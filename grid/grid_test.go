@@ -515,3 +515,149 @@ func TestCombiningMarkOnASpaceIsKept(t *testing.T) {
 		t.Fatalf("At(0,0) = %+v, want a space carrying one mark", got)
 	}
 }
+
+func TestSelectionContainsFlowingRange(t *testing.T) {
+	s := Selection{Anchor: Point{2, 1}, Cursor: Point{3, 3}, Active: true}
+	cases := []struct {
+		x, y int
+		want bool
+	}{
+		{1, 1, false}, // before the start on the first row
+		{2, 1, true},
+		{9, 1, true}, // the rest of the first row
+		{0, 2, true}, // all of a middle row
+		{9, 2, true},
+		{3, 3, true},
+		{4, 3, false}, // past the end on the last row
+		{0, 0, false}, // a row above
+		{0, 4, false}, // a row below
+	}
+	for _, tc := range cases {
+		if got := s.Contains(tc.x, tc.y); got != tc.want {
+			t.Errorf("Contains(%d,%d) = %v, want %v", tc.x, tc.y, got, tc.want)
+		}
+	}
+}
+
+// Dragging backwards selects the same cells as dragging forwards.
+func TestSelectionIsDirectionIndependent(t *testing.T) {
+	fwd := Selection{Anchor: Point{2, 1}, Cursor: Point{3, 3}, Active: true}
+	back := Selection{Anchor: Point{3, 3}, Cursor: Point{2, 1}, Active: true}
+	for y := 0; y < 5; y++ {
+		for x := 0; x < 10; x++ {
+			if fwd.Contains(x, y) != back.Contains(x, y) {
+				t.Fatalf("at %d,%d: forwards %v, backwards %v",
+					x, y, fwd.Contains(x, y), back.Contains(x, y))
+			}
+		}
+	}
+}
+
+func TestBlockSelectionCoversTheRectangle(t *testing.T) {
+	s := Selection{Anchor: Point{2, 1}, Cursor: Point{4, 3}, Active: true, Block: true}
+	if !s.Contains(3, 2) {
+		t.Error("inside the rectangle reported as outside")
+	}
+	if s.Contains(5, 2) {
+		t.Error("right of the rectangle reported as inside")
+	}
+	if s.Contains(1, 2) {
+		t.Error("left of the rectangle reported as inside")
+	}
+}
+
+func TestInactiveSelectionContainsNothing(t *testing.T) {
+	s := Selection{Anchor: Point{0, 0}, Cursor: Point{9, 9}}
+	if s.Contains(1, 1) {
+		t.Fatal("an inactive selection reported a cell as selected")
+	}
+}
+
+func TestSetSelectionDirtiesTheRowsItCovers(t *testing.T) {
+	g := New(10, 5, fg, bg)
+	g.ClearDirty()
+
+	g.SetSelection(Selection{Anchor: Point{0, 1}, Cursor: Point{9, 2}, Active: true})
+
+	for y := 0; y < 5; y++ {
+		want := y == 1 || y == 2
+		if got := g.RowDirty(y); got != want {
+			t.Errorf("row %d dirty = %v, want %v", y, got, want)
+		}
+	}
+}
+
+// Clearing a selection has to repaint the rows it used to cover, or the
+// highlight stays on screen.
+func TestClearSelectionDirtiesTheOldRows(t *testing.T) {
+	g := New(10, 5, fg, bg)
+	g.SetSelection(Selection{Anchor: Point{0, 3}, Cursor: Point{9, 3}, Active: true})
+	g.ClearDirty()
+
+	g.ClearSelection()
+
+	if !g.RowDirty(3) {
+		t.Fatal("the row the selection left is clean; the highlight would stay")
+	}
+}
+
+func TestSelectionChangesTheBackground(t *testing.T) {
+	g := New(4, 1, fg, bg)
+	g.SetSelection(Selection{Anchor: Point{1, 0}, Cursor: Point{2, 0}, Active: true})
+
+	var runs []color.RGBA
+	g.BGRuns(0, func(x0, x1 int, c color.RGBA) { runs = append(runs, c) })
+
+	if len(runs) != 3 {
+		t.Fatalf("got %d background runs, want 3 (before, selected, after)", len(runs))
+	}
+	if runs[1] != g.SelectionBG {
+		t.Errorf("selected run = %v, want the selection colour %v", runs[1], g.SelectionBG)
+	}
+}
+
+func TestSelectedText(t *testing.T) {
+	g := New(10, 3, fg, bg)
+	g.SetString(0, 0, "hello", fg, bg, 0)
+	g.SetString(0, 1, "world", fg, bg, 0)
+
+	g.SetSelection(Selection{Anchor: Point{2, 0}, Cursor: Point{2, 1}, Active: true})
+
+	if got, want := g.SelectedText(), "llo\nwor"; got != want {
+		t.Fatalf("SelectedText() = %q, want %q", got, want)
+	}
+}
+
+// Trailing blanks are trimmed per row, which is what makes a selected
+// command line paste back as a command line.
+func TestSelectedTextTrimsTrailingBlanks(t *testing.T) {
+	g := New(20, 2, fg, bg)
+	g.SetString(0, 0, "ls -l", fg, bg, 0)
+
+	g.SetSelection(Selection{Anchor: Point{0, 0}, Cursor: Point{19, 0}, Active: true})
+
+	if got, want := g.SelectedText(), "ls -l"; got != want {
+		t.Fatalf("SelectedText() = %q, want %q", got, want)
+	}
+}
+
+// The continuation half of a wide character has no rune of its own; its
+// lead cell already contributed one.
+func TestSelectedTextCountsAWideCharacterOnce(t *testing.T) {
+	g := New(10, 1, fg, bg)
+	g.SetString(0, 0, "a世b", fg, bg, 0)
+
+	g.SetSelection(Selection{Anchor: Point{0, 0}, Cursor: Point{4, 0}, Active: true})
+
+	if got, want := g.SelectedText(), "a世b"; got != want {
+		t.Fatalf("SelectedText() = %q, want %q", got, want)
+	}
+}
+
+func TestSelectedTextIsEmptyWhenInactive(t *testing.T) {
+	g := New(10, 1, fg, bg)
+	g.SetString(0, 0, "hello", fg, bg, 0)
+	if got := g.SelectedText(); got != "" {
+		t.Fatalf("SelectedText() = %q with no selection, want empty", got)
+	}
+}

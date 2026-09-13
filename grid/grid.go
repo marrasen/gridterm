@@ -6,6 +6,7 @@ package grid
 import (
 	"image/color"
 	"slices"
+	"strings"
 
 	"github.com/rivo/uniseg"
 )
@@ -78,15 +79,27 @@ type Grid struct {
 	dirty      []bool
 	allDirty   bool
 	cursor     Cursor
+	sel        Selection
 
 	// DefaultFG and DefaultBG fill cells cleared by Clear and Resize.
 	DefaultFG color.RGBA
 	DefaultBG color.RGBA
+
+	// SelectionBG is painted behind selected cells. The foreground is
+	// left alone, so selected text keeps whatever colour the program
+	// gave it.
+	SelectionBG color.RGBA
 }
 
 // New returns a grid of the given size, filled with spaces.
 func New(cols, rows int, fg, bg color.RGBA) *Grid {
-	g := &Grid{DefaultFG: fg, DefaultBG: bg}
+	g := &Grid{
+		DefaultFG: fg,
+		DefaultBG: bg,
+		// A mid grey reads as a selection against both a dark and a
+		// light scheme; callers with a theme should override it.
+		SelectionBG: color.RGBA{0x3a, 0x44, 0x55, 0xff},
+	}
 	g.Resize(cols, rows)
 	return g
 }
@@ -370,8 +383,16 @@ func (g *Grid) BGRuns(y int, fn func(x0, x1 int, c color.RGBA)) {
 	fn(start, g.cols, cur)
 }
 
-// bgOf returns the effective background of a cell, honouring AttrReverse.
+// bgOf returns the effective background of a cell, honouring AttrReverse
+// and the selection.
+//
+// Resolving the selection here rather than in the renderer means the
+// background run merging and the damage tracking handle it without
+// knowing it exists.
 func (g *Grid) bgOf(x, y int) color.RGBA {
+	if g.sel.Contains(x, y) && g.SelectionBG.A != 0 {
+		return g.SelectionBG
+	}
 	c := g.cells[y*g.cols+x]
 	if c.Attr&AttrReverse != 0 {
 		return c.FG
@@ -443,4 +464,120 @@ func RuneWidth(r rune) int {
 	default:
 		return 1
 	}
+}
+
+// Point is a cell coordinate.
+type Point struct{ X, Y int }
+
+// Selection is a highlighted range of cells.
+//
+// Anchor is where the drag started and Cursor is where it is now, in
+// either order — normalising them is the caller's business only if it
+// wants to know which end is which. A block selection covers the
+// rectangle between them rather than the flowing range.
+type Selection struct {
+	Anchor, Cursor Point
+	Active         bool
+	Block          bool
+}
+
+// normalised returns the selection with its ends in reading order.
+func (s Selection) normalised() (from, to Point) {
+	from, to = s.Anchor, s.Cursor
+	if s.Block {
+		if from.X > to.X {
+			from.X, to.X = to.X, from.X
+		}
+		if from.Y > to.Y {
+			from.Y, to.Y = to.Y, from.Y
+		}
+		return from, to
+	}
+	if to.Y < from.Y || (to.Y == from.Y && to.X < from.X) {
+		from, to = to, from
+	}
+	return from, to
+}
+
+// Contains reports whether x,y falls inside the selection.
+func (s Selection) Contains(x, y int) bool {
+	if !s.Active {
+		return false
+	}
+	from, to := s.normalised()
+	if y < from.Y || y > to.Y {
+		return false
+	}
+	if s.Block {
+		return x >= from.X && x <= to.X
+	}
+	switch {
+	case from.Y == to.Y:
+		return x >= from.X && x <= to.X
+	case y == from.Y:
+		return x >= from.X
+	case y == to.Y:
+		return x <= to.X
+	default:
+		return true
+	}
+}
+
+// Selection returns the current selection.
+func (g *Grid) Selection() Selection { return g.sel }
+
+// SetSelection replaces the selection, dirtying every row either the old
+// or the new one covered so the highlight is repainted.
+func (g *Grid) SetSelection(s Selection) {
+	if s == g.sel {
+		return
+	}
+	old := g.sel
+	g.sel = s
+	for _, cur := range []Selection{old, s} {
+		if !cur.Active {
+			continue
+		}
+		from, to := cur.normalised()
+		for y := max(from.Y, 0); y <= min(to.Y, g.rows-1); y++ {
+			g.dirtyRow(y)
+		}
+	}
+}
+
+// ClearSelection removes the highlight.
+func (g *Grid) ClearSelection() { g.SetSelection(Selection{}) }
+
+// SelectedText returns the selected cells as text, with a newline
+// between rows and trailing blanks trimmed from each — which is what
+// makes pasting a selected command line work.
+func (g *Grid) SelectedText() string {
+	if !g.sel.Active {
+		return ""
+	}
+	from, to := g.sel.normalised()
+	var sb strings.Builder
+	for y := max(from.Y, 0); y <= min(to.Y, g.rows-1); y++ {
+		var row strings.Builder
+		for x := 0; x < g.cols; x++ {
+			if !g.sel.Contains(x, y) {
+				continue
+			}
+			c := g.cells[y*g.cols+x]
+			// The continuation half of a wide character carries no rune
+			// of its own; its lead cell already contributed one.
+			if c.Width == 0 {
+				continue
+			}
+			row.WriteRune(c.Rune)
+			for _, m := range c.Comb {
+				row.WriteRune(m)
+			}
+		}
+		if y > max(from.Y, 0) {
+			sb.WriteByte('\n')
+		}
+		sb.WriteString(strings.TrimRight(row.String(), " "))
+	}
+	return sb.String()
 }

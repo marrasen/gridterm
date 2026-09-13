@@ -43,9 +43,6 @@ type Terminal struct {
 
 	// lastRune is the most recent printable character, which REP repeats.
 	lastRune rune
-
-	// replyBuf is reused by device reports so a report does not allocate.
-	replyBuf []byte
 }
 
 // New returns a terminal of the given size.
@@ -85,7 +82,12 @@ func (t *Terminal) Render(g *grid.Grid) { t.scr.Render(g) }
 // ---------------------------------------------------------------- //
 
 func (t *Terminal) Print(r rune) {
-	t.lastRune = r
+	// REP repeats the last printable character. A combining mark is not
+	// one: repeating it would stack marks on a cell rather than repeat
+	// anything visible.
+	if grid.RuneWidth(r) > 0 {
+		t.lastRune = r
+	}
 	t.scr.Print(r)
 }
 
@@ -147,6 +149,8 @@ func (t *Terminal) EscDispatch(intermediates []byte, _ bool, b byte) {
 		t.scr.RestoreCursor()
 	case 'c': // RIS
 		t.scr.Reset()
+		t.lastRune = 0
+		t.title = ""
 	case '=': // DECKPAM
 		t.scr.mode.AppKeypad = true
 	case '>': // DECKPNM
@@ -214,8 +218,7 @@ func (t *Terminal) CsiDispatch(params [][]uint16, intermediates []byte, ignore b
 		t.scr.MoveRel(0, -arg(0, 1))
 		t.scr.CarriageReturn()
 	case 'G', '`': // CHA, HPA
-		_, y := t.scr.CursorPos()
-		t.scr.MoveTo(arg(0, 1)-1, y)
+		t.scr.MoveToCol(arg(0, 1) - 1)
 	case 'H', 'f': // CUP, HVP
 		t.scr.MoveTo(arg(1, 1)-1, arg(0, 1)-1)
 	case 'I': // CHT
@@ -241,13 +244,13 @@ func (t *Terminal) CsiDispatch(params [][]uint16, intermediates []byte, ignore b
 	case 'b': // REP
 		t.repeat(arg(0, 1))
 	case 'd': // VPA
-		x, _ := t.scr.CursorPos()
-		t.scr.MoveTo(x, arg(0, 1)-1)
+		t.scr.MoveToRow(arg(0, 1) - 1)
 	case 'g': // TBC
-		if argRaw(0, 0) == 3 {
-			t.scr.ClearTabs()
-		} else {
+		switch argRaw(0, 0) {
+		case 0:
 			t.scr.SetTab(false)
+		case 3:
+			t.scr.ClearTabs()
 		}
 	case 'h': // SM
 		t.setModes(params, true)
@@ -275,10 +278,12 @@ func (t *Terminal) repeat(n int) {
 	if t.lastRune == 0 {
 		return
 	}
-	// A runaway count would let a remote program hang the terminal, so
-	// it is capped at what could fit on screen anyway.
-	cols, rows := t.scr.Size()
-	n = min(n, cols*rows)
+	// A runaway count would let eight bytes of input buy a screenful of
+	// work. xterm bounds REP by what is left of the current line, which
+	// caps the amplification at the terminal width.
+	cols, _ := t.scr.Size()
+	x, _ := t.scr.CursorPos()
+	n = min(n, max(cols-x, 1))
 	for i := 0; i < n; i++ {
 		t.scr.Print(t.lastRune)
 	}
@@ -336,7 +341,12 @@ func (t *Terminal) setPrivateModes(params [][]uint16, on bool) {
 		case 1006:
 			t.scr.mode.MouseSGR = on
 		case 47, 1047:
-			t.scr.UseAltBuffer(on)
+			// xterm clears the alternate screen for 1047 on the way
+			// out, not on the way in; 47 does not clear at all.
+			if !on && sub[0] == 1047 {
+				t.scr.clearAlt()
+			}
+			t.scr.UseAltBuffer(on, false)
 		case 1048:
 			if on {
 				t.scr.SaveCursor()
@@ -349,9 +359,9 @@ func (t *Terminal) setPrivateModes(params [][]uint16, on bool) {
 			// prompt exactly where it found it.
 			if on {
 				t.scr.SaveCursor()
-				t.scr.UseAltBuffer(true)
+				t.scr.UseAltBuffer(true, true)
 			} else {
-				t.scr.UseAltBuffer(false)
+				t.scr.UseAltBuffer(false, false)
 				t.scr.RestoreCursor()
 			}
 		case 2004:
@@ -369,7 +379,8 @@ func (t *Terminal) deviceStatus(n int, private bool) {
 			t.reply("\x1b[0n")
 		}
 	case 6:
-		x, y := t.scr.CursorPos()
+		x, _ := t.scr.CursorPos()
+		y := t.scr.CursorRow()
 		prefix := "\x1b["
 		if private {
 			prefix = "\x1b[?"
@@ -378,12 +389,13 @@ func (t *Terminal) deviceStatus(n int, private bool) {
 	}
 }
 
+// reply sends bytes back to the program. The slice is freshly allocated
+// on each call: reports are rare and short, and handing out a reused
+// buffer means a callback that queues the slice sees it change under it.
 func (t *Terminal) reply(s string) {
-	if t.cb.Reply == nil {
-		return
+	if t.cb.Reply != nil {
+		t.cb.Reply([]byte(s))
 	}
-	t.replyBuf = append(t.replyBuf[:0], s...)
-	t.cb.Reply(t.replyBuf)
 }
 
 func (t *Terminal) OscDispatch(params [][]byte, _ bool) {

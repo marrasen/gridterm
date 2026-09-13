@@ -4,9 +4,12 @@ package session
 
 import (
 	"bytes"
+	"errors"
 	"io"
-	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -16,16 +19,26 @@ import (
 // can be assumed to hold a whole line.
 func readUntil(t *testing.T, s Session, want string, timeout time.Duration) string {
 	t.Helper()
-	var buf bytes.Buffer
-	done := make(chan struct{})
+	// The buffer is shared with the reader goroutine and is read again
+	// on the timeout path, so it needs a lock. Without one the failure
+	// message races with the reader and -race turns a timeout into a
+	// data-race report instead.
+	var (
+		mu   sync.Mutex
+		buf  bytes.Buffer
+		done = make(chan struct{})
+	)
 	go func() {
 		defer close(done)
 		b := make([]byte, 4096)
 		for {
 			n, err := s.Read(b)
 			if n > 0 {
+				mu.Lock()
 				buf.Write(b[:n])
-				if strings.Contains(buf.String(), want) {
+				got := strings.Contains(buf.String(), want)
+				mu.Unlock()
+				if got {
 					return
 				}
 			}
@@ -37,8 +50,9 @@ func readUntil(t *testing.T, s Session, want string, timeout time.Duration) stri
 	select {
 	case <-done:
 	case <-time.After(timeout):
-		t.Fatalf("timed out waiting for %q; got %q", want, buf.String())
 	}
+	mu.Lock()
+	defer mu.Unlock()
 	return buf.String()
 }
 
@@ -54,7 +68,7 @@ func TestStartLocalRunsACommand(t *testing.T) {
 
 	got := readUntil(t, s, "hello-from-the-pty", 5*time.Second)
 	if !strings.Contains(got, "hello-from-the-pty") {
-		t.Fatalf("output = %q", got)
+		t.Fatalf("output = %q, want it to contain hello-from-the-pty", got)
 	}
 }
 
@@ -165,8 +179,13 @@ func TestWaitReportsTheExitStatus(t *testing.T) {
 	// Drain, or the child can block writing and never exit.
 	go io.Copy(io.Discard, s)
 
-	if err := s.Wait(); err == nil {
-		t.Fatal("Wait returned nil for a command that exited 3")
+	err = s.Wait()
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) {
+		t.Fatalf("Wait returned %v (%T), want an *exec.ExitError", err, err)
+	}
+	if got := exit.ExitCode(); got != 3 {
+		t.Fatalf("exit code = %d, want 3", got)
 	}
 }
 
@@ -186,6 +205,89 @@ func TestCloseIsIdempotent(t *testing.T) {
 	}
 	if err := s.Close(); err != nil {
 		t.Fatalf("second Close: %v", err)
+	}
+}
+
+// Close is reachable from several goroutines at once — the window
+// closing while the reaper is also finishing — which is what the
+// sync.Once is there for.
+func TestCloseIsSafeConcurrently(t *testing.T) {
+	s, err := StartLocal(LocalConfig{
+		Command: []string{"/bin/sh", "-c", "sleep 30"},
+		Cols:    80, Rows: 24,
+	})
+	if err != nil {
+		t.Fatalf("StartLocal: %v", err)
+	}
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_ = s.Close()
+		}()
+	}
+	wg.Wait()
+}
+
+// Closing the pty master discards whatever the kernel still had
+// buffered, so a short command's entire output could vanish before the
+// pump ever saw it.
+func TestOutputSurvivesAChildThatExitsImmediately(t *testing.T) {
+	s, err := StartLocal(LocalConfig{
+		Command: []string{"/bin/sh", "-c", "printf 'x%.0s' $(seq 1 4000); exit 0"},
+		Cols:    80, Rows: 24,
+	})
+	if err != nil {
+		t.Fatalf("StartLocal: %v", err)
+	}
+	defer s.Close()
+
+	// Start reading late, as a terminal busy with a frame would.
+	time.Sleep(300 * time.Millisecond)
+
+	var got []byte
+	b := make([]byte, 4096)
+	for {
+		n, err := s.Read(b)
+		got = append(got, b[:n]...)
+		if err != nil {
+			break
+		}
+	}
+	if len(got) < 4000 {
+		t.Fatalf("read %d bytes, want 4000: output was discarded when the child exited",
+			len(got))
+	}
+}
+
+// A child that ignores SIGHUP would otherwise outlive the window that
+// started it, holding the pty open.
+func TestCloseKillsAChildThatIgnoresHangup(t *testing.T) {
+	s, err := StartLocal(LocalConfig{
+		Command: []string{"/bin/sh", "-c", "trap '' HUP; while :; do sleep 1; done"},
+		Cols:    80, Rows: 24,
+	})
+	if err != nil {
+		t.Fatalf("StartLocal: %v", err)
+	}
+	go io.Copy(io.Discard, s)
+
+	start := time.Now()
+	if err := s.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	// Close only returns once the child is gone or has been killed.
+	if d := time.Since(start); d > 3*time.Second {
+		t.Fatalf("Close took %v; it should give up on the hangup and kill", d)
+	}
+
+	done := make(chan struct{})
+	go func() { _ = s.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("the child survived Close")
 	}
 }
 
@@ -278,21 +380,27 @@ func TestDirIsHonoured(t *testing.T) {
 	}
 	defer s.Close()
 
-	// macOS reports /private/var for /var, so compare the resolved path.
-	want, err := os.Readlink(dir)
+	// macOS puts temp dirs under /var, which is a symlink to
+	// /private/var, and pwd prints the physical path. Resolve both ends
+	// rather than comparing the symlinked one.
+	want, err := filepath.EvalSymlinks(dir)
 	if err != nil {
 		want = dir
 	}
-	got := readUntil(t, s, "/", 5*time.Second)
-	if !strings.Contains(got, strings.TrimSpace(want)) {
-		t.Fatalf("pwd = %q, want %q", strings.TrimSpace(got), want)
+	// Wait for the newline, not the first slash: a pty can split the
+	// write and leave a prefix of the path in the buffer.
+	got := readUntil(t, s, "\n", 5*time.Second)
+	if !strings.Contains(got, want) {
+		t.Fatalf("pwd = %q, want it to contain %q", strings.TrimSpace(got), want)
 	}
 }
 
-func TestResizeWithNonsenseSizeIsIgnored(t *testing.T) {
+// "Ignored" has to mean the child's size is unchanged, not merely that
+// no error came back.
+func TestResizeWithNonsenseSizeLeavesTheSizeAlone(t *testing.T) {
 	s, err := StartLocal(LocalConfig{
-		Command: []string{"/bin/sh", "-c", "sleep 5"},
-		Cols:    80, Rows: 24,
+		Command: []string{"/bin/sh", "-c", "read _; stty size"},
+		Cols:    77, Rows: 21,
 	})
 	if err != nil {
 		t.Fatalf("StartLocal: %v", err)
@@ -304,6 +412,14 @@ func TestResizeWithNonsenseSizeIsIgnored(t *testing.T) {
 	}
 	if err := s.Resize(-5, -5); err != nil {
 		t.Errorf("Resize(-5,-5) returned %v, want nil", err)
+	}
+	if _, err := s.Write([]byte("\n")); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	got := readUntil(t, s, "21 77", 5*time.Second)
+	if !strings.Contains(got, "21 77") {
+		t.Fatalf("stty size = %q, want the original 21 77", strings.TrimSpace(got))
 	}
 }
 
@@ -318,6 +434,12 @@ func TestHasEnv(t *testing.T) {
 		{[]string{"TERM="}, "TERM", true},
 		{nil, "TERM", false},
 		{[]string{"A=1", "TERM=x"}, "TERM", true},
+		// Windows environment names are case-insensitive, and os/exec
+		// keeps the last duplicate there, so a caller's "Term=dumb"
+		// would lose to an appended "TERM=...".
+		{[]string{"Term=dumb"}, "TERM", true},
+		{[]string{"term=dumb"}, "TERM", true},
+		{[]string{"TERMINFO=/x"}, "TERM", false},
 	}
 	for _, tc := range cases {
 		if got := hasEnv(tc.env, tc.key); got != tc.want {

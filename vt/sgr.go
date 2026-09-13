@@ -55,6 +55,20 @@ func (t *Terminal) applySGR(params [][]uint16) {
 		}
 
 		switch {
+		case n == 4:
+			// The colon form carries a style: 4:0 is off, 4:1 single,
+			// 4:3 curly. Only on and off are drawn, but 4:0 must not be
+			// read as plain "underline on".
+			if len(sub) > 1 && sub[1] == 0 {
+				pen.Attr &^= grid.AttrUnderline
+			} else {
+				pen.Attr |= grid.AttrUnderline
+			}
+		case n == 21:
+			// Double underline. Drawn as a single one for now, but it is
+			// not "bold off", which is what ECMA-48 says and almost no
+			// terminal implements.
+			pen.Attr |= grid.AttrUnderline
 		case n == 0:
 			pen = t.defaultPen()
 		case n == 1:
@@ -63,8 +77,6 @@ func (t *Terminal) applySGR(params [][]uint16) {
 			pen.Attr |= grid.AttrDim
 		case n == 3:
 			pen.Attr |= grid.AttrItalic
-		case n == 4:
-			pen.Attr |= grid.AttrUnderline
 		case n == 5 || n == 6:
 			pen.Attr |= grid.AttrBlink
 		case n == 7:
@@ -73,7 +85,7 @@ func (t *Terminal) applySGR(params [][]uint16) {
 			pen.Attr |= grid.AttrHidden
 		case n == 9:
 			pen.Attr |= grid.AttrStrike
-		case n == 21 || n == 22:
+		case n == 22:
 			pen.Attr &^= grid.AttrBold | grid.AttrDim
 		case n == 23:
 			pen.Attr &^= grid.AttrItalic
@@ -160,7 +172,16 @@ func colorFromParams(rest [][]uint16, pal *Palette) (col color.RGBA, ok bool, us
 		g, gok := at(2)
 		b, bok := at(3)
 		if !rok || !gok || !bok {
-			return color.RGBA{}, false, 1
+			// Consume whatever of the run is present. Leaving the tail
+			// behind would let "38;2;1" apply the 1 as bold.
+			used := 1
+			for _, ok := range []bool{rok, gok, bok} {
+				if !ok {
+					break
+				}
+				used++
+			}
+			return color.RGBA{}, false, used
 		}
 		return color.RGBA{clamp8(r), clamp8(g), clamp8(b), 0xff}, true, 4
 	}

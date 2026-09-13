@@ -307,14 +307,29 @@ func TestScrollRegion(t *testing.T) {
 	h.wantLines("1", "3", "4", "", "5")
 }
 
+// Only a scroll of the whole screen is history. A program that has
+// reserved a status line scrolls a region whose top is row 0, and those
+// lines are its own interface being redrawn.
 func TestScrollRegionDoesNotFeedScrollback(t *testing.T) {
-	h := newHarness(t, 6, 4)
-	h.write("\x1b[2;3r\x1b[3;1H")
-	before := len(h.term.Screen().cur.scrollback)
-	h.write("\n\n\n")
-	if got := len(h.term.Screen().cur.scrollback); got != before {
-		t.Fatalf("scrollback grew by %d; a region scroll is a redraw, not history",
-			got-before)
+	cases := []struct {
+		name   string
+		region string
+		home   string
+	}{
+		{"region below the top", "\x1b[2;3r", "\x1b[3;1H"},
+		{"region starting at row 0", "\x1b[1;3r", "\x1b[3;1H"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness(t, 6, 4)
+			h.write(tc.region + tc.home)
+			before := len(h.term.Screen().cur.scrollback)
+			h.write("\n\n\n")
+			if got := len(h.term.Screen().cur.scrollback); got != before {
+				t.Fatalf("scrollback grew by %d; a region scroll is a redraw, not history",
+					got-before)
+			}
+		})
 	}
 }
 
@@ -420,13 +435,20 @@ func TestSGRAttributes(t *testing.T) {
 
 // An out-of-range 256-colour index arrives from the far end of a pipe
 // and must not index past the palette.
-func TestSGROutOfRangeColourIndexDoesNotPanic(t *testing.T) {
+func TestSGROutOfRangeColourIsClamped(t *testing.T) {
+	pal := DefaultPalette()
 	h := newHarness(t, 4, 2)
+
 	h.write("\x1b[38;5;999mx")
+	h.term.Render(h.g)
+	if got := h.g.At(0, 0).FG; got != pal.FG {
+		t.Errorf("out-of-range palette index gave %v, want the default fg %v", got, pal.FG)
+	}
+
 	h.write("\x1b[38;2;999;999;999my")
 	h.term.Render(h.g)
-	if got := h.g.At(1, 0); got.FG.R != 255 || got.FG.G != 255 || got.FG.B != 255 {
-		t.Errorf("clamped truecolor = %v, want white", got.FG)
+	if got := h.g.At(1, 0).FG; got != (color.RGBA{255, 255, 255, 255}) {
+		t.Errorf("clamped truecolor = %v, want white", got)
 	}
 }
 
@@ -481,13 +503,24 @@ func TestRepeat(t *testing.T) {
 	h.wantLines("aaaaa")
 }
 
-func TestRepeatCountIsCapped(t *testing.T) {
-	h := newHarness(t, 4, 2)
-	// A runaway REP would otherwise let a remote program hang the
-	// terminal for as long as it likes.
-	h.write("a\x1b[65535b")
-	if x, y := h.cursor(); y > 1 || x > 4 {
-		t.Fatalf("cursor at %d,%d after a capped repeat", x, y)
+// REP is bounded by what is left of the line. Without that, eight bytes
+// of input buy a screenful of work and a megabyte of them buys minutes.
+func TestRepeatIsBoundedByTheRestOfTheLine(t *testing.T) {
+	h := newHarness(t, 10, 4)
+	h.write("ab\x1b[65535b")
+	h.wantLines("abbbbbbbbb", "")
+	if x, y := h.cursor(); y != 0 {
+		t.Fatalf("cursor at %d,%d; REP scrolled off its own line", x, y)
+	}
+}
+
+func TestRepeatIgnoresCombiningMarks(t *testing.T) {
+	h := newHarness(t, 10, 2)
+	// The last printable character is 'e', not the mark that followed.
+	h.write("e\u0301\x1b[2b")
+	h.term.Render(h.g)
+	if got := h.g.At(1, 0).Rune; got != 'e' {
+		t.Fatalf("At(1,0) = %q, want 'e'; REP repeated the combining mark", got)
 	}
 }
 
@@ -521,8 +554,8 @@ func TestCursorPositionReport(t *testing.T) {
 func TestDeviceAttributes(t *testing.T) {
 	h := newHarness(t, 4, 2)
 	h.write("\x1b[c")
-	if len(h.replies) != 1 || !strings.HasPrefix(h.replies[0], "\x1b[?6") {
-		t.Fatalf("replies = %q, want a primary DA response", h.replies)
+	if len(h.replies) != 1 || h.replies[0] != "\x1b[?6c" {
+		t.Fatalf("replies = %q, want [\\x1b[?6c]", h.replies)
 	}
 }
 

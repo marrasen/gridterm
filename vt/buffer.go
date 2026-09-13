@@ -47,10 +47,10 @@ func (b *buffer) blankLine() line {
 // truncated or extended in place; rows are added at the bottom and
 // removed from the top, so growing a window reveals scrollback rather
 // than pushing the prompt down.
-func (b *buffer) resize(cols, rows int, fill grid.Cell) {
+func (b *buffer) resize(cols, rows int, fill grid.Cell, cursorY int) int {
 	b.fill = fill
 	if cols == b.cols && rows == len(b.lines) {
-		return
+		return 0
 	}
 	if cols != b.cols {
 		b.cols = cols
@@ -62,28 +62,38 @@ func (b *buffer) resize(cols, rows int, fill grid.Cell) {
 		}
 	}
 
+	shift := 0
 	switch {
 	case rows > len(b.lines):
-		// Pull lines back out of scrollback before inventing blank ones.
+		// Pull lines back out of scrollback before inventing blank ones,
+		// so making a window taller reveals what scrolled off rather
+		// than adding blank space.
 		want := rows - len(b.lines)
 		take := min(want, len(b.scrollback))
 		if take > 0 {
 			revived := b.scrollback[len(b.scrollback)-take:]
 			b.scrollback = b.scrollback[:len(b.scrollback)-take]
 			b.lines = append(append([]line{}, revived...), b.lines...)
+			shift = take
 		}
 		for len(b.lines) < rows {
 			b.lines = append(b.lines, b.blankLine())
 		}
 	case rows < len(b.lines):
-		// Drop from the top, pushing the dropped lines into history so
-		// shrinking a window does not destroy output.
+		// Drop from the bottom where possible: those rows are below the
+		// cursor and usually blank. Only take from the top when the
+		// cursor would otherwise fall off the new screen, and push what
+		// is taken into history so output is not destroyed.
 		drop := len(b.lines) - rows
-		for _, l := range b.lines[:drop] {
+		fromTop := max(cursorY-rows+1, 0)
+		fromTop = min(fromTop, drop)
+		for _, l := range b.lines[:fromTop] {
 			b.pushScrollback(l)
 		}
-		b.lines = append([]line{}, b.lines[drop:]...)
+		b.lines = append([]line{}, b.lines[fromTop:len(b.lines)-(drop-fromTop)]...)
+		shift = -fromTop
 	}
+	return shift
 }
 
 // resizeLine truncates or pads a row to cols, blanking any half of a
@@ -106,39 +116,56 @@ func resizeLine(l line, cols int, fill grid.Cell) line {
 	return out
 }
 
-func (b *buffer) pushScrollback(l line) {
+// pushScrollback appends a line to history and reports whether it was
+// kept, so the caller can keep a scrolled-back view pinned to the same
+// text.
+func (b *buffer) pushScrollback(l line) bool {
 	if b.maxScroll <= 0 {
-		return
+		return false
 	}
 	b.scrollback = append(b.scrollback, l)
-	if len(b.scrollback) > b.maxScroll {
-		// Drop the oldest. Copying down rather than re-slicing keeps the
-		// backing array from growing without bound.
+	if len(b.scrollback) > b.maxScroll+scrollSlack {
+		// Trim in batches. Compacting on every line past the limit
+		// memmoves the whole history for each line of output, which is
+		// the one part of this design that scales the wrong way under a
+		// flood.
 		drop := len(b.scrollback) - b.maxScroll
+		clear(b.scrollback[:drop])
 		b.scrollback = append(b.scrollback[:0], b.scrollback[drop:]...)
 	}
+	return true
 }
 
-// scrollUp moves lines [top,bot] up by n, discarding the top n. When the
-// region starts at row 0 and history is enabled, the discarded lines go
-// to scrollback; a scroll inside a smaller region is a full-screen
-// program redrawing and is not history.
-func (b *buffer) scrollUp(top, bot, n int, history bool, fill grid.Cell) {
+// scrollSlack is how far history may overshoot its limit before being
+// compacted, so trimming costs one memmove per slack lines rather than
+// one per line.
+const scrollSlack = 256
+
+// scrollUp moves lines [top,bot] up by n, discarding the top n, and
+// reports how many of them were kept as history.
+//
+// Lines only become history when the region is the whole screen. A
+// program scrolling a smaller region — one that has reserved a status
+// line, say — is redrawing, and pushing those lines into history would
+// fill it with fragments of its own interface.
+func (b *buffer) scrollUp(top, bot, n int, history bool, fill grid.Cell) int {
 	b.fill = fill
 	if n <= 0 || top < 0 || bot >= len(b.lines) || top > bot {
-		return
+		return 0
 	}
 	n = min(n, bot-top+1)
+	kept := 0
+	whole := top == 0 && bot == len(b.lines)-1
 	for i := 0; i < n; i++ {
-		l := b.lines[top+i]
-		if history && top == 0 {
-			b.pushScrollback(l)
+		if history && whole && b.pushScrollback(b.lines[top+i]) {
+			kept++
 		}
 	}
 	copy(b.lines[top:bot+1-n], b.lines[top+n:bot+1])
 	for i := bot + 1 - n; i <= bot; i++ {
 		b.lines[i] = b.blankLine()
 	}
+	return kept
 }
 
 // scrollDown moves lines [top,bot] down by n, discarding the bottom n.

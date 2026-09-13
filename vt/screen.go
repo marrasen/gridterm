@@ -85,6 +85,12 @@ func NewScreen(cols, rows int, pal Palette, scrollback int) *Screen {
 	s.mode.Wrap = true
 	s.mode.CursorVis = true
 	s.cursor.Pen = s.blank()
+	// Restoring a cursor that was never saved must not install the zero
+	// Cell as the pen: its colours are transparent black, so every
+	// subsequent character would be invisible.
+	for i := range s.saved {
+		s.saved[i] = s.cursor
+	}
 	s.resetTabs()
 	return s
 }
@@ -127,6 +133,20 @@ func (s *Screen) resetTabs() {
 	}
 }
 
+// resizeTabs keeps the stops a program has set. Rebuilding the default
+// grid instead would silently discard them, and a program that set its
+// own columns has no way to know it must set them again.
+func (s *Screen) resizeTabs(cols int) {
+	next := make([]bool, cols)
+	copy(next, s.tabs)
+	for i := len(s.tabs); i < cols; i += 1 {
+		if i%8 == 0 && i > 0 {
+			next[i] = true
+		}
+	}
+	s.tabs = next
+}
+
 // Resize changes the screen dimensions. The cursor is clamped into the
 // new bounds and the scroll region is reset, which is what xterm does.
 func (s *Screen) Resize(cols, rows int) {
@@ -135,18 +155,27 @@ func (s *Screen) Resize(cols, rows int) {
 	if cols == s.cols && rows == s.rows {
 		return
 	}
-	s.pri.resize(cols, rows, s.eraseCell())
-	s.alt.resize(cols, rows, s.eraseCell())
+	priShift := s.pri.resize(cols, rows, s.eraseCell(), s.cursor.Y)
+	altShift := s.alt.resize(cols, rows, s.eraseCell(), s.cursor.Y)
+	shift := priShift
+	if s.cur == s.alt {
+		shift = altShift
+	}
+
 	s.cols, s.rows = cols, rows
 	s.top, s.bot = 0, rows-1
+	// The cursor has to travel with the text it was sitting on. Lines
+	// revived from history push the screen down; lines taken from the
+	// top pull it up. Clamping alone would leave the prompt stranded in
+	// the middle of old output.
 	s.cursor.X = min(s.cursor.X, cols-1)
-	s.cursor.Y = min(s.cursor.Y, rows-1)
+	s.cursor.Y = min(max(s.cursor.Y+shift, 0), rows-1)
 	s.cursor.WrapNext = false
 	for i := range s.saved {
 		s.saved[i].X = min(s.saved[i].X, cols-1)
-		s.saved[i].Y = min(s.saved[i].Y, rows-1)
+		s.saved[i].Y = min(max(s.saved[i].Y+shift, 0), rows-1)
 	}
-	s.resetTabs()
+	s.resizeTabs(cols)
 	s.clampScrollOff()
 }
 
@@ -184,6 +213,11 @@ func (s *Screen) Print(r rune) {
 		}
 		s.cursor.X = 0
 		s.lineFeed()
+	}
+	// A screen narrower than the character itself: wrapping did not
+	// help and writing it would run off the end of the row.
+	if s.cursor.X+w > s.cols {
+		return
 	}
 
 	l := s.line(s.cursor.Y)
@@ -242,12 +276,24 @@ func (s *Screen) attachCombining(r rune) {
 	if l[x].Width == 0 && x > 0 {
 		x--
 	}
-	// Copy on append: the cell's slice may be shared with a line that
-	// was duplicated by a scroll.
+	// A hostile stream can send combining marks forever. Without a cap
+	// this grows without bound and, because each append copies, does so
+	// quadratically: 400 KB of input froze the emulator for ten seconds.
+	if len(l[x].Comb) >= maxCombining {
+		return
+	}
+	// Copy on append rather than appending in place: Render hands this
+	// slice to the grid, and growing it later would mutate what the grid
+	// is showing without dirtying the row.
 	marks := make([]rune, 0, len(l[x].Comb)+1)
 	marks = append(marks, l[x].Comb...)
 	l[x].Comb = append(marks, r)
 }
+
+// maxCombining is how many marks one cell may carry. Even the most
+// enthusiastic real text stays well under this; beyond it the marks are
+// unreadable anyway.
+const maxCombining = 8
 
 // clearWideNeighbours blanks the other half of any double-width
 // character covering column x.
@@ -279,6 +325,17 @@ func (s *Screen) insertBlanks(n int) {
 	for i := x; i < x+n; i++ {
 		l[i] = s.eraseCell()
 	}
+	s.repair(l)
+}
+
+// repair restores the double-width invariant after cells have been moved
+// or blanked within a row. Every operation that shifts or erases cells
+// can cut a wide character in half, and the renderer draws whatever half
+// is left over the cell next to it.
+func (s *Screen) repair(l line) {
+	if l != nil {
+		grid.RepairWidths(l, s.eraseCell())
+	}
 }
 
 // MoveTo places the cursor, honouring origin mode and clamping into
@@ -298,24 +355,66 @@ func (s *Screen) MoveTo(x, y int) {
 // MoveRel moves the cursor by a delta without leaving the screen, or the
 // scroll region when origin mode is on.
 func (s *Screen) MoveRel(dx, dy int) {
-	lo, hi := 0, s.rows-1
-	if s.cursor.Origin {
-		lo, hi = s.top, s.bot
-	} else if s.cursor.Y >= s.top && s.cursor.Y <= s.bot {
-		// Vertical movement does not escape a region the cursor is
-		// already inside, even without origin mode.
-		lo, hi = s.top, s.bot
-	}
 	s.cursor.X = min(max(s.cursor.X+dx, 0), s.cols-1)
-	s.cursor.Y = min(max(s.cursor.Y+dy, lo), hi)
+
+	// The margin only stops the cursor if it is on the far side of it
+	// already. Moving up from below the top margin stops at the margin;
+	// moving up from above it is unconstrained. Clamping to the whole
+	// region regardless would trap a cursor that started outside.
+	y := s.cursor.Y + dy
+	switch {
+	case dy < 0:
+		lo := 0
+		if s.cursor.Y >= s.top {
+			lo = s.top
+		}
+		y = max(y, lo)
+	case dy > 0:
+		hi := s.rows - 1
+		if s.cursor.Y <= s.bot {
+			hi = s.bot
+		}
+		y = min(y, hi)
+	}
+	s.cursor.Y = min(max(y, 0), s.rows-1)
 	s.cursor.WrapNext = false
+}
+
+// MoveToCol sets the column without touching the row. CHA and HPA are
+// horizontal-only; routing them through MoveTo would re-apply the origin
+// offset to a row that already has it and walk the cursor down the
+// screen.
+func (s *Screen) MoveToCol(x int) {
+	s.cursor.X = min(max(x, 0), s.cols-1)
+	s.cursor.WrapNext = false
+}
+
+// MoveToRow sets the row, honouring origin mode, without touching the
+// column.
+func (s *Screen) MoveToRow(y int) {
+	if s.cursor.Origin {
+		y = min(max(y+s.top, s.top), s.bot)
+	} else {
+		y = min(max(y, 0), s.rows-1)
+	}
+	s.cursor.Y = y
+	s.cursor.WrapNext = false
+}
+
+// CursorRow returns the cursor row relative to the scroll region when
+// origin mode is on, which is what a cursor position report must send.
+func (s *Screen) CursorRow() int {
+	if s.cursor.Origin {
+		return s.cursor.Y - s.top
+	}
+	return s.cursor.Y
 }
 
 // lineFeed moves down one row, scrolling the region when it is already
 // at the bottom.
 func (s *Screen) lineFeed() {
 	if s.cursor.Y == s.bot {
-		s.cur.scrollUp(s.top, s.bot, 1, s.cur == s.pri, s.eraseCell())
+		s.historyGrew(s.cur.scrollUp(s.top, s.bot, 1, s.cur == s.pri, s.eraseCell()))
 		return
 	}
 	if s.cursor.Y < s.rows-1 {
@@ -399,9 +498,11 @@ func (s *Screen) SetScrollRegion(top, bot int) {
 	top = min(max(top, 0), s.rows-1)
 	bot = min(max(bot, 0), s.rows-1)
 	if top >= bot {
-		// A degenerate region is ignored and the margins reset, which is
-		// what xterm does rather than locking the cursor to one row.
-		top, bot = 0, s.rows-1
+		// DEC ignores the whole sequence when the region is inverted or
+		// a single line: the margins and the cursor are both left alone.
+		// Resetting them instead loses the margins of a program that
+		// merely probed with a degenerate value.
+		return
 	}
 	s.top, s.bot = top, bot
 	s.MoveTo(0, 0)
@@ -410,7 +511,17 @@ func (s *Screen) SetScrollRegion(top, bot int) {
 // ScrollUp and ScrollDown are the SU and SD sequences, which move the
 // region without moving the cursor.
 func (s *Screen) ScrollUp(n int) {
-	s.cur.scrollUp(s.top, s.bot, n, s.cur == s.pri, s.eraseCell())
+	s.historyGrew(s.cur.scrollUp(s.top, s.bot, n, s.cur == s.pri, s.eraseCell()))
+}
+
+// historyGrew keeps a scrolled-back view on the same text when new lines
+// push into history underneath it. Without this the view drifts forward
+// on its own while output arrives, which is disorienting to read.
+func (s *Screen) historyGrew(n int) {
+	if n > 0 && s.scrollOff > 0 {
+		s.scrollOff += n
+		s.clampScrollOff()
+	}
 }
 
 func (s *Screen) ScrollDown(n int) { s.cur.scrollDown(s.top, s.bot, n, s.eraseCell()) }
@@ -433,7 +544,7 @@ func (s *Screen) DeleteLines(n int) {
 		return
 	}
 	// Deleting inside the screen is never history, even at row 0.
-	s.cur.scrollUp(s.cursor.Y, s.bot, n, false, s.eraseCell())
+	_ = s.cur.scrollUp(s.cursor.Y, s.bot, n, false, s.eraseCell())
 	s.cursor.X = 0
 	s.cursor.WrapNext = false
 }
@@ -456,6 +567,7 @@ func (s *Screen) DeleteChars(n int) {
 	for i := s.cols - n; i < s.cols; i++ {
 		l[i] = s.eraseCell()
 	}
+	s.repair(l)
 	s.cursor.WrapNext = false
 }
 
@@ -469,6 +581,7 @@ func (s *Screen) EraseChars(n int) {
 	for i := s.cursor.X; i < end; i++ {
 		l[i] = s.eraseCell()
 	}
+	s.repair(l)
 	s.cursor.WrapNext = false
 }
 
@@ -491,6 +604,7 @@ func (s *Screen) EraseInLine(mode int) {
 	for i := lo; i < hi; i++ {
 		l[i] = s.eraseCell()
 	}
+	s.repair(l)
 	s.cursor.WrapNext = false
 }
 
@@ -544,23 +658,28 @@ func (s *Screen) bufIndex() int {
 // Entering clears the alternate buffer, which is what a full-screen
 // program expects; leaving does not touch the primary, which is how the
 // shell's output reappears intact.
-func (s *Screen) UseAltBuffer(on bool) {
+func (s *Screen) UseAltBuffer(on, clearOnEntry bool) {
 	if on == (s.cur == s.alt) {
 		return
 	}
 	if on {
 		s.cur = s.alt
 		s.mode.Alt = true
-		blank := s.blank()
-		for _, l := range s.alt.lines {
-			for i := range l {
-				l[i] = blank
+		if clearOnEntry {
+			blank := s.blank()
+			for _, l := range s.alt.lines {
+				for i := range l {
+					l[i] = blank
+				}
 			}
 		}
 	} else {
 		s.cur = s.pri
 		s.mode.Alt = false
 	}
+	// The new buffer's last column is not the old one's, so a pending
+	// wrap makes no sense across the switch.
+	s.cursor.WrapNext = false
 	s.scrollOff = 0
 }
 
@@ -660,3 +779,15 @@ func (s *Screen) MouseEnabled() bool {
 // belongs to the primary buffer, so the mouse wheel should send arrow
 // keys instead of scrolling the view while this is true.
 func (s *Screen) OnAltBuffer() bool { return s.cur == s.alt }
+
+// clearAlt blanks the alternate buffer. Kept separate from
+// UseAltBuffer because the different alt-screen modes clear at
+// different moments: 1049 on entry, 1047 on exit, 47 never.
+func (s *Screen) clearAlt() {
+	blank := s.blank()
+	for _, l := range s.alt.lines {
+		for i := range l {
+			l[i] = blank
+		}
+	}
+}

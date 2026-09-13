@@ -128,13 +128,18 @@ func (g *Grid) Resize(cols, rows int) {
 	// expose another, and a lead cell with no continuation makes
 	// clearWideAt blank an innocent neighbour later on.
 	for y := 0; y < copyRows; y++ {
-		repairWidths(g.cells[y*cols:(y+1)*cols], blank)
+		RepairWidths(g.cells[y*cols:(y+1)*cols], blank)
 	}
 }
 
-// repairWidths blanks any half of a double-width character whose partner
+// RepairWidths blanks any half of a double-width character whose partner
 // is missing, leaving the row's width invariant intact.
-func repairWidths(row []Cell, blank Cell) {
+//
+// Anything that moves cells around within a row — erasing, inserting,
+// deleting — can cut a double-width character in half. A lone lead cell
+// draws its glyph over the cell that was just cleared; a lone
+// continuation makes the next write blank an innocent neighbour.
+func RepairWidths(row []Cell, blank Cell) {
 	for x := range row {
 		switch row[x].Width {
 		case 2:

@@ -7,10 +7,17 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/aymanbagabas/go-pty"
 )
+
+// hangupGrace is how long Close waits for a child to act on the hangup
+// before killing it. A shell exits in microseconds; a child that ignores
+// SIGHUP would otherwise outlive the window that started it.
+const hangupGrace = 250 * time.Millisecond
 
 // LocalConfig describes a shell to run on this machine.
 type LocalConfig struct {
@@ -44,6 +51,14 @@ type local struct {
 
 	waitOnce sync.Once
 	waitErr  error
+
+	// done is closed once the child has been reaped, so Close can tell
+	// whether the hangup worked without polling.
+	done chan struct{}
+
+	// detached records that this process no longer holds the pty slave,
+	// which makes go-pty's own Close report a harmless double close.
+	detached bool
 }
 
 // StartLocal runs a shell attached to a new pseudo-terminal.
@@ -84,16 +99,24 @@ func StartLocal(cfg LocalConfig) (Session, error) {
 		return nil, fmt.Errorf("start %s: %w", argv[0], err)
 	}
 
-	l := &local{pty: p, cmd: c}
-	// A pty master only reports the child's exit once every slave handle
-	// is closed, and go-pty keeps one open in this process for the life
-	// of the pty. Without this goroutine a Read blocked on the master
-	// never returns after the shell exits, and the window would sit
-	// there showing a dead prompt. Reaping the child and closing the pty
-	// unblocks it.
+	l := &local{pty: p, cmd: c, done: make(chan struct{})}
+
+	// Hand the slave back to the child alone. With this process no
+	// longer holding it, the master drains and then reports the child's
+	// exit by itself, so nothing has to close the pty out from under a
+	// pending read — which would throw away whatever output was still
+	// buffered.
+	l.detached = detachSlave(p)
+
 	go func() {
+		defer close(l.done)
 		_ = l.Wait()
-		_ = l.Close()
+		if !l.detached {
+			// No slave to release, so the only way to unblock a pending
+			// read is to close the pty. On Windows that is also what
+			// flushes the pseudoconsole, so no output is lost.
+			_ = l.Close()
+		}
 	}()
 	return l, nil
 }
@@ -110,7 +133,23 @@ func (l *local) Read(b []byte) (int, error) {
 	return n, err
 }
 
-func (l *local) Write(b []byte) (int, error) { return l.pty.Write(b) }
+// Write sends input to the child. It loops until everything is written,
+// because a short write with no error is legal for an io.Writer and
+// would otherwise drop the tail of a paste silently.
+func (l *local) Write(b []byte) (int, error) {
+	total := 0
+	for total < len(b) {
+		n, err := l.pty.Write(b[total:])
+		total += n
+		if err != nil {
+			return total, err
+		}
+		if n == 0 {
+			return total, io.ErrShortWrite
+		}
+	}
+	return total, nil
+}
 
 func (l *local) Resize(cols, rows int) error {
 	if cols <= 0 || rows <= 0 {
@@ -124,11 +163,28 @@ func (l *local) Wait() error {
 	return l.waitErr
 }
 
+// Close hangs the child up and then makes sure it is gone.
 func (l *local) Close() error {
 	l.closeOnce.Do(func() {
 		// Closing the pty sends the child a hangup. Killing it outright
 		// first would deny a shell the chance to run its exit hooks.
-		l.closeErr = l.pty.Close()
+		err := l.pty.Close()
+		if l.detached && closeErrIsBenign(err) {
+			// go-pty closes the slave this process already released.
+			err = nil
+		}
+		l.closeErr = err
+
+		// A child that ignores SIGHUP would outlive the window, holding
+		// the terminal's file descriptors and, with tabs, leaking one
+		// process per closed tab.
+		select {
+		case <-l.done:
+		case <-time.After(hangupGrace):
+			if p := l.cmd.Process; p != nil {
+				_ = p.Kill()
+			}
+		}
 	})
 	return l.closeErr
 }
@@ -141,10 +197,15 @@ func isPtyClosed(err error) bool {
 		errPtyHangup(err)
 }
 
+// hasEnv reports whether env sets key. The comparison ignores case
+// because Windows environment variables are case-insensitive, and
+// os/exec keeps the last of a duplicated name there — so a caller's
+// "Term=dumb" would otherwise be silently overridden by an appended
+// "TERM=xterm-256color".
 func hasEnv(env []string, key string) bool {
-	prefix := key + "="
 	for _, e := range env {
-		if len(e) >= len(prefix) && e[:len(prefix)] == prefix {
+		name, _, ok := strings.Cut(e, "=")
+		if ok && strings.EqualFold(name, key) {
 			return true
 		}
 	}

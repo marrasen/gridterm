@@ -31,6 +31,12 @@ import (
 // a flood of output does not become a syscall per line.
 const readChunk = 64 * 1024
 
+// outQueue is how many pending writes to the session are held before
+// input is dropped. Deep enough for a large paste, shallow enough that a
+// program which has stopped reading cannot make the terminal hold an
+// unbounded amount of typing on its behalf.
+const outQueue = 256
+
 type app struct {
 	atlas    *glyph.Atlas
 	renderer *render.Renderer
@@ -45,6 +51,13 @@ type app struct {
 
 	sess session.Session
 
+	// out carries bytes destined for the session. Writing to a pty
+	// blocks once the program stops reading its input, and both the pump
+	// — which holds a.mu — and the ebiten UI thread produce input. If
+	// either wrote directly, a program that stopped reading would wedge
+	// the whole terminal. A dedicated goroutine absorbs the block.
+	out chan []byte
+
 	// pending is set by the pump when new output has been parsed, so a
 	// frame with nothing to show can skip re-rendering the grid.
 	pending atomic.Bool
@@ -56,11 +69,46 @@ type app struct {
 	title    atomic.Pointer[string]
 	lastSize [2]int
 	encBuf   []byte
+
+	// drewFinal records that the frame after the shell exited has been
+	// drawn. ebiten returns from Update before Draw, so terminating the
+	// moment the shell goes would discard its last output.
+	drewFinal bool
+}
+
+// send queues bytes for the session. It never blocks: a program that has
+// stopped reading its input cannot be helped by queueing more, and
+// blocking here would freeze the window.
+func (a *app) send(b []byte) {
+	if len(b) == 0 {
+		return
+	}
+	// The caller reuses its buffer and the write happens later.
+	cp := append([]byte(nil), b...)
+	select {
+	case a.out <- cp:
+	default:
+	}
+}
+
+// writeLoop drains the queue into the session.
+func (a *app) writeLoop() {
+	for b := range a.out {
+		if _, err := a.sess.Write(b); err != nil {
+			a.exited.Store(true)
+			return
+		}
+	}
 }
 
 func (a *app) Update() error {
 	if a.exited.Load() {
-		return ebiten.Termination
+		// Give Draw one more frame to paint what the shell wrote last.
+		if a.drewFinal {
+			return ebiten.Termination
+		}
+		a.drewFinal = true
+		return nil
 	}
 
 	mode := a.mode()
@@ -115,9 +163,7 @@ func (a *app) handle(ev input.Event, mode input.Mode) {
 		a.pending.Store(true)
 	}
 
-	if _, err := a.sess.Write(a.encBuf); err != nil {
-		a.exited.Store(true)
-	}
+	a.send(a.encBuf)
 }
 
 func (a *app) Draw(screen *ebiten.Image) {
@@ -160,7 +206,7 @@ func (a *app) resizeTo(pxW, pxH int) {
 	a.mu.Unlock()
 	a.pending.Store(true)
 
-	if err := a.sess.Resize(cols, rows); err != nil {
+	if err := a.sess.Resize(cols, rows); err != nil && !a.exited.Load() {
 		log.Printf("resize session: %v", err)
 	}
 }
@@ -189,8 +235,9 @@ func (a *app) pump() {
 func main() {
 	var (
 		fontSize = flag.Float64("font-size", 15, "font size in points")
-		cmdline  = flag.String("e", "", "run this command instead of the login shell")
-		scroll   = flag.Int("scrollback", vt.DefaultScrollback, "lines of history to keep")
+		cmdline  = flag.String("e", "",
+			"run this command instead of the login shell; split on spaces, no quoting")
+		scroll = flag.Int("scrollback", vt.DefaultScrollback, "lines of history to keep")
 	)
 	flag.Parse()
 
@@ -216,20 +263,19 @@ func main() {
 		log.Fatalf("start shell: %v", err)
 	}
 	a.sess = sess
+	a.out = make(chan []byte, outQueue)
+	go a.writeLoop()
 
 	a.term = vt.New(initCols, initRows, pal, *scroll, vt.Callbacks{
 		Title: func(s string) {
 			t := s
 			a.title.Store(&t)
 		},
-		Reply: func(b []byte) {
-			// Device reports are produced while the pump holds the lock.
-			// Writing to the pty from here is safe: Write is independent
-			// of Read, and the reply is short enough not to block.
-			if _, err := a.sess.Write(b); err != nil {
-				a.exited.Store(true)
-			}
-		},
+		// Device reports are produced while the pump holds the lock, so
+		// they must not touch the pty directly: a program that has
+		// stopped reading would block the write and deadlock the pump
+		// against every other user of the lock.
+		Reply: a.send,
 	})
 	go a.pump()
 

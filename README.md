@@ -1,172 +1,155 @@
 # gridterm
 
-A proof of concept for a GPU-rendered character grid on Windows: the
-rendering and input foundation a native terminal, SSH client or
-terminal-style IDE would sit on.
+A GPU-rendered terminal emulator in Go, built for Windows first.
 
-It is 1,373 lines of Go plus 421 lines of tests. It is **not** a
-terminal — there is no VT parser and no child process. It covers the
-part that has to be right first, and the part that decides whether the
-approach is worth pursuing.
+It runs a shell on a local pseudo-terminal — a PTY on Unix, a ConPTY on
+Windows — or on another machine over SSH, feeds the output through a VT
+emulator, and draws the resulting character grid as batched triangles.
 
-## What it does
+5,213 lines of Go, 2,652 lines of tests, 188 tests.
 
-- **Batched glyph rendering.** Glyphs are rasterised once into 1024x1024
-  texture pages, shelf-packed, and drawn as tinted quads. A full screen
-  of text is one `DrawTriangles` call for all the backgrounds plus one
-  per atlas page for the text — typically two calls total, regardless of
-  how many characters are on screen.
-- **Damage tracking.** `grid.Set` ignores writes that match what is
-  already in the cell, so an idle screen dirties no rows and draws
-  nothing at all. Combined with
-  `ebiten.SetScreenClearedEveryFrame(false)`, a still window costs
-  nothing per frame.
-- **A real key pipeline.** Key press, release and OS repeat, with
-  modifiers, correlated with the committed text they produced — then
-  encoded to the bytes you would write to a PTY or an `ssh.Session`.
-  Ctrl+C becomes `03`. Alt+Up becomes `CSI 1;3 A`. Shift+Tab becomes
-  `CSI Z`.
+![a shell running in gridterm](docs/shell.png)
 
-The demo window shows every input event with its encoded bytes, plus
-live counts of rows repainted, quads submitted and draw calls. `F2`
-toggles a stress mode that pushes a fresh line every frame.
+## What works
 
-## Status
+- **A real terminal.** bash, vim and less all run: alternate screen,
+  scroll regions, scrollback, 256 and true colour, bold, dim, underline,
+  strikethrough and reverse video, window title, cursor shapes, device
+  reports, bracketed paste and mouse modes.
+- **Local shells and SSH.** One `session.Session` interface with two
+  implementations. Nothing above it — the emulator, the grid, the
+  renderer — can tell the difference.
+- **Batched rendering.** A full screen of text is one `DrawTriangles`
+  call for the backgrounds plus one per atlas page for the glyphs,
+  typically two in total however much text is on screen.
+- **Damage tracking.** Writing a cell that already holds the same
+  content does not dirty its row, so an idle screen draws nothing at all.
+- **Wide characters and combining marks.** CJK and emoji take two
+  columns; a base character and its marks share one cell.
+- **Box drawing that joins up.** The box and block characters are drawn
+  in code at the exact cell size, so framed TUIs have unbroken lines.
+- **A real key pipeline.** Press, release and OS repeat with modifiers,
+  correlated with the text they produced, encoded to the bytes a program
+  expects — including application cursor mode, which vim and readline
+  need.
 
-**Confirmed working on Windows.** Marcus ran `gridterm.exe` on real
-hardware on 2026-09-13; text quality and behaviour looked right. The
-DirectX 11 path is exercised.
+![vim running on the alternate screen](docs/vim.png)
 
-It cross-compiles from Linux to a Windows executable, for both
-architectures, with `CGO_ENABLED=0` and no C toolchain:
+## Try it
 
 ```
-$ GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o gridterm.exe .
-$ file gridterm.exe
-gridterm.exe: PE32+ executable (console) x86-64, for MS Windows
-
-$ GOOS=windows GOARCH=arm64 CGO_ENABLED=0 go build -o gridterm-arm64.exe .
-$ file gridterm-arm64.exe
-gridterm-arm64.exe: PE32+ executable (console) Aarch64, for MS Windows
+go run .                       # your login shell
+go run . -ssh user@host        # a shell on another machine
+go run . -e 'vim /etc/hosts'   # one command
+go run . -font-size 18
 ```
 
-On Windows, ebitengine renders through DirectX 11 or OpenGL via
-[purego](https://github.com/ebitengine/purego), so there is no cgo
-anywhere in the build. The "console" subsystem in the file type is
-expected: ebitengine hides the console at startup via
-`github.com/ebitengine/hideconsole`.
+`Shift+PageUp` and `Shift+PageDown` scroll the scrollback.
 
-`go vet ./...` is clean for `GOOS=windows`, and the 54 tests covering
-the grid model and the VT encoding pass.
-
-The CPU side of a frame is measured, on an i7-6700K, for a 200x60 grid
-(12,000 cells — a large terminal on a 4K display):
+Windows needs no C toolchain at all:
 
 ```
-BenchmarkSetFullScreen-8      73311 ns/op    0 B/op   0 allocs/op
-BenchmarkSetUnchanged-8       46018 ns/op    0 B/op   0 allocs/op
-BenchmarkScrollUp-8            3442 ns/op    0 B/op   0 allocs/op
-BenchmarkBGRunsUniform-8      38657 ns/op    0 B/op   0 allocs/op
-BenchmarkEncodeText-8           3.455 ns/op  0 B/op   0 allocs/op
+GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o gridterm.exe .
 ```
 
-Rewriting every cell on screen costs 73 microseconds and allocates
-nothing — about 0.4% of a 16.7 ms frame at 60 Hz.
+Building for Linux needs the X11 development headers ebitengine's
+bundled GLFW compiles against:
 
-It has also been run on Linux under a headless X server with software
-rendering (llvmpipe — no GPU at all), driven by synthetic keystrokes.
+```
+sudo apt-get install -y libxcursor-dev libxinerama-dev libxi-dev \
+    libxxf86vm-dev libxrandr-dev libgl1-mesa-dev
+```
 
-![input events and their encoded bytes](docs/input-events.png)
-
-Every encoding above is correct: `hello` arrives as five Text events with
-distinct `src` ids; Ctrl+C is `03` and nothing else, with no duplicate
-`c`; Ctrl+Shift+Up is `1b 5b 31 3b 36 41` (CSI 1;6 A); Shift+Tab is
-`1b 5b 5a`; F5 is `1b 5b 31 35 7e`; Alt+Up is `1b 5b 31 3b 33 41`.
-Note "18/32 rows repainted" — damage tracking is live.
-
-![stress mode, full-screen repaint every frame](docs/stress.png)
-
-Stress mode rewrites the entire screen every frame: 32 of 32 rows,
-2,390 quads — and still **2 DrawTriangles calls**, at 140 fps. That is
-with no GPU, inside a virtual framebuffer, while a screen recorder was
-running. On real hardware this is not the bottleneck.
+Most of the code needs neither. `make test` runs everything that does
+not touch a GPU, which is the grid, the emulator, the key and mouse
+encoders and both session types.
 
 ## Layout
 
 | Package | Lines | Needs a GPU? | What it is |
 |---|---|---|---|
-| `grid` | 223 | no | the cell buffer, damage tracking, background run merging |
-| `input` | 345 | no | key/text events to VT bytes — no toolkit import at all |
-| `input/ebitenin` | 122 | no | the only file that knows about ebiten's input API |
-| `glyph` | 234 | yes | glyph rasterising and shelf-packed atlas pages |
-| `render` | 218 | yes | grid to batched triangles |
-| `main.go` | 231 | yes | the demo window |
+| `vt` | 1,439 | no | the VT emulator: parser, screen model, two buffers, scrollback |
+| `grid` | 446 | no | the display grid, damage tracking, wide-character invariants |
+| `input` | 528 | no | key, text and mouse events to VT bytes |
+| `session` | 633 | no | a shell as a byte stream: local pty or SSH |
+| `glyph` | 683 | yes | glyph atlas, system font fallback, box drawing |
+| `render` | 378 | yes | grid to batched triangles |
+| `main.go` | 336 | yes | the window and the wiring |
 
-`input` deliberately does not import ebiten. The encoding rules are the
-fiddly part and they should be testable on any machine — including this
-one, which has no GPU and is missing the X11 development headers.
-Swapping the window toolkit means rewriting `input/ebitenin` and nothing
-else.
+The layering is deliberate: `vt` never imports the renderer, `input`
+never imports ebiten (that lives in `input/ebitenin`), and `session`
+knows nothing about any of them. Everything fiddly is testable without a
+display, which is how the emulator got written.
+
+## Design notes worth knowing
+
+**Damage tracking is load-bearing.** `ebiten.SetScreenClearedEveryFrame(false)`
+means a row the renderer skips shows the *previous* frame, not a blank.
+A row wrongly considered clean is a visible bug, so `grid.Set` compares
+before it writes and never dirties a row for content that did not
+change.
+
+**Nothing on a UI thread writes to a pty.** Writing to a pty blocks once
+the program stops reading its input. Both the output pump — which holds
+the terminal lock — and the ebiten thread produce input, so both queue
+through a writer goroutine. Without that, a program that stops reading
+wedges the whole window.
+
+**Box characters are drawn, not looked up.** A font's box glyphs are cut
+for that font's own advance width. Inside a terminal cell the strokes
+stop short of the edges and adjacent cells do not meet, so every framed
+TUI renders as a field of disconnected ticks.
+
+**Host keys are checked with no fallback.** A terminal that silently
+trusts an unknown SSH host key can be man-in-the-middled and nobody
+finds out. An unverifiable host is a hard failure with an explanation.
 
 ## The ebiten fork
 
 `go.mod` replaces ebitengine with a local copy of
-`github.com/unstablebuild/ebiten/v2 v2.7.5-ub.27`, the fork the Rune IDE
-uses, at `../ebiten-ub`.
+`github.com/unstablebuild/ebiten/v2 v2.7.5-ub.27` at `../ebiten-ub`.
 
-The fork matters because upstream ebitengine gives you polled
-`IsKeyPressed` plus `AppendInputChars`. That cannot tell Ctrl+C from the
-letter c, nor an OS key repeat from a fresh press, which rules out
-writing a terminal against it. The fork adds `AppendInputEvents`, where
-each observation is either a key transition (press/release/repeat with
-modifiers) or a committed code point, tied together by an `InputSource`
-id. It implements this properly on Windows, in the Win32 message loop,
-correlating `WM_CHAR` messages with the key message `TranslateMessage`
-posted them for.
+Upstream ebitengine gives you polled `IsKeyPressed` plus
+`AppendInputChars`, which cannot tell Ctrl+C from the letter c, nor an
+OS key repeat from a fresh press. That rules out writing a terminal
+against it. The fork adds `AppendInputEvents`, where each observation is
+either a key transition or a committed code point, tied together by an
+`InputSource` id — and it implements this properly on Windows, in the
+Win32 message loop.
 
-The local copy carries exactly one change, needed to make the fork build
-for Windows at all — see `../ebiten-ub/PATCH-NOTES.md`. That change is
-worth sending upstream; with it merged, this project could depend on the
-published fork directly.
+The local copy carries one change, needed to make the fork build for
+Windows at all; see `../ebiten-ub/PATCH-NOTES.md`.
 
-Both ebitengine and the fork are Apache-2.0. Nothing in this project is
-derived from the Rune IDE itself, which is GPL-3.0-or-later and keeps
-its renderer and terminal emulator under `internal/` where they cannot
-be imported.
+Both ebitengine and the fork are Apache-2.0. Nothing here is derived
+from the Rune IDE, which is GPL-3.0-or-later and keeps its renderer and
+emulator under `internal/` where they cannot be imported.
 
-## Running it
+## Known gaps
 
-On Windows, just run the executable.
+- **Italic** is parsed but drawn in the regular face; there is no italic
+  font in the bundle.
+- **Blink** is parsed and ignored.
+- **Colour emoji** do not render. `x/image/font/sfnt` cannot read the
+  bitmap tables that colour emoji fonts use.
+- **Emoji ZWJ sequences and flags** show only their first glyph; the
+  rest of the cluster is dropped rather than stacked in one cell.
+- **Selection and clipboard** are not implemented. OSC 52 writes are
+  wired to a callback but nothing consumes it yet, and OSC 52 reads are
+  deliberately never answered — replying would let any program that can
+  write to the terminal exfiltrate the clipboard.
+- **Sixel and the Kitty graphics protocol** are not implemented.
+- **An APC, PM or SOS string with no terminator grows without bound.**
+  The parser buffers it before the emulator sees anything, so it cannot
+  be capped from here; it needs a fix in `danielgatis/go-vte`, which
+  already caps OSC the same way.
+- **The font size is fixed at startup.**
+- `-e` splits its argument on spaces, with no quoting.
 
-On Linux you need the X11 development headers ebitengine's bundled GLFW
-compiles against. On Debian/Ubuntu:
+## How this was built
 
-```
-sudo apt-get install -y libxcursor-dev libxinerama-dev libxi-dev \
-    libxxf86vm-dev libxrandr-dev libgl1-mesa-dev
-go run .
-```
-
-Tests need none of that:
-
-```
-go test ./grid/... ./input
-```
-
-## What comes next
-
-In rough order of what would tell you the most:
-
-1. Add a VT parser and screen model — [`go-vte`](https://github.com/aymanbagabas/go-vte)
-   is a Go port of Alacritty's parser, permissively licensed, and is the
-   same lineage as the one Rune uses.
-2. Wire `golang.org/x/crypto/ssh` to it. SSH needs no local pty: the
-   session channel plus `pty-req` and `window-change` is the whole
-   interface.
-3. Add local shells with [`go-pty`](https://github.com/aymanbagabas/go-pty),
-   which wraps Unix PTYs and Windows ConPTY behind one interface.
-
-Known gaps in what is here: no wide-character (CJK) cell handling, no
-combining marks or shaping, no cursor rendering, no mouse, no selection,
-no underline or strikethrough drawing (the attribute bits exist but the
-renderer ignores them), and a single font size fixed at startup.
+Each step was reviewed adversarially before the next one started, which
+is where most of the interesting bugs came from — a crash on a
+one-column screen, two denial-of-service paths, a deadlock between the
+output pump and a device report, and a reaper that threw away a short
+command's entire output. The commit messages record what each review
+found.

@@ -791,3 +791,10 @@ func (s *Screen) clearAlt() {
 		}
 	}
 }
+
+// MouseModes reports what the program asked for with DECSET 1000, 1002,
+// 1003 and 1006. The flags are returned rather than a struct so this
+// package does not have to know about the input encoder.
+func (s *Screen) MouseModes() (click, drag, motion, sgr bool) {
+	return s.mode.MouseClick, s.mode.MouseDrag, s.mode.MouseMotion, s.mode.MouseSGR
+}

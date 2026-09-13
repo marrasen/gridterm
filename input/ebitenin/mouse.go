@@ -1,0 +1,104 @@
+package ebitenin
+
+import (
+	"github.com/hajimehoshi/ebiten/v2"
+
+	"github.com/marcus/gridterm/input"
+)
+
+// MouseReader turns ebiten's polled mouse state into the press, release
+// and motion events a terminal reports.
+//
+// ebiten exposes the mouse as state rather than events, so the edges
+// have to be derived by comparing against the previous frame. Reuse one
+// reader across frames or every frame looks like a fresh press.
+type MouseReader struct {
+	pressed  [3]bool
+	lastCol  int
+	lastRow  int
+	haveLast bool
+	out      []input.MouseEvent
+}
+
+var mouseButtons = [3]struct {
+	eb ebiten.MouseButton
+	in input.MouseButton
+}{
+	{ebiten.MouseButtonLeft, input.MouseLeft},
+	{ebiten.MouseButtonMiddle, input.MouseMiddle},
+	{ebiten.MouseButtonRight, input.MouseRight},
+}
+
+// Poll returns this frame's mouse events in grid coordinates. cellW and
+// cellH are the pixel size of one cell.
+func (r *MouseReader) Poll(cellW, cellH int) []input.MouseEvent {
+	r.out = r.out[:0]
+	if cellW <= 0 || cellH <= 0 {
+		return r.out
+	}
+	px, py := ebiten.CursorPosition()
+	col, row := px/cellW, py/cellH
+	mods := currentMods()
+
+	// The wheel comes first: a program that scrolls on the wheel should
+	// see the scroll before any click that lands in the same frame.
+	if _, dy := ebiten.Wheel(); dy != 0 {
+		b := input.MouseWheelDown
+		if dy > 0 {
+			b = input.MouseWheelUp
+		}
+		r.out = append(r.out, input.MouseEvent{
+			Kind: input.MousePress, Button: b, Col: col, Row: row, Mods: mods,
+		})
+	}
+
+	held := input.MouseNone
+	for i, b := range mouseButtons {
+		down := ebiten.IsMouseButtonPressed(b.eb)
+		switch {
+		case down && !r.pressed[i]:
+			r.out = append(r.out, input.MouseEvent{
+				Kind: input.MousePress, Button: b.in, Col: col, Row: row, Mods: mods,
+			})
+		case !down && r.pressed[i]:
+			r.out = append(r.out, input.MouseEvent{
+				Kind: input.MouseRelease, Button: b.in, Col: col, Row: row, Mods: mods,
+			})
+		}
+		r.pressed[i] = down
+		if down && held == input.MouseNone {
+			held = b.in
+		}
+	}
+
+	// Motion is only worth reporting when the pointer changed cell. A
+	// program in any-event mode would otherwise get one report per frame
+	// for a stationary pointer.
+	if r.haveLast && (col != r.lastCol || row != r.lastRow) {
+		r.out = append(r.out, input.MouseEvent{
+			Kind: input.MouseMove, Button: held, Col: col, Row: row, Mods: mods,
+		})
+	}
+	r.lastCol, r.lastRow, r.haveLast = col, row, true
+	return r.out
+}
+
+// currentMods reads the modifier keys. Mouse state is polled rather than
+// delivered as events, so unlike a key event it carries no modifier mask
+// of its own.
+func currentMods() input.Mods {
+	var m input.Mods
+	if ebiten.IsKeyPressed(ebiten.KeyShift) {
+		m |= input.ModShift
+	}
+	if ebiten.IsKeyPressed(ebiten.KeyControl) {
+		m |= input.ModCtrl
+	}
+	if ebiten.IsKeyPressed(ebiten.KeyAlt) {
+		m |= input.ModAlt
+	}
+	if ebiten.IsKeyPressed(ebiten.KeyMeta) {
+		m |= input.ModSuper
+	}
+	return m
+}

@@ -12,6 +12,7 @@ require (
 )
 
 require (
+	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/creack/pty v1.1.24 // indirect
 	github.com/danielgatis/go-utf8 v1.0.1 // indirect
 	github.com/ebitengine/gomobile v0.0.0-20240518074828-e86332849895 // indirect

@@ -1,15 +1,18 @@
 // Command gridterm is a GPU-rendered terminal emulator.
 //
-// It runs a shell on a local pseudo-terminal — a PTY on Unix, a ConPTY
-// on Windows — feeds its output through a VT emulator, and draws the
-// resulting character grid as batched triangles.
+// It runs a shell either on a local pseudo-terminal — a PTY on Unix, a
+// ConPTY on Windows — or on another machine over SSH, feeds the output
+// through a VT emulator, and draws the resulting character grid as
+// batched triangles.
 package main
 
 import (
 	"errors"
 	"flag"
+	"fmt"
 	"io"
 	"log"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -238,6 +241,8 @@ func main() {
 		cmdline  = flag.String("e", "",
 			"run this command instead of the login shell; split on spaces, no quoting")
 		scroll = flag.Int("scrollback", vt.DefaultScrollback, "lines of history to keep")
+		remote = flag.String("ssh", "",
+			"connect to [user@]host[:port] over SSH instead of running a local shell")
 	)
 	flag.Parse()
 
@@ -254,13 +259,9 @@ func main() {
 	a.g = grid.New(initCols, initRows, pal.FG, pal.BG)
 	a.lastSize = [2]int{initCols, initRows}
 
-	sess, err := session.StartLocal(session.LocalConfig{
-		Command: strings.Fields(*cmdline),
-		Cols:    initCols,
-		Rows:    initRows,
-	})
+	sess, err := startSession(*remote, strings.Fields(*cmdline), initCols, initRows)
 	if err != nil {
-		log.Fatalf("start shell: %v", err)
+		log.Fatalf("start session: %v", err)
 	}
 	a.sess = sess
 	a.out = make(chan []byte, outQueue)
@@ -291,4 +292,45 @@ func main() {
 	if err != nil && !errors.Is(err, ebiten.Termination) {
 		log.Fatal(err)
 	}
+}
+
+// startSession opens either a local shell or an SSH connection. The rest
+// of the program cannot tell the difference: both are a byte stream and
+// a size.
+func startSession(target string, command []string, cols, rows int) (session.Session, error) {
+	if target == "" {
+		return session.StartLocal(session.LocalConfig{
+			Command: command,
+			Cols:    cols,
+			Rows:    rows,
+		})
+	}
+	cfg, err := parseSSHTarget(target)
+	if err != nil {
+		return nil, err
+	}
+	cfg.Command = command
+	cfg.Cols, cfg.Rows = cols, rows
+	return session.StartSSH(cfg)
+}
+
+// parseSSHTarget splits [user@]host[:port].
+func parseSSHTarget(target string) (session.SSHConfig, error) {
+	var cfg session.SSHConfig
+	if user, rest, ok := strings.Cut(target, "@"); ok {
+		cfg.User, target = user, rest
+	}
+	if host, port, ok := strings.Cut(target, ":"); ok {
+		n, err := strconv.Atoi(port)
+		if err != nil {
+			return cfg, fmt.Errorf("ssh target %q: bad port %q", target, port)
+		}
+		cfg.Host, cfg.Port = host, n
+	} else {
+		cfg.Host = target
+	}
+	if cfg.Host == "" {
+		return cfg, fmt.Errorf("ssh target %q: no host", target)
+	}
+	return cfg, nil
 }

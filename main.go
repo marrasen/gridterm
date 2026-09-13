@@ -38,11 +38,36 @@ const readChunk = 64 * 1024
 // unbounded amount of typing on its behalf.
 const outQueue = 256
 
+// Font size limits and the step Ctrl+plus and Ctrl+minus move by.
+const (
+	defaultFontSize = 15
+	minFontSize     = 6
+	maxFontSize     = 72
+	fontStep        = 1
+)
+
+// wheelLines is how far one wheel notch moves the view, or how many
+// arrow keys it becomes on the alternate screen.
+const wheelLines = 3
+
 type app struct {
 	atlas    *glyph.Atlas
 	renderer *render.Renderer
 	g        *grid.Grid
 	reader   ebitenin.Reader
+	mouse    ebitenin.MouseReader
+	clip     clipboardWriter
+
+	// selecting is true between a press and its release, so motion is
+	// only treated as a drag when a drag actually started here.
+	selecting bool
+
+	// lastPixels is the window size in device pixels, kept so a font
+	// size change can re-derive the grid size from it.
+	lastPixels [2]int
+
+	// fontSize is the current size in points.
+	fontSize float64
 
 	// mu guards term. The pty pump runs on its own goroutine while
 	// ebiten drives Update and Draw from another, and vt.Terminal is not
@@ -112,9 +137,13 @@ func (a *app) Update() error {
 		return nil
 	}
 
-	mode := a.mode()
+	mode, mouseMode, alt := a.modes()
 	for _, ev := range a.reader.Poll() {
 		a.handle(ev, mode)
+	}
+	cw, ch := a.renderer.CellSize()
+	for _, ev := range a.mouse.Poll(cw, ch) {
+		a.handleMouse(ev, mouseMode, alt)
 	}
 
 	if t := a.title.Swap(nil); t != nil {
@@ -123,27 +152,21 @@ func (a *app) Update() error {
 	return nil
 }
 
-// mode reads the terminal state the input encoder needs.
-func (a *app) mode() input.Mode {
+// modes reads the terminal state the encoders need, in one pass under
+// the lock rather than three.
+func (a *app) modes() (input.Mode, input.MouseMode, bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return input.Mode{AppCursor: a.term.Screen().AppCursor()}
+	scr := a.term.Screen()
+	click, drag, motion, sgr := scr.MouseModes()
+	return input.Mode{AppCursor: scr.AppCursor()},
+		input.MouseMode{Click: click, Drag: drag, Motion: motion, SGR: sgr},
+		scr.OnAltBuffer()
 }
 
 func (a *app) handle(ev input.Event, mode input.Mode) {
-	// Shift+PageUp and Shift+PageDown scroll the view rather than
-	// reaching the program, which is the usual terminal convention.
 	if ev.Kind == input.KeyPress || ev.Kind == input.KeyRepeat {
-		if ev.Shift() && (ev.Key == input.KeyPageUp || ev.Key == input.KeyPageDown) {
-			_, rows := a.g.Size()
-			n := max(rows/2, 1)
-			if ev.Key == input.KeyPageDown {
-				n = -n
-			}
-			a.mu.Lock()
-			a.term.Screen().ScrollView(n)
-			a.mu.Unlock()
-			a.pending.Store(true)
+		if a.shortcut(ev) {
 			return
 		}
 	}
@@ -164,7 +187,175 @@ func (a *app) handle(ev input.Event, mode input.Mode) {
 		a.pending.Store(true)
 	}
 
+	// Typing replaces a selection, as it does everywhere else.
+	a.g.ClearSelection()
 	a.send(a.encBuf)
+}
+
+// shortcut handles the keys the terminal keeps for itself, and reports
+// whether the event was consumed.
+//
+// Ctrl+Shift is the usual escape hatch: Ctrl+C has to stay available to
+// the program, so copy cannot live there.
+func (a *app) shortcut(ev input.Event) bool {
+	switch {
+	case ev.Shift() && (ev.Key == input.KeyPageUp || ev.Key == input.KeyPageDown):
+		_, rows := a.g.Size()
+		n := max(rows/2, 1)
+		if ev.Key == input.KeyPageDown {
+			n = -n
+		}
+		a.scrollView(n)
+		return true
+
+	case ev.Ctrl() && ev.Shift() && ev.Key == input.KeyC:
+		if text := a.g.SelectedText(); text != "" {
+			a.clip.set(text)
+		}
+		return true
+
+	case ev.Ctrl() && ev.Shift() && ev.Key == input.KeyV:
+		a.paste(clipboardRead())
+		return true
+
+	case ev.Ctrl() && ev.Key == input.KeyEquals:
+		a.setFontSize(a.fontSize + fontStep)
+		return true
+
+	case ev.Ctrl() && ev.Key == input.KeyMinus:
+		a.setFontSize(a.fontSize - fontStep)
+		return true
+
+	case ev.Ctrl() && ev.Key == input.Key0:
+		a.setFontSize(defaultFontSize)
+		return true
+	}
+	return false
+}
+
+// paste sends text to the program, bracketed if it asked for that.
+func (a *app) paste(text string) {
+	if text == "" {
+		return
+	}
+	a.mu.Lock()
+	bracketed := a.term.Screen().Bracketed()
+	a.mu.Unlock()
+	a.send(input.EncodePaste(text, bracketed, nil))
+}
+
+// handleMouse either reports to the program or drives the selection.
+//
+// A program with mouse reporting on owns the mouse, except while Shift
+// is held — that is how xterm lets you select text inside a program that
+// has taken the mouse over, and every terminal since has copied it.
+func (a *app) handleMouse(ev input.MouseEvent, mode input.MouseMode, onAlt bool) {
+	if mode.Enabled() && !ev.Mods.Has(input.ModShift) {
+		a.send(input.EncodeMouse(ev, mode, nil))
+		return
+	}
+
+	switch ev.Button {
+	case input.MouseWheelUp, input.MouseWheelDown:
+		if ev.Kind != input.MousePress {
+			return
+		}
+		n := wheelLines
+		if ev.Button == input.MouseWheelDown {
+			n = -n
+		}
+		if onAlt {
+			// The alternate screen has no scrollback to move through, so
+			// the wheel becomes arrow keys — which is what lets less and
+			// man scroll with it.
+			a.sendArrows(n)
+			return
+		}
+		a.scrollView(n)
+		return
+
+	case input.MouseMiddle:
+		// The X11 convention. Harmless elsewhere.
+		if ev.Kind == input.MousePress {
+			a.paste(clipboardRead())
+		}
+		return
+	}
+
+	if ev.Button != input.MouseLeft && ev.Kind != input.MouseMove {
+		return
+	}
+	switch ev.Kind {
+	case input.MousePress:
+		a.selecting = true
+		a.g.SetSelection(grid.Selection{
+			Anchor: grid.Point{X: ev.Col, Y: ev.Row},
+			Cursor: grid.Point{X: ev.Col, Y: ev.Row},
+			Active: true,
+			Block:  ev.Mods.Has(input.ModAlt),
+		})
+	case input.MouseMove:
+		if !a.selecting {
+			return
+		}
+		sel := a.g.Selection()
+		sel.Cursor = grid.Point{X: ev.Col, Y: ev.Row}
+		a.g.SetSelection(sel)
+	case input.MouseRelease:
+		a.selecting = false
+		// A click that never moved is a click, not an empty selection
+		// left highlighting one cell.
+		sel := a.g.Selection()
+		if sel.Anchor == sel.Cursor {
+			a.g.ClearSelection()
+		}
+	}
+}
+
+// sendArrows sends n arrow keys, up for positive.
+func (a *app) sendArrows(n int) {
+	key := input.KeyUp
+	if n < 0 {
+		key, n = input.KeyDown, -n
+	}
+	a.mu.Lock()
+	appCursor := a.term.Screen().AppCursor()
+	a.mu.Unlock()
+
+	var buf []byte
+	for i := 0; i < n; i++ {
+		buf = input.EncodeMode(
+			input.Event{Kind: input.KeyPress, Key: key},
+			input.Mode{AppCursor: appCursor}, buf)
+	}
+	a.send(buf)
+}
+
+func (a *app) scrollView(n int) {
+	a.mu.Lock()
+	a.term.Screen().ScrollView(n)
+	a.mu.Unlock()
+	a.pending.Store(true)
+}
+
+// setFontSize rebuilds the atlas and re-derives the grid size, because
+// changing the font changes how many cells fit in the window.
+func (a *app) setFontSize(pt float64) {
+	pt = min(max(pt, minFontSize), maxFontSize)
+	if pt == a.fontSize {
+		return
+	}
+	if err := a.atlas.SetSize(pt); err != nil {
+		log.Printf("font size %.1f: %v", pt, err)
+		return
+	}
+	a.fontSize = pt
+	// The cell box changed, so the cached size is meaningless and every
+	// glyph quad has to be re-measured.
+	a.lastSize = [2]int{0, 0}
+	a.resizeTo(a.lastPixels[0], a.lastPixels[1])
+	a.g.MarkAllDirty()
+	a.pending.Store(true)
 }
 
 func (a *app) Draw(screen *ebiten.Image) {
@@ -195,6 +386,7 @@ func (a *app) LayoutF(logicalW, logicalH float64) (float64, float64) {
 // size. All three have to agree or the shell wraps its prompt at the
 // wrong column.
 func (a *app) resizeTo(pxW, pxH int) {
+	a.lastPixels = [2]int{pxW, pxH}
 	cols, rows := a.renderer.GridSizeFor(pxW, pxH)
 	if a.lastSize == [2]int{cols, rows} {
 		return
@@ -235,7 +427,7 @@ func (a *app) pump() {
 
 func main() {
 	var (
-		fontSize = flag.Float64("font-size", 15, "font size in points")
+		fontSize = flag.Float64("font-size", defaultFontSize, "font size in points")
 		cmdline  = flag.String("e", "",
 			"run this command instead of the login shell; split on spaces, no quoting")
 		scroll = flag.Int("scrollback", vt.DefaultScrollback, "lines of history to keep")
@@ -250,11 +442,12 @@ func main() {
 	}
 	m := atlas.Metrics()
 
-	a := &app{atlas: atlas, renderer: render.New(atlas)}
+	a := &app{atlas: atlas, renderer: render.New(atlas), fontSize: *fontSize}
 
 	const initCols, initRows = 100, 32
 	pal := vt.DefaultPalette()
 	a.g = grid.New(initCols, initRows, pal.FG, pal.BG)
+	a.g.SelectionBG = pal.Selection
 	a.lastSize = [2]int{initCols, initRows}
 
 	sess, err := startSession(*remote, strings.Fields(*cmdline), initCols, initRows)

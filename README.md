@@ -6,7 +6,7 @@ It runs a shell on a local pseudo-terminal — a PTY on Unix, a ConPTY on
 Windows — or on another machine over SSH, feeds the output through a VT
 emulator, and draws the resulting character grid as batched triangles.
 
-5,213 lines of Go, 2,652 lines of tests, 188 tests.
+5,900 lines of Go, 3,000 lines of tests, 230 tests.
 
 ![a shell running in gridterm](docs/shell.png)
 
@@ -32,6 +32,11 @@ emulator, and draws the resulting character grid as batched triangles.
   correlated with the text they produced, encoded to the bytes a program
   expects — including application cursor mode, which vim and readline
   need.
+- **Mouse, selection and clipboard.** Programs that ask for the mouse
+  get it; hold Shift to select text anyway. Drag to select, Alt+drag for
+  a rectangle.
+
+![selecting text with the mouse](docs/selection.png)
 
 ![vim running on the alternate screen](docs/vim.png)
 
@@ -44,7 +49,15 @@ go run . -e 'vim /etc/hosts'   # one command
 go run . -font-size 18
 ```
 
-`Shift+PageUp` and `Shift+PageDown` scroll the scrollback.
+| Key | |
+|---|---|
+| `Shift+PageUp` / `Shift+PageDown` | scroll the scrollback |
+| mouse wheel | scroll, or arrow keys on the alternate screen |
+| drag | select; `Alt+drag` selects a rectangle |
+| `Shift+drag` | select even while a program owns the mouse |
+| `Ctrl+Shift+C` / `Ctrl+Shift+V` | copy and paste |
+| middle click | paste |
+| `Ctrl+=` / `Ctrl+-` / `Ctrl+0` | font size |
 
 Windows needs no C toolchain at all:
 
@@ -133,16 +146,20 @@ emulator under `internal/` where they cannot be imported.
   bitmap tables that colour emoji fonts use.
 - **Emoji ZWJ sequences and flags** show only their first glyph; the
   rest of the cluster is dropped rather than stacked in one cell.
-- **Selection and clipboard** are not implemented. OSC 52 writes are
-  wired to a callback but nothing consumes it yet, and OSC 52 reads are
+- **OSC 52 clipboard writes** are parsed but not yet applied. Reads are
   deliberately never answered — replying would let any program that can
   write to the terminal exfiltrate the clipboard.
+- **A click faster than one frame is missed.** ebiten reports the mouse
+  as polled state, so a press and release inside the same 16 ms are
+  never seen as either. No human manages it; a test harness does.
+- **SSH needs its password up front.** A passphrase or password is
+  prompted on the console before the window opens, because once gridterm
+  is drawing its own grid there is nowhere to prompt.
 - **Sixel and the Kitty graphics protocol** are not implemented.
 - **An APC, PM or SOS string with no terminator grows without bound.**
   The parser buffers it before the emulator sees anything, so it cannot
   be capped from here; it needs a fix in `danielgatis/go-vte`, which
   already caps OSC the same way.
-- **The font size is fixed at startup.**
 - `-e` splits its argument on spaces, with no quoting.
 
 ## How this was built

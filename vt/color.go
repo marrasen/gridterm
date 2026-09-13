@@ -15,15 +15,19 @@ type Palette struct {
 	FG     color.RGBA // default foreground
 	BG     color.RGBA // default background
 	Cursor color.RGBA
+
+	// Selection is painted behind selected text.
+	Selection color.RGBA
 }
 
 // DefaultPalette returns a dark scheme with the usual xterm 256-colour
 // layout for everything above index 15.
 func DefaultPalette() Palette {
 	p := Palette{
-		FG:     color.RGBA{0xc8, 0xd0, 0xda, 0xff},
-		BG:     color.RGBA{0x14, 0x17, 0x1c, 0xff},
-		Cursor: color.RGBA{0xc8, 0xd0, 0xda, 0xff},
+		FG:        color.RGBA{0xc8, 0xd0, 0xda, 0xff},
+		BG:        color.RGBA{0x14, 0x17, 0x1c, 0xff},
+		Cursor:    color.RGBA{0xc8, 0xd0, 0xda, 0xff},
+		Selection: color.RGBA{0x33, 0x3f, 0x52, 0xff},
 	}
 
 	base := [16]color.RGBA{

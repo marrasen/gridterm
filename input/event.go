@@ -80,6 +80,12 @@ const (
 	KeyBracketRight
 	KeyBackslash
 
+	// Keys that carry no sequence of their own but that the terminal
+	// binds shortcuts to.
+	KeyEquals
+	KeyMinus
+	Key0
+
 	KeyUp
 	KeyDown
 	KeyRight
@@ -125,6 +131,9 @@ type Event struct {
 	// from the platform instead of being derived from Mods.
 	NormalText bool
 }
+
+// Has reports whether every modifier in want is held.
+func (m Mods) Has(want Mods) bool { return m&want == want }
 
 // Ctrl reports whether Control was held.
 func (e Event) Ctrl() bool { return e.Mods&ModCtrl != 0 }
@@ -336,6 +345,7 @@ func (k Key) String() string {
 
 var keyNames = map[Key]string{
 	KeyNone: "-", KeyEnter: "Enter", KeyTab: "Tab", KeyBackspace: "Backspace",
+	KeyEquals: "=", KeyMinus: "-", Key0: "0",
 	KeyEscape: "Escape", KeySpace: "Space", KeyBracketLeft: "[",
 	KeyBracketRight: "]", KeyBackslash: "\\", KeyUp: "Up", KeyDown: "Down",
 	KeyRight: "Right", KeyLeft: "Left", KeyHome: "Home", KeyEnd: "End",

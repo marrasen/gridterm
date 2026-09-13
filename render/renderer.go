@@ -19,6 +19,11 @@ import (
 // it wrong corrupts geometry rather than failing loudly.
 const maxBatchVerts = 65532
 
+// barThickness is how many pixels wide an underline or bar cursor is,
+// before scaling. Kept to a share of the cell so it stays visible at
+// small sizes without swallowing the glyph at large ones.
+const barFraction = 8
+
 // Stats reports what the last frame cost, so a caller can see whether
 // batching and damage tracking are actually doing anything.
 type Stats struct {
@@ -89,6 +94,8 @@ func (r *Renderer) GridSizeFor(pxW, pxH int) (cols, rows int) {
 func (r *Renderer) Draw(dst *ebiten.Image, g *grid.Grid) {
 	m := r.atlas.Metrics()
 	cols, rows := g.Size()
+	cur := g.Cursor()
+	curVisible := cur.Visible && cur.X >= 0 && cur.X < cols && cur.Y >= 0 && cur.Y < rows
 
 	r.reset()
 	r.stats = Stats{CellsTotal: cols * rows}
@@ -116,6 +123,9 @@ func (r *Renderer) Draw(dst *ebiten.Image, g *grid.Grid) {
 				float32((x1-x0)*m.CellW), float32(m.CellH),
 				0, 0, 1, 1, c)
 		})
+		if curVisible && cur.Y == y {
+			r.pushCursor(dst, g, cur, m)
+		}
 	}
 	r.flush(dst, &r.bg)
 
@@ -123,30 +133,30 @@ func (r *Renderer) Draw(dst *ebiten.Image, g *grid.Grid) {
 		if !g.RowDirty(y) {
 			continue
 		}
-		top := float32(y * m.CellH)
 		for x := 0; x < cols; x++ {
 			c := g.At(x, y)
-			if c.Rune == ' ' || c.Rune == 0 {
+			// Width 0 is the column a double-width character spills
+			// into; its glyph was already drawn by the lead cell.
+			if c.Width == 0 || c.Rune == ' ' || c.Rune == 0 {
+				continue
+			}
+			if c.Attr&grid.AttrHidden != 0 {
 				continue
 			}
 			style := glyph.Regular
 			if c.Attr&grid.AttrBold != 0 {
 				style = glyph.Bold
 			}
-			gl := r.atlas.Get(c.Rune, style)
-			if gl.Empty {
-				continue
+			fg := g.FGOf(x, y)
+			// A block cursor inverts the cell it sits on, so the glyph
+			// has to come back out in the background colour.
+			if curVisible && cur.Style == grid.CursorBlock && cur.X == x && cur.Y == y {
+				fg = bgOf(g, x, y)
 			}
-			// Rasterising a new glyph can add an atlas page, so the
-			// per-page batches are grown here rather than up front.
-			r.growPages()
-			sz := gl.Rect.Size()
-			r.push(dst, &r.fg[gl.Page],
-				float32(x*m.CellW+gl.Offset.X), top+float32(gl.Offset.Y),
-				float32(sz.X), float32(sz.Y),
-				float32(gl.Rect.Min.X), float32(gl.Rect.Min.Y),
-				float32(gl.Rect.Max.X), float32(gl.Rect.Max.Y),
-				g.FGOf(x, y))
+			r.pushGlyph(dst, x, y, c.Rune, style, fg, m)
+			for _, cb := range c.Comb {
+				r.pushGlyph(dst, x, y, cb, style, fg, m)
+			}
 		}
 	}
 	for i := range r.fg {
@@ -154,6 +164,68 @@ func (r *Renderer) Draw(dst *ebiten.Image, g *grid.Grid) {
 	}
 
 	g.ClearDirty()
+}
+
+// pushGlyph queues one glyph quad at cell x,y.
+func (r *Renderer) pushGlyph(
+	dst *ebiten.Image, x, y int, ch rune,
+	style glyph.Style, fg color.RGBA, m glyph.Metrics,
+) {
+	gl := r.atlas.Get(ch, style)
+	if gl.Empty {
+		return
+	}
+	// Rasterising a new glyph can add an atlas page, so the per-page
+	// batches are grown here rather than up front.
+	r.growPages()
+	sz := gl.Rect.Size()
+	r.push(dst, &r.fg[gl.Page],
+		float32(x*m.CellW+gl.Offset.X), float32(y*m.CellH+gl.Offset.Y),
+		float32(sz.X), float32(sz.Y),
+		float32(gl.Rect.Min.X), float32(gl.Rect.Min.Y),
+		float32(gl.Rect.Max.X), float32(gl.Rect.Max.Y),
+		fg)
+}
+
+// pushCursor queues the cursor's own quad. A block cursor fills the
+// cell; underline and bar draw a sliver. All three go in the background
+// pass, so the glyph lands on top of them.
+func (r *Renderer) pushCursor(
+	dst *ebiten.Image, g *grid.Grid, cur grid.Cursor, m glyph.Metrics,
+) {
+	col := g.FGOf(cur.X, cur.Y)
+	if col.A == 0 {
+		return
+	}
+	x := float32(cur.X * m.CellW)
+	y := float32(cur.Y * m.CellH)
+	w := float32(m.CellW)
+	h := float32(m.CellH)
+	// A block cursor over the lead half of a double-width character
+	// covers both columns, matching where the glyph actually is.
+	if g.At(cur.X, cur.Y).Width == 2 {
+		w *= 2
+	}
+	thick := float32(max(m.CellH/barFraction, 1))
+
+	switch cur.Style {
+	case grid.CursorUnderline:
+		y += h - thick
+		h = thick
+	case grid.CursorBar:
+		w = thick
+	}
+	r.push(dst, &r.bg, x, y, w, h, 0, 0, 1, 1, col)
+}
+
+// bgOf returns a cell's effective background, the counterpart of
+// grid.FGOf. It lives here because only the block cursor needs it.
+func bgOf(g *grid.Grid, x, y int) color.RGBA {
+	c := g.At(x, y)
+	if c.Attr&grid.AttrReverse != 0 {
+		return c.FG
+	}
+	return c.BG
 }
 
 func (r *Renderer) reset() {

@@ -220,3 +220,177 @@ func TestBGRunsOutOfRangeRowIsSilent(t *testing.T) {
 		t.Fatal("callback ran for a row past the end")
 	})
 }
+
+func TestSetWideOccupiesTwoColumns(t *testing.T) {
+	g := New(6, 1, fg, bg)
+
+	n := g.SetWide(1, 0, Cell{Rune: '世', FG: fg, BG: bg, Width: 2})
+
+	if n != 2 {
+		t.Fatalf("SetWide consumed %d columns, want 2", n)
+	}
+	if got := g.At(1, 0); got.Rune != '世' || got.Width != 2 {
+		t.Errorf("lead cell = %+v, want 世 width 2", got)
+	}
+	if got := g.At(2, 0); got.Width != 0 {
+		t.Errorf("continuation cell width = %d, want 0", got.Width)
+	}
+}
+
+func TestSetWideRefusesToStraddleTheRowEnd(t *testing.T) {
+	g := New(4, 1, fg, bg)
+
+	n := g.SetWide(3, 0, Cell{Rune: '世', FG: fg, BG: bg, Width: 2})
+
+	if n != 0 {
+		t.Fatalf("SetWide consumed %d columns at the last column, want 0", n)
+	}
+	if got := g.At(3, 0).Rune; got != ' ' {
+		t.Errorf("At(3,0) = %q, want it left blank", got)
+	}
+}
+
+// Overwriting either half of a double-width character has to clear the
+// other half, or a stray glyph is left behind with no lead cell.
+func TestSetWideClearsTheOtherHalfOfAnOverwrittenWideCell(t *testing.T) {
+	cases := []struct {
+		name       string
+		overwriteX int
+		checkX     int
+	}{
+		{"overwrite the lead half", 1, 2},
+		{"overwrite the continuation half", 2, 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := New(6, 1, fg, bg)
+			g.SetWide(1, 0, Cell{Rune: '世', FG: fg, BG: bg, Width: 2})
+
+			g.SetWide(tc.overwriteX, 0, Cell{Rune: 'a', FG: fg, BG: bg, Width: 1})
+
+			got := g.At(tc.checkX, 0)
+			if got.Rune != ' ' || got.Width != 1 {
+				t.Errorf("orphaned half = %+v, want a blank width-1 cell", got)
+			}
+		})
+	}
+}
+
+func TestSetStringHandlesWideAndCombining(t *testing.T) {
+	g := New(10, 1, fg, bg)
+
+	end := g.SetString(0, 0, "a世éb", fg, bg, 0)
+
+	if end != 5 {
+		t.Fatalf("end column = %d, want 5 (1 + 2 + 1 + 1)", end)
+	}
+	if got := g.At(1, 0); got.Rune != '世' || got.Width != 2 {
+		t.Errorf("At(1,0) = %+v, want 世 width 2", got)
+	}
+	if got := g.At(2, 0).Width; got != 0 {
+		t.Errorf("At(2,0).Width = %d, want 0", got)
+	}
+	if got := g.At(3, 0); got.Rune != 'e' || len(got.Comb) != 1 || got.Comb[0] != '́' {
+		t.Errorf("At(3,0) = %+v, want e with one combining mark", got)
+	}
+	if got := g.At(4, 0).Rune; got != 'b' {
+		t.Errorf("At(4,0) = %q, want 'b'", got)
+	}
+}
+
+func TestCellEqualComparesCombiningMarks(t *testing.T) {
+	a := Cell{Rune: 'e', Comb: []rune{'́'}, Width: 1}
+	b := Cell{Rune: 'e', Comb: []rune{'́'}, Width: 1}
+	c := Cell{Rune: 'e', Comb: []rune{'̂'}, Width: 1}
+
+	if !a.Equal(b) {
+		t.Error("cells with identical combining marks compared unequal")
+	}
+	if a.Equal(c) {
+		t.Error("cells with different combining marks compared equal")
+	}
+}
+
+// Set uses Equal for the idle-repaint check, so a cell differing only in
+// its combining marks must still dirty the row.
+func TestSetDirtiesOnACombiningMarkChange(t *testing.T) {
+	g := New(4, 1, fg, bg)
+	g.Set(0, 0, Cell{Rune: 'e', Comb: []rune{'́'}, FG: fg, BG: bg, Width: 1})
+	g.ClearDirty()
+
+	g.Set(0, 0, Cell{Rune: 'e', Comb: []rune{'̂'}, FG: fg, BG: bg, Width: 1})
+
+	if !g.AnyDirty() {
+		t.Fatal("changing a combining mark left the grid clean")
+	}
+}
+
+func TestSetCursorDirtiesBothTheOldAndNewRow(t *testing.T) {
+	g := New(4, 4, fg, bg)
+	g.SetCursor(Cursor{X: 0, Y: 1, Visible: true})
+	g.ClearDirty()
+
+	g.SetCursor(Cursor{X: 0, Y: 3, Visible: true})
+
+	if !g.RowDirty(1) {
+		t.Error("the row the cursor left is clean; it would keep the old cursor")
+	}
+	if !g.RowDirty(3) {
+		t.Error("the row the cursor arrived at is clean; it would not appear")
+	}
+	if g.RowDirty(2) {
+		t.Error("an untouched row was dirtied")
+	}
+}
+
+func TestSetCursorUnchangedDoesNotDirty(t *testing.T) {
+	g := New(4, 4, fg, bg)
+	c := Cursor{X: 1, Y: 1, Visible: true}
+	g.SetCursor(c)
+	g.ClearDirty()
+
+	g.SetCursor(c)
+
+	if g.AnyDirty() {
+		t.Fatal("re-setting the same cursor dirtied the grid")
+	}
+}
+
+func TestHidingTheCursorDirtiesItsRow(t *testing.T) {
+	g := New(4, 4, fg, bg)
+	g.SetCursor(Cursor{X: 0, Y: 2, Visible: true})
+	g.ClearDirty()
+
+	g.SetCursor(Cursor{X: 0, Y: 2, Visible: false})
+
+	if !g.RowDirty(2) {
+		t.Fatal("hiding the cursor left its row clean; it would stay on screen")
+	}
+}
+
+// Narrowing the grid can cut a double-width character in half. Either
+// surviving half draws wrong on its own.
+func TestResizeBlanksHalvesOfWideCellsCutByNarrowing(t *testing.T) {
+	g := New(6, 1, fg, bg)
+	g.SetWide(4, 0, Cell{Rune: '世', FG: fg, BG: bg, Width: 2})
+
+	g.Resize(5, 1)
+
+	if got := g.At(4, 0); got.Width == 2 {
+		t.Errorf("At(4,0) = %+v, want the orphaned lead cell blanked", got)
+	}
+}
+
+func TestResizeBlanksAnOrphanedContinuationAtColumnZero(t *testing.T) {
+	g := New(6, 2, fg, bg)
+	g.SetWide(0, 0, Cell{Rune: '世', FG: fg, BG: bg, Width: 2})
+	// Growing is not the interesting case; force the lead out of view by
+	// checking the invariant directly after a resize that keeps column 0.
+	g.Set(0, 0, Cell{Rune: 0, FG: fg, BG: bg, Width: 0})
+
+	g.Resize(4, 2)
+
+	if got := g.At(0, 0); got.Width == 0 {
+		t.Errorf("At(0,0) = %+v, want the orphaned continuation blanked", got)
+	}
+}

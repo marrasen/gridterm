@@ -173,10 +173,10 @@ func (r *Renderer) Draw(dst *ebiten.Image, g *grid.Grid) {
 			// A block cursor inverts the cell it sits on, so the glyph
 			// has to come back out in the background colour.
 			if curVisible && cur.Style == grid.CursorBlock && cur.X == x && cur.Y == y {
-				fg = bgOf(g, x, y)
+				fg = g.BGOf(x, y)
 			}
 			if c.Attr&grid.AttrDim != 0 {
-				fg = blend(fg, bgOf(g, x, y), dimFactor)
+				fg = blend(fg, g.BGOf(x, y), dimFactor)
 			}
 			r.pushGlyph(dst, x, y, c.Rune, style, fg, m)
 			for _, cb := range c.Comb {
@@ -250,7 +250,7 @@ func (r *Renderer) pushRules(dst *ebiten.Image, g *grid.Grid, y int, m glyph.Met
 			c := g.At(x, y)
 			col := g.FGOf(x, y)
 			if c.Attr&grid.AttrDim != 0 {
-				col = blend(col, bgOf(g, x, y), dimFactor)
+				col = blend(col, g.BGOf(x, y), dimFactor)
 			}
 			on := c.Attr&rule.attr != 0 && c.Attr&grid.AttrHidden == 0 && col.A != 0
 			switch {
@@ -304,16 +304,6 @@ func (r *Renderer) pushCursor(
 		w = thick
 	}
 	r.push(dst, &r.bg, x, y, w, h, 0, 0, 1, 1, col)
-}
-
-// bgOf returns a cell's effective background, the counterpart of
-// grid.FGOf. It lives here because only the block cursor needs it.
-func bgOf(g *grid.Grid, x, y int) color.RGBA {
-	c := g.At(x, y)
-	if c.Attr&grid.AttrReverse != 0 {
-		return c.FG
-	}
-	return c.BG
 }
 
 func (r *Renderer) reset() {

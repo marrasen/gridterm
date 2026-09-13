@@ -400,6 +400,15 @@ func (g *Grid) bgOf(x, y int) color.RGBA {
 	return c.BG
 }
 
+// BGOf returns the effective background of a cell, honouring
+// AttrReverse and the selection. It is the counterpart of FGOf.
+func (g *Grid) BGOf(x, y int) color.RGBA {
+	if !g.inBounds(x, y) {
+		return g.DefaultBG
+	}
+	return g.bgOf(x, y)
+}
+
 // FGOf returns the effective foreground of a cell, honouring AttrReverse.
 func (g *Grid) FGOf(x, y int) color.RGBA {
 	c := g.At(x, y)

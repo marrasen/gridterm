@@ -135,6 +135,15 @@ func (e Event) Alt() bool { return e.Mods&ModAlt != 0 }
 // Shift reports whether Shift was held.
 func (e Event) Shift() bool { return e.Mods&ModShift != 0 }
 
+// Mode carries the terminal modes that change how a key is encoded. A
+// program turns these on through escape sequences, so the encoder has to
+// be told about them or arrow keys stop working inside vim and readline.
+type Mode struct {
+	// AppCursor is DECCKM. With it set, the cursor keys are sent as SS3
+	// (ESC O A) rather than CSI (ESC [ A).
+	AppCursor bool
+}
+
 // Encode appends the bytes to write to a PTY or an SSH session channel
 // for one event, and returns the extended buffer. It returns nil when
 // the event produces no input.
@@ -142,7 +151,10 @@ func (e Event) Shift() bool { return e.Mods&ModShift != 0 }
 // Key releases produce nothing, which is correct for a plain VT stream.
 // A terminal negotiating the Kitty keyboard protocol would encode them —
 // possible here only because the fork reports releases at all.
-func Encode(e Event, dst []byte) []byte {
+func Encode(e Event, dst []byte) []byte { return EncodeMode(e, Mode{}, dst) }
+
+// EncodeMode is Encode with the terminal's current modes applied.
+func EncodeMode(e Event, m Mode, dst []byte) []byte {
 	switch e.Kind {
 	case KeyRelease:
 		return nil
@@ -157,17 +169,23 @@ func Encode(e Event, dst []byte) []byte {
 		return utf8.AppendRune(dst, e.Rune)
 
 	case KeyPress, KeyRepeat:
-		return encodeKey(e, dst)
+		return encodeKey(e, m, dst)
 	}
 	return nil
 }
 
-func encodeKey(e Event, dst []byte) []byte {
+func encodeKey(e Event, m Mode, dst []byte) []byte {
 	// Keys with a CSI or SS3 form carry their modifiers inside the
 	// sequence, so they must be handled before the Alt/ESC-prefix rule
 	// below. Getting this order wrong sends ESC ESC [ A for Alt+Up
 	// instead of CSI 1;3 A, which vim reads as two separate keys.
 	if final, ok := csiFinal[e.Key]; ok {
+		// Application cursor mode moves the unmodified cursor keys to
+		// SS3. Modified ones stay CSI, as xterm does, because SS3 has
+		// nowhere to put a modifier parameter.
+		if m.AppCursor && modParam(e.Mods) == 1 && isCursorKey(e.Key) {
+			return append(dst, 0x1b, 'O', final)
+		}
 		return appendCSI(dst, "", final, e.Mods)
 	}
 	if final, ok := ss3Final[e.Key]; ok {
@@ -203,7 +221,7 @@ func encodeKey(e Event, dst []byte) []byte {
 	// Meta by default.
 	if e.Alt() {
 		stripped := Event{Kind: e.Kind, Key: e.Key, Mods: e.Mods &^ ModAlt}
-		if rest := encodeKey(stripped, nil); rest != nil {
+		if rest := encodeKey(stripped, m, nil); rest != nil {
 			return append(append(dst, 0x1b), rest...)
 		}
 	}
@@ -233,6 +251,16 @@ var csiFinal = map[Key]byte{
 	KeyLeft:  'D',
 	KeyEnd:   'F',
 	KeyHome:  'H',
+}
+
+// isCursorKey reports whether k is one of the four arrows or Home/End,
+// the keys DECCKM applies to.
+func isCursorKey(k Key) bool {
+	switch k {
+	case KeyUp, KeyDown, KeyLeft, KeyRight, KeyHome, KeyEnd:
+		return true
+	}
+	return false
 }
 
 // ss3Final holds F1..F4, which xterm sends as SS3 (ESC O x) when

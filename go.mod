@@ -1,6 +1,6 @@
 module github.com/marcus/gridterm
 
-go 1.25.0
+go 1.26.0
 
 require (
 	github.com/hajimehoshi/ebiten/v2 v2.7.5
@@ -8,6 +8,8 @@ require (
 )
 
 require (
+	github.com/aymanbagabas/go-pty v0.2.3 // indirect
+	github.com/creack/pty v1.1.24 // indirect
 	github.com/danielgatis/go-utf8 v1.0.1 // indirect
 	github.com/danielgatis/go-vte v1.0.11 // indirect
 	github.com/ebitengine/gomobile v0.0.0-20240518074828-e86332849895 // indirect
@@ -15,8 +17,10 @@ require (
 	github.com/ebitengine/purego v0.8.3 // indirect
 	github.com/jezek/xgb v1.1.1 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
+	github.com/u-root/u-root v0.16.0 // indirect
+	golang.org/x/crypto v0.51.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
-	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/text v0.41.0 // indirect
 )
 

@@ -197,3 +197,43 @@ func TestModifierHelpers(t *testing.T) {
 		t.Errorf("Mods.String() = %q, want \"ctrl+shift\"", got)
 	}
 }
+
+// With DECCKM set, an unmodified arrow key moves to SS3. Getting this
+// wrong breaks arrow keys inside vim and readline.
+func TestApplicationCursorModeUsesSS3(t *testing.T) {
+	cases := []struct {
+		key  Key
+		want string
+	}{
+		{KeyUp, "\x1bOA"},
+		{KeyDown, "\x1bOB"},
+		{KeyRight, "\x1bOC"},
+		{KeyLeft, "\x1bOD"},
+		{KeyHome, "\x1bOH"},
+		{KeyEnd, "\x1bOF"},
+	}
+	for _, tc := range cases {
+		got := EncodeMode(Event{Kind: KeyPress, Key: tc.key}, Mode{AppCursor: true}, nil)
+		if string(got) != tc.want {
+			t.Errorf("%s in app-cursor mode = %q, want %q", tc.key, got, tc.want)
+		}
+	}
+}
+
+// A modified cursor key stays CSI even in application mode: SS3 has
+// nowhere to put the modifier parameter.
+func TestApplicationCursorModeKeepsCSIForModifiedKeys(t *testing.T) {
+	got := EncodeMode(
+		Event{Kind: KeyPress, Key: KeyUp, Mods: ModCtrl},
+		Mode{AppCursor: true}, nil)
+	if string(got) != "\x1b[1;5A" {
+		t.Fatalf("Ctrl+Up in app-cursor mode = %q, want \"\\x1b[1;5A\"", got)
+	}
+}
+
+func TestApplicationCursorModeDoesNotAffectOtherKeys(t *testing.T) {
+	got := EncodeMode(Event{Kind: KeyPress, Key: KeyF5}, Mode{AppCursor: true}, nil)
+	if string(got) != "\x1b[15~" {
+		t.Fatalf("F5 in app-cursor mode = %q, want \"\\x1b[15~\"", got)
+	}
+}

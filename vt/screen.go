@@ -643,3 +643,20 @@ func (s *Screen) Render(g *grid.Grid) {
 	cur.Visible = s.mode.CursorVis && s.scrollOff == 0
 	g.SetCursor(cur)
 }
+
+// AppCursor reports whether DECCKM is set, which changes how the cursor
+// keys are encoded on the way back to the program.
+func (s *Screen) AppCursor() bool { return s.mode.AppCursor }
+
+// Bracketed reports whether bracketed paste is enabled.
+func (s *Screen) Bracketed() bool { return s.mode.Bracketed }
+
+// MouseEnabled reports whether the program asked for mouse reports.
+func (s *Screen) MouseEnabled() bool {
+	return s.mode.MouseClick || s.mode.MouseDrag || s.mode.MouseMotion
+}
+
+// OnAltBuffer reports whether the alternate screen is in use. Scrollback
+// belongs to the primary buffer, so the mouse wheel should send arrow
+// keys instead of scrolling the view while this is true.
+func (s *Screen) OnAltBuffer() bool { return s.cur == s.alt }

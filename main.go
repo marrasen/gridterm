@@ -1,19 +1,18 @@
-// Command gridterm is a proof of concept for a GPU-rendered character
-// grid: the rendering and input foundation a native terminal or
-// terminal-style IDE would sit on.
+// Command gridterm is a GPU-rendered terminal emulator.
 //
-// It deliberately stops short of a terminal. There is no VT parser and
-// no process here. What it shows is the part that has to be right first:
-// glyphs batched through a texture atlas, damage-tracked repaints, and
-// a key pipeline that can tell Ctrl+C from the letter c and turn it into
-// the bytes you would write to a PTY or an SSH channel.
+// It runs a shell on a local pseudo-terminal — a PTY on Unix, a ConPTY
+// on Windows — feeds its output through a VT emulator, and draws the
+// resulting character grid as batched triangles.
 package main
 
 import (
-	"fmt"
-	"image/color"
+	"errors"
+	"flag"
+	"io"
 	"log"
 	"strings"
+	"sync"
+	"sync/atomic"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"golang.org/x/image/font/gofont/gomono"
@@ -24,19 +23,13 @@ import (
 	"github.com/marcus/gridterm/input"
 	"github.com/marcus/gridterm/input/ebitenin"
 	"github.com/marcus/gridterm/render"
+	"github.com/marcus/gridterm/session"
+	"github.com/marcus/gridterm/vt"
 )
 
-var (
-	colBG     = color.RGBA{0x14, 0x17, 0x1c, 0xff}
-	colFG     = color.RGBA{0xc8, 0xd0, 0xda, 0xff}
-	colDim    = color.RGBA{0x6a, 0x74, 0x84, 0xff}
-	colAccent = color.RGBA{0x7a, 0xc8, 0xff, 0xff}
-	colGreen  = color.RGBA{0x8f, 0xd4, 0x6a, 0xff}
-	colAmber  = color.RGBA{0xe6, 0xb4, 0x50, 0xff}
-	colBar    = color.RGBA{0x22, 0x28, 0x32, 0xff}
-)
-
-const headerRows = 4
+// readChunk is how much pty output is taken per read. Large enough that
+// a flood of output does not become a syscall per line.
+const readChunk = 64 * 1024
 
 type app struct {
 	atlas    *glyph.Atlas
@@ -44,185 +37,212 @@ type app struct {
 	g        *grid.Grid
 	reader   ebitenin.Reader
 
-	lines  []line // scrollback of what happened
-	stress bool
-	tick   uint64
-	encBuf []byte
-}
+	// mu guards term. The pty pump runs on its own goroutine while
+	// ebiten drives Update and Draw from another, and vt.Terminal is not
+	// safe for concurrent use.
+	mu   sync.Mutex
+	term *vt.Terminal
 
-type line struct {
-	text  string
-	color color.RGBA
+	sess session.Session
+
+	// pending is set by the pump when new output has been parsed, so a
+	// frame with nothing to show can skip re-rendering the grid.
+	pending atomic.Bool
+
+	// exited is set once the shell is gone; the window closes on the
+	// next frame.
+	exited atomic.Bool
+
+	title    atomic.Pointer[string]
+	lastSize [2]int
+	encBuf   []byte
 }
 
 func (a *app) Update() error {
-	for _, ev := range a.reader.Poll() {
-		a.handle(ev)
+	if a.exited.Load() {
+		return ebiten.Termination
 	}
-	if a.stress {
-		// Throughput check: push a fresh line every frame so the whole
-		// body repaints and the batching numbers mean something.
-		a.tick++
-		a.log(fmt.Sprintf(
-			"stress %06d  %s", a.tick,
-			strings.Repeat("the quick brown fox jumps over the lazy dog ", 3)),
-			colDim)
+
+	mode := a.mode()
+	for _, ev := range a.reader.Poll() {
+		a.handle(ev, mode)
+	}
+
+	if t := a.title.Swap(nil); t != nil {
+		ebiten.SetWindowTitle("gridterm — " + *t)
 	}
 	return nil
 }
 
-func (a *app) handle(ev input.Event) {
-	switch {
-	case ev.Kind == input.KeyPress && ev.Key == input.KeyF2:
-		a.stress = !a.stress
-		a.log(fmt.Sprintf("stress mode %v", a.stress), colAmber)
-		return
-	case ev.Kind == input.KeyPress && ev.Key == input.KeyF3:
-		a.lines = a.lines[:0]
-		a.g.MarkAllDirty()
-		return
-	}
-
-	a.encBuf = input.Encode(ev, a.encBuf[:0])
-	if a.encBuf == nil {
-		return // release, or a shortcut that produces no input
-	}
-
-	var what string
-	col := colFG
-	switch ev.Kind {
-	case input.Text:
-		what = fmt.Sprintf("text   %-12q", ev.Rune)
-		col = colGreen
-	case input.KeyPress:
-		what = fmt.Sprintf("press  %-12s", ev.Key)
-		col = colAccent
-	case input.KeyRepeat:
-		what = fmt.Sprintf("repeat %-12s", ev.Key)
-		col = colDim
-	}
-	a.log(fmt.Sprintf("%s mods=%-10s src=%-4d -> %s",
-		what, ev.Mods, ev.Source, hex(a.encBuf)), col)
+// mode reads the terminal state the input encoder needs.
+func (a *app) mode() input.Mode {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return input.Mode{AppCursor: a.term.Screen().AppCursor()}
 }
 
-func (a *app) log(s string, c color.RGBA) {
-	a.lines = append(a.lines, line{text: s, color: c})
-	_, rows := a.g.Size()
-	if keep := rows - headerRows - 1; keep > 0 && len(a.lines) > keep {
-		a.lines = a.lines[len(a.lines)-keep:]
+func (a *app) handle(ev input.Event, mode input.Mode) {
+	// Shift+PageUp and Shift+PageDown scroll the view rather than
+	// reaching the program, which is the usual terminal convention.
+	if ev.Kind == input.KeyPress || ev.Kind == input.KeyRepeat {
+		if ev.Shift() && (ev.Key == input.KeyPageUp || ev.Key == input.KeyPageDown) {
+			_, rows := a.g.Size()
+			n := max(rows/2, 1)
+			if ev.Key == input.KeyPageDown {
+				n = -n
+			}
+			a.mu.Lock()
+			a.term.Screen().ScrollView(n)
+			a.mu.Unlock()
+			a.pending.Store(true)
+			return
+		}
+	}
+
+	a.encBuf = input.EncodeMode(ev, mode, a.encBuf[:0])
+	if len(a.encBuf) == 0 {
+		return
+	}
+
+	// Typing jumps back to the live screen, as every terminal does.
+	a.mu.Lock()
+	scrolled := a.term.Screen().ViewOffset() != 0
+	if scrolled {
+		a.term.Screen().ResetView()
+	}
+	a.mu.Unlock()
+	if scrolled {
+		a.pending.Store(true)
+	}
+
+	if _, err := a.sess.Write(a.encBuf); err != nil {
+		a.exited.Store(true)
 	}
 }
 
 func (a *app) Draw(screen *ebiten.Image) {
-	a.paint()
+	if a.pending.Swap(false) {
+		a.mu.Lock()
+		a.term.Render(a.g)
+		a.mu.Unlock()
+	}
 	a.renderer.Draw(screen, a.g)
 }
 
-// paint writes the current state into the grid. It only touches cells
-// whose contents changed; grid.Set drops writes that match what is
-// already there, so a still screen leaves every row clean and Draw
-// issues no work at all.
-func (a *app) paint() {
-	cols, rows := a.g.Size()
-	st := a.renderer.Stats()
-	cw, ch := a.renderer.CellSize()
-
-	blank := strings.Repeat(" ", cols)
-	row := func(y int, s string, fg, bg color.RGBA, attr grid.Attr) {
-		a.g.SetString(0, y, blank, fg, bg, 0)
-		a.g.SetString(0, y, s, fg, bg, attr)
-	}
-
-	row(0, "  gridterm — GPU character grid proof of concept",
-		colBG, colAccent, grid.AttrBold)
-	row(1, fmt.Sprintf(
-		"  grid %dx%d  cell %dx%d px  atlas %d page(s), %d glyphs  fps %.0f",
-		cols, rows, cw, ch, a.atlas.Pages(), a.atlas.Cached(), ebiten.ActualFPS()),
-		colDim, colBG, 0)
-	row(2, fmt.Sprintf(
-		"  last frame: %d/%d rows repainted, %d quads, %d DrawTriangles calls",
-		st.RowsDrawn, rows, st.Quads, st.DrawCalls),
-		colDim, colBG, 0)
-	row(3, "  type anything · F2 stress · F3 clear",
-		colDim, colBar, 0)
-
-	for i := 0; i < rows-headerRows-1; i++ {
-		y := headerRows + i
-		if i < len(a.lines) {
-			row(y, "  "+a.lines[i].text, a.lines[i].color, colBG, 0)
-		} else {
-			row(y, "", colFG, colBG, 0)
-		}
-	}
-	row(rows-1,
-		"  keypress → VT bytes, ready to write to a PTY or an ssh.Session",
-		colDim, colBar, 0)
-}
-
-// Layout satisfies ebiten.Game. LayoutF below takes precedence when the
-// runtime supports it; this is the integer fallback.
+// Layout satisfies ebiten.Game; LayoutF below takes precedence when the
+// runtime supports it.
 func (a *app) Layout(w, h int) (int, int) {
-	cols, rows := a.renderer.GridSizeFor(w, h)
-	if c, r := a.g.Size(); c != cols || r != rows {
-		a.g.Resize(cols, rows)
-	}
+	a.resizeTo(w, h)
 	return w, h
 }
 
-// LayoutF sizes the grid to the window in device pixels, so the cell
-// box lands on whole pixels on a HiDPI display instead of being scaled.
+// LayoutF sizes the grid in device pixels, so the cell box lands on
+// whole pixels on a HiDPI display instead of being scaled.
 func (a *app) LayoutF(logicalW, logicalH float64) (float64, float64) {
 	s := ebiten.Monitor().DeviceScaleFactor()
-	pxW, pxH := int(logicalW*s), int(logicalH*s)
-	cols, rows := a.renderer.GridSizeFor(pxW, pxH)
-	if c, r := a.g.Size(); c != cols || r != rows {
-		a.g.Resize(cols, rows)
-	}
+	a.resizeTo(int(logicalW*s), int(logicalH*s))
 	return logicalW * s, logicalH * s
 }
 
+// resizeTo tells the grid, the emulator and the shell about a new window
+// size. All three have to agree or the shell wraps its prompt at the
+// wrong column.
+func (a *app) resizeTo(pxW, pxH int) {
+	cols, rows := a.renderer.GridSizeFor(pxW, pxH)
+	if a.lastSize == [2]int{cols, rows} {
+		return
+	}
+	a.lastSize = [2]int{cols, rows}
+
+	a.g.Resize(cols, rows)
+	a.mu.Lock()
+	a.term.Resize(cols, rows)
+	a.mu.Unlock()
+	a.pending.Store(true)
+
+	if err := a.sess.Resize(cols, rows); err != nil {
+		log.Printf("resize session: %v", err)
+	}
+}
+
+// pump copies shell output into the emulator until the session ends.
+func (a *app) pump() {
+	buf := make([]byte, readChunk)
+	for {
+		n, err := a.sess.Read(buf)
+		if n > 0 {
+			a.mu.Lock()
+			_, _ = a.term.Write(buf[:n])
+			a.mu.Unlock()
+			a.pending.Store(true)
+		}
+		if err != nil {
+			if !errors.Is(err, io.EOF) {
+				log.Printf("read session: %v", err)
+			}
+			a.exited.Store(true)
+			return
+		}
+	}
+}
+
 func main() {
-	atlas, err := glyph.NewAtlas(gomono.TTF, gomonobold.TTF, 15, 96)
+	var (
+		fontSize = flag.Float64("font-size", 15, "font size in points")
+		cmdline  = flag.String("e", "", "run this command instead of the login shell")
+		scroll   = flag.Int("scrollback", vt.DefaultScrollback, "lines of history to keep")
+	)
+	flag.Parse()
+
+	atlas, err := glyph.NewAtlas(gomono.TTF, gomonobold.TTF, *fontSize, 96)
 	if err != nil {
 		log.Fatalf("build glyph atlas: %v", err)
 	}
 	m := atlas.Metrics()
 
 	a := &app{atlas: atlas, renderer: render.New(atlas)}
-	a.g = grid.New(80, 25, colFG, colBG)
-	a.log("ready — every line below is a real input event", colAmber)
+
+	const initCols, initRows = 100, 32
+	pal := vt.DefaultPalette()
+	a.g = grid.New(initCols, initRows, pal.FG, pal.BG)
+	a.lastSize = [2]int{initCols, initRows}
+
+	sess, err := session.StartLocal(session.LocalConfig{
+		Command: strings.Fields(*cmdline),
+		Cols:    initCols,
+		Rows:    initRows,
+	})
+	if err != nil {
+		log.Fatalf("start shell: %v", err)
+	}
+	a.sess = sess
+
+	a.term = vt.New(initCols, initRows, pal, *scroll, vt.Callbacks{
+		Title: func(s string) {
+			t := s
+			a.title.Store(&t)
+		},
+		Reply: func(b []byte) {
+			// Device reports are produced while the pump holds the lock.
+			// Writing to the pty from here is safe: Write is independent
+			// of Read, and the reply is short enough not to block.
+			if _, err := a.sess.Write(b); err != nil {
+				a.exited.Store(true)
+			}
+		},
+	})
+	go a.pump()
 
 	ebiten.SetWindowTitle("gridterm")
-	ebiten.SetWindowSize(m.CellW*100, m.CellH*32)
+	ebiten.SetWindowSize(m.CellW*initCols, m.CellH*initRows)
 	ebiten.SetWindowResizingMode(ebiten.WindowResizingModeEnabled)
 	// Damage tracking only pays off if ebiten keeps the previous frame.
 	ebiten.SetScreenClearedEveryFrame(false)
 	ebiten.SetVsyncEnabled(true)
 
-	if err := ebiten.RunGame(a); err != nil {
+	err = ebiten.RunGame(a)
+	_ = sess.Close()
+	if err != nil && !errors.Is(err, ebiten.Termination) {
 		log.Fatal(err)
 	}
-}
-
-func hex(b []byte) string {
-	var sb strings.Builder
-	for i, c := range b {
-		if i > 0 {
-			sb.WriteByte(' ')
-		}
-		fmt.Fprintf(&sb, "%02x", c)
-	}
-	if printable(b) {
-		fmt.Fprintf(&sb, "  %q", string(b))
-	}
-	return sb.String()
-}
-
-func printable(b []byte) bool {
-	for _, c := range b {
-		if c < 0x20 || c == 0x7f {
-			return false
-		}
-	}
-	return len(b) > 0
 }

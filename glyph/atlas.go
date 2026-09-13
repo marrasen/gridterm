@@ -64,6 +64,10 @@ type Atlas struct {
 	faces   [numStyles]font.Face
 	metrics Metrics
 
+	// src keeps the font bytes so the atlas can be rebuilt at a new
+	// size without the caller having to hold them.
+	srcRegular, srcBold []byte
+
 	// sizePt and dpi are kept so fallback faces can be built at the same
 	// size as the primary one.
 	sizePt, dpi float64
@@ -107,6 +111,8 @@ func NewAtlas(regularTTF, boldTTF []byte, sizePt, dpi float64) (*Atlas, error) {
 		})
 	}
 
+	a.srcRegular, a.srcBold = regularTTF, boldTTF
+
 	var err error
 	if a.faces[Regular], err = mkFace(regularTTF); err != nil {
 		return nil, err
@@ -140,6 +146,26 @@ func NewAtlas(regularTTF, boldTTF []byte, sizePt, dpi float64) (*Atlas, error) {
 
 // Metrics returns the cell box this atlas rasterises into.
 func (a *Atlas) Metrics() Metrics { return a.metrics }
+
+// SetSize rebuilds the atlas at a new font size.
+//
+// Everything cached is thrown away: the glyphs are the wrong size, and
+// so is the cell box every quad was measured against. The old texture
+// pages are dropped for the garbage collector rather than reused,
+// because a shelf-packed page cannot be repacked in place.
+func (a *Atlas) SetSize(sizePt float64) error {
+	if sizePt <= 0 || sizePt == a.sizePt {
+		return nil
+	}
+	next, err := NewAtlas(a.srcRegular, a.srcBold, sizePt, a.dpi)
+	if err != nil {
+		// Leave the atlas as it was. A failed resize should not take the
+		// window down with it.
+		return err
+	}
+	*a = *next
+	return nil
+}
 
 // Page returns the texture for page i, for use as a DrawTriangles source.
 func (a *Atlas) Page(i int) *ebiten.Image { return a.pages[i] }

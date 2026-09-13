@@ -370,27 +370,148 @@ func TestHidingTheCursorDirtiesItsRow(t *testing.T) {
 
 // Narrowing the grid can cut a double-width character in half. Either
 // surviving half draws wrong on its own.
+// wantWidthInvariant asserts that every double-width character in the
+// grid still has both halves. A lone half draws a stray glyph, and a
+// lone continuation makes later writes blank an innocent neighbour.
+func wantWidthInvariant(t *testing.T, g *Grid) {
+	t.Helper()
+	cols, rows := g.Size()
+	for y := 0; y < rows; y++ {
+		for x := 0; x < cols; x++ {
+			switch g.At(x, y).Width {
+			case 2:
+				if x+1 >= cols || g.At(x+1, y).Width != 0 {
+					t.Errorf("lead cell at %d,%d has no continuation", x, y)
+				}
+			case 0:
+				if x == 0 || g.At(x-1, y).Width != 2 {
+					t.Errorf("continuation at %d,%d has no lead", x, y)
+				}
+			}
+		}
+	}
+}
+
 func TestResizeBlanksHalvesOfWideCellsCutByNarrowing(t *testing.T) {
 	g := New(6, 1, fg, bg)
 	g.SetWide(4, 0, Cell{Rune: '世', FG: fg, BG: bg, Width: 2})
 
 	g.Resize(5, 1)
 
-	if got := g.At(4, 0); got.Width == 2 {
-		t.Errorf("At(4,0) = %+v, want the orphaned lead cell blanked", got)
+	if got := g.At(4, 0); got.Rune != ' ' || got.Width != 1 {
+		t.Errorf("At(4,0) = %+v, want a blank width-1 cell", got)
+	}
+	wantWidthInvariant(t, g)
+}
+
+// Repairing one broken pair can expose another, so the fix-up has to
+// scan the row rather than check its edges.
+func TestResizeRepairsEveryBrokenPairInARow(t *testing.T) {
+	g := New(8, 1, fg, bg)
+	// A continuation at column 0 with no lead, and a lead at the far end
+	// whose continuation the narrowing will cut off.
+	g.Set(0, 0, Cell{Rune: 0, FG: fg, BG: bg, Width: 0})
+	g.Set(1, 0, Cell{Rune: 0, FG: fg, BG: bg, Width: 0})
+	g.SetWide(5, 0, Cell{Rune: '世', FG: fg, BG: bg, Width: 2})
+
+	g.Resize(6, 1)
+
+	wantWidthInvariant(t, g)
+}
+
+// A row left with a lead cell but no continuation makes the next write
+// at the neighbouring column blank the wrong cell.
+func TestRepairedRowDoesNotEatTheNextCharacterWritten(t *testing.T) {
+	g := New(6, 1, fg, bg)
+	g.SetWide(0, 0, Cell{Rune: '世', FG: fg, BG: bg, Width: 2})
+	g.Set(0, 0, Cell{Rune: 0, FG: fg, BG: bg, Width: 0}) // break it
+
+	g.Resize(4, 1)
+	g.SetString(0, 0, "ab", fg, bg, 0)
+
+	if got := g.At(0, 0).Rune; got != 'a' {
+		t.Errorf("At(0,0) = %q, want 'a'; writing 'b' blanked its neighbour", got)
+	}
+	if got := g.At(1, 0).Rune; got != 'b' {
+		t.Errorf("At(1,0) = %q, want 'b'", got)
 	}
 }
 
-func TestResizeBlanksAnOrphanedContinuationAtColumnZero(t *testing.T) {
-	g := New(6, 2, fg, bg)
-	g.SetWide(0, 0, Cell{Rune: '世', FG: fg, BG: bg, Width: 2})
-	// Growing is not the interesting case; force the lead out of view by
-	// checking the invariant directly after a resize that keeps column 0.
-	g.Set(0, 0, Cell{Rune: 0, FG: fg, BG: bg, Width: 0})
+// Rewriting the same wide character must not dirty the row, or a screen
+// full of CJK repaints every frame.
+func TestSetWideIdenticalContentDoesNotDirty(t *testing.T) {
+	g := New(6, 1, fg, bg)
+	c := Cell{Rune: '世', FG: fg, BG: bg, Width: 2}
+	g.SetWide(1, 0, c)
+	g.ClearDirty()
 
-	g.Resize(4, 2)
+	g.SetWide(1, 0, c)
 
-	if got := g.At(0, 0); got.Width == 0 {
-		t.Errorf("At(0,0) = %+v, want the orphaned continuation blanked", got)
+	if g.AnyDirty() {
+		t.Fatal("rewriting an identical wide cell dirtied the grid")
+	}
+}
+
+func TestSetStringIdenticalWideContentDoesNotDirty(t *testing.T) {
+	g := New(10, 1, fg, bg)
+	g.SetString(0, 0, "a世b", fg, bg, 0)
+	g.ClearDirty()
+
+	g.SetString(0, 0, "a世b", fg, bg, 0)
+
+	if g.AnyDirty() {
+		t.Fatal("rewriting an identical string containing a wide cell dirtied the grid")
+	}
+}
+
+func TestSetWideClampsAnOutOfRangeWidth(t *testing.T) {
+	g := New(6, 1, fg, bg)
+
+	n := g.SetWide(0, 0, Cell{Rune: 'x', FG: fg, BG: bg, Width: 5})
+
+	if n != 2 {
+		t.Errorf("SetWide reported %d columns for width 5, want 2", n)
+	}
+	wantWidthInvariant(t, g)
+}
+
+// A cluster that cannot fit must not abandon the rest of the string
+// silently, and must not leave stale content under itself.
+func TestSetStringWideClusterAtTheRowEndBlanksAndStops(t *testing.T) {
+	g := New(3, 1, fg, bg)
+	g.SetString(0, 0, "XXX", fg, bg, 0)
+
+	end := g.SetString(0, 0, "ab世cd", fg, bg, 0)
+
+	if end != 3 {
+		t.Errorf("end column = %d, want 3 (the row is full)", end)
+	}
+	if got := g.At(2, 0).Rune; got != ' ' {
+		t.Errorf("At(2,0) = %q, want a blank, not stale content", got)
+	}
+}
+
+// Only real zero-width marks stack on a base rune. The trailing runes of
+// an emoji ZWJ sequence are full glyphs and would draw on top of it.
+func TestClusterCellKeepsOnlyZeroWidthMarks(t *testing.T) {
+	c := ClusterCell("\U0001F468‍\U0001F469", 2)
+	for _, r := range c.Comb {
+		if RuneWidth(r) != 0 {
+			t.Errorf("Comb holds %U, which is %d columns wide", r, RuneWidth(r))
+		}
+	}
+}
+
+func TestClusterCellReplacesControlCharacters(t *testing.T) {
+	if got := ClusterCell("\t", 1).Rune; got != ' ' {
+		t.Errorf("tab became %q, want a space", got)
+	}
+}
+
+func TestCombiningMarkOnASpaceIsKept(t *testing.T) {
+	g := New(4, 1, fg, bg)
+	g.SetString(0, 0, " ́", fg, bg, 0)
+	if got := g.At(0, 0); got.Rune != ' ' || len(got.Comb) != 1 {
+		t.Fatalf("At(0,0) = %+v, want a space carrying one mark", got)
 	}
 }

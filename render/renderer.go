@@ -96,6 +96,13 @@ func (r *Renderer) Draw(dst *ebiten.Image, g *grid.Grid) {
 	cols, rows := g.Size()
 	cur := g.Cursor()
 	curVisible := cur.Visible && cur.X >= 0 && cur.X < cols && cur.Y >= 0 && cur.Y < rows
+	// A cursor on the continuation half of a double-width character
+	// belongs on its lead cell, which is where the glyph actually is.
+	// Left alone, a block cursor would paint over half the character in
+	// the foreground colour and hide it.
+	if curVisible && cur.X > 0 && g.At(cur.X, cur.Y).Width == 0 {
+		cur.X--
+	}
 
 	r.reset()
 	r.stats = Stats{CellsTotal: cols * rows}
@@ -136,8 +143,13 @@ func (r *Renderer) Draw(dst *ebiten.Image, g *grid.Grid) {
 		for x := 0; x < cols; x++ {
 			c := g.At(x, y)
 			// Width 0 is the column a double-width character spills
-			// into; its glyph was already drawn by the lead cell.
-			if c.Width == 0 || c.Rune == ' ' || c.Rune == 0 {
+			// into; its glyph was already drawn by the lead cell. A
+			// blank still has to be drawn when it carries a combining
+			// mark, which is how a mark on a space appears at all.
+			if c.Width == 0 {
+				continue
+			}
+			if (c.Rune == ' ' || c.Rune == 0) && len(c.Comb) == 0 {
 				continue
 			}
 			if c.Attr&grid.AttrHidden != 0 {
@@ -159,6 +171,11 @@ func (r *Renderer) Draw(dst *ebiten.Image, g *grid.Grid) {
 			}
 		}
 	}
+	// Glyph batches flush in atlas-page order, not push order. A base
+	// glyph and its combining marks are rasterised together and so
+	// almost always share a page, but a page boundary falling between
+	// them would draw the mark underneath the base. Rare enough to
+	// accept, and the alternative is a draw call per cell.
 	for i := range r.fg {
 		r.flush(dst, &r.fg[i])
 	}

@@ -1,3 +1,7 @@
+github.com/danielgatis/go-utf8 v1.0.1 h1:0tXC3eI9I+11X3DwF46Auqjcq1KrsQCQsaI8k/ymGhU=
+github.com/danielgatis/go-utf8 v1.0.1/go.mod h1:TGCny5E5wwT7AHD5cAj941LnjZLTqcHXlK4Zq0FqDPw=
+github.com/danielgatis/go-vte v1.0.11 h1:xcVrqdCqP08zhSW0rn7tETpz3QMEJOvkoLhd2VYU0SQ=
+github.com/danielgatis/go-vte v1.0.11/go.mod h1:ITnFCD8DqOM9TPhxvxcGABmbcUfC1yJsb3e+l2NCKJQ=
 github.com/ebitengine/gomobile v0.0.0-20240518074828-e86332849895 h1:48bCqKTuD7Z0UovDfvpCn7wZ0GUZ+yosIteNDthn3FU=
 github.com/ebitengine/gomobile v0.0.0-20240518074828-e86332849895/go.mod h1:XZdLv05c5hOZm3fM2NlJ92FyEZjnslcMcNRrhxs8+8M=
 github.com/ebitengine/hideconsole v1.0.0 h1:5J4U0kXF+pv/DhiXt5/lTz0eO5ogJ1iXb8Yj1yReDqE=

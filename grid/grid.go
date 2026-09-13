@@ -123,16 +123,27 @@ func (g *Grid) Resize(cols, rows int) {
 	g.dirty = make([]bool, rows)
 	g.allDirty = true
 
-	// Narrowing can cut a double-width character in half, leaving a
-	// lead cell whose continuation is off-screen or an orphaned
-	// continuation at column 0. Either draws wrong, so blank them.
+	// Narrowing can cut a double-width character in half. Repair the
+	// whole row rather than just its edges: blanking one broken pair can
+	// expose another, and a lead cell with no continuation makes
+	// clearWideAt blank an innocent neighbour later on.
 	for y := 0; y < copyRows; y++ {
-		if cols > 0 {
-			if c := g.cells[y*cols]; c.Width == 0 {
-				g.cells[y*cols] = blank
+		repairWidths(g.cells[y*cols:(y+1)*cols], blank)
+	}
+}
+
+// repairWidths blanks any half of a double-width character whose partner
+// is missing, leaving the row's width invariant intact.
+func repairWidths(row []Cell, blank Cell) {
+	for x := range row {
+		switch row[x].Width {
+		case 2:
+			if x+1 >= len(row) || row[x+1].Width != 0 {
+				row[x] = blank
 			}
-			if c := g.cells[y*cols+cols-1]; c.Width == 2 {
-				g.cells[y*cols+cols-1] = blank
+		case 0:
+			if x == 0 || row[x-1].Width != 2 {
+				row[x] = blank
 			}
 		}
 	}
@@ -185,21 +196,29 @@ func (g *Grid) SetWide(x, y int, c Cell) int {
 	if !g.inBounds(x, y) {
 		return 0
 	}
-	w := int(c.Width)
-	if w == 0 {
-		w = 1
-	}
+	w := min(max(int(c.Width), 1), 2)
 	if x+w > g.cols {
 		return 0
 	}
+	c.Width = uint8(w)
+	cont := Cell{FG: c.FG, BG: c.BG, Attr: c.Attr, Width: 0}
+
+	// Check for equality before touching anything. clearWideAt writes a
+	// blank over the continuation cell, which would dirty the row even
+	// when the character being written is the one already there — and an
+	// idle screen full of CJK would then repaint every frame.
+	if g.cells[y*g.cols+x].Equal(c) &&
+		(w == 1 || g.cells[y*g.cols+x+1].Equal(cont)) {
+		return w
+	}
+
 	g.clearWideAt(x, y)
 	if w == 2 {
 		g.clearWideAt(x+1, y)
 	}
-	c.Width = uint8(w)
 	g.Set(x, y, c)
 	if w == 2 {
-		g.Set(x+1, y, Cell{FG: c.FG, BG: c.BG, Attr: c.Attr, Width: 0})
+		g.Set(x+1, y, cont)
 	}
 	return w
 }
@@ -237,7 +256,11 @@ func (g *Grid) SetString(x, y int, s string, fg, bg color.RGBA, attr Attr) int {
 		c.FG, c.BG, c.Attr = fg, bg, attr
 		n := g.SetWide(x, y, c)
 		if n == 0 {
-			break
+			// A double-width cluster with one column left. Blank the
+			// column rather than leaving whatever was under it, and
+			// report the row as full.
+			g.Set(x, y, Cell{Rune: ' ', FG: fg, BG: bg, Attr: attr, Width: 1})
+			return g.cols
 		}
 		x += n
 	}
@@ -247,19 +270,38 @@ func (g *Grid) SetString(x, y int, s string, fg, bg color.RGBA, attr Attr) int {
 // ClusterCell builds a cell from one grapheme cluster and its display
 // width. Width is clamped to 1 or 2: a terminal grid has no room for
 // anything else, and a zero-width cluster still has to land somewhere.
+//
+// Only true zero-width marks join the base rune. The remaining runes of
+// an emoji ZWJ sequence or a regional-indicator flag are full-size
+// glyphs; stacking them in one cell draws them on top of each other, so
+// they are dropped and only the first is shown.
 func ClusterCell(cluster string, width int) Cell {
 	c := Cell{Rune: ' ', Width: 1}
-	if width == 2 {
+	if width >= 2 {
 		c.Width = 2
 	}
-	for i, r := range []rune(cluster) {
-		if i == 0 {
-			c.Rune = r
+	first := true
+	for _, r := range cluster {
+		if first {
+			c.Rune = printable(r)
+			first = false
 			continue
 		}
-		c.Comb = append(c.Comb, r)
+		if RuneWidth(r) == 0 {
+			c.Comb = append(c.Comb, r)
+		}
 	}
 	return c
+}
+
+// printable maps control characters to a space. They have no glyph, and
+// letting one reach the atlas would cache a miss under a rune the caller
+// never meant to display.
+func printable(r rune) rune {
+	if r < 0x20 || r == 0x7f {
+		return ' '
+	}
+	return r
 }
 
 // ScrollUp moves every row up by n, discarding the top n rows and
@@ -379,4 +421,21 @@ func (g *Grid) dirtyRow(y int) {
 
 func (g *Grid) inBounds(x, y int) bool {
 	return x >= 0 && y >= 0 && x < g.cols && y < g.rows
+}
+
+// RuneWidth returns how many columns r occupies: 0 for a combining
+// mark, 2 for a double-width character, 1 otherwise.
+//
+// Every part of the program measures width through this one function.
+// A terminal that disagrees with its own grid about how wide a character
+// is will corrupt the screen, so there is deliberately no second source.
+func RuneWidth(r rune) int {
+	switch w := uniseg.StringWidth(string(r)); {
+	case w <= 0:
+		return 0
+	case w >= 2:
+		return 2
+	default:
+		return 1
+	}
 }

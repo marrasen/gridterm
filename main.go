@@ -9,10 +9,8 @@ package main
 import (
 	"errors"
 	"flag"
-	"fmt"
 	"io"
 	"log"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -305,32 +303,20 @@ func startSession(target string, command []string, cols, rows int) (session.Sess
 			Rows:    rows,
 		})
 	}
-	cfg, err := parseSSHTarget(target)
+	cfg, err := session.ParseSSHTarget(target)
 	if err != nil {
 		return nil, err
 	}
 	cfg.Command = command
 	cfg.Cols, cfg.Rows = cols, rows
+	// Without these, SSH works only with an agent or an unencrypted key
+	// on disk: a passphrase-protected key is skipped and password
+	// authentication is never even offered.
+	cfg.Passphrase = func(keyfile string) (string, error) {
+		return promptSecret("passphrase for " + keyfile + ": ")
+	}
+	cfg.Password = func() (string, error) {
+		return promptSecret("password for " + cfg.User + "@" + cfg.Host + ": ")
+	}
 	return session.StartSSH(cfg)
-}
-
-// parseSSHTarget splits [user@]host[:port].
-func parseSSHTarget(target string) (session.SSHConfig, error) {
-	var cfg session.SSHConfig
-	if user, rest, ok := strings.Cut(target, "@"); ok {
-		cfg.User, target = user, rest
-	}
-	if host, port, ok := strings.Cut(target, ":"); ok {
-		n, err := strconv.Atoi(port)
-		if err != nil {
-			return cfg, fmt.Errorf("ssh target %q: bad port %q", target, port)
-		}
-		cfg.Host, cfg.Port = host, n
-	} else {
-		cfg.Host = target
-	}
-	if cfg.Host == "" {
-		return cfg, fmt.Errorf("ssh target %q: no host", target)
-	}
-	return cfg, nil
 }

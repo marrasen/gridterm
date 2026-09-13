@@ -7,12 +7,16 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/knownhosts"
 )
 
 // testServer is a minimal SSH server that behaves enough like a shell to
@@ -26,6 +30,25 @@ type testServer struct {
 
 	mu       sync.Mutex
 	lastSize [2]int // cols, rows
+
+	conns []net.Conn
+
+	// writeMu serialises channel writes. x/crypto documents concurrent
+	// writes to one ssh.Channel as unsafe, and the request loop and the
+	// echo goroutine both write.
+	writeMu sync.Mutex
+}
+
+func (s *testServer) say(ch ssh.Channel, format string, args ...any) {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	fmt.Fprintf(ch, format, args...)
+}
+
+func (s *testServer) echoBack(ch ssh.Channel, b []byte) {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	_, _ = ch.Write(b)
 }
 
 const testPassword = "hunter2"
@@ -60,8 +83,23 @@ func newTestServer(t *testing.T) *testServer {
 	s.addr = s.ln.Addr().String()
 
 	go s.serve()
-	t.Cleanup(func() { _ = s.ln.Close() })
+	t.Cleanup(func() {
+		_ = s.ln.Close()
+		s.closeClients()
+	})
 	return s
+}
+
+// closeClients cuts every accepted connection, which is what a dropped
+// network looks like from the client's side.
+func (s *testServer) closeClients() {
+	s.mu.Lock()
+	conns := s.conns
+	s.conns = nil
+	s.mu.Unlock()
+	for _, c := range conns {
+		_ = c.Close()
+	}
 }
 
 func (s *testServer) host() (string, int) {
@@ -83,6 +121,9 @@ func (s *testServer) serve() {
 		if err != nil {
 			return
 		}
+		s.mu.Lock()
+		s.conns = append(s.conns, conn)
+		s.mu.Unlock()
 		go s.handle(conn)
 	}
 }
@@ -125,18 +166,18 @@ func (s *testServer) session(ch ssh.Channel, reqs <-chan *ssh.Request) {
 			s.mu.Lock()
 			s.lastSize = [2]int{cols, rows}
 			s.mu.Unlock()
-			fmt.Fprintf(ch, "SIZE %dx%d\n", cols, rows)
+			s.say(ch, "SIZE %dx%d\n", cols, rows)
 
 		case "shell":
 			_ = req.Reply(true, nil)
 			cols, rows := s.size()
-			fmt.Fprintf(ch, "READY %dx%d\n", cols, rows)
+			s.say(ch, "READY %dx%d\n", cols, rows)
 			go s.echo(ch)
 
 		case "exec":
 			_ = req.Reply(true, nil)
 			cmd := string(req.Payload[4:])
-			fmt.Fprintf(ch, "RAN %s\n", cmd)
+			s.say(ch, "RAN %s\n", cmd)
 			_, _ = ch.SendRequest("exit-status", false, exitStatus(0))
 			return
 
@@ -155,7 +196,7 @@ func (s *testServer) echo(ch ssh.Channel) {
 		n, err := ch.Read(buf)
 		if n > 0 {
 			line = append(line, buf[:n]...)
-			_, _ = ch.Write(buf[:n])
+			s.echoBack(ch, buf[:n])
 			if idx := strings.Index(string(line), "bye\n"); idx >= 0 {
 				_, _ = ch.SendRequest("exit-status", false, exitStatus(7))
 				_ = ch.Close()
@@ -183,6 +224,9 @@ func parsePtyReq(p []byte) (cols, rows int) {
 		return 0, 0
 	}
 	termLen := int(be32(p))
+	if termLen < 0 || 4+termLen > len(p) {
+		return 0, 0
+	}
 	rest := p[4+termLen:]
 	if len(rest) < 8 {
 		return 0, 0
@@ -212,6 +256,12 @@ func dialTest(t *testing.T, s *testServer, mut func(*SSHConfig)) Session {
 		Cols: 80, Rows: 24,
 		Password:        func() (string, error) { return testPassword, nil },
 		HostKeyCallback: ssh.FixedHostKey(s.hostKey),
+		// Without this the tests offer whatever keys the developer
+		// happens to have, so they exercise a different authentication
+		// path on a laptop than on a build machine — and a smartcard
+		// agent would make them hang.
+		NoAgent:    true,
+		Identities: []string{filepath.Join(t.TempDir(), "no-such-key")},
 	}
 	if mut != nil {
 		mut(&cfg)
@@ -336,6 +386,39 @@ func TestSSHRunsACommand(t *testing.T) {
 	}
 }
 
+// A dropped connection is not a clean logout. Reporting it as one hides
+// the difference between closing a window and losing the network.
+func TestSSHDroppedConnectionIsNotReportedAsACleanExit(t *testing.T) {
+	s := newTestServer(t)
+	sess := dialTest(t, s, nil)
+	readUntilRemote(t, sess, "READY", 5*time.Second)
+
+	// Cut the connection underneath the session.
+	s.closeClients()
+
+	done := make(chan error, 1)
+	go func() {
+		b := make([]byte, 256)
+		for {
+			if _, err := sess.Read(b); err != nil {
+				done <- err
+				return
+			}
+		}
+	}()
+	select {
+	case err := <-done:
+		if err == nil || err == io.EOF {
+			t.Fatalf("Read returned %v for a dropped connection, want a real error", err)
+		}
+		if !strings.Contains(err.Error(), "closed by the remote host") {
+			t.Fatalf("Read returned %v, want it to say the connection was closed", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Read never returned after the connection dropped")
+	}
+}
+
 // The host key must be checked. A terminal that silently trusts an
 // unknown key can be man-in-the-middled without anyone noticing.
 func TestSSHRejectsTheWrongHostKey(t *testing.T) {
@@ -389,28 +472,70 @@ func TestSSHRejectsABadPassword(t *testing.T) {
 	}
 }
 
-func TestSSHWaitIsIdempotent(t *testing.T) {
+// The remote exits 7, which must still read as an ordinary end of
+// session rather than an error.
+func TestSSHWaitReportsTheRemoteExitStatus(t *testing.T) {
 	s := newTestServer(t)
 	sess := dialTest(t, s, nil)
 	readUntilRemote(t, sess, "READY", 5*time.Second)
 	_, _ = sess.Write([]byte("bye\n"))
-	go io.Copy(io.Discard, sess)
+	drainRemote(t, sess)
 
-	first := sess.Wait()
-	if second := sess.Wait(); !sameErr(first, second) {
-		t.Fatalf("second Wait = %v, first = %v", second, first)
+	err := sess.Wait()
+	var exit *ssh.ExitError
+	if !errors.As(err, &exit) {
+		t.Fatalf("Wait returned %v (%T), want an *ssh.ExitError", err, err)
+	}
+	if got := exit.ExitStatus(); got != 7 {
+		t.Fatalf("exit status = %d, want 7", got)
+	}
+	if second := sess.Wait(); !sameErr(err, second) {
+		t.Fatalf("second Wait = %v, first = %v", second, err)
 	}
 }
 
-func TestSSHCloseIsIdempotent(t *testing.T) {
+func TestSSHCloseIsIdempotentAndConcurrent(t *testing.T) {
 	s := newTestServer(t)
 	sess := dialTest(t, s, nil)
 	if err := sess.Close(); err != nil {
 		t.Fatalf("first Close: %v", err)
 	}
-	if err := sess.Close(); err != nil {
-		t.Fatalf("second Close: %v", err)
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := sess.Close(); err != nil {
+				t.Errorf("concurrent Close: %v", err)
+			}
+		}()
 	}
+	wg.Wait()
+}
+
+// Closing the window with a keystroke still in flight used to race:
+// closing the session stdin writes a flag that Write reads.
+func TestSSHCloseRacingWriteIsSafe(t *testing.T) {
+	s := newTestServer(t)
+	sess := dialTest(t, s, nil)
+	readUntilRemote(t, sess, "READY", 5*time.Second)
+	drainRemote(t, sess)
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 200; i++ {
+			if _, err := sess.Write([]byte("x")); err != nil {
+				return
+			}
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		_ = sess.Close()
+	}()
+	wg.Wait()
 }
 
 func TestSSHNoHostIsAnError(t *testing.T) {
@@ -474,9 +599,178 @@ func readUntilRemote(t *testing.T, s Session, want string, timeout time.Duration
 	return sb.String()
 }
 
+// drainRemote reads and discards output so a test that is not asserting
+// on it cannot stall the remote.
+func drainRemote(t *testing.T, s Session) {
+	t.Helper()
+	go func() { _, _ = io.Copy(io.Discard, s) }()
+}
+
 func sameErr(a, b error) bool {
 	if a == nil || b == nil {
 		return a == nil && b == nil
 	}
 	return a.Error() == b.Error()
+}
+
+// writeKnownHosts builds a known_hosts file and returns its path.
+func writeKnownHosts(t *testing.T, lines ...string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "known_hosts")
+	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o600); err != nil {
+		t.Fatalf("write known_hosts: %v", err)
+	}
+	return path
+}
+
+func knownHostsLine(s *testServer) string {
+	host, port := s.host()
+	return knownhosts.Line([]string{net.JoinHostPort(host, strconv.Itoa(port))}, s.hostKey)
+}
+
+// The real known_hosts path, rather than the FixedHostKey the other
+// tests pin. Everything about host key checking lives in this function.
+func TestSSHAcceptsAHostInKnownHosts(t *testing.T) {
+	s := newTestServer(t)
+	host, port := s.host()
+
+	sess, err := StartSSH(SSHConfig{
+		Host: host, Port: port, User: "tester", Cols: 80, Rows: 24,
+		KnownHosts: []string{writeKnownHosts(t, knownHostsLine(s))},
+		Password:   func() (string, error) { return testPassword, nil },
+		NoAgent:    true,
+		Identities: []string{filepath.Join(t.TempDir(), "none")},
+	})
+	if err != nil {
+		t.Fatalf("StartSSH with a matching known_hosts entry: %v", err)
+	}
+	_ = sess.Close()
+}
+
+// An unknown host and a changed key are different things and must say
+// so. Reporting an unknown host as "key mismatch" trains the user to
+// ignore the one message that matters.
+func TestSSHUnknownHostSaysSo(t *testing.T) {
+	s := newTestServer(t)
+	other := newTestServer(t)
+	host, port := s.host()
+
+	_, err := StartSSH(SSHConfig{
+		Host: host, Port: port, User: "tester", Cols: 80, Rows: 24,
+		// A file with an entry for a different host.
+		KnownHosts: []string{writeKnownHosts(t, knownHostsLine(other))},
+		Password:   func() (string, error) { return testPassword, nil },
+		NoAgent:    true,
+		Identities: []string{filepath.Join(t.TempDir(), "none")},
+	})
+	if err == nil {
+		t.Fatal("StartSSH accepted a host that is not in known_hosts")
+	}
+	if !strings.Contains(err.Error(), "not in known_hosts") {
+		t.Fatalf("error = %v, want it to say the host is not in known_hosts", err)
+	}
+}
+
+func TestSSHChangedHostKeySaysSo(t *testing.T) {
+	s := newTestServer(t)
+	other := newTestServer(t)
+	host, port := s.host()
+
+	// An entry for this address, but holding a different key.
+	otherHost, otherPort := other.host()
+	line := knownhosts.Line(
+		[]string{net.JoinHostPort(host, strconv.Itoa(port))}, other.hostKey)
+	_ = otherHost
+	_ = otherPort
+
+	_, err := StartSSH(SSHConfig{
+		Host: host, Port: port, User: "tester", Cols: 80, Rows: 24,
+		KnownHosts: []string{writeKnownHosts(t, line)},
+		Password:   func() (string, error) { return testPassword, nil },
+		NoAgent:    true,
+		Identities: []string{filepath.Join(t.TempDir(), "none")},
+	})
+	if err == nil {
+		t.Fatal("StartSSH accepted a host whose key had changed")
+	}
+	if !strings.Contains(err.Error(), "does not match") {
+		t.Fatalf("error = %v, want it to say the key does not match", err)
+	}
+	if !strings.Contains(err.Error(), "man-in-the-middle") {
+		t.Fatalf("error = %v, want it to name the risk", err)
+	}
+}
+
+// OpenSSH skips a line it cannot parse. knownhosts.New rejects the whole
+// file, so one truncated entry — or one written by a newer OpenSSH with
+// a key type this version does not know — would otherwise disable SSH
+// for every host.
+func TestSSHSkipsUnparseableKnownHostsLines(t *testing.T) {
+	s := newTestServer(t)
+	host, port := s.host()
+
+	kh := writeKnownHosts(t,
+		"garbage-line-with-no-key",
+		"somehost ssh-ed25519 not-base64!!",
+		"somehost ssh-brandnew AAAA",
+		"# a comment",
+		knownHostsLine(s),
+	)
+
+	sess, err := StartSSH(SSHConfig{
+		Host: host, Port: port, User: "tester", Cols: 80, Rows: 24,
+		KnownHosts: []string{kh},
+		Password:   func() (string, error) { return testPassword, nil },
+		NoAgent:    true,
+		Identities: []string{filepath.Join(t.TempDir(), "none")},
+	})
+	if err != nil {
+		t.Fatalf("StartSSH: %v; one bad line disabled the whole file", err)
+	}
+	_ = sess.Close()
+}
+
+func TestSSHKnownHostsWithOnlyBadLinesIsAnError(t *testing.T) {
+	s := newTestServer(t)
+	host, port := s.host()
+
+	_, err := StartSSH(SSHConfig{
+		Host: host, Port: port, User: "tester", Cols: 80, Rows: 24,
+		KnownHosts: []string{writeKnownHosts(t, "garbage", "more garbage")},
+		Password:   func() (string, error) { return testPassword, nil },
+		NoAgent:    true,
+		Identities: []string{filepath.Join(t.TempDir(), "none")},
+	})
+	if err == nil {
+		t.Fatal("StartSSH connected with no usable known_hosts entries")
+	}
+	if !strings.Contains(err.Error(), "known_hosts") {
+		t.Fatalf("error = %v, want it to mention known_hosts", err)
+	}
+}
+
+func TestSessionEnd(t *testing.T) {
+	cases := []struct {
+		name    string
+		err     error
+		wantEOF bool
+	}{
+		{"clean exit", nil, true},
+		{"non-zero exit", &ssh.ExitError{}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := sessionEnd(tc.err)
+			if (got == io.EOF) != tc.wantEOF {
+				t.Errorf("sessionEnd(%v) = %v, want EOF=%v", tc.err, got, tc.wantEOF)
+			}
+		})
+	}
+
+	// A session that ends with no exit status is a dropped connection,
+	// not a logout.
+	got := sessionEnd(&ssh.ExitMissingError{})
+	if got == io.EOF || got == nil {
+		t.Fatalf("sessionEnd(ExitMissingError) = %v, want a real error", got)
+	}
 }

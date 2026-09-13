@@ -19,10 +19,19 @@ import (
 // it wrong corrupts geometry rather than failing loudly.
 const maxBatchVerts = 65532
 
-// barThickness is how many pixels wide an underline or bar cursor is,
-// before scaling. Kept to a share of the cell so it stays visible at
+// barFraction sets how thick a bar or underline cursor is, as a
+// fraction of the cell height. Kept proportional so it stays visible at
 // small sizes without swallowing the glyph at large ones.
 const barFraction = 8
+
+// lineFraction sets how thick an underline or strikethrough rule is.
+// Thinner than the cursor: it sits under text rather than replacing it.
+const lineFraction = 14
+
+// dimFactor is how far a dim cell's foreground is blended towards its
+// background. SGR 2 has no exact definition; this matches what most
+// terminals do.
+const dimFactor = 0.55
 
 // Stats reports what the last frame cost, so a caller can see whether
 // batching and damage tracking are actually doing anything.
@@ -130,6 +139,7 @@ func (r *Renderer) Draw(dst *ebiten.Image, g *grid.Grid) {
 				float32((x1-x0)*m.CellW), float32(m.CellH),
 				0, 0, 1, 1, c)
 		})
+		r.pushRules(dst, g, y, m)
 		if curVisible && cur.Y == y {
 			r.pushCursor(dst, g, cur, m)
 		}
@@ -164,6 +174,9 @@ func (r *Renderer) Draw(dst *ebiten.Image, g *grid.Grid) {
 			// has to come back out in the background colour.
 			if curVisible && cur.Style == grid.CursorBlock && cur.X == x && cur.Y == y {
 				fg = bgOf(g, x, y)
+			}
+			if c.Attr&grid.AttrDim != 0 {
+				fg = blend(fg, bgOf(g, x, y), dimFactor)
 			}
 			r.pushGlyph(dst, x, y, c.Rune, style, fg, m)
 			for _, cb := range c.Comb {
@@ -202,6 +215,64 @@ func (r *Renderer) pushGlyph(
 		float32(gl.Rect.Min.X), float32(gl.Rect.Min.Y),
 		float32(gl.Rect.Max.X), float32(gl.Rect.Max.Y),
 		fg)
+}
+
+// pushRules queues the underline and strikethrough rules for a row,
+// merging adjacent cells that share an attribute and colour into one
+// quad. They go in the background pass so the glyph lands on top, which
+// is what keeps an underline from cutting through a descender.
+func (r *Renderer) pushRules(dst *ebiten.Image, g *grid.Grid, y int, m glyph.Metrics) {
+	cols, _ := g.Size()
+	thick := float32(max(m.CellH/lineFraction, 1))
+
+	for _, rule := range []struct {
+		attr grid.Attr
+		top  float32
+	}{
+		// Just below the baseline for the underline, and through the
+		// middle of the x-height for the strikethrough.
+		{grid.AttrUnderline, float32(min(m.Ascent+1, m.CellH-int(thick)))},
+		{grid.AttrStrike, float32(m.Ascent) * 0.65},
+	} {
+		runStart := -1
+		var runColor color.RGBA
+		flush := func(end int) {
+			if runStart < 0 {
+				return
+			}
+			r.push(dst, &r.bg,
+				float32(runStart*m.CellW), float32(y*m.CellH)+rule.top,
+				float32((end-runStart)*m.CellW), thick,
+				0, 0, 1, 1, runColor)
+			runStart = -1
+		}
+		for x := 0; x < cols; x++ {
+			c := g.At(x, y)
+			col := g.FGOf(x, y)
+			if c.Attr&grid.AttrDim != 0 {
+				col = blend(col, bgOf(g, x, y), dimFactor)
+			}
+			on := c.Attr&rule.attr != 0 && c.Attr&grid.AttrHidden == 0 && col.A != 0
+			switch {
+			case !on:
+				flush(x)
+			case runStart < 0:
+				runStart, runColor = x, col
+			case col != runColor:
+				flush(x)
+				runStart, runColor = x, col
+			}
+		}
+		flush(cols)
+	}
+}
+
+// blend mixes a towards b by t, in straight (non-premultiplied) space.
+func blend(a, b color.RGBA, t float64) color.RGBA {
+	mix := func(x, y uint8) uint8 {
+		return uint8(float64(x)*(1-t) + float64(y)*t)
+	}
+	return color.RGBA{mix(a.R, b.R), mix(a.G, b.G), mix(a.B, b.B), a.A}
 }
 
 // pushCursor queues the cursor's own quad. A block cursor fills the

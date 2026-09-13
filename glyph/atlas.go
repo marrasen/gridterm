@@ -64,6 +64,18 @@ type Atlas struct {
 	faces   [numStyles]font.Face
 	metrics Metrics
 
+	// sizePt and dpi are kept so fallback faces can be built at the same
+	// size as the primary one.
+	sizePt, dpi float64
+
+	// fallbacks are system fonts consulted for runes the primary font
+	// has no glyph for: CJK, heavy box-drawing, braille. They are found
+	// and loaded lazily, on the first miss, because walking the font
+	// directories is not worth doing for a session that never needs one.
+	fallbacks     []font.Face
+	fallbackPaths []string
+	fallbackDone  bool
+
 	pages []*ebiten.Image
 	cache map[key]Glyph
 
@@ -79,7 +91,7 @@ type Atlas struct {
 // and bold weights at the given size. Pass nil for boldTTF to reuse the
 // regular face for bold text.
 func NewAtlas(regularTTF, boldTTF []byte, sizePt, dpi float64) (*Atlas, error) {
-	a := &Atlas{cache: make(map[key]Glyph, 512)}
+	a := &Atlas{cache: make(map[key]Glyph, 512), sizePt: sizePt, dpi: dpi}
 
 	mkFace := func(b []byte) (font.Face, error) {
 		f, err := sfnt.Parse(b)
@@ -154,11 +166,26 @@ func (a *Atlas) Get(r rune, style Style) Glyph {
 }
 
 func (a *Atlas) rasterise(r rune, style Style) Glyph {
+	// Box-drawing and block characters are drawn to the exact cell size
+	// rather than taken from a font, so adjacent cells join up.
+	if drawnRune(r) {
+		return a.rasteriseDrawn(r)
+	}
 	face := a.faces[style]
 
 	bounds, _, ok := face.GlyphBounds(r)
 	if !ok {
-		// Unmapped rune. Cache the miss so we do not retry every frame.
+		// The primary font has no glyph. Ask the system fonts before
+		// giving up, so CJK and the heavier box-drawing characters draw
+		// instead of vanishing.
+		if fb := a.fallbackFor(r); fb != nil {
+			face = fb
+			bounds, _, ok = face.GlyphBounds(r)
+		}
+	}
+	if !ok {
+		// Genuinely unmapped. Cache the miss so we do not retry it every
+		// frame.
 		return Glyph{Empty: true}
 	}
 
@@ -203,6 +230,25 @@ func (a *Atlas) rasterise(r rune, style Style) Glyph {
 	}
 }
 
+// rasteriseDrawn renders a procedurally drawn glyph, which always fills
+// the whole cell and so needs no glyph metrics.
+func (a *Atlas) rasteriseDrawn(r rune) Glyph {
+	rect := cellRect(a.metrics)
+	w, h := rect.Dx(), rect.Dy()
+	need := 4 * w * h
+	if cap(a.scratch) < need {
+		a.scratch = make([]byte, need)
+	}
+	buf := a.scratch[:need]
+	clear(buf)
+	if !drawCellGlyph(r, w, h, buf) {
+		return Glyph{Empty: true}
+	}
+	page, dst := a.alloc(w, h)
+	a.pages[page].SubImage(dst).(*ebiten.Image).WritePixels(buf)
+	return Glyph{Page: page, Rect: dst}
+}
+
 // alloc reserves a w by h region, starting a new shelf or a new page
 // when the current one is full. It returns the page index and the region.
 func (a *Atlas) alloc(w, h int) (int, image.Rectangle) {
@@ -228,6 +274,55 @@ func (a *Atlas) alloc(w, h int) (int, image.Rectangle) {
 func (a *Atlas) newPage() {
 	a.pages = append(a.pages, ebiten.NewImage(pageSize, pageSize))
 	a.shelfX, a.shelfY, a.shelfH = 0, 0, 0
+}
+
+// fallbackFor returns the first system font that can draw r, loading
+// candidates on demand. It returns nil when none can.
+func (a *Atlas) fallbackFor(r rune) font.Face {
+	for _, f := range a.fallbacks {
+		if _, _, ok := f.GlyphBounds(r); ok {
+			return f
+		}
+	}
+	for !a.fallbackDone {
+		f := a.loadNextFallback()
+		if f == nil {
+			break
+		}
+		if _, _, ok := f.GlyphBounds(r); ok {
+			return f
+		}
+	}
+	return nil
+}
+
+// loadNextFallback loads one more candidate font, or returns nil when
+// the list is exhausted.
+func (a *Atlas) loadNextFallback() font.Face {
+	if a.fallbackPaths == nil && !a.fallbackDone {
+		a.fallbackPaths = findFallbackFiles()
+		if len(a.fallbackPaths) == 0 {
+			a.fallbackDone = true
+			return nil
+		}
+	}
+	for len(a.fallbackPaths) > 0 {
+		path := a.fallbackPaths[0]
+		a.fallbackPaths = a.fallbackPaths[1:]
+		f, err := loadFace(path, a.sizePt, a.dpi)
+		if err != nil {
+			// A font that will not parse is not worth reporting; there
+			// are other candidates and the glyph may not be needed.
+			continue
+		}
+		a.fallbacks = append(a.fallbacks, f)
+		if len(a.fallbackPaths) == 0 {
+			a.fallbackDone = true
+		}
+		return f
+	}
+	a.fallbackDone = true
+	return nil
 }
 
 func ceil26_6(v fixed.Int26_6) int  { return int((v + 63) >> 6) }

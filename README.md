@@ -6,7 +6,7 @@ It runs a shell on a local pseudo-terminal — a PTY on Unix, a ConPTY on
 Windows — or on another machine over SSH, feeds the output through a VT
 emulator, and draws the resulting character grid as batched triangles.
 
-5,900 lines of Go, 3,000 lines of tests, 230 tests.
+5,946 lines of Go, 3,228 lines of tests, 236 tests.
 
 ![a shell running in gridterm](docs/shell.png)
 
@@ -81,13 +81,13 @@ encoders and both session types.
 
 | Package | Lines | Needs a GPU? | What it is |
 |---|---|---|---|
-| `vt` | 1,439 | no | the VT emulator: parser, screen model, two buffers, scrollback |
-| `grid` | 446 | no | the display grid, damage tracking, wide-character invariants |
-| `input` | 528 | no | key, text and mouse events to VT bytes |
-| `session` | 633 | no | a shell as a byte stream: local pty or SSH |
-| `glyph` | 683 | yes | glyph atlas, system font fallback, box drawing |
-| `render` | 378 | yes | grid to batched triangles |
-| `main.go` | 336 | yes | the window and the wiring |
+| `vt` | 1,720 | no | the VT emulator: parser, screen model, two buffers, scrollback |
+| `grid` | 592 | no | the display grid, damage tracking, selection, wide-character invariants |
+| `input` | 818 | no | key, text, mouse and paste events to VT bytes |
+| `session` | 983 | no | a shell as a byte stream: local pty or SSH |
+| `glyph` | 866 | yes | glyph atlas, system font fallback, box drawing |
+| `render` | 368 | yes | grid to batched triangles |
+| `main` | 515 | yes | the window and the wiring |
 
 The layering is deliberate: `vt` never imports the renderer, `input`
 never imports ebiten (that lives in `input/ebitenin`), and `session`

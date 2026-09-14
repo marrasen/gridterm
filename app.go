@@ -520,7 +520,7 @@ func (a *app) commands() {
 		ui.Command{ID: "panel.toggle", Title: "Show or hide the connections",
 			Run: a.togglePanel},
 		ui.Command{ID: "panel.focus", Title: "Go to the connections", Run: a.focusPanel},
-		ui.Command{ID: "conn.terminal", Title: "Open another terminal here",
+		ui.Command{ID: "conn.terminal", Title: "Open a terminal here",
 			Run: a.openTerminalHere},
 		ui.Command{ID: "conn.command", Title: "Run a command…", Run: a.openCommandHere},
 		ui.Command{ID: "conn.tunnel", Title: "Open a tunnel…", Run: a.openTunnelHere},

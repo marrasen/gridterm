@@ -155,6 +155,13 @@ func (a *app) paneStyle() files.Style {
 		// is what the next key acts on, the other what the last one did.
 		ClipFG: a.colours.ANSI[5],
 		NoteFG: a.colours.ANSI[8],
+		// The bar along the bottom: a key is read on the pane's own
+		// ground, so it wants the window's own foreground rather than
+		// the dim one a note is written in. A key with nothing behind it
+		// sits on a ground between the bar and a working key -- dimmer
+		// than one that works, and still lit enough to read.
+		KeyFG: a.colours.FG,
+		OffBG: mix(a.colours.BG, a.colours.FG, 1, 5),
 		// Red, because a line saying why something failed has to read as
 		// a failure before it is read as words.
 		ErrorFG: a.colours.ANSI[1],

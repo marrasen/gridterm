@@ -22,8 +22,14 @@ func styled() Style {
 	return Style{
 		FG: white, BG: black,
 		SelectedFG: black, SelectedBG: white,
-		HeaderFG: white, DirFG: white, LinkFG: white, MarkedFG: white,
-		NoteFG: white, ErrorFG: white,
+		HeaderFG: white, PathFG: white, DirFG: white, LinkFG: white,
+		MarkedFG: white, ClipFG: white,
+		NoteFG:  color.RGBA{R: 90, G: 90, B: 90, A: 255},
+		ErrorFG: white,
+		// The bar: a key is read on the pane's own ground, and one with
+		// nothing behind it on a ground between the two. Told apart from
+		// NoteFG, or a test could not say which one the bar used.
+		KeyFG: white, OffBG: color.RGBA{R: 60, G: 60, B: 60, A: 255},
 	}
 }
 
@@ -706,8 +712,8 @@ func TestBrowserSaysWhatTheKeysDo(t *testing.T) {
 
 	bar := rows[len(rows)-1]
 	for _, want := range []string{
-		"Tab", "Next", "2", "Rename", "5", "Copy", "6", "Cut",
-		"7", "Paste", "8", "Delete", "9", "Mkdir", "10", "Close",
+		"Tab", "Next", "F2", "Rename", "^C", "Copy", "^X", "Cut",
+		"^V", "Paste", "F8", "Delete", "F9", "Mkdir", "^D", "Close",
 	} {
 		if !strings.Contains(bar, want) {
 			t.Errorf("the bar reads %q, missing %q", bar, want)
@@ -750,16 +756,16 @@ func TestClickingTheBarRunsTheKey(t *testing.T) {
 
 	// Copy, then the next pane, then paste: three clicks on the bar, the
 	// same three keys.
-	clickKey := func(k input.Key) {
+	clickKey := func(chord string) {
 		t.Helper()
 		i := -1
 		for at, key := range b.keys {
-			if key.Key == k {
+			if key.Chord == chord {
 				i = at
 			}
 		}
 		if i < 0 {
-			t.Fatalf("%v is not on the bar", k)
+			t.Fatalf("%q is not on the bar", chord)
 		}
 		start, _ := keyCell(i, 60, len(b.keys))
 		took, err := b.HandleMouse(input.MouseEvent{
@@ -772,9 +778,9 @@ func TestClickingTheBarRunsTheKey(t *testing.T) {
 			t.Fatal("the click on the bar travelled on")
 		}
 	}
-	clickKey(input.KeyF5)
-	clickKey(input.KeyTab)
-	clickKey(input.KeyF7)
+	clickKey("^C")
+	clickKey("Tab")
+	clickKey("^V")
 
 	if len(asked) != 1 {
 		t.Fatalf("the bar asked for %d copies", len(asked))
@@ -802,6 +808,16 @@ func TestAClickOnTheBarStaysOnIt(t *testing.T) {
 	if b.Here().At() != was {
 		t.Fatalf("the click moved the keys to %q", b.Here().At())
 	}
+}
+
+// wiredKey reports whether the bar offers the key with this chord.
+func wiredKey(b *Browser, chord string) bool {
+	for _, k := range b.keys {
+		if k.Chord == chord {
+			return b.wired(k)
+		}
+	}
+	return false
 }
 
 // Every column of the bar belongs to the key drawn there, all the way
@@ -930,14 +946,23 @@ func TestTheBarShowsAKeyWithNothingBehindIt(t *testing.T) {
 	b.Layout(ui.Size{Cols: 60, Rows: 12})
 	b.Draw(g.View())
 
-	// Copy is wired and Delete is not, so the two read differently.
+	// Copy is wired and Delete is not, so the two read differently. The
+	// one with nothing behind it is still lit enough to read: dimmer
+	// than a working key and brighter than the bar's own ground.
 	copyAt, _ := keyCell(2, 60, len(b.keys))
 	deleteAt, _ := keyCell(5, 60, len(b.keys))
-	if got := g.At(copyAt+1, 11).BG; got != styled().SelectedBG {
+	if got := g.At(copyAt+2, 11).BG; got != styled().SelectedBG {
 		t.Errorf("a wired key is drawn on %v, want it marked out", got)
 	}
-	if got := g.At(deleteAt+1, 11).BG; got == styled().SelectedBG {
+	off := g.At(deleteAt+2, 11).BG
+	if off == styled().SelectedBG {
 		t.Error("a key with nothing behind it is drawn as though it does something")
+	}
+	if off == styled().BG {
+		t.Error("a key with nothing behind it is drawn on the bar's own ground")
+	}
+	if off != styled().OffBG {
+		t.Errorf("a key with nothing behind it is drawn on %v", off)
 	}
 }
 
@@ -1015,7 +1040,7 @@ func TestOnePaneHasNowhereToTabTo(t *testing.T) {
 	if took, _ := b.HandleKey(input.Event{Kind: input.KeyPress, Key: input.KeyTab}); took {
 		t.Error("the one pane swallowed Tab")
 	}
-	if b.wired(input.KeyTab) {
+	if wiredKey(b, "Tab") {
 		t.Error("the bar offers the next pane with one pane open")
 	}
 
@@ -1424,14 +1449,14 @@ func TestACutIsPastedOnce(t *testing.T) {
 func TestPasteIsNotOfferedWithAnEmptyClipboard(t *testing.T) {
 	b, dirs := many(t, 2)
 	b.OnCopy = func(Work) {}
-	if b.wired(input.KeyF7) {
+	if wiredKey(b, "^V") {
 		t.Fatal("the bar offers paste with nothing on the clipboard")
 	}
 	write(t, dirs[0], "one.txt", "one")
 	b.Here().Reload()
 	press(t, b, input.KeyDown)
 	press(t, b, input.KeyF5)
-	if !b.wired(input.KeyF7) {
+	if !wiredKey(b, "^V") {
 		t.Fatal("the bar does not offer paste with something on the clipboard")
 	}
 }
@@ -1554,17 +1579,21 @@ func TestShiftTabGoesBackAPane(t *testing.T) {
 // The bar says how to close a pane, and the key says which one.
 func TestTheBarClosesAPane(t *testing.T) {
 	b, dirs := many(t, 3)
-	if b.wired(input.KeyF10) {
+	if wiredKey(b, "^D") {
 		t.Fatal("the bar offers to close a pane with nothing wired to it")
 	}
 
 	var closed []*Pane
 	b.OnClose = func(p *Pane) { closed = append(closed, p) }
-	if !b.wired(input.KeyF10) {
+	if !wiredKey(b, "^D") {
 		t.Fatal("the bar does not offer to close a pane")
 	}
 	press(t, b, input.KeyTab)
-	press(t, b, input.KeyF10)
+	if _, err := b.HandleKey(input.Event{
+		Kind: input.KeyPress, Key: input.KeyD, Mods: input.ModCtrl,
+	}); err != nil {
+		t.Fatalf("ctrl+d: %v", err)
+	}
 	if len(closed) != 1 || closed[0].At() != dirs[1] {
 		t.Fatalf("it asked to close %v, want the pane with the keys", closed)
 	}
@@ -1582,7 +1611,7 @@ func TestTheBarSpacesTheKeyFromItsName(t *testing.T) {
 	b.Style = styled()
 	rows := drawBrowser(b, 100, 12)
 	bar := rows[11]
-	for _, want := range []string{"Tab Next", "2 Rename", "5 Copy", "7 Paste", "10 Close"} {
+	for _, want := range []string{"Tab Next", "F2 Rename", "^C Copy", "^V Paste", "^D Close"} {
 		if !strings.Contains(bar, want) {
 			t.Errorf("the bar reads %q, want %q in it", bar, want)
 		}
@@ -1647,7 +1676,7 @@ func TestPasteIsNotOfferedWithoutTheOneThatDoesIt(t *testing.T) {
 	// A cut needs the mover, and only the copier is wired.
 	b.OnCopy = func(Work) {}
 	press(t, b, input.KeyF6)
-	if b.wired(input.KeyF7) {
+	if wiredKey(b, "^V") {
 		t.Fatal("the bar offers to paste a cut with nothing to move it")
 	}
 	if took, _ := b.HandleKey(input.Event{Kind: input.KeyPress, Key: input.KeyF7}); took {
@@ -1655,7 +1684,141 @@ func TestPasteIsNotOfferedWithoutTheOneThatDoesIt(t *testing.T) {
 	}
 	// And the other way round.
 	b.OnMove, b.OnCopy = func(Work) {}, nil
-	if !b.wired(input.KeyF7) {
+	if !wiredKey(b, "^V") {
 		t.Fatal("the bar does not offer to paste a cut with a mover wired")
+	}
+}
+
+// Copy, cut and paste are the chords they are everywhere else.
+func TestTheClipboardChords(t *testing.T) {
+	b, dirs := many(t, 2)
+	write(t, dirs[0], "one.txt", "one")
+	b.Here().Reload()
+	press(t, b, input.KeyDown)
+
+	var copied, moved int
+	b.OnCopy = func(Work) { copied++ }
+	b.OnMove = func(Work) { moved++ }
+
+	ctrl := func(k input.Key) {
+		t.Helper()
+		took, err := b.HandleKey(input.Event{Kind: input.KeyPress, Key: k, Mods: input.ModCtrl})
+		if err != nil {
+			t.Fatalf("ctrl+%v: %v", k, err)
+		}
+		if !took {
+			t.Fatalf("ctrl+%v travelled on", k)
+		}
+	}
+
+	ctrl(input.KeyC)
+	if b.Clip().Empty() || b.Clip().Cut {
+		t.Fatal("ctrl+c put no copy on the clipboard")
+	}
+	press(t, b, input.KeyTab)
+	ctrl(input.KeyV)
+	if copied != 1 {
+		t.Fatalf("ctrl+v asked for %d copies", copied)
+	}
+
+	press(t, b, input.KeyTab)
+	press(t, b, input.KeyDown)
+	ctrl(input.KeyX)
+	if !b.Clip().Cut {
+		t.Fatal("ctrl+x put no cut on the clipboard")
+	}
+	press(t, b, input.KeyTab)
+	ctrl(input.KeyV)
+	if moved != 1 {
+		t.Fatalf("ctrl+v asked for %d moves", moved)
+	}
+}
+
+// Escape empties the clipboard: one the user has forgotten about is one
+// that pastes something they did not mean.
+func TestEscapeClearsTheClipboard(t *testing.T) {
+	b, dirs := many(t, 2)
+	write(t, dirs[0], "one.txt", "one")
+	b.Here().Reload()
+	press(t, b, input.KeyDown)
+
+	// With nothing on it, Escape is not the browser's to take.
+	if took, _ := b.HandleKey(input.Event{Kind: input.KeyPress, Key: input.KeyEscape}); took {
+		t.Error("Escape was taken with an empty clipboard")
+	}
+
+	press(t, b, input.KeyF5)
+	if b.Clip().Empty() {
+		t.Fatal("copy put nothing on the clipboard")
+	}
+	took, err := b.HandleKey(input.Event{Kind: input.KeyPress, Key: input.KeyEscape})
+	if err != nil || !took {
+		t.Fatalf("Escape took %v, err %v", took, err)
+	}
+	if !b.Clip().Empty() {
+		t.Fatal("Escape left the clipboard alone")
+	}
+	// And the marks it put on the pane go with it.
+	if b.Panes()[0].isClipped("one.txt") {
+		t.Fatal("the name is still marked as waiting to be pasted")
+	}
+}
+
+// The F keys a two-pane browser has always used still work, even though
+// the bar names the chords.
+func TestTheOldFunctionKeysStillWork(t *testing.T) {
+	b, dirs := many(t, 2)
+	write(t, dirs[0], "one.txt", "one")
+	b.Here().Reload()
+	press(t, b, input.KeyDown)
+
+	var copied int
+	b.OnCopy = func(Work) { copied++ }
+	press(t, b, input.KeyF5)
+	press(t, b, input.KeyTab)
+	press(t, b, input.KeyF7)
+	if copied != 1 {
+		t.Fatalf("the old keys asked for %d copies", copied)
+	}
+}
+
+// A key on the bar is read on the pane's own ground, so it is written in
+// something brighter than the dim colour a note beside a file uses.
+func TestTheBarDrawsItsKeysBrightly(t *testing.T) {
+	b, _ := many(t, 2)
+	b.Style = styled()
+	g := grid.New(100, 12, color.RGBA{}, color.RGBA{})
+	b.Layout(ui.Size{Cols: 100, Rows: 12})
+	b.Draw(g.View())
+
+	// The first cell of the first key is the "T" of Tab.
+	start, _ := keyCell(0, 100, len(b.keys))
+	cell := g.At(start, 11)
+	if cell.Rune != 'T' {
+		t.Fatalf("the bar starts with %q", cell.Rune)
+	}
+	if cell.FG != styled().KeyFG {
+		t.Fatalf("the key is drawn in %v, want the bright colour %v",
+			cell.FG, styled().KeyFG)
+	}
+	if cell.FG == styled().NoteFG {
+		t.Fatal("the key is drawn in the dim colour a note uses")
+	}
+}
+
+// The bar says F2 rather than 2, so a key with a name has its whole name
+// on it.
+func TestTheBarNamesTheFunctionKeys(t *testing.T) {
+	b, _ := many(t, 2)
+	b.Style = styled()
+	bar := drawBrowser(b, 100, 12)[11]
+	for _, want := range []string{"F2 Rename", "F8 Delete", "F9 Mkdir"} {
+		if !strings.Contains(bar, want) {
+			t.Errorf("the bar reads %q, want %q in it", bar, want)
+		}
+	}
+	// And not the bare number, which read as a count rather than a key.
+	if strings.Contains(bar, " 2 Rename") {
+		t.Errorf("the bar reads %q, want the F on it", bar)
 	}
 }

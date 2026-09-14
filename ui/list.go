@@ -19,6 +19,13 @@ type ListStyle struct {
 	// SelectedFG and SelectedBG mark the row Enter would act on.
 	SelectedFG, SelectedBG color.RGBA
 
+	// CurrentFG and CurrentBG mark that row while the list does not have
+	// the keys. A list that is a list of what is open has to say which
+	// one is in front whether or not the user is looking at the list.
+	// Leaving them with no alpha marks nothing, which is right for a
+	// list that is only a list.
+	CurrentFG, CurrentBG color.RGBA
+
 	// HeaderFG is a line that names a group rather than being one of it.
 	HeaderFG color.RGBA
 
@@ -362,11 +369,15 @@ func (l *List) paintRow(v grid.View, row ListRow, selected bool, y, rows int) {
 	case row.FG.A != 0:
 		fg = row.FG
 	}
-	if selected && l.focused {
+	switch {
+	case selected && l.focused:
 		fg, bg = l.Style.SelectedFG, l.Style.SelectedBG
 		// A colour picked to stand out against the other rows can
 		// disappear against the selected one. Whatever the row writes
 		// its own text in is the one colour known to show there.
+		noteFG = fg
+	case selected && l.Style.CurrentBG.A != 0:
+		fg, bg = l.Style.CurrentFG, l.Style.CurrentBG
 		noteFG = fg
 	}
 	v.Fill(grid.Cell{Rune: ' ', FG: fg, BG: bg, Width: 1})

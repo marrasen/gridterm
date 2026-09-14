@@ -527,3 +527,80 @@ func TestAServerIsNotOfferedAsItsOwnRoute(t *testing.T) {
 		t.Fatalf("the dialog offers %v, want the blank and edge", via.Options)
 	}
 }
+
+// The palette lists a terminal and a file pane for every machine by
+// name, including this one, so a machine can be reached by typing what
+// it is called rather than by first going to look at it.
+func TestEveryMachineHasItsOwnCommands(t *testing.T) {
+	s := sshtest.New(t)
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pinServers(t, a, s)
+	saveHost(t, a, "margit", s, "")
+	// saveHost writes straight to the book; the dialog that saves one in
+	// the window rebuilds the commands after it.
+	a.refreshServers()
+
+	for _, want := range []string{
+		"Open a terminal on Local", "Browse files on Local",
+		"Open a terminal on margit", "Browse files on margit",
+	} {
+		if !titled(a, want) {
+			t.Errorf("the palette has no %q: %v", want, commandTitles(a))
+		}
+	}
+	// And the ones that act on whatever is in front are still there.
+	for _, want := range []string{"Open a terminal here", "Browse files here"} {
+		if !titled(a, want) {
+			t.Errorf("the palette has no %q", want)
+		}
+	}
+	// "another" is gone: a terminal is a terminal.
+	for _, title := range commandTitles(a) {
+		if strings.Contains(title, "another terminal") {
+			t.Errorf("the palette still says %q", title)
+		}
+	}
+}
+
+// A machine the window has connected to gets its commands even though
+// the book never named it.
+func TestAConnectedMachineGetsItsOwnCommands(t *testing.T) {
+	s := sshtest.New(t)
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	a.connectAs("live", serverConfig(t, s))
+	waitForPanes(t, a, 2)
+
+	if !titled(a, "Browse files on live") {
+		t.Fatalf("the palette has no browse command for it: %v", commandTitles(a))
+	}
+	// And they go when it does.
+	if err := a.dropMachine("live"); err != nil {
+		t.Fatalf("dropMachine: %v", err)
+	}
+	if titled(a, "Browse files on live") {
+		t.Fatalf("the commands outlived the connection: %v", commandTitles(a))
+	}
+}
+
+// commandTitles is what the registry is offering.
+func commandTitles(a *testApp) []string {
+	var out []string
+	for _, cmd := range a.root.Commands.All() {
+		out = append(out, cmd.Title)
+	}
+	return out
+}
+
+// titled reports whether a command with this title is registered.
+func titled(a *testApp, title string) bool {
+	for _, got := range commandTitles(a) {
+		if got == title {
+			return true
+		}
+	}
+	return false
+}

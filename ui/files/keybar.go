@@ -6,11 +6,18 @@ import (
 )
 
 // fkey is one key on the bar along the bottom of the browser: the key
-// itself, what the bar calls it, and what it does.
+// itself, the modifiers it wants, what the bar calls it, and what it
+// does.
 type fkey struct {
 	Key   input.Key
+	Mods  input.Mods
 	Chord string
 	Title string
+}
+
+// matches reports whether an event is this key.
+func (k fkey) matches(ev input.Event) bool {
+	return ev.Key == k.Key && ev.Mods == k.Mods
 }
 
 // browserKeys is what the bar offers.
@@ -20,14 +27,19 @@ type fkey struct {
 // knows those keys should not have to learn these.
 func browserKeys() []fkey {
 	return []fkey{
-		{input.KeyTab, "Tab", "Next"},
-		{input.KeyF2, "2", "Rename"},
-		{input.KeyF5, "5", "Copy"},
-		{input.KeyF6, "6", "Cut"},
-		{input.KeyF7, "7", "Paste"},
-		{input.KeyF8, "8", "Delete"},
-		{input.KeyF9, "9", "Mkdir"},
-		{input.KeyF10, "10", "Close"},
+		{Key: input.KeyTab, Chord: "Tab", Title: "Next"},
+		{Key: input.KeyF2, Chord: "F2", Title: "Rename"},
+		// Copy, cut and paste are the chords they are everywhere else. A
+		// file pane is not a terminal, so nothing else wants them here.
+		{Key: input.KeyC, Mods: input.ModCtrl, Chord: "^C", Title: "Copy"},
+		{Key: input.KeyX, Mods: input.ModCtrl, Chord: "^X", Title: "Cut"},
+		{Key: input.KeyV, Mods: input.ModCtrl, Chord: "^V", Title: "Paste"},
+		{Key: input.KeyF8, Chord: "F8", Title: "Delete"},
+		{Key: input.KeyF9, Chord: "F9", Title: "Mkdir"},
+		// Not F10: the window opens its menu bar on that, and an
+		// accelerator wins before any widget sees the key. ^D is what
+		// closes a shell, which is near enough the same thing.
+		{Key: input.KeyD, Mods: input.ModCtrl, Chord: "^D", Title: "Close"},
 	}
 }
 
@@ -64,20 +76,20 @@ func keyAt(col, cols, n int) (int, bool) {
 //
 // Every cell is written once, with the same value each frame, so a
 // browser nobody is touching leaves the row clean.
-func drawKeys(v grid.View, y, cols int, keys []fkey, st Style, wired func(input.Key) bool) {
+func drawKeys(v grid.View, y, cols int, keys []fkey, st Style, wired func(fkey) bool) {
 	if cols <= 0 || len(keys) == 0 {
 		return
 	}
 	for i, k := range keys {
 		start, end := keyCell(i, cols, len(keys))
-		// The key itself, dim, the way a number is on the bar it was
-		// copied from.
+		// The key itself, on the bar's own ground, the way a number is
+		// on the bar this was copied from.
 		at := start
 		for _, r := range k.Chord {
 			if at >= end {
 				break
 			}
-			v.Set(at, y, grid.Cell{Rune: r, FG: st.NoteFG, BG: st.BG, Width: 1})
+			v.Set(at, y, grid.Cell{Rune: r, FG: st.KeyFG, BG: st.BG, Width: 1})
 			at++
 		}
 		// Then what it does, marked out, so the bar reads as a row of
@@ -85,10 +97,11 @@ func drawKeys(v grid.View, y, cols int, keys []fkey, st Style, wired func(input.
 		// word, inside the marked-out part, so the key and its name do
 		// not run into one another.
 		fg, bg := st.SelectedFG, st.SelectedBG
-		if wired != nil && !wired(k.Key) {
+		if wired != nil && !wired(k) {
 			// Nothing is wired to it here, so it is shown without being
-			// offered.
-			fg, bg = st.NoteFG, st.BG
+			// offered: dimmer than a key that works, and still lit
+			// enough to read.
+			fg, bg = st.KeyFG, st.OffBG
 		}
 		title := trimTitle(" "+k.Title, end-at)
 		at = v.SetString(at, y, title, fg, bg, 0)

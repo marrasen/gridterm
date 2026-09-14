@@ -66,6 +66,9 @@ func (a *app) hold(s step, conn *remote.Conn, via string) *machine {
 	}
 	a.machines[s.name] = m
 	a.registry.Add(m.entry)
+	// A machine the window has reached is worth a command of its own,
+	// whether or not it was ever saved.
+	a.refreshServers()
 
 	// A connection the far end drops is still held here, saying it is
 	// connected, until something notices. Nothing else here would.
@@ -121,8 +124,12 @@ func (a *app) machineDied(m *machine) {
 	m.entry.Reveal = nil
 	m.entry.Close = func() error {
 		a.registry.Drop(m.entry)
+		a.refreshServers()
 		return nil
 	}
+	// Whatever was on it has gone with it, so it is no longer a machine
+	// worth a command of its own.
+	a.refreshServers()
 	a.markDirty()
 }
 
@@ -159,6 +166,9 @@ func (a *app) dropMachine(name string) error {
 			errs = append(errs, a.closePane(t))
 		}
 	}
+	// Last, once everything that was on it has gone: a machine still
+	// holding a pane is still a machine worth a command.
+	a.refreshServers()
 	return errors.Join(errs...)
 }
 

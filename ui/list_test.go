@@ -689,3 +689,42 @@ func TestListKeepsTheNoteOffTheButton(t *testing.T) {
 		t.Fatalf("row = %q, want the note", row)
 	}
 }
+
+// A list that is a list of what is open marks the row in front even
+// while the keys are somewhere else.
+//
+// The sidebar is that list: which pane is being looked at has to show
+// whether or not the user is looking at the sidebar.
+func TestListMarksTheCurrentRowWithoutTheKeys(t *testing.T) {
+	current := color.RGBA{R: 40, G: 40, B: 90, A: 255}
+	l := newTestList(t, panelRows(), 40, 10)
+	l.Style.CurrentFG = fg
+	l.Style.CurrentBG = current
+	l.SetFocus(false)
+
+	g := drawList(l, 40, 10)
+	at := l.SelectedIndex()
+	if at < 0 {
+		t.Fatal("nothing is selected")
+	}
+	if got := g.At(1, at).BG; got != current {
+		t.Fatalf("the current row is drawn on %v, want %v", got, current)
+	}
+	// And every other row is the ordinary ground.
+	for y := 0; y < 10; y++ {
+		if y == at {
+			continue
+		}
+		if got := g.At(1, y).BG; got == current {
+			t.Fatalf("row %d is marked as well", y)
+		}
+	}
+
+	// With the keys, the selected colour wins: the two say different
+	// things and the stronger one is where the typing goes.
+	l.SetFocus(true)
+	g = drawList(l, 40, 10)
+	if got := g.At(1, at).BG; got != l.Style.SelectedBG {
+		t.Fatalf("with the keys the row is %v, want the selected colour", got)
+	}
+}

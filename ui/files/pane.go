@@ -71,6 +71,13 @@ type Style struct {
 	// ClipFG is a name waiting to be pasted somewhere.
 	ClipFG color.RGBA
 
+	// KeyFG is a key on the bar along the bottom, and OffBG the ground
+	// behind one with nothing wired to it. A key that does nothing here
+	// is still worth reading, so OffBG sits between the bar's own ground
+	// and the one a working key is marked out on.
+	KeyFG color.RGBA
+	OffBG color.RGBA
+
 	// NoteFG is the size or the time at the end of a row.
 	NoteFG color.RGBA
 

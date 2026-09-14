@@ -29,7 +29,7 @@ const dot = '\u2022'
 // it is. "Terminal" and "Files" were the widest thing on most rows and
 // said the same thing on every one of them.
 const (
-	terminalIcon = '\u276f' // a prompt
+	terminalIcon = '$'      // a shell prompt
 	commandIcon  = '\u25b8' // something that was run
 	filesIcon    = '\u25a4' // a listing
 	tunnelIcon   = '\u21c4' // going both ways
@@ -75,6 +75,11 @@ func (a *app) newPanel() *ui.List {
 		BGEnd: sidebarFoot(a.colours),
 	}
 	l.Style.BG = sidebarTop(a.colours)
+	// The row for whatever is in front, marked even while the keys are
+	// somewhere else: the sidebar is the list of what is open, so it has
+	// to say which one is being looked at.
+	l.Style.CurrentFG = a.colours.FG
+	l.Style.CurrentBG = a.colours.Selection
 	l.OnActivate = func(row ui.ListRow) error { return a.revealRow(row) }
 	l.OnButton = func(row ui.ListRow) error { return a.openHostMenu(row) }
 	return l
@@ -354,15 +359,11 @@ func (a *app) panelRow(row conns.Row, now time.Time) ui.ListRow {
 	return out
 }
 
-// note is what a row says at its end: how fast, or what it is carrying.
+// note is what a row says at its end.
 //
-// What state it is in is the dot's business now. The note is for things
-// the dot cannot say: a speed, a count, the machine a connection is
-// reached through.
-//
-// A speed comes first while one is worth showing, because that is the
-// answer to "is this working": a tunnel carrying two streams and moving
-// nothing is stuck, and the row has to be able to say so.
+// What state it is in is the dot's business, and how busy it is the
+// graph's. The note is for what neither can say: a count of streams, the
+// machine a connection is reached through, how far a job has got.
 func (a *app) note(row conns.Row, now time.Time) string {
 	if row.Meter == nil {
 		return row.Note
@@ -376,12 +377,11 @@ func (a *app) note(row conns.Row, now time.Time) string {
 		rate = &meter.Rate{}
 		a.rates[row.Entry] = rate
 	}
-	in, out := rate.Sample(row.Meter, now)
-	if row.State == meter.Active {
-		if speed := meter.Speed(max(in, out)); speed != "" {
-			return speed
-		}
-	}
+	// Sampled and thrown away: the sampling is what keeps the run the
+	// graph draws, and the graph is what the speed used to be for. The
+	// number itself took the widest part of the row and pushed out the
+	// one thing that says which connection this is.
+	rate.Sample(row.Meter, now)
 	return row.Note
 }
 

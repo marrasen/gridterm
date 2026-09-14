@@ -532,13 +532,17 @@ func TestATunnelRowSaysHowManyStreamsItHas(t *testing.T) {
 	if got := a.note(conns.Row{Entry: row, State: meter.Settled}, time.Now()); got != "2 streams" {
 		t.Fatalf("the row says %q, want 2 streams", got)
 	}
-	// Busy, so it says how fast instead.
+	// Busy, and it still says what it is carrying: how fast is the
+	// graph's business now, and a count is what the graph cannot say.
 	row.Meter.Moved(64*1024, 0, time.Now())
 	a.note(conns.Row{Entry: row, State: meter.Active}, time.Now())
 	row.Meter.Moved(64*1024, 0, time.Now().Add(time.Second))
 	got := a.note(conns.Row{Entry: row, State: meter.Active}, time.Now().Add(time.Second))
-	if !strings.Contains(got, "/s") {
-		t.Fatalf("a busy tunnel says %q, want a speed", got)
+	if got != "2 streams" {
+		t.Fatalf("a busy tunnel says %q, want what it is carrying", got)
+	}
+	if strings.Contains(got, "/s") {
+		t.Fatalf("a busy tunnel says %q, want no speed in words", got)
 	}
 }
 

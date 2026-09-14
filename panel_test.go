@@ -167,9 +167,49 @@ func TestPanelSaysNoStateInWords(t *testing.T) {
 	}
 }
 
-// A connection moving a lot says how fast rather than just that it is
-// busy.
-func TestPanelShowsASpeedWhileBytesAreMoving(t *testing.T) {
+// The sidebar marks the row for whatever is in front even while the keys
+// are somewhere else: it is the list of what is open, so it has to say
+// which one is being looked at.
+func TestTheSidebarMarksThePaneInFront(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	if err := a.openTab(); err != nil {
+		t.Fatalf("openTab: %v", err)
+	}
+	// The keys are in a pane, not in the sidebar.
+	a.panel.SetFocus(false)
+	a.refreshPanel(panelNow)
+	a.root.Draw(a.g.View())
+
+	area, shown := a.root.AreaOf(a.side)
+	if !shown {
+		t.Fatal("the sidebar is not on screen")
+	}
+	at := a.panel.SelectedIndex()
+	if at < 0 {
+		t.Fatal("nothing is selected")
+	}
+	marked := a.g.At(area.X+1, area.Y+at).BG
+	if marked != a.colours.Selection {
+		t.Fatalf("the row in front is drawn on %v, want the selection colour %v",
+			marked, a.colours.Selection)
+	}
+	// And the rows around it are not.
+	for y := 0; y < area.Rows-1; y++ {
+		if y == at {
+			continue
+		}
+		if got := a.g.At(area.X+1, area.Y+y).BG; got == marked {
+			t.Fatalf("row %d is marked as well", y)
+		}
+	}
+}
+
+// A connection moving a lot draws the run rather than naming a speed.
+//
+// The number took the widest part of the row and pushed out the one
+// thing that says which connection this is.
+func TestPanelDrawsTheRunRatherThanASpeed(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withPanel(t, a)
 	e := onlyPane(t, a)
@@ -178,9 +218,12 @@ func TestPanelShowsASpeedWhileBytesAreMoving(t *testing.T) {
 	panelText(a, panelNow) // the first sample, with nothing to compare to
 	e.Meter.Moved(64*1024, 0, panelNow.Add(time.Second))
 
-	got := panelText(a, panelNow.Add(time.Second))[1]
-	if !strings.Contains(got, "/s") {
-		t.Fatalf("row = %q, want a speed on it", got)
+	at := panelNow.Add(time.Second)
+	if got := panelText(a, at)[1]; strings.Contains(got, "/s") {
+		t.Fatalf("row = %q, want no speed in words", got)
+	}
+	if got := rowArt(a, e); got.Kind != grid.ArtGraph {
+		t.Fatalf("a busy row carries %v, want the run drawn", got)
 	}
 }
 
@@ -698,9 +741,17 @@ func TestPanelSpeedIsNotAveragedOverTheQuietSpell(t *testing.T) {
 
 	// And then a megabyte in one second.
 	e.Meter.Moved(1<<20, 0, quiet.Add(time.Second))
-	got := panelText(a, quiet.Add(time.Second))[1]
-	if !strings.Contains(got, "1.0 MB/s") {
-		t.Fatalf("row = %q, want 1.0 MB/s: the quiet spell was averaged in", got)
+	panelText(a, quiet.Add(time.Second))
+
+	rate := a.rates[e]
+	if rate == nil {
+		t.Fatal("the row has no rate")
+	}
+	past := rate.Past()
+	got := past[len(past)-1]
+	if want := uint64(1 << 20); got < want*9/10 || got > want*11/10 {
+		t.Fatalf("the last second is %d bytes, want about %d: the quiet spell was averaged in",
+			got, want)
 	}
 }
 

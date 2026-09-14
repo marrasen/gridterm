@@ -12,8 +12,10 @@ import (
 // What a saved server's commands are called. The prefixes let the
 // commands for one version of the list be taken away when it changes.
 const (
-	openPrefix = "server.open."
-	editPrefix = "server.edit."
+	openPrefix  = "server.open."
+	editPrefix  = "server.edit."
+	termPrefix  = "conn.terminal."
+	filesPrefix = "conn.files."
 )
 
 // refreshServers registers a command per saved machine and puts them on
@@ -33,18 +35,37 @@ func (a *app) refreshServers() {
 	}
 	a.serverCommands = nil
 
-	hosts := a.book.Hosts()
+	// A terminal and a file pane for every machine, this one included:
+	// the palette is searched by name, and a name is the thing the user
+	// has in mind. Connecting and editing are only for the saved ones --
+	// there is nothing to connect to on the machine already running.
+	for _, name := range a.everyHost() {
+		host := name
+		term := ui.Command{
+			ID:    termPrefix + remote.CommandName(host),
+			Title: "Open a terminal on " + groupName(host),
+			Run:   func() error { return a.openTerminalOn(host) },
+		}
+		browse := ui.Command{
+			ID:    filesPrefix + remote.CommandName(host),
+			Title: "Browse files on " + groupName(host),
+			Run:   func() error { return a.openFilesOn(host) },
+		}
+		a.registerServerCommands(a.reporting(term), a.reporting(browse))
+	}
+
 	var items []ui.MenuItem
-	for _, h := range hosts {
+	for _, h := range a.book.Hosts() {
+		host := h.Name
 		open := ui.Command{
-			ID:    openPrefix + remote.CommandName(h.Name),
-			Title: "Connect to " + h.Name,
-			Run:   func() error { return a.connectSaved(h.Name) },
+			ID:    openPrefix + remote.CommandName(host),
+			Title: "Connect to " + host,
+			Run:   func() error { return a.connectSaved(host) },
 		}
 		edit := ui.Command{
-			ID:    editPrefix + remote.CommandName(h.Name),
-			Title: "Edit " + h.Name + "…",
-			Run:   func() error { return a.openEditServer(h.Name) },
+			ID:    editPrefix + remote.CommandName(host),
+			Title: "Edit " + host + "…",
+			Run:   func() error { return a.openEditServer(host) },
 		}
 		for _, cmd := range []ui.Command{a.reporting(open), a.reporting(edit)} {
 			if err := a.root.Commands.Register(cmd); err != nil {
@@ -65,6 +86,38 @@ func (a *app) refreshServers() {
 	}
 	a.refreshServerMenu(items)
 }
+
+// registerServerCommands puts commands on the registry and remembers
+// their ids, so the next list can take them off again.
+//
+// A name that reduces to an id already taken is dropped rather than
+// losing the rest of the list over it.
+func (a *app) registerServerCommands(cmds ...ui.Command) {
+	for _, cmd := range cmds {
+		if err := a.root.Commands.Register(cmd); err != nil {
+			a.logError(err)
+			continue
+		}
+		a.serverCommands = append(a.serverCommands, cmd.ID)
+	}
+}
+
+// openTerminalOn opens a terminal on a machine: a tab here when it is
+// this one, and a shell over the connection otherwise.
+func (a *app) openTerminalOn(host string) error {
+	if a.isHere(host) {
+		return a.openTab()
+	}
+	return a.openOn(host, nil, nil)
+}
+
+// everyHost is every machine worth a command of its own: this one, the
+// saved servers, and anything the window has connected to along the way.
+//
+// Local is on the list because "browse files on this machine" is the
+// answer as often as any other, and it is the one machine the book never
+// names.
+func (a *app) everyHost() []string { return a.allHosts() }
 
 // refreshServerMenu puts the saved machines on the menu bar, under their
 // own title.

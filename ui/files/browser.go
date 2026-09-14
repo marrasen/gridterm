@@ -385,29 +385,34 @@ func (b *Browser) Draw(v grid.View) {
 }
 
 // wired reports whether a key on the bar has anything behind it here.
-func (b *Browser) wired(k input.Key) bool {
-	switch k {
-	case input.KeyTab:
+func (b *Browser) wired(k fkey) bool {
+	switch {
+	case k.matches(key(input.KeyTab, 0)):
 		return len(b.panes) > 1
-	case input.KeyF2:
+	case k.matches(key(input.KeyF2, 0)):
 		return b.OnRename != nil
-	case input.KeyF5:
+	case k.matches(key(input.KeyC, input.ModCtrl)):
 		return b.OnCopy != nil && b.Here() != nil
-	case input.KeyF6:
+	case k.matches(key(input.KeyX, input.ModCtrl)):
 		return b.OnMove != nil && b.Here() != nil
-	case input.KeyF7:
+	case k.matches(key(input.KeyV, input.ModCtrl)):
 		// Nothing picked out is nothing to paste, so the bar says so
 		// rather than offering a key that does nothing. Which of the two
 		// does the work depends on what is on the clipboard.
 		return !b.clip.Empty() && b.pasteWith() != nil
-	case input.KeyF8:
+	case k.matches(key(input.KeyF8, 0)):
 		return b.OnDelete != nil
-	case input.KeyF9:
+	case k.matches(key(input.KeyF9, 0)):
 		return b.OnMkdir != nil
-	case input.KeyF10:
+	case k.matches(key(input.KeyD, input.ModCtrl)):
 		return b.OnClose != nil
 	}
 	return false
+}
+
+// key is one key press, for asking whether a key on the bar is this one.
+func key(k input.Key, mods input.Mods) input.Event {
+	return input.Event{Kind: input.KeyPress, Key: k, Mods: mods}
 }
 
 // SetFocus passes the keys on to the pane that has them.
@@ -523,10 +528,7 @@ func (b *Browser) HandleKey(ev input.Event) (bool, error) {
 		b.Prev()
 		return true, nil
 	}
-	if ev.Mods != 0 {
-		return b.toPane(ev)
-	}
-	if took, err := b.press(ev.Key); took || err != nil {
+	if took, err := b.press(ev); took || err != nil {
 		return took, err
 	}
 	return b.toPane(ev)
@@ -543,13 +545,45 @@ func (b *Browser) toPane(ev input.Event) (bool, error) {
 
 // press runs what a key means, whether it was typed or clicked on the
 // bar. It reports whether the key was used.
-func (b *Browser) press(key input.Key) (bool, error) {
-	switch key {
+//
+// The F keys Midnight Commander uses for copy and move still work
+// alongside the chords on the bar: a user who knows those should not
+// have to unlearn them for the sake of the label.
+func (b *Browser) press(ev input.Event) (bool, error) {
+	if ev.Ctrl() {
+		switch ev.Key {
+		case input.KeyC:
+			return b.pick(false)
+		case input.KeyX:
+			return b.pick(true)
+		case input.KeyV:
+			return b.paste()
+		case input.KeyD:
+			if b.OnClose == nil || b.Here() == nil {
+				return false, nil
+			}
+			b.OnClose(b.Here())
+			return true, nil
+		}
+		return false, nil
+	}
+	if ev.Mods != 0 {
+		return false, nil
+	}
+	switch ev.Key {
 	case input.KeyTab:
 		if len(b.panes) < 2 {
 			return false, nil
 		}
 		b.Next()
+		return true, nil
+	case input.KeyEscape:
+		// Nothing left to paste. A clipboard the user has forgotten
+		// about is one that pastes something they did not mean.
+		if b.clip.Empty() {
+			return false, nil
+		}
+		b.setClip(Clipboard{})
 		return true, nil
 	case input.KeyF5:
 		return b.pick(false)
@@ -566,12 +600,6 @@ func (b *Browser) press(key input.Key) (bool, error) {
 			return false, nil
 		}
 		b.OnMkdir(Work{From: b.Here(), At: b.Here().At()})
-		return true, nil
-	case input.KeyF10:
-		if b.OnClose == nil || b.Here() == nil {
-			return false, nil
-		}
-		b.OnClose(b.Here())
 		return true, nil
 	case input.KeyF2:
 		// One name: renaming asks what to call it, and there is one
@@ -614,7 +642,8 @@ func (b *Browser) HandleMouse(ev input.MouseEvent) (bool, error) {
 		}
 		// Taken whatever the key does: the press landed on the bar, not
 		// on whatever is under the browser.
-		_, err := b.press(b.keys[i].Key)
+		k := b.keys[i]
+		_, err := b.press(key(k.Key, k.Mods))
 		return true, err
 	}
 	for i, p := range b.panes {

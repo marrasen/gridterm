@@ -25,10 +25,20 @@ import (
 type Ring struct {
 	mu      sync.Mutex
 	signers map[string]ssh.Signer // by key file path
+
+	// opening holds a channel per key being unlocked right now, closed
+	// when that unlock finishes. Two connections wanting the same key
+	// would otherwise put two dialogs on screen for it.
+	opening map[string]chan struct{}
 }
 
 // NewRing returns an empty ring.
-func NewRing() *Ring { return &Ring{signers: make(map[string]ssh.Signer)} }
+func NewRing() *Ring {
+	return &Ring{
+		signers: make(map[string]ssh.Signer),
+		opening: make(map[string]chan struct{}),
+	}
+}
 
 // Signers returns every key that has been unlocked, in a stable order so
 // a server is offered them the same way twice.
@@ -80,12 +90,24 @@ func (r *Ring) Has(path string) bool {
 // it has one. A key already in the ring is returned without asking.
 func (r *Ring) Unlock(ctx context.Context, path string, ask Ask) (ssh.Signer, error) {
 	if r != nil {
-		r.mu.Lock()
-		signer, ok := r.signers[path]
-		r.mu.Unlock()
-		if ok {
+		signer, wait, ok := r.claim(path)
+		switch {
+		case ok:
 			return signer, nil
+		case wait != nil:
+			// Somebody else is already asking. Waiting for their answer
+			// is better than a second dialog for the same key.
+			select {
+			case <-wait:
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+			if signer, _, ok := r.claim(path); ok {
+				return signer, nil
+			}
+			// Theirs failed. Ours is welcome to try.
 		}
+		defer r.release(path)
 	}
 
 	b, err := os.ReadFile(path)
@@ -116,6 +138,33 @@ func (r *Ring) Unlock(ctx context.Context, path string, ask Ask) (ssh.Signer, er
 		r.mu.Unlock()
 	}
 	return signer, nil
+}
+
+// claim reports the key if the ring already holds it. Otherwise it
+// either takes responsibility for unlocking it, or hands back the
+// channel to wait on while somebody else does.
+func (r *Ring) claim(path string) (signer ssh.Signer, wait chan struct{}, ok bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if signer, ok := r.signers[path]; ok {
+		return signer, nil, true
+	}
+	if wait, busy := r.opening[path]; busy {
+		return nil, wait, false
+	}
+	r.opening[path] = make(chan struct{})
+	return nil, nil, false
+}
+
+// release says an unlock has finished, however it went.
+func (r *Ring) release(path string) {
+	r.mu.Lock()
+	wait := r.opening[path]
+	delete(r.opening, path)
+	r.mu.Unlock()
+	if wait != nil {
+		close(wait)
+	}
 }
 
 // Forget drops one key, so the next connection asks for it again.

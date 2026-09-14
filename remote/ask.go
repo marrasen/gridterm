@@ -35,7 +35,17 @@ type Ask interface {
 
 // Question is what a server asked for during keyboard-interactive
 // authentication.
+//
+// User and Host are ours. Everything else is the server's own wording
+// and is not to be trusted: a server that chose "Unlock a private key"
+// and a plausible key path could otherwise produce a dialog the user
+// cannot tell from the local one, and be handed the passphrase to their
+// private key. A dialog has to say which machine is asking, in words the
+// server cannot write.
 type Question struct {
+	// User and Host name the connection the question came from.
+	User, Host string
+
 	// Name and Instruction are the server's own wording, and may be
 	// empty.
 	Name, Instruction string

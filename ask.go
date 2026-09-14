@@ -45,14 +45,19 @@ func (u *askUser) Password(ctx context.Context, user, host string) (string, erro
 // Question asks whatever the server decided to ask, which is usually a
 // one-time code.
 func (u *askUser) Question(ctx context.Context, q remote.Question) ([]string, error) {
-	var lines []string
+	// Ours first and always. Everything under it is the server's own
+	// wording: a server that chose "Unlock a private key" and a
+	// plausible key path would otherwise produce a dialog the user
+	// cannot tell from the local one, and be handed the passphrase to
+	// their private key.
+	lines := []string{q.User + "@" + q.Host + " is asking:"}
+	if q.Name != "" {
+		lines = append(lines, "", q.Name)
+	}
 	if q.Instruction != "" {
-		lines = append(lines, q.Instruction)
+		lines = append(lines, "", q.Instruction)
 	}
-	title := q.Name
-	if title == "" {
-		title = "The server is asking"
-	}
+	const title = "The server is asking"
 	masked := make([]bool, len(q.Prompts))
 	for i := range q.Prompts {
 		// Echo says the answer may be shown as it is typed. Anything the
@@ -92,6 +97,9 @@ func (u *askUser) TrustHostKey(ctx context.Context, key remote.HostKey) (bool, e
 			reply(nil, errDismissed)
 			return nil
 		}})
+		// Opens on Cancel: this is the one question where saying yes by
+		// reflex is the answer that cannot be taken back.
+		f.FocusButton(1)
 		return f
 	})
 	switch {

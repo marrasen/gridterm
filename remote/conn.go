@@ -120,13 +120,15 @@ func Connect(ctx context.Context, cfg Config) (*Conn, error) {
 	if cfg.Host == "" {
 		return nil, errors.New("remote: no host given")
 	}
-	user := cfg.User
-	if user == "" {
+	if cfg.User == "" {
 		u, err := currentUser()
 		if err != nil {
 			return nil, fmt.Errorf("remote: no user given and none found: %w", err)
 		}
-		user = u
+		// Written back, not kept in a local: the dialogs are built from
+		// the config, and a password dialog that says "@host" does not
+		// say whose password it wants.
+		cfg.User = u
 	}
 
 	// A dialog the user dismisses cancels the connection rather than
@@ -149,13 +151,13 @@ func Connect(ctx context.Context, cfg Config) (*Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	if len(a.methods) == 0 {
+	if len(a.ladder) == 0 {
 		a.close()
 		return nil, nothingToAuthenticateWith(a.noAgent)
 	}
 
 	addr := cfg.addr()
-	client, dialErr := dial(ctx, addr, user, a.methods, hostKey)
+	client, dialErr := dial(ctx, addr, cfg.User, a.next, hostKey)
 	if dialErr != nil {
 		a.close()
 		// What the user said, when they said anything: "the dialog was
@@ -165,7 +167,14 @@ func Connect(ctx context.Context, cfg Config) (*Conn, error) {
 		}
 		return nil, dialErr
 	}
-	return newConn(client, a.agent, user, addr), nil
+	// Cancelled while the handshake was finishing. Handing back a live
+	// connection here would open a terminal the user has given up on.
+	if err := ctx.Err(); err != nil {
+		_ = client.Close()
+		a.close()
+		return nil, err
+	}
+	return newConn(client, a.agent, cfg.User, addr), nil
 }
 
 // nothingToAuthenticateWith explains a connection that had no way to

@@ -35,6 +35,11 @@ type hostKeys struct {
 	// add is the file a newly trusted key is appended to: the first path
 	// given, or ~/.ssh/known_hosts.
 	add string
+
+	// files are the paths that were read, and dropped is how many of
+	// their lines would not parse.
+	files   []string
+	dropped int
 }
 
 // callback returns the check to hand to x/crypto.
@@ -55,8 +60,20 @@ func (h *hostKeys) callback(ctx context.Context, ask Ask) ssh.HostKeyCallback {
 			return err
 		}
 		if ask == nil {
-			return fmt.Errorf("%w: %w", errUnknownHost, err)
+			return fmt.Errorf("%w; connect once with ssh to record its host key",
+				errUnknownHost)
 		}
+		// A host with no entry might have one that could not be read. A
+		// dropped line turns "this key changed, refuse" into "trust this
+		// key?", which is the one question that must never be asked by
+		// mistake, so nothing is offered while any line is unaccounted
+		// for.
+		if h.dropped > 0 {
+			return fmt.Errorf("%w, and %d line(s) of %v could not be read, "+
+				"so it may be recorded there after all; repair known_hosts first",
+				errUnknownHost, h.dropped, h.files)
+		}
+
 		ok, askErr := ask.TrustHostKey(ctx, HostKey{Addr: hostname, Key: key})
 		if askErr != nil {
 			return askErr
@@ -80,11 +97,26 @@ func (h *hostKeys) record(hostname string, key ssh.PublicKey) error {
 	if err := os.MkdirAll(filepath.Dir(h.add), 0o700); err != nil {
 		return fmt.Errorf("remote: record the host key: %w", err)
 	}
+	// Only ever a plain file. Appending a trust decision to a symlink or
+	// a device is not something to do by accident.
+	if info, err := os.Lstat(h.add); err == nil && !info.Mode().IsRegular() {
+		return fmt.Errorf("remote: record the host key: %s is not a regular file", h.add)
+	}
+	// A file that does not end in a newline would otherwise have this
+	// entry glued onto its last one, leaving two lines that parse as
+	// neither — and a host that was recorded reading as unknown.
+	unterminated, err := lacksFinalNewline(h.add)
+	if err != nil {
+		return fmt.Errorf("remote: record the host key: %w", err)
+	}
 	f, err := os.OpenFile(h.add, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		return fmt.Errorf("remote: record the host key: %w", err)
 	}
 	line := knownhosts.Line([]string{hostname}, key) + "\n"
+	if unterminated {
+		line = "\n" + line
+	}
 	if _, err := f.WriteString(line); err != nil {
 		_ = f.Close()
 		return fmt.Errorf("remote: record the host key: %w", err)
@@ -93,6 +125,31 @@ func (h *hostKeys) record(hostname string, key ssh.PublicKey) error {
 		return fmt.Errorf("remote: record the host key: %w", err)
 	}
 	return nil
+}
+
+// lacksFinalNewline reports whether a file is there, has something in it
+// and does not end in a newline.
+func lacksFinalNewline(path string) (bool, error) {
+	info, err := os.Stat(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if info.Size() == 0 {
+		return false, nil
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return false, err
+	}
+	defer f.Close()
+	var last [1]byte
+	if _, err := f.ReadAt(last[:], info.Size()-1); err != nil {
+		return false, err
+	}
+	return last[0] != '\n', nil
 }
 
 // loadKnownHosts reads the known_hosts files and returns the check built
@@ -115,7 +172,7 @@ func loadKnownHosts(paths []string) (*hostKeys, error) {
 	// knownhosts.New rejects the whole file, so one truncated entry — or
 	// one written by a newer OpenSSH with a key type this version does
 	// not know — would otherwise disable SSH for every host.
-	good, err := usableKnownHostLines(paths)
+	good, dropped, err := usableKnownHostLines(paths)
 	if err != nil {
 		return nil, err
 	}
@@ -123,7 +180,7 @@ func loadKnownHosts(paths []string) (*hostKeys, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &hostKeys{check: check, add: paths[0]}, nil
+	return &hostKeys{check: check, add: paths[0], files: paths, dropped: dropped}, nil
 }
 
 // checkerFor builds the verification from the lines that parsed. With no
@@ -166,30 +223,30 @@ func checkerFor(lines [][]byte, paths []string) (ssh.HostKeyCallback, error) {
 // other failure to read one stops the lot: a truncated list would say a
 // host is unknown, or say its key had changed, when the truth is that a
 // file could not be read.
-func usableKnownHostLines(paths []string) ([][]byte, error) {
-	var out [][]byte
+func usableKnownHostLines(paths []string) (lines [][]byte, dropped int, err error) {
 	for _, p := range paths {
 		f, err := os.Open(p)
 		if errors.Is(err, fs.ErrNotExist) {
 			continue
 		}
 		if err != nil {
-			return nil, fmt.Errorf("remote: read known_hosts: %w", err)
+			return nil, 0, fmt.Errorf("remote: read known_hosts: %w", err)
 		}
-		lines, err := parseKnownHosts(f)
+		good, bad, err := parseKnownHosts(f)
 		_ = f.Close()
 		if err != nil {
-			return nil, fmt.Errorf("remote: read known_hosts %s: %w", p, err)
+			return nil, 0, fmt.Errorf("remote: read known_hosts %s: %w", p, err)
 		}
-		out = append(out, lines...)
+		lines = append(lines, good...)
+		dropped += bad
 	}
-	return out, nil
+	return lines, dropped, nil
 }
 
 // parseKnownHosts reads one known_hosts file, keeping the lines that
-// parse and reporting a failure to read it.
-func parseKnownHosts(f *os.File) ([][]byte, error) {
-	var out [][]byte
+// parse, counting the ones that do not, and reporting a failure to read
+// it.
+func parseKnownHosts(f *os.File) (lines [][]byte, dropped int, err error) {
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 0, 64*1024), maxKnownHostsLine)
 	for sc.Scan() {
@@ -198,12 +255,13 @@ func parseKnownHosts(f *os.File) ([][]byte, error) {
 			continue
 		}
 		if _, _, _, _, _, err := ssh.ParseKnownHosts(line); err != nil {
+			dropped++
 			continue
 		}
-		out = append(out, append([]byte(nil), line...))
+		lines = append(lines, append([]byte(nil), line...))
 	}
 	if err := sc.Err(); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	return out, nil
+	return lines, dropped, nil
 }

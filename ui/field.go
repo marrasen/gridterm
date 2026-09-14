@@ -24,6 +24,10 @@ type FieldStyle struct {
 // and anything else that takes typing all move the caret the same way.
 // The caret steps by grapheme cluster rather than by rune, because the
 // grid draws a base character and its combining marks in one cell.
+//
+// Draw writes every cell it is given twice: once to fill and once for
+// the text. Whatever shows a field is expected to draw through a buffer,
+// as Form and Palette do, or an idle frame dirties the row.
 type Field struct {
 	Style FieldStyle
 
@@ -57,13 +61,16 @@ func (f *Field) Text() string { return f.text }
 
 // SetText replaces the text and puts the caret at the end.
 func (f *Field) SetText(s string) {
-	if f.text == s {
-		return
-	}
+	changed := f.text != s
 	f.text = s
 	f.at = len(s)
+	// The old offset was a position in the old text, and can land inside
+	// a character of the new one.
+	f.left = 0
 	f.scroll()
-	f.changed()
+	if changed {
+		f.changed()
+	}
 }
 
 // Caret returns the caret's byte offset into the text.
@@ -111,16 +118,17 @@ func (f *Field) HandleKey(ev input.Event) (bool, error) {
 		return false, nil
 	}
 
+	// Alt means something else everywhere it is used here, and Super is
+	// the window manager's. Checked first, because AltGr on a Windows
+	// layout arrives as Ctrl+Alt: AltGr+V would otherwise paste as well
+	// as typing the character it composes.
+	if ev.Mods.Has(input.ModAlt) || ev.Mods.Has(input.ModSuper) {
+		return false, nil
+	}
 	// Ctrl and Ctrl+Shift both paste, because the window binds paste to
 	// Ctrl+Shift+V and every other program binds it to Ctrl+V.
 	if ev.Ctrl() && ev.Key == input.KeyV {
-		f.paste()
-		return true, nil
-	}
-	// Alt means something else everywhere it is used here, and Super is
-	// the window manager's.
-	if ev.Mods.Has(input.ModAlt) || ev.Mods.Has(input.ModSuper) {
-		return false, nil
+		return f.paste(), nil
 	}
 
 	switch ev.Key {
@@ -180,8 +188,13 @@ func (f *Field) Draw(v grid.View) {
 	blank := grid.Cell{Rune: ' ', FG: f.Style.FG, BG: f.Style.BG, Width: 1}
 	v.Sub(0, 0, cols, 1).Fill(blank)
 
-	if f.text == "" && f.Placeholder != "" && !f.focused {
+	if f.text == "" && f.Placeholder != "" {
+		// Shown even with the caret in it: an empty field is exactly
+		// when the user is wondering what to type.
 		v.SetString(0, 0, f.Placeholder, f.Style.PlaceholderFG, f.Style.BG, 0)
+		if f.focused {
+			v.SetCursor(grid.Cursor{X: 0, Y: 0, Visible: true, Style: grid.CursorBar})
+		}
 		return
 	}
 
@@ -234,15 +247,20 @@ func (f *Field) cut(from, to int) {
 
 // paste puts the clipboard in at the caret, as one line: a newline in a
 // one-line field would be typed into a box that cannot show it.
-func (f *Field) paste() {
+//
+// It reports whether it took the key. A field with no clipboard has not
+// handled it, so the window's own paste binding still runs rather than
+// the key doing nothing at all.
+func (f *Field) paste() bool {
 	if f.ReadClipboard == nil {
-		return
+		return false
 	}
 	s := f.ReadClipboard()
 	if i := strings.IndexAny(s, "\r\n"); i >= 0 {
 		s = s[:i]
 	}
 	f.insert(s)
+	return true
 }
 
 func (f *Field) changed() {

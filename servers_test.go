@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -30,7 +32,7 @@ func serverConfig(t *testing.T, s *sshtest.Server) remote.Config {
 // waitForPanes runs the pump until the app has n panes.
 func waitForPanes(t *testing.T, a *testApp, n int) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(waitBudget)
 	for time.Now().Before(deadline) {
 		a.pump.run()
 		if len(a.panes) == n {
@@ -45,7 +47,7 @@ func waitForPanes(t *testing.T, a *testApp, n int) {
 // the stack.
 func waitForDialog(t *testing.T, a *testApp, title string) *ui.Form {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(waitBudget)
 	for time.Now().Before(deadline) {
 		a.pump.run()
 		if f, ok := a.root.Modal().(*ui.Form); ok && f.Title == title {
@@ -125,25 +127,37 @@ func TestConnectShowsWhyItFailed(t *testing.T) {
 	}
 }
 
-// Cancelling gives up on the connection rather than leaving a goroutine
-// dialling a machine nobody is waiting for.
-func TestConnectCancelClosesTheWaitingDialog(t *testing.T) {
-	s := sshtest.New(t)
+// Cancelling gives up on a connection that is genuinely still being
+// made, and says nothing afterwards: the user knows, they cancelled.
+//
+// The server here accepts and then never speaks, so the dial really is
+// still running when Cancel is pressed. A port nothing listens on is
+// refused in well under a millisecond, which would let this pass without
+// the cancellation doing anything at all.
+func TestConnectCancelStopsADialThatIsStillRunning(t *testing.T) {
+	host, port := sshtest.Deaf(t)
 	a := newTestApp(t, 80, 24)
 	withDialogs(t, a)
 
-	cfg := serverConfig(t, s)
-	cfg.Port = 1 // nothing answers, so the dial is still running
+	cfg := serverConfig(t, sshtest.New(t))
+	cfg.Host, cfg.Port = host, port
 	a.connect(cfg)
 
 	f := waitForDialog(t, a, "Connecting")
+	// Still dialling: nothing has finished, so nothing has been posted.
+	if !a.connecting {
+		t.Fatal("the connection was over before Cancel was pressed")
+	}
 	pressButton(t, a, f, "Cancel")
 
-	// The dial ends and reports nothing: the user knows, they cancelled.
-	deadline := time.Now().Add(5 * time.Second)
+	// The dial has to end, and end quietly.
+	deadline := time.Now().Add(waitBudget)
 	for time.Now().Before(deadline) {
 		a.pump.run()
-		if a.root.Modal() == nil {
+		if !a.connecting {
+			if m := a.root.Modal(); m != nil {
+				t.Fatalf("a dialog was left open after cancelling: %T", m)
+			}
 			if len(a.panes) != 1 {
 				t.Fatalf("%d panes after cancelling, want the one that was there", len(a.panes))
 			}
@@ -151,7 +165,43 @@ func TestConnectCancelClosesTheWaitingDialog(t *testing.T) {
 		}
 		time.Sleep(time.Millisecond)
 	}
-	t.Fatalf("a dialog was left open after cancelling: %T", a.root.Modal())
+	t.Fatal("the dial was still running long after it was cancelled")
+}
+
+// Cancelling is the user's own decision, so it is not reported back to
+// them as a failure.
+func TestReportErrorSaysNothingAboutACancellation(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+
+	a.reportError("Could not connect", context.Canceled)
+	if m := a.root.Modal(); m != nil {
+		t.Fatalf("cancelling opened a dialog: %T", m)
+	}
+	a.reportError("Could not connect", errors.New("no route to host"))
+	if a.root.Modal() == nil {
+		t.Fatal("a real failure opened no dialog")
+	}
+}
+
+// One connection at a time. A second would want a dialog of its own to
+// wait in, and closing one dialog takes anything stacked above it.
+func TestConnectRefusesASecondWhileOneIsRunning(t *testing.T) {
+	host, port := sshtest.Deaf(t)
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+
+	cfg := serverConfig(t, sshtest.New(t))
+	cfg.Host, cfg.Port = host, port
+	a.connect(cfg)
+	waitForDialog(t, a, "Connecting")
+
+	if err := a.openServer(); err == nil {
+		t.Fatal("a second connection dialog opened while one was still connecting")
+	}
+	if f, ok := a.root.Modal().(*ui.Form); !ok || f.Title != "Connecting" {
+		t.Fatalf("top modal = %T, want the Connecting dialog still", a.root.Modal())
+	}
 }
 
 // Locking forgets every key, so the next connection asks again.
@@ -223,4 +273,41 @@ func (f *fixedAsk) Question(context.Context, remote.Question) ([]string, error) 
 }
 func (f *fixedAsk) TrustHostKey(context.Context, remote.HostKey) (bool, error) {
 	return false, nil
+}
+
+// The path a user actually takes: the command, the form, the keys.
+//
+// This is what the direct call to connect misses. The Connect button
+// used to open the waiting dialog from inside the form's own Do, and the
+// form then closed -- taking the waiting dialog with it and cancelling
+// the connection it had just started. Nothing was reported.
+func TestOpenServerConnectsThroughTheForm(t *testing.T) {
+	s := sshtest.New(t)
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	host, port := s.Host()
+
+	// The real connection has to go through serverConfig's pinned host
+	// key, so the form only supplies the target and the rest is set on
+	// the way past.
+	a.prepare = func(cfg remote.Config) remote.Config {
+		base := serverConfig(t, s)
+		base.User = cfg.User
+		return base
+	}
+
+	if err := a.openServer(); err != nil {
+		t.Fatalf("openServer: %v", err)
+	}
+	f := waitForDialog(t, a, "Connect to a server")
+	for _, r := range fmt.Sprintf("tester@%s:%d", host, port) {
+		a.root.HandleKey(input1(r))
+	}
+	pressButton(t, a, f, "Connect")
+
+	waitForPanes(t, a, 2)
+	if a.root.Modal() != nil {
+		t.Errorf("a dialog was left open: %T", a.root.Modal())
+	}
+	checkTree(t, a)
 }

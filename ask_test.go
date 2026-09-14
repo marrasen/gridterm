@@ -5,17 +5,25 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"errors"
+	"image/color"
 	"strings"
 	"testing"
 	"time"
 
 	"golang.org/x/crypto/ssh"
 
+	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/input"
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/render"
 	"github.com/marrasen/gridterm/ui"
 )
+
+// waitBudget is how long a test waits for the drawing goroutine and a
+// connecting one to meet. Generous on purpose: a passing test never
+// waits this long, and a race build on a busy machine is slow enough to
+// make a tight budget flaky rather than informative.
+const waitBudget = 30 * time.Second
 
 // withDialogs gives a test app what a dialog needs: a compositor for the
 // layers, a context to cancel, and a key ring.
@@ -34,7 +42,7 @@ func withDialogs(t *testing.T, a *testApp) *askUser {
 // openDialog runs the pump until a dialog is on the stack and returns it.
 func openDialog(t *testing.T, a *testApp) *ui.Form {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(waitBudget)
 	for time.Now().Before(deadline) {
 		a.pump.run()
 		if f, ok := a.root.Modal().(*ui.Form); ok {
@@ -105,7 +113,7 @@ func TestAskPassphraseReturnsWhatWasTyped(t *testing.T) {
 		if s != "let me in" {
 			t.Fatalf("passphrase = %q, want what was typed", s)
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(waitBudget):
 		t.Fatal("the dialog never answered")
 	}
 }
@@ -151,7 +159,7 @@ func TestAskDismissedDialogIsARefusal(t *testing.T) {
 		if !errors.Is(err, errDismissed) {
 			t.Fatalf("error = %v, want it to say the dialog was dismissed", err)
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(waitBudget):
 		t.Fatal("dismissing the dialog left the connection waiting")
 	}
 }
@@ -176,13 +184,13 @@ func TestAskCancelledContextClosesTheDialog(t *testing.T) {
 		if !errors.Is(err, context.Canceled) {
 			t.Fatalf("error = %v, want it to say the connection was cancelled", err)
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(waitBudget):
 		t.Fatal("cancelling left the connection waiting")
 	}
 
 	// And the dialog goes with it, rather than being left on screen with
 	// nothing behind it.
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(waitBudget)
 	for time.Now().Before(deadline) {
 		a.pump.run()
 		if a.root.Modal() == nil {
@@ -224,7 +232,7 @@ func TestAskHostKeyShowsTheFingerprint(t *testing.T) {
 		if !ok {
 			t.Fatal("pressing Connect did not accept the key")
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(waitBudget):
 		t.Fatal("the dialog never answered")
 	}
 }
@@ -256,7 +264,7 @@ func TestAskHostKeyCancelMeansNo(t *testing.T) {
 		if r.err != nil {
 			t.Fatalf("Cancel reported %v, want a plain no", r.err)
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(waitBudget):
 		t.Fatal("the dialog never answered")
 	}
 }
@@ -269,6 +277,8 @@ func TestAskQuestionAnswersInOrder(t *testing.T) {
 	got := make(chan []string, 1)
 	go func() {
 		answers, err := ask.Question(a.ctx, remote.Question{
+			User:        "marcus",
+			Host:        "margit:22",
 			Name:        "Two-factor",
 			Instruction: "Check your phone",
 			Prompts:     []string{"Code", "Account"},
@@ -281,8 +291,20 @@ func TestAskQuestionAnswersInOrder(t *testing.T) {
 	}()
 
 	f := openDialog(t, a)
-	if f.Title != "Two-factor" {
-		t.Errorf("title = %q, want the server's own wording", f.Title)
+	// The title is ours. A server that chose "Unlock a private key" and
+	// a plausible key path would otherwise produce a dialog the user
+	// cannot tell from the local one, and be handed the passphrase to
+	// their private key.
+	if f.Title == "Two-factor" {
+		t.Error("the server chose the dialog's title")
+	}
+	joined := strings.Join(f.Lines, "\n")
+	if !strings.Contains(joined, "marcus@margit:22") {
+		t.Errorf("the dialog does not say which machine asked: %q", joined)
+	}
+	// The server's own wording is still shown, under ours.
+	if !strings.Contains(joined, "Check your phone") {
+		t.Errorf("the server's instruction was dropped: %q", joined)
 	}
 	// The code is a secret; the account name the server said may be shown.
 	if f.Fields()[0].Mask == 0 {
@@ -299,7 +321,7 @@ func TestAskQuestionAnswersInOrder(t *testing.T) {
 		if len(answers) != 2 || answers[0] != want[0] || answers[1] != want[1] {
 			t.Fatalf("answers = %q, want %q", answers, want)
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(waitBudget):
 		t.Fatal("the dialog never answered")
 	}
 }
@@ -316,4 +338,60 @@ func testHostKey(t *testing.T) remote.HostKey {
 		t.Fatalf("signer: %v", err)
 	}
 	return remote.HostKey{Addr: "margit.skalarit.net:22", Key: signer.PublicKey()}
+}
+
+// What a password dialog draws must be stars, not the password. The
+// field test covers the widget; this covers the dialog the user sees.
+func TestAskPasswordDrawsNothingReadable(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	ask := withDialogs(t, a)
+
+	got := make(chan string, 1)
+	go func() {
+		s, err := ask.Password(a.ctx, "marcus", "margit.skalarit.net:22")
+		if err != nil {
+			t.Errorf("Password: %v", err)
+		}
+		got <- s
+	}()
+
+	f := openDialog(t, a)
+	const secret = "hunter2"
+	for _, r := range secret {
+		a.root.HandleKey(input.Event{Kind: input.Text, Rune: r, NormalText: true})
+	}
+
+	// Draw the dialog the way its own layer is drawn, and read it back.
+	g := grid.New(80, 24, color.RGBA{}, color.RGBA{})
+	f.Draw(g.View())
+	var drawn strings.Builder
+	_, rows := g.Size()
+	for y := 0; y < rows; y++ {
+		cols, _ := g.Size()
+		for x := 0; x < cols; x++ {
+			if c := g.At(x, y); c.Width != 0 {
+				drawn.WriteRune(c.Rune)
+			}
+		}
+	}
+	if strings.Contains(drawn.String(), secret) {
+		t.Fatal("the password was drawn on screen")
+	}
+	if !strings.Contains(drawn.String(), strings.Repeat("*", len(secret))) {
+		t.Fatalf("the password was not drawn as stars:\n%s", drawn.String())
+	}
+	// And it still says whose password it wants.
+	if joined := strings.Join(f.Lines, "\n"); !strings.Contains(joined, "marcus@") {
+		t.Errorf("the dialog does not say whose password: %q", joined)
+	}
+
+	pressButton(t, a, f, "Sign in")
+	select {
+	case s := <-got:
+		if s != secret {
+			t.Fatalf("password = %q, want what was typed", s)
+		}
+	case <-time.After(waitBudget):
+		t.Fatal("the dialog never answered")
+	}
 }

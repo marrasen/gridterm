@@ -48,6 +48,9 @@ func newTestForm(t *testing.T) *testForm {
 		return nil
 	}})
 	f.Layout(Size{Cols: 60, Rows: 24})
+	// The modal stack focuses a dialog when it pushes it, and the form
+	// passes that on to its first field.
+	f.SetFocus(true)
 	tf.form = f
 	return tf
 }
@@ -376,5 +379,276 @@ func TestFormBoxStaysInsideTheArea(t *testing.T) {
 		if box.X < 0 || box.Y < 0 || box.X+box.Cols > size.Cols || box.Y+box.Rows > size.Rows {
 			t.Errorf("box %+v falls outside a %dx%d area", box, size.Cols, size.Rows)
 		}
+	}
+}
+
+// What is drawn and what a click lands on have to be the same rows.
+//
+// They used to be worked out twice: the buttons from the height the box
+// actually got, everything else from the height it asked for. At 24x9
+// that put the buttons on top of the first field, and clicking the
+// Connect button you could see focused a field you could not.
+func TestFormDrawsAndRoutesTheSameRows(t *testing.T) {
+	for _, size := range []Size{
+		{Cols: 24, Rows: 9}, {Cols: 16, Rows: 10}, {Cols: 40, Rows: 12},
+		{Cols: 60, Rows: 24}, {Cols: 80, Rows: 40},
+	} {
+		tf := newTestForm(t)
+		f := tf.form
+		g := drawForm(f, size.Cols, size.Rows)
+		box := f.Box()
+		if box.Empty() {
+			continue
+		}
+		l := f.layout()
+
+		// Nothing may share the button row.
+		if l.buttonRow <= l.fieldsTop+l.fields-1 && l.fields > 0 {
+			t.Errorf("%dx%d: fields end at row %d and the buttons are at %d",
+				size.Cols, size.Rows, l.fieldsTop+l.fields-1, l.buttonRow)
+		}
+		// Every field the form will route a click to must be drawn.
+		if l.fields != len(f.Fields()) {
+			t.Errorf("%dx%d: %d of %d fields fit, so one is reachable but not on screen",
+				size.Cols, size.Rows, l.fields, len(f.Fields()))
+		}
+		// And everything lands inside the box.
+		if l.buttonRow >= box.Rows || l.errRow >= box.Rows || l.title >= box.Rows {
+			t.Errorf("%dx%d: layout %+v falls outside a box %d rows tall",
+				size.Cols, size.Rows, l, box.Rows)
+		}
+		// The button the user can see is the button they can press.
+		for i, at := range f.buttonCols() {
+			if at < 0 {
+				continue
+			}
+			got, ok := f.buttonAt(at)
+			if !ok || got != i {
+				t.Errorf("%dx%d: the column button %d is drawn at routes to %d (%v)",
+					size.Cols, size.Rows, i, got, ok)
+			}
+			if at < formPad || at >= box.Cols {
+				t.Errorf("%dx%d: button %d is drawn at column %d, outside the box",
+					size.Cols, size.Rows, i, at)
+			}
+		}
+		_ = g
+	}
+}
+
+// A dialog with no room for its fields does not open at all. Drawing it
+// without them leaves the user typing a password into a row that is not
+// on screen.
+func TestFormWithNoRoomForItsFieldsDoesNotOpen(t *testing.T) {
+	tf := newTestForm(t)
+	f := tf.form
+	// Two fields need more than eight rows once the title, the error
+	// line and the buttons are counted.
+	f.Layout(Size{Cols: 40, Rows: 8})
+	if box := f.Box(); !box.Empty() {
+		t.Fatalf("box = %+v in a 40x8 area, want nothing", box)
+	}
+
+	// And it takes nothing but Escape while it cannot be seen.
+	for _, r := range "secret" {
+		f.HandleKey(input.Event{Kind: input.Text, Rune: r, NormalText: true})
+	}
+	if got := f.Fields()[0].Text(); got != "" {
+		t.Errorf("an invisible dialog took %q", got)
+	}
+	f.HandleKey(press(input.KeyEnter, 0))
+	if len(tf.ran) != 0 {
+		t.Errorf("an invisible dialog ran %q", tf.ran)
+	}
+	f.HandleKey(press(input.KeyEscape, 0))
+	if tf.closed != 1 {
+		t.Errorf("Escape closed an invisible dialog %d times, want 1", tf.closed)
+	}
+}
+
+// Space with the caret in a field is a character, not a button press. A
+// password with a space in it has to be typeable.
+func TestFormSpaceKeyInAFieldPressesNothing(t *testing.T) {
+	tf := newTestForm(t)
+	took, _ := tf.form.HandleKey(press(input.KeySpace, 0))
+	if len(tf.ran) != 0 {
+		t.Fatalf("Space with the caret in a field ran %q", tf.ran)
+	}
+	if took {
+		t.Error("Space in a field was taken, so nothing else can have it")
+	}
+}
+
+// A dialog opens from the pump and input is polled in the same frame, so
+// the repeats of the key that opened it must not answer it.
+func TestFormIgnoresAHeldKeyOnAButton(t *testing.T) {
+	tf := newTestForm(t)
+	f := tf.form
+	f.FocusButton(0)
+
+	f.HandleKey(input.Event{Kind: input.KeyRepeat, Key: input.KeyEnter})
+	f.HandleKey(input.Event{Kind: input.KeyRepeat, Key: input.KeySpace})
+	if len(tf.ran) != 0 {
+		t.Fatalf("a held key ran %q", tf.ran)
+	}
+	f.HandleKey(press(input.KeyEnter, 0))
+	if len(tf.ran) != 1 {
+		t.Fatalf("a fresh press ran %q, want the button once", tf.ran)
+	}
+}
+
+// A question whose safe answer is "no" opens on the button that says no.
+func TestFormFocusButtonChoosesWhereItOpens(t *testing.T) {
+	closed := 0
+	f := NewConfirm("Unknown host key", []string{"a fingerprint"}, func() { closed++ })
+	f.Style = formStyled()
+	var ran []string
+	f.AddButton(Button{Title: "Connect", Do: func() error { ran = append(ran, "connect"); return nil }})
+	f.AddButton(Button{Title: "Cancel", Do: func() error { ran = append(ran, "cancel"); return nil }})
+	f.FocusButton(1)
+	f.Layout(Size{Cols: 60, Rows: 24})
+
+	at, isButton := f.Focused()
+	if !isButton || at != 1 {
+		t.Fatalf("focus is %d (button %v), want the second button", at, isButton)
+	}
+	f.HandleKey(press(input.KeyEnter, 0))
+	if len(ran) != 1 || ran[0] != "cancel" {
+		t.Fatalf("Enter ran %q, want the focused button", ran)
+	}
+}
+
+// A button with no room is left out rather than drawn over the ones that
+// fit. grid.View.Sub shifts a negative origin to zero instead of
+// clipping it, so a button laid out past the left edge would print its
+// middle at the left edge.
+func TestFormDropsAButtonThatDoesNotFit(t *testing.T) {
+	closed := 0
+	f := NewForm("Narrow", func() { closed++ })
+	f.Style = formStyled()
+	f.AddButton(Button{Title: "A rather long button"})
+	f.AddButton(Button{Title: "Another long one"})
+	f.Layout(Size{Cols: 24, Rows: 20})
+
+	box := f.Box()
+	if box.Empty() {
+		t.Skip("no box at this size")
+	}
+	for i, at := range f.buttonCols() {
+		if at >= 0 && at < formPad {
+			t.Errorf("button %d is drawn at column %d, left of the padding", i, at)
+		}
+	}
+}
+
+// Clicking the label you can see focuses the field beside it.
+//
+// This reads the drawn grid rather than asking the form where it put
+// things: the painter and the click router each used to work the rows
+// out for themselves, so they could drift apart and every test that
+// asked the router would agree with the router.
+func TestFormClickLandsOnTheFieldThatWasDrawn(t *testing.T) {
+	for _, size := range []Size{{Cols: 24, Rows: 12}, {Cols: 40, Rows: 14}, {Cols: 60, Rows: 24}} {
+		tf := newTestForm(t)
+		f := tf.form
+		g := drawForm(f, size.Cols, size.Rows)
+		box := f.Box()
+		if box.Empty() {
+			continue
+		}
+
+		// Find the row the second field's label was actually drawn on.
+		want := -1
+		_, rows := g.Size()
+		for y := 0; y < rows; y++ {
+			if strings.Contains(rowOf(g, y), "User") {
+				want = y
+				break
+			}
+		}
+		if want < 0 {
+			t.Fatalf("%dx%d: the User label was not drawn", size.Cols, size.Rows)
+		}
+
+		f.HandleMouse(input.MouseEvent{
+			Kind: input.MousePress, Button: input.MouseLeft,
+			Col: box.X + f.fieldX(), Row: want,
+		})
+		at, isButton := f.Focused()
+		if isButton || at != 1 {
+			t.Errorf("%dx%d: clicking the row the User label is drawn on focused %d (button %v)",
+				size.Cols, size.Rows, at, isButton)
+		}
+	}
+}
+
+// The same from the other side: the button the user can see is the one
+// the click runs.
+func TestFormClickLandsOnTheButtonThatWasDrawn(t *testing.T) {
+	tf := newTestForm(t)
+	f := tf.form
+	g := drawForm(f, 40, 16)
+	box := f.Box()
+
+	want := -1
+	_, rows := g.Size()
+	for y := 0; y < rows; y++ {
+		if strings.Contains(rowOf(g, y), "Cancel") {
+			want = y
+			break
+		}
+	}
+	if want < 0 {
+		t.Fatal("the Cancel button was not drawn")
+	}
+
+	at := f.buttonCols()[1]
+	f.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft,
+		Col: box.X + at, Row: want,
+	})
+	if len(tf.ran) != 1 || tf.ran[0] != "cancel" {
+		t.Fatalf("clicking the row Cancel is drawn on ran %q", tf.ran)
+	}
+}
+
+// With more hint lines than fit, the fields move up. A click router that
+// counted all the lines would then aim below every one of them.
+func TestFormClickLandsWhenHintLinesAreElided(t *testing.T) {
+	closed := 0
+	f := NewForm("Sign in", func() { closed++ })
+	f.Style = formStyled()
+	f.Lines = []string{"one", "two", "three", "four", "five", "six", "seven"}
+	f.AddField("User", nil)
+	f.AddField("Password", nil)
+	f.AddButton(Button{Title: "Go"})
+	f.SetFocus(true)
+
+	g := drawForm(f, 40, 14)
+	box := f.Box()
+	if box.Empty() {
+		t.Fatal("no box")
+	}
+	if l := f.layout(); len(l.lines) == len(f.Lines) {
+		t.Skip("every hint line fitted, so nothing was elided")
+	}
+
+	want := -1
+	_, rows := g.Size()
+	for y := 0; y < rows; y++ {
+		if strings.Contains(rowOf(g, y), "Password") {
+			want = y
+			break
+		}
+	}
+	if want < 0 {
+		t.Fatal("the Password label was not drawn")
+	}
+	f.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft,
+		Col: box.X + f.fieldX(), Row: want,
+	})
+	if at, isButton := f.Focused(); isButton || at != 1 {
+		t.Fatalf("clicking the Password row focused %d (button %v)", at, isButton)
 	}
 }

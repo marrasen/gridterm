@@ -156,6 +156,8 @@ func newTestPalette(t *testing.T, cmds *Commands) (*Palette, *int) {
 	closed := 0
 	p := NewPalette(cmds, NewKeymap(), func() { closed++ })
 	p.Layout(Size{Cols: 40, Rows: 12})
+	// The modal stack focuses a dialog when it pushes it.
+	p.SetFocus(true)
 	return p, &closed
 }
 
@@ -1103,5 +1105,26 @@ func TestPaletteArrowsStillMoveTheSelection(t *testing.T) {
 	}
 	if p.Query() != "" {
 		t.Errorf("Down typed %q into the query", p.Query())
+	}
+}
+
+// The palette is a modal like any other and has to be told when it loses
+// focus. Without it a menu opened over the palette leaves a caret
+// blinking in a query line that no longer has the keys.
+func TestPaletteGivesUpTheCursorWhenFocusLeaves(t *testing.T) {
+	p, _ := newTestPalette(t, testCommands("Copy"))
+
+	g := grid.New(40, 12, fg, bg)
+	g.ResetCursorClaim()
+	p.Draw(g.View())
+	if !g.CursorClaimed() {
+		t.Fatal("a focused palette drew no cursor")
+	}
+
+	p.SetFocus(false)
+	g.ResetCursorClaim()
+	p.Draw(g.View())
+	if g.CursorClaimed() {
+		t.Fatal("the palette still claimed the cursor after focus left")
 	}
 }

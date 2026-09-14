@@ -42,6 +42,7 @@ type Server struct {
 	conns    []net.Conn
 	accepted int
 	offered  []string
+	onlyKey  string
 
 	// writeMu serialises channel writes. x/crypto documents concurrent
 	// writes to one ssh.Channel as unsafe, and the request loop and the
@@ -70,13 +71,17 @@ func New(t *testing.T) *Server {
 			}
 			return nil, errors.New("bad password")
 		},
-		// Any key is accepted. A test that cares which key was offered
-		// reads Offered; one that only needs key authentication to
-		// succeed does not have to manage an authorized_keys file.
+		// Any key is accepted until a test says otherwise with Accept. A
+		// test that cares which key was offered reads Offered.
 		PublicKeyCallback: func(_ ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
+			print := ssh.FingerprintSHA256(key)
 			s.mu.Lock()
-			s.offered = append(s.offered, ssh.FingerprintSHA256(key))
+			s.offered = append(s.offered, print)
+			only := s.onlyKey
 			s.mu.Unlock()
+			if only != "" && only != print {
+				return nil, errors.New("that key is not authorised")
+			}
 			return nil, nil
 		},
 	}
@@ -107,6 +112,15 @@ func (s *Server) Host() (string, int) {
 	h, p, _ := net.SplitHostPort(s.addr)
 	port, _ := strconv.Atoi(p)
 	return h, port
+}
+
+// Accept narrows the server to one public key, named by its SHA256
+// fingerprint, so a test can watch a client work its way through the
+// keys it has until it finds the one that is authorised.
+func (s *Server) Accept(fingerprint string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.onlyKey = fingerprint
 }
 
 // Conns returns how many connections the server has accepted, so a test

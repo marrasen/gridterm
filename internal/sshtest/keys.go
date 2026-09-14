@@ -26,14 +26,20 @@ func WriteEncryptedKey(t *testing.T, passphrase string) string {
 }
 
 // Fingerprint returns the SHA256 fingerprint of a private key file, so a
-// test can tell which key a server was offered.
-func Fingerprint(t *testing.T, path string) string {
+// test can tell which key a server was offered. A key written by
+// WriteEncryptedKey needs its passphrase passed as well.
+func Fingerprint(t *testing.T, path string, passphrase ...string) string {
 	t.Helper()
 	b, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read %s: %v", path, err)
 	}
-	signer, err := ssh.ParsePrivateKey(b)
+	var signer ssh.Signer
+	if len(passphrase) > 0 {
+		signer, err = ssh.ParsePrivateKeyWithPassphrase(b, []byte(passphrase[0]))
+	} else {
+		signer, err = ssh.ParsePrivateKey(b)
+	}
 	if err != nil {
 		t.Fatalf("parse %s: %v", path, err)
 	}

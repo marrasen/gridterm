@@ -85,3 +85,39 @@ func TestPumpIgnoresNothingToDo(t *testing.T) {
 	}
 	p.run()
 }
+
+// Work posted while the queue is running is what a connecting goroutine
+// does: it finishes at whatever moment the drawing goroutine happens to
+// be draining. Nothing may be lost and nothing may block.
+func TestPumpTakesWorkPostedWhileItRuns(t *testing.T) {
+	var p pump
+	var mu sync.Mutex
+	ran := 0
+
+	const late = 32
+	var wg sync.WaitGroup
+	p.post(func() {
+		// Posted from other goroutines while this one holds the queue.
+		for i := 0; i < late; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				p.post(func() {
+					mu.Lock()
+					ran++
+					mu.Unlock()
+				})
+			}()
+		}
+		wg.Wait()
+	})
+
+	p.run()
+	if p.pending() != late {
+		t.Fatalf("%d pieces of work waiting, want the %d posted while it ran", p.pending(), late)
+	}
+	p.run()
+	if ran != late {
+		t.Fatalf("ran %d of %d", ran, late)
+	}
+}

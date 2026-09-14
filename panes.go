@@ -54,6 +54,7 @@ func (a *app) openPalette() error {
 		// command, not part of its name.
 		ChordFG: a.colours.ANSI[8],
 	}
+	p.SetClipboard(clipboardRead)
 	a.palette = p
 	a.dismissPalette = a.showModal(p, func() { a.palette, a.dismissPalette = nil, nil })
 	return nil

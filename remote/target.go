@@ -38,5 +38,19 @@ func ParseTarget(target string) (Config, error) {
 	if cfg.Host == "" {
 		return cfg, fmt.Errorf("remote: target %q: no host", orig)
 	}
+	// A host is written verbatim into known_hosts once its key is
+	// trusted, and neither this nor knownhosts.Line escapes anything. A
+	// space or a newline in it would put a second, unasked-for trust
+	// line in that file. Today the resolver refuses such a name long
+	// before it gets that far; that is luck, not a check.
+	if i := strings.IndexFunc(cfg.Host, badInHost); i >= 0 {
+		return Config{}, fmt.Errorf("remote: target %q: the host name contains %q",
+			orig, cfg.Host[i:i+1])
+	}
 	return cfg, nil
+}
+
+// badInHost reports a character that has no business in a host name.
+func badInHost(r rune) bool {
+	return r <= ' ' || r == 0x7f || r == '#'
 }

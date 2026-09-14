@@ -83,3 +83,20 @@ func TestConfigAddrFillsInTheDefaultPort(t *testing.T) {
 		}
 	}
 }
+
+// A host name is written into known_hosts verbatim once its key is
+// trusted, so anything that could put a second line in that file is
+// refused before it gets near.
+func TestParseTargetRejectsAHostThatIsNotAHost(t *testing.T) {
+	for _, target := range []string{
+		"host\nevil.example ssh-ed25519 AAAA",
+		"host evil.example",
+		"host\tname",
+		"host#comment",
+		"user@ho\x00st",
+	} {
+		if cfg, err := ParseTarget(target); err == nil {
+			t.Errorf("ParseTarget(%q) = %+v, want an error", target, cfg)
+		}
+	}
+}

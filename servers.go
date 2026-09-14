@@ -13,6 +13,9 @@ import (
 
 // openServer asks which machine to connect to.
 func (a *app) openServer() error {
+	if a.connecting {
+		return errors.New("a connection is already being made")
+	}
 	f := a.newForm("Connect to a server")
 	f.Lines = []string{"A machine to open a terminal on."}
 	target := f.AddField("Server", a.newField("[user@]host[:port]", 0))
@@ -23,7 +26,17 @@ func (a *app) openServer() error {
 			// still there to correct.
 			return err
 		}
-		a.connect(cfg)
+		if a.connecting {
+			return errors.New("a connection is already being made")
+		}
+		if a.prepare != nil {
+			cfg = a.prepare(cfg)
+		}
+		// Not from here: this dialog closes as soon as this returns, and
+		// closing a dialog takes anything stacked on top of it -- which
+		// would be the one the connection had just opened. The next
+		// frame starts it instead, once this form has gone.
+		a.pump.post(func() { a.connect(cfg) })
 		return nil
 	}})
 	f.AddButton(ui.Button{Title: "Cancel"})
@@ -38,7 +51,17 @@ func (a *app) openServer() error {
 // something, and the dialog it asks with is drawn by this one. A
 // "Connecting" dialog holds the place until it is done, and cancelling
 // that gives up.
+//
+// One connection at a time, for now. Each wants a dialog of its own to
+// wait in, the modal stack is ordered, and closing a dialog takes
+// anything above it — so a connection that finished would tear down the
+// dialog another was still waiting in. The connections panel is where
+// several at once will live.
 func (a *app) connect(cfg remote.Config) {
+	if a.connecting {
+		a.reportError("Could not connect", errors.New("a connection is already being made"))
+		return
+	}
 	cfg.Ask = &askUser{app: a}
 	cfg.Ring = a.keys
 
@@ -49,6 +72,7 @@ func (a *app) connect(cfg remote.Config) {
 		return nil
 	}})
 	// Closing it any other way means the same thing.
+	a.connecting = true
 	dismiss := a.showForm(waiting, cancel)
 
 	cols, rows := a.lastSize[0], a.lastSize[1]
@@ -57,6 +81,7 @@ func (a *app) connect(cfg remote.Config) {
 		a.pump.post(func() {
 			// The waiting dialog goes whichever way it turned out, and
 			// before anything else is shown over it.
+			a.connecting = false
 			dismiss()
 			cancel()
 			if err != nil {

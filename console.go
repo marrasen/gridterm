@@ -3,13 +3,25 @@ package main
 import (
 	"bufio"
 	"context"
-	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
+	"unicode"
 
 	"github.com/marrasen/gridterm/remote"
 )
+
+// stdin is read through one reader for the life of the process.
+//
+// A fresh bufio.Reader per prompt reads ahead and then throws the buffer
+// away, so an answer typed before it was asked for would be swallowed --
+// and the next prompt would wait for input that had already arrived.
+var stdin = bufio.NewReader(os.Stdin)
+
+// console is where prompts and notices are written. It is a variable so
+// a test can read what a server's wording turned into on the way out.
+var console io.Writer = os.Stderr
 
 // consoleAsk answers a connection's questions on the terminal gridterm
 // was started from.
@@ -31,22 +43,45 @@ func (consoleAsk) Password(_ context.Context, user, host string) (string, error)
 }
 
 func (consoleAsk) Question(_ context.Context, q remote.Question) ([]string, error) {
+	// Named first, in our own words. Everything below is the server's,
+	// and it is printed to a real terminal that obeys escape sequences.
+	fmt.Fprintf(console, "%s@%s is asking:\n", q.User, q.Host)
+	if q.Name != "" {
+		fmt.Fprintln(console, plainly(q.Name))
+	}
 	if q.Instruction != "" {
-		fmt.Fprintln(os.Stderr, q.Instruction)
+		fmt.Fprintln(console, plainly(q.Instruction))
 	}
 	answers := make([]string, len(q.Prompts))
 	for i, prompt := range q.Prompts {
 		var err error
 		if i < len(q.Echo) && q.Echo[i] {
-			answers[i], err = promptLine(prompt)
+			answers[i], err = promptLine(plainly(prompt))
 		} else {
-			answers[i], err = promptSecret(prompt)
+			answers[i], err = promptSecret(plainly(prompt))
 		}
 		if err != nil {
 			return nil, err
 		}
 	}
 	return answers, nil
+}
+
+// plainly strips what a terminal would act on rather than print.
+//
+// A server chooses the wording here, and it goes to the console gridterm
+// was started from. Left alone, it could move that terminal's cursor,
+// overwrite what was already printed, or set its title.
+func plainly(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r == '\t' {
+			return ' '
+		}
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, s)
 }
 
 // TrustHostKey refuses.
@@ -65,11 +100,11 @@ func (consoleAsk) TrustHostKey(_ context.Context, key remote.HostKey) (bool, err
 // promptLine reads one line, for an answer the server said may be shown
 // as it is typed.
 func promptLine(prompt string) (string, error) {
-	fmt.Fprint(os.Stderr, prompt)
-	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+	fmt.Fprint(console, prompt)
+	line, err := stdin.ReadString('\n')
 	if err != nil {
-		return "", errors.New("no terminal to prompt on: " +
-			"start gridterm from a shell")
+		return "", fmt.Errorf("read the answer from the console "+
+			"(start gridterm from a shell): %w", err)
 	}
 	return strings.TrimRight(line, "\r\n"), nil
 }

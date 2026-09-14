@@ -229,6 +229,11 @@ emulator under `internal/` where they cannot be imported.
   the window opens, so there is nowhere to draw a dialog yet and the
   console is the only place left to ask. Connecting from inside the
   window asks in the window.
+- **One connection at a time.** Each one wants a dialog of its own to
+  wait in, the modal stack is ordered, and closing a dialog takes
+  anything above it — so a connection that finished would tear down the
+  dialog another was still waiting in. The connections panel is where
+  several at once will live.
 - **Sixel and the Kitty graphics protocol** are not implemented.
 - **An APC, PM or SOS string with no terminator grows without bound.**
   The parser buffers it before the emulator sees anything, so it cannot

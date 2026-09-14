@@ -218,17 +218,35 @@ func TestFieldPasteTakesOneLine(t *testing.T) {
 	}
 }
 
-func TestFieldWithoutClipboardIgnoresPaste(t *testing.T) {
+// A field with no clipboard has not handled the key, so the window's own
+// paste binding still runs. Swallowing it would make Ctrl+Shift+V do
+// nothing at all inside a dialog.
+func TestFieldWithoutClipboardLetsPasteThrough(t *testing.T) {
 	f := newTestField(40)
 	took, err := f.HandleKey(press(input.KeyV, input.ModCtrl))
 	if err != nil {
 		t.Fatalf("paste: %v", err)
 	}
-	if !took {
-		t.Error("the paste key travelled on and would reach the window")
+	if took {
+		t.Error("the field swallowed a paste it could not do")
 	}
 	if f.Text() != "" {
 		t.Errorf("text = %q, want it left empty", f.Text())
+	}
+}
+
+// AltGr on a Windows layout arrives as Ctrl+Alt and delivers ordinary
+// text, so AltGr+V must compose its character rather than pasting.
+func TestFieldAltGrDoesNotPaste(t *testing.T) {
+	f := newTestField(40)
+	f.ReadClipboard = func() string { return "clipboard" }
+
+	took, _ := f.HandleKey(press(input.KeyV, input.ModCtrl|input.ModAlt))
+	if took {
+		t.Error("AltGr+V was taken as a paste")
+	}
+	if f.Text() != "" {
+		t.Fatalf("AltGr+V pasted %q", f.Text())
 	}
 }
 
@@ -257,7 +275,9 @@ func TestFieldWithoutFocusPlacesNoCursor(t *testing.T) {
 	}
 }
 
-func TestFieldPlaceholderShowsOnlyWhileEmptyAndUnfocused(t *testing.T) {
+// The hint stays while the caret is in an empty field: that is exactly
+// when the user is wondering what to type.
+func TestFieldPlaceholderShowsWhileEmpty(t *testing.T) {
 	f := newTestField(20)
 	f.Placeholder = "user@host"
 
@@ -265,8 +285,12 @@ func TestFieldPlaceholderShowsOnlyWhileEmptyAndUnfocused(t *testing.T) {
 		t.Fatalf("drew %q, want the placeholder", row)
 	}
 	f.SetFocus(true)
-	if row, _ := drawField(f, 20); row != "" {
-		t.Fatalf("drew %q with the caret in it, want nothing", row)
+	row, cur := drawField(f, 20)
+	if row != "user@host" {
+		t.Fatalf("drew %q with the caret in it, want the placeholder", row)
+	}
+	if !cur.Visible || cur.X != 0 {
+		t.Fatalf("cursor = %+v, want a visible one at the start", cur)
 	}
 	typeField(f, "a")
 	if row, _ := drawField(f, 20); row != "a" {
@@ -278,10 +302,11 @@ func TestFieldPlaceholderShowsOnlyWhileEmptyAndUnfocused(t *testing.T) {
 // middle of a multi-byte character.
 func TestFieldSetCaretSnapsToAClusterBoundary(t *testing.T) {
 	f := newTestField(20)
-	f.SetText("héllo") // the accented letter is two bytes
-	f.SetCaret(2)      // inside it
+	// "a", then "e" with a combining acute accent: one cell, three bytes.
+	f.SetText("aéllo")
+	f.SetCaret(2) // inside the cluster
 	if got := f.Caret(); got != 1 {
-		t.Fatalf("caret = %d, want 1: it stopped inside a character", got)
+		t.Fatalf("caret = %d, want 1: it stopped inside a cluster", got)
 	}
 }
 

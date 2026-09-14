@@ -75,6 +75,17 @@ type app struct {
 	// asked for once rather than once per connection.
 	keys *remote.Ring
 
+	// connecting is set while a machine is being connected to. One at a
+	// time, because each wants a dialog of its own to wait in and the
+	// modal stack is ordered.
+	connecting bool
+
+	// prepare adjusts a config parsed from what the user typed, before
+	// anything is dialled. It is a field so a test can drive the real
+	// dialog against a server whose host key it has pinned; nil in the
+	// program, which connects to exactly what was typed.
+	prepare func(remote.Config) remote.Config
+
 	// shot drives a screenshot and then closes the window, for looking
 	// at what the drawing code actually produced. Nil in ordinary use.
 	shot *shooter
@@ -136,6 +147,10 @@ type app struct {
 
 func (a *app) Update() error {
 	if a.quit.Load() {
+		// Drained once on the way out: a connection that finished in
+		// this very frame is holding a shell that only this queue knows
+		// how to close.
+		a.pump.run()
 		// Give Draw one more frame to paint what the shell wrote last.
 		if a.drewFinal {
 			return ebiten.Termination

@@ -30,12 +30,16 @@ const dialTimeout = 20 * time.Second
 // A server with both keys then presents the one known_hosts does not
 // record, and knownhosts reports "key mismatch" — the man-in-the-middle
 // alarm — when nothing at all is wrong.
-func dial(ctx context.Context, addr, user string, auth []ssh.AuthMethod,
+func dial(ctx context.Context, addr, user string, next ssh.ClientAuthCallback,
 	hostKey ssh.HostKeyCallback) (*ssh.Client, error) {
 
+	// AuthCallback rather than Auth: x/crypto's own selection
+	// deduplicates by method name, so of several public-key methods only
+	// the first would ever be tried. What to try next is decided by the
+	// ladder in auth.go instead.
 	base := &ssh.ClientConfig{
 		User:            user,
-		Auth:            auth,
+		AuthCallback:    next,
 		HostKeyCallback: hostKey,
 		Timeout:         dialTimeout,
 	}
@@ -92,6 +96,14 @@ func dialOnce(ctx context.Context, addr string, cfg *ssh.ClientConfig) (*ssh.Cli
 	}
 	if !stop() {
 		// Cancelled between the handshake finishing and us noticing.
+		// The incoming channels are drained so the multiplexer is not
+		// left with a reader nobody will ever run.
+		go ssh.DiscardRequests(reqs)
+		go func() {
+			for ch := range chans {
+				_ = ch.Reject(ssh.Prohibited, "connection cancelled")
+			}
+		}()
 		_ = cc.Close()
 		return nil, ctx.Err()
 	}
@@ -127,9 +139,10 @@ func wantedKeyTypes(want []knownhosts.KnownKey) []string {
 // key changed", which knownhosts reports as the same type and which mean
 // very different things to a user.
 func describeHostKeyError(err error, addr string) error {
+	// The checker already said what it found, including whether part of
+	// known_hosts could not be read, so its wording is kept.
 	if errors.Is(err, errUnknownHost) {
-		return fmt.Errorf("remote: %s is not in known_hosts; "+
-			"connect once with ssh to record its host key", addr)
+		return fmt.Errorf("remote: connect to %s: %w", addr, err)
 	}
 	var ke *knownhosts.KeyError
 	if !errors.As(err, &ke) {

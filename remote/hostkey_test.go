@@ -242,17 +242,103 @@ func TestDialUnreadableKnownHostsIsAnError(t *testing.T) {
 	}
 }
 
+// A file of nothing but unreadable lines is not an empty file. Treating
+// it as one would offer trust-on-first-use for every host the user has
+// ever recorded.
 func TestDialKnownHostsWithOnlyBadLinesIsAnError(t *testing.T) {
 	s := sshtest.New(t)
 	kh := sshtest.WriteKnownHosts(t, "garbage", "more garbage")
 	cfg := checkedConfig(t, s, kh)
-	cfg.Ask = nil
+	cfg.Ask = newTestAsk()
 
 	_, err := Connect(t.Context(), cfg)
 	if err == nil {
 		t.Fatal("Connect connected with no usable known_hosts entries")
 	}
-	if !strings.Contains(err.Error(), "known_hosts") {
-		t.Fatalf("error = %v, want it to mention known_hosts", err)
+	if !strings.Contains(err.Error(), "could not be read") {
+		t.Fatalf("error = %v, want it to say the lines could not be read", err)
+	}
+}
+
+// A dropped line turns "this key changed, refuse" into "trust this key?"
+// -- the one question that must never be asked by mistake. Drop the line
+// that records a host and that host reads as unknown, so nothing is
+// offered while any line is unaccounted for.
+func TestDialWillNotOfferTrustWhenALineWasDropped(t *testing.T) {
+	s := sshtest.New(t)
+	ask := newTestAsk()
+	kh := sshtest.WriteKnownHosts(t, "this line will not parse")
+	cfg := checkedConfig(t, s, kh)
+	cfg.Ask = ask
+
+	_, err := Connect(t.Context(), cfg)
+	if err == nil {
+		t.Fatal("Connect went ahead with known_hosts lines it could not read")
+	}
+	if _, _, keys := ask.asked(); len(keys) != 0 {
+		t.Fatalf("the user was offered a host key while a line was unreadable: %+v", keys)
+	}
+	if !strings.Contains(err.Error(), "could not be read") {
+		t.Fatalf("error = %v, want it to say a line could not be read", err)
+	}
+}
+
+// A known_hosts with no trailing newline must not have the new entry
+// glued onto its last one: that leaves two lines parsing as neither, so
+// the host that was recorded reads as unknown next time.
+func TestDialRecordsOnALineOfItsOwn(t *testing.T) {
+	s := sshtest.New(t)
+	other := sshtest.New(t)
+	kh := filepath.Join(t.TempDir(), "known_hosts")
+	// An entry for a different host, with no newline after it.
+	if err := os.WriteFile(kh, []byte(other.KnownHostsLine()), 0o600); err != nil {
+		t.Fatalf("write known_hosts: %v", err)
+	}
+
+	cfg := checkedConfig(t, s, kh)
+	cfg.Ask = newTestAsk()
+	c, err := Connect(t.Context(), cfg)
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	_ = c.Close()
+
+	b, err := os.ReadFile(kh)
+	if err != nil {
+		t.Fatalf("read known_hosts: %v", err)
+	}
+	lines := strings.Split(strings.TrimRight(string(b), "\n"), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("known_hosts holds %d lines, want 2:\n%s", len(lines), b)
+	}
+	// Both must still parse, or the next connection asks again.
+	second := newTestAsk()
+	cfg.Ask = second
+	c2, err := Connect(t.Context(), cfg)
+	if err != nil {
+		t.Fatalf("second Connect: %v", err)
+	}
+	_ = c2.Close()
+	if _, _, keys := second.asked(); len(keys) != 0 {
+		t.Fatalf("the recorded host was asked about again: %+v", keys)
+	}
+}
+
+// A trust decision is not appended to whatever h.add happens to point at.
+func TestDialWillNotRecordThroughSomethingThatIsNotAFile(t *testing.T) {
+	s := sshtest.New(t)
+	dir := t.TempDir()
+	// A directory named where the file should be.
+	kh := filepath.Join(dir, "known_hosts")
+	if err := os.Mkdir(kh, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	// The first path is where a new key would be recorded.
+	cfg := checkedConfig(t, s, kh)
+	cfg.Ask = newTestAsk()
+
+	if _, err := Connect(t.Context(), cfg); err == nil {
+		t.Fatal("Connect recorded a host key through a directory")
 	}
 }

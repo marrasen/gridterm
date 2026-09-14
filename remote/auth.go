@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"slices"
 
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
@@ -16,20 +17,71 @@ import (
 // defaultIdentities are the key files tried when none were named.
 var defaultIdentities = []string{"id_ed25519", "id_ecdsa", "id_rsa"}
 
+// Protocol names for the authentication methods, as RFC 4252 spells them.
+// The server says which of these it will accept.
+const (
+	methodPublicKey = "publickey"
+	methodKeyboard  = "keyboard-interactive"
+	methodPassword  = "password"
+)
+
 // auth is what a connection will try, in order, and the agent socket it
 // opened to do it.
 type auth struct {
-	methods []ssh.AuthMethod
-	agent   io.Closer
+	ladder []rung
+	agent  io.Closer
 
 	// noAgent is why there is no agent, kept for the message shown when
 	// nothing at all worked.
 	noAgent error
+
+	// at is how far up the ladder the connection has climbed.
+	at int
+}
+
+// rung is one thing to try: a protocol method name, and how to build it
+// when its turn comes.
+//
+// The method is built rather than kept, because building it is what
+// opens a dialog, and a rung that is never reached must never ask the
+// user anything.
+type rung struct {
+	method string
+	build  func() ssh.AuthMethod
+}
+
+// next picks what to try after the last attempt failed.
+//
+// It exists because x/crypto will not do this for us: its own selection
+// deduplicates by method name, so of several "publickey" methods only
+// the first is ever tried. A machine with an agent and an encrypted key
+// would offer the agent, be refused, and never try the key.
+func (a *auth) next(ctx *ssh.ClientAuthContext) (ssh.AuthMethod, error) {
+	for a.at < len(a.ladder) {
+		r := a.ladder[a.at]
+		a.at++
+		// Only what the server says it will accept. Offering a password
+		// to a server that refuses passwords wastes an attempt and, with
+		// a dialog behind it, asks the user for nothing.
+		if !slices.Contains(ctx.AllowedMethods, r.method) {
+			continue
+		}
+		return r.build(), nil
+	}
+	return nil, nil
+}
+
+// close lets go of the agent socket, for a connection that never
+// happened.
+func (a *auth) close() {
+	if a != nil && a.agent != nil {
+		_ = a.agent.Close()
+	}
 }
 
 // authMethods assembles what to try, in the order a user expects.
 //
-// Keys that need no passphrase come first, all in one method: the ring,
+// Keys that need no passphrase come first, all in one attempt: the ring,
 // the agent, and any key file that is not encrypted. Only if the server
 // refuses all of those does anything prompt, and then one encrypted key
 // at a time, so a machine with three keys does not ask three times for a
@@ -54,61 +106,67 @@ func authMethods(ctx context.Context, cfg Config) (*auth, error) {
 		return nil, err
 	}
 
-	ready := func() ([]ssh.Signer, error) {
-		signers := cfg.Ring.Signers()
-		if agentSigners != nil {
-			got, err := agentSigners()
-			if err != nil {
-				return nil, fmt.Errorf("remote: read the SSH agent: %w", err)
-			}
-			signers = append(signers, got...)
-		}
-		return append(signers, plain...), nil
-	}
 	if agentSigners != nil || len(plain) > 0 || len(cfg.Ring.Paths()) > 0 {
-		a.methods = append(a.methods, ssh.PublicKeysCallback(ready))
+		a.ladder = append(a.ladder, rung{method: methodPublicKey, build: func() ssh.AuthMethod {
+			return ssh.PublicKeysCallback(func() ([]ssh.Signer, error) {
+				signers := cfg.Ring.Signers()
+				if agentSigners != nil {
+					got, err := agentSigners()
+					if err != nil {
+						return nil, fmt.Errorf("remote: read the SSH agent: %w", err)
+					}
+					signers = append(signers, got...)
+				}
+				return append(signers, plain...), nil
+			})
+		}})
 	}
 
 	if cfg.Ask == nil {
 		return a, nil
 	}
-	// One method per encrypted key, so the second is only reached — and
-	// only asked about — when the first was refused.
 	for _, path := range locked {
-		a.methods = append(a.methods, ssh.PublicKeysCallback(func() ([]ssh.Signer, error) {
-			signer, err := cfg.Ring.Unlock(ctx, path, cfg.Ask)
-			if err != nil {
-				return nil, fmt.Errorf("remote: private key %s: %w", path, err)
-			}
-			return []ssh.Signer{signer}, nil
-		}))
+		a.ladder = append(a.ladder, rung{method: methodPublicKey, build: func() ssh.AuthMethod {
+			return ssh.PublicKeysCallback(func() ([]ssh.Signer, error) {
+				signer, err := cfg.Ring.Unlock(ctx, path, cfg.Ask)
+				if err != nil {
+					return nil, fmt.Errorf("remote: private key %s: %w", path, err)
+				}
+				return []ssh.Signer{signer}, nil
+			})
+		}})
 	}
-	a.methods = append(a.methods,
-		ssh.KeyboardInteractive(keyboardInteractive(ctx, cfg.Ask)),
-		ssh.PasswordCallback(func() (string, error) {
-			return cfg.Ask.Password(ctx, cfg.User, cfg.Host)
-		}))
+	a.ladder = append(a.ladder,
+		rung{method: methodKeyboard, build: func() ssh.AuthMethod {
+			return ssh.KeyboardInteractive(keyboardInteractive(ctx, cfg))
+		}},
+		rung{method: methodPassword, build: func() ssh.AuthMethod {
+			return ssh.PasswordCallback(func() (string, error) {
+				return cfg.Ask.Password(ctx, cfg.User, cfg.Host)
+			})
+		}},
+	)
 	return a, nil
-}
-
-// close lets go of the agent socket, for a connection that never
-// happened.
-func (a *auth) close() {
-	if a != nil && a.agent != nil {
-		_ = a.agent.Close()
-	}
 }
 
 // keyboardInteractive answers whatever the server decided to ask, which
 // is usually a one-time code.
-func keyboardInteractive(ctx context.Context, ask Ask) ssh.KeyboardInteractiveChallenge {
+//
+// Which machine is asking is added here rather than left to the server.
+// Everything else in the dialog is the server's own wording, and a
+// server that chose "Unlock a private key" and a plausible key path
+// would otherwise produce a dialog indistinguishable from the local one
+// -- and be handed the passphrase to the user's private key.
+func keyboardInteractive(ctx context.Context, cfg Config) ssh.KeyboardInteractiveChallenge {
 	return func(name, instruction string, prompts []string, echo []bool) ([]string, error) {
 		if len(prompts) == 0 {
 			// The server is telling the user something rather than
 			// asking, so there is nothing to answer.
 			return nil, nil
 		}
-		return ask.Question(ctx, Question{
+		return cfg.Ask.Question(ctx, Question{
+			User:        cfg.User,
+			Host:        cfg.addr(),
 			Name:        name,
 			Instruction: instruction,
 			Prompts:     prompts,
@@ -143,7 +201,7 @@ func identities(cfg Config) (plain []ssh.Signer, locked []string, err error) {
 
 	for _, p := range paths {
 		// Already unlocked, so it is among the ring's signers and needs
-		// no method of its own.
+		// no rung of its own.
 		if cfg.Ring.Has(p) {
 			continue
 		}

@@ -115,18 +115,33 @@ func (f *Form) AddField(label string, field *Field) *Field {
 		field = NewField()
 	}
 	f.rows = append(f.rows, formRow{label: label, field: field})
-	// The first field takes focus, or a form would open with the caret
-	// on a button and nowhere to type.
+	// The first field is what the form opens on, or it would open with
+	// the caret on a button and nowhere to type. The focus itself
+	// arrives with the dialog, through SetFocus.
 	if len(f.rows) == 1 {
 		f.at = 0
-		field.SetFocus(true)
 	}
 	return field
 }
 
 // AddButton puts a button at the bottom. The first one added is the one
-// Enter presses from a field.
+// Enter presses from a field, and the one that has the focus when the
+// form has no fields.
+//
+// Do must not open another dialog. The form closes after it, and closing
+// a dialog takes anything stacked on top of it -- which would be the
+// dialog Do had just opened. Post the work instead, so it happens once
+// this form has gone.
 func (f *Form) AddButton(b Button) { f.buttons = append(f.buttons, b) }
+
+// FocusButton puts the focus on one of the buttons, for a question whose
+// safe answer should be the one already under the finger.
+func (f *Form) FocusButton(at int) {
+	if at < 0 || at >= len(f.buttons) {
+		return
+	}
+	f.focus(len(f.rows) + at)
+}
 
 // Fields returns the fields in the order they were added.
 func (f *Form) Fields() []*Field {
@@ -178,6 +193,15 @@ func (f *Form) SetFocus(on bool) {
 // typing goes where the caret is; what it does not want moves the focus
 // or presses a button.
 func (f *Form) HandleKey(ev input.Event) (bool, error) {
+	// A dialog with no room to be drawn takes nothing but Escape. It is
+	// still the top modal, so typing would land in a field the user
+	// cannot see, and Enter would send it wherever the dialog goes.
+	if f.box().Empty() {
+		if ev.Kind == input.KeyPress && ev.Key == input.KeyEscape {
+			f.dismiss()
+		}
+		return true, nil
+	}
 	if fld := f.focusedField(); fld != nil {
 		if took, err := fld.HandleKey(ev); took {
 			return true, err
@@ -205,6 +229,12 @@ func (f *Form) HandleKey(ev input.Event) (bool, error) {
 		f.move(1)
 		return true, nil
 	case input.KeyEnter, input.KeySpace:
+		// Only a fresh press. A dialog opens from the pump and input is
+		// polled in the same frame, so the repeats of the key that
+		// opened it would otherwise answer it before it is read.
+		if ev.Kind != input.KeyPress {
+			return true, nil
+		}
 		// Space presses the focused button, but only a button: in a
 		// field it is a character to type, which the field took above.
 		if at, isButton := f.Focused(); isButton {
@@ -264,25 +294,22 @@ func (f *Form) paint(v grid.View) {
 	if box.Empty() {
 		return
 	}
+	l := f.layout()
 	in := box.In(v)
 	in.Fill(grid.Cell{Rune: ' ', FG: f.Style.FG, BG: f.Style.BG, Width: 1})
 	cols, _ := in.Size()
 	room := cols - formPad*2
 
-	y := 1
-	in.SetString(formPad, y, f.Title, f.Style.TitleFG, f.Style.BG, grid.AttrBold)
-	y += 2
+	in.SetString(formPad, l.title, trimTo(f.Title, room), f.Style.TitleFG, f.Style.BG, grid.AttrBold)
 
-	for _, line := range f.Lines {
-		in.SetString(formPad, y, line, f.Style.HintFG, f.Style.BG, 0)
-		y++
-	}
-	if len(f.Lines) > 0 {
-		y++
+	for i, line := range l.lines {
+		in.SetString(formPad, l.linesTop+i, trimTo(line, room), f.Style.HintFG, f.Style.BG, 0)
 	}
 
-	for i, r := range f.rows {
-		in.SetString(formPad, y, r.label, f.Style.LabelFG, f.Style.BG, 0)
+	for i := 0; i < l.fields; i++ {
+		r := f.rows[i]
+		y := l.fieldsTop + i
+		in.SetString(formPad, y, trimTo(r.label, room), f.Style.LabelFG, f.Style.BG, 0)
 		fg, bg := f.Style.FieldFG, f.Style.FieldBG
 		if i == f.at {
 			fg, bg = f.Style.FocusFG, f.Style.FocusBG
@@ -290,24 +317,87 @@ func (f *Form) paint(v grid.View) {
 		r.field.Style = FieldStyle{FG: fg, BG: bg, PlaceholderFG: f.Style.HintFG}
 		width := max(room-f.fieldX()+formPad, 1)
 		r.field.Draw(in.Sub(f.fieldX(), y, width, 1))
-		y++
-	}
-	if len(f.rows) > 0 {
-		y++
 	}
 
 	if f.err != nil {
-		in.SetString(formPad, y, trimTo(f.err.Error(), room), f.Style.ErrorFG, f.Style.BG, 0)
+		in.SetString(formPad, l.errRow, trimTo(f.err.Error(), room),
+			f.Style.ErrorFG, f.Style.BG, 0)
 	}
-	f.paintButtons(in, cols)
+	f.paintButtons(in, l.buttonRow)
+}
+
+// formLayout is where each part of the dialog goes in the box it got.
+//
+// Every row comes from here, so what is drawn, what a click lands on and
+// what the buttons sit above cannot disagree. Working them out twice is
+// what let the buttons be painted over a field.
+type formLayout struct {
+	title     int
+	linesTop  int
+	lines     []string // as many hint lines as there was room for
+	fieldsTop int
+	fields    int // how many fields fit
+	errRow    int
+	buttonRow int
+}
+
+// layout divides the box up. The fields always fit -- box() refuses to
+// open a dialog with no room for them -- and the hint lines are what
+// gets dropped when the window is short.
+func (f *Form) layout() formLayout {
+	var l formLayout
+	box := f.box()
+	if box.Empty() {
+		return l
+	}
+	// From the bottom: a blank row, the buttons, the error line.
+	l.buttonRow = box.Rows - 2
+	l.errRow = box.Rows - 3
+
+	// From the top: a blank row, the title, a blank row.
+	l.title = 1
+	y := 3
+	l.linesTop = y
+
+	// The fields are spoken for before the hint lines get any room:
+	// box() promised every field would fit, and a hint is what the
+	// dialog will do without.
+	fields := len(f.rows)
+	if fields > 0 {
+		fields++ // the blank row under them
+	}
+	for _, line := range f.Lines {
+		if y+1 >= l.errRow-fields {
+			break
+		}
+		l.lines = append(l.lines, line)
+		y++
+	}
+	if len(l.lines) > 0 {
+		y++
+	}
+
+	l.fieldsTop = y
+	for range f.rows {
+		if y >= l.errRow {
+			break
+		}
+		l.fields++
+		y++
+	}
+	return l
 }
 
 // paintButtons draws the buttons in a row along the bottom, right
 // aligned so the one Enter presses is nearest the corner the eye lands
 // on.
-func (f *Form) paintButtons(in grid.View, cols int) {
-	y := f.buttonsRow()
+func (f *Form) paintButtons(in grid.View, y int) {
 	for i, at := range f.buttonCols() {
+		if at < 0 {
+			// No room for this one. Drawing it would land it on top of
+			// the buttons that did fit.
+			continue
+		}
 		b := f.buttons[i]
 		fg, bg := f.Style.ButtonFG, f.Style.ButtonBG
 		if focused, isButton := f.Focused(); isButton && focused == i {
@@ -320,7 +410,12 @@ func (f *Form) paintButtons(in grid.View, cols int) {
 	}
 }
 
-// buttonCols returns the column each button starts at.
+// buttonCols returns the column each button starts at, or -1 for one
+// there was no room for.
+//
+// A negative column is not a clipped button: grid.View.Sub shifts a
+// negative origin to zero rather than clipping it, so a button laid out
+// past the left edge would draw its middle at the left edge instead.
 func (f *Form) buttonCols() []int {
 	if len(f.buttons) == 0 {
 		return nil
@@ -332,6 +427,10 @@ func (f *Form) buttonCols() []int {
 	x := cols - formPad
 	for i := len(f.buttons) - 1; i >= 0; i-- {
 		w := grid.StringWidth(f.buttons[i].Title) + 2
+		if x-w < formPad {
+			at[i] = -1
+			continue
+		}
 		x -= w
 		at[i] = x
 		x--
@@ -342,6 +441,9 @@ func (f *Form) buttonCols() []int {
 // buttonAt returns which button covers a column.
 func (f *Form) buttonAt(x int) (int, bool) {
 	for i, at := range f.buttonCols() {
+		if at < 0 {
+			continue
+		}
 		w := grid.StringWidth(f.buttons[i].Title) + 2
 		if x >= at && x < at+w {
 			return i, true
@@ -458,24 +560,20 @@ func (f *Form) fieldX() int {
 }
 
 // rowsTop returns the first row of the box the fields are drawn on.
-func (f *Form) rowsTop() int {
-	// A blank line under the title, then the hint lines and a blank
-	// after them when there are any.
-	y := 3
-	if len(f.Lines) > 0 {
-		y += len(f.Lines) + 1
-	}
-	return y
-}
+func (f *Form) rowsTop() int { return f.layout().fieldsTop }
 
 // buttonsRow returns the row of the box the buttons are drawn on.
-func (f *Form) buttonsRow() int { return f.box().Rows - 2 }
+func (f *Form) buttonsRow() int { return f.layout().buttonRow }
 
 // box returns where the dialog goes, centred in the area it was given.
+//
+// It gives up rather than shrinking past the point where every field
+// fits. A field drawn off the bottom is still reachable with Tab, so the
+// user would be typing a password into a row that is not on screen.
 func (f *Form) box() Rect {
 	cols := min(f.size.Cols-formMargin*2, max(f.wantCols(), 20))
 	rows := min(f.size.Rows-formMargin*2, f.wantRows())
-	if cols < 12 || rows < 5 {
+	if cols < 12 || rows < f.needRows() {
 		return Rect{}
 	}
 	return Rect{
@@ -514,19 +612,24 @@ func (f *Form) wantCols() int {
 
 // wantRows returns how tall the dialog would like to be.
 func (f *Form) wantRows() int {
-	// A blank row top and bottom, the title, a blank under it, the body,
-	// the error line and the buttons.
-	rows := 1 + 1 + 1
+	rows := f.needRows()
 	if len(f.Lines) > 0 {
 		rows += len(f.Lines) + 1
 	}
+	return rows
+}
+
+// needRows returns the least the dialog can be drawn in: everything but
+// the hint lines, which are the only part it will do without.
+func (f *Form) needRows() int {
+	// A blank row, the title, a blank row.
+	rows := 3
 	if len(f.rows) > 0 {
 		rows += len(f.rows) + 1
 	}
 	// The error line is always there, so the buttons do not jump down
-	// the moment something goes wrong.
-	rows += 1 + 1 + 1
-	return rows
+	// the moment something goes wrong. Then the buttons and a blank row.
+	return rows + 3
 }
 
 // trimTo cuts a string to a width, by cluster so a wide character is not

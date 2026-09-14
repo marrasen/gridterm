@@ -67,7 +67,6 @@ type Palette struct {
 // the palette does not know what is showing it.
 func NewPalette(cmds *Commands, keys *Keymap, close func()) *Palette {
 	p := &Palette{cmds: cmds, keys: keys, close: close, q: NewField()}
-	p.q.SetFocus(true)
 	p.q.OnChange = func(string) { p.refresh() }
 	p.refresh()
 	return p
@@ -75,6 +74,13 @@ func NewPalette(cmds *Commands, keys *Keymap, close func()) *Palette {
 
 // SetClipboard backs the paste shortcut in the query line.
 func (p *Palette) SetClipboard(read func() string) { p.q.ReadClipboard = read }
+
+// SetFocus passes focus on to the query line, so the caret appears and
+// disappears with the dialog.
+//
+// Without it a menu opened over the palette leaves a caret blinking in a
+// query line that no longer has the keys.
+func (p *Palette) SetFocus(on bool) { p.q.SetFocus(on) }
 
 // Reset empties the query, for showing the palette afresh rather than
 // where it was left.

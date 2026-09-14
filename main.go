@@ -57,10 +57,15 @@ const wheelLines = 3
 type app struct {
 	atlas    *glyph.Atlas
 	renderer *render.Renderer
-	g        *grid.Grid
-	reader   ebitenin.Reader
-	mouse    ebitenin.MouseReader
-	clip     clipboardWriter
+	comp     *render.Compositor
+
+	// term is the layer the shell draws on, and g is its grid. Splits,
+	// tabs and dialogs become more layers above it.
+	termLayer *render.Layer
+	g         *grid.Grid
+	reader    ebitenin.Reader
+	mouse     ebitenin.MouseReader
+	clip      clipboardWriter
 
 	// selecting is true between a press and its release, so motion is
 	// only treated as a drag when a drag actually started here.
@@ -368,7 +373,7 @@ func (a *app) Draw(screen *ebiten.Image) {
 		a.term.Render(a.g)
 		a.mu.Unlock()
 	}
-	a.renderer.Draw(screen, a.g)
+	a.comp.Draw(screen)
 }
 
 // Layout satisfies ebiten.Game; LayoutF below takes precedence when the
@@ -497,11 +502,14 @@ func main() {
 	m := atlas.Metrics()
 
 	a := &app{atlas: atlas, renderer: render.New(atlas), fontSize: *fontSize}
+	a.comp = render.NewCompositor(a.renderer)
 
 	const initCols, initRows = 100, 32
 	pal := vt.DefaultPalette()
 	a.g = grid.New(initCols, initRows, pal.FG, pal.BG)
 	a.g.SelectionBG = pal.Selection
+	a.termLayer = &render.Layer{Grid: a.g}
+	a.comp.Add(a.termLayer)
 	a.lastSize = [2]int{initCols, initRows}
 
 	sess, err := startSession(*remote, strings.Fields(*cmdline), initCols, initRows)

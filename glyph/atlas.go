@@ -95,6 +95,11 @@ type Atlas struct {
 	pages []*ebiten.Image
 	cache map[key]Glyph
 
+	// gen counts rebuilds, so a caller holding anything derived from the
+	// old glyphs can tell they are stale. The cell box is not enough:
+	// two font sizes can share one.
+	gen uint64
+
 	// Shelf-packing cursor into the last page.
 	shelfX, shelfY, shelfH int
 
@@ -154,9 +159,16 @@ func (a *Atlas) SetSize(sizePt float64) error {
 		// window down with it.
 		return err
 	}
+	gen := a.gen
 	*a = *next
+	a.gen = gen + 1
 	return nil
 }
+
+// Generation counts how many times the atlas has been rebuilt. Every
+// glyph rasterised before a bump is at the wrong size or in the wrong
+// place.
+func (a *Atlas) Generation() uint64 { return a.gen }
 
 // Page returns the texture for page i, for use as a DrawTriangles source.
 func (a *Atlas) Page(i int) *ebiten.Image { return a.pages[i] }

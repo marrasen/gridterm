@@ -82,6 +82,10 @@ func New(a *glyph.Atlas) *Renderer {
 // Stats returns the cost of the most recent Draw.
 func (r *Renderer) Stats() Stats { return r.stats }
 
+// Generation reports the atlas rebuild count, so a caller caching
+// anything drawn from it can tell when the glyphs moved.
+func (r *Renderer) Generation() uint64 { return r.atlas.Generation() }
+
 // CellSize returns the pixel size of one cell.
 func (r *Renderer) CellSize() (w, h int) {
 	m := r.atlas.Metrics()
@@ -95,7 +99,12 @@ func (r *Renderer) GridSizeFor(pxW, pxH int) (cols, rows int) {
 	return max(pxW/m.CellW, 1), max(pxH/m.CellH, 1)
 }
 
-// Draw paints the dirty rows of g onto dst and marks the grid clean.
+// Draw paints the dirty rows of g onto dst.
+//
+// It does not clear the grid's damage. The caller does that, once
+// everything drawing from that grid has been drawn: clearing here would
+// let the first of several layers on one grid take the row damage for
+// all of them, and leave the rest showing stale text.
 //
 // Callers relying on clean rows being skipped must also call
 // ebiten.SetScreenClearedEveryFrame(false); otherwise the rows this
@@ -195,8 +204,6 @@ func (r *Renderer) Draw(dst *ebiten.Image, g *grid.Grid) {
 	for i := range r.fg {
 		r.flush(dst, &r.fg[i])
 	}
-
-	g.ClearDirty()
 }
 
 // pushGlyph queues one glyph quad at cell x,y.
@@ -311,7 +318,14 @@ func (r *Renderer) pushCursor(
 
 func (r *Renderer) reset() {
 	r.bg.verts, r.bg.idx = r.bg.verts[:0], r.bg.idx[:0]
+	// A rebuilt atlas — a font size change — replaces its pages, so a
+	// batch still holding the old texture would draw the old glyphs at
+	// the new coordinates.
+	if n := r.atlas.Pages(); len(r.fg) > n {
+		r.fg = r.fg[:n]
+	}
 	for i := range r.fg {
+		r.fg[i].src = r.atlas.Page(i)
 		r.fg[i].verts, r.fg[i].idx = r.fg[i].verts[:0], r.fg[i].idx[:0]
 	}
 }

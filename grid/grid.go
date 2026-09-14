@@ -433,8 +433,8 @@ func (g *Grid) AnyDirty() bool {
 	return slices.Contains(g.dirty, true)
 }
 
-// ClearDirty marks the whole grid clean. The renderer calls this after
-// a successful frame.
+// ClearDirty marks the whole grid clean. Whatever draws the grid calls
+// this once everything showing it has been drawn.
 func (g *Grid) ClearDirty() {
 	g.allDirty = false
 	clear(g.dirty)

@@ -16,11 +16,13 @@ GO_WIN = GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go
 .PHONY: test windows linux vet fmt all
 all: test windows
 
-# Everything testable without a display, which is most of the logic. The
-# glyph and main tests are here too: those packages need a GPU to draw,
-# but their tests only cover font selection, which does not.
+# Everything testable without a display, which is most of the logic.
+# glyph and main are here because their tests only cover font selection.
+# render is here because ebiten allocates textures without a window: the
+# compositor tests check the code path and the frame accounting, not the
+# pixels, which still need a real window to judge.
 test:
-	go test . ./glyph ./grid/... ./input ./vt/... ./session/...
+	go test . ./glyph ./grid/... ./input ./render ./vt/... ./session/...
 
 vet:
 	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go vet ./...

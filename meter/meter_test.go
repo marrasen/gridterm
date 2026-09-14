@@ -1,10 +1,6 @@
 package meter
 
 import (
-	"bytes"
-	"errors"
-	"io"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -99,60 +95,6 @@ func TestZeroMeterIsUsable(t *testing.T) {
 	}
 }
 
-func TestReaderAndWriterCount(t *testing.T) {
-	m := New()
-	clock := func() time.Time { return at }
-
-	r := &Reader{R: strings.NewReader("hello"), M: m, Now: clock}
-	got, err := io.ReadAll(r)
-	if err != nil {
-		t.Fatalf("read: %v", err)
-	}
-	if string(got) != "hello" {
-		t.Fatalf("read %q", got)
-	}
-
-	var sink bytes.Buffer
-	w := &Writer{W: &sink, M: m, Now: clock}
-	if _, err := w.Write([]byte("out")); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-
-	in, out := m.Totals()
-	if in != 5 || out != 3 {
-		t.Fatalf("totals = %d in, %d out, want 5 and 3", in, out)
-	}
-	if m.StateAt(at) != Active {
-		t.Fatal("moving bytes through the wrappers did not make it active")
-	}
-}
-
-// A read that failed still moved whatever it managed, and the failure is
-// the caller's to deal with.
-func TestReaderPassesTheErrorOn(t *testing.T) {
-	want := errors.New("the pipe broke")
-	m := New()
-	r := &Reader{R: &failingReader{err: want}, M: m, Now: func() time.Time { return at }}
-
-	n, err := r.Read(make([]byte, 8))
-	if !errors.Is(err, want) {
-		t.Fatalf("error = %v, want the one the reader gave", err)
-	}
-	if n != 2 {
-		t.Fatalf("read %d bytes, want the 2 it managed", n)
-	}
-	if in, _ := m.Totals(); in != 2 {
-		t.Fatalf("counted %d bytes, want the 2 that arrived", in)
-	}
-}
-
-type failingReader struct{ err error }
-
-func (f *failingReader) Read(p []byte) (int, error) {
-	copy(p, "ab")
-	return 2, f.err
-}
-
 // The goroutine moving bytes and the one drawing meet here with no lock
 // between them.
 func TestMeterFromSeveralGoroutines(t *testing.T) {
@@ -199,5 +141,9 @@ func TestStateNames(t *testing.T) {
 		if got := state.String(); got != name {
 			t.Errorf("%d.String() = %q, want %q", state, got, name)
 		}
+	}
+	// Anything else has to say so rather than come out blank.
+	if got := State(99).String(); got != "unknown" {
+		t.Errorf("State(99).String() = %q, want unknown", got)
 	}
 }

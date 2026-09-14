@@ -126,6 +126,15 @@ func TestConnectShowsWhyItFailed(t *testing.T) {
 	if len(a.panes) != 1 {
 		t.Errorf("%d panes after a failed connection, want the one that was there", len(a.panes))
 	}
+	// And the row it was waiting in has gone, or it stays on the panel
+	// for ever with a Close that does nothing.
+	for _, group := range a.registry.Groups(time.Now()) {
+		for _, row := range group.Rows {
+			if row.Label == "connecting" {
+				t.Fatal("a failed connection was left on the panel")
+			}
+		}
+	}
 }
 
 // Cancelling gives up on a connection that is genuinely still being
@@ -234,20 +243,50 @@ func TestConnectRunsSeveralAtOnce(t *testing.T) {
 		t.Fatalf("a dialog opened for a connection: %T", m)
 	}
 
-	// Cancelling one leaves the others alone.
-	first := a.registry.Groups(time.Now())[1].Rows[0].Entry
-	if err := first.Close(); err != nil {
+	// Each has a row of its own that says it is opening.
+	var opening []*conns.Entry
+	for _, group := range a.registry.Groups(time.Now()) {
+		for _, row := range group.Rows {
+			if row.Label == "connecting" && row.Note == "opening" {
+				opening = append(opening, row.Entry)
+			}
+		}
+	}
+	if len(opening) != 3 {
+		t.Fatalf("%d rows say a connection is opening, want 3", len(opening))
+	}
+
+	// Cancelling one leaves the others alone. Settled first, so a
+	// cancel-all is not missed while the count is passing through 2.
+	if err := opening[0].Close(); err != nil {
 		t.Fatalf("cancel: %v", err)
 	}
 	deadline := time.Now().Add(waitBudget)
-	for time.Now().Before(deadline) {
+	for time.Now().Before(deadline) && a.connecting > 2 {
 		a.pump.run()
-		if a.connecting == 2 {
-			return
-		}
 		time.Sleep(time.Millisecond)
 	}
-	t.Fatalf("%d connections are being made after cancelling one, want 2", a.connecting)
+	// Long enough that a cancel-all would have landed too.
+	for i := 0; i < 20; i++ {
+		a.pump.run()
+		time.Sleep(5 * time.Millisecond)
+	}
+	if a.connecting != 2 {
+		t.Fatalf("%d connections are being made after cancelling one, want 2", a.connecting)
+	}
+	for _, e := range opening[1:] {
+		var found bool
+		for _, group := range a.registry.Groups(time.Now()) {
+			for _, row := range group.Rows {
+				if row.Entry == e {
+					found = true
+				}
+			}
+		}
+		if !found {
+			t.Fatal("cancelling one connection took another off the panel")
+		}
+	}
 }
 
 // waitForConnecting runs the pump until a connection is on its way and

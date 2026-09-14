@@ -108,7 +108,13 @@ func (a *app) openTab() error {
 	if err != nil {
 		return err
 	}
-	return a.placeTab(next)
+	if err := a.placeTab(next); err != nil {
+		delete(a.panes, next)
+		_ = next.Close()
+		return err
+	}
+	a.showPane(next)
+	return nil
 }
 
 // placeTab puts a widget in the strip holding the focused pane, starting
@@ -193,6 +199,7 @@ func (a *app) splitFocused(dir ui.Dir) error {
 	// before the new one takes focus.
 	a.relayout()
 	a.focus(next)
+	a.showPane(next)
 	return nil
 }
 
@@ -202,13 +209,42 @@ func (a *app) closeFocused() error {
 	return a.closePane(ui.FocusedLeaf(a.root.Widget()))
 }
 
+// isPane reports whether a widget is something closePane may take out.
+//
+// The connections panel is a leaf of the tree like a terminal is, so
+// without this the close-pane key would detach the panel and leave the
+// window with no way to get it back.
+func (a *app) isPane(w ui.Widget) bool {
+	if w == nil || w == ui.Widget(a.panel) {
+		return false
+	}
+	for _, leaf := range ui.Leaves(w) {
+		if _, ok := leaf.(*term.Terminal); !ok {
+			return false
+		}
+	}
+	return true
+}
+
 // closePane takes a pane out of the tree and ends every shell under it.
 //
 // It works on any container, not just a split, because a pane can sit
 // inside anything: asking the tree to detach it is what keeps this from
 // having to know.
-func (a *app) closePane(w ui.Widget) error {
+func (a *app) closePane(w ui.Widget) error { return a.removePane(w, false) }
+
+// removePane takes a pane out of the tree and ends every shell under it.
+//
+// keep leaves the panel rows behind, greyed and closed, for a shell that
+// ended on its own. A pane the user closed takes its row with it: they
+// know what happened to it.
+func (a *app) removePane(w ui.Widget, keep bool) error {
 	if w == nil {
+		return nil
+	}
+	if !a.isPane(w) {
+		// The connections panel, or something else that is not a pane.
+		// Detaching it would take it out of the tree for good.
 		return nil
 	}
 	// Every shell under it, in case the pane being closed is a whole
@@ -238,8 +274,15 @@ func (a *app) closePane(w ui.Widget) error {
 			continue
 		}
 		if e := a.panes[t]; e != nil {
-			a.registry.Drop(e)
-			delete(a.rates, e)
+			if keep {
+				// The shell went on its own, so the row stays and says
+				// so: what a command did after it stopped is worth
+				// reading. There is nothing left to reveal or close.
+				e.Meter.Close()
+				e.Reveal, e.Close = nil, nil
+			} else {
+				a.registry.Drop(e)
+			}
 		}
 		delete(a.panes, t)
 		if cerr := t.Close(); cerr != nil && err == nil {
@@ -347,7 +390,7 @@ func (a *app) reapExited() {
 			if !t.Exited() {
 				continue
 			}
-			if err := a.closePane(t); err != nil {
+			if err := a.removePane(t, true); err != nil {
 				a.logError(err)
 			}
 		}

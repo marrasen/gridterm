@@ -82,6 +82,10 @@ func TestBytesReadsTheWayAPersonReadsIt(t *testing.T) {
 		1 << 40:      "1.0 TB",
 		1 << 50:      "1.0 PB",
 		1 << 59:      "512 PB",
+		// Past the last unit there is. Without the cap this indexes off
+		// the end of the table and takes the window with it.
+		1 << 60: "1024 PB",
+		1 << 63: "8192 PB",
 	}
 	for n, want := range cases {
 		if got := Bytes(n); got != want {
@@ -97,5 +101,23 @@ func TestSpeedSaysNothingWhenThereIsNone(t *testing.T) {
 	}
 	if got := Speed(2048); got != "2.0 kB/s" {
 		t.Fatalf("Speed(2048) = %q, want 2.0 kB/s", got)
+	}
+}
+
+// A clock that goes backwards must not produce a speed measured over a
+// negative moment. The answer already known is the right one to keep.
+func TestRateWithAClockThatWentBackwards(t *testing.T) {
+	m := New()
+	var r Rate
+	r.Sample(m, at)
+	m.Moved(2048, 0, at.Add(time.Second))
+	want, _ := r.Sample(m, at.Add(time.Second))
+	if want == 0 {
+		t.Fatal("nothing was measured to begin with")
+	}
+
+	m.Moved(1024, 0, at)
+	if got, _ := r.Sample(m, at.Add(-time.Hour)); got != want {
+		t.Fatalf("rate = %d after the clock went back, want the %d already known", got, want)
 	}
 }

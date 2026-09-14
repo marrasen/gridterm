@@ -144,7 +144,13 @@ func (r *Registry) Drop(e *Entry) {
 	defer r.mu.Unlock()
 	for i, have := range r.entries {
 		if have == e {
-			r.entries = append(r.entries[:i], r.entries[i+1:]...)
+			// The vacated slot at the end is cleared rather than left
+			// holding what used to be last: an Entry keeps a whole
+			// terminal alive through its Reveal and Close.
+			last := len(r.entries) - 1
+			copy(r.entries[i:], r.entries[i+1:])
+			r.entries[last] = nil
+			r.entries = r.entries[:last]
 			return
 		}
 	}
@@ -181,6 +187,10 @@ func (r *Registry) Len() int {
 }
 
 // Groups returns everything open, by machine.
+//
+// The entries it hands back are not the registry's to guard: their
+// labels are written by whatever is drawing. Reading one from another
+// goroutine is the caller's problem, not this lock's.
 //
 // This machine comes first, whether or not anything is open on it, so
 // the panel always has somewhere to show a local shell. Every other

@@ -349,13 +349,38 @@ func TestListDoesNotDirtyAnIdleFrame(t *testing.T) {
 // An empty list is not a broken one.
 func TestListWithNothingInIt(t *testing.T) {
 	l := newTestList(t, nil, 20, 5)
+	var ran int
+	l.OnActivate = func(ListRow) error { ran++; return nil }
+
 	if _, ok := l.Selected(); ok {
 		t.Fatal("something is selected in an empty list")
 	}
+	if l.SelectedIndex() != -1 {
+		t.Fatalf("the selection is row %d in an empty list", l.SelectedIndex())
+	}
+
 	l.HandleKey(press(input.KeyDown, 0))
 	l.HandleKey(press(input.KeyEnter, 0))
-	l.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Row: 0})
-	drawList(l, 20, 5)
+	l.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseWheelDown})
+	took, _ := l.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft, Row: 0,
+	})
+	if !took {
+		t.Error("a click on an empty list travelled on")
+	}
+	if ran != 0 {
+		t.Fatalf("an empty list ran a row %d times", ran)
+	}
+	if l.top != 0 {
+		t.Fatalf("an empty list scrolled to row %d", l.top)
+	}
+
+	g := drawList(l, 20, 5)
+	for y := 0; y < 5; y++ {
+		if got := strings.TrimSpace(rowOf(g, y)); got != "" {
+			t.Errorf("an empty list drew %q on row %d", got, y)
+		}
+	}
 }
 
 // A list of nothing but headers has nothing to select.
@@ -373,13 +398,31 @@ func TestListOfOnlyHeaders(t *testing.T) {
 	}
 }
 
-// Keys with a modifier belong to whatever is around the list.
+// Keys with a modifier belong to whatever is around the list, including
+// the ones the list would otherwise take for itself.
 func TestListLetsModifiedKeysThrough(t *testing.T) {
 	l := newTestList(t, panelRows(), 40, 10)
-	for _, mods := range []input.Mods{input.ModCtrl, input.ModAlt, input.ModCtrl | input.ModShift} {
-		if took, _ := l.HandleKey(press(input.KeyTab, mods)); took {
-			t.Errorf("the list swallowed Tab with %v", mods)
+	var ran int
+	l.OnActivate = func(ListRow) error { ran++; return nil }
+	before, _ := l.Selected()
+
+	for _, key := range []input.Key{
+		input.KeyDown, input.KeyUp, input.KeyHome, input.KeyEnd, input.KeyEnter,
+		input.KeySpace, input.KeyPageDown, input.KeyTab,
+	} {
+		for _, mods := range []input.Mods{
+			input.ModCtrl, input.ModAlt, input.ModCtrl | input.ModShift,
+		} {
+			if took, _ := l.HandleKey(press(key, mods)); took {
+				t.Errorf("the list swallowed %s with %v", key, mods)
+			}
 		}
+	}
+	if after, _ := l.Selected(); after.Key != before.Key {
+		t.Fatalf("a modified key moved the selection to %v", after.Key)
+	}
+	if ran != 0 {
+		t.Fatalf("a modified key ran a row %d times", ran)
 	}
 }
 
@@ -394,4 +437,60 @@ func TestListSelectByKey(t *testing.T) {
 	if l.Select("not there") {
 		t.Fatal("a key that is not there was found")
 	}
+	// A header is a name, not a row. Reporting success while the
+	// selection stays where it was would be worse than saying no.
+	before, _ := l.Selected()
+	if l.Select("h:margit") {
+		t.Fatal("a header was selected")
+	}
+	if after, _ := l.Selected(); after.Key != before.Key {
+		t.Fatalf("selecting a header moved the selection to %v", after.Key)
+	}
+}
+
+// The panel is rebuilt from the registry on every frame, so a rebuild
+// must not undo the wheel: the user would turn it and see nothing move.
+func TestListWheelSurvivesARebuild(t *testing.T) {
+	var rows []ListRow
+	for i := 0; i < 40; i++ {
+		rows = append(rows, ListRow{Text: "row", Key: i})
+	}
+	l := newTestList(t, rows, 20, 5)
+
+	for i := 0; i < 3; i++ {
+		l.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseWheelDown})
+	}
+	scrolled := l.top
+	if scrolled == 0 {
+		t.Fatal("the wheel did not scroll")
+	}
+
+	l.SetRows(rows)
+	if l.top != scrolled {
+		t.Fatalf("a rebuild moved the list from row %d back to %d", scrolled, l.top)
+	}
+
+	// Moving the selection still brings it into view: that is what
+	// moving it means.
+	l.HandleKey(press(input.KeyHome, 0))
+	if l.top != 0 {
+		t.Fatalf("Home left the list showing from row %d", l.top)
+	}
+}
+
+// A key that cannot be compared would panic where it is compared, on the
+// goroutine that draws.
+func TestListSurvivesAKeyThatCannotBeCompared(t *testing.T) {
+	l := NewList()
+	l.Style = listStyled()
+	l.Layout(Size{Cols: 20, Rows: 5})
+
+	rows := []ListRow{{Text: "one", Key: []int{1}}, {Text: "two", Key: "two"}}
+	l.SetRows(rows)
+	l.HandleKey(press(input.KeyDown, 0))
+	l.SetRows(rows)
+	if l.Select([]string{"x"}) {
+		t.Fatal("a key that cannot be compared was found")
+	}
+	drawList(l, 20, 5)
 }

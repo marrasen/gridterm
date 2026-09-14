@@ -207,6 +207,29 @@ func TestKindNames(t *testing.T) {
 			t.Errorf("%d.String() = %q, want %q", kind, got, name)
 		}
 	}
+	if got := Kind(99).String(); got != "Unknown" {
+		t.Errorf("Kind(99).String() = %q, want Unknown", got)
+	}
+}
+
+// Taking one connection off shifts the rest down and leaves the slot at
+// the end holding what used to be last. An Entry keeps a whole terminal
+// alive through its Reveal and Close, so that slot has to be cleared.
+func TestDropLetsGoPastTheEndOfTheList(t *testing.T) {
+	r := New()
+	for _, label := range []string{"one", "two", "three"} {
+		r.Add(entry("margit", Terminal, label))
+	}
+	r.Drop(r.Groups(at)[1].Rows[0].Entry)
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	held := r.entries[:cap(r.entries)]
+	for i := len(r.entries); i < len(held); i++ {
+		if held[i] != nil {
+			t.Fatalf("the list still holds %q past its end", held[i].Label)
+		}
+	}
 }
 
 // The panel reads this on every frame while connections are opening and

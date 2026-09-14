@@ -54,7 +54,9 @@ func (a *app) revealRow(row ui.ListRow) error {
 // that did not change alone. A state falls from active to settled by
 // itself, because the text is worked out again from the time passed in.
 func (a *app) refreshPanel(now time.Time) {
-	if a.panel == nil {
+	if a.panel == nil || (a.dock != nil && a.dock.Collapsed) {
+		// Nothing to build while nobody can see it. The rows are worked
+		// out again the moment the panel opens.
 		return
 	}
 	// A terminal names itself: what the program in it called the window
@@ -64,6 +66,10 @@ func (a *app) refreshPanel(now time.Time) {
 		e.Label = t.Title()
 	}
 
+	// What is still open, so a rate belonging to something that has gone
+	// is not kept for the life of the window.
+	live := make(map[*conns.Entry]bool, len(a.rates))
+
 	var rows []ui.ListRow
 	for _, group := range a.registry.Groups(now) {
 		rows = append(rows, ui.ListRow{
@@ -72,7 +78,13 @@ func (a *app) refreshPanel(now time.Time) {
 			Key:    "host:" + group.Host,
 		})
 		for _, row := range group.Rows {
+			live[row.Entry] = true
 			rows = append(rows, a.panelRow(row, now))
+		}
+	}
+	for e := range a.rates {
+		if !live[e] {
+			delete(a.rates, e)
 		}
 	}
 	a.panel.SetRows(rows)
@@ -99,13 +111,20 @@ func (a *app) note(row conns.Row, now time.Time) string {
 	if row.Note != "" {
 		return row.Note
 	}
-	if row.State == meter.Active && row.Meter != nil {
-		rate := a.rates[row.Entry]
-		if rate == nil {
-			rate = &meter.Rate{}
-			a.rates[row.Entry] = rate
-		}
-		in, out := rate.Sample(row.Meter, now)
+	if row.Meter == nil {
+		return row.State.String()
+	}
+	// Sampled whatever the state, so the window it measures is always
+	// the one just gone. Sampling only while active would measure the
+	// first busy second against however long the quiet spell before it
+	// lasted, and report a fraction of the real speed.
+	rate := a.rates[row.Entry]
+	if rate == nil {
+		rate = &meter.Rate{}
+		a.rates[row.Entry] = rate
+	}
+	in, out := rate.Sample(row.Meter, now)
+	if row.State == meter.Active {
 		if speed := meter.Speed(max(in, out)); speed != "" {
 			return speed
 		}
@@ -119,16 +138,6 @@ func groupName(host string) string {
 		return "Local"
 	}
 	return host
-}
-
-// trackConnection puts something on the panel and hands back what takes
-// it off again.
-func (a *app) trackConnection(e *conns.Entry) func() {
-	a.registry.Add(e)
-	return func() {
-		a.registry.Drop(e)
-		delete(a.rates, e)
-	}
 }
 
 // showPanel opens or closes the connections panel.

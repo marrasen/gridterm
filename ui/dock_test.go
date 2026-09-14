@@ -2,6 +2,7 @@ package ui
 
 import (
 	"image/color"
+	"strings"
 	"testing"
 
 	"github.com/marrasen/gridterm/grid"
@@ -162,25 +163,37 @@ func TestDockKeysGoToWhicheverHalfHasFocus(t *testing.T) {
 	}
 }
 
+// A click goes to the half it landed on, in that half's own
+// coordinates, and takes the keys with it.
 func TestDockRoutesTheMouseToWhatWasClicked(t *testing.T) {
 	d, panel, rest := newTestDock(t, 24, 100, 30)
-	// fake takes no mouse events, so this checks the routing through a
-	// click landing where each half is.
-	if _, shown := d.ChildArea(panel); !shown {
-		t.Fatal("the panel is not drawn")
-	}
-	took, _ := d.HandleMouse(input.MouseEvent{
-		Kind: input.MousePress, Button: input.MouseLeft, Col: 5, Row: 5,
+	d.SetFocus(true)
+
+	d.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft, Col: 5, Row: 7,
 	})
-	if took {
-		t.Error("a click on the panel was taken by the dock rather than offered to the panel")
+	if len(panel.clicks) != 1 || len(rest.clicks) != 0 {
+		t.Fatalf("the click went to panel=%d rest=%d", len(panel.clicks), len(rest.clicks))
 	}
+	if got := panel.clicks[0]; got.Col != 5 || got.Row != 7 {
+		t.Errorf("the panel was handed column %d row %d, want 5 and 7", got.Col, got.Row)
+	}
+	if d.Focused() != Widget(panel) {
+		t.Error("clicking the panel did not take the keys")
+	}
+
 	area, _ := d.ChildArea(rest)
-	took, _ = d.HandleMouse(input.MouseEvent{
-		Kind: input.MousePress, Button: input.MouseLeft, Col: area.X + 1, Row: 5,
+	d.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft, Col: area.X + 3, Row: 7,
 	})
-	if took {
-		t.Error("a click on the rest was taken by the dock")
+	if len(rest.clicks) != 1 {
+		t.Fatalf("the click went to rest=%d", len(rest.clicks))
+	}
+	if got := rest.clicks[0]; got.Col != 3 {
+		t.Errorf("the rest was handed column %d, want it in its own coordinates", got.Col)
+	}
+	if d.Focused() != Widget(rest) {
+		t.Error("clicking the rest did not take the keys back")
 	}
 }
 
@@ -221,6 +234,18 @@ func TestDockDragStaysWithinWhatTheWindowCanSpare(t *testing.T) {
 	if d.Width > 100-dockRest-1 {
 		t.Fatalf("width = %d, want room left for the rest of the window", d.Width)
 	}
+	// Dragged as far as it goes, both halves are still drawn: the
+	// clamp and the point where the dock gives up have to meet.
+	panel, shown := d.ChildArea(d.Panel())
+	if !shown {
+		t.Fatal("dragging the divider all the way made the panel vanish")
+	}
+	if panel.Cols != d.Width {
+		t.Fatalf("the panel is %d wide after the drag, want %d", panel.Cols, d.Width)
+	}
+	if _, shown := d.ChildArea(d.Rest()); !shown {
+		t.Fatal("dragging the divider all the way squeezed the rest away")
+	}
 }
 
 // A drag whose release never comes must not leave the divider stuck to
@@ -238,9 +263,21 @@ func TestDockCancelGestureEndsADrag(t *testing.T) {
 
 func TestDockReplaceAndRemove(t *testing.T) {
 	d, panel, rest := newTestDock(t, 24, 100, 30)
+	d.SetFocus(true)
 	next := &fake{name: "next"}
 	if !d.Replace(rest, next) {
 		t.Fatal("Replace would not swap the rest")
+	}
+	// Focus follows: the widget that had the keys has gone.
+	if rest.focus || !next.focus {
+		t.Errorf("after Replace, focus is old=%v new=%v", rest.focus, next.focus)
+	}
+	if d.Replace(next, nil) {
+		t.Fatal("Replace accepted nothing as a replacement")
+	}
+	// The same widget in both halves would give Remove two answers.
+	if d.Replace(next, panel) {
+		t.Fatal("Replace put the same widget in both halves")
 	}
 	if d.Rest() != next {
 		t.Fatal("the rest was not replaced")
@@ -249,13 +286,21 @@ func TestDockReplaceAndRemove(t *testing.T) {
 		t.Fatal("Replace swapped something that was not there")
 	}
 
-	// Losing the panel leaves the dock as its other half.
+	// Losing the panel leaves the dock as its other half, and the keys
+	// go with it: the child it held may outlive it.
+	d.Focus(panel)
 	stands, ok := d.Remove(panel)
 	if !ok {
 		t.Fatal("Remove would not take the panel out")
 	}
 	if stands != next {
 		t.Fatalf("Remove said %v should stand in its place, want the rest", stands)
+	}
+	if panel.focus {
+		t.Error("the removed panel was not told it lost the keys")
+	}
+	if !next.focus {
+		t.Error("Remove did not hand the keys to what stands in its place")
 	}
 	if _, ok := d.Remove(&fake{}); ok {
 		t.Fatal("Remove took out something that was not there")
@@ -275,7 +320,8 @@ func TestDockRemovingTheRestLeavesThePanel(t *testing.T) {
 	}
 }
 
-// Every child has to know where it is, or a drag cannot be routed to it.
+// Where a container says a child is has to be where it drew it, or a
+// click is routed to one thing and the user is looking at another.
 func TestDockChildAreasMatchWhatIsDrawn(t *testing.T) {
 	d, panel, rest := newTestDock(t, 24, 100, 30)
 	g := grid.New(100, 30, color.RGBA{}, color.RGBA{})
@@ -294,6 +340,15 @@ func TestDockChildAreasMatchWhatIsDrawn(t *testing.T) {
 	}
 	if restArea.X != 25 {
 		t.Errorf("the rest is at %+v, want it past the divider", restArea)
+	}
+	// fake writes its own name at the top left of whatever view it got.
+	// Read by column, not by byte: the divider is three bytes wide.
+	row := []rune(rowOf(g, 0))
+	if got := string(row[panelArea.X:]); !strings.HasPrefix(got, "panel") {
+		t.Errorf("the panel was drawn at %q, not where ChildArea says it is", got)
+	}
+	if got := string(row[restArea.X:]); !strings.HasPrefix(got, "rest") {
+		t.Errorf("the rest was drawn at %q, not where ChildArea says it is", got)
 	}
 	// The divider is drawn between them and belongs to neither.
 	if got := g.At(24, 0).Rune; got != '│' {

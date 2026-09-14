@@ -21,7 +21,6 @@ func withPanel(t *testing.T, a *testApp) {
 	t.Helper()
 	a.panel = a.newPanel()
 	a.dock = ui.NewDock(panelWidth, a.panel, a.root.Widget())
-	a.dock.Collapsed = true
 	a.root.SetWidget(a.dock)
 	a.relayout()
 }
@@ -269,9 +268,7 @@ func TestPanelSaysWhenAConnectionCannotBeClosed(t *testing.T) {
 func TestPanelOpensAndCloses(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withPanel(t, a)
-	if !a.dock.Collapsed {
-		t.Fatal("the window opened with the panel already showing")
-	}
+	a.dock.Collapsed = true
 
 	if err := a.togglePanel(); err != nil {
 		t.Fatalf("toggle: %v", err)
@@ -284,6 +281,31 @@ func TestPanelOpensAndCloses(t *testing.T) {
 	}
 	if !a.dock.Collapsed {
 		t.Fatal("the panel did not close")
+	}
+}
+
+// A hidden panel is not worth building. The window draws sixty times a
+// second and nobody can see it.
+func TestPanelBuildsNothingWhileHidden(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	if got := panelText(a, panelNow); len(got) == 0 {
+		t.Fatal("the panel showed nothing while open")
+	}
+
+	a.dock.Collapsed = true
+	a.panel.SetRows(nil)
+	a.refreshPanel(panelNow)
+	if got := a.panel.Rows(); len(got) != 0 {
+		t.Fatalf("a hidden panel built %d rows", len(got))
+	}
+
+	// And it comes back the moment it is shown.
+	if err := a.showPanel(true); err != nil {
+		t.Fatalf("showPanel: %v", err)
+	}
+	if got := panelText(a, panelNow); len(got) == 0 {
+		t.Fatal("the panel stayed empty after it was shown")
 	}
 }
 
@@ -337,9 +359,6 @@ func TestPanelTakesTheKeysWhileItHasThem(t *testing.T) {
 func TestPanelDoesNotDirtyAnIdleFrame(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withPanel(t, a)
-	if err := a.showPanel(true); err != nil {
-		t.Fatalf("showPanel: %v", err)
-	}
 	e := onlyPane(t, a)
 	e.Meter.Moved(10, 0, panelNow)
 
@@ -386,4 +405,207 @@ func TestPanelSeesTheShellGo(t *testing.T) {
 
 	a.shells[0].Close()
 	waitUntil(t, func() bool { return e.State(time.Now()) == meter.Closed })
+}
+
+// Enter on the panel has to do something. Calling revealRow by hand
+// tests the function, not that anything is wired to it.
+func TestPanelEnterRevealsThroughTheList(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	if err := a.openTab(); err != nil {
+		t.Fatalf("openTab: %v", err)
+	}
+	panelText(a, panelNow)
+	if err := a.focusPanel(); err != nil {
+		t.Fatalf("focusPanel: %v", err)
+	}
+
+	// The first row is the pane that does not have focus.
+	first := a.panel.Rows()[1]
+	want := first.Key.(*conns.Entry)
+	a.panel.Select(want)
+	if _, err := a.root.HandleKey(press(input.KeyEnter, 0)); err != nil {
+		t.Fatalf("enter: %v", err)
+	}
+	if got := a.panes[a.focusedTerminal()]; got != want {
+		t.Fatal("Enter on the panel did not focus the pane the row names")
+	}
+}
+
+// A connection that is still being made says so, in its own words.
+func TestPanelSaysAConnectionIsOnItsWay(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	a.registry.Add(&conns.Entry{
+		Host: "margit", Kind: conns.Terminal, Label: "connecting", Note: "opening",
+	})
+
+	var found bool
+	for _, row := range panelText(a, panelNow) {
+		if strings.Contains(row, "connecting") && strings.Contains(row, "[opening]") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("the panel shows %v, want a row saying it is opening", panelText(a, panelNow))
+	}
+}
+
+// A finished row has to read as finished rather than as one more thing
+// running.
+func TestPanelDimsAFinishedRow(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	e := onlyPane(t, a)
+
+	a.refreshPanel(panelNow)
+	running := a.panel.Rows()[1].FG
+
+	e.Meter.Close()
+	a.refreshPanel(panelNow)
+	finished := a.panel.Rows()[1].FG
+
+	if finished == running {
+		t.Fatal("a finished row is drawn the same as a running one")
+	}
+	if finished.A == 0 {
+		t.Fatal("a finished row has no colour of its own")
+	}
+}
+
+// A shell that ends on its own leaves its row behind, saying what it
+// did. A pane the user closed takes its row with it: they know.
+func TestPanelKeepsTheRowOfAShellThatEndedOnItsOwn(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	if err := a.openTab(); err != nil {
+		t.Fatalf("openTab: %v", err)
+	}
+	panelText(a, panelNow)
+
+	// The shell on the first pane goes.
+	a.shells[0].Close()
+	waitUntil(t, func() bool {
+		a.reapExited()
+		return len(a.panes) == 1
+	})
+
+	rows := panelText(a, panelNow)
+	var closed int
+	for _, row := range rows {
+		if strings.Contains(row, "[closed]") {
+			closed++
+		}
+	}
+	if closed != 1 {
+		t.Fatalf("the panel shows %v, want the shell that ended left behind", rows)
+	}
+
+	// And clearing takes it off.
+	if err := a.clearFinished(); err != nil {
+		t.Fatalf("clearFinished: %v", err)
+	}
+	for _, row := range panelText(a, panelNow) {
+		if strings.Contains(row, "[closed]") {
+			t.Fatalf("clearing left %q", row)
+		}
+	}
+}
+
+// The close-pane key with the panel focused used to detach the panel and
+// leave the window with no way to get it back.
+func TestClosePaneWillNotTakeThePanelOutOfTheTree(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	if err := a.focusPanel(); err != nil {
+		t.Fatalf("focusPanel: %v", err)
+	}
+
+	if err := a.closeFocused(); err != nil {
+		t.Fatalf("closeFocused: %v", err)
+	}
+	if a.dock.Panel() != ui.Widget(a.panel) {
+		t.Fatal("the panel was taken out of the dock")
+	}
+	if len(a.panes) != 1 {
+		t.Fatalf("%d panes, want the one that was there", len(a.panes))
+	}
+	// And the panel still works.
+	if err := a.togglePanel(); err != nil {
+		t.Fatalf("toggle: %v", err)
+	}
+}
+
+// A window too narrow for the panel must not take the keys to somewhere
+// that is never drawn: the keyboard would stop working with no
+// explanation.
+func TestFocusPanelRefusesAWindowWithNoRoom(t *testing.T) {
+	a := newTestApp(t, 30, 10)
+	withPanel(t, a)
+	a.relayout()
+	if _, shown := a.dock.ChildArea(a.panel); shown {
+		t.Skip("this window has room for the panel after all")
+	}
+
+	if err := a.focusPanel(); err == nil {
+		t.Fatal("the keys went to a panel with no room to be drawn")
+	}
+	if a.dock.Focused() == ui.Widget(a.panel) {
+		t.Fatal("the panel has the keys and is not on screen")
+	}
+}
+
+// Clicking a terminal takes the keys back from the panel. Without it the
+// user types into something they are not looking at.
+func TestClickingATerminalTakesTheKeysBack(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	if err := a.focusPanel(); err != nil {
+		t.Fatalf("focusPanel: %v", err)
+	}
+	if a.dock.Focused() != ui.Widget(a.panel) {
+		t.Fatal("the panel does not have the keys")
+	}
+
+	area, shown := a.dock.ChildArea(a.dock.Rest())
+	if !shown {
+		t.Fatal("the rest of the window is not drawn")
+	}
+	if _, err := a.root.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft,
+		Col: area.X + 2, Row: area.Y + 2,
+	}); err != nil {
+		t.Fatalf("click: %v", err)
+	}
+	if a.dock.Focused() == ui.Widget(a.panel) {
+		t.Fatal("clicking the terminal left the keys on the panel")
+	}
+
+	// And typing reaches the shell again.
+	a.root.HandleKey(input1('x'))
+	waitUntil(t, func() bool { return strings.Contains(a.shells[0].sentText(), "x") })
+}
+
+// A speed shown when a connection wakes up is the speed now, not the
+// average over however long it was quiet.
+func TestPanelSpeedIsNotAveragedOverTheQuietSpell(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	e := onlyPane(t, a)
+
+	e.Meter.Moved(1<<20, 0, panelNow)
+	panelText(a, panelNow)
+
+	// A minute of nothing, with the panel drawing throughout.
+	quiet := panelNow.Add(time.Minute)
+	for at := panelNow.Add(time.Second); !at.After(quiet); at = at.Add(time.Second) {
+		panelText(a, at)
+	}
+
+	// And then a megabyte in one second.
+	e.Meter.Moved(1<<20, 0, quiet.Add(time.Second))
+	got := panelText(a, quiet.Add(time.Second))[1]
+	if !strings.Contains(got, "1.0 MB/s") {
+		t.Fatalf("row = %q, want 1.0 MB/s: the quiet spell was averaged in", got)
+	}
 }

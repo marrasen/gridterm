@@ -47,13 +47,14 @@ func (r *Rate) Sample(m *Meter, now time.Time) (in, out uint64) {
 }
 
 // Bytes writes a byte count the way a person reads one: three
-// significant figures and a unit, so the width of the number does not
-// jump about as it grows.
+// significant figures and a unit.
 func Bytes(n uint64) string {
 	const unit = 1024
 	if n < unit {
 		return fmt.Sprintf("%d B", n)
 	}
+	// exp is capped at the last suffix there is. Without it a number
+	// past an exabyte would index past the end of the table.
 	div, exp := uint64(unit), 0
 	for n/div >= unit && exp < 4 {
 		div *= unit

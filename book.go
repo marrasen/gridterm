@@ -106,7 +106,7 @@ func (a *app) connectSaved(name string) error {
 		return fmt.Errorf("%q is reached through %q, which gridterm cannot do yet",
 			h.Name, h.Via)
 	}
-	a.connect(h.Config())
+	a.connectAs(h.Name, h.Config())
 	return nil
 }
 

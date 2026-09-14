@@ -11,7 +11,6 @@
 package meter
 
 import (
-	"io"
 	"sync/atomic"
 	"time"
 )
@@ -126,41 +125,4 @@ func (m *Meter) StateAt(now time.Time) State {
 		return Active
 	}
 	return Settled
-}
-
-// Reader counts what is read through it.
-type Reader struct {
-	R io.Reader
-	M *Meter
-
-	// Now is where the time comes from. A nil one uses the clock.
-	Now func() time.Time
-}
-
-func (r *Reader) Read(p []byte) (int, error) {
-	n, err := r.R.Read(p)
-	r.M.Moved(n, 0, now(r.Now))
-	return n, err
-}
-
-// Writer counts what is written through it.
-type Writer struct {
-	W io.Writer
-	M *Meter
-
-	// Now is where the time comes from. A nil one uses the clock.
-	Now func() time.Time
-}
-
-func (w *Writer) Write(p []byte) (int, error) {
-	n, err := w.W.Write(p)
-	w.M.Moved(0, n, now(w.Now))
-	return n, err
-}
-
-func now(f func() time.Time) time.Time {
-	if f == nil {
-		return time.Now()
-	}
-	return f()
 }

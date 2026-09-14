@@ -164,6 +164,8 @@ func main() {
 	// Off the drawing goroutine: reading every font file the system has
 	// takes long enough to be seen as the window failing to open.
 	a.startFontScan()
+	a.showPane(first)
+
 	// The tree: the menu bar over the panel and everything else.
 	a.panel = a.newPanel()
 	a.dock = ui.NewDock(panelWidth, a.panel, first)

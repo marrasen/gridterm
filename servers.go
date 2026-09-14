@@ -102,7 +102,15 @@ func (a *app) openSessionTab(sess session.Session, host string) error {
 	if err != nil {
 		return err
 	}
-	return a.placeTab(t)
+	if err := a.placeTab(t); err != nil {
+		// Nowhere to put it, so nothing is told about it. Closing the
+		// terminal closes the session with it.
+		delete(a.panes, t)
+		_ = t.Close()
+		return err
+	}
+	a.showPane(t)
+	return nil
 }
 
 // reportError shows something that failed, for a failure that arrived
@@ -210,9 +218,16 @@ func (a *app) newTerminalOn(sess session.Session, host string) (*term.Terminal, 
 		Reveal: func() { a.focus(t) },
 		Close:  func() error { return a.closePane(t) },
 	}
-	a.registry.Add(e)
 	a.panes[t] = e
 	return t, nil
+}
+
+// showPane puts a pane on the panel, once it is somewhere the panel can
+// send the user.
+func (a *app) showPane(t *term.Terminal) {
+	if e := a.panes[t]; e != nil {
+		a.registry.Add(e)
+	}
 }
 
 // metered counts what moves through a session, so the panel can say
@@ -239,6 +254,11 @@ func (s *metered) Read(p []byte) (int, error) {
 func (s *metered) Write(p []byte) (int, error) {
 	n, err := s.Session.Write(p)
 	s.m.Moved(0, n, time.Now())
+	if err != nil {
+		// A session that will not take input has ended as surely as one
+		// that will not give any: the terminal treats both the same way.
+		s.m.Close()
+	}
 	return n, err
 }
 

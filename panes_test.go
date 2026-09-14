@@ -131,6 +131,7 @@ func newTestApp(t *testing.T, cols, rows int) *testApp {
 	if err != nil {
 		t.Fatalf("first pane: %v", err)
 	}
+	ta.showPane(first)
 	ta.root.SetWidget(first)
 	ta.root.Layout(ui.Rect{Cols: cols, Rows: rows})
 	t.Cleanup(func() {

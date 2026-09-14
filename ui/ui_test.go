@@ -31,6 +31,15 @@ type fake struct {
 	takes   input.Key
 	fails   error
 	seen    []input.Key
+
+	// clicks are the mouse events this was handed, in its own
+	// coordinates, for checking that a container routed one correctly.
+	clicks []input.MouseEvent
+}
+
+func (f *fake) HandleMouse(ev input.MouseEvent) (bool, error) {
+	f.clicks = append(f.clicks, ev)
+	return true, nil
 }
 
 func (f *fake) Layout(size Size) {

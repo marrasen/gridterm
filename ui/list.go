@@ -2,6 +2,7 @@ package ui
 
 import (
 	"image/color"
+	"reflect"
 
 	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/input"
@@ -43,6 +44,9 @@ type ListRow struct {
 	// Key is how a caller recognises this row again. The selection
 	// follows it, so a list rebuilt every frame does not lose its place
 	// when something above it appears or goes.
+	//
+	// It has to be comparable: a slice, a map or a function in here
+	// would panic where it is compared, on the goroutine that draws.
 	Key any
 
 	// FG overrides the row's colour when it has an alpha, for a row that
@@ -61,10 +65,6 @@ type List struct {
 	// OnActivate runs when Enter is pressed or a row is clicked.
 	OnActivate func(ListRow) error
 
-	// OnSelect is told when the selection moves, for a caller that
-	// mirrors it somewhere else.
-	OnSelect func(ListRow)
-
 	rows []ListRow
 
 	// at is the selected row and top the first one drawn. A list longer
@@ -80,6 +80,20 @@ type List struct {
 // NewList returns an empty list.
 func NewList() *List { return &List{at: -1} }
 
+// sameKey compares two row keys.
+//
+// Comparing two interfaces panics when either holds something that
+// cannot be compared, and this runs on the goroutine that draws: a panic
+// here takes the window with it. A key like that simply never matches,
+// which costs the user their place in the list and nothing else.
+func sameKey(a, b any) bool {
+	ta, tb := reflect.TypeOf(a), reflect.TypeOf(b)
+	if ta == nil || tb == nil || ta != tb || !ta.Comparable() {
+		return false
+	}
+	return a == b
+}
+
 // SetRows replaces what the list shows, keeping the user's place.
 //
 // The selection follows its Key rather than its position, because the
@@ -94,7 +108,7 @@ func (l *List) SetRows(rows []ListRow) {
 	l.at = -1
 	if key != nil {
 		for i, row := range rows {
-			if !row.Header && row.Key == key {
+			if !row.Header && sameKey(row.Key, key) {
 				l.at = i
 				break
 			}
@@ -103,7 +117,10 @@ func (l *List) SetRows(rows []ListRow) {
 	if l.at < 0 {
 		l.at = l.firstSelectable()
 	}
-	l.scroll()
+	// Only clamped, not pulled back to the selection: the panel is
+	// rebuilt every frame, and bringing the selection into view here
+	// would undo the wheel within a frame of the user turning it.
+	l.clamp()
 }
 
 // Rows returns what the list is showing.
@@ -124,7 +141,7 @@ func (l *List) SelectedIndex() int { return l.at }
 // there is one.
 func (l *List) Select(key any) bool {
 	for i, row := range l.rows {
-		if !row.Header && row.Key == key {
+		if !row.Header && sameKey(row.Key, key) {
 			l.moveTo(i)
 			return true
 		}
@@ -135,7 +152,7 @@ func (l *List) Select(key any) bool {
 // Layout notes how much room the list has.
 func (l *List) Layout(size Size) {
 	l.size = size
-	l.scroll()
+	l.clamp()
 }
 
 // SetFocus marks the list as the one receiving keys, which is what makes
@@ -297,14 +314,11 @@ func (l *List) move(by int) {
 // moveTo puts the selection on one row and tells whoever is listening.
 func (l *List) moveTo(at int) {
 	if at < 0 || at >= len(l.rows) || l.rows[at].Header || at == l.at {
-		l.scroll()
+		l.reveal()
 		return
 	}
 	l.at = at
-	l.scroll()
-	if l.OnSelect != nil {
-		l.OnSelect(l.rows[at])
-	}
+	l.reveal()
 }
 
 // nextFrom returns the next row that can be selected in a direction, or
@@ -339,21 +353,27 @@ func (l *List) lastSelectable() int {
 // scrollBy moves what is shown without moving the selection, for the
 // wheel.
 func (l *List) scrollBy(by int) {
-	l.top = min(max(l.top+by, 0), max(len(l.rows)-l.size.Rows, 0))
+	l.top += by
+	l.clamp()
 }
 
-// scroll brings the selected row into the box, so Enter always acts on
-// something the user can see.
-func (l *List) scroll() {
+// clamp keeps what is shown within the list, for one that has shrunk or
+// a box that has changed size.
+func (l *List) clamp() {
 	rows := l.size.Rows
 	if rows <= 0 {
 		l.top = 0
 		return
 	}
-	// A list that has shrunk must not be left scrolled past its end.
-	l.top = min(l.top, max(len(l.rows)-rows, 0))
-	l.top = max(l.top, 0)
-	if l.at < 0 {
+	l.top = min(max(l.top, 0), max(len(l.rows)-rows, 0))
+}
+
+// reveal brings the selected row into the box, so Enter always acts on
+// something the user can see. It is what moving the selection does.
+func (l *List) reveal() {
+	l.clamp()
+	rows := l.size.Rows
+	if rows <= 0 || l.at < 0 {
 		return
 	}
 	if l.at < l.top {

@@ -105,7 +105,13 @@ func (d *Dock) Focus(w Widget) bool {
 	switch {
 	case w == nil:
 		return false
-	case w == d.panel && !d.Collapsed:
+	case w == d.panel:
+		// Not just "not collapsed": a window too narrow for both gives
+		// the panel no room at all, and focus cannot go somewhere that
+		// is never drawn and cannot be clicked.
+		if panel, _, _ := d.rects(); panel.Empty() {
+			return false
+		}
 		return d.focusPanel(true)
 	case w == d.rest:
 		return d.focusPanel(false)
@@ -132,6 +138,11 @@ func (d *Dock) focusPanel(on bool) bool {
 // there.
 func (d *Dock) Replace(old, new Widget) bool {
 	if old == nil || new == nil {
+		return false
+	}
+	// The same widget in both halves would give Remove two answers and
+	// leave the dock holding a ghost.
+	if (old == d.panel && new == d.rest) || (old == d.rest && new == d.panel) {
 		return false
 	}
 	focused := d.hasFocus && d.Focused() == old
@@ -162,18 +173,29 @@ func (d *Dock) Remove(w Widget) (Widget, bool) {
 	if w == nil {
 		return nil, false
 	}
-	if d.hasFocus && d.Focused() == w {
-		SetFocus(w, false)
-	}
+	var other Widget
 	switch w {
 	case d.panel:
-		d.panel = nil
-		return d.rest, true
+		other = d.rest
 	case d.rest:
-		d.rest = nil
-		return d.panel, true
+		other = d.panel
+	default:
+		return nil, false
 	}
-	return nil, false
+	if d.hasFocus && d.Focused() == w {
+		SetFocus(w, false)
+		// Handed on rather than dropped: the dock is finished, but
+		// whatever stands in its place still has the keys.
+		SetFocus(other, true)
+	}
+	if w == d.panel {
+		d.panel = nil
+		d.onPanel = false
+	} else {
+		d.rest = nil
+		d.onPanel = d.panel != nil
+	}
+	return other, true
 }
 
 // ChildArea returns where one of the two is drawn.
@@ -198,6 +220,9 @@ func (d *Dock) Layout(size Size) {
 
 // SetFocus passes focus on to whichever half has it.
 func (d *Dock) SetFocus(on bool) {
+	if d.hasFocus == on {
+		return
+	}
 	d.hasFocus = on
 	SetFocus(d.Focused(), on)
 }
@@ -252,12 +277,22 @@ func (d *Dock) HandleMouse(ev input.MouseEvent) (bool, error) {
 		return true, nil
 	}
 
+	// Clicking one half is how the mouse moves focus, the same way it
+	// does in a split. Without it the keys stay where they were and the
+	// user is typing into something they are not looking at.
+	takesFocus := ev.Kind == input.MousePress && !ev.Button.IsWheel()
 	switch {
 	case !panel.Empty() && panel.Contains(ev.Col, ev.Row):
+		if takesFocus {
+			d.Focus(d.panel)
+		}
 		local := ev
 		local.Col, local.Row = panel.Local(ev.Col, ev.Row)
 		return HandleMouse(d.panel, local)
 	case !rest.Empty() && rest.Contains(ev.Col, ev.Row):
+		if takesFocus {
+			d.Focus(d.rest)
+		}
 		local := ev
 		local.Col, local.Row = rest.Local(ev.Col, ev.Row)
 		return HandleMouse(d.rest, local)

@@ -22,6 +22,12 @@ func (s *Server) forward(nch ssh.NewChannel) {
 		return
 	}
 
+	// Recorded before anything is tried, so a test can tell an address
+	// this machine was asked for from one it managed to reach.
+	s.mu.Lock()
+	s.asked = append(s.asked, addr)
+	s.mu.Unlock()
+
 	far, err := net.Dial("tcp", addr)
 	if err != nil {
 		_ = nch.Reject(ssh.ConnectionFailed, err.Error())
@@ -64,7 +70,15 @@ func (s *Server) Forwards() int {
 	return s.forwards
 }
 
-// Forwarded returns the addresses the server was asked to reach.
+// Asked returns every address the server was asked to reach, whether or
+// not it could, so a test can tell what a client sent from what worked.
+func (s *Server) Asked() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.asked...)
+}
+
+// Forwarded returns the addresses the server reached.
 func (s *Server) Forwarded() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()

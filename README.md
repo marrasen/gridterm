@@ -6,7 +6,7 @@ It runs a shell on a local pseudo-terminal — a PTY on Unix, a ConPTY on
 Windows — or on another machine over SSH, feeds the output through a VT
 emulator, and draws the resulting character grid as batched triangles.
 
-20,134 lines of Go, 24,764 lines of tests, 998 tests.
+20,475 lines of Go, 25,319 lines of tests, 1,011 tests.
 
 ![a shell running in gridterm](docs/shell.png)
 
@@ -32,9 +32,11 @@ emulator, and draws the resulting character grid as batched triangles.
 - **Tunnels.** A port here that stands for a service over there, a port
   over there that stands for one here, or a SOCKS5 proxy that reaches
   whatever it is asked for as the far machine sees it. A tunnel with no
-  address of its own listens on this machine only, and one that would
-  let the rest of the network through asks before it opens. The panel
-  shows what each is carrying: how many streams, and how fast.
+  address of its own listens on that machine only, and one that would
+  let the rest of the network through asks before it opens — as does
+  every remote forward, because where the far machine really binds it is
+  the far machine's decision. The panel shows what each is carrying: how
+  many streams, how fast, and how many failed.
 - **A connections panel.** `Ctrl+Shift+B` shows every terminal, tunnel
   and transfer the window has open, grouped by the machine it is on with
   this one at the top. Each says what it is doing: opened until
@@ -140,14 +142,14 @@ encoders and both session types.
 | `grid` | 863 | no | the display grid, damage tracking, selection, wide-character invariants |
 | `input` | 592 | no | key, text, mouse and paste events to VT bytes |
 | `session` | 362 | no | a shell as a byte stream, and the local pty |
-| `remote` | 3,252 | no | SSH: connections, shells, host keys, unlocked keys, tunnels |
+| `remote` | 3,423 | no | SSH: connections, shells, host keys, unlocked keys, tunnels |
 | `conns` | 221 | no | what the window has open, grouped by machine |
 | `meter` | 257 | no | bytes moved, and how long ago: the four states |
-| `ui` | 5,025 | no | the widget toolkit: panes, tabs, menus, dialogs, fields, lists |
+| `ui` | 5,062 | no | the widget toolkit: panes, tabs, menus, dialogs, fields, lists |
 | `ui/term` | 529 | no | a shell on a widget |
 | `glyph` | 1,289 | yes | glyph atlas, system font fallback, box drawing |
 | `render` | 1,149 | yes | grid to batched triangles |
-| `main` | 3,886 | yes | the window and the wiring |
+| `main` | 4,000 | yes | the window and the wiring |
 
 The layering is deliberate: `vt` never imports the renderer, `input`
 never imports ebiten (that lives in `input/ebitenin`), `ui` knows nothing

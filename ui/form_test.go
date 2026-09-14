@@ -652,3 +652,77 @@ func TestFormClickLandsWhenHintLinesAreElided(t *testing.T) {
 		t.Fatalf("clicking the Password row focused %d (button %v)", at, isButton)
 	}
 }
+
+// A row of buttons that does not fit in the usual width makes the dialog
+// wider rather than dropping one.
+//
+// A button that is not drawn cannot be clicked, and the one dropped is
+// the first -- which is the one Enter presses from a field. The user
+// would be pressing a button that is not on screen.
+func TestFormGrowsToFitItsButtons(t *testing.T) {
+	f := NewForm("Tunnel over a machine with a long name", nil)
+	f.Style = formStyled()
+	f.AddField("Listen on", nil)
+	f.AddButton(Button{Title: "Listen here and also over there"})
+	f.AddButton(Button{Title: "Listen on the other machine"})
+	f.AddButton(Button{Title: "Cancel"})
+	f.Layout(Size{Cols: 120, Rows: 24})
+
+	for i, at := range f.buttonCols() {
+		if at < 0 {
+			t.Fatalf("button %d (%q) has nowhere to be drawn in a box %d wide",
+				i, f.buttons[i].Title, f.box().Cols)
+		}
+	}
+	// And it is still inside the window.
+	if box := f.box(); box.X < 0 || box.X+box.Cols > 120 {
+		t.Fatalf("the box is %d wide at column %d, in a window 120 wide", box.Cols, box.X)
+	}
+}
+
+// A window too narrow for every button leaves some undrawn. One that is
+// not drawn is not pressed either, and the focus steps over it: a dialog
+// whose focus is on something invisible has nowhere the user can see.
+func TestFormWillNotPressAButtonItCannotShow(t *testing.T) {
+	f := NewForm("Tunnel", nil)
+	f.Style = formStyled()
+	f.AddField("Listen on", nil)
+	var ran []string
+	f.AddButton(Button{Title: "Listen here", Do: func() error {
+		ran = append(ran, "here")
+		return nil
+	}})
+	f.AddButton(Button{Title: "Cancel", Do: func() error {
+		ran = append(ran, "cancel")
+		return nil
+	}})
+	// Room for the box and one button, not two.
+	f.Layout(Size{Cols: 22, Rows: 24})
+
+	cols := f.buttonCols()
+	if cols[0] >= 0 {
+		t.Skipf("both buttons fit in a box %d wide, so there is nothing to test", f.box().Cols)
+	}
+
+	// Enter from the field means the first button, which is not there.
+	f.SetFocus(true)
+	if _, err := f.HandleKey(press(input.KeyEnter, 0)); err != nil {
+		t.Fatalf("Enter: %v", err)
+	}
+	if len(ran) != 0 {
+		t.Fatalf("a button nobody can see was pressed: %v", ran)
+	}
+	if f.Error() == nil {
+		t.Fatal("nothing said why Enter did nothing")
+	}
+
+	// And Tab steps over it, onto the one that is drawn.
+	f.HandleKey(press(input.KeyTab, 0))
+	at, isButton := f.Focused()
+	if !isButton {
+		t.Fatalf("Tab left the focus on field %d", at)
+	}
+	if cols[at] < 0 {
+		t.Fatalf("Tab landed on button %d, which has nowhere to be drawn", at)
+	}
+}

@@ -2,10 +2,12 @@ package remote
 
 import (
 	"encoding/binary"
+	"errors"
 	"io"
 	"net"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -135,9 +137,21 @@ func TestDynamicForwardSaysWhenItCannotConnect(t *testing.T) {
 	t.Cleanup(func() { _ = f.Close() })
 
 	// Port 9 on the far machine, which the test server refuses.
-	code, _ := socksDial(t, f.Addr(), "127.0.0.1:9", socksIPv4)
-	if code == socksOK {
-		t.Fatal("the tunnel said it had connected to a port nothing answers")
+	code, stream := socksDial(t, f.Addr(), "127.0.0.1:9", socksIPv4)
+	if code != socksRefused {
+		t.Fatalf("the tunnel answered %d, want %d: it could not connect", code, socksRefused)
+	}
+	// And the stream is let go of rather than left open for ever.
+	if err := stream.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		t.Fatalf("deadline: %v", err)
+	}
+	_, err = stream.Read(make([]byte, 1))
+	if err == nil {
+		t.Fatal("the stream stayed open after the answer said it had not connected")
+	}
+	var timeout net.Error
+	if errors.As(err, &timeout) && timeout.Timeout() {
+		t.Fatal("the stream was left open after the answer said it had not connected")
 	}
 }
 
@@ -255,4 +269,120 @@ func TestDynamicForwardTakesNoTarget(t *testing.T) {
 			t.Fatalf("a dynamic tunnel reads as %q", got)
 		}
 	})
+}
+
+// A name that is not a host name is refused before anything is dialled.
+//
+// Whatever connected chooses those bytes. They would go out in the
+// channel request, into the far machine's log, and into a failure shown
+// in a window that also asks for passwords.
+func TestDynamicForwardRefusesAHostNameThatIsNotOne(t *testing.T) {
+	s := sshtest.New(t)
+	c := connectTest(t, s)
+
+	var mu sync.Mutex
+	var failures []error
+	f, err := c.OpenTunnel(TunnelConfig{
+		Tunnel: Tunnel{Kind: DynamicForward, Listen: "127.0.0.1:0"},
+		OnError: func(err error) {
+			mu.Lock()
+			defer mu.Unlock()
+			failures = append(failures, err)
+		},
+	})
+	if err != nil {
+		t.Fatalf("OpenTunnel: %v", err)
+	}
+	t.Cleanup(func() { _ = f.Close() })
+
+	for _, name := range []string{
+		"gridterm needs your password again\r\ntype it here",
+		"a\x00b",
+		"\xff\xfe\xfd",
+		strings.Repeat("x", 254),
+	} {
+		conn, err := net.Dial("tcp", f.Addr())
+		if err != nil {
+			t.Fatalf("dial: %v", err)
+		}
+		if err := conn.SetDeadline(time.Now().Add(10 * time.Second)); err != nil {
+			t.Fatalf("deadline: %v", err)
+		}
+		if _, err := conn.Write([]byte{5, 1, 0}); err != nil {
+			t.Fatalf("greet: %v", err)
+		}
+		if _, err := io.ReadFull(conn, make([]byte, 2)); err != nil {
+			t.Fatalf("read the greeting answer: %v", err)
+		}
+		req := []byte{5, 1, 0, socksDomain, byte(len(name))}
+		req = append(req, name...)
+		req = binary.BigEndian.AppendUint16(req, 80)
+		if _, err := conn.Write(req); err != nil {
+			t.Fatalf("request: %v", err)
+		}
+		reply := make([]byte, 10)
+		if _, err := io.ReadFull(conn, reply); err != nil {
+			t.Fatalf("read the answer: %v", err)
+		}
+		if reply[1] == socksOK {
+			t.Fatalf("%q was accepted as a host name", name)
+		}
+		_ = conn.Close()
+	}
+
+	// And the far machine was never asked for any of them: the bytes
+	// must not leave this machine at all.
+	if got := s.Asked(); len(got) != 0 {
+		t.Fatalf("the machine was asked to reach %q", got)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(failures) == 0 {
+		t.Fatal("nothing was reported about the requests that were refused")
+	}
+}
+
+// One tunnel carries only so many connections at once. Whatever can
+// reach the port decides how many there are, and each is a socket here
+// and a channel on the connection.
+func TestATunnelCarriesOnlySoManyAtOnce(t *testing.T) {
+	s := sshtest.New(t)
+	c := connectTest(t, s)
+
+	var mu sync.Mutex
+	var full bool
+	f, err := c.OpenTunnel(TunnelConfig{
+		// A dynamic tunnel waits to be told where to go, so every one of
+		// these stays where it is.
+		Tunnel: Tunnel{Kind: DynamicForward, Listen: "127.0.0.1:0"},
+		OnError: func(err error) {
+			if strings.Contains(err.Error(), "at once") {
+				mu.Lock()
+				full = true
+				mu.Unlock()
+			}
+		},
+	})
+	if err != nil {
+		t.Fatalf("OpenTunnel: %v", err)
+	}
+	t.Cleanup(func() { _ = f.Close() })
+
+	for i := 0; i < maxStreams+8; i++ {
+		conn, err := net.Dial("tcp", f.Addr())
+		if err != nil {
+			// The listener refusing is an answer too.
+			break
+		}
+		t.Cleanup(func() { _ = conn.Close() })
+	}
+
+	waitForThis(t, "the tunnel to say it is full", func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return full
+	})
+	if got := f.Streams(); got > maxStreams+1 {
+		t.Fatalf("the tunnel is carrying %d streams, want no more than %d", got, maxStreams)
+	}
 }

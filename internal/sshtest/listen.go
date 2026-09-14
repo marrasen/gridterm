@@ -45,16 +45,20 @@ func (s *Server) ConnectTo(addr string) (net.Conn, error) {
 		return nil, err
 	}
 
+	// A copy, not a pointer into the slice: cancelling a forward
+	// compacts that slice in place, so the entry at an index can become
+	// a different one between here and the channel being opened.
+	var at bound
+	var found bool
 	s.mu.Lock()
-	var at *bound
-	for i, b := range s.bound {
+	for _, b := range s.bound {
 		if b.port == uint32(port) && (b.host == host || host == "") {
-			at = &s.bound[i]
+			at, found = b, true
 			break
 		}
 	}
 	s.mu.Unlock()
-	if at == nil {
+	if !found {
 		return nil, fmt.Errorf("sshtest: nothing is listening on %s: %v", addr, s.Listening())
 	}
 
@@ -84,13 +88,15 @@ func (s *Server) forwardRequest(conn ssh.Conn, req *ssh.Request) {
 			_ = req.Reply(false, nil)
 			return
 		}
+		// Chosen and recorded under one lock. Letting go in between
+		// would hand the same port to two requests made at once.
+		s.mu.Lock()
 		port := ask.Port
 		if port == 0 {
 			// A real sshd picks one. Any number will do here, as long as
 			// it is not one already bound.
-			port = s.freePort()
+			port = s.freePortLocked()
 		}
-		s.mu.Lock()
 		s.bound = append(s.bound, bound{conn: conn, host: ask.Host, port: port})
 		s.mu.Unlock()
 		// The reply carries the port when one was asked for, which is how
@@ -127,11 +133,9 @@ func (s *Server) forwardRequest(conn ssh.Conn, req *ssh.Request) {
 	}
 }
 
-// freePort returns a port number nothing is bound to. The caller holds
-// no lock.
-func (s *Server) freePort() uint32 {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+// freePortLocked returns a port number nothing is bound to. The caller
+// holds the lock.
+func (s *Server) freePortLocked() uint32 {
 	port := uint32(30000 + len(s.bound))
 	for {
 		taken := false

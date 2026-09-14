@@ -7,6 +7,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -216,6 +217,83 @@ func TestATunnelCountsEachWaySeparately(t *testing.T) {
 	waitForTotals(t, m, 2, 8)
 }
 
+// An address with no host of its own means the loopback of whichever
+// machine does the connecting, and that is what is dialled.
+//
+// Passing what was typed straight through would send an empty host to
+// the far end, which cannot look one up: the tunnel would open, be
+// accepted by the dialog, and fail on every stream.
+func TestATargetWithNoHostReachesTheLoopbackOfTheFarMachine(t *testing.T) {
+	s := sshtest.New(t)
+	echo := echoServer(t)
+	_, port, err := net.SplitHostPort(echo)
+	if err != nil {
+		t.Fatalf("split %q: %v", echo, err)
+	}
+	c := connectTest(t, s)
+
+	f, err := c.OpenTunnel(TunnelConfig{
+		Tunnel: Tunnel{Kind: LocalForward, Listen: "127.0.0.1:0", Target: ":" + port},
+	})
+	if err != nil {
+		t.Fatalf("OpenTunnel: %v", err)
+	}
+	t.Cleanup(func() { _ = f.Close() })
+
+	near, err := net.Dial("tcp", f.Addr())
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	t.Cleanup(func() { _ = near.Close() })
+	if got := say(t, near, "hello"); got != "HELLO" {
+		t.Fatalf("the echo said %q, want HELLO", got)
+	}
+	want := net.JoinHostPort(loopback, port)
+	if got := s.Forwarded(); len(got) != 1 || got[0] != want {
+		t.Fatalf("the machine was asked to reach %v, want %q", got, want)
+	}
+}
+
+// A stream that is still being connected is one the tunnel is holding:
+// closing the tunnel has to cut it, or the socket is left behind with
+// nothing able to close it.
+func TestClosingATunnelCutsAStreamThatIsStillBeingSetUp(t *testing.T) {
+	s := sshtest.New(t)
+	c := connectTest(t, s)
+
+	f, err := c.OpenTunnel(TunnelConfig{
+		// A dynamic tunnel waits for the client to say where it is going,
+		// so a client that says nothing is held here.
+		Tunnel: Tunnel{Kind: DynamicForward, Listen: "127.0.0.1:0"},
+	})
+	if err != nil {
+		t.Fatalf("OpenTunnel: %v", err)
+	}
+
+	near, err := net.Dial("tcp", f.Addr())
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	t.Cleanup(func() { _ = near.Close() })
+	// Nothing is said, so the tunnel is waiting for the greeting.
+	waitForThis(t, "the stream to be taken up", func() bool { return f.held() == 1 })
+
+	if err := f.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	if err := near.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		t.Fatalf("deadline: %v", err)
+	}
+	_, err = near.Read(make([]byte, 1))
+	if err == nil {
+		t.Fatal("the stream was still open after the tunnel closed")
+	}
+	var timeout net.Error
+	if errors.As(err, &timeout) && timeout.Timeout() {
+		t.Fatal("a stream waiting to say where it was going was left open")
+	}
+}
+
 // Closing the tunnel stops it accepting and cuts what is going through
 // it. A stream left copying would hold the far end open for ever.
 func TestClosingATunnelCutsItsStreams(t *testing.T) {
@@ -404,6 +482,8 @@ func TestTunnelValidate(t *testing.T) {
 		ok   bool
 	}{
 		{"a plain local forward", Tunnel{Kind: LocalForward, Listen: ":5432", Target: "db:5432"}, true},
+		{"a target on the far machine itself", Tunnel{Kind: LocalForward, Listen: ":5432", Target: ":5432"}, true},
+		{"a space inside the target port", Tunnel{Kind: LocalForward, Listen: ":1", Target: "db: 5432"}, true},
 		{"a plain remote forward", Tunnel{Kind: RemoteForward, Listen: ":8080", Target: "localhost:80"}, true},
 		{"any free port", Tunnel{Kind: LocalForward, Listen: "127.0.0.1:0", Target: "db:5432"}, true},
 		{"no port to listen on", Tunnel{Kind: LocalForward, Listen: "127.0.0.1", Target: "db:5432"}, false},
@@ -497,4 +577,75 @@ func waitForThis(t *testing.T, what string, cond func() bool) {
 		time.Sleep(time.Millisecond)
 	}
 	t.Fatalf("timed out waiting for %s", what)
+}
+
+// A listener that fails on its own ends the tunnel, and whoever opened
+// it is told: only they can take its row away, and only they have
+// somewhere to show the reason.
+func TestATunnelSaysWhenItStopsAccepting(t *testing.T) {
+	s := sshtest.New(t)
+	c := connectTest(t, s)
+
+	stopped := make(chan error, 1)
+	var failures atomic.Int64
+	f, err := c.OpenTunnel(TunnelConfig{
+		Tunnel:  Tunnel{Kind: LocalForward, Listen: "127.0.0.1:0", Target: "127.0.0.1:9"},
+		OnError: func(error) { failures.Add(1) },
+		OnStopped: func(err error) {
+			select {
+			case stopped <- err:
+			default:
+			}
+		},
+	})
+	if err != nil {
+		t.Fatalf("OpenTunnel: %v", err)
+	}
+	t.Cleanup(func() { _ = f.Close() })
+
+	// The listener goes out from under the accept loop, which is what a
+	// machine out of handles or a forward the far end cancelled looks
+	// like from here.
+	if err := f.ln.Close(); err != nil {
+		t.Fatalf("close the listener: %v", err)
+	}
+
+	select {
+	case err := <-stopped:
+		if err == nil {
+			t.Fatal("the tunnel stopped and said nothing about why")
+		}
+		if !strings.Contains(err.Error(), "stopped accepting") {
+			t.Fatalf("the tunnel stopped with %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the tunnel stopped accepting and nobody was told")
+	}
+	// Closing it afterwards is the same answer, not a second failure.
+	if err := f.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+}
+
+// A tunnel closed on purpose says nothing: the user closed it and knows.
+func TestATunnelClosedOnPurposeSaysNothing(t *testing.T) {
+	s := sshtest.New(t)
+	c := connectTest(t, s)
+
+	var stopped atomic.Int64
+	f, err := c.OpenTunnel(TunnelConfig{
+		Tunnel:    Tunnel{Kind: LocalForward, Listen: "127.0.0.1:0", Target: "127.0.0.1:9"},
+		OnStopped: func(error) { stopped.Add(1) },
+	})
+	if err != nil {
+		t.Fatalf("OpenTunnel: %v", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	// Long enough that the accept loop has certainly noticed.
+	time.Sleep(50 * time.Millisecond)
+	if n := stopped.Load(); n != 0 {
+		t.Fatalf("closing the tunnel was reported %d times as it stopping on its own", n)
+	}
 }

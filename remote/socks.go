@@ -49,12 +49,14 @@ const socksGreeting = 30 * time.Second
 // The reply to the request is not sent here: whether it worked is only
 // known once the far machine has been asked to connect.
 func socksAsk(c net.Conn) (string, error) {
-	if err := c.SetReadDeadline(time.Now().Add(socksGreeting)); err != nil {
+	// Both ways: the greeting has to arrive, and the answers to it have
+	// to be taken.
+	if err := c.SetDeadline(time.Now().Add(socksGreeting)); err != nil {
 		return "", fmt.Errorf("socks: %w", err)
 	}
 	// Cleared before the stream is handed on, or the copying would stop
 	// at the same deadline.
-	defer func() { _ = c.SetReadDeadline(time.Time{}) }()
+	defer func() { _ = c.SetDeadline(time.Time{}) }()
 
 	if err := socksHello(c); err != nil {
 		return "", err
@@ -102,8 +104,10 @@ func socksRequest(c net.Conn) (string, error) {
 		return "", fmt.Errorf("socks: version %d is not SOCKS5", head[0])
 	}
 	if head[1] != socksConnect {
-		_ = socksAnswer(c, socksBadCommand)
-		return "", fmt.Errorf("socks: command %d is not one gridterm does", head[1])
+		// Both: why it was refused, and whether the client was told.
+		return "", errors.Join(
+			fmt.Errorf("socks: command %d is not one gridterm does", head[1]),
+			socksAnswer(c, socksBadCommand))
 	}
 
 	var host string
@@ -128,9 +132,20 @@ func socksRequest(c net.Conn) (string, error) {
 			return "", fmt.Errorf("socks: read the address: %w", err)
 		}
 		host = string(raw)
+		if !hostname(host) {
+			// Whatever connected chose these bytes. They would go out in
+			// the channel request, into the far machine's log, and into
+			// a failure shown in this window -- which is a window that
+			// also asks for passwords. Nothing but a host name gets that
+			// far.
+			return "", errors.Join(
+				fmt.Errorf("socks: %q is not a host name", host),
+				socksAnswer(c, socksBadAddressKind))
+		}
 	default:
-		_ = socksAnswer(c, socksBadAddressKind)
-		return "", fmt.Errorf("socks: address type %d is not one gridterm does", head[3])
+		return "", errors.Join(
+			fmt.Errorf("socks: address type %d is not one gridterm does", head[3]),
+			socksAnswer(c, socksBadAddressKind))
 	}
 
 	raw := make([]byte, 2)
@@ -139,10 +154,34 @@ func socksRequest(c net.Conn) (string, error) {
 	}
 	port := binary.BigEndian.Uint16(raw)
 	if host == "" {
-		_ = socksAnswer(c, socksFailed)
-		return "", errors.New("socks: the request names no host")
+		return "", errors.Join(
+			errors.New("socks: the request names no host"),
+			socksAnswer(c, socksFailed))
 	}
 	return net.JoinHostPort(host, strconv.Itoa(int(port))), nil
+}
+
+// hostname reports whether a string is a plausible host name: the
+// characters a name is made of, and no longer than DNS allows.
+//
+// Deliberately strict. A name that is refused here is a name the far
+// machine could not have looked up anyway, and everything else that
+// might be in those bytes -- a newline, a control character, a byte
+// sequence that is not text at all -- travels into a log on the far
+// machine and a dialog in this window.
+func hostname(s string) bool {
+	if s == "" || len(s) > 253 {
+		return false
+	}
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		case r == '.' || r == '-' || r == '_':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // socksAnswer tells the client how the request went.
@@ -151,6 +190,14 @@ func socksRequest(c net.Conn) (string, error) {
 // address the far end connected from, which an SSH channel does not
 // have, and no client in practice looks at it for a CONNECT.
 func socksAnswer(c net.Conn, code byte) error {
+	// Ten bytes fit in any socket's buffer, so a client that has stopped
+	// reading cannot hold this goroutine. The deadline says so rather
+	// than leaving it to be worked out.
+	if err := c.SetWriteDeadline(time.Now().Add(socksGreeting)); err != nil {
+		return fmt.Errorf("socks: answer the request: %w", err)
+	}
+	defer func() { _ = c.SetWriteDeadline(time.Time{}) }()
+
 	_, err := c.Write([]byte{socksVersion, code, 0x00, socksIPv4, 0, 0, 0, 0, 0, 0})
 	if err != nil {
 		return fmt.Errorf("socks: answer the request: %w", err)

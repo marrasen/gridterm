@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"image/color"
 
 	"github.com/marrasen/gridterm/grid"
@@ -457,6 +458,12 @@ func (f *Form) press(at int) error {
 	if at < 0 || at >= len(f.buttons) {
 		return nil
 	}
+	if cols := f.buttonCols(); at < len(cols) && cols[at] < 0 {
+		// There was no room to draw it. Doing what an invisible button
+		// says is worse than saying why nothing happened.
+		f.err = errors.New("the window is too narrow to show that button")
+		return nil
+	}
 	b := f.buttons[at]
 	if b.Do == nil {
 		f.dismiss()
@@ -479,15 +486,41 @@ func (f *Form) dismiss() {
 	}
 }
 
-// move steps the focus through the fields and then the buttons.
+// move steps the focus through the fields and then the buttons,
+// stepping over any button there was no room to draw.
 func (f *Form) move(by int) {
 	n := len(f.rows) + len(f.buttons)
 	if n == 0 {
 		return
 	}
+	step := 1
+	if by < 0 {
+		step = -1
+	}
 	// Go's % keeps the sign of the dividend, so a step back from the
 	// first needs the extra turn to land on the last.
-	f.focus(((f.at+by)%n + n) % n)
+	at := ((f.at+by)%n + n) % n
+	// One turn at most: when every button is hidden and there are no
+	// fields, the focus stays where it was.
+	for i := 0; i < n && f.hidden(at); i++ {
+		at = ((at+step)%n + n) % n
+	}
+	if f.hidden(at) {
+		return
+	}
+	f.focus(at)
+}
+
+// hidden reports whether a place in the focus order is a button there
+// was no room to draw. Landing on one would leave the dialog with the
+// focus nowhere the user can see.
+func (f *Form) hidden(at int) bool {
+	i := at - len(f.rows)
+	if i < 0 {
+		return false
+	}
+	cols := f.buttonCols()
+	return i < len(cols) && cols[i] < 0
 }
 
 // focus puts the caret on one field or button and takes it off whatever
@@ -607,7 +640,11 @@ func (f *Form) wantCols() int {
 		buttons += grid.StringWidth(b.Title) + 3
 	}
 	width = max(width, buttons)
-	return min(width+formPad*2, formMaxCols)
+	// The cap stops one long line making the dialog as wide as the
+	// window, which costs nothing because a line is trimmed. It does not
+	// apply to the buttons: one that does not fit is not drawn at all,
+	// and a button nobody can see is a button nobody can press.
+	return max(min(width+formPad*2, formMaxCols), buttons+formPad*2)
 }
 
 // wantRows returns how tall the dialog would like to be.

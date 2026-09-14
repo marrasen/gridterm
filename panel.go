@@ -71,10 +71,10 @@ func (a *app) refreshPanel(now time.Time) {
 		}
 	}
 
-	// A tunnel says how many streams are going through it, which is the
-	// one thing about it the meter cannot say.
+	// A tunnel says what it is carrying, which is the one thing about it
+	// the meter cannot say.
 	for e, open := range a.tunnels {
-		e.Note = streams(open.f.Streams())
+		e.Note = open.note()
 	}
 
 	// What is still open, so a rate belonging to something that has gone

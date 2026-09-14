@@ -47,6 +47,7 @@ type Server struct {
 
 	forwards  int
 	forwarded []string
+	asked     []string
 
 	// bound are the ports the far machine has been asked to listen on.
 	bound []bound

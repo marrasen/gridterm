@@ -82,15 +82,25 @@ func main() {
 			"use this installed monospace family instead of the bundled Go Mono")
 		listFonts = flag.Bool("list-fonts", false,
 			"print the installed monospace families and exit")
+		shotScript = flag.String("shot", "",
+			"drive the window through a script and write PNGs, then exit;"+
+				" steps are wait:<frames> key:<chord> type:<text> shot:<file>,"+
+				` e.g. "wait:60 key:ctrl+k shot:palette.png"`)
 	)
 	flag.Parse()
 
 	if *listFonts {
-		printFonts(os.Stdout)
+		if err := printFonts(os.Stdout); err != nil {
+			log.Fatalf("-list-fonts: %v", err)
+		}
 		return
 	}
 
-	fonts := bundledFonts()
+	bundled := bundledFonts()
+	// What the window starts with, which is the bundled face unless a
+	// flag named something else. The two are kept apart, because "back to
+	// the bundled font" has to mean the bundled font whatever a flag said.
+	fonts, family := bundled, ""
 	switch {
 	case *fontFiles != "" && *fontFamily != "":
 		log.Fatal("-font and -font-family both name a typeface; use one")
@@ -101,11 +111,13 @@ func main() {
 		}
 		fonts = f
 	case *fontFamily != "":
-		f, err := loadFamily(*fontFamily)
+		f, name, err := loadFamily(*fontFamily)
 		if err != nil {
 			log.Fatalf("-font-family: %v", err)
 		}
-		fonts = f
+		// The family's own spelling rather than what was typed, so
+		// choosing it again from the menu is recognised as no change.
+		fonts, family = f, name
 	}
 
 	atlas, err := glyph.NewAtlas(fonts, *fontSize, 96)
@@ -114,10 +126,10 @@ func main() {
 	}
 	m := atlas.Metrics()
 
-	a := &app{atlas: atlas, renderer: render.New(atlas), fontSize: *fontSize, bundled: fonts}
-	// What -font-family chose, so the font menu marks it as the one in
+	a := &app{atlas: atlas, renderer: render.New(atlas), fontSize: *fontSize, bundled: bundled}
+	// What -font-family chose, so the font menu treats it as the one in
 	// use rather than offering to switch to it again.
-	a.fontFamily = *fontFamily
+	a.fontFamily = family
 	a.comp = render.NewCompositor(a.renderer)
 	// The compositor is called by the game loop and has nowhere to hand
 	// a failure back to.
@@ -146,6 +158,11 @@ func main() {
 	}
 
 	a.commands()
+	shot, err := parseShotScript(*shotScript)
+	if err != nil {
+		log.Fatalf("-shot: %v", err)
+	}
+	a.shot = shot
 	// Off the drawing goroutine: reading every font file the system has
 	// takes long enough to be seen as the window failing to open.
 	a.startFontScan()
@@ -173,11 +190,17 @@ func main() {
 
 // printFonts writes the installed monospace families, with the styles
 // each has, for -list-fonts.
-func printFonts(w io.Writer) {
-	families := glyph.Monospaced()
+//
+// A failure to read the font directories is reported rather than printed
+// as an empty list, which would say the machine has no fonts.
+func printFonts(w io.Writer) error {
+	families, err := glyph.Monospaced()
+	if err != nil {
+		return err
+	}
 	if len(families) == 0 {
 		fmt.Fprintln(w, "no monospace font families found")
-		return
+		return nil
 	}
 	names := map[glyph.Style]string{
 		glyph.Regular:    "regular",
@@ -192,17 +215,23 @@ func printFonts(w io.Writer) {
 		}
 		fmt.Fprintf(w, "%-34s %s\n", family.Name, strings.Join(styles, ", "))
 	}
+	return nil
 }
 
-// loadFamily reads an installed family by name, ignoring case.
-func loadFamily(name string) (glyph.Fonts, error) {
-	families := glyph.Monospaced()
+// loadFamily reads an installed family by name, ignoring case, and
+// returns the family's own spelling of that name alongside it.
+func loadFamily(name string) (glyph.Fonts, string, error) {
+	families, err := glyph.Monospaced()
+	if err != nil {
+		return glyph.Fonts{}, "", err
+	}
 	for _, family := range families {
 		if strings.EqualFold(family.Name, name) {
-			return family.Load()
+			fonts, err := family.Load()
+			return fonts, family.Name, err
 		}
 	}
-	return glyph.Fonts{}, fmt.Errorf(
+	return glyph.Fonts{}, "", fmt.Errorf(
 		"no monospace family %q is installed; -list-fonts shows the %d there are",
 		name, len(families))
 }

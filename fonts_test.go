@@ -23,8 +23,13 @@ func fakeFamilies(names ...string) []glyph.Family {
 // deliverFonts hands the app a scan result and lets the draw loop pick
 // it up, which is what the goroutine reading the font directories does.
 func deliverFonts(a *testApp, families []glyph.Family) {
-	a.families = make(chan []glyph.Family, 1)
-	a.families <- families
+	deliverScan(a, scanned{families: families})
+}
+
+// deliverScan is deliverFonts with whatever the scan reported alongside.
+func deliverScan(a *testApp, got scanned) {
+	a.families = make(chan scanned, 1)
+	a.families <- got
 	a.reapFontScan()
 }
 

@@ -40,6 +40,17 @@ func goMonoFiles() map[string][]byte {
 	}
 }
 
+// mustScan runs the scan and fails the test if reading the directories
+// failed, which is the answer every test here expects.
+func mustScan(t *testing.T, dirs []string) []Family {
+	t.Helper()
+	fams, err := monospacedIn(dirs)
+	if err != nil {
+		t.Fatalf("scan %v: %v", dirs, err)
+	}
+	return fams
+}
+
 func findFamily(fams []Family, name string) (Family, bool) {
 	for _, f := range fams {
 		if f.Name == name {
@@ -52,7 +63,7 @@ func findFamily(fams []Family, name string) (Family, bool) {
 func TestScanGroupsAFamilysFourStyles(t *testing.T) {
 	dir := fontDir(t, goMonoFiles())
 
-	fams := monospacedIn([]string{dir})
+	fams := mustScan(t, []string{dir})
 
 	if len(fams) != 1 {
 		t.Fatalf("found %d families, want one: %+v", len(fams), fams)
@@ -85,7 +96,7 @@ func TestScanRejectsAProportionalFont(t *testing.T) {
 		"gomono.ttf":    gomono.TTF,
 	})
 
-	fams := monospacedIn([]string{dir})
+	fams := mustScan(t, []string{dir})
 
 	if _, ok := findFamily(fams, "Go Regular"); ok {
 		t.Error("a proportional family was offered")
@@ -104,7 +115,7 @@ func TestScanSkipsWhatItCannotRead(t *testing.T) {
 	files["notes.txt"] = gomono.TTF // a font by content, not by name
 	dir := fontDir(t, files)
 
-	fams := monospacedIn([]string{dir})
+	fams := mustScan(t, []string{dir})
 
 	if len(fams) != 1 {
 		t.Fatalf("found %d families, want the one good family: %+v", len(fams), fams)
@@ -119,7 +130,7 @@ func TestScanWalksSubdirectories(t *testing.T) {
 		filepath.Join("vendor", "go", "gomono.ttf"): gomono.TTF,
 	})
 
-	fams := monospacedIn([]string{dir})
+	fams := mustScan(t, []string{dir})
 
 	if len(fams) != 1 {
 		t.Fatalf("found %d families, want one below a subdirectory", len(fams))
@@ -131,7 +142,7 @@ func TestScanWalksSubdirectories(t *testing.T) {
 func TestScanCountsAFileOnce(t *testing.T) {
 	dir := fontDir(t, goMonoFiles())
 
-	fams := monospacedIn([]string{dir, dir})
+	fams := mustScan(t, []string{dir, dir})
 
 	if len(fams) != 1 {
 		t.Fatalf("found %d families, want one", len(fams))
@@ -146,7 +157,7 @@ func TestScanCountsAFileOnce(t *testing.T) {
 func TestScanIgnoresAMissingDirectory(t *testing.T) {
 	dir := fontDir(t, goMonoFiles())
 
-	fams := monospacedIn([]string{filepath.Join(dir, "nope"), dir})
+	fams := mustScan(t, []string{filepath.Join(dir, "nope"), dir})
 
 	if len(fams) != 1 {
 		t.Fatalf("found %d families, want the one that is there", len(fams))
@@ -159,7 +170,7 @@ func TestScanIgnoresAMissingDirectory(t *testing.T) {
 func TestScanDropsAFamilyWithNoRegular(t *testing.T) {
 	dir := fontDir(t, map[string][]byte{"gomonobold.ttf": gomonobold.TTF})
 
-	fams := monospacedIn([]string{dir})
+	fams := mustScan(t, []string{dir})
 
 	if len(fams) != 0 {
 		t.Errorf("found %+v, want nothing offered without a regular style", fams)
@@ -184,7 +195,7 @@ func TestScanSortsByNameIgnoringCase(t *testing.T) {
 
 func TestFamilyLoadReadsEveryStyle(t *testing.T) {
 	dir := fontDir(t, goMonoFiles())
-	fams := monospacedIn([]string{dir})
+	fams := mustScan(t, []string{dir})
 	if len(fams) != 1 {
 		t.Fatalf("found %d families, want one", len(fams))
 	}
@@ -326,7 +337,14 @@ func TestMonospacedUsesTheSystemDirectories(t *testing.T) {
 	if testing.Short() {
 		t.Skip("reads every font file on the system")
 	}
-	for _, f := range Monospaced() {
+	families, err := Monospaced()
+	if err != nil {
+		t.Fatalf("scan the system fonts: %v", err)
+	}
+	if len(families) == 0 {
+		t.Skip("no monospace fonts on this machine")
+	}
+	for _, f := range families {
 		if f.Name == "" {
 			t.Error("a family has no name")
 		}

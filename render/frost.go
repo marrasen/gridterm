@@ -215,23 +215,27 @@ func (c *Compositor) drawFrost(screen *ebiten.Image, l *Layer) {
 		return
 	}
 
-	// Sampled wider than the panel so the blur has real pixels to reach
-	// into, rather than fading the rim into nothing.
-	pad := int(math.Ceil(float64(f.Radius))) * blurTaps
-	src := panel.Inset(-pad).Intersect(screen.Bounds())
+	src, step := frostRegion(panel, f.Radius, screen.Bounds())
 	c.scratch.ensure(src.Dx(), src.Dy())
 
-	// The backdrop, moved to the scratch image's own origin.
-	into := c.scratch.a.SubImage(image.Rect(0, 0, src.Dx(), src.Dy())).(*ebiten.Image)
-	into.Clear()
+	// The backdrop, moved so the wanted region sits at the scratch's own
+	// origin.
+	//
+	// The whole canvas goes in and the scratch's bounds do the cropping.
+	// Passing a sub-image of the canvas instead draws nothing at all on
+	// the Direct3D backend, with no error, which is a long way to chase
+	// a black panel.
+	c.scratch.a.Clear()
 	op := &ebiten.DrawImageOptions{}
 	op.GeoM.Translate(-float64(src.Min.X), -float64(src.Min.Y))
-	into.DrawImage(screen.SubImage(src).(*ebiten.Image), op)
+	c.scratch.a.DrawImage(screen, op)
+	into := c.scratch.a.SubImage(image.Rect(0, 0, src.Dx(), src.Dy())).(*ebiten.Image)
 
-	step := max(float64(f.Radius)/blurTaps, 1)
-	c.blurPass(c.scratch.b, into, [2]float32{1, 0}, step, src)
-	blurred := c.scratch.b.SubImage(image.Rect(0, 0, src.Dx(), src.Dy())).(*ebiten.Image)
-	c.blurPass(c.scratch.a, blurred, [2]float32{0, 1}, step, src)
+	if step > 0 {
+		c.blurPass(c.scratch.b, into, [2]float32{1, 0}, step, src)
+		blurred := c.scratch.b.SubImage(image.Rect(0, 0, src.Dx(), src.Dy())).(*ebiten.Image)
+		c.blurPass(c.scratch.a, blurred, [2]float32{0, 1}, step, src)
+	}
 
 	// The part of the scratch that lines up with the panel.
 	inner := panel.Sub(src.Min)
@@ -243,7 +247,7 @@ func (c *Compositor) drawFrost(screen *ebiten.Image, l *Layer) {
 	sop.Uniforms = map[string]any{
 		"Origin":     []float32{float32(panel.Min.X), float32(panel.Min.Y)},
 		"Size":       []float32{float32(panel.Dx()), float32(panel.Dy())},
-		"Corner":     f.Corner,
+		"Corner":     frostCorner(f.Corner, panel),
 		"Tint":       rgbaToFloats(f.Tint),
 		"Saturation": f.Saturation,
 		"Grain":      f.Grain,
@@ -251,6 +255,33 @@ func (c *Compositor) drawFrost(screen *ebiten.Image, l *Layer) {
 	}
 	screen.DrawRectShader(panel.Dx(), panel.Dy(), c.shaders.frost, sop)
 	c.stats.Frosted++
+}
+
+// frostRegion returns the region of the screen to blur for a panel, and
+// how far apart the blur taps should sit. A step of zero means no blur
+// was asked for.
+//
+// The region is wider than the panel so that the blur has real pixels to
+// reach into. Left to sample its own edge, the panel would fade out at
+// the rim instead of showing what is beside it. At the edge of the
+// screen there is nothing to widen into, and the taps clamp instead.
+func frostRegion(panel image.Rectangle, radius float32, screen image.Rectangle) (image.Rectangle, float64) {
+	if radius <= 0 {
+		return panel, 0
+	}
+	// The taps are spread over the radius, but never closer than a pixel
+	// apart, so a small radius still reaches a whole number of pixels.
+	step := max(float64(radius)/blurTaps, 1)
+	pad := int(math.Ceil(step * blurTaps))
+	return panel.Inset(-pad).Intersect(screen), step
+}
+
+// frostCorner holds a corner radius to what the panel can take. The
+// rounded-box distance field is only a distance while the radius fits
+// inside the box; past that the panel draws as a lens.
+func frostCorner(corner float32, panel image.Rectangle) float32 {
+	limit := float32(min(panel.Dx(), panel.Dy())) / 2
+	return min(max(corner, 0), limit)
 }
 
 // blurPass runs one direction of the blur from src into dst, both in the

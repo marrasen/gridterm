@@ -354,6 +354,7 @@ func (c *Compositor) Draw(screen *ebiten.Image) {
 		screen.DrawImage(l.tex, op)
 		c.stats.Blits++
 	}
+
 }
 
 // onError reports a failure the compositor cannot hand back, because

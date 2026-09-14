@@ -1,6 +1,7 @@
 package glyph
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -62,13 +63,22 @@ func (f Family) Styles() []Style {
 func (f Family) Load() (Fonts, error) {
 	var fonts Fonts
 	into := [numStyles]*[]byte{&fonts.Regular, &fonts.Bold, &fonts.Italic, &fonts.BoldItalic}
+	// A file is read once however many styles come from it. Four styles
+	// in one collection is the ordinary case on macOS, and a collection
+	// runs to tens of megabytes.
+	read := make(map[string][]byte, numStyles)
 	for s := Style(0); s < numStyles; s++ {
 		if !f.Has(s) {
 			continue
 		}
-		b, err := os.ReadFile(f.Src[s].Path)
-		if err != nil {
-			return Fonts{}, fmt.Errorf("read %s: %w", f.Src[s].Path, err)
+		path := f.Src[s].Path
+		b, seen := read[path]
+		if !seen {
+			var err error
+			if b, err = os.ReadFile(path); err != nil {
+				return Fonts{}, fmt.Errorf("read %s: %w", path, err)
+			}
+			read[path] = b
 		}
 		*into[s] = b
 		fonts.Index[s] = f.Src[s].Index
@@ -82,21 +92,32 @@ func (f Family) Load() (Fonts, error) {
 // Monospaced returns the installed monospace families, by name.
 //
 // It reads every font file the system has, so it takes long enough to be
-// worth doing off whatever goroutine is drawing. Files that will not
-// parse are skipped rather than reported: a broken font among hundreds
-// is not a reason to offer the user none of them.
-func Monospaced() []Family {
+// worth doing off whatever goroutine is drawing.
+//
+// A file that will not parse is skipped and not reported: a broken font
+// among hundreds is not a reason to offer the user none of them. A file
+// or directory that cannot be read is a different thing and is reported,
+// because otherwise an unreadable font directory looks exactly like a
+// machine with no fonts on it. The families found come back either way,
+// so a caller can decide what to do about the failures.
+func Monospaced() ([]Family, error) {
 	return monospacedIn(fontDirs())
 }
 
 // monospacedIn is Monospaced over given directories, so a test can point
 // it at a directory it controls.
-func monospacedIn(dirs []string) []Family {
+func monospacedIn(dirs []string) ([]Family, error) {
 	// Keyed by the lowercased family name, so two files disagreeing about
 	// capitalisation do not become two families.
 	families := make(map[string]*Family)
-	for _, path := range fontFilesIn(dirs) {
-		for _, face := range facesIn(path) {
+	paths, failed := fontFilesIn(dirs)
+	for _, path := range paths {
+		faces, err := facesIn(path)
+		if err != nil {
+			failed = append(failed, err)
+			continue
+		}
+		for _, face := range faces {
 			addFace(families, face)
 		}
 	}
@@ -110,7 +131,7 @@ func monospacedIn(dirs []string) []Family {
 		}
 	}
 	sortFamilies(out)
-	return out
+	return out, errors.Join(failed...)
 }
 
 // sortFamilies puts families in the order a menu shows them: by name,
@@ -153,23 +174,33 @@ func addFace(families map[string]*Family, face faceInfo) {
 //
 // An unreadable directory is skipped. Font trees are shallow and a few
 // thousand entries at worst.
-func fontFilesIn(dirs []string) []string {
-	var out []string
+func fontFilesIn(dirs []string) (paths []string, failed []error) {
 	seen := make(map[string]bool)
 	for _, dir := range dirs {
-		_ = filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
-			if err != nil || d.IsDir() || !isFontFile(d.Name()) {
+		err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+			if err != nil {
+				// A font directory the system simply does not have is
+				// ordinary; one it has and will not open is not.
+				if !os.IsNotExist(err) {
+					failed = append(failed, err)
+				}
+				return nil
+			}
+			if d.IsDir() || !isFontFile(d.Name()) {
 				return nil
 			}
 			if !seen[path] {
 				seen[path] = true
-				out = append(out, path)
+				paths = append(paths, path)
 			}
 			return nil
 		})
+		if err != nil {
+			failed = append(failed, err)
+		}
 	}
-	sort.Strings(out)
-	return out
+	sort.Strings(paths)
+	return paths, failed
 }
 
 // isFontFile reports whether a filename looks like something sfnt can
@@ -184,14 +215,18 @@ func isFontFile(name string) bool {
 
 // facesIn returns the monospace faces in one file, which is usually one
 // and is several for a collection.
-func facesIn(path string) []faceInfo {
+//
+// A file that will not parse yields nothing and no error. A file that
+// will not open yields the error: that is the disk failing rather than
+// the font being unusable.
+func facesIn(path string) ([]faceInfo, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	coll, err := sfnt.ParseCollection(b)
 	if err != nil {
-		return nil
+		return nil, nil
 	}
 	var out []faceInfo
 	var buf sfnt.Buffer
@@ -205,7 +240,7 @@ func facesIn(path string) []faceInfo {
 			out = append(out, face)
 		}
 	}
-	return out
+	return out, nil
 }
 
 // describe reads a font's family and style and reports whether it is a

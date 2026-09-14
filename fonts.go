@@ -23,28 +23,48 @@ const bundledFamily = "Go Mono (bundled)"
 // the widget tree and the command registry are only ever touched from
 // the one goroutine allowed to touch them.
 func (a *app) startFontScan() {
-	a.families = make(chan []glyph.Family, 1)
-	go func() { a.families <- glyph.Monospaced() }()
+	// The goroutine holds the channel rather than reading the field, so
+	// that starting a second scan cannot race with the first one
+	// finishing.
+	found := make(chan scanned, 1)
+	a.families = found
+	go func() {
+		families, err := glyph.Monospaced()
+		found <- scanned{families: families, err: err}
+	}()
+}
+
+// scanned is what the goroutine reading the font directories sends back.
+type scanned struct {
+	families []glyph.Family
+	err      error
 }
 
 // reapFontScan registers a command per installed family, once the scan
 // has finished. It is called from the draw loop.
 func (a *app) reapFontScan() {
-	var found []glyph.Family
+	var got scanned
 	select {
-	case found = <-a.families:
+	case got = <-a.families:
 	default:
 		return
 	}
-	a.installed = found
+	if got.err != nil {
+		// Reported and not fatal. A font directory that will not open
+		// costs the user the fonts in it; it is not a reason to take down
+		// a window with shells running in it. Whatever was found is still
+		// offered, and the failure is on the log to explain the gap.
+		a.logError(fmt.Errorf("reading the system fonts: %w", got.err))
+	}
+	a.installed = got.families
 
-	cmds := make([]ui.Command, 0, len(found)+1)
+	cmds := make([]ui.Command, 0, len(got.families)+1)
 	cmds = append(cmds, ui.Command{
 		ID:    fontCommandPrefix + "bundled",
 		Title: "Font: " + bundledFamily,
 		Run:   func() error { return a.setFontFamily("") },
 	})
-	for _, family := range found {
+	for _, family := range got.families {
 		name := family.Name
 		cmds = append(cmds, ui.Command{
 			ID:    fontCommandID(name),
@@ -52,15 +72,21 @@ func (a *app) reapFontScan() {
 			Run:   func() error { return a.setFontFamily(name) },
 		})
 	}
+	// Only the ones that registered go on the menu. A line naming a
+	// command that is not there is dropped by the menu anyway, so putting
+	// it on would leave a gap nobody can explain.
+	registered := cmds[:0:0]
 	for _, cmd := range cmds {
 		if err := a.root.Commands.Register(cmd); err != nil {
-			// Two families whose names differ only in case, or a name
+			// Two families whose names reduce to the same id, or a name
 			// that collides with a command already registered. Neither is
 			// worth losing the rest of the list over.
 			a.logError(err)
+			continue
 		}
+		registered = append(registered, cmd)
 	}
-	a.refreshFontMenu(cmds)
+	a.refreshFontMenu(registered)
 }
 
 // fontCommandID names the command that switches to a family. Family
@@ -95,7 +121,7 @@ func (a *app) refreshFontMenu(cmds []ui.Command) {
 // setFontFamily swaps the typeface, by family name. An empty name goes
 // back to the faces compiled into the binary.
 func (a *app) setFontFamily(name string) error {
-	if name == a.fontFamily {
+	if strings.EqualFold(name, a.fontFamily) {
 		return nil
 	}
 	fonts := a.bundled
@@ -109,6 +135,9 @@ func (a *app) setFontFamily(name string) error {
 			return err
 		}
 		fonts = loaded
+		// The family's own spelling, so asking for it again is
+		// recognised as no change.
+		name = family.Name
 	}
 	if err := a.atlas.SetFonts(fonts); err != nil {
 		return fmt.Errorf("font %q: %w", name, err)

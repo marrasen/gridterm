@@ -109,6 +109,28 @@ never imports ebiten (that lives in `input/ebitenin`), and `session`
 knows nothing about any of them. Everything fiddly is testable without a
 display, which is how the emulator got written.
 
+## Looking at the pixels
+
+Most of this is testable without a display, but the parts that are not —
+a blurred panel, a rounded corner, a dialog drawn over the wrong thing —
+are exactly the parts where a test tells you nothing useful. `-shot`
+drives a real window through a short script and writes PNG files:
+
+```
+gridterm -shot "wait:60 key:ctrl+k wait:2 shot:palette.png"
+```
+
+The steps are `wait:<frames>`, `key:<chord>`, `type:<text>` and
+`shot:<file>`, each taking one frame so that what a step did has been
+drawn before the next one looks at it. Several `shot:` steps in one
+script capture several states from one window launch. The window closes
+when the script ends.
+
+This found a bug that every test had passed over: the frosted panel was
+drawing pure black, because a `SubImage` of the render target silently
+draws nothing when used as a source on the Direct3D backend. Nothing
+errored. It simply looked wrong, and nothing was looking.
+
 ## Design notes worth knowing
 
 **Damage tracking is load-bearing.** `ebiten.SetScreenClearedEveryFrame(false)`

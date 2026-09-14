@@ -60,6 +60,10 @@ type app struct {
 	// bar is the row of menu titles at the top of the window.
 	bar *ui.Menubar
 
+	// shot drives a screenshot and then closes the window, for looking
+	// at what the drawing code actually produced. Nil in ordinary use.
+	shot *shooter
+
 	// panes is every live terminal, so a shell that exits can be found
 	// wherever it sits in the tree.
 	panes map[*term.Terminal]struct{}
@@ -89,7 +93,7 @@ type app struct {
 
 	// families carries the system's monospace fonts from the goroutine
 	// that scanned for them, and installed is what it found.
-	families  chan []glyph.Family
+	families  chan scanned
 	installed []glyph.Family
 
 	// lastPixels is the window size in device pixels, kept so a font
@@ -123,6 +127,9 @@ func (a *app) Update() error {
 
 	a.reapExited()
 	a.reapFontScan()
+	if a.shot != nil {
+		a.shot.update(a)
+	}
 
 	for _, ev := range a.reader.Poll() {
 		if _, err := a.root.HandleKey(ev); err != nil {
@@ -163,6 +170,14 @@ func (a *app) Draw(screen *ebiten.Image) {
 	a.root.Draw(a.g.View())
 	a.drawModals()
 	a.comp.Draw(screen)
+
+	// After the frame is composited, so a picture is what the window
+	// shows rather than what it was about to show.
+	if a.shot != nil {
+		if err := a.shot.captured(screen); err != nil {
+			a.logError(err)
+		}
+	}
 }
 
 // Layout satisfies ebiten.Game; LayoutF below takes precedence when the

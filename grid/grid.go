@@ -244,16 +244,32 @@ func (g *Grid) SetWide(x, y int, c Cell) int {
 // clearWideAt blanks the other half of any double-width character
 // covering column x, so no continuation is left without its lead or the
 // reverse.
+//
+// Both halves are checked before blanking anything. A cell claiming to
+// be half of a pair is not proof that the pair exists, and trusting it
+// blanks an innocent neighbour.
 func (g *Grid) clearWideAt(x, y int) {
 	if !g.inBounds(x, y) {
 		return
 	}
 	switch g.cells[y*g.cols+x].Width {
 	case 2:
-		g.Set(x+1, y, g.Blank())
+		if other := g.At(x+1, y); other.Width == 0 {
+			g.Set(x+1, y, blankLike(other))
+		}
 	case 0:
-		g.Set(x-1, y, g.Blank())
+		if other := g.At(x-1, y); other.Width == 2 {
+			g.Set(x-1, y, blankLike(other))
+		}
 	}
+}
+
+// blankLike returns an empty cell in c's own colours, so blanking the
+// orphaned half of a pair does not repaint it in the grid's defaults.
+// Repairing a whole row is RepairWidths' job, and it blanks with the
+// cell the caller passes instead.
+func blankLike(c Cell) Cell {
+	return Cell{Rune: ' ', FG: c.FG, BG: c.BG, Width: 1}
 }
 
 // SetString writes s starting at x,y in one style, stopping at the row
@@ -262,27 +278,7 @@ func (g *Grid) clearWideAt(x, y int) {
 // Text is split into grapheme clusters, so a base character and its
 // combining marks share one cell, and double-width clusters take two.
 func (g *Grid) SetString(x, y int, s string, fg, bg color.RGBA, attr Attr) int {
-	state := -1
-	for len(s) > 0 {
-		var cluster string
-		var width int
-		cluster, s, width, state = uniseg.FirstGraphemeClusterInString(s, state)
-		if x >= g.cols {
-			break
-		}
-		c := ClusterCell(cluster, width)
-		c.FG, c.BG, c.Attr = fg, bg, attr
-		n := g.SetWide(x, y, c)
-		if n == 0 {
-			// A double-width cluster with one column left. Blank the
-			// column rather than leaving whatever was under it, and
-			// report the row as full.
-			g.Set(x, y, Cell{Rune: ' ', FG: fg, BG: bg, Attr: attr, Width: 1})
-			return g.cols
-		}
-		x += n
-	}
-	return x
+	return g.View().SetString(x, y, s, fg, bg, attr)
 }
 
 // ClusterCell builds a cell from one grapheme cluster and its display

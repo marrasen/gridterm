@@ -10,6 +10,7 @@ import (
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/meter"
 	"github.com/marrasen/gridterm/ui"
+	"github.com/marrasen/gridterm/vt"
 )
 
 // panelWidth is how wide the connections panel starts.
@@ -44,9 +45,9 @@ func (a *app) newPanel() *ui.List {
 		// A ground of its own, shading down the list, so the sidebar
 		// reads as part of the window's frame rather than as one more
 		// thing running in it.
-		BGEnd: mix(a.colours.BG, a.colours.ANSI[4], 1, 8),
+		BGEnd: sidebarFoot(a.colours),
 	}
-	l.Style.BG = mix(a.colours.BG, a.colours.ANSI[4], 1, 20)
+	l.Style.BG = sidebarTop(a.colours)
 	l.OnActivate = func(row ui.ListRow) error { return a.revealRow(row) }
 	l.OnButton = func(row ui.ListRow) error { return a.openHostMenu(row) }
 	return l
@@ -83,6 +84,12 @@ func pulse(from, to color.RGBA, now time.Time) color.RGBA {
 	}
 	return mix(from, to, at+1, steps+2)
 }
+
+// sidebarTop and sidebarFoot are the two ends of the ground the window's
+// frame is drawn on: the sidebar shades between them down its length,
+// and the menu bar across its width.
+func sidebarTop(p vt.Palette) color.RGBA  { return mix(p.BG, p.ANSI[4], 1, 20) }
+func sidebarFoot(p vt.Palette) color.RGBA { return mix(p.BG, p.ANSI[4], 1, 8) }
 
 // mix blends two colours, at/of the way from the first to the second.
 func mix(from, to color.RGBA, at, of int) color.RGBA {

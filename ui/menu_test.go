@@ -222,7 +222,7 @@ func TestMenuUnknownCommandCannotBeChosen(t *testing.T) {
 		t.Errorf("selected %d, want the line that names a real command", got)
 	}
 	// Aiming at it with the mouse must not run it either.
-	if _, err := m.HandleMouse(pressAt(m.box().X+1, m.box().Y)); err != nil {
+	if _, err := m.HandleMouse(pressAt(menuLines(m).X+1, menuLines(m).Y)); err != nil {
 		t.Fatalf("press: %v", err)
 	}
 	if *closed != 0 {
@@ -230,7 +230,7 @@ func TestMenuUnknownCommandCannotBeChosen(t *testing.T) {
 	}
 	// And it says what it is rather than showing the command id.
 	g := drawMenu(m, 40, 20)
-	if row := rowOf(g, m.box().Y); !strings.Contains(row, "Not today") {
+	if row := rowOf(g, menuLines(m).Y); !strings.Contains(row, "Not today") {
 		t.Errorf("row = %q, want the title the program gave it", row)
 	}
 }
@@ -241,8 +241,8 @@ func TestMenuTitleOverridesTheCommand(t *testing.T) {
 
 	g := drawMenu(m, 40, 20)
 
-	if !strings.Contains(rowOf(g, m.box().Y), "Copy to clipboard") {
-		t.Errorf("row = %q, want the item's own title", rowOf(g, m.box().Y))
+	if !strings.Contains(rowOf(g, menuLines(m).Y), "Copy to clipboard") {
+		t.Errorf("row = %q, want the item's own title", rowOf(g, menuLines(m).Y))
 	}
 }
 
@@ -444,7 +444,7 @@ func TestMenuClickRunsALine(t *testing.T) {
 		Command{ID: "paste", Title: "Paste", Run: func() error { ran = "paste"; return nil }},
 	)
 	m, closed := newTestMenu(t, cmds, items("copy", "paste"))
-	box := m.box()
+	box := menuLines(m)
 
 	if _, err := m.HandleMouse(pressAt(box.X+1, box.Y+1)); err != nil {
 		t.Fatalf("press: %v", err)
@@ -461,7 +461,7 @@ func TestMenuClickRunsALine(t *testing.T) {
 func TestMenuPointerHighlightsALine(t *testing.T) {
 	cmds := testCommands("Copy", "Paste")
 	m, _ := newTestMenu(t, cmds, items("copy", "paste"))
-	box := m.box()
+	box := menuLines(m)
 
 	m.HandleMouse(moveTo(box.X+1, box.Y+1))
 
@@ -476,7 +476,7 @@ func TestMenuPointerHighlightsALine(t *testing.T) {
 func TestMenuPressOnASeparatorDoesNothing(t *testing.T) {
 	cmds := testCommands("Copy", "Paste")
 	m, closed := newTestMenu(t, cmds, []MenuItem{{Command: "copy"}, MenuSeparator(), {Command: "paste"}})
-	box := m.box()
+	box := menuLines(m)
 
 	m.HandleMouse(moveTo(box.X+1, box.Y+1))
 	m.HandleMouse(pressAt(box.X+1, box.Y+1))
@@ -547,7 +547,7 @@ func TestMenuShowsTheKeyBinding(t *testing.T) {
 
 	g := drawMenu(m, 40, 20)
 
-	row := rowOf(g, m.box().Y)
+	row := rowOf(g, menuLines(m).Y)
 	want := Chord{Key: input.KeyC, Mods: input.ModCtrl | input.ModShift}.String()
 	if !strings.Contains(row, want) {
 		t.Errorf("row = %q, want it to show %q", row, want)
@@ -560,7 +560,7 @@ func TestMenuSeparatorDrawsARule(t *testing.T) {
 
 	g := drawMenu(m, 40, 20)
 
-	row := rowOf(g, m.box().Y+1)
+	row := rowOf(g, menuLines(m).Y+1)
 	if !strings.Contains(row, string(separatorRune)) {
 		t.Errorf("row = %q, want a rule", row)
 	}
@@ -574,7 +574,7 @@ func TestMenuWidthIsMeasuredInColumns(t *testing.T) {
 	cmds.MustRegister(Command{ID: "wide", Title: "世界世界", Run: nop})
 	m, _ := newTestMenu(t, cmds, items("wide"))
 
-	if got, want := m.box().Cols, grid.StringWidth("世界世界")+menuPad*2; got < want {
+	if got, want := menuLines(m).Cols, grid.StringWidth("世界世界")+menuPad*2; got < want {
 		t.Errorf("box is %d columns, want at least %d for the title", got, want)
 	}
 }

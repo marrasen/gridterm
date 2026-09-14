@@ -14,6 +14,10 @@ const (
 	menuPad     = 1
 	menuGap     = 3
 	menuMinCols = 12
+
+	// menuFrame is the rule around the outside, which costs a row and a
+	// column at each edge.
+	menuFrame = 1
 )
 
 // separatorRune draws the rule between groups of items.
@@ -46,6 +50,12 @@ type MenuStyle struct {
 
 	// ChordFG is the key binding shown at the end of a line.
 	ChordFG color.RGBA
+
+	// BorderFG is the rule around the outside, and ShadowBG darkens the
+	// cells it falls on below and to the right. A zero alpha leaves
+	// either one out.
+	BorderFG color.RGBA
+	ShadowBG color.RGBA
 
 	// DisabledFG is an item naming a command that is not registered.
 	// Panes and tabs register commands as they open, so a menu written
@@ -183,15 +193,21 @@ func (m *Menu) paint(v grid.View) {
 	if box.Empty() {
 		return
 	}
+	drawShadow(v, box, m.Style.ShadowBG)
 	in := box.In(v)
 	cols, rows := in.Size()
 	in.Fill(grid.Cell{Rune: ' ', FG: m.Style.FG, BG: m.Style.BG, Width: 1})
-	for row := 0; row < rows; row++ {
+	drawFrame(v, box, m.Style.BorderFG, m.Style.BG)
+
+	lines := in.Sub(menuFrame, menuFrame,
+		max(cols-menuFrame*2, 0), max(rows-menuFrame*2, 0))
+	inner, shown := lines.Size()
+	for row := 0; row < shown; row++ {
 		i := m.top + row
 		if i >= len(m.items) {
 			break
 		}
-		m.paintItem(in.Sub(0, row, cols, 1), i, cols)
+		m.paintItem(lines.Sub(0, row, inner, 1), i, inner)
 	}
 }
 
@@ -294,7 +310,7 @@ func (m *Menu) HandleKey(ev input.Event) (bool, error) {
 func (m *Menu) HandleMouse(ev input.MouseEvent) (bool, error) {
 	box := m.box()
 	inside := !box.Empty() && box.Contains(ev.Col, ev.Row)
-	row := m.top + ev.Row - box.Y
+	row := m.top + ev.Row - box.Y - menuFrame
 
 	switch {
 	case ev.Button.IsWheel():
@@ -351,8 +367,11 @@ func (m *Menu) box() Rect {
 	under := min(max(anchor.Y+anchor.Rows, 0), m.size.Rows)
 	over := min(max(anchor.Y, 0), m.size.Rows)
 
-	rows, y := min(len(m.items), m.size.Rows-under), under
-	if above := min(len(m.items), over); above > rows {
+	// The rule takes a row at each end, so the box is taller than the
+	// lines in it.
+	want := len(m.items) + menuFrame*2
+	rows, y := min(want, m.size.Rows-under), under
+	if above := min(want, over); above > rows {
 		rows, y = above, over-above
 	}
 	if cols <= 0 || rows <= 0 {
@@ -388,7 +407,7 @@ func (m *Menu) width() int {
 	if chords > 0 {
 		want += menuGap + chords
 	}
-	return max(want, menuMinCols)
+	return max(want, menuMinCols) + menuFrame*2
 }
 
 // titleOf names one line, preferring what the item says over what the
@@ -486,7 +505,7 @@ func (m *Menu) edge(step int) {
 // scroll brings the selected line into the box, so Enter always runs
 // something the user can see.
 func (m *Menu) scroll() {
-	rows := m.box().Rows
+	rows := m.lines()
 	if rows <= 0 {
 		m.top = 0
 		return
@@ -494,6 +513,10 @@ func (m *Menu) scroll() {
 	m.top = min(max(m.top, m.at-rows+1), max(m.at, 0))
 	m.top = min(max(m.top, 0), max(len(m.items)-rows, 0))
 }
+
+// lines is how many items the box has room for, which is its height
+// less the rule at each end.
+func (m *Menu) lines() int { return max(m.box().Rows-menuFrame*2, 0) }
 
 // run invokes the selected command, closing the menu first so that a
 // command which opens another one is not fighting this for the stack.

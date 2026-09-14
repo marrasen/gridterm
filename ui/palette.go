@@ -14,6 +14,10 @@ const (
 	paletteMaxCols = 60
 	paletteMaxRows = 14
 	paletteMargin  = 2
+
+	// paletteFrame is the rule around the outside, which costs a row and
+	// a column at each edge.
+	paletteFrame = 1
 )
 
 // promptRune marks the line being typed into.
@@ -31,6 +35,12 @@ type PaletteStyle struct {
 
 	// ChordFG is the key binding shown at the end of a line.
 	ChordFG color.RGBA
+
+	// BorderFG is the rule around the outside, and ShadowBG darkens the
+	// cells it falls on below and to the right. A zero alpha leaves
+	// either one out.
+	BorderFG color.RGBA
+	ShadowBG color.RGBA
 }
 
 // Palette is a dialog that finds a command by typing part of its name.
@@ -156,10 +166,10 @@ func (p *Palette) HandleMouse(ev input.MouseEvent) (bool, error) {
 		p.dismiss()
 		return true, nil
 	}
-	// The first row inside the box is the query; the rest are matches.
+	// The first row inside the rule is the query; the rest are matches.
 	// The box is only ever as tall as the list it shows, so the upper
 	// bound is guarding against a future box that is not.
-	row := ev.Row - box.Y - 1
+	row := ev.Row - p.lines().Y - 1
 	if row >= 0 && row < p.rows() {
 		p.at = p.top + row
 		return true, p.run()
@@ -181,13 +191,32 @@ func (p *Palette) paint(v grid.View) {
 	if box.Empty() {
 		return
 	}
-	in := box.In(v)
-	in.Fill(grid.Cell{Rune: ' ', FG: p.Style.FG, BG: p.Style.BG, Width: 1})
+	drawShadow(v, box, p.Style.ShadowBG)
+	full := box.In(v)
+	full.Fill(grid.Cell{Rune: ' ', FG: p.Style.FG, BG: p.Style.BG, Width: 1})
+	drawFrame(v, box, p.Style.BorderFG, p.Style.BG)
 
+	in := p.lines().In(v)
 	cols, _ := in.Size()
+	if cols <= 0 {
+		return
+	}
 	p.drawQuery(in, cols)
 	for row := 0; row < p.rows(); row++ {
 		p.drawMatch(in, row, cols)
+	}
+}
+
+// lines is the part of the box the query and the matches go in, which is
+// the box less the rule around it.
+func (p *Palette) lines() Rect {
+	box := p.box()
+	if box.Empty() {
+		return box
+	}
+	return Rect{
+		X: box.X + paletteFrame, Y: box.Y + paletteFrame,
+		Cols: max(box.Cols-paletteFrame*2, 0), Rows: max(box.Rows-paletteFrame*2, 0),
 	}
 }
 
@@ -273,16 +302,17 @@ func (p *Palette) drawTitle(line grid.View, m Match, fg, bg, matchFG color.RGBA,
 
 // rows returns how many lines of the list are drawn.
 func (p *Palette) rows() int {
-	return min(len(p.matches)-p.top, max(p.box().Rows-1, 0))
+	return min(len(p.matches)-p.top, max(p.lines().Rows-1, 0))
 }
 
 // box returns where the dialog goes, centred in the area it was given.
 func (p *Palette) box() Rect {
-	cols := min(p.size.Cols-paletteMargin*2, paletteMaxCols)
-	// One line for the query, and one per match up to the cap. A longer
-	// list scrolls rather than making a taller box.
-	rows := min(min(p.size.Rows-paletteMargin*2, paletteMaxRows), len(p.matches)+1)
-	if cols < 8 || rows < 1 {
+	cols := min(p.size.Cols-paletteMargin*2, paletteMaxCols+paletteFrame*2)
+	// One line for the query, one per match up to the cap, and the rule
+	// at each end. A longer list scrolls rather than making a taller box.
+	rows := min(min(p.size.Rows-paletteMargin*2, paletteMaxRows+paletteFrame*2),
+		len(p.matches)+1+paletteFrame*2)
+	if cols < 8+paletteFrame*2 || rows < 1+paletteFrame*2 {
 		return Rect{}
 	}
 	return Rect{
@@ -318,7 +348,7 @@ func (p *Palette) move(by int) {
 // scroll brings the selected line into the box, so Enter always runs
 // something the user can see.
 func (p *Palette) scroll() {
-	rows := max(p.box().Rows-1, 0)
+	rows := max(p.lines().Rows-1, 0)
 	if rows <= 0 {
 		p.top = 0
 		return

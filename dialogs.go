@@ -30,8 +30,18 @@ func (a *app) formStyle() ui.FormStyle {
 		// Red, because a line saying why something failed has to read as
 		// a failure before it is read as words.
 		ErrorFG: a.colours.ANSI[1],
+		// A rule around it, and a shadow under it. A dialog over a
+		// terminal is otherwise two lots of text with nothing between
+		// them.
+		BorderFG: a.colours.ANSI[8],
+		ShadowBG: shadow,
 	}
 }
+
+// shadow is what a menu or a dialog lays over the cells below and to the
+// right of it. Dark and mostly see-through: it darkens what is behind
+// rather than covering it.
+var shadow = color.RGBA{A: 0x70}
 
 // newForm builds a dialog carrying the window's colours.
 func (a *app) newForm(title string) *ui.Form {

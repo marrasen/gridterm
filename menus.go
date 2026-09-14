@@ -59,8 +59,12 @@ func (a *app) newMenubar(child ui.Widget) *ui.Menubar {
 		}},
 	}
 	bar.Style = ui.MenubarStyle{
-		FG:     a.colours.FG,
-		BG:     a.colours.ANSI[0],
+		FG: a.colours.FG,
+		// The sidebar's own ground, running across the bar rather than
+		// down it. The two are one frame around the window, so they are
+		// drawn in one colour.
+		BG:     sidebarTop(a.colours),
+		BGEnd:  sidebarFoot(a.colours),
 		OpenFG: a.colours.BG,
 		OpenBG: a.colours.FG,
 	}
@@ -88,6 +92,11 @@ func (a *app) menuStyle() ui.MenuStyle {
 		SelectedBG: a.colours.FG,
 		ChordFG:    a.colours.ANSI[8],
 		DisabledFG: a.colours.Selection,
+		// A rule around it, and a shadow under it. A menu over a
+		// terminal is otherwise two lots of text with nothing between
+		// them.
+		BorderFG: a.colours.ANSI[8],
+		ShadowBG: shadow,
 	}
 }
 

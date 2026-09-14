@@ -43,6 +43,12 @@ type FormStyle struct {
 
 	// ErrorFG is the line that says why the last attempt failed.
 	ErrorFG color.RGBA
+
+	// BorderFG is the rule around the outside, and ShadowBG darkens the
+	// cells it falls on below and to the right. A zero alpha leaves
+	// either one out.
+	BorderFG color.RGBA
+	ShadowBG color.RGBA
 }
 
 // Button is something to press at the bottom of a form.
@@ -296,8 +302,12 @@ func (f *Form) paint(v grid.View) {
 		return
 	}
 	l := f.layout()
+	drawShadow(v, box, f.Style.ShadowBG)
 	in := box.In(v)
 	in.Fill(grid.Cell{Rune: ' ', FG: f.Style.FG, BG: f.Style.BG, Width: 1})
+	// The rule goes on the blank ring the layout already leaves: a row
+	// above the title, a row under the buttons, and the pad each side.
+	drawFrame(v, box, f.Style.BorderFG, f.Style.BG)
 	cols, _ := in.Size()
 	room := cols - formPad*2
 

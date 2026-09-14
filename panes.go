@@ -55,6 +55,10 @@ func (a *app) openPalette() error {
 		// Dimmer than the title: a key binding is a note beside the
 		// command, not part of its name.
 		ChordFG: a.colours.ANSI[8],
+		// A rule around it, and a shadow under it, the way a menu and a
+		// dialog have.
+		BorderFG: a.colours.ANSI[8],
+		ShadowBG: shadow,
 	}
 	p.SetClipboard(clipboardRead)
 	a.palette = p

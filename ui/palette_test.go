@@ -335,7 +335,7 @@ func TestPaletteDrawsItsBox(t *testing.T) {
 
 	p.Draw(g.View())
 
-	box := p.box()
+	box := p.lines()
 	if box.Empty() {
 		t.Fatal("the dialog has no box")
 	}
@@ -362,7 +362,7 @@ func TestPaletteCursorSitsAfterTheQuery(t *testing.T) {
 
 	p.Draw(g.View())
 
-	box := p.box()
+	box := p.lines()
 	cur := g.Cursor()
 	if !cur.Visible {
 		t.Fatal("the dialog drew no cursor")
@@ -403,7 +403,7 @@ func TestPaletteClickRunsALine(t *testing.T) {
 		Command{ID: "two", Title: "Two", Run: func() error { ran = "two"; return nil }},
 	)
 	p, closed := newTestPalette(t, cmds)
-	box := p.box()
+	box := p.lines()
 
 	// The second line of the list, which is the second match.
 	_, err := p.HandleMouse(input.MouseEvent{
@@ -546,7 +546,7 @@ func TestPaletteClearsWhatItDrewLastTime(t *testing.T) {
 	typeInto(t, p, "zzz")
 	p.Draw(g.View())
 
-	box := p.box()
+	box := p.lines()
 	for y := 0; y < 12; y++ {
 		if box.Contains(box.X, y) {
 			continue
@@ -608,7 +608,7 @@ func TestPaletteScrollsToKeepTheSelectionInView(t *testing.T) {
 		}
 		g := grid.New(40, 12, color.RGBA{}, color.RGBA{})
 		p.Draw(g.View())
-		if !strings.Contains(rowOf(g, p.box().Y+p.at-p.top+1), want.Title) {
+		if !strings.Contains(rowOf(g, p.lines().Y+p.at-p.top+1), want.Title) {
 			t.Fatalf("line %d: %q is not drawn where the selection is", i, want.Title)
 		}
 		p.HandleKey(press(input.KeyDown, 0))
@@ -680,7 +680,7 @@ func TestPaletteHighlightsTheSelectedLine(t *testing.T) {
 
 	p.Draw(g.View())
 
-	box := p.box()
+	box := p.lines()
 	selected := box.Y + 1 + (p.at - p.top)
 	if got := g.At(box.X+1, selected).BG; got != fg {
 		t.Errorf("the selected line's background = %v, want the selected colour %v", got, fg)
@@ -701,7 +701,7 @@ func TestPaletteTitleKeepsGraphemeClusters(t *testing.T) {
 
 	p.Draw(g.View())
 
-	box := p.box()
+	box := p.lines()
 	line := rowOf(g, box.Y+1)
 	if !strings.Contains(line, "Cafe x") {
 		t.Errorf("line = %q, want the accent in its base character's cell", line)
@@ -724,7 +724,7 @@ func TestPaletteLongQueryShowsItsEnd(t *testing.T) {
 
 	p.Draw(g.View())
 
-	box := p.box()
+	box := p.lines()
 	line := rowOf(g, box.Y)[box.X : box.X+box.Cols]
 	if !strings.Contains(line, "z") {
 		t.Errorf("query line = %q, want the end of what was typed", line)
@@ -841,7 +841,7 @@ func TestPaletteScrollFollowsTheWindow(t *testing.T) {
 
 	// Growing must not leave the list scrolled past its end either.
 	p.Layout(Size{Cols: 40, Rows: 30})
-	if got, want := p.rows(), max(p.box().Rows-1, 0); got != want {
+	if got, want := p.rows(), max(p.lines().Rows-1, 0); got != want {
 		t.Errorf("%d lines drawn in a box with room for %d", got, want)
 	}
 	if !p.drawsSelection() {
@@ -872,7 +872,7 @@ func TestPaletteClickWhileScrolledRunsTheRightLine(t *testing.T) {
 		t.Fatal("the list did not scroll, so there is nothing to get wrong")
 	}
 	want := p.Matches()[p.top].Command.ID
-	box := p.box()
+	box := p.lines()
 
 	// The first line of the list as drawn.
 	if _, err := p.HandleMouse(input.MouseEvent{
@@ -922,7 +922,7 @@ func TestPaletteShowsTheKeyBinding(t *testing.T) {
 
 	p.Draw(g.View())
 
-	box := p.box()
+	box := p.lines()
 	line := rowOf(g, box.Y+1)
 	if !strings.Contains(line, "ctrl+shift+C") {
 		t.Errorf("line = %q, want the binding shown beside the command", line)
@@ -933,7 +933,7 @@ func TestPaletteShowsTheKeyBinding(t *testing.T) {
 	plain.Layout(Size{Cols: 40, Rows: 12})
 	g2 := grid.New(40, 12, color.RGBA{}, color.RGBA{})
 	plain.Draw(g2.View())
-	if got := strings.TrimSpace(rowOf(g2, plain.box().Y+1)); got != "Copy" {
+	if got := strings.TrimSpace(rowOf(g2, plain.lines().Y+1)); got != "Copy" {
 		t.Errorf("line = %q, want just the title", got)
 	}
 }
@@ -953,7 +953,7 @@ func TestPalettePicksOutTheMatchedLetters(t *testing.T) {
 
 	p.Draw(g.View())
 
-	box := p.box()
+	box := p.lines()
 	// A title starts two columns into the box; C and p matched.
 	at := box.X + 2
 
@@ -1016,7 +1016,7 @@ func TestPaletteNeverDrawsTextItsOwnBackgroundColour(t *testing.T) {
 
 	p.Draw(g.View())
 
-	box := p.box()
+	box := p.lines()
 	for y := box.Y; y < box.Y+box.Rows; y++ {
 		for x := box.X; x < box.X+box.Cols; x++ {
 			c := g.At(x, y)
@@ -1048,7 +1048,7 @@ func TestPaletteWideTitleStopsBeforeTheChord(t *testing.T) {
 
 	p.Draw(g.View())
 
-	box := p.box()
+	box := p.lines()
 	// The binding is still readable: the title did not run into it.
 	if got := rowOf(g, box.Y+1); !strings.Contains(got, "ctrl+W") {
 		t.Errorf("line = %q, want the binding still whole", got)

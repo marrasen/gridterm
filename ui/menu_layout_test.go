@@ -9,6 +9,19 @@ import (
 	"github.com/marrasen/gridterm/input"
 )
 
+// menuLines is where a menu's items are drawn: its box, less the rule
+// around the outside.
+func menuLines(m *Menu) Rect {
+	box := m.box()
+	if box.Empty() {
+		return box
+	}
+	return Rect{
+		X: box.X + menuFrame, Y: box.Y + menuFrame,
+		Cols: max(box.Cols-menuFrame*2, 0), Rows: max(box.Rows-menuFrame*2, 0),
+	}
+}
+
 // longMenu returns a menu of n numbered commands, for the scrolling
 // tests. The titles differ in their first character so a drawn row says
 // which item it is.
@@ -40,7 +53,7 @@ func TestMenuLineLayout(t *testing.T) {
 
 	g := drawMenu(m, 60, 20)
 
-	box := m.box()
+	box := menuLines(m)
 	// A blank column each side, the title, the gap, then "F5".
 	if want := menuPad + 17 + menuGap + 2 + menuPad; box.Cols != want {
 		t.Fatalf("box is %d columns, want %d", box.Cols, want)
@@ -73,12 +86,13 @@ func TestMenuTooNarrowDropsTheBinding(t *testing.T) {
 	m := NewMenu(cmds, keys, items("copy"), func() {})
 	m.Style = menuStyled()
 
-	// Five columns: a blank each side, the two the binding wants, and one
-	// left over. Wide enough that a guard one column out would show the
-	// binding and leave the title nowhere to go.
-	g := drawMenu(m, 5, 20)
+	// Seven columns: the rule each side, a blank each side, the two the
+	// binding wants, and one left over. Wide enough that a guard one
+	// column out would show the binding and leave the title nowhere to
+	// go.
+	g := drawMenu(m, 5+menuFrame*2, 20)
 
-	row := rowOf(g, m.box().Y)
+	row := rowOf(g, menuLines(m).Y)
 	if strings.Contains(row, "F5") {
 		t.Errorf("row = %q, want the binding dropped for want of room", row)
 	}
@@ -102,7 +116,7 @@ func TestMenuDrawsTheScrolledItems(t *testing.T) {
 
 	g := drawMenu(m, 40, 6)
 
-	box := m.box()
+	box := menuLines(m)
 	want := m.Items()[m.top].Command
 	if got := strings.TrimSpace(rowOf(g, box.Y)); !strings.HasPrefix(got, want) {
 		t.Errorf("first drawn row = %q, want item %d, which is %q", got, m.top, want)
@@ -132,12 +146,12 @@ func TestMenuClickIsScrollAware(t *testing.T) {
 	for i := 0; i < 19; i++ {
 		m.HandleKey(press(input.KeyDown, 0))
 	}
-	box := m.box()
+	box := menuLines(m)
 	if box.Y == 0 || m.top == 0 {
-		t.Fatalf("box at row %d with top %d: this proves nothing", box.Y, m.top)
+		t.Fatalf("lines at row %d with top %d: this proves nothing", box.Y, m.top)
 	}
 
-	// The second row of the box.
+	// The second line of the menu.
 	if _, err := m.HandleMouse(pressAt(box.X+1, box.Y+1)); err != nil {
 		t.Fatalf("press: %v", err)
 	}
@@ -156,7 +170,7 @@ func TestMenuHighlightsTheSelectedRow(t *testing.T) {
 
 	g := drawMenu(m, 40, 20)
 
-	box := m.box()
+	box := menuLines(m)
 	for row := 0; row < box.Rows; row++ {
 		got := g.At(box.X+1, box.Y+row).BG
 		want := m.Style.BG
@@ -219,12 +233,11 @@ func TestMenuShrunkToFitStillReachesEveryLine(t *testing.T) {
 
 	m.HandleKey(press(input.KeyEnd, 0))
 
-	box := m.box()
 	if m.at != 29 {
 		t.Fatalf("End landed on %d, want the last line", m.at)
 	}
-	if m.at < m.top || m.at >= m.top+box.Rows {
-		t.Errorf("selected %d with lines %d..%d showing", m.at, m.top, m.top+box.Rows-1)
+	if lines := m.lines(); m.at < m.top || m.at >= m.top+lines {
+		t.Errorf("selected %d with lines %d..%d showing", m.at, m.top, m.top+lines-1)
 	}
 }
 
@@ -243,8 +256,9 @@ func TestMenuAnchorOffTheWindowIsClamped(t *testing.T) {
 		t.Fatalf("box = %+v, want it on the window", box)
 	}
 	g := drawMenu(m, 40, 20)
-	if !strings.Contains(rowOf(g, box.Y), "Copy") {
-		t.Errorf("row %d = %q, want the menu drawn there", box.Y, rowOf(g, box.Y))
+	at := menuLines(m).Y
+	if !strings.Contains(rowOf(g, at), "Copy") {
+		t.Errorf("row %d = %q, want the menu drawn there", at, rowOf(g, at))
 	}
 }
 
@@ -259,7 +273,7 @@ func TestMenuWidthFitsAWideTitle(t *testing.T) {
 
 	g := drawMenu(m, 40, 20)
 
-	box := m.box()
+	box := menuLines(m)
 	if want := grid.StringWidth(title) + menuPad*2; box.Cols != want {
 		t.Fatalf("box is %d columns, want %d for a %d-column title",
 			box.Cols, want, grid.StringWidth(title))

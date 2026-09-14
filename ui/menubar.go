@@ -20,8 +20,22 @@ type MenuDef struct {
 type MenubarStyle struct {
 	FG, BG color.RGBA
 
+	// BGEnd is the background of the last column, when it has an alpha.
+	// The columns in between blend from BG to it, which gives the bar a
+	// ground of its own rather than the window's.
+	BGEnd color.RGBA
+
 	// OpenFG and OpenBG mark the title whose menu is showing.
 	OpenFG, OpenBG color.RGBA
+}
+
+// colAt is the background of one column of the bar, blended across it
+// when the style asks for that.
+func (s MenubarStyle) colAt(x, cols int) color.RGBA {
+	if s.BGEnd.A == 0 || cols <= 1 {
+		return s.BG
+	}
+	return blend(s.BG, s.BGEnd, min(max(x, 0), cols-1), cols-1)
 }
 
 // Menubar is a row of menu titles above one other widget.
@@ -214,19 +228,40 @@ func (b *Menubar) drawBar(v grid.View) {
 
 // paintBar draws the titles into a row of their own.
 func (b *Menubar) paintBar(row grid.View) {
-	row.Fill(grid.Cell{Rune: ' ', FG: b.Style.FG, BG: b.Style.BG, Width: 1})
+	// Column by column, because the ground can be a blend across the bar
+	// rather than one colour.
+	cols, _ := row.Size()
+	for x := 0; x < cols; x++ {
+		row.Set(x, 0, grid.Cell{
+			Rune: ' ', FG: b.Style.FG, BG: b.Style.colAt(x, cols), Width: 1,
+		})
+	}
 
 	for i, label := range b.labels() {
 		if label.Empty() {
 			continue
 		}
-		fg, bg := b.Style.FG, b.Style.BG
-		if i == b.openAt {
-			fg, bg = b.Style.OpenFG, b.Style.OpenBG
-		}
 		cell := label.In(row)
-		cell.Fill(grid.Cell{Rune: ' ', FG: fg, BG: bg, Width: 1})
-		cell.SetString(1, 0, b.Menus[i].Title, fg, bg, 0)
+		if i == b.openAt {
+			// The open title is marked out, so it carries its own
+			// colour rather than the bar's ground.
+			fg, bg := b.Style.OpenFG, b.Style.OpenBG
+			cell.Fill(grid.Cell{Rune: ' ', FG: fg, BG: bg, Width: 1})
+			cell.SetString(1, 0, b.Menus[i].Title, fg, bg, 0)
+			continue
+		}
+		// Written a cluster at a time, each on the ground its own column
+		// carries, so the blend runs under the titles as well as between
+		// them.
+		at := 1
+		for _, cluster := range grid.Clusters(b.Menus[i].Title) {
+			bg := b.Style.colAt(label.X+at, cols)
+			next := cell.SetString(at, 0, cluster, b.Style.FG, bg, 0)
+			if next <= at {
+				break
+			}
+			at = next
+		}
 	}
 }
 

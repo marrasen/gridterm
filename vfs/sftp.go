@@ -172,6 +172,14 @@ func (s *SFTP) Mkdir(path string, mode fs.FileMode) error {
 	return nil
 }
 
+// Symlink makes a symbolic link pointing at target.
+func (s *SFTP) Symlink(target, path string) error {
+	if err := s.client.Symlink(target, path); err != nil {
+		return wrap(s, "link", path+" to "+target, err)
+	}
+	return nil
+}
+
 // Remove takes away one file or one empty directory.
 func (s *SFTP) Remove(path string) error {
 	return wrap(s, "remove", path, s.client.Remove(path))

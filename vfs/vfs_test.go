@@ -811,3 +811,71 @@ func TestReadDirSaysWhenItIsNotAllowed(t *testing.T) {
 		}
 	})
 }
+
+// A link can be made as well as read, which is what a copy needs to put
+// a tree down on the other machine as it found it.
+func TestSymlink(t *testing.T) {
+	both(t, func(t *testing.T, tr tree) {
+		write(t, tr.real, "one.txt", "hello")
+		if err := tr.fs.Symlink("one.txt", Join(tr.fs, tr.at, "link")); err != nil {
+			t.Skipf("no link can be made here: %v", err)
+		}
+
+		got, err := tr.fs.Stat(Join(tr.fs, tr.at, "link"))
+		if err != nil {
+			t.Fatalf("Stat: %v", err)
+		}
+		if !got.IsLink() {
+			t.Fatalf("what was made is %v, want a link", got.Mode)
+		}
+		if got.Link != "one.txt" {
+			t.Fatalf("it points at %q, want one.txt", got.Link)
+		}
+		// A link to nothing is still a link: what it points at is not
+		// checked, because that is what a link is.
+		if err := tr.fs.Symlink("gone.txt", Join(tr.fs, tr.at, "dead")); err != nil {
+			t.Fatalf("a link to nothing: %v", err)
+		}
+	})
+}
+
+// Two values standing for the same place are the same filesystem, so a
+// move between two directories on one machine is a rename rather than a
+// copy and a delete.
+//
+// Comparing the values themselves answers nothing: a filesystem with no
+// fields at all gives the same pointer every time it is made.
+func TestSame(t *testing.T) {
+	one, two := NewLocal(), NewLocal()
+	if !Same(one, two) {
+		t.Error("two values for this machine are not the same place")
+	}
+	if !Same(one, one) {
+		t.Error("a filesystem is not itself")
+	}
+
+	far := &SFTP{name: "margit"}
+	alsoFar := &SFTP{name: "margit"}
+	elsewhere := &SFTP{name: "web1"}
+	if !Same(far, alsoFar) {
+		t.Error("two sessions to one machine are not the same place")
+	}
+	if Same(far, elsewhere) {
+		t.Error("two machines are the same place")
+	}
+	if Same(one, far) {
+		t.Error("this machine and another are the same place")
+	}
+	if Same(nil, one) || Same(one, nil) || Same(nil, nil) {
+		t.Error("nothing is the same place as something")
+	}
+
+	// The separator is not what tells them apart: a filesystem that
+	// names paths like Windows is still this machine.
+	if !Same(windows{NewLocal()}, windows{NewLocal()}) {
+		t.Error("two of one kind are not the same place")
+	}
+	if Same(windows{NewLocal()}, one) {
+		t.Error("two kinds are the same place")
+	}
+}

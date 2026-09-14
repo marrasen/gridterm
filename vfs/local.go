@@ -159,6 +159,14 @@ func (l *Local) Mkdir(path string, mode fs.FileMode) error {
 	return nil
 }
 
+// Symlink makes a symbolic link pointing at target.
+func (l *Local) Symlink(target, path string) error {
+	if err := os.Symlink(target, path); err != nil {
+		return wrap(l, "link", path+" to "+target, err)
+	}
+	return nil
+}
+
 // Remove takes away one file or one empty directory.
 func (l *Local) Remove(path string) error {
 	return wrap(l, "remove", path, os.Remove(path))

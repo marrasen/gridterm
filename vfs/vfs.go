@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"reflect"
 	"strings"
 	"time"
 )
@@ -89,6 +90,10 @@ type FS interface {
 	// is what it gets whatever the machine's umask would have said.
 	Mkdir(path string, mode fs.FileMode) error
 
+	// Symlink makes a symbolic link at path pointing at target. The
+	// target is not checked and need not exist: that is what a link is.
+	Symlink(target, path string) error
+
 	// Remove takes away one file or one empty directory.
 	Remove(path string) error
 
@@ -110,6 +115,25 @@ type FS interface {
 // file. It is not exported: a caller tells one from the other with Stat,
 // and this is only what the failure says.
 var errIsDir = errors.New("it is a directory")
+
+// Same reports whether two filesystems are the same place, so a move
+// between them can be a rename rather than a copy and a delete.
+//
+// Two sessions to one machine are the same place even though they are
+// two connections, and two values standing for this machine are the same
+// place even though they are two values. Comparing the values themselves
+// answers neither: a filesystem with no fields at all gives the same
+// pointer every time it is made, so two of them compare equal whatever
+// they stand for.
+//
+// It rests on Name naming the machine, which is what the window calls
+// it: one name means one machine.
+func Same(a, b FS) bool {
+	if a == nil || b == nil {
+		return false
+	}
+	return reflect.TypeOf(a) == reflect.TypeOf(b) && a.Name() == b.Name()
+}
 
 // Join puts the parts of a path together with the filesystem's own
 // separator.

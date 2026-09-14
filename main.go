@@ -129,6 +129,7 @@ func main() {
 	command := strings.Fields(*cmdline)
 	a.keys = remote.NewRing()
 	a.ctx, a.stop = context.WithCancel(context.Background())
+	a.book = loadBook()
 	a.newSession = func(cols, rows int) (session.Session, error) {
 		return startSession(*sshTarget, command, a.keys, cols, rows)
 	}
@@ -152,6 +153,10 @@ func main() {
 	// takes long enough to be seen as the window failing to open.
 	a.startFontScan()
 	a.bar = a.newMenubar(first)
+	a.refreshServers()
+	// Told once there is a window to tell them in: this runs before one
+	// exists, so the message waits for the first frame.
+	a.reportBookError()
 	a.root.SetWidget(a.bar)
 	a.root.Layout(ui.Rect{Cols: initCols, Rows: initRows})
 
@@ -256,6 +261,28 @@ func loadFamily(name string) (glyph.Fonts, string, error) {
 	return glyph.Fonts{}, "", fmt.Errorf(
 		"no monospace family %q is installed; -list-fonts shows the %d there are",
 		name, len(families))
+}
+
+// loadBook reads the saved servers.
+//
+// A list that could not be read is not a reason to refuse to open a
+// window: the book comes back empty and refuses to save, and the window
+// says why on its first frame. Everything else still works, including
+// connecting to a machine typed by hand.
+func loadBook() *remote.Book {
+	path, err := remote.BookPath()
+	if err != nil {
+		log.Print(err)
+		// No path at all, so nothing to read and nothing to save over.
+		return &remote.Book{}
+	}
+	book, err := remote.LoadBook(path)
+	if err != nil {
+		// Kept on the book, and shown in the window rather than only
+		// here: a window opened from an icon has no console to read.
+		log.Print(err)
+	}
+	return book
 }
 
 // startSession opens either a local shell or an SSH connection. The rest

@@ -75,6 +75,12 @@ type app struct {
 	// asked for once rather than once per connection.
 	keys *remote.Ring
 
+	// book is the saved list of machines, and serverCommands are the ids
+	// registered for what is in it, so one list can be taken away when
+	// the next is put up.
+	book           *remote.Book
+	serverCommands []string
+
 	// connecting is set while a machine is being connected to. One at a
 	// time, because each wants a dialog of its own to wait in and the
 	// modal stack is ordered.
@@ -326,6 +332,7 @@ func (a *app) commands() {
 		ui.Command{ID: "pane.close", Title: "Close pane", Run: a.closeFocused},
 		ui.Command{ID: "tab.open", Title: "New tab", Run: a.openTab},
 		ui.Command{ID: "server.connect", Title: "Connect to a server", Run: a.openServer},
+		ui.Command{ID: "server.add", Title: "Add a server", Run: a.openAddServer},
 		ui.Command{ID: "keys.lock", Title: "Forget unlocked keys", Run: a.lockKeys},
 		ui.Command{ID: "palette.open", Title: "Show all commands", Run: a.openPalette},
 		ui.Command{ID: "menu.open", Title: "Show the menu bar", Run: a.openMenu},

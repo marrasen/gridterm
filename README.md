@@ -23,6 +23,11 @@ emulator, and draws the resulting character grid as batched triangles.
   things at once, so a second terminal on a machine is a second channel
   rather than a second login. Connect from inside the window with
   `Ctrl+Shift+N`.
+- **Servers are saved.** A machine you add gets a line on the Servers
+  menu and an entry in the palette, kept in a JSON file under the OS
+  configuration directory. It holds no secret and never will. A list
+  that cannot be read is reported and is never written over, because a
+  file nobody could parse is still somebody's list of servers.
 - **Secrets are asked for in the window.** A key passphrase, an account
   password and a one-time code all get a dialog. An unlocked key is kept
   in memory for as long as the window is open and never written

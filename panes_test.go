@@ -3,6 +3,7 @@ package main
 import (
 	"io"
 	"math/rand"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/marrasen/gridterm/glyph"
 	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/input"
+	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/render"
 	"github.com/marrasen/gridterm/session"
 	"github.com/marrasen/gridterm/ui"
@@ -109,6 +111,13 @@ func newTestApp(t *testing.T, cols, rows int) *testApp {
 	}
 	ta.atlas = atlas
 	ta.renderer = render.New(atlas)
+	// A server list of its own, in a directory the test owns, so nothing
+	// reads or writes the one belonging to whoever is running the tests.
+	book, err := remote.LoadBook(filepath.Join(t.TempDir(), "servers.json"))
+	if err != nil {
+		t.Fatalf("server list: %v", err)
+	}
+	ta.book = book
 	ta.newSession = func(int, int) (session.Session, error) {
 		sess := newPipeSession()
 		ta.shells = append(ta.shells, sess)

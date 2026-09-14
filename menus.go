@@ -15,8 +15,6 @@ func (a *app) newMenubar(child ui.Widget) *ui.Menubar {
 	bar := ui.NewMenubar(a.root.Commands, a.root.Accelerators, child)
 	bar.Menus = []ui.MenuDef{
 		{Title: "File", Items: []ui.MenuItem{
-			{Command: "server.connect"},
-			ui.MenuSeparator(),
 			{Command: "tab.open"},
 			{Command: "pane.splitRight"},
 			{Command: "pane.splitDown"},

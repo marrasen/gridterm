@@ -1,0 +1,432 @@
+package remote
+
+import (
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// newBook returns an empty book in a directory of its own.
+func newBook(t *testing.T) *Book {
+	t.Helper()
+	b, err := LoadBook(filepath.Join(t.TempDir(), "servers.json"))
+	if err != nil {
+		t.Fatalf("LoadBook: %v", err)
+	}
+	return b
+}
+
+// margit is a saved server to put in a book.
+func margit() Host {
+	return Host{Name: "margit", Address: "margit.skalarit.net", User: "marcus"}
+}
+
+// A machine that has never run gridterm has no file, and that is not
+// something to report.
+func TestLoadBookWithNoFileIsEmptyAndFine(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "nested", "servers.json")
+	b, err := LoadBook(path)
+	if err != nil {
+		t.Fatalf("LoadBook: %v", err)
+	}
+	if len(b.Hosts()) != 0 {
+		t.Fatalf("%d servers, want none", len(b.Hosts()))
+	}
+	if b.Err() != nil {
+		t.Fatalf("Err = %v, want nil", b.Err())
+	}
+	// And it saves, creating the directory on the way.
+	if err := b.Put(margit(), ""); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("the file was not written: %v", err)
+	}
+}
+
+func TestBookSavesAndLoadsBack(t *testing.T) {
+	b := newBook(t)
+	want := Host{
+		Name: "web1", Address: "web1.example", Port: 2222, User: "deploy",
+		Identities: []string{"/home/marcus/.ssh/id_deploy"}, Term: "xterm",
+	}
+	if err := b.Put(want, ""); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+
+	again, err := LoadBook(b.Path())
+	if err != nil {
+		t.Fatalf("LoadBook: %v", err)
+	}
+	got, ok := again.Lookup("web1")
+	if !ok {
+		t.Fatal("the saved server was not read back")
+	}
+	if got.Address != want.Address || got.Port != want.Port || got.User != want.User ||
+		got.Term != want.Term || len(got.Identities) != 1 ||
+		got.Identities[0] != want.Identities[0] {
+		t.Fatalf("read back %+v, want %+v", got, want)
+	}
+}
+
+// A file nobody could read is somebody's list of servers. Replacing it
+// with an empty one loses it for good.
+func TestBookThatCouldNotBeReadWillNotBeWrittenOver(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "servers.json")
+	const garbage = "{ this is not json"
+	if err := os.WriteFile(path, []byte(garbage), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	b, err := LoadBook(path)
+	if err == nil {
+		t.Fatal("LoadBook read a file that is not a server list")
+	}
+	if b == nil {
+		t.Fatal("LoadBook returned no book, so the window has nothing to work with")
+	}
+	if b.Err() == nil {
+		t.Fatal("the book does not know it could not be read")
+	}
+
+	if err := b.Put(margit(), ""); !errors.Is(err, ErrUnsaveable) {
+		t.Fatalf("Put = %v, want it to refuse", err)
+	}
+	if err := b.Remove("margit"); !errors.Is(err, ErrUnsaveable) {
+		t.Fatalf("Remove = %v, want it to refuse", err)
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if string(raw) != garbage {
+		t.Fatalf("the file was changed to %q", raw)
+	}
+}
+
+// A file written by a newer gridterm may hold fields this one would drop
+// on the way through.
+func TestBookFromANewerVersionWillNotBeWrittenOver(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "servers.json")
+	if err := os.WriteFile(path, []byte(`{"version":99,"servers":[]}`), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	b, err := LoadBook(path)
+	if err == nil {
+		t.Fatal("LoadBook accepted a file from a newer version")
+	}
+	if !strings.Contains(err.Error(), "newer") {
+		t.Fatalf("error = %v, want it to say the file is newer", err)
+	}
+	if err := b.Put(margit(), ""); !errors.Is(err, ErrUnsaveable) {
+		t.Fatalf("Put = %v, want it to refuse", err)
+	}
+}
+
+// A server in the file that is not a server is a file to repair, not one
+// to quietly drop an entry from.
+func TestBookWithABadEntryWillNotBeWrittenOver(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "servers.json")
+	const bad = `{"version":1,"servers":[{"name":"ok","address":"a"},{"name":"","address":"b"}]}`
+	if err := os.WriteFile(path, []byte(bad), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	b, err := LoadBook(path)
+	if err == nil {
+		t.Fatal("LoadBook accepted a server with no name")
+	}
+	if len(b.Hosts()) != 0 {
+		t.Fatalf("%d servers came back from a file that could not be read", len(b.Hosts()))
+	}
+}
+
+func TestBookRefusesTwoServersWithTheSameName(t *testing.T) {
+	b := newBook(t)
+	if err := b.Put(margit(), ""); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	other := Host{Name: "Margit", Address: "elsewhere.example"}
+	if err := b.Put(other, ""); err == nil {
+		t.Fatal("a second server took a name already in use")
+	}
+	if len(b.Hosts()) != 1 {
+		t.Fatalf("%d servers, want the one that was there", len(b.Hosts()))
+	}
+}
+
+func TestBookEditsAndRenames(t *testing.T) {
+	b := newBook(t)
+	if err := b.Put(margit(), ""); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	// Something reached through it, so a rename has to carry it along.
+	via := Host{Name: "web1", Address: "web1.internal", Via: "margit"}
+	if err := b.Put(via, ""); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+
+	renamed := margit()
+	renamed.Name = "bastion"
+	renamed.User = "root"
+	if err := b.Put(renamed, "margit"); err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+
+	if _, ok := b.Lookup("margit"); ok {
+		t.Error("the old name is still there")
+	}
+	got, ok := b.Lookup("bastion")
+	if !ok {
+		t.Fatal("the new name is not there")
+	}
+	if got.User != "root" {
+		t.Errorf("user = %q, want the edit to have stuck", got.User)
+	}
+	after, _ := b.Lookup("web1")
+	if after.Via != "bastion" {
+		t.Errorf("web1 goes through %q, want it to follow the rename", after.Via)
+	}
+}
+
+// A server nothing can be reached through is one to edit, not one to
+// leave pointing at nothing.
+func TestBookWillNotRemoveSomethingStillReachedThrough(t *testing.T) {
+	b := newBook(t)
+	if err := b.Put(margit(), ""); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	if err := b.Put(Host{Name: "web1", Address: "web1.internal", Via: "margit"}, ""); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+
+	err := b.Remove("margit")
+	if err == nil {
+		t.Fatal("a server still used as a route was removed")
+	}
+	if !strings.Contains(err.Error(), "web1") {
+		t.Fatalf("error = %v, want it to name what needs it", err)
+	}
+
+	// The one that needs it can go, and then so can it.
+	if err := b.Remove("web1"); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+	if err := b.Remove("margit"); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+	if len(b.Hosts()) != 0 {
+		t.Fatalf("%d servers left, want none", len(b.Hosts()))
+	}
+}
+
+func TestBookRefusesARouteThatGoesNowhere(t *testing.T) {
+	b := newBook(t)
+	err := b.Put(Host{Name: "web1", Address: "web1.internal", Via: "nothing"}, "")
+	if err == nil {
+		t.Fatal("a server was saved with a route through something that does not exist")
+	}
+}
+
+// A route that goes round in a circle would be found only when somebody
+// tried to use it, by which time the dial has already started.
+func TestBookRefusesARouteThatGoesRoundInACircle(t *testing.T) {
+	b := newBook(t)
+	if err := b.Put(Host{Name: "a", Address: "a.example"}, ""); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	if err := b.Put(Host{Name: "b", Address: "b.example", Via: "a"}, ""); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	// Closing the loop: a through b, which already goes through a.
+	loop := Host{Name: "a", Address: "a.example", Via: "b"}
+	if err := b.Put(loop, "a"); err == nil {
+		t.Fatal("a route that goes round in a circle was saved")
+	}
+	// And the list is as it was.
+	got, _ := b.Lookup("a")
+	if got.Via != "" {
+		t.Fatalf("a goes through %q after the refusal", got.Via)
+	}
+}
+
+func TestBookRouteListsTheHopsInOrder(t *testing.T) {
+	b := newBook(t)
+	for _, h := range []Host{
+		{Name: "edge", Address: "edge.example"},
+		{Name: "bastion", Address: "bastion.internal", Via: "edge"},
+		{Name: "db", Address: "db.internal", Via: "bastion"},
+	} {
+		if err := b.Put(h, ""); err != nil {
+			t.Fatalf("Put %s: %v", h.Name, err)
+		}
+	}
+
+	route, err := b.Route("db")
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	want := []string{"edge", "bastion", "db"}
+	if len(route) != len(want) {
+		t.Fatalf("route is %d long, want %d", len(route), len(want))
+	}
+	for i, name := range want {
+		if route[i].Name != name {
+			t.Fatalf("route = %v, want %v", names(route), want)
+		}
+	}
+}
+
+func names(hosts []Host) []string {
+	out := make([]string, len(hosts))
+	for i, h := range hosts {
+		out[i] = h.Name
+	}
+	return out
+}
+
+// The file is written through a rename, so a failure part way leaves the
+// old list where it was rather than half of the new one.
+func TestBookKeepsTheOldListWhenTheWriteFails(t *testing.T) {
+	dir := t.TempDir()
+	b, err := LoadBook(filepath.Join(dir, "servers.json"))
+	if err != nil {
+		t.Fatalf("LoadBook: %v", err)
+	}
+	if err := b.Put(margit(), ""); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	before, err := os.ReadFile(b.Path())
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+
+	// A directory where the file should go: the rename cannot land.
+	blocked := &Book{path: filepath.Join(dir, "sub", "servers.json"), hosts: b.Hosts()}
+	if err := os.MkdirAll(blocked.path, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := blocked.Put(Host{Name: "other", Address: "other.example"}, ""); err == nil {
+		t.Fatal("a write that could not land reported success")
+	}
+	if n := len(blocked.Hosts()); n != 1 {
+		t.Fatalf("%d servers in memory after a failed save, want the one that was there", n)
+	}
+
+	after, err := os.ReadFile(b.Path())
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if string(after) != string(before) {
+		t.Fatal("the saved list changed when a different write failed")
+	}
+}
+
+// Nothing that could be a secret has anywhere to go.
+func TestBookHoldsNoSecrets(t *testing.T) {
+	b := newBook(t)
+	if err := b.Put(margit(), ""); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	raw, err := os.ReadFile(b.Path())
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	for _, word := range []string{"password", "passphrase", "secret"} {
+		if strings.Contains(strings.ToLower(string(raw)), word) {
+			t.Fatalf("the saved list mentions %q:\n%s", word, raw)
+		}
+	}
+}
+
+func TestBookIsSortedSoItDoesNotShuffle(t *testing.T) {
+	b := newBook(t)
+	for _, name := range []string{"zeta", "Alpha", "middle"} {
+		if err := b.Put(Host{Name: name, Address: name + ".example"}, ""); err != nil {
+			t.Fatalf("Put %s: %v", name, err)
+		}
+	}
+	want := []string{"Alpha", "middle", "zeta"}
+	got := names(b.Hosts())
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("order = %v, want %v", got, want)
+		}
+	}
+}
+
+func TestHostTargetReadsBackTheWayItWasTyped(t *testing.T) {
+	cases := []struct {
+		host Host
+		want string
+	}{
+		{Host{Address: "example.com"}, "example.com"},
+		{Host{Address: "example.com", Port: 22}, "example.com"},
+		{Host{Address: "example.com", Port: 2222}, "example.com:2222"},
+		{Host{Address: "example.com", User: "marcus"}, "marcus@example.com"},
+		{Host{Address: "::1", Port: 2222, User: "root"}, "root@[::1]:2222"},
+		{Host{Address: "::1"}, "[::1]"},
+	}
+	for _, tc := range cases {
+		if got := tc.host.Target(); got != tc.want {
+			t.Errorf("Target() = %q, want %q", got, tc.want)
+		}
+	}
+}
+
+// What a target parses to has to be what a host saves, or a server saved
+// from the connect dialog would reach a different machine.
+func TestHostFromTargetRoundTripsThroughTarget(t *testing.T) {
+	for _, target := range []string{
+		"example.com", "marcus@example.com", "example.com:2222",
+		"marcus@example.com:2222", "root@[::1]:22",
+	} {
+		h, err := HostFromTarget("", target)
+		if err != nil {
+			t.Fatalf("HostFromTarget(%q): %v", target, err)
+		}
+		again, err := ParseTarget(h.Target())
+		if err != nil {
+			t.Fatalf("ParseTarget(%q): %v", h.Target(), err)
+		}
+		first, _ := ParseTarget(target)
+		if again.Host != first.Host || again.User != first.User {
+			t.Errorf("%q became %q, which is %+v rather than %+v",
+				target, h.Target(), again, first)
+		}
+	}
+}
+
+func TestHostFromTargetNamesItselfWhenNoNameWasGiven(t *testing.T) {
+	h, err := HostFromTarget("  ", "marcus@margit.skalarit.net")
+	if err != nil {
+		t.Fatalf("HostFromTarget: %v", err)
+	}
+	if h.Name != "margit.skalarit.net" {
+		t.Fatalf("name = %q, want the address", h.Name)
+	}
+}
+
+func TestHostValidateRefusesWhatCannotBeSaved(t *testing.T) {
+	cases := []struct {
+		name string
+		host Host
+	}{
+		{"no name", Host{Address: "a"}},
+		{"no address", Host{Name: "a"}},
+		{"a control character in the name", Host{Name: "a\x1bb", Address: "a"}},
+		{"a newline in the address", Host{Name: "a", Address: "a\nb"}},
+		{"a space in the address", Host{Name: "a", Address: "a b"}},
+		{"a port that is not a port", Host{Name: "a", Address: "a", Port: 70000}},
+		{"reached through itself", Host{Name: "a", Address: "a", Via: "a"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := tc.host.Validate(); err == nil {
+				t.Fatalf("Validate(%+v) = nil, want an error", tc.host)
+			}
+		})
+	}
+}

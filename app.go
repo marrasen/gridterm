@@ -18,6 +18,7 @@ import (
 	"github.com/marrasen/gridterm/meter"
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/render"
+	"github.com/marrasen/gridterm/serve"
 	"github.com/marrasen/gridterm/session"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/term"
@@ -75,6 +76,15 @@ type app struct {
 
 	// bar is the row of menu titles at the top of the window.
 	bar *ui.Menubar
+
+	// server is the listener letting another window take this one over,
+	// or nil when the window is not being served. Off unless the user
+	// turns it on, and for this run only.
+	server *serve.Server
+
+	// servePaths points at the key and the list of who may connect,
+	// empty in the program and set by a test to a directory of its own.
+	servePaths servePaths
 
 	// dock holds the sidebar beside everything else, panel is the list
 	// in it, and stage is what fills the rest: it holds every pane the
@@ -572,6 +582,7 @@ func (a *app) commands() {
 		ui.Command{ID: "server.connect", Title: "Connect to a server", Run: a.openServer},
 		ui.Command{ID: "server.add", Title: "Add a server", Run: a.openAddServer},
 		ui.Command{ID: "server.reload", Title: "Reread the server list", Run: a.reloadBook},
+		ui.Command{ID: "serve.window", Title: "Serve this window…", Run: a.openServing},
 		ui.Command{ID: "panel.toggle", Title: "Show or hide the connections",
 			Run: a.togglePanel},
 		ui.Command{ID: "panel.focus", Title: "Go to the connections", Run: a.focusPanel},

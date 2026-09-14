@@ -87,11 +87,12 @@ func TestCancelTakesTheHalfWrittenFileAway(t *testing.T) {
 	case <-time.After(budget):
 		t.Fatal("the job never started reading")
 	}
-	// It has written something by now, so there is a part-written file
-	// to take away.
-	if _, err := os.Stat(filepath.Join(to.real, "big.txt")); err != nil {
-		t.Fatalf("nothing was written before cancelling: %v", err)
+	// It is writing beside the name rather than onto it, so the name
+	// itself has nothing at it yet.
+	if parts := parts(t, to.real); len(parts) != 1 {
+		t.Fatalf("%d files are being written, want the one", len(parts))
 	}
+	gone(t, to.real, "big.txt")
 
 	j.Cancel()
 	close(held.held)
@@ -101,6 +102,19 @@ func TestCancelTakesTheHalfWrittenFileAway(t *testing.T) {
 		t.Fatalf("error = %v, want it to say it was cancelled", err)
 	}
 	gone(t, to.real, "big.txt")
+	if parts := parts(t, to.real); len(parts) != 0 {
+		t.Fatalf("%v was left behind", parts)
+	}
+}
+
+// parts lists the files a job is part way through writing.
+func parts(t *testing.T, at string) []string {
+	t.Helper()
+	found, err := filepath.Glob(filepath.Join(at, "*"+partSuffix))
+	if err != nil {
+		t.Fatalf("look for part files: %v", err)
+	}
+	return found
 }
 
 // A read that fails part way stops the job and takes away what it had
@@ -133,6 +147,9 @@ func TestAFailedReadStopsTheJobAndLeavesNothing(t *testing.T) {
 		t.Fatalf("error = %v, want the reason in it", err)
 	}
 	gone(t, to.real, "big.txt")
+	if parts := parts(t, to.real); len(parts) != 0 {
+		t.Fatalf("%v was left behind", parts)
+	}
 }
 
 // A job that cannot be started says so rather than running and failing
@@ -401,4 +418,76 @@ func TestMoveBetweenMachinesDoesNotRename(t *testing.T) {
 		t.Fatalf("what was moved holds %q", got)
 	}
 	gone(t, from.real, "one.txt")
+}
+
+// A job dropped before it ever started has ended: anything waiting on it
+// would otherwise wait for ever, and a panel row for it would say it was
+// still running.
+func TestDroppingAJobThatNeverStarted(t *testing.T) {
+	from, to := local(t), local(t)
+	write(t, from.real, "one.txt", "one")
+	write(t, from.real, "two.txt", "two")
+
+	// The one slot is taken by a job that is holding its read.
+	held := newSlow(from.fs)
+	q := New(1)
+	first := q.Start(t.Context(), Op{
+		Kind: Copy, From: held, At: from.at, Names: []string{"one.txt"},
+		To: to.fs, Into: to.at,
+	}, Options{})
+	select {
+	case <-held.reading:
+	case <-time.After(budget):
+		t.Fatal("the first job never started reading")
+	}
+
+	second := q.Start(t.Context(), Op{
+		Kind: Copy, From: from.fs, At: from.at, Names: []string{"two.txt"},
+		To: to.fs, Into: to.at,
+	}, Options{})
+	q.Drop(second)
+
+	select {
+	case <-second.Done():
+	case <-time.After(budget):
+		t.Fatal("a job dropped before it started never ended")
+	}
+	p := second.Progress()
+	if !p.Done {
+		t.Error("it says it is still running")
+	}
+	if !errors.Is(p.Err, context.Canceled) {
+		t.Errorf("it ended with %v, want it to say it was cancelled", p.Err)
+	}
+	if got := len(q.Jobs()); got != 1 {
+		t.Errorf("the queue holds %d jobs, want the one still running", got)
+	}
+
+	// And the one that was running is unharmed.
+	first.Cancel()
+	close(held.held)
+	<-first.Done()
+}
+
+// A job that could never have run says so at once, rather than after the
+// panel has drawn it as running.
+func TestAJobThatCannotRunSaysSoStraightAway(t *testing.T) {
+	here := local(t)
+	q := New(1)
+	j := q.Start(t.Context(), Op{Kind: Copy, From: here.fs, At: here.at,
+		Names: []string{"one.txt"}}, Options{})
+
+	if p := j.Progress(); !p.Done || p.Err == nil {
+		t.Fatalf("it is %+v, want one that has already stopped with a reason", p)
+	}
+	// And naming it does not fall over on the way there being nothing to
+	// name.
+	if got := j.Name(); got == "" {
+		t.Error("it has no name")
+	}
+	select {
+	case <-j.Done():
+	default:
+		t.Error("it never ended")
+	}
 }

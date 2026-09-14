@@ -6,7 +6,7 @@ It runs a shell on a local pseudo-terminal — a PTY on Unix, a ConPTY on
 Windows — or on another machine over SSH, feeds the output through a VT
 emulator, and draws the resulting character grid as batched triangles.
 
-22,257 lines of Go, 27,416 lines of tests, 1,069 tests.
+22,584 lines of Go, 28,025 lines of tests, 1,085 tests.
 
 ![a shell running in gridterm](docs/shell.png)
 
@@ -32,9 +32,11 @@ emulator, and draws the resulting character grid as batched triangles.
 - **File work in the background.** Copying, moving and deleting, on one
   machine or between two, with how far along it is and a way to stop it.
   A name that is already there is asked about — replace, skip, rename, or
-  stop — and never decided alone. Every failure stops the job and says
-  why, and what was half written is taken away: half a directory that
-  says it worked is worse than one that stopped.
+  stop — and never decided alone. A file is written beside its name and
+  moved onto it at the end, so what is at that name is either the file
+  that was there or the whole of the new one, never half of either. Every
+  failure stops the job and says why: half a directory that says it
+  worked is worse than one that stopped.
 - **Tunnels.** A port here that stands for a service over there, a port
   over there that stands for one here, or a SOCKS5 proxy that reaches
   whatever it is asked for as the far machine sees it. A tunnel with no
@@ -151,7 +153,7 @@ encoders and both session types.
 | `remote` | 3,570 | no | SSH: connections, shells, host keys, unlocked keys, tunnels |
 | `conns` | 221 | no | what the window has open, grouped by machine |
 | `vfs` | 668 | no | a filesystem a browser works on: this machine, or one over SFTP |
-| `jobs` | 811 | no | copying, moving and deleting in the background, with progress and cancel |
+| `jobs` | 1,138 | no | copying, moving and deleting in the background, with progress and cancel |
 | `meter` | 257 | no | bytes moved, and how long ago: the four states |
 | `ui` | 5,062 | no | the widget toolkit: panes, tabs, menus, dialogs, fields, lists |
 | `ui/term` | 529 | no | a shell on a widget |

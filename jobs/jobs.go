@@ -125,8 +125,21 @@ type Job struct {
 	// it without polling.
 	done chan struct{}
 
+	// finished makes sure a job ends once: one dropped while it was
+	// waiting is finished by whoever took it off the queue, and one that
+	// ran is finished by the goroutine that ran it.
+	finished sync.Once
+
 	mu sync.Mutex
 	p  Progress
+
+	// parts counts the files written beside their names, so two at once
+	// cannot choose the same one.
+	parts int
+
+	// made are the directories this job created, to be given the mode
+	// they were asked for once everything is inside them.
+	made []item
 
 	// choice is what the user said to do about every later conflict,
 	// when they said it once for all of them.
@@ -140,6 +153,10 @@ func (j *Job) Kind() Kind { return j.op.Kind }
 func (j *Job) Op() Op { return j.op }
 
 // Name is what the panel calls the job.
+//
+// It is read from the drawing goroutine the moment the job is made, so
+// it holds for a job that was never going to run: the panel asks before
+// anything has had a chance to say why.
 func (j *Job) Name() string {
 	what := ""
 	switch n := len(j.op.Names); {
@@ -148,7 +165,7 @@ func (j *Job) Name() string {
 	default:
 		what = fmt.Sprintf("%d items", n)
 	}
-	if j.op.Kind == Delete {
+	if j.op.Kind == Delete || j.op.To == nil {
 		return what
 	}
 	return what + " → " + j.op.To.Name()
@@ -174,14 +191,17 @@ func (j *Job) update(fn func(*Progress)) {
 	fn(&j.p)
 }
 
-// finish records how the job ended.
+// finish records how the job ended. The first ending is the one that
+// counts.
 func (j *Job) finish(err error) {
-	j.update(func(p *Progress) {
-		p.Err = err
-		p.Done = true
-		p.Current = ""
+	j.finished.Do(func() {
+		j.update(func(p *Progress) {
+			p.Err = err
+			p.Done = true
+			p.Current = ""
+		})
+		close(j.done)
 	})
-	close(j.done)
 }
 
 // Queue is the jobs the window has, running and finished.
@@ -224,6 +244,16 @@ func (q *Queue) Start(ctx context.Context, op Op, opts Options) *Job {
 		cancel: cancel,
 		done:   make(chan struct{}),
 		p:      Progress{Started: time.Now()},
+	}
+
+	// Checked here rather than on the job's own goroutine, so a job that
+	// was never going to run says so before the panel has drawn it once.
+	if err := op.check(); err != nil {
+		q.mu.Lock()
+		q.jobs = append(q.jobs, j)
+		q.mu.Unlock()
+		j.finish(err)
+		return j
 	}
 
 	q.mu.Lock()
@@ -273,19 +303,29 @@ func (q *Queue) Jobs() []*Job {
 // nothing able to stop it.
 func (q *Queue) Drop(j *Job) {
 	j.Cancel()
+
 	q.mu.Lock()
-	defer q.mu.Unlock()
 	for i, have := range q.jobs {
 		if have == j {
 			q.jobs = append(q.jobs[:i], q.jobs[i+1:]...)
 			break
 		}
 	}
+	waiting := false
 	for i, have := range q.waiting {
 		if have == j {
 			q.waiting = append(q.waiting[:i], q.waiting[i+1:]...)
+			waiting = true
 			break
 		}
+	}
+	q.mu.Unlock()
+
+	if waiting {
+		// It never started and nothing will start it now, so nothing
+		// else would ever end it: whoever is waiting on it would wait
+		// for ever.
+		j.finish(context.Canceled)
 	}
 }
 
@@ -322,6 +362,27 @@ func (q *Queue) Wait() {
 	for _, j := range q.Jobs() {
 		<-j.Done()
 	}
+}
+
+// WaitFor is Wait with a limit on how long it will wait, and reports
+// whether everything stopped.
+//
+// Cancelling a job cannot interrupt a read or a write that is already
+// under way: a filesystem method takes no context, so a job on a machine
+// that has stopped answering is stuck until whatever it is waiting on
+// gives up. A window that is closing lets those go rather than waiting
+// with them -- the connections are closed on the way out, which is what
+// ends them.
+func (q *Queue) WaitFor(d time.Duration) bool {
+	deadline := time.After(d)
+	for _, j := range q.Jobs() {
+		select {
+		case <-j.Done():
+		case <-deadline:
+			return false
+		}
+	}
+	return true
 }
 
 // errStopped is what a job returns when the user answered a question

@@ -49,9 +49,14 @@ type Choice struct {
 
 // Ask reaches the user about a name that is already there.
 //
-// It is called from the job's own goroutine and blocks it until there is
+// It is called from a job's own goroutine and blocks it until there is
 // an answer. An implementation that draws must hand the question to
 // whichever goroutine may draw and wait for the reply.
+//
+// One of these may be shared by several jobs, which run at the same
+// time, so it has to be safe to call from several goroutines at once. An
+// implementation that keeps one question in a field needs a lock around
+// it.
 //
 // Returning an error stops the job, which is what a window that is
 // closing does: the question can no longer be answered, so there is no
@@ -88,14 +93,13 @@ func (j *Job) decide(ctx context.Context, c Conflict) (Choice, error) {
 	if err != nil {
 		return Choice{}, err
 	}
-	if choice.All {
+	// A name to put the next one beside cannot be reused: the next one
+	// has a different name. Remembering it as anything else would be
+	// answering a question the user was never asked, so that one keeps
+	// asking.
+	if choice.All && choice.What != Rename {
 		j.mu.Lock()
 		kept := choice
-		// A name to rename to means nothing for the next one, which has
-		// a different name.
-		if kept.What == Rename {
-			kept.What = Skip
-		}
 		j.choice = &kept
 		j.mu.Unlock()
 	}

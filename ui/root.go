@@ -233,27 +233,77 @@ func (r *Root) HandleKey(ev input.Event) (handled bool, err error) {
 // There are no mouse bindings: a click means whatever is under it, so
 // there is nothing for a keymap to say about it.
 func (r *Root) HandleMouse(ev input.MouseEvent) (bool, error) {
-	target := r.held.Holder()
-	if target == nil {
-		// Only a press that starts something has to land inside. A wheel
-		// notch or a motion report in the pixels left over below the
-		// last whole row still belongs to the tree.
-		starts := ev.Kind == input.MousePress && !ev.Button.IsWheel()
-		if starts && !r.area.Contains(ev.Col, ev.Row) {
+	if r.held.Held() {
+		held := r.held.Holder()
+		if held == nil {
+			// The widget that took the press has gone. Nothing else may
+			// have its release, so the rest of the drag is swallowed.
+			r.held.Take(nil, ev)
 			return false, nil
 		}
-		target = r.top()
+		return r.deliverHeld(held, ev)
 	}
-	if target == nil {
+
+	top := r.top()
+	if top == nil {
+		return false, nil
+	}
+	// Only a press that starts something has to land inside. A wheel
+	// notch or a motion report in the pixels left over below the last
+	// whole row still belongs to the tree.
+	starts := ev.Kind == input.MousePress && !ev.Button.IsWheel()
+	if starts && !r.area.Contains(ev.Col, ev.Row) {
 		return false, nil
 	}
 
-	ev.Col, ev.Row = r.area.Local(ev.Col, ev.Row)
-	ev.Col = min(max(ev.Col, 0), max(r.area.Cols-1, 0))
-	ev.Row = min(max(ev.Row, 0), max(r.area.Rows-1, 0))
+	local := ev
+	local.Col, local.Row = r.clampInto(r.area, ev.Col, ev.Row)
+	handled, err := HandleMouse(top, local)
+	if starts && handled {
+		// Remember the widget itself, not the way down to it. Containers
+		// come and go while a button is held, and the path is worked out
+		// again for every event that follows.
+		if leaf, _, ok := LeafAt(top, r.area.Size().rect(), local.Col, local.Row); ok {
+			r.held.Take(leaf, local)
+		}
+	}
+	return handled, err
+}
 
-	r.held.Take(target, ev)
-	return HandleMouse(target, ev)
+// deliverHeld sends an event straight to the widget holding the pointer,
+// wherever the tree has since put it.
+//
+// A widget that has left the tree gets nothing more, and neither does
+// anything else: a release belongs to whatever took the press, and
+// handing it to whoever happens to be under the pointer would clear a
+// selection nobody made and report a button-up no program pressed.
+func (r *Root) deliverHeld(held Widget, ev input.MouseEvent) (bool, error) {
+	area, shown := AreaOf(r.top(), r.area.Size().rect(), held)
+	if !shown {
+		r.held.Abandon()
+		r.held.Take(nil, ev)
+		return false, nil
+	}
+	local := ev
+	local.Col, local.Row = r.area.Local(ev.Col, ev.Row)
+	local.Col, local.Row = r.clampInto(area, local.Col, local.Row)
+	local.Col, local.Row = area.Local(local.Col, local.Row)
+	r.held.Take(held, local)
+	return HandleMouse(held, local)
+}
+
+// clampInto pulls a point inside an area, so dragging past an edge
+// selects to the edge rather than to a column that is not there.
+func (r *Root) clampInto(area Rect, x, y int) (int, int) {
+	return min(max(x, area.X), area.X+max(area.Cols-1, 0)),
+		min(max(y, area.Y), area.Y+max(area.Rows-1, 0))
+}
+
+// AreaOf returns where a widget sits in the tree, in the tree's own
+// coordinates. It saves a caller having to know the root's area and get
+// it wrong.
+func (r *Root) AreaOf(target Widget) (Rect, bool) {
+	return AreaOf(r.top(), r.area.Size().rect(), target)
 }
 
 // run looks a chord up in one keymap and runs what it finds.

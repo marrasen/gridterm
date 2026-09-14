@@ -785,3 +785,138 @@ func TestLayoutToZeroStillResizes(t *testing.T) {
 		t.Errorf("session size = %v, want 1x1", got)
 	}
 }
+
+// TestTwoTerminalsInASplit is the whole point of splitting: two shells
+// on one grid, each drawn in its own half, each typed into separately.
+func TestTwoTerminalsInASplit(t *testing.T) {
+	pal := vt.DefaultPalette()
+	left, lf := newTestTerm(t, 1, 1, Config{Palette: &pal})
+	right, rf := newTestTerm(t, 1, 1, Config{Palette: &pal})
+
+	split := ui.NewSplit(ui.Columns, left, right)
+	split.DividerFG = pal.FG
+	var root ui.Root
+	root.SetWidget(split)
+	root.Layout(ui.Rect{Cols: 11, Rows: 2})
+
+	lf.feed(t, left, "LL")
+	rf.feed(t, right, "RR")
+	host := grid.New(11, 2, pal.FG, pal.BG)
+	root.Draw(host.View())
+
+	if got := rowText(host, 0); got != "LL   │RR" {
+		t.Errorf("row 0 = %q, want the two shells either side of the divider", got)
+	}
+	// Each shell was told its own width, not the window's.
+	if got := left.Size(); got != (ui.Size{Cols: 5, Rows: 2}) {
+		t.Errorf("left pane size = %+v, want 5x2", got)
+	}
+	if got := right.Size(); got != (ui.Size{Cols: 5, Rows: 2}) {
+		t.Errorf("right pane size = %+v, want 5x2", got)
+	}
+
+	// Typing reaches the focused pane only.
+	root.HandleKey(input.Event{Kind: input.Text, Rune: 'x', NormalText: true})
+	waitFor(t, func() bool { return lf.sentText() == "x" })
+	if got := rf.sentText(); got != "" {
+		t.Errorf("the unfocused pane received %q", got)
+	}
+
+	// Clicking the other pane moves focus, and then typing follows.
+	root.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft, Col: 8, Row: 1,
+	})
+	root.HandleMouse(input.MouseEvent{
+		Kind: input.MouseRelease, Button: input.MouseLeft, Col: 8, Row: 1,
+	})
+	root.HandleKey(input.Event{Kind: input.Text, Rune: 'y', NormalText: true})
+
+	waitFor(t, func() bool { return rf.sentText() == "y" })
+	if got := lf.sentText(); got != "x" {
+		t.Errorf("the first pane received %q after focus moved away", got)
+	}
+}
+
+// TestSplitCursorBelongsToTheFocusedPane checks on real terminals what
+// the split tests check on fakes: one cursor, and the focused pane has
+// it whichever way round the panes are drawn.
+func TestSplitCursorBelongsToTheFocusedPane(t *testing.T) {
+	pal := vt.DefaultPalette()
+	left, lf := newTestTerm(t, 1, 1, Config{Palette: &pal})
+	right, rf := newTestTerm(t, 1, 1, Config{Palette: &pal})
+	split := ui.NewSplit(ui.Columns, left, right)
+	var root ui.Root
+	root.SetWidget(split)
+	root.Layout(ui.Rect{Cols: 11, Rows: 2})
+	lf.feed(t, left, "LL")
+	rf.feed(t, right, "RR")
+	host := grid.New(11, 2, pal.FG, pal.BG)
+
+	root.Draw(host.View())
+	cur := host.Cursor()
+	if !cur.Visible || cur.X >= 6 {
+		t.Errorf("cursor = %+v, want it visible in the left pane", cur)
+	}
+
+	split.Focus(right)
+	root.Draw(host.View())
+
+	cur = host.Cursor()
+	if !cur.Visible || cur.X < 6 {
+		t.Errorf("cursor = %+v, want it visible in the right pane", cur)
+	}
+}
+
+// TestSplitResizesBothShells checks that changing the window tells both
+// programs their new width, not just the focused one.
+func TestSplitResizesBothShells(t *testing.T) {
+	left, lf := newTestTerm(t, 1, 1, Config{})
+	right, rf := newTestTerm(t, 1, 1, Config{})
+	var root ui.Root
+	root.SetWidget(ui.NewSplit(ui.Columns, left, right))
+
+	root.Layout(ui.Rect{Cols: 41, Rows: 10})
+
+	if got := lf.lastSize(); got != [2]int{20, 10} {
+		t.Errorf("left shell told %v, want 20x10", got)
+	}
+	if got := rf.lastSize(); got != [2]int{20, 10} {
+		t.Errorf("right shell told %v, want 20x10", got)
+	}
+}
+
+// TestSplitKeepsDamageTrackingAcrossPanes checks that output in one pane
+// does not repaint the other. Two shells on one grid is where a lazy
+// copy would cost twice as much as it should.
+func TestSplitKeepsDamageTrackingAcrossPanes(t *testing.T) {
+	left, lf := newTestTerm(t, 1, 1, Config{})
+	right, rf := newTestTerm(t, 1, 1, Config{})
+	var root ui.Root
+	root.SetWidget(ui.NewSplit(ui.Rows, left, right))
+	root.Layout(ui.Rect{Cols: 10, Rows: 5})
+	lf.feed(t, left, "top")
+	rf.feed(t, right, "bottom")
+	host := grid.New(10, 5, fgOf(), bgOf())
+	root.Draw(host.View())
+	host.ClearDirty()
+
+	root.Draw(host.View())
+	if host.AnyDirty() {
+		t.Fatal("an unchanged repaint dirtied the grid")
+	}
+
+	lf.feed(t, left, "\r\nmore")
+	root.Draw(host.View())
+
+	if !host.RowDirty(1) {
+		t.Error("the row that changed was not dirtied")
+	}
+	for _, y := range []int{3, 4} {
+		if host.RowDirty(y) {
+			t.Errorf("row %d of the other pane was dirtied by output in the first", y)
+		}
+	}
+}
+
+func fgOf() color.RGBA { return color.RGBA{0xff, 0xff, 0xff, 0xff} }
+func bgOf() color.RGBA { return color.RGBA{0x00, 0x00, 0x00, 0xff} }

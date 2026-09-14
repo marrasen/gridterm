@@ -114,6 +114,11 @@ type Terminal struct {
 	closed atomic.Bool
 	done   chan struct{}
 
+	// title is what the program last called the window, kept out here so
+	// the drawing goroutine can read it without waiting on the reader,
+	// which holds the lock for as long as it takes to parse a flood.
+	title atomic.Pointer[string]
+
 	// size is the last size Layout gave, and haveSize tells a genuine
 	// zero size from never having been laid out.
 	size     ui.Size
@@ -151,9 +156,11 @@ func New(cfg Config) (*Terminal, error) {
 	t.g = grid.New(cols, rows, pal.FG, pal.BG)
 	t.g.SelectionBG = pal.Selection
 	t.term = vt.New(cols, rows, pal, cfg.Scrollback, vt.Callbacks{
-		Title: func(s string) {
+		Title: func(title string) {
+			kept := title
+			t.title.Store(&kept)
 			if cfg.OnTitle != nil {
-				cfg.OnTitle(s)
+				cfg.OnTitle(title)
 			}
 		},
 		Bell: func() {
@@ -248,6 +255,17 @@ func (t *Terminal) SetFocus(on bool) {
 	t.focused = on
 	t.pending.Store(true)
 }
+
+// Title returns the title the program last set, or "" if it set none.
+func (t *Terminal) Title() string {
+	if s := t.title.Load(); s != nil {
+		return *s
+	}
+	return ""
+}
+
+// Focused reports whether this terminal is the one receiving keys.
+func (t *Terminal) Focused() bool { return t.focused }
 
 // Size returns the terminal's size in cells.
 func (t *Terminal) Size() ui.Size { return t.size }

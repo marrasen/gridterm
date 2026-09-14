@@ -105,32 +105,23 @@ func main() {
 	a.comp.Add(a.layer)
 	a.lastSize = [2]int{initCols, initRows}
 
-	sess, err := startSession(*remote, strings.Fields(*cmdline), initCols, initRows)
-	if err != nil {
-		log.Fatalf("start session: %v", err)
+	// What every pane is started with, so a split can open another.
+	command := strings.Fields(*cmdline)
+	a.newSession = func(cols, rows int) (session.Session, error) {
+		return startSession(*remote, command, cols, rows)
 	}
+	a.scrollback = *scroll
+	a.palette = pal
+	a.panes = make(map[*term.Terminal]struct{})
+	a.exits = make(chan struct{}, exitQueue)
 
-	var clip clipboardWriter
-	a.t, err = term.New(term.Config{
-		Session:        sess,
-		Size:           ui.Size{Cols: initCols, Rows: initRows},
-		Scrollback:     *scroll,
-		Palette:        &pal,
-		ReadClipboard:  clipboardRead,
-		WriteClipboard: clip.set,
-		OnTitle: func(s string) {
-			title := s
-			a.title.Store(&title)
-		},
-		OnExit:  func() { a.quit.Store(true) },
-		OnError: func(err error) { log.Print(err) },
-	})
+	first, err := a.newTerminal()
 	if err != nil {
-		log.Fatalf("start terminal: %v", err)
+		log.Fatal(err)
 	}
 
 	a.commands()
-	a.root.SetWidget(a.t)
+	a.root.SetWidget(first)
 	a.root.Layout(ui.Rect{Cols: initCols, Rows: initRows})
 
 	ebiten.SetWindowTitle("gridterm")
@@ -141,8 +132,10 @@ func main() {
 	ebiten.SetVsyncEnabled(true)
 
 	err = ebiten.RunGame(a)
-	if cerr := a.t.Close(); cerr != nil && err == nil {
-		err = cerr
+	for t := range a.panes {
+		if cerr := t.Close(); cerr != nil && err == nil {
+			err = cerr
+		}
 	}
 	if err != nil && !errors.Is(err, ebiten.Termination) {
 		log.Fatal(err)

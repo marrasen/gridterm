@@ -11,9 +11,16 @@ import (
 	"github.com/marrasen/gridterm/input"
 	"github.com/marrasen/gridterm/input/ebitenin"
 	"github.com/marrasen/gridterm/render"
+	"github.com/marrasen/gridterm/session"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/term"
+	"github.com/marrasen/gridterm/vt"
 )
+
+// exitQueue is how many "a shell has gone" notices are held before the
+// drawing goroutine collects them. One per pane is plenty; the channel
+// only has to avoid blocking the goroutine reporting it.
+const exitQueue = 64
 
 // Font size limits and the step the zoom commands move by.
 const (
@@ -40,9 +47,23 @@ type app struct {
 	reader ebitenin.Reader
 	mouse  ebitenin.MouseReader
 
-	// t is the terminal the window was opened for. It is also the tree's
-	// only widget until splits arrive.
-	t *term.Terminal
+	// panes is every live terminal, so a shell that exits can be found
+	// wherever it sits in the tree.
+	panes map[*term.Terminal]struct{}
+
+	// exits carries "a shell has gone" from the goroutines reading them
+	// to the drawing goroutine, which is the only one that may touch the
+	// widget tree.
+	exits chan struct{}
+
+	// newSession starts the shell a new pane runs. It is a field so a
+	// test can drive the tree without spawning anything.
+	newSession func(cols, rows int) (session.Session, error)
+
+	// What a new pane is started with, kept from the flags.
+	scrollback int
+	palette    vt.Palette
+	clip       clipboardWriter
 
 	// fontSize is the current size in points.
 	fontSize float64
@@ -52,9 +73,9 @@ type app struct {
 	lastPixels [2]int
 	lastSize   [2]int
 
-	// title carries a title set by the program back to the drawing
-	// goroutine, which is the only one allowed to touch the window.
-	title atomic.Pointer[string]
+	// title is what the window is currently called, so it is only set
+	// again when it changes.
+	title string
 
 	// quit is set once the shell is gone; the window closes on the next
 	// frame.
@@ -76,6 +97,8 @@ func (a *app) Update() error {
 		return nil
 	}
 
+	a.reapExited()
+
 	for _, ev := range a.reader.Poll() {
 		if _, err := a.root.HandleKey(ev); err != nil {
 			log.Printf("key %s: %v", ui.ChordOf(ev), err)
@@ -88,10 +111,27 @@ func (a *app) Update() error {
 		}
 	}
 
-	if t := a.title.Swap(nil); t != nil {
-		ebiten.SetWindowTitle("gridterm — " + *t)
-	}
+	a.updateTitle()
 	return nil
+}
+
+// updateTitle shows the focused pane's title. Read rather than pushed:
+// a build running in a pane you are not looking at should not rename the
+// window.
+func (a *app) updateTitle() {
+	title := ""
+	if t := a.focusedTerminal(); t != nil {
+		title = t.Title()
+	}
+	if title == a.title {
+		return
+	}
+	a.title = title
+	if title == "" {
+		ebiten.SetWindowTitle("gridterm")
+		return
+	}
+	ebiten.SetWindowTitle("gridterm — " + title)
 }
 
 func (a *app) Draw(screen *ebiten.Image) {
@@ -123,6 +163,7 @@ func (a *app) resizeTo(pxW, pxH int) {
 
 	a.g.Resize(cols, rows)
 	a.root.Layout(ui.Rect{Cols: cols, Rows: rows})
+	a.markDirty()
 }
 
 // setFontSize rebuilds the atlas and re-derives the grid size, because
@@ -144,6 +185,22 @@ func (a *app) setFontSize(pt float64) error {
 	return nil
 }
 
+// logError reports a failure a pane could not return: the goroutines
+// moving bytes have nowhere to hand one back to.
+func (a *app) logError(err error) { log.Print(err) }
+
+// onFocused wraps a command that acts on the focused pane, doing nothing
+// when the focus is somewhere that is not a terminal.
+func (a *app) onFocused(fn func(*term.Terminal) error) func() error {
+	return func() error {
+		t := a.focusedTerminal()
+		if t == nil {
+			return nil
+		}
+		return fn(t)
+	}
+}
+
 // commands registers everything the window can do and binds the default
 // keys to it. Accelerators are the ones the terminal must not swallow.
 func (a *app) commands() {
@@ -158,21 +215,26 @@ func (a *app) commands() {
 		ui.Command{ID: "font.reset", Title: "Reset font size", Run: func() error {
 			return a.setFontSize(defaultFontSize)
 		}},
-		ui.Command{ID: "edit.copy", Title: "Copy", Run: func() error {
-			a.t.Copy()
-			return nil
+		ui.Command{ID: "edit.copy", Title: "Copy", Run: a.onFocused(
+			func(t *term.Terminal) error { t.Copy(); return nil })},
+		ui.Command{ID: "edit.paste", Title: "Paste", Run: a.onFocused(
+			func(t *term.Terminal) error { t.PasteClipboard(); return nil })},
+		ui.Command{ID: "view.scrollUp", Title: "Scroll back", Run: a.onFocused(
+			func(t *term.Terminal) error { t.ScrollPages(1); return nil })},
+		ui.Command{ID: "view.scrollDown", Title: "Scroll forward", Run: a.onFocused(
+			func(t *term.Terminal) error { t.ScrollPages(-1); return nil })},
+		ui.Command{ID: "pane.splitRight", Title: "Split right", Run: func() error {
+			return a.splitFocused(ui.Columns)
 		}},
-		ui.Command{ID: "edit.paste", Title: "Paste", Run: func() error {
-			a.t.PasteClipboard()
-			return nil
+		ui.Command{ID: "pane.splitDown", Title: "Split down", Run: func() error {
+			return a.splitFocused(ui.Rows)
 		}},
-		ui.Command{ID: "view.scrollUp", Title: "Scroll back", Run: func() error {
-			a.t.ScrollPages(1)
-			return nil
+		ui.Command{ID: "pane.close", Title: "Close pane", Run: a.closeFocused},
+		ui.Command{ID: "pane.next", Title: "Next pane", Run: func() error {
+			return a.focusPane(1)
 		}},
-		ui.Command{ID: "view.scrollDown", Title: "Scroll forward", Run: func() error {
-			a.t.ScrollPages(-1)
-			return nil
+		ui.Command{ID: "pane.previous", Title: "Previous pane", Run: func() error {
+			return a.focusPane(-1)
 		}},
 	)
 
@@ -191,6 +253,11 @@ func (a *app) commands() {
 		{Key: input.Key0, Mods: input.ModCtrl}:                       "font.reset",
 		{Key: input.KeyPageUp, Mods: input.ModShift}:                 "view.scrollUp",
 		{Key: input.KeyPageDown, Mods: input.ModShift}:               "view.scrollDown",
+		{Key: input.KeyD, Mods: input.ModCtrl | input.ModShift}:      "pane.splitRight",
+		{Key: input.KeyE, Mods: input.ModCtrl | input.ModShift}:      "pane.splitDown",
+		{Key: input.KeyW, Mods: input.ModCtrl | input.ModShift}:      "pane.close",
+		{Key: input.KeyTab, Mods: input.ModCtrl}:                     "pane.next",
+		{Key: input.KeyTab, Mods: input.ModCtrl | input.ModShift}:    "pane.previous",
 	})
 
 	a.root.Commands = cmds

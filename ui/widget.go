@@ -23,6 +23,10 @@ type Size struct {
 // Empty reports whether there is nothing to draw in.
 func (s Size) Empty() bool { return s.Cols <= 0 || s.Rows <= 0 }
 
+// rect returns the size as a rectangle at the origin, for the common
+// case of asking about a tree in its own coordinates.
+func (s Size) rect() Rect { return Rect{Cols: s.Cols, Rows: s.Rows} }
+
 // Rect is an area of cells at a position. Containers use it to divide
 // themselves up; a child is only ever told its Size, because a widget
 // that knew its position could offset by it twice.
@@ -133,23 +137,93 @@ func HandleKey(w Widget, ev input.Event) (bool, error) {
 	return false, nil
 }
 
+// Container is a widget made of other widgets.
+//
+// Implementing it lets the tree helpers walk and rearrange a layout
+// without knowing what kind of container each node is, so a split, a tab
+// strip and anything written later all work with the same code.
+type Container interface {
+	Widget
+
+	// Children returns the children, in layout order. A container with
+	// children must report one of them as Focused.
+	Children() []Widget
+
+	// Focused returns the child that receives events, or nil when there
+	// are no children.
+	Focused() Widget
+
+	// Focus moves focus to one of the children, reporting whether it is
+	// one. Without it nothing could point a chain of containers at a
+	// widget without knowing what each one is.
+	Focus(w Widget) bool
+
+	// Replace swaps one child for another, reporting whether old was
+	// there. Focus follows: replacing the focused child focuses its
+	// replacement, and the old child is told focus left.
+	Replace(old, new Widget) bool
+
+	// Remove takes a child out and reports what should stand in the
+	// container's own place: itself when it can carry on, its last
+	// remaining child when removing this one leaves it with nothing to
+	// divide, or nil when nothing is left at all.
+	//
+	// Returning anything but itself is a promise that the container is
+	// finished and may be thrown away, so it need not tidy up the slot
+	// it is about to lose. It must still hand focus on, because the
+	// child it held may outlive it.
+	//
+	// It reports false when w is not a child.
+	Remove(w Widget) (Widget, bool)
+
+	// ChildArea returns where a child sits inside this container, in the
+	// container's own coordinates. It reports false when w is not a
+	// child, or when there is no room to show it.
+	//
+	// It must give the same rectangle Layout used for that child.
+	// Anything asking where a widget is on screen -- routing a drag,
+	// placing a menu under the word that opened it -- believes this, and
+	// a container that works it out twice has two chances to disagree
+	// with itself.
+	ChildArea(w Widget) (Rect, bool)
+}
+
 // MouseCapture remembers which widget took a mouse press, so every move
 // and release goes to it until the button comes up, however far the
 // pointer has wandered.
 //
 // Without it a drag that leaves a widget never finishes, and the widget
-// waits for a release it will not get. Containers nest, so each one that
-// routes the mouse keeps its own.
+// waits for a release it will not get.
+//
+// It holds the widget, not the way down to it. Containers come and go
+// while a button is held -- a pane splits, a neighbour closes -- and a
+// remembered path would be wrong by the next event, where the widget
+// itself is still the right answer or is gone entirely.
 type MouseCapture struct {
 	w      Widget
 	button input.MouseButton
+
+	// down stays true while the capturing button is held, even once the
+	// widget has gone, so the release it was waiting for is swallowed
+	// rather than handed to whoever the pointer has wandered over.
+	down bool
 }
 
-// Holder returns the widget holding the pointer, or nil.
+// Holder returns the widget holding the pointer, or nil. It is nil while
+// a button is still down if the widget has left the tree.
 func (c *MouseCapture) Holder() Widget { return c.w }
 
-// Release drops the capture, for when the widget holding it goes away.
-func (c *MouseCapture) Release() { c.w = nil }
+// Held reports whether a button is down that the pointer is being kept
+// for, whether or not the widget it was kept for still exists.
+func (c *MouseCapture) Held() bool { return c.down }
+
+// Abandon gives up on the widget but keeps waiting for the button, for
+// when the widget has gone and its release belongs to nobody.
+func (c *MouseCapture) Abandon() { c.w = nil }
+
+// Release drops the capture entirely, for when the tree is rearranged
+// under it and the next press should start afresh.
+func (c *MouseCapture) Release() { c.w, c.down = nil, false }
 
 // Take records that w took this event, if it is a press that will be
 // released. A wheel notch is a press with no release, so taking one
@@ -157,13 +231,13 @@ func (c *MouseCapture) Release() { c.w = nil }
 func (c *MouseCapture) Take(w Widget, ev input.MouseEvent) {
 	switch {
 	case ev.Kind == input.MousePress && !ev.Button.IsWheel():
-		if c.w == nil {
-			c.w, c.button = w, ev.Button
+		if !c.down {
+			c.w, c.button, c.down = w, ev.Button, true
 		}
-	case ev.Kind == input.MouseRelease && ev.Button == c.button:
+	case ev.Kind == input.MouseRelease && c.down && ev.Button == c.button:
 		// Only the button that took the pointer gives it back. Tapping
 		// another mid-drag must not end the drag.
-		c.w = nil
+		c.w, c.down = nil, false
 	}
 }
 

@@ -29,14 +29,17 @@ emulator, and draws the resulting character grid as batched triangles.
   of the first, so no local port is opened for it and nothing else on
   the machine can use it. Closing the one in the middle closes what
   rides on it.
-- **A two-pane file browser.** Two filesystems side by side: this
-  machine and another, or two machines with gridterm in the middle. The
-  keys are the ones a two-pane browser has had for thirty years — Tab
-  swaps sides, Enter descends, Backspace goes up, Space marks, F5 copies
-  to the other pane, F6 moves, F7 makes a directory, F8 deletes. A
-  directory is never read on the goroutine that draws, so a slow machine
-  cannot stop the window, and a read that fails leaves the listing that
-  worked on screen with the reason beside it.
+- **A file manager with as many panes as you want.** One manager for the
+  window, and a pane added to it from the plus on any machine in the
+  sidebar: this machine, a server, or five of each with gridterm in the
+  middle. The keys are the ones a two-pane browser has had for thirty
+  years — Tab moves to the next pane, Enter descends, Backspace goes up,
+  Space marks, F5 copies to the next pane, F6 moves, F7 makes a
+  directory, F8 deletes — and a bar along the bottom says which key does
+  what, the way Midnight Commander does. Clicking a key on the bar does
+  what pressing it does. A directory is never read on the goroutine that
+  draws, so a slow machine cannot stop the window, and a read that fails
+  leaves the listing that worked on screen with the reason beside it.
 - **File work in the background.** Copying, moving and deleting, on one
   machine or between two, with how far along it is and a way to stop it.
   A name that is already there is asked about — replace, skip, rename, or
@@ -53,14 +56,17 @@ emulator, and draws the resulting character grid as batched triangles.
   every remote forward, because where the far machine really binds it is
   the far machine's decision. The panel shows what each is carrying: how
   many streams, how fast, and how many failed.
-- **A connections panel.** `Ctrl+Shift+B` shows every terminal, tunnel
-  and transfer the window has open, grouped by the machine it is on with
-  this one at the top. Each says what it is doing: opened until
-  something moves, active while bytes are going past, settled four
-  seconds after they stop, and closed at the end. A busy one shows how
-  fast. Nothing polls and nothing ticks — the row is worked out afresh
-  each frame from when the last byte went by, so an idle panel redraws
-  nothing at all.
+- **A sidebar instead of a row of tabs.** It is open when the window
+  opens, and it is how everything is reached: every terminal, file pane,
+  tunnel and transfer, grouped by the machine it is on with this one at
+  the top. A dot in front of each row says what it is doing — green for
+  open, brightening and dimming while bytes are going past, grey once it
+  has finished — so the words beside it are left for a speed or a count.
+  Every machine carries a plus that drops a menu of what can be opened
+  there, and "Connect to server…" is pinned under the list. Nothing polls
+  and nothing ticks: the row is worked out afresh each frame from when
+  the last byte went by, so an idle sidebar redraws nothing at all.
+  `Ctrl+Shift+B` hides it and shows it again.
 - **Servers are saved.** A machine you add gets a line on the Servers
   menu and an entry in the palette, kept in a JSON file under the OS
   configuration directory. It holds no secret and never will. A list
@@ -122,13 +128,14 @@ gave. There is no way to pick a font by family name yet; give paths.
 | `Ctrl+Shift+C` / `Ctrl+Shift+V` | copy and paste |
 | middle click | paste |
 | `Ctrl+=` / `Ctrl+-` / `Ctrl+0` | font size |
-| `Ctrl+Shift+B` | show or hide the connections panel |
-| `Ctrl+Shift+L` | go to the connections panel |
+| `Ctrl+Shift+B` | show or hide the sidebar |
+| `Ctrl+Shift+L` | go to the sidebar |
 | `Ctrl+Shift+N` | connect to a server |
 
-In a file browser: `Tab` swaps panes, `Enter` descends, `Backspace` goes
-up, `Space` marks, `F2` renames, `F5` copies to the other pane, `F6`
-moves, `F7` makes a directory, `F8` deletes.
+In the file manager: `Tab` moves to the next pane, `Enter` descends,
+`Backspace` goes up, `Space` marks, `F2` renames, `F5` copies to the next
+pane, `F6` moves, `F7` makes a directory, `F8` deletes. The bar along the
+bottom says the same thing, and clicking a key on it runs that key.
 
 On Windows there is nothing else to install — no C toolchain, no cgo:
 
@@ -164,15 +171,15 @@ encoders and both session types.
 | `session` | 362 | no | a shell as a byte stream, and the local pty |
 | `remote` | 3,570 | no | SSH: connections, shells, host keys, unlocked keys, tunnels |
 | `conns` | 221 | no | what the window has open, grouped by machine |
-| `vfs` | 668 | no | a filesystem a browser works on: this machine, or one over SFTP |
+| `vfs` | 668 | no | a filesystem a file pane works on: this machine, or one over SFTP |
 | `jobs` | 1,142 | no | copying, moving and deleting in the background, with progress and cancel |
 | `meter` | 257 | no | bytes moved, and how long ago: the four states |
-| `ui` | 5,075 | no | the widget toolkit: panes, tabs, menus, dialogs, fields, lists |
+| `ui` | 5,203 | no | the widget toolkit: panes, tabs, menus, dialogs, fields, lists |
 | `ui/term` | 529 | no | a shell on a widget |
-| `ui/files` | 767 | no | the two-pane file browser |
+| `ui/files` | 1,198 | no | the file manager: any number of panes side by side |
 | `glyph` | 1,289 | yes | glyph atlas, system font fallback, box drawing |
 | `render` | 1,149 | yes | grid to batched triangles |
-| `main` | 4,675 | yes | the window and the wiring |
+| `main` | 5,114 | yes | the window and the wiring |
 
 The layering is deliberate: `vt` never imports the renderer, `input`
 never imports ebiten (that lives in `input/ebitenin`), `ui` knows nothing
@@ -284,6 +291,10 @@ emulator under `internal/` where they cannot be imported.
   the window opens, so there is nowhere to draw a dialog yet and the
   console is the only place left to ask. Connecting from inside the
   window asks in the window.
+- **File panes share the width evenly, and the split cannot be dragged.**
+  Five panes in an eighty-column window are sixteen columns each. Closing
+  one gives its width back to the rest, but there is no way to make one
+  pane wider than another.
 - **Sixel and the Kitty graphics protocol** are not implemented.
 - **An APC, PM or SOS string with no terminator grows without bound.**
   The parser buffers it before the emulator sees anything, so it cannot

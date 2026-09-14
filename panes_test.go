@@ -258,7 +258,7 @@ func checkClosed(t *testing.T, closed ...*term.Terminal) {
 func TestSplitAndClose(t *testing.T) {
 	a := newTestApp(t, 40, 10)
 
-	if err := a.splitFocused(ui.Columns); err != nil {
+	if err := a.splitHere(ui.Columns); err != nil {
 		t.Fatalf("split: %v", err)
 	}
 	checkTree(t, a)
@@ -310,10 +310,10 @@ func TestClosingTheLastPaneQuits(t *testing.T) {
 func TestCloseAPaneWhoseSiblingIsASplit(t *testing.T) {
 	a := newTestApp(t, 40, 10)
 	// Three panes: first | (second / third).
-	if err := a.splitFocused(ui.Columns); err != nil {
+	if err := a.splitHere(ui.Columns); err != nil {
 		t.Fatalf("split: %v", err)
 	}
-	if err := a.splitFocused(ui.Rows); err != nil {
+	if err := a.splitHere(ui.Rows); err != nil {
 		t.Fatalf("split: %v", err)
 	}
 	checkTree(t, a)
@@ -345,7 +345,7 @@ func TestCloseAPaneWhoseSiblingIsASplit(t *testing.T) {
 func TestFocusCyclesThroughEveryPane(t *testing.T) {
 	a := newTestApp(t, 60, 20)
 	for i := 0; i < 2; i++ {
-		if err := a.splitFocused(ui.Columns); err != nil {
+		if err := a.splitHere(ui.Columns); err != nil {
 			t.Fatalf("split: %v", err)
 		}
 	}
@@ -385,7 +385,7 @@ func TestFocusCyclesThroughEveryPane(t *testing.T) {
 func TestSplitRefusedWithNoRoom(t *testing.T) {
 	a := newTestApp(t, 2, 4)
 
-	err := a.splitFocused(ui.Columns)
+	err := a.splitHere(ui.Columns)
 
 	if err == nil {
 		t.Error("splitting a pane two columns wide was allowed")
@@ -402,7 +402,7 @@ func TestReapClosesExitedPanes(t *testing.T) {
 	for run := 0; run < 30; run++ {
 		a := newTestApp(t, 60, 20)
 		for i := 0; i < 2; i++ {
-			if err := a.splitFocused(ui.Columns); err != nil {
+			if err := a.splitHere(ui.Columns); err != nil {
 				t.Fatalf("split: %v", err)
 			}
 		}
@@ -463,7 +463,7 @@ func TestSplitCloseFuzz(t *testing.T) {
 				dir = ui.Rows
 			}
 			// Refusing for want of room is an answer, not a failure.
-			_ = a.splitFocused(dir)
+			_ = a.splitHere(dir)
 		case 1:
 			if len(a.panes) > 1 {
 				if err := a.closeFocused(); err != nil {
@@ -512,7 +512,7 @@ func TestSplitRoomBoundary(t *testing.T) {
 	}{{cols: 2, allow: false}, {cols: 3, allow: true}} {
 		a := newTestApp(t, tc.cols, 4)
 
-		err := a.splitFocused(ui.Columns)
+		err := a.splitHere(ui.Columns)
 
 		if tc.allow && err != nil {
 			t.Errorf("%d columns: %v, want the split allowed", tc.cols, err)
@@ -528,7 +528,7 @@ func TestSplitRoomBoundary(t *testing.T) {
 // answer has to come from the tree rather than from the pane.
 func TestSplitRefusedWhenThePaneIsNotShown(t *testing.T) {
 	a := newTestApp(t, 40, 10)
-	if err := a.splitFocused(ui.Columns); err != nil {
+	if err := a.splitHere(ui.Columns); err != nil {
 		t.Fatalf("split: %v", err)
 	}
 	hidden := ui.FocusedLeaf(a.root.Widget()).(*term.Terminal)
@@ -540,7 +540,7 @@ func TestSplitRefusedWhenThePaneIsNotShown(t *testing.T) {
 	a.lastSize = [2]int{2, 10}
 	a.root.Layout(ui.Rect{Cols: 2, Rows: 10})
 
-	if err := a.splitFocused(ui.Columns); err == nil {
+	if err := a.splitHere(ui.Columns); err == nil {
 		t.Error("a pane with nowhere to be drawn was split")
 	}
 	if len(a.panes) != 2 {
@@ -556,7 +556,7 @@ func TestSplitRefusedWhenThePaneIsNotShown(t *testing.T) {
 func TestTitleFollowsFocus(t *testing.T) {
 	a := newTestApp(t, 40, 10)
 	first := ui.FocusedLeaf(a.root.Widget()).(*term.Terminal)
-	if err := a.splitFocused(ui.Columns); err != nil {
+	if err := a.splitHere(ui.Columns); err != nil {
 		t.Fatalf("split: %v", err)
 	}
 	second := ui.FocusedLeaf(a.root.Widget()).(*term.Terminal)
@@ -688,7 +688,7 @@ func TestTheStageHasNoTabStrip(t *testing.T) {
 // split is one of the things the stage holds, beside a pane of its own.
 func TestTabsAndSplitsNest(t *testing.T) {
 	a := newTestApp(t, 60, 20)
-	if err := a.splitFocused(ui.Columns); err != nil {
+	if err := a.splitHere(ui.Columns); err != nil {
 		t.Fatalf("split: %v", err)
 	}
 	if err := a.openTab(); err != nil {
@@ -820,7 +820,7 @@ func TestTabsAndSplitsFuzz(t *testing.T) {
 				dir = ui.Rows
 			}
 			// Refusing for want of room is an answer, not a failure.
-			_ = a.splitFocused(dir)
+			_ = a.splitHere(dir)
 		case 1:
 			if err := a.openTab(); err != nil {
 				t.Fatalf("step %d: open tab: %v", step, err)
@@ -867,7 +867,7 @@ func TestFocusTabWorksAfterSplittingATab(t *testing.T) {
 	if err := a.openTab(); err != nil {
 		t.Fatalf("open tab: %v", err)
 	}
-	if err := a.splitFocused(ui.Columns); err != nil {
+	if err := a.splitHere(ui.Columns); err != nil {
 		t.Fatalf("split: %v", err)
 	}
 	before := ui.FocusedLeaf(a.root.Widget())
@@ -901,7 +901,7 @@ func TestOpenTabFromInsideASplitJoinsTheStripAbove(t *testing.T) {
 	if err := a.openTab(); err != nil {
 		t.Fatalf("open tab: %v", err)
 	}
-	if err := a.splitFocused(ui.Columns); err != nil {
+	if err := a.splitHere(ui.Columns); err != nil {
 		t.Fatalf("split: %v", err)
 	}
 
@@ -1033,6 +1033,9 @@ func TestPaletteRunsACommandFromTheRegistry(t *testing.T) {
 	if a.palette != nil {
 		t.Error("the dialog is still open after running a command")
 	}
+	// Splitting asks what goes in the half that opens up, and the line
+	// it opens on is a shell here.
+	takeFirstChoice(t, a)
 	if len(a.panes) != 2 {
 		t.Errorf("%d panes, want the split to have happened", len(a.panes))
 	}
@@ -1076,8 +1079,23 @@ func TestAcceleratorReachesPastThePalette(t *testing.T) {
 		t.Fatalf("accelerator: %v", err)
 	}
 
+	// Splitting asks what goes in the half that opens up.
+	takeFirstChoice(t, a)
 	if len(a.panes) != 2 {
 		t.Errorf("%d panes, want the accelerator to have reached past the dialog", len(a.panes))
+	}
+}
+
+// takeFirstChoice answers the chooser on the modal stack with its first
+// line, which is what Enter on a freshly opened one does.
+func takeFirstChoice(t *testing.T, a *testApp) {
+	t.Helper()
+	c, ok := a.root.Modal().(*ui.Chooser)
+	if !ok {
+		t.Fatalf("nothing is asking: the top modal is %T", a.root.Modal())
+	}
+	if _, err := c.HandleKey(press(input.KeyEnter, 0)); err != nil {
+		t.Fatalf("taking the first line: %v", err)
 	}
 }
 
@@ -1180,7 +1198,7 @@ func TestPaletteSurvivesAPaneExiting(t *testing.T) {
 	a := newTestApp(t, 40, 10)
 	a.comp = render.NewCompositor(nil)
 	a.commands()
-	if err := a.splitFocused(ui.Columns); err != nil {
+	if err := a.splitHere(ui.Columns); err != nil {
 		t.Fatalf("split: %v", err)
 	}
 	if err := a.openPalette(); err != nil {
@@ -1274,7 +1292,7 @@ func TestASplitThatCannotBePlacedLeavesNoShell(t *testing.T) {
 	a.focus(a.files.view.Panes()[0])
 	was := len(a.panes)
 
-	err := a.splitFocused(ui.Columns)
+	err := a.splitHere(ui.Columns)
 	if err == nil {
 		t.Fatal("splitting a file pane reported nothing")
 	}

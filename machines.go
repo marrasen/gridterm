@@ -209,14 +209,14 @@ func (a *app) plan(route []step) (through *machine, missing []step, err error) {
 // something, and the dialog it asks with is drawn by this one. A row on
 // the panel holds the place until it is done, and cancelling that gives
 // up.
-func (a *app) openRoute(name string, route []step, command []string) {
+func (a *app) openRoute(name string, route []step, command []string, at *spot) {
 	through, missing, err := a.plan(route)
 	if err != nil {
 		a.reportError("Could not connect to "+name, err)
 		return
 	}
 	if len(missing) == 0 {
-		if err := a.startOn(name, command); err != nil {
+		if err := a.startOn(name, command, at); err != nil {
 			a.reportError("Could not open it on "+name, err)
 		}
 		return
@@ -300,7 +300,7 @@ func (a *app) openRoute(name string, route []step, command []string) {
 				a.hold(missing[i], conn, via)
 				via = missing[i].name
 			}
-			if err := a.startOn(name, command); err != nil {
+			if err := a.startOn(name, command, at); err != nil {
 				a.reportError("Could not open it on "+name, err)
 			}
 		})
@@ -367,7 +367,7 @@ func dialRoute(ctx context.Context, through *remote.Conn, route []step) ([]*remo
 }
 
 // startOn runs something on a machine that is already connected to.
-func (a *app) startOn(name string, command []string) error {
+func (a *app) startOn(name string, command []string, at *spot) error {
 	m := a.machines[name]
 	if m == nil {
 		return fmt.Errorf("nothing is connected to %s", name)
@@ -381,7 +381,7 @@ func (a *app) startOn(name string, command []string) error {
 	if err != nil {
 		return err
 	}
-	t, err := a.openSessionTab(sh, name, kindOf(command), labelFor(command))
+	t, err := a.openSessionTab(sh, name, kindOf(command), labelFor(command), at)
 	if err != nil {
 		// The shell is ours and nothing else knows about it.
 		_ = sh.Close()
@@ -397,12 +397,12 @@ func (a *app) startOn(name string, command []string) error {
 
 // openOn puts a terminal or a command on a machine, connecting to it
 // first when nothing is connected to it yet.
-func (a *app) openOn(name string, command []string) error {
+func (a *app) openOn(name string, command []string, at *spot) error {
 	route, err := a.route(name)
 	if err != nil {
 		return err
 	}
-	a.openRoute(name, route, command)
+	a.openRoute(name, route, command, at)
 	return nil
 }
 
@@ -500,7 +500,7 @@ func (a *app) openTerminalHere() error {
 		// A new pane already runs there, which is what a new tab is.
 		return a.openTab()
 	}
-	return a.openOn(host, nil)
+	return a.openOn(host, nil, nil)
 }
 
 // openCommandHere asks for a command to run on the machine the user is
@@ -523,7 +523,7 @@ func (a *app) openCommandHere() error {
 		// Not from here: this dialog closes as soon as this returns, and
 		// closing one takes anything stacked on top of it.
 		a.pump.post(func() {
-			if err := a.openOn(host, command); err != nil {
+			if err := a.openOn(host, command, nil); err != nil {
 				a.reportError("Could not run it on "+host, err)
 			}
 		})

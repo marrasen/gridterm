@@ -211,44 +211,6 @@ func (a *app) newSplit(dir ui.Dir, first, second ui.Widget) *ui.Split {
 	return s
 }
 
-// splitFocused puts a new shell beside the focused pane.
-func (a *app) splitFocused(dir ui.Dir) error {
-	current := a.paneToPlaceBeside()
-	if current == nil {
-		return errors.New("nothing to split")
-	}
-	// A pane too small to divide would leave two panes nobody can see,
-	// each with a live shell still in the focus cycle.
-	if !a.roomToSplit(current, dir) {
-		return errors.New("no room to split")
-	}
-	next, err := a.newTerminal()
-	if err != nil {
-		return err
-	}
-
-	split := a.newSplit(dir, current, next)
-	if parent := ui.ParentOf(a.root.Widget(), current); parent != nil {
-		if !parent.Replace(current, split) {
-			// The container refused it, so the new pane is nowhere in
-			// the tree. Left as it is that is a live shell nobody can
-			// see or close.
-			delete(a.panes, next)
-			return errors.Join(
-				fmt.Errorf("%T would not take a split in place of the pane", parent),
-				next.Close())
-		}
-	} else {
-		a.root.SetWidget(split)
-	}
-	// The tree changed shape, so every pane has to be told its new size
-	// before the new one takes focus.
-	a.relayout()
-	a.focus(next)
-	a.showPane(next)
-	return nil
-}
-
 // closeFocused shuts the focused pane and gives its room to whatever
 // shared the split. Closing the last pane closes the window.
 func (a *app) closeFocused() error {
@@ -501,4 +463,139 @@ func (a *app) reapExited() {
 			}
 		}
 	}
+}
+
+// spot is where a pane the window is opening should go: dividing another
+// pane, rather than going in a tab of its own.
+//
+// It travels with the request rather than being recorded on the window,
+// because a connection takes as long as it takes. A pane arriving from
+// somewhere else in the meantime would otherwise land in the split that
+// was meant for this one.
+type spot struct {
+	beside ui.Widget
+	dir    ui.Dir
+}
+
+// place puts a new pane where it was asked to go.
+//
+// A spot naming a pane that has since been closed falls back to a tab of
+// its own: the terminal is open either way, and losing it because the
+// pane it was to sit beside has gone would be worse than putting it
+// somewhere else.
+func (a *app) place(next ui.Widget, at *spot) error {
+	if at == nil || ui.ParentOf(a.root.Widget(), at.beside) == nil {
+		return a.placeTab(next)
+	}
+	return a.splitWith(at.dir, at.beside, next)
+}
+
+// splitWith divides one pane and puts another in the half that opens up.
+//
+// next may be a pane that is already somewhere else in the tree, which
+// is what splitting with an existing tab means: it is taken out of where
+// it was first.
+//
+// A failure leaves next out of the tree, and whoever asked owns it: a
+// pane the window has only just made is closed, and one moved from
+// somewhere else has to be put back.
+func (a *app) splitWith(dir ui.Dir, current, next ui.Widget) error {
+	if err := a.canSplit(dir, current, next); err != nil {
+		return err
+	}
+
+	// Out of wherever it was. A pane the window has only just made is in
+	// the tree nowhere, and Detach says so rather than failing.
+	if root, moved := ui.Detach(a.root.Widget(), next); moved {
+		if root == nil {
+			return errors.New("taking the pane out of the tree left nothing")
+		}
+		if root != a.root.Widget() {
+			a.root.SetWidget(root)
+		}
+	}
+
+	split := a.newSplit(dir, current, next)
+	parent := ui.ParentOf(a.root.Widget(), current)
+	if parent == nil {
+		a.root.SetWidget(split)
+	} else if !parent.Replace(current, split) {
+		return fmt.Errorf("%T would not take a split in place of the pane", parent)
+	}
+	// The tree changed shape, so every pane has to be told its new size
+	// before the new one takes focus.
+	a.relayout()
+	a.focus(next)
+	return nil
+}
+
+// canDivide says why a pane cannot be divided, or nil when it can.
+//
+// Asked before the user is, so a split that could never be made is not
+// a question first.
+func (a *app) canDivide(dir ui.Dir, current ui.Widget) error {
+	switch {
+	case current == nil:
+		return errors.New("nothing to split")
+	case !a.isPane(current):
+		return errors.New("that is not a pane to split")
+	case !a.roomToSplit(current, dir):
+		// A pane too small to divide would leave two panes nobody can
+		// see, each with a live shell still in the focus cycle.
+		return errors.New("no room to split")
+	}
+	if _, ok := ui.ParentOf(a.root.Widget(), current).(*files.Browser); ok {
+		// The file manager holds panes of its own and nothing else, so
+		// it would refuse the split after the other pane had already
+		// been taken out of the tree for it.
+		return errors.New(
+			"a file pane cannot be split: add a pane to the file manager instead")
+	}
+	return nil
+}
+
+// canSplit says why one pane cannot be divided with another, or nil
+// when it can.
+//
+// Asked before anything moves, so a split that cannot be made leaves the
+// tree exactly as it was.
+func (a *app) canSplit(dir ui.Dir, current, next ui.Widget) error {
+	switch {
+	case next == nil:
+		return errors.New("nothing to split with")
+	case current == next:
+		return errors.New("a pane cannot be split with itself")
+	case ui.ParentOf(next, current) != nil:
+		return errors.New("a pane cannot be split with what it is inside")
+	}
+	return a.canDivide(dir, current)
+}
+
+// unsplitFocused takes the focused pane out of the split it is in and
+// gives it a tab of its own.
+//
+// Nothing is closed. The pane beside it takes the whole of the room the
+// split had, which is what undoing a split means.
+func (a *app) unsplitFocused() error {
+	w := ui.FocusedLeaf(a.root.Widget())
+	if !a.isPane(w) {
+		return errors.New("there is no pane here to take out of a split")
+	}
+	if a.stage == nil {
+		return errors.New("there is nowhere to put it")
+	}
+	if _, ok := ui.ParentOf(a.root.Widget(), w).(*ui.Split); !ok {
+		return errors.New("this pane is not in a split")
+	}
+	root, detached := ui.Detach(a.root.Widget(), w)
+	if !detached {
+		return errors.New("the pane could not be taken out of its split")
+	}
+	if root != nil && root != a.root.Widget() {
+		a.root.SetWidget(root)
+	}
+	a.stage.Add(w)
+	a.relayout()
+	a.focus(w)
+	return nil
 }

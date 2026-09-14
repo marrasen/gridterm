@@ -65,7 +65,7 @@ func TestASecondTerminalRidesOnTheSameConnection(t *testing.T) {
 	if a.machines[host] == nil {
 		t.Fatalf("the connection was not kept: %v", names(a))
 	}
-	if err := a.openOn(host, nil); err != nil {
+	if err := a.openOn(host, nil, nil); err != nil {
 		t.Fatalf("a second terminal: %v", err)
 	}
 	if len(a.panes) != 3 {
@@ -89,7 +89,7 @@ func TestRunACommandOnAConnectedMachine(t *testing.T) {
 	waitForPanes(t, a, 2)
 	host := serverConfig(t, s).Target()
 
-	if err := a.openOn(host, []string{"apt-get", "upgrade"}); err != nil {
+	if err := a.openOn(host, []string{"apt-get", "upgrade"}, nil); err != nil {
 		t.Fatalf("run a command: %v", err)
 	}
 	if len(a.panes) != 3 {
@@ -169,7 +169,7 @@ func TestClosingABastionClosesWhatRidesOnIt(t *testing.T) {
 	waitForPanes(t, a, 2)
 	// A terminal on the machine in the middle as well, so there is
 	// something of its own to lose.
-	if err := a.openOn("edge", nil); err != nil {
+	if err := a.openOn("edge", nil, nil); err != nil {
 		t.Fatalf("a terminal on edge: %v", err)
 	}
 	if len(a.panes) != 3 {
@@ -333,7 +333,7 @@ func TestOpenOnRefusesAMachineItDoesNotKnow(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withDialogs(t, a)
 
-	err := a.openOn("nowhere", nil)
+	err := a.openOn("nowhere", nil, nil)
 	if err == nil {
 		t.Fatal("a machine nothing knows about was connected to")
 	}
@@ -516,7 +516,7 @@ func TestAFinishedCommandKeepsItsOutput(t *testing.T) {
 	waitForPanes(t, a, 2)
 	host := serverConfig(t, s).Target()
 
-	if err := a.openOn(host, []string{"uname", "-a"}); err != nil {
+	if err := a.openOn(host, []string{"uname", "-a"}, nil); err != nil {
 		t.Fatalf("run a command: %v", err)
 	}
 	if len(a.panes) != 3 {
@@ -608,7 +608,7 @@ func TestClearingAFinishedCommandTakesItsPaneToo(t *testing.T) {
 	a.connect(serverConfig(t, s))
 	waitForPanes(t, a, 2)
 	host := serverConfig(t, s).Target()
-	if err := a.openOn(host, []string{"uname", "-a"}); err != nil {
+	if err := a.openOn(host, []string{"uname", "-a"}, nil); err != nil {
 		t.Fatalf("run a command: %v", err)
 	}
 	waitFor(t, a, "the command to finish", func() bool {

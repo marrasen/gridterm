@@ -55,18 +55,19 @@ func (a *app) connectAs(name string, cfg remote.Config) {
 	if name == "" {
 		name = cfg.Host
 	}
-	a.openRoute(name, []step{{name: name, cfg: cfg}}, nil)
+	a.openRoute(name, []step{{name: name, cfg: cfg}}, nil, nil)
 }
 
-// openSessionTab puts a session in a tab of its own.
+// openSessionTab puts a session where it was asked to go: dividing a
+// pane when one was named, and in a tab of its own otherwise.
 func (a *app) openSessionTab(sess session.Session, host string, kind conns.Kind,
-	label string) (*term.Terminal, error) {
+	label string, at *spot) (*term.Terminal, error) {
 
 	t, err := a.newTerminalOn(sess, host, kind, label)
 	if err != nil {
 		return nil, err
 	}
-	if err := a.placeTab(t); err != nil {
+	if err := a.place(t, at); err != nil {
 		// Nowhere to put it, so nothing is told about it. Closing the
 		// terminal closes the session with it.
 		delete(a.panes, t)

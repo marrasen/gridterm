@@ -18,6 +18,7 @@ func (a *app) newMenubar(child ui.Widget) *ui.Menubar {
 			{Command: "tab.open"},
 			{Command: "pane.splitRight"},
 			{Command: "pane.splitDown"},
+			{Command: "pane.unsplit"},
 			ui.MenuSeparator(),
 			{Command: "keys.lock"},
 			ui.MenuSeparator(),

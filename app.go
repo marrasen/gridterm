@@ -510,6 +510,8 @@ func (a *app) commands() {
 		ui.Command{ID: "pane.splitDown", Title: "Split down", Run: func() error {
 			return a.splitFocused(ui.Rows)
 		}},
+		ui.Command{ID: "pane.unsplit", Title: "Take this pane out of its split",
+			Run: a.unsplitFocused},
 		ui.Command{ID: "pane.close", Title: "Close pane", Run: a.closeFocused},
 		ui.Command{ID: "tab.open", Title: "New tab", Run: a.openTab},
 		ui.Command{ID: "server.connect", Title: "Connect to a server", Run: a.openServer},
@@ -563,6 +565,7 @@ func (a *app) commands() {
 		{Key: input.KeyPageUp, Mods: input.ModShift}:                 "view.scrollUp",
 		{Key: input.KeyPageDown, Mods: input.ModShift}:               "view.scrollDown",
 		{Key: input.KeyD, Mods: input.ModCtrl | input.ModShift}:      "pane.splitRight",
+		{Key: input.KeyU, Mods: input.ModCtrl | input.ModShift}:      "pane.unsplit",
 		{Key: input.KeyE, Mods: input.ModCtrl | input.ModShift}:      "pane.splitDown",
 		{Key: input.KeyW, Mods: input.ModCtrl | input.ModShift}:      "pane.close",
 		{Key: input.KeyTab, Mods: input.ModCtrl}:                     "pane.next",

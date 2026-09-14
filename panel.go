@@ -257,6 +257,16 @@ func (a *app) hosts(open map[string][]conns.Row) []string {
 	return append(out, rest...)
 }
 
+// allHosts is every machine the window knows about, in the order the
+// sidebar shows them.
+func (a *app) allHosts() []string {
+	open := map[string][]conns.Row{}
+	for _, group := range a.registry.Groups(time.Now()) {
+		open[group.Host] = group.Rows
+	}
+	return a.hosts(open)
+}
+
 // hostRow is the heading for one machine.
 //
 // It carries the dot the connection's own row used to, so a machine with

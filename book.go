@@ -101,7 +101,7 @@ func (a *app) connectSaved(name string) error {
 	if !ok {
 		return fmt.Errorf("there is no saved server called %q", name)
 	}
-	return a.openOn(h.Name, nil)
+	return a.openOn(h.Name, nil, nil)
 }
 
 // reloadBook reads the server list again, for a user who has repaired

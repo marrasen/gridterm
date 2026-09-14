@@ -145,6 +145,11 @@ func (a *app) openServerForm(under string) error {
 	target := f.AddField("Server", a.newField("[user@]host[:port]", 0))
 	key := f.AddField("Key file", a.newField("optional", 0))
 	via := f.AddField("Through", a.newField("another saved server, optional", 0))
+	// The machines already saved, so the field can be cycled rather than
+	// typed from memory. Blank first: leaving it empty is the usual
+	// answer, and it is what cycling comes back round to.
+	via.Options = append([]string{""}, a.serverNames(under)...)
+	f.Lines = append(f.Lines, viaHint(via.Options))
 
 	name.SetText(was.Name)
 	target.SetText(was.Target())
@@ -214,4 +219,34 @@ func (a *app) reportBookError() {
 		a.reportError("The server list could not be read", errors.Join(err,
 			errors.New("gridterm will not write over it until it is repaired")))
 	})
+}
+
+// serverNames is every saved machine except one, for the Through field
+// of the dialog editing that one.
+//
+// A machine reached through itself is a machine nothing can reach, so it
+// is not on the list. A longer loop is still possible and is caught when
+// the connection is made, which is the only place the whole chain is
+// known.
+func (a *app) serverNames(except string) []string {
+	var out []string
+	for _, h := range a.book.Hosts() {
+		if h.Name == except {
+			continue
+		}
+		out = append(out, h.Name)
+	}
+	return out
+}
+
+// viaHint says how to fill the Through field in, and with what.
+func viaHint(options []string) string {
+	named := options
+	if len(named) > 0 && named[0] == "" {
+		named = named[1:]
+	}
+	if len(named) == 0 {
+		return "Through: nothing else is saved yet, so there is nothing to go through."
+	}
+	return "Through: ctrl+down and ctrl+up step through " + strings.Join(named, ", ") + "."
 }

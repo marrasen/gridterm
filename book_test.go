@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/marrasen/gridterm/input"
+	"github.com/marrasen/gridterm/internal/sshtest"
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/ui"
 )
@@ -457,5 +458,72 @@ func TestServerMenuWithNothingSaved(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("there is no Servers menu")
+	}
+}
+
+// The Through field offers the machines already saved, so one can be
+// chosen rather than remembered.
+func TestTheThroughFieldOffersTheSavedServers(t *testing.T) {
+	s := sshtest.New(t)
+	a := newTestApp(t, 100, 30)
+	withDialogs(t, a)
+	saveHost(t, a, "edge", s, "")
+	saveHost(t, a, "db", s, "")
+
+	if err := a.openAddServer(); err != nil {
+		t.Fatalf("openAddServer: %v", err)
+	}
+	f, ok := a.root.Modal().(*ui.Form)
+	if !ok {
+		t.Fatalf("it showed %T", a.root.Modal())
+	}
+	via := f.Fields()[len(f.Fields())-1]
+	if len(via.Options) != 3 {
+		t.Fatalf("the field offers %v, want the blank and both machines", via.Options)
+	}
+	// The blank first: leaving it empty is the usual answer, and it is
+	// what stepping back round lands on.
+	if via.Options[0] != "" {
+		t.Fatalf("the field offers %v, want the blank first", via.Options)
+	}
+	for _, want := range []string{"edge", "db"} {
+		var found bool
+		for _, option := range via.Options {
+			if option == want {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("the field offers %v, missing %q", via.Options, want)
+		}
+	}
+	// And the dialog says how to reach them.
+	hint := strings.Join(f.Lines, " ")
+	if !strings.Contains(hint, "ctrl+down") || !strings.Contains(hint, "edge") {
+		t.Fatalf("the dialog says %q", hint)
+	}
+}
+
+// A machine cannot be reached through itself, so editing one leaves it
+// off its own list.
+func TestAServerIsNotOfferedAsItsOwnRoute(t *testing.T) {
+	s := sshtest.New(t)
+	a := newTestApp(t, 100, 30)
+	withDialogs(t, a)
+	saveHost(t, a, "edge", s, "")
+	saveHost(t, a, "db", s, "")
+
+	if err := a.openEditServer("db"); err != nil {
+		t.Fatalf("openEditServer: %v", err)
+	}
+	f := a.root.Modal().(*ui.Form)
+	via := f.Fields()[len(f.Fields())-1]
+	for _, option := range via.Options {
+		if option == "db" {
+			t.Fatalf("the dialog offers db as its own route: %v", via.Options)
+		}
+	}
+	if len(via.Options) != 2 {
+		t.Fatalf("the dialog offers %v, want the blank and edge", via.Options)
 	}
 }

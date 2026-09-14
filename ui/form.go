@@ -11,8 +11,11 @@ import (
 // How large a form is allowed to get, and how much of the area it leaves
 // around itself.
 const (
-	formMaxCols = 60
-	formMargin  = 2
+	formMaxCols = 76
+
+	// formFieldCols is the room a field asks for beside its label.
+	formFieldCols = 44
+	formMargin    = 2
 
 	// formPad is the blank column each side of the text inside the box.
 	formPad = 2
@@ -642,8 +645,10 @@ func (f *Form) wantCols() int {
 		labels = max(labels, grid.StringWidth(r.label))
 	}
 	if len(f.rows) > 0 {
-		// Room for a label and something worth typing beside it.
-		width = max(width, labels+formLabelGap+24)
+		// Room for a label and something worth typing beside it. A path
+		// or an address is what these fields usually hold, and neither
+		// fits in a handful of columns.
+		width = max(width, labels+formLabelGap+formFieldCols)
 	}
 	buttons := 0
 	for _, b := range f.buttons {

@@ -45,6 +45,15 @@ type Field struct {
 	// ReadClipboard backs the paste shortcut. A nil one disables it.
 	ReadClipboard func() string
 
+	// Options are the answers worth offering, for a field whose value is
+	// usually one of a known few. Ctrl+Down and Ctrl+Up step through
+	// them, and an empty one is included so an optional field can be
+	// cycled back to nothing.
+	//
+	// They are a suggestion, not a rule: the field still takes anything
+	// that is typed into it.
+	Options []string
+
 	text string
 	at   int // the caret, a byte offset into text at a cluster boundary
 	left int // the first byte drawn, for text wider than the field
@@ -129,6 +138,14 @@ func (f *Field) HandleKey(ev input.Event) (bool, error) {
 	// Ctrl+Shift+V and every other program binds it to Ctrl+V.
 	if ev.Ctrl() && ev.Key == input.KeyV {
 		return f.paste(), nil
+	}
+
+	if ev.Ctrl() && (ev.Key == input.KeyDown || ev.Key == input.KeyUp) {
+		step := 1
+		if ev.Key == input.KeyUp {
+			step = -1
+		}
+		return f.cycle(step), nil
 	}
 
 	switch ev.Key {
@@ -378,4 +395,34 @@ func (f *Field) scroll() {
 	for f.colOf(f.at)-f.colOf(f.left) > f.cols-1 {
 		f.left = f.next(f.left)
 	}
+}
+
+// cycle puts the next option in the field, wrapping at the ends.
+//
+// It starts from whatever is there: text that is one of the options
+// steps on from it, and anything else starts at the first. An empty
+// field counts as the empty option when there is one, so an optional
+// field cycles back round to nothing rather than stopping at a value.
+func (f *Field) cycle(step int) bool {
+	if len(f.Options) == 0 {
+		return false
+	}
+	at := -1
+	for i, option := range f.Options {
+		if option == f.text {
+			at = i
+			break
+		}
+	}
+	if at < 0 {
+		// Not one of them, so the first step lands on the first option
+		// going forwards and the last going back.
+		at = -1
+		if step < 0 {
+			at = 0
+		}
+	}
+	next := ((at+step)%len(f.Options) + len(f.Options)) % len(f.Options)
+	f.SetText(f.Options[next])
+	return true
 }

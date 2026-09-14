@@ -726,3 +726,30 @@ func TestFormWillNotPressAButtonItCannotShow(t *testing.T) {
 		t.Fatalf("Tab landed on button %d, which has nowhere to be drawn", at)
 	}
 }
+
+// A dialog leaves its fields room to type in.
+//
+// These fields hold paths and addresses. A field a third the width of
+// the box scrolls what was typed out of sight, so the user is correcting
+// something they cannot see.
+func TestAFormGivesItsFieldsRoomToType(t *testing.T) {
+	// Long enough to be worth seeing all of, and no longer than what
+	// these dialogs are really asked for.
+	const path = "/home/somebody/.ssh/id_ed25519_work"
+
+	f := NewForm("Add a server", nil)
+	f.Style = formStyled()
+	f.AddField("Name", NewField())
+	f.AddField("Key file", NewField())
+	f.Layout(Size{Cols: 100, Rows: 30})
+
+	box := f.box()
+	if box.Empty() {
+		t.Fatal("the dialog has no room at all")
+	}
+	room := box.Cols - formPad - f.fieldX()
+	if want := grid.StringWidth(path); room < want {
+		t.Fatalf("a field is %d columns in a %d-column dialog, want at least %d for %q",
+			room, box.Cols, want, path)
+	}
+}

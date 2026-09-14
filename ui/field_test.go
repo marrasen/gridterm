@@ -331,3 +331,77 @@ func TestFieldSetTextReportsTheChange(t *testing.T) {
 		}
 	}
 }
+
+// A field with known answers steps through them, so a value that is
+// usually one of a few need not be typed from memory.
+func TestFieldCyclesItsOptions(t *testing.T) {
+	f := NewField()
+	f.Options = []string{"", "edge", "db", "app"}
+	f.Layout(Size{Cols: 20, Rows: 1})
+
+	down := func() bool {
+		took, _ := f.HandleKey(input.Event{
+			Kind: input.KeyPress, Key: input.KeyDown, Mods: input.ModCtrl,
+		})
+		return took
+	}
+	up := func() bool {
+		took, _ := f.HandleKey(input.Event{
+			Kind: input.KeyPress, Key: input.KeyUp, Mods: input.ModCtrl,
+		})
+		return took
+	}
+
+	for _, want := range []string{"edge", "db", "app", "", "edge"} {
+		if !down() {
+			t.Fatal("the field did not take ctrl+down")
+		}
+		if got := f.Text(); got != want {
+			t.Fatalf("stepping on gave %q, want %q", got, want)
+		}
+	}
+	for _, want := range []string{"", "app", "db", "edge"} {
+		if !up() {
+			t.Fatal("the field did not take ctrl+up")
+		}
+		if got := f.Text(); got != want {
+			t.Fatalf("stepping back gave %q, want %q", got, want)
+		}
+	}
+}
+
+// Something typed that is not one of the answers is left alone until the
+// user asks for one, and then the list starts from its own beginning.
+func TestFieldCyclesFromSomethingTyped(t *testing.T) {
+	f := NewField()
+	f.Options = []string{"edge", "db"}
+	f.Layout(Size{Cols: 20, Rows: 1})
+	f.SetText("somewhere else")
+
+	f.HandleKey(input.Event{Kind: input.KeyPress, Key: input.KeyDown, Mods: input.ModCtrl})
+	if got := f.Text(); got != "edge" {
+		t.Fatalf("stepping on from something typed gave %q", got)
+	}
+	f.SetText("somewhere else")
+	f.HandleKey(input.Event{Kind: input.KeyPress, Key: input.KeyUp, Mods: input.ModCtrl})
+	if got := f.Text(); got != "db" {
+		t.Fatalf("stepping back from something typed gave %q", got)
+	}
+}
+
+// A field with no answers to offer leaves the keys alone, so whatever
+// they are bound to elsewhere still works.
+func TestFieldWithNoOptionsLeavesTheKeys(t *testing.T) {
+	f := NewField()
+	f.Layout(Size{Cols: 20, Rows: 1})
+	for _, key := range []input.Key{input.KeyDown, input.KeyUp} {
+		if took, _ := f.HandleKey(input.Event{
+			Kind: input.KeyPress, Key: key, Mods: input.ModCtrl,
+		}); took {
+			t.Errorf("the field swallowed ctrl+%v with nothing to offer", key)
+		}
+	}
+	if got := f.Text(); got != "" {
+		t.Fatalf("it typed %q", got)
+	}
+}

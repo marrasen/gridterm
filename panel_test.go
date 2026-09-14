@@ -1,0 +1,389 @@
+package main
+
+import (
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/marrasen/gridterm/conns"
+	"github.com/marrasen/gridterm/input"
+	"github.com/marrasen/gridterm/meter"
+	"github.com/marrasen/gridterm/ui"
+	"github.com/marrasen/gridterm/ui/term"
+)
+
+// now is a fixed moment, so nothing here waits four seconds to watch a
+// connection settle.
+var panelNow = time.Date(2026, 9, 14, 12, 0, 0, 0, time.UTC)
+
+// withPanel gives a test app the panel and the dock, the way main does.
+func withPanel(t *testing.T, a *testApp) {
+	t.Helper()
+	a.panel = a.newPanel()
+	a.dock = ui.NewDock(panelWidth, a.panel, a.root.Widget())
+	a.dock.Collapsed = true
+	a.root.SetWidget(a.dock)
+	a.relayout()
+}
+
+// panelText returns what the panel is showing, one line per row, with
+// the note in brackets.
+func panelText(a *testApp, now time.Time) []string {
+	a.refreshPanel(now)
+	rows := a.panel.Rows()
+	out := make([]string, len(rows))
+	for i, row := range rows {
+		out[i] = strings.TrimSpace(row.Text)
+		if row.Note != "" {
+			out[i] += " [" + row.Note + "]"
+		}
+	}
+	return out
+}
+
+// onlyPane returns the app's single terminal and its panel entry.
+func onlyPane(t *testing.T, a *testApp) *conns.Entry {
+	t.Helper()
+	if len(a.panes) != 1 {
+		t.Fatalf("%d panes, want 1", len(a.panes))
+	}
+	for _, e := range a.panes {
+		return e
+	}
+	return nil
+}
+
+// A pane that opens gets a row, under the machine it is running on.
+func TestPanelShowsTheShellThatIsOpen(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+
+	got := panelText(a, panelNow)
+	if len(got) != 2 {
+		t.Fatalf("the panel shows %v, want a heading and a row", got)
+	}
+	if got[0] != "Local" {
+		t.Errorf("the heading is %q, want Local", got[0])
+	}
+	if !strings.HasPrefix(got[1], "Terminal") {
+		t.Errorf("the row is %q, want a terminal", got[1])
+	}
+}
+
+// The four states, seen through the panel: opened until something
+// moves, active for four seconds, settled after that, closed at the end.
+func TestPanelShowsTheFourStates(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	e := onlyPane(t, a)
+
+	if got := panelText(a, panelNow)[1]; !strings.HasSuffix(got, "[opened]") {
+		t.Fatalf("row = %q, want it opened", got)
+	}
+
+	e.Meter.Moved(64, 0, panelNow)
+	if got := panelText(a, panelNow)[1]; !strings.HasSuffix(got, "[active]") {
+		t.Fatalf("row = %q, want it active", got)
+	}
+	// Nothing is told to change it: the same panel, asked about a later
+	// moment, says settled.
+	later := panelNow.Add(meter.Settle)
+	if got := panelText(a, later)[1]; !strings.HasSuffix(got, "[settled]") {
+		t.Fatalf("row = %q at the boundary, want it settled", got)
+	}
+
+	e.Meter.Close()
+	if got := panelText(a, later)[1]; !strings.HasSuffix(got, "[closed]") {
+		t.Fatalf("row = %q, want it closed", got)
+	}
+}
+
+// A connection moving a lot says how fast rather than just that it is
+// busy.
+func TestPanelShowsASpeedWhileBytesAreMoving(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	e := onlyPane(t, a)
+
+	e.Meter.Moved(1, 0, panelNow)
+	panelText(a, panelNow) // the first sample, with nothing to compare to
+	e.Meter.Moved(64*1024, 0, panelNow.Add(time.Second))
+
+	got := panelText(a, panelNow.Add(time.Second))[1]
+	if !strings.Contains(got, "/s") {
+		t.Fatalf("row = %q, want a speed on it", got)
+	}
+}
+
+// What the program in a pane called the window is what the panel shows.
+func TestPanelShowsWhatTheProgramCalledItself(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	var pane *term.Terminal
+	for p := range a.panes {
+		pane = p
+	}
+	a.setTitle(t, 0, pane, "vim README.md")
+
+	got := panelText(a, panelNow)[1]
+	if !strings.Contains(got, "vim README.md") {
+		t.Fatalf("row = %q, want the title in it", got)
+	}
+}
+
+// A machine with nothing open on it is not a heading worth keeping, and
+// this machine is always there so a local shell has somewhere to go.
+func TestPanelGroupsByMachine(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+
+	e := &conns.Entry{Host: "margit", Kind: conns.Tunnel, Label: ":5432", Meter: meter.New()}
+	a.registry.Add(e)
+	got := panelText(a, panelNow)
+	if len(got) != 4 {
+		t.Fatalf("the panel shows %v, want two headings and two rows", got)
+	}
+	if got[2] != "margit" {
+		t.Errorf("the second heading is %q, want margit", got[2])
+	}
+	if !strings.Contains(got[3], ":5432") {
+		t.Errorf("the tunnel row is %q", got[3])
+	}
+
+	a.registry.Drop(e)
+	if got := panelText(a, panelNow); len(got) != 2 {
+		t.Fatalf("the panel shows %v after the tunnel went, want the machine gone too", got)
+	}
+}
+
+// Closing a pane takes its row with it, and nothing is left holding the
+// rate it was measured with.
+func TestPanelRowGoesWithItsPane(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	if err := a.openTab(); err != nil {
+		t.Fatalf("openTab: %v", err)
+	}
+	if got := panelText(a, panelNow); len(got) != 3 {
+		t.Fatalf("the panel shows %v, want a heading and two rows", got)
+	}
+
+	// Give each a rate to remember.
+	for _, e := range a.panes {
+		e.Meter.Moved(1, 0, panelNow)
+	}
+	panelText(a, panelNow)
+
+	if err := a.closeFocused(); err != nil {
+		t.Fatalf("closeFocused: %v", err)
+	}
+	if got := panelText(a, panelNow); len(got) != 2 {
+		t.Fatalf("the panel shows %v after a pane closed", got)
+	}
+	if len(a.rates) > len(a.panes) {
+		t.Fatalf("%d rates are held for %d panes", len(a.rates), len(a.panes))
+	}
+}
+
+// A shell that has gone stays on the panel: what a command did after it
+// stopped is worth reading. Clearing is what takes it off.
+func TestPanelKeepsAFinishedConnectionUntilItIsCleared(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	e := onlyPane(t, a)
+	e.Meter.Close()
+
+	if got := panelText(a, panelNow); len(got) != 2 {
+		t.Fatalf("the panel shows %v, want the finished row kept", got)
+	}
+	if err := a.clearFinished(); err != nil {
+		t.Fatalf("clearFinished: %v", err)
+	}
+	if got := panelText(a, panelNow); len(got) != 1 {
+		t.Fatalf("the panel shows %v after clearing, want the heading alone", got)
+	}
+}
+
+// Choosing a row puts what it names in front of the user.
+func TestPanelActivatingARowRevealsIt(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	if err := a.openTab(); err != nil {
+		t.Fatalf("openTab: %v", err)
+	}
+	panelText(a, panelNow)
+
+	// The first pane, which is not the one with focus.
+	first := a.panel.Rows()[1]
+	want, ok := first.Key.(*conns.Entry)
+	if !ok {
+		t.Fatal("the row does not name a connection")
+	}
+	a.panel.Select(want)
+	if err := a.revealRow(first); err != nil {
+		t.Fatalf("reveal: %v", err)
+	}
+
+	got := a.panes[a.focusedTerminal()]
+	if got != want {
+		t.Fatal("choosing a row did not focus the pane it names")
+	}
+}
+
+// The panel can close what it has selected, which is how a connection
+// with no pane of its own is ever ended.
+func TestPanelClosesTheSelectedConnection(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	if err := a.openTab(); err != nil {
+		t.Fatalf("openTab: %v", err)
+	}
+	panelText(a, panelNow)
+
+	row := a.panel.Rows()[1]
+	e := row.Key.(*conns.Entry)
+	a.panel.Select(e)
+	if err := a.closeSelectedConnection(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	if len(a.panes) != 1 {
+		t.Fatalf("%d panes, want the other one closed", len(a.panes))
+	}
+	checkTree(t, a)
+}
+
+// A connection the panel cannot close says so rather than doing nothing.
+func TestPanelSaysWhenAConnectionCannotBeClosed(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	e := &conns.Entry{Host: "margit", Kind: conns.Tunnel, Label: "held open"}
+	a.registry.Add(e)
+	panelText(a, panelNow)
+
+	a.panel.Select(e)
+	if err := a.closeSelectedConnection(); err == nil {
+		t.Fatal("a connection with no way to close reported success")
+	}
+}
+
+func TestPanelOpensAndCloses(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	if !a.dock.Collapsed {
+		t.Fatal("the window opened with the panel already showing")
+	}
+
+	if err := a.togglePanel(); err != nil {
+		t.Fatalf("toggle: %v", err)
+	}
+	if a.dock.Collapsed {
+		t.Fatal("the panel did not open")
+	}
+	if err := a.togglePanel(); err != nil {
+		t.Fatalf("toggle: %v", err)
+	}
+	if !a.dock.Collapsed {
+		t.Fatal("the panel did not close")
+	}
+}
+
+// Going to the panel opens it first: a command that puts the keys
+// somewhere invisible is a command that loses them.
+func TestFocusPanelOpensItFirst(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	if err := a.focusPanel(); err != nil {
+		t.Fatalf("focusPanel: %v", err)
+	}
+	if a.dock.Collapsed {
+		t.Fatal("the panel is still hidden")
+	}
+	if a.dock.Focused() != ui.Widget(a.panel) {
+		t.Fatal("the keys did not go to the panel")
+	}
+}
+
+// The panel takes the arrow keys while it has the focus, and the pane
+// underneath does not see them.
+func TestPanelTakesTheKeysWhileItHasThem(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	if err := a.openTab(); err != nil {
+		t.Fatalf("openTab: %v", err)
+	}
+	panelText(a, panelNow)
+	if err := a.focusPanel(); err != nil {
+		t.Fatalf("focusPanel: %v", err)
+	}
+
+	first, _ := a.panel.Selected()
+	if _, err := a.root.HandleKey(press(input.KeyDown, 0)); err != nil {
+		t.Fatalf("down: %v", err)
+	}
+	second, _ := a.panel.Selected()
+	if first.Key == second.Key {
+		t.Fatal("Down did not move the panel selection")
+	}
+	// And the shell was not typed into.
+	for _, shell := range a.shells {
+		if shell.sentText() != "" {
+			t.Fatalf("the shell was sent %q while the panel had the keys", shell.sentText())
+		}
+	}
+}
+
+// An idle panel leaves its layer alone, which is what keeps a window
+// with nothing happening from redrawing itself sixty times a second.
+func TestPanelDoesNotDirtyAnIdleFrame(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	if err := a.showPanel(true); err != nil {
+		t.Fatalf("showPanel: %v", err)
+	}
+	e := onlyPane(t, a)
+	e.Meter.Moved(10, 0, panelNow)
+
+	a.refreshPanel(panelNow)
+	a.root.Draw(a.g.View())
+	a.g.ClearDirty()
+
+	// A second frame at the same moment changes nothing.
+	a.refreshPanel(panelNow)
+	a.root.Draw(a.g.View())
+	if a.g.AnyDirty() {
+		t.Fatal("an idle panel dirtied the layer")
+	}
+
+	// And the moment the state changes, it does.
+	a.refreshPanel(panelNow.Add(meter.Settle))
+	a.root.Draw(a.g.View())
+	if !a.g.AnyDirty() {
+		t.Fatal("a row that changed from active to settled did not redraw")
+	}
+}
+
+// The bytes a shell actually sends are what makes its row active. The
+// other state tests drive the meter directly; this one goes through the
+// session the terminal is reading.
+func TestPanelSeesBytesFromTheShellItself(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	e := onlyPane(t, a)
+
+	if got := e.State(time.Now()); got != meter.Opened {
+		t.Fatalf("a shell that has said nothing is %v, want opened", got)
+	}
+	a.shells[0].out <- []byte("hello")
+	waitUntil(t, func() bool { return e.State(time.Now()) == meter.Active })
+}
+
+// A shell that has gone says so rather than settling and looking merely
+// quiet.
+func TestPanelSeesTheShellGo(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	e := onlyPane(t, a)
+
+	a.shells[0].Close()
+	waitUntil(t, func() bool { return e.State(time.Now()) == meter.Closed })
+}

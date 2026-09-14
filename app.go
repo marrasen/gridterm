@@ -4,13 +4,16 @@ import (
 	"context"
 	"log"
 	"sync/atomic"
+	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
 
+	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/glyph"
 	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/input"
 	"github.com/marrasen/gridterm/input/ebitenin"
+	"github.com/marrasen/gridterm/meter"
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/render"
 	"github.com/marrasen/gridterm/session"
@@ -62,6 +65,25 @@ type app struct {
 	// bar is the row of menu titles at the top of the window.
 	bar *ui.Menubar
 
+	// dock holds the connections panel beside everything else, and panel
+	// is the list in it.
+	dock  *ui.Dock
+	panel *ui.List
+
+	// registry is everything the window has open, which is what the
+	// panel draws.
+	registry *conns.Registry
+
+	// localHost is the machine a new pane runs on: this one, unless
+	// -ssh named another. Every pane a split or a tab opens goes there,
+	// because that is where newSession puts it.
+	localHost string
+
+	// rates turn a connection's running totals into a speed. One per
+	// connection, because a speed is a difference between two moments
+	// and each has its own.
+	rates map[*conns.Entry]*meter.Rate
+
 	// pump carries work from the goroutines connecting to machines to
 	// this one, which is the only one that may touch the widget tree.
 	pump pump
@@ -81,10 +103,10 @@ type app struct {
 	book           *remote.Book
 	serverCommands []string
 
-	// connecting is set while a machine is being connected to. One at a
-	// time, because each wants a dialog of its own to wait in and the
-	// modal stack is ordered.
-	connecting bool
+	// connecting counts the machines being connected to right now. The
+	// panel shows a row for each, so several can be on their way at
+	// once; this is only so a test can tell when they have all landed.
+	connecting int
 
 	// prepare adjusts a config parsed from what the user typed, before
 	// anything is dialled. It is a field so a test can drive the real
@@ -100,9 +122,10 @@ type app struct {
 	// them. Nil in the program, which logs them.
 	onError func(error)
 
-	// panes is every live terminal, so a shell that exits can be found
-	// wherever it sits in the tree.
-	panes map[*term.Terminal]struct{}
+	// panes is every live terminal, with the panel entry that stands for
+	// it, so a shell that exits can be found wherever it sits in the
+	// tree and taken off the panel with it.
+	panes map[*term.Terminal]*conns.Entry
 
 	// exits carries "a shell has gone" from the goroutines reading them
 	// to the drawing goroutine, which is the only one that may touch the
@@ -170,6 +193,11 @@ func (a *app) Update() error {
 	a.pump.run()
 	a.reapExited()
 	a.reapFontScan()
+	// Worked out afresh every frame, which is what makes a connection
+	// fall from active to settled with no timer anywhere. A row whose
+	// text has not changed is written with the same value, so an idle
+	// panel leaves its layer alone.
+	a.refreshPanel(time.Now())
 	if a.shot != nil {
 		a.shot.update(a)
 	}
@@ -334,6 +362,13 @@ func (a *app) commands() {
 		ui.Command{ID: "server.connect", Title: "Connect to a server", Run: a.openServer},
 		ui.Command{ID: "server.add", Title: "Add a server", Run: a.openAddServer},
 		ui.Command{ID: "server.reload", Title: "Reread the server list", Run: a.reloadBook},
+		ui.Command{ID: "panel.toggle", Title: "Show or hide the connections",
+			Run: a.togglePanel},
+		ui.Command{ID: "panel.focus", Title: "Go to the connections", Run: a.focusPanel},
+		ui.Command{ID: "conn.close", Title: "Close this connection",
+			Run: a.closeSelectedConnection},
+		ui.Command{ID: "conn.clearFinished", Title: "Clear finished connections",
+			Run: a.clearFinished},
 		ui.Command{ID: "keys.lock", Title: "Forget unlocked keys", Run: a.lockKeys},
 		ui.Command{ID: "palette.open", Title: "Show all commands", Run: a.openPalette},
 		ui.Command{ID: "menu.open", Title: "Show the menu bar", Run: a.openMenu},
@@ -373,6 +408,8 @@ func (a *app) commands() {
 		{Key: input.KeyTab, Mods: input.ModCtrl | input.ModShift}:    "pane.previous",
 		{Key: input.KeyT, Mods: input.ModCtrl | input.ModShift}:      "tab.open",
 		{Key: input.KeyN, Mods: input.ModCtrl | input.ModShift}:      "server.connect",
+		{Key: input.KeyB, Mods: input.ModCtrl | input.ModShift}:      "panel.toggle",
+		{Key: input.KeyL, Mods: input.ModCtrl | input.ModShift}:      "panel.focus",
 		{Key: input.KeyPageDown, Mods: input.ModCtrl}:                "tab.next",
 		{Key: input.KeyPageUp, Mods: input.ModCtrl}:                  "tab.previous",
 		{Key: input.KeyK, Mods: input.ModCtrl}:                       "palette.open",

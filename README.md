@@ -6,7 +6,7 @@ It runs a shell on a local pseudo-terminal — a PTY on Unix, a ConPTY on
 Windows — or on another machine over SSH, feeds the output through a VT
 emulator, and draws the resulting character grid as batched triangles.
 
-15,092 lines of Go, 17,649 lines of tests, 756 tests.
+17,986 lines of Go, 21,877 lines of tests, 920 tests.
 
 ![a shell running in gridterm](docs/shell.png)
 
@@ -23,6 +23,14 @@ emulator, and draws the resulting character grid as batched triangles.
   things at once, so a second terminal on a machine is a second channel
   rather than a second login. Connect from inside the window with
   `Ctrl+Shift+N`.
+- **A connections panel.** `Ctrl+Shift+B` shows every terminal, tunnel
+  and transfer the window has open, grouped by the machine it is on with
+  this one at the top. Each says what it is doing: opened until
+  something moves, active while bytes are going past, settled four
+  seconds after they stop, and closed at the end. A busy one shows how
+  fast. Nothing polls and nothing ticks — the row is worked out afresh
+  each frame from when the last byte went by, so an idle panel redraws
+  nothing at all.
 - **Servers are saved.** A machine you add gets a line on the Servers
   menu and an entry in the palette, kept in a JSON file under the OS
   configuration directory. It holds no secret and never will. A list
@@ -84,6 +92,9 @@ gave. There is no way to pick a font by family name yet; give paths.
 | `Ctrl+Shift+C` / `Ctrl+Shift+V` | copy and paste |
 | middle click | paste |
 | `Ctrl+=` / `Ctrl+-` / `Ctrl+0` | font size |
+| `Ctrl+Shift+B` | show or hide the connections panel |
+| `Ctrl+Shift+L` | go to the connections panel |
+| `Ctrl+Shift+N` | connect to a server |
 
 On Windows there is nothing else to install — no C toolchain, no cgo:
 
@@ -118,11 +129,13 @@ encoders and both session types.
 | `input` | 592 | no | key, text, mouse and paste events to VT bytes |
 | `session` | 362 | no | a shell as a byte stream, and the local pty |
 | `remote` | 1,560 | no | SSH: connections, shells, host keys, unlocked keys |
-| `ui` | 4,174 | no | the widget toolkit: panes, tabs, menus, dialogs, fields |
+| `conns` | 205 | no | what the window has open, grouped by machine |
+| `meter` | 243 | no | bytes moved, and how long ago: the four states |
+| `ui` | 4,970 | no | the widget toolkit: panes, tabs, menus, dialogs, fields, lists |
 | `ui/term` | 529 | no | a shell on a widget |
 | `glyph` | 1,289 | yes | glyph atlas, system font fallback, box drawing |
 | `render` | 1,149 | yes | grid to batched triangles |
-| `main` | 2,248 | yes | the window and the wiring |
+| `main` | 2,903 | yes | the window and the wiring |
 
 The layering is deliberate: `vt` never imports the renderer, `input`
 never imports ebiten (that lives in `input/ebitenin`), `ui` knows nothing
@@ -234,11 +247,6 @@ emulator under `internal/` where they cannot be imported.
   the window opens, so there is nowhere to draw a dialog yet and the
   console is the only place left to ask. Connecting from inside the
   window asks in the window.
-- **One connection at a time.** Each one wants a dialog of its own to
-  wait in, the modal stack is ordered, and closing a dialog takes
-  anything above it — so a connection that finished would tear down the
-  dialog another was still waiting in. The connections panel is where
-  several at once will live.
 - **Sixel and the Kitty graphics protocol** are not implemented.
 - **An APC, PM or SOS string with no terminator grows without bound.**
   The parser buffers it before the emulator sees anything, so it cannot

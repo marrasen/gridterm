@@ -22,7 +22,7 @@ func (a *app) newTerminal() (*term.Terminal, error) {
 	if err != nil {
 		return nil, fmt.Errorf("start session: %w", err)
 	}
-	t, err := a.newTerminalOn(sess)
+	t, err := a.newTerminalOn(sess, a.localHost)
 	if err != nil {
 		// The session is ours now and nothing else will close it.
 		_ = sess.Close()
@@ -236,6 +236,10 @@ func (a *app) closePane(w ui.Widget) error {
 		t, isTerm := leaf.(*term.Terminal)
 		if !isTerm {
 			continue
+		}
+		if e := a.panes[t]; e != nil {
+			a.registry.Drop(e)
+			delete(a.rates, e)
 		}
 		delete(a.panes, t)
 		if cerr := t.Close(); cerr != nil && err == nil {

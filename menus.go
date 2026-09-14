@@ -28,12 +28,19 @@ func (a *app) newMenubar(child ui.Widget) *ui.Menubar {
 			{Command: "edit.paste"},
 		}},
 		{Title: "View", Items: []ui.MenuItem{
+			{Command: "panel.toggle"},
+			{Command: "panel.focus"},
+			ui.MenuSeparator(),
 			{Command: "font.increase"},
 			{Command: "font.decrease"},
 			{Command: "font.reset"},
 			ui.MenuSeparator(),
 			{Command: "view.scrollUp"},
 			{Command: "view.scrollDown"},
+		}},
+		{Title: "Connection", Items: []ui.MenuItem{
+			{Command: "conn.close"},
+			{Command: "conn.clearFinished"},
 		}},
 		{Title: "Go", Items: []ui.MenuItem{
 			{Command: "pane.next"},

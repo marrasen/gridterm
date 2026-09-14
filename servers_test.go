@@ -10,6 +10,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
+	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/input"
 	"github.com/marrasen/gridterm/internal/sshtest"
 	"github.com/marrasen/gridterm/remote"
@@ -93,8 +94,8 @@ func TestConnectOpensATab(t *testing.T) {
 	withDialogs(t, a)
 
 	a.connect(serverConfig(t, s))
-	// The waiting dialog holds the place while the connection is made.
-	waitForDialog(t, a, "Connecting")
+	// A row holds the place while the connection is made.
+	waitForConnecting(t, a)
 	waitForPanes(t, a, 2)
 
 	if a.root.Modal() != nil {
@@ -143,23 +144,37 @@ func TestConnectCancelStopsADialThatIsStillRunning(t *testing.T) {
 	cfg.Host, cfg.Port = host, port
 	a.connect(cfg)
 
-	f := waitForDialog(t, a, "Connecting")
-	// Still dialling: nothing has finished, so nothing has been posted.
-	if !a.connecting {
-		t.Fatal("the connection was over before Cancel was pressed")
+	// A row on the panel says it is on its way, and it can be cancelled
+	// from there.
+	waiting := waitForConnecting(t, a)
+	if a.connecting != 1 {
+		t.Fatalf("%d connections are being made, want 1", a.connecting)
 	}
-	pressButton(t, a, f, "Cancel")
+	if waiting.Close == nil {
+		t.Fatal("the row cannot be cancelled")
+	}
+	if err := waiting.Close(); err != nil {
+		t.Fatalf("cancel: %v", err)
+	}
 
 	// The dial has to end, and end quietly.
 	deadline := time.Now().Add(waitBudget)
 	for time.Now().Before(deadline) {
 		a.pump.run()
-		if !a.connecting {
+		if a.connecting == 0 {
 			if m := a.root.Modal(); m != nil {
 				t.Fatalf("a dialog was left open after cancelling: %T", m)
 			}
 			if len(a.panes) != 1 {
 				t.Fatalf("%d panes after cancelling, want the one that was there", len(a.panes))
+			}
+			// And the row it was waiting in has gone.
+			for _, e := range a.registry.Groups(time.Now()) {
+				for _, row := range e.Rows {
+					if row.Entry == waiting {
+						t.Fatal("the row was left on the panel")
+					}
+				}
 			}
 			return
 		}
@@ -184,24 +199,75 @@ func TestReportErrorSaysNothingAboutACancellation(t *testing.T) {
 	}
 }
 
-// One connection at a time. A second would want a dialog of its own to
-// wait in, and closing one dialog takes anything stacked above it.
-func TestConnectRefusesASecondWhileOneIsRunning(t *testing.T) {
+// Several connections can be on their way at once, each with its own row
+// on the panel. A dialog each would stack, and closing one takes
+// everything above it.
+func TestConnectRunsSeveralAtOnce(t *testing.T) {
 	host, port := sshtest.Deaf(t)
 	a := newTestApp(t, 80, 24)
 	withDialogs(t, a)
+	withPanel(t, a)
 
-	cfg := serverConfig(t, sshtest.New(t))
-	cfg.Host, cfg.Port = host, port
-	a.connect(cfg)
-	waitForDialog(t, a, "Connecting")
+	for _, name := range []string{"one", "two", "three"} {
+		cfg := serverConfig(t, sshtest.New(t))
+		cfg.Host, cfg.Port = host, port
+		a.connectAs(name, cfg)
+	}
+	if a.connecting != 3 {
+		t.Fatalf("%d connections are being made, want 3", a.connecting)
+	}
 
-	if err := a.openServer(); err == nil {
-		t.Fatal("a second connection dialog opened while one was still connecting")
+	// One row each, under a heading each, and no dialog anywhere.
+	rows := panelText(a, time.Now())
+	for _, name := range []string{"one", "two", "three"} {
+		var found bool
+		for _, row := range rows {
+			if row == name {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("there is no row for %q: %v", name, rows)
+		}
 	}
-	if f, ok := a.root.Modal().(*ui.Form); !ok || f.Title != "Connecting" {
-		t.Fatalf("top modal = %T, want the Connecting dialog still", a.root.Modal())
+	if m := a.root.Modal(); m != nil {
+		t.Fatalf("a dialog opened for a connection: %T", m)
 	}
+
+	// Cancelling one leaves the others alone.
+	first := a.registry.Groups(time.Now())[1].Rows[0].Entry
+	if err := first.Close(); err != nil {
+		t.Fatalf("cancel: %v", err)
+	}
+	deadline := time.Now().Add(waitBudget)
+	for time.Now().Before(deadline) {
+		a.pump.run()
+		if a.connecting == 2 {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("%d connections are being made after cancelling one, want 2", a.connecting)
+}
+
+// waitForConnecting runs the pump until a connection is on its way and
+// returns the row standing for it.
+func waitForConnecting(t *testing.T, a *testApp) *conns.Entry {
+	t.Helper()
+	deadline := time.Now().Add(waitBudget)
+	for time.Now().Before(deadline) {
+		a.pump.run()
+		for _, group := range a.registry.Groups(time.Now()) {
+			for _, row := range group.Rows {
+				if row.Label == "connecting" {
+					return row.Entry
+				}
+			}
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("nothing is being connected to")
+	return nil
 }
 
 // Locking forgets every key, so the next connection asks again.

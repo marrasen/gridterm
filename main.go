@@ -21,8 +21,10 @@ import (
 	"golang.org/x/image/font/gofont/gomonobolditalic"
 	"golang.org/x/image/font/gofont/gomonoitalic"
 
+	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/glyph"
 	"github.com/marrasen/gridterm/grid"
+	"github.com/marrasen/gridterm/meter"
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/render"
 	"github.com/marrasen/gridterm/session"
@@ -133,9 +135,19 @@ func main() {
 	a.newSession = func(cols, rows int) (session.Session, error) {
 		return startSession(*sshTarget, command, a.keys, cols, rows)
 	}
+	// Where a pane opened by a split or a tab runs. With -ssh that is
+	// the machine on the far end, not this one.
+	a.localHost = conns.Local
+	if *sshTarget != "" {
+		if cfg, err := remote.ParseTarget(*sshTarget); err == nil {
+			a.localHost = cfg.Host
+		}
+	}
+	a.registry = conns.New()
+	a.rates = make(map[*conns.Entry]*meter.Rate)
 	a.scrollback = *scroll
 	a.colours = pal
-	a.panes = make(map[*term.Terminal]struct{})
+	a.panes = make(map[*term.Terminal]*conns.Entry)
 	a.exits = make(chan struct{}, exitQueue)
 
 	first, err := a.newTerminal()
@@ -152,7 +164,15 @@ func main() {
 	// Off the drawing goroutine: reading every font file the system has
 	// takes long enough to be seen as the window failing to open.
 	a.startFontScan()
-	a.bar = a.newMenubar(first)
+	// The tree: the menu bar over the panel and everything else.
+	a.panel = a.newPanel()
+	a.dock = ui.NewDock(panelWidth, a.panel, first)
+	a.dock.DividerFG = a.colours.ANSI[8]
+	a.dock.DividerBG = a.colours.BG
+	// Hidden to begin with: a window that opens with a panel nobody
+	// asked for is a window that has to be tidied before it is used.
+	a.dock.Collapsed = true
+	a.bar = a.newMenubar(a.dock)
 	a.refreshServers()
 	// Told once there is a window to tell them in: this runs before one
 	// exists, so the message waits for the first frame.

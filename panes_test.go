@@ -11,9 +11,11 @@ import (
 	"github.com/hajimehoshi/ebiten/v2"
 	"golang.org/x/image/font/gofont/gomono"
 
+	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/glyph"
 	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/input"
+	"github.com/marrasen/gridterm/meter"
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/render"
 	"github.com/marrasen/gridterm/session"
@@ -96,9 +98,11 @@ func newTestApp(t *testing.T, cols, rows int) *testApp {
 		fontSize:   defaultFontSize,
 		colours:    vt.DefaultPalette(),
 		scrollback: 64,
-		panes:      make(map[*term.Terminal]struct{}),
+		panes:      make(map[*term.Terminal]*conns.Entry),
 		exits:      make(chan struct{}, exitQueue),
 		lastSize:   [2]int{cols, rows},
+		registry:   conns.New(),
+		rates:      make(map[*conns.Entry]*meter.Rate),
 	}}
 	// The window's own grid, so markDirty and setGridSize do what they do
 	// in the program rather than nothing at all.
@@ -151,6 +155,10 @@ func checkTree(t *testing.T, a *testApp) {
 	t.Helper()
 	inTree := map[*term.Terminal]bool{}
 	for _, leaf := range ui.Leaves(a.root.Widget()) {
+		if leaf == ui.Widget(a.panel) {
+			// The connections panel is a leaf of the dock, not a pane.
+			continue
+		}
 		pane, ok := leaf.(*term.Terminal)
 		if !ok {
 			t.Fatalf("a leaf is not a terminal: %T", leaf)

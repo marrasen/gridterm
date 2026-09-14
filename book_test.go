@@ -215,7 +215,7 @@ func TestConnectSavedRefusesARouteItCannotMakeYet(t *testing.T) {
 	if !strings.Contains(err.Error(), "edge") {
 		t.Fatalf("error = %v, want it to name the machine in the way", err)
 	}
-	if a.connecting {
+	if a.connecting != 0 {
 		t.Error("a connection was started anyway")
 	}
 }

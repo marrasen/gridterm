@@ -108,6 +108,19 @@ type MouseHandler interface {
 	HandleMouse(ev input.MouseEvent) (bool, error)
 }
 
+// GestureCanceller is a widget that keeps something between a press and
+// its release: a selection being dragged out, a strip holding a click on
+// one of its labels.
+//
+// CancelGesture says the release is never coming. A dialog opening, or
+// the widget leaving the screen, ends a gesture without one, and only
+// whatever routes the mouse knows that has happened. A widget left
+// waiting carries on as though the button were still down.
+type GestureCanceller interface {
+	Widget
+	CancelGesture()
+}
+
 // Focusable is a widget that draws differently when it is the one
 // receiving keys, or that has a cursor to show.
 //
@@ -180,11 +193,15 @@ type Container interface {
 	// container's own coordinates. It reports false when w is not a
 	// child, or when there is no room to show it.
 	//
-	// It must give the same rectangle Layout used for that child.
+	// An area it does report must be the one Layout used for that child.
 	// Anything asking where a widget is on screen -- routing a drag,
 	// placing a menu under the word that opened it -- believes this, and
 	// a container that works it out twice has two chances to disagree
 	// with itself.
+	//
+	// A child that is laid out but not on screen, such as a tab that is
+	// not the one showing, reports false: it has a size but nowhere to
+	// be clicked.
 	ChildArea(w Widget) (Rect, bool)
 }
 
@@ -219,11 +236,25 @@ func (c *MouseCapture) Held() bool { return c.down }
 
 // Abandon gives up on the widget but keeps waiting for the button, for
 // when the widget has gone and its release belongs to nobody.
-func (c *MouseCapture) Abandon() { c.w = nil }
+func (c *MouseCapture) Abandon() {
+	c.cancel()
+	c.w = nil
+}
 
 // Release drops the capture entirely, for when the tree is rearranged
 // under it and the next press should start afresh.
-func (c *MouseCapture) Release() { c.w, c.down = nil, false }
+func (c *MouseCapture) Release() {
+	c.cancel()
+	c.w, c.down = nil, false
+}
+
+// cancel tells the holder its release is not coming, so it does not go
+// on behaving as though the button were still down.
+func (c *MouseCapture) cancel() {
+	if g, ok := c.w.(GestureCanceller); ok {
+		g.CancelGesture()
+	}
+}
 
 // Take records that w took this event, if it is a press that will be
 // released. A wheel notch is a press with no release, so taking one

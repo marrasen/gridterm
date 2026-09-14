@@ -920,3 +920,139 @@ func TestSplitKeepsDamageTrackingAcrossPanes(t *testing.T) {
 
 func fgOf() color.RGBA { return color.RGBA{0xff, 0xff, 0xff, 0xff} }
 func bgOf() color.RGBA { return color.RGBA{0x00, 0x00, 0x00, 0xff} }
+
+// TestTerminalsInATabStrip is the whole point of tabs: two shells, one
+// shown at a time, with a strip naming them by what their programs set
+// the title to.
+func TestTerminalsInATabStrip(t *testing.T) {
+	pal := vt.DefaultPalette()
+	first, ff := newTestTerm(t, 1, 1, Config{Palette: &pal})
+	second, sf := newTestTerm(t, 1, 1, Config{Palette: &pal})
+
+	strip := ui.NewTabs(first, second)
+	strip.InactiveFG, strip.ActiveFG = pal.FG, pal.BG
+	strip.ActiveBG, strip.StripBG = pal.FG, pal.BG
+	var root ui.Root
+	root.SetWidget(strip)
+	root.Layout(ui.Rect{Cols: 14, Rows: 3})
+
+	ff.feed(t, first, "\x1b]0;one\x07FIRST")
+	sf.feed(t, second, "\x1b]0;two\x07SECOND")
+	host := grid.New(14, 3, pal.FG, pal.BG)
+	root.Draw(host.View())
+
+	if got := rowText(host, 0); got != " one  two" {
+		t.Errorf("strip = %q, want both titles", got)
+	}
+	if got := rowText(host, 1); got != "FIRST" {
+		t.Errorf("body = %q, want the first shell", got)
+	}
+
+	// Each shell was told the body's size, not the window's.
+	if got := first.Size(); got != (ui.Size{Cols: 14, Rows: 2}) {
+		t.Errorf("the shown shell has %+v, want 14x2 below the strip", got)
+	}
+
+	// Typing reaches the shell being shown, and only that one.
+	root.HandleKey(input.Event{Kind: input.Text, Rune: 'x', NormalText: true})
+	waitFor(t, func() bool { return ff.sentText() == "x" })
+	if got := sf.sentText(); got != "" {
+		t.Errorf("the hidden shell received %q", got)
+	}
+
+	// Clicking the other label brings it forward.
+	root.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft, Col: 7, Row: 0,
+	})
+	root.HandleMouse(input.MouseEvent{
+		Kind: input.MouseRelease, Button: input.MouseLeft, Col: 7, Row: 0,
+	})
+	root.Draw(host.View())
+
+	if got := rowText(host, 1); got != "SECOND" {
+		t.Errorf("body = %q, want the second shell after clicking its label", got)
+	}
+	root.HandleKey(input.Event{Kind: input.Text, Rune: 'y', NormalText: true})
+	waitFor(t, func() bool { return sf.sentText() == "y" })
+}
+
+// TestTabCursorBelongsToTheShellBeingShown checks that the hidden shell
+// does not draw a cursor into the shared grid.
+func TestTabCursorBelongsToTheShellBeingShown(t *testing.T) {
+	pal := vt.DefaultPalette()
+	first, ff := newTestTerm(t, 1, 1, Config{Palette: &pal})
+	second, sf := newTestTerm(t, 1, 1, Config{Palette: &pal})
+	strip := ui.NewTabs(first, second)
+	var root ui.Root
+	root.SetWidget(strip)
+	root.Layout(ui.Rect{Cols: 14, Rows: 3})
+	ff.feed(t, first, "AB")
+	sf.feed(t, second, "CDEF")
+	host := grid.New(14, 3, pal.FG, pal.BG)
+
+	root.Draw(host.View())
+	cur := host.Cursor()
+	if !cur.Visible || cur.Y != 1 || cur.X != 2 {
+		t.Errorf("cursor = %+v, want it after the first shell's text", cur)
+	}
+
+	strip.Focus(second)
+	root.Draw(host.View())
+
+	cur = host.Cursor()
+	if !cur.Visible || cur.X != 4 {
+		t.Errorf("cursor = %+v, want it after the second shell's text", cur)
+	}
+}
+
+// TestTerminalCancelGestureEndsADrag checks the case that leaves a
+// terminal selecting for ever. A dialog opening between a press and its
+// release ends the drag without one, and a terminal still selecting
+// would extend its selection on the next plain hover: motion is reported
+// with no button down.
+func TestTerminalCancelGestureEndsADrag(t *testing.T) {
+	term, f := newTestTerm(t, 20, 4, Config{WriteClipboard: func(string) {}})
+	f.feed(t, term, "hello")
+	draw(term, 20, 4)
+
+	term.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft})
+	term.HandleMouse(input.MouseEvent{Kind: input.MouseMove, Button: input.MouseLeft, Col: 2})
+	if !term.Copy() {
+		t.Fatal("the drag selected nothing")
+	}
+
+	// The release never comes: a dialog opened over it.
+	term.CancelGesture()
+	term.HandleMouse(input.MouseEvent{Kind: input.MouseMove, Col: 4})
+
+	if got := term.SelectionText(); got != "hel" {
+		t.Errorf("selection = %q, want it left where the drag ended: a hover extended it", got)
+	}
+}
+
+// TestTerminalCancelGestureThroughTheRoot checks the same thing where it
+// actually happens: a dialog opening while a drag is in progress.
+func TestTerminalCancelGestureThroughTheRoot(t *testing.T) {
+	term, f := newTestTerm(t, 20, 4, Config{WriteClipboard: func(string) {}})
+	f.feed(t, term, "hello")
+	var root ui.Root
+	root.SetWidget(term)
+	root.Layout(ui.Rect{Cols: 20, Rows: 4})
+	root.Draw(grid.New(20, 4, fgOf(), bgOf()).View())
+
+	root.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft})
+	root.HandleMouse(input.MouseEvent{Kind: input.MouseMove, Button: input.MouseLeft, Col: 2})
+	root.PushModal(&nothing{})
+	root.PopModal()
+	root.HandleMouse(input.MouseEvent{Kind: input.MouseMove, Col: 8})
+
+	if got := term.SelectionText(); got != "hel" {
+		t.Errorf("selection = %q, want the dialog to have ended the drag", got)
+	}
+}
+
+// nothing is a widget that draws nothing, for standing in as a dialog.
+type nothing struct{}
+
+func (*nothing) Layout(ui.Size) {}
+func (*nothing) Draw(grid.View) {}

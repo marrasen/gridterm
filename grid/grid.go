@@ -472,9 +472,10 @@ func (g *Grid) inBounds(x, y int) bool {
 // RuneWidth returns how many columns r occupies: 0 for a combining
 // mark, 2 for a double-width character, 1 otherwise.
 //
-// Every part of the program measures width through this one function.
 // A terminal that disagrees with its own grid about how wide a character
-// is will corrupt the screen, so there is deliberately no second source.
+// is will corrupt the screen, so width is asked of this package and
+// nowhere else. StringWidth answers the same question for a run of text,
+// where the unit is a grapheme cluster rather than a rune.
 func RuneWidth(r rune) int {
 	switch w := uniseg.StringWidth(string(r)); {
 	case w <= 0:
@@ -484,6 +485,28 @@ func RuneWidth(r rune) int {
 	default:
 		return 1
 	}
+}
+
+// StringWidth returns how many columns a string takes when written into
+// a grid, which is not how many runes it holds: a CJK character takes
+// two, and a combining mark shares its base character's cell.
+//
+// It counts what SetString will actually spend rather than asking for a
+// display width, because a grid gives every cluster at least one column.
+// A control character or a zero-width space has no display width and
+// still takes a cell.
+func StringWidth(s string) int {
+	total, state := 0, -1
+	for len(s) > 0 {
+		var w int
+		_, s, w, state = uniseg.FirstGraphemeClusterInString(s, state)
+		if w >= 2 {
+			total += 2
+			continue
+		}
+		total++
+	}
+	return total
 }
 
 // Point is a cell coordinate.

@@ -19,8 +19,11 @@ var (
 // fake is a widget that records what it was told and answers keys it was
 // asked to answer.
 type fake struct {
-	name    string
-	size    Size
+	name string
+	size Size
+	// sizes is every size Layout was given, for checking a widget is not
+	// told it has no room.
+	sizes   []Size
 	drawn   int
 	drawSz  Size
 	focus   bool
@@ -30,7 +33,10 @@ type fake struct {
 	seen    []input.Key
 }
 
-func (f *fake) Layout(size Size) { f.size = size }
+func (f *fake) Layout(size Size) {
+	f.size = size
+	f.sizes = append(f.sizes, size)
+}
 func (f *fake) Draw(v grid.View) {
 	f.drawn++
 	cols, rows := v.Size()
@@ -1484,5 +1490,53 @@ func TestMouseCaptureIgnoresAStrayRelease(t *testing.T) {
 
 	if c.Holder() != nil {
 		t.Error("a stray release captured the pointer")
+	}
+}
+
+// TestRootSetWidgetWithNoAreaDoesNotResize checks the trap that squashes
+// a shell before the first frame. A root has no area until Layout, and
+// telling a terminal it has no room resizes its shell to one column and
+// reflows the scrollback, which the next Layout cannot undo.
+func TestRootSetWidgetWithNoAreaDoesNotResize(t *testing.T) {
+	r := &Root{}
+	w := &fake{name: "w"}
+
+	r.SetWidget(w)
+
+	if len(w.sizes) != 0 {
+		t.Errorf("the widget was told %v before the root had an area", w.sizes)
+	}
+	r.Layout(Rect{Cols: 20, Rows: 6})
+	if got := w.size; got != (Size{Cols: 20, Rows: 6}) {
+		t.Errorf("after Layout the widget has %+v, want 20x6", got)
+	}
+}
+
+// TestRootLayoutToNothingTellsNobody checks the same rule on the way
+// down: a window with no room yet must not resize what is in it.
+func TestRootLayoutToNothingTellsNobody(t *testing.T) {
+	r := &Root{}
+	w := &fake{name: "w"}
+	r.SetWidget(w)
+	r.Layout(Rect{Cols: 20, Rows: 6})
+	was := len(w.sizes)
+
+	r.Layout(Rect{})
+
+	if len(w.sizes) != was {
+		t.Errorf("the widget was told %v, want it left at its last size", w.sizes)
+	}
+}
+
+// TestRootPushModalWithNoAreaDoesNotResize checks the same for a dialog
+// pushed before the window has a size.
+func TestRootPushModalWithNoAreaDoesNotResize(t *testing.T) {
+	r := &Root{}
+	d := &fake{name: "d"}
+
+	r.PushModal(d)
+
+	if len(d.sizes) != 0 {
+		t.Errorf("the dialog was told %v before the root had an area", d.sizes)
 	}
 }

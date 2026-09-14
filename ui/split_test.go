@@ -15,17 +15,26 @@ type filler struct {
 	ch      rune
 	size    Size
 	focused bool
-	seen    []input.MouseEvent
-	keys    []input.Key
-	takes   input.Key
+	// focusLog keeps every SetFocus value, for checking the contract a
+	// container has to keep.
+	focusLog []bool
+	seen     []input.MouseEvent
+	keys     []input.Key
+	takes    input.Key
+	// drawn records that Draw was called, for telling a widget that was
+	// only sized from one that is on screen.
+	drawn bool
 }
 
 func (f *filler) Layout(size Size) { f.size = size }
 func (f *filler) Draw(v grid.View) {
-	f.size = sizeOf(v)
+	f.drawn = true
 	v.Fill(grid.Cell{Rune: f.ch, FG: fg, BG: bg, Width: 1})
 }
-func (f *filler) SetFocus(on bool) { f.focused = on }
+func (f *filler) SetFocus(on bool) {
+	f.focused = on
+	f.focusLog = append(f.focusLog, on)
+}
 func (f *filler) HandleKey(ev input.Event) (bool, error) {
 	f.keys = append(f.keys, ev.Key)
 	return ev.Key == f.takes, nil
@@ -40,12 +49,17 @@ func sizeOf(v grid.View) Size {
 	return Size{Cols: cols, Rows: rows}
 }
 
-// rowOf reads a row back as a string.
+// rowOf reads a row back as a string. The second half of a double-width
+// character is skipped: it carries no rune of its own.
 func rowOf(g *grid.Grid, y int) string {
 	cols, _ := g.Size()
 	var b strings.Builder
 	for x := 0; x < cols; x++ {
-		b.WriteRune(g.At(x, y).Rune)
+		c := g.At(x, y)
+		if c.Width == 0 {
+			continue
+		}
+		b.WriteRune(c.Rune)
 	}
 	return b.String()
 }
@@ -1100,12 +1114,13 @@ func TestLeafAt(t *testing.T) {
 		})
 	}
 
-	// The divider belongs to no pane, and neither does a point outside.
-	if _, _, ok := LeafAt(outer, whole, 4, 2); ok {
-		t.Error("the divider was reported as a pane")
+	// The divider is the split's own chrome, so it belongs to the split
+	// rather than to either pane. A press there is the split's to keep.
+	if got, _, ok := LeafAt(outer, whole, 4, 2); !ok || got != Widget(outer) {
+		t.Errorf("the divider belongs to %v, want the split itself", got)
 	}
 	if _, _, ok := LeafAt(outer, whole, 99, 99); ok {
-		t.Error("a point outside the tree found a pane")
+		t.Error("a point outside the tree found a widget")
 	}
 }
 
@@ -1164,5 +1179,23 @@ func TestDetachRejectsARefusal(t *testing.T) {
 	}
 	if got := Leaves(outer); len(got) != 3 {
 		t.Errorf("leaves = %v, want the container and both children still there", got)
+	}
+}
+
+// TestSplitReplaceRefusesADuplicate checks the guard against holding one
+// widget in both halves, which would give Remove two answers.
+func TestSplitReplaceRefusesADuplicate(t *testing.T) {
+	a, b := &filler{ch: 'a'}, &filler{ch: 'b'}
+	s := NewSplit(Columns, a, b)
+
+	if s.Replace(a, b) {
+		t.Error("Replace put the same widget in both halves")
+	}
+	if got := s.Children(); got[0] != Widget(a) || got[1] != Widget(b) {
+		t.Errorf("children = %v, want them untouched", got)
+	}
+	// Replacing a child with itself is harmless and stays allowed.
+	if !s.Replace(a, a) {
+		t.Error("Replace refused a child with itself")
 	}
 }

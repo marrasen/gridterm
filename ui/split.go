@@ -103,6 +103,12 @@ func (s *Split) Replace(old, new Widget) bool {
 	if new == nil || (old != s.a && old != s.b) {
 		return false
 	}
+	// Both halves the same widget would give Remove two answers and
+	// leave the split holding a ghost. Replacing a child with itself is
+	// harmless and stays allowed.
+	if new != old && (new == s.a || new == s.b) {
+		return false
+	}
 	if old == s.a {
 		s.a = new
 	} else {
@@ -379,8 +385,15 @@ func AreaOf(root Widget, area Rect, target Widget) (Rect, bool) {
 // both in the coordinates the given area is in.
 //
 // A point inside a container but in none of its children -- a split's
-// divider, a tab strip's own row -- belongs to nothing, so it reports
-// false rather than the container.
+// divider, a tab strip's own row -- belongs to the container itself. It
+// is that container's own chrome, and a press there is that container's
+// to keep until the button comes up.
+//
+// Which means a container that answers true to a press on its own chrome
+// is promising to handle the whole gesture: every move and the release
+// come back to it, not to the child under the pointer. One that has
+// nothing to do with the press must answer false, as a split does for
+// its divider.
 func LeafAt(root Widget, area Rect, x, y int) (Widget, Rect, bool) {
 	if root == nil || !area.Contains(x, y) {
 		return nil, Rect{}, false
@@ -399,7 +412,7 @@ func LeafAt(root Widget, area Rect, x, y int) (Widget, Rect, bool) {
 			return w, at, true
 		}
 	}
-	return nil, Rect{}, false
+	return root, area, true
 }
 
 // Detach takes a widget out of the tree under root and returns the new

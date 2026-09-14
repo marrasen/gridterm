@@ -63,7 +63,13 @@ func (r *Root) SetWidget(w Widget) {
 	if w == nil {
 		return
 	}
-	w.Layout(r.area.Size())
+	// Not while the root has no area of its own. Telling a widget it has
+	// no room is not the same as telling it nothing: a terminal resizes
+	// its shell to one column and reflows the scrollback, and the next
+	// Layout cannot undo that.
+	if !r.area.Empty() {
+		w.Layout(r.area.Size())
+	}
 	if len(r.modals) == 0 {
 		SetFocus(w, true)
 	}
@@ -75,6 +81,9 @@ func (r *Root) Widget() Widget { return r.widget }
 // Layout sets the area of its parent that the tree fills.
 func (r *Root) Layout(area Rect) {
 	r.area = area
+	if area.Empty() {
+		return
+	}
 	if r.widget != nil {
 		r.widget.Layout(area.Size())
 	}
@@ -139,7 +148,9 @@ func (r *Root) PushModal(w Widget) {
 	SetFocus(r.top(), false)
 	r.held.Release()
 	r.modals = append(r.modals, w)
-	w.Layout(r.area.Size())
+	if !r.area.Empty() {
+		w.Layout(r.area.Size())
+	}
 	SetFocus(w, true)
 }
 

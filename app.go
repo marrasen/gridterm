@@ -230,6 +230,13 @@ func (a *app) commands() {
 			return a.splitFocused(ui.Rows)
 		}},
 		ui.Command{ID: "pane.close", Title: "Close pane", Run: a.closeFocused},
+		ui.Command{ID: "tab.open", Title: "New tab", Run: a.openTab},
+		ui.Command{ID: "tab.next", Title: "Next tab", Run: func() error {
+			return a.focusTab(1)
+		}},
+		ui.Command{ID: "tab.previous", Title: "Previous tab", Run: func() error {
+			return a.focusTab(-1)
+		}},
 		ui.Command{ID: "pane.next", Title: "Next pane", Run: func() error {
 			return a.focusPane(1)
 		}},
@@ -258,6 +265,9 @@ func (a *app) commands() {
 		{Key: input.KeyW, Mods: input.ModCtrl | input.ModShift}:      "pane.close",
 		{Key: input.KeyTab, Mods: input.ModCtrl}:                     "pane.next",
 		{Key: input.KeyTab, Mods: input.ModCtrl | input.ModShift}:    "pane.previous",
+		{Key: input.KeyT, Mods: input.ModCtrl | input.ModShift}:      "tab.open",
+		{Key: input.KeyPageDown, Mods: input.ModCtrl}:                "tab.next",
+		{Key: input.KeyPageUp, Mods: input.ModCtrl}:                  "tab.previous",
 	})
 
 	a.root.Commands = cmds

@@ -661,3 +661,22 @@ func TestSelectedTextIsEmptyWhenInactive(t *testing.T) {
 		t.Fatalf("SelectedText() = %q with no selection, want empty", got)
 	}
 }
+
+// TestStringWidthMatchesWhatSetStringSpends checks the measure a caller
+// sizing a label relies on. Asking for display width instead would come
+// up short for a control character or a zero-width one, and the label
+// would be drawn with its end clipped off.
+func TestStringWidthMatchesWhatSetStringSpends(t *testing.T) {
+	for _, s := range []string{
+		"", "abc", "日本", "a日b", "éx", "́abc",
+		"a\tb", "\x07bell", "x​z", "🚀 go",
+	} {
+		g := New(40, 1, fg, bg)
+
+		spent := g.SetString(0, 0, s, fg, bg, 0)
+
+		if got := StringWidth(s); got != spent {
+			t.Errorf("StringWidth(%q) = %d, but SetString spent %d columns", s, got, spent)
+		}
+	}
+}

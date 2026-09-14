@@ -40,6 +40,89 @@ func (a *app) newTerminal() (*term.Terminal, error) {
 	return t, nil
 }
 
+// newTabs builds a tab strip carrying the window's colours.
+func (a *app) newTabs(kids ...ui.Widget) *ui.Tabs {
+	tb := ui.NewTabs(kids...)
+	tb.StripBG = a.palette.BG
+	tb.InactiveFG = a.palette.FG
+	tb.ActiveFG = a.palette.BG
+	tb.ActiveBG = a.palette.FG
+	return tb
+}
+
+// stripAbove returns the nearest tab strip containing w, along with the
+// tab of that strip that w sits inside.
+//
+// It walks rather than asking for w's own parent: a pane that has been
+// split is a grandchild of the strip, and the strip is still the one its
+// tab keys mean.
+func (a *app) stripAbove(w ui.Widget) (*ui.Tabs, ui.Widget) {
+	for child := w; child != nil; {
+		parent := ui.ParentOf(a.root.Widget(), child)
+		if parent == nil {
+			return nil, nil
+		}
+		if strip, ok := parent.(*ui.Tabs); ok {
+			return strip, child
+		}
+		child = parent
+	}
+	return nil, nil
+}
+
+// openTab puts a new shell in the strip holding the focused pane,
+// starting a strip if it is not in one.
+func (a *app) openTab() error {
+	current := ui.FocusedLeaf(a.root.Widget())
+	if current == nil {
+		return errors.New("nothing to open a tab beside")
+	}
+	next, err := a.newTerminal()
+	if err != nil {
+		return err
+	}
+
+	if strip, _ := a.stripAbove(current); strip != nil {
+		strip.Add(next)
+	} else {
+		strip := a.newTabs(current, next)
+		if parent := ui.ParentOf(a.root.Widget(), current); parent != nil {
+			parent.Replace(current, strip)
+		} else {
+			a.root.SetWidget(strip)
+		}
+		strip.Focus(next)
+	}
+	a.relayout()
+	a.focus(next)
+	return nil
+}
+
+// focusTab moves n tabs along in the strip holding the focused pane,
+// wrapping at the ends. It does nothing when the pane is not in a strip.
+func (a *app) focusTab(n int) error {
+	strip, mine := a.stripAbove(ui.FocusedLeaf(a.root.Widget()))
+	if strip == nil {
+		return nil
+	}
+	tabs := strip.Children()
+	if len(tabs) < 2 {
+		return nil
+	}
+	at := 0
+	for i, tab := range tabs {
+		if tab == mine {
+			at = i
+			break
+		}
+	}
+	// Go's % keeps the sign of the dividend, so a step backwards from
+	// the first tab needs the extra turn to land on the last.
+	next := ((at+n)%len(tabs) + len(tabs)) % len(tabs)
+	a.focus(ui.FocusedLeaf(tabs[next]))
+	return nil
+}
+
 // newSplit builds a split carrying the window's divider colours.
 func (a *app) newSplit(dir ui.Dir, first, second ui.Widget) *ui.Split {
 	s := ui.NewSplit(dir, first, second)

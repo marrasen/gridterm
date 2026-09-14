@@ -365,6 +365,16 @@ func (t *Terminal) HandleMouse(ev input.MouseEvent) (bool, error) {
 	return true, nil
 }
 
+// CancelGesture lets go of a drag whose release will never arrive,
+// because a dialog opened over the terminal or its pane left the screen.
+// Left alone, the next time the pointer crossed the terminal with no
+// button down it would carry on extending the selection.
+func (t *Terminal) CancelGesture() { t.selecting = false }
+
+// SelectionText returns the text currently selected, or "" when nothing
+// is.
+func (t *Terminal) SelectionText() string { return t.g.SelectedText() }
+
 // Copy puts the selection on the clipboard. It reports whether there was
 // anything to copy.
 func (t *Terminal) Copy() bool {

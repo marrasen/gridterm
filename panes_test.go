@@ -501,3 +501,274 @@ func TestClosePaneEndsTheShellEvenWhenTheTreeSurgeryFails(t *testing.T) {
 		t.Error("the pane is still in the list, so it would be reaped for ever")
 	}
 }
+
+// TestOpenTabStartsAStrip checks the first tab opened beside a plain
+// pane, which has to become a strip holding both.
+func TestOpenTabStartsAStrip(t *testing.T) {
+	a := newTestApp(t, 40, 10)
+	first := ui.FocusedLeaf(a.root.Widget()).(*term.Terminal)
+
+	if err := a.openTab(); err != nil {
+		t.Fatalf("open tab: %v", err)
+	}
+
+	checkTree(t, a)
+	strip, ok := a.root.Widget().(*ui.Tabs)
+	if !ok {
+		t.Fatalf("root = %T, want a tab strip", a.root.Widget())
+	}
+	if got := strip.Children(); len(got) != 2 || got[0] != ui.Widget(first) {
+		t.Errorf("tabs = %v, want the original first", got)
+	}
+	if ui.FocusedLeaf(a.root.Widget()) == ui.Widget(first) {
+		t.Error("the new tab is not the one being shown")
+	}
+}
+
+// TestOpenTabAddsToAnExistingStrip checks that a second tab joins the
+// strip rather than nesting another one inside it.
+func TestOpenTabAddsToAnExistingStrip(t *testing.T) {
+	a := newTestApp(t, 40, 10)
+	for i := 0; i < 2; i++ {
+		if err := a.openTab(); err != nil {
+			t.Fatalf("open tab: %v", err)
+		}
+	}
+
+	checkTree(t, a)
+	strip, ok := a.root.Widget().(*ui.Tabs)
+	if !ok {
+		t.Fatalf("root = %T, want one tab strip", a.root.Widget())
+	}
+	if got := len(strip.Children()); got != 3 {
+		t.Errorf("%d tabs, want 3", got)
+	}
+}
+
+// TestTabsAndSplitsNest checks the two containers working together: a
+// tab strip inside one half of a split.
+func TestTabsAndSplitsNest(t *testing.T) {
+	a := newTestApp(t, 60, 20)
+	if err := a.splitFocused(ui.Columns); err != nil {
+		t.Fatalf("split: %v", err)
+	}
+	if err := a.openTab(); err != nil {
+		t.Fatalf("open tab: %v", err)
+	}
+
+	checkTree(t, a)
+	if len(a.panes) != 3 {
+		t.Fatalf("%d panes, want 3", len(a.panes))
+	}
+	split, ok := a.root.Widget().(*ui.Split)
+	if !ok {
+		t.Fatalf("root = %T, want the split still on top", a.root.Widget())
+	}
+	if _, ok := split.Children()[1].(*ui.Tabs); !ok {
+		t.Errorf("the second half is %T, want a tab strip", split.Children()[1])
+	}
+}
+
+func TestFocusTabCycles(t *testing.T) {
+	a := newTestApp(t, 40, 10)
+	for i := 0; i < 2; i++ {
+		if err := a.openTab(); err != nil {
+			t.Fatalf("open tab: %v", err)
+		}
+	}
+	tabs := ui.Leaves(a.root.Widget())
+	if len(tabs) != 3 {
+		t.Fatalf("%d tabs, want 3", len(tabs))
+	}
+	a.focus(tabs[0])
+
+	seen := map[ui.Widget]bool{}
+	for i := 0; i < len(tabs); i++ {
+		seen[ui.FocusedLeaf(a.root.Widget())] = true
+		if err := a.focusTab(1); err != nil {
+			t.Fatalf("next tab: %v", err)
+		}
+	}
+
+	if len(seen) != len(tabs) {
+		t.Errorf("cycling reached %d of %d tabs", len(seen), len(tabs))
+	}
+	if got := ui.FocusedLeaf(a.root.Widget()); got != tabs[0] {
+		t.Error("a full cycle did not come back to the first tab")
+	}
+	if err := a.focusTab(-1); err != nil {
+		t.Fatalf("previous tab: %v", err)
+	}
+	if got := ui.FocusedLeaf(a.root.Widget()); got != tabs[len(tabs)-1] {
+		t.Error("stepping back from the first tab did not reach the last")
+	}
+}
+
+// TestFocusTabDoesNothingOutsideAStrip checks that the tab keys are
+// harmless in a window that has no tabs.
+func TestFocusTabDoesNothingOutsideAStrip(t *testing.T) {
+	a := newTestApp(t, 40, 10)
+	before := ui.FocusedLeaf(a.root.Widget())
+
+	if err := a.focusTab(1); err != nil {
+		t.Fatalf("next tab: %v", err)
+	}
+
+	if ui.FocusedLeaf(a.root.Widget()) != before {
+		t.Error("moving between tabs moved focus with no tabs open")
+	}
+	checkTree(t, a)
+}
+
+// TestClosingTabsCollapsesTheStrip checks the whole life of a strip:
+// carries on, collapses to its last tab, then goes with it.
+func TestClosingTabsCollapsesTheStrip(t *testing.T) {
+	a := newTestApp(t, 40, 10)
+	for i := 0; i < 2; i++ {
+		if err := a.openTab(); err != nil {
+			t.Fatalf("open tab: %v", err)
+		}
+	}
+
+	if err := a.closeFocused(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	checkTree(t, a)
+	if _, ok := a.root.Widget().(*ui.Tabs); !ok {
+		t.Errorf("root = %T, want the strip carrying on with two tabs", a.root.Widget())
+	}
+
+	if err := a.closeFocused(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	checkTree(t, a)
+	if _, ok := a.root.Widget().(*term.Terminal); !ok {
+		t.Errorf("root = %T, want the strip collapsed into its last tab", a.root.Widget())
+	}
+
+	if err := a.closeFocused(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	if !a.quit.Load() {
+		t.Error("closing the last tab did not close the window")
+	}
+}
+
+// TestTabsAndSplitsFuzz drives both containers together and checks the
+// invariants after every step. Mixing them is where a pane gets left
+// running unseen.
+func TestTabsAndSplitsFuzz(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	rng := rand.New(rand.NewSource(7))
+
+	for step := 0; step < 200; step++ {
+		switch rng.Intn(6) {
+		case 0:
+			dir := ui.Columns
+			if rng.Intn(2) == 0 {
+				dir = ui.Rows
+			}
+			// Refusing for want of room is an answer, not a failure.
+			_ = a.splitFocused(dir)
+		case 1:
+			if err := a.openTab(); err != nil {
+				t.Fatalf("step %d: open tab: %v", step, err)
+			}
+		case 2:
+			if len(a.panes) > 1 {
+				if err := a.closeFocused(); err != nil {
+					t.Fatalf("step %d: close: %v", step, err)
+				}
+			}
+		case 3:
+			if err := a.focusPane(1); err != nil {
+				t.Fatalf("step %d: next pane: %v", step, err)
+			}
+		case 4:
+			before := ui.FocusedLeaf(a.root.Widget())
+			if err := a.focusTab(1); err != nil {
+				t.Fatalf("step %d: next tab: %v", step, err)
+			}
+			// A strip with more than one tab must actually move, or a
+			// command that quietly does nothing looks like success.
+			if strip, _ := a.stripAbove(before); strip != nil && len(strip.Children()) > 1 {
+				if ui.FocusedLeaf(a.root.Widget()) == before {
+					t.Fatalf("step %d: the next tab command did nothing", step)
+				}
+			}
+		case 5:
+			if err := a.focusTab(-1); err != nil {
+				t.Fatalf("step %d: previous tab: %v", step, err)
+			}
+		}
+		if a.quit.Load() {
+			t.Fatalf("step %d: the window closed with panes still open", step)
+		}
+		checkTree(t, a)
+	}
+}
+
+// TestFocusTabWorksAfterSplittingATab checks the tab keys in a tree
+// where the focused pane's own parent is a split, not the strip. Asking
+// for the direct parent finds no strip and the tab keys go dead.
+func TestFocusTabWorksAfterSplittingATab(t *testing.T) {
+	a := newTestApp(t, 60, 20)
+	if err := a.openTab(); err != nil {
+		t.Fatalf("open tab: %v", err)
+	}
+	if err := a.splitFocused(ui.Columns); err != nil {
+		t.Fatalf("split: %v", err)
+	}
+	before := ui.FocusedLeaf(a.root.Widget())
+
+	if err := a.focusTab(1); err != nil {
+		t.Fatalf("next tab: %v", err)
+	}
+
+	checkTree(t, a)
+	if ui.FocusedLeaf(a.root.Widget()) == before {
+		t.Error("moving to the next tab did nothing: the strip above the split was not found")
+	}
+	// And back again lands inside the split, on one of its panes.
+	if err := a.focusTab(-1); err != nil {
+		t.Fatalf("previous tab: %v", err)
+	}
+	strip, ok := a.root.Widget().(*ui.Tabs)
+	if !ok {
+		t.Fatalf("root = %T, want the strip", a.root.Widget())
+	}
+	if _, isSplit := strip.Children()[1].(*ui.Split); !isSplit {
+		t.Fatalf("the second tab is %T, want the split", strip.Children()[1])
+	}
+}
+
+// TestOpenTabFromInsideASplitJoinsTheStripAbove checks that a new tab
+// joins the strip the pane is already under, rather than starting a
+// second strip nested inside the split.
+func TestOpenTabFromInsideASplitJoinsTheStripAbove(t *testing.T) {
+	a := newTestApp(t, 60, 20)
+	if err := a.openTab(); err != nil {
+		t.Fatalf("open tab: %v", err)
+	}
+	if err := a.splitFocused(ui.Columns); err != nil {
+		t.Fatalf("split: %v", err)
+	}
+
+	if err := a.openTab(); err != nil {
+		t.Fatalf("open tab: %v", err)
+	}
+
+	checkTree(t, a)
+	strip, ok := a.root.Widget().(*ui.Tabs)
+	if !ok {
+		t.Fatalf("root = %T, want one strip", a.root.Widget())
+	}
+	if got := len(strip.Children()); got != 3 {
+		t.Errorf("%d tabs, want 3 in the one strip", got)
+	}
+	for _, tab := range strip.Children() {
+		if _, nested := tab.(*ui.Tabs); nested {
+			t.Error("a second strip was started inside the first")
+		}
+	}
+}

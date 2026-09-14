@@ -1,13 +1,13 @@
 // Package remote is SSH: the machines gridterm can reach, and what runs
 // on them.
 //
-// One Conn is one connection to one machine. Several things ride on it
-// at once — shells, remote commands, file transfers and tunnels — which
-// is the whole point of keeping the connection separate from the shell.
+// One Conn is one connection to one machine, and more than one thing can
+// ride on it at a time. Today that means shells; tunnels and file
+// transfers are the reason the connection is kept separate from them.
 // Closing the connection closes everything riding on it.
 //
-// A Conn is safe to use from several goroutines. The things it opens are
-// not, beyond what each one documents.
+// A Conn is safe to use from several goroutines. A Shell is not, beyond
+// what it documents.
 package remote
 
 import (
@@ -20,6 +20,19 @@ import (
 
 	"golang.org/x/crypto/ssh"
 )
+
+// ErrClosed is returned when something is opened on a connection that
+// has already been closed.
+var ErrClosed = errors.New("the connection is closed")
+
+// rider is something open on a connection.
+//
+// closeRider tears it down and must not call Conn.Close. The connection
+// may already be closing, and a rider that waited for that to finish
+// would be waiting for itself.
+type rider interface {
+	closeRider() error
+}
 
 // Config describes a machine to connect to.
 type Config struct {
@@ -35,11 +48,16 @@ type Config struct {
 	KnownHosts []string
 
 	// Identities lists private key files to try. Empty means the usual
-	// ~/.ssh/id_ed25519, id_ecdsa and id_rsa.
+	// ~/.ssh/id_ed25519, id_ecdsa and id_rsa. A file named here that
+	// cannot be read or decrypted fails the connection; one of the
+	// defaults is skipped.
 	Identities []string
 
-	// NoAgent skips the SSH agent even when one is running.
-	NoAgent bool
+	// NoAgent skips the SSH agent even when one is running, and
+	// NoIdentities skips key files entirely, for a connection that
+	// should only ever offer a password.
+	NoAgent      bool
+	NoIdentities bool
 
 	// Passphrase is asked for a private key's passphrase. Nil skips
 	// encrypted keys rather than failing.
@@ -79,22 +97,18 @@ type Conn struct {
 	// under it and lets go before closing them, so a rider closing
 	// itself at the same moment does not deadlock against it.
 	mu      sync.Mutex
-	riders  map[io.Closer]struct{}
+	riders  map[rider]struct{}
 	closing bool
 
 	// done is closed once Close has finished, so a second caller waits
-	// for the first rather than reporting success while it is still
-	// tearing the connection down.
+	// for the first rather than reporting success while the connection
+	// is still being torn down.
 	done     chan struct{}
 	closeErr error
 }
 
-// ErrClosed is returned when something is opened on a connection that
-// has already been closed.
-var ErrClosed = errors.New("remote: the connection is closed")
-
-// Dial opens a connection and authenticates.
-func Dial(cfg Config) (*Conn, error) {
+// Connect opens a connection to a machine and authenticates.
+func Connect(cfg Config) (*Conn, error) {
 	if cfg.Host == "" {
 		return nil, errors.New("remote: no host given")
 	}
@@ -115,22 +129,25 @@ func Dial(cfg Config) (*Conn, error) {
 		}
 	}
 
-	auth, agentConn := authMethods(cfg)
+	auth, agentConn, err := authMethods(cfg)
+	if err != nil {
+		return nil, err
+	}
 	if len(auth) == 0 {
 		if agentConn != nil {
 			_ = agentConn.Close()
 		}
-		return nil, errors.New("remote: no usable authentication method: " +
+		return nil, errors.New("remote: nothing to authenticate with: " +
 			"no agent, no readable private key, and no password source")
 	}
 
 	addr := cfg.addr()
-	client, err := dial(addr, user, auth, hostKey)
-	if err != nil {
+	client, dialErr := dial(addr, user, auth, hostKey)
+	if dialErr != nil {
 		if agentConn != nil {
 			_ = agentConn.Close()
 		}
-		return nil, err
+		return nil, dialErr
 	}
 	return newConn(client, agentConn, user, addr), nil
 }
@@ -142,40 +159,46 @@ func newConn(client *ssh.Client, agentConn io.Closer, user, addr string) *Conn {
 		agent:  agentConn,
 		user:   user,
 		addr:   addr,
-		riders: make(map[io.Closer]struct{}),
+		riders: make(map[rider]struct{}),
 		done:   make(chan struct{}),
 	}
 }
 
-// User returns the account this connection authenticated as.
-func (c *Conn) User() string { return c.user }
-
-// Addr returns the host:port this connection was made to.
-func (c *Conn) Addr() string { return c.addr }
-
 // String names the connection the way a user would: user@host:port.
 func (c *Conn) String() string { return c.user + "@" + c.addr }
 
-// add registers something riding on the connection, so closing the
+// closing reports whether Close has started.
+func (c *Conn) isClosing() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.closing
+}
+
+// register records something riding on the connection, so closing the
 // connection closes it too. It fails once the connection has closed,
 // because a rider registered then would never be closed by anything.
-func (c *Conn) add(r io.Closer) error {
+func (c *Conn) register(r rider) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.closing {
-		return ErrClosed
+		return fmt.Errorf("remote: %s: %w", c, ErrClosed)
 	}
 	c.riders[r] = struct{}{}
 	return nil
 }
 
 // drop forgets a rider that closed itself.
-func (c *Conn) drop(r io.Closer) {
+func (c *Conn) drop(r rider) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.riders != nil {
-		delete(c.riders, r)
-	}
+	delete(c.riders, r)
+}
+
+// riderCount returns how many things are open on the connection.
+func (c *Conn) riderCount() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.riders)
 }
 
 // Close ends everything riding on the connection and then the
@@ -189,27 +212,46 @@ func (c *Conn) Close() error {
 		return c.closeErr
 	}
 	c.closing = true
-	riders := make([]io.Closer, 0, len(c.riders))
+	riders := make([]rider, 0, len(c.riders))
 	for r := range c.riders {
 		riders = append(riders, r)
 	}
 	c.riders = nil
 	c.mu.Unlock()
 
-	var errs []error
-	// The riders first: a shell closing politely gives the remote a
-	// chance to exit before the transport goes away underneath it.
-	for _, r := range riders {
-		if err := r.Close(); err != nil && !errors.Is(err, io.EOF) {
+	// The riders first, so a shell gets its polite hangup before the
+	// transport goes away underneath it. In parallel, because each one
+	// waits out its own drain period and several panes on one machine
+	// would otherwise close one after another.
+	var (
+		wg      sync.WaitGroup
+		errMu   sync.Mutex
+		errs    []error
+		collect = func(err error) {
+			if err == nil {
+				return
+			}
+			errMu.Lock()
 			errs = append(errs, err)
+			errMu.Unlock()
 		}
+	)
+	for _, r := range riders {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			collect(r.closeRider())
+		}()
 	}
-	if err := c.client.Close(); err != nil &&
-		!errors.Is(err, net.ErrClosed) && !errors.Is(err, io.EOF) {
+	wg.Wait()
+
+	if err := c.client.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
 		errs = append(errs, err)
 	}
 	if c.agent != nil {
-		_ = c.agent.Close()
+		if err := c.agent.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+			errs = append(errs, err)
+		}
 	}
 
 	c.closeErr = errors.Join(errs...)

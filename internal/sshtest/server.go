@@ -40,6 +40,7 @@ type Server struct {
 	mu       sync.Mutex
 	lastSize [2]int // cols, rows
 	conns    []net.Conn
+	accepted int
 
 	// writeMu serialises channel writes. x/crypto documents concurrent
 	// writes to one ssh.Channel as unsafe, and the request loop and the
@@ -96,6 +97,14 @@ func (s *Server) Host() (string, int) {
 	h, p, _ := net.SplitHostPort(s.addr)
 	port, _ := strconv.Atoi(p)
 	return h, port
+}
+
+// Conns returns how many connections the server has accepted, so a test
+// can tell one login from several.
+func (s *Server) Conns() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.accepted
 }
 
 // Size returns the last pty size the server was told.
@@ -160,6 +169,7 @@ func (s *Server) serve() {
 		}
 		s.mu.Lock()
 		s.conns = append(s.conns, conn)
+		s.accepted++
 		s.mu.Unlock()
 		go s.handle(conn)
 	}

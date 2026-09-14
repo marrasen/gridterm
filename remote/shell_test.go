@@ -150,8 +150,8 @@ func TestShellDroppedConnectionIsNotReportedAsACleanExit(t *testing.T) {
 		if err == nil || err == io.EOF {
 			t.Fatalf("Read returned %v for a dropped connection, want a real error", err)
 		}
-		if !strings.Contains(err.Error(), "closed by the remote host") {
-			t.Fatalf("Read returned %v, want it to say the connection was closed", err)
+		if !strings.Contains(err.Error(), "closed the connection") {
+			t.Fatalf("Read returned %v, want it to say the host closed the connection", err)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("Read never returned after the connection dropped")
@@ -254,4 +254,67 @@ func sameErr(a, b error) bool {
 		return a == nil && b == nil
 	}
 	return a.Error() == b.Error()
+}
+
+// Close is reachable from the reader goroutine, from the window and from
+// the connection at once, and every one of them has to get the same
+// answer without the hangup running twice.
+func TestShellCloseIsIdempotentAndConcurrent(t *testing.T) {
+	s := sshtest.New(t)
+	c := connectTest(t, s)
+	sh, err := c.Shell(ShellConfig{Cols: 80, Rows: 24})
+	if err != nil {
+		t.Fatalf("Shell: %v", err)
+	}
+	readUntil(t, sh, "READY", 5*time.Second)
+	drain(sh)
+
+	first := sh.Close()
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := sh.Close(); !sameErr(err, first) {
+				t.Errorf("concurrent Close = %v, first = %v", err, first)
+			}
+		}()
+	}
+	wg.Wait()
+}
+
+// A shell that never started has nothing to drain, so closing it must
+// not sit out the grace period. It is on the path to reporting a failed
+// connection, where the user is already waiting.
+func TestShellThatNeverStartedClosesAtOnce(t *testing.T) {
+	s := sshtest.New(t)
+	c := connectTest(t, s)
+
+	sess, err := c.client.NewSession()
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	sh := &Shell{conn: c, sess: sess, done: make(chan struct{})}
+	sh.out, sh.outW = io.Pipe()
+
+	start := time.Now()
+	_ = sh.Close()
+	if took := time.Since(start); took >= drainGrace {
+		t.Fatalf("closing a shell that never started took %v, want well under %v",
+			took, drainGrace)
+	}
+}
+
+// Resize after the connection went is a real sequence: the window is
+// resized while a pane whose connection dropped is still on screen.
+func TestShellResizeAfterCloseDoesNotPanic(t *testing.T) {
+	s := sshtest.New(t)
+	sess := startTest(t, s, nil)
+	readUntil(t, sess, "READY", 5*time.Second)
+	if err := sess.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if err := sess.Resize(100, 40); err == nil {
+		t.Fatal("Resize on a closed shell reported success")
+	}
 }

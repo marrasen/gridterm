@@ -14,7 +14,7 @@ import (
 func dialAgent() (io.ReadWriteCloser, error) {
 	sock := os.Getenv("SSH_AUTH_SOCK")
 	if sock == "" {
-		return nil, errors.New("remote: no SSH agent: SSH_AUTH_SOCK is not set")
+		return nil, errors.New("no SSH agent: SSH_AUTH_SOCK is not set")
 	}
 	return net.Dial("unix", sock)
 }

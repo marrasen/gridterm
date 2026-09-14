@@ -3,7 +3,9 @@ package remote
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -12,7 +14,9 @@ import (
 )
 
 // maxKnownHostsLine caps one line of known_hosts. Certificate entries
-// can be long, but a single huge line should not abort the whole file.
+// can be long, so the cap is generous; a line over it is a read failure
+// rather than a line to skip, because carrying on would drop every entry
+// after it.
 const maxKnownHostsLine = 1024 * 1024
 
 // knownHostsCallback builds host key verification from known_hosts.
@@ -49,7 +53,7 @@ func knownHostsCallback(paths []string) (ssh.HostKeyCallback, error) {
 	defer os.Remove(tmp.Name())
 	for _, l := range good {
 		if _, err := tmp.Write(append(l, '\n')); err != nil {
-			tmp.Close()
+			_ = tmp.Close()
 			return nil, fmt.Errorf("remote: stage known_hosts: %w", err)
 		}
 	}
@@ -59,38 +63,63 @@ func knownHostsCallback(paths []string) (ssh.HostKeyCallback, error) {
 
 	cb, err := knownhosts.New(tmp.Name())
 	if err != nil {
-		return nil, fmt.Errorf("remote: read known_hosts: %w", err)
+		// The staged copy is about to be removed, so the path in the
+		// wrapped error names a file the user cannot go and look at.
+		return nil, fmt.Errorf("remote: read known_hosts %v: %w", paths, err)
 	}
 	return cb, nil
 }
 
 // usableKnownHostLines returns the lines of the given files that parse.
+//
+// A file that is not there is skipped, because the default list names
+// three paths and most machines have one. Any other failure to read one
+// stops the lot: a truncated list would say a host is unknown, or say
+// its key had changed, when the truth is that a file could not be read.
 func usableKnownHostLines(paths []string) ([][]byte, error) {
 	var out [][]byte
 	var found bool
 	for _, p := range paths {
 		f, err := os.Open(p)
-		if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
 			continue
 		}
-		found = true
-		sc := bufio.NewScanner(f)
-		sc.Buffer(make([]byte, 0, 64*1024), maxKnownHostsLine)
-		for sc.Scan() {
-			line := bytes.TrimSpace(sc.Bytes())
-			if len(line) == 0 || line[0] == '#' {
-				continue
-			}
-			if _, _, _, _, _, err := ssh.ParseKnownHosts(line); err != nil {
-				continue
-			}
-			out = append(out, append([]byte(nil), line...))
+		if err != nil {
+			return nil, fmt.Errorf("remote: read known_hosts: %w", err)
 		}
-		f.Close()
+		found = true
+		lines, err := parseKnownHosts(f)
+		_ = f.Close()
+		if err != nil {
+			return nil, fmt.Errorf("remote: read known_hosts %s: %w", p, err)
+		}
+		out = append(out, lines...)
 	}
 	if !found {
 		return nil, fmt.Errorf("remote: no known_hosts file found (looked in %v); "+
 			"connect once with ssh to record the host key", paths)
+	}
+	return out, nil
+}
+
+// parseKnownHosts reads one known_hosts file, keeping the lines that
+// parse and reporting a failure to read it.
+func parseKnownHosts(f *os.File) ([][]byte, error) {
+	var out [][]byte
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 64*1024), maxKnownHostsLine)
+	for sc.Scan() {
+		line := bytes.TrimSpace(sc.Bytes())
+		if len(line) == 0 || line[0] == '#' {
+			continue
+		}
+		if _, _, _, _, _, err := ssh.ParseKnownHosts(line); err != nil {
+			continue
+		}
+		out = append(out, append([]byte(nil), line...))
+	}
+	if err := sc.Err(); err != nil {
+		return nil, err
 	}
 	return out, nil
 }

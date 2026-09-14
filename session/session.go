@@ -1,9 +1,9 @@
-// Package session is the byte source a terminal is attached to: a local
-// shell over a pseudo-terminal, or a remote one over SSH.
+// Package session is the byte source a terminal is attached to.
 //
 // The interface is deliberately small. Everything above it — the VT
 // emulator, the grid, the renderer — only ever sees bytes and a size, so
-// swapping a local shell for a remote host changes nothing else.
+// swapping a local shell for a remote host changes nothing else. A local
+// shell over a pseudo-terminal is here; a remote one is in remote.
 package session
 
 import "io"

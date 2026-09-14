@@ -159,13 +159,18 @@ func main() {
 	ebiten.SetScreenClearedEveryFrame(false)
 	ebiten.SetVsyncEnabled(true)
 
+	// A clean quit is ebiten.Termination rather than nil, so the shells
+	// have to be closed into a separate error or every failure to shut
+	// one down is dropped on the path the user actually takes.
 	err = ebiten.RunGame(a)
-	for t := range a.panes {
-		if cerr := t.Close(); cerr != nil && err == nil {
-			err = cerr
-		}
+	if errors.Is(err, ebiten.Termination) {
+		err = nil
 	}
-	if err != nil && !errors.Is(err, ebiten.Termination) {
+	closed := []error{err}
+	for t := range a.panes {
+		closed = append(closed, t.Close())
+	}
+	if err := errors.Join(closed...); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -271,9 +276,13 @@ func startSession(target string, command []string, cols, rows int) (session.Sess
 	cfg.Password = func() (string, error) {
 		return promptSecret("password for " + cfg.User + "@" + cfg.Host + ": ")
 	}
-	return remote.StartShell(cfg, remote.ShellConfig{
+	sh, err := remote.StartShell(cfg, remote.ShellConfig{
 		Command: command,
 		Cols:    cols,
 		Rows:    rows,
 	})
+	if err != nil {
+		return nil, err
+	}
+	return sh, nil
 }

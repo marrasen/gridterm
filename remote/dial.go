@@ -44,7 +44,10 @@ func dial(addr, user string, auth []ssh.AuthMethod, hostKey ssh.HostKeyCallback)
 			if err2 == nil {
 				return client, nil
 			}
-			err = err2
+			// Both, because the first attempt is the one that reports a
+			// key mismatch and the second is the one that says why the
+			// retry did not help either.
+			err = errors.Join(err, err2)
 		}
 	}
 	return nil, describeHostKeyError(err, addr)

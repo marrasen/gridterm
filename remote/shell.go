@@ -9,14 +9,11 @@ import (
 	"time"
 
 	"golang.org/x/crypto/ssh"
-
-	"github.com/marrasen/gridterm/session"
 )
 
-// hangupGrace is how long Close waits for the remote to finish after its
-// stdin is closed, so output already on the wire can still be read. It
-// matches what the local pty path takes care to preserve.
-const hangupGrace = 250 * time.Millisecond
+// drainGrace is how long Close waits for the remote to finish after its
+// stdin is closed, so output already on the wire can still be read.
+const drainGrace = 250 * time.Millisecond
 
 // ShellConfig describes one shell or command to run on a connection.
 type ShellConfig struct {
@@ -53,9 +50,10 @@ type Shell struct {
 	out  *io.PipeReader
 	outW *io.PipeWriter
 
-	// done is closed once the session has ended and the output pipe has
-	// been closed behind it.
-	done chan struct{}
+	// running records that the goroutine which closes done was started.
+	// A shell that failed before that has nothing to wait for.
+	running bool
+	done    chan struct{}
 
 	closeOnce sync.Once
 	closeErr  error
@@ -66,21 +64,26 @@ type Shell struct {
 // Shell starts a program on the connection and returns it as a byte
 // stream. Several may run on one connection at a time.
 func (c *Conn) Shell(cfg ShellConfig) (*Shell, error) {
+	// Asked before a channel is opened, so a closed connection says so
+	// rather than reporting whatever the dead transport failed with.
+	if c.isClosing() {
+		return nil, fmt.Errorf("remote: %s: %w", c, ErrClosed)
+	}
 	sess, err := c.client.NewSession()
 	if err != nil {
-		return nil, fmt.Errorf("remote: open session: %w", err)
+		return nil, fmt.Errorf("remote: open a session on %s: %w", c, err)
 	}
 
 	s := &Shell{conn: c, sess: sess, done: make(chan struct{})}
-	// Registered before anything is started, so a connection closing at
-	// this moment tears the half-built shell down rather than leaving it
-	// running with nothing holding it.
-	if err := c.add(s); err != nil {
-		_ = sess.Close()
+	// Started before it is registered: until the connection knows about
+	// it, no other goroutine can reach it, so nothing can read the
+	// fields start is still filling in.
+	if err := s.start(cfg); err != nil {
+		_ = s.closeRider()
 		return nil, err
 	}
-	if err := s.start(cfg); err != nil {
-		_ = s.Close()
+	if err := c.register(s); err != nil {
+		_ = s.closeRider()
 		return nil, err
 	}
 	return s, nil
@@ -97,7 +100,7 @@ func (s *Shell) start(cfg ShellConfig) error {
 
 	var err error
 	if s.stdin, err = s.sess.StdinPipe(); err != nil {
-		return fmt.Errorf("remote: stdin: %w", err)
+		return fmt.Errorf("remote: open the stdin pipe: %w", err)
 	}
 
 	term := cfg.Term
@@ -112,7 +115,7 @@ func (s *Shell) start(cfg ShellConfig) error {
 		ssh.TTY_OP_ISPEED: 38400,
 		ssh.TTY_OP_OSPEED: 38400,
 	}); err != nil {
-		return fmt.Errorf("remote: request pty: %w", err)
+		return fmt.Errorf("remote: request a pty: %w", err)
 	}
 
 	if len(cfg.Command) == 0 {
@@ -121,17 +124,25 @@ func (s *Shell) start(cfg ShellConfig) error {
 		err = s.sess.Start(shellQuote(cfg.Command))
 	}
 	if err != nil {
-		return fmt.Errorf("remote: start: %w", err)
+		return fmt.Errorf("remote: start the remote program: %w", err)
 	}
 
-	// Closing the pipe writer is what turns the remote's exit into an
-	// io.EOF for the reader, so it happens exactly when the session ends
-	// and not before.
-	go func() {
-		defer close(s.done)
-		_ = s.outW.CloseWithError(sessionEnd(s.Wait()))
-	}()
+	s.running = true
+	go s.reap()
 	return nil
+}
+
+// reap waits for the remote program and tidies up after it.
+//
+// Closing the pipe writer is what turns the remote's exit into an io.EOF
+// for the reader, so it happens exactly when the session ends and not
+// before. The shell closes itself afterwards, or a connection whose
+// programs all exited would keep a record of every one of them.
+func (s *Shell) reap() {
+	end := sessionEnd(s.Wait())
+	close(s.done)
+	_ = s.outW.CloseWithError(end)
+	_ = s.Close()
 }
 
 func (s *Shell) Read(b []byte) (int, error) { return s.out.Read(b) }
@@ -165,10 +176,15 @@ func (s *Shell) Wait() error {
 // it. The connection itself stays open: other shells and tunnels may
 // still be riding on it.
 func (s *Shell) Close() error {
-	s.closeOnce.Do(func() {
-		s.closeErr = s.closeAll()
-		s.conn.drop(s)
-	})
+	err := s.closeRider()
+	s.conn.drop(s)
+	return err
+}
+
+// closeRider is Close without the deregistering, for a connection that
+// is closing its riders and will throw the whole record away anyway.
+func (s *Shell) closeRider() error {
+	s.closeOnce.Do(func() { s.closeErr = s.closeAll() })
 	return s.closeErr
 }
 
@@ -181,17 +197,16 @@ func (s *Shell) closeAll() error {
 	}
 	s.writeMu.Unlock()
 
-	// Give the session a moment to finish on its own. Tearing it down
-	// immediately would discard whatever the remote had already sent,
-	// which is the mistake the local pty path takes care to avoid.
-	//
-	// Only when something was started: a shell that failed in start has
-	// nothing running, and nothing will ever close done.
-	if s.outW != nil {
+	// Give the remote a moment to finish on its own, so output already
+	// sent is not thrown away. Only when the program was started:
+	// nothing else ever closes done.
+	if s.running {
 		select {
 		case <-s.done:
-		case <-time.After(hangupGrace):
+		case <-time.After(drainGrace):
 		}
+	}
+	if s.outW != nil {
 		_ = s.outW.CloseWithError(io.EOF)
 	}
 
@@ -201,14 +216,13 @@ func (s *Shell) closeAll() error {
 	return nil
 }
 
-// StartShell opens a connection and runs one shell on it, and hands back
-// a shell that closes the connection with it.
+// StartShell opens a connection and runs one shell on it.
 //
 // It is the one-shot form, for a caller that wants a single remote shell
 // and nothing else. A caller that wants more than one thing on a machine
-// should Dial and keep the Conn.
-func StartShell(cfg Config, sh ShellConfig) (session.Session, error) {
-	conn, err := Dial(cfg)
+// should Connect and keep the Conn.
+func StartShell(cfg Config, sh ShellConfig) (*OwnedShell, error) {
+	conn, err := Connect(cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -217,25 +231,23 @@ func StartShell(cfg Config, sh ShellConfig) (session.Session, error) {
 		_ = conn.Close()
 		return nil, err
 	}
-	return &ownedShell{Shell: s, conn: conn}, nil
+	return &OwnedShell{Shell: s, conn: conn}, nil
 }
 
-// ownedShell is a shell that carries its connection.
-//
-// The connection closes after the shell rather than the shell closing
-// through the connection, so Conn.Close closing this shell as one of its
-// riders does not come back round into Conn.Close again.
-type ownedShell struct {
+// OwnedShell is a shell that carries its own connection and closes it
+// after the shell, so Conn.Close closing that shell as a rider does not
+// recurse.
+type OwnedShell struct {
 	*Shell
 	conn *Conn
 }
 
-func (o *ownedShell) Close() error {
-	err := o.Shell.Close()
-	if cerr := o.conn.Close(); cerr != nil && err == nil {
-		err = cerr
-	}
-	return err
+// Conn returns the connection the shell is running on.
+func (o *OwnedShell) Conn() *Conn { return o.conn }
+
+// Close ends the shell and then the connection carrying it.
+func (o *OwnedShell) Close() error {
+	return errors.Join(o.Shell.Close(), o.conn.Close())
 }
 
 // sessionEnd turns the reason a session ended into what a reader should
@@ -256,7 +268,7 @@ func sessionEnd(err error) error {
 	}
 	var missing *ssh.ExitMissingError
 	if errors.As(err, &missing) {
-		return errors.New("remote: connection closed by the remote host")
+		return errors.New("remote: the host closed the connection")
 	}
 	return err
 }
@@ -266,22 +278,21 @@ func sessionEnd(err error) error {
 // hands the command string to the user's shell, so this assumes that
 // shell is POSIX — cmd.exe ignores single quotes entirely.
 func shellQuote(argv []string) string {
-	const quote = '\''
 	var sb strings.Builder
 	for i, a := range argv {
 		if i > 0 {
 			sb.WriteByte(' ')
 		}
-		sb.WriteByte(quote)
+		sb.WriteByte('\'')
 		for _, c := range []byte(a) {
-			if c == quote {
+			if c == '\'' {
 				// End the quote, emit an escaped quote, reopen.
-				sb.WriteString("'\\''")
+				sb.WriteString(`'\''`)
 				continue
 			}
 			sb.WriteByte(c)
 		}
-		sb.WriteByte(quote)
+		sb.WriteByte('\'')
 	}
 	return sb.String()
 }

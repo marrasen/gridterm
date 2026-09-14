@@ -26,7 +26,7 @@ func ParseTarget(target string) (Config, error) {
 	if host, port, err := net.SplitHostPort(target); err == nil {
 		n, convErr := strconv.Atoi(port)
 		if convErr != nil || n < 1 || n > 65535 {
-			return cfg, fmt.Errorf("ssh target %q: port %q is not between 1 and 65535",
+			return cfg, fmt.Errorf("remote: target %q: port %q is not between 1 and 65535",
 				orig, port)
 		}
 		cfg.Host, cfg.Port = host, n
@@ -36,7 +36,7 @@ func ParseTarget(target string) (Config, error) {
 	}
 
 	if cfg.Host == "" {
-		return cfg, fmt.Errorf("ssh target %q: no host", orig)
+		return cfg, fmt.Errorf("remote: target %q: no host", orig)
 	}
 	return cfg, nil
 }

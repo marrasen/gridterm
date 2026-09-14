@@ -1,7 +1,6 @@
 package remote
 
 import (
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -18,10 +17,10 @@ func checkedConfig(t *testing.T, s *sshtest.Server, knownHosts ...string) Config
 	host, port := s.Host()
 	return Config{
 		Host: host, Port: port, User: "tester",
-		KnownHosts: knownHosts,
-		Password:   func() (string, error) { return sshtest.Password, nil },
-		NoAgent:    true,
-		Identities: []string{filepath.Join(t.TempDir(), "none")},
+		KnownHosts:   knownHosts,
+		Password:     func() (string, error) { return sshtest.Password, nil },
+		NoAgent:      true,
+		NoIdentities: true,
 	}
 }
 
@@ -33,8 +32,8 @@ func TestDialRejectsTheWrongHostKey(t *testing.T) {
 
 	cfg := testConfig(t, s)
 	cfg.HostKeyCallback = ssh.FixedHostKey(other.HostKey())
-	if _, err := Dial(cfg); err == nil {
-		t.Fatal("Dial accepted a connection with the wrong host key")
+	if _, err := Connect(cfg); err == nil {
+		t.Fatal("Connect accepted a connection with the wrong host key")
 	}
 }
 
@@ -43,9 +42,9 @@ func TestDialRejectsTheWrongHostKey(t *testing.T) {
 func TestDialWithoutKnownHostsRefusesToConnect(t *testing.T) {
 	s := sshtest.New(t)
 
-	_, err := Dial(checkedConfig(t, s, "/nonexistent/known_hosts"))
+	_, err := Connect(checkedConfig(t, s, "/nonexistent/known_hosts"))
 	if err == nil {
-		t.Fatal("Dial connected with no known_hosts to check against")
+		t.Fatal("Connect connected with no known_hosts to check against")
 	}
 	if !strings.Contains(err.Error(), "known_hosts") {
 		t.Fatalf("error = %v, want it to mention known_hosts", err)
@@ -55,9 +54,9 @@ func TestDialWithoutKnownHostsRefusesToConnect(t *testing.T) {
 func TestDialAcceptsAHostInKnownHosts(t *testing.T) {
 	s := sshtest.New(t)
 
-	c, err := Dial(checkedConfig(t, s, sshtest.WriteKnownHosts(t, s.KnownHostsLine())))
+	c, err := Connect(checkedConfig(t, s, sshtest.WriteKnownHosts(t, s.KnownHostsLine())))
 	if err != nil {
-		t.Fatalf("Dial with a matching known_hosts entry: %v", err)
+		t.Fatalf("Connect with a matching known_hosts entry: %v", err)
 	}
 	_ = c.Close()
 }
@@ -71,9 +70,9 @@ func TestDialUnknownHostSaysSo(t *testing.T) {
 
 	// A file with an entry for a different host.
 	kh := sshtest.WriteKnownHosts(t, other.KnownHostsLine())
-	_, err := Dial(checkedConfig(t, s, kh))
+	_, err := Connect(checkedConfig(t, s, kh))
 	if err == nil {
-		t.Fatal("Dial accepted a host that is not in known_hosts")
+		t.Fatal("Connect accepted a host that is not in known_hosts")
 	}
 	if !strings.Contains(err.Error(), "not in known_hosts") {
 		t.Fatalf("error = %v, want it to say the host is not in known_hosts", err)
@@ -86,9 +85,9 @@ func TestDialChangedHostKeySaysSo(t *testing.T) {
 
 	// An entry for this address, but holding a different key.
 	kh := sshtest.WriteKnownHosts(t, s.LineFor(other.HostKey()))
-	_, err := Dial(checkedConfig(t, s, kh))
+	_, err := Connect(checkedConfig(t, s, kh))
 	if err == nil {
-		t.Fatal("Dial accepted a host whose key had changed")
+		t.Fatal("Connect accepted a host whose key had changed")
 	}
 	if !strings.Contains(err.Error(), "does not match") {
 		t.Fatalf("error = %v, want it to say the key does not match", err)
@@ -113,9 +112,9 @@ func TestDialSkipsUnparseableKnownHostsLines(t *testing.T) {
 		s.KnownHostsLine(),
 	)
 
-	c, err := Dial(checkedConfig(t, s, kh))
+	c, err := Connect(checkedConfig(t, s, kh))
 	if err != nil {
-		t.Fatalf("Dial: %v; one bad line disabled the whole file", err)
+		t.Fatalf("Connect: %v; one bad line disabled the whole file", err)
 	}
 	_ = c.Close()
 }
@@ -124,9 +123,9 @@ func TestDialKnownHostsWithOnlyBadLinesIsAnError(t *testing.T) {
 	s := sshtest.New(t)
 
 	kh := sshtest.WriteKnownHosts(t, "garbage", "more garbage")
-	_, err := Dial(checkedConfig(t, s, kh))
+	_, err := Connect(checkedConfig(t, s, kh))
 	if err == nil {
-		t.Fatal("Dial connected with no usable known_hosts entries")
+		t.Fatal("Connect connected with no usable known_hosts entries")
 	}
 	if !strings.Contains(err.Error(), "known_hosts") {
 		t.Fatalf("error = %v, want it to mention known_hosts", err)

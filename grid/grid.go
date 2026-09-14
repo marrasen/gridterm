@@ -81,6 +81,12 @@ type Grid struct {
 	cursor     Cursor
 	sel        Selection
 
+	// cursorClaimed records that something placed the cursor since the
+	// claim was last reset. Clearing an unclaimed cursor after the fact
+	// costs nothing, where clearing it first and having it written back
+	// dirties a row on every idle frame.
+	cursorClaimed bool
+
 	// DefaultFG and DefaultBG fill cells cleared by Clear and Resize.
 	DefaultFG color.RGBA
 	DefaultBG color.RGBA
@@ -343,6 +349,7 @@ func (g *Grid) Cursor() Cursor { return g.cursor }
 // SetCursor moves the cursor, dirtying both the row it left and the row
 // it arrived at so the old cell is repainted without it.
 func (g *Grid) SetCursor(c Cursor) {
+	g.cursorClaimed = true
 	if c == g.cursor {
 		return
 	}
@@ -439,6 +446,14 @@ func (g *Grid) ClearDirty() {
 	g.allDirty = false
 	clear(g.dirty)
 }
+
+// CursorClaimed reports whether the cursor has been placed since the
+// claim was last reset.
+func (g *Grid) CursorClaimed() bool { return g.cursorClaimed }
+
+// ResetCursorClaim forgets who placed the cursor, before a fresh pass of
+// drawing decides again.
+func (g *Grid) ResetCursorClaim() { g.cursorClaimed = false }
 
 // MarkAllDirty forces a full repaint on the next frame, for when
 // something outside the cell contents changed (window resize, theme).

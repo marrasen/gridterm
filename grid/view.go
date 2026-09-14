@@ -173,6 +173,39 @@ func (v View) repairEdges() {
 	}
 }
 
+// SetCursor places the grid cursor at a point in view coordinates. A
+// point outside the view hides the cursor rather than drawing it over
+// whatever sits next to the view.
+//
+// A grid has one cursor and no idea who owns it, so only the widget
+// holding focus may call this. An unfocused one that did would take the
+// cursor from whoever has it, and writing a hidden cursor takes it just
+// as surely as writing a visible one. Clearing the cursor belongs to
+// whatever draws the widgets, once per frame.
+func (v View) SetCursor(c Cursor) {
+	if v.g == nil {
+		return
+	}
+	if !v.inBounds(c.X, c.Y) {
+		c.Visible = false
+	}
+	c.X, c.Y = v.x0+c.X, v.y0+c.Y
+	v.g.SetCursor(c)
+}
+
+// CursorClaimed reports whether a widget placed the cursor since the
+// claim was last reset.
+func (v View) CursorClaimed() bool { return v.g != nil && v.g.CursorClaimed() }
+
+// ResetCursorClaim forgets who placed the cursor. Whatever draws the
+// widgets calls this before a pass and hides the cursor afterwards if
+// nobody claimed it.
+func (v View) ResetCursorClaim() {
+	if v.g != nil {
+		v.g.ResetCursorClaim()
+	}
+}
+
 func (v View) inBounds(x, y int) bool {
 	return v.g != nil && x >= 0 && y >= 0 && x < v.cols && y < v.rows
 }

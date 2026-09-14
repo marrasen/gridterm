@@ -94,6 +94,16 @@ type KeyHandler interface {
 	HandleKey(ev input.Event) (bool, error)
 }
 
+// MouseHandler is a widget that takes mouse events.
+//
+// Col and Row on the event are in the widget's own coordinates, so a
+// container translates before forwarding. Returning true consumes the
+// event the way KeyHandler does.
+type MouseHandler interface {
+	Widget
+	HandleMouse(ev input.MouseEvent) (bool, error)
+}
+
 // Focusable is a widget that draws differently when it is the one
 // receiving keys, or that has a cursor to show.
 //
@@ -119,6 +129,49 @@ func SetFocus(w Widget, on bool) {
 func HandleKey(w Widget, ev input.Event) (bool, error) {
 	if h, ok := w.(KeyHandler); ok {
 		return h.HandleKey(ev)
+	}
+	return false, nil
+}
+
+// MouseCapture remembers which widget took a mouse press, so every move
+// and release goes to it until the button comes up, however far the
+// pointer has wandered.
+//
+// Without it a drag that leaves a widget never finishes, and the widget
+// waits for a release it will not get. Containers nest, so each one that
+// routes the mouse keeps its own.
+type MouseCapture struct {
+	w      Widget
+	button input.MouseButton
+}
+
+// Holder returns the widget holding the pointer, or nil.
+func (c *MouseCapture) Holder() Widget { return c.w }
+
+// Release drops the capture, for when the widget holding it goes away.
+func (c *MouseCapture) Release() { c.w = nil }
+
+// Take records that w took this event, if it is a press that will be
+// released. A wheel notch is a press with no release, so taking one
+// would never let go.
+func (c *MouseCapture) Take(w Widget, ev input.MouseEvent) {
+	switch {
+	case ev.Kind == input.MousePress && !ev.Button.IsWheel():
+		if c.w == nil {
+			c.w, c.button = w, ev.Button
+		}
+	case ev.Kind == input.MouseRelease && ev.Button == c.button:
+		// Only the button that took the pointer gives it back. Tapping
+		// another mid-drag must not end the drag.
+		c.w = nil
+	}
+}
+
+// HandleMouse offers a mouse event to a widget, if it takes them. The
+// event must already be in that widget's coordinates.
+func HandleMouse(w Widget, ev input.MouseEvent) (bool, error) {
+	if h, ok := w.(MouseHandler); ok {
+		return h.HandleMouse(ev)
 	}
 	return false, nil
 }

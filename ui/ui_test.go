@@ -1154,3 +1154,335 @@ func TestRootKeepsAWidgetFailureAlongsideACommandFailure(t *testing.T) {
 		t.Errorf("error = %v, want the command's failure kept", err)
 	}
 }
+
+// TestRootMouseDragThatLeavesTheAreaStillFinishes checks pointer
+// capture. Dragging to select and releasing past the edge is an everyday
+// gesture, and dropping the release leaves the widget selecting for ever.
+func TestRootMouseDragThatLeavesTheAreaStillFinishes(t *testing.T) {
+	r := &Root{}
+	w := &mouser{}
+	r.SetWidget(w)
+	r.Layout(Rect{Cols: 10, Rows: 4})
+
+	r.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 2, Row: 1})
+	r.HandleMouse(input.MouseEvent{Kind: input.MouseMove, Button: input.MouseLeft, Col: 40, Row: 40})
+	r.HandleMouse(input.MouseEvent{Kind: input.MouseRelease, Button: input.MouseLeft, Col: 40, Row: 40})
+
+	kinds := w.kinds()
+	if len(kinds) != 3 {
+		t.Fatalf("the widget saw %d events, want all 3 of the drag", len(kinds))
+	}
+	if kinds[2] != input.MouseRelease {
+		t.Error("the release outside the area was dropped, so the widget is still dragging")
+	}
+	// Past the edge clamps to the edge, so a drag selects to the end
+	// rather than to a negative column.
+	if got := w.last(); got.Col != 9 || got.Row != 3 {
+		t.Errorf("release at %d,%d, want it clamped to 9,3", got.Col, got.Row)
+	}
+}
+
+// TestRootMousePressOutsideTheAreaIsIgnored checks the other half: with
+// nothing held, a press that missed the tree is not routed into it.
+func TestRootMousePressOutsideTheAreaIsIgnored(t *testing.T) {
+	r := &Root{}
+	w := &mouser{}
+	r.SetWidget(w)
+	r.Layout(Rect{X: 2, Y: 1, Cols: 4, Rows: 2})
+
+	handled, err := r.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft, Col: 0, Row: 0,
+	})
+
+	if err != nil {
+		t.Fatalf("HandleMouse: %v", err)
+	}
+	if handled || len(w.kinds()) != 0 {
+		t.Error("a press outside the tree was routed into it")
+	}
+}
+
+// TestRootWheelDoesNotHoldThePointer checks that a wheel notch, which is
+// a press with no release, does not capture the pointer for ever.
+func TestRootWheelDoesNotHoldThePointer(t *testing.T) {
+	r := &Root{}
+	w := &mouser{}
+	r.SetWidget(w)
+	r.Layout(Rect{Cols: 10, Rows: 4})
+
+	r.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseWheelUp, Col: 1, Row: 1})
+	handled, err := r.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft, Col: 99, Row: 99,
+	})
+
+	if err != nil {
+		t.Fatalf("HandleMouse: %v", err)
+	}
+	if handled {
+		t.Error("a wheel notch held the pointer, so later clicks anywhere reach the widget")
+	}
+}
+
+// TestRootOpeningADialogReleasesThePointer checks that a dialog arriving
+// mid-drag does not leave the pointer held by the widget underneath.
+func TestRootOpeningADialogReleasesThePointer(t *testing.T) {
+	r := &Root{}
+	under := &mouser{}
+	r.SetWidget(under)
+	r.Layout(Rect{Cols: 10, Rows: 4})
+	r.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 1, Row: 1})
+
+	dialog := &mouser{}
+	r.PushModal(dialog)
+	r.HandleMouse(input.MouseEvent{Kind: input.MouseMove, Button: input.MouseLeft, Col: 2, Row: 1})
+
+	if len(under.kinds()) != 1 {
+		t.Errorf("the widget under the dialog saw %d events, want only its press", len(under.kinds()))
+	}
+	if len(dialog.kinds()) != 1 {
+		t.Errorf("the dialog saw %d events, want the move", len(dialog.kinds()))
+	}
+}
+
+// mouser records the mouse events it was given.
+type mouser struct {
+	seen []input.MouseEvent
+}
+
+func (*mouser) Layout(Size)    {}
+func (*mouser) Draw(grid.View) {}
+func (m *mouser) HandleMouse(ev input.MouseEvent) (bool, error) {
+	m.seen = append(m.seen, ev)
+	return true, nil
+}
+
+func (m *mouser) kinds() []input.MouseKind {
+	out := make([]input.MouseKind, len(m.seen))
+	for i, ev := range m.seen {
+		out[i] = ev.Kind
+	}
+	return out
+}
+
+func (m *mouser) last() input.MouseEvent { return m.seen[len(m.seen)-1] }
+
+// cursorWidget is a focused widget that places a cursor, which is what
+// distinguishes clearing the cursor before drawing from after.
+type cursorWidget struct {
+	at grid.Cursor
+}
+
+func (*cursorWidget) Layout(Size) {}
+func (c *cursorWidget) Draw(v grid.View) {
+	v.SetCursor(c.at)
+}
+
+// TestRootDrawKeepsAPlacedCursor checks that a widget's cursor survives
+// the pass. Clearing it after drawing without asking who placed one
+// would wipe it.
+func TestRootDrawKeepsAPlacedCursor(t *testing.T) {
+	r := &Root{}
+	want := grid.Cursor{X: 2, Y: 1, Visible: true}
+	r.SetWidget(&cursorWidget{at: want})
+	r.Layout(Rect{Cols: 6, Rows: 2})
+	g := grid.New(6, 2, fg, bg)
+
+	r.Draw(g.View())
+
+	if got := g.Cursor(); got != want {
+		t.Errorf("cursor = %+v, want the one the widget placed, %+v", got, want)
+	}
+}
+
+// TestRootDrawHidesAnUnclaimedCursor checks the other half: with nobody
+// placing one, last frame's cursor does not linger.
+func TestRootDrawHidesAnUnclaimedCursor(t *testing.T) {
+	r := &Root{}
+	r.SetWidget(&fake{name: "w"})
+	r.Layout(Rect{Cols: 6, Rows: 2})
+	g := grid.New(6, 2, fg, bg)
+	g.SetCursor(grid.Cursor{X: 3, Y: 1, Visible: true})
+
+	r.Draw(g.View())
+
+	if g.Cursor().Visible {
+		t.Error("a cursor from the last frame survived, so an unfocused widget keeps one")
+	}
+}
+
+// TestRootDrawIdleFrameDirtiesNothing checks the property the whole
+// design rests on. Hiding the cursor and letting the widget write it
+// back would change one slot twice and dirty a row every frame, on a
+// terminal nobody is typing into.
+func TestRootDrawIdleFrameDirtiesNothing(t *testing.T) {
+	r := &Root{}
+	r.SetWidget(&cursorWidget{at: grid.Cursor{X: 2, Y: 1, Visible: true}})
+	r.Layout(Rect{Cols: 6, Rows: 2})
+	g := grid.New(6, 2, fg, bg)
+	r.Draw(g.View())
+	g.ClearDirty()
+
+	for i := 0; i < 3; i++ {
+		r.Draw(g.View())
+		if g.AnyDirty() {
+			t.Fatalf("idle frame %d dirtied the grid", i)
+		}
+	}
+}
+
+// TestRootDrawModalSettlesItsOwnCursor checks that a dialog on its own
+// layer gets the same treatment as the tree, rather than its layer's
+// cursor being nobody's job.
+func TestRootDrawModalSettlesItsOwnCursor(t *testing.T) {
+	r := &Root{}
+	g := grid.New(6, 2, fg, bg)
+	g.SetCursor(grid.Cursor{X: 4, Y: 1, Visible: true})
+
+	r.DrawModal(&fake{name: "d"}, g.View())
+
+	if g.Cursor().Visible {
+		t.Error("the dialog's layer kept a cursor nobody placed")
+	}
+
+	want := grid.Cursor{X: 1, Y: 0, Visible: true}
+	r.DrawModal(&cursorWidget{at: want}, g.View())
+
+	if got := g.Cursor(); got != want {
+		t.Errorf("cursor = %+v, want the dialog's own %+v", got, want)
+	}
+}
+
+// TestRootMouseReleaseEndsTheCapture checks the dangerous half of
+// capture. A capture that is never released means the widget under the
+// pointer never sees another press.
+func TestRootMouseReleaseEndsTheCapture(t *testing.T) {
+	r := &Root{}
+	w := &mouser{}
+	r.SetWidget(w)
+	r.Layout(Rect{Cols: 10, Rows: 4})
+
+	r.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 2, Row: 1})
+	r.HandleMouse(input.MouseEvent{Kind: input.MouseRelease, Button: input.MouseLeft, Col: 2, Row: 1})
+
+	if r.held.Holder() != nil {
+		t.Fatal("the release did not end the capture")
+	}
+	// With the capture gone, a press outside is ignored again.
+	handled, err := r.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft, Col: 99, Row: 99,
+	})
+	if err != nil {
+		t.Fatalf("HandleMouse: %v", err)
+	}
+	if handled {
+		t.Error("a press outside was routed, so the capture is stuck")
+	}
+}
+
+// TestRootSecondButtonDoesNotEndADrag checks that tapping another button
+// mid-drag leaves the drag alone. Middle-click paste during a selection
+// does exactly this.
+func TestRootSecondButtonDoesNotEndADrag(t *testing.T) {
+	r := &Root{}
+	w := &mouser{}
+	r.SetWidget(w)
+	r.Layout(Rect{Cols: 10, Rows: 4})
+
+	r.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 2, Row: 1})
+	r.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseMiddle, Col: 3, Row: 1})
+	r.HandleMouse(input.MouseEvent{Kind: input.MouseRelease, Button: input.MouseMiddle, Col: 3, Row: 1})
+	r.HandleMouse(input.MouseEvent{Kind: input.MouseMove, Button: input.MouseLeft, Col: 40, Row: 40})
+
+	if r.held.Holder() == nil {
+		t.Fatal("the other button's release ended the drag")
+	}
+	if got := w.last(); got.Kind != input.MouseMove || got.Col != 9 {
+		t.Errorf("last event = %+v, want the drag still running and clamped to the edge", got)
+	}
+}
+
+// TestRootWheelOutsideTheAreaStillScrolls checks the pixels left over
+// below the last whole row. GridSizeFor floors, so a strip of the window
+// is inside it and outside the grid, and the wheel has to work there.
+func TestRootWheelOutsideTheAreaStillScrolls(t *testing.T) {
+	r := &Root{}
+	w := &mouser{}
+	r.SetWidget(w)
+	r.Layout(Rect{Cols: 10, Rows: 4})
+
+	handled, err := r.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseWheelUp, Col: 5, Row: 9,
+	})
+
+	if err != nil {
+		t.Fatalf("HandleMouse: %v", err)
+	}
+	if !handled || len(w.seen) != 1 {
+		t.Error("a wheel notch in the leftover strip was dropped")
+	}
+	if got := w.last(); got.Row != 3 {
+		t.Errorf("wheel at row %d, want it clamped to the last row", got.Row)
+	}
+}
+
+// TestRootMotionOutsideTheAreaIsStillReported checks the same strip for
+// bare motion, which a program in any-event tracking mode wants.
+func TestRootMotionOutsideTheAreaIsStillReported(t *testing.T) {
+	r := &Root{}
+	w := &mouser{}
+	r.SetWidget(w)
+	r.Layout(Rect{Cols: 10, Rows: 4})
+
+	r.HandleMouse(input.MouseEvent{Kind: input.MouseMove, Col: 5, Row: 9})
+
+	if len(w.seen) != 1 {
+		t.Error("motion in the leftover strip was dropped")
+	}
+}
+
+// TestRootSetWidgetReleasesThePointer checks that swapping the tree does
+// not leave the pointer held by a widget no longer in it.
+func TestRootSetWidgetReleasesThePointer(t *testing.T) {
+	r := &Root{}
+	old := &mouser{}
+	r.SetWidget(old)
+	r.Layout(Rect{Cols: 10, Rows: 4})
+	r.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 1, Row: 1})
+
+	r.SetWidget(&mouser{})
+
+	if r.held.Holder() != nil {
+		t.Error("the replaced widget still holds the pointer")
+	}
+}
+
+// TestMouseCaptureIgnoresASecondPress checks that the first button to
+// take the pointer keeps it, rather than the last one winning.
+func TestMouseCaptureIgnoresASecondPress(t *testing.T) {
+	var c MouseCapture
+	first, second := &mouser{}, &mouser{}
+
+	c.Take(first, input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft})
+	c.Take(second, input.MouseEvent{Kind: input.MousePress, Button: input.MouseRight})
+
+	if c.Holder() != first {
+		t.Error("a second press stole the pointer from the first")
+	}
+	c.Take(second, input.MouseEvent{Kind: input.MouseRelease, Button: input.MouseLeft})
+	if c.Holder() != nil {
+		t.Error("the capturing button's release did not free the pointer")
+	}
+}
+
+// TestMouseCaptureIgnoresAStrayRelease checks a release with no press
+// behind it, which arrives when a button comes up over the window after
+// being pressed somewhere else.
+func TestMouseCaptureIgnoresAStrayRelease(t *testing.T) {
+	var c MouseCapture
+
+	c.Take(&mouser{}, input.MouseEvent{Kind: input.MouseRelease, Button: input.MouseLeft})
+
+	if c.Holder() != nil {
+		t.Error("a stray release captured the pointer")
+	}
+}

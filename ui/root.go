@@ -41,6 +41,9 @@ type Root struct {
 	// modals is the dialog stack, topmost last. A modal takes the keys
 	// the tree would otherwise get.
 	modals []Widget
+
+	// held keeps the pointer for whoever took a press.
+	held MouseCapture
 }
 
 // SetWidget puts a widget in the tree, sizing it to the current area and
@@ -56,6 +59,7 @@ func (r *Root) SetWidget(w Widget) {
 		SetFocus(r.widget, false)
 	}
 	r.widget = w
+	r.held.Release()
 	if w == nil {
 		return
 	}
@@ -88,8 +92,35 @@ func (r *Root) Area() Rect { return r.area }
 // Modals are not drawn here: each is its own layer, so that the tree
 // underneath is not repainted to uncover one.
 func (r *Root) Draw(v grid.View) {
-	if r.widget != nil {
-		r.widget.Draw(r.area.In(v))
+	drawCursorOwner(r.area.In(v), func(area grid.View) {
+		if r.widget != nil {
+			r.widget.Draw(area)
+		}
+	})
+}
+
+// DrawModal paints one dialog from the stack into its own view. Each is
+// its own layer, so a caller draws them itself rather than through Draw,
+// and this is how the cursor gets the same treatment there.
+func (r *Root) DrawModal(m Widget, v grid.View) {
+	if m == nil {
+		return
+	}
+	drawCursorOwner(v, m.Draw)
+}
+
+// drawCursorOwner runs one pass of drawing and settles who holds the
+// cursor.
+//
+// The grid has one cursor and no idea who owns it. Hiding it first and
+// letting the focused widget write it back changes the same slot twice
+// and dirties a row on every idle frame, so it is hidden afterwards, and
+// only when nobody placed one.
+func drawCursorOwner(v grid.View, draw func(grid.View)) {
+	v.ResetCursorClaim()
+	draw(v)
+	if !v.CursorClaimed() {
+		v.SetCursor(grid.Cursor{})
 	}
 }
 
@@ -106,6 +137,7 @@ func (r *Root) PushModal(w Widget) {
 		}
 	}
 	SetFocus(r.top(), false)
+	r.held.Release()
 	r.modals = append(r.modals, w)
 	w.Layout(r.area.Size())
 	SetFocus(w, true)
@@ -119,6 +151,7 @@ func (r *Root) PopModal() Widget {
 	}
 	top := r.modals[len(r.modals)-1]
 	SetFocus(top, false)
+	r.held.Release()
 	r.modals[len(r.modals)-1] = nil
 	r.modals = r.modals[:len(r.modals)-1]
 	SetFocus(r.top(), true)
@@ -136,9 +169,8 @@ func (r *Root) Modal() Widget {
 // Modals returns the dialog stack, bottom first. The slice is a copy, so
 // a caller can draw every layer without the stack shifting underneath.
 //
-// Each modal draws itself into its own layer. A caller placing that
-// layer against the tree's own grid has to apply Area first, the way
-// Draw does for the tree.
+// Each modal draws itself into its own layer, so a caller draws them
+// with DrawModal rather than through Draw.
 func (r *Root) Modals() []Widget {
 	if len(r.modals) == 0 {
 		return nil
@@ -188,6 +220,40 @@ func (r *Root) HandleKey(ev input.Event) (handled bool, err error) {
 		return true, failed
 	}
 	return false, failed
+}
+
+// HandleMouse offers a mouse event to the topmost modal or else the
+// widget tree, translated into that widget's own coordinates.
+//
+// A press outside the area is ignored. Once a widget has taken a press
+// it keeps the pointer until the release, and coordinates are clamped
+// to the area, so dragging past the edge selects to the edge instead of
+// stranding the drag.
+//
+// There are no mouse bindings: a click means whatever is under it, so
+// there is nothing for a keymap to say about it.
+func (r *Root) HandleMouse(ev input.MouseEvent) (bool, error) {
+	target := r.held.Holder()
+	if target == nil {
+		// Only a press that starts something has to land inside. A wheel
+		// notch or a motion report in the pixels left over below the
+		// last whole row still belongs to the tree.
+		starts := ev.Kind == input.MousePress && !ev.Button.IsWheel()
+		if starts && !r.area.Contains(ev.Col, ev.Row) {
+			return false, nil
+		}
+		target = r.top()
+	}
+	if target == nil {
+		return false, nil
+	}
+
+	ev.Col, ev.Row = r.area.Local(ev.Col, ev.Row)
+	ev.Col = min(max(ev.Col, 0), max(r.area.Cols-1, 0))
+	ev.Row = min(max(ev.Row, 0), max(r.area.Rows-1, 0))
+
+	r.held.Take(target, ev)
+	return HandleMouse(target, ev)
 }
 
 // run looks a chord up in one keymap and runs what it finds.

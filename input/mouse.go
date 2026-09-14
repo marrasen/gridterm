@@ -139,6 +139,11 @@ func buttonCode(e MouseEvent) int {
 	return cb
 }
 
-func isWheel(b MouseButton) bool {
+// IsWheel reports whether the button is a wheel notch. A notch arrives
+// as a press with no release, so anything tracking a held button has to
+// leave it out.
+func (b MouseButton) IsWheel() bool {
 	return b == MouseWheelUp || b == MouseWheelDown
 }
+
+func isWheel(b MouseButton) bool { return b.IsWheel() }

@@ -57,7 +57,7 @@ func TestASecondTerminalRidesOnTheSameConnection(t *testing.T) {
 	a.connect(serverConfig(t, s))
 	waitForPanes(t, a, 2)
 
-	host, _ := s.Host()
+	host := serverConfig(t, s).Target()
 	if a.machines[host] == nil {
 		t.Fatalf("the connection was not kept: %v", names(a))
 	}
@@ -83,7 +83,7 @@ func TestRunACommandOnAConnectedMachine(t *testing.T) {
 
 	a.connect(serverConfig(t, s))
 	waitForPanes(t, a, 2)
-	host, _ := s.Host()
+	host := serverConfig(t, s).Target()
 
 	if err := a.openOn(host, []string{"apt-get", "upgrade"}); err != nil {
 		t.Fatalf("run a command: %v", err)
@@ -199,7 +199,7 @@ func TestTheServerRowClosesTheWholeConnection(t *testing.T) {
 
 	a.connect(serverConfig(t, s))
 	waitForPanes(t, a, 2)
-	host, _ := s.Host()
+	host := serverConfig(t, s).Target()
 
 	var server *conns.Entry
 	for _, group := range a.registry.Groups(time.Now()) {
@@ -351,7 +351,7 @@ func TestRunACommandThroughTheDialog(t *testing.T) {
 
 	a.connect(serverConfig(t, s))
 	waitForPanes(t, a, 2)
-	host, _ := s.Host()
+	host := serverConfig(t, s).Target()
 
 	if err := a.openCommandHere(); err != nil {
 		t.Fatalf("openCommandHere: %v", err)
@@ -387,7 +387,7 @@ func TestRunACommandRefusesAnEmptyOne(t *testing.T) {
 
 	a.connect(serverConfig(t, s))
 	waitForPanes(t, a, 2)
-	host, _ := s.Host()
+	host := serverConfig(t, s).Target()
 
 	if err := a.openCommandHere(); err != nil {
 		t.Fatalf("openCommandHere: %v", err)
@@ -449,13 +449,15 @@ func TestCurrentHostFollowsThePanelThenTheFocus(t *testing.T) {
 
 	a.connect(serverConfig(t, s))
 	waitForPanes(t, a, 2)
-	host, _ := s.Host()
+	host := serverConfig(t, s).Target()
 	// The new pane has the keys, so that is the machine being looked at.
 	if got := a.currentHost(); got != host {
 		t.Fatalf("currentHost = %q, want %q", got, host)
 	}
 
-	// Selecting the local shell on the panel moves it back.
+	// The panel's selection only counts while the panel has the keys: it
+	// outlives being looked at, and a row selected minutes ago is not
+	// where the user is.
 	a.refreshPanel(time.Now())
 	for _, row := range a.panel.Rows() {
 		if e, ok := row.Key.(*conns.Entry); ok && e.Host == conns.Local {
@@ -465,8 +467,16 @@ func TestCurrentHostFollowsThePanelThenTheFocus(t *testing.T) {
 			break
 		}
 	}
+	if got := a.currentHost(); got != host {
+		t.Fatalf("currentHost = %q, want the pane with the keys at %q", got, host)
+	}
+
+	// Going to the panel makes its selection the machine being looked at.
+	if err := a.focusPanel(); err != nil {
+		t.Fatalf("focusPanel: %v", err)
+	}
 	if got := a.currentHost(); got != conns.Local {
-		t.Fatalf("currentHost = %q after selecting a local row, want the local machine", got)
+		t.Fatalf("currentHost = %q with the local row selected, want the local machine", got)
 	}
 }
 

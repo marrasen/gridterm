@@ -140,13 +140,14 @@ func main() {
 	a.localHost = conns.Local
 	if *sshTarget != "" {
 		if cfg, err := remote.ParseTarget(*sshTarget); err == nil {
-			a.localHost = cfg.Host
+			a.localHost = cfg.Target()
 		}
 	}
 	a.registry = conns.New()
 	a.rates = make(map[*conns.Entry]*meter.Rate)
 	a.machines = make(map[string]*machine)
 	a.opening = make(map[string]bool)
+	a.paneOn = make(map[*term.Terminal]*machine)
 	a.scrollback = *scroll
 	a.colours = pal
 	a.panes = make(map[*term.Terminal]*conns.Entry)

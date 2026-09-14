@@ -198,8 +198,13 @@ func (a *app) clearFinished() error {
 }
 
 // selectedConnection returns what the panel has selected.
+//
+// Nothing is selected while the panel is hidden. Its rows are only
+// rebuilt while it can be seen, so the selection of a hidden panel is
+// whatever was there when it was last looked at -- possibly a connection
+// that has since been closed and taken off the list.
 func (a *app) selectedConnection() (*conns.Entry, bool) {
-	if a.panel == nil {
+	if a.panel == nil || (a.dock != nil && a.dock.Collapsed) {
 		return nil, false
 	}
 	row, ok := a.panel.Selected()

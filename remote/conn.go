@@ -17,6 +17,7 @@ import (
 	"io"
 	"net"
 	"strconv"
+	"strings"
 	"sync"
 
 	"golang.org/x/crypto/ssh"
@@ -90,6 +91,42 @@ func (c Config) addr() string {
 	return net.JoinHostPort(c.Host, strconv.Itoa(port))
 }
 
+// Target names the machine the way a user would type it, leaving out the
+// parts that are the default.
+//
+// It is what a connection made from a typed target is called, so two
+// accounts on one machine, or two ports, are two names rather than one.
+func (c Config) Target() string {
+	addr := c.Host
+	if c.Port != 0 && c.Port != 22 {
+		addr = net.JoinHostPort(c.Host, strconv.Itoa(c.Port))
+	} else if strings.Contains(addr, ":") {
+		// A bare IPv6 literal needs its brackets or it reads as a host
+		// and a port.
+		addr = "[" + addr + "]"
+	}
+	if c.User == "" {
+		return addr
+	}
+	return c.User + "@" + addr
+}
+
+// SameMachine reports whether two configs name the same login on the
+// same machine.
+//
+// The window keeps one connection per name, and a name that meant a
+// different machine from one moment to the next would put a terminal on
+// whichever was connected to first.
+func (c Config) SameMachine(other Config) bool {
+	port := func(cfg Config) int {
+		if cfg.Port == 0 {
+			return 22
+		}
+		return cfg.Port
+	}
+	return c.Host == other.Host && port(c) == port(other) && c.User == other.User
+}
+
 // Conn is a live connection to one machine.
 type Conn struct {
 	client *ssh.Client
@@ -138,9 +175,23 @@ func (c *Conn) Through(ctx context.Context, cfg Config) (*Conn, error) {
 }
 
 // reach opens a plain connection from the far end of this one.
+//
+// It carries the same deadline a connection made from here does, so a
+// machine the far end cannot get to fails with a message rather than
+// leaving the window waiting for however long the remote takes to give
+// up. Cancelling after this has returned does not touch the connection
+// it hands back.
 func (c *Conn) reach(ctx context.Context, addr string) (net.Conn, error) {
+	ctx, cancel := context.WithTimeout(ctx, dialTimeout)
+	defer cancel()
 	return c.client.DialContext(ctx, "tcp", addr)
 }
+
+// Wait blocks until the connection is gone, and returns why.
+//
+// It is how the window notices a machine that dropped off the network
+// rather than one it closed itself: nothing else here would ever say so.
+func (c *Conn) Wait() error { return c.client.Wait() }
 
 // connect is the body of both: the only difference is how the address is
 // reached and what the result rides on.
@@ -206,8 +257,9 @@ func connect(ctx context.Context, to reach, via *Conn, cfg Config) (*Conn, error
 	if via != nil {
 		c.via = via
 		if err := via.register(c); err != nil {
-			_ = c.Close()
-			return nil, err
+			// Both: the connection is no use, and a failure to close
+			// something just opened is worth saying out loud.
+			return nil, errors.Join(err, c.Close())
 		}
 	}
 	return c, nil

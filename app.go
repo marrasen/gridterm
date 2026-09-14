@@ -84,6 +84,13 @@ type app struct {
 	// would hold the second and close neither.
 	opening map[string]bool
 
+	// paneOn says which connection a pane is running on. Panes are
+	// grouped on the panel by a name, and a name can mean two things at
+	// once -- the machine -ssh put every pane on, and a connection made
+	// from the window -- so closing one connection must find its own
+	// panes rather than everything under that name.
+	paneOn map[*term.Terminal]*machine
+
 	// localHost is the machine a new pane runs on: this one, unless
 	// -ssh named another. Every pane a split or a tab opens goes there,
 	// because that is where newSession puts it.
@@ -339,11 +346,39 @@ func (a *app) onFocused(fn func(*term.Terminal) error) func() error {
 	}
 }
 
+// reporting wraps a command so a failure reaches the user.
+//
+// A command is something the user asked for. One that returns an error
+// nobody shows does nothing at all as far as they can tell, and a window
+// opened from an icon has no console to find the reason in.
+//
+// Safe to open a dialog from: both the menu and the palette close
+// themselves before running a command, so nothing is left above this on
+// the stack to take it away again.
+func (a *app) reporting(cmd ui.Command) ui.Command {
+	run := cmd.Run
+	cmd.Run = func() error {
+		if err := run(); err != nil {
+			a.reportError(cmd.Title, err)
+		}
+		return nil
+	}
+	return cmd
+}
+
+// reportingAll wraps every command in a list.
+func (a *app) reportingAll(cmds []ui.Command) []ui.Command {
+	for i, cmd := range cmds {
+		cmds[i] = a.reporting(cmd)
+	}
+	return cmds
+}
+
 // commands registers everything the window can do and binds the default
 // keys to it. Accelerators are the ones the terminal must not swallow.
 func (a *app) commands() {
 	cmds := ui.NewCommands()
-	cmds.MustRegister(
+	cmds.MustRegister(a.reportingAll([]ui.Command{
 		ui.Command{ID: "font.increase", Title: "Increase font size", Run: func() error {
 			return a.setFontSize(a.fontSize + fontStep)
 		}},
@@ -397,7 +432,7 @@ func (a *app) commands() {
 		ui.Command{ID: "pane.previous", Title: "Previous pane", Run: func() error {
 			return a.focusPane(-1)
 		}},
-	)
+	})...)
 
 	// Ctrl+Shift is the usual escape hatch: Ctrl+C has to stay available
 	// to the program, so copy cannot live there.

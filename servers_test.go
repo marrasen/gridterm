@@ -119,7 +119,7 @@ func TestConnectShowsWhyItFailed(t *testing.T) {
 	cfg.Port = 1
 	a.connect(cfg)
 
-	f := waitForDialog(t, a, "Could not connect to "+cfg.Host)
+	f := waitForDialog(t, a, "Could not connect to "+cfg.Target())
 	if len(f.Lines) == 0 || strings.TrimSpace(strings.Join(f.Lines, "")) == "" {
 		t.Fatal("the failure was reported with no reason in it")
 	}

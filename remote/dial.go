@@ -21,15 +21,6 @@ import (
 // context is what ends that.
 const dialTimeout = 20 * time.Second
 
-// dial connects, retrying once with the host key types that known_hosts
-// actually holds for this address.
-//
-// Without that retry the client and OpenSSH disagree about which host
-// key to use: x/crypto prefers rsa-sha2-256 while OpenSSH prefers
-// ed25519 and reorders its offer towards what the client already knows.
-// A server with both keys then presents the one known_hosts does not
-// record, and knownhosts reports "key mismatch" — the man-in-the-middle
-// alarm — when nothing at all is wrong.
 // reach opens a plain connection to an address.
 //
 // It is what separates a connection made from here from one made through
@@ -43,6 +34,15 @@ func overTCP(ctx context.Context, addr string) (net.Conn, error) {
 	return d.DialContext(ctx, "tcp", addr)
 }
 
+// dial connects, retrying once with the host key types that known_hosts
+// actually holds for this address.
+//
+// Without that retry the client and OpenSSH disagree about which host
+// key to use: x/crypto prefers rsa-sha2-256 while OpenSSH prefers
+// ed25519 and reorders its offer towards what the client already knows.
+// A server with both keys then presents the one known_hosts does not
+// record, and knownhosts reports "key mismatch" — the man-in-the-middle
+// alarm — when nothing at all is wrong.
 func dial(ctx context.Context, to reach, addr, user string, next ssh.ClientAuthCallback,
 	hostKey ssh.HostKeyCallback) (*ssh.Client, error) {
 

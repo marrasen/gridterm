@@ -46,7 +46,7 @@ func (a *app) refreshServers() {
 			Title: "Edit " + h.Name + "…",
 			Run:   func() error { return a.openEditServer(h.Name) },
 		}
-		for _, cmd := range []ui.Command{open, edit} {
+		for _, cmd := range []ui.Command{a.reporting(open), a.reporting(edit)} {
 			if err := a.root.Commands.Register(cmd); err != nil {
 				// Two names that reduce to the same id, or one that
 				// collides with a command already there. Neither is

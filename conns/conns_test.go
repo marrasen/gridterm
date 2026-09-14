@@ -201,6 +201,7 @@ func TestClearingLetsGoOfWhatItDropped(t *testing.T) {
 func TestKindNames(t *testing.T) {
 	want := map[Kind]string{
 		Terminal: "Terminal", Command: "Command", Files: "Files", Tunnel: "Tunnel",
+		Server: "Server",
 	}
 	for kind, name := range want {
 		if got := kind.String(); got != name {

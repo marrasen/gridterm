@@ -105,6 +105,7 @@ func newTestApp(t *testing.T, cols, rows int) *testApp {
 		rates:      make(map[*conns.Entry]*meter.Rate),
 		machines:   make(map[string]*machine),
 		opening:    make(map[string]bool),
+		paneOn:     make(map[*term.Terminal]*machine),
 	}}
 	// The window's own grid, so markDirty and setGridSize do what they do
 	// in the program rather than nothing at all.

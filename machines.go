@@ -7,8 +7,10 @@ import (
 	"strings"
 
 	"github.com/marrasen/gridterm/conns"
+	"github.com/marrasen/gridterm/meter"
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/ui"
+	"github.com/marrasen/gridterm/ui/term"
 )
 
 // machine is one connection to one server.
@@ -18,11 +20,12 @@ import (
 // The window keeps these so the second one costs nothing and so that
 // closing the connection closes everything riding on it.
 type machine struct {
-	name string
-	conn *remote.Conn
+	// at is what the machine was opened as: the name the panel calls it
+	// and the config it was reached with. The config is kept so a second
+	// connection under the same name can be checked against it.
+	at step
 
-	// term is the TERM value shells on this machine are started with.
-	term string
+	conn *remote.Conn
 
 	// entry is the panel row for the connection itself, so a machine
 	// with nothing open on it is still visible and still closeable.
@@ -45,21 +48,68 @@ func hostStep(h remote.Host) step {
 // hold remembers a connection under a name and puts a row on the panel
 // for the machine itself. via names what carries it, or is empty.
 func (a *app) hold(s step, conn *remote.Conn, via string) *machine {
-	m := &machine{name: s.name, conn: conn, term: s.term}
+	m := &machine{at: s, conn: conn}
 	note := "connected"
 	if via != "" {
 		note = "via " + via
 	}
 	m.entry = &conns.Entry{
-		Host:  s.name,
-		Kind:  conns.Server,
-		Label: conn.String(),
-		Note:  note,
-		Close: func() error { return a.dropMachine(s.name) },
+		Host:   s.name,
+		Kind:   conns.Server,
+		Label:  conn.String(),
+		Note:   note,
+		Reveal: func() { a.revealMachine(m) },
+		Close:  func() error { return a.dropMachine(s.name) },
 	}
 	a.machines[s.name] = m
 	a.registry.Add(m.entry)
+
+	// A connection the far end drops is still held here, saying it is
+	// connected, until something notices. Nothing else here would.
+	go func() {
+		_ = conn.Wait()
+		a.pump.post(func() { a.machineDied(m) })
+	}()
 	return m
+}
+
+// revealMachine puts one of a machine's panes in front of the user.
+//
+// A connection with nothing open on it has nothing to show, so nothing
+// happens: there is no window for a connection itself.
+func (a *app) revealMachine(m *machine) {
+	for t, on := range a.paneOn {
+		if on == m {
+			a.focus(t)
+			return
+		}
+	}
+}
+
+// machineDied takes away a machine whose connection has gone on its own.
+//
+// The row stays, greyed and closed, the way a shell that exited leaves
+// its row behind: what a connection did before it dropped is worth
+// reading. The panes on it end by themselves, because their shells stop
+// reading.
+func (a *app) machineDied(m *machine) {
+	if a.machines[m.at.name] != m {
+		// Already closed from the window, and its row with it.
+		return
+	}
+	delete(a.machines, m.at.name)
+
+	dead := meter.New()
+	dead.Close()
+	m.entry.Meter = dead
+	// The state says closed now, and the note said "connected".
+	m.entry.Note = ""
+	m.entry.Reveal = nil
+	m.entry.Close = func() error {
+		a.registry.Drop(m.entry)
+		return nil
+	}
+	a.markDirty()
 }
 
 // dropMachine closes a machine's connection and everything riding on it.
@@ -71,20 +121,20 @@ func (a *app) dropMachine(name string) error {
 	delete(a.machines, name)
 	a.registry.Drop(m.entry)
 
-	var errs []error
-	// A machine reached through this one cannot outlive it, and neither
-	// can what is open on that.
+	// The connection first. It closes everything riding on it in
+	// parallel, each waiting out its own drain period; closing the panes
+	// first would wait out one drain period per pane instead.
+	errs := []error{m.conn.Close()}
+	// A machine reached through this one has been closed with it, but
+	// the window is still holding a record of it.
 	for _, rider := range a.ridingOn(m) {
 		errs = append(errs, a.dropMachine(rider))
 	}
-	// The panes before the connection, so each is taken out of the tree
-	// rather than left showing a shell whose transport has gone.
-	for t, e := range a.panes {
-		if e.Host == name {
+	for t, on := range a.paneOn {
+		if on == m {
 			errs = append(errs, a.closePane(t))
 		}
 	}
-	errs = append(errs, m.conn.Close())
 	return errors.Join(errs...)
 }
 
@@ -104,19 +154,28 @@ func (a *app) ridingOn(m *machine) []string {
 //
 // It runs on the drawing goroutine, which is the only one that may read
 // what the window is holding. The dialling happens elsewhere.
+//
+// The search runs from the far end back, so a machine already connected
+// to is used however it was reached. Walking forwards instead would
+// connect to something already open a second time, and the window would
+// hold the second connection and close neither.
 func (a *app) plan(route []step) (through *machine, missing []step, err error) {
 	if len(route) == 0 {
 		return nil, nil, errors.New("there is no route to that machine")
 	}
-	at := 0
-	for i, s := range route {
-		m := a.machines[s.name]
+	for at := len(route) - 1; at >= 0; at-- {
+		m := a.machines[route[at].name]
 		if m == nil {
-			break
+			continue
 		}
-		through, at = m, i+1
+		if !m.at.cfg.SameMachine(route[at].cfg) {
+			return nil, nil, fmt.Errorf(
+				"%q is already connected to %s, which is not %s; close it first",
+				m.at.name, m.at.cfg.Target(), route[at].cfg.Target())
+		}
+		return m, route[at+1:], nil
 	}
-	return through, route[at:], nil
+	return nil, route, nil
 }
 
 // openRoute connects to whatever of a route is not connected to yet and
@@ -192,14 +251,26 @@ func (a *app) openRoute(name string, route []step, command []string) {
 			for _, s := range missing {
 				delete(a.opening, s.name)
 			}
+			// Read before the context is let go of on the next line,
+			// which would otherwise make every connection look like one
+			// the user gave up on.
+			gaveUp := ctx.Err()
 			cancel()
 			if err != nil {
 				a.reportError("Could not connect to "+name, err)
 				return
 			}
+			// Given up on, or the machine it was reached through closed,
+			// while the last handshake was finishing. Either way what
+			// was opened is no use and nothing else knows about it.
+			if why := a.stillWanted(gaveUp, through); why != nil {
+				a.reportError("Could not connect to "+name,
+					errors.Join(append([]error{why}, closeAll(opened)...)...))
+				return
+			}
 			via := ""
 			if through != nil {
-				via = through.name
+				via = through.at.name
 			}
 			for i, conn := range opened {
 				a.hold(missing[i], conn, via)
@@ -212,11 +283,39 @@ func (a *app) openRoute(name string, route []step, command []string) {
 	}()
 }
 
+// stillWanted says why a connection that has just been made is no use,
+// or nil when it is still the connection that was asked for.
+//
+// gaveUp is what the connection's own context said before it was let go
+// of: the user cancelling the row that was waiting for it.
+func (a *app) stillWanted(gaveUp error, through *machine) error {
+	if gaveUp != nil {
+		return gaveUp
+	}
+	if through != nil && a.machines[through.at.name] != through {
+		return fmt.Errorf("%s closed while this was being connected through it", through.at.name)
+	}
+	return nil
+}
+
+// closeAll shuts a set of connections and returns what went wrong.
+func closeAll(conns []*remote.Conn) []error {
+	errs := make([]error, 0, len(conns))
+	for i := len(conns) - 1; i >= 0; i-- {
+		if err := conns[i].Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errs
+}
+
 // dialRoute opens each machine of a route in turn, each through the one
 // before it, and hands back what it opened.
 //
 // A failure part way closes what it had already opened. Half a route is
-// a set of connections nothing knows about and nothing would ever close.
+// a set of connections nothing knows about and nothing would ever close,
+// so a failure to close one of them is reported alongside the failure
+// that caused it.
 func dialRoute(ctx context.Context, through *remote.Conn, route []step) ([]*remote.Conn, error) {
 	opened := make([]*remote.Conn, 0, len(route))
 	for _, s := range route {
@@ -230,15 +329,12 @@ func dialRoute(ctx context.Context, through *remote.Conn, route []step) ([]*remo
 			conn, err = through.Through(ctx, s.cfg)
 		}
 		if err != nil {
-			for i := len(opened) - 1; i >= 0; i-- {
-				_ = opened[i].Close()
-			}
 			if len(route) > 1 {
 				// Which machine of the route failed, which the caller
 				// cannot work out from the error on its own.
-				return nil, fmt.Errorf("%s: %w", s.name, err)
+				err = fmt.Errorf("%s: %w", s.name, err)
 			}
-			return nil, err
+			return nil, errors.Join(append([]error{err}, closeAll(opened)...)...)
 		}
 		opened = append(opened, conn)
 		through = conn
@@ -256,25 +352,28 @@ func (a *app) startOn(name string, command []string) error {
 		Command: command,
 		Cols:    a.lastSize[0],
 		Rows:    a.lastSize[1],
-		Term:    m.term,
+		Term:    m.at.term,
 	})
 	if err != nil {
 		return err
 	}
-	if err := a.openSessionTab(sh, name, kindOf(command), labelFor(command)); err != nil {
+	t, err := a.openSessionTab(sh, name, kindOf(command), labelFor(command))
+	if err != nil {
 		// The shell is ours and nothing else knows about it.
 		_ = sh.Close()
 		return err
 	}
+	// Which connection the pane rides on, rather than which machine it
+	// is named after: two things can share a name -- the machine -ssh
+	// put every pane on, and a connection made from the window -- and
+	// closing one must not take the other's panes.
+	a.paneOn[t] = m
 	return nil
 }
 
-// openOn puts a terminal or a command on a saved machine, connecting to
-// it first when nothing is connected to it yet.
+// openOn puts a terminal or a command on a machine, connecting to it
+// first when nothing is connected to it yet.
 func (a *app) openOn(name string, command []string) error {
-	if a.machines[name] != nil {
-		return a.startOn(name, command)
-	}
 	route, err := a.route(name)
 	if err != nil {
 		return err
@@ -283,9 +382,15 @@ func (a *app) openOn(name string, command []string) error {
 	return nil
 }
 
-// route returns the machines to connect to in order to reach a saved
-// one: the far end last, and whatever it is reached through before it.
+// route returns the machines to connect to in order to reach one: the
+// far end last, and whatever it is reached through before it.
+//
+// A machine already connected to is a route of one, whether or not it
+// was ever saved: it is reachable, which is what a route is for.
 func (a *app) route(name string) ([]step, error) {
+	if m := a.machines[name]; m != nil {
+		return []step{m.at}, nil
+	}
 	hosts, err := a.book.Route(name)
 	if err != nil {
 		return nil, err
@@ -311,13 +416,24 @@ func labelFor(command []string) string {
 	return strings.Join(command, " ")
 }
 
-// currentHost returns the machine the user is looking at: whatever the
-// panel has selected, or the machine the focused pane runs on.
+// currentHost returns the machine the user is looking at: the one the
+// panel has selected while the panel has the keys, and otherwise the one
+// the focused pane is running on.
+//
+// The panel only counts while it is focused. Its selection outlives
+// being looked at -- it is still there when the panel is hidden -- and a
+// command that opened a terminal on a machine the user chose ten minutes
+// ago would be opening it somewhere they are not looking.
 func (a *app) currentHost() string {
-	if e, ok := a.selectedConnection(); ok {
-		return e.Host
+	if a.panel != nil && a.panel.Focused() {
+		if e, ok := a.selectedConnection(); ok {
+			return e.Host
+		}
 	}
 	if t := a.focusedTerminal(); t != nil {
+		if m := a.paneOn[t]; m != nil {
+			return m.at.name
+		}
 		if e := a.panes[t]; e != nil {
 			return e.Host
 		}
@@ -325,11 +441,11 @@ func (a *app) currentHost() string {
 	return a.localHost
 }
 
-// isHere reports whether the machine the user is looking at is the one
-// gridterm itself is running on, or the one -ssh put every pane on.
-// Neither has a connection of its own to open anything else on.
+// isHere reports whether the machine the user is looking at is one the
+// window has no connection of its own to: this machine, or the one -ssh
+// put every pane on.
 func (a *app) isHere(host string) bool {
-	return host == conns.Local || (a.machines[host] == nil && host == a.localHost)
+	return a.machines[host] == nil && (host == conns.Local || host == a.localHost)
 }
 
 // openTerminalHere opens another terminal on the machine the user is
@@ -374,13 +490,31 @@ func (a *app) openCommandHere() error {
 	return nil
 }
 
+// forgetPane takes a pane off the record of what runs where, for one
+// that has been closed.
+func (a *app) forgetPane(t *term.Terminal) { delete(a.paneOn, t) }
+
 // closeMachines ends every connection the window is holding, for a
 // window that is closing.
 func (a *app) closeMachines() error {
+	// A machine reached through another is closed by that one, so it is
+	// not closed again here: the second close would report the first
+	// one's failure a second time.
+	carried := make(map[*machine]bool, len(a.machines))
+	for _, m := range a.machines {
+		for _, other := range a.machines {
+			if m.conn.Via() == other.conn {
+				carried[m] = true
+			}
+		}
+	}
 	var errs []error
-	for name, m := range a.machines {
-		delete(a.machines, name)
+	for _, m := range a.machines {
+		if carried[m] {
+			continue
+		}
 		errs = append(errs, m.conn.Close())
 	}
+	clear(a.machines)
 	return errors.Join(errs...)
 }

@@ -40,7 +40,11 @@ func (a *app) openServer() error {
 
 // connect opens a connection in the background and puts a terminal on it
 // when it arrives.
-func (a *app) connect(cfg remote.Config) { a.connectAs(cfg.Host, cfg) }
+//
+// The machine is named by what was asked for rather than by the address
+// alone, so two accounts on one machine are two connections rather than
+// one: a terminal opened on the second must not land on the first.
+func (a *app) connect(cfg remote.Config) { a.connectAs(cfg.Target(), cfg) }
 
 // connectAs is connect, with a name for the panel: a saved server is
 // known by the name the user gave it rather than by its address.
@@ -55,20 +59,22 @@ func (a *app) connectAs(name string, cfg remote.Config) {
 }
 
 // openSessionTab puts a session in a tab of its own.
-func (a *app) openSessionTab(sess session.Session, host string, kind conns.Kind, label string) error {
+func (a *app) openSessionTab(sess session.Session, host string, kind conns.Kind,
+	label string) (*term.Terminal, error) {
+
 	t, err := a.newTerminalOn(sess, host, kind, label)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := a.placeTab(t); err != nil {
 		// Nowhere to put it, so nothing is told about it. Closing the
 		// terminal closes the session with it.
 		delete(a.panes, t)
 		_ = t.Close()
-		return err
+		return nil, err
 	}
 	a.showPane(t)
-	return nil
+	return t, nil
 }
 
 // reportError shows something that failed, for a failure that arrived

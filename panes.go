@@ -98,11 +98,34 @@ func (a *app) stripAbove(w ui.Widget) (*ui.Tabs, ui.Widget) {
 	return nil, nil
 }
 
+// paneToPlaceBeside returns the pane a new one goes next to: the focused
+// one when it is a pane, and otherwise whichever pane has the focus
+// inside the rest of the window.
+//
+// The connections panel is a leaf of the tree like a terminal is, so
+// without this a new tab opened while the panel had the keys would build
+// a tab strip around the panel and put the connections list in a tab.
+func (a *app) paneToPlaceBeside() ui.Widget {
+	if w := ui.FocusedLeaf(a.root.Widget()); a.isPane(w) {
+		return w
+	}
+	if a.dock != nil {
+		if w := ui.FocusedLeaf(a.dock.Rest()); a.isPane(w) {
+			return w
+		}
+	}
+	for _, leaf := range ui.Leaves(a.root.Widget()) {
+		if a.isPane(leaf) {
+			return leaf
+		}
+	}
+	return nil
+}
+
 // openTab puts a new shell in the strip holding the focused pane,
 // starting a strip if it is not in one.
 func (a *app) openTab() error {
-	current := ui.FocusedLeaf(a.root.Widget())
-	if current == nil {
+	if a.paneToPlaceBeside() == nil {
 		return errors.New("nothing to open a tab beside")
 	}
 	next, err := a.newTerminal()
@@ -121,7 +144,7 @@ func (a *app) openTab() error {
 // placeTab puts a widget in the strip holding the focused pane, starting
 // a strip if it is not in one.
 func (a *app) placeTab(next ui.Widget) error {
-	current := ui.FocusedLeaf(a.root.Widget())
+	current := a.paneToPlaceBeside()
 	if current == nil {
 		return errors.New("nothing to open a tab beside")
 	}
@@ -176,7 +199,7 @@ func (a *app) newSplit(dir ui.Dir, first, second ui.Widget) *ui.Split {
 
 // splitFocused puts a new shell beside the focused pane.
 func (a *app) splitFocused(dir ui.Dir) error {
-	current := ui.FocusedLeaf(a.root.Widget())
+	current := a.paneToPlaceBeside()
 	if current == nil {
 		return errors.New("nothing to split")
 	}
@@ -258,8 +281,8 @@ func (a *app) removePane(w ui.Widget, keep bool) error {
 		// The tree surgery failed, but the shells are still ours to end.
 		// Leaving them running is worse than a crooked tree.
 	case root == nil:
-		// The last pane. The window goes with it.
-		a.quit.Store(true)
+		// Nothing left in the tree at all, which is what closing the
+		// last pane looks like when there is no panel beside it.
 	default:
 		if root != a.root.Widget() {
 			a.root.SetWidget(root)
@@ -286,9 +309,16 @@ func (a *app) removePane(w ui.Widget, keep bool) error {
 			}
 		}
 		delete(a.panes, t)
+		a.forgetPane(t)
 		if cerr := t.Close(); cerr != nil && err == nil {
 			err = cerr
 		}
+	}
+	// The window goes with the last pane. Counted rather than read off
+	// an empty tree: the connections panel is a leaf too, so the dock
+	// stands in for the pane that went and the tree is never empty.
+	if len(a.panes) == 0 {
+		a.quit.Store(true)
 	}
 	if !detached && err == nil {
 		err = fmt.Errorf("pane was not in the tree")

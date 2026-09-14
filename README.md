@@ -6,7 +6,7 @@ It runs a shell on a local pseudo-terminal — a PTY on Unix, a ConPTY on
 Windows — or on another machine over SSH, feeds the output through a VT
 emulator, and draws the resulting character grid as batched triangles.
 
-17,986 lines of Go, 21,877 lines of tests, 920 tests.
+18,909 lines of Go, 23,431 lines of tests, 964 tests.
 
 ![a shell running in gridterm](docs/shell.png)
 
@@ -134,14 +134,14 @@ encoders and both session types.
 | `grid` | 863 | no | the display grid, damage tracking, selection, wide-character invariants |
 | `input` | 592 | no | key, text, mouse and paste events to VT bytes |
 | `session` | 362 | no | a shell as a byte stream, and the local pty |
-| `remote` | 2,543 | no | SSH: connections, shells, host keys, unlocked keys |
+| `remote` | 2,595 | no | SSH: connections, shells, host keys, unlocked keys |
 | `conns` | 221 | no | what the window has open, grouped by machine |
 | `meter` | 206 | no | bytes moved, and how long ago: the four states |
 | `ui` | 5,025 | no | the widget toolkit: panes, tabs, menus, dialogs, fields, lists |
 | `ui/term` | 529 | no | a shell on a widget |
 | `glyph` | 1,289 | yes | glyph atlas, system font fallback, box drawing |
 | `render` | 1,149 | yes | grid to batched triangles |
-| `main` | 3,346 | yes | the window and the wiring |
+| `main` | 3,557 | yes | the window and the wiring |
 
 The layering is deliberate: `vt` never imports the renderer, `input`
 never imports ebiten (that lives in `input/ebitenin`), `ui` knows nothing

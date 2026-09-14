@@ -45,6 +45,11 @@ const (
 // required; a nil entry borrows the nearest style that is present.
 type Fonts struct {
 	Regular, Bold, Italic, BoldItalic []byte
+
+	// Index picks which font inside a collection file each style is.
+	// Zero for an ordinary font file, which holds one font. A family
+	// whose four styles share one .ttc, as macOS ships them, needs it.
+	Index [numStyles]int
 }
 
 // Glyph records where a rasterised glyph lives and how to place its quad
@@ -364,8 +369,17 @@ func buildFaces(fonts Fonts, sizePt, dpi float64) ([numStyles]font.Face, error) 
 		return faces, fmt.Errorf("no regular font")
 	}
 
-	mkFace := func(b []byte) (font.Face, error) {
-		f, err := sfnt.Parse(b)
+	// ParseCollection rather than Parse: it reads a single font too, so
+	// one path covers both an ordinary file and a collection.
+	mkFace := func(b []byte, index int) (font.Face, error) {
+		coll, err := sfnt.ParseCollection(b)
+		if err != nil {
+			return nil, fmt.Errorf("parse font: %w", err)
+		}
+		if index < 0 || index >= coll.NumFonts() {
+			return nil, fmt.Errorf("font %d of a file holding %d", index, coll.NumFonts())
+		}
+		f, err := coll.Font(index)
 		if err != nil {
 			return nil, fmt.Errorf("parse font: %w", err)
 		}
@@ -391,7 +405,7 @@ func buildFaces(fonts Fonts, sizePt, dpi float64) ([numStyles]font.Face, error) 
 			continue
 		}
 		var err error
-		if faces[s], err = mkFace(srcs[s]); err != nil {
+		if faces[s], err = mkFace(srcs[s], fonts.Index[s]); err != nil {
 			return faces, err
 		}
 	}

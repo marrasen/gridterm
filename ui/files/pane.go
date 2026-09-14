@@ -59,12 +59,17 @@ type Style struct {
 	// SelectedFG and SelectedBG mark the row the keys act on.
 	SelectedFG, SelectedBG color.RGBA
 
-	// HeaderFG is the line at the top saying where the pane is.
+	// HeaderFG is the line at the top naming the machine, and PathFG the
+	// one under it saying which directory is being shown.
 	HeaderFG color.RGBA
+	PathFG   color.RGBA
 
 	// DirFG is a directory, LinkFG a symbolic link, and MarkedFG a name
 	// the user has picked out.
 	DirFG, LinkFG, MarkedFG color.RGBA
+
+	// ClipFG is a name waiting to be pasted somewhere.
+	ClipFG color.RGBA
 
 	// NoteFG is the size or the time at the end of a row.
 	NoteFG color.RGBA
@@ -115,6 +120,13 @@ type Pane struct {
 	// directory. Moving to another directory forgets them: they were
 	// about what was in front of them.
 	marked map[string]bool
+
+	// clipped are the names waiting to be pasted, and clippedAt the
+	// directory they were picked out in. The pane may be somewhere else
+	// by now, and a name means nothing outside the directory it was
+	// read in.
+	clipped   map[string]bool
+	clippedAt string
 
 	// land is the name to put the bar on once the listing arrives, for
 	// coming back up out of a directory. The rows are not there yet when
@@ -293,18 +305,24 @@ func (p *Pane) rows() {
 // row is one name as a line.
 func (p *Pane) row(e vfs.Entry) ui.ListRow {
 	name := e.Name
-	if p.marked[e.Name] {
+	switch {
+	case p.marked[e.Name]:
 		// A mark is a character in front of the name rather than a
 		// colour alone: a pane on a screen nobody can see the colours of
 		// still has to say what is picked out.
 		name = "*" + name
-	} else {
+	case p.isClipped(e.Name):
+		// And one waiting to be pasted says so the same way.
+		name = "·" + name
+	default:
 		name = " " + name
 	}
 	row := ui.ListRow{Text: name, Key: e.Name, Note: p.note(e)}
 	switch {
 	case p.marked[e.Name]:
 		row.FG = p.Style.MarkedFG
+	case p.isClipped(e.Name):
+		row.FG = p.Style.ClipFG
 	case e.IsLink():
 		row.FG = p.Style.LinkFG
 	case e.IsDir():
@@ -387,6 +405,26 @@ func (p *Pane) Marked() []string {
 	return nil
 }
 
+// SetClipped says which names in a directory are waiting to be pasted,
+// so the pane can show them as spoken for.
+//
+// The directory comes with them: the pane may have moved on, and the
+// same name in another directory is another file.
+func (p *Pane) SetClipped(at string, names []string) {
+	p.clipped = make(map[string]bool, len(names))
+	p.clippedAt = at
+	for _, name := range names {
+		p.clipped[name] = true
+	}
+	p.rows()
+}
+
+// isClipped reports whether a name in the directory being shown is
+// waiting to be pasted.
+func (p *Pane) isClipped(name string) bool {
+	return p.clippedAt != "" && p.clippedAt == p.at && p.clipped[name]
+}
+
 // Mark picks a name out, or stops picking it out.
 func (p *Pane) Mark(name string, on bool) {
 	if on {
@@ -448,12 +486,13 @@ func (p *Pane) Layout(size ui.Size) {
 	p.list.Layout(ui.Size{Cols: size.Cols, Rows: max(size.Rows-p.head(), 0)})
 }
 
-// head is how many rows the pane uses above the listing.
+// head is how many rows the pane uses above the listing: the machine,
+// the directory, and the reason the last read failed when there is one.
 func (p *Pane) head() int {
 	if p.err != nil {
-		return 2
+		return 3
 	}
-	return 1
+	return 2
 }
 
 // Draw paints the pane.
@@ -468,18 +507,24 @@ func (p *Pane) Draw(v grid.View) {
 	if p.Busy() {
 		where += " …"
 	}
-	// The end of the path rather than the start: which directory this is
-	// matters more than which disk it is on, and there is never room for
-	// both.
+	// The machine above the directory: a pane says nothing about which
+	// machine it is on otherwise, and with several panes open that is
+	// the first thing to know about one.
 	//
 	// Written once, padded, rather than filled and written over: a cell
 	// written twice in one frame is a cell that changed, and a window
 	// that redraws a browser nobody is touching is what the whole
 	// display is built to avoid.
-	line(v, 0, cols, trimLeft(where, cols), p.Style.HeaderFG, p.Style.BG)
+	line(v, 0, cols, trimTail(p.fs.Name(), cols), p.Style.HeaderFG, p.Style.BG, grid.AttrBold)
 
-	if p.err != nil && rows > 1 {
-		line(v, 1, cols, trimLeft(p.err.Error(), cols), p.Style.ErrorFG, p.Style.BG)
+	// The end of the path rather than the start: which directory this is
+	// matters more than which disk it is on, and there is never room for
+	// both.
+	if rows > 1 {
+		line(v, 1, cols, trimLeft(where, cols), p.Style.PathFG, p.Style.BG, 0)
+	}
+	if p.err != nil && rows > 2 {
+		line(v, 2, cols, trimLeft(p.err.Error(), cols), p.Style.ErrorFG, p.Style.BG, 0)
 	}
 	if rows > p.head() {
 		// The list fills what is under the head, and keeps its own copy
@@ -490,11 +535,33 @@ func (p *Pane) Draw(v grid.View) {
 
 // line writes one row and pads it, so every cell in the row is written
 // exactly once.
-func line(v grid.View, y, cols int, text string, fg, bg color.RGBA) {
-	at := v.SetString(0, y, text, fg, bg, 0)
+func line(v grid.View, y, cols int, text string, fg, bg color.RGBA, attr grid.Attr) {
+	at := v.SetString(0, y, text, fg, bg, attr)
 	for x := at; x < cols; x++ {
 		v.Set(x, y, grid.Cell{Rune: ' ', FG: fg, BG: bg, Width: 1})
 	}
+}
+
+// trimTail cuts a string to a width, keeping the start: a machine is
+// known by the front of its name.
+func trimTail(s string, cols int) string {
+	if cols <= 0 {
+		return ""
+	}
+	if grid.StringWidth(s) <= cols {
+		return s
+	}
+	var out []rune
+	at := 0
+	for _, r := range s {
+		w := grid.StringWidth(string(r))
+		if at+w+1 > cols {
+			break
+		}
+		out = append(out, r)
+		at += w
+	}
+	return string(out) + "…"
 }
 
 // trimLeft keeps the end of a string when it is too long, because that

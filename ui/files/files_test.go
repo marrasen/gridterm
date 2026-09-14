@@ -308,8 +308,12 @@ func TestPaneDraws(t *testing.T) {
 
 	p := alone(t, dir)
 	lines := drawn(p, 40, 8)
-	if !strings.HasSuffix(lines[0], vfs.Base(p.FS(), dir)) {
-		t.Errorf("the first line is %q, want where it is", lines[0])
+	// The machine on top, then the directory under it.
+	if !strings.HasPrefix(lines[0], p.FS().Name()) {
+		t.Errorf("the first line is %q, want the machine", lines[0])
+	}
+	if !strings.HasSuffix(strings.TrimRight(lines[1], " "), vfs.Base(p.FS(), dir)) {
+		t.Errorf("the second line is %q, want where it is", lines[1])
 	}
 	whole := strings.Join(lines, "\n")
 	for _, want := range []string{up, "sub", "one.txt", "dir", "5 B"} {
@@ -375,22 +379,36 @@ func TestBrowserAsksForWork(t *testing.T) {
 
 	press(t, b, input.KeyDown)
 	press(t, b, input.KeySpace)
-	press(t, b, input.KeyF5)
 
-	if what != "copy" {
-		t.Fatalf("F5 asked for %q", what)
+	// Copy picks the name out and asks for nothing yet: where it goes is
+	// decided by where the user is when they paste.
+	press(t, b, input.KeyF5)
+	if what != "" {
+		t.Fatalf("copy asked for %q before anything was pasted", what)
 	}
-	if asked.From.At() != left || asked.To.At() != right {
-		t.Fatalf("it copies from %q to %q", asked.From.At(), asked.To.At())
+	press(t, b, input.KeyTab)
+	press(t, b, input.KeyF7)
+	if what != "copy" {
+		t.Fatalf("paste asked for %q", what)
+	}
+	if asked.At != left || asked.To.At() != right {
+		t.Fatalf("it copies from %q to %q", asked.At, asked.To.At())
 	}
 	if len(asked.Names) != 1 || asked.Names[0] != "one.txt" {
 		t.Fatalf("it copies %v", asked.Names)
 	}
 
+	// Cut is the same, and a move when it lands.
+	press(t, b, input.KeyTab)
+	press(t, b, input.KeyDown)
 	press(t, b, input.KeyF6)
+	press(t, b, input.KeyTab)
+	press(t, b, input.KeyF7)
 	if what != "move" || asked.To == nil {
-		t.Fatalf("F6 asked for %q with To=%v", what, asked.To)
+		t.Fatalf("pasting a cut asked for %q with To=%v", what, asked.To)
 	}
+
+	press(t, b, input.KeyTab)
 	press(t, b, input.KeyF8)
 	if what != "delete" {
 		t.Fatalf("F8 asked for %q", what)
@@ -411,8 +429,13 @@ func TestBrowserAsksForNothingWhenNothingIsPickedOut(t *testing.T) {
 	b.OnCopy = func(Work) { asked = true }
 	// The bar is on the way up, which is not a name to copy.
 	press(t, b, input.KeyF5)
+	press(t, b, input.KeyTab)
+	press(t, b, input.KeyF7)
 	if asked {
 		t.Fatal("it asked to copy the way up")
+	}
+	if !b.Clip().Empty() {
+		t.Fatalf("the way up went on the clipboard: %v", b.Clip().Names)
 	}
 }
 
@@ -424,12 +447,12 @@ func TestBrowserMkdirIsAboutThePane(t *testing.T) {
 	got := false
 	b.OnMkdir = func(w Work) { asked, got = w, true }
 
-	press(t, b, input.KeyF7)
+	press(t, b, input.KeyF9)
 	if !got {
-		t.Fatal("F7 asked for nothing")
+		t.Fatal("F9 asked for nothing")
 	}
-	if asked.From.At() != left {
-		t.Fatalf("it would make one in %q", asked.From.At())
+	if asked.At != left {
+		t.Fatalf("it would make one in %q", asked.At)
 	}
 	if len(asked.Names) != 0 {
 		t.Errorf("it named %v", asked.Names)
@@ -592,7 +615,11 @@ func TestBrowserLeavesKeysItDoesNothingWith(t *testing.T) {
 	b.Here().Reload()
 	press(t, b, input.KeyDown)
 
-	for _, key := range []input.Key{input.KeyF2, input.KeyF5, input.KeyF6, input.KeyF7, input.KeyF8} {
+	// Copy and cut are left out: they fill the browser's own clipboard,
+	// so they do something whether or not anything is wired behind them.
+	for _, key := range []input.Key{
+		input.KeyF2, input.KeyF7, input.KeyF8, input.KeyF9, input.KeyF10,
+	} {
 		took, err := b.HandleKey(input.Event{Kind: input.KeyPress, Key: key})
 		if err != nil {
 			t.Fatalf("key: %v", err)
@@ -678,7 +705,10 @@ func TestBrowserSaysWhatTheKeysDo(t *testing.T) {
 	rows := drawBrowser(b, 80, 12)
 
 	bar := rows[len(rows)-1]
-	for _, want := range []string{"Tab", "Next", "2", "Rename", "5", "Copy", "6", "Move", "7", "Mkdir", "8", "Delete"} {
+	for _, want := range []string{
+		"Tab", "Next", "2", "Rename", "5", "Copy", "6", "Cut",
+		"7", "Paste", "8", "Delete", "9", "Mkdir", "10", "Close",
+	} {
 		if !strings.Contains(bar, want) {
 			t.Errorf("the bar reads %q, missing %q", bar, want)
 		}
@@ -718,22 +748,39 @@ func TestClickingTheBarRunsTheKey(t *testing.T) {
 	b.OnCopy = func(w Work) { asked = append(asked, w) }
 	b.Layout(ui.Size{Cols: 60, Rows: 12})
 
-	// The third of six keys is Copy, so its cell starts a third of the
-	// way along.
-	took, err := b.HandleMouse(input.MouseEvent{
-		Kind: input.MousePress, Button: input.MouseLeft, Row: 11, Col: 60*2/6 + 1,
-	})
-	if err != nil {
-		t.Fatalf("the click failed: %v", err)
+	// Copy, then the next pane, then paste: three clicks on the bar, the
+	// same three keys.
+	clickKey := func(k input.Key) {
+		t.Helper()
+		i := -1
+		for at, key := range b.keys {
+			if key.Key == k {
+				i = at
+			}
+		}
+		if i < 0 {
+			t.Fatalf("%v is not on the bar", k)
+		}
+		start, _ := keyCell(i, 60, len(b.keys))
+		took, err := b.HandleMouse(input.MouseEvent{
+			Kind: input.MousePress, Button: input.MouseLeft, Row: 11, Col: start,
+		})
+		if err != nil {
+			t.Fatalf("the click failed: %v", err)
+		}
+		if !took {
+			t.Fatal("the click on the bar travelled on")
+		}
 	}
-	if !took {
-		t.Fatal("the click on the bar travelled on")
-	}
+	clickKey(input.KeyF5)
+	clickKey(input.KeyTab)
+	clickKey(input.KeyF7)
+
 	if len(asked) != 1 {
 		t.Fatalf("the bar asked for %d copies", len(asked))
 	}
-	if asked[0].From.At() != left || asked[0].To.At() != right {
-		t.Fatalf("the copy goes from %q to %q", asked[0].From.At(), asked[0].To.At())
+	if asked[0].At != left || asked[0].To.At() != right {
+		t.Fatalf("the copy goes from %q to %q", asked[0].At, asked[0].To.At())
 	}
 }
 
@@ -940,13 +987,14 @@ func TestACopyGoesToTheNextPane(t *testing.T) {
 		b.Here().Mark("one.txt", true)
 		press(t, b, input.KeyF5)
 		press(t, b, input.KeyTab)
+		press(t, b, input.KeyF7)
 	}
 	if len(asked) != len(dirs) {
 		t.Fatalf("%d copies asked for, want one per pane", len(asked))
 	}
 	for i, w := range asked {
-		if w.From.At() != dirs[i] {
-			t.Errorf("copy %d comes from %q, want %q", i, w.From.At(), dirs[i])
+		if w.At != dirs[i] {
+			t.Errorf("copy %d comes from %q, want %q", i, w.At, dirs[i])
 		}
 		if want := dirs[(i+1)%len(dirs)]; w.To.At() != want {
 			t.Errorf("copy %d goes to %q, want %q", i, w.To.At(), want)
@@ -954,40 +1002,36 @@ func TestACopyGoesToTheNextPane(t *testing.T) {
 	}
 }
 
-// One pane has nowhere to send anything, so the keys that copy and move
-// do nothing and say so on the bar.
-func TestOnePaneHasNowhereToCopyTo(t *testing.T) {
+// One pane has nowhere else to go, so Tab does nothing. Copying still
+// works: the names go on the clipboard, and a pane opened later is
+// somewhere to paste them.
+func TestOnePaneHasNowhereToTabTo(t *testing.T) {
 	b, _ := many(t, 1)
 	write(t, b.Here().At(), "one.txt", "one")
 	b.Here().Reload()
 	press(t, b, input.KeyDown)
 	b.Here().Mark("one.txt", true)
 
-	var asked int
-	b.OnCopy = func(Work) { asked++ }
-	took, err := b.HandleKey(input.Event{Kind: input.KeyPress, Key: input.KeyF5})
-	if err != nil {
-		t.Fatalf("F5: %v", err)
-	}
-	if took {
-		t.Error("the one pane swallowed the copy key")
-	}
-	if asked != 0 {
-		t.Fatal("a copy was asked for with nowhere to put it")
-	}
-	if b.wired(input.KeyF5) {
-		t.Error("the bar offers a copy with one pane open")
-	}
-	b.OnMove = func(Work) {}
-	if b.wired(input.KeyF6) {
-		t.Error("the bar offers a move with one pane open")
-	}
-	if took, _ := b.HandleKey(input.Event{Kind: input.KeyPress, Key: input.KeyF6}); took {
-		t.Error("the one pane swallowed the move key")
-	}
-	// And Tab is not taken either: there is nowhere to go.
 	if took, _ := b.HandleKey(input.Event{Kind: input.KeyPress, Key: input.KeyTab}); took {
 		t.Error("the one pane swallowed Tab")
+	}
+	if b.wired(input.KeyTab) {
+		t.Error("the bar offers the next pane with one pane open")
+	}
+
+	var asked int
+	b.OnCopy = func(Work) { asked++ }
+	press(t, b, input.KeyF5)
+	if b.Clip().Empty() {
+		t.Fatal("copy put nothing on the clipboard")
+	}
+	if asked != 0 {
+		t.Fatal("a copy was asked for before anything was pasted")
+	}
+	// And into the same pane, which is what "duplicate here" is.
+	press(t, b, input.KeyF7)
+	if asked != 1 {
+		t.Fatalf("pasting asked for %d copies", asked)
 	}
 }
 
@@ -1315,5 +1359,232 @@ func TestAddRefusesAPaneTwice(t *testing.T) {
 	// And one it has never seen goes in.
 	if !b.Add(here(t, t.TempDir())) {
 		t.Fatal("Add refused a new pane")
+	}
+}
+
+// A copy stays on the clipboard, so it can be pasted into one pane
+// after another.
+func TestACopyCanBePastedSeveralTimes(t *testing.T) {
+	b, dirs := many(t, 3)
+	write(t, dirs[0], "one.txt", "one")
+	b.Here().Reload()
+	press(t, b, input.KeyDown)
+
+	var to []string
+	b.OnCopy = func(w Work) { to = append(to, w.To.At()) }
+	b.OnMove = func(Work) { t.Error("a copy asked for a move") }
+
+	press(t, b, input.KeyF5)
+	for i := 1; i < 3; i++ {
+		press(t, b, input.KeyTab)
+		press(t, b, input.KeyF7)
+	}
+	if len(to) != 2 || to[0] != dirs[1] || to[1] != dirs[2] {
+		t.Fatalf("it pasted into %v, want %v and %v", to, dirs[1], dirs[2])
+	}
+	if b.Clip().Empty() {
+		t.Fatal("the copy came off the clipboard after being pasted")
+	}
+}
+
+// A cut can be pasted once. After that the names are somewhere else, so
+// there is nothing left to paste.
+func TestACutIsPastedOnce(t *testing.T) {
+	b, dirs := many(t, 3)
+	write(t, dirs[0], "one.txt", "one")
+	b.Here().Reload()
+	press(t, b, input.KeyDown)
+
+	var moves int
+	b.OnMove = func(Work) { moves++ }
+	b.OnCopy = func(Work) { t.Error("a cut asked for a copy") }
+
+	press(t, b, input.KeyF6)
+	if b.Clip().Empty() || !b.Clip().Cut {
+		t.Fatal("cut put nothing on the clipboard")
+	}
+	press(t, b, input.KeyTab)
+	press(t, b, input.KeyF7)
+	if moves != 1 {
+		t.Fatalf("pasting a cut asked for %d moves", moves)
+	}
+	if !b.Clip().Empty() {
+		t.Fatal("the cut is still on the clipboard after being pasted")
+	}
+	press(t, b, input.KeyTab)
+	if took, _ := b.HandleKey(input.Event{Kind: input.KeyPress, Key: input.KeyF7}); took {
+		t.Error("pasting with an empty clipboard was taken")
+	}
+	if moves != 1 {
+		t.Fatalf("the cut was pasted %d times", moves)
+	}
+}
+
+// Paste is shown without being offered while there is nothing to paste.
+func TestPasteIsNotOfferedWithAnEmptyClipboard(t *testing.T) {
+	b, dirs := many(t, 2)
+	b.OnCopy = func(Work) {}
+	if b.wired(input.KeyF7) {
+		t.Fatal("the bar offers paste with nothing on the clipboard")
+	}
+	write(t, dirs[0], "one.txt", "one")
+	b.Here().Reload()
+	press(t, b, input.KeyDown)
+	press(t, b, input.KeyF5)
+	if !b.wired(input.KeyF7) {
+		t.Fatal("the bar does not offer paste with something on the clipboard")
+	}
+}
+
+// The names waiting to be pasted are marked in the pane they came from,
+// and only while that pane is still showing that directory.
+func TestTheClipboardIsShownInThePaneItCameFrom(t *testing.T) {
+	b, dirs := many(t, 2)
+	write(t, dirs[0], "one.txt", "one")
+	write(t, dirs[0], "sub/two.txt", "two")
+	b.Here().Reload()
+
+	press(t, b, input.KeyDown) // past ".."
+	press(t, b, input.KeyDown) // onto one.txt
+	on, _ := b.Here().Selected()
+	if on.Name != "one.txt" {
+		t.Fatalf("the bar is on %q", on.Name)
+	}
+	press(t, b, input.KeyF5)
+
+	from := b.Panes()[0]
+	if !from.isClipped("one.txt") {
+		t.Fatal("the name it came from is not marked")
+	}
+	if b.Panes()[1].isClipped("one.txt") {
+		t.Fatal("a pane the copy did not come from marks the name")
+	}
+	// And it is drawn as marked, not only recorded.
+	g := grid.New(90, 12, color.RGBA{}, color.RGBA{})
+	b.Layout(ui.Size{Cols: 90, Rows: 12})
+	b.Draw(g.View())
+	var found bool
+	for y := 0; y < 11; y++ {
+		if strings.Contains(rowText(g, y, 40), "·one.txt") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("the name waiting to be pasted is not marked on screen")
+	}
+
+	// The pane moves on, and the mark goes with the directory it was
+	// about. The clipboard keeps the names: they are still there to
+	// paste.
+	from.Open(dirs[0] + string(from.FS().Sep()) + "sub")
+	if from.isClipped("one.txt") {
+		t.Fatal("the mark followed the pane to another directory")
+	}
+	if b.Clip().Empty() {
+		t.Fatal("moving the pane emptied the clipboard")
+	}
+}
+
+// A copy is pasted from the directory it was taken in, whatever the pane
+// is showing by the time it lands.
+func TestAPasteComesFromWhereItWasCopied(t *testing.T) {
+	b, dirs := many(t, 2)
+	write(t, dirs[0], "one.txt", "one")
+	write(t, dirs[0], "sub/two.txt", "two")
+	b.Here().Reload()
+	press(t, b, input.KeyDown)
+	press(t, b, input.KeyDown)
+
+	var asked Work
+	b.OnCopy = func(w Work) { asked = w }
+	press(t, b, input.KeyF5)
+
+	// The pane it came from is used to look somewhere else.
+	b.Panes()[0].Open(dirs[0] + string(b.Panes()[0].FS().Sep()) + "sub")
+	press(t, b, input.KeyTab)
+	press(t, b, input.KeyF7)
+
+	if asked.At != dirs[0] {
+		t.Fatalf("the copy comes from %q, want %q", asked.At, dirs[0])
+	}
+	if len(asked.Names) != 1 || asked.Names[0] != "one.txt" {
+		t.Fatalf("it copies %v", asked.Names)
+	}
+}
+
+// Taking away the pane a copy came from takes the copy with it: there is
+// nowhere left to read the names from.
+func TestClosingThePaneAClipCameFromEmptiesIt(t *testing.T) {
+	b, dirs := many(t, 2)
+	write(t, dirs[0], "one.txt", "one")
+	b.Here().Reload()
+	press(t, b, input.KeyDown)
+	press(t, b, input.KeyF5)
+	if b.Clip().Empty() {
+		t.Fatal("copy put nothing on the clipboard")
+	}
+
+	if _, ok := b.Remove(b.Panes()[0]); !ok {
+		t.Fatal("Remove refused")
+	}
+	if !b.Clip().Empty() {
+		t.Fatal("the clipboard outlived the pane it came from")
+	}
+}
+
+// Shift+Tab walks the panes the other way, so a browser with five of
+// them is one the user can get back through.
+func TestShiftTabGoesBackAPane(t *testing.T) {
+	b, dirs := many(t, 4)
+	for i := len(dirs) - 1; i >= 0; i-- {
+		if got := b.Here().At(); got != dirs[(i+1)%len(dirs)] {
+			t.Fatalf("step %d is in %q", i, got)
+		}
+		if _, err := b.HandleKey(input.Event{
+			Kind: input.KeyPress, Key: input.KeyTab, Mods: input.ModShift,
+		}); err != nil {
+			t.Fatalf("shift+tab: %v", err)
+		}
+	}
+	if got := b.Here().At(); got != dirs[0] {
+		t.Fatalf("back round to %q, want %q", got, dirs[0])
+	}
+}
+
+// The bar says how to close a pane, and the key says which one.
+func TestTheBarClosesAPane(t *testing.T) {
+	b, dirs := many(t, 3)
+	if b.wired(input.KeyF10) {
+		t.Fatal("the bar offers to close a pane with nothing wired to it")
+	}
+
+	var closed []*Pane
+	b.OnClose = func(p *Pane) { closed = append(closed, p) }
+	if !b.wired(input.KeyF10) {
+		t.Fatal("the bar does not offer to close a pane")
+	}
+	press(t, b, input.KeyTab)
+	press(t, b, input.KeyF10)
+	if len(closed) != 1 || closed[0].At() != dirs[1] {
+		t.Fatalf("it asked to close %v, want the pane with the keys", closed)
+	}
+	// The browser does not take it out itself: the tree it sits in owns
+	// that, and it may have to let go of a filesystem on the way.
+	if len(b.Panes()) != 3 {
+		t.Fatalf("the browser took the pane out itself: %d left", len(b.Panes()))
+	}
+}
+
+// The bar puts a blank between a key and what it does, so "Tab" and
+// "Next" do not run into one another.
+func TestTheBarSpacesTheKeyFromItsName(t *testing.T) {
+	b, _ := many(t, 2)
+	b.Style = styled()
+	rows := drawBrowser(b, 100, 12)
+	bar := rows[11]
+	for _, want := range []string{"Tab Next", "2 Rename", "5 Copy", "7 Paste", "10 Close"} {
+		if !strings.Contains(bar, want) {
+			t.Errorf("the bar reads %q, want %q in it", bar, want)
+		}
 	}
 }

@@ -143,13 +143,18 @@ func (a *app) paneStyle() files.Style {
 		// as the same thing.
 		SelectedFG: a.colours.BG,
 		SelectedBG: a.colours.FG,
-		// Where the pane is, in the colour a machine's name has on the
-		// panel.
+		// The machine, in the colour its name has on the sidebar, and
+		// the directory under it dimmer: which directory this is changes
+		// as the user moves, and which machine does not.
 		HeaderFG: a.colours.ANSI[6],
+		PathFG:   a.colours.FG,
 		DirFG:    a.colours.ANSI[4],
 		LinkFG:   a.colours.ANSI[6],
 		MarkedFG: a.colours.ANSI[3],
-		NoteFG:   a.colours.ANSI[8],
+		// Waiting to be pasted, which is not the same as picked out: one
+		// is what the next key acts on, the other what the last one did.
+		ClipFG: a.colours.ANSI[5],
+		NoteFG: a.colours.ANSI[8],
 		// Red, because a line saying why something failed has to read as
 		// a failure before it is read as words.
 		ErrorFG: a.colours.ANSI[1],
@@ -163,6 +168,18 @@ func (a *app) wireBrowser(b *browser) {
 	b.view.OnDelete = func(w files.Work) { a.confirmDelete(w) }
 	b.view.OnMkdir = func(w files.Work) { a.askForDirectory(w) }
 	b.view.OnRename = func(w files.Work) { a.askToRename(w) }
+	// A browser cannot take its own pane out of the tree it sits in, so
+	// it says which one and the window does the rest.
+	b.view.OnClose = func(p *files.Pane) {
+		// Not from here: this runs from a key the browser is handling,
+		// and taking the pane out of the tree underneath it would pull
+		// the ground from under the rest of that key.
+		a.pump.post(func() {
+			if err := a.closePane(p); err != nil {
+				a.reportError("Could not close the pane", err)
+			}
+		})
+	}
 }
 
 // browserRow is one pane of the file manager on the sidebar.
@@ -196,7 +213,7 @@ func (a *app) startJob(kind jobs.Kind, w files.Work) {
 		return
 	}
 	op := jobs.Op{
-		Kind: kind, From: w.From.FS(), At: w.From.At(), Names: w.Names,
+		Kind: kind, From: w.From.FS(), At: w.At, Names: w.Names,
 	}
 	if w.To != nil {
 		op.To, op.Into = w.To.FS(), w.To.At()
@@ -308,7 +325,7 @@ func (a *app) confirmDelete(w files.Work) {
 		what = fmt.Sprintf("%d things", len(w.Names))
 	}
 	f := a.newConfirm("Delete "+what+"?", wrapLines(
-		"They go from "+w.From.FS().Name()+", at "+w.From.At()+
+		"They go from "+w.From.FS().Name()+", at "+w.At+
 			". There is nothing that puts them back.", errorLineWidth))
 	f.AddButton(ui.Button{Title: "Delete", Do: func() error {
 		// Not from here: this dialog closes as soon as this returns, and
@@ -325,7 +342,7 @@ func (a *app) confirmDelete(w files.Work) {
 // askForDirectory asks what to call a new directory and makes it.
 func (a *app) askForDirectory(w files.Work) {
 	f := a.newForm("New directory in " + w.From.FS().Name())
-	f.Lines = wrapLines("It is made in "+w.From.At()+".", errorLineWidth)
+	f.Lines = wrapLines("It is made in "+w.At+".", errorLineWidth)
 	name := f.AddField("Name", a.newField("what to call it", 0))
 	f.AddButton(ui.Button{Title: "Make it", Do: func() error {
 		at := strings.TrimSpace(name.Text())

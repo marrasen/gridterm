@@ -23,10 +23,31 @@ type Work struct {
 	// and making a directory.
 	From, To *Pane
 
-	// Names are what was picked out, each a name in the From pane's
-	// directory.
+	// At is the directory the names are in. It is where the From pane
+	// was when they were picked out, which is not always where it is
+	// now: names copied from one directory can be pasted after the pane
+	// has moved on to another.
+	At string
+
+	// Names are what was picked out, each a name in At.
 	Names []string
 }
+
+// Clipboard is what is waiting to be pasted: which names, where they
+// are, and whether pasting moves them or copies them.
+type Clipboard struct {
+	From  *Pane
+	At    string
+	Names []string
+
+	// Cut says the names are to be moved rather than copied. A cut can
+	// be pasted once, because after that the names are somewhere else; a
+	// copy can be pasted as often as the user likes.
+	Cut bool
+}
+
+// Empty reports whether there is nothing to paste.
+func (c Clipboard) Empty() bool { return c.From == nil || len(c.Names) == 0 }
 
 // divider is the rule between two panes.
 const divider = '│'
@@ -46,6 +67,11 @@ type Browser struct {
 	// something typed, which a widget does not do.
 	OnMkdir, OnRename func(Work)
 
+	// OnClose is asked to take a pane away. A browser cannot remove its
+	// own pane from the tree it sits in, so it says which one and leaves
+	// the rest to whatever built it.
+	OnClose func(*Pane)
+
 	// Style colours the dividers between the panes and the bar of keys
 	// along the bottom. It is the panes' own style, so both belong to
 	// what is around them.
@@ -62,6 +88,7 @@ type Browser struct {
 	hasFocus bool
 	keys     []fkey
 	size     ui.Size
+	clip     Clipboard
 }
 
 // NewBrowser puts panes side by side, with the keys on the first.
@@ -127,6 +154,11 @@ func (b *Browser) Remove(w ui.Widget) (ui.Widget, bool) {
 	if i < 0 {
 		return nil, false
 	}
+	if b.clip.From == p {
+		// Its directory is going with it, so there is nothing left to
+		// paste from.
+		b.setClip(Clipboard{})
+	}
 	had := b.active == p
 	if had && b.hasFocus {
 		p.SetFocus(false)
@@ -185,10 +217,79 @@ func (b *Browser) Next() {
 	}
 }
 
+// Prev moves the keys to the pane before this one, wrapping at the
+// start.
+func (b *Browser) Prev() {
+	if len(b.panes) < 2 {
+		return
+	}
+	at := b.indexOf(b.active)
+	b.Focus(b.panes[(at+len(b.panes)-1)%len(b.panes)])
+}
+
+// Clip is what is waiting to be pasted.
+func (b *Browser) Clip() Clipboard { return b.clip }
+
+// setClip records what is waiting to be pasted and shows it in the pane
+// the names are in.
+func (b *Browser) setClip(c Clipboard) {
+	b.clip = c
+	for _, p := range b.panes {
+		if p == c.From {
+			p.SetClipped(c.At, c.Names)
+			continue
+		}
+		p.SetClipped("", nil)
+	}
+}
+
+// pick puts what the user has marked on the clipboard, to be pasted
+// wherever they go next.
+func (b *Browser) pick(cut bool) (bool, error) {
+	here := b.Here()
+	if here == nil {
+		return false, nil
+	}
+	names := here.Marked()
+	if len(names) == 0 {
+		return false, nil
+	}
+	b.setClip(Clipboard{From: here, At: here.At(), Names: names, Cut: cut})
+	return true, nil
+}
+
+// paste asks for the names on the clipboard to be put in the pane with
+// the keys.
+//
+// The directory they came from is the one they were picked out in, not
+// wherever that pane is now: a copy can be pasted into several places,
+// and the pane it came from may have been used to look elsewhere in
+// between.
+func (b *Browser) paste() (bool, error) {
+	to := b.Here()
+	if to == nil || b.clip.Empty() {
+		return false, nil
+	}
+	do := b.OnCopy
+	if b.clip.Cut {
+		do = b.OnMove
+	}
+	if do == nil {
+		return false, nil
+	}
+	do(Work{From: b.clip.From, At: b.clip.At, To: to, Names: b.clip.Names})
+	if b.clip.Cut {
+		// They are somewhere else now, so there is nothing left to paste
+		// again.
+		b.setClip(Clipboard{})
+	}
+	return true, nil
+}
+
 // work is what the pane with the keys has picked out. one asks for the
 // name under the bar alone, for something that can only be done to one
 // thing at a time.
-func (b *Browser) work(both, one bool) (Work, bool) {
+func (b *Browser) work(one bool) (Work, bool) {
 	here := b.Here()
 	if here == nil {
 		return Work{}, false
@@ -204,14 +305,7 @@ func (b *Browser) work(both, one bool) (Work, bool) {
 	if len(names) == 0 {
 		return Work{}, false
 	}
-	w := Work{From: here, Names: names}
-	if both {
-		if w.To = b.There(); w.To == nil {
-			// One pane has nowhere to send anything.
-			return Work{}, false
-		}
-	}
-	return w, true
+	return Work{From: here, At: here.At(), Names: names}, true
 }
 
 // paneCell returns the columns one pane is drawn in.
@@ -288,13 +382,19 @@ func (b *Browser) wired(k input.Key) bool {
 	case input.KeyF2:
 		return b.OnRename != nil
 	case input.KeyF5:
-		return b.OnCopy != nil && len(b.panes) > 1
+		return b.OnCopy != nil && b.Here() != nil
 	case input.KeyF6:
-		return b.OnMove != nil && len(b.panes) > 1
+		return b.OnMove != nil && b.Here() != nil
 	case input.KeyF7:
-		return b.OnMkdir != nil
+		// Nothing picked out is nothing to paste, so the bar says so
+		// rather than offering a key that does nothing.
+		return !b.clip.Empty() && (b.OnCopy != nil || b.OnMove != nil)
 	case input.KeyF8:
 		return b.OnDelete != nil
+	case input.KeyF9:
+		return b.OnMkdir != nil
+	case input.KeyF10:
+		return b.OnClose != nil
 	}
 	return false
 }
@@ -405,7 +505,14 @@ func (b *Browser) ChildArea(w ui.Widget) (ui.Rect, bool) {
 // The keys are the ones a two-pane browser has had for thirty years: a
 // user who knows one of these knows this one.
 func (b *Browser) HandleKey(ev input.Event) (bool, error) {
-	if (ev.Kind != input.KeyPress && ev.Kind != input.KeyRepeat) || ev.Mods != 0 {
+	if ev.Kind != input.KeyPress && ev.Kind != input.KeyRepeat {
+		return b.toPane(ev)
+	}
+	if ev.Key == input.KeyTab && ev.Mods == input.ModShift && len(b.panes) > 1 {
+		b.Prev()
+		return true, nil
+	}
+	if ev.Mods != 0 {
 		return b.toPane(ev)
 	}
 	if took, err := b.press(ev.Key); took || err != nil {
@@ -434,23 +541,31 @@ func (b *Browser) press(key input.Key) (bool, error) {
 		b.Next()
 		return true, nil
 	case input.KeyF5:
-		return b.ask(b.OnCopy, true, false)
+		return b.pick(false)
 	case input.KeyF6:
-		return b.ask(b.OnMove, true, false)
+		return b.pick(true)
 	case input.KeyF7:
+		return b.paste()
+	case input.KeyF8, input.KeyDelete:
+		return b.ask(b.OnDelete, false)
+	case input.KeyF9:
 		// Making a directory acts on the pane rather than on what is
 		// picked out in it.
 		if b.OnMkdir == nil || b.Here() == nil {
 			return false, nil
 		}
-		b.OnMkdir(Work{From: b.Here()})
+		b.OnMkdir(Work{From: b.Here(), At: b.Here().At()})
 		return true, nil
-	case input.KeyF8, input.KeyDelete:
-		return b.ask(b.OnDelete, false, false)
+	case input.KeyF10:
+		if b.OnClose == nil || b.Here() == nil {
+			return false, nil
+		}
+		b.OnClose(b.Here())
+		return true, nil
 	case input.KeyF2:
 		// One name: renaming asks what to call it, and there is one
 		// answer to that question.
-		return b.ask(b.OnRename, false, true)
+		return b.ask(b.OnRename, true)
 	}
 	return false, nil
 }
@@ -461,11 +576,11 @@ func (b *Browser) press(key input.Key) (bool, error) {
 // A key nothing is wired to, or one with nothing to act on, is not
 // taken: a widget that swallows a key it does nothing with swallows
 // whatever that key is bound to everywhere else.
-func (b *Browser) ask(to func(Work), both, one bool) (bool, error) {
+func (b *Browser) ask(to func(Work), one bool) (bool, error) {
 	if to == nil {
 		return false, nil
 	}
-	w, ok := b.work(both, one)
+	w, ok := b.work(one)
 	if !ok {
 		return false, nil
 	}

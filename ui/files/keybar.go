@@ -23,9 +23,11 @@ func browserKeys() []fkey {
 		{input.KeyTab, "Tab", "Next"},
 		{input.KeyF2, "2", "Rename"},
 		{input.KeyF5, "5", "Copy"},
-		{input.KeyF6, "6", "Move"},
-		{input.KeyF7, "7", "Mkdir"},
+		{input.KeyF6, "6", "Cut"},
+		{input.KeyF7, "7", "Paste"},
 		{input.KeyF8, "8", "Delete"},
+		{input.KeyF9, "9", "Mkdir"},
+		{input.KeyF10, "10", "Close"},
 	}
 }
 
@@ -79,14 +81,16 @@ func drawKeys(v grid.View, y, cols int, keys []fkey, st Style, wired func(input.
 			at++
 		}
 		// Then what it does, marked out, so the bar reads as a row of
-		// keys rather than a sentence.
+		// keys rather than a sentence. A blank column in front of the
+		// word, inside the marked-out part, so the key and its name do
+		// not run into one another.
 		fg, bg := st.SelectedFG, st.SelectedBG
 		if wired != nil && !wired(k.Key) {
 			// Nothing is wired to it here, so it is shown without being
 			// offered.
 			fg, bg = st.NoteFG, st.BG
 		}
-		title := trimTitle(k.Title, end-at)
+		title := trimTitle(" "+k.Title, end-at)
 		at = v.SetString(at, y, title, fg, bg, 0)
 		for ; at < end; at++ {
 			v.Set(at, y, grid.Cell{Rune: ' ', FG: fg, BG: bg, Width: 1})

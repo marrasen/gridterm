@@ -140,7 +140,11 @@ func TestCopyingBetweenPanes(t *testing.T) {
 
 	// Down onto the file, then copy.
 	tap(t, b.view, input.KeyDown)
+	// Copy picks the names out; pasting in the next pane is what starts
+	// the job.
 	tap(t, b.view, input.KeyF5)
+	tap(t, b.view, input.KeyTab)
+	tap(t, b.view, input.KeyF7)
 
 	if len(a.jobs) != 1 {
 		t.Fatalf("the window holds %d jobs, want the copy", len(a.jobs))
@@ -172,7 +176,11 @@ func TestCopyingAsksBeforeReplacing(t *testing.T) {
 	waitFor(t, a, "the listing", func() bool { return !leftPane.Busy() })
 
 	tap(t, b.view, input.KeyDown)
+	// Copy picks the names out; pasting in the next pane is what starts
+	// the job.
 	tap(t, b.view, input.KeyF5)
+	tap(t, b.view, input.KeyTab)
+	tap(t, b.view, input.KeyF7)
 
 	f := waitForDialogPrefix(t, a, "Replace")
 	if !strings.Contains(strings.Join(f.Lines, " "), "file") {
@@ -207,7 +215,11 @@ func TestAQuestionThatIsDismissedStopsTheJob(t *testing.T) {
 	waitFor(t, a, "the listing", func() bool { return !leftPane.Busy() })
 
 	tap(t, b.view, input.KeyDown)
+	// Copy picks the names out; pasting in the next pane is what starts
+	// the job.
 	tap(t, b.view, input.KeyF5)
+	tap(t, b.view, input.KeyTab)
+	tap(t, b.view, input.KeyF7)
 	f := waitForDialogPrefix(t, a, "Replace")
 
 	// Escape, which is how a dialog goes away without an answer.
@@ -344,7 +356,7 @@ func TestMakingADirectory(t *testing.T) {
 	withDialogs(t, a)
 
 	b, left, _ := onlyBrowser(t, a)
-	tap(t, b.view, input.KeyF7)
+	tap(t, b.view, input.KeyF9)
 	f := waitForDialogPrefix(t, a, "New directory")
 
 	f.Fields()[0].SetText("in/out")

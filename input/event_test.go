@@ -237,3 +237,18 @@ func TestApplicationCursorModeDoesNotAffectOtherKeys(t *testing.T) {
 		t.Fatalf("F5 in app-cursor mode = %q, want \"\\x1b[15~\"", got)
 	}
 }
+
+// TestEveryKeyHasAName checks that no key between KeyA and the last one
+// is nameless. Callers find keys by walking until String returns "Key?",
+// so a nameless key inserted in the middle would silently hide every key
+// after it, and settings files naming those keys would stop parsing.
+func TestEveryKeyHasAName(t *testing.T) {
+	for k := KeyA; k <= KeyF12; k++ {
+		if got := k.String(); got == "Key?" {
+			t.Errorf("key %d has no name, hiding every key after it", k)
+		}
+	}
+	if got := Key(KeyF12 + 1).String(); got != "Key?" {
+		t.Errorf("the key past the last one is named %q, so the walk never stops", got)
+	}
+}

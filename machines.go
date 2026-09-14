@@ -135,6 +135,14 @@ func (a *app) machineDied(m *machine) {
 
 // dropMachine closes a machine's connection and everything riding on it.
 func (a *app) dropMachine(name string) error {
+	if cancel := a.opening[name]; cancel != nil {
+		// Still on its way. Cancelling closes the connection under the
+		// handshake, wherever it is waiting -- including on a browser
+		// window the user has thought better of -- and the goroutine
+		// that was dialling takes the row away.
+		cancel()
+		return nil
+	}
 	m := a.machines[name]
 	if m == nil {
 		return nil
@@ -234,7 +242,7 @@ func (a *app) openRoute(name string, route []step, command []string, at *spot) {
 	for _, s := range missing {
 		// Two connections to one machine at once would leave the window
 		// holding the second and closing neither.
-		if a.opening[s.name] {
+		if a.opening[s.name] != nil {
 			a.reportError("Could not connect to "+name,
 				fmt.Errorf("gridterm is already connecting to %s", s.name))
 			return
@@ -262,6 +270,10 @@ func (a *app) openRoute(name string, route []step, command []string, at *spot) {
 		Kind:  kindOf(command),
 		Label: "connecting",
 		Note:  "opening",
+		// There is no pane to go to yet, so clicking the row says what
+		// it is waiting for. Doing nothing at all reads as a window
+		// that has stopped listening.
+		Reveal: func() { a.sayWaitingFor(name) },
 		Close: func() error {
 			cancel()
 			return nil
@@ -270,8 +282,12 @@ func (a *app) openRoute(name string, route []step, command []string, at *spot) {
 	a.registry.Add(waiting)
 	a.connecting++
 	for _, s := range missing {
-		a.opening[s.name] = true
+		a.opening[s.name] = cancel
 	}
+	// And under the name the row goes by, which is the end of the route
+	// rather than the step being dialled: it is the name the user sees
+	// and the one they will ask to close.
+	a.opening[name] = cancel
 
 	var carrier *remote.Conn
 	if through != nil {
@@ -285,6 +301,7 @@ func (a *app) openRoute(name string, route []step, command []string, at *spot) {
 			for _, s := range missing {
 				delete(a.opening, s.name)
 			}
+			delete(a.opening, name)
 			// Read before the context is let go of on the next line,
 			// which would otherwise make every connection look like one
 			// the user gave up on.
@@ -499,7 +516,23 @@ func (a *app) disconnectHere() error {
 	if a.isHere(host) {
 		return errors.New("this is the machine gridterm is running on, not one it connected to")
 	}
+	if a.machines[host] == nil && a.opening[host] == nil {
+		// Said rather than done quietly. A command that reports success
+		// and changes nothing is how a connection that would not close
+		// looked like a window that had stopped listening.
+		return fmt.Errorf("nothing is connected to %s", host)
+	}
 	return a.dropMachine(host)
+}
+
+// cancelConnecting gives up on a connection that is still being made.
+func (a *app) cancelConnecting(host string) error {
+	cancel := a.opening[host]
+	if cancel == nil {
+		return fmt.Errorf("gridterm is not connecting to %s", host)
+	}
+	cancel()
+	return nil
 }
 
 // openTerminalHere opens another terminal on the machine the user is
@@ -571,4 +604,32 @@ func (a *app) closeMachines() error {
 	}
 	clear(a.machines)
 	return errors.Join(errs...)
+}
+
+// isSaved reports whether the server list holds a machine by this name.
+func (a *app) isSaved(name string) bool {
+	_, ok := a.book.Lookup(name)
+	return ok
+}
+
+// sayWaitingFor tells the user what a connection still being made is
+// waiting for.
+//
+// There is no pane to go to yet, so this is what clicking its row does.
+// Saying nothing reads as a window that has stopped listening, which is
+// exactly what a connection waiting on a browser window looks like.
+func (a *app) sayWaitingFor(name string) {
+	lines := []string{
+		"gridterm is still opening this connection.",
+		"",
+		"Some servers sign people in through a browser and wait for that" +
+			" to finish. If one asked you to open a link, the connection" +
+			" carries on by itself once you have.",
+	}
+	f := a.newConfirm("Connecting to "+name, lines)
+	f.AddButton(ui.Button{Title: "Keep waiting"})
+	f.AddButton(ui.Button{Title: "Give up", Do: func() error {
+		return a.cancelConnecting(name)
+	}})
+	a.showForm(f, nil)
 }

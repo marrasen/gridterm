@@ -220,7 +220,7 @@ func TestConnectSavedStartsWithTheMachineInTheWay(t *testing.T) {
 	}
 	// Both machines on the route are being connected to, under the one
 	// row that stands for the far end.
-	if !a.opening["edge"] || !a.opening["db"] {
+	if a.opening["edge"] == nil || a.opening["db"] == nil {
 		t.Fatalf("the route being made is %v, want both machines", a.opening)
 	}
 	waiting := waitForConnecting(t, a)

@@ -8,10 +8,10 @@ import (
 
 // Ask is how a connection reaches the user for a secret or a decision.
 //
-// Every method blocks until the user answers or ctx is cancelled. They
-// are called from the goroutine that is connecting, never from the one
-// drawing, so an implementation has to hand the question to the window
-// and wait for the reply.
+// Every method but Notice blocks until the user answers or ctx is
+// cancelled. They are called from the goroutine that is connecting,
+// never from the one drawing, so an implementation has to hand the
+// question to the window and wait for the reply.
 //
 // Returning an error stops the connection, and the error is what the
 // caller is told. That is what cancelling a dialog means: the user said
@@ -31,6 +31,36 @@ type Ask interface {
 	// TrustHostKey asks whether to connect to a host that is not in
 	// known_hosts. Answering yes records the key.
 	TrustHostKey(ctx context.Context, key HostKey) (bool, error)
+
+	// Notice is something a server said rather than asked: a link to
+	// open, most often, which is how a server that signs people in
+	// through a browser tells them where to go. The handshake goes on
+	// waiting while they do it, and finishes on its own once they have.
+	//
+	// It must return as soon as the message is on its way to the user.
+	// Nothing is waiting for an answer, and a client that sat on this
+	// would hold up the very handshake the user is being asked to
+	// unblock.
+	//
+	// The message stops being worth showing when ctx is done, which is
+	// when the connection has been made, has failed, or was given up
+	// on.
+	Notice(ctx context.Context, n Notice)
+}
+
+// Notice is something a server told the user during authentication.
+//
+// User and Host are ours. Everything else is the server's own wording
+// and is not to be trusted, for the same reason a Question's is not: a
+// message the user cannot tell from the window's own could send them
+// somewhere of the server's choosing.
+type Notice struct {
+	// User and Host name the connection the message came from.
+	User, Host string
+
+	// Name and Instruction are the server's own wording, and may be
+	// empty. Text is the message of a banner, which has neither.
+	Name, Instruction, Text string
 }
 
 // Question is what a server asked for during keyboard-interactive

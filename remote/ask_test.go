@@ -29,11 +29,12 @@ type testAsk struct {
 	// while a dialog is open.
 	held chan struct{}
 
-	// What was asked.
+	// What was asked, and what was said without asking.
 	keyfiles  []string
 	passwords int
 	questions []Question
 	hostKeys  []HostKey
+	notices   []Notice
 }
 
 func newTestAsk() *testAsk { return &testAsk{password: sshtest.Password, trust: true} }
@@ -78,6 +79,21 @@ func (a *testAsk) TrustHostKey(ctx context.Context, key HostKey) (bool, error) {
 
 // asked returns what the window was asked for, for a test that cares
 // about how often rather than what.
+// Notice records what a server said and returns at once, the way a real
+// one must: nothing is waiting on it, and the handshake is.
+func (a *testAsk) Notice(ctx context.Context, n Notice) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.notices = append(a.notices, n)
+}
+
+// told returns what servers have said without asking.
+func (a *testAsk) told() []Notice {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return append([]Notice(nil), a.notices...)
+}
+
 func (a *testAsk) asked() (keyfiles []string, passwords int, hostKeys []HostKey) {
 	a.mu.Lock()
 	defer a.mu.Unlock()

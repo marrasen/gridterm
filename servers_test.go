@@ -379,6 +379,7 @@ func (f *fixedAsk) Question(context.Context, remote.Question) ([]string, error) 
 func (f *fixedAsk) TrustHostKey(context.Context, remote.HostKey) (bool, error) {
 	return false, nil
 }
+func (f *fixedAsk) Notice(context.Context, remote.Notice) {}
 
 // The path a user actually takes: the command, the form, the keys.
 //

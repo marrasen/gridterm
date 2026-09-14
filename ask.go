@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/ui"
@@ -215,4 +216,51 @@ func (u *askUser) ask(ctx context.Context, build func(reply func([]string, error
 		})
 		return nil, ctx.Err()
 	}
+}
+
+// Notice shows what a server said and returns at once.
+//
+// A server that signs people in through a browser sends the link this
+// way: it says where to go, holds the handshake open, and lets it
+// through once the user has been. So nothing here waits for an answer.
+// Waiting would hold up the very handshake the user is being asked to
+// unblock.
+//
+// The dialog goes when the connection does, whichever way that turns
+// out: made, failed, or given up on.
+func (u *askUser) Notice(ctx context.Context, n remote.Notice) {
+	// Ours first and always. Everything under it is the server's own
+	// wording, and a message the user cannot tell from the window's own
+	// could send them somewhere of the server's choosing.
+	lines := []string{n.User + "@" + n.Host + " says:"}
+	for _, line := range []string{n.Name, n.Instruction, n.Text} {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		lines = append(lines, "", line)
+	}
+	lines = append(lines, "", "gridterm is waiting for the server. It carries on by itself once you are done.")
+
+	host := n.Host
+	var dismiss func()
+	u.app.pump.post(func() {
+		f := u.app.newConfirm("The server is waiting", lines)
+		f.AddButton(ui.Button{Title: "Leave it waiting"})
+		f.AddButton(ui.Button{Title: "Give up", Do: func() error {
+			return u.app.cancelConnecting(host)
+		}})
+		dismiss = u.app.showForm(f, nil)
+	})
+
+	// Taken down when the connection is settled, on the goroutine that
+	// draws. Nothing waits here: the handshake has to go back to the
+	// server before the user can get anywhere.
+	go func() {
+		<-ctx.Done()
+		u.app.pump.post(func() {
+			if dismiss != nil {
+				dismiss()
+			}
+		})
+	}()
 }

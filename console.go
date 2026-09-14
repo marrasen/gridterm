@@ -108,3 +108,17 @@ func promptLine(prompt string) (string, error) {
 	}
 	return strings.TrimRight(line, "\r\n"), nil
 }
+
+// Notice prints what a server said, which for a server that signs
+// people in through a browser is where to go and do it.
+//
+// Printed through plainly, like everything else the server wrote: this
+// goes to a real terminal that obeys escape sequences.
+func (consoleAsk) Notice(_ context.Context, n remote.Notice) {
+	fmt.Fprintf(console, "%s@%s says:\n", n.User, n.Host)
+	for _, line := range []string{n.Name, n.Instruction, n.Text} {
+		if strings.TrimSpace(line) != "" {
+			fmt.Fprintln(console, plainly(line))
+		}
+	}
+}

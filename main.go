@@ -147,7 +147,7 @@ func main() {
 	a.registry = conns.New()
 	a.rates = make(map[*conns.Entry]*meter.Rate)
 	a.machines = make(map[string]*machine)
-	a.opening = make(map[string]bool)
+	a.opening = make(map[string]context.CancelFunc)
 	a.paneOn = make(map[*term.Terminal]*machine)
 	a.tunnels = make(map[*conns.Entry]*tunnel)
 	a.queue = jobs.New(0)

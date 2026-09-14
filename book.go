@@ -316,3 +316,27 @@ func viaHint(options []string) string {
 	}
 	return "Through: ctrl+down and ctrl+up step through " + strings.Join(named, ", ") + "."
 }
+
+// editThisServer opens the dialog for the machine whose row was
+// clicked, rather than for one picked from a list.
+func (a *app) editThisServer() error {
+	host := a.currentHost()
+	if !a.isSaved(host) {
+		return fmt.Errorf("%s is not in the server list", groupName(host))
+	}
+	return a.openEditServer(host)
+}
+
+// forgetThisServer takes the machine whose row was clicked out of the
+// server list, once the user has said so.
+//
+// Asked from here rather than done: a server is a few minutes of typing
+// and the list is the only record of it.
+func (a *app) forgetThisServer() error {
+	host := a.currentHost()
+	if !a.isSaved(host) {
+		return fmt.Errorf("%s is not in the server list", groupName(host))
+	}
+	a.confirmRemoveServer(host)
+	return nil
+}

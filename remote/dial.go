@@ -44,7 +44,7 @@ func overTCP(ctx context.Context, addr string) (net.Conn, error) {
 // record, and knownhosts reports "key mismatch" — the man-in-the-middle
 // alarm — when nothing at all is wrong.
 func dial(ctx context.Context, to reach, addr, user string, next ssh.ClientAuthCallback,
-	hostKey ssh.HostKeyCallback) (*ssh.Client, error) {
+	hostKey ssh.HostKeyCallback, banner ssh.BannerCallback) (*ssh.Client, error) {
 
 	// AuthCallback rather than Auth: x/crypto's own selection
 	// deduplicates by method name, so of several public-key methods only
@@ -54,6 +54,7 @@ func dial(ctx context.Context, to reach, addr, user string, next ssh.ClientAuthC
 		User:            user,
 		AuthCallback:    next,
 		HostKeyCallback: hostKey,
+		BannerCallback:  banner,
 		Timeout:         dialTimeout,
 	}
 	client, err := dialOnce(ctx, to, addr, base)

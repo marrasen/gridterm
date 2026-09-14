@@ -119,3 +119,7 @@ func (a *cancelAsk) TrustHostKey(ctx context.Context, key HostKey) (bool, error)
 	}
 	return ok, nil
 }
+
+// Notice passes a server's message straight through. Nothing is waiting
+// on it, so there is no answer that could stop the connection.
+func (a *cancelAsk) Notice(ctx context.Context, n Notice) { a.ask.Notice(ctx, n) }

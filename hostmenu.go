@@ -28,7 +28,7 @@ func (a *app) openHostMenu(row ui.ListRow) error {
 	// below.
 	var hide func()
 	menu := ui.NewMenu(a.root.Commands, a.root.Accelerators,
-		hostItems(a.isHere(string(host))), func() {
+		hostItems(a.isHere(string(host)), a.isSaved(string(host))), func() {
 			if hide != nil {
 				hide()
 			}
@@ -69,14 +69,18 @@ func (a *app) openHostMenu(row ui.ListRow) error {
 // A machine gridterm has no connection of its own to gets the short
 // list: a terminal there is one more pane, and there is nothing to
 // tunnel or to close.
-func hostItems(here bool) []ui.MenuItem {
+//
+// A machine the server list holds can also be edited and forgotten.
+// This is where they belong: the row is the machine, so the plus on it
+// is where everything about that machine is.
+func hostItems(here, saved bool) []ui.MenuItem {
 	if here {
 		return []ui.MenuItem{
 			{Command: "tab.open", Title: "Terminal"},
 			{Command: "conn.files", Title: "Files"},
 		}
 	}
-	return []ui.MenuItem{
+	items := []ui.MenuItem{
 		{Command: "conn.terminal", Title: "Terminal"},
 		{Command: "conn.files", Title: "Files"},
 		{Command: "conn.command", Title: "Command…"},
@@ -88,6 +92,12 @@ func hostItems(here bool) []ui.MenuItem {
 		// selected, which is not the machine whose row was clicked.
 		{Command: "conn.disconnect", Title: "Close the connection"},
 	}
+	if saved {
+		items = append(items, ui.MenuSeparator(),
+			ui.MenuItem{Command: "server.editThis", Title: "Edit this server…"},
+			ui.MenuItem{Command: "server.forget", Title: "Forget this server…"})
+	}
+	return items
 }
 
 // rowAnchor is where a menu opened from a panel row points.

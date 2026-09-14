@@ -9,6 +9,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
@@ -160,8 +161,18 @@ func authMethods(ctx context.Context, cfg Config) (*auth, error) {
 func keyboardInteractive(ctx context.Context, cfg Config) ssh.KeyboardInteractiveChallenge {
 	return func(name, instruction string, prompts []string, echo []bool) ([]string, error) {
 		if len(prompts) == 0 {
-			// The server is telling the user something rather than
-			// asking, so there is nothing to answer.
+			// Nothing to answer: the server is telling the user
+			// something. It is how a server that signs people in
+			// through a browser sends them the link, so the message is
+			// shown and the empty answer goes back at once. The server
+			// then holds the handshake open until the user has been
+			// through it.
+			cfg.Ask.Notice(ctx, Notice{
+				User:        cfg.User,
+				Host:        cfg.addr(),
+				Name:        name,
+				Instruction: instruction,
+			})
 			return nil, nil
 		}
 		return cfg.Ask.Question(ctx, Question{
@@ -250,4 +261,26 @@ func currentUser() (string, error) {
 		}
 	}
 	return "", errors.New("no current user")
+}
+
+// bannerOf shows a server's banner, which is the other way a server
+// tells someone how to sign in.
+//
+// Nil when there is nobody to tell: the banner is the server's own
+// wording and there is nothing to do with it but show it.
+func bannerOf(ctx context.Context, cfg Config) ssh.BannerCallback {
+	if cfg.Ask == nil {
+		return nil
+	}
+	return func(message string) error {
+		if strings.TrimSpace(message) == "" {
+			return nil
+		}
+		cfg.Ask.Notice(ctx, Notice{
+			User: cfg.User,
+			Host: cfg.addr(),
+			Text: message,
+		})
+		return nil
+	}
 }

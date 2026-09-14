@@ -236,7 +236,7 @@ func connect(ctx context.Context, to reach, via *Conn, cfg Config) (*Conn, error
 	}
 
 	addr := cfg.addr()
-	client, dialErr := dial(ctx, to, addr, cfg.User, a.next, hostKey)
+	client, dialErr := dial(ctx, to, addr, cfg.User, a.next, hostKey, bannerOf(ctx, cfg))
 	if dialErr != nil {
 		a.close()
 		// What the user said, when they said anything: "the dialog was

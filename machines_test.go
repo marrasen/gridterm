@@ -268,7 +268,7 @@ func TestAFailedConnectionCanBeRetried(t *testing.T) {
 	cfg.Port = 1
 	a.connectAs("box", cfg)
 	waitForDialog(t, a, "Could not connect to box")
-	if a.opening["box"] {
+	if a.opening["box"] != nil {
 		t.Fatal("the machine is still marked as being connected to")
 	}
 	if len(a.machines) != 0 {
@@ -322,7 +322,7 @@ func TestAFailedRouteLeavesNothingOpen(t *testing.T) {
 	if len(a.panes) != 1 {
 		t.Fatalf("%d panes after a failed route, want the one that was there", len(a.panes))
 	}
-	if a.opening["edge"] || a.opening["db"] {
+	if a.opening["edge"] != nil || a.opening["db"] != nil {
 		t.Fatal("a machine was left marked as being connected to")
 	}
 }

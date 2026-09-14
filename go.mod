@@ -7,6 +7,7 @@ require (
 	github.com/aymanbagabas/go-pty v0.2.3
 	github.com/danielgatis/go-vte v1.0.11
 	github.com/hajimehoshi/ebiten/v2 v2.7.5
+	github.com/pkg/sftp v1.13.11
 	github.com/rivo/uniseg v0.4.7
 	golang.org/x/crypto v0.57.0
 	golang.org/x/image v0.45.0
@@ -21,6 +22,7 @@ require (
 	github.com/ebitengine/hideconsole v1.0.0 // indirect
 	github.com/ebitengine/purego v0.8.3 // indirect
 	github.com/jezek/xgb v1.1.1 // indirect
+	github.com/kr/fs v0.1.0 // indirect
 	github.com/u-root/u-root v0.16.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/text v0.42.0 // indirect

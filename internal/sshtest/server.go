@@ -49,6 +49,11 @@ type Server struct {
 	forwarded []string
 	asked     []string
 
+	// sftps counts the SFTP sessions started, and noSFTP turns the
+	// subsystem off the way an sshd without it does.
+	sftps  int
+	noSFTP bool
+
 	// bound are the ports the far machine has been asked to listen on.
 	bound []bound
 
@@ -285,6 +290,10 @@ func (s *Server) session(ch ssh.Channel, reqs <-chan *ssh.Request) {
 			cols, rows := s.Size()
 			s.say(ch, "READY %dx%d\n", cols, rows)
 			go s.echo(ch)
+
+		case "subsystem":
+			// SFTP, which is a subsystem rather than a command.
+			_ = req.Reply(s.sftpRequest(ch, req), nil)
 
 		case "exec":
 			_ = req.Reply(true, nil)

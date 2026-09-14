@@ -43,6 +43,8 @@ emulator, and draws the resulting character grid as batched triangles.
 ## Try it
 
 ```
+git clone https://github.com/marrasen/gridterm
+cd gridterm
 go run .                       # your login shell
 go run . -ssh user@host        # a shell on another machine
 go run . -e 'vim /etc/hosts'   # one command
@@ -59,7 +61,13 @@ go run . -font-size 18
 | middle click | paste |
 | `Ctrl+=` / `Ctrl+-` / `Ctrl+0` | font size |
 
-Windows needs no C toolchain at all:
+On Windows there is nothing else to install — no C toolchain, no cgo:
+
+```
+go build -o gridterm.exe .
+```
+
+Cross-compiling to Windows from anywhere else works the same way:
 
 ```
 GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o gridterm.exe .
@@ -119,22 +127,29 @@ finds out. An unverifiable host is a hard failure with an explanation.
 
 ## The ebiten fork
 
-`go.mod` replaces ebitengine with a local copy of
-`github.com/unstablebuild/ebiten/v2 v2.7.5-ub.27` at `../ebiten-ub`.
+`go.mod` replaces ebitengine with
+[marrasen/ebiten](https://github.com/marrasen/ebiten), a fork of
+[unstablebuild/ebiten](https://github.com/unstablebuild/ebiten). `go
+build` fetches it like any other dependency; there is nothing to check
+out by hand.
 
 Upstream ebitengine gives you polled `IsKeyPressed` plus
 `AppendInputChars`, which cannot tell Ctrl+C from the letter c, nor an
 OS key repeat from a fresh press. That rules out writing a terminal
-against it. The fork adds `AppendInputEvents`, where each observation is
-either a key transition or a committed code point, tied together by an
-`InputSource` id — and it implements this properly on Windows, in the
-Win32 message loop.
+against it. unstablebuild's fork adds `AppendInputEvents`, where each
+observation is either a key transition or a committed code point, tied
+together by an `InputSource` id — and it implements this properly on
+Windows, in the Win32 message loop.
 
-The local copy carries one change, needed to make the fork build for
-Windows at all; see `../ebiten-ub/PATCH-NOTES.md`.
+That fork does not itself compile for `GOOS=windows`: `initializeGLFW`
+calls `glfw.InitHint`, which only the cgo glfw binding defines, so the
+pure-Go Windows port fails to build. This fork is the same commit with
+that one macOS-only call put behind a build tag — the branch is
+`windows-build`, offered upstream. Once it lands there, the replace can
+point back at unstablebuild's own tag.
 
-Both ebitengine and the fork are Apache-2.0. Nothing here is derived
-from the Rune IDE, which is GPL-3.0-or-later and keeps its renderer and
+ebitengine and both forks are Apache-2.0. Nothing here is derived from
+the Rune IDE, which is GPL-3.0-or-later and keeps its renderer and
 emulator under `internal/` where they cannot be imported.
 
 ## Known gaps
@@ -161,6 +176,12 @@ emulator under `internal/` where they cannot be imported.
   be capped from here; it needs a fix in `danielgatis/go-vte`, which
   already caps OSC the same way.
 - `-e` splits its argument on spaces, with no quoting.
+
+## Licence
+
+MIT; see [LICENSE](LICENSE). The dependencies are all permissive:
+ebitengine and `golang.org/x/*` are Apache-2.0 or BSD, and `go-vte`,
+`go-pty`, `uniseg` and `atotto/clipboard` are MIT.
 
 ## How this was built
 

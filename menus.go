@@ -1,6 +1,8 @@
 package main
 
 import (
+	"image/color"
+
 	"github.com/marrasen/gridterm/ui"
 )
 
@@ -48,11 +50,13 @@ func (a *app) newMenubar(child ui.Widget) *ui.Menubar {
 		OpenBG: a.colours.FG,
 	}
 	bar.MenuStyle = ui.MenuStyle{
-		FG:         a.colours.FG,
-		BG:         a.colours.ANSI[0],
+		FG: a.colours.FG,
+		// No background of its own: the frosted panel behind the menu is
+		// the background, and an opaque fill would hide it.
+		BG:         color.RGBA{},
 		SelectedFG: a.colours.BG,
 		SelectedBG: a.colours.FG,
-		ChordFG:    a.colours.Selection,
+		ChordFG:    a.colours.Cursor,
 		DisabledFG: a.colours.Selection,
 	}
 	// The bar reaches the modal stack and the compositor only through

@@ -163,6 +163,10 @@ func (m *Menu) Selected() (Command, bool) {
 // be chosen.
 func (m *Menu) SelectedIndex() int { return m.at }
 
+// Box returns where the menu sits in the view it draws through, so
+// whatever is showing it can treat that part differently.
+func (m *Menu) Box() Rect { return m.box() }
+
 // Layout notes how much room the menu has to place itself in, and asks
 // again where it is pointing.
 func (m *Menu) Layout(size Size) {

@@ -2,11 +2,24 @@ package main
 
 import (
 	"fmt"
+	"image"
 	"image/color"
 
 	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/render"
 	"github.com/marrasen/gridterm/ui"
+)
+
+// How the glass behind a dialog looks: how far the blur reaches, how
+// much of the window's own background is laid over it, how far the
+// colour is lifted back after the blur averaged it away, and how much
+// noise and rim light finish it.
+const (
+	frostRadius     = 7
+	frostTint       = 0xc4
+	frostSaturation = 1.4
+	frostGrain      = 0.04
+	frostEdge       = 0.07
 )
 
 // modal is one dialog on the stack together with the layer it draws on.
@@ -35,7 +48,7 @@ func (a *app) showModal(w ui.Widget, onHidden func()) func() {
 	m := &modal{
 		w:        w,
 		g:        g,
-		layer:    &render.Layer{Grid: g, Transparent: true},
+		layer:    &render.Layer{Grid: g, Transparent: true, Frost: a.frost()},
 		onHidden: onHidden,
 	}
 	if !a.root.PushModal(w) {
@@ -95,10 +108,48 @@ func (a *app) hideModal(m *modal) {
 	}
 }
 
-// drawModals paints each dialog onto its own layer.
+// drawModals paints each dialog onto its own layer and moves the glass
+// behind it to wherever the dialog has put itself.
+//
+// The panel follows the dialog every frame rather than being placed
+// once: a palette box shrinks as the query narrows it, and a menu moves
+// when the window is resized.
 func (a *app) drawModals() {
+	cw, ch := a.renderer.CellSize()
 	for _, m := range a.modals {
 		a.root.DrawModal(m.w, m.g.View())
+		if m.layer.Frost == nil {
+			continue
+		}
+		m.layer.Frost.Rect = image.Rectangle{}
+		boxed, ok := m.w.(ui.Boxed)
+		if !ok {
+			continue
+		}
+		if box := boxed.Box(); !box.Empty() {
+			m.layer.Frost.Rect = image.Rect(
+				box.X*cw, box.Y*ch,
+				(box.X+box.Cols)*cw, (box.Y+box.Rows)*ch)
+		}
+	}
+}
+
+// frost describes the glass behind a dialog, in the window's colours.
+//
+// The dialog itself draws no background: the panel is the background, so
+// the pane behind shows through it blurred. Without the tint the text
+// would sit straight on a blurred picture of a shell and be unreadable.
+func (a *app) frost() *render.Frost {
+	cw, ch := a.renderer.CellSize()
+	tint := a.colours.BG
+	tint.A = frostTint
+	return &render.Frost{
+		Radius:     frostRadius,
+		Corner:     float32(min(cw, ch)),
+		Tint:       tint,
+		Saturation: frostSaturation,
+		Grain:      frostGrain,
+		Edge:       frostEdge,
 	}
 }
 

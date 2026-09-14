@@ -108,6 +108,21 @@ type MouseHandler interface {
 	HandleMouse(ev input.MouseEvent) (bool, error)
 }
 
+// Boxed is a widget that fills only part of the view it is given and
+// says which part, in that view's own coordinates.
+//
+// A dialog placed in the middle of the window is the case: the view it
+// draws through covers everything, and only the box is the dialog. It
+// lets whatever is showing the widget treat that part differently --
+// putting frosted glass behind it, say -- without knowing how the widget
+// decided where to sit.
+//
+// An empty Rect means there is nothing on screen.
+type Boxed interface {
+	Widget
+	Box() Rect
+}
+
 // GestureCanceller is a widget that keeps something between a press and
 // its release: a selection being dragged out, a strip holding a click on
 // one of its labels.

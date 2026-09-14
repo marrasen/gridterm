@@ -1,0 +1,124 @@
+package main
+
+import (
+	"testing"
+
+	"github.com/hajimehoshi/ebiten/v2"
+
+	"github.com/marrasen/gridterm/input"
+	"github.com/marrasen/gridterm/render"
+	"github.com/marrasen/gridterm/ui"
+)
+
+// TestDialogGetsFrostedGlass drives the window's own draw path with a
+// dialog open and checks the panel is drawn. It is the only test that
+// runs the shaders against a real screen; everything else about frost is
+// arithmetic.
+func TestDialogGetsFrostedGlass(t *testing.T) {
+	a := newTestApp(t, 40, 20)
+	a.comp = render.NewCompositor(a.renderer)
+	a.comp.OnError = func(err error) { t.Errorf("compositor: %v", err) }
+	a.layer = &render.Layer{Grid: a.g}
+	a.comp.Add(a.layer)
+	a.commands()
+	a.bar = a.newMenubar(a.root.Widget())
+	a.root.SetWidget(a.bar)
+	a.relayout()
+	if err := a.openMenu(); err != nil {
+		t.Fatalf("open menu: %v", err)
+	}
+
+	cw, ch := a.renderer.CellSize()
+	a.Draw(ebiten.NewImage(40*cw, 20*ch))
+
+	if got := a.comp.Stats().Frosted; got != 1 {
+		t.Errorf("%d panels drawn, want one behind the menu", got)
+	}
+	// The panel covers the menu's box and nothing else.
+	menu, ok := a.root.Modal().(*ui.Menu)
+	if !ok {
+		t.Fatalf("top modal = %T, want a menu", a.root.Modal())
+	}
+	box := menu.Box()
+	want := a.modals[0].layer.Frost.Rect
+	if want.Dx() != box.Cols*cw || want.Dy() != box.Rows*ch {
+		t.Errorf("panel is %v, want the menu's %d by %d cells", want, box.Cols, box.Rows)
+	}
+	if want.Min.X != box.X*cw || want.Min.Y != box.Y*ch {
+		t.Errorf("panel starts at %v, want the menu's corner at %d,%d", want.Min, box.X, box.Y)
+	}
+}
+
+// TestNoDialogDrawsNoGlass checks that an ordinary window pays nothing
+// for the frost path.
+func TestNoDialogDrawsNoGlass(t *testing.T) {
+	a := newTestApp(t, 40, 20)
+	a.comp = render.NewCompositor(a.renderer)
+	a.comp.OnError = func(err error) { t.Errorf("compositor: %v", err) }
+	a.layer = &render.Layer{Grid: a.g}
+	a.comp.Add(a.layer)
+	a.commands()
+
+	cw, ch := a.renderer.CellSize()
+	a.Draw(ebiten.NewImage(40*cw, 20*ch))
+
+	if got := a.comp.Stats().Frosted; got != 0 {
+		t.Errorf("%d panels drawn with no dialog open", got)
+	}
+}
+
+// TestFrostFollowsTheDialog checks the panel moves with the box. A
+// palette box shrinks as the query narrows it, and a panel left where
+// the old one was would sit beside the dialog.
+func TestFrostFollowsTheDialog(t *testing.T) {
+	a := newTestApp(t, 60, 20)
+	a.comp = render.NewCompositor(a.renderer)
+	a.commands()
+	if err := a.openPalette(); err != nil {
+		t.Fatalf("open palette: %v", err)
+	}
+	a.drawModals()
+	wide := a.modals[0].layer.Frost.Rect
+
+	// Typing narrows the list, which makes the box shorter.
+	for _, r := range "split" {
+		ev := input.Event{Kind: input.Text, Rune: r, NormalText: true}
+		if _, err := a.root.HandleKey(ev); err != nil {
+			t.Fatalf("typing: %v", err)
+		}
+	}
+	a.drawModals()
+
+	narrow := a.modals[0].layer.Frost.Rect
+	if narrow == wide {
+		t.Fatal("the box did not change, so this proves nothing")
+	}
+	cw, ch := a.renderer.CellSize()
+	box := a.palette.Box()
+	if narrow.Dy() != box.Rows*ch || narrow.Dx() != box.Cols*cw {
+		t.Errorf("panel is %v, want the dialog's %d by %d cells", narrow, box.Cols, box.Rows)
+	}
+}
+
+// TestFrostGoesWithTheDialog checks that closing a dialog takes its
+// panel with it, rather than leaving glass over the window.
+func TestFrostGoesWithTheDialog(t *testing.T) {
+	a := newTestApp(t, 40, 20)
+	a.comp = render.NewCompositor(a.renderer)
+	a.commands()
+	if err := a.openPalette(); err != nil {
+		t.Fatalf("open palette: %v", err)
+	}
+	a.drawModals()
+	if a.modals[0].layer.Frost.Rect.Empty() {
+		t.Fatal("the dialog has no panel to lose, so this proves nothing")
+	}
+
+	a.closePalette()
+
+	for _, l := range a.comp.Layers() {
+		if l.Frost != nil && !l.Frost.Rect.Empty() {
+			t.Error("a panel is still on screen with no dialog behind it")
+		}
+	}
+}

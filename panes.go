@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"image/color"
 
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/term"
@@ -49,12 +50,14 @@ func (a *app) openPalette() error {
 	}
 	p := ui.NewPalette(a.root.Commands, a.root.Accelerators, a.closePalette)
 	p.Style = ui.PaletteStyle{
-		FG:         a.colours.FG,
-		BG:         a.colours.BG,
+		FG: a.colours.FG,
+		// No background of its own: the frosted panel behind the dialog
+		// is the background, and an opaque fill would hide it.
+		BG:         color.RGBA{},
 		MatchFG:    a.colours.Cursor,
 		SelectedFG: a.colours.BG,
 		SelectedBG: a.colours.FG,
-		ChordFG:    a.colours.Selection,
+		ChordFG:    a.colours.Cursor,
 	}
 	a.palette = p
 	a.dismissPalette = a.showModal(p, func() { a.palette, a.dismissPalette = nil, nil })

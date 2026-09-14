@@ -37,6 +37,10 @@ type Layer struct {
 	// would show through. Setting it skips that per-row check.
 	Transparent bool
 
+	// Frost puts frosted glass behind part of the layer, taking what is
+	// already on screen as its backdrop. Nil for an ordinary layer.
+	Frost *Frost
+
 	tex *ebiten.Image
 
 	// painted records that the texture matches its grid. It cannot be
@@ -137,6 +141,7 @@ type CompositorStats struct {
 	Layers    int  // layers in the stack
 	Repainted int  // layers whose texture was repainted
 	Blits     int  // textures drawn to the screen
+	Frosted   int  // frosted panels drawn behind a layer
 	Cleared   bool // the screen was wiped before blitting
 	Skipped   bool // nothing changed, so the frame was left alone
 }
@@ -171,6 +176,17 @@ type Compositor struct {
 	// lastAtlas notices the glyphs being re-rasterised under a layer
 	// whose pixel size happens not to change with them.
 	lastAtlas uint64
+
+	// OnError reports a failure Draw cannot hand back, because the game
+	// loop calls it and there is nowhere to return one. A nil OnError
+	// drops them.
+	OnError func(error)
+
+	// shaders and scratch are the frosted-glass machinery, built on
+	// first use so a window with nothing frosted never pays for them.
+	shaders      shaders
+	scratch      scratch
+	shaderFailed bool
 }
 
 // placement is the part of a layer's state that changes what the screen
@@ -313,7 +329,12 @@ func (c *Compositor) Draw(screen *ebiten.Image) {
 
 	// Blitting alone cannot erase, so anything that uncovers pixels has
 	// to wipe the screen first.
-	if moved || resized || rescreened {
+	//
+	// Frosted glass forces it too. The panel takes what is on screen as
+	// its backdrop, so drawing over a screen that still held the last
+	// frame's panel would blur the panel into itself, a little more on
+	// every frame.
+	if moved || resized || rescreened || c.anyFrosted() {
 		screen.Clear()
 		c.stats.Cleared = true
 	}
@@ -323,10 +344,23 @@ func (c *Compositor) Draw(screen *ebiten.Image) {
 		if l.Hidden || l.Grid == nil || l.tex == nil {
 			continue
 		}
+		// The glass first: it reads the layers already blitted under it,
+		// and this layer's own text then goes on top of it.
+		if l.Frost != nil && !l.Frost.Rect.Empty() {
+			c.drawFrost(screen, l)
+		}
 		op := &ebiten.DrawImageOptions{}
 		op.GeoM.Translate(float64(l.X), float64(l.Y))
 		screen.DrawImage(l.tex, op)
 		c.stats.Blits++
+	}
+}
+
+// onError reports a failure the compositor cannot hand back, because
+// Draw is called by the game loop and has nowhere to return one.
+func (c *Compositor) onError(err error) {
+	if c.OnError != nil {
+		c.OnError(err)
 	}
 }
 

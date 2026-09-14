@@ -119,6 +119,9 @@ func main() {
 	// use rather than offering to switch to it again.
 	a.fontFamily = *fontFamily
 	a.comp = render.NewCompositor(a.renderer)
+	// The compositor is called by the game loop and has nowhere to hand
+	// a failure back to.
+	a.comp.OnError = a.logError
 
 	const initCols, initRows = 100, 32
 	pal := vt.DefaultPalette()

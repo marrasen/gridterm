@@ -91,6 +91,10 @@ func (p *Palette) Selected() (Command, bool) {
 	return p.matches[p.at].Command, true
 }
 
+// Box returns where the dialog sits in the view it draws through, so
+// whatever is showing it can treat that part differently.
+func (p *Palette) Box() Rect { return p.box() }
+
 // Layout notes how much room the dialog has to place itself in.
 func (p *Palette) Layout(size Size) {
 	p.size = size

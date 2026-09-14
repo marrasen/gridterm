@@ -101,6 +101,14 @@ func newTestApp(t *testing.T, cols, rows int) *testApp {
 	// The window's own grid, so markDirty and setGridSize do what they do
 	// in the program rather than nothing at all.
 	ta.g = grid.New(cols, rows, ta.colours.FG, ta.colours.BG)
+	// And a renderer, because the window measures itself in cells and
+	// asks the renderer how big one is.
+	atlas, err := glyph.NewAtlas(glyph.Fonts{Regular: gomono.TTF}, 12, 96)
+	if err != nil {
+		t.Skipf("no atlas: %v", err)
+	}
+	ta.atlas = atlas
+	ta.renderer = render.New(atlas)
 	ta.newSession = func(int, int) (session.Session, error) {
 		sess := newPipeSession()
 		ta.shells = append(ta.shells, sess)

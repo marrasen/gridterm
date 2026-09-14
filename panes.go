@@ -3,7 +3,10 @@ package main
 import (
 	"errors"
 	"fmt"
+	"image/color"
 
+	"github.com/marrasen/gridterm/grid"
+	"github.com/marrasen/gridterm/render"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/term"
 )
@@ -25,7 +28,7 @@ func (a *app) newTerminal() (*term.Terminal, error) {
 		Session:        sess,
 		Size:           ui.Size{Cols: a.lastSize[0], Rows: a.lastSize[1]},
 		Scrollback:     a.scrollback,
-		Palette:        &a.palette,
+		Palette:        &a.colours,
 		ReadClipboard:  clipboardRead,
 		WriteClipboard: a.clip.set,
 		OnExit:         a.paneExited,
@@ -40,13 +43,56 @@ func (a *app) newTerminal() (*term.Terminal, error) {
 	return t, nil
 }
 
+// openPalette shows the command dialog, on a layer of its own above the
+// widget tree so that closing it costs a blit rather than repainting
+// everything underneath.
+func (a *app) openPalette() error {
+	if a.palette != nil {
+		// Ctrl+K again closes it, which is what a key that opens
+		// something is expected to do.
+		a.closePalette()
+		return nil
+	}
+	cols, rows := a.lastSize[0], a.lastSize[1]
+	// No colours at all: the layer sits over the widget tree, and a
+	// background with any alpha would blank the window behind it. The
+	// dialog paints its own box opaquely.
+	a.paletteGrid = grid.New(cols, rows, color.RGBA{}, color.RGBA{})
+	a.palette = ui.NewPalette(a.root.Commands, a.root.Accelerators, a.closePalette)
+	a.palette.Style = ui.PaletteStyle{
+		FG:         a.colours.FG,
+		BG:         a.colours.BG,
+		MatchFG:    a.colours.Cursor,
+		SelectedFG: a.colours.BG,
+		SelectedBG: a.colours.FG,
+		ChordFG:    a.colours.Selection,
+	}
+
+	a.paletteLayer = &render.Layer{Grid: a.paletteGrid, Transparent: true}
+	a.comp.Add(a.paletteLayer)
+	a.root.PushModal(a.palette)
+	a.markDirty()
+	return nil
+}
+
+// closePalette takes the dialog and its layer away.
+func (a *app) closePalette() {
+	if a.palette == nil {
+		return
+	}
+	a.root.PopModal()
+	a.comp.Remove(a.paletteLayer)
+	a.palette, a.paletteGrid, a.paletteLayer = nil, nil, nil
+	a.markDirty()
+}
+
 // newTabs builds a tab strip carrying the window's colours.
 func (a *app) newTabs(kids ...ui.Widget) *ui.Tabs {
 	tb := ui.NewTabs(kids...)
-	tb.StripBG = a.palette.BG
-	tb.InactiveFG = a.palette.FG
-	tb.ActiveFG = a.palette.BG
-	tb.ActiveBG = a.palette.FG
+	tb.StripBG = a.colours.BG
+	tb.InactiveFG = a.colours.FG
+	tb.ActiveFG = a.colours.BG
+	tb.ActiveBG = a.colours.FG
 	return tb
 }
 
@@ -126,8 +172,8 @@ func (a *app) focusTab(n int) error {
 // newSplit builds a split carrying the window's divider colours.
 func (a *app) newSplit(dir ui.Dir, first, second ui.Widget) *ui.Split {
 	s := ui.NewSplit(dir, first, second)
-	s.DividerFG = a.palette.FG
-	s.DividerBG = a.palette.BG
+	s.DividerFG = a.colours.FG
+	s.DividerBG = a.colours.BG
 	return s
 }
 

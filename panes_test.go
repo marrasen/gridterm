@@ -7,6 +7,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hajimehoshi/ebiten/v2"
+	"golang.org/x/image/font/gofont/gomono"
+
+	"github.com/marrasen/gridterm/glyph"
+	"github.com/marrasen/gridterm/grid"
+	"github.com/marrasen/gridterm/input"
+	"github.com/marrasen/gridterm/render"
 	"github.com/marrasen/gridterm/session"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/term"
@@ -16,9 +23,11 @@ import (
 // pipeSession is a shell that reads nothing and writes nowhere, with an
 // end the test can pull.
 type pipeSession struct {
-	mu     sync.Mutex
-	out    chan []byte
-	closed bool
+	mu      sync.Mutex
+	out     chan []byte
+	written []byte
+	size    [2]int
+	closed  bool
 }
 
 func newPipeSession() *pipeSession {
@@ -33,9 +42,33 @@ func (p *pipeSession) Read(b []byte) (int, error) {
 	return copy(b, got), nil
 }
 
-func (p *pipeSession) Write(b []byte) (int, error) { return len(b), nil }
-func (p *pipeSession) Resize(int, int) error       { return nil }
-func (p *pipeSession) Wait() error                 { return nil }
+func (p *pipeSession) Write(b []byte) (int, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.written = append(p.written, b...)
+	return len(b), nil
+}
+
+// sentText returns what the terminal has written to this shell.
+func (p *pipeSession) sentText() string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return string(p.written)
+}
+func (p *pipeSession) Resize(cols, rows int) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.size = [2]int{cols, rows}
+	return nil
+}
+
+// lastSize returns the size the terminal last told this shell.
+func (p *pipeSession) lastSize() [2]int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.size
+}
+func (p *pipeSession) Wait() error { return nil }
 
 func (p *pipeSession) Close() error {
 	p.mu.Lock()
@@ -59,7 +92,7 @@ func newTestApp(t *testing.T, cols, rows int) *testApp {
 	t.Helper()
 	ta := &testApp{app: &app{
 		fontSize:   defaultFontSize,
-		palette:    vt.DefaultPalette(),
+		colours:    vt.DefaultPalette(),
 		scrollback: 64,
 		panes:      make(map[*term.Terminal]struct{}),
 		exits:      make(chan struct{}, exitQueue),
@@ -121,16 +154,21 @@ func checkTree(t *testing.T, a *testApp) {
 		t.Fatalf("focus is on %T, which is not a live pane", leaf)
 	}
 	// Exactly one, or two panes both draw a cursor and both take keys.
+	// None at all while a dialog is up: it has the keys and the cursor.
 	focused := 0
 	for p := range inTree {
 		if p.Focused() {
 			focused++
 		}
 	}
-	if focused != 1 {
-		t.Fatalf("%d panes believe they have focus, want 1", focused)
+	want := 1
+	if a.root.Modal() != nil {
+		want = 0
 	}
-	if !pane.Focused() {
+	if focused != want {
+		t.Fatalf("%d panes believe they have focus, want %d", focused, want)
+	}
+	if want == 1 && !pane.Focused() {
 		t.Fatal("the pane keys reach does not believe it has focus")
 	}
 }
@@ -372,6 +410,11 @@ func TestSplitCloseFuzz(t *testing.T) {
 		}
 		checkTree(t, a)
 	}
+}
+
+// press builds a key press, the way the ui tests do.
+func press(k input.Key, mods input.Mods) input.Event {
+	return input.Event{Kind: input.KeyPress, Key: k, Mods: mods}
 }
 
 func waitUntil(t *testing.T, cond func() bool) {
@@ -770,5 +813,339 @@ func TestOpenTabFromInsideASplitJoinsTheStripAbove(t *testing.T) {
 		if _, nested := tab.(*ui.Tabs); nested {
 			t.Error("a second strip was started inside the first")
 		}
+	}
+}
+
+// TestPaletteOpensAndCloses checks the dialog's whole life: it goes on
+// the modal stack, gets a layer of its own, and takes both away again.
+func TestPaletteOpensAndCloses(t *testing.T) {
+	a := newTestApp(t, 40, 10)
+	a.comp = render.NewCompositor(nil)
+	layersBefore := len(a.comp.Layers())
+
+	if err := a.openPalette(); err != nil {
+		t.Fatalf("open palette: %v", err)
+	}
+
+	if a.palette == nil {
+		t.Fatal("the dialog was not made")
+	}
+	if a.root.Modal() != ui.Widget(a.palette) {
+		t.Errorf("top modal = %v, want the dialog", a.root.Modal())
+	}
+	if got := len(a.comp.Layers()); got != layersBefore+1 {
+		t.Errorf("%d layers, want one more than %d", got, layersBefore)
+	}
+
+	a.closePalette()
+
+	if a.palette != nil || a.paletteLayer != nil || a.paletteGrid != nil {
+		t.Error("the dialog left something behind")
+	}
+	if a.root.Modal() != nil {
+		t.Error("the dialog is still on the modal stack")
+	}
+	if got := len(a.comp.Layers()); got != layersBefore {
+		t.Errorf("%d layers, want it back to %d", got, layersBefore)
+	}
+}
+
+// TestPaletteOpeningWhileOpenCloses checks the toggle: the command
+// that shows the dialog hides it again, so its key is never dead.
+func TestPaletteOpeningWhileOpenCloses(t *testing.T) {
+	a := newTestApp(t, 40, 10)
+	a.comp = render.NewCompositor(nil)
+	if err := a.openPalette(); err != nil {
+		t.Fatalf("open palette: %v", err)
+	}
+
+	if err := a.openPalette(); err != nil {
+		t.Fatalf("open palette again: %v", err)
+	}
+
+	if a.palette != nil {
+		t.Error("asking again left the dialog open")
+	}
+	if got := len(a.comp.Layers()); got != 0 {
+		t.Errorf("%d layers, want none", got)
+	}
+	// And closing when it is already closed is harmless.
+	a.closePalette()
+}
+
+// TestPaletteTakesKeysFromTheTerminal checks the routing the dialog
+// needs: while it is open the shell must not receive what is typed.
+func TestPaletteTakesKeysFromTheTerminal(t *testing.T) {
+	a := newTestApp(t, 40, 10)
+	a.comp = render.NewCompositor(nil)
+	a.commands()
+	if err := a.openPalette(); err != nil {
+		t.Fatalf("open palette: %v", err)
+	}
+
+	handled, err := a.root.HandleKey(input.Event{Kind: input.Text, Rune: 'c', NormalText: true})
+
+	if err != nil {
+		t.Fatalf("HandleKey: %v", err)
+	}
+	if !handled {
+		t.Error("the dialog did not take the key")
+	}
+	if got := a.palette.Query(); got != "c" {
+		t.Errorf("query = %q, want the key to have reached the dialog", got)
+	}
+	if got := a.shells[0].sentText(); got != "" {
+		t.Errorf("the shell received %q while the dialog was open", got)
+	}
+}
+
+// TestPaletteRunsACommandFromTheRegistry checks the point of the whole
+// thing: every command the window registered is reachable by typing.
+func TestPaletteRunsACommandFromTheRegistry(t *testing.T) {
+	a := newTestApp(t, 60, 20)
+	a.comp = render.NewCompositor(nil)
+	a.commands()
+	if err := a.openPalette(); err != nil {
+		t.Fatalf("open palette: %v", err)
+	}
+
+	// "Split right" by its word starts.
+	for _, r := range "sr" {
+		if _, err := a.root.HandleKey(input.Event{Kind: input.Text, Rune: r, NormalText: true}); err != nil {
+			t.Fatalf("typing: %v", err)
+		}
+	}
+	if got, ok := a.palette.Selected(); !ok || got.ID != "pane.splitRight" {
+		t.Fatalf("selected %+v, want the split command", got)
+	}
+	if _, err := a.root.HandleKey(press(input.KeyEnter, 0)); err != nil {
+		t.Fatalf("Enter: %v", err)
+	}
+
+	if a.palette != nil {
+		t.Error("the dialog is still open after running a command")
+	}
+	if len(a.panes) != 2 {
+		t.Errorf("%d panes, want the split to have happened", len(a.panes))
+	}
+	checkTree(t, a)
+}
+
+// TestPaletteEscapeGivesFocusBack checks that closing the dialog puts
+// typing back where it was.
+func TestPaletteEscapeGivesFocusBack(t *testing.T) {
+	a := newTestApp(t, 40, 10)
+	a.comp = render.NewCompositor(nil)
+	a.commands()
+	if err := a.openPalette(); err != nil {
+		t.Fatalf("open palette: %v", err)
+	}
+
+	if _, err := a.root.HandleKey(press(input.KeyEscape, 0)); err != nil {
+		t.Fatalf("Escape: %v", err)
+	}
+	if _, err := a.root.HandleKey(input.Event{Kind: input.Text, Rune: 'x', NormalText: true}); err != nil {
+		t.Fatalf("typing after Escape: %v", err)
+	}
+
+	waitUntil(t, func() bool { return a.shells[0].sentText() == "x" })
+	checkTree(t, a)
+}
+
+// TestAcceleratorReachesPastThePalette checks that a shortcut the dialog
+// has no use for still works, so the window can be closed while it is
+// open.
+func TestAcceleratorReachesPastThePalette(t *testing.T) {
+	a := newTestApp(t, 60, 20)
+	a.comp = render.NewCompositor(nil)
+	a.commands()
+	if err := a.openPalette(); err != nil {
+		t.Fatalf("open palette: %v", err)
+	}
+
+	// Ctrl+Shift+D splits, and the dialog does not want it.
+	if _, err := a.root.HandleKey(press(input.KeyD, input.ModCtrl|input.ModShift)); err != nil {
+		t.Fatalf("accelerator: %v", err)
+	}
+
+	if len(a.panes) != 2 {
+		t.Errorf("%d panes, want the accelerator to have reached past the dialog", len(a.panes))
+	}
+}
+
+// TestPaletteLayerIsSeeThrough checks that the window is still visible
+// behind the dialog. The layer is composited over the widget tree, and
+// a background with any alpha would blank everything under it.
+func TestPaletteLayerIsSeeThrough(t *testing.T) {
+	a := newTestApp(t, 40, 10)
+	a.comp = render.NewCompositor(nil)
+
+	if err := a.openPalette(); err != nil {
+		t.Fatalf("open palette: %v", err)
+	}
+
+	if !a.paletteLayer.Transparent {
+		t.Error("the dialog's layer is not marked see-through")
+	}
+	for y := 0; y < 10; y++ {
+		for x := 0; x < 40; x++ {
+			if got := a.paletteGrid.At(x, y); got.BG.A != 0 {
+				t.Fatalf("cell %d,%d = %+v, want the layer clear before anything is drawn",
+					x, y, got)
+			}
+		}
+	}
+}
+
+// TestPaletteIsDrawnOntoItsLayer checks the dialog actually reaches a
+// grid. Nothing else in the window would notice if it did not.
+func TestPaletteIsDrawnOntoItsLayer(t *testing.T) {
+	a := newTestApp(t, 40, 10)
+	a.comp = render.NewCompositor(nil)
+	a.commands()
+	if err := a.openPalette(); err != nil {
+		t.Fatalf("open palette: %v", err)
+	}
+
+	// What app.Draw does with the dialog.
+	a.root.DrawModal(a.palette, a.paletteGrid.View())
+
+	found := false
+	for y := 0; y < 10 && !found; y++ {
+		for x := 0; x < 40; x++ {
+			if a.paletteGrid.At(x, y).Rune == '>' {
+				found = true
+				break
+			}
+		}
+	}
+	if !found {
+		t.Error("the dialog drew nothing onto its layer")
+	}
+}
+
+// TestPaletteFollowsAResize checks that widening the window moves the
+// dialog with it rather than leaving it measured for the old one.
+func TestPaletteFollowsAResize(t *testing.T) {
+	a := newTestApp(t, 40, 10)
+	a.comp = render.NewCompositor(nil)
+	a.g = grid.New(40, 10, a.colours.FG, a.colours.BG)
+	a.commands()
+	if err := a.openPalette(); err != nil {
+		t.Fatalf("open palette: %v", err)
+	}
+
+	a.setGridSize(80, 20)
+
+	cols, rows := a.paletteGrid.Size()
+	if cols != a.lastSize[0] || rows != a.lastSize[1] {
+		t.Errorf("the dialog's layer is %dx%d, want the window's %v", cols, rows, a.lastSize)
+	}
+}
+
+// TestPaletteShortcutToggles checks that the key which opens the dialog
+// closes it too, rather than being dead while it is up.
+func TestPaletteShortcutToggles(t *testing.T) {
+	a := newTestApp(t, 40, 10)
+	a.comp = render.NewCompositor(nil)
+	a.commands()
+
+	if _, err := a.root.HandleKey(press(input.KeyK, input.ModCtrl)); err != nil {
+		t.Fatalf("ctrl+K: %v", err)
+	}
+	if a.palette == nil {
+		t.Fatal("ctrl+K did not open the dialog")
+	}
+
+	if _, err := a.root.HandleKey(press(input.KeyK, input.ModCtrl)); err != nil {
+		t.Fatalf("ctrl+K again: %v", err)
+	}
+	if a.palette != nil {
+		t.Error("ctrl+K again did not close the dialog")
+	}
+}
+
+// TestPaletteSurvivesAPaneExiting checks a shell ending on its own while
+// the dialog is open. The tree changes underneath it, and the dialog is
+// no part of that.
+func TestPaletteSurvivesAPaneExiting(t *testing.T) {
+	a := newTestApp(t, 40, 10)
+	a.comp = render.NewCompositor(nil)
+	a.commands()
+	if err := a.splitFocused(ui.Columns); err != nil {
+		t.Fatalf("split: %v", err)
+	}
+	if err := a.openPalette(); err != nil {
+		t.Fatalf("open palette: %v", err)
+	}
+
+	// One of the two shells ends on its own.
+	pane := ui.Leaves(a.root.Widget())[0].(*term.Terminal)
+	_ = pane.Close()
+	waitUntil(t, pane.Exited)
+	a.reapExited()
+
+	checkTree(t, a)
+	if a.palette == nil {
+		t.Error("the dialog closed when a pane it was not part of went away")
+	}
+	if a.root.Modal() != ui.Widget(a.palette) {
+		t.Error("the dialog is no longer the top modal")
+	}
+}
+
+// TestAppDrawPutsTheDialogOnItsLayer checks the window's own draw path,
+// not just the dialog's. Nothing else notices if the modal is left out
+// of it: the dialog is on a layer nothing else touches.
+func TestAppDrawPutsTheDialogOnItsLayer(t *testing.T) {
+	atlas, err := glyph.NewAtlas(glyph.Fonts{Regular: gomono.TTF}, 12, 96)
+	if err != nil {
+		t.Skipf("no atlas: %v", err)
+	}
+	a := newTestApp(t, 40, 10)
+	a.renderer = render.New(atlas)
+	a.comp = render.NewCompositor(a.renderer)
+	a.g = grid.New(40, 10, a.colours.FG, a.colours.BG)
+	a.layer = &render.Layer{Grid: a.g}
+	a.comp.Add(a.layer)
+	a.commands()
+	if err := a.openPalette(); err != nil {
+		t.Fatalf("open palette: %v", err)
+	}
+
+	a.Draw(ebiten.NewImage(320, 160))
+
+	found := false
+	for y := 0; y < 10 && !found; y++ {
+		for x := 0; x < 40; x++ {
+			if a.paletteGrid.At(x, y).Rune == '>' {
+				found = true
+				break
+			}
+		}
+	}
+	if !found {
+		t.Error("the window drew a frame without the dialog on it")
+	}
+}
+
+// TestResizeReachesTheWidgetTree checks that a new window size tells the
+// panes, not just the grids. Without it every shell keeps the size it
+// had and wraps its output at the wrong column.
+func TestResizeReachesTheWidgetTree(t *testing.T) {
+	a := newTestApp(t, 40, 10)
+	a.g = grid.New(40, 10, a.colours.FG, a.colours.BG)
+	pane := ui.FocusedLeaf(a.root.Widget()).(*term.Terminal)
+	if got := pane.Size(); got != (ui.Size{Cols: 40, Rows: 10}) {
+		t.Fatalf("the pane starts at %+v, want 40x10", got)
+	}
+
+	a.setGridSize(80, 20)
+
+	if got := pane.Size(); got != (ui.Size{Cols: 80, Rows: 20}) {
+		t.Errorf("the pane has %+v after the window changed, want 80x20", got)
+	}
+	if got := a.shells[0].lastSize(); got != [2]int{80, 20} {
+		t.Errorf("the shell was told %v, want 80x20", got)
 	}
 }

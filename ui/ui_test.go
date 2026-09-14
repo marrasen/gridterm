@@ -1229,9 +1229,11 @@ func TestRootWheelDoesNotHoldThePointer(t *testing.T) {
 	}
 }
 
-// TestRootOpeningADialogReleasesThePointer checks that a dialog arriving
-// mid-drag does not leave the pointer held by the widget underneath.
-func TestRootOpeningADialogReleasesThePointer(t *testing.T) {
+// TestRootOpeningADialogEndsTheDragUnderIt checks that a dialog arriving
+// mid-drag takes the drag with it. The button is still down from a press
+// on the widget underneath, and neither that widget nor the dialog may
+// be given the rest of it.
+func TestRootOpeningADialogEndsTheDragUnderIt(t *testing.T) {
 	r := &Root{}
 	under := &mouser{}
 	r.SetWidget(under)
@@ -1241,12 +1243,123 @@ func TestRootOpeningADialogReleasesThePointer(t *testing.T) {
 	dialog := &mouser{}
 	r.PushModal(dialog)
 	r.HandleMouse(input.MouseEvent{Kind: input.MouseMove, Button: input.MouseLeft, Col: 2, Row: 1})
+	r.HandleMouse(input.MouseEvent{Kind: input.MouseRelease, Button: input.MouseLeft, Col: 2, Row: 1})
 
 	if len(under.kinds()) != 1 {
 		t.Errorf("the widget under the dialog saw %d events, want only its press", len(under.kinds()))
 	}
+	if len(dialog.kinds()) != 0 {
+		t.Errorf("the dialog saw %v, want none of a drag that began before it", dialog.kinds())
+	}
+	// Once the button is up, the dialog takes the mouse as usual.
+	r.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 2, Row: 1})
 	if len(dialog.kinds()) != 1 {
-		t.Errorf("the dialog saw %d events, want the move", len(dialog.kinds()))
+		t.Errorf("the dialog saw %v after the button came up, want a fresh press", dialog.kinds())
+	}
+}
+
+// TestRootAFreshPressUnwedgesALostRelease checks the case a window can
+// produce on its own: the button comes up somewhere the window never
+// hears about, so the release never arrives. Without a way out, the
+// pointer would be held for good and every later click swallowed.
+func TestRootAFreshPressUnwedgesALostRelease(t *testing.T) {
+	r := &Root{}
+	w := &mouser{}
+	r.SetWidget(w)
+	r.Layout(Rect{Cols: 10, Rows: 4})
+	r.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 1, Row: 1})
+	// A dialog opens and closes with the button still down.
+	r.PushModal(&fake{name: "d"})
+	r.PopModal()
+
+	handled, err := r.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft, Col: 2, Row: 1,
+	})
+
+	if err != nil {
+		t.Fatalf("HandleMouse: %v", err)
+	}
+	if !handled || len(w.kinds()) != 2 {
+		t.Errorf("the widget saw %v, want the new press to have reached it", w.kinds())
+	}
+	// And the pointer is the widget's again, so the drag that follows
+	// is not swallowed.
+	if r.held.Holder() != Widget(w) {
+		t.Errorf("the pointer is held by %v, want the widget the press landed on", r.held.Holder())
+	}
+	r.HandleMouse(input.MouseEvent{Kind: input.MouseMove, Button: input.MouseLeft, Col: 99, Row: 99})
+	if got := w.kinds(); len(got) != 3 || got[2] != input.MouseMove {
+		t.Errorf("the widget saw %v, want the drag that followed", got)
+	}
+}
+
+// TestRootLostReleaseDoesNotLetAnotherButtonThrough checks the escape
+// hatch is about the button the capture is waiting for. Pressing a
+// different one proves nothing -- the first may well still be down -- and
+// letting go there hands the tree a release for a press it never saw.
+func TestRootLostReleaseDoesNotLetAnotherButtonThrough(t *testing.T) {
+	r := &Root{}
+	under := &mouser{}
+	r.SetWidget(under)
+	r.Layout(Rect{Cols: 10, Rows: 4})
+	r.PushModal(&mouser{})
+	r.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 3, Row: 3})
+	r.PopModal()
+
+	// A second button comes and goes while the first is still down.
+	r.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseRight, Col: 3, Row: 3})
+	r.HandleMouse(input.MouseEvent{Kind: input.MouseRelease, Button: input.MouseRight, Col: 3, Row: 3})
+	r.HandleMouse(input.MouseEvent{Kind: input.MouseRelease, Button: input.MouseLeft, Col: 3, Row: 3})
+
+	if got := under.kinds(); len(got) != 0 {
+		t.Errorf("the tree saw %v, want none of a gesture the dialog took", got)
+	}
+}
+
+// TestRootWheelWorksWithALostRelease checks that scrolling is not dead
+// while a button is stuck down. A wheel notch has no release to confuse.
+func TestRootWheelWorksWithALostRelease(t *testing.T) {
+	r := &Root{}
+	w := &mouser{}
+	r.SetWidget(w)
+	r.Layout(Rect{Cols: 10, Rows: 4})
+	r.PushModal(&mouser{})
+	r.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 3, Row: 3})
+	r.PopModal()
+
+	handled, err := r.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseWheelUp, Col: 3, Row: 3,
+	})
+
+	if err != nil {
+		t.Fatalf("HandleMouse: %v", err)
+	}
+	if !handled || len(w.kinds()) != 1 {
+		t.Errorf("the widget saw %v, want the wheel notch", w.kinds())
+	}
+}
+
+// TestRootPressPathTranslatesLikeTheHeldPath checks the two routes agree
+// about coordinates. They only look alike while the tree sits at the
+// origin.
+func TestRootPressPathTranslatesLikeTheHeldPath(t *testing.T) {
+	r := &Root{}
+	w := &mouser{}
+	r.SetWidget(w)
+	r.Layout(Rect{X: 3, Y: 2, Cols: 6, Rows: 4})
+
+	r.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 5, Row: 3})
+	r.HandleMouse(input.MouseEvent{Kind: input.MouseMove, Button: input.MouseLeft, Col: 5, Row: 3})
+
+	if len(w.seen) != 2 {
+		t.Fatalf("the widget saw %d events, want 2", len(w.seen))
+	}
+	if w.seen[0].Col != w.seen[1].Col || w.seen[0].Row != w.seen[1].Row {
+		t.Errorf("the press arrived at %d,%d and the drag at %d,%d for the same point",
+			w.seen[0].Col, w.seen[0].Row, w.seen[1].Col, w.seen[1].Row)
+	}
+	if got := w.seen[0]; got.Col != 2 || got.Row != 1 {
+		t.Errorf("the widget was told %d,%d, want it in its own coordinates", got.Col, got.Row)
 	}
 }
 
@@ -1539,4 +1652,84 @@ func TestRootPushModalWithNoAreaDoesNotResize(t *testing.T) {
 	if len(d.sizes) != 0 {
 		t.Errorf("the dialog was told %v before the root had an area", d.sizes)
 	}
+}
+
+// TestRootAreaOfSearchesTheTreeNotTheDialog checks that asking where a
+// widget sits still works while a dialog is open. A dialog is drawn on a
+// layer of its own, so it is not in the tree's coordinates at all, and
+// searching from it finds nothing.
+func TestRootAreaOfSearchesTheTreeNotTheDialog(t *testing.T) {
+	r := &Root{}
+	w := &fake{name: "w"}
+	r.SetWidget(w)
+	r.Layout(Rect{Cols: 20, Rows: 6})
+	before, ok := r.AreaOf(w)
+	if !ok {
+		t.Fatal("the tree's own widget was not found before the dialog")
+	}
+
+	r.PushModal(&fake{name: "dialog"})
+
+	got, ok := r.AreaOf(w)
+	if !ok {
+		t.Fatal("the tree's own widget was lost while a dialog was open")
+	}
+	if got != before {
+		t.Errorf("area = %+v, want it unchanged at %+v", got, before)
+	}
+}
+
+// TestRootDialogClosingMidPressSwallowsTheRelease checks the button-up
+// after a dialog closes under the pointer. The tree never saw the press,
+// and with mouse reporting on a program acts on a release it was not
+// expecting.
+func TestRootDialogClosingMidPressSwallowsTheRelease(t *testing.T) {
+	r := &Root{}
+	under := &mouser{}
+	r.SetWidget(under)
+	r.Layout(Rect{Cols: 10, Rows: 4})
+	dialog := &mouser{}
+	r.PushModal(dialog)
+
+	r.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 3, Row: 3})
+	r.PopModal()
+	r.HandleMouse(input.MouseEvent{Kind: input.MouseRelease, Button: input.MouseLeft, Col: 3, Row: 3})
+
+	for _, ev := range under.seen {
+		if ev.Kind == input.MouseRelease {
+			t.Error("the tree got a release for a press the dialog took")
+		}
+	}
+}
+
+// TestRootDialogDismissingItselfDoesNotKeepThePointer checks a dialog
+// that closes on the very press it is handling. Taking the pointer for
+// it afterwards would hold a widget no longer on the stack.
+func TestRootDialogDismissingItselfDoesNotKeepThePointer(t *testing.T) {
+	r := &Root{}
+	r.SetWidget(&mouser{})
+	r.Layout(Rect{Cols: 10, Rows: 4})
+	dialog := &selfClosing{root: r}
+	r.PushModal(dialog)
+
+	r.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 3, Row: 3})
+
+	if r.held.Holder() != nil {
+		t.Errorf("the pointer is held by %v, which is no longer on the stack", r.held.Holder())
+	}
+}
+
+// selfClosing is a dialog that dismisses itself on any press, the way a
+// click outside a palette's box does.
+type selfClosing struct {
+	root *Root
+}
+
+func (*selfClosing) Layout(Size)    {}
+func (*selfClosing) Draw(grid.View) {}
+func (d *selfClosing) HandleMouse(ev input.MouseEvent) (bool, error) {
+	if ev.Kind == input.MousePress {
+		d.root.PopModal()
+	}
+	return true, nil
 }

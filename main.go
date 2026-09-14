@@ -111,7 +111,7 @@ func main() {
 		return startSession(*remote, command, cols, rows)
 	}
 	a.scrollback = *scroll
-	a.palette = pal
+	a.colours = pal
 	a.panes = make(map[*term.Terminal]struct{})
 	a.exits = make(chan struct{}, exitQueue)
 

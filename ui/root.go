@@ -59,7 +59,7 @@ func (r *Root) SetWidget(w Widget) {
 		SetFocus(r.widget, false)
 	}
 	r.widget = w
-	r.held.Release()
+	r.held.Abandon()
 	if w == nil {
 		return
 	}
@@ -146,7 +146,9 @@ func (r *Root) PushModal(w Widget) {
 		}
 	}
 	SetFocus(r.top(), false)
-	r.held.Release()
+	// Same on the way in: whatever was mid-drag is not getting its
+	// release, and nothing else may have it either.
+	r.held.Abandon()
 	r.modals = append(r.modals, w)
 	if !r.area.Empty() {
 		w.Layout(r.area.Size())
@@ -162,7 +164,11 @@ func (r *Root) PopModal() Widget {
 	}
 	top := r.modals[len(r.modals)-1]
 	SetFocus(top, false)
-	r.held.Release()
+	// The button is still down and its release belongs to the dialog
+	// that is going. Abandoning rather than releasing keeps swallowing
+	// until it comes up, so the tree underneath is not handed a
+	// button-up for a press it never saw.
+	r.held.Abandon()
 	r.modals[len(r.modals)-1] = nil
 	r.modals = r.modals[:len(r.modals)-1]
 	SetFocus(r.top(), true)
@@ -245,14 +251,26 @@ func (r *Root) HandleKey(ev input.Event) (handled bool, err error) {
 // there is nothing for a keymap to say about it.
 func (r *Root) HandleMouse(ev input.MouseEvent) (bool, error) {
 	if r.held.Held() {
-		held := r.held.Holder()
-		if held == nil {
-			// The widget that took the press has gone. Nothing else may
-			// have its release, so the rest of the drag is swallowed.
+		if held := r.held.Holder(); held != nil {
+			return r.deliverHeld(held, ev)
+		}
+		// The widget that took the press has gone. Nothing else may have
+		// its release, so the rest of the drag is swallowed.
+		//
+		// A wheel notch is let through: it has no release to confuse,
+		// and scrolling should not stop working because a button is
+		// down somewhere.
+		switch {
+		case ev.Button.IsWheel():
+		case ev.Kind == input.MousePress && r.held.Waiting(ev.Button):
+			// Pressing a button that is supposedly already down proves
+			// its release was lost -- the window never heard it. Letting
+			// go here is what stops the pointer being stuck for good.
+			r.held.Release()
+		default:
 			r.held.Take(nil, ev)
 			return false, nil
 		}
-		return r.deliverHeld(held, ev)
 	}
 
 	top := r.top()
@@ -269,8 +287,11 @@ func (r *Root) HandleMouse(ev input.MouseEvent) (bool, error) {
 
 	local := ev
 	local.Col, local.Row = r.clampInto(r.area, ev.Col, ev.Row)
+	local.Col, local.Row = r.area.Local(local.Col, local.Row)
 	handled, err := HandleMouse(top, local)
-	if starts && handled {
+	// A dialog that dismissed itself on this very press is gone, and the
+	// pointer must not be handed to something no longer on the stack.
+	if starts && handled && r.top() == top {
 		// Remember the widget itself, not the way down to it. Containers
 		// come and go while a button is held, and the path is worked out
 		// again for every event that follows.
@@ -313,8 +334,12 @@ func (r *Root) clampInto(area Rect, x, y int) (int, int) {
 // AreaOf returns where a widget sits in the tree, in the tree's own
 // coordinates. It saves a caller having to know the root's area and get
 // it wrong.
+//
+// It searches the tree, not the dialog on top of it. A dialog is drawn
+// on a layer of its own, so where the tree puts things is a question
+// about the tree whether or not one is open.
 func (r *Root) AreaOf(target Widget) (Rect, bool) {
-	return AreaOf(r.top(), r.area.Size().rect(), target)
+	return AreaOf(r.widget, r.area.Size().rect(), target)
 }
 
 // run looks a chord up in one keymap and runs what it finds.

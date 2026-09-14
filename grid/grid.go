@@ -487,6 +487,23 @@ func RuneWidth(r rune) int {
 	}
 }
 
+// Clusters splits a string into grapheme clusters, which is the unit a
+// grid draws: a base character and its combining marks share one cell,
+// and so do the halves of a flag.
+//
+// Anything colouring part of a string has to cut it here. Writing runes
+// one at a time gives a combining mark a cell of its own and a flag two.
+func Clusters(s string) []string {
+	var out []string
+	state := -1
+	for len(s) > 0 {
+		var cluster string
+		cluster, s, _, state = uniseg.FirstGraphemeClusterInString(s, state)
+		out = append(out, cluster)
+	}
+	return out
+}
+
 // StringWidth returns how many columns a string takes when written into
 // a grid, which is not how many runes it holds: a CJK character takes
 // two, and a combining mark shares its base character's cell.

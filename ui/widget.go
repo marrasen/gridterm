@@ -234,6 +234,15 @@ func (c *MouseCapture) Holder() Widget { return c.w }
 // for, whether or not the widget it was kept for still exists.
 func (c *MouseCapture) Held() bool { return c.down }
 
+// Waiting reports whether the capture is still waiting for b to come up.
+//
+// A press of that same button proves its release was lost, which is the
+// only safe reason to let go early. A press of any other button proves
+// nothing: the first one may well still be down.
+func (c *MouseCapture) Waiting(b input.MouseButton) bool {
+	return c.down && c.button == b
+}
+
 // Abandon gives up on the widget but keeps waiting for the button, for
 // when the widget has gone and its release belongs to nobody.
 func (c *MouseCapture) Abandon() {

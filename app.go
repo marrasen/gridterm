@@ -47,6 +47,13 @@ type app struct {
 	reader ebitenin.Reader
 	mouse  ebitenin.MouseReader
 
+	// palette is the command dialog while it is open, on a layer of its
+	// own above the tree so that closing it costs a blit rather than a
+	// repaint of everything underneath.
+	palette      *ui.Palette
+	paletteGrid  *grid.Grid
+	paletteLayer *render.Layer
+
 	// panes is every live terminal, so a shell that exits can be found
 	// wherever it sits in the tree.
 	panes map[*term.Terminal]struct{}
@@ -62,7 +69,7 @@ type app struct {
 
 	// What a new pane is started with, kept from the flags.
 	scrollback int
-	palette    vt.Palette
+	colours    vt.Palette
 	clip       clipboardWriter
 
 	// fontSize is the current size in points.
@@ -136,6 +143,9 @@ func (a *app) updateTitle() {
 
 func (a *app) Draw(screen *ebiten.Image) {
 	a.root.Draw(a.g.View())
+	if a.palette != nil {
+		a.root.DrawModal(a.palette, a.paletteGrid.View())
+	}
 	a.comp.Draw(screen)
 }
 
@@ -156,12 +166,22 @@ func (a *app) LayoutF(logicalW, logicalH float64) (float64, float64) {
 func (a *app) resizeTo(pxW, pxH int) {
 	a.lastPixels = [2]int{pxW, pxH}
 	cols, rows := a.renderer.GridSizeFor(pxW, pxH)
+	a.setGridSize(cols, rows)
+}
+
+// setGridSize tells the grids and the widget tree about a new size in
+// cells. Every layer is resized, not just the tree's: a dialog on its
+// own layer has to follow the window or it is measured for the old one.
+func (a *app) setGridSize(cols, rows int) {
 	if a.lastSize == [2]int{cols, rows} {
 		return
 	}
 	a.lastSize = [2]int{cols, rows}
 
 	a.g.Resize(cols, rows)
+	if a.paletteGrid != nil {
+		a.paletteGrid.Resize(cols, rows)
+	}
 	a.root.Layout(ui.Rect{Cols: cols, Rows: rows})
 	a.markDirty()
 }
@@ -231,6 +251,7 @@ func (a *app) commands() {
 		}},
 		ui.Command{ID: "pane.close", Title: "Close pane", Run: a.closeFocused},
 		ui.Command{ID: "tab.open", Title: "New tab", Run: a.openTab},
+		ui.Command{ID: "palette.open", Title: "Show all commands", Run: a.openPalette},
 		ui.Command{ID: "tab.next", Title: "Next tab", Run: func() error {
 			return a.focusTab(1)
 		}},
@@ -268,6 +289,7 @@ func (a *app) commands() {
 		{Key: input.KeyT, Mods: input.ModCtrl | input.ModShift}:      "tab.open",
 		{Key: input.KeyPageDown, Mods: input.ModCtrl}:                "tab.next",
 		{Key: input.KeyPageUp, Mods: input.ModCtrl}:                  "tab.previous",
+		{Key: input.KeyK, Mods: input.ModCtrl}:                       "palette.open",
 	})
 
 	a.root.Commands = cmds

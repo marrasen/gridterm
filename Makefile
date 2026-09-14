@@ -16,9 +16,11 @@ GO_WIN = GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go
 .PHONY: test windows linux vet fmt all
 all: test windows
 
-# The packages with no GPU dependency, which is most of the logic.
+# Everything testable without a display, which is most of the logic. The
+# glyph and main tests are here too: those packages need a GPU to draw,
+# but their tests only cover font selection, which does not.
 test:
-	go test ./grid/... ./input ./vt/... ./session/...
+	go test . ./glyph ./grid/... ./input ./vt/... ./session/...
 
 vet:
 	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go vet ./...

@@ -167,7 +167,10 @@ func (r *Renderer) Draw(dst *ebiten.Image, g *grid.Grid) {
 			}
 			style := glyph.Regular
 			if c.Attr&grid.AttrBold != 0 {
-				style = glyph.Bold
+				style |= glyph.Bold
+			}
+			if c.Attr&grid.AttrItalic != 0 {
+				style |= glyph.Italic
 			}
 			fg := g.FGOf(x, y)
 			// A block cursor inverts the cell it sits on, so the glyph

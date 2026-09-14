@@ -9,8 +9,10 @@ package main
 import (
 	"errors"
 	"flag"
+	"fmt"
 	"io"
 	"log"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -18,6 +20,8 @@ import (
 	"github.com/hajimehoshi/ebiten/v2"
 	"golang.org/x/image/font/gofont/gomono"
 	"golang.org/x/image/font/gofont/gomonobold"
+	"golang.org/x/image/font/gofont/gomonobolditalic"
+	"golang.org/x/image/font/gofont/gomonoitalic"
 
 	"github.com/marrasen/gridterm/glyph"
 	"github.com/marrasen/gridterm/grid"
@@ -425,6 +429,44 @@ func (a *app) pump() {
 	}
 }
 
+// bundledFonts returns the Go Mono faces compiled into the binary.
+func bundledFonts() glyph.Fonts {
+	return glyph.Fonts{
+		Regular:    gomono.TTF,
+		Bold:       gomonobold.TTF,
+		Italic:     gomonoitalic.TTF,
+		BoldItalic: gomonobolditalic.TTF,
+	}
+}
+
+// loadFonts reads the comma-separated font files given to -font, in the
+// order regular, bold, italic, bold italic. A trailing style may be left
+// out and an inner one left empty, which makes the atlas borrow a style
+// it does have.
+func loadFonts(list string) (glyph.Fonts, error) {
+	var fonts glyph.Fonts
+	into := []*[]byte{&fonts.Regular, &fonts.Bold, &fonts.Italic, &fonts.BoldItalic}
+	paths := strings.Split(list, ",")
+	if len(paths) > len(into) {
+		return glyph.Fonts{}, fmt.Errorf("at most %d files, got %d", len(into), len(paths))
+	}
+	for i, path := range paths {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			continue
+		}
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return glyph.Fonts{}, err
+		}
+		*into[i] = b
+	}
+	if fonts.Regular == nil {
+		return glyph.Fonts{}, fmt.Errorf("the first file is the regular font and is required")
+	}
+	return fonts, nil
+}
+
 func main() {
 	var (
 		fontSize = flag.Float64("font-size", defaultFontSize, "font size in points")
@@ -433,10 +475,22 @@ func main() {
 		scroll = flag.Int("scrollback", vt.DefaultScrollback, "lines of history to keep")
 		remote = flag.String("ssh", "",
 			"connect to [user@]host[:port] over SSH instead of running a local shell")
+		fontFiles = flag.String("font", "",
+			"font files to use instead of the bundled Go Mono, comma separated,"+
+				" in the order regular,bold,italic,bold-italic")
 	)
 	flag.Parse()
 
-	atlas, err := glyph.NewAtlas(gomono.TTF, gomonobold.TTF, *fontSize, 96)
+	fonts := bundledFonts()
+	if *fontFiles != "" {
+		f, err := loadFonts(*fontFiles)
+		if err != nil {
+			log.Fatalf("-font: %v", err)
+		}
+		fonts = f
+	}
+
+	atlas, err := glyph.NewAtlas(fonts, *fontSize, 96)
 	if err != nil {
 		log.Fatalf("build glyph atlas: %v", err)
 	}

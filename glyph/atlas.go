@@ -27,13 +27,25 @@ const padding = 1
 
 // Style selects a variant of the same typeface. Kept deliberately small:
 // the atlas key must stay cheap to hash.
+//
+// The values are a bitfield — Bold is bit 0 and Italic bit 1 — so a
+// caller holding the two attributes separately combines them with a
+// plain OR.
 type Style uint8
 
 const (
-	Regular Style = iota
-	Bold
-	numStyles
+	Regular    Style = 0
+	Bold       Style = 1
+	Italic     Style = 2
+	BoldItalic Style = Bold | Italic
+	numStyles  Style = 4
 )
+
+// Fonts holds the TrueType or OpenType bytes for each style. Regular is
+// required; a nil entry borrows the nearest style that is present.
+type Fonts struct {
+	Regular, Bold, Italic, BoldItalic []byte
+}
 
 // Glyph records where a rasterised glyph lives and how to place its quad
 // relative to the cell origin (the top-left of the cell box).
@@ -66,7 +78,7 @@ type Atlas struct {
 
 	// src keeps the font bytes so the atlas can be rebuilt at a new
 	// size without the caller having to hold them.
-	srcRegular, srcBold []byte
+	src Fonts
 
 	// sizePt and dpi are kept so fallback faces can be built at the same
 	// size as the primary one.
@@ -91,36 +103,15 @@ type Atlas struct {
 	scratch []byte
 }
 
-// NewAtlas builds an atlas from TrueType/OpenType bytes for the regular
-// and bold weights at the given size. Pass nil for boldTTF to reuse the
-// regular face for bold text.
-func NewAtlas(regularTTF, boldTTF []byte, sizePt, dpi float64) (*Atlas, error) {
-	a := &Atlas{cache: make(map[key]Glyph, 512), sizePt: sizePt, dpi: dpi}
-
-	mkFace := func(b []byte) (font.Face, error) {
-		f, err := sfnt.Parse(b)
-		if err != nil {
-			return nil, fmt.Errorf("parse font: %w", err)
-		}
-		return opentype.NewFace(f, &opentype.FaceOptions{
-			Size: sizePt,
-			DPI:  dpi,
-			// Full hinting keeps stems on the pixel grid, which is what
-			// makes small monospace text crisp rather than smeared.
-			Hinting: font.HintingFull,
-		})
-	}
-
-	a.srcRegular, a.srcBold = regularTTF, boldTTF
-
-	var err error
-	if a.faces[Regular], err = mkFace(regularTTF); err != nil {
+// NewAtlas builds an atlas from the given font bytes at the given size.
+func NewAtlas(fonts Fonts, sizePt, dpi float64) (*Atlas, error) {
+	faces, err := buildFaces(fonts, sizePt, dpi)
+	if err != nil {
 		return nil, err
 	}
-	if boldTTF == nil {
-		a.faces[Bold] = a.faces[Regular]
-	} else if a.faces[Bold], err = mkFace(boldTTF); err != nil {
-		return nil, err
+	a := &Atlas{
+		cache:  make(map[key]Glyph, 512),
+		sizePt: sizePt, dpi: dpi, src: fonts, faces: faces,
 	}
 
 	// Derive the cell box from the regular face. A monospace face gives
@@ -157,7 +148,7 @@ func (a *Atlas) SetSize(sizePt float64) error {
 	if sizePt <= 0 || sizePt == a.sizePt {
 		return nil
 	}
-	next, err := NewAtlas(a.srcRegular, a.srcBold, sizePt, a.dpi)
+	next, err := NewAtlas(a.src, sizePt, a.dpi)
 	if err != nil {
 		// Leave the atlas as it was. A failed resize should not take the
 		// window down with it.
@@ -349,6 +340,65 @@ func (a *Atlas) loadNextFallback() font.Face {
 	}
 	a.fallbackDone = true
 	return nil
+}
+
+// buildFaces opens one face per style at the given size. A style with no
+// bytes of its own shares the face of the style substitute picks for it.
+func buildFaces(fonts Fonts, sizePt, dpi float64) ([numStyles]font.Face, error) {
+	var faces [numStyles]font.Face
+	// Every other style falls back to regular, so without it the array
+	// would come back full of nil faces.
+	if fonts.Regular == nil {
+		return faces, fmt.Errorf("no regular font")
+	}
+
+	mkFace := func(b []byte) (font.Face, error) {
+		f, err := sfnt.Parse(b)
+		if err != nil {
+			return nil, fmt.Errorf("parse font: %w", err)
+		}
+		return opentype.NewFace(f, &opentype.FaceOptions{
+			Size: sizePt,
+			DPI:  dpi,
+			// Full hinting keeps stems on the pixel grid, which is what
+			// makes small monospace text crisp rather than smeared.
+			Hinting: font.HintingFull,
+		})
+	}
+
+	srcs := [numStyles][]byte{
+		Regular:    fonts.Regular,
+		Bold:       fonts.Bold,
+		Italic:     fonts.Italic,
+		BoldItalic: fonts.BoldItalic,
+	}
+	// Ascending order, so the face a style borrows is already built.
+	for s := Style(0); s < numStyles; s++ {
+		if srcs[s] == nil {
+			faces[s] = faces[substitute(s, srcs)]
+			continue
+		}
+		var err error
+		if faces[s], err = mkFace(srcs[s]); err != nil {
+			return faces, err
+		}
+	}
+	return faces, nil
+}
+
+// substitute picks the style whose face stands in for a style with no
+// font of its own. Bold italic prefers italic, then bold; everything
+// else falls back to regular.
+func substitute(s Style, srcs [numStyles][]byte) Style {
+	if s == BoldItalic {
+		if srcs[Italic] != nil {
+			return Italic
+		}
+		if srcs[Bold] != nil {
+			return Bold
+		}
+	}
+	return Regular
 }
 
 func ceil26_6(v fixed.Int26_6) int  { return int((v + 63) >> 6) }

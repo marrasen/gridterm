@@ -13,9 +13,9 @@ emulator, and draws the resulting character grid as batched triangles.
 ## What works
 
 - **A real terminal.** bash, vim and less all run: alternate screen,
-  scroll regions, scrollback, 256 and true colour, bold, dim, underline,
-  strikethrough and reverse video, window title, cursor shapes, device
-  reports, bracketed paste and mouse modes.
+  scroll regions, scrollback, 256 and true colour, bold, dim, italic,
+  underline, strikethrough and reverse video, window title, cursor
+  shapes, device reports, bracketed paste and mouse modes.
 - **Local shells and SSH.** One `session.Session` interface with two
   implementations. Nothing above it — the emulator, the grid, the
   renderer — can tell the difference.
@@ -49,7 +49,14 @@ go run .                       # your login shell
 go run . -ssh user@host        # a shell on another machine
 go run . -e 'vim /etc/hosts'   # one command
 go run . -font-size 18
+go run . -font /path/to/Regular.ttf,/path/to/Bold.ttf
 ```
+
+Text is drawn in the four Go Mono faces compiled into the binary:
+regular, bold, italic and bold italic. `-font` takes font files instead,
+comma separated, in the order regular, bold, italic, bold italic. Only
+the regular font is required — a style you leave out borrows one you
+gave. There is no way to pick a font by family name yet; give paths.
 
 | Key | |
 |---|---|
@@ -93,9 +100,9 @@ encoders and both session types.
 | `grid` | 592 | no | the display grid, damage tracking, selection, wide-character invariants |
 | `input` | 818 | no | key, text, mouse and paste events to VT bytes |
 | `session` | 983 | no | a shell as a byte stream: local pty or SSH |
-| `glyph` | 866 | yes | glyph atlas, system font fallback, box drawing |
-| `render` | 368 | yes | grid to batched triangles |
-| `main` | 515 | yes | the window and the wiring |
+| `glyph` | 914 | yes | glyph atlas, system font fallback, box drawing |
+| `render` | 371 | yes | grid to batched triangles |
+| `main` | 653 | yes | the window and the wiring |
 
 The layering is deliberate: `vt` never imports the renderer, `input`
 never imports ebiten (that lives in `input/ebitenin`), and `session`
@@ -154,8 +161,17 @@ emulator under `internal/` where they cannot be imported.
 
 ## Known gaps
 
-- **Italic** is parsed but drawn in the regular face; there is no italic
-  font in the bundle.
+- **Fonts are chosen by file path, not by name.** `-font` takes paths.
+  Matching a family name means reading the name table out of every font
+  file on the system, grouping the four styles despite inconsistent
+  subfamily strings, and rejecting proportional fonts; none of that is
+  written yet.
+- **A fallback glyph is always upright.** The system fonts consulted for
+  runes the main font lacks are shared by every style, so CJK, braille
+  and heavy box drawing stay regular even in bold or italic text.
+- **Variable fonts render at their default instance.**
+  `x/image/font/sfnt` does not apply variation axes, so asking such a
+  font for its bold weight gets the default one.
 - **Blink** is parsed and ignored.
 - **Colour emoji** do not render. `x/image/font/sfnt` cannot read the
   bitmap tables that colour emoji fonts use.

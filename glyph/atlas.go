@@ -240,11 +240,8 @@ func (a *Atlas) rasterise(r rune, style Style) Glyph {
 		return Glyph{Empty: true}
 	}
 
-	// Convert the 26.6 fixed-point glyph box to whole pixels, rounding
-	// outwards so no coverage is clipped.
-	minX, minY := floor26_6(bounds.Min.X), floor26_6(bounds.Min.Y)
-	maxX, maxY := ceil26_6(bounds.Max.X), ceil26_6(bounds.Max.Y)
-	w, h := maxX-minX, maxY-minY
+	size, pen, offset := glyphBox(bounds, a.metrics.Ascent)
+	w, h := size.X, size.Y
 	if w <= 0 || h <= 0 {
 		return Glyph{Empty: true} // space and friends
 	}
@@ -263,22 +260,37 @@ func (a *Atlas) rasterise(r rune, style Style) Glyph {
 		Dst:  mask,
 		Src:  image.NewUniform(color.White),
 		Face: face,
-		// Place the pen so the glyph's own bounding box lands at the
-		// mask origin.
-		Dot: fixed.Point26_6{X: -bounds.Min.X, Y: -bounds.Min.Y},
+		Dot:  pen,
 	}
 	d.DrawString(string(r))
 
 	page, rect := a.alloc(w, h)
 	a.pages[page].SubImage(rect).(*ebiten.Image).WritePixels(mask.Pix)
 
-	return Glyph{
-		Page: page,
-		Rect: rect,
-		// GlyphBounds is relative to the baseline with Y growing down, so
-		// the mask's top-left sits Ascent+minY below the cell origin.
-		Offset: image.Pt(minX, a.metrics.Ascent+minY),
-	}
+	return Glyph{Page: page, Rect: rect, Offset: offset}
+}
+
+// glyphBox says how big a glyph's mask is, where to put the pen to draw
+// into it, and where the mask goes relative to the cell origin.
+//
+// The pen lands on a whole pixel, at the same corner the mask is placed
+// at. Both come from the same floored corner, so every glyph's baseline
+// falls on the same row of the cell whatever shape the glyph is.
+//
+// Drawing with the pen at the outline's own corner instead puts the
+// baseline a fraction of a pixel away from where the mask is placed, and
+// the fraction is different for every glyph because it comes from that
+// glyph's own height. A lower-case "i" reaches higher than an "n", so
+// the two would sit at different heights on the same line.
+func glyphBox(bounds fixed.Rectangle26_6, ascent int) (size image.Point, pen fixed.Point26_6, offset image.Point) {
+	// Rounded outwards so no coverage is clipped.
+	minX, minY := floor26_6(bounds.Min.X), floor26_6(bounds.Min.Y)
+	maxX, maxY := ceil26_6(bounds.Max.X), ceil26_6(bounds.Max.Y)
+	return image.Pt(maxX-minX, maxY-minY),
+		fixed.P(-minX, -minY),
+		// GlyphBounds is relative to the baseline with Y growing down,
+		// so the mask's top-left sits Ascent+minY below the cell origin.
+		image.Pt(minX, ascent+minY)
 }
 
 // rasteriseDrawn renders a procedurally drawn glyph, which always fills

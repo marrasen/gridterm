@@ -98,6 +98,8 @@ func (a *app) machineDied(m *machine) {
 		return
 	}
 	delete(a.machines, m.at.name)
+	// The tunnels went with it. Their rows stay, saying so.
+	a.tunnelsDiedOn(m)
 
 	dead := meter.New()
 	dead.Close()
@@ -124,7 +126,7 @@ func (a *app) dropMachine(name string) error {
 	// The connection first. It closes everything riding on it in
 	// parallel, each waiting out its own drain period; closing the panes
 	// first would wait out one drain period per pane instead.
-	errs := []error{m.conn.Close()}
+	errs := []error{m.conn.Close(), a.dropTunnelsOn(m)}
 	// A machine reached through this one has been closed with it, but
 	// the window is still holding a record of it.
 	for _, rider := range a.ridingOn(m) {

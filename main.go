@@ -148,6 +148,7 @@ func main() {
 	a.machines = make(map[string]*machine)
 	a.opening = make(map[string]bool)
 	a.paneOn = make(map[*term.Terminal]*machine)
+	a.tunnels = make(map[*conns.Entry]*tunnel)
 	a.scrollback = *scroll
 	a.colours = pal
 	a.panes = make(map[*term.Terminal]*conns.Entry)
@@ -208,7 +209,9 @@ func main() {
 	}
 	// After the panes, so a shell gets its polite hangup before the
 	// connection carrying it goes away underneath it.
-	closed = append(closed, a.closeMachines())
+	// The tunnels before the connections that carry them, so a port
+	// that could not be let go of is reported as its own failure.
+	closed = append(closed, a.closeTunnels(), a.closeMachines())
 	if err := errors.Join(closed...); err != nil {
 		log.Fatal(err)
 	}

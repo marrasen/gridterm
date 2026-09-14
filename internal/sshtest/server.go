@@ -48,6 +48,9 @@ type Server struct {
 	forwards  int
 	forwarded []string
 
+	// bound are the ports the far machine has been asked to listen on.
+	bound []bound
+
 	// writeMu serialises channel writes. x/crypto documents concurrent
 	// writes to one ssh.Channel as unsafe, and the request loop and the
 	// echo goroutine both write.
@@ -233,7 +236,13 @@ func (s *Server) handle(nc net.Conn) {
 		return
 	}
 	defer sc.Close()
-	go ssh.DiscardRequests(reqs)
+	// The global requests, which is how a client asks this machine to
+	// listen on a port for it.
+	go func() {
+		for req := range reqs {
+			s.forwardRequest(sc, req)
+		}
+	}()
 
 	for nch := range chans {
 		switch nch.ChannelType() {

@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/marrasen/gridterm/conns"
@@ -70,6 +71,12 @@ func (a *app) refreshPanel(now time.Time) {
 		}
 	}
 
+	// A tunnel says how many streams are going through it, which is the
+	// one thing about it the meter cannot say.
+	for e, open := range a.tunnels {
+		e.Note = streams(open.f.Streams())
+	}
+
 	// What is still open, so a rate belonging to something that has gone
 	// is not kept for the life of the window.
 	live := make(map[*conns.Entry]bool, len(a.rates))
@@ -111,11 +118,15 @@ func (a *app) panelRow(row conns.Row, now time.Time) ui.ListRow {
 
 // note is the word at the end of a row: what it is doing, and how fast
 // when that is worth knowing.
+//
+// A speed comes first while one is worth showing, because that is the
+// answer to "is this working": a tunnel carrying two streams and moving
+// nothing is stuck, and the row has to be able to say so.
 func (a *app) note(row conns.Row, now time.Time) string {
-	if row.Note != "" {
-		return row.Note
-	}
 	if row.Meter == nil {
+		if row.Note != "" {
+			return row.Note
+		}
 		return row.State.String()
 	}
 	// Sampled whatever the state, so the window it measures is always
@@ -133,7 +144,22 @@ func (a *app) note(row conns.Row, now time.Time) string {
 			return speed
 		}
 	}
+	if row.Note != "" {
+		return row.Note
+	}
 	return row.State.String()
+}
+
+// streams is what a tunnel's row says when nothing is moving through it:
+// how many connections are going through it at all.
+func streams(n int) string {
+	switch {
+	case n <= 0:
+		return ""
+	case n == 1:
+		return "1 stream"
+	}
+	return strconv.Itoa(n) + " streams"
 }
 
 // groupName is what a machine is called on the panel.

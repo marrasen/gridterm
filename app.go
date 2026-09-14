@@ -84,6 +84,11 @@ type app struct {
 	// would hold the second and close neither.
 	opening map[string]bool
 
+	// tunnels are the forwards the window is holding, by the panel row
+	// that stands for each. They ride on a connection, so closing that
+	// closes them; this is what takes their rows away with it.
+	tunnels map[*conns.Entry]*tunnel
+
 	// paneOn says which connection a pane is running on. Panes are
 	// grouped on the panel by a name, and a name can mean two things at
 	// once -- the machine -ssh put every pane on, and a connection made
@@ -413,6 +418,8 @@ func (a *app) commands() {
 		ui.Command{ID: "conn.terminal", Title: "Open another terminal here",
 			Run: a.openTerminalHere},
 		ui.Command{ID: "conn.command", Title: "Run a command…", Run: a.openCommandHere},
+		ui.Command{ID: "conn.tunnel", Title: "Open a tunnel…", Run: a.openTunnelHere},
+		ui.Command{ID: "conn.socks", Title: "Open a SOCKS proxy…", Run: a.openSocksHere},
 		ui.Command{ID: "conn.close", Title: "Close this connection",
 			Run: a.closeSelectedConnection},
 		ui.Command{ID: "conn.clearFinished", Title: "Clear finished connections",

@@ -39,13 +39,19 @@ type Browser struct {
 	// something typed, which a widget does not do.
 	OnMkdir, OnRename func(Work)
 
+	// Style colours the bar of keys along the bottom. It is the panes'
+	// own style, so the bar belongs to what is above it.
+	Style Style
+
 	left, right *Pane
 	split       *ui.Split
+	keys        []fkey
+	size        ui.Size
 }
 
 // NewBrowser puts two panes side by side, with the keys on the left.
 func NewBrowser(left, right *Pane, divider func(*ui.Split)) *Browser {
-	b := &Browser{left: left, right: right}
+	b := &Browser{left: left, right: right, keys: browserKeys()}
 	b.split = ui.NewSplit(ui.Columns, left, right)
 	if divider != nil {
 		divider(b.split)
@@ -104,11 +110,56 @@ func (b *Browser) work(both, one bool) (Work, bool) {
 	return w, true
 }
 
-// Layout tells the split how much room it has.
-func (b *Browser) Layout(size ui.Size) { b.split.Layout(size) }
+// Layout gives the panes everything but the bar of keys.
+func (b *Browser) Layout(size ui.Size) {
+	b.size = size
+	b.split.Layout(ui.Size{Cols: size.Cols, Rows: max(size.Rows-b.barRows(), 0)})
+}
 
-// Draw paints both panes.
-func (b *Browser) Draw(v grid.View) { b.split.Draw(v) }
+// barRows is how many rows the bar of keys takes.
+func (b *Browser) barRows() int {
+	// Never at the cost of the panes: a browser showing a bar and one
+	// row of names is a browser showing nothing.
+	if len(b.keys) == 0 || b.size.Rows < 4 {
+		return 0
+	}
+	return 1
+}
+
+// Draw paints the panes and the bar of keys under them.
+func (b *Browser) Draw(v grid.View) {
+	cols, rows := v.Size()
+	if cols <= 0 || rows <= 0 {
+		return
+	}
+	bar := b.barRows()
+	if rows > bar {
+		b.split.Draw(v.Sub(0, 0, cols, rows-bar))
+	}
+	if bar == 0 {
+		return
+	}
+	drawKeys(v, rows-1, cols, b.keys, b.Style, b.wired)
+}
+
+// wired reports whether a key on the bar has anything behind it here.
+func (b *Browser) wired(k input.Key) bool {
+	switch k {
+	case input.KeyTab:
+		return true
+	case input.KeyF2:
+		return b.OnRename != nil
+	case input.KeyF5:
+		return b.OnCopy != nil
+	case input.KeyF6:
+		return b.OnMove != nil
+	case input.KeyF7:
+		return b.OnMkdir != nil
+	case input.KeyF8:
+		return b.OnDelete != nil
+	}
+	return false
+}
 
 // SetFocus passes the focus to whichever pane has it.
 func (b *Browser) SetFocus(on bool) { b.split.SetFocus(on) }
@@ -139,7 +190,16 @@ func (b *Browser) HandleKey(ev input.Event) (bool, error) {
 		return b.split.HandleKey(ev)
 	}
 
-	switch ev.Key {
+	if took, err := b.press(ev.Key); took || err != nil {
+		return took, err
+	}
+	return b.split.HandleKey(ev)
+}
+
+// press runs what a key means, whether it was typed or clicked on the
+// bar. It reports whether the key was used.
+func (b *Browser) press(key input.Key) (bool, error) {
+	switch key {
 	case input.KeyTab:
 		b.Swap()
 		return true, nil
@@ -162,7 +222,7 @@ func (b *Browser) HandleKey(ev input.Event) (bool, error) {
 		// answer to that question.
 		return b.ask(b.OnRename, false, true)
 	}
-	return b.split.HandleKey(ev)
+	return false, nil
 }
 
 // ask hands on what the user picked out, if anything and if there is
@@ -183,9 +243,24 @@ func (b *Browser) ask(to func(Work), both, one bool) (bool, error) {
 	return true, nil
 }
 
-// HandleMouse passes the mouse to the split, which knows where its panes
-// are.
+// HandleMouse runs a key clicked on the bar, and otherwise passes the
+// mouse to the split, which knows where its panes are.
 func (b *Browser) HandleMouse(ev input.MouseEvent) (bool, error) {
+	if bar := b.barRows(); bar > 0 && ev.Row == b.size.Rows-1 {
+		if ev.Kind != input.MousePress || ev.Button != input.MouseLeft {
+			// A release or a drag over the bar is swallowed rather than
+			// acted on, the way a press on a button is.
+			return true, nil
+		}
+		i, ok := keyAt(ev.Col, b.size.Cols, len(b.keys))
+		if !ok {
+			return true, nil
+		}
+		// Taken whatever the key does: the press landed on the bar, not
+		// on whatever is under the browser.
+		_, err := b.press(b.keys[i].Key)
+		return true, err
+	}
 	return b.split.HandleMouse(ev)
 }
 

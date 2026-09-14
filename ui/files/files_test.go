@@ -2,6 +2,7 @@ package files
 
 import (
 	"errors"
+	"fmt"
 	"image/color"
 	"os"
 	"path/filepath"
@@ -653,5 +654,242 @@ func TestRenamingIsAboutOneName(t *testing.T) {
 
 	if len(asked.Names) != 1 {
 		t.Fatalf("it asked to rename %v, want the one under the bar", asked.Names)
+	}
+}
+
+// drawBrowser paints a browser and reads it back, one string per row.
+func drawBrowser(b *Browser, cols, rows int) []string {
+	g := grid.New(cols, rows, color.RGBA{}, color.RGBA{})
+	b.Layout(ui.Size{Cols: cols, Rows: rows})
+	b.Draw(g.View())
+	out := make([]string, rows)
+	for y := 0; y < rows; y++ {
+		out[y] = rowText(g, y, cols)
+	}
+	return out
+}
+
+// The browser says which key does what along the bottom, the way
+// Midnight Commander does. Without it there is nothing on screen saying
+// that F5 copies.
+func TestBrowserSaysWhatTheKeysDo(t *testing.T) {
+	b, _, _ := two(t)
+	b.Style = styled()
+	rows := drawBrowser(b, 80, 12)
+
+	bar := rows[len(rows)-1]
+	for _, want := range []string{"Tab", "Swap", "2", "Rename", "5", "Copy", "6", "Move", "7", "Mkdir", "8", "Delete"} {
+		if !strings.Contains(bar, want) {
+			t.Errorf("the bar reads %q, missing %q", bar, want)
+		}
+	}
+	// And it is the bottom row alone: the panes keep the rest.
+	if strings.Contains(rows[len(rows)-2], "Rename") {
+		t.Errorf("the row above the bar reads %q", rows[len(rows)-2])
+	}
+}
+
+// The bar takes a row from the panes rather than being drawn over them.
+func TestTheBarTakesARowFromThePanes(t *testing.T) {
+	b, _, _ := two(t)
+	b.Style = styled()
+	b.Layout(ui.Size{Cols: 80, Rows: 12})
+	// A pane has a header row and the rest is its listing, so eleven
+	// rows of browser is ten rows of pane.
+	rows := drawBrowser(b, 80, 12)
+	if got := strings.TrimSpace(rows[0]); got == "" {
+		t.Fatal("the pane header is not drawn")
+	}
+	if !strings.Contains(rows[11], "Copy") {
+		t.Fatalf("the bar is on row %q", rows[11])
+	}
+}
+
+// Clicking a key on the bar does what pressing it does. The bar is the
+// help, so it has to work as one.
+func TestClickingTheBarRunsTheKey(t *testing.T) {
+	b, left, right := two(t)
+	b.Style = styled()
+	write(t, left, "one.txt", "one")
+	b.Here().Reload()
+	press(t, b, input.KeyDown)
+
+	var asked []Work
+	b.OnCopy = func(w Work) { asked = append(asked, w) }
+	b.Layout(ui.Size{Cols: 60, Rows: 12})
+
+	// The third of six keys is Copy, so its cell starts a third of the
+	// way along.
+	took, err := b.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft, Row: 11, Col: 60*2/6 + 1,
+	})
+	if err != nil {
+		t.Fatalf("the click failed: %v", err)
+	}
+	if !took {
+		t.Fatal("the click on the bar travelled on")
+	}
+	if len(asked) != 1 {
+		t.Fatalf("the bar asked for %d copies", len(asked))
+	}
+	if asked[0].From.At() != left || asked[0].To.At() != right {
+		t.Fatalf("the copy goes from %q to %q", asked[0].From.At(), asked[0].To.At())
+	}
+}
+
+// A click on the bar never reaches the panes underneath, whatever the
+// key it landed on does.
+func TestAClickOnTheBarStaysOnIt(t *testing.T) {
+	b, _, _ := two(t)
+	b.Style = styled()
+	b.Layout(ui.Size{Cols: 60, Rows: 12})
+	was := b.Here().At()
+
+	// Nothing is wired to Rename, and nothing is picked out either.
+	took, err := b.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft, Row: 11, Col: 12,
+	})
+	if err != nil || !took {
+		t.Fatalf("took %v, err %v", took, err)
+	}
+	if b.Here().At() != was {
+		t.Fatalf("the click moved the keys to %q", b.Here().At())
+	}
+}
+
+// Every column of the bar belongs to the key drawn there, all the way
+// to the right edge.
+func TestEveryColumnOfTheBarIsTheKeyItShows(t *testing.T) {
+	b, _, _ := two(t)
+	b.Style = styled()
+	for _, cols := range []int{40, 60, 61, 80, 97} {
+		rows := drawBrowser(b, cols, 12)
+		bar := rows[11]
+		var swapped int
+		b.OnCopy = func(Work) {}
+		for col := 0; col < cols; col++ {
+			i, ok := keyAt(col, cols, len(b.keys))
+			if !ok {
+				t.Fatalf("column %d of %d belongs to no key", col, cols)
+			}
+			start, end := keyCell(i, cols, len(b.keys))
+			if col < start || col >= end {
+				t.Fatalf("column %d of %d says key %d, drawn at %d..%d", col, cols, i, start, end)
+			}
+			if b.keys[i].Key == input.KeyTab {
+				swapped++
+			}
+		}
+		if swapped == 0 {
+			t.Fatalf("no column of %q is the swap key", bar)
+		}
+	}
+}
+
+// A browser with no room for both the panes and the bar keeps the
+// panes: a bar over one row of names helps nobody.
+func TestABrowserTooShortForTheBar(t *testing.T) {
+	b, _, _ := two(t)
+	b.Style = styled()
+	rows := drawBrowser(b, 60, 3)
+	for _, row := range rows {
+		if strings.Contains(row, "Copy") {
+			t.Fatalf("the bar is drawn in a browser three rows high: %v", rows)
+		}
+	}
+	// And a click where the bar would have been reaches the panes.
+	var asked int
+	b.OnCopy = func(Work) { asked++ }
+	b.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft, Row: 2, Col: 25,
+	})
+	if asked != 0 {
+		t.Fatal("a click in a browser with no bar ran a key on it")
+	}
+}
+
+// A browser nobody is touching writes nothing, bar and all.
+//
+// The narrow width is the one that matters: there the names on the bar
+// are longer than the room each key has, and a title allowed to run into
+// the next key's cell would be written over by it every frame. A cell
+// written twice in one frame is a cell that changed.
+func TestAnIdleBrowserDirtiesNothing(t *testing.T) {
+	for _, cols := range []int{36, 40, 60} {
+		b, left, _ := two(t)
+		b.Style = styled()
+		write(t, left, "a.txt", "a")
+		b.Here().Reload()
+
+		g := grid.New(cols, 12, color.RGBA{}, color.RGBA{})
+		b.Layout(ui.Size{Cols: cols, Rows: 12})
+		b.Draw(g.View())
+		g.ClearDirty()
+		for i := 0; i < 5; i++ {
+			b.Draw(g.View())
+		}
+		if g.AnyDirty() {
+			var dirty []int
+			for y := 0; y < 12; y++ {
+				if g.RowDirty(y) {
+					dirty = append(dirty, y)
+				}
+			}
+			t.Fatalf("an idle browser %d columns wide dirtied rows %v", cols, dirty)
+		}
+	}
+}
+
+// The panes know how much room they have, which is the browser's height
+// less the bar. A pane told it has a row it cannot draw puts the bar on
+// a name nobody can see.
+func TestTheBarDoesNotHideTheNameTheKeysAreOn(t *testing.T) {
+	b, left, _ := two(t)
+	b.Style = styled()
+	for i := 0; i < 30; i++ {
+		write(t, left, fmt.Sprintf("file%02d.txt", i), "x")
+	}
+	b.Here().Reload()
+	b.Layout(ui.Size{Cols: 60, Rows: 12})
+
+	// All the way to the last name, which is where a pane that thinks
+	// it is a row taller than it is runs off the bottom.
+	press(t, b, input.KeyEnd)
+	on, ok := b.Here().Selected()
+	if !ok {
+		t.Fatal("nothing is selected")
+	}
+
+	rows := drawBrowser(b, 60, 12)
+	var shown bool
+	for _, row := range rows[:11] {
+		if strings.Contains(row, on.Name) {
+			shown = true
+		}
+	}
+	if !shown {
+		t.Fatalf("the keys are on %q, which is not on screen: %v", on.Name, rows)
+	}
+}
+
+// A key with nothing behind it is still shown, so the bar says the same
+// thing wherever it is, but it is shown without being offered.
+func TestTheBarShowsAKeyWithNothingBehindIt(t *testing.T) {
+	b, _, _ := two(t)
+	b.Style = styled()
+	b.OnCopy = func(Work) {}
+
+	g := grid.New(60, 12, color.RGBA{}, color.RGBA{})
+	b.Layout(ui.Size{Cols: 60, Rows: 12})
+	b.Draw(g.View())
+
+	// Copy is wired and Delete is not, so the two read differently.
+	copyAt, _ := keyCell(2, 60, len(b.keys))
+	deleteAt, _ := keyCell(5, 60, len(b.keys))
+	if got := g.At(copyAt+1, 11).BG; got != styled().SelectedBG {
+		t.Errorf("a wired key is drawn on %v, want it marked out", got)
+	}
+	if got := g.At(deleteAt+1, 11).BG; got == styled().SelectedBG {
+		t.Error("a key with nothing behind it is drawn as though it does something")
 	}
 }

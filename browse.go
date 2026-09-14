@@ -49,11 +49,14 @@ func (a *app) openBrowser(left, right string) error {
 	}
 
 	b := &browser{}
-	b.view = files.NewBrowser(a.newPane(leftFS, b, true), a.newPane(rightFS, b, false),
-		func(s *ui.Split) {
-			s.DividerFG = a.colours.FG
-			s.DividerBG = a.colours.BG
-		})
+	leftPane, rightPane := a.newPane(leftFS, b, true), a.newPane(rightFS, b, false)
+	b.view = files.NewBrowser(leftPane, rightPane, func(s *ui.Split) {
+		s.DividerFG = a.colours.FG
+		s.DividerBG = a.colours.BG
+	})
+	// The bar of keys under the panes is drawn in the panes' own
+	// colours, so it reads as part of the browser.
+	b.view.Style = leftPane.Style
 	a.wireBrowser(b)
 
 	if err := a.placeTab(b.view); err != nil {
@@ -62,7 +65,6 @@ func (a *app) openBrowser(left, right string) error {
 	a.browsers[b.view] = b
 	// The browser is what the tree holds, and it opens on its left side.
 	a.focus(b.view)
-	leftPane, rightPane := b.view.Panes()
 	b.view.Focus(leftPane)
 	a.showBrowser(b, left, right)
 	a.relayout()

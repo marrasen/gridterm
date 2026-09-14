@@ -157,6 +157,7 @@ func main() {
 	a.scrollback = *scroll
 	a.colours = pal
 	a.panes = make(map[*term.Terminal]*conns.Entry)
+	a.ended = make(map[*term.Terminal]bool)
 	a.exits = make(chan struct{}, exitQueue)
 
 	first, err := a.newTerminal()
@@ -180,9 +181,9 @@ func main() {
 	a.dock = ui.NewDock(panelWidth, a.panel, first)
 	a.dock.DividerFG = a.colours.ANSI[8]
 	a.dock.DividerBG = a.colours.BG
-	// Hidden to begin with: a window that opens with a panel nobody
-	// asked for is a window that has to be tidied before it is used.
-	a.dock.Collapsed = true
+	// Open to begin with: it is how everything in the window is reached,
+	// so a window that hid it would open with no way in.
+	a.dock.Collapsed = false
 	a.bar = a.newMenubar(a.dock)
 	a.refreshServers()
 	// Told once there is a window to tell them in: this runs before one

@@ -509,8 +509,8 @@ func TestATunnelRowSaysHowManyStreamsItHas(t *testing.T) {
 		Kind: remote.LocalForward, Listen: "127.0.0.1:0", Target: echo,
 	})
 	row := tunnelRow(t, a)
-	if got := a.note(conns.Row{Entry: row, State: meter.Opened}, time.Now()); got != "opened" {
-		t.Fatalf("a tunnel with nothing on it says %q, want opened", got)
+	if got := a.note(conns.Row{Entry: row, State: meter.Opened}, time.Now()); got != "" {
+		t.Fatalf("a tunnel with nothing on it says %q, and the dot says the rest", got)
 	}
 
 	addr := a.tunnels[row].f.Addr()

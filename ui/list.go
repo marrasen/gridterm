@@ -24,6 +24,36 @@ type ListStyle struct {
 
 	// NoteFG is the word at the end of a row: what it is doing, how fast.
 	NoteFG color.RGBA
+
+	// BGEnd is the background of the last row, when it has an alpha. The
+	// rows in between blend from BG to it, which gives a list a ground
+	// of its own rather than the window's.
+	BGEnd color.RGBA
+}
+
+// rowBG is the background of one row, blended down the list when the
+// style asks for it.
+func (l ListStyle) rowBG(y, rows int) color.RGBA {
+	if l.BGEnd.A == 0 || rows <= 1 {
+		return l.BG
+	}
+	return blend(l.BG, l.BGEnd, min(max(y, 0), rows-1), rows-1)
+}
+
+// blend mixes two colours, at/of the way from the first to the second.
+func blend(from, to color.RGBA, at, of int) color.RGBA {
+	if of <= 0 {
+		return from
+	}
+	mix := func(a, b uint8) uint8 {
+		return uint8(int(a) + (int(b)-int(a))*at/of)
+	}
+	return color.RGBA{
+		R: mix(from.R, to.R),
+		G: mix(from.G, to.G),
+		B: mix(from.B, to.B),
+		A: mix(from.A, to.A),
+	}
 }
 
 // ListRow is one line.
@@ -52,6 +82,12 @@ type ListRow struct {
 	// FG overrides the row's colour when it has an alpha, for a row that
 	// has to read differently from the rest.
 	FG color.RGBA
+
+	// Mark is a character drawn in the indent in front of the text, and
+	// MarkFG is its colour. It is how a row says what state it is in
+	// without spending words on it.
+	Mark   rune
+	MarkFG color.RGBA
 }
 
 // List is rows to look through and choose from.
@@ -241,21 +277,29 @@ func (l *List) paint(v grid.View) {
 	if cols <= 0 || rows <= 0 {
 		return
 	}
-	v.Fill(grid.Cell{Rune: ' ', FG: l.Style.FG, BG: l.Style.BG, Width: 1})
+	// Row by row, because the ground can be a blend down the list rather
+	// than one colour.
+	for y := 0; y < rows; y++ {
+		line := v.Sub(0, y, cols, 1)
+		line.Fill(grid.Cell{
+			Rune: ' ', FG: l.Style.FG, BG: l.Style.rowBG(y, rows), Width: 1,
+		})
+	}
 
 	for y := 0; y < rows; y++ {
 		i := l.top + y
 		if i >= len(l.rows) {
 			break
 		}
-		l.paintRow(v.Sub(0, y, cols, 1), l.rows[i], i == l.at)
+		l.paintRow(v.Sub(0, y, cols, 1), l.rows[i], i == l.at, y, rows)
 	}
 }
 
-// paintRow draws one line: the text, indented, and the note at the end.
-func (l *List) paintRow(v grid.View, row ListRow, selected bool) {
+// paintRow draws one line: the mark in the indent, the text, and the
+// note at the end.
+func (l *List) paintRow(v grid.View, row ListRow, selected bool, y, rows int) {
 	cols, _ := v.Size()
-	fg, bg := l.Style.FG, l.Style.BG
+	fg, bg := l.Style.FG, l.Style.rowBG(y, rows)
 	noteFG := l.Style.NoteFG
 	switch {
 	case row.Header:
@@ -286,6 +330,20 @@ func (l *List) paintRow(v grid.View, row ListRow, selected bool) {
 	}
 
 	at := min(row.Depth*2, max(cols-1, 0))
+	// The mark sits in the indent the text leaves in front of it, so it
+	// costs no column of its own.
+	if row.Mark != 0 && at >= 2 {
+		mark := row.MarkFG
+		if mark.A == 0 {
+			mark = fg
+		}
+		if selected && l.focused {
+			// A colour chosen against the other rows can disappear
+			// against this one.
+			mark = fg
+		}
+		v.Set(at-2, 0, grid.Cell{Rune: row.Mark, FG: mark, BG: bg, Width: 1})
+	}
 	attr := grid.Attr(0)
 	if row.Header {
 		attr = grid.AttrBold

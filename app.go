@@ -114,6 +114,10 @@ type app struct {
 	// question is up has to take the question with it.
 	asking map[chan jobs.Choice]func()
 
+	// ended are the panes whose program has stopped and which are being
+	// kept only so the user can read what it printed.
+	ended map[*term.Terminal]bool
+
 	// paneOn says which connection a pane is running on. Panes are
 	// grouped on the panel by a name, and a name can mean two things at
 	// once -- the machine -ssh put every pane on, and a connection made

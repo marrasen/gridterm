@@ -335,6 +335,7 @@ func (a *app) removePane(w ui.Widget, keep bool) error {
 			}
 		}
 		delete(a.panes, t)
+		delete(a.ended, t)
 		a.forgetPane(t)
 		if cerr := t.Close(); cerr != nil && err == nil {
 			err = cerr
@@ -351,6 +352,33 @@ func (a *app) removePane(w ui.Widget, keep bool) error {
 	}
 	return err
 }
+
+// paneEnded deals with a shell that stopped on its own.
+//
+// A command keeps its pane. What it printed is what it was run for, and
+// a window that cleared the screen the moment the program finished would
+// take the answer away with it. A shell takes its pane with it: there is
+// nothing left to read, and the user asked for a shell rather than for
+// what it last said.
+func (a *app) paneEnded(t *term.Terminal) error {
+	e := a.panes[t]
+	if e == nil || e.Kind != conns.Command {
+		return a.removePane(t, true)
+	}
+	if a.ended[t] {
+		return nil
+	}
+	a.ended[t] = true
+	// The row says it has finished, and the channel it was running on is
+	// let go of. The pane itself stays, showing what was printed.
+	e.Meter.Close()
+	a.markDirty()
+	return t.Close()
+}
+
+// Ended reports whether a pane is one that has stopped and is only being
+// read.
+func (a *app) Ended(t *term.Terminal) bool { return a.ended[t] }
 
 // roomToSplit reports whether a pane has the cells to become two, which
 // needs one each side and one for the divider.
@@ -447,7 +475,7 @@ func (a *app) reapExited() {
 			if !t.Exited() {
 				continue
 			}
-			if err := a.removePane(t, true); err != nil {
+			if err := a.paneEnded(t); err != nil {
 				a.logError(err)
 			}
 		}

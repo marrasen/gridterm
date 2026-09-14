@@ -11,7 +11,10 @@ import (
 
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/internal/sshtest"
+	"github.com/marrasen/gridterm/meter"
 	"github.com/marrasen/gridterm/remote"
+	"github.com/marrasen/gridterm/ui"
+	"github.com/marrasen/gridterm/ui/term"
 )
 
 // pinServers makes the app connect to the given test servers and to
@@ -497,4 +500,95 @@ func has(list []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// A command that has finished keeps its pane. What it printed is what it
+// was run for, and a window that cleared the screen the moment the
+// program stopped would take the answer away with it.
+func TestAFinishedCommandKeepsItsOutput(t *testing.T) {
+	s := sshtest.New(t)
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+
+	a.connect(serverConfig(t, s))
+	waitForPanes(t, a, 2)
+	host := serverConfig(t, s).Target()
+
+	if err := a.openOn(host, []string{"uname", "-a"}); err != nil {
+		t.Fatalf("run a command: %v", err)
+	}
+	if len(a.panes) != 3 {
+		t.Fatalf("%d panes, want the command as well", len(a.panes))
+	}
+	// The test server answers a command and ends the session at once.
+	waitFor(t, a, "the command to finish", func() bool {
+		a.reapExited()
+		for pane, e := range a.panes {
+			if e.Kind == conns.Command {
+				return a.Ended(pane)
+			}
+		}
+		return false
+	})
+
+	// The pane is still there, and still in the tree.
+	if len(a.panes) != 3 {
+		t.Fatalf("%d panes after the command finished, want its output kept", len(a.panes))
+	}
+	var e *conns.Entry
+	var pane *term.Terminal
+	for p, have := range a.panes {
+		if have.Kind == conns.Command {
+			e, pane = have, p
+		}
+	}
+	if e == nil {
+		t.Fatal("the command's row has gone")
+	}
+	if got := e.State(time.Now()); got != meter.Closed {
+		t.Fatalf("the row is %v, want it to say the command finished", got)
+	}
+	var inTree bool
+	for _, leaf := range ui.Leaves(a.root.Widget()) {
+		if leaf == ui.Widget(pane) {
+			inTree = true
+		}
+	}
+	if !inTree {
+		t.Fatal("the pane was taken out of the tree with its output")
+	}
+	checkTree(t, a)
+
+	// And the user can close it when they have read it.
+	if e.Close == nil {
+		t.Fatal("the finished command cannot be closed")
+	}
+	if err := e.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	if len(a.panes) != 2 {
+		t.Fatalf("%d panes after closing it", len(a.panes))
+	}
+}
+
+// A shell that ends takes its pane with it: there is nothing left to
+// read, and the user asked for a shell rather than for what it last
+// said.
+func TestAShellThatEndsTakesItsPane(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	if err := a.openTab(); err != nil {
+		t.Fatalf("openTab: %v", err)
+	}
+	if len(a.panes) != 2 {
+		t.Fatalf("%d panes", len(a.panes))
+	}
+
+	a.shells[0].Close()
+	waitUntil(t, func() bool {
+		a.reapExited()
+		return len(a.panes) == 1
+	})
+	checkTree(t, a)
 }

@@ -101,6 +101,7 @@ func newTestApp(t *testing.T, cols, rows int) *testApp {
 		colours:    vt.DefaultPalette(),
 		scrollback: 64,
 		panes:      make(map[*term.Terminal]*conns.Entry),
+		ended:      make(map[*term.Terminal]bool),
 		exits:      make(chan struct{}, exitQueue),
 		lastSize:   [2]int{cols, rows},
 		registry:   conns.New(),

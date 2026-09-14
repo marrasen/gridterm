@@ -50,7 +50,9 @@ func hostStep(h remote.Host) step {
 // for the machine itself. via names what carries it, or is empty.
 func (a *app) hold(s step, conn *remote.Conn, via string) *machine {
 	m := &machine{at: s, conn: conn}
-	note := "connected"
+	// Only what the dot cannot say. That it is connected is the dot's
+	// business; which machine it was reached through is not.
+	note := ""
 	if via != "" {
 		note = "via " + via
 	}

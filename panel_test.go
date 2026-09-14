@@ -1,6 +1,7 @@
 package main
 
 import (
+	"image/color"
 	"strings"
 	"testing"
 	"time"
@@ -35,6 +36,19 @@ func panelText(a *testApp, now time.Time) []string {
 		out[i] = strings.TrimSpace(row.Text)
 		if row.Note != "" {
 			out[i] += " [" + row.Note + "]"
+		}
+	}
+	return out
+}
+
+// panelMarks returns the colour of the dot in front of each row, for the
+// rows that have one.
+func panelMarks(a *testApp, now time.Time) []color.RGBA {
+	a.refreshPanel(now)
+	var out []color.RGBA
+	for _, row := range a.panel.Rows() {
+		if row.Mark != 0 {
+			out = append(out, row.MarkFG)
 		}
 	}
 	return out
@@ -76,24 +90,60 @@ func TestPanelShowsTheFourStates(t *testing.T) {
 	withPanel(t, a)
 	e := onlyPane(t, a)
 
-	if got := panelText(a, panelNow)[1]; !strings.HasSuffix(got, "[opened]") {
-		t.Fatalf("row = %q, want it opened", got)
+	green := a.colours.ANSI[2]
+	grey := a.colours.ANSI[8]
+
+	if got := panelMarks(a, panelNow)[0]; got != green {
+		t.Fatalf("a row with nothing moved is %v, want the green of something that is there", got)
 	}
 
+	// While bytes are going past the dot brightens and dims, so it is
+	// green but not the steady green of a row that is only there.
 	e.Meter.Moved(64, 0, panelNow)
-	if got := panelText(a, panelNow)[1]; !strings.HasSuffix(got, "[active]") {
-		t.Fatalf("row = %q, want it active", got)
+	busy := panelMarks(a, panelNow)[0]
+	if busy == grey {
+		t.Fatal("a busy row is grey")
 	}
+	var moved bool
+	for step := 0; step < 8; step++ {
+		at := panelNow.Add(time.Duration(step) * pulseStep)
+		if panelMarks(a, at)[0] != busy {
+			moved = true
+		}
+	}
+	if !moved {
+		t.Fatal("the dot does not move while bytes are going past")
+	}
+
 	// Nothing is told to change it: the same panel, asked about a later
-	// moment, says settled.
+	// moment, is the steady green again.
 	later := panelNow.Add(meter.Settle)
-	if got := panelText(a, later)[1]; !strings.HasSuffix(got, "[settled]") {
-		t.Fatalf("row = %q at the boundary, want it settled", got)
+	if got := panelMarks(a, later)[0]; got != green {
+		t.Fatalf("a settled row is %v, want the steady green", got)
 	}
 
 	e.Meter.Close()
-	if got := panelText(a, later)[1]; !strings.HasSuffix(got, "[closed]") {
-		t.Fatalf("row = %q, want it closed", got)
+	if got := panelMarks(a, later)[0]; got != grey {
+		t.Fatalf("a finished row is %v, want grey", got)
+	}
+}
+
+// What a row is doing is the dot's business, so the words beside it are
+// only what the dot cannot say.
+func TestPanelSaysNoStateInWords(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	e := onlyPane(t, a)
+
+	for _, state := range []string{"opened", "active", "settled", "closed"} {
+		if got := panelText(a, panelNow)[1]; strings.Contains(got, state) {
+			t.Fatalf("the row says %q in words", state)
+		}
+		e.Meter.Moved(1, 0, panelNow)
+	}
+	e.Meter.Close()
+	if got := panelText(a, panelNow)[1]; strings.Contains(got, "closed") {
+		t.Fatalf("the row says %q", got)
 	}
 }
 
@@ -373,7 +423,8 @@ func TestPanelDoesNotDirtyAnIdleFrame(t *testing.T) {
 		t.Fatal("an idle panel dirtied the layer")
 	}
 
-	// And the moment the state changes, it does.
+	// And the moment the state changes, it does: the dot goes from the
+	// one that moves to the one that does not.
 	a.refreshPanel(panelNow.Add(meter.Settle))
 	a.root.Draw(a.g.View())
 	if !a.g.AnyDirty() {
@@ -490,15 +541,15 @@ func TestPanelKeepsTheRowOfAShellThatEndedOnItsOwn(t *testing.T) {
 		return len(a.panes) == 1
 	})
 
-	rows := panelText(a, panelNow)
 	var closed int
-	for _, row := range rows {
-		if strings.Contains(row, "[closed]") {
+	for _, mark := range panelMarks(a, panelNow) {
+		if mark == a.colours.ANSI[8] {
 			closed++
 		}
 	}
 	if closed != 1 {
-		t.Fatalf("the panel shows %v, want the shell that ended left behind", rows)
+		t.Fatalf("the panel shows %v, want the shell that ended left behind",
+			panelText(a, panelNow))
 	}
 
 	// And clearing takes it off.
@@ -607,5 +658,33 @@ func TestPanelSpeedIsNotAveragedOverTheQuietSpell(t *testing.T) {
 	got := panelText(a, quiet.Add(time.Second))[1]
 	if !strings.Contains(got, "1.0 MB/s") {
 		t.Fatalf("row = %q, want 1.0 MB/s: the quiet spell was averaged in", got)
+	}
+}
+
+// The sidebar has a ground of its own, shading down the list, so it
+// reads as part of the window's frame rather than as one more thing
+// running in it.
+func TestThePanelHasItsOwnGround(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+
+	if a.panel.Style.BG == a.colours.BG {
+		t.Fatal("the sidebar is the same colour as everything else")
+	}
+	if a.panel.Style.BGEnd == a.panel.Style.BG {
+		t.Fatal("the sidebar does not shade at all")
+	}
+
+	// And what it draws really is two colours, top and bottom.
+	a.refreshPanel(panelNow)
+	a.root.Draw(a.g.View())
+	area, shown := a.root.AreaOf(a.panel)
+	if !shown {
+		t.Fatal("the sidebar is not on screen")
+	}
+	top := a.g.At(area.X, area.Y)
+	bottom := a.g.At(area.X, area.Y+area.Rows-1)
+	if top.BG == bottom.BG {
+		t.Fatalf("the sidebar is one flat colour: %v", top.BG)
 	}
 }

@@ -195,6 +195,13 @@ type placement struct {
 	l      *Layer
 	x, y   int
 	hidden bool
+
+	// frost is where the glass is, because moving it changes the screen
+	// without dirtying any grid. Nothing in the program does that today:
+	// a dialog that moves has redrawn its cells. It is here so that a
+	// dialog which animates its panel, or sizes it from something other
+	// than its own text, cannot silently freeze.
+	frost image.Rectangle
 }
 
 // NewCompositor returns a compositor drawing with the given renderer.
@@ -386,7 +393,11 @@ func (c *Compositor) markAllStale() {
 // part of it: swapping one is caught by Layer.lastGrid, which has to
 // mark the layer behind as well.
 func placementOf(l *Layer) placement {
-	return placement{l: l, x: l.X, y: l.Y, hidden: l.Hidden}
+	p := placement{l: l, x: l.X, y: l.Y, hidden: l.Hidden}
+	if l.Frost != nil {
+		p.frost = l.Frost.Rect
+	}
+	return p
 }
 
 // appendPlacements records where the layers currently sit, reusing dst's

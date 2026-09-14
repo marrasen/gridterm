@@ -96,28 +96,9 @@ func main() {
 		return
 	}
 
-	bundled := bundledFonts()
-	// What the window starts with, which is the bundled face unless a
-	// flag named something else. The two are kept apart, because "back to
-	// the bundled font" has to mean the bundled font whatever a flag said.
-	fonts, family := bundled, ""
-	switch {
-	case *fontFiles != "" && *fontFamily != "":
-		log.Fatal("-font and -font-family both name a typeface; use one")
-	case *fontFiles != "":
-		f, err := loadFonts(*fontFiles)
-		if err != nil {
-			log.Fatalf("-font: %v", err)
-		}
-		fonts = f
-	case *fontFamily != "":
-		f, name, err := loadFamily(*fontFamily)
-		if err != nil {
-			log.Fatalf("-font-family: %v", err)
-		}
-		// The family's own spelling rather than what was typed, so
-		// choosing it again from the menu is recognised as no change.
-		fonts, family = f, name
+	fonts, family, err := chooseFonts(*fontFiles, *fontFamily)
+	if err != nil {
+		log.Fatal(err)
 	}
 
 	atlas, err := glyph.NewAtlas(fonts, *fontSize, 96)
@@ -126,7 +107,7 @@ func main() {
 	}
 	m := atlas.Metrics()
 
-	a := &app{atlas: atlas, renderer: render.New(atlas), fontSize: *fontSize, bundled: bundled}
+	a := &app{atlas: atlas, renderer: render.New(atlas), fontSize: *fontSize}
 	// What -font-family chose, so the font menu treats it as the one in
 	// use rather than offering to switch to it again.
 	a.fontFamily = family
@@ -186,6 +167,35 @@ func main() {
 	if err != nil && !errors.Is(err, ebiten.Termination) {
 		log.Fatal(err)
 	}
+}
+
+// chooseFonts resolves the typeface flags into what the window starts
+// with, and the family name that names it.
+//
+// What it returns is only the starting typeface. The bundled faces are
+// read separately and never come from here, because "back to the bundled
+// font" has to mean the bundled font whatever a flag said.
+func chooseFonts(files, family string) (glyph.Fonts, string, error) {
+	switch {
+	case files != "" && family != "":
+		return glyph.Fonts{}, "", fmt.Errorf(
+			"-font and -font-family both name a typeface; use one")
+	case files != "":
+		fonts, err := loadFonts(files)
+		if err != nil {
+			return glyph.Fonts{}, "", fmt.Errorf("-font: %w", err)
+		}
+		return fonts, "", nil
+	case family != "":
+		fonts, name, err := loadFamily(family)
+		if err != nil {
+			return glyph.Fonts{}, "", fmt.Errorf("-font-family: %w", err)
+		}
+		// The family's own spelling rather than what was typed, so
+		// choosing it again from the menu is recognised as no change.
+		return fonts, name, nil
+	}
+	return bundledFonts(), "", nil
 }
 
 // printFonts writes the installed monospace families, with the styles

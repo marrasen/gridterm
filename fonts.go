@@ -124,7 +124,7 @@ func (a *app) setFontFamily(name string) error {
 	if strings.EqualFold(name, a.fontFamily) {
 		return nil
 	}
-	fonts := a.bundled
+	fonts := bundledFonts()
 	if name != "" {
 		family, ok := a.familyNamed(name)
 		if !ok {

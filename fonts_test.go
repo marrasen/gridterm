@@ -1,8 +1,14 @@
 package main
 
 import (
+	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"golang.org/x/image/font/gofont/gomono"
+	"golang.org/x/image/font/gofont/gomonobold"
 
 	"github.com/marrasen/gridterm/glyph"
 	"github.com/marrasen/gridterm/ui"
@@ -18,6 +24,107 @@ func fakeFamilies(names ...string) []glyph.Family {
 		out = append(out, f)
 	}
 	return out
+}
+
+// realFamilies returns families whose files exist and parse, so a test
+// can drive the whole font switch rather than stopping at the read.
+func realFamilies(t *testing.T, names ...string) []glyph.Family {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gomono.ttf")
+	if err := os.WriteFile(path, gomono.TTF, 0o644); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
+	out := make([]glyph.Family, 0, len(names))
+	for _, name := range names {
+		f := glyph.Family{Name: name}
+		f.Src[glyph.Regular] = glyph.Source{Path: path}
+		out = append(out, f)
+	}
+	return out
+}
+
+// TestSetFontFamilyUsesTheFamilysOwnSpelling checks the name the window
+// remembers. Keeping what was typed instead would make choosing the same
+// family from the menu rebuild the atlas for no change.
+func TestSetFontFamilyUsesTheFamilysOwnSpelling(t *testing.T) {
+	a := newTestApp(t, 40, 20)
+	withMenubar(t, a)
+	deliverFonts(a, realFamilies(t, "Courier New"))
+
+	if err := a.setFontFamily("courier new"); err != nil {
+		t.Fatalf("switch font: %v", err)
+	}
+
+	if a.fontFamily != "Courier New" {
+		t.Errorf("the window calls the font %q, want the family's own spelling", a.fontFamily)
+	}
+	// And asking again, by any spelling, is now no change at all.
+	gen := a.atlas.Generation()
+	if err := a.setFontFamily("COURIER NEW"); err != nil {
+		t.Fatalf("switch again: %v", err)
+	}
+	if a.atlas.Generation() != gen {
+		t.Error("asking for the font already in use rebuilt the atlas")
+	}
+}
+
+// TestSetFontFamilyRebuildsTheAtlas checks the switch end to end: the
+// glyphs are re-rasterised and the window re-measures itself, because a
+// new typeface is a new cell box.
+func TestSetFontFamilyRebuildsTheAtlas(t *testing.T) {
+	a := newTestApp(t, 40, 20)
+	withMenubar(t, a)
+	deliverFonts(a, realFamilies(t, "Elsewhere"))
+	gen := a.atlas.Generation()
+
+	if err := a.setFontFamily("Elsewhere"); err != nil {
+		t.Fatalf("switch font: %v", err)
+	}
+
+	if a.atlas.Generation() == gen {
+		t.Error("the atlas was not rebuilt, so the old glyphs are still cached")
+	}
+	if err := a.setFontFamily(""); err != nil {
+		t.Fatalf("back to the bundled font: %v", err)
+	}
+	if a.fontFamily != "" {
+		t.Errorf("the window calls the font %q, want the bundled one", a.fontFamily)
+	}
+}
+
+// TestChooseFontsKeepsTheBundledFacesReachable checks the flags. The
+// typeface a flag names is what the window starts with, and nothing
+// more: the bundled faces are read separately, so the Font menu can
+// always get back to them.
+func TestChooseFontsKeepsTheBundledFacesReachable(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "mono.ttf")
+	if err := os.WriteFile(path, gomonobold.TTF, 0o644); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
+
+	fonts, family, err := chooseFonts(path, "")
+	if err != nil {
+		t.Fatalf("-font %s: %v", path, err)
+	}
+
+	if family != "" {
+		t.Errorf("family = %q, want none: a file names no family", family)
+	}
+	if len(fonts.Regular) != len(gomonobold.TTF) {
+		t.Error("the file given was not what the window starts with")
+	}
+	// The bundled faces are untouched by any of that.
+	if len(bundledFonts().Regular) != len(gomono.TTF) {
+		t.Error("the bundled faces are no longer the bundled faces")
+	}
+}
+
+func TestChooseFontsRefusesBothFlags(t *testing.T) {
+	if _, _, err := chooseFonts("a.ttf", "Consolas"); err == nil {
+		t.Error("naming a typeface twice was accepted")
+	}
 }
 
 // deliverFonts hands the app a scan result and lets the draw loop pick
@@ -201,11 +308,74 @@ func TestSetFontFamilyReportsAMissingFile(t *testing.T) {
 // for nothing.
 func TestSetFontFamilyIgnoresTheOneInUse(t *testing.T) {
 	a := newTestApp(t, 40, 20)
+	withMenubar(t, a)
+	deliverFonts(a, fakeFamilies("Ghost"))
+	// A family whose file does not exist, so loading it would fail. The
+	// early return is what keeps this from being an error.
+	a.fontFamily = "Ghost"
 
-	// The atlas is nil in a test app, so reaching it would panic. That
-	// the call returns at all is the assertion.
-	if err := a.setFontFamily(""); err != nil {
-		t.Errorf("switching to the font already in use: %v", err)
+	if err := a.setFontFamily("Ghost"); err != nil {
+		t.Errorf("switching to the family already in use: %v", err)
+	}
+	// And by any spelling of its name.
+	if err := a.setFontFamily("ghost"); err != nil {
+		t.Errorf("switching to the family already in use, in lowercase: %v", err)
+	}
+	if a.fontFamily != "Ghost" {
+		t.Errorf("the font is now %q", a.fontFamily)
+	}
+}
+
+// TestStartFontScanDeliversAResult covers the goroutine itself, which
+// every other test here steps around by putting a result on the channel
+// by hand.
+func TestStartFontScanDeliversAResult(t *testing.T) {
+	if testing.Short() {
+		t.Skip("reads every font file on the system")
+	}
+	a := newTestApp(t, 40, 20)
+	withMenubar(t, a)
+
+	a.startFontScan()
+
+	// The channel is buffered, so the goroutine finishes whether or not
+	// anyone is waiting. Blocking here is the test for that.
+	got := <-a.families
+	if got.err != nil {
+		t.Fatalf("scanning the system fonts: %v", got.err)
+	}
+	// Put it back and let the draw loop pick it up the way it does.
+	a.families <- got
+	a.reapFontScan()
+
+	if len(a.installed) != len(got.families) {
+		t.Errorf("%d families remembered, want the %d that were found",
+			len(a.installed), len(got.families))
+	}
+	if _, ok := a.root.Commands.Lookup(fontCommandPrefix + "bundled"); !ok {
+		t.Error("the bundled font has no command after a real scan")
+	}
+}
+
+// TestFontScanReportsAFailureAndKeepsWhatItFound checks the disk-error
+// rule at the one place it is deliberately not fatal: a font directory
+// that will not open costs the fonts in it, not the window.
+func TestFontScanReportsAFailureAndKeepsWhatItFound(t *testing.T) {
+	a := newTestApp(t, 40, 20)
+	withMenubar(t, a)
+	var logged []error
+	a.onError = func(err error) { logged = append(logged, err) }
+
+	deliverScan(a, scanned{
+		families: fakeFamilies("Consolas"),
+		err:      errors.New("open C:/Windows/Fonts: permission denied"),
+	})
+
+	if len(logged) == 0 {
+		t.Error("the failure was swallowed")
+	}
+	if _, ok := a.root.Commands.Lookup(fontCommandID("Consolas")); !ok {
+		t.Error("the families that were found were thrown away with the failure")
 	}
 }
 

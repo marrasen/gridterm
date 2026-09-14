@@ -250,10 +250,11 @@ func describe(f *sfnt.Font, buf *sfnt.Buffer, src Source) (faceInfo, bool) {
 	if err != nil || family == "" {
 		return faceInfo{}, false
 	}
-	sub, err := f.Name(buf, sfnt.NameIDSubfamily)
-	if err != nil {
-		return faceInfo{}, false
-	}
+	// A font with no subfamily record at all is the regular one, which
+	// is the same answer an empty subfamily gets. Rejecting the face
+	// instead would make "no name" and "an empty name" mean different
+	// things for no reason.
+	sub, _ := f.Name(buf, sfnt.NameIDSubfamily)
 	style, ok := styleOf(sub)
 	if !ok {
 		return faceInfo{}, false

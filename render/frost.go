@@ -35,6 +35,11 @@ type Frost struct {
 
 	// Tint is painted over the blurred background, its alpha saying how
 	// much of it to use.
+	//
+	// Its components are read as they are written rather than as
+	// alpha-premultiplied, which is what color.RGBA usually means. The
+	// alpha here is a mixing weight, not coverage: the colour is what it
+	// says, and the alpha says how much of it to lay on.
 	Tint color.RGBA
 
 	// Saturation lifts the colour of what shows through, because a blur
@@ -215,7 +220,7 @@ func (c *Compositor) drawFrost(screen *ebiten.Image, l *Layer) {
 		return
 	}
 
-	src, step := frostRegion(panel, f.Radius, screen.Bounds())
+	src, inner, step := frostRegion(panel, f.Radius, screen.Bounds())
 	c.scratch.ensure(src.Dx(), src.Dy())
 
 	// The backdrop, moved so the wanted region sits at the scratch's own
@@ -238,7 +243,6 @@ func (c *Compositor) drawFrost(screen *ebiten.Image, l *Layer) {
 	}
 
 	// The part of the scratch that lines up with the panel.
-	inner := panel.Sub(src.Min)
 	backdrop := c.scratch.a.SubImage(inner).(*ebiten.Image)
 
 	sop := &ebiten.DrawRectShaderOptions{}
@@ -257,23 +261,28 @@ func (c *Compositor) drawFrost(screen *ebiten.Image, l *Layer) {
 	c.stats.Frosted++
 }
 
-// frostRegion returns the region of the screen to blur for a panel, and
-// how far apart the blur taps should sit. A step of zero means no blur
+// frostRegion works out the three rectangles a panel needs: src is the
+// region of the screen to blur, inner is where the panel sits inside
+// that region once it has been moved to the scratch image's origin, and
+// step is how far apart the blur taps sit. A step of zero means no blur
 // was asked for.
 //
 // The region is wider than the panel so that the blur has real pixels to
 // reach into. Left to sample its own edge, the panel would fade out at
 // the rim instead of showing what is beside it. At the edge of the
-// screen there is nothing to widen into, and the taps clamp instead.
-func frostRegion(panel image.Rectangle, radius float32, screen image.Rectangle) (image.Rectangle, float64) {
+// screen there is nothing to widen into, and the taps clamp instead --
+// which is why inner is not simply the padding: it is however much of
+// the padding there was room for.
+func frostRegion(panel image.Rectangle, radius float32, screen image.Rectangle) (src, inner image.Rectangle, step float64) {
 	if radius <= 0 {
-		return panel, 0
+		return panel, panel.Sub(panel.Min), 0
 	}
 	// The taps are spread over the radius, but never closer than a pixel
 	// apart, so a small radius still reaches a whole number of pixels.
-	step := max(float64(radius)/blurTaps, 1)
+	step = max(float64(radius)/blurTaps, 1)
 	pad := int(math.Ceil(step * blurTaps))
-	return panel.Inset(-pad).Intersect(screen), step
+	src = panel.Inset(-pad).Intersect(screen)
+	return src, panel.Sub(src.Min), step
 }
 
 // frostCorner holds a corner radius to what the panel can take. The

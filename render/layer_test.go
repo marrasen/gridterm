@@ -1,6 +1,7 @@
 package render
 
 import (
+	"image"
 	"image/color"
 	"testing"
 
@@ -75,6 +76,21 @@ func TestSamePlacementsSpotsEveryVisibleChange(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("frost moved", func(t *testing.T) {
+		// A panel that moves changes the screen without dirtying a grid,
+		// so the placement has to notice it or the frame is skipped and
+		// the glass is left where the dialog used to be.
+		a.Frost = &Frost{Rect: image.Rect(0, 0, 10, 10)}
+		defer func() { a.Frost = nil }()
+		with := appendPlacements(nil, base)
+
+		a.Frost.Rect = image.Rect(5, 5, 15, 15)
+
+		if samePlacementSlices(with, appendPlacements(nil, base)) {
+			t.Error("the panel moved and nothing noticed")
+		}
+	})
 
 	t.Run("reordered", func(t *testing.T) {
 		if samePlacementSlices(was, appendPlacements(nil, []*Layer{b, a})) {

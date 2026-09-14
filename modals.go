@@ -130,6 +130,9 @@ func (a *app) drawModals() {
 			m.layer.Frost.Rect = image.Rect(
 				box.X*cw, box.Y*ch,
 				(box.X+box.Cols)*cw, (box.Y+box.Rows)*ch)
+			// The corner is measured in cells too, so changing the font
+			// size with a dialog open keeps it in proportion.
+			m.layer.Frost.Corner = float32(min(cw, ch))
 		}
 	}
 }

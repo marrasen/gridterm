@@ -5,11 +5,15 @@ import (
 	"path/filepath"
 	"testing"
 
+	"golang.org/x/image/font/gofont/gobold"
+	"golang.org/x/image/font/gofont/goitalic"
+	"golang.org/x/image/font/gofont/gomedium"
 	"golang.org/x/image/font/gofont/gomono"
 	"golang.org/x/image/font/gofont/gomonobold"
 	"golang.org/x/image/font/gofont/gomonobolditalic"
 	"golang.org/x/image/font/gofont/gomonoitalic"
 	"golang.org/x/image/font/gofont/goregular"
+	"golang.org/x/image/font/gofont/gosmallcaps"
 )
 
 // fontDir writes the given fonts into a directory of their own and
@@ -90,19 +94,26 @@ func TestScanGroupsAFamilysFourStyles(t *testing.T) {
 // TestScanRejectsAProportionalFont checks the whole point of the scan: a
 // terminal drawn in a font whose letters are different widths has every
 // column in the wrong place.
+//
+// The proportional faces here are a family called "Go", not "Go
+// Regular": name id 1 is the family, and the weight is the subfamily.
+// Looking for the wrong name would make this test prove nothing.
 func TestScanRejectsAProportionalFont(t *testing.T) {
 	dir := fontDir(t, map[string][]byte{
-		"goregular.ttf": goregular.TTF,
-		"gomono.ttf":    gomono.TTF,
+		"goregular.ttf":   goregular.TTF,
+		"gobold.ttf":      gobold.TTF,
+		"goitalic.ttf":    goitalic.TTF,
+		"gomedium.ttf":    gomedium.TTF,
+		"gosmallcaps.ttf": gosmallcaps.TTF,
+		"gomono.ttf":      gomono.TTF,
 	})
 
 	fams := mustScan(t, []string{dir})
 
-	if _, ok := findFamily(fams, "Go Regular"); ok {
-		t.Error("a proportional family was offered")
-	}
-	if _, ok := findFamily(fams, "Go Mono"); !ok {
-		t.Error("the monospace family was not found alongside it")
+	// Exactly one family, so a proportional face slipping through under
+	// any name at all fails this.
+	if len(fams) != 1 || fams[0].Name != "Go Mono" {
+		t.Errorf("families = %+v, want only Go Mono", fams)
 	}
 }
 
@@ -112,7 +123,6 @@ func TestScanSkipsWhatItCannotRead(t *testing.T) {
 	files := goMonoFiles()
 	files["broken.ttf"] = []byte("this is not a font")
 	files["empty.ttf"] = nil
-	files["notes.txt"] = gomono.TTF // a font by content, not by name
 	dir := fontDir(t, files)
 
 	fams := mustScan(t, []string{dir})
@@ -122,6 +132,100 @@ func TestScanSkipsWhatItCannotRead(t *testing.T) {
 	}
 	if fams[0].Name != "Go Mono" {
 		t.Errorf("family = %q, want %q", fams[0].Name, "Go Mono")
+	}
+}
+
+// TestScanIgnoresAFileNotNamedLikeAFont checks that the extension is
+// what decides, so the scan does not read every file on the machine
+// hoping one of them parses.
+func TestScanIgnoresAFileNotNamedLikeAFont(t *testing.T) {
+	// A real font, under a name that is not a font's.
+	dir := fontDir(t, map[string][]byte{"notes.txt": gomono.TTF})
+
+	paths, failed := fontFilesIn([]string{dir})
+
+	if len(failed) != 0 {
+		t.Fatalf("reading the directory failed: %v", failed)
+	}
+	if len(paths) != 0 {
+		t.Errorf("scanned %v; a font by content is still not a font file by name", paths)
+	}
+}
+
+// TestScanPrefersTheSameFileEveryRun checks that two copies of one
+// family give the same answer however the directories are listed. The
+// files are walked in sorted order and the first found for a style wins,
+// so the font a window opens with does not change between runs.
+func TestScanPrefersTheSameFileEveryRun(t *testing.T) {
+	base := t.TempDir()
+	for _, name := range []string{"a", "b"} {
+		dir := filepath.Join(base, name)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("make %s: %v", dir, err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "gomono.ttf"), gomono.TTF, 0o644); err != nil {
+			t.Fatalf("write into %s: %v", dir, err)
+		}
+	}
+
+	// Given in the opposite order to the one they sort in.
+	fams := mustScan(t, []string{filepath.Join(base, "b"), filepath.Join(base, "a")})
+
+	if len(fams) != 1 {
+		t.Fatalf("found %d families, want one", len(fams))
+	}
+	want := filepath.Join(base, "a", "gomono.ttf")
+	if got := fams[0].Src[Regular].Path; got != want {
+		t.Errorf("regular came from %q, want %q: the answer depends on the order"+
+			" the directories were given in", got, want)
+	}
+}
+
+// TestFacesInReportsAFileItCannotOpen checks the line between a font
+// that will not parse and a disk that will not read. The first is
+// skipped in silence because a broken font among hundreds is not worth
+// failing over; the second is the disk failing and is reported.
+func TestFacesInReportsAFileItCannotOpen(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "gone.ttf")
+
+	faces, err := facesIn(missing)
+
+	if err == nil {
+		t.Error("a file that cannot be opened was passed over in silence")
+	}
+	if faces != nil {
+		t.Errorf("faces = %v, want none", faces)
+	}
+
+	// And the other side of the line: a file that opens and is not a font.
+	junk := filepath.Join(t.TempDir(), "junk.ttf")
+	if err := os.WriteFile(junk, []byte("not a font"), 0o644); err != nil {
+		t.Fatalf("write %s: %v", junk, err)
+	}
+	faces, err = facesIn(junk)
+	if err != nil {
+		t.Errorf("a font that will not parse was reported as a failure: %v", err)
+	}
+	if faces != nil {
+		t.Errorf("faces = %v, want none", faces)
+	}
+}
+
+// TestScanIsQuietAboutADirectoryThatIsNotThere checks the other half of
+// that line. Every platform lists font directories a given machine
+// simply does not have, and reporting each one would bury a real
+// failure in noise.
+func TestScanIsQuietAboutADirectoryThatIsNotThere(t *testing.T) {
+	good := fontDir(t, goMonoFiles())
+	absent := filepath.Join(t.TempDir(), "no-such-fonts")
+
+	fams, err := monospacedIn([]string{absent, good})
+
+	if err != nil {
+		t.Errorf("a font directory that does not exist was reported: %v", err)
+	}
+	if len(fams) != 1 {
+		t.Errorf("found %d families, want the one that is there", len(fams))
 	}
 }
 

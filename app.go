@@ -64,6 +64,10 @@ type app struct {
 	// at what the drawing code actually produced. Nil in ordinary use.
 	shot *shooter
 
+	// onError takes the failures logError reports, so a test can see
+	// them. Nil in the program, which logs them.
+	onError func(error)
+
 	// panes is every live terminal, so a shell that exits can be found
 	// wherever it sits in the tree.
 	panes map[*term.Terminal]struct{}
@@ -85,10 +89,10 @@ type app struct {
 	// fontSize is the current size in points.
 	fontSize float64
 
-	// bundled is the typeface compiled into the binary, which is what
-	// the window falls back to. fontFamily names the installed family in
-	// use, empty while the bundled one is.
-	bundled    glyph.Fonts
+	// fontFamily names the installed family in use, empty while the
+	// typeface compiled into the binary is. What that typeface is comes
+	// from bundledFonts, not from a field: a window handed its starting
+	// font would offer that as "the bundled font" for ever after.
 	fontFamily string
 
 	// families carries the system's monospace fonts from the goroutine
@@ -234,9 +238,17 @@ func (a *app) setFontSize(pt float64) error {
 	return nil
 }
 
-// logError reports a failure a pane could not return: the goroutines
-// moving bytes have nowhere to hand one back to.
-func (a *app) logError(err error) { log.Print(err) }
+// logError reports a failure that could not be returned: the goroutines
+// moving bytes, and the compositor, have nowhere to hand one back to.
+//
+// onError is a field so a test can see what was reported. A nil one logs.
+func (a *app) logError(err error) {
+	if a.onError != nil {
+		a.onError(err)
+		return
+	}
+	log.Print(err)
+}
 
 // onFocused wraps a command that acts on the focused pane, doing nothing
 // when the focus is somewhere that is not a terminal.

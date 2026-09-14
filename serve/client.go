@@ -104,8 +104,11 @@ func (w *Window) Open(cols, rows int) (session.Session, error) {
 	if w.isClosed() {
 		return nil, errors.New("serve: that window has been let go of")
 	}
+	// Sent as asked. The machine that has to make a terminal this size
+	// is the one that clamps it, and a second clamp here would only
+	// hide what this window actually asked for.
 	ch, reqs, err := w.client.OpenChannel(chanSession, ssh.Marshal(openSession{
-		Cols: uint32(max(cols, 1)), Rows: uint32(max(rows, 1)),
+		Cols: uint32(cols), Rows: uint32(rows),
 	}))
 	if err != nil {
 		return nil, fmt.Errorf("serve: open a session on %s: %w", w.addr, err)
@@ -142,13 +145,10 @@ func (w *Window) isClosed() bool {
 type remoteSession struct {
 	ch ssh.Channel
 
-	// writeMu keeps Write and Close off each other: closing writes the
-	// channel's own flags, and the window can close with a keystroke
-	// still in flight.
-	writeMu sync.Mutex
-
 	// done is closed when the other end has said how the program ended,
-	// or the channel has gone. status is only read after that.
+	// or the channel has gone without it saying. status and gotOne are
+	// written before that and read after it, so the close is what keeps
+	// them straight.
 	done   chan struct{}
 	status uint32
 	gotOne bool
@@ -159,11 +159,11 @@ type remoteSession struct {
 
 func (s *remoteSession) Read(p []byte) (int, error) { return s.ch.Read(p) }
 
-func (s *remoteSession) Write(p []byte) (int, error) {
-	s.writeMu.Lock()
-	defer s.writeMu.Unlock()
-	return s.ch.Write(p)
-}
+// Write sends input. No lock of our own: a session is never written to
+// from two places at once, and a lock shared with Close is how a pane
+// stops being closeable. Write blocks until the far end has room, and
+// Close is the only thing that can unblock it.
+func (s *remoteSession) Write(p []byte) (int, error) { return s.ch.Write(p) }
 
 // Resize tells the other end the pane changed size.
 func (s *remoteSession) Resize(cols, rows int) error {
@@ -180,9 +180,17 @@ func (s *remoteSession) Resize(cols, rows int) error {
 }
 
 // Wait blocks until the program ends and says how it went.
+//
+// A session whose channel closed without the other end saying how it
+// ended is a connection that dropped, not a program that finished. The
+// two are different things to show somebody, and returning nothing for
+// both would make this whole exchange pointless.
 func (s *remoteSession) Wait() error {
 	<-s.done
-	if s.gotOne && s.status != 0 {
+	switch {
+	case !s.gotOne:
+		return errors.New("serve: the connection went before it said how that ended")
+	case s.status != 0:
 		return fmt.Errorf("serve: it ended with status %d", s.status)
 	}
 	return nil
@@ -191,8 +199,6 @@ func (s *remoteSession) Wait() error {
 // Close hangs the program up.
 func (s *remoteSession) Close() error {
 	s.closeOnce.Do(func() {
-		s.writeMu.Lock()
-		defer s.writeMu.Unlock()
 		if err := s.ch.Close(); err != nil && !errors.Is(err, io.EOF) {
 			s.closeErr = fmt.Errorf("serve: close a session: %w", err)
 		}
@@ -207,6 +213,10 @@ func (s *remoteSession) readRequests(reqs <-chan *ssh.Request) {
 	for req := range reqs {
 		if req.Type == reqExitStatus {
 			var got exitStatus
+			// A status that cannot be read is no status at all, which
+			// Wait reports as a connection that went. Taking it as a
+			// clean finish would be the one answer that is certainly
+			// wrong.
 			if err := ssh.Unmarshal(req.Payload, &got); err == nil {
 				s.status, s.gotOne = got.Status, true
 			}

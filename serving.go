@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/marrasen/gridterm/serve"
+	"github.com/marrasen/gridterm/session"
 	"github.com/marrasen/gridterm/ui"
 )
 
@@ -160,6 +161,14 @@ func (a *app) startServing(port, where string) error {
 		Addr:    net.JoinHostPort(host, strconv.Itoa(n)),
 		HostKey: hostKey,
 		Allowed: allowed,
+		// A shell on this machine, sized for the pane the other window
+		// will draw it in. Started straight from session rather than
+		// through the window's own panes: this is the machine being
+		// worked on, not the one doing the drawing, and nothing here
+		// touches the widget tree.
+		Open: func(cols, rows int) (session.Session, error) {
+			return session.StartLocal(session.LocalConfig{Cols: cols, Rows: rows})
+		},
 		// Every one of these arrives on a goroutine of the server's, so
 		// they are handed to the one that draws.
 		OnJoin: func(c *serve.Client) {

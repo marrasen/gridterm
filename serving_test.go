@@ -46,6 +46,20 @@ func aPublicKey(t *testing.T, comment string) string {
 	return strings.TrimSpace(string(ssh.MarshalAuthorizedKey(signer.PublicKey()))) + " " + comment
 }
 
+// aKeyPair makes a key and the authorized_keys line for it.
+func aKeyPair(t *testing.T) (ssh.Signer, string) {
+	t.Helper()
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("make a key: %v", err)
+	}
+	signer, err := ssh.NewSignerFromKey(priv)
+	if err != nil {
+		t.Fatalf("use the key: %v", err)
+	}
+	return signer, strings.TrimSpace(string(ssh.MarshalAuthorizedKey(signer.PublicKey()))) + " marcus@laptop"
+}
+
 // A window nobody is allowed to connect to says so, and says where to
 // put a key, rather than offering to open a port that serves nobody.
 func TestServingNobodySaysWhereToPutAKey(t *testing.T) {

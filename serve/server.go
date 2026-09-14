@@ -350,9 +350,21 @@ func (s *Server) handshake(nc net.Conn) {
 	}
 
 	go ssh.DiscardRequests(reqs)
-	go s.serveChannels(chans)
+	// gone tells the sessions the connection has finished, and served
+	// closes once every one of them has been hung up on.
+	gone := make(chan struct{})
+	served := make(chan struct{})
+	go func() {
+		defer close(served)
+		s.serveChannels(chans, gone)
+	}()
 
 	why := conn.Wait()
+	close(gone)
+	// Waited for before the client is said to have gone. A window that
+	// said so first would be one where a shell is still being hung up
+	// on while the row for it has already left the panel.
+	<-served
 	s.drop(c)
 	if s.cfg.OnGone != nil {
 		s.cfg.OnGone(c, why)

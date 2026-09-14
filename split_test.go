@@ -405,3 +405,124 @@ func TestLeavingTheSplitQuestionChangesNothing(t *testing.T) {
 	}
 	checkTree(t, a)
 }
+
+// A pane that closes while the question is up is not spliced back into
+// the tree.
+//
+// The chooser holds the pane in a closure, and anything can close it in
+// the meantime: its shell exits, or the connection it rides on drops.
+// ui.Detach cannot tell a closed pane from one the window has only just
+// made, so the answer has to be asked for again when the line is taken.
+func TestAPaneThatClosedWhileAskingIsNotSplicedBack(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	if err := a.openTab(); err != nil {
+		t.Fatalf("openTab: %v", err)
+	}
+	doomed := a.focusedTerminal()
+	first := otherTerminal(t, a, doomed)
+	a.focus(first)
+
+	c := splitChoices(t, a, ui.Columns)
+	// It goes while the question is still up.
+	if err := a.closePane(doomed); err != nil {
+		t.Fatalf("closePane: %v", err)
+	}
+
+	var took bool
+	for i, text := range choiceTexts(c) {
+		if !strings.Contains(text, "Move") {
+			continue
+		}
+		took = true
+		if err := c.Take(i); err == nil {
+			t.Fatal("moving a pane that has closed reported nothing")
+		}
+	}
+	if !took {
+		t.Fatalf("the question never offered the pane: %v", choiceTexts(c))
+	}
+	for _, leaf := range ui.Leaves(a.root.Widget()) {
+		if leaf == ui.Widget(doomed) {
+			t.Fatal("the closed pane is back in the tree")
+		}
+	}
+	checkTree(t, a)
+}
+
+// A file pane belongs to the file manager and is not offered as
+// something to move into a split.
+//
+// Out of the manager it loses every key it has, and a manager left with
+// none is taken out of the tree with the window still holding it.
+func TestAFilePaneIsNotOfferedToMoveIntoASplit(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	if err := a.openFilesOn(conns.Local); err != nil {
+		t.Fatalf("a file pane: %v", err)
+	}
+	pane := a.files.view.Panes()[0]
+	a.focus(a.focusedTerminalAnywhere(t))
+
+	c := splitChoices(t, a, ui.Columns)
+	for _, text := range choiceTexts(c) {
+		if strings.Contains(text, "Move") {
+			t.Fatalf("it offers %q, and the only other pane is a file pane", text)
+		}
+	}
+	c.HandleKey(input.Event{Kind: input.KeyPress, Key: input.KeyEscape})
+
+	// And it is refused even when asked for directly.
+	if err := a.splitWith(ui.Columns, a.focusedTerminalAnywhere(t), pane); err == nil {
+		t.Fatal("a file pane was moved out of the manager")
+	}
+	if a.files == nil || len(a.files.view.Panes()) != 1 {
+		t.Fatal("the manager lost its pane")
+	}
+	checkTree(t, a)
+}
+
+// focusedTerminalAnywhere returns any terminal the window holds.
+func (a *testApp) focusedTerminalAnywhere(t *testing.T) *term.Terminal {
+	t.Helper()
+	for pane := range a.panes {
+		return pane
+	}
+	t.Fatal("the window has no terminal")
+	return nil
+}
+
+// A terminal that arrives for a split whose pane has gone into the
+// background opens in a tab rather than being thrown away.
+//
+// A backgrounded tab has no room to be split into, and the login the
+// user waited for must not be lost because of where they went next.
+func TestASplitWhosePaneWentToTheBackgroundOpensATab(t *testing.T) {
+	s := sshtest.New(t)
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pinServers(t, a, s)
+
+	first := a.focusedTerminal()
+	at := &spot{beside: first, dir: ui.Columns}
+	// Another tab, so the pane the split was meant for is no longer the
+	// one showing and has no area to divide.
+	if err := a.openTab(); err != nil {
+		t.Fatalf("openTab: %v", err)
+	}
+
+	a.openRoute("margit", []step{{name: "margit", cfg: serverConfig(t, s)}}, nil, at)
+	waitForPanes(t, a, 3)
+	checkTree(t, a)
+	for _, w := range a.stage.Children() {
+		if _, split := w.(*ui.Split); split {
+			t.Fatal("it split a pane with no room to be split")
+		}
+	}
+	if got := len(a.stage.Children()); got != 3 {
+		t.Fatalf("the stage holds %d things, want three tabs", got)
+	}
+}

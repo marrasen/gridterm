@@ -79,7 +79,10 @@ func (a *app) newPanel() *ui.List {
 	// somewhere else: the sidebar is the list of what is open, so it has
 	// to say which one is being looked at.
 	l.Style.CurrentFG = a.colours.FG
-	l.Style.CurrentBG = a.colours.Selection
+	// Lifted off the list's own ground rather than the window's
+	// selection colour, so it stays darker than any dot drawn on it: the
+	// dot is what says whether the connection is open.
+	l.Style.CurrentBG = mix(a.colours.BG, a.colours.FG, 1, 6)
 	l.OnActivate = func(row ui.ListRow) error { return a.revealRow(row) }
 	l.OnButton = func(row ui.ListRow) error { return a.openHostMenu(row) }
 	return l
@@ -226,6 +229,9 @@ func (a *app) refreshPanel(now time.Time) {
 		}
 	}
 	a.panel.SetRows(rows)
+	// Which row is in front, told to the list rather than left to the
+	// bar: the bar is the user's and moves where they put it.
+	a.panel.SetCurrent(a.showing())
 	a.followTheStage()
 }
 

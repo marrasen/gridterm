@@ -55,6 +55,14 @@ func (a *app) addSplitChoices(c *ui.Chooser, dir ui.Dir, current ui.Widget) {
 	for _, w := range a.otherPanes(current) {
 		pane := w
 		c.Add("Move "+a.paneName(pane), a.paneWhere(pane), func() error {
+			// Asked again now rather than when the line was written: a
+			// shell that ended or a connection that dropped while the
+			// question was up takes its pane with it, and splicing a
+			// closed one back into the tree leaves a dead session where
+			// nothing can reach it.
+			if !a.live(pane) || !a.live(current) {
+				return errors.New("that pane has closed")
+			}
 			if err := a.splitWith(dir, current, pane); err != nil {
 				// It is out of the tree now and nothing else holds it,
 				// so it goes back as a tab rather than being left
@@ -113,8 +121,11 @@ func (a *app) splitHere(dir ui.Dir) error {
 	return a.splitNewTerminal(dir, current)
 }
 
-// otherPanes is everything open in the window except one pane, in the
-// order the stage holds them.
+// otherPanes is everything open in the window that could be moved
+// somewhere else, except one pane, in the order the stage holds them.
+//
+// A file pane is left out: it belongs to the file manager, and out of it
+// it loses every key it has.
 func (a *app) otherPanes(except ui.Widget) []ui.Widget {
 	if a.stage == nil {
 		return nil
@@ -122,6 +133,9 @@ func (a *app) otherPanes(except ui.Widget) []ui.Widget {
 	var out []ui.Widget
 	for _, leaf := range ui.Leaves(a.stage) {
 		if leaf == except || !a.isPane(leaf) {
+			continue
+		}
+		if _, ok := leaf.(*files.Pane); ok {
 			continue
 		}
 		out = append(out, leaf)

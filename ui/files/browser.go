@@ -550,24 +550,27 @@ func (b *Browser) toPane(ev input.Event) (bool, error) {
 // alongside the chords on the bar: a user who knows those should not
 // have to unlearn them for the sake of the label.
 func (b *Browser) press(ev input.Event) (bool, error) {
-	if ev.Ctrl() {
-		switch ev.Key {
-		case input.KeyC:
+	// The chords come off the bar's own table, so what the bar says is
+	// live and what the key does cannot drift apart. Ctrl+Shift+X is not
+	// Ctrl+X: taking a chord the bar never offered would cut files on a
+	// key the user pressed for something else.
+	if ev.Mods != 0 {
+		switch {
+		case ev.Mods != input.ModCtrl:
+			return false, nil
+		case ev.Key == input.KeyC:
 			return b.pick(false)
-		case input.KeyX:
+		case ev.Key == input.KeyX:
 			return b.pick(true)
-		case input.KeyV:
+		case ev.Key == input.KeyV:
 			return b.paste()
-		case input.KeyD:
+		case ev.Key == input.KeyD:
 			if b.OnClose == nil || b.Here() == nil {
 				return false, nil
 			}
 			b.OnClose(b.Here())
 			return true, nil
 		}
-		return false, nil
-	}
-	if ev.Mods != 0 {
 		return false, nil
 	}
 	switch ev.Key {

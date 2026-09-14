@@ -768,3 +768,42 @@ func TestArtCountsAsAChange(t *testing.T) {
 		t.Fatal("taking the art away left the row clean")
 	}
 }
+
+// A graph says how many of its bars were really measured, so a run of
+// two seconds is not drawn as ten quiet ones and two busy.
+func TestGraphSaysHowManyBarsAreReal(t *testing.T) {
+	if got := Graph([]int{3, 7}).Bars(); got != 2 {
+		t.Errorf("a two-second run says %d bars", got)
+	}
+	long := make([]int, ArtGraphBars*2)
+	if got := Graph(long).Bars(); got != ArtGraphBars {
+		t.Errorf("a run longer than the cell says %d bars, want %d", got, ArtGraphBars)
+	}
+	if got := Graph(nil); got.Kind != ArtNone {
+		t.Errorf("a run of nothing is %v, want no art at all", got)
+	}
+	if got := (Art{}).Bars(); got != 0 {
+		t.Errorf("art that is not a graph says %d bars", got)
+	}
+	// The count does not disturb the bars themselves.
+	art := Graph([]int{1, 2, 3})
+	for i, want := range map[int]int{ArtGraphBars - 3: 1, ArtGraphBars - 2: 2, ArtGraphBars - 1: 3} {
+		if got := art.Bar(i); got != want {
+			t.Errorf("bar %d = %d, want %d", i, got, want)
+		}
+	}
+}
+
+// Filling a region never fills it with one cell's art: a little picture
+// belongs to one cell, not to everything behind it.
+func TestFillDoesNotSpreadArt(t *testing.T) {
+	g := New(4, 2, fg, bg)
+	g.View().Fill(Cell{Rune: ' ', Width: 1, Art: Graph([]int{1, 2})})
+	for y := 0; y < 2; y++ {
+		for x := 0; x < 4; x++ {
+			if got := g.At(x, y).Art.Kind; got != ArtNone {
+				t.Fatalf("cell %d,%d carries %v", x, y, got)
+			}
+		}
+	}
+}

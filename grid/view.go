@@ -151,6 +151,9 @@ func (v View) Fill(c Cell) {
 	}
 	c.Width = 1
 	c.Comb = nil
+	// Art belongs to one cell, never to a region: filling with it would
+	// draw the same little picture in every cell of the view.
+	c.Art = Art{}
 	v.repairEdges()
 	for y := 0; y < v.rows; y++ {
 		for x := 0; x < v.cols; x++ {

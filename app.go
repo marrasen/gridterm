@@ -181,6 +181,12 @@ type app struct {
 	book           *remote.Book
 	serverCommands []string
 
+	// serverHosts is the list the registered commands were built from,
+	// so a rebuild that would change nothing is skipped. Rebuilding
+	// closes whatever menu is open, and this runs whenever a connection
+	// is made or lost.
+	serverHosts []string
+
 	// connecting counts the machines being connected to right now. The
 	// panel shows a row for each, so several can be on their way at
 	// once; this is only so a test can tell when they have all landed.

@@ -78,11 +78,13 @@ const (
 
 // How a graph is packed: the samples it holds and the bits each one
 // takes. Four bits is sixteen heights, which is more than a cell that
-// small can show apart.
+// small can show apart. The count of real bars goes above them, so a run
+// shorter than the cell holds is not drawn as a run of quiet seconds.
 const (
-	ArtGraphBars = 12
-	ArtGraphBits = 4
-	ArtGraphMax  = 1<<ArtGraphBits - 1
+	ArtGraphBars  = 12
+	ArtGraphBits  = 4
+	ArtGraphMax   = 1<<ArtGraphBits - 1
+	artGraphCount = ArtGraphBars * ArtGraphBits
 )
 
 // Graph packs bar heights into a piece of art, oldest first.
@@ -92,15 +94,29 @@ const (
 // second is always in the same place. Heights are clamped to
 // ArtGraphMax, and anything older than the last ArtGraphBars is dropped.
 func Graph(heights []int) Art {
+	if len(heights) == 0 {
+		// No run is no art. A graph of nothing draws a rule across the
+		// cell, which says there was a run and it was quiet.
+		return Art{}
+	}
 	if len(heights) > ArtGraphBars {
 		heights = heights[len(heights)-ArtGraphBars:]
 	}
 	at := ArtGraphBars - len(heights)
-	var data uint64
+	data := uint64(len(heights)) << artGraphCount
 	for i, h := range heights {
 		data |= uint64(min(max(h, 0), ArtGraphMax)) << ((at + i) * ArtGraphBits)
 	}
 	return Art{Kind: ArtGraph, Data: data}
+}
+
+// Bars is how many of a graph's bars were really measured. The rest are
+// seconds that had not happened yet, and are not drawn.
+func (a Art) Bars() int {
+	if a.Kind != ArtGraph {
+		return 0
+	}
+	return min(int(a.Data>>artGraphCount), ArtGraphBars)
 }
 
 // Bar returns the height of one bar of a graph.

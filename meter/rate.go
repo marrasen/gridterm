@@ -36,11 +36,13 @@ const Samples = 12
 
 // Past returns the speeds it remembers, oldest first, with nothing in
 // front of the first second it saw.
+//
+// A copy, because the caller is handed a window onto a run that keeps
+// moving: the array behind it is written again every second.
 func (r *Rate) Past() []uint64 {
-	if r.depth < Samples {
-		return r.past[Samples-r.depth:]
-	}
-	return r.past[:]
+	out := make([]uint64, r.depth)
+	copy(out, r.past[Samples-min(r.depth, Samples):])
+	return out
 }
 
 // remember adds one second to the history, pushing the oldest out.
@@ -71,6 +73,16 @@ func (r *Rate) Sample(m *Meter, now time.Time) (in, out uint64) {
 	r.perSecIn = uint64(float64(gotIn-r.in) / seconds)
 	r.perSecOut = uint64(float64(gotOut-r.out) / seconds)
 	r.in, r.out, r.at = gotIn, gotOut, now
+	if gap >= RateWindow*2 {
+		// More than one window went by unmeasured: the sidebar was
+		// hidden, or the window was not drawing. The speed over the
+		// whole gap is still the answer to how fast, but it cannot
+		// stand in for the last second of a run, and the seconds before
+		// it were never measured either. So the run is forgotten rather
+		// than filled in with an average pretending to be part of it.
+		r.past, r.depth = [Samples]uint64{}, 0
+		return r.perSecIn, r.perSecOut
+	}
 	r.remember(max(r.perSecIn, r.perSecOut))
 	return r.perSecIn, r.perSecOut
 }

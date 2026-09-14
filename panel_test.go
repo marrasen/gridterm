@@ -190,9 +190,8 @@ func TestTheSidebarMarksThePaneInFront(t *testing.T) {
 		t.Fatal("nothing is selected")
 	}
 	marked := a.g.At(area.X+1, area.Y+at).BG
-	if marked != a.colours.Selection {
-		t.Fatalf("the row in front is drawn on %v, want the selection colour %v",
-			marked, a.colours.Selection)
+	if want := mix(a.colours.BG, a.colours.FG, 1, 6); marked != want {
+		t.Fatalf("the row in front is drawn on %v, want %v", marked, want)
 	}
 	// And the rows around it are not.
 	for y := 0; y < area.Rows-1; y++ {

@@ -206,3 +206,64 @@ func TestASecondThatMovedAnythingIsABar(t *testing.T) {
 		t.Fatalf("a second that moved a byte is %d, want at least one", got[0])
 	}
 }
+
+// A run nobody was measuring is forgotten rather than filled in.
+//
+// The sidebar can be hidden for minutes. One average over the whole gap
+// is not the last second of a run, and the seconds before it were never
+// measured at all.
+func TestARunNobodyWatchedIsForgotten(t *testing.T) {
+	m := New()
+	var r Rate
+	at := time.Date(2026, 9, 14, 12, 0, 0, 0, time.UTC)
+	r.Sample(m, at)
+	for i := 1; i <= 4; i++ {
+		m.Moved(i*1000, 0, at)
+		at = at.Add(RateWindow)
+		r.Sample(m, at)
+	}
+	if got := len(r.Past()); got != 4 {
+		t.Fatalf("it remembers %d seconds before the gap", got)
+	}
+
+	// Nobody looks for five minutes, and then a megabyte arrives.
+	m.Moved(1<<20, 0, at)
+	at = at.Add(5 * time.Minute)
+	in, _ := r.Sample(m, at)
+	if in == 0 {
+		t.Fatal("the speed over the gap is not reported at all")
+	}
+	if got := r.Past(); len(got) != 0 {
+		t.Fatalf("it still remembers %v, want the run forgotten", got)
+	}
+
+	// And it starts again from there.
+	m.Moved(2048, 0, at)
+	at = at.Add(RateWindow)
+	r.Sample(m, at)
+	if got := len(r.Past()); got != 1 {
+		t.Fatalf("it remembers %d seconds after starting again", got)
+	}
+}
+
+// The run handed out is a copy: the array behind it is written again
+// every second.
+func TestPastIsACopy(t *testing.T) {
+	m := New()
+	var r Rate
+	at := time.Date(2026, 9, 14, 12, 0, 0, 0, time.UTC)
+	r.Sample(m, at)
+	m.Moved(1000, 0, at)
+	at = at.Add(RateWindow)
+	r.Sample(m, at)
+
+	got := r.Past()
+	if len(got) != 1 {
+		t.Fatalf("it remembers %v", got)
+	}
+	was := got[0]
+	got[0] = 999999
+	if again := r.Past(); again[0] != was {
+		t.Fatalf("writing to what Past handed back changed the run to %v", again)
+	}
+}

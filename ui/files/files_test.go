@@ -1822,3 +1822,35 @@ func TestTheBarNamesTheFunctionKeys(t *testing.T) {
 		t.Errorf("the bar reads %q, want the F on it", bar)
 	}
 }
+
+// A chord the bar never offered does nothing.
+//
+// Ctrl+Shift+X is not Ctrl+X. Taking it would cut files on a key the
+// user pressed for something else, and the bar would never have said it
+// was live.
+func TestTheBrowserTakesOnlyTheChordsItOffers(t *testing.T) {
+	b, dirs := many(t, 2)
+	write(t, dirs[0], "one.txt", "one")
+	b.Here().Reload()
+	press(t, b, input.KeyDown)
+	b.OnClose = func(*Pane) { t.Error("a pane was closed by a chord the bar does not offer") }
+
+	for _, mods := range []input.Mods{
+		input.ModCtrl | input.ModShift,
+		input.ModCtrl | input.ModAlt,
+		input.ModAlt,
+	} {
+		for _, k := range []input.Key{input.KeyC, input.KeyX, input.KeyV, input.KeyD} {
+			took, err := b.HandleKey(input.Event{Kind: input.KeyPress, Key: k, Mods: mods})
+			if err != nil {
+				t.Fatalf("%v+%v: %v", mods, k, err)
+			}
+			if took {
+				t.Errorf("the browser took %v+%v, which the bar does not offer", mods, k)
+			}
+		}
+	}
+	if !b.Clip().Empty() {
+		t.Fatal("a chord the bar does not offer filled the clipboard")
+	}
+}

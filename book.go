@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/marrasen/gridterm/remote"
@@ -28,6 +29,16 @@ func (a *app) refreshServers() {
 	if a.root.Commands == nil {
 		return
 	}
+	// Nothing to do when the machines are the ones already registered.
+	// This runs whenever a connection is made or lost, and rebuilding
+	// takes the open menu down with it: a menu that vanished while the
+	// user was reading it, because a connection they were not watching
+	// dropped, is the window getting in their way.
+	want := append(a.everyHost(), a.savedHosts()...)
+	if slices.Equal(want, a.serverHosts) {
+		return
+	}
+	a.serverHosts = want
 	// Whatever was registered for the old list goes first, or a server
 	// that has been renamed would answer to both names.
 	for _, id := range a.serverCommands {
@@ -55,8 +66,7 @@ func (a *app) refreshServers() {
 	}
 
 	var items []ui.MenuItem
-	for _, h := range a.book.Hosts() {
-		host := h.Name
+	for _, host := range a.savedHosts() {
 		open := ui.Command{
 			ID:    openPrefix + remote.CommandName(host),
 			Title: "Connect to " + host,
@@ -86,6 +96,9 @@ func (a *app) refreshServers() {
 	}
 	a.refreshServerMenu(items)
 }
+
+// savedHosts is what the book calls its machines.
+func (a *app) savedHosts() []string { return a.book.Names() }
 
 // registerServerCommands puts commands on the registry and remembers
 // their ids, so the next list can take them off again.

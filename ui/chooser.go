@@ -62,6 +62,9 @@ type Chooser struct {
 func NewChooser(title string, close func()) *Chooser {
 	c := &Chooser{title: title, close: close, list: NewList()}
 	c.list.OnActivate = func(row ListRow) error { return c.take(row) }
+	// The keys arrive with the chooser: a modal is pushed and focused in
+	// one go, and a list that had to wait to be told would open with no
+	// line marked.
 	c.list.SetFocus(true)
 	return c
 }
@@ -207,9 +210,13 @@ func (c *Chooser) paint(v grid.View) {
 	}
 }
 
-// SetFocus is here because a chooser is the top modal while it is up:
-// the keys come to it whether or not anything told it so.
-func (c *Chooser) SetFocus(on bool) { c.list.SetFocus(true) }
+// SetFocus passes the keys on to the list, which is what they are for.
+//
+// A chooser is the top modal while it is up, but it is still told when
+// focus leaves: a dialog pushed over it takes the keys, and a chooser
+// still drawing an active bar under that dialog would say two things
+// have them.
+func (c *Chooser) SetFocus(on bool) { c.list.SetFocus(on) }
 
 // HandleKey drives the chooser. Escape leaves without picking anything.
 func (c *Chooser) HandleKey(ev input.Event) (bool, error) {

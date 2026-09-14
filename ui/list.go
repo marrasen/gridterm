@@ -19,11 +19,11 @@ type ListStyle struct {
 	// SelectedFG and SelectedBG mark the row Enter would act on.
 	SelectedFG, SelectedBG color.RGBA
 
-	// CurrentFG and CurrentBG mark that row while the list does not have
-	// the keys. A list that is a list of what is open has to say which
-	// one is in front whether or not the user is looking at the list.
-	// Leaving them with no alpha marks nothing, which is right for a
-	// list that is only a list.
+	// CurrentFG and CurrentBG mark the row the list was told is in
+	// front. A list that is a list of what is open has to say which one
+	// that is whether or not the user is looking at the list. Leaving
+	// them with no alpha marks nothing, which is right for a list that
+	// is only a list.
 	CurrentFG, CurrentBG color.RGBA
 
 	// HeaderFG is a line that names a group rather than being one of it.
@@ -140,6 +140,12 @@ type List struct {
 	// off the bottom of what is on screen.
 	at, top int
 
+	// current is the key of the row that is in front, which is not the
+	// same as the row the bar is on: the bar is the user's, and they
+	// move it to look at something else without that changing what is
+	// showing.
+	current any
+
 	size    Size
 	focused bool
 	buf     buffer
@@ -193,6 +199,18 @@ func (l *List) SetRows(rows []ListRow) {
 
 // Rows returns what the list is showing.
 func (l *List) Rows() []ListRow { return l.rows }
+
+// SetCurrent says which row is in front, by its key. It is marked with
+// the style's Current colours wherever it happens to be.
+//
+// Separate from the selection: the bar is the user's and moves where
+// they put it, while what is in front changes for its own reasons. A
+// list that marked the bar instead would confidently point at something
+// that is not on screen.
+func (l *List) SetCurrent(key any) { l.current = key }
+
+// Current returns the key of the row that is in front.
+func (l *List) Current() any { return l.current }
 
 // Selected returns the row Enter would act on, and whether there is one.
 func (l *List) Selected() (ListRow, bool) {
@@ -369,14 +387,20 @@ func (l *List) paintRow(v grid.View, row ListRow, selected bool, y, rows int) {
 	case row.FG.A != 0:
 		fg = row.FG
 	}
+	// washed says the row's ground is light enough to swallow a mark
+	// picked out against the ordinary one.
+	washed := false
 	switch {
 	case selected && l.focused:
 		fg, bg = l.Style.SelectedFG, l.Style.SelectedBG
 		// A colour picked to stand out against the other rows can
 		// disappear against the selected one. Whatever the row writes
 		// its own text in is the one colour known to show there.
-		noteFG = fg
-	case selected && l.Style.CurrentBG.A != 0:
+		noteFG, washed = fg, true
+	case l.Style.CurrentBG.A != 0 && l.current != nil && sameKey(row.Key, l.current):
+		// Only the ground changes. The mark keeps its own colour,
+		// because what it says is the whole reason it is there and this
+		// is the row the user is looking at.
 		fg, bg = l.Style.CurrentFG, l.Style.CurrentBG
 		noteFG = fg
 	}
@@ -418,7 +442,7 @@ func (l *List) paintRow(v grid.View, row ListRow, selected bool, y, rows int) {
 		if mark.A == 0 {
 			mark = fg
 		}
-		if selected && l.focused {
+		if washed {
 			// A colour chosen against the other rows can disappear
 			// against this one.
 			mark = fg

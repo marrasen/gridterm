@@ -479,12 +479,17 @@ type spot struct {
 
 // place puts a new pane where it was asked to go.
 //
-// A spot naming a pane that has since been closed falls back to a tab of
-// its own: the terminal is open either way, and losing it because the
-// pane it was to sit beside has gone would be worse than putting it
-// somewhere else.
+// A split that cannot be made falls back to a tab of its own, whatever
+// the reason: the pane it was to sit beside may have closed, or gone
+// into the background, or the window may have been made too narrow while
+// the connection was on its way. The terminal is open either way, and
+// losing the login the user waited for because the room for it went
+// would be worse than putting it somewhere else.
 func (a *app) place(next ui.Widget, at *spot) error {
-	if at == nil || ui.ParentOf(a.root.Widget(), at.beside) == nil {
+	if at == nil {
+		return a.placeTab(next)
+	}
+	if err := a.canSplit(at.dir, at.beside, next); err != nil {
 		return a.placeTab(next)
 	}
 	return a.splitWith(at.dir, at.beside, next)
@@ -568,7 +573,24 @@ func (a *app) canSplit(dir ui.Dir, current, next ui.Widget) error {
 	case ui.ParentOf(next, current) != nil:
 		return errors.New("a pane cannot be split with what it is inside")
 	}
+	if _, ok := ui.ParentOf(a.root.Widget(), next).(*files.Browser); ok {
+		// A file pane belongs to the manager. Taken out of it, it loses
+		// every key it has -- Tab, copy, rename, the lot live on the
+		// manager -- and a manager left with none is detached with the
+		// window still holding it.
+		return errors.New("a file pane belongs to the file manager and cannot be moved out of it")
+	}
 	return a.canDivide(dir, current)
+}
+
+// live reports whether a widget is still a pane the window is showing.
+//
+// A closed pane and one the window has only just made are both outside
+// the tree, and ui.Detach cannot tell them apart. Anything holding a
+// pane across time -- a chooser waiting to be answered, a connection on
+// its way -- has to ask before it uses one.
+func (a *app) live(w ui.Widget) bool {
+	return w != nil && a.isPane(w) && ui.ParentOf(a.root.Widget(), w) != nil
 }
 
 // unsplitFocused takes the focused pane out of the split it is in and

@@ -701,11 +701,23 @@ func TestListMarksTheCurrentRowWithoutTheKeys(t *testing.T) {
 	l.Style.CurrentFG = fg
 	l.Style.CurrentBG = current
 	l.SetFocus(false)
+	// The row in front is told to the list; the bar is the user's and is
+	// somewhere else entirely.
+	l.SetCurrent("margit-tunnel")
+	l.Move(-len(l.Rows()))
 
 	g := drawList(l, 40, 10)
-	at := l.SelectedIndex()
+	at := -1
+	for i, row := range l.Rows() {
+		if row.Key == "margit-tunnel" {
+			at = i
+		}
+	}
 	if at < 0 {
-		t.Fatal("nothing is selected")
+		t.Fatal("no row for the one in front")
+	}
+	if at == l.SelectedIndex() {
+		t.Fatal("the bar is on the same row, so this proves nothing")
 	}
 	if got := g.At(1, at).BG; got != current {
 		t.Fatalf("the current row is drawn on %v, want %v", got, current)
@@ -720,11 +732,14 @@ func TestListMarksTheCurrentRowWithoutTheKeys(t *testing.T) {
 		}
 	}
 
-	// With the keys, the selected colour wins: the two say different
-	// things and the stronger one is where the typing goes.
+	// With the keys, the bar is marked as well, on its own row: the two
+	// say different things and both are worth saying.
 	l.SetFocus(true)
 	g = drawList(l, 40, 10)
-	if got := g.At(1, at).BG; got != l.Style.SelectedBG {
-		t.Fatalf("with the keys the row is %v, want the selected colour", got)
+	if got := g.At(1, at).BG; got != current {
+		t.Fatalf("the row in front is %v once the list has the keys", got)
+	}
+	if got := g.At(1, l.SelectedIndex()).BG; got != l.Style.SelectedBG {
+		t.Fatalf("the bar is drawn on %v, want the selected colour", got)
 	}
 }

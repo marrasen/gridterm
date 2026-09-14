@@ -219,8 +219,8 @@ func (r *Renderer) pushArt(dst *ebiten.Image, g *grid.Grid, y int, m glyph.Metri
 		if c.Art.Kind != grid.ArtGraph || c.Attr&grid.AttrHidden != 0 {
 			continue
 		}
-		col := g.FGOf(x, y)
-		if col.A == 0 {
+		col, ok := artColour(g, x, y, c)
+		if !ok {
 			continue
 		}
 		r.pushGraph(dst, x, y, c.Art, col, m)
@@ -229,37 +229,87 @@ func (r *Renderer) pushArt(dst *ebiten.Image, g *grid.Grid, y int, m glyph.Metri
 
 // pushGraph draws a column chart inside one cell.
 //
-// The bars share the cell's width, so a wider font gives a wider graph
-// rather than a graph with gaps in it. A bar of nothing still draws one
-// pixel, because a gap and a zero read the same otherwise and the point
-// of the graph is the shape of the run.
+// The bars share the cell's width, counted from its left edge each time
+// so that they tile it exactly: every bar is a whole number of pixels
+// wide and no column is drawn twice or left out. Quads are not
+// antialiased, so a bar narrower than a pixel would only be drawn when a
+// pixel centre happened to fall inside it -- and the same seconds would
+// vanish every time, which is the one thing a graph of the run must not
+// do.
+//
+// A cell too narrow for every bar shows the newest that fit. Dropping
+// the oldest is the honest loss: the graph is read from the right.
+//
+// A bar of nothing still draws one pixel, because a gap and a zero read
+// the same otherwise and the point of the graph is the shape of the run.
 func (r *Renderer) pushGraph(
 	dst *ebiten.Image, x, y int, art grid.Art, col color.RGBA, m glyph.Metrics,
 ) {
+	for _, bar := range graphBars(art, x, y, m) {
+		r.push(dst, &r.bg, bar.X, bar.Y, bar.W, bar.H, 0, 0, 1, 1, col)
+	}
+}
+
+// artColour is what a cell's art is drawn in, and whether to draw it at
+// all.
+//
+// The same rules a glyph on that cell would follow: hidden is not drawn,
+// reverse video has already been resolved into FGOf, and dim is mixed
+// towards the background.
+func artColour(g *grid.Grid, x, y int, c grid.Cell) (color.RGBA, bool) {
+	if c.Attr&grid.AttrHidden != 0 {
+		return color.RGBA{}, false
+	}
+	col := g.FGOf(x, y)
+	if c.Attr&grid.AttrDim != 0 {
+		col = blend(col, g.BGOf(x, y), dimFactor)
+	}
+	return col, col.A != 0
+}
+
+// bar is one rectangle of a graph, in pixels.
+type bar struct{ X, Y, W, H float32 }
+
+// graphBars is where a graph's bars go inside one cell.
+//
+// They share the cell's width, counted from its left edge each time so
+// that they tile it exactly: every bar is a whole number of pixels wide
+// and no column is drawn twice or left out. Quads are not antialiased,
+// so a bar narrower than a pixel would only be drawn when a pixel centre
+// happened to fall inside it -- and the same seconds would vanish every
+// time, which is the one thing a graph of a run must not do.
+//
+// A cell too narrow for every bar shows the newest that fit. Dropping
+// the oldest is the honest loss: the graph is read from the right.
+//
+// A bar of nothing still stands one pixel high, because a gap and a zero
+// read the same otherwise and the point of the graph is the shape.
+func graphBars(art grid.Art, x, y int, m glyph.Metrics) []bar {
 	// The x-height, so the graph sits on the baseline and stands about
 	// as tall as the letters beside it.
 	top := float32(y*m.CellH) + float32(m.Ascent)*0.35
 	foot := float32(y*m.CellH + m.Ascent)
 	tall := foot - top
-	if tall <= 0 {
-		return
+	// Only the seconds really measured, and only as many as the cell has
+	// whole pixels for.
+	bars := min(art.Bars(), m.CellW)
+	if tall <= 0 || bars <= 0 {
+		return nil
 	}
-	left := float32(x * m.CellW)
-	for i := 0; i < grid.ArtGraphBars; i++ {
-		x0 := left + float32(i*m.CellW)/grid.ArtGraphBars
-		x1 := left + float32((i+1)*m.CellW)/grid.ArtGraphBars
-		w := x1 - x0
-		if w <= 0 {
-			continue
-		}
-		h := tall * float32(art.Bar(i)) / grid.ArtGraphMax
+	// The newest ones, which are the last of them.
+	first := grid.ArtGraphBars - bars
+	left := x * m.CellW
+	out := make([]bar, 0, bars)
+	for i := 0; i < bars; i++ {
+		x0 := left + i*m.CellW/bars
+		x1 := left + (i+1)*m.CellW/bars
+		h := tall * float32(art.Bar(first+i)) / grid.ArtGraphMax
 		if h < 1 {
-			// A bar of nothing is still a bar: a gap would read as a
-			// hole in the run rather than as a quiet second.
 			h = 1
 		}
-		r.push(dst, &r.bg, x0, foot-h, w, h, 0, 0, 1, 1, col)
+		out = append(out, bar{X: float32(x0), Y: foot - h, W: float32(x1 - x0), H: h})
 	}
+	return out
 }
 
 // pushGlyph queues one glyph quad at cell x,y.

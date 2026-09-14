@@ -219,3 +219,31 @@ func TestAnIdleChooserDirtiesNothing(t *testing.T) {
 		t.Fatal("an idle chooser dirtied its layer")
 	}
 }
+
+// A chooser lets go of the keys when it is told to.
+//
+// It is the top modal while it is up, but a dialog pushed over it takes
+// the keys: a chooser still drawing an active bar under that dialog
+// would say two things have them.
+func TestAChooserToldItLostTheKeysStopsMarkingItsLine(t *testing.T) {
+	c, _, _ := newTestChooser(t)
+	g := drawChooser(c, 60, 20)
+
+	lines := c.lines()
+	if got := g.At(lines.X, lines.Y).BG; got != c.Style.SelectedBG {
+		t.Fatalf("with the keys the first line is %v, want it marked", got)
+	}
+
+	c.SetFocus(false)
+	g = drawChooser(c, 60, 20)
+	if got := g.At(lines.X, lines.Y).BG; got == c.Style.SelectedBG {
+		t.Fatal("a chooser that lost the keys still marks its line")
+	}
+
+	// And it takes them back.
+	c.SetFocus(true)
+	g = drawChooser(c, 60, 20)
+	if got := g.At(lines.X, lines.Y).BG; got != c.Style.SelectedBG {
+		t.Fatalf("the line is %v once the keys come back", got)
+	}
+}

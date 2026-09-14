@@ -604,3 +604,37 @@ func titled(a *testApp, title string) bool {
 	}
 	return false
 }
+
+// A rebuild that would change nothing is skipped, so a connection the
+// user was not watching cannot take the menu they are reading away.
+func TestTheServerCommandsAreNotRebuiltForNothing(t *testing.T) {
+	s := sshtest.New(t)
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	saveHost(t, a, "margit", s, "")
+	a.refreshServers()
+	a.bar = a.newMenubar(a.root.Widget())
+	a.root.SetWidget(a.bar)
+	a.relayout()
+
+	if !a.bar.Open(0) {
+		t.Fatal("no menu opened")
+	}
+	if a.bar.OpenIndex() < 0 {
+		t.Fatal("the bar says nothing is open")
+	}
+	// The machines have not changed, so this changes nothing.
+	a.refreshServers()
+	if a.bar.OpenIndex() < 0 {
+		t.Fatal("a rebuild that changed nothing closed the open menu")
+	}
+
+	// A machine really arriving does rebuild, and the menu goes with it:
+	// the list it hangs under has changed shape.
+	a.connectAs("live", serverConfig(t, s))
+	waitForPanes(t, a, 2)
+	if !titled(a, "Browse files on live") {
+		t.Fatalf("the new machine has no commands: %v", commandTitles(a))
+	}
+}

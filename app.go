@@ -113,6 +113,10 @@ type app struct {
 	// closes them; this is what takes their rows away with it.
 	tunnels map[*conns.Entry]*tunnel
 
+	// shown is the sidebar row for whatever the stage last had in front.
+	// The bar follows it when it changes, and is left alone in between.
+	shown *conns.Entry
+
 	// files is the window's file manager, or nil when there is none.
 	// There is one of it: a pane is added to the manager rather than a
 	// second manager being opened beside it.

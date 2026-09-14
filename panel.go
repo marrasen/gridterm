@@ -4,12 +4,15 @@ import (
 	"errors"
 	"fmt"
 	"image/color"
+	"sort"
 	"strconv"
 	"time"
 
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/meter"
 	"github.com/marrasen/gridterm/ui"
+	"github.com/marrasen/gridterm/ui/files"
+	"github.com/marrasen/gridterm/ui/term"
 	"github.com/marrasen/gridterm/vt"
 )
 
@@ -20,6 +23,29 @@ const panelWidth = 26
 // bullet rather than a word, because the word was the widest thing on
 // most rows and said the least.
 const dot = '\u2022'
+
+// The icon in front of a connection, in place of the word for what kind
+// it is. "Terminal" and "Files" were the widest thing on most rows and
+// said the same thing on every one of them.
+const (
+	terminalIcon = '\u276f' // a prompt
+	commandIcon  = '\u25b8' // something that was run
+	filesIcon    = '\u25a4' // a listing
+	tunnelIcon   = '\u21c4' // going both ways
+)
+
+// icon is the character that stands for a kind of connection.
+func icon(k conns.Kind) rune {
+	switch k {
+	case conns.Command:
+		return commandIcon
+	case conns.Files:
+		return filesIcon
+	case conns.Tunnel:
+		return tunnelIcon
+	}
+	return terminalIcon
+}
 
 // pulseStep is how long one step of the pulse lasts. A row that changes
 // colour every frame is a row that dirties itself every frame, so the
@@ -169,18 +195,22 @@ func (a *app) refreshPanel(now time.Time) {
 	// is not kept for the life of the window.
 	live := make(map[*conns.Entry]bool, len(a.rates))
 
-	var rows []ui.ListRow
+	open := map[string][]conns.Row{}
 	for _, group := range a.registry.Groups(now) {
-		rows = append(rows, ui.ListRow{
-			Text:   groupName(group.Host),
-			Header: true,
-			Key:    hostKey(group.Host),
-			// What can be opened on this machine, since the name itself
-			// is not something to act on.
-			Button: '+',
-		})
-		for _, row := range group.Rows {
+		open[group.Host] = group.Rows
+	}
+
+	var rows []ui.ListRow
+	for _, host := range a.hosts(open) {
+		rows = append(rows, a.hostRow(host, now))
+		for _, row := range open[host] {
 			live[row.Entry] = true
+			if row.Kind == conns.Server {
+				// The connection itself is the machine, and the machine
+				// is the heading above these rows. A row for it as well
+				// says the same thing twice.
+				continue
+			}
 			rows = append(rows, a.panelRow(row, now))
 		}
 	}
@@ -190,13 +220,107 @@ func (a *app) refreshPanel(now time.Time) {
 		}
 	}
 	a.panel.SetRows(rows)
+	a.followTheStage()
+}
+
+// hosts is every machine the sidebar shows, in the order it shows them:
+// this one, then the saved servers, then anything else the window has
+// open.
+//
+// A saved server is listed before anything is connected to it. That is
+// how it is reached: the plus beside its name opens the connection.
+func (a *app) hosts(open map[string][]conns.Row) []string {
+	out := []string{conns.Local}
+	seen := map[string]bool{conns.Local: true}
+	for _, h := range a.book.Hosts() {
+		if seen[h.Name] {
+			continue
+		}
+		seen[h.Name] = true
+		out = append(out, h.Name)
+	}
+	// Then whatever is open that the book does not name. Sorted, because
+	// they come out of a map and an order that changed every frame would
+	// shuffle the sidebar under the user.
+	var rest []string
+	for host := range open {
+		if seen[host] {
+			continue
+		}
+		seen[host] = true
+		rest = append(rest, host)
+	}
+	sort.Strings(rest)
+	return append(out, rest...)
+}
+
+// hostRow is the heading for one machine.
+//
+// It carries the dot the connection's own row used to, so a machine with
+// nothing open on it still says whether it is connected and what it was
+// reached through.
+func (a *app) hostRow(host string, now time.Time) ui.ListRow {
+	row := ui.ListRow{
+		Text:   groupName(host),
+		Header: true,
+		Key:    hostKey(host),
+		// What can be opened on this machine, since the name itself is
+		// not something to act on.
+		Button: '+',
+	}
+	m := a.machines[host]
+	if m == nil || m.entry == nil {
+		return row
+	}
+	state := m.entry.State(now)
+	row.Mark, row.MarkFG = a.mark(state, now)
+	row.Note = a.note(conns.Row{Entry: m.entry, State: state}, now)
+	return row
+}
+
+// followTheStage puts the bar on the row for whatever the stage is
+// showing, when that has changed.
+//
+// The sidebar is how a pane is chosen, so it has to say which one is in
+// front. Only on a change: in between, the bar is the user's, and
+// snapping it back every frame would stop them looking anywhere else.
+func (a *app) followTheStage() {
+	e := a.showing()
+	if e == a.shown {
+		return
+	}
+	a.shown = e
+	if e == nil {
+		return
+	}
+	if a.panel.Select(e) {
+		a.panel.Reveal()
+	}
+}
+
+// showing is the sidebar row for whatever the stage has in front,
+// whether or not the keys are in it.
+func (a *app) showing() *conns.Entry {
+	if a.stage == nil {
+		return nil
+	}
+	switch w := ui.FocusedLeaf(a.stage).(type) {
+	case *term.Terminal:
+		return a.panes[w]
+	case *files.Pane:
+		if a.files == nil {
+			return nil
+		}
+		return a.files.rows[w]
+	}
+	return nil
 }
 
 // panelRow turns one connection into a line.
 func (a *app) panelRow(row conns.Row, now time.Time) ui.ListRow {
-	text := row.Kind.String()
+	text := string(icon(row.Kind))
 	if row.Label != "" {
-		text += "  " + row.Label
+		text += " " + row.Label
 	}
 	out := ui.ListRow{Text: text, Depth: 1, Key: row.Entry, Note: a.note(row, now)}
 	out.Mark, out.MarkFG = a.mark(row.State, now)

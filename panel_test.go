@@ -10,6 +10,7 @@ import (
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/input"
+	"github.com/marrasen/gridterm/internal/sshtest"
 	"github.com/marrasen/gridterm/meter"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/term"
@@ -81,7 +82,7 @@ func TestPanelShowsTheShellThatIsOpen(t *testing.T) {
 	if got[0] != "Local" {
 		t.Errorf("the heading is %q, want Local", got[0])
 	}
-	if !strings.HasPrefix(got[1], "Terminal") {
+	if !strings.HasPrefix(got[1], string(terminalIcon)) {
 		t.Errorf("the row is %q, want a terminal", got[1])
 	}
 }
@@ -159,7 +160,7 @@ func TestPanelSaysNoStateInWords(t *testing.T) {
 		}
 		// And it still says what it is, so the test is not passing on an
 		// empty row.
-		if !strings.HasPrefix(row, "Terminal") {
+		if !strings.HasPrefix(row, string(terminalIcon)) {
 			t.Fatalf("a %v row reads %q, want it to still name the pane", state, row)
 		}
 	}
@@ -405,6 +406,10 @@ func TestPanelTakesTheKeysWhileItHasThem(t *testing.T) {
 	if err := a.focusPanel(); err != nil {
 		t.Fatalf("focusPanel: %v", err)
 	}
+	// The bar follows whatever the stage is showing, which is the tab
+	// just opened: the last row. Back to the top, so Down has somewhere
+	// to go.
+	a.panel.Move(-len(a.panel.Rows()))
 
 	first, _ := a.panel.Selected()
 	if _, err := a.root.HandleKey(press(input.KeyDown, 0)); err != nil {
@@ -885,5 +890,179 @@ func TestThePinnedRowIsClickedWhereItIsDrawn(t *testing.T) {
 	}
 	if pressed != 1 {
 		t.Fatal("a press below the view ran the pinned row")
+	}
+}
+
+// headerRows returns the machine names the sidebar is showing, in order,
+// and whether each carries a plus.
+func headerRows(a *testApp, now time.Time) []string {
+	a.refreshPanel(now)
+	var out []string
+	for _, row := range a.panel.Rows() {
+		if !row.Header {
+			continue
+		}
+		name := strings.TrimSpace(row.Text)
+		if row.Button != 0 {
+			name += " +"
+		}
+		out = append(out, name)
+	}
+	return out
+}
+
+// A saved server is on the sidebar before anything is connected to it,
+// with the plus that opens the connection.
+//
+// It is the only way in: a machine nothing has reached yet has no rows
+// of its own, so without its name on the list there is nothing to click.
+func TestASavedServerIsOnTheSidebarWithNothingConnected(t *testing.T) {
+	s := sshtest.New(t)
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	saveHost(t, a, "margit", s, "")
+	saveHost(t, a, "web1", s, "")
+
+	got := headerRows(a, panelNow)
+	want := []string{"Local +", "margit +", "web1 +"}
+	if len(got) != len(want) {
+		t.Fatalf("the sidebar shows %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("the sidebar shows %v, want %v", got, want)
+		}
+	}
+	if len(a.machines) != 0 {
+		t.Fatalf("%d machines are connected, and none should be", len(a.machines))
+	}
+}
+
+// The connection itself has no row. The machine is the heading above its
+// rows, so one for the connection as well says the same thing twice.
+func TestTheConnectionItselfHasNoRow(t *testing.T) {
+	s := sshtest.New(t)
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	a.connect(serverConfig(t, s))
+	waitForPanes(t, a, 2)
+	host := serverConfig(t, s).Target()
+
+	// The registry still holds it: it is what closing the machine acts
+	// on, and what says the machine is there at all.
+	if serverRow(t, a, host) == nil {
+		t.Fatal("the connection is not in the registry")
+	}
+	for _, row := range panelText(a, panelNow) {
+		if strings.Contains(row, "Server") {
+			t.Fatalf("the sidebar shows %q", row)
+		}
+	}
+	// Two rows under the machine's name would be the connection and the
+	// terminal; there is one.
+	var under int
+	var seen bool
+	for _, row := range a.panel.Rows() {
+		if row.Header {
+			seen = strings.TrimSpace(row.Text) == host
+			continue
+		}
+		if seen {
+			under++
+		}
+	}
+	if under != 1 {
+		t.Fatalf("%d rows under %s, want the terminal alone", under, host)
+	}
+}
+
+// The heading carries the dot the connection's own row used to, so a
+// machine with nothing open on it still says whether it is connected.
+func TestTheHeadingSaysWhetherTheMachineIsConnected(t *testing.T) {
+	s := sshtest.New(t)
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pinServers(t, a, s)
+	saveHost(t, a, "margit", s, "")
+
+	a.refreshPanel(panelNow)
+	for _, row := range a.panel.Rows() {
+		if row.Header && strings.TrimSpace(row.Text) == "margit" && row.Mark != 0 {
+			t.Fatal("an unconnected machine has a dot")
+		}
+	}
+
+	if err := a.connectSaved("margit"); err != nil {
+		t.Fatalf("connectSaved: %v", err)
+	}
+	waitForPanes(t, a, 2)
+
+	a.refreshPanel(panelNow)
+	var found bool
+	for _, row := range a.panel.Rows() {
+		if !row.Header || strings.TrimSpace(row.Text) != "margit" {
+			continue
+		}
+		found = true
+		if row.Mark == 0 {
+			t.Fatal("a connected machine has no dot")
+		}
+		if row.MarkFG != a.colours.ANSI[2] {
+			t.Fatalf("the dot is %v, want the green of something that is there", row.MarkFG)
+		}
+	}
+	if !found {
+		t.Fatalf("no heading for margit: %v", headerRows(a, panelNow))
+	}
+}
+
+// A connection says what it is with an icon rather than with the word
+// for what kind it is: the word was the widest thing on the row and the
+// same on every one of them.
+func TestARowSaysWhatItIsWithAnIcon(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+
+	got := panelText(a, panelNow)[1]
+	if !strings.HasPrefix(got, string(terminalIcon)) {
+		t.Fatalf("the row is %q, want the terminal icon", got)
+	}
+	for _, word := range []string{"Terminal", "Files", "Tunnel", "Command"} {
+		if strings.Contains(got, word) {
+			t.Fatalf("the row is %q, which still names the kind", got)
+		}
+	}
+}
+
+// The bar follows whatever the stage is showing, so the sidebar is the
+// list of what is open and says which one is in front.
+func TestTheBarFollowsWhatTheStageShows(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	first := onlyPane(t, a)
+
+	a.refreshPanel(panelNow)
+	if got, _ := a.panel.Selected(); got.Key != any(first) {
+		t.Fatal("the bar is not on the pane the window opened with")
+	}
+
+	if err := a.openTab(); err != nil {
+		t.Fatalf("openTab: %v", err)
+	}
+	next := a.panes[a.focusedTerminal()]
+	a.refreshPanel(panelNow)
+	if got, _ := a.panel.Selected(); got.Key != any(next) {
+		t.Fatal("the bar did not follow the tab that was opened")
+	}
+
+	// And in between it is the user's: moving it does not snap back.
+	a.panel.Move(-1)
+	was, _ := a.panel.Selected()
+	a.refreshPanel(panelNow)
+	if got, _ := a.panel.Selected(); got.Key != was.Key {
+		t.Fatal("the bar snapped back to the pane in front")
 	}
 }

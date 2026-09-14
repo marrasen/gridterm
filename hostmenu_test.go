@@ -160,11 +160,14 @@ func TestClosingAMachineFromItsPlusClosesThatMachine(t *testing.T) {
 	waitForPanes(t, a, 2)
 	host := serverConfig(t, s).Target()
 
-	// The bar is on the local terminal, which is where it starts: the
-	// first row anything can be done to.
+	// The bar follows the stage, so it is put on a pane running here:
+	// the point of the test is that the plus acts on the machine whose
+	// row was clicked rather than on the row the bar is sitting on.
+	a.focus(localPane(t, a))
 	a.refreshPanel(time.Now())
-	if e, ok := a.panel.Selected(); !ok || e.Key.(*conns.Entry).Host != conns.Local {
-		t.Fatalf("the bar is on %v, want the local terminal", e.Text)
+	e, ok := a.panel.Selected()
+	if !ok || e.Key.(*conns.Entry).Host != conns.Local {
+		t.Fatalf("the bar is on %v, want a pane on this machine", e.Text)
 	}
 
 	menu := clickPlus(t, a, host)

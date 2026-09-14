@@ -423,6 +423,12 @@ func (f *Field) cycle(step int) bool {
 		}
 	}
 	next := ((at+step)%len(f.Options) + len(f.Options)) % len(f.Options)
+	if f.Options[next] == f.text {
+		// One option, and it is already in the field. Taking the key
+		// here would make it a dead key rather than whatever it is bound
+		// to further out.
+		return false
+	}
 	f.SetText(f.Options[next])
 	return true
 }

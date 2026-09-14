@@ -405,3 +405,29 @@ func TestFieldWithNoOptionsLeavesTheKeys(t *testing.T) {
 		t.Fatalf("it typed %q", got)
 	}
 }
+
+// A key that would change nothing is not taken, so it is still whatever
+// it is bound to further out.
+//
+// The Through field of a dialog with one saved server has one option and
+// a blank, and once the blank is in the field there is nowhere to go.
+func TestFieldLeavesAKeyThatChangesNothing(t *testing.T) {
+	f := NewField()
+	f.Options = []string{""}
+	f.Layout(Size{Cols: 20, Rows: 1})
+
+	for _, key := range []input.Key{input.KeyDown, input.KeyUp} {
+		if took, _ := f.HandleKey(input.Event{
+			Kind: input.KeyPress, Key: key, Mods: input.ModCtrl,
+		}); took {
+			t.Errorf("ctrl+%v was taken with nowhere to go", key)
+		}
+	}
+	// And with something else typed, the one option is somewhere to go.
+	f.SetText("elsewhere")
+	if took, _ := f.HandleKey(input.Event{
+		Kind: input.KeyPress, Key: input.KeyDown, Mods: input.ModCtrl,
+	}); !took {
+		t.Error("ctrl+down was left alone with an option to reach")
+	}
+}

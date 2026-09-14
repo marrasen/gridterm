@@ -370,3 +370,97 @@ func TestMenuNeverDrawsTextItsOwnBackgroundColour(t *testing.T) {
 		}
 	}
 }
+
+// A press on the rule chooses nothing.
+//
+// The rule is inside the box and is not a line, so counting rows from
+// the box names the line above the first or below the last. Once a menu
+// is scrolled, those are real commands the user cannot see.
+func TestPressingTheMenuRuleRunsNothing(t *testing.T) {
+	ran := ""
+	cmds := NewCommands()
+	var lines []MenuItem
+	for i := 0; i < 20; i++ {
+		id := string(rune('a' + i))
+		cmds.MustRegister(Command{ID: id, Title: id + " command", Run: func() error {
+			ran = id
+			return nil
+		}})
+		lines = append(lines, MenuItem{Command: id})
+	}
+	m := NewMenu(cmds, NewKeymap(), lines, func() {})
+	m.Style = menuStyled()
+	m.Anchor = func() Rect { return Rect{X: 0, Y: 2, Cols: 4, Rows: 1} }
+	m.Layout(Size{Cols: 40, Rows: 9})
+
+	box := m.box()
+	if m.lines() >= len(lines) {
+		t.Fatal("the menu is not truncated, so this proves nothing")
+	}
+	for _, y := range []int{box.Y, box.Y + box.Rows - 1} {
+		m.HandleMouse(pressAt(box.X+1, y))
+		if ran != "" {
+			t.Fatalf("a press on the rule at row %d ran %q", y, ran)
+		}
+	}
+
+	// And scrolled to the end, where the top rule would name a real line
+	// as well.
+	for i := 0; i < 19; i++ {
+		m.HandleKey(press(input.KeyDown, 0))
+	}
+	if m.top == 0 {
+		t.Fatal("the menu did not scroll, so this proves nothing")
+	}
+	box = m.box()
+	was := m.SelectedIndex()
+	for _, y := range []int{box.Y, box.Y + box.Rows - 1} {
+		m.HandleMouse(moveTo(box.X+1, y))
+		if got := m.SelectedIndex(); got != was {
+			t.Fatalf("the pointer on the rule at row %d selected %d, want %d", y, got, was)
+		}
+		m.HandleMouse(pressAt(box.X+1, y))
+		if ran != "" {
+			t.Fatalf("a press on the rule at row %d ran %q", y, ran)
+		}
+	}
+}
+
+// A window with room for the rule and none for a line shows no menu at
+// all, and the menu takes nothing but Escape.
+//
+// A box holding its own rule and nothing else says it has something in
+// it. Enter would then run a line nobody has read.
+func TestAMenuWithNoRoomForALine(t *testing.T) {
+	ran := ""
+	cmds := NewCommands()
+	cmds.MustRegister(Command{ID: "copy", Title: "Copy", Run: func() error { ran = "copy"; return nil }})
+	closed := 0
+	m := NewMenu(cmds, NewKeymap(), items("copy"), func() { closed++ })
+	m.Style = menuStyled()
+	m.Anchor = func() Rect { return Rect{X: 0, Y: 0, Cols: 4, Rows: 1} }
+
+	for _, rows := range []int{1, 2, 3} {
+		ran, closed = "", 0
+		m.Layout(Size{Cols: 40, Rows: rows})
+		if got := m.box(); !got.Empty() {
+			t.Fatalf("in %d rows the box is %+v, want none", rows, got)
+		}
+		g := drawMenu(m, 40, rows)
+		for y := 0; y < rows; y++ {
+			if got := strings.TrimSpace(rowOf(g, y)); got != "" {
+				t.Fatalf("in %d rows it drew %q", rows, got)
+			}
+		}
+		if took, _ := m.HandleKey(press(input.KeyEnter, 0)); !took {
+			t.Fatalf("in %d rows Enter travelled on", rows)
+		}
+		if ran != "" {
+			t.Fatalf("in %d rows Enter ran %q from a menu nobody can see", rows, ran)
+		}
+		m.HandleKey(press(input.KeyEscape, 0))
+		if closed != 1 {
+			t.Fatalf("in %d rows Escape closed it %d times", rows, closed)
+		}
+	}
+}

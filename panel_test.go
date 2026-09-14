@@ -45,13 +45,14 @@ func panelText(a *testApp, now time.Time) []string {
 	return out
 }
 
-// panelMarks returns the colour of the dot in front of each row, for the
-// rows that have one.
+// panelMarks returns the colour of the dot in front of each connection,
+// for the rows that have one. A machine's heading is left out: its dot
+// is about the connection rather than about anything running on it.
 func panelMarks(a *testApp, now time.Time) []color.RGBA {
 	a.refreshPanel(now)
 	var out []color.RGBA
 	for _, row := range a.panel.Rows() {
-		if row.Mark != 0 {
+		if !row.Header && row.Mark != 0 {
 			out = append(out, row.MarkFG)
 		}
 	}
@@ -990,8 +991,13 @@ func TestTheHeadingSaysWhetherTheMachineIsConnected(t *testing.T) {
 
 	a.refreshPanel(panelNow)
 	for _, row := range a.panel.Rows() {
-		if row.Header && strings.TrimSpace(row.Text) == "margit" && row.Mark != 0 {
-			t.Fatal("an unconnected machine has a dot")
+		if !row.Header || strings.TrimSpace(row.Text) != "margit" {
+			continue
+		}
+		// A blank rather than nothing: the dot's column is kept, so the
+		// name does not shift sideways when something connects.
+		if row.Mark != ' ' {
+			t.Fatalf("an unconnected machine is marked %q", row.Mark)
 		}
 	}
 
@@ -1017,6 +1023,39 @@ func TestTheHeadingSaysWhetherTheMachineIsConnected(t *testing.T) {
 	if !found {
 		t.Fatalf("no heading for margit: %v", headerRows(a, panelNow))
 	}
+
+	// And it is painted, not only recorded: a heading with no room in
+	// front of it has nowhere to put a dot, and the row would come out
+	// looking exactly like an unconnected one.
+	a.root.Draw(a.g.View())
+	area, shown := a.root.AreaOf(a.side)
+	if !shown {
+		t.Fatal("the sidebar is not on screen")
+	}
+	var painted bool
+	for y := area.Y; y < area.Y+area.Rows; y++ {
+		if strings.Contains(sidebarText(a, y, area), "margit") &&
+			a.g.At(area.X, y).Rune == dot {
+			painted = true
+		}
+	}
+	if !painted {
+		t.Fatal("the heading's dot was not drawn")
+	}
+}
+
+// sidebarText reads one row of the sidebar back.
+func sidebarText(a *testApp, y int, area ui.Rect) string {
+	var b strings.Builder
+	for x := area.X; x < area.X+area.Cols; x++ {
+		c := a.g.At(x, y)
+		if c.Rune == 0 {
+			b.WriteByte(' ')
+			continue
+		}
+		b.WriteRune(c.Rune)
+	}
+	return b.String()
 }
 
 // A connection says what it is with an icon rather than with the word

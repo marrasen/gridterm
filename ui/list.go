@@ -377,9 +377,9 @@ func (l *List) paintRow(v grid.View, row ListRow, selected bool, y, rows int) {
 	}
 	if row.Note != "" {
 		w := grid.StringWidth(row.Note)
-		// Shown only if a column of text survives it: a row holding
-		// nothing but a note does not say what it is about.
-		if at := room - w; at > 2 {
+		// A blank before it as well as after, so a note and a button do
+		// not run into one another.
+		if at := room - w - 1; at > 2 {
 			v.SetString(at, 0, row.Note, noteFG, bg, 0)
 			room = at - 1
 		}

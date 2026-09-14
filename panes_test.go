@@ -1257,3 +1257,58 @@ func TestResizeReachesTheWidgetTree(t *testing.T) {
 		t.Errorf("the shell was told %v, want 80x20", got)
 	}
 }
+
+// A container that will not take a split leaves no shell behind.
+//
+// A file pane's parent is the file manager, which holds panes and
+// nothing else. Splitting one used to build the terminal, fail to put it
+// in the tree, and leave it running where nobody could see or close it.
+func TestASplitThatCannotBePlacedLeavesNoShell(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+
+	if err := a.openFilesOn(conns.Local); err != nil {
+		t.Fatalf("a file pane: %v", err)
+	}
+	a.focus(a.files.view.Panes()[0])
+	was := len(a.panes)
+
+	err := a.splitFocused(ui.Columns)
+	if err == nil {
+		t.Fatal("splitting a file pane reported nothing")
+	}
+	if got := len(a.panes); got != was {
+		t.Fatalf("%d panes after the refusal, want the %d there were", got, was)
+	}
+	checkTree(t, a)
+}
+
+// The sidebar forgets the pane in front when it goes, even while nobody
+// is looking at the sidebar.
+//
+// The rows are only rebuilt while the sidebar is open, so a pane closed
+// while it is hidden would be held by the window until it was opened
+// again.
+func TestClosingAPaneForgetsItEvenWithTheSidebarHidden(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	if err := a.openTab(); err != nil {
+		t.Fatalf("openTab: %v", err)
+	}
+	a.refreshPanel(panelNow)
+	if a.shown == nil {
+		t.Fatal("the sidebar is not following the stage, so this proves nothing")
+	}
+
+	if err := a.showPanel(false); err != nil {
+		t.Fatalf("hide the sidebar: %v", err)
+	}
+	if err := a.closeFocused(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	if a.shown != nil {
+		t.Fatal("the window is still holding the pane that was closed")
+	}
+}

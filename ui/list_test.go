@@ -665,3 +665,27 @@ func TestListRowTopSaysNothingForARowOutOfSight(t *testing.T) {
 		t.Fatalf("row 12 with ten scrolled past is at %d, want 2", got)
 	}
 }
+
+// A note and a button do not run into one another.
+//
+// Headers carry both now: the machine's name, what its connection is
+// carrying, and the plus that says what can be opened on it.
+func TestListKeepsTheNoteOffTheButton(t *testing.T) {
+	l := newTestList(t, []ListRow{
+		{Text: "margit", Header: true, Note: "12 kB/s", Button: '+', Key: 1},
+	}, 30, 4)
+	g := drawList(l, 30, 4)
+
+	at := buttonCol(30)
+	if got := g.At(at, 0).Rune; got != '+' {
+		t.Fatalf("the button is %q", got)
+	}
+	if got := g.At(at-1, 0).Rune; got != ' ' {
+		t.Fatalf("the column before the button holds %q, want a blank", got)
+	}
+	// And the note is still there, ending a column short of it.
+	row := rowOf(g, 0)
+	if !strings.Contains(row, "12 kB/s") {
+		t.Fatalf("row = %q, want the note", row)
+	}
+}

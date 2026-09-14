@@ -255,7 +255,20 @@ func (b *Browser) pick(cut bool) (bool, error) {
 		return false, nil
 	}
 	b.setClip(Clipboard{From: here, At: here.At(), Names: names, Cut: cut})
+	// The marks go: they said what the next key would act on, and that
+	// key has been pressed. What is waiting to be pasted is marked its
+	// own way.
+	here.ClearMarks()
 	return true, nil
+}
+
+// pasteWith is whoever does the work for what is on the clipboard: a cut
+// is a move and a copy is a copy.
+func (b *Browser) pasteWith() func(Work) {
+	if b.clip.Cut {
+		return b.OnMove
+	}
+	return b.OnCopy
 }
 
 // paste asks for the names on the clipboard to be put in the pane with
@@ -270,10 +283,7 @@ func (b *Browser) paste() (bool, error) {
 	if to == nil || b.clip.Empty() {
 		return false, nil
 	}
-	do := b.OnCopy
-	if b.clip.Cut {
-		do = b.OnMove
-	}
+	do := b.pasteWith()
 	if do == nil {
 		return false, nil
 	}
@@ -387,8 +397,9 @@ func (b *Browser) wired(k input.Key) bool {
 		return b.OnMove != nil && b.Here() != nil
 	case input.KeyF7:
 		// Nothing picked out is nothing to paste, so the bar says so
-		// rather than offering a key that does nothing.
-		return !b.clip.Empty() && (b.OnCopy != nil || b.OnMove != nil)
+		// rather than offering a key that does nothing. Which of the two
+		// does the work depends on what is on the clipboard.
+		return !b.clip.Empty() && b.pasteWith() != nil
 	case input.KeyF8:
 		return b.OnDelete != nil
 	case input.KeyF9:

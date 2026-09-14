@@ -544,6 +544,10 @@ func line(v grid.View, y, cols int, text string, fg, bg color.RGBA, attr grid.At
 
 // trimTail cuts a string to a width, keeping the start: a machine is
 // known by the front of its name.
+//
+// By cluster rather than by rune, like every other trim here: a grid
+// draws a character and its combining marks in one cell, and cutting
+// between them leaves half a character behind.
 func trimTail(s string, cols int) string {
 	if cols <= 0 {
 		return ""
@@ -551,17 +555,17 @@ func trimTail(s string, cols int) string {
 	if grid.StringWidth(s) <= cols {
 		return s
 	}
-	var out []rune
+	var out strings.Builder
 	at := 0
-	for _, r := range s {
-		w := grid.StringWidth(string(r))
+	for _, cluster := range grid.Clusters(s) {
+		w := grid.StringWidth(cluster)
 		if at+w+1 > cols {
 			break
 		}
-		out = append(out, r)
+		out.WriteString(cluster)
 		at += w
 	}
-	return string(out) + "…"
+	return out.String() + "…"
 }
 
 // trimLeft keeps the end of a string when it is too long, because that

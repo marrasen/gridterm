@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"image/color"
 	"strings"
 	"testing"
 
@@ -186,11 +187,30 @@ func TestMenubarAnchorsAMenuUnderItsTitle(t *testing.T) {
 	if menu == nil {
 		t.Fatal("no menu was shown")
 	}
-	if got := menu.box().X; got != 6 {
-		t.Errorf("menu starts at column %d, want it under the title at 6", got)
-	}
 	if got := menu.box().Y; got != 1 {
 		t.Errorf("menu starts at row %d, want it just under the bar", got)
+	}
+	// Drawn, and read back: the first letter of a line sits under the
+	// first letter of the title it dropped from. Each on a grid of its
+	// own, because a menu paints the whole view it is given -- in the
+	// window it has a layer to itself.
+	onBar := grid.New(40, 20, color.RGBA{}, color.RGBA{})
+	b.Draw(onBar.View())
+	onMenu := grid.New(40, 20, color.RGBA{}, color.RGBA{})
+	menu.Layout(Size{Cols: 40, Rows: 20})
+	menu.Draw(onMenu.View())
+
+	title := strings.Index(rowOf(onBar, 0), "Edit")
+	if title < 0 {
+		t.Fatalf("the bar reads %q", rowOf(onBar, 0))
+	}
+	at := menuLines(menu).Y
+	line := strings.Index(rowOf(onMenu, at), "Copy")
+	if line < 0 {
+		t.Fatalf("the menu reads %q", rowOf(onMenu, at))
+	}
+	if line != title {
+		t.Errorf("the title is at column %d and the line under it at %d", title, line)
 	}
 }
 
@@ -208,8 +228,10 @@ func TestMenubarAnchorFollowsTheBarsOwnPosition(t *testing.T) {
 	if menu == nil {
 		t.Fatal("no menu was shown")
 	}
-	if got := menu.box().X; got != 10 {
-		t.Errorf("menu starts at column %d, want it under the bar's own origin", got)
+	// The bar's own origin plus its title's pad, less the menu's rule
+	// and pad: the letters line up, wherever the bar is.
+	if got, want := menu.box().X, 10+barPad-(menuFrame+menuPad); got != want {
+		t.Errorf("menu starts at column %d, want %d for a bar at column 10", got, want)
 	}
 	if got := menu.box().Y; got != 5 {
 		t.Errorf("menu starts at row %d, want it under the bar's own row", got)

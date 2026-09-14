@@ -1128,3 +1128,29 @@ func TestPaletteGivesUpTheCursorWhenFocusLeaves(t *testing.T) {
 		t.Fatal("the palette still claimed the cursor after focus left")
 	}
 }
+
+// A window with no room for the palette shows none, and the palette
+// takes nothing but Escape.
+//
+// It is still the top modal, so Enter would run whatever the list had
+// settled on, out of a box nobody can see.
+func TestAPaletteWithNoRoomToBeDrawn(t *testing.T) {
+	for _, rows := range []int{1, 2, 3} {
+		p, closed := newTestPalette(t, testCommands("Copy", "Paste"))
+		p.Style = styled()
+		p.Layout(Size{Cols: 40, Rows: rows})
+		if got := p.box(); !got.Empty() {
+			t.Fatalf("in %d rows the box is %+v, want none", rows, got)
+		}
+		if took, err := p.HandleKey(press(input.KeyEnter, 0)); !took || err != nil {
+			t.Fatalf("in %d rows Enter took %v, err %v", rows, took, err)
+		}
+		if *closed != 0 {
+			t.Fatalf("in %d rows Enter closed it, so it ran something", rows)
+		}
+		p.HandleKey(press(input.KeyEscape, 0))
+		if *closed != 1 {
+			t.Fatalf("in %d rows Escape closed it %d times", rows, *closed)
+		}
+	}
+}

@@ -531,3 +531,19 @@ func cloneHosts(hosts []Host) []Host {
 	}
 	return out
 }
+
+// Names is what the saved machines are called, in the order the book
+// holds them.
+//
+// A caller that only wants the names asks for these rather than for
+// Hosts: a Host carries its key files, and cloning those to read a name
+// off is work for nothing.
+func (b *Book) Names() []string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	out := make([]string, 0, len(b.hosts))
+	for _, h := range b.hosts {
+		out = append(out, h.Name)
+	}
+	return out
+}

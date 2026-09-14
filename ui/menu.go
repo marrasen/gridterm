@@ -267,6 +267,15 @@ func (m *Menu) paintTitle(line grid.View, i int, fg, bg color.RGBA, room int) {
 // HandleKey drives the menu. Keys it has no use for travel on, so the
 // shortcuts that close or quit still work while it is open.
 func (m *Menu) HandleKey(ev input.Event) (bool, error) {
+	if m.box().Empty() {
+		// Nowhere to draw it, so there is nothing on screen to choose
+		// from. It is still the top modal, so Enter here would run a
+		// line nobody has read. Escape is the way out.
+		if ev.Kind == input.KeyPress && ev.Key == input.KeyEscape {
+			m.dismiss()
+		}
+		return true, nil
+	}
 	if ev.Kind != input.KeyPress && ev.Kind != input.KeyRepeat {
 		// Text events included: a menu is chosen from, not typed into.
 		return false, nil
@@ -310,7 +319,13 @@ func (m *Menu) HandleKey(ev input.Event) (bool, error) {
 func (m *Menu) HandleMouse(ev input.MouseEvent) (bool, error) {
 	box := m.box()
 	inside := !box.Empty() && box.Contains(ev.Col, ev.Row)
-	row := m.top + ev.Row - box.Y - menuFrame
+	// The rule is inside the box and is not a line. Counting from it
+	// would name the line above the first or below the last -- one the
+	// user cannot see and did not click.
+	row := -1
+	if at := ev.Row - box.Y - menuFrame; inside && at >= 0 && at < m.lines() {
+		row = m.top + at
+	}
 
 	switch {
 	case ev.Button.IsWheel():
@@ -374,7 +389,10 @@ func (m *Menu) box() Rect {
 	if above := min(want, over); above > rows {
 		rows, y = above, over-above
 	}
-	if cols <= 0 || rows <= 0 {
+	// Room for the rule at each end and a line between them, or there is
+	// no menu to show. A box holding nothing but its own rule is a modal
+	// nobody can read and Enter would still run something out of it.
+	if cols <= menuFrame*2 || rows <= menuFrame*2 {
 		return Rect{}
 	}
 	x := min(max(anchor.X, 0), max(m.size.Cols-cols, 0))

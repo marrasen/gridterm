@@ -232,12 +232,15 @@ func (a *app) refreshPanel(now time.Time) {
 func (a *app) hosts(open map[string][]conns.Row) []string {
 	out := []string{conns.Local}
 	seen := map[string]bool{conns.Local: true}
-	for _, h := range a.book.Hosts() {
-		if seen[h.Name] {
+	// Names rather than Hosts: this runs every frame, and cloning every
+	// saved machine and its key files to read the names off them is work
+	// for nothing.
+	for _, name := range a.book.Names() {
+		if seen[name] {
 			continue
 		}
-		seen[h.Name] = true
-		out = append(out, h.Name)
+		seen[name] = true
+		out = append(out, name)
 	}
 	// Then whatever is open that the book does not name. Sorted, because
 	// they come out of a map and an order that changed every frame would
@@ -264,9 +267,16 @@ func (a *app) hostRow(host string, now time.Time) ui.ListRow {
 		Text:   groupName(host),
 		Header: true,
 		Key:    hostKey(host),
+		// Indented like the rows under it, so its own dot sits in the
+		// column theirs do. A heading hard against the left edge has
+		// nowhere to put one.
+		Depth: 1,
 		// What can be opened on this machine, since the name itself is
 		// not something to act on.
 		Button: '+',
+		// A blank where the dot goes while nothing is connected, so the
+		// name does not shift sideways when something is.
+		Mark: ' ',
 	}
 	m := a.machines[host]
 	if m == nil || m.entry == nil {

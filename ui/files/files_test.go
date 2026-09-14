@@ -1588,3 +1588,74 @@ func TestTheBarSpacesTheKeyFromItsName(t *testing.T) {
 		}
 	}
 }
+
+// Copying takes the marks off: they said what the next key would act on,
+// and that key has been pressed. Waiting to be pasted is marked its own
+// way, and a name that was still marked would be drawn as marked
+// instead.
+func TestCopyingTakesTheMarksOff(t *testing.T) {
+	b, dirs := many(t, 2)
+	write(t, dirs[0], "one.txt", "one")
+	write(t, dirs[0], "two.txt", "two")
+	b.Here().Reload()
+
+	press(t, b, input.KeyDown)
+	press(t, b, input.KeySpace)
+	press(t, b, input.KeySpace)
+	here := b.Here()
+	if got := len(here.Marked()); got != 2 {
+		t.Fatalf("%d names marked, want both", got)
+	}
+
+	press(t, b, input.KeyF5)
+	if got := b.Clip().Names; len(got) != 2 {
+		t.Fatalf("the clipboard holds %v, want both", got)
+	}
+	// Marked() falls back to the row under the bar, so the test asks
+	// about the names rather than the count.
+	for _, name := range []string{"one.txt", "two.txt"} {
+		if !here.isClipped(name) {
+			t.Fatalf("%q is not marked as waiting to be pasted", name)
+		}
+	}
+	g := grid.New(90, 12, color.RGBA{}, color.RGBA{})
+	b.Layout(ui.Size{Cols: 90, Rows: 12})
+	b.Draw(g.View())
+	var clipped int
+	for y := 0; y < 11; y++ {
+		row := rowText(g, y, 44)
+		if strings.Contains(row, "·one.txt") || strings.Contains(row, "·two.txt") {
+			clipped++
+		}
+		if strings.Contains(row, "*one.txt") || strings.Contains(row, "*two.txt") {
+			t.Fatalf("row %d still reads as picked out: %q", y, row)
+		}
+	}
+	if clipped != 2 {
+		t.Fatalf("%d names are drawn as waiting to be pasted, want 2", clipped)
+	}
+}
+
+// Paste is not offered when the one that would do the work is not wired,
+// whichever that is for what is on the clipboard.
+func TestPasteIsNotOfferedWithoutTheOneThatDoesIt(t *testing.T) {
+	b, dirs := many(t, 2)
+	write(t, dirs[0], "one.txt", "one")
+	b.Here().Reload()
+	press(t, b, input.KeyDown)
+
+	// A cut needs the mover, and only the copier is wired.
+	b.OnCopy = func(Work) {}
+	press(t, b, input.KeyF6)
+	if b.wired(input.KeyF7) {
+		t.Fatal("the bar offers to paste a cut with nothing to move it")
+	}
+	if took, _ := b.HandleKey(input.Event{Kind: input.KeyPress, Key: input.KeyF7}); took {
+		t.Fatal("pasting a cut was taken with nothing to move it")
+	}
+	// And the other way round.
+	b.OnMove, b.OnCopy = func(Work) {}, nil
+	if !b.wired(input.KeyF7) {
+		t.Fatal("the bar does not offer to paste a cut with a mover wired")
+	}
+}

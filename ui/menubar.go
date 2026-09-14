@@ -7,8 +7,12 @@ import (
 	"github.com/marrasen/gridterm/input"
 )
 
-// barRows is how tall the row of menu titles is.
-const barRows = 1
+// barRows is how tall the row of menu titles is, and barPad the blank
+// column each side of a title.
+const (
+	barRows = 1
+	barPad  = 1
+)
 
 // MenuDef is one menu on a bar: the word shown and the lines under it.
 type MenuDef struct {
@@ -107,7 +111,15 @@ func (b *Menubar) Open(i int) bool {
 	// The closure holds the title's own index rather than reading the
 	// bar, so laying the menu out inside Present asks the right question
 	// before the bar has recorded anything.
-	menu.Anchor = func() Rect { return b.anchorFor(i) }
+	menu.Anchor = func() Rect {
+		at := b.anchorFor(i)
+		// A title is drawn barPad in from its label, and a menu draws
+		// its first letter menuFrame+menuPad in from its box. Lined up,
+		// so the first letter of a line sits under the first letter of
+		// the title it dropped from.
+		at.X += barPad - (menuFrame + menuPad)
+		return at
+	}
 	menu.OnEdge = b.step
 	menu.OnOutside = b.pressedBar
 
@@ -247,13 +259,13 @@ func (b *Menubar) paintBar(row grid.View) {
 			// colour rather than the bar's ground.
 			fg, bg := b.Style.OpenFG, b.Style.OpenBG
 			cell.Fill(grid.Cell{Rune: ' ', FG: fg, BG: bg, Width: 1})
-			cell.SetString(1, 0, b.Menus[i].Title, fg, bg, 0)
+			cell.SetString(barPad, 0, b.Menus[i].Title, fg, bg, 0)
 			continue
 		}
 		// Written a cluster at a time, each on the ground its own column
 		// carries, so the blend runs under the titles as well as between
 		// them.
-		at := 1
+		at := barPad
 		for _, cluster := range grid.Clusters(b.Menus[i].Title) {
 			bg := b.Style.colAt(label.X+at, cols)
 			next := cell.SetString(at, 0, cluster, b.Style.FG, bg, 0)
@@ -405,7 +417,7 @@ func (b *Menubar) labels() []Rect {
 		// Measured in columns, not runes: a CJK title takes two columns a
 		// character, and a label sized by rune count would be drawn with
 		// its end cut off.
-		width := grid.StringWidth(menu.Title) + 2 // a space each side
+		width := grid.StringWidth(menu.Title) + barPad*2
 		if at+width > bar.Cols {
 			// No room for this one or any after it.
 			break

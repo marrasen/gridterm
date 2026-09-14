@@ -229,7 +229,15 @@ func (a *app) splitFocused(dir ui.Dir) error {
 
 	split := a.newSplit(dir, current, next)
 	if parent := ui.ParentOf(a.root.Widget(), current); parent != nil {
-		parent.Replace(current, split)
+		if !parent.Replace(current, split) {
+			// The container refused it, so the new pane is nowhere in
+			// the tree. Left as it is that is a live shell nobody can
+			// see or close.
+			delete(a.panes, next)
+			return errors.Join(
+				fmt.Errorf("%T would not take a split in place of the pane", parent),
+				next.Close())
+		}
 	} else {
 		a.root.SetWidget(split)
 	}
@@ -338,6 +346,9 @@ func (a *app) removePane(w ui.Widget, keep bool) error {
 		a.forgetPane(t)
 		errs = append(errs, t.Close())
 	}
+	// Whatever was in front has gone or moved, so the sidebar works it
+	// out again rather than holding a pane that is no longer there.
+	a.shown = nil
 	// The window goes with the last pane. Counted rather than read off
 	// an empty tree: the connections panel is a leaf too, so the dock
 	// stands in for the pane that went and the tree is never empty.

@@ -5,6 +5,7 @@ import (
 	"io"
 	"io/fs"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -25,14 +26,40 @@ type heldFS struct {
 	held   chan struct{}
 	closed chan struct{}
 	err    error
+
+	// reading is closed once something has actually blocked on it. A
+	// test that wants a job stuck in a read has to wait for that: a job
+	// cancelled before it got that far gives up at once, and then the
+	// close it was holding up happens immediately.
+	once    sync.Once
+	reading chan struct{}
 }
 
 func newHeldFS(err error) *heldFS {
-	return &heldFS{held: make(chan struct{}), closed: make(chan struct{}), err: err}
+	return &heldFS{
+		held: make(chan struct{}), closed: make(chan struct{}),
+		reading: make(chan struct{}), err: err,
+	}
 }
 
 // release lets the reads answer.
 func (f *heldFS) release() { close(f.held) }
+
+// wait blocks until the test lets go, saying first that it has.
+func (f *heldFS) wait() {
+	f.once.Do(func() { close(f.reading) })
+	<-f.held
+}
+
+// stuck waits for a job to be inside a read on this filesystem.
+func (f *heldFS) stuck(t *testing.T) {
+	t.Helper()
+	select {
+	case <-f.reading:
+	case <-time.After(waitBudget):
+		t.Fatal("no job ever read from the filesystem")
+	}
+}
 
 func (f *heldFS) Name() string { return "held" }
 func (f *heldFS) Sep() byte    { return '/' }
@@ -40,28 +67,28 @@ func (f *heldFS) Sep() byte    { return '/' }
 func (f *heldFS) Home() (string, error) { return "/", nil }
 
 func (f *heldFS) ReadDir(string) ([]vfs.Entry, error) {
-	<-f.held
+	f.wait()
 	return nil, errors.New("the machine has gone")
 }
 
 func (f *heldFS) Stat(string) (vfs.Entry, error) {
-	<-f.held
+	f.wait()
 	return vfs.Entry{}, errors.New("the machine has gone")
 }
 
 func (f *heldFS) Open(string) (io.ReadCloser, error) {
-	<-f.held
+	f.wait()
 	return nil, errors.New("the machine has gone")
 }
 
 func (f *heldFS) Create(string, fs.FileMode) (io.WriteCloser, error) {
-	<-f.held
+	f.wait()
 	return nil, errors.New("the machine has gone")
 }
 
 func (f *heldFS) Mkdir(string, fs.FileMode) error { return errors.New("the machine has gone") }
 func (f *heldFS) Symlink(string, string) error    { return errors.New("the machine has gone") }
-func (f *heldFS) Remove(string) error             { <-f.held; return errors.New("the machine has gone") }
+func (f *heldFS) Remove(string) error             { f.wait(); return errors.New("the machine has gone") }
 func (f *heldFS) Rename(string, string) error     { return errors.New("the machine has gone") }
 func (f *heldFS) Chmod(string, fs.FileMode) error { return errors.New("the machine has gone") }
 
@@ -112,6 +139,8 @@ func TestLettingGoOfAFilesystemAJobIsUsing(t *testing.T) {
 	}, jobs.Options{Count: count})
 	a.jobs[e] = j
 	a.registry.Add(e)
+	// Stuck in a read, so cancelling it cannot finish it on the spot.
+	f.stuck(t)
 
 	// It cannot be closed yet, so it is not.
 	if err := a.releaseFS(f); err != nil {
@@ -173,6 +202,7 @@ func TestWaitingForClosesGivesUp(t *testing.T) {
 		Kind: jobs.Delete, From: f, At: "/", Names: []string{"one"},
 	}, jobs.Options{Count: count})
 	a.jobs[e] = j
+	f.stuck(t)
 
 	if err := a.releaseFS(f); err != nil {
 		t.Fatalf("releaseFS = %v", err)

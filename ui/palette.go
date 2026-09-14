@@ -130,6 +130,16 @@ func (p *Palette) Layout(size Size) {
 // HandleKey drives the dialog. Keys it has no use for travel on, so the
 // shortcuts that close or quit still work while it is open.
 func (p *Palette) HandleKey(ev input.Event) (bool, error) {
+	if p.box().Empty() {
+		// Nowhere to draw it, so there is nothing on screen to read and
+		// nothing to type into. It is still the top modal, so Enter here
+		// would run whatever the list had settled on. Escape is the way
+		// out.
+		if ev.Kind == input.KeyPress && ev.Key == input.KeyEscape {
+			p.dismiss()
+		}
+		return true, nil
+	}
 	// The list keys first: Up and Down move the selection here, where in
 	// an ordinary field they would do nothing.
 	if ev.Kind == input.KeyPress || ev.Kind == input.KeyRepeat {
@@ -312,6 +322,8 @@ func (p *Palette) box() Rect {
 	// at each end. A longer list scrolls rather than making a taller box.
 	rows := min(min(p.size.Rows-paletteMargin*2, paletteMaxRows+paletteFrame*2),
 		len(p.matches)+1+paletteFrame*2)
+	// Room for the rule at each end and the query line between them, or
+	// there is nothing to show and nothing to type into.
 	if cols < 8+paletteFrame*2 || rows < 1+paletteFrame*2 {
 		return Rect{}
 	}

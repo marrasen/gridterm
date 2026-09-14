@@ -32,14 +32,19 @@ emulator, and draws the resulting character grid as batched triangles.
 - **A file manager with as many panes as you want.** One manager for the
   window, and a pane added to it from the plus on any machine in the
   sidebar: this machine, a server, or five of each with gridterm in the
-  middle. The keys are the ones a two-pane browser has had for thirty
-  years — Tab moves to the next pane, Enter descends, Backspace goes up,
-  Space marks, F5 copies to the next pane, F6 moves, F7 makes a
-  directory, F8 deletes — and a bar along the bottom says which key does
-  what, the way Midnight Commander does. Clicking a key on the bar does
-  what pressing it does. A directory is never read on the goroutine that
-  draws, so a slow machine cannot stop the window, and a read that fails
-  leaves the listing that worked on screen with the reason beside it.
+  middle. Each pane says which machine it is on above the directory it
+  is showing. Tab moves to the next pane and Shift+Tab back, Enter
+  descends, Backspace goes up and Space marks, the way a two-pane browser
+  has worked for thirty years. Moving files is a clipboard rather than a
+  direction: F5 copies and F6 cuts, and F7 pastes into whichever pane you
+  have gone to. A copy can be pasted into one pane after another; a cut
+  lands once. What is waiting to be pasted is marked in the pane it came
+  from, and comes from the directory it was taken in whatever that pane
+  is showing by then. A bar along the bottom says which key does what,
+  the way Midnight Commander does, and clicking a key on it runs that
+  key. A directory is never read on the goroutine that draws, so a slow
+  machine cannot stop the window, and a read that fails leaves the
+  listing that worked on screen with the reason beside it.
 - **File work in the background.** Copying, moving and deleting, on one
   machine or between two, with how far along it is and a way to stop it.
   A name that is already there is asked about — replace, skip, rename, or
@@ -58,14 +63,17 @@ emulator, and draws the resulting character grid as batched triangles.
   many streams, how fast, and how many failed.
 - **A sidebar instead of a row of tabs.** It is open when the window
   opens, and it is how everything is reached: every terminal, file pane,
-  tunnel and transfer, grouped by the machine it is on with this one at
-  the top. A dot in front of each row says what it is doing — green for
-  open, brightening and dimming while bytes are going past, grey once it
-  has finished — so the words beside it are left for a speed or a count.
-  Every machine carries a plus that drops a menu of what can be opened
-  there, and "Connect to server…" is pinned under the list. Nothing polls
-  and nothing ticks: the row is worked out afresh each frame from when
-  the last byte went by, so an idle sidebar redraws nothing at all.
+  tunnel and transfer, under the machine it is on with this one at the
+  top. Every saved server is on it whether or not anything is connected,
+  and every machine carries a plus that drops a menu of what can be
+  opened there. A dot says what each row is doing — green for open,
+  brightening and dimming while bytes are going past, grey once it has
+  finished — and the machine's own heading carries the dot for the
+  connection. The bar follows whatever pane is in front, so the sidebar
+  is the list of what is open and says which one you are looking at.
+  "Connect to server…" is pinned under the list. Nothing polls and
+  nothing ticks: the row is worked out afresh each frame from when the
+  last byte went by, so an idle sidebar redraws nothing at all.
   `Ctrl+Shift+B` hides it and shows it again.
 - **Servers are saved.** A machine you add gets a line on the Servers
   menu and an entry in the palette, kept in a JSON file under the OS
@@ -132,10 +140,14 @@ gave. There is no way to pick a font by family name yet; give paths.
 | `Ctrl+Shift+L` | go to the sidebar |
 | `Ctrl+Shift+N` | connect to a server |
 
-In the file manager: `Tab` moves to the next pane, `Enter` descends,
-`Backspace` goes up, `Space` marks, `F2` renames, `F5` copies to the next
-pane, `F6` moves, `F7` makes a directory, `F8` deletes. The bar along the
-bottom says the same thing, and clicking a key on it runs that key.
+In the file manager: `Tab` and `Shift+Tab` move between panes, `Enter`
+descends, `Backspace` goes up, `Space` marks, `F2` renames, `F5` copies,
+`F6` cuts, `F7` pastes, `F8` deletes, `F9` makes a directory and `F10`
+closes the pane. The bar along the bottom says the same thing, and
+clicking a key on it runs that key.
+
+In a dialog, a field that usually holds one of a few answers offers them:
+`Ctrl+Down` and `Ctrl+Up` step through what is saved.
 
 On Windows there is nothing else to install — no C toolchain, no cgo:
 
@@ -174,12 +186,12 @@ encoders and both session types.
 | `vfs` | 668 | no | a filesystem a file pane works on: this machine, or one over SFTP |
 | `jobs` | 1,142 | no | copying, moving and deleting in the background, with progress and cancel |
 | `meter` | 257 | no | bytes moved, and how long ago: the four states |
-| `ui` | 5,203 | no | the widget toolkit: panes, tabs, menus, dialogs, fields, lists |
+| `ui` | 5,443 | no | the widget toolkit: panes, tabs, menus, dialogs, fields, lists |
 | `ui/term` | 529 | no | a shell on a widget |
-| `ui/files` | 1,198 | no | the file manager: any number of panes side by side |
-| `glyph` | 1,289 | yes | glyph atlas, system font fallback, box drawing |
+| `ui/files` | 1,388 | no | the file manager: any number of panes side by side |
+| `glyph` | 1,301 | yes | glyph atlas, system font fallback, box drawing |
 | `render` | 1,149 | yes | grid to batched triangles |
-| `main` | 5,114 | yes | the window and the wiring |
+| `main` | 5,424 | yes | the window and the wiring |
 
 The layering is deliberate: `vt` never imports the renderer, `input`
 never imports ebiten (that lives in `input/ebitenin`), `ui` knows nothing

@@ -743,3 +743,61 @@ func TestListMarksTheCurrentRowWithoutTheKeys(t *testing.T) {
 		t.Fatalf("the bar is drawn on %v, want the selected colour", got)
 	}
 }
+
+// A row's icon goes where its text would start, and the text moves along
+// to make room.
+//
+// The picture is not a character in the text: nothing copies it out,
+// and nothing measures the row by it.
+func TestListDrawsAnIconInFrontOfTheText(t *testing.T) {
+	l := newTestList(t, []ListRow{
+		{Text: "margit", Header: true, Key: 1},
+		{Text: "vim", Depth: 1, Mark: '•', MarkFG: fg, Icon: grid.Icon(grid.IconTerminal), Key: 2},
+	}, 30, 4)
+	g := drawList(l, 30, 4)
+
+	// The dot stays in the indent, which costs it no column.
+	if got := g.At(0, 1).Rune; got != '•' {
+		t.Fatalf("column 0 holds %q, want the dot", got)
+	}
+	// Then the icon where the text used to start, a blank, then the text.
+	if got := g.At(2, 1).Art; got != grid.Icon(grid.IconTerminal) {
+		t.Fatalf("column 2 carries %v, want the icon", got)
+	}
+	if got := g.At(3, 1).Art.Kind; got != grid.ArtNone {
+		t.Fatalf("column 3 carries %v, want the blank after the icon", got)
+	}
+	if got := rowOf(g, 1); !strings.Contains(got, "vim") {
+		t.Fatalf("row = %q, want the text as well", got)
+	}
+	// In columns, not bytes: the dot in front is three bytes of one.
+	if at := columnOf(rowOf(g, 1), "vim"); at != 4 {
+		t.Fatalf("the text starts at column %d, want it past the icon", at)
+	}
+	// A row with no icon keeps its text where it was.
+	if at := columnOf(rowOf(g, 0), "margit"); at != 0 {
+		t.Fatalf("a header with no icon starts at column %d", at)
+	}
+}
+
+// columnOf is where a word starts in a drawn row, counted in columns.
+func columnOf(row, want string) int {
+	at := strings.Index(row, want)
+	if at < 0 {
+		return -1
+	}
+	return len([]rune(row[:at]))
+}
+
+// A list too narrow for an icon and a word draws the word.
+func TestListWithNoRoomForAnIcon(t *testing.T) {
+	l := newTestList(t, []ListRow{
+		{Text: "vim", Depth: 1, Icon: grid.Icon(grid.IconTerminal), Key: 1},
+	}, 4, 4)
+	g := drawList(l, 4, 4)
+	for x := 0; x < 4; x++ {
+		if got := g.At(x, 0).Art.Kind; got != grid.ArtNone {
+			t.Fatalf("column %d carries %v in a list this narrow", x, got)
+		}
+	}
+}

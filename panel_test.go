@@ -83,8 +83,8 @@ func TestPanelShowsTheShellThatIsOpen(t *testing.T) {
 	if got[0] != "Local" {
 		t.Errorf("the heading is %q, want Local", got[0])
 	}
-	if !strings.HasPrefix(got[1], string(terminalIcon)) {
-		t.Errorf("the row is %q, want a terminal", got[1])
+	if got := rowIcon(a, 1); got != grid.Icon(grid.IconTerminal) {
+		t.Errorf("the row carries %v, want a terminal", got)
 	}
 }
 
@@ -161,8 +161,8 @@ func TestPanelSaysNoStateInWords(t *testing.T) {
 		}
 		// And it still says what it is, so the test is not passing on an
 		// empty row.
-		if !strings.HasPrefix(row, string(terminalIcon)) {
-			t.Fatalf("a %v row reads %q, want it to still name the pane", state, row)
+		if got := rowIcon(a, 1); got != grid.Icon(grid.IconTerminal) {
+			t.Fatalf("a %v row carries %v, want a terminal", state, got)
 		}
 	}
 }
@@ -1108,22 +1108,37 @@ func sidebarText(a *testApp, y int, area ui.Rect) string {
 	return b.String()
 }
 
-// A connection says what it is with an icon rather than with the word
-// for what kind it is: the word was the widest thing on the row and the
-// same on every one of them.
+// A connection says what it is with a little picture rather than with
+// the word for what kind it is: the word was the widest thing on the row
+// and the same on every one of them.
 func TestARowSaysWhatItIsWithAnIcon(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withPanel(t, a)
 
-	got := panelText(a, panelNow)[1]
-	if !strings.HasPrefix(got, string(terminalIcon)) {
-		t.Fatalf("the row is %q, want the terminal icon", got)
+	if got := rowIcon(a, 1); got != grid.Icon(grid.IconTerminal) {
+		t.Fatalf("the row carries %v, want a terminal", got)
 	}
+	got := panelText(a, panelNow)[1]
 	for _, word := range []string{"Terminal", "Files", "Tunnel", "Command"} {
 		if strings.Contains(got, word) {
 			t.Fatalf("the row is %q, which still names the kind", got)
 		}
 	}
+	// And the picture is not a character in the text, so nothing copies
+	// it out or measures the row by it.
+	if strings.TrimSpace(got) != "" {
+		t.Fatalf("the row reads %q, and its shell has not named itself yet", got)
+	}
+}
+
+// rowIcon is the picture on one row of the panel.
+func rowIcon(a *testApp, at int) grid.Art {
+	a.refreshPanel(panelNow)
+	rows := a.panel.Rows()
+	if at < 0 || at >= len(rows) {
+		return grid.Art{}
+	}
+	return rows[at].Icon
 }
 
 // The bar follows whatever the stage is showing, so the sidebar is the
@@ -1264,4 +1279,44 @@ func TestTheGraphAndTheSpeedBothFit(t *testing.T) {
 func a4Style() ui.ListStyle {
 	white := color.RGBA{R: 255, G: 255, B: 255, A: 255}
 	return ui.ListStyle{FG: white, BG: color.RGBA{A: 255}, NoteFG: white}
+}
+
+// Each kind of connection gets its own picture, so a row says what it is
+// without spending words on it.
+func TestEachKindHasItsOwnIcon(t *testing.T) {
+	for kind, want := range map[conns.Kind]grid.Art{
+		conns.Terminal: grid.Icon(grid.IconTerminal),
+		conns.Command:  grid.Icon(grid.IconCommand),
+		conns.Files:    grid.Icon(grid.IconFiles),
+		conns.Tunnel:   grid.Icon(grid.IconTunnel),
+	} {
+		if got := icon(kind); got != want {
+			t.Errorf("%v carries %v, want %v", kind, got, want)
+		}
+	}
+}
+
+// The picture is drawn on the row, not only recorded: a cell of the
+// sidebar carries it.
+func TestTheIconIsDrawnOnTheRow(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	a.refreshPanel(panelNow)
+	a.root.Draw(a.g.View())
+
+	area, shown := a.root.AreaOf(a.side)
+	if !shown {
+		t.Fatal("the sidebar is not on screen")
+	}
+	var found bool
+	for y := area.Y; y < area.Y+area.Rows; y++ {
+		for x := area.X; x < area.X+area.Cols; x++ {
+			if a.g.At(x, y).Art == grid.Icon(grid.IconTerminal) {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Fatal("no cell of the sidebar carries the terminal picture")
+	}
 }

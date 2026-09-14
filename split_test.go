@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/marrasen/gridterm/conns"
+	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/input"
 	"github.com/marrasen/gridterm/internal/sshtest"
 	"github.com/marrasen/gridterm/ui"
@@ -365,15 +366,15 @@ func TestBothHalvesOfASplitAreOnTheSidebar(t *testing.T) {
 	}
 	second := a.focusedTerminal()
 
-	rows := panelText(a, time.Now())
+	a.refreshPanel(time.Now())
 	var terminals int
-	for _, row := range rows {
-		if strings.HasPrefix(row, string(terminalIcon)) {
+	for _, row := range a.panel.Rows() {
+		if row.Icon == grid.Icon(grid.IconTerminal) {
 			terminals++
 		}
 	}
 	if terminals != 2 {
-		t.Fatalf("the sidebar shows %v, want a row for each half", rows)
+		t.Fatalf("the sidebar shows %d terminals, want a row for each half", terminals)
 	}
 
 	a.refreshPanel(panelNow)

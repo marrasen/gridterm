@@ -105,6 +105,11 @@ type ListRow struct {
 	// Art is drawn in the cell before the note, for a row with
 	// something to show that no words would say as well.
 	Art grid.Art
+
+	// Icon is drawn in front of the text, for a row whose kind is better
+	// shown than named. It takes the column it sits in and a blank after
+	// it, and the text starts beyond them.
+	Icon grid.Art
 }
 
 // buttonCol is the column a row's button is drawn in, or -1 when the
@@ -435,9 +440,17 @@ func (l *List) paintRow(v grid.View, row ListRow, selected bool, y, rows int) {
 	}
 
 	at := min(row.Depth*2, max(cols-1, 0))
+	// The icon goes where the text would start, and the text moves along
+	// to make room: a picture of what a row is says it in one column
+	// where the word for it took eight.
+	if row.Icon.Kind != grid.ArtNone && at+2 < room {
+		v.Set(at, 0, grid.Cell{Rune: ' ', FG: fg, BG: bg, Width: 1, Art: row.Icon})
+		v.Set(at+1, 0, grid.Cell{Rune: ' ', FG: fg, BG: bg, Width: 1})
+		at += 2
+	}
 	// The mark sits in the indent the text leaves in front of it, so it
 	// costs no column of its own.
-	if row.Mark != 0 && at >= 2 {
+	if row.Mark != 0 && row.Depth*2 >= 2 {
 		mark := row.MarkFG
 		if mark.A == 0 {
 			mark = fg
@@ -447,7 +460,7 @@ func (l *List) paintRow(v grid.View, row ListRow, selected bool, y, rows int) {
 			// against this one.
 			mark = fg
 		}
-		v.Set(at-2, 0, grid.Cell{Rune: row.Mark, FG: mark, BG: bg, Width: 1})
+		v.Set(row.Depth*2-2, 0, grid.Cell{Rune: row.Mark, FG: mark, BG: bg, Width: 1})
 	}
 	attr := grid.Attr(0)
 	if row.Header {

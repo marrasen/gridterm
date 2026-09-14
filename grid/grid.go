@@ -74,7 +74,46 @@ const (
 	// ArtGraph is a column chart across the cell: ArtGraphBars samples,
 	// each ArtGraphBits wide, oldest on the left.
 	ArtGraph
+
+	// ArtIcon is a small picture standing for a kind of thing. Data says
+	// which one.
+	ArtIcon
 )
+
+// IconKind names a small picture drawn in code.
+//
+// Drawn rather than looked up in a font: no character stands for "a
+// terminal" or "a filesystem", and the ones that come close are arrows
+// and boxes that read as something else.
+type IconKind uint8
+
+const (
+	// IconTerminal is a screen with a prompt in it.
+	IconTerminal IconKind = iota
+
+	// IconCommand is something that was run and finished.
+	IconCommand
+
+	// IconFiles is a listing: a root with things under it.
+	IconFiles
+
+	// IconTunnel is traffic going both ways.
+	IconTunnel
+
+	// numIcons is how many there are, for a caller checking one.
+	numIcons
+)
+
+// Icon is a piece of art standing for a kind of thing.
+func Icon(k IconKind) Art { return Art{Kind: ArtIcon, Data: uint64(k)} }
+
+// Icon returns which picture a piece of art is, and whether it is one.
+func (a Art) Icon() (IconKind, bool) {
+	if a.Kind != ArtIcon || a.Data >= uint64(numIcons) {
+		return 0, false
+	}
+	return IconKind(a.Data), true
+}
 
 // How a graph is packed: the samples it holds and the bits each one
 // takes. Four bits is sixteen heights, which is more than a cell that

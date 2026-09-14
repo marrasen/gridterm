@@ -216,14 +216,16 @@ func (r *Renderer) pushArt(dst *ebiten.Image, g *grid.Grid, y int, m glyph.Metri
 	cols, _ := g.Size()
 	for x := 0; x < cols; x++ {
 		c := g.At(x, y)
-		if c.Art.Kind != grid.ArtGraph || c.Attr&grid.AttrHidden != 0 {
+		if c.Art.Kind == grid.ArtNone {
 			continue
 		}
 		col, ok := artColour(g, x, y, c)
 		if !ok {
 			continue
 		}
-		r.pushGraph(dst, x, y, c.Art, col, m)
+		for _, b := range artBars(c.Art, x, y, m) {
+			r.push(dst, &r.bg, b.X, b.Y, b.W, b.H, 0, 0, 1, 1, col)
+		}
 	}
 }
 
@@ -242,12 +244,15 @@ func (r *Renderer) pushArt(dst *ebiten.Image, g *grid.Grid, y int, m glyph.Metri
 //
 // A bar of nothing still draws one pixel, because a gap and a zero read
 // the same otherwise and the point of the graph is the shape of the run.
-func (r *Renderer) pushGraph(
-	dst *ebiten.Image, x, y int, art grid.Art, col color.RGBA, m glyph.Metrics,
-) {
-	for _, bar := range graphBars(art, x, y, m) {
-		r.push(dst, &r.bg, bar.X, bar.Y, bar.W, bar.H, 0, 0, 1, 1, col)
+// artBars is where a piece of art's rectangles go inside one cell.
+func artBars(art grid.Art, x, y int, m glyph.Metrics) []bar {
+	switch art.Kind {
+	case grid.ArtGraph:
+		return graphBars(art, x, y, m)
+	case grid.ArtIcon:
+		return iconBars(art, x, y, m)
 	}
+	return nil
 }
 
 // artColour is what a cell's art is drawn in, and whether to draw it at

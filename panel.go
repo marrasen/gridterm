@@ -35,17 +35,17 @@ const (
 	tunnelIcon   = '\u21c4' // going both ways
 )
 
-// icon is the character that stands for a kind of connection.
-func icon(k conns.Kind) rune {
+// icon is the little picture that stands for a kind of connection.
+func icon(k conns.Kind) grid.Art {
 	switch k {
 	case conns.Command:
-		return commandIcon
+		return grid.Icon(grid.IconCommand)
 	case conns.Files:
-		return filesIcon
+		return grid.Icon(grid.IconFiles)
 	case conns.Tunnel:
-		return tunnelIcon
+		return grid.Icon(grid.IconTunnel)
 	}
-	return terminalIcon
+	return grid.Icon(grid.IconTerminal)
 }
 
 // pulseStep is how long one step of the pulse lasts. A row that changes
@@ -350,11 +350,10 @@ func (a *app) showing() *conns.Entry {
 
 // panelRow turns one connection into a line.
 func (a *app) panelRow(row conns.Row, now time.Time) ui.ListRow {
-	text := string(icon(row.Kind))
-	if row.Label != "" {
-		text += " " + row.Label
+	out := ui.ListRow{
+		Text: row.Label, Depth: 1, Key: row.Entry,
+		Note: a.note(row, now), Icon: icon(row.Kind),
 	}
-	out := ui.ListRow{Text: text, Depth: 1, Key: row.Entry, Note: a.note(row, now)}
 	out.Mark, out.MarkFG = a.mark(row.State, now)
 	out.Art = a.graph(row.Entry)
 	if row.State == meter.Closed {

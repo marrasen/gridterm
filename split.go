@@ -146,15 +146,18 @@ func (a *app) otherPanes(except ui.Widget) []ui.Widget {
 // paneName is what the sidebar calls a pane, for a list that has to say
 // which one it means.
 func (a *app) paneName(w ui.Widget) string {
+	// Named rather than drawn: a chooser is a list of things to pick
+	// from, and the picture the sidebar uses says which kind but not
+	// which one.
 	switch pane := w.(type) {
 	case *term.Terminal:
 		if e := a.panes[pane]; e != nil {
-			return string(icon(e.Kind)) + " " + e.Label
+			return e.Kind.String() + " " + e.Label
 		}
 	case *files.Pane:
 		if a.files != nil {
 			if e := a.files.rows[pane]; e != nil {
-				return string(filesIcon) + " " + e.Label
+				return e.Kind.String() + " " + e.Label
 			}
 		}
 	}

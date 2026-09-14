@@ -130,3 +130,95 @@ func TestArtColourFollowsTheCell(t *testing.T) {
 		t.Fatal("a hidden cell's art is drawn")
 	}
 }
+
+// Every icon draws something, inside its own cell, with no rectangle
+// thinner than a pixel.
+//
+// Quads are not antialiased, so a rectangle narrower than a pixel is
+// drawn only when a pixel centre falls inside it: half an icon would go
+// missing at the sizes where an icon is doing the most work.
+func TestEveryIconDrawsInsideItsCell(t *testing.T) {
+	kinds := []grid.IconKind{
+		grid.IconTerminal, grid.IconCommand, grid.IconFiles, grid.IconTunnel,
+	}
+	for _, kind := range kinds {
+		for _, m := range cellSizes {
+			bars := iconBars(grid.Icon(kind), 2, 3, m)
+			if len(bars) == 0 {
+				t.Fatalf("icon %d at %+v drew nothing", kind, m)
+			}
+			left := float32(2 * m.CellW)
+			right := left + float32(m.CellW)
+			top := float32(3 * m.CellH)
+			foot := float32(3*m.CellH + m.Ascent)
+			for i, b := range bars {
+				if b.W < 1 || b.H < 1 {
+					t.Fatalf("icon %d at %+v: piece %d is %vx%v", kind, m, i, b.W, b.H)
+				}
+				if b.X < left || b.X+b.W > right {
+					t.Fatalf("icon %d at %+v: piece %d spans %v..%v, outside %v..%v",
+						kind, m, i, b.X, b.X+b.W, left, right)
+				}
+				if b.Y < top || b.Y+b.H > foot {
+					t.Fatalf("icon %d at %+v: piece %d spans %v..%v, outside %v..%v",
+						kind, m, i, b.Y, b.Y+b.H, top, foot)
+				}
+			}
+		}
+	}
+}
+
+// Each icon is a different picture: one that looked like another would
+// say the wrong thing about the row it is on.
+func TestTheIconsAreToldApart(t *testing.T) {
+	m := glyph.Metrics{CellW: 24, CellH: 48, Ascent: 38}
+	seen := map[string]grid.IconKind{}
+	for _, kind := range []grid.IconKind{
+		grid.IconTerminal, grid.IconCommand, grid.IconFiles, grid.IconTunnel,
+	} {
+		var shape string
+		for _, b := range iconBars(grid.Icon(kind), 0, 0, m) {
+			shape += string(rune('0'+int(b.X))) + string(rune('0'+int(b.Y))) +
+				string(rune('0'+int(b.W))) + string(rune('0'+int(b.H)))
+		}
+		if was, ok := seen[shape]; ok {
+			t.Fatalf("icons %d and %d are the same picture", was, kind)
+		}
+		seen[shape] = kind
+	}
+}
+
+// Art that is not an icon draws no icon, and a kind that does not exist
+// draws nothing rather than reading past the end of the list.
+func TestIconBarsRefusesWhatIsNotAnIcon(t *testing.T) {
+	m := glyph.Metrics{CellW: 12, CellH: 25, Ascent: 20}
+	for _, art := range []grid.Art{
+		{},
+		grid.Graph([]int{1, 2}),
+		{Kind: grid.ArtIcon, Data: 99},
+	} {
+		if got := iconBars(art, 0, 0, m); got != nil {
+			t.Fatalf("%v drew %v", art, got)
+		}
+	}
+}
+
+// Every kind of art reaches its own shapes. A kind the renderer does not
+// know about draws nothing rather than drawing the wrong thing.
+func TestArtBarsReachesEveryKind(t *testing.T) {
+	m := glyph.Metrics{CellW: 12, CellH: 25, Ascent: 20}
+	for _, art := range []grid.Art{
+		grid.Graph([]int{1, 2, 3}),
+		grid.Icon(grid.IconTerminal),
+		grid.Icon(grid.IconFiles),
+		grid.Icon(grid.IconTunnel),
+		grid.Icon(grid.IconCommand),
+	} {
+		if got := artBars(art, 0, 0, m); len(got) == 0 {
+			t.Fatalf("%v drew nothing", art)
+		}
+	}
+	if got := artBars(grid.Art{}, 0, 0, m); got != nil {
+		t.Fatalf("no art drew %v", got)
+	}
+}

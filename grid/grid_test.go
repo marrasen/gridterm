@@ -807,3 +807,23 @@ func TestFillDoesNotSpreadArt(t *testing.T) {
 		}
 	}
 }
+
+// An icon is packed into the cell and read back the same, and one that
+// does not exist is not an icon at all.
+func TestIconRoundTrips(t *testing.T) {
+	for _, want := range []IconKind{IconTerminal, IconCommand, IconFiles, IconTunnel} {
+		art := Icon(want)
+		if art.Kind != ArtIcon {
+			t.Fatalf("Icon(%d) is %v", want, art.Kind)
+		}
+		got, ok := art.Icon()
+		if !ok || got != want {
+			t.Fatalf("Icon(%d) reads back as %d, %v", want, got, ok)
+		}
+	}
+	for _, art := range []Art{{}, Graph([]int{1}), {Kind: ArtIcon, Data: uint64(numIcons)}} {
+		if _, ok := art.Icon(); ok {
+			t.Errorf("%v says it is an icon", art)
+		}
+	}
+}

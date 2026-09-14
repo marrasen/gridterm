@@ -83,6 +83,13 @@ type app struct {
 	side  *sidebar
 	stage *ui.Tabs
 
+	// actOn is the machine a menu opened from the sidebar is about, and
+	// acting says there is such a menu. The commands on that menu act
+	// on the machine the user is looking at, and while the menu is up
+	// that is the machine whose row they clicked.
+	actOn  string
+	acting bool
+
 	// registry is everything the window has open, which is what the
 	// panel draws.
 	registry *conns.Registry

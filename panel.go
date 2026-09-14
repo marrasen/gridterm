@@ -48,6 +48,7 @@ func (a *app) newPanel() *ui.List {
 	}
 	l.Style.BG = mix(a.colours.BG, a.colours.ANSI[4], 1, 20)
 	l.OnActivate = func(row ui.ListRow) error { return a.revealRow(row) }
+	l.OnButton = func(row ui.ListRow) error { return a.openHostMenu(row) }
 	return l
 }
 
@@ -162,7 +163,10 @@ func (a *app) refreshPanel(now time.Time) {
 		rows = append(rows, ui.ListRow{
 			Text:   groupName(group.Host),
 			Header: true,
-			Key:    "host:" + group.Host,
+			Key:    hostKey(group.Host),
+			// What can be opened on this machine, since the name itself
+			// is not something to act on.
+			Button: '+',
 		})
 		for _, row := range group.Rows {
 			live[row.Entry] = true

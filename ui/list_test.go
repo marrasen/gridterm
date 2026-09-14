@@ -494,3 +494,174 @@ func TestListSurvivesAKeyThatCannotBeCompared(t *testing.T) {
 	}
 	drawList(l, 20, 5)
 }
+
+// buttonRows is a panel-shaped list where each header offers something
+// to do, the way the connections panel offers what to open on a machine.
+func buttonRows() []ListRow {
+	rows := panelRows()
+	for i := range rows {
+		if rows[i].Header {
+			rows[i].Button = '+'
+		}
+	}
+	return rows
+}
+
+// A header is the one row nothing can be done with, so the button on it
+// is the only thing a click there can mean.
+func TestListClickingAHeaderButtonRunsIt(t *testing.T) {
+	l := newTestList(t, buttonRows(), 40, 10)
+	var ran []any
+	l.OnButton = func(row ListRow) error {
+		ran = append(ran, row.Key)
+		return nil
+	}
+	l.OnActivate = func(ListRow) error {
+		t.Error("the button chose the row as well")
+		return nil
+	}
+	was, _ := l.Selected()
+
+	took, err := l.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft, Row: 2, Col: 38,
+	})
+	if !took || err != nil {
+		t.Fatalf("the press was taken %v, err %v", took, err)
+	}
+	if len(ran) != 1 || ran[0] != "h:margit" {
+		t.Fatalf("ran %v, want the header that was clicked", ran)
+	}
+	if got, _ := l.Selected(); got.Key != was.Key {
+		t.Fatalf("the selection moved to %v", got.Key)
+	}
+}
+
+// The rest of a header is still a name rather than a button.
+func TestListClickingBesideAButtonRunsNothing(t *testing.T) {
+	l := newTestList(t, buttonRows(), 40, 10)
+	var ran int
+	l.OnButton = func(ListRow) error { ran++; return nil }
+
+	for _, col := range []int{0, 5, 37, 39} {
+		took, _ := l.HandleMouse(input.MouseEvent{
+			Kind: input.MousePress, Button: input.MouseLeft, Row: 2, Col: col,
+		})
+		if !took {
+			t.Errorf("the press at column %d travelled on", col)
+		}
+	}
+	if ran != 0 {
+		t.Fatalf("the button ran %d times", ran)
+	}
+}
+
+// A button on a row that can be chosen is still the button: the two are
+// different columns of the same row.
+func TestListButtonBeatsChoosingTheRow(t *testing.T) {
+	rows := panelRows()
+	rows[1].Button = '+'
+	l := newTestList(t, rows, 40, 10)
+	var button, activate int
+	l.OnButton = func(ListRow) error { button++; return nil }
+	l.OnActivate = func(ListRow) error { activate++; return nil }
+
+	l.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft, Row: 1, Col: 38,
+	})
+	if button != 1 || activate != 0 {
+		t.Fatalf("the button ran %d times and the row %d", button, activate)
+	}
+}
+
+// A failure from the button reaches whoever asked, rather than being
+// swallowed by the list.
+func TestListButtonReportsAFailure(t *testing.T) {
+	l := newTestList(t, buttonRows(), 40, 10)
+	boom := errors.New("no room for a menu")
+	l.OnButton = func(ListRow) error { return boom }
+
+	took, err := l.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft, Row: 0, Col: 38,
+	})
+	if !took || !errors.Is(err, boom) {
+		t.Fatalf("took %v, err %v", took, err)
+	}
+}
+
+// The button is drawn where the click looks for it, and the text and
+// the note make room for it.
+func TestListDrawsTheButtonAtItsColumn(t *testing.T) {
+	l := newTestList(t, []ListRow{
+		{Text: "margit", Header: true, Button: '+', Key: 1},
+		{Text: "Terminal", Depth: 1, Note: "12 kB/s", Button: '+', Key: 2},
+	}, 20, 4)
+	g := drawList(l, 20, 4)
+
+	for _, y := range []int{0, 1} {
+		if got := g.At(18, y).Rune; got != '+' {
+			t.Errorf("row %d has %q where the button is clicked", y, got)
+		}
+	}
+	// The note stops short of it rather than running under it.
+	if got := rowOf(g, 1); !strings.Contains(got, "12 kB/s") {
+		t.Fatalf("row 1 = %q, want the note as well", got)
+	}
+	if got := g.At(19, 1).Rune; got != ' ' {
+		t.Errorf("the column past the button holds %q", got)
+	}
+}
+
+// A list too narrow for a button draws none, and a click where one
+// would have been is an ordinary click.
+func TestListTooNarrowForAButton(t *testing.T) {
+	l := newTestList(t, []ListRow{
+		{Text: "margit", Header: true, Button: '+', Key: 1},
+		{Text: "sh", Depth: 1, Key: 2},
+	}, 5, 4)
+	g := drawList(l, 5, 4)
+	if got := rowOf(g, 0); strings.Contains(got, "+") {
+		t.Fatalf("row 0 = %q, want no button in a list this narrow", got)
+	}
+
+	var ran int
+	l.OnButton = func(ListRow) error { ran++; return nil }
+	for col := 0; col < 5; col++ {
+		l.HandleMouse(input.MouseEvent{
+			Kind: input.MousePress, Button: input.MouseLeft, Row: 0, Col: col,
+		})
+	}
+	if ran != 0 {
+		t.Fatalf("the button ran %d times in a list with no room for one", ran)
+	}
+}
+
+// RowTop is how a caller hangs something off a row: a menu under the
+// line that was clicked.
+func TestListRowTopFindsARowOnScreen(t *testing.T) {
+	l := newTestList(t, panelRows(), 40, 10)
+	if got := l.RowTop("h:margit"); got != 2 {
+		t.Fatalf("the margit header is drawn at %d, want row 2", got)
+	}
+	if got := l.RowTop("nothing of the sort"); got != -1 {
+		t.Fatalf("a key that is not there is at %d, want -1", got)
+	}
+}
+
+// A row scrolled out of sight has no place to hang anything off.
+func TestListRowTopSaysNothingForARowOutOfSight(t *testing.T) {
+	var rows []ListRow
+	for i := 0; i < 40; i++ {
+		rows = append(rows, ListRow{Text: "row", Key: i})
+	}
+	l := newTestList(t, rows, 20, 5)
+	if got := l.RowTop(0); got != 0 {
+		t.Fatalf("the first row is at %d", got)
+	}
+	l.scrollBy(10)
+	if got := l.RowTop(0); got != -1 {
+		t.Fatalf("a row scrolled away is at %d, want -1", got)
+	}
+	if got := l.RowTop(12); got != 2 {
+		t.Fatalf("row 12 with ten scrolled past is at %d, want 2", got)
+	}
+}

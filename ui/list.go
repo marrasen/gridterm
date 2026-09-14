@@ -88,6 +88,24 @@ type ListRow struct {
 	// without spending words on it.
 	Mark   rune
 	MarkFG color.RGBA
+
+	// Button is a character drawn at the end of the row. Clicking it
+	// runs the list's OnButton instead of choosing the row, which is
+	// how a header -- a row nothing else can be done with -- offers
+	// something to do.
+	Button rune
+}
+
+// buttonCol is the column a row's button is drawn in, or -1 when the
+// list is too narrow to spare one.
+//
+// Not the last column: a list is usually docked against something, and
+// a character hard up against a divider reads as part of it.
+func buttonCol(cols int) int {
+	if cols < 6 {
+		return -1
+	}
+	return cols - 2
 }
 
 // List is rows to look through and choose from.
@@ -100,6 +118,9 @@ type List struct {
 
 	// OnActivate runs when Enter is pressed or a row is clicked.
 	OnActivate func(ListRow) error
+
+	// OnButton runs when a row's Button is clicked.
+	OnButton func(ListRow) error
 
 	rows []ListRow
 
@@ -172,6 +193,24 @@ func (l *List) Selected() (ListRow, bool) {
 
 // SelectedIndex returns which row is selected, or -1.
 func (l *List) SelectedIndex() int { return l.at }
+
+// RowTop returns how far down the box the row with a key is drawn, or
+// -1 when there is no such row or it is scrolled out of sight.
+//
+// It is how a caller anchors something to a row: a menu dropped under
+// the line the user clicked.
+func (l *List) RowTop(key any) int {
+	for i, row := range l.rows {
+		if !sameKey(row.Key, key) {
+			continue
+		}
+		if y := i - l.top; y >= 0 && y < l.size.Rows {
+			return y
+		}
+		return -1
+	}
+	return -1
+}
 
 // Move steps the bar through the rows, for a caller that acts on a row
 // and then wants the next one: marking a run of names is one key held
@@ -259,10 +298,22 @@ func (l *List) HandleMouse(ev input.MouseEvent) (bool, error) {
 	}
 
 	row := l.top + ev.Row
-	if row < 0 || row >= len(l.rows) || l.rows[row].Header {
-		// A header is not a row to act on, and neither is the space
-		// below the last one. The press is still the list's: it puts the
-		// keys here.
+	if row < 0 || row >= len(l.rows) {
+		// The space below the last row. The press is still the list's:
+		// it puts the keys here.
+		return true, nil
+	}
+	// The button first, because it is the one thing a header can be
+	// clicked for and it sits on rows that can be chosen as well.
+	if at := buttonCol(l.size.Cols); at >= 0 && l.rows[row].Button != 0 && ev.Col == at {
+		if l.OnButton == nil {
+			return true, nil
+		}
+		return true, l.OnButton(l.rows[row])
+	}
+	if l.rows[row].Header {
+		// A header names the rows under it rather than being one to act
+		// on.
 		return true, nil
 	}
 	l.moveTo(row)
@@ -316,14 +367,19 @@ func (l *List) paintRow(v grid.View, row ListRow, selected bool, y, rows int) {
 	}
 	v.Fill(grid.Cell{Rune: ' ', FG: fg, BG: bg, Width: 1})
 
-	// The note first, right aligned, so the text can use whatever is
-	// left without measuring around it.
+	// The button, then the note, then whatever is left is the text's.
+	// Each takes from the right, so the text needs no measuring around
+	// them.
 	room := cols
+	if at := buttonCol(cols); at >= 0 && row.Button != 0 {
+		v.Set(at, 0, grid.Cell{Rune: row.Button, FG: fg, BG: bg, Width: 1})
+		room = at
+	}
 	if row.Note != "" {
 		w := grid.StringWidth(row.Note)
 		// Shown only if a column of text survives it: a row holding
 		// nothing but a note does not say what it is about.
-		if at := cols - w; at > 2 {
+		if at := room - w; at > 2 {
 			v.SetString(at, 0, row.Note, noteFG, bg, 0)
 			room = at - 1
 		}

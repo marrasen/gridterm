@@ -452,6 +452,11 @@ func labelFor(command []string) string {
 // command that opened a terminal on a machine the user chose ten minutes
 // ago would be opening it somewhere they are not looking.
 func (a *app) currentHost() string {
+	// A menu dropped from a machine's row beats everything else: the
+	// user named the machine by clicking it.
+	if a.acting {
+		return a.actOn
+	}
 	if a.panel != nil && a.panel.Focused() {
 		if e, ok := a.selectedConnection(); ok {
 			return e.Host

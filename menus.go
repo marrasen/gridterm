@@ -64,16 +64,7 @@ func (a *app) newMenubar(child ui.Widget) *ui.Menubar {
 		OpenFG: a.colours.BG,
 		OpenBG: a.colours.FG,
 	}
-	bar.MenuStyle = ui.MenuStyle{
-		FG: a.colours.FG,
-		// No background of its own: the frosted panel behind the menu is
-		// the background, and an opaque fill would hide it.
-		BG:         color.RGBA{},
-		SelectedFG: a.colours.BG,
-		SelectedBG: a.colours.FG,
-		ChordFG:    a.colours.ANSI[8],
-		DisabledFG: a.colours.Selection,
-	}
+	bar.MenuStyle = a.menuStyle()
 	// The bar reaches the modal stack and the compositor only through
 	// these: everything about which menu is showing stays in the widget.
 	bar.Present = func(m *ui.Menu) func() {
@@ -84,6 +75,20 @@ func (a *app) newMenubar(child ui.Widget) *ui.Menubar {
 		return area
 	}
 	return bar
+}
+
+// menuStyle colours a drop-down menu, wherever it was opened from.
+func (a *app) menuStyle() ui.MenuStyle {
+	return ui.MenuStyle{
+		FG: a.colours.FG,
+		// No background of its own: the frosted panel behind the menu is
+		// the background, and an opaque fill would hide it.
+		BG:         color.RGBA{},
+		SelectedFG: a.colours.BG,
+		SelectedBG: a.colours.FG,
+		ChordFG:    a.colours.ANSI[8],
+		DisabledFG: a.colours.Selection,
+	}
 }
 
 // openMenu drops down the first menu, or closes whichever is showing.

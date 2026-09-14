@@ -248,6 +248,14 @@ type app struct {
 	// quarters of a cell, so a change to it can re-derive the grid size.
 	lastPad [2]int
 
+	// sideRegion is the sidebar, drawn on a grid of its own so its rows
+	// can have room around them without moving the terminal's.
+	sideRegion *region
+
+	// sideGeo is where that grid lands in pixels, for routing a click
+	// by the sidebar's rows rather than the window's.
+	sideGeo render.Geometry
+
 	// geo is where the window's grid lands in pixels, for routing a
 	// click and for placing the glass behind a dialog. Kept apart from
 	// the one the renderer draws with.
@@ -311,7 +319,7 @@ func (a *app) Update() error {
 	// font size changes, and a click routed by the old measurements
 	// lands on the wrong row.
 	a.renderer.Measure(a.g, &a.geo)
-	for _, ev := range a.mouse.Poll(a.geo.CellAt) {
+	for _, ev := range a.mouse.Poll(a.cellAt) {
 		if _, err := a.root.HandleMouse(ev); err != nil {
 			a.reportError("That could not be done", err)
 		}
@@ -321,6 +329,7 @@ func (a *app) Update() error {
 	// sidebar is drawn this frame rather than the next one. Before it,
 	// the frame would be laid out for padding the window no longer has.
 	a.applyPads()
+	a.placeRegions()
 
 	a.updateTitle()
 	return nil
@@ -347,6 +356,11 @@ func (a *app) updateTitle() {
 
 func (a *app) Draw(screen *ebiten.Image) {
 	a.root.Draw(a.g.View())
+	// After the tree, because the tree is what gave the region its size
+	// this frame. Its own grid, so the window's rows are not its rows.
+	if a.sideRegion != nil {
+		a.sideRegion.draw()
+	}
 	a.drawModals()
 	a.comp.Draw(screen)
 

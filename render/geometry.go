@@ -144,6 +144,48 @@ func shareOut(spans []span, px, size int) {
 	spans[len(spans)-1].size += short - head
 }
 
+// TakeCols replaces this geometry's columns with a run of another's,
+// moved to begin at the origin. The rows are left alone.
+//
+// A region is a hole in the window, and the columns of the hole are the
+// window's own: the same padding, and the same share of the odd pixels
+// the window had over. Laid out on its own a region would put that
+// share somewhere else, and the text inside it would sit a pixel or two
+// off the text above it.
+func (geo *Geometry) TakeCols(src *Geometry, x0, x1 int) {
+	geo.cellW = src.cellW
+	geo.cols = geo.cols[:0]
+	if src == nil || x1 <= x0 {
+		return
+	}
+	base := boxStart(src.cols, x0, src.cellW)
+	for x := x0; x < x1; x++ {
+		at := boxStart(src.cols, x, src.cellW)
+		end := boxStart(src.cols, x+1, src.cellW)
+		geo.cols = append(geo.cols, span{
+			at:   at - base,
+			size: end - at,
+			in:   cellStart(src.cols, x, src.cellW) - base,
+		})
+	}
+}
+
+// FitRows stretches the last row so the grid is h pixels tall.
+//
+// Everything missing goes after the last row, not shared between the
+// two ends the way Fill shares it. A region's top is where the window
+// put it, and room above its first row would push its text down past
+// the text beside it.
+func (geo *Geometry) FitRows(h int) {
+	if len(geo.rows) == 0 {
+		return
+	}
+	last := &geo.rows[len(geo.rows)-1]
+	if short := h - (last.at + last.size); short > 0 {
+		last.size += short
+	}
+}
+
 // Width and Height are the pixel size of the whole grid, padding
 // included. Both are at least one, so a texture can be made from them.
 func (geo *Geometry) Width() int  { return max(spanEnd(geo.cols, geo.cellW), 1) }

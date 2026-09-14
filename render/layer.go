@@ -41,6 +41,18 @@ type Layer struct {
 	// already on screen as its backdrop. Nil for an ordinary layer.
 	Frost *Frost
 
+	// Geom is where the layer's grid lands in pixels, for a layer whose
+	// owner works that out rather than leaving it to the compositor.
+	// Nil for an ordinary layer, which is measured against the window.
+	//
+	// It is for a region: a hole in the window whose columns are the
+	// window's own, down to the odd pixels the window had over.
+	// Measured on its own a region would put those somewhere else, and
+	// its text would sit a pixel or two off the text beside it.
+	//
+	// The owner keeps it up to date before the frame is drawn.
+	Geom *Geometry
+
 	tex *ebiten.Image
 
 	// painted records that the texture matches its grid. It cannot be
@@ -290,8 +302,7 @@ func (c *Compositor) Draw(screen *ebiten.Image) {
 			l.lastGrid, l.lastTransparent = l.Grid, l.Transparent
 			l.invalidate()
 		}
-		c.r.MeasureAt(l.Grid, l.X, l.Y, &c.geo)
-		if l.ensure(&c.geo) {
+		if l.ensure(c.measure(l)) {
 			resized = true
 		}
 		if l.Grid.AnyDirty() {
@@ -322,8 +333,7 @@ func (c *Compositor) Draw(screen *ebiten.Image) {
 		if l.Hidden || l.Grid == nil || l.painted {
 			continue
 		}
-		c.r.MeasureAt(l.Grid, l.X, l.Y, &c.geo)
-		l.repaint(c.r, &c.geo)
+		l.repaint(c.r, c.measure(l))
 		c.stats.Stats.add(c.r.Stats())
 		c.stats.Repainted++
 	}
@@ -370,6 +380,16 @@ func (c *Compositor) Draw(screen *ebiten.Image) {
 		c.stats.Blits++
 	}
 
+}
+
+// measure returns where a layer's grid lands in pixels, working it out
+// unless the layer came with it.
+func (c *Compositor) measure(l *Layer) *Geometry {
+	if l.Geom != nil {
+		return l.Geom
+	}
+	c.r.MeasureAt(l.Grid, l.X, l.Y, &c.geo)
+	return &c.geo
 }
 
 // onError reports a failure the compositor cannot hand back, because

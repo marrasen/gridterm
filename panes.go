@@ -428,6 +428,11 @@ func (a *app) markDirty() {
 	if a.g != nil {
 		a.g.MarkAllDirty()
 	}
+	// The regions too: they are drawn from the same widget tree, and a
+	// tree that changed shape has changed theirs as well.
+	if a.sideRegion != nil {
+		a.sideRegion.g.MarkAllDirty()
+	}
 }
 
 // paneExited is called from a shell's own goroutine when it goes.

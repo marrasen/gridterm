@@ -90,6 +90,10 @@ func (r *Renderer) Stats() Stats { return r.stats }
 // anything drawn from it can tell when the glyphs moved.
 func (r *Renderer) Generation() uint64 { return r.atlas.Generation() }
 
+// Metrics returns the font's measurements, for a caller laying a grid
+// out itself rather than through Measure.
+func (r *Renderer) Metrics() glyph.Metrics { return r.atlas.Metrics() }
+
 // CellSize returns the pixel size of one cell.
 func (r *Renderer) CellSize() (w, h int) {
 	m := r.atlas.Metrics()

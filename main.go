@@ -184,6 +184,12 @@ func main() {
 	a.dock = ui.NewDock(panelWidth, a.side, a.stage)
 	a.dock.DividerFG = a.colours.ANSI[8]
 	a.dock.DividerBG = a.colours.BG
+	// The sidebar is painted onto a grid of its own, over the window's,
+	// so that its rows can have room around them while the terminal
+	// beside it keeps every line the same height.
+	a.sideRegion = newRegion(a.side, grid.New(0, 0, a.colours.FG, a.colours.BG), &a.sideGeo)
+	a.dock.PanelDrawnElsewhere = true
+	a.comp.Add(a.sideRegion.layer)
 	// Open to begin with: it is how everything in the window is reached,
 	// so a window that hid it would open with no way in.
 	a.dock.Collapsed = false

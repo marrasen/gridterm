@@ -33,6 +33,16 @@ type Dock struct {
 	// Collapsed hides the panel without forgetting it or what is in it.
 	Collapsed bool
 
+	// PanelDrawnElsewhere says the panel is painted by whoever owns it
+	// rather than here. The dock still gives it its size and sends it
+	// the keys and the clicks; it only stops painting it.
+	//
+	// It is for a panel on a grid of its own. A grid has one set of row
+	// heights, so a panel whose rows are not the same height as the
+	// rest of the window cannot share one, and is drawn onto its own
+	// layer at its own place on screen instead.
+	PanelDrawnElsewhere bool
+
 	// DividerFG and DividerBG colour the column between the two. A
 	// foreground with no alpha leaves a blank gap instead of a line.
 	DividerFG, DividerBG color.RGBA
@@ -230,7 +240,7 @@ func (d *Dock) SetFocus(on bool) {
 // Draw paints both halves and the divider between them.
 func (d *Dock) Draw(v grid.View) {
 	panel, rest, divider := d.rects()
-	if !panel.Empty() && d.panel != nil {
+	if !panel.Empty() && d.panel != nil && !d.PanelDrawnElsewhere {
 		d.panel.Draw(panel.In(v))
 	}
 	if !rest.Empty() && d.rest != nil {

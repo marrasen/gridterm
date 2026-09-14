@@ -81,6 +81,17 @@ type app struct {
 	// fontSize is the current size in points.
 	fontSize float64
 
+	// bundled is the typeface compiled into the binary, which is what
+	// the window falls back to. fontFamily names the installed family in
+	// use, empty while the bundled one is.
+	bundled    glyph.Fonts
+	fontFamily string
+
+	// families carries the system's monospace fonts from the goroutine
+	// that scanned for them, and installed is what it found.
+	families  chan []glyph.Family
+	installed []glyph.Family
+
 	// lastPixels is the window size in device pixels, kept so a font
 	// size change can re-derive the grid size from it.
 	lastPixels [2]int
@@ -111,6 +122,7 @@ func (a *app) Update() error {
 	}
 
 	a.reapExited()
+	a.reapFontScan()
 
 	for _, ev := range a.reader.Poll() {
 		if _, err := a.root.HandleKey(ev); err != nil {

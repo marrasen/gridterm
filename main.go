@@ -9,6 +9,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"strings"
@@ -77,14 +78,32 @@ func main() {
 		fontFiles = flag.String("font", "",
 			"font files to use instead of the bundled Go Mono, comma separated,"+
 				" in the order regular,bold,italic,bold-italic")
+		fontFamily = flag.String("font-family", "",
+			"use this installed monospace family instead of the bundled Go Mono")
+		listFonts = flag.Bool("list-fonts", false,
+			"print the installed monospace families and exit")
 	)
 	flag.Parse()
 
+	if *listFonts {
+		printFonts(os.Stdout)
+		return
+	}
+
 	fonts := bundledFonts()
-	if *fontFiles != "" {
+	switch {
+	case *fontFiles != "" && *fontFamily != "":
+		log.Fatal("-font and -font-family both name a typeface; use one")
+	case *fontFiles != "":
 		f, err := loadFonts(*fontFiles)
 		if err != nil {
 			log.Fatalf("-font: %v", err)
+		}
+		fonts = f
+	case *fontFamily != "":
+		f, err := loadFamily(*fontFamily)
+		if err != nil {
+			log.Fatalf("-font-family: %v", err)
 		}
 		fonts = f
 	}
@@ -95,7 +114,10 @@ func main() {
 	}
 	m := atlas.Metrics()
 
-	a := &app{atlas: atlas, renderer: render.New(atlas), fontSize: *fontSize}
+	a := &app{atlas: atlas, renderer: render.New(atlas), fontSize: *fontSize, bundled: fonts}
+	// What -font-family chose, so the font menu marks it as the one in
+	// use rather than offering to switch to it again.
+	a.fontFamily = *fontFamily
 	a.comp = render.NewCompositor(a.renderer)
 
 	const initCols, initRows = 100, 32
@@ -121,6 +143,9 @@ func main() {
 	}
 
 	a.commands()
+	// Off the drawing goroutine: reading every font file the system has
+	// takes long enough to be seen as the window failing to open.
+	a.startFontScan()
 	a.bar = a.newMenubar(first)
 	a.root.SetWidget(a.bar)
 	a.root.Layout(ui.Rect{Cols: initCols, Rows: initRows})
@@ -141,6 +166,42 @@ func main() {
 	if err != nil && !errors.Is(err, ebiten.Termination) {
 		log.Fatal(err)
 	}
+}
+
+// printFonts writes the installed monospace families, with the styles
+// each has, for -list-fonts.
+func printFonts(w io.Writer) {
+	families := glyph.Monospaced()
+	if len(families) == 0 {
+		fmt.Fprintln(w, "no monospace font families found")
+		return
+	}
+	names := map[glyph.Style]string{
+		glyph.Regular:    "regular",
+		glyph.Bold:       "bold",
+		glyph.Italic:     "italic",
+		glyph.BoldItalic: "bold-italic",
+	}
+	for _, family := range families {
+		styles := make([]string, 0, 4)
+		for _, s := range family.Styles() {
+			styles = append(styles, names[s])
+		}
+		fmt.Fprintf(w, "%-34s %s\n", family.Name, strings.Join(styles, ", "))
+	}
+}
+
+// loadFamily reads an installed family by name, ignoring case.
+func loadFamily(name string) (glyph.Fonts, error) {
+	families := glyph.Monospaced()
+	for _, family := range families {
+		if strings.EqualFold(family.Name, name) {
+			return family.Load()
+		}
+	}
+	return glyph.Fonts{}, fmt.Errorf(
+		"no monospace family %q is installed; -list-fonts shows the %d there are",
+		name, len(families))
 }
 
 // startSession opens either a local shell or an SSH connection. The rest

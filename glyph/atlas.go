@@ -170,6 +170,23 @@ func (a *Atlas) SetSize(sizePt float64) error {
 	return nil
 }
 
+// SetFonts swaps the typeface, keeping the current size.
+//
+// A failed rebuild leaves the atlas as it was, so a font that will not
+// parse costs the user nothing but an error. Callers have to re-derive
+// the grid size afterwards: a new typeface is a new cell box, and the
+// same window then holds a different number of them.
+func (a *Atlas) SetFonts(fonts Fonts) error {
+	next, err := NewAtlas(fonts, a.sizePt, a.dpi)
+	if err != nil {
+		return err
+	}
+	gen := a.gen
+	*a = *next
+	a.gen = gen + 1
+	return nil
+}
+
 // Generation counts how many times the atlas has been rebuilt. Every
 // glyph rasterised before a bump is at the wrong size or in the wrong
 // place.

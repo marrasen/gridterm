@@ -103,6 +103,8 @@ func newTestApp(t *testing.T, cols, rows int) *testApp {
 		lastSize:   [2]int{cols, rows},
 		registry:   conns.New(),
 		rates:      make(map[*conns.Entry]*meter.Rate),
+		machines:   make(map[string]*machine),
+		opening:    make(map[string]bool),
 	}}
 	// The window's own grid, so markDirty and setGridSize do what they do
 	// in the program rather than nothing at all.
@@ -138,6 +140,7 @@ func newTestApp(t *testing.T, cols, rows int) *testApp {
 		for pane := range ta.panes {
 			_ = pane.Close()
 		}
+		_ = ta.closeMachines()
 	})
 	return ta
 }

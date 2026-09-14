@@ -145,6 +145,8 @@ func main() {
 	}
 	a.registry = conns.New()
 	a.rates = make(map[*conns.Entry]*meter.Rate)
+	a.machines = make(map[string]*machine)
+	a.opening = make(map[string]bool)
 	a.scrollback = *scroll
 	a.colours = pal
 	a.panes = make(map[*term.Terminal]*conns.Entry)
@@ -203,6 +205,9 @@ func main() {
 	for t := range a.panes {
 		closed = append(closed, t.Close())
 	}
+	// After the panes, so a shell gets its polite hangup before the
+	// connection carrying it goes away underneath it.
+	closed = append(closed, a.closeMachines())
 	if err := errors.Join(closed...); err != nil {
 		log.Fatal(err)
 	}

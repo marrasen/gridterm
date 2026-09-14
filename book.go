@@ -94,20 +94,14 @@ func (a *app) refreshServerMenu(items []ui.MenuItem) {
 	a.bar.Menus = append(a.bar.Menus, def)
 }
 
-// connectSaved opens a terminal on a saved machine.
+// connectSaved opens a terminal on a saved machine, reaching it through
+// whatever it is saved as being behind.
 func (a *app) connectSaved(name string) error {
 	h, ok := a.book.Lookup(name)
 	if !ok {
 		return fmt.Errorf("there is no saved server called %q", name)
 	}
-	if h.Via != "" {
-		// Reaching one machine through another needs a connection that
-		// outlives the shell on it, which is what the next step is for.
-		return fmt.Errorf("%q is reached through %q, which gridterm cannot do yet",
-			h.Name, h.Via)
-	}
-	a.connectAs(h.Name, h.Config())
-	return nil
+	return a.openOn(h.Name, nil)
 }
 
 // reloadBook reads the server list again, for a user who has repaired

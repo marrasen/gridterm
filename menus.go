@@ -39,6 +39,9 @@ func (a *app) newMenubar(child ui.Widget) *ui.Menubar {
 			{Command: "view.scrollDown"},
 		}},
 		{Title: "Connection", Items: []ui.MenuItem{
+			{Command: "conn.terminal"},
+			{Command: "conn.command"},
+			ui.MenuSeparator(),
 			{Command: "conn.close"},
 			{Command: "conn.clearFinished"},
 		}},

@@ -33,6 +33,10 @@ const (
 
 	// Tunnel is a forwarded port.
 	Tunnel
+
+	// Server is the connection to a machine itself, which everything
+	// else on that machine rides inside.
+	Server
 )
 
 // String names a kind the way the panel shows it.
@@ -46,6 +50,8 @@ func (k Kind) String() string {
 		return "Files"
 	case Tunnel:
 		return "Tunnel"
+	case Server:
+		return "Server"
 	}
 	return "Unknown"
 }

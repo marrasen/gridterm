@@ -74,6 +74,16 @@ type app struct {
 	// panel draws.
 	registry *conns.Registry
 
+	// machines are the connections the window is holding, by the name
+	// the panel calls each one. A second terminal on a machine rides on
+	// the connection already here rather than logging in again.
+	machines map[string]*machine
+
+	// opening names the machines being connected to right now, so two
+	// connections to one machine cannot be made at once: the window
+	// would hold the second and close neither.
+	opening map[string]bool
+
 	// localHost is the machine a new pane runs on: this one, unless
 	// -ssh named another. Every pane a split or a tab opens goes there,
 	// because that is where newSession puts it.
@@ -108,10 +118,10 @@ type app struct {
 	// once; this is only so a test can tell when they have all landed.
 	connecting int
 
-	// prepare adjusts a config parsed from what the user typed, before
-	// anything is dialled. It is a field so a test can drive the real
-	// dialog against a server whose host key it has pinned; nil in the
-	// program, which connects to exactly what was typed.
+	// prepare adjusts every config on its way to being dialled. It is a
+	// field so a test can drive the real dialogs and the real server
+	// list against a machine whose host key it has pinned; nil in the
+	// program, which connects to exactly what was asked for.
 	prepare func(remote.Config) remote.Config
 
 	// shot drives a screenshot and then closes the window, for looking
@@ -365,6 +375,9 @@ func (a *app) commands() {
 		ui.Command{ID: "panel.toggle", Title: "Show or hide the connections",
 			Run: a.togglePanel},
 		ui.Command{ID: "panel.focus", Title: "Go to the connections", Run: a.focusPanel},
+		ui.Command{ID: "conn.terminal", Title: "Open another terminal here",
+			Run: a.openTerminalHere},
+		ui.Command{ID: "conn.command", Title: "Run a command…", Run: a.openCommandHere},
 		ui.Command{ID: "conn.close", Title: "Close this connection",
 			Run: a.closeSelectedConnection},
 		ui.Command{ID: "conn.clearFinished", Title: "Clear finished connections",

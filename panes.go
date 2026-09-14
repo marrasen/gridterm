@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"image/color"
 
+	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/term"
 )
@@ -22,7 +23,7 @@ func (a *app) newTerminal() (*term.Terminal, error) {
 	if err != nil {
 		return nil, fmt.Errorf("start session: %w", err)
 	}
-	t, err := a.newTerminalOn(sess, a.localHost)
+	t, err := a.newTerminalOn(sess, a.localHost, conns.Terminal, "")
 	if err != nil {
 		// The session is ours now and nothing else will close it.
 		_ = sess.Close()

@@ -21,8 +21,14 @@ emulator, and draws the resulting character grid as batched triangles.
   renderer — can tell the difference.
 - **Connections, not just shells.** One SSH connection carries several
   things at once, so a second terminal on a machine is a second channel
-  rather than a second login. Connect from inside the window with
+  rather than a second login. A remote command gets a connection of its
+  own, named by what it runs. Connect from inside the window with
   `Ctrl+Shift+N`.
+- **One machine reached through another.** A saved server can say it is
+  behind another one. The second connection is carried inside a channel
+  of the first, so no local port is opened for it and nothing else on
+  the machine can use it. Closing the one in the middle closes what
+  rides on it.
 - **A connections panel.** `Ctrl+Shift+B` shows every terminal, tunnel
   and transfer the window has open, grouped by the machine it is on with
   this one at the top. Each says what it is doing: opened until
@@ -128,14 +134,14 @@ encoders and both session types.
 | `grid` | 863 | no | the display grid, damage tracking, selection, wide-character invariants |
 | `input` | 592 | no | key, text, mouse and paste events to VT bytes |
 | `session` | 362 | no | a shell as a byte stream, and the local pty |
-| `remote` | 1,560 | no | SSH: connections, shells, host keys, unlocked keys |
-| `conns` | 205 | no | what the window has open, grouped by machine |
-| `meter` | 243 | no | bytes moved, and how long ago: the four states |
-| `ui` | 4,970 | no | the widget toolkit: panes, tabs, menus, dialogs, fields, lists |
+| `remote` | 2,543 | no | SSH: connections, shells, host keys, unlocked keys |
+| `conns` | 221 | no | what the window has open, grouped by machine |
+| `meter` | 206 | no | bytes moved, and how long ago: the four states |
+| `ui` | 5,025 | no | the widget toolkit: panes, tabs, menus, dialogs, fields, lists |
 | `ui/term` | 529 | no | a shell on a widget |
 | `glyph` | 1,289 | yes | glyph atlas, system font fallback, box drawing |
 | `render` | 1,149 | yes | grid to batched triangles |
-| `main` | 2,903 | yes | the window and the wiring |
+| `main` | 3,346 | yes | the window and the wiring |
 
 The layering is deliberate: `vt` never imports the renderer, `input`
 never imports ebiten (that lives in `input/ebitenin`), `ui` knows nothing

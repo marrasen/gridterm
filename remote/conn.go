@@ -97,6 +97,10 @@ type Conn struct {
 
 	user, addr string
 
+	// via is the connection this one is carried inside, when it was
+	// reached through another machine.
+	via *Conn
+
 	// mu guards the riders and the closing flag. Close takes the riders
 	// under it and lets go before closing them, so a rider closing
 	// itself at the same moment does not deadlock against it.
@@ -117,6 +121,30 @@ type Conn struct {
 // passphrase: authentication can sit on a question nobody is going to
 // answer, and a window that is closing must not wait for it.
 func Connect(ctx context.Context, cfg Config) (*Conn, error) {
+	return connect(ctx, overTCP, nil, cfg)
+}
+
+// Through opens a connection to another machine from this one.
+//
+// No local port is opened for it. The second connection is carried
+// inside a channel of the first, which is what ssh -J does and what a
+// saved server reached "through" another one means. It rides on this
+// connection: closing this one closes it too.
+func (c *Conn) Through(ctx context.Context, cfg Config) (*Conn, error) {
+	if c.isClosing() {
+		return nil, fmt.Errorf("remote: %s: %w", c, ErrClosed)
+	}
+	return connect(ctx, c.reach, c, cfg)
+}
+
+// reach opens a plain connection from the far end of this one.
+func (c *Conn) reach(ctx context.Context, addr string) (net.Conn, error) {
+	return c.client.DialContext(ctx, "tcp", addr)
+}
+
+// connect is the body of both: the only difference is how the address is
+// reached and what the result rides on.
+func connect(ctx context.Context, to reach, via *Conn, cfg Config) (*Conn, error) {
 	if cfg.Host == "" {
 		return nil, errors.New("remote: no host given")
 	}
@@ -157,7 +185,7 @@ func Connect(ctx context.Context, cfg Config) (*Conn, error) {
 	}
 
 	addr := cfg.addr()
-	client, dialErr := dial(ctx, addr, cfg.User, a.next, hostKey)
+	client, dialErr := dial(ctx, to, addr, cfg.User, a.next, hostKey)
 	if dialErr != nil {
 		a.close()
 		// What the user said, when they said anything: "the dialog was
@@ -174,7 +202,15 @@ func Connect(ctx context.Context, cfg Config) (*Conn, error) {
 		a.close()
 		return nil, err
 	}
-	return newConn(client, a.agent, cfg.User, addr), nil
+	c := newConn(client, a.agent, cfg.User, addr)
+	if via != nil {
+		c.via = via
+		if err := via.register(c); err != nil {
+			_ = c.Close()
+			return nil, err
+		}
+	}
+	return c, nil
 }
 
 // nothingToAuthenticateWith explains a connection that had no way to
@@ -237,10 +273,24 @@ func (c *Conn) riderCount() int {
 	return len(c.riders)
 }
 
-// Close ends everything riding on the connection and then the
-// connection itself. It is idempotent, and a second caller waits for the
-// first to finish rather than reporting a success that has not happened.
+// Via returns the connection this one is carried inside, or nil.
+func (c *Conn) Via() *Conn { return c.via }
+
+// Close ends everything riding on the connection and then the connection
+// itself. It is idempotent, and a second caller waits for the first to
+// finish rather than reporting a success that has not happened.
 func (c *Conn) Close() error {
+	err := c.closeRider()
+	if c.via != nil {
+		c.via.drop(c)
+	}
+	return err
+}
+
+// closeRider is Close without letting go of what carries this
+// connection, for a machine that is closing everything riding on it and
+// will throw the whole record away anyway.
+func (c *Conn) closeRider() error {
 	c.mu.Lock()
 	if c.closing {
 		c.mu.Unlock()

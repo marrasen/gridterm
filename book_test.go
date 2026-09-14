@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/marrasen/gridterm/input"
 	"github.com/marrasen/gridterm/remote"
@@ -192,10 +193,12 @@ func TestAddServerKeepsTheDialogOpenOnABadTarget(t *testing.T) {
 	}
 }
 
-// Reaching one machine through another needs a connection that outlives
-// the shell on it, which is not built yet. Saying so beats connecting to
-// the wrong machine.
-func TestConnectSavedRefusesARouteItCannotMakeYet(t *testing.T) {
+// A machine saved as being behind another is connected to through it,
+// with the one in the way connected to first.
+//
+// This is only the order; the whole route against two real servers is
+// TestConnectSavedWalksTheRoute.
+func TestConnectSavedStartsWithTheMachineInTheWay(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withDialogs(t, a)
 
@@ -208,16 +211,33 @@ func TestConnectSavedRefusesARouteItCannotMakeYet(t *testing.T) {
 		t.Fatalf("Put: %v", err)
 	}
 
-	err := a.connectSaved("db")
-	if err == nil {
-		t.Fatal("a route gridterm cannot make yet was attempted")
+	if err := a.connectSaved("db"); err != nil {
+		t.Fatalf("connectSaved: %v", err)
 	}
-	if !strings.Contains(err.Error(), "edge") {
-		t.Fatalf("error = %v, want it to name the machine in the way", err)
+	if a.connecting != 1 {
+		t.Fatalf("%d connections are being made, want the one route", a.connecting)
 	}
-	if a.connecting != 0 {
-		t.Error("a connection was started anyway")
+	// Both machines on the route are being connected to, under the one
+	// row that stands for the far end.
+	if !a.opening["edge"] || !a.opening["db"] {
+		t.Fatalf("the route being made is %v, want both machines", a.opening)
 	}
+	waiting := waitForConnecting(t, a)
+	if waiting.Host != "db" {
+		t.Errorf("the row is under %q, want db", waiting.Host)
+	}
+	// Given up on rather than left dialling a machine that is not there.
+	if err := waiting.Close(); err != nil {
+		t.Fatalf("cancel: %v", err)
+	}
+	for deadline := time.Now().Add(waitBudget); time.Now().Before(deadline); {
+		a.pump.run()
+		if a.connecting == 0 {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("the route was still being made long after it was cancelled")
 }
 
 // Two names that reduce to the same command id would leave one of the

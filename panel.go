@@ -61,9 +61,13 @@ func (a *app) refreshPanel(now time.Time) {
 	}
 	// A terminal names itself: what the program in it called the window
 	// is what the panel shows. Read rather than pushed, the way the
-	// window title is.
+	// window title is. A program that has named nothing leaves the row
+	// saying what it was started as, which is what a remote command has
+	// instead of a title.
 	for t, e := range a.panes {
-		e.Label = t.Title()
+		if title := t.Title(); title != "" {
+			e.Label = title
+		}
 	}
 
 	// What is still open, so a rate belonging to something that has gone

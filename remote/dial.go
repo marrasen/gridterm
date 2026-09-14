@@ -30,7 +30,20 @@ const dialTimeout = 20 * time.Second
 // A server with both keys then presents the one known_hosts does not
 // record, and knownhosts reports "key mismatch" — the man-in-the-middle
 // alarm — when nothing at all is wrong.
-func dial(ctx context.Context, addr, user string, next ssh.ClientAuthCallback,
+// reach opens a plain connection to an address.
+//
+// It is what separates a connection made from here from one made through
+// another machine: everything after it -- the handshake, the host key,
+// the ladder of things to authenticate with -- is the same either way.
+type reach func(ctx context.Context, addr string) (net.Conn, error)
+
+// overTCP reaches an address from this machine.
+func overTCP(ctx context.Context, addr string) (net.Conn, error) {
+	d := net.Dialer{Timeout: dialTimeout}
+	return d.DialContext(ctx, "tcp", addr)
+}
+
+func dial(ctx context.Context, to reach, addr, user string, next ssh.ClientAuthCallback,
 	hostKey ssh.HostKeyCallback) (*ssh.Client, error) {
 
 	// AuthCallback rather than Auth: x/crypto's own selection
@@ -43,7 +56,7 @@ func dial(ctx context.Context, addr, user string, next ssh.ClientAuthCallback,
 		HostKeyCallback: hostKey,
 		Timeout:         dialTimeout,
 	}
-	client, err := dialOnce(ctx, addr, base)
+	client, err := dialOnce(ctx, to, addr, base)
 	if err == nil {
 		return client, nil
 	}
@@ -53,7 +66,7 @@ func dial(ctx context.Context, addr, user string, next ssh.ClientAuthCallback,
 		if algos := wantedKeyTypes(ke.Want); len(algos) > 0 {
 			retry := *base
 			retry.HostKeyAlgorithms = algos
-			client, err2 := dialOnce(ctx, addr, &retry)
+			client, err2 := dialOnce(ctx, to, addr, &retry)
 			if err2 == nil {
 				return client, nil
 			}
@@ -72,9 +85,8 @@ func dial(ctx context.Context, addr, user string, next ssh.ClientAuthCallback,
 // nothing else, so a handshake that stops to ask the user a question
 // would hold the goroutine until they answered. Doing the two halves
 // separately is what lets a window that is closing let go.
-func dialOnce(ctx context.Context, addr string, cfg *ssh.ClientConfig) (*ssh.Client, error) {
-	d := net.Dialer{Timeout: cfg.Timeout}
-	nc, err := d.DialContext(ctx, "tcp", addr)
+func dialOnce(ctx context.Context, to reach, addr string, cfg *ssh.ClientConfig) (*ssh.Client, error) {
+	nc, err := to(ctx, addr)
 	if err != nil {
 		return nil, err
 	}

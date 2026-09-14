@@ -26,9 +26,6 @@ func (a *app) openServer() error {
 			// still there to correct.
 			return err
 		}
-		if a.prepare != nil {
-			cfg = a.prepare(cfg)
-		}
 		// Not from here: this dialog closes as soon as this returns, and
 		// closing a dialog takes anything stacked on top of it -- which
 		// would be the one the connection had just opened. The next
@@ -43,62 +40,23 @@ func (a *app) openServer() error {
 
 // connect opens a connection in the background and puts a terminal on it
 // when it arrives.
-//
-// The dial runs on its own goroutine because it can stop to ask the user
-// something, and the dialog it asks with is drawn by this one. A
-// "Connecting" dialog holds the place until it is done, and cancelling
-// that gives up.
 func (a *app) connect(cfg remote.Config) { a.connectAs(cfg.Host, cfg) }
 
 // connectAs is connect, with a name for the panel: a saved server is
 // known by the name the user gave it rather than by its address.
+//
+// The connection is kept under that name, so a second terminal on the
+// machine rides on it rather than logging in again.
 func (a *app) connectAs(name string, cfg remote.Config) {
 	if name == "" {
 		name = cfg.Host
 	}
-	cfg.Ask = &askUser{app: a}
-	cfg.Ring = a.keys
-
-	ctx, cancel := context.WithCancel(a.ctx)
-	// A row on the panel rather than a dialog to wait in. Several
-	// connections can be on their way at once, and a dialog each would
-	// stack: closing one takes everything above it, so the one that
-	// finished first would tear down the one still waiting.
-	waiting := &conns.Entry{
-		Host:  name,
-		Kind:  conns.Terminal,
-		Label: "connecting",
-		Note:  "opening",
-		Close: func() error {
-			cancel()
-			return nil
-		},
-	}
-	a.registry.Add(waiting)
-	a.connecting++
-
-	cols, rows := a.lastSize[0], a.lastSize[1]
-	go func() {
-		sh, err := remote.StartShell(ctx, cfg, remote.ShellConfig{Cols: cols, Rows: rows})
-		a.pump.post(func() {
-			a.connecting--
-			a.registry.Drop(waiting)
-			cancel()
-			if err != nil {
-				a.reportError(fmt.Sprintf("Could not connect to %s", name), err)
-				return
-			}
-			if err := a.openSessionTab(sh, name); err != nil {
-				_ = sh.Close()
-				a.reportError("Could not open a terminal", err)
-			}
-		})
-	}()
+	a.openRoute(name, []step{{name: name, cfg: cfg}}, nil)
 }
 
 // openSessionTab puts a session in a tab of its own.
-func (a *app) openSessionTab(sess session.Session, host string) error {
-	t, err := a.newTerminalOn(sess, host)
+func (a *app) openSessionTab(sess session.Session, host string, kind conns.Kind, label string) error {
+	t, err := a.newTerminalOn(sess, host, kind, label)
 	if err != nil {
 		return err
 	}
@@ -193,9 +151,13 @@ func (a *app) lockKeys() error {
 // row on the panel for it.
 //
 // host names the machine it is running on, or conns.Local for this one.
-// Everything the panel says about the connection is read from the meter
-// the session is wrapped in, so nothing has to report what it is doing.
-func (a *app) newTerminalOn(sess session.Session, host string) (*term.Terminal, error) {
+// kind and label are what the row says it is until the program in it
+// names itself. Everything else the panel says about the connection is
+// read from the meter the session is wrapped in, so nothing has to
+// report what it is doing.
+func (a *app) newTerminalOn(sess session.Session, host string, kind conns.Kind,
+	label string) (*term.Terminal, error) {
+
 	counted := &metered{Session: sess, m: meter.New()}
 	t, err := term.New(term.Config{
 		Session:        counted,
@@ -213,7 +175,8 @@ func (a *app) newTerminalOn(sess session.Session, host string) (*term.Terminal, 
 
 	e := &conns.Entry{
 		Host:   host,
-		Kind:   conns.Terminal,
+		Kind:   kind,
+		Label:  label,
 		Meter:  counted.m,
 		Reveal: func() { a.focus(t) },
 		Close:  func() error { return a.closePane(t) },

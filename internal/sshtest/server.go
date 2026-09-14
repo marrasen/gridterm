@@ -41,8 +41,12 @@ type Server struct {
 	lastSize [2]int // cols, rows
 	conns    []net.Conn
 	accepted int
+	live     int
 	offered  []string
 	onlyKey  string
+
+	forwards  int
+	forwarded []string
 
 	// writeMu serialises channel writes. x/crypto documents concurrent
 	// writes to one ssh.Channel as unsafe, and the request loop and the
@@ -131,6 +135,15 @@ func (s *Server) Conns() int {
 	return s.accepted
 }
 
+// Live returns how many connections the server still has open, so a
+// test can tell a connection that was closed from one that was merely
+// forgotten about.
+func (s *Server) Live() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.live
+}
+
 // Offered returns the fingerprint of every public key a client has
 // offered, in order.
 func (s *Server) Offered() []string {
@@ -202,12 +215,18 @@ func (s *Server) serve() {
 		s.mu.Lock()
 		s.conns = append(s.conns, conn)
 		s.accepted++
+		s.live++
 		s.mu.Unlock()
 		go s.handle(conn)
 	}
 }
 
 func (s *Server) handle(nc net.Conn) {
+	defer func() {
+		s.mu.Lock()
+		s.live--
+		s.mu.Unlock()
+	}()
 	sc, chans, reqs, err := ssh.NewServerConn(nc, s.cfg)
 	if err != nil {
 		_ = nc.Close()
@@ -217,15 +236,19 @@ func (s *Server) handle(nc net.Conn) {
 	go ssh.DiscardRequests(reqs)
 
 	for nch := range chans {
-		if nch.ChannelType() != "session" {
-			_ = nch.Reject(ssh.UnknownChannelType, "only sessions")
-			continue
+		switch nch.ChannelType() {
+		case "session":
+			ch, chReqs, err := nch.Accept()
+			if err != nil {
+				return
+			}
+			go s.session(ch, chReqs)
+		case "direct-tcpip":
+			// A client reaching somewhere else through this machine.
+			go s.forward(nch)
+		default:
+			_ = nch.Reject(ssh.UnknownChannelType, "sessions and forwards only")
 		}
-		ch, chReqs, err := nch.Accept()
-		if err != nil {
-			return
-		}
-		go s.session(ch, chReqs)
 	}
 }
 

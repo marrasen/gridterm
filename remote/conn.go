@@ -11,6 +11,7 @@
 package remote
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -59,13 +60,16 @@ type Config struct {
 	NoAgent      bool
 	NoIdentities bool
 
-	// Passphrase is asked for a private key's passphrase. Nil skips
-	// encrypted keys rather than failing.
-	Passphrase func(keyfile string) (string, error)
+	// Ask reaches the user for a passphrase, a password, a one-time code
+	// or a decision about an unknown host key. A nil one refuses
+	// anything that would need asking: encrypted keys are skipped, no
+	// password is offered, and an unknown host is a hard failure.
+	Ask Ask
 
-	// Password is asked for the account password, after key
-	// authentication has been tried. Nil skips password auth.
-	Password func() (string, error)
+	// Ring holds keys already unlocked, so a passphrase is asked for
+	// once and then used for every connection. A nil one holds nothing
+	// and keeps nothing.
+	Ring *Ring
 
 	// HostKeyCallback replaces known-hosts checking entirely.
 	//
@@ -108,7 +112,11 @@ type Conn struct {
 }
 
 // Connect opens a connection to a machine and authenticates.
-func Connect(cfg Config) (*Conn, error) {
+//
+// Cancelling ctx gives up, including while a dialog is waiting for a
+// passphrase: authentication can sit on a question nobody is going to
+// answer, and a window that is closing must not wait for it.
+func Connect(ctx context.Context, cfg Config) (*Conn, error) {
 	if cfg.Host == "" {
 		return nil, errors.New("remote: no host given")
 	}
@@ -121,35 +129,54 @@ func Connect(cfg Config) (*Conn, error) {
 		user = u
 	}
 
+	// A dialog the user dismisses cancels the connection rather than
+	// being treated as one more thing that did not work.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	ask := newCancelAsk(cfg.Ask, cancel)
+	cfg.Ask = ask.asker()
+
 	hostKey := cfg.HostKeyCallback
 	if hostKey == nil {
-		var err error
-		if hostKey, err = knownHostsCallback(cfg.KnownHosts); err != nil {
+		keys, err := loadKnownHosts(cfg.KnownHosts)
+		if err != nil {
 			return nil, err
 		}
+		hostKey = keys.callback(ctx, cfg.Ask)
 	}
 
-	auth, agentConn, err := authMethods(cfg)
+	a, err := authMethods(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}
-	if len(auth) == 0 {
-		if agentConn != nil {
-			_ = agentConn.Close()
-		}
-		return nil, errors.New("remote: nothing to authenticate with: " +
-			"no agent, no readable private key, and no password source")
+	if len(a.methods) == 0 {
+		a.close()
+		return nil, nothingToAuthenticateWith(a.noAgent)
 	}
 
 	addr := cfg.addr()
-	client, dialErr := dial(addr, user, auth, hostKey)
+	client, dialErr := dial(ctx, addr, user, a.methods, hostKey)
 	if dialErr != nil {
-		if agentConn != nil {
-			_ = agentConn.Close()
+		a.close()
+		// What the user said, when they said anything: "the dialog was
+		// cancelled" beats x/crypto reporting that no method remained.
+		if why := ask.reason(); why != nil {
+			return nil, why
 		}
 		return nil, dialErr
 	}
-	return newConn(client, agentConn, user, addr), nil
+	return newConn(client, a.agent, user, addr), nil
+}
+
+// nothingToAuthenticateWith explains a connection that had no way to
+// even try, naming the agent's own failure when there was one.
+func nothingToAuthenticateWith(agentErr error) error {
+	msg := "remote: nothing to authenticate with: " +
+		"no agent, no readable private key, and no way to ask for a password"
+	if agentErr == nil {
+		return errors.New(msg)
+	}
+	return fmt.Errorf("%s: %w", msg, agentErr)
 }
 
 // newConn wraps an authenticated client.

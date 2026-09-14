@@ -1,6 +1,9 @@
 package remote
 
 import (
+	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -17,10 +20,13 @@ func checkedConfig(t *testing.T, s *sshtest.Server, knownHosts ...string) Config
 	host, port := s.Host()
 	return Config{
 		Host: host, Port: port, User: "tester",
-		KnownHosts:   knownHosts,
-		Password:     func() (string, error) { return sshtest.Password, nil },
-		NoAgent:      true,
-		NoIdentities: true,
+		KnownHosts: knownHosts,
+		Ask:        &testAsk{password: sshtest.Password},
+		// A key file rather than the agent, so a test that turns the
+		// dialogs off can still authenticate: with nobody to ask, a
+		// password is not on offer either.
+		NoAgent:    true,
+		Identities: []string{sshtest.WriteKey(t)},
 	}
 }
 
@@ -32,17 +38,19 @@ func TestDialRejectsTheWrongHostKey(t *testing.T) {
 
 	cfg := testConfig(t, s)
 	cfg.HostKeyCallback = ssh.FixedHostKey(other.HostKey())
-	if _, err := Connect(cfg); err == nil {
+	if _, err := Connect(t.Context(), cfg); err == nil {
 		t.Fatal("Connect accepted a connection with the wrong host key")
 	}
 }
 
-// With no known_hosts file and no override, the connection must fail
+// With no known_hosts file and nobody to ask, the connection must fail
 // rather than fall back to trusting anything.
 func TestDialWithoutKnownHostsRefusesToConnect(t *testing.T) {
 	s := sshtest.New(t)
+	cfg := checkedConfig(t, s, "/nonexistent/known_hosts")
+	cfg.Ask = nil
 
-	_, err := Connect(checkedConfig(t, s, "/nonexistent/known_hosts"))
+	_, err := Connect(t.Context(), cfg)
 	if err == nil {
 		t.Fatal("Connect connected with no known_hosts to check against")
 	}
@@ -53,12 +61,121 @@ func TestDialWithoutKnownHostsRefusesToConnect(t *testing.T) {
 
 func TestDialAcceptsAHostInKnownHosts(t *testing.T) {
 	s := sshtest.New(t)
+	cfg := checkedConfig(t, s, sshtest.WriteKnownHosts(t, s.KnownHostsLine()))
+	cfg.Ask = nil
 
-	c, err := Connect(checkedConfig(t, s, sshtest.WriteKnownHosts(t, s.KnownHostsLine())))
+	c, err := Connect(t.Context(), cfg)
 	if err != nil {
 		t.Fatalf("Connect with a matching known_hosts entry: %v", err)
 	}
 	_ = c.Close()
+}
+
+// A host already recorded must not be asked about, or the dialog appears
+// on every connection and stops being read.
+func TestDialDoesNotAskAboutAKnownHost(t *testing.T) {
+	s := sshtest.New(t)
+	ask := newTestAsk()
+	cfg := checkedConfig(t, s, sshtest.WriteKnownHosts(t, s.KnownHostsLine()))
+	cfg.Ask = ask
+
+	c, err := Connect(t.Context(), cfg)
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	_ = c.Close()
+	if _, _, keys := ask.asked(); len(keys) != 0 {
+		t.Fatalf("a known host was still asked about: %+v", keys)
+	}
+}
+
+// An unknown host is shown to the user, and saying yes both connects and
+// records the key.
+func TestDialAsksAboutAnUnknownHostAndRecordsIt(t *testing.T) {
+	s := sshtest.New(t)
+	// Nested, so the test also covers creating the .ssh directory.
+	kh := filepath.Join(t.TempDir(), "nested", "known_hosts")
+	ask := newTestAsk()
+	cfg := checkedConfig(t, s, kh)
+	cfg.Ask = ask
+
+	c, err := Connect(t.Context(), cfg)
+	if err != nil {
+		t.Fatalf("Connect after the host key was accepted: %v", err)
+	}
+	_ = c.Close()
+
+	_, _, keys := ask.asked()
+	if len(keys) != 1 {
+		t.Fatalf("the user was asked %d times, want once", len(keys))
+	}
+	if got := keys[0].Fingerprint(); got != ssh.FingerprintSHA256(s.HostKey()) {
+		t.Errorf("asked about %q, want the key the server presented", got)
+	}
+
+	b, err := os.ReadFile(kh)
+	if err != nil {
+		t.Fatalf("read the known_hosts that should have been written: %v", err)
+	}
+	if !strings.Contains(string(b), "ssh-ed25519") {
+		t.Fatalf("known_hosts holds %q, want the host key", string(b))
+	}
+
+	// Recorded, so the next connection does not ask again.
+	second := newTestAsk()
+	cfg.Ask = second
+	c2, err := Connect(t.Context(), cfg)
+	if err != nil {
+		t.Fatalf("second Connect: %v", err)
+	}
+	_ = c2.Close()
+	if _, _, keys := second.asked(); len(keys) != 0 {
+		t.Fatalf("the recorded host was asked about again: %+v", keys)
+	}
+}
+
+// Saying no means no. Nothing is recorded and nothing connects.
+func TestDialRefusedHostKeyDoesNotConnectOrRecord(t *testing.T) {
+	s := sshtest.New(t)
+	kh := filepath.Join(t.TempDir(), "known_hosts")
+	ask := newTestAsk()
+	ask.trust = false
+	cfg := checkedConfig(t, s, kh)
+	cfg.Ask = ask
+
+	if _, err := Connect(t.Context(), cfg); err == nil {
+		t.Fatal("Connect went ahead with a host key the user refused")
+	}
+	if _, err := os.Stat(kh); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("known_hosts was written for a refused key: %v", err)
+	}
+}
+
+// A key that does not match the one on record is a different thing
+// entirely. There is no answer a user could give that would make
+// connecting safe, so they are not asked.
+func TestDialChangedHostKeyIsNeverOffered(t *testing.T) {
+	s := sshtest.New(t)
+	other := sshtest.New(t)
+	ask := newTestAsk()
+
+	kh := sshtest.WriteKnownHosts(t, s.LineFor(other.HostKey()))
+	cfg := checkedConfig(t, s, kh)
+	cfg.Ask = ask
+
+	_, err := Connect(t.Context(), cfg)
+	if err == nil {
+		t.Fatal("Connect accepted a host whose key had changed")
+	}
+	if !strings.Contains(err.Error(), "does not match") {
+		t.Fatalf("error = %v, want it to say the key does not match", err)
+	}
+	if !strings.Contains(err.Error(), "man-in-the-middle") {
+		t.Fatalf("error = %v, want it to name the risk", err)
+	}
+	if _, _, keys := ask.asked(); len(keys) != 0 {
+		t.Fatalf("the user was offered a changed host key: %+v", keys)
+	}
 }
 
 // An unknown host and a changed key are different things and must say
@@ -70,30 +187,15 @@ func TestDialUnknownHostSaysSo(t *testing.T) {
 
 	// A file with an entry for a different host.
 	kh := sshtest.WriteKnownHosts(t, other.KnownHostsLine())
-	_, err := Connect(checkedConfig(t, s, kh))
+	cfg := checkedConfig(t, s, kh)
+	cfg.Ask = nil
+
+	_, err := Connect(t.Context(), cfg)
 	if err == nil {
 		t.Fatal("Connect accepted a host that is not in known_hosts")
 	}
 	if !strings.Contains(err.Error(), "not in known_hosts") {
 		t.Fatalf("error = %v, want it to say the host is not in known_hosts", err)
-	}
-}
-
-func TestDialChangedHostKeySaysSo(t *testing.T) {
-	s := sshtest.New(t)
-	other := sshtest.New(t)
-
-	// An entry for this address, but holding a different key.
-	kh := sshtest.WriteKnownHosts(t, s.LineFor(other.HostKey()))
-	_, err := Connect(checkedConfig(t, s, kh))
-	if err == nil {
-		t.Fatal("Connect accepted a host whose key had changed")
-	}
-	if !strings.Contains(err.Error(), "does not match") {
-		t.Fatalf("error = %v, want it to say the key does not match", err)
-	}
-	if !strings.Contains(err.Error(), "man-in-the-middle") {
-		t.Fatalf("error = %v, want it to name the risk", err)
 	}
 }
 
@@ -111,19 +213,42 @@ func TestDialSkipsUnparseableKnownHostsLines(t *testing.T) {
 		"# a comment",
 		s.KnownHostsLine(),
 	)
+	cfg := checkedConfig(t, s, kh)
+	cfg.Ask = nil
 
-	c, err := Connect(checkedConfig(t, s, kh))
+	c, err := Connect(t.Context(), cfg)
 	if err != nil {
 		t.Fatalf("Connect: %v; one bad line disabled the whole file", err)
 	}
 	_ = c.Close()
 }
 
+// A file that cannot be read is not a file with no entries. Treating it
+// as empty would report a recorded host as unknown, or as one whose key
+// had changed.
+func TestDialUnreadableKnownHostsIsAnError(t *testing.T) {
+	s := sshtest.New(t)
+	// A directory opens and then fails to read, which is the closest a
+	// test gets to an unreadable file on every platform.
+	cfg := checkedConfig(t, s, t.TempDir())
+	cfg.Ask = newTestAsk()
+
+	_, err := Connect(t.Context(), cfg)
+	if err == nil {
+		t.Fatal("Connect treated an unreadable known_hosts as an empty one")
+	}
+	if !strings.Contains(err.Error(), "known_hosts") {
+		t.Fatalf("error = %v, want it to mention known_hosts", err)
+	}
+}
+
 func TestDialKnownHostsWithOnlyBadLinesIsAnError(t *testing.T) {
 	s := sshtest.New(t)
-
 	kh := sshtest.WriteKnownHosts(t, "garbage", "more garbage")
-	_, err := Connect(checkedConfig(t, s, kh))
+	cfg := checkedConfig(t, s, kh)
+	cfg.Ask = nil
+
+	_, err := Connect(t.Context(), cfg)
 	if err == nil {
 		t.Fatal("Connect connected with no usable known_hosts entries")
 	}

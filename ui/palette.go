@@ -45,7 +45,9 @@ type Palette struct {
 	keys  *Keymap
 	close func()
 
-	query   string
+	// q is the line being typed into. It is a Field like any other, so
+	// the caret moves the same way here as in a form.
+	q       *Field
 	matches []Match
 
 	// at is the line Enter would run, and top the first line drawn. A
@@ -64,20 +66,25 @@ type Palette struct {
 // dialog is finished with, which is what takes it off the modal stack:
 // the palette does not know what is showing it.
 func NewPalette(cmds *Commands, keys *Keymap, close func()) *Palette {
-	p := &Palette{cmds: cmds, keys: keys, close: close}
+	p := &Palette{cmds: cmds, keys: keys, close: close, q: NewField()}
+	p.q.SetFocus(true)
+	p.q.OnChange = func(string) { p.refresh() }
 	p.refresh()
 	return p
 }
 
+// SetClipboard backs the paste shortcut in the query line.
+func (p *Palette) SetClipboard(read func() string) { p.q.ReadClipboard = read }
+
 // Reset empties the query, for showing the palette afresh rather than
 // where it was left.
 func (p *Palette) Reset() {
-	p.query = ""
+	p.q.SetText("")
 	p.refresh()
 }
 
 // Query returns what has been typed.
-func (p *Palette) Query() string { return p.query }
+func (p *Palette) Query() string { return p.q.Text() }
 
 // Matches returns the commands the query found, best first.
 func (p *Palette) Matches() []Match { return p.matches }
@@ -107,40 +114,26 @@ func (p *Palette) Layout(size Size) {
 // HandleKey drives the dialog. Keys it has no use for travel on, so the
 // shortcuts that close or quit still work while it is open.
 func (p *Palette) HandleKey(ev input.Event) (bool, error) {
-	if ev.Kind == input.Text {
-		// Delete is not a character to type, whatever the platform says.
-		if !ev.NormalText || ev.Rune < ' ' || ev.Rune == 0x7f {
-			return false, nil
+	// The list keys first: Up and Down move the selection here, where in
+	// an ordinary field they would do nothing.
+	if ev.Kind == input.KeyPress || ev.Kind == input.KeyRepeat {
+		switch ev.Key {
+		case input.KeyEscape:
+			p.dismiss()
+			return true, nil
+		case input.KeyEnter:
+			return true, p.run()
+		case input.KeyUp:
+			p.move(-1)
+			return true, nil
+		case input.KeyDown:
+			p.move(1)
+			return true, nil
 		}
-		p.query += string(ev.Rune)
-		p.refresh()
-		return true, nil
 	}
-	if ev.Kind != input.KeyPress && ev.Kind != input.KeyRepeat {
-		return false, nil
-	}
-
-	switch ev.Key {
-	case input.KeyEscape:
-		p.dismiss()
-		return true, nil
-	case input.KeyEnter:
-		return true, p.run()
-	case input.KeyUp:
-		p.move(-1)
-		return true, nil
-	case input.KeyDown:
-		p.move(1)
-		return true, nil
-	case input.KeyBackspace:
-		if p.query != "" {
-			runes := []rune(p.query)
-			p.query = string(runes[:len(runes)-1])
-			p.refresh()
-		}
-		return true, nil
-	}
-	return false, nil
+	// Everything else is typing. refresh runs from the field's OnChange,
+	// so the list follows whatever the edit did.
+	return p.q.HandleKey(ev)
 }
 
 // HandleMouse runs the line that was clicked, and dismisses the dialog
@@ -198,18 +191,8 @@ func (p *Palette) paint(v grid.View) {
 // the caret stays in view and the user is not typing blind.
 func (p *Palette) drawQuery(in grid.View, cols int) {
 	in.SetString(0, 0, string(promptRune)+" ", p.Style.ChordFG, p.Style.BG, 0)
-
-	room := max(cols-3, 1)
-	shown := p.query
-	for grid.StringWidth(shown) > room {
-		shown = string([]rune(shown)[1:])
-	}
-	in.SetString(2, 0, shown, p.Style.FG, p.Style.BG, grid.AttrBold)
-	// The caret sits after what has been typed, so the dialog looks like
-	// somewhere to type rather than somewhere to read.
-	if at := 2 + grid.StringWidth(shown); at < cols {
-		in.SetCursor(grid.Cursor{X: at, Y: 0, Visible: true, Style: grid.CursorBar})
-	}
+	p.q.Style = FieldStyle{FG: p.Style.FG, BG: p.Style.BG, PlaceholderFG: p.Style.ChordFG}
+	p.q.Draw(in.Sub(2, 0, max(cols-2, 1), 1))
 }
 
 // drawMatch paints one line of the list, counting from the first one
@@ -344,7 +327,7 @@ func (p *Palette) refresh() {
 		p.matches, p.at = nil, 0
 		return
 	}
-	p.matches = MatchCommands(p.cmds.All(), strings.TrimSpace(p.query))
+	p.matches = MatchCommands(p.cmds.All(), strings.TrimSpace(p.q.Text()))
 	// A new list is a new answer: the best one is at the top, and the
 	// line the old selection sat on means nothing now.
 	p.at, p.top = 0, 0

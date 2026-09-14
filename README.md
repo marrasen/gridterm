@@ -6,7 +6,7 @@ It runs a shell on a local pseudo-terminal — a PTY on Unix, a ConPTY on
 Windows — or on another machine over SSH, feeds the output through a VT
 emulator, and draws the resulting character grid as batched triangles.
 
-5,946 lines of Go, 3,228 lines of tests, 236 tests.
+15,092 lines of Go, 17,649 lines of tests, 756 tests.
 
 ![a shell running in gridterm](docs/shell.png)
 
@@ -19,6 +19,18 @@ emulator, and draws the resulting character grid as batched triangles.
 - **Local shells and SSH.** One `session.Session` interface with two
   implementations. Nothing above it — the emulator, the grid, the
   renderer — can tell the difference.
+- **Connections, not just shells.** One SSH connection carries several
+  things at once, so a second terminal on a machine is a second channel
+  rather than a second login. Connect from inside the window with
+  `Ctrl+Shift+N`.
+- **Secrets are asked for in the window.** A key passphrase, an account
+  password and a one-time code all get a dialog. An unlocked key is kept
+  in memory for as long as the window is open and never written
+  anywhere, so the second connection to a machine asks nothing.
+- **Unknown host keys are shown, not assumed.** A host that is not in
+  `known_hosts` gets a dialog with its fingerprint, and only an explicit
+  yes records it. A key that does not match one already recorded is
+  refused with no button to press.
 - **Batched rendering.** A full screen of text is one `DrawTriangles`
   call for the backgrounds plus one per atlas page for the glyphs,
   typically two in total however much text is on screen.
@@ -97,16 +109,19 @@ encoders and both session types.
 | Package | Lines | Needs a GPU? | What it is |
 |---|---|---|---|
 | `vt` | 1,720 | no | the VT emulator: parser, screen model, two buffers, scrollback |
-| `grid` | 592 | no | the display grid, damage tracking, selection, wide-character invariants |
-| `input` | 818 | no | key, text, mouse and paste events to VT bytes |
-| `session` | 983 | no | a shell as a byte stream: local pty or SSH |
-| `glyph` | 914 | yes | glyph atlas, system font fallback, box drawing |
-| `render` | 371 | yes | grid to batched triangles |
-| `main` | 653 | yes | the window and the wiring |
+| `grid` | 863 | no | the display grid, damage tracking, selection, wide-character invariants |
+| `input` | 592 | no | key, text, mouse and paste events to VT bytes |
+| `session` | 362 | no | a shell as a byte stream, and the local pty |
+| `remote` | 1,560 | no | SSH: connections, shells, host keys, unlocked keys |
+| `ui` | 4,174 | no | the widget toolkit: panes, tabs, menus, dialogs, fields |
+| `ui/term` | 529 | no | a shell on a widget |
+| `glyph` | 1,289 | yes | glyph atlas, system font fallback, box drawing |
+| `render` | 1,149 | yes | grid to batched triangles |
+| `main` | 2,248 | yes | the window and the wiring |
 
 The layering is deliberate: `vt` never imports the renderer, `input`
-never imports ebiten (that lives in `input/ebitenin`), and `session`
-knows nothing about any of them. Everything fiddly is testable without a
+never imports ebiten (that lives in `input/ebitenin`), `ui` knows nothing
+about terminals or SSH, and `session` knows nothing about any of them. Everything fiddly is testable without a
 display, which is how the emulator got written.
 
 ## Looking at the pixels
@@ -150,9 +165,14 @@ for that font's own advance width. Inside a terminal cell the strokes
 stop short of the edges and adjacent cells do not meet, so every framed
 TUI renders as a field of disconnected ticks.
 
-**Host keys are checked with no fallback.** A terminal that silently
-trusts an unknown SSH host key can be man-in-the-middled and nobody
-finds out. An unverifiable host is a hard failure with an explanation.
+**Host keys are never assumed.** A terminal that silently trusts an
+unknown SSH host key can be man-in-the-middled and nobody finds out. An
+unknown host gets a dialog showing its fingerprint, and only an explicit
+yes records it. A key that does not match one already in `known_hosts`
+is refused outright: there is no answer a user could give that would
+make connecting safe. A `known_hosts` that cannot be read is an error
+rather than an empty one, because a truncated list does not report a
+host as unknown — it reports its key as changed.
 
 ## The ebiten fork
 
@@ -205,9 +225,10 @@ emulator under `internal/` where they cannot be imported.
 - **A click faster than one frame is missed.** ebiten reports the mouse
   as polled state, so a press and release inside the same 16 ms are
   never seen as either. No human manages it; a test harness does.
-- **SSH needs its password up front.** A passphrase or password is
-  prompted on the console before the window opens, because once gridterm
-  is drawing its own grid there is nowhere to prompt.
+- **`-ssh` still needs its secrets up front.** That flag connects before
+  the window opens, so there is nowhere to draw a dialog yet and the
+  console is the only place left to ask. Connecting from inside the
+  window asks in the window.
 - **Sixel and the Kitty graphics protocol** are not implemented.
 - **An APC, PM or SOS string with no terminator grows without bound.**
   The parser buffers it before the emulator sees anything, so it cannot

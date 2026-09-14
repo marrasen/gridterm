@@ -1,6 +1,7 @@
 package remote
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -12,110 +13,169 @@ import (
 	"golang.org/x/crypto/ssh/agent"
 )
 
-// authMethods assembles the authentication methods to try, in the order
-// a user expects: the agent first, then on-disk keys, then a password.
-// The returned closer owns the agent socket, if one was opened.
-//
-// An agent that cannot be opened is not an error on its own, because a
-// key or a password may still work. The reason is folded into the error
-// for the case where nothing else does either.
-func authMethods(cfg Config) ([]ssh.AuthMethod, io.Closer, error) {
-	var methods []ssh.AuthMethod
-	var agentConn io.Closer
-	var agentErr error
+// defaultIdentities are the key files tried when none were named.
+var defaultIdentities = []string{"id_ed25519", "id_ecdsa", "id_rsa"}
 
-	if !cfg.NoAgent {
-		conn, err := dialAgent()
-		switch {
-		case err != nil:
-			agentErr = err
-		default:
-			agentConn = conn
-			methods = append(methods,
-				ssh.PublicKeysCallback(agent.NewClient(conn).Signers))
-		}
-	}
+// auth is what a connection will try, in order, and the agent socket it
+// opened to do it.
+type auth struct {
+	methods []ssh.AuthMethod
+	agent   io.Closer
 
-	signers, err := loadIdentities(cfg)
-	if err != nil {
-		if agentConn != nil {
-			_ = agentConn.Close()
-		}
-		return nil, nil, err
-	}
-	if len(signers) > 0 {
-		methods = append(methods, ssh.PublicKeys(signers...))
-	}
-
-	if cfg.Password != nil {
-		methods = append(methods, ssh.PasswordCallback(cfg.Password))
-	}
-	if len(methods) == 0 && agentErr != nil {
-		return nil, nil, fmt.Errorf("remote: nothing to authenticate with: %w", agentErr)
-	}
-	return methods, agentConn, nil
+	// noAgent is why there is no agent, kept for the message shown when
+	// nothing at all worked.
+	noAgent error
 }
 
-// loadIdentities reads private keys from disk.
+// authMethods assembles what to try, in the order a user expects.
 //
-// A key the caller named is one it asked for, so a failure to read or
-// decrypt it fails the connection. One of the three defaults is skipped
-// instead: most machines have only one of them, and failing because a
-// stale id_rsa has a passphrase would be unhelpful when the agent holds
-// the key that works.
-func loadIdentities(cfg Config) ([]ssh.Signer, error) {
+// Keys that need no passphrase come first, all in one method: the ring,
+// the agent, and any key file that is not encrypted. Only if the server
+// refuses all of those does anything prompt, and then one encrypted key
+// at a time, so a machine with three keys does not ask three times for a
+// connection the first one would have made.
+func authMethods(ctx context.Context, cfg Config) (*auth, error) {
+	a := &auth{}
+
+	var agentSigners func() ([]ssh.Signer, error)
+	if !cfg.NoAgent {
+		conn, err := dialAgent()
+		if err != nil {
+			a.noAgent = err
+		} else {
+			a.agent = conn
+			agentSigners = agent.NewClient(conn).Signers
+		}
+	}
+
+	plain, locked, err := identities(cfg)
+	if err != nil {
+		a.close()
+		return nil, err
+	}
+
+	ready := func() ([]ssh.Signer, error) {
+		signers := cfg.Ring.Signers()
+		if agentSigners != nil {
+			got, err := agentSigners()
+			if err != nil {
+				return nil, fmt.Errorf("remote: read the SSH agent: %w", err)
+			}
+			signers = append(signers, got...)
+		}
+		return append(signers, plain...), nil
+	}
+	if agentSigners != nil || len(plain) > 0 || len(cfg.Ring.Paths()) > 0 {
+		a.methods = append(a.methods, ssh.PublicKeysCallback(ready))
+	}
+
+	if cfg.Ask == nil {
+		return a, nil
+	}
+	// One method per encrypted key, so the second is only reached — and
+	// only asked about — when the first was refused.
+	for _, path := range locked {
+		a.methods = append(a.methods, ssh.PublicKeysCallback(func() ([]ssh.Signer, error) {
+			signer, err := cfg.Ring.Unlock(ctx, path, cfg.Ask)
+			if err != nil {
+				return nil, fmt.Errorf("remote: private key %s: %w", path, err)
+			}
+			return []ssh.Signer{signer}, nil
+		}))
+	}
+	a.methods = append(a.methods,
+		ssh.KeyboardInteractive(keyboardInteractive(ctx, cfg.Ask)),
+		ssh.PasswordCallback(func() (string, error) {
+			return cfg.Ask.Password(ctx, cfg.User, cfg.Host)
+		}))
+	return a, nil
+}
+
+// close lets go of the agent socket, for a connection that never
+// happened.
+func (a *auth) close() {
+	if a != nil && a.agent != nil {
+		_ = a.agent.Close()
+	}
+}
+
+// keyboardInteractive answers whatever the server decided to ask, which
+// is usually a one-time code.
+func keyboardInteractive(ctx context.Context, ask Ask) ssh.KeyboardInteractiveChallenge {
+	return func(name, instruction string, prompts []string, echo []bool) ([]string, error) {
+		if len(prompts) == 0 {
+			// The server is telling the user something rather than
+			// asking, so there is nothing to answer.
+			return nil, nil
+		}
+		return ask.Question(ctx, Question{
+			Name:        name,
+			Instruction: instruction,
+			Prompts:     prompts,
+			Echo:        echo,
+		})
+	}
+}
+
+// identities sorts the key files into the ones that can be read without
+// asking and the ones that need a passphrase.
+//
+// A key file the caller named is one it asked for, so a failure to read
+// it fails the connection. One of the defaults is skipped instead: most
+// machines have only one of the three, and failing because a stale
+// id_rsa is unreadable would be unhelpful when the agent holds the key
+// that works.
+func identities(cfg Config) (plain []ssh.Signer, locked []string, err error) {
 	if cfg.NoIdentities {
-		return nil, nil
+		return nil, nil, nil
 	}
 	paths, named := cfg.Identities, true
 	if len(paths) == 0 {
 		named = false
 		home, err := os.UserHomeDir()
 		if err != nil {
-			return nil, fmt.Errorf("remote: no home directory to look for keys in: %w", err)
+			return nil, nil, fmt.Errorf("remote: no home directory to look for keys in: %w", err)
 		}
-		for _, name := range []string{"id_ed25519", "id_ecdsa", "id_rsa"} {
+		for _, name := range defaultIdentities {
 			paths = append(paths, filepath.Join(home, ".ssh", name))
 		}
 	}
 
-	var signers []ssh.Signer
 	for _, p := range paths {
-		signer, err := loadIdentity(p, cfg.Passphrase)
-		if err == nil {
-			signers = append(signers, signer)
+		// Already unlocked, so it is among the ring's signers and needs
+		// no method of its own.
+		if cfg.Ring.Has(p) {
 			continue
 		}
-		if named {
-			return nil, fmt.Errorf("remote: private key %s: %w", p, err)
+		signer, needsPass, err := readIdentity(p)
+		switch {
+		case err == nil:
+			plain = append(plain, signer)
+		case needsPass:
+			locked = append(locked, p)
+		case named:
+			return nil, nil, fmt.Errorf("remote: private key %s: %w", p, err)
 		}
 	}
-	return signers, nil
+	return plain, locked, nil
 }
 
-// loadIdentity reads one private key, asking for its passphrase when it
-// has one.
-func loadIdentity(path string, ask func(string) (string, error)) (ssh.Signer, error) {
+// readIdentity loads one private key, reporting separately that it is
+// encrypted so the caller can decide when to ask.
+func readIdentity(path string) (signer ssh.Signer, needsPass bool, err error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	signer, err := ssh.ParsePrivateKey(b)
+	signer, err = ssh.ParsePrivateKey(b)
 	if err == nil {
-		return signer, nil
+		return signer, false, nil
 	}
-	var needsPass *ssh.PassphraseMissingError
-	if !errors.As(err, &needsPass) {
-		return nil, err
+	var missing *ssh.PassphraseMissingError
+	if errors.As(err, &missing) {
+		return nil, true, err
 	}
-	if ask == nil {
-		return nil, errors.New("the key has a passphrase and there is nothing to ask for it")
-	}
-	pass, err := ask(path)
-	if err != nil {
-		return nil, err
-	}
-	return ssh.ParsePrivateKeyWithPassphrase(b, []byte(pass))
+	return nil, false, err
 }
 
 // currentUser returns the local account name, used as the SSH user when

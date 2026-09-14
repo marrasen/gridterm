@@ -1062,3 +1062,46 @@ func TestPaletteWideTitleStopsBeforeTheChord(t *testing.T) {
 		}
 	}
 }
+
+// The query used to be append-only: the only edit was deleting the last
+// character. It is a Field now, so it can be corrected in the middle.
+func TestPaletteQueryCanBeEditedInTheMiddle(t *testing.T) {
+	cmds := testCommands("Split right", "Split down")
+	p, _ := newTestPalette(t, cmds)
+
+	typeInto(t, p, "slpit")
+	p.HandleKey(press(input.KeyLeft, 0))
+	p.HandleKey(press(input.KeyLeft, 0))
+	p.HandleKey(press(input.KeyLeft, 0))
+	p.HandleKey(press(input.KeyBackspace, 0))
+	p.HandleKey(press(input.KeyRight, 0))
+	typeInto(t, p, "l")
+	p.HandleKey(press(input.KeyEnd, 0))
+	typeInto(t, p, " r")
+
+	if got := p.Query(); got != "split r" {
+		t.Fatalf("query = %q, want %q", got, "split r")
+	}
+	// The list followed the edit rather than the last keystroke.
+	cmd, ok := p.Selected()
+	if !ok || cmd.Title != "Split right" {
+		t.Fatalf("selected %v, want Split right", cmd.Title)
+	}
+}
+
+// Up and Down belong to the list. A field would ignore them, and the
+// palette would become a dialog you cannot choose from with the keyboard.
+func TestPaletteArrowsStillMoveTheSelection(t *testing.T) {
+	cmds := testCommands("Alpha", "Beta")
+	p, _ := newTestPalette(t, cmds)
+
+	first, _ := p.Selected()
+	p.HandleKey(press(input.KeyDown, 0))
+	second, ok := p.Selected()
+	if !ok || second.ID == first.ID {
+		t.Fatalf("Down left the selection on %q", first.ID)
+	}
+	if p.Query() != "" {
+		t.Errorf("Down typed %q into the query", p.Query())
+	}
+}

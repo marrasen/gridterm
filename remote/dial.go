@@ -1,17 +1,24 @@
 package remote
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"net"
 	"time"
 
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
 )
 
-// dialTimeout bounds the connection attempt, so an unresponsive host
-// fails with a message rather than hanging for however long TCP takes to
-// give up.
+// dialTimeout bounds the attempt to reach the machine, so an
+// unresponsive host fails with a message rather than hanging for however
+// long TCP takes to give up.
+//
+// It covers reaching the host and nothing after it. Authentication can
+// stop to ask the user for a passphrase, and a deadline that ran while a
+// dialog was open would close the connection under them; cancelling the
+// context is what ends that.
 const dialTimeout = 20 * time.Second
 
 // dial connects, retrying once with the host key types that known_hosts
@@ -23,14 +30,16 @@ const dialTimeout = 20 * time.Second
 // A server with both keys then presents the one known_hosts does not
 // record, and knownhosts reports "key mismatch" — the man-in-the-middle
 // alarm — when nothing at all is wrong.
-func dial(addr, user string, auth []ssh.AuthMethod, hostKey ssh.HostKeyCallback) (*ssh.Client, error) {
+func dial(ctx context.Context, addr, user string, auth []ssh.AuthMethod,
+	hostKey ssh.HostKeyCallback) (*ssh.Client, error) {
+
 	base := &ssh.ClientConfig{
 		User:            user,
 		Auth:            auth,
 		HostKeyCallback: hostKey,
 		Timeout:         dialTimeout,
 	}
-	client, err := ssh.Dial("tcp", addr, base)
+	client, err := dialOnce(ctx, addr, base)
 	if err == nil {
 		return client, nil
 	}
@@ -40,7 +49,7 @@ func dial(addr, user string, auth []ssh.AuthMethod, hostKey ssh.HostKeyCallback)
 		if algos := wantedKeyTypes(ke.Want); len(algos) > 0 {
 			retry := *base
 			retry.HostKeyAlgorithms = algos
-			client, err2 := ssh.Dial("tcp", addr, &retry)
+			client, err2 := dialOnce(ctx, addr, &retry)
 			if err2 == nil {
 				return client, nil
 			}
@@ -51,6 +60,42 @@ func dial(addr, user string, auth []ssh.AuthMethod, hostKey ssh.HostKeyCallback)
 		}
 	}
 	return nil, describeHostKeyError(err, addr)
+}
+
+// dialOnce makes one attempt, which cancelling ctx gives up on.
+//
+// ssh.Dial cannot be cancelled: its Timeout covers reaching the host and
+// nothing else, so a handshake that stops to ask the user a question
+// would hold the goroutine until they answered. Doing the two halves
+// separately is what lets a window that is closing let go.
+func dialOnce(ctx context.Context, addr string, cfg *ssh.ClientConfig) (*ssh.Client, error) {
+	d := net.Dialer{Timeout: cfg.Timeout}
+	nc, err := d.DialContext(ctx, "tcp", addr)
+	if err != nil {
+		return nil, err
+	}
+	// Closing the connection is what unblocks the handshake, whichever
+	// part of it is waiting.
+	stop := context.AfterFunc(ctx, func() { _ = nc.Close() })
+
+	cc, chans, reqs, err := ssh.NewClientConn(nc, addr, cfg)
+	if err != nil {
+		// Only close it ourselves when the cancellation did not: closing
+		// an already-closed connection is not an error worth reporting,
+		// but the reason matters.
+		if !stop() {
+			_ = nc.Close()
+			return nil, errors.Join(ctx.Err(), err)
+		}
+		_ = nc.Close()
+		return nil, err
+	}
+	if !stop() {
+		// Cancelled between the handshake finishing and us noticing.
+		_ = cc.Close()
+		return nil, ctx.Err()
+	}
+	return ssh.NewClient(cc, chans, reqs), nil
 }
 
 // wantedKeyTypes lists the key algorithms known_hosts holds for a host,
@@ -82,6 +127,10 @@ func wantedKeyTypes(want []knownhosts.KnownKey) []string {
 // key changed", which knownhosts reports as the same type and which mean
 // very different things to a user.
 func describeHostKeyError(err error, addr string) error {
+	if errors.Is(err, errUnknownHost) {
+		return fmt.Errorf("remote: %s is not in known_hosts; "+
+			"connect once with ssh to record its host key", addr)
+	}
 	var ke *knownhosts.KeyError
 	if !errors.As(err, &ke) {
 		return fmt.Errorf("remote: connect to %s: %w", addr, err)

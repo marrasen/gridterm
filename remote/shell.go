@@ -1,6 +1,7 @@
 package remote
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -221,8 +222,8 @@ func (s *Shell) closeAll() error {
 // It is the one-shot form, for a caller that wants a single remote shell
 // and nothing else. A caller that wants more than one thing on a machine
 // should Connect and keep the Conn.
-func StartShell(cfg Config, sh ShellConfig) (*OwnedShell, error) {
-	conn, err := Connect(cfg)
+func StartShell(ctx context.Context, cfg Config, sh ShellConfig) (*OwnedShell, error) {
+	conn, err := Connect(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}

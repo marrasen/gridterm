@@ -6,6 +6,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -126,8 +127,10 @@ func main() {
 
 	// What every pane is started with, so a split can open another.
 	command := strings.Fields(*cmdline)
+	a.keys = remote.NewRing()
+	a.ctx, a.stop = context.WithCancel(context.Background())
 	a.newSession = func(cols, rows int) (session.Session, error) {
-		return startSession(*sshTarget, command, cols, rows)
+		return startSession(*sshTarget, command, a.keys, cols, rows)
 	}
 	a.scrollback = *scroll
 	a.colours = pal
@@ -163,6 +166,9 @@ func main() {
 	// have to be closed into a separate error or every failure to shut
 	// one down is dropped on the path the user actually takes.
 	err = ebiten.RunGame(a)
+	// Every connection still being made, and every dialog waiting for an
+	// answer, is let go of here rather than left holding a goroutine.
+	a.stop()
 	if errors.Is(err, ebiten.Termination) {
 		err = nil
 	}
@@ -255,7 +261,7 @@ func loadFamily(name string) (glyph.Fonts, string, error) {
 // startSession opens either a local shell or an SSH connection. The rest
 // of the program cannot tell the difference: both are a byte stream and
 // a size.
-func startSession(target string, command []string, cols, rows int) (session.Session, error) {
+func startSession(target string, command []string, ring *remote.Ring, cols, rows int) (session.Session, error) {
 	if target == "" {
 		return session.StartLocal(session.LocalConfig{
 			Command: command,
@@ -267,16 +273,12 @@ func startSession(target string, command []string, cols, rows int) (session.Sess
 	if err != nil {
 		return nil, err
 	}
-	// Without these, SSH works only with an agent or an unencrypted key
-	// on disk: a passphrase-protected key is skipped and password
-	// authentication is never even offered.
-	cfg.Passphrase = func(keyfile string) (string, error) {
-		return promptSecret("passphrase for " + keyfile + ": ")
-	}
-	cfg.Password = func() (string, error) {
-		return promptSecret("password for " + cfg.User + "@" + cfg.Host + ": ")
-	}
-	sh, err := remote.StartShell(cfg, remote.ShellConfig{
+	// -ssh connects before the window opens, so there is nowhere to draw
+	// a dialog and the console is the only place left to ask. Connecting
+	// from inside the window uses askUser and its dialogs instead.
+	cfg.Ask = consoleAsk{}
+	cfg.Ring = ring
+	sh, err := remote.StartShell(context.Background(), cfg, remote.ShellConfig{
 		Command: command,
 		Cols:    cols,
 		Rows:    rows,

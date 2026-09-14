@@ -41,6 +41,7 @@ type Server struct {
 	lastSize [2]int // cols, rows
 	conns    []net.Conn
 	accepted int
+	offered  []string
 
 	// writeMu serialises channel writes. x/crypto documents concurrent
 	// writes to one ssh.Channel as unsafe, and the request loop and the
@@ -68,6 +69,15 @@ func New(t *testing.T) *Server {
 				return nil, nil
 			}
 			return nil, errors.New("bad password")
+		},
+		// Any key is accepted. A test that cares which key was offered
+		// reads Offered; one that only needs key authentication to
+		// succeed does not have to manage an authorized_keys file.
+		PublicKeyCallback: func(_ ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
+			s.mu.Lock()
+			s.offered = append(s.offered, ssh.FingerprintSHA256(key))
+			s.mu.Unlock()
+			return nil, nil
 		},
 	}
 	s.cfg.AddHostKey(signer)
@@ -105,6 +115,14 @@ func (s *Server) Conns() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.accepted
+}
+
+// Offered returns the fingerprint of every public key a client has
+// offered, in order.
+func (s *Server) Offered() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.offered...)
 }
 
 // Size returns the last pty size the server was told.

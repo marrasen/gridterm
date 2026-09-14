@@ -27,7 +27,7 @@ func testConfig(t *testing.T, s *sshtest.Server) Config {
 	host, port := s.Host()
 	return Config{
 		Host: host, Port: port, User: "tester",
-		Password:        func() (string, error) { return sshtest.Password, nil },
+		Ask:             newTestAsk(),
 		HostKeyCallback: ssh.FixedHostKey(s.HostKey()),
 		// Without these the tests offer whatever keys the developer
 		// happens to have, so they exercise a different authentication
@@ -42,7 +42,7 @@ func testConfig(t *testing.T, s *sshtest.Server) Config {
 // the test ends.
 func connectTest(t *testing.T, s *sshtest.Server) *Conn {
 	t.Helper()
-	c, err := Connect(testConfig(t, s))
+	c, err := Connect(t.Context(), testConfig(t, s))
 	if err != nil {
 		t.Fatalf("Connect: %v", err)
 	}
@@ -58,7 +58,7 @@ func startTest(t *testing.T, s *sshtest.Server, mut func(*ShellConfig)) *OwnedSh
 	if mut != nil {
 		mut(&sh)
 	}
-	sess, err := StartShell(testConfig(t, s), sh)
+	sess, err := StartShell(t.Context(), testConfig(t, s), sh)
 	if err != nil {
 		t.Fatalf("StartShell: %v", err)
 	}
@@ -337,7 +337,7 @@ func TestConnShellRacingCloseIsSafe(t *testing.T) {
 }
 
 func TestConnectNoHostIsAnError(t *testing.T) {
-	if _, err := Connect(Config{}); err == nil {
+	if _, err := Connect(t.Context(), Config{}); err == nil {
 		t.Fatal("Connect accepted an empty host")
 	}
 }
@@ -345,8 +345,8 @@ func TestConnectNoHostIsAnError(t *testing.T) {
 func TestConnectRejectsABadPassword(t *testing.T) {
 	s := sshtest.New(t)
 	cfg := testConfig(t, s)
-	cfg.Password = func() (string, error) { return "wrong", nil }
-	if _, err := Connect(cfg); err == nil {
+	cfg.Ask = &testAsk{password: "wrong"}
+	if _, err := Connect(t.Context(), cfg); err == nil {
 		t.Fatal("Connect accepted a bad password")
 	}
 }
@@ -356,8 +356,8 @@ func TestConnectRejectsABadPassword(t *testing.T) {
 func TestConnectWithNothingToAuthenticateWithSaysSo(t *testing.T) {
 	s := sshtest.New(t)
 	cfg := testConfig(t, s)
-	cfg.Password = nil
-	_, err := Connect(cfg)
+	cfg.Ask = nil
+	_, err := Connect(t.Context(), cfg)
 	if err == nil {
 		t.Fatal("Connect connected with no authentication method")
 	}
@@ -375,7 +375,7 @@ func TestConnectReportsANamedKeyItCannotRead(t *testing.T) {
 	cfg.NoIdentities = false
 	cfg.Identities = []string{missing}
 
-	_, err := Connect(cfg)
+	_, err := Connect(t.Context(), cfg)
 	if err == nil {
 		t.Fatal("Connect ignored a private key it was told to use")
 	}

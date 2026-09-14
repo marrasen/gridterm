@@ -355,13 +355,21 @@ func TestMenuRunsACommand(t *testing.T) {
 		t.Fatalf("top modal = %T, want a menu", a.root.Modal())
 	}
 
-	// The File menu starts on "New tab".
+	// The File menu starts on "Connect to a server".
 	cmd, ok := menu.Selected()
 	if !ok {
 		t.Fatal("nothing is selected")
 	}
-	if cmd.ID != "tab.open" {
+	if cmd.ID != "server.connect" {
 		t.Fatalf("selected %q, want the first line of the File menu", cmd.ID)
+	}
+	// Down to "New tab", which is the line this test runs: it opens a
+	// pane rather than a dialog, so the tree can be checked afterwards.
+	if _, err := a.root.HandleKey(press(input.KeyDown, 0)); err != nil {
+		t.Fatalf("down: %v", err)
+	}
+	if cmd, _ := menu.Selected(); cmd.ID != "tab.open" {
+		t.Fatalf("after Down, selected %q, want tab.open", cmd.ID)
 	}
 	if _, err := a.root.HandleKey(press(input.KeyEnter, 0)); err != nil {
 		t.Fatalf("enter: %v", err)

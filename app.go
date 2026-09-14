@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"sync/atomic"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/input"
 	"github.com/marrasen/gridterm/input/ebitenin"
+	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/render"
 	"github.com/marrasen/gridterm/session"
 	"github.com/marrasen/gridterm/ui"
@@ -59,6 +61,19 @@ type app struct {
 
 	// bar is the row of menu titles at the top of the window.
 	bar *ui.Menubar
+
+	// pump carries work from the goroutines connecting to machines to
+	// this one, which is the only one that may touch the widget tree.
+	pump pump
+
+	// ctx is cancelled when the window closes, which lets go of every
+	// connection still being made and every dialog waiting for an answer.
+	ctx  context.Context
+	stop context.CancelFunc
+
+	// keys holds private keys the user has unlocked, so a passphrase is
+	// asked for once rather than once per connection.
+	keys *remote.Ring
 
 	// shot drives a screenshot and then closes the window, for looking
 	// at what the drawing code actually produced. Nil in ordinary use.
@@ -129,6 +144,9 @@ func (a *app) Update() error {
 		return nil
 	}
 
+	// Before anything else: a connection that has finished is waiting to
+	// put a terminal on screen, and a dialog it needs is waiting to open.
+	a.pump.run()
 	a.reapExited()
 	a.reapFontScan()
 	if a.shot != nil {
@@ -292,6 +310,8 @@ func (a *app) commands() {
 		}},
 		ui.Command{ID: "pane.close", Title: "Close pane", Run: a.closeFocused},
 		ui.Command{ID: "tab.open", Title: "New tab", Run: a.openTab},
+		ui.Command{ID: "server.connect", Title: "Connect to a server", Run: a.openServer},
+		ui.Command{ID: "keys.lock", Title: "Forget unlocked keys", Run: a.lockKeys},
 		ui.Command{ID: "palette.open", Title: "Show all commands", Run: a.openPalette},
 		ui.Command{ID: "menu.open", Title: "Show the menu bar", Run: a.openMenu},
 		ui.Command{ID: "tab.next", Title: "Next tab", Run: func() error {
@@ -329,6 +349,7 @@ func (a *app) commands() {
 		{Key: input.KeyTab, Mods: input.ModCtrl}:                     "pane.next",
 		{Key: input.KeyTab, Mods: input.ModCtrl | input.ModShift}:    "pane.previous",
 		{Key: input.KeyT, Mods: input.ModCtrl | input.ModShift}:      "tab.open",
+		{Key: input.KeyN, Mods: input.ModCtrl | input.ModShift}:      "server.connect",
 		{Key: input.KeyPageDown, Mods: input.ModCtrl}:                "tab.next",
 		{Key: input.KeyPageUp, Mods: input.ModCtrl}:                  "tab.previous",
 		{Key: input.KeyK, Mods: input.ModCtrl}:                       "palette.open",

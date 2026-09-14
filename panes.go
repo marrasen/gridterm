@@ -22,22 +22,12 @@ func (a *app) newTerminal() (*term.Terminal, error) {
 	if err != nil {
 		return nil, fmt.Errorf("start session: %w", err)
 	}
-	t, err := term.New(term.Config{
-		Session:        sess,
-		Size:           ui.Size{Cols: a.lastSize[0], Rows: a.lastSize[1]},
-		Scrollback:     a.scrollback,
-		Palette:        &a.colours,
-		ReadClipboard:  clipboardRead,
-		WriteClipboard: a.clip.set,
-		OnExit:         a.paneExited,
-		OnError:        a.logError,
-	})
+	t, err := a.newTerminalOn(sess)
 	if err != nil {
 		// The session is ours now and nothing else will close it.
 		_ = sess.Close()
-		return nil, fmt.Errorf("start terminal: %w", err)
+		return nil, err
 	}
-	a.panes[t] = struct{}{}
 	return t, nil
 }
 
@@ -117,7 +107,16 @@ func (a *app) openTab() error {
 	if err != nil {
 		return err
 	}
+	return a.placeTab(next)
+}
 
+// placeTab puts a widget in the strip holding the focused pane, starting
+// a strip if it is not in one.
+func (a *app) placeTab(next ui.Widget) error {
+	current := ui.FocusedLeaf(a.root.Widget())
+	if current == nil {
+		return errors.New("nothing to open a tab beside")
+	}
 	if strip, _ := a.stripAbove(current); strip != nil {
 		strip.Add(next)
 	} else {

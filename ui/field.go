@@ -1,0 +1,363 @@
+package ui
+
+import (
+	"image/color"
+	"strings"
+	"unicode"
+
+	"github.com/marrasen/gridterm/grid"
+	"github.com/marrasen/gridterm/input"
+)
+
+// FieldStyle colours a text field.
+type FieldStyle struct {
+	// FG and BG are the text and the box it sits in.
+	FG, BG color.RGBA
+
+	// PlaceholderFG dims the hint shown while the field is empty.
+	PlaceholderFG color.RGBA
+}
+
+// Field is one line of text being typed into.
+//
+// It is the only text editor in the toolkit, so the palette, the forms
+// and anything else that takes typing all move the caret the same way.
+// The caret steps by grapheme cluster rather than by rune, because the
+// grid draws a base character and its combining marks in one cell.
+type Field struct {
+	Style FieldStyle
+
+	// Placeholder is shown while the field is empty and says what the
+	// field is for.
+	Placeholder string
+
+	// Mask replaces every cluster on screen, for a password. What was
+	// typed is unchanged; only the drawing differs.
+	Mask rune
+
+	// OnChange is called after every change to the text.
+	OnChange func(string)
+
+	// ReadClipboard backs the paste shortcut. A nil one disables it.
+	ReadClipboard func() string
+
+	text string
+	at   int // the caret, a byte offset into text at a cluster boundary
+	left int // the first byte drawn, for text wider than the field
+
+	cols    int
+	focused bool
+}
+
+// NewField returns an empty field.
+func NewField() *Field { return &Field{} }
+
+// Text returns what has been typed.
+func (f *Field) Text() string { return f.text }
+
+// SetText replaces the text and puts the caret at the end.
+func (f *Field) SetText(s string) {
+	if f.text == s {
+		return
+	}
+	f.text = s
+	f.at = len(s)
+	f.scroll()
+	f.changed()
+}
+
+// Caret returns the caret's byte offset into the text.
+func (f *Field) Caret() int { return f.at }
+
+// SetCaret moves the caret to the cluster boundary at or before a byte
+// offset, so a caller cannot put it inside a character.
+func (f *Field) SetCaret(at int) {
+	at = min(max(at, 0), len(f.text))
+	marks := f.bounds()
+	f.at = marks[0]
+	for _, m := range marks {
+		if m > at {
+			break
+		}
+		f.at = m
+	}
+	f.scroll()
+}
+
+// Layout notes how wide the field is.
+func (f *Field) Layout(size Size) {
+	f.cols = size.Cols
+	f.scroll()
+}
+
+// SetFocus takes and gives up the caret.
+func (f *Field) SetFocus(on bool) { f.focused = on }
+
+// Focused reports whether the field is the one being typed into.
+func (f *Field) Focused() bool { return f.focused }
+
+// HandleKey edits the text. Keys it has no use for travel on, so Enter,
+// Escape and Tab still reach whatever is showing the field.
+func (f *Field) HandleKey(ev input.Event) (bool, error) {
+	if ev.Kind == input.Text {
+		// Delete is not a character to type, whatever the platform says.
+		if !ev.NormalText || ev.Rune < ' ' || ev.Rune == 0x7f {
+			return false, nil
+		}
+		f.insert(string(ev.Rune))
+		return true, nil
+	}
+	if ev.Kind != input.KeyPress && ev.Kind != input.KeyRepeat {
+		return false, nil
+	}
+
+	// Ctrl and Ctrl+Shift both paste, because the window binds paste to
+	// Ctrl+Shift+V and every other program binds it to Ctrl+V.
+	if ev.Ctrl() && ev.Key == input.KeyV {
+		f.paste()
+		return true, nil
+	}
+	// Alt means something else everywhere it is used here, and Super is
+	// the window manager's.
+	if ev.Mods.Has(input.ModAlt) || ev.Mods.Has(input.ModSuper) {
+		return false, nil
+	}
+
+	switch ev.Key {
+	case input.KeyLeft:
+		if ev.Ctrl() {
+			f.at = f.wordLeft(f.at)
+		} else {
+			f.at = f.prev(f.at)
+		}
+	case input.KeyRight:
+		if ev.Ctrl() {
+			f.at = f.wordRight(f.at)
+		} else {
+			f.at = f.next(f.at)
+		}
+	case input.KeyHome:
+		f.at = 0
+	case input.KeyEnd:
+		f.at = len(f.text)
+	case input.KeyBackspace:
+		to := f.prev(f.at)
+		if ev.Ctrl() {
+			to = f.wordLeft(f.at)
+		}
+		f.cut(to, f.at)
+		return true, nil
+	case input.KeyDelete:
+		to := f.next(f.at)
+		if ev.Ctrl() {
+			to = f.wordRight(f.at)
+		}
+		f.cut(f.at, to)
+		return true, nil
+	case input.KeyU:
+		// Ctrl+U clears back to the start, the way a shell line does.
+		if !ev.Ctrl() {
+			return false, nil
+		}
+		f.cut(0, f.at)
+		return true, nil
+	default:
+		return false, nil
+	}
+	f.scroll()
+	return true, nil
+}
+
+// Draw paints the text into the first row of the view.
+func (f *Field) Draw(v grid.View) {
+	cols, rows := v.Size()
+	if cols <= 0 || rows <= 0 {
+		return
+	}
+	f.cols = cols
+	f.scroll()
+
+	blank := grid.Cell{Rune: ' ', FG: f.Style.FG, BG: f.Style.BG, Width: 1}
+	v.Sub(0, 0, cols, 1).Fill(blank)
+
+	if f.text == "" && f.Placeholder != "" && !f.focused {
+		v.SetString(0, 0, f.Placeholder, f.Style.PlaceholderFG, f.Style.BG, 0)
+		return
+	}
+
+	at := 0
+	for _, c := range f.clustersFrom(f.left) {
+		shown, width := c, grid.StringWidth(c)
+		if f.Mask != 0 {
+			shown, width = string(f.Mask), grid.RuneWidth(f.Mask)
+		}
+		if at+width > cols {
+			break
+		}
+		at = v.SetString(at, 0, shown, f.Style.FG, f.Style.BG, 0)
+	}
+
+	// Only the focused field may place the cursor: the grid has one and
+	// no idea who owns it.
+	if f.focused {
+		if col := f.colOf(f.at) - f.colOf(f.left); col < cols {
+			v.SetCursor(grid.Cursor{X: col, Y: 0, Visible: true, Style: grid.CursorBar})
+		}
+	}
+}
+
+// insert puts text at the caret and moves it past.
+func (f *Field) insert(s string) {
+	if s == "" {
+		return
+	}
+	f.text = f.text[:f.at] + s + f.text[f.at:]
+	f.at += len(s)
+	f.scroll()
+	f.changed()
+}
+
+// cut removes the text between two byte offsets and leaves the caret at
+// the start of the gap.
+func (f *Field) cut(from, to int) {
+	if from > to {
+		from, to = to, from
+	}
+	if from == to {
+		return
+	}
+	f.text = f.text[:from] + f.text[to:]
+	f.at = from
+	f.scroll()
+	f.changed()
+}
+
+// paste puts the clipboard in at the caret, as one line: a newline in a
+// one-line field would be typed into a box that cannot show it.
+func (f *Field) paste() {
+	if f.ReadClipboard == nil {
+		return
+	}
+	s := f.ReadClipboard()
+	if i := strings.IndexAny(s, "\r\n"); i >= 0 {
+		s = s[:i]
+	}
+	f.insert(s)
+}
+
+func (f *Field) changed() {
+	if f.OnChange != nil {
+		f.OnChange(f.text)
+	}
+}
+
+// bounds returns the byte offsets the caret may sit at: the start of
+// every grapheme cluster, and the end of the text.
+func (f *Field) bounds() []int {
+	out := make([]int, 1, len(f.text)+1)
+	at := 0
+	for _, c := range grid.Clusters(f.text) {
+		at += len(c)
+		out = append(out, at)
+	}
+	return out
+}
+
+// prev returns the caret position one cluster before at.
+func (f *Field) prev(at int) int {
+	last := 0
+	for _, m := range f.bounds() {
+		if m >= at {
+			return last
+		}
+		last = m
+	}
+	return last
+}
+
+// next returns the caret position one cluster after at.
+func (f *Field) next(at int) int {
+	for _, m := range f.bounds() {
+		if m > at {
+			return m
+		}
+	}
+	return len(f.text)
+}
+
+// wordLeft returns the start of the word before at, stepping over
+// whatever separated them.
+//
+// A word is letters and digits; everything else separates. That is what
+// makes Ctrl+Backspace in "deploy@web1" take the host and leave the
+// account, rather than taking the lot.
+func (f *Field) wordLeft(at int) int {
+	for at > 0 && !isWordRune(f.runeBefore(at)) {
+		at = f.prev(at)
+	}
+	for at > 0 && isWordRune(f.runeBefore(at)) {
+		at = f.prev(at)
+	}
+	return at
+}
+
+// wordRight returns the position just past the word after at.
+func (f *Field) wordRight(at int) int {
+	for at < len(f.text) && !isWordRune(f.runeAt(at)) {
+		at = f.next(at)
+	}
+	for at < len(f.text) && isWordRune(f.runeAt(at)) {
+		at = f.next(at)
+	}
+	return at
+}
+
+func (f *Field) runeAt(at int) rune {
+	for _, r := range f.text[at:] {
+		return r
+	}
+	return 0
+}
+
+func (f *Field) runeBefore(at int) rune {
+	return f.runeAt(f.prev(at))
+}
+
+func isWordRune(r rune) bool { return unicode.IsLetter(r) || unicode.IsNumber(r) }
+
+// colOf returns the column a byte offset is drawn at, counting from the
+// start of the text rather than from the first cluster shown.
+func (f *Field) colOf(at int) int {
+	if f.Mask != 0 {
+		return len(grid.Clusters(f.text[:at])) * max(grid.RuneWidth(f.Mask), 1)
+	}
+	return grid.StringWidth(f.text[:at])
+}
+
+// clustersFrom returns the clusters from a byte offset on.
+func (f *Field) clustersFrom(at int) []string {
+	if at >= len(f.text) {
+		return nil
+	}
+	return grid.Clusters(f.text[at:])
+}
+
+// scroll slides the shown text along so the caret is always in the box.
+//
+// Without it a field narrower than what it holds is typed into blind:
+// the caret walks off the right-hand edge and nothing moves.
+func (f *Field) scroll() {
+	f.at = min(max(f.at, 0), len(f.text))
+	if f.cols <= 0 {
+		f.left = 0
+		return
+	}
+	if f.left > f.at {
+		f.left = f.at
+	}
+	// One column is kept for the caret itself, which sits past the last
+	// character when the text ends there.
+	for f.colOf(f.at)-f.colOf(f.left) > f.cols-1 {
+		f.left = f.next(f.left)
+	}
+}

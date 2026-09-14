@@ -3,6 +3,7 @@ package remote
 import (
 	"fmt"
 	"net"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -72,6 +73,42 @@ func (h Host) Shell(cols, rows int) ShellConfig {
 	return ShellConfig{Cols: cols, Rows: rows, Term: h.Term}
 }
 
+// clone returns a copy that shares nothing with the original, so a
+// caller cannot change what is saved without saving it.
+func (h Host) clone() Host {
+	h.Identities = slices.Clone(h.Identities)
+	return h
+}
+
+// tidy trims what a user typed, so a name with a stray space does not
+// become a different server from the one they meant.
+func (h Host) tidy() Host {
+	h.Name = strings.TrimSpace(h.Name)
+	h.Address = strings.TrimSpace(h.Address)
+	h.User = strings.TrimSpace(h.User)
+	h.Via = strings.TrimSpace(h.Via)
+	h.Term = strings.TrimSpace(h.Term)
+	kept := make([]string, 0, len(h.Identities))
+	for _, path := range h.Identities {
+		if path = strings.TrimSpace(path); path != "" {
+			kept = append(kept, path)
+		}
+	}
+	h.Identities = kept
+	return h
+}
+
+// CommandName reduces a server name to the part a command id is built
+// from. Names hold spaces and capitals; an id is lowercase and has
+// none, so that a key binding naming one is readable.
+//
+// It lives here because a Book has to refuse two names that reduce to
+// the same thing: one of the two would be unreachable from the menu and
+// the palette.
+func CommandName(name string) string {
+	return strings.ToLower(strings.ReplaceAll(strings.TrimSpace(name), " ", "-"))
+}
+
 // Validate reports what is wrong with a host, or nil.
 //
 // The address goes into known_hosts once its key is trusted, so it is
@@ -94,6 +131,19 @@ func (h Host) Validate() error {
 		return fmt.Errorf("the user name contains a character that is not allowed")
 	case h.Via == h.Name && h.Via != "":
 		return fmt.Errorf("%q cannot be reached through itself", h.Name)
+	case CommandName(h.Name) == "":
+		return fmt.Errorf("the name has to have something in it a command can be named after")
+	}
+	for _, path := range h.Identities {
+		if path == "" {
+			return fmt.Errorf("one of the key files has no name")
+		}
+		if strings.IndexFunc(path, unprintable) >= 0 {
+			return fmt.Errorf("a key file name contains something that cannot be shown")
+		}
+	}
+	if strings.IndexFunc(h.Term, unprintable) >= 0 {
+		return fmt.Errorf("the terminal type contains something that cannot be shown")
 	}
 	return nil
 }

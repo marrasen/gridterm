@@ -333,6 +333,7 @@ func (a *app) commands() {
 		ui.Command{ID: "tab.open", Title: "New tab", Run: a.openTab},
 		ui.Command{ID: "server.connect", Title: "Connect to a server", Run: a.openServer},
 		ui.Command{ID: "server.add", Title: "Add a server", Run: a.openAddServer},
+		ui.Command{ID: "server.reload", Title: "Reread the server list", Run: a.reloadBook},
 		ui.Command{ID: "keys.lock", Title: "Forget unlocked keys", Run: a.lockKeys},
 		ui.Command{ID: "palette.open", Title: "Show all commands", Run: a.openPalette},
 		ui.Command{ID: "menu.open", Title: "Show the menu bar", Run: a.openMenu},

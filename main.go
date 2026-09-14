@@ -272,9 +272,10 @@ func loadFamily(name string) (glyph.Fonts, string, error) {
 func loadBook() *remote.Book {
 	path, err := remote.BookPath()
 	if err != nil {
-		log.Print(err)
-		// No path at all, so nothing to read and nothing to save over.
-		return &remote.Book{}
+		// A book that knows why it is unusable, so the window says so
+		// and the add dialog refuses rather than taking what is typed
+		// and having nowhere to put it.
+		return remote.UnusableBook(err)
 	}
 	book, err := remote.LoadBook(path)
 	if err != nil {

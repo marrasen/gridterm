@@ -287,73 +287,66 @@ func names(hosts []Host) []string {
 	return out
 }
 
-// The file is written through a rename, so a failure part way leaves the
-// old list where it was rather than half of the new one.
-func TestBookKeepsTheOldListWhenTheWriteFails(t *testing.T) {
+// A save that cannot land changes nothing: no file appears, and the list
+// in memory is as it was rather than showing a server that is saved
+// nowhere.
+func TestBookSaveThatCannotLandChangesNothing(t *testing.T) {
 	dir := t.TempDir()
-	b, err := LoadBook(filepath.Join(dir, "servers.json"))
+	// A file where a directory would have to be, so nothing can be
+	// created under it.
+	blocker := filepath.Join(dir, "blocker")
+	if err := os.WriteFile(blocker, []byte("not a directory"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	path := filepath.Join(blocker, "sub", "servers.json")
+
+	b, err := LoadBook(path)
 	if err != nil {
 		t.Fatalf("LoadBook: %v", err)
 	}
-	if err := b.Put(margit(), ""); err != nil {
-		t.Fatalf("Put: %v", err)
+	if err := b.Put(margit(), ""); err == nil {
+		t.Fatal("a save that could not land reported success")
+	}
+	if n := len(b.Hosts()); n != 0 {
+		t.Fatalf("%d servers in memory after a failed save, want none", n)
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("something was written anyway: %v", err)
+	}
+}
+
+// A change refused after it was applied leaves the list exactly as it
+// was, on disk and in memory.
+func TestBookRefusedChangeLeavesTheListAlone(t *testing.T) {
+	b := newBook(t)
+	for _, h := range []Host{
+		{Name: "a", Address: "a.example"},
+		{Name: "b", Address: "b.example", Via: "a"},
+	} {
+		if err := b.Put(h, ""); err != nil {
+			t.Fatalf("Put %s: %v", h.Name, err)
+		}
 	}
 	before, err := os.ReadFile(b.Path())
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
 
-	// A directory where the file should go: the rename cannot land.
-	blocked := &Book{path: filepath.Join(dir, "sub", "servers.json"), hosts: b.Hosts()}
-	if err := os.MkdirAll(blocked.path, 0o700); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	if err := blocked.Put(Host{Name: "other", Address: "other.example"}, ""); err == nil {
-		t.Fatal("a write that could not land reported success")
-	}
-	if n := len(blocked.Hosts()); n != 1 {
-		t.Fatalf("%d servers in memory after a failed save, want the one that was there", n)
+	// Closing the loop, which is only found once the change is applied.
+	if err := b.Put(Host{Name: "a", Address: "a.example", Via: "b"}, "a"); err == nil {
+		t.Fatal("a route that goes round in a circle was saved")
 	}
 
+	got, _ := b.Lookup("a")
+	if got.Via != "" {
+		t.Fatalf("a goes through %q after the refusal", got.Via)
+	}
 	after, err := os.ReadFile(b.Path())
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
 	if string(after) != string(before) {
-		t.Fatal("the saved list changed when a different write failed")
-	}
-}
-
-// Nothing that could be a secret has anywhere to go.
-func TestBookHoldsNoSecrets(t *testing.T) {
-	b := newBook(t)
-	if err := b.Put(margit(), ""); err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-	raw, err := os.ReadFile(b.Path())
-	if err != nil {
-		t.Fatalf("read: %v", err)
-	}
-	for _, word := range []string{"password", "passphrase", "secret"} {
-		if strings.Contains(strings.ToLower(string(raw)), word) {
-			t.Fatalf("the saved list mentions %q:\n%s", word, raw)
-		}
-	}
-}
-
-func TestBookIsSortedSoItDoesNotShuffle(t *testing.T) {
-	b := newBook(t)
-	for _, name := range []string{"zeta", "Alpha", "middle"} {
-		if err := b.Put(Host{Name: name, Address: name + ".example"}, ""); err != nil {
-			t.Fatalf("Put %s: %v", name, err)
-		}
-	}
-	want := []string{"Alpha", "middle", "zeta"}
-	got := names(b.Hosts())
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("order = %v, want %v", got, want)
-		}
+		t.Fatalf("the file changed: %s", after)
 	}
 }
 

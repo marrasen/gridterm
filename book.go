@@ -37,12 +37,12 @@ func (a *app) refreshServers() {
 	var items []ui.MenuItem
 	for _, h := range hosts {
 		open := ui.Command{
-			ID:    openPrefix + commandSlug(h.Name),
+			ID:    openPrefix + remote.CommandName(h.Name),
 			Title: "Connect to " + h.Name,
 			Run:   func() error { return a.connectSaved(h.Name) },
 		}
 		edit := ui.Command{
-			ID:    editPrefix + commandSlug(h.Name),
+			ID:    editPrefix + remote.CommandName(h.Name),
 			Title: "Edit " + h.Name + "…",
 			Run:   func() error { return a.openEditServer(h.Name) },
 		}
@@ -81,7 +81,8 @@ func (a *app) refreshServerMenu(items []ui.MenuItem) {
 	}
 	items = append(items,
 		ui.MenuItem{Command: "server.connect"},
-		ui.MenuItem{Command: "server.add"})
+		ui.MenuItem{Command: "server.add"},
+		ui.MenuItem{Command: "server.reload"})
 
 	def := ui.MenuDef{Title: "Servers", Items: items}
 	for i, have := range a.bar.Menus {
@@ -91,13 +92,6 @@ func (a *app) refreshServerMenu(items []ui.MenuItem) {
 		}
 	}
 	a.bar.Menus = append(a.bar.Menus, def)
-}
-
-// commandSlug turns a server's name into part of a command id. Names
-// hold spaces and capitals; an id is lowercase and has none, so that a
-// key binding naming one is readable.
-func commandSlug(name string) string {
-	return strings.ToLower(strings.ReplaceAll(strings.TrimSpace(name), " ", "-"))
 }
 
 // connectSaved opens a terminal on a saved machine.
@@ -113,6 +107,16 @@ func (a *app) connectSaved(name string) error {
 			h.Name, h.Via)
 	}
 	a.connect(h.Config())
+	return nil
+}
+
+// reloadBook reads the server list again, for a user who has repaired
+// it since the window opened.
+func (a *app) reloadBook() error {
+	if err := a.book.Reload(); err != nil {
+		return err
+	}
+	a.refreshServers()
 	return nil
 }
 
@@ -164,8 +168,16 @@ func (a *app) openServerForm(under string) error {
 		}
 		h.Via = strings.TrimSpace(via.Text())
 		h.Term = was.Term
+		// The dialog edits the first key file. Any others the machine
+		// had stay: a field that cannot show them must not delete them.
+		rest := was.Identities
+		if len(rest) > 0 {
+			rest = rest[1:]
+		}
 		if path := strings.TrimSpace(key.Text()); path != "" {
-			h.Identities = []string{path}
+			h.Identities = append([]string{path}, rest...)
+		} else {
+			h.Identities = rest
 		}
 		return a.book.Put(h, under)
 	}})

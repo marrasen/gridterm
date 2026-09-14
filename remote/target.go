@@ -51,6 +51,10 @@ func ParseTarget(target string) (Config, error) {
 }
 
 // badInHost reports a character that has no business in a host name.
+//
+// The @ is there because ParseTarget splits on the last one, so anything
+// left in the host is a second one -- and Target would render it back
+// into a string that reads as a different user on a different machine.
 func badInHost(r rune) bool {
-	return r <= ' ' || r == 0x7f || r == '#'
+	return r <= ' ' || r == 0x7f || r == '#' || r == '@'
 }

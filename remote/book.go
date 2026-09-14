@@ -1,9 +1,11 @@
 package remote
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -37,6 +39,9 @@ type saved struct {
 // one loses it for good; the failure is reported and the user gets to
 // repair the file.
 //
+// Every change re-reads the file first, so a second window's work is
+// never written over by a list built from a stale read.
+//
 // A Book is safe to use from several goroutines.
 type Book struct {
 	path string
@@ -69,40 +74,22 @@ func BookPath() (string, error) {
 // looks like.
 func LoadBook(path string) (*Book, error) {
 	b := &Book{path: path}
-	raw, err := os.ReadFile(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return b, nil
-	}
-	if err != nil {
-		b.loadErr = fmt.Errorf("remote: read the server list %s: %w", path, err)
-		return b, b.loadErr
-	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b, b.rereadLocked()
+}
 
-	var file saved
-	if err := json.Unmarshal(raw, &file); err != nil {
-		b.loadErr = fmt.Errorf("remote: the server list %s is not readable: %w", path, err)
-		return b, b.loadErr
+// UnusableBook returns a book that holds nothing and will not save,
+// because of err.
+//
+// It exists for a caller that could not work out where the file lives.
+// Handing back a plain empty Book instead would give a window that
+// silently offers to save servers it has nowhere to put.
+func UnusableBook(err error) *Book {
+	if err == nil {
+		err = errors.New("the server list is unavailable")
 	}
-	if file.Version > bookVersion {
-		b.loadErr = fmt.Errorf(
-			"remote: the server list %s was written by a newer gridterm (version %d)",
-			path, file.Version)
-		return b, b.loadErr
-	}
-	for i, h := range file.Servers {
-		if err := h.Validate(); err != nil {
-			b.loadErr = fmt.Errorf("remote: the server list %s: server %d: %w", path, i+1, err)
-			return b, b.loadErr
-		}
-	}
-	if name, dup := firstDuplicate(file.Servers); dup {
-		b.loadErr = fmt.Errorf("remote: the server list %s names %q twice", path, name)
-		return b, b.loadErr
-	}
-
-	b.hosts = file.Servers
-	sortHosts(b.hosts)
-	return b, nil
+	return &Book{loadErr: err}
 }
 
 // Err returns why the book cannot be saved, or nil.
@@ -115,11 +102,19 @@ func (b *Book) Err() error {
 // Path returns the file the book is kept in.
 func (b *Book) Path() string { return b.path }
 
-// Hosts returns the saved machines, by name. The slice is a copy.
+// Reload reads the file again, for a user who has repaired it.
+func (b *Book) Reload() error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.rereadLocked()
+}
+
+// Hosts returns the saved machines, by name. The slice is a copy, deep
+// enough that a caller cannot change what is saved without saving it.
 func (b *Book) Hosts() []Host {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return slices.Clone(b.hosts)
+	return cloneHosts(b.hosts)
 }
 
 // Lookup returns the machine with a name, ignoring case so a name typed
@@ -127,7 +122,8 @@ func (b *Book) Hosts() []Host {
 func (b *Book) Lookup(name string) (Host, bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.lookupLocked(name)
+	h, ok := b.lookupLocked(name)
+	return h.clone(), ok
 }
 
 func (b *Book) lookupLocked(name string) (Host, bool) {
@@ -144,13 +140,17 @@ func (b *Book) lookupLocked(name string) (Host, bool) {
 // under is the name it is replacing, for a rename. An empty one means it
 // is being added, and a name already taken is refused.
 func (b *Book) Put(h Host, under string) error {
+	h = h.tidy()
 	if err := h.Validate(); err != nil {
 		return err
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if b.loadErr != nil {
-		return fmt.Errorf("%w: %w", ErrUnsaveable, b.loadErr)
+	// The file first: another window may have changed it since this one
+	// read it, and writing a list built from a stale read would throw
+	// that work away.
+	if err := b.rereadLocked(); err != nil {
+		return fmt.Errorf("%w: %w", ErrUnsaveable, err)
 	}
 
 	at := -1
@@ -166,19 +166,22 @@ func (b *Book) Put(h Host, under string) error {
 		}
 	}
 	// A name already used by a different entry would give two servers
-	// the same one, and Via names a server by its name.
+	// the same one, and Via names a server by its name. Two names that
+	// reduce to the same command id are refused for the same reason: one
+	// of the two would be unreachable from the menu and the palette.
 	for i, have := range b.hosts {
-		if i != at && strings.EqualFold(have.Name, h.Name) {
+		if i == at {
+			continue
+		}
+		if strings.EqualFold(have.Name, h.Name) {
 			return fmt.Errorf("there is already a server called %q", have.Name)
 		}
-	}
-	if h.Via != "" {
-		if _, ok := b.lookupLocked(h.Via); !ok {
-			return fmt.Errorf("there is no saved server called %q to reach it through", h.Via)
+		if CommandName(have.Name) == CommandName(h.Name) {
+			return fmt.Errorf("%q is too much like %q to tell apart", h.Name, have.Name)
 		}
 	}
 
-	before := slices.Clone(b.hosts)
+	before := cloneHosts(b.hosts)
 	if at >= 0 {
 		// A rename leaves anything that went through the old name
 		// pointing at nothing, so those follow it.
@@ -193,24 +196,23 @@ func (b *Book) Put(h Host, under string) error {
 	} else {
 		b.hosts = append(b.hosts, h)
 	}
-	if err := b.checkRoutes(); err != nil {
+	// Checked after the change, not before: a rename can take away the
+	// very name a route was pointing at, and a check run first would
+	// have approved it.
+	if err := checkRoutes(b.hosts); err != nil {
 		b.hosts = before
 		return err
 	}
 	sortHosts(b.hosts)
-	if err := b.saveLocked(); err != nil {
-		b.hosts = before
-		return err
-	}
-	return nil
+	return b.applyLocked(before)
 }
 
 // Remove takes a machine out of the list and saves.
 func (b *Book) Remove(name string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if b.loadErr != nil {
-		return fmt.Errorf("%w: %w", ErrUnsaveable, b.loadErr)
+	if err := b.rereadLocked(); err != nil {
+		return fmt.Errorf("%w: %w", ErrUnsaveable, err)
 	}
 
 	at := -1
@@ -230,8 +232,16 @@ func (b *Book) Remove(name string) error {
 		}
 	}
 
-	before := slices.Clone(b.hosts)
+	before := cloneHosts(b.hosts)
 	b.hosts = slices.Delete(b.hosts, at, at+1)
+	return b.applyLocked(before)
+}
+
+// applyLocked writes the changed list out, and puts back what was there
+// if it will not save. One of these rather than one per change: a window
+// showing servers that are saved nowhere is worse than a change that
+// did not happen.
+func (b *Book) applyLocked(before []Host) error {
 	if err := b.saveLocked(); err != nil {
 		b.hosts = before
 		return err
@@ -258,17 +268,161 @@ func (b *Book) Route(name string) ([]Host, error) {
 		if !ok {
 			return nil, fmt.Errorf("there is no saved server called %q", at)
 		}
-		route = append(route, h)
+		route = append(route, h.clone())
 		at = h.Via
 	}
 	slices.Reverse(route)
 	return route, nil
 }
 
-// checkRoutes reports a Via that goes round in a circle, which would
-// otherwise be found only when somebody tried to connect.
-func (b *Book) checkRoutes() error {
-	for _, start := range b.hosts {
+// rereadLocked reads the file into the book, replacing what it holds.
+//
+// A file that is not there leaves an empty list and no error: that is
+// what the first run looks like, and also what it looks like after the
+// user deletes it.
+func (b *Book) rereadLocked() error {
+	if b.path == "" {
+		// Nothing was ever read, so there is nothing to reread. A book
+		// built by UnusableBook keeps the reason it is unusable.
+		if b.loadErr == nil {
+			b.loadErr = errors.New("remote: nowhere to keep the server list")
+		}
+		return b.loadErr
+	}
+
+	hosts, err := readBook(b.path)
+	if err != nil {
+		b.loadErr = err
+		b.hosts = nil
+		return err
+	}
+	b.loadErr = nil
+	b.hosts = hosts
+	return nil
+}
+
+// readBook parses the file, or says why it could not.
+func readBook(path string) ([]Host, error) {
+	raw, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("remote: read the server list %s: %w", path, err)
+	}
+
+	// A key written twice is not a list to guess at: Go's decoder keeps
+	// the last one, so a file holding "servers" twice would quietly
+	// become whichever came second -- and the next save would make that
+	// permanent.
+	if err := checkNoRepeatedKeys(raw); err != nil {
+		return nil, fmt.Errorf("remote: the server list %s: %w", path, err)
+	}
+
+	var file saved
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	// Nothing is dropped on the way through. A field this build does not
+	// know about belongs to somebody, and writing the file back without
+	// it would delete it.
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&file); err != nil {
+		return nil, fmt.Errorf("remote: the server list %s is not readable: %w", path, err)
+	}
+	if err := endOfFile(dec); err != nil {
+		return nil, fmt.Errorf("remote: the server list %s: %w", path, err)
+	}
+
+	switch {
+	case file.Version > bookVersion:
+		return nil, fmt.Errorf(
+			"remote: the server list %s was written by a newer gridterm (version %d)",
+			path, file.Version)
+	case file.Version < 1:
+		// Covers a file of "null" or "{}" as well as one written with no
+		// version at all: none of them is a list this can safely replace.
+		return nil, fmt.Errorf("remote: the server list %s has no version number", path)
+	}
+
+	for i, h := range file.Servers {
+		if err := h.Validate(); err != nil {
+			return nil, fmt.Errorf("remote: the server list %s: server %d: %w", path, i+1, err)
+		}
+	}
+	if name, dup := firstDuplicate(file.Servers); dup {
+		return nil, fmt.Errorf("remote: the server list %s names %q twice", path, name)
+	}
+	// Checked on the way in as well as on the way out, or a file with a
+	// broken route would load clean and then refuse every later change
+	// for a reason the user never touched.
+	if err := checkRoutes(file.Servers); err != nil {
+		return nil, fmt.Errorf("remote: the server list %s: %w", path, err)
+	}
+
+	sortHosts(file.Servers)
+	return file.Servers, nil
+}
+
+// endOfFile reports anything after the value that was decoded.
+func endOfFile(dec *json.Decoder) error {
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+		return errors.New("there is more in the file than one server list")
+	}
+	return nil
+}
+
+// checkNoRepeatedKeys reports an object holding the same key twice,
+// which the decoder would otherwise resolve by keeping the last.
+func checkNoRepeatedKeys(raw []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	// A stack of the keys seen in each object still being read.
+	var scopes []map[string]bool
+	for {
+		tok, err := dec.Token()
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			// Not readable as JSON at all, which the decode below says
+			// far better than this can.
+			return nil
+		}
+		switch t := tok.(type) {
+		case json.Delim:
+			switch t {
+			case '{':
+				scopes = append(scopes, map[string]bool{})
+			case '}':
+				if len(scopes) > 0 {
+					scopes = scopes[:len(scopes)-1]
+				}
+			}
+		case string:
+			// A string is a key only where an object is open and the
+			// decoder is expecting one, which is what More reports.
+			if len(scopes) == 0 || !dec.More() {
+				continue
+			}
+			at := scopes[len(scopes)-1]
+			if at[t] {
+				return fmt.Errorf("%q is in it twice", t)
+			}
+			at[t] = true
+		}
+	}
+}
+
+// checkRoutes reports a Via that names nothing, or that goes round in a
+// circle. Either would be found only when somebody tried to connect.
+func checkRoutes(hosts []Host) error {
+	find := func(name string) (Host, bool) {
+		for _, h := range hosts {
+			if strings.EqualFold(h.Name, name) {
+				return h, true
+			}
+		}
+		return Host{}, false
+	}
+	for _, start := range hosts {
 		seen := map[string]bool{}
 		for at := start.Name; at != ""; {
 			key := strings.ToLower(at)
@@ -276,9 +430,10 @@ func (b *Book) checkRoutes() error {
 				return fmt.Errorf("the route to %q goes round in a circle", start.Name)
 			}
 			seen[key] = true
-			h, ok := b.lookupLocked(at)
+			h, ok := find(at)
 			if !ok {
-				break
+				return fmt.Errorf("there is no saved server called %q to reach %q through",
+					at, start.Name)
 			}
 			at = h.Via
 		}
@@ -292,6 +447,11 @@ func (b *Book) checkRoutes() error {
 // crash or a full disk leaves the old list where it was rather than half
 // of the new one.
 func (b *Book) saveLocked() error {
+	if b.loadErr != nil {
+		// The one place the rule lives, so a mutator added later cannot
+		// forget it.
+		return fmt.Errorf("%w: %w", ErrUnsaveable, b.loadErr)
+	}
 	if b.path == "" {
 		return errors.New("remote: nowhere to save the server list")
 	}
@@ -301,11 +461,19 @@ func (b *Book) saveLocked() error {
 	}
 	raw = append(raw, '\n')
 
-	dir := filepath.Dir(b.path)
+	// The file the path really names. A rename replaces a link rather
+	// than what it points at, so a config file linked in from somewhere
+	// else would be quietly detached and stop being updated.
+	path := b.path
+	if real, err := filepath.EvalSymlinks(path); err == nil {
+		path = real
+	}
+
+	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("remote: write the server list: %w", err)
 	}
-	tmp, err := os.CreateTemp(dir, filepath.Base(b.path)+".*")
+	tmp, err := os.CreateTemp(dir, filepath.Base(path)+".*")
 	if err != nil {
 		return fmt.Errorf("remote: write the server list: %w", err)
 	}
@@ -326,11 +494,7 @@ func (b *Book) saveLocked() error {
 		_ = os.Remove(name)
 		return fmt.Errorf("remote: write the server list: %w", err)
 	}
-	if err := os.Chmod(name, 0o600); err != nil {
-		_ = os.Remove(name)
-		return fmt.Errorf("remote: write the server list: %w", err)
-	}
-	if err := os.Rename(name, b.path); err != nil {
+	if err := os.Rename(name, path); err != nil {
 		_ = os.Remove(name)
 		return fmt.Errorf("remote: write the server list: %w", err)
 	}
@@ -356,4 +520,14 @@ func sortHosts(hosts []Host) {
 	slices.SortFunc(hosts, func(a, b Host) int {
 		return strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
 	})
+}
+
+// cloneHosts copies a list deeply enough that nothing handed out shares
+// a slice with what is saved.
+func cloneHosts(hosts []Host) []Host {
+	out := make([]Host, len(hosts))
+	for i, h := range hosts {
+		out[i] = h.clone()
+	}
+	return out
 }

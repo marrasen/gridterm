@@ -143,6 +143,11 @@ func (a *app) dropMachine(name string) error {
 			errs = append(errs, a.closePane(t))
 		}
 	}
+	// A browser with a side on this machine is half a browser without
+	// it, and the session it was reading through has gone.
+	for _, b := range a.browsersOn(name) {
+		errs = append(errs, a.closePane(b.view))
+	}
 	return errors.Join(errs...)
 }
 

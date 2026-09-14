@@ -6,7 +6,7 @@ It runs a shell on a local pseudo-terminal — a PTY on Unix, a ConPTY on
 Windows — or on another machine over SSH, feeds the output through a VT
 emulator, and draws the resulting character grid as batched triangles.
 
-22,584 lines of Go, 28,025 lines of tests, 1,085 tests.
+23,816 lines of Go, 28,837 lines of tests, 1,110 tests.
 
 ![a shell running in gridterm](docs/shell.png)
 
@@ -29,6 +29,14 @@ emulator, and draws the resulting character grid as batched triangles.
   of the first, so no local port is opened for it and nothing else on
   the machine can use it. Closing the one in the middle closes what
   rides on it.
+- **A two-pane file browser.** Two filesystems side by side: this
+  machine and another, or two machines with gridterm in the middle. The
+  keys are the ones a two-pane browser has had for thirty years — Tab
+  swaps sides, Enter descends, Backspace goes up, Space marks, F5 copies
+  to the other pane, F6 moves, F7 makes a directory, F8 deletes. A
+  directory is never read on the goroutine that draws, so a slow machine
+  cannot stop the window, and a read that fails leaves the listing that
+  worked on screen with the reason beside it.
 - **File work in the background.** Copying, moving and deleting, on one
   machine or between two, with how far along it is and a way to stop it.
   A name that is already there is asked about — replace, skip, rename, or
@@ -118,6 +126,10 @@ gave. There is no way to pick a font by family name yet; give paths.
 | `Ctrl+Shift+L` | go to the connections panel |
 | `Ctrl+Shift+N` | connect to a server |
 
+In a file browser: `Tab` swaps panes, `Enter` descends, `Backspace` goes
+up, `Space` marks, `F2` renames, `F5` copies to the other pane, `F6`
+moves, `F7` makes a directory, `F8` deletes.
+
 On Windows there is nothing else to install — no C toolchain, no cgo:
 
 ```
@@ -155,11 +167,12 @@ encoders and both session types.
 | `vfs` | 668 | no | a filesystem a browser works on: this machine, or one over SFTP |
 | `jobs` | 1,138 | no | copying, moving and deleting in the background, with progress and cancel |
 | `meter` | 257 | no | bytes moved, and how long ago: the four states |
-| `ui` | 5,062 | no | the widget toolkit: panes, tabs, menus, dialogs, fields, lists |
+| `ui` | 5,067 | no | the widget toolkit: panes, tabs, menus, dialogs, fields, lists |
 | `ui/term` | 529 | no | a shell on a widget |
+| `ui/files` | 676 | no | the two-pane file browser |
 | `glyph` | 1,289 | yes | glyph atlas, system font fallback, box drawing |
 | `render` | 1,149 | yes | grid to batched triangles |
-| `main` | 4,000 | yes | the window and the wiring |
+| `main` | 4,551 | yes | the window and the wiring |
 
 The layering is deliberate: `vt` never imports the renderer, `input`
 never imports ebiten (that lives in `input/ebitenin`), `ui` knows nothing

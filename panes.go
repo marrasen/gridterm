@@ -7,6 +7,7 @@ import (
 
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/ui"
+	"github.com/marrasen/gridterm/ui/files"
 	"github.com/marrasen/gridterm/ui/term"
 )
 
@@ -243,11 +244,29 @@ func (a *app) isPane(w ui.Widget) bool {
 		return false
 	}
 	for _, leaf := range ui.Leaves(w) {
-		if _, ok := leaf.(*term.Terminal); !ok {
+		switch leaf.(type) {
+		case *term.Terminal:
+		case *files.Browser:
+			// A file browser is one pane with two sides rather than a
+			// container the tree may take apart: neither side means
+			// anything without the other.
+		default:
 			return false
 		}
 	}
 	return true
+}
+
+// browsersIn returns the file browsers inside a widget, for one that is
+// being taken out of the tree.
+func (a *app) browsersIn(w ui.Widget) []*browser {
+	var found []*browser
+	for at, b := range a.browsers {
+		if at == w || ui.ParentOf(w, at) != nil {
+			found = append(found, b)
+		}
+	}
+	return found
 }
 
 // closePane takes a pane out of the tree and ends every shell under it.
@@ -292,6 +311,13 @@ func (a *app) removePane(w ui.Widget, keep bool) error {
 	}
 
 	var err error
+	// A browser is not a terminal: it holds two filesystems, and one of
+	// them may be a session on a connection.
+	for _, b := range a.browsersIn(w) {
+		if cerr := a.closeBrowser(b.view); cerr != nil && err == nil {
+			err = cerr
+		}
+	}
 	for _, leaf := range doomed {
 		t, isTerm := leaf.(*term.Terminal)
 		if !isTerm {
@@ -317,7 +343,7 @@ func (a *app) removePane(w ui.Widget, keep bool) error {
 	// The window goes with the last pane. Counted rather than read off
 	// an empty tree: the connections panel is a leaf too, so the dock
 	// stands in for the pane that went and the tree is never empty.
-	if len(a.panes) == 0 {
+	if len(a.panes) == 0 && len(a.browsers) == 0 {
 		a.quit.Store(true)
 	}
 	if !detached && err == nil {

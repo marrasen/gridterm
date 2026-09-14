@@ -137,6 +137,11 @@ func (l *List) Selected() (ListRow, bool) {
 // SelectedIndex returns which row is selected, or -1.
 func (l *List) SelectedIndex() int { return l.at }
 
+// Move steps the bar through the rows, for a caller that acts on a row
+// and then wants the next one: marking a run of names is one key held
+// down rather than two alternating.
+func (l *List) Move(by int) { l.move(by) }
+
 // Select moves the selection to the row with a key, reporting whether
 // there is one.
 func (l *List) Select(key any) bool {

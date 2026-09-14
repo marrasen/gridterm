@@ -15,11 +15,13 @@ import (
 	"github.com/marrasen/gridterm/glyph"
 	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/input"
+	"github.com/marrasen/gridterm/jobs"
 	"github.com/marrasen/gridterm/meter"
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/render"
 	"github.com/marrasen/gridterm/session"
 	"github.com/marrasen/gridterm/ui"
+	"github.com/marrasen/gridterm/ui/files"
 	"github.com/marrasen/gridterm/ui/term"
 	"github.com/marrasen/gridterm/vt"
 )
@@ -107,6 +109,9 @@ func newTestApp(t *testing.T, cols, rows int) *testApp {
 		opening:    make(map[string]bool),
 		paneOn:     make(map[*term.Terminal]*machine),
 		tunnels:    make(map[*conns.Entry]*tunnel),
+		browsers:   make(map[ui.Widget]*browser),
+		queue:      jobs.New(1),
+		jobs:       make(map[*conns.Entry]*jobs.Job),
 	}}
 	// The window's own grid, so markDirty and setGridSize do what they do
 	// in the program rather than nothing at all.
@@ -166,6 +171,14 @@ func checkTree(t *testing.T, a *testApp) {
 			// The connections panel is a leaf of the dock, not a pane.
 			continue
 		}
+		if b, isBrowser := leaf.(*files.Browser); isBrowser {
+			// A file browser is a pane with two sides rather than a
+			// terminal, and the app keeps those in their own list.
+			if a.browsers[ui.Widget(b)] == nil {
+				t.Fatal("a browser in the tree is not in the app's list")
+			}
+			continue
+		}
 		pane, ok := leaf.(*term.Terminal)
 		if !ok {
 			t.Fatalf("a leaf is not a terminal: %T", leaf)
@@ -184,6 +197,14 @@ func checkTree(t *testing.T, a *testApp) {
 		return
 	}
 	leaf := ui.FocusedLeaf(a.root.Widget())
+	if b, isBrowser := leaf.(*files.Browser); isBrowser {
+		// A browser holds the keys itself and hands them to one of its
+		// two sides.
+		if a.root.Modal() == nil && !b.HasFocus() {
+			t.Fatal("the browser has the keys and neither of its sides does")
+		}
+		return
+	}
 	pane, ok := leaf.(*term.Terminal)
 	if !ok || !inTree[pane] {
 		t.Fatalf("focus is on %T, which is not a live pane", leaf)

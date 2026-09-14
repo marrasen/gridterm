@@ -24,6 +24,7 @@ import (
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/glyph"
 	"github.com/marrasen/gridterm/grid"
+	"github.com/marrasen/gridterm/jobs"
 	"github.com/marrasen/gridterm/meter"
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/render"
@@ -149,6 +150,9 @@ func main() {
 	a.opening = make(map[string]bool)
 	a.paneOn = make(map[*term.Terminal]*machine)
 	a.tunnels = make(map[*conns.Entry]*tunnel)
+	a.browsers = make(map[ui.Widget]*browser)
+	a.queue = jobs.New(0)
+	a.jobs = make(map[*conns.Entry]*jobs.Job)
 	a.scrollback = *scroll
 	a.colours = pal
 	a.panes = make(map[*term.Terminal]*conns.Entry)
@@ -211,6 +215,10 @@ func main() {
 	// connection carrying it goes away underneath it.
 	// The tunnels before the connections that carry them, so a port
 	// that could not be let go of is reported as its own failure.
+	// The file work first: a job holding a file open would keep the
+	// connection it runs over from closing cleanly.
+	a.queue.CancelAll()
+	a.queue.WaitFor(jobsGrace)
 	closed = append(closed, a.closeTunnels(), a.closeMachines())
 	if err := errors.Join(closed...); err != nil {
 		log.Fatal(err)

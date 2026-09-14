@@ -13,6 +13,7 @@ import (
 	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/input"
 	"github.com/marrasen/gridterm/input/ebitenin"
+	"github.com/marrasen/gridterm/jobs"
 	"github.com/marrasen/gridterm/meter"
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/render"
@@ -26,6 +27,15 @@ import (
 // drawing goroutine collects them. One per pane is plenty; the channel
 // only has to avoid blocking the goroutine reporting it.
 const exitQueue = 64
+
+// jobsGrace is how long a window that is closing waits for the file work
+// to stop.
+//
+// Cancelling cannot interrupt a read or a write already under way, so a
+// job on a machine that has stopped answering is let go of rather than
+// waited for: the connections close on the way out, which is what ends
+// it.
+const jobsGrace = 2 * time.Second
 
 // Font size limits and the step the zoom commands move by.
 const (
@@ -88,6 +98,16 @@ type app struct {
 	// that stands for each. They ride on a connection, so closing that
 	// closes them; this is what takes their rows away with it.
 	tunnels map[*conns.Entry]*tunnel
+
+	// browsers are the file browsers the window has open, by the widget
+	// each one is. They are not terminals, so the pane bookkeeping does
+	// not cover them.
+	browsers map[ui.Widget]*browser
+
+	// queue is the file work running in the background, and jobs are the
+	// panel rows that stand for each piece of it.
+	queue *jobs.Queue
+	jobs  map[*conns.Entry]*jobs.Job
 
 	// paneOn says which connection a pane is running on. Panes are
 	// grouped on the panel by a name, and a name can mean two things at
@@ -219,6 +239,7 @@ func (a *app) Update() error {
 	// fall from active to settled with no timer anywhere. A row whose
 	// text has not changed is written with the same value, so an idle
 	// panel leaves its layer alone.
+	a.refreshJobs()
 	a.refreshPanel(time.Now())
 	if a.shot != nil {
 		a.shot.update(a)
@@ -420,6 +441,7 @@ func (a *app) commands() {
 		ui.Command{ID: "conn.command", Title: "Run a command…", Run: a.openCommandHere},
 		ui.Command{ID: "conn.tunnel", Title: "Open a tunnel…", Run: a.openTunnelHere},
 		ui.Command{ID: "conn.socks", Title: "Open a SOCKS proxy…", Run: a.openSocksHere},
+		ui.Command{ID: "conn.files", Title: "Browse files here", Run: a.openFilesHere},
 		ui.Command{ID: "conn.close", Title: "Close this connection",
 			Run: a.closeSelectedConnection},
 		ui.Command{ID: "conn.clearFinished", Title: "Clear finished connections",

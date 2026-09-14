@@ -43,6 +43,7 @@ func (a *app) newMenubar(child ui.Widget) *ui.Menubar {
 			{Command: "conn.command"},
 			{Command: "conn.tunnel"},
 			{Command: "conn.socks"},
+			{Command: "conn.files"},
 			ui.MenuSeparator(),
 			{Command: "conn.close"},
 			{Command: "conn.clearFinished"},

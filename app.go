@@ -315,10 +315,11 @@ func (a *app) Update() error {
 			a.reportError(ui.ChordOf(ev).String()+" could not be done", err)
 		}
 	}
-	// Measured afresh: the padding moves when the sidebar opens or the
-	// font size changes, and a click routed by the old measurements
-	// lands on the wrong row.
-	a.renderer.Measure(a.g, &a.geo)
+	// Routed by the measurements the window was last laid out with,
+	// which is what the user was looking at when they clicked. They are
+	// taken together, in placeRegions: a window measured afresh here
+	// and a region measured a frame ago would not agree on where the
+	// sidebar's rows are.
 	for _, ev := range a.mouse.Poll(a.cellAt) {
 		if _, err := a.root.HandleMouse(ev); err != nil {
 			a.reportError("That could not be done", err)
@@ -398,6 +399,11 @@ func (a *app) resizeTo(pxW, pxH int) {
 	a.lastPad = [2]int{padX, padY}
 	cols, rows := a.renderer.GridSizeWithin(pxW, pxH, padX, padY)
 	a.setGridSize(cols, rows)
+	// Measured here as well as at the end of the frame, so the window
+	// is never routing clicks by measurements it has never taken: this
+	// runs before the first frame, and again before the input of any
+	// frame the window was resized in.
+	a.placeRegions()
 }
 
 // setGridSize tells the grids and the widget tree about a new size in

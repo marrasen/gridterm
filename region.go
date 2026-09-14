@@ -30,10 +30,6 @@ type region struct {
 
 	// left, top, width and height are the same in pixels.
 	left, top, width, height int
-
-	// budget is how many quarters of a cell the last layout set aside
-	// for the room around the rows.
-	budget int
 }
 
 // newRegion puts a widget on a grid of its own, over whatever the
@@ -63,12 +59,12 @@ func (r *region) place(rect ui.Rect, geo *render.Geometry, pads []grid.Pad) {
 	r.layer.X, r.layer.Y = r.left, r.top
 	r.layer.Hidden = false
 
-	// How much of the box goes to the room around the rows, and so how
-	// many rows are left. The region is the only thing that knows how
-	// tall its own rows are, so it works out the count and lays the
-	// widget out again for it: the tree could only count whole cells.
-	r.budget = r.roomFor(rect.Rows)
-	rows := max(rect.Rows-(r.budget+grid.PadUnit-1)/grid.PadUnit, 1)
+	// How many rows fit once the room around them is paid for. The
+	// region is the only thing that knows how tall its own rows are, so
+	// it settles the count and lays the widget out for it: the tree can
+	// only count whole cells.
+	full := rect.Rows
+	rows, rowPads := r.fit(full)
 	rect.Rows = rows
 	r.rect = rect
 
@@ -84,43 +80,67 @@ func (r *region) place(rect ui.Rect, geo *render.Geometry, pads []grid.Pad) {
 	if r.w != nil {
 		r.w.Layout(ui.Size{Cols: rect.Cols, Rows: rows})
 	}
-	r.padRows(rows)
+	r.padRows(full, rows, rowPads)
 }
 
-// roomFor is how many quarters of a cell the widget wants for the room
-// around its rows, given a box this many rows tall.
-func (r *region) roomFor(rows int) int {
+// fit settles how many rows the region has and the room around them.
+//
+// Padding is room the grid gains, so a row of room is a row the widget
+// does not get, and the two have to be settled together. The widget is
+// asked what it wants for a box of a given height, starting at the full
+// height and coming down until the rows and the room they ask for fit
+// in the box together.
+//
+// Coming down one at a time rather than searching, because what a
+// widget wants need not grow smoothly with the height: a shorter box
+// shows a different set of rows, not simply fewer of them. The first
+// height that fits is therefore the tallest that does.
+//
+// A widget whose room never fits goes without it. Better a sidebar
+// without its margins than one whose rows run off the bottom.
+func (r *region) fit(full int) (rows int, pads []grid.Pad) {
 	s, ok := r.w.(ui.RowSpacer)
-	if !ok {
-		return 0
+	if !ok || full < 1 {
+		return max(full, 0), nil
 	}
-	return max(s.RoomWanted(rows), 0)
+	for rows := full; rows >= 1; rows-- {
+		pads = s.RowPads(rows)
+		if rows*grid.PadUnit+quarters(pads) <= full*grid.PadUnit {
+			return rows, pads
+		}
+	}
+	return full, nil
+}
+
+// quarters is how much room a set of pads asks for.
+func quarters(pads []grid.Pad) int {
+	n := 0
+	for _, p := range pads {
+		n += int(p.Before) + int(p.After)
+	}
+	return n
 }
 
 // padRows gives the widget the room it asked for.
 //
-// Whatever it does not use goes under the last row, so the grid fills
-// its box exactly. Room set aside and then left unused would be a strip
-// at the foot of the sidebar with no cell to paint it.
-func (r *region) padRows(rows int) {
-	budget := (r.budget + grid.PadUnit - 1) / grid.PadUnit * grid.PadUnit
+// Whatever is left over goes above the last row rather than on it. The
+// last row is the one pinned to the foot of the sidebar, and room on it
+// draws as a band of its own colour rather than as a gap. There is
+// usually nothing left over: it happens when giving a row back to the
+// widget would cost more room than the row is worth, and it is under a
+// cell and a half when it happens at all.
+func (r *region) padRows(full, rows int, pads []grid.Pad) {
 	var want padTable
-	spent := 0
-	if s, ok := r.w.(ui.RowSpacer); ok {
-		for y, p := range s.RowPads() {
-			if y >= rows {
-				break
-			}
-			cost := int(p.Before) + int(p.After)
-			if cost <= 0 || spent+cost > budget {
-				continue
-			}
+	for y, p := range pads {
+		if y >= rows {
+			break
+		}
+		if !p.Empty() {
 			want.add(y, p)
-			spent += cost
 		}
 	}
-	if left := budget - spent; left > 0 {
-		want.add(rows-1, grid.Pad{After: int8(min(left, grid.PadMax))})
+	if left := (full-rows)*grid.PadUnit - quarters(pads); left > 0 {
+		want.add(max(rows-2, 0), grid.Pad{After: int8(min(left, grid.PadMax))})
 	}
 	want.apply(rows, r.g.RowPads(), r.g.SetRowPad)
 }
@@ -139,10 +159,10 @@ func (r *region) measure(src *render.Geometry, m glyph.Metrics, geo *render.Geom
 
 // draw paints the region's widget onto its own grid.
 func (r *region) draw() {
-	if r.rect.Empty() || r.w == nil {
+	if r.rect.Empty() {
 		return
 	}
-	r.w.Draw(r.g.View())
+	ui.DrawApart(r.w, r.g.View())
 }
 
 // contains reports whether a pixel is inside the region.
@@ -205,9 +225,45 @@ func (a *app) sidebarArea() ui.Rect {
 // A region has its own row heights, so a click inside one is measured
 // by those rather than by the window's: asking the window would name a
 // row the sidebar is not drawing there.
+//
+// Only a click that is going to the region, though. A dialog is drawn
+// on the window's own grid, over the sidebar as much as anywhere else,
+// and a menu dropped from the sidebar reaches across both: measured by
+// the region's rows, a click on it would run the line above the one it
+// landed on. The same goes for a drag that began somewhere else and has
+// wandered in, which belongs to whoever took the press.
 func (a *app) cellAt(px, py int) (col, row int) {
-	if a.sideRegion != nil && a.sideRegion.contains(px, py) {
+	if a.overRegion(px, py) {
 		return a.sideRegion.cellAt(px, py, &a.sideGeo)
 	}
 	return a.geo.CellAt(px, py)
+}
+
+// overRegion reports whether a pixel is on a region and the region is
+// what would receive it.
+func (a *app) overRegion(px, py int) bool {
+	switch {
+	case a.sideRegion == nil || !a.sideRegion.contains(px, py):
+		return false
+	case a.root.Modal() != nil:
+		return false
+	case a.root.Holding() != nil && a.root.Holding() != a.side:
+		return false
+	}
+	return true
+}
+
+// windowRow is the window row a sidebar row is drawn on.
+//
+// A menu is a dialog, drawn on the window's own grid with the window's
+// row heights. The sidebar's rows are taller, so counting from the top
+// of the sidebar in the window's rows would put a menu half a cell out
+// for the first machine and three cells out by the sixth. Going through
+// the pixels is what keeps the two honest.
+func (a *app) windowRow(row int) int {
+	if a.sideRegion == nil || a.sideRegion.rect.Empty() {
+		return row
+	}
+	at, height := a.sideGeo.RowBox(row, row+1)
+	return a.geo.RowAt(a.sideRegion.top + at + height/2)
 }

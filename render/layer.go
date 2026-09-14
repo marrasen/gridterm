@@ -77,6 +77,12 @@ type Layer struct {
 	// which no damage flag reports.
 	lastGrid        *grid.Grid
 	lastTransparent bool
+
+	// lastGeom spots a carried geometry moving the grid inside a
+	// texture that stayed the same size. Nothing else would notice: the
+	// compositor does not measure a layer that brought its own, and a
+	// geometry can change with no cell of the grid touched.
+	lastGeom [4]int
 }
 
 // Size returns the layer's pixel size, which is its grid measured by
@@ -302,7 +308,14 @@ func (c *Compositor) Draw(screen *ebiten.Image) {
 			l.lastGrid, l.lastTransparent = l.Grid, l.Transparent
 			l.invalidate()
 		}
-		if l.ensure(c.measure(l)) {
+		geo := c.measure(l)
+		if sig := geo.Signature(); sig != l.lastGeom {
+			l.lastGeom = sig
+			l.invalidate()
+			// The pixels the grid moved off are still on screen.
+			resized = true
+		}
+		if l.ensure(geo) {
 			resized = true
 		}
 		if l.Grid.AnyDirty() {

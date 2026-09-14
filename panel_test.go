@@ -20,14 +20,48 @@ import (
 // connection settle.
 var panelNow = time.Date(2026, 9, 14, 12, 0, 0, 0, time.UTC)
 
-// withPanel gives a test app the panel and the dock, the way main does.
+// withPanel gives a test app the panel and the dock, the way main does:
+// the sidebar on a grid of its own, drawn and laid out by its region.
 func withPanel(t *testing.T, a *testApp) {
 	t.Helper()
 	a.panel = a.newPanel()
 	a.side = a.newSidebar()
 	a.dock = ui.NewDock(panelWidth, a.side, a.root.Widget())
+	a.sideRegion = newRegion(a.side, grid.New(0, 0, a.colours.FG, a.colours.BG), &a.sideGeo)
+	a.dock.PanelElsewhere = true
 	a.root.SetWidget(a.dock)
 	a.relayout()
+	a.placeRegions()
+}
+
+// paint draws the window and the sidebar, which are two grids now.
+func paint(a *testApp) {
+	a.root.Draw(a.g.View())
+	a.sideRegion.draw()
+}
+
+// windowCell reads a cell by where it is in the window, from whichever
+// grid holds it. The sidebar is drawn on its own, at its own row
+// heights, so the window's grid has nothing under it.
+func windowCell(a *testApp) func(x, y int) grid.Cell {
+	return func(x, y int) grid.Cell {
+		if r := a.sideRegion; r != nil && !r.rect.Empty() &&
+			x >= r.rect.X && x < r.rect.X+r.rect.Cols &&
+			y >= r.rect.Y && y < r.rect.Y+r.rect.Rows {
+			return r.g.At(x-r.rect.X, y-r.rect.Y)
+		}
+		return a.g.At(x, y)
+	}
+}
+
+// sideArea is where the sidebar is in the window, which is the region's
+// box rather than the dock's: the region gives up rows to pay for the
+// room around the machine names.
+func sideArea(a *testApp) (ui.Rect, bool) {
+	if a.sideRegion == nil || a.sideRegion.rect.Empty() {
+		return ui.Rect{}, false
+	}
+	return a.sideRegion.rect, true
 }
 
 // panelText returns what the panel is showing, one line per row, with
@@ -179,26 +213,27 @@ func TestTheSidebarMarksThePaneInFront(t *testing.T) {
 	// The keys are in a pane, not in the sidebar.
 	a.panel.SetFocus(false)
 	a.refreshPanel(panelNow)
-	a.root.Draw(a.g.View())
+	at := windowCell(a)
+	paint(a)
 
-	area, shown := a.root.AreaOf(a.side)
+	area, shown := sideArea(a)
 	if !shown {
 		t.Fatal("the sidebar is not on screen")
 	}
-	at := a.panel.SelectedIndex()
-	if at < 0 {
+	row := a.panel.SelectedIndex()
+	if row < 0 {
 		t.Fatal("nothing is selected")
 	}
-	marked := a.g.At(area.X+1, area.Y+at).BG
+	marked := at(area.X+1, area.Y+row).BG
 	if want := mix(a.colours.BG, a.colours.FG, 1, 6); marked != want {
 		t.Fatalf("the row in front is drawn on %v, want %v", marked, want)
 	}
 	// And the rows around it are not.
 	for y := 0; y < area.Rows-1; y++ {
-		if y == at {
+		if y == row {
 			continue
 		}
-		if got := a.g.At(area.X+1, area.Y+y).BG; got == marked {
+		if got := at(area.X+1, area.Y+y).BG; got == marked {
 			t.Fatalf("row %d is marked as well", y)
 		}
 	}
@@ -479,21 +514,21 @@ func TestPanelDoesNotDirtyAnIdleFrame(t *testing.T) {
 	e.Meter.Moved(10, 0, panelNow)
 
 	a.refreshPanel(panelNow)
-	a.root.Draw(a.g.View())
-	a.g.ClearDirty()
+	paint(a)
+	a.sideRegion.g.ClearDirty()
 
 	// A second frame at the same moment changes nothing.
 	a.refreshPanel(panelNow)
-	a.root.Draw(a.g.View())
-	if a.g.AnyDirty() {
+	paint(a)
+	if a.sideRegion.g.AnyDirty() {
 		t.Fatal("an idle panel dirtied the layer")
 	}
 
 	// And the moment the state changes, it does: the dot goes from the
 	// one that moves to the one that does not.
 	a.refreshPanel(panelNow.Add(meter.Settle))
-	a.root.Draw(a.g.View())
-	if !a.g.AnyDirty() {
+	paint(a)
+	if !a.sideRegion.g.AnyDirty() {
 		t.Fatal("a row that changed from active to settled did not redraw")
 	}
 
@@ -504,14 +539,14 @@ func TestPanelDoesNotDirtyAnIdleFrame(t *testing.T) {
 	for step := 1; step <= 8; step++ {
 		at := panelNow.Add(meter.Settle + time.Duration(step)*pulseStep)
 		a.refreshPanel(at)
-		a.root.Draw(a.g.View())
-		a.g.ClearDirty()
+		paint(a)
+		a.sideRegion.g.ClearDirty()
 	}
 	for step := 1; step <= 8; step++ {
 		at := panelNow.Add(2*meter.Settle + time.Duration(step)*pulseStep)
 		a.refreshPanel(at)
-		a.root.Draw(a.g.View())
-		if a.g.AnyDirty() {
+		paint(a)
+		if a.sideRegion.g.AnyDirty() {
 			t.Fatalf("a settled panel dirtied the layer %v later", at.Sub(panelNow))
 		}
 	}
@@ -770,16 +805,17 @@ func TestThePanelHasItsOwnGround(t *testing.T) {
 
 	// And what it draws really is two colours, top and bottom.
 	a.refreshPanel(panelNow)
-	a.root.Draw(a.g.View())
-	area, shown := a.root.AreaOf(a.side)
+	at := windowCell(a)
+	paint(a)
+	area, shown := sideArea(a)
 	if !shown {
 		t.Fatal("the sidebar is not on screen")
 	}
-	top := a.g.At(area.X, area.Y)
+	top := at(area.X, area.Y)
 	// The row above the last one: the last is the pinned line, which is
 	// painted in one colour of its own and says nothing about whether
 	// the list above it shades at all.
-	bottom := a.g.At(area.X, area.Y+area.Rows-2)
+	bottom := at(area.X, area.Y+area.Rows-2)
 	if top.BG == bottom.BG {
 		t.Fatalf("the sidebar is one flat colour: %v", top.BG)
 	}
@@ -789,14 +825,15 @@ func TestThePanelHasItsOwnGround(t *testing.T) {
 func sidebarRow(t *testing.T, a *testApp) string {
 	t.Helper()
 	a.refreshPanel(panelNow)
-	a.root.Draw(a.g.View())
-	area, shown := a.root.AreaOf(a.side)
+	at := windowCell(a)
+	paint(a)
+	area, shown := sideArea(a)
 	if !shown {
 		t.Fatal("the sidebar is not on screen")
 	}
 	var b strings.Builder
 	for x := area.X; x < area.X+area.Cols; x++ {
-		c := a.g.At(x, area.Y+area.Rows-1)
+		c := at(x, area.Y+area.Rows-1)
 		if c.Rune == 0 {
 			b.WriteByte(' ')
 			continue
@@ -834,12 +871,12 @@ func TestThePinnedRowSurvivesBeingPaintedOver(t *testing.T) {
 	withPanel(t, a)
 	sidebarRow(t, a)
 
-	area, shown := a.root.AreaOf(a.side)
+	area, shown := sideArea(a)
 	if !shown {
 		t.Fatal("the sidebar is not on screen")
 	}
 	for x := area.X; x < area.X+area.Cols; x++ {
-		a.g.View().Set(x, area.Y+area.Rows-1,
+		a.sideRegion.g.View().Set(x, area.Rows-1,
 			grid.Cell{Rune: 'x', FG: a.colours.FG, BG: a.colours.BG, Width: 1})
 	}
 	if got := sidebarRow(t, a); !strings.Contains(got, "Connect") {
@@ -853,7 +890,7 @@ func TestThePinnedRowGoesThroughTheCommands(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withDialogs(t, a)
 	withPanel(t, a)
-	a.root.Draw(a.g.View())
+	paint(a)
 
 	var ran int
 	if !a.root.Commands.Unregister("server.connect") {
@@ -864,7 +901,7 @@ func TestThePinnedRowGoesThroughTheCommands(t *testing.T) {
 		Run: func() error { ran++; return errors.New("nothing to connect to") },
 	}))
 
-	area, _ := a.root.AreaOf(a.side)
+	area, _ := sideArea(a)
 	took, err := a.root.HandleMouse(input.MouseEvent{
 		Kind: input.MousePress, Button: input.MouseLeft,
 		Col: area.X + 2, Row: area.Y + area.Rows - 1,
@@ -895,9 +932,9 @@ func TestTheWheelWorksOverThePinnedRow(t *testing.T) {
 		rows = append(rows, ui.ListRow{Text: "row", Key: i})
 	}
 	a.panel.SetRows(rows)
-	a.root.Draw(a.g.View())
+	paint(a)
 
-	area, _ := a.root.AreaOf(a.side)
+	area, _ := sideArea(a)
 	was := a.panel.RowTop(0)
 	took, err := a.side.HandleMouse(input.MouseEvent{
 		Kind: input.MousePress, Button: input.MouseWheelDown,
@@ -1077,15 +1114,16 @@ func TestTheHeadingSaysWhetherTheMachineIsConnected(t *testing.T) {
 	// And it is painted, not only recorded: a heading with no room in
 	// front of it has nowhere to put a dot, and the row would come out
 	// looking exactly like an unconnected one.
-	a.root.Draw(a.g.View())
-	area, shown := a.root.AreaOf(a.side)
+	at := windowCell(a)
+	paint(a)
+	area, shown := sideArea(a)
 	if !shown {
 		t.Fatal("the sidebar is not on screen")
 	}
 	var painted bool
 	for y := area.Y; y < area.Y+area.Rows; y++ {
 		if strings.Contains(sidebarText(a, y, area), "margit") &&
-			a.g.At(area.X, y).Rune == dot {
+			at(area.X, y).Rune == dot {
 			painted = true
 		}
 	}
@@ -1096,9 +1134,10 @@ func TestTheHeadingSaysWhetherTheMachineIsConnected(t *testing.T) {
 
 // sidebarText reads one row of the sidebar back.
 func sidebarText(a *testApp, y int, area ui.Rect) string {
+	at := windowCell(a)
 	var b strings.Builder
 	for x := area.X; x < area.X+area.Cols; x++ {
-		c := a.g.At(x, y)
+		c := at(x, y)
 		if c.Rune == 0 {
 			b.WriteByte(' ')
 			continue
@@ -1302,16 +1341,17 @@ func TestTheIconIsDrawnOnTheRow(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withPanel(t, a)
 	a.refreshPanel(panelNow)
-	a.root.Draw(a.g.View())
+	at := windowCell(a)
+	paint(a)
 
-	area, shown := a.root.AreaOf(a.side)
+	area, shown := sideArea(a)
 	if !shown {
 		t.Fatal("the sidebar is not on screen")
 	}
 	var found bool
 	for y := area.Y; y < area.Y+area.Rows; y++ {
 		for x := area.X; x < area.X+area.Cols; x++ {
-			if a.g.At(x, y).Art == grid.Icon(grid.IconTerminal) {
+			if at(x, y).Art == grid.Icon(grid.IconTerminal) {
 				found = true
 			}
 		}

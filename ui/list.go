@@ -161,6 +161,10 @@ type List struct {
 	// showing.
 	current any
 
+	// pads is the answer RowPads last gave, kept so that settling a
+	// height, which asks several times over, does not allocate.
+	pads []grid.Pad
+
 	size    Size
 	focused bool
 	buf     buffer
@@ -287,48 +291,33 @@ func (l *List) Layout(size Size) {
 	l.clamp()
 }
 
-// RoomWanted is how many quarters of a cell the list would like for the
-// room around its headers, were it given this many rows.
+// RowPads is the room the list wants around each of its rows, were its
+// box this many rows tall.
 //
-// Asked before the list is laid out, and answered from the rows it
-// holds rather than from the ones it would show: the answer decides how
-// many rows there is room for, so an answer that depended on the layout
-// would change the layout, which would change the answer.
+// Only the headings it would be showing at that height get any: room
+// for one scrolled out of sight is a row taken off the list for a gap
+// nobody can see.
 //
-// Capped at a quarter of the rows, so a list of nothing but headings
-// cannot spend the whole panel on the gaps between them.
-func (l *List) RoomWanted(rows int) int {
-	each := int(l.Style.HeaderPad.Before) + int(l.Style.HeaderPad.After)
-	if each <= 0 || rows <= 0 {
-		return 0
-	}
-	headers := 0
-	for _, row := range l.rows {
-		if row.Header {
-			headers++
-		}
-	}
-	// Never more than a quarter of the panel, so a list of nothing but
-	// headings cannot spend the whole of it on the gaps between them.
-	return min(headers*each, rows*grid.PadUnit/4)
-}
-
-// RowPads is the room around each of the rows the list is drawing, one
-// entry per row from the top of its box.
-func (l *List) RowPads() []grid.Pad {
-	if l.Style.HeaderPad.Empty() {
+// Nothing is changed by asking. Where the list would start is worked
+// out rather than set, because the height is still being settled and
+// laying the list out to find out would drag the selection with it.
+//
+// The slice is reused between calls.
+func (l *List) RowPads(rows int) []grid.Pad {
+	if l.Style.HeaderPad.Empty() || rows <= 0 {
 		return nil
 	}
-	out := make([]grid.Pad, 0, l.size.Rows)
-	for y := 0; y < l.size.Rows; y++ {
-		i := l.top + y
+	top := min(max(l.top, 0), max(len(l.rows)-rows, 0))
+	l.pads = l.pads[:0]
+	for y := 0; y < rows; y++ {
+		i := top + y
 		if i < 0 || i >= len(l.rows) || !l.rows[i].Header {
-			out = append(out, grid.Pad{})
+			l.pads = append(l.pads, grid.Pad{})
 			continue
 		}
-		out = append(out, l.Style.HeaderPad)
+		l.pads = append(l.pads, l.Style.HeaderPad)
 	}
-	return out
+	return l.pads
 }
 
 // SetFocus marks the list as the one receiving keys, which is what makes

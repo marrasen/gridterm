@@ -88,6 +88,17 @@ func (geo *Geometry) CellH() int { return geo.cellH }
 // Ascent is how far the baseline sits below the top of a cell.
 func (geo *Geometry) Ascent() int { return geo.ascent }
 
+// Signature is a short summary of where the geometry puts things, for
+// a caller that has to notice one changing under it.
+//
+// Not every difference shows up in it. It is for the geometry a layer
+// carries, which the compositor cannot measure again to compare: the
+// texture already catches a change of size, and this catches the grid
+// being moved inside it without changing that size.
+func (geo *Geometry) Signature() [4]int {
+	return [4]int{geo.Width(), geo.Height(), geo.CellX(0), geo.CellY(0)}
+}
+
 // Cols and Rows are how many the geometry was laid out for.
 func (geo *Geometry) Cols() int { return len(geo.cols) }
 func (geo *Geometry) Rows() int { return len(geo.rows) }
@@ -153,11 +164,11 @@ func shareOut(spans []span, px, size int) {
 // share somewhere else, and the text inside it would sit a pixel or two
 // off the text above it.
 func (geo *Geometry) TakeCols(src *Geometry, x0, x1 int) {
-	geo.cellW = src.cellW
 	geo.cols = geo.cols[:0]
 	if src == nil || x1 <= x0 {
 		return
 	}
+	geo.cellW = src.cellW
 	base := boxStart(src.cols, x0, src.cellW)
 	for x := x0; x < x1; x++ {
 		at := boxStart(src.cols, x, src.cellW)

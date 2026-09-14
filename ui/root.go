@@ -111,11 +111,20 @@ func (r *Root) Draw(v grid.View) {
 // DrawModal paints one dialog from the stack into its own view. Each is
 // its own layer, so a caller draws them itself rather than through Draw,
 // and this is how the cursor gets the same treatment there.
-func (r *Root) DrawModal(m Widget, v grid.View) {
-	if m == nil {
+func (r *Root) DrawModal(m Widget, v grid.View) { DrawApart(m, v) }
+
+// DrawApart paints a widget from the tree onto a view of its own.
+//
+// It is for anything the tree does not paint where it sits: a dialog on
+// its own layer, or a panel on a grid of its own. The cursor is settled
+// the same way it is for the tree, because a grid has one cursor and no
+// idea who owns it: a widget that placed one and then stopped would
+// otherwise leave it on that grid for good.
+func DrawApart(w Widget, v grid.View) {
+	if w == nil {
 		return
 	}
-	drawCursorOwner(v, m.Draw)
+	drawCursorOwner(v, w.Draw)
 }
 
 // drawCursorOwner runs one pass of drawing and settles who holds the
@@ -178,6 +187,11 @@ func (r *Root) PopModal() Widget {
 	SetFocus(r.top(), true)
 	return top
 }
+
+// Holding returns the widget the pointer was captured by, or nil when
+// nothing holds it. A drag belongs to whoever took the press, wherever
+// the pointer has since gone.
+func (r *Root) Holding() Widget { return r.held.Holder() }
 
 // Modal returns the topmost dialog, or nil when none is open.
 func (r *Root) Modal() Widget {

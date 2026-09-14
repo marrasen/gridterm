@@ -1,7 +1,10 @@
 package main
 
 import (
+	"fmt"
 	"testing"
+
+	"github.com/marrasen/gridterm/input"
 
 	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/ui"
@@ -16,7 +19,7 @@ func withRegion(t *testing.T, a *testApp) {
 	a.side = a.newSidebar()
 	a.dock = ui.NewDock(panelWidth, a.side, a.root.Widget())
 	a.sideRegion = newRegion(a.side, grid.New(0, 0, a.colours.FG, a.colours.BG), &a.sideGeo)
-	a.dock.PanelDrawnElsewhere = true
+	a.dock.PanelElsewhere = true
 	a.bar = a.newMenubar(a.dock)
 	a.root.SetWidget(a.bar)
 	cw, ch := a.renderer.CellSize()
@@ -161,6 +164,126 @@ func TestAClosedSidebarHasNoRegion(t *testing.T) {
 	}
 }
 
+// machines fills the panel with server names, each with a connection
+// under it.
+func machines(a *testApp, n int) {
+	var rows []ui.ListRow
+	for i := 0; i < n; i++ {
+		rows = append(rows,
+			ui.ListRow{Text: fmt.Sprintf("host%02d", i), Header: true, Key: [2]int{i, 0}},
+			ui.ListRow{Text: "a shell", Key: [2]int{i, 1}})
+	}
+	a.panel.SetRows(rows)
+	a.placeRegions()
+}
+
+// roomSpent is how much room the region put around its rows.
+func roomSpent(a *testApp) int {
+	_, rows := a.sideRegion.g.Size()
+	spent := 0
+	for y := 0; y < rows; y++ {
+		p := a.sideRegion.g.RowPad(y)
+		spent += int(p.Before) + int(p.After)
+	}
+	return spent
+}
+
+// The rows the region gives up are exactly the room it spends, whatever
+// the sidebar holds.
+//
+// They were not. The room was counted from every heading the list held,
+// including the ones scrolled out of sight, and only the headings on
+// screen were given any; the rest piled up under the last row. With
+// fourteen servers the sidebar lost a quarter of its rows and the
+// "Connect to server" line at the foot of it became a band six cells
+// tall.
+func TestTheRegionGivesUpOnlyTheRowsItSpends(t *testing.T) {
+	for _, n := range []int{1, 4, 6, 14, 20, 40} {
+		a := newTestApp(t, 90, 30)
+		withRegion(t, a)
+		machines(a, n)
+
+		box, ok := a.dock.ChildArea(a.side)
+		if !ok {
+			t.Fatal("the sidebar has no room")
+		}
+		_, rows := a.sideRegion.g.Size()
+		if want := (box.Rows - rows) * grid.PadUnit; roomSpent(a) != want {
+			t.Errorf("%d servers: gave up %d rows for %d quarters of room",
+				n, box.Rows-rows, roomSpent(a))
+		}
+		// And no room was dumped on the last row, which is the pinned
+		// one: room on it draws as a band of its own colour rather than
+		// as a gap.
+		if got := a.sideRegion.g.RowPad(rows - 1); !got.Empty() {
+			t.Errorf("%d servers: the pinned row carries %+v", n, got)
+		}
+	}
+}
+
+// Every heading on screen gets its room, or the sidebar changes rhythm
+// halfway down.
+func TestEveryHeadingOnScreenGetsItsRoom(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withRegion(t, a)
+	machines(a, 40)
+
+	_, rows := a.sideRegion.g.Size()
+	headings := 0
+	for y := 0; y < rows; y++ {
+		if !a.sideRegion.g.RowPad(y).Empty() {
+			headings++
+		}
+	}
+	// The rows alternate heading and connection, so half of them are
+	// headings and every one of them is spaced.
+	if want := rows / 2; headings != want {
+		t.Errorf("%d of the %d headings on screen have room around them", headings, want)
+	}
+}
+
+// The sidebar never paints past the box it was given, however little of
+// it there is.
+func TestTheRegionNeverOverflowsItsBox(t *testing.T) {
+	for _, rows := range []int{3, 4, 5, 8, 12, 30} {
+		a := newTestApp(t, 90, rows)
+		withRegion(t, a)
+		machines(a, 8)
+
+		if over := a.sideGeo.Height() - a.sideRegion.height; over != 0 {
+			t.Errorf("a %d row window: the sidebar is %d pixels out of its box", rows, over)
+		}
+	}
+}
+
+// Laying the tree out again does not move a scrolled sidebar.
+//
+// It did. The dock laid the panel out for the whole box and the region
+// laid it out again for the rows it really has, and the list clamped
+// its scroll to the larger count in between: one drag of the divider
+// scrolled a sidebar at the end of its list back up by seven rows.
+func TestRelayingOutTheTreeDoesNotMoveTheSidebar(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withRegion(t, a)
+	machines(a, 40)
+	for i := 0; i < 60; i++ {
+		if _, err := a.panel.HandleKey(input.Event{Kind: input.KeyPress, Key: input.KeyDown}); err != nil {
+			t.Fatalf("down: %v", err)
+		}
+	}
+	a.placeRegions()
+	was := a.panel.RowTop(a.panel.Rows()[len(a.panel.Rows())-1].Key)
+
+	cols, rows := a.g.Size()
+	a.root.Layout(ui.Rect{Cols: cols, Rows: rows})
+	a.placeRegions()
+
+	got := a.panel.RowTop(a.panel.Rows()[len(a.panel.Rows())-1].Key)
+	if got != was {
+		t.Errorf("the last row moved from %d to %d", was, got)
+	}
+}
+
 // The region gives up rows to pay for the room around the ones it
 // keeps, and its grid still fills its box to the pixel.
 func TestTheRegionPaysForItsRoomInRows(t *testing.T) {
@@ -255,5 +378,63 @@ func TestARegionWithoutSpacingKeepsEveryRow(t *testing.T) {
 		if got := a.sideRegion.g.RowPad(y); !got.Empty() {
 			t.Errorf("row %d has %+v with nothing asking for room", y, got)
 		}
+	}
+}
+
+// A menu dropped from a sidebar row points at the row it belongs to.
+//
+// A menu is a dialog, drawn on the window's own grid with the window's
+// row heights. The sidebar's rows are taller, so counting from the top
+// of the sidebar in the window's rows put the menu half a cell out for
+// the first machine and three cells out by the sixth: it opened over
+// the machines above the one whose plus was clicked.
+func TestAMenuFromTheSidebarPointsAtItsRow(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withRegion(t, a)
+	machines(a, 6)
+
+	for y := 0; y < a.sideRegion.rect.Rows; y++ {
+		at, height := a.sideGeo.RowBox(y, y+1)
+		middle := a.sideRegion.top + at + height/2
+
+		row := a.windowRow(y)
+
+		top, tall := a.geo.RowBox(row, row+1)
+		if middle < top || middle >= top+tall {
+			t.Fatalf("sidebar row %d is drawn at %d..%d and points at window row %d, which is %d..%d",
+				y, at+a.sideRegion.top, at+a.sideRegion.top+height, row, top, top+tall)
+		}
+	}
+}
+
+// A click on a dialog over the sidebar is measured by the window.
+//
+// The dialog is drawn on the window's grid, so measuring it by the
+// sidebar's taller rows would run the line above the one clicked.
+func TestAClickOnADialogOverTheSidebarUsesTheWindow(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withRegion(t, a)
+	withDialogs(t, a)
+	machines(a, 6)
+
+	// A pixel well down the sidebar, where the two disagree.
+	at, height := a.sideGeo.RowBox(10, 11)
+	px := a.sideRegion.left + 2
+	py := a.sideRegion.top + at + height/2
+	if _, byRegion := a.cellAt(px, py); true {
+		_, byWindow := a.geo.CellAt(px, py)
+		if byRegion == byWindow {
+			t.Skip("the two agree at this pixel, so the test proves nothing")
+		}
+	}
+
+	f := a.newConfirm("Really?", []string{"A question."})
+	a.showForm(f, nil)
+
+	gotCol, gotRow := a.cellAt(px, py)
+	wantCol, wantRow := a.geo.CellAt(px, py)
+	if gotCol != wantCol || gotRow != wantRow {
+		t.Errorf("with a dialog up the pixel is cell %d,%d, want the window's %d,%d",
+			gotCol, gotRow, wantCol, wantRow)
 	}
 }

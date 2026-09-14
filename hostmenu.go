@@ -109,6 +109,9 @@ func (a *app) rowAnchor(key any) func() ui.Rect {
 		// The plus itself, not the whole row: the menu hangs from its
 		// left edge and reaches out over whatever is beside the sidebar,
 		// rather than being squeezed into the sidebar's own width.
-		return ui.Rect{X: area.X + max(area.Cols-2, 0), Y: area.Y + y, Cols: 1, Rows: 1}
+		return ui.Rect{
+			X: area.X + max(area.Cols-2, 0), Y: a.windowRow(y),
+			Cols: 1, Rows: 1,
+		}
 	}
 }

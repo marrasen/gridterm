@@ -82,13 +82,12 @@ func (s *sidebar) Draw(v grid.View) {
 	drawRow(v.Sub(0, s.at, cols, 1), s.Label, s.FG, s.BG)
 }
 
-// RoomWanted and RowPads hand the question on to the list, which is
-// what has the headings. The pinned row under it wants no room.
-func (s *sidebar) RoomWanted(rows int) int {
-	return s.list.RoomWanted(max(rows-s.pinnedRows(rows), 0))
+// RowPads hands the question on to the list, which is what has the
+// headings. The pinned row under it wants nothing, so the answer stops
+// one short of the box.
+func (s *sidebar) RowPads(rows int) []grid.Pad {
+	return s.list.RowPads(max(rows-s.pinnedRows(rows), 0))
 }
-
-func (s *sidebar) RowPads() []grid.Pad { return s.list.RowPads() }
 
 // SetFocus passes the keys on to the list, which is what they are for.
 func (s *sidebar) SetFocus(on bool) { s.list.SetFocus(on) }

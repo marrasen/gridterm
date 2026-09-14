@@ -33,15 +33,20 @@ type Dock struct {
 	// Collapsed hides the panel without forgetting it or what is in it.
 	Collapsed bool
 
-	// PanelDrawnElsewhere says the panel is painted by whoever owns it
-	// rather than here. The dock still gives it its size and sends it
-	// the keys and the clicks; it only stops painting it.
+	// PanelElsewhere says the panel is laid out and painted by whoever
+	// owns it rather than here. The dock still says where it goes,
+	// through ChildArea, and still sends it the keys and the clicks.
 	//
 	// It is for a panel on a grid of its own. A grid has one set of row
 	// heights, so a panel whose rows are not the same height as the
 	// rest of the window cannot share one, and is drawn onto its own
 	// layer at its own place on screen instead.
-	PanelDrawnElsewhere bool
+	//
+	// Laying it out here as well would be worse than useless: its owner
+	// knows how tall its rows are and so how many of them fit, and a
+	// layout for the whole box in between would drag a scrolled list
+	// back up by the difference.
+	PanelElsewhere bool
 
 	// DividerFG and DividerBG colour the column between the two. A
 	// foreground with no alpha leaves a blank gap instead of a line.
@@ -224,7 +229,9 @@ func (d *Dock) ChildArea(w Widget) (Rect, bool) {
 func (d *Dock) Layout(size Size) {
 	d.size = size
 	panel, rest, _ := d.rects()
-	layoutIfVisible(d.panel, panel)
+	if !d.PanelElsewhere {
+		layoutIfVisible(d.panel, panel)
+	}
 	layoutIfVisible(d.rest, rest)
 }
 
@@ -240,7 +247,7 @@ func (d *Dock) SetFocus(on bool) {
 // Draw paints both halves and the divider between them.
 func (d *Dock) Draw(v grid.View) {
 	panel, rest, divider := d.rects()
-	if !panel.Empty() && d.panel != nil && !d.PanelDrawnElsewhere {
+	if !panel.Empty() && d.panel != nil && !d.PanelElsewhere {
 		d.panel.Draw(panel.In(v))
 	}
 	if !rest.Empty() && d.rest != nil {

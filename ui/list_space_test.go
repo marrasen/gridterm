@@ -20,61 +20,22 @@ func spacedList(machines int) *List {
 	return l
 }
 
-// The room a list asks for is counted from the headings it holds, not
-// from the ones it happens to be showing.
-//
-// What it asks for is what decides how many rows it gets, so an answer
-// that looked at the rows would change them, and change its own answer
-// with them the next time round.
-func TestTheRoomAListWantsDoesNotFollowItsLayout(t *testing.T) {
-	l := spacedList(4)
-
-	l.Layout(Size{Cols: 20, Rows: 20})
-	roomy := l.RoomWanted(20)
-	l.Layout(Size{Cols: 20, Rows: 3})
-	cramped := l.RoomWanted(20)
-
-	if roomy != cramped {
-		t.Errorf("a list laid out for 20 rows wants %d quarters and one laid out for 3 wants %d",
-			roomy, cramped)
+// quarters is how much room a set of pads asks for.
+func quarters(pads []grid.Pad) int {
+	n := 0
+	for _, p := range pads {
+		n += int(p.Before) + int(p.After)
 	}
-	if want := 4 * 2; roomy != want {
-		t.Errorf("four headings want %d quarters, want %d", roomy, want)
-	}
+	return n
 }
 
-// A list of nothing but headings cannot spend the whole panel on the
-// gaps between them.
-func TestTheRoomAListWantsIsCapped(t *testing.T) {
-	l := spacedList(40)
-
-	if got, want := l.RoomWanted(12), 12*grid.PadUnit/4; got != want {
-		t.Errorf("forty headings in twelve rows want %d quarters, want %d capped", got, want)
-	}
-}
-
-// A list that was given no header padding wants nothing and marks
-// nothing, so a list on the window's own grid is left alone.
-func TestAListWithoutHeaderPaddingWantsNothing(t *testing.T) {
-	l := spacedList(3)
-	l.Style.HeaderPad = grid.Pad{}
-	l.Layout(Size{Cols: 20, Rows: 10})
-
-	if got := l.RoomWanted(10); got != 0 {
-		t.Errorf("it wants %d quarters", got)
-	}
-	if got := l.RowPads(); got != nil {
-		t.Errorf("it marked %v", got)
-	}
-}
-
-// The room goes on the rows the list is drawing headings on, one entry
-// per row of its box.
+// The room goes on the rows the list would be drawing headings on, one
+// entry per row of the box it was asked about.
 func TestTheRoomGoesOnTheHeadings(t *testing.T) {
 	l := spacedList(3)
-	l.Layout(Size{Cols: 20, Rows: 6})
 
-	pads := l.RowPads()
+	pads := l.RowPads(6)
+
 	if len(pads) != 6 {
 		t.Fatalf("%d entries for a box of 6 rows", len(pads))
 	}
@@ -89,14 +50,51 @@ func TestTheRoomGoesOnTheHeadings(t *testing.T) {
 	}
 }
 
-// Scrolled down, the room follows the headings to wherever they are
-// drawn rather than staying where they were.
+// Only the headings that would be on screen at that height get room. A
+// row given up for a gap nobody can see is a row of the list thrown
+// away for nothing.
+func TestOnlyTheHeadingsOnScreenGetRoom(t *testing.T) {
+	l := spacedList(20)
+
+	if got, want := quarters(l.RowPads(6)), 3*2; got != want {
+		t.Errorf("a box of 6 rows wants %d quarters, want %d for the three headings in it",
+			got, want)
+	}
+	if got, want := quarters(l.RowPads(40)), 20*2; got != want {
+		t.Errorf("a box of 40 rows wants %d quarters, want %d", got, want)
+	}
+}
+
+// Asking changes nothing. The height is settled by asking several
+// times over, and a question that moved the list would settle on an
+// answer to a different question.
+func TestAskingForRoomChangesNothing(t *testing.T) {
+	l := spacedList(20)
+	l.Layout(Size{Cols: 20, Rows: 8})
+	l.scrollBy(6)
+	top, at := l.top, l.at
+
+	for rows := 1; rows <= 40; rows++ {
+		l.RowPads(rows)
+	}
+
+	if l.top != top || l.at != at {
+		t.Errorf("the list moved to top %d selection %d, from top %d selection %d",
+			l.top, l.at, top, at)
+	}
+	if got := l.size.Rows; got != 8 {
+		t.Errorf("the list's box became %d rows", got)
+	}
+}
+
+// Scrolled down, the room follows the headings to wherever they would
+// be drawn rather than staying where they were.
 func TestTheRoomFollowsTheHeadingsWhenTheListScrolls(t *testing.T) {
 	l := spacedList(3)
 	l.Layout(Size{Cols: 20, Rows: 4})
 	l.scrollBy(1)
 
-	pads := l.RowPads()
+	pads := l.RowPads(4)
 	if len(pads) != 4 {
 		t.Fatalf("%d entries for a box of 4 rows", len(pads))
 	}
@@ -112,12 +110,43 @@ func TestTheRoomFollowsTheHeadingsWhenTheListScrolls(t *testing.T) {
 	}
 }
 
-// A box with no rows in it asks for nothing: there is nothing to put
-// room around.
+// A box taller than the list starts at the top of it, however far down
+// the list was scrolled: there is nothing below to scroll to.
+func TestABoxTallerThanTheListStartsAtTheTop(t *testing.T) {
+	l := spacedList(3)
+	l.Layout(Size{Cols: 20, Rows: 2})
+	l.scrollBy(4)
+
+	pads := l.RowPads(20)
+
+	if len(pads) != 20 {
+		t.Fatalf("%d entries for a box of 20 rows", len(pads))
+	}
+	if pads[0] != (grid.Pad{Before: 1, After: 1}) {
+		t.Errorf("row 0 has %+v, want the first heading", pads[0])
+	}
+	if got, want := quarters(pads), 3*2; got != want {
+		t.Errorf("it wants %d quarters, want %d for all three headings", got, want)
+	}
+}
+
+// A list that was given no header padding marks nothing, so a list on
+// the window's own grid is left alone.
+func TestAListWithoutHeaderPaddingWantsNothing(t *testing.T) {
+	l := spacedList(3)
+	l.Style.HeaderPad = grid.Pad{}
+
+	if got := l.RowPads(10); got != nil {
+		t.Errorf("it marked %v", got)
+	}
+}
+
+// A box with no rows in it wants nothing: there is nothing to put room
+// around.
 func TestAnEmptyBoxWantsNoRoom(t *testing.T) {
 	l := spacedList(3)
 
-	if got := l.RoomWanted(0); got != 0 {
-		t.Errorf("a box of no rows wants %d quarters", got)
+	if got := l.RowPads(0); got != nil {
+		t.Errorf("a box of no rows wants %v", got)
 	}
 }

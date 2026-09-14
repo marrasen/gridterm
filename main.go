@@ -188,7 +188,7 @@ func main() {
 	// so that its rows can have room around them while the terminal
 	// beside it keeps every line the same height.
 	a.sideRegion = newRegion(a.side, grid.New(0, 0, a.colours.FG, a.colours.BG), &a.sideGeo)
-	a.dock.PanelDrawnElsewhere = true
+	a.dock.PanelElsewhere = true
 	a.comp.Add(a.sideRegion.layer)
 	// Open to begin with: it is how everything in the window is reached,
 	// so a window that hid it would open with no way in.

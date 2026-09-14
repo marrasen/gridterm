@@ -97,6 +97,19 @@ func mix(from, to color.RGBA, at, of int) color.RGBA {
 	}
 }
 
+// newSidebar puts the list in the panel, with the way to reach a machine
+// that is not open yet pinned under it.
+func (a *app) newSidebar() *sidebar {
+	s := newSidebar(a.panel, "+ Connect to server…", a.openServer)
+	s.FG = a.colours.ANSI[6]
+	s.OverFG = a.colours.FG
+	// The foot of the shading the list draws, so the pinned row looks
+	// like the bottom of the sidebar rather than something sitting on
+	// it.
+	s.BG = a.panel.Style.BGEnd
+	return s
+}
+
 // revealRow puts whatever a row names in front of the user.
 func (a *app) revealRow(row ui.ListRow) error {
 	e, ok := row.Key.(*conns.Entry)
@@ -257,7 +270,7 @@ func (a *app) focusPanel() error {
 	if err := a.showPanel(true); err != nil {
 		return err
 	}
-	if !a.dock.Focus(a.panel) {
+	if !a.dock.Focus(a.side) {
 		return errors.New("there is no room for the panel")
 	}
 	a.markDirty()

@@ -35,6 +35,11 @@ type Tabs struct {
 	// position when it has none.
 	Label func(w Widget, i int) string
 
+	// HideStrip leaves out the row of labels, for a window where what is
+	// showing is chosen from somewhere else. The widget then holds
+	// several things and shows one, and says nothing about the rest.
+	HideStrip bool
+
 	kids     []Widget
 	active   Widget
 	size     Size
@@ -281,7 +286,7 @@ func (t *Tabs) CancelGesture() { t.stripHeld = false }
 // strip returns the row of labels, which is empty when there is no room
 // for both it and a tab under it.
 func (t *Tabs) strip() Rect {
-	if t.size.Cols <= 0 || t.size.Rows <= stripRows {
+	if t.HideStrip || t.size.Cols <= 0 || t.size.Rows <= stripRows {
 		return Rect{}
 	}
 	return Rect{Cols: t.size.Cols, Rows: stripRows}

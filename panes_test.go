@@ -143,7 +143,10 @@ func newTestApp(t *testing.T, cols, rows int) *testApp {
 		t.Fatalf("first pane: %v", err)
 	}
 	ta.showPane(first)
-	ta.root.SetWidget(first)
+	// The same shape the window has: everything open sits on the stage,
+	// which shows one at a time.
+	ta.stage = ta.newTabs(first)
+	ta.root.SetWidget(ta.stage)
 	ta.root.Layout(ui.Rect{Cols: cols, Rows: rows})
 	t.Cleanup(func() {
 		for pane := range ta.panes {
@@ -169,8 +172,8 @@ func checkTree(t *testing.T, a *testApp) {
 	t.Helper()
 	inTree := map[*term.Terminal]bool{}
 	for _, leaf := range ui.Leaves(a.root.Widget()) {
-		if leaf == ui.Widget(a.panel) {
-			// The connections panel is a leaf of the dock, not a pane.
+		if leaf == ui.Widget(a.side) || leaf == ui.Widget(a.panel) {
+			// The sidebar is a leaf of the dock, not a pane.
 			continue
 		}
 		if b, isBrowser := leaf.(*files.Browser); isBrowser {
@@ -320,9 +323,11 @@ func TestCloseAPaneWhoseSiblingIsASplit(t *testing.T) {
 	if len(a.panes) != 2 {
 		t.Errorf("%d panes, want 2", len(a.panes))
 	}
-	inner, ok := a.root.Widget().(*ui.Split)
+	// The stage is always on top; the promoted split is what it shows.
+	inner, ok := a.stage.Children()[0].(*ui.Split)
 	if !ok || inner.Dir() != ui.Rows {
-		t.Errorf("root = %T, want the inner split promoted", a.root.Widget())
+		t.Errorf("the stage holds %T, want the inner split promoted",
+			a.stage.Children()[0])
 	}
 }
 
@@ -637,17 +642,39 @@ func TestOpenTabAddsToAnExistingStrip(t *testing.T) {
 	}
 
 	checkTree(t, a)
-	strip, ok := a.root.Widget().(*ui.Tabs)
-	if !ok {
-		t.Fatalf("root = %T, want one tab strip", a.root.Widget())
+	if a.root.Widget() != ui.Widget(a.stage) {
+		t.Fatalf("root = %T, want the one stage", a.root.Widget())
 	}
-	if got := len(strip.Children()); got != 3 {
-		t.Errorf("%d tabs, want 3", got)
+	if got := len(a.stage.Children()); got != 3 {
+		t.Errorf("the stage holds %d panes, want 3", got)
+	}
+}
+
+// The stage draws no row of labels. Which pane is showing is chosen from
+// the sidebar, which has room to say what each one is and which machine
+// it is on.
+func TestTheStageHasNoTabStrip(t *testing.T) {
+	a := newTestApp(t, 40, 10)
+	for i := 0; i < 2; i++ {
+		if err := a.openTab(); err != nil {
+			t.Fatalf("open tab: %v", err)
+		}
+	}
+	if !a.stage.HideStrip {
+		t.Fatal("the stage draws a strip of labels")
+	}
+	// The pane being shown gets every row, rather than all but one.
+	area, shown := a.root.AreaOf(ui.FocusedLeaf(a.root.Widget()))
+	if !shown {
+		t.Fatal("the pane being shown is not on screen")
+	}
+	if area.Y != 0 || area.Rows != 10 {
+		t.Fatalf("the pane sits at row %d and is %d tall, want all 10", area.Y, area.Rows)
 	}
 }
 
 // TestTabsAndSplitsNest checks the two containers working together: a
-// tab strip inside one half of a split.
+// split is one of the things the stage holds, beside a pane of its own.
 func TestTabsAndSplitsNest(t *testing.T) {
 	a := newTestApp(t, 60, 20)
 	if err := a.splitFocused(ui.Columns); err != nil {
@@ -661,12 +688,22 @@ func TestTabsAndSplitsNest(t *testing.T) {
 	if len(a.panes) != 3 {
 		t.Fatalf("%d panes, want 3", len(a.panes))
 	}
-	split, ok := a.root.Widget().(*ui.Split)
-	if !ok {
-		t.Fatalf("root = %T, want the split still on top", a.root.Widget())
+	if a.root.Widget() != ui.Widget(a.stage) {
+		t.Fatalf("root = %T, want the stage on top", a.root.Widget())
 	}
-	if _, ok := split.Children()[1].(*ui.Tabs); !ok {
-		t.Errorf("the second half is %T, want a tab strip", split.Children()[1])
+	kids := a.stage.Children()
+	if len(kids) != 2 {
+		t.Fatalf("the stage holds %d things, want the split and the new pane", len(kids))
+	}
+	if _, ok := kids[0].(*ui.Split); !ok {
+		t.Errorf("the first is %T, want the split", kids[0])
+	}
+	if _, ok := kids[1].(*term.Terminal); !ok {
+		t.Errorf("the second is %T, want the new pane", kids[1])
+	}
+	// And the new one is what is being shown.
+	if ui.FocusedLeaf(a.root.Widget()) != kids[1] {
+		t.Error("the new pane is not the one being shown")
 	}
 }
 

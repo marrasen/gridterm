@@ -269,11 +269,11 @@ func TestOpeningATerminalFromThePanelDoesNotSwallowIt(t *testing.T) {
 	if len(a.panes) != 2 {
 		t.Fatalf("%d panes, want the new one", len(a.panes))
 	}
-	if got := a.dock.Panel(); got != ui.Widget(a.panel) {
+	if got := a.dock.Panel(); got != ui.Widget(a.side) {
 		t.Fatalf("the panel is now %T", got)
 	}
 	for _, leaf := range ui.Leaves(a.dock.Rest()) {
-		if leaf == ui.Widget(a.panel) {
+		if leaf == ui.Widget(a.side) {
 			t.Fatal("the connections list ended up among the panes")
 		}
 	}

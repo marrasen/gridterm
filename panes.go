@@ -69,9 +69,15 @@ func (a *app) closePalette() {
 	}
 }
 
-// newTabs builds a tab strip carrying the window's colours.
+// newTabs builds the thing that holds several panes and shows one.
+//
+// It draws no strip of labels: which pane is showing is chosen from the
+// sidebar, which has room to say what each one is and which machine it
+// is on. A row of names along the top would say the same thing twice,
+// and worse.
 func (a *app) newTabs(kids ...ui.Widget) *ui.Tabs {
 	tb := ui.NewTabs(kids...)
+	tb.HideStrip = true
 	tb.StripBG = a.colours.BG
 	tb.InactiveFG = a.colours.FG
 	tb.ActiveFG = a.colours.BG
@@ -240,7 +246,7 @@ func (a *app) closeFocused() error {
 // without this the close-pane key would detach the panel and leave the
 // window with no way to get it back.
 func (a *app) isPane(w ui.Widget) bool {
-	if w == nil || w == ui.Widget(a.panel) {
+	if w == nil || w == ui.Widget(a.side) || w == ui.Widget(a.panel) {
 		return false
 	}
 	for _, leaf := range ui.Leaves(w) {

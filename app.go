@@ -75,10 +75,13 @@ type app struct {
 	// bar is the row of menu titles at the top of the window.
 	bar *ui.Menubar
 
-	// dock holds the connections panel beside everything else, and panel
-	// is the list in it.
+	// dock holds the sidebar beside everything else, panel is the list
+	// in it, and stage is what fills the rest: it holds every pane the
+	// window has open and shows the one the sidebar picked.
 	dock  *ui.Dock
 	panel *ui.List
+	side  *sidebar
+	stage *ui.Tabs
 
 	// registry is everything the window has open, which is what the
 	// panel draws.

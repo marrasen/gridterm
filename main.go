@@ -176,9 +176,13 @@ func main() {
 	a.startFontScan()
 	a.showPane(first)
 
-	// The tree: the menu bar over the panel and everything else.
+	// The tree: the menu bar over the sidebar and the stage beside it.
+	// Everything the window opens goes on the stage, which shows one at
+	// a time; the sidebar is what chooses.
 	a.panel = a.newPanel()
-	a.dock = ui.NewDock(panelWidth, a.panel, first)
+	a.side = a.newSidebar()
+	a.stage = a.newTabs(first)
+	a.dock = ui.NewDock(panelWidth, a.side, a.stage)
 	a.dock.DividerFG = a.colours.ANSI[8]
 	a.dock.DividerBG = a.colours.BG
 	// Open to begin with: it is how everything in the window is reached,

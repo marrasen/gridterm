@@ -21,7 +21,8 @@ var panelNow = time.Date(2026, 9, 14, 12, 0, 0, 0, time.UTC)
 func withPanel(t *testing.T, a *testApp) {
 	t.Helper()
 	a.panel = a.newPanel()
-	a.dock = ui.NewDock(panelWidth, a.panel, a.root.Widget())
+	a.side = a.newSidebar()
+	a.dock = ui.NewDock(panelWidth, a.side, a.root.Widget())
 	a.root.SetWidget(a.dock)
 	a.relayout()
 }
@@ -370,7 +371,7 @@ func TestFocusPanelOpensItFirst(t *testing.T) {
 	if a.dock.Collapsed {
 		t.Fatal("the panel is still hidden")
 	}
-	if a.dock.Focused() != ui.Widget(a.panel) {
+	if a.dock.Focused() != ui.Widget(a.side) {
 		t.Fatal("the keys did not go to the panel")
 	}
 }
@@ -575,7 +576,7 @@ func TestClosePaneWillNotTakeThePanelOutOfTheTree(t *testing.T) {
 	if err := a.closeFocused(); err != nil {
 		t.Fatalf("closeFocused: %v", err)
 	}
-	if a.dock.Panel() != ui.Widget(a.panel) {
+	if a.dock.Panel() != ui.Widget(a.side) {
 		t.Fatal("the panel was taken out of the dock")
 	}
 	if len(a.panes) != 1 {
@@ -601,7 +602,7 @@ func TestFocusPanelRefusesAWindowWithNoRoom(t *testing.T) {
 	if err := a.focusPanel(); err == nil {
 		t.Fatal("the keys went to a panel with no room to be drawn")
 	}
-	if a.dock.Focused() == ui.Widget(a.panel) {
+	if a.dock.Focused() == ui.Widget(a.side) {
 		t.Fatal("the panel has the keys and is not on screen")
 	}
 }
@@ -614,7 +615,7 @@ func TestClickingATerminalTakesTheKeysBack(t *testing.T) {
 	if err := a.focusPanel(); err != nil {
 		t.Fatalf("focusPanel: %v", err)
 	}
-	if a.dock.Focused() != ui.Widget(a.panel) {
+	if a.dock.Focused() != ui.Widget(a.side) {
 		t.Fatal("the panel does not have the keys")
 	}
 
@@ -628,7 +629,7 @@ func TestClickingATerminalTakesTheKeysBack(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("click: %v", err)
 	}
-	if a.dock.Focused() == ui.Widget(a.panel) {
+	if a.dock.Focused() == ui.Widget(a.side) {
 		t.Fatal("clicking the terminal left the keys on the panel")
 	}
 
@@ -678,7 +679,7 @@ func TestThePanelHasItsOwnGround(t *testing.T) {
 	// And what it draws really is two colours, top and bottom.
 	a.refreshPanel(panelNow)
 	a.root.Draw(a.g.View())
-	area, shown := a.root.AreaOf(a.panel)
+	area, shown := a.root.AreaOf(a.side)
 	if !shown {
 		t.Fatal("the sidebar is not on screen")
 	}

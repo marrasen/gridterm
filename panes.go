@@ -53,11 +53,16 @@ func (a *app) openPalette() error {
 		FG: a.colours.FG,
 		// No background of its own: the frosted panel behind the dialog
 		// is the background, and an opaque fill would hide it.
-		BG:         color.RGBA{},
-		MatchFG:    a.colours.Cursor,
+		BG: color.RGBA{},
+		// Yellow, because the letters the query found have to read as
+		// found. The window's own foreground would only differ from the
+		// rest of the title by weight.
+		MatchFG:    a.colours.ANSI[3],
 		SelectedFG: a.colours.BG,
 		SelectedBG: a.colours.FG,
-		ChordFG:    a.colours.Cursor,
+		// Dimmer than the title: a key binding is a note beside the
+		// command, not part of its name.
+		ChordFG: a.colours.ANSI[8],
 	}
 	a.palette = p
 	a.dismissPalette = a.showModal(p, func() { a.palette, a.dismissPalette = nil, nil })

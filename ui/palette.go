@@ -221,8 +221,15 @@ func (p *Palette) drawMatch(in grid.View, row, cols int) {
 	}
 	m := p.matches[i]
 	fg, bg := p.Style.FG, p.Style.BG
+	matchFG, chordFG := p.Style.MatchFG, p.Style.ChordFG
 	if i == p.at {
 		fg, bg = p.Style.SelectedFG, p.Style.SelectedBG
+		// The selected line has a background of its own, and a colour
+		// picked to stand out against the other lines can disappear
+		// against it. Whatever the line writes its own text in is the one
+		// colour known to show there. The matched letters keep their
+		// weight, so they are still picked out.
+		matchFG, chordFG = fg, fg
 	}
 	y := row + 1
 	line := in.Sub(0, y, cols, 1)
@@ -237,11 +244,11 @@ func (p *Palette) drawMatch(in grid.View, row, cols int) {
 		// nothing but a key binding does not say what the key does, so a
 		// dialog too narrow for both drops the binding.
 		if at := cols - 1 - w; at >= 6 {
-			line.SetString(at, 0, chord, p.Style.ChordFG, bg, 0)
+			line.SetString(at, 0, chord, chordFG, bg, 0)
 			room = at - 3
 		}
 	}
-	p.drawTitle(line, m, fg, bg, room)
+	p.drawTitle(line, m, fg, bg, matchFG, room)
 }
 
 // drawTitle writes a title with the letters the query found picked out.
@@ -249,7 +256,7 @@ func (p *Palette) drawMatch(in grid.View, row, cols int) {
 // It walks grapheme clusters, not runes. A grid draws a base character
 // and its combining marks in one cell, so writing runes one at a time
 // would give the mark a cell of its own.
-func (p *Palette) drawTitle(line grid.View, m Match, fg, bg color.RGBA, room int) {
+func (p *Palette) drawTitle(line grid.View, m Match, fg, bg, matchFG color.RGBA, room int) {
 	hit := make(map[int]bool, len(m.At))
 	for _, i := range m.At {
 		hit[i] = true
@@ -268,7 +275,7 @@ func (p *Palette) drawTitle(line grid.View, m Match, fg, bg color.RGBA, room int
 		}
 		colour, attr := fg, grid.Attr(0)
 		if found {
-			colour, attr = p.Style.MatchFG, grid.AttrBold
+			colour, attr = matchFG, grid.AttrBold
 		}
 		at = line.SetString(at, 0, cluster, colour, bg, attr)
 		index += len([]rune(cluster))

@@ -56,7 +56,7 @@ func (a *app) newMenubar(child ui.Widget) *ui.Menubar {
 		BG:         color.RGBA{},
 		SelectedFG: a.colours.BG,
 		SelectedBG: a.colours.FG,
-		ChordFG:    a.colours.Cursor,
+		ChordFG:    a.colours.ANSI[8],
 		DisabledFG: a.colours.Selection,
 	}
 	// The bar reaches the modal stack and the compositor only through

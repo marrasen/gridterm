@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"image/color"
 	"strings"
 	"testing"
 
@@ -309,5 +310,49 @@ func TestMenuIgnoresChords(t *testing.T) {
 	}
 	if *closed != 0 || m.SelectedIndex() != 0 {
 		t.Error("a chord moved or closed the menu")
+	}
+}
+
+// TestMenuNeverDrawsTextItsOwnBackgroundColour is the rule the palette
+// broke: a style may choose any colours, and a widget must not put a
+// character in the colour of the cell behind it. A key binding drawn in
+// the colour the selected line sits on simply disappears.
+func TestMenuNeverDrawsTextItsOwnBackgroundColour(t *testing.T) {
+	ink := color.RGBA{0xc8, 0xd0, 0xda, 0xff}
+	paper := color.RGBA{0x14, 0x17, 0x1c, 0xff}
+	cmds := testCommands("Copy", "Paste", "Quit")
+	keys := NewKeymap()
+	keys.MustBind(map[Chord]string{
+		{Key: input.KeyF5}: "copy",
+		{Key: input.KeyF6}: "paste",
+	})
+	m := NewMenu(cmds, keys, []MenuItem{
+		{Command: "copy"}, MenuSeparator(), {Command: "paste"}, {Command: "quit"},
+	}, func() {})
+	// The chord colour is the one the selected line has behind it.
+	m.Style = MenuStyle{
+		FG:         ink,
+		BG:         paper,
+		SelectedFG: paper,
+		SelectedBG: ink,
+		ChordFG:    ink,
+		DisabledFG: ink,
+	}
+
+	g := drawMenu(m, 40, 20)
+
+	box := m.box()
+	for y := box.Y; y < box.Y+box.Rows; y++ {
+		for x := box.X; x < box.X+box.Cols; x++ {
+			c := g.At(x, y)
+			// A blank has no ink, so it may be any colour at all.
+			if c.Rune == ' ' || c.Rune == 0 {
+				continue
+			}
+			if c.FG == c.BG {
+				t.Fatalf("%q at %d,%d is drawn in the colour behind it (%v): it is invisible",
+					c.Rune, x, y, c.FG)
+			}
+		}
 	}
 }

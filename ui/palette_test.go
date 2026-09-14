@@ -939,30 +939,93 @@ func TestPaletteShowsTheKeyBinding(t *testing.T) {
 // TestPalettePicksOutTheMatchedLetters checks the highlight that shows
 // why a command is in the list at all.
 func TestPalettePicksOutTheMatchedLetters(t *testing.T) {
-	p, _ := newTestPalette(t, testCommands("Copy"))
+	// Two matches, so there is an unselected line as well as the
+	// selected one. They are drawn differently and both have to work.
+	p, _ := newTestPalette(t, testCommands("Copy", "Copy paste"))
 	p.Style = styled()
 	typeInto(t, p, "cp")
+	if len(p.Matches()) != 2 {
+		t.Fatalf("%d matches, want two", len(p.Matches()))
+	}
 	g := grid.New(40, 12, color.RGBA{}, color.RGBA{})
 
 	p.Draw(g.View())
 
 	box := p.box()
-	y := box.Y + 1
-	// "Copy" starts two columns into the box; C and p matched.
+	// A title starts two columns into the box; C and p matched.
 	at := box.X + 2
-	for _, tc := range []struct {
-		x    int
-		want color.RGBA
-		what string
-	}{
-		{x: at, want: p.Style.MatchFG, what: "the matched C"},
-		// The line is the selected one, so what did not match is drawn
-		// in the selected colour rather than the ordinary one.
-		{x: at + 1, want: p.Style.SelectedFG, what: "the o between them"},
-		{x: at + 2, want: p.Style.MatchFG, what: "the matched p"},
-	} {
-		if got := g.At(tc.x, y).FG; got != tc.want {
-			t.Errorf("%s is %v, want %v", tc.what, got, tc.want)
+
+	// An unselected line picks the letters out in the match colour.
+	other := box.Y + 2
+	if got := g.At(at, other).FG; got != p.Style.MatchFG {
+		t.Errorf("the matched C is %v, want the match colour %v", got, p.Style.MatchFG)
+	}
+	if got := g.At(at+1, other).FG; got != p.Style.FG {
+		t.Errorf("the o between them is %v, want the ordinary %v", got, p.Style.FG)
+	}
+	if got := g.At(at+2, other).FG; got != p.Style.MatchFG {
+		t.Errorf("the matched p is %v, want the match colour %v", got, p.Style.MatchFG)
+	}
+
+	// The selected line has a background of its own, so the letters are
+	// picked out by weight instead. The match colour is chosen to stand
+	// out against the other lines, and can be exactly what is behind
+	// this one.
+	sel := box.Y + 1
+	if got := g.At(at, sel).FG; got != p.Style.SelectedFG {
+		t.Errorf("the matched C on the selected line is %v, want the line's own %v",
+			got, p.Style.SelectedFG)
+	}
+	if g.At(at, sel).Attr&grid.AttrBold == 0 {
+		t.Error("the matched C on the selected line is not bold, so nothing picks it out")
+	}
+	if g.At(at+1, sel).Attr&grid.AttrBold != 0 {
+		t.Error("the o between them is bold, so the weight says nothing")
+	}
+}
+
+// TestPaletteNeverDrawsTextItsOwnBackgroundColour is the rule behind the
+// one above. A style is free to choose any colours, and the palette must
+// not put a character in the colour of the cell behind it.
+//
+// The window's own palette does exactly this: the colour that marks a
+// match is the colour the selected line is drawn on. The matched word
+// vanished, and so did the key binding beside it, leaving "Next pane"
+// reading as a command called "Next".
+func TestPaletteNeverDrawsTextItsOwnBackgroundColour(t *testing.T) {
+	ink := color.RGBA{0xc8, 0xd0, 0xda, 0xff}
+	paper := color.RGBA{0x14, 0x17, 0x1c, 0xff}
+	p, _ := newTestPalette(t, testCommands("Next pane", "Close pane", "Previous pane"))
+	// The arrangement the window uses: the match and chord colours are
+	// the same one the selected line has behind it.
+	p.Style = PaletteStyle{
+		FG:         ink,
+		BG:         paper,
+		MatchFG:    ink,
+		SelectedFG: paper,
+		SelectedBG: ink,
+		ChordFG:    ink,
+	}
+	keys := NewKeymap()
+	keys.MustBind(map[Chord]string{{Key: input.KeyF5}: "next pane"})
+	p.keys = keys
+	typeInto(t, p, "pane")
+	g := grid.New(40, 12, color.RGBA{}, color.RGBA{})
+
+	p.Draw(g.View())
+
+	box := p.box()
+	for y := box.Y; y < box.Y+box.Rows; y++ {
+		for x := box.X; x < box.X+box.Cols; x++ {
+			c := g.At(x, y)
+			// A blank has no ink, so it may be any colour at all.
+			if c.Rune == ' ' || c.Rune == 0 {
+				continue
+			}
+			if c.FG == c.BG {
+				t.Fatalf("%q at %d,%d is drawn in the colour behind it (%v): it is invisible",
+					c.Rune, x, y, c.FG)
+			}
 		}
 	}
 }

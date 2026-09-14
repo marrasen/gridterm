@@ -22,6 +22,34 @@ type Rate struct {
 
 	perSecIn  uint64
 	perSecOut uint64
+
+	// past is the last Samples speeds, oldest first, so a row can show
+	// the shape of the run rather than one number from it. It is the
+	// faster of the two directions: which way the bytes went is a
+	// different question from whether anything is happening.
+	past  [Samples]uint64
+	depth int
+}
+
+// Samples is how many seconds of speed a Rate remembers.
+const Samples = 12
+
+// Past returns the speeds it remembers, oldest first, with nothing in
+// front of the first second it saw.
+func (r *Rate) Past() []uint64 {
+	if r.depth < Samples {
+		return r.past[Samples-r.depth:]
+	}
+	return r.past[:]
+}
+
+// remember adds one second to the history, pushing the oldest out.
+func (r *Rate) remember(speed uint64) {
+	copy(r.past[:], r.past[1:])
+	r.past[Samples-1] = speed
+	if r.depth < Samples {
+		r.depth++
+	}
 }
 
 // Sample returns the speed each way in bytes per second.
@@ -43,6 +71,7 @@ func (r *Rate) Sample(m *Meter, now time.Time) (in, out uint64) {
 	r.perSecIn = uint64(float64(gotIn-r.in) / seconds)
 	r.perSecOut = uint64(float64(gotOut-r.out) / seconds)
 	r.in, r.out, r.at = gotIn, gotOut, now
+	r.remember(max(r.perSecIn, r.perSecOut))
 	return r.perSecIn, r.perSecOut
 }
 
@@ -75,4 +104,33 @@ func Speed(perSec uint64) string {
 		return ""
 	}
 	return Bytes(perSec) + "/s"
+}
+
+// Bars turns a run of speeds into bar heights from 0 to max, scaled to
+// the fastest second in the run.
+//
+// Scaled to itself rather than to an absolute speed, because what the
+// graph is for is the shape: a shell printing a few bytes a second and a
+// copy moving megabytes both have quiet spells and busy ones, and the
+// same picture should show either.
+func Bars(speeds []uint64, max int) []int {
+	if max <= 0 {
+		return nil
+	}
+	var top uint64
+	for _, s := range speeds {
+		if s > top {
+			top = s
+		}
+	}
+	out := make([]int, len(speeds))
+	if top == 0 {
+		return out
+	}
+	for i, s := range speeds {
+		// Rounded up, so a second that moved anything at all is a bar
+		// rather than a gap.
+		out[i] = int((uint64(max)*s + top - 1) / top)
+	}
+	return out
 }

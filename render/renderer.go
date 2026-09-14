@@ -148,6 +148,7 @@ func (r *Renderer) Draw(dst *ebiten.Image, g *grid.Grid) {
 				float32((x1-x0)*m.CellW), float32(m.CellH),
 				0, 0, 1, 1, c)
 		})
+		r.pushArt(dst, g, y, m)
 		r.pushRules(dst, g, y, m)
 		if curVisible && cur.Y == y {
 			r.pushCursor(dst, g, cur, m)
@@ -203,6 +204,61 @@ func (r *Renderer) Draw(dst *ebiten.Image, g *grid.Grid) {
 	// accept, and the alternative is a draw call per cell.
 	for i := range r.fg {
 		r.flush(dst, &r.fg[i])
+	}
+}
+
+// pushArt queues the quads for one row's art.
+//
+// Drawn in the background pass, because it is a set of plain rectangles
+// like a background is, and because a glyph on the same cell should land
+// over it rather than under it.
+func (r *Renderer) pushArt(dst *ebiten.Image, g *grid.Grid, y int, m glyph.Metrics) {
+	cols, _ := g.Size()
+	for x := 0; x < cols; x++ {
+		c := g.At(x, y)
+		if c.Art.Kind != grid.ArtGraph || c.Attr&grid.AttrHidden != 0 {
+			continue
+		}
+		col := g.FGOf(x, y)
+		if col.A == 0 {
+			continue
+		}
+		r.pushGraph(dst, x, y, c.Art, col, m)
+	}
+}
+
+// pushGraph draws a column chart inside one cell.
+//
+// The bars share the cell's width, so a wider font gives a wider graph
+// rather than a graph with gaps in it. A bar of nothing still draws one
+// pixel, because a gap and a zero read the same otherwise and the point
+// of the graph is the shape of the run.
+func (r *Renderer) pushGraph(
+	dst *ebiten.Image, x, y int, art grid.Art, col color.RGBA, m glyph.Metrics,
+) {
+	// The x-height, so the graph sits on the baseline and stands about
+	// as tall as the letters beside it.
+	top := float32(y*m.CellH) + float32(m.Ascent)*0.35
+	foot := float32(y*m.CellH + m.Ascent)
+	tall := foot - top
+	if tall <= 0 {
+		return
+	}
+	left := float32(x * m.CellW)
+	for i := 0; i < grid.ArtGraphBars; i++ {
+		x0 := left + float32(i*m.CellW)/grid.ArtGraphBars
+		x1 := left + float32((i+1)*m.CellW)/grid.ArtGraphBars
+		w := x1 - x0
+		if w <= 0 {
+			continue
+		}
+		h := tall * float32(art.Bar(i)) / grid.ArtGraphMax
+		if h < 1 {
+			// A bar of nothing is still a bar: a gap would read as a
+			// hole in the run rather than as a quiet second.
+			h = 1
+		}
+		r.push(dst, &r.bg, x0, foot-h, w, h, 0, 0, 1, 1, col)
 	}
 }
 

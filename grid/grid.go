@@ -39,6 +39,76 @@ type Cell struct {
 	BG    color.RGBA
 	Attr  Attr
 	Width uint8
+
+	// Art is drawn in code rather than looked up in a font, for the
+	// things no character stands for. It is drawn over the background
+	// and instead of the glyph.
+	Art Art
+}
+
+// Art is something drawn in code inside one cell: a small graph, a mark,
+// anything the fonts have no character for.
+//
+// It lives in the cell rather than in a table beside it, so the grid's
+// damage tracking covers it without being told: art that has changed is
+// a cell that has changed, and art that has not is a row left alone.
+// That is also why it is a value and not a pointer -- two cells holding
+// the same drawing have to compare equal.
+type Art struct {
+	// Kind says what to draw. The zero kind is nothing at all, so a
+	// cell with no art is the zero cell.
+	Kind ArtKind
+
+	// Data is the drawing's own, packed into one word. What the bits
+	// mean is the kind's business.
+	Data uint64
+}
+
+// ArtKind names something drawn in code.
+type ArtKind uint8
+
+const (
+	// ArtNone is no art, which is what an ordinary cell has.
+	ArtNone ArtKind = iota
+
+	// ArtGraph is a column chart across the cell: ArtGraphBars samples,
+	// each ArtGraphBits wide, oldest on the left.
+	ArtGraph
+)
+
+// How a graph is packed: the samples it holds and the bits each one
+// takes. Four bits is sixteen heights, which is more than a cell that
+// small can show apart.
+const (
+	ArtGraphBars = 12
+	ArtGraphBits = 4
+	ArtGraphMax  = 1<<ArtGraphBits - 1
+)
+
+// Graph packs bar heights into a piece of art, oldest first.
+//
+// The newest is the last bar, so a run shorter than the cell holds fills
+// from the right and grows leftwards as it lengthens: the most recent
+// second is always in the same place. Heights are clamped to
+// ArtGraphMax, and anything older than the last ArtGraphBars is dropped.
+func Graph(heights []int) Art {
+	if len(heights) > ArtGraphBars {
+		heights = heights[len(heights)-ArtGraphBars:]
+	}
+	at := ArtGraphBars - len(heights)
+	var data uint64
+	for i, h := range heights {
+		data |= uint64(min(max(h, 0), ArtGraphMax)) << ((at + i) * ArtGraphBits)
+	}
+	return Art{Kind: ArtGraph, Data: data}
+}
+
+// Bar returns the height of one bar of a graph.
+func (a Art) Bar(i int) int {
+	if a.Kind != ArtGraph || i < 0 || i >= ArtGraphBars {
+		return 0
+	}
+	return int(a.Data>>(i*ArtGraphBits)) & ArtGraphMax
 }
 
 // Equal reports whether two cells would draw identically. Cell contains
@@ -49,6 +119,7 @@ func (c Cell) Equal(o Cell) bool {
 		c.BG == o.BG &&
 		c.Attr == o.Attr &&
 		c.Width == o.Width &&
+		c.Art == o.Art &&
 		slices.Equal(c.Comb, o.Comb)
 }
 

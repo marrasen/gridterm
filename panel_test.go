@@ -1105,3 +1105,113 @@ func TestTheBarFollowsWhatTheStageShows(t *testing.T) {
 		t.Fatal("the bar snapped back to the pane in front")
 	}
 }
+
+// A busy row shows the shape of the last few seconds, which is the
+// answer to "is this going" that one speed does not give.
+func TestABusyRowShowsItsRun(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	e := onlyPane(t, a)
+
+	// Nothing has moved, so there is no shape to show. A run of nothing
+	// but zeroes would draw a flat line under every quiet row.
+	at := panelNow
+	for i := 0; i < meter.Samples+2; i++ {
+		at = at.Add(meter.RateWindow)
+		a.refreshPanel(at)
+	}
+	if got := rowArt(a, e); got.Kind != grid.ArtNone {
+		t.Fatalf("a row that has moved nothing for %d seconds carries %v",
+			meter.Samples, got)
+	}
+
+	// A run of seconds, each busier than the last.
+	for i := 1; i <= 4; i++ {
+		e.Meter.Moved(i*1000, 0, at)
+		at = at.Add(meter.RateWindow)
+		a.refreshPanel(at)
+	}
+
+	art := rowArt(a, e)
+	if art.Kind != grid.ArtGraph {
+		t.Fatalf("a busy row carries %v, want a graph", art)
+	}
+	// The run got faster, so the bars do too, and the last is full.
+	var last, full int
+	for i := 0; i < grid.ArtGraphBars; i++ {
+		if h := art.Bar(i); h > 0 {
+			if h < last {
+				t.Fatalf("the bars go %v, want them rising", barsOf(art))
+			}
+			last = h
+		}
+	}
+	full = art.Bar(grid.ArtGraphBars - 1)
+	if full != grid.ArtGraphMax {
+		t.Fatalf("the busiest second is %d, want the full height: %v", full, barsOf(art))
+	}
+}
+
+// rowArt returns the art on the row for one connection.
+func rowArt(a *testApp, e *conns.Entry) grid.Art {
+	for _, row := range a.panel.Rows() {
+		if row.Key == any(e) {
+			return row.Art
+		}
+	}
+	return grid.Art{}
+}
+
+// barsOf reads a graph back as heights, for a failure worth reading.
+func barsOf(art grid.Art) []int {
+	out := make([]int, grid.ArtGraphBars)
+	for i := range out {
+		out[i] = art.Bar(i)
+	}
+	return out
+}
+
+// The graph is drawn in a cell of its own, before the note, so the two
+// do not land on top of one another.
+func TestTheGraphAndTheSpeedBothFit(t *testing.T) {
+	l := ui.NewList()
+	l.Style = a4Style()
+	l.SetRows([]ui.ListRow{{
+		Text: "one", Note: "12 kB/s", Art: grid.Graph([]int{1, 2, 3}), Key: 1,
+	}})
+	l.Layout(ui.Size{Cols: 40, Rows: 4})
+	g := grid.New(40, 4, color.RGBA{}, color.RGBA{})
+	l.Draw(g.View())
+
+	var at = -1
+	for x := 0; x < 40; x++ {
+		if g.At(x, 0).Art.Kind == grid.ArtGraph {
+			at = x
+		}
+	}
+	if at < 0 {
+		t.Fatal("the graph is not drawn at all")
+	}
+	var note string
+	for x := 0; x < 40; x++ {
+		c := g.At(x, 0)
+		if c.Rune == 0 {
+			note += " "
+			continue
+		}
+		note += string(c.Rune)
+	}
+	if !strings.Contains(note, "12 kB/s") {
+		t.Fatalf("the row reads %q, want the speed as well", note)
+	}
+	// The graph's own cell carries no letter.
+	if got := g.At(at, 0).Rune; got != ' ' && got != 0 {
+		t.Fatalf("the graph's cell also holds %q", got)
+	}
+}
+
+// a4Style colours a list for a test that only cares about what is where.
+func a4Style() ui.ListStyle {
+	white := color.RGBA{R: 255, G: 255, B: 255, A: 255}
+	return ui.ListStyle{FG: white, BG: color.RGBA{A: 255}, NoteFG: white}
+}

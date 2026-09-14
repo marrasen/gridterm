@@ -121,3 +121,88 @@ func TestRateWithAClockThatWentBackwards(t *testing.T) {
 		t.Fatalf("rate = %d after the clock went back, want the %d already known", got, want)
 	}
 }
+
+// A rate remembers the last few seconds, oldest first, with nothing in
+// front of the first second it saw.
+func TestRateRemembersTheRun(t *testing.T) {
+	m := New()
+	var r Rate
+	at := time.Date(2026, 9, 14, 12, 0, 0, 0, time.UTC)
+	r.Sample(m, at)
+	if got := r.Past(); len(got) != 0 {
+		t.Fatalf("it remembers %v before anything has gone past", got)
+	}
+
+	for i := 1; i <= 3; i++ {
+		m.Moved(i*1000, 0, at)
+		at = at.Add(RateWindow)
+		r.Sample(m, at)
+	}
+	got := r.Past()
+	if len(got) != 3 {
+		t.Fatalf("it remembers %v, want three seconds", got)
+	}
+	if !(got[0] < got[1] && got[1] < got[2]) {
+		t.Fatalf("it remembers %v, want them oldest first", got)
+	}
+
+	// Past the length it holds, the oldest falls off the front.
+	for i := 0; i < Samples*2; i++ {
+		at = at.Add(RateWindow)
+		r.Sample(m, at)
+	}
+	if got := len(r.Past()); got != Samples {
+		t.Fatalf("it remembers %d seconds, want %d", got, Samples)
+	}
+	// Nothing has moved for a while, so the run is quiet.
+	for i, speed := range r.Past() {
+		if speed != 0 {
+			t.Fatalf("second %d of a quiet run is %d", i, speed)
+		}
+	}
+}
+
+// Bars scale to the fastest second in the run, so the shape shows
+// whatever the speeds happen to be.
+func TestBarsScaleToTheRun(t *testing.T) {
+	got := Bars([]uint64{0, 50, 100}, 15)
+	if len(got) != 3 {
+		t.Fatalf("%v", got)
+	}
+	if got[0] != 0 {
+		t.Errorf("a quiet second is %d, want nothing", got[0])
+	}
+	if got[2] != 15 {
+		t.Errorf("the fastest second is %d, want the full height", got[2])
+	}
+	if got[1] <= got[0] || got[1] >= got[2] {
+		t.Errorf("the middle second is %d, want it between them", got[1])
+	}
+
+	// The same shape at a different scale gives the same bars.
+	slow := Bars([]uint64{0, 50, 100}, 15)
+	fast := Bars([]uint64{0, 50_000, 100_000}, 15)
+	for i := range slow {
+		if slow[i] != fast[i] {
+			t.Fatalf("the same shape gives %v and %v", slow, fast)
+		}
+	}
+
+	// A run with nothing in it is flat rather than full.
+	for i, h := range Bars([]uint64{0, 0, 0}, 15) {
+		if h != 0 {
+			t.Fatalf("bar %d of a quiet run is %d", i, h)
+		}
+	}
+	if got := Bars([]uint64{1}, 0); got != nil {
+		t.Errorf("bars with no height = %v", got)
+	}
+}
+
+// A second that moved anything at all is a bar rather than a gap.
+func TestASecondThatMovedAnythingIsABar(t *testing.T) {
+	got := Bars([]uint64{1, 1_000_000}, 15)
+	if got[0] < 1 {
+		t.Fatalf("a second that moved a byte is %d, want at least one", got[0])
+	}
+}

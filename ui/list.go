@@ -94,6 +94,10 @@ type ListRow struct {
 	// how a header -- a row nothing else can be done with -- offers
 	// something to do.
 	Button rune
+
+	// Art is drawn in the cell before the note, for a row with
+	// something to show that no words would say as well.
+	Art grid.Art
 }
 
 // buttonCol is the column a row's button is drawn in, or -1 when the
@@ -374,6 +378,16 @@ func (l *List) paintRow(v grid.View, row ListRow, selected bool, y, rows int) {
 	if at := buttonCol(cols); at >= 0 && row.Button != 0 {
 		v.Set(at, 0, grid.Cell{Rune: row.Button, FG: fg, BG: bg, Width: 1})
 		room = at
+	}
+	if row.Art.Kind != grid.ArtNone {
+		// A cell of its own, before the note: the two say different
+		// things about the same connection.
+		if at := room - 2; at > 2 {
+			v.Set(at, 0, grid.Cell{
+				Rune: ' ', FG: noteFG, BG: bg, Width: 1, Art: row.Art,
+			})
+			room = at - 1
+		}
 	}
 	if row.Note != "" {
 		w := grid.StringWidth(row.Note)

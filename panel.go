@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/marrasen/gridterm/conns"
+	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/meter"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/files"
@@ -344,6 +345,7 @@ func (a *app) panelRow(row conns.Row, now time.Time) ui.ListRow {
 	}
 	out := ui.ListRow{Text: text, Depth: 1, Key: row.Entry, Note: a.note(row, now)}
 	out.Mark, out.MarkFG = a.mark(row.State, now)
+	out.Art = a.graph(row.Entry)
 	if row.State == meter.Closed {
 		// A finished connection reads as finished rather than as one
 		// more thing running.
@@ -381,6 +383,36 @@ func (a *app) note(row conns.Row, now time.Time) string {
 		}
 	}
 	return row.Note
+}
+
+// graph is the last few seconds of traffic on a connection, drawn in one
+// cell.
+//
+// A picture rather than a number: what a row is asked is usually "is
+// this going", and the shape of the last twelve seconds answers that
+// where one speed does not. The number stays beside it for the times
+// when how fast is the question.
+func (a *app) graph(e *conns.Entry) grid.Art {
+	rate := a.rates[e]
+	if rate == nil {
+		return grid.Art{}
+	}
+	past := rate.Past()
+	if len(past) == 0 {
+		return grid.Art{}
+	}
+	var moved bool
+	for _, speed := range past {
+		if speed > 0 {
+			moved = true
+		}
+	}
+	if !moved {
+		// Nothing has gone past in the whole run, so there is no shape
+		// to show. A row of nothing but zeroes is noise.
+		return grid.Art{}
+	}
+	return grid.Graph(meter.Bars(past, grid.ArtGraphMax))
 }
 
 // streams is what a tunnel's row says when nothing is moving through it:

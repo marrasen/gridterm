@@ -680,3 +680,91 @@ func TestStringWidthMatchesWhatSetStringSpends(t *testing.T) {
 		}
 	}
 }
+
+// A run shorter than the cell holds fills from the right, so the newest
+// second is always in the same place as the graph lengthens.
+func TestGraphFillsFromTheRight(t *testing.T) {
+	art := Graph([]int{3, 7})
+	for i := 0; i < ArtGraphBars-2; i++ {
+		if got := art.Bar(i); got != 0 {
+			t.Fatalf("bar %d of a two-second run is %d, want nothing", i, got)
+		}
+	}
+	if got := art.Bar(ArtGraphBars - 2); got != 3 {
+		t.Errorf("the older second is at %d", got)
+	}
+	if got := art.Bar(ArtGraphBars - 1); got != 7 {
+		t.Errorf("the newest second is %d, want it last", got)
+	}
+}
+
+// Art is packed into the cell and read back the same, so a row can carry
+// a small drawing without a table beside it.
+func TestGraphPacksItsBars(t *testing.T) {
+	want := []int{0, 1, 2, 3, 15, 8, 0, 4, 9, 15, 1, 6}
+	art := Graph(want)
+	if art.Kind != ArtGraph {
+		t.Fatalf("kind = %v", art.Kind)
+	}
+	for i, h := range want {
+		if got := art.Bar(i); got != h {
+			t.Fatalf("bar %d = %d, want %d", i, got, h)
+		}
+	}
+	// Past the end there is nothing.
+	if got := art.Bar(ArtGraphBars); got != 0 {
+		t.Errorf("bar past the end = %d", got)
+	}
+	if got := art.Bar(-1); got != 0 {
+		t.Errorf("bar before the start = %d", got)
+	}
+}
+
+// A height taller than the cell can show is cut to what it can, and bars
+// past the end are dropped rather than running into the next one.
+func TestGraphClampsWhatItIsGiven(t *testing.T) {
+	art := Graph([]int{99, -4})
+	// Right aligned: two bars land in the last two places.
+	if got := art.Bar(ArtGraphBars - 2); got != ArtGraphMax {
+		t.Errorf("a bar taller than the cell packs as %d, want %d", got, ArtGraphMax)
+	}
+	if got := art.Bar(ArtGraphBars - 1); got != 0 {
+		t.Errorf("a bar below nothing packs as %d", got)
+	}
+
+	long := make([]int, ArtGraphBars+8)
+	for i := range long {
+		long[i] = ArtGraphMax
+	}
+	full := Graph(long)
+	for i := 0; i < ArtGraphBars; i++ {
+		if got := full.Bar(i); got != ArtGraphMax {
+			t.Fatalf("bar %d = %d", i, got)
+		}
+	}
+}
+
+// Art that has changed is a cell that has changed, which is what keeps
+// the grid's damage tracking covering it without being told.
+func TestArtCountsAsAChange(t *testing.T) {
+	g := New(4, 2, fg, bg)
+	g.Set(0, 0, Cell{Rune: ' ', Width: 1, Art: Graph([]int{1, 2, 3})})
+	g.ClearDirty()
+
+	// The same art again changes nothing.
+	g.Set(0, 0, Cell{Rune: ' ', Width: 1, Art: Graph([]int{1, 2, 3})})
+	if g.AnyDirty() {
+		t.Fatal("writing the same art dirtied the row")
+	}
+	// A different run does.
+	g.Set(0, 0, Cell{Rune: ' ', Width: 1, Art: Graph([]int{1, 2, 4})})
+	if !g.RowDirty(0) {
+		t.Fatal("changing the art left the row clean")
+	}
+	g.ClearDirty()
+	// And taking it away does.
+	g.Set(0, 0, Cell{Rune: ' ', Width: 1})
+	if !g.RowDirty(0) {
+		t.Fatal("taking the art away left the row clean")
+	}
+}

@@ -108,6 +108,25 @@ type MouseHandler interface {
 	HandleMouse(ev input.MouseEvent) (bool, error)
 }
 
+// RowSpacer is a widget that wants room around some of its rows.
+//
+// Whoever draws it asks twice. RoomWanted comes first, before the
+// widget is laid out, and decides how much of the height goes to the
+// gaps rather than to rows. RowPads comes after, and says where that
+// room went, one entry per row from the top of the widget's box.
+//
+// RoomWanted must not depend on the layout. What it asks for is what
+// decides the row count, so an answer that looked at the rows would
+// change them, and change its own answer with them the next time round.
+//
+// Only a widget on a grid of its own can have either: a grid has one
+// set of row heights, so a widget sharing one with a terminal would put
+// its gaps through the terminal's lines as well.
+type RowSpacer interface {
+	RoomWanted(rows int) int
+	RowPads() []grid.Pad
+}
+
 // Boxed is a widget that fills only part of the view it is given and
 // says which part, in that view's own coordinates.
 //

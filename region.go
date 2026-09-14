@@ -30,6 +30,10 @@ type region struct {
 
 	// left, top, width and height are the same in pixels.
 	left, top, width, height int
+
+	// budget is how many quarters of a cell the last layout set aside
+	// for the room around the rows.
+	budget int
 }
 
 // newRegion puts a widget on a grid of its own, over whatever the
@@ -54,13 +58,21 @@ func (r *region) place(rect ui.Rect, geo *render.Geometry, pads []grid.Pad) {
 		r.layer.Hidden = true
 		return
 	}
-	r.rect = rect
 	r.left, r.width = geo.ColBox(rect.X, rect.X+rect.Cols)
 	r.top, r.height = geo.RowBox(rect.Y, rect.Y+rect.Rows)
 	r.layer.X, r.layer.Y = r.left, r.top
 	r.layer.Hidden = false
 
-	r.g.Resize(rect.Cols, rect.Rows)
+	// How much of the box goes to the room around the rows, and so how
+	// many rows are left. The region is the only thing that knows how
+	// tall its own rows are, so it works out the count and lays the
+	// widget out again for it: the tree could only count whole cells.
+	r.budget = r.roomFor(rect.Rows)
+	rows := max(rect.Rows-(r.budget+grid.PadUnit-1)/grid.PadUnit, 1)
+	rect.Rows = rows
+	r.rect = rect
+
+	r.g.Resize(rect.Cols, rows)
 	var want padTable
 	for x := 0; x < rect.Cols; x++ {
 		if p := padOf(pads, rect.X+x); !p.Empty() {
@@ -68,6 +80,49 @@ func (r *region) place(rect ui.Rect, geo *render.Geometry, pads []grid.Pad) {
 		}
 	}
 	want.apply(rect.Cols, r.g.ColPads(), r.g.SetColPad)
+
+	if r.w != nil {
+		r.w.Layout(ui.Size{Cols: rect.Cols, Rows: rows})
+	}
+	r.padRows(rows)
+}
+
+// roomFor is how many quarters of a cell the widget wants for the room
+// around its rows, given a box this many rows tall.
+func (r *region) roomFor(rows int) int {
+	s, ok := r.w.(ui.RowSpacer)
+	if !ok {
+		return 0
+	}
+	return max(s.RoomWanted(rows), 0)
+}
+
+// padRows gives the widget the room it asked for.
+//
+// Whatever it does not use goes under the last row, so the grid fills
+// its box exactly. Room set aside and then left unused would be a strip
+// at the foot of the sidebar with no cell to paint it.
+func (r *region) padRows(rows int) {
+	budget := (r.budget + grid.PadUnit - 1) / grid.PadUnit * grid.PadUnit
+	var want padTable
+	spent := 0
+	if s, ok := r.w.(ui.RowSpacer); ok {
+		for y, p := range s.RowPads() {
+			if y >= rows {
+				break
+			}
+			cost := int(p.Before) + int(p.After)
+			if cost <= 0 || spent+cost > budget {
+				continue
+			}
+			want.add(y, p)
+			spent += cost
+		}
+	}
+	if left := budget - spent; left > 0 {
+		want.add(rows-1, grid.Pad{After: int8(min(left, grid.PadMax))})
+	}
+	want.apply(rows, r.g.RowPads(), r.g.SetRowPad)
 }
 
 // measure works out where the region's own grid lands in pixels.

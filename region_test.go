@@ -22,6 +22,9 @@ func withRegion(t *testing.T, a *testApp) {
 	cw, ch := a.renderer.CellSize()
 	a.resizeTo(90*cw, 30*ch)
 	a.applyPads()
+	// Rows in the panel, so it has machine names to put room around and
+	// the region has something to pay for.
+	a.refreshPanel(panelNow)
 	a.placeRegions()
 }
 
@@ -39,8 +42,11 @@ func TestTheSidebarRegionIsWhereTheTreePutIt(t *testing.T) {
 		t.Errorf("the sidebar is %d columns, want %d", area.Cols, panelWidth)
 	}
 	cols, rows := a.sideRegion.g.Size()
-	if cols != area.Cols || rows != area.Rows {
-		t.Errorf("its grid is %dx%d, want the %dx%d it was given", cols, rows, area.Cols, area.Rows)
+	// Fewer rows than the box: some of its height pays for the room
+	// around the machine names.
+	if cols != area.Cols || rows > area.Rows || rows < 1 {
+		t.Errorf("its grid is %dx%d, want %d columns and at most %d rows",
+			cols, rows, area.Cols, area.Rows)
 	}
 }
 
@@ -152,5 +158,102 @@ func TestAClosedSidebarHasNoRegion(t *testing.T) {
 	if gotCol != wantCol || gotRow != wantRow {
 		t.Errorf("the pixel is on cell %d,%d, want the window's %d,%d",
 			gotCol, gotRow, wantCol, wantRow)
+	}
+}
+
+// The region gives up rows to pay for the room around the ones it
+// keeps, and its grid still fills its box to the pixel.
+func TestTheRegionPaysForItsRoomInRows(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withRegion(t, a)
+	area, ok := a.dock.ChildArea(a.side)
+	if !ok {
+		t.Fatal("the sidebar has no room")
+	}
+
+	rows := a.sideRegion.rect.Rows
+	if rows >= area.Rows {
+		t.Errorf("the region kept all %d of its rows, so it paid for no room", rows)
+	}
+	if got, _ := a.sideRegion.g.Size(); got != a.sideRegion.rect.Cols {
+		t.Errorf("its grid is %d columns and its box is %d", got, a.sideRegion.rect.Cols)
+	}
+	if got := a.sideGeo.Height(); got != a.sideRegion.height {
+		t.Errorf("its grid is %d pixels tall and its box is %d", got, a.sideRegion.height)
+	}
+}
+
+// The room the region set aside is all spent. Room set aside and then
+// left unused would be a strip at the foot of the sidebar with no cell
+// to paint it.
+func TestTheRegionSpendsTheRoomItSetAside(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withRegion(t, a)
+
+	rows := a.sideRegion.rect.Rows
+	spent := 0
+	for y := 0; y < rows; y++ {
+		p := a.sideRegion.g.RowPad(y)
+		spent += int(p.Before) + int(p.After)
+	}
+	lost := 0
+	if area, ok := a.dock.ChildArea(a.side); ok {
+		lost = area.Rows - rows
+	}
+	if want := lost * grid.PadUnit; spent != want {
+		t.Errorf("the region spent %d quarters of the %d rows it gave up", spent, want)
+	}
+}
+
+// The machine names are the rows with room around them.
+func TestTheServerNamesAreWhatGetsTheRoom(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withRegion(t, a)
+	a.refreshPanel(panelNow)
+	a.sideRegion.place(a.sidebarArea(), &a.geo, a.g.ColPads())
+
+	rows := a.panel.Rows()
+	if len(rows) == 0 {
+		t.Fatal("the panel is empty, so there are no names to space")
+	}
+	headers := 0
+	for y, row := range rows {
+		if y >= a.sideRegion.rect.Rows {
+			break
+		}
+		got := a.sideRegion.g.RowPad(y)
+		if row.Header {
+			headers++
+			if got.Before == 0 && got.After == 0 {
+				t.Errorf("the heading on row %d (%q) has no room around it", y, row.Text)
+			}
+			continue
+		}
+		// The last row carries whatever the headings did not use.
+		if y != a.sideRegion.rect.Rows-1 && !got.Empty() {
+			t.Errorf("row %d (%q) is not a heading but has %+v", y, row.Text, got)
+		}
+	}
+	if headers == 0 {
+		t.Fatal("no headings were drawn, so the test proves nothing")
+	}
+}
+
+// A widget that asks for no room keeps every row its box has.
+func TestARegionWithoutSpacingKeepsEveryRow(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withRegion(t, a)
+	a.panel.Style.HeaderPad = grid.Pad{}
+
+	area, _ := a.dock.ChildArea(a.side)
+	a.sideRegion.place(a.sidebarArea(), &a.geo, a.g.ColPads())
+
+	if a.sideRegion.rect.Rows != area.Rows {
+		t.Errorf("the region has %d rows of the %d in its box", a.sideRegion.rect.Rows, area.Rows)
+	}
+	for y := 0; y < area.Rows; y++ {
+		if got := a.sideRegion.g.RowPad(y); !got.Empty() {
+			t.Errorf("row %d has %+v with nothing asking for room", y, got)
+		}
 	}
 }

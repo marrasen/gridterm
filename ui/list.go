@@ -32,6 +32,16 @@ type ListStyle struct {
 	// NoteFG is the word at the end of a row: what it is doing, how fast.
 	NoteFG color.RGBA
 
+	// HeaderPad is the room around a header, in quarters of a cell. It
+	// is what makes a name for the rows under it read as a heading
+	// rather than as another row, without spending a whole line on the
+	// gap.
+	//
+	// Only a list on a grid of its own can have it: a grid has one set
+	// of row heights, so a list sharing one with a terminal would put
+	// the gap through the terminal's lines as well.
+	HeaderPad grid.Pad
+
 	// BGEnd is the background of the last row, when it has an alpha. The
 	// rows in between blend from BG to it, which gives a list a ground
 	// of its own rather than the window's.
@@ -275,6 +285,50 @@ func (l *List) Select(key any) bool {
 func (l *List) Layout(size Size) {
 	l.size = size
 	l.clamp()
+}
+
+// RoomWanted is how many quarters of a cell the list would like for the
+// room around its headers, were it given this many rows.
+//
+// Asked before the list is laid out, and answered from the rows it
+// holds rather than from the ones it would show: the answer decides how
+// many rows there is room for, so an answer that depended on the layout
+// would change the layout, which would change the answer.
+//
+// Capped at a quarter of the rows, so a list of nothing but headings
+// cannot spend the whole panel on the gaps between them.
+func (l *List) RoomWanted(rows int) int {
+	each := int(l.Style.HeaderPad.Before) + int(l.Style.HeaderPad.After)
+	if each <= 0 || rows <= 0 {
+		return 0
+	}
+	headers := 0
+	for _, row := range l.rows {
+		if row.Header {
+			headers++
+		}
+	}
+	// Never more than a quarter of the panel, so a list of nothing but
+	// headings cannot spend the whole of it on the gaps between them.
+	return min(headers*each, rows*grid.PadUnit/4)
+}
+
+// RowPads is the room around each of the rows the list is drawing, one
+// entry per row from the top of its box.
+func (l *List) RowPads() []grid.Pad {
+	if l.Style.HeaderPad.Empty() {
+		return nil
+	}
+	out := make([]grid.Pad, 0, l.size.Rows)
+	for y := 0; y < l.size.Rows; y++ {
+		i := l.top + y
+		if i < 0 || i >= len(l.rows) || !l.rows[i].Header {
+			out = append(out, grid.Pad{})
+			continue
+		}
+		out = append(out, l.Style.HeaderPad)
+	}
+	return out
 }
 
 // SetFocus marks the list as the one receiving keys, which is what makes

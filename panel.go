@@ -83,6 +83,11 @@ func (a *app) newPanel() *ui.List {
 	// selection colour, so it stays darker than any dot drawn on it: the
 	// dot is what says whether the connection is open.
 	l.Style.CurrentBG = mix(a.colours.BG, a.colours.FG, 1, 6)
+	// A little air around each machine's name, so it reads as a heading
+	// for the rows under it rather than as another row. A quarter of a
+	// character each way: enough to see, and far less than the blank
+	// line it would otherwise take.
+	l.Style.HeaderPad = grid.Pad{Before: 1, After: 1}
 	l.OnActivate = func(row ui.ListRow) error { return a.revealRow(row) }
 	l.OnButton = func(row ui.ListRow) error { return a.openHostMenu(row) }
 	return l

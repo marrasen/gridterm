@@ -14,7 +14,7 @@ import (
 
 	vte "github.com/danielgatis/go-vte"
 
-	"github.com/marcus/gridterm/grid"
+	"github.com/marrasen/gridterm/grid"
 )
 
 // Callbacks are the side effects a terminal has on the world around it.

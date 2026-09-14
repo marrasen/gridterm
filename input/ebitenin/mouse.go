@@ -3,7 +3,7 @@ package ebitenin
 import (
 	"github.com/hajimehoshi/ebiten/v2"
 
-	"github.com/marcus/gridterm/input"
+	"github.com/marrasen/gridterm/input"
 )
 
 // MouseReader turns ebiten's polled mouse state into the press, release

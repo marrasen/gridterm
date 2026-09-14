@@ -1,6 +1,6 @@
 package vt
 
-import "github.com/marcus/gridterm/grid"
+import "github.com/marrasen/gridterm/grid"
 
 // line is one row of cells. Rows are separate slices rather than one
 // flat array so scrolling is a pointer rotate instead of a copy of the

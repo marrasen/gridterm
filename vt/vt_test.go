@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/marcus/gridterm/grid"
+	"github.com/marrasen/gridterm/grid"
 )
 
 // harness drives a terminal and reads the screen back as text, so tests

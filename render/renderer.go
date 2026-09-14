@@ -8,8 +8,8 @@ import (
 
 	"github.com/hajimehoshi/ebiten/v2"
 
-	"github.com/marcus/gridterm/glyph"
-	"github.com/marcus/gridterm/grid"
+	"github.com/marrasen/gridterm/glyph"
+	"github.com/marrasen/gridterm/grid"
 )
 
 // maxBatchVerts caps how many vertices go into one DrawTriangles call.

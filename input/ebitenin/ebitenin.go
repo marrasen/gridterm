@@ -10,7 +10,7 @@ package ebitenin
 import (
 	"github.com/hajimehoshi/ebiten/v2"
 
-	"github.com/marcus/gridterm/input"
+	"github.com/marrasen/gridterm/input"
 )
 
 // Reader collects a frame's input events from the window. Reuse one

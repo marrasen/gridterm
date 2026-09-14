@@ -3,7 +3,7 @@ package vt
 import (
 	"image/color"
 
-	"github.com/marcus/gridterm/grid"
+	"github.com/marrasen/gridterm/grid"
 )
 
 // applySGR updates the pen from one SGR sequence.

@@ -19,13 +19,13 @@ import (
 	"golang.org/x/image/font/gofont/gomono"
 	"golang.org/x/image/font/gofont/gomonobold"
 
-	"github.com/marcus/gridterm/glyph"
-	"github.com/marcus/gridterm/grid"
-	"github.com/marcus/gridterm/input"
-	"github.com/marcus/gridterm/input/ebitenin"
-	"github.com/marcus/gridterm/render"
-	"github.com/marcus/gridterm/session"
-	"github.com/marcus/gridterm/vt"
+	"github.com/marrasen/gridterm/glyph"
+	"github.com/marrasen/gridterm/grid"
+	"github.com/marrasen/gridterm/input"
+	"github.com/marrasen/gridterm/input/ebitenin"
+	"github.com/marrasen/gridterm/render"
+	"github.com/marrasen/gridterm/session"
+	"github.com/marrasen/gridterm/vt"
 )
 
 // readChunk is how much pty output is taken per read. Large enough that

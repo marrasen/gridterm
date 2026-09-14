@@ -15,65 +15,64 @@ import (
 	"github.com/marrasen/gridterm/vfs"
 )
 
-// browser is a two-pane file browser in the window, with a panel row for
-// each side.
+// browser is the window's file manager: any number of panes side by
+// side, with a row on the sidebar for each of them.
+//
+// One manager rather than one per pair of machines. A pane is opened
+// from the plus on a machine's row, and the user puts as many in as they
+// want: tab along them, and copy from the one with the keys to the next.
 type browser struct {
 	view *files.Browser
 
-	// left and right are the rows on the panel, one per side, so a
-	// browser touching two machines is shown under both of them.
-	left, right *conns.Entry
+	// rows is the sidebar row for each pane, so a manager touching
+	// several machines is shown under each of them.
+	rows map[*files.Pane]*conns.Entry
 }
 
-// openFilesHere opens a browser on the machine the user is looking at,
-// with this machine in the other pane.
-func (a *app) openFilesHere() error {
-	host := a.currentHost()
-	if a.isHere(host) {
-		// Both sides on this machine, which is a browser of its own
-		// worth: two directories at once.
-		return a.openBrowser(conns.Local, conns.Local)
-	}
-	return a.openBrowser(conns.Local, host)
-}
+// openFilesHere puts another pane in the file manager, on the machine
+// the user is looking at.
+func (a *app) openFilesHere() error { return a.openFilesOn(a.currentHost()) }
 
-// openBrowser puts a browser in a tab, with a filesystem on each side.
-func (a *app) openBrowser(left, right string) error {
-	leftFS, err := a.filesystem(left)
+// openFilesOn puts a pane on a machine, starting the file manager when
+// there is not one yet.
+func (a *app) openFilesOn(host string) error {
+	f, err := a.filesystem(host)
 	if err != nil {
 		return err
 	}
-	rightFS, err := a.filesystem(right)
-	if err != nil {
-		return errors.Join(err, leftFS.Close())
+	if a.files == nil {
+		if err := a.openFileManager(); err != nil {
+			return errors.Join(err, f.Close())
+		}
 	}
-
-	b := &browser{}
-	leftPane, rightPane := a.newPane(leftFS, b, true), a.newPane(rightFS, b, false)
-	b.view = files.NewBrowser(leftPane, rightPane, func(s *ui.Split) {
-		s.DividerFG = a.colours.FG
-		s.DividerBG = a.colours.BG
-	})
-	// The bar of keys under the panes is drawn in the panes' own
-	// colours, so it reads as part of the browser.
-	b.view.Style = leftPane.Style
-	a.wireBrowser(b)
-
-	if err := a.placeTab(b.view); err != nil {
-		return errors.Join(err, b.view.Close())
-	}
-	a.browsers[b.view] = b
-	// The browser is what the tree holds, and it opens on its left side.
-	a.focus(b.view)
-	b.view.Focus(leftPane)
-	a.showBrowser(b, left, right)
+	b := a.files
+	p := a.newPane(f, b)
+	b.view.Add(p)
+	row := a.browserRow(p, host)
+	b.rows[p] = row
+	a.registry.Add(row)
+	a.focus(p)
 	a.relayout()
 
 	// Somewhere to start. Asking a machine where home is takes as long
 	// as anything else it is asked, so it happens off this goroutine and
 	// the pane fills in when the answer arrives.
-	a.startAt(leftPane)
-	a.startAt(rightPane)
+	a.startAt(p)
+	return nil
+}
+
+// openFileManager puts an empty file manager in the window.
+func (a *app) openFileManager() error {
+	b := &browser{rows: map[*files.Pane]*conns.Entry{}}
+	b.view = files.NewBrowser()
+	// The dividers and the bar of keys are drawn in the panes' own
+	// colours, so both read as part of the manager.
+	b.view.Style = a.paneStyle()
+	a.wireBrowser(b)
+	if err := a.placeTab(b.view); err != nil {
+		return err
+	}
+	a.files = b
 	return nil
 }
 
@@ -113,10 +112,26 @@ func (a *app) filesystem(host string) (vfs.FS, error) {
 	return vfs.NewSFTP(host, f.Client(), f.Close), nil
 }
 
-// newPane builds one side of a browser.
-func (a *app) newPane(f vfs.FS, b *browser, left bool) *files.Pane {
+// newPane builds one pane of the file manager.
+func (a *app) newPane(f vfs.FS, b *browser) *files.Pane {
 	p := files.New(f)
-	p.Style = files.Style{
+	p.Style = a.paneStyle()
+	// Off the drawing goroutine, and back onto it with the answer: a
+	// directory on a machine with a long way to go would otherwise stop
+	// the window while it was read.
+	p.Read = func(f vfs.FS, path string, then func([]vfs.Entry, error)) {
+		go func() {
+			entries, err := f.ReadDir(path)
+			a.pump.post(func() { then(entries, err) })
+		}()
+	}
+	p.OnChange = func() { a.browserMoved(b, p) }
+	return p
+}
+
+// paneStyle colours one pane of the file manager.
+func (a *app) paneStyle() files.Style {
+	return files.Style{
 		FG: a.colours.FG,
 		BG: a.colours.BG,
 		// The bar is marked the way a selected tab is, so the two read
@@ -134,17 +149,6 @@ func (a *app) newPane(f vfs.FS, b *browser, left bool) *files.Pane {
 		// a failure before it is read as words.
 		ErrorFG: a.colours.ANSI[1],
 	}
-	// Off the drawing goroutine, and back onto it with the answer: a
-	// directory on a machine with a long way to go would otherwise stop
-	// the window while it was read.
-	p.Read = func(f vfs.FS, path string, then func([]vfs.Entry, error)) {
-		go func() {
-			entries, err := f.ReadDir(path)
-			a.pump.post(func() { then(entries, err) })
-		}()
-	}
-	p.OnChange = func() { a.browserMoved(b, left) }
-	return p
 }
 
 // wireBrowser says what the F keys do.
@@ -156,49 +160,28 @@ func (a *app) wireBrowser(b *browser) {
 	b.view.OnRename = func(w files.Work) { a.askToRename(w) }
 }
 
-// showBrowser puts a row on the panel for each side.
-func (a *app) showBrowser(b *browser, left, right string) {
-	leftPane, rightPane := b.view.Panes()
-	b.left = a.browserRow(b, leftPane, left)
-	b.right = a.browserRow(b, rightPane, right)
-	a.registry.Add(b.left)
-	a.registry.Add(b.right)
-}
-
-// browserRow is one side of a browser on the panel.
+// browserRow is one pane of the file manager on the sidebar.
 //
-// One row per side rather than one per browser: a browser touching two
-// machines is open on both of them, and closing either machine has to
-// take it away.
-func (a *app) browserRow(b *browser, p *files.Pane, host string) *conns.Entry {
+// One row per pane rather than one per manager: a manager touching
+// several machines is open on all of them, and closing any of those
+// machines has to take its pane away.
+func (a *app) browserRow(p *files.Pane, host string) *conns.Entry {
 	return &conns.Entry{
-		Host:  host,
-		Kind:  conns.Files,
-		Label: p.At(),
-		// The browser is what the tree holds; which side of it has the
-		// keys is the browser's own business.
-		Reveal: func() {
-			a.focus(b.view)
-			b.view.Focus(p)
-		},
-		Close: func() error { return a.closePane(b.view) },
+		Host:   host,
+		Kind:   conns.Files,
+		Label:  p.At(),
+		Reveal: func() { a.focus(p) },
+		Close:  func() error { return a.closePane(p) },
 	}
 }
 
-// browserMoved keeps the panel saying where a pane is.
-func (a *app) browserMoved(b *browser, left bool) {
-	row := b.right
-	if left {
-		row = b.left
-	}
+// browserMoved keeps the sidebar saying where a pane is.
+func (a *app) browserMoved(b *browser, p *files.Pane) {
+	row := b.rows[p]
 	if row == nil {
 		return
 	}
-	pane, other := b.view.Panes()
-	if !left {
-		pane = other
-	}
-	row.Label = pane.At()
+	row.Label = p.At()
 	a.markDirty()
 }
 
@@ -272,8 +255,8 @@ func (a *app) refreshJobs() {
 			a.reportError("Could not finish "+j.Name(), p.Err)
 		}
 		// What it changed is in front of the user, so it is read again.
-		for _, b := range a.browsers {
-			b.view.Reload()
+		if a.files != nil {
+			a.files.view.Reload()
 		}
 		a.markDirty()
 	}
@@ -525,37 +508,50 @@ func size(n int64) string {
 	return meter.Bytes(uint64(n))
 }
 
-// browsersOn returns the browsers with a side on a machine.
-func (a *app) browsersOn(host string) []*browser {
-	var found []*browser
-	for _, b := range a.browsers {
-		left, right := b.view.Panes()
-		if left.FS().Name() == host || right.FS().Name() == host {
-			found = append(found, b)
-		}
-	}
-	return found
-}
-
-// closeBrowser takes a browser off the panel, for one whose pane has
-// gone.
-//
-// The filesystems go last, and only once nothing is still using them: a
-// job reading through a session closed underneath it fails part way and
-// cannot even take away what it half wrote.
-func (a *app) closeBrowser(w ui.Widget) error {
-	b := a.browsers[w]
+// closeFilesOn takes away every pane of the file manager that is on a
+// machine, for a connection that has gone.
+func (a *app) closeFilesOn(host string) error {
+	b := a.files
 	if b == nil {
 		return nil
 	}
-	delete(a.browsers, w)
-	a.registry.Drop(b.left)
-	a.registry.Drop(b.right)
+	var errs []error
+	for _, p := range b.view.Panes() {
+		if p.FS().Name() != host {
+			continue
+		}
+		errs = append(errs, a.closePane(p))
+	}
+	return errors.Join(errs...)
+}
 
-	left, right := b.view.Panes()
-	stopping := a.stopJobsOn(left.FS(), right.FS())
+// filesPaneGone takes a pane of the file manager off the sidebar, for
+// one the tree has already let go of.
+//
+// The filesystem goes last, and only once nothing is still using it: a
+// job reading through a session closed underneath it fails part way and
+// cannot even take away what it half wrote.
+func (a *app) filesPaneGone(p *files.Pane) error {
+	b := a.files
+	if b == nil {
+		return nil
+	}
+	if row := b.rows[p]; row != nil {
+		a.registry.Drop(row)
+		delete(b.rows, p)
+	}
+	if len(b.rows) == 0 {
+		// The manager went with its last pane, so the window has none.
+		a.files = nil
+	}
+	return a.releaseFS(p.FS())
+}
+
+// releaseFS lets go of a filesystem, once no job is still using it.
+func (a *app) releaseFS(f vfs.FS) error {
+	stopping := a.stopJobsOn(f)
 	if len(stopping) == 0 {
-		return b.view.Close()
+		return f.Close()
 	}
 	// Off this goroutine: a job stops when whatever it is waiting on
 	// gives up, and the window may not wait with it.
@@ -563,8 +559,8 @@ func (a *app) closeBrowser(w ui.Widget) error {
 		for _, j := range stopping {
 			<-j.Done()
 		}
-		if err := b.view.Close(); err != nil {
-			a.pump.post(func() { a.reportError("Could not close the browser", err) })
+		if err := f.Close(); err != nil {
+			a.pump.post(func() { a.reportError("Could not close "+f.Name(), err) })
 		}
 	}()
 	return nil

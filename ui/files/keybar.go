@@ -20,7 +20,7 @@ type fkey struct {
 // knows those keys should not have to learn these.
 func browserKeys() []fkey {
 	return []fkey{
-		{input.KeyTab, "Tab", "Swap"},
+		{input.KeyTab, "Tab", "Next"},
 		{input.KeyF2, "2", "Rename"},
 		{input.KeyF5, "5", "Copy"},
 		{input.KeyF6, "6", "Move"},

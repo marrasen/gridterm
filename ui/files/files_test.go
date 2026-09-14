@@ -678,7 +678,7 @@ func TestBrowserSaysWhatTheKeysDo(t *testing.T) {
 	rows := drawBrowser(b, 80, 12)
 
 	bar := rows[len(rows)-1]
-	for _, want := range []string{"Tab", "Swap", "2", "Rename", "5", "Copy", "6", "Move", "7", "Mkdir", "8", "Delete"} {
+	for _, want := range []string{"Tab", "Next", "2", "Rename", "5", "Copy", "6", "Move", "7", "Mkdir", "8", "Delete"} {
 		if !strings.Contains(bar, want) {
 			t.Errorf("the bar reads %q, missing %q", bar, want)
 		}
@@ -891,5 +891,245 @@ func TestTheBarShowsAKeyWithNothingBehindIt(t *testing.T) {
 	}
 	if got := g.At(deleteAt+1, 11).BG; got == styled().SelectedBG {
 		t.Error("a key with nothing behind it is drawn as though it does something")
+	}
+}
+
+// many returns a browser with n panes, each on a directory of its own.
+func many(t *testing.T, n int) (*Browser, []string) {
+	t.Helper()
+	var dirs []string
+	var panes []*Pane
+	for i := 0; i < n; i++ {
+		at := t.TempDir()
+		dirs = append(dirs, at)
+		panes = append(panes, here(t, at))
+	}
+	b := NewBrowser(panes...)
+	b.Style = styled()
+	b.Layout(ui.Size{Cols: 90, Rows: 12})
+	b.SetFocus(true)
+	return b, dirs
+}
+
+// Tab walks every pane in turn and comes back round, so a browser with
+// five panes in it is one the user can reach all of.
+func TestBrowserTabsThroughEveryPane(t *testing.T) {
+	b, dirs := many(t, 4)
+	for i := 0; i < len(dirs)*2; i++ {
+		want := dirs[i%len(dirs)]
+		if got := b.Here().At(); got != want {
+			t.Fatalf("step %d is in %q, want %q", i, got, want)
+		}
+		press(t, b, input.KeyTab)
+	}
+}
+
+// A copy goes from the pane with the keys to the next one along, and
+// the last pane sends to the first.
+func TestACopyGoesToTheNextPane(t *testing.T) {
+	b, dirs := many(t, 3)
+	for _, at := range dirs {
+		write(t, at, "one.txt", "one")
+	}
+	var asked []Work
+	b.OnCopy = func(w Work) { asked = append(asked, w) }
+
+	for range dirs {
+		b.Here().Reload()
+		press(t, b, input.KeyDown)
+		b.Here().Mark("one.txt", true)
+		press(t, b, input.KeyF5)
+		press(t, b, input.KeyTab)
+	}
+	if len(asked) != len(dirs) {
+		t.Fatalf("%d copies asked for, want one per pane", len(asked))
+	}
+	for i, w := range asked {
+		if w.From.At() != dirs[i] {
+			t.Errorf("copy %d comes from %q, want %q", i, w.From.At(), dirs[i])
+		}
+		if want := dirs[(i+1)%len(dirs)]; w.To.At() != want {
+			t.Errorf("copy %d goes to %q, want %q", i, w.To.At(), want)
+		}
+	}
+}
+
+// One pane has nowhere to send anything, so the keys that copy and move
+// do nothing and say so on the bar.
+func TestOnePaneHasNowhereToCopyTo(t *testing.T) {
+	b, _ := many(t, 1)
+	write(t, b.Here().At(), "one.txt", "one")
+	b.Here().Reload()
+	press(t, b, input.KeyDown)
+	b.Here().Mark("one.txt", true)
+
+	var asked int
+	b.OnCopy = func(Work) { asked++ }
+	took, err := b.HandleKey(input.Event{Kind: input.KeyPress, Key: input.KeyF5})
+	if err != nil {
+		t.Fatalf("F5: %v", err)
+	}
+	if took {
+		t.Error("the one pane swallowed the copy key")
+	}
+	if asked != 0 {
+		t.Fatal("a copy was asked for with nowhere to put it")
+	}
+	if b.wired(input.KeyF5) {
+		t.Error("the bar offers a copy with one pane open")
+	}
+	// And Tab is not taken either: there is nowhere to go.
+	if took, _ := b.HandleKey(input.Event{Kind: input.KeyPress, Key: input.KeyTab}); took {
+		t.Error("the one pane swallowed Tab")
+	}
+}
+
+// Every column of the browser belongs to the pane drawn there, with a
+// divider in the column between two of them.
+func TestEveryColumnBelongsToAPane(t *testing.T) {
+	for _, n := range []int{1, 2, 3, 5} {
+		b, _ := many(t, n)
+		for _, cols := range []int{40, 60, 81, 90} {
+			b.Layout(ui.Size{Cols: cols, Rows: 12})
+			seen := make([]bool, cols)
+			for i := range b.Panes() {
+				start, end := b.paneCell(i, cols)
+				if i > 0 && seen[start-1] {
+					t.Fatalf("%d panes in %d columns: no divider before pane %d", n, cols, i)
+				}
+				for x := start; x < end; x++ {
+					if seen[x] {
+						t.Fatalf("%d panes in %d columns: column %d is in two panes", n, cols, x)
+					}
+					seen[x] = true
+				}
+			}
+			// Everything but the divider columns is somebody's.
+			var missing int
+			for _, taken := range seen {
+				if !taken {
+					missing++
+				}
+			}
+			if missing != n-1 {
+				t.Fatalf("%d panes in %d columns leave %d columns spare, want %d dividers",
+					n, cols, missing, n-1)
+			}
+		}
+	}
+}
+
+// The dividers are drawn where the sharing left room for them.
+func TestTheDividersAreDrawn(t *testing.T) {
+	b, _ := many(t, 3)
+	g := grid.New(90, 12, color.RGBA{}, color.RGBA{})
+	b.Layout(ui.Size{Cols: 90, Rows: 12})
+	b.Draw(g.View())
+	for i := 1; i < 3; i++ {
+		start, _ := b.paneCell(i, 90)
+		for y := 0; y < 11; y++ {
+			if got := g.At(start-1, y).Rune; got != divider {
+				t.Fatalf("row %d of the column before pane %d holds %q", y, i, got)
+			}
+		}
+	}
+}
+
+// A click puts the keys on the pane it landed in, which is the other way
+// of choosing where a copy comes from.
+func TestClickingAPaneTakesTheKeys(t *testing.T) {
+	b, dirs := many(t, 3)
+	b.Layout(ui.Size{Cols: 90, Rows: 12})
+	start, _ := b.paneCell(2, 90)
+
+	if _, err := b.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft, Col: start + 1, Row: 3,
+	}); err != nil {
+		t.Fatalf("the click failed: %v", err)
+	}
+	if got := b.Here().At(); got != dirs[2] {
+		t.Fatalf("the keys are in %q, want the pane that was clicked", got)
+	}
+}
+
+// Taking a pane out leaves the browser standing while it has one left,
+// and says it is finished when it has none.
+func TestRemovingPanes(t *testing.T) {
+	b, _ := many(t, 3)
+	panes := b.Panes()
+
+	stands, ok := b.Remove(panes[0])
+	if !ok || stands != ui.Widget(b) {
+		t.Fatalf("Remove = %v, %v, want the browser to carry on", stands, ok)
+	}
+	stands, ok = b.Remove(panes[1])
+	if !ok || stands != ui.Widget(b) {
+		t.Fatalf("with one pane left Remove = %v, %v, want the browser", stands, ok)
+	}
+	// The keys did not go with them.
+	if got := b.Here(); got != panes[2] {
+		t.Fatalf("the keys are on %v, want the pane still open", got)
+	}
+	if !panes[2].Focused() {
+		t.Error("the pane left does not know it has the keys")
+	}
+
+	stands, ok = b.Remove(panes[2])
+	if !ok || stands != nil {
+		t.Fatalf("with nothing left Remove = %v, %v, want nothing", stands, ok)
+	}
+	if b.Here() != nil {
+		t.Error("an empty browser says it has a pane")
+	}
+	if _, ok := b.Remove(panes[0]); ok {
+		t.Error("Remove accepted a pane that is not in the browser")
+	}
+}
+
+// A browser with several panes nobody is touching writes nothing.
+func TestAnIdleBrowserOfManyPanesDirtiesNothing(t *testing.T) {
+	b, dirs := many(t, 4)
+	for _, at := range dirs {
+		write(t, at, "a.txt", "a")
+	}
+	b.Reload()
+
+	g := grid.New(90, 12, color.RGBA{}, color.RGBA{})
+	b.Layout(ui.Size{Cols: 90, Rows: 12})
+	b.Draw(g.View())
+	g.ClearDirty()
+	for i := 0; i < 5; i++ {
+		b.Draw(g.View())
+	}
+	if g.AnyDirty() {
+		var dirty []int
+		for y := 0; y < 12; y++ {
+			if g.RowDirty(y) {
+				dirty = append(dirty, y)
+			}
+		}
+		t.Fatalf("an idle browser dirtied rows %v", dirty)
+	}
+}
+
+// ChildArea says where a pane is, and it is the area Layout used: a
+// container that works it out twice has two chances to disagree with
+// itself.
+func TestBrowserChildArea(t *testing.T) {
+	b, _ := many(t, 3)
+	b.Layout(ui.Size{Cols: 90, Rows: 12})
+	for i, p := range b.Panes() {
+		area, ok := b.ChildArea(p)
+		if !ok {
+			t.Fatalf("pane %d has no area", i)
+		}
+		start, end := b.paneCell(i, 90)
+		want := ui.Rect{X: start, Cols: end - start, Rows: 11}
+		if area != want {
+			t.Fatalf("pane %d is at %+v, want %+v", i, area, want)
+		}
+	}
+	if _, ok := b.ChildArea(here(t, t.TempDir())); ok {
+		t.Error("a pane that is not in the browser has an area in it")
 	}
 }

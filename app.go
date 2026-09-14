@@ -112,10 +112,10 @@ type app struct {
 	// closes them; this is what takes their rows away with it.
 	tunnels map[*conns.Entry]*tunnel
 
-	// browsers are the file browsers the window has open, by the widget
-	// each one is. They are not terminals, so the pane bookkeeping does
-	// not cover them.
-	browsers map[ui.Widget]*browser
+	// files is the window's file manager, or nil when there is none.
+	// There is one of it: a pane is added to the manager rather than a
+	// second manager being opened beside it.
+	files *browser
 
 	// queue is the file work running in the background, and jobs are the
 	// panel rows that stand for each piece of it.

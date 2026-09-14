@@ -9,15 +9,20 @@ import (
 	"github.com/marrasen/gridterm/vfs"
 )
 
+// Browser is a container of panes, and the tree takes it at its word:
+// anything that walks the widgets reaches the panes through it, and a
+// method here with the wrong shape would silently make it a leaf again.
+var _ ui.Container = (*Browser)(nil)
+
 // Work is something the user asked to do to the names they picked out.
 //
 // The browser does none of it. It says what was asked for and leaves the
 // doing to whatever built it, which is what keeps a job queue, a dialog
 // and a connection out of a widget.
 type Work struct {
-	// From is the pane the names are in, and To the other one. To is nil
-	// for work that has only one side, which is deleting and making a
-	// directory.
+	// From is the pane the names are in, and To the pane they are going
+	// to. To is nil for work that has only one side, which is deleting
+	// and making a directory.
 	From, To *Pane
 
 	// Names are what was picked out, each a name in the From pane's
@@ -25,11 +30,15 @@ type Work struct {
 	Names []string
 }
 
-// Browser is two panes side by side.
+// divider is the rule between two panes.
+const divider = '│'
+
+// Browser is any number of panes side by side.
 //
 // Which pane has the keys decides everything: a copy goes from there to
-// the other one. That is what makes one key enough for a copy between
-// two machines.
+// the next one along. That is what makes one key enough for a copy
+// between two machines, and it is why the window can hold as many panes
+// as the user wants to put in it.
 type Browser struct {
 	// OnCopy, OnMove and OnDelete are what the F keys ask for. A nil one
 	// means that key does nothing.
@@ -39,59 +48,142 @@ type Browser struct {
 	// something typed, which a widget does not do.
 	OnMkdir, OnRename func(Work)
 
-	// Style colours the bar of keys along the bottom. It is the panes'
-	// own style, so the bar belongs to what is above it.
+	// Style colours the dividers between the panes and the bar of keys
+	// along the bottom. It is the panes' own style, so both belong to
+	// what is around them.
 	Style Style
 
-	left, right *Pane
-	split       *ui.Split
-	keys        []fkey
-	size        ui.Size
+	panes []*Pane
+
+	// at is the pane with the keys, which is where work comes from.
+	at int
+
+	hasFocus bool
+	keys     []fkey
+	size     ui.Size
 }
 
-// NewBrowser puts two panes side by side, with the keys on the left.
-func NewBrowser(left, right *Pane, divider func(*ui.Split)) *Browser {
-	b := &Browser{left: left, right: right, keys: browserKeys()}
-	b.split = ui.NewSplit(ui.Columns, left, right)
-	if divider != nil {
-		divider(b.split)
+// NewBrowser puts panes side by side, with the keys on the first.
+//
+// Adding one later gives it the keys instead: a pane opened is a pane
+// the user wants to look at. Building a browser is not the same thing,
+// so it opens where a browser always has.
+func NewBrowser(panes ...*Pane) *Browser {
+	b := &Browser{keys: browserKeys()}
+	for _, p := range panes {
+		b.Add(p)
 	}
-	b.split.Focus(left)
+	b.at = 0
 	return b
 }
 
-// Panes returns the two, left first.
-func (b *Browser) Panes() (*Pane, *Pane) { return b.left, b.right }
+// Panes returns them, left to right. The slice is a copy, so a caller
+// cannot swap one out from under the browser.
+func (b *Browser) Panes() []*Pane {
+	out := make([]*Pane, len(b.panes))
+	copy(out, b.panes)
+	return out
+}
 
-// Here is the pane with the keys, and There the other one.
+// Add puts a pane on the right-hand end and gives it the keys, which is
+// what opening one is for.
+func (b *Browser) Add(p *Pane) {
+	if p == nil || b.indexOf(p) >= 0 {
+		return
+	}
+	b.panes = append(b.panes, p)
+	b.Focus(p)
+	b.Layout(b.size)
+}
+
+// Remove takes a pane out and says what stands in the browser's place:
+// itself while it has a pane left, and nothing when it has none.
 //
-// Asked of the split rather than of the panes: a pane only believes it
-// has the keys while the browser does, and which side a copy comes from
+// One pane is a browser worth keeping. It cannot copy anywhere, but it
+// is still a directory the user is looking at, and taking it away the
+// moment the pane beside it closed would be closing something nobody
+// asked to close.
+//
+// The keys go to the pane that takes its place, or to the one before it
+// when the last pane went: they have to end up somewhere, or the browser
+// is a thing no key reaches.
+func (b *Browser) Remove(w ui.Widget) (ui.Widget, bool) {
+	p, ok := w.(*Pane)
+	if !ok {
+		return nil, false
+	}
+	i := b.indexOf(p)
+	if i < 0 {
+		return nil, false
+	}
+	if b.hasFocus && b.at == i {
+		p.SetFocus(false)
+	}
+	copy(b.panes[i:], b.panes[i+1:])
+	// Clear the slot the shift vacated, or the array behind the slice
+	// keeps the pane it just gave up alive, along with its filesystem.
+	b.panes[len(b.panes)-1] = nil
+	b.panes = b.panes[:len(b.panes)-1]
+
+	b.at = min(b.at, max(len(b.panes)-1, 0))
+	if len(b.panes) == 0 {
+		return nil, true
+	}
+	if b.hasFocus {
+		b.panes[b.at].SetFocus(true)
+	}
+	b.Layout(b.size)
+	return b, true
+}
+
+// indexOf returns where a pane sits, or -1.
+func (b *Browser) indexOf(p *Pane) int {
+	for i, have := range b.panes {
+		if have == p {
+			return i
+		}
+	}
+	return -1
+}
+
+// Here is the pane with the keys, or nil when the browser has none.
+//
+// Asked of the browser rather than of the panes: a pane only believes it
+// has the keys while the browser does, and which pane work comes from
 // has to be the same answer whether or not the browser is being looked
 // at.
 func (b *Browser) Here() *Pane {
-	if b.split.Focused() == ui.Widget(b.right) {
-		return b.right
+	if b.at < 0 || b.at >= len(b.panes) {
+		return nil
 	}
-	return b.left
+	return b.panes[b.at]
 }
 
-// There is the pane the keys are not in, which is where a copy goes.
+// There is the next pane along, wrapping at the end, which is where a
+// copy goes. It is nil when there is nowhere else to send one.
 func (b *Browser) There() *Pane {
-	if b.Here() == b.right {
-		return b.left
+	if len(b.panes) < 2 {
+		return nil
 	}
-	return b.right
+	return b.panes[(b.at+1)%len(b.panes)]
 }
 
-// Swap moves the keys to the other pane.
-func (b *Browser) Swap() { b.split.Focus(b.There()) }
+// Next moves the keys to the pane after this one, wrapping at the end.
+func (b *Browser) Next() {
+	if len(b.panes) < 2 {
+		return
+	}
+	b.Focus(b.panes[(b.at+1)%len(b.panes)])
+}
 
 // work is what the pane with the keys has picked out. one asks for the
 // name under the bar alone, for something that can only be done to one
 // thing at a time.
 func (b *Browser) work(both, one bool) (Work, bool) {
 	here := b.Here()
+	if here == nil {
+		return Work{}, false
+	}
 	names := here.Marked()
 	if one {
 		e, ok := here.Selected()
@@ -105,15 +197,40 @@ func (b *Browser) work(both, one bool) (Work, bool) {
 	}
 	w := Work{From: here, Names: names}
 	if both {
-		w.To = b.There()
+		if w.To = b.There(); w.To == nil {
+			// One pane has nowhere to send anything.
+			return Work{}, false
+		}
 	}
 	return w, true
 }
 
-// Layout gives the panes everything but the bar of keys.
+// paneCell returns the columns one pane is drawn in.
+//
+// The width is divided by counting from the left edge each time rather
+// than by stepping, so the remainder is spread across the panes and the
+// last one ends at the right edge. A divider sits in the column before
+// every pane but the first.
+func (b *Browser) paneCell(i, cols int) (start, end int) {
+	n := len(b.panes)
+	if n <= 0 || cols <= 0 || i < 0 || i >= n {
+		return 0, 0
+	}
+	// The dividers come off the top, and what is left is shared out.
+	room := max(cols-(n-1), 0)
+	start = min(room*i/n+i, cols)
+	end = min(room*(i+1)/n+i, cols)
+	return start, max(end, start)
+}
+
+// Layout gives every pane its share of the width, less the bar of keys.
 func (b *Browser) Layout(size ui.Size) {
 	b.size = size
-	b.split.Layout(ui.Size{Cols: size.Cols, Rows: max(size.Rows-b.barRows(), 0)})
+	rows := max(size.Rows-b.barRows(), 0)
+	for i := range b.panes {
+		start, end := b.paneCell(i, size.Cols)
+		b.panes[i].Layout(ui.Size{Cols: end - start, Rows: rows})
+	}
 }
 
 // barRows is how many rows the bar of keys takes.
@@ -126,17 +243,29 @@ func (b *Browser) barRows() int {
 	return 1
 }
 
-// Draw paints the panes and the bar of keys under them.
+// Draw paints the panes, the dividers between them, and the bar of keys
+// under them.
 func (b *Browser) Draw(v grid.View) {
 	cols, rows := v.Size()
 	if cols <= 0 || rows <= 0 {
 		return
 	}
-	bar := b.barRows()
-	if rows > bar {
-		b.split.Draw(v.Sub(0, 0, cols, rows-bar))
+	body := rows - b.barRows()
+	for i, p := range b.panes {
+		start, end := b.paneCell(i, cols)
+		if i > 0 && start > 0 {
+			// The divider goes in the column the sharing left for it.
+			for y := 0; y < body; y++ {
+				v.Set(start-1, y, grid.Cell{
+					Rune: divider, FG: b.Style.NoteFG, BG: b.Style.BG, Width: 1,
+				})
+			}
+		}
+		if end > start && body > 0 {
+			p.Draw(v.Sub(start, 0, end-start, body))
+		}
 	}
-	if bar == 0 {
+	if b.barRows() == 0 {
 		return
 	}
 	drawKeys(v, rows-1, cols, b.keys, b.Style, b.wired)
@@ -146,13 +275,13 @@ func (b *Browser) Draw(v grid.View) {
 func (b *Browser) wired(k input.Key) bool {
 	switch k {
 	case input.KeyTab:
-		return true
+		return len(b.panes) > 1
 	case input.KeyF2:
 		return b.OnRename != nil
 	case input.KeyF5:
-		return b.OnCopy != nil
+		return b.OnCopy != nil && len(b.panes) > 1
 	case input.KeyF6:
-		return b.OnMove != nil
+		return b.OnMove != nil && len(b.panes) > 1
 	case input.KeyF7:
 		return b.OnMkdir != nil
 	case input.KeyF8:
@@ -161,21 +290,106 @@ func (b *Browser) wired(k input.Key) bool {
 	return false
 }
 
-// SetFocus passes the focus to whichever pane has it.
-func (b *Browser) SetFocus(on bool) { b.split.SetFocus(on) }
+// SetFocus passes the keys on to the pane that has them.
+func (b *Browser) SetFocus(on bool) {
+	if b.hasFocus == on {
+		return
+	}
+	b.hasFocus = on
+	if p := b.Here(); p != nil {
+		p.SetFocus(on)
+	}
+}
 
 // Focused returns the pane the keys are going to, which is what a
 // container is asked for.
-func (b *Browser) Focused() ui.Widget { return b.split.Focused() }
+func (b *Browser) Focused() ui.Widget {
+	p := b.Here()
+	if p == nil {
+		return nil
+	}
+	return p
+}
 
 // HasFocus reports whether the browser has the keys at all.
-func (b *Browser) HasFocus() bool { return b.left.Focused() || b.right.Focused() }
+func (b *Browser) HasFocus() bool { return b.hasFocus }
 
-// Children are the two panes, for the tree.
-func (b *Browser) Children() []ui.Widget { return b.split.Children() }
+// Children are the panes, for the tree.
+func (b *Browser) Children() []ui.Widget {
+	out := make([]ui.Widget, len(b.panes))
+	for i, p := range b.panes {
+		out[i] = p
+	}
+	return out
+}
 
 // Focus points the browser at one of its panes.
-func (b *Browser) Focus(w ui.Widget) bool { return b.split.Focus(w) }
+func (b *Browser) Focus(w ui.Widget) bool {
+	p, ok := w.(*Pane)
+	if !ok {
+		return false
+	}
+	i := b.indexOf(p)
+	if i < 0 {
+		return false
+	}
+	if i == b.at {
+		return true
+	}
+	// Only pass the change on while the browser holds the keys itself,
+	// or a pane is told it lost keys it never had.
+	if b.hasFocus {
+		if was := b.Here(); was != nil {
+			was.SetFocus(false)
+		}
+	}
+	b.at = i
+	if b.hasFocus {
+		p.SetFocus(true)
+	}
+	return true
+}
+
+// Replace swaps one pane for another, reporting whether old was there.
+//
+// A pane already in the browser is refused: the same pane twice would
+// give Remove two answers and leave the browser holding a ghost.
+func (b *Browser) Replace(old, next ui.Widget) bool {
+	was, wasOK := old.(*Pane)
+	now, nowOK := next.(*Pane)
+	if !wasOK || !nowOK {
+		return false
+	}
+	i := b.indexOf(was)
+	if i < 0 || (now != was && b.indexOf(now) >= 0) {
+		return false
+	}
+	b.panes[i] = now
+	if b.at == i && b.hasFocus && now != was {
+		was.SetFocus(false)
+		now.SetFocus(true)
+	}
+	b.Layout(b.size)
+	return true
+}
+
+// ChildArea returns where a pane is drawn.
+func (b *Browser) ChildArea(w ui.Widget) (ui.Rect, bool) {
+	p, ok := w.(*Pane)
+	if !ok {
+		return ui.Rect{}, false
+	}
+	i := b.indexOf(p)
+	if i < 0 {
+		return ui.Rect{}, false
+	}
+	start, end := b.paneCell(i, b.size.Cols)
+	area := ui.Rect{X: start, Cols: end - start, Rows: max(b.size.Rows-b.barRows(), 0)}
+	if area.Empty() {
+		return ui.Rect{}, false
+	}
+	return area, true
+}
 
 // HandleKey takes the browser's own keys and passes the rest to the pane
 // with the focus.
@@ -183,17 +397,22 @@ func (b *Browser) Focus(w ui.Widget) bool { return b.split.Focus(w) }
 // The keys are the ones a two-pane browser has had for thirty years: a
 // user who knows one of these knows this one.
 func (b *Browser) HandleKey(ev input.Event) (bool, error) {
-	if ev.Kind != input.KeyPress && ev.Kind != input.KeyRepeat {
-		return b.split.HandleKey(ev)
+	if (ev.Kind != input.KeyPress && ev.Kind != input.KeyRepeat) || ev.Mods != 0 {
+		return b.toPane(ev)
 	}
-	if ev.Mods != 0 {
-		return b.split.HandleKey(ev)
-	}
-
 	if took, err := b.press(ev.Key); took || err != nil {
 		return took, err
 	}
-	return b.split.HandleKey(ev)
+	return b.toPane(ev)
+}
+
+// toPane hands a key to whichever pane has them.
+func (b *Browser) toPane(ev input.Event) (bool, error) {
+	p := b.Here()
+	if p == nil {
+		return false, nil
+	}
+	return p.HandleKey(ev)
 }
 
 // press runs what a key means, whether it was typed or clicked on the
@@ -201,7 +420,10 @@ func (b *Browser) HandleKey(ev input.Event) (bool, error) {
 func (b *Browser) press(key input.Key) (bool, error) {
 	switch key {
 	case input.KeyTab:
-		b.Swap()
+		if len(b.panes) < 2 {
+			return false, nil
+		}
+		b.Next()
 		return true, nil
 	case input.KeyF5:
 		return b.ask(b.OnCopy, true, false)
@@ -210,7 +432,7 @@ func (b *Browser) press(key input.Key) (bool, error) {
 	case input.KeyF7:
 		// Making a directory acts on the pane rather than on what is
 		// picked out in it.
-		if b.OnMkdir == nil {
+		if b.OnMkdir == nil || b.Here() == nil {
 			return false, nil
 		}
 		b.OnMkdir(Work{From: b.Here()})
@@ -243,10 +465,10 @@ func (b *Browser) ask(to func(Work), both, one bool) (bool, error) {
 	return true, nil
 }
 
-// HandleMouse runs a key clicked on the bar, and otherwise passes the
-// mouse to the split, which knows where its panes are.
+// HandleMouse runs a key clicked on the bar, and otherwise hands the
+// event to the pane the pointer is over, putting the keys on it.
 func (b *Browser) HandleMouse(ev input.MouseEvent) (bool, error) {
-	if bar := b.barRows(); bar > 0 && ev.Row == b.size.Rows-1 {
+	if b.barRows() > 0 && ev.Row == b.size.Rows-1 {
 		if ev.Kind != input.MousePress || ev.Button != input.MouseLeft {
 			// A release or a drag over the bar is swallowed rather than
 			// acted on, the way a press on a button is.
@@ -261,20 +483,43 @@ func (b *Browser) HandleMouse(ev input.MouseEvent) (bool, error) {
 		_, err := b.press(b.keys[i].Key)
 		return true, err
 	}
-	return b.split.HandleMouse(ev)
+	for i, p := range b.panes {
+		start, end := b.paneCell(i, b.size.Cols)
+		if ev.Col < start || ev.Col >= end {
+			continue
+		}
+		if ev.Kind == input.MousePress && !ev.Button.IsWheel() {
+			b.Focus(p)
+		}
+		ev.Col -= start
+		return p.HandleMouse(ev)
+	}
+	// A divider, or the space past the last pane.
+	return true, nil
 }
 
-// Reload reads both panes again, for after a job has changed something.
+// Reload reads every pane again, for after a job has changed something.
 func (b *Browser) Reload() {
-	b.left.Reload()
-	b.right.Reload()
+	for _, p := range b.panes {
+		p.Reload()
+	}
 }
 
-// Close lets go of both filesystems.
+// Close lets go of every pane's filesystem.
 func (b *Browser) Close() error {
-	return errors.Join(b.left.FS().Close(), b.right.FS().Close())
+	var errs []error
+	for _, p := range b.panes {
+		errs = append(errs, p.FS().Close())
+	}
+	return errors.Join(errs...)
 }
 
-// SameFS reports whether both panes are on the same filesystem, which is
-// what makes a move a rename.
-func (b *Browser) SameFS() bool { return vfs.Same(b.left.FS(), b.right.FS()) }
+// SameFS reports whether the pane with the keys and the one a copy goes
+// to are one filesystem, which is what makes a move a rename.
+func (b *Browser) SameFS() bool {
+	here, there := b.Here(), b.There()
+	if here == nil || there == nil {
+		return false
+	}
+	return vfs.Same(here.FS(), there.FS())
+}

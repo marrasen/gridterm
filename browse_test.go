@@ -11,6 +11,7 @@ import (
 	"github.com/marrasen/gridterm/input"
 	"github.com/marrasen/gridterm/internal/sshtest"
 	"github.com/marrasen/gridterm/ui"
+	"github.com/marrasen/gridterm/ui/files"
 )
 
 // putFile writes a file for a browser test to find.
@@ -25,21 +26,24 @@ func putFile(t *testing.T, at, name, body string) {
 	}
 }
 
-// onlyBrowser returns the window's one browser, with both panes pointed
-// at directories the test owns.
+// onlyBrowser returns the window's file manager with two panes in it,
+// pointed at directories the test owns.
 func onlyBrowser(t *testing.T, a *testApp) (*browser, string, string) {
 	t.Helper()
-	if err := a.openFilesHere(); err != nil {
-		t.Fatalf("openFilesHere: %v", err)
+	for i := 0; i < 2; i++ {
+		if err := a.openFilesHere(); err != nil {
+			t.Fatalf("openFilesHere: %v", err)
+		}
 	}
-	if len(a.browsers) != 1 {
-		t.Fatalf("the window holds %d browsers", len(a.browsers))
+	b := a.files
+	if b == nil {
+		t.Fatal("the window has no file manager")
 	}
-	var b *browser
-	for _, have := range a.browsers {
-		b = have
+	panes := b.view.Panes()
+	if len(panes) != 2 {
+		t.Fatalf("the manager holds %d panes, want 2", len(panes))
 	}
-	leftPane, rightPane := b.view.Panes()
+	leftPane, rightPane := panes[0], panes[1]
 	// It opens on the user's own directory by itself, on a goroutine of
 	// its own, so that has to land before the test sends it anywhere
 	// else.
@@ -47,6 +51,11 @@ func onlyBrowser(t *testing.T, a *testApp) (*browser, string, string) {
 		return leftPane.At() != "" && rightPane.At() != "" &&
 			!leftPane.Busy() && !rightPane.Busy()
 	})
+
+	// The keys go on the first pane: a copy goes from the pane with the
+	// keys to the next one, and a test that acts on the first wants
+	// them there.
+	a.focus(leftPane)
 
 	left, right := t.TempDir(), t.TempDir()
 	leftPane.Open(left)
@@ -93,7 +102,7 @@ func TestOpenABrowser(t *testing.T) {
 	}
 }
 
-// Closing the pane takes the browser and its rows away.
+// Closing the file manager takes it and its rows away.
 func TestClosingABrowserPane(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withDialogs(t, a)
@@ -103,8 +112,8 @@ func TestClosingABrowserPane(t *testing.T) {
 	if err := a.closePane(b.view); err != nil {
 		t.Fatalf("closePane: %v", err)
 	}
-	if len(a.browsers) != 0 {
-		t.Fatalf("the window still holds %d browsers", len(a.browsers))
+	if a.files != nil {
+		t.Fatal("the window still holds a file manager")
 	}
 	for _, group := range a.registry.Groups(time.Now()) {
 		for _, row := range group.Rows {
@@ -125,7 +134,7 @@ func TestCopyingBetweenPanes(t *testing.T) {
 
 	b, left, right := onlyBrowser(t, a)
 	putFile(t, left, "one.txt", "the body")
-	leftPane, _ := b.view.Panes()
+	leftPane := b.view.Panes()[0]
 	leftPane.Reload()
 	waitFor(t, a, "the listing", func() bool { return !leftPane.Busy() })
 
@@ -158,7 +167,7 @@ func TestCopyingAsksBeforeReplacing(t *testing.T) {
 	b, left, right := onlyBrowser(t, a)
 	putFile(t, left, "one.txt", "the new one")
 	putFile(t, right, "one.txt", "the old one")
-	leftPane, _ := b.view.Panes()
+	leftPane := b.view.Panes()[0]
 	leftPane.Reload()
 	waitFor(t, a, "the listing", func() bool { return !leftPane.Busy() })
 
@@ -193,7 +202,7 @@ func TestAQuestionThatIsDismissedStopsTheJob(t *testing.T) {
 	b, left, right := onlyBrowser(t, a)
 	putFile(t, left, "one.txt", "the new one")
 	putFile(t, right, "one.txt", "the old one")
-	leftPane, _ := b.view.Panes()
+	leftPane := b.view.Panes()[0]
 	leftPane.Reload()
 	waitFor(t, a, "the listing", func() bool { return !leftPane.Busy() })
 
@@ -228,7 +237,7 @@ func TestDeletingAsksFirst(t *testing.T) {
 
 	b, left, _ := onlyBrowser(t, a)
 	putFile(t, left, "one.txt", "the body")
-	leftPane, _ := b.view.Panes()
+	leftPane := b.view.Panes()[0]
 	leftPane.Reload()
 	waitFor(t, a, "the listing", func() bool { return !leftPane.Busy() })
 
@@ -258,19 +267,26 @@ func TestABrowserOnAnotherMachine(t *testing.T) {
 	withPanel(t, a)
 	host := connectedTo(t, a, s)
 
-	if err := a.openBrowser(conns.Local, host); err != nil {
-		t.Fatalf("openBrowser: %v", err)
+	if err := a.openFilesOn(conns.Local); err != nil {
+		t.Fatalf("a pane here: %v", err)
 	}
-	var b *browser
-	for _, have := range a.browsers {
-		b = have
+	if err := a.openFilesOn(host); err != nil {
+		t.Fatalf("a pane on %s: %v", host, err)
 	}
-	left, right := b.view.Panes()
+	b := a.files
+	if b == nil {
+		t.Fatal("the window has no file manager")
+	}
+	panes := b.view.Panes()
+	if len(panes) != 2 {
+		t.Fatalf("the manager holds %d panes, want 2", len(panes))
+	}
+	left, right := panes[0], panes[1]
 	if left.FS().Name() != "Local" {
-		t.Errorf("the left pane is on %q", left.FS().Name())
+		t.Errorf("the first pane is on %q", left.FS().Name())
 	}
 	if right.FS().Name() != host {
-		t.Errorf("the right pane is on %q", right.FS().Name())
+		t.Errorf("the second pane is on %q", right.FS().Name())
 	}
 	// One row under each machine.
 	var hosts []string
@@ -285,12 +301,27 @@ func TestABrowserOnAnotherMachine(t *testing.T) {
 		t.Fatalf("the browser is shown under %v, want one row on each machine", hosts)
 	}
 
-	// And closing the machine takes the browser with it.
+	// And closing the machine takes its pane with it, leaving the one
+	// on this machine alone.
 	if err := a.dropMachine(host); err != nil {
 		t.Fatalf("dropMachine: %v", err)
 	}
-	if len(a.browsers) != 0 {
-		t.Fatalf("the browser outlived the connection it was half on")
+	if a.files == nil {
+		t.Fatal("the whole manager went with one machine")
+	}
+	if got := a.files.view.Panes(); len(got) != 1 || got[0] != left {
+		t.Fatalf("the manager holds %d panes, want the one on this machine", len(got))
+	}
+	var still []string
+	for _, group := range a.registry.Groups(time.Now()) {
+		for _, row := range group.Rows {
+			if row.Kind == conns.Files {
+				still = append(still, group.Host)
+			}
+		}
+	}
+	if len(still) != 1 || still[0] != conns.Local {
+		t.Fatalf("the sidebar shows file rows under %v, want only this machine", still)
 	}
 }
 
@@ -299,11 +330,11 @@ func TestABrowserNeedsAConnection(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withDialogs(t, a)
 
-	if err := a.openBrowser(conns.Local, "nowhere"); err == nil {
-		t.Fatal("a browser opened on a machine nothing is connected to")
+	if err := a.openFilesOn("nowhere"); err == nil {
+		t.Fatal("a pane opened on a machine nothing is connected to")
 	}
-	if len(a.browsers) != 0 {
-		t.Fatalf("%d browsers were left behind", len(a.browsers))
+	if a.files != nil {
+		t.Fatal("a file manager was left behind")
 	}
 }
 
@@ -341,4 +372,133 @@ func tap(t *testing.T, w ui.KeyHandler, key input.Key) {
 	if _, err := w.HandleKey(press(key, 0)); err != nil {
 		t.Fatalf("key %v: %v", key, err)
 	}
+}
+
+// filesRows returns which machine each file row on the sidebar is under.
+func filesRows(a *testApp) []string {
+	var hosts []string
+	for _, group := range a.registry.Groups(time.Now()) {
+		for _, row := range group.Rows {
+			if row.Kind == conns.Files {
+				hosts = append(hosts, group.Host)
+			}
+		}
+	}
+	return hosts
+}
+
+// The file manager takes as many panes as the user asks for, on as many
+// machines, each with a row of its own under the machine it is on.
+func TestTheFileManagerTakesAsManyPanesAsAsked(t *testing.T) {
+	s := sshtest.New(t)
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	host := connectedTo(t, a, s)
+
+	for _, on := range []string{conns.Local, host, conns.Local, host} {
+		if err := a.openFilesOn(on); err != nil {
+			t.Fatalf("a pane on %q: %v", on, err)
+		}
+	}
+	if got := len(a.files.view.Panes()); got != 4 {
+		t.Fatalf("the manager holds %d panes, want 4", got)
+	}
+	// One manager, not four: they are side by side in the one tab.
+	var managers int
+	for _, leaf := range ui.Leaves(a.root.Widget()) {
+		if _, ok := leaf.(*files.Pane); ok {
+			managers++
+		}
+	}
+	if managers != 4 {
+		t.Fatalf("the tree holds %d file panes", managers)
+	}
+	got := filesRows(a)
+	if len(got) != 4 {
+		t.Fatalf("the sidebar shows %v, want a row for each pane", got)
+	}
+	var here, there int
+	for _, on := range got {
+		if on == conns.Local {
+			here++
+		}
+		if on == host {
+			there++
+		}
+	}
+	if here != 2 || there != 2 {
+		t.Fatalf("the rows sit under %v, want two on each machine", got)
+	}
+
+	// The pane just opened has the keys, which is what opening one is
+	// for.
+	if a.files.view.Here() != a.files.view.Panes()[3] {
+		t.Fatal("the keys are not on the pane that was just opened")
+	}
+	checkTree(t, a)
+}
+
+// Closing one pane's row takes that pane and leaves the rest.
+func TestClosingOneFilePaneLeavesTheOthers(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+
+	for i := 0; i < 3; i++ {
+		if err := a.openFilesOn(conns.Local); err != nil {
+			t.Fatalf("a pane: %v", err)
+		}
+	}
+	panes := a.files.view.Panes()
+	row := a.files.rows[panes[1]]
+	if row == nil || row.Close == nil {
+		t.Fatal("the middle pane has no row to close")
+	}
+	if err := row.Close(); err != nil {
+		t.Fatalf("closing the row: %v", err)
+	}
+
+	left := a.files.view.Panes()
+	if len(left) != 2 || left[0] != panes[0] || left[1] != panes[2] {
+		t.Fatalf("the manager holds %d panes, want the other two", len(left))
+	}
+	if a.files.rows[panes[1]] != nil {
+		t.Fatal("the closed pane still has a row")
+	}
+	if got := filesRows(a); len(got) != 2 {
+		t.Fatalf("the sidebar shows %v, want two rows", got)
+	}
+	checkTree(t, a)
+}
+
+// The last pane takes the manager with it, and the window carries on.
+func TestTheLastFilePaneTakesTheManager(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+
+	if err := a.openFilesOn(conns.Local); err != nil {
+		t.Fatalf("a pane: %v", err)
+	}
+	manager := a.files.view
+	p := a.files.view.Panes()[0]
+	if err := a.closePane(p); err != nil {
+		t.Fatalf("closePane: %v", err)
+	}
+	if a.files != nil {
+		t.Fatal("the manager outlived its last pane")
+	}
+	if len(filesRows(a)) != 0 {
+		t.Fatal("a file row was left on the sidebar")
+	}
+	for _, leaf := range ui.Leaves(a.root.Widget()) {
+		if leaf == ui.Widget(manager) {
+			t.Fatal("the manager is still in the tree with no panes in it")
+		}
+	}
+	if a.quit.Load() {
+		t.Fatal("the window closed, and there is still a terminal open")
+	}
+	checkTree(t, a)
 }

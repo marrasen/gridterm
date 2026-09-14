@@ -101,13 +101,11 @@ func (a *app) machineDied(m *machine) {
 		return
 	}
 	delete(a.machines, m.at.name)
-	// A browser with a side on this machine is reading through a session
-	// that has gone. It is taken away here, because nothing else would:
-	// a browser does not end by itself the way a shell does.
-	for _, b := range a.browsersOn(m.at.name) {
-		if err := a.closePane(b.view); err != nil {
-			a.logError(err)
-		}
+	// A pane of the file manager on this machine is reading through a
+	// session that has gone. It is taken away here, because nothing else
+	// would: a pane does not end by itself the way a shell does.
+	if err := a.closeFilesOn(m.at.name); err != nil {
+		a.reportError("Trouble closing the file panes on "+m.at.name, err)
 	}
 	// The tunnels went with it, but a local forward listens on a socket
 	// of this machine, which the far end dropping does nothing to.
@@ -141,10 +139,7 @@ func (a *app) dropMachine(name string) error {
 	// closed underneath it fails part way and cannot take away what it
 	// half wrote. Browsers on this machine go with it, which is what
 	// stops their jobs.
-	var errs []error
-	for _, b := range a.browsersOn(name) {
-		errs = append(errs, a.closePane(b.view))
-	}
+	errs := []error{a.closeFilesOn(name)}
 	// Then the connection, which closes everything riding on it in
 	// parallel, each waiting out its own drain period; closing the panes
 	// first would wait out one drain period per pane instead.
@@ -470,10 +465,10 @@ func (a *app) currentHost() string {
 			return e.Host
 		}
 	}
-	// A browser is not a terminal, and the side with the keys is on a
+	// A file pane is not a terminal, and the one with the keys is on a
 	// machine like anything else.
-	if b, ok := ui.FocusedLeaf(a.root.Widget()).(*files.Browser); ok {
-		return a.hostOf(b.Here().FS())
+	if p, ok := ui.FocusedLeaf(a.root.Widget()).(*files.Pane); ok {
+		return a.hostOf(p.FS())
 	}
 	return a.localHost
 }

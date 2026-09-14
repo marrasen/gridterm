@@ -150,7 +150,6 @@ func main() {
 	a.opening = make(map[string]bool)
 	a.paneOn = make(map[*term.Terminal]*machine)
 	a.tunnels = make(map[*conns.Entry]*tunnel)
-	a.browsers = make(map[ui.Widget]*browser)
 	a.queue = jobs.New(0)
 	a.jobs = make(map[*conns.Entry]*jobs.Job)
 	a.asking = make(map[chan jobs.Choice]func())

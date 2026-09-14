@@ -122,7 +122,6 @@ func newTestApp(t *testing.T, cols, rows int) *testApp {
 		opening:    make(map[string]bool),
 		paneOn:     make(map[*term.Terminal]*machine),
 		tunnels:    make(map[*conns.Entry]*tunnel),
-		browsers:   make(map[ui.Widget]*browser),
 		queue:      jobs.New(1),
 		jobs:       make(map[*conns.Entry]*jobs.Job),
 		asking:     make(map[chan jobs.Choice]func()),
@@ -188,11 +187,11 @@ func checkTree(t *testing.T, a *testApp) {
 			// The sidebar is a leaf of the dock, not a pane.
 			continue
 		}
-		if b, isBrowser := leaf.(*files.Browser); isBrowser {
-			// A file browser is a pane with two sides rather than a
-			// terminal, and the app keeps those in their own list.
-			if a.browsers[ui.Widget(b)] == nil {
-				t.Fatal("a browser in the tree is not in the app's list")
+		if p, isFiles := leaf.(*files.Pane); isFiles {
+			// A pane of the file manager is not a terminal, and the app
+			// keeps those under the manager rather than with the panes.
+			if a.files == nil || a.files.rows[p] == nil {
+				t.Fatal("a file pane in the tree has no row on the sidebar")
 			}
 			continue
 		}
@@ -210,15 +209,15 @@ func checkTree(t *testing.T, a *testApp) {
 			t.Fatal("a pane in the app's list is not in the tree, so it runs unseen")
 		}
 	}
-	if len(a.panes) == 0 {
+	if len(a.panes) == 0 && a.files == nil {
 		return
 	}
 	leaf := ui.FocusedLeaf(a.root.Widget())
-	if b, isBrowser := leaf.(*files.Browser); isBrowser {
-		// A browser holds the keys itself and hands them to one of its
-		// two sides.
-		if a.root.Modal() == nil && !b.HasFocus() {
-			t.Fatal("the browser has the keys and neither of its sides does")
+	if p, isFiles := leaf.(*files.Pane); isFiles {
+		// The manager holds the keys itself and hands them to one of
+		// its panes.
+		if a.root.Modal() == nil && !p.Focused() {
+			t.Fatal("a file pane has the keys and does not know it")
 		}
 		return
 	}

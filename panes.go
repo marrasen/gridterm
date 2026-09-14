@@ -3,10 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
-	"image/color"
 
-	"github.com/marrasen/gridterm/grid"
-	"github.com/marrasen/gridterm/render"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/term"
 )
@@ -43,23 +40,15 @@ func (a *app) newTerminal() (*term.Terminal, error) {
 	return t, nil
 }
 
-// openPalette shows the command dialog, on a layer of its own above the
-// widget tree so that closing it costs a blit rather than repainting
-// everything underneath.
+// openPalette shows the command dialog, or closes it when it is already
+// open: a key that opens something is expected to close it again.
 func (a *app) openPalette() error {
 	if a.palette != nil {
-		// Ctrl+K again closes it, which is what a key that opens
-		// something is expected to do.
 		a.closePalette()
 		return nil
 	}
-	cols, rows := a.lastSize[0], a.lastSize[1]
-	// No colours at all: the layer sits over the widget tree, and a
-	// background with any alpha would blank the window behind it. The
-	// dialog paints its own box opaquely.
-	a.paletteGrid = grid.New(cols, rows, color.RGBA{}, color.RGBA{})
-	a.palette = ui.NewPalette(a.root.Commands, a.root.Accelerators, a.closePalette)
-	a.palette.Style = ui.PaletteStyle{
+	p := ui.NewPalette(a.root.Commands, a.root.Accelerators, a.closePalette)
+	p.Style = ui.PaletteStyle{
 		FG:         a.colours.FG,
 		BG:         a.colours.BG,
 		MatchFG:    a.colours.Cursor,
@@ -67,23 +56,16 @@ func (a *app) openPalette() error {
 		SelectedBG: a.colours.FG,
 		ChordFG:    a.colours.Selection,
 	}
-
-	a.paletteLayer = &render.Layer{Grid: a.paletteGrid, Transparent: true}
-	a.comp.Add(a.paletteLayer)
-	a.root.PushModal(a.palette)
-	a.markDirty()
+	a.palette = p
+	a.dismissPalette = a.showModal(p, func() { a.palette, a.dismissPalette = nil, nil })
 	return nil
 }
 
 // closePalette takes the dialog and its layer away.
 func (a *app) closePalette() {
-	if a.palette == nil {
-		return
+	if a.dismissPalette != nil {
+		a.dismissPalette()
 	}
-	a.root.PopModal()
-	a.comp.Remove(a.paletteLayer)
-	a.palette, a.paletteGrid, a.paletteLayer = nil, nil, nil
-	a.markDirty()
 }
 
 // newTabs builds a tab strip carrying the window's colours.

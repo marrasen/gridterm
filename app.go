@@ -47,12 +47,18 @@ type app struct {
 	reader ebitenin.Reader
 	mouse  ebitenin.MouseReader
 
-	// palette is the command dialog while it is open, on a layer of its
-	// own above the tree so that closing it costs a blit rather than a
-	// repaint of everything underneath.
-	palette      *ui.Palette
-	paletteGrid  *grid.Grid
-	paletteLayer *render.Layer
+	// modals is the dialog stack, each with a layer of its own above the
+	// tree so that closing one costs a blit rather than a repaint of
+	// everything underneath.
+	modals []*modal
+
+	// palette is the command dialog while it is open, and dismissPalette
+	// is what takes it away.
+	palette        *ui.Palette
+	dismissPalette func()
+
+	// bar is the row of menu titles at the top of the window.
+	bar *ui.Menubar
 
 	// panes is every live terminal, so a shell that exits can be found
 	// wherever it sits in the tree.
@@ -143,9 +149,7 @@ func (a *app) updateTitle() {
 
 func (a *app) Draw(screen *ebiten.Image) {
 	a.root.Draw(a.g.View())
-	if a.palette != nil {
-		a.root.DrawModal(a.palette, a.paletteGrid.View())
-	}
+	a.drawModals()
 	a.comp.Draw(screen)
 }
 
@@ -179,9 +183,7 @@ func (a *app) setGridSize(cols, rows int) {
 	a.lastSize = [2]int{cols, rows}
 
 	a.g.Resize(cols, rows)
-	if a.paletteGrid != nil {
-		a.paletteGrid.Resize(cols, rows)
-	}
+	a.resizeModals(cols, rows)
 	a.root.Layout(ui.Rect{Cols: cols, Rows: rows})
 	a.markDirty()
 }
@@ -252,6 +254,7 @@ func (a *app) commands() {
 		ui.Command{ID: "pane.close", Title: "Close pane", Run: a.closeFocused},
 		ui.Command{ID: "tab.open", Title: "New tab", Run: a.openTab},
 		ui.Command{ID: "palette.open", Title: "Show all commands", Run: a.openPalette},
+		ui.Command{ID: "menu.open", Title: "Show the menu bar", Run: a.openMenu},
 		ui.Command{ID: "tab.next", Title: "Next tab", Run: func() error {
 			return a.focusTab(1)
 		}},
@@ -290,6 +293,7 @@ func (a *app) commands() {
 		{Key: input.KeyPageDown, Mods: input.ModCtrl}:                "tab.next",
 		{Key: input.KeyPageUp, Mods: input.ModCtrl}:                  "tab.previous",
 		{Key: input.KeyK, Mods: input.ModCtrl}:                       "palette.open",
+		{Key: input.KeyF10}:                                          "menu.open",
 	})
 
 	a.root.Commands = cmds

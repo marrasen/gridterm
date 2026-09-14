@@ -121,7 +121,8 @@ func main() {
 	}
 
 	a.commands()
-	a.root.SetWidget(first)
+	a.bar = a.newMenubar(first)
+	a.root.SetWidget(a.bar)
 	a.root.Layout(ui.Rect{Cols: initCols, Rows: initRows})
 
 	ebiten.SetWindowTitle("gridterm")

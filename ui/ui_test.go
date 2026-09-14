@@ -1733,3 +1733,46 @@ func (d *selfClosing) HandleMouse(ev input.MouseEvent) (bool, error) {
 	}
 	return true, nil
 }
+
+// TestRootDialogClosingOnItsOwnPressSwallowsTheRelease checks the case
+// the test above does not reach: a dialog that closes on the very press
+// it is handling, which is what running a menu line or a palette line
+// does. Nothing took the pointer, so without this the button-up walks
+// down to the pane underneath, which never saw the press.
+func TestRootDialogClosingOnItsOwnPressSwallowsTheRelease(t *testing.T) {
+	r := &Root{}
+	under := &mouser{}
+	r.SetWidget(under)
+	r.Layout(Rect{Cols: 10, Rows: 4})
+	r.PushModal(&selfClosing{root: r})
+
+	r.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 3, Row: 3})
+	r.HandleMouse(input.MouseEvent{Kind: input.MouseRelease, Button: input.MouseLeft, Col: 3, Row: 3})
+
+	for _, ev := range under.seen {
+		if ev.Kind == input.MouseRelease {
+			t.Error("the tree got a release for a press the dialog took and closed on")
+		}
+	}
+}
+
+// TestRootReleaseIsOwedOnlyOnce checks that swallowing one release does
+// not wedge the pointer: the next press must reach the tree.
+func TestRootReleaseIsOwedOnlyOnce(t *testing.T) {
+	r := &Root{}
+	under := &mouser{}
+	r.SetWidget(under)
+	r.Layout(Rect{Cols: 10, Rows: 4})
+	r.PushModal(&selfClosing{root: r})
+
+	r.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 3, Row: 3})
+	r.HandleMouse(input.MouseEvent{Kind: input.MouseRelease, Button: input.MouseLeft, Col: 3, Row: 3})
+	r.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 2, Row: 2})
+
+	if len(under.seen) == 0 {
+		t.Fatal("the tree saw nothing after the dialog went")
+	}
+	if got := under.seen[0].Kind; got != input.MousePress {
+		t.Errorf("the tree's first event was %v, want the next press", got)
+	}
+}

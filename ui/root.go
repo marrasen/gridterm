@@ -289,15 +289,24 @@ func (r *Root) HandleMouse(ev input.MouseEvent) (bool, error) {
 	local.Col, local.Row = r.clampInto(r.area, ev.Col, ev.Row)
 	local.Col, local.Row = r.area.Local(local.Col, local.Row)
 	handled, err := HandleMouse(top, local)
-	// A dialog that dismissed itself on this very press is gone, and the
-	// pointer must not be handed to something no longer on the stack.
-	if starts && handled && r.top() == top {
+	if starts && handled {
 		// Remember the widget itself, not the way down to it. Containers
 		// come and go while a button is held, and the path is worked out
 		// again for every event that follows.
-		if leaf, _, ok := LeafAt(top, r.area.Size().rect(), local.Col, local.Row); ok {
-			r.held.Take(leaf, local)
+		var leaf Widget
+		// A dialog that dismissed itself on this very press is gone, and
+		// the pointer must not be handed to something no longer on the
+		// stack.
+		if r.top() == top {
+			if at, _, ok := LeafAt(top, r.area.Size().rect(), local.Col, local.Row); ok {
+				leaf = at
+			}
 		}
+		// The pointer is taken either way, with nobody holding it when
+		// there is no widget to hold it. The release is still owed, and
+		// giving it to whatever is under the pointer would report a
+		// button-up for a press that widget never saw.
+		r.held.Take(leaf, local)
 	}
 	return handled, err
 }

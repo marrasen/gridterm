@@ -55,12 +55,9 @@ type Palette struct {
 	top  int
 	size Size
 
-	// buf is where the dialog is drawn before it reaches the layer, so
-	// every cell of the layer is written once with its final value. Drawn
-	// straight onto the layer, the box background and the text over it
-	// would each be a change, and an unchanged dialog would dirty its
-	// rows on every frame.
-	buf *grid.Grid
+	// buf keeps the dialog off the layer until it is finished, so an
+	// unchanged dialog leaves the layer clean.
+	buf buffer
 }
 
 // NewPalette returns a palette over a registry. close is called when the
@@ -173,37 +170,7 @@ func (p *Palette) HandleMouse(ev input.MouseEvent) (bool, error) {
 func (p *Palette) CancelGesture() {}
 
 // Draw paints the box over whatever is behind it.
-//
-// The dialog is built in a buffer of its own and copied out a cell at a
-// time, so every cell of the layer is written once with its final value.
-// That does two things: an unchanged dialog leaves the layer clean, so
-// the frame can still be skipped; and everywhere the box is not comes
-// out see-through, so a box that shrank as the query narrowed leaves
-// nothing standing beside the new one.
-func (p *Palette) Draw(v grid.View) {
-	cols, rows := v.Size()
-	if cols <= 0 || rows <= 0 {
-		return
-	}
-	if p.buf == nil {
-		// No colours at all, so an untouched cell is see-through.
-		p.buf = grid.New(cols, rows, color.RGBA{}, color.RGBA{})
-	} else {
-		p.buf.Resize(cols, rows)
-	}
-	p.buf.ResetCursorClaim()
-	p.buf.View().Fill(grid.Cell{Rune: ' ', Width: 1})
-	p.paint(p.buf.View())
-
-	for y := 0; y < rows; y++ {
-		for x := 0; x < cols; x++ {
-			v.Set(x, y, p.buf.At(x, y))
-		}
-	}
-	if p.buf.CursorClaimed() {
-		v.SetCursor(p.buf.Cursor())
-	}
-}
+func (p *Palette) Draw(v grid.View) { p.buf.draw(v, p.paint) }
 
 // paint draws the box into a view of its own.
 func (p *Palette) paint(v grid.View) {

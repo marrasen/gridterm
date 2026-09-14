@@ -839,7 +839,7 @@ func TestPaletteOpensAndCloses(t *testing.T) {
 
 	a.closePalette()
 
-	if a.palette != nil || a.paletteLayer != nil || a.paletteGrid != nil {
+	if a.palette != nil || a.dismissPalette != nil || len(a.modals) != 0 {
 		t.Error("the dialog left something behind")
 	}
 	if a.root.Modal() != nil {
@@ -984,12 +984,12 @@ func TestPaletteLayerIsSeeThrough(t *testing.T) {
 		t.Fatalf("open palette: %v", err)
 	}
 
-	if !a.paletteLayer.Transparent {
+	if !a.modals[0].layer.Transparent {
 		t.Error("the dialog's layer is not marked see-through")
 	}
 	for y := 0; y < 10; y++ {
 		for x := 0; x < 40; x++ {
-			if got := a.paletteGrid.At(x, y); got.BG.A != 0 {
+			if got := a.modals[0].g.At(x, y); got.BG.A != 0 {
 				t.Fatalf("cell %d,%d = %+v, want the layer clear before anything is drawn",
 					x, y, got)
 			}
@@ -1008,12 +1008,12 @@ func TestPaletteIsDrawnOntoItsLayer(t *testing.T) {
 	}
 
 	// What app.Draw does with the dialog.
-	a.root.DrawModal(a.palette, a.paletteGrid.View())
+	a.drawModals()
 
 	found := false
 	for y := 0; y < 10 && !found; y++ {
 		for x := 0; x < 40; x++ {
-			if a.paletteGrid.At(x, y).Rune == '>' {
+			if a.modals[0].g.At(x, y).Rune == '>' {
 				found = true
 				break
 			}
@@ -1037,7 +1037,7 @@ func TestPaletteFollowsAResize(t *testing.T) {
 
 	a.setGridSize(80, 20)
 
-	cols, rows := a.paletteGrid.Size()
+	cols, rows := a.modals[0].g.Size()
 	if cols != a.lastSize[0] || rows != a.lastSize[1] {
 		t.Errorf("the dialog's layer is %dx%d, want the window's %v", cols, rows, a.lastSize)
 	}
@@ -1118,7 +1118,7 @@ func TestAppDrawPutsTheDialogOnItsLayer(t *testing.T) {
 	found := false
 	for y := 0; y < 10 && !found; y++ {
 		for x := 0; x < 40; x++ {
-			if a.paletteGrid.At(x, y).Rune == '>' {
+			if a.modals[0].g.At(x, y).Rune == '>' {
 				found = true
 				break
 			}

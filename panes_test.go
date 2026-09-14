@@ -34,6 +34,18 @@ type pipeSession struct {
 	written []byte
 	size    [2]int
 	closed  bool
+
+	// closeErr is what Close hands back, for a test about a channel that
+	// will not let go.
+	closeErr error
+}
+
+// failOnClose makes the next Close hand back an error, for a test about
+// a channel that will not let go.
+func (p *pipeSession) failOnClose(err error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.closeErr = err
 }
 
 func newPipeSession() *pipeSession {
@@ -83,7 +95,7 @@ func (p *pipeSession) Close() error {
 		p.closed = true
 		close(p.out)
 	}
-	return nil
+	return p.closeErr
 }
 
 // newTestApp builds an app with one pane and no window, which is enough
@@ -758,9 +770,14 @@ func TestFocusTabDoesNothingOutsideAStrip(t *testing.T) {
 	checkTree(t, a)
 }
 
-// TestClosingTabsCollapsesTheStrip checks the whole life of a strip:
-// carries on, collapses to its last tab, then goes with it.
-func TestClosingTabsCollapsesTheStrip(t *testing.T) {
+// TestTheStageOutlivesItsPanes checks the whole life of the stage: it
+// carries on as panes close, it is still there with one left, and the
+// window goes with the last one.
+//
+// It does not stand aside for its last pane the way a plain strip does.
+// Every pane the window opens goes in it, so a stage replaced by a
+// terminal is a window with nowhere to put the next one.
+func TestTheStageOutlivesItsPanes(t *testing.T) {
 	a := newTestApp(t, 40, 10)
 	for i := 0; i < 2; i++ {
 		if err := a.openTab(); err != nil {
@@ -768,27 +785,24 @@ func TestClosingTabsCollapsesTheStrip(t *testing.T) {
 		}
 	}
 
-	if err := a.closeFocused(); err != nil {
-		t.Fatalf("close: %v", err)
-	}
-	checkTree(t, a)
-	if _, ok := a.root.Widget().(*ui.Tabs); !ok {
-		t.Errorf("root = %T, want the strip carrying on with two tabs", a.root.Widget())
-	}
-
-	if err := a.closeFocused(); err != nil {
-		t.Fatalf("close: %v", err)
-	}
-	checkTree(t, a)
-	if _, ok := a.root.Widget().(*term.Terminal); !ok {
-		t.Errorf("root = %T, want the strip collapsed into its last tab", a.root.Widget())
+	for left := 2; left >= 1; left-- {
+		if err := a.closeFocused(); err != nil {
+			t.Fatalf("close: %v", err)
+		}
+		checkTree(t, a)
+		if got := a.root.Widget(); got != ui.Widget(a.stage) {
+			t.Fatalf("with %d panes left the root is %T, want the stage", left, got)
+		}
+		if got := len(a.stage.Children()); got != left {
+			t.Fatalf("the stage holds %d panes, want %d", got, left)
+		}
 	}
 
 	if err := a.closeFocused(); err != nil {
 		t.Fatalf("close: %v", err)
 	}
 	if !a.quit.Load() {
-		t.Error("closing the last tab did not close the window")
+		t.Error("closing the last pane did not close the window")
 	}
 }
 

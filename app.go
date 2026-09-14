@@ -86,9 +86,12 @@ type app struct {
 	// actOn is the machine a menu opened from the sidebar is about, and
 	// acting says there is such a menu. The commands on that menu act
 	// on the machine the user is looking at, and while the menu is up
-	// that is the machine whose row they clicked.
+	// that is the machine whose row they clicked. menus counts the menus
+	// opened this way, so the one that forgets a machine is the one that
+	// named it.
 	actOn  string
 	acting bool
+	menus  int
 
 	// registry is everything the window has open, which is what the
 	// panel draws.
@@ -264,15 +267,18 @@ func (a *app) Update() error {
 		a.shot.update(a)
 	}
 
+	// Shown rather than logged. A key or a click is something the user
+	// asked for, and the sidebar is now the way into most of it: a
+	// window opened from an icon has no console to find the reason in.
 	for _, ev := range a.reader.Poll() {
 		if _, err := a.root.HandleKey(ev); err != nil {
-			log.Printf("key %s: %v", ui.ChordOf(ev), err)
+			a.reportError(ui.ChordOf(ev).String()+" could not be done", err)
 		}
 	}
 	cw, ch := a.renderer.CellSize()
 	for _, ev := range a.mouse.Poll(cw, ch) {
 		if _, err := a.root.HandleMouse(ev); err != nil {
-			log.Printf("mouse: %v", err)
+			a.reportError("That could not be done", err)
 		}
 	}
 
@@ -461,6 +467,8 @@ func (a *app) commands() {
 		ui.Command{ID: "conn.tunnel", Title: "Open a tunnel…", Run: a.openTunnelHere},
 		ui.Command{ID: "conn.socks", Title: "Open a SOCKS proxy…", Run: a.openSocksHere},
 		ui.Command{ID: "conn.files", Title: "Browse files here", Run: a.openFilesHere},
+		ui.Command{ID: "conn.disconnect", Title: "Close the connection to this machine",
+			Run: a.disconnectHere},
 		ui.Command{ID: "conn.close", Title: "Close this connection",
 			Run: a.closeSelectedConnection},
 		ui.Command{ID: "conn.clearFinished", Title: "Clear finished connections",

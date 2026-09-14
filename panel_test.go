@@ -1,12 +1,14 @@
 package main
 
 import (
+	"errors"
 	"image/color"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/marrasen/gridterm/conns"
+	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/input"
 	"github.com/marrasen/gridterm/meter"
 	"github.com/marrasen/gridterm/ui"
@@ -136,15 +138,30 @@ func TestPanelSaysNoStateInWords(t *testing.T) {
 	withPanel(t, a)
 	e := onlyPane(t, a)
 
-	for _, state := range []string{"opened", "active", "settled", "closed"} {
-		if got := panelText(a, panelNow)[1]; strings.Contains(got, state) {
-			t.Fatalf("the row says %q in words", state)
+	// Each of the four states in turn, and the row never names one.
+	at := []time.Time{panelNow, panelNow, panelNow.Add(meter.Settle), panelNow}
+	want := []meter.State{meter.Opened, meter.Active, meter.Settled, meter.Closed}
+	for i, state := range want {
+		switch state {
+		case meter.Active:
+			e.Meter.Moved(1, 0, panelNow)
+		case meter.Closed:
+			e.Meter.Close()
 		}
-		e.Meter.Moved(1, 0, panelNow)
-	}
-	e.Meter.Close()
-	if got := panelText(a, panelNow)[1]; strings.Contains(got, "closed") {
-		t.Fatalf("the row says %q", got)
+		if got := e.State(at[i]); got != state {
+			t.Fatalf("the row is %v, want %v", got, state)
+		}
+		row := panelText(a, at[i])[1]
+		for _, word := range []string{"opened", "active", "settled", "closed"} {
+			if strings.Contains(row, word) {
+				t.Fatalf("a %v row reads %q, which says its state in words", state, row)
+			}
+		}
+		// And it still says what it is, so the test is not passing on an
+		// empty row.
+		if !strings.HasPrefix(row, "Terminal") {
+			t.Fatalf("a %v row reads %q, want it to still name the pane", state, row)
+		}
 	}
 }
 
@@ -431,6 +448,25 @@ func TestPanelDoesNotDirtyAnIdleFrame(t *testing.T) {
 	if !a.g.AnyDirty() {
 		t.Fatal("a row that changed from active to settled did not redraw")
 	}
+
+	// Nor does time passing, once nothing is moving any more. The dot
+	// brightens and dims while bytes are going past, so a panel that
+	// kept pulsing after a connection settled would redraw for as long
+	// as the window was open.
+	for step := 1; step <= 8; step++ {
+		at := panelNow.Add(meter.Settle + time.Duration(step)*pulseStep)
+		a.refreshPanel(at)
+		a.root.Draw(a.g.View())
+		a.g.ClearDirty()
+	}
+	for step := 1; step <= 8; step++ {
+		at := panelNow.Add(2*meter.Settle + time.Duration(step)*pulseStep)
+		a.refreshPanel(at)
+		a.root.Draw(a.g.View())
+		if a.g.AnyDirty() {
+			t.Fatalf("a settled panel dirtied the layer %v later", at.Sub(panelNow))
+		}
+	}
 }
 
 // The bytes a shell actually sends are what makes its row active. The
@@ -684,8 +720,170 @@ func TestThePanelHasItsOwnGround(t *testing.T) {
 		t.Fatal("the sidebar is not on screen")
 	}
 	top := a.g.At(area.X, area.Y)
-	bottom := a.g.At(area.X, area.Y+area.Rows-1)
+	// The row above the last one: the last is the pinned line, which is
+	// painted in one colour of its own and says nothing about whether
+	// the list above it shades at all.
+	bottom := a.g.At(area.X, area.Y+area.Rows-2)
 	if top.BG == bottom.BG {
 		t.Fatalf("the sidebar is one flat colour: %v", top.BG)
+	}
+}
+
+// sidebarRow reads the pinned row at the bottom of the sidebar.
+func sidebarRow(t *testing.T, a *testApp) string {
+	t.Helper()
+	a.refreshPanel(panelNow)
+	a.root.Draw(a.g.View())
+	area, shown := a.root.AreaOf(a.side)
+	if !shown {
+		t.Fatal("the sidebar is not on screen")
+	}
+	var b strings.Builder
+	for x := area.X; x < area.X+area.Cols; x++ {
+		c := a.g.At(x, area.Y+area.Rows-1)
+		if c.Rune == 0 {
+			b.WriteByte(' ')
+			continue
+		}
+		b.WriteRune(c.Rune)
+	}
+	return strings.TrimSpace(b.String())
+}
+
+// The pinned row is written afresh every frame, so it is still there
+// after the window changes height.
+//
+// A row that remembered what it drew and skipped an unchanged frame
+// would be left behind at the height it was drawn at, and the row it
+// belongs on would stay blank.
+func TestThePinnedRowSurvivesAResize(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	if got := sidebarRow(t, a); !strings.Contains(got, "Connect") {
+		t.Fatalf("the pinned row reads %q", got)
+	}
+
+	a.lastSize = [2]int{80, 40}
+	a.g = grid.New(80, 40, a.colours.FG, a.colours.BG)
+	a.root.Layout(ui.Rect{Cols: 80, Rows: 40})
+	if got := sidebarRow(t, a); !strings.Contains(got, "Connect") {
+		t.Fatalf("after growing the window the pinned row reads %q", got)
+	}
+}
+
+// And after something else has written over it, which is what the panes
+// do while the sidebar is hidden.
+func TestThePinnedRowSurvivesBeingPaintedOver(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	sidebarRow(t, a)
+
+	area, shown := a.root.AreaOf(a.side)
+	if !shown {
+		t.Fatal("the sidebar is not on screen")
+	}
+	for x := area.X; x < area.X+area.Cols; x++ {
+		a.g.View().Set(x, area.Y+area.Rows-1,
+			grid.Cell{Rune: 'x', FG: a.colours.FG, BG: a.colours.BG, Width: 1})
+	}
+	if got := sidebarRow(t, a); !strings.Contains(got, "Connect") {
+		t.Fatalf("the pinned row reads %q after something wrote over it", got)
+	}
+}
+
+// A press on the pinned row goes through the command registry, so a
+// failure is shown rather than logged where nobody will look.
+func TestThePinnedRowGoesThroughTheCommands(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	a.root.Draw(a.g.View())
+
+	var ran int
+	if !a.root.Commands.Unregister("server.connect") {
+		t.Fatal("server.connect is not a command")
+	}
+	a.root.Commands.MustRegister(a.reporting(ui.Command{
+		ID: "server.connect", Title: "Connect to a server",
+		Run: func() error { ran++; return errors.New("nothing to connect to") },
+	}))
+
+	area, _ := a.root.AreaOf(a.side)
+	took, err := a.root.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft,
+		Col: area.X + 2, Row: area.Y + area.Rows - 1,
+	})
+	if !took || err != nil {
+		t.Fatalf("took %v, err %v", took, err)
+	}
+	if ran != 1 {
+		t.Fatalf("the row ran the command %d times", ran)
+	}
+	f, ok := a.root.Modal().(*ui.Form)
+	if !ok {
+		t.Fatalf("the failure showed %T, want a dialog", a.root.Modal())
+	}
+	if !strings.Contains(strings.Join(f.Lines, " "), "nothing to connect to") {
+		t.Fatalf("the dialog says %q", strings.Join(f.Lines, " "))
+	}
+}
+
+// The wheel scrolls the list wherever the pointer is, including the
+// bottom row: that is where somebody scrolling to the end of a long
+// list will have put it.
+func TestTheWheelWorksOverThePinnedRow(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	var rows []ui.ListRow
+	for i := 0; i < 60; i++ {
+		rows = append(rows, ui.ListRow{Text: "row", Key: i})
+	}
+	a.panel.SetRows(rows)
+	a.root.Draw(a.g.View())
+
+	area, _ := a.root.AreaOf(a.side)
+	was := a.panel.RowTop(0)
+	took, err := a.side.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseWheelDown,
+		Col: 1, Row: area.Rows - 1,
+	})
+	if !took || err != nil {
+		t.Fatalf("took %v, err %v", took, err)
+	}
+	if got := a.panel.RowTop(0); got == was {
+		t.Fatalf("the wheel over the bottom row did not scroll: still at %d", got)
+	}
+}
+
+// The pinned row is clicked where it was drawn.
+//
+// A widget is given a view that may be shorter than the size it was laid
+// out for, and a row measured against the promise rather than against
+// the view is a row nobody can press.
+func TestThePinnedRowIsClickedWhereItIsDrawn(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	var pressed int
+	a.side.Press = func() error { pressed++; return nil }
+
+	a.side.Layout(ui.Size{Cols: panelWidth, Rows: 24})
+	g := grid.New(panelWidth, 10, a.colours.FG, a.colours.BG)
+	a.side.Draw(g.View())
+
+	if _, err := a.side.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft, Col: 2, Row: 9,
+	}); err != nil {
+		t.Fatalf("the press failed: %v", err)
+	}
+	if pressed != 1 {
+		t.Fatalf("a press on the bottom row of the view ran it %d times", pressed)
+	}
+	if _, err := a.side.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft, Col: 2, Row: 23,
+	}); err != nil {
+		t.Fatalf("the press failed: %v", err)
+	}
+	if pressed != 1 {
+		t.Fatal("a press below the view ran the pinned row")
 	}
 }

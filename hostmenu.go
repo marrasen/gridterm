@@ -1,6 +1,8 @@
 package main
 
 import (
+	"errors"
+
 	"github.com/marrasen/gridterm/ui"
 )
 
@@ -34,14 +36,30 @@ func (a *app) openHostMenu(row ui.ListRow) error {
 	menu.Style = a.menuStyle()
 	menu.Anchor = a.rowAnchor(row.Key)
 
-	a.actOn, a.acting = string(host), true
+	// Which menu this is. The machine is forgotten a frame later, and by
+	// then another menu may have opened and named a different one: a
+	// clear that did not say which menu it belonged to would take that
+	// machine away instead.
+	a.menus++
+	mine := a.menus
 	hide = a.showModal(menu, func() {
 		// Not cleared here: a menu closes before it runs the line the
 		// user chose, so this would take the machine away from under
 		// the command. The pump is drained once a frame, which is after
 		// the command has run.
-		a.pump.post(func() { a.acting = false })
+		a.pump.post(func() {
+			if a.menus == mine {
+				a.acting = false
+			}
+		})
 	})
+	if a.root.Modal() != ui.Widget(menu) {
+		// It never went up, so nothing will ever take it down and
+		// nothing will clear the machine it was about.
+		return errors.New("there is no room to show the menu")
+	}
+	// Set once the menu is really up, for the same reason.
+	a.actOn, a.acting = string(host), true
 	a.markDirty()
 	return nil
 }
@@ -66,7 +84,9 @@ func hostItems(here bool) []ui.MenuItem {
 		{Command: "conn.tunnel", Title: "Tunnel…"},
 		{Command: "conn.socks", Title: "SOCKS proxy…"},
 		ui.MenuSeparator(),
-		{Command: "conn.close", Title: "Close the connection"},
+		// Not conn.close: that one closes whatever the list has
+		// selected, which is not the machine whose row was clicked.
+		{Command: "conn.disconnect", Title: "Close the connection"},
 	}
 }
 

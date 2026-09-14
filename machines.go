@@ -485,6 +485,16 @@ func (a *app) isHere(host string) bool {
 	return a.machines[host] == nil && (host == conns.Local || host == a.localHost)
 }
 
+// disconnectHere closes the connection to the machine the user is
+// looking at, and everything riding on it.
+func (a *app) disconnectHere() error {
+	host := a.currentHost()
+	if a.isHere(host) {
+		return errors.New("this is the machine gridterm is running on, not one it connected to")
+	}
+	return a.dropMachine(host)
+}
+
 // openTerminalHere opens another terminal on the machine the user is
 // looking at.
 func (a *app) openTerminalHere() error {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"image/color"
+	"strings"
 
 	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/input"
@@ -21,23 +22,26 @@ type sidebar struct {
 	Label string
 	Press func() error
 
-	// FG and BG colour the pinned row, and PressedFG marks it while the
-	// pointer is on it.
-	FG, BG, OverFG color.RGBA
+	// FG and BG colour the pinned row.
+	FG, BG color.RGBA
 
 	size ui.Size
-	over bool
-	buf  paddedRow
+
+	// at is the row the pinned line was last drawn on, or -1 when there
+	// was none. A click is measured against this rather than against the
+	// size Layout promised, because Draw may be given a shorter view and
+	// a row has to be clicked where it is drawn.
+	at int
 }
 
 // newSidebar puts a pinned row under a list.
 func newSidebar(list *ui.List, label string, press func() error) *sidebar {
-	return &sidebar{list: list, Label: label, Press: press}
+	return &sidebar{list: list, Label: label, Press: press, at: -1}
 }
 
-// rows is how many rows the pinned part takes.
-func (s *sidebar) rows() int {
-	if s.Label == "" || s.size.Rows < 3 {
+// pinnedRows is how many rows the pinned part takes in a box this tall.
+func (s *sidebar) pinnedRows(rows int) int {
+	if s.Label == "" || rows < 3 {
 		// Never at the cost of the list itself: a sidebar showing one
 		// row and a button is a sidebar showing nothing.
 		return 0
@@ -48,93 +52,84 @@ func (s *sidebar) rows() int {
 // Layout gives the list everything but the pinned row.
 func (s *sidebar) Layout(size ui.Size) {
 	s.size = size
-	s.list.Layout(ui.Size{Cols: size.Cols, Rows: max(size.Rows-s.rows(), 0)})
+	s.list.Layout(ui.Size{Cols: size.Cols, Rows: max(size.Rows-s.pinnedRows(size.Rows), 0)})
 }
 
 // Draw paints the list and the row under it.
+//
+// Every cell of the pinned row is written every frame. A row that
+// remembered what it drew and skipped an unchanged frame would be left
+// holding whatever else had written there since: the panes paint over
+// this whole strip while the sidebar is hidden, and a taller window puts
+// the row somewhere nothing has written at all. Writing the same value
+// costs nothing, because grid.Set leaves a cell that did not change
+// alone.
 func (s *sidebar) Draw(v grid.View) {
 	cols, rows := v.Size()
 	if cols <= 0 || rows <= 0 {
+		s.at = -1
 		return
 	}
-	pinned := s.rows()
+	pinned := s.pinnedRows(rows)
 	if rows > pinned {
 		s.list.Draw(v.Sub(0, 0, cols, rows-pinned))
 	}
 	if pinned == 0 {
+		s.at = -1
 		return
 	}
-	fg := s.FG
-	if s.over {
-		fg = s.OverFG
-	}
-	s.buf.draw(v.Sub(0, rows-1, cols, 1), s.Label, fg, s.BG)
+	s.at = rows - 1
+	drawRow(v.Sub(0, s.at, cols, 1), s.Label, s.FG, s.BG)
 }
 
 // SetFocus passes the keys on to the list, which is what they are for.
 func (s *sidebar) SetFocus(on bool) { s.list.SetFocus(on) }
-
-// Focused reports whether the sidebar has the keys.
-func (s *sidebar) Focused() bool { return s.list.Focused() }
 
 // HandleKey gives the keys to the list.
 func (s *sidebar) HandleKey(ev input.Event) (bool, error) { return s.list.HandleKey(ev) }
 
 // HandleMouse presses the pinned row, or passes the event to the list.
 func (s *sidebar) HandleMouse(ev input.MouseEvent) (bool, error) {
-	pinned := s.rows()
-	if pinned > 0 && ev.Row == s.size.Rows-1 {
-		s.over = ev.Kind != input.MouseRelease
-		if ev.Kind != input.MousePress || ev.Button != input.MouseLeft {
-			return true, nil
-		}
-		s.over = false
-		if s.Press == nil {
-			return true, nil
-		}
-		return true, s.Press()
+	if s.at < 0 || ev.Row != s.at || ev.Button.IsWheel() {
+		// The wheel goes to the list wherever the pointer is: the bottom
+		// row is where somebody scrolling to the end of a long list will
+		// have put it.
+		return s.list.HandleMouse(ev)
 	}
-	s.over = false
-	return s.list.HandleMouse(ev)
+	if ev.Kind != input.MousePress || ev.Button != input.MouseLeft {
+		// A release or a drag over the row is swallowed rather than
+		// acted on, the way a press on a button is.
+		return true, nil
+	}
+	if s.Press == nil {
+		return true, nil
+	}
+	return true, s.Press()
 }
 
-// CancelGesture lets go of a press whose release will never arrive.
-func (s *sidebar) CancelGesture() { s.over = false }
-
-// paddedRow draws one row and keeps what it drew, so a row that has not
-// changed is not written again.
+// drawRow writes one line of text, padded to the width.
 //
-// The toolkit has one of these for its own widgets, unexported. This is
-// the same idea for the one row this draws.
-type paddedRow struct {
-	was    string
-	fg, bg color.RGBA
-	cols   int
-	drawn  bool
-}
-
-// draw writes the text, padded to the width, when anything about it has
-// changed.
-func (p *paddedRow) draw(v grid.View, text string, fg, bg color.RGBA) {
+// Every cell is written, and each one exactly once: a cell written twice
+// in a frame is a cell that changed, and a window that redraws a sidebar
+// nobody is touching is what the whole display is built to avoid.
+func drawRow(v grid.View, text string, fg, bg color.RGBA) {
 	cols, rows := v.Size()
 	if cols <= 0 || rows <= 0 {
 		return
 	}
-	if p.drawn && p.was == text && p.fg == fg && p.bg == bg && p.cols == cols {
-		return
-	}
-	p.was, p.fg, p.bg, p.cols, p.drawn = text, fg, bg, cols, true
-
+	blank := grid.Cell{Rune: ' ', FG: fg, BG: bg, Width: 1}
+	v.Set(0, 0, blank)
 	at := v.SetString(1, 0, trimTo(text, max(cols-2, 0)), fg, bg, 0)
-	for x := 0; x < cols; x++ {
-		if x >= 1 && x < at {
-			continue
-		}
-		v.Set(x, 0, grid.Cell{Rune: ' ', FG: fg, BG: bg, Width: 1})
+	for x := max(at, 1); x < cols; x++ {
+		v.Set(x, 0, blank)
 	}
 }
 
-// trimTo cuts a string to a width in cells.
+// trimTo cuts a string to a width in cells, marking where it was cut.
+//
+// By cluster rather than by rune: a grid draws a character and its
+// combining marks in one cell, and cutting between them would leave half
+// a character behind.
 func trimTo(s string, cols int) string {
 	if cols <= 0 {
 		return ""
@@ -142,9 +137,17 @@ func trimTo(s string, cols int) string {
 	if grid.StringWidth(s) <= cols {
 		return s
 	}
-	runes := []rune(s)
-	for len(runes) > 0 && grid.StringWidth(string(runes)+"…") > cols {
-		runes = runes[:len(runes)-1]
+	var out strings.Builder
+	room := cols - grid.StringWidth("…")
+	var at int
+	for _, cluster := range grid.Clusters(s) {
+		w := grid.StringWidth(cluster)
+		if at+w > room {
+			break
+		}
+		out.WriteString(cluster)
+		at += w
 	}
-	return string(runes) + "…"
+	out.WriteString("…")
+	return out.String()
 }

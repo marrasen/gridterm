@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"image/color"
 	"testing"
 
 	"github.com/marrasen/gridterm/grid"
@@ -774,5 +775,66 @@ func TestTabsStripGestureIsButtonAware(t *testing.T) {
 	}
 	if tb.stripHeld {
 		t.Error("the strip did not let go on its own button's release")
+	}
+}
+
+// A strip with Keep set stays where it is, whether it is down to one tab
+// or to none.
+//
+// It is what a window holding all its panes in one place needs: a strip
+// that stood aside for its last tab would leave the window with nowhere
+// to put the next one.
+func TestTabsKeepStaysInTheTree(t *testing.T) {
+	one, two := &filler{ch: '1'}, &filler{ch: '2'}
+	tb := NewTabs(one, two)
+	tb.Keep = true
+	tb.SetFocus(true)
+	tb.Layout(Size{Cols: 12, Rows: 4})
+
+	stands, ok := tb.Remove(two)
+	if !ok || stands != Widget(tb) {
+		t.Fatalf("with two tabs Remove = %v, %v, want the strip", stands, ok)
+	}
+	stands, ok = tb.Remove(one)
+	if !ok || stands != Widget(tb) {
+		t.Fatalf("with one tab left Remove = %v, %v, want the strip", stands, ok)
+	}
+	if got := tb.Children(); len(got) != 0 {
+		t.Fatalf("%d children left, want none", len(got))
+	}
+	// And it is still a widget: an empty stage is drawn and laid out
+	// like any other, until the next pane goes in it.
+	tb.Layout(Size{Cols: 12, Rows: 4})
+	g := grid.New(12, 4, color.RGBA{}, color.RGBA{})
+	tb.Draw(g.View())
+	tb.SetFocus(false)
+	if got := tb.Focused(); got != nil {
+		t.Fatalf("an empty strip is showing %v", got)
+	}
+
+	tb.Add(one)
+	if got := tb.Focused(); got != Widget(one) {
+		t.Fatalf("the strip is showing %v after a tab went back in it", got)
+	}
+}
+
+// Detach leaves a kept strip alone, which is what puts the rule to work:
+// the tree surgery is what would otherwise replace it.
+func TestDetachLeavesAKeptStripInPlace(t *testing.T) {
+	one, two := &filler{ch: '1'}, &filler{ch: '2'}
+	tb := NewTabs(one, two)
+	tb.Keep = true
+	tb.Layout(Size{Cols: 12, Rows: 4})
+
+	root, ok := Detach(Widget(tb), two)
+	if !ok {
+		t.Fatal("Detach refused")
+	}
+	if root != Widget(tb) {
+		t.Fatalf("the root is %T, want the strip", root)
+	}
+	root, ok = Detach(Widget(tb), one)
+	if !ok || root != Widget(tb) {
+		t.Fatalf("Detach = %v, %v, want the strip left standing", root, ok)
 	}
 }

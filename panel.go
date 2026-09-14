@@ -101,9 +101,13 @@ func mix(from, to color.RGBA, at, of int) color.RGBA {
 // newSidebar puts the list in the panel, with the way to reach a machine
 // that is not open yet pinned under it.
 func (a *app) newSidebar() *sidebar {
-	s := newSidebar(a.panel, "+ Connect to server…", a.openServer)
+	s := newSidebar(a.panel, "+ Connect to server…", func() error {
+		// Through the registry rather than straight to the function, so
+		// a failure reaches the user the way it does from the menu bar
+		// and the keys: those go through a wrapper that shows it.
+		return a.root.Commands.Run("server.connect")
+	})
 	s.FG = a.colours.ANSI[6]
-	s.OverFG = a.colours.FG
 	// The foot of the shading the list draws, so the pinned row looks
 	// like the bottom of the sidebar rather than something sitting on
 	// it.
@@ -294,11 +298,28 @@ func (a *app) closeSelectedConnection() error {
 }
 
 // clearFinished takes every connection that has ended off the panel.
+//
+// A command that stopped keeps its pane, so that what it printed can
+// still be read. Clearing its row is the user saying they have read it,
+// so the pane goes too: a pane with no row is one the sidebar cannot
+// reach, and the sidebar is the only way to choose what is showing.
 func (a *app) clearFinished() error {
-	if a.registry.DropFinished(time.Now()) > 0 {
+	var err error
+	now := time.Now()
+	for t := range a.ended {
+		// Only the ones that really have finished. A pane whose channel
+		// would not close is still open, and its row still says so.
+		if e := a.panes[t]; e == nil || e.State(now) != meter.Closed {
+			continue
+		}
+		if cerr := a.removePane(t, false); cerr != nil && err == nil {
+			err = cerr
+		}
+	}
+	if a.registry.DropFinished(now) > 0 {
 		a.markDirty()
 	}
-	return nil
+	return err
 }
 
 // selectedConnection returns what the panel has selected.

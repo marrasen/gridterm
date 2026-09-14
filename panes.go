@@ -78,6 +78,9 @@ func (a *app) closePalette() {
 func (a *app) newTabs(kids ...ui.Widget) *ui.Tabs {
 	tb := ui.NewTabs(kids...)
 	tb.HideStrip = true
+	// It is the window's stage: every pane sits in it, and it has to
+	// still be there for the next one when the last is closed.
+	tb.Keep = true
 	tb.StripBG = a.colours.BG
 	tb.InactiveFG = a.colours.FG
 	tb.ActiveFG = a.colours.BG
@@ -374,12 +377,22 @@ func (a *app) paneEnded(t *term.Terminal) error {
 	if a.ended[t] {
 		return nil
 	}
+	// Marked before the close is tried, so a close that failed is not
+	// tried again on every frame for the life of the window.
 	a.ended[t] = true
-	// The row says it has finished, and the channel it was running on is
-	// let go of. The pane itself stays, showing what was printed.
-	e.Meter.Close()
 	a.markDirty()
-	return t.Close()
+	if err := t.Close(); err != nil {
+		// The dot has already gone grey: the stream ended, and that is
+		// what closed the meter. So the note is the only place left to
+		// say the channel was not let go of, and the caller shows the
+		// reason.
+		e.Note = "could not be closed"
+		return err
+	}
+	// The channel it was running on is let go of. The pane itself stays,
+	// showing what was printed.
+	e.Meter.Close()
+	return nil
 }
 
 // Ended reports whether a pane is one that has stopped and is only being
@@ -482,7 +495,10 @@ func (a *app) reapExited() {
 				continue
 			}
 			if err := a.paneEnded(t); err != nil {
-				a.logError(err)
+				// Shown rather than logged: a window opened from an icon
+				// has no console, and a channel that would not close is
+				// worth knowing about.
+				a.reportError("A command could not be closed", err)
 			}
 		}
 	}

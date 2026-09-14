@@ -40,6 +40,12 @@ type Tabs struct {
 	// several things and shows one, and says nothing about the rest.
 	HideStrip bool
 
+	// Keep stops the strip standing aside when it is down to one tab or
+	// none. A window that holds all its panes in one strip needs that
+	// strip to still be there for the next one, rather than being
+	// replaced by whatever tab happened to be left.
+	Keep bool
+
 	kids     []Widget
 	active   Widget
 	size     Size
@@ -146,7 +152,8 @@ func (t *Tabs) Replace(old, new Widget) bool {
 
 // Remove takes a tab out. A strip with one tab left has nothing to
 // choose between, so it reports that tab as what should stand in its
-// place; with none left it reports nothing.
+// place; with none left it reports nothing. A strip with Keep set
+// reports itself either way and stays where it is.
 func (t *Tabs) Remove(w Widget) (Widget, bool) {
 	at := -1
 	for i, kid := range t.kids {
@@ -178,11 +185,13 @@ func (t *Tabs) Remove(w Widget) (Widget, bool) {
 		}
 	}
 
-	switch len(t.kids) {
-	case 0:
-		return nil, true
-	case 1:
-		return t.kids[0], true
+	if !t.Keep {
+		switch len(t.kids) {
+		case 0:
+			return nil, true
+		case 1:
+			return t.kids[0], true
+		}
 	}
 	t.Layout(t.size)
 	return t, true

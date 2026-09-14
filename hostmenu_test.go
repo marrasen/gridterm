@@ -60,7 +60,9 @@ func chooseMenuItem(t *testing.T, m *ui.Menu, id string) {
 			}
 			return
 		}
-		m.HandleKey(input.Event{Kind: input.KeyPress, Key: input.KeyDown})
+		if _, err := m.HandleKey(input.Event{Kind: input.KeyPress, Key: input.KeyDown}); err != nil {
+			t.Fatalf("moving down the menu: %v", err)
+		}
 	}
 	t.Fatalf("%s is not on the menu: %v", id, menuCommands(m))
 }
@@ -128,7 +130,7 @@ func TestThePlusOnAServerOffersWhatAConnectionCanCarry(t *testing.T) {
 	menu := clickPlus(t, a, host)
 	for _, want := range []string{
 		"conn.terminal", "conn.files", "conn.command",
-		"conn.tunnel", "conn.socks", "conn.close",
+		"conn.tunnel", "conn.socks", "conn.disconnect",
 	} {
 		if !offers(menu, want) {
 			t.Errorf("the menu is missing %s: %v", want, menuCommands(menu))
@@ -138,6 +140,44 @@ func TestThePlusOnAServerOffersWhatAConnectionCanCarry(t *testing.T) {
 	// runs on the server and not.
 	if offers(menu, "tab.open") {
 		t.Errorf("the menu offers a local tab: %v", menuCommands(menu))
+	}
+	// Nor the one that closes whatever the list has selected. Clicking
+	// the plus does not move the selection, so that line would close
+	// some other machine's connection without saying so.
+	if offers(menu, "conn.close") {
+		t.Errorf("the menu offers the line that closes the selected row: %v", menuCommands(menu))
+	}
+}
+
+// Closing a machine from its own plus closes that machine, whatever row
+// the list has the bar on.
+func TestClosingAMachineFromItsPlusClosesThatMachine(t *testing.T) {
+	s := sshtest.New(t)
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	a.connect(serverConfig(t, s))
+	waitForPanes(t, a, 2)
+	host := serverConfig(t, s).Target()
+
+	// The bar is on the local terminal, which is where it starts: the
+	// first row anything can be done to.
+	a.refreshPanel(time.Now())
+	if e, ok := a.panel.Selected(); !ok || e.Key.(*conns.Entry).Host != conns.Local {
+		t.Fatalf("the bar is on %v, want the local terminal", e.Text)
+	}
+
+	menu := clickPlus(t, a, host)
+	chooseMenuItem(t, menu, "conn.disconnect")
+	waitFor(t, a, "the connection to be closed", func() bool {
+		return a.machines[host] == nil
+	})
+	// And the pane the bar was on is still there.
+	if len(a.panes) == 0 {
+		t.Fatal("the local terminal went with the connection")
+	}
+	if localPane(t, a) == nil {
+		t.Fatal("no pane is running here any more")
 	}
 }
 
@@ -197,5 +237,47 @@ func TestAMenuDismissedForgetsItsMachine(t *testing.T) {
 	a.pump.run()
 	if a.acting {
 		t.Fatal("the machine outlived the menu")
+	}
+}
+
+// A menu opened while an earlier one is still being forgotten keeps its
+// own machine.
+//
+// The machine is forgotten a turn of the pump after the menu closes, and
+// by then another menu may have opened: a key and a click are both
+// dealt with inside one frame, so this is a menu dismissed with Escape
+// and another opened with the mouse before either is drawn.
+func TestANewMenuKeepsItsMachineWhileTheOldOneIsForgotten(t *testing.T) {
+	one := sshtest.New(t)
+	two := sshtest.New(t)
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+
+	a.connectAs("one", serverConfig(t, one))
+	waitForPanes(t, a, 2)
+	a.connectAs("two", serverConfig(t, two))
+	waitForPanes(t, a, 3)
+
+	first := clickPlus(t, a, "one")
+	first.HandleKey(input.Event{Kind: input.KeyPress, Key: input.KeyEscape})
+	second := clickPlus(t, a, "two")
+
+	// The clear queued by the first menu runs now, and must leave the
+	// second alone.
+	a.pump.run()
+	if !a.acting || a.actOn != "two" {
+		t.Fatalf("the window is acting on %q (%v), want the machine the open menu is about",
+			a.actOn, a.acting)
+	}
+	if got := a.currentHost(); got != "two" {
+		t.Fatalf("the commands would act on %q", got)
+	}
+
+	// And once the second goes, nothing is left behind.
+	second.HandleKey(input.Event{Kind: input.KeyPress, Key: input.KeyEscape})
+	a.pump.run()
+	if a.acting {
+		t.Fatal("the machine outlived the last menu")
 	}
 }

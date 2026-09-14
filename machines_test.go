@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"net"
 	"strconv"
 	"strings"
@@ -591,4 +592,110 @@ func TestAShellThatEndsTakesItsPane(t *testing.T) {
 		return len(a.panes) == 1
 	})
 	checkTree(t, a)
+}
+
+// Clearing the finished connections takes away the pane as well as the
+// row.
+//
+// A pane with no row cannot be reached: the sidebar is the only way to
+// choose what is showing, and there is no strip of tabs any more.
+func TestClearingAFinishedCommandTakesItsPaneToo(t *testing.T) {
+	s := sshtest.New(t)
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+
+	a.connect(serverConfig(t, s))
+	waitForPanes(t, a, 2)
+	host := serverConfig(t, s).Target()
+	if err := a.openOn(host, []string{"uname", "-a"}); err != nil {
+		t.Fatalf("run a command: %v", err)
+	}
+	waitFor(t, a, "the command to finish", func() bool {
+		a.reapExited()
+		for pane, e := range a.panes {
+			if e.Kind == conns.Command {
+				return a.Ended(pane)
+			}
+		}
+		return false
+	})
+
+	if err := a.clearFinished(); err != nil {
+		t.Fatalf("clear: %v", err)
+	}
+	for _, e := range a.panes {
+		if e.Kind == conns.Command {
+			t.Fatal("the command's pane is still open with no row on the sidebar")
+		}
+	}
+	if len(a.ended) != 0 {
+		t.Fatalf("%d panes are still marked as finished", len(a.ended))
+	}
+	// The login terminal and the local one are untouched.
+	if len(a.panes) != 2 {
+		t.Fatalf("%d panes left, want the local one and the login", len(a.panes))
+	}
+}
+
+// A command whose channel will not close does not get a row saying it
+// finished cleanly.
+//
+// The dot going grey is the window saying the work is over and let go
+// of. When the close failed none of that is true, and the failure is
+// shown rather than written to a console the window does not have.
+func TestACommandThatWillNotCloseSaysSo(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+
+	// A second pane standing in for a command: what it printed is what
+	// it was run for, so it keeps its pane when it stops.
+	if err := a.openTab(); err != nil {
+		t.Fatalf("open tab: %v", err)
+	}
+	pane := a.focusedTerminal()
+	if pane == nil {
+		t.Fatal("the new tab has no terminal")
+	}
+	e := a.panes[pane]
+	if e == nil {
+		t.Fatal("the new pane has no row")
+	}
+	e.Kind = conns.Command
+
+	// The shell behind it ends, and refuses to be let go of.
+	shell := a.shells[len(a.shells)-1]
+	boom := errors.New("the channel would not close")
+	shell.failOnClose(boom)
+	shell.Close()
+
+	waitFor(t, a, "the command to stop", func() bool {
+		a.reapExited()
+		return a.Ended(pane)
+	})
+
+	if e.Note != "could not be closed" {
+		t.Fatalf("the row says %q, want it to say the close failed", e.Note)
+	}
+	// The pane stays, with what the command printed still in it.
+	if a.panes[pane] == nil {
+		t.Fatal("the pane went with the failed close")
+	}
+	f, ok := a.root.Modal().(*ui.Form)
+	if !ok {
+		t.Fatalf("the failure showed %T, want a dialog", a.root.Modal())
+	}
+	if !strings.Contains(strings.Join(f.Lines, " "), boom.Error()) {
+		t.Fatalf("the dialog says %q", strings.Join(f.Lines, " "))
+	}
+
+	// And it is not tried again on every frame: one failure, one dialog.
+	a.paneExited()
+	a.reapExited()
+	a.paneExited()
+	a.reapExited()
+	if n := len(a.root.Modals()); n != 1 {
+		t.Fatalf("%d dialogs, want one", n)
+	}
 }

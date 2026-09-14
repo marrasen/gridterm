@@ -335,7 +335,7 @@ func TestPaneInNoRoom(t *testing.T) {
 func two(t *testing.T) (*Browser, string, string) {
 	t.Helper()
 	left, right := t.TempDir(), t.TempDir()
-	b := NewBrowser(here(t, left), here(t, right), nil)
+	b := NewBrowser(here(t, left), here(t, right))
 	b.Layout(ui.Size{Cols: 80, Rows: 12})
 	b.SetFocus(true)
 	return b, left, right
@@ -978,6 +978,13 @@ func TestOnePaneHasNowhereToCopyTo(t *testing.T) {
 	if b.wired(input.KeyF5) {
 		t.Error("the bar offers a copy with one pane open")
 	}
+	b.OnMove = func(Work) {}
+	if b.wired(input.KeyF6) {
+		t.Error("the bar offers a move with one pane open")
+	}
+	if took, _ := b.HandleKey(input.Event{Kind: input.KeyPress, Key: input.KeyF6}); took {
+		t.Error("the one pane swallowed the move key")
+	}
 	// And Tab is not taken either: there is nowhere to go.
 	if took, _ := b.HandleKey(input.Event{Kind: input.KeyPress, Key: input.KeyTab}); took {
 		t.Error("the one pane swallowed Tab")
@@ -986,51 +993,76 @@ func TestOnePaneHasNowhereToCopyTo(t *testing.T) {
 
 // Every column of the browser belongs to the pane drawn there, with a
 // divider in the column between two of them.
+//
+// Read off what was drawn rather than out of paneCell: a test that asks
+// the arithmetic what the arithmetic says agrees with it however wrong
+// it is. The panes are each on a directory with one file whose name
+// says which pane it is, so a column can be traced back to its pane.
 func TestEveryColumnBelongsToAPane(t *testing.T) {
-	for _, n := range []int{1, 2, 3, 5} {
-		b, _ := many(t, n)
-		for _, cols := range []int{40, 60, 81, 90} {
+	for _, n := range []int{1, 2, 3, 5, 7} {
+		b, dirs := many(t, n)
+		for i, at := range dirs {
+			write(t, at, fmt.Sprintf("pane%d", i), "x")
+		}
+		b.Reload()
+
+		for _, cols := range []int{20, 40, 41, 60, 81, 90, 121} {
+			g := grid.New(cols, 12, color.RGBA{}, color.RGBA{})
 			b.Layout(ui.Size{Cols: cols, Rows: 12})
-			seen := make([]bool, cols)
-			for i := range b.Panes() {
-				start, end := b.paneCell(i, cols)
-				if i > 0 && seen[start-1] {
-					t.Fatalf("%d panes in %d columns: no divider before pane %d", n, cols, i)
-				}
-				for x := start; x < end; x++ {
-					if seen[x] {
-						t.Fatalf("%d panes in %d columns: column %d is in two panes", n, cols, x)
+			b.Draw(g.View())
+
+			// Row 1 is the first name in each listing, which is "..".
+			// Row 0 is the path, and the divider runs down both.
+			var dividers int
+			for x := 0; x < cols; x++ {
+				if g.At(x, 0).Rune == divider {
+					dividers++
+					if got := g.At(x, 1).Rune; got != divider {
+						t.Fatalf("%d panes in %d columns: the divider at %d is one row deep, not %q",
+							n, cols, x, got)
 					}
-					seen[x] = true
 				}
 			}
-			// Everything but the divider columns is somebody's.
-			var missing int
-			for _, taken := range seen {
-				if !taken {
-					missing++
-				}
+			if dividers != n-1 {
+				t.Fatalf("%d panes in %d columns drew %d dividers, want %d",
+					n, cols, dividers, n-1)
 			}
-			if missing != n-1 {
-				t.Fatalf("%d panes in %d columns leave %d columns spare, want %d dividers",
-					n, cols, missing, n-1)
+			// And nothing is left blank: every other column was written
+			// by the pane it belongs to.
+			for x := 0; x < cols; x++ {
+				if g.At(x, 0).Rune == 0 {
+					t.Fatalf("%d panes in %d columns: column %d of the top row was never written",
+						n, cols, x)
+				}
 			}
 		}
 	}
 }
 
-// The dividers are drawn where the sharing left room for them.
-func TestTheDividersAreDrawn(t *testing.T) {
+// The dividers stand between the panes rather than inside one, which is
+// what the column each pane is laid out with has to leave room for.
+func TestTheDividersStandBetweenThePanes(t *testing.T) {
 	b, _ := many(t, 3)
 	g := grid.New(90, 12, color.RGBA{}, color.RGBA{})
 	b.Layout(ui.Size{Cols: 90, Rows: 12})
 	b.Draw(g.View())
-	for i := 1; i < 3; i++ {
-		start, _ := b.paneCell(i, 90)
-		for y := 0; y < 11; y++ {
-			if got := g.At(start-1, y).Rune; got != divider {
-				t.Fatalf("row %d of the column before pane %d holds %q", y, i, got)
-			}
+
+	var at []int
+	for x := 0; x < 90; x++ {
+		if g.At(x, 0).Rune == divider {
+			at = append(at, x)
+		}
+	}
+	if len(at) != 2 {
+		t.Fatalf("%d dividers drawn, want one between each pair", len(at))
+	}
+	// A pane on each side of each of them, each as wide as it was laid
+	// out for: the widths and the rules have to add up to the box.
+	widths := []int{at[0], at[1] - at[0] - 1, 90 - at[1] - 1}
+	for i, p := range b.Panes() {
+		if got := p.laidOut().Cols; got != widths[i] {
+			t.Fatalf("pane %d was laid out %d columns wide, and %d are drawn for it",
+				i, got, widths[i])
 		}
 	}
 }
@@ -1118,18 +1150,170 @@ func TestAnIdleBrowserOfManyPanesDirtiesNothing(t *testing.T) {
 func TestBrowserChildArea(t *testing.T) {
 	b, _ := many(t, 3)
 	b.Layout(ui.Size{Cols: 90, Rows: 12})
+	at := 0
 	for i, p := range b.Panes() {
 		area, ok := b.ChildArea(p)
 		if !ok {
 			t.Fatalf("pane %d has no area", i)
 		}
-		start, end := b.paneCell(i, 90)
-		want := ui.Rect{X: start, Cols: end - start, Rows: 11}
-		if area != want {
-			t.Fatalf("pane %d is at %+v, want %+v", i, area, want)
+		// The size Layout gave the pane, asked of the pane: a container
+		// that works its answer out twice has two chances to disagree
+		// with itself.
+		if got := p.laidOut(); area.Size() != got {
+			t.Fatalf("pane %d is laid out %+v and reported at %+v", i, got, area)
 		}
+		if area.X != at {
+			t.Fatalf("pane %d starts at %d, want %d", i, area.X, at)
+		}
+		// The next one starts a divider along from the end of this.
+		at = area.X + area.Cols + 1
 	}
 	if _, ok := b.ChildArea(here(t, t.TempDir())); ok {
 		t.Error("a pane that is not in the browser has an area in it")
+	}
+}
+
+// focusedPanes returns which panes believe they have the keys.
+func focusedPanes(b *Browser) []int {
+	var on []int
+	for i, p := range b.Panes() {
+		if p.Focused() {
+			on = append(on, i)
+		}
+	}
+	return on
+}
+
+// The first pane put in a browser that already has the keys is told it
+// has them.
+//
+// It is how the file manager opens: the empty manager goes into the tree
+// and is given the keys, and the pane arrives after. A pane that is not
+// told draws no selected row, so the whole thing looks dead.
+func TestTheFirstPaneOfABrowserWithTheKeysIsToldSo(t *testing.T) {
+	b := NewBrowser()
+	b.Style = styled()
+	b.SetFocus(true)
+	b.Layout(ui.Size{Cols: 40, Rows: 12})
+
+	p := here(t, t.TempDir())
+	b.Add(p)
+	if b.Here() != p {
+		t.Fatalf("the keys are on %v, want the pane just added", b.Here())
+	}
+	if !p.Focused() {
+		t.Fatal("the pane does not know it has the keys, so it draws no selected row")
+	}
+}
+
+// Taking away a pane to the left of the one with the keys leaves the
+// keys where they were.
+//
+// The panes after it shift along, so a browser holding a position rather
+// than a pane would move the keys to the pane next door -- and leave the
+// one that had them still believing it did.
+func TestRemovingAPaneLeftOfTheKeysLeavesThemAlone(t *testing.T) {
+	b, dirs := many(t, 4)
+	b.Focus(b.Panes()[2])
+	was := b.Here()
+	if was.At() != dirs[2] {
+		t.Fatalf("the keys are in %q, want the third pane", was.At())
+	}
+
+	if _, ok := b.Remove(b.Panes()[1]); !ok {
+		t.Fatal("Remove refused")
+	}
+	if b.Here() != was {
+		t.Fatalf("the keys moved to %q, want %q", b.Here().At(), was.At())
+	}
+	if got := focusedPanes(b); len(got) != 1 {
+		t.Fatalf("panes %v believe they have the keys, want exactly one", got)
+	}
+	if !was.Focused() {
+		t.Fatal("the pane with the keys does not know it")
+	}
+}
+
+// And taking away the one with the keys hands them to whichever pane
+// takes its place.
+func TestRemovingThePaneWithTheKeysHandsThemOn(t *testing.T) {
+	b, dirs := many(t, 3)
+	b.Focus(b.Panes()[1])
+
+	if _, ok := b.Remove(b.Panes()[1]); !ok {
+		t.Fatal("Remove refused")
+	}
+	if got := b.Here().At(); got != dirs[2] {
+		t.Fatalf("the keys went to %q, want the pane that took its place", got)
+	}
+	if got := focusedPanes(b); len(got) != 1 || got[0] != 1 {
+		t.Fatalf("panes %v believe they have the keys", got)
+	}
+
+	// And the last pane hands them to the one before it.
+	b.Focus(b.Panes()[1])
+	if _, ok := b.Remove(b.Panes()[1]); !ok {
+		t.Fatal("Remove refused")
+	}
+	if got := b.Here().At(); got != dirs[0] {
+		t.Fatalf("the keys went to %q, want the pane before it", got)
+	}
+	if got := focusedPanes(b); len(got) != 1 {
+		t.Fatalf("panes %v believe they have the keys", got)
+	}
+}
+
+// A browser nobody is touching writes nothing, at every shape it can be.
+//
+// The one geometry the other idle test uses says nothing about the
+// widths where the panes divide unevenly, and the panes are what the
+// user adds and removes.
+func TestNoShapeOfBrowserDirtiesAnIdleFrame(t *testing.T) {
+	for _, n := range []int{1, 2, 3, 4, 5, 7} {
+		b, dirs := many(t, n)
+		for i, at := range dirs {
+			write(t, at, fmt.Sprintf("pane%d", i), "x")
+		}
+		b.Reload()
+		for _, cols := range []int{9, 13, 20, 37, 40, 41, 63, 80, 81, 90, 121, 200} {
+			for _, rows := range []int{3, 4, 5, 12, 24} {
+				g := grid.New(cols, rows, color.RGBA{}, color.RGBA{})
+				b.Layout(ui.Size{Cols: cols, Rows: rows})
+				b.Draw(g.View())
+				g.ClearDirty()
+				b.Draw(g.View())
+				b.Draw(g.View())
+				if g.AnyDirty() {
+					t.Fatalf("%d panes in %dx%d dirtied an idle frame", n, cols, rows)
+				}
+			}
+		}
+	}
+}
+
+// A pane already in the browser is refused, and so is nothing at all.
+//
+// The same pane twice would give Remove two answers and leave the
+// browser holding a ghost, and a caller that has put a row on a sidebar
+// for it has to hear that it is not there.
+func TestAddRefusesAPaneTwice(t *testing.T) {
+	b, _ := many(t, 2)
+	p := b.Panes()[0]
+
+	if b.Add(p) {
+		t.Fatal("Add took a pane it already had")
+	}
+	if got := len(b.Panes()); got != 2 {
+		t.Fatalf("the browser holds %d panes", got)
+	}
+	if b.Add(nil) {
+		t.Fatal("Add took nothing")
+	}
+	if got := len(b.Panes()); got != 2 {
+		t.Fatalf("the browser holds %d panes after being given nothing", got)
+	}
+	// And one it has never seen goes in.
+	if !b.Add(here(t, t.TempDir())) {
+		t.Fatal("Add refused a new pane")
 	}
 }

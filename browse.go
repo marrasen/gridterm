@@ -47,7 +47,12 @@ func (a *app) openFilesOn(host string) error {
 	}
 	b := a.files
 	p := a.newPane(f, b)
-	b.view.Add(p)
+	if !b.view.Add(p) {
+		// Nothing puts a pane in twice, so this is the window having
+		// lost track of what it holds. A row on the sidebar for a pane
+		// nothing is showing is worse than no pane at all.
+		return errors.Join(errors.New("the file manager refused the pane"), f.Close())
+	}
 	row := a.browserRow(p, host)
 	b.rows[p] = row
 	a.registry.Add(row)
@@ -223,6 +228,26 @@ func (a *app) startJob(kind jobs.Kind, w files.Work) {
 	a.markDirty()
 }
 
+// reloadPanesOn reads again every pane of the file manager that is on
+// one of these filesystems.
+//
+// By vfs.Same rather than by value: two panes on this machine are two
+// values standing for one place, and a job that changed something there
+// changed it for both of them.
+func (a *app) reloadPanesOn(on ...vfs.FS) {
+	if a.files == nil {
+		return
+	}
+	for _, p := range a.files.view.Panes() {
+		for _, f := range on {
+			if vfs.Same(p.FS(), f) {
+				p.Reload()
+				break
+			}
+		}
+	}
+}
+
 // hostOf says which machine a filesystem is, for the panel.
 func (a *app) hostOf(f vfs.FS) string {
 	for name, m := range a.machines {
@@ -255,9 +280,10 @@ func (a *app) refreshJobs() {
 			a.reportError("Could not finish "+j.Name(), p.Err)
 		}
 		// What it changed is in front of the user, so it is read again.
-		if a.files != nil {
-			a.files.view.Reload()
-		}
+		// Only the panes it touched: the window can hold as many panes
+		// as the user cares to open, and rereading a directory on a
+		// machine the job never went near is a round trip for nothing.
+		a.reloadPanesOn(j.Op().From, j.Op().To)
 		a.markDirty()
 	}
 }
@@ -532,9 +558,13 @@ func (a *app) closeFilesOn(host string) error {
 // job reading through a session closed underneath it fails part way and
 // cannot even take away what it half wrote.
 func (a *app) filesPaneGone(p *files.Pane) error {
+	// The filesystem first, and whatever the sidebar knows about the
+	// pane after: a pane with no manager to belong to still holds a
+	// session that has to be let go of.
+	err := a.releaseFS(p.FS())
 	b := a.files
 	if b == nil {
-		return nil
+		return errors.Join(err, fmt.Errorf("the pane on %s belonged to no file manager", p.FS().Name()))
 	}
 	if row := b.rows[p]; row != nil {
 		a.registry.Drop(row)
@@ -544,23 +574,32 @@ func (a *app) filesPaneGone(p *files.Pane) error {
 		// The manager went with its last pane, so the window has none.
 		a.files = nil
 	}
-	return a.releaseFS(p.FS())
+	return err
 }
 
 // releaseFS lets go of a filesystem, once no job is still using it.
+//
+// A filesystem with no job on it is closed here and the failure handed
+// straight back. One that has to wait is closed on another goroutine,
+// because a job stops when whatever it is waiting on gives up and the
+// window may not wait with it. The window counts those and waits for
+// them on the way out, and whatever they report is shown on the next
+// frame or printed on the way out.
 func (a *app) releaseFS(f vfs.FS) error {
 	stopping := a.stopJobsOn(f)
 	if len(stopping) == 0 {
 		return f.Close()
 	}
-	// Off this goroutine: a job stops when whatever it is waiting on
-	// gives up, and the window may not wait with it.
+	// Counted before the goroutine starts, so a window closing in the
+	// same frame still waits for it.
+	a.closing.Add(1)
 	go func() {
+		defer a.closing.Done()
 		for _, j := range stopping {
 			<-j.Done()
 		}
 		if err := f.Close(); err != nil {
-			a.pump.post(func() { a.reportError("Could not close "+f.Name(), err) })
+			a.closeFailed(fmt.Errorf("could not close %s: %w", f.Name(), err))
 		}
 	}()
 	return nil

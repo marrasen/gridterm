@@ -122,8 +122,9 @@ var errIsDir = errors.New("it is a directory")
 // Two sessions to one machine are the same place even though they are
 // two connections, and two values standing for this machine are the same
 // place even though they are two values. Comparing the values themselves
-// answers neither: a filesystem with no fields at all gives the same
-// pointer every time it is made, so two of them compare equal whatever
+// answers neither. A filesystem with no fields at all is a pointer to
+// nothing, and Go does not say whether two of those are equal: the
+// answer can go either way between builds, and it never depends on what
 // they stand for.
 //
 // It rests on Name naming the machine, which is what the window calls

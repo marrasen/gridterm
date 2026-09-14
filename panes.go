@@ -303,14 +303,15 @@ func (a *app) removePane(w ui.Widget, keep bool) error {
 		a.focus(ui.FocusedLeaf(a.root.Widget()))
 	}
 
-	var err error
+	// Every failure, not the first: a manager with panes on four
+	// machines can fail to let go of four of them, and three of those
+	// would go unsaid.
+	var errs []error
 	for _, leaf := range doomed {
 		// A file pane is not a terminal: it holds a filesystem, which
 		// may be a session on a connection.
 		if p, isFiles := leaf.(*files.Pane); isFiles {
-			if cerr := a.filesPaneGone(p); cerr != nil && err == nil {
-				err = cerr
-			}
+			errs = append(errs, a.filesPaneGone(p))
 			continue
 		}
 		t, isTerm := leaf.(*term.Terminal)
@@ -331,9 +332,7 @@ func (a *app) removePane(w ui.Widget, keep bool) error {
 		delete(a.panes, t)
 		delete(a.ended, t)
 		a.forgetPane(t)
-		if cerr := t.Close(); cerr != nil && err == nil {
-			err = cerr
-		}
+		errs = append(errs, t.Close())
 	}
 	// The window goes with the last pane. Counted rather than read off
 	// an empty tree: the connections panel is a leaf too, so the dock
@@ -341,10 +340,10 @@ func (a *app) removePane(w ui.Widget, keep bool) error {
 	if len(a.panes) == 0 && a.files == nil {
 		a.quit.Store(true)
 	}
-	if !detached && err == nil {
-		err = fmt.Errorf("pane was not in the tree")
+	if !detached {
+		errs = append(errs, fmt.Errorf("pane was not in the tree"))
 	}
-	return err
+	return errors.Join(errs...)
 }
 
 // paneEnded deals with a shell that stopped on its own.

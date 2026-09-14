@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -116,6 +117,15 @@ type app struct {
 	// There is one of it: a pane is added to the manager rather than a
 	// second manager being opened beside it.
 	files *browser
+
+	// closing counts the filesystems waiting for a job to stop before
+	// they can be let go of, and closeErrs is what those attempts
+	// reported. The window may not wait for one on the goroutine that
+	// draws, so it waits on the way out instead: a filesystem closed
+	// after the process has gone is a filesystem never closed.
+	closing   sync.WaitGroup
+	closeMu   sync.Mutex
+	closeErrs []error
 
 	// queue is the file work running in the background, and jobs are the
 	// panel rows that stand for each piece of it.
@@ -262,6 +272,9 @@ func (a *app) Update() error {
 	// text has not changed is written with the same value, so an idle
 	// panel leaves its layer alone.
 	a.refreshJobs()
+	for _, err := range a.takeCloseErrs() {
+		a.reportError("Could not let go of a filesystem", err)
+	}
 	a.refreshPanel(time.Now())
 	if a.shot != nil {
 		a.shot.update(a)
@@ -383,6 +396,46 @@ func (a *app) logError(err error) {
 		return
 	}
 	log.Print(err)
+}
+
+// takeCloseErrs hands back what the filesystem closes have reported and
+// forgets them, so each failure is shown once.
+func (a *app) takeCloseErrs() []error {
+	a.closeMu.Lock()
+	defer a.closeMu.Unlock()
+	out := a.closeErrs
+	a.closeErrs = nil
+	return out
+}
+
+// closeFailed records a failure from a goroutine letting go of a
+// filesystem. It runs off the drawing goroutine, so it leaves the
+// failure where the window will find it rather than showing it here.
+func (a *app) closeFailed(err error) {
+	a.closeMu.Lock()
+	defer a.closeMu.Unlock()
+	a.closeErrs = append(a.closeErrs, err)
+}
+
+// waitForCloses waits for the filesystems still being let go of, for the
+// window on its way out.
+//
+// Bounded, for the same reason the file work is: cancelling cannot
+// interrupt a read already under way, so a filesystem on a machine that
+// has stopped answering is left rather than waited for. It hands back
+// whatever the closes reported, including the ones that finished while
+// it waited.
+func (a *app) waitForCloses(d time.Duration) []error {
+	done := make(chan struct{})
+	go func() {
+		a.closing.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(d):
+	}
+	return a.takeCloseErrs()
 }
 
 // onFocused wraps a command that acts on the focused pane, doing nothing

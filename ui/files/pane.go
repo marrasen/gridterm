@@ -560,3 +560,8 @@ func (p *Pane) HandleMouse(ev input.MouseEvent) (bool, error) {
 	ev.Row -= head
 	return p.list.HandleMouse(ev)
 }
+
+// laidOut is the size the pane was last given. It is for the tests in
+// this package that check a container put its children where it says it
+// did.
+func (p *Pane) laidOut() ui.Size { return p.size }

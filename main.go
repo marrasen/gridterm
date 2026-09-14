@@ -224,6 +224,10 @@ func main() {
 	// connection it runs over from closing cleanly.
 	a.queue.CancelAll()
 	a.queue.WaitFor(jobsGrace)
+	// Then the filesystems waiting on those jobs, which are closed on
+	// goroutines of their own: one still waiting when the process ends
+	// is one never closed.
+	closed = append(closed, a.waitForCloses(jobsGrace)...)
 	closed = append(closed, a.closeTunnels(), a.closeMachines())
 	if err := errors.Join(closed...); err != nil {
 		log.Fatal(err)

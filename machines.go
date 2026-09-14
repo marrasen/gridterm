@@ -135,10 +135,12 @@ func (a *app) dropMachine(name string) error {
 	delete(a.machines, name)
 	a.registry.Drop(m.entry)
 
-	// The file work first: a job reading through a session that is
-	// closed underneath it fails part way and cannot take away what it
-	// half wrote. Browsers on this machine go with it, which is what
-	// stops their jobs.
+	// The file panes on this machine go first, which cancels the jobs
+	// reading through them and lets go of their sessions once those have
+	// stopped. A cancelled job stops when whatever it is waiting on
+	// gives up, which can be after this returns: one still unwinding
+	// then finds the connection gone underneath it, reports that like
+	// any other failure, and leaves what it half wrote where it is.
 	errs := []error{a.closeFilesOn(name)}
 	// Then the connection, which closes everything riding on it in
 	// parallel, each waiting out its own drain period; closing the panes

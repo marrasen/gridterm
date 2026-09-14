@@ -502,3 +502,64 @@ func TestTheLastFilePaneTakesTheManager(t *testing.T) {
 	}
 	checkTree(t, a)
 }
+
+// The one pane of a manager just opened has the keys and knows it.
+//
+// The manager goes into the tree empty and is given the keys there, and
+// the pane arrives after. A pane never told draws no selected row, so
+// the arrows move something nobody can see.
+func TestTheFirstFilePaneHasTheKeys(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+
+	if err := a.openFilesOn(conns.Local); err != nil {
+		t.Fatalf("a pane: %v", err)
+	}
+	p := a.files.view.Panes()[0]
+	if a.files.view.Here() != p {
+		t.Fatal("the manager says the keys are somewhere else")
+	}
+	if !p.Focused() {
+		t.Fatal("the only pane does not know it has the keys")
+	}
+	checkTree(t, a)
+}
+
+// A machine dropping takes its pane and leaves the keys where the user
+// had them.
+func TestAMachineGoingLeavesTheKeysWhereTheyWere(t *testing.T) {
+	s := sshtest.New(t)
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	host := connectedTo(t, a, s)
+
+	// Here, there, here: the keys end on the last one.
+	for _, on := range []string{conns.Local, host, conns.Local} {
+		if err := a.openFilesOn(on); err != nil {
+			t.Fatalf("a pane on %q: %v", on, err)
+		}
+	}
+	was := a.files.view.Here()
+
+	if err := a.dropMachine(host); err != nil {
+		t.Fatalf("dropMachine: %v", err)
+	}
+	if a.files == nil {
+		t.Fatal("the whole manager went with one machine")
+	}
+	if got := a.files.view.Here(); got != was {
+		t.Fatalf("the keys moved to %q, want the pane the user was in", got.At())
+	}
+	var focused int
+	for _, p := range a.files.view.Panes() {
+		if p.Focused() {
+			focused++
+		}
+	}
+	if focused != 1 {
+		t.Fatalf("%d panes believe they have the keys", focused)
+	}
+	checkTree(t, a)
+}

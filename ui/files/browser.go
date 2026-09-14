@@ -1,8 +1,6 @@
 package files
 
 import (
-	"errors"
-
 	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/input"
 	"github.com/marrasen/gridterm/ui"
@@ -55,8 +53,11 @@ type Browser struct {
 
 	panes []*Pane
 
-	// at is the pane with the keys, which is where work comes from.
-	at int
+	// active is the pane with the keys, which is where work comes from.
+	// A pointer rather than a position: removing a pane to the left of
+	// it shifts every later pane along, and an index would then name the
+	// pane next door.
+	active *Pane
 
 	hasFocus bool
 	keys     []fkey
@@ -73,7 +74,11 @@ func NewBrowser(panes ...*Pane) *Browser {
 	for _, p := range panes {
 		b.Add(p)
 	}
-	b.at = 0
+	if len(b.panes) > 0 {
+		// Straight to the field: nothing holds the keys yet, so there is
+		// no pane to tell about it.
+		b.active = b.panes[0]
+	}
 	return b
 }
 
@@ -86,14 +91,20 @@ func (b *Browser) Panes() []*Pane {
 }
 
 // Add puts a pane on the right-hand end and gives it the keys, which is
-// what opening one is for.
-func (b *Browser) Add(p *Pane) {
+// what opening one is for. It reports whether the pane went in.
+//
+// Nothing and a pane already here are both refused. The same pane twice
+// would give Remove two answers and leave the browser holding a ghost,
+// and a caller that has put a row on a sidebar for it needs to hear that
+// it is not there.
+func (b *Browser) Add(p *Pane) bool {
 	if p == nil || b.indexOf(p) >= 0 {
-		return
+		return false
 	}
 	b.panes = append(b.panes, p)
 	b.Focus(p)
 	b.Layout(b.size)
+	return true
 }
 
 // Remove takes a pane out and says what stands in the browser's place:
@@ -116,7 +127,8 @@ func (b *Browser) Remove(w ui.Widget) (ui.Widget, bool) {
 	if i < 0 {
 		return nil, false
 	}
-	if b.hasFocus && b.at == i {
+	had := b.active == p
+	if had && b.hasFocus {
 		p.SetFocus(false)
 	}
 	copy(b.panes[i:], b.panes[i+1:])
@@ -125,12 +137,15 @@ func (b *Browser) Remove(w ui.Widget) (ui.Widget, bool) {
 	b.panes[len(b.panes)-1] = nil
 	b.panes = b.panes[:len(b.panes)-1]
 
-	b.at = min(b.at, max(len(b.panes)-1, 0))
 	if len(b.panes) == 0 {
+		b.active = nil
 		return nil, true
 	}
-	if b.hasFocus {
-		b.panes[b.at].SetFocus(true)
+	if had {
+		b.active = b.panes[min(i, len(b.panes)-1)]
+		if b.hasFocus {
+			b.active.SetFocus(true)
+		}
 	}
 	b.Layout(b.size)
 	return b, true
@@ -152,12 +167,7 @@ func (b *Browser) indexOf(p *Pane) int {
 // has the keys while the browser does, and which pane work comes from
 // has to be the same answer whether or not the browser is being looked
 // at.
-func (b *Browser) Here() *Pane {
-	if b.at < 0 || b.at >= len(b.panes) {
-		return nil
-	}
-	return b.panes[b.at]
-}
+func (b *Browser) Here() *Pane { return b.active }
 
 // There is the next pane along, wrapping at the end, which is where a
 // copy goes. It is nil when there is nowhere else to send one.
@@ -165,15 +175,14 @@ func (b *Browser) There() *Pane {
 	if len(b.panes) < 2 {
 		return nil
 	}
-	return b.panes[(b.at+1)%len(b.panes)]
+	return b.panes[(b.indexOf(b.active)+1)%len(b.panes)]
 }
 
 // Next moves the keys to the pane after this one, wrapping at the end.
 func (b *Browser) Next() {
-	if len(b.panes) < 2 {
-		return
+	if next := b.There(); next != nil {
+		b.Focus(next)
 	}
-	b.Focus(b.panes[(b.at+1)%len(b.panes)])
 }
 
 // work is what the pane with the keys has picked out. one asks for the
@@ -296,19 +305,18 @@ func (b *Browser) SetFocus(on bool) {
 		return
 	}
 	b.hasFocus = on
-	if p := b.Here(); p != nil {
-		p.SetFocus(on)
+	if b.active != nil {
+		b.active.SetFocus(on)
 	}
 }
 
 // Focused returns the pane the keys are going to, which is what a
 // container is asked for.
 func (b *Browser) Focused() ui.Widget {
-	p := b.Here()
-	if p == nil {
+	if b.active == nil {
 		return nil
 	}
-	return p
+	return b.active
 }
 
 // HasFocus reports whether the browser has the keys at all.
@@ -329,21 +337,18 @@ func (b *Browser) Focus(w ui.Widget) bool {
 	if !ok {
 		return false
 	}
-	i := b.indexOf(p)
-	if i < 0 {
+	if b.indexOf(p) < 0 {
 		return false
 	}
-	if i == b.at {
+	if p == b.active {
 		return true
 	}
 	// Only pass the change on while the browser holds the keys itself,
 	// or a pane is told it lost keys it never had.
-	if b.hasFocus {
-		if was := b.Here(); was != nil {
-			was.SetFocus(false)
-		}
+	if b.hasFocus && b.active != nil {
+		b.active.SetFocus(false)
 	}
-	b.at = i
+	b.active = p
 	if b.hasFocus {
 		p.SetFocus(true)
 	}
@@ -365,9 +370,12 @@ func (b *Browser) Replace(old, next ui.Widget) bool {
 		return false
 	}
 	b.panes[i] = now
-	if b.at == i && b.hasFocus && now != was {
-		was.SetFocus(false)
-		now.SetFocus(true)
+	if b.active == was {
+		b.active = now
+		if b.hasFocus && now != was {
+			was.SetFocus(false)
+			now.SetFocus(true)
+		}
 	}
 	b.Layout(b.size)
 	return true
@@ -503,15 +511,6 @@ func (b *Browser) Reload() {
 	for _, p := range b.panes {
 		p.Reload()
 	}
-}
-
-// Close lets go of every pane's filesystem.
-func (b *Browser) Close() error {
-	var errs []error
-	for _, p := range b.panes {
-		errs = append(errs, p.FS().Close())
-	}
-	return errors.Join(errs...)
 }
 
 // SameFS reports whether the pane with the keys and the one a copy goes

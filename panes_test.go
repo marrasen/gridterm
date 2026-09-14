@@ -112,6 +112,7 @@ func newTestApp(t *testing.T, cols, rows int) *testApp {
 		browsers:   make(map[ui.Widget]*browser),
 		queue:      jobs.New(1),
 		jobs:       make(map[*conns.Entry]*jobs.Job),
+		asking:     make(map[chan jobs.Choice]func()),
 	}}
 	// The window's own grid, so markDirty and setGridSize do what they do
 	// in the program rather than nothing at all.

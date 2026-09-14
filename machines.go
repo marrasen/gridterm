@@ -10,6 +10,7 @@ import (
 	"github.com/marrasen/gridterm/meter"
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/ui"
+	"github.com/marrasen/gridterm/ui/files"
 	"github.com/marrasen/gridterm/ui/term"
 )
 
@@ -98,6 +99,14 @@ func (a *app) machineDied(m *machine) {
 		return
 	}
 	delete(a.machines, m.at.name)
+	// A browser with a side on this machine is reading through a session
+	// that has gone. It is taken away here, because nothing else would:
+	// a browser does not end by itself the way a shell does.
+	for _, b := range a.browsersOn(m.at.name) {
+		if err := a.closePane(b.view); err != nil {
+			a.logError(err)
+		}
+	}
 	// The tunnels went with it, but a local forward listens on a socket
 	// of this machine, which the far end dropping does nothing to.
 	if err := a.tunnelsDiedOn(m); err != nil {
@@ -126,10 +135,18 @@ func (a *app) dropMachine(name string) error {
 	delete(a.machines, name)
 	a.registry.Drop(m.entry)
 
-	// The connection first. It closes everything riding on it in
+	// The file work first: a job reading through a session that is
+	// closed underneath it fails part way and cannot take away what it
+	// half wrote. Browsers on this machine go with it, which is what
+	// stops their jobs.
+	var errs []error
+	for _, b := range a.browsersOn(name) {
+		errs = append(errs, a.closePane(b.view))
+	}
+	// Then the connection, which closes everything riding on it in
 	// parallel, each waiting out its own drain period; closing the panes
 	// first would wait out one drain period per pane instead.
-	errs := []error{m.conn.Close()}
+	errs = append(errs, m.conn.Close())
 	// The rows of its tunnels, which the connection has just closed as
 	// riders of its own.
 	a.dropTunnelsOn(m)
@@ -142,11 +159,6 @@ func (a *app) dropMachine(name string) error {
 		if on == m {
 			errs = append(errs, a.closePane(t))
 		}
-	}
-	// A browser with a side on this machine is half a browser without
-	// it, and the session it was reading through has gone.
-	for _, b := range a.browsersOn(name) {
-		errs = append(errs, a.closePane(b.view))
 	}
 	return errors.Join(errs...)
 }
@@ -450,6 +462,11 @@ func (a *app) currentHost() string {
 		if e := a.panes[t]; e != nil {
 			return e.Host
 		}
+	}
+	// A browser is not a terminal, and the side with the keys is on a
+	// machine like anything else.
+	if b, ok := ui.FocusedLeaf(a.root.Widget()).(*files.Browser); ok {
+		return a.hostOf(b.Here().FS())
 	}
 	return a.localHost
 }

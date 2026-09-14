@@ -385,6 +385,10 @@ func (q *Queue) WaitFor(d time.Duration) bool {
 	return true
 }
 
-// errStopped is what a job returns when the user answered a question
-// with "stop".
-var errStopped = errors.New("jobs: stopped")
+// ErrStopped is what a job returns when the user answered a question by
+// saying to stop.
+//
+// Exported so a window can tell it from a failure: the user chose it,
+// and telling them their own decision went wrong is not a report worth
+// making.
+var ErrStopped = errors.New("jobs: stopped")

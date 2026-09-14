@@ -39,12 +39,21 @@ func onlyBrowser(t *testing.T, a *testApp) (*browser, string, string) {
 	for _, have := range a.browsers {
 		b = have
 	}
-	left, right := t.TempDir(), t.TempDir()
 	leftPane, rightPane := b.view.Panes()
+	// It opens on the user's own directory by itself, on a goroutine of
+	// its own, so that has to land before the test sends it anywhere
+	// else.
+	waitFor(t, a, "the browser to open somewhere", func() bool {
+		return leftPane.At() != "" && rightPane.At() != "" &&
+			!leftPane.Busy() && !rightPane.Busy()
+	})
+
+	left, right := t.TempDir(), t.TempDir()
 	leftPane.Open(left)
 	rightPane.Open(right)
 	waitFor(t, a, "both panes to be read", func() bool {
-		return !leftPane.Busy() && !rightPane.Busy()
+		return leftPane.At() == left && rightPane.At() == right &&
+			!leftPane.Busy() && !rightPane.Busy()
 	})
 	return b, left, right
 }

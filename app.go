@@ -109,6 +109,11 @@ type app struct {
 	queue *jobs.Queue
 	jobs  map[*conns.Entry]*jobs.Job
 
+	// asking is how to take away a question a job is waiting on, by the
+	// channel the answer goes back through. A job given up on while its
+	// question is up has to take the question with it.
+	asking map[chan jobs.Choice]func()
+
 	// paneOn says which connection a pane is running on. Panes are
 	// grouped on the panel by a name, and a name can mean two things at
 	// once -- the machine -ssh put every pane on, and a connection made

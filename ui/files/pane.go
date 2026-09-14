@@ -116,6 +116,11 @@ type Pane struct {
 	// about what was in front of them.
 	marked map[string]bool
 
+	// land is the name to put the bar on once the listing arrives, for
+	// coming back up out of a directory. The rows are not there yet when
+	// the move is asked for.
+	land string
+
 	list *ui.List
 	size ui.Size
 }
@@ -127,6 +132,23 @@ func New(f vfs.FS) *Pane {
 	p.list = ui.NewList()
 	p.list.OnActivate = func(row ui.ListRow) error { return p.activate(row) }
 	return p
+}
+
+// dress passes the pane's colours to the list, which is what draws every
+// row.
+//
+// Done here rather than once at the start, because Style is a field the
+// caller sets after the pane is made. Writing the same colours again
+// costs nothing.
+func (p *Pane) dress() {
+	p.list.Style = ui.ListStyle{
+		FG:         p.Style.FG,
+		BG:         p.Style.BG,
+		SelectedFG: p.Style.SelectedFG,
+		SelectedBG: p.Style.SelectedBG,
+		HeaderFG:   p.Style.HeaderFG,
+		NoteFG:     p.Style.NoteFG,
+	}
 }
 
 // FS is the filesystem the pane is showing.
@@ -149,12 +171,18 @@ func (p *Pane) Busy() bool { return p.reading > 0 }
 // The pane shows what it had until the answer comes back, so a slow read
 // leaves the user looking at the last thing that worked rather than at
 // nothing.
-func (p *Pane) Open(path string) {
+func (p *Pane) Open(path string) { p.openAt(path, "") }
+
+// openAt moves the pane, remembering a name to put the bar on once the
+// listing arrives. It is set before the read starts, because a read that
+// answers straight away answers before this returns.
+func (p *Pane) openAt(path, land string) {
 	if path == "" {
 		return
 	}
 	p.at = path
 	p.marked = map[string]bool{}
+	p.land = land
 	if p.OnChange != nil {
 		p.OnChange()
 	}
@@ -187,12 +215,33 @@ func (p *Pane) Reload() {
 // looking at a directory they can still act on, and replacing it with
 // nothing would say the directory is empty.
 func (p *Pane) show(entries []vfs.Entry, err error) {
+	was := p.head()
 	p.err = err
 	if err == nil {
 		p.entries = entries
 		p.order()
 	}
+	// The rows are about to be built, so a name to land on can be
+	// reached now and not before.
+	defer func() {
+		if p.land != "" {
+			p.list.Select(p.land)
+			p.land = ""
+		}
+	}()
+	shorter := p.head() != was
+	if shorter {
+		// The line saying why takes a row from the listing. Without
+		// telling the list, it works from a height it no longer has and
+		// the bar walks off the bottom of what is on screen.
+		p.Layout(p.size)
+	}
 	p.rows()
+	if shorter {
+		// And the bar is brought back into view: it is where the user
+		// put it, and it has to still be somewhere they can see.
+		p.list.Reveal()
+	}
 }
 
 // SetSort changes the order and redraws.
@@ -385,10 +434,11 @@ func (p *Pane) Up() {
 		return
 	}
 	// The name being left, so the bar lands on it rather than at the top
-	// of a directory the user has just come out of.
+	// of a directory the user has just come out of. It is remembered
+	// rather than selected: the rows of the directory above have not
+	// been read yet.
 	was := vfs.Base(p.fs, p.at)
-	p.Open(vfs.Dir(p.fs, p.at))
-	p.list.Select(was)
+	p.openAt(vfs.Dir(p.fs, p.at), was)
 }
 
 // Layout tells the pane how much room it has.
@@ -412,7 +462,7 @@ func (p *Pane) Draw(v grid.View) {
 	if cols <= 0 || rows <= 0 {
 		return
 	}
-	v.Fill(grid.Cell{Rune: ' ', FG: p.Style.FG, BG: p.Style.BG, Width: 1})
+	p.dress()
 
 	where := p.at
 	if p.Busy() {
@@ -421,13 +471,29 @@ func (p *Pane) Draw(v grid.View) {
 	// The end of the path rather than the start: which directory this is
 	// matters more than which disk it is on, and there is never room for
 	// both.
-	v.SetString(0, 0, trimLeft(where, cols), p.Style.HeaderFG, p.Style.BG, 0)
+	//
+	// Written once, padded, rather than filled and written over: a cell
+	// written twice in one frame is a cell that changed, and a window
+	// that redraws a browser nobody is touching is what the whole
+	// display is built to avoid.
+	line(v, 0, cols, trimLeft(where, cols), p.Style.HeaderFG, p.Style.BG)
 
 	if p.err != nil && rows > 1 {
-		v.SetString(0, 1, trimLeft(p.err.Error(), cols), p.Style.ErrorFG, p.Style.BG, 0)
+		line(v, 1, cols, trimLeft(p.err.Error(), cols), p.Style.ErrorFG, p.Style.BG)
 	}
 	if rows > p.head() {
+		// The list fills what is under the head, and keeps its own copy
+		// of what it drew, so an idle one writes nothing at all.
 		p.list.Draw(v.Sub(0, p.head(), cols, rows-p.head()))
+	}
+}
+
+// line writes one row and pads it, so every cell in the row is written
+// exactly once.
+func line(v grid.View, y, cols int, text string, fg, bg color.RGBA) {
+	at := v.SetString(0, y, text, fg, bg, 0)
+	for x := at; x < cols; x++ {
+		v.Set(x, y, grid.Cell{Rune: ' ', FG: fg, BG: bg, Width: 1})
 	}
 }
 
@@ -456,6 +522,10 @@ func (p *Pane) Focused() bool { return p.list.Focused() }
 
 // HandleKey takes the keys the pane knows and passes the rest on.
 func (p *Pane) HandleKey(ev input.Event) (bool, error) {
+	if ev.Mods != 0 {
+		// Ctrl+Tab and the rest belong to whatever is around the pane.
+		return p.list.HandleKey(ev)
+	}
 	if ev.Kind == input.KeyPress || ev.Kind == input.KeyRepeat {
 		switch ev.Key {
 		case input.KeyBackspace:

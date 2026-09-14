@@ -153,6 +153,7 @@ func main() {
 	a.browsers = make(map[ui.Widget]*browser)
 	a.queue = jobs.New(0)
 	a.jobs = make(map[*conns.Entry]*jobs.Job)
+	a.asking = make(map[chan jobs.Choice]func())
 	a.scrollback = *scroll
 	a.colours = pal
 	a.panes = make(map[*term.Terminal]*conns.Entry)

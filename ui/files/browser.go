@@ -58,8 +58,13 @@ func NewBrowser(left, right *Pane, divider func(*ui.Split)) *Browser {
 func (b *Browser) Panes() (*Pane, *Pane) { return b.left, b.right }
 
 // Here is the pane with the keys, and There the other one.
+//
+// Asked of the split rather than of the panes: a pane only believes it
+// has the keys while the browser does, and which side a copy comes from
+// has to be the same answer whether or not the browser is being looked
+// at.
 func (b *Browser) Here() *Pane {
-	if b.right.Focused() {
+	if b.split.Focused() == ui.Widget(b.right) {
 		return b.right
 	}
 	return b.left
@@ -67,7 +72,7 @@ func (b *Browser) Here() *Pane {
 
 // There is the pane the keys are not in, which is where a copy goes.
 func (b *Browser) There() *Pane {
-	if b.right.Focused() {
+	if b.Here() == b.right {
 		return b.left
 	}
 	return b.right
@@ -76,10 +81,19 @@ func (b *Browser) There() *Pane {
 // Swap moves the keys to the other pane.
 func (b *Browser) Swap() { b.split.Focus(b.There()) }
 
-// work is what the pane with the keys has picked out.
-func (b *Browser) work(both bool) (Work, bool) {
+// work is what the pane with the keys has picked out. one asks for the
+// name under the bar alone, for something that can only be done to one
+// thing at a time.
+func (b *Browser) work(both, one bool) (Work, bool) {
 	here := b.Here()
 	names := here.Marked()
+	if one {
+		e, ok := here.Selected()
+		if !ok {
+			return Work{}, false
+		}
+		names = []string{e.Name}
+	}
 	if len(names) == 0 {
 		return Work{}, false
 	}
@@ -130,36 +144,43 @@ func (b *Browser) HandleKey(ev input.Event) (bool, error) {
 		b.Swap()
 		return true, nil
 	case input.KeyF5:
-		return true, b.ask(b.OnCopy, true)
+		return b.ask(b.OnCopy, true, false)
 	case input.KeyF6:
-		return true, b.ask(b.OnMove, true)
+		return b.ask(b.OnMove, true, false)
 	case input.KeyF7:
 		// Making a directory acts on the pane rather than on what is
 		// picked out in it.
-		if b.OnMkdir != nil {
-			b.OnMkdir(Work{From: b.Here()})
+		if b.OnMkdir == nil {
+			return false, nil
 		}
+		b.OnMkdir(Work{From: b.Here()})
 		return true, nil
 	case input.KeyF8, input.KeyDelete:
-		return true, b.ask(b.OnDelete, false)
+		return b.ask(b.OnDelete, false, false)
 	case input.KeyF2:
-		return true, b.ask(b.OnRename, false)
+		// One name: renaming asks what to call it, and there is one
+		// answer to that question.
+		return b.ask(b.OnRename, false, true)
 	}
 	return b.split.HandleKey(ev)
 }
 
 // ask hands on what the user picked out, if anything and if there is
 // anybody to hand it to.
-func (b *Browser) ask(to func(Work), both bool) error {
+//
+// A key nothing is wired to, or one with nothing to act on, is not
+// taken: a widget that swallows a key it does nothing with swallows
+// whatever that key is bound to everywhere else.
+func (b *Browser) ask(to func(Work), both, one bool) (bool, error) {
 	if to == nil {
-		return nil
+		return false, nil
 	}
-	w, ok := b.work(both)
+	w, ok := b.work(both, one)
 	if !ok {
-		return nil
+		return false, nil
 	}
 	to(w)
-	return nil
+	return true, nil
 }
 
 // HandleMouse passes the mouse to the split, which knows where its panes

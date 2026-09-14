@@ -307,7 +307,7 @@ func (j *Job) put(ctx context.Context, it item) (wrote string, err error) {
 			j.skip(it)
 			return "", nil
 		case Stop:
-			return "", errStopped
+			return "", ErrStopped
 		case Rename:
 			if to, err = beside(j.op.To, to, choice.Name); err != nil {
 				return "", err
@@ -543,7 +543,7 @@ func (j *Job) rename(ctx context.Context, items []item) error {
 				j.update(func(p *Progress) { p.Skipped++ })
 				continue
 			case Stop:
-				return errStopped
+				return ErrStopped
 			case Rename:
 				if to, err = beside(j.op.To, to, choice.Name); err != nil {
 					return err

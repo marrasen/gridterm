@@ -454,3 +454,204 @@ func TestBrowserKnowsWhenBothPanesAreOneFilesystem(t *testing.T) {
 		t.Fatal("two panes on this machine are not the same filesystem")
 	}
 }
+
+// The colours a pane is given reach the rows, which is what the list
+// draws. Without that the names and the bar are painted in nothing at
+// all, and the user cannot see where the keys are pointing.
+func TestPaneColoursItsRows(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "one.txt", "hello")
+
+	p := alone(t, dir)
+	press(t, p, input.KeyDown)
+
+	g := grid.New(30, 6, color.RGBA{}, color.RGBA{})
+	p.Layout(ui.Size{Cols: 30, Rows: 6})
+	p.Draw(g.View())
+
+	// The row under the bar, which is the one every key acts on.
+	var painted bool
+	for y := 0; y < 6; y++ {
+		if strings.Contains(rowText(g, y, 30), "one.txt") {
+			c := g.At(1, y)
+			if c.FG.A == 0 && c.BG.A == 0 {
+				t.Fatalf("the selected row is drawn in nothing: fg %v bg %v", c.FG, c.BG)
+			}
+			painted = true
+		}
+	}
+	if !painted {
+		t.Fatal("the row was not drawn at all")
+	}
+}
+
+// rowText reads one row of a grid back as a string.
+func rowText(g *grid.Grid, y, cols int) string {
+	var b strings.Builder
+	for x := 0; x < cols; x++ {
+		c := g.At(x, y)
+		if c.Rune == 0 {
+			b.WriteByte(' ')
+			continue
+		}
+		b.WriteRune(c.Rune)
+	}
+	return b.String()
+}
+
+// A pane nobody is touching writes nothing. Filling the view and then
+// writing over it changes every cell twice a frame, and a window that
+// redraws a browser nobody is touching is what the whole display is
+// built to avoid.
+func TestAnIdlePaneDirtiesNothing(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"a.txt", "b.txt", "c.txt"} {
+		write(t, dir, name, name)
+	}
+
+	p := alone(t, dir)
+	g := grid.New(30, 8, color.RGBA{}, color.RGBA{})
+	p.Layout(ui.Size{Cols: 30, Rows: 8})
+
+	p.Draw(g.View())
+	g.ClearDirty()
+	for i := 0; i < 5; i++ {
+		p.Draw(g.View())
+	}
+	if g.AnyDirty() {
+		var rows []int
+		for y := 0; y < 8; y++ {
+			if g.RowDirty(y) {
+				rows = append(rows, y)
+			}
+		}
+		t.Fatalf("an idle pane dirtied rows %v", rows)
+	}
+}
+
+// The line saying why a read failed takes a row from the listing, and
+// the listing has to be told: otherwise the bar walks off the bottom of
+// what is on screen.
+func TestTheErrorLineDoesNotPushTheBarOffScreen(t *testing.T) {
+	dir := t.TempDir()
+	for i := 0; i < 12; i++ {
+		write(t, dir, string(rune('a'+i))+".txt", "x")
+	}
+
+	p := alone(t, dir)
+	p.Layout(ui.Size{Cols: 30, Rows: 8})
+	// To the bottom of the listing.
+	press(t, p, input.KeyEnd)
+	last, ok := p.Selected()
+	if !ok {
+		t.Fatal("nothing is selected")
+	}
+
+	// Now a read fails, which costs a row.
+	p.Read = func(_ vfs.FS, _ string, then func([]vfs.Entry, error)) {
+		then(nil, errors.New("boom"))
+	}
+	p.Reload()
+
+	lines := drawn(p, 30, 8)
+	if !strings.Contains(strings.Join(lines, "\n"), last.Name) {
+		t.Fatalf("the selected %q is not on screen:\n%s", last.Name, strings.Join(lines, "\n"))
+	}
+}
+
+// A key with a modifier belongs to whatever is around the pane: Ctrl and
+// Shift chords are bound elsewhere in the window.
+func TestPaneLeavesChordsAlone(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "sub/one.txt", "one")
+	p := alone(t, dir)
+	was := p.At()
+
+	for _, key := range []input.Key{input.KeyBackspace, input.KeySpace, input.KeyInsert} {
+		took, err := p.HandleKey(input.Event{
+			Kind: input.KeyPress, Key: key, Mods: input.ModCtrl,
+		})
+		if err != nil {
+			t.Fatalf("key: %v", err)
+		}
+		if took {
+			t.Errorf("the pane swallowed a Ctrl chord: %v", key)
+		}
+	}
+	if p.At() != was {
+		t.Fatalf("a Ctrl chord moved the pane to %q", p.At())
+	}
+}
+
+// A key nothing is wired to travels on, so whatever it is bound to
+// elsewhere still works.
+func TestBrowserLeavesKeysItDoesNothingWith(t *testing.T) {
+	b, left, _ := two(t)
+	write(t, left, "one.txt", "one")
+	b.Here().Reload()
+	press(t, b, input.KeyDown)
+
+	for _, key := range []input.Key{input.KeyF2, input.KeyF5, input.KeyF6, input.KeyF7, input.KeyF8} {
+		took, err := b.HandleKey(input.Event{Kind: input.KeyPress, Key: key})
+		if err != nil {
+			t.Fatalf("key: %v", err)
+		}
+		if took {
+			t.Errorf("the browser swallowed %v with nothing wired to it", key)
+		}
+	}
+
+	// And with nothing picked out, a key that acts on names is not taken
+	// either.
+	b.OnCopy = func(Work) {}
+	b.Here().ClearMarks()
+	// The bar back on the way up, which is not a name to copy.
+	press(t, b, input.KeyHome)
+	took, _ := b.HandleKey(input.Event{Kind: input.KeyPress, Key: input.KeyF5})
+	if took {
+		t.Error("the browser swallowed F5 with nothing to copy")
+	}
+}
+
+// Which side a copy comes from is the same answer whether or not the
+// browser is being looked at.
+func TestWhichSideHasTheKeysSurvivesLosingThem(t *testing.T) {
+	b, left, right := two(t)
+	if _, err := b.HandleKey(input.Event{Kind: input.KeyPress, Key: input.KeyTab}); err != nil {
+		t.Fatalf("tab: %v", err)
+	}
+	if b.Here().At() != right {
+		t.Fatalf("after tab it is in %q", b.Here().At())
+	}
+
+	// The keys go somewhere else entirely, the way they do when another
+	// pane is focused.
+	b.SetFocus(false)
+	if got := b.Here().At(); got != right {
+		t.Fatalf("with the keys elsewhere it says %q, want the side that had them", got)
+	}
+	if got := b.There().At(); got != left {
+		t.Fatalf("the other side is %q", got)
+	}
+}
+
+// Renaming asks about one name, because there is one answer to "what
+// should it be called".
+func TestRenamingIsAboutOneName(t *testing.T) {
+	b, left, _ := two(t)
+	for _, name := range []string{"a.txt", "b.txt"} {
+		write(t, left, name, name)
+	}
+	b.Here().Reload()
+
+	var asked Work
+	b.OnRename = func(w Work) { asked = w }
+	press(t, b, input.KeyDown)
+	press(t, b, input.KeySpace)
+	press(t, b, input.KeySpace)
+	press(t, b, input.KeyF2)
+
+	if len(asked.Names) != 1 {
+		t.Fatalf("it asked to rename %v, want the one under the bar", asked.Names)
+	}
+}

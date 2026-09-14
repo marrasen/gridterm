@@ -142,6 +142,14 @@ func (l *List) SelectedIndex() int { return l.at }
 // down rather than two alternating.
 func (l *List) Move(by int) { l.move(by) }
 
+// Reveal scrolls until the selected row is on screen.
+//
+// Setting rows does not do this, because the list is rebuilt every frame
+// and it would undo the wheel. A caller that has just made the list
+// shorter does need it: the selection is where the user put it, and it
+// has to still be somewhere they can see.
+func (l *List) Reveal() { l.reveal() }
+
 // Select moves the selection to the row with a key, reporting whether
 // there is one.
 func (l *List) Select(key any) bool {

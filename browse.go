@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"strings"
 
 	"github.com/marrasen/gridterm/conns"
@@ -44,8 +45,7 @@ func (a *app) openBrowser(left, right string) error {
 	}
 	rightFS, err := a.filesystem(right)
 	if err != nil {
-		_ = leftFS.Close()
-		return err
+		return errors.Join(err, leftFS.Close())
 	}
 
 	b := &browser{}
@@ -57,17 +57,41 @@ func (a *app) openBrowser(left, right string) error {
 	a.wireBrowser(b)
 
 	if err := a.placeTab(b.view); err != nil {
-		_ = b.view.Close()
-		return err
+		return errors.Join(err, b.view.Close())
 	}
 	a.browsers[b.view] = b
 	// The browser is what the tree holds, and it opens on its left side.
 	a.focus(b.view)
-	leftPane, _ := b.view.Panes()
+	leftPane, rightPane := b.view.Panes()
 	b.view.Focus(leftPane)
 	a.showBrowser(b, left, right)
 	a.relayout()
+
+	// Somewhere to start. Asking a machine where home is takes as long
+	// as anything else it is asked, so it happens off this goroutine and
+	// the pane fills in when the answer arrives.
+	a.startAt(leftPane)
+	a.startAt(rightPane)
 	return nil
+}
+
+// startAt opens a pane on the user's own directory.
+//
+// Until it has one a pane is on no directory at all: the keys have
+// nothing to act on, and a path built from nowhere is a relative one,
+// which would land in whatever directory gridterm itself was started in.
+func (a *app) startAt(p *files.Pane) {
+	f := p.FS()
+	go func() {
+		home, err := f.Home()
+		a.pump.post(func() {
+			if err != nil {
+				a.reportError("Could not open "+f.Name(), err)
+				return
+			}
+			p.Open(home)
+		})
+	}()
 }
 
 // filesystem opens a filesystem for a machine: this one, or one reached
@@ -205,6 +229,7 @@ func (a *app) startJob(kind jobs.Kind, w files.Work) {
 	e.Label = j.Name()
 	e.Close = func() error {
 		a.queue.Drop(j)
+		delete(a.jobs, e)
 		a.registry.Drop(e)
 		return nil
 	}
@@ -238,7 +263,10 @@ func (a *app) refreshJobs() {
 		delete(a.jobs, e)
 		// It has finished, so the meter stops and the row goes grey.
 		e.Meter.Close()
-		if p.Err != nil {
+		// Stopping it is the user's own decision, and cancelling is what
+		// the window does when it takes a browser away.
+		if p.Err != nil && !errors.Is(p.Err, jobs.ErrStopped) &&
+			!errors.Is(p.Err, context.Canceled) {
 			a.reportError("Could not finish "+j.Name(), p.Err)
 		}
 		// What it changed is in front of the user, so it is read again.
@@ -346,12 +374,23 @@ func (a *app) renameTo(p *files.Pane, was, to string) {
 	go func() {
 		// Asked about first: rename replaces what is there, and the user
 		// typed a name rather than answering a question about one.
+		//
+		// Changing only the letter case is let through: on a machine
+		// that does not tell two such names apart, the name that is
+		// already there is the very file being renamed.
 		_, err := f.Stat(at)
-		if err == nil {
+		switch {
+		case err == nil && !strings.EqualFold(was, to):
 			a.pump.post(func() {
 				a.reportError("Could not rename it",
 					fmt.Errorf("%s is already there", to))
 			})
+			return
+		case err != nil && !errors.Is(err, fs.ErrNotExist):
+			// Something else went wrong looking. Renaming replaces what
+			// is there, so going ahead without knowing is how a file is
+			// lost.
+			a.pump.post(func() { a.reportError("Could not rename it", err) })
 			return
 		}
 		err = f.Rename(from, at)
@@ -394,14 +433,16 @@ func (a *askOverwrite) Overwrite(ctx context.Context, c jobs.Conflict) (jobs.Cho
 	case choice := <-answers:
 		return choice, nil
 	case <-ctx.Done():
-		// The job has been given up on, so there is no answer to act on.
+		// The job has been given up on, so there is no answer to act on
+		// and the question goes with it.
+		a.app.pump.post(func() { a.app.stopAsking(answers) })
 		return jobs.Choice{}, ctx.Err()
 	}
 }
 
 // showOverwrite puts the question on the screen. It runs on the drawing
 // goroutine.
-func (a *app) showOverwrite(c jobs.Conflict, answers chan<- jobs.Choice) {
+func (a *app) showOverwrite(c jobs.Conflict, answers chan jobs.Choice) {
 	f := a.newConfirm("Replace "+vfs.Base(c.To, c.Path)+"?", wrapLines(
 		fmt.Sprintf("On %s there is already a %s of %s, changed %s.",
 			c.To.Name(), what(c.Have), size(c.Have.Size), when(c.Have)), errorLineWidth))
@@ -430,9 +471,28 @@ func (a *app) showOverwrite(c jobs.Conflict, answers chan<- jobs.Choice) {
 		answer(jobs.Choice{What: jobs.Skip, All: true})
 		return nil
 	}})
+	// Opens on the answer that changes nothing, the way the question
+	// about deleting does.
+	f.FocusButton(2)
 	// Whichever way the dialog goes away, the job is told: one that was
 	// never answered would hold its goroutine until the window closed.
-	a.showForm(f, func() { answer(jobs.Choice{What: jobs.Stop}) })
+	dismiss := a.showForm(f, func() {
+		delete(a.asking, answers)
+		answer(jobs.Choice{What: jobs.Stop})
+	})
+	// Kept so a job that is given up on takes its question away with it:
+	// a dialog nobody can usefully answer is a dialog in the way.
+	a.asking[answers] = dismiss
+}
+
+// stopAsking takes away a question whose job has gone. It runs on the
+// drawing goroutine.
+func (a *app) stopAsking(answers chan jobs.Choice) {
+	dismiss := a.asking[answers]
+	delete(a.asking, answers)
+	if dismiss != nil {
+		dismiss()
+	}
 }
 
 // what names the kind of thing something is.
@@ -477,6 +537,10 @@ func (a *app) browsersOn(host string) []*browser {
 
 // closeBrowser takes a browser off the panel, for one whose pane has
 // gone.
+//
+// The filesystems go last, and only once nothing is still using them: a
+// job reading through a session closed underneath it fails part way and
+// cannot even take away what it half wrote.
 func (a *app) closeBrowser(w ui.Widget) error {
 	b := a.browsers[w]
 	if b == nil {
@@ -485,5 +549,42 @@ func (a *app) closeBrowser(w ui.Widget) error {
 	delete(a.browsers, w)
 	a.registry.Drop(b.left)
 	a.registry.Drop(b.right)
-	return b.view.Close()
+
+	left, right := b.view.Panes()
+	stopping := a.stopJobsOn(left.FS(), right.FS())
+	if len(stopping) == 0 {
+		return b.view.Close()
+	}
+	// Off this goroutine: a job stops when whatever it is waiting on
+	// gives up, and the window may not wait with it.
+	go func() {
+		for _, j := range stopping {
+			<-j.Done()
+		}
+		if err := b.view.Close(); err != nil {
+			a.pump.post(func() { a.reportError("Could not close the browser", err) })
+		}
+	}()
+	return nil
+}
+
+// stopJobsOn gives up on the jobs using any of these filesystems, and
+// hands them back so a caller can wait for them to stop.
+func (a *app) stopJobsOn(on ...vfs.FS) []*jobs.Job {
+	var stopping []*jobs.Job
+	for e, j := range a.jobs {
+		op := j.Op()
+		for _, f := range on {
+			if op.From != f && op.To != f {
+				continue
+			}
+			j.Cancel()
+			stopping = append(stopping, j)
+			// The row goes with the browser it was started from.
+			delete(a.jobs, e)
+			a.registry.Drop(e)
+			break
+		}
+	}
+	return stopping
 }

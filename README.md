@@ -6,7 +6,7 @@ It runs a shell on a local pseudo-terminal — a PTY on Unix, a ConPTY on
 Windows — or on another machine over SSH, feeds the output through a VT
 emulator, and draws the resulting character grid as batched triangles.
 
-23,816 lines of Go, 28,837 lines of tests, 1,110 tests.
+24,043 lines of Go, 29,048 lines of tests, 1,117 tests.
 
 ![a shell running in gridterm](docs/shell.png)
 
@@ -165,14 +165,14 @@ encoders and both session types.
 | `remote` | 3,570 | no | SSH: connections, shells, host keys, unlocked keys, tunnels |
 | `conns` | 221 | no | what the window has open, grouped by machine |
 | `vfs` | 668 | no | a filesystem a browser works on: this machine, or one over SFTP |
-| `jobs` | 1,138 | no | copying, moving and deleting in the background, with progress and cancel |
+| `jobs` | 1,142 | no | copying, moving and deleting in the background, with progress and cancel |
 | `meter` | 257 | no | bytes moved, and how long ago: the four states |
-| `ui` | 5,067 | no | the widget toolkit: panes, tabs, menus, dialogs, fields, lists |
+| `ui` | 5,075 | no | the widget toolkit: panes, tabs, menus, dialogs, fields, lists |
 | `ui/term` | 529 | no | a shell on a widget |
-| `ui/files` | 676 | no | the two-pane file browser |
+| `ui/files` | 767 | no | the two-pane file browser |
 | `glyph` | 1,289 | yes | glyph atlas, system font fallback, box drawing |
 | `render` | 1,149 | yes | grid to batched triangles |
-| `main` | 4,551 | yes | the window and the wiring |
+| `main` | 4,675 | yes | the window and the wiring |
 
 The layering is deliberate: `vt` never imports the renderer, `input`
 never imports ebiten (that lives in `input/ebitenin`), `ui` knows nothing

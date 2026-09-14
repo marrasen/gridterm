@@ -49,35 +49,45 @@ func LoadAllowed(path string) (*Allowed, error) {
 
 // ParseAllowed reads keys in the authorized_keys format.
 //
-// A line it cannot read fails the lot. Skipping it would leave the user
-// believing a key is trusted when it is not, or -- worse the other way
-// -- hide a line somebody else added that they cannot see the shape of.
+// A line it cannot read fails the lot, and so does a line carrying
+// restrictions. Both for the same reason: a user who wrote something
+// there meant it. A key skipped is one they believe is trusted and is
+// not, or one somebody else added that they cannot see the shape of. A
+// key admitted with its from= or command= quietly dropped is worse
+// still, because it is a key they believe is restricted and is not.
+//
+// Taken a line at a time rather than by handing the whole file to
+// x/crypto, which skips what it cannot parse and would make a silent
+// nothing of a key that was cut in half.
 func ParseAllowed(raw []byte, from string) (*Allowed, error) {
 	a := &Allowed{}
-	rest := raw
-	line := 0
-	for {
-		rest = bytes.TrimLeft(rest, " \t\r\n")
-		for len(rest) > 0 && rest[0] == '#' {
-			if at := bytes.IndexByte(rest, '\n'); at >= 0 {
-				rest = rest[at+1:]
-			} else {
-				rest = nil
-			}
-			rest = bytes.TrimLeft(rest, " \t\r\n")
+	for n, line := range strings.Split(string(raw), "\n") {
+		text := strings.TrimSpace(line)
+		if text == "" || strings.HasPrefix(text, "#") {
+			continue
 		}
-		if len(rest) == 0 {
-			return a, nil
-		}
-		line++
-		key, comment, _, next, err := ssh.ParseAuthorizedKey(rest)
+		key, comment, options, _, err := ssh.ParseAuthorizedKey([]byte(text))
 		if err != nil {
-			return nil, fmt.Errorf("serve: %s: key %d cannot be read: %w", from, line, err)
+			return nil, fmt.Errorf("serve: %s line %d cannot be read: %w", from, n+1, err)
+		}
+		if len(options) > 0 {
+			return nil, fmt.Errorf(
+				"serve: %s line %d carries %s, which gridterm does not honour."+
+					" Remove it, or keep that key for ssh only",
+				from, n+1, strings.Join(options, ","))
+		}
+		if _, ok := key.(*ssh.Certificate); ok {
+			// A certificate has an expiry, principals and a revocation
+			// list behind it, and none of that is checked here. Taking
+			// one as a plain key would honour it for ever.
+			return nil, fmt.Errorf(
+				"serve: %s line %d is a certificate, which gridterm does not check."+
+					" List the key itself", from, n+1)
 		}
 		a.keys = append(a.keys, key)
 		a.names = append(a.names, strings.TrimSpace(comment))
-		rest = next
 	}
+	return a, nil
 }
 
 // Len is how many keys may connect.
@@ -109,7 +119,8 @@ func (a *Allowed) Names() []string {
 //
 // Compared by the bytes of the key rather than by its fingerprint: a
 // fingerprint is a digest, and comparing digests is comparing something
-// about the key instead of the key.
+// about the key instead of the key. The bytes begin with the key's own
+// algorithm name, so matching them is already matching the type.
 func (a *Allowed) Who(offered ssh.PublicKey) (string, bool) {
 	if a == nil || offered == nil {
 		return "", false
@@ -117,14 +128,14 @@ func (a *Allowed) Who(offered ssh.PublicKey) (string, bool) {
 	want := offered.Marshal()
 	for i, key := range a.keys {
 		// ConstantTimeCompare is not wanted here and would be a
-		// pretence: a public key is public, and the lengths and types
-		// differ anyway.
-		if key.Type() == offered.Type() && bytes.Equal(key.Marshal(), want) {
-			if a.names[i] != "" {
-				return a.names[i], true
-			}
-			return Fingerprint(key), true
+		// pretence: a public key is public.
+		if !bytes.Equal(key.Marshal(), want) {
+			continue
 		}
+		if a.names[i] != "" {
+			return a.names[i], true
+		}
+		return Fingerprint(key), true
 	}
 	return "", false
 }

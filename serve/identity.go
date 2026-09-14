@@ -18,11 +18,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"golang.org/x/crypto/ssh"
 )
 
-// Where a serving window keeps its own files, under the OS config
+// Where a serving window keeps its files, under the OS config
 // directory.
 const (
 	dir      = "gridterm"
@@ -30,7 +31,7 @@ const (
 	authFile = "authorized_keys"
 )
 
-// Dir returns the directory a serving window keeps its files in.
+// Dir returns the directory a serving window keeps its public files in.
 func Dir() (string, error) {
 	base, err := os.UserConfigDir()
 	if err != nil {
@@ -39,9 +40,25 @@ func Dir() (string, error) {
 	return filepath.Join(base, dir), nil
 }
 
+// privateDir returns the directory the host key lives in.
+//
+// On Windows that is the local profile rather than the roaming one.
+// os.UserConfigDir gives %AppData%, which a domain account syncs to a
+// file server at every logon and logoff: a private key kept there is
+// copied off this machine and onto every other machine the user signs
+// in to. %LocalAppData% stays where it is put.
+func privateDir() (string, error) {
+	if runtime.GOOS == "windows" {
+		if local := os.Getenv("LOCALAPPDATA"); local != "" {
+			return filepath.Join(local, dir), nil
+		}
+	}
+	return Dir()
+}
+
 // HostKeyPath returns where the host key lives.
 func HostKeyPath() (string, error) {
-	at, err := Dir()
+	at, err := privateDir()
 	if err != nil {
 		return "", err
 	}
@@ -68,21 +85,64 @@ func AuthorizedKeysPath() (string, error) {
 // serve. A key that only exists in memory would be that fresh key again
 // the next time.
 func HostKey(path string) (ssh.Signer, error) {
-	pemBytes, err := os.ReadFile(path)
-	switch {
-	case err == nil:
-		signer, err := ssh.ParsePrivateKey(pemBytes)
-		if err != nil {
-			return nil, fmt.Errorf("serve: read the host key %s: %w", path, err)
+	signer, err := readHostKey(path)
+	if err == nil || !errors.Is(err, os.ErrNotExist) {
+		return signer, err
+	}
+	signer, err = makeHostKey(path)
+	if !errors.Is(err, os.ErrExist) {
+		return signer, err
+	}
+	// Another window made one between the read and the write. Theirs is
+	// the one on disk, so theirs is the one this machine is known by.
+	return readHostKey(path)
+}
+
+// modesMeanSomething is whether a file mode says who can read a file.
+//
+// Windows has none to read: what keeps the key private there is the
+// directory it is in, which belongs to one account. A test sets this to
+// pin the check on whichever platform it is running on.
+var modesMeanSomething = runtime.GOOS != "windows"
+
+// readHostKey reads the key from disk, refusing one anybody else can
+// read.
+func readHostKey(path string) (ssh.Signer, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, err
 		}
-		return signer, nil
-	case !errors.Is(err, os.ErrNotExist):
 		return nil, fmt.Errorf("serve: read the host key %s: %w", path, err)
 	}
-	return makeHostKey(path)
+	if modesMeanSomething && info.Mode().Perm()&0o077 != 0 {
+		return nil, fmt.Errorf(
+			"serve: the host key %s is readable by others (mode %04o)."+
+				" Fix its permissions, or delete it and let gridterm make another",
+			path, info.Mode().Perm())
+	}
+	pemBytes, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("serve: read the host key %s: %w", path, err)
+	}
+	signer, err := ssh.ParsePrivateKey(pemBytes)
+	if err != nil {
+		return nil, fmt.Errorf("serve: read the host key %s: %w", path, err)
+	}
+	return signer, nil
 }
 
 // makeHostKey writes a new key and returns it.
+//
+// Created with O_EXCL, so two windows starting together cannot each
+// think they made the key this machine is known by: the one that loses
+// gets ErrExist and reads what the other wrote. Without it they end up
+// presenting different keys, which is the very alarm a host key is for.
+//
+// A window killed between the create and the write leaves a file that
+// is not a key. That is a failure to read next time rather than a key
+// quietly replaced, which is the safer of the two: the error says to
+// delete it.
 func makeHostKey(path string) (ssh.Signer, error) {
 	_, key, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -95,12 +155,11 @@ func makeHostKey(path string) (ssh.Signer, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, fmt.Errorf("serve: make %s: %w", filepath.Dir(path), err)
 	}
-	// 0600, and written through OpenFile rather than WriteFile so the
-	// mode is set as the file is made. WriteFile applies it only when it
-	// creates the file, which leaves a key readable by anyone if one was
-	// already there with a wider mode.
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return nil, err
+		}
 		return nil, fmt.Errorf("serve: write the host key %s: %w", path, err)
 	}
 	if _, err := f.Write(pem.EncodeToMemory(block)); err != nil {

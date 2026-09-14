@@ -3,12 +3,15 @@ package main
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/marrasen/gridterm/serve"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -135,15 +138,44 @@ func TestAWindowDoesNotServeUntilItIsTold(t *testing.T) {
 	}
 }
 
-// The dialog shows the fingerprint, which is the only thing a client
-// has to check this machine by on a first connection.
-func TestTheServingDialogShowsTheFingerprint(t *testing.T) {
+// Pressing Serve on the dialog as it opens works.
+//
+// It did not: the default port was the field's placeholder rather than
+// its text, so the first press sent an empty string to be read as a
+// number. Every test called startServing directly, so nothing noticed.
+func TestPressingServeOnTheDialogAsItOpensWorks(t *testing.T) {
 	a := newTestApp(t, 90, 30)
 	withDialogs(t, a)
 	withServing(t, a, aPublicKey(t, "marcus@laptop"))
-	if err := a.startServing("0", whereHere); err != nil {
-		t.Fatalf("serve: %v", err)
+	if err := a.openServing(); err != nil {
+		t.Fatalf("open: %v", err)
 	}
+	f := openDialog(t, a)
+
+	pressButton(t, a, f, "Serve")
+
+	if a.server == nil {
+		t.Fatal("pressing Serve did not open a port")
+	}
+	if _, port, _ := net.SplitHostPort(a.server.Addr()); port != strconv.Itoa(servePort) {
+		t.Errorf("it is serving on port %s, want the %d the dialog offered", port, servePort)
+	}
+}
+
+// And the dialog that says what is being served survives being opened.
+//
+// A form closes as soon as a button's action returns, and closing a
+// dialog takes anything stacked on top of it. Opened from inside the
+// action, the dialog with the port and the fingerprint in it was
+// destroyed the moment it appeared.
+func TestTheServingDialogSurvivesTheButtonThatOpensIt(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withServing(t, a, aPublicKey(t, "marcus@laptop"))
+	if err := a.openServing(); err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	pressButton(t, a, openDialog(t, a), "Serve")
 
 	f := openDialog(t, a)
 
@@ -153,5 +185,124 @@ func TestTheServingDialogShowsTheFingerprint(t *testing.T) {
 	}
 	if !strings.Contains(text, a.server.Addr()) {
 		t.Errorf("the dialog does not say where it is serving:\n%s", text)
+	}
+}
+
+// The fingerprint shown is the one the running server presents.
+//
+// Read back from disk, it was whatever the file said now -- and if the
+// file had gone, serve.HostKey quietly made a new one, so the dialog
+// handed the user a fingerprint to check that could never match. That
+// trains somebody to click past the one warning that matters.
+func TestTheFingerprintShownIsTheOneBeingServed(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withServing(t, a, aPublicKey(t, "marcus@laptop"))
+	if err := a.startServing("0", whereHere); err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+	want := serve.Fingerprint(a.server.HostKey())
+
+	// The file goes, the way a cleanup tool or a tidy-up would take it.
+	if err := os.Remove(a.servePaths.hostKey); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	if err := a.showServing(); err != nil {
+		t.Fatalf("show: %v", err)
+	}
+
+	f := openDialog(t, a)
+	if text := strings.Join(f.Lines, "\n"); !strings.Contains(text, want) {
+		t.Errorf("the dialog shows a fingerprint the server does not present:\n%s\nwant %s",
+			text, want)
+	}
+}
+
+// Starting twice is refused rather than leaving the first listener with
+// nothing able to reach it or close it.
+func TestServingTwiceIsRefused(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withServing(t, a, aPublicKey(t, "marcus@laptop"))
+	if err := a.startServing("0", whereHere); err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+	first := a.server.Addr()
+
+	err := a.startServing("0", whereHere)
+
+	if err == nil {
+		t.Fatal("it started serving twice")
+	}
+	if a.server.Addr() != first {
+		t.Errorf("the window now holds %s, having let go of %s", a.server.Addr(), first)
+	}
+	if err := a.stopServing(); err != nil {
+		t.Fatalf("stop: %v", err)
+	}
+	c, dialErr := net.Dial("tcp", first)
+	if dialErr == nil {
+		c.Close()
+		t.Error("the first port is still open after stopping")
+	}
+}
+
+// A window that stops serving because its listener failed says so, and
+// stops claiming to be served.
+//
+// It used to report the failure to a log nobody is reading and leave
+// the dialog offering to stop a listener that had already gone.
+func TestALostListenerIsSaidAndNotClaimed(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withServing(t, a, aPublicKey(t, "marcus@laptop"))
+	if err := a.startServing("0", whereHere); err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+
+	a.servingStopped(errors.New("the listener gave up"))
+
+	if a.server != nil {
+		t.Error("the window still says it is being served")
+	}
+	f := openDialog(t, a)
+	if text := strings.Join(f.Lines, "\n"); !strings.Contains(text, "gave up") {
+		t.Errorf("the user was not told why:\n%s", text)
+	}
+}
+
+// Which addresses a choice means.
+//
+// "Anywhere" is every address the machine has, which is what reaching
+// it over Tailscale needs. Everything else is this machine only: the
+// wider one has to be asked for by name, so a dialog that changed its
+// wording cannot quietly open the port to the network.
+func TestWhichAddressesAChoiceMeans(t *testing.T) {
+	if got := listenHost(whereAnywhere); got != "" {
+		t.Errorf("anywhere means %q, want every address", got)
+	}
+	for _, where := range []string{whereHere, "", "anywhere", "0.0.0.0", "::", "Anywhere"} {
+		if got := listenHost(where); got != "127.0.0.1" {
+			t.Errorf("%q means %q, want this machine only", where, got)
+		}
+	}
+}
+
+// Serving anywhere really does listen on every address.
+func TestServingAnywhereListensOnEveryAddress(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withServing(t, a, aPublicKey(t, "marcus@laptop"))
+
+	if err := a.startServing("0", whereAnywhere); err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+
+	host, _, err := net.SplitHostPort(a.server.Addr())
+	if err != nil {
+		t.Fatalf("the server is at %q: %v", a.server.Addr(), err)
+	}
+	if host != "::" && host != "0.0.0.0" {
+		t.Errorf("it is listening on %q, want every address", host)
 	}
 }

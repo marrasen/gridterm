@@ -1,7 +1,9 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"net"
 	"strconv"
 	"strings"
@@ -77,7 +79,8 @@ func (a *app) openServing() error {
 
 	f := a.newForm("Serve this window")
 	f.Lines = lines
-	port := f.AddField("Port", a.newField(strconv.Itoa(servePort), 0))
+	port := f.AddField("Port", a.newField("", 0))
+	port.SetText(strconv.Itoa(servePort))
 	reach := f.AddField("Reachable from", a.newField("", 0))
 	reach.Options = []string{whereHere, whereAnywhere}
 	reach.SetText(whereHere)
@@ -87,7 +90,17 @@ func (a *app) openServing() error {
 			" network can reach.")
 
 	f.AddButton(ui.Button{Title: "Serve", Do: func() error {
-		return a.startServing(port.Text(), reach.Text())
+		if err := a.startServing(port.Text(), reach.Text()); err != nil {
+			return err
+		}
+		// Not from here: this form closes as soon as this returns, and
+		// closing a dialog takes anything stacked on top of it.
+		a.pump.post(func() {
+			if err := a.showServing(); err != nil {
+				a.reportError("Could not say what is being served", err)
+			}
+		})
+		return nil
 	}})
 	f.AddButton(ui.Button{Title: "Cancel"})
 	a.showForm(f, nil)
@@ -100,8 +113,27 @@ const (
 	whereAnywhere = "Anywhere this machine can be reached"
 )
 
+// listenHost is the address a choice from the dialog means.
+//
+// Empty means every address the machine has, which is what reaching it
+// over Tailscale needs and is also what every other network can reach.
+// Anything that is not that choice, exactly, is this machine only: the
+// wider one has to be asked for.
+func listenHost(where string) string {
+	if where == whereAnywhere {
+		return ""
+	}
+	return "127.0.0.1"
+}
+
 // startServing opens the port.
 func (a *app) startServing(port, where string) error {
+	if a.server != nil {
+		// Two dialogs can be open at once, and a second listener would
+		// take the place of the first in a window that then had no way
+		// to reach it and no way to close it.
+		return fmt.Errorf("this window is already being served on %s", a.server.Addr())
+	}
 	// Zero is allowed and means whichever port is free. The dialog says
 	// which one that turned out to be, so it is discoverable rather
 	// than lost.
@@ -109,13 +141,7 @@ func (a *app) startServing(port, where string) error {
 	if err != nil || n < 0 || n > 65535 {
 		return fmt.Errorf("%q is not a port number", strings.TrimSpace(port))
 	}
-	host := "127.0.0.1"
-	if where == whereAnywhere {
-		// Empty means every address, which is what reaching a machine
-		// over Tailscale needs. Written out rather than left implied,
-		// because it is the choice that matters.
-		host = ""
-	}
+	host := listenHost(where)
 
 	paths, err := a.servingPaths()
 	if err != nil {
@@ -134,10 +160,16 @@ func (a *app) startServing(port, where string) error {
 		Addr:    net.JoinHostPort(host, strconv.Itoa(n)),
 		HostKey: hostKey,
 		Allowed: allowed,
-		// Both arrive on the goroutine serving a client, so they are
-		// handed to the one that draws.
-		OnClient: func(c *serve.Client, gone bool) {
-			a.pump.post(func() { a.servingChanged(c, gone) })
+		// Every one of these arrives on a goroutine of the server's, so
+		// they are handed to the one that draws.
+		OnJoin: func(c *serve.Client) {
+			a.pump.post(func() { a.clientArrived(c) })
+		},
+		OnGone: func(c *serve.Client, why error) {
+			a.pump.post(func() { a.clientWent(c, why) })
+		},
+		OnStopped: func(err error) {
+			a.pump.post(func() { a.servingStopped(err) })
 		},
 		OnError: func(err error) {
 			a.pump.post(func() { a.logError(err) })
@@ -147,7 +179,6 @@ func (a *app) startServing(port, where string) error {
 		return err
 	}
 	a.server = s
-	a.showServing()
 	return nil
 }
 
@@ -162,19 +193,32 @@ func (a *app) stopServing() error {
 	return s.Close()
 }
 
-// servingChanged is told when a client arrives or goes.
-func (a *app) servingChanged(c *serve.Client, gone bool) {
-	if a.server == nil {
-		return
-	}
-	// The screen comes back to this machine when the client goes, and
-	// the port stays open: the user may well be moving from one machine
-	// to another.
+// clientArrived is told when a window has taken this one over.
+func (a *app) clientArrived(c *serve.Client) { a.markDirty() }
+
+// clientWent is told when it has gone, and why.
+//
+// The screen comes back to this machine and the port stays open: the
+// user may well be moving from one machine to another. A client lost to
+// a fault is reported, one that hung up is not -- the first is
+// something the user did not ask for.
+func (a *app) clientWent(c *serve.Client, why error) {
 	a.markDirty()
-	if gone {
-		return
+	if why != nil && !errors.Is(why, io.EOF) {
+		a.reportError("The window serving "+c.Name+" was lost", why)
 	}
-	_ = c
+}
+
+// servingStopped is told when the listener has failed, which is the end
+// of it: no further client can connect.
+//
+// Said to the user rather than logged. A window that went on offering
+// to stop serving, and on saying it was being served, would be lying
+// about the one thing the user turned on deliberately.
+func (a *app) servingStopped(err error) {
+	a.server = nil
+	a.markDirty()
+	a.reportError("This window is no longer being served", err)
 }
 
 // showServing says what the window is serving and offers to stop.
@@ -182,21 +226,16 @@ func (a *app) showServing() error {
 	if a.server == nil {
 		return nil
 	}
-	paths, err := a.servingPaths()
-	if err != nil {
-		return err
-	}
-	hostKey, err := serve.HostKey(paths.hostKey)
-	if err != nil {
-		return err
-	}
-
 	lines := []string{
 		"This window is being served on " + a.server.Addr() + ".",
 		"",
 		"Check this machine by its fingerprint when you first connect:",
-		"  " + serve.Fingerprint(hostKey.PublicKey()),
+		"  " + serve.Fingerprint(a.server.HostKey()),
 	}
+	// What is connected as the dialog opens. It says so once rather
+	// than following: a dialog is read and answered, and one that
+	// rewrote itself under the reader would be harder to trust, not
+	// easier.
 	if clients := a.server.Clients(); len(clients) > 0 {
 		lines = append(lines, "", "Connected now:")
 		for _, c := range clients {

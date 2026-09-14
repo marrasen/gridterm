@@ -224,6 +224,10 @@ func main() {
 		err = nil
 	}
 	closed := []error{err}
+	// The listener first, so a window that has taken this one over is
+	// hung up on cleanly rather than finding the socket reset under it
+	// as the process goes.
+	closed = append(closed, a.stopServing())
 	for t := range a.panes {
 		closed = append(closed, t.Close())
 	}

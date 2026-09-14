@@ -3,11 +3,13 @@ package serve
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -326,12 +328,17 @@ func TestAnUnreadableAuthorizedKeysIsAnError(t *testing.T) {
 func TestAKeyThatCannotBeReadFailsTheFile(t *testing.T) {
 	_, good := aKey(t, "marcus@laptop")
 
-	_, err := ParseAllowed([]byte(good+"\nssh-ed25519 not-a-key nobody\n"), "the test")
+	_, after := aKey(t, "somebody@else")
+
+	// The bad line in the middle, which is where skipping it would go
+	// unnoticed: a parser that runs off the end of a file gives an
+	// error whether or not it fails the line that caused it.
+	_, err := ParseAllowed([]byte(good+"\nssh-ed25519 not-a-key nobody\n"+after+"\n"), "the test")
 
 	if err == nil {
 		t.Fatal("a line that is not a key was skipped")
 	}
-	if !strings.Contains(err.Error(), "key 2") {
+	if !strings.Contains(err.Error(), "line 2") {
 		t.Errorf("it said %v, want which line", err)
 	}
 }
@@ -419,4 +426,415 @@ func TestListenSaysWhatIsMissing(t *testing.T) {
 			t.Errorf("%s: it said %v", c.why, err)
 		}
 	}
+}
+
+// A key carrying restrictions is refused, rather than admitted with
+// them quietly dropped.
+//
+// gridterm does not honour from=, command= or any of the rest. A user
+// who copied a line they deliberately restricted would otherwise be
+// handing out a full takeover of their window from anywhere.
+func TestARestrictedKeyIsRefused(t *testing.T) {
+	_, line := aKey(t, "marcus@laptop")
+
+	for _, option := range []string{
+		`from="10.0.0.1"`,
+		`command="/bin/false"`,
+		"restrict",
+		`expiry-time="19990101"`,
+		"cert-authority",
+		"no-pty",
+	} {
+		a, err := ParseAllowed([]byte(option+" "+line), "the test")
+		if err == nil {
+			t.Errorf("%s was accepted, admitting %d keys with it dropped", option, a.Len())
+			continue
+		}
+		if !strings.Contains(err.Error(), "line 1") {
+			t.Errorf("%s: it said %v, want which line", option, err)
+		}
+	}
+}
+
+// A certificate is refused too. It has an expiry, principals and a
+// revocation list behind it and none of that is checked here, so taking
+// one as a plain key would honour it for ever.
+func TestACertificateIsRefused(t *testing.T) {
+	signer, _ := aKey(t, "")
+	ca, _ := aKey(t, "")
+	cert := &ssh.Certificate{
+		Key:         signer.PublicKey(),
+		CertType:    ssh.UserCert,
+		ValidBefore: ssh.CertTimeInfinity,
+	}
+	if err := cert.SignCert(rand.Reader, ca); err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+	line := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(cert)))
+
+	_, err := ParseAllowed([]byte(line), "the test")
+
+	if err == nil {
+		t.Fatal("a certificate was taken as a key")
+	}
+	if !strings.Contains(err.Error(), "certificate") {
+		t.Errorf("it said %v", err)
+	}
+}
+
+// Two windows starting together end up known by one key.
+//
+// They did not: both read, both saw nothing, and both wrote. The one on
+// disk belonged to neither reliably, and every client that had pinned a
+// fingerprint saw a host key change -- the very alarm the key is for.
+func TestWindowsStartingTogetherAgreeOnTheHostKey(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "host_key")
+
+	const at = 8
+	start := make(chan struct{})
+	got := make(chan string, at)
+	for i := 0; i < at; i++ {
+		go func() {
+			<-start
+			signer, err := HostKey(path)
+			if err != nil {
+				got <- "failed: " + err.Error()
+				return
+			}
+			got <- Fingerprint(signer.PublicKey())
+		}()
+	}
+	close(start)
+
+	seen := map[string]int{}
+	for i := 0; i < at; i++ {
+		seen[<-got]++
+	}
+	if len(seen) != 1 {
+		t.Errorf("the windows came up with %d different keys: %v", len(seen), seen)
+	}
+}
+
+// A key anybody can read is refused rather than served with.
+func TestAHostKeyOthersCanReadIsRefused(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("file modes on Windows say nothing about who can read a file")
+	}
+	path := filepath.Join(t.TempDir(), "host_key")
+	if _, err := HostKey(path); err != nil {
+		t.Fatalf("make: %v", err)
+	}
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+
+	_, err := HostKey(path)
+
+	if err == nil {
+		t.Fatal("a key others can read was used anyway")
+	}
+	if !strings.Contains(err.Error(), "readable by others") {
+		t.Errorf("it said %v", err)
+	}
+}
+
+// Only so many callers may be part way through connecting.
+//
+// Nobody has authenticated at that point, so without a cap a stranger
+// who can reach the port pins a goroutine and a socket per connection
+// for the whole handshake window -- while the window is holding the
+// user's shells.
+func TestOnlySoManyMayBeConnectingAtOnce(t *testing.T) {
+	_, line := aKey(t, "marcus@laptop")
+	s := serving(t, line)
+
+	// Callers that connect and then say nothing at all.
+	var quiet []net.Conn
+	t.Cleanup(func() {
+		for _, c := range quiet {
+			_ = c.Close()
+		}
+	})
+	for i := 0; i < handshakesAtOnce; i++ {
+		c, err := net.Dial("tcp", s.Addr())
+		if err != nil {
+			t.Fatalf("dial %d: %v", i, err)
+		}
+		quiet = append(quiet, c)
+	}
+	waitFor(t, "the server to take them all", func() bool { return s.connecting() == handshakesAtOnce })
+
+	// One more is hung up on rather than queued.
+	extra, err := net.Dial("tcp", s.Addr())
+	if err != nil {
+		t.Fatalf("dial the extra one: %v", err)
+	}
+	defer extra.Close()
+
+	_ = extra.SetReadDeadline(time.Now().Add(5 * time.Second))
+	if _, err := extra.Read(make([]byte, 1)); err == nil {
+		t.Error("the extra caller was served a banner rather than hung up on")
+	}
+	if got := s.connecting(); got != handshakesAtOnce {
+		t.Errorf("%d callers are connecting, want no more than %d", got, handshakesAtOnce)
+	}
+}
+
+// Closing hangs up on someone part way through connecting, too.
+//
+// Close says it hangs up on everyone. A caller that has been accepted
+// and has not authenticated is in no list, so nothing reached it: it
+// kept its socket and its goroutine for the rest of the handshake
+// window after the user pressed Stop serving.
+func TestClosingHangsUpOnSomeoneStillConnecting(t *testing.T) {
+	_, line := aKey(t, "marcus@laptop")
+	s := serving(t, line)
+
+	c, err := net.Dial("tcp", s.Addr())
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer c.Close()
+	// Read the banner, so the handshake is known to have started.
+	_ = c.SetReadDeadline(time.Now().Add(5 * time.Second))
+	if _, err := c.Read(make([]byte, 1)); err != nil {
+		t.Fatalf("read the banner: %v", err)
+	}
+
+	if err := s.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	_ = c.SetReadDeadline(time.Now().Add(5 * time.Second))
+	if _, err := io.ReadAll(c); err != nil {
+		t.Errorf("the caller was left connected: %v", err)
+	}
+}
+
+// A caller that arrives after the server has closed is turned away.
+func TestNobodyArrivesAfterClosing(t *testing.T) {
+	_, line := aKey(t, "marcus@laptop")
+	s := serving(t, line)
+	if err := s.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	if got := s.arrived(nil); got != arrivedClosed {
+		t.Errorf("a caller arriving after closing got %v, want to be turned away", got)
+	}
+	if s.add(&Client{Name: "late"}) {
+		t.Error("a client was recorded after closing")
+	}
+	if got := s.Clients(); len(got) != 0 {
+		t.Errorf("%d clients are recorded", len(got))
+	}
+}
+
+// A client that goes is forgotten, so the window stops saying it is
+// there.
+func TestAClientThatGoesIsForgotten(t *testing.T) {
+	mine, line := aKey(t, "marcus@laptop")
+	s := serving(t, line)
+	client, err := connect(t, s, mine)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	waitFor(t, "the client to arrive", func() bool { return len(s.Clients()) == 1 })
+
+	_ = client.Close()
+
+	waitFor(t, "the client to be forgotten", func() bool { return len(s.Clients()) == 0 })
+}
+
+// Arriving and going are both told, and going says why.
+//
+// A client lost to a network fault and one that hung up are different
+// things to be told about.
+func TestArrivingAndGoingAreBothTold(t *testing.T) {
+	mine, line := aKey(t, "marcus@laptop")
+	host, err := HostKey(filepath.Join(t.TempDir(), "host_key"))
+	if err != nil {
+		t.Fatalf("host key: %v", err)
+	}
+	keys, err := ParseAllowed([]byte(line), "the test")
+	if err != nil {
+		t.Fatalf("allowed: %v", err)
+	}
+	joined := make(chan string, 1)
+	gone := make(chan string, 1)
+	s, err := Listen(Config{
+		Addr: "127.0.0.1:0", HostKey: host, Allowed: keys,
+		OnJoin:  func(c *Client) { joined <- c.Name },
+		OnGone:  func(c *Client, why error) { gone <- c.Name },
+		OnError: func(error) {},
+	})
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+
+	client, err := connect(t, s, mine)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	select {
+	case name := <-joined:
+		if name != "marcus@laptop" {
+			t.Errorf("the arrival was called %q", name)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("nobody was told the client arrived")
+	}
+
+	_ = client.Close()
+
+	select {
+	case name := <-gone:
+		if name != "marcus@laptop" {
+			t.Errorf("the departure was called %q", name)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("nobody was told the client went")
+	}
+}
+
+// Refusals are told about, but counted rather than told one at a time:
+// a stranger with a loop makes thousands, down a queue that has no
+// depth to overflow.
+func TestRefusalsAreCountedRatherThanToldOneAtATime(t *testing.T) {
+	_, line := aKey(t, "marcus@laptop")
+	other, _ := aKey(t, "somebody@else")
+	host, err := HostKey(filepath.Join(t.TempDir(), "host_key"))
+	if err != nil {
+		t.Fatalf("host key: %v", err)
+	}
+	keys, err := ParseAllowed([]byte(line), "the test")
+	if err != nil {
+		t.Fatalf("allowed: %v", err)
+	}
+	var mu sync.Mutex
+	var told []string
+	s, err := Listen(Config{
+		Addr: "127.0.0.1:0", HostKey: host, Allowed: keys,
+		OnError: func(err error) {
+			mu.Lock()
+			told = append(told, err.Error())
+			mu.Unlock()
+		},
+	})
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+
+	const tries = 20
+	for i := 0; i < tries; i++ {
+		if c, err := connect(t, s, other); err == nil {
+			c.Close()
+			t.Fatal("a key nobody listed was let in")
+		}
+	}
+
+	waitFor(t, "every refusal to land", func() bool { return s.turnedAwaySoFar() == tries })
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(told) == 0 {
+		t.Fatal("the user was told nothing about any refused connection")
+	}
+	if len(told) >= tries {
+		t.Errorf("the user was told %d times about %d refusals", len(told), tries)
+	}
+}
+
+// waitFor waits for something to become true.
+func waitFor(t *testing.T, what string, done func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if done() {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for %s", what)
+}
+
+// connecting is how many callers are part way through authenticating.
+func (s *Server) connecting() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.arriving)
+}
+
+// A caller that says nothing is hung up on when its time runs out.
+//
+// Without that it holds a goroutine and a socket for as long as it
+// likes, and nobody has authenticated at that point.
+func TestACallerThatSaysNothingIsDropped(t *testing.T) {
+	_, line := aKey(t, "marcus@laptop")
+	host, err := HostKey(filepath.Join(t.TempDir(), "host_key"))
+	if err != nil {
+		t.Fatalf("host key: %v", err)
+	}
+	keys, err := ParseAllowed([]byte(line), "the test")
+	if err != nil {
+		t.Fatalf("allowed: %v", err)
+	}
+	s, err := Listen(Config{
+		Addr: "127.0.0.1:0", HostKey: host, Allowed: keys,
+		Handshake: 50 * time.Millisecond,
+		OnError:   func(error) {},
+	})
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+
+	c, err := net.Dial("tcp", s.Addr())
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer c.Close()
+
+	_ = c.SetReadDeadline(time.Now().Add(5 * time.Second))
+	if _, err := io.ReadAll(c); err != nil {
+		t.Errorf("the caller was left connected: %v", err)
+	}
+	waitFor(t, "the server to let go of it", func() bool { return s.connecting() == 0 })
+}
+
+// A key others can read is refused, on whichever platform the check can
+// be made on.
+func TestTheModeCheckRefusesAnOpenKey(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "host_key")
+	if _, err := HostKey(path); err != nil {
+		t.Fatalf("make: %v", err)
+	}
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	// Forced on, so the check is pinned here as well as on the systems
+	// where a file mode says something by itself.
+	was := modesMeanSomething
+	modesMeanSomething = true
+	t.Cleanup(func() { modesMeanSomething = was })
+
+	_, err := HostKey(path)
+
+	if err == nil {
+		t.Fatal("a key others can read was used anyway")
+	}
+	if !strings.Contains(err.Error(), "readable by others") {
+		t.Errorf("it said %v", err)
+	}
+}
+
+// turnedAwaySoFar is how many callers have been refused, for a test
+// that has to wait for them to land: a refusal is reported from the
+// goroutine that was serving the caller, after the caller has gone.
+func (s *Server) turnedAwaySoFar() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.turnedAway
 }

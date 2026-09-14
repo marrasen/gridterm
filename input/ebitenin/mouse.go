@@ -29,15 +29,20 @@ var mouseButtons = [3]struct {
 	{ebiten.MouseButtonRight, input.MouseRight},
 }
 
-// Poll returns this frame's mouse events in grid coordinates. cellW and
-// cellH are the pixel size of one cell.
-func (r *MouseReader) Poll(cellW, cellH int) []input.MouseEvent {
+// Poll returns this frame's mouse events in grid coordinates. at says
+// which cell a pixel falls in.
+//
+// The caller does the conversion rather than being asked for a cell
+// size, because a grid is not quite a grid: a column or a row can have
+// padding around it, and dividing by the cell size would put every
+// click after the padding one cell out.
+func (r *MouseReader) Poll(at func(px, py int) (col, row int)) []input.MouseEvent {
 	r.out = r.out[:0]
-	if cellW <= 0 || cellH <= 0 {
+	if at == nil {
 		return r.out
 	}
 	px, py := ebiten.CursorPosition()
-	col, row := px/cellW, py/cellH
+	col, row := at(px, py)
 	mods := currentMods()
 
 	// The wheel comes first: a program that scrolls on the wheel should

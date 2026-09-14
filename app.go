@@ -244,6 +244,15 @@ type app struct {
 	lastPixels [2]int
 	lastSize   [2]int
 
+	// lastPad is how much room the window's padding was last given, in
+	// quarters of a cell, so a change to it can re-derive the grid size.
+	lastPad [2]int
+
+	// geo is where the window's grid lands in pixels, for routing a
+	// click and for placing the glass behind a dialog. Kept apart from
+	// the one the renderer draws with.
+	geo render.Geometry
+
 	// title is what the window is currently called, so it is only set
 	// again when it changes.
 	title string
@@ -286,6 +295,7 @@ func (a *app) Update() error {
 		a.reportError("Could not let go of a filesystem", err)
 	}
 	a.refreshPanel(time.Now())
+	a.applyPads()
 	if a.shot != nil {
 		a.shot.update(a)
 	}
@@ -298,8 +308,11 @@ func (a *app) Update() error {
 			a.reportError(ui.ChordOf(ev).String()+" could not be done", err)
 		}
 	}
-	cw, ch := a.renderer.CellSize()
-	for _, ev := range a.mouse.Poll(cw, ch) {
+	// Measured afresh: the padding moves when the sidebar opens or the
+	// font size changes, and a click routed by the old measurements
+	// lands on the wrong row.
+	a.renderer.Measure(a.g, &a.geo)
+	for _, ev := range a.mouse.Poll(a.geo.CellAt) {
 		if _, err := a.root.HandleMouse(ev); err != nil {
 			a.reportError("That could not be done", err)
 		}
@@ -356,9 +369,16 @@ func (a *app) LayoutF(logicalW, logicalH float64) (float64, float64) {
 }
 
 // resizeTo tells the grid and the widget tree about a new window size.
+//
+// The window's own padding comes off the top first: it is space the
+// grid gains rather than space a cell gives up, so the cells have to be
+// counted in what is left.
 func (a *app) resizeTo(pxW, pxH int) {
 	a.lastPixels = [2]int{pxW, pxH}
-	cols, rows := a.renderer.GridSizeFor(pxW, pxH)
+	a.renderer.SetWindow(pxW, pxH)
+	padX, padY := a.padsWanted()
+	a.lastPad = [2]int{padX, padY}
+	cols, rows := a.renderer.GridSizeWithin(pxW, pxH, padX, padY)
 	a.setGridSize(cols, rows)
 }
 
@@ -374,6 +394,7 @@ func (a *app) setGridSize(cols, rows int) {
 	a.g.Resize(cols, rows)
 	a.resizeModals(cols, rows)
 	a.root.Layout(ui.Rect{Cols: cols, Rows: rows})
+	a.padGrids()
 	a.markDirty()
 }
 

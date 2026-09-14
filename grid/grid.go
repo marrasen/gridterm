@@ -213,6 +213,12 @@ type Grid struct {
 	// dirties a row on every idle frame.
 	cursorClaimed bool
 
+	// colPad and rowPad are the space around columns and rows, and
+	// padGen counts the changes to it. Either table may stop short of
+	// the grid, or be nil when nothing is padded.
+	colPad, rowPad []Pad
+	padGen         uint64
+
 	// DefaultFG and DefaultBG fill cells cleared by Clear and Resize.
 	DefaultFG color.RGBA
 	DefaultBG color.RGBA
@@ -267,6 +273,15 @@ func (g *Grid) Resize(cols, rows int) {
 	g.cols, g.rows = cols, rows
 	g.dirty = make([]bool, rows)
 	g.allDirty = true
+
+	// Padding for columns and rows that are gone. Dropping it counts as
+	// a change, so anything caching the old shape gives that up too.
+	colPad, colMoved := trimPads(g.colPad, cols)
+	rowPad, rowMoved := trimPads(g.rowPad, rows)
+	g.colPad, g.rowPad = colPad, rowPad
+	if colMoved || rowMoved {
+		g.padded()
+	}
 
 	// Narrowing can cut a double-width character in half. Repair the
 	// whole row rather than just its edges: blanking one broken pair can

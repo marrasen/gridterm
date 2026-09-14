@@ -137,8 +137,9 @@ func TestCompositorResizingAGridRepaintsItWhole(t *testing.T) {
 	l.Grid.Resize(20, 8)
 	c.Draw(screen)
 
-	cellW, cellH := r.CellSize()
-	wantW, wantH := l.Size(cellW, cellH)
+	geo := &Geometry{}
+	r.Measure(l.Grid, geo)
+	wantW, wantH := l.Size(geo)
 	if b := l.tex.Bounds(); b.Dx() != wantW || b.Dy() != wantH {
 		t.Errorf("texture = %dx%d, want %dx%d", b.Dx(), b.Dy(), wantW, wantH)
 	}

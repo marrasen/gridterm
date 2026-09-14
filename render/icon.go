@@ -1,7 +1,6 @@
 package render
 
 import (
-	"github.com/marrasen/gridterm/glyph"
 	"github.com/marrasen/gridterm/grid"
 )
 
@@ -73,18 +72,19 @@ const numIconKinds = 4
 // antialiased, so one narrower than a pixel is drawn only when a pixel
 // centre happens to fall inside it, and half an icon would go missing at
 // the sizes where an icon is doing the most work.
-func iconBars(art grid.Art, x, y int, m glyph.Metrics) []bar {
+func iconBars(art grid.Art, x, y int, geo *Geometry) []bar {
 	kind, ok := art.Icon()
 	if !ok || int(kind) >= len(icons) {
 		return nil
 	}
+	cellW, ascent := geo.CellW(), geo.Ascent()
 	// No taller than a capital letter, and never wider than the cell.
-	side := min(m.CellW, m.Ascent*7/10)
+	side := min(cellW, ascent*7/10)
 	if side < 2 {
 		return nil
 	}
-	left := x*m.CellW + (m.CellW-side)/2
-	top := y*m.CellH + m.Ascent - side
+	left := geo.CellX(x) + (cellW-side)/2
+	top := geo.CellY(y) + ascent - side
 
 	shape := icons[kind]
 	out := make([]bar, 0, len(shape))

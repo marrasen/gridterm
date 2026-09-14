@@ -45,6 +45,11 @@ func (a *app) showModal(w ui.Widget, onHidden func()) func() {
 	// background with any alpha would blank the window behind it. A
 	// dialog paints its own box opaquely.
 	g := grid.New(a.lastSize[0], a.lastSize[1], color.RGBA{}, color.RGBA{})
+	// The same padding as the window under it, before the first frame
+	// rather than on the next one: two grids that did not agree on where
+	// a row sits would draw the dialog a few pixels off the text it
+	// covers, and the dialog would then jump into place.
+	a.padGrid(g)
 	m := &modal{
 		w:        w,
 		g:        g,
@@ -116,6 +121,7 @@ func (a *app) hideModal(m *modal) {
 // when the window is resized.
 func (a *app) drawModals() {
 	cw, ch := a.renderer.CellSize()
+	a.renderer.Measure(a.g, &a.geo)
 	for _, m := range a.modals {
 		a.root.DrawModal(m.w, m.g.View())
 		if m.layer.Frost == nil {
@@ -127,9 +133,11 @@ func (a *app) drawModals() {
 			continue
 		}
 		if box := boxed.Box(); !box.Empty() {
-			m.layer.Frost.Rect = image.Rect(
-				box.X*cw, box.Y*ch,
-				(box.X+box.Cols)*cw, (box.Y+box.Rows)*ch)
+			// Measured, not multiplied: the glass has to land on the same
+			// pixels the dialog does, and padding moves them.
+			left, width := a.geo.ColBox(box.X, box.X+box.Cols)
+			top, height := a.geo.RowBox(box.Y, box.Y+box.Rows)
+			m.layer.Frost.Rect = image.Rect(left, top, left+width, top+height)
 			// The corner is measured in cells too, so changing the font
 			// size with a dialog open keeps it in proportion.
 			m.layer.Frost.Corner = float32(min(cw, ch))

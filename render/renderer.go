@@ -63,6 +63,14 @@ type Renderer struct {
 
 	stats Stats
 	opts  ebiten.DrawTrianglesOptions
+
+	// geo is where the grid being drawn lands in pixels. Reused rather
+	// than built afresh, and only valid inside a Draw.
+	geo Geometry
+
+	// winW and winH are the window in pixels, so a grid that falls a
+	// few pixels short of it can be stretched to reach the edge.
+	winW, winH int
 }
 
 // New returns a renderer drawing with the given atlas.
@@ -95,8 +103,39 @@ func (r *Renderer) CellSize() (w, h int) {
 // GridSizeFor returns how many columns and rows fit in a window of the
 // given pixel size.
 func (r *Renderer) GridSizeFor(pxW, pxH int) (cols, rows int) {
+	return r.GridSizeWithin(pxW, pxH, 0, 0)
+}
+
+// GridSizeWithin returns how many columns and rows fit in a window of
+// the given pixel size, once padX and padY quarters of a cell have been
+// set aside for padding.
+//
+// Padding is space the grid gains, so a caller that means to pad has to
+// ask for fewer cells. It says how much here rather than being told
+// afterwards, because being told would mean laying the window out again
+// at a different size, and again after that.
+func (r *Renderer) GridSizeWithin(pxW, pxH, padX, padY int) (cols, rows int) {
 	m := r.atlas.Metrics()
-	return max(pxW/m.CellW, 1), max(pxH/m.CellH, 1)
+	spareW := max(pxW-max(padX, 0)*m.CellW/grid.PadUnit, 0)
+	spareH := max(pxH-max(padY, 0)*m.CellH/grid.PadUnit, 0)
+	return max(spareW/m.CellW, 1), max(spareH/m.CellH, 1)
+}
+
+// SetWindow tells the renderer how big the window is.
+//
+// A window is rarely a whole number of cells across. The pixels over
+// are given to the last column and row, so no strip of the window is
+// left with nothing to paint it.
+func (r *Renderer) SetWindow(pxW, pxH int) { r.winW, r.winH = pxW, pxH }
+
+// Measure fills in where a grid's columns and rows land in pixels.
+//
+// The geometry is handed in rather than returned, so a caller measuring
+// every frame does not allocate, and so the mouse keeps its own rather
+// than sharing the one the renderer draws with.
+func (r *Renderer) Measure(g *grid.Grid, geo *Geometry) {
+	geo.Layout(g, r.atlas.Metrics())
+	geo.Fill(r.winW, r.winH)
 }
 
 // Draw paints the dirty rows of g onto dst.
@@ -111,6 +150,9 @@ func (r *Renderer) GridSizeFor(pxW, pxH int) (cols, rows int) {
 // skips are blank rather than showing the previous frame.
 func (r *Renderer) Draw(dst *ebiten.Image, g *grid.Grid) {
 	m := r.atlas.Metrics()
+	r.geo.Layout(g, m)
+	r.geo.Fill(r.winW, r.winH)
+	geo := &r.geo
 	cols, rows := g.Size()
 	cur := g.Cursor()
 	curVisible := cur.Visible && cur.X >= 0 && cur.X < cols && cur.Y >= 0 && cur.Y < rows
@@ -138,20 +180,23 @@ func (r *Renderer) Draw(dst *ebiten.Image, g *grid.Grid) {
 		if !g.RowDirty(y) {
 			continue
 		}
-		top := float32(y * m.CellH)
+		// The outer box, padding included, so the space around a padded
+		// row takes the colour of the row it pads and no seam shows.
+		rowAt, rowH := geo.RowBox(y, y+1)
+		top, height := float32(rowAt), float32(rowH)
 		g.BGRuns(y, func(x0, x1 int, c color.RGBA) {
 			if c.A == 0 {
 				return
 			}
+			at, width := geo.ColBox(x0, x1)
 			r.push(dst, &r.bg,
-				float32(x0*m.CellW), top,
-				float32((x1-x0)*m.CellW), float32(m.CellH),
+				float32(at), top, float32(width), height,
 				0, 0, 1, 1, c)
 		})
-		r.pushArt(dst, g, y, m)
-		r.pushRules(dst, g, y, m)
+		r.pushArt(dst, g, y, geo)
+		r.pushRules(dst, g, y, geo)
 		if curVisible && cur.Y == y {
-			r.pushCursor(dst, g, cur, m)
+			r.pushCursor(dst, g, cur, geo)
 		}
 	}
 	r.flush(dst, &r.bg)
@@ -191,9 +236,9 @@ func (r *Renderer) Draw(dst *ebiten.Image, g *grid.Grid) {
 			if c.Attr&grid.AttrDim != 0 {
 				fg = blend(fg, g.BGOf(x, y), dimFactor)
 			}
-			r.pushGlyph(dst, x, y, c.Rune, style, fg, m)
+			r.pushGlyph(dst, x, y, c.Rune, style, fg, geo)
 			for _, cb := range c.Comb {
-				r.pushGlyph(dst, x, y, cb, style, fg, m)
+				r.pushGlyph(dst, x, y, cb, style, fg, geo)
 			}
 		}
 	}
@@ -212,7 +257,7 @@ func (r *Renderer) Draw(dst *ebiten.Image, g *grid.Grid) {
 // Drawn in the background pass, because it is a set of plain rectangles
 // like a background is, and because a glyph on the same cell should land
 // over it rather than under it.
-func (r *Renderer) pushArt(dst *ebiten.Image, g *grid.Grid, y int, m glyph.Metrics) {
+func (r *Renderer) pushArt(dst *ebiten.Image, g *grid.Grid, y int, geo *Geometry) {
 	cols, _ := g.Size()
 	for x := 0; x < cols; x++ {
 		c := g.At(x, y)
@@ -223,34 +268,19 @@ func (r *Renderer) pushArt(dst *ebiten.Image, g *grid.Grid, y int, m glyph.Metri
 		if !ok {
 			continue
 		}
-		for _, b := range artBars(c.Art, x, y, m) {
+		for _, b := range artBars(c.Art, x, y, geo) {
 			r.push(dst, &r.bg, b.X, b.Y, b.W, b.H, 0, 0, 1, 1, col)
 		}
 	}
 }
 
-// pushGraph draws a column chart inside one cell.
-//
-// The bars share the cell's width, counted from its left edge each time
-// so that they tile it exactly: every bar is a whole number of pixels
-// wide and no column is drawn twice or left out. Quads are not
-// antialiased, so a bar narrower than a pixel would only be drawn when a
-// pixel centre happened to fall inside it -- and the same seconds would
-// vanish every time, which is the one thing a graph of the run must not
-// do.
-//
-// A cell too narrow for every bar shows the newest that fit. Dropping
-// the oldest is the honest loss: the graph is read from the right.
-//
-// A bar of nothing still draws one pixel, because a gap and a zero read
-// the same otherwise and the point of the graph is the shape of the run.
 // artBars is where a piece of art's rectangles go inside one cell.
-func artBars(art grid.Art, x, y int, m glyph.Metrics) []bar {
+func artBars(art grid.Art, x, y int, geo *Geometry) []bar {
 	switch art.Kind {
 	case grid.ArtGraph:
-		return graphBars(art, x, y, m)
+		return graphBars(art, x, y, geo)
 	case grid.ArtIcon:
-		return iconBars(art, x, y, m)
+		return iconBars(art, x, y, geo)
 	}
 	return nil
 }
@@ -289,25 +319,26 @@ type bar struct{ X, Y, W, H float32 }
 //
 // A bar of nothing still stands one pixel high, because a gap and a zero
 // read the same otherwise and the point of the graph is the shape.
-func graphBars(art grid.Art, x, y int, m glyph.Metrics) []bar {
+func graphBars(art grid.Art, x, y int, geo *Geometry) []bar {
+	cellW, ascent := geo.CellW(), geo.Ascent()
 	// The x-height, so the graph sits on the baseline and stands about
 	// as tall as the letters beside it.
-	top := float32(y*m.CellH) + float32(m.Ascent)*0.35
-	foot := float32(y*m.CellH + m.Ascent)
+	top := float32(geo.CellY(y)) + float32(ascent)*0.35
+	foot := float32(geo.CellY(y) + ascent)
 	tall := foot - top
 	// Only the seconds really measured, and only as many as the cell has
 	// whole pixels for.
-	bars := min(art.Bars(), m.CellW)
+	bars := min(art.Bars(), cellW)
 	if tall <= 0 || bars <= 0 {
 		return nil
 	}
 	// The newest ones, which are the last of them.
 	first := grid.ArtGraphBars - bars
-	left := x * m.CellW
+	left := geo.CellX(x)
 	out := make([]bar, 0, bars)
 	for i := 0; i < bars; i++ {
-		x0 := left + i*m.CellW/bars
-		x1 := left + (i+1)*m.CellW/bars
+		x0 := left + i*cellW/bars
+		x1 := left + (i+1)*cellW/bars
 		h := tall * float32(art.Bar(first+i)) / grid.ArtGraphMax
 		if h < 1 {
 			h = 1
@@ -320,7 +351,7 @@ func graphBars(art grid.Art, x, y int, m glyph.Metrics) []bar {
 // pushGlyph queues one glyph quad at cell x,y.
 func (r *Renderer) pushGlyph(
 	dst *ebiten.Image, x, y int, ch rune,
-	style glyph.Style, fg color.RGBA, m glyph.Metrics,
+	style glyph.Style, fg color.RGBA, geo *Geometry,
 ) {
 	gl := r.atlas.Get(ch, style)
 	if gl.Empty {
@@ -331,7 +362,7 @@ func (r *Renderer) pushGlyph(
 	r.growPages()
 	sz := gl.Rect.Size()
 	r.push(dst, &r.fg[gl.Page],
-		float32(x*m.CellW+gl.Offset.X), float32(y*m.CellH+gl.Offset.Y),
+		float32(geo.CellX(x)+gl.Offset.X), float32(geo.CellY(y)+gl.Offset.Y),
 		float32(sz.X), float32(sz.Y),
 		float32(gl.Rect.Min.X), float32(gl.Rect.Min.Y),
 		float32(gl.Rect.Max.X), float32(gl.Rect.Max.Y),
@@ -342,9 +373,10 @@ func (r *Renderer) pushGlyph(
 // merging adjacent cells that share an attribute and colour into one
 // quad. They go in the background pass so the glyph lands on top, which
 // is what keeps an underline from cutting through a descender.
-func (r *Renderer) pushRules(dst *ebiten.Image, g *grid.Grid, y int, m glyph.Metrics) {
+func (r *Renderer) pushRules(dst *ebiten.Image, g *grid.Grid, y int, geo *Geometry) {
 	cols, _ := g.Size()
-	thick := float32(max(m.CellH/lineFraction, 1))
+	cellH, ascent := geo.CellH(), geo.Ascent()
+	thick := float32(max(cellH/lineFraction, 1))
 
 	for _, rule := range []struct {
 		attr grid.Attr
@@ -352,8 +384,8 @@ func (r *Renderer) pushRules(dst *ebiten.Image, g *grid.Grid, y int, m glyph.Met
 	}{
 		// Just below the baseline for the underline, and through the
 		// middle of the x-height for the strikethrough.
-		{grid.AttrUnderline, float32(min(m.Ascent+1, m.CellH-int(thick)))},
-		{grid.AttrStrike, float32(m.Ascent) * 0.65},
+		{grid.AttrUnderline, float32(min(ascent+1, cellH-int(thick)))},
+		{grid.AttrStrike, float32(ascent) * 0.65},
 	} {
 		runStart := -1
 		var runColor color.RGBA
@@ -361,9 +393,13 @@ func (r *Renderer) pushRules(dst *ebiten.Image, g *grid.Grid, y int, m glyph.Met
 			if runStart < 0 {
 				return
 			}
+			// Across the outer box, so a rule under padded text reaches
+			// the edges of what it underlines, and down from the cell's
+			// own top, because it is measured against the baseline.
+			at, width := geo.ColBox(runStart, end)
 			r.push(dst, &r.bg,
-				float32(runStart*m.CellW), float32(y*m.CellH)+rule.top,
-				float32((end-runStart)*m.CellW), thick,
+				float32(at), float32(geo.CellY(y))+rule.top,
+				float32(width), thick,
 				0, 0, 1, 1, runColor)
 			runStart = -1
 		}
@@ -400,22 +436,25 @@ func blend(a, b color.RGBA, t float64) color.RGBA {
 // cell; underline and bar draw a sliver. All three go in the background
 // pass, so the glyph lands on top of them.
 func (r *Renderer) pushCursor(
-	dst *ebiten.Image, g *grid.Grid, cur grid.Cursor, m glyph.Metrics,
+	dst *ebiten.Image, g *grid.Grid, cur grid.Cursor, geo *Geometry,
 ) {
 	col := g.FGOf(cur.X, cur.Y)
 	if col.A == 0 {
 		return
 	}
-	x := float32(cur.X * m.CellW)
-	y := float32(cur.Y * m.CellH)
-	w := float32(m.CellW)
-	h := float32(m.CellH)
 	// A block cursor over the lead half of a double-width character
 	// covers both columns, matching where the glyph actually is.
+	wide := 1
 	if g.At(cur.X, cur.Y).Width == 2 {
-		w *= 2
+		wide = 2
 	}
-	thick := float32(max(m.CellH/barFraction, 1))
+	// The outer box, so a cursor on a padded row fills it rather than
+	// leaving a strip of what is behind showing through.
+	left, width := geo.ColBox(cur.X, cur.X+wide)
+	top, height := geo.RowBox(cur.Y, cur.Y+1)
+	x, y := float32(left), float32(top)
+	w, h := float32(width), float32(height)
+	thick := float32(max(geo.CellH()/barFraction, 1))
 
 	switch cur.Style {
 	case grid.CursorUnderline:

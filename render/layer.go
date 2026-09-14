@@ -65,20 +65,22 @@ type Layer struct {
 	// which no damage flag reports.
 	lastGrid        *grid.Grid
 	lastTransparent bool
+
+	// lastPads notices the grid's padding moving. Padding shifts pixels
+	// without touching a cell, so no damage flag reports it either.
+	lastPads uint64
 }
 
-// Size returns the layer's pixel size, which is its grid measured in
-// cells of the given size.
-func (l *Layer) Size(cellW, cellH int) (w, h int) {
-	cols, rows := l.Grid.Size()
-	return max(cols*cellW, 1), max(rows*cellH, 1)
-}
+// Size returns the layer's pixel size, which is its grid measured by
+// the given geometry. The geometry must have been laid out for that
+// grid.
+func (l *Layer) Size(geo *Geometry) (w, h int) { return geo.Width(), geo.Height() }
 
 // ensure allocates the layer's texture, or replaces one that no longer
 // matches the grid. It reports whether the texture changed size, which
 // uncovers whatever the old one was hiding.
-func (l *Layer) ensure(cellW, cellH int) bool {
-	w, h := l.Size(cellW, cellH)
+func (l *Layer) ensure(geo *Geometry) bool {
+	w, h := l.Size(geo)
 	if l.tex != nil {
 		if b := l.tex.Bounds(); b.Dx() == w && b.Dy() == h {
 			return false
@@ -94,17 +96,22 @@ func (l *Layer) ensure(cellW, cellH int) bool {
 func (l *Layer) invalidate() { l.painted, l.full = false, true }
 
 // repaint draws the grid into the layer's texture.
-func (l *Layer) repaint(r *Renderer) {
+//
+// geo must have been laid out for the layer's grid.
+func (l *Layer) repaint(r *Renderer, geo *Geometry) {
 	if l.full {
 		l.Grid.MarkAllDirty()
 	}
-	cellW, cellH := r.CellSize()
-	cols, rows := l.Grid.Size()
+	_, rows := l.Grid.Size()
+	width := geo.Width()
 	for y := 0; y < rows; y++ {
 		if !l.Grid.RowDirty(y) || !l.clears(y) {
 			continue
 		}
-		strip := image.Rect(0, y*cellH, cols*cellW, (y+1)*cellH)
+		// The outer box, so the padding around a row is wiped with it
+		// rather than keeping whatever the row before left there.
+		at, height := geo.RowBox(y, y+1)
+		strip := image.Rect(0, at, width, at+height)
 		l.tex.SubImage(strip).(*ebiten.Image).Clear()
 	}
 	r.Draw(l.tex, l.Grid)
@@ -176,6 +183,10 @@ type Compositor struct {
 	// lastAtlas notices the glyphs being re-rasterised under a layer
 	// whose pixel size happens not to change with them.
 	lastAtlas uint64
+
+	// geo measures whichever layer is being sized or repainted. Reused
+	// so a frame does not allocate.
+	geo Geometry
 
 	// OnError reports a failure Draw cannot hand back, because the game
 	// loop calls it and there is nowhere to return one. A nil OnError
@@ -256,7 +267,6 @@ func (c *Compositor) Stats() CompositorStats { return c.stats }
 // Nothing else may rely on those flags surviving a frame.
 func (c *Compositor) Draw(screen *ebiten.Image) {
 	c.stats = CompositorStats{Layers: len(c.layers)}
-	cellW, cellH := c.r.CellSize()
 
 	// A rebuilt atlas re-rasterises every glyph. The cell box is not the
 	// signal for that: two font sizes can share one.
@@ -284,7 +294,15 @@ func (c *Compositor) Draw(screen *ebiten.Image) {
 			l.lastGrid, l.lastTransparent = l.Grid, l.Transparent
 			l.invalidate()
 		}
-		if l.ensure(cellW, cellH) {
+		// Padding that moved leaves the pixels it vacated behind, so the
+		// screen is put back the way a resize puts it back.
+		if pads := l.Grid.PadGeneration(); pads != l.lastPads {
+			l.lastPads = pads
+			l.invalidate()
+			resized = true
+		}
+		c.r.Measure(l.Grid, &c.geo)
+		if l.ensure(&c.geo) {
 			resized = true
 		}
 		if l.Grid.AnyDirty() {
@@ -315,7 +333,8 @@ func (c *Compositor) Draw(screen *ebiten.Image) {
 		if l.Hidden || l.Grid == nil || l.painted {
 			continue
 		}
-		l.repaint(c.r)
+		c.r.Measure(l.Grid, &c.geo)
+		l.repaint(c.r, &c.geo)
 		c.stats.Stats.add(c.r.Stats())
 		c.stats.Repainted++
 	}

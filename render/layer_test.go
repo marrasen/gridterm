@@ -5,6 +5,7 @@ import (
 	"image/color"
 	"testing"
 
+	"github.com/marrasen/gridterm/glyph"
 	"github.com/marrasen/gridterm/grid"
 )
 
@@ -13,11 +14,33 @@ var (
 	bg = color.RGBA{0x00, 0x00, 0x00, 0xff}
 )
 
+// sizeOf measures a layer the way the compositor does.
+func sizeOf(l *Layer, cellW, cellH int) (w, h int) {
+	geo := &Geometry{}
+	geo.Layout(l.Grid, glyph.Metrics{CellW: cellW, CellH: cellH, Ascent: cellH * 4 / 5})
+	return l.Size(geo)
+}
+
 func TestLayerSizeMeasuresItsGrid(t *testing.T) {
 	l := &Layer{Grid: grid.New(10, 4, fg, bg)}
 
-	if w, h := l.Size(7, 15); w != 70 || h != 60 {
+	if w, h := sizeOf(l, 7, 15); w != 70 || h != 60 {
 		t.Errorf("size = %dx%d, want 70x60", w, h)
+	}
+}
+
+// A padded grid is wider and taller than its cells: padding is room the
+// grid gains, so the texture has to hold it.
+func TestLayerSizeCountsThePadding(t *testing.T) {
+	l := &Layer{Grid: grid.New(10, 4, fg, bg)}
+	l.Grid.SetColPad(0, grid.Pad{Before: 2})
+	l.Grid.SetColPad(9, grid.Pad{After: 2})
+	l.Grid.SetRowPad(0, grid.Pad{Before: 1, After: 1})
+
+	// Half a cell each side across, and a quarter above and below the
+	// first row.
+	if w, h := sizeOf(l, 8, 16); w != 80+8 || h != 64+8 {
+		t.Errorf("size = %dx%d, want %dx%d", w, h, 88, 72)
 	}
 }
 
@@ -27,7 +50,7 @@ func TestLayerSizeIsNeverZero(t *testing.T) {
 	for _, dims := range [][2]int{{0, 0}, {0, 4}, {10, 0}} {
 		l := &Layer{Grid: grid.New(dims[0], dims[1], fg, bg)}
 
-		w, h := l.Size(7, 15)
+		w, h := sizeOf(l, 7, 15)
 		if w < 1 || h < 1 {
 			t.Errorf("grid %v: size = %dx%d, want at least 1x1", dims, w, h)
 		}

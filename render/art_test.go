@@ -19,6 +19,14 @@ var cellSizes = []glyph.Metrics{
 	{CellW: 24, CellH: 48, Ascent: 38},
 }
 
+// plainGeo measures a grid with no padding, which is what art is drawn
+// against unless something asked for room around it.
+func plainGeo(m glyph.Metrics) *Geometry {
+	geo := &Geometry{}
+	geo.Layout(grid.New(40, 20, color.RGBA{}, color.RGBA{}), m)
+	return geo
+}
+
 // Every bar is a whole pixel wide and they tile the cell exactly.
 //
 // Quads are not antialiased, so a bar narrower than a pixel is only
@@ -34,7 +42,7 @@ func TestGraphBarsAreWholePixelsAndTileTheCell(t *testing.T) {
 
 	for _, m := range cellSizes {
 		for _, at := range [][2]int{{0, 0}, {3, 2}} {
-			bars := graphBars(art, at[0], at[1], m)
+			bars := graphBars(art, at[0], at[1], plainGeo(m))
 			if len(bars) == 0 {
 				t.Fatalf("%+v: no bars at all", m)
 			}
@@ -69,11 +77,11 @@ func TestGraphDrawsOnlyWhatWasMeasured(t *testing.T) {
 		for i := range heights {
 			heights[i] = 8
 		}
-		if got := len(graphBars(grid.Graph(heights), 0, 0, m)); got != n {
+		if got := len(graphBars(grid.Graph(heights), 0, 0, plainGeo(m))); got != n {
 			t.Fatalf("a run of %d seconds drew %d bars", n, got)
 		}
 	}
-	if got := graphBars(grid.Art{}, 0, 0, m); got != nil {
+	if got := graphBars(grid.Art{}, 0, 0, plainGeo(m)); got != nil {
 		t.Fatalf("art that is not a graph drew %v", got)
 	}
 }
@@ -83,7 +91,7 @@ func TestGraphStaysInsideItsCell(t *testing.T) {
 	art := grid.Graph([]int{0, grid.ArtGraphMax, 4})
 	for _, m := range cellSizes {
 		foot := float32(2*m.CellH + m.Ascent)
-		for i, b := range graphBars(art, 1, 2, m) {
+		for i, b := range graphBars(art, 1, 2, plainGeo(m)) {
 			if b.H < 1 {
 				t.Errorf("%+v: bar %d is %v high, want at least a pixel", m, i, b.H)
 			}
@@ -143,7 +151,7 @@ func TestEveryIconDrawsInsideItsCell(t *testing.T) {
 	}
 	for _, kind := range kinds {
 		for _, m := range cellSizes {
-			bars := iconBars(grid.Icon(kind), 2, 3, m)
+			bars := iconBars(grid.Icon(kind), 2, 3, plainGeo(m))
 			if len(bars) == 0 {
 				t.Fatalf("icon %d at %+v drew nothing", kind, m)
 			}
@@ -177,7 +185,7 @@ func TestTheIconsAreToldApart(t *testing.T) {
 		grid.IconTerminal, grid.IconCommand, grid.IconFiles, grid.IconTunnel,
 	} {
 		var shape string
-		for _, b := range iconBars(grid.Icon(kind), 0, 0, m) {
+		for _, b := range iconBars(grid.Icon(kind), 0, 0, plainGeo(m)) {
 			shape += string(rune('0'+int(b.X))) + string(rune('0'+int(b.Y))) +
 				string(rune('0'+int(b.W))) + string(rune('0'+int(b.H)))
 		}
@@ -197,7 +205,7 @@ func TestIconBarsRefusesWhatIsNotAnIcon(t *testing.T) {
 		grid.Graph([]int{1, 2}),
 		{Kind: grid.ArtIcon, Data: 99},
 	} {
-		if got := iconBars(art, 0, 0, m); got != nil {
+		if got := iconBars(art, 0, 0, plainGeo(m)); got != nil {
 			t.Fatalf("%v drew %v", art, got)
 		}
 	}
@@ -214,11 +222,11 @@ func TestArtBarsReachesEveryKind(t *testing.T) {
 		grid.Icon(grid.IconTunnel),
 		grid.Icon(grid.IconCommand),
 	} {
-		if got := artBars(art, 0, 0, m); len(got) == 0 {
+		if got := artBars(art, 0, 0, plainGeo(m)); len(got) == 0 {
 			t.Fatalf("%v drew nothing", art)
 		}
 	}
-	if got := artBars(grid.Art{}, 0, 0, m); got != nil {
+	if got := artBars(grid.Art{}, 0, 0, plainGeo(m)); got != nil {
 		t.Fatalf("no art drew %v", got)
 	}
 }

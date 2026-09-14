@@ -698,3 +698,80 @@ func TestCompositorFullRepaintCostDependsOnStackOrder(t *testing.T) {
 		})
 	}
 }
+
+// A layer that brings its own geometry is drawn by it, not by whatever
+// measuring its grid would give.
+//
+// A region is a hole in the window and its columns are the window's
+// own, down to the odd pixels the window had over. Measured afresh it
+// would put those somewhere else.
+func TestCompositorUsesTheGeometryALayerBrings(t *testing.T) {
+	r := newTestRenderer(t)
+	c := NewCompositor(r)
+	screen := ebiten.NewImage(320, 240)
+	g := grid.New(10, 4, fg, bg)
+
+	var geo Geometry
+	r.Measure(g, &geo)
+	// Wider than the grid measures on its own, the way a hole in a
+	// padded window is.
+	geo.FitRows(geo.Height() + 7)
+	l := &Layer{Grid: g, Geom: &geo}
+	c.Add(l)
+	c.Draw(screen)
+
+	if b := l.tex.Bounds(); b.Dy() != geo.Height() {
+		t.Errorf("the texture is %d tall, want the %d its geometry asks for",
+			b.Dy(), geo.Height())
+	}
+}
+
+// A carried geometry moving is drawn, and the screen is put back first.
+//
+// Nothing else would notice. The compositor does not measure a layer
+// that brought its own, and a geometry can change with not one cell of
+// the grid touched.
+func TestCompositorDrawsACarriedGeometryThatMoved(t *testing.T) {
+	r := newTestRenderer(t)
+	c := NewCompositor(r)
+	screen := ebiten.NewImage(320, 240)
+	g := grid.New(10, 4, fg, bg)
+
+	// Two sources the same width overall, with the padding at opposite
+	// ends: taking columns from one and then the other moves every cell
+	// without changing the size of anything.
+	head := grid.New(10, 4, fg, bg)
+	head.SetColPad(0, grid.Pad{Before: 2})
+	tail := grid.New(10, 4, fg, bg)
+	tail.SetColPad(9, grid.Pad{After: 2})
+	var from, to Geometry
+	r.Measure(head, &from)
+	r.Measure(tail, &to)
+
+	var geo Geometry
+	r.Measure(g, &geo)
+	geo.TakeCols(&from, 0, 10)
+	l := &Layer{Grid: g, Geom: &geo}
+	c.Add(l)
+	c.Draw(screen)
+	c.Draw(screen)
+	if !c.Stats().Skipped {
+		t.Fatal("the second frame was drawn, so the layer was not idle to begin with")
+	}
+	was := geo.Width()
+
+	geo.TakeCols(&to, 0, 10)
+	if geo.Width() != was {
+		t.Fatalf("the grid is %d wide and was %d: the size gives the move away",
+			geo.Width(), was)
+	}
+	c.Draw(screen)
+
+	got := c.Stats()
+	if got.Skipped || got.Repainted != 1 {
+		t.Errorf("after the geometry moved = %+v, want the layer repainted", got)
+	}
+	if !got.Cleared {
+		t.Error("the screen was not wiped, so the pixels the grid moved off are still there")
+	}
+}

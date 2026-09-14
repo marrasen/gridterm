@@ -348,3 +348,83 @@ func TestLayoutStartsAgain(t *testing.T) {
 		t.Errorf("the grid is %d wide, want 24", got)
 	}
 }
+
+// A geometry that borrows another's columns puts its cells exactly
+// where that one puts them.
+//
+// A window is rarely a whole number of cells across, and the odd pixels
+// are shared between its two edges. A region laid out on its own would
+// put that share somewhere else and its text would sit a few pixels off
+// the text above it.
+func TestBorrowedColumnsLandWhereTheyDidBefore(t *testing.T) {
+	g := geoGrid(20, 4)
+	g.SetColPad(0, grid.Pad{Before: 2})
+	g.SetColPad(5, grid.Pad{Before: 1, After: 3})
+	g.SetColPad(19, grid.Pad{After: 2})
+	src := measured(g)
+	// The odd pixels a window has over, which land on the first column.
+	src.Fill(src.Width()+5, src.Height())
+
+	var geo Geometry
+	geo.Layout(geoGrid(6, 2), geoMetrics)
+	geo.TakeCols(src, 0, 6)
+
+	if got, want := geo.Width(), mustBox(src, 0, 6); got != want {
+		t.Errorf("the borrowed columns are %d wide, want the %d they came from", got, want)
+	}
+	for x := 0; x < 6; x++ {
+		if got, want := geo.CellX(x), src.CellX(x); got != want {
+			t.Errorf("column %d is at %d, want the %d it came from", x, got, want)
+		}
+		at, size := geo.ColBox(x, x+1)
+		wantAt, wantSize := src.ColBox(x, x+1)
+		if at != wantAt || size != wantSize {
+			t.Errorf("column %d's box is %d..%d, want %d..%d",
+				x, at, at+size, wantAt, wantAt+wantSize)
+		}
+	}
+}
+
+// Borrowing from a run that does not start at the first column moves it
+// to the origin.
+func TestBorrowedColumnsStartAtTheOrigin(t *testing.T) {
+	g := geoGrid(20, 4)
+	g.SetColPad(5, grid.Pad{Before: 2})
+	src := measured(g)
+
+	var geo Geometry
+	geo.Layout(geoGrid(4, 2), geoMetrics)
+	geo.TakeCols(src, 5, 9)
+
+	base, _ := src.ColBox(5, 6)
+	if at, _ := geo.ColBox(0, 1); at != 0 {
+		t.Errorf("the run starts at %d, want the origin", at)
+	}
+	if got, want := geo.CellX(0), src.CellX(5)-base; got != want {
+		t.Errorf("its first cell is at %d, want %d", got, want)
+	}
+}
+
+// Borrowing from nothing leaves a geometry with no columns rather than
+// reading through a nil.
+func TestBorrowingFromNothingIsSafe(t *testing.T) {
+	var geo Geometry
+	geo.Layout(geoGrid(4, 2), geoMetrics)
+
+	geo.TakeCols(nil, 0, 4)
+
+	if got := geo.Cols(); got != 0 {
+		t.Errorf("it has %d columns", got)
+	}
+	// And still answers, counting in whole cells the way an empty
+	// geometry does.
+	if got := geo.ColAt(30); got != 30/geoMetrics.CellW {
+		t.Errorf("a pixel in it is in column %d", got)
+	}
+}
+
+// mustBox is the width of a run of columns.
+func mustBox(geo *Geometry, x0, x1 int) int {
+	_, size := geo.ColBox(x0, x1)
+	return size
+}

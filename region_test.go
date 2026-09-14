@@ -438,3 +438,100 @@ func TestAClickOnADialogOverTheSidebarUsesTheWindow(t *testing.T) {
 			gotCol, gotRow, wantCol, wantRow)
 	}
 }
+
+// The region's cells land where the window's do.
+//
+// Its columns are the window's own, borrowed rather than measured
+// again: a window is rarely a whole number of cells across, and the odd
+// pixels are shared between its two edges. Laid out on its own the
+// region would put that share somewhere else and its text would sit a
+// few pixels off the text above it.
+func TestTheRegionsCellsLineUpWithTheWindows(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withRegion(t, a)
+	area := a.sideRegion.rect
+
+	for x := 0; x < area.Cols; x++ {
+		got := a.sideRegion.left + a.sideGeo.CellX(x)
+		if want := a.geo.CellX(area.X + x); got != want {
+			t.Fatalf("the region's column %d is drawn at %d and the window's at %d", x, got, want)
+		}
+	}
+}
+
+// A drag that began outside the sidebar keeps the window's rows. It
+// belongs to whoever took the press, wherever the pointer has gone.
+func TestADragFromOutsideKeepsTheWindowsRows(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withRegion(t, a)
+	machines(a, 6)
+
+	// A pixel well down the sidebar, where the two disagree.
+	at, height := a.sideGeo.RowBox(10, 11)
+	px := a.sideRegion.left + 2
+	py := a.sideRegion.top + at + height/2
+	_, byRegion := a.cellAt(px, py)
+	_, byWindow := a.geo.CellAt(px, py)
+	if byRegion == byWindow {
+		t.Skip("the two agree at this pixel, so the test proves nothing")
+	}
+
+	// Press in the terminal beside the sidebar, which takes the pointer.
+	col, row := a.geo.CellAt(a.sideRegion.left+a.sideRegion.width+20, py)
+	if _, err := a.root.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft, Col: col, Row: row,
+	}); err != nil {
+		t.Fatalf("press: %v", err)
+	}
+	if a.root.Holding() == nil {
+		t.Skip("nothing took the press, so there is no drag to follow")
+	}
+
+	if _, got := a.cellAt(px, py); got != byWindow {
+		t.Errorf("a drag over the sidebar reports row %d, want the window's %d", got, byWindow)
+	}
+}
+
+// The window's own grid has nothing under the sidebar. Painting it
+// there as well would draw the sidebar twice, once at row heights that
+// are not its own.
+func TestTheWindowsGridIsBlankUnderTheSidebar(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withRegion(t, a)
+	machines(a, 6)
+	a.root.Draw(a.g.View())
+
+	area := a.sideRegion.rect
+	blank := a.g.Blank()
+	for y := area.Y; y < area.Y+area.Rows; y++ {
+		for x := area.X; x < area.X+area.Cols; x++ {
+			if got := a.g.At(x, y); !got.Equal(blank) {
+				t.Fatalf("the window painted %q at %d,%d, under the sidebar", got.Rune, x, y)
+			}
+		}
+	}
+}
+
+// The pinned row never gets a heading's room, however the list falls.
+//
+// The sidebar asks the list about its own rows, which stop one short of
+// the box: the row pinned to the foot of it is the sidebar's, not the
+// list's.
+func TestThePinnedRowNeverGetsAHeadingsRoom(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withRegion(t, a)
+
+	// Nothing but headings, so whatever row the pinned one lands on
+	// would be one if the sidebar did not stop short.
+	var rows []ui.ListRow
+	for i := 0; i < 60; i++ {
+		rows = append(rows, ui.ListRow{Text: "host", Header: true, Key: i})
+	}
+	a.panel.SetRows(rows)
+	a.placeRegions()
+
+	_, have := a.sideRegion.g.Size()
+	if got := a.sideRegion.g.RowPad(have - 1); !got.Empty() {
+		t.Errorf("the pinned row has %+v", got)
+	}
+}

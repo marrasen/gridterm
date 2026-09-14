@@ -166,10 +166,10 @@ func (r *region) draw() {
 }
 
 // contains reports whether a pixel is inside the region.
+//
+// A region with nowhere to go has no box at all -- place empties the
+// pixels along with the rect -- so there is nothing else to ask.
 func (r *region) contains(px, py int) bool {
-	if r.rect.Empty() || r.layer.Hidden {
-		return false
-	}
 	return px >= r.left && px < r.left+r.width &&
 		py >= r.top && py < r.top+r.height
 }

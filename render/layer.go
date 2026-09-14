@@ -65,10 +65,6 @@ type Layer struct {
 	// which no damage flag reports.
 	lastGrid        *grid.Grid
 	lastTransparent bool
-
-	// lastPads notices the grid's padding moving. Padding shifts pixels
-	// without touching a cell, so no damage flag reports it either.
-	lastPads uint64
 }
 
 // Size returns the layer's pixel size, which is its grid measured by
@@ -114,7 +110,7 @@ func (l *Layer) repaint(r *Renderer, geo *Geometry) {
 		strip := image.Rect(0, at, width, at+height)
 		l.tex.SubImage(strip).(*ebiten.Image).Clear()
 	}
-	r.Draw(l.tex, l.Grid)
+	r.Draw(l.tex, l.Grid, geo)
 	l.painted, l.full = true, false
 }
 
@@ -294,14 +290,7 @@ func (c *Compositor) Draw(screen *ebiten.Image) {
 			l.lastGrid, l.lastTransparent = l.Grid, l.Transparent
 			l.invalidate()
 		}
-		// Padding that moved leaves the pixels it vacated behind, so the
-		// screen is put back the way a resize puts it back.
-		if pads := l.Grid.PadGeneration(); pads != l.lastPads {
-			l.lastPads = pads
-			l.invalidate()
-			resized = true
-		}
-		c.r.Measure(l.Grid, &c.geo)
+		c.r.MeasureAt(l.Grid, l.X, l.Y, &c.geo)
 		if l.ensure(&c.geo) {
 			resized = true
 		}
@@ -333,7 +322,7 @@ func (c *Compositor) Draw(screen *ebiten.Image) {
 		if l.Hidden || l.Grid == nil || l.painted {
 			continue
 		}
-		c.r.Measure(l.Grid, &c.geo)
+		c.r.MeasureAt(l.Grid, l.X, l.Y, &c.geo)
 		l.repaint(c.r, &c.geo)
 		c.stats.Stats.add(c.r.Stats())
 		c.stats.Repainted++

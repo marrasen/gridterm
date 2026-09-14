@@ -295,7 +295,6 @@ func (a *app) Update() error {
 		a.reportError("Could not let go of a filesystem", err)
 	}
 	a.refreshPanel(time.Now())
-	a.applyPads()
 	if a.shot != nil {
 		a.shot.update(a)
 	}
@@ -317,6 +316,11 @@ func (a *app) Update() error {
 			a.reportError("That could not be done", err)
 		}
 	}
+
+	// After the input, so a key or a click that opens or closes the
+	// sidebar is drawn this frame rather than the next one. Before it,
+	// the frame would be laid out for padding the window no longer has.
+	a.applyPads()
 
 	a.updateTitle()
 	return nil

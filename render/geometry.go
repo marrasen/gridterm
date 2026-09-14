@@ -49,15 +49,28 @@ func (geo *Geometry) Layout(g *grid.Grid, m glyph.Metrics) {
 // layoutSpans places n columns or rows of the given size, each with
 // whatever padding its table asks for.
 func layoutSpans(dst []span, n, size int, pads []grid.Pad) []span {
-	at := 0
+	quarters, at := 0, 0
 	for i := 0; i < n; i++ {
 		p := padAt(pads, i)
-		before := int(p.Before) * size / grid.PadUnit
-		after := int(p.After) * size / grid.PadUnit
-		dst = append(dst, span{at: at, size: before + size + after, in: at + before})
-		at += before + size + after
+		in := padPixels(i, quarters+int(p.Before), size)
+		quarters += int(p.Before) + int(p.After)
+		end := padPixels(i+1, quarters, size)
+		dst = append(dst, span{at: at, size: end - at, in: in})
+		at = end
 	}
 	return dst
+}
+
+// padPixels is where a column begins: whole cells, plus every quarter
+// of padding before it turned into pixels in one go.
+//
+// In one go because the room the padding needs is worked out the same
+// way, before there is a grid to lay out. A division per pad loses up
+// to a pixel each time, and the pixels lost add up to room the window
+// set aside and the grid never uses: a strip of the window with no cell
+// to paint it.
+func padPixels(cells, quarters, size int) int {
+	return cells*size + quarters*size/grid.PadUnit
 }
 
 // padAt reads a pad table that may stop short of the grid.
@@ -92,34 +105,43 @@ func (geo *Geometry) ColBox(x0, x1 int) (at, size int) { return box(geo.cols, x0
 // y1, padding included.
 func (geo *Geometry) RowBox(y0, y1 int) (at, size int) { return box(geo.rows, y0, y1, geo.cellH) }
 
-// Fill stretches the last column and row so the grid reaches a window
-// of the given size.
+// Fill spreads the pixels a window has over the grid between its two
+// edges, so the grid reaches the window on both sides.
 //
 // A window is rarely a whole number of cells across, and the few pixels
 // over are not worth a column of their own. Left alone they are a strip
-// of the window with nothing to paint them, which shows as a gash down
-// the edge. Given to the last column and row, they take the colour of
-// whatever is already there.
+// with nothing to paint it, which shows as a gash down the edge. Shared
+// between the first column and the last, they widen the margin the
+// window already has by a pixel or two at each end.
 //
 // Only a shortfall of less than a cell is taken, so a layer that is
 // genuinely smaller than the window keeps its own size.
 func (geo *Geometry) Fill(pxW, pxH int) {
-	fillSpans(geo.cols, pxW, geo.cellW)
-	fillSpans(geo.rows, pxH, geo.cellH)
+	shareOut(geo.cols, pxW, geo.cellW)
+	shareOut(geo.rows, pxH, geo.cellH)
 }
 
-// fillSpans stretches the last span to px, if it falls short by less
-// than one cell.
-func fillSpans(spans []span, px, size int) {
+// shareOut gives the pixels a window has over to the first and the last
+// span, half each, if together they come to less than one cell.
+func shareOut(spans []span, px, size int) {
 	if len(spans) == 0 {
 		return
 	}
-	last := &spans[len(spans)-1]
+	last := spans[len(spans)-1]
 	short := px - (last.at + last.size)
 	if short <= 0 || short >= size {
 		return
 	}
-	last.size += short
+	// Everything moves over by the first half, and then the first span
+	// reaches back to the edge it came from.
+	head := short / 2
+	for i := range spans {
+		spans[i].at += head
+		spans[i].in += head
+	}
+	spans[0].at -= head
+	spans[0].size += head
+	spans[len(spans)-1].size += short - head
 }
 
 // Width and Height are the pixel size of the whole grid, padding
@@ -188,6 +210,11 @@ func spanEnd(spans []span, size int) int {
 
 // at is which column or row a pixel falls in.
 func at(spans []span, px, size int) int {
+	if size <= 0 {
+		// Nothing has been laid out yet, so every pixel is the first
+		// cell. Better than dividing by a cell size of nothing.
+		return 0
+	}
 	if len(spans) == 0 {
 		return floorDiv(px, size)
 	}

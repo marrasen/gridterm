@@ -120,6 +120,38 @@ func TestASidebarWithNoRoomGivesItsGapToTheMargin(t *testing.T) {
 	if got != want {
 		t.Errorf("the grid was padded by %d quarters, want the %d set aside", got, want)
 	}
+	// Split between the two margins rather than given to the right,
+	// which would leave the window lopsided at the width where the
+	// sidebar drops out.
+	left, right := a.g.ColPad(0).Before, a.g.ColPad(13).After
+	if int(left) <= edgePad || int(right) <= edgePad {
+		t.Errorf("the margins are %d and %d quarters, want the gap shared between them",
+			left, right)
+	}
+}
+
+// The table holds every pad it is given. The room for each one is set
+// aside before the grid is measured, so one quietly dropped would be a
+// strip of the window with no cell to paint it.
+func TestThePadTableHoldsWhateverItIsGiven(t *testing.T) {
+	var table padTable
+	for i := 0; i < 9; i++ {
+		table.add(i, grid.Pad{Before: 1})
+	}
+	table.add(3, grid.Pad{After: 2})
+
+	got := map[int]grid.Pad{}
+	table.apply(9, nil, func(i int, p grid.Pad) { got[i] = p })
+
+	if len(got) != 9 {
+		t.Fatalf("%d of 9 pads were written", len(got))
+	}
+	if got[8] != (grid.Pad{Before: 1}) {
+		t.Errorf("the ninth pad is %+v, want it kept", got[8])
+	}
+	if got[3] != (grid.Pad{Before: 1, After: 2}) {
+		t.Errorf("two pads on one column came to %+v", got[3])
+	}
 }
 
 // A dialog draws on its own grid over the window's. Two that did not
@@ -145,6 +177,22 @@ func TestADialogIsPaddedLikeTheWindow(t *testing.T) {
 	if got, want := a.modals[0].g.RowPad(0), a.g.RowPad(0); got != want {
 		t.Errorf("row 0 has %+v on the dialog and %+v on the window", got, want)
 	}
+
+	// And after the window changes size, which moves the column the
+	// right-hand margin is on and drops the padding past the new edge.
+	cw, ch := a.renderer.CellSize()
+	a.resizeTo(40*cw, 15*ch)
+
+	cols, _ := a.g.Size()
+	for x := 0; x < cols; x++ {
+		if got, want := a.modals[0].g.ColPad(x), a.g.ColPad(x); got != want {
+			t.Fatalf("after a resize, column %d has %+v on the dialog and %+v on the window",
+				x, got, want)
+		}
+	}
+	if gotCols, _ := a.modals[0].g.Size(); gotCols != cols {
+		t.Errorf("the dialog's grid is %d columns and the window's is %d", gotCols, cols)
+	}
 }
 
 // Writing the padding again writes nothing. It is done every frame, and
@@ -155,15 +203,11 @@ func TestPaddingTheSameWayTwiceRedrawsNothing(t *testing.T) {
 	withPanel(t, a)
 	a.padGrid(a.g)
 	a.g.ClearDirty()
-	was := a.g.PadGeneration()
 
 	for i := 0; i < 3; i++ {
 		a.padGrid(a.g)
 	}
 
-	if a.g.PadGeneration() != was {
-		t.Errorf("the generation moved to %d from %d", a.g.PadGeneration(), was)
-	}
 	if a.g.AnyDirty() {
 		t.Error("padding that did not change dirtied the grid")
 	}

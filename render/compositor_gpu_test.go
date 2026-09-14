@@ -103,6 +103,36 @@ func TestCompositorMovingALayerRedrawsTheScreen(t *testing.T) {
 	}
 }
 
+// Padding that moved is drawn, and the screen is put back first.
+//
+// Padding shifts pixels without changing a single cell, so no damage
+// flag reports it. A compositor that went on its flags alone would skip
+// the frame and leave the grid drawn where it used to be, with the
+// pixels it vacated still on screen.
+func TestCompositorDrawsPaddingThatMoved(t *testing.T) {
+	r := newTestRenderer(t)
+	c := NewCompositor(r)
+	screen := ebiten.NewImage(320, 240)
+	l := &Layer{Grid: grid.New(20, 8, fg, bg)}
+	c.Add(l)
+	c.Draw(screen)
+	c.Draw(screen)
+	if !c.Stats().Skipped {
+		t.Fatal("the second frame was drawn, so the layer was not idle to begin with")
+	}
+
+	l.Grid.SetColPad(0, grid.Pad{Before: 2})
+	c.Draw(screen)
+
+	got := c.Stats()
+	if got.Skipped || got.Repainted != 1 {
+		t.Errorf("after the padding moved = %+v, want the layer repainted", got)
+	}
+	if !got.Cleared {
+		t.Error("the screen was not wiped, so the pixels the padding vacated are still there")
+	}
+}
+
 // TestCompositorHiddenLayerIsNotDrawn checks that hiding a layer skips
 // its blit but keeps it in the stack.
 func TestCompositorHiddenLayerIsNotDrawn(t *testing.T) {

@@ -9,18 +9,14 @@ func padGrid(cols, rows int) *Grid {
 	return New(cols, rows, color.RGBA{0xff, 0xff, 0xff, 0xff}, color.RGBA{0, 0, 0, 0xff})
 }
 
-// Padding moves pixels without touching a cell, so the only way a layer
-// hears about it is the generation and the damage flags.
+// Padding moves pixels without touching a cell, so the damage flags are
+// the only way anything hears about it.
 func TestSettingPaddingRedrawsEverything(t *testing.T) {
 	g := padGrid(10, 4)
 	g.ClearDirty()
-	was := g.PadGeneration()
 
 	g.SetColPad(0, Pad{Before: 2})
 
-	if g.PadGeneration() == was {
-		t.Error("the generation did not move, so nothing notices the padding")
-	}
 	if !g.AnyDirty() {
 		t.Error("nothing was marked dirty, so the grid is drawn where it used to be")
 	}
@@ -37,16 +33,12 @@ func TestSettingTheSamePaddingChangesNothing(t *testing.T) {
 	g.SetColPad(3, Pad{Before: 1, After: 2})
 	g.SetRowPad(0, Pad{After: 1})
 	g.ClearDirty()
-	was := g.PadGeneration()
 
 	for i := 0; i < 3; i++ {
 		g.SetColPad(3, Pad{Before: 1, After: 2})
 		g.SetRowPad(0, Pad{After: 1})
 	}
 
-	if g.PadGeneration() != was {
-		t.Errorf("the generation moved to %d from %d", g.PadGeneration(), was)
-	}
 	if g.AnyDirty() {
 		t.Error("the grid was dirtied by padding that did not change")
 	}
@@ -56,11 +48,10 @@ func TestSettingTheSamePaddingChangesNothing(t *testing.T) {
 func TestClearingNoPaddingChangesNothing(t *testing.T) {
 	g := padGrid(10, 4)
 	g.ClearDirty()
-	was := g.PadGeneration()
 
 	g.ClearPads()
 
-	if g.PadGeneration() != was || g.AnyDirty() {
+	if g.AnyDirty() {
 		t.Error("clearing padding that was not there redrew the grid")
 	}
 }
@@ -92,13 +83,12 @@ func TestPaddingIsCapped(t *testing.T) {
 	}
 }
 
-// Padding for columns a resize took away goes with them, and dropping
-// it counts as a change.
+// Padding for columns a resize took away goes with them, or it would be
+// given to whichever column takes that index next.
 func TestResizeDropsPaddingItHasNoColumnFor(t *testing.T) {
 	g := padGrid(10, 6)
 	g.SetColPad(9, Pad{After: 2})
 	g.SetRowPad(5, Pad{After: 1})
-	was := g.PadGeneration()
 
 	g.Resize(4, 3)
 
@@ -107,9 +97,6 @@ func TestResizeDropsPaddingItHasNoColumnFor(t *testing.T) {
 	}
 	if len(g.ColPads()) > 4 || len(g.RowPads()) > 3 {
 		t.Errorf("the tables outlive the grid: cols %v rows %v", g.ColPads(), g.RowPads())
-	}
-	if g.PadGeneration() == was {
-		t.Error("the generation did not move, so a layer keeps the old measurements")
 	}
 }
 

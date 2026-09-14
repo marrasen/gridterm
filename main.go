@@ -196,7 +196,12 @@ func main() {
 	a.root.Layout(ui.Rect{Cols: initCols, Rows: initRows})
 
 	ebiten.SetWindowTitle("gridterm")
-	ebiten.SetWindowSize(m.CellW*initCols, m.CellH*initRows)
+	// Room for the padding on top of the cells, or the window opens a
+	// column and a row short of the size it was asked for.
+	padX, padY := a.padsWanted()
+	ebiten.SetWindowSize(
+		m.CellW*initCols+padX*m.CellW/grid.PadUnit,
+		m.CellH*initRows+padY*m.CellH/grid.PadUnit)
 	ebiten.SetWindowResizingMode(ebiten.WindowResizingModeEnabled)
 	// Damage tracking only pays off if ebiten keeps the previous frame.
 	ebiten.SetScreenClearedEveryFrame(false)

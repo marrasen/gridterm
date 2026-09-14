@@ -65,18 +65,12 @@ func (g *Grid) ClearPads() {
 	g.padded()
 }
 
-// PadGeneration counts the changes to the padding.
-//
-// Nothing in the damage flags reports one: padding moves pixels without
-// changing a single cell, so anything caching what a grid looked like
-// has to watch this instead.
-func (g *Grid) PadGeneration() uint64 { return g.padGen }
-
 // padded records that the padding moved.
-func (g *Grid) padded() {
-	g.padGen++
-	g.allDirty = true
-}
+//
+// The whole grid, because padding moves every column after the one it
+// is on. Nothing else reports it: a pad shifts pixels without changing
+// a single cell.
+func (g *Grid) padded() { g.allDirty = true }
 
 // setPad writes one entry, growing the table only when there is
 // something to say.
@@ -104,18 +98,10 @@ func padAt(pads []Pad, i int) Pad {
 	return pads[i]
 }
 
-// trimPads drops the padding for columns or rows a resize took away,
-// reporting whether any of it was asking for space.
-func trimPads(pads []Pad, n int) ([]Pad, bool) {
+// trimPads drops the padding for columns or rows a resize took away.
+func trimPads(pads []Pad, n int) []Pad {
 	if len(pads) <= n {
-		return pads, false
+		return pads
 	}
-	moved := false
-	for _, p := range pads[n:] {
-		if !p.Empty() {
-			moved = true
-			break
-		}
-	}
-	return pads[:n], moved
+	return pads[:n]
 }

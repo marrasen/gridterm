@@ -102,6 +102,23 @@ func TestBoxesTileTheGrid(t *testing.T) {
 	}
 }
 
+// A run that reaches past the last column keeps counting in whole
+// cells. Nothing asks for one today, but a box that stopped at the edge
+// would quietly draw a run of two as a run of one.
+func TestARunPastTheEndKeepsCounting(t *testing.T) {
+	g := geoGrid(4, 2)
+	g.SetColPad(3, grid.Pad{After: 2})
+	geo := measured(g)
+
+	at, size := geo.ColBox(3, 6)
+	if at != 24 || size != 8+4+8+8 {
+		t.Errorf("the run from 3 to 6 is %d..%d, want 24..%d", at, at+size, 24+28)
+	}
+	if got := geo.CellX(6); got != geo.CellX(4)+2*8 {
+		t.Errorf("the cell two past the end starts at %d", got)
+	}
+}
+
 // An empty run has no width, whatever it is asked about.
 func TestAnEmptyRunHasNoWidth(t *testing.T) {
 	g := geoGrid(4, 2)
@@ -164,9 +181,10 @@ func TestPixelsOutsideTheGridKeepCounting(t *testing.T) {
 	}
 }
 
-// A grid a few pixels short of the window is stretched to reach it, so
-// no strip of the window is left with nothing to paint it.
-func TestFillStretchesTheLastColumnAndRow(t *testing.T) {
+// A grid a few pixels short of the window reaches it on both sides, so
+// no strip of the window is left with nothing to paint it and the
+// margin does not end up wider at one edge than the other.
+func TestFillSharesTheSparePixelsBetweenTheEdges(t *testing.T) {
 	g := geoGrid(4, 2)
 	geo := measured(g)
 
@@ -178,12 +196,59 @@ func TestFillStretchesTheLastColumnAndRow(t *testing.T) {
 	if got := geo.Height(); got != 35 {
 		t.Errorf("the grid is %d high, want 35", got)
 	}
-	if _, size := geo.ColBox(3, 4); size != 8+3 {
-		t.Errorf("the last column is %d wide, want 11", size)
+	if at, size := geo.ColBox(0, 1); at != 0 || size != 8+1 {
+		t.Errorf("the first column is %d..%d, want 0..9", at, at+size)
 	}
-	// The cell itself did not move, so nothing is drawn anywhere new.
-	if got := geo.CellX(3); got != 24 {
-		t.Errorf("the last cell starts at %d, want 24", got)
+	if at, size := geo.ColBox(3, 4); at != 25 || size != 8+2 {
+		t.Errorf("the last column is %d..%d, want 25..35", at, at+size)
+	}
+	// Every cell moved over by the share the first edge took.
+	if got := geo.CellX(0); got != 1 {
+		t.Errorf("the first cell starts at %d, want 1", got)
+	}
+	if got := geo.CellX(3); got != 25 {
+		t.Errorf("the last cell starts at %d, want 25", got)
+	}
+}
+
+// The grid reaches the window at every size, whatever the cell box.
+//
+// The room the padding needs is worked out before there is a grid to
+// lay out, so the two have to agree to the pixel. They did not: the
+// room was one division and the placing was a division per pad, and the
+// pixels the truncations lost added up to a whole cell the window had
+// set aside and the grid never used -- a bare strip a character wide
+// down the right-hand edge, at one window width in nine.
+func TestTheGridReachesTheWindowAtEverySize(t *testing.T) {
+	// Odd cell boxes are where a division per pad loses a pixel.
+	for _, cell := range []int{5, 7, 9, 11, 13, 17, 8, 12, 24} {
+		m := glyph.Metrics{CellW: cell, CellH: cell, Ascent: cell * 4 / 5}
+		// What the window asks for: a margin down each side and the
+		// sidebar gap, split across three columns.
+		const padX = 6
+		for px := 100; px < 400; px++ {
+			cols := max((px-padX*cell/grid.PadUnit)/cell, 1)
+			g := geoGrid(cols, 4)
+			// The three pads the window asks for, combined where two of
+			// them land on the same column, which is what it does with
+			// them. All six quarters are placed either way.
+			want := make([]grid.Pad, cols)
+			want[0].Before += 2
+			want[min(3, cols-1)].After += 2
+			want[cols-1].After += 2
+			for at, p := range want {
+				g.SetColPad(at, p)
+			}
+
+			geo := &Geometry{}
+			geo.Layout(g, m)
+			geo.Fill(px, px)
+
+			if got := geo.Width(); got != px {
+				t.Fatalf("cell %d, window %d: the grid is %d wide, leaving %d pixels bare",
+					cell, px, got, px-got)
+			}
+		}
 	}
 }
 
@@ -222,6 +287,51 @@ func TestAnEmptyGridStillHasASize(t *testing.T) {
 	}
 	if geo.ColAt(20) != 2 {
 		t.Errorf("a pixel in an empty grid is in column %d", geo.ColAt(20))
+	}
+}
+
+// A geometry nothing has laid out still answers. It is an exported
+// value anyone can declare, and the cell size is nothing until Layout
+// has run.
+func TestAnUnmeasuredGeometryAnswers(t *testing.T) {
+	var geo Geometry
+
+	if got := geo.ColAt(40); got != 0 {
+		t.Errorf("a pixel in an unmeasured geometry is in column %d", got)
+	}
+	if got := geo.RowAt(-40); got != 0 {
+		t.Errorf("a pixel in an unmeasured geometry is in row %d", got)
+	}
+	if w, h := geo.Width(), geo.Height(); w < 1 || h < 1 {
+		t.Errorf("an unmeasured geometry is %dx%d", w, h)
+	}
+}
+
+// A layer is only entitled to the window below and to the right of its
+// own corner. One stretched to the far edge whatever its corner would
+// have a texture that much too big.
+func TestALayerIsMeasuredFromItsOwnCorner(t *testing.T) {
+	r := newTestRenderer(t)
+	cellW, cellH := r.CellSize()
+	cols, rows := 4, 3
+	// A window a couple of pixels bigger than the grid, so a grid at
+	// the corner is stretched to reach it and one moved over by those
+	// pixels already does.
+	off := max(min(cellW, cellH)/3, 1)
+	r.SetWindow(cols*cellW+off, rows*cellH+off)
+
+	var here, over Geometry
+	g := geoGrid(cols, rows)
+	r.MeasureAt(g, 0, 0, &here)
+	r.MeasureAt(g, off, off, &over)
+
+	if here.Width() != cols*cellW+off || here.Height() != rows*cellH+off {
+		t.Errorf("a grid at the corner is %dx%d, want it stretched to %dx%d",
+			here.Width(), here.Height(), cols*cellW+off, rows*cellH+off)
+	}
+	if over.Width() != cols*cellW || over.Height() != rows*cellH {
+		t.Errorf("a grid %d pixels in is %dx%d, want its own %dx%d",
+			off, over.Width(), over.Height(), cols*cellW, rows*cellH)
 	}
 }
 

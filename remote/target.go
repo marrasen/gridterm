@@ -1,4 +1,4 @@
-package session
+package remote
 
 import (
 	"fmt"
@@ -7,14 +7,14 @@ import (
 	"strings"
 )
 
-// ParseSSHTarget splits [user@]host[:port] into a config.
+// ParseTarget splits [user@]host[:port] into a config.
 //
 // The host may be an IPv6 literal, which is why the port is not simply
 // split on the first colon: "::1" is an address, not a host and a port.
 // A bracketed literal with a port, "[::1]:22", is the only unambiguous
 // spelling and the one net.SplitHostPort understands.
-func ParseSSHTarget(target string) (SSHConfig, error) {
-	var cfg SSHConfig
+func ParseTarget(target string) (Config, error) {
+	var cfg Config
 	orig := target
 
 	// Split on the last @: a username may not contain one, but an IPv6

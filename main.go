@@ -22,6 +22,7 @@ import (
 
 	"github.com/marrasen/gridterm/glyph"
 	"github.com/marrasen/gridterm/grid"
+	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/render"
 	"github.com/marrasen/gridterm/session"
 	"github.com/marrasen/gridterm/ui"
@@ -72,8 +73,8 @@ func main() {
 		fontSize = flag.Float64("font-size", defaultFontSize, "font size in points")
 		cmdline  = flag.String("e", "",
 			"run this command instead of the login shell; split on spaces, no quoting")
-		scroll = flag.Int("scrollback", vt.DefaultScrollback, "lines of history to keep")
-		remote = flag.String("ssh", "",
+		scroll    = flag.Int("scrollback", vt.DefaultScrollback, "lines of history to keep")
+		sshTarget = flag.String("ssh", "",
 			"connect to [user@]host[:port] over SSH instead of running a local shell")
 		fontFiles = flag.String("font", "",
 			"font files to use instead of the bundled Go Mono, comma separated,"+
@@ -126,7 +127,7 @@ func main() {
 	// What every pane is started with, so a split can open another.
 	command := strings.Fields(*cmdline)
 	a.newSession = func(cols, rows int) (session.Session, error) {
-		return startSession(*remote, command, cols, rows)
+		return startSession(*sshTarget, command, cols, rows)
 	}
 	a.scrollback = *scroll
 	a.colours = pal
@@ -257,12 +258,10 @@ func startSession(target string, command []string, cols, rows int) (session.Sess
 			Rows:    rows,
 		})
 	}
-	cfg, err := session.ParseSSHTarget(target)
+	cfg, err := remote.ParseTarget(target)
 	if err != nil {
 		return nil, err
 	}
-	cfg.Command = command
-	cfg.Cols, cfg.Rows = cols, rows
 	// Without these, SSH works only with an agent or an unencrypted key
 	// on disk: a passphrase-protected key is skipped and password
 	// authentication is never even offered.
@@ -272,5 +271,9 @@ func startSession(target string, command []string, cols, rows int) (session.Sess
 	cfg.Password = func() (string, error) {
 		return promptSecret("password for " + cfg.User + "@" + cfg.Host + ": ")
 	}
-	return session.StartSSH(cfg)
+	return remote.StartShell(cfg, remote.ShellConfig{
+		Command: command,
+		Cols:    cols,
+		Rows:    rows,
+	})
 }

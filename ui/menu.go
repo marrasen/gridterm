@@ -101,10 +101,46 @@ type Menu struct {
 // does not know what is showing it.
 func NewMenu(cmds *Commands, keys *Keymap, items []MenuItem, close func()) *Menu {
 	m := &Menu{cmds: cmds, keys: keys, close: close}
-	m.items = make([]MenuItem, len(items))
-	copy(m.items, items)
+	m.items = usableItems(cmds, items)
 	m.at = m.nextFrom(-1, 1)
 	return m
+}
+
+// usableItems drops the lines a menu cannot name and tidies the
+// separators that leaves stranded.
+//
+// A line with no title of its own naming a command that is not
+// registered has nothing to show but the id, which means nothing to the
+// person reading it. A line the program gave a title keeps it and is
+// drawn greyed out instead.
+//
+// The list is settled when the menu opens. A menu is on screen for a
+// moment, so a command registered while one is up belongs in the next
+// menu rather than appearing halfway down this one.
+func usableItems(cmds *Commands, in []MenuItem) []MenuItem {
+	out := make([]MenuItem, 0, len(in))
+	for _, item := range in {
+		switch {
+		case item.Command == "":
+			// A rule that separates nothing is not a rule.
+			if len(out) > 0 && out[len(out)-1].Command != "" {
+				out = append(out, item)
+			}
+		case item.Title != "":
+			out = append(out, item)
+		default:
+			if cmds == nil {
+				continue
+			}
+			if _, ok := cmds.Lookup(item.Command); ok {
+				out = append(out, item)
+			}
+		}
+	}
+	if n := len(out); n > 0 && out[n-1].Command == "" {
+		out = out[:n-1]
+	}
+	return out
 }
 
 // Items returns the lines of the menu. The slice is a copy.
@@ -178,7 +214,10 @@ func (m *Menu) paintItem(line grid.View, i, cols int) {
 	room := cols - menuPad
 	if chord, ok := m.chordFor(item.Command); ok {
 		w := grid.StringWidth(chord)
-		if at := cols - menuPad - w; at > menuPad {
+		// Shown only if a column of title survives it. A line holding
+		// nothing but a key binding does not say what the key does, so a
+		// menu too narrow for both drops the binding.
+		if at := cols - menuPad - w; at >= menuPad+2 {
 			chordFG := m.Style.ChordFG
 			if i == m.at {
 				chordFG = fg
@@ -210,6 +249,11 @@ func (m *Menu) paintTitle(line grid.View, i int, fg, bg color.RGBA, room int) {
 func (m *Menu) HandleKey(ev input.Event) (bool, error) {
 	if ev.Kind != input.KeyPress && ev.Kind != input.KeyRepeat {
 		// Text events included: a menu is chosen from, not typed into.
+		return false, nil
+	}
+	if ev.Mods != 0 {
+		// Ctrl+Enter is not Enter. Swallowing a chord the menu has no
+		// meaning for would kill it for whatever it is bound to.
 		return false, nil
 	}
 	switch ev.Key {
@@ -284,31 +328,33 @@ func (m *Menu) CancelGesture() {}
 
 // box returns where the menu goes, hanging under its anchor.
 //
-// A menu that would fall off the bottom is flipped above the anchor
-// instead, and one that fits neither way is pinned to the top and
-// scrolls. Falling off the right is answered by sliding left, because a
-// menu narrower than the window can always be moved onto it.
+// A menu never covers what opened it. It takes the room under the
+// anchor, or the room over it when that is larger, and scrolls when
+// neither side fits the whole list. A menu drawn over its own title
+// would turn a click meant to switch menus into a line of this one.
+//
+// Falling off the right is answered by sliding left, because a menu
+// narrower than the window can always be moved onto it.
 func (m *Menu) box() Rect {
 	if m.size.Empty() || len(m.items) == 0 {
 		return Rect{}
 	}
 	cols := min(m.width(), m.size.Cols)
-	rows := min(len(m.items), m.size.Rows)
+
+	// Clamped to the window, because Anchor belongs to whoever opened the
+	// menu and may name a rectangle that is partly off it.
+	anchor := m.anchor()
+	under := min(max(anchor.Y+anchor.Rows, 0), m.size.Rows)
+	over := min(max(anchor.Y, 0), m.size.Rows)
+
+	rows, y := min(len(m.items), m.size.Rows-under), under
+	if above := min(len(m.items), over); above > rows {
+		rows, y = above, over-above
+	}
 	if cols <= 0 || rows <= 0 {
 		return Rect{}
 	}
-
-	anchor := m.anchor()
-	y := anchor.Y + anchor.Rows
-	switch {
-	case y+rows <= m.size.Rows:
-		// It fits below.
-	case anchor.Y-rows >= 0:
-		y = anchor.Y - rows
-	default:
-		y = min(max(m.size.Rows-rows, 0), max(anchor.Y, 0))
-	}
-	x := min(max(anchor.X, 0), m.size.Cols-cols)
+	x := min(max(anchor.X, 0), max(m.size.Cols-cols, 0))
 	return Rect{X: x, Y: y, Cols: cols, Rows: rows}
 }
 
@@ -343,15 +389,17 @@ func (m *Menu) width() int {
 
 // titleOf names one line, preferring what the item says over what the
 // command it names is called.
+//
+// A line with neither is empty rather than showing a command id. Only a
+// command unregistered since the menu opened can reach that, because
+// NewMenu drops a line it cannot name.
 func (m *Menu) titleOf(i int) string {
 	item := m.items[i]
 	if item.Title != "" {
 		return item.Title
 	}
-	if cmd, ok := m.lookup(item.Command); ok {
-		return cmd.Title
-	}
-	return item.Command
+	cmd, _ := m.lookup(item.Command)
+	return cmd.Title
 }
 
 // chordFor returns the key binding to show beside a command.

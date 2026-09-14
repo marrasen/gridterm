@@ -38,7 +38,9 @@ type Menubar struct {
 	Style     MenubarStyle
 	MenuStyle MenuStyle
 
-	// Menus are the titles, left to right.
+	// Menus are the titles, left to right. Leave them alone while a menu
+	// is open: the open menu holds the index of the title it hangs under,
+	// and changing the list moves that title out from under it.
 	Menus []MenuDef
 
 	// Present shows a menu and returns the function that takes it away.
@@ -66,6 +68,11 @@ type Menubar struct {
 	open      *Menu
 	openAt    int
 	closeOpen func()
+
+	// buf keeps the title row off the layer until it is finished. Filling
+	// the row and then writing the titles over it changes the same cell
+	// twice, which would dirty the row on every frame.
+	buf buffer
 }
 
 // NewMenubar puts a row of menu titles above a widget.
@@ -83,17 +90,22 @@ func (b *Menubar) Open(i int) bool {
 
 	menu := NewMenu(b.cmds, b.keys, b.Menus[i].Items, b.Close)
 	menu.Style = b.MenuStyle
+	// The closure holds the title's own index rather than reading the
+	// bar, so laying the menu out inside Present asks the right question
+	// before the bar has recorded anything.
 	menu.Anchor = func() Rect { return b.anchorFor(i) }
 	menu.OnEdge = b.step
 	menu.OnOutside = b.pressedBar
-	// Set before presenting: showing a menu lays it out, and laying it
-	// out asks the bar where to hang it.
-	b.open, b.openAt = menu, i
-	b.closeOpen = b.Present(menu)
-	if b.closeOpen == nil {
-		b.open, b.openAt = nil, -1
+
+	close := b.Present(menu)
+	if close == nil {
 		return false
 	}
+	// Recorded only once the menu is up, and all three together. Set
+	// beforehand, a Present that closed the menu again would clear them
+	// and then have the closer written back over the top, leaving the bar
+	// holding a way to tear down a menu that has already gone.
+	b.open, b.openAt, b.closeOpen = menu, i, close
 	return true
 }
 
@@ -195,11 +207,13 @@ func (b *Menubar) Draw(v grid.View) {
 
 // drawBar paints the row of titles.
 func (b *Menubar) drawBar(v grid.View) {
-	bar := b.bar()
-	if bar.Empty() {
-		return
+	if bar := b.bar(); !bar.Empty() {
+		b.buf.draw(bar.In(v), b.paintBar)
 	}
-	row := bar.In(v)
+}
+
+// paintBar draws the titles into a row of their own.
+func (b *Menubar) paintBar(row grid.View) {
 	row.Fill(grid.Cell{Rune: ' ', FG: b.Style.FG, BG: b.Style.BG, Width: 1})
 
 	for i, label := range b.labels() {
@@ -301,15 +315,19 @@ func (b *Menubar) step(by int) {
 
 // anchorFor returns where a menu hangs, in the coordinates a menu is
 // laid out in.
+//
+// A title too far along to fit on the bar has no rectangle of its own,
+// and the menu hangs from the bar's own row instead. Falling back to
+// whatever Origin reports would use the bar's whole height, which is the
+// window's, and put the menu off the bottom.
 func (b *Menubar) anchorFor(i int) Rect {
-	labels := b.labels()
-	if i < 0 || i >= len(labels) || labels[i].Empty() {
-		return b.origin()
-	}
 	origin := b.origin()
-	label := labels[i]
-	label.X, label.Y = label.X+origin.X, label.Y+origin.Y
-	return label
+	at := Rect{X: origin.X, Y: origin.Y, Rows: barRows}
+	if labels := b.labels(); i >= 0 && i < len(labels) && !labels[i].Empty() {
+		at.X, at.Y = labels[i].X+origin.X, labels[i].Y+origin.Y
+		at.Cols, at.Rows = labels[i].Cols, labels[i].Rows
+	}
+	return at
 }
 
 // origin returns where the bar sits in the window.

@@ -47,6 +47,11 @@ type Tabs struct {
 	// end the gesture.
 	stripHeld   bool
 	stripButton input.MouseButton
+
+	// buf keeps the label strip off the layer until it is finished.
+	// Filling the strip and then writing the labels over it changes the
+	// same cell twice, which would dirty the row on every frame.
+	buf buffer
 }
 
 // NewTabs shows the first of the given widgets, ignoring any nil ones.
@@ -331,11 +336,13 @@ func (t *Tabs) labelOf(w Widget, i int) string {
 
 // drawStrip paints the labels.
 func (t *Tabs) drawStrip(v grid.View) {
-	strip := t.strip()
-	if strip.Empty() {
-		return
+	if strip := t.strip(); !strip.Empty() {
+		t.buf.draw(strip.In(v), t.paintStrip)
 	}
-	row := strip.In(v)
+}
+
+// paintStrip draws the labels into a row of their own.
+func (t *Tabs) paintStrip(row grid.View) {
 	row.Fill(grid.Cell{Rune: ' ', FG: t.InactiveFG, BG: t.StripBG, Width: 1})
 
 	for i, label := range t.labels() {

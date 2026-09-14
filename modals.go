@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"image/color"
 
 	"github.com/marrasen/gridterm/grid"
@@ -37,10 +38,16 @@ func (a *app) showModal(w ui.Widget, onHidden func()) func() {
 		layer:    &render.Layer{Grid: g, Transparent: true},
 		onHidden: onHidden,
 	}
+	if !a.root.PushModal(w) {
+		// Already on the stack. Keeping a second record of it here would
+		// leave a dialog drawn on a layer that nothing routes keys to.
+		return func() {}
+	}
 	a.modals = append(a.modals, m)
 	a.comp.Add(m.layer)
-	a.root.PushModal(w)
-	a.markDirty()
+	// No markDirty: the tree has not changed. Adding a layer changes the
+	// compositor's placements, which is what makes it re-blit everything
+	// from the textures it already has.
 	return func() { a.hideModal(m) }
 }
 
@@ -67,7 +74,12 @@ func (a *app) hideModal(m *modal) {
 	copy(doomed, a.modals[at:])
 
 	for i := len(a.modals) - 1; i >= at; i-- {
-		a.root.PopModal()
+		if got := a.root.PopModal(); got != a.modals[i].w {
+			// The two stacks have to hold the same dialogs in the same
+			// order. Carrying on would draw one nothing routes keys to.
+			a.logError(fmt.Errorf("modal stack out of step: popped %T, expected %T",
+				got, a.modals[i].w))
+		}
 		a.comp.Remove(a.modals[i].layer)
 		a.modals[i] = nil
 	}
@@ -81,7 +93,6 @@ func (a *app) hideModal(m *modal) {
 			doomed[i].onHidden()
 		}
 	}
-	a.markDirty()
 }
 
 // drawModals paints each dialog onto its own layer.

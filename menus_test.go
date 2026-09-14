@@ -9,10 +9,14 @@ import (
 	"github.com/marrasen/gridterm/ui"
 )
 
-// withMenubar puts a bar over the app's tree, the way main does.
+// withMenubar puts a bar over the app's tree, the way main does, with
+// the tree on a layer of its own so a dialog's layer has something to
+// sit above.
 func withMenubar(t *testing.T, a *testApp) *ui.Menubar {
 	t.Helper()
 	a.comp = render.NewCompositor(nil)
+	a.layer = &render.Layer{Grid: a.g}
+	a.comp.Add(a.layer)
 	a.commands()
 	a.bar = a.newMenubar(a.root.Widget())
 	a.root.SetWidget(a.bar)
@@ -105,12 +109,166 @@ func TestMenuAndPaletteGetALayerEach(t *testing.T) {
 		t.Errorf("%d layers, want two more than %d", got, layersBefore)
 	}
 
-	// Each is drawn onto its own grid and nothing else.
+	// Each is drawn onto its own grid and nothing else. A new grid starts
+	// dirty, so the damage has to be cleared or this proves nothing.
+	for _, m := range a.modals {
+		m.g.ClearDirty()
+	}
 	a.drawModals()
 	for i, m := range a.modals {
 		if !m.g.AnyDirty() {
 			t.Errorf("dialog %d drew nothing onto its layer", i)
 		}
+	}
+}
+
+// TestDialogLayersSitAboveTheTree checks the compositor order. A dialog
+// under the tree's layer is drawn and then covered by the window.
+func TestDialogLayersSitAboveTheTree(t *testing.T) {
+	a := newTestApp(t, 40, 20)
+	withMenubar(t, a)
+	if err := a.openMenu(); err != nil {
+		t.Fatalf("open menu: %v", err)
+	}
+
+	layers := a.comp.Layers()
+	if len(layers) != 2 {
+		t.Fatalf("%d layers, want the tree and the dialog", len(layers))
+	}
+	if layers[0] != a.layer {
+		t.Error("the tree is not at the bottom of the stack")
+	}
+	if layers[1] != a.modals[0].layer {
+		t.Error("the dialog is not above the tree")
+	}
+}
+
+// TestOpeningADialogDoesNotRepaintTheTree is the point of giving a
+// dialog its own layer: the window underneath has not changed, so
+// nothing under it should be redrawn. Left and Right along a menu bar
+// close one menu and open the next, so a repaint here is a repaint of
+// every pane on every keystroke.
+func TestOpeningADialogDoesNotRepaintTheTree(t *testing.T) {
+	a := newTestApp(t, 40, 20)
+	bar := withMenubar(t, a)
+	a.root.Draw(a.g.View())
+	a.g.ClearDirty()
+
+	if err := a.openMenu(); err != nil {
+		t.Fatalf("open menu: %v", err)
+	}
+	a.root.Draw(a.g.View())
+
+	// Two rows may change: the bar's, because a title is now marked open,
+	// and whichever row the focused pane's cursor was on, because the
+	// cursor goes while a dialog holds focus. Marking the window dirty
+	// would redraw all twenty.
+	if got := dirtyRows(a); got > 2 {
+		t.Errorf("opening a menu dirtied %d of 20 rows, want at most 2", got)
+	}
+
+	a.g.ClearDirty()
+	bar.Close()
+	a.root.Draw(a.g.View())
+	if got := dirtyRows(a); got > 2 {
+		t.Errorf("closing a menu dirtied %d of 20 rows, want at most 2", got)
+	}
+}
+
+// dirtyRows counts the rows of the window that changed.
+func dirtyRows(a *testApp) int {
+	_, rows := a.g.Size()
+	n := 0
+	for y := 0; y < rows; y++ {
+		if a.g.RowDirty(y) {
+			n++
+		}
+	}
+	return n
+}
+
+// TestClosingADialogTwiceIsHarmless checks the guard that stops a
+// re-entrant close from tearing down the rest of the stack.
+func TestClosingADialogTwiceIsHarmless(t *testing.T) {
+	a := newTestApp(t, 40, 20)
+	withMenubar(t, a)
+	if err := a.openMenu(); err != nil {
+		t.Fatalf("open menu: %v", err)
+	}
+	gone := a.modals[0]
+	if err := a.openPalette(); err != nil {
+		t.Fatalf("open palette: %v", err)
+	}
+	a.hideModal(gone)
+
+	// The menu is long gone, along with the palette that was over it.
+	a.hideModal(gone)
+
+	if got := len(a.modals); got != 0 {
+		t.Errorf("%d dialogs left, want none", got)
+	}
+	if got := len(a.comp.Layers()); got != 1 {
+		t.Errorf("%d layers, want just the tree", got)
+	}
+}
+
+// TestClosingADialogThatIsNotOpenLeavesTheStackAlone checks the guard
+// from the other side: a dialog that was never on the stack must not
+// take the ones that are with it.
+func TestClosingADialogThatIsNotOpenLeavesTheStackAlone(t *testing.T) {
+	a := newTestApp(t, 40, 20)
+	withMenubar(t, a)
+	if err := a.openMenu(); err != nil {
+		t.Fatalf("open menu: %v", err)
+	}
+	if err := a.openPalette(); err != nil {
+		t.Fatalf("open palette: %v", err)
+	}
+
+	a.hideModal(&modal{})
+
+	if got := len(a.modals); got != 2 {
+		t.Errorf("%d dialogs left, want the two that are open", got)
+	}
+	if a.palette == nil {
+		t.Error("the palette was taken away by a dialog that was never open")
+	}
+	if a.root.Modal() != ui.Widget(a.palette) {
+		t.Errorf("top modal = %v, want the palette", a.root.Modal())
+	}
+}
+
+// TestADialogTakenFromUnderneathIsToldSo checks the wiring that is not
+// reached by closing a dialog through its own close function. Without
+// it, the menu bar goes on marking a title as open with no menu under
+// it, and the title can never be opened again.
+func TestADialogTakenFromUnderneathIsToldSo(t *testing.T) {
+	a := newTestApp(t, 40, 20)
+	bar := withMenubar(t, a)
+	if err := a.openMenu(); err != nil {
+		t.Fatalf("open menu: %v", err)
+	}
+	menu := a.modals[0]
+	if err := a.openPalette(); err != nil {
+		t.Fatalf("open palette: %v", err)
+	}
+
+	// Take the menu away from under the palette, without going through
+	// the menu bar.
+	a.hideModal(menu)
+
+	if bar.OpenIndex() != -1 {
+		t.Errorf("the bar still marks menu %d as open", bar.OpenIndex())
+	}
+	if a.palette != nil {
+		t.Error("the palette went with it but was not told")
+	}
+	// And the bar can open a menu again afterwards.
+	if err := a.openMenu(); err != nil {
+		t.Fatalf("open menu again: %v", err)
+	}
+	if bar.OpenIndex() != 0 {
+		t.Errorf("open = %d, want the bar working again", bar.OpenIndex())
 	}
 }
 
@@ -136,8 +294,8 @@ func TestHidingADialogTakesWhatIsStackedOnIt(t *testing.T) {
 	if a.root.Modal() != nil {
 		t.Error("something is still on the modal stack")
 	}
-	if got := len(a.comp.Layers()); got != 0 {
-		t.Errorf("%d layers left, want none", got)
+	if got := len(a.comp.Layers()); got != 1 {
+		t.Errorf("%d layers left, want just the tree", got)
 	}
 	// The palette went with it, and was told so rather than being left
 	// thinking it is still on screen.

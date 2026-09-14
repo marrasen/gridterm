@@ -229,7 +229,10 @@ func (p *Palette) drawMatch(in grid.View, row, cols int) {
 	room := cols - 2
 	if chord, ok := p.chordFor(m.Command.ID); ok {
 		w := grid.StringWidth(chord)
-		if at := cols - 1 - w; at > 4 {
+		// Shown only if a column of title survives it. A line holding
+		// nothing but a key binding does not say what the key does, so a
+		// dialog too narrow for both drops the binding.
+		if at := cols - 1 - w; at >= 6 {
 			line.SetString(at, 0, chord, p.Style.ChordFG, bg, 0)
 			room = at - 3
 		}

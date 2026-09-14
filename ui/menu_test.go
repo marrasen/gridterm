@@ -100,11 +100,9 @@ func TestMenuArrowsStopAtTheEnds(t *testing.T) {
 
 func TestMenuHomeAndEnd(t *testing.T) {
 	cmds := testCommands("Copy", "Paste", "Quit")
-	// Separators at both ends, so Home and End must step past them.
+	// A separator in the middle, which Home and End must step past.
 	m, _ := newTestMenu(t, cmds, []MenuItem{
-		MenuSeparator(),
-		{Command: "copy"}, {Command: "paste"}, {Command: "quit"},
-		MenuSeparator(),
+		{Command: "copy"}, MenuSeparator(), {Command: "paste"}, {Command: "quit"},
 	})
 
 	m.HandleKey(press(input.KeyEnd, 0))
@@ -112,8 +110,53 @@ func TestMenuHomeAndEnd(t *testing.T) {
 		t.Errorf("End landed on %d, want the last line that can be run", got)
 	}
 	m.HandleKey(press(input.KeyHome, 0))
-	if got := m.SelectedIndex(); got != 1 {
+	if got := m.SelectedIndex(); got != 0 {
 		t.Errorf("Home landed on %d, want the first line that can be run", got)
+	}
+}
+
+// TestMenuDropsAStrandedSeparator checks that a rule which separates
+// nothing is not drawn. A menu opening with a line across the top, or
+// two rules together where a line between them was dropped, looks broken.
+func TestMenuDropsAStrandedSeparator(t *testing.T) {
+	cmds := testCommands("Copy", "Paste")
+	m, _ := newTestMenu(t, cmds, []MenuItem{
+		MenuSeparator(),
+		{Command: "copy"},
+		MenuSeparator(),
+		MenuSeparator(),
+		{Command: "paste"},
+		MenuSeparator(),
+	})
+
+	got := m.Items()
+
+	want := []string{"copy", "", "paste"}
+	if len(got) != len(want) {
+		t.Fatalf("items = %+v, want %v", got, want)
+	}
+	for i, id := range want {
+		if got[i].Command != id {
+			t.Errorf("item %d = %q, want %q", i, got[i].Command, id)
+		}
+	}
+}
+
+// TestMenuDropsALineItCannotName checks an item naming a command that is
+// not registered. There is nothing to show but the id, which means
+// nothing to the person reading it.
+func TestMenuDropsALineItCannotName(t *testing.T) {
+	cmds := testCommands("Copy")
+	m, _ := newTestMenu(t, cmds, items("gone", "copy"))
+
+	if got := len(m.Items()); got != 1 {
+		t.Fatalf("%d items, want the unnamed one dropped: %+v", got, m.Items())
+	}
+	g := drawMenu(m, 40, 20)
+	for y := 0; y < 20; y++ {
+		if strings.Contains(rowOf(g, y), "gone") {
+			t.Errorf("row %d = %q, want no command id on screen", y, rowOf(g, y))
+		}
 	}
 }
 
@@ -161,13 +204,20 @@ func TestMenuEscapeClosesWithoutRunning(t *testing.T) {
 	}
 }
 
-// TestMenuUnknownCommandCannotBeChosen checks a line naming a command
-// that is not registered. Panes and tabs register commands as they open,
-// so a menu written once holds lines that are not always available.
+// TestMenuUnknownCommandCannotBeChosen checks a line the program named
+// itself whose command is not registered. Panes and tabs register
+// commands as they open, so a menu written once holds lines that are not
+// always available. Such a line is shown greyed out and cannot be run.
 func TestMenuUnknownCommandCannotBeChosen(t *testing.T) {
 	cmds := testCommands("Copy")
-	m, closed := newTestMenu(t, cmds, items("gone", "copy"))
+	m, closed := newTestMenu(t, cmds, []MenuItem{
+		{Command: "gone", Title: "Not today"},
+		{Command: "copy"},
+	})
 
+	if got := len(m.Items()); got != 2 {
+		t.Fatalf("%d items, want the named line kept", got)
+	}
 	if got := m.SelectedIndex(); got != 1 {
 		t.Errorf("selected %d, want the line that names a real command", got)
 	}
@@ -177,6 +227,11 @@ func TestMenuUnknownCommandCannotBeChosen(t *testing.T) {
 	}
 	if *closed != 0 {
 		t.Error("pressing a line with no command behind it closed the menu")
+	}
+	// And it says what it is rather than showing the command id.
+	g := drawMenu(m, 40, 20)
+	if row := rowOf(g, m.box().Y); !strings.Contains(row, "Not today") {
+		t.Errorf("row = %q, want the title the program gave it", row)
 	}
 }
 

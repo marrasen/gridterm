@@ -135,14 +135,17 @@ func drawCursorOwner(v grid.View, draw func(grid.View)) {
 
 // PushModal puts a dialog on top. It takes focus and every key the tree
 // would have seen, until it is popped. A dialog already on the stack is
-// ignored rather than stacked on itself.
-func (r *Root) PushModal(w Widget) {
+// refused rather than stacked on itself.
+//
+// It reports whether the dialog went on, so a caller keeping a stack of
+// its own does not drift out of step with this one.
+func (r *Root) PushModal(w Widget) bool {
 	if w == nil {
-		return
+		return false
 	}
 	for _, have := range r.modals {
 		if have == w {
-			return
+			return false
 		}
 	}
 	SetFocus(r.top(), false)
@@ -154,6 +157,7 @@ func (r *Root) PushModal(w Widget) {
 		w.Layout(r.area.Size())
 	}
 	SetFocus(w, true)
+	return true
 }
 
 // PopModal takes the topmost dialog off and returns it, giving focus
@@ -277,6 +281,7 @@ func (r *Root) HandleMouse(ev input.MouseEvent) (bool, error) {
 	if top == nil {
 		return false, nil
 	}
+	depth := len(r.modals)
 	// Only a press that starts something has to land inside. A wheel
 	// notch or a motion report in the pixels left over below the last
 	// whole row still belongs to the tree.
@@ -290,22 +295,27 @@ func (r *Root) HandleMouse(ev input.MouseEvent) (bool, error) {
 	local.Col, local.Row = r.area.Local(local.Col, local.Row)
 	handled, err := HandleMouse(top, local)
 	if starts && handled {
-		// Remember the widget itself, not the way down to it. Containers
-		// come and go while a button is held, and the path is worked out
-		// again for every event that follows.
 		var leaf Widget
-		// A dialog that dismissed itself on this very press is gone, and
-		// the pointer must not be handed to something no longer on the
-		// stack.
-		if r.top() == top {
+		switch {
+		case r.top() == top:
+			// Remember the widget itself, not the way down to it.
+			// Containers come and go while a button is held, and the path
+			// is worked out again for every event that follows.
 			if at, _, ok := LeafAt(top, r.area.Size().rect(), local.Col, local.Row); ok {
 				leaf = at
 			}
+		case len(r.modals) > depth:
+			// The press opened a dialog, so the rest of the gesture is
+			// the dialog's. Without this, pressing a menu title and
+			// dragging into the menu highlights nothing: the standard way
+			// to use a menu would do nothing at all.
+			leaf = r.top()
 		}
 		// The pointer is taken either way, with nobody holding it when
-		// there is no widget to hold it. The release is still owed, and
-		// giving it to whatever is under the pointer would report a
-		// button-up for a press that widget never saw.
+		// there is nobody to hold it -- a dialog that dismissed itself on
+		// this very press. The release is still owed, and giving it to
+		// whatever is under the pointer would report a button-up for a
+		// press that widget never saw.
 		r.held.Take(leaf, local)
 	}
 	return handled, err

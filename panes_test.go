@@ -98,6 +98,9 @@ func newTestApp(t *testing.T, cols, rows int) *testApp {
 		exits:      make(chan struct{}, exitQueue),
 		lastSize:   [2]int{cols, rows},
 	}}
+	// The window's own grid, so markDirty and setGridSize do what they do
+	// in the program rather than nothing at all.
+	ta.g = grid.New(cols, rows, ta.colours.FG, ta.colours.BG)
 	ta.newSession = func(int, int) (session.Session, error) {
 		sess := newPipeSession()
 		ta.shells = append(ta.shells, sess)

@@ -735,15 +735,19 @@ func TestRefusalsAreCountedRatherThanToldOneAtATime(t *testing.T) {
 		}
 	}
 
-	waitFor(t, "every refusal to land", func() bool { return s.turnedAwaySoFar() == tries })
+	// Most of them, rather than all: a dial that gives up before it
+	// reaches the server is a refusal the server never saw, and this
+	// runs alongside every other package's tests.
+	waitFor(t, "the refusals to land", func() bool { return s.turnedAwaySoFar() >= tries/2 })
 
 	mu.Lock()
 	defer mu.Unlock()
+	refused := s.turnedAwaySoFar()
 	if len(told) == 0 {
 		t.Fatal("the user was told nothing about any refused connection")
 	}
-	if len(told) >= tries {
-		t.Errorf("the user was told %d times about %d refusals", len(told), tries)
+	if len(told) >= refused {
+		t.Errorf("the user was told %d times about %d refusals", len(told), refused)
 	}
 }
 

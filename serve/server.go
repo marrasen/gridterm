@@ -85,6 +85,10 @@ type Config struct {
 	// handshakeWindow, which is what the program uses; a test sets it
 	// short rather than waiting out the real one.
 	Handshake time.Duration
+
+	// Open starts something for a client to work in. A nil one serves
+	// nothing, and a client that asks is told so.
+	Open Opener
 }
 
 // Client is one window that has taken this one over.
@@ -346,16 +350,7 @@ func (s *Server) handshake(nc net.Conn) {
 	}
 
 	go ssh.DiscardRequests(reqs)
-	go func() {
-		for nch := range chans {
-			// Nothing is served over the connection yet. Refused by
-			// name so a client of a later version is told what is wrong
-			// rather than left waiting. The refusal itself can only
-			// fail because the connection has gone, which is what the
-			// wait below is for.
-			_ = nch.Reject(ssh.UnknownChannelType, "this gridterm serves no channels yet")
-		}
-	}()
+	go s.serveChannels(chans)
 
 	why := conn.Wait()
 	s.drop(c)

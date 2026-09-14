@@ -6,7 +6,7 @@ It runs a shell on a local pseudo-terminal — a PTY on Unix, a ConPTY on
 Windows — or on another machine over SSH, feeds the output through a VT
 emulator, and draws the resulting character grid as batched triangles.
 
-21,076 lines of Go, 25,841 lines of tests, 1,026 tests.
+21,406 lines of Go, 26,418 lines of tests, 1,043 tests.
 
 ![a shell running in gridterm](docs/shell.png)
 
@@ -142,9 +142,9 @@ encoders and both session types.
 | `grid` | 863 | no | the display grid, damage tracking, selection, wide-character invariants |
 | `input` | 592 | no | key, text, mouse and paste events to VT bytes |
 | `session` | 362 | no | a shell as a byte stream, and the local pty |
-| `remote` | 3,500 | no | SSH: connections, shells, host keys, unlocked keys, tunnels |
+| `remote` | 3,570 | no | SSH: connections, shells, host keys, unlocked keys, tunnels |
 | `conns` | 221 | no | what the window has open, grouped by machine |
-| `vfs` | 457 | no | a filesystem a browser works on: this machine, or one over SFTP |
+| `vfs` | 628 | no | a filesystem a browser works on: this machine, or one over SFTP |
 | `meter` | 257 | no | bytes moved, and how long ago: the four states |
 | `ui` | 5,062 | no | the widget toolkit: panes, tabs, menus, dialogs, fields, lists |
 | `ui/term` | 529 | no | a shell on a widget |

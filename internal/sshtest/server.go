@@ -51,8 +51,19 @@ type Server struct {
 
 	// sftps counts the SFTP sessions started, and noSFTP turns the
 	// subsystem off the way an sshd without it does.
-	sftps  int
-	noSFTP bool
+	sftps   int
+	noSFTP  bool
+	sftpErr error
+
+	// sessions is how many session channels are open right now, so a
+	// test can tell a channel that was closed from one left behind.
+	sessions int
+
+	// frozen is closed by Freeze, and stopped when the test ends, so a
+	// session held open by a frozen server lets go in the end.
+	frozen     chan struct{}
+	freezeOnce sync.Once
+	stopped    chan struct{}
 
 	// bound are the ports the far machine has been asked to listen on.
 	bound []bound
@@ -76,7 +87,11 @@ func New(t *testing.T) *Server {
 		t.Fatalf("host signer: %v", err)
 	}
 
-	s := &Server{hostKey: signer.PublicKey()}
+	s := &Server{
+		hostKey: signer.PublicKey(),
+		frozen:  make(chan struct{}),
+		stopped: make(chan struct{}),
+	}
 	s.cfg = &ssh.ServerConfig{
 		PasswordCallback: func(_ ssh.ConnMetadata, pass []byte) (*ssh.Permissions, error) {
 			if string(pass) == Password {
@@ -108,6 +123,7 @@ func New(t *testing.T) *Server {
 
 	go s.serve()
 	t.Cleanup(func() {
+		close(s.stopped)
 		_ = s.ln.Close()
 		s.CloseClients()
 	})
@@ -159,6 +175,14 @@ func (s *Server) Offered() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return append([]string(nil), s.offered...)
+}
+
+// Sessions returns how many session channels are open right now, so a
+// test can tell a channel that was closed from one left behind.
+func (s *Server) Sessions() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.sessions
 }
 
 // Size returns the last pty size the server was told.
@@ -268,6 +292,14 @@ func (s *Server) handle(nc net.Conn) {
 }
 
 func (s *Server) session(ch ssh.Channel, reqs <-chan *ssh.Request) {
+	s.mu.Lock()
+	s.sessions++
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		s.sessions--
+		s.mu.Unlock()
+	}()
 	defer ch.Close()
 	for req := range reqs {
 		switch req.Type {

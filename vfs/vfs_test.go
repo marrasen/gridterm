@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"golang.org/x/crypto/ssh"
@@ -519,4 +520,294 @@ func TestClosingTheConnectionClosesTheFiles(t *testing.T) {
 	if _, err := f.ReadDir("/"); err == nil {
 		t.Fatal("the filesystem still listed a directory after its connection closed")
 	}
+}
+
+// The path helpers on the shapes a Windows machine has: a drive, a
+// share, and a path that is only separators.
+//
+// A drive letter on its own means the current directory on that drive,
+// not the top of it, so going up from C:\Users has to land on C:\ and
+// not on C:.
+func TestWindowsPaths(t *testing.T) {
+	// A filesystem with backslashes whatever this machine uses, so the
+	// shapes are tested wherever the tests run.
+	f := windows{NewLocal()}
+
+	cases := []struct{ what, got, want string }{
+		{`Join a drive and a name`, Join(f, `C:\`, "Users"), `C:\Users`},
+		{`Join a bare drive and a name`, Join(f, `C:`, "Users"), `C:\Users`},
+		{`Join a drive alone`, Join(f, `C:\`), `C:\`},
+		{`Join a share`, Join(f, `\\server\share`, "sub"), `\\server\share\sub`},
+		{`Join past an empty part`, Join(f, "", `C:\`, "Users"), `C:\Users`},
+		{`Dir under a drive`, Dir(f, `C:\Users`), `C:\`},
+		{`Dir of a drive`, Dir(f, `C:\`), `C:\`},
+		{`Dir deeper`, Dir(f, `C:\Users\marcus`), `C:\Users`},
+		{`Base of a drive`, Base(f, `C:\`), `C:`},
+		{`Base deeper`, Base(f, `C:\Users\marcus`), "marcus"},
+	}
+	for _, tc := range cases {
+		if tc.got != tc.want {
+			t.Errorf("%s = %q, want %q", tc.what, tc.got, tc.want)
+		}
+	}
+	if !IsTop(f, `C:\`) {
+		t.Error("a drive root says it is not the top")
+	}
+	if IsTop(f, `C:\Users`) {
+		t.Error("a directory under a drive says it is the top")
+	}
+}
+
+// A part that names where it starts decides, even when an empty one came
+// before it: an absolute path must not quietly become a relative one.
+func TestJoinKeepsWhereThePathStarts(t *testing.T) {
+	f := &SFTP{name: "far"}
+	if got := Join(f, "", "/tmp", "x"); got != "/tmp/x" {
+		t.Errorf("Join past an empty part = %q, want /tmp/x", got)
+	}
+	if got := Join(f, "/"); got != "/" {
+		t.Errorf("Join of the root alone = %q", got)
+	}
+	if got := Join(f, "/", "tmp"); got != "/tmp" {
+		t.Errorf("Join under the root = %q", got)
+	}
+	if got := Base(f, "/"); got != "/" {
+		t.Errorf("Base of the root = %q, want something to show", got)
+	}
+	if got := Dir(f, "/foo//bar"); got != "/foo" {
+		t.Errorf("Dir with a doubled separator = %q", got)
+	}
+}
+
+// windows is a filesystem that names paths the way Windows does,
+// whatever machine the tests are running on.
+type windows struct{ *Local }
+
+func (windows) Sep() byte { return '\\' }
+
+// A file that is already there keeps the mode it has. A copy over an
+// existing file changes what is in it, not who may read it -- and the
+// two filesystems have to agree, or the same copy would do different
+// things depending on which end it landed on.
+func TestCreateLeavesAnExistingFilesModeAlone(t *testing.T) {
+	both(t, func(t *testing.T, tr tree) {
+		path := filepath.Join(tr.real, "one.txt")
+		write(t, tr.real, "one.txt", "hello")
+		before, err := os.Stat(path)
+		if err != nil {
+			t.Fatalf("stat: %v", err)
+		}
+
+		// Asked for read-only, over a file that is already there and is
+		// not. The mode it has wins, on both filesystems.
+		w, err := tr.fs.Create(Join(tr.fs, tr.at, "one.txt"), 0o444)
+		if err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		if err := w.Close(); err != nil {
+			t.Fatalf("close: %v", err)
+		}
+
+		after, err := os.Stat(path)
+		if err != nil {
+			t.Fatalf("stat: %v", err)
+		}
+		if after.Mode().Perm() != before.Mode().Perm() {
+			t.Fatalf("the file is %v, want the %v it already had",
+				after.Mode().Perm(), before.Mode().Perm())
+		}
+		if after.Mode().Perm()&0o200 == 0 {
+			t.Fatal("a file that could be written to before cannot be now")
+		}
+	})
+}
+
+// A new directory gets the mode it was asked for, not whatever the
+// machine's umask allows. Both filesystems, or a copy would make
+// directories the user cannot enter at one end and can at the other.
+func TestMkdirUsesTheModeItWasGiven(t *testing.T) {
+	if os.PathSeparator != '/' {
+		t.Skip("Windows has no permission bits to set on a directory")
+	}
+	both(t, func(t *testing.T, tr tree) {
+		if err := tr.fs.Mkdir(Join(tr.fs, tr.at, "made"), 0o777); err != nil {
+			t.Fatalf("Mkdir: %v", err)
+		}
+		info, err := os.Stat(filepath.Join(tr.real, "made"))
+		if err != nil {
+			t.Fatalf("stat: %v", err)
+		}
+		if info.Mode().Perm() != 0o777 {
+			t.Fatalf("the directory is %v, want the 0777 it was made with", info.Mode().Perm())
+		}
+	})
+}
+
+// The interface promises a filesystem is safe to use from several
+// goroutines, because a copy running in the background reads through the
+// same one a pane is listing with.
+func TestAFilesystemTakesSeveralGoroutinesAtOnce(t *testing.T) {
+	both(t, func(t *testing.T, tr tree) {
+		for _, name := range []string{"one.txt", "two.txt", "three.txt"} {
+			write(t, tr.real, name, "the body of "+name)
+		}
+
+		var wg sync.WaitGroup
+		fail := make(chan error, 64)
+		for i := 0; i < 8; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for j := 0; j < 8; j++ {
+					if _, err := tr.fs.ReadDir(tr.at); err != nil {
+						fail <- err
+						return
+					}
+					f, err := tr.fs.Open(Join(tr.fs, tr.at, "two.txt"))
+					if err != nil {
+						fail <- err
+						return
+					}
+					body, err := io.ReadAll(f)
+					if err != nil {
+						fail <- err
+						_ = f.Close()
+						return
+					}
+					if err := f.Close(); err != nil {
+						fail <- err
+						return
+					}
+					if string(body) != "the body of two.txt" {
+						fail <- errors.New("a file read through a busy filesystem came back wrong")
+						return
+					}
+				}
+			}()
+		}
+		wg.Wait()
+		close(fail)
+		for err := range fail {
+			t.Fatalf("reading from several goroutines: %v", err)
+		}
+	})
+}
+
+// Renaming onto a name that is already there replaces it, on both
+// filesystems. SFTP's own rename refuses it and renaming on this machine
+// does not, so a job that moved a file would do different things
+// depending on which end it landed on.
+func TestRenameReplacesWhatIsThere(t *testing.T) {
+	both(t, func(t *testing.T, tr tree) {
+		write(t, tr.real, "one.txt", "the new one")
+		write(t, tr.real, "two.txt", "the old one")
+
+		from := Join(tr.fs, tr.at, "one.txt")
+		to := Join(tr.fs, tr.at, "two.txt")
+		if err := tr.fs.Rename(from, to); err != nil {
+			t.Fatalf("Rename: %v", err)
+		}
+		got, err := os.ReadFile(filepath.Join(tr.real, "two.txt"))
+		if err != nil {
+			t.Fatalf("read it back: %v", err)
+		}
+		if string(got) != "the new one" {
+			t.Fatalf("the file holds %q, want what was moved onto it", got)
+		}
+		if _, err := os.Stat(filepath.Join(tr.real, "one.txt")); !errors.Is(err, fs.ErrNotExist) {
+			t.Error("the old name is still there")
+		}
+	})
+}
+
+// A name that is already taken says so in a way a caller can act on. A
+// browser asking "there is already a folder called that" can only do it
+// if both filesystems say the same thing.
+func TestMkdirSaysWhenTheNameIsTaken(t *testing.T) {
+	both(t, func(t *testing.T, tr tree) {
+		at := Join(tr.fs, tr.at, "made")
+		if err := tr.fs.Mkdir(at, 0o755); err != nil {
+			t.Fatalf("Mkdir: %v", err)
+		}
+		err := tr.fs.Mkdir(at, 0o755)
+		if err == nil {
+			t.Fatal("a directory that was already there was made again")
+		}
+		if !errors.Is(err, fs.ErrExist) {
+			t.Fatalf("error = %v, want it to say the name is taken", err)
+		}
+	})
+}
+
+// A directory is not a file. Refused where it is asked for, rather than
+// at the first read: a copy that got this far would already have emptied
+// the file it was copying to.
+func TestOpenRefusesADirectory(t *testing.T) {
+	both(t, func(t *testing.T, tr tree) {
+		if err := os.Mkdir(filepath.Join(tr.real, "sub"), 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		f, err := tr.fs.Open(Join(tr.fs, tr.at, "sub"))
+		if err == nil {
+			_ = f.Close()
+			t.Fatal("a directory opened as a file")
+		}
+		if !strings.Contains(err.Error(), "directory") {
+			t.Fatalf("error = %v, want it to say it is a directory", err)
+		}
+	})
+}
+
+// A link whose target cannot be read fails the listing rather than being
+// shown as a link to nowhere. A dangling link reads back perfectly well,
+// so a failure here means something else.
+func TestADanglingLinkIsStillReadable(t *testing.T) {
+	both(t, func(t *testing.T, tr tree) {
+		if err := os.Symlink("gone.txt", filepath.Join(tr.real, "dead")); err != nil {
+			t.Skipf("no link to test with: %v", err)
+		}
+
+		got, err := tr.fs.ReadDir(tr.at)
+		if err != nil {
+			t.Fatalf("ReadDir: %v", err)
+		}
+		dead := find(t, got, "dead")
+		if !dead.IsLink() {
+			t.Fatalf("the link is listed as %v", dead.Mode)
+		}
+		if dead.Link != "gone.txt" {
+			t.Fatalf("the link points at %q, want gone.txt", dead.Link)
+		}
+	})
+}
+
+// A directory that is there but cannot be read is a failure, which is
+// the case the whole rule is about: a browser showing nothing where it
+// was not allowed to look says the directory is empty.
+func TestReadDirSaysWhenItIsNotAllowed(t *testing.T) {
+	if os.PathSeparator != '/' {
+		t.Skip("a directory on Windows cannot be made unreadable with a mode")
+	}
+	both(t, func(t *testing.T, tr tree) {
+		shut := filepath.Join(tr.real, "shut")
+		if err := os.Mkdir(shut, 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		write(t, shut, "one.txt", "hello")
+		if err := os.Chmod(shut, 0o000); err != nil {
+			t.Fatalf("chmod: %v", err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(shut, 0o755) })
+
+		got, err := tr.fs.ReadDir(Join(tr.fs, tr.at, "shut"))
+		if err == nil {
+			t.Fatalf("a directory that may not be read listed %v", names(got))
+		}
+		if got != nil {
+			t.Fatalf("a failed listing returned %v as well as the failure", names(got))
+		}
+		if !errors.Is(err, fs.ErrPermission) {
+			t.Fatalf("error = %v, want it to say it is not allowed", err)
+		}
+	})
 }

@@ -78,9 +78,15 @@ type FS interface {
 	Open(path string) (io.ReadCloser, error)
 
 	// Create makes a file, replacing one that is there.
+	//
+	// The mode is what a new file gets, whatever the machine's umask
+	// would have said. A file that is already there keeps its own: a
+	// copy over an existing file changes what is in it, not who may
+	// read it.
 	Create(path string, mode fs.FileMode) (io.WriteCloser, error)
 
-	// Mkdir makes one directory. Its parent has to exist.
+	// Mkdir makes one directory. Its parent has to exist, and the mode
+	// is what it gets whatever the machine's umask would have said.
 	Mkdir(path string, mode fs.FileMode) error
 
 	// Remove takes away one file or one empty directory.
@@ -89,7 +95,10 @@ type FS interface {
 	// Rename moves a name to another, on the same filesystem.
 	Rename(from, to string) error
 
-	// Chmod sets the permissions.
+	// Chmod sets the permissions. Only the nine permission bits are
+	// used: setuid, setgid and the sticky bit are left alone, because a
+	// copy between two machines must not quietly hand out rights on the
+	// far one.
 	Chmod(path string, mode fs.FileMode) error
 
 	// Close lets go of whatever the filesystem is holding. A local one
@@ -97,8 +106,10 @@ type FS interface {
 	Close() error
 }
 
-// ErrNotSupported is returned by an operation a filesystem cannot do.
-var ErrNotSupported = errors.New("vfs: that cannot be done on this filesystem")
+// errIsDir says an operation was given a directory where it needed a
+// file. It is not exported: a caller tells one from the other with Stat,
+// and this is only what the failure says.
+var errIsDir = errors.New("it is a directory")
 
 // Join puts the parts of a path together with the filesystem's own
 // separator.
@@ -110,21 +121,47 @@ func Join(f FS, parts ...string) string {
 	sep := string(f.Sep())
 	var out string
 	for _, part := range parts {
-		part = strings.Trim(part, sep)
-		switch {
-		case part == "":
+		if part == "" {
 			continue
-		case out == "":
-			out = part
-		default:
-			out += sep + part
+		}
+		if out == "" {
+			// The first part that says anything decides where the path
+			// starts. Its leading separators are kept, so a POSIX root
+			// and a Windows share both survive.
+			out = trimTail(part, sep)
+			continue
+		}
+		next := strings.Trim(part, sep)
+		if next == "" {
+			continue
+		}
+		if strings.HasSuffix(out, sep) {
+			out += next
+		} else {
+			out += sep + next
 		}
 	}
-	// A POSIX path that started at the root keeps its leading separator.
-	if len(parts) > 0 && strings.HasPrefix(parts[0], sep) {
-		out = sep + out
-	}
 	return out
+}
+
+// trimTail takes the separators off the end of a path, unless that would
+// leave nothing at all -- the root -- or a bare drive letter, which on
+// Windows names the current directory on that drive rather than its top.
+func trimTail(path, sep string) string {
+	trimmed := strings.TrimRight(path, sep)
+	if trimmed == "" || isDrive(trimmed) {
+		return path
+	}
+	return trimmed
+}
+
+// isDrive reports whether a path is a bare Windows drive letter.
+func isDrive(path string) bool {
+	if len(path) != 2 || path[1] != ':' {
+		return false
+	}
+	c := path[0]
+	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
 }
 
 // Dir returns the directory a path is in, or the path itself when it is
@@ -132,26 +169,36 @@ func Join(f FS, parts ...string) string {
 func Dir(f FS, path string) string {
 	sep := f.Sep()
 	trimmed := strings.TrimRight(path, string(sep))
-	if trimmed == "" {
-		// The root itself, which is its own parent.
+	if trimmed == "" || isDrive(trimmed) {
+		// The root, or the top of a drive: its own parent.
 		return path
 	}
 	at := strings.LastIndexByte(trimmed, sep)
-	switch {
-	case at < 0:
+	if at < 0 {
 		// A bare name, with nowhere above it that this knows about.
 		return trimmed
-	case at == 0:
+	}
+	head := strings.TrimRight(trimmed[:at], string(sep))
+	switch {
+	case head == "":
 		// Straight under a POSIX root.
 		return string(sep)
+	case isDrive(head):
+		// Straight under a drive. The separator stays: "C:" on its own
+		// means the current directory on that drive.
+		return head + string(sep)
 	}
-	return trimmed[:at]
+	return head
 }
 
-// Base returns the last part of a path.
+// Base returns the last part of a path. The root is its own name,
+// because a pane sitting there has to have something to show.
 func Base(f FS, path string) string {
 	sep := f.Sep()
 	trimmed := strings.TrimRight(path, string(sep))
+	if trimmed == "" {
+		return path
+	}
 	if at := strings.LastIndexByte(trimmed, sep); at >= 0 {
 		return trimmed[at+1:]
 	}
@@ -175,16 +222,6 @@ func entryOf(name string, info fs.FileInfo, link string) Entry {
 		Mod:  info.ModTime(),
 		Link: link,
 	}
-}
-
-// joinClose puts a failure together with a failure to tidy up after it.
-// Both matter: the first says what went wrong, and the second says a
-// file was left open on the far end.
-func joinClose(err, closeErr error) error {
-	if closeErr == nil {
-		return err
-	}
-	return errors.Join(err, closeErr)
 }
 
 // wrap says which filesystem a failure happened on, so an error from a

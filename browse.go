@@ -147,6 +147,15 @@ func (a *app) newPane(f vfs.FS, b *browser) *files.Pane {
 			}
 		})
 	}
+	// Posted for the same reason: the dialog is opened from a click the
+	// pane is still handling. The directory is read now, because the pane
+	// may have moved on by the time the closure runs.
+	p.OnError = func(err error) {
+		at := p.At()
+		a.pump.post(func() {
+			a.reportError("Could not read a directory", fmt.Errorf("%s\n\n%w", at, err))
+		})
+	}
 	return p
 }
 

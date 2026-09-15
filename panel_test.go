@@ -912,12 +912,12 @@ func TestThePinnedRowGoesThroughTheCommands(t *testing.T) {
 	if ran != 1 {
 		t.Fatalf("the row ran the command %d times", ran)
 	}
-	f, ok := a.root.Modal().(*ui.Form)
+	n, ok := a.root.Modal().(*ui.Notice)
 	if !ok {
 		t.Fatalf("the failure showed %T, want a dialog", a.root.Modal())
 	}
-	if !strings.Contains(strings.Join(f.Lines, " "), "nothing to connect to") {
-		t.Fatalf("the dialog says %q", strings.Join(f.Lines, " "))
+	if !strings.Contains(n.Message(), "nothing to connect to") {
+		t.Fatalf("the dialog says %q", n.Message())
 	}
 }
 

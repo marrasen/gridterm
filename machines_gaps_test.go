@@ -53,14 +53,14 @@ func TestACommandThatFailsSaysSo(t *testing.T) {
 	if err := a.root.Commands.Run("conn.command"); err != nil {
 		t.Fatalf("the command reported a failure to nobody: %v", err)
 	}
-	f, ok := a.root.Modal().(*ui.Form)
+	n, ok := a.root.Modal().(*ui.Notice)
 	if !ok {
 		t.Fatalf("nothing was shown: %T", a.root.Modal())
 	}
-	if f.Title != "Run a command…" {
-		t.Errorf("the dialog is titled %q, want the command's own name", f.Title)
+	if n.Title != "Run a command…" {
+		t.Errorf("the dialog is titled %q, want the command's own name", n.Title)
 	}
-	if strings.TrimSpace(strings.Join(f.Lines, "")) == "" {
+	if strings.TrimSpace(n.Message()) == "" {
 		t.Fatal("the dialog says nothing about what went wrong")
 	}
 }
@@ -140,9 +140,9 @@ func TestANameCannotMeanTwoMachines(t *testing.T) {
 	waitForPanes(t, a, 2)
 
 	a.connectAs("box", serverConfig(t, two))
-	f := waitForDialog(t, a, "Could not connect to box")
-	if !strings.Contains(strings.Join(f.Lines, " "), "close it first") {
-		t.Fatalf("the refusal says %q", strings.Join(f.Lines, " "))
+	n := waitForNotice(t, a, "Could not connect to box")
+	if !strings.Contains(n.Message(), "close it first") {
+		t.Fatalf("the refusal says %q", n.Message())
 	}
 	if n := two.Conns(); n != 0 {
 		t.Fatalf("the other machine saw %d logins, want none", n)

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -413,5 +414,126 @@ func TestFontMenuLinesAreNamedByTheirCommands(t *testing.T) {
 	// Every line survived the drop that removes what cannot be named.
 	if got := len(menu.Items()); got != 3 {
 		t.Errorf("%d lines showing, want 3: a line was dropped as unnameable", got)
+	}
+}
+
+// refusedPath returns a path the operating system will refuse to read,
+// and will not merely call missing. A missing directory proves nothing
+// here: the font scan is right to pass one of those over.
+//
+// What counts as a refusal differs. Windows rejects a name with a bar in
+// it. Anywhere else a path through a regular file is not a directory, so
+// the file is made and its own path returned: it, and anything under it,
+// fails to be read.
+//
+// In a directory of its own, so that a caller listing a directory of its
+// own does not find this file in it.
+func refusedPath(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	if runtime.GOOS == "windows" {
+		return filepath.Join(dir, "no|such")
+	}
+	path := filepath.Join(dir, "notadirectory")
+	if err := os.WriteFile(path, nil, 0o644); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
+	return path
+}
+
+// unreadableFontDir points the font scan at directories the operating
+// system will refuse, and returns the part of the path the reason has to
+// name.
+func unreadableFontDir(t *testing.T) string {
+	t.Helper()
+	bad := refusedPath(t)
+	if runtime.GOOS == "windows" {
+		t.Setenv("windir", bad)
+		t.Setenv("localappdata", filepath.Join(t.TempDir(), "also|bad"))
+		return bad
+	}
+	// The scan reads the font directories under the user's home, so a
+	// home that cannot be read is two directories that cannot be read.
+	t.Setenv("HOME", bad)
+	return bad
+}
+
+// TestFontScanFailureReachesTheUser drives the scan the window runs and
+// checks the whole reason lands in one dialog.
+//
+// Two directories are made unreadable, because the user gets one dialog
+// however many of them failed.
+func TestFontScanFailureReachesTheUser(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withMenubar(t, a)
+	bad := unreadableFontDir(t)
+
+	a.startFontScan()
+	// The channel is buffered, so the goroutine finishes whether or not
+	// anyone is waiting. Then the draw loop picks it up the way it does.
+	got := <-a.families
+	if got.err == nil {
+		t.Fatalf("the scan of %s reported nothing wrong", bad)
+	}
+	a.families <- got
+	a.reapFontScan()
+
+	n, ok := a.root.Modal().(*ui.Notice)
+	if !ok {
+		t.Fatalf("top dialog = %T, want a notice about the fonts", a.root.Modal())
+	}
+	if len(a.modals) != 1 {
+		t.Errorf("%d dialogs opened, want one however many directories failed", len(a.modals))
+	}
+	if !n.Failure {
+		t.Error("the notice is not marked as a failure, so its title is not red")
+	}
+	if !strings.Contains(n.Message(), bad) {
+		t.Errorf("the notice does not name %s:\n%s", bad, n.Message())
+	}
+	if !strings.Contains(n.Message(), got.err.Error()) {
+		t.Errorf("the notice does not hold the whole reason:\n%s\nwant it to contain\n%s",
+			n.Message(), got.err.Error())
+	}
+}
+
+// The dialog says the list is of directories, not of fonts, and it
+// points at the Font menu only when there is something on it.
+func TestTheFontDialogSaysWhatTheListIsAndWhatIsLeft(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		families []glyph.Family
+		menu     bool
+	}{
+		{name: "some families were found",
+			families: fakeFamilies("Some Font"), menu: true},
+		{name: "none were", menu: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := newTestApp(t, 80, 24)
+			withMenubar(t, a)
+			reason := "/usr/share/fonts: permission denied"
+
+			deliverScan(a, scanned{families: tc.families, err: errors.New(reason)})
+
+			n, ok := a.root.Modal().(*ui.Notice)
+			if !ok {
+				t.Fatalf("top dialog = %T, want a notice about the fonts", a.root.Modal())
+			}
+			if n.Title != "Some font directories could not be read" {
+				t.Errorf("the notice is titled %q, want it to name directories", n.Title)
+			}
+			if !strings.Contains(n.Message(), "These directories could not be read:") {
+				t.Errorf("the notice does not say what the list is:\n%s", n.Message())
+			}
+			if !strings.Contains(n.Message(), reason) {
+				t.Errorf("the notice does not hold the reason:\n%s", n.Message())
+			}
+			said := "The fonts that were found are on the Font menu."
+			if got := strings.Contains(n.Message(), said); got != tc.menu {
+				t.Errorf("the notice points at the Font menu: %v, want %v\n%s",
+					got, tc.menu, n.Message())
+			}
+		})
 	}
 }

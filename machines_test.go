@@ -761,12 +761,12 @@ func TestACommandThatWillNotCloseSaysSo(t *testing.T) {
 	if a.panes[pane] == nil {
 		t.Fatal("the pane went with the failed close")
 	}
-	f, ok := a.root.Modal().(*ui.Form)
+	n, ok := a.root.Modal().(*ui.Notice)
 	if !ok {
 		t.Fatalf("the failure showed %T, want a dialog", a.root.Modal())
 	}
-	if !strings.Contains(strings.Join(f.Lines, " "), boom.Error()) {
-		t.Fatalf("the dialog says %q", strings.Join(f.Lines, " "))
+	if !strings.Contains(n.Message(), boom.Error()) {
+		t.Fatalf("the dialog says %q", n.Message())
 	}
 
 	// And it is not tried again on every frame: one failure, one dialog.

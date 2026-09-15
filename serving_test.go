@@ -280,9 +280,9 @@ func TestALostListenerIsSaidAndNotClaimed(t *testing.T) {
 	if a.server != nil {
 		t.Error("the window still says it is being served")
 	}
-	f := openDialog(t, a)
-	if text := strings.Join(f.Lines, "\n"); !strings.Contains(text, "gave up") {
-		t.Errorf("the user was not told why:\n%s", text)
+	n := openNotice(t, a)
+	if !strings.Contains(n.Message(), "gave up") {
+		t.Errorf("the user was not told why:\n%s", n.Message())
 	}
 }
 

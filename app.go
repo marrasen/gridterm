@@ -632,7 +632,7 @@ func (a *app) commands() {
 		ui.Command{ID: "font.reset", Title: "Reset font size", Run: func() error {
 			return a.setFontSize(defaultFontSize)
 		}},
-		ui.Command{ID: "edit.copy", Title: "Copy", Run: a.onFocused(
+		ui.Command{ID: copyCommand, Title: "Copy", Run: a.onFocused(
 			func(t *term.Terminal) error { t.Copy(); return nil })},
 		ui.Command{ID: "edit.paste", Title: "Paste", Run: a.onFocused(
 			func(t *term.Terminal) error { t.PasteClipboard(); return nil })},
@@ -701,12 +701,12 @@ func (a *app) commands() {
 	// to the program, so copy cannot live there.
 	keys := ui.NewKeymap()
 	keys.MustBind(map[ui.Chord]string{
-		{Key: input.KeyC, Mods: input.ModCtrl | input.ModShift}: "edit.copy",
+		{Key: input.KeyC, Mods: input.ModCtrl | input.ModShift}: copyCommand,
 		{Key: input.KeyV, Mods: input.ModCtrl | input.ModShift}: "edit.paste",
 		// The X11 spelling of paste, which plenty of people have in
 		// their fingers and no terminal has a meaning for.
 		{Key: input.KeyInsert, Mods: input.ModShift}: "edit.paste",
-		{Key: input.KeyInsert, Mods: input.ModCtrl}:  "edit.copy",
+		{Key: input.KeyInsert, Mods: input.ModCtrl}:  copyCommand,
 		{Key: input.KeyEquals, Mods: input.ModCtrl}:  "font.increase",
 		// Ctrl+plus is Ctrl+Shift+= on a US layout, and the shift shows
 		// up in the modifiers, so the obvious way to ask for a bigger

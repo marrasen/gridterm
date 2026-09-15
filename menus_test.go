@@ -1,10 +1,12 @@
 package main
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/input"
+	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/render"
 	"github.com/marrasen/gridterm/ui"
 )
@@ -393,5 +395,45 @@ func TestMenuTakesKeysFromTheTerminal(t *testing.T) {
 
 	if menu.SelectedIndex() == before {
 		t.Error("the arrow key went past the menu to the pane underneath")
+	}
+}
+
+// A notice posted while a menu is down outlives the next rebuild of that
+// menu. The server list is rebuilt whenever a connection is made or
+// lost, and rebuilding closes the drop-down along with everything
+// stacked over it.
+func TestANoticeSurvivesTheServerMenuBeingRebuilt(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	bar := withMenubar(t, a)
+	a.refreshServers()
+	at := -1
+	for i, def := range bar.Menus {
+		if def.Title == "Servers" {
+			at = i
+		}
+	}
+	if at < 0 {
+		t.Fatal("there is no Servers menu to drop down")
+	}
+	if !bar.Open(at) {
+		t.Fatal("the Servers menu would not open")
+	}
+
+	a.reportError("Could not open it", errors.New("the machine went away"))
+	n := openNotice(t, a)
+
+	// A saved machine appears, so the menu really is rebuilt rather than
+	// left as it was.
+	if err := a.book.Put(remote.Host{Name: "margit", Address: "margit.skalarit.net"}, ""); err != nil {
+		t.Fatalf("saving a server: %v", err)
+	}
+	a.refreshServers()
+
+	if got := a.root.Modal(); got != ui.Widget(n) {
+		t.Fatalf("the top dialog is %T, want the notice still", got)
+	}
+	if !menuNames(a).has("Connect to margit") {
+		t.Error("the menu was not rebuilt, so nothing was tested")
 	}
 }

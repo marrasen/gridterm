@@ -176,12 +176,12 @@ func TestAFailedCloseIsShownInTheWindow(t *testing.T) {
 	for _, err := range a.takeCloseErrs() {
 		a.reportError("Could not let go of a filesystem", err)
 	}
-	f, ok := a.root.Modal().(*ui.Form)
+	n, ok := a.root.Modal().(*ui.Notice)
 	if !ok {
 		t.Fatalf("the failure showed %T, want a dialog", a.root.Modal())
 	}
-	if !strings.Contains(strings.Join(f.Lines, " "), boom.Error()) {
-		t.Fatalf("the dialog says %q", strings.Join(f.Lines, " "))
+	if !strings.Contains(n.Message(), boom.Error()) {
+		t.Fatalf("the dialog says %q", n.Message())
 	}
 	// And it is only shown once.
 	if got := a.takeCloseErrs(); len(got) != 0 {

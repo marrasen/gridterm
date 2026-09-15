@@ -1,6 +1,7 @@
 package main
 
 import (
+	"image/color"
 	"os"
 	"path/filepath"
 	"strings"
@@ -8,6 +9,7 @@ import (
 	"time"
 
 	"github.com/marrasen/gridterm/conns"
+	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/input"
 	"github.com/marrasen/gridterm/internal/sshtest"
 	"github.com/marrasen/gridterm/ui"
@@ -610,4 +612,151 @@ func TestGoToSendsAFilePaneAnywhere(t *testing.T) {
 	if len(f.Field("Path").Options) < 2 {
 		t.Errorf("it offers %v, want where it is now and the roots", f.Field("Path").Options)
 	}
+}
+
+// paneDrawn reads a pane back off a grid of its own, one string per row.
+func paneDrawn(p *files.Pane, cols, rows int) []string {
+	g := grid.New(cols, rows, color.RGBA{}, color.RGBA{})
+	p.Layout(ui.Size{Cols: cols, Rows: rows})
+	p.Draw(g.View())
+	out := make([]string, 0, rows)
+	for y := 0; y < rows; y++ {
+		var b strings.Builder
+		for x := 0; x < cols; x++ {
+			if c := g.At(x, y); c.Width != 0 {
+				b.WriteRune(c.Rune)
+			}
+		}
+		out = append(out, strings.TrimRight(b.String(), " "))
+	}
+	return out
+}
+
+// noNoticeOpens runs the pump for a moment and fails if a dialog turns
+// up while it does.
+func noNoticeOpens(t *testing.T, a *testApp, what string) {
+	t.Helper()
+	for i := 0; i < 100; i++ {
+		a.pump.run()
+		if got := a.root.Modal(); got != nil {
+			t.Fatalf("%s opened %T", what, got)
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+// dismissNotice puts the dialog on top away with Escape, the way the
+// user does.
+func dismissNotice(t *testing.T, a *testApp) {
+	t.Helper()
+	if _, err := a.root.HandleKey(press(input.KeyEscape, 0)); err != nil {
+		t.Fatalf("Escape: %v", err)
+	}
+	if got := a.root.Modal(); got != nil {
+		t.Fatalf("Escape left %T on the stack", got)
+	}
+}
+
+// A directory that cannot be read leaves the listing that worked on
+// screen and says so on one short row. The reason is a dialog of its
+// own, shown at once in the pane the user is working in: trimming it
+// into the row was losing the part that said what to do.
+func TestAFilePaneWithTheKeysShowsWhyAReadFailed(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+
+	b, left, _ := onlyBrowser(t, a)
+	putFile(t, left, "one.txt", "the body")
+	p := b.view.Panes()[0]
+	p.Open(left)
+	waitFor(t, a, "the listing", func() bool { return !p.Busy() })
+
+	bad := refusedPath(t)
+	p.Open(bad)
+	waitFor(t, a, "the read to fail", func() bool { return !p.Busy() && p.Err() != nil })
+
+	// The names that worked are still there to act on.
+	got := p.Entries()
+	if len(got) != 1 || got[0].Name != "one.txt" {
+		t.Fatalf("the pane shows %v, want what it had", got)
+	}
+	// The row says what happened rather than a fragment of why, and
+	// offers the rest.
+	rows := paneDrawn(p, 40, 10)
+	if !strings.Contains(rows[2], "could not be read") {
+		t.Fatalf("the pane does not say the read failed:\n%s", strings.Join(rows, "\n"))
+	}
+	if !strings.Contains(rows[2], "click to see why") {
+		t.Errorf("the row does not offer the reason:\n%s", rows[2])
+	}
+	if strings.Contains(strings.Join(rows, "\n"), p.Err().Error()) {
+		t.Error("the whole reason is on the row, so it is being trimmed again")
+	}
+
+	// The user asked for that directory, so the reason arrives without
+	// their having to ask for it again.
+	n := openNotice(t, a)
+	if n.Title != "Could not read a directory" {
+		t.Errorf("the dialog is titled %q", n.Title)
+	}
+	if !strings.HasPrefix(n.Message(), bad+"\n") {
+		t.Errorf("the dialog does not start with the directory:\n%s", n.Message())
+	}
+	if !strings.Contains(n.Message(), p.Err().Error()) {
+		t.Errorf("the dialog says\n%s\nwant it to hold the whole of\n%s",
+			n.Message(), p.Err().Error())
+	}
+	if !n.Failure {
+		t.Error("the dialog is not marked as a failure, so its title is not red")
+	}
+
+	// And the row brings it back once it has been read and put away.
+	dismissNotice(t, a)
+	if _, err := a.root.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft, Col: 4, Row: 2,
+	}); err != nil {
+		t.Fatalf("clicking the row: %v", err)
+	}
+	if again := openNotice(t, a); again.Message() != n.Message() {
+		t.Errorf("the row brought back\n%s\nwant\n%s", again.Message(), n.Message())
+	}
+}
+
+// A pane nobody is looking at waits for the keys before it says why: a
+// dialog on top of what somebody is doing in the other pane is the
+// window getting in their way. It says so once, not on every visit.
+func TestAFilePaneWithoutTheKeysWaitsToSayWhyAReadFailed(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+
+	b, _, _ := onlyBrowser(t, a)
+	other := b.view.Panes()[1]
+	if other.Focused() {
+		t.Fatal("the second pane has the keys, so there is no waiting to test")
+	}
+
+	other.Open(refusedPath(t))
+	waitFor(t, a, "the read to fail", func() bool { return !other.Busy() && other.Err() != nil })
+	noNoticeOpens(t, a, "a failure in the pane without the keys")
+
+	// Tab moves the keys to it, and that is when it says why.
+	if _, err := a.root.HandleKey(press(input.KeyTab, 0)); err != nil {
+		t.Fatalf("Tab: %v", err)
+	}
+	if !other.Focused() {
+		t.Fatal("Tab did not move the keys to the other pane")
+	}
+	openNotice(t, a)
+	dismissNotice(t, a)
+
+	// Leaving and coming back is not another failure.
+	for i := 0; i < 2; i++ {
+		if _, err := a.root.HandleKey(press(input.KeyTab, 0)); err != nil {
+			t.Fatalf("Tab: %v", err)
+		}
+	}
+	if !other.Focused() {
+		t.Fatal("two more Tabs did not come back to the pane that failed")
+	}
+	noNoticeOpens(t, a, "coming back to a pane whose reason has been read")
 }

@@ -49,13 +49,6 @@ func (a *app) reapFontScan() {
 	default:
 		return
 	}
-	if got.err != nil {
-		// Reported and not fatal. A font directory that will not open
-		// costs the user the fonts in it; it is not a reason to take down
-		// a window with shells running in it. Whatever was found is still
-		// offered, and the failure is on the log to explain the gap.
-		a.logError(fmt.Errorf("reading the system fonts: %w", got.err))
-	}
 	a.installed = got.families
 
 	cmds := make([]ui.Command, 0, len(got.families)+1)
@@ -87,6 +80,24 @@ func (a *app) reapFontScan() {
 		registered = append(registered, cmd)
 	}
 	a.refreshFontMenu(registered)
+	a.reportFontScan(got.err)
+}
+
+// reportFontScan tells the user which font directories could not be read
+// and why, once the scan is over.
+//
+// Carrying on with the fonts that were found is the fallback Marcus
+// approved by asking for this dialog.
+func (a *app) reportFontScan(err error) {
+	if err == nil {
+		return
+	}
+	a.logError(fmt.Errorf("reading the system fonts: %w", err))
+	said := "These directories could not be read:\n\n" + err.Error()
+	if len(a.installed) > 0 {
+		said += "\n\nThe fonts that were found are on the Font menu."
+	}
+	a.showNotice("Some font directories could not be read", said, true)
 }
 
 // fontCommandID names the command that switches to a family. Family

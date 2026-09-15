@@ -82,22 +82,22 @@ func (a *app) openSessionTab(sess session.Session, host string, kind conns.Kind,
 // from a goroutine with nowhere to return it.
 //
 // A dialog rather than a log line: the user asked for this and is
-// waiting for it, so a message they never see is no message at all.
+// waiting for it, so a message they never see is no message at all. The
+// whole of the message goes in, because the part that was being cut off
+// was twice the part that said what to do about it.
 func (a *app) reportError(title string, err error) {
 	if errors.Is(err, context.Canceled) {
 		// They cancelled it themselves and know what happened.
 		return
 	}
-	f := a.newConfirm(title, wrapLines(err.Error(), errorLineWidth))
-	f.AddButton(ui.Button{Title: "Close"})
-	a.showForm(f, nil)
+	a.showNotice(title, err.Error(), true)
 }
 
-// errorLineWidth is how wide a wrapped error message is allowed to get.
-// It matches what a dialog will show without being trimmed.
+// errorLineWidth is how wide a line of a confirmation dialog is allowed
+// to get. It matches what a dialog will show without being trimmed.
 const errorLineWidth = 52
 
-// wrapLines breaks a message at spaces so a long error reads as a
+// wrapLines breaks a message at spaces so a long question reads as a
 // paragraph rather than being cut off at the edge of the box.
 func wrapLines(s string, width int) []string {
 	var lines []string

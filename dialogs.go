@@ -3,6 +3,7 @@ package main
 import (
 	"image/color"
 
+	"github.com/marrasen/gridterm/input"
 	"github.com/marrasen/gridterm/ui"
 )
 
@@ -65,6 +66,74 @@ func (a *app) showForm(f *ui.Form, onHidden func()) func() {
 	// what takes it away.
 	f.SetClose(dismiss)
 	return dismiss
+}
+
+// noticeStyle colours a notice in the window's own colours.
+//
+// The background has no alpha for the same reason a form's has none: the
+// frosted panel behind the dialog is the background.
+func (a *app) noticeStyle() ui.NoticeStyle {
+	return ui.NoticeStyle{
+		FG:      a.colours.FG,
+		BG:      color.RGBA{},
+		TitleFG: a.colours.FG,
+		// Red, because a title saying something failed has to read as a
+		// failure before it is read as words.
+		FailureFG:   a.colours.ANSI[1],
+		SelectionFG: a.colours.FG,
+		SelectionBG: a.colours.Selection,
+		ButtonFG:    a.colours.FG,
+		ButtonBG:    a.colours.ANSI[0],
+		ActiveFG:    a.colours.BG,
+		ActiveBG:    a.colours.FG,
+		BorderFG:    a.colours.ANSI[8],
+		ShadowBG:    shadow,
+	}
+}
+
+// newNotice builds a dialog showing a message whole, in the window's
+// colours and able to reach the clipboard.
+func (a *app) newNotice(title, message string) *ui.Notice {
+	n := ui.NewNotice(title, message, nil)
+	n.Style = a.noticeStyle()
+	n.Copy = a.clip.set
+	// The dialog swallows every other key, so it has to be told which
+	// one copies: the toolkit cannot see the window's keymap.
+	n.CopyChord = a.copyChord
+	return n
+}
+
+// copyCommand is the command a copy chord runs.
+const copyCommand = "edit.copy"
+
+// copyChord reports whether a key press is bound to copy, so a dialog
+// holding text can answer that chord itself.
+func (a *app) copyChord(ev input.Event) bool {
+	c := ui.ChordOf(ev)
+	for _, keys := range []*ui.Keymap{a.root.Accelerators, a.root.Keys} {
+		if keys == nil {
+			continue
+		}
+		if id, ok := keys.Lookup(c); ok {
+			return id == copyCommand
+		}
+	}
+	return false
+}
+
+// showNotice puts a message on the modal stack. failure draws the title
+// in the error colour.
+//
+// An open drop-down goes first, because rebuilding a menu closes the
+// drop-down and takes everything stacked above it away with it.
+func (a *app) showNotice(title, message string, failure bool) *ui.Notice {
+	if a.bar != nil {
+		a.bar.Close()
+	}
+	n := a.newNotice(title, message)
+	n.Failure = failure
+	n.SetClose(a.showModal(n, nil))
+	return n
 }
 
 // newField builds a field that can be pasted into, which is how a long

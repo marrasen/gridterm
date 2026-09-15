@@ -51,6 +51,15 @@ func (s Sort) String() string {
 // up is the name of the row that goes to the directory above.
 const up = ".."
 
+// errorRow is the row of the head a failed read is reported on, and
+// unreadable what it says. The reason itself is too long for a row, so
+// the row offers it instead and OnError shows it.
+const (
+	errorRow       = 2
+	unreadable     = "could not be read"
+	unreadableHint = unreadable + " — click to see why"
+)
+
 // Style colours a pane.
 type Style struct {
 	// FG and BG are an ordinary row, and the whole pane's background.
@@ -106,6 +115,13 @@ type Pane struct {
 	// and this package has none.
 	OnGoTo func()
 
+	// OnError is called with the whole of a failed read: once when the
+	// pane that has the keys fails, or when a pane whose read failed gains
+	// them, and again whenever the row reporting it is clicked. A nil one
+	// takes the offer off that row: showing an error needs a dialog, and
+	// this package has none.
+	OnError func(err error)
+
 	// Read is how a listing is fetched. It runs the work somewhere else
 	// and calls back with what it found, on the goroutine that draws.
 	//
@@ -118,9 +134,11 @@ type Pane struct {
 	sort Sort
 
 	// entries is what is in the directory, in the order shown, and err
-	// is why the last read failed.
+	// is why the last read failed. told says the reason has been shown
+	// already, so one failure produces one dialog.
 	entries []vfs.Entry
 	err     error
+	told    bool
 
 	// reading counts the reads on their way back, so the pane can say it
 	// is waiting, and asked is which read is the one being waited for:
@@ -245,12 +263,12 @@ func (p *Pane) Reload() {
 
 // show puts a listing in the pane.
 //
-// A read that failed leaves the names that were there. The user is
-// looking at a directory they can still act on, and replacing it with
-// nothing would say the directory is empty.
+// A read that failed leaves the names that were there, which is the
+// fallback Marcus approved: the whole of the error goes to OnError, and
+// the row that reports it brings it back.
 func (p *Pane) show(entries []vfs.Entry, err error) {
 	was := p.head()
-	p.err = err
+	p.err, p.told = err, false
 	if err == nil {
 		p.entries = entries
 		p.order()
@@ -276,6 +294,20 @@ func (p *Pane) show(entries []vfs.Entry, err error) {
 		// put it, and it has to still be somewhere they can see.
 		p.list.Reveal()
 	}
+	// Straight away in the pane the user asked in; SetFocus does it for
+	// a pane they are not looking at.
+	if p.Focused() {
+		p.tell()
+	}
+}
+
+// tell offers the reason the last read failed, once per failure.
+func (p *Pane) tell() {
+	if p.err == nil || p.told || p.OnError == nil {
+		return
+	}
+	p.told = true
+	p.OnError(p.err)
 }
 
 // SetSort changes the order and redraws.
@@ -509,12 +541,13 @@ func (p *Pane) Layout(size ui.Size) {
 }
 
 // head is how many rows the pane uses above the listing: the machine,
-// the directory, and the reason the last read failed when there is one.
+// the directory, and the row that reports a failed read when there is
+// one.
 func (p *Pane) head() int {
 	if p.err != nil {
-		return 3
+		return errorRow + 1
 	}
-	return 2
+	return errorRow
 }
 
 // Draw paints the pane.
@@ -545,8 +578,14 @@ func (p *Pane) Draw(v grid.View) {
 	if rows > 1 {
 		line(v, 1, cols, trimLeft(where, cols), p.Style.PathFG, p.Style.BG, 0)
 	}
-	if p.err != nil && rows > 2 {
-		line(v, 2, cols, trimLeft(p.err.Error(), cols), p.Style.ErrorFG, p.Style.BG, 0)
+	if p.err != nil && rows > errorRow {
+		// The row says what happened, not why: a reason trimmed to the
+		// width of a pane loses the part that matters.
+		said := unreadable
+		if p.OnError != nil {
+			said = unreadableHint
+		}
+		line(v, errorRow, cols, trimTail(said, cols), p.Style.ErrorFG, p.Style.BG, 0)
 	}
 	if rows > p.head() {
 		// The list fills what is under the head, and keeps its own copy
@@ -668,8 +707,14 @@ func (p *Pane) findFrom(want string) (any, bool) {
 const findPause = time.Second
 
 // SetFocus passes the focus on to the listing, so the bar shows where
-// the keys are going.
-func (p *Pane) SetFocus(on bool) { p.list.SetFocus(on) }
+// the keys are going, and offers the reason a read failed while this
+// pane did not have them.
+func (p *Pane) SetFocus(on bool) {
+	p.list.SetFocus(on)
+	if on {
+		p.tell()
+	}
+}
 
 // Focused reports whether the pane has the keys.
 func (p *Pane) Focused() bool { return p.list.Focused() }
@@ -736,6 +781,10 @@ func (p *Pane) HandleKey(ev input.Event) (bool, error) {
 func (p *Pane) HandleMouse(ev input.MouseEvent) (bool, error) {
 	head := p.head()
 	if ev.Row < head {
+		if p.err != nil && ev.Row == errorRow && p.OnError != nil &&
+			ev.Kind == input.MousePress && ev.Button == input.MouseLeft {
+			p.OnError(p.err)
+		}
 		return true, nil
 	}
 	ev.Row -= head

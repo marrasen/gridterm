@@ -383,9 +383,9 @@ func TestATunnelThatStopsOnItsOwnIsTakenAway(t *testing.T) {
 	if got := row.State(time.Now()); got != meter.Closed {
 		t.Fatalf("the row is %v after the tunnel stopped, want closed", got)
 	}
-	f := waitForDialogPrefix(t, a, "The tunnel")
-	if !strings.Contains(strings.Join(f.Lines, " "), "out of handles") {
-		t.Fatalf("the dialog says %q, want the reason in it", f.Lines)
+	n := waitForNoticePrefix(t, a, "The tunnel")
+	if !strings.Contains(n.Message(), "out of handles") {
+		t.Fatalf("the dialog says %q, want the reason in it", n.Message())
 	}
 	// The row can still be cleared, and clearing it is all that is left.
 	if err := row.Close(); err != nil {
@@ -503,8 +503,8 @@ func TestAStreamThatFailsIsReportedAndTheTunnelStays(t *testing.T) {
 	}
 	defer c.Close()
 
-	f := waitForDialogPrefix(t, a, "Trouble on the tunnel")
-	if strings.TrimSpace(strings.Join(f.Lines, "")) == "" {
+	n := waitForNoticePrefix(t, a, "Trouble on the tunnel")
+	if strings.TrimSpace(n.Message()) == "" {
 		t.Fatal("the failure was reported with no reason in it")
 	}
 	if len(a.tunnels) != 1 {

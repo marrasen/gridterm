@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"image/color"
 	"strings"
 	"testing"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/marrasen/gridterm/conns"
+	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/input"
 	"github.com/marrasen/gridterm/internal/sshtest"
 	"github.com/marrasen/gridterm/remote"
@@ -578,4 +580,229 @@ func TestThePaneThatSaysWhyIsNotReapedAway(t *testing.T) {
 		return
 	}
 	t.Error("there is no pane for the machine that could not be reached")
+}
+
+// awaitNotice runs the pump until a notice the test is after is on the
+// stack. A failure is shown as a notice rather than a form, because it
+// is read and copied rather than answered.
+func awaitNotice(t *testing.T, a *testApp, what string, want func(*ui.Notice) bool) *ui.Notice {
+	t.Helper()
+	deadline := time.Now().Add(waitBudget)
+	for time.Now().Before(deadline) {
+		a.pump.run()
+		if n, is := a.root.Modal().(*ui.Notice); is && want(n) {
+			return n
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("no notice opened %s", what)
+	return nil
+}
+
+// openNotice waits for any notice.
+func openNotice(t *testing.T, a *testApp) *ui.Notice {
+	t.Helper()
+	return awaitNotice(t, a, "at all", func(*ui.Notice) bool { return true })
+}
+
+// waitForNotice waits for one with a title.
+func waitForNotice(t *testing.T, a *testApp, title string) *ui.Notice {
+	t.Helper()
+	return awaitNotice(t, a, "titled "+title, func(n *ui.Notice) bool { return n.Title == title })
+}
+
+// waitForNoticePrefix waits for one whose title starts with a prefix,
+// for a title that names the thing that failed.
+func waitForNoticePrefix(t *testing.T, a *testApp, prefix string) *ui.Notice {
+	t.Helper()
+	return awaitNotice(t, a, "whose title starts with "+prefix, func(n *ui.Notice) bool {
+		return strings.HasPrefix(n.Title, prefix)
+	})
+}
+
+// A failure the user cannot retype has to be readable whole and copyable
+// with the window's own copy chord.
+func TestReportErrorShowsTheWholeMessageAndCopiesIt(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	long := "could not open " + strings.Repeat("a/long/path/", 30) + "file: permission denied"
+
+	a.reportError("Could not open it", errors.New(long))
+
+	n := openNotice(t, a)
+	if n.Message() != long {
+		t.Errorf("the dialog holds %d characters, want the whole %d", len(n.Message()), len(long))
+	}
+	if !n.Failure {
+		t.Error("the dialog is not marked as a failure, so its title is not red")
+	}
+
+	if _, err := a.root.HandleKey(press(input.KeyC, input.ModCtrl|input.ModShift)); err != nil {
+		t.Fatalf("the copy chord: %v", err)
+	}
+
+	waitUntil(t, func() bool { return a.copiedText() == long })
+}
+
+// noticeRow reads one row of a notice back off a grid of its own, the
+// way the window draws a dialog onto its own layer.
+func noticeRow(a *testApp, n *ui.Notice, y int) string {
+	g := grid.New(a.lastSize[0], a.lastSize[1], color.RGBA{}, color.RGBA{})
+	ui.DrawApart(n, g.View())
+	var b strings.Builder
+	for x := 0; x < a.lastSize[0]; x++ {
+		if c := g.At(x, y); c.Width != 0 {
+			b.WriteRune(c.Rune)
+		}
+	}
+	return b.String()
+}
+
+// clickNoticeButton presses a button where it is drawn, through the
+// window's own mouse routing. The column comes off the grid rather than
+// from the layout, which is the code the hit test uses.
+func clickNoticeButton(t *testing.T, a *testApp, n *ui.Notice, label string) {
+	t.Helper()
+	box := n.Box()
+	row := box.Y + box.Rows - 2
+	at := strings.Index(noticeRow(a, n, row), label)
+	if at < 0 {
+		t.Fatalf("the button %q is not drawn on row %d: %q", label, row, noticeRow(a, n, row))
+	}
+	if _, err := a.root.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft, Col: at, Row: row,
+	}); err != nil {
+		t.Fatalf("clicking %q: %v", label, err)
+	}
+}
+
+// A notice has to be dismissable. Left up, it sits over the window for
+// ever and nothing behind it can be reached.
+func TestANoticeIsDismissedByEscapeAndByItsOKButton(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		dismiss func(*testing.T, *testApp, *ui.Notice)
+	}{
+		{name: "Escape", dismiss: func(t *testing.T, a *testApp, _ *ui.Notice) {
+			if _, err := a.root.HandleKey(press(input.KeyEscape, 0)); err != nil {
+				t.Fatalf("Escape: %v", err)
+			}
+		}},
+		{name: "the OK button", dismiss: func(t *testing.T, a *testApp, n *ui.Notice) {
+			clickNoticeButton(t, a, n, "OK")
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := newTestApp(t, 80, 24)
+			withDialogs(t, a)
+			a.reportError("Could not open it", errors.New("the machine went away"))
+			n := openNotice(t, a)
+
+			tc.dismiss(t, a, n)
+
+			if got := a.root.Modal(); got != nil {
+				t.Errorf("%T is still the top dialog, want the window back", got)
+			}
+			if len(a.modals) != 0 {
+				t.Errorf("%d dialogs are still on the stack, want none", len(a.modals))
+			}
+		})
+	}
+}
+
+// A notice covers the window, so the window's own shortcuts stop at it.
+// Otherwise a key aimed at the dialog closes a pane behind it.
+func TestANoticeTakesTheShortcutsWhileItIsUp(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withMenubar(t, a)
+	panes := len(a.panes)
+	a.reportError("Could not open it", errors.New("the machine went away"))
+	n := openNotice(t, a)
+
+	for _, ev := range []input.Event{
+		press(input.KeyV, input.ModCtrl|input.ModShift), // paste into the shell
+		press(input.KeyW, input.ModCtrl|input.ModShift), // close the pane
+		press(input.KeyF10, 0),                          // open the menu bar
+		press(input.KeyK, input.ModCtrl),                // open the palette
+	} {
+		if _, err := a.root.HandleKey(ev); err != nil {
+			t.Fatalf("%v: %v", ui.ChordOf(ev), err)
+		}
+	}
+
+	if got := a.shells[0].sentText(); got != "" {
+		t.Errorf("the shell behind the dialog received %q", got)
+	}
+	if len(a.panes) != panes {
+		t.Errorf("%d panes are left of %d: one was closed behind the dialog", len(a.panes), panes)
+	}
+	if a.bar.OpenIndex() >= 0 {
+		t.Error("the menu bar dropped a menu over the dialog")
+	}
+	if got := a.root.Modal(); got != ui.Widget(n) {
+		t.Errorf("the top dialog is %T, want the notice still", got)
+	}
+	if len(a.modals) != 1 {
+		t.Errorf("%d dialogs are stacked up, want the notice alone", len(a.modals))
+	}
+}
+
+// The copy chord is the one shortcut a notice answers: an error nobody
+// can retype is there to be copied.
+func TestTheCopyChordsCopyFromTheNoticeOnTop(t *testing.T) {
+	for _, chord := range []input.Event{
+		press(input.KeyC, input.ModCtrl|input.ModShift),
+		press(input.KeyInsert, input.ModCtrl),
+	} {
+		t.Run(ui.ChordOf(chord).String(), func(t *testing.T) {
+			a := newTestApp(t, 80, 24)
+			withDialogs(t, a)
+			a.reportError("Could not open it", errors.New("the machine went away"))
+			openNotice(t, a)
+
+			if _, err := a.root.HandleKey(chord); err != nil {
+				t.Fatalf("the copy chord: %v", err)
+			}
+
+			waitUntil(t, func() bool { return a.copiedText() == "the machine went away" })
+		})
+	}
+}
+
+// With no dialog open the same chord copies what is selected in the
+// pane that has the keys.
+func TestTheCopyChordCopiesTheTerminalSelectionWithNoDialogOpen(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	pane := a.focusedTerminal()
+	if pane == nil {
+		t.Fatal("no pane has the keys")
+	}
+	a.shells[0].out <- []byte("hello there")
+	// Drawn each time round: the bytes are on their way from the shell,
+	// and the pane only puts what it has read on its grid when it paints.
+	waitUntil(t, func() bool {
+		g := grid.New(a.lastSize[0], a.lastSize[1], color.RGBA{}, color.RGBA{})
+		pane.Layout(ui.Size{Cols: a.lastSize[0], Rows: a.lastSize[1]})
+		pane.Draw(g.View())
+		return g.At(0, 0).Rune == 'h'
+	})
+	for _, ev := range []input.MouseEvent{
+		{Kind: input.MousePress, Button: input.MouseLeft, Col: 0, Row: 0},
+		{Kind: input.MouseMove, Button: input.MouseLeft, Col: 4, Row: 0},
+		{Kind: input.MouseRelease, Button: input.MouseLeft, Col: 4, Row: 0},
+	} {
+		if _, err := pane.HandleMouse(ev); err != nil {
+			t.Fatalf("the drag: %v", err)
+		}
+	}
+	if got := pane.SelectionText(); got != "hello" {
+		t.Fatalf("the pane has %q selected, want the word the chord should copy", got)
+	}
+
+	if _, err := a.root.HandleKey(press(input.KeyC, input.ModCtrl|input.ModShift)); err != nil {
+		t.Fatalf("the copy chord: %v", err)
+	}
+
+	waitUntil(t, func() bool { return a.copiedText() == "hello" })
 }

@@ -245,10 +245,70 @@ func TestPaneKeepsWhatItHadWhenAReadFails(t *testing.T) {
 	if got := names(p); len(got) != 1 || got[0] != "one.txt" {
 		t.Fatalf("it shows %v, want what it had", got)
 	}
-	// And it says so on screen.
+	// And it says so on screen, short: the reason itself is behind the
+	// row rather than trimmed into it.
 	lines := drawn(p, 40, 8)
-	if !strings.Contains(strings.Join(lines, "\n"), "went away") {
-		t.Fatalf("the pane does not say why:\n%s", strings.Join(lines, "\n"))
+	if !strings.Contains(strings.Join(lines, "\n"), unreadable) {
+		t.Fatalf("the pane does not say the read failed:\n%s", strings.Join(lines, "\n"))
+	}
+	// With nobody wired up to show the reason, the row does not offer it:
+	// a click that did nothing would be worse than no offer at all.
+	if strings.Contains(strings.Join(lines, "\n"), "click to see why") {
+		t.Errorf("the row offers a reason nothing can show:\n%s", strings.Join(lines, "\n"))
+	}
+}
+
+// The reason is shown at once in the pane the user is working in, and it
+// is shown once: they asked for that directory and are waiting for it.
+func TestPaneWithTheKeysShowsWhyAReadFailedStraightAway(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "one.txt", "one")
+
+	p := alone(t, dir)
+	var shown []error
+	p.OnError = func(err error) { shown = append(shown, err) }
+
+	want := errors.New("the machine went away")
+	p.Read = func(_ vfs.FS, _ string, then func([]vfs.Entry, error)) { then(nil, want) }
+	p.Reload()
+
+	if len(shown) != 1 || !errors.Is(shown[0], want) {
+		t.Fatalf("the pane showed %v, want the reason once", shown)
+	}
+	// And the row now offers it again.
+	lines := drawn(p, 40, 8)
+	if !strings.Contains(strings.Join(lines, "\n"), unreadableHint) {
+		t.Errorf("the row does not offer the reason:\n%s", strings.Join(lines, "\n"))
+	}
+}
+
+// A pane without the keys waits: a dialog on top of what somebody is
+// doing in the other pane is the window getting in their way.
+func TestPaneWithoutTheKeysWaitsForThemToShowWhyAReadFailed(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "one.txt", "one")
+
+	p := here(t, dir)
+	var shown []error
+	p.OnError = func(err error) { shown = append(shown, err) }
+
+	want := errors.New("the machine went away")
+	p.Read = func(_ vfs.FS, _ string, then func([]vfs.Entry, error)) { then(nil, want) }
+	p.Reload()
+
+	if len(shown) != 0 {
+		t.Fatalf("a pane nobody is looking at showed %v", shown)
+	}
+
+	p.SetFocus(true)
+	if len(shown) != 1 || !errors.Is(shown[0], want) {
+		t.Fatalf("taking the keys showed %v, want the reason once", shown)
+	}
+	// Going away and coming back is not another failure.
+	p.SetFocus(false)
+	p.SetFocus(true)
+	if len(shown) != 1 {
+		t.Errorf("the reason was shown %d times, want once for one failure", len(shown))
 	}
 }
 

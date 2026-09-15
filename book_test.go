@@ -181,10 +181,9 @@ func TestBookErrorIsReportedInTheWindow(t *testing.T) {
 	a.book, _ = remote.LoadBook(path)
 
 	a.reportBookError()
-	f := waitForDialog(t, a, "The server list could not be read")
-	joined := strings.Join(f.Lines, " ")
-	if !strings.Contains(joined, "repaired") {
-		t.Errorf("the dialog does not say what happens next: %q", joined)
+	n := waitForNotice(t, a, "The server list could not be read")
+	if !strings.Contains(n.Message(), "repaired") {
+		t.Errorf("the dialog does not say what happens next: %q", n.Message())
 	}
 }
 

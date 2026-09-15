@@ -1093,3 +1093,48 @@ func TestTheKindHintNamesKeysThatWork(t *testing.T) {
 		t.Fatalf("the dialog says %q, which does not name the keys that step Kind", said)
 	}
 }
+
+// Changing a saved machine into a window takes effect at once.
+//
+// Which machines there are and what each one is are two different
+// questions, and changing the kind changes no name. The window read the
+// kinds only when the list of names changed, so a machine edited into a
+// window stayed known as a machine for the rest of the session: asking
+// for a terminal on it logged in to it and was refused.
+func TestChangingAMachineIntoAWindowTakesEffectAtOnce(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	withMenubar(t, a)
+
+	if err := a.book.Put(remote.Host{
+		Name: "statio", Address: "10.0.0.5", Port: 2222,
+	}, ""); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	a.refreshServers()
+	if a.savedWindows["statio"] {
+		t.Fatal("a machine is known as a window before it is one")
+	}
+
+	if err := a.openEditServer("statio"); err != nil {
+		t.Fatalf("edit: %v", err)
+	}
+	f := openDialog(t, a)
+	f.Field("Kind").SetText(kindWindow)
+	pressButton(t, a, f, "Save")
+	a.pump.run()
+
+	if !a.savedWindows["statio"] {
+		t.Fatal("it is still known as a machine")
+	}
+	// And the command says what it now does, rather than offering a
+	// terminal on something with no shell.
+	cmd, ok := a.root.Commands.Lookup(termPrefix + remote.CommandName("statio"))
+	if !ok {
+		t.Fatal("there is no command for it")
+	}
+	if !strings.Contains(cmd.Title, "Take over") {
+		t.Fatalf("the command is %q, want it to offer taking it over", cmd.Title)
+	}
+}

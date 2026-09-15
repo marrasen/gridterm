@@ -29,24 +29,42 @@ func (a *app) refreshServers() {
 	if a.root.Commands == nil {
 		return
 	}
-	// Nothing to do when the machines are the ones already registered.
-	// This runs whenever a connection is made or lost, and rebuilding
-	// takes the open menu down with it: a menu that vanished while the
-	// user was reading it, because a connection they were not watching
-	// dropped, is the window getting in their way.
-	want := append(a.everyHost(), a.savedHosts()...)
+	// Which of them are windows rather than machines, for the panel and
+	// for the commands below.
+	//
+	// Before the shortcut: which machines there are and what each one is
+	// are two different questions, and changing a machine from one kind
+	// to the other changes no name at all. Reading this after the
+	// shortcut left a window known as a machine for the rest of the
+	// session, so asking for a terminal on it tried to log in to it.
+	windows := make(map[string]bool)
+	for _, h := range a.book.Hosts() {
+		if h.Window {
+			windows[h.Name] = true
+		}
+	}
+	a.savedWindows = windows
+
+	// Nothing more to do when the machines are the ones already
+	// registered. This runs whenever a connection is made or lost, and
+	// rebuilding takes the open menu down with it: a menu that vanished
+	// while the user was reading it, because a connection they were not
+	// watching dropped, is the window getting in their way.
+	// The kinds go into the comparison as well as the names. What a
+	// command is called depends on which kind a machine is -- "take
+	// over" rather than "open a terminal on" -- and changing that
+	// changes no name.
+	want := make([]string, 0, len(a.everyHost())+len(a.savedHosts()))
+	for _, host := range append(a.everyHost(), a.savedHosts()...) {
+		if windows[host] {
+			host += " (window)"
+		}
+		want = append(want, host)
+	}
 	if slices.Equal(want, a.serverHosts) {
 		return
 	}
 	a.serverHosts = want
-	// Which of them are windows rather than machines, for the panel and
-	// for the commands below.
-	a.savedWindows = make(map[string]bool)
-	for _, h := range a.book.Hosts() {
-		if h.Window {
-			a.savedWindows[h.Name] = true
-		}
-	}
 	// Whatever was registered for the old list goes first, or a server
 	// that has been renamed would answer to both names.
 	for _, id := range a.serverCommands {

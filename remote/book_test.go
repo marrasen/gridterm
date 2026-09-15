@@ -461,48 +461,6 @@ func TestABookThatCouldNotBeReadBackIsNotWritten(t *testing.T) {
 	}
 }
 
-// A list that is already broken can be repaired, keeping what it can.
-func TestRepairKeepsWhatItCan(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "servers.json")
-	const broken = `{
-	  "version": 1,
-	  "servers": [
-	    {"name": "one", "address": "10.0.0.1"},
-	    {"name": "One", "address": "10.0.0.2"},
-	    {"name": "two", "address": "10.0.0.3", "via": "gone"}
-	  ]
-	}`
-	if err := os.WriteFile(path, []byte(broken), 0o600); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-	b, err := LoadBook(path)
-	if err == nil {
-		t.Fatal("a list naming a server twice was loaded")
-	}
-	if b == nil {
-		t.Fatal("there is no book to repair")
-	}
-
-	dropped, err := b.Repair()
-	if err != nil {
-		t.Fatalf("Repair: %v", err)
-	}
-	if len(dropped) != 2 {
-		t.Fatalf("it threw away %v, want the duplicate and the route", dropped)
-	}
-	if got := b.Names(); len(got) != 2 {
-		t.Fatalf("it kept %v, want one and two", got)
-	}
-	// And what it wrote is readable, which is the whole point.
-	again, err := LoadBook(path)
-	if err != nil {
-		t.Fatalf("the repaired list is not readable: %v", err)
-	}
-	if got := again.Names(); len(got) != 2 {
-		t.Fatalf("the repaired list holds %v", got)
-	}
-}
-
 // A server whose name is its address is a server, not a repeated key.
 //
 // The check that stops a file holding "servers" twice read the tokens

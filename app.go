@@ -669,7 +669,6 @@ func (a *app) commands() {
 		ui.Command{ID: "conn.socks", Title: "Open a SOCKS proxy…", Run: a.openSocksHere},
 		ui.Command{ID: "conn.files", Title: "Browse files here", Run: a.openFilesHere},
 		ui.Command{ID: "files.goTo", Title: "Go to a directory…", Run: a.openGoTo},
-		ui.Command{ID: "server.repair", Title: "Repair the server list…", Run: a.openRepairBook},
 		ui.Command{ID: "conn.disconnect", Title: "Close the connection to this machine",
 			Run: a.disconnectHere},
 		ui.Command{ID: "server.editThis", Title: "Edit this server…",

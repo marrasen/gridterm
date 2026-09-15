@@ -14,6 +14,21 @@ each group. A line goes when the work is in and reviewed.
   offscreen image and blitted scaled, which the compositor does not do
   yet.
 
+## The sidebar and the panes
+
+- **Use the type icon instead of the dot.** A connection's row draws a
+  coloured dot for its state and then the hand-drawn icon for what it
+  is. One mark can do both: draw the type icon and give it the colour
+  the dot would have had.
+- **Fold the connection log once the connection is made.** Every
+  terminal starts with the account of how it was reached. Once it has
+  worked, that is scrollback nobody needs open; it should fold, with a
+  way to open it again.
+- **Colour the connection log.** The time in dark green on a line that
+  went well and dark red on one that did not, and the words themselves a
+  darker grey than the shell's output.
+- **Remove the grey bar between the sidebar and the panes.**
+
 ## Errors and logs
 
 - **Error dialogs cut their text off.** The message is trimmed to the

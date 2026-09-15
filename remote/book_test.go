@@ -502,3 +502,57 @@ func TestRepairKeepsWhatItCan(t *testing.T) {
 		t.Fatalf("the repaired list holds %v", got)
 	}
 }
+
+// A server whose name is its address is a server, not a repeated key.
+//
+// The check that stops a file holding "servers" twice read the tokens
+// in order and could not tell a key from a value, so a name that also
+// appeared as an address looked like the same key written twice. The
+// list refused to load, and every change reread it first, so the user
+// was locked out by a file with nothing wrong with it.
+func TestANameThatIsAlsoAnAddressLoads(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "servers.json")
+	const list = `{
+  "version": 1,
+  "servers": [
+    {"name": "Picard", "address": "picard.marras.net", "user": "marras"},
+    {"name": "www.skalarit.net", "address": "www.skalarit.net", "port": 2222}
+  ]
+}`
+	if err := os.WriteFile(path, []byte(list), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	b, err := LoadBook(path)
+	if err != nil {
+		t.Fatalf("LoadBook: %v", err)
+	}
+	if got := b.Names(); len(got) != 2 {
+		t.Fatalf("it read %v, want both servers", got)
+	}
+}
+
+// And a key really written twice is still caught.
+func TestAKeyWrittenTwiceIsStillCaught(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "servers.json")
+	const list = `{
+  "version": 1,
+  "servers": [{"name": "one", "address": "a", "address": "b"}]
+}`
+	if err := os.WriteFile(path, []byte(list), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if _, err := LoadBook(path); err == nil {
+		t.Fatal("a server with two addresses was read")
+	} else if !strings.Contains(err.Error(), "address") {
+		t.Errorf("it refused with %v, want it to name the key", err)
+	}
+
+	// Including the one the check was written for.
+	const twice = `{"version": 1, "servers": [], "servers": []}`
+	if err := os.WriteFile(path, []byte(twice), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if _, err := LoadBook(path); err == nil {
+		t.Fatal("a file holding the list twice was read")
+	}
+}

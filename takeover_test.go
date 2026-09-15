@@ -55,13 +55,13 @@ func TestOneWindowWorksInAnotherMachinesShell(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}
-	defer w.Close()
+	defer func() { _ = w.Close() }()
 
 	sess, err := w.Open(80, 24)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	defer sess.Close()
+	defer func() { _ = sess.Close() }()
 
 	if _, err := sess.Write([]byte("echo taken-over-ok\r")); err != nil {
 		t.Fatalf("write: %v", err)
@@ -98,9 +98,11 @@ func TestTakingOverAWindowOpensAPaneOnIt(t *testing.T) {
 	withPanel(t, client)
 	panes := len(client.panes)
 
-	if err := client.takeOver(host.serving.addr(), keyFile, nil); err != nil {
-		t.Fatalf("take over: %v", err)
-	}
+	runFromPalette(t, client, "serve.takeOver")
+	f := awaitModal(t, client, "the Take over a window dialog", byTitle[*ui.Form]("Take over a window"))
+	typeIntoField(t, client, f, "Machine", host.serving.addr())
+	typeIntoField(t, client, f, "Key file", keyFile)
+	pressButton(t, client, f, "Take over")
 	// The window has never been reached before, so its key is offered
 	// and has to be accepted, the same as any other machine's.
 	answer(t, client, "Connect")
@@ -139,9 +141,13 @@ func TestLettingGoOfATakenWindowTakesItsPanes(t *testing.T) {
 	withDialogs(t, client)
 	withPanel(t, client)
 	panes := len(client.panes)
-	if err := client.takeOver(addr, keyFile, nil); err != nil {
-		t.Fatalf("take over: %v", err)
-	}
+	// From the palette rather than the menu bar, because a bar would take
+	// a row off a window whose size is the point of this fixture.
+	runFromPalette(t, client, "serve.takeOver")
+	f := awaitModal(t, client, "the Take over a window dialog", byTitle[*ui.Form]("Take over a window"))
+	typeIntoField(t, client, f, "Machine", addr)
+	typeIntoField(t, client, f, "Key file", keyFile)
+	pressButton(t, client, f, "Take over")
 	answer(t, client, "Connect")
 	waitFor(t, client, "the window to be taken over", func() bool {
 		return client.windows.named(addr) != nil && len(client.panes) > panes
@@ -522,7 +528,7 @@ func TestTakingOverTheSameWindowTwiceAsks(t *testing.T) {
 
 	// Asked about rather than refused: the user says whether to wait for
 	// the one on its way or to throw it away and start again.
-	f := waitForDialog(t, a, "Already connecting to 127.0.0.1:1")
+	f := awaitModal(t, a, "the Already connecting to 127.0.0.1:1 dialog", byTitle[*ui.Form]("Already connecting to 127.0.0.1:1"))
 	pressButton(t, a, f, "Leave it")
 	if a.machines.beingMade() != 1 {
 		t.Fatalf("%d windows are being taken over, want the first one only", a.machines.beingMade())
@@ -670,7 +676,7 @@ func TestAWindowThatQuitsKeepsARowThatCanBeCleared(t *testing.T) {
 	takeOver := func(at, name string) {
 		t.Helper()
 		chooseMenuItem(t, openBarMenu(t, client, "Servers"), "serve.takeOver")
-		f := waitForDialog(t, client, "Take over a window")
+		f := awaitModal(t, client, "the Take over a window dialog", byTitle[*ui.Form]("Take over a window"))
 		typeIntoField(t, client, f, "Machine", at)
 		typeIntoField(t, client, f, "Key file", keyFile)
 		pressButton(t, client, f, "Take over")
@@ -710,7 +716,7 @@ func TestAWindowThatQuitsKeepsARowThatCanBeCleared(t *testing.T) {
 
 	// Hanging up on a window that has already gone reports the socket it
 	// could not close politely. Dismissed, the way the user would.
-	if n := waitForNoticePrefix(t, client, "Trouble letting go of"); n != nil {
+	if n := awaitModal(t, client, "a notice whose title starts with Trouble letting go of", byTitlePrefix[*ui.Notice]("Trouble letting go of")); n != nil {
 		if _, err := client.root.HandleKey(press(input.KeyEscape, 0)); err != nil {
 			t.Fatalf("dismissing the notice: %v", err)
 		}
@@ -768,8 +774,8 @@ func TestTakingOverAnAddressAMachineIsUnderIsRefused(t *testing.T) {
 	if err := a.openTakeOver(); err != nil {
 		t.Fatalf("the take-over dialog: %v", err)
 	}
-	f := openDialog(t, a)
-	f.Field("Machine").SetText(addr)
+	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
+	typeIntoField(t, a, f, "Machine", addr)
 	pressButton(t, a, f, "Take over")
 
 	if a.root.Modal() != f {
@@ -862,6 +868,20 @@ func TestShuttingDownHangsUpOnEveryWindow(t *testing.T) {
 	waitFor(t, host, "the serving window to see it go", func() bool {
 		return len(host.serving.clients()) == 0
 	})
+}
+
+// attachFromTheSidebar opens a pane on a screen over there the way a user
+// does: the row on the sidebar, and Enter on it.
+func attachFromTheSidebar(t *testing.T, a *testApp, key remoteKey) {
+	t.Helper()
+	if err := a.focusPanel(); err != nil {
+		t.Fatalf("focus the sidebar: %v", err)
+	}
+	panelText(a, time.Now())
+	if !a.panel.Select(key) {
+		t.Fatalf("the sidebar has no row for that screen: %v", panelText(a, time.Now()))
+	}
+	sendKey(t, a, press(input.KeyEnter, 0))
 }
 
 // twoWindows is one window serving and another that has taken it over,
@@ -970,9 +990,9 @@ func TestAttachingShowsWhatIsAlreadyOnTheScreen(t *testing.T) {
 	// the shell running in it.
 	hostPane := onlyPaneOn(t, host)
 	host.shells[0].out <- []byte("already-here\r\n")
-	waitForBoth(t, host, client, "the shell there to say it", func() bool {
+	waitFor(t, host, "the shell there to say it", func() bool {
 		return strings.Contains(paneText(hostPane), "already-here")
-	})
+	}, client)
 
 	// A second shell over there, so the window keeps a row of its own
 	// after this one takes the first shell over. Without it the "listed
@@ -985,7 +1005,7 @@ func TestAttachingShowsWhatIsAlreadyOnTheScreen(t *testing.T) {
 	// The row for the shell with the text on it, as this window was told
 	// about it, and a row for the second shell beside it.
 	row := remoteKey{window: addr, id: host.panes[hostPane].ID()}
-	waitForBoth(t, host, client, "a row for each shell over there", func() bool {
+	waitFor(t, host, "a row for each shell over there", func() bool {
 		client.refreshPanel(panelNow)
 		var mine, others int
 		for _, r := range client.panel.Rows() {
@@ -1000,29 +1020,27 @@ func TestAttachingShowsWhatIsAlreadyOnTheScreen(t *testing.T) {
 			}
 		}
 		return mine == 1 && others > 0
-	})
+	}, client)
 
 	panes := len(client.panes)
-	if err := client.attachHere(row, nil); err != nil {
-		t.Fatalf("attach: %v", err)
-	}
-	waitForBoth(t, host, client, "a pane watching it", func() bool {
+	attachFromTheSidebar(t, client, row)
+	waitFor(t, host, "a pane watching it", func() bool {
 		return len(client.panes) == panes+1
-	})
+	}, client)
 
 	// The screen as it stands, without waiting for the program to say
 	// anything more.
 	here := newestPane(t, client)
-	waitForBoth(t, host, client, "the screen already there", func() bool {
+	waitFor(t, host, "the screen already there", func() bool {
 		return strings.Contains(paneText(here), "already-here")
-	})
+	}, client)
 
 	// What the shell says from now on, which is the whole point: a
 	// screen sent once is a photograph, not a window into it.
 	host.shells[0].out <- []byte("live-after-attach\r\n")
-	waitForBoth(t, host, client, "what it said after the attach", func() bool {
+	waitFor(t, host, "what it said after the attach", func() bool {
 		return strings.Contains(paneText(here), "live-after-attach")
-	})
+	}, client)
 
 	// One thing open is one row. The row for it over there was there a
 	// moment ago, and goes when a pane of this window is showing it. The
@@ -1047,7 +1065,7 @@ func TestAttachingShowsWhatIsAlreadyOnTheScreen(t *testing.T) {
 
 	// And the window being watched says so, on the row of the pane
 	// being read.
-	waitForBoth(t, host, client, "the host to say it is being watched", func() bool {
+	waitFor(t, host, "the host to say it is being watched", func() bool {
 		host.refreshPanel(panelNow)
 		for _, r := range host.panel.Rows() {
 			if strings.HasPrefix(r.Note, watchedBy) {
@@ -1055,10 +1073,12 @@ func TestAttachingShowsWhatIsAlreadyOnTheScreen(t *testing.T) {
 			}
 		}
 		return false
-	})
+	}, client)
 
 	// Choosing the same row again brings that pane forward rather than
-	// opening a second one typing into one shell.
+	// opening a second one typing into one shell. Called rather than
+	// clicked: once a screen is being watched the sidebar shows the pane
+	// here, so there is no row over there left to click.
 	was := len(client.panes)
 	if err := client.attachHere(row, nil); err != nil {
 		t.Fatalf("attach again: %v", err)
@@ -1069,21 +1089,21 @@ func TestAttachingShowsWhatIsAlreadyOnTheScreen(t *testing.T) {
 
 	// And typing here reaches the shell there.
 	here.Send([]byte("typed-from-here\r"))
-	waitForBoth(t, host, client, "what was typed here to reach there", func() bool {
+	waitFor(t, host, "what was typed here to reach there", func() bool {
 		return strings.Contains(host.shells[0].sentText(), "typed-from-here")
-	})
+	}, client)
 
 	// Letting go leaves it running over there.
 	if err := client.dropWindow(addr); err != nil {
 		t.Fatalf("drop: %v", err)
 	}
-	waitForBoth(t, host, client, "the shell there to be let go of", func() bool {
+	waitFor(t, host, "the shell there to be let go of", func() bool {
 		return hostPane.Watched() == 0
-	})
+	}, client)
 	host.shells[0].out <- []byte("still-running\r\n")
-	waitForBoth(t, host, client, "the shell there to carry on", func() bool {
+	waitFor(t, host, "the shell there to carry on", func() bool {
 		return strings.Contains(paneText(hostPane), "still-running")
-	})
+	}, client)
 }
 
 // Attaching to something that is not there says so, and opens nothing.
@@ -1173,7 +1193,7 @@ func TestTheRowChosenIsTheOneAttachedTo(t *testing.T) {
 
 	// The row for the second one, as this window was told about it.
 	var row remoteKey
-	waitForBoth(t, host, client, "a row named for the second shell", func() bool {
+	waitFor(t, host, "a row named for the second shell", func() bool {
 		host.refreshPanel(panelNow)
 		client.refreshPanel(panelNow)
 		for _, r := range client.panel.Rows() {
@@ -1187,15 +1207,13 @@ func TestTheRowChosenIsTheOneAttachedTo(t *testing.T) {
 			}
 		}
 		return false
-	})
+	}, client)
 
-	if err := client.attachHere(row, nil); err != nil {
-		t.Fatalf("attach: %v", err)
-	}
+	attachFromTheSidebar(t, client, row)
 	here := newestPane(t, client)
-	waitForBoth(t, host, client, "whichever shell it attached to", func() bool {
+	waitFor(t, host, "whichever shell it attached to", func() bool {
 		return strings.Contains(paneText(here), "this-is-the-")
-	})
+	}, client)
 	if text := paneText(here); !strings.Contains(text, "this-is-the-second") {
 		t.Errorf("it attached to the wrong shell: %q", text)
 	}
@@ -1257,7 +1275,7 @@ func TestARowKeepsItsNameWhenSomethingElseCloses(t *testing.T) {
 	host.shells[second].out <- []byte("this-is-the-second\r\n")
 
 	var row remoteKey
-	waitForBoth(t, host, client, "a row for the second shell", func() bool {
+	waitFor(t, host, "a row for the second shell", func() bool {
 		host.refreshPanel(panelNow)
 		client.refreshPanel(panelNow)
 		for _, r := range client.panel.Rows() {
@@ -1271,13 +1289,13 @@ func TestARowKeepsItsNameWhenSomethingElseCloses(t *testing.T) {
 			}
 		}
 		return false
-	})
+	}, client)
 
 	// The one before it goes, which moves everything after it up.
 	if err := host.closePane(first); err != nil {
 		t.Fatalf("close the first: %v", err)
 	}
-	waitForBoth(t, host, client, "the other window to say it has one less", func() bool {
+	waitFor(t, host, "the other window to say it has one less", func() bool {
 		host.refreshPanel(panelNow)
 		for _, open := range client.windows.named(addr).win.Opens() {
 			if open.ID == row.id && open.Label == "the-one-i-want" {
@@ -1285,17 +1303,15 @@ func TestARowKeepsItsNameWhenSomethingElseCloses(t *testing.T) {
 			}
 		}
 		return false
-	})
+	}, client)
 
 	// The row the user was shown is still the shell they were shown it
 	// for.
-	if err := client.attachHere(row, nil); err != nil {
-		t.Fatalf("attach: %v", err)
-	}
+	attachFromTheSidebar(t, client, row)
 	here := newestPane(t, client)
-	waitForBoth(t, host, client, "whichever shell it attached to", func() bool {
+	waitFor(t, host, "whichever shell it attached to", func() bool {
 		return strings.Contains(paneText(here), "this-is-the-")
-	})
+	}, client)
 	if text := paneText(here); !strings.Contains(text, "this-is-the-second") {
 		t.Errorf("the row now holds a different shell: %q", text)
 	}
@@ -1308,7 +1324,7 @@ func TestTheSizeOfAScreenOverThereTravels(t *testing.T) {
 	hostPane := onlyPaneOn(t, host)
 
 	var open serve.Open
-	waitForBoth(t, host, client, "a row with a size on it", func() bool {
+	waitFor(t, host, "a row with a size on it", func() bool {
 		host.refreshPanel(panelNow)
 		for _, o := range client.windows.named(addr).win.Opens() {
 			if o.Cols > 0 && o.Rows > 0 {
@@ -1317,7 +1333,7 @@ func TestTheSizeOfAScreenOverThereTravels(t *testing.T) {
 			}
 		}
 		return false
-	})
+	}, client)
 
 	if want := hostPane.Size(); open.Cols != want.Cols || open.Rows != want.Rows {
 		t.Errorf("it said %dx%d for a pane that is %dx%d",
@@ -1337,7 +1353,7 @@ func TestWhatIsOpenIsToldWithTheSidebarShut(t *testing.T) {
 	}
 	host.dock.Collapsed = true
 
-	waitForBoth(t, host, client, "the name to reach the other window", func() bool {
+	waitFor(t, host, "the name to reach the other window", func() bool {
 		host.refreshPanel(panelNow)
 		for _, o := range client.windows.named(addr).win.Opens() {
 			if o.Label == "named-while-shut" {
@@ -1345,7 +1361,7 @@ func TestWhatIsOpenIsToldWithTheSidebarShut(t *testing.T) {
 			}
 		}
 		return false
-	})
+	}, client)
 }
 
 // A row keeps its key while what it is doing changes, so the user's
@@ -1384,7 +1400,7 @@ func TestWatchingAScreenGivesItTheWatchersSize(t *testing.T) {
 	was := hostPane.Size()
 
 	var row remoteKey
-	waitForBoth(t, host, client, "a row for the shell over there", func() bool {
+	waitFor(t, host, "a row for the shell over there", func() bool {
 		host.refreshPanel(panelNow)
 		client.refreshPanel(panelNow)
 		for _, r := range client.panel.Rows() {
@@ -1394,17 +1410,15 @@ func TestWatchingAScreenGivesItTheWatchersSize(t *testing.T) {
 			}
 		}
 		return false
-	})
-	if err := client.attachHere(row, nil); err != nil {
-		t.Fatalf("attach: %v", err)
-	}
+	}, client)
+	attachFromTheSidebar(t, client, row)
 	here := newestPane(t, client)
 
 	// The screen over there is the watcher's size now, not the size the
 	// window it runs in would have given it.
-	waitForBoth(t, host, client, "the screen over there to take this size", func() bool {
+	waitFor(t, host, "the screen over there to take this size", func() bool {
 		return hostPane.Held() && hostPane.Size() == here.Size()
-	})
+	}, client)
 	// And the window it runs in does not take it back. Its own layout
 	// runs on every resize, and a pane that snapped back would undo the
 	// watcher a frame later.
@@ -1425,9 +1439,9 @@ func TestWatchingAScreenGivesItTheWatchersSize(t *testing.T) {
 	if err := client.closePane(here); err != nil {
 		t.Fatalf("stop watching: %v", err)
 	}
-	waitForBoth(t, host, client, "the screen to go back to its own size", func() bool {
+	waitFor(t, host, "the screen to go back to its own size", func() bool {
 		return !hostPane.Held()
-	})
+	}, client)
 	if got := hostPane.Size(); got != (ui.Size{Cols: was.Cols - 7, Rows: was.Rows - 3}) {
 		t.Fatalf("it came back at %v, want the size its own window last gave it", got)
 	}
@@ -1442,7 +1456,7 @@ func TestANoteAboutAFailureIsNotWrittenOver(t *testing.T) {
 	hostPane := onlyPaneOn(t, host)
 
 	var row remoteKey
-	waitForBoth(t, host, client, "a row for the shell over there", func() bool {
+	waitFor(t, host, "a row for the shell over there", func() bool {
 		host.refreshPanel(panelNow)
 		client.refreshPanel(panelNow)
 		for _, r := range client.panel.Rows() {
@@ -1452,13 +1466,11 @@ func TestANoteAboutAFailureIsNotWrittenOver(t *testing.T) {
 			}
 		}
 		return false
-	})
-	if err := client.attachHere(row, nil); err != nil {
-		t.Fatalf("attach: %v", err)
-	}
-	waitForBoth(t, host, client, "the host to know it is watched", func() bool {
+	}, client)
+	attachFromTheSidebar(t, client, row)
+	waitFor(t, host, "the host to know it is watched", func() bool {
 		return hostPane.Watched() == 1
-	})
+	}, client)
 
 	// Something else has written on the row of the pane being watched.
 	host.refreshPanel(panelNow)
@@ -1490,9 +1502,7 @@ func TestTheFilesOfTheWindowTakenOverAreBrowsable(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 
-	if err := client.openFilesOn(addr); err != nil {
-		t.Fatalf("a pane on %s: %v", addr, err)
-	}
+	openFilesFromThePlus(t, client, addr)
 	b := client.files
 	if b == nil {
 		t.Fatal("the window has no file manager")
@@ -1515,7 +1525,7 @@ func TestTheFilesOfTheWindowTakenOverAreBrowsable(t *testing.T) {
 	// What is on that machine's disk, read over the same connection the
 	// shells ride on.
 	var entries []vfs.Entry
-	within(t, "read the directory over there", func() error {
+	offWindow(t, client, "read the directory over there", func() error {
 		var err error
 		entries, err = pane.FS().ReadDir(overThere(dir))
 		return err
@@ -1536,10 +1546,10 @@ func TestTheFilesOfTheWindowTakenOverAreBrowsable(t *testing.T) {
 	if err := host.stopServing(); err != nil {
 		t.Fatalf("stop serving: %v", err)
 	}
-	waitForBoth(t, host, client, "the pane to lose the machine it was reading", func() bool {
+	waitFor(t, host, "the pane to lose the machine it was reading", func() bool {
 		_, err := pane.FS().ReadDir(overThere(dir))
 		return err != nil
-	})
+	}, client)
 }
 
 // overThere spells a path of this machine the way a file session over
@@ -1553,22 +1563,6 @@ func overThere(dir string) string {
 	return at
 }
 
-// within runs something that talks to another window, failing the test
-// rather than hanging it when the other end goes quiet.
-func within(t *testing.T, what string, do func() error) {
-	t.Helper()
-	done := make(chan error, 1)
-	go func() { done <- do() }()
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("%s: %v", what, err)
-		}
-	case <-time.After(10 * time.Second):
-		t.Fatalf("%s: the other window never answered", what)
-	}
-}
-
 // A file pane on a window taken over belongs to that window.
 //
 // Everything the window does with a pane starts by asking which machine
@@ -1578,9 +1572,7 @@ func within(t *testing.T, what string, do func() error) {
 func TestAFilePaneOnAWindowBelongsToThatWindow(t *testing.T) {
 	_, client, addr := twoWindows(t)
 
-	if err := client.openFilesOn(addr); err != nil {
-		t.Fatalf("a pane on %s: %v", addr, err)
-	}
+	openFilesFromThePlus(t, client, addr)
 	pane := client.files.view.Panes()[0]
 
 	if got := client.hostOf(pane.FS()); got != addr {
@@ -1852,12 +1844,12 @@ func TestAskingAboutTheWindowOnItsWayOpensFromTheButton(t *testing.T) {
 	if err := a.openTakeOver(); err != nil {
 		t.Fatalf("open the form: %v", err)
 	}
-	f := openDialog(t, a)
-	f.Fields()[0].SetText("127.0.0.1:1")
-	f.Fields()[1].SetText(keyFile)
+	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
+	typeIntoField(t, a, f, "Machine", "127.0.0.1:1")
+	typeIntoField(t, a, f, "Key file", keyFile)
 	pressButton(t, a, f, "Take over")
 
-	ask := waitForDialog(t, a, "Already connecting to 127.0.0.1:1")
+	ask := awaitModal(t, a, "the Already connecting to 127.0.0.1:1 dialog", byTitle[*ui.Form]("Already connecting to 127.0.0.1:1"))
 	pressButton(t, a, ask, "Leave it")
 	if a.machines.connecting("127.0.0.1:1") == nil {
 		t.Fatal("the first attempt was let go of")
@@ -1900,7 +1892,7 @@ func TestARowWithNoScreenCannotBeWatched(t *testing.T) {
 	// not list it -- but a key naming it can still arrive, from a row
 	// listed a moment before it closed.
 	var serving remoteKey
-	waitForBoth(t, host, client, "the serving row to reach the client", func() bool {
+	waitFor(t, host, "the serving row to reach the client", func() bool {
 		host.refreshPanel(time.Now())
 		var screens int
 		var found bool
@@ -1914,7 +1906,7 @@ func TestARowWithNoScreenCannotBeWatched(t *testing.T) {
 			}
 		}
 		return found && screens > 0
-	})
+	}, client)
 
 	// It is not offered, and the shell over there, which has a screen,
 	// still is. Without the second half a list of nothing would pass.
@@ -1977,7 +1969,7 @@ func TestTheScreensOfAWindowAreGroupedByMachine(t *testing.T) {
 	withDialogs(t, host)
 	pinServers(t, host, s)
 	host.connectAs("margit", host.prepare(serverConfig(t, s)))
-	waitForBoth(t, host, client, "a pane on the machine over there", func() bool {
+	waitFor(t, host, "a pane on the machine over there", func() bool {
 		host.refreshPanel(time.Now())
 		for _, open := range client.windows.named(addr).win.Opens() {
 			if open.Host == "margit" && open.HasScreen() {
@@ -1985,7 +1977,7 @@ func TestTheScreensOfAWindowAreGroupedByMachine(t *testing.T) {
 			}
 		}
 		return false
-	})
+	}, client)
 
 	rows := client.remoteRows(client.about(addr))
 	var heads, under []string
@@ -2019,7 +2011,7 @@ func takeOverFromTheDialog(t *testing.T, a *testApp, addr, keyFile string) *term
 	t.Helper()
 	m := openBarMenu(t, a, "Servers")
 	chooseMenuItem(t, m, "serve.takeOver")
-	f := waitForDialog(t, a, "Take over a window")
+	f := awaitModal(t, a, "the Take over a window dialog", byTitle[*ui.Form]("Take over a window"))
 	typeIntoField(t, a, f, "Machine", addr)
 	typeIntoField(t, a, f, "Key file", keyFile)
 	pressButton(t, a, f, "Take over")
@@ -2057,7 +2049,7 @@ func addServerFromTheDialog(t *testing.T, a *testApp, name, addr, keyFile string
 	t.Helper()
 	m := openBarMenu(t, a, "Servers")
 	chooseMenuItem(t, m, "server.add")
-	f := waitForDialog(t, a, "Add a server")
+	f := awaitModal(t, a, "the Add a server dialog", byTitle[*ui.Form]("Add a server"))
 	typeIntoField(t, a, f, "Name", name)
 	typeIntoField(t, a, f, "Server", addr)
 	typeIntoField(t, a, f, "Key file", keyFile)
@@ -2073,7 +2065,7 @@ func addServerFromTheDialog(t *testing.T, a *testApp, name, addr, keyFile string
 func forgetFromThePlus(t *testing.T, a *testApp, host string) {
 	t.Helper()
 	chooseMenuItem(t, clickPlus(t, a, host), "server.forget")
-	f := openDialog(t, a)
+	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
 	pressButton(t, a, f, "Remove")
 	a.pump.run()
 }
@@ -2312,11 +2304,11 @@ func TestAWindowSavedDuringTheDialLandsUnderItsNewName(t *testing.T) {
 	// posts back.
 	m := openBarMenu(t, client, "Servers")
 	chooseMenuItem(t, m, "serve.takeOver")
-	f := waitForDialog(t, client, "Take over a window")
+	f := awaitModal(t, client, "the Take over a window dialog", byTitle[*ui.Form]("Take over a window"))
 	typeIntoField(t, client, f, "Machine", addr)
 	typeIntoField(t, client, f, "Key file", keyFile)
 	pressButton(t, client, f, "Take over")
-	waitUntil(t, func() bool { return client.pump.pending() > 0 })
+	waitUntil(t, "work to be queued for the window", func() bool { return client.pump.pending() > 0 })
 
 	// Saved under a name while the dial waits to land. Written straight
 	// to the list rather than through the dialog, because the dialog
@@ -2521,11 +2513,11 @@ func TestAPaneWhoseSizeAWatcherTookSaysSo(t *testing.T) {
 
 	hostPane := onlyPaneOn(t, host)
 	row := remoteKey{window: addr, id: host.panes[hostPane].ID()}
-	waitForBoth(t, host, client, "the row for the shell over there", func() bool {
+	waitFor(t, host, "the row for the shell over there", func() bool {
 		host.refreshPanel(panelNow)
 		_, there := client.openOver(row)
 		return there
-	})
+	}, client)
 
 	// That row on this window's sidebar, chosen: it opens a pane
 	// watching the shell over there, and that pane's size becomes the
@@ -2534,10 +2526,10 @@ func TestAPaneWhoseSizeAWatcherTookSaysSo(t *testing.T) {
 		t.Fatalf("watch the shell over there: %v", err)
 	}
 	here := newestPane(t, client)
-	waitForBoth(t, host, client, "the watching pane to take the size over there", func() bool {
+	waitFor(t, host, "the watching pane to take the size over there", func() bool {
 		host.refreshPanel(panelNow)
 		return hostPane.Held() && hostPane.Size() == here.Size()
-	})
+	}, client)
 
 	size := hostPane.Size()
 	want := fmt.Sprintf("at %dx%d, watched by 1", size.Cols, size.Rows)

@@ -39,33 +39,19 @@ func withDialogs(t *testing.T, a *testApp) *askUser {
 	return &askUser{app: a.app}
 }
 
-// openDialog runs the pump until a dialog is on the stack and returns it.
-func openDialog(t *testing.T, a *testApp) *ui.Form {
+// answer waits for a dialog, fills in the fields it names and presses a
+// button by name.
+//
+// Label and value pairs, not values in field order: adding a row to a
+// dialog would otherwise swap the answers of every test after it.
+func answer(t *testing.T, a *testApp, button string, fields ...string) {
 	t.Helper()
-	deadline := time.Now().Add(waitBudget)
-	for time.Now().Before(deadline) {
-		a.pump.run()
-		if f, ok := a.root.Modal().(*ui.Form); ok {
-			return f
-		}
-		time.Sleep(time.Millisecond)
+	if len(fields)%2 != 0 {
+		t.Fatalf("answer wants label and value pairs, got %d strings", len(fields))
 	}
-	t.Fatal("no dialog opened")
-	return nil
-}
-
-// answer waits for a dialog, types into its fields and presses a button
-// by name.
-func answer(t *testing.T, a *testApp, button string, values ...string) {
-	t.Helper()
-	f := openDialog(t, a)
-	for i, v := range values {
-		if i > 0 {
-			a.root.HandleKey(press(input.KeyTab, 0))
-		}
-		for _, r := range v {
-			a.root.HandleKey(input.Event{Kind: input.Text, Rune: r, NormalText: true})
-		}
+	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
+	for i := 0; i < len(fields); i += 2 {
+		typeIntoField(t, a, f, fields[i], fields[i+1])
 	}
 	pressButton(t, a, f, button)
 }
@@ -85,11 +71,11 @@ func pressButton(t *testing.T, a *testApp, f *ui.Form, title string) {
 	}
 	for i := 0; i < len(f.Fields())+len(f.Buttons())+1; i++ {
 		if got, isButton := f.Focused(); isButton && got == at {
-			a.root.HandleKey(press(input.KeyEnter, 0))
+			sendKey(t, a, press(input.KeyEnter, 0))
 			a.pump.run()
 			return
 		}
-		a.root.HandleKey(press(input.KeyTab, 0))
+		sendKey(t, a, press(input.KeyTab, 0))
 	}
 	t.Fatalf("focus never reached the %q button", title)
 }
@@ -107,7 +93,7 @@ func TestAskPassphraseReturnsWhatWasTyped(t *testing.T) {
 		got <- s
 	}()
 
-	answer(t, a, "Unlock", "let me in")
+	answer(t, a, "Unlock", "Passphrase", "let me in")
 	select {
 	case s := <-got:
 		if s != "let me in" {
@@ -123,13 +109,13 @@ func TestAskPassphraseIsMasked(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	ask := withDialogs(t, a)
 
-	go ask.Passphrase(a.ctx, "/home/marcus/.ssh/id_ed25519")
-	f := openDialog(t, a)
-	for _, r := range "hunter2" {
-		a.root.HandleKey(input.Event{Kind: input.Text, Rune: r, NormalText: true})
-	}
+	// Nobody answers this one: the test is about how the field draws, and
+	// the dialog goes when the test's own context is cancelled.
+	go func() { _, _ = ask.Passphrase(a.ctx, "/home/marcus/.ssh/id_ed25519") }()
+	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
+	typeIntoField(t, a, f, "Passphrase", "hunter2")
 
-	fld := f.Fields()[0]
+	fld := f.Field("Passphrase")
 	if fld.Text() != "hunter2" {
 		t.Fatalf("the field holds %q", fld.Text())
 	}
@@ -150,8 +136,8 @@ func TestAskDismissedDialogIsARefusal(t *testing.T) {
 		got <- err
 	}()
 
-	openDialog(t, a)
-	a.root.HandleKey(press(input.KeyEscape, 0))
+	awaitModal[*ui.Form](t, a, "a dialog", nil)
+	sendKey(t, a, press(input.KeyEscape, 0))
 	a.pump.run()
 
 	select {
@@ -176,7 +162,7 @@ func TestAskCancelledContextClosesTheDialog(t *testing.T) {
 		got <- err
 	}()
 
-	openDialog(t, a)
+	awaitModal[*ui.Form](t, a, "a dialog", nil)
 	a.stop()
 
 	select {
@@ -217,7 +203,7 @@ func TestAskHostKeyShowsTheFingerprint(t *testing.T) {
 		got <- ok
 	}()
 
-	f := openDialog(t, a)
+	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
 	joined := strings.Join(f.Lines, "\n")
 	if !strings.Contains(joined, key.Fingerprint()) {
 		t.Errorf("the dialog does not show the fingerprint: %q", joined)
@@ -253,7 +239,7 @@ func TestAskHostKeyCancelMeansNo(t *testing.T) {
 		got <- result{ok, err}
 	}()
 
-	f := openDialog(t, a)
+	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
 	pressButton(t, a, f, "Cancel")
 
 	select {
@@ -290,7 +276,7 @@ func TestAskQuestionAnswersInOrder(t *testing.T) {
 		got <- answers
 	}()
 
-	f := openDialog(t, a)
+	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
 	// The title is ours. A server that chose "Unlock a private key" and
 	// a plausible key path would otherwise produce a dialog the user
 	// cannot tell from the local one, and be handed the passphrase to
@@ -307,13 +293,13 @@ func TestAskQuestionAnswersInOrder(t *testing.T) {
 		t.Errorf("the server's instruction was dropped: %q", joined)
 	}
 	// The code is a secret; the account name the server said may be shown.
-	if f.Fields()[0].Mask == 0 {
+	if f.Field("Code").Mask == 0 {
 		t.Error("an answer the server did not mark as echoed was not masked")
 	}
-	if f.Fields()[1].Mask != 0 {
+	if f.Field("Account").Mask != 0 {
 		t.Error("an answer the server marked as echoed was masked")
 	}
-	answer(t, a, "Answer", "123456", "marcus")
+	answer(t, a, "Answer", "Code", "123456", "Account", "marcus")
 
 	select {
 	case answers := <-got:
@@ -355,11 +341,9 @@ func TestAskPasswordDrawsNothingReadable(t *testing.T) {
 		got <- s
 	}()
 
-	f := openDialog(t, a)
+	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
 	const secret = "hunter2"
-	for _, r := range secret {
-		a.root.HandleKey(input.Event{Kind: input.Text, Rune: r, NormalText: true})
-	}
+	typeIntoField(t, a, f, "Password", secret)
 
 	// Draw the dialog the way its own layer is drawn, and read it back.
 	g := grid.New(80, 24, color.RGBA{}, color.RGBA{})

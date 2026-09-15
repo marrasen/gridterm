@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/marrasen/gridterm/serve"
+	"github.com/marrasen/gridterm/ui"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -139,7 +140,7 @@ func TestStoppingClosesThePort(t *testing.T) {
 	}
 	c, err := net.Dial("tcp", addr)
 	if err == nil {
-		c.Close()
+		_ = c.Close()
 		t.Error("the port is still open")
 	}
 }
@@ -167,7 +168,7 @@ func TestPressingServeOnTheDialogAsItOpensWorks(t *testing.T) {
 	if err := a.openServing(); err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	f := openDialog(t, a)
+	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
 
 	pressButton(t, a, f, "Serve")
 
@@ -192,9 +193,9 @@ func TestTheServingDialogSurvivesTheButtonThatOpensIt(t *testing.T) {
 	if err := a.openServing(); err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	pressButton(t, a, openDialog(t, a), "Serve")
+	pressButton(t, a, awaitModal[*ui.Form](t, a, "a dialog", nil), "Serve")
 
-	f := openDialog(t, a)
+	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
 
 	text := strings.Join(f.Lines, "\n")
 	if !strings.Contains(text, "SHA256:") {
@@ -228,7 +229,7 @@ func TestTheFingerprintShownIsTheOneBeingServed(t *testing.T) {
 		t.Fatalf("show: %v", err)
 	}
 
-	f := openDialog(t, a)
+	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
 	if text := strings.Join(f.Lines, "\n"); !strings.Contains(text, want) {
 		t.Errorf("the dialog shows a fingerprint the server does not present:\n%s\nwant %s",
 			text, want)
@@ -259,7 +260,7 @@ func TestServingTwiceIsRefused(t *testing.T) {
 	}
 	c, dialErr := net.Dial("tcp", first)
 	if dialErr == nil {
-		c.Close()
+		_ = c.Close()
 		t.Error("the first port is still open after stopping")
 	}
 }
@@ -282,7 +283,7 @@ func TestALostListenerIsSaidAndNotClaimed(t *testing.T) {
 	if a.serving.on() {
 		t.Error("the window still says it is being served")
 	}
-	n := openNotice(t, a)
+	n := awaitModal[*ui.Notice](t, a, "a notice", nil)
 	if !strings.Contains(n.Message(), "gave up") {
 		t.Errorf("the user was not told why:\n%s", n.Message())
 	}

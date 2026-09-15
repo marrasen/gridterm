@@ -249,7 +249,7 @@ func connectByName(t *testing.T, a *testApp, target string) {
 	if _, err := a.root.HandleKey(press(input.KeyN, input.ModCtrl|input.ModShift)); err != nil {
 		t.Fatalf("the connect chord: %v", err)
 	}
-	f := waitForDialog(t, a, "Connect to a server")
+	f := awaitModal(t, a, "the Connect to a server dialog", byTitle[*ui.Form]("Connect to a server"))
 	typeIntoField(t, a, f, "Server", target)
 	pressButton(t, a, f, "Connect")
 }
@@ -326,8 +326,7 @@ func TestFilesOnAWindowSavedAfterTakeOverGoUnderItsName(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 
-	// The plus on its row, and the line that browses.
-	chooseMenuItem(t, clickPlus(t, client, "office"), "conn.files")
+	openFilesFromThePlus(t, client, "office")
 
 	b := client.files
 	if b == nil {
@@ -352,7 +351,7 @@ func TestFilesOnAWindowSavedAfterTakeOverGoUnderItsName(t *testing.T) {
 	}
 
 	var entries []vfs.Entry
-	within(t, "read the directory over there", func() error {
+	offWindow(t, client, "read the directory over there", func() error {
 		var err error
 		entries, err = pane.FS().ReadDir(overThere(dir))
 		return err
@@ -399,7 +398,7 @@ func TestTheTakeOverDialogOnAHeldWindowOpensATerminal(t *testing.T) {
 
 	m := openBarMenu(t, client, "Servers")
 	chooseMenuItem(t, m, "serve.takeOver")
-	f := waitForDialog(t, client, "Take over a window")
+	f := awaitModal(t, client, "the Take over a window dialog", byTitle[*ui.Form]("Take over a window"))
 	typeIntoField(t, client, f, "Machine", addr)
 	typeIntoField(t, client, f, "Key file", keyFile)
 	pressButton(t, client, f, "Take over")
@@ -675,7 +674,7 @@ func waysIn() []wayIn {
 			if _, err := a.root.HandleKey(press(input.KeyN, input.ModCtrl|input.ModShift)); err != nil {
 				t.Fatalf("the connect chord: %v", err)
 			}
-			f := waitForDialog(t, a, "Connect to a server")
+			f := awaitModal(t, a, "the Connect to a server dialog", byTitle[*ui.Form]("Connect to a server"))
 			typeIntoField(t, a, f, "Server", addr)
 			pressButton(t, a, f, "Connect")
 		}},
@@ -698,7 +697,7 @@ func TestEveryWayInTakesOverASavedWindow(t *testing.T) {
 		func(t *testing.T, a *testApp, host, addr, keyFile string) {
 			m := openBarMenu(t, a, "Servers")
 			chooseMenuItem(t, m, "serve.takeOver")
-			f := waitForDialog(t, a, "Take over a window")
+			f := awaitModal(t, a, "the Take over a window dialog", byTitle[*ui.Form]("Take over a window"))
 			typeIntoField(t, a, f, "Machine", addr)
 			typeIntoField(t, a, f, "Key file", keyFile)
 			pressButton(t, a, f, "Take over")
@@ -863,9 +862,7 @@ func aWindowTakenOverAs(t *testing.T, name string) *testApp {
 		t.Fatalf("save the window: %v", err)
 	}
 	client.refreshServers()
-	if err := client.openTerminalOn(name, nil); err != nil {
-		t.Fatalf("take it over: %v", err)
-	}
+	clickTerminalLine(t, client, name)
 	waitFor(t, client, "the window to be taken over", func() bool {
 		return client.windows.named(name) != nil
 	})

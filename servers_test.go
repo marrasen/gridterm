@@ -32,39 +32,17 @@ func serverConfig(t *testing.T, s *sshtest.Server) remote.Config {
 	}
 }
 
-// waitForPanes runs the pump until the app has n panes.
+// waitForPanes runs the pump until the app has n panes and nothing is
+// still connecting.
+//
+// A connection opens its pane as soon as it starts, so the pane is there
+// before the machine is, and a test that counted panes alone would go on
+// before there was anything to connect to.
 func waitForPanes(t *testing.T, a *testApp, n int) {
 	t.Helper()
-	deadline := time.Now().Add(waitBudget)
-	for time.Now().Before(deadline) {
-		a.pump.run()
-		// And nothing still connecting. A connection opens its pane as
-		// soon as it starts, so the pane is there before the machine
-		// is, and a test that counted panes alone would go on before
-		// there was anything to connect to.
-		if len(a.panes) == n && a.machines.beingMade() == 0 {
-			return
-		}
-		time.Sleep(time.Millisecond)
-	}
-	t.Fatalf("the app has %d panes and %d connections still opening, want %d panes",
-		len(a.panes), a.machines.beingMade(), n)
-}
-
-// waitForDialog runs the pump until a dialog with the given title is on
-// the stack.
-func waitForDialog(t *testing.T, a *testApp, title string) *ui.Form {
-	t.Helper()
-	deadline := time.Now().Add(waitBudget)
-	for time.Now().Before(deadline) {
-		a.pump.run()
-		if f, ok := a.root.Modal().(*ui.Form); ok && f.Title == title {
-			return f
-		}
-		time.Sleep(time.Millisecond)
-	}
-	t.Fatalf("no %q dialog opened", title)
-	return nil
+	waitFor(t, a, fmt.Sprintf("%d panes and nothing still connecting", n), func() bool {
+		return len(a.panes) == n && a.machines.beingMade() == 0
+	})
 }
 
 // A target that is not a target has to be said so where it was typed,
@@ -76,10 +54,8 @@ func TestOpenServerRejectsABadTarget(t *testing.T) {
 	if err := a.openServer(); err != nil {
 		t.Fatalf("openServer: %v", err)
 	}
-	f := waitForDialog(t, a, "Connect to a server")
-	for _, r := range "host:nope" {
-		a.root.HandleKey(input1(r))
-	}
+	f := awaitModal(t, a, "the Connect to a server dialog", byTitle[*ui.Form]("Connect to a server"))
+	typeIntoField(t, a, f, "Server", "host:nope")
 	pressButton(t, a, f, "Connect")
 
 	if a.root.Modal() != f {
@@ -88,29 +64,8 @@ func TestOpenServerRejectsABadTarget(t *testing.T) {
 	if f.Error() == nil {
 		t.Fatal("nothing said why the target was refused")
 	}
-	if got := f.Fields()[0].Text(); got != "host:nope" {
+	if got := f.Field("Server").Text(); got != "host:nope" {
 		t.Errorf("the dialog lost what was typed: %q", got)
-	}
-}
-
-// The whole path: ask for a machine, connect to it in the background,
-// and put a terminal on it when it arrives.
-func TestConnectOpensATab(t *testing.T) {
-	s := sshtest.New(t)
-	a := newTestApp(t, 80, 24)
-	withDialogs(t, a)
-
-	a.connect(serverConfig(t, s))
-	// A row holds the place while the connection is made.
-	waitForConnecting(t, a)
-	waitForPanes(t, a, 2)
-
-	if a.root.Modal() != nil {
-		t.Errorf("a dialog was left open after the connection arrived: %T", a.root.Modal())
-	}
-	checkTree(t, a)
-	if n := s.Conns(); n != 1 {
-		t.Fatalf("the server saw %d connections, want 1", n)
 	}
 }
 
@@ -313,20 +268,19 @@ func TestConnectRunsSeveralAtOnce(t *testing.T) {
 // returns the row standing for it.
 func waitForConnecting(t *testing.T, a *testApp) *conns.Entry {
 	t.Helper()
-	deadline := time.Now().Add(waitBudget)
-	for time.Now().Before(deadline) {
-		a.pump.run()
+	var found *conns.Entry
+	waitFor(t, a, "a row that says something is being connected to", func() bool {
 		for _, group := range a.registry.Groups(time.Now()) {
 			for _, row := range group.Rows {
 				if row.Label == "connecting" {
-					return row.Entry
+					found = row.Entry
+					return true
 				}
 			}
 		}
-		time.Sleep(time.Millisecond)
-	}
-	t.Fatal("nothing is being connected to")
-	return nil
+		return false
+	})
+	return found
 }
 
 // Locking forgets every key, so the next connection asks again.
@@ -437,17 +391,20 @@ func TestOpenServerConnectsThroughTheForm(t *testing.T) {
 	if err := a.openServer(); err != nil {
 		t.Fatalf("openServer: %v", err)
 	}
-	f := waitForDialog(t, a, "Connect to a server")
-	for _, r := range fmt.Sprintf("tester@%s:%d", host, port) {
-		a.root.HandleKey(input1(r))
-	}
+	f := awaitModal(t, a, "the Connect to a server dialog", byTitle[*ui.Form]("Connect to a server"))
+	typeIntoField(t, a, f, "Server", fmt.Sprintf("tester@%s:%d", host, port))
 	pressButton(t, a, f, "Connect")
 
+	// A row holds the place while the connection is made.
+	waitForConnecting(t, a)
 	waitForPanes(t, a, 2)
 	if a.root.Modal() != nil {
 		t.Errorf("a dialog was left open: %T", a.root.Modal())
 	}
 	checkTree(t, a)
+	if n := s.Conns(); n != 1 {
+		t.Fatalf("the server saw %d connections, want the one", n)
+	}
 }
 
 // waitForFailure waits for the pane watching a connection to say it
@@ -458,21 +415,20 @@ func TestOpenServerConnectsThroughTheForm(t *testing.T) {
 // read afterwards.
 func waitForFailure(t *testing.T, a *testApp, host string) string {
 	t.Helper()
-	deadline := time.Now().Add(waitBudget)
-	for time.Now().Before(deadline) {
-		a.pump.run()
+	var said string
+	waitFor(t, a, "a pane saying the connection to "+host+" failed", func() bool {
 		for pane, e := range a.panes {
 			if e.Host != host {
 				continue
 			}
 			if got := paneText(pane); strings.Contains(got, "The connection was not made") {
-				return got
+				said = got
+				return true
 			}
 		}
-		time.Sleep(time.Millisecond)
-	}
-	t.Fatalf("no pane says the connection to %s failed: %v", host, panelText(a, time.Now()))
-	return ""
+		return false
+	})
+	return said
 }
 
 // Connecting to a server opens a pane and says what it is doing in it,
@@ -594,44 +550,6 @@ func TestThePaneThatSaysWhyIsNotReapedAway(t *testing.T) {
 	t.Error("there is no pane for the machine that could not be reached")
 }
 
-// awaitNotice runs the pump until a notice the test is after is on the
-// stack. A failure is shown as a notice rather than a form, because it
-// is read and copied rather than answered.
-func awaitNotice(t *testing.T, a *testApp, what string, want func(*ui.Notice) bool) *ui.Notice {
-	t.Helper()
-	deadline := time.Now().Add(waitBudget)
-	for time.Now().Before(deadline) {
-		a.pump.run()
-		if n, is := a.root.Modal().(*ui.Notice); is && want(n) {
-			return n
-		}
-		time.Sleep(time.Millisecond)
-	}
-	t.Fatalf("no notice opened %s", what)
-	return nil
-}
-
-// openNotice waits for any notice.
-func openNotice(t *testing.T, a *testApp) *ui.Notice {
-	t.Helper()
-	return awaitNotice(t, a, "at all", func(*ui.Notice) bool { return true })
-}
-
-// waitForNotice waits for one with a title.
-func waitForNotice(t *testing.T, a *testApp, title string) *ui.Notice {
-	t.Helper()
-	return awaitNotice(t, a, "titled "+title, func(n *ui.Notice) bool { return n.Title == title })
-}
-
-// waitForNoticePrefix waits for one whose title starts with a prefix,
-// for a title that names the thing that failed.
-func waitForNoticePrefix(t *testing.T, a *testApp, prefix string) *ui.Notice {
-	t.Helper()
-	return awaitNotice(t, a, "whose title starts with "+prefix, func(n *ui.Notice) bool {
-		return strings.HasPrefix(n.Title, prefix)
-	})
-}
-
 // A failure the user cannot retype has to be readable whole and copyable
 // with the window's own copy chord.
 func TestReportErrorShowsTheWholeMessageAndCopiesIt(t *testing.T) {
@@ -641,7 +559,7 @@ func TestReportErrorShowsTheWholeMessageAndCopiesIt(t *testing.T) {
 
 	a.reportError("Could not open it", errors.New(long))
 
-	n := openNotice(t, a)
+	n := awaitModal[*ui.Notice](t, a, "a notice", nil)
 	if n.Message() != long {
 		t.Errorf("the dialog holds %d characters, want the whole %d", len(n.Message()), len(long))
 	}
@@ -653,7 +571,7 @@ func TestReportErrorShowsTheWholeMessageAndCopiesIt(t *testing.T) {
 		t.Fatalf("the copy chord: %v", err)
 	}
 
-	waitUntil(t, func() bool { return a.copiedText() == long })
+	waitFor(t, a, "the message to reach the clipboard", func() bool { return a.copiedText() == long })
 }
 
 // noticeRow reads one row of a notice back off a grid of its own, the
@@ -708,7 +626,7 @@ func TestANoticeIsDismissedByEscapeAndByItsOKButton(t *testing.T) {
 			a := newTestApp(t, 80, 24)
 			withDialogs(t, a)
 			a.reportError("Could not open it", errors.New("the machine went away"))
-			n := openNotice(t, a)
+			n := awaitModal[*ui.Notice](t, a, "a notice", nil)
 
 			tc.dismiss(t, a, n)
 
@@ -729,7 +647,7 @@ func TestANoticeTakesTheShortcutsWhileItIsUp(t *testing.T) {
 	withMenubar(t, a)
 	panes := len(a.panes)
 	a.reportError("Could not open it", errors.New("the machine went away"))
-	n := openNotice(t, a)
+	n := awaitModal[*ui.Notice](t, a, "a notice", nil)
 
 	for _, ev := range []input.Event{
 		press(input.KeyV, input.ModCtrl|input.ModShift), // paste into the shell
@@ -770,13 +688,13 @@ func TestTheCopyChordsCopyFromTheNoticeOnTop(t *testing.T) {
 			a := newTestApp(t, 80, 24)
 			withDialogs(t, a)
 			a.reportError("Could not open it", errors.New("the machine went away"))
-			openNotice(t, a)
+			awaitModal[*ui.Notice](t, a, "a notice", nil)
 
 			if _, err := a.root.HandleKey(chord); err != nil {
 				t.Fatalf("the copy chord: %v", err)
 			}
 
-			waitUntil(t, func() bool { return a.copiedText() == "the machine went away" })
+			waitFor(t, a, "the message to reach the clipboard", func() bool { return a.copiedText() == "the machine went away" })
 		})
 	}
 }
@@ -793,7 +711,7 @@ func TestTheCopyChordCopiesTheTerminalSelectionWithNoDialogOpen(t *testing.T) {
 	a.shells[0].out <- []byte("hello there")
 	// Drawn each time round: the bytes are on their way from the shell,
 	// and the pane only puts what it has read on its grid when it paints.
-	waitUntil(t, func() bool {
+	waitFor(t, a, "the pane to draw what the shell said", func() bool {
 		g := grid.New(a.lastSize[0], a.lastSize[1], color.RGBA{}, color.RGBA{})
 		pane.Layout(ui.Size{Cols: a.lastSize[0], Rows: a.lastSize[1]})
 		pane.Draw(g.View())
@@ -816,5 +734,5 @@ func TestTheCopyChordCopiesTheTerminalSelectionWithNoDialogOpen(t *testing.T) {
 		t.Fatalf("the copy chord: %v", err)
 	}
 
-	waitUntil(t, func() bool { return a.copiedText() == "hello" })
+	waitFor(t, a, "the selection to reach the clipboard", func() bool { return a.copiedText() == "hello" })
 }

@@ -23,11 +23,30 @@ func TestThePlusOnASavedServerOffersToForgetIt(t *testing.T) {
 	a.refreshServers()
 
 	menu := clickPlus(t, a, "edge")
-
 	for _, want := range []string{"server.editThis", "server.forget"} {
 		if !offers(menu, want) {
-			t.Errorf("the menu offers %v, with no %s", menuCommands(menu), want)
+			t.Fatalf("the menu offers %v, with no %s", menuCommands(menu), want)
 		}
+	}
+	dismiss(t, menu)
+
+	// Offered is not enough: both lines are run, because the bug each
+	// time was in what the line did, not in whether it was drawn.
+	chooseMenuItem(t, clickPlus(t, a, "edge"), "server.editThis")
+	edit := awaitModal(t, a, "the Edit edge dialog", byTitle[*ui.Form]("Edit edge"))
+	// The default port is left off, so the field says the target as the
+	// list holds it rather than as it was typed.
+	if got := edit.Field("Server").Text(); got != "user@edge.example" {
+		t.Errorf("the edit dialog holds %q, want the machine that was saved", got)
+	}
+	pressButton(t, a, edit, "Cancel")
+
+	chooseMenuItem(t, clickPlus(t, a, "edge"), "server.forget")
+	gone := awaitModal(t, a, "the Remove edge? dialog", byTitle[*ui.Form]("Remove edge?"))
+	pressButton(t, a, gone, "Remove")
+
+	if _, ok := a.book.Lookup("edge"); ok {
+		t.Fatal("the machine is still in the server list")
 	}
 }
 
@@ -116,7 +135,7 @@ func TestAServerMessageIsShownWithoutWaiting(t *testing.T) {
 		t.Fatal("showing a message waited for an answer")
 	}
 
-	f := openDialog(t, a)
+	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
 	text := strings.Join(f.Lines, "\n")
 	for _, want := range []string{"rdp@marras-skylake:22", "https://login.example/a/1234"} {
 		if !strings.Contains(text, want) {
@@ -135,7 +154,7 @@ func TestAServerMessageGoesWhenTheConnectionIsSettled(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	ask.Notice(ctx, remote.Notice{User: "rdp", Host: "here", Text: "hello"})
-	openDialog(t, a)
+	awaitModal[*ui.Form](t, a, "a dialog", nil)
 
 	cancel()
 
@@ -171,7 +190,7 @@ func TestGivingUpOnAServerMessageGivesUp(t *testing.T) {
 		Instruction: "To authenticate, visit: https://login.example/a/1234",
 	})
 
-	f := openDialog(t, a)
+	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
 	pressButton(t, a, f, "Give up")
 	a.pump.run()
 	if !gave {

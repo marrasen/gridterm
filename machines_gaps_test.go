@@ -15,20 +15,6 @@ import (
 	"github.com/marrasen/gridterm/ui"
 )
 
-// waitFor runs the pump until something is true, or gives up loudly.
-func waitFor(t *testing.T, a *testApp, what string, cond func() bool) {
-	t.Helper()
-	deadline := time.Now().Add(waitBudget)
-	for time.Now().Before(deadline) {
-		a.pump.run()
-		if cond() {
-			return
-		}
-		time.Sleep(time.Millisecond)
-	}
-	t.Fatalf("timed out waiting for %s", what)
-}
-
 // serverRow returns the panel row that stands for a machine's connection.
 func serverRow(t *testing.T, a *testApp, host string) *conns.Entry {
 	t.Helper()
@@ -232,7 +218,7 @@ func TestANameCannotMeanTwoMachines(t *testing.T) {
 	waitForPanes(t, a, 2)
 
 	a.connectAs("box", serverConfig(t, two))
-	n := waitForNotice(t, a, "Could not connect to box")
+	n := awaitModal(t, a, "the Could not connect to box notice", byTitle[*ui.Notice]("Could not connect to box"))
 	if !strings.Contains(n.Message(), "close it first") {
 		t.Fatalf("the refusal says %q", n.Message())
 	}
@@ -496,25 +482,6 @@ func onlyLocalPane(t *testing.T, a *testApp) ui.Widget {
 	}
 	t.Fatal("every pane is running on a machine")
 	return nil
-}
-
-// waitForBoth waits for something while keeping two windows running.
-//
-// Both, because a window taken over answers its client from the
-// goroutine that draws: a test that pumped only one of them would wait
-// for an answer the other was never going to give.
-func waitForBoth(t *testing.T, a, b *testApp, what string, cond func() bool) {
-	t.Helper()
-	deadline := time.Now().Add(waitBudget)
-	for time.Now().Before(deadline) {
-		a.pump.run()
-		b.pump.run()
-		if cond() {
-			return
-		}
-		time.Sleep(time.Millisecond)
-	}
-	t.Fatalf("timed out waiting for %s", what)
 }
 
 // The greyed row says why the connection went, not only that it did.

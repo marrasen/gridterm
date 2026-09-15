@@ -64,6 +64,37 @@ func sideArea(a *testApp) (ui.Rect, bool) {
 	return a.sideRegion.rect, true
 }
 
+// paneRow is the sidebar row that names a connection, found by what it
+// names rather than by where it sits: a heading or a pinned row above it
+// would move every position.
+func paneRow(t *testing.T, a *testApp, want *conns.Entry) ui.ListRow {
+	t.Helper()
+	panelText(a, panelNow)
+	for _, row := range a.panel.Rows() {
+		if e, is := row.Key.(*conns.Entry); is && e == want {
+			return row
+		}
+	}
+	t.Fatalf("the sidebar has no row for that connection: %v", panelText(a, panelNow))
+	return ui.ListRow{}
+}
+
+// unfocusedPaneRow is the sidebar row of a pane that does not have the
+// keys, which is the one a test chooses to see something happen.
+func unfocusedPaneRow(t *testing.T, a *testApp) ui.ListRow {
+	t.Helper()
+	focused := a.panes[a.focusedTerminal()]
+	panelText(a, panelNow)
+	for _, row := range a.panel.Rows() {
+		e, is := row.Key.(*conns.Entry)
+		if is && e != focused {
+			return row
+		}
+	}
+	t.Fatalf("every row on the sidebar names the focused pane: %v", panelText(a, panelNow))
+	return ui.ListRow{}
+}
+
 // chooseRow puts the sidebar's bar on a row, which is what choosing it
 // in the sidebar does.
 func chooseRow(t *testing.T, a *testApp, want *conns.Entry) {
@@ -374,14 +405,9 @@ func TestPanelActivatingARowRevealsIt(t *testing.T) {
 	if err := a.openTab(); err != nil {
 		t.Fatalf("openTab: %v", err)
 	}
-	panelText(a, panelNow)
-
-	// The first pane, which is not the one with focus.
-	first := a.panel.Rows()[1]
-	want, ok := first.Key.(*conns.Entry)
-	if !ok {
-		t.Fatal("the row does not name a connection")
-	}
+	// The pane that does not have the keys.
+	first := unfocusedPaneRow(t, a)
+	want := first.Key.(*conns.Entry)
 	a.panel.Select(want)
 	if err := a.revealRow(first); err != nil {
 		t.Fatalf("reveal: %v", err)
@@ -401,10 +427,7 @@ func TestPanelClosesTheSelectedConnection(t *testing.T) {
 	if err := a.openTab(); err != nil {
 		t.Fatalf("openTab: %v", err)
 	}
-	panelText(a, panelNow)
-
-	row := a.panel.Rows()[1]
-	e := row.Key.(*conns.Entry)
+	e := unfocusedPaneRow(t, a).Key.(*conns.Entry)
 	a.panel.Select(e)
 	if err := a.closeSelectedConnection(); err != nil {
 		t.Fatalf("close: %v", err)
@@ -581,7 +604,7 @@ func TestPanelSeesBytesFromTheShellItself(t *testing.T) {
 		t.Fatalf("a shell that has said nothing is %v, want opened", got)
 	}
 	a.shells[0].out <- []byte("hello")
-	waitUntil(t, func() bool { return e.State(time.Now()) == meter.Active })
+	waitFor(t, a, "the row to say the shell is active", func() bool { return e.State(time.Now()) == meter.Active })
 }
 
 // A shell that has gone says so rather than settling and looking merely
@@ -591,8 +614,8 @@ func TestPanelSeesTheShellGo(t *testing.T) {
 	withPanel(t, a)
 	e := onlyPane(t, a)
 
-	a.shells[0].Close()
-	waitUntil(t, func() bool { return e.State(time.Now()) == meter.Closed })
+	_ = a.shells[0].Close()
+	waitFor(t, a, "the row to say the shell has gone", func() bool { return e.State(time.Now()) == meter.Closed })
 }
 
 // Enter on the panel has to do something. Calling revealRow by hand
@@ -603,14 +626,12 @@ func TestPanelEnterRevealsThroughTheList(t *testing.T) {
 	if err := a.openTab(); err != nil {
 		t.Fatalf("openTab: %v", err)
 	}
-	panelText(a, panelNow)
 	if err := a.focusPanel(); err != nil {
 		t.Fatalf("focusPanel: %v", err)
 	}
 
-	// The first row is the pane that does not have focus.
-	first := a.panel.Rows()[1]
-	want := first.Key.(*conns.Entry)
+	// The pane that does not have the keys.
+	want := unfocusedPaneRow(t, a).Key.(*conns.Entry)
 	a.panel.Select(want)
 	if _, err := a.root.HandleKey(press(input.KeyEnter, 0)); err != nil {
 		t.Fatalf("enter: %v", err)
@@ -646,12 +667,10 @@ func TestPanelDimsAFinishedRow(t *testing.T) {
 	withPanel(t, a)
 	e := onlyPane(t, a)
 
-	a.refreshPanel(panelNow)
-	running := a.panel.Rows()[1].FG
+	running := paneRow(t, a, e).FG
 
 	e.Meter.Close()
-	a.refreshPanel(panelNow)
-	finished := a.panel.Rows()[1].FG
+	finished := paneRow(t, a, e).FG
 
 	if finished == running {
 		t.Fatal("a finished row is drawn the same as a running one")
@@ -672,8 +691,8 @@ func TestPanelKeepsTheRowOfAShellThatEndedOnItsOwn(t *testing.T) {
 	panelText(a, panelNow)
 
 	// The shell on the first pane goes.
-	a.shells[0].Close()
-	waitUntil(t, func() bool {
+	_ = a.shells[0].Close()
+	waitFor(t, a, "the pane of the shell that ended to go", func() bool {
 		a.reapExited()
 		return len(a.panes) == 1
 	})
@@ -770,8 +789,8 @@ func TestClickingATerminalTakesTheKeysBack(t *testing.T) {
 	}
 
 	// And typing reaches the shell again.
-	a.root.HandleKey(input1('x'))
-	waitUntil(t, func() bool { return strings.Contains(a.shells[0].sentText(), "x") })
+	sendKey(t, a, input1('x'))
+	waitFor(t, a, "the shell to be sent what was typed", func() bool { return strings.Contains(a.shells[0].sentText(), "x") })
 }
 
 // A speed shown when a connection wakes up is the speed now, not the

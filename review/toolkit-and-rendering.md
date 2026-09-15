@@ -41,6 +41,8 @@ one case in each of `wired` and `press` -- or better, move the Ctrl+G
 handling out of `Pane` into `Browser`, so the bar's table is the single
 source again, which is what `press`'s own comment claims it is.
 
+Closed by 0320a9c Give dialogs one key rule, tell the user why a connection went.
+
 ### 2. Escape cancels the clipboard before the type-to-find
 
 `ui/files/browser.go:583` against `ui/files/pane.go:700`.
@@ -51,6 +53,8 @@ three letters to jump to a name while something is on the clipboard,
 press Escape to abandon the jump: the clipboard is silently emptied and
 the find buffer is left standing. Escape should unwind the innermost
 thing first.
+
+Closed by 0320a9c Give dialogs one key rule, tell the user why a connection went.
 
 ### 3. A held terminal size has no read side, and the host is never told
 
@@ -74,6 +78,8 @@ Naming hazard: `Terminal.Box() ui.Size` collides with the toolkit's
 `Boxed.Box() Rect` contract. Different signature, so no confusion for
 the compiler; a reader has to check.
 
+Closed by 4bc67cc Give the taken-over windows a type with its invariant written down.
+
 ### 4. Every widget handles modifiers differently, and `Form` not at all
 
 `ui/form.go:233-271` against `ui/list.go:336`, `ui/menu.go:283`,
@@ -88,6 +94,8 @@ to "next pane") does nothing while any dialog is open, with no error
 saying why. `Form` should mirror `Menu`: decline any modifier it did
 not ask for.
 
+Closed by 0320a9c Give dialogs one key rule, tell the user why a connection went.
+
 ### 5. `Chooser` swallows every key, so the accelerators die while one is up
 
 `ui/chooser.go:242`.
@@ -101,6 +109,8 @@ reaching a pane behind it would be typed into something the user cannot
 see") applies equally to the other three, which solved it by declining
 rather than swallowing.
 
+Closed by 0320a9c Give dialogs one key rule, tell the user why a connection went.
+
 ### 6. Ctrl+K is an accelerator, so the shell never sees kill-line
 
 `app.go:732`.
@@ -111,6 +121,8 @@ people's fingers; here it opens the palette and the shell gets nothing.
 Every other accelerator is Ctrl+Shift, a function key, or a chord no
 terminal claims; the key bar even documents avoiding F10 for this exact
 reason. Ctrl+Shift+K or Ctrl+Shift+P would match the rest of the table.
+
+Closed by 0320a9c Give dialogs one key rule, tell the user why a connection went.
 
 ### 7. `Field` resizes itself inside `Draw`, and two widgets depend on it
 
@@ -127,6 +139,8 @@ the next frame only because `Draw` re-derives the width. So
 split does not size the one widget with scroll state. Either make
 `Field.Draw` read-only and have the callers call `Layout`, or say in
 `Widget` that a widget may re-derive from the view. One or the other.
+
+Closed by 0320a9c Give dialogs one key rule, tell the user why a connection went.
 
 ### 8. `files.Browser` measures from the view but routes clicks from the stored size
 
@@ -150,6 +164,8 @@ and `Draw` is the side to fix.
 `render.Layer.ensure` and `Compositor.Remove`, which are careful about
 it. Each page is a 1024×1024 texture. Holding Ctrl+= through the font
 range allocates dozens that only the finalizer reclaims.
+
+Closed by b00f97e Make the font fallback one decision, reported once.
 
 ## Damage tracking
 
@@ -230,6 +246,8 @@ Every pair asked about exists.
   cut with no sign, while a long machine name one row above gets "…".
 - **Two chord vocabularies.** `ui.Chord` with a derived `String()`, and
   `files.fkey` with the display spelling hand-written (`"^C"`).
+
+Closed by 1707651 Fold the duplicated pieces the review named into one of each.
 
 ## Size and cohesion
 

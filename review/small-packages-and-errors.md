@@ -32,6 +32,8 @@ race under `-race`, and a torn header in practice. The `FS` doc
 promises "safe to use from several goroutines"; `SFTP` is the one
 implementation that is not. Introduced with the rename work this week.
 
+Closed by 0d20f84 Stop a copy overwriting a file it could not check.
+
 ### 2. Every local session close on Windows stalls 250 ms and then kills a child that has already exited
 
 `session/local.go:111-120`, `:168-188`. On Windows `detached` is false,
@@ -43,6 +45,8 @@ first `Close`'s wait on `done` can only time out. Result: a guaranteed
 close. Unix is unaffected. `session` has no tests on Windows (see the
 test review), which is how this survived.
 
+Closed by 290911e Stop every tab close on Windows waiting a quarter of a second.
+
 ### 3. `grid.RuneWidth` runs the full grapheme machine, twice, for every printable character
 
 `grid/grid.go:615` calls `uniseg.StringWidth(string(r))`; it is called
@@ -53,6 +57,8 @@ ASCII fast path. The single most likely cause of the 13 MB/s ceiling.
 A `< 0x7f` fast path, plus passing the computed width from
 `Terminal.Print` into `Screen.Print`, should move it substantially.
 
+Closed by 79b4cf5 Double the terminal's throughput and redraw only the rows that changed.
+
 ### 4. `applySGR` copies the whole 1 KB palette on every SGR sequence
 
 `vt/sgr.go:22`: `Screen.Palette()` returns by value, and the type holds
@@ -60,6 +66,8 @@ A `< 0x7f` fast path, plus passing the computed width from
 constantly, so this is a kilobyte copy per escape sequence, and
 `defaultPen()` copies it again on every SGR 0. Return a pointer or cache
 one on the terminal.
+
+Closed by 79b4cf5 Double the terminal's throughput and redraw only the rows that changed.
 
 ### 5. The parser allocates two or three times per dispatch
 
@@ -78,12 +86,16 @@ whether or not anything is pending. At 240×67 that is about 32,000 cell
 operations per frame per pane before anything is drawn. `Render` also
 ignores which rows the emulator touched.
 
+Closed by 79b4cf5 Double the terminal's throughput and redraw only the rows that changed.
+
 ### 7. A finished job never calls its cancel function
 
 `jobs/jobs.go:239` creates `context.WithCancel`; `finish` and
 `DropFinished` do not call it. Every job that completes normally leaves
 a cancel context registered on the parent for the life of the window.
 A slow leak proportional to the number of transfers.
+
+Closed by 0d20f84 Stop a copy overwriting a file it could not check.
 
 ### 8. `beside` treats an unreadable destination as "nothing is there"
 
@@ -94,6 +106,8 @@ substituted with the assumption that the name is free, in the one place
 where getting it wrong overwrites the user's file. **House rule
 violation.**
 
+Closed by 0d20f84 Stop a copy overwriting a file it could not check.
+
 ### 9. A failed directory-mode fixup leaves the copy half-permissioned
 
 `jobs/run.go:241-249`. The trailing loop restores the asked-for mode on
@@ -101,6 +115,8 @@ directories created wide. If `Chmod` fails on the third of ten, it
 returns and the other seven keep their widened modes, with no record of
 which. The package doc promises half-written results are taken away;
 this one survives.
+
+Closed by 0d20f84 Stop a copy overwriting a file it could not check.
 
 ### 10. `vfs.Same` makes two machines the same place if they share a name
 
@@ -112,12 +128,16 @@ path *on the source machine*. **Speculation** as to reachability, since
 the book rejects duplicate saved names; the failure mode is silent data
 movement, so identity should not be a display string.
 
+Closed by 0d20f84 Stop a copy overwriting a file it could not check.
+
 ### 11. `vfs.Roots` takes an interface and type-asserts to `*Local`
 
 `vfs/vfs.go:251-264`. It answers `/` for anything not a local Windows
 filesystem, so a pane on an SFTP host that is itself Windows is offered
 `/` as its only root. The concrete-type switch is the interface
 leaking; this wants to be a method on `FS`.
+
+Closed by 0d20f84 Stop a copy overwriting a file it could not check.
 
 ### 12. Dead and unreachable
 
@@ -139,6 +159,8 @@ file look new and the code then chmods it to the source's mode. On a
 path that exists but cannot be stat'd, the destination's own
 permissions are overwritten -- the opposite of the rule two lines
 above. `vfs/sftp.go:132` has the same shape.
+
+Closed by 0d20f84 Stop a copy overwriting a file it could not check.
 
 ### 15. Harness faults
 
@@ -303,6 +325,13 @@ The last three are the same decision -- "a bad font file should not take
 the window down" -- made in three places. It may well be the right
 decision. Under the house rule it is Marcus's to make, once, and the
 code should then say he made it.
+
+Closed by 0d20f84 Stop a copy overwriting a file it could not check, for the
+job and the two filesystems.
+Closed by 0320a9c Give dialogs one key rule, tell the user why a connection
+went, for the clipboard read.
+Closed by b00f97e Make the font fallback one decision, reported once, for the
+three font rows.
 
 ### What is sound repo-wide
 

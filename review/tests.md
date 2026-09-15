@@ -38,6 +38,8 @@ commit that removed the guard ("show only the screens"). Restore a
 count: assert at least one remote row for that window exists and that
 the attached one is not among them.
 
+Closed by 4c44b5a Make six tests able to fail for the reason they name.
+
 ### 2. The same shape, same commit, in the test that guards a real regression [passes-with-bug]
 
 `takeover_test.go:1764-1768`, `TestARowWithNoScreenCannotBeWatched`.
@@ -46,6 +48,8 @@ the attached one is not among them.
 an empty slice passes. It needs a non-empty assertion plus proof that
 the screened siblings are still offered, or it cannot tell "filtered
 correctly" from "listed nothing".
+
+Closed by 4c44b5a Make six tests able to fail for the reason they name.
 
 ### 3. The test for "clicking a screenless row opened a pane" no longer clicks [bypass]
 
@@ -58,6 +62,8 @@ called `client.revealRow(serving)`, which is what the list's
 pane"; the test now runs one layer below the click. `revealRow` is
 exercised only twice elsewhere, neither time with a `remoteKey`.
 
+Closed by 4c44b5a Make six tests able to fail for the reason they name.
+
 ### 4. `silentMachine` in `serve` still has the send-on-closed-channel panic fixed in the root copy [flaky]
 
 `serve/takeover_test.go:1381-1404` against the fixed twin at
@@ -69,6 +75,8 @@ window panics the whole binary; a ninth connection blocks the goroutine
 for ever. The root copy was converted to a mutex and a slice with a
 comment explaining exactly this. The duplicate was not.
 
+Closed by 1707651 Fold the duplicated pieces the review named into one of each.
+
 ### 5. `silentMachine(t)` is called from inside `go func()` [flaky]
 
 `serve/takeover_test.go:1423`, `:1453`.
@@ -77,6 +85,8 @@ It calls `t.Helper`, `t.Fatalf` and `t.Cleanup` from a non-test
 goroutine. `Fatalf` there only ends that goroutine, so the test hangs
 on its 30-second select and reports the wrong thing; registering a
 cleanup races test completion. Hoist the call above the goroutine.
+
+Closed by 1707651 Fold the duplicated pieces the review named into one of each.
 
 ### 6. One font-atlas failure turns all 937 root tests green by skipping [passes-with-bug]
 
@@ -87,6 +97,8 @@ embedded font, a DPI change, a new metrics assertion -- silently turns
 the entire suite to SKIP, and `go test ./...` still prints `ok`. The
 atlas is built from an embedded font and has no environmental reason to
 fail. This should be `Fatalf`.
+
+Closed by 4c44b5a Make six tests able to fail for the reason they name.
 
 ### 7. The key-bar layout is asserted against the function that implements it [passes-with-bug]
 
@@ -145,6 +157,8 @@ directly, so the `conn.files` line on a window's plus menu is never
 exercised end to end. **Speculation**: the failure is one branch from
 the one fixed in `c9186f2`.
 
+Closed by d96de72 Decide what kind of host a name is in one place.
+
 ### 13. `TestTheHereCommandsDelegate` promises the here-commands and checks one [source-reading]
 
 `hostmenu_test.go:378-403` asserts only about `openTerminalHere`.
@@ -152,6 +166,8 @@ the one fixed in `c9186f2`.
 `isHere`/`isWindow` switches -- the shape the test exists to forbid. It
 also hard-codes the filename, so moving the function fails with "is
 gone" rather than a useful message.
+
+Closed by d96de72 Decide what kind of host a name is in one place.
 
 ### 14. Source-reading tests: defensible, but only as a second line [source-reading]
 
@@ -229,6 +245,8 @@ timeout.
 condition is deterministic given the embedded font, so these either
 always run or always skip; a metrics change turns them into silent
 no-ops, and `:487` skips on exactly the regression it should catch.
+
+Closed by 4c44b5a Make six tests able to fail for the reason they name.
 
 ### 24. The menu tripwire does not cover the plus menu [coverage]
 

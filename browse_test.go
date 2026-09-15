@@ -16,6 +16,33 @@ import (
 	"github.com/marrasen/gridterm/ui/files"
 )
 
+// openFilesFromThePlus opens a file pane on a machine the way a user
+// does: the plus on its row, and the line that browses.
+func openFilesFromThePlus(t *testing.T, a *testApp, host string) *files.Pane {
+	t.Helper()
+	was := make(map[*files.Pane]bool)
+	if a.files != nil {
+		for _, p := range a.files.view.Panes() {
+			was[p] = true
+		}
+	}
+	chooseMenuItem(t, clickPlus(t, a, host), "conn.files")
+	var opened *files.Pane
+	waitFor(t, a, "a file pane on "+host, func() bool {
+		if a.files == nil {
+			return false
+		}
+		for _, p := range a.files.view.Panes() {
+			if !was[p] {
+				opened = p
+				return true
+			}
+		}
+		return false
+	})
+	return opened
+}
+
 // putFile writes a file for a browser test to find.
 func putFile(t *testing.T, at, name, body string) {
 	t.Helper()
@@ -184,7 +211,7 @@ func TestCopyingAsksBeforeReplacing(t *testing.T) {
 	tap(t, b.view, input.KeyTab)
 	tap(t, b.view, input.KeyF7)
 
-	f := waitForDialogPrefix(t, a, "Replace")
+	f := awaitModal(t, a, "a dialog whose title starts with Replace", byTitlePrefix[*ui.Form]("Replace"))
 	if !strings.Contains(strings.Join(f.Lines, " "), "file") {
 		t.Errorf("the question says %q, want what is there", f.Lines)
 	}
@@ -222,10 +249,10 @@ func TestAQuestionThatIsDismissedStopsTheJob(t *testing.T) {
 	tap(t, b.view, input.KeyF5)
 	tap(t, b.view, input.KeyTab)
 	tap(t, b.view, input.KeyF7)
-	f := waitForDialogPrefix(t, a, "Replace")
+	f := awaitModal(t, a, "a dialog whose title starts with Replace", byTitlePrefix[*ui.Form]("Replace"))
 
 	// Escape, which is how a dialog goes away without an answer.
-	a.root.HandleKey(press(input.KeyEscape, 0))
+	sendKey(t, a, press(input.KeyEscape, 0))
 	a.pump.run()
 	if a.root.Modal() == f {
 		t.Fatal("the dialog is still there")
@@ -258,7 +285,7 @@ func TestDeletingAsksFirst(t *testing.T) {
 	tap(t, b.view, input.KeyDown)
 	tap(t, b.view, input.KeyF8)
 
-	f := waitForDialogPrefix(t, a, "Delete")
+	f := awaitModal(t, a, "a dialog whose title starts with Delete", byTitlePrefix[*ui.Form]("Delete"))
 	if len(a.jobs) != 0 {
 		t.Fatal("it started deleting before the question was answered")
 	}
@@ -281,12 +308,8 @@ func TestABrowserOnAnotherMachine(t *testing.T) {
 	withPanel(t, a)
 	host := connectedTo(t, a, s)
 
-	if err := a.openFilesOn(conns.Local); err != nil {
-		t.Fatalf("a pane here: %v", err)
-	}
-	if err := a.openFilesOn(host); err != nil {
-		t.Fatalf("a pane on %s: %v", host, err)
-	}
+	openFilesFromThePlus(t, a, conns.Local)
+	openFilesFromThePlus(t, a, host)
 	b := a.files
 	if b == nil {
 		t.Fatal("the window has no file manager")
@@ -359,9 +382,9 @@ func TestMakingADirectory(t *testing.T) {
 
 	b, left, _ := onlyBrowser(t, a)
 	tap(t, b.view, input.KeyF9)
-	f := waitForDialogPrefix(t, a, "New directory")
+	f := awaitModal(t, a, "a dialog whose title starts with New directory", byTitlePrefix[*ui.Form]("New directory"))
 
-	f.Fields()[0].SetText("in/out")
+	typeIntoField(t, a, f, "Name", "in/out")
 	pressButton(t, a, f, "Make it")
 	if a.root.Modal() != f {
 		t.Fatal("the dialog closed on a name that is a path")
@@ -370,7 +393,7 @@ func TestMakingADirectory(t *testing.T) {
 		t.Fatal("nothing said why it was refused")
 	}
 
-	f.Fields()[0].SetText("made")
+	retypeField(t, a, f, "Name", "made")
 	pressButton(t, a, f, "Make it")
 	waitFor(t, a, "the directory to be made", func() bool {
 		_, err := os.Stat(filepath.Join(left, "made"))
@@ -410,10 +433,9 @@ func TestTheFileManagerTakesAsManyPanesAsAsked(t *testing.T) {
 	withPanel(t, a)
 	host := connectedTo(t, a, s)
 
+	var last *files.Pane
 	for _, on := range []string{conns.Local, host, conns.Local, host} {
-		if err := a.openFilesOn(on); err != nil {
-			t.Fatalf("a pane on %q: %v", on, err)
-		}
+		last = openFilesFromThePlus(t, a, on)
 	}
 	if got := len(a.files.view.Panes()); got != 4 {
 		t.Fatalf("the manager holds %d panes, want 4", got)
@@ -447,7 +469,7 @@ func TestTheFileManagerTakesAsManyPanesAsAsked(t *testing.T) {
 
 	// The pane just opened has the keys, which is what opening one is
 	// for.
-	if a.files.view.Here() != a.files.view.Panes()[3] {
+	if a.files.view.Here() != last {
 		t.Fatal("the keys are not on the pane that was just opened")
 	}
 	checkTree(t, a)
@@ -460,9 +482,7 @@ func TestClosingOneFilePaneLeavesTheOthers(t *testing.T) {
 	withPanel(t, a)
 
 	for i := 0; i < 3; i++ {
-		if err := a.openFilesOn(conns.Local); err != nil {
-			t.Fatalf("a pane: %v", err)
-		}
+		openFilesFromThePlus(t, a, conns.Local)
 	}
 	panes := a.files.view.Panes()
 	row := a.files.rows[panes[1]]
@@ -492,9 +512,7 @@ func TestTheLastFilePaneTakesTheManager(t *testing.T) {
 	withDialogs(t, a)
 	withPanel(t, a)
 
-	if err := a.openFilesOn(conns.Local); err != nil {
-		t.Fatalf("a pane: %v", err)
-	}
+	openFilesFromThePlus(t, a, conns.Local)
 	manager := a.files.view
 	p := a.files.view.Panes()[0]
 	if err := a.closePane(p); err != nil {
@@ -527,9 +545,7 @@ func TestTheFirstFilePaneHasTheKeys(t *testing.T) {
 	withDialogs(t, a)
 	withPanel(t, a)
 
-	if err := a.openFilesOn(conns.Local); err != nil {
-		t.Fatalf("a pane: %v", err)
-	}
+	openFilesFromThePlus(t, a, conns.Local)
 	p := a.files.view.Panes()[0]
 	if a.files.view.Here() != p {
 		t.Fatal("the manager says the keys are somewhere else")
@@ -551,9 +567,7 @@ func TestAMachineGoingLeavesTheKeysWhereTheyWere(t *testing.T) {
 
 	// Here, there, here: the keys end on the last one.
 	for _, on := range []string{conns.Local, host, conns.Local} {
-		if err := a.openFilesOn(on); err != nil {
-			t.Fatalf("a pane on %q: %v", on, err)
-		}
+		openFilesFromThePlus(t, a, on)
 	}
 	was := a.files.view.Here()
 
@@ -584,9 +598,7 @@ func TestGoToSendsAFilePaneAnywhere(t *testing.T) {
 	a := newTestApp(t, 90, 30)
 	withDialogs(t, a)
 	withPanel(t, a)
-	if err := a.openFilesOn(conns.Local); err != nil {
-		t.Fatalf("open the file manager: %v", err)
-	}
+	openFilesFromThePlus(t, a, conns.Local)
 	p, ok := ui.FocusedLeaf(a.root.Widget()).(*files.Pane)
 	if !ok {
 		t.Fatal("the keys are not on a file pane")
@@ -596,8 +608,8 @@ func TestGoToSendsAFilePaneAnywhere(t *testing.T) {
 	if err := a.openGoTo(); err != nil {
 		t.Fatalf("go to: %v", err)
 	}
-	f := openDialog(t, a)
-	f.Field("Path").SetText(where)
+	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
+	typeIntoField(t, a, f, "Path", where)
 	pressButton(t, a, f, "Go")
 	a.pump.run()
 
@@ -608,7 +620,7 @@ func TestGoToSendsAFilePaneAnywhere(t *testing.T) {
 	if err := a.openGoTo(); err != nil {
 		t.Fatalf("go to again: %v", err)
 	}
-	f = openDialog(t, a)
+	f = awaitModal[*ui.Form](t, a, "a dialog", nil)
 	if len(f.Field("Path").Options) < 2 {
 		t.Errorf("it offers %v, want where it is now and the roots", f.Field("Path").Options)
 	}
@@ -695,7 +707,7 @@ func TestAFilePaneWithTheKeysShowsWhyAReadFailed(t *testing.T) {
 
 	// The user asked for that directory, so the reason arrives without
 	// their having to ask for it again.
-	n := openNotice(t, a)
+	n := awaitModal[*ui.Notice](t, a, "a notice", nil)
 	if n.Title != "Could not read a directory" {
 		t.Errorf("the dialog is titled %q", n.Title)
 	}
@@ -717,7 +729,7 @@ func TestAFilePaneWithTheKeysShowsWhyAReadFailed(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("clicking the row: %v", err)
 	}
-	if again := openNotice(t, a); again.Message() != n.Message() {
+	if again := awaitModal[*ui.Notice](t, a, "a notice", nil); again.Message() != n.Message() {
 		t.Errorf("the row brought back\n%s\nwant\n%s", again.Message(), n.Message())
 	}
 }
@@ -746,7 +758,7 @@ func TestAFilePaneWithoutTheKeysWaitsToSayWhyAReadFailed(t *testing.T) {
 	if !other.Focused() {
 		t.Fatal("Tab did not move the keys to the other pane")
 	}
-	openNotice(t, a)
+	awaitModal[*ui.Notice](t, a, "a notice", nil)
 	dismissNotice(t, a)
 
 	// Leaving and coming back is not another failure.

@@ -570,9 +570,12 @@ func TestPaletteClearsAfterTheWindowResizes(t *testing.T) {
 	p.Layout(Size{Cols: 80, Rows: 12})
 	p.Draw(g.View())
 
+	// Forty columns then eighty: the widening is the test's own, so a box
+	// that stayed put means the palette stopped centring itself.
 	wide := p.box()
 	if wide.X == narrow.X {
-		t.Skip("the box did not move, so there is nothing to have left behind")
+		t.Fatalf("the box stayed at column %d when the window went from 40 to 80 columns, "+
+			"so nothing could have been left behind", wide.X)
 	}
 	// Every cell of the old box that the new one does not cover is clear.
 	for y := narrow.Y; y < narrow.Y+narrow.Rows; y++ {

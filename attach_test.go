@@ -75,7 +75,7 @@ func readOnce(t *testing.T, w *watched) ([]byte, error) {
 	select {
 	case g := <-back:
 		return g.b, g.err
-	case <-time.After(5 * time.Second):
+	case <-time.After(waitBudget):
 		t.Fatal("the read never came back")
 		return nil, nil
 	}
@@ -107,9 +107,9 @@ func TestAWatcherIsSentTheLiveScreenNotTheScrolledView(t *testing.T) {
 
 	// More than a screenful, so there is history to scroll into.
 	shell.out <- []byte("one\r\ntwo\r\nthree\r\nfour\r\nfive\r\n")
-	waitUntil(t, func() bool { return strings.Contains(paneText(pane), "five") })
+	waitUntil(t, "the pane to show the last line", func() bool { return strings.Contains(paneText(pane), "five") })
 	pane.ScrollView(4)
-	waitUntil(t, func() bool { return strings.Contains(paneText(pane), "one") })
+	waitUntil(t, "the pane to show what it was scrolled back to", func() bool { return strings.Contains(paneText(pane), "one") })
 
 	w, err := newWatched(pane)
 	if err != nil {
@@ -137,7 +137,7 @@ func TestAWatcherThatFellBehindIsGivenTheScreen(t *testing.T) {
 		shell.out <- []byte("filling\r\n")
 	}
 	shell.out <- []byte("the-last-thing-said")
-	waitUntil(t, func() bool {
+	waitUntil(t, "the pane to show the last thing said", func() bool {
 		return strings.Contains(paneText(pane), "the-last-thing-said")
 	})
 
@@ -206,7 +206,7 @@ func TestWatchingSomethingAlreadyFinishedFails(t *testing.T) {
 	if err := shell.Close(); err != nil {
 		t.Fatalf("end the shell: %v", err)
 	}
-	waitUntil(t, func() bool { return pane.Exited() })
+	waitUntil(t, "the pane to notice the shell went", func() bool { return pane.Exited() })
 
 	w, err := newWatched(pane)
 	if err == nil {

@@ -569,9 +569,11 @@ func TestFormDropsAButtonThatDoesNotFit(t *testing.T) {
 	f.AddButton(Button{Title: "Another long one"})
 	f.Layout(Size{Cols: 24, Rows: 20})
 
+	// The size is the test's own, so an empty box is the layout having
+	// changed rather than this machine being different.
 	box := f.Box()
 	if box.Empty() {
-		t.Skip("no box at this size")
+		t.Fatal("the form drew no box in 24 columns, so there is nothing to check")
 	}
 	for i, at := range f.buttonCols() {
 		if at >= 0 && at < formPad {
@@ -668,8 +670,12 @@ func TestFormClickLandsWhenHintLinesAreElided(t *testing.T) {
 	if box.Empty() {
 		t.Fatal("no box")
 	}
+	// Seven hint lines in fourteen rows: the fixture is chosen so some of
+	// them have to go, and a layout that fits them all has stopped being
+	// the case this test is about.
 	if l := f.layout(); len(l.lines) == len(f.Lines) {
-		t.Skip("every hint line fitted, so nothing was elided")
+		t.Fatalf("all %d hint lines fitted, so nothing was elided; give the form more lines",
+			len(f.Lines))
 	}
 
 	want := -1
@@ -738,9 +744,12 @@ func TestFormWillNotPressAButtonItCannotShow(t *testing.T) {
 	// Room for the box and one button, not two.
 	f.Layout(Size{Cols: 22, Rows: 24})
 
+	// Twenty-two columns is the test's own choice, so both buttons fitting
+	// means the layout changed, not that this machine is different.
 	cols := f.buttonCols()
 	if cols[0] >= 0 {
-		t.Skipf("both buttons fit in a box %d wide, so there is nothing to test", f.box().Cols)
+		t.Fatalf("both buttons fit in a box %d wide, so no button is left undrawn; make the form narrower",
+			f.box().Cols)
 	}
 
 	// Enter from the field means the first button, which is not there.

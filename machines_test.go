@@ -243,36 +243,6 @@ func TestTheServerRowClosesTheWholeConnection(t *testing.T) {
 	}
 }
 
-// Two connections to one machine at once would leave the window holding
-// the second and closing neither.
-func TestOneMachineIsOnlyConnectedToOnce(t *testing.T) {
-	deafHost, deafPort := sshtest.Deaf(t)
-	a := newTestApp(t, 80, 24)
-	withDialogs(t, a)
-
-	cfg := serverConfig(t, sshtest.New(t))
-	cfg.Host, cfg.Port = deafHost, deafPort
-	a.connectAs("slow", cfg)
-	if a.machines.beingMade() != 1 {
-		t.Fatalf("%d connections are being made, want 1", a.machines.beingMade())
-	}
-
-	a.connectAs("slow", cfg)
-	if a.machines.beingMade() != 1 {
-		t.Fatalf("%d connections are being made, want the first one only", a.machines.beingMade())
-	}
-	// Asked about rather than refused: the user says whether to wait for
-	// the one on its way or to throw it away and start again.
-	f := waitForDialog(t, a, "Already connecting to slow")
-	pressButton(t, a, f, "Leave it")
-	if a.machines.beingMade() != 1 {
-		t.Fatalf("%d connections are being made, want the first one only", a.machines.beingMade())
-	}
-	if a.machines.connecting("slow") == nil {
-		t.Fatal("the first connection was let go of")
-	}
-}
-
 // Waiting for a connection already on its way runs the request again
 // once it is done.
 func TestWaitingForTheOneOnItsWayRunsTheRequestAgain(t *testing.T) {
@@ -283,7 +253,7 @@ func TestWaitingForTheOneOnItsWayRunsTheRequestAgain(t *testing.T) {
 	cfg := serverConfig(t, s)
 	a.connectAs("box", cfg)
 	a.connectAs("box", cfg)
-	f := waitForDialog(t, a, "Already connecting to box")
+	f := awaitModal(t, a, "the Already connecting to box dialog", byTitle[*ui.Form]("Already connecting to box"))
 	pressButton(t, a, f, "Wait for it")
 
 	// The first connection lands, and then the second request runs on
@@ -295,30 +265,6 @@ func TestWaitingForTheOneOnItsWayRunsTheRequestAgain(t *testing.T) {
 	// And the machine that answered while the second request waited is
 	// connected rather than still being connected to.
 	heldAs(t, a, "box", isConnected)
-}
-
-// Giving up on the connection already on its way starts the new one.
-func TestGivingUpOnTheOneOnItsWayStartsTheNewOne(t *testing.T) {
-	deafHost, deafPort := sshtest.Deaf(t)
-	a := newTestApp(t, 80, 24)
-	withDialogs(t, a)
-
-	cfg := serverConfig(t, sshtest.New(t))
-	cfg.Host, cfg.Port = deafHost, deafPort
-	a.connectAs("slow", cfg)
-	first := a.machines.connecting("slow")
-	if first == nil {
-		t.Fatal("nothing is being connected to")
-	}
-
-	a.connectAs("slow", cfg)
-	f := waitForDialog(t, a, "Already connecting to slow")
-	pressButton(t, a, f, "Give up on that one")
-
-	waitFor(t, a, "the second attempt to take the name", func() bool {
-		d := a.machines.connecting("slow")
-		return d != nil && d != first
-	})
 }
 
 // A machine that failed to connect is not left marked as busy, or the
@@ -451,10 +397,8 @@ func TestRunACommandThroughTheDialog(t *testing.T) {
 	if err := a.openCommandHere(); err != nil {
 		t.Fatalf("openCommandHere: %v", err)
 	}
-	f := waitForDialog(t, a, "Run a command on "+host)
-	for _, r := range "uname -a" {
-		a.root.HandleKey(input1(r))
-	}
+	f := awaitModal(t, a, "the Run a command on "+host+" dialog", byTitle[*ui.Form]("Run a command on "+host))
+	typeIntoField(t, a, f, "Command", "uname -a")
 	pressButton(t, a, f, "Run")
 	waitForPanes(t, a, 3)
 
@@ -487,7 +431,7 @@ func TestRunACommandRefusesAnEmptyOne(t *testing.T) {
 	if err := a.openCommandHere(); err != nil {
 		t.Fatalf("openCommandHere: %v", err)
 	}
-	f := waitForDialog(t, a, "Run a command on "+host)
+	f := awaitModal(t, a, "the Run a command on "+host+" dialog", byTitle[*ui.Form]("Run a command on "+host))
 	pressButton(t, a, f, "Run")
 
 	if a.root.Modal() != f {
@@ -668,8 +612,8 @@ func TestAShellThatEndsTakesItsPane(t *testing.T) {
 		t.Fatalf("%d panes", len(a.panes))
 	}
 
-	a.shells[0].Close()
-	waitUntil(t, func() bool {
+	_ = a.shells[0].Close()
+	waitFor(t, a, "the pane of the shell that ended to go", func() bool {
 		a.reapExited()
 		return len(a.panes) == 1
 	})
@@ -750,7 +694,7 @@ func TestACommandThatWillNotCloseSaysSo(t *testing.T) {
 	shell := a.shells[len(a.shells)-1]
 	boom := errors.New("the channel would not close")
 	shell.failOnClose(boom)
-	shell.Close()
+	_ = shell.Close()
 
 	waitFor(t, a, "the command to stop", func() bool {
 		a.reapExited()
@@ -1062,7 +1006,7 @@ func TestWhatWaitedForAConnectionThatFailedIsDropped(t *testing.T) {
 	cfg.Host, cfg.Port = deafHost, deafPort
 	a.connectAs("box", cfg)
 	a.connectAs("box", cfg)
-	f := waitForDialog(t, a, "Already connecting to box")
+	f := awaitModal(t, a, "the Already connecting to box dialog", byTitle[*ui.Form]("Already connecting to box"))
 	pressButton(t, a, f, "Wait for it")
 	a.pump.run()
 
@@ -1346,18 +1290,14 @@ func TestASecondAttemptOnASavedMachineAsks(t *testing.T) {
 			a.refreshServers()
 			connect := openPrefix + remote.CommandName("slow")
 
-			if err := a.root.Commands.Run(connect); err != nil {
-				t.Fatalf("connect to it: %v", err)
-			}
+			runFromPalette(t, a, connect)
 			first := a.machines.connecting("slow")
 			if first == nil {
 				t.Fatal("nothing is on its way to the deaf machine, so this proves nothing")
 			}
 
-			if err := a.root.Commands.Run(connect); err != nil {
-				t.Fatalf("connect to it again: %v", err)
-			}
-			f := waitForDialog(t, a, "Already connecting to slow")
+			runFromPalette(t, a, connect)
+			f := awaitModal(t, a, "the Already connecting to slow dialog", byTitle[*ui.Form]("Already connecting to slow"))
 			pressButton(t, a, f, tc.button)
 
 			tc.then(t, a, first)

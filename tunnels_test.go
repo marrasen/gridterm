@@ -31,7 +31,7 @@ func echoAt(t *testing.T) string {
 				return
 			}
 			go func() {
-				defer c.Close()
+				defer func() { _ = c.Close() }()
 				buf := make([]byte, 256)
 				for {
 					n, err := c.Read(buf)
@@ -100,8 +100,9 @@ func TestOpenATunnelThroughTheDialog(t *testing.T) {
 	if err := a.openTunnelHere(); err != nil {
 		t.Fatalf("openTunnelHere: %v", err)
 	}
-	f := waitForDialog(t, a, "Tunnel over "+host)
-	typeInto(t, a, f, "127.0.0.1:0", echo)
+	f := awaitModal(t, a, "the Tunnel over "+host+" dialog", byTitle[*ui.Form]("Tunnel over "+host))
+	typeIntoField(t, a, f, "Listen on", "127.0.0.1:0")
+	typeIntoField(t, a, f, "Reach", echo)
 	pressButton(t, a, f, "Listen here")
 	a.pump.run()
 
@@ -132,7 +133,7 @@ func TestOpenATunnelThroughTheDialog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dial the tunnel: %v", err)
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 	if err := c.SetDeadline(time.Now().Add(waitBudget)); err != nil {
 		t.Fatalf("deadline: %v", err)
 	}
@@ -385,7 +386,7 @@ func TestATunnelThatStopsOnItsOwnIsTakenAway(t *testing.T) {
 	if got := row.State(time.Now()); got != meter.Closed {
 		t.Fatalf("the row is %v after the tunnel stopped, want closed", got)
 	}
-	n := waitForNoticePrefix(t, a, "The tunnel")
+	n := awaitModal(t, a, "a notice whose title starts with The tunnel", byTitlePrefix[*ui.Notice]("The tunnel"))
 	if !strings.Contains(n.Message(), "out of handles") {
 		t.Fatalf("the dialog says %q, want the reason in it", n.Message())
 	}
@@ -469,8 +470,9 @@ func TestATunnelThatMakesNoSenseIsRefusedInTheDialog(t *testing.T) {
 	if err := a.openTunnelHere(); err != nil {
 		t.Fatalf("openTunnelHere: %v", err)
 	}
-	f := waitForDialog(t, a, "Tunnel over "+host)
-	typeInto(t, a, f, "127.0.0.1:0", "nowhere")
+	f := awaitModal(t, a, "the Tunnel over "+host+" dialog", byTitle[*ui.Form]("Tunnel over "+host))
+	typeIntoField(t, a, f, "Listen on", "127.0.0.1:0")
+	typeIntoField(t, a, f, "Reach", "nowhere")
 	pressButton(t, a, f, "Listen here")
 
 	if a.root.Modal() != f {
@@ -503,9 +505,9 @@ func TestAStreamThatFailsIsReportedAndTheTunnelStays(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
-	n := waitForNoticePrefix(t, a, "Trouble on the tunnel")
+	n := awaitModal(t, a, "a notice whose title starts with Trouble on the tunnel", byTitlePrefix[*ui.Notice]("Trouble on the tunnel"))
 	if strings.TrimSpace(n.Message()) == "" {
 		t.Fatal("the failure was reported with no reason in it")
 	}
@@ -579,8 +581,8 @@ func TestOpenASocksProxyThroughTheDialog(t *testing.T) {
 	if err := a.openSocksHere(); err != nil {
 		t.Fatalf("openSocksHere: %v", err)
 	}
-	f := waitForDialog(t, a, "SOCKS proxy over "+host)
-	typeInto(t, a, f, "127.0.0.1:0")
+	f := awaitModal(t, a, "the SOCKS proxy over "+host+" dialog", byTitle[*ui.Form]("SOCKS proxy over "+host))
+	typeIntoField(t, a, f, "Listen on", "127.0.0.1:0")
 	pressButton(t, a, f, "Open")
 	a.pump.run()
 
@@ -607,37 +609,10 @@ func TestTheSocksDialogAsksForOneThingOnly(t *testing.T) {
 	if err := a.openSocksHere(); err != nil {
 		t.Fatalf("openSocksHere: %v", err)
 	}
-	f := waitForDialog(t, a, "SOCKS proxy over "+host)
+	f := awaitModal(t, a, "the SOCKS proxy over "+host+" dialog", byTitle[*ui.Form]("SOCKS proxy over "+host))
 	if len(f.Fields()) != 1 {
 		t.Fatalf("the dialog has %d fields, want the one it needs", len(f.Fields()))
 	}
-}
-
-// typeInto fills a dialog's fields in order, from the first one.
-func typeInto(t *testing.T, a *testApp, f *ui.Form, values ...string) {
-	t.Helper()
-	for i, value := range values {
-		if i >= len(f.Fields()) {
-			t.Fatalf("the dialog has %d fields, want at least %d", len(f.Fields()), len(values))
-		}
-		f.Fields()[i].SetText(value)
-	}
-}
-
-// waitForDialogPrefix runs the pump until a dialog whose title starts
-// with what is asked for is on the stack.
-func waitForDialogPrefix(t *testing.T, a *testApp, prefix string) *ui.Form {
-	t.Helper()
-	deadline := time.Now().Add(waitBudget)
-	for time.Now().Before(deadline) {
-		a.pump.run()
-		if f, ok := a.root.Modal().(*ui.Form); ok && strings.HasPrefix(f.Title, prefix) {
-			return f
-		}
-		time.Sleep(time.Millisecond)
-	}
-	t.Fatalf("no dialog opened whose title starts with %q", prefix)
-	return nil
 }
 
 // A remote forward is asked about whatever address it names. Where the

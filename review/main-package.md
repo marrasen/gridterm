@@ -63,6 +63,8 @@ Related: `openTerminalOn` takes no `*spot`, and every take-over path
 passes `nil`. **A terminal on a window can never land in the split the
 user asked for.** It always becomes a tab.
 
+Closed by d96de72 Decide what kind of host a name is in one place.
+
 ### 2. A connection that drops on its own leaves a heading nobody can act on
 
 `machines.go:106-139` (`machineDied`) against `panel.go:261-266` and
@@ -86,6 +88,8 @@ entirely. Same event, opposite policy.
 
 **No test covers `machineDied` or `windowDied`.** Zero hits in `*_test.go`.
 
+Closed by 3fa837a Give the connected machines a type and split machines.go six ways.
+
 ### 3. Command titles drift from what is connected
 
 `book.go:57-67` (the early return) against `book.go:79-86` (the title).
@@ -101,6 +105,8 @@ Running the command still does the right thing, so this is a lying
 label rather than a broken action. It is the same class of fault the
 comment at `book.go:36-39` was written to fix for `savedWindows`, one
 field over.
+
+Closed by 4bc67cc Give the taken-over windows a type with its invariant written down.
 
 ### 4. Saving a window that is already taken over makes it unreachable under its new name
 
@@ -119,6 +125,8 @@ office first"*.
 In one sentence: `windows` is keyed by a name derived from the book, and
 nothing re-derives that key when the book changes. Rename is handled
 (`renamedWindow`); first save and remove are not.
+
+Closed by 4bc67cc Give the taken-over windows a type with its invariant written down.
 
 ### 5. Eleven separate "what kind of host is this?" decisions
 
@@ -155,6 +163,8 @@ consumed by all eleven. `hostAbout` in `hostmenu.go:88-98` is already
 most of that type, is pure, and has a table test. Promote it; delete the
 other ten.
 
+Closed by d96de72 Decide what kind of host a name is in one place.
+
 ### 6. Derived state, field by field
 
 | field | written | breaks on |
@@ -164,6 +174,8 @@ other ten.
 | `windows` | `holdWindow` | **Stale.** Finding 4: keyed by a book name never re-derived. |
 | `paneOn` | `machines.go:762,847` | Stale after `machineDied`: panes keep pointing at a `*machine` no longer in `a.machines`. Harmless today; a dangling map into a dead object. |
 | `opening`, `kept`, `paneOnWindow`, `watching`, `handedBy`, `lastSnapshot`/`openNow`, `shown`, `rates`, `serverCommands` | various | Sound. `giveUp` releasing names eagerly is right and well argued. `handedBy` keyed by id rather than pane is well thought out. |
+
+Closed by 4bc67cc Give the taken-over windows a type with its invariant written down.
 
 ### 7. Multiple funnels for one operation
 
@@ -184,6 +196,8 @@ other ten.
   different field subsets. `windows.go:503` uses `&meter.Meter{}` where
   everything else uses `meter.New()` -- **speculation** whether a zero
   meter reports the same initial state.
+
+Closed by d96de72 Decide what kind of host a name is in one place.
 
 ### 8. Threading -- the healthiest part of the package
 
@@ -253,6 +267,10 @@ There because two files needed to share something:
   connection made or lost.
 - `openRows` (`publish.go:112`) is dead.
 
+Closed by 6350ed0 Lift four groups of fields off the app struct into their own types.
+Closed by 4bc67cc Give the taken-over windows a type with its invariant written down.
+Closed by 3fa837a Give the connected machines a type and split machines.go six ways.
+
 ### 10. Splitting the two big files
 
 **`machines.go`** (1,048 lines, twelve responsibilities):
@@ -284,6 +302,8 @@ There because two files needed to share something:
   client side. It belongs in `browse.go` beside `filesystem`.
 
 What is left is ~350 lines and coherent.
+
+Closed by 3fa837a Give the connected machines a type and split machines.go six ways.
 
 ## What is sound, and should be kept
 

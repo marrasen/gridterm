@@ -31,11 +31,6 @@ each group. A line goes when the work is in and reviewed.
 
 ## Errors and logs
 
-- **Error dialogs cut their text off.** The message is trimmed to the
-  dialog's width and the rest is lost. Hit twice, both times hiding
-  something needed.
-- **Error dialogs cannot be selected or copied.**
-- **Error dialogs should be red.**
 - **A log view.** Somewhere to read the whole of what a connection said,
   scroll it, and copy out of it.
 

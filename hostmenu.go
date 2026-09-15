@@ -15,9 +15,10 @@ type hostKey string
 // here because ui.Command.Run takes no argument. Only the goroutine that
 // draws touches it.
 type hostMenus struct {
-	// host is the machine the menu now up is about, empty when no such
-	// menu is up.
+	// host is the machine the menu now up is about, and up says whether
+	// one is up at all, because the local machine's name is empty.
 	host string
+	up   bool
 
 	// opened counts the menus opened this way.
 	opened int
@@ -30,10 +31,10 @@ func (m *hostMenus) opening() int {
 }
 
 // nowAbout records the machine the menu now up is about.
-func (m *hostMenus) nowAbout(host string) { m.host = host }
+func (m *hostMenus) nowAbout(host string) { m.host, m.up = host, true }
 
 // forget takes the machine away, for a menu that has closed.
-func (m *hostMenus) forget() { m.host = "" }
+func (m *hostMenus) forget() { m.host, m.up = "", false }
 
 // closed forgets the machine the menu numbered n named, unless a later
 // menu has named another.
@@ -43,9 +44,9 @@ func (m *hostMenus) closed(n int) {
 	}
 }
 
-// machine is the machine the open menu is about, empty when no menu is
-// up.
-func (m *hostMenus) machine() string { return m.host }
+// machine is the machine the open menu is about, and false when no menu
+// is up.
+func (m *hostMenus) machine() (string, bool) { return m.host, m.up }
 
 // openHostMenu drops down what can be opened on a machine, under the row
 // that names it.

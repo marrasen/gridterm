@@ -37,6 +37,8 @@ machine, or quitting parks the drawing goroutine for good.
 avoids sharing the lock with Close: *"a lock shared with Close is how a
 pane stops being closeable"*. `remote` does the opposite.
 
+Closed by 0b03bf8 Stop the window freezing on a machine that has stopped answering.
+
 ### 2. Channel opens run on the drawing goroutine with nothing bounding them
 
 `remote/shell.go:91` (`NewSession`), `remote/files.go:42,63-76`
@@ -52,6 +54,8 @@ a file pane". `Conn.reach` (`remote/conn.go:192-196`) shows the right
 shape, a `context.WithTimeout` per operation, and none of these three
 use it.
 
+Closed by 0b03bf8 Stop the window freezing on a machine that has stopped answering.
+
 ### 3. The agent and MCP client has no read bound at all
 
 `agent/client.go:172`, `mcp/mcp.go:138`.
@@ -64,6 +68,8 @@ ninth is answered inline, reading stops, and `Serve`'s `defer
 running.Wait()` means the process never exits even on end of file.
 The dial itself is bounded at five seconds (`agent/client.go:47`); the
 conversation after it is not.
+
+Closed by c788cb0 Filter the far end's text everywhere, bound the agent, report the rest.
 
 ### 4. Server-chosen text goes into the pane's terminal unfiltered
 
@@ -81,6 +87,8 @@ clipboard theft. The far end's refusal text in `serve/client.go:314`
 has the same gap and arrives prefixed "gridterm: ", so it reads as this
 window's own words.
 
+Closed by c788cb0 Filter the far end's text everywhere, bound the agent, report the rest.
+
 ### 5. House rule broken: an unreadable default key file is silently skipped
 
 `remote/auth.go:424-439`, via `remote/auth.go:446-448`.
@@ -94,6 +102,8 @@ with "no supported methods remain". The comment justifies skipping a
 stale `id_rsa`, but the code cannot tell "not there" from "cannot be
 read": `fs.ErrNotExist` and `EACCES` take the same branch.
 
+Closed by c788cb0 Filter the far end's text everywhere, bound the agent, report the rest.
+
 ### 6. A documented check on attach is not implemented
 
 `serve/server.go:312-318`, `serve/client.go:222-233`, `serve/wire.go:55`.
@@ -105,6 +115,8 @@ wire carries only the ID, the `Attacher` takes only the id, and
 risk is theoretical -- registry ids are a monotonic counter, never
 reused -- but two comments assert a defence that does not exist, which
 is how it stays absent when ids become anything else.
+
+Closed by c788cb0 Filter the far end's text everywhere, bound the agent, report the rest.
 
 ### 7. Close discipline: the discards that hide something
 
@@ -134,6 +146,8 @@ Defensible, and mostly said so in a comment: `remote/dial.go:187,216,
 287,299,345,355,366`, `agent/server.go:161`, `remote/book.go:510,517`,
 `remote/shell.go:173,239`.
 
+Closed by c788cb0 Filter the far end's text everywhere, bound the agent, report the rest.
+
 ### 8. House rule: disk errors with a fallback substituted
 
 - `remote/book.go:496-498` -- `filepath.EvalSymlinks` failing falls back
@@ -149,6 +163,8 @@ Defensible, and mostly said so in a comment: `remote/dial.go:187,216,
   will find the same thing") holds for a broken pipe and not for a
   failed write on a still-open stream; the client waits for an id that
   will never be answered.
+
+Closed by c788cb0 Filter the far end's text everywhere, bound the agent, report the rest.
 
 ### 9. Duplicated logic, and where it has already diverged
 
@@ -174,6 +190,9 @@ Defensible, and mostly said so in a comment: `remote/dial.go:187,216,
   gridterm by `strings.Contains(err.Error(), "session@gridterm")` --
   sniffing `serve/wire.go:18`'s constant through an error message.
   Rename the channel and `remote` silently stops recognising it.
+
+Closed by 1707651 Fold the duplicated pieces the review named into one of each.
+Closed by e1de8df Keep the take-over's passphrase dialog and cancel working under one ladder.
 
 ### 10. What bounds each blocking operation
 

@@ -2,6 +2,9 @@ package main
 
 import (
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"net"
 	"os"
 	"path/filepath"
@@ -22,18 +25,18 @@ func saveServer(t *testing.T, a *testApp, name, target string) *ui.Form {
 	if err := a.openAddServer(); err != nil {
 		t.Fatalf("openAddServer: %v", err)
 	}
-	f := waitForDialog(t, a, "Add a server")
+	f := awaitModal(t, a, "the Add a server dialog", byTitle[*ui.Form]("Add a server"))
 	typeIntoField(t, a, f, "Name", name)
 	typeIntoField(t, a, f, "Server", target)
 	pressButton(t, a, f, "Save")
 	return f
 }
 
-// typeIntoField moves the focus onto one field and types into it.
+// focusField tabs the focus onto one field of a dialog.
 //
 // By label rather than by position, so adding a row to a form does not
 // move every test that types into the ones after it.
-func typeIntoField(t *testing.T, a *testApp, f *ui.Form, label, text string) {
+func focusField(t *testing.T, a *testApp, f *ui.Form, label string) {
 	t.Helper()
 	at := -1
 	for i, have := range f.Fields() {
@@ -47,42 +50,50 @@ func typeIntoField(t *testing.T, a *testApp, f *ui.Form, label, text string) {
 	}
 	for i := 0; i < len(f.Fields())+len(f.Buttons())+1; i++ {
 		if got, isButton := f.Focused(); !isButton && got == at {
-			for _, r := range text {
-				a.root.HandleKey(input1(r))
-			}
 			return
 		}
-		a.root.HandleKey(press(input.KeyTab, 0))
+		if _, err := a.root.HandleKey(press(input.KeyTab, 0)); err != nil {
+			t.Fatalf("tabbing towards the %q field: %v", label, err)
+		}
 	}
 	t.Fatalf("focus never reached the %q field", label)
+}
+
+// typeIntoField moves the focus onto one field and types into it.
+func typeIntoField(t *testing.T, a *testApp, f *ui.Form, label, text string) {
+	t.Helper()
+	focusField(t, a, f, label)
+	for _, r := range text {
+		if _, err := a.root.HandleKey(input1(r)); err != nil {
+			t.Fatalf("typing into the %q field: %v", label, err)
+		}
+	}
+}
+
+// retypeField clears a field with the keys the dialog itself takes -- End,
+// then Ctrl+U -- and types the new value in.
+func retypeField(t *testing.T, a *testApp, f *ui.Form, label, text string) {
+	t.Helper()
+	focusField(t, a, f, label)
+	for _, ev := range []input.Event{press(input.KeyEnd, 0), press(input.KeyU, input.ModCtrl)} {
+		if _, err := a.root.HandleKey(ev); err != nil {
+			t.Fatalf("clearing the %q field: %v", label, err)
+		}
+	}
+	if got := f.Field(label).Text(); got != "" {
+		t.Fatalf("the %q field still holds %q after being cleared", label, got)
+	}
+	typeIntoField(t, a, f, label, text)
 }
 
 // stepOptions moves the focus onto a field that offers a list and steps
 // it on, with the keys the dialog's own hint names.
 func stepOptions(t *testing.T, a *testApp, f *ui.Form, label string) {
 	t.Helper()
-	at := -1
-	for i, have := range f.Fields() {
-		if have == f.Field(label) {
-			at = i
-			break
-		}
+	focusField(t, a, f, label)
+	if _, err := a.root.HandleKey(press(input.KeyDown, input.ModCtrl)); err != nil {
+		t.Fatalf("stepping the %q field: %v", label, err)
 	}
-	if at < 0 {
-		t.Fatalf("the dialog has no %q field", label)
-	}
-	for i := 0; i < len(f.Fields())+len(f.Buttons())+1; i++ {
-		if got, isButton := f.Focused(); !isButton && got == at {
-			if _, err := a.root.HandleKey(press(input.KeyDown, input.ModCtrl)); err != nil {
-				t.Fatalf("stepping the %q field: %v", label, err)
-			}
-			return
-		}
-		if _, err := a.root.HandleKey(press(input.KeyTab, 0)); err != nil {
-			t.Fatalf("to the %q field: %v", label, err)
-		}
-	}
-	t.Fatalf("focus never reached the %q field", label)
 }
 
 // The whole path: add a server, and find it on the menu and in the
@@ -119,14 +130,12 @@ func TestEditServerReplacesItsCommands(t *testing.T) {
 	if err := a.openEditServer("margit"); err != nil {
 		t.Fatalf("openEditServer: %v", err)
 	}
-	f := waitForDialog(t, a, "Edit margit")
+	f := awaitModal(t, a, "the Edit margit dialog", byTitle[*ui.Form]("Edit margit"))
 	// The dialog opens filled in with what was saved.
 	if got := f.Field("Server").Text(); got != "marcus@margit.skalarit.net" {
 		t.Fatalf("the Server field holds %q, want what was saved", got)
 	}
-	typeIntoField(t, a, f, "Name", "")
-	f.Field("Name").SetText("")
-	typeIntoField(t, a, f, "Name", "bastion")
+	retypeField(t, a, f, "Name", "bastion")
 	pressButton(t, a, f, "Save")
 
 	if _, ok := a.root.Commands.Lookup(openPrefix + "margit"); ok {
@@ -152,10 +161,10 @@ func TestRemoveServerAsksFirst(t *testing.T) {
 	if err := a.openEditServer("margit"); err != nil {
 		t.Fatalf("openEditServer: %v", err)
 	}
-	f := waitForDialog(t, a, "Edit margit")
+	f := awaitModal(t, a, "the Edit margit dialog", byTitle[*ui.Form]("Edit margit"))
 	pressButton(t, a, f, "Remove")
 
-	ask := waitForDialog(t, a, "Remove margit?")
+	ask := awaitModal(t, a, "the Remove margit? dialog", byTitle[*ui.Form]("Remove margit?"))
 	if at, isButton := ask.Focused(); !isButton || ask.Buttons()[at].Title != "Keep it" {
 		t.Error("the question does not open on the answer that changes nothing")
 	}
@@ -209,7 +218,7 @@ func TestBookErrorIsReportedInTheWindow(t *testing.T) {
 	a.book, _ = remote.LoadBook(path)
 
 	a.reportBookError()
-	n := waitForNotice(t, a, "The server list could not be read")
+	n := awaitModal(t, a, "the The server list could not be read notice", byTitle[*ui.Notice]("The server list could not be read"))
 	if !strings.Contains(n.Message(), "repaired") {
 		t.Errorf("the dialog does not say what happens next: %q", n.Message())
 	}
@@ -369,7 +378,7 @@ func TestAddServerSavesEveryFieldInTheDialog(t *testing.T) {
 	if err := a.openAddServer(); err != nil {
 		t.Fatalf("openAddServer: %v", err)
 	}
-	f := waitForDialog(t, a, "Add a server")
+	f := awaitModal(t, a, "the Add a server dialog", byTitle[*ui.Form]("Add a server"))
 	typeIntoField(t, a, f, "Name", "db")
 	typeIntoField(t, a, f, "Server", "postgres@db.internal:5433")
 	typeIntoField(t, a, f, "Key file", "/keys/db")
@@ -419,12 +428,12 @@ func TestEditServerKeepsWhatTheDialogCannotShow(t *testing.T) {
 	if err := a.openEditServer("web1"); err != nil {
 		t.Fatalf("openEditServer: %v", err)
 	}
-	f := waitForDialog(t, a, "Edit web1")
+	f := awaitModal(t, a, "the Edit web1 dialog", byTitle[*ui.Form]("Edit web1"))
 	if got := f.Field("Key file").Text(); got != "/keys/one" {
 		t.Fatalf("the Key file field shows %q, want the first one", got)
 	}
 	// Change nothing but the port.
-	f.Field("Server").SetText("web1.internal:2222")
+	retypeField(t, a, f, "Server", "web1.internal:2222")
 	pressButton(t, a, f, "Save")
 
 	got, ok := a.book.Lookup("web1")
@@ -704,8 +713,8 @@ func TestRenamingAMachineTakesWhatIsOpenWithIt(t *testing.T) {
 	if err := a.openEditServer("picard"); err != nil {
 		t.Fatalf("edit: %v", err)
 	}
-	f := openDialog(t, a)
-	f.Field("Name").SetText("picard via skylake")
+	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
+	retypeField(t, a, f, "Name", "picard via skylake")
 	pressButton(t, a, f, "Save")
 	a.pump.run()
 
@@ -754,8 +763,8 @@ func TestRenamingOnlyTheCapitalsStillMovesWhatIsOpen(t *testing.T) {
 	if err := a.openEditServer("picard"); err != nil {
 		t.Fatalf("edit: %v", err)
 	}
-	f := openDialog(t, a)
-	f.Field("Name").SetText("Picard")
+	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
+	retypeField(t, a, f, "Name", "Picard")
 	pressButton(t, a, f, "Save")
 	a.pump.run()
 
@@ -788,8 +797,8 @@ func TestRenamingOntoAConnectedNameIsRefused(t *testing.T) {
 	if err := a.openEditServer("picard"); err != nil {
 		t.Fatalf("edit: %v", err)
 	}
-	f := openDialog(t, a)
-	f.Field("Name").SetText("enterprise")
+	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
+	retypeField(t, a, f, "Name", "enterprise")
 	pressButton(t, a, f, "Save")
 	a.pump.run()
 
@@ -825,8 +834,8 @@ func TestRenamingOntoAConnectingNameIsRefused(t *testing.T) {
 	if err := a.openEditServer("picard"); err != nil {
 		t.Fatalf("edit: %v", err)
 	}
-	f := openDialog(t, a)
-	f.Field("Name").SetText("slow")
+	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
+	retypeField(t, a, f, "Name", "slow")
 	pressButton(t, a, f, "Save")
 	a.pump.run()
 
@@ -859,9 +868,9 @@ func TestRenamingAndRetargetingLeavesTheOldConnection(t *testing.T) {
 	if err := a.openEditServer("picard"); err != nil {
 		t.Fatalf("edit: %v", err)
 	}
-	f := openDialog(t, a)
-	f.Field("Name").SetText("enterprise")
-	f.Field("Server").SetText(fmt.Sprintf("tester@%s:%d", host, port))
+	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
+	retypeField(t, a, f, "Name", "enterprise")
+	retypeField(t, a, f, "Server", fmt.Sprintf("tester@%s:%d", host, port))
 	pressButton(t, a, f, "Save")
 	a.pump.run()
 
@@ -1076,8 +1085,8 @@ func TestRenamingATakenOverWindowMovesItsConnection(t *testing.T) {
 	if err := client.openEditServer("statio"); err != nil {
 		t.Fatalf("edit: %v", err)
 	}
-	f := openDialog(t, client)
-	f.Field("Name").SetText("m-statio")
+	f := awaitModal[*ui.Form](t, client, "a dialog", nil)
+	retypeField(t, client, f, "Name", "m-statio")
 	pressButton(t, client, f, "Save")
 	client.pump.run()
 
@@ -1114,8 +1123,8 @@ func TestAKindThatIsNeitherIsRefused(t *testing.T) {
 	if err := a.openEditServer("statio"); err != nil {
 		t.Fatalf("edit: %v", err)
 	}
-	f := openDialog(t, a)
-	f.Field("Kind").SetText("windwo")
+	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
+	retypeField(t, a, f, "Kind", "windwo")
 	pressButton(t, a, f, "Save")
 	a.pump.run()
 
@@ -1140,7 +1149,7 @@ func TestTheKindChosenInTheDialogIsSaved(t *testing.T) {
 	if err := a.openAddServer(); err != nil {
 		t.Fatalf("add: %v", err)
 	}
-	f := openDialog(t, a)
+	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
 	typeIntoField(t, a, f, "Name", "statio")
 	typeIntoField(t, a, f, "Server", "10.0.0.5:2222")
 
@@ -1150,7 +1159,9 @@ func TestTheKindChosenInTheDialogIsSaved(t *testing.T) {
 		t.Fatal("the dialog has no Kind")
 	}
 	was := kind.Text()
-	kind.HandleKey(input.Event{Kind: input.KeyPress, Key: input.KeyDown, Mods: input.ModCtrl})
+	if _, err := kind.HandleKey(press(input.KeyDown, input.ModCtrl)); err != nil {
+		t.Fatalf("stepping the Kind field: %v", err)
+	}
 	if kind.Text() == was {
 		t.Fatalf("the keys the dialog names do nothing: it still says %q", was)
 	}
@@ -1176,7 +1187,7 @@ func TestTheKindHintNamesKeysThatWork(t *testing.T) {
 	if err := a.openAddServer(); err != nil {
 		t.Fatalf("add: %v", err)
 	}
-	f := openDialog(t, a)
+	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
 
 	said := strings.Join(f.Lines, " ")
 	if !strings.Contains(said, "ctrl+down") {
@@ -1210,8 +1221,8 @@ func TestChangingAMachineIntoAWindowTakesEffectAtOnce(t *testing.T) {
 	if err := a.openEditServer("statio"); err != nil {
 		t.Fatalf("edit: %v", err)
 	}
-	f := openDialog(t, a)
-	f.Field("Kind").SetText(kindWindow)
+	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
+	retypeField(t, a, f, "Kind", kindWindow)
 	pressButton(t, a, f, "Save")
 	a.pump.run()
 
@@ -1226,68 +1237,6 @@ func TestChangingAMachineIntoAWindowTakesEffectAtOnce(t *testing.T) {
 	}
 	if !strings.Contains(cmd.Title, "Take over") {
 		t.Fatalf("the command is %q, want it to offer taking it over", cmd.Title)
-	}
-}
-
-// A saved window is taken over however the user asked for it.
-//
-// Every path that opens a connection by name or by address goes through
-// one place, so none of them can log in to a window's serve port and be
-// refused for it.
-func TestASavedWindowIsTakenOverHoweverItIsAskedFor(t *testing.T) {
-	host := newTestApp(t, 90, 30)
-	withDialogs(t, host)
-	keyFile, line := aKeyFile(t)
-	withServing(t, host, line)
-	if err := host.startServing("0", whereHere); err != nil {
-		t.Fatalf("serve: %v", err)
-	}
-	addr := host.serving.addr()
-
-	for _, how := range []string{"by name", "by address", "as a terminal on it", "from the saved list"} {
-		t.Run(how, func(t *testing.T) {
-			client := newTestApp(t, 90, 30)
-			withDialogs(t, client)
-			withPanel(t, client)
-			if err := client.book.Put(remote.Host{
-				Name: "statio", Address: hostOf(t, addr), Port: portOf(t, addr),
-				Window: true, Identities: []string{keyFile},
-			}, ""); err != nil {
-				t.Fatalf("Put: %v", err)
-			}
-			client.refreshServers()
-
-			switch how {
-			case "by name":
-				client.connectAs("statio", remote.Config{})
-			case "by address":
-				// What "connect to a server" does with a typed address,
-				// which knows nothing about the list.
-				client.connect(remote.Config{
-					Host: hostOf(t, addr), Port: portOf(t, addr),
-				})
-			case "as a terminal on it":
-				// The plus on its row, which builds a route of its own
-				// rather than going through connectAs.
-				if err := client.openTerminalOn("statio", nil); err != nil {
-					t.Fatalf("terminal on it: %v", err)
-				}
-			case "from the saved list":
-				if err := client.connectSaved("statio"); err != nil {
-					t.Fatalf("connect saved: %v", err)
-				}
-			}
-			answer(t, client, "Connect")
-			waitFor(t, client, "the window to be taken over", func() bool {
-				return client.windows.named("statio") != nil
-			})
-			if n := len(host.serving.clients()); n == 0 {
-				t.Fatal("the serving window saw no client")
-			}
-			if err := client.dropWindow("statio"); err != nil {
-				t.Fatalf("let go: %v", err)
-			}
-		})
 	}
 }
 
@@ -1323,13 +1272,19 @@ func TestAWindowCannotBeMadeIntoARoute(t *testing.T) {
 // was believing some other function was the one place everything went
 // through, and only the callers can settle that.
 func TestOnlyOpenRouteDials(t *testing.T) {
-	dialers := callersOf(t, "remote.Connect(", ".Through(")
+	dialers := callersOf(t, "remote.Connect", "Through")
+	if len(dialers) == 0 {
+		t.Fatal("nothing dials at all, so this proves nothing")
+	}
 	for _, at := range dialers {
 		if !strings.HasPrefix(at, "route.go") {
 			t.Errorf("something outside route.go dials: %s", at)
 		}
 	}
-	routes := callersOf(t, "a.openRoute(", "openRoute(")
+	routes := callersOf(t, "openRoute")
+	if len(routes) == 0 {
+		t.Fatal("nothing calls openRoute at all, so this proves nothing")
+	}
 	for _, at := range routes {
 		switch {
 		case strings.HasPrefix(at, "connect.go"), strings.HasPrefix(at, "servers.go"):
@@ -1339,34 +1294,73 @@ func TestOnlyOpenRouteDials(t *testing.T) {
 	}
 }
 
-// callersOf lists the file and line of every use of these snippets in
-// the window's own source, leaving tests out.
-func callersOf(t *testing.T, snippets ...string) []string {
+// callersOf lists the file and line of everywhere the window's own source
+// names one of these functions, leaving tests out.
+//
+// A name with a dot is a package's, so "remote.Connect" is that function
+// and nothing else; a bare name matches a method or a function of that
+// name however it is reached, and its own declaration does not count.
+// Read from the syntax tree, so a method value counts and a name inside a
+// comment or a string does not.
+func callersOf(t *testing.T, names ...string) []string {
 	t.Helper()
-	names, err := filepath.Glob("*.go")
+	files, err := filepath.Glob("*.go")
 	if err != nil {
 		t.Fatalf("glob: %v", err)
 	}
-	var out []string
+	wanted := make(map[string]bool, len(names))
 	for _, name := range names {
-		if strings.HasSuffix(name, "_test.go") {
+		wanted[name] = true
+	}
+	fset := token.NewFileSet()
+	var out []string
+	for _, at := range files {
+		if strings.HasSuffix(at, "_test.go") {
 			continue
 		}
-		raw, err := os.ReadFile(name)
+		raw, err := os.ReadFile(at)
 		if err != nil {
-			t.Fatalf("read %s: %v", name, err)
+			t.Fatalf("read %s: %v", at, err)
 		}
-		for i, line := range strings.Split(string(raw), "\n") {
-			if strings.HasPrefix(strings.TrimSpace(line), "//") {
-				continue
+		file, err := parser.ParseFile(fset, at, raw, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", at, err)
+		}
+		declared := make(map[*ast.Ident]bool)
+		for _, decl := range file.Decls {
+			if fn, is := decl.(*ast.FuncDecl); is {
+				declared[fn.Name] = true
 			}
-			for _, snippet := range snippets {
-				if strings.Contains(line, snippet) {
-					out = append(out, fmt.Sprintf("%s:%d", name, i+1))
-					break
+		}
+		seen := make(map[string]bool)
+		note := func(pos token.Pos) {
+			where := fset.Position(pos)
+			at := fmt.Sprintf("%s:%d", filepath.Base(where.Filename), where.Line)
+			if !seen[at] {
+				seen[at] = true
+				out = append(out, at)
+			}
+		}
+		ast.Inspect(file, func(n ast.Node) bool {
+			switch node := n.(type) {
+			case *ast.SelectorExpr:
+				if pkg, is := node.X.(*ast.Ident); is && wanted[pkg.Name+"."+node.Sel.Name] {
+					note(node.Sel.Pos())
+				}
+				if wanted[node.Sel.Name] {
+					note(node.Sel.Pos())
+				}
+				// The Sel is this selector's own name, not a mention of
+				// something else, so only the left-hand side is walked.
+				ast.Inspect(node.X, func(ast.Node) bool { return true })
+				return false
+			case *ast.Ident:
+				if !declared[node] && wanted[node.Name] {
+					note(node.Pos())
 				}
 			}
-		}
+			return true
+		})
 	}
 	return out
 }

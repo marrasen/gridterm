@@ -7,7 +7,6 @@ import (
 
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/grid"
-	"github.com/marrasen/gridterm/input"
 	"github.com/marrasen/gridterm/internal/sshtest"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/term"
@@ -396,7 +395,7 @@ func TestLeavingTheSplitQuestionChangesNothing(t *testing.T) {
 	was := len(a.panes)
 
 	c := splitChoices(t, a, ui.Columns)
-	c.HandleKey(input.Event{Kind: input.KeyPress, Key: input.KeyEscape})
+	dismiss(t, c)
 
 	if a.root.Modal() != nil {
 		t.Fatalf("Escape left %T on the stack", a.root.Modal())
@@ -473,7 +472,7 @@ func TestAFilePaneIsNotOfferedToMoveIntoASplit(t *testing.T) {
 			t.Fatalf("it offers %q, and the only other pane is a file pane", text)
 		}
 	}
-	c.HandleKey(input.Event{Kind: input.KeyPress, Key: input.KeyEscape})
+	dismiss(t, c)
 
 	// And it is refused even when asked for directly.
 	if err := a.splitWith(ui.Columns, a.focusedTerminalAnywhere(t), pane); err == nil {

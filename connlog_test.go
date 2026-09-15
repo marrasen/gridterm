@@ -144,7 +144,7 @@ func TestThePaneBecomesTheConnection(t *testing.T) {
 	if _, err := c.Write([]byte("uptime\r")); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	waitUntil(t, func() bool { return shell.sentText() == "uptime\r" })
+	waitUntil(t, "the shell to be sent what was typed", func() bool { return shell.sentText() == "uptime\r" })
 }
 
 // A pane resized before the connection was made tells it how big it is
@@ -162,13 +162,13 @@ func TestTheConnectionIsToldHowBigThePaneAlreadyIs(t *testing.T) {
 	shell := newPipeSession()
 	c.Became(shell)
 
-	waitUntil(t, func() bool { return shell.lastSize() == [2]int{120, 40} })
+	waitUntil(t, "the shell to be told the new size", func() bool { return shell.lastSize() == [2]int{120, 40} })
 
 	// And a resize after it reaches it too.
 	if err := c.Resize(80, 24); err != nil {
 		t.Fatalf("resize: %v", err)
 	}
-	waitUntil(t, func() bool { return shell.lastSize() == [2]int{80, 24} })
+	waitUntil(t, "the shell to be told the size again", func() bool { return shell.lastSize() == [2]int{80, 24} })
 }
 
 // Typing before there is anything to type into goes nowhere, rather
@@ -254,7 +254,7 @@ func TestAConnectionThatArrivesTooLateIsClosed(t *testing.T) {
 	shell := newPipeSession()
 	c.Became(shell)
 
-	waitUntil(t, func() bool { return shell.isClosed() })
+	waitUntil(t, "the shell to be closed", func() bool { return shell.isClosed() })
 }
 
 // Closing the pane after the connection was made closes the connection.
@@ -266,7 +266,7 @@ func TestClosingThePaneClosesTheConnection(t *testing.T) {
 	if err := c.Close(); err != nil {
 		t.Fatalf("close: %v", err)
 	}
-	waitUntil(t, func() bool { return shell.isClosed() })
+	waitUntil(t, "the shell to be closed", func() bool { return shell.isClosed() })
 }
 
 // waitedFor waits on a log, failing the test rather than hanging it.
@@ -277,7 +277,7 @@ func waitedFor(t *testing.T, c *connLog) error {
 	select {
 	case err := <-done:
 		return err
-	case <-time.After(5 * time.Second):
+	case <-time.After(waitBudget):
 		t.Fatal("waiting never came back")
 		return nil
 	}

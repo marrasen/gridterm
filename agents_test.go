@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/marrasen/gridterm/agent"
+	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/term"
 )
 
@@ -41,7 +42,7 @@ func TestAnAgentWorksInThePaneItWasHanded(t *testing.T) {
 	pane, _, c := handedOver(t, a)
 
 	var got agent.Pane
-	fromAgent(t, a, func() error {
+	offWindow(t, a, "the window to answer the agent", func() error {
 		var err error
 		got, err = c.Use(a.agents.of(pane).code)
 		return err
@@ -52,10 +53,12 @@ func TestAnAgentWorksInThePaneItWasHanded(t *testing.T) {
 
 	// What is on the screen.
 	a.shells[0].out <- []byte("root@margit:~# \r\n")
-	waitUntil(t, func() bool { return strings.Contains(paneText(pane), "root@margit") })
+	waitFor(t, a, "the pane to show what the shell said", func() bool {
+		return strings.Contains(paneText(pane), "root@margit")
+	})
 
 	var look agent.Look
-	fromAgent(t, a, func() error {
+	offWindow(t, a, "the window to answer the agent", func() error {
 		var err error
 		look, err = c.Read(got.ID)
 		return err
@@ -68,8 +71,10 @@ func TestAnAgentWorksInThePaneItWasHanded(t *testing.T) {
 	}
 
 	// And what it types reaches the program.
-	fromAgent(t, a, func() error { return c.Send(got.ID, "uptime\r") })
-	waitUntil(t, func() bool { return strings.Contains(a.shells[0].sentText(), "uptime") })
+	offWindow(t, a, "the window to answer the agent", func() error { return c.Send(got.ID, "uptime\r") })
+	waitFor(t, a, "the shell to be sent what the agent typed", func() bool {
+		return strings.Contains(a.shells[0].sentText(), "uptime")
+	})
 }
 
 // Without a code an agent can do nothing, even having reached the
@@ -106,7 +111,7 @@ func TestTakingThePaneBackStopsTheAgent(t *testing.T) {
 	pane, code, c := handedOver(t, a)
 
 	var got agent.Pane
-	fromAgent(t, a, func() error {
+	offWindow(t, a, "the window to answer the agent", func() error {
 		var err error
 		got, err = c.Use(code)
 		return err
@@ -205,11 +210,11 @@ func TestTheRowSaysAnAgentHasThePane(t *testing.T) {
 		t.Errorf("the row says %q", got)
 	}
 
-	fromAgent(t, a, func() error {
+	offWindow(t, a, "the window to answer the agent", func() error {
 		_, err := c.Use(code)
 		return err
 	})
-	waitUntilPumped(t, a, "the row to say an agent is working here", func() bool {
+	waitFor(t, a, "the row to say an agent is working here", func() bool {
 		a.refreshPanel(panelNow)
 		return a.panes[pane].Note == agentAt
 	})
@@ -217,50 +222,10 @@ func TestTheRowSaysAnAgentHasThePane(t *testing.T) {
 	if err := c.Close(); err != nil {
 		t.Fatalf("the agent leaving: %v", err)
 	}
-	waitUntilPumped(t, a, "the row to say it is only offered again", func() bool {
+	waitFor(t, a, "the row to say it is only offered again", func() bool {
 		a.refreshPanel(panelNow)
 		return a.panes[pane].Note == agentOffered
 	})
-}
-
-// fromAgent runs something an agent asks, pumping the window so the
-// question posted to the drawing goroutine is answered.
-//
-// Every question an agent asks is about something only that goroutine
-// may look at, so a test that does not run it waits for ever.
-func fromAgent(t *testing.T, a *testApp, do func() error) {
-	t.Helper()
-	done := make(chan error, 1)
-	go func() { done <- do() }()
-	deadline := time.Now().Add(waitBudget)
-	for time.Now().Before(deadline) {
-		a.pump.run()
-		select {
-		case err := <-done:
-			if err != nil {
-				t.Fatalf("the agent was told: %v", err)
-			}
-			return
-		default:
-		}
-		time.Sleep(time.Millisecond)
-	}
-	t.Fatal("the window never answered the agent")
-}
-
-// waitUntilPumped waits for something to become true, running what the
-// window has been asked to do meanwhile.
-func waitUntilPumped(t *testing.T, a *testApp, what string, cond func() bool) {
-	t.Helper()
-	deadline := time.Now().Add(waitBudget)
-	for time.Now().Before(deadline) {
-		a.pump.run()
-		if cond() {
-			return
-		}
-		time.Sleep(time.Millisecond)
-	}
-	t.Fatalf("timed out waiting for %s", what)
 }
 
 // Handing a pane over shows the code and puts it on the clipboard.
@@ -278,13 +243,13 @@ func TestHandingAPaneOverShowsTheCodeAndCopiesIt(t *testing.T) {
 	}
 
 	code := a.agents.of(pane).code
-	f := openDialog(t, a)
+	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
 	if !strings.Contains(strings.Join(f.Lines, "\n"), code) {
 		t.Errorf("the dialog does not show the code: %v", f.Lines)
 	}
 	// The clipboard is written from a goroutine of its own, because on
 	// some systems putting something on it means running a program.
-	waitUntil(t, func() bool { return a.copiedText() == code })
+	waitFor(t, a, "the code to reach the clipboard", func() bool { return a.copiedText() == code })
 
 	// And the dialog offers to take it straight back.
 	pressButton(t, a, f, "Take it back")
@@ -306,7 +271,7 @@ func TestTakingAPaneBackWhileAnAgentIsAskingComesBack(t *testing.T) {
 	withPanel(t, a)
 	pane, code, c := handedOver(t, a)
 
-	fromAgent(t, a, func() error {
+	offWindow(t, a, "the window to answer the agent", func() error {
 		_, err := c.Use(code)
 		return err
 	})
@@ -319,7 +284,7 @@ func TestTakingAPaneBackWhileAnAgentIsAskingComesBack(t *testing.T) {
 		_, _, _ = c.Wait("1", agent.Until{QuietMS: 60000, TimeoutMS: 60000})
 	}()
 	<-asking
-	waitUntil(t, func() bool { return a.pump.pending() > 0 })
+	waitUntil(t, "work to be queued for the window", func() bool { return a.pump.pending() > 0 })
 
 	done := make(chan error, 1)
 	go func() { done <- a.takeBackPane(pane) }()
@@ -345,7 +310,7 @@ func TestHandingAPaneOverAgainShutsOutTheAgentThatHadIt(t *testing.T) {
 	pane, code, c := handedOver(t, a)
 
 	var had agent.Pane
-	fromAgent(t, a, func() error {
+	offWindow(t, a, "the window to answer the agent", func() error {
 		var err error
 		had, err = c.Use(code)
 		return err
@@ -381,7 +346,7 @@ func TestHandingAPaneOverAgainShutsOutTheAgentThatHadIt(t *testing.T) {
 		_, err := old.Read(had.ID)
 		done <- err
 	}()
-	waitUntilPumped(t, a, "the window to answer", func() bool { return len(done) > 0 })
+	waitFor(t, a, "the window to answer", func() bool { return len(done) > 0 })
 	if err := <-done; err == nil {
 		t.Error("the name it was given before still reads the pane")
 	}
@@ -390,7 +355,7 @@ func TestHandingAPaneOverAgainShutsOutTheAgentThatHadIt(t *testing.T) {
 	go func() {
 		done <- old.Send(had.ID, "rm -rf /\r")
 	}()
-	waitUntilPumped(t, a, "the window to answer", func() bool { return len(done) > 0 })
+	waitFor(t, a, "the window to answer", func() bool { return len(done) > 0 })
 	if err := <-done; err == nil {
 		t.Error("the name it was given before still types into the pane")
 	}
@@ -426,7 +391,7 @@ func TestACodeTheWindowNeverHandedOutOpensNothing(t *testing.T) {
 		_, err := c.Use(wrong)
 		done <- err
 	}()
-	waitUntilPumped(t, a, "the window to answer", func() bool { return len(done) > 0 })
+	waitFor(t, a, "the window to answer", func() bool { return len(done) > 0 })
 	if err := <-done; err == nil {
 		t.Error("a code the window never handed out was taken")
 	}
@@ -472,7 +437,7 @@ func TestTakingOnePaneBackWithAnotherStillOut(t *testing.T) {
 	defer func() { _ = c.Close() }()
 
 	var had agent.Pane
-	fromAgent(t, a, func() error {
+	offWindow(t, a, "the window to answer the agent", func() error {
 		var err error
 		had, err = c.Use(first.code)
 		return err
@@ -492,13 +457,13 @@ func TestTakingOnePaneBackWithAnotherStillOut(t *testing.T) {
 		_, err := c.Read(had.ID)
 		done <- err
 	}()
-	waitUntilPumped(t, a, "the window to answer", func() bool { return len(done) > 0 })
+	waitFor(t, a, "the window to answer", func() bool { return len(done) > 0 })
 	if err := <-done; err == nil {
 		t.Error("it read a pane the user had taken back")
 	}
 
 	go func() { done <- c.Send(had.ID, "rm -rf /\r") }()
-	waitUntilPumped(t, a, "the window to answer", func() bool { return len(done) > 0 })
+	waitFor(t, a, "the window to answer", func() bool { return len(done) > 0 })
 	if err := <-done; err == nil {
 		t.Error("it typed into a pane the user had taken back")
 	}
@@ -524,7 +489,7 @@ func TestTheDialogNamesSomewhereTheCommandsReallyAre(t *testing.T) {
 		t.Fatalf("hand it over: %v", err)
 	}
 
-	f := openDialog(t, a)
+	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
 	lines := strings.Join(f.Lines, " ")
 	if !strings.Contains(lines, "Servers menu") {
 		t.Errorf("the dialog says %q", lines)

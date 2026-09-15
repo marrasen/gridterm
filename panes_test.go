@@ -116,7 +116,7 @@ func (p *pipeSession) Close() error {
 // frame; a test that reaps once has to wait for it.
 func reapWhenTold(t *testing.T, a *testApp) {
 	t.Helper()
-	waitUntil(t, func() bool { return len(a.exits) > 0 })
+	waitUntil(t, "the window to be told a pane exited", func() bool { return len(a.exits) > 0 })
 	a.reapExited()
 }
 
@@ -222,6 +222,9 @@ func newTestApp(t *testing.T, cols, rows int) *testApp {
 		}
 		_ = ta.closeTunnels()
 		_ = ta.closeMachines()
+		// A pane handed over and not taken back leaves a listener and
+		// its accept goroutine running for the rest of the binary.
+		_ = ta.agents.stop()
 	})
 	return ta
 }
@@ -230,7 +233,7 @@ func newTestApp(t *testing.T, cols, rows int) *testApp {
 func (ta *testApp) setTitle(t *testing.T, which int, pane *term.Terminal, title string) {
 	t.Helper()
 	ta.shells[which].out <- []byte("\x1b]0;" + title + "\x07")
-	waitUntil(t, func() bool { return pane.Title() == title })
+	waitFor(t, ta, "the pane to take the title its program set", func() bool { return pane.Title() == title })
 }
 
 // checkTree asserts what must always hold: the panes the app knows about
@@ -308,7 +311,7 @@ func checkTree(t *testing.T, a *testApp) {
 func checkClosed(t *testing.T, closed ...*term.Terminal) {
 	t.Helper()
 	for _, pane := range closed {
-		waitUntil(t, pane.Exited)
+		waitUntil(t, "the pane to have exited", pane.Exited)
 	}
 }
 
@@ -470,7 +473,7 @@ func TestReapClosesExitedPanes(t *testing.T) {
 		for _, p := range []ui.Widget{panes[0], panes[2]} {
 			pane := p.(*term.Terminal)
 			_ = pane.Close()
-			waitUntil(t, pane.Exited)
+			waitUntil(t, "the pane to have exited", pane.Exited)
 		}
 		reapWhenTold(t, a)
 
@@ -494,7 +497,7 @@ func TestReapTheLastPaneQuits(t *testing.T) {
 	only := ui.FocusedLeaf(a.root.Widget()).(*term.Terminal)
 
 	_ = only.Close()
-	waitUntil(t, only.Exited)
+	waitUntil(t, "the pane to have exited", only.Exited)
 	reapWhenTold(t, a)
 
 	if !a.quit.Load() {
@@ -543,21 +546,123 @@ func TestSplitCloseFuzz(t *testing.T) {
 	}
 }
 
+// sendKey gives the window a key and fails the test rather than losing
+// what the window said about it.
+func sendKey(t *testing.T, a *testApp, ev input.Event) {
+	t.Helper()
+	if _, err := a.root.HandleKey(ev); err != nil {
+		t.Fatalf("the window refused the key: %v", err)
+	}
+}
+
+// dismiss presses Escape on a widget, the way a user drops a menu, a
+// chooser or a dialog.
+func dismiss(t *testing.T, w ui.KeyHandler) {
+	t.Helper()
+	if _, err := w.HandleKey(press(input.KeyEscape, 0)); err != nil {
+		t.Fatalf("Escape: %v", err)
+	}
+}
+
 // press builds a key press, the way the ui tests do.
 func press(k input.Key, mods input.Mods) input.Event {
 	return input.Event{Kind: input.KeyPress, Key: k, Mods: mods}
 }
 
-func waitUntil(t *testing.T, cond func() bool) {
+// waitFor runs the pump until something is true, or gives up loudly.
+//
+// Further windows can be named after the condition. A window taken over
+// answers its client from the goroutine that draws, so a test that pumped
+// only one of two would wait for an answer the other was never going to
+// give.
+func waitFor(t *testing.T, a *testApp, what string, cond func() bool, also ...*testApp) {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(waitBudget)
+	for time.Now().Before(deadline) {
+		a.pump.run()
+		for _, b := range also {
+			b.pump.run()
+		}
+		if cond() {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for %s", what)
+}
+
+// waitUntil waits for something to become true where there is no window
+// to pump, which is a test driving one part of the program on its own.
+func waitUntil(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(waitBudget)
 	for time.Now().Before(deadline) {
 		if cond() {
 			return
 		}
 		time.Sleep(time.Millisecond)
 	}
-	t.Fatal("timed out waiting")
+	t.Fatalf("timed out waiting for %s", what)
+}
+
+// awaitModal runs the pump until the modal on top is a T the test is
+// after, and returns it. A nil want takes the first T of any title.
+func awaitModal[T ui.Widget](t *testing.T, a *testApp, what string, want func(T) bool) T {
+	t.Helper()
+	var found T
+	waitFor(t, a, what, func() bool {
+		got, is := a.root.Modal().(T)
+		if !is || (want != nil && !want(got)) {
+			return false
+		}
+		found = got
+		return true
+	})
+	return found
+}
+
+// byTitle matches a modal by the whole title it draws at its top.
+func byTitle[T ui.Widget](want string) func(T) bool {
+	return func(w T) bool { return titleOf(w) == want }
+}
+
+// byTitlePrefix matches a modal whose title starts with a prefix, for a
+// title that goes on to name the thing it is about.
+func byTitlePrefix[T ui.Widget](prefix string) func(T) bool {
+	return func(w T) bool { return strings.HasPrefix(titleOf(w), prefix) }
+}
+
+// titleOf returns the title a modal draws at its top, and empty for a
+// modal that draws none.
+func titleOf(w ui.Widget) string {
+	switch m := w.(type) {
+	case *ui.Form:
+		return m.Title
+	case *ui.Notice:
+		return m.Title
+	}
+	return ""
+}
+
+// offWindow runs something that talks to a window from another goroutine
+// and waits for it, pumping meanwhile, because the window answers from the
+// goroutine that draws.
+func offWindow(t *testing.T, a *testApp, what string, do func() error) {
+	t.Helper()
+	done := make(chan error, 1)
+	go func() { done <- do() }()
+	var err error
+	waitFor(t, a, what, func() bool {
+		select {
+		case err = <-done:
+			return true
+		default:
+			return false
+		}
+	})
+	if err != nil {
+		t.Fatalf("%s: %v", what, err)
+	}
 }
 
 // TestSplitRoomBoundary pins where splitting stops being possible: one
@@ -1116,7 +1221,7 @@ func TestPaletteEscapeGivesFocusBack(t *testing.T) {
 		t.Fatalf("typing after Escape: %v", err)
 	}
 
-	waitUntil(t, func() bool { return a.shells[0].sentText() == "x" })
+	waitFor(t, a, "the shell to be sent what was typed", func() bool { return a.shells[0].sentText() == "x" })
 	checkTree(t, a)
 }
 
@@ -1265,7 +1370,7 @@ func TestPaletteSurvivesAPaneExiting(t *testing.T) {
 	// One of the two shells ends on its own.
 	pane := ui.Leaves(a.root.Widget())[0].(*term.Terminal)
 	_ = pane.Close()
-	waitUntil(t, pane.Exited)
+	waitUntil(t, "the pane to have exited", pane.Exited)
 	reapWhenTold(t, a)
 
 	checkTree(t, a)
@@ -1404,7 +1509,7 @@ func TestCtrlKReachesTheShell(t *testing.T) {
 	if a.palette != nil {
 		t.Fatal("ctrl+K opened the palette instead of reaching the shell")
 	}
-	waitUntil(t, func() bool { return a.shells[0].sentText() == "\x0b" })
+	waitFor(t, a, "the shell to be sent the chord", func() bool { return a.shells[0].sentText() == "\x0b" })
 }
 
 // A clipboard that cannot be read says so, rather than pasting nothing.
@@ -1450,5 +1555,5 @@ func TestAClipboardThatCanBeReadIsPasted(t *testing.T) {
 	if a.root.Modal() != nil {
 		t.Fatalf("a paste that worked showed %T", a.root.Modal())
 	}
-	waitUntil(t, func() bool { return a.shells[0].sentText() == "uptime" })
+	waitFor(t, a, "the shell to be sent what was typed", func() bool { return a.shells[0].sentText() == "uptime" })
 }

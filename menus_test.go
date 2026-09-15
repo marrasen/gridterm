@@ -51,6 +51,64 @@ func TestEveryMenuLineNamesACommand(t *testing.T) {
 	}
 }
 
+// TestEveryPlusMenuLineNamesACommand is the same tripwire for the menu
+// the plus on a machine's row drops down.
+//
+// hostItems builds a different list for each shape a name can have, and
+// a line naming nothing is drawn greyed out wherever it appears.
+func TestEveryPlusMenuLineNamesACommand(t *testing.T) {
+	a := newTestApp(t, 40, 20)
+	withMenubar(t, a)
+
+	for _, shape := range hostShapes() {
+		items := hostItems(shape.facts)
+		if len(items) == 0 {
+			t.Errorf("the plus on a %s offers nothing", shape.name)
+		}
+		for _, item := range items {
+			if item.Command == "" {
+				continue // a separator
+			}
+			if item.Title == "" {
+				t.Errorf("a line of the %s menu names %q and has no title", shape.name, item.Command)
+			}
+			if _, ok := a.root.Commands.Lookup(item.Command); !ok {
+				t.Errorf("the %s menu names command %q, which is not registered",
+					shape.name, item.Command)
+			}
+		}
+	}
+}
+
+// hostShapes is one hostFacts of every shape the plus menu is built for,
+// including the two flags that add lines of their own.
+func hostShapes() []struct {
+	name  string
+	facts hostFacts
+} {
+	var out []struct {
+		name  string
+		facts hostFacts
+	}
+	add := func(name string, f hostFacts) {
+		out = append(out, struct {
+			name  string
+			facts hostFacts
+		}{name, f})
+	}
+	for _, kind := range []hostKind{
+		hostUnknown, hostHere, hostWindow, hostSavedWindow,
+		hostMachine, hostConnecting, hostSavedMachine,
+	} {
+		add(kind.String(), hostFacts{name: "margit", kind: kind})
+		add(kind.String()+", saved", hostFacts{name: "margit", kind: kind, saved: true})
+		add(kind.String()+", saved as a window", hostFacts{
+			name: "margit", kind: kind, saved: true, serves: true,
+		})
+	}
+	return out
+}
+
 // TestMenuOpensOnItsOwnLayer checks the dialog's whole life through the
 // app: it goes on the modal stack, gets a layer of its own, and takes
 // both away again.
@@ -423,7 +481,7 @@ func TestANoticeSurvivesTheServerMenuBeingRebuilt(t *testing.T) {
 	}
 
 	a.reportError("Could not open it", errors.New("the machine went away"))
-	n := openNotice(t, a)
+	n := awaitModal[*ui.Notice](t, a, "a notice", nil)
 
 	// A saved machine appears, so the menu really is rebuilt rather than
 	// left as it was.

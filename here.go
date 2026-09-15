@@ -21,7 +21,7 @@ import (
 func (a *app) currentHost() string {
 	// A menu dropped from a machine's row beats everything else: the
 	// user named the machine by clicking it.
-	if host := a.hostMenus.machine(); host != "" {
+	if host, up := a.hostMenus.machine(); up {
 		return host
 	}
 	if a.panel != nil && a.panel.Focused() {

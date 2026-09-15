@@ -127,7 +127,12 @@ func (a *app) remoteRows(host string) []ui.ListRow {
 	if t == nil {
 		return nil
 	}
-	var rows []ui.ListRow
+	// Grouped by the machine over there they run on, the way that
+	// window groups them itself. A flat list with the machine's name
+	// repeated on every line says the same thing many times and hides
+	// what each row actually is.
+	var order []string
+	under := map[string][]serve.Open{}
 	for _, open := range t.win.Opens() {
 		if !open.HasScreen() {
 			continue
@@ -138,25 +143,69 @@ func (a *app) remoteRows(host string) []ui.ListRow {
 			// that can be put in front and closed is the better one.
 			continue
 		}
-		text := open.Label
-		if open.Host != conns.Local && open.Host != "" {
-			// Which machine over there, because "Local" on that window
-			// is not this machine and saying so plainly would be wrong.
-			text = open.Host + ": " + open.Label
+		if _, seen := under[open.Host]; !seen {
+			order = append(order, open.Host)
 		}
-		rows = append(rows, ui.ListRow{
-			Text:  text,
-			Note:  open.Note,
-			Depth: 1,
-			Key:   remoteKeyFor(host, open),
-			Mark:  remoteMark,
-			// Dimmed, because it is running somewhere else: what this
-			// window can do with it is open a pane to watch it in, not
-			// close it or put it in front.
-			FG: mix(a.colours.FG, a.colours.BG, 1, 2),
-		})
+		under[open.Host] = append(under[open.Host], open)
+	}
+
+	dim := mix(a.colours.FG, a.colours.BG, 1, 2)
+	var rows []ui.ListRow
+	for _, on := range order {
+		if len(order) > 1 || !isTheirOwn(on) {
+			// A heading only when there is something to tell apart.
+			// One machine's worth of panes under a window whose name is
+			// right above them needs no line saying so twice.
+			rows = append(rows, ui.ListRow{
+				Text:   theirName(on),
+				Header: true,
+				Depth:  1,
+				Key:    remoteHostKey{window: host, host: on},
+				Mark:   ' ',
+				FG:     dim,
+			})
+		}
+		for _, open := range under[on] {
+			rows = append(rows, ui.ListRow{
+				Text:  open.Label,
+				Note:  open.Note,
+				Depth: 2,
+				Key:   remoteKeyFor(host, open),
+				Mark:  remoteMark,
+				// Dimmed, because it is running somewhere else: what
+				// this window can do with it is open a pane to watch it
+				// in, not close it or put it in front.
+				FG: dim,
+			})
+		}
 	}
 	return rows
+}
+
+// remoteHostKey names a machine of a window taken over, for the heading
+// over the screens open on it.
+//
+// Its own type so it is never mistaken for a machine of this window or
+// for one of that window's screens: nothing can be done with it, and a
+// key that compared equal to something that can would act on the wrong
+// thing.
+type remoteHostKey struct {
+	window, host string
+}
+
+// isTheirOwn reports whether a machine name is the window's own, which
+// is what its Local means.
+func isTheirOwn(host string) bool { return host == conns.Local || host == "" }
+
+// theirName is what to call a machine of a window taken over.
+//
+// Its "Local" is not this machine, and a heading saying so plainly
+// would be read as this one.
+func theirName(host string) string {
+	if isTheirOwn(host) {
+		return "that machine"
+	}
+	return host
 }
 
 // remoteMark is the dot in front of a row belonging to another window.

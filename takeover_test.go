@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -1772,5 +1773,55 @@ func TestARowWithNoScreenCannotBeWatched(t *testing.T) {
 	}
 	if len(client.panes) != panes {
 		t.Fatalf("%d panes after two attempts, want the %d there were", len(client.panes), panes)
+	}
+}
+
+// The screens of a window taken over are grouped by the machine they
+// run on, the way that window groups them itself.
+//
+// A flat list with the machine's name on every line says the same thing
+// many times and hides what each row actually is.
+func TestTheScreensOfAWindowAreGroupedByMachine(t *testing.T) {
+	host, client, addr := twoWindows(t)
+
+	// Two machines' worth over there: the window's own, and one it is
+	// connected to.
+	s := sshtest.New(t)
+	withDialogs(t, host)
+	pinServers(t, host, s)
+	host.connectAs("margit", host.prepare(serverConfig(t, s)))
+	waitForBoth(t, host, client, "a pane on the machine over there", func() bool {
+		host.refreshPanel(time.Now())
+		for _, open := range client.windows[addr].win.Opens() {
+			if open.Host == "margit" && open.HasScreen() {
+				return true
+			}
+		}
+		return false
+	})
+
+	rows := client.remoteRows(addr)
+	var heads, under []string
+	for _, row := range rows {
+		if row.Header {
+			heads = append(heads, row.Text)
+			continue
+		}
+		under = append(under, row.Text)
+	}
+	if len(heads) < 2 {
+		t.Fatalf("headings %v, want one per machine over there: %v", heads, rows)
+	}
+	for _, want := range []string{"that machine", "margit"} {
+		if !slices.Contains(heads, want) {
+			t.Errorf("no heading for %q: %v", want, heads)
+		}
+	}
+	// And the rows under them say what they are, not which machine they
+	// are on: the heading above them says that.
+	for _, text := range under {
+		if strings.Contains(text, "margit: ") {
+			t.Errorf("a row repeats the machine its heading names: %q", text)
+		}
 	}
 }

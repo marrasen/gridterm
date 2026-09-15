@@ -86,6 +86,14 @@ type app struct {
 	// empty in the program and set by a test to a directory of its own.
 	servePaths servePaths
 
+	// windows are the other machines' gridterms this one has taken
+	// over, by the address each was reached at.
+	windows map[string]*taken
+
+	// paneOnWindow says which taken-over window a pane is drawn from,
+	// so letting go of one takes its panes with it.
+	paneOnWindow map[*term.Terminal]*taken
+
 	// dock holds the sidebar beside everything else, panel is the list
 	// in it, and stage is what fills the rest: it holds every pane the
 	// window has open and shows the one the sidebar picked.
@@ -583,6 +591,7 @@ func (a *app) commands() {
 		ui.Command{ID: "server.add", Title: "Add a server", Run: a.openAddServer},
 		ui.Command{ID: "server.reload", Title: "Reread the server list", Run: a.reloadBook},
 		ui.Command{ID: "serve.window", Title: "Serve this window…", Run: a.openServing},
+		ui.Command{ID: "serve.takeOver", Title: "Take over a window…", Run: a.openTakeOver},
 		ui.Command{ID: "panel.toggle", Title: "Show or hide the connections",
 			Run: a.togglePanel},
 		ui.Command{ID: "panel.focus", Title: "Go to the connections", Run: a.focusPanel},

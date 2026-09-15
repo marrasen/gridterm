@@ -148,6 +148,8 @@ func main() {
 	a.rates = make(map[*conns.Entry]*meter.Rate)
 	a.machines = make(map[string]*machine)
 	a.opening = make(map[string]context.CancelFunc)
+	a.windows = make(map[string]*taken)
+	a.paneOnWindow = make(map[*term.Terminal]*taken)
 	a.paneOn = make(map[*term.Terminal]*machine)
 	a.tunnels = make(map[*conns.Entry]*tunnel)
 	a.queue = jobs.New(0)
@@ -244,6 +246,9 @@ func main() {
 	// is one never closed.
 	closed = append(closed, a.waitForCloses(jobsGrace)...)
 	closed = append(closed, a.closeTunnels(), a.closeMachines())
+	// The windows this one took over go last: their panes were closed
+	// with the rest, and this hangs up on what carried them.
+	closed = append(closed, a.closeWindows())
 	if err := errors.Join(closed...); err != nil {
 		log.Fatal(err)
 	}

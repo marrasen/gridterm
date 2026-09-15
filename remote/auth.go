@@ -284,3 +284,22 @@ func bannerOf(ctx context.Context, cfg Config) ssh.BannerCallback {
 		return nil
 	}
 }
+
+// AgentKeys are the keys the SSH agent holds, and the closer for the
+// connection to it.
+//
+// Exported for one gridterm reaching another, which offers the same
+// keys the user would reach any other machine with. The caller closes
+// what it is given; a nil closer means there was no agent.
+func AgentKeys() (keys []ssh.Signer, closer io.Closer, err error) {
+	conn, err := dialAgent()
+	if err != nil {
+		return nil, nil, fmt.Errorf("remote: no SSH agent: %w", err)
+	}
+	keys, err = agent.NewClient(conn).Signers()
+	if err != nil {
+		_ = conn.Close()
+		return nil, nil, fmt.Errorf("remote: read the SSH agent: %w", err)
+	}
+	return keys, conn, nil
+}

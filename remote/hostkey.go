@@ -265,3 +265,23 @@ func parseKnownHosts(f *os.File) (lines [][]byte, dropped int, err error) {
 	}
 	return lines, dropped, nil
 }
+
+// HostKeyCheck builds the check a connection uses: the known_hosts
+// files given, and a question for a host that is not in any of them.
+//
+// Exported for one gridterm reaching another, which is a machine to be
+// checked like any other but is not in the user's ~/.ssh/known_hosts
+// and should not be written there. The rule it enforces is the one that
+// matters and must not be written twice: an unknown host is offered to
+// the user and only an explicit yes records it, while a key that does
+// not match one already recorded is refused outright.
+func HostKeyCheck(ctx context.Context, paths []string, ask Ask) (ssh.HostKeyCallback, error) {
+	if len(paths) == 0 {
+		return nil, errors.New("remote: no known hosts file to check against")
+	}
+	keys, err := loadKnownHosts(paths)
+	if err != nil {
+		return nil, err
+	}
+	return keys.callback(ctx, ask), nil
+}

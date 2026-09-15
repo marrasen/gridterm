@@ -150,7 +150,8 @@ func (a *app) refreshServerMenu(items []ui.MenuItem) {
 		ui.MenuItem{Command: "server.add"},
 		ui.MenuItem{Command: "server.reload"},
 		ui.MenuSeparator(),
-		ui.MenuItem{Command: "serve.window"})
+		ui.MenuItem{Command: "serve.window"},
+		ui.MenuItem{Command: "serve.takeOver"})
 
 	def := ui.MenuDef{Title: "Servers", Items: items}
 	for i, have := range a.bar.Menus {

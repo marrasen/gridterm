@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/pem"
 	"errors"
 	"net"
 	"os"
@@ -319,4 +320,28 @@ func TestServingAnywhereListensOnEveryAddress(t *testing.T) {
 	if host != "::" && host != "0.0.0.0" {
 		t.Errorf("it is listening on %q, want every address", host)
 	}
+}
+
+// aKeyFile writes a private key for a test and returns its path and the
+// authorized_keys line for it.
+func aKeyFile(t *testing.T) (path, line string) {
+	t.Helper()
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("make a key: %v", err)
+	}
+	block, err := ssh.MarshalPrivateKey(priv, "a test")
+	if err != nil {
+		t.Fatalf("encode the key: %v", err)
+	}
+	path = filepath.Join(t.TempDir(), "id_ed25519")
+	if err := os.WriteFile(path, pem.EncodeToMemory(block), 0o600); err != nil {
+		t.Fatalf("write the key: %v", err)
+	}
+	signer, err := ssh.NewSignerFromKey(priv)
+	if err != nil {
+		t.Fatalf("use the key: %v", err)
+	}
+	return path, strings.TrimSpace(string(ssh.MarshalAuthorizedKey(signer.PublicKey()))) +
+		" marcus@laptop"
 }

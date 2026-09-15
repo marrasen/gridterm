@@ -108,7 +108,7 @@ func takenOver(t *testing.T, open Opener) (*Server, *Window) {
 	t.Cleanup(func() { _ = s.Close() })
 
 	w, err := Dial(context.Background(), DialConfig{
-		Addr: s.Addr(), Key: mine,
+		Addr: s.Addr(), Keys: []ssh.Signer{mine},
 		HostKey: ssh.FixedHostKey(host.PublicKey()),
 	})
 	if err != nil {
@@ -251,9 +251,9 @@ func TestReachingAWindowSaysWhatIsMissing(t *testing.T) {
 		why string
 		cfg DialConfig
 	}{
-		{"no address", DialConfig{Key: signer, HostKey: ssh.InsecureIgnoreHostKey()}},
+		{"no address", DialConfig{Keys: []ssh.Signer{signer}, HostKey: ssh.InsecureIgnoreHostKey()}},
 		{"no key", DialConfig{Addr: "127.0.0.1:1", HostKey: ssh.InsecureIgnoreHostKey()}},
-		{"nothing to check by", DialConfig{Addr: "127.0.0.1:1", Key: signer}},
+		{"nothing to check by", DialConfig{Addr: "127.0.0.1:1", Keys: []ssh.Signer{signer}}},
 	} {
 		if _, err := Dial(context.Background(), c.cfg); err == nil {
 			t.Errorf("%s: it connected anyway", c.why)
@@ -283,7 +283,7 @@ func TestAWindowWithTheWrongKeyIsRefused(t *testing.T) {
 	t.Cleanup(func() { _ = s.Close() })
 
 	_, err = Dial(context.Background(), DialConfig{
-		Addr: s.Addr(), Key: mine,
+		Addr: s.Addr(), Keys: []ssh.Signer{mine},
 		HostKey: ssh.FixedHostKey(other.PublicKey()),
 	})
 
@@ -593,7 +593,7 @@ func takenOverReporting(t *testing.T, open Opener, told chan error) (*Server, *W
 	t.Cleanup(func() { _ = s.Close() })
 
 	w, err := Dial(context.Background(), DialConfig{
-		Addr: s.Addr(), Key: mine, HostKey: ssh.FixedHostKey(host.PublicKey()),
+		Addr: s.Addr(), Keys: []ssh.Signer{mine}, HostKey: ssh.FixedHostKey(host.PublicKey()),
 	})
 	if err != nil {
 		t.Fatalf("dial: %v", err)
@@ -805,7 +805,7 @@ func TestAClientIsSaidToHaveGoneOnlyOnceItsShellsAre(t *testing.T) {
 	t.Cleanup(func() { _ = s.Close() })
 
 	w, err := Dial(context.Background(), DialConfig{
-		Addr: s.Addr(), Key: mine, HostKey: ssh.FixedHostKey(host.PublicKey()),
+		Addr: s.Addr(), Keys: []ssh.Signer{mine}, HostKey: ssh.FixedHostKey(host.PublicKey()),
 	})
 	if err != nil {
 		t.Fatalf("dial: %v", err)

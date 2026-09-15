@@ -39,9 +39,9 @@ type DialConfig struct {
 	// Addr is the machine and port it is serving on.
 	Addr string
 
-	// Key is this window's own key, which the other one must have
-	// listed. There is no other way in.
-	Key ssh.Signer
+	// Keys are the keys to offer. The other window has to have one of
+	// them listed: there is no other way in, and nothing else is tried.
+	Keys []ssh.Signer
 
 	// HostKey checks the machine answering is the one meant. It is
 	// never nil: a window that took whatever answered would be one that
@@ -58,7 +58,7 @@ func Dial(ctx context.Context, cfg DialConfig) (*Window, error) {
 	switch {
 	case cfg.Addr == "":
 		return nil, errors.New("serve: no window to reach")
-	case cfg.Key == nil:
+	case len(cfg.Keys) == 0:
 		return nil, errors.New("serve: no key to reach it with")
 	case cfg.HostKey == nil:
 		return nil, errors.New("serve: nothing to check the machine by")
@@ -75,7 +75,7 @@ func Dial(ctx context.Context, cfg DialConfig) (*Window, error) {
 
 	cc, chans, reqs, err := ssh.NewClientConn(nc, cfg.Addr, &ssh.ClientConfig{
 		User:            "gridterm",
-		Auth:            []ssh.AuthMethod{ssh.PublicKeys(cfg.Key)},
+		Auth:            []ssh.AuthMethod{ssh.PublicKeys(cfg.Keys...)},
 		HostKeyCallback: cfg.HostKey,
 		Timeout:         dialTimeout,
 	})

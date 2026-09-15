@@ -65,6 +65,14 @@ type Screen struct {
 	// scrollOff is how many lines back into history the view is.
 	scrollOff int
 
+	// touched are the rows written since the last Render, and all says
+	// the whole screen was. drawnTo is the grid that render went to: any
+	// other grid is missing rows this screen no longer knows about, so
+	// it gets the lot.
+	touched []bool
+	all     bool
+	drawnTo *grid.Grid
+
 	curStyle grid.CursorStyle
 }
 
@@ -76,8 +84,8 @@ func NewScreen(cols, rows int, pal Palette, scrollback int) *Screen {
 		cols:    cols,
 		rows:    rows,
 		palette: pal,
-		pri:     newBuffer(cols, rows, scrollback, blankFor(pal)),
-		alt:     newBuffer(cols, rows, 0, blankFor(pal)),
+		pri:     newBuffer(cols, rows, scrollback, blankFor(&pal)),
+		alt:     newBuffer(cols, rows, 0, blankFor(&pal)),
 		top:     0,
 		bot:     rows - 1,
 	}
@@ -98,21 +106,17 @@ func NewScreen(cols, rows int, pal Palette, scrollback int) *Screen {
 // Size returns the screen dimensions in cells.
 func (s *Screen) Size() (cols, rows int) { return s.cols, s.rows }
 
-// Palette returns the colour scheme in use.
-func (s *Screen) Palette() Palette { return s.palette }
-
-// Modes returns a copy of the current mode flags.
-func (s *Screen) Modes() modes { return s.mode }
-
-// blankFor is the empty cell for a palette's defaults.
-func blankFor(pal Palette) grid.Cell {
+// blankFor is the empty cell for a palette's defaults. The palette is
+// taken by pointer because it is a kilobyte and this is on the path
+// every printed character takes.
+func blankFor(pal *Palette) grid.Cell {
 	return grid.Cell{Rune: ' ', FG: pal.FG, BG: pal.BG, Width: 1}
 }
 
 // blank returns an empty cell in the current default colours. New cells
 // take the default background rather than the pen's, so clearing with a
 // coloured pen does not paint the screen.
-func (s *Screen) blank() grid.Cell { return blankFor(s.palette) }
+func (s *Screen) blank() grid.Cell { return blankFor(&s.palette) }
 
 // eraseCell is what erase operations write. It keeps the pen's
 // background, which is how `clear` with a coloured background works,
@@ -177,6 +181,7 @@ func (s *Screen) Resize(cols, rows int) {
 	}
 	s.resizeTabs(cols)
 	s.clampScrollOff()
+	s.touchAll()
 }
 
 // line returns the current buffer's row y, or nil when out of range.
@@ -187,11 +192,29 @@ func (s *Screen) line(y int) line {
 	return s.cur.lines[y]
 }
 
+// touch records that row y has to be drawn again. A row outside the
+// screen means the caller worked on something this cannot name, so the
+// whole screen is drawn again.
+func (s *Screen) touch(y int) {
+	if y < 0 || y >= len(s.touched) {
+		s.all = true
+		return
+	}
+	s.touched[y] = true
+}
+
+// touchAll records that the whole screen has to be drawn again.
+func (s *Screen) touchAll() { s.all = true }
+
 // Print writes one rune at the cursor, handling deferred wrap, insert
 // mode and double-width characters. A combining mark attaches to the
 // cell already written rather than taking a cell of its own.
-func (s *Screen) Print(r rune) {
-	w := grid.RuneWidth(r)
+func (s *Screen) Print(r rune) { s.print(r, grid.RuneWidth(r)) }
+
+// print writes one rune whose width has already been worked out. Width
+// is the most expensive thing the emulator asks about a character, and
+// the caller has usually asked already.
+func (s *Screen) print(r rune, w int) {
 	if w == 0 {
 		s.attachCombining(r)
 		return
@@ -228,6 +251,8 @@ func (s *Screen) Print(r rune) {
 		s.insertBlanks(w)
 		l = s.line(s.cursor.Y)
 	}
+
+	s.touch(s.cursor.Y)
 
 	// Overwriting either half of an existing double-width character
 	// leaves the other half orphaned, which draws a stray glyph.
@@ -288,6 +313,7 @@ func (s *Screen) attachCombining(r rune) {
 	marks := make([]rune, 0, len(l[x].Comb)+1)
 	marks = append(marks, l[x].Comb...)
 	l[x].Comb = append(marks, r)
+	s.touch(s.cursor.Y)
 }
 
 // maxCombining is how many marks one cell may carry. Even the most
@@ -336,6 +362,9 @@ func (s *Screen) repair(l line) {
 	if l != nil {
 		grid.RepairWidths(l, s.eraseCell())
 	}
+	// Every caller works on the cursor's own row, and every one of them
+	// has just written to it.
+	s.touch(s.cursor.Y)
 }
 
 // MoveTo places the cursor, honouring origin mode and clamping into
@@ -415,6 +444,7 @@ func (s *Screen) CursorRow() int {
 func (s *Screen) lineFeed() {
 	if s.cursor.Y == s.bot {
 		s.historyGrew(s.cur.scrollUp(s.top, s.bot, 1, s.cur == s.pri, s.eraseCell()))
+		s.touchAll()
 		return
 	}
 	if s.cursor.Y < s.rows-1 {
@@ -434,6 +464,7 @@ func (s *Screen) ReverseIndex() {
 	s.cursor.WrapNext = false
 	if s.cursor.Y == s.top {
 		s.cur.scrollDown(s.top, s.bot, 1, s.eraseCell())
+		s.touchAll()
 		return
 	}
 	if s.cursor.Y > 0 {
@@ -512,6 +543,7 @@ func (s *Screen) SetScrollRegion(top, bot int) {
 // region without moving the cursor.
 func (s *Screen) ScrollUp(n int) {
 	s.historyGrew(s.cur.scrollUp(s.top, s.bot, n, s.cur == s.pri, s.eraseCell()))
+	s.touchAll()
 }
 
 // historyGrew keeps a scrolled-back view on the same text when new lines
@@ -524,7 +556,10 @@ func (s *Screen) historyGrew(n int) {
 	}
 }
 
-func (s *Screen) ScrollDown(n int) { s.cur.scrollDown(s.top, s.bot, n, s.eraseCell()) }
+func (s *Screen) ScrollDown(n int) {
+	s.cur.scrollDown(s.top, s.bot, n, s.eraseCell())
+	s.touchAll()
+}
 
 // InsertLines opens n blank lines at the cursor row, pushing the rest of
 // the region down. It is ignored outside the scroll region.
@@ -535,6 +570,7 @@ func (s *Screen) InsertLines(n int) {
 	s.cur.scrollDown(s.cursor.Y, s.bot, n, s.eraseCell())
 	s.cursor.X = 0
 	s.cursor.WrapNext = false
+	s.touchAll()
 }
 
 // DeleteLines removes n lines at the cursor row, pulling the rest of the
@@ -547,6 +583,7 @@ func (s *Screen) DeleteLines(n int) {
 	_ = s.cur.scrollUp(s.cursor.Y, s.bot, n, false, s.eraseCell())
 	s.cursor.X = 0
 	s.cursor.WrapNext = false
+	s.touchAll()
 }
 
 // InsertChars shifts the rest of the row right by n.
@@ -623,6 +660,7 @@ func (s *Screen) EraseInDisplay(mode int) {
 	case 3:
 		s.cur.scrollback = nil
 		s.scrollOff = 0
+		s.touchAll()
 	}
 	s.cursor.WrapNext = false
 }
@@ -634,6 +672,7 @@ func (s *Screen) eraseRows(from, to int) {
 		for i := range l {
 			l[i] = blank
 		}
+		s.touch(y)
 	}
 }
 
@@ -681,6 +720,7 @@ func (s *Screen) UseAltBuffer(on, clearOnEntry bool) {
 	// wrap makes no sense across the switch.
 	s.cursor.WrapNext = false
 	s.scrollOff = 0
+	s.touchAll()
 }
 
 // Reset returns the screen to its power-on state (RIS).
@@ -689,6 +729,7 @@ func (s *Screen) Reset() {
 	cols, rows := s.cols, s.rows
 	scrollback := s.pri.maxScroll
 	*s = *NewScreen(cols, rows, pal, scrollback)
+	s.touchAll()
 }
 
 // DECALN fills the screen with E, a self-test pattern.
@@ -702,6 +743,7 @@ func (s *Screen) DecAln() {
 	}
 	s.top, s.bot = 0, s.rows-1
 	s.MoveTo(0, 0)
+	s.touchAll()
 }
 
 // Pen returns the current graphic rendition.
@@ -721,10 +763,14 @@ func (s *Screen) SetCursorStyle(st grid.CursorStyle) { s.curStyle = st }
 func (s *Screen) ScrollView(n int) {
 	s.scrollOff += n
 	s.clampScrollOff()
+	s.touchAll()
 }
 
 // ResetView jumps back to the live screen.
-func (s *Screen) ResetView() { s.scrollOff = 0 }
+func (s *Screen) ResetView() {
+	s.scrollOff = 0
+	s.touchAll()
+}
 
 // ViewOffset returns how many lines back the view currently is.
 func (s *Screen) ViewOffset() int { return s.scrollOff }
@@ -740,9 +786,20 @@ func (s *Screen) Render(g *grid.Grid) {
 	g.DefaultFG, g.DefaultBG = s.palette.FG, s.palette.BG
 	if c, r := g.Size(); c != s.cols || r != s.rows {
 		g.Resize(s.cols, s.rows)
+		s.touchAll()
 	}
+	// Any grid but the one the last render went to is missing whatever
+	// this screen has forgotten it wrote, so it gets every row.
+	all := s.all || g != s.drawnTo || len(s.touched) != s.rows
+	if len(s.touched) != s.rows {
+		s.touched = make([]bool, s.rows)
+	}
+
 	blank := s.blank()
 	for y := 0; y < s.rows; y++ {
+		if !all && !s.touched[y] {
+			continue
+		}
 		l := s.cur.view(y, s.scrollOff)
 		for x := 0; x < s.cols; x++ {
 			c := blank
@@ -755,6 +812,10 @@ func (s *Screen) Render(g *grid.Grid) {
 			g.Set(x, y, c)
 		}
 	}
+
+	clear(s.touched)
+	s.all = false
+	s.drawnTo = g
 
 	cur := grid.Cursor{X: s.cursor.X, Y: s.cursor.Y, Style: s.curStyle}
 	// The cursor belongs to the live screen; scrolled back into history
@@ -784,6 +845,7 @@ func (s *Screen) OnAltBuffer() bool { return s.cur == s.alt }
 // UseAltBuffer because the different alt-screen modes clear at
 // different moments: 1049 on entry, 1047 on exit, 47 never.
 func (s *Screen) clearAlt() {
+	s.touchAll()
 	blank := s.blank()
 	for _, l := range s.alt.lines {
 		for i := range l {
@@ -804,8 +866,14 @@ func (s *Screen) MouseModes() (click, drag, motion, sgr bool) {
 func (s *Screen) RenderLive(g *grid.Grid) {
 	was := s.scrollOff
 	s.scrollOff = 0
+	// A different view of the same rows, so what was drawn last time
+	// says nothing about what this one needs -- and what this one leaves
+	// in g is not the live screen either, so the next render starts
+	// again whatever grid it is given.
+	s.touchAll()
 	s.Render(g)
 	s.scrollOff = was
+	s.drawnTo = nil
 }
 
 // RenderUnder draws the ordinary screen that an alternate one is
@@ -818,8 +886,10 @@ func (s *Screen) RenderUnder(g *grid.Grid) bool {
 	if s.cur != s.pri {
 		was, wasOff := s.cur, s.scrollOff
 		s.cur, s.scrollOff = s.pri, 0
+		s.touchAll()
 		s.Render(g)
 		s.cur, s.scrollOff = was, wasOff
+		s.drawnTo = nil
 		return true
 	}
 	return false

@@ -82,13 +82,14 @@ func (t *Terminal) Render(g *grid.Grid) { t.scr.Render(g) }
 // ---------------------------------------------------------------- //
 
 func (t *Terminal) Print(r rune) {
+	w := grid.RuneWidth(r)
 	// REP repeats the last printable character. A combining mark is not
 	// one: repeating it would stack marks on a cell rather than repeat
 	// anything visible.
-	if grid.RuneWidth(r) > 0 {
+	if w > 0 {
 		t.lastRune = r
 	}
-	t.scr.Print(r)
+	t.scr.print(r, w)
 }
 
 func (t *Terminal) Execute(b byte) {
@@ -284,8 +285,9 @@ func (t *Terminal) repeat(n int) {
 	cols, _ := t.scr.Size()
 	x, _ := t.scr.CursorPos()
 	n = min(n, max(cols-x, 1))
+	w := grid.RuneWidth(t.lastRune)
 	for i := 0; i < n; i++ {
-		t.scr.Print(t.lastRune)
+		t.scr.print(t.lastRune, w)
 	}
 }
 
@@ -323,6 +325,7 @@ func (t *Terminal) setPrivateModes(params [][]uint16, on bool) {
 			t.scr.mode.AppCursor = on
 		case 5:
 			t.scr.mode.ReverseVid = on
+			t.scr.touchAll()
 		case 6:
 			t.scr.cursor.Origin = on
 			t.scr.MoveTo(0, 0)

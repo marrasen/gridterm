@@ -613,6 +613,11 @@ func (g *Grid) inBounds(x, y int) bool {
 // nowhere else. StringWidth answers the same question for a run of text,
 // where the unit is a grapheme cluster rather than a rune.
 func RuneWidth(r rune) int {
+	if r >= 0x20 && r < 0x7f {
+		// Printable ASCII, which is nearly every character a terminal is
+		// sent, and the one range where the answer is always one.
+		return 1
+	}
 	switch w := uniseg.StringWidth(string(r)); {
 	case w <= 0:
 		return 0

@@ -19,7 +19,9 @@ func (t *Terminal) applySGR(params [][]uint16) {
 		return
 	}
 	pen := t.scr.Pen()
-	pal := t.scr.Palette()
+	// The screen's own palette rather than a copy of it: it is a
+	// kilobyte, and a coloured listing sends one of these per word.
+	pal := &t.scr.palette
 
 	for i := 0; i < len(params); i++ {
 		sub := params[i]
@@ -33,10 +35,10 @@ func (t *Terminal) applySGR(params [][]uint16) {
 			var col color.RGBA
 			var ok bool
 			if len(sub) > 1 {
-				col, ok = colorFromSub(sub[1:], &pal)
+				col, ok = colorFromSub(sub[1:], pal)
 			} else {
 				var used int
-				col, ok, used = colorFromParams(params[i+1:], &pal)
+				col, ok, used = colorFromParams(params[i+1:], pal)
 				i += used
 			}
 			if !ok {
@@ -118,7 +120,7 @@ func (t *Terminal) applySGR(params [][]uint16) {
 
 // defaultPen is SGR 0: default colours, no attributes.
 func (t *Terminal) defaultPen() grid.Cell {
-	pal := t.scr.Palette()
+	pal := &t.scr.palette
 	return grid.Cell{Rune: ' ', FG: pal.FG, BG: pal.BG, Width: 1}
 }
 

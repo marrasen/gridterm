@@ -74,3 +74,45 @@ func BenchmarkRenderScreenful(b *testing.B) {
 		term.Render(g)
 	}
 }
+
+// Rendering a screen that has changed, which is what a frame costs while
+// a program is talking.
+//
+// BenchmarkRenderScreenful above measures the other case: a screen
+// nothing has written to since the last frame, which is most frames.
+func BenchmarkRenderAfterOneLine(b *testing.B) {
+	term := New(80, 24, DefaultPalette(), DefaultScrollback, Callbacks{})
+	if _, err := term.Write(findOutput(100)); err != nil {
+		b.Fatal(err)
+	}
+	g := grid.New(80, 24, DefaultPalette().FG, DefaultPalette().BG)
+	term.Render(g)
+	line := []byte("/usr/lib/x86_64-linux-gnu/perl-base/unicore/lib/Gc/Cntrl.pl\r\n")
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := term.Write(line); err != nil {
+			b.Fatal(err)
+		}
+		term.Render(g)
+	}
+}
+
+// Rendering after one row changed without the screen scrolling, which is
+// a prompt being typed at or a progress line counting up.
+func BenchmarkRenderAfterOneRow(b *testing.B) {
+	term := New(80, 24, DefaultPalette(), DefaultScrollback, Callbacks{})
+	if _, err := term.Write(findOutput(100)); err != nil {
+		b.Fatal(err)
+	}
+	g := grid.New(80, 24, DefaultPalette().FG, DefaultPalette().BG)
+	term.Render(g)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		// Back to the top of the screen and over one row, so nothing
+		// scrolls.
+		if _, err := term.Write([]byte("\x1b[1;1Hworking" + string(rune('a'+i%26)))); err != nil {
+			b.Fatal(err)
+		}
+		term.Render(g)
+	}
+}

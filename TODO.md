@@ -45,6 +45,9 @@ each group. A line goes when the work is in and reviewed.
   "Terminal" does. It should work for an SFTP-only connection too.
 - **"Forget" a server should close its connections first**, so the row
   goes rather than staying behind under a name nothing saved.
+- **Remember what "Serve this window" was set to.** The dialog asks for
+  the port and where it may be reached from every time, starting from
+  the defaults. It should open on whatever was last used.
 
 ## The file browser
 

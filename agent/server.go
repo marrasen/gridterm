@@ -66,6 +66,14 @@ const (
 	// longestLine caps what one request may be, so an agent that sends
 	// no newline cannot make this window hold an unbounded buffer.
 	longestLine = 1 << 20
+
+	// mostAgents is how many may be connected at once.
+	//
+	// A handover is one user giving one pane to one agent, so this is
+	// far more than anybody uses. It is a cap because a wait costs a
+	// goroutine and a question of the window twenty times a second, and
+	// anything running as this user can open a connection.
+	mostAgents = 8
 )
 
 // Listen starts listening for agents on a port of the system's
@@ -136,17 +144,19 @@ func (s *Server) accept() {
 		}
 		if !s.hold(c) {
 			_ = c.Close()
-			return
+			continue
 		}
 		go s.talk(c)
 	}
 }
 
-// hold records a connection, reporting whether the server is still open.
+// hold records a connection, reporting whether it may stay: a server
+// that has closed takes nobody, and nor does one already talking to as
+// many agents as it will.
 func (s *Server) hold(c net.Conn) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.closed {
+	if s.closed || len(s.talking) >= mostAgents {
 		return false
 	}
 	s.talking[c] = struct{}{}
@@ -340,7 +350,9 @@ func (s *Server) waitFor(want ask) said {
 		if look.Gone {
 			return said{Look: &look}
 		}
-		if now.After(deadline) {
+		// The window is shutting down, so what is on the screen now is
+		// the last thing there will ever be to say about it.
+		if now.After(deadline) || s.isClosed() {
 			return said{Look: &look, Waited: true}
 		}
 		time.Sleep(lookEvery)

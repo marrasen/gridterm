@@ -452,3 +452,124 @@ func TestTheWindowIsToldWhenAnAgentComesAndGoes(t *testing.T) {
 		t.Fatal("the window was never told the agent had gone")
 	}
 }
+
+// Only so many agents talk to one window at once.
+//
+// A wait costs a goroutine and a question of the window twenty times a
+// second, and anything running as this user can open a connection.
+func TestOnlySoManyAgentsAtOnce(t *testing.T) {
+	_, _, code := listening(t)
+
+	var open []*Client
+	defer func() {
+		for _, c := range open {
+			_ = c.Close()
+		}
+	}()
+	for i := 0; i < mostAgents; i++ {
+		c, err := Dial(code)
+		if err != nil {
+			t.Fatalf("agent %d: %v", i, err)
+		}
+		// Asked something, so the connection is really established
+		// rather than only queued by the system.
+		if _, err := c.Use(code); err != nil {
+			t.Fatalf("agent %d: %v", i, err)
+		}
+		open = append(open, c)
+	}
+
+	// One more is turned away. The connection may be taken by the
+	// system and dropped straight after, so what says so is the first
+	// question going unanswered.
+	extra, err := Dial(code)
+	if err != nil {
+		return
+	}
+	defer func() { _ = extra.Close() }()
+	if _, err := extra.Use(code); err == nil {
+		t.Error("it took one more agent than it serves")
+	}
+}
+
+// A wait gives up when the window stops listening, rather than going on
+// asking a window that has gone.
+func TestAWaitEndsWhenTheWindowStops(t *testing.T) {
+	w, s, code := listening(t)
+	w.say("still going")
+	c, err := Dial(code)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer func() { _ = c.Close() }()
+	pane, err := c.Use(code)
+	if err != nil {
+		t.Fatalf("use: %v", err)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_, _, _ = c.Wait(pane.ID, Until{Contains: "never", TimeoutMS: 60000})
+	}()
+
+	if err := s.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Error("the wait went on after the window stopped listening")
+	}
+}
+
+// Waiting for text on the screen comes back as soon as it is there,
+// without waiting for the pane to go quiet.
+//
+// A command that keeps printing never goes quiet, so a wait that only
+// watched for quiet would sit there until the time ran out on something
+// that had already happened.
+func TestWaitingForTextComesBackWhileThePaneIsStillBusy(t *testing.T) {
+	w, _, code := listening(t)
+	c, err := Dial(code)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer func() { _ = c.Close() }()
+	pane, err := c.Use(code)
+	if err != nil {
+		t.Fatalf("use: %v", err)
+	}
+
+	// Something that says the thing and then keeps going, so the screen
+	// never settles.
+	stop := make(chan struct{})
+	defer close(stop)
+	go func() {
+		w.say("Listening on port 8080")
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			w.say("Listening on port 8080\nstill working")
+			time.Sleep(5 * time.Millisecond)
+			w.say("Listening on port 8080\nstill working.")
+			time.Sleep(5 * time.Millisecond)
+		}
+	}()
+
+	look, timedOut, err := c.Wait(pane.ID, Until{
+		Contains: "Listening on port", QuietMS: 60000, TimeoutMS: 10000,
+	})
+	if err != nil {
+		t.Fatalf("wait: %v", err)
+	}
+	if timedOut {
+		t.Error("it waited for a busy pane to go quiet instead of for the text")
+	}
+	if !strings.Contains(look.Screen, "Listening on port") {
+		t.Errorf("it came back on %q", look.Screen)
+	}
+}

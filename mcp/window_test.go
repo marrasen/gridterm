@@ -164,3 +164,53 @@ func TestSomethingThatIsNotACodeIsTurnedAway(t *testing.T) {
 		t.Error("it took something that is not a code")
 	}
 }
+
+// A code for another window opens that window, not the one already
+// reached.
+//
+// Two windows on one machine hand out codes of the same shape, and a
+// code carries the port for exactly this reason. Offered to the wrong
+// window a code names nothing, and the user would be told their code
+// was refused by the window that never had it.
+func TestACodeForAnotherWindowReachesThatWindow(t *testing.T) {
+	first := &oneWindow{screen: "the first window"}
+	one, err := agent.Listen(agent.Config{Window: first, OnError: func(error) {}})
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer func() { _ = one.Close() }()
+	first.code, err = agent.NewCode(one.Port())
+	if err != nil {
+		t.Fatalf("code: %v", err)
+	}
+
+	second := &oneWindow{screen: "the second window"}
+	two, err := agent.Listen(agent.Config{Window: second, OnError: func(error) {}})
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer func() { _ = two.Close() }()
+	second.code, err = agent.NewCode(two.Port())
+	if err != nil {
+		t.Fatalf("code: %v", err)
+	}
+
+	panes := NewWindow()
+	defer func() { _ = panes.Close() }()
+
+	if _, err := panes.Use(first.code); err != nil {
+		t.Fatalf("the first window: %v", err)
+	}
+	if _, err := panes.Use(second.code); err != nil {
+		t.Fatalf("the second window: %v", err)
+	}
+
+	// And what it reads now is the second window's screen.
+	screen, err := panes.Read("pane-1")
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if screen.Screen != "the second window" {
+		t.Errorf("it read %q", screen.Screen)
+	}
+}

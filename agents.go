@@ -129,7 +129,7 @@ func (a *app) agentWent(id string) { a.markAgent(id, false) }
 
 func (a *app) markAgent(id string, working bool) {
 	for pane, h := range a.handedBy {
-		if a.panes[pane] != nil && a.panes[pane].ID() == id {
+		if e := a.panes[pane]; e != nil && e.ID() == id {
 			h.working = working
 			a.markDirty()
 			return
@@ -220,10 +220,8 @@ func (w agentWindow) Send(id, text string) error {
 // handedPane is the pane an id names, and only while it is still handed
 // over.
 func (a *app) handedPane(id string) (*term.Terminal, error) {
-	for pane, h := range a.handedBy {
-		e := a.panes[pane]
-		if e != nil && e.ID() == id {
-			_ = h
+	for pane := range a.handedBy {
+		if e := a.panes[pane]; e != nil && e.ID() == id {
 			return pane, nil
 		}
 	}

@@ -49,6 +49,26 @@ each group. A line goes when the work is in and reviewed.
   the port and where it may be reached from every time, starting from
   the defaults. It should open on whatever was last used.
 
+## Copying files
+
+- **A copy should show its progress when its row is clicked.** The row
+  says a copy is happening and nothing else. Clicking it should show how
+  far it has got, how fast it is going and what it is on now.
+- **A copy should be cancellable.** The jobs underneath already take a
+  cancel; nothing offers it.
+- **A copy that has finished should be repeatable from its row.** The
+  row stays when the copy is done, so copying the same file again --
+  a log with new lines in it, say -- should be one click rather than
+  finding both ends again.
+
+## Panes
+
+- **Dividers should be draggable.** A split shares the room evenly and
+  there is no way to give one pane more of it. The same is true of the
+  file browser's two panes. `ui.Split` works out its weight afresh on
+  every layout and nothing ever writes it, so the weight has to become
+  something the divider can set and the layout has to keep.
+
 ## The file browser
 
 - Nothing outstanding. Ctrl+G goes to a path and offers the drives;

@@ -76,7 +76,7 @@ type Server struct {
 }
 
 // New starts a server on a loopback port and stops it when the test ends.
-func New(t *testing.T) *Server {
+func New(t testing.TB) *Server {
 	t.Helper()
 
 	_, priv, err := ed25519.GenerateKey(rand.Reader)
@@ -359,6 +359,13 @@ func (s *Server) echo(ch ssh.Channel) {
 		if n > 0 {
 			line = append(line, buf[:n]...)
 			s.echoBack(ch, buf[:n])
+			// A command that floods the terminal, for measuring how
+			// fast a client can read one.
+			if strings.Contains(string(line), "flood\n") {
+				line = nil
+				s.flood(ch)
+				continue
+			}
 			if strings.Contains(string(line), "bye\n") {
 				_, _ = ch.SendRequest("exit-status", false, exitStatus(exitOnBye))
 				_ = ch.Close()
@@ -412,4 +419,19 @@ func (s *Server) SayOnTheWayIn(what string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.banner = what
+}
+
+// FloodSize is how much a "flood" command writes.
+const FloodSize = 4 << 20
+
+// flood writes FloodSize bytes of ordinary output as fast as the client
+// will take it, which is what a find(1) over a big tree looks like.
+func (s *Server) flood(ch ssh.Channel) {
+	const line = "/usr/lib/x86_64-linux-gnu/perl-base/unicore/lib/Gc/Cntrl.pl\r\n"
+	block := strings.Repeat(line, 1024)
+	for sent := 0; sent < FloodSize; sent += len(block) {
+		if _, err := ch.Write([]byte(block)); err != nil {
+			return
+		}
+	}
 }

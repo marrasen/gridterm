@@ -1037,3 +1037,59 @@ func TestAKindThatIsNeitherIsRefused(t *testing.T) {
 		t.Fatal("a typo turned the window into a machine")
 	}
 }
+
+// The kind chosen in the dialog is the kind that is saved.
+//
+// Tested through the dialog rather than by building the record: the
+// record was always right, and what went wrong was that the field
+// telling the user how to change it named keys that do nothing.
+func TestTheKindChosenInTheDialogIsSaved(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+
+	if err := a.openAddServer(); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	f := openDialog(t, a)
+	typeIntoField(t, a, f, "Name", "statio")
+	typeIntoField(t, a, f, "Server", "10.0.0.5:2222")
+
+	// The way the dialog says to: the keys the hint names.
+	kind := f.Field("Kind")
+	if kind == nil {
+		t.Fatal("the dialog has no Kind")
+	}
+	was := kind.Text()
+	kind.HandleKey(input.Event{Kind: input.KeyPress, Key: input.KeyDown, Mods: input.ModCtrl})
+	if kind.Text() == was {
+		t.Fatalf("the keys the dialog names do nothing: it still says %q", was)
+	}
+	if kind.Text() != kindWindow {
+		t.Fatalf("it stepped to %q, want %q", kind.Text(), kindWindow)
+	}
+	pressButton(t, a, f, "Save")
+	a.pump.run()
+
+	h, ok := a.book.Lookup("statio")
+	if !ok {
+		t.Fatal("it was not saved")
+	}
+	if !h.Window {
+		t.Fatal("it was saved as a machine, not as a window")
+	}
+}
+
+// And the hint names keys that really step the field.
+func TestTheKindHintNamesKeysThatWork(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	if err := a.openAddServer(); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	f := openDialog(t, a)
+
+	said := strings.Join(f.Lines, " ")
+	if !strings.Contains(said, "ctrl+down") {
+		t.Fatalf("the dialog says %q, which does not name the keys that step Kind", said)
+	}
+}

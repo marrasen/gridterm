@@ -16,6 +16,24 @@ import (
 // stdin is closed, so output already on the wire can still be read.
 const drainGrace = 250 * time.Millisecond
 
+// GridtermWindowKind is what the server list calls an entry that is
+// another gridterm serving, for the message that tells a user their
+// machine is really one of those.
+//
+// A constant here rather than in the window, so the message and the
+// dialog cannot drift apart.
+const GridtermWindowKind = "gridterm window"
+
+// isGridterm reports whether a refusal came from a gridterm serving.
+//
+// It says so in the refusal itself, which is the only thing that
+// crosses: an SSH client is told a channel type is unknown and nothing
+// else. Matched on the channel type it names rather than on the
+// sentence around it.
+func isGridterm(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "session@gridterm")
+}
+
 // ShellConfig describes one shell or command to run on a connection.
 type ShellConfig struct {
 	// Command is what to run. Empty asks for the user's login shell.
@@ -72,6 +90,16 @@ func (c *Conn) Shell(cfg ShellConfig) (*Shell, error) {
 	}
 	sess, err := c.client.NewSession()
 	if err != nil {
+		if isGridterm(err) {
+			// The far end is gridterm serving, not a machine with a
+			// shell. Said plainly, because what the user has to change
+			// is one field in the dialog and the refusal from the other
+			// end does not say which.
+			return nil, fmt.Errorf(
+				"remote: %s is a gridterm window, not a machine to log in to."+
+					" Set its Kind to %q and take it over instead: %w",
+				c.addr, GridtermWindowKind, err)
+		}
 		return nil, fmt.Errorf("remote: open a session on %s: %w", c, err)
 	}
 

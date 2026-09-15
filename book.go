@@ -193,7 +193,9 @@ func (a *app) refreshServerMenu(items []ui.MenuItem) {
 // to log in to, or another gridterm serving that this one takes over.
 const (
 	kindMachine = "Machine (SSH)"
-	kindWindow  = "gridterm window"
+	// The same words the message uses when an SSH connection turns out
+	// to be a window, so the two cannot drift apart.
+	kindWindow = remote.GridtermWindowKind
 )
 
 // whichKind reads the Kind field.
@@ -281,8 +283,8 @@ func (a *app) openServerForm(under string) error {
 	// answer, and it is what cycling comes back round to.
 	via.Options = append([]string{""}, a.serverNames(under)...)
 	f.Lines = append(f.Lines,
-		"Kind cycles with the left and right arrows. A gridterm window is",
-		"one serving on another machine, taken over rather than logged in to.",
+		"Kind steps with ctrl+down and ctrl+up. A gridterm window is one",
+		"serving on another machine, taken over rather than logged in to.",
 		viaHint(via.Options))
 
 	name.SetText(was.Name)

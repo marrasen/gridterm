@@ -471,3 +471,23 @@ func TestLockingTheKeysForgetsTheAgentTrouble(t *testing.T) {
 		t.Errorf("it still remembers %v", why)
 	}
 }
+
+// A gridterm window refuses an ordinary SSH session, and the failure
+// says what to do about it.
+//
+// The refusal that crosses the wire says only that a channel type is
+// unknown. A user who saved a window as a machine got that and nothing
+// else, with no hint that one field in the dialog was wrong.
+func TestASessionOnAGridtermWindowSaysWhatItIs(t *testing.T) {
+	refusal := errors.New(
+		`ssh: rejected: unknown channel type ("this is gridterm, and it serves session@gridterm")`)
+	if !isGridterm(refusal) {
+		t.Fatal("it does not recognise a gridterm window")
+	}
+	if isGridterm(errors.New("ssh: rejected: administratively prohibited")) {
+		t.Error("it calls an ordinary refusal a gridterm window")
+	}
+	if isGridterm(nil) {
+		t.Error("it calls no failure a gridterm window")
+	}
+}

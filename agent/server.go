@@ -39,7 +39,9 @@ type Server struct {
 	closed  bool
 	talking map[net.Conn]struct{}
 
-	running sync.WaitGroup
+	// accepting is the goroutine taking connections, and nothing else.
+	// The goroutines answering agents are not waited for; see Close.
+	accepting sync.WaitGroup
 }
 
 // The defaults a wait uses when the agent asks for none.
@@ -82,9 +84,9 @@ func Listen(cfg Config) (*Server, error) {
 		return nil, fmt.Errorf("agent: listen: %w", err)
 	}
 	s := &Server{cfg: cfg, ln: ln, talking: map[net.Conn]struct{}{}}
-	s.running.Add(1)
+	s.accepting.Add(1)
 	go func() {
-		defer s.running.Done()
+		defer s.accepting.Done()
 		s.accept()
 	}()
 	return s, nil
@@ -94,6 +96,13 @@ func Listen(cfg Config) (*Server, error) {
 func (s *Server) Port() int { return s.ln.Addr().(*net.TCPAddr).Port }
 
 // Close stops listening and hangs up on every agent.
+//
+// It does not wait for the goroutines answering agents. Every question
+// an agent asks is answered by the window, and taking a pane back
+// happens in the window too: waiting here would be the window waiting
+// for something that is waiting for the window. Those goroutines end as
+// soon as what they are waiting on gives up, and nothing depends on
+// their having finished.
 func (s *Server) Close() error {
 	s.mu.Lock()
 	if s.closed {
@@ -111,7 +120,7 @@ func (s *Server) Close() error {
 	for _, c := range talking {
 		errs = append(errs, c.Close())
 	}
-	s.running.Wait()
+	s.accepting.Wait()
 	return errors.Join(errs...)
 }
 
@@ -129,11 +138,7 @@ func (s *Server) accept() {
 			_ = c.Close()
 			return
 		}
-		s.running.Add(1)
-		go func() {
-			defer s.running.Done()
-			s.talk(c)
-		}()
+		go s.talk(c)
 	}
 }
 

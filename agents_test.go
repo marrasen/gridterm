@@ -292,3 +292,43 @@ func TestHandingAPaneOverShowsTheCodeAndCopiesIt(t *testing.T) {
 		t.Error("it is still handed over")
 	}
 }
+
+// Taking a pane back while an agent is waiting on it comes back.
+//
+// Every question an agent asks is answered by the goroutine that draws,
+// and taking a pane back happens on that same goroutine. One waiting
+// for the other is a window that never draws again, and the action that
+// wedges it is the one the user reaches for when they want the agent to
+// stop.
+func TestTakingAPaneBackWhileAnAgentIsAskingComesBack(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pane, code, c := handedOver(t, a)
+
+	fromAgent(t, a, func() error {
+		_, err := c.Use(code)
+		return err
+	})
+
+	// A wait in flight: the agent is asking, and nothing is running
+	// what it asked for.
+	asking := make(chan struct{})
+	go func() {
+		close(asking)
+		_, _, _ = c.Wait("1", agent.Until{QuietMS: 60000, TimeoutMS: 60000})
+	}()
+	<-asking
+	waitUntil(t, func() bool { return a.pump.pending() > 0 })
+
+	done := make(chan error, 1)
+	go func() { done <- a.takeBackPane(pane) }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("taking it back gave %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("taking the pane back waited for the agent it was taking it from")
+	}
+}

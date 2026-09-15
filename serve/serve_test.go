@@ -842,3 +842,29 @@ func (s *Server) turnedAwaySoFar() int {
 	defer s.mu.Unlock()
 	return s.turnedAway
 }
+
+// A client that has not kept up is sent the latest snapshot, not every
+// one it missed.
+//
+// What it wants is a picture of the window now. A queue of pictures it
+// is already too late for would put it further behind with every one.
+func TestAClientBehindIsSentTheLatestSnapshot(t *testing.T) {
+	w := newWatcher(nil)
+
+	w.put([]byte("first\n"))
+	w.put([]byte("second\n"))
+
+	if got := string(w.take()); got != "second\n" {
+		t.Errorf("it kept %q", got)
+	}
+	if got := w.take(); got != nil {
+		t.Errorf("there was another waiting: %q", got)
+	}
+
+	// And one that has gone is not queued for.
+	w.stop()
+	w.put([]byte("third\n"))
+	if got := w.take(); got != nil {
+		t.Errorf("it queued %q for a client that has gone", got)
+	}
+}

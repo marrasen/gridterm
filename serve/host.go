@@ -178,7 +178,7 @@ func (s *Server) runSession(ch ssh.Channel, reqs <-chan *ssh.Request,
 				errors.New("this gridterm cannot be worked in from elsewhere"))
 			return
 		}
-		sess, err = s.cfg.Attach(want.Attach)
+		sess, err = s.cfg.Attach(want.Attach, cols, rows)
 	case s.cfg.Open == nil:
 		s.refuseSession(ch, reqs, errors.New("this gridterm has nothing to open"))
 		return
@@ -326,7 +326,10 @@ func (s *Server) endSession(ch ssh.Channel, why error) {
 //
 // It is called from a goroutine of the server's, so an implementation
 // that reaches into the window has to hand the work to whatever draws.
-type Attacher func(id string) (session.Session, error)
+// cols and rows are how big the watcher's pane is. The window may
+// give the pane that size, or may keep its own and let the watcher see
+// a screen of another size; either way the watcher has said.
+type Attacher func(id string, cols, rows int) (session.Session, error)
 
 // Opener starts something for a client to work in.
 //

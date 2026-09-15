@@ -19,14 +19,14 @@ import (
 // Called from a goroutine serving that client, so the work of finding
 // the pane is handed to the one that draws and waited for here. Nothing
 // in the widget tree may be touched from anywhere else.
-func (a *app) attachTo(id string) (session.Session, error) {
+func (a *app) attachTo(id string, cols, rows int) (session.Session, error) {
 	type found struct {
 		sess session.Session
 		err  error
 	}
 	back := make(chan found, 1)
 	a.pump.post(func() {
-		sess, err := a.watchPane(id)
+		sess, err := a.watchPane(id, cols, rows)
 		back <- found{sess: sess, err: err}
 	})
 	select {
@@ -44,7 +44,7 @@ func (a *app) attachTo(id string) (session.Session, error) {
 //
 // On the goroutine that draws, which is the only one that may look at
 // what the window has open.
-func (a *app) watchPane(id string) (session.Session, error) {
+func (a *app) watchPane(id string, cols, rows int) (session.Session, error) {
 	e := a.entryByID(id)
 	if e == nil {
 		return nil, fmt.Errorf("there is nothing called %q open here any more", id)
@@ -53,7 +53,32 @@ func (a *app) watchPane(id string) (session.Session, error) {
 	if pane == nil {
 		return nil, errors.New("that is not something with a screen to watch")
 	}
-	return newWatched(pane)
+	w, err := newWatched(pane)
+	if err != nil {
+		return nil, err
+	}
+	// The watcher sets the size. Asked for from whichever goroutine is
+	// serving them, so it is handed to the one that draws: the widget
+	// tree is that goroutine's.
+	w.resize = func(cols, rows int) error {
+		a.pump.post(func() { pane.Hold(cols, rows) })
+		return nil
+	}
+	// The size they opened at, so their screen is the right shape from
+	// the first frame rather than after the first resize. Straight
+	// rather than through the pump: this already runs on the goroutine
+	// that draws.
+	pane.Hold(cols, rows)
+	// And the size comes back to this window when nobody is watching.
+	w.gone = func() {
+		a.pump.post(func() {
+			if pane.Watched() == 0 {
+				pane.Release()
+				a.markDirty()
+			}
+		})
+	}
+	return w, nil
 }
 
 // entryByID finds what a snapshot called something.
@@ -97,6 +122,15 @@ func (a *app) paneFor(e *conns.Entry) *term.Terminal {
 type watched struct {
 	pane *term.Terminal
 	stop func()
+
+	// resize is how the watcher asks for the size it wants. A nil one
+	// refuses: the pane is drawn on this machine as well, and its size
+	// is this window's unless this window gives it up.
+	resize func(cols, rows int) error
+
+	// gone is called when this watcher stops, so the window can take
+	// its screen back.
+	gone func()
 
 	// out carries what the pane says to whoever is reading this. It is
 	// buffered: the pane's own reader writes into it, and a watcher on
@@ -285,8 +319,11 @@ func (w *watched) Write(p []byte) (int, error) {
 // Resize refuses. The pane is drawn on this machine too, and shrinking
 // somebody's shell to fit a pane they are not looking at would reach
 // further than watching was ever asked to.
-func (w *watched) Resize(int, int) error {
-	return errors.New("the size of a pane that is drawn here too is not yours to set")
+func (w *watched) Resize(cols, rows int) error {
+	if w.resize == nil {
+		return errors.New("the size of a pane that is drawn here too is not yours to set")
+	}
+	return w.resize(cols, rows)
 }
 
 // Wait blocks until the program ends or the watcher stops watching.
@@ -307,6 +344,9 @@ func (w *watched) Close() error {
 		close(w.done)
 		if w.stop != nil {
 			w.stop()
+		}
+		if w.gone != nil {
+			w.gone()
 		}
 	})
 	return nil

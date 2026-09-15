@@ -129,6 +129,17 @@ type Terminal struct {
 	size     ui.Size
 	haveSize bool
 
+	// box is the room the layout gave this terminal, which is the same
+	// as size unless somebody watching has been given the size. Then
+	// the screen is drawn into the top-left of the box: bigger, and what
+	// does not fit is not shown here; smaller, and the rest of the box
+	// is left blank.
+	box ui.Size
+
+	// held says the size is somebody else's. The layout stops setting
+	// it while it is, or this window would take it straight back.
+	held bool
+
 	focused bool
 	encBuf  []byte
 
@@ -214,6 +225,19 @@ func (t *Terminal) Dirty() bool { return t.pending.Load() }
 
 // Layout resizes the emulator and the session to match the area.
 func (t *Terminal) Layout(size ui.Size) {
+	t.box = size
+	if t.held {
+		// The size belongs to somebody watching. The screen keeps the
+		// size they asked for and is drawn in whatever room this window
+		// has for it, which is what lets their screen be the right shape
+		// while this one still shows it.
+		return
+	}
+	t.resize(size)
+}
+
+// resize gives the terminal a size, whoever decided it.
+func (t *Terminal) resize(size ui.Size) {
 	cols, rows := max(size.Cols, 1), max(size.Rows, 1)
 	if t.haveSize && t.size == size {
 		return
@@ -264,6 +288,42 @@ func (t *Terminal) Draw(v grid.View) {
 	if t.focused {
 		v.SetCursor(t.g.Cursor())
 	}
+}
+
+// Hold gives the size to somebody watching from another machine.
+//
+// A terminal's size normally comes from the layout around it, and while
+// it is held it does not: the watcher's screen is the right shape, and
+// this window draws what fits in the room it has. Release gives it
+// back.
+//
+// It is the difference between looking over somebody's shoulder and
+// taking a machine over. The first must not resize a screen somebody
+// may be sitting in front of; the second is the case where nobody is.
+func (t *Terminal) Hold(cols, rows int) {
+	t.held = true
+	t.resize(ui.Size{Cols: max(cols, 1), Rows: max(rows, 1)})
+}
+
+// Release gives the size back to the layout.
+func (t *Terminal) Release() {
+	if !t.held {
+		return
+	}
+	t.held = false
+	t.resize(t.box)
+}
+
+// Held reports whether somebody else has this terminal's size.
+func (t *Terminal) Held() bool { return t.held }
+
+// Box is the room the layout has for this terminal, which differs from
+// its size only while the size is held.
+func (t *Terminal) Box() ui.Size {
+	if !t.haveSize {
+		return t.size
+	}
+	return t.box
 }
 
 // SetFocus takes the cursor with it: an unfocused terminal shows none.

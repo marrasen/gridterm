@@ -1002,7 +1002,7 @@ func waitForOpens(t *testing.T, w *Window, ok func([]Open) bool, what string) {
 func TestAWindowWorksInSomethingAlreadyRunning(t *testing.T) {
 	asked := make(chan string, 1)
 	running := newEchoSession(100, 40)
-	_, w := takenOverWith(t, nil, func(id string) (session.Session, error) {
+	_, w := takenOverWith(t, nil, func(id string, cols, rows int) (session.Session, error) {
 		asked <- id
 		return running, nil
 	})
@@ -1061,7 +1061,7 @@ func TestAWindowThatCannotBeWorkedInSaysSo(t *testing.T) {
 // What the serving window says about something that has gone reaches
 // the client rather than being swallowed.
 func TestAskingForSomethingGoneSaysSo(t *testing.T) {
-	_, w := takenOverWith(t, nil, func(id string) (session.Session, error) {
+	_, w := takenOverWith(t, nil, func(id string, cols, rows int) (session.Session, error) {
 		return nil, fmt.Errorf("there is nothing called %q open here any more", id)
 	})
 

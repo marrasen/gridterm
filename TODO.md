@@ -5,13 +5,14 @@ each group. A line goes when the work is in and reviewed.
 
 ## Now
 
-- **Lend the screen so a watcher owns the size.** A pane being watched is
-  drawn on the machine it runs on as well, and its size comes from that
-  window's layout, so a watcher sees a screen of the wrong size and
-  anything drawing a layout breaks. The pane should take the watcher's
-  size and be drawn inside whatever box the host's layout gives it. In
-  progress; an earlier attempt that gave the whole window away is
-  stashed as "lending the screen, work in progress".
+- **Scale a held screen to fit the host's window.** A watched screen now
+  takes the watcher's size, and the machine it runs on draws as much of
+  it as fits in the room its own layout gives that pane. When the
+  watcher's screen is the bigger of the two, the rest is not shown
+  there. Marcus asked for it to be scaled instead, so all of it is
+  visible however the two sizes differ. Needs the pane drawn to an
+  offscreen image and blitted scaled, which the compositor does not do
+  yet.
 
 ## Errors and logs
 

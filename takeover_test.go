@@ -1021,9 +1021,10 @@ func TestARemoteRowKeepsItsKeyWhileItWorks(t *testing.T) {
 // The far end is redrawn at its own size whenever that changes, and a
 // size remembered from the moment of attaching would go on being shown
 // long after it stopped being true.
-func TestTheFarScreenSizeIsAskedForAgain(t *testing.T) {
+func TestWatchingAScreenGivesItTheWatchersSize(t *testing.T) {
 	host, client, addr := twoWindows(t)
 	hostPane := onlyPaneOn(t, host)
+	was := hostPane.Size()
 
 	var row remoteKey
 	waitForBoth(t, host, client, "a row for the shell over there", func() bool {
@@ -1042,25 +1043,37 @@ func TestTheFarScreenSizeIsAskedForAgain(t *testing.T) {
 	}
 	here := newestPane(t, client)
 
-	// The screen over there is made a size this pane is not.
-	was := hostPane.Size()
+	// The screen over there is the watcher's size now, not the size the
+	// window it runs in would have given it.
+	waitForBoth(t, host, client, "the screen over there to take this size", func() bool {
+		return hostPane.Held() && hostPane.Size() == here.Size()
+	})
+	// And the window it runs in does not take it back. Its own layout
+	// runs on every resize, and a pane that snapped back would undo the
+	// watcher a frame later.
 	hostPane.Layout(ui.Size{Cols: was.Cols - 7, Rows: was.Rows - 3})
+	if got := hostPane.Size(); got != here.Size() {
+		t.Fatalf("the window took the size back: it is %v, want %v", got, here.Size())
+	}
 
-	waitForBoth(t, host, client, "the row to say what size it is now", func() bool {
-		host.refreshPanel(panelNow)
-		client.refreshPanel(panelNow)
-		e := client.panes[here]
-		return e != nil && e.Note == farNote(here.Size(), was.Cols-7, was.Rows-3)
-	})
+	// The note says nothing, because there is nothing to say: what the
+	// watcher sees is the shape it asked for.
+	host.refreshPanel(panelNow)
+	client.refreshPanel(panelNow)
+	if e := client.panes[here]; e != nil && e.Note != "" {
+		t.Errorf("the row says %q about a screen that is the right size", e.Note)
+	}
 
-	// And back again, so the note goes when there is nothing to say.
-	hostPane.Layout(here.Size())
-	waitForBoth(t, host, client, "the note to go when the sizes agree", func() bool {
-		host.refreshPanel(panelNow)
-		client.refreshPanel(panelNow)
-		e := client.panes[here]
-		return e != nil && e.Note == ""
+	// Letting go gives the size back to the window it runs in.
+	if err := client.closePane(here); err != nil {
+		t.Fatalf("stop watching: %v", err)
+	}
+	waitForBoth(t, host, client, "the screen to go back to its own size", func() bool {
+		return !hostPane.Held()
 	})
+	if got := hostPane.Size(); got != (ui.Size{Cols: was.Cols - 7, Rows: was.Rows - 3}) {
+		t.Fatalf("it came back at %v, want the size its own window last gave it", got)
+	}
 }
 
 // A note somebody else put on a row is not written over.

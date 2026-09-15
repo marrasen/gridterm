@@ -239,7 +239,7 @@ func TestAttachingFromAClosingWindowComesBack(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		_, err := a.attachTo("1")
+		_, err := a.attachTo("1", 80, 24)
 		done <- err
 	}()
 	select {

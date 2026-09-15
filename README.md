@@ -256,7 +256,7 @@ are exactly the parts where a test tells you nothing useful. `-shot`
 drives a real window through a short script and writes PNG files:
 
 ```
-gridterm -shot "wait:60 key:ctrl+k wait:2 shot:palette.png"
+gridterm -shot "wait:60 key:ctrl+shift+k wait:2 shot:palette.png"
 ```
 
 The steps are `wait:<frames>`, `key:<chord>`, `type:<text>` and

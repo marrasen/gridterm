@@ -247,3 +247,64 @@ func TestAChooserToldItLostTheKeysStopsMarkingItsLine(t *testing.T) {
 		t.Fatalf("the line is %v once the keys come back", got)
 	}
 }
+
+// A chord the chooser never offered moves nothing, and does not reach
+// what is behind the dialog either.
+//
+// Ctrl+Down is not Down: acting on it moves the choice on a key the user
+// pressed for something else. Handing it on is worse, because the
+// window's own chords act on a pane the chooser is covering.
+func TestChooserTakesNoChordItNeverOffered(t *testing.T) {
+	for _, ev := range []input.Event{
+		press(input.KeyDown, input.ModCtrl),
+		press(input.KeyUp, input.ModAlt),
+		press(input.KeyEnter, input.ModCtrl),
+		press(input.KeyV, input.ModCtrl|input.ModShift),
+		// Ctrl+Escape is not Escape: a chooser that closed on it would
+		// answer a chord the user pressed for something else.
+		press(input.KeyEscape, input.ModCtrl),
+	} {
+		c, took, closed := newTestChooser(t)
+		was := c.list.at
+
+		taken, err := c.HandleKey(ev)
+		if err != nil {
+			t.Fatalf("%v: %v", ev.Key, err)
+		}
+		if !taken {
+			t.Errorf("%v went past the dialog to whatever is behind it", ev.Key)
+		}
+		if len(*took) != 0 {
+			t.Errorf("%v picked %q", ev.Key, *took)
+		}
+		if *closed != 0 {
+			t.Errorf("%v closed the chooser", ev.Key)
+		}
+		if now := c.list.at; now != was {
+			t.Errorf("%v moved the choice from %d to %d", ev.Key, was, now)
+		}
+	}
+}
+
+// A dialog with nowhere to draw itself still closes on Escape, and still
+// only on Escape: Ctrl+Escape is a different chord.
+func TestAnInvisibleDialogClosesOnPlainEscapeOnly(t *testing.T) {
+	c, _, closed := newTestChooser(t)
+	c.Layout(Size{Cols: 4, Rows: 2})
+	if !c.box().Empty() {
+		t.Fatal("the test needs a chooser with nowhere to draw itself")
+	}
+
+	if _, err := c.HandleKey(press(input.KeyEscape, input.ModCtrl)); err != nil {
+		t.Fatalf("ctrl+escape: %v", err)
+	}
+	if *closed != 0 {
+		t.Error("Ctrl+Escape closed an invisible chooser")
+	}
+	if _, err := c.HandleKey(press(input.KeyEscape, 0)); err != nil {
+		t.Fatalf("escape: %v", err)
+	}
+	if *closed != 1 {
+		t.Errorf("Escape closed an invisible chooser %d times, want 1", *closed)
+	}
+}

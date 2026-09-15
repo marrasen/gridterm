@@ -723,7 +723,7 @@ func TestANoticeTakesTheShortcutsWhileItIsUp(t *testing.T) {
 		press(input.KeyV, input.ModCtrl|input.ModShift), // paste into the shell
 		press(input.KeyW, input.ModCtrl|input.ModShift), // close the pane
 		press(input.KeyF10, 0),                          // open the menu bar
-		press(input.KeyK, input.ModCtrl),                // open the palette
+		press(input.KeyK, input.ModCtrl|input.ModShift), // open the palette
 	} {
 		if _, err := a.root.HandleKey(ev); err != nil {
 			t.Fatalf("%v: %v", ui.ChordOf(ev), err)

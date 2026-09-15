@@ -163,29 +163,6 @@ func (n *Notice) SetMessage(s string) {
 	n.active, n.holding = false, false
 }
 
-// cleanText makes a message fit to draw: a tab becomes a space and every
-// other control character goes, because a far end can put anything in an
-// error. Line breaks stay, so a message written as several lines keeps
-// them.
-func cleanText(s string) string {
-	var b strings.Builder
-	b.Grow(len(s))
-	for _, r := range s {
-		switch {
-		case r == '\n':
-			b.WriteRune(r)
-		case r == '\t':
-			b.WriteByte(' ')
-		case r < ' ', r == 0x7f, r >= 0x80 && r <= 0x9f:
-			// Dropped, the carriage return of a CRLF among them, which
-			// leaves the line break behind it.
-		default:
-			b.WriteRune(r)
-		}
-	}
-	return b.String()
-}
-
 // Selection returns the text the user has dragged over as the message
 // wrote it rather than as the box wrapped it, and "" when there is no
 // selection.
@@ -254,8 +231,8 @@ func (n *Notice) Draw(v grid.View) { n.buf.draw(v, n.paint) }
 // HandleKey scrolls the message, moves between the buttons and presses
 // one.
 //
-// Every other key is swallowed, because the dialog covers what is behind
-// it. The copy chord is the exception: the notice answers that itself.
+// Every other key is swallowed, the way a modal does (see KeyHandler).
+// The copy chord is the exception: the notice answers that itself.
 func (n *Notice) HandleKey(ev input.Event) (bool, error) {
 	if ev.Kind != input.KeyPress && ev.Kind != input.KeyRepeat {
 		return true, nil
@@ -267,12 +244,12 @@ func (n *Notice) HandleKey(ev input.Event) (bool, error) {
 	// A dialog with no room to be drawn takes nothing but Escape: every
 	// other key would act on a message that is not on screen.
 	if n.box().Empty() {
-		if ev.Key == input.KeyEscape {
+		if ev.Key == input.KeyEscape && isPlainKey(ev) {
 			n.dismiss()
 		}
 		return true, nil
 	}
-	if ev.Mods != 0 && !(ev.Key == input.KeyTab && ev.Mods == input.ModShift) {
+	if !isPlainKey(ev) {
 		return true, nil
 	}
 

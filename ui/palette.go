@@ -125,6 +125,11 @@ func (p *Palette) Layout(size Size) {
 	// it. A taller one can show more, so the list should not be left
 	// scrolled past its end.
 	p.scroll()
+	// And the query line is told how much room it has, which is what
+	// lets it scroll to keep the caret in view.
+	if in := p.lines(); !in.Empty() {
+		p.q.Layout(Size{Cols: p.queryCols(in.Cols), Rows: 1})
+	}
 }
 
 // HandleKey drives the dialog. Keys it has no use for travel on, so the
@@ -237,8 +242,13 @@ func (p *Palette) lines() Rect {
 func (p *Palette) drawQuery(in grid.View, cols int) {
 	in.SetString(0, 0, string(promptRune)+" ", p.Style.ChordFG, p.Style.BG, 0)
 	p.q.Style = FieldStyle{FG: p.Style.FG, BG: p.Style.BG, PlaceholderFG: p.Style.ChordFG}
-	p.q.Draw(in.Sub(2, 0, max(cols-2, 1), 1))
+	p.q.Draw(in.Sub(2, 0, p.queryCols(cols), 1))
 }
+
+// queryCols is how wide the query line is, and is what the field is laid
+// out with. A field scrolls to keep the caret in view, and it can only
+// do that once it has been told how much room it has.
+func (p *Palette) queryCols(cols int) int { return max(cols-2, 1) }
 
 // drawMatch paints one line of the list, counting from the first one
 // shown rather than the first there is.

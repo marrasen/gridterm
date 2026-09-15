@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -513,4 +515,41 @@ func waitForBoth(t *testing.T, a, b *testApp, what string, cond func() bool) {
 		time.Sleep(time.Millisecond)
 	}
 	t.Fatalf("timed out waiting for %s", what)
+}
+
+// The greyed row says why the connection went, not only that it did.
+//
+// "the host closed the connection" and "connection reset by peer" send
+// the user to different places, and the row is all they have to work
+// from once the panes on it have gone.
+func TestAGreyedRowSaysWhyTheConnectionWent(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		was  string
+		why  error
+		want string
+	}{
+		{name: "a reason", why: errors.New("connection reset by peer"),
+			want: "connection reset by peer"},
+		{name: "a clean end", why: io.EOF, want: ""},
+		{name: "no reason at all", want: ""},
+		{name: "beside what the row already said", was: "10.0.0.5:22",
+			why:  errors.New("connection reset by peer"),
+			want: "10.0.0.5:22: connection reset by peer"},
+		{name: "a far end that dressed its reason up",
+			why:  errors.New("\x1b[2Jreset"),
+			want: "[2Jreset"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := newTestApp(t, 80, 24)
+			e := &conns.Entry{Host: "margit", Kind: conns.Server, Note: tc.was, Meter: meter.New()}
+			a.registry.Add(e)
+
+			a.greyRow(e, tc.why)
+
+			if e.Note != tc.want {
+				t.Errorf("the row notes %q, want %q", e.Note, tc.want)
+			}
+		})
+	}
 }

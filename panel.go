@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"image/color"
+	"io"
 	"sort"
 	"strconv"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/meter"
+	"github.com/marrasen/gridterm/serve"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/files"
 	"github.com/marrasen/gridterm/ui/term"
@@ -387,7 +389,23 @@ func (a *app) hostRow(on hostFacts, now time.Time) ui.ListRow {
 // the user clears it, with "Close this connection" or "clear finished",
 // because what a connection did before it went is worth reading. What
 // the row says it was is the caller's to set.
-func (a *app) greyRow(e *conns.Entry) {
+//
+// why is what the connection ended with, and goes on the row's note: a
+// user told only that a machine went has nothing to act on, while "the
+// host closed the connection" and "connection reset by peer" send them
+// to different places.
+//
+// A clean end says nothing the greying does not, so it is left off: a
+// nil reason, and an end of file, which is what a far end hanging up
+// politely looks like.
+func (a *app) greyRow(e *conns.Entry, why error) {
+	if why != nil && !errors.Is(why, io.EOF) {
+		said := serve.Plain(why.Error())
+		if e.Note != "" {
+			said = e.Note + ": " + said
+		}
+		e.Note = said
+	}
 	dead := meter.New()
 	dead.Close()
 	e.Meter = dead

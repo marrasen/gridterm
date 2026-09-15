@@ -566,7 +566,7 @@ func runFromPalette(t *testing.T, a *testApp, id string) {
 	if !ok {
 		t.Fatalf("there is no command %q", id)
 	}
-	if _, err := a.root.HandleKey(press(input.KeyK, input.ModCtrl)); err != nil {
+	if _, err := a.root.HandleKey(press(input.KeyK, input.ModCtrl|input.ModShift)); err != nil {
 		t.Fatalf("the palette chord: %v", err)
 	}
 	p, ok := a.root.Modal().(*ui.Palette)

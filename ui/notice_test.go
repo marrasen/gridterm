@@ -401,7 +401,7 @@ func TestNoticeSwallowsEveryKeyButTheCopyChord(t *testing.T) {
 	for _, ev := range []input.Event{
 		press(input.KeyV, input.ModCtrl|input.ModShift), // paste
 		press(input.KeyW, input.ModCtrl|input.ModShift), // close the pane
-		press(input.KeyK, input.ModCtrl),                // the palette
+		press(input.KeyK, input.ModCtrl|input.ModShift), // the palette
 		press(input.KeyF10, 0),                          // the menu bar
 		press(input.KeyA, 0),
 	} {

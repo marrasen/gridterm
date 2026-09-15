@@ -559,14 +559,16 @@ func (a *app) holdWindow(name, addr string, win *serve.Window) *taken {
 	// A window that quits at the far end is still held here, saying it
 	// is taken over, until something notices. Nothing else here would.
 	go func() {
-		_ = win.Wait()
-		a.pump.post(func() { a.windowDied(t) })
+		// Why it ended, not only that it did: it goes on the greyed row,
+		// which is all the user has to work from afterwards.
+		why := win.Wait()
+		a.pump.post(func() { a.windowDied(t, why) })
 	}()
 	return t
 }
 
 // windowDied is called when the other window has gone by itself.
-func (a *app) windowDied(t *taken) {
+func (a *app) windowDied(t *taken, why error) {
 	// By identity: the name may hold another window by now.
 	if a.windows.named(t.name) != t {
 		// Already let go of from here, and its row with it.
@@ -579,7 +581,7 @@ func (a *app) windowDied(t *taken) {
 	// does. It says what became of the window and keeps the address,
 	// which is what somebody reading it afterwards has to go on.
 	t.entry.Label = "no longer serving"
-	a.greyRow(t.entry)
+	a.greyRow(t.entry, why)
 	a.refreshServers()
 	a.markDirty()
 }

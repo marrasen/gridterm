@@ -1,9 +1,11 @@
 package main
 
 import (
+	"errors"
 	"io"
 	"math/rand"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -1231,18 +1233,18 @@ func TestPaletteShortcutToggles(t *testing.T) {
 	a.comp = render.NewCompositor(nil)
 	a.commands()
 
-	if _, err := a.root.HandleKey(press(input.KeyK, input.ModCtrl)); err != nil {
-		t.Fatalf("ctrl+K: %v", err)
+	if _, err := a.root.HandleKey(press(input.KeyK, input.ModCtrl|input.ModShift)); err != nil {
+		t.Fatalf("ctrl+shift+K: %v", err)
 	}
 	if a.palette == nil {
-		t.Fatal("ctrl+K did not open the dialog")
+		t.Fatal("ctrl+shift+K did not open the dialog")
 	}
 
-	if _, err := a.root.HandleKey(press(input.KeyK, input.ModCtrl)); err != nil {
-		t.Fatalf("ctrl+K again: %v", err)
+	if _, err := a.root.HandleKey(press(input.KeyK, input.ModCtrl|input.ModShift)); err != nil {
+		t.Fatalf("ctrl+shift+K again: %v", err)
 	}
 	if a.palette != nil {
-		t.Error("ctrl+K again did not close the dialog")
+		t.Error("ctrl+shift+K again did not close the dialog")
 	}
 }
 
@@ -1384,4 +1386,69 @@ func TestClosingAPaneForgetsItEvenWithTheSidebarHidden(t *testing.T) {
 	if a.shown != nil {
 		t.Fatal("the window is still holding the pane that was closed")
 	}
+}
+
+// Ctrl+K reaches the shell, because readline's kill-to-end-of-line is
+// in a lot of people's fingers.
+//
+// An accelerator runs before any widget sees the key, so a window that
+// took Ctrl+K for itself took it away from every shell in it.
+func TestCtrlKReachesTheShell(t *testing.T) {
+	a := newTestApp(t, 60, 20)
+	a.comp = render.NewCompositor(nil)
+	a.commands()
+
+	if _, err := a.root.HandleKey(press(input.KeyK, input.ModCtrl)); err != nil {
+		t.Fatalf("ctrl+K: %v", err)
+	}
+	if a.palette != nil {
+		t.Fatal("ctrl+K opened the palette instead of reaching the shell")
+	}
+	waitUntil(t, func() bool { return a.shells[0].sentText() == "\x0b" })
+}
+
+// A clipboard that cannot be read says so, rather than pasting nothing.
+//
+// A paste that quietly does nothing looks exactly like an empty
+// clipboard: the user tries again, and again, and is never told that
+// xclip is not installed.
+func TestAClipboardThatCannotBeReadSaysSo(t *testing.T) {
+	a := newTestApp(t, 60, 20)
+	withDialogs(t, a)
+	a.commands()
+
+	boom := errors.New("xclip is not installed")
+	a.readClip = func() (string, error) { return "", boom }
+
+	if _, err := a.root.HandleKey(press(input.KeyV, input.ModCtrl|input.ModShift)); err != nil {
+		t.Fatalf("the paste chord: %v", err)
+	}
+
+	n, ok := a.root.Modal().(*ui.Notice)
+	if !ok {
+		t.Fatalf("the failure showed %T, want a dialog", a.root.Modal())
+	}
+	if !strings.Contains(n.Message(), boom.Error()) {
+		t.Fatalf("the dialog says %q", n.Message())
+	}
+	// And nothing was typed into the shell.
+	if got := a.shells[0].sentText(); got != "" {
+		t.Errorf("the shell was sent %q", got)
+	}
+}
+
+// And one that can be read is pasted.
+func TestAClipboardThatCanBeReadIsPasted(t *testing.T) {
+	a := newTestApp(t, 60, 20)
+	withDialogs(t, a)
+	a.commands()
+	a.readClip = func() (string, error) { return "uptime", nil }
+
+	if _, err := a.root.HandleKey(press(input.KeyV, input.ModCtrl|input.ModShift)); err != nil {
+		t.Fatalf("the paste chord: %v", err)
+	}
+	if a.root.Modal() != nil {
+		t.Fatalf("a paste that worked showed %T", a.root.Modal())
+	}
+	waitUntil(t, func() bool { return a.shells[0].sentText() == "uptime" })
 }

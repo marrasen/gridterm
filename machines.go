@@ -299,8 +299,10 @@ func (a *app) hold(m *machine, via string) {
 	// A connection the far end drops is still held here, saying it is
 	// connected, until something notices. Nothing else here would.
 	go func() {
-		_ = m.conn.Wait()
-		a.pump.post(func() { a.machineDied(m) })
+		// Why it ended, not only that it did: it goes on the greyed row,
+		// which is all the user has to work from afterwards.
+		why := m.conn.Wait()
+		a.pump.post(func() { a.machineDied(m, why) })
 	}()
 }
 
@@ -320,7 +322,7 @@ func (a *app) revealMachine(m *machine) {
 // The panes on it end by themselves, because their shells stop reading.
 // The row stays, greyed, the way greyRow says a dropped connection's row
 // does.
-func (a *app) machineDied(m *machine) {
+func (a *app) machineDied(m *machine, why error) {
 	// By identity: the name may hold another connection by now.
 	if a.machines.named(m.at.name) != m {
 		// Already closed from the window, and its row with it.
@@ -338,9 +340,9 @@ func (a *app) machineDied(m *machine) {
 	if err := a.tunnelsDiedOn(m); err != nil {
 		a.reportError("Trouble closing the tunnels on "+m.at.name, err)
 	}
-	// The note said what carried it, and nothing does now.
+	// The note said what carried it, and now it says why it went.
 	m.entry.Note = ""
-	a.greyRow(m.entry)
+	a.greyRow(m.entry, why)
 	// What the window is holding has changed, so the commands and their
 	// titles are worked out again.
 	a.refreshServers()

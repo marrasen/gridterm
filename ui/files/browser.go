@@ -389,6 +389,8 @@ func (b *Browser) wired(k fkey) bool {
 	switch {
 	case k.matches(key(input.KeyTab, 0)):
 		return len(b.panes) > 1
+	case k.matches(key(input.KeyG, input.ModCtrl)):
+		return b.Here() != nil && b.Here().OnGoTo != nil
 	case k.matches(key(input.KeyF2, 0)):
 		return b.OnRename != nil
 	case k.matches(key(input.KeyC, input.ModCtrl)):
@@ -528,6 +530,16 @@ func (b *Browser) HandleKey(ev input.Event) (bool, error) {
 		b.Prev()
 		return true, nil
 	}
+	if ev.Key == input.KeyEscape {
+		// The innermost thing first. A name half typed to jump to it is
+		// closer to the user than what is on the clipboard, and Escape
+		// should take back the thing they are in the middle of. The pane
+		// has had it, so what is left is the clipboard and nothing else.
+		if took, err := b.toPane(ev); took || err != nil {
+			return took, err
+		}
+		return b.press(ev)
+	}
 	if took, err := b.press(ev); took || err != nil {
 		return took, err
 	}
@@ -569,6 +581,13 @@ func (b *Browser) press(ev input.Event) (bool, error) {
 				return false, nil
 			}
 			b.OnClose(b.Here())
+			return true, nil
+		case ev.Key == input.KeyG:
+			here := b.Here()
+			if here == nil || here.OnGoTo == nil {
+				return false, nil
+			}
+			here.OnGoTo()
 			return true, nil
 		}
 		return false, nil

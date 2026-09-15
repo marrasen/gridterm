@@ -468,14 +468,53 @@ func TestFormWithNoRoomForItsFieldsDoesNotOpen(t *testing.T) {
 
 // Space with the caret in a field is a character, not a button press. A
 // password with a space in it has to be typeable.
+//
+// It is still swallowed: the dialog covers what is behind it, and the
+// space itself arrives as text, which the field takes.
 func TestFormSpaceKeyInAFieldPressesNothing(t *testing.T) {
 	tf := newTestForm(t)
 	took, _ := tf.form.HandleKey(press(input.KeySpace, 0))
 	if len(tf.ran) != 0 {
 		t.Fatalf("Space with the caret in a field ran %q", tf.ran)
 	}
-	if took {
-		t.Error("Space in a field was taken, so nothing else can have it")
+	if !took {
+		t.Error("Space went past the dialog to whatever is behind it")
+	}
+}
+
+// A chord the form never offered is not the key it is spelled with, and
+// it does not reach what is behind the dialog either.
+//
+// Ctrl+Tab is bound to the next pane, and moving the form's focus on it
+// answers a key the user pressed for something else. Handing it on is
+// worse: the window's own chords act on a pane the dialog is covering,
+// and the paste chord types into a shell nobody can see.
+func TestFormTakesNoChordItNeverOffered(t *testing.T) {
+	for _, ev := range []input.Event{
+		press(input.KeyTab, input.ModCtrl),
+		press(input.KeyDown, input.ModAlt),
+		press(input.KeyEscape, input.ModCtrl),
+		press(input.KeyV, input.ModCtrl|input.ModShift),
+		press(input.KeyEnter, input.ModCtrl),
+	} {
+		tf := newTestForm(t)
+		was, _ := tf.form.Focused()
+		took, err := tf.form.HandleKey(ev)
+		if err != nil {
+			t.Fatalf("%v: %v", ev.Key, err)
+		}
+		if !took {
+			t.Errorf("%v went past the dialog to whatever is behind it", ev.Key)
+		}
+		if len(tf.ran) != 0 {
+			t.Errorf("%v pressed %q", ev.Key, tf.ran)
+		}
+		if tf.closed != 0 {
+			t.Errorf("%v closed the dialog", ev.Key)
+		}
+		if now, _ := tf.form.Focused(); now != was {
+			t.Errorf("%v moved the focus from %d to %d", ev.Key, was, now)
+		}
 	}
 }
 
@@ -751,5 +790,173 @@ func TestAFormGivesItsFieldsRoomToType(t *testing.T) {
 	if want := grid.StringWidth(path); room < want {
 		t.Fatalf("a field is %d columns in a %d-column dialog, want at least %d for %q",
 			room, box.Cols, want, path)
+	}
+}
+
+// An error widens the dialog, and the fields are laid out for the box
+// they are now in.
+//
+// A field scrolls to keep the caret in view and can only do that once it
+// has been told how much room it has. Waiting for Draw to work the width
+// out is what the Layout and Draw split exists to avoid.
+func TestAFormThatGrewLaysItsFieldsOutAgain(t *testing.T) {
+	tf := newTestForm(t)
+	f := tf.form
+	was := f.Fields()[0].cols
+
+	f.SetError(errors.New(strings.Repeat("that did not work, ", 4)))
+
+	now := f.Fields()[0].cols
+	if now <= was {
+		t.Fatalf("the field is %d columns wide in a box the error widened, was %d", now, was)
+	}
+	if want := f.box().Cols - formPad - f.fieldX(); now != want {
+		t.Errorf("the field is %d columns wide, want %d for the box it is in", now, want)
+	}
+}
+
+// A long error is wrapped over the lines the dialog can spare rather
+// than cut off at the first one.
+//
+// The reason something failed is what the line is for, and half a
+// sentence says nothing useful. The buttons stay where they were: the
+// box grows instead of the error walking over a field.
+func TestAFormWrapsALongError(t *testing.T) {
+	tf := newTestForm(t)
+	f := tf.form
+	was := f.layout().buttonRow
+
+	long := "could not reach margit.skalarit.net on port 22: the machine " +
+		"answered and then said nothing, so the connection was given up on"
+	f.SetError(errors.New(long))
+
+	l := f.layout()
+	if len(l.errLines) < 2 {
+		t.Fatalf("the error is on %d lines: %q", len(l.errLines), l.errLines)
+	}
+	if l.errRow+len(l.errLines) != l.buttonRow {
+		t.Errorf("the error ends at row %d and the buttons are at %d",
+			l.errRow+len(l.errLines), l.buttonRow)
+	}
+	if l.buttonRow <= was {
+		t.Errorf("the buttons are at row %d, want the box to have grown from %d", l.buttonRow, was)
+	}
+	// Nothing of it is lost between the lines.
+	if joined := strings.Join(l.errLines, " "); !strings.Contains(joined, "said nothing") {
+		t.Errorf("the error reads %q", joined)
+	}
+}
+
+// A long error is shown whole: it takes as many rows as the window can
+// give it, and nothing of it is cut away.
+//
+// The reason something failed is what the line is for. A dialog that
+// shows half of it and marks the rest with an ellipsis shows the half
+// that is usually the least use -- and the whole of it is what the user
+// wants to paste into a message to somebody.
+func TestAFormShowsALongErrorWhole(t *testing.T) {
+	tf := newTestForm(t)
+	f := tf.form
+	f.Layout(Size{Cols: 60, Rows: 40})
+
+	long := strings.Repeat("this went wrong and then so did that, ", 6)
+	f.SetError(errors.New(long))
+
+	l := f.layout()
+	joined := strings.Join(l.errLines, " ")
+	for _, word := range strings.Fields(long) {
+		if !strings.Contains(joined, word) {
+			t.Fatalf("the error is missing %q:\n%s", word, joined)
+		}
+	}
+	if strings.Contains(joined, "…") {
+		t.Errorf("the error was cut: %q", joined)
+	}
+}
+
+// A window too short for the whole error still shows the dialog, with as
+// much of the error as there is room for.
+func TestAFormInAShortWindowShowsWhatFits(t *testing.T) {
+	tf := newTestForm(t)
+	f := tf.form
+	f.Layout(Size{Cols: 60, Rows: 14})
+
+	f.SetError(errors.New(strings.Repeat("this went wrong and then so did that, ", 20)))
+
+	l := f.layout()
+	if f.box().Empty() {
+		t.Fatal("the dialog closed rather than showing what fits")
+	}
+	if len(l.errLines) == 0 {
+		t.Fatal("the dialog shows no part of the error")
+	}
+	if l.errRow+len(l.errLines) != l.buttonRow {
+		t.Errorf("the error ends at row %d and the buttons are at %d",
+			l.errRow+len(l.errLines), l.buttonRow)
+	}
+	if l.errRow < l.fieldsTop+l.fields {
+		t.Errorf("the error starts at row %d, over the fields that end at %d",
+			l.errRow, l.fieldsTop+l.fields)
+	}
+}
+
+// The error can be copied with the window's own copy chord, because a
+// reason worth reading is a reason worth pasting somewhere.
+func TestTheCopyChordCopiesAFormError(t *testing.T) {
+	tf := newTestForm(t)
+	f := tf.form
+	var copied string
+	f.Copy = func(s string) { copied = s }
+	f.CopyChord = func(ev input.Event) bool {
+		return ev.Key == input.KeyC && ev.Mods == input.ModCtrl|input.ModShift
+	}
+	f.SetError(errors.New("could not reach margit.skalarit.net"))
+
+	took, err := f.HandleKey(press(input.KeyC, input.ModCtrl|input.ModShift))
+	if err != nil {
+		t.Fatalf("the copy chord: %v", err)
+	}
+	if !took {
+		t.Error("the copy chord went past the dialog")
+	}
+	if copied != "could not reach margit.skalarit.net" {
+		t.Errorf("it copied %q", copied)
+	}
+}
+
+// A far end can put anything in an error, and it is drawn into a grid.
+func TestAFormErrorIsCleanedBeforeItIsDrawn(t *testing.T) {
+	tf := newTestForm(t)
+	tf.form.SetError(errors.New("refused: \x1b[2Jtry\r\nsomewhere else"))
+
+	got := tf.form.ErrorText()
+	if strings.ContainsAny(got, "\x1b\r") {
+		t.Fatalf("the error reads %q, want nothing a grid cannot draw", got)
+	}
+	if !strings.Contains(got, "try\nsomewhere else") {
+		t.Errorf("the error reads %q, want the line break kept", got)
+	}
+}
+
+// Shift+Insert pastes into a field, because that is what X11 and a great
+// many terminals use and it is in plenty of fingers.
+//
+// It has to be the field that takes it. A form swallows what it does not
+// use, so a paste chord the field declined would land nowhere at all.
+func TestShiftInsertPastesIntoAFormField(t *testing.T) {
+	tf := newTestForm(t)
+	f := tf.form
+	fld := f.Fields()[0]
+	fld.ReadClipboard = func() string { return "margit" }
+
+	took, err := f.HandleKey(press(input.KeyInsert, input.ModShift))
+	if err != nil {
+		t.Fatalf("shift+insert: %v", err)
+	}
+	if !took {
+		t.Error("shift+insert went past the dialog")
+	}
+	if fld.Text() != "margit" {
+		t.Errorf("the field holds %q", fld.Text())
 	}
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"sync"
 
@@ -58,14 +59,36 @@ func (c *clipboardWriter) set(text string) {
 	}
 }
 
-// read returns the clipboard contents, or "" if it cannot be read. It
-// blocks, so it is called from the paste path only, where the user is
-// already waiting.
-func clipboardRead() string {
-	s, err := clipboard.ReadAll()
+// pasteText is what a widget pastes: the clipboard, with a failure shown
+// rather than pasted as nothing.
+//
+// The toolkit's paste hooks hand back text and no error, so a widget
+// that could not read the clipboard has nowhere to report it. This is
+// where it is reported, on the goroutine that draws, which is the only
+// one that calls it.
+func (a *app) pasteText() string {
+	read := a.readClip
+	if read == nil {
+		read = clipboardRead
+	}
+	s, err := read()
 	if err != nil {
-		log.Printf("clipboard: %v", err)
+		a.reportError("Could not paste", err)
 		return ""
 	}
 	return s
+}
+
+// clipboardRead returns what is on the clipboard.
+//
+// It blocks, so it is called from the paste path only, where the user is
+// already waiting. A failure is returned rather than pasted as nothing:
+// a paste that does nothing looks exactly like an empty clipboard, and
+// the user tries again instead of being told why.
+func clipboardRead() (string, error) {
+	s, err := clipboard.ReadAll()
+	if err != nil {
+		return "", fmt.Errorf("read the clipboard: %w", err)
+	}
+	return s, nil
 }

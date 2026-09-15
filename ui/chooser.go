@@ -224,15 +224,17 @@ func (c *Chooser) HandleKey(ev input.Event) (bool, error) {
 		// Nowhere to draw it, so there is nothing on screen to pick
 		// from. It is still the top modal, so Enter here would take a
 		// line nobody has read.
-		if ev.Kind == input.KeyPress && ev.Key == input.KeyEscape {
+		if ev.Kind == input.KeyPress && ev.Key == input.KeyEscape && isPlainKey(ev) {
 			c.dismiss()
 		}
 		return true, nil
 	}
-	if ev.Kind == input.KeyPress && ev.Key == input.KeyEscape {
+	if ev.Kind == input.KeyPress && ev.Key == input.KeyEscape && isPlainKey(ev) {
 		c.dismiss()
 		return true, nil
 	}
+	// The list declines every chord it was not offered, so Ctrl+Down
+	// moves nothing here.
 	if took, err := c.list.HandleKey(ev); took {
 		return true, err
 	}

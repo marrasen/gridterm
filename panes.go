@@ -60,7 +60,7 @@ func (a *app) openPalette() error {
 		BorderFG: a.colours.ANSI[8],
 		ShadowBG: shadow,
 	}
-	p.SetClipboard(clipboardRead)
+	p.SetClipboard(a.pasteText)
 	a.palette = p
 	a.dismissPalette = a.showModal(p, func() { a.palette, a.dismissPalette = nil, nil })
 	return nil

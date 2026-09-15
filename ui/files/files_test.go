@@ -2035,19 +2035,19 @@ func selectedName(t *testing.T, p *Pane) string {
 	return e.Name
 }
 
-// Going somewhere by name is on the bar and on the key, because nothing
-// else says it is there.
+// Going somewhere by name works from the bar and from the key.
+//
+// The bar is the only advertisement the key has, so a cell that looks
+// live and does nothing when it is clicked is worse than no cell.
 func TestGoToIsOnTheBarAndOnTheKey(t *testing.T) {
 	b, _, _ := two(t)
 	b.Style = styled()
 
-	if barKey(t, b, "^G") < 0 {
-		t.Fatal("the bar does not offer it")
-	}
+	at := barKey(t, b, "^G")
 	asked := 0
-	pane := b.Panes()[0]
-	pane.OnGoTo = func() { asked++ }
-	took, err := pane.HandleKey(input.Event{
+	b.Panes()[0].OnGoTo = func() { asked++ }
+
+	took, err := b.HandleKey(input.Event{
 		Kind: input.KeyPress, Key: input.KeyG, Mods: input.ModCtrl,
 	})
 	if err != nil {
@@ -2055,5 +2055,75 @@ func TestGoToIsOnTheBarAndOnTheKey(t *testing.T) {
 	}
 	if !took || asked != 1 {
 		t.Fatalf("the key was taken %v and asked %d times", took, asked)
+	}
+
+	// And the cell on the bar, which is what says the key is there.
+	b.Layout(ui.Size{Cols: 60, Rows: 12})
+	start, _ := keyCell(at, 60, len(b.keys))
+	took, err = b.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft, Row: 11, Col: start,
+	})
+	if err != nil {
+		t.Fatalf("the click failed: %v", err)
+	}
+	if !took || asked != 2 {
+		t.Fatalf("the click was taken %v and asked %d times in all", took, asked)
+	}
+}
+
+// A cell on the bar is drawn live only when there is something behind
+// it, and "Go to" has something behind it.
+func TestTheBarSaysGoToIsThere(t *testing.T) {
+	b, _, _ := two(t)
+	b.Style = styled()
+
+	if b.wired(b.keys[barKey(t, b, "^G")]) {
+		t.Error("the bar offers Go to with nothing behind it")
+	}
+	b.Panes()[0].OnGoTo = func() {}
+	if !b.wired(b.keys[barKey(t, b, "^G")]) {
+		t.Error("the bar shows Go to as dead when it works")
+	}
+}
+
+// Escape unwinds the innermost thing first.
+//
+// A name half typed to jump to it is closer to the user than what is on
+// the clipboard: Escape has to take back the one they are in the middle
+// of, and leave the other alone.
+func TestEscapeTakesBackTheFindBeforeTheClipboard(t *testing.T) {
+	b, left, _ := two(t)
+	b.Style = styled()
+	b.OnCopy = func(Work) {}
+	write(t, left, "apple.txt", "one")
+	b.Here().Reload()
+
+	// Something on the clipboard, and a name being typed on top of it.
+	here := b.Here()
+	here.SetFocus(true)
+	b.setClip(Clipboard{From: here, Names: []string{"one.txt"}})
+	if _, err := b.HandleKey(input.Event{Kind: input.Text, NormalText: true, Rune: 'a'}); err != nil {
+		t.Fatalf("typing: %v", err)
+	}
+	if here.Finding() == "" {
+		t.Fatal("the pane is not in the middle of finding a name")
+	}
+
+	if _, err := b.HandleKey(input.Event{Kind: input.KeyPress, Key: input.KeyEscape}); err != nil {
+		t.Fatalf("escape: %v", err)
+	}
+	if here.Finding() != "" {
+		t.Error("Escape left the name being typed standing")
+	}
+	if b.clip.Empty() {
+		t.Error("Escape emptied the clipboard as well as the find")
+	}
+
+	// And again, with nothing half typed, empties the clipboard.
+	if _, err := b.HandleKey(input.Event{Kind: input.KeyPress, Key: input.KeyEscape}); err != nil {
+		t.Fatalf("escape: %v", err)
+	}
+	if !b.clip.Empty() {
+		t.Error("Escape left the clipboard standing with nothing else to take back")
 	}
 }

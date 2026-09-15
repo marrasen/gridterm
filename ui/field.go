@@ -136,7 +136,10 @@ func (f *Field) HandleKey(ev input.Event) (bool, error) {
 	}
 	// Ctrl and Ctrl+Shift both paste, because the window binds paste to
 	// Ctrl+Shift+V and every other program binds it to Ctrl+V.
-	if ev.Ctrl() && ev.Key == input.KeyV {
+	// Shift+Insert as well: it is what X11 and a lot of terminals use,
+	// and it is in many people's fingers.
+	if ev.Ctrl() && ev.Key == input.KeyV ||
+		ev.Mods == input.ModShift && ev.Key == input.KeyInsert {
 		return f.paste(), nil
 	}
 
@@ -199,8 +202,6 @@ func (f *Field) Draw(v grid.View) {
 	if cols <= 0 || rows <= 0 {
 		return
 	}
-	f.cols = cols
-	f.scroll()
 
 	blank := grid.Cell{Rune: ' ', FG: f.Style.FG, BG: f.Style.BG, Width: 1}
 	v.Sub(0, 0, cols, 1).Fill(blank)

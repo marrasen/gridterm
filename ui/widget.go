@@ -86,16 +86,39 @@ type Widget interface {
 // KeyHandler is a widget that takes keyboard events.
 //
 // Returning true consumes the event: no widget above it and no
-// after-binding sees it. A widget that does not recognise a key must
-// return false, or it swallows the shortcuts of everything around it.
-// A widget that acts on a key must return true, or whatever the key is
-// bound to runs as well.
+// after-binding sees it. A widget that acts on a key must return true,
+// or whatever the key is bound to runs as well.
+//
+// What to do with a key the widget does not recognise depends on what
+// the widget is on the screen for:
+//
+//   - A widget that shares the screen -- a pane, a list, a menu
+//     drop-down, the palette -- returns false, or it swallows the
+//     shortcuts of everything around it. A menu that took F10 would be
+//     a menu that cannot be closed with the key that opened it.
+//   - A modal that covers the screen -- a form, a notice, a chooser --
+//     returns true for every key it does not use. Behind it is a pane
+//     the user cannot see, and Root.HandleKey offers a declined key to
+//     the accelerators: the paste chord would type into a shell hidden
+//     under the dialog, and the menu chord would open a menu over it.
+//     The way out is a chord the window hands the dialog itself, the
+//     way it hands a notice its copy chord.
+//
+// A modal must also act only on the chords it offers. Ctrl+Tab is not
+// Tab, and moving a dialog's focus on it answers a key the user pressed
+// for something else; isPlainKey is the test.
 //
 // The error is for a widget that ran something and it failed. Returning
 // one does not change whether the event was consumed.
 type KeyHandler interface {
 	Widget
 	HandleKey(ev input.Event) (bool, error)
+}
+
+// isPlainKey reports whether an event is a key a dialog offers: no
+// modifier, or the one chord that is spelled with one, Shift+Tab.
+func isPlainKey(ev input.Event) bool {
+	return ev.Mods == 0 || ev.Key == input.KeyTab && ev.Mods == input.ModShift
 }
 
 // MouseHandler is a widget that takes mouse events.

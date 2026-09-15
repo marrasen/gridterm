@@ -81,8 +81,19 @@ type Form struct {
 
 	// Title names the dialog, and Lines say more underneath it. A host
 	// key fingerprint is the case Lines exists for.
+	//
+	// Both are read while the dialog is being built. Changing either
+	// once it is open does not re-lay the fields, which is what the
+	// width they were given comes from.
 	Title string
 	Lines []string
+
+	// Copy puts text on the clipboard, and CopyChord reports whether a
+	// key is the window's copy chord. A nil pair leaves the error on
+	// screen and nowhere else: this package cannot reach a clipboard or
+	// see a keymap.
+	Copy      func(string)
+	CopyChord func(input.Event) bool
 
 	rows    []formRow
 	buttons []Button
@@ -95,7 +106,15 @@ type Form struct {
 	// button after that.
 	at int
 
-	err   error
+	err error
+
+	// errText is the error as it may be drawn, and wrapped is it broken
+	// to wrappedAt columns. Both are thrown away by SetError and by a
+	// Layout that changes the width.
+	errText   string
+	wrapped   []string
+	wrappedAt int
+
 	size  Size
 	close func()
 	buf   buffer
@@ -197,9 +216,36 @@ func (f *Form) Focused() (int, bool) {
 // Error returns what the last attempt failed with.
 func (f *Form) Error() error { return f.err }
 
-// SetError shows a line saying why the last attempt failed, or clears it
-// when err is nil.
-func (f *Form) SetError(err error) { f.err = err }
+// SetError shows why the last attempt failed, or clears it when err is
+// nil.
+//
+// The text is cleaned, because a far end can put anything in an error
+// and this is drawn into a grid. An error also changes the shape of the
+// box, so the fields are laid out again: a field scrolls to keep the
+// caret in view and can only do that once it knows how much room it has.
+func (f *Form) SetError(err error) {
+	f.err = err
+	f.errText = ""
+	if err != nil {
+		f.errText = cleanText(err.Error())
+	}
+	f.wrapped, f.wrappedAt = nil, 0
+	f.layoutFields()
+}
+
+// ErrorText is the error as the dialog shows it, cleaned of anything a
+// grid cannot draw.
+func (f *Form) ErrorText() string { return f.errText }
+
+// CopyNow puts the error on the clipboard, for the window's copy chord.
+//
+// The error is the part of a form worth copying: a connection that
+// failed says why in words the user will want to paste somewhere.
+func (f *Form) CopyNow() {
+	if f.Copy != nil && f.errText != "" {
+		f.Copy(f.errText)
+	}
+}
 
 // Box returns where the dialog sits in the view it draws through, so
 // whatever is showing it can treat that part differently.
@@ -210,6 +256,9 @@ func (f *Form) Layout(size Size) {
 	f.size = size
 	f.layoutFields()
 }
+
+// wrapWidth is the width the error is wrapped to.
+func (f *Form) wrapWidth() int { return f.boxCols() - formPad*2 }
 
 // SetFocus passes focus on to the field that has it, so the caret
 // appears and disappears with the dialog.
@@ -222,12 +271,20 @@ func (f *Form) SetFocus(on bool) {
 // HandleKey drives the dialog. The focused field sees a key first, so
 // typing goes where the caret is; what it does not want moves the focus
 // or presses a button.
+//
+// Every other key is swallowed, the way a modal does (see KeyHandler).
+// The copy chord is the exception: the form answers that itself. Paste
+// is not one, because the field takes that chord before this sees it.
 func (f *Form) HandleKey(ev input.Event) (bool, error) {
+	if f.CopyChord != nil && f.CopyChord(ev) {
+		f.CopyNow()
+		return true, nil
+	}
 	// A dialog with no room to be drawn takes nothing but Escape. It is
 	// still the top modal, so typing would land in a field the user
 	// cannot see, and Enter would send it wherever the dialog goes.
 	if f.box().Empty() {
-		if ev.Kind == input.KeyPress && ev.Key == input.KeyEscape {
+		if ev.Kind == input.KeyPress && ev.Key == input.KeyEscape && isPlainKey(ev) {
 			f.dismiss()
 		}
 		return true, nil
@@ -238,7 +295,10 @@ func (f *Form) HandleKey(ev input.Event) (bool, error) {
 		}
 	}
 	if ev.Kind != input.KeyPress && ev.Kind != input.KeyRepeat {
-		return false, nil
+		return true, nil
+	}
+	if !isPlainKey(ev) {
+		return true, nil
 	}
 
 	switch ev.Key {
@@ -276,7 +336,10 @@ func (f *Form) HandleKey(ev input.Event) (bool, error) {
 			return true, f.press(0)
 		}
 	}
-	return false, nil
+	// Everything else is swallowed, because the dialog covers what is
+	// behind it: a key handed on would reach an accelerator that types
+	// into a pane the user cannot see.
+	return true, nil
 }
 
 // HandleMouse moves focus to what was clicked and presses a button.
@@ -353,9 +416,8 @@ func (f *Form) paint(v grid.View) {
 		r.field.Draw(in.Sub(f.fieldX(), y, width, 1))
 	}
 
-	if f.err != nil {
-		in.SetString(formPad, l.errRow, trimTo(f.err.Error(), room),
-			f.Style.ErrorFG, f.Style.BG, 0)
+	for i, line := range l.errLines {
+		in.SetString(formPad, l.errRow+i, line, f.Style.ErrorFG, f.Style.BG, 0)
 	}
 	f.paintButtons(in, l.buttonRow)
 }
@@ -372,7 +434,29 @@ type formLayout struct {
 	fieldsTop int
 	fields    int // how many fields fit
 	errRow    int
+	errLines  []string // the error, wrapped
 	buttonRow int
+}
+
+// errLines is the error wrapped to the width it is drawn in, no more
+// lines than rows.
+//
+// Wrapped once per width rather than once per frame: the box is scanned
+// to work out how tall it is and again to draw it, and an error from a
+// far end can be long.
+func (f *Form) errLines(room, rows int) []string {
+	if f.err == nil || room <= 0 || rows <= 0 {
+		return nil
+	}
+	if f.wrapped == nil || f.wrappedAt != room {
+		lines := wrapText(f.errText, room)
+		f.wrapped = make([]string, len(lines))
+		for i, line := range lines {
+			f.wrapped[i] = line.text
+		}
+		f.wrappedAt = room
+	}
+	return f.wrapped[:min(len(f.wrapped), rows)]
 }
 
 // layout divides the box up. The fields always fit -- box() refuses to
@@ -384,9 +468,17 @@ func (f *Form) layout() formLayout {
 	if box.Empty() {
 		return l
 	}
-	// From the bottom: a blank row, the buttons, the error line.
+	// From the bottom: a blank row, the buttons, then the error, which
+	// is one line unless it needs more and the box has room for more.
 	l.buttonRow = box.Rows - 2
-	l.errRow = box.Rows - 3
+	// A blank row, the title, a blank row, then the fields: what is
+	// between that and the buttons is what the error may have.
+	above := 3
+	if len(f.rows) > 0 {
+		above += len(f.rows) + 1
+	}
+	l.errLines = f.errLines(box.Cols-formPad*2, max(l.buttonRow-above, 1))
+	l.errRow = l.buttonRow - max(len(l.errLines), 1)
 
 	// From the top: a blank row, the title, a blank row.
 	l.title = 1
@@ -463,7 +555,7 @@ func (f *Form) press(at int) error {
 	if cols := f.buttonCols(); at < len(cols) && cols[at] < 0 {
 		// There was no room to draw it. Doing what an invisible button
 		// says is worse than saying why nothing happened.
-		f.err = errors.New("the window is too narrow to show that button")
+		f.SetError(errors.New("the window is too narrow to show that button"))
 		return nil
 	}
 	b := f.buttons[at]
@@ -474,7 +566,7 @@ func (f *Form) press(at int) error {
 	if err := b.Do(); err != nil {
 		// The form stays open showing why, so what was typed is still
 		// there to correct.
-		f.err = err
+		f.SetError(err)
 		return nil
 	}
 	f.dismiss()
@@ -606,7 +698,7 @@ func (f *Form) buttonsRow() int { return f.layout().buttonRow }
 // fits. A field drawn off the bottom is still reachable with Tab, so the
 // user would be typing a password into a row that is not on screen.
 func (f *Form) box() Rect {
-	cols := min(f.size.Cols-formMargin*2, max(f.wantCols(), 20))
+	cols := f.boxCols()
 	rows := min(f.size.Rows-formMargin*2, f.wantRows())
 	if cols < 12 || rows < f.needRows() {
 		return Rect{}
@@ -617,6 +709,11 @@ func (f *Form) box() Rect {
 		Cols: cols,
 		Rows: rows,
 	}
+}
+
+// boxCols is how wide the box is: what it wants, in the room it has.
+func (f *Form) boxCols() int {
+	return min(f.size.Cols-formMargin*2, max(f.wantCols(), 20))
 }
 
 // wantCols returns how wide the dialog would like to be: enough for the
@@ -654,7 +751,9 @@ func (f *Form) wantRows() int {
 	if len(f.Lines) > 0 {
 		rows += len(f.Lines) + 1
 	}
-	return rows
+	// An error too long for the one line the dialog always keeps makes
+	// the dialog taller, rather than being drawn over a field.
+	return rows + f.errExtra()
 }
 
 // needRows returns the least the dialog can be drawn in: everything but
@@ -665,9 +764,25 @@ func (f *Form) needRows() int {
 	if len(f.rows) > 0 {
 		rows += len(f.rows) + 1
 	}
-	// The error line is always there, so the buttons do not jump down
+	// One error line is always there, so the buttons do not jump down
 	// the moment something goes wrong. Then the buttons and a blank row.
 	return rows + 3
+}
+
+// errExtra is how many rows beyond the one the dialog always keeps this
+// error needs, and never more than the window has left.
+func (f *Form) errExtra() int {
+	if f.err == nil {
+		return 0
+	}
+	spare := f.size.Rows - formMargin*2 - f.needRows()
+	if len(f.Lines) > 0 {
+		spare -= len(f.Lines) + 1
+	}
+	if spare <= 0 {
+		return 0
+	}
+	return min(len(f.errLines(f.wrapWidth(), spare+1)), spare+1) - 1
 }
 
 // trimTo cuts a string to a width, by cluster so a wide character is not

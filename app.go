@@ -223,6 +223,11 @@ type app struct {
 	colours    vt.Palette
 	clip       clipboardWriter
 
+	// readClip reads the clipboard. A nil one reads the system's own,
+	// and a test sets its own: a test run must not reach into the
+	// clipboard of whoever is running it.
+	readClip func() (string, error)
+
 	// fontSize is the current size in points.
 	fontSize float64
 
@@ -292,6 +297,7 @@ func (a *app) Update() error {
 	a.pump.run()
 	a.reapExited()
 	a.reapFontScan()
+	a.reapFontTrouble()
 	// Worked out afresh every frame, which is what makes a connection
 	// fall from active to settled with no timer anywhere. A row whose
 	// text has not changed is written with the same value, so an idle
@@ -512,7 +518,7 @@ func (a *app) commands() {
 		ui.Command{ID: copyCommand, Title: "Copy", Run: a.onFocused(
 			func(t *term.Terminal) error { t.Copy(); return nil })},
 		ui.Command{ID: "edit.paste", Title: "Paste", Run: a.onFocused(
-			func(t *term.Terminal) error { t.PasteClipboard(); return nil })},
+			func(t *term.Terminal) error { t.Paste(a.pasteText()); return nil })},
 		ui.Command{ID: "view.scrollUp", Title: "Scroll back", Run: a.onFocused(
 			func(t *term.Terminal) error { t.ScrollPages(1); return nil })},
 		ui.Command{ID: "view.scrollDown", Title: "Scroll forward", Run: a.onFocused(
@@ -606,8 +612,11 @@ func (a *app) commands() {
 		{Key: input.KeyPageDown, Mods: input.ModCtrl}:                "tab.next",
 		{Key: input.KeyPageUp, Mods: input.ModCtrl}:                  "tab.previous",
 		{Key: input.KeyG, Mods: input.ModCtrl | input.ModShift}:      "files.goTo",
-		{Key: input.KeyK, Mods: input.ModCtrl}:                       "palette.open",
-		{Key: input.KeyF10}:                                          "menu.open",
+		// Ctrl+Shift+K, not Ctrl+K: Ctrl+K is readline's kill-to-end-of-
+		// line, and an accelerator runs before any widget sees the key,
+		// so the shell would never get it.
+		{Key: input.KeyK, Mods: input.ModCtrl | input.ModShift}: "palette.open",
+		{Key: input.KeyF10}: "menu.open",
 	})
 
 	a.root.Commands = cmds

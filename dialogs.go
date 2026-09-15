@@ -47,15 +47,26 @@ var shadow = color.RGBA{A: 0x70}
 // newForm builds a dialog carrying the window's colours.
 func (a *app) newForm(title string) *ui.Form {
 	f := ui.NewForm(title, nil)
-	f.Style = a.formStyle()
+	a.dressForm(f)
 	return f
 }
 
 // newConfirm builds a question with no fields, in the window's colours.
 func (a *app) newConfirm(title string, lines []string) *ui.Form {
 	f := ui.NewConfirm(title, lines, nil)
-	f.Style = a.formStyle()
+	a.dressForm(f)
 	return f
+}
+
+// dressForm gives a dialog the window's colours and its copy chord.
+//
+// The chord, because a form swallows every key it does not use and the
+// toolkit cannot see the window's keymap. The reason a connection failed
+// is shown on the form and is worth pasting somewhere.
+func (a *app) dressForm(f *ui.Form) {
+	f.Style = a.formStyle()
+	f.Copy = a.clip.set
+	f.CopyChord = a.copyChord
 }
 
 // showForm puts a dialog on the modal stack and returns what takes it
@@ -142,6 +153,6 @@ func (a *app) newField(placeholder string, mask rune) *ui.Field {
 	fld := ui.NewField()
 	fld.Placeholder = placeholder
 	fld.Mask = mask
-	fld.ReadClipboard = clipboardRead
+	fld.ReadClipboard = a.pasteText
 	return fld
 }

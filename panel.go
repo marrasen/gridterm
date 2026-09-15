@@ -210,7 +210,12 @@ func (a *app) refreshPanel(now time.Time) {
 	// the one sitting at it has to be able to tell.
 	for pane, e := range a.panes {
 		want := ""
-		if what, ok := a.watching[pane]; ok {
+		if h := a.handedBy[pane]; h != nil {
+			// What an agent is doing with a pane beats what size the
+			// far end is: the user can see the size, and cannot
+			// otherwise see that something else is typing here.
+			want = h.note()
+		} else if what, ok := a.watching[pane]; ok {
 			// A pane showing a screen that is not its size, which is
 			// the one thing about it the user cannot otherwise work
 			// out from what it draws. Asked for afresh, because the
@@ -223,7 +228,7 @@ func (a *app) refreshPanel(now time.Time) {
 		// Only over a note of our own. The one other note a pane can
 		// carry says its channel could not be let go of, and that is
 		// the only place the user can read it.
-		if e.Note == "" || isOurNote(e.Note) {
+		if e.Note == "" || isOurNote(e.Note) || isAgentNote(e.Note) {
 			e.Note = want
 		}
 	}

@@ -106,6 +106,22 @@ type testApp struct {
 	*app
 	// shells are the fake sessions, in the order the panes were made.
 	shells []*pipeSession
+
+	// copied is what the window has put on the clipboard. Its own, not
+	// the clipboard of whoever is running the tests: a test run must
+	// not reach into that.
+	copiedMu sync.Mutex
+	copied   []string
+}
+
+// copiedText is the last thing the window put on the clipboard.
+func (ta *testApp) copiedText() string {
+	ta.copiedMu.Lock()
+	defer ta.copiedMu.Unlock()
+	if len(ta.copied) == 0 {
+		return ""
+	}
+	return ta.copied[len(ta.copied)-1]
 }
 
 func newTestApp(t *testing.T, cols, rows int) *testApp {
@@ -126,12 +142,21 @@ func newTestApp(t *testing.T, cols, rows int) *testApp {
 		served:       make(map[*serve.Client]*conns.Entry),
 		paneOnWindow: make(map[*term.Terminal]*taken),
 		watching:     make(map[*term.Terminal]remoteKey),
+		handedBy:     make(map[*term.Terminal]*handover),
 		paneOn:       make(map[*term.Terminal]*machine),
 		tunnels:      make(map[*conns.Entry]*tunnel),
 		queue:        jobs.New(1),
 		jobs:         make(map[*conns.Entry]*jobs.Job),
 		asking:       make(map[chan jobs.Choice]func()),
 	}}
+	// A clipboard of its own. Without this every test that copies
+	// something would overwrite the clipboard of whoever ran it.
+	ta.clip.write = func(s string) error {
+		ta.copiedMu.Lock()
+		defer ta.copiedMu.Unlock()
+		ta.copied = append(ta.copied, s)
+		return nil
+	}
 	// The window's own grid, so markDirty and setGridSize do what they do
 	// in the program rather than nothing at all.
 	ta.g = grid.New(cols, rows, ta.colours.FG, ta.colours.BG)

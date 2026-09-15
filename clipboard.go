@@ -14,6 +14,11 @@ import (
 // block outright if neither is installed. Doing that on the UI thread
 // would stutter the window on every copy.
 type clipboardWriter struct {
+	// write puts text on the clipboard. Empty means the system's own,
+	// and a test sets its own: a test run must not reach into the
+	// clipboard of whoever is running it.
+	write func(string) error
+
 	once sync.Once
 	ch   chan string
 }
@@ -23,10 +28,14 @@ func (c *clipboardWriter) set(text string) {
 		return
 	}
 	c.once.Do(func() {
+		put := c.write
+		if put == nil {
+			put = clipboard.WriteAll
+		}
 		c.ch = make(chan string, 8)
 		go func() {
 			for s := range c.ch {
-				if err := clipboard.WriteAll(s); err != nil {
+				if err := put(s); err != nil {
 					log.Printf("clipboard: %v", err)
 				}
 			}

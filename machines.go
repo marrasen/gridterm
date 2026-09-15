@@ -593,6 +593,11 @@ func (a *app) forgetPane(t *term.Terminal) {
 	// closed long before.
 	delete(a.paneOnWindow, t)
 	delete(a.watching, t)
+	// And the agent the user handed it to, which has nothing left to
+	// work in. Its code stops naming anything the moment this is gone.
+	if err := a.forgetHandover(t); err != nil {
+		a.reportError("Trouble letting go of the agent on that pane", err)
+	}
 }
 
 // closeMachines ends every connection the window is holding, for a

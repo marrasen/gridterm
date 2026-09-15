@@ -83,6 +83,8 @@ func hostItems(here, window, saved bool) []ui.MenuItem {
 		return []ui.MenuItem{
 			{Command: "tab.open", Title: "Terminal"},
 			{Command: "conn.files", Title: "Files"},
+			ui.MenuSeparator(),
+			{Command: "agent.hand", Title: "Hand this pane to an agent…"},
 		}
 	}
 	if window {

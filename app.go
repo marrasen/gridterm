@@ -9,6 +9,7 @@ import (
 
 	"github.com/hajimehoshi/ebiten/v2"
 
+	"github.com/marrasen/gridterm/agent"
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/glyph"
 	"github.com/marrasen/gridterm/grid"
@@ -114,6 +115,14 @@ type app struct {
 	// choosing the same thing again brings the pane forward rather than
 	// opening a second one onto one shell.
 	watching map[*term.Terminal]remoteKey
+
+	// agents listens for agents the user has handed a pane to, and is
+	// nil while none has been. Nothing listens until the user asks.
+	agents *agent.Server
+
+	// handedBy says which panes the user has handed to an agent, and
+	// the code that names each. The codes live here and nowhere else.
+	handedBy map[*term.Terminal]*handover
 
 	// dock holds the sidebar beside everything else, panel is the list
 	// in it, and stage is what fills the rest: it holds every pane the
@@ -613,6 +622,10 @@ func (a *app) commands() {
 		ui.Command{ID: "server.reload", Title: "Reread the server list", Run: a.reloadBook},
 		ui.Command{ID: "serve.window", Title: "Serve this window…", Run: a.openServing},
 		ui.Command{ID: "serve.takeOver", Title: "Take over a window…", Run: a.openTakeOver},
+		ui.Command{ID: "agent.hand", Title: "Let an agent work in this pane…",
+			Run: a.handHere},
+		ui.Command{ID: "agent.take", Title: "Take this pane back from the agent",
+			Run: a.takeBackHere},
 		ui.Command{ID: "panel.toggle", Title: "Show or hide the connections",
 			Run: a.togglePanel},
 		ui.Command{ID: "panel.focus", Title: "Go to the connections", Run: a.focusPanel},

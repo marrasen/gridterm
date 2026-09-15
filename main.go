@@ -153,6 +153,7 @@ func main() {
 	a.served = make(map[*serve.Client]*conns.Entry)
 	a.paneOnWindow = make(map[*term.Terminal]*taken)
 	a.watching = make(map[*term.Terminal]remoteKey)
+	a.handedBy = make(map[*term.Terminal]*handover)
 	a.paneOn = make(map[*term.Terminal]*machine)
 	a.tunnels = make(map[*conns.Entry]*tunnel)
 	a.queue = jobs.New(0)
@@ -250,8 +251,10 @@ func main() {
 	closed = append(closed, a.waitForCloses(jobsGrace)...)
 	closed = append(closed, a.closeTunnels(), a.closeMachines())
 	// The windows this one took over go last: their panes were closed
-	// with the rest, and this hangs up on what carried them.
-	closed = append(closed, a.closeWindows())
+	// with the rest, and this hangs up on what carried them. The port
+	// agents reach this window on goes with them: there is nothing left
+	// to hand over.
+	closed = append(closed, a.closeWindows(), a.closeAgents())
 	if err := errors.Join(closed...); err != nil {
 		log.Fatal(err)
 	}

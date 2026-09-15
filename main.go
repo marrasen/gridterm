@@ -93,6 +93,9 @@ func main() {
 			"serve this machine's gridterm panes to an agent over the Model Context"+
 				" Protocol, on standard input and output, instead of opening a window;"+
 				" it reaches nothing until the user gives it a session code")
+		showStats = flag.Bool("stats", false,
+			"say how long each frame is taking, once a second, on standard error;"+
+				" for working out why a window feels slow")
 		shotScript = flag.String("shot", "",
 			"drive the window through a script and write PNGs, then exit;"+
 				" steps are wait:<frames> key:<chord> type:<text> shot:<file>,"+
@@ -160,6 +163,9 @@ func main() {
 		if cfg, err := remote.ParseTarget(*sshTarget); err == nil {
 			a.localHost = cfg.Target()
 		}
+	}
+	if *showStats {
+		a.stats = newWatchStats(os.Stderr)
 	}
 	a.registry = conns.New()
 	// A copy that could not be made is said. Something the user was

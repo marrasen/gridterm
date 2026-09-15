@@ -134,6 +134,10 @@ type app struct {
 	// a test asks for less so it does not wait out the real one.
 	reachPatience time.Duration
 
+	// stats says how long the window is taking, for somebody looking at
+	// a slow one. Nil unless it was asked for.
+	stats *watchStats
+
 	// dock holds the sidebar beside everything else, panel is the list
 	// in it, and stage is what fills the rest: it holds every pane the
 	// window has open and shows the one the sidebar picked.
@@ -418,6 +422,7 @@ func (a *app) updateTitle() {
 }
 
 func (a *app) Draw(screen *ebiten.Image) {
+	started := time.Now()
 	a.root.Draw(a.g.View())
 	// After the tree, because the tree is what gave the region its size
 	// this frame. Its own grid, so the window's rows are not its rows.
@@ -426,6 +431,9 @@ func (a *app) Draw(screen *ebiten.Image) {
 	}
 	a.drawModals()
 	a.comp.Draw(screen)
+	if a.stats != nil {
+		a.stats.frame(time.Since(started), a.comp.Stats(), a.bytesRead())
+	}
 
 	// After the frame is composited, so a picture is what the window
 	// shows rather than what it was about to show.

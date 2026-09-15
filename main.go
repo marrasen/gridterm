@@ -28,6 +28,7 @@ import (
 	"github.com/marrasen/gridterm/meter"
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/render"
+	"github.com/marrasen/gridterm/serve"
 	"github.com/marrasen/gridterm/session"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/term"
@@ -149,6 +150,7 @@ func main() {
 	a.machines = make(map[string]*machine)
 	a.opening = make(map[string]context.CancelFunc)
 	a.windows = make(map[string]*taken)
+	a.served = make(map[*serve.Client]*conns.Entry)
 	a.paneOnWindow = make(map[*term.Terminal]*taken)
 	a.paneOn = make(map[*term.Terminal]*machine)
 	a.tunnels = make(map[*conns.Entry]*tunnel)

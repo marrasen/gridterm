@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/serve"
 	"github.com/marrasen/gridterm/session"
 	"github.com/marrasen/gridterm/ui"
@@ -198,12 +199,28 @@ func (a *app) stopServing() error {
 	}
 	s := a.server
 	a.server = nil
+	a.dropServedRows()
 	a.markDirty()
 	return s.Close()
 }
 
 // clientArrived is told when a window has taken this one over.
-func (a *app) clientArrived(c *serve.Client) { a.markDirty() }
+func (a *app) clientArrived(c *serve.Client) {
+	// A row of its own on the panel. This machine is being worked in
+	// from somewhere else, which is worth seeing at a glance and is
+	// worth being able to end from here: whoever is sitting at this
+	// screen owns it, however far away the person using it is.
+	e := &conns.Entry{
+		Host:  conns.Local,
+		Kind:  conns.Terminal,
+		Label: "serving " + c.Name,
+		Note:  "from " + c.Addr,
+		Close: func() error { return c.Close() },
+	}
+	a.served[c] = e
+	a.registry.Add(e)
+	a.markDirty()
+}
 
 // clientWent is told when it has gone, and why.
 //
@@ -212,6 +229,10 @@ func (a *app) clientArrived(c *serve.Client) { a.markDirty() }
 // a fault is reported, one that hung up is not -- the first is
 // something the user did not ask for.
 func (a *app) clientWent(c *serve.Client, why error) {
+	if e := a.served[c]; e != nil {
+		delete(a.served, c)
+		a.registry.Drop(e)
+	}
 	a.markDirty()
 	if why != nil && !errors.Is(why, io.EOF) {
 		a.reportError("The window serving "+c.Name+" was lost", why)
@@ -226,6 +247,7 @@ func (a *app) clientWent(c *serve.Client, why error) {
 // about the one thing the user turned on deliberately.
 func (a *app) servingStopped(err error) {
 	a.server = nil
+	a.dropServedRows()
 	a.markDirty()
 	a.reportError("This window is no longer being served", err)
 }
@@ -259,4 +281,14 @@ func (a *app) showServing() error {
 	f.AddButton(ui.Button{Title: "Stop serving", Do: a.stopServing})
 	a.showForm(f, nil)
 	return nil
+}
+
+// dropServedRows takes away the rows for the windows that were being
+// served. Nothing is being served any more, so nothing of theirs is
+// left on the panel to close.
+func (a *app) dropServedRows() {
+	for c, e := range a.served {
+		delete(a.served, c)
+		a.registry.Drop(e)
+	}
 }

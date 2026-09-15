@@ -90,6 +90,10 @@ type app struct {
 	// over, by the address each was reached at.
 	windows map[string]*taken
 
+	// served are the panel rows for the windows working in this one,
+	// by the client each stands for.
+	served map[*serve.Client]*conns.Entry
+
 	// paneOnWindow says which taken-over window a pane is drawn from,
 	// so letting go of one takes its panes with it.
 	paneOnWindow map[*term.Terminal]*taken

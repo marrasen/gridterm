@@ -162,3 +162,64 @@ func TestTakingOverAWindowThatIsNotThereFails(t *testing.T) {
 		t.Error("a window that answered nothing was held anyway")
 	}
 }
+
+// The window being served says so, and whoever is sitting at it can
+// end the connection from there.
+//
+// Whoever is at this screen owns it, however far away the person using
+// it is.
+func TestTheServedWindowSaysItIsBeingServed(t *testing.T) {
+	host := newTestApp(t, 90, 30)
+	withDialogs(t, host)
+	withPanel(t, host)
+	keyFile, line := aKeyFile(t)
+	withServing(t, host, line)
+	if err := host.startServing("0", whereHere); err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+	addr := host.server.Addr()
+
+	client := newTestApp(t, 90, 30)
+	withDialogs(t, client)
+	withPanel(t, client)
+	if err := client.takeOver(addr, keyFile); err != nil {
+		t.Fatalf("take over: %v", err)
+	}
+	answer(t, client, "Connect")
+	waitFor(t, client, "the window to be taken over", func() bool {
+		return client.windows[addr] != nil
+	})
+
+	waitFor(t, host, "the served window to say so", func() bool {
+		for _, line := range panelText(host, panelNow) {
+			if strings.Contains(line, "serving") {
+				return true
+			}
+		}
+		return false
+	})
+
+	// And the row can end it from here.
+	var ended func() error
+	for _, g := range host.registry.Groups(panelNow) {
+		for _, row := range g.Rows {
+			if strings.HasPrefix(row.Entry.Label, "serving") {
+				ended = row.Entry.Close
+			}
+		}
+	}
+	if ended == nil {
+		t.Fatal("the row has no way to end the connection")
+	}
+	if err := ended(); err != nil {
+		t.Fatalf("end it: %v", err)
+	}
+	waitFor(t, host, "the row to go when the window does", func() bool {
+		for _, line := range panelText(host, panelNow) {
+			if strings.Contains(line, "serving") {
+				return false
+			}
+		}
+		return true
+	})
+}

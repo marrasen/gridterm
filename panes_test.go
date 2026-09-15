@@ -20,6 +20,7 @@ import (
 	"github.com/marrasen/gridterm/meter"
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/render"
+	"github.com/marrasen/gridterm/serve"
 	"github.com/marrasen/gridterm/session"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/files"
@@ -122,6 +123,7 @@ func newTestApp(t *testing.T, cols, rows int) *testApp {
 		machines:     make(map[string]*machine),
 		opening:      make(map[string]context.CancelFunc),
 		windows:      make(map[string]*taken),
+		served:       make(map[*serve.Client]*conns.Entry),
 		paneOnWindow: make(map[*term.Terminal]*taken),
 		paneOn:       make(map[*term.Terminal]*machine),
 		tunnels:      make(map[*conns.Entry]*tunnel),

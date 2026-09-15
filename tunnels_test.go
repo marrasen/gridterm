@@ -13,6 +13,7 @@ import (
 	"github.com/marrasen/gridterm/meter"
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/ui"
+	"github.com/marrasen/gridterm/ui/term"
 )
 
 // echoAt answers every connection with what it was sent, in upper case.
@@ -51,9 +52,24 @@ func echoAt(t *testing.T) string {
 // window calls it.
 func connectedTo(t *testing.T, a *testApp, s *sshtest.Server) string {
 	t.Helper()
+	host := serverConfig(t, s).Target()
 	a.connect(serverConfig(t, s))
-	waitForPanes(t, a, len(a.panes)+1)
-	return serverConfig(t, s).Target()
+	// The pane opens as soon as the connecting starts, so what says the
+	// machine was reached is the window holding it.
+	waitFor(t, a, "the connection to "+host, func() bool {
+		return a.machines[host] != nil && a.paneOn[paneFor(a, host)] != nil
+	})
+	return host
+}
+
+// paneFor is the pane a machine's connection is drawn in, or nil.
+func paneFor(a *testApp, host string) *term.Terminal {
+	for pane, m := range a.paneOn {
+		if m != nil && m.at.name == host {
+			return pane
+		}
+	}
+	return nil
 }
 
 // tunnelRow returns the panel row of the window's one tunnel.

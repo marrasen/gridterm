@@ -19,7 +19,15 @@ var errDismissed = errors.New("cancelled")
 // dialog belongs to the goroutine that is drawing. The two meet at the
 // pump: the question is posted as work for the next frame, and the
 // answer comes back down a channel.
-type askUser struct{ app *app }
+type askUser struct {
+	app *app
+
+	// log is the pane the connection is writing its account into, or
+	// nil when there is none. What a server says goes there as well as
+	// into a dialog: a dialog is read once and dismissed, and a link
+	// that has been dismissed is a link nobody can use.
+	log *connLog
+}
 
 // Passphrase asks for the passphrase of a private key file.
 func (u *askUser) Passphrase(ctx context.Context, keyfile string) (string, error) {
@@ -229,6 +237,15 @@ func (u *askUser) ask(ctx context.Context, build func(reply func([]string, error
 // The dialog goes when the connection does, whichever way that turns
 // out: made, failed, or given up on.
 func (u *askUser) Notice(ctx context.Context, n remote.Notice) {
+	// Into the pane first, where it stays: whole, on lines of its own,
+	// and there to select and copy. A dialog is read once and then
+	// dismissed, and a sign-in link the user dismissed is gone.
+	if u.log != nil {
+		for _, line := range []string{n.Name, n.Instruction, n.Text} {
+			u.log.Quote(n.User+"@"+n.Host, line)
+		}
+	}
+
 	// Ours first and always. Everything under it is the server's own
 	// wording, and a message the user cannot tell from the window's own
 	// could send them somewhere of the server's choosing.
@@ -240,6 +257,10 @@ func (u *askUser) Notice(ctx context.Context, n remote.Notice) {
 		lines = append(lines, "", line)
 	}
 	lines = append(lines, "", "gridterm is waiting for the server. It carries on by itself once you are done.")
+	if u.log != nil {
+		lines = append(lines,
+			"", "It is in the pane as well, in full and there to copy.")
+	}
 
 	host := n.Host
 	var dismiss func()

@@ -93,37 +93,32 @@ func (a *app) takeOver(addr, keyFile string) error {
 	}
 
 	ctx, cancel := context.WithCancel(a.ctx)
-	waiting := &conns.Entry{
-		Host:   addr,
-		Kind:   conns.Terminal,
-		Label:  "taking over",
-		Note:   "opening",
-		Reveal: func() { a.sayWaitingFor(addr) },
-		Close:  func() error { cancel(); return nil },
+
+	// A pane rather than a row that only says "opening". It is somewhere
+	// to watch from: every step as it is tried, and whatever the far end
+	// says, in full and there to copy. The same pane carries the shell
+	// when there is one, so the account of how it was reached stays in
+	// the scrollback above it.
+	log := newConnLog(cancel)
+	pane, err := a.openSessionTab(log, addr, conns.Terminal, "connecting", nil)
+	if err != nil {
+		cancel()
+		return err
 	}
-	a.registry.Add(waiting)
 	a.connecting++
 	a.opening[addr] = cancel
+	log.Say("taking over " + addr)
 
-	ask := &askUser{app: a}
+	ask := &askUser{app: a, log: log}
 	go func() {
 		win, err := reachWindow(ctx, reach{
 			addr: addr, keyFile: keyFile, ring: a.keys, ask: ask,
 			known: a.knownWindows, agent: remote.AgentKeys,
 			patience: a.reachPatience,
-			// What it is doing now, on the row. A connection that
-			// stalls then says where it stalled, which is the whole of
-			// what anybody has to go on.
-			saying: func(what string) {
-				a.pump.post(func() {
-					waiting.Note = what
-					a.markDirty()
-				})
-			},
+			saying:   log.Say,
 		})
 		a.pump.post(func() {
 			a.connecting--
-			a.registry.Drop(waiting)
 			delete(a.opening, addr)
 			// Read before the context is let go of on the next line,
 			// which would otherwise make every window look like one the
@@ -132,11 +127,10 @@ func (a *app) takeOver(addr, keyFile string) error {
 			cancel()
 			if err != nil {
 				if gaveUp != nil {
-					// The user asked for this, so there is nothing to
-					// tell them: the row going is the answer.
+					log.GaveUp()
 					return
 				}
-				a.reportError("Could not take over "+addr, err)
+				log.Failed(err)
 				return
 			}
 			if gaveUp != nil {
@@ -144,18 +138,36 @@ func (a *app) takeOver(addr, keyFile string) error {
 				// finishing. Nothing else knows about it, and a failure
 				// to hang up is the user's to see: it is a socket to a
 				// machine that thinks somebody is working in it.
+				log.GaveUp()
 				if err := win.Close(); err != nil {
 					a.reportError("Could not let go of "+addr, err)
 				}
 				return
 			}
 			a.holdWindow(addr, win)
-			if err := a.openOnWindow(addr, nil); err != nil {
-				a.reportError("Could not open a terminal on "+addr, err)
-			}
+			a.becomeWindowPane(addr, pane, log)
 		})
 	}()
 	return nil
+}
+
+// becomeWindowPane hands the pane that was watching a window being taken
+// over to a shell on that window.
+func (a *app) becomeWindowPane(addr string, pane *term.Terminal, log *connLog) {
+	t := a.windows[addr]
+	if t == nil {
+		log.Failed(fmt.Errorf("this window has not taken over %s", addr))
+		return
+	}
+	size := pane.Size()
+	sess, err := t.win.Open(size.Cols, size.Rows)
+	if err != nil {
+		log.Failed(err)
+		return
+	}
+	log.Say("connected")
+	a.paneOnWindow[pane] = t
+	log.Became(sess)
 }
 
 // reach is everything reaching another window needs.

@@ -261,30 +261,28 @@ func (a *app) openRoute(name string, route []step, command []string, at *spot) {
 	}
 
 	ctx, cancel := context.WithCancel(a.ctx)
-	// A row on the panel rather than a dialog to wait in. Several
-	// connections can be on their way at once, and a dialog each would
-	// stack: closing one takes everything above it, so the one that
-	// finished first would tear down the one still waiting.
-	waiting := &conns.Entry{
-		Host:  name,
-		Kind:  kindOf(command),
-		Label: "connecting",
-		Note:  "opening",
-		// There is no pane to go to yet, so clicking the row says what
-		// it is waiting for. Doing nothing at all reads as a window
-		// that has stopped listening.
-		Reveal: func() { a.sayWaitingFor(name) },
-		Close: func() error {
-			cancel()
-			return nil
-		},
+
+	// A pane rather than a row that only says "opening". It is somewhere
+	// to watch from: every machine on the way as it is reached, and
+	// whatever a server says, in full and there to copy. The same pane
+	// carries the shell when there is one, so the account of how it was
+	// reached stays in the scrollback above it.
+	//
+	// Letting go of the connection is done here rather than by the
+	// closure that finishes it: a dial that has not come back yet still
+	// has to stop holding the name, or nothing can try again.
+	log := newConnLog(func() { a.pump.post(func() { a.gaveUpOn(name, missing, cancel) }) })
+	pane, err := a.openSessionTab(log, name, kindOf(command), "connecting", at)
+	if err != nil {
+		cancel()
+		a.reportError("Could not connect to "+name, err)
+		return
 	}
-	a.registry.Add(waiting)
 	a.connecting++
 	for _, s := range missing {
 		a.opening[s.name] = cancel
 	}
-	// And under the name the row goes by, which is the end of the route
+	// And under the name the pane goes by, which is the end of the route
 	// rather than the step being dialled: it is the name the user sees
 	// and the one they will ask to close.
 	a.opening[name] = cancel
@@ -293,30 +291,38 @@ func (a *app) openRoute(name string, route []step, command []string, at *spot) {
 	if through != nil {
 		carrier = through.conn
 	}
+	if through != nil {
+		log.Say("going through " + through.at.name + ", which is already connected")
+	}
+	for _, s := range missing {
+		log.Say("connecting to " + s.cfg.Target())
+	}
+	for i := range missing {
+		missing[i].cfg.Ask = &askUser{app: a, log: log}
+	}
 	go func() {
 		opened, err := dialRoute(ctx, carrier, missing)
 		a.pump.post(func() {
 			a.connecting--
-			a.registry.Drop(waiting)
-			for _, s := range missing {
-				delete(a.opening, s.name)
-			}
-			delete(a.opening, name)
+			a.letGoOf(name, missing)
 			// Read before the context is let go of on the next line,
 			// which would otherwise make every connection look like one
 			// the user gave up on.
 			gaveUp := ctx.Err()
 			cancel()
 			if err != nil {
-				a.reportError("Could not connect to "+name, err)
+				if gaveUp != nil {
+					log.GaveUp()
+					return
+				}
+				log.Failed(err)
 				return
 			}
 			// Given up on, or the machine it was reached through closed,
 			// while the last handshake was finishing. Either way what
 			// was opened is no use and nothing else knows about it.
 			if why := a.stillWanted(gaveUp, through); why != nil {
-				a.reportError("Could not connect to "+name,
-					errors.Join(append([]error{why}, closeAll(opened)...)...))
+				log.Failed(errors.Join(append([]error{why}, closeAll(opened)...)...))
 				return
 			}
 			via := ""
@@ -326,12 +332,64 @@ func (a *app) openRoute(name string, route []step, command []string, at *spot) {
 			for i, conn := range opened {
 				a.hold(missing[i], conn, via)
 				via = missing[i].name
+				log.Say("connected to " + missing[i].name)
 			}
-			if err := a.startOn(name, command, at); err != nil {
-				a.reportError("Could not open it on "+name, err)
-			}
+			a.becomeShellPane(name, command, pane, log)
 		})
 	}()
+}
+
+// letGoOf stops the window holding a route's names, so another attempt
+// can have them.
+func (a *app) letGoOf(name string, missing []step) {
+	for _, s := range missing {
+		delete(a.opening, s.name)
+	}
+	delete(a.opening, name)
+}
+
+// gaveUpOn lets go of a route the user has given up on, without waiting
+// for the dial to come back.
+//
+// The names go now rather than when the goroutine finishes. A dial that
+// is still unwinding would otherwise go on holding them, and the window
+// would answer the next attempt with "already connecting" to a machine
+// nobody is connecting to any more.
+func (a *app) gaveUpOn(name string, missing []step, cancel context.CancelFunc) {
+	cancel()
+	a.letGoOf(name, missing)
+}
+
+// becomeShellPane hands the pane that was watching a connection being
+// made to a shell on the machine it reached.
+func (a *app) becomeShellPane(name string, command []string, pane *term.Terminal, log *connLog) {
+	m := a.machines[name]
+	if m == nil {
+		log.Failed(fmt.Errorf("nothing is connected to %s", name))
+		return
+	}
+	size := pane.Size()
+	sh, err := m.conn.Shell(remote.ShellConfig{
+		Command: command,
+		Cols:    size.Cols,
+		Rows:    size.Rows,
+		Term:    m.at.term,
+	})
+	if err != nil {
+		log.Failed(err)
+		return
+	}
+	// Which connection the pane rides on, rather than which machine it
+	// is named after: two things can share a name -- the machine -ssh
+	// put every pane on, and a connection made from the window -- and
+	// closing one must not take the other's panes.
+	a.paneOn[pane] = m
+	if label := labelFor(command); label != "" {
+		if e := a.panes[pane]; e != nil {
+			e.Label = label
+		}
+	}
+	log.Became(sh)
 }
 
 // stillWanted says why a connection that has just been made is no use,

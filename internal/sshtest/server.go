@@ -38,6 +38,7 @@ type Server struct {
 	ln      net.Listener
 
 	mu       sync.Mutex
+	banner   string
 	lastSize [2]int // cols, rows
 	conns    []net.Conn
 	accepted int
@@ -93,6 +94,14 @@ func New(t *testing.T) *Server {
 		stopped: make(chan struct{}),
 	}
 	s.cfg = &ssh.ServerConfig{
+		// What a server says on the way in, which is how one that signs
+		// people in through a browser sends the link. Empty unless a
+		// test asks for one.
+		BannerCallback: func(ssh.ConnMetadata) string {
+			s.mu.Lock()
+			defer s.mu.Unlock()
+			return s.banner
+		},
 		PasswordCallback: func(_ ssh.ConnMetadata, pass []byte) (*ssh.Permissions, error) {
 			if string(pass) == Password {
 				return nil, nil
@@ -395,4 +404,12 @@ func parseWinch(p []byte) (cols, rows int) {
 
 func be32(b []byte) uint32 {
 	return uint32(b[0])<<24 | uint32(b[1])<<16 | uint32(b[2])<<8 | uint32(b[3])
+}
+
+// SayOnTheWayIn makes the server send this to whoever connects, the way
+// one that signs people in through a browser sends a link.
+func (s *Server) SayOnTheWayIn(what string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.banner = what
 }

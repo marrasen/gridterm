@@ -135,8 +135,8 @@ func TestLettingGoOfATakenWindowTakesItsPanes(t *testing.T) {
 		t.Fatalf("take over: %v", err)
 	}
 	answer(t, client, "Connect")
-	waitFor(t, client, "a pane on the other window", func() bool {
-		return len(client.panes) > panes
+	waitFor(t, client, "the window to be taken over", func() bool {
+		return client.windows[addr] != nil && len(client.panes) > panes
 	})
 
 	if err := client.dropWindow(addr); err != nil {
@@ -154,8 +154,8 @@ func TestLettingGoOfATakenWindowTakesItsPanes(t *testing.T) {
 	})
 }
 
-// A window that is not serving is not taken over, and the failure is
-// shown rather than leaving a row that never fills.
+// A window that is not serving is not taken over, and the pane that was
+// watching says why.
 func TestTakingOverAWindowThatIsNotThereFails(t *testing.T) {
 	client := newTestApp(t, 90, 30)
 	withDialogs(t, client)
@@ -166,11 +166,13 @@ func TestTakingOverAWindowThatIsNotThereFails(t *testing.T) {
 	if err := client.takeOver("127.0.0.1:1", keyFile); err != nil {
 		t.Fatalf("take over: %v", err)
 	}
+	pane := newestPane(t, client)
 
-	f := openDialog(t, client)
-	if text := strings.Join(f.Lines, "\n"); !strings.Contains(text, "Could not take over") &&
-		!strings.Contains(f.Title, "Could not take over") {
-		t.Errorf("the failure was not shown: %q %v", f.Title, f.Lines)
+	waitFor(t, client, "the pane to say why it could not", func() bool {
+		return strings.Contains(paneText(pane), "The connection was not made")
+	})
+	if got := paneText(pane); !strings.Contains(got, "127.0.0.1:1") {
+		t.Errorf("it does not say which machine: %q", got)
 	}
 	if client.windows["127.0.0.1:1"] != nil {
 		t.Error("a window that answered nothing was held anyway")
@@ -1358,37 +1360,36 @@ func silentMachine(t *testing.T) string {
 	return ln.Addr().String()
 }
 
-// Giving up on a window that is not answering takes its row away.
+// Giving up on a window that is not answering lets it go, and lets the
+// window try again.
 //
-// This is the whole of what "Give up" has to do. A row that stays says
-// the window is still being taken over, the window will not try again
-// -- "gridterm is already taking over" -- and there is no way back but
-// restarting it.
-func TestGivingUpOnAWindowThatIsNotAnsweringTakesItsRowAway(t *testing.T) {
+// The pane stays with its account of what happened; what must not stay
+// is the window thinking it is still taking that machine over, which is
+// what answers a second attempt with "already taking over".
+func TestGivingUpOnAWindowThatIsNotAnsweringLetsItGo(t *testing.T) {
 	a := newTestApp(t, 90, 30)
 	withDialogs(t, a)
 	withPanel(t, a)
 	keyFile, _ := aKeyFile(t)
 	addr := silentMachine(t)
 
-	// No dialog to answer: a machine that says nothing never gets as
-	// far as offering a host key to trust.
 	if err := a.takeOver(addr, keyFile); err != nil {
 		t.Fatalf("take over: %v", err)
 	}
-	waitFor(t, a, "the row for the window being taken over", func() bool {
-		return a.opening[addr] != nil && rowFor(a, addr) != nil
+	pane := newestPane(t, a)
+	waitFor(t, a, "the pane to say it is connecting", func() bool {
+		return strings.Contains(paneText(pane), stepConnect)
 	})
 
-	// What the user does: click the row, then Give up.
-	a.sayWaitingFor(addr)
-	answer(t, a, "Give up")
-
-	waitFor(t, a, "the row to go", func() bool {
-		return a.opening[addr] == nil && rowFor(a, addr) == nil
+	// What the user does: close the pane, which is what gives up.
+	if err := a.closePane(pane); err != nil {
+		t.Fatalf("close the pane: %v", err)
+	}
+	waitFor(t, a, "it to let go of the machine", func() bool {
+		return a.opening[addr] == nil
 	})
 
-	// And the window will try again rather than saying it already is.
+	// And it will try again rather than saying it already is.
 	if err := a.takeOver(addr, keyFile); err != nil {
 		t.Fatalf("it would not try again: %v", err)
 	}
@@ -1399,7 +1400,7 @@ func TestGivingUpOnAWindowThatIsNotAnsweringTakesItsRowAway(t *testing.T) {
 }
 
 // A window that answers and then says nothing is given up on by itself,
-// with a reason.
+// and the pane says so.
 func TestAWindowThatSaysNothingIsGivenUpOnByItself(t *testing.T) {
 	a := newTestApp(t, 90, 30)
 	withDialogs(t, a)
@@ -1407,40 +1408,38 @@ func TestAWindowThatSaysNothingIsGivenUpOnByItself(t *testing.T) {
 	keyFile, _ := aKeyFile(t)
 	addr := silentMachine(t)
 
-	// No dialog to answer: a machine that says nothing never gets as
-	// far as offering a host key to trust.
 	if err := a.takeOver(addr, keyFile); err != nil {
 		t.Fatalf("take over: %v", err)
 	}
+	pane := newestPane(t, a)
 
-	waitFor(t, a, "it to give up on its own", func() bool {
-		return a.opening[addr] == nil && rowFor(a, addr) == nil
+	waitFor(t, a, "the pane to say it gave up", func() bool {
+		return strings.Contains(paneText(pane), "The connection was not made")
 	})
-	// And it says why, rather than the row simply going.
-	f := openDialog(t, a)
-	if said := strings.Join(f.Lines, " "); !strings.Contains(said, addr) {
-		t.Errorf("it does not say which machine: %q", said)
+	if a.opening[addr] != nil {
+		t.Error("it still thinks it is taking that machine over")
 	}
 }
 
-// The row says what is being done, so a connection that stalls says
+// The pane says what is being done, so a connection that stalls says
 // where it stalled.
-func TestTheRowSaysWhatItIsDoing(t *testing.T) {
+func TestThePaneSaysWhatItIsDoing(t *testing.T) {
 	a := newTestApp(t, 90, 30)
 	withDialogs(t, a)
 	withPanel(t, a)
 	keyFile, _ := aKeyFile(t)
 	addr := silentMachine(t)
 
-	// No dialog to answer: a machine that says nothing never gets as
-	// far as offering a host key to trust.
 	if err := a.takeOver(addr, keyFile); err != nil {
 		t.Fatalf("take over: %v", err)
 	}
+	pane := newestPane(t, a)
 
-	waitFor(t, a, "the row to say it is connecting", func() bool {
-		row := rowFor(a, addr)
-		return row != nil && row.Note == stepConnect
+	waitFor(t, a, "the pane to say what it is doing", func() bool {
+		got := paneText(pane)
+		return strings.Contains(got, "taking over "+addr) &&
+			strings.Contains(got, stepKeys) &&
+			strings.Contains(got, stepConnect)
 	})
 }
 

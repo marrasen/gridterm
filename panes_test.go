@@ -69,6 +69,13 @@ func (p *pipeSession) Write(b []byte) (int, error) {
 	return len(b), nil
 }
 
+// isClosed reports whether this shell has been closed.
+func (p *pipeSession) isClosed() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.closed
+}
+
 // sentText returns what the terminal has written to this shell.
 func (p *pipeSession) sentText() string {
 	p.mu.Lock()

@@ -36,12 +36,17 @@ func waitForPanes(t *testing.T, a *testApp, n int) {
 	deadline := time.Now().Add(waitBudget)
 	for time.Now().Before(deadline) {
 		a.pump.run()
-		if len(a.panes) == n {
+		// And nothing still connecting. A connection opens its pane as
+		// soon as it starts, so the pane is there before the machine
+		// is, and a test that counted panes alone would go on before
+		// there was anything to connect to.
+		if len(a.panes) == n && a.connecting == 0 {
 			return
 		}
 		time.Sleep(time.Millisecond)
 	}
-	t.Fatalf("the app has %d panes, want %d", len(a.panes), n)
+	t.Fatalf("the app has %d panes and %d connections still opening, want %d panes",
+		len(a.panes), a.connecting, n)
 }
 
 // waitForDialog runs the pump until a dialog with the given title is on
@@ -119,19 +124,32 @@ func TestConnectShowsWhyItFailed(t *testing.T) {
 	cfg.Port = 1
 	a.connect(cfg)
 
-	f := waitForDialog(t, a, "Could not connect to "+cfg.Target())
-	if len(f.Lines) == 0 || strings.TrimSpace(strings.Join(f.Lines, "")) == "" {
+	said := waitForFailure(t, a, cfg.Target())
+	if strings.TrimSpace(said) == "" {
 		t.Fatal("the failure was reported with no reason in it")
 	}
-	if len(a.panes) != 1 {
-		t.Errorf("%d panes after a failed connection, want the one that was there", len(a.panes))
+	// The pane that was watching stays, holding the reason: a failure
+	// the user can still read is the whole point of watching in a pane.
+	// Closing it is what takes it away.
+	if len(a.panes) != 2 {
+		t.Errorf("%d panes after a failed connection, want the one that was there"+
+			" and the one that says why", len(a.panes))
 	}
-	// And the row it was waiting in has gone, or it stays on the panel
-	// for ever with a Close that does nothing.
+	if a.opening[cfg.Target()] != nil {
+		t.Error("the machine is still marked as being connected to")
+	}
+	for pane, e := range a.panes {
+		if e.Host != cfg.Target() {
+			continue
+		}
+		if err := a.closePane(pane); err != nil {
+			t.Fatalf("close the pane: %v", err)
+		}
+	}
 	for _, group := range a.registry.Groups(time.Now()) {
 		for _, row := range group.Rows {
-			if row.Label == "connecting" {
-				t.Fatal("a failed connection was left on the panel")
+			if row.Host == cfg.Target() {
+				t.Fatalf("closing it left %q on the panel", row.Label)
 			}
 		}
 	}
@@ -243,17 +261,17 @@ func TestConnectRunsSeveralAtOnce(t *testing.T) {
 		t.Fatalf("a dialog opened for a connection: %T", m)
 	}
 
-	// Each has a row of its own that says it is opening.
+	// Each has a pane of its own, saying what it is doing.
 	var opening []*conns.Entry
 	for _, group := range a.registry.Groups(time.Now()) {
 		for _, row := range group.Rows {
-			if row.Label == "connecting" && row.Note == "opening" {
+			if row.Label == "connecting" {
 				opening = append(opening, row.Entry)
 			}
 		}
 	}
 	if len(opening) != 3 {
-		t.Fatalf("%d rows say a connection is opening, want 3", len(opening))
+		t.Fatalf("%d panes say a connection is opening, want 3", len(opening))
 	}
 
 	// Cancelling one leaves the others alone. Settled first, so a
@@ -417,3 +435,103 @@ func TestOpenServerConnectsThroughTheForm(t *testing.T) {
 	}
 	checkTree(t, a)
 }
+
+// waitForFailure waits for the pane watching a connection to say it
+// could not be made, and gives back what it says.
+//
+// A failure is written into the pane that was watching for it rather
+// than shown in a dialog: the pane stays, so the reason can still be
+// read afterwards.
+func waitForFailure(t *testing.T, a *testApp, host string) string {
+	t.Helper()
+	deadline := time.Now().Add(waitBudget)
+	for time.Now().Before(deadline) {
+		a.pump.run()
+		for pane, e := range a.panes {
+			if e.Host != host {
+				continue
+			}
+			if got := paneText(pane); strings.Contains(got, "The connection was not made") {
+				return got
+			}
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("no pane says the connection to %s failed: %v", host, panelText(a, time.Now()))
+	return ""
+}
+
+// Connecting to a server opens a pane and says what it is doing in it,
+// and the same pane then carries the shell.
+//
+// This is what makes a connection that goes wrong reportable: without
+// it there is a row that says "opening" and nothing else, whatever
+// happens.
+func TestConnectingOpensAPaneAndSaysWhatItIsDoing(t *testing.T) {
+	s := sshtest.New(t)
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	before := len(a.panes)
+
+	cfg := serverConfig(t, s)
+	a.connect(cfg)
+
+	pane := newestPane(t, a)
+	if len(a.panes) != before+1 {
+		t.Fatalf("%d panes, want one more than the %d there were", len(a.panes), before)
+	}
+	// It says what it is doing before there is anything to connect to.
+	waitFor(t, a, "the pane to say what it is doing", func() bool {
+		return strings.Contains(paneText(pane), "connecting to "+cfg.Target())
+	})
+
+	// And the same pane carries the shell, with the account of how it
+	// was reached still above it.
+	waitFor(t, a, "the connection to be made", func() bool {
+		return a.machines[cfg.Target()] != nil
+	})
+	waitFor(t, a, "the pane to say it connected", func() bool {
+		return strings.Contains(paneText(pane), "connected to "+cfg.Target())
+	})
+	if a.paneOn[pane] == nil {
+		t.Error("the pane is not on the machine it connected to")
+	}
+	if len(a.panes) != before+1 {
+		t.Errorf("%d panes, so a second one opened for the shell", len(a.panes))
+	}
+}
+
+// What a server says on the way in is written into the pane, whole.
+//
+// A server that signs people in through a browser sends the link this
+// way. In a dialog it is cut off at the edge, cannot be selected, and
+// is gone the moment the dialog is dismissed; in the pane it is there
+// to read and to copy.
+func TestWhatAServerSaysGoesIntoThePane(t *testing.T) {
+	const link = "https://login.tailscale.com/a/0123456789abcdef0123456789abcdef"
+	s := sshtest.New(t)
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+
+	s.SayOnTheWayIn("To authenticate, visit:\r\n\r\n" + link + "\r\n")
+
+	cfg := serverConfig(t, s)
+	a.connect(cfg)
+	pane := newestPane(t, a)
+
+	// Joined back up: a link longer than the pane is wide is wrapped
+	// across two rows, the way any long line is. What matters is that
+	// all of it is there.
+	waitFor(t, a, "the link to reach the pane", func() bool {
+		return strings.Contains(unwrapped(paneText(pane)), link)
+	})
+	if got := paneText(pane); !strings.Contains(got, "says:") {
+		t.Errorf("it does not say who said it: %q", got)
+	}
+}
+
+// unwrapped is what a pane shows with the row breaks taken out, for
+// reading something longer than the pane is wide.
+func unwrapped(text string) string { return strings.ReplaceAll(text, "\n", "") }

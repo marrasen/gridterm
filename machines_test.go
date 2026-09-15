@@ -267,7 +267,7 @@ func TestAFailedConnectionCanBeRetried(t *testing.T) {
 	cfg := serverConfig(t, s)
 	cfg.Port = 1
 	a.connectAs("box", cfg)
-	waitForDialog(t, a, "Could not connect to box")
+	waitForFailure(t, a, "box")
 	if a.opening["box"] != nil {
 		t.Fatal("the machine is still marked as being connected to")
 	}
@@ -304,9 +304,9 @@ func TestAFailedRouteLeavesNothingOpen(t *testing.T) {
 	if err := a.connectSaved("db"); err != nil {
 		t.Fatalf("connectSaved: %v", err)
 	}
-	f := waitForDialog(t, a, "Could not connect to db")
-	if !strings.Contains(strings.Join(f.Lines, " "), "db") {
-		t.Fatalf("the failure does not say which machine refused: %q", f.Lines)
+	said := waitForFailure(t, a, "db")
+	if !strings.Contains(said, "db") {
+		t.Fatalf("the failure does not say which machine refused: %q", said)
 	}
 	if len(a.machines) != 0 {
 		t.Fatalf("the first hop was left open: %v", names(a))
@@ -319,11 +319,25 @@ func TestAFailedRouteLeavesNothingOpen(t *testing.T) {
 		}
 		time.Sleep(time.Millisecond)
 	}
-	if len(a.panes) != 1 {
-		t.Fatalf("%d panes after a failed route, want the one that was there", len(a.panes))
+	// The pane that was watching stays, holding the reason. Closing it
+	// is what takes it away, and leaves what was there before.
+	if len(a.panes) != 2 {
+		t.Fatalf("%d panes after a failed route, want the one that was there"+
+			" and the one that says why", len(a.panes))
 	}
 	if a.opening["edge"] != nil || a.opening["db"] != nil {
 		t.Fatal("a machine was left marked as being connected to")
+	}
+	for pane, e := range a.panes {
+		if e.Host != "db" {
+			continue
+		}
+		if err := a.closePane(pane); err != nil {
+			t.Fatalf("close the pane: %v", err)
+		}
+	}
+	if len(a.panes) != 1 {
+		t.Fatalf("%d panes after closing it, want the one that was there", len(a.panes))
 	}
 }
 

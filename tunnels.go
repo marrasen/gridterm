@@ -212,7 +212,7 @@ func (a *app) openTunnel(host string, t remote.Tunnel) {
 		Label: t.String(),
 		Meter: count.m,
 	}
-	f, err := m.conn.OpenTunnel(remote.TunnelConfig{
+	f, err := m.conn.OpenTunnel(a.ctx, remote.TunnelConfig{
 		Tunnel: t,
 		Count:  count,
 		// Called from the goroutines carrying the streams, so both are

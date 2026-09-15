@@ -79,7 +79,7 @@ func TestLocalForwardCarriesBytesBothWays(t *testing.T) {
 	c := connectTest(t, s)
 
 	m := meter.New()
-	f, err := c.OpenTunnel(TunnelConfig{
+	f, err := c.OpenTunnel(t.Context(), TunnelConfig{
 		Tunnel: Tunnel{Kind: LocalForward, Listen: "127.0.0.1:0", Target: echo},
 		Count:  counted{m},
 	})
@@ -120,7 +120,7 @@ func TestRemoteForwardCarriesBytesBothWays(t *testing.T) {
 	c := connectTest(t, s)
 
 	m := meter.New()
-	f, err := c.OpenTunnel(TunnelConfig{
+	f, err := c.OpenTunnel(t.Context(), TunnelConfig{
 		Tunnel: Tunnel{Kind: RemoteForward, Listen: "127.0.0.1:9000", Target: echo},
 		Count:  counted{m},
 	})
@@ -191,7 +191,7 @@ func TestATunnelCountsEachWaySeparately(t *testing.T) {
 
 	c := connectTest(t, s)
 	m := meter.New()
-	f, err := c.OpenTunnel(TunnelConfig{
+	f, err := c.OpenTunnel(t.Context(), TunnelConfig{
 		Tunnel: Tunnel{Kind: LocalForward, Listen: "127.0.0.1:0", Target: ln.Addr().String()},
 		Count:  counted{m},
 	})
@@ -232,7 +232,7 @@ func TestATargetWithNoHostReachesTheLoopbackOfTheFarMachine(t *testing.T) {
 	}
 	c := connectTest(t, s)
 
-	f, err := c.OpenTunnel(TunnelConfig{
+	f, err := c.OpenTunnel(t.Context(), TunnelConfig{
 		Tunnel: Tunnel{Kind: LocalForward, Listen: "127.0.0.1:0", Target: ":" + port},
 	})
 	if err != nil {
@@ -261,7 +261,7 @@ func TestClosingATunnelCutsAStreamThatIsStillBeingSetUp(t *testing.T) {
 	s := sshtest.New(t)
 	c := connectTest(t, s)
 
-	f, err := c.OpenTunnel(TunnelConfig{
+	f, err := c.OpenTunnel(t.Context(), TunnelConfig{
 		// A dynamic tunnel waits for the client to say where it is going,
 		// so a client that says nothing is held here.
 		Tunnel: Tunnel{Kind: DynamicForward, Listen: "127.0.0.1:0"},
@@ -301,7 +301,7 @@ func TestClosingATunnelCutsItsStreams(t *testing.T) {
 	echo := echoServer(t)
 	c := connectTest(t, s)
 
-	f, err := c.OpenTunnel(TunnelConfig{
+	f, err := c.OpenTunnel(t.Context(), TunnelConfig{
 		Tunnel: Tunnel{Kind: LocalForward, Listen: "127.0.0.1:0", Target: echo},
 	})
 	if err != nil {
@@ -348,7 +348,7 @@ func TestClosingTheConnectionClosesItsTunnels(t *testing.T) {
 	echo := echoServer(t)
 	c := connectTest(t, s)
 
-	f, err := c.OpenTunnel(TunnelConfig{
+	f, err := c.OpenTunnel(t.Context(), TunnelConfig{
 		Tunnel: Tunnel{Kind: LocalForward, Listen: "127.0.0.1:0", Target: echo},
 	})
 	if err != nil {
@@ -374,7 +374,7 @@ func TestTheConnectionForgetsAClosedTunnel(t *testing.T) {
 	s := sshtest.New(t)
 	c := connectTest(t, s)
 
-	f, err := c.OpenTunnel(TunnelConfig{
+	f, err := c.OpenTunnel(t.Context(), TunnelConfig{
 		Tunnel: Tunnel{Kind: LocalForward, Listen: "127.0.0.1:0", Target: "127.0.0.1:9"},
 	})
 	if err != nil {
@@ -400,7 +400,7 @@ func TestAStreamThatCannotBeConnectedIsReported(t *testing.T) {
 
 	var mu sync.Mutex
 	var failures []error
-	f, err := c.OpenTunnel(TunnelConfig{
+	f, err := c.OpenTunnel(t.Context(), TunnelConfig{
 		// Port 9 on the far machine, which the test server refuses.
 		Tunnel: Tunnel{Kind: LocalForward, Listen: "127.0.0.1:0", Target: "127.0.0.1:9"},
 		OnError: func(err error) {
@@ -444,7 +444,7 @@ func TestATunnelSaysWhenItCannotListen(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = taken.Close() })
 
-	_, err = c.OpenTunnel(TunnelConfig{
+	_, err = c.OpenTunnel(t.Context(), TunnelConfig{
 		Tunnel: Tunnel{Kind: LocalForward, Listen: taken.Addr().String(), Target: "127.0.0.1:9"},
 	})
 	if err == nil {
@@ -463,7 +463,7 @@ func TestATunnelOnAClosedConnectionIsRefused(t *testing.T) {
 	if err := c.Close(); err != nil {
 		t.Fatalf("close: %v", err)
 	}
-	_, err := c.OpenTunnel(TunnelConfig{
+	_, err := c.OpenTunnel(t.Context(), TunnelConfig{
 		Tunnel: Tunnel{Kind: LocalForward, Listen: "127.0.0.1:0", Target: "127.0.0.1:9"},
 	})
 	if err == nil {
@@ -535,7 +535,7 @@ func TestATunnelWithNoHostListensOnLoopbackOnly(t *testing.T) {
 	s := sshtest.New(t)
 	c := connectTest(t, s)
 
-	f, err := c.OpenTunnel(TunnelConfig{
+	f, err := c.OpenTunnel(t.Context(), TunnelConfig{
 		Tunnel: Tunnel{Kind: LocalForward, Listen: ":0", Target: "127.0.0.1:9"},
 	})
 	if err != nil {
@@ -588,7 +588,7 @@ func TestATunnelSaysWhenItStopsAccepting(t *testing.T) {
 
 	stopped := make(chan error, 1)
 	var failures atomic.Int64
-	f, err := c.OpenTunnel(TunnelConfig{
+	f, err := c.OpenTunnel(t.Context(), TunnelConfig{
 		Tunnel:  Tunnel{Kind: LocalForward, Listen: "127.0.0.1:0", Target: "127.0.0.1:9"},
 		OnError: func(error) { failures.Add(1) },
 		OnStopped: func(err error) {
@@ -633,7 +633,7 @@ func TestATunnelClosedOnPurposeSaysNothing(t *testing.T) {
 	c := connectTest(t, s)
 
 	var stopped atomic.Int64
-	f, err := c.OpenTunnel(TunnelConfig{
+	f, err := c.OpenTunnel(t.Context(), TunnelConfig{
 		Tunnel:    Tunnel{Kind: LocalForward, Listen: "127.0.0.1:0", Target: "127.0.0.1:9"},
 		OnStopped: func(error) { stopped.Add(1) },
 	})

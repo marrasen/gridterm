@@ -82,3 +82,11 @@ each group. A line goes when the work is in and reviewed.
   has no connection pane.
 - There is no help anywhere. Keys are on the file browser's bar and on
   the menus; nothing lists them all.
+- A file pane on a gridterm window has no bound. `windowFiles` in
+  `windows.go` calls `t.win.Files()` and then `sftp.NewClientPipe`, both
+  on the goroutine that draws and neither of them bounded. The same pane
+  on a machine goes through `Conn.Files`, which gives the whole open one
+  deadline.
+- `Shell.Resize` can park. It sends a `window-change` request, which
+  takes x/crypto's channel write lock, so it waits when the send buffer
+  to the machine has filled. Dragging a window edge is what calls it.

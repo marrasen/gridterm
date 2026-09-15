@@ -67,7 +67,7 @@ func far(t *testing.T) side {
 	}
 	t.Cleanup(func() { _ = conn.Close() })
 
-	files, err := conn.Files()
+	files, err := conn.Files(t.Context())
 	if err != nil {
 		t.Fatalf("start SFTP: %v", err)
 	}

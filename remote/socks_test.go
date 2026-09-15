@@ -85,7 +85,7 @@ func TestDynamicForwardReachesWhatItIsAsked(t *testing.T) {
 	c := connectTest(t, s)
 
 	m := meter.New()
-	f, err := c.OpenTunnel(TunnelConfig{
+	f, err := c.OpenTunnel(t.Context(), TunnelConfig{
 		Tunnel: Tunnel{Kind: DynamicForward, Listen: "127.0.0.1:0"},
 		Count:  counted{m},
 	})
@@ -128,7 +128,7 @@ func TestDynamicForwardSaysWhenItCannotConnect(t *testing.T) {
 	s := sshtest.New(t)
 	c := connectTest(t, s)
 
-	f, err := c.OpenTunnel(TunnelConfig{
+	f, err := c.OpenTunnel(t.Context(), TunnelConfig{
 		Tunnel: Tunnel{Kind: DynamicForward, Listen: "127.0.0.1:0"},
 	})
 	if err != nil {
@@ -160,7 +160,7 @@ func TestDynamicForwardRefusesWhatItDoesNotDo(t *testing.T) {
 	s := sshtest.New(t)
 	c := connectTest(t, s)
 
-	f, err := c.OpenTunnel(TunnelConfig{
+	f, err := c.OpenTunnel(t.Context(), TunnelConfig{
 		Tunnel: Tunnel{Kind: DynamicForward, Listen: "127.0.0.1:0"},
 	})
 	if err != nil {
@@ -204,7 +204,7 @@ func TestDynamicForwardTurnsDownAClientThatWantsAPassword(t *testing.T) {
 	var failures []error
 	var mu = make(chan struct{}, 1)
 	mu <- struct{}{}
-	f, err := c.OpenTunnel(TunnelConfig{
+	f, err := c.OpenTunnel(t.Context(), TunnelConfig{
 		Tunnel: Tunnel{Kind: DynamicForward, Listen: "127.0.0.1:0"},
 		OnError: func(err error) {
 			<-mu
@@ -282,7 +282,7 @@ func TestDynamicForwardRefusesAHostNameThatIsNotOne(t *testing.T) {
 
 	var mu sync.Mutex
 	var failures []error
-	f, err := c.OpenTunnel(TunnelConfig{
+	f, err := c.OpenTunnel(t.Context(), TunnelConfig{
 		Tunnel: Tunnel{Kind: DynamicForward, Listen: "127.0.0.1:0"},
 		OnError: func(err error) {
 			mu.Lock()
@@ -351,7 +351,7 @@ func TestATunnelCarriesOnlySoManyAtOnce(t *testing.T) {
 
 	var mu sync.Mutex
 	var full bool
-	f, err := c.OpenTunnel(TunnelConfig{
+	f, err := c.OpenTunnel(t.Context(), TunnelConfig{
 		// A dynamic tunnel waits to be told where to go, so every one of
 		// these stays where it is.
 		Tunnel: Tunnel{Kind: DynamicForward, Listen: "127.0.0.1:0"},

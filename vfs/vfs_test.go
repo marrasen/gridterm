@@ -61,7 +61,7 @@ func overSSH(t *testing.T) FS {
 	}
 	t.Cleanup(func() { _ = conn.Close() })
 
-	files, err := conn.Files()
+	files, err := conn.Files(t.Context())
 	if err != nil {
 		t.Fatalf("start SFTP: %v", err)
 	}
@@ -490,7 +490,7 @@ func TestSFTPSaysWhenTheMachineWillNotDoIt(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = conn.Close() })
 
-	if _, err := conn.Files(); err == nil {
+	if _, err := conn.Files(t.Context()); err == nil {
 		t.Fatal("SFTP started on a machine that refuses it")
 	}
 }
@@ -508,7 +508,7 @@ func TestClosingTheConnectionClosesTheFiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("connect: %v", err)
 	}
-	files, err := conn.Files()
+	files, err := conn.Files(t.Context())
 	if err != nil {
 		t.Fatalf("start SFTP: %v", err)
 	}

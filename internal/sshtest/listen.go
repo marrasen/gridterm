@@ -88,6 +88,13 @@ func (s *Server) forwardRequest(conn ssh.Conn, req *ssh.Request) {
 			_ = req.Reply(false, nil)
 			return
 		}
+		s.mu.Lock()
+		stall := s.stallingForward
+		s.mu.Unlock()
+		if stall {
+			// Taken and never answered, with the connection left up.
+			return
+		}
 		// Chosen and recorded under one lock. Letting go in between
 		// would hand the same port to two requests made at once.
 		s.mu.Lock()
@@ -114,6 +121,13 @@ func (s *Server) forwardRequest(conn ssh.Conn, req *ssh.Request) {
 		}
 		if err := ssh.Unmarshal(req.Payload, &ask); err != nil {
 			_ = req.Reply(false, nil)
+			return
+		}
+		s.mu.Lock()
+		stall := s.stallingCancel
+		s.mu.Unlock()
+		if stall {
+			// Taken and never answered, with the forward left in place.
 			return
 		}
 		s.mu.Lock()

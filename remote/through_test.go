@@ -25,7 +25,7 @@ func TestThroughReachesTheFarMachine(t *testing.T) {
 	t.Cleanup(func() { _ = c.Close() })
 
 	// It is a connection like any other: a shell runs on it.
-	sh, err := c.Shell(ShellConfig{Cols: 80, Rows: 24})
+	sh, err := c.Shell(t.Context(), ShellConfig{Cols: 80, Rows: 24})
 	if err != nil {
 		t.Fatalf("Shell on the far machine: %v", err)
 	}
@@ -62,7 +62,7 @@ func TestClosingTheBastionClosesWhatRidesOnIt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Through: %v", err)
 	}
-	sh, err := c.Shell(ShellConfig{Cols: 80, Rows: 24})
+	sh, err := c.Shell(t.Context(), ShellConfig{Cols: 80, Rows: 24})
 	if err != nil {
 		t.Fatalf("Shell: %v", err)
 	}
@@ -71,7 +71,7 @@ func TestClosingTheBastionClosesWhatRidesOnIt(t *testing.T) {
 	if err := bastion.Close(); err != nil {
 		t.Fatalf("close the bastion: %v", err)
 	}
-	if _, err := c.Shell(ShellConfig{Cols: 80, Rows: 24}); err == nil {
+	if _, err := c.Shell(t.Context(), ShellConfig{Cols: 80, Rows: 24}); err == nil {
 		t.Fatal("the far connection still opened a shell after its carrier closed")
 	}
 	if _, err := sh.Write([]byte("ping\n")); err == nil {
@@ -136,7 +136,7 @@ func TestThroughChainsAsFarAsItIsAsked(t *testing.T) {
 		t.Fatalf("the third hop: %v", err)
 	}
 
-	sh, err := c.Shell(ShellConfig{Cols: 80, Rows: 24})
+	sh, err := c.Shell(t.Context(), ShellConfig{Cols: 80, Rows: 24})
 	if err != nil {
 		t.Fatalf("Shell at the far end: %v", err)
 	}
@@ -148,7 +148,7 @@ func TestThroughChainsAsFarAsItIsAsked(t *testing.T) {
 	if err := a.Close(); err != nil {
 		t.Fatalf("close the first: %v", err)
 	}
-	if _, err := c.Shell(ShellConfig{Cols: 80, Rows: 24}); err == nil {
+	if _, err := c.Shell(t.Context(), ShellConfig{Cols: 80, Rows: 24}); err == nil {
 		t.Fatal("the far end survived the first machine closing")
 	}
 }

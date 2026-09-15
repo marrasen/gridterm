@@ -1,9 +1,11 @@
 package remote
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"sync"
 	"time"
 
@@ -33,23 +35,34 @@ type Files struct {
 //
 // One per call rather than one shared: each has its own channel, and two
 // browser panes on one machine should not wait on each other's reads.
-func (c *Conn) Files() (*Files, error) {
+//
+// Starting it is bounded by channelTimeout, all three round trips
+// together, because it runs on the goroutine that draws. A caller that
+// cancels ctx ends it sooner. Neither touches a session that was
+// started.
+func (c *Conn) Files(ctx context.Context) (*Files, error) {
 	// Asked before a channel is opened, so a closed connection says so
 	// rather than reporting whatever the dead transport failed with.
 	if c.isClosing() {
 		return nil, fmt.Errorf("remote: %s: %w", c, ErrClosed)
 	}
-	sess, err := c.client.NewSession()
+	// One deadline for the whole open. The session, the subsystem and the
+	// SFTP greeting are three round trips, and a deadline each would let a
+	// machine that stalls on every one of them hold the window for three
+	// times as long.
+	ctx, cancel := context.WithTimeout(ctx, channelTimeout)
+	defer cancel()
+
+	sess, err := openWithin(ctx, "open a session on "+c.String(), c.client.NewSession)
 	if err != nil {
-		return nil, fmt.Errorf("remote: open a session on %s: %w", c, err)
+		return nil, err
 	}
 	// The session is ours to close from here on, including on every
 	// failure below: sftp's own NewClient leaves one behind when the
 	// machine turns the subsystem down.
-	client, err := startSFTP(sess)
+	client, err := startSFTP(ctx, sess, c.String())
 	if err != nil {
-		return nil, fmt.Errorf("remote: start SFTP on %s: %w",
-			c, errors.Join(err, closeSession(sess)))
+		return nil, errors.Join(err, closeSession(sess))
 	}
 
 	f := &Files{conn: c, sess: sess, client: client}
@@ -59,20 +72,25 @@ func (c *Conn) Files() (*Files, error) {
 	return f, nil
 }
 
-// startSFTP asks for the subsystem and speaks SFTP over the session.
-func startSFTP(sess *ssh.Session) (*sftp.Client, error) {
+// startSFTP asks for the subsystem and speaks SFTP over the session,
+// both within what is left of the caller's deadline.
+func startSFTP(ctx context.Context, sess *ssh.Session, host string) (*sftp.Client, error) {
 	out, err := sess.StdoutPipe()
 	if err != nil {
-		return nil, fmt.Errorf("open the read pipe: %w", err)
+		return nil, fmt.Errorf("remote: open the read pipe from %s: %w", host, err)
 	}
 	in, err := sess.StdinPipe()
 	if err != nil {
-		return nil, fmt.Errorf("open the write pipe: %w", err)
+		return nil, fmt.Errorf("remote: open the write pipe to %s: %w", host, err)
 	}
-	if err := sess.RequestSubsystem("sftp"); err != nil {
-		return nil, fmt.Errorf("ask for the sftp subsystem: %w", err)
+	if err := doWithin(ctx, "ask "+host+" for the sftp subsystem", func() error {
+		return sess.RequestSubsystem("sftp")
+	}); err != nil {
+		return nil, err
 	}
-	return sftp.NewClientPipe(out, in)
+	return openWithin(ctx, "start SFTP on "+host, func() (*sftp.Client, error) {
+		return sftp.NewClientPipe(out, in)
+	})
 }
 
 // Client is the SFTP client itself, for whatever works on files.
@@ -130,7 +148,7 @@ func (f *Files) closeAll() error {
 // was already shut.
 func closeSession(sess *ssh.Session) error {
 	err := sess.Close()
-	if err == nil || errors.Is(err, io.EOF) {
+	if err == nil || errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) {
 		return nil
 	}
 	return err

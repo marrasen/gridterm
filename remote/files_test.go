@@ -14,7 +14,7 @@ func TestFilesRideOnTheConnection(t *testing.T) {
 	s := sshtest.New(t)
 	c := connectTest(t, s)
 
-	f, err := c.Files()
+	f, err := c.Files(t.Context())
 	if err != nil {
 		t.Fatalf("Files: %v", err)
 	}
@@ -42,7 +42,7 @@ func TestClosingTheConnectionClosesItsFiles(t *testing.T) {
 	s := sshtest.New(t)
 	c := connectTest(t, s)
 
-	f, err := c.Files()
+	f, err := c.Files(t.Context())
 	if err != nil {
 		t.Fatalf("Files: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestRefusedSFTPLeavesNoSessionBehind(t *testing.T) {
 
 	const tries = 8
 	for i := 0; i < tries; i++ {
-		if f, err := c.Files(); err == nil {
+		if f, err := c.Files(t.Context()); err == nil {
 			_ = f.Close()
 			t.Fatal("SFTP started on a machine that refuses it")
 		}
@@ -90,7 +90,7 @@ func TestRefusedSFTPLeavesNoSessionBehind(t *testing.T) {
 	}
 	// A shell still opens, which is what the machine would have run out
 	// of room for.
-	sh, err := c.Shell(ShellConfig{Cols: 80, Rows: 24})
+	sh, err := c.Shell(t.Context(), ShellConfig{Cols: 80, Rows: 24})
 	if err != nil {
 		t.Fatalf("a shell after %d refused SFTP starts: %v", tries, err)
 	}
@@ -106,7 +106,7 @@ func TestClosingFilesDoesNotWaitForeverOnADeadMachine(t *testing.T) {
 	s := sshtest.New(t)
 	c := connectTest(t, s)
 
-	f, err := c.Files()
+	f, err := c.Files(t.Context())
 	if err != nil {
 		t.Fatalf("Files: %v", err)
 	}
@@ -146,7 +146,7 @@ func TestFilesOnAClosedConnectionIsRefused(t *testing.T) {
 	if err := c.Close(); err != nil {
 		t.Fatalf("close: %v", err)
 	}
-	if _, err := c.Files(); !errors.Is(err, ErrClosed) {
+	if _, err := c.Files(t.Context()); !errors.Is(err, ErrClosed) {
 		t.Fatalf("error = %v, want ErrClosed", err)
 	}
 }

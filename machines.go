@@ -744,7 +744,7 @@ func (a *app) becomeShellPane(name string, command []string, pane *term.Terminal
 		return
 	}
 	size := pane.Size()
-	sh, err := m.conn.Shell(remote.ShellConfig{
+	sh, err := m.conn.Shell(a.ctx, remote.ShellConfig{
 		Command: command,
 		Cols:    size.Cols,
 		Rows:    size.Rows,
@@ -825,7 +825,7 @@ func (a *app) startOn(name string, command []string, at *spot) error {
 	if m == nil {
 		return fmt.Errorf("nothing is connected to %s", name)
 	}
-	sh, err := m.conn.Shell(remote.ShellConfig{
+	sh, err := m.conn.Shell(a.ctx, remote.ShellConfig{
 		Command: command,
 		Cols:    a.lastSize[0],
 		Rows:    a.lastSize[1],

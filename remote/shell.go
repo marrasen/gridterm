@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"strings"
 	"sync"
 	"time"
@@ -34,6 +35,24 @@ func isGridterm(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "session@gridterm")
 }
 
+// notAMachine says the far end is a gridterm window saved as a machine,
+// and what to change about it.
+//
+// Said plainly, because what the user has to change is one field in the
+// dialog and the refusal from the other end does not say which. The
+// refusal goes in unwrapped, because the sentence around it names the
+// machine a second time.
+func notAMachine(addr string, refused error) error {
+	inner := errors.Unwrap(refused)
+	if inner == nil {
+		inner = refused
+	}
+	return fmt.Errorf(
+		"remote: %s is a gridterm window, not a machine to log in to."+
+			" Set its Kind to %q and take it over instead: %w",
+		addr, GridtermWindowKind, inner)
+}
+
 // ShellConfig describes one shell or command to run on a connection.
 type ShellConfig struct {
 	// Command is what to run. Empty asks for the user's login shell.
@@ -57,11 +76,21 @@ type Shell struct {
 	conn *Conn
 	sess *ssh.Session
 
-	// writeMu keeps Write and Close off each other. Closing the session
-	// stdin writes the channel's sentEOF flag, which Write reads, and
-	// the window can close with a keystroke still in flight.
+	// writeMu guards the fields below, never the write itself.
 	writeMu sync.Mutex
 	stdin   io.WriteCloser
+
+	// writing counts the writes on the channel right now, and hungUp
+	// records that Close has been through. Closing the session stdin
+	// writes the channel's sentEOF flag, which Write reads, so the two
+	// must not overlap.
+	writing int
+	hungUp  bool
+
+	// quiet is closed by the write that brings writing to zero once
+	// hungUp is set, so Close can tell a keystroke that is about to land
+	// from a write wedged on a program that stopped reading.
+	quiet chan struct{}
 
 	// out is fed by the session's stdout and stderr. It is unbuffered,
 	// which is the flow control: the remote stops sending when the
@@ -82,34 +111,44 @@ type Shell struct {
 
 // Shell starts a program on the connection and returns it as a byte
 // stream. Several may run on one connection at a time.
-func (c *Conn) Shell(cfg ShellConfig) (*Shell, error) {
+//
+// Opening it is bounded by channelTimeout, all three round trips
+// together, because it runs on the goroutine that draws. A caller that
+// cancels ctx ends it sooner. Neither touches a shell that was opened:
+// the program then runs until it exits or the shell is closed.
+func (c *Conn) Shell(ctx context.Context, cfg ShellConfig) (*Shell, error) {
 	// Asked before a channel is opened, so a closed connection says so
 	// rather than reporting whatever the dead transport failed with.
 	if c.isClosing() {
 		return nil, fmt.Errorf("remote: %s: %w", c, ErrClosed)
 	}
-	sess, err := c.client.NewSession()
+	// One deadline for the whole open. The session, the pty and the
+	// program are three round trips, and a deadline each would let a
+	// machine that stalls on every one of them hold the window for three
+	// times as long.
+	ctx, cancel := context.WithTimeout(ctx, channelTimeout)
+	defer cancel()
+
+	sess, err := openWithin(ctx, "open a session on "+c.String(), c.client.NewSession)
 	if err != nil {
 		if isGridterm(err) {
-			// The far end is gridterm serving, not a machine with a
-			// shell. Said plainly, because what the user has to change
-			// is one field in the dialog and the refusal from the other
-			// end does not say which.
-			return nil, fmt.Errorf(
-				"remote: %s is a gridterm window, not a machine to log in to."+
-					" Set its Kind to %q and take it over instead: %w",
-				c.addr, GridtermWindowKind, err)
+			return nil, notAMachine(c.addr, err)
 		}
-		return nil, fmt.Errorf("remote: open a session on %s: %w", c, err)
+		return nil, err
 	}
 
 	s := &Shell{conn: c, sess: sess, done: make(chan struct{})}
 	// Started before it is registered: until the connection knows about
 	// it, no other goroutine can reach it, so nothing can read the
 	// fields start is still filling in.
-	if err := s.start(cfg); err != nil {
-		_ = s.closeRider()
-		return nil, err
+	if err := s.start(ctx, cfg); err != nil {
+		// A pty or a program that was never answered leaves the session
+		// open on the machine, and whatever the abandoned request still
+		// writes needs somewhere to go.
+		if s.outW != nil {
+			_ = s.outW.CloseWithError(io.EOF)
+		}
+		return nil, errors.Join(err, closeSession(sess))
 	}
 	if err := c.register(s); err != nil {
 		_ = s.closeRider()
@@ -118,8 +157,8 @@ func (c *Conn) Shell(cfg ShellConfig) (*Shell, error) {
 	return s, nil
 }
 
-// start requests the pty and runs the program.
-func (s *Shell) start(cfg ShellConfig) error {
+// start requests the pty and runs the program, both within ctx.
+func (s *Shell) start(ctx context.Context, cfg ShellConfig) error {
 	s.out, s.outW = io.Pipe()
 	// stdout and stderr both land in one stream, as they would on a
 	// local pty. With a pty the remote merges them itself; wiring both
@@ -139,21 +178,22 @@ func (s *Shell) start(cfg ShellConfig) error {
 	cols, rows := max(cfg.Cols, 1), max(cfg.Rows, 1)
 	// Ask for the pty before starting anything, so the remote shell sees
 	// the right size in its very first prompt.
-	if err := s.sess.RequestPty(term, rows, cols, ssh.TerminalModes{
-		ssh.ECHO:          1,
-		ssh.TTY_OP_ISPEED: 38400,
-		ssh.TTY_OP_OSPEED: 38400,
+	if err := doWithin(ctx, "ask "+s.conn.String()+" for a pty", func() error {
+		return s.sess.RequestPty(term, rows, cols, ssh.TerminalModes{
+			ssh.ECHO:          1,
+			ssh.TTY_OP_ISPEED: 38400,
+			ssh.TTY_OP_OSPEED: 38400,
+		})
 	}); err != nil {
-		return fmt.Errorf("remote: request a pty: %w", err)
+		return err
 	}
 
-	if len(cfg.Command) == 0 {
-		err = s.sess.Shell()
-	} else {
-		err = s.sess.Start(shellQuote(cfg.Command))
+	run := s.sess.Shell
+	if len(cfg.Command) > 0 {
+		run = func() error { return s.sess.Start(shellQuote(cfg.Command)) }
 	}
-	if err != nil {
-		return fmt.Errorf("remote: start the remote program: %w", err)
+	if err := doWithin(ctx, "start the program on "+s.conn.String(), run); err != nil {
+		return err
 	}
 
 	s.running = true
@@ -176,14 +216,32 @@ func (s *Shell) reap() {
 
 func (s *Shell) Read(b []byte) (int, error) { return s.out.Read(b) }
 
-// Write sends input to the remote program.
+// Write sends input to the remote program. One writer at a time; the
+// caller serialises.
+//
+// It blocks until the far end has room, for however long that takes: a
+// program that has stopped reading its input is not a failure.
 func (s *Shell) Write(b []byte) (int, error) {
 	s.writeMu.Lock()
-	defer s.writeMu.Unlock()
-	if s.stdin == nil {
+	if s.stdin == nil || s.hungUp {
+		s.writeMu.Unlock()
 		return 0, io.ErrClosedPipe
 	}
-	return s.stdin.Write(b)
+	in := s.stdin
+	s.writing++
+	s.writeMu.Unlock()
+
+	n, err := in.Write(b)
+
+	s.writeMu.Lock()
+	s.writing--
+	if s.writing == 0 && s.quiet != nil {
+		// Close is waiting to hear that the channel is idle.
+		close(s.quiet)
+		s.quiet = nil
+	}
+	s.writeMu.Unlock()
+	return n, err
 }
 
 // Resize reports a new window size in character cells.
@@ -218,18 +276,49 @@ func (s *Shell) closeRider() error {
 }
 
 func (s *Shell) closeAll() error {
-	// Closing stdin is the polite hangup: a shell reading its input sees
-	// end-of-file and exits, running its own exit hooks on the way.
+	// The pointer and the state, not the write, because this runs on the
+	// goroutine that draws.
 	s.writeMu.Lock()
-	if s.stdin != nil {
-		_ = s.stdin.Close()
+	in, parked := s.stdin, s.writing > 0
+	s.hungUp = true
+	if parked {
+		s.quiet = make(chan struct{})
 	}
+	quiet := s.quiet
 	s.writeMu.Unlock()
 
+	// A keystroke on the wire at this moment is not a wedged program, so
+	// give it up to drainGrace to land rather than deciding from the
+	// snapshot above. No Write can start once hungUp is set, so when
+	// this comes back the channel is idle and stays idle.
+	if parked {
+		select {
+		case <-quiet:
+			parked = false
+		case <-time.After(drainGrace):
+		}
+	}
+
+	// Closing stdin is the polite hangup: a shell reading its input sees
+	// end-of-file and exits, running its own exit hooks on the way. It is
+	// skipped while a write is still parked, because closing stdin
+	// underneath a write is the race writeMu exists to prevent. Closing
+	// the session below hangs the program up anyway, without the
+	// courtesy.
+	var errs []error
+	saidGoodbye := false
+	if in != nil && !parked {
+		if err := in.Close(); err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, net.ErrClosed) {
+			errs = append(errs, err)
+		}
+		saidGoodbye = true
+	}
+
 	// Give the remote a moment to finish on its own, so output already
-	// sent is not thrown away. Only when the program was started:
-	// nothing else ever closes done.
-	if s.running {
+	// sent is not thrown away. Only when the program was started and
+	// heard the hangup: nothing else ever closes done, and a program
+	// that was never told to finish never will.
+	if s.running && saidGoodbye {
 		select {
 		case <-s.done:
 		case <-time.After(drainGrace):
@@ -239,10 +328,21 @@ func (s *Shell) closeAll() error {
 		_ = s.outW.CloseWithError(io.EOF)
 	}
 
-	if err := s.sess.Close(); err != nil && !errors.Is(err, io.EOF) {
-		return err
+	// On a goroutine, because closing a session takes the channel's write
+	// lock and a write holds that while the transport is busy with a key
+	// exchange or a send buffer that has filled.
+	shut := make(chan error, 1)
+	go func() { shut <- s.sess.Close() }()
+	select {
+	case err := <-shut:
+		if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, net.ErrClosed) {
+			errs = append(errs, err)
+		}
+	case <-time.After(drainGrace):
+		errs = append(errs, fmt.Errorf("remote: close the session on %s: %w within %s",
+			s.conn, ErrNoAnswer, drainGrace))
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 // StartShell opens a connection and runs one shell on it.
@@ -255,7 +355,7 @@ func StartShell(ctx context.Context, cfg Config, sh ShellConfig) (*OwnedShell, e
 	if err != nil {
 		return nil, err
 	}
-	s, err := conn.Shell(sh)
+	s, err := conn.Shell(ctx, sh)
 	if err != nil {
 		_ = conn.Close()
 		return nil, err

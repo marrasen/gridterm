@@ -3,6 +3,7 @@ package remote
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"strings"
@@ -489,5 +490,412 @@ func TestASessionOnAGridtermWindowSaysWhatItIs(t *testing.T) {
 	}
 	if isGridterm(nil) {
 		t.Error("it calls no failure a gridterm window")
+	}
+
+	// And the message reads once. The refusal arrives already wrapped in
+	// "open a session on <machine>", and embedding that whole sentence
+	// gave the user the same machine twice in one line.
+	said := notAMachine("box:22", fmt.Errorf("remote: open a session on tester@box:22: %w", refusal)).Error()
+	if n := strings.Count(said, "box:22"); n != 1 {
+		t.Errorf("the message names the machine %d times, want once:\n%s", n, said)
+	}
+	if strings.Contains(said, "open a session on") {
+		t.Errorf("the message reports the open a second time:\n%s", said)
+	}
+	if !strings.Contains(said, "session@gridterm") {
+		t.Errorf("the message drops what the far end actually said:\n%s", said)
+	}
+}
+
+// Closing a pane whose write is parked comes straight back.
+//
+// A write to the session channel blocks on SSH flow control as soon as
+// the far program stops reading its input, and Close runs on the
+// goroutine that draws. A lock shared between the two is how the whole
+// window stops.
+func TestClosingAShellWhoseWriteIsParkedComesBack(t *testing.T) {
+	s := sshtest.New(t)
+	s.StopReadingInput()
+	sh := startTest(t, s, nil)
+	readUntil(t, sh, "READY", 5*time.Second)
+
+	// More than the channel's flow-control window, into a program that
+	// reads none of it, so this write never finishes on its own.
+	wrote := make(chan struct{})
+	go func() {
+		defer close(wrote)
+		_, _ = sh.Write(make([]byte, 4<<20))
+	}()
+	// Long enough to be parked inside the write rather than still on its
+	// way into it.
+	time.Sleep(200 * time.Millisecond)
+	select {
+	case <-wrote:
+		t.Fatal("the write finished, so nothing was parked and this proves nothing")
+	default:
+	}
+
+	closed := make(chan error, 1)
+	go func() { closed <- sh.Close() }()
+	select {
+	case <-closed:
+	case <-time.After(time.Second):
+		t.Fatal("closing a shell whose write is parked never came back")
+	}
+
+	// And the parked write lets go once the channel has gone, or the
+	// goroutine carrying a keystroke would be held for the life of the
+	// program.
+	select {
+	case <-wrote:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the parked write never came back after the shell was closed")
+	}
+}
+
+// A machine that takes a request to open a session and never answers is
+// given up on. Opening a terminal runs on the goroutine that draws, so
+// waiting for that machine is the whole window.
+func TestOpeningAShellOnASilentMachineGivesUp(t *testing.T) {
+	was := channelTimeout
+	channelTimeout = 300 * time.Millisecond
+	t.Cleanup(func() { channelTimeout = was })
+
+	s := sshtest.New(t)
+	c := connectTest(t, s)
+	// Connected first, so the machine is reachable and answering right
+	// up to the moment the session is asked for.
+	s.StallChannels()
+
+	done := make(chan error, 1)
+	go func() {
+		sh, err := c.Shell(t.Context(), ShellConfig{Cols: 80, Rows: 24})
+		if sh != nil {
+			_ = sh.Close()
+		}
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("a shell started on a machine that never answered")
+		}
+		if !errors.Is(err, ErrNoAnswer) {
+			t.Fatalf("Shell = %v, want it to say the machine did not answer", err)
+		}
+		// Named, because the user has to decide which machine to look at.
+		if !strings.Contains(err.Error(), s.Addr()) {
+			t.Fatalf("Shell = %v, want it to name %s", err, s.Addr())
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("opening a shell on a silent machine never came back")
+	}
+}
+
+// The same for a file pane: the session it needs is opened the same way.
+func TestOpeningFilesOnASilentMachineGivesUp(t *testing.T) {
+	was := channelTimeout
+	channelTimeout = 300 * time.Millisecond
+	t.Cleanup(func() { channelTimeout = was })
+
+	s := sshtest.New(t)
+	c := connectTest(t, s)
+	s.StallChannels()
+
+	done := make(chan error, 1)
+	go func() {
+		f, err := c.Files(t.Context())
+		if f != nil {
+			_ = f.Close()
+		}
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("a file session started on a machine that never answered")
+		}
+		if !errors.Is(err, ErrNoAnswer) {
+			t.Fatalf("Files = %v, want it to say the machine did not answer", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("opening a file session on a silent machine never came back")
+	}
+}
+
+// A machine that opens the channel and then says nothing about the
+// subsystem is given up on too. It is one round trip further on, and
+// unbounded in the same way.
+func TestAskingForSFTPOnASilentMachineGivesUp(t *testing.T) {
+	was := channelTimeout
+	channelTimeout = 300 * time.Millisecond
+	t.Cleanup(func() { channelTimeout = was })
+
+	s := sshtest.New(t)
+	s.StallSubsystems()
+	c := connectTest(t, s)
+
+	done := make(chan error, 1)
+	go func() {
+		f, err := c.Files(t.Context())
+		if f != nil {
+			_ = f.Close()
+		}
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("SFTP started on a machine that never answered the request")
+		}
+		if !strings.Contains(err.Error(), "sftp subsystem") || !errors.Is(err, ErrNoAnswer) {
+			t.Fatalf("Files = %v, want it to name the subsystem and say nothing came back", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("asking for SFTP on a silent machine never came back")
+	}
+	// Nothing is left open on the machine: a session held for every
+	// attempt would use up the ten a real sshd allows.
+	deadline := time.Now().Add(5 * time.Second)
+	for s.Sessions() > 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if got := s.Sessions(); got != 0 {
+		t.Fatalf("the machine still has %d sessions open", got)
+	}
+}
+
+// Giving up on a machine that is still opening a session is the user
+// closing the dialog, and it must not wait for the machine either.
+func TestOpeningAShellCanBeCancelled(t *testing.T) {
+	s := sshtest.New(t)
+	c := connectTest(t, s)
+	s.StallChannels()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		sh, err := c.Shell(ctx, ShellConfig{Cols: 80, Rows: 24})
+		if sh != nil {
+			_ = sh.Close()
+		}
+		done <- err
+	}()
+	time.Sleep(100 * time.Millisecond)
+	cancel()
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("Shell = %v, want it to say it was cancelled", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("giving up on opening a shell did not come back")
+	}
+}
+
+// A machine that opens the session and then never grants the pty is
+// given up on.
+//
+// Opening a shell is three round trips, not one. Bounding only the first
+// left the other two on the goroutine that draws, so a machine that
+// answered the channel and stopped there still took the window.
+func TestOpeningAShellWhoseMachineNeverGrantsAPtyGivesUp(t *testing.T) {
+	was := channelTimeout
+	channelTimeout = 300 * time.Millisecond
+	t.Cleanup(func() { channelTimeout = was })
+
+	s := sshtest.New(t)
+	s.StallPty()
+	c := connectTest(t, s)
+
+	done := make(chan error, 1)
+	go func() {
+		sh, err := c.Shell(t.Context(), ShellConfig{Cols: 80, Rows: 24})
+		if sh != nil {
+			_ = sh.Close()
+		}
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("a shell started on a machine that never granted a pty")
+		}
+		if !errors.Is(err, ErrNoAnswer) {
+			t.Fatalf("Shell = %v, want it to say the machine did not answer", err)
+		}
+		if !strings.Contains(err.Error(), "pty") {
+			t.Fatalf("Shell = %v, want it to name the pty", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("opening a shell on a machine that never granted a pty never came back")
+	}
+
+	// The session it did open is closed: one left behind for every
+	// attempt would use up the ten a real sshd allows.
+	deadline := time.Now().Add(5 * time.Second)
+	for s.Sessions() > 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if got := s.Sessions(); got != 0 {
+		t.Fatalf("the machine still has %d sessions open", got)
+	}
+}
+
+// A machine that takes a request to listen on a port and says nothing is
+// given up on. Opening a tunnel runs on the goroutine that draws.
+func TestOpeningARemoteTunnelOnASilentMachineGivesUp(t *testing.T) {
+	was := channelTimeout
+	channelTimeout = 300 * time.Millisecond
+	t.Cleanup(func() { channelTimeout = was })
+
+	s := sshtest.New(t)
+	c := connectTest(t, s)
+	s.StallForwards()
+
+	done := make(chan error, 1)
+	go func() {
+		f, err := c.OpenTunnel(t.Context(), TunnelConfig{
+			Tunnel: Tunnel{Kind: RemoteForward, Listen: "127.0.0.1:9100", Target: "127.0.0.1:9101"},
+		})
+		if f != nil {
+			_ = f.Close()
+		}
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("a tunnel opened on a machine that never answered")
+		}
+		if !errors.Is(err, ErrNoAnswer) {
+			t.Fatalf("OpenTunnel = %v, want it to say the machine did not answer", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("opening a remote tunnel on a silent machine never came back")
+	}
+}
+
+// Closing a remote tunnel on a machine that stops answering comes back.
+//
+// The listener belongs to the far machine, so closing it asks that
+// machine to stop listening and waits for the reply. Unbounded, that
+// wait is the whole window: closing a tunnel runs on the goroutine that
+// draws, and so does closing the connection carrying it.
+func TestClosingARemoteTunnelOnASilentMachineComesBack(t *testing.T) {
+	was := channelTimeout
+	channelTimeout = 300 * time.Millisecond
+	t.Cleanup(func() { channelTimeout = was })
+
+	s := sshtest.New(t)
+	c := connectTest(t, s)
+
+	f, err := c.OpenTunnel(t.Context(), TunnelConfig{
+		Tunnel: Tunnel{Kind: RemoteForward, Listen: "127.0.0.1:9200", Target: "127.0.0.1:9201"},
+	})
+	if err != nil {
+		t.Fatalf("OpenTunnel: %v", err)
+	}
+	// Opened first, so the machine answered right up to the moment the
+	// tunnel was closed.
+	s.StallCancelForward()
+
+	done := make(chan error, 1)
+	go func() { done <- f.Close() }()
+	select {
+	case err := <-done:
+		if !errors.Is(err, ErrNoAnswer) {
+			t.Fatalf("Close = %v, want it to say the machine did not answer", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("closing a remote tunnel on a silent machine never came back")
+	}
+}
+
+// heldWriter is a stdin that holds one write until the test lets it
+// through, so a test can say exactly when a write is in flight.
+type heldWriter struct {
+	io.WriteCloser
+	began  chan struct{}
+	let    chan struct{}
+	shut   chan struct{}
+	once   sync.Once
+	shutOn sync.Once
+}
+
+func (h *heldWriter) Write(p []byte) (int, error) {
+	h.once.Do(func() { close(h.began) })
+	<-h.let
+	return h.WriteCloser.Write(p)
+}
+
+func (h *heldWriter) Close() error {
+	h.shutOn.Do(func() { close(h.shut) })
+	return h.WriteCloser.Close()
+}
+
+// A write that is in flight when the pane is closed, and that finishes,
+// still gets the polite hangup.
+//
+// Deciding from one reading of the counter treated an ordinary keystroke
+// on the wire as a wedged program: no end-of-file, no drain, and output
+// already sent thrown away.
+func TestClosingAShellWhoseWriteLandsStillSaysGoodbye(t *testing.T) {
+	s := sshtest.New(t)
+	sh := startTest(t, s, nil)
+	readUntil(t, sh, "READY", 5*time.Second)
+	// Kept read, the way a pane does. A session whose output nobody
+	// takes cannot finish: the copy into the pipe blocks and Wait never
+	// comes back.
+	go func() { _, _ = io.Copy(io.Discard, sh) }()
+
+	held := &heldWriter{
+		began: make(chan struct{}),
+		let:   make(chan struct{}),
+		shut:  make(chan struct{}),
+	}
+	sh.Shell.writeMu.Lock()
+	held.WriteCloser = sh.Shell.stdin
+	sh.Shell.stdin = held
+	sh.Shell.writeMu.Unlock()
+
+	wrote := make(chan struct{})
+	go func() {
+		defer close(wrote)
+		_, _ = sh.Write([]byte("hello\n"))
+	}()
+	// In flight: past the counter and inside the write itself.
+	<-held.began
+
+	closed := make(chan error, 1)
+	go func() { closed <- sh.Shell.Close() }()
+
+	// Well inside the grace period, which is what tells a keystroke about
+	// to land from a program that has stopped reading.
+	time.Sleep(20 * time.Millisecond)
+	close(held.let)
+
+	select {
+	case err := <-closed:
+		if err != nil {
+			t.Fatalf("Close: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("closing the shell never came back")
+	}
+	<-wrote
+
+	select {
+	case <-held.shut:
+	default:
+		t.Fatal("stdin was never closed, so the remote shell got no end-of-file")
+	}
+	// And the drain happened: the remote saw the end-of-file, finished,
+	// and this waited for it rather than cutting the channel.
+	select {
+	case <-sh.Shell.done:
+	default:
+		t.Error("Close came back before the remote had finished")
 	}
 }

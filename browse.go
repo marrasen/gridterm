@@ -117,7 +117,7 @@ func (a *app) filesystem(host string) (vfs.FS, error) {
 	if m == nil {
 		return nil, fmt.Errorf("nothing is connected to %s", host)
 	}
-	f, err := m.conn.Files()
+	f, err := m.conn.Files(a.ctx)
 	if err != nil {
 		return nil, err
 	}

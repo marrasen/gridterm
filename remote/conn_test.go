@@ -94,7 +94,7 @@ func TestConnCarriesSeveralShells(t *testing.T) {
 	s := sshtest.New(t)
 	c := connectTest(t, s)
 
-	first, err := c.Shell(ShellConfig{Cols: 80, Rows: 24})
+	first, err := c.Shell(t.Context(), ShellConfig{Cols: 80, Rows: 24})
 	if err != nil {
 		t.Fatalf("first Shell: %v", err)
 	}
@@ -102,7 +102,7 @@ func TestConnCarriesSeveralShells(t *testing.T) {
 		t.Fatalf("first shell said %q", strings.TrimSpace(got))
 	}
 
-	second, err := c.Shell(ShellConfig{Cols: 100, Rows: 40})
+	second, err := c.Shell(t.Context(), ShellConfig{Cols: 100, Rows: 40})
 	if err != nil {
 		t.Fatalf("second Shell: %v", err)
 	}
@@ -185,7 +185,7 @@ func TestConnCloseClosesItsShells(t *testing.T) {
 	s := sshtest.New(t)
 	c := connectTest(t, s)
 
-	sh, err := c.Shell(ShellConfig{Cols: 80, Rows: 24})
+	sh, err := c.Shell(t.Context(), ShellConfig{Cols: 80, Rows: 24})
 	if err != nil {
 		t.Fatalf("Shell: %v", err)
 	}
@@ -208,7 +208,7 @@ func TestConnShellAfterCloseIsRefused(t *testing.T) {
 	if err := c.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-	_, err := c.Shell(ShellConfig{Cols: 80, Rows: 24})
+	_, err := c.Shell(t.Context(), ShellConfig{Cols: 80, Rows: 24})
 	if err == nil {
 		t.Fatal("Shell on a closed connection succeeded")
 	}
@@ -223,7 +223,7 @@ func TestConnForgetsAClosedShell(t *testing.T) {
 	s := sshtest.New(t)
 	c := connectTest(t, s)
 
-	sh, err := c.Shell(ShellConfig{Cols: 80, Rows: 24})
+	sh, err := c.Shell(t.Context(), ShellConfig{Cols: 80, Rows: 24})
 	if err != nil {
 		t.Fatalf("Shell: %v", err)
 	}
@@ -242,7 +242,7 @@ func TestConnForgetsAShellWhoseRemoteExited(t *testing.T) {
 	s := sshtest.New(t)
 	c := connectTest(t, s)
 
-	sh, err := c.Shell(ShellConfig{Cols: 80, Rows: 24})
+	sh, err := c.Shell(t.Context(), ShellConfig{Cols: 80, Rows: 24})
 	if err != nil {
 		t.Fatalf("Shell: %v", err)
 	}
@@ -266,7 +266,7 @@ func TestConnForgetsAShellWhoseRemoteExited(t *testing.T) {
 func TestConnCloseIsIdempotentAndConcurrent(t *testing.T) {
 	s := sshtest.New(t)
 	c := connectTest(t, s)
-	if _, err := c.Shell(ShellConfig{Cols: 80, Rows: 24}); err != nil {
+	if _, err := c.Shell(t.Context(), ShellConfig{Cols: 80, Rows: 24}); err != nil {
 		t.Fatalf("Shell: %v", err)
 	}
 	if err := c.Close(); err != nil {
@@ -324,7 +324,7 @@ func TestConnShellRacingCloseIsSafe(t *testing.T) {
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		sh, err := c.Shell(ShellConfig{Cols: 80, Rows: 24})
+		sh, err := c.Shell(t.Context(), ShellConfig{Cols: 80, Rows: 24})
 		if err == nil {
 			_ = sh.Close()
 		}
@@ -396,7 +396,7 @@ func TestStartShellClosesItsConnection(t *testing.T) {
 	}
 	// Asking the connection for another shell is the observable test of
 	// whether it went away.
-	if _, err := sess.Conn().Shell(ShellConfig{Cols: 80, Rows: 24}); !errors.Is(err, ErrClosed) {
+	if _, err := sess.Conn().Shell(t.Context(), ShellConfig{Cols: 80, Rows: 24}); !errors.Is(err, ErrClosed) {
 		t.Fatalf("the connection outlived the shell it carried: %v", err)
 	}
 	// Twice, because the window can reach Close by more than one path.

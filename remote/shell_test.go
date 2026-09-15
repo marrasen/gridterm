@@ -262,7 +262,7 @@ func sameErr(a, b error) bool {
 func TestShellCloseIsIdempotentAndConcurrent(t *testing.T) {
 	s := sshtest.New(t)
 	c := connectTest(t, s)
-	sh, err := c.Shell(ShellConfig{Cols: 80, Rows: 24})
+	sh, err := c.Shell(t.Context(), ShellConfig{Cols: 80, Rows: 24})
 	if err != nil {
 		t.Fatalf("Shell: %v", err)
 	}

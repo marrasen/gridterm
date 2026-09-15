@@ -247,7 +247,12 @@ type TunnelConfig struct {
 //
 // The listener is opened before this returns, so a port already in use
 // is reported here rather than from a goroutine nobody is watching.
-func (c *Conn) OpenTunnel(cfg TunnelConfig) (*Forwarder, error) {
+//
+// Asking the far machine to listen is the only part that waits for it,
+// and is bounded by channelTimeout because it runs on the goroutine that
+// draws. A caller that cancels ctx ends it sooner. Neither touches a
+// tunnel that was opened.
+func (c *Conn) OpenTunnel(ctx context.Context, cfg TunnelConfig) (*Forwarder, error) {
 	if err := cfg.Tunnel.Validate(); err != nil {
 		return nil, fmt.Errorf("remote: %w", err)
 	}
@@ -272,13 +277,20 @@ func (c *Conn) OpenTunnel(cfg TunnelConfig) (*Forwarder, error) {
 	switch cfg.Tunnel.Kind {
 	case LocalForward, DynamicForward:
 		ln, err = net.Listen("tcp", addr)
+		if err != nil {
+			return nil, fmt.Errorf("remote: listen on %s for %s: %w", addr, cfg.Tunnel, err)
+		}
 	case RemoteForward:
-		// Asked of the far machine, which answers with the port it
-		// bound. A machine that refuses forwarding says so here.
-		ln, err = c.client.Listen("tcp", addr)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("remote: listen on %s for %s: %w", addr, cfg.Tunnel, err)
+		// Asked of the far machine, which answers with the port it bound,
+		// and given up on if it does not.
+		ctx, cancel := context.WithTimeout(ctx, channelTimeout)
+		defer cancel()
+		ln, err = openWithin(ctx,
+			"listen on "+addr+" for "+cfg.Tunnel.String()+" on "+c.String(),
+			func() (net.Listener, error) { return c.client.Listen("tcp", addr) })
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// What it is really listening on. A tunnel that asked for any free
@@ -300,7 +312,7 @@ func (c *Conn) OpenTunnel(cfg TunnelConfig) (*Forwarder, error) {
 	// moment closes the listener rather than leaving it accepting into a
 	// connection that has gone.
 	if err := c.register(f); err != nil {
-		_ = ln.Close()
+		_ = f.stopListening()
 		return nil, err
 	}
 	go f.serve()
@@ -587,6 +599,27 @@ func (f *Forwarder) closeRider() error {
 	return f.closeErr
 }
 
+// stopListening stops accepting connections.
+//
+// A remote tunnel's listener is the far machine's, so closing it asks
+// that machine to stop listening and waits for the answer. That is
+// bounded, because closing a tunnel runs on the goroutine that draws.
+func (f *Forwarder) stopListening() error {
+	if f.t.Kind != RemoteForward {
+		if err := f.ln.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+			return fmt.Errorf("remote: stop listening for %s: %w", f.t, err)
+		}
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), channelTimeout)
+	defer cancel()
+	what := "stop listening for " + f.t.String() + " on " + f.conn.String()
+	if err := doWithin(ctx, what, f.ln.Close); err != nil && !errors.Is(err, net.ErrClosed) {
+		return err
+	}
+	return nil
+}
+
 // closeAll stops accepting and ends what is still going through.
 func (f *Forwarder) closeAll() error {
 	f.mu.Lock()
@@ -599,8 +632,8 @@ func (f *Forwarder) closeAll() error {
 	f.mu.Unlock()
 
 	var errs []error
-	if err := f.ln.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
-		errs = append(errs, fmt.Errorf("remote: stop listening for %s: %w", f.t, err))
+	if err := f.stopListening(); err != nil {
+		errs = append(errs, err)
 	}
 	// The streams after the listener, so nothing new arrives while these
 	// are being cut. One whose peer has already gone says so with EOF or

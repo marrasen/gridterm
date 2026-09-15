@@ -29,7 +29,7 @@ func BenchmarkReadAShellFlood(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		b.StopTimer()
-		sh, err := conn.Shell(ShellConfig{Cols: 80, Rows: 24})
+		sh, err := conn.Shell(b.Context(), ShellConfig{Cols: 80, Rows: 24})
 		if err != nil {
 			b.Fatalf("shell: %v", err)
 		}

@@ -60,6 +60,20 @@ type Server struct {
 	// test can tell a channel that was closed from one left behind.
 	sessions int
 
+	// stalling leaves a request to open a channel unanswered,
+	// stallingSub leaves a request to start a subsystem unanswered,
+	// stallingPty leaves a request for a pty unanswered, and deafInput
+	// starts a shell that never reads what is sent to it.
+	stalling    bool
+	stallingSub bool
+	stallingPty bool
+	deafInput   bool
+
+	// stallingForward leaves a request to listen on a port unanswered,
+	// and stallingCancel a request to stop listening again.
+	stallingForward bool
+	stallingCancel  bool
+
 	// frozen is closed by Freeze, and stopped when the test ends, so a
 	// session held open by a frozen server lets go in the end.
 	frozen     chan struct{}
@@ -159,6 +173,72 @@ func (s *Server) Accept(fingerprint string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.onlyKey = fingerprint
+}
+
+// StallChannels makes the server stop answering a request to open a
+// channel, without hanging up on the client.
+//
+// The request is neither accepted nor refused, which is what a machine
+// that is still on the network but no longer answering looks like.
+// Channels opened before the call carry on working until x/crypto's
+// sixteen-slot buffer of incoming channels fills, after which every
+// channel on the connection stops. Everything held this way is let go of
+// when the test ends.
+func (s *Server) StallChannels() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.stalling = true
+}
+
+// StallPty makes the server take a request for a pty and never answer
+// it, with the session channel left open.
+//
+// It is the step after StallChannels: the machine opens the session and
+// stops on the round trip after it.
+func (s *Server) StallPty() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.stallingPty = true
+}
+
+// StallForwards makes the server take a request to listen on a port for
+// a client and never answer it.
+func (s *Server) StallForwards() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.stallingForward = true
+}
+
+// StallCancelForward makes the server take a request to stop listening
+// on a port and never answer it, with the forward left in place.
+func (s *Server) StallCancelForward() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.stallingCancel = true
+}
+
+// StallSubsystems makes the server take a request to start a subsystem
+// and never answer it, with the session channel left open.
+//
+// It is the step after StallChannels: the machine still opens channels
+// and stops one round trip later.
+func (s *Server) StallSubsystems() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.stallingSub = true
+}
+
+// StopReadingInput makes the shell the server starts never read what is
+// sent to it, which is what a remote program that has stopped reading
+// its input does. A client writing into that shell fills the channel's
+// flow-control window and then blocks.
+//
+// A deaf session never sends exit-status either, so it cannot end on its
+// own: only closing it ends it.
+func (s *Server) StopReadingInput() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.deafInput = true
 }
 
 // Conns returns how many connections the server has accepted, so a test
@@ -284,6 +364,15 @@ func (s *Server) handle(nc net.Conn) {
 	}()
 
 	for nch := range chans {
+		s.mu.Lock()
+		stall := s.stalling
+		s.mu.Unlock()
+		if stall {
+			// Neither accepted nor refused, and the connection is left
+			// up. Held until the test ends.
+			<-s.stopped
+			return
+		}
 		switch nch.ChannelType() {
 		case "session":
 			ch, chReqs, err := nch.Accept()
@@ -316,7 +405,13 @@ func (s *Server) session(ch ssh.Channel, reqs <-chan *ssh.Request) {
 			cols, rows := parsePtyReq(req.Payload)
 			s.mu.Lock()
 			s.lastSize = [2]int{cols, rows}
+			stall := s.stallingPty
 			s.mu.Unlock()
+			if stall {
+				// The channel is open and the request is neither
+				// granted nor turned down.
+				continue
+			}
 			_ = req.Reply(true, nil)
 
 		case "window-change":
@@ -330,9 +425,24 @@ func (s *Server) session(ch ssh.Channel, reqs <-chan *ssh.Request) {
 			_ = req.Reply(true, nil)
 			cols, rows := s.Size()
 			s.say(ch, "READY %dx%d\n", cols, rows)
-			go s.echo(ch)
+			s.mu.Lock()
+			deaf := s.deafInput
+			s.mu.Unlock()
+			// A shell that never reads its input, so a client writing
+			// into it fills the flow-control window and blocks.
+			if !deaf {
+				go s.echo(ch)
+			}
 
 		case "subsystem":
+			s.mu.Lock()
+			stall := s.stallingSub
+			s.mu.Unlock()
+			if stall {
+				// The channel is open and the request is neither
+				// granted nor turned down.
+				continue
+			}
 			// SFTP, which is a subsystem rather than a command.
 			_ = req.Reply(s.sftpRequest(ch, req), nil)
 

@@ -10,6 +10,10 @@ import (
 	"time"
 )
 
+// ErrGone says the window is not answering any more: it has closed, or
+// the connection to it has.
+var ErrGone = errors.New("agent: that window is no longer answering")
+
 // Client is an agent's end of the connection to a window.
 //
 // One at a time: a client is written to and read from by whatever is
@@ -145,19 +149,30 @@ func (c *Client) isClosed() bool {
 	return c.closed
 }
 
+// Gone reports whether this connection is finished with, either because
+// it was closed or because the window stopped answering.
+func (c *Client) Gone() bool { return c.isClosed() }
+
 // say asks one thing and waits for the answer to it.
+//
+// A connection that breaks is closed here, so the next question says
+// the window has gone rather than handing back whatever the network
+// last complained about. Reading that twice is how an agent ends up
+// with a socket error where an explanation belongs.
 func (c *Client) say(want ask) (said, error) {
 	c.asking.Lock()
 	defer c.asking.Unlock()
 	if c.isClosed() {
-		return said{}, errors.New("agent: that window has been let go of")
+		return said{}, ErrGone
 	}
 	if err := c.out.Encode(want); err != nil {
-		return said{}, fmt.Errorf("agent: ask the window: %w", err)
+		_ = c.Close()
+		return said{}, ErrGone
 	}
 	line, err := readLine(c.in)
 	if err != nil {
-		return said{}, fmt.Errorf("agent: the window stopped answering: %w", err)
+		_ = c.Close()
+		return said{}, ErrGone
 	}
 	var got said
 	if err := json.Unmarshal(line, &got); err != nil {

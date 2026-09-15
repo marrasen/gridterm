@@ -26,10 +26,8 @@ type field struct {
 	Description string `json:"description"`
 }
 
-// result is what a tool call gives back.
-//
-// Text, not a structure. What an agent is being given is a screen, and
-// a screen read as text is a screen read the way the user reads it.
+// result is what a tool call gives back: text, because what an agent is
+// given is a screen.
 type result struct {
 	Content []content `json:"content"`
 	IsError bool      `json:"isError,omitempty"`
@@ -116,10 +114,12 @@ func toolList() []tool {
 
 // runTool does one tool call.
 //
-// A tool that could not do what it was asked says so in its answer
-// rather than as a protocol failure: the agent asked a fair question
-// and the answer is what went wrong.
-func (s *server) runTool(name string, args json.RawMessage) result {
+// A tool that ran and could not do what it was asked says so in its
+// answer. A call this server cannot make sense of at all -- a tool it
+// does not have, arguments it cannot read, a call that does not say
+// which pane -- is a failure of the message, which is what the protocol
+// asks for.
+func (s *server) runTool(name string, args json.RawMessage) (result, *rpcError) {
 	var in struct {
 		Code      string `json:"code"`
 		Pane      string `json:"pane"`
@@ -130,14 +130,17 @@ func (s *server) runTool(name string, args json.RawMessage) result {
 	}
 	if len(args) > 0 {
 		if err := json.Unmarshal(args, &in); err != nil {
-			return wrong("those are not arguments this tool understands")
+			return result{}, &rpcError{
+				Code:    codeInvalidParams,
+				Message: "those are not arguments this tool understands",
+			}
 		}
 	}
 
 	switch name {
 	case "use_session_code":
 		if in.Code == "" {
-			return wrong("that call carried no session code")
+			return missing("code")
 		}
 		pane, err := s.panes.Use(in.Code)
 		if err != nil {
@@ -166,7 +169,7 @@ func (s *server) runTool(name string, args json.RawMessage) result {
 
 	case "read_pane":
 		if in.Pane == "" {
-			return wrong("that call did not say which pane")
+			return missing("pane")
 		}
 		screen, err := s.panes.Read(in.Pane)
 		if err != nil {
@@ -176,7 +179,7 @@ func (s *server) runTool(name string, args json.RawMessage) result {
 
 	case "send_keys":
 		if in.Pane == "" {
-			return wrong("that call did not say which pane")
+			return missing("pane")
 		}
 		if err := s.panes.Send(in.Pane, in.Text); err != nil {
 			return wrong(err.Error())
@@ -186,7 +189,7 @@ func (s *server) runTool(name string, args json.RawMessage) result {
 
 	case "wait_for":
 		if in.Pane == "" {
-			return wrong("that call did not say which pane")
+			return missing("pane")
 		}
 		screen, gaveUp, err := s.panes.Wait(in.Pane, Until{
 			Contains:  in.Contains,
@@ -198,7 +201,18 @@ func (s *server) runTool(name string, args json.RawMessage) result {
 		}
 		return say(showScreen(screen, gaveUp))
 	}
-	return wrong(fmt.Sprintf("%q is not a tool this server has", name))
+	return result{}, &rpcError{
+		Code:    codeInvalidParams,
+		Message: fmt.Sprintf("%q is not a tool this server has", name),
+	}
+}
+
+// missing says a call left out something it had to carry.
+func missing(what string) (result, *rpcError) {
+	return result{}, &rpcError{
+		Code:    codeInvalidParams,
+		Message: "that call carried no " + what,
+	}
 }
 
 // showScreen is a screen as an agent reads it, with what the screen
@@ -221,11 +235,12 @@ func showScreen(s Screen, gaveUp bool) string {
 }
 
 // say is a tool answer.
-func say(text string) result {
-	return result{Content: []content{{Type: "text", Text: text}}}
+func say(text string) (result, *rpcError) {
+	return result{Content: []content{{Type: "text", Text: text}}}, nil
 }
 
-// wrong is a tool answer that says what went wrong.
-func wrong(why string) result {
-	return result{Content: []content{{Type: "text", Text: why}}, IsError: true}
+// wrong is a tool answer from a tool that ran and could not do what it
+// was asked.
+func wrong(why string) (result, *rpcError) {
+	return result{Content: []content{{Type: "text", Text: why}}, IsError: true}, nil
 }

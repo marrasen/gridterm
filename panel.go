@@ -211,9 +211,8 @@ func (a *app) refreshPanel(now time.Time) {
 	for pane, e := range a.panes {
 		want := ""
 		if h := a.handedBy[pane]; h != nil {
-			// What an agent is doing with a pane beats what size the
-			// far end is: the user can see the size, and cannot
-			// otherwise see that something else is typing here.
+			// Ahead of the far end's size: the user can see a size, and
+			// cannot otherwise see that something else is typing here.
 			want = h.note()
 		} else if what, ok := a.watching[pane]; ok {
 			// A pane showing a screen that is not its size, which is

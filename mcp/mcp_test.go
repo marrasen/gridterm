@@ -407,14 +407,19 @@ func TestSomethingItCannotAnswerIsTurnedAway(t *testing.T) {
 	if len(answers) != 4 {
 		t.Fatalf("it gave %d answers", len(answers))
 	}
-	// Two of them carry no id to match on, because the question did not
-	// say what it wanted or was not a message at all.
+	// Two of them carry a null id, because the question did not say
+	// what it wanted or was not a message at all. Null rather than
+	// nothing: an answer that named no question at all is one the agent
+	// cannot tell from a message of some other kind.
 	var noID []response
 	for _, a := range answers {
 		if a.Error == nil {
 			t.Errorf("it answered %v rather than saying what was wrong", a.Result)
 		}
 		if len(a.ID) == 0 {
+			t.Errorf("an answer carried no id at all: %+v", a)
+		}
+		if string(a.ID) == "null" {
 			noID = append(noID, a)
 		}
 	}
@@ -436,17 +441,178 @@ func TestSomethingItCannotAnswerIsTurnedAway(t *testing.T) {
 	}
 }
 
-// A tool this server does not have is an answer, not a crash.
-func TestAToolItDoesNotHaveIsAnAnswer(t *testing.T) {
+// A tool this server does not have, and arguments it cannot read, are
+// failures of the message rather than of what a tool did.
+//
+// The two are different things to tell an agent. A tool that ran and
+// could not do what it was asked is an answer it should read; a call
+// this server could not make sense of is a mistake in the asking.
+func TestACallItCannotMakeSenseOfIsAFailureOfTheMessage(t *testing.T) {
 	answers := talk(t, &fakePanes{},
-		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"open_shell"}}`)
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"open_shell"}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":`+
+			`{"name":"read_pane","arguments":{"pane":42}}}`,
+		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":`+
+			`{"name":"read_pane","arguments":{}}}`)
 
-	text, failed := textOf(t, answers[0])
-	if !failed {
-		t.Errorf("it ran something it does not have: %q", text)
+	said := byID(t, answers)
+	for id, what := range map[int]string{1: "open_shell", 2: "arguments", 3: "no pane"} {
+		got := said[id].Error
+		if got == nil {
+			t.Errorf("%s was answered rather than refused: %v", what, said[id].Result)
+			continue
+		}
+		if got.Code != codeInvalidParams {
+			t.Errorf("%s gave %d, want %d", what, got.Code, codeInvalidParams)
+		}
 	}
-	if !strings.Contains(text, "open_shell") {
-		t.Errorf("it said %q", text)
+	if got := said[1].Error; got != nil && !strings.Contains(got.Message, "open_shell") {
+		t.Errorf("it said %q", got.Message)
+	}
+}
+
+// A message that does not say it is JSON-RPC, or calls itself null, is
+// refused.
+func TestAMessageThatIsNotAQuestionIsRefused(t *testing.T) {
+	answers := atOnce(t, &fakePanes{},
+		`{"id":1,"method":"ping"}`,
+		`{"jsonrpc":"1.0","id":2,"method":"ping"}`,
+		`{"jsonrpc":"2.0","id":null,"method":"ping"}`)
+
+	if len(answers) != 3 {
+		t.Fatalf("it gave %d answers", len(answers))
+	}
+	for i, a := range answers {
+		if a.Error == nil {
+			t.Errorf("answer %d was not a refusal: %v", i, a.Result)
+			continue
+		}
+		if a.Error.Code != codeInvalidRequest {
+			t.Errorf("answer %d gave %d, want %d", i, a.Error.Code, codeInvalidRequest)
+		}
+	}
+}
+
+// A message too long to be a message is one bad message, not the end of
+// the conversation.
+func TestAMessageTooLongIsNotTheEnd(t *testing.T) {
+	answers := talk(t, &fakePanes{},
+		`{"jsonrpc":"2.0","id":1,"method":"ping","params":{"pad":"`+
+			strings.Repeat("x", longestLine+16)+`"}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"ping"}`)
+
+	if len(answers) != 2 {
+		t.Fatalf("it gave %d answers, so it stopped listening", len(answers))
+	}
+	if answers[0].Error == nil || answers[0].Error.Code != codeParse {
+		t.Errorf("the long one gave %+v", answers[0])
+	}
+	var id int
+	if err := json.Unmarshal(answers[1].ID, &id); err != nil || id != 2 {
+		t.Errorf("the one after it was answered as %s", answers[1].ID)
+	}
+}
+
+// What it says about itself is what a client needs to talk to it.
+func TestItSaysWhatAClientNeedsToKnow(t *testing.T) {
+	answers := talk(t, &fakePanes{},
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":`+
+			`{"protocolVersion":"1999-01-01","capabilities":{},`+
+			`"clientInfo":{"name":"something","version":"1"}}}`)
+
+	raw, err := json.Marshal(answers[0].Result)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var said struct {
+		Protocol     string `json:"protocolVersion"`
+		Capabilities *struct {
+			Tools map[string]any `json:"tools"`
+		} `json:"capabilities"`
+		ServerInfo *struct {
+			Name    string `json:"name"`
+			Version string `json:"version"`
+		} `json:"serverInfo"`
+		Instructions string `json:"instructions"`
+	}
+	if err := json.Unmarshal(raw, &said); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	// A version it does not speak is answered with the one it does,
+	// rather than refused.
+	if said.Protocol != protocolVersion {
+		t.Errorf("it said it speaks %q", said.Protocol)
+	}
+	if said.Capabilities == nil || said.Capabilities.Tools == nil {
+		t.Errorf("it did not say it has tools: %s", raw)
+	}
+	if said.ServerInfo == nil || said.ServerInfo.Name != "gridterm" ||
+		said.ServerInfo.Version == "" {
+		t.Errorf("it did not say what it is: %s", raw)
+	}
+	if !strings.Contains(said.Instructions, "session code") {
+		t.Errorf("it did not say how to get a pane: %q", said.Instructions)
+	}
+}
+
+// Every tool says what it takes, in a shape a client can check a call
+// against before making it.
+func TestEveryToolSaysWhatItTakes(t *testing.T) {
+	answers := talk(t, &fakePanes{}, `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
+	raw, err := json.Marshal(answers[0].Result)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var listed struct {
+		Tools []struct {
+			Name        string `json:"name"`
+			Title       string `json:"title"`
+			Description string `json:"description"`
+			InputSchema struct {
+				Type       string                    `json:"type"`
+				Properties map[string]map[string]any `json:"properties"`
+				Required   []string                  `json:"required"`
+			} `json:"inputSchema"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(raw, &listed); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(listed.Tools) != 5 {
+		t.Fatalf("it offers %d tools", len(listed.Tools))
+	}
+	needs := map[string][]string{
+		"use_session_code": {"code"},
+		"list_panes":       nil,
+		"read_pane":        {"pane"},
+		"send_keys":        {"pane", "text"},
+		"wait_for":         {"pane"},
+	}
+	for _, tl := range listed.Tools {
+		if tl.Title == "" || tl.Description == "" {
+			t.Errorf("%s says nothing about itself", tl.Name)
+		}
+		if tl.InputSchema.Type != "object" {
+			t.Errorf("%s takes %q, not an object", tl.Name, tl.InputSchema.Type)
+		}
+		want, known := needs[tl.Name]
+		if !known {
+			t.Errorf("it offers %s, which is not one of its tools", tl.Name)
+			continue
+		}
+		if len(tl.InputSchema.Required) != len(want) {
+			t.Errorf("%s requires %v, want %v", tl.Name, tl.InputSchema.Required, want)
+		}
+		for _, arg := range want {
+			field, there := tl.InputSchema.Properties[arg]
+			if !there {
+				t.Errorf("%s does not say what %s is", tl.Name, arg)
+				continue
+			}
+			if field["type"] == "" || field["description"] == "" {
+				t.Errorf("%s says %v about %s", tl.Name, field, arg)
+			}
+		}
 	}
 }
 

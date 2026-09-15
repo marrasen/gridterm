@@ -1,15 +1,14 @@
 // Package mcp serves gridterm's panes to an agent over the Model
 // Context Protocol.
 //
-// It is a translator and nothing else. An agent speaks JSON-RPC on this
-// process's standard input and output; the window speaks its own
-// protocol on a loopback port. What may be asked for is decided by the
-// window, and what an agent may reach is decided by the code the user
-// gave it.
+// It translates and nothing more: an agent speaks JSON-RPC on this
+// process's standard input and output, and the window speaks its own
+// protocol on a loopback port. What an agent may ask for is decided by
+// the window, and what it may reach by the code the user gave it.
 //
-// It runs as its own process, started by whatever is running the agent,
-// and holds no credentials of its own. A session code arrives in a tool
-// call, is used to open one pane, and is never written anywhere.
+// It runs as its own process, started by whatever runs the agent, and
+// holds no credentials. A session code arrives in a tool call and opens
+// one pane.
 package mcp
 
 import (
@@ -18,13 +17,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"runtime/debug"
 	"strings"
 	"sync"
 )
 
-// The protocol this speaks. An agent that asks for another version is
-// told this one: the shape of what follows is the same, and saying so
-// is better than refusing to talk.
+// protocolVersion is the one version this speaks. An agent that asks
+// for another is answered with this one, which is what the protocol
+// says to do when the version asked for is not on offer.
 const protocolVersion = "2025-06-18"
 
 // longestLine caps one message, so a client that sends no newline
@@ -43,9 +43,13 @@ type request struct {
 }
 
 // response is one answer.
+//
+// ID is always written, even for a message so broken that there was no
+// id to read: null then, which is what says "this answers something,
+// and I could not tell what".
 type response struct {
 	JSONRPC string          `json:"jsonrpc"`
-	ID      json.RawMessage `json:"id,omitempty"`
+	ID      json.RawMessage `json:"id"`
 	Result  any             `json:"result,omitempty"`
 	Error   *rpcError       `json:"error,omitempty"`
 }
@@ -117,12 +121,11 @@ type Until struct {
 // It returns when the agent closes its end, which is how the process
 // running it says it is done.
 //
-// Questions are answered as they come rather than one after another. A
-// wait can be minutes long, and an agent that could not ask anything
-// else meanwhile -- not even whether this is still alive -- would be an
-// agent that had to choose between waiting and keeping in touch. Only
-// so many run at once; past that the next one waits its turn, which is
-// what tells a flooding client to slow down.
+// Questions are answered as they come rather than one after another,
+// because a wait can be minutes long and an agent has to be able to ask
+// something else meanwhile. Only answersAtOnce run at a time; past that
+// the next waits its turn, which stops reading and so slows the client
+// down.
 func Serve(in io.Reader, out io.Writer, panes Panes) error {
 	r := bufio.NewReaderSize(in, 4096)
 	s := &server{panes: panes, out: json.NewEncoder(out)}
@@ -138,6 +141,13 @@ func Serve(in io.Reader, out io.Writer, panes Panes) error {
 		line, err := readLine(r)
 		if errors.Is(err, io.EOF) {
 			return nil
+		}
+		if errors.Is(err, errTooLong) {
+			// Read past and carried on. A message too long to be a
+			// message is one bad message, not the end of the
+			// conversation.
+			s.send(fail(nil, codeParse, "that message is too long to read"))
+			continue
 		}
 		if err != nil {
 			return fmt.Errorf("mcp: read: %w", err)
@@ -161,11 +171,10 @@ func Serve(in io.Reader, out io.Writer, panes Panes) error {
 	}
 }
 
-// answersAtOnce is how many questions are answered at the same time.
-//
-// Enough that a wait never stops an agent asking anything else, few
-// enough that a client sending faster than it reads cannot make this
-// process hold a goroutine for every line.
+// answersAtOnce is how many questions are answered at the same time:
+// enough that a wait does not stop an agent asking anything else, few
+// enough that a flooding client cannot make this hold a goroutine per
+// line.
 const answersAtOnce = 8
 
 // answerOne does one message and sends the answer, if it has one.
@@ -177,10 +186,8 @@ func (s *server) answerOne(line []byte) {
 	s.send(answer)
 }
 
-// send writes one answer.
-//
-// Under a lock, because several may be finished at once and half of one
-// answer inside another is a stream neither end can read.
+// send writes one answer, under a lock: several can finish at once, and
+// half of one answer inside another is a stream neither end can read.
 func (s *server) send(answer response) {
 	s.writing.Lock()
 	defer s.writing.Unlock()
@@ -192,19 +199,30 @@ func (s *server) send(answer response) {
 	}
 }
 
+// errTooLong says a message was longer than a message can be. What is
+// left of it has been read past, so the next read starts on the one
+// after.
+var errTooLong = errors.New("mcp: that message is too long to read")
+
 // readLine reads one message, refusing one too long to be a message.
 func readLine(r *bufio.Reader) ([]byte, error) {
 	var line []byte
+	tooLong := false
 	for {
 		part, more, err := r.ReadLine()
 		if err != nil {
 			return nil, err
 		}
-		line = append(line, part...)
-		if len(line) > longestLine {
-			return nil, fmt.Errorf("a message of %d bytes is not a message", len(line))
+		if !tooLong {
+			line = append(line, part...)
+			if len(line) > longestLine {
+				tooLong, line = true, nil
+			}
 		}
 		if !more {
+			if tooLong {
+				return nil, errTooLong
+			}
 			return line, nil
 		}
 	}
@@ -221,21 +239,30 @@ type server struct {
 // handle answers one message, and reports whether there is an answer to
 // send: a notification is acted on and not answered.
 func (s *server) handle(line []byte) (response, bool) {
+	// Several messages in one array, which this protocol does not take.
 	if trimmed := strings.TrimSpace(string(line)); strings.HasPrefix(trimmed, "[") {
-		// JSON-RPC allows several messages in one array; this protocol
-		// dropped that, and answering one would mean guessing which id
-		// the answer belonged to.
 		return fail(nil, codeInvalidRequest, "send one message at a time"), true
 	}
 	var req request
 	if err := json.Unmarshal(line, &req); err != nil {
 		return fail(nil, codeParse, "that is not a message this understands"), true
 	}
+	if req.JSONRPC != "2.0" {
+		return fail(req.ID, codeInvalidRequest,
+			`a message has to say "jsonrpc":"2.0"`), true
+	}
 	if req.Method == "" {
 		return fail(req.ID, codeInvalidRequest, "a message has to say what it wants"), true
 	}
 	// A notification: acted on, never answered. Answering one is a
 	// message the agent has nothing to match and will complain about.
+	//
+	// No id at all is a notification. An id that is null is not: it is a
+	// question that named itself nothing, and an answer to it could
+	// never be matched.
+	if string(req.ID) == "null" {
+		return fail(nil, codeInvalidRequest, "a question cannot call itself null"), true
+	}
 	notice := len(req.ID) == 0
 
 	result, rerr := s.call(req)
@@ -258,7 +285,7 @@ func (s *server) call(req request) (any, *rpcError) {
 			"serverInfo": map[string]any{
 				"name":    "gridterm",
 				"title":   "gridterm panes",
-				"version": Version,
+				"version": version(),
 			},
 			"instructions": instructions,
 		}, nil
@@ -280,7 +307,11 @@ func (s *server) call(req request) (any, *rpcError) {
 		if err := json.Unmarshal(req.Params, &params); err != nil {
 			return nil, &rpcError{Code: codeInvalidParams, Message: "that is not a tool call"}
 		}
-		return s.runTool(params.Name, params.Arguments), nil
+		got, rerr := s.runTool(params.Name, params.Arguments)
+		if rerr != nil {
+			return nil, rerr
+		}
+		return got, nil
 	}
 	return nil, &rpcError{
 		Code:    codeMethodNotFound,
@@ -290,11 +321,20 @@ func (s *server) call(req request) (any, *rpcError) {
 
 // fail is an answer that says what was wrong with the message.
 func fail(id json.RawMessage, code int, why string) response {
+	if len(id) == 0 {
+		id = json.RawMessage("null")
+	}
 	return response{JSONRPC: "2.0", ID: id, Error: &rpcError{Code: code, Message: why}}
 }
 
-// Version is what this server calls itself. Set by whatever builds it.
-var Version = "dev"
+// version is what this server calls itself: the version of the module
+// it was built from, or "dev" for a build that has none.
+func version() string {
+	if built, ok := debug.ReadBuildInfo(); ok && built.Main.Version != "" {
+		return built.Main.Version
+	}
+	return "dev"
+}
 
 // instructions is what an agent is told about this server when it
 // connects.

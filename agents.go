@@ -43,10 +43,8 @@ type handover struct {
 
 // handPane hands a pane to an agent and shows the user the code.
 //
-// Nothing listens until this is asked for, and what an agent can do
-// with the code is read this one pane, type into it, and wait. It
-// cannot open a connection, start a shell, reach the files, or touch
-// any other pane.
+// Nothing listens until this is asked for. What the code lets an agent
+// do is read this one pane, type into it, and wait.
 func (a *app) handPane(pane *term.Terminal) error {
 	if pane == nil {
 		return errors.New("there is no pane here to hand over")
@@ -320,11 +318,8 @@ func (a *app) handHere() error { return a.handPane(a.focusedTerminal()) }
 func (a *app) takeBackHere() error { return a.takeBackPane(a.focusedTerminal()) }
 
 // showCode shows the code for a handed-over pane, and puts it on the
-// clipboard.
-//
-// On the clipboard because the next thing it is for is being pasted
-// into a conversation with an agent, and a code is thirty-two
-// characters nobody should have to read off a screen.
+// clipboard: the next thing it is for is being pasted into a
+// conversation.
 func (a *app) showCode(h *handover) {
 	a.clip.set(h.code)
 	f := a.newConfirm("An agent may work in this pane", []string{
@@ -339,9 +334,11 @@ func (a *app) showCode(h *handover) {
 		"What it types goes into the shell running here, as whoever you",
 		"set it up as, so it does whatever that shell does.",
 		"",
-		"You see everything it does, as it does it. Take the pane back",
-		"from the sidebar or with this window's menu, and the code stops",
-		"working at once.",
+		"You see everything it does, as it does it. The pane's row says",
+		"when an agent is working in it.",
+		"",
+		"Take it back from the Servers menu, and the code stops working",
+		"at once.",
 	})
 	f.AddButton(ui.Button{Title: "Done"})
 	f.AddButton(ui.Button{Title: "Take it back", Do: func() error {

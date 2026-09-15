@@ -60,8 +60,7 @@ const hello = "gridterm-agent-1"
 // said is what the window answers.
 //
 // Error and the rest are exclusive: a request that failed says why and
-// carries nothing else. There is no partial answer, because a screen
-// half read is worse than none.
+// carries nothing else.
 type said struct {
 	// Error says what went wrong, and is empty when nothing did.
 	Error string `json:"error,omitempty"`

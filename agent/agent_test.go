@@ -339,10 +339,15 @@ func TestACodeSaysWhichWindow(t *testing.T) {
 	}
 }
 
-// Two codes are never the same.
+// A code is not guessable from the ones before it.
+//
+// Distinct is not enough: a counter is distinct. What matters is that
+// knowing a code, or a hundred of them, says nothing about the next.
 func TestCodesAreNotGuessable(t *testing.T) {
+	const tries = 100
 	seen := map[string]bool{}
-	for i := 0; i < 100; i++ {
+	var codes []string
+	for i := 0; i < tries; i++ {
 		code, err := NewCode(2222)
 		if err != nil {
 			t.Fatalf("code: %v", err)
@@ -356,6 +361,26 @@ func TestCodesAreNotGuessable(t *testing.T) {
 		parts := strings.Split(code, "-")
 		if len(parts) != 3 || len(parts[2]) != 32 {
 			t.Fatalf("it made %q", code)
+		}
+		codes = append(codes, parts[2])
+	}
+
+	// Every position moves. A code made by counting leaves most of
+	// itself the same from one to the next; one made from randomness
+	// leaves none of it. The chance of a position holding still across
+	// a hundred draws by luck is one in thirty-two to the ninety-ninth.
+	for at := 0; at < 32; at++ {
+		first := codes[0][at]
+		same := true
+		for _, code := range codes {
+			if code[at] != first {
+				same = false
+				break
+			}
+		}
+		if same {
+			t.Errorf("character %d is %q in every code, so they are not random",
+				at, string(first))
 		}
 	}
 }
@@ -667,5 +692,42 @@ func TestAConnectionThatSaysNothingIsLetGoOf(t *testing.T) {
 	}
 	if _, err := io.ReadAll(conn); err != nil {
 		t.Errorf("it was still holding the connection: %v", err)
+	}
+}
+
+// A window that has gone says so plainly, and says the same thing every
+// time it is asked.
+//
+// The first question after it went used to come back with whatever the
+// network last complained about, and every one after that with a raw
+// socket error. An agent reads those; it deserves a sentence rather
+// than a Winsock number.
+func TestAWindowThatWentSaysSoEveryTime(t *testing.T) {
+	_, s, code := listening(t)
+	c, err := Dial(code)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer func() { _ = c.Close() }()
+	pane, err := c.Use(code)
+	if err != nil {
+		t.Fatalf("use: %v", err)
+	}
+
+	if err := s.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	for i := 0; i < 3; i++ {
+		_, err := c.Read(pane.ID)
+		if !errors.Is(err, ErrGone) {
+			t.Errorf("ask %d gave %v", i, err)
+		}
+	}
+	if err := c.Send(pane.ID, "x"); !errors.Is(err, ErrGone) {
+		t.Errorf("typing gave %v", err)
+	}
+	if !c.Gone() {
+		t.Error("it does not know the window has gone")
 	}
 }

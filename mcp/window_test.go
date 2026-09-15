@@ -1,7 +1,6 @@
 package mcp
 
 import (
-	"bytes"
 	"errors"
 	"strings"
 	"sync"
@@ -88,31 +87,38 @@ func TestAnAgentReachesARealWindow(t *testing.T) {
 		t.Fatalf("use: %v", err)
 	}
 
-	var out bytes.Buffer
-	in := strings.Join([]string{
+	answers := talk(t, panes,
 		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`,
-		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":` +
-			`{"name":"use_session_code","arguments":{"code":"` + code + `"}}}`,
-		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":` +
-			`{"name":"read_pane","arguments":{"pane":"` + pane.ID + `"}}}`,
-		`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":` +
-			`{"name":"send_keys","arguments":{"pane":"` + pane.ID + `","text":"uptime\r"}}}`,
-		`{"jsonrpc":"2.0","id":5,"method":"tools/call","params":` +
-			`{"name":"list_panes","arguments":{}}}`,
-	}, "\n") + "\n"
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":`+
+			`{"name":"use_session_code","arguments":{"code":"`+code+`"}}}`,
+		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":`+
+			`{"name":"read_pane","arguments":{"pane":"`+pane.ID+`"}}}`,
+		`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":`+
+			`{"name":"send_keys","arguments":{"pane":"`+pane.ID+`","text":"uptime\r"}}}`,
+		`{"jsonrpc":"2.0","id":5,"method":"tools/call","params":`+
+			`{"name":"list_panes","arguments":{}}}`)
 
-	if err := Serve(strings.NewReader(in), &out, panes); err != nil {
-		t.Fatalf("serve: %v", err)
+	said := byID(t, answers)
+	told, failed := textOf(t, said[2])
+	if failed || !strings.Contains(told, "bash on this machine") {
+		t.Errorf("it was not told what it has: %q", told)
 	}
-	said := out.String()
-	if !strings.Contains(said, "root@margit") {
-		t.Errorf("the screen never reached the agent: %s", said)
-	}
-	if !strings.Contains(said, "bash on this machine") {
-		t.Errorf("it was not told what it has: %s", said)
+	screen, failed := textOf(t, said[3])
+	if failed || !strings.Contains(screen, "root@margit") {
+		t.Errorf("the screen never reached the agent: %q", screen)
 	}
 	if got := win.sentText(); got != "uptime\r" {
 		t.Errorf("the window was sent %q", got)
+	}
+	// And the listing says what it holds, which is the one pane and its
+	// size -- checked here rather than left to something an earlier
+	// answer happened to mention too.
+	listed, failed := textOf(t, said[5])
+	if failed {
+		t.Fatalf("listing failed: %q", listed)
+	}
+	if !strings.Contains(listed, pane.ID) || !strings.Contains(listed, "80x24") {
+		t.Errorf("it listed %q", listed)
 	}
 }
 
@@ -256,5 +262,47 @@ func TestListingNothingIsNotAFailure(t *testing.T) {
 	}
 	if len(got) != 0 {
 		t.Errorf("it holds %v", got)
+	}
+}
+
+// A fresh code for a window whose connection broke is dialled again
+// rather than answered with the dead one.
+//
+// A code arriving after the connection broke is the user handing a pane
+// over again. Holding on to the corpse would mean this process had to
+// be restarted before their code would work.
+func TestAFreshCodeAfterTheConnectionBrokeIsDialledAgain(t *testing.T) {
+	win := &oneWindow{screen: "still here"}
+	s, err := agent.Listen(agent.Config{Window: win, OnError: func(error) {}})
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	win.code, err = agent.NewCode(s.Port())
+	if err != nil {
+		t.Fatalf("code: %v", err)
+	}
+
+	panes := NewWindow()
+	defer func() { _ = panes.Close() }()
+	pane, err := panes.Use(win.code)
+	if err != nil {
+		t.Fatalf("use: %v", err)
+	}
+
+	if err := s.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	if _, err := panes.Read(pane.ID); err == nil {
+		t.Fatal("it read a window that had gone")
+	}
+
+	// The same code again. Nothing is listening now, so what says the
+	// old connection was let go of is that this tried to dial at all.
+	_, err = panes.Use(win.code)
+	if err == nil {
+		t.Fatal("it opened a pane on a window that has gone")
+	}
+	if !strings.Contains(err.Error(), "is listening on port") {
+		t.Errorf("it answered with the old connection rather than dialling: %v", err)
 	}
 }

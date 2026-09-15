@@ -121,9 +121,18 @@ func (w *Window) Close() error {
 }
 
 // connect is the connection to one window, opening it the first time.
+//
+// One that has gone is let go of and dialled again. A fresh code for a
+// window whose connection broke is the user handing the pane over
+// again, and answering it with the old socket's failure for ever would
+// mean restarting this process to use it.
 func (w *Window) connect(port int, code string) (*agent.Client, error) {
 	w.mu.Lock()
 	have := w.reached[port]
+	if have != nil && have.Gone() {
+		delete(w.reached, port)
+		have = nil
+	}
 	w.mu.Unlock()
 	if have != nil {
 		return have, nil

@@ -101,22 +101,25 @@ func panesOn(a *testApp, host string) int {
 }
 
 // The machine gridterm is running on has nothing to connect or tunnel,
-// so its plus offers what can be opened here and what can be handed
-// over.
-func TestThePlusOnLocalOffersFilesATerminalAndAHandover(t *testing.T) {
+// so its plus offers the two things that can be opened here.
+//
+// Not handing a pane to an agent: a machine's row is about that
+// machine, and the pane that would be handed over is whichever one the
+// user is looking at, which may be on another machine entirely.
+func TestThePlusOnLocalOffersFilesAndATerminal(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withDialogs(t, a)
 	withPanel(t, a)
 
 	menu := clickPlus(t, a, conns.Local)
-	for _, want := range []string{"tab.open", "conn.files", "agent.hand"} {
+	for _, want := range []string{"tab.open", "conn.files"} {
 		if !offers(menu, want) {
 			t.Errorf("the menu does not offer %s: %v", want, menuCommands(menu))
 		}
 	}
-	for _, not := range []string{"conn.terminal", "conn.tunnel", "conn.disconnect"} {
+	for _, not := range []string{"conn.terminal", "conn.tunnel", "conn.disconnect", "agent.hand"} {
 		if offers(menu, not) {
-			t.Errorf("the menu offers %s, which is for a machine reached over a connection", not)
+			t.Errorf("the menu offers %s, which is not about this machine", not)
 		}
 	}
 }

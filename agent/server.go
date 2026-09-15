@@ -91,12 +91,8 @@ const (
 )
 
 // Listen starts listening for agents on a port of the system's
-// choosing, on the loopback address only.
-//
-// Loopback and nothing else: what gets in is decided by a code the user
-// handed over, and a code travels through the user rather than over a
-// network. Anything that can reach this port is already running as this
-// user.
+// choosing, on the loopback address only. What gets in past that is
+// decided by a code the user handed over.
 func Listen(cfg Config) (*Server, error) {
 	if cfg.Window == nil {
 		return nil, errors.New("agent: there is nothing to serve")

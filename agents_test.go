@@ -209,7 +209,7 @@ func TestTheRowSaysAnAgentHasThePane(t *testing.T) {
 		_, err := c.Use(code)
 		return err
 	})
-	waitUntilPumped(t, a, func() bool {
+	waitUntilPumped(t, a, "the row to say an agent is working here", func() bool {
 		a.refreshPanel(panelNow)
 		return a.panes[pane].Note == agentAt
 	})
@@ -217,7 +217,7 @@ func TestTheRowSaysAnAgentHasThePane(t *testing.T) {
 	if err := c.Close(); err != nil {
 		t.Fatalf("the agent leaving: %v", err)
 	}
-	waitUntilPumped(t, a, func() bool {
+	waitUntilPumped(t, a, "the row to say it is only offered again", func() bool {
 		a.refreshPanel(panelNow)
 		return a.panes[pane].Note == agentOffered
 	})
@@ -250,7 +250,7 @@ func fromAgent(t *testing.T, a *testApp, do func() error) {
 
 // waitUntilPumped waits for something to become true, running what the
 // window has been asked to do meanwhile.
-func waitUntilPumped(t *testing.T, a *testApp, cond func() bool) {
+func waitUntilPumped(t *testing.T, a *testApp, what string, cond func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(waitBudget)
 	for time.Now().Before(deadline) {
@@ -260,7 +260,7 @@ func waitUntilPumped(t *testing.T, a *testApp, cond func() bool) {
 		}
 		time.Sleep(time.Millisecond)
 	}
-	t.Fatal("it never happened")
+	t.Fatalf("timed out waiting for %s", what)
 }
 
 // Handing a pane over shows the code and puts it on the clipboard.
@@ -381,7 +381,7 @@ func TestHandingAPaneOverAgainShutsOutTheAgentThatHadIt(t *testing.T) {
 		_, err := old.Read(had.ID)
 		done <- err
 	}()
-	waitUntilPumped(t, a, func() bool { return len(done) > 0 })
+	waitUntilPumped(t, a, "the window to answer", func() bool { return len(done) > 0 })
 	if err := <-done; err == nil {
 		t.Error("the name it was given before still reads the pane")
 	}
@@ -390,11 +390,154 @@ func TestHandingAPaneOverAgainShutsOutTheAgentThatHadIt(t *testing.T) {
 	go func() {
 		done <- old.Send(had.ID, "rm -rf /\r")
 	}()
-	waitUntilPumped(t, a, func() bool { return len(done) > 0 })
+	waitUntilPumped(t, a, "the window to answer", func() bool { return len(done) > 0 })
 	if err := <-done; err == nil {
 		t.Error("the name it was given before still types into the pane")
 	}
 	if got := a.shells[0].sentText(); got != "" {
 		t.Errorf("the pane was sent %q", got)
+	}
+}
+
+// A code the window never handed out opens nothing.
+//
+// The window has its own check, and it is the one that matters: the
+// stand-in used elsewhere has one of its own, so a test against that
+// says nothing about this.
+func TestACodeTheWindowNeverHandedOutOpensNothing(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	_, code, c := handedOver(t, a)
+
+	wrong := code[:len(code)-1] + "z"
+	if wrong == code {
+		t.Fatal("the test did not change the code")
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := c.Use(wrong)
+		done <- err
+	}()
+	waitUntilPumped(t, a, "the window to answer", func() bool { return len(done) > 0 })
+	if err := <-done; err == nil {
+		t.Error("a code the window never handed out was taken")
+	}
+	if got := a.shells[0].sentText(); got != "" {
+		t.Errorf("the pane was sent %q", got)
+	}
+}
+
+// Taking one pane back stops the agent in it, with another still handed
+// over.
+//
+// Taking the last one back stops the listener, which hides whether the
+// window checks anything: the connection simply goes. With another pane
+// still out, the listener stays up and the check is the only thing
+// standing between the agent and the pane.
+func TestTakingOnePaneBackWithAnotherStillOut(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+
+	// Two panes, both handed over.
+	if err := a.openTab(); err != nil {
+		t.Fatalf("a second pane: %v", err)
+	}
+	panes := make([]*term.Terminal, 0, 2)
+	for pane := range a.panes {
+		panes = append(panes, pane)
+	}
+	if len(panes) != 2 {
+		t.Fatalf("%d panes, want two", len(panes))
+	}
+	for _, pane := range panes {
+		if err := a.handPane(pane); err != nil {
+			t.Fatalf("hand it over: %v", err)
+		}
+	}
+
+	first := a.handedBy[panes[0]]
+	c, err := agent.Dial(first.code)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer func() { _ = c.Close() }()
+
+	var had agent.Pane
+	fromAgent(t, a, func() error {
+		var err error
+		had, err = c.Use(first.code)
+		return err
+	})
+
+	if err := a.takeBackPane(panes[0]); err != nil {
+		t.Fatalf("take it back: %v", err)
+	}
+	if a.agents == nil {
+		t.Fatal("the listener stopped with a pane still handed over")
+	}
+
+	// The connection is still open, so what refuses the agent is the
+	// window.
+	done := make(chan error, 1)
+	go func() {
+		_, err := c.Read(had.ID)
+		done <- err
+	}()
+	waitUntilPumped(t, a, "the window to answer", func() bool { return len(done) > 0 })
+	if err := <-done; err == nil {
+		t.Error("it read a pane the user had taken back")
+	}
+
+	go func() { done <- c.Send(had.ID, "rm -rf /\r") }()
+	waitUntilPumped(t, a, "the window to answer", func() bool { return len(done) > 0 })
+	if err := <-done; err == nil {
+		t.Error("it typed into a pane the user had taken back")
+	}
+	for i, shell := range a.shells {
+		if got := shell.sentText(); got != "" {
+			t.Errorf("shell %d was sent %q", i, got)
+		}
+	}
+}
+
+// The dialog says where to take the pane back from, and that place
+// exists.
+//
+// A dialog that names a command the window does not have is worse than
+// one that says nothing: the user goes looking.
+func TestTheDialogNamesSomewhereTheCommandsReallyAre(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	withMenubar(t, a)
+	pane := onlyPaneOn(t, a)
+	if err := a.handPane(pane); err != nil {
+		t.Fatalf("hand it over: %v", err)
+	}
+
+	f := openDialog(t, a)
+	lines := strings.Join(f.Lines, " ")
+	if !strings.Contains(lines, "Servers menu") {
+		t.Errorf("the dialog says %q", lines)
+	}
+
+	// And the Servers menu really offers it.
+	a.refreshServers()
+	var offered bool
+	for _, menu := range a.bar.Menus {
+		if menu.Title != "Servers" {
+			continue
+		}
+		for _, item := range menu.Items {
+			if item.Command == "agent.take" {
+				offered = true
+			}
+		}
+	}
+	if !offered {
+		t.Error("the Servers menu does not offer taking the pane back")
 	}
 }

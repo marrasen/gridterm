@@ -114,7 +114,7 @@ func (a *app) takeOver(addr, keyFile string) error {
 	a.holdNames(held)
 	log.Say("taking over " + addr)
 
-	ask := &askUser{app: a, log: log}
+	ask := &askUser{app: a, log: log, stop: func() { a.giveUp(held) }}
 	go func() {
 		win, err := reachWindow(ctx, reach{
 			addr: addr, keyFile: keyFile, ring: a.keys, ask: ask,

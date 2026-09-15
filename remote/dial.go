@@ -89,7 +89,8 @@ func dial(ctx context.Context, to reach, addr, user string, next ssh.ClientAuthC
 // can wait on a passphrase dialog, and a deadline running while one is
 // open would close the connection under the user.
 //
-// A variable so a test can shorten it. Nothing else writes it.
+// A variable because the tests shorten it. Nothing in the program
+// writes it.
 var helloTimeout = 20 * time.Second
 
 // handshake is everything ssh.NewClientConn produced, so the goroutine
@@ -144,9 +145,17 @@ func dialOnce(ctx context.Context, to reach, addr string, cfg *ssh.ClientConfig,
 	if check := cfg.HostKeyCallback; check != nil {
 		once.HostKeyCallback = func(hostname string, remote net.Addr, key ssh.PublicKey) error {
 			mu.Lock()
+			first := !answered
 			answered = true
 			mu.Unlock()
 			hello.Stop()
+			// Only the first time. This runs again at every later key
+			// exchange, and by then the pane carries a shell: a line
+			// written into it would land in the middle of whatever the
+			// user is running.
+			if !first {
+				return check(hostname, remote, key)
+			}
 			saySo(saying, "it answered, with a "+key.Type()+" host key")
 			if err := check(hostname, remote, key); err != nil {
 				return err
@@ -167,7 +176,9 @@ func dialOnce(ctx context.Context, to reach, addr string, cfg *ssh.ClientConfig,
 	case h = <-done:
 	case <-late:
 		walkAway(nc, done)
-		return nil, fmt.Errorf("remote: %s did not say who it is within %s", addr, helloTimeout)
+		// No address and no "remote:" here: describeHostKeyError adds
+		// both on the way out.
+		return nil, errors.New("it did not say who it is within " + helloTimeout.String())
 	case <-ctx.Done():
 		walkAway(nc, done)
 		return nil, ctx.Err()
@@ -195,6 +206,12 @@ func dialOnce(ctx context.Context, to reach, addr string, cfg *ssh.ClientConfig,
 // The connection is closed, which is what a socket needs to stop.
 // Whatever the handshake ends up producing is closed when it arrives, so
 // nothing here waits for a machine that may never answer.
+//
+// It has a price when the handshake really never stops: two goroutines
+// stay parked, along with the channel of the machine carrying it and
+// everything the connection's config holds. They go when that machine
+// is closed. Nothing is reported from here, because by then there is no
+// caller left to report it to.
 func walkAway(nc net.Conn, done <-chan handshake) {
 	_ = nc.Close()
 	go func() {

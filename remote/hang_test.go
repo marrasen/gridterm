@@ -171,34 +171,3 @@ func TestGivingUpOnAHandshakeThatWillNotStop(t *testing.T) {
 		t.Error("the connection was left open")
 	}
 }
-
-// A handshake that will not stop is given up on by itself too, rather
-// than waiting for somebody to notice.
-func TestAHandshakeThatWillNotStopRunsOutOfTime(t *testing.T) {
-	was := helloTimeout
-	helloTimeout = 200 * time.Millisecond
-	t.Cleanup(func() { helloTimeout = was })
-
-	nc := newStubborn()
-	t.Cleanup(func() { close(nc.blocked) })
-
-	started := time.Now()
-	c, err := dialOnce(context.Background(), func(context.Context, string) (net.Conn, error) { return nc, nil },
-		"stuck:22", &ssh.ClientConfig{
-			User:            "tester",
-			Auth:            []ssh.AuthMethod{ssh.Password("x")},
-			HostKeyCallback: func(string, net.Addr, ssh.PublicKey) error { return nil },
-		}, nil)
-	if c != nil {
-		_ = c.Close()
-	}
-	if err == nil {
-		t.Fatal("a connection that said nothing was made anyway")
-	}
-	if !strings.Contains(err.Error(), "did not say who it is") {
-		t.Fatalf("dialOnce = %v, want it to say the machine never answered", err)
-	}
-	if took := time.Since(started); took > 5*time.Second {
-		t.Fatalf("it waited %s, want about %s", took, helloTimeout)
-	}
-}

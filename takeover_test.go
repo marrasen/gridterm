@@ -1340,20 +1340,29 @@ func silentMachine(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
-	held := make(chan net.Conn, 8)
+	// Kept under a lock rather than sent down a channel: the goroutine
+	// can be holding a connection at the moment the test ends, and a
+	// channel closed under it panics.
+	var (
+		mu   sync.Mutex
+		held []net.Conn
+	)
 	go func() {
 		for {
 			c, err := ln.Accept()
 			if err != nil {
 				return
 			}
-			held <- c
+			mu.Lock()
+			held = append(held, c)
+			mu.Unlock()
 		}
 	}()
 	t.Cleanup(func() {
 		_ = ln.Close()
-		close(held)
-		for c := range held {
+		mu.Lock()
+		defer mu.Unlock()
+		for _, c := range held {
 			_ = c.Close()
 		}
 	})

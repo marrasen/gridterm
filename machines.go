@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	stdlog "log"
 	"strings"
 
 	"github.com/marrasen/gridterm/conns"
@@ -356,16 +357,21 @@ func (a *app) openRoute(name string, route []step, command []string, at *spot) {
 		log.Say("connecting to " + s.cfg.Target())
 	}
 	for i := range missing {
-		missing[i].cfg.Ask = &askUser{app: a, log: log}
+		missing[i].cfg.Ask = &askUser{app: a, log: log, stop: func() { a.giveUp(held) }}
 		// What the dial is doing, as it does it. A connection that stops
 		// says where it stopped, which is the whole of what anybody has
 		// to go on.
 		missing[i].cfg.Saying = log.Say
 	}
 	go func() {
+		var handed []*remote.Conn
 		err := dialRoute(ctx, carrier, missing, func(at int, conn *remote.Conn) {
+			handed = append(handed, conn)
 			a.pump.post(func() { a.reached(held, log, missing, at, conn, first) })
 		})
+		if a.ctx.Err() != nil {
+			closeOnTheWayOut(handed)
+		}
 		a.pump.post(func() {
 			a.connecting--
 			a.release(held)
@@ -407,12 +413,12 @@ func (a *app) openRoute(name string, route []step, command []string, at *spot) {
 // it is connected to.
 func (a *app) reached(d *dialling, log *connLog, route []step, at int, conn *remote.Conn, first string) {
 	s := route[at]
-	if a.opening[s.name] != d || a.machines[s.name] != nil {
-		// Given up on, or tried again and the new attempt owns the name
-		// now. This connection is nobody's.
-		if err := conn.Close(); err != nil {
-			a.reportError("Could not let go of "+s.name, err)
-		}
+	// Held even when the route was given up on in the meantime: the
+	// machine answered, and whether this landed a frame before the user
+	// pressed give up or a frame after is not something they can see.
+	// Only another attempt owning the machine takes it away.
+	if taken := a.opening[s.name]; a.machines[s.name] != nil || (taken != nil && taken != d) {
+		a.letGoOfConn(s.name, conn)
 		return
 	}
 	via := first
@@ -423,6 +429,39 @@ func (a *app) reached(d *dialling, log *connLog, route []step, at int, conn *rem
 	d.made = append(d.made, s.name)
 	a.releaseName(d, s.name)
 	log.Say("connected to " + s.name)
+}
+
+// closeOnTheWayOut closes connections the window is never going to
+// take, because it has already stopped.
+//
+// Work posted to the pump does not run once the window has gone, so
+// these would be left open and the far end would see the socket break
+// rather than a hangup. Closing is idempotent, so one the window did
+// take is closed once either way. There is no window left to report a
+// failure to, so it goes to the log the process was started with.
+func closeOnTheWayOut(conns []*remote.Conn) {
+	for _, c := range conns {
+		if err := c.Close(); err != nil {
+			stdlog.Printf("closing a connection the window never took: %v", err)
+		}
+	}
+}
+
+// letGoOfConn closes a connection nothing wants, away from the
+// goroutine that draws.
+//
+// Closing one can take as long as the machine carrying it: it is a
+// polite hangup on a connection that may itself be wedged. Doing that
+// here would stop the window drawing and stop it taking keys.
+func (a *app) letGoOfConn(name string, conn *remote.Conn) {
+	go func() {
+		err := conn.Close()
+		a.pump.post(func() {
+			if err != nil {
+				a.reportError("Could not let go of "+name, err)
+			}
+		})
+	}()
 }
 
 // sayStillConnected names the machines of a route that are connected
@@ -439,7 +478,8 @@ func (a *app) sayStillConnected(log *connLog, d *dialling) {
 		}
 	}
 	if len(still) > 0 {
-		log.Say("still connected to " + strings.Join(still, ", "))
+		log.Say(strings.Join(still, ", ") + " answered and stays connected;" +
+			" closing this pane does not close it")
 	}
 }
 
@@ -500,6 +540,11 @@ func (a *app) stillWanted(gaveUp error, through *machine) error {
 // the machine beyond it does not. It is called from this goroutine.
 func dialRoute(ctx context.Context, through *remote.Conn, route []step, made func(int, *remote.Conn)) error {
 	for i, s := range route {
+		// Checked between hops as well as inside each one, so giving up
+		// does not start a login on the next machine along.
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		var (
 			conn *remote.Conn
 			err  error
@@ -658,16 +703,6 @@ func (a *app) disconnectHere() error {
 	return a.dropMachine(host)
 }
 
-// cancelConnecting gives up on a connection that is still being made.
-func (a *app) cancelConnecting(host string) error {
-	d := a.opening[host]
-	if d == nil {
-		return fmt.Errorf("gridterm is not connecting to %s", host)
-	}
-	a.giveUp(d)
-	return nil
-}
-
 // openTerminalHere opens another terminal on the machine the user is
 // looking at.
 func (a *app) openTerminalHere() error {
@@ -760,26 +795,4 @@ func (a *app) closeMachines() error {
 func (a *app) isSaved(name string) bool {
 	_, ok := a.book.Lookup(name)
 	return ok
-}
-
-// sayWaitingFor tells the user what a connection still being made is
-// waiting for.
-//
-// There is no pane to go to yet, so this is what clicking its row does.
-// Saying nothing reads as a window that has stopped listening, which is
-// exactly what a connection waiting on a browser window looks like.
-func (a *app) sayWaitingFor(name string) {
-	lines := []string{
-		"gridterm is still opening this connection.",
-		"",
-		"Some servers sign people in through a browser and wait for that" +
-			" to finish. If one asked you to open a link, the connection" +
-			" carries on by itself once you have.",
-	}
-	f := a.newConfirm("Connecting to "+name, lines)
-	f.AddButton(ui.Button{Title: "Keep waiting"})
-	f.AddButton(ui.Button{Title: "Give up", Do: func() error {
-		return a.cancelConnecting(name)
-	}})
-	a.showForm(f, nil)
 }

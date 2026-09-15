@@ -27,6 +27,15 @@ type askUser struct {
 	// into a dialog: a dialog is read once and dismissed, and a link
 	// that has been dismissed is a link nobody can use.
 	log *connLog
+
+	// stop gives up on the connection, and is nil when there is no way
+	// to. It is called on the goroutine that draws.
+	//
+	// The closure rather than the machine's name: what a server calls
+	// itself in a message is an address, and the window holds the name
+	// the user gave it. Looking one up by the other gave up on nothing
+	// at all.
+	stop func()
 }
 
 // Passphrase asks for the passphrase of a private key file.
@@ -178,6 +187,12 @@ func (u *askUser) form(s secret) func(reply func([]string, error)) ui.Widget {
 // without one having been called answers for itself, so clicking away or
 // pressing Escape is a refusal rather than a goroutine waiting for ever.
 func (u *askUser) ask(ctx context.Context, build func(reply func([]string, error)) ui.Widget) ([]string, error) {
+	if err := ctx.Err(); err != nil {
+		// Given up on already. A handshake that was walked away from
+		// goes on running, and a dialog from it would take the screen
+		// for a connection nobody is waiting for any more.
+		return nil, err
+	}
 	type answer struct {
 		values []string
 		err    error
@@ -237,6 +252,12 @@ func (u *askUser) ask(ctx context.Context, build func(reply func([]string, error
 // The dialog goes when the connection does, whichever way that turns
 // out: made, failed, or given up on.
 func (u *askUser) Notice(ctx context.Context, n remote.Notice) {
+	if ctx.Err() != nil {
+		// Given up on already. A handshake that was walked away from
+		// goes on running, and a dialog from it would arrive for a
+		// connection nobody is waiting for any more.
+		return
+	}
 	// Into the pane first, where it stays: whole, on lines of its own,
 	// and there to select and copy. A dialog is read once and then
 	// dismissed, and a sign-in link the user dismissed is gone.
@@ -262,14 +283,16 @@ func (u *askUser) Notice(ctx context.Context, n remote.Notice) {
 			"", "It is in the pane as well, in full and there to copy.")
 	}
 
-	host := n.Host
 	var dismiss func()
 	u.app.pump.post(func() {
 		f := u.app.newConfirm("The server is waiting", lines)
 		f.AddButton(ui.Button{Title: "Leave it waiting"})
-		f.AddButton(ui.Button{Title: "Give up", Do: func() error {
-			return u.app.cancelConnecting(host)
-		}})
+		if u.stop != nil {
+			f.AddButton(ui.Button{Title: "Give up", Do: func() error {
+				u.stop()
+				return nil
+			}})
+		}
 		dismiss = u.app.showForm(f, nil)
 	})
 

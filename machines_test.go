@@ -316,7 +316,7 @@ func TestAFailedRouteKeepsTheHopItReached(t *testing.T) {
 	if a.machines["db"] != nil {
 		t.Fatalf("the machine that refused was kept: %v", names(a))
 	}
-	if !strings.Contains(said, "still connected to edge") {
+	if !strings.Contains(said, "edge answered and stays connected") {
 		t.Errorf("the pane does not say what is still connected: %q", said)
 	}
 	// And no name is held any more, so another attempt at either can be
@@ -791,5 +791,64 @@ func TestAHopThatAnsweredIsUsableWhileTheNextIsStillBeingReached(t *testing.T) {
 	// connection the user can work on.
 	if a.machines["edge"] == nil {
 		t.Fatalf("giving up on the machine beyond it closed the one that answered: %v", names(a))
+	}
+}
+
+// Closing a connection that is still being made gives up on it and lets
+// go of every name it was holding, there and then.
+//
+// This is what "close the connection" does, and it did nothing that the
+// user could see. The names went only when the dial goroutine came
+// back, and a handshake carried inside another connection need never
+// come back at all: the window went on saying it was already connecting
+// to a machine nobody was connecting to.
+func TestClosingAConnectionStillBeingMadeLetsGoOfItsNames(t *testing.T) {
+	near := sshtest.New(t)
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+
+	deafHost, deafPort := sshtest.Deaf(t)
+	key := sshtest.WriteKey(t)
+	a.prepare = func(cfg remote.Config) remote.Config {
+		cfg.NoAgent = true
+		cfg.Identities = []string{key}
+		cfg.HostKeyCallback = ssh.FixedHostKey(near.HostKey())
+		return cfg
+	}
+	saveHost(t, a, "edge", near, "")
+	deaf := net.JoinHostPort(deafHost, strconv.Itoa(deafPort))
+	if err := a.book.Put(remote.Host{
+		Name: "db", Address: deafHost, Port: deafPort, User: "tester", Via: "edge",
+	}, ""); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+
+	if err := a.connectSaved("db"); err != nil {
+		t.Fatalf("connectSaved: %v", err)
+	}
+	// Wait until it is inside the handshake with the machine that never
+	// answers, which is where it used to be impossible to stop.
+	waitFor(t, a, "the machine that never answers to be reached", func() bool {
+		for pane, e := range a.panes {
+			if e.Host == "db" && strings.Contains(paneText(pane), "asking "+deaf) {
+				return true
+			}
+		}
+		return false
+	})
+
+	// The way the user does it: "Close the connection" on the machine's
+	// own row in the sidebar.
+	a.actOn, a.acting = "db", true
+	if err := a.disconnectHere(); err != nil {
+		t.Fatalf("close the connection: %v", err)
+	}
+	a.acting = false
+	if a.opening["db"] != nil {
+		t.Fatal("the window is still holding the name of a connection nobody is making")
+	}
+	// And another attempt can be made at once, which is the whole point.
+	if err := a.connectSaved("db"); err != nil {
+		t.Fatalf("a second attempt: %v", err)
 	}
 }

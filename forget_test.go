@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/marrasen/gridterm/remote"
+	"github.com/marrasen/gridterm/ui"
 )
 
 // A saved machine can be edited and forgotten from its own plus menu.
@@ -147,4 +148,55 @@ func TestAServerMessageGoesWhenTheConnectionIsSettled(t *testing.T) {
 		time.Sleep(time.Millisecond)
 	}
 	t.Fatal("the message stayed up after the connection was settled")
+}
+
+// The "Give up" button on a server's message gives up.
+//
+// It used to look the machine up by what the server calls itself, which
+// is an address, while the window holds the name the user gave it. The
+// two never matched, so the one button in front of a user waiting on a
+// browser sign-in did nothing at all.
+func TestGivingUpOnAServerMessageGivesUp(t *testing.T) {
+	a := newTestApp(t, 100, 30)
+	withPanel(t, a)
+	withDialogs(t, a)
+
+	gave := false
+	ask := &askUser{app: a.app, stop: func() { gave = true }}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ask.Notice(ctx, remote.Notice{
+		User: "rdp", Host: "10.0.0.5:22",
+		Instruction: "To authenticate, visit: https://login.example/a/1234",
+	})
+
+	f := openDialog(t, a)
+	pressButton(t, a, f, "Give up")
+	a.pump.run()
+	if !gave {
+		t.Error("the button gave up on nothing")
+	}
+}
+
+// A message that arrives for a connection already given up on is not
+// shown.
+//
+// A handshake that was walked away from goes on running, and its dialog
+// would otherwise take the screen minutes later for a connection nobody
+// is waiting for.
+func TestAServerMessageForAConnectionAlreadyGivenUpOnIsNotShown(t *testing.T) {
+	a := newTestApp(t, 100, 30)
+	withPanel(t, a)
+	withDialogs(t, a)
+	ask := &askUser{app: a.app}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	ask.Notice(ctx, remote.Notice{User: "rdp", Host: "here", Text: "hello"})
+
+	a.pump.run()
+	if f, ok := a.root.Modal().(*ui.Form); ok {
+		t.Errorf("a dialog opened anyway: %v", f.Lines)
+	}
 }

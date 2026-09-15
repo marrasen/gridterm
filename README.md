@@ -224,19 +224,19 @@ encoders and both session types.
 | `input` | 592 | no | key, text, mouse and paste events to VT bytes |
 | `session` | 362 | no | a shell as a byte stream, and the local pty |
 | `remote` | 3,693 | no | SSH: connections, shells, host keys, unlocked keys, tunnels |
-| `serve` | 1,878 | no | one window served to another: the listener, the client, and what they say |
-| `agent` | 666 | no | one pane handed to an agent: the code, the port, and what may be asked |
-| `mcp` | 633 | no | those panes over the Model Context Protocol, on standard input and output |
+| `serve` | 1,934 | no | one window served to another: the listener, the client, and what they say |
+| `agent` | 683 | no | one pane handed to an agent: the code, the port, and what may be asked |
+| `mcp` | 638 | no | those panes over the Model Context Protocol, on standard input and output |
 | `conns` | 252 | no | what the window has open, grouped by machine |
 | `vfs` | 669 | no | a filesystem a file pane works on: this machine, or one over SFTP |
 | `jobs` | 1,142 | no | copying, moving and deleting in the background, with progress and cancel |
 | `meter` | 327 | no | bytes moved, and how long ago: the four states |
 | `ui` | 5,919 | no | the widget toolkit: panes, tabs, menus, dialogs, fields, lists |
-| `ui/term` | 733 | no | a shell on a widget |
+| `ui/term` | 787 | no | a shell on a widget |
 | `ui/files` | 1,455 | no | the file manager: any number of panes side by side |
 | `glyph` | 1,301 | yes | glyph atlas, system font fallback, box drawing |
 | `render` | 1,779 | yes | grid to batched triangles |
-| `main` | 8,073 | yes | the window and the wiring |
+| `main` | 8,499 | yes | the window and the wiring |
 
 The layering is deliberate: `vt` never imports the renderer, `input`
 never imports ebiten (that lives in `input/ebitenin`), `ui` knows nothing

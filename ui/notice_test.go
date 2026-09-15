@@ -480,6 +480,18 @@ func TestNoticeKeepsTheLineBreaksItWasGiven(t *testing.T) {
 	}
 }
 
+// A line that fills the width exactly is one line, not two.
+func TestWrapTextFillsTheWidthBeforeBreaking(t *testing.T) {
+	lines := wrapText("aaaa bbbb", 9)
+	if len(lines) != 1 || lines[0].text != "aaaa bbbb" {
+		t.Fatalf("wrapText at 9 = %+v, want the one line that fits", lines)
+	}
+	lines = wrapText("aaaa bbbb", 8)
+	if len(lines) != 2 || lines[0].text != "aaaa" || lines[0].join != " " {
+		t.Fatalf("wrapText at 8 = %+v, want two lines joined by a space", lines)
+	}
+}
+
 // A word wider than the box is cut rather than pushing the box wider
 // than the window, and none of it is lost.
 func TestNoticeBreaksAWordTooWideForTheBox(t *testing.T) {

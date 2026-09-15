@@ -282,6 +282,28 @@ func TestPaneWithTheKeysShowsWhyAReadFailedStraightAway(t *testing.T) {
 	}
 }
 
+// A new failure is a new reason, and it is shown even though the last
+// one already was.
+func TestPaneShowsASecondFailureToo(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "one.txt", "one")
+
+	p := alone(t, dir)
+	var shown []error
+	p.OnError = func(err error) { shown = append(shown, err) }
+
+	first := errors.New("the machine went away")
+	p.Read = func(_ vfs.FS, _ string, then func([]vfs.Entry, error)) { then(nil, first) }
+	p.Reload()
+	second := errors.New("and it is still away")
+	p.Read = func(_ vfs.FS, _ string, then func([]vfs.Entry, error)) { then(nil, second) }
+	p.Reload()
+
+	if len(shown) != 2 || !errors.Is(shown[1], second) {
+		t.Fatalf("the pane showed %v, want both reasons in turn", shown)
+	}
+}
+
 // A pane without the keys waits: a dialog on top of what somebody is
 // doing in the other pane is the window getting in their way.
 func TestPaneWithoutTheKeysWaitsForThemToShowWhyAReadFailed(t *testing.T) {

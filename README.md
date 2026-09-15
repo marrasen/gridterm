@@ -339,6 +339,8 @@ emulator under `internal/` where they cannot be imported.
   `x/image/font/sfnt` does not apply variation axes, so asking such a
   font for its bold weight gets the default one.
 - **Blink** is parsed and ignored.
+- **The cursor never blinks.** `DECSCUSR` is read and the shape is
+  used, but the blinking styles draw the same as the steady ones.
 - **Colour emoji** do not render. `x/image/font/sfnt` cannot read the
   bitmap tables that colour emoji fonts use.
 - **Emoji ZWJ sequences and flags** show only their first glyph; the

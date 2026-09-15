@@ -62,12 +62,7 @@ func (a *app) openHostMenu(row ui.ListRow) error {
 	// below.
 	var hide func()
 	menu := ui.NewMenu(a.root.Commands, a.root.Accelerators,
-		hostItems(hostAbout{
-			here:   a.isHere(string(host)),
-			window: a.isWindow(string(host)),
-			saved:  a.isSaved(string(host)),
-			serves: a.savedWindow(string(host)),
-		}), func() {
+		hostItems(a.about(string(host))), func() {
 			if hide != nil {
 				hide()
 			}
@@ -109,29 +104,17 @@ func (a *app) openHostMenu(row ui.ListRow) error {
 // A machine the server list holds can also be edited and forgotten.
 // This is where they belong: the row is the machine, so the plus on it
 // is where everything about that machine is.
-
-// hostAbout says what kind of machine a row stands for, which is what
-// decides the menu on it.
-type hostAbout struct {
-	// here is the machine gridterm is running on.
-	here bool
-
-	// window is another gridterm, already taken over.
-	window bool
-
-	// saved is in the server list, and serves narrows that to one saved
-	// as a gridterm window rather than a machine to log in to.
-	saved, serves bool
-}
-
-func hostItems(about hostAbout) []ui.MenuItem {
-	if about.here {
+func hostItems(about hostFacts) []ui.MenuItem {
+	if about.kind == hostHere {
 		return []ui.MenuItem{
 			{Command: "tab.open", Title: "Terminal"},
 			{Command: "conn.files", Title: "Files"},
 		}
 	}
-	if about.window {
+	// heldAt as well as the kind: a saved window taken over under
+	// another name is a window in front of the user, whatever the maps
+	// are keyed by.
+	if about.kind == hostWindow || about.heldAt != nil {
 		items := []ui.MenuItem{
 			{Command: "conn.terminal", Title: "Terminal"},
 			{Command: "conn.files", Title: "Files"},

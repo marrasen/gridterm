@@ -117,7 +117,7 @@ func (a *app) openRows(t *taken) []serve.Open { return t.win.Opens() }
 // anything with, and a list of rows that do nothing is a list nobody
 // can read.
 func (a *app) remoteRows(host string) []ui.ListRow {
-	t := a.windows[host]
+	t := a.about(host).window
 	if t == nil {
 		return nil
 	}

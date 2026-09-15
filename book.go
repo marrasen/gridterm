@@ -29,21 +29,18 @@ func (a *app) refreshServers() {
 	if a.root.Commands == nil {
 		return
 	}
-	// Which of them are windows rather than machines, for the panel and
-	// for the commands below.
-	//
-	// Before the shortcut: which machines there are and what each one is
-	// are two different questions, and changing a machine from one kind
-	// to the other changes no name at all. Reading this after the
-	// shortcut left a window known as a machine for the rest of the
-	// session, so asking for a terminal on it tried to log in to it.
+	// Which of them are windows rather than machines, for the comparison
+	// below. Which machines there are and what each one is are two
+	// different questions, and changing a machine from one kind to the
+	// other changes no name at all. The field this used to cache is
+	// gone, and about reads the book live, so reading it after the
+	// shortcut below is safe.
 	windows := make(map[string]bool)
 	for _, h := range a.book.Hosts() {
 		if h.Window {
 			windows[h.Name] = true
 		}
 	}
-	a.savedWindows = windows
 
 	// Nothing more to do when the machines are the ones already
 	// registered. This runs whenever a connection is made or lost, and
@@ -79,7 +76,7 @@ func (a *app) refreshServers() {
 	for _, name := range a.everyHost() {
 		host := name
 		title := "Open a terminal on " + groupName(host)
-		if a.savedWindows[host] && a.windows[host] == nil {
+		if a.about(host).toTakeOver() {
 			// Nothing runs on a window until it is taken over, and
 			// taking it over is what asking for a terminal on it means.
 			title = "Take over " + groupName(host)
@@ -87,7 +84,7 @@ func (a *app) refreshServers() {
 		term := ui.Command{
 			ID:    termPrefix + remote.CommandName(host),
 			Title: title,
-			Run:   func() error { return a.openTerminalOn(host) },
+			Run:   func() error { return a.openTerminalOn(host, nil) },
 		}
 		a.registerServerCommands(a.reporting(term))
 		browse := ui.Command{
@@ -150,20 +147,43 @@ func (a *app) registerServerCommands(cmds ...ui.Command) {
 
 // openTerminalOn opens a terminal on a machine: a tab here when it is
 // this one, and a shell over the connection otherwise.
-func (a *app) openTerminalOn(host string) error {
+//
+// about says what a name is; this says what to open on it, so every way
+// in gets the same answer. at is the split the terminal should land in,
+// or nil for a tab of its own.
+func (a *app) openTerminalOn(host string, at *spot) error {
+	f := a.about(host)
 	switch {
-	case a.isHere(host):
+	case f.kind == hostHere:
 		// A new pane already runs there, which is what a new tab is.
+		if at != nil {
+			// A guard: the chooser skips this machine, because a
+			// terminal here is the line it offers first.
+			return a.splitNewTerminal(at.dir, at.beside)
+		}
 		return a.openTab()
-	case a.isWindow(host):
-		return a.openOnWindow(host, nil)
-	case a.savedWindow(host):
+	case f.kind == hostWindow:
+		return a.openOnWindow(f.name, at)
+	case f.heldAt != nil:
+		// Saved as a window and already taken over under another name,
+		// so a terminal on it is a terminal on the one being held.
+		return a.openOnWindow(f.heldAt.name, at)
+	case f.toTakeOver():
 		// Nothing runs on a window until it is taken over, and there is
 		// no shell on one to log in to: it serves gridterm's own
 		// protocol and answers nothing else.
-		return a.connectSaved(host)
+		h := f.record()
+		return a.workOnWindow(h.ServeAddr(), h.KeyFile(), at)
 	}
-	return a.openOn(host, nil, nil)
+	// The server list's own spelling, because a connection made under
+	// the name as typed would become a second heading beside the saved
+	// one: the maps take the name as asked, and a new key takes the
+	// list's.
+	name := f.name
+	if f.saved {
+		name = f.spelling
+	}
+	return a.openOn(name, nil, at)
 }
 
 // everyHost is every machine worth a command of its own: this one, the
@@ -238,20 +258,13 @@ func whichKind(text string) (window bool, err error) {
 //
 // A saved window is taken over instead, which is the only way to reach
 // one: it serves gridterm's own protocol and has no shell to log in to.
+// Which of those it is, is openTerminalOn's to say.
 func (a *app) connectSaved(name string) error {
-	h, ok := a.book.Lookup(name)
-	if !ok {
+	f := a.about(name)
+	if !f.saved {
 		return fmt.Errorf("there is no saved server called %q", name)
 	}
-	if h.Window {
-		if a.windows[h.Name] != nil {
-			// Already taken over, so what was asked for is a terminal on
-			// it rather than taking it over again.
-			return a.openOnWindow(h.Name, nil)
-		}
-		return a.takeOver(h.ServeAddr(), h.KeyFile())
-	}
-	return a.openOn(h.Name, nil, nil)
+	return a.openTerminalOn(f.name, nil)
 }
 
 // reloadBook reads the server list again, for a user who has repaired
@@ -367,11 +380,11 @@ func (a *app) openServerForm(under string) error {
 		// this machine itself -- and two connections under one name
 		// would leave one of them open with nothing holding it.
 		if under != "" && under != h.Name {
-			if a.machines[h.Name] != nil || a.opening[h.Name] != nil || a.windows[h.Name] != nil {
+			if a.about(h.Name).held() {
 				return fmt.Errorf("something is already connected as %q; close it first", h.Name)
 			}
 		}
-		if t := a.windows[under]; t != nil && (!window || t.addr != h.ServeAddr()) {
+		if t := a.about(under).window; t != nil && (!window || t.addr != h.ServeAddr()) {
 			// The connection is to the machine it was made to, and
 			// saying it is somewhere else does not move it.
 			return fmt.Errorf("%s is taken over at %s; let go of it before changing where it is",
@@ -461,11 +474,11 @@ func viaHint(options []string) string {
 // editThisServer opens the dialog for the machine whose row was
 // clicked, rather than for one picked from a list.
 func (a *app) editThisServer() error {
-	host := a.currentHost()
-	if !a.isSaved(host) {
-		return fmt.Errorf("%s is not in the server list", groupName(host))
+	f := a.about(a.currentHost())
+	if !f.saved {
+		return fmt.Errorf("%s is not in the server list", groupName(f.name))
 	}
-	return a.openEditServer(host)
+	return a.openEditServer(f.name)
 }
 
 // forgetThisServer takes the machine whose row was clicked out of the
@@ -474,10 +487,10 @@ func (a *app) editThisServer() error {
 // Asked from here rather than done: a server is a few minutes of typing
 // and the list is the only record of it.
 func (a *app) forgetThisServer() error {
-	host := a.currentHost()
-	if !a.isSaved(host) {
-		return fmt.Errorf("%s is not in the server list", groupName(host))
+	f := a.about(a.currentHost())
+	if !f.saved {
+		return fmt.Errorf("%s is not in the server list", groupName(f.name))
 	}
-	a.confirmRemoveServer(host)
+	a.confirmRemoveServer(f.name)
 	return nil
 }

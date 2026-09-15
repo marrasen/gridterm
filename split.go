@@ -82,14 +82,18 @@ func (a *app) addSplitChoices(c *ui.Chooser, dir ui.Dir, current ui.Widget) {
 	// one of them. A machine nothing is connected to yet is connected to
 	// first, and the terminal lands in the split when it arrives.
 	for _, host := range a.allHosts() {
-		if a.isHere(host) {
+		on := a.about(host)
+		if on.kind == hostHere {
 			// A terminal there is the local shell already offered.
 			continue
 		}
-		name := host
+		name := on.name
 		at := &spot{beside: current, dir: dir}
-		c.Add("Terminal on "+name, a.hostNote(name), func() error {
-			return a.openOn(name, nil, at)
+		c.Add("Terminal on "+name, hostNote(on), func() error {
+			// Through the one place that says what a name is worth
+			// opening on, so a window here is taken over rather than
+			// logged in to, and lands in the split all the same.
+			return a.openTerminalOn(name, at)
 		})
 	}
 }
@@ -181,11 +185,18 @@ func (a *app) paneWhere(w ui.Widget) string {
 	return ""
 }
 
-// hostNote says whether a machine is connected already, so the user can
-// tell which choices cost a login.
-func (a *app) hostNote(host string) string {
-	if a.machines[host] != nil {
+// hostNote says what picking a machine costs, so the user can tell which
+// choices are a login and which are already there.
+func hostNote(on hostFacts) string {
+	switch {
+	case on.kind == hostWindow:
+		return "already taken over"
+	case on.kind == hostMachine:
 		return "connected"
+	case on.kind == hostConnecting:
+		return "still connecting"
+	case on.serves:
+		return "takes it over"
 	}
 	return "connects"
 }

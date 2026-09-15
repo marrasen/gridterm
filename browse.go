@@ -36,11 +36,19 @@ func (a *app) openFilesHere() error { return a.openFilesOn(a.currentHost()) }
 // openFilesOn puts a pane on a machine, starting the file manager when
 // there is not one yet.
 func (a *app) openFilesOn(host string) error {
-	if a.savedWindows[host] && a.windows[host] == nil {
+	on := a.about(host)
+	if on.toTakeOver() {
 		return fmt.Errorf("take over %s first: it is a gridterm window, "+
-			"and its files come over that connection", host)
+			"and its files come over that connection", on.name)
 	}
-	f, err := a.filesystem(host)
+	// A saved window already taken over under another name: its files
+	// come over the connection being held, and its pane goes under the
+	// name holding it so the sidebar keeps one heading for it.
+	name := on.name
+	if on.heldAt != nil {
+		name = on.heldAt.name
+	}
+	f, err := a.filesystem(name)
 	if err != nil {
 		return err
 	}
@@ -57,7 +65,7 @@ func (a *app) openFilesOn(host string) error {
 		// nothing is showing is worse than no pane at all.
 		return errors.Join(errors.New("the file manager refused the pane"), f.Close())
 	}
-	row := a.browserRow(p, host)
+	row := a.browserRow(p, name)
 	b.rows[p] = row
 	a.registry.Add(row)
 	a.focus(p)
@@ -107,21 +115,27 @@ func (a *app) startAt(p *files.Pane) {
 // filesystem opens a filesystem for a machine: this one, or one reached
 // over a connection that is already open.
 func (a *app) filesystem(host string) (vfs.FS, error) {
-	if host == conns.Local {
+	on := a.about(host)
+	switch {
+	case on.local:
 		return vfs.NewLocal(), nil
+	case on.kind == hostHere:
+		// The machine -ssh put every pane on. The panes run there, but
+		// the window holds no connection of its own to read files over.
+		return nil, fmt.Errorf(
+			"the panes here run on %s, but gridterm did not open that connection, "+
+				"so it cannot read files over it",
+			on.name)
+	case on.window != nil:
+		return a.windowFiles(on.name)
+	case on.machine == nil:
+		return nil, fmt.Errorf("nothing is connected to %s", on.name)
 	}
-	if a.isWindow(host) {
-		return a.windowFiles(host)
-	}
-	m := a.machines[host]
-	if m == nil {
-		return nil, fmt.Errorf("nothing is connected to %s", host)
-	}
-	f, err := m.conn.Files(a.ctx)
+	f, err := on.machine.conn.Files(a.ctx)
 	if err != nil {
 		return nil, err
 	}
-	return vfs.NewSFTP(host, f.Client(), f.Close), nil
+	return vfs.NewSFTP(on.name, f.Client(), f.Close), nil
 }
 
 // newPane builds one pane of the file manager.
@@ -299,16 +313,11 @@ func (a *app) reloadPanesOn(on ...vfs.FS) {
 
 // hostOf says which machine a filesystem is, for the panel.
 func (a *app) hostOf(f vfs.FS) string {
-	for name, m := range a.machines {
-		if m != nil && f.Name() == name {
-			return name
-		}
-	}
 	// A window taken over is a machine like any other here: its panes
 	// go under its name, the commands on its row work on it, and a copy
 	// to it counts as bytes leaving rather than arriving.
-	if a.isWindow(f.Name()) {
-		return f.Name()
+	if on := a.about(f.Name()); on.machine != nil || on.window != nil {
+		return on.name
 	}
 	return conns.Local
 }

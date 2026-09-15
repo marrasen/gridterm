@@ -927,7 +927,7 @@ func TestAWindowAlreadyTakenOverIsNotTakenOverTwice(t *testing.T) {
 	client := newTestApp(t, 90, 30)
 	withDialogs(t, client)
 	withPanel(t, client)
-	if err := client.takeOver(addr, keyFile); err != nil {
+	if err := client.takeOver(addr, keyFile, nil); err != nil {
 		t.Fatalf("take over: %v", err)
 	}
 	answer(t, client, "Connect")
@@ -945,7 +945,7 @@ func TestAWindowAlreadyTakenOverIsNotTakenOverTwice(t *testing.T) {
 	}
 	client.refreshServers()
 
-	if err := client.takeOver(addr, keyFile); err == nil {
+	if err := client.takeOver(addr, keyFile, nil); err == nil {
 		t.Fatal("it took over the same window twice")
 	}
 	if n := len(client.windows); n != 1 {
@@ -997,8 +997,8 @@ func TestRenamingATakenOverWindowMovesItsConnection(t *testing.T) {
 	if t2 == nil {
 		t.Fatalf("the connection did not follow the rename: %v", mapKeys(client.windows))
 	}
-	if !client.isWindow("m-statio") {
-		t.Error("it is not known as a window under its new name")
+	if got := client.about("m-statio").kind; got != hostWindow {
+		t.Errorf("under its new name it is a %v, want a window", got)
 	}
 	// And closing it under the new name really closes it.
 	if err := client.dropWindow("m-statio"); err != nil {
@@ -1112,7 +1112,7 @@ func TestChangingAMachineIntoAWindowTakesEffectAtOnce(t *testing.T) {
 		t.Fatalf("Put: %v", err)
 	}
 	a.refreshServers()
-	if a.savedWindows["statio"] {
+	if a.about("statio").serves {
 		t.Fatal("a machine is known as a window before it is one")
 	}
 
@@ -1124,7 +1124,7 @@ func TestChangingAMachineIntoAWindowTakesEffectAtOnce(t *testing.T) {
 	pressButton(t, a, f, "Save")
 	a.pump.run()
 
-	if !a.savedWindows["statio"] {
+	if !a.about("statio").serves {
 		t.Fatal("it is still known as a machine")
 	}
 	// And the command says what it now does, rather than offering a
@@ -1178,7 +1178,7 @@ func TestASavedWindowIsTakenOverHoweverItIsAskedFor(t *testing.T) {
 			case "as a terminal on it":
 				// The plus on its row, which builds a route of its own
 				// rather than going through connectAs.
-				if err := client.openTerminalOn("statio"); err != nil {
+				if err := client.openTerminalOn("statio", nil); err != nil {
 					t.Fatalf("terminal on it: %v", err)
 				}
 			case "from the saved list":

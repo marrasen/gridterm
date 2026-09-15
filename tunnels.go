@@ -48,13 +48,13 @@ func (c counted) Wrap(w io.Writer, out bool) io.Writer {
 // tunnelHost returns the machine to run a tunnel over: the one the user
 // is looking at, if it is one gridterm has a connection to.
 func (a *app) tunnelHost() (string, error) {
-	host := a.currentHost()
-	if a.machines[host] == nil {
+	on := a.about(a.currentHost())
+	if on.machine == nil {
 		return "", fmt.Errorf(
 			"a tunnel runs over a connection to another machine, and %s is not one",
-			groupName(host))
+			groupName(on.name))
 	}
-	return host, nil
+	return on.name, nil
 }
 
 // openTunnelHere asks for a port to forward over the connection to the
@@ -198,7 +198,7 @@ func listenName(t remote.Tunnel) string {
 
 // openTunnel starts a forward and puts it on the panel.
 func (a *app) openTunnel(host string, t remote.Tunnel) {
-	m := a.machines[host]
+	m := a.about(host).machine
 	if m == nil {
 		a.reportError("Could not open the tunnel",
 			fmt.Errorf("nothing is connected to %s any more", host))

@@ -72,7 +72,10 @@ func (a *app) openTakeOver() error {
 	key := f.AddField("Key file", a.newField("optional, or the agent's keys", 0))
 
 	f.AddButton(ui.Button{Title: "Take over", Do: func() error {
-		return a.takeOver(strings.TrimSpace(addr.Text()), strings.TrimSpace(key.Text()))
+		// Through workOnWindow, so typing the address of a window this
+		// one already holds gives a terminal on it rather than the
+		// complaint that it has been taken over.
+		return a.workOnWindow(strings.TrimSpace(addr.Text()), strings.TrimSpace(key.Text()), nil)
 	}})
 	f.AddButton(ui.Button{Title: "Cancel"})
 	a.showForm(f, nil)
@@ -84,15 +87,11 @@ func (a *app) openTakeOver() error {
 // The work happens on a goroutine of its own: reaching a machine can
 // stop to ask for a passphrase, or to ask whether its key is the one
 // expected, and neither can be answered by the goroutine that draws.
-func (a *app) takeOver(addr, keyFile string) error {
+func (a *app) takeOver(addr, keyFile string, at *spot) error {
 	if addr == "" {
 		return errors.New("no machine to take over")
 	}
-	if _, _, err := net.SplitHostPort(addr); err != nil {
-		// No port, or a bare IPv6 literal, which has colons of its own
-		// and is not an address with a port on the end.
-		addr = net.JoinHostPort(strings.Trim(addr, "[]"), strconv.Itoa(servePort))
-	}
+	addr = serveAddr(addr)
 	// Already held, whatever it is called. By address rather than by
 	// name: saving, renaming or forgetting a window changes its name
 	// and changes nothing about the connection, and a guard that went
@@ -106,8 +105,8 @@ func (a *app) takeOver(addr, keyFile string) error {
 	name := a.windowNamed(addr)
 	// Already on its way. Asked about rather than refused: waiting for
 	// it is usually what the user wants.
-	if d := a.opening[name]; d != nil {
-		a.askAboutTheOneOnItsWay(d, name, func() { a.workOnWindow(addr, keyFile) })
+	if d := a.about(name).dialling; d != nil {
+		a.askAboutTheOneOnItsWay(d, name, func() { a.workOnWindowOrSay(addr, keyFile, at) })
 		return nil
 	}
 
@@ -125,7 +124,7 @@ func (a *app) takeOver(addr, keyFile string) error {
 	held := &dialling{cancel: cancel, names: []string{name}}
 	log := newConnLog(func() { a.pump.post(func() { a.giveUp(held) }) })
 	held.say = log.Say
-	pane, err := a.openSessionTab(log, name, conns.Terminal, "connecting", nil)
+	pane, err := a.openSessionTab(log, name, conns.Terminal, "connecting", at)
 	if err != nil {
 		cancel()
 		return err
@@ -181,23 +180,48 @@ func (a *app) takeOver(addr, keyFile string) error {
 	return nil
 }
 
-// workOnWindow is what a request that waited for a window being taken
-// over does when it runs.
+// workOnWindow opens a terminal on the window serving at an address,
+// taking it over first when this one has not already.
 //
-// A terminal on it once it has landed, rather than taking it over a
-// second time: that would only report that it has been taken over
-// already, which is not what the user waited for.
-func (a *app) workOnWindow(addr, keyFile string) {
-	name := a.windowNamed(addr)
-	if a.windows[name] != nil {
-		if err := a.openOnWindow(name, nil); err != nil {
-			a.reportError("Could not open a terminal on "+name, err)
-		}
-		return
+// The one way in for every request to work on a window, however it was
+// named: taking over one already taken over would only report that it
+// has been, which is not what the user asked for.
+func (a *app) workOnWindow(addr, keyFile string, at *spot) error {
+	addr = serveAddr(addr)
+	// By address rather than by name: a window taken over before it was
+	// saved is held under its address, and a name that was never asked
+	// about is held under nothing.
+	if held := a.windowAt(addr); held != nil {
+		return a.openOnWindow(held.name, at)
 	}
-	if err := a.takeOver(addr, keyFile); err != nil {
-		a.reportError("Could not take over "+addr, err)
+	return a.takeOver(addr, keyFile, at)
+}
+
+// workOnWindowOrSay is workOnWindow for a caller with nowhere to return
+// an error to, and says which of the two failed.
+func (a *app) workOnWindowOrSay(addr, keyFile string, at *spot) {
+	where := serveAddr(addr)
+	title := "Could not take over " + a.windowNamed(where)
+	if held := a.windowAt(where); held != nil {
+		title = "Could not open a terminal on " + held.name
 	}
+	if err := a.workOnWindow(addr, keyFile, at); err != nil {
+		a.reportError(title, err)
+	}
+}
+
+// serveAddr is an address as the user typed it, with the serve port
+// filled in when none was given.
+func serveAddr(addr string) string {
+	if addr == "" {
+		return ""
+	}
+	if _, _, err := net.SplitHostPort(addr); err != nil {
+		// No port, or a bare IPv6 literal, which has colons of its own
+		// and is not an address with a port on the end.
+		return net.JoinHostPort(strings.Trim(addr, "[]"), strconv.Itoa(servePort))
+	}
+	return addr
 }
 
 // windowNamed is what a window serving at an address is called here.
@@ -206,12 +230,24 @@ func (a *app) workOnWindow(addr, keyFile string) {
 // about it goes under one name. An address nothing saved is its own
 // name.
 func (a *app) windowNamed(addr string) string {
-	for _, h := range a.book.Hosts() {
-		if h.Window && strings.EqualFold(h.ServeAddr(), addr) {
-			return h.Name
-		}
+	if h, ok := a.savedWindowAt(addr); ok {
+		return h.Name
 	}
 	return addr
+}
+
+// savedWindowAt is the saved gridterm window serving at an address.
+//
+// By address rather than by name, because a connection made from a typed
+// target knows nothing about the list. about answers about a name and
+// this does not, so the two do not overlap.
+func (a *app) savedWindowAt(addr string) (remote.Host, bool) {
+	for _, h := range a.book.Hosts() {
+		if h.Window && strings.EqualFold(h.ServeAddr(), addr) {
+			return h, true
+		}
+	}
+	return remote.Host{}, false
 }
 
 // windowAt is the window already taken over at an address, or nil.
@@ -223,14 +259,6 @@ func (a *app) windowAt(addr string) *taken {
 	}
 	return nil
 }
-
-// savedWindow reports whether a name is a window in the server list.
-//
-// Read off the names the panel already asks for rather than by looking
-// the machine up: this runs for every row of every frame, and cloning a
-// saved machine and its key files to read one flag off it is work for
-// nothing.
-func (a *app) savedWindow(name string) bool { return a.savedWindows[name] }
 
 // renamedWindow follows a rename through what the window holds for a
 // window taken over.
@@ -260,7 +288,7 @@ func (a *app) renamedWindow(was, now string) {
 // becomeWindowPane hands the pane that was watching a window being taken
 // over to a shell on that window.
 func (a *app) becomeWindowPane(addr string, pane *term.Terminal, log *connLog) {
-	t := a.windows[addr]
+	t := a.about(addr).window
 	if t == nil {
 		a.endedAs(pane, "not taken over")
 		log.Failed(fmt.Errorf("this window has not taken over %s", addr))
@@ -519,6 +547,7 @@ func (a *app) holdWindow(name, addr string, win *serve.Window) *taken {
 
 // windowDied is called when the other window has gone by itself.
 func (a *app) windowDied(t *taken) {
+	// By identity: the name may hold another window by now.
 	if a.windows[t.name] != t {
 		// Already let go of from here, and its row with it.
 		return
@@ -589,7 +618,7 @@ func (keptOpen) Close() error { return nil }
 // windowFiles is the filesystem of the machine a window taken over is
 // on, as a browser pane works on it.
 func (a *app) windowFiles(addr string) (vfs.FS, error) {
-	t := a.windows[addr]
+	t := a.about(addr).window
 	if t == nil {
 		return nil, fmt.Errorf("this window has not taken over %s", addr)
 	}
@@ -657,7 +686,7 @@ const filesGrace = 250 * time.Millisecond
 // openOnWindow opens a terminal in the other window, drawn in a pane
 // here.
 func (a *app) openOnWindow(addr string, at *spot) error {
-	t := a.windows[addr]
+	t := a.about(addr).window
 	if t == nil {
 		return fmt.Errorf("this window has not taken over %s", addr)
 	}
@@ -703,9 +732,10 @@ func (a *app) farSize(what remoteKey) (cols, rows int) {
 
 // dropWindow lets go of another window, taking the panes drawn from it.
 func (a *app) dropWindow(addr string) error {
-	t := a.windows[addr]
+	on := a.about(addr)
+	t := on.window
 	if t == nil {
-		if d := a.opening[addr]; d != nil {
+		if d := on.dialling; d != nil {
 			// Still on its way. Cancelling closes the connection under
 			// the handshake, and the goroutine takes the row away. The
 			// address is let go of here rather than there, so another
@@ -753,9 +783,6 @@ func (a *app) closeWindows() error {
 	return errors.Join(errs...)
 }
 
-// isWindow reports whether a name is a window this one has taken over.
-func (a *app) isWindow(name string) bool { return a.windows[name] != nil }
-
 // knownWindows is where this window records the keys of the windows it
 // has reached. A test points it somewhere of its own.
 func (a *app) knownWindows() (string, error) {
@@ -781,7 +808,7 @@ func knownWindowsPath() (string, error) {
 // attachHere opens a pane on what the window taken over already has
 // running, rather than starting something new there.
 func (a *app) attachHere(what remoteKey, at *spot) error {
-	t := a.windows[what.window]
+	t := a.about(what.window).window
 	if t == nil {
 		return fmt.Errorf("this window has not taken over %s", what.window)
 	}
@@ -822,7 +849,7 @@ func (a *app) attachHere(what remoteKey, at *spot) error {
 // openOver is what a window taken over says about one of the things it
 // has open, and whether it still has it.
 func (a *app) openOver(what remoteKey) (serve.Open, bool) {
-	t := a.windows[what.window]
+	t := a.about(what.window).window
 	if t == nil || what.id == "" {
 		return serve.Open{}, false
 	}

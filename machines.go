@@ -104,6 +104,7 @@ func (a *app) revealMachine(m *machine) {
 // reading. The panes on it end by themselves, because their shells stop
 // reading.
 func (a *app) machineDied(m *machine) {
+	// By identity: the name may hold another connection by now.
 	if a.machines[m.at.name] != m {
 		// Already closed from the window, and its row with it.
 		return
@@ -140,7 +141,8 @@ func (a *app) machineDied(m *machine) {
 
 // dropMachine closes a machine's connection and everything riding on it.
 func (a *app) dropMachine(name string) error {
-	if d := a.opening[name]; d != nil {
+	on := a.about(name)
+	if d := on.dialling; d != nil {
 		// Still on its way. Cancelling closes the connection under the
 		// handshake, wherever it is waiting -- including on a browser
 		// window the user has thought better of -- and the goroutine
@@ -150,7 +152,7 @@ func (a *app) dropMachine(name string) error {
 		a.giveUp(d)
 		return nil
 	}
-	m := a.machines[name]
+	m := on.machine
 	if m == nil {
 		return nil
 	}
@@ -213,7 +215,7 @@ func (a *app) plan(route []step) (through *machine, missing []step, err error) {
 		return nil, nil, errors.New("there is no route to that machine")
 	}
 	for at := len(route) - 1; at >= 0; at-- {
-		m := a.machines[route[at].name]
+		m := a.about(route[at].name).machine
 		if m == nil {
 			continue
 		}
@@ -399,7 +401,7 @@ func (a *app) openRoute(name string, route []step, command []string, at *spot) {
 	// logging in to the serve port, and the far end refusing a session
 	// was the first anything heard of it.
 	if h, ok := a.savedWindowInRoute(name, route); ok {
-		a.takeOverSaved(h)
+		a.workOnWindowOrSay(h.ServeAddr(), h.KeyFile(), at)
 		return
 	}
 	through, missing, err := a.plan(route)
@@ -417,7 +419,7 @@ func (a *app) openRoute(name string, route []step, command []string, at *spot) {
 		// Already on its way. Asked about rather than refused: waiting
 		// for it is usually what the user wants, and refusing left them
 		// with a machine they could not reach and no way to say so.
-		if d := a.opening[s.name]; d != nil {
+		if d := a.about(s.name).dialling; d != nil {
 			a.askAboutTheOneOnItsWay(d, s.name, func() { a.openRoute(name, route, command, at) })
 			return
 		}
@@ -541,15 +543,15 @@ func (a *app) openRoute(name string, route []step, command []string, at *spot) {
 // serves gridterm's own protocol and cannot be a machine on the way to
 // another one.
 func (a *app) savedWindowInRoute(name string, route []step) (remote.Host, bool) {
-	if h, ok := a.book.Lookup(name); ok && h.Window {
-		return h, true
+	if f := a.about(name); f.serves {
+		return f.record(), true
 	}
 	if len(route) == 0 {
 		return remote.Host{}, false
 	}
 	last := route[len(route)-1]
-	if h, ok := a.book.Lookup(last.name); ok && h.Window {
-		return h, true
+	if f := a.about(last.name); f.serves {
+		return f.record(), true
 	}
 	addr := last.cfg.Host
 	if addr == "" {
@@ -558,30 +560,19 @@ func (a *app) savedWindowInRoute(name string, route []step) (remote.Host, bool) 
 	if last.cfg.Port != 0 {
 		addr = net.JoinHostPort(last.cfg.Host, strconv.Itoa(last.cfg.Port))
 	}
-	for _, h := range a.book.Hosts() {
-		if !h.Window {
-			continue
-		}
-		if strings.EqualFold(h.ServeAddr(), addr) ||
-			(last.cfg.Port == 0 && strings.EqualFold(h.Address, addr)) {
-			return h, true
+	if h, ok := a.savedWindowAt(addr); ok {
+		return h, true
+	}
+	if last.cfg.Port == 0 {
+		// A target typed with no port, so the address on its own is
+		// what the list has to match.
+		for _, h := range a.book.Hosts() {
+			if h.Window && strings.EqualFold(h.Address, addr) {
+				return h, true
+			}
 		}
 	}
 	return remote.Host{}, false
-}
-
-// takeOverSaved takes over a saved window, or opens a terminal on it
-// when it is already taken over.
-func (a *app) takeOverSaved(h remote.Host) {
-	if a.windows[h.Name] != nil {
-		if err := a.openOnWindow(h.Name, nil); err != nil {
-			a.reportError("Could not open a terminal on "+h.Name, err)
-		}
-		return
-	}
-	if err := a.takeOver(h.ServeAddr(), h.KeyFile()); err != nil {
-		a.reportError("Could not take over "+h.Name, err)
-	}
 }
 
 // reached takes a machine of a route that has just connected, while the
@@ -724,7 +715,7 @@ func (a *app) letGoOfConn(name string, conn *remote.Conn) {
 func (a *app) sayStillConnected(log *connLog, d *dialling) {
 	var still []string
 	for _, name := range d.made {
-		if a.machines[name] != nil {
+		if a.about(name).machine != nil {
 			still = append(still, name)
 		}
 	}
@@ -737,7 +728,7 @@ func (a *app) sayStillConnected(log *connLog, d *dialling) {
 // becomeShellPane hands the pane that was watching a connection being
 // made to a shell on the machine it reached.
 func (a *app) becomeShellPane(name string, command []string, pane *term.Terminal, log *connLog) {
-	m := a.machines[name]
+	m := a.about(name).machine
 	if m == nil {
 		a.endedAs(pane, "not connected")
 		log.Failed(fmt.Errorf("nothing is connected to %s", name))
@@ -777,6 +768,7 @@ func (a *app) stillWanted(gaveUp error, through *machine) error {
 	if gaveUp != nil {
 		return gaveUp
 	}
+	// By identity: the name may hold another connection by now.
 	if through != nil && a.machines[through.at.name] != through {
 		return fmt.Errorf("%s closed while this was being connected through it", through.at.name)
 	}
@@ -821,7 +813,7 @@ func dialRoute(ctx context.Context, through *remote.Conn, route []step, made fun
 
 // startOn runs something on a machine that is already connected to.
 func (a *app) startOn(name string, command []string, at *spot) error {
-	m := a.machines[name]
+	m := a.about(name).machine
 	if m == nil {
 		return fmt.Errorf("nothing is connected to %s", name)
 	}
@@ -865,8 +857,9 @@ func (a *app) openOn(name string, command []string, at *spot) error {
 // A machine already connected to is a route of one, whether or not it
 // was ever saved: it is reachable, which is what a route is for.
 func (a *app) route(name string) ([]step, error) {
-	if m := a.machines[name]; m != nil {
-		return []step{m.at}, nil
+	f := a.about(name)
+	if f.machine != nil {
+		return []step{f.machine.at}, nil
 	}
 	hosts, err := a.book.Route(name)
 	if err != nil {
@@ -937,44 +930,47 @@ func (a *app) currentHost() string {
 	return a.localHost
 }
 
-// isHere reports whether the machine the user is looking at is one the
-// window has no connection of its own to: this machine, or the one -ssh
-// put every pane on.
-func (a *app) isHere(host string) bool {
-	return a.machines[host] == nil && (host == conns.Local || host == a.localHost)
-}
-
 // disconnectHere closes the connection to the machine the user is
 // looking at, and everything riding on it.
 func (a *app) disconnectHere() error {
-	host := a.currentHost()
-	if a.isHere(host) {
+	h := a.about(a.currentHost())
+	switch h.kind {
+	case hostHere:
 		return errors.New("this is the machine gridterm is running on, not one it connected to")
+	case hostWindow:
+		return a.dropWindow(h.name)
+	case hostMachine, hostConnecting:
+		return a.dropMachine(h.name)
 	}
-	if a.isWindow(host) {
-		return a.dropWindow(host)
+	if h.heldAt != nil {
+		// Saved as a window and already taken over under another name.
+		return a.dropWindow(h.heldAt.name)
 	}
-	if a.machines[host] == nil && a.opening[host] == nil {
-		// Said rather than done quietly. A command that reports success
-		// and changes nothing is how a connection that would not close
-		// looked like a window that had stopped listening.
-		return fmt.Errorf("nothing is connected to %s", host)
-	}
-	return a.dropMachine(host)
+	// Said rather than done quietly. A command that reports success and
+	// changes nothing is how a connection that would not close looked
+	// like a window that had stopped listening.
+	return fmt.Errorf("nothing is connected to %s", h.name)
 }
 
 // openTerminalHere opens another terminal on the machine the user is
 // looking at.
-func (a *app) openTerminalHere() error { return a.openTerminalOn(a.currentHost()) }
+func (a *app) openTerminalHere() error { return a.openTerminalOn(a.currentHost(), nil) }
 
 // openCommandHere asks for a command to run on the machine the user is
 // looking at, connecting to it if the connection has since been closed.
 func (a *app) openCommandHere() error {
-	host := a.currentHost()
-	if a.isHere(host) {
+	h := a.about(a.currentHost())
+	if h.kind == hostHere {
 		return errors.New(
 			"a command runs on a machine gridterm connected to, and this is the one it is running on")
 	}
+	if h.kind == hostWindow || h.kind == hostSavedWindow || h.heldAt != nil {
+		return fmt.Errorf(
+			"%s is a gridterm window: it has no shell, so there is nothing to run a command in. "+
+				"Open a terminal on it instead.",
+			h.name)
+	}
+	host := h.name
 	f := a.newForm("Run a command on " + host)
 	what := f.AddField("Command", a.newField("the program and its arguments", 0))
 	f.AddButton(ui.Button{Title: "Run", Do: func() error {
@@ -1039,10 +1035,4 @@ func (a *app) closeMachines() error {
 	}
 	clear(a.machines)
 	return errors.Join(errs...)
-}
-
-// isSaved reports whether the server list holds a machine by this name.
-func (a *app) isSaved(name string) bool {
-	_, ok := a.book.Lookup(name)
-	return ok
 }

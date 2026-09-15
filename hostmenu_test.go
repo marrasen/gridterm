@@ -1,7 +1,13 @@
 package main
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/printer"
+	"go/token"
 	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -302,7 +308,7 @@ func TestANewMenuKeepsItsMachineWhileTheOldOneIsForgotten(t *testing.T) {
 // this one's to ask, so offering them would be offering something that
 // cannot work.
 func TestThePlusOnAWindowOffersPanesAndFiles(t *testing.T) {
-	items := hostItems(hostAbout{window: true})
+	items := hostItems(hostFacts{kind: hostWindow})
 
 	offered := map[string]bool{}
 	for _, it := range items {
@@ -369,8 +375,8 @@ func TestThePlusOnASavedWindowTakesItOver(t *testing.T) {
 	})
 }
 
-// The commands that act on "here" do it by asking which machine and
-// handing that to the one that knows what to do with it.
+// The commands that act on "here" ask one place what the machine in
+// front of the user is, rather than each working it out again.
 //
 // There were two near-identical routines, one for a machine named and
 // one for the machine in front of the user, and a window was handled in
@@ -378,26 +384,83 @@ func TestThePlusOnASavedWindowTakesItOver(t *testing.T) {
 // source, because the mistake is one of shape: a second copy of the
 // switch is the bug, whatever it says today.
 func TestTheHereCommandsDelegate(t *testing.T) {
-	raw, err := os.ReadFile("machines.go")
+	// Each one names what the machine is, or hands the name to a command
+	// that does. "a.openOn(" is not on this list: it is what a caller
+	// runs once the answer is known, so it proves nothing about who
+	// worked the answer out.
+	delegates := []string{"a.about(", "openTerminalOn(", "openFilesOn(", "dropMachine("}
+	// Working it out again, in any of the ways the window used to.
+	own := []*regexp.Regexp{
+		regexp.MustCompile(`a\.windows\[`),
+		regexp.MustCompile(`a\.machines\[`),
+		regexp.MustCompile(`a\.opening\[`),
+		regexp.MustCompile(`a\.book\.`),
+		regexp.MustCompile(`\bisWindow\b`),
+		regexp.MustCompile(`\bisHere\b`),
+		regexp.MustCompile(`\bsavedWindow\b`),
+	}
+
+	for _, name := range []string{
+		"openTerminalHere", "openFilesHere", "disconnectHere", "openCommandHere",
+	} {
+		body, where := functionBody(t, name)
+		for _, re := range own {
+			if re.MatchString(body) {
+				t.Errorf("%s (%s) decides what the machine is itself, with %s:\n%s",
+					name, where, re, body)
+			}
+		}
+		asks := false
+		for _, to := range delegates {
+			if strings.Contains(body, to) {
+				asks = true
+			}
+		}
+		if !asks {
+			t.Errorf("%s (%s) neither asks about() nor hands over to a command that does:\n%s",
+				name, where, body)
+		}
+	}
+}
+
+// functionBody is the source of one of the window's own functions, found
+// wherever it lives.
+//
+// By name rather than by file, so moving a function reports what it
+// found instead of saying the function is gone. Printed from the tree
+// rather than cut out of the file, which leaves the comments behind: a
+// rule about what the code does is not met by a comment saying so.
+func functionBody(t *testing.T, name string) (body, where string) {
+	t.Helper()
+	names, err := filepath.Glob("*.go")
 	if err != nil {
-		t.Fatalf("read: %v", err)
+		t.Fatalf("glob: %v", err)
 	}
-	body := string(raw)
-	at := strings.Index(body, "func (a *app) openTerminalHere() error")
-	if at < 0 {
-		t.Fatal("openTerminalHere is gone; this test needs rewriting")
+	fset := token.NewFileSet()
+	for _, at := range names {
+		if strings.HasSuffix(at, "_test.go") {
+			continue
+		}
+		raw, err := os.ReadFile(at)
+		if err != nil {
+			t.Fatalf("read %s: %v", at, err)
+		}
+		file, err := parser.ParseFile(fset, at, raw, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", at, err)
+		}
+		for _, decl := range file.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Name.Name != name {
+				continue
+			}
+			var out strings.Builder
+			if err := printer.Fprint(&out, fset, fn.Body); err != nil {
+				t.Fatalf("print %s: %v", name, err)
+			}
+			return out.String(), at
+		}
 	}
-	// Up to whatever comes next at the left margin, which reads a
-	// one-line function as well as a block.
-	fn := body[at:]
-	if cut := strings.Index(fn[1:], "\nfunc "); cut >= 0 {
-		fn = fn[:cut+1]
-	}
-	if strings.Contains(fn, "isWindow") || strings.Contains(fn, "openOn(") {
-		t.Errorf("openTerminalHere decides for itself again rather than asking "+
-			"openTerminalOn:\n%s", fn)
-	}
-	if !strings.Contains(fn, "openTerminalOn(") {
-		t.Errorf("openTerminalHere no longer hands over to openTerminalOn:\n%s", fn)
-	}
+	t.Fatalf("there is no function called %s any more; this test needs rewriting", name)
+	return "", ""
 }

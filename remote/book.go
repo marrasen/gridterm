@@ -595,3 +595,36 @@ func (b *Book) Names() []string {
 	}
 	return out
 }
+
+// Kind is what a Book holds under a name, without the key files a Host
+// carries.
+type Kind struct {
+	// Name is the book's own spelling of the name, which can differ in
+	// case from the name asked about.
+	Name string
+
+	// Window says the machine is another gridterm, and Serve is where
+	// that one serves.
+	Window bool
+	Serve  string
+}
+
+// Kind says what the book holds under a name, ignoring case the way
+// Lookup does.
+//
+// A caller that only wants these asks for them rather than for the Host:
+// this is asked for every row of every frame, and cloning a machine and
+// its key files to read one flag off it is work for nothing.
+func (b *Book) Kind(name string) (Kind, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	h, ok := b.lookupLocked(name)
+	if !ok {
+		return Kind{}, false
+	}
+	k := Kind{Name: h.Name, Window: h.Window}
+	if h.Window {
+		k.Serve = h.ServeAddr()
+	}
+	return k, true
+}

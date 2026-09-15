@@ -435,10 +435,10 @@ func TestATerminalOnASavedMachineUsesTheListsSpelling(t *testing.T) {
 		t.Fatalf("connectSaved: %v", err)
 	}
 	waitFor(t, a, "the machine to answer", func() bool {
-		return a.machines["margit"] != nil && len(a.panes) > panes
+		return a.machines.named("margit") != nil && len(a.panes) > panes
 	})
-	if n := len(a.machines); n != 1 {
-		t.Errorf("it is holding %v, want the one connection", mapKeys(a.machines))
+	if n := a.machines.count(); n != 1 {
+		t.Errorf("it is holding %v, want the one connection", a.machines.names())
 	}
 
 	a.refreshPanel(time.Now())
@@ -501,8 +501,9 @@ func TestACommandIsRefusedOnAWindowAndNotOnAMachine(t *testing.T) {
 // window closing one at the end of the test would close a nil connection.
 func pretendMachine(t *testing.T, a *testApp, name string) {
 	t.Helper()
-	a.machines[name] = &machine{at: step{name: name}}
-	t.Cleanup(func() { delete(a.machines, name) })
+	m := &machine{at: step{name: name}}
+	a.machines.take(m)
+	t.Cleanup(func() { a.machines.drop(m) })
 }
 
 func pretendWindow(t *testing.T, a *testApp, name, addr string) {
@@ -515,8 +516,9 @@ func pretendWindow(t *testing.T, a *testApp, name, addr string) {
 
 func pretendDialling(t *testing.T, a *testApp, name string) {
 	t.Helper()
-	a.opening[name] = &dialling{names: []string{name}}
-	t.Cleanup(func() { delete(a.opening, name) })
+	d := &dialling{cancel: func() {}, names: []string{name}}
+	holdTheNames(t, a, d)
+	t.Cleanup(func() { a.machines.release(d) })
 }
 
 // dialCounter counts the connections that got as far as being prepared
@@ -723,8 +725,8 @@ func TestEveryWayInTakesOverASavedWindow(t *testing.T) {
 			if *dials != 0 {
 				t.Errorf("%d connections were prepared to dial; a window is taken over, not logged in to", *dials)
 			}
-			if n := len(client.machines); n != 0 {
-				t.Errorf("it is holding %v as machines", mapKeys(client.machines))
+			if n := client.machines.count(); n != 0 {
+				t.Errorf("it is holding %v as machines", client.machines.names())
 			}
 			waitFor(t, client, "a pane drawn from the window", func() bool {
 				return client.windows.drawn() > 0
@@ -761,7 +763,7 @@ func TestEveryWayInDialsASavedMachineOnce(t *testing.T) {
 			way.open(t, a, "margit", addr, "")
 
 			waitFor(t, a, "the machine to answer", func() bool {
-				return len(a.machines) > 0 && len(a.panes) > panes
+				return a.machines.count() > 0 && len(a.panes) > panes
 			})
 			if *dials != 1 {
 				t.Errorf("%d connections were prepared to dial, want the one", *dials)
@@ -815,7 +817,7 @@ func TestEveryWayInOpensAPaneHere(t *testing.T) {
 			if *dials != 0 {
 				t.Errorf("%d connections were prepared to dial for a pane on this machine", *dials)
 			}
-			if n := len(a.machines) + a.windows.count(); n != 0 {
+			if n := a.machines.count() + a.windows.count(); n != 0 {
 				t.Errorf("it opened %d connections for a pane on this machine", n)
 			}
 		})

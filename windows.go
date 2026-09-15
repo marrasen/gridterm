@@ -395,18 +395,24 @@ func (a *app) takeOver(addr, keyFile string, at *spot) error {
 	// that finishes the dial: a dial that has not come back yet still
 	// has to stop holding it, or nothing can try again.
 	held := &dialling{cancel: cancel, names: []string{name}}
-	log := newConnLog(func() { a.pump.post(func() { a.giveUp(held) }) })
+	// Before the pane opens, so a name a machine is already connected
+	// under is refused with no pane left behind saying otherwise.
+	if err := a.machines.holdNames(held); err != nil {
+		cancel()
+		return err
+	}
+	log := newConnLog(func() { a.pump.post(func() { a.machines.giveUp(held) }) })
 	held.say = log.Say
 	pane, err := a.openSessionTab(log, name, conns.Terminal, "connecting", at)
 	if err != nil {
 		cancel()
+		a.machines.release(held)
 		return err
 	}
-	a.connecting++
-	a.holdNames(held)
+	a.machines.dialStarted()
 	log.Say("taking over " + addr)
 
-	ask := &askUser{app: a, log: log, stop: func() { a.giveUp(held) }}
+	ask := &askUser{app: a, log: log, stop: func() { a.machines.giveUp(held) }}
 	// Read here rather than in the goroutine below: what the window
 	// holds belongs to the goroutine that draws.
 	knownAt, patience := a.windows.knownAt, a.windows.patience
@@ -419,14 +425,14 @@ func (a *app) takeOver(addr, keyFile string, at *spot) error {
 			Saying:   log.Say,
 		})
 		a.pump.post(func() {
-			a.connecting--
+			a.machines.dialEnded()
 			// Read before the context is let go of on the next line,
 			// which would otherwise make every window look like one the
 			// user gave up on.
 			gaveUp := ctx.Err()
 			cancel()
 			if err != nil {
-				a.settle(held, false)
+				a.machines.settle(held, false)
 				if gaveUp != nil {
 					a.endedAs(pane, "given up on")
 					log.GaveUp()
@@ -441,7 +447,7 @@ func (a *app) takeOver(addr, keyFile string, at *spot) error {
 				// finishing. Nothing else knows about it, and a failure
 				// to hang up is the user's to see: it is a socket to a
 				// machine that thinks somebody is working in it.
-				a.settle(held, false)
+				a.machines.settle(held, false)
 				a.endedAs(pane, "given up on")
 				log.GaveUp()
 				if err := win.Close(); err != nil {
@@ -450,7 +456,7 @@ func (a *app) takeOver(addr, keyFile string, at *spot) error {
 				return
 			}
 			a.becomeWindowPane(a.holdWindow(name, addr, win), pane, log)
-			a.settle(held, true)
+			a.machines.settle(held, true)
 		})
 	}()
 	return nil
@@ -498,42 +504,6 @@ func serveAddr(addr string) string {
 		return net.JoinHostPort(strings.Trim(addr, "[]"), strconv.Itoa(servePort))
 	}
 	return addr
-}
-
-// rekeyWindows follows a change to the server list through the windows
-// taken over.
-//
-// Called from refreshServers, which is where the list may have changed.
-// The key a window is held under comes from the list, so whatever else
-// goes by the old name follows here.
-func (a *app) rekeyWindows() {
-	moved, err := a.windows.rekey()
-	if err != nil {
-		// Logged rather than shown: this runs whenever a connection is
-		// made or lost, and a dialog a frame would be unusable.
-		a.logError(err)
-		return
-	}
-	if len(moved) == 0 {
-		return
-	}
-	// What goes by each old name is gathered before any of it is
-	// renamed, because two windows can trade names.
-	rows := make([][]*conns.Entry, len(moved))
-	reading := make([][]renamedFS, len(moved))
-	for i, r := range moved {
-		rows[i] = a.rowsUnder(r.was)
-		reading[i] = a.filesystemsOn(r.was)
-	}
-	for i, r := range moved {
-		for _, e := range rows[i] {
-			e.Host = r.window.name
-		}
-		for _, f := range reading[i] {
-			f.Renamed(r.window.name)
-		}
-		r.window.entry.Note = windowNote(r.window)
-	}
 }
 
 // becomeWindowPane hands the pane that was watching a window being taken
@@ -602,9 +572,16 @@ func (a *app) windowDied(t *taken) {
 		// Already let go of from here, and its row with it.
 		return
 	}
-	if err := a.dropWindow(t.name); err != nil {
+	if err := a.letGoOfWindow(t); err != nil {
 		a.reportError("Trouble letting go of "+t.name, err)
 	}
+	// The row stays, the way greyRow says a dropped connection's row
+	// does. It says what became of the window and keeps the address,
+	// which is what somebody reading it afterwards has to go on.
+	t.entry.Label = "no longer serving"
+	a.greyRow(t.entry)
+	a.refreshServers()
+	a.markDirty()
 }
 
 // revealWindow puts one of a window's panes in front of the user.
@@ -666,17 +643,29 @@ func (a *app) dropWindow(addr string) error {
 			// the handshake, and the goroutine takes the row away. The
 			// address is let go of here rather than there, so another
 			// attempt can have it at once.
-			a.giveUp(d)
+			a.machines.giveUp(d)
 			return nil
 		}
 		return nil
 	}
+	a.registry.Drop(t.entry)
+	err := a.letGoOfWindow(t)
+	a.refreshServers()
+	return err
+}
+
+// letGoOfWindow hangs up on a window and takes away what was drawn from
+// it, leaving its row on the panel.
+//
+// Whether the row goes with it is the caller's: one the user let go of
+// has nothing left to say, and one that quit at the far end keeps a
+// greyed row.
+func (a *app) letGoOfWindow(t *taken) error {
 	// Under the name holding it, which is not always the name asked
 	// about: the list can save a second name at one window's address,
 	// and that name reaches the same connection.
 	name := t.name
 	a.windows.drop(t)
-	a.registry.Drop(t.entry)
 
 	// A file pane reading through this window is reading through a
 	// connection that is about to go. It is taken away here, because
@@ -691,7 +680,6 @@ func (a *app) dropWindow(addr string) error {
 		errs = append(errs, a.closePane(pane))
 	}
 	errs = append(errs, t.win.Close())
-	a.refreshServers()
 	return errors.Join(errs...)
 }
 

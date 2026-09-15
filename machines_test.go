@@ -42,6 +42,15 @@ func pinServers(t *testing.T, a *testApp, servers ...*sshtest.Server) {
 	}
 }
 
+// holdTheNames holds a route's names the way a connection being made
+// does, for a test that drives the dialling without a machine to dial.
+func holdTheNames(t *testing.T, a *testApp, d *dialling) {
+	t.Helper()
+	if err := a.machines.holdNames(d); err != nil {
+		t.Fatalf("holding the names of %v: %v", d.names, err)
+	}
+}
+
 // saveHost puts a machine in the book, pointed at a test server.
 func saveHost(t *testing.T, a *testApp, name string, s *sshtest.Server, via string) {
 	t.Helper()
@@ -63,8 +72,8 @@ func TestASecondTerminalRidesOnTheSameConnection(t *testing.T) {
 	waitForPanes(t, a, 2)
 
 	host := serverConfig(t, s).Target()
-	if a.machines[host] == nil {
-		t.Fatalf("the connection was not kept: %v", names(a))
+	if a.machines.named(host) == nil {
+		t.Fatalf("the connection was not kept: %v", a.machines.names())
 	}
 	if err := a.openOn(host, nil, nil); err != nil {
 		t.Fatalf("a second terminal: %v", err)
@@ -129,10 +138,10 @@ func TestConnectSavedWalksTheRoute(t *testing.T) {
 	waitForPanes(t, a, 2)
 
 	// Both machines are held, and the far one says what carries it.
-	if a.machines["edge"] == nil || a.machines["db"] == nil {
-		t.Fatalf("the window holds %v, want both machines", names(a))
+	if a.machines.named("edge") == nil || a.machines.named("db") == nil {
+		t.Fatalf("the window holds %v, want both machines", a.machines.names())
 	}
-	if got := a.machines["db"].conn.Via(); got != a.machines["edge"].conn {
+	if got := a.machines.named("db").conn.Via(); got != a.machines.named("edge").conn {
 		t.Fatalf("db came through %v, want edge", got)
 	}
 	// And it really went through rather than being dialled from here.
@@ -180,8 +189,8 @@ func TestClosingABastionClosesWhatRidesOnIt(t *testing.T) {
 	if err := a.dropMachine("edge"); err != nil {
 		t.Fatalf("dropMachine: %v", err)
 	}
-	if len(a.machines) != 0 {
-		t.Fatalf("the window still holds %v", names(a))
+	if a.machines.count() != 0 {
+		t.Fatalf("the window still holds %v", a.machines.names())
 	}
 	if len(a.panes) != 1 {
 		t.Fatalf("%d panes after closing the machine in the middle, want the local one", len(a.panes))
@@ -226,8 +235,8 @@ func TestTheServerRowClosesTheWholeConnection(t *testing.T) {
 	if err := server.Close(); err != nil {
 		t.Fatalf("close: %v", err)
 	}
-	if len(a.machines) != 0 {
-		t.Fatalf("the window still holds %v", names(a))
+	if a.machines.count() != 0 {
+		t.Fatalf("the window still holds %v", a.machines.names())
 	}
 	if len(a.panes) != 1 {
 		t.Fatalf("%d panes after closing the connection, want the local one", len(a.panes))
@@ -244,22 +253,22 @@ func TestOneMachineIsOnlyConnectedToOnce(t *testing.T) {
 	cfg := serverConfig(t, sshtest.New(t))
 	cfg.Host, cfg.Port = deafHost, deafPort
 	a.connectAs("slow", cfg)
-	if a.connecting != 1 {
-		t.Fatalf("%d connections are being made, want 1", a.connecting)
+	if a.machines.beingMade() != 1 {
+		t.Fatalf("%d connections are being made, want 1", a.machines.beingMade())
 	}
 
 	a.connectAs("slow", cfg)
-	if a.connecting != 1 {
-		t.Fatalf("%d connections are being made, want the first one only", a.connecting)
+	if a.machines.beingMade() != 1 {
+		t.Fatalf("%d connections are being made, want the first one only", a.machines.beingMade())
 	}
 	// Asked about rather than refused: the user says whether to wait for
 	// the one on its way or to throw it away and start again.
 	f := waitForDialog(t, a, "Already connecting to slow")
 	pressButton(t, a, f, "Leave it")
-	if a.connecting != 1 {
-		t.Fatalf("%d connections are being made, want the first one only", a.connecting)
+	if a.machines.beingMade() != 1 {
+		t.Fatalf("%d connections are being made, want the first one only", a.machines.beingMade())
 	}
-	if a.opening["slow"] == nil {
+	if a.machines.connecting("slow") == nil {
 		t.Fatal("the first connection was let go of")
 	}
 }
@@ -283,6 +292,9 @@ func TestWaitingForTheOneOnItsWayRunsTheRequestAgain(t *testing.T) {
 	if n := s.Conns(); n != 1 {
 		t.Fatalf("the machine saw %d logins, want the one", n)
 	}
+	// And the machine that answered while the second request waited is
+	// connected rather than still being connected to.
+	heldAs(t, a, "box", isConnected)
 }
 
 // Giving up on the connection already on its way starts the new one.
@@ -294,7 +306,7 @@ func TestGivingUpOnTheOneOnItsWayStartsTheNewOne(t *testing.T) {
 	cfg := serverConfig(t, sshtest.New(t))
 	cfg.Host, cfg.Port = deafHost, deafPort
 	a.connectAs("slow", cfg)
-	first := a.opening["slow"]
+	first := a.machines.connecting("slow")
 	if first == nil {
 		t.Fatal("nothing is being connected to")
 	}
@@ -304,7 +316,7 @@ func TestGivingUpOnTheOneOnItsWayStartsTheNewOne(t *testing.T) {
 	pressButton(t, a, f, "Give up on that one")
 
 	waitFor(t, a, "the second attempt to take the name", func() bool {
-		d := a.opening["slow"]
+		d := a.machines.connecting("slow")
 		return d != nil && d != first
 	})
 }
@@ -320,11 +332,11 @@ func TestAFailedConnectionCanBeRetried(t *testing.T) {
 	cfg.Port = 1
 	a.connectAs("box", cfg)
 	waitForFailure(t, a, "box")
-	if a.opening["box"] != nil {
+	if a.machines.connecting("box") != nil {
 		t.Fatal("the machine is still marked as being connected to")
 	}
-	if len(a.machines) != 0 {
-		t.Fatalf("a failed connection was kept: %v", names(a))
+	if a.machines.count() != 0 {
+		t.Fatalf("a failed connection was kept: %v", a.machines.names())
 	}
 }
 
@@ -362,18 +374,18 @@ func TestAFailedRouteKeepsTheHopItReached(t *testing.T) {
 	if !strings.Contains(said, "db") {
 		t.Fatalf("the failure does not say which machine refused: %q", said)
 	}
-	if a.machines["edge"] == nil {
-		t.Fatalf("the machine that answered was closed: %v", names(a))
+	if a.machines.named("edge") == nil {
+		t.Fatalf("the machine that answered was closed: %v", a.machines.names())
 	}
-	if a.machines["db"] != nil {
-		t.Fatalf("the machine that refused was kept: %v", names(a))
+	if a.machines.named("db") != nil {
+		t.Fatalf("the machine that refused was kept: %v", a.machines.names())
 	}
 	if !strings.Contains(said, "edge answered and stays connected") {
 		t.Errorf("the pane does not say what is still connected: %q", said)
 	}
 	// And no name is held any more, so another attempt at either can be
 	// made straight away.
-	if a.opening["edge"] != nil || a.opening["db"] != nil {
+	if a.machines.connecting("edge") != nil || a.machines.connecting("db") != nil {
 		t.Fatal("a machine was left marked as being connected to")
 	}
 	// The pane that was watching stays, holding the reason. Closing it
@@ -419,7 +431,7 @@ func TestOpenOnRefusesAMachineItDoesNotKnow(t *testing.T) {
 	if !strings.Contains(err.Error(), "nowhere") {
 		t.Fatalf("error = %v, want it to name the machine", err)
 	}
-	if a.connecting != 0 {
+	if a.machines.beingMade() != 0 {
 		t.Error("a connection was started anyway")
 	}
 }
@@ -561,15 +573,6 @@ func TestCurrentHostFollowsThePanelThenTheFocus(t *testing.T) {
 	if got := a.currentHost(); got != conns.Local {
 		t.Fatalf("currentHost = %q with the local row selected, want the local machine", got)
 	}
-}
-
-// names lists the machines the window is holding, for a failure message.
-func names(a *testApp) []string {
-	var out []string
-	for name := range a.machines {
-		out = append(out, name)
-	}
-	return out
 }
 
 // has reports whether a list holds a string.
@@ -812,8 +815,8 @@ func TestAHopThatAnsweredIsUsableWhileTheNextIsStillBeingReached(t *testing.T) {
 	if err := a.connectSaved("db"); err != nil {
 		t.Fatalf("connectSaved: %v", err)
 	}
-	waitFor(t, a, "the machine on the way to answer", func() bool { return a.machines["edge"] != nil })
-	if a.opening["edge"] != nil {
+	waitFor(t, a, "the machine on the way to answer", func() bool { return a.machines.named("edge") != nil })
+	if a.machines.connecting("edge") != nil {
 		t.Fatal("the window is still holding the name of a machine it is connected to")
 	}
 	// Which is the whole point of letting go of it: a terminal opens on
@@ -827,7 +830,7 @@ func TestAHopThatAnsweredIsUsableWhileTheNextIsStillBeingReached(t *testing.T) {
 	if err := a.dropMachine("db"); err != nil {
 		t.Fatalf("give up on the machine that never answered: %v", err)
 	}
-	if a.opening["db"] != nil {
+	if a.machines.connecting("db") != nil {
 		t.Fatal("the window is still holding the name of a machine nobody is connecting to")
 	}
 	waitFor(t, a, "the pane to say it was given up on", func() bool {
@@ -841,8 +844,8 @@ func TestAHopThatAnsweredIsUsableWhileTheNextIsStillBeingReached(t *testing.T) {
 	// And the machine that answered is still connected: closing it
 	// because the one beyond it did not answer would throw away a
 	// connection the user can work on.
-	if a.machines["edge"] == nil {
-		t.Fatalf("giving up on the machine beyond it closed the one that answered: %v", names(a))
+	if a.machines.named("edge") == nil {
+		t.Fatalf("giving up on the machine beyond it closed the one that answered: %v", a.machines.names())
 	}
 }
 
@@ -896,7 +899,7 @@ func TestClosingAConnectionStillBeingMadeLetsGoOfItsNames(t *testing.T) {
 		t.Fatalf("close the connection: %v", err)
 	}
 	a.hostMenus.forget()
-	if a.opening["db"] != nil {
+	if a.machines.connecting("db") != nil {
 		t.Fatal("the window is still holding the name of a connection nobody is making")
 	}
 	// And another attempt can be made at once, which is the whole point.
@@ -916,15 +919,15 @@ func TestLettingGoLeavesANameAnotherAttemptHasTaken(t *testing.T) {
 
 	first := &dialling{cancel: func() {}, names: []string{"edge"}}
 	second := &dialling{cancel: func() {}, names: []string{"edge"}}
-	a.holdNames(first)
-	a.holdNames(second)
+	holdTheNames(t, a, first)
+	holdTheNames(t, a, second)
 
-	a.release(first)
-	if a.opening["edge"] != second {
+	a.machines.release(first)
+	if a.machines.connecting("edge") != second {
 		t.Fatal("the second attempt lost the name the first one let go of")
 	}
-	a.release(second)
-	if a.opening["edge"] != nil {
+	a.machines.release(second)
+	if a.machines.connecting("edge") != nil {
 		t.Fatal("the name is still held by nobody")
 	}
 }
@@ -948,16 +951,32 @@ func TestAMachineNobodyHasANameForIsClosed(t *testing.T) {
 
 	mine := &dialling{cancel: func() {}, names: []string{"edge"}}
 	theirs := &dialling{cancel: func() {}, names: []string{"edge"}}
-	a.holdNames(theirs)
+	holdTheNames(t, a, theirs)
+
+	// The pane the first attempt is being watched in, which is where
+	// anything it has to say has to land.
+	log := newConnLog(nil)
+	pane, err := a.openSessionTab(log, "edge", conns.Terminal, "connecting", nil)
+	if err != nil {
+		t.Fatalf("the pane watching it: %v", err)
+	}
 
 	route := []step{{name: "edge", cfg: serverConfig(t, s)}}
-	a.reached(mine, newConnLog(nil), route, 0, conn, "")
+	a.reached(mine, log, pane, route, 0, conn, "")
 
-	if a.machines["edge"] != nil {
+	if a.machines.named("edge") != nil {
 		t.Fatal("a machine was held under a name another attempt owns")
 	}
 	waitFor(t, a, "the connection nobody has a name for to close", func() bool {
 		return s.Live() == 0
+	})
+	// And the user is told, rather than watching a pane that says it is
+	// still connecting.
+	if got := a.panes[pane].Label; got != "not connected" {
+		t.Errorf("the row says %q, want it to say the connection was not made", got)
+	}
+	waitFor(t, a, "the pane to say why", func() bool {
+		return strings.Contains(paneText(pane), "something else")
 	})
 }
 
@@ -1064,7 +1083,7 @@ func TestWhatWaitedForAConnectionThatFailedIsDropped(t *testing.T) {
 	})
 	// Nothing was started in its place, and nothing is being asked about
 	// a second time.
-	waitFor(t, a, "the dial to unwind", func() bool { return a.connecting == 0 })
+	waitFor(t, a, "the dial to unwind", func() bool { return a.machines.beingMade() == 0 })
 	if _, ok := a.root.Modal().(*ui.Form); ok {
 		t.Fatal("it asked about the connection again")
 	}
@@ -1086,7 +1105,7 @@ func TestAMachineRenamedWhileItWasBeingReachedLandsUnderTheNewName(t *testing.T)
 	saveHost(t, a, "picard", s, "")
 	route := []step{{name: "picard", cfg: a.prepare(serverConfig(t, s))}}
 	held := &dialling{cancel: func() {}, names: []string{"picard"}}
-	a.holdNames(held)
+	holdTheNames(t, a, held)
 
 	// Renamed while the dial is still running.
 	h, _ := a.book.Lookup("picard")
@@ -1096,16 +1115,235 @@ func TestAMachineRenamedWhileItWasBeingReachedLandsUnderTheNewName(t *testing.T)
 	}
 	a.renamedMachine("picard", h)
 
+	// The dial is on its way to the new name from here on: the old one
+	// is nobody's, and the new one is held by the dial and by nothing
+	// else.
+	if a.machines.connecting("picard") != nil {
+		t.Fatal("the old name is still being connected to")
+	}
+	if a.machines.connecting("picard via skylake") != held {
+		t.Fatal("the dial on its way did not follow the rename")
+	}
+	heldAs(t, a, "picard via skylake", isConnecting)
+
 	conn, err := remote.Connect(t.Context(), route[0].cfg)
 	if err != nil {
 		t.Fatalf("Connect: %v", err)
 	}
-	a.reached(held, newConnLog(nil), route, 0, conn, "")
+	a.reached(held, newConnLog(nil), nil, route, 0, conn, "")
 
-	if a.machines["picard"] != nil {
-		t.Fatalf("it landed under the name that is gone: %v", names(a))
+	if a.machines.named("picard") != nil {
+		t.Fatalf("it landed under the name that is gone: %v", a.machines.names())
 	}
-	if a.machines["picard via skylake"] == nil {
-		t.Fatalf("it did not land under the name it has now: %v", names(a))
+	if a.machines.named("picard via skylake") == nil {
+		t.Fatalf("it did not land under the name it has now: %v", a.machines.names())
+	}
+}
+
+// A machine renamed twice while it was being reached lands under the
+// name it has now, not the one in between.
+func TestAMachineRenamedTwiceWhileBeingReachedLandsUnderTheLastName(t *testing.T) {
+	s := sshtest.New(t)
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pinServers(t, a, s)
+
+	saveHost(t, a, "picard", s, "")
+	route := []step{{name: "picard", cfg: a.prepare(serverConfig(t, s))}}
+	held := &dialling{cancel: func() {}, names: []string{"picard"}}
+	holdTheNames(t, a, held)
+
+	// Twice, while the dial is still running.
+	renameSaved(t, a, "picard", "number one")
+	renameSaved(t, a, "number one", "captain")
+
+	conn, err := remote.Connect(t.Context(), route[0].cfg)
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	a.reached(held, newConnLog(nil), nil, route, 0, conn, "")
+
+	if a.machines.named("captain") == nil {
+		t.Fatalf("it did not land under the name it has now: %v", a.machines.names())
+	}
+	for _, gone := range []string{"picard", "number one"} {
+		heldAs(t, a, gone, isFree)
+	}
+}
+
+// holding is what a name stands for, for a test checking the invariant.
+type holding string
+
+const (
+	isConnected  holding = "connected"
+	isConnecting holding = "being connected to"
+	isFree       holding = "held by nothing"
+)
+
+// heldAs checks the invariant of the machines type from the outside: a
+// name is held by at most one of connected and connecting, and by the
+// one the test names.
+func heldAs(t *testing.T, a *testApp, name string, want holding) {
+	t.Helper()
+	got := isFree
+	switch {
+	case a.machines.named(name) != nil && a.machines.connecting(name) != nil:
+		t.Fatalf("%s is connected and being connected to at once", name)
+	case a.machines.named(name) != nil:
+		got = isConnected
+	case a.machines.connecting(name) != nil:
+		got = isConnecting
+	}
+	if got != want {
+		t.Fatalf("%s is %s, want %s", name, got, want)
+	}
+}
+
+// renameSaved renames a saved machine, the way the edit dialog does.
+func renameSaved(t *testing.T, a *testApp, was, now string) {
+	t.Helper()
+	h, ok := a.book.Lookup(was)
+	if !ok {
+		t.Fatalf("%s is not saved", was)
+	}
+	h.Name = now
+	if err := a.book.Put(h, was); err != nil {
+		t.Fatalf("renaming %s to %s: %v", was, now, err)
+	}
+	a.renamedMachine(was, h)
+}
+
+// A dial cannot take the name of a machine already connected, and a
+// route refused that way holds none of its other names either.
+func TestADialIsRefusedTheNameOfAConnectedMachine(t *testing.T) {
+	ms := newMachines()
+	ms.take(&machine{at: step{name: "edge"}})
+
+	d := &dialling{cancel: func() {}, names: []string{"edge", "db"}}
+	if err := ms.holdNames(d); err == nil {
+		t.Fatal("a dial took the name of a machine already connected")
+	}
+	if ms.connecting("edge") != nil {
+		t.Error("the name is connected and being connected to at once")
+	}
+	if ms.connecting("db") != nil {
+		t.Error("the rest of a route that was refused is held anyway")
+	}
+	// And a machine that answers under a name already connected is
+	// refused the same way, rather than replacing the connection there.
+	if err := ms.answered(d, &machine{at: step{name: "edge"}}); err == nil {
+		t.Fatal("a second connection was held under a name already connected")
+	}
+}
+
+// A machine that answers stops counting as one being connected to, in
+// the same step: that is where a name crosses from one side of the
+// invariant to the other.
+func TestAMachineThatAnswersLetsGoOfTheNameItWasReachedUnder(t *testing.T) {
+	ms := newMachines()
+	mine := &dialling{cancel: func() {}, names: []string{"edge"}}
+	if err := ms.holdNames(mine); err != nil {
+		t.Fatalf("holding the name: %v", err)
+	}
+
+	m := &machine{at: step{name: "edge"}}
+	if err := ms.answered(mine, m); err != nil {
+		t.Fatalf("the machine that answered was not held: %v", err)
+	}
+	if ms.named("edge") != m {
+		t.Fatal("the machine that answered is not held under its name")
+	}
+	if ms.connecting("edge") != nil {
+		t.Fatal("the name is connected and being connected to at once")
+	}
+
+	// A machine that answers under a name another attempt has taken is
+	// refused, so that attempt still owns it alone.
+	theirs := &dialling{cancel: func() {}, names: []string{"db"}}
+	if err := ms.holdNames(theirs); err != nil {
+		t.Fatalf("holding the name: %v", err)
+	}
+	if err := ms.answered(mine, &machine{at: step{name: "db"}}); err == nil {
+		t.Fatal("a machine was held under a name another attempt owns")
+	}
+	if ms.named("db") != nil {
+		t.Fatal("it was held anyway")
+	}
+	if ms.connecting("db") != theirs {
+		t.Fatal("the attempt that owns the name lost it")
+	}
+}
+
+// A second attempt on a saved machine still connecting asks the user,
+// and whichever of the three they choose the name is left held by one
+// thing.
+func TestASecondAttemptOnASavedMachineAsks(t *testing.T) {
+	for _, tc := range []struct {
+		button string
+		then   func(t *testing.T, a *testApp, first *dialling)
+	}{
+		{button: "Leave it", then: func(t *testing.T, a *testApp, first *dialling) {
+			if a.machines.connecting("slow") != first {
+				t.Error("leaving it alone did not leave the first attempt holding the name")
+			}
+			if len(first.waiting) != 0 {
+				t.Errorf("%d requests are queued behind it, and leaving it queues none",
+					len(first.waiting))
+			}
+			if n := a.machines.beingMade(); n != 1 {
+				t.Errorf("%d connections are being made, want the first one only", n)
+			}
+		}},
+		{button: "Wait for it", then: func(t *testing.T, a *testApp, first *dialling) {
+			if a.machines.connecting("slow") != first {
+				t.Error("waiting for it did not leave the first attempt holding the name")
+			}
+			// That the request really runs when the first connection
+			// lands is TestWaitingForTheOneOnItsWayRunsTheRequestAgain,
+			// against a machine that answers. This one never does.
+			if len(first.waiting) != 1 {
+				t.Errorf("%d requests are waiting for it, want the second one", len(first.waiting))
+			}
+		}},
+		{button: "Give up on that one", then: func(t *testing.T, a *testApp, first *dialling) {
+			waitFor(t, a, "the second attempt to take the name", func() bool {
+				d := a.machines.connecting("slow")
+				return d != nil && d != first
+			})
+		}},
+	} {
+		t.Run(tc.button, func(t *testing.T) {
+			deafHost, deafPort := sshtest.Deaf(t)
+			a := newTestApp(t, 80, 24)
+			withDialogs(t, a)
+			// The keys and the host key of a machine that will never be
+			// reached, so nothing here reads the developer's ~/.ssh.
+			pinServers(t, a, sshtest.New(t))
+			if err := a.book.Put(remote.Host{
+				Name: "slow", Address: deafHost, Port: deafPort, User: "tester",
+			}, ""); err != nil {
+				t.Fatalf("save the machine: %v", err)
+			}
+			a.refreshServers()
+			connect := openPrefix + remote.CommandName("slow")
+
+			if err := a.root.Commands.Run(connect); err != nil {
+				t.Fatalf("connect to it: %v", err)
+			}
+			first := a.machines.connecting("slow")
+			if first == nil {
+				t.Fatal("nothing is on its way to the deaf machine, so this proves nothing")
+			}
+
+			if err := a.root.Commands.Run(connect); err != nil {
+				t.Fatalf("connect to it again: %v", err)
+			}
+			f := waitForDialog(t, a, "Already connecting to slow")
+			pressButton(t, a, f, tc.button)
+
+			tc.then(t, a, first)
+			heldAs(t, a, "slow", isConnecting)
+		})
 	}
 }

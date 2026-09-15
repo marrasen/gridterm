@@ -100,13 +100,11 @@ func localPane(t *testing.T, a *testApp) *term.Terminal {
 
 // panesOn counts the terminals the window has open on a machine.
 func panesOn(a *testApp, host string) int {
-	var n int
-	for _, m := range a.paneOn {
-		if m != nil && m.at.name == host {
-			n++
-		}
+	m := a.machines.named(host)
+	if m == nil {
+		return 0
 	}
-	return n
+	return len(a.machines.panesOn(m))
 }
 
 // The machine gridterm is running on has nothing to connect or tunnel,
@@ -190,7 +188,7 @@ func TestClosingAMachineFromItsPlusClosesThatMachine(t *testing.T) {
 	menu := clickPlus(t, a, host)
 	chooseMenuItem(t, menu, "conn.disconnect")
 	waitFor(t, a, "the connection to be closed", func() bool {
-		return a.machines[host] == nil
+		return a.machines.named(host) == nil
 	})
 	// And the pane the bar was on is still there.
 	if len(a.panes) == 0 {
@@ -391,9 +389,9 @@ func TestTheHereCommandsDelegate(t *testing.T) {
 	delegates := []string{"a.about(", "openTerminalOn(", "openFilesOn(", "dropMachine("}
 	// Working it out again, in any of the ways the window used to.
 	own := []*regexp.Regexp{
-		regexp.MustCompile(`a\.windows\[`),
-		regexp.MustCompile(`a\.machines\[`),
-		regexp.MustCompile(`a\.opening\[`),
+		regexp.MustCompile(`a\.windows\.named\(`),
+		regexp.MustCompile(`a\.machines\.named\(`),
+		regexp.MustCompile(`a\.machines\.connecting\(`),
 		regexp.MustCompile(`a\.book\.`),
 		regexp.MustCompile(`\bisWindow\b`),
 		regexp.MustCompile(`\bisHere\b`),

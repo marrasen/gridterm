@@ -164,9 +164,9 @@ func TestAClosedSidebarHasNoRegion(t *testing.T) {
 	}
 }
 
-// machines fills the panel with server names, each with a connection
+// machineRows fills the panel with server names, each with a connection
 // under it.
-func machines(a *testApp, n int) {
+func machineRows(a *testApp, n int) {
 	var rows []ui.ListRow
 	for i := 0; i < n; i++ {
 		rows = append(rows,
@@ -201,7 +201,7 @@ func TestTheRegionGivesUpOnlyTheRowsItSpends(t *testing.T) {
 	for _, n := range []int{1, 4, 6, 14, 20, 40} {
 		a := newTestApp(t, 90, 30)
 		withRegion(t, a)
-		machines(a, n)
+		machineRows(a, n)
 
 		box, ok := a.dock.ChildArea(a.side)
 		if !ok {
@@ -226,7 +226,7 @@ func TestTheRegionGivesUpOnlyTheRowsItSpends(t *testing.T) {
 func TestEveryHeadingOnScreenGetsItsRoom(t *testing.T) {
 	a := newTestApp(t, 90, 30)
 	withRegion(t, a)
-	machines(a, 40)
+	machineRows(a, 40)
 
 	_, rows := a.sideRegion.g.Size()
 	headings := 0
@@ -248,7 +248,7 @@ func TestTheRegionNeverOverflowsItsBox(t *testing.T) {
 	for _, rows := range []int{3, 4, 5, 8, 12, 30} {
 		a := newTestApp(t, 90, rows)
 		withRegion(t, a)
-		machines(a, 8)
+		machineRows(a, 8)
 
 		if over := a.sideGeo.Height() - a.sideRegion.height; over != 0 {
 			t.Errorf("a %d row window: the sidebar is %d pixels out of its box", rows, over)
@@ -265,7 +265,7 @@ func TestTheRegionNeverOverflowsItsBox(t *testing.T) {
 func TestRelayingOutTheTreeDoesNotMoveTheSidebar(t *testing.T) {
 	a := newTestApp(t, 90, 30)
 	withRegion(t, a)
-	machines(a, 40)
+	machineRows(a, 40)
 	for i := 0; i < 60; i++ {
 		if _, err := a.panel.HandleKey(input.Event{Kind: input.KeyPress, Key: input.KeyDown}); err != nil {
 			t.Fatalf("down: %v", err)
@@ -391,7 +391,7 @@ func TestARegionWithoutSpacingKeepsEveryRow(t *testing.T) {
 func TestAMenuFromTheSidebarPointsAtItsRow(t *testing.T) {
 	a := newTestApp(t, 90, 30)
 	withRegion(t, a)
-	machines(a, 6)
+	machineRows(a, 6)
 
 	for y := 0; y < a.sideRegion.rect.Rows; y++ {
 		at, height := a.sideGeo.RowBox(y, y+1)
@@ -415,7 +415,7 @@ func TestAClickOnADialogOverTheSidebarUsesTheWindow(t *testing.T) {
 	a := newTestApp(t, 90, 30)
 	withRegion(t, a)
 	withDialogs(t, a)
-	machines(a, 6)
+	machineRows(a, 6)
 
 	// A pixel well down the sidebar, where the two disagree.
 	at, height := a.sideGeo.RowBox(10, 11)
@@ -464,7 +464,7 @@ func TestTheRegionsCellsLineUpWithTheWindows(t *testing.T) {
 func TestADragFromOutsideKeepsTheWindowsRows(t *testing.T) {
 	a := newTestApp(t, 90, 30)
 	withRegion(t, a)
-	machines(a, 6)
+	machineRows(a, 6)
 
 	// A pixel well down the sidebar, where the two disagree.
 	at, height := a.sideGeo.RowBox(10, 11)
@@ -498,7 +498,7 @@ func TestADragFromOutsideKeepsTheWindowsRows(t *testing.T) {
 func TestTheWindowsGridIsBlankUnderTheSidebar(t *testing.T) {
 	a := newTestApp(t, 90, 30)
 	withRegion(t, a)
-	machines(a, 6)
+	machineRows(a, 6)
 	a.root.Draw(a.g.View())
 
 	area := a.sideRegion.rect

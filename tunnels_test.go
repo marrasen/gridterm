@@ -57,17 +57,19 @@ func connectedTo(t *testing.T, a *testApp, s *sshtest.Server) string {
 	// The pane opens as soon as the connecting starts, so what says the
 	// machine was reached is the window holding it.
 	waitFor(t, a, "the connection to "+host, func() bool {
-		return a.machines[host] != nil && a.paneOn[paneFor(a, host)] != nil
+		return a.machines.named(host) != nil && a.machines.runningOn(paneFor(a, host)) != nil
 	})
 	return host
 }
 
 // paneFor is the pane a machine's connection is drawn in, or nil.
 func paneFor(a *testApp, host string) *term.Terminal {
-	for pane, m := range a.paneOn {
-		if m != nil && m.at.name == host {
-			return pane
-		}
+	m := a.machines.named(host)
+	if m == nil {
+		return nil
+	}
+	for _, pane := range a.machines.panesOn(m) {
+		return pane
 	}
 	return nil
 }
@@ -291,7 +293,7 @@ func TestAConnectionThatDropsClosesItsTunnels(t *testing.T) {
 
 	s.CloseClients()
 	waitFor(t, a, "the connection to be given up on", func() bool {
-		return a.machines[host] == nil
+		return a.machines.named(host) == nil
 	})
 
 	if len(a.tunnels) != 0 {

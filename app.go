@@ -115,19 +115,9 @@ type app struct {
 	// panel draws.
 	registry *conns.Registry
 
-	// machines are the connections the window is holding, by the name
-	// the panel calls each one. A second terminal on a machine rides on
-	// the connection already here rather than logging in again.
-	machines map[string]*machine
-
-	// opening names every machine being connected to right now, so two
-	// connections to one machine cannot be made at once: the window
-	// would hold the second and close neither. Every name of a route
-	// points at the same dialling.
-	//
-	// A connection still being made is the one most likely to be given
-	// up on, because it is the one that is taking too long.
-	opening map[string]*dialling
+	// machines are the connections the window is holding, the ones it is
+	// making, and the panes running on them.
+	machines *machines
 
 	// tunnels are the forwards the window is holding, by the panel row
 	// that stands for each. They ride on a connection, so closing that
@@ -160,13 +150,6 @@ type app struct {
 	// ended are the panes whose program has stopped and which are being
 	// kept only so the user can read what it printed.
 	ended map[*term.Terminal]bool
-
-	// paneOn says which connection a pane is running on. Panes are
-	// grouped on the panel by a name, and a name can mean two things at
-	// once -- the machine -ssh put every pane on, and a connection made
-	// from the window -- so closing one connection must find its own
-	// panes rather than everything under that name.
-	paneOn map[*term.Terminal]*machine
 
 	// localHost is the machine a new pane runs on: this one, unless
 	// -ssh named another. Every pane a split or a tab opens goes there,
@@ -206,11 +189,6 @@ type app struct {
 	// down whatever menu is open, and this runs whenever a connection
 	// is made or lost.
 	builtFor []string
-
-	// connecting counts the machines being connected to right now. The
-	// panel shows a row for each, so several can be on their way at
-	// once; this is only so a test can tell when they have all landed.
-	connecting int
 
 	// prepare adjusts every config on its way to being dialled. It is a
 	// field so a test can drive the real dialogs and the real server

@@ -116,11 +116,12 @@ func (a *app) openRows(t *taken) []serve.Open { return t.win.Opens() }
 // and clients are rows on its panel and nothing this one can do
 // anything with, and a list of rows that do nothing is a list nobody
 // can read.
-func (a *app) remoteRows(host string) []ui.ListRow {
-	t := a.about(host).window
+func (a *app) remoteRows(on hostFacts) []ui.ListRow {
+	t := on.window
 	if t == nil {
 		return nil
 	}
+	host := on.name
 	// Grouped by the machine over there they run on, the way that
 	// window groups them itself. A flat list with the machine's name
 	// repeated on every line says the same thing many times and hides

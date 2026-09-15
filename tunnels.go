@@ -6,7 +6,6 @@ import (
 	"io"
 	"net"
 	"strconv"
-	"strings"
 
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/meter"
@@ -43,100 +42,6 @@ type counted struct{ m *meter.Meter }
 // Wrap returns a writer that counts what goes through it.
 func (c counted) Wrap(w io.Writer, out bool) io.Writer {
 	return meter.Writer{W: w, M: c.m, Out: out}
-}
-
-// tunnelHost returns the machine to run a tunnel over: the one the user
-// is looking at, if it is one gridterm has a connection to.
-func (a *app) tunnelHost() (string, error) {
-	on := a.about(a.currentHost())
-	if on.machine == nil {
-		return "", fmt.Errorf(
-			"a tunnel runs over a connection to another machine, and %s is not one",
-			groupName(on.name))
-	}
-	return on.name, nil
-}
-
-// openTunnelHere asks for a port to forward over the connection to the
-// machine the user is looking at.
-func (a *app) openTunnelHere() error {
-	host, err := a.tunnelHost()
-	if err != nil {
-		return err
-	}
-
-	f := a.newForm("Tunnel over " + host)
-	f.Lines = wrapLines("A port on one machine that stands for a service "+
-		"the other one can reach. Listen here to reach a service on "+
-		host+", or there to give "+host+" one of ours.", errorLineWidth)
-	listen := f.AddField("Listen on", a.newField("[address:]port", 0))
-	target := f.AddField("Reach", a.newField("host:port", 0))
-
-	// The direction is on the buttons rather than in a field: which
-	// machine listens is the whole of what a tunnel is, and a word for it
-	// in a box would be one more thing to get wrong.
-	open := func(kind remote.TunnelKind) func() error {
-		return func() error {
-			t := remote.Tunnel{
-				Kind:   kind,
-				Listen: strings.TrimSpace(listen.Text()),
-				Target: strings.TrimSpace(target.Text()),
-			}
-			if err := t.Validate(); err != nil {
-				// Returned rather than shown here, so the dialog stays
-				// open with what was typed still there to correct.
-				return err
-			}
-			// Not from here: this dialog closes as soon as this returns,
-			// and closing one takes anything stacked on top of it.
-			a.pump.post(func() { a.confirmTunnel(host, t) })
-			return nil
-		}
-	}
-	// The names stay short whatever the machine is called: a button whose
-	// title carried the host name would be too wide to draw on a dialog
-	// this size, and a button that is not drawn cannot be pressed.
-	f.AddButton(ui.Button{Title: "Listen here", Do: open(remote.LocalForward)})
-	f.AddButton(ui.Button{Title: "Listen there", Do: open(remote.RemoteForward)})
-	f.AddButton(ui.Button{Title: "Cancel"})
-	a.showForm(f, nil)
-	return nil
-}
-
-// openSocksHere asks for a SOCKS5 proxy over the connection to the
-// machine the user is looking at.
-//
-// A dialog of its own rather than a third button on the tunnel one: it
-// takes no address to reach, because every stream through it says where
-// it is going.
-func (a *app) openSocksHere() error {
-	host, err := a.tunnelHost()
-	if err != nil {
-		return err
-	}
-
-	f := a.newForm("SOCKS proxy over " + host)
-	f.Lines = wrapLines("A proxy on this machine that reaches whatever it is "+
-		"asked for, as "+host+" sees it.", errorLineWidth)
-	listen := f.AddField("Listen on", a.newField("[address:]port", 0))
-	f.AddButton(ui.Button{Title: "Open", Do: func() error {
-		t := remote.Tunnel{
-			Kind:   remote.DynamicForward,
-			Listen: strings.TrimSpace(listen.Text()),
-		}
-		if err := t.Validate(); err != nil {
-			// Returned rather than shown here, so the dialog stays open
-			// with what was typed still there to correct.
-			return err
-		}
-		// Not from here: this dialog closes as soon as this returns, and
-		// closing one takes anything stacked on top of it.
-		a.pump.post(func() { a.confirmTunnel(host, t) })
-		return nil
-	}})
-	f.AddButton(ui.Button{Title: "Cancel"})
-	a.showForm(f, nil)
-	return nil
 }
 
 // confirmTunnel asks again when the tunnel would be open to the rest of

@@ -102,6 +102,18 @@ func (f hostFacts) toTakeOver() bool {
 	return f.serves && f.window == nil
 }
 
+// headingRow is the row the machine's heading on the panel draws itself
+// from: the connection the name is holding, or nil when it holds none.
+func (f hostFacts) headingRow() *conns.Entry {
+	switch {
+	case f.window != nil:
+		return f.window.entry
+	case f.machine != nil:
+		return f.machine.entry
+	}
+	return nil
+}
+
 // record clones the server list's entry for the name out of the book,
 // which about does not. Empty unless the name is saved.
 func (f hostFacts) record() remote.Host {
@@ -126,8 +138,8 @@ func (a *app) about(host string) hostFacts {
 		a:        a,
 		name:     host,
 		window:   a.windows.named(host),
-		machine:  a.machines[host],
-		dialling: a.opening[host],
+		machine:  a.machines.named(host),
+		dialling: a.machines.connecting(host),
 	}
 	if k, saved := a.book.Kind(host); saved {
 		f.saved, f.serves, f.spelling = true, k.Window, k.Name

@@ -42,13 +42,13 @@ func waitForPanes(t *testing.T, a *testApp, n int) {
 		// soon as it starts, so the pane is there before the machine
 		// is, and a test that counted panes alone would go on before
 		// there was anything to connect to.
-		if len(a.panes) == n && a.connecting == 0 {
+		if len(a.panes) == n && a.machines.beingMade() == 0 {
 			return
 		}
 		time.Sleep(time.Millisecond)
 	}
 	t.Fatalf("the app has %d panes and %d connections still opening, want %d panes",
-		len(a.panes), a.connecting, n)
+		len(a.panes), a.machines.beingMade(), n)
 }
 
 // waitForDialog runs the pump until a dialog with the given title is on
@@ -137,7 +137,7 @@ func TestConnectShowsWhyItFailed(t *testing.T) {
 		t.Errorf("%d panes after a failed connection, want the one that was there"+
 			" and the one that says why", len(a.panes))
 	}
-	if a.opening[cfg.Target()] != nil {
+	if a.machines.connecting(cfg.Target()) != nil {
 		t.Error("the machine is still marked as being connected to")
 	}
 	for pane, e := range a.panes {
@@ -176,8 +176,8 @@ func TestConnectCancelStopsADialThatIsStillRunning(t *testing.T) {
 	// A row on the panel says it is on its way, and it can be cancelled
 	// from there.
 	waiting := waitForConnecting(t, a)
-	if a.connecting != 1 {
-		t.Fatalf("%d connections are being made, want 1", a.connecting)
+	if a.machines.beingMade() != 1 {
+		t.Fatalf("%d connections are being made, want 1", a.machines.beingMade())
 	}
 	if waiting.Close == nil {
 		t.Fatal("the row cannot be cancelled")
@@ -190,7 +190,7 @@ func TestConnectCancelStopsADialThatIsStillRunning(t *testing.T) {
 	deadline := time.Now().Add(waitBudget)
 	for time.Now().Before(deadline) {
 		a.pump.run()
-		if a.connecting == 0 {
+		if a.machines.beingMade() == 0 {
 			if m := a.root.Modal(); m != nil {
 				t.Fatalf("a dialog was left open after cancelling: %T", m)
 			}
@@ -242,8 +242,8 @@ func TestConnectRunsSeveralAtOnce(t *testing.T) {
 		cfg.Host, cfg.Port = host, port
 		a.connectAs(name, cfg)
 	}
-	if a.connecting != 3 {
-		t.Fatalf("%d connections are being made, want 3", a.connecting)
+	if a.machines.beingMade() != 3 {
+		t.Fatalf("%d connections are being made, want 3", a.machines.beingMade())
 	}
 
 	// One row each, under a heading each, and no dialog anywhere.
@@ -282,7 +282,7 @@ func TestConnectRunsSeveralAtOnce(t *testing.T) {
 		t.Fatalf("cancel: %v", err)
 	}
 	deadline := time.Now().Add(waitBudget)
-	for time.Now().Before(deadline) && a.connecting > 2 {
+	for time.Now().Before(deadline) && a.machines.beingMade() > 2 {
 		a.pump.run()
 		time.Sleep(time.Millisecond)
 	}
@@ -291,8 +291,8 @@ func TestConnectRunsSeveralAtOnce(t *testing.T) {
 		a.pump.run()
 		time.Sleep(5 * time.Millisecond)
 	}
-	if a.connecting != 2 {
-		t.Fatalf("%d connections are being made after cancelling one, want 2", a.connecting)
+	if a.machines.beingMade() != 2 {
+		t.Fatalf("%d connections are being made after cancelling one, want 2", a.machines.beingMade())
 	}
 	for _, e := range opening[1:] {
 		var found bool
@@ -491,12 +491,12 @@ func TestConnectingOpensAPaneAndSaysWhatItIsDoing(t *testing.T) {
 	// And the same pane carries the shell, with the account of how it
 	// was reached still above it.
 	waitFor(t, a, "the connection to be made", func() bool {
-		return a.machines[cfg.Target()] != nil
+		return a.machines.named(cfg.Target()) != nil
 	})
 	waitFor(t, a, "the pane to say it connected", func() bool {
 		return strings.Contains(paneText(pane), "connected to "+cfg.Target())
 	})
-	if a.paneOn[pane] == nil {
+	if a.machines.runningOn(pane) == nil {
 		t.Error("the pane is not on the machine it connected to")
 	}
 	if len(a.panes) != before+1 {

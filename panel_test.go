@@ -64,6 +64,23 @@ func sideArea(a *testApp) (ui.Rect, bool) {
 	return a.sideRegion.rect, true
 }
 
+// chooseRow puts the sidebar's bar on a row, which is what choosing it
+// in the sidebar does.
+func chooseRow(t *testing.T, a *testApp, want *conns.Entry) {
+	t.Helper()
+	panelText(a, time.Now())
+	if !a.panel.Select(want) {
+		t.Fatalf("the sidebar has no row to choose: %v", panelText(a, time.Now()))
+	}
+}
+
+// clearTheRow clears whichever row the sidebar has chosen, through the
+// menu line that does it.
+func clearTheRow(t *testing.T, a *testApp) {
+	t.Helper()
+	chooseMenuItem(t, openBarMenu(t, a, "Connection"), "conn.close")
+}
+
 // panelText returns what the panel is showing, one line per row, with
 // the note in brackets.
 func panelText(a *testApp, now time.Time) []string {
@@ -1022,8 +1039,8 @@ func TestASavedServerIsOnTheSidebarWithNothingConnected(t *testing.T) {
 			t.Fatalf("the sidebar shows %v, want %v", got, want)
 		}
 	}
-	if len(a.machines) != 0 {
-		t.Fatalf("%d machines are connected, and none should be", len(a.machines))
+	if a.machines.count() != 0 {
+		t.Fatalf("%d machines are connected, and none should be", a.machines.count())
 	}
 }
 

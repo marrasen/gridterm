@@ -87,7 +87,7 @@ func TestAConnectionThatDropsStopsSayingItIsConnected(t *testing.T) {
 	s.CloseClients()
 
 	waitFor(t, a, "the connection to be given up on", func() bool {
-		return a.machines[host] == nil
+		return a.machines.named(host) == nil
 	})
 	if got := row.State(time.Now()); got != meter.Closed {
 		t.Fatalf("the row is %v after the connection dropped, want closed", got)
@@ -99,6 +99,96 @@ func TestAConnectionThatDropsStopsSayingItIsConnected(t *testing.T) {
 	// says it has finished.
 	if n := a.registry.DropFinished(time.Now()); n == 0 {
 		t.Fatal("the dead connection could not be cleared")
+	}
+}
+
+// A connection that drops keeps a row on the panel, greyed, and the user
+// can clear it. The name is free to connect to again once it has gone.
+//
+// The row was there and never drawn: the heading draws the dot from the
+// connection, which had just gone, and the panel left every connection's
+// own row out on the grounds that the heading carried it. So a machine
+// that dropped showed a heading with no dot and nothing to clear.
+func TestAMachineThatDroppedKeepsARowThatCanBeCleared(t *testing.T) {
+	near := sshtest.New(t)
+	far := sshtest.New(t)
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	withMenubar(t, a)
+	pinServers(t, a, near, far)
+
+	// Reached through another machine, so its row has a note saying
+	// which one carries it.
+	saveHost(t, a, "edge", near, "")
+	saveHost(t, a, "db", far, "edge")
+	const host = "db"
+	if err := a.connectSaved(host); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	waitFor(t, a, "the machine at the end of the route", func() bool {
+		return a.machines.named(host) != nil
+	})
+	row := serverRow(t, a, host)
+	label := row.Label
+	if row.Note == "" {
+		t.Fatal("the row does not say what carries it, so this proves nothing")
+	}
+
+	// The network goes away.
+	far.CloseClients()
+	waitFor(t, a, "the connection to be given up on", func() bool {
+		return a.machines.named(host) == nil
+	})
+
+	panelText(a, time.Now())
+	drawn, ok := panelRow(a, row)
+	if !ok {
+		t.Fatalf("the panel does not draw the row of the dropped connection: %v",
+			panelText(a, time.Now()))
+	}
+	if drawn.FG != a.colours.ANSI[8] {
+		t.Errorf("the row is drawn in %v, want the grey a finished connection is drawn in", drawn.FG)
+	}
+	// Still saying which connection it was, with the note about what
+	// carried it gone with the connection.
+	if drawn.Text != label {
+		t.Errorf("the row says %q, want %q", drawn.Text, label)
+	}
+	if drawn.Note != "" {
+		t.Errorf("the row still notes %q", drawn.Note)
+	}
+
+	// Cleared the way any row is: choose it in the sidebar, then the
+	// menu line that closes what is chosen.
+	chooseRow(t, a, row)
+	clearTheRow(t, a)
+
+	panelText(a, time.Now())
+	if _, ok := panelRow(a, row); ok {
+		t.Errorf("the row is still on the panel: %v", panelText(a, time.Now()))
+	}
+	for _, e := range a.rowsUnder(host) {
+		if e.Kind == conns.Server {
+			t.Errorf("the connection's row is still on the list: %q", e.Label)
+		}
+	}
+	// The machine that carried it is still connected, and the one that
+	// dropped is held by nothing.
+	if got := a.machines.names(); len(got) != 1 || got[0] != "edge" {
+		t.Errorf("the window holds %v, want only the machine that carried it", got)
+	}
+	heldAs(t, a, host, isFree)
+
+	// And the name is nobody's, so the machine can be reached again.
+	if err := a.connectSaved(host); err != nil {
+		t.Fatalf("connect again: %v", err)
+	}
+	waitFor(t, a, "the machine to be connected to again", func() bool {
+		return a.machines.named(host) != nil
+	})
+	if n := far.Conns(); n != 2 {
+		t.Errorf("the server saw %d logins, want the second one", n)
 	}
 }
 
@@ -120,8 +210,8 @@ func TestTwoLoginsOnOneMachineAreTwoConnections(t *testing.T) {
 	a.connect(second)
 	waitForPanes(t, a, 3)
 
-	if len(a.machines) != 2 {
-		t.Fatalf("the window holds %v, want both logins", names(a))
+	if a.machines.count() != 2 {
+		t.Fatalf("the window holds %v, want both logins", a.machines.names())
 	}
 	if n := two.Conns(); n != 1 {
 		t.Fatalf("the second machine saw %d logins, want 1", n)
@@ -192,11 +282,11 @@ func TestARouteStartsFromTheMachineAlreadyConnectedTo(t *testing.T) {
 	if n := edge.Conns(); n != 0 {
 		t.Fatalf("edge saw %d logins, want none: db was already reachable", n)
 	}
-	if got := a.machines["app"].conn.Via(); got != a.machines["db"].conn {
+	if got := a.machines.named("app").conn.Via(); got != a.machines.named("db").conn {
 		t.Fatalf("app came through %v, want db", got)
 	}
-	if len(a.machines) != 2 {
-		t.Fatalf("the window holds %v, want db and app", names(a))
+	if a.machines.count() != 2 {
+		t.Fatalf("the window holds %v, want db and app", a.machines.names())
 	}
 }
 
@@ -316,7 +406,7 @@ func TestTheServerRowRevealsAPaneOnThatMachine(t *testing.T) {
 	row.Reveal()
 
 	t2 := a.focusedTerminal()
-	if t2 == nil || a.paneOn[t2] == nil || a.paneOn[t2] != a.machines[host] {
+	if t2 == nil || a.machines.runningOn(t2) == nil || a.machines.runningOn(t2) != a.machines.named(host) {
 		t.Fatal("the keys did not land on a pane running on that machine")
 	}
 }
@@ -341,8 +431,8 @@ func TestClosingTheWindowEndsEveryConnection(t *testing.T) {
 	if err := a.closeMachines(); err != nil {
 		t.Fatalf("closeMachines: %v", err)
 	}
-	if len(a.machines) != 0 {
-		t.Fatalf("the window still holds %v", names(a))
+	if a.machines.count() != 0 {
+		t.Fatalf("the window still holds %v", a.machines.names())
 	}
 	waitFor(t, a, "both machines to go", func() bool {
 		return near.Live() == 0 && far.Live() == 0
@@ -375,8 +465,8 @@ func TestAConnectionThatIsNoLongerWanted(t *testing.T) {
 	}
 	// Held again, with no connection under it: nothing here looks at one,
 	// and the window closing would try to close it.
-	a.machines["edge"] = gone
-	defer delete(a.machines, "edge")
+	a.machines.take(gone)
+	defer a.machines.drop(gone)
 	if err := a.stillWanted(nil, gone); err != nil {
 		t.Fatalf("a hop through a machine still held was refused: %v", err)
 	}
@@ -398,7 +488,7 @@ func onlyPaneWidget(t *testing.T, a *testApp) ui.Widget {
 func onlyLocalPane(t *testing.T, a *testApp) ui.Widget {
 	t.Helper()
 	for pane := range a.panes {
-		if a.paneOn[pane] == nil {
+		if a.machines.runningOn(pane) == nil {
 			return pane
 		}
 	}

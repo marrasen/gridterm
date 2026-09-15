@@ -173,7 +173,7 @@ func (a *app) paneName(w ui.Widget) string {
 func (a *app) paneWhere(w ui.Widget) string {
 	switch pane := w.(type) {
 	case *term.Terminal:
-		if m := a.paneOn[pane]; m != nil {
+		if m := a.machines.runningOn(pane); m != nil {
 			return m.at.name
 		}
 		if e := a.panes[pane]; e != nil {

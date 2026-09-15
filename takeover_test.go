@@ -332,10 +332,10 @@ func TestTakingOverTheSameWindowTwiceAsks(t *testing.T) {
 	// the one on its way or to throw it away and start again.
 	f := waitForDialog(t, a, "Already connecting to 127.0.0.1:1")
 	pressButton(t, a, f, "Leave it")
-	if a.connecting != 1 {
-		t.Fatalf("%d windows are being taken over, want the first one only", a.connecting)
+	if a.machines.beingMade() != 1 {
+		t.Fatalf("%d windows are being taken over, want the first one only", a.machines.beingMade())
 	}
-	if a.opening["127.0.0.1:1"] == nil {
+	if a.machines.connecting("127.0.0.1:1") == nil {
 		t.Fatal("the first attempt was let go of")
 	}
 }
@@ -368,8 +368,8 @@ func TestAMachineWithNoPortGetsTheServingOne(t *testing.T) {
 	}
 
 	want := fmt.Sprintf("127.0.0.1:%d", servePort)
-	if a.opening[want] == nil {
-		t.Errorf("it is reaching %v, want %s", mapKeys(a.opening), want)
+	if a.machines.connecting(want) == nil {
+		t.Errorf("it is reaching %v, want %s", a.machines.reaching(), want)
 	}
 }
 
@@ -383,16 +383,16 @@ func TestGivingUpOnAWindowLeavesNothing(t *testing.T) {
 	if err := a.takeOver("127.0.0.1:1", keyFile, nil); err != nil {
 		t.Fatalf("take over: %v", err)
 	}
-	if a.connecting != 1 {
-		t.Fatalf("%d connections are being made, want one", a.connecting)
+	if a.machines.beingMade() != 1 {
+		t.Fatalf("%d connections are being made, want one", a.machines.beingMade())
 	}
 
 	if err := a.dropWindow("127.0.0.1:1"); err != nil {
 		t.Fatalf("give up: %v", err)
 	}
 
-	waitFor(t, a, "the row to go", func() bool { return a.connecting == 0 })
-	if a.opening["127.0.0.1:1"] != nil {
+	waitFor(t, a, "the row to go", func() bool { return a.machines.beingMade() == 0 })
+	if a.machines.connecting("127.0.0.1:1") != nil {
 		t.Error("the window is still being reached")
 	}
 	for _, line := range panelText(a, panelNow) {
@@ -445,6 +445,151 @@ func TestAWindowThatQuitsIsLetGoOf(t *testing.T) {
 	if client.windows.drawn() != 0 {
 		t.Errorf("%d panes are still drawn from it", client.windows.drawn())
 	}
+}
+
+// A window that quits at the far end keeps a row too, greyed, and the
+// user can clear it. The address is free to take over again once it has
+// gone.
+//
+// The same policy as a machine whose connection drops, which is what
+// greyRow states. This one used to take the row away the moment the far
+// window went, so what it had been doing went with it.
+func TestAWindowThatQuitsKeepsARowThatCanBeCleared(t *testing.T) {
+	host := newTestApp(t, 90, 30)
+	withDialogs(t, host)
+	withPanel(t, host)
+	keyFile, line := aKeyFile(t)
+	withServing(t, host, line)
+	if err := host.startServing("0", whereHere); err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+	addr := host.serving.addr()
+
+	client := newTestApp(t, 90, 30)
+	withDialogs(t, client)
+	withPanel(t, client)
+	withMenubar(t, client)
+	// Saved, so the window is held under a name and its row has an
+	// address to say.
+	saveWindowFromTheDialog(t, client, "statio", addr, keyFile)
+
+	// Through the dialog, trusting the window's key, which this one has
+	// not seen before.
+	takeOver := func(at, name string) {
+		t.Helper()
+		chooseMenuItem(t, openBarMenu(t, client, "Servers"), "serve.takeOver")
+		f := waitForDialog(t, client, "Take over a window")
+		typeIntoField(t, client, f, "Machine", at)
+		typeIntoField(t, client, f, "Key file", keyFile)
+		pressButton(t, client, f, "Take over")
+		answer(t, client, "Connect")
+		waitFor(t, client, "a pane on the window taken over", func() bool {
+			return client.windows.named(name) != nil && client.windows.drawn() > 0
+		})
+	}
+	takeOver(addr, "statio")
+	row := serverRow(t, client, "statio")
+
+	// The serving window stops serving, which is what quitting looks
+	// like from here.
+	if err := host.stopServing(); err != nil {
+		t.Fatalf("stop serving: %v", err)
+	}
+	waitFor(t, client, "the window to be let go of", func() bool {
+		return client.windows.named("statio") == nil
+	})
+
+	panelText(client, time.Now())
+	drawn, ok := panelRow(client, row)
+	if !ok {
+		t.Fatalf("the panel does not draw the row of the window that quit: %v",
+			panelText(client, time.Now()))
+	}
+	if drawn.FG != client.colours.ANSI[8] {
+		t.Errorf("the row is drawn in %v, want the grey a finished connection is drawn in", drawn.FG)
+	}
+	// Saying what became of it, and still saying where it was.
+	if drawn.Text != "no longer serving" {
+		t.Errorf("the row says %q, want what became of the window", drawn.Text)
+	}
+	if drawn.Note != addr {
+		t.Errorf("the row notes %q, want the address it was at", drawn.Note)
+	}
+
+	// Hanging up on a window that has already gone reports the socket it
+	// could not close politely. Dismissed, the way the user would.
+	if n := waitForNoticePrefix(t, client, "Trouble letting go of"); n != nil {
+		if _, err := client.root.HandleKey(press(input.KeyEscape, 0)); err != nil {
+			t.Fatalf("dismissing the notice: %v", err)
+		}
+	}
+
+	// Cleared the way any row is: choose it in the sidebar, then the
+	// menu line that closes what is chosen.
+	chooseRow(t, client, row)
+	clearTheRow(t, client)
+
+	panelText(client, time.Now())
+	if _, ok := panelRow(client, row); ok {
+		t.Errorf("the row is still on the panel: %v", panelText(client, time.Now()))
+	}
+	for _, e := range client.rowsUnder("statio") {
+		if e.Kind == conns.Server {
+			t.Errorf("the window's row is still on the list: %q", e.Label)
+		}
+	}
+	if n := client.windows.count(); n != 0 {
+		t.Errorf("the window still holds %v", client.windows.names())
+	}
+	heldAs(t, client, "statio", isFree)
+
+	// And a window serving again is taken over like any other.
+	if err := host.startServing("0", whereHere); err != nil {
+		t.Fatalf("serve again: %v", err)
+	}
+	again := host.serving.addr()
+	takeOver(again, again)
+	if client.windows.named(again) == nil {
+		t.Errorf("it did not take the window over again: %v", client.windows.names())
+	}
+}
+
+// Taking over an address a machine is already connected under is
+// refused, with the dialog left open to correct.
+//
+// The name would stand for two things at once, and closing either would
+// go looking for the other.
+func TestTakingOverAnAddressAMachineIsUnderIsRefused(t *testing.T) {
+	s := sshtest.New(t)
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+
+	// Reached by typing its address, so the connection is held under the
+	// name a window serving there would be held under.
+	addr := s.Addr()
+	a.connectAs(addr, serverConfig(t, s))
+	waitFor(t, a, "the machine to connect", func() bool {
+		return a.machines.named(addr) != nil
+	})
+
+	if err := a.openTakeOver(); err != nil {
+		t.Fatalf("the take-over dialog: %v", err)
+	}
+	f := openDialog(t, a)
+	f.Field("Machine").SetText(addr)
+	pressButton(t, a, f, "Take over")
+
+	if a.root.Modal() != f {
+		t.Fatal("the dialog closed on an address it cannot take over")
+	}
+	if f.Error() == nil {
+		t.Fatal("nothing said why the address was refused")
+	}
+	if got := f.Error().Error(); !strings.Contains(got, "close it first") {
+		t.Errorf("it refused with %q, want it to say what to do about it", got)
+	}
+	heldAs(t, a, addr, isConnected)
 }
 
 // The row for a taken-over window is what takes it away, and the panel
@@ -615,7 +760,7 @@ func TestOnlyATakenWindowContributesRemoteRows(t *testing.T) {
 			t.Errorf("a row for another window appeared: %q", row.Text)
 		}
 	}
-	if got := a.remoteRows("nowhere"); got != nil {
+	if got := a.remoteRows(a.about("nowhere")); got != nil {
 		t.Errorf("a machine that is not a window gave %v", got)
 	}
 }
@@ -1429,7 +1574,7 @@ func TestGivingUpOnAWindowThatIsNotAnsweringLetsItGo(t *testing.T) {
 		t.Fatalf("close the pane: %v", err)
 	}
 	waitFor(t, a, "it to let go of the machine", func() bool {
-		return a.opening[addr] == nil
+		return a.machines.connecting(addr) == nil
 	})
 
 	// And it will try again rather than saying it already is.
@@ -1439,7 +1584,7 @@ func TestGivingUpOnAWindowThatIsNotAnsweringLetsItGo(t *testing.T) {
 	if err := a.dropWindow(addr); err != nil {
 		t.Fatalf("drop: %v", err)
 	}
-	waitFor(t, a, "the second attempt to go", func() bool { return a.opening[addr] == nil })
+	waitFor(t, a, "the second attempt to go", func() bool { return a.machines.connecting(addr) == nil })
 }
 
 // A window that answers and then says nothing is given up on by itself,
@@ -1459,7 +1604,7 @@ func TestAWindowThatSaysNothingIsGivenUpOnByItself(t *testing.T) {
 	waitFor(t, a, "the pane to say it gave up", func() bool {
 		return strings.Contains(paneText(pane), "The connection was not made")
 	})
-	if a.opening[addr] != nil {
+	if a.machines.connecting(addr) != nil {
 		t.Error("it still thinks it is taking that machine over")
 	}
 }
@@ -1560,7 +1705,7 @@ func TestAskingAboutTheWindowOnItsWayOpensFromTheButton(t *testing.T) {
 
 	ask := waitForDialog(t, a, "Already connecting to 127.0.0.1:1")
 	pressButton(t, a, ask, "Leave it")
-	if a.opening["127.0.0.1:1"] == nil {
+	if a.machines.connecting("127.0.0.1:1") == nil {
 		t.Fatal("the first attempt was let go of")
 	}
 }
@@ -1622,7 +1767,7 @@ func TestARowWithNoScreenCannotBeWatched(t *testing.T) {
 	shell := remoteKey{window: addr, id: host.panes[onlyPaneOn(t, host)].ID()}
 	var offered int
 	var shellOffered bool
-	for _, row := range client.remoteRows(addr) {
+	for _, row := range client.remoteRows(client.about(addr)) {
 		key, ok := row.Key.(remoteKey)
 		if !ok {
 			continue
@@ -1688,7 +1833,7 @@ func TestTheScreensOfAWindowAreGroupedByMachine(t *testing.T) {
 		return false
 	})
 
-	rows := client.remoteRows(addr)
+	rows := client.remoteRows(client.about(addr))
 	var heads, under []string
 	for _, row := range rows {
 		if row.Header {

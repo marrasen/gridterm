@@ -258,13 +258,13 @@ func TestConnectSavedStartsWithTheMachineInTheWay(t *testing.T) {
 	if err := a.connectSaved("db"); err != nil {
 		t.Fatalf("connectSaved: %v", err)
 	}
-	if a.connecting != 1 {
-		t.Fatalf("%d connections are being made, want the one route", a.connecting)
+	if a.machines.beingMade() != 1 {
+		t.Fatalf("%d connections are being made, want the one route", a.machines.beingMade())
 	}
 	// Both machines on the route are being connected to, under the one
 	// row that stands for the far end.
-	if a.opening["edge"] == nil || a.opening["db"] == nil {
-		t.Fatalf("the route being made is %v, want both machines", a.opening)
+	if a.machines.connecting("edge") == nil || a.machines.connecting("db") == nil {
+		t.Fatalf("the route being made is %v, want both machines", a.machines.reaching())
 	}
 	waiting := waitForConnecting(t, a)
 	if waiting.Host != "db" {
@@ -276,7 +276,7 @@ func TestConnectSavedStartsWithTheMachineInTheWay(t *testing.T) {
 	}
 	for deadline := time.Now().Add(waitBudget); time.Now().Before(deadline); {
 		a.pump.run()
-		if a.connecting == 0 {
+		if a.machines.beingMade() == 0 {
 			return
 		}
 		time.Sleep(time.Millisecond)
@@ -699,7 +699,7 @@ func TestRenamingAMachineTakesWhatIsOpenWithIt(t *testing.T) {
 	if err := a.connectSaved("picard"); err != nil {
 		t.Fatalf("connectSaved: %v", err)
 	}
-	waitFor(t, a, "the machine to connect", func() bool { return a.machines["picard"] != nil })
+	waitFor(t, a, "the machine to connect", func() bool { return a.machines.named("picard") != nil })
 
 	if err := a.openEditServer("picard"); err != nil {
 		t.Fatalf("edit: %v", err)
@@ -709,12 +709,12 @@ func TestRenamingAMachineTakesWhatIsOpenWithIt(t *testing.T) {
 	pressButton(t, a, f, "Save")
 	a.pump.run()
 
-	if a.machines["picard"] != nil {
+	if a.machines.named("picard") != nil {
 		t.Fatal("the connection is still held under the old name")
 	}
-	m := a.machines["picard via skylake"]
+	m := a.machines.named("picard via skylake")
 	if m == nil {
-		t.Fatalf("the connection did not follow the rename: %v", names(a))
+		t.Fatalf("the connection did not follow the rename: %v", a.machines.names())
 	}
 	shown := strings.Join(panelText(a, time.Now()), "\n")
 	if strings.Contains(shown, "picard\n") || strings.HasSuffix(shown, "picard") {
@@ -728,7 +728,7 @@ func TestRenamingAMachineTakesWhatIsOpenWithIt(t *testing.T) {
 	if err := m.entry.Close(); err != nil {
 		t.Fatalf("close the renamed connection: %v", err)
 	}
-	if a.machines["picard via skylake"] != nil {
+	if a.machines.named("picard via skylake") != nil {
 		t.Fatal("closing the renamed connection did nothing")
 	}
 }
@@ -749,7 +749,7 @@ func TestRenamingOnlyTheCapitalsStillMovesWhatIsOpen(t *testing.T) {
 	if err := a.connectSaved("picard"); err != nil {
 		t.Fatalf("connectSaved: %v", err)
 	}
-	waitFor(t, a, "the machine to connect", func() bool { return a.machines["picard"] != nil })
+	waitFor(t, a, "the machine to connect", func() bool { return a.machines.named("picard") != nil })
 
 	if err := a.openEditServer("picard"); err != nil {
 		t.Fatalf("edit: %v", err)
@@ -759,11 +759,11 @@ func TestRenamingOnlyTheCapitalsStillMovesWhatIsOpen(t *testing.T) {
 	pressButton(t, a, f, "Save")
 	a.pump.run()
 
-	if a.machines["picard"] != nil {
+	if a.machines.named("picard") != nil {
 		t.Fatal("the connection is still held under the old capitals")
 	}
-	if a.machines["Picard"] == nil {
-		t.Fatalf("the connection did not follow the rename: %v", names(a))
+	if a.machines.named("Picard") == nil {
+		t.Fatalf("the connection did not follow the rename: %v", a.machines.names())
 	}
 }
 
@@ -781,9 +781,9 @@ func TestRenamingOntoAConnectedNameIsRefused(t *testing.T) {
 	saveHost(t, a, "picard", s, "")
 	a.connectAs("enterprise", a.prepare(serverConfig(t, s)))
 	waitFor(t, a, "the typed machine to connect", func() bool {
-		return a.machines["enterprise"] != nil
+		return a.machines.named("enterprise") != nil
 	})
-	was := a.machines["enterprise"]
+	was := a.machines.named("enterprise")
 
 	if err := a.openEditServer("picard"); err != nil {
 		t.Fatalf("edit: %v", err)
@@ -793,7 +793,7 @@ func TestRenamingOntoAConnectedNameIsRefused(t *testing.T) {
 	pressButton(t, a, f, "Save")
 	a.pump.run()
 
-	if a.machines["enterprise"] != was {
+	if a.machines.named("enterprise") != was {
 		t.Fatal("the connection that was already there was dropped without being closed")
 	}
 	if _, ok := a.book.Lookup("enterprise"); ok {
@@ -818,7 +818,7 @@ func TestRenamingOntoAConnectingNameIsRefused(t *testing.T) {
 	cfg := serverConfig(t, s)
 	cfg.Host, cfg.Port = deafHost, deafPort
 	a.connectAs("slow", cfg)
-	if a.opening["slow"] == nil {
+	if a.machines.connecting("slow") == nil {
 		t.Fatal("nothing is on its way to the deaf machine, so this proves nothing")
 	}
 
@@ -853,7 +853,7 @@ func TestRenamingAndRetargetingLeavesTheOldConnection(t *testing.T) {
 	if err := a.connectSaved("picard"); err != nil {
 		t.Fatalf("connectSaved: %v", err)
 	}
-	waitFor(t, a, "the machine to connect", func() bool { return a.machines["picard"] != nil })
+	waitFor(t, a, "the machine to connect", func() bool { return a.machines.named("picard") != nil })
 
 	host, port := far.Host()
 	if err := a.openEditServer("picard"); err != nil {
@@ -865,12 +865,41 @@ func TestRenamingAndRetargetingLeavesTheOldConnection(t *testing.T) {
 	pressButton(t, a, f, "Save")
 	a.pump.run()
 
-	if a.machines["enterprise"] != nil {
+	if a.machines.named("enterprise") != nil {
 		t.Fatal("the connection to the old machine was moved under the new name")
 	}
-	if a.machines["picard"] == nil {
-		t.Fatalf("the connection to the old machine was lost: %v", names(a))
+	m := a.machines.named("picard")
+	if m == nil {
+		t.Fatalf("the connection to the old machine was lost: %v", a.machines.names())
 	}
+
+	// And its rows stayed with it. They used to follow the name, which
+	// left the panel drawing them under a heading nothing is connected
+	// to, and the live connection's heading with no dot on it.
+	panelText(a, time.Now())
+	heading, ok := panelRow(a, hostKey("picard"))
+	if !ok {
+		t.Fatalf("the panel has no heading for the live connection: %v",
+			panelText(a, time.Now()))
+	}
+	if heading.Mark == ' ' {
+		t.Error("the heading of the live connection has no dot on it")
+	}
+	if moved, ok := panelRow(a, hostKey("enterprise")); ok && moved.Mark != ' ' {
+		t.Error("the new name has a dot for a connection that did not move")
+	}
+	for _, pane := range a.machines.panesOn(m) {
+		if got := a.panes[pane].Host; got != "picard" {
+			t.Errorf("a pane on the connection is filed under %q, want picard", got)
+		}
+	}
+
+	// And the old name still closes it.
+	a.hostMenus.nowAbout("picard")
+	if err := a.disconnectHere(); err != nil {
+		t.Fatalf("closing it from the name it is still under: %v", err)
+	}
+	heldAs(t, a, "picard", isFree)
 }
 
 // A gridterm window can be saved under a name, and taken over from the
@@ -930,8 +959,8 @@ func TestASavedWindowHasItsOwnColourInTheSidebar(t *testing.T) {
 	a.refreshServers()
 	a.refreshPanel(time.Now())
 
-	window := a.hostRow("statio", time.Now())
-	machine := a.hostRow("margit", time.Now())
+	window := a.hostRow(a.about("statio"), time.Now())
+	machine := a.hostRow(a.about("margit"), time.Now())
 	if window.FG == machine.FG {
 		t.Fatalf("a window and a machine are the same colour: %v", window.FG)
 	}
@@ -1296,14 +1325,14 @@ func TestAWindowCannotBeMadeIntoARoute(t *testing.T) {
 func TestOnlyOpenRouteDials(t *testing.T) {
 	dialers := callersOf(t, "remote.Connect(", ".Through(")
 	for _, at := range dialers {
-		if !strings.HasPrefix(at, "machines.go") {
-			t.Errorf("something outside machines.go dials: %s", at)
+		if !strings.HasPrefix(at, "route.go") {
+			t.Errorf("something outside route.go dials: %s", at)
 		}
 	}
 	routes := callersOf(t, "a.openRoute(", "openRoute(")
 	for _, at := range routes {
 		switch {
-		case strings.HasPrefix(at, "machines.go"), strings.HasPrefix(at, "servers.go"):
+		case strings.HasPrefix(at, "connect.go"), strings.HasPrefix(at, "servers.go"):
 		default:
 			t.Errorf("openRoute is called from %s, which the guard was not checked against", at)
 		}

@@ -262,13 +262,20 @@ func (a *app) refreshPanel(now time.Time) {
 
 	var rows []ui.ListRow
 	for _, host := range a.hosts(open) {
-		rows = append(rows, a.hostRow(host, now))
+		// Once per heading, and handed down: every row of the heading
+		// asks the same questions about the same name.
+		on := a.about(host)
+		rows = append(rows, a.hostRow(on, now))
+		heading := on.headingRow()
 		for _, row := range open[host] {
 			live[row.Entry] = true
-			if row.Kind == conns.Server {
+			if row.Kind == conns.Server && row.Entry == heading {
 				// The connection itself is the machine, and the machine
 				// is the heading above these rows. A row for it as well
-				// says the same thing twice.
+				// says the same thing twice. The row of a connection
+				// that has dropped is drawn: the heading no longer
+				// carries it, and greyRow left it to be read and
+				// cleared.
 				continue
 			}
 			rows = append(rows, a.panelRow(row, now))
@@ -277,7 +284,7 @@ func (a *app) refreshPanel(now time.Time) {
 		// Its list, not one worked out here: what a window has open is
 		// that window's business, and a client that guessed would
 		// disagree with the machine it is looking at.
-		rows = append(rows, a.remoteRows(host)...)
+		rows = append(rows, a.remoteRows(on)...)
 	}
 	for e := range a.rates {
 		if !live[e] {
@@ -340,11 +347,11 @@ func (a *app) allHosts() []string {
 // It carries the dot the connection's own row used to, so a machine with
 // nothing open on it still says whether it is connected and what it was
 // reached through.
-func (a *app) hostRow(host string, now time.Time) ui.ListRow {
+func (a *app) hostRow(on hostFacts, now time.Time) ui.ListRow {
 	row := ui.ListRow{
-		Text:   groupName(host),
+		Text:   groupName(on.name),
 		Header: true,
-		Key:    hostKey(host),
+		Key:    hostKey(on.name),
 		// Indented like the rows under it, so its own dot sits in the
 		// column theirs do. A heading hard against the left edge has
 		// nowhere to put one.
@@ -356,7 +363,6 @@ func (a *app) hostRow(host string, now time.Time) ui.ListRow {
 		// name does not shift sideways when something is.
 		Mark: ' ',
 	}
-	on := a.about(host)
 	if on.kind == hostWindow || on.serves {
 		// A window of its own colour. It is a different thing to a
 		// machine -- another gridterm, with panes rather than a shell --
@@ -364,20 +370,34 @@ func (a *app) hostRow(host string, now time.Time) ui.ListRow {
 		// tell which is which.
 		row.FG = a.colours.ANSI[5]
 	}
-	if t := on.window; t != nil && t.entry != nil {
-		state := t.entry.State(now)
-		row.Mark, row.MarkFG = a.mark(state, now)
-		row.Note = a.note(conns.Row{Entry: t.entry, State: state}, now)
+	e := on.headingRow()
+	if e == nil {
 		return row
 	}
-	m := on.machine
-	if m == nil || m.entry == nil {
-		return row
-	}
-	state := m.entry.State(now)
+	state := e.State(now)
 	row.Mark, row.MarkFG = a.mark(state, now)
-	row.Note = a.note(conns.Row{Entry: m.entry, State: state}, now)
+	row.Note = a.note(conns.Row{Entry: e, State: state}, now)
 	return row
+}
+
+// greyRow leaves the row of a connection that has gone on the panel,
+// closed and with nothing left to reveal.
+//
+// A machine or a window whose far end goes by itself keeps its row until
+// the user clears it, with "Close this connection" or "clear finished",
+// because what a connection did before it went is worth reading. What
+// the row says it was is the caller's to set.
+func (a *app) greyRow(e *conns.Entry) {
+	dead := meter.New()
+	dead.Close()
+	e.Meter = dead
+	e.Reveal = nil
+	e.Close = func() error {
+		a.registry.Drop(e)
+		a.refreshServers()
+		a.markDirty()
+		return nil
+	}
 }
 
 // followTheStage puts the bar on the row for whatever the stage is

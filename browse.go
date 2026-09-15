@@ -33,10 +33,6 @@ type browser struct {
 	rows map[*files.Pane]*conns.Entry
 }
 
-// openFilesHere puts another pane in the file manager, on the machine
-// the user is looking at.
-func (a *app) openFilesHere() error { return a.openFilesOn(a.currentHost()) }
-
 // openFilesOn puts a pane on a machine, starting the file manager when
 // there is not one yet.
 func (a *app) openFilesOn(host string) error {
@@ -600,19 +596,6 @@ func size(n int64) string {
 		return "0 B"
 	}
 	return meter.Bytes(uint64(n))
-}
-
-// renamedFiles tells the file panes on a machine that it is called
-// something else now.
-//
-// The name is frozen into the filesystem when the pane opens, and the
-// window finds a pane's machine by matching it. A pane left under the
-// old name would not be closed with its connection, and would sit on a
-// session that had gone.
-func (a *app) renamedFiles(was, now string) {
-	for _, f := range a.filesystemsOn(was) {
-		f.Renamed(now)
-	}
 }
 
 // renamedFS is a filesystem that can be told its machine is called

@@ -81,6 +81,13 @@ each group. A line goes when the work is in and reviewed.
   frame finds nothing.
 - The cursor never blinks (`DECSCUSR` styles 1, 3 and 5 draw as the
   steady ones).
+- On Windows a command that writes and exits in the same instant loses
+  its output. A ConPTY repaints on a clock of its own, and the reaper
+  closes the pseudoconsole as soon as the child is reaped, which is
+  before the repaint. `session`'s Windows tests type their commands into
+  a shell that stays running rather than passing them on the command
+  line. Unix has `TestOutputSurvivesAChildThatExitsImmediately` for the
+  same case and passes it.
 - `-ssh` connects before the window opens, so it asks on the console and
   has no connection pane.
 - There is no help anywhere. Keys are on the file browser's bar and on

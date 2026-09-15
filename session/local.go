@@ -109,8 +109,12 @@ func StartLocal(cfg LocalConfig) (Session, error) {
 	l.detached = detachSlave(p)
 
 	go func() {
-		defer close(l.done)
 		_ = l.Wait()
+		// Closed the moment the child has been reaped, and before the
+		// Close below, which takes the same lock a Close from the window
+		// holds: one waiting for this channel inside that lock would
+		// wait for a channel this goroutine could no longer close.
+		close(l.done)
 		if !l.detached {
 			// No slave to release, so the only way to unblock a pending
 			// read is to close the pty. On Windows that is also what

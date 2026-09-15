@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	stdlog "log"
+	"net"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -389,6 +391,17 @@ func (a *app) showTheOneOnItsWay(d *dialling, name string, again func()) {
 // something, and the dialog it asks with is drawn by this one. A pane
 // holds the place until it is done, and closing it gives up.
 func (a *app) openRoute(name string, route []step, command []string, at *spot) {
+	// A window the server list holds is taken over, not logged in to.
+	//
+	// Here because this is the one place every connection really goes
+	// through. Guarding the ways in instead left one of them -- opening
+	// a terminal on a saved machine, which builds its own route -- still
+	// logging in to the serve port, and the far end refusing a session
+	// was the first anything heard of it.
+	if h, ok := a.savedWindowInRoute(name, route); ok {
+		a.takeOverSaved(h)
+		return
+	}
 	through, missing, err := a.plan(route)
 	if err != nil {
 		a.reportError("Could not connect to "+name, err)
@@ -518,6 +531,57 @@ func (a *app) openRoute(name string, route []step, command []string, at *spot) {
 			a.settle(held, true)
 		})
 	}()
+}
+
+// savedWindowInRoute is the saved window a request names, by the name
+// it was asked for or by the address its last step would be dialled at.
+//
+// By address as well as by name, because a connection made from a typed
+// target knows nothing about the list. Only the last step: a window
+// serves gridterm's own protocol and cannot be a machine on the way to
+// another one.
+func (a *app) savedWindowInRoute(name string, route []step) (remote.Host, bool) {
+	if h, ok := a.book.Lookup(name); ok && h.Window {
+		return h, true
+	}
+	if len(route) == 0 {
+		return remote.Host{}, false
+	}
+	last := route[len(route)-1]
+	if h, ok := a.book.Lookup(last.name); ok && h.Window {
+		return h, true
+	}
+	addr := last.cfg.Host
+	if addr == "" {
+		return remote.Host{}, false
+	}
+	if last.cfg.Port != 0 {
+		addr = net.JoinHostPort(last.cfg.Host, strconv.Itoa(last.cfg.Port))
+	}
+	for _, h := range a.book.Hosts() {
+		if !h.Window {
+			continue
+		}
+		if strings.EqualFold(h.ServeAddr(), addr) ||
+			(last.cfg.Port == 0 && strings.EqualFold(h.Address, addr)) {
+			return h, true
+		}
+	}
+	return remote.Host{}, false
+}
+
+// takeOverSaved takes over a saved window, or opens a terminal on it
+// when it is already taken over.
+func (a *app) takeOverSaved(h remote.Host) {
+	if a.windows[h.Name] != nil {
+		if err := a.openOnWindow(h.Name, nil); err != nil {
+			a.reportError("Could not open a terminal on "+h.Name, err)
+		}
+		return
+	}
+	if err := a.takeOver(h.ServeAddr(), h.KeyFile()); err != nil {
+		a.reportError("Could not take over "+h.Name, err)
+	}
 }
 
 // reached takes a machine of a route that has just connected, while the

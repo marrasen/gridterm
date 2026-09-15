@@ -4,9 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/marrasen/gridterm/conns"
@@ -58,52 +55,7 @@ func (a *app) connectAs(name string, cfg remote.Config) {
 	if name == "" {
 		name = cfg.Host
 	}
-	// A window the server list holds is taken over rather than logged
-	// in to, whichever way the user asked for it. Checked here because
-	// this is the one place every connection by name or by address goes
-	// through: a path that missed it would log in to the serve port and
-	// be refused, which is a long way round to find out.
-	if h, ok := a.savedWindowFor(name, cfg); ok {
-		if a.windows[h.Name] != nil {
-			if err := a.openOnWindow(h.Name, nil); err != nil {
-				a.reportError("Could not open a terminal on "+h.Name, err)
-			}
-			return
-		}
-		if err := a.takeOver(h.ServeAddr(), h.KeyFile()); err != nil {
-			a.reportError("Could not take over "+h.Name, err)
-		}
-		return
-	}
 	a.openRoute(name, []step{{name: name, cfg: cfg}}, nil, nil)
-}
-
-// savedWindowFor is the saved window a request names, by the name it
-// was asked for or by the address it would have been dialled at.
-//
-// By address as well as by name, because "connect to a server" takes a
-// typed address and knows nothing about the list.
-func (a *app) savedWindowFor(name string, cfg remote.Config) (remote.Host, bool) {
-	if h, ok := a.book.Lookup(name); ok && h.Window {
-		return h, true
-	}
-	addr := cfg.Host
-	if addr == "" {
-		return remote.Host{}, false
-	}
-	if cfg.Port != 0 {
-		addr = net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port))
-	}
-	for _, h := range a.book.Hosts() {
-		if !h.Window {
-			continue
-		}
-		if strings.EqualFold(h.ServeAddr(), addr) ||
-			(cfg.Port == 0 && strings.EqualFold(h.Address, addr)) {
-			return h, true
-		}
-	}
-	return remote.Host{}, false
 }
 
 // openSessionTab puts a session where it was asked to go: dividing a

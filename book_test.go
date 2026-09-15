@@ -1154,7 +1154,7 @@ func TestASavedWindowIsTakenOverHoweverItIsAskedFor(t *testing.T) {
 	}
 	addr := host.server.Addr()
 
-	for _, how := range []string{"by name", "by address"} {
+	for _, how := range []string{"by name", "by address", "as a terminal on it", "from the saved list"} {
 		t.Run(how, func(t *testing.T) {
 			client := newTestApp(t, 90, 30)
 			withDialogs(t, client)
@@ -1167,14 +1167,25 @@ func TestASavedWindowIsTakenOverHoweverItIsAskedFor(t *testing.T) {
 			}
 			client.refreshServers()
 
-			if how == "by name" {
+			switch how {
+			case "by name":
 				client.connectAs("statio", remote.Config{})
-			} else {
+			case "by address":
 				// What "connect to a server" does with a typed address,
 				// which knows nothing about the list.
 				client.connect(remote.Config{
 					Host: hostOf(t, addr), Port: portOf(t, addr),
 				})
+			case "as a terminal on it":
+				// The plus on its row, which builds a route of its own
+				// rather than going through connectAs.
+				if err := client.openTerminalOn("statio"); err != nil {
+					t.Fatalf("terminal on it: %v", err)
+				}
+			case "from the saved list":
+				if err := client.connectSaved("statio"); err != nil {
+					t.Fatalf("connect saved: %v", err)
+				}
 			}
 			answer(t, client, "Connect")
 			waitFor(t, client, "the window to be taken over", func() bool {

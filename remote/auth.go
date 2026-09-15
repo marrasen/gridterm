@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
@@ -296,10 +297,34 @@ func AgentKeys() (keys []ssh.Signer, closer io.Closer, err error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("remote: no SSH agent: %w", err)
 	}
-	keys, err = agent.NewClient(conn).Signers()
-	if err != nil {
-		_ = conn.Close()
-		return nil, nil, fmt.Errorf("remote: read the SSH agent: %w", err)
+	type answer struct {
+		keys []ssh.Signer
+		err  error
 	}
-	return keys, conn, nil
+	back := make(chan answer, 1)
+	go func() {
+		keys, err := agent.NewClient(conn).Signers()
+		back <- answer{keys: keys, err: err}
+	}()
+	select {
+	case got := <-back:
+		if got.err != nil {
+			_ = conn.Close()
+			return nil, nil, fmt.Errorf("remote: read the SSH agent: %w", got.err)
+		}
+		return got.keys, conn, nil
+	case <-time.After(agentPatience):
+		// Closing it is what unblocks the read, so the goroutine above
+		// ends rather than being left holding the connection.
+		_ = conn.Close()
+		return nil, nil, fmt.Errorf(
+			"remote: the SSH agent did not answer within %v", agentPatience)
+	}
 }
+
+// agentPatience is how long the SSH agent has to say what it holds.
+//
+// It answers from memory, so this is long only by the standards of that:
+// it is here because an agent that has wedged would otherwise stop a
+// connection for ever, with nothing saying why.
+const agentPatience = 5 * time.Second

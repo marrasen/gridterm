@@ -20,6 +20,18 @@ import (
 // dialTimeout is how long reaching another window may take.
 const dialTimeout = 15 * time.Second
 
+// handshakeTimeout is how long the other end has to get through the
+// handshake once it has answered, when the caller asks for no other
+// bound.
+//
+// It is its own deadline because ssh.ClientConfig.Timeout is not one:
+// that field bounds the TCP connection that ssh.Dial makes, and this
+// makes its own connection so that cancelling can close it. Without
+// this, something that accepts and then says nothing -- a firewall that
+// accepts, a port forwarded to nothing, another service on the port --
+// leaves the window saying "opening" for ever.
+const handshakeTimeout = 20 * time.Second
+
 // Window is another machine's gridterm, taken over from this one.
 //
 // Sessions opened on it are session.Session like any other, so a pane
@@ -56,6 +68,10 @@ type DialConfig struct {
 	// never nil: a window that took whatever answered would be one that
 	// hands a shell to whoever got there first.
 	HostKey ssh.HostKeyCallback
+
+	// Patience is how long the other end has to get through the
+	// handshake once it has answered. Zero asks for handshakeTimeout.
+	Patience time.Duration
 }
 
 // Dial reaches another window that is serving.
@@ -82,11 +98,24 @@ func Dial(ctx context.Context, cfg DialConfig) (*Window, error) {
 	// part of it is waiting.
 	stop := context.AfterFunc(ctx, func() { _ = nc.Close() })
 
+	// And a deadline, because the handshake can wait on a machine that
+	// answered and then went quiet, and nothing else here bounds that.
+	// Cleared once the connection is made: from then on it is a session
+	// that may sit idle for as long as the user likes.
+	patience := cfg.Patience
+	if patience <= 0 {
+		patience = handshakeTimeout
+	}
+	if err := nc.SetDeadline(time.Now().Add(patience)); err != nil {
+		stop()
+		_ = nc.Close()
+		return nil, fmt.Errorf("serve: reach %s: %w", cfg.Addr, err)
+	}
+
 	cc, chans, reqs, err := ssh.NewClientConn(nc, cfg.Addr, &ssh.ClientConfig{
 		User:            "gridterm",
 		Auth:            []ssh.AuthMethod{ssh.PublicKeys(cfg.Keys...)},
 		HostKeyCallback: cfg.HostKey,
-		Timeout:         dialTimeout,
 	})
 	if err != nil {
 		if !stop() {
@@ -100,6 +129,10 @@ func Dial(ctx context.Context, cfg DialConfig) (*Window, error) {
 		// Given up on between the handshake finishing and us noticing.
 		_ = cc.Close()
 		return nil, ctx.Err()
+	}
+	if err := nc.SetDeadline(time.Time{}); err != nil {
+		_ = cc.Close()
+		return nil, fmt.Errorf("serve: reach %s: %w", cfg.Addr, err)
 	}
 	w := &Window{client: ssh.NewClient(cc, chans, reqs), addr: cfg.Addr}
 	w.watch()

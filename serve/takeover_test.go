@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1372,4 +1373,118 @@ func TestAFileSessionThatFailedSaysWhyToTheClient(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Error("the window serving was told nothing about it")
 	}
+}
+
+// silentMachine answers and then says nothing, which is what a firewall
+// that accepts, a port forwarded to nothing, or another service on the
+// port looks like from here.
+func silentMachine(t *testing.T) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	held := make(chan net.Conn, 8)
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			held <- c
+		}
+	}()
+	t.Cleanup(func() {
+		_ = ln.Close()
+		close(held)
+		for c := range held {
+			_ = c.Close()
+		}
+	})
+	return ln.Addr().String()
+}
+
+// Reaching a machine that answers and then says nothing gives up.
+//
+// ssh.ClientConfig.Timeout does not bound this: it bounds the TCP
+// connection that ssh.Dial makes, and this makes its own so that
+// cancelling can close it. Without a deadline of its own the window
+// says "opening" for ever, with no way back but restarting it.
+func TestAMachineThatAnswersAndSaysNothingIsGivenUpOn(t *testing.T) {
+	mine, _ := aKey(t, "marcus@laptop")
+	host, err := HostKey(t.TempDir() + "/host_key")
+	if err != nil {
+		t.Fatalf("host key: %v", err)
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := Dial(context.Background(), DialConfig{
+			Addr: silentMachine(t), Keys: []ssh.Signer{mine},
+			HostKey:  ssh.FixedHostKey(host.PublicKey()),
+			Patience: 300 * time.Millisecond,
+		})
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("it says it reached a machine that never spoke")
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("it waited for a machine that answered and then said nothing")
+	}
+}
+
+// And giving up on one comes back at once, rather than waiting out the
+// deadline.
+func TestGivingUpOnASilentMachineComesBackAtOnce(t *testing.T) {
+	mine, _ := aKey(t, "marcus@laptop")
+	host, err := HostKey(t.TempDir() + "/host_key")
+	if err != nil {
+		t.Fatalf("host key: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := Dial(ctx, DialConfig{
+			Addr: silentMachine(t), Keys: []ssh.Signer{mine},
+			HostKey: ssh.FixedHostKey(host.PublicKey()),
+			// Long, so what ends this can only be the giving up.
+			Patience: 5 * time.Minute,
+		})
+		done <- err
+	}()
+	// Long enough to be in the handshake rather than the connect.
+	time.Sleep(100 * time.Millisecond)
+	cancel()
+
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("it says it reached a machine that never spoke")
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("giving up waited for the deadline instead of taking effect")
+	}
+}
+
+// A connection that was made is not held to the handshake's deadline. A
+// window somebody is working in sits idle for as long as they like.
+func TestAConnectionThatWasMadeHasNoDeadline(t *testing.T) {
+	_, w := takenOver(t, func(cols, rows int) (session.Session, error) {
+		return newEchoSession(cols, rows), nil
+	})
+
+	// Longer than the handshake was given, with nothing said on it.
+	time.Sleep(200 * time.Millisecond)
+
+	sess, err := w.Open(80, 24)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer func() { _ = sess.Close() }()
+	read(t, sess, "started at 80x24")
 }

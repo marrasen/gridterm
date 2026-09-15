@@ -162,6 +162,9 @@ func newTestApp(t *testing.T, cols, rows int) *testApp {
 		jobs:         make(map[*conns.Entry]*jobs.Job),
 		asking:       make(map[chan jobs.Choice]func()),
 	}}
+	// Long enough to be a handshake and short enough that a test which
+	// waits one out is not a test that waits twenty seconds.
+	ta.reachPatience = 300 * time.Millisecond
 	// A clipboard of its own. Without this every test that copies
 	// something would overwrite the clipboard of whoever ran it.
 	ta.clip.write = func(s string) error {

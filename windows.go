@@ -110,6 +110,16 @@ func (a *app) takeOver(addr, keyFile string) error {
 		win, err := reachWindow(ctx, reach{
 			addr: addr, keyFile: keyFile, ring: a.keys, ask: ask,
 			known: a.knownWindows, agent: remote.AgentKeys,
+			patience: a.reachPatience,
+			// What it is doing now, on the row. A connection that
+			// stalls then says where it stalled, which is the whole of
+			// what anybody has to go on.
+			saying: func(what string) {
+				a.pump.post(func() {
+					waiting.Note = what
+					a.markDirty()
+				})
+			},
 		})
 		a.pump.post(func() {
 			a.connecting--
@@ -121,6 +131,11 @@ func (a *app) takeOver(addr, keyFile string) error {
 			gaveUp := ctx.Err()
 			cancel()
 			if err != nil {
+				if gaveUp != nil {
+					// The user asked for this, so there is nothing to
+					// tell them: the row going is the answer.
+					return
+				}
 				a.reportError("Could not take over "+addr, err)
 				return
 			}
@@ -157,15 +172,71 @@ type reach struct {
 	// agent where the keys an SSH agent holds come from.
 	known func() (string, error)
 	agent agentKeys
+
+	// saying is told what is being done now, for the row to show. It is
+	// called from the goroutine doing it, so it hands the work to
+	// whatever draws. A nil one is not called.
+	saying func(what string)
+
+	// patience is how long the other end has to get through the
+	// handshake. Zero asks the serve package for its own.
+	patience time.Duration
 }
+
+// say tells the row what is being done now.
+func (r reach) say(what string) {
+	if r.saying != nil {
+		r.saying(what)
+	}
+}
+
+// What a connection says it is doing, in the order it does them.
+const (
+	stepKeys      = "finding a key to offer"
+	stepConnect   = "connecting"
+	stepGivingUp  = "giving up"
+	stepConnected = "connected"
+)
 
 // reachWindow does the part that must not run on the goroutine that
 // draws: reading the disk, unlocking a key, and the handshake itself.
 func reachWindow(ctx context.Context, r reach) (*serve.Window, error) {
+	type answer struct {
+		win *serve.Window
+		err error
+	}
+	back := make(chan answer, 1)
+	go func() {
+		win, err := r.reach(ctx)
+		back <- answer{win: win, err: err}
+	}()
+	select {
+	case got := <-back:
+		return got.win, got.err
+	case <-ctx.Done():
+		r.say(stepGivingUp)
+		// Given up on. Every step of reaching a window is bounded, so
+		// the one still running ends on its own; it is waited for here
+		// rather than abandoned, because it may yet come back holding a
+		// connection that nothing else would close.
+		go func() {
+			if got := <-back; got.win != nil {
+				_ = got.win.Close()
+			}
+		}()
+		return nil, ctx.Err()
+	}
+}
+
+// reach makes the connection, step by step. It runs on a goroutine of
+// reachWindow's, which is what lets giving up be answered at once
+// however far this has got.
+func (r reach) reach(ctx context.Context) (*serve.Window, error) {
 	known, err := r.known()
 	if err != nil {
 		return nil, err
 	}
+	r.say(stepKeys)
 	keys, closer, err := keysFor(ctx, r.keyFile, r.ring, r.ask, r.agent)
 	if err != nil {
 		return nil, err
@@ -182,7 +253,15 @@ func reachWindow(ctx context.Context, r reach) (*serve.Window, error) {
 	if err != nil {
 		return nil, err
 	}
-	return serve.Dial(ctx, serve.DialConfig{Addr: r.addr, Keys: keys, HostKey: check})
+	r.say(stepConnect)
+	win, err := serve.Dial(ctx, serve.DialConfig{
+		Addr: r.addr, Keys: keys, HostKey: check, Patience: r.patience,
+	})
+	if err != nil {
+		return nil, err
+	}
+	r.say(stepConnected)
+	return win, nil
 }
 
 // agentKeys is where the keys an SSH agent holds come from. It is a

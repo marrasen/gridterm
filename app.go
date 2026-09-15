@@ -129,6 +129,11 @@ type app struct {
 	// is holding nothing.
 	handedNext uint64
 
+	// reachPatience is how long a window being taken over has to get
+	// through the handshake. Zero asks the serve package for its own;
+	// a test asks for less so it does not wait out the real one.
+	reachPatience time.Duration
+
 	// dock holds the sidebar beside everything else, panel is the list
 	// in it, and stage is what fills the rest: it holds every pane the
 	// window has open and shows the one the sidebar picked.

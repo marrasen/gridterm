@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"image/color"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1326,4 +1327,135 @@ func TestTheRowOfAWindowOpensTheWindowsMenu(t *testing.T) {
 			t.Errorf("the menu offers %s, which cannot work on a window", not)
 		}
 	}
+}
+
+// silentMachine answers and then says nothing, which is what a firewall
+// that accepts, a port forwarded to nothing, or another service on the
+// port looks like from here.
+func silentMachine(t *testing.T) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	held := make(chan net.Conn, 8)
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			held <- c
+		}
+	}()
+	t.Cleanup(func() {
+		_ = ln.Close()
+		close(held)
+		for c := range held {
+			_ = c.Close()
+		}
+	})
+	return ln.Addr().String()
+}
+
+// Giving up on a window that is not answering takes its row away.
+//
+// This is the whole of what "Give up" has to do. A row that stays says
+// the window is still being taken over, the window will not try again
+// -- "gridterm is already taking over" -- and there is no way back but
+// restarting it.
+func TestGivingUpOnAWindowThatIsNotAnsweringTakesItsRowAway(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	keyFile, _ := aKeyFile(t)
+	addr := silentMachine(t)
+
+	// No dialog to answer: a machine that says nothing never gets as
+	// far as offering a host key to trust.
+	if err := a.takeOver(addr, keyFile); err != nil {
+		t.Fatalf("take over: %v", err)
+	}
+	waitFor(t, a, "the row for the window being taken over", func() bool {
+		return a.opening[addr] != nil && rowFor(a, addr) != nil
+	})
+
+	// What the user does: click the row, then Give up.
+	a.sayWaitingFor(addr)
+	answer(t, a, "Give up")
+
+	waitFor(t, a, "the row to go", func() bool {
+		return a.opening[addr] == nil && rowFor(a, addr) == nil
+	})
+
+	// And the window will try again rather than saying it already is.
+	if err := a.takeOver(addr, keyFile); err != nil {
+		t.Fatalf("it would not try again: %v", err)
+	}
+	if err := a.dropWindow(addr); err != nil {
+		t.Fatalf("drop: %v", err)
+	}
+	waitFor(t, a, "the second attempt to go", func() bool { return a.opening[addr] == nil })
+}
+
+// A window that answers and then says nothing is given up on by itself,
+// with a reason.
+func TestAWindowThatSaysNothingIsGivenUpOnByItself(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	keyFile, _ := aKeyFile(t)
+	addr := silentMachine(t)
+
+	// No dialog to answer: a machine that says nothing never gets as
+	// far as offering a host key to trust.
+	if err := a.takeOver(addr, keyFile); err != nil {
+		t.Fatalf("take over: %v", err)
+	}
+
+	waitFor(t, a, "it to give up on its own", func() bool {
+		return a.opening[addr] == nil && rowFor(a, addr) == nil
+	})
+	// And it says why, rather than the row simply going.
+	f := openDialog(t, a)
+	if said := strings.Join(f.Lines, " "); !strings.Contains(said, addr) {
+		t.Errorf("it does not say which machine: %q", said)
+	}
+}
+
+// The row says what is being done, so a connection that stalls says
+// where it stalled.
+func TestTheRowSaysWhatItIsDoing(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	keyFile, _ := aKeyFile(t)
+	addr := silentMachine(t)
+
+	// No dialog to answer: a machine that says nothing never gets as
+	// far as offering a host key to trust.
+	if err := a.takeOver(addr, keyFile); err != nil {
+		t.Fatalf("take over: %v", err)
+	}
+
+	waitFor(t, a, "the row to say it is connecting", func() bool {
+		row := rowFor(a, addr)
+		return row != nil && row.Note == stepConnect
+	})
+}
+
+// rowFor is the row for a window being taken over, or nil when there is
+// none.
+func rowFor(a *testApp, addr string) *conns.Entry {
+	for _, group := range a.registry.Groups(time.Now()) {
+		if group.Host != addr {
+			continue
+		}
+		for _, row := range group.Rows {
+			if row.Label == "taking over" {
+				return row.Entry
+			}
+		}
+	}
+	return nil
 }

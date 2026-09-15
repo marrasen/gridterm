@@ -349,6 +349,19 @@ func (a *app) hostRow(host string, now time.Time) ui.ListRow {
 		// name does not shift sideways when something is.
 		Mark: ' ',
 	}
+	if a.savedWindow(host) || a.isWindow(host) {
+		// A window of its own colour. It is a different thing to a
+		// machine -- another gridterm, with panes rather than a shell --
+		// and the sidebar should not make the user read the name to
+		// tell which is which.
+		row.FG = a.colours.ANSI[5]
+	}
+	if t := a.windows[host]; t != nil && t.entry != nil {
+		state := t.entry.State(now)
+		row.Mark, row.MarkFG = a.mark(state, now)
+		row.Note = a.note(conns.Row{Entry: t.entry, State: state}, now)
+		return row
+	}
 	m := a.machines[host]
 	if m == nil || m.entry == nil {
 		return row

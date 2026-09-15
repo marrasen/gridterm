@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/marrasen/gridterm/conns"
+	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/serve"
 	"github.com/marrasen/gridterm/session"
 	"github.com/marrasen/gridterm/ui"
@@ -16,7 +17,7 @@ import (
 
 // servePort is the port a window serves on unless the user says
 // otherwise. Nothing standard, and nothing a scanner looks at first.
-const servePort = 2222
+const servePort = remote.ServePort
 
 // servePaths is where a serving window keeps its key and its list of
 // who may connect.

@@ -162,6 +162,19 @@ func (f *Form) Fields() []*Field {
 	return out
 }
 
+// Field returns the field with a label, or nil when there is none.
+//
+// By label rather than by position, so adding a row does not move every
+// caller that used the ones after it.
+func (f *Form) Field(label string) *Field {
+	for _, r := range f.rows {
+		if r.label == label {
+			return r.field
+		}
+	}
+	return nil
+}
+
 // Buttons returns the buttons in the order they were added.
 func (f *Form) Buttons() []Button { return f.buttons }
 

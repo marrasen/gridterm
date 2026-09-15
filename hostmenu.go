@@ -28,8 +28,12 @@ func (a *app) openHostMenu(row ui.ListRow) error {
 	// below.
 	var hide func()
 	menu := ui.NewMenu(a.root.Commands, a.root.Accelerators,
-		hostItems(a.isHere(string(host)), a.isWindow(string(host)),
-			a.isSaved(string(host))), func() {
+		hostItems(hostAbout{
+			here:   a.isHere(string(host)),
+			window: a.isWindow(string(host)),
+			saved:  a.isSaved(string(host)),
+			serves: a.savedWindow(string(host)),
+		}), func() {
 			if hide != nil {
 				hide()
 			}
@@ -78,19 +82,51 @@ func (a *app) openHostMenu(row ui.ListRow) error {
 // A machine the server list holds can also be edited and forgotten.
 // This is where they belong: the row is the machine, so the plus on it
 // is where everything about that machine is.
-func hostItems(here, window, saved bool) []ui.MenuItem {
-	if here {
+
+// hostAbout says what kind of machine a row stands for, which is what
+// decides the menu on it.
+type hostAbout struct {
+	// here is the machine gridterm is running on.
+	here bool
+
+	// window is another gridterm, already taken over.
+	window bool
+
+	// saved is in the server list, and serves narrows that to one saved
+	// as a gridterm window rather than a machine to log in to.
+	saved, serves bool
+}
+
+func hostItems(about hostAbout) []ui.MenuItem {
+	if about.here {
 		return []ui.MenuItem{
 			{Command: "tab.open", Title: "Terminal"},
 			{Command: "conn.files", Title: "Files"},
 		}
 	}
-	if window {
-		return []ui.MenuItem{
+	if about.window {
+		items := []ui.MenuItem{
 			{Command: "conn.terminal", Title: "Terminal"},
 			{Command: "conn.files", Title: "Files"},
 			ui.MenuSeparator(),
 			{Command: "conn.disconnect", Title: "Let go of this window"},
+		}
+		if about.serves {
+			items = append(items, ui.MenuSeparator(),
+				ui.MenuItem{Command: "server.editThis", Title: "Edit this window…"},
+				ui.MenuItem{Command: "server.forget", Title: "Forget this window…"})
+		}
+		return items
+	}
+	if about.serves {
+		// Saved as a window and not taken over yet. Nothing that needs
+		// a shell applies: it serves gridterm's own protocol and has no
+		// shell to log in to.
+		return []ui.MenuItem{
+			{Command: "server.connect", Title: "Take it over"},
+			ui.MenuSeparator(),
+			{Command: "server.editThis", Title: "Edit this window…"},
+			{Command: "server.forget", Title: "Forget this window…"},
 		}
 	}
 	items := []ui.MenuItem{
@@ -105,7 +141,7 @@ func hostItems(here, window, saved bool) []ui.MenuItem {
 		// selected, which is not the machine whose row was clicked.
 		{Command: "conn.disconnect", Title: "Close the connection"},
 	}
-	if saved {
+	if about.saved {
 		items = append(items, ui.MenuSeparator(),
 			ui.MenuItem{Command: "server.editThis", Title: "Edit this server…"},
 			ui.MenuItem{Command: "server.forget", Title: "Forget this server…"})

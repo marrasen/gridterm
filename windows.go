@@ -38,8 +38,15 @@ const knownWindowsFile = "known_windows"
 // gridterm that opens those things for itself. The two look alike in
 // the panel and are nothing alike underneath.
 type taken struct {
+	// name is what the window is called here: the name the server list
+	// gives it, or the address when it is not saved. It is the key
+	// everything else uses, the way a machine's name is.
 	name string
-	win  *serve.Window
+
+	// addr is where it serves, which is what reaching it again needs.
+	addr string
+
+	win *serve.Window
 
 	// entry is the panel row for the window itself, so one with nothing
 	// open on it is still visible and still closeable.
@@ -82,13 +89,17 @@ func (a *app) takeOver(addr, keyFile string) error {
 	if !strings.Contains(addr, ":") {
 		addr = fmt.Sprintf("%s:%d", addr, servePort)
 	}
-	if a.windows[addr] != nil {
-		return fmt.Errorf("this window has already taken over %s", addr)
+	// What this window is called here. A saved one goes under the name
+	// the user gave it, so the sidebar has one heading for it rather
+	// than one for the name and another for the address.
+	name := a.windowNamed(addr)
+	if a.windows[name] != nil {
+		return fmt.Errorf("this window has already taken over %s", name)
 	}
 	// Already on its way. Asked about rather than refused: waiting for
 	// it is usually what the user wants.
-	if d := a.opening[addr]; d != nil {
-		a.askAboutTheOneOnItsWay(d, addr, func() { a.workOnWindow(addr, keyFile) })
+	if d := a.opening[name]; d != nil {
+		a.askAboutTheOneOnItsWay(d, name, func() { a.workOnWindow(addr, keyFile) })
 		return nil
 	}
 
@@ -103,10 +114,10 @@ func (a *app) takeOver(addr, keyFile string) error {
 	// Letting go of the address is done here rather than by the closure
 	// that finishes the dial: a dial that has not come back yet still
 	// has to stop holding it, or nothing can try again.
-	held := &dialling{cancel: cancel, names: []string{addr}}
+	held := &dialling{cancel: cancel, names: []string{name}}
 	log := newConnLog(func() { a.pump.post(func() { a.giveUp(held) }) })
 	held.say = log.Say
-	pane, err := a.openSessionTab(log, addr, conns.Terminal, "connecting", nil)
+	pane, err := a.openSessionTab(log, name, conns.Terminal, "connecting", nil)
 	if err != nil {
 		cancel()
 		return err
@@ -154,8 +165,8 @@ func (a *app) takeOver(addr, keyFile string) error {
 				}
 				return
 			}
-			a.holdWindow(addr, win)
-			a.becomeWindowPane(addr, pane, log)
+			a.holdWindow(name, addr, win)
+			a.becomeWindowPane(name, pane, log)
 			a.settle(held, true)
 		})
 	}()
@@ -169,15 +180,36 @@ func (a *app) takeOver(addr, keyFile string) error {
 // second time: that would only report that it has been taken over
 // already, which is not what the user waited for.
 func (a *app) workOnWindow(addr, keyFile string) {
-	if a.windows[addr] != nil {
-		if err := a.openOnWindow(addr, nil); err != nil {
-			a.reportError("Could not open a terminal on "+addr, err)
+	name := a.windowNamed(addr)
+	if a.windows[name] != nil {
+		if err := a.openOnWindow(name, nil); err != nil {
+			a.reportError("Could not open a terminal on "+name, err)
 		}
 		return
 	}
 	if err := a.takeOver(addr, keyFile); err != nil {
 		a.reportError("Could not take over "+addr, err)
 	}
+}
+
+// windowNamed is what a window serving at an address is called here.
+//
+// The name the server list gives it, so everything this window keeps
+// about it goes under one name. An address nothing saved is its own
+// name.
+func (a *app) windowNamed(addr string) string {
+	for _, h := range a.book.Hosts() {
+		if h.Window && h.ServeAddr() == addr {
+			return h.Name
+		}
+	}
+	return addr
+}
+
+// savedWindow reports whether a name is a window in the server list.
+func (a *app) savedWindow(name string) bool {
+	h, ok := a.book.Lookup(name)
+	return ok && h.Window
 }
 
 // becomeWindowPane hands the pane that was watching a window being taken
@@ -407,17 +439,24 @@ func keysFor(ctx context.Context, keyFile string, ring *remote.Ring,
 }
 
 // holdWindow remembers a window and puts a row on the panel for it.
-func (a *app) holdWindow(addr string, win *serve.Window) *taken {
-	t := &taken{name: addr, win: win}
+func (a *app) holdWindow(name, addr string, win *serve.Window) *taken {
+	t := &taken{name: name, addr: addr, win: win}
+	note := ""
+	if name != addr {
+		// Which address the name stands for, because the name is the
+		// user's and says nothing about where it is.
+		note = addr
+	}
 	t.entry = &conns.Entry{
-		Host:   addr,
+		Host:   name,
 		Kind:   conns.Terminal,
 		Label:  "taken over",
+		Note:   note,
 		Meter:  &meter.Meter{},
 		Reveal: func() { a.revealWindow(t) },
-		Close:  func() error { return a.dropWindow(addr) },
+		Close:  func() error { return a.dropWindow(name) },
 	}
-	a.windows[addr] = t
+	a.windows[name] = t
 	a.registry.Add(t.entry)
 	a.refreshServers()
 

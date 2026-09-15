@@ -2,8 +2,10 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -21,15 +23,28 @@ func saveServer(t *testing.T, a *testApp, name, target string) *ui.Form {
 		t.Fatalf("openAddServer: %v", err)
 	}
 	f := waitForDialog(t, a, "Add a server")
-	typeIntoField(t, a, f, 0, name)
-	typeIntoField(t, a, f, 1, target)
+	typeIntoField(t, a, f, "Name", name)
+	typeIntoField(t, a, f, "Server", target)
 	pressButton(t, a, f, "Save")
 	return f
 }
 
 // typeIntoField moves the focus onto one field and types into it.
-func typeIntoField(t *testing.T, a *testApp, f *ui.Form, at int, text string) {
+//
+// By label rather than by position, so adding a row to a form does not
+// move every test that types into the ones after it.
+func typeIntoField(t *testing.T, a *testApp, f *ui.Form, label, text string) {
 	t.Helper()
+	at := -1
+	for i, have := range f.Fields() {
+		if have == f.Field(label) {
+			at = i
+			break
+		}
+	}
+	if at < 0 {
+		t.Fatalf("the dialog has no %q field", label)
+	}
 	for i := 0; i < len(f.Fields())+len(f.Buttons())+1; i++ {
 		if got, isButton := f.Focused(); !isButton && got == at {
 			for _, r := range text {
@@ -39,7 +54,7 @@ func typeIntoField(t *testing.T, a *testApp, f *ui.Form, at int, text string) {
 		}
 		a.root.HandleKey(press(input.KeyTab, 0))
 	}
-	t.Fatalf("focus never reached field %d", at)
+	t.Fatalf("focus never reached the %q field", label)
 }
 
 // The whole path: add a server, and find it on the menu and in the
@@ -78,12 +93,12 @@ func TestEditServerReplacesItsCommands(t *testing.T) {
 	}
 	f := waitForDialog(t, a, "Edit margit")
 	// The dialog opens filled in with what was saved.
-	if got := f.Fields()[1].Text(); got != "marcus@margit.skalarit.net" {
+	if got := f.Field("Server").Text(); got != "marcus@margit.skalarit.net" {
 		t.Fatalf("the Server field holds %q, want what was saved", got)
 	}
-	typeIntoField(t, a, f, 0, "")
-	f.Fields()[0].SetText("")
-	typeIntoField(t, a, f, 0, "bastion")
+	typeIntoField(t, a, f, "Name", "")
+	f.Field("Name").SetText("")
+	typeIntoField(t, a, f, "Name", "bastion")
 	pressButton(t, a, f, "Save")
 
 	if _, ok := a.root.Commands.Lookup(openPrefix + "margit"); ok {
@@ -187,7 +202,7 @@ func TestAddServerKeepsTheDialogOpenOnABadTarget(t *testing.T) {
 	if f.Error() == nil {
 		t.Fatal("nothing said why")
 	}
-	if got := f.Fields()[1].Text(); got != "host:nope" {
+	if got := f.Field("Server").Text(); got != "host:nope" {
 		t.Errorf("the dialog lost what was typed: %q", got)
 	}
 	if len(a.book.Hosts()) != 0 {
@@ -328,10 +343,10 @@ func TestAddServerSavesEveryFieldInTheDialog(t *testing.T) {
 		t.Fatalf("openAddServer: %v", err)
 	}
 	f := waitForDialog(t, a, "Add a server")
-	typeIntoField(t, a, f, 0, "db")
-	typeIntoField(t, a, f, 1, "postgres@db.internal:5433")
-	typeIntoField(t, a, f, 2, "/keys/db")
-	typeIntoField(t, a, f, 3, "bastion")
+	typeIntoField(t, a, f, "Name", "db")
+	typeIntoField(t, a, f, "Server", "postgres@db.internal:5433")
+	typeIntoField(t, a, f, "Key file", "/keys/db")
+	typeIntoField(t, a, f, "Through", "bastion")
 	pressButton(t, a, f, "Save")
 
 	if f.Error() != nil {
@@ -378,11 +393,11 @@ func TestEditServerKeepsWhatTheDialogCannotShow(t *testing.T) {
 		t.Fatalf("openEditServer: %v", err)
 	}
 	f := waitForDialog(t, a, "Edit web1")
-	if got := f.Fields()[2].Text(); got != "/keys/one" {
+	if got := f.Field("Key file").Text(); got != "/keys/one" {
 		t.Fatalf("the Key file field shows %q, want the first one", got)
 	}
 	// Change nothing but the port.
-	f.Fields()[1].SetText("web1.internal:2222")
+	f.Field("Server").SetText("web1.internal:2222")
 	pressButton(t, a, f, "Save")
 
 	got, ok := a.book.Lookup("web1")
@@ -478,7 +493,7 @@ func TestTheThroughFieldOffersTheSavedServers(t *testing.T) {
 	if !ok {
 		t.Fatalf("it showed %T", a.root.Modal())
 	}
-	via := f.Fields()[len(f.Fields())-1]
+	via := f.Field("Through")
 	if len(via.Options) != 3 {
 		t.Fatalf("the field offers %v, want the blank and both machines", via.Options)
 	}
@@ -518,7 +533,7 @@ func TestAServerIsNotOfferedAsItsOwnRoute(t *testing.T) {
 		t.Fatalf("openEditServer: %v", err)
 	}
 	f := a.root.Modal().(*ui.Form)
-	via := f.Fields()[len(f.Fields())-1]
+	via := f.Field("Through")
 	for _, option := range via.Options {
 		if option == "db" {
 			t.Fatalf("the dialog offers db as its own route: %v", via.Options)
@@ -663,7 +678,7 @@ func TestRenamingAMachineTakesWhatIsOpenWithIt(t *testing.T) {
 		t.Fatalf("edit: %v", err)
 	}
 	f := openDialog(t, a)
-	f.Fields()[0].SetText("picard via skylake")
+	f.Field("Name").SetText("picard via skylake")
 	pressButton(t, a, f, "Save")
 	a.pump.run()
 
@@ -713,7 +728,7 @@ func TestRenamingOnlyTheCapitalsStillMovesWhatIsOpen(t *testing.T) {
 		t.Fatalf("edit: %v", err)
 	}
 	f := openDialog(t, a)
-	f.Fields()[0].SetText("Picard")
+	f.Field("Name").SetText("Picard")
 	pressButton(t, a, f, "Save")
 	a.pump.run()
 
@@ -747,7 +762,7 @@ func TestRenamingOntoAConnectedNameIsRefused(t *testing.T) {
 		t.Fatalf("edit: %v", err)
 	}
 	f := openDialog(t, a)
-	f.Fields()[0].SetText("enterprise")
+	f.Field("Name").SetText("enterprise")
 	pressButton(t, a, f, "Save")
 	a.pump.run()
 
@@ -784,8 +799,8 @@ func TestRenamingAndRetargetingLeavesTheOldConnection(t *testing.T) {
 		t.Fatalf("edit: %v", err)
 	}
 	f := openDialog(t, a)
-	f.Fields()[0].SetText("enterprise")
-	f.Fields()[1].SetText(fmt.Sprintf("tester@%s:%d", host, port))
+	f.Field("Name").SetText("enterprise")
+	f.Field("Server").SetText(fmt.Sprintf("tester@%s:%d", host, port))
 	pressButton(t, a, f, "Save")
 	a.pump.run()
 
@@ -795,4 +810,102 @@ func TestRenamingAndRetargetingLeavesTheOldConnection(t *testing.T) {
 	if a.machines["picard"] == nil {
 		t.Fatalf("the connection to the old machine was lost: %v", names(a))
 	}
+}
+
+// A gridterm window can be saved under a name, and taken over from the
+// sidebar without retyping its address and its key every time.
+func TestASavedWindowIsTakenOverByName(t *testing.T) {
+	host := newTestApp(t, 90, 30)
+	withDialogs(t, host)
+	keyFile, line := aKeyFile(t)
+	withServing(t, host, line)
+	if err := host.startServing("0", whereHere); err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+	addr := host.server.Addr()
+
+	client := newTestApp(t, 90, 30)
+	withDialogs(t, client)
+	withPanel(t, client)
+	if err := client.book.Put(remote.Host{
+		Name: "statio", Address: hostOf(t, addr), Port: portOf(t, addr),
+		Window: true, Identities: []string{keyFile},
+	}, ""); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	client.refreshServers()
+
+	if err := client.connectSaved("statio"); err != nil {
+		t.Fatalf("connectSaved: %v", err)
+	}
+	answer(t, client, "Connect")
+	waitFor(t, client, "the window to be taken over", func() bool {
+		return client.windows["statio"] != nil
+	})
+
+	// Under the name it was given, not under its address: one heading
+	// for it, not two.
+	if client.windows[addr] != nil {
+		t.Fatal("it is also held under its address")
+	}
+	shown := strings.Join(panelText(client, time.Now()), "\n")
+	if !strings.Contains(shown, "statio") {
+		t.Fatalf("the sidebar does not name it:\n%s", shown)
+	}
+}
+
+// A saved window is a different colour in the sidebar, because it is a
+// different thing to a machine.
+func TestASavedWindowHasItsOwnColourInTheSidebar(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	if err := a.book.Put(remote.Host{
+		Name: "statio", Address: "10.0.0.5", Window: true,
+	}, ""); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	saveHostNamed(t, a, "margit", "10.0.0.6")
+	a.refreshServers()
+	a.refreshPanel(time.Now())
+
+	window := a.hostRow("statio", time.Now())
+	machine := a.hostRow("margit", time.Now())
+	if window.FG == machine.FG {
+		t.Fatalf("a window and a machine are the same colour: %v", window.FG)
+	}
+	if (window.FG == ui.ListRow{}.FG) {
+		t.Fatal("the window heading has no colour of its own")
+	}
+}
+
+// saveHostNamed puts a plain machine in the book.
+func saveHostNamed(t *testing.T, a *testApp, name, address string) {
+	t.Helper()
+	if err := a.book.Put(remote.Host{Name: name, Address: address, User: "tester"}, ""); err != nil {
+		t.Fatalf("save %s: %v", name, err)
+	}
+}
+
+// hostOf and portOf split a host:port the test server gave back.
+func hostOf(t *testing.T, addr string) string {
+	t.Helper()
+	h, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		t.Fatalf("split %s: %v", addr, err)
+	}
+	return h
+}
+
+func portOf(t *testing.T, addr string) int {
+	t.Helper()
+	_, p, err := net.SplitHostPort(addr)
+	if err != nil {
+		t.Fatalf("split %s: %v", addr, err)
+	}
+	n, err := strconv.Atoi(p)
+	if err != nil {
+		t.Fatalf("port %s: %v", p, err)
+	}
+	return n
 }

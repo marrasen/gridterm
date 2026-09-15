@@ -170,12 +170,30 @@ func (a *app) refreshServerMenu(items []ui.MenuItem) {
 	a.bar.Menus = append(a.bar.Menus, def)
 }
 
+// kindMachine and kindWindow are what the Kind field offers: a machine
+// to log in to, or another gridterm serving that this one takes over.
+const (
+	kindMachine = "Machine (SSH)"
+	kindWindow  = "gridterm window"
+)
+
 // connectSaved opens a terminal on a saved machine, reaching it through
 // whatever it is saved as being behind.
+//
+// A saved window is taken over instead, which is the only way to reach
+// one: it serves gridterm's own protocol and has no shell to log in to.
 func (a *app) connectSaved(name string) error {
 	h, ok := a.book.Lookup(name)
 	if !ok {
 		return fmt.Errorf("there is no saved server called %q", name)
+	}
+	if h.Window {
+		if a.windows[h.Name] != nil {
+			// Already taken over, so what was asked for is a terminal on
+			// it rather than taking it over again.
+			return a.openOnWindow(h.Name, nil)
+		}
+		return a.takeOver(h.ServeAddr(), h.KeyFile())
 	}
 	return a.openOn(h.Name, nil, nil)
 }
@@ -218,6 +236,8 @@ func (a *app) openServerForm(under string) error {
 	}
 	f := a.newForm(title)
 	name := f.AddField("Name", a.newField("what to call it", 0))
+	kind := f.AddField("Kind", a.newField("", 0))
+	kind.Options = []string{kindMachine, kindWindow}
 	target := f.AddField("Server", a.newField("[user@]host[:port]", 0))
 	key := f.AddField("Key file", a.newField("optional", 0))
 	via := f.AddField("Through", a.newField("another saved server, optional", 0))
@@ -228,6 +248,10 @@ func (a *app) openServerForm(under string) error {
 	f.Lines = append(f.Lines, viaHint(via.Options))
 
 	name.SetText(was.Name)
+	kind.SetText(kindMachine)
+	if was.Window {
+		kind.SetText(kindWindow)
+	}
 	target.SetText(was.Target())
 	if len(was.Identities) > 0 {
 		key.SetText(was.Identities[0])
@@ -235,14 +259,24 @@ func (a *app) openServerForm(under string) error {
 	via.SetText(was.Via)
 
 	f.AddButton(ui.Button{Title: "Save", Do: func() error {
+		window := strings.TrimSpace(kind.Text()) == kindWindow
 		h, err := remote.HostFromTarget(name.Text(), target.Text())
 		if err != nil {
 			// Returned rather than shown here, so the dialog stays open
 			// with what was typed still there to correct.
 			return err
 		}
-		h.Via = strings.TrimSpace(via.Text())
-		h.Term = was.Term
+		h.Window = window
+		if window {
+			// Neither means anything to a window: there is no account to
+			// log in to and no machine to go through.
+			h.User, h.Via = "", ""
+		} else {
+			h.Via = strings.TrimSpace(via.Text())
+		}
+		if !window {
+			h.Term = was.Term
+		}
 		// The dialog edits the first key file. Any others the machine
 		// had stay: a field that cannot show them must not delete them.
 		rest := was.Identities

@@ -37,11 +37,43 @@ type Host struct {
 	// Term is the TERM value sent to the machine. Empty means
 	// xterm-256color.
 	Term string `json:"term,omitempty"`
+
+	// Window says this is another gridterm serving, taken over rather
+	// than logged in to.
+	//
+	// Address and Port are where it serves, and the first of Identities
+	// is the key to offer it. User, Via and Term mean nothing to one:
+	// there is no account to log in to and no machine to go through.
+	Window bool `json:"window,omitempty"`
+}
+
+// ServePort is the port a gridterm serves on when none is given.
+const ServePort = 2222
+
+// ServeAddr returns where a saved window serves, as host:port.
+func (h Host) ServeAddr() string {
+	port := h.Port
+	if port == 0 {
+		port = ServePort
+	}
+	return net.JoinHostPort(h.Address, strconv.Itoa(port))
+}
+
+// KeyFile is the key file a saved window offers, or empty for whatever
+// is to hand.
+func (h Host) KeyFile() string {
+	if len(h.Identities) == 0 {
+		return ""
+	}
+	return h.Identities[0]
 }
 
 // Target returns the machine as a user would type it: user@host:port,
 // leaving out the parts that are the default.
 func (h Host) Target() string {
+	if h.Window {
+		return h.ServeAddr()
+	}
 	addr := h.Address
 	if h.Port != 0 && h.Port != 22 {
 		addr = net.JoinHostPort(h.Address, strconv.Itoa(h.Port))

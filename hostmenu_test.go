@@ -300,7 +300,7 @@ func TestANewMenuKeepsItsMachineWhileTheOldOneIsForgotten(t *testing.T) {
 // this one's to ask, so offering them would be offering something that
 // cannot work.
 func TestThePlusOnAWindowOffersPanesAndFiles(t *testing.T) {
-	items := hostItems(false, true, false)
+	items := hostItems(hostAbout{window: true})
 
 	offered := map[string]bool{}
 	for _, it := range items {

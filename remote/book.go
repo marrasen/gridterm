@@ -455,6 +455,14 @@ func (b *Book) saveLocked() error {
 	if b.path == "" {
 		return errors.New("remote: nowhere to save the server list")
 	}
+	// Nothing is written that cannot be read back. A list this refuses
+	// to load is a list the user cannot repair from inside gridterm:
+	// every later change rereads the file first and fails on the same
+	// thing, so one bad write locks them out of their own servers for
+	// good.
+	if err := readableBack(b.hosts); err != nil {
+		return err
+	}
 	raw, err := json.MarshalIndent(saved{Version: bookVersion, Servers: b.hosts}, "", "  ")
 	if err != nil {
 		return fmt.Errorf("remote: write the server list: %w", err)
@@ -497,6 +505,111 @@ func (b *Book) saveLocked() error {
 	if err := os.Rename(name, path); err != nil {
 		_ = os.Remove(name)
 		return fmt.Errorf("remote: write the server list: %w", err)
+	}
+	return nil
+}
+
+// Repair reads the server list past whatever is wrong with it, throws
+// away what cannot be kept, and writes it back.
+//
+// It is the way out of a file gridterm will not load: every ordinary
+// change rereads the file first and fails on the same thing, so without
+// this the user has to find the file and edit it by hand.
+//
+// What it drops is reported rather than done quietly. A server the user
+// saved is not something to lose without being told.
+func (b *Book) Repair() (dropped []string, err error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.path == "" {
+		return nil, errors.New("remote: nowhere to keep the server list")
+	}
+	hosts, dropped, err := readLoosely(b.path)
+	if err != nil {
+		return nil, err
+	}
+	b.hosts = hosts
+	// Loadable again, so an ordinary save is allowed to run.
+	b.loadErr = nil
+	sortHosts(b.hosts)
+	if err := b.saveLocked(); err != nil {
+		return nil, err
+	}
+	return dropped, nil
+}
+
+// readLoosely reads a server list, keeping what it can.
+//
+// Only what makes a list unloadable is dropped: a server that does not
+// validate, a name used twice, and a route through a machine that is
+// not there. Everything else is kept exactly as it was.
+func readLoosely(path string) (hosts []Host, dropped []string, err error) {
+	raw, readErr := os.ReadFile(path)
+	if errors.Is(readErr, fs.ErrNotExist) {
+		return nil, nil, nil
+	}
+	if readErr != nil {
+		return nil, nil, fmt.Errorf("remote: read the server list %s: %w", path, readErr)
+	}
+	var file saved
+	if err := json.Unmarshal(raw, &file); err != nil {
+		// Nothing can be made of it at all. Repairing by throwing the
+		// whole list away is not repairing.
+		return nil, nil, fmt.Errorf(
+			"remote: the server list %s cannot be read at all, so there is nothing to repair from: %w",
+			path, err)
+	}
+
+	seen := map[string]bool{}
+	for _, h := range file.Servers {
+		h = h.tidy()
+		key := strings.ToLower(h.Name)
+		switch {
+		case h.Validate() != nil:
+			dropped = append(dropped, h.Name+" (not a server this can use)")
+		case seen[key]:
+			dropped = append(dropped, h.Name+" (named twice)")
+		default:
+			seen[key] = true
+			hosts = append(hosts, h)
+		}
+	}
+	// A route through a machine that is no longer there is cut rather
+	// than dropping the machine that pointed at it.
+	for i := range hosts {
+		if hosts[i].Via != "" && !seen[strings.ToLower(hosts[i].Via)] {
+			dropped = append(dropped, hosts[i].Name+" no longer goes through "+hosts[i].Via)
+			hosts[i].Via = ""
+		}
+	}
+	if err := checkRoutes(hosts); err != nil {
+		// A loop, which cutting one link at a time cannot settle.
+		for i := range hosts {
+			if hosts[i].Via != "" {
+				dropped = append(dropped, hosts[i].Name+" no longer goes through "+hosts[i].Via)
+				hosts[i].Via = ""
+			}
+		}
+	}
+	return hosts, dropped, nil
+}
+
+// readableBack reports why a list could not be loaded again, or nil.
+//
+// The same checks readBook makes, run before the file is written. They
+// are cheap, and the alternative is a file gridterm wrote and gridterm
+// will not read.
+func readableBack(hosts []Host) error {
+	for i, h := range hosts {
+		if err := h.Validate(); err != nil {
+			return fmt.Errorf("remote: will not write the server list: server %d: %w", i+1, err)
+		}
+	}
+	if name, dup := firstDuplicate(hosts); dup {
+		return fmt.Errorf("remote: will not write the server list: it names %q twice", name)
+	}
+	if err := checkRoutes(hosts); err != nil {
+		return fmt.Errorf("remote: will not write the server list: %w", err)
 	}
 	return nil
 }

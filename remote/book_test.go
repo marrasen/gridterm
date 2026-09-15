@@ -423,3 +423,82 @@ func TestHostValidateRefusesWhatCannotBeSaved(t *testing.T) {
 		})
 	}
 }
+
+// A list that cannot be read back is never written.
+//
+// Every change rereads the file first, so one bad write locks the user
+// out of their own servers for good: the list cannot be repaired from
+// inside gridterm, because repairing it is a change.
+func TestABookThatCouldNotBeReadBackIsNotWritten(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "servers.json")
+	b, err := LoadBook(path)
+	if err != nil {
+		t.Fatalf("OpenBook: %v", err)
+	}
+	if err := b.Put(Host{Name: "one", Address: "10.0.0.1"}, ""); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+
+	// Past Put's own check, which is what any later mistake would be.
+	b.mu.Lock()
+	b.hosts = append(b.hosts, Host{Name: "One", Address: "10.0.0.2"})
+	err = b.saveLocked()
+	b.mu.Unlock()
+	if err == nil {
+		t.Fatal("it wrote a list it will not read")
+	}
+	if !strings.Contains(err.Error(), "twice") {
+		t.Errorf("it refused with %v, want it to say the name is used twice", err)
+	}
+
+	// And the file is still the one that was there.
+	again, err := LoadBook(path)
+	if err != nil {
+		t.Fatalf("the list on disk is not readable: %v", err)
+	}
+	if got := again.Names(); len(got) != 1 || got[0] != "one" {
+		t.Fatalf("the list holds %v, want the one server", got)
+	}
+}
+
+// A list that is already broken can be repaired, keeping what it can.
+func TestRepairKeepsWhatItCan(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "servers.json")
+	const broken = `{
+	  "version": 1,
+	  "servers": [
+	    {"name": "one", "address": "10.0.0.1"},
+	    {"name": "One", "address": "10.0.0.2"},
+	    {"name": "two", "address": "10.0.0.3", "via": "gone"}
+	  ]
+	}`
+	if err := os.WriteFile(path, []byte(broken), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	b, err := LoadBook(path)
+	if err == nil {
+		t.Fatal("a list naming a server twice was loaded")
+	}
+	if b == nil {
+		t.Fatal("there is no book to repair")
+	}
+
+	dropped, err := b.Repair()
+	if err != nil {
+		t.Fatalf("Repair: %v", err)
+	}
+	if len(dropped) != 2 {
+		t.Fatalf("it threw away %v, want the duplicate and the route", dropped)
+	}
+	if got := b.Names(); len(got) != 2 {
+		t.Fatalf("it kept %v, want one and two", got)
+	}
+	// And what it wrote is readable, which is the whole point.
+	again, err := LoadBook(path)
+	if err != nil {
+		t.Fatalf("the repaired list is not readable: %v", err)
+	}
+	if got := again.Names(); len(got) != 2 {
+		t.Fatalf("the repaired list holds %v", got)
+	}
+}

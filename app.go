@@ -669,6 +669,7 @@ func (a *app) commands() {
 		ui.Command{ID: "conn.socks", Title: "Open a SOCKS proxy…", Run: a.openSocksHere},
 		ui.Command{ID: "conn.files", Title: "Browse files here", Run: a.openFilesHere},
 		ui.Command{ID: "files.goTo", Title: "Go to a directory…", Run: a.openGoTo},
+		ui.Command{ID: "server.repair", Title: "Repair the server list…", Run: a.openRepairBook},
 		ui.Command{ID: "conn.disconnect", Title: "Close the connection to this machine",
 			Run: a.disconnectHere},
 		ui.Command{ID: "server.editThis", Title: "Edit this server…",
@@ -703,7 +704,11 @@ func (a *app) commands() {
 	keys.MustBind(map[ui.Chord]string{
 		{Key: input.KeyC, Mods: input.ModCtrl | input.ModShift}: "edit.copy",
 		{Key: input.KeyV, Mods: input.ModCtrl | input.ModShift}: "edit.paste",
-		{Key: input.KeyEquals, Mods: input.ModCtrl}:             "font.increase",
+		// The X11 spelling of paste, which plenty of people have in
+		// their fingers and no terminal has a meaning for.
+		{Key: input.KeyInsert, Mods: input.ModShift}: "edit.paste",
+		{Key: input.KeyInsert, Mods: input.ModCtrl}:  "edit.copy",
+		{Key: input.KeyEquals, Mods: input.ModCtrl}:  "font.increase",
 		// Ctrl+plus is Ctrl+Shift+= on a US layout, and the shift shows
 		// up in the modifiers, so the obvious way to ask for a bigger
 		// font needs its own binding.

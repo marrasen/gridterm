@@ -172,6 +172,7 @@ func (a *app) refreshServerMenu(items []ui.MenuItem) {
 		ui.MenuItem{Command: "server.connect"},
 		ui.MenuItem{Command: "server.add"},
 		ui.MenuItem{Command: "server.reload"},
+		ui.MenuItem{Command: "server.repair"},
 		ui.MenuSeparator(),
 		ui.MenuItem{Command: "serve.window"},
 		ui.MenuItem{Command: "serve.takeOver"},
@@ -231,6 +232,47 @@ func (a *app) connectSaved(name string) error {
 		return a.takeOver(h.ServeAddr(), h.KeyFile())
 	}
 	return a.openOn(h.Name, nil, nil)
+}
+
+// openRepairBook offers to repair a server list gridterm will not load.
+//
+// The way out of a file every other command refuses to touch: they all
+// reread it first and fail on the same thing. What would be thrown away
+// is said first, because a server the user saved is not something to
+// lose without being asked.
+func (a *app) openRepairBook() error {
+	why := a.book.Err()
+	if why == nil {
+		return errors.New("the server list is readable, so there is nothing to repair")
+	}
+	lines := append(wrapLines(why.Error(), errorLineWidth), "",
+		"Repairing keeps every server it can and throws away the rest.",
+		"It is written to "+a.book.Path()+".")
+	f := a.newConfirm("Repair the server list?", lines)
+	f.AddButton(ui.Button{Title: "Repair", Do: func() error {
+		dropped, err := a.book.Repair()
+		if err != nil {
+			return err
+		}
+		a.refreshServers()
+		if len(dropped) > 0 {
+			// Not from here: this dialog closes as soon as this returns,
+			// and closing one takes anything stacked on top of it.
+			a.pump.post(func() { a.sayWhatRepairDropped(dropped) })
+		}
+		return nil
+	}})
+	f.AddButton(ui.Button{Title: "Leave it"})
+	a.showForm(f, nil)
+	return nil
+}
+
+// sayWhatRepairDropped names what the repair threw away.
+func (a *app) sayWhatRepairDropped(dropped []string) {
+	lines := append([]string{"The server list is readable again. This went:", ""}, dropped...)
+	f := a.newConfirm("Repaired the server list", lines)
+	f.AddButton(ui.Button{Title: "Close"})
+	a.showForm(f, nil)
 }
 
 // reloadBook reads the server list again, for a user who has repaired

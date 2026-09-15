@@ -88,35 +88,37 @@ func fontDirs() []string {
 }
 
 // findFallbackFiles walks the font directories once and returns the
-// paths of the wanted files, in preference order.
+// paths of the wanted files, in preference order, along with whatever
+// went wrong on the way.
+//
+// It walks through fontFilesIn, which is the walk the font scan does and
+// the one that keeps what it could not read. What was missed is handed
+// back rather than dropped, under the decision recorded on the window's
+// reportFontScan.
 //
 // The walk is bounded: font trees are shallow and a few thousand entries
 // at worst, and it happens once, lazily, on the first rune the primary
 // font cannot draw.
-func findFallbackFiles() []string {
+func findFallbackFiles() ([]string, []error) {
+	return findFallbackFilesIn(fontDirs())
+}
+
+// findFallbackFilesIn is findFallbackFiles over given directories, so a
+// test can point it at a directory it controls.
+func findFallbackFilesIn(dirs []string) ([]string, []error) {
 	want := fallbackNames()
 	found := make(map[string]string, len(want))
 
-	for _, dir := range fontDirs() {
-		_ = filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
-			if err != nil {
-				// An unreadable directory is not worth failing over;
-				// there are several candidates.
-				return nil
-			}
-			if d.IsDir() {
-				return nil
-			}
-			name := strings.ToLower(d.Name())
-			for _, w := range want {
-				if name == w {
-					if _, seen := found[w]; !seen {
-						found[w] = path
-					}
+	paths, failed := fontFilesIn(dirs)
+	for _, path := range paths {
+		name := strings.ToLower(filepath.Base(path))
+		for _, w := range want {
+			if name == w {
+				if _, seen := found[w]; !seen {
+					found[w] = path
 				}
 			}
-			return nil
-		})
+		}
 	}
 
 	out := make([]string, 0, len(found))
@@ -125,33 +127,38 @@ func findFallbackFiles() []string {
 			out = append(out, p)
 		}
 	}
-	return out
+	return out, failed
 }
 
 // loadFace parses a font file and returns a face at the given size.
 // TrueType collections hold several fonts in one file; the first is
 // taken, which for the files listed above is the regular weight.
-func loadFace(path string, sizePt, dpi float64) (font.Face, error) {
+//
+// read says the bytes were in hand, so the caller can tell a disk that
+// failed from a file that is not a face this program can use. Only the
+// first is worth telling anybody about; see facesIn.
+func loadFace(path string, sizePt, dpi float64) (face font.Face, read bool, err error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	var f *sfnt.Font
 	if strings.HasSuffix(strings.ToLower(path), ".ttc") ||
 		strings.HasSuffix(strings.ToLower(path), ".otc") {
 		coll, err := sfnt.ParseCollection(b)
 		if err != nil {
-			return nil, err
+			return nil, true, err
 		}
 		if f, err = coll.Font(0); err != nil {
-			return nil, err
+			return nil, true, err
 		}
 	} else if f, err = sfnt.Parse(b); err != nil {
-		return nil, err
+		return nil, true, err
 	}
-	return opentype.NewFace(f, &opentype.FaceOptions{
+	face, err = opentype.NewFace(f, &opentype.FaceOptions{
 		Size:    sizePt,
 		DPI:     dpi,
 		Hinting: font.HintingFull,
 	})
+	return face, true, err
 }

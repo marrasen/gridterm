@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -83,21 +84,67 @@ func (a *app) reapFontScan() {
 	a.reportFontScan(got.err)
 }
 
-// reportFontScan tells the user which font directories could not be read
-// and why, once the scan is over.
+// reportFontScan tells the user what the font scan could not read and
+// why, once the scan is over.
 //
-// Carrying on with the fonts that were found is the fallback Marcus
-// approved by asking for this dialog.
+// Carrying on with the fonts that were found, rather than failing, is
+// the fallback Marcus approved by asking for this dialog. It is the one
+// decision everywhere fonts are read, and it is written down here and
+// nowhere else. It reaches the user by two routes: the scan's own
+// failures through this, and the ones met while looking for a fallback
+// face through reapFontTrouble.
 func (a *app) reportFontScan(err error) {
 	if err == nil {
 		return
 	}
 	a.logError(fmt.Errorf("reading the system fonts: %w", err))
-	said := "These directories could not be read:\n\n" + err.Error()
+	// The atlas walks the same directories when it looks for a fallback
+	// face, so it is told what has been shown and does not show it
+	// again.
+	if a.atlas != nil {
+		a.atlas.Told(sayings(err)...)
+	}
+	said := "These font files and directories could not be read:\n\n" + err.Error()
 	if len(a.installed) > 0 {
 		said += "\n\nThe fonts that were found are on the Font menu."
 	}
-	a.showNotice("Some font directories could not be read", said, true)
+	a.showNotice("Some fonts could not be read", said, true)
+}
+
+// reapFontTrouble shows what the search for a fallback font could not
+// read. It is called from the draw loop.
+//
+// The search happens part way through a frame, on the first character
+// the chosen font cannot draw, so there is nothing to report to at the
+// time and the atlas keeps it until somebody asks.
+func (a *app) reapFontTrouble() {
+	if a.atlas == nil {
+		return
+	}
+	failed := a.atlas.Trouble()
+	if len(failed) == 0 {
+		return
+	}
+	err := errors.Join(failed...)
+	a.logError(fmt.Errorf("looking for a font to fall back on: %w", err))
+	a.showNotice("Some fonts could not be read while looking for a character",
+		"A character was not in the font in use, and these could not be read "+
+			"while looking for one that has it:\n\n"+err.Error(),
+		true)
+}
+
+// sayings breaks a joined error into what each of its parts says.
+func sayings(err error) []string {
+	joined, ok := err.(interface{ Unwrap() []error })
+	if !ok {
+		return []string{err.Error()}
+	}
+	parts := joined.Unwrap()
+	out := make([]string, len(parts))
+	for i, one := range parts {
+		out[i] = one.Error()
+	}
+	return out
 }
 
 // fontCommandID names the command that switches to a family. Family

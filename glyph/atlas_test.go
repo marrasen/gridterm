@@ -152,3 +152,42 @@ func TestGlyphsKeepTheirHeightsApart(t *testing.T) {
 		t.Fatal("the two baselines are not the same row")
 	}
 }
+
+// A rebuilt atlas draws from none of the pages the old one owned.
+//
+// That is the property that makes giving the old pages back safe, and it
+// is what this checks: ebiten says nothing about whether an image has
+// been deallocated, so the deallocation itself cannot be tested here.
+// What can be tested is that nothing still in use was given away.
+func TestRebuildingTheAtlasKeepsNoneOfItsOldPages(t *testing.T) {
+	a, err := NewAtlas(Fonts{Regular: gomono.TTF}, 14, 96)
+	if err != nil {
+		t.Fatalf("NewAtlas: %v", err)
+	}
+	// A glyph, so there is a page to give back.
+	if g := a.Get('M', 0); g.Empty {
+		t.Fatal("the atlas drew no M")
+	}
+	was := make([]any, a.Pages())
+	for i := range was {
+		was[i] = a.Page(i)
+	}
+	if len(was) == 0 {
+		t.Fatal("the atlas has no pages to give back")
+	}
+
+	if err := a.SetSize(20); err != nil {
+		t.Fatalf("SetSize: %v", err)
+	}
+	for i := 0; i < a.Pages(); i++ {
+		for _, old := range was {
+			if a.Page(i) == old {
+				t.Fatal("the rebuilt atlas is drawing from a page the old one owned")
+			}
+		}
+	}
+	// And it still works, which is what says nothing live was given back.
+	if g := a.Get('M', 0); g.Empty {
+		t.Fatal("the rebuilt atlas drew no M")
+	}
+}

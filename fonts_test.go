@@ -349,6 +349,13 @@ func TestStartFontScanDeliversAResult(t *testing.T) {
 	a.families <- got
 	a.reapFontScan()
 
+	// And no dialog: the font files a real machine has that cannot be
+	// parsed are skipped in silence, so a window on a stock install
+	// opens with nothing in front of it.
+	if a.root.Modal() != nil {
+		t.Fatalf("a real scan put %T in front of the user", a.root.Modal())
+	}
+
 	if len(a.installed) != len(got.families) {
 		t.Errorf("%d families remembered, want the %d that were found",
 			len(a.installed), len(got.families))
@@ -497,8 +504,9 @@ func TestFontScanFailureReachesTheUser(t *testing.T) {
 	}
 }
 
-// The dialog says the list is of directories, not of fonts, and it
-// points at the Font menu only when there is something on it.
+// The dialog says what the list is -- the font files and directories
+// that could not be read -- and points at the Font menu only when there
+// is something on it.
 func TestTheFontDialogSaysWhatTheListIsAndWhatIsLeft(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
@@ -520,10 +528,10 @@ func TestTheFontDialogSaysWhatTheListIsAndWhatIsLeft(t *testing.T) {
 			if !ok {
 				t.Fatalf("top dialog = %T, want a notice about the fonts", a.root.Modal())
 			}
-			if n.Title != "Some font directories could not be read" {
-				t.Errorf("the notice is titled %q, want it to name directories", n.Title)
+			if n.Title != "Some fonts could not be read" {
+				t.Errorf("the notice is titled %q", n.Title)
 			}
-			if !strings.Contains(n.Message(), "These directories could not be read:") {
+			if !strings.Contains(n.Message(), "These font files and directories could not be read:") {
 				t.Errorf("the notice does not say what the list is:\n%s", n.Message())
 			}
 			if !strings.Contains(n.Message(), reason) {

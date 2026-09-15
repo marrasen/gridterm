@@ -94,12 +94,11 @@ func (f Family) Load() (Fonts, error) {
 // It reads every font file the system has, so it takes long enough to be
 // worth doing off whatever goroutine is drawing.
 //
-// A file that will not parse is skipped and not reported: a broken font
-// among hundreds is not a reason to offer the user none of them. A file
-// or directory that cannot be read is a different thing and is reported,
-// because otherwise an unreadable font directory looks exactly like a
-// machine with no fonts on it. The families found come back either way,
-// so a caller can decide what to do about the failures.
+// A file or directory that cannot be read is skipped and reported: the
+// disk failing is worth telling the user about, and one unreadable file
+// among hundreds is not a reason to offer them none of the rest. A file
+// that reads and will not parse is skipped in silence -- see facesIn.
+// The families that were found come back either way.
 func Monospaced() ([]Family, error) {
 	return monospacedIn(fontDirs())
 }
@@ -182,7 +181,7 @@ func fontFilesIn(dirs []string) (paths []string, failed []error) {
 				// A font directory the system simply does not have is
 				// ordinary; one it has and will not open is not.
 				if !os.IsNotExist(err) {
-					failed = append(failed, err)
+					failed = append(failed, fmt.Errorf("read %s: %w", path, err))
 				}
 				return nil
 			}
@@ -196,7 +195,7 @@ func fontFilesIn(dirs []string) (paths []string, failed []error) {
 			return nil
 		})
 		if err != nil {
-			failed = append(failed, err)
+			failed = append(failed, fmt.Errorf("read %s: %w", dir, err))
 		}
 	}
 	sort.Strings(paths)
@@ -216,9 +215,14 @@ func isFontFile(name string) bool {
 // facesIn returns the monospace faces in one file, which is usually one
 // and is several for a collection.
 //
-// A file that will not parse yields nothing and no error. A file that
-// will not open yields the error: that is the disk failing rather than
-// the font being unusable.
+// A file that cannot be read yields the error: that is the disk failing,
+// and the user is owed an account of it. Everything after the bytes are
+// in hand is not -- a file that will not parse, a font inside a
+// collection that will not come out, a face with no readable name -- and
+// those are skipped in silence as faces this program cannot use. A stock
+// Windows install has several, so reporting them would put a dialog up
+// at every start. See reportFontScan in the main package for the
+// decision this follows.
 func facesIn(path string) ([]faceInfo, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -245,6 +249,11 @@ func facesIn(path string) ([]faceInfo, error) {
 
 // describe reads a font's family and style and reports whether it is a
 // monospace face worth offering.
+//
+// Every no here means the same thing -- not a face this can offer -- so
+// a font with no readable family name is refused the same way as one
+// that is not monospace, rather than reported as a file that could not
+// be read.
 func describe(f *sfnt.Font, buf *sfnt.Buffer, src Source) (faceInfo, bool) {
 	family, err := f.Name(buf, sfnt.NameIDFamily)
 	if err != nil || family == "" {

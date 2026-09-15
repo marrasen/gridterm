@@ -118,20 +118,28 @@ func TestScanRejectsAProportionalFont(t *testing.T) {
 }
 
 // TestScanSkipsWhatItCannotRead checks that one bad file among many does
-// not cost the user every font on the system.
+// not cost the user every font on the system, and that nothing is said
+// about it.
+//
+// A file that reads and will not parse is a face this program cannot
+// use, not a disk failing. A stock Windows install has several, and a
+// dialog naming them at every start is a dialog nobody reads.
 func TestScanSkipsWhatItCannotRead(t *testing.T) {
 	files := goMonoFiles()
 	files["broken.ttf"] = []byte("this is not a font")
 	files["empty.ttf"] = nil
 	dir := fontDir(t, files)
 
-	fams := mustScan(t, []string{dir})
+	fams, err := monospacedIn([]string{dir})
 
 	if len(fams) != 1 {
 		t.Fatalf("found %d families, want the one good family: %+v", len(fams), fams)
 	}
 	if fams[0].Name != "Go Mono" {
 		t.Errorf("family = %q, want %q", fams[0].Name, "Go Mono")
+	}
+	if err != nil {
+		t.Errorf("two files that will not parse were reported: %v", err)
 	}
 }
 
@@ -181,11 +189,15 @@ func TestScanPrefersTheSameFileEveryRun(t *testing.T) {
 	}
 }
 
-// TestFacesInReportsAFileItCannotOpen checks the line between a font
-// that will not parse and a disk that will not read. The first is
-// skipped in silence because a broken font among hundreds is not worth
-// failing over; the second is the disk failing and is reported.
-func TestFacesInReportsAFileItCannotOpen(t *testing.T) {
+// TestFacesInReportsAFileItCannotRead checks the line between a disk
+// that will not read and a font this program cannot use.
+//
+// The first is reported, because an unreadable font directory would
+// otherwise look exactly like a machine with no fonts on it. The second
+// is skipped in silence: a stock Windows install has font files sfnt
+// cannot get a face out of, and naming them at every start would make
+// the dialog worthless.
+func TestFacesInReportsAFileItCannotRead(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "gone.ttf")
 
 	faces, err := facesIn(missing)
@@ -197,17 +209,28 @@ func TestFacesInReportsAFileItCannotOpen(t *testing.T) {
 		t.Errorf("faces = %v, want none", faces)
 	}
 
-	// And the other side of the line: a file that opens and is not a font.
+	// A file that reads and is not a font: nothing to offer, and nothing
+	// to say.
 	junk := filepath.Join(t.TempDir(), "junk.ttf")
 	if err := os.WriteFile(junk, []byte("not a font"), 0o644); err != nil {
 		t.Fatalf("write %s: %v", junk, err)
 	}
 	faces, err = facesIn(junk)
 	if err != nil {
-		t.Errorf("a font that will not parse was reported as a failure: %v", err)
+		t.Errorf("a font that will not parse was reported: %v", err)
 	}
 	if faces != nil {
 		t.Errorf("faces = %v, want none", faces)
+	}
+
+	// And a directory named like a font file, which is the shape a read
+	// failure takes without an ACL to set.
+	asDir := filepath.Join(t.TempDir(), "locked.ttf")
+	if err := os.Mkdir(asDir, 0o700); err != nil {
+		t.Fatalf("mkdir %s: %v", asDir, err)
+	}
+	if _, err := facesIn(asDir); err == nil {
+		t.Error("a font file that could not be read was passed over in silence")
 	}
 }
 
@@ -434,9 +457,14 @@ func TestFontsIndexReachesTheFace(t *testing.T) {
 }
 
 // TestMonospacedUsesTheSystemDirectories checks the exported entry point
-// runs against the real system without failing. What it finds depends on
-// the machine, so the only claim is that every family it does offer is
-// usable as a terminal font.
+// runs against the real system without reporting anything. What it finds
+// depends on the machine, so the other claim is only that every family
+// it does offer is usable as a terminal font.
+//
+// Nothing reported is the point: the font files a real machine has that
+// this library cannot get a face out of are skipped in silence, and a
+// failure here means something was read as a disk failing when it was
+// not.
 func TestMonospacedUsesTheSystemDirectories(t *testing.T) {
 	if testing.Short() {
 		t.Skip("reads every font file on the system")

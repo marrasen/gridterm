@@ -97,6 +97,13 @@ type Atlas struct {
 	fallbackPaths []string
 	fallbackDone  bool
 
+	// trouble is what the search for fallbacks could not read, and told
+	// are the failures somebody has already been shown. Skipping what
+	// cannot be read is the decision recorded on the window's
+	// reportFontScan; Trouble hands the failures out so it can be said.
+	trouble []error
+	told    map[string]bool
+
 	pages []*ebiten.Image
 	cache map[key]Glyph
 
@@ -152,8 +159,8 @@ func (a *Atlas) Metrics() Metrics { return a.metrics }
 //
 // Everything cached is thrown away: the glyphs are the wrong size, and
 // so is the cell box every quad was measured against. The old texture
-// pages are dropped for the garbage collector rather than reused,
-// because a shelf-packed page cannot be repacked in place.
+// pages are given up rather than reused, because a shelf-packed page
+// cannot be repacked in place.
 func (a *Atlas) SetSize(sizePt float64) error {
 	if sizePt <= 0 || sizePt == a.sizePt {
 		return nil
@@ -164,9 +171,7 @@ func (a *Atlas) SetSize(sizePt float64) error {
 		// window down with it.
 		return err
 	}
-	gen := a.gen
-	*a = *next
-	a.gen = gen + 1
+	a.replaceWith(next)
 	return nil
 }
 
@@ -181,10 +186,69 @@ func (a *Atlas) SetFonts(fonts Fonts) error {
 	if err != nil {
 		return err
 	}
+	a.replaceWith(next)
+	return nil
+}
+
+// replaceWith becomes a freshly built atlas, giving the old texture
+// pages back.
+//
+// Each page is a megapixel of video memory. Held on Ctrl+= through the
+// font sizes, waiting for the finalizer to reclaim them means dozens
+// alive at once.
+//
+// The constraint: this may not be called inside a draw pass. Anything
+// already drawn this frame is pointing at pages that have just been
+// given up, and what has been said about a font file is carried across
+// so a step through the sizes does not report the same one again.
+func (a *Atlas) replaceWith(next *Atlas) {
+	old := a.pages
 	gen := a.gen
+	told := a.told
 	*a = *next
 	a.gen = gen + 1
-	return nil
+	a.told = told
+	for _, page := range old {
+		page.Deallocate()
+	}
+}
+
+// Trouble returns what the search for a fallback font could not read,
+// and forgets it, so a window polling this shows each failure once.
+//
+// The search happens on the first rune the primary font cannot draw,
+// which is in the middle of a frame, so there is nothing to return it to
+// at the time.
+func (a *Atlas) Trouble() []error {
+	out := a.trouble
+	a.trouble = nil
+	return out
+}
+
+// Told says these failures have been shown already, so Trouble does not
+// hand them out again.
+//
+// The font scan walks the same directories, so a window that reported
+// both would show the same unreadable directory twice: once when the
+// scan finished and once on the first character that needed a fallback.
+// The failures are matched by what they say, because both walks say the
+// same thing about the same path.
+func (a *Atlas) Told(said ...string) {
+	if a.told == nil {
+		a.told = make(map[string]bool, len(said))
+	}
+	for _, s := range said {
+		a.told[s] = true
+	}
+}
+
+// met keeps a failure unless it has been shown already.
+func (a *Atlas) met(err error) {
+	if a.told[err.Error()] {
+		return
+	}
+	a.Told(err.Error())
+	a.trouble = append(a.trouble, err)
 }
 
 // Generation counts how many times the atlas has been rebuilt. Every
@@ -363,7 +427,11 @@ func (a *Atlas) fallbackFor(r rune) font.Face {
 // the list is exhausted.
 func (a *Atlas) loadNextFallback() font.Face {
 	if a.fallbackPaths == nil && !a.fallbackDone {
-		a.fallbackPaths = findFallbackFiles()
+		var failed []error
+		a.fallbackPaths, failed = findFallbackFiles()
+		for _, err := range failed {
+			a.met(err)
+		}
 		if len(a.fallbackPaths) == 0 {
 			a.fallbackDone = true
 			return nil
@@ -372,10 +440,16 @@ func (a *Atlas) loadNextFallback() font.Face {
 	for len(a.fallbackPaths) > 0 {
 		path := a.fallbackPaths[0]
 		a.fallbackPaths = a.fallbackPaths[1:]
-		f, err := loadFace(path, a.sizePt, a.dpi)
+		f, read, err := loadFace(path, a.sizePt, a.dpi)
 		if err != nil {
-			// A font that will not parse is not worth reporting; there
-			// are other candidates and the glyph may not be needed.
+			// Skipped either way, because the next candidate may have
+			// the character. A file that could not be read is kept, so
+			// the user is told the disk failed; one that read and would
+			// not parse is not a face this program can use, and saying
+			// so at every start is what facesIn explains.
+			if !read {
+				a.met(fmt.Errorf("read %s: %w", path, err))
+			}
 			continue
 		}
 		a.fallbacks = append(a.fallbacks, f)

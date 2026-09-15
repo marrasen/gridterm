@@ -59,10 +59,15 @@ func (w *Window) Use(code string) (Pane, error) {
 }
 
 // List is the panes this agent has been given.
+//
+// Nothing handed over is an empty list rather than a failure: being
+// asked what you have and having nothing is an answer.
 func (w *Window) List() ([]Pane, error) {
-	conn, err := w.reach()
-	if err != nil {
-		return nil, err
+	w.mu.Lock()
+	conn := w.conn
+	w.mu.Unlock()
+	if conn == nil {
+		return nil, nil
 	}
 	panes, err := conn.Panes()
 	if err != nil {

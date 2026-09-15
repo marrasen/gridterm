@@ -214,3 +214,19 @@ func TestACodeForAnotherWindowReachesThatWindow(t *testing.T) {
 		t.Errorf("it read %q", screen.Screen)
 	}
 }
+
+// Being asked what you have when you have nothing is an answer, not a
+// failure.
+func TestListingNothingIsNotAFailure(t *testing.T) {
+	panes := NewWindow()
+	defer func() { _ = panes.Close() }()
+
+	got, err := panes.List()
+
+	if err != nil {
+		t.Errorf("it gave %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("it holds %v", got)
+	}
+}

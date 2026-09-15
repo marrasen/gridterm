@@ -48,12 +48,15 @@ emulator, and draws the resulting character grid as batched triangles.
   that one pane to a program you are talking to, and watch it work. The
   agent gets a code; the code is the whole of what lets it in, and with
   it the agent can read the pane, type into it, and wait for it to
-  settle. It cannot open a connection, start a shell, browse files, or
-  reach a pane you did not hand it. Nothing listens until you hand a pane
-  over, the port is on the loopback address only, and taking the pane
-  back makes the code useless at once. `gridterm -mcp` is the Model
-  Context Protocol server the agent runs; it holds no credentials and
-  reaches nothing until you give it a code.
+  settle. It reaches no other pane, no connection of yours and no file
+  except through that pane. It is a narrow way in rather than a fence
+  around what follows: what it types goes into a live shell running as
+  whoever you set that pane up as, and it does whatever that shell does
+  — in one pane, in front of you, and you can take it back. Nothing
+  listens until you hand a pane over, the port is on the loopback
+  address, and taking the pane back makes the code useless at once.
+  `gridterm -mcp` is the Model Context Protocol server the agent runs;
+  it holds no credentials and reaches nothing until you give it a code.
 - **One machine reached through another.** A saved server can say it is
   behind another one. The second connection is carried inside a channel
   of the first, so no local port is opened for it and nothing else on
@@ -373,6 +376,12 @@ emulator under `internal/` where they cannot be imported.
   it to tell a command that is still running from one that printed
   nothing -- it waits for the screen to go quiet and reads what is
   there.
+- **The port an agent reaches is the machine's, not the session's.** A
+  loopback port on Windows is reachable by every session on the machine,
+  not only by the one that opened it. Nothing gets past it without the
+  code, which is not guessable and which you give out yourself, and
+  anything that does not say what it is at once is hung up on. But it is
+  a port, and it is open while a pane is handed over.
 - **Sixel and the Kitty graphics protocol** are not implemented.
 - **An APC, PM or SOS string with no terminator grows without bound.**
   The parser buffers it before the emulator sees anything, so it cannot

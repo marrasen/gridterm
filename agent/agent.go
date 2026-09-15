@@ -2,11 +2,17 @@
 // this window.
 //
 // It is not a second window taking over. An agent is given one pane at a
-// time, by the user, and can do nothing else: it cannot open a
-// connection, start a shell, browse files, or reach a pane it was not
-// handed. What it can do is read the screen, type into it, and wait for
-// the screen to settle -- which is what watching somebody work looks
-// like from the outside.
+// time, by the user, and what it can do with it is read the screen, type
+// into it, and wait for the screen to settle -- which is what watching
+// somebody work looks like from the outside. It cannot reach a pane it
+// was not handed, open a connection of this window's, or read a file
+// through it.
+//
+// That is a narrow way in, not a fence around what happens next. What it
+// types goes into a live shell, so anything that shell can run it can
+// ask for, and it runs as whoever the user set that pane up as. The
+// point is that it happens in one pane, in front of the user, who is
+// watching and can take it back.
 //
 // The user picks a pane and gets a code. The code is the whole of what
 // lets anything in. It is made fresh and taking the pane back makes it

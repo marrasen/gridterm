@@ -1237,6 +1237,24 @@ func TestADialIsRefusedTheNameOfAConnectedMachine(t *testing.T) {
 	}
 }
 
+// A rename onto a name a dial is holding is refused by the type as well
+// as by the dialog, so the two sides of the invariant cannot meet.
+func TestARenameOntoAConnectingNameIsRefusedByTheType(t *testing.T) {
+	ms := newMachines()
+	ms.take(&machine{at: step{name: "picard"}})
+	d := &dialling{cancel: func() {}, names: []string{"slow"}}
+	if err := ms.holdNames(d); err != nil {
+		t.Fatalf("hold the name: %v", err)
+	}
+
+	if _, err := ms.rename("picard", remote.Host{Name: "slow"}); err == nil {
+		t.Fatal("a connection was renamed onto a name being connected to")
+	}
+	if ms.named("picard") == nil || ms.named("slow") != nil {
+		t.Errorf("the refusal moved something: %v", ms.names())
+	}
+}
+
 // A machine that answers stops counting as one being connected to, in
 // the same step: that is where a name crosses from one side of the
 // invariant to the other.

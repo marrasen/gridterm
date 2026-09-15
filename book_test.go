@@ -776,6 +776,40 @@ func TestRenamingOntoAConnectedNameIsRefused(t *testing.T) {
 	}
 }
 
+// Renaming onto a name still being connected to is refused the same
+// way: the connection on its way will be held under that name.
+func TestRenamingOntoAConnectingNameIsRefused(t *testing.T) {
+	deafHost, deafPort := sshtest.Deaf(t)
+	s := sshtest.New(t)
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pinServers(t, a, s)
+
+	saveHost(t, a, "picard", s, "")
+	cfg := serverConfig(t, s)
+	cfg.Host, cfg.Port = deafHost, deafPort
+	a.connectAs("slow", cfg)
+	if a.opening["slow"] == nil {
+		t.Fatal("nothing is on its way to the deaf machine, so this proves nothing")
+	}
+
+	if err := a.openEditServer("picard"); err != nil {
+		t.Fatalf("edit: %v", err)
+	}
+	f := openDialog(t, a)
+	f.Field("Name").SetText("slow")
+	pressButton(t, a, f, "Save")
+	a.pump.run()
+
+	if _, ok := a.book.Lookup("slow"); ok {
+		t.Fatal("the rename was saved onto a name still being connected to")
+	}
+	if _, ok := a.book.Lookup("picard"); !ok {
+		t.Fatal("the machine lost its name")
+	}
+}
+
 // A rename that also changes the address leaves the old connection
 // where it was: it is a connection to the old machine, and the new name
 // is not it.

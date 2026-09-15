@@ -72,6 +72,21 @@ type DialConfig struct {
 	// Patience is how long the other end has to get through the
 	// handshake once it has answered. Zero asks for handshakeTimeout.
 	Patience time.Duration
+
+	// Saying is told each step as it is tried, for showing somebody what
+	// a connection is doing. A nil one is not called.
+	//
+	// It is called from whichever goroutine is connecting, which is not
+	// the one that draws, so an implementation that touches a window has
+	// to hand the work to whatever does.
+	Saying func(what string)
+}
+
+// say tells whoever is watching what is being done now, if anybody is.
+func (c DialConfig) say(what string) {
+	if c.Saying != nil {
+		c.Saying(what)
+	}
 }
 
 // Dial reaches another window that is serving.
@@ -89,11 +104,13 @@ func Dial(ctx context.Context, cfg DialConfig) (*Window, error) {
 		return nil, errors.New("serve: nothing to check the machine by")
 	}
 
+	cfg.say("reaching " + cfg.Addr)
 	d := net.Dialer{Timeout: dialTimeout}
 	nc, err := d.DialContext(ctx, "tcp", cfg.Addr)
 	if err != nil {
 		return nil, fmt.Errorf("serve: reach %s: %w", cfg.Addr, err)
 	}
+	cfg.say("asking " + cfg.Addr + " who it is")
 	// Closing the connection is what unblocks the handshake, whichever
 	// part of it is waiting.
 	stop := context.AfterFunc(ctx, func() { _ = nc.Close() })
@@ -113,9 +130,16 @@ func Dial(ctx context.Context, cfg DialConfig) (*Window, error) {
 	}
 
 	cc, chans, reqs, err := ssh.NewClientConn(nc, cfg.Addr, &ssh.ClientConfig{
-		User:            "gridterm",
-		Auth:            []ssh.AuthMethod{ssh.PublicKeys(cfg.Keys...)},
-		HostKeyCallback: cfg.HostKey,
+		User: "gridterm",
+		Auth: []ssh.AuthMethod{ssh.PublicKeys(cfg.Keys...)},
+		HostKeyCallback: func(hostname string, addr net.Addr, key ssh.PublicKey) error {
+			cfg.say("it answered, with a " + key.Type() + " host key")
+			if err := cfg.HostKey(hostname, addr, key); err != nil {
+				return err
+			}
+			cfg.say(fmt.Sprintf("its host key is accepted; offering %d keys", len(cfg.Keys)))
+			return nil
+		},
 	})
 	if err != nil {
 		if !stop() {

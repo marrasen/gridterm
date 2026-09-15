@@ -299,6 +299,7 @@ func (r reach) reach(ctx context.Context) (*serve.Window, error) {
 	r.say(stepConnect)
 	win, err := serve.Dial(ctx, serve.DialConfig{
 		Addr: r.addr, Keys: keys, HostKey: check, Patience: r.patience,
+		Saying: r.saying,
 	})
 	if err != nil {
 		return nil, err

@@ -1488,3 +1488,53 @@ func TestAConnectionThatWasMadeHasNoDeadline(t *testing.T) {
 	defer func() { _ = sess.Close() }()
 	read(t, sess, "started at 80x24")
 }
+
+// Reaching a window says each step as it is tried, so one that stops
+// says where.
+//
+// The window had one word for the whole of it -- "connecting" -- which
+// covered the socket, the handshake, the host key and the keys offered.
+// A user whose window never answered had that word and nothing else.
+func TestDialSaysEachStep(t *testing.T) {
+	mine, line := aKey(t, "marcus@laptop")
+	host, err := HostKey(t.TempDir() + "/host_key")
+	if err != nil {
+		t.Fatalf("host key: %v", err)
+	}
+	keys, err := ParseAllowed([]byte(line), "the test")
+	if err != nil {
+		t.Fatalf("allowed: %v", err)
+	}
+	s, err := Listen(Config{
+		Addr: "127.0.0.1:0", HostKey: host, Allowed: keys,
+		Open:    func(cols, rows int) (session.Session, error) { return newEchoSession(cols, rows), nil },
+		OnError: func(error) {},
+	})
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+
+	var said []string
+	w, err := Dial(context.Background(), DialConfig{
+		Addr: s.Addr(), Keys: []ssh.Signer{mine},
+		HostKey: ssh.FixedHostKey(host.PublicKey()),
+		Saying:  func(what string) { said = append(said, what) },
+	})
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	t.Cleanup(func() { _ = w.Close() })
+
+	account := strings.Join(said, "\n")
+	for _, want := range []string{
+		"reaching " + s.Addr(),
+		"asking " + s.Addr() + " who it is",
+		"host key",
+		"offering 1 keys",
+	} {
+		if !strings.Contains(account, want) {
+			t.Errorf("the account does not say %q:\n%s", want, account)
+		}
+	}
+}

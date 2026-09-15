@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/input"
@@ -1853,4 +1854,88 @@ func TestTheBrowserTakesOnlyTheChordsItOffers(t *testing.T) {
 	if !b.Clip().Empty() {
 		t.Fatal("a chord the bar does not offer filled the clipboard")
 	}
+}
+
+// Typing a name moves to it, the way a file list does everywhere else.
+func TestTypingANameMovesToIt(t *testing.T) {
+	p := alone(t, dirWith(t, "alpha", "gamma", "gazebo", "zulu"))
+
+	typeName(p, "ga")
+	if got := selectedName(t, p); got != "gamma" {
+		t.Fatalf("it is on %q, want gamma", got)
+	}
+	typeName(p, "z")
+	if got := selectedName(t, p); got != "gazebo" {
+		t.Fatalf("it is on %q, want gazebo", got)
+	}
+	if got := p.Finding(); got != "gaz" {
+		t.Errorf("it is looking for %q, want gaz", got)
+	}
+
+	// Backspace takes a letter back rather than going up a directory.
+	was := p.At()
+	p.HandleKey(input.Event{Kind: input.KeyPress, Key: input.KeyBackspace})
+	if p.At() != was {
+		t.Fatalf("it left %q for %q on a backspace while typing", was, p.At())
+	}
+	if got := p.Finding(); got != "ga" {
+		t.Errorf("it is looking for %q, want ga", got)
+	}
+
+	// Escape gives up on the name, so backspace goes up again.
+	p.HandleKey(input.Event{Kind: input.KeyPress, Key: input.KeyEscape})
+	if got := p.Finding(); got != "" {
+		t.Errorf("it is still looking for %q", got)
+	}
+}
+
+// A letter that matches nothing starts a new name rather than being
+// thrown away, and a pause does too.
+func TestTypingStartsAgainWhenNothingMatches(t *testing.T) {
+	p := alone(t, dirWith(t, "alpha", "gamma"))
+
+	typeName(p, "al")
+	typeName(p, "g")
+	if got := selectedName(t, p); got != "gamma" {
+		t.Fatalf("it is on %q, want gamma", got)
+	}
+
+	// And a pause between letters is two searches, not one.
+	now := time.Now()
+	p.clock = func() time.Time { return now }
+	typeName(p, "a")
+	now = now.Add(2 * findPause)
+	typeName(p, "g")
+	if got := selectedName(t, p); got != "gamma" {
+		t.Fatalf("it is on %q, want the name the second letter starts", got)
+	}
+}
+
+// dirWith makes a directory holding empty files with these names.
+func dirWith(t *testing.T, names ...string) string {
+	t.Helper()
+	dir := t.TempDir()
+	for _, name := range names {
+		if err := os.WriteFile(filepath.Join(dir, name), nil, 0o600); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+	return dir
+}
+
+// typeName types letters into a pane the way the platform delivers them.
+func typeName(p *Pane, text string) {
+	for _, r := range text {
+		p.HandleKey(input.Event{Kind: input.Text, Rune: r, NormalText: true})
+	}
+}
+
+// selectedName is the name the bar is on.
+func selectedName(t *testing.T, p *Pane) string {
+	t.Helper()
+	e, ok := p.Selected()
+	if !ok {
+		t.Fatal("nothing is selected")
+	}
+	return e.Name
 }

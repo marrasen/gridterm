@@ -662,6 +662,7 @@ func (a *app) commands() {
 		ui.Command{ID: "conn.tunnel", Title: "Open a tunnel…", Run: a.openTunnelHere},
 		ui.Command{ID: "conn.socks", Title: "Open a SOCKS proxy…", Run: a.openSocksHere},
 		ui.Command{ID: "conn.files", Title: "Browse files here", Run: a.openFilesHere},
+		ui.Command{ID: "files.goTo", Title: "Go to a directory…", Run: a.openGoTo},
 		ui.Command{ID: "conn.disconnect", Title: "Close the connection to this machine",
 			Run: a.disconnectHere},
 		ui.Command{ID: "server.editThis", Title: "Edit this server…",
@@ -717,6 +718,7 @@ func (a *app) commands() {
 		{Key: input.KeyL, Mods: input.ModCtrl | input.ModShift}:      "panel.focus",
 		{Key: input.KeyPageDown, Mods: input.ModCtrl}:                "tab.next",
 		{Key: input.KeyPageUp, Mods: input.ModCtrl}:                  "tab.previous",
+		{Key: input.KeyG, Mods: input.ModCtrl | input.ModShift}:      "files.goTo",
 		{Key: input.KeyK, Mods: input.ModCtrl}:                       "palette.open",
 		{Key: input.KeyF10}:                                          "menu.open",
 	})

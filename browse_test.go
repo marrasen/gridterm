@@ -575,3 +575,39 @@ func TestAMachineGoingLeavesTheKeysWhereTheyWere(t *testing.T) {
 	}
 	checkTree(t, a)
 }
+
+// A file pane can be sent anywhere by typing the path, which is the
+// only way to reach another drive: going up from one leads nowhere.
+func TestGoToSendsAFilePaneAnywhere(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	if err := a.openFilesOn(conns.Local); err != nil {
+		t.Fatalf("open the file manager: %v", err)
+	}
+	p, ok := ui.FocusedLeaf(a.root.Widget()).(*files.Pane)
+	if !ok {
+		t.Fatal("the keys are not on a file pane")
+	}
+	where := t.TempDir()
+
+	if err := a.openGoTo(); err != nil {
+		t.Fatalf("go to: %v", err)
+	}
+	f := openDialog(t, a)
+	f.Field("Path").SetText(where)
+	pressButton(t, a, f, "Go")
+	a.pump.run()
+
+	waitFor(t, a, "the pane to go there", func() bool { return p.At() == where })
+
+	// And the places the filesystem starts from are offered, so a drive
+	// is one key away rather than a letter to remember.
+	if err := a.openGoTo(); err != nil {
+		t.Fatalf("go to again: %v", err)
+	}
+	f = openDialog(t, a)
+	if len(f.Field("Path").Options) < 2 {
+		t.Errorf("it offers %v, want where it is now and the roots", f.Field("Path").Options)
+	}
+}

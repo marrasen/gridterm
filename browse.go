@@ -587,6 +587,37 @@ func (a *app) renamedFiles(was, now string) {
 	}
 }
 
+// openGoTo asks a file pane for somewhere to go.
+//
+// The only way to reach another drive: going up from one leads nowhere,
+// because there is nothing above it. It is also the only way to reach a
+// directory whose name nobody wants to walk to.
+func (a *app) openGoTo() error {
+	p, ok := ui.FocusedLeaf(a.root.Widget()).(*files.Pane)
+	if !ok {
+		return errors.New("the keys are not on a file pane")
+	}
+	f := a.newForm("Go to")
+	where := f.AddField("Path", a.newField("a directory on "+p.FS().Name(), 0))
+	// The places this filesystem starts from, so a drive is one key
+	// away rather than something to remember the letter of.
+	where.Options = append([]string{p.At()}, vfs.Roots(p.FS())...)
+	where.SetText(p.At())
+	f.AddButton(ui.Button{Title: "Go", Do: func() error {
+		path := strings.TrimSpace(where.Text())
+		if path == "" {
+			// Returned rather than shown here, so the dialog stays open
+			// with what was typed still there to correct.
+			return errors.New("there is nowhere to go")
+		}
+		p.Open(path)
+		return nil
+	}})
+	f.AddButton(ui.Button{Title: "Cancel"})
+	a.showForm(f, nil)
+	return nil
+}
+
 // closeFilesOn takes away every pane of the file manager that is on a
 // machine, for a connection that has gone.
 func (a *app) closeFilesOn(host string) error {

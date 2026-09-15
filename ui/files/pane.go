@@ -128,6 +128,16 @@ type Pane struct {
 	// about what was in front of them.
 	marked map[string]bool
 
+	// finding is what has been typed to jump to a name, and findingAt
+	// when the last letter of it arrived. A pause between letters
+	// starts a new name rather than adding to the old one.
+	finding   string
+	findingAt time.Time
+
+	// clock says what time it is, so a test can decide when a pause has
+	// gone by rather than waiting for one.
+	clock func() time.Time
+
 	// clipped are the names waiting to be pasted, and clippedAt the
 	// directory they were picked out in. The pane may be somewhere else
 	// by now, and a name means nothing outside the directory it was
@@ -147,7 +157,7 @@ type Pane struct {
 // New returns a pane showing a filesystem. It has nothing in it until
 // Open is called.
 func New(f vfs.FS) *Pane {
-	p := &Pane{fs: f, marked: map[string]bool{}}
+	p := &Pane{fs: f, marked: map[string]bool{}, clock: time.Now}
 	p.list = ui.NewList()
 	p.list.OnActivate = func(row ui.ListRow) error { return p.activate(row) }
 	return p
@@ -591,6 +601,67 @@ func trimLeft(s string, cols int) string {
 	return "…" + string(runes)
 }
 
+// typeToFind moves the selection to the first name starting with what
+// has been typed.
+//
+// What was typed stands until a pause, Escape, or a move of the
+// selection by any other means: a run of letters is one search, and two
+// searches a second apart are two.
+func (p *Pane) typeToFind(r rune) {
+	now := p.clock()
+	if p.finding != "" && now.Sub(p.findingAt) > findPause {
+		p.finding = ""
+	}
+	p.findingAt = now
+	if found, ok := p.findFrom(p.finding + string(r)); ok {
+		p.finding += string(r)
+		p.list.Select(found)
+		return
+	}
+	// Nothing starts with it. A letter that matches nothing is more
+	// likely the start of another name than a typing mistake, so it is
+	// tried on its own before it is thrown away.
+	if found, ok := p.findFrom(string(r)); ok {
+		p.finding = string(r)
+		p.list.Select(found)
+	}
+}
+
+// findLess takes the last letter back off what is being searched for.
+func (p *Pane) findLess() {
+	runes := []rune(p.finding)
+	p.finding = string(runes[:len(runes)-1])
+	p.findingAt = p.clock()
+	if p.finding == "" {
+		return
+	}
+	if found, ok := p.findFrom(p.finding); ok {
+		p.list.Select(found)
+	}
+}
+
+// clearFinding forgets what was being searched for.
+func (p *Pane) clearFinding() { p.finding = "" }
+
+// Finding is what has been typed to find a name, for the bar to show.
+func (p *Pane) Finding() string { return p.finding }
+
+// findFrom returns the key of the first entry whose name starts with
+// what was typed, ignoring case the way a filename does on Windows.
+func (p *Pane) findFrom(want string) (any, bool) {
+	want = strings.ToLower(want)
+	for _, e := range p.entries {
+		if strings.HasPrefix(strings.ToLower(e.Name), want) {
+			return e.Name, true
+		}
+	}
+	return nil, false
+}
+
+// findPause is how long a name being typed stands before the next
+// letter starts a new one.
+const findPause = time.Second
+
 // SetFocus passes the focus on to the listing, so the bar shows where
 // the keys are going.
 func (p *Pane) SetFocus(on bool) { p.list.SetFocus(on) }
@@ -600,13 +671,31 @@ func (p *Pane) Focused() bool { return p.list.Focused() }
 
 // HandleKey takes the keys the pane knows and passes the rest on.
 func (p *Pane) HandleKey(ev input.Event) (bool, error) {
+	if ev.Kind == input.Text && ev.NormalText && ev.Rune >= ' ' {
+		// Typing moves to the name being typed, the way a file list
+		// does everywhere else.
+		p.typeToFind(ev.Rune)
+		return true, nil
+	}
 	if ev.Mods != 0 {
 		// Ctrl+Tab and the rest belong to whatever is around the pane.
 		return p.list.HandleKey(ev)
 	}
 	if ev.Kind == input.KeyPress || ev.Kind == input.KeyRepeat {
 		switch ev.Key {
+		case input.KeyEscape:
+			if p.finding != "" {
+				p.clearFinding()
+				return true, nil
+			}
 		case input.KeyBackspace:
+			if p.finding != "" {
+				// The typing comes apart before the pane goes up a
+				// directory, so a mistyped letter is taken back rather
+				// than losing the place entirely.
+				p.findLess()
+				return true, nil
+			}
 			p.Up()
 			return true, nil
 		case input.KeySpace:

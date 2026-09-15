@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"os"
 	"reflect"
 	"strings"
 	"time"
@@ -235,6 +236,31 @@ func Base(f FS, path string) string {
 func IsTop(f FS, path string) bool {
 	sep := string(f.Sep())
 	return strings.TrimRight(Dir(f, path), sep) == strings.TrimRight(path, sep)
+}
+
+// Roots are the places a filesystem starts from.
+//
+// One on a POSIX machine and one per drive on Windows, which is the
+// only way to reach another drive: going up from C:\\ leads nowhere,
+// because there is nothing above it.
+//
+// A drive that cannot be looked at is left out. This is a probe rather
+// than a read the user asked for: an empty card reader answers with a
+// failure, and listing it as somewhere to go would be worse than not
+// naming it.
+func Roots(f FS) []string {
+	local, ok := f.(*Local)
+	if !ok || local.Sep() != '\\' {
+		return []string{"/"}
+	}
+	var out []string
+	for letter := 'A'; letter <= 'Z'; letter++ {
+		path := string(letter) + `:\`
+		if _, err := os.Stat(path); err == nil {
+			out = append(out, path)
+		}
+	}
+	return out
 }
 
 // entryOf builds an Entry from what a directory listing gives, which is

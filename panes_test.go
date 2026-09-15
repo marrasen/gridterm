@@ -100,6 +100,19 @@ func (p *pipeSession) Close() error {
 	return p.closeErr
 }
 
+// reapWhenTold reaps the panes whose shell has gone, once the window has
+// actually been told about one.
+//
+// A terminal sets Exited just before it tells the window, so a reap that
+// waited only for Exited can run in the gap and find nothing queued.
+// The window itself reaps on every frame, so a late one costs it a
+// frame; a test that reaps once has to wait for it.
+func reapWhenTold(t *testing.T, a *testApp) {
+	t.Helper()
+	waitUntil(t, func() bool { return len(a.exits) > 0 })
+	a.reapExited()
+}
+
 // newTestApp builds an app with one pane and no window, which is enough
 // for every tree operation.
 type testApp struct {
@@ -452,7 +465,7 @@ func TestReapClosesExitedPanes(t *testing.T) {
 			_ = pane.Close()
 			waitUntil(t, pane.Exited)
 		}
-		a.reapExited()
+		reapWhenTold(t, a)
 
 		checkTree(t, a)
 		if len(a.panes) != 1 {
@@ -475,7 +488,7 @@ func TestReapTheLastPaneQuits(t *testing.T) {
 
 	_ = only.Close()
 	waitUntil(t, only.Exited)
-	a.reapExited()
+	reapWhenTold(t, a)
 
 	if !a.quit.Load() {
 		t.Error("the last shell exiting did not close the window")
@@ -1246,7 +1259,7 @@ func TestPaletteSurvivesAPaneExiting(t *testing.T) {
 	pane := ui.Leaves(a.root.Widget())[0].(*term.Terminal)
 	_ = pane.Close()
 	waitUntil(t, pane.Exited)
-	a.reapExited()
+	reapWhenTold(t, a)
 
 	checkTree(t, a)
 	if a.palette == nil {

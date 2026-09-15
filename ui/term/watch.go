@@ -1,6 +1,7 @@
 package term
 
 import (
+	"errors"
 	"sync"
 
 	"github.com/marrasen/gridterm/grid"
@@ -14,18 +15,25 @@ import (
 // copied to the watcher rather than handed over, so the screen on this
 // machine stays right and is still right when the watcher goes.
 //
-// Write is called with the screen as it stands and then with everything
-// the program says, in order. It is called with a lock held that the
-// terminal needs back before it can draw anything, so it must not block
-// -- a queue with somewhere to put the bytes, not a socket to write
-// them down.
+// Screen is the whole screen as it stands. Anything the watcher has
+// queued and not passed on is older than it and must be thrown away.
+// Write is what the program said next, in order.
+//
+// Both are called with a lock held that the terminal needs back before
+// it can draw anything, so neither may block -- a queue with somewhere
+// to put the bytes, not a socket to write them down.
 //
 // Ended is called once, when the program has gone. A watcher that was
 // never told would wait for output from a shell that has exited.
 type Watcher interface {
+	Screen(p []byte) error
 	Write(p []byte) (int, error)
 	Ended()
 }
+
+// ErrEnded says the program in a terminal has gone, so there is nothing
+// left to watch.
+var ErrEnded = errors.New("that program has finished")
 
 // Watch shows this terminal to somebody else and returns what stops it.
 //
@@ -35,38 +43,75 @@ type Watcher interface {
 // a chunk can arrive before the screen it is already part of and be
 // painted over by it, leaving a screen that is wrong until the program
 // happens to redraw -- which a shell sitting at a prompt never does.
-func (t *Terminal) Watch(w Watcher) func() {
+//
+// It fails when the program has already gone, rather than handing back
+// a watch on a dead screen that would end the moment it was read.
+func (t *Terminal) Watch(w Watcher) (func(), error) {
 	// The emulator's lock stops the reader parsing anything new, and
 	// the watchers' lock stops it handing anything on. Both are held
 	// across the snapshot and the append, so what the watcher is given
 	// is the screen at one moment and its stream starts from there.
 	t.mu.Lock()
-	cols, rows := t.g.Size()
-	g := grid.New(cols, rows, t.g.DefaultFG, t.g.DefaultBG)
-	// The live screen, not the view: somebody at this machine may have
-	// scrolled back into history, and what the far end wants is the
-	// screen that the next output will land on.
-	t.term.RenderLive(g)
-	screen := vt.Repaint(g, t.term.Screenful())
+	screen := t.liveScreen()
 
 	t.watchMu.Lock()
 	if t.ended {
 		t.watchMu.Unlock()
 		t.mu.Unlock()
-		w.Ended()
-		return func() {}
+		return nil, ErrEnded
 	}
 	t.watchers = append(t.watchers, w)
-	_, err := w.Write([]byte(screen))
+	err := w.Screen([]byte(screen))
 	t.watchMu.Unlock()
 	t.mu.Unlock()
 
 	if err != nil {
 		t.Unwatch(w)
-		return func() {}
+		return nil, err
 	}
 	var once sync.Once
-	return func() { once.Do(func() { t.Unwatch(w) }) }
+	return func() { once.Do(func() { t.Unwatch(w) }) }, nil
+}
+
+// Resync gives a watcher the screen again, for one that fell behind and
+// had what it missed thrown away.
+//
+// Under the same locks as Watch, so the screen and the throwing away
+// happen together: taken separately, the chunks that arrived in between
+// would be handed on after the screen that already contains them.
+func (t *Terminal) Resync(w Watcher) error {
+	t.mu.Lock()
+	screen := t.liveScreen()
+
+	t.watchMu.Lock()
+	defer t.mu.Unlock()
+	defer t.watchMu.Unlock()
+	if t.ended {
+		return ErrEnded
+	}
+	return w.Screen([]byte(screen))
+}
+
+// liveScreen is the escape sequences that would draw this terminal's
+// live screen. The emulator's lock is already held.
+//
+// The live screen, not the view: somebody at this machine may have
+// scrolled back into history, and what a watcher wants is the screen
+// that the next output will land on.
+func (t *Terminal) liveScreen() string {
+	cols, rows := t.g.Size()
+	g := grid.New(cols, rows, t.g.DefaultFG, t.g.DefaultBG)
+	t.term.RenderLive(g)
+	full := t.term.Screenful()
+	if full.Alt {
+		// And the screen the full-screen program is covering, so that
+		// the watcher has something to go back to when it quits.
+		under := grid.New(cols, rows, t.g.DefaultFG, t.g.DefaultBG)
+		if t.term.RenderUnder(under) {
+			full.Under = under
+		}
+	}
+	return vt.Repaint(g, full)
 }
 
 // Unwatch stops showing this terminal to somebody.
@@ -98,9 +143,10 @@ func (t *Terminal) Watched() int {
 
 // tell passes what the program said to whoever is watching.
 //
-// Under the same lock Watch appends with, so a watcher is never handed
-// a chunk that the screen it was given already contained, and never
-// misses one that it did not.
+// Under the same lock Watch appends with, and called with the
+// emulator's lock still held, so a watcher is never handed a chunk that
+// the screen it was given already contained and never misses one that
+// it did not.
 func (t *Terminal) tell(b []byte) {
 	t.watchMu.Lock()
 	defer t.watchMu.Unlock()
@@ -128,21 +174,6 @@ func (t *Terminal) endWatchers() {
 	for _, w := range watching {
 		w.Ended()
 	}
-}
-
-// Screen is this terminal's live screen, as the escape sequences that
-// would draw it.
-//
-// It is how a watcher that fell behind catches up: what it missed
-// cannot be pieced back together, and half an escape sequence leaves an
-// emulator in a state nothing will correct.
-func (t *Terminal) Screen() string {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	cols, rows := t.g.Size()
-	g := grid.New(cols, rows, t.g.DefaultFG, t.g.DefaultBG)
-	t.term.RenderLive(g)
-	return vt.Repaint(g, t.term.Screenful())
 }
 
 // Send puts input into the terminal as though it had been typed here.

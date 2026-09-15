@@ -113,7 +113,7 @@ type app struct {
 	// watching says what each of those panes is watching over there, so
 	// choosing the same thing again brings the pane forward rather than
 	// opening a second one onto one shell.
-	watching map[*term.Terminal]watchedID
+	watching map[*term.Terminal]remoteKey
 
 	// dock holds the sidebar beside everything else, panel is the list
 	// in it, and stage is what fills the rest: it holds every pane the

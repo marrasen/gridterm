@@ -68,6 +68,12 @@ func TestAHiddenCursorStaysHidden(t *testing.T) {
 	if again.Cursor().Visible {
 		t.Error("it came back visible")
 	}
+	// And in the right place. A hidden cursor is still somewhere, and
+	// the moment the program shows it again without moving it, one left
+	// after the last thing written would appear in the wrong place.
+	if got, want := again.Cursor(), was.Cursor(); got.X != want.X || got.Y != want.Y {
+		t.Errorf("it came back at %d,%d, want %d,%d", got.X, got.Y, want.X, want.Y)
+	}
 }
 
 // An empty screen is written short: a screenful of spaces costs a
@@ -118,6 +124,16 @@ func sameToLookAt(a, b grid.Cell) bool {
 	if a.Rune != b.Rune || a.BG != b.BG || a.Attr != b.Attr || a.Width != b.Width {
 		return false
 	}
+	// What sits on the letter is part of the picture: without it a word
+	// comes back spelled differently.
+	if len(a.Comb) != len(b.Comb) {
+		return false
+	}
+	for i, r := range a.Comb {
+		if b.Comb[i] != r {
+			return false
+		}
+	}
 	if a.Rune == ' ' || a.Rune == 0 {
 		return true
 	}
@@ -164,36 +180,143 @@ func TestACombiningMarkComesWithItsLetter(t *testing.T) {
 	}
 }
 
-// The modes that change what happens to what comes next travel with the
-// screen, and are said before anything is drawn.
+// The modes that change what happens to what comes next travel with
+// the screen, and are said before anything is drawn.
 func TestTheModesTravelWithTheScreen(t *testing.T) {
 	g := drawn(t, 20, 3, "hello")
 
 	for _, c := range []struct {
 		what Screenful
 		want []string
-		not  []string
 	}{
-		{Screenful{Wrap: true}, []string{"\x1b[?1049l", "\x1b[?7h", "\x1b[?1l"}, nil},
-		{Screenful{Alt: true}, []string{"\x1b[?1049h", "\x1b[?7l"}, []string{"\x1b[?1049l"}},
-		{Screenful{AppCursor: true}, []string{"\x1b[?1h"}, []string{"\x1b[?1l"}},
+		{Screenful{Wrap: true}, []string{"\x1b[?7h", "\x1b[?1l"}},
+		{Screenful{}, []string{"\x1b[?7l", "\x1b[?1l"}},
+		{Screenful{AppCursor: true}, []string{"\x1b[?7l", "\x1b[?1h"}},
 	} {
 		out := Repaint(g, c.what)
+		drawing := strings.Index(out, "\x1b[H\x1b[2J")
+		if drawing < 0 {
+			t.Fatalf("%+v never cleared the screen: %q", c.what, out)
+		}
 		for _, want := range c.want {
-			if !strings.Contains(out, want) {
+			at := strings.Index(out, want)
+			if at < 0 {
 				t.Errorf("%+v did not say %q: %q", c.what, want, out)
+				continue
 			}
-		}
-		for _, not := range c.not {
-			if strings.Contains(out, not) {
-				t.Errorf("%+v said %q: %q", c.what, not, out)
+			// Before anything is drawn. Whether a long line wraps
+			// changes what the drawing itself does.
+			if at > drawing {
+				t.Errorf("%+v said %q after it started drawing: %q", c.what, want, out)
 			}
-		}
-		// Before the screen, or it would be drawn in the wrong buffer.
-		if at := strings.Index(out, "\x1b[H\x1b[2J"); at < 0 {
-			t.Errorf("%+v never cleared the screen: %q", c.what, out)
-		} else if strings.Contains(out[at:], "\x1b[?1049") {
-			t.Errorf("%+v switched buffer after drawing: %q", c.what, out)
 		}
 	}
+}
+
+// A screen showing a full-screen program carries the screen underneath
+// it, so the program quitting leaves what was there behind.
+//
+// Nothing else would send it. The far end restores its own ordinary
+// screen when the program leaves the alternate buffer, and a shell
+// coming back to its prompt does not redraw.
+func TestTheScreenUnderAFullScreenProgramTravels(t *testing.T) {
+	// A prompt, then a full-screen program over it.
+	term := New(20, 3, DefaultPalette(), 100, Callbacks{})
+	if _, err := term.Write([]byte("at-the-prompt\r\n\x1b[?1049hin-the-program")); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	live := grid.New(20, 3, DefaultPalette().FG, DefaultPalette().BG)
+	term.RenderLive(live)
+	under := grid.New(20, 3, DefaultPalette().FG, DefaultPalette().BG)
+	if !term.RenderUnder(under) {
+		t.Fatal("it says there is no screen underneath")
+	}
+	full := term.Screenful()
+	full.Under = under
+	if !full.Alt {
+		t.Fatal("it is not in the alternate buffer")
+	}
+
+	// Read back by an emulator that was not watching.
+	watcher := New(20, 3, DefaultPalette(), 100, Callbacks{})
+	if _, err := watcher.Write([]byte(Repaint(live, full))); err != nil {
+		t.Fatalf("watcher: %v", err)
+	}
+	shown := grid.New(20, 3, DefaultPalette().FG, DefaultPalette().BG)
+	watcher.RenderLive(shown)
+	if got := textOf(shown); !strings.Contains(got, "in-the-program") {
+		t.Errorf("the program's screen did not arrive: %q", got)
+	}
+
+	// The program quits, on both.
+	if _, err := term.Write([]byte("\x1b[?1049l")); err != nil {
+		t.Fatalf("quit: %v", err)
+	}
+	if _, err := watcher.Write([]byte("\x1b[?1049l")); err != nil {
+		t.Fatalf("watcher quit: %v", err)
+	}
+	was := grid.New(20, 3, DefaultPalette().FG, DefaultPalette().BG)
+	term.RenderLive(was)
+	watcher.RenderLive(shown)
+	if diff := gridDiff(was, shown); diff != "" {
+		t.Errorf("what was underneath came back different:\n%s", diff)
+	}
+	if got := textOf(shown); !strings.Contains(got, "at-the-prompt") {
+		t.Errorf("the prompt did not come back: %q", got)
+	}
+}
+
+// A cursor that has filled the last column owes a wrap, and the wrap
+// travels with it.
+//
+// Sent as an ordinary cursor move, the next character would land on top
+// of the last one instead of at the start of the next row, and
+// everything after it would be a column out.
+func TestAWrapThatIsOwedTravels(t *testing.T) {
+	// Exactly one row's worth, so the wrap is owed and not yet taken.
+	term := New(6, 3, DefaultPalette(), 100, Callbacks{})
+	if _, err := term.Write([]byte("abcdef")); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	live := grid.New(6, 3, DefaultPalette().FG, DefaultPalette().BG)
+	term.RenderLive(live)
+	full := term.Screenful()
+	if !full.WrapNext {
+		t.Fatal("no wrap was owed to begin with")
+	}
+
+	watcher := New(6, 3, DefaultPalette(), 100, Callbacks{})
+	if _, err := watcher.Write([]byte(Repaint(live, full))); err != nil {
+		t.Fatalf("watcher: %v", err)
+	}
+
+	// One more character, on both.
+	if _, err := term.Write([]byte("g")); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if _, err := watcher.Write([]byte("g")); err != nil {
+		t.Fatalf("watcher: %v", err)
+	}
+	was := grid.New(6, 3, DefaultPalette().FG, DefaultPalette().BG)
+	term.RenderLive(was)
+	shown := grid.New(6, 3, DefaultPalette().FG, DefaultPalette().BG)
+	watcher.RenderLive(shown)
+	if diff := gridDiff(was, shown); diff != "" {
+		t.Errorf("the next character landed elsewhere:\n%s", diff)
+	}
+}
+
+// textOf is what a grid is showing, as one string per row.
+func textOf(g *grid.Grid) string {
+	cols, rows := g.Size()
+	var b strings.Builder
+	for y := 0; y < rows; y++ {
+		for x := 0; x < cols; x++ {
+			if r := g.At(x, y).Rune; r != 0 {
+				b.WriteRune(r)
+			}
+		}
+		b.WriteByte('\n')
+	}
+	return b.String()
 }

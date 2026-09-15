@@ -446,6 +446,10 @@ func (t *Terminal) clipboard(params [][]byte) {
 // is on it now, and what the next output will land on.
 func (t *Terminal) RenderLive(g *grid.Grid) { t.scr.RenderLive(g) }
 
+// RenderUnder draws the ordinary screen that an alternate one is
+// covering, and reports whether there was one.
+func (t *Terminal) RenderUnder(g *grid.Grid) bool { return t.scr.RenderUnder(g) }
+
 // Screenful is what the screen carries that its grid does not, for
 // sending it somewhere else.
 func (t *Terminal) Screenful() Screenful {
@@ -453,5 +457,6 @@ func (t *Terminal) Screenful() Screenful {
 		Alt:       t.scr.OnAltBuffer(),
 		Wrap:      t.scr.Wrap(),
 		AppCursor: t.scr.AppCursor(),
+		WrapNext:  t.scr.WrapNext(),
 	}
 }

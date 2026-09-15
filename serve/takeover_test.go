@@ -29,6 +29,8 @@ type echoSession struct {
 	out  *io.PipeReader
 	outW *io.PipeWriter
 	done chan struct{}
+
+	finishOnce sync.Once
 }
 
 func newEchoSession(cols, rows int) *echoSession {
@@ -71,13 +73,16 @@ func (s *echoSession) Close() error {
 	return s.closeErr
 }
 
+// finish ends the session once, however many goroutines end it.
+//
+// A session is closed from three places -- the copy of input, the copy
+// of output, and the connection going -- so a check and a close that
+// were not one step would close a channel twice.
 func (s *echoSession) finish() {
-	select {
-	case <-s.done:
-	default:
+	s.finishOnce.Do(func() {
 		close(s.done)
 		_ = s.outW.Close()
-	}
+	})
 }
 
 func (s *echoSession) seenSizes() [][2]int {
@@ -131,20 +136,35 @@ func takenOverWith(t *testing.T, open Opener, attach Attacher) (*Server, *Window
 func read(t *testing.T, s session.Session, want string) string {
 	t.Helper()
 	var got strings.Builder
-	deadline := time.Now().Add(5 * time.Second)
-	buf := make([]byte, 256)
-	for time.Now().Before(deadline) {
-		n, err := s.Read(buf)
-		got.Write(buf[:n])
-		if strings.Contains(got.String(), want) {
-			return got.String()
-		}
-		if err != nil {
-			t.Fatalf("read: %v, having got %q", err, got.String())
+	type said struct {
+		b   []byte
+		err error
+	}
+	// Each read on a goroutine of its own, because a session that never
+	// answers would otherwise hang the test until the alarm rather than
+	// failing it.
+	deadline := time.After(5 * time.Second)
+	for {
+		back := make(chan said, 1)
+		go func() {
+			buf := make([]byte, 256)
+			n, err := s.Read(buf)
+			back <- said{b: buf[:n], err: err}
+		}()
+		select {
+		case one := <-back:
+			got.Write(one.b)
+			if strings.Contains(got.String(), want) {
+				return got.String()
+			}
+			if one.err != nil {
+				t.Fatalf("read: %v, having got %q", one.err, got.String())
+			}
+		case <-deadline:
+			t.Fatalf("waited for %q, got %q", want, got.String())
+			return ""
 		}
 	}
-	t.Fatalf("waited for %q, got %q", want, got.String())
-	return ""
 }
 
 // One window works in another's session, and cannot tell it from one of
@@ -976,14 +996,14 @@ func waitForOpens(t *testing.T, w *Window, ok func([]Open) bool, what string) {
 // A client works in something the serving window already has running,
 // and the window is asked for exactly what the client was told about.
 func TestAWindowWorksInSomethingAlreadyRunning(t *testing.T) {
-	asked := make(chan [3]string, 1)
+	asked := make(chan string, 1)
 	running := newEchoSession(100, 40)
-	_, w := takenOverWith(t, nil, func(id, kind, label string) (session.Session, error) {
-		asked <- [3]string{id, kind, label}
+	_, w := takenOverWith(t, nil, func(id string) (session.Session, error) {
+		asked <- id
 		return running, nil
 	})
 
-	sess, err := w.Attach(Open{ID: "margit#2", Kind: "Terminal", Label: "vim README.md"}, 80, 24)
+	sess, err := w.Attach(Open{ID: "7", Kind: "Terminal", Label: "vim README.md"}, 80, 24)
 	if err != nil {
 		t.Fatalf("attach: %v", err)
 	}
@@ -991,9 +1011,8 @@ func TestAWindowWorksInSomethingAlreadyRunning(t *testing.T) {
 
 	select {
 	case got := <-asked:
-		want := [3]string{"margit#2", "Terminal", "vim README.md"}
-		if got != want {
-			t.Errorf("it asked for %v, not %v", got, want)
+		if got != "7" {
+			t.Errorf("it asked for %q, not %q", got, "7")
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("the serving window was never asked")
@@ -1018,7 +1037,7 @@ func TestAWindowThatCannotBeWorkedInSaysSo(t *testing.T) {
 		return newEchoSession(cols, rows), nil
 	}, nil)
 
-	sess, err := w.Attach(Open{ID: "Local#0", Kind: "Terminal", Label: "bash"}, 80, 24)
+	sess, err := w.Attach(Open{ID: "1", Kind: "Terminal", Label: "bash"}, 80, 24)
 	if err != nil {
 		t.Fatalf("attach: %v", err)
 	}
@@ -1038,15 +1057,121 @@ func TestAWindowThatCannotBeWorkedInSaysSo(t *testing.T) {
 // What the serving window says about something that has gone reaches
 // the client rather than being swallowed.
 func TestAskingForSomethingGoneSaysSo(t *testing.T) {
-	_, w := takenOverWith(t, nil, func(id, kind, label string) (session.Session, error) {
+	_, w := takenOverWith(t, nil, func(id string) (session.Session, error) {
 		return nil, fmt.Errorf("there is nothing called %q open here any more", id)
 	})
 
-	sess, err := w.Attach(Open{ID: "Local#9", Kind: "Terminal", Label: "gone"}, 80, 24)
+	sess, err := w.Attach(Open{ID: "99", Kind: "Terminal", Label: "gone"}, 80, 24)
 	if err != nil {
 		t.Fatalf("attach: %v", err)
 	}
 	defer func() { _ = sess.Close() }()
 
-	read(t, sess, `nothing called "Local#9" open here any more`)
+	read(t, sess, `nothing called "99" open here any more`)
+}
+
+// failingSession says something and then fails, for a test about a
+// program whose output stops reaching the client part way.
+type failingSession struct {
+	said bool
+	done chan struct{}
+	err  error
+}
+
+func (s *failingSession) Read(p []byte) (int, error) {
+	if !s.said {
+		s.said = true
+		return copy(p, []byte("half a screen")), nil
+	}
+	return 0, s.err
+}
+
+func (s *failingSession) Write(p []byte) (int, error) { return len(p), nil }
+func (s *failingSession) Resize(int, int) error       { return nil }
+func (s *failingSession) Wait() error                 { return nil }
+
+func (s *failingSession) Close() error {
+	select {
+	case <-s.done:
+	default:
+		close(s.done)
+	}
+	return nil
+}
+
+// A session whose output stopped reaching the client is not a program
+// that ran and finished.
+//
+// The program itself thinks it ended cleanly. The client is holding
+// half a screen, and this is the only end that knows.
+func TestASessionThatFailedPartWayDidNotEndCleanly(t *testing.T) {
+	_, w := takenOverReporting(t, func(cols, rows int) (session.Session, error) {
+		return &failingSession{
+			done: make(chan struct{}),
+			err:  errors.New("the pipe broke"),
+		}, nil
+	}, make(chan error, 8))
+
+	sess, err := w.Open(80, 24)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer func() { _ = sess.Close() }()
+
+	read(t, sess, "half a screen")
+	if err := waited(t, sess); err == nil {
+		t.Error("a program whose output stopped was reported as a clean finish")
+	}
+}
+
+// Telling clients what this window has open does not wait for any of
+// them.
+//
+// The window that has the snapshot is the one that draws. A socket
+// write from there would stop the screen for as long as the slowest
+// client took to read, and a client that has stopped reading would
+// stop it for good.
+func TestSayingWhatIsOpenDoesNotWaitForAClient(t *testing.T) {
+	s, w := takenOver(t, func(cols, rows int) (session.Session, error) {
+		return newEchoSession(cols, rows), nil
+	})
+
+	// A client that opens the channel and never reads a byte of it.
+	ch, reqs, err := w.client.OpenChannel(chanControl, nil)
+	if err != nil {
+		t.Fatalf("open control: %v", err)
+	}
+	go ssh.DiscardRequests(reqs)
+	defer func() { _ = ch.Close() }()
+
+	// Far more than any window will hold, so a write that waited would
+	// still be waiting.
+	big := serve1MB()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 64; i++ {
+			s.Publish(big)
+		}
+	}()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("saying what is open waited for a client that is not reading")
+	}
+}
+
+// serve1MB is a snapshot big enough that sending it many times fills
+// any window a client is not emptying.
+func serve1MB() Snapshot {
+	snap := Snapshot{Window: "big"}
+	for i := 0; i < 200; i++ {
+		snap.Open = append(snap.Open, Open{
+			ID:    "x" + strings.Repeat("y", 100),
+			Host:  "host",
+			Kind:  "Terminal",
+			Label: strings.Repeat("z", 100),
+		})
+	}
+	return snap
 }

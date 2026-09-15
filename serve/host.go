@@ -48,7 +48,12 @@ func (s *Server) serveChannels(chans <-chan ssh.NewChannel, gone <-chan struct{}
 		}
 		var want openSession
 		if err := ssh.Unmarshal(nch.ExtraData(), &want); err != nil {
-			_ = nch.Reject(ssh.ConnectionFailed, "that is not a session request")
+			// The shape is fixed and positional, with no room for a
+			// field one end knows and the other does not, so this is
+			// what a gridterm of another build looks like from here.
+			_ = nch.Reject(ssh.ConnectionFailed,
+				"that is not a session request this gridterm understands: "+
+					"both windows have to be the same build")
 			continue
 		}
 		ch, reqs, err := nch.Accept()
@@ -92,7 +97,7 @@ func (s *Server) runSession(ch ssh.Channel, reqs <-chan *ssh.Request,
 				errors.New("this gridterm cannot be worked in from elsewhere"))
 			return
 		}
-		sess, err = s.cfg.Attach(want.Attach, want.Kind, want.Label)
+		sess, err = s.cfg.Attach(want.Attach)
 	case s.cfg.Open == nil:
 		s.refuseSession(ch, reqs, errors.New("this gridterm has nothing to open"))
 		return
@@ -157,17 +162,24 @@ func (s *Server) runSession(ch ssh.Channel, reqs <-chan *ssh.Request,
 
 	// What the program writes, out to the client.
 	_, copyErr := io.Copy(ch, sess)
+	if errors.Is(copyErr, io.EOF) {
+		copyErr = nil
+	}
 	// Closed before it is waited for. The copy above ends when the
 	// client goes as well as when the program does, and waiting first
 	// would wait for a program nothing has hung up on yet.
 	closeErr := sess.Close()
 	waitErr := sess.Wait()
 
-	s.endSession(ch, waitErr)
+	// A session whose output stopped reaching the client is not a
+	// program that ran and finished, whatever the program thinks: the
+	// client is holding half a screen and the only end that knows is
+	// this one.
+	s.endSession(ch, errors.Join(waitErr, copyErr))
 	if closeErr != nil {
 		s.onError(fmt.Errorf("serve: close a session: %w", closeErr))
 	}
-	if copyErr != nil && !errors.Is(copyErr, io.EOF) {
+	if copyErr != nil {
 		s.onError(fmt.Errorf("serve: carry a session: %w", copyErr))
 	}
 }
@@ -233,7 +245,7 @@ func (s *Server) endSession(ch ssh.Channel, why error) {
 //
 // It is called from a goroutine of the server's, so an implementation
 // that reaches into the window has to hand the work to whatever draws.
-type Attacher func(id, kind, label string) (session.Session, error)
+type Attacher func(id string) (session.Session, error)
 
 // Opener starts something for a client to work in.
 //

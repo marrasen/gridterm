@@ -808,6 +808,27 @@ func (s *Screen) RenderLive(g *grid.Grid) {
 	s.scrollOff = was
 }
 
+// RenderUnder draws the ordinary screen that an alternate one is
+// covering, and reports whether there was one.
+//
+// It is what a watcher is given along with the alternate screen, so
+// that the program quitting leaves the right thing behind rather than
+// a blank pane nothing will redraw.
+func (s *Screen) RenderUnder(g *grid.Grid) bool {
+	if s.cur != s.pri {
+		was, wasOff := s.cur, s.scrollOff
+		s.cur, s.scrollOff = s.pri, 0
+		s.Render(g)
+		s.cur, s.scrollOff = was, wasOff
+		return true
+	}
+	return false
+}
+
 // Wrap reports whether DECAWM is set, which decides whether a line too
 // long for the screen carries on to the next.
 func (s *Screen) Wrap() bool { return s.mode.Wrap }
+
+// WrapNext reports whether the last character filled the final column
+// and the wrap it owes has not happened yet.
+func (s *Screen) WrapNext() bool { return s.cursor.WrapNext }

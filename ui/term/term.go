@@ -215,8 +215,8 @@ func (t *Terminal) Layout(size ui.Size) {
 	}
 	t.size, t.haveSize = size, true
 
-	t.g.Resize(cols, rows)
 	t.mu.Lock()
+	t.g.Resize(cols, rows)
 	t.term.Resize(cols, rows)
 	t.mu.Unlock()
 	t.pending.Store(true)
@@ -507,12 +507,14 @@ func (t *Terminal) readLoop() {
 		if n > 0 {
 			t.mu.Lock()
 			_, _ = t.term.Write(buf[:n])
-			t.mu.Unlock()
-			t.pending.Store(true)
 			// And to anyone watching from another machine, who is
 			// shown the same bytes rather than a second rendering of
 			// them: what they see is then what is on this screen.
+			// Still under the lock, so a chunk cannot be handed on
+			// after a screen that was taken once it was parsed.
 			t.tell(buf[:n])
+			t.mu.Unlock()
+			t.pending.Store(true)
 		}
 		if err != nil {
 			if !errors.Is(err, io.EOF) {

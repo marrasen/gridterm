@@ -125,7 +125,7 @@ func newTestApp(t *testing.T, cols, rows int) *testApp {
 		windows:      make(map[string]*taken),
 		served:       make(map[*serve.Client]*conns.Entry),
 		paneOnWindow: make(map[*term.Terminal]*taken),
-		watching:     make(map[*term.Terminal]watchedID),
+		watching:     make(map[*term.Terminal]remoteKey),
 		paneOn:       make(map[*term.Terminal]*machine),
 		tunnels:      make(map[*conns.Entry]*tunnel),
 		queue:        jobs.New(1),

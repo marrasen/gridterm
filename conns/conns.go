@@ -8,6 +8,7 @@
 package conns
 
 import (
+	"strconv"
 	"sync"
 	"time"
 
@@ -87,6 +88,24 @@ type Entry struct {
 
 	// Close ends it. A nil one cannot be closed from the panel.
 	Close func() error
+
+	// id is what this entry is called for as long as it exists. The
+	// registry gives it when the entry is added.
+	id uint64
+}
+
+// ID names this entry for as long as it is open, for another window
+// asking about it.
+//
+// Given by the registry rather than worked out from where the entry
+// sits in the list: the list is built afresh every frame, and something
+// closing moves everything after it up one. An empty string means the
+// entry is not on a registry, so nothing can ask about it.
+func (e *Entry) ID() string {
+	if e.id == 0 {
+		return ""
+	}
+	return strconv.FormatUint(e.id, 10)
 }
 
 // State is what the entry looks like at a given moment.
@@ -124,6 +143,11 @@ type Registry struct {
 	// panel shows them in. A machine's place in the list is where its
 	// first connection went.
 	entries []*Entry
+
+	// given is the last id handed out. It only goes up, so an id names
+	// one thing for the life of the window even after that thing has
+	// closed and been dismissed.
+	given uint64
 }
 
 // New returns an empty registry.
@@ -140,6 +164,13 @@ func (r *Registry) Add(e *Entry) {
 		if have == e {
 			return
 		}
+	}
+	// Named once. An entry dropped and added again -- which is what a
+	// connection that died and was dismissed looks like -- keeps the
+	// name another window already knows it by.
+	if e.id == 0 {
+		r.given++
+		e.id = r.given
 	}
 	r.entries = append(r.entries, e)
 }

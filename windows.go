@@ -295,20 +295,28 @@ func (a *app) openOnWindow(addr string, at *spot) error {
 
 // watchingPane is the pane already watching something on a window taken
 // over, or nil when nothing is.
-func (a *app) watchingPane(addr, id string) *term.Terminal {
-	for pane, what := range a.watching {
-		if what.window == addr && what.id == id {
+func (a *app) watchingPane(what remoteKey) *term.Terminal {
+	for pane, have := range a.watching {
+		if have == what {
 			return pane
 		}
 	}
 	return nil
 }
 
-// watchedID names what a pane is watching on a window taken over, and
-// how big the screen is over there.
-type watchedID struct {
-	window, id string
-	cols, rows int
+// farSize is how big the screen a pane is watching is now, or zero when
+// the window over there no longer says it has it open.
+//
+// Asked for afresh rather than remembered: the far end is redrawn at
+// its own size whenever that changes, and a size kept from the moment
+// the pane opened would go on being shown long after it stopped being
+// true.
+func (a *app) farSize(what remoteKey) (cols, rows int) {
+	open, ok := a.openOver(what)
+	if !ok {
+		return 0, 0
+	}
+	return open.Cols, open.Rows
 }
 
 // dropWindow lets go of another window, taking the panes drawn from it.
@@ -383,29 +391,49 @@ func knownWindowsPath() (string, error) {
 
 // attachHere opens a pane on what the window taken over already has
 // running, rather than starting something new there.
-func (a *app) attachHere(addr string, open serve.Open, at *spot) error {
-	t := a.windows[addr]
+func (a *app) attachHere(what remoteKey, at *spot) error {
+	t := a.windows[what.window]
 	if t == nil {
-		return fmt.Errorf("this window has not taken over %s", addr)
+		return fmt.Errorf("this window has not taken over %s", what.window)
 	}
 	// Already watching it: the pane comes forward rather than a second
 	// one opening on the same program, which would be two panes typing
 	// into one shell.
-	if pane := a.watchingPane(addr, open.ID); pane != nil {
+	if pane := a.watchingPane(what); pane != nil {
 		a.focus(pane)
 		return nil
+	}
+	open, ok := a.openOver(what)
+	if !ok {
+		return fmt.Errorf("%s no longer has that open", what.window)
 	}
 	sess, err := t.win.Attach(open, a.lastSize[0], a.lastSize[1])
 	if err != nil {
 		return err
 	}
-	pane, err := a.openSessionTab(sess, addr, conns.Terminal, open.Label, at)
+	pane, err := a.openSessionTab(sess, what.window, conns.Terminal, open.Label, at)
 	if err != nil {
-		// The session is ours and nothing else knows about it.
-		_ = sess.Close()
-		return err
+		// The session is ours and nothing else knows about it. Failing
+		// to let go of it leaves the pane over there being watched by
+		// nobody, which is worth saying along with why this failed.
+		return errors.Join(err, sess.Close())
 	}
 	a.paneOnWindow[pane] = t
-	a.watching[pane] = watchedID{window: addr, id: open.ID, cols: open.Cols, rows: open.Rows}
+	a.watching[pane] = what
 	return nil
+}
+
+// openOver is what a window taken over says about one of the things it
+// has open, and whether it still has it.
+func (a *app) openOver(what remoteKey) (serve.Open, bool) {
+	t := a.windows[what.window]
+	if t == nil || what.id == "" {
+		return serve.Open{}, false
+	}
+	for _, open := range t.win.Opens() {
+		if open.ID == what.id {
+			return open, true
+		}
+	}
+	return serve.Open{}, false
 }

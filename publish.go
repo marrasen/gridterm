@@ -20,7 +20,7 @@ import (
 func (a *app) snapshot(now time.Time) serve.Snapshot {
 	snap := serve.Snapshot{Window: a.localHost}
 	for _, g := range a.registry.Groups(now) {
-		for i, row := range g.Rows {
+		for _, row := range g.Rows {
 			// The size of its screen, for something that has one. It
 			// is not resized to suit a watcher, so a watcher that
 			// wants to know has to be told.
@@ -30,10 +30,9 @@ func (a *app) snapshot(now time.Time) serve.Snapshot {
 				cols, rows = size.Cols, size.Rows
 			}
 			snap.Open = append(snap.Open, serve.Open{
-				// The machine and the place in its list, which together
-				// name a row for as long as it is there. Nothing here
-				// has an identity of its own to send.
-				ID:    openID(g.Host, i),
+				// What the registry calls it, which names it for as
+				// long as it is open however the list moves around it.
+				ID:    row.ID(),
 				Host:  g.Host,
 				Kind:  row.Kind.String(),
 				Label: row.Label,
@@ -125,7 +124,7 @@ func (a *app) remoteRows(host string) []ui.ListRow {
 	}
 	var rows []ui.ListRow
 	for _, open := range t.win.Opens() {
-		if a.watchingPane(host, open.ID) != nil {
+		if a.watchingPane(remoteKeyFor(host, open)) != nil {
 			// There is a pane of this window watching it, with a row of
 			// its own. One thing open should be one row, and the row
 			// that can be put in front and closed is the better one.
@@ -141,7 +140,7 @@ func (a *app) remoteRows(host string) []ui.ListRow {
 			Text:  text,
 			Note:  open.Note,
 			Depth: 1,
-			Key:   remoteKey{window: host, open: open},
+			Key:   remoteKeyFor(host, open),
 			Mark:  remoteMark,
 			// Dimmed, because it is running somewhere else: what this
 			// window can do with it is open a pane to watch it in, not
@@ -158,22 +157,20 @@ const remoteMark = '◦'
 
 // remoteKey names a row belonging to a window taken over, so choosing
 // it can say which thing on which window.
+//
+// Only what names the thing: the window it is on and what that window
+// calls it. The list keeps the user's place by comparing keys, so a key
+// carrying what the row is doing -- its note, its state, the size of
+// its screen, the title the program gave it a moment ago -- would move
+// the selection out from under them every time any of that changed.
 type remoteKey struct {
-	window string
-
-	// open is the whole description the other window gave, which is
-	// what goes back when this row is chosen: the place in its list is
-	// not enough on its own to be sure of what is there.
-	open serve.Open
+	window, id string
 }
 
-// openID names one of the things a window has open, for as long as it
-// is open.
-//
-// The machine and the place in its list, which is all there is: nothing
-// in the registry has an identity of its own, and one made up here
-// would have to be kept in step with a list built afresh every frame.
-func openID(host string, at int) string { return host + "#" + strconv.Itoa(at) }
+// remoteKeyFor names one of the things a window taken over has open.
+func remoteKeyFor(window string, open serve.Open) remoteKey {
+	return remoteKey{window: window, id: open.ID}
+}
 
 // farNote is what a watching pane's row says about the screen it is
 // showing, when that screen is not the size of the pane.
@@ -196,16 +193,14 @@ const farSize = "shows"
 
 // watchedNote is what a pane's row says when somebody elsewhere is
 // reading it.
-func watchedNote(n int) string {
-	if n == 1 {
-		return watchedBy + " 1"
-	}
-	return watchedBy + " " + strconv.Itoa(n)
-}
+func watchedNote(n int) string { return watchedBy + " " + strconv.Itoa(n) }
 
-// isWatchedNote reports whether a note is one of ours, so it can be
-// taken away again without touching a note something else wrote.
-func isWatchedNote(note string) bool { return strings.HasPrefix(note, watchedBy) }
+// isOurNote reports whether a note is one the panel wrote about
+// watching, so it can be taken away again without writing over a note
+// something else put there.
+func isOurNote(note string) bool {
+	return strings.HasPrefix(note, watchedBy) || isFarNote(note)
+}
 
 // watchedBy begins the note on a pane somebody elsewhere is reading.
 const watchedBy = "watched by"

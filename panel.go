@@ -167,7 +167,7 @@ func (a *app) revealRow(row ui.ListRow) error {
 	if remote, ok := row.Key.(remoteKey); ok {
 		// Something running on a window this one took over. There is no
 		// pane here to put in front, so one is opened to watch it in.
-		return a.attachHere(remote.window, remote.open, nil)
+		return a.attachHere(remote, nil)
 	}
 	e, ok := row.Key.(*conns.Entry)
 	if !ok || e.Reveal == nil {
@@ -188,14 +188,6 @@ func (a *app) revealRow(row ui.ListRow) error {
 // that did not change alone. A state falls from active to settled by
 // itself, because the text is worked out again from the time passed in.
 func (a *app) refreshPanel(now time.Time) {
-	// Whoever is working in this window from elsewhere is told what it
-	// has open, whether or not anybody here is looking at the panel.
-	a.tellWatchers(now)
-	if a.panel == nil || (a.dock != nil && a.dock.Collapsed) {
-		// Nothing to build while nobody can see it. The rows are worked
-		// out again the moment the panel opens.
-		return
-	}
 	// A terminal names itself: what the program in it called the window
 	// is what the panel shows. Read rather than pushed, the way the
 	// window title is. A program that has named nothing leaves the row
@@ -217,22 +209,35 @@ func (a *app) refreshPanel(now time.Time) {
 	// looking at one terminal is what taking over a window means, and
 	// the one sitting at it has to be able to tell.
 	for pane, e := range a.panes {
+		want := ""
 		if what, ok := a.watching[pane]; ok {
 			// A pane showing a screen that is not its size, which is
 			// the one thing about it the user cannot otherwise work
-			// out from what it draws.
-			if note := farNote(pane.Size(), what.cols, what.rows); note != "" {
-				e.Note = note
-			} else if isFarNote(e.Note) {
-				e.Note = ""
-			}
-			continue
+			// out from what it draws. Asked for afresh, because the
+			// far end is redrawn at its own size whenever it changes.
+			cols, rows := a.farSize(what)
+			want = farNote(pane.Size(), cols, rows)
+		} else if n := pane.Watched(); n > 0 {
+			want = watchedNote(n)
 		}
-		if n := pane.Watched(); n > 0 {
-			e.Note = watchedNote(n)
-		} else if isWatchedNote(e.Note) {
-			e.Note = ""
+		// Only over a note of our own. The one other note a pane can
+		// carry says its channel could not be let go of, and that is
+		// the only place the user can read it.
+		if e.Note == "" || isOurNote(e.Note) {
+			e.Note = want
 		}
+	}
+
+	// Whoever is working in this window from elsewhere is told what it
+	// has open, once the rows say what they are going to say. Told
+	// whether or not anybody here is looking at the panel: what another
+	// window sees has nothing to do with whether this one's sidebar
+	// happens to be open.
+	a.tellWatchers(now)
+	if a.panel == nil || (a.dock != nil && a.dock.Collapsed) {
+		// Nothing to build while nobody can see it. The rows are worked
+		// out again the moment the panel opens.
+		return
 	}
 
 	// What is still open, so a rate belonging to something that has gone

@@ -30,6 +30,11 @@ const (
 // openSession is what a client asks for when it opens a session
 // channel: the size of the pane it will be drawn in.
 //
+// SSH's own encoding is positional: there are no field names and no
+// room for a field one end knows and the other does not. So both
+// windows have to be the same build, and one that is not is refused by
+// name when this fails to parse.
+//
 // The size comes with the request rather than in one that follows it. A
 // program reads the size as it starts, and one that started at eighty
 // by twenty-four and was told the truth afterwards has already drawn
@@ -43,16 +48,11 @@ type openSession struct {
 	// something new.
 	//
 	// It is the ID of an Open the served window sent down the control
-	// channel, so a client can only ask for what it was told about.
+	// channel, so a client can only ask for what it was told about. It
+	// names one thing for the life of that window, so a client asking
+	// about something that has since closed is told so rather than
+	// handed whatever took its place.
 	Attach string
-
-	// Kind and Label are what that Open said it was. An ID names a
-	// place in a list that is built afresh, so the served window checks
-	// these against what is there now: something closing shifts
-	// everything after it, and a stale ID would otherwise hand over a
-	// different program to be typed into.
-	Kind  string
-	Label string
 }
 
 // windowChange is the size of the pane a session is drawn in.

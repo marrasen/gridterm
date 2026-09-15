@@ -641,7 +641,7 @@ func TestAttachingShowsWhatIsAlreadyOnTheScreen(t *testing.T) {
 	})
 
 	panes := len(client.panes)
-	if err := client.attachHere(row.window, row.open, nil); err != nil {
+	if err := client.attachHere(row, nil); err != nil {
 		t.Fatalf("attach: %v", err)
 	}
 	waitForBoth(t, host, client, "a pane watching it", func() bool {
@@ -665,10 +665,19 @@ func TestAttachingShowsWhatIsAlreadyOnTheScreen(t *testing.T) {
 	// One thing open is one row. The dimmed row for it over there goes
 	// when a pane of this window is showing it.
 	client.refreshPanel(panelNow)
+	mine := 0
 	for _, r := range client.panel.Rows() {
-		if key, ok := r.Key.(remoteKey); ok && key.open.ID == row.open.ID {
+		key, ok := r.Key.(remoteKey)
+		if !ok || key.window != row.window {
+			continue
+		}
+		mine++
+		if key == row {
 			t.Error("it is listed twice: once as a pane and once as a row over there")
 		}
+	}
+	if mine == 0 {
+		t.Error("the window over there lost every row, so this proves nothing")
 	}
 
 	// And the window being watched says so, on the row of the pane
@@ -686,7 +695,7 @@ func TestAttachingShowsWhatIsAlreadyOnTheScreen(t *testing.T) {
 	// Choosing the same row again brings that pane forward rather than
 	// opening a second one typing into one shell.
 	was := len(client.panes)
-	if err := client.attachHere(row.window, row.open, nil); err != nil {
+	if err := client.attachHere(row, nil); err != nil {
 		t.Fatalf("attach again: %v", err)
 	}
 	if len(client.panes) != was {
@@ -712,21 +721,26 @@ func TestAttachingShowsWhatIsAlreadyOnTheScreen(t *testing.T) {
 	})
 }
 
-// Attaching to something that is not there says so.
+// Attaching to something that is not there says so, and opens nothing.
+//
+// The window over there says what it has open, and this one asks about
+// what it was told. A row that is not in that list is one that has
+// closed, and there is nothing to open a pane onto.
 func TestAttachingToNothingSaysSo(t *testing.T) {
-	host, client, addr := twoWindows(t)
+	_, client, addr := twoWindows(t)
+	panes := len(client.panes)
 
-	// The channel opens before the other end has decided, so the reason
-	// arrives in the pane rather than as an error here. That is where
-	// the user would see it.
-	if err := client.attachHere(addr, serve.Open{ID: "Local#99", Kind: "Terminal", Label: "gone"}, nil); err != nil {
-		t.Fatalf("attach: %v", err)
+	err := client.attachHere(remoteKey{window: addr, id: "no-such-thing"}, nil)
+
+	if err == nil {
+		t.Fatal("it attached to something that is not open")
 	}
-	pane := newestPane(t, client)
-
-	waitForBoth(t, host, client, "the reason in the pane", func() bool {
-		return strings.Contains(paneText(pane), "nothing called")
-	})
+	if !strings.Contains(err.Error(), "no longer has that open") {
+		t.Errorf("it said %v", err)
+	}
+	if len(client.panes) != panes {
+		t.Errorf("it opened a pane anyway")
+	}
 }
 
 // onlyPaneOn is the one pane a window has.
@@ -799,7 +813,10 @@ func TestTheRowChosenIsTheOneAttachedTo(t *testing.T) {
 		client.refreshPanel(panelNow)
 		for _, r := range client.panel.Rows() {
 			key, ok := r.Key.(remoteKey)
-			if ok && key.window == addr && key.open.Label == "second-shell" {
+			if !ok || key.window != addr {
+				continue
+			}
+			if open, there := client.openOver(key); there && open.Label == "second-shell" {
 				row = key
 				return true
 			}
@@ -807,15 +824,15 @@ func TestTheRowChosenIsTheOneAttachedTo(t *testing.T) {
 		return false
 	})
 
-	if err := client.attachHere(addr, row.open, nil); err != nil {
+	if err := client.attachHere(row, nil); err != nil {
 		t.Fatalf("attach: %v", err)
 	}
 	here := newestPane(t, client)
-	waitForBoth(t, host, client, "the second shell's screen", func() bool {
-		return strings.Contains(paneText(here), "this-is-the-second")
+	waitForBoth(t, host, client, "whichever shell it attached to", func() bool {
+		return strings.Contains(paneText(here), "this-is-the-")
 	})
-	if text := paneText(here); strings.Contains(text, "this-is-the-first") {
-		t.Errorf("it attached to the first shell instead: %q", text)
+	if text := paneText(here); !strings.Contains(text, "this-is-the-second") {
+		t.Errorf("it attached to the wrong shell: %q", text)
 	}
 }
 
@@ -835,7 +852,7 @@ func TestAPaneSaysWhenTheFarScreenIsAnotherSize(t *testing.T) {
 	if !isFarNote("shows 120x40") {
 		t.Error("it does not recognise its own note")
 	}
-	if isFarNote("via bastion") {
+	if isFarNote("via bastion") || isOurNote("via bastion") {
 		t.Error("it claimed somebody else's note")
 	}
 }
@@ -848,10 +865,233 @@ func TestAWatchedPaneSaysSo(t *testing.T) {
 	if got := watchedNote(3); got != "watched by 3" {
 		t.Errorf("three watchers gave %q", got)
 	}
-	if !isWatchedNote(watchedNote(2)) {
+	if !isOurNote(watchedNote(2)) {
 		t.Error("it does not recognise its own note")
 	}
-	if isWatchedNote("exit 3") {
+	if isOurNote("could not be closed") {
 		t.Error("it claimed somebody else's note")
+	}
+}
+
+// A row keeps its name when something before it on the list closes.
+//
+// This is what makes a row safe to click. Named by where it sat in a
+// list built afresh every frame, a row would quietly become a different
+// program the moment anything above it went, and the user would be
+// typing into a shell they never chose.
+func TestARowKeepsItsNameWhenSomethingElseCloses(t *testing.T) {
+	host, client, addr := twoWindows(t)
+	first := onlyPaneOn(t, host)
+
+	second := len(host.shells)
+	if err := host.openTab(); err != nil {
+		t.Fatalf("a second shell there: %v", err)
+	}
+	newest := newestPane(t, host)
+	host.setTitle(t, second, newest, "the-one-i-want")
+	host.shells[second].out <- []byte("this-is-the-second\r\n")
+
+	var row remoteKey
+	waitForBoth(t, host, client, "a row for the second shell", func() bool {
+		host.refreshPanel(panelNow)
+		client.refreshPanel(panelNow)
+		for _, r := range client.panel.Rows() {
+			key, ok := r.Key.(remoteKey)
+			if !ok || key.window != addr {
+				continue
+			}
+			if open, there := client.openOver(key); there && open.Label == "the-one-i-want" {
+				row = key
+				return true
+			}
+		}
+		return false
+	})
+
+	// The one before it goes, which moves everything after it up.
+	if err := host.closePane(first); err != nil {
+		t.Fatalf("close the first: %v", err)
+	}
+	waitForBoth(t, host, client, "the other window to say it has one less", func() bool {
+		host.refreshPanel(panelNow)
+		for _, open := range client.windows[addr].win.Opens() {
+			if open.ID == row.id && open.Label == "the-one-i-want" {
+				return true
+			}
+		}
+		return false
+	})
+
+	// The row the user was shown is still the shell they were shown it
+	// for.
+	if err := client.attachHere(row, nil); err != nil {
+		t.Fatalf("attach: %v", err)
+	}
+	here := newestPane(t, client)
+	waitForBoth(t, host, client, "whichever shell it attached to", func() bool {
+		return strings.Contains(paneText(here), "this-is-the-")
+	})
+	if text := paneText(here); !strings.Contains(text, "this-is-the-second") {
+		t.Errorf("the row now holds a different shell: %q", text)
+	}
+}
+
+// How big a screen is over there travels with the row, because watching
+// does not resize it and the pane showing it has no other way to know.
+func TestTheSizeOfAScreenOverThereTravels(t *testing.T) {
+	host, client, addr := twoWindows(t)
+	hostPane := onlyPaneOn(t, host)
+
+	var open serve.Open
+	waitForBoth(t, host, client, "a row with a size on it", func() bool {
+		host.refreshPanel(panelNow)
+		for _, o := range client.windows[addr].win.Opens() {
+			if o.Cols > 0 && o.Rows > 0 {
+				open = o
+				return true
+			}
+		}
+		return false
+	})
+
+	if want := hostPane.Size(); open.Cols != want.Cols || open.Rows != want.Rows {
+		t.Errorf("it said %dx%d for a pane that is %dx%d",
+			open.Cols, open.Rows, want.Cols, want.Rows)
+	}
+}
+
+// What this window has open is told to whoever is working in it from
+// elsewhere, whether or not the sidebar here happens to be open.
+func TestWhatIsOpenIsToldWithTheSidebarShut(t *testing.T) {
+	host, client, addr := twoWindows(t)
+	hostPane := onlyPaneOn(t, host)
+	host.setTitle(t, 0, hostPane, "named-while-shut")
+
+	if host.dock == nil {
+		t.Fatal("there is no sidebar to shut")
+	}
+	host.dock.Collapsed = true
+
+	waitForBoth(t, host, client, "the name to reach the other window", func() bool {
+		host.refreshPanel(panelNow)
+		for _, o := range client.windows[addr].win.Opens() {
+			if o.Label == "named-while-shut" {
+				return true
+			}
+		}
+		return false
+	})
+}
+
+// A row keeps its key while what it is doing changes, so the user's
+// place in the list is not taken from them by a connection going quiet.
+func TestARemoteRowKeepsItsKeyWhileItWorks(t *testing.T) {
+	busy := serve.Open{
+		ID: "margit#1", Kind: "Terminal", Label: "vim",
+		Note: "via bastion", State: "active", Cols: 80, Rows: 24,
+	}
+	quiet := busy
+	quiet.Note, quiet.State, quiet.Cols, quiet.Rows = "", "settled", 120, 40
+
+	if remoteKeyFor("margit", busy) != remoteKeyFor("margit", quiet) {
+		t.Error("the row changed key when the program went quiet")
+	}
+
+	other := busy
+	other.ID = "margit#2"
+	if remoteKeyFor("margit", busy) == remoteKeyFor("margit", other) {
+		t.Error("two different rows share a key")
+	}
+	if remoteKeyFor("margit", busy) == remoteKeyFor("web1", busy) {
+		t.Error("the same row on two windows shares a key")
+	}
+}
+
+// The size a watching pane reports is the size the far screen is now,
+// not the size it was when the pane opened.
+//
+// The far end is redrawn at its own size whenever that changes, and a
+// size remembered from the moment of attaching would go on being shown
+// long after it stopped being true.
+func TestTheFarScreenSizeIsAskedForAgain(t *testing.T) {
+	host, client, addr := twoWindows(t)
+	hostPane := onlyPaneOn(t, host)
+
+	var row remoteKey
+	waitForBoth(t, host, client, "a row for the shell over there", func() bool {
+		host.refreshPanel(panelNow)
+		client.refreshPanel(panelNow)
+		for _, r := range client.panel.Rows() {
+			if key, ok := r.Key.(remoteKey); ok && key.window == addr {
+				row = key
+				return true
+			}
+		}
+		return false
+	})
+	if err := client.attachHere(row, nil); err != nil {
+		t.Fatalf("attach: %v", err)
+	}
+	here := newestPane(t, client)
+
+	// The screen over there is made a size this pane is not.
+	was := hostPane.Size()
+	hostPane.Layout(ui.Size{Cols: was.Cols - 7, Rows: was.Rows - 3})
+
+	waitForBoth(t, host, client, "the row to say what size it is now", func() bool {
+		host.refreshPanel(panelNow)
+		client.refreshPanel(panelNow)
+		e := client.panes[here]
+		return e != nil && e.Note == farNote(here.Size(), was.Cols-7, was.Rows-3)
+	})
+
+	// And back again, so the note goes when there is nothing to say.
+	hostPane.Layout(here.Size())
+	waitForBoth(t, host, client, "the note to go when the sizes agree", func() bool {
+		host.refreshPanel(panelNow)
+		client.refreshPanel(panelNow)
+		e := client.panes[here]
+		return e != nil && e.Note == ""
+	})
+}
+
+// A note somebody else put on a row is not written over.
+//
+// The one other note a pane can carry says its channel could not be let
+// go of, and its row is the only place the user can read that.
+func TestANoteAboutAFailureIsNotWrittenOver(t *testing.T) {
+	host, client, addr := twoWindows(t)
+	hostPane := onlyPaneOn(t, host)
+
+	var row remoteKey
+	waitForBoth(t, host, client, "a row for the shell over there", func() bool {
+		host.refreshPanel(panelNow)
+		client.refreshPanel(panelNow)
+		for _, r := range client.panel.Rows() {
+			if key, ok := r.Key.(remoteKey); ok && key.window == addr {
+				row = key
+				return true
+			}
+		}
+		return false
+	})
+	if err := client.attachHere(row, nil); err != nil {
+		t.Fatalf("attach: %v", err)
+	}
+	waitForBoth(t, host, client, "the host to know it is watched", func() bool {
+		return hostPane.Watched() == 1
+	})
+
+	// Something else has written on the row of the pane being watched.
+	host.refreshPanel(panelNow)
+	e := host.panes[hostPane]
+	if e == nil {
+		t.Fatal("the pane over there has no row")
+	}
+	e.Note = "could not be closed"
+
+	host.refreshPanel(panelNow)
+	if e.Note != "could not be closed" {
+		t.Errorf("the failure was written over with %q", e.Note)
 	}
 }

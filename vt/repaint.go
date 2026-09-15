@@ -28,19 +28,11 @@ import (
 // palette index it came from would mean resolving it again at the other
 // end, against a palette that may not be the same.
 func Repaint(g *grid.Grid, m Screenful) string {
-	cols, rows := g.Size()
 	var b strings.Builder
-	// Which buffer first, because switching afterwards would throw the
-	// screen away: a program in the alternate buffer is drawn there,
-	// and one that has left it is not.
-	if m.Alt {
-		b.WriteString("\x1b[?1049h")
-	} else {
-		b.WriteString("\x1b[?1049l")
-	}
-	// Then the two modes that change what happens to what comes next
-	// rather than what is already drawn: whether a long line wraps, and
-	// how the arrow keys are spelled back to the program.
+	// The two modes that change what happens to what comes next rather
+	// than what is already drawn, before anything is drawn: whether a
+	// long line wraps, and how the arrow keys are spelled back to the
+	// program.
 	if m.Wrap {
 		b.WriteString("\x1b[?7h")
 	} else {
@@ -51,8 +43,34 @@ func Repaint(g *grid.Grid, m Screenful) string {
 	} else {
 		b.WriteString("\x1b[?1l")
 	}
-	// Home, and no scrollback of the far end's own left showing through
-	// underneath what is written over it.
+
+	// The ordinary screen first, always, even for a program drawing in
+	// the alternate one. It is what the far end goes back to when that
+	// program quits, and nothing else is ever going to send it: a shell
+	// coming back to its prompt does not redraw.
+	b.WriteString("\x1b[?1049l")
+	if m.Under != nil {
+		writeCells(&b, m.Under)
+	}
+	if m.Alt {
+		b.WriteString("\x1b[?1049h")
+	}
+	writeCells(&b, g)
+
+	// The cursor last, so it is left where the program had it rather
+	// than after whatever was written last. Put where it belongs even
+	// when it is hidden: the moment the program shows it again without
+	// moving it, one left at the end of the text would appear in the
+	// wrong place.
+	writeCursor(&b, g, m)
+	return b.String()
+}
+
+// writeCells draws one screenful, from a clear to a reset.
+func writeCells(b *strings.Builder, g *grid.Grid) {
+	cols, rows := g.Size()
+	// Home, and no scrollback of the far end's own left showing
+	// through underneath what is written over it.
 	b.WriteString("\x1b[H\x1b[2J")
 
 	var last grid.Cell
@@ -79,31 +97,48 @@ func Repaint(g *grid.Grid, m Screenful) string {
 				b.WriteString(sgr(c, g))
 				last, first = c, false
 			}
-			if c.Rune == 0 {
-				b.WriteByte(' ')
-			} else {
-				b.WriteRune(c.Rune)
-			}
-			for _, cb := range c.Comb {
-				b.WriteRune(cb)
-			}
+			writeCell(b, c)
 		}
 	}
 	b.WriteString("\x1b[0m")
+}
 
-	// The cursor last, so it is left where the program had it rather
-	// than after whatever was written last. Put where it belongs even
-	// when it is hidden: the moment the program shows it again without
-	// moving it, one left at the end of the text would appear in the
-	// wrong place.
+// writeCell writes one cell's character and whatever sits on it.
+func writeCell(b *strings.Builder, c grid.Cell) {
+	if c.Rune == 0 {
+		b.WriteByte(' ')
+	} else {
+		b.WriteRune(c.Rune)
+	}
+	for _, cb := range c.Comb {
+		b.WriteRune(cb)
+	}
+}
+
+// writeCursor puts the cursor back where the program had it.
+//
+// A cursor that has filled the last column of a row is not simply at
+// that column: the wrap is owed and happens when the next character
+// arrives. Moving there would lose that, and every character from then
+// on would land a column out. So the cell is written again instead,
+// which is what put the far end in that state to begin with.
+func writeCursor(b *strings.Builder, g *grid.Grid, m Screenful) {
+	cols, _ := g.Size()
 	cur := g.Cursor()
-	fmt.Fprintf(&b, "\x1b[%d;%dH", cur.Y+1, cur.X+1)
+	if m.WrapNext && cur.X == cols-1 {
+		fmt.Fprintf(b, "\x1b[%d;%dH", cur.Y+1, cur.X+1)
+		c := g.At(cur.X, cur.Y)
+		b.WriteString(sgr(c, g))
+		writeCell(b, c)
+		b.WriteString("\x1b[0m")
+	} else {
+		fmt.Fprintf(b, "\x1b[%d;%dH", cur.Y+1, cur.X+1)
+	}
 	if cur.Visible {
 		b.WriteString("\x1b[?25h")
 	} else {
 		b.WriteString("\x1b[?25l")
 	}
-	return b.String()
 }
 
 // Screenful is what a screen carries that its grid does not.
@@ -118,6 +153,11 @@ type Screenful struct {
 	// where a full-screen program draws.
 	Alt bool
 
+	// Under is the ordinary screen that the alternate one is covering,
+	// or nil. It is sent so that the far end has something to go back
+	// to when the program in the alternate buffer quits.
+	Under *grid.Grid
+
 	// Wrap is DECAWM: whether a line too long for the screen carries on
 	// to the next.
 	Wrap bool
@@ -125,6 +165,12 @@ type Screenful struct {
 	// AppCursor is DECCKM, which changes how the arrow keys are spelled
 	// back to the program.
 	AppCursor bool
+
+	// WrapNext says the last character filled the final column and the
+	// wrap has not happened yet. It happens when the next character
+	// arrives, so a screen sent without it is a column out from there
+	// on.
+	WrapNext bool
 }
 
 // lastShowing is the rightmost cell of a row that would show anything,

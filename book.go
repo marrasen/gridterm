@@ -153,10 +153,11 @@ func (a *app) registerServerCommands(cmds ...ui.Command) {
 func (a *app) openTerminalOn(host string) error {
 	switch {
 	case a.isHere(host):
+		// A new pane already runs there, which is what a new tab is.
 		return a.openTab()
 	case a.isWindow(host):
 		return a.openOnWindow(host, nil)
-	case a.savedWindows[host]:
+	case a.savedWindow(host):
 		// Nothing runs on a window until it is taken over, and there is
 		// no shell on one to log in to: it serves gridterm's own
 		// protocol and answers nothing else.

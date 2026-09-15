@@ -965,17 +965,7 @@ func (a *app) disconnectHere() error {
 
 // openTerminalHere opens another terminal on the machine the user is
 // looking at.
-func (a *app) openTerminalHere() error {
-	host := a.currentHost()
-	switch {
-	case a.isHere(host):
-		// A new pane already runs there, which is what a new tab is.
-		return a.openTab()
-	case a.isWindow(host):
-		return a.openOnWindow(host, nil)
-	}
-	return a.openOn(host, nil, nil)
-}
+func (a *app) openTerminalHere() error { return a.openTerminalOn(a.currentHost()) }
 
 // openCommandHere asks for a command to run on the machine the user is
 // looking at, connecting to it if the connection has since been closed.

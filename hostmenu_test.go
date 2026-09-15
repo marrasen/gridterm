@@ -1,12 +1,15 @@
 package main
 
 import (
+	"os"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/input"
 	"github.com/marrasen/gridterm/internal/sshtest"
+	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/term"
 )
@@ -322,5 +325,80 @@ func TestThePlusOnAWindowOffersPanesAndFiles(t *testing.T) {
 		if it.Command == "conn.disconnect" && it.Title != "Let go of this window" {
 			t.Errorf("it says %q", it.Title)
 		}
+	}
+}
+
+// The plus on a saved window's row takes it over.
+//
+// The user's own path: click the plus on the heading, choose the line
+// it offers. Driven through the menu rather than by calling the command,
+// because every fix so far has been in a place the real path did not go.
+func TestThePlusOnASavedWindowTakesItOver(t *testing.T) {
+	host := newTestApp(t, 90, 30)
+	withDialogs(t, host)
+	keyFile, line := aKeyFile(t)
+	withServing(t, host, line)
+	if err := host.startServing("0", whereHere); err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+	addr := host.server.Addr()
+
+	client := newTestApp(t, 90, 30)
+	withDialogs(t, client)
+	withPanel(t, client)
+	if err := client.book.Put(remote.Host{
+		Name: "statio", Address: hostOf(t, addr), Port: portOf(t, addr),
+		Window: true, Identities: []string{keyFile},
+	}, ""); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	client.refreshServers()
+
+	menu := clickPlus(t, client, "statio")
+	if !offers(menu, "conn.terminal") {
+		t.Fatalf("the plus offers %v", menuCommands(menu))
+	}
+	chooseMenuItem(t, menu, "conn.terminal")
+
+	// Nothing should have gone wrong, and nothing should be asking.
+	if f, ok := client.root.Modal().(*ui.Form); ok {
+		t.Fatalf("it reported %q: %v", f.Title, f.Lines)
+	}
+	answer(t, client, "Connect")
+	waitFor(t, client, "the window to be taken over", func() bool {
+		return client.windows["statio"] != nil
+	})
+}
+
+// The commands that act on "here" do it by asking which machine and
+// handing that to the one that knows what to do with it.
+//
+// There were two near-identical routines, one for a machine named and
+// one for the machine in front of the user, and a window was handled in
+// only one of them. Clicking the plus took the other. Checked in the
+// source, because the mistake is one of shape: a second copy of the
+// switch is the bug, whatever it says today.
+func TestTheHereCommandsDelegate(t *testing.T) {
+	raw, err := os.ReadFile("machines.go")
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	body := string(raw)
+	at := strings.Index(body, "func (a *app) openTerminalHere() error")
+	if at < 0 {
+		t.Fatal("openTerminalHere is gone; this test needs rewriting")
+	}
+	// Up to whatever comes next at the left margin, which reads a
+	// one-line function as well as a block.
+	fn := body[at:]
+	if cut := strings.Index(fn[1:], "\nfunc "); cut >= 0 {
+		fn = fn[:cut+1]
+	}
+	if strings.Contains(fn, "isWindow") || strings.Contains(fn, "openOn(") {
+		t.Errorf("openTerminalHere decides for itself again rather than asking "+
+			"openTerminalOn:\n%s", fn)
+	}
+	if !strings.Contains(fn, "openTerminalOn(") {
+		t.Errorf("openTerminalHere no longer hands over to openTerminalOn:\n%s", fn)
 	}
 }

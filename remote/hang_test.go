@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -169,5 +170,148 @@ func TestGivingUpOnAHandshakeThatWillNotStop(t *testing.T) {
 	case <-nc.closed:
 	default:
 		t.Error("the connection was left open")
+	}
+}
+
+// gated is a connection that holds its first read until it is let
+// through, and that closing does not stop.
+//
+// It is the shape of a connection carried inside another one: the far
+// end can still answer after this end has given up and closed it.
+type gated struct {
+	net.Conn
+	open chan struct{}
+	once sync.Once
+}
+
+func (g *gated) Read(p []byte) (int, error) {
+	g.once.Do(func() { <-g.open })
+	return g.Conn.Read(p)
+}
+
+// Close takes effect only once the read has been let through.
+//
+// Closing a channel of another connection is like this: this end is
+// closed, a read already waiting on it carries on, and the far end goes
+// on answering until it notices.
+func (g *gated) Close() error {
+	select {
+	case <-g.open:
+		return g.Conn.Close()
+	default:
+		return nil
+	}
+}
+
+// A handshake that lands after it was given up on is closed.
+//
+// Giving up does not stop it: the far end may still answer, and the
+// connection it makes belongs to nobody. Left open, it is a login on a
+// machine that thinks somebody is working in it.
+func TestAHandshakeThatLandsAfterGivingUpIsClosed(t *testing.T) {
+	s := sshtest.New(t)
+	open := make(chan struct{})
+	var letThrough sync.Once
+	release := func() { letThrough.Do(func() { close(open) }) }
+	defer release()
+
+	to := func(ctx context.Context, addr string) (net.Conn, error) {
+		c, err := overTCP(ctx, addr)
+		if err != nil {
+			return nil, err
+		}
+		return &gated{Conn: c, open: open}, nil
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		c, err := dialOnce(ctx, to, s.Addr(), &ssh.ClientConfig{
+			User:            "tester",
+			Auth:            []ssh.AuthMethod{ssh.Password(sshtest.Password)},
+			HostKeyCallback: ssh.FixedHostKey(s.HostKey()),
+		}, nil)
+		if c != nil {
+			_ = c.Close()
+		}
+		done <- err
+	}()
+
+	// Long enough to be inside the handshake rather than still reaching
+	// the machine.
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("dialOnce = %v, want it to say it was cancelled", err)
+	}
+
+	// Now let the handshake finish. What it makes is nobody's, and has
+	// to be closed rather than left on the server.
+	release()
+	waitForConns(t, s, 0)
+}
+
+// Cancelled between the handshake finishing and this noticing: the
+// connection is closed rather than handed back.
+func TestAConnectionCancelledAsItFinishedIsClosed(t *testing.T) {
+	s := sshtest.New(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	c, err := dialOnce(ctx, overTCP, s.Addr(), &ssh.ClientConfig{
+		User: "tester",
+		Auth: []ssh.AuthMethod{ssh.Password(sshtest.Password)},
+		HostKeyCallback: func(string, net.Addr, ssh.PublicKey) error {
+			// The user gives up while the handshake is still running,
+			// which is the only way to land on that branch on purpose.
+			cancel()
+			return nil
+		},
+	}, nil)
+	if c != nil {
+		_ = c.Close()
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("dialOnce = %v, want it to say it was cancelled", err)
+	}
+	waitForConns(t, s, 0)
+}
+
+// Signing in is not bounded by the time the far end had to say who it
+// is.
+//
+// It can wait on a passphrase dialog, and a bound that went on running
+// would close the connection while the user was typing.
+func TestSigningInIsNotBoundedByTheHello(t *testing.T) {
+	was := helloTimeout
+	helloTimeout = 100 * time.Millisecond
+	t.Cleanup(func() { helloTimeout = was })
+
+	s := sshtest.New(t)
+	cfg := testConfig(t, s)
+	check := cfg.HostKeyCallback
+	cfg.HostKeyCallback = func(hostname string, addr net.Addr, key ssh.PublicKey) error {
+		// As long as somebody reading a fingerprint and deciding.
+		time.Sleep(5 * helloTimeout)
+		return check(hostname, addr, key)
+	}
+	c, err := Connect(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	_ = c.Close()
+}
+
+// waitForConns waits until the server holds this many live connections.
+func waitForConns(t *testing.T, s *sshtest.Server, want int) {
+	t.Helper()
+	for deadline := time.Now().Add(5 * time.Second); ; {
+		if s.Live() == want {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the server holds %d connections, want %d", s.Live(), want)
+		}
+		time.Sleep(time.Millisecond)
 	}
 }

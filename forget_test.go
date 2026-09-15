@@ -194,9 +194,38 @@ func TestAServerMessageForAConnectionAlreadyGivenUpOnIsNotShown(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	ask.Notice(ctx, remote.Notice{User: "rdp", Host: "here", Text: "hello"})
+	if n := a.pump.pending(); n != 0 {
+		t.Errorf("%d pieces of work were posted, want none: the dialog was built anyway", n)
+	}
 
 	a.pump.run()
 	if f, ok := a.root.Modal().(*ui.Form); ok {
 		t.Errorf("a dialog opened anyway: %v", f.Lines)
+	}
+}
+
+// A question asked for a connection already given up on is not shown.
+//
+// An abandoned handshake goes on running and can reach the point where
+// it wants a password. A dialog for it would take the screen, and the
+// keys, for a connection nobody is waiting for.
+func TestAQuestionForAConnectionAlreadyGivenUpOnIsNotAsked(t *testing.T) {
+	a := newTestApp(t, 100, 30)
+	withPanel(t, a)
+	withDialogs(t, a)
+	ask := &askUser{app: a.app}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := ask.Password(ctx, "rdp", "marras-skylake"); err == nil {
+		t.Fatal("a password was asked for a connection given up on")
+	}
+	if n := a.pump.pending(); n != 0 {
+		t.Errorf("%d pieces of work were posted, want none: the dialog was built anyway", n)
+	}
+
+	a.pump.run()
+	if f, ok := a.root.Modal().(*ui.Form); ok {
+		t.Errorf("a dialog opened anyway: %v", f.Title)
 	}
 }

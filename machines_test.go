@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"net"
 	"strconv"
@@ -850,5 +851,100 @@ func TestClosingAConnectionStillBeingMadeLetsGoOfItsNames(t *testing.T) {
 	// And another attempt can be made at once, which is the whole point.
 	if err := a.connectSaved("db"); err != nil {
 		t.Fatalf("a second attempt: %v", err)
+	}
+}
+
+// A name another attempt has taken is left alone when the first one
+// lets go.
+//
+// A dial that is still unwinding comes back after the user has tried
+// again. Letting go of the name then would leave the second attempt
+// unnamed, and a third one would be allowed to start beside it.
+func TestLettingGoLeavesANameAnotherAttemptHasTaken(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+
+	first := &dialling{cancel: func() {}, names: []string{"edge"}}
+	second := &dialling{cancel: func() {}, names: []string{"edge"}}
+	a.holdNames(first)
+	a.holdNames(second)
+
+	a.release(first)
+	if a.opening["edge"] != second {
+		t.Fatal("the second attempt lost the name the first one let go of")
+	}
+	a.release(second)
+	if a.opening["edge"] != nil {
+		t.Fatal("the name is still held by nobody")
+	}
+}
+
+// A machine that answers after another attempt has taken its name is
+// closed, not kept.
+//
+// Two connections to one machine would leave the window holding the
+// second and closing neither.
+func TestAMachineNobodyHasANameForIsClosed(t *testing.T) {
+	s := sshtest.New(t)
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	pinServers(t, a, s)
+
+	conn, err := remote.Connect(t.Context(), a.prepare(serverConfig(t, s)))
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	waitFor(t, a, "the connection to be made", func() bool { return s.Live() == 1 })
+
+	mine := &dialling{cancel: func() {}, names: []string{"edge"}}
+	theirs := &dialling{cancel: func() {}, names: []string{"edge"}}
+	a.holdNames(theirs)
+
+	route := []step{{name: "edge", cfg: serverConfig(t, s)}}
+	a.reached(mine, newConnLog(nil), route, 0, conn, "")
+
+	if a.machines["edge"] != nil {
+		t.Fatal("a machine was held under a name another attempt owns")
+	}
+	waitFor(t, a, "the connection nobody has a name for to close", func() bool {
+		return s.Live() == 0
+	})
+}
+
+// Giving up stops the route where it is, rather than signing in to the
+// next machine along.
+func TestGivingUpStopsTheRouteWhereItIs(t *testing.T) {
+	near := sshtest.New(t)
+	far := sshtest.New(t)
+	a := newTestApp(t, 80, 24)
+	pinServers(t, a, near, far)
+
+	route := []step{
+		{name: "edge", cfg: a.prepare(serverConfig(t, near))},
+		{name: "db", cfg: a.prepare(serverConfig(t, far))},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var made []*remote.Conn
+	err := dialRoute(ctx, nil, route, func(_ int, conn *remote.Conn) {
+		made = append(made, conn)
+		// What closing the pane does, while the route is between
+		// machines.
+		cancel()
+	})
+	for _, conn := range made {
+		if err := conn.Close(); err != nil {
+			t.Errorf("close what was opened: %v", err)
+		}
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("dialRoute = %v, want it to say it was given up on", err)
+	}
+	if n := far.Conns(); n != 0 {
+		t.Fatalf("the machine beyond the one given up on saw %d connections, want none", n)
+	}
+	// And it does not blame a machine it never tried to sign in to.
+	if strings.Contains(err.Error(), "db") {
+		t.Fatalf("dialRoute = %v, want it not to name the machine it stopped before", err)
 	}
 }

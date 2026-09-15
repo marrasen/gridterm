@@ -2,6 +2,7 @@ package term
 
 import (
 	"errors"
+	"strings"
 	"sync"
 
 	"github.com/marrasen/gridterm/grid"
@@ -175,6 +176,53 @@ func (t *Terminal) endWatchers() {
 		w.Ended()
 	}
 }
+
+// Text is the live screen as plain text: one line per row, trailing
+// spaces cut, nothing else.
+//
+// It is what somebody reads off the screen, which is what an agent
+// working in this pane is given. Not the escape sequences that would
+// draw it: those are for another terminal, and this is for a reader.
+func (t *Terminal) Text() string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	cols, rows := t.g.Size()
+	g := grid.New(cols, rows, t.g.DefaultFG, t.g.DefaultBG)
+	t.term.RenderLive(g)
+
+	var b strings.Builder
+	for y := 0; y < rows; y++ {
+		var line strings.Builder
+		for x := 0; x < cols; x++ {
+			c := g.At(x, y)
+			if c.Width == 0 {
+				// The second half of a double-width character, already
+				// written by the first.
+				continue
+			}
+			if c.Rune == 0 {
+				line.WriteByte(' ')
+			} else {
+				line.WriteRune(c.Rune)
+			}
+			for _, cb := range c.Comb {
+				line.WriteRune(cb)
+			}
+		}
+		if y > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteString(strings.TrimRight(line.String(), " "))
+	}
+	return b.String()
+}
+
+// Said counts how many times the program has said anything.
+//
+// It is how something watching from outside knows a screen has moved
+// without comparing it: output that redraws the same picture is still
+// the program working.
+func (t *Terminal) Said() uint64 { return t.said.Load() }
 
 // Send puts input into the terminal as though it had been typed here.
 //

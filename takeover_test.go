@@ -21,6 +21,7 @@ import (
 	"github.com/marrasen/gridterm/serve"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/term"
+	"github.com/marrasen/gridterm/vfs"
 )
 
 // A real window serving, and a real window working in its shell.
@@ -492,24 +493,25 @@ func TestTheCommandsOnAWindowReachTheWindow(t *testing.T) {
 	}
 }
 
-// A window taken over is not offered a file browser, because nothing
-// can browse one yet. A command that cannot work is worse than none.
-func TestAWindowIsNotOfferedAFileBrowser(t *testing.T) {
+// A window taken over is offered both of the things that connection
+// carries: a terminal on it and its files.
+func TestAWindowIsOfferedATerminalAndABrowser(t *testing.T) {
 	_, client, addr := twoWindows(t)
 
-	for _, title := range commandTitles(client) {
-		if strings.Contains(title, "Browse files on "+addr) {
-			t.Errorf("it offers %q, which cannot work", title)
-		}
-	}
-	var found bool
+	var terminal, files bool
 	for _, title := range commandTitles(client) {
 		if strings.Contains(title, "Open a terminal on "+addr) {
-			found = true
+			terminal = true
+		}
+		if strings.Contains(title, "Browse files on "+addr) {
+			files = true
 		}
 	}
-	if !found {
+	if !terminal {
 		t.Errorf("it offers no way to open a terminal on %s", addr)
+	}
+	if !files {
+		t.Errorf("it offers no way to browse the files of %s", addr)
 	}
 }
 
@@ -1105,7 +1107,6 @@ func TestANoteAboutAFailureIsNotWrittenOver(t *testing.T) {
 // with a second login for everything else.
 func TestTheFilesOfTheWindowTakenOverAreBrowsable(t *testing.T) {
 	host, client, addr := twoWindows(t)
-	_ = host
 
 	// Something on the serving machine's disk to find. The pane is
 	// asked for a directory by name, so the test does not depend on
@@ -1130,13 +1131,21 @@ func TestTheFilesOfTheWindowTakenOverAreBrowsable(t *testing.T) {
 	if got := pane.FS().Name(); got != addr {
 		t.Errorf("the pane is on %q, not the window taken over", got)
 	}
+	// Reached over a connection, not by opening the same disk twice.
+	// A filesystem this window could read on its own would spell paths
+	// the way this machine does.
+	if got := pane.FS().Sep(); got != '/' {
+		t.Errorf("it separates paths with %q, which is not what crosses a wire", got)
+	}
 
 	// What is on that machine's disk, read over the same connection the
 	// shells ride on.
-	entries, err := pane.FS().ReadDir(dir)
-	if err != nil {
-		t.Fatalf("read %s over there: %v", dir, err)
-	}
+	var entries []vfs.Entry
+	within(t, "read the directory over there", func() error {
+		var err error
+		entries, err = pane.FS().ReadDir(overThere(dir))
+		return err
+	})
 	found := false
 	for _, e := range entries {
 		if e.Name == "over-there.txt" {
@@ -1147,13 +1156,42 @@ func TestTheFilesOfTheWindowTakenOverAreBrowsable(t *testing.T) {
 		t.Errorf("the file was not there: %v", entries)
 	}
 
-	// And letting go of the window takes the pane with it, because
-	// nothing else would.
-	if err := client.dropWindow(addr); err != nil {
-		t.Fatalf("drop: %v", err)
+	// And it really is that connection. The window over there stops
+	// serving, and the pane can no longer read a directory it has just
+	// read -- which a filesystem of this machine's own could.
+	if err := host.stopServing(); err != nil {
+		t.Fatalf("stop serving: %v", err)
 	}
-	if got := len(b.view.Panes()); got != 0 {
-		t.Errorf("%d file panes are still reading through a window that has gone", got)
+	waitForBoth(t, host, client, "the pane to lose the machine it was reading", func() bool {
+		_, err := pane.FS().ReadDir(overThere(dir))
+		return err != nil
+	})
+}
+
+// overThere spells a path of this machine the way a file session over
+// the wire spells it: one root, forward slashes, and a drive letter
+// under the root on Windows.
+func overThere(dir string) string {
+	at := filepath.ToSlash(dir)
+	if !strings.HasPrefix(at, "/") {
+		at = "/" + at
+	}
+	return at
+}
+
+// within runs something that talks to another window, failing the test
+// rather than hanging it when the other end goes quiet.
+func within(t *testing.T, what string, do func() error) {
+	t.Helper()
+	done := make(chan error, 1)
+	go func() { done <- do() }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("%s: %v", what, err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatalf("%s: the other window never answered", what)
 	}
 }
 
@@ -1264,5 +1302,28 @@ func TestLettingGoOfFilesOnAWindowThatStoppedAnsweringComesBack(t *testing.T) {
 	}
 	if got := ch.closed(); got == 0 {
 		t.Error("the channel was left open, so nothing freed the client")
+	}
+}
+
+// The plus on a window taken over offers the window's own list.
+//
+// Not only the list itself: the row has to ask for it. Asked for the
+// machine list instead, it would offer a command, a tunnel and a proxy,
+// none of which can work on a window.
+func TestTheRowOfAWindowOpensTheWindowsMenu(t *testing.T) {
+	_, client, addr := twoWindows(t)
+	client.refreshPanel(panelNow)
+
+	menu := clickPlus(t, client, addr)
+
+	for _, want := range []string{"conn.terminal", "conn.files", "conn.disconnect"} {
+		if !offers(menu, want) {
+			t.Errorf("the menu does not offer %s: %v", want, menuCommands(menu))
+		}
+	}
+	for _, not := range []string{"conn.command", "conn.tunnel", "conn.socks"} {
+		if offers(menu, not) {
+			t.Errorf("the menu offers %s, which cannot work on a window", not)
+		}
 	}
 }

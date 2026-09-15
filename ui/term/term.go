@@ -105,6 +105,11 @@ type Terminal struct {
 	// frame with nothing to show can skip re-rendering.
 	pending atomic.Bool
 
+	// said counts how many times the program has said anything, for
+	// something watching from outside that needs to know the screen
+	// moved without comparing it.
+	said atomic.Uint64
+
 	// exited is set once the shell is gone.
 	exited atomic.Bool
 
@@ -515,6 +520,7 @@ func (t *Terminal) readLoop() {
 			t.tell(buf[:n])
 			t.mu.Unlock()
 			t.pending.Store(true)
+			t.said.Add(1)
 		}
 		if err != nil {
 			if !errors.Is(err, io.EOF) {

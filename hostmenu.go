@@ -71,10 +71,9 @@ func (a *app) openHostMenu(row ui.ListRow) error {
 // list: a terminal there is one more pane, and there is nothing to
 // tunnel or to close.
 //
-// A window taken over gets a list of its own. What crosses that
-// connection is panes and files, so a command, a tunnel and a proxy are
-// left off: they are things this window asks a machine for, and the
-// machine over there is not this one's to ask.
+// A window taken over gets a list of its own: panes and files are what
+// cross that connection, so a command, a tunnel and a proxy are left
+// off.
 //
 // A machine the server list holds can also be edited and forgotten.
 // This is where they belong: the row is the machine, so the plus on it

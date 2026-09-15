@@ -264,3 +264,70 @@ func TestRegistryFromSeveralGoroutines(t *testing.T) {
 		t.Fatalf("%d entries left", r.Len())
 	}
 }
+
+// A name is given once and never given again.
+//
+// Another window asks about what this one has open by name, so a name
+// has to mean one thing for as long as this window is running. A name
+// worked out from where the entry sits in the list would move under
+// whoever was using it every time anything closed.
+func TestANameIsGivenOnceAndNeverReused(t *testing.T) {
+	r := New()
+	first := &Entry{Host: "margit", Kind: Terminal, Label: "one"}
+	second := &Entry{Host: "margit", Kind: Terminal, Label: "two"}
+	r.Add(first)
+	r.Add(second)
+
+	if first.ID() == "" || second.ID() == "" {
+		t.Fatalf("they are called %q and %q", first.ID(), second.ID())
+	}
+	if first.ID() == second.ID() {
+		t.Fatalf("both are called %q", first.ID())
+	}
+	was := second.ID()
+
+	// The one before it closes and is dismissed, which moves everything
+	// after it up one.
+	r.Drop(first)
+	if second.ID() != was {
+		t.Errorf("it was renamed from %q to %q", was, second.ID())
+	}
+
+	// And something opened afterwards does not take the name the one
+	// that closed had, nor the name of the one still open.
+	third := &Entry{Host: "margit", Kind: Terminal, Label: "three"}
+	r.Add(third)
+	if third.ID() == was {
+		t.Errorf("it took the name of something still open: %q", was)
+	}
+	if third.ID() == first.ID() {
+		t.Errorf("it took the name of something that closed: %q", first.ID())
+	}
+}
+
+// An entry put back keeps the name another window already knows it by.
+//
+// A connection that died and was dismissed is dropped and added again;
+// renaming it then would break a client holding the old name.
+func TestAnEntryPutBackKeepsItsName(t *testing.T) {
+	r := New()
+	e := &Entry{Host: "margit", Kind: Server, Label: "root@margit"}
+	r.Add(e)
+	was := e.ID()
+
+	r.Drop(e)
+	r.Add(e)
+
+	if e.ID() != was {
+		t.Errorf("it was renamed from %q to %q", was, e.ID())
+	}
+}
+
+// An entry no registry holds has no name, because nothing can ask about
+// it.
+func TestAnEntryNobodyHoldsHasNoName(t *testing.T) {
+	e := &Entry{Host: "margit", Kind: Terminal, Label: "one"}
+	if got := e.ID(); got != "" {
+		t.Errorf("it is called %q", got)
+	}
+}

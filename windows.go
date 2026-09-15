@@ -275,30 +275,40 @@ func (a *app) revealWindow(t *taken) {
 	}
 }
 
-// serveFiles gives a client the files of this machine.
+// serveFiles gives a client the files of this machine, as SFTP on the
+// channel it was handed.
 //
-// An SFTP server on the channel, rooted at the filesystem this process
-// can see. It is no more than the connection already allows: a client
-// that got this far has a key this window lists, and a shell it can run
-// anything in.
-//
-// It runs on a goroutine of the server's, and touches nothing the
-// window holds.
+// It runs on a goroutine of the server's and touches nothing the window
+// holds.
 func (a *app) serveFiles(ch io.ReadWriteCloser) error {
 	// The channel is not this function's to close: whoever handed it
 	// over closes it once, and an SFTP server closes what it was given
 	// as it goes. Left alone, the two would close it twice and the
 	// second would have to be told not to mind.
-	srv, err := sftp.NewServer(keptOpen{ch},
+	// Where the user lives, so a pane on this machine opens there. A
+	// file session starts in the serving process's own directory
+	// otherwise, which is wherever the window happened to be launched
+	// from.
+	options := []sftp.ServerOption{
 		// A Windows machine has drives rather than one root. Without
 		// this, "/" is whatever drive this process happens to be on and
 		// the others cannot be reached by going up.
-		sftp.WindowsRootEnumeratesDrives())
+		sftp.WindowsRootEnumeratesDrives(),
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		options = append(options, sftp.WithServerWorkingDirectory(home))
+	}
+	srv, err := sftp.NewServer(keptOpen{ch}, options...)
 	if err != nil {
 		return fmt.Errorf("could not serve the files of this machine: %w", err)
 	}
-	defer func() { _ = srv.Close() }()
-	if err := srv.Serve(); err != nil && !errors.Is(err, io.EOF) {
+	served := srv.Serve()
+	if errors.Is(served, io.EOF) {
+		served = nil
+	}
+	// Closed after serving, and its failure said: it lets go of every
+	// file the session left open.
+	if err := errors.Join(served, srv.Close()); err != nil {
 		return fmt.Errorf("serving the files of this machine: %w", err)
 	}
 	return nil

@@ -1186,7 +1186,7 @@ func TestAWindowThatDoesNotServeItsFilesSaysSo(t *testing.T) {
 		return newEchoSession(cols, rows), nil
 	})
 
-	ch, err := w.Files()
+	ch, err := filesWithin(t, w)
 
 	if err == nil {
 		_ = ch.Close()
@@ -1194,6 +1194,47 @@ func TestAWindowThatDoesNotServeItsFilesSaysSo(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "does not serve its files") {
 		t.Errorf("it said %v", err)
+	}
+}
+
+// filesWithin asks for a file session, failing the test rather than
+// hanging it when the other window goes quiet instead of answering.
+//
+// A test that hangs takes the whole package down with it at the binary
+// timeout, and says nothing about which one was wrong.
+func filesWithin(t *testing.T, w *Window) (*FileSession, error) {
+	t.Helper()
+	type got struct {
+		f   *FileSession
+		err error
+	}
+	back := make(chan got, 1)
+	go func() {
+		f, err := w.Files()
+		back <- got{f: f, err: err}
+	}()
+	select {
+	case g := <-back:
+		return g.f, g.err
+	case <-time.After(10 * time.Second):
+		t.Fatal("the other window never answered the ask for its files")
+		return nil, nil
+	}
+}
+
+// withinTime runs something that talks to the other window, failing the
+// test rather than hanging it.
+func withinTime(t *testing.T, what string, do func() error) {
+	t.Helper()
+	done := make(chan error, 1)
+	go func() { done <- do() }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("%s: %v", what, err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatalf("%s: the other window never answered", what)
 	}
 }
 
@@ -1221,18 +1262,22 @@ func TestTheFilesOfAServingWindowCross(t *testing.T) {
 		return err
 	}
 
-	ch, err := w.Files()
+	ch, err := filesWithin(t, w)
 	if err != nil {
 		t.Fatalf("files: %v", err)
 	}
-	client, err := sftp.NewClientPipe(ch, ch)
-	if err != nil {
-		t.Fatalf("sftp: %v", err)
-	}
-	entries, err := client.ReadDir(dir)
-	if err != nil {
-		t.Fatalf("read %s: %v", dir, err)
-	}
+	var client *sftp.Client
+	withinTime(t, "start a file session", func() error {
+		var err error
+		client, err = sftp.NewClientPipe(ch, ch)
+		return err
+	})
+	var entries []os.FileInfo
+	withinTime(t, "read "+dir, func() error {
+		var err error
+		entries, err = client.ReadDir(dir)
+		return err
+	})
 	found := false
 	for _, e := range entries {
 		if e.Name() == "over-there.txt" {
@@ -1279,14 +1324,14 @@ func TestOnlySoManyFileSessionsAtOnce(t *testing.T) {
 		}
 	}()
 	for i := 0; i < mostFileSessions; i++ {
-		f, err := w.Files()
+		f, err := filesWithin(t, w)
 		if err != nil {
 			t.Fatalf("file session %d: %v", i, err)
 		}
 		open = append(open, f)
 	}
 
-	f, err := w.Files()
+	f, err := filesWithin(t, w)
 	if err == nil {
 		_ = f.Close()
 		t.Fatal("it opened one more than it serves")
@@ -1305,7 +1350,7 @@ func TestAFileSessionThatFailedSaysWhyToTheClient(t *testing.T) {
 		return errors.New("the disk is not there")
 	}
 
-	f, err := w.Files()
+	f, err := filesWithin(t, w)
 	if err != nil {
 		t.Fatalf("files: %v", err)
 	}

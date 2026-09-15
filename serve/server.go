@@ -96,12 +96,7 @@ type Config struct {
 	Attach Attacher
 
 	// Files gives a client the files of the machine this window is on.
-	//
-	// It is handed a channel and returns when it is finished with it.
-	// What runs on that channel is the window's business: this package
-	// carries the bytes. A nil one refuses the channel, so a window
-	// that does not offer its files says so by name rather than by
-	// going quiet.
+	// A nil one refuses the channel by name.
 	Files Filer
 
 	// Opens is what this window has open, for a client that wants to

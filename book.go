@@ -58,12 +58,6 @@ func (a *app) refreshServers() {
 			Run:   func() error { return a.openTerminalOn(host) },
 		}
 		a.registerServerCommands(a.reporting(term))
-		if a.isWindow(host) {
-			// A window taken over serves terminals and nothing else
-			// yet. A command to browse its files would be one that
-			// cannot work, greyed out or not.
-			continue
-		}
 		browse := ui.Command{
 			ID:    filesPrefix + remote.CommandName(host),
 			Title: "Browse files on " + groupName(host),

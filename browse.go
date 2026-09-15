@@ -135,7 +135,9 @@ func (a *app) filesystem(host string) (vfs.FS, error) {
 	if err != nil {
 		return nil, err
 	}
-	return vfs.NewSFTP(on.name, f.Client(), f.Close), nil
+	// The connection is what says which machine this is: two
+	// panes on one machine open two sessions on it.
+	return vfs.NewSFTP(on.name, on.machine.conn, f.Client(), f.Close), nil
 }
 
 // newPane builds one pane of the file manager.
@@ -633,7 +635,7 @@ func (a *app) openGoTo() error {
 	where := f.AddField("Path", a.newField("a directory on "+p.FS().Name(), 0))
 	// The places this filesystem starts from, so a drive is one key
 	// away rather than something to remember the letter of.
-	where.Options = append([]string{p.At()}, vfs.Roots(p.FS())...)
+	where.Options = append([]string{p.At()}, p.FS().Roots()...)
 	where.SetText(p.At())
 	f.AddButton(ui.Button{Title: "Go", Do: func() error {
 		path := strings.TrimSpace(where.Text())
@@ -761,7 +763,8 @@ func (a *app) windowFiles(addr string) (vfs.FS, error) {
 		}
 		return nil, fmt.Errorf("could not read the files of %s: %w", addr, err)
 	}
-	return vfs.NewSFTP(addr, client, func() error {
+	// The window taken over is what says which machine this is.
+	return vfs.NewSFTP(addr, t.win, client, func() error {
 		return closeFilesOver(client, ch)
 	}), nil
 }

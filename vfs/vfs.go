@@ -16,8 +16,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"os"
-	"reflect"
 	"strings"
 	"time"
 )
@@ -60,6 +58,28 @@ type FS interface {
 	// Name is what the panel calls this filesystem: "Local", or the
 	// machine a connection reaches.
 	Name() string
+
+	// Place is which machine the filesystem reads, as a value equal for
+	// two filesystems on one machine and for nothing else. It is what
+	// Same asks, and it has to be comparable.
+	//
+	// It is not the name. A name is a label the window can change, and
+	// two machines can end up called the same thing.
+	Place() any
+
+	// Roots are the places a path on it can start: one on a POSIX
+	// machine, one per drive on Windows. A pane at the top of the
+	// filesystem has these to go to and nowhere else.
+	//
+	// What the machine says it has, not what answers: a drive is listed
+	// whether or not there is a disk in it, because "there is a drive
+	// here and it will not answer" is something the user is entitled to
+	// find out by going to it. An empty list means the machine would not
+	// say, and a pane then has only where it already is.
+	//
+	// It is asked on the goroutine that draws, so it does not go to the
+	// disk.
+	Roots() []string
 
 	// Sep is the separator between the parts of a path on it. A Windows
 	// pane and a POSIX one sit side by side, so neither can assume.
@@ -123,18 +143,15 @@ var errIsDir = errors.New("it is a directory")
 // Two sessions to one machine are the same place even though they are
 // two connections, and two values standing for this machine are the same
 // place even though they are two values. Comparing the values themselves
-// answers neither. A filesystem with no fields at all is a pointer to
-// nothing, and Go does not say whether two of those are equal: the
-// answer can go either way between builds, and it never depends on what
-// they stand for.
-//
-// It rests on Name naming the machine, which is what the window calls
-// it: one name means one machine.
+// answers neither, and comparing the names answers wrongly: a name is
+// only what the window calls a machine, so a move that read two machines
+// as one because they were called the same thing would put the file on
+// the machine it came from.
 func Same(a, b FS) bool {
 	if a == nil || b == nil {
 		return false
 	}
-	return reflect.TypeOf(a) == reflect.TypeOf(b) && a.Name() == b.Name()
+	return a.Place() == b.Place()
 }
 
 // Join puts the parts of a path together with the filesystem's own
@@ -236,31 +253,6 @@ func Base(f FS, path string) string {
 func IsTop(f FS, path string) bool {
 	sep := string(f.Sep())
 	return strings.TrimRight(Dir(f, path), sep) == strings.TrimRight(path, sep)
-}
-
-// Roots are the places a filesystem starts from.
-//
-// One on a POSIX machine and one per drive on Windows, which is the
-// only way to reach another drive: going up from C:\\ leads nowhere,
-// because there is nothing above it.
-//
-// A drive that cannot be looked at is left out. This is a probe rather
-// than a read the user asked for: an empty card reader answers with a
-// failure, and listing it as somewhere to go would be worse than not
-// naming it.
-func Roots(f FS) []string {
-	local, ok := f.(*Local)
-	if !ok || local.Sep() != '\\' {
-		return []string{"/"}
-	}
-	var out []string
-	for letter := 'A'; letter <= 'Z'; letter++ {
-		path := string(letter) + `:\`
-		if _, err := os.Stat(path); err == nil {
-			out = append(out, path)
-		}
-	}
-	return out
 }
 
 // entryOf builds an Entry from what a directory listing gives, which is

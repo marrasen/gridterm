@@ -61,8 +61,10 @@ func (f *heldFS) stuck(t *testing.T) {
 	}
 }
 
-func (f *heldFS) Name() string { return "held" }
-func (f *heldFS) Sep() byte    { return '/' }
+func (f *heldFS) Name() string    { return "held" }
+func (f *heldFS) Place() any      { return f }
+func (f *heldFS) Roots() []string { return []string{"/"} }
+func (f *heldFS) Sep() byte       { return '/' }
 
 func (f *heldFS) Home() (string, error) { return "/", nil }
 

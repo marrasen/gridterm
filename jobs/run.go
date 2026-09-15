@@ -197,7 +197,14 @@ func (j *Job) walk(ctx context.Context, into []item, from, to string, e vfs.Entr
 }
 
 // copy writes everything the plan found onto the other filesystem.
-func (j *Job) copy(ctx context.Context, items []item) error {
+func (j *Job) copy(ctx context.Context, items []item) (err error) {
+	// The directories are made wide enough to write inside and narrowed
+	// again at the end, and that has to happen however the copy ends:
+	// cancelled, refused or finished. Left out of a path that returns
+	// early, every directory this job made keeps the widened mode with
+	// nothing saying which.
+	defer func() { err = errors.Join(err, j.narrow()) }()
+
 	// Where a directory ended up, for one the user chose to put beside
 	// what was there under another name: everything inside it was
 	// planned under the name it had.
@@ -234,20 +241,34 @@ func (j *Job) copy(ctx context.Context, items []item) error {
 		}
 	}
 	j.update(func(p *Progress) { p.Current = "" })
+	return nil
+}
 
-	// The directories were made wide enough to write inside. Now that
-	// everything is in them, they get the mode they were asked for,
-	// deepest first so a parent closing does not shut out a child.
+// narrow gives the directories this job made the mode they were asked
+// for.
+//
+// They were made wide enough to write inside; now that whatever was
+// going into them has gone in, they get what was asked for, deepest
+// first so a parent closing does not shut out a child.
+//
+// One that fails does not stop the rest: leaving the others wide open
+// would be a second fault, and the user is told every directory that
+// kept the wrong mode rather than only the first.
+func (j *Job) narrow() error {
+	var errs []error
 	for i := len(j.made) - 1; i >= 0; i-- {
 		made := j.made[i]
 		if made.e.Mode.Perm() == made.e.Mode.Perm()|0o700 {
 			continue
 		}
 		if err := j.op.To.Chmod(made.to, made.e.Mode); err != nil {
-			return err
+			errs = append(errs, err)
 		}
 	}
-	return nil
+	// Done once: a second call would set the modes again on directories
+	// that already have them, and a move calls copy before remove.
+	j.made = nil
+	return errors.Join(errs...)
 }
 
 // inside reports whether a path is one of a set of directories or under
@@ -358,8 +379,14 @@ func beside(f vfs.FS, to, name string) (string, error) {
 		return "", fmt.Errorf("jobs: %q is a path, and a name is wanted", name)
 	}
 	at := vfs.Join(f, vfs.Dir(f, to), name)
-	if _, err := f.Stat(at); err == nil {
+	switch _, err := f.Stat(at); {
+	case err == nil:
 		return "", fmt.Errorf("jobs: %s is already there too", at)
+	case !errors.Is(err, fs.ErrNotExist):
+		// Only "it is not there" makes the name free. Any other failure
+		// leaves it unknown, and writing over an unknown name is how a
+		// file the user still wanted goes.
+		return "", err
 	}
 	return at, nil
 }

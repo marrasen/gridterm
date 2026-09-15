@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"io/fs"
+	"sync"
 
 	"github.com/pkg/sftp"
 )
@@ -14,7 +15,15 @@ import (
 // there. A Windows pane and one of these sit side by side and neither
 // may assume the other's separator.
 type SFTP struct {
-	name   string
+	// mu guards name. Renamed is called on the goroutine that draws,
+	// and every listing and every job reads the name from its own.
+	mu   sync.Mutex
+	name string
+
+	// place is the machine this reads, as the window knows it. Two
+	// sessions to one machine carry the same place and are one place.
+	place any
+
 	client *sftp.Client
 
 	// close is what lets go of the session, which is the connection's
@@ -23,20 +32,45 @@ type SFTP struct {
 }
 
 // NewSFTP wraps an SFTP session as a filesystem. name is what the panel
-// calls the machine, and close ends the session.
-func NewSFTP(name string, client *sftp.Client, close func() error) *SFTP {
-	return &SFTP{name: name, client: client, close: close}
+// calls the machine, place says which machine it is, and close ends the
+// session.
+func NewSFTP(name string, place any, client *sftp.Client, close func() error) *SFTP {
+	s := &SFTP{name: name, place: place, client: client, close: close}
+	if place == nil {
+		// Nothing said which machine this reads, so it is only itself
+		// and no other filesystem is the same place.
+		s.place = s
+	}
+	return s
 }
 
 // Name is what the panel calls the machine.
-func (s *SFTP) Name() string { return s.name }
+func (s *SFTP) Name() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.name
+}
 
 // Renamed says the machine is called something else now.
 //
 // The name is what the window matches a pane against to find which
 // machine it is on, so one that kept the old name would be left behind
 // when its connection closed.
-func (s *SFTP) Renamed(name string) { s.name = name }
+func (s *SFTP) Renamed(name string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.name = name
+}
+
+// Place is the machine this session reads.
+func (s *SFTP) Place() any { return s.place }
+
+// Roots is the one place a POSIX path can start.
+//
+// SFTP paths are POSIX whatever the far machine runs, so a Windows
+// machine reached this way puts its drives under the root rather than
+// beside it.
+func (s *SFTP) Roots() []string { return []string{"/"} }
 
 // Sep is the separator between the parts of a path over there, which
 // SFTP defines as a slash whatever the machine runs.
@@ -46,7 +80,7 @@ func (s *SFTP) Sep() byte { return '/' }
 func (s *SFTP) Home() (string, error) {
 	home, err := s.client.Getwd()
 	if err != nil {
-		return "", wrap(s, "find the home directory on", s.name, err)
+		return "", wrap(s, "find the home directory on", s.Name(), err)
 	}
 	return home, nil
 }
@@ -129,12 +163,19 @@ func (s *SFTP) Open(path string) (io.ReadCloser, error) {
 // the file that was asked for. One that is already there keeps the mode
 // it has, which is what happens on this machine too.
 func (s *SFTP) Create(path string, mode fs.FileMode) (io.WriteCloser, error) {
-	_, known := s.client.Lstat(path)
+	// Only "it is not there" makes the file new. Any other failure
+	// leaves it unknown whether the file has a mode of its own to keep,
+	// and guessing it has none overwrites the permissions on it.
+	_, err := s.client.Lstat(path)
+	there := err == nil
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil, wrap(s, "read", path, err)
+	}
 	f, err := s.client.Create(path)
 	if err != nil {
 		return nil, wrap(s, "create", path, err)
 	}
-	if known == nil {
+	if there {
 		return f, nil
 	}
 	if err := s.client.Chmod(path, mode.Perm()); err != nil {

@@ -20,6 +20,17 @@ func NewLocal() *Local { return &Local{} }
 // Name is what the panel calls it.
 func (l *Local) Name() string { return "Local" }
 
+// localPlace is this machine. Every Local stands for it, so two panes
+// here are one place although they are two values.
+type localPlace struct{}
+
+// Place is this machine.
+func (l *Local) Place() any { return localPlace{} }
+
+// Roots are the places a path here can start: one on a POSIX machine,
+// and one per drive on Windows.
+func (l *Local) Roots() []string { return localRoots() }
+
 // Sep is the separator between the parts of a path here: a backslash on
 // Windows, a slash everywhere else.
 func (l *Local) Sep() byte { return filepath.Separator }
@@ -118,12 +129,19 @@ func (l *Local) Open(path string) (io.ReadCloser, error) {
 // the same file made on a machine at the far end come out the same. One
 // that is already there keeps the mode it has.
 func (l *Local) Create(path string, mode fs.FileMode) (io.WriteCloser, error) {
-	_, known := os.Lstat(path)
+	// Only "it is not there" makes the file new. Any other failure
+	// leaves it unknown whether the file has a mode of its own to keep,
+	// and guessing it has none overwrites the permissions on it.
+	_, err := os.Lstat(path)
+	there := err == nil
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil, wrap(l, "read", path, err)
+	}
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode.Perm())
 	if err != nil {
 		return nil, wrap(l, "create", path, err)
 	}
-	if known == nil {
+	if there {
 		return f, nil
 	}
 	if err := os.Chmod(path, mode.Perm()); err != nil {

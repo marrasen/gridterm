@@ -71,7 +71,7 @@ func far(t *testing.T) side {
 	if err != nil {
 		t.Fatalf("start SFTP: %v", err)
 	}
-	f := vfs.NewSFTP("far", files.Client(), files.Close)
+	f := vfs.NewSFTP("far", conn, files.Client(), files.Close)
 	t.Cleanup(func() { _ = f.Close() })
 
 	dir := t.TempDir()

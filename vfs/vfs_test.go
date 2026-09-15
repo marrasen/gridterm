@@ -65,7 +65,7 @@ func overSSH(t *testing.T) FS {
 	if err != nil {
 		t.Fatalf("start SFTP: %v", err)
 	}
-	f := NewSFTP("tester@"+host, files.Client(), files.Close)
+	f := NewSFTP("tester@"+host, conn, files.Client(), files.Close)
 	t.Cleanup(func() { _ = f.Close() })
 	return f
 }
@@ -512,7 +512,7 @@ func TestClosingTheConnectionClosesTheFiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("start SFTP: %v", err)
 	}
-	f := NewSFTP("far", files.Client(), files.Close)
+	f := NewSFTP("far", conn, files.Client(), files.Close)
 
 	if err := conn.Close(); err != nil {
 		t.Fatalf("close the connection: %v", err)
@@ -531,7 +531,7 @@ func TestClosingTheConnectionClosesTheFiles(t *testing.T) {
 func TestWindowsPaths(t *testing.T) {
 	// A filesystem with backslashes whatever this machine uses, so the
 	// shapes are tested wherever the tests run.
-	f := windows{NewLocal()}
+	f := newWinPaths()
 
 	cases := []struct{ what, got, want string }{
 		{`Join a drive and a name`, Join(f, `C:\`, "Users"), `C:\Users`},
@@ -579,11 +579,25 @@ func TestJoinKeepsWhereThePathStarts(t *testing.T) {
 	}
 }
 
-// windows is a filesystem that names paths the way Windows does,
-// whatever machine the tests are running on.
-type windows struct{ *Local }
+// winPaths is a filesystem of its own that names paths the way Windows
+// does, whatever machine the tests are running on.
+//
+// A place of its own, because it is not this machine: a fixture that
+// borrowed Local's place would make Same say yes to two filesystems that
+// do not even agree on what a path looks like.
+type winPaths struct {
+	*Local
+	place *int
+}
 
-func (windows) Sep() byte { return '\\' }
+// newWinPaths returns one. The place is a value of its own rather than
+// the Local it wraps: a Local has no fields, and Go says nothing about
+// whether two pointers to nothing are equal.
+func newWinPaths() winPaths { return winPaths{Local: NewLocal(), place: new(int)} }
+
+func (winPaths) Sep() byte { return '\\' }
+
+func (w winPaths) Place() any { return w.place }
 
 // A file that is already there keeps the mode it has. A copy over an
 // existing file changes what is in it, not who may read it -- and the
@@ -854,9 +868,10 @@ func TestSame(t *testing.T) {
 		t.Error("a filesystem is not itself")
 	}
 
-	far := &SFTP{name: "margit"}
-	alsoFar := &SFTP{name: "margit"}
-	elsewhere := &SFTP{name: "web1"}
+	here, there := new(int), new(int)
+	far := NewSFTP("margit", here, nil, nil)
+	alsoFar := NewSFTP("margit", here, nil, nil)
+	elsewhere := NewSFTP("web1", there, nil, nil)
 	if !Same(far, alsoFar) {
 		t.Error("two sessions to one machine are not the same place")
 	}
@@ -870,12 +885,48 @@ func TestSame(t *testing.T) {
 		t.Error("nothing is the same place as something")
 	}
 
-	// The separator is not what tells them apart: a filesystem that
-	// names paths like Windows is still this machine.
-	if !Same(windows{NewLocal()}, windows{NewLocal()}) {
-		t.Error("two of one kind are not the same place")
+	// A filesystem with a place of its own is its own place, whatever
+	// it wraps.
+	mine, yours := newWinPaths(), newWinPaths()
+	if Same(mine, yours) {
+		t.Error("two filesystems with places of their own are one place")
 	}
-	if Same(windows{NewLocal()}, one) {
-		t.Error("two kinds are the same place")
+	if !Same(mine, mine) {
+		t.Error("a filesystem is not itself")
+	}
+	if Same(mine, one) {
+		t.Error("a filesystem of its own is this machine")
+	}
+}
+
+// Two machines called the same thing are two places.
+//
+// A name is a label the window puts on a machine, and Renamed can make
+// two of them match while the user is looking at them. A move that read
+// that as one place would rename the file on the machine it came from
+// and call it moved.
+func TestTwoMachinesWithOneNameAreTwoPlaces(t *testing.T) {
+	far := NewSFTP("margit", new(int), nil, nil)
+	elsewhere := NewSFTP("web1", new(int), nil, nil)
+	elsewhere.Renamed("margit")
+
+	if far.Name() != elsewhere.Name() {
+		t.Fatalf("the test needs one name: %q and %q", far.Name(), elsewhere.Name())
+	}
+	if Same(far, elsewhere) {
+		t.Error("two machines sharing a name are the same place")
+	}
+}
+
+// A session nobody said the machine of is only itself, so nothing else
+// is taken for it.
+func TestAnSFTPWithNoPlaceIsOnlyItself(t *testing.T) {
+	one := NewSFTP("margit", nil, nil, nil)
+	two := NewSFTP("margit", nil, nil, nil)
+	if !Same(one, one) {
+		t.Error("a session is not itself")
+	}
+	if Same(one, two) {
+		t.Error("two sessions with nothing saying which machine are one place")
 	}
 }

@@ -201,6 +201,9 @@ func (j *Job) finish(err error) {
 			p.Current = ""
 		})
 		close(j.done)
+		// The job has stopped, so its context is only a registration on
+		// the window's, held for as long as the window lives.
+		j.cancel()
 	})
 }
 

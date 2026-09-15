@@ -13,6 +13,7 @@ package mcp
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -118,43 +119,96 @@ type Until struct {
 
 // Serve answers an agent on one pair of streams until it goes.
 //
-// It returns when the agent closes its end, which is how the process
-// running it says it is done.
+// It returns when the agent closes its end, when ctx is cancelled, or
+// when an answer could not be written: a client waiting for an id that
+// will never be sent is a conversation that has ended whether or not it
+// knows yet.
+//
+// What bounds what. Nothing bounds a read: an agent may think for as
+// long as it likes between questions. So the reading happens on a
+// goroutine of its own and the other two endings do not have to wait for
+// it -- that goroutine is left parked on the read when Serve returns,
+// because the stream belongs to whoever handed it in and only they can
+// close it.
 //
 // Questions are answered as they come rather than one after another,
 // because a wait can be minutes long and an agent has to be able to ask
 // something else meanwhile. Only answersAtOnce run at a time; past that
 // the next waits its turn, which stops reading and so slows the client
 // down.
-func Serve(in io.Reader, out io.Writer, panes Panes) error {
+func Serve(ctx context.Context, in io.Reader, out io.Writer, panes Panes) (err error) {
 	r := bufio.NewReaderSize(in, 4096)
-	s := &server{panes: panes, out: json.NewEncoder(out)}
+	s := &server{panes: panes, out: json.NewEncoder(out), broke: make(chan struct{})}
 
 	// Whatever is still being answered is waited for. The panes are not
 	// closed here: they were handed in and whoever handed them in lets
 	// go of them, which is what ends a question still in flight.
 	var running sync.WaitGroup
 	atOnce := make(chan struct{}, answersAtOnce)
-	defer running.Wait()
+	done := make(chan struct{})
+	defer func() {
+		close(done)
+		running.Wait()
+		if err == nil {
+			// An answer written on one of those goroutines may have been
+			// the one that failed.
+			err = s.failed()
+		}
+	}()
+
+	lines := make(chan []byte)
+	stopped := make(chan error, 1)
+	go func() {
+		defer close(lines)
+		for {
+			line, err := readLine(r)
+			switch {
+			case errors.Is(err, io.EOF):
+				return
+			case errors.Is(err, errTooLong):
+				// Read past and carried on. A message too long to be a
+				// message is one bad message, not the end of the
+				// conversation.
+				s.send(fail(nil, codeParse, "that message is too long to read"))
+				continue
+			case err != nil:
+				stopped <- fmt.Errorf("mcp: read: %w", err)
+				return
+			}
+			if len(strings.TrimSpace(string(line))) == 0 {
+				continue
+			}
+			select {
+			case lines <- line:
+			case <-done:
+				return
+			}
+		}
+	}()
 
 	for {
-		line, err := readLine(r)
-		if errors.Is(err, io.EOF) {
-			return nil
+		var line []byte
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-s.broke:
+			return s.failed()
+		case err := <-stopped:
+			return err
+		case got, ok := <-lines:
+			if !ok {
+				// End of file on the agent's side, which is how the
+				// process running it says it is done.
+				select {
+				case err := <-stopped:
+					return err
+				default:
+					return nil
+				}
+			}
+			line = got
 		}
-		if errors.Is(err, errTooLong) {
-			// Read past and carried on. A message too long to be a
-			// message is one bad message, not the end of the
-			// conversation.
-			s.send(fail(nil, codeParse, "that message is too long to read"))
-			continue
-		}
-		if err != nil {
-			return fmt.Errorf("mcp: read: %w", err)
-		}
-		if len(strings.TrimSpace(string(line))) == 0 {
-			continue
-		}
+
 		select {
 		case atOnce <- struct{}{}:
 			running.Add(1)
@@ -191,12 +245,26 @@ func (s *server) answerOne(line []byte) {
 func (s *server) send(answer response) {
 	s.writing.Lock()
 	defer s.writing.Unlock()
-	if err := s.out.Encode(answer); err != nil {
-		// The agent has gone mid-answer, or its stream has broken.
-		// Nothing here can do anything about it: reading will find the
-		// same thing and end the conversation.
+	if s.broken != nil {
 		return
 	}
+	if err := s.out.Encode(answer); err != nil {
+		// A write that failed on a stream still open leaves the client
+		// waiting for an id nothing will ever answer, so the
+		// conversation ends here rather than carrying on writing into
+		// it.
+		s.broken = fmt.Errorf("mcp: write: %w", err)
+		if s.broke != nil {
+			close(s.broke)
+		}
+	}
+}
+
+// failed returns the write that ended the conversation, if one did.
+func (s *server) failed() error {
+	s.writing.Lock()
+	defer s.writing.Unlock()
+	return s.broken
 }
 
 // errTooLong says a message was longer than a message can be. What is
@@ -234,6 +302,13 @@ type server struct {
 
 	writing sync.Mutex
 	out     *json.Encoder
+
+	// broken is the write that ended the conversation, and broke is
+	// closed when it happens so that a Serve waiting on a read wakes up.
+	// Guarded by writing, because that is what one answer at a time is
+	// written under.
+	broken error
+	broke  chan struct{}
 }
 
 // handle answers one message, and reports whether there is an answer to

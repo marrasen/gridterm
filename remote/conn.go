@@ -227,7 +227,7 @@ func connect(ctx context.Context, to reach, via *Conn, cfg Config) (*Conn, error
 
 	hostKey := cfg.HostKeyCallback
 	if hostKey == nil {
-		keys, err := loadKnownHosts(cfg.KnownHosts)
+		keys, err := loadKnownHosts(cfg.KnownHosts, cfg.Saying)
 		if err != nil {
 			return nil, err
 		}
@@ -257,7 +257,14 @@ func connect(ctx context.Context, to reach, via *Conn, cfg Config) (*Conn, error
 	// Cancelled while the handshake was finishing. Handing back a live
 	// connection here would open a terminal the user has given up on.
 	if err := ctx.Err(); err != nil {
-		_ = client.Close()
+		// The reason the caller gets is the user's own decision, because
+		// every caller checks for that. A connection just made that will
+		// not close is said out loud instead: joined onto the
+		// cancellation it would be swallowed by all of them.
+		if closeErr := client.Close(); closeErr != nil && cfg.Saying != nil {
+			cfg.Saying("could not close the connection that was given up on: " +
+				closeErr.Error())
+		}
 		a.close()
 		return nil, err
 	}

@@ -159,7 +159,9 @@ func lacksFinalNewline(path string) (bool, error) {
 // until one is recorded. A file that exists and cannot be read is an
 // error, because a host that is in it would otherwise read as unknown --
 // or, worse, as a host whose key had changed.
-func loadKnownHosts(paths []string) (*hostKeys, error) {
+// saying is told what could not be cleared up afterwards, and may be
+// nil.
+func loadKnownHosts(paths []string, saying func(string)) (*hostKeys, error) {
 	if len(paths) == 0 {
 		home, err := os.UserHomeDir()
 		if err != nil {
@@ -176,7 +178,7 @@ func loadKnownHosts(paths []string) (*hostKeys, error) {
 	if err != nil {
 		return nil, err
 	}
-	check, err := checkerFor(good, paths)
+	check, err := checkerFor(good, paths, saying)
 	if err != nil {
 		return nil, err
 	}
@@ -185,7 +187,7 @@ func loadKnownHosts(paths []string) (*hostKeys, error) {
 
 // checkerFor builds the verification from the lines that parsed. With no
 // lines at all, every host is unknown.
-func checkerFor(lines [][]byte, paths []string) (ssh.HostKeyCallback, error) {
+func checkerFor(lines [][]byte, paths []string, saying func(string)) (cb ssh.HostKeyCallback, err error) {
 	if len(lines) == 0 {
 		return func(hostname string, _ net.Addr, _ ssh.PublicKey) error {
 			return &knownhosts.KeyError{}
@@ -196,7 +198,15 @@ func checkerFor(lines [][]byte, paths []string) (ssh.HostKeyCallback, error) {
 	if err != nil {
 		return nil, fmt.Errorf("remote: stage known_hosts: %w", err)
 	}
-	defer os.Remove(tmp.Name())
+	// The staged copy holds the user's host keys, so one left behind in
+	// the system temp directory is said out loud -- but not failed over:
+	// the lines were already read, so the check is sound and only the
+	// copy leaks.
+	defer func() {
+		if rmErr := os.Remove(tmp.Name()); rmErr != nil && saying != nil {
+			saying("could not clear up " + tmp.Name() + ": " + rmErr.Error())
+		}
+	}()
 	for _, l := range lines {
 		if _, err := tmp.Write(append(l, '\n')); err != nil {
 			_ = tmp.Close()
@@ -207,7 +217,7 @@ func checkerFor(lines [][]byte, paths []string) (ssh.HostKeyCallback, error) {
 		return nil, fmt.Errorf("remote: stage known_hosts: %w", err)
 	}
 
-	cb, err := knownhosts.New(tmp.Name())
+	cb, err = knownhosts.New(tmp.Name())
 	if err != nil {
 		// The staged copy is about to be removed, so the path in the
 		// wrapped error names a file the user cannot go and look at.
@@ -233,7 +243,12 @@ func usableKnownHostLines(paths []string) (lines [][]byte, dropped int, err erro
 			return nil, 0, fmt.Errorf("remote: read known_hosts: %w", err)
 		}
 		good, bad, err := parseKnownHosts(f)
-		_ = f.Close()
+		// A close that fails after a read is the one hint that the file
+		// was truncated underneath it, and a short list of known hosts
+		// says a host is unknown when it is not.
+		if closeErr := f.Close(); err == nil {
+			err = closeErr
+		}
 		if err != nil {
 			return nil, 0, fmt.Errorf("remote: read known_hosts %s: %w", p, err)
 		}
@@ -279,7 +294,7 @@ func HostKeyCheck(ctx context.Context, paths []string, ask Ask) (ssh.HostKeyCall
 	if len(paths) == 0 {
 		return nil, errors.New("remote: no known hosts file to check against")
 	}
-	keys, err := loadKnownHosts(paths)
+	keys, err := loadKnownHosts(paths, nil)
 	if err != nil {
 		return nil, err
 	}

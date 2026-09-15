@@ -48,11 +48,21 @@ type openSession struct {
 	// something new.
 	//
 	// It is the ID of an Open the served window sent down the control
-	// channel, so a client can only ask for what it was told about. It
-	// names one thing for the life of that window, so a client asking
-	// about something that has since closed is told so rather than
-	// handed whatever took its place.
+	// channel, so a client can only ask for what it was told about.
 	Attach string
+
+	// AttachHost and AttachKind are the machine and the sort of thing
+	// that Open said it was.
+	//
+	// They are not authorisation: the key the client signed with is what
+	// decides whether it may be here at all. They are integrity. An ID
+	// names a place in a list the served window builds afresh, and if
+	// ids ever stop being a counter that is never reused, one that has
+	// been handed out again would silently connect a client to something
+	// else. The label is deliberately not among them: a shell sets its
+	// own title, so it changes at every prompt.
+	AttachHost string
+	AttachKind string
 }
 
 // windowChange is the size of the pane a session is drawn in.

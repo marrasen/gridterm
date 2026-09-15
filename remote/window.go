@@ -84,7 +84,7 @@ func ReachWindow(ctx context.Context, r Reach) (*serve.Window, error) {
 // reach makes the connection, step by step. It runs on a goroutine of
 // ReachWindow's, which is what lets giving up be answered at once
 // however far this has got.
-func (r Reach) reach(ctx context.Context) (*serve.Window, error) {
+func (r Reach) reach(ctx context.Context) (win *serve.Window, err error) {
 	known, err := r.Known()
 	if err != nil {
 		return nil, err
@@ -99,7 +99,10 @@ func (r Reach) reach(ctx context.Context) (*serve.Window, error) {
 	// be offered and cannot be used -- and one such key fails the whole
 	// handshake, with the others never tried.
 	if closer != nil {
-		defer closer.Close()
+		// A socket to the agent that will not close is worth saying out
+		// loud: it is one of eight the agent will hold, and nothing else
+		// here would ever mention it.
+		defer func() { err = errors.Join(err, closer.Close()) }()
 	}
 
 	check, err := HostKeyCheck(ctx, []string{known}, r.Ask)
@@ -107,7 +110,7 @@ func (r Reach) reach(ctx context.Context) (*serve.Window, error) {
 		return nil, err
 	}
 	r.say(stepConnect)
-	win, err := serve.Dial(ctx, serve.DialConfig{
+	win, err = serve.Dial(ctx, serve.DialConfig{
 		Addr: r.Addr, Keys: keys, HostKey: check, Patience: r.Patience,
 		Saying: r.Saying,
 	})

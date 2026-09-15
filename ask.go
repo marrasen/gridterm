@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/marrasen/gridterm/remote"
+	"github.com/marrasen/gridterm/serve"
 	"github.com/marrasen/gridterm/ui"
 )
 
@@ -68,12 +69,14 @@ func (u *askUser) Question(ctx context.Context, q remote.Question) ([]string, er
 	// plausible key path would otherwise produce a dialog the user
 	// cannot tell from the local one, and be handed the passphrase to
 	// their private key.
+	// And through serve.Plain, because a dialog draws what it is given:
+	// the server's wording must not carry escape sequences into it.
 	lines := []string{q.User + "@" + q.Host + " is asking:"}
 	if q.Name != "" {
-		lines = append(lines, "", q.Name)
+		lines = append(lines, "", serve.Plain(q.Name))
 	}
 	if q.Instruction != "" {
-		lines = append(lines, "", q.Instruction)
+		lines = append(lines, "", serve.Plain(q.Instruction))
 	}
 	const title = "The server is asking"
 	masked := make([]bool, len(q.Prompts))
@@ -82,10 +85,14 @@ func (u *askUser) Question(ctx context.Context, q remote.Question) ([]string, er
 		// server did not mark that way is a secret.
 		masked[i] = i >= len(q.Echo) || !q.Echo[i]
 	}
+	labels := make([]string, len(q.Prompts))
+	for i, prompt := range q.Prompts {
+		labels[i] = serve.Plain(prompt)
+	}
 	return u.ask(ctx, u.form(secret{
 		title:  title,
 		lines:  lines,
-		labels: q.Prompts,
+		labels: labels,
 		masked: masked,
 		accept: "Answer",
 	}))
@@ -275,7 +282,7 @@ func (u *askUser) Notice(ctx context.Context, n remote.Notice) {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		lines = append(lines, "", line)
+		lines = append(lines, "", serve.Plain(line))
 	}
 	lines = append(lines, "", "gridterm is waiting for the server. It carries on by itself once you are done.")
 	if u.log != nil {

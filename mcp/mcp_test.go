@@ -3,6 +3,7 @@ package mcp
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // fakePanes is a window with one pane, for testing what an agent is
@@ -101,7 +103,7 @@ func talk(t *testing.T, panes Panes, messages ...string) []response {
 	fromServer, toTest := io.Pipe()
 
 	done := make(chan error, 1)
-	go func() { done <- Serve(toServer, toTest, panes) }()
+	go func() { done <- Serve(t.Context(), toServer, toTest, panes) }()
 
 	in := bufio.NewReaderSize(fromServer, 4096)
 	var answers []response
@@ -150,7 +152,7 @@ func wantsAnAnswer(message string) bool {
 func atOnce(t *testing.T, panes Panes, messages ...string) []response {
 	t.Helper()
 	var out bytes.Buffer
-	if err := Serve(strings.NewReader(strings.Join(messages, "\n")+"\n"), &out, panes); err != nil {
+	if err := Serve(t.Context(), strings.NewReader(strings.Join(messages, "\n")+"\n"), &out, panes); err != nil {
 		t.Fatalf("serve: %v", err)
 	}
 	var answers []response
@@ -620,7 +622,7 @@ func TestEveryToolSaysWhatItTakes(t *testing.T) {
 // reading a stream nobody will write to.
 func TestTheAgentGoingEndsIt(t *testing.T) {
 	var out bytes.Buffer
-	if err := Serve(strings.NewReader(""), &out, &fakePanes{}); err != nil {
+	if err := Serve(t.Context(), strings.NewReader(""), &out, &fakePanes{}); err != nil {
 		t.Errorf("it gave %v", err)
 	}
 	if out.Len() != 0 {
@@ -639,7 +641,7 @@ func TestAQuestionIsAnsweredWhileAWaitIsStillWaiting(t *testing.T) {
 	fromServer, toTest := io.Pipe()
 
 	done := make(chan error, 1)
-	go func() { done <- Serve(toServer, toTest, panes) }()
+	go func() { done <- Serve(t.Context(), toServer, toTest, panes) }()
 	in := bufio.NewReaderSize(fromServer, 4096)
 
 	ask := func(m string) {
@@ -688,5 +690,101 @@ func TestAQuestionIsAnsweredWhileAWaitIsStillWaiting(t *testing.T) {
 	}
 	if err := toTest.Close(); err != nil {
 		t.Fatalf("close: %v", err)
+	}
+}
+
+// deaf takes one answer and then refuses the rest, the way a stream
+// that has broken part way does.
+type deaf struct {
+	mu    sync.Mutex
+	took  int
+	limit int
+	why   error
+}
+
+func (d *deaf) Write(p []byte) (int, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.took >= d.limit {
+		return 0, d.why
+	}
+	d.took++
+	return len(p), nil
+}
+
+// An answer that could not be written ends the conversation.
+//
+// The client is waiting for an id that will never be answered now.
+// Carrying on writing into a stream that has refused one answer leaves
+// it waiting for every one after it as well.
+func TestAnAnswerThatCannotBeWrittenEndsTheConversation(t *testing.T) {
+	boom := errors.New("the agent's stream has gone")
+	out := &deaf{limit: 1, why: boom}
+
+	in := strings.Join([]string{
+		`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/list"}`,
+		`{"jsonrpc":"2.0","id":3,"method":"tools/list"}`,
+	}, "\n") + "\n"
+
+	err := Serve(t.Context(), strings.NewReader(in), out, &fakePanes{})
+	if !errors.Is(err, boom) {
+		t.Fatalf("Serve = %v, want the write that failed", err)
+	}
+}
+
+// silentReader answers no read and never ends, the way a process's own
+// standard input does when whatever is on the other end has stopped
+// talking but not hung up.
+type silentReader struct{ done chan struct{} }
+
+func (r silentReader) Read([]byte) (int, error) { <-r.done; return 0, io.EOF }
+
+// A write that failed ends the conversation even though the agent is
+// still not saying anything.
+//
+// Nothing here can interrupt a read on a stream it was handed, so the
+// read runs on its own goroutine and Serve stops without it.
+func TestABrokenWriteEndsAConversationParkedOnARead(t *testing.T) {
+	boom := errors.New("the agent's stream has gone")
+	out := &deaf{why: boom}
+	quiet := silentReader{done: make(chan struct{})}
+	defer close(quiet.done)
+
+	// One question, then silence. The answer to it cannot be written,
+	// and nothing else will ever arrive to notice that with.
+	in := io.MultiReader(
+		strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`+"\n"),
+		quiet)
+
+	done := make(chan error, 1)
+	go func() { done <- Serve(t.Context(), in, out, &fakePanes{}) }()
+	select {
+	case err := <-done:
+		if !errors.Is(err, boom) {
+			t.Fatalf("Serve = %v, want the write that failed", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Serve parked on a read after the write it could not finish")
+	}
+}
+
+// A cancelled context ends it too, for a caller that has decided to stop
+// rather than one whose stream broke.
+func TestACancelledContextEndsTheConversation(t *testing.T) {
+	quiet := silentReader{done: make(chan struct{})}
+	defer close(quiet.done)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() { done <- Serve(ctx, quiet, io.Discard, &fakePanes{}) }()
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("Serve = %v, want the cancellation", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Serve parked on a read after it was cancelled")
 	}
 }

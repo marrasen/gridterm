@@ -282,3 +282,35 @@ func waitedFor(t *testing.T, c *connLog) error {
 		return nil
 	}
 }
+
+// The pane reads what is written to it as a terminal stream, so a
+// server's own wording cannot be allowed to drive it.
+//
+// Left alone, a server could clear the pane, move the cursor back over
+// "its host key is accepted", and write whatever it liked there in this
+// window's own voice.
+func TestWhatTheFarEndSaysCannotDriveThePane(t *testing.T) {
+	c := atTime(newConnLog(nil))
+	defer func() { _ = c.Close() }()
+
+	c.Quote("marcus@picard", "\x1b[2Jsign in here\x1b]0;owned\x07")
+
+	got := readLog(t, c, "sign in here")
+	if strings.ContainsAny(got, "\x1b\x07") {
+		t.Fatalf("the pane was written %q, want nothing a terminal acts on", got)
+	}
+}
+
+// A failure often carries the far end's own words inside it, and those
+// reach the same pane.
+func TestAFailureFromTheFarEndCannotDriveThePane(t *testing.T) {
+	c := atTime(newConnLog(nil))
+	defer func() { _ = c.Close() }()
+
+	c.Failed(errors.New("refused: \x1b[2Jtry somewhere else\x07"))
+
+	got := readLog(t, c, "try somewhere else")
+	if strings.ContainsAny(got, "\x1b\x07") {
+		t.Fatalf("the pane was written %q, want nothing a terminal acts on", got)
+	}
+}

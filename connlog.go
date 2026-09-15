@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/marrasen/gridterm/serve"
 	"github.com/marrasen/gridterm/session"
 )
 
@@ -78,9 +79,14 @@ func (c *connLog) Say(what string) {
 // Quote writes what the far end said, marked as its words rather than
 // this window's.
 //
-// Said plainly and in full. A server that signs people in through a
-// browser sends a link this way, and a link that is cut off or that
-// cannot be copied is a link nobody can use.
+// Said in full. A server that signs people in through a browser sends a
+// link this way, and a link that is cut off or that cannot be copied is
+// a link nobody can use.
+//
+// Stripped of what a terminal would act on rather than print. The pane
+// parses what is written to it as a terminal stream, so a server left
+// alone here could move the cursor, overwrite the lines above it --
+// "its host key is accepted" among them -- and set the window's title.
 func (c *connLog) Quote(who, what string) {
 	what = strings.TrimRight(what, "\r\n")
 	if strings.TrimSpace(what) == "" {
@@ -88,7 +94,7 @@ func (c *connLog) Quote(who, what string) {
 	}
 	c.Say(who + " says:")
 	for _, line := range strings.Split(what, "\n") {
-		c.write("    " + strings.TrimRight(line, "\r"))
+		c.write("    " + serve.Plain(line))
 	}
 }
 
@@ -98,7 +104,13 @@ func (c *connLog) Failed(err error) {
 	if err == nil {
 		return
 	}
-	c.Say(err.Error())
+	// A failure often carries what the far end said inside it, and this
+	// pane acts on escape sequences like any other terminal. Split
+	// first, because Say writes one line and a reason that came on
+	// several is meant to be read on several.
+	for _, line := range strings.Split(err.Error(), "\n") {
+		c.Say(serve.Plain(line))
+	}
 	c.write("")
 	c.write("The connection was not made. This pane is only the record of")
 	c.write("it: close it when you have read it.")

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -400,11 +401,16 @@ func UsualKeys() (plain []ssh.Signer, locked []string, err error) {
 // identities sorts the key files into the ones that can be read without
 // asking and the ones that need a passphrase.
 //
-// A key file the caller named is one it asked for, so a failure to read
-// it fails the connection. One of the defaults is skipped instead: most
-// machines have only one of the three, and failing because a stale
-// id_rsa is unreadable would be unhelpful when the agent holds the key
-// that works.
+// A key file the caller named is one it asked for, so anything wrong
+// with it fails the connection.
+//
+// One of the defaults is different. Most machines have only one of the
+// three, so a name that is not there is skipped, and so is one that is
+// there and is not a key this understands: a stale id_rsa should not
+// stop a connection the agent holds the key for. A default that is
+// there and cannot be read is neither of those. It fails, because a
+// connection that quietly offers fewer keys ends in "no supported
+// methods remain" with nothing saying why.
 func identities(cfg Config) (plain []ssh.Signer, locked []string, err error) {
 	if cfg.NoIdentities {
 		return nil, nil, nil
@@ -427,7 +433,7 @@ func identities(cfg Config) (plain []ssh.Signer, locked []string, err error) {
 		if cfg.Ring.Has(p) {
 			continue
 		}
-		signer, needsPass, err := readIdentity(p)
+		signer, needsPass, read, err := readIdentity(p)
 		switch {
 		case err == nil:
 			plain = append(plain, signer)
@@ -435,27 +441,39 @@ func identities(cfg Config) (plain []ssh.Signer, locked []string, err error) {
 			locked = append(locked, p)
 		case named:
 			return nil, nil, fmt.Errorf("remote: private key %s: %w", p, err)
+		case !read && !errors.Is(err, fs.ErrNotExist):
+			// One of the usual names that is there and cannot be read.
+			// Not having a key is a reason to try another method;
+			// not being able to tell is not, and quietly offering fewer
+			// keys ends in "no supported methods remain" with nothing
+			// saying why.
+			return nil, nil, fmt.Errorf("remote: private key %s: %w", p, err)
 		}
 	}
 	return plain, locked, nil
 }
 
-// readIdentity loads one private key, reporting separately that it is
-// encrypted so the caller can decide when to ask.
-func readIdentity(path string) (signer ssh.Signer, needsPass bool, err error) {
+// readIdentity loads one private key.
+//
+// needsPass reports separately that it is encrypted, so the caller can
+// decide when to ask. read reports that the file itself was read: a
+// file that is there and is not a key this understands is a different
+// thing from one that could not be got at, and only the caller knows
+// which of the two it may skip.
+func readIdentity(path string) (signer ssh.Signer, needsPass, read bool, err error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
-		return nil, false, err
+		return nil, false, false, err
 	}
 	signer, err = ssh.ParsePrivateKey(b)
 	if err == nil {
-		return signer, false, nil
+		return signer, false, true, nil
 	}
 	var missing *ssh.PassphraseMissingError
 	if errors.As(err, &missing) {
-		return nil, true, err
+		return nil, true, true, err
 	}
-	return nil, false, err
+	return nil, false, true, err
 }
 
 // currentUser returns the local account name, used as the SSH user when
@@ -519,17 +537,19 @@ func AgentKeys() (keys []ssh.Signer, closer io.Closer, err error) {
 	select {
 	case got := <-back:
 		if got.err != nil {
-			_ = conn.Close()
-			return nil, nil, fmt.Errorf("remote: read the SSH agent: %w: %w",
-				ErrAgentSilent, got.err)
+			return nil, nil, errors.Join(
+				fmt.Errorf("remote: read the SSH agent: %w: %w", ErrAgentSilent, got.err),
+				conn.Close())
 		}
 		return got.keys, conn, nil
 	case <-time.After(agentPatience):
 		// Closing it is what unblocks the read, so the goroutine above
-		// ends rather than being left holding the connection.
-		_ = conn.Close()
-		return nil, nil, fmt.Errorf("remote: %w: it had %v to say what keys it holds",
-			ErrAgentSilent, agentPatience)
+		// ends rather than being left holding the connection. A close
+		// that fails here is the one place a wedged agent socket shows.
+		return nil, nil, errors.Join(
+			fmt.Errorf("remote: %w: it had %v to say what keys it holds",
+				ErrAgentSilent, agentPatience),
+			conn.Close())
 	}
 }
 

@@ -157,7 +157,15 @@ func (s *Server) dropWatcher(w *watcher) {
 	// Closed outside the lock: the channel's own close talks to the
 	// connection, and holding the server's lock across that would put
 	// every other client behind one that has gone.
-	_ = w.ch.Close()
+	s.letGoOf(w.ch)
+}
+
+// letGoOf closes a control channel and says so if it would not go. A
+// connection that has already gone is not a failure to report.
+func (s *Server) letGoOf(ch ssh.Channel) {
+	if err := ch.Close(); err != nil && !ended(err) {
+		s.onError(fmt.Errorf("serve: close a control channel: %w", err))
+	}
 }
 
 // runControl carries one client's view of what this window has open.
@@ -168,7 +176,7 @@ func (s *Server) runControl(ch ssh.Channel, reqs <-chan *ssh.Request, gone <-cha
 
 	w := newWatcher(ch)
 	if !s.addWatcher(w) {
-		_ = ch.Close()
+		s.letGoOf(ch)
 		return
 	}
 	// The writing happens here, so nothing the window does waits on a
@@ -180,7 +188,7 @@ func (s *Server) runControl(ch ssh.Channel, reqs <-chan *ssh.Request, gone <-cha
 	}()
 	defer func() {
 		s.dropWatcher(w)
-		_ = ch.Close()
+		s.letGoOf(ch)
 		<-writing
 	}()
 

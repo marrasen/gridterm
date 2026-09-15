@@ -468,9 +468,15 @@ func (f *Forwarder) carry(near net.Conn) {
 		}
 		// Half the stream is done. Closing both is what stops the other
 		// half, which is otherwise blocked on a read that will not
-		// return until the peer goes away.
-		_ = to.Close()
-		_ = from.Close()
+		// return until the peer goes away. One end already gone is how
+		// this usually happens; anything else means a stream the user
+		// still has open cannot be let go of.
+		if err := to.Close(); err != nil && !ended(err) {
+			f.report(fmt.Errorf("remote: %s: close a stream: %w", f, err))
+		}
+		if err := from.Close(); err != nil && !ended(err) {
+			f.report(fmt.Errorf("remote: %s: close a stream: %w", f, err))
+		}
 	}
 
 	var wg sync.WaitGroup

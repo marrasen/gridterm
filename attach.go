@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/marrasen/gridterm/conns"
+	"github.com/marrasen/gridterm/serve"
 	"github.com/marrasen/gridterm/session"
 	"github.com/marrasen/gridterm/ui/term"
 )
@@ -19,14 +20,14 @@ import (
 // Called from a goroutine serving that client, so the work of finding
 // the pane is handed to the one that draws and waited for here. Nothing
 // in the widget tree may be touched from anywhere else.
-func (a *app) attachTo(id string, cols, rows int) (session.Session, error) {
+func (a *app) attachTo(want serve.Attached, cols, rows int) (session.Session, error) {
 	type found struct {
 		sess session.Session
 		err  error
 	}
 	back := make(chan found, 1)
 	a.pump.post(func() {
-		sess, err := a.watchPane(id, cols, rows)
+		sess, err := a.watchPane(want, cols, rows)
 		back <- found{sess: sess, err: err}
 	})
 	select {
@@ -44,10 +45,10 @@ func (a *app) attachTo(id string, cols, rows int) (session.Session, error) {
 //
 // On the goroutine that draws, which is the only one that may look at
 // what the window has open.
-func (a *app) watchPane(id string, cols, rows int) (session.Session, error) {
-	e := a.entryByID(id)
-	if e == nil {
-		return nil, fmt.Errorf("there is nothing called %q open here any more", id)
+func (a *app) watchPane(want serve.Attached, cols, rows int) (session.Session, error) {
+	e, err := a.entryAsked(want)
+	if err != nil {
+		return nil, err
 	}
 	pane := a.paneFor(e)
 	if pane == nil {
@@ -81,24 +82,36 @@ func (a *app) watchPane(id string, cols, rows int) (session.Session, error) {
 	return w, nil
 }
 
-// entryByID finds what a snapshot called something.
+// entryAsked finds what a snapshot called something, and checks the name
+// still stands for the machine and the kind of thing the client was told
+// it stood for.
 //
-// By the name the registry gave it, which is the name the snapshot
-// carried. An id names one thing for the life of the window, so a
-// client asking about something that has closed is told so rather than
-// handed whatever moved into its place.
-func (a *app) entryByID(id string) *conns.Entry {
-	if id == "" {
-		return nil
+// The label is not checked: a shell sets its own title, so it changes at
+// every prompt and a legitimate client would be refused at random.
+//
+// This is integrity rather than a way in -- the key the client signed
+// with is what decides that. An id names a place in a list the registry
+// builds afresh, and if ids ever stop being a counter that is never
+// reused, one handed out twice would quietly connect a client to
+// something else.
+func (a *app) entryAsked(want serve.Attached) (*conns.Entry, error) {
+	if want.ID == "" {
+		return nil, errors.New("that named nothing to work in")
 	}
 	for _, g := range a.registry.Groups(time.Now()) {
 		for _, row := range g.Rows {
-			if row.ID() == id {
-				return row.Entry
+			if row.ID() != want.ID {
+				continue
 			}
+			if g.Host != want.Host || row.Kind.String() != want.Kind {
+				return nil, fmt.Errorf(
+					"%q is no longer the %s on %s that you were told about",
+					want.ID, want.Kind, want.Host)
+			}
+			return row.Entry, nil
 		}
 	}
-	return nil
+	return nil, fmt.Errorf("there is nothing called %q open here any more", want.ID)
 }
 
 // paneFor is the terminal showing an entry, or nil when the entry is

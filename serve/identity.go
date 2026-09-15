@@ -165,9 +165,8 @@ func makeHostKey(path string) (ssh.Signer, error) {
 	}
 	tmp := f.Name()
 	if _, err := f.Write(pem.EncodeToMemory(block)); err != nil {
-		f.Close()
-		_ = os.Remove(tmp)
-		return nil, fmt.Errorf("serve: write the host key %s: %w", path, err)
+		return nil, fmt.Errorf("serve: write the host key %s: %w", path,
+			errors.Join(err, f.Close(), os.Remove(tmp)))
 	}
 	if err := f.Close(); err != nil {
 		_ = os.Remove(tmp)

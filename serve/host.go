@@ -178,7 +178,11 @@ func (s *Server) runSession(ch ssh.Channel, reqs <-chan *ssh.Request,
 				errors.New("this gridterm cannot be worked in from elsewhere"))
 			return
 		}
-		sess, err = s.cfg.Attach(want.Attach, cols, rows)
+		sess, err = s.cfg.Attach(Attached{
+			ID:   want.Attach,
+			Host: want.AttachHost,
+			Kind: want.AttachKind,
+		}, cols, rows)
 	case s.cfg.Open == nil:
 		s.refuseSession(ch, reqs, errors.New("this gridterm has nothing to open"))
 		return
@@ -305,18 +309,42 @@ func (s *Server) endSession(ch ssh.Channel, why error) {
 		// is nearly true and is the safer of the two readings.
 		s.onError(fmt.Errorf("serve: say how a session ended: %w", err))
 	}
-	_ = ch.CloseWrite()
-	_ = ch.Close()
+	// The close is the last thing the client hears, so one that failed
+	// is the only account of a channel that did not end cleanly. A
+	// connection that has already gone is not one of those, and the
+	// second close reports nothing when the first said so: they are one
+	// failure, not two.
+	if err := ch.CloseWrite(); err != nil && !ended(err) {
+		s.onError(fmt.Errorf("serve: end a session: %w", err))
+		_ = ch.Close()
+		return
+	}
+	if err := ch.Close(); err != nil && !ended(err) {
+		s.onError(fmt.Errorf("serve: close a session: %w", err))
+	}
+}
+
+// Attached names something a client asked to work in, as the client was
+// told about it.
+type Attached struct {
+	// ID is the ID of the Open that named it.
+	ID string
+
+	// Host and Kind are the machine and the sort of thing that Open said
+	// it was. Not the label, which a shell changes every time it sets
+	// its title.
+	Host, Kind string
 }
 
 // Attacher gives a client what is already running in one of this
 // window's panes, named by the ID it was sent down the control channel
-// and by what that ID was said to be.
+// and by the machine and kind that ID was said to be.
 //
-// Both, because an ID is a place in a list that is built afresh: an
+// All three, because an ID is a place in a list that is built afresh: an
 // implementation checks what it finds against what the client was told
-// it was asking for, and refuses rather than hand over a different
-// program.
+// it was asking for, and refuses rather than hand over something else.
+// That is integrity, not authorisation -- the key the client signed with
+// is what says it may be here at all.
 //
 // What comes back is a session like any other: reading it gives what
 // the pane shows, starting with the screen as it stands, and writing to
@@ -329,7 +357,7 @@ func (s *Server) endSession(ch ssh.Channel, why error) {
 // cols and rows are how big the watcher's pane is. The window may
 // give the pane that size, or may keep its own and let the watcher see
 // a screen of another size; either way the watcher has said.
-type Attacher func(id string, cols, rows int) (session.Session, error)
+type Attacher func(want Attached, cols, rows int) (session.Session, error)
 
 // Opener starts something for a client to work in.
 //

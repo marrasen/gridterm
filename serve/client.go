@@ -229,7 +229,9 @@ func (w *Window) Addr() string { return w.addr }
 // hand-over.
 func (w *Window) Attach(open Open, cols, rows int) (session.Session, error) {
 	return w.session(openSession{
-		Cols: uint32(cols), Rows: uint32(rows), Attach: open.ID,
+		Cols: uint32(cols), Rows: uint32(rows),
+		Attach:     open.ID,
+		AttachHost: open.Host, AttachKind: open.Kind,
 	})
 }
 
@@ -311,7 +313,7 @@ func (w *Window) session(want openSession) (session.Session, error) {
 		// A reason cut in half by a connection that dropped is worse
 		// than no reason: the user reads what arrived as the whole of
 		// it. So the failure is put on the end of what it cut.
-		if _, err := io.Copy(errWriter{s}, ch.Stderr()); err != nil {
+		if _, err := io.Copy(&PlainWriter{To: errWriter{s}}, ch.Stderr()); err != nil {
 			_, _ = errWriter{s}.Write([]byte(
 				"\r\ngridterm: the rest of that was lost: " + err.Error() + "\r\n"))
 		}

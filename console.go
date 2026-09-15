@@ -7,9 +7,9 @@ import (
 	"io"
 	"os"
 	"strings"
-	"unicode"
 
 	"github.com/marrasen/gridterm/remote"
+	"github.com/marrasen/gridterm/serve"
 )
 
 // stdin is read through one reader for the life of the process.
@@ -47,41 +47,24 @@ func (consoleAsk) Question(_ context.Context, q remote.Question) ([]string, erro
 	// and it is printed to a real terminal that obeys escape sequences.
 	fmt.Fprintf(console, "%s@%s is asking:\n", q.User, q.Host)
 	if q.Name != "" {
-		fmt.Fprintln(console, plainly(q.Name))
+		fmt.Fprintln(console, serve.Plain(q.Name))
 	}
 	if q.Instruction != "" {
-		fmt.Fprintln(console, plainly(q.Instruction))
+		fmt.Fprintln(console, serve.Plain(q.Instruction))
 	}
 	answers := make([]string, len(q.Prompts))
 	for i, prompt := range q.Prompts {
 		var err error
 		if i < len(q.Echo) && q.Echo[i] {
-			answers[i], err = promptLine(plainly(prompt))
+			answers[i], err = promptLine(serve.Plain(prompt))
 		} else {
-			answers[i], err = promptSecret(plainly(prompt))
+			answers[i], err = promptSecret(serve.Plain(prompt))
 		}
 		if err != nil {
 			return nil, err
 		}
 	}
 	return answers, nil
-}
-
-// plainly strips what a terminal would act on rather than print.
-//
-// A server chooses the wording here, and it goes to the console gridterm
-// was started from. Left alone, it could move that terminal's cursor,
-// overwrite what was already printed, or set its title.
-func plainly(s string) string {
-	return strings.Map(func(r rune) rune {
-		if r == '\t' {
-			return ' '
-		}
-		if unicode.IsControl(r) {
-			return -1
-		}
-		return r
-	}, s)
 }
 
 // TrustHostKey refuses.
@@ -112,13 +95,13 @@ func promptLine(prompt string) (string, error) {
 // Notice prints what a server said, which for a server that signs
 // people in through a browser is where to go and do it.
 //
-// Printed through plainly, like everything else the server wrote: this
-// goes to a real terminal that obeys escape sequences.
+// Printed through serve.Plain, like everything else the server wrote:
+// this goes to a real terminal that obeys escape sequences.
 func (consoleAsk) Notice(_ context.Context, n remote.Notice) {
 	fmt.Fprintf(console, "%s@%s says:\n", n.User, n.Host)
 	for _, line := range []string{n.Name, n.Instruction, n.Text} {
 		if strings.TrimSpace(line) != "" {
-			fmt.Fprintln(console, plainly(line))
+			fmt.Fprintln(console, serve.Plain(line))
 		}
 	}
 }

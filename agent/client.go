@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"sync"
 	"time"
 )
@@ -28,6 +29,9 @@ type Client struct {
 	// an answer belongs to the question before it.
 	asking sync.Mutex
 
+	// patience is how long an ordinary question has to be answered.
+	patience time.Duration
+
 	// shut is its own lock, and a small one. Closing must not wait for
 	// a question to be answered: a wait can be minutes long, and the
 	// thing that wants to close is often what would end it.
@@ -48,7 +52,12 @@ func Dial(code string) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("agent: no gridterm window is listening on port %d: %w", port, err)
 	}
-	c := &Client{conn: conn, in: bufio.NewReaderSize(conn, 4096), out: json.NewEncoder(conn)}
+	c := &Client{
+		conn:     conn,
+		in:       bufio.NewReaderSize(conn, 4096),
+		out:      json.NewEncoder(conn),
+		patience: promptly,
+	}
 	if _, err := c.say(ask{Do: "hello", Protocol: hello}); err != nil {
 		return nil, errors.Join(
 			fmt.Errorf("agent: %s is not a gridterm window this can talk to: %w",
@@ -110,6 +119,51 @@ func (c *Client) Wait(id string, until Until) (Look, bool, error) {
 	return *got.Look, got.Waited, nil
 }
 
+// why says which ending this was.
+//
+// A window that ran out of time is not the same as one that hung up, and
+// the two ask the user for different things: wait, or go and look at the
+// window, against it has gone. Both are ErrGone, because the connection
+// is finished with either way.
+//
+// The deadline is asked about as well as the error, because readLine
+// reads a timeout as the conversation ending -- which is the right
+// answer on the window's side of it and not here.
+func why(err error, bound time.Duration, by time.Time) error {
+	if errors.Is(err, os.ErrDeadlineExceeded) || !time.Now().Before(by) {
+		return fmt.Errorf("%w: it did not answer within %v", ErrGone, bound)
+	}
+	return ErrGone
+}
+
+// promptly is how long a window has to answer an ordinary question.
+// Long enough that a window busy drawing is not given up on, short
+// enough that an agent gets an answer rather than a hang.
+const promptly = 30 * time.Second
+
+// answerWithin is how long this question may take.
+//
+// A wait is the one question meant to be slow: it takes as long as it
+// was asked to take, so it gets that plus the time a window needs to
+// notice and reply. Everything else gets promptly.
+func (c *Client) answerWithin(want ask) time.Duration {
+	// A client built without one -- a zero value, or a test -- still
+	// gets a bound, because a deadline of now is a question that fails
+	// before it is asked.
+	patience := c.patience
+	if patience <= 0 {
+		patience = promptly
+	}
+	if want.Do != "wait" {
+		return patience
+	}
+	asked := time.Duration(want.Until.TimeoutMS) * time.Millisecond
+	if asked <= 0 || asked > longestWait {
+		asked = longestWait
+	}
+	return asked + patience
+}
+
 // Until says what a wait is waiting for. Whichever happens first.
 type Until struct {
 	// Contains ends the wait as soon as the screen holds this text.
@@ -165,12 +219,27 @@ func (c *Client) say(want ask) (said, error) {
 	if c.isClosed() {
 		return said{}, ErrGone
 	}
-	if err := c.out.Encode(want); err != nil {
+	// A window that accepts, greets and then says nothing would park
+	// this for ever, and the process running an agent has nothing that
+	// could close the connection from the side. The bound covers the
+	// question as well as the answer: a window that has stopped reading
+	// blocks the write.
+	bound := c.answerWithin(want)
+	by := time.Now().Add(bound)
+	if err := c.conn.SetDeadline(by); err != nil {
 		_ = c.Close()
 		return said{}, ErrGone
 	}
+	if err := c.out.Encode(want); err != nil {
+		_ = c.Close()
+		return said{}, why(err, bound, by)
+	}
 	line, err := readLine(c.in)
 	if err != nil {
+		_ = c.Close()
+		return said{}, why(err, bound, by)
+	}
+	if err := c.conn.SetDeadline(time.Time{}); err != nil {
 		_ = c.Close()
 		return said{}, ErrGone
 	}

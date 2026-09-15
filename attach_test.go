@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/marrasen/gridterm/conns"
+	"github.com/marrasen/gridterm/serve"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/term"
 )
@@ -239,7 +241,7 @@ func TestAttachingFromAClosingWindowComesBack(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		_, err := a.attachTo("1", 80, 24)
+		_, err := a.attachTo(serve.Attached{ID: "1"}, 80, 24)
 		done <- err
 	}()
 	select {
@@ -282,5 +284,67 @@ func TestADropWakesAReaderWaitingForOutput(t *testing.T) {
 	}
 	if len(got) == 0 {
 		t.Error("it came back with nothing")
+	}
+}
+
+// A client is handed what it asked for, or nothing.
+//
+// The ID names a place in a list the window builds afresh, so the client
+// sends back the machine, the kind and the label it was shown. A name
+// whose row now says something else is refused rather than handed over.
+func TestAttachingChecksTheRowStillSaysWhatTheClientWasTold(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+
+	var want serve.Attached
+	var e *conns.Entry
+	for _, g := range a.registry.Groups(panelNow) {
+		for _, row := range g.Rows {
+			if row.Kind != conns.Terminal {
+				continue
+			}
+			want = serve.Attached{ID: row.ID(), Host: g.Host, Kind: row.Kind.String()}
+			e = row.Entry
+		}
+	}
+	if want.ID == "" {
+		t.Fatal("the window has no shell for a client to watch")
+	}
+
+	// The same name, standing for a different kind of thing, and for a
+	// thing on a different machine.
+	for _, what := range []string{"kind", "host"} {
+		stale := want
+		switch what {
+		case "kind":
+			stale.Kind = conns.Files.String()
+		case "host":
+			stale.Host = "margit"
+		}
+		if _, err := a.watchPane(stale, 80, 24); err == nil {
+			t.Fatalf("a client told the %s was something else was handed the pane", what)
+		} else if !strings.Contains(err.Error(), "no longer") {
+			t.Errorf("it refused with %q, want it to say the name stands for something else", err)
+		}
+	}
+
+	// The label is not part of the check: a shell sets its own title, so
+	// it changes at every prompt, and a client that was told one title
+	// must not be refused for asking a moment later.
+	e.Label = "vim README.md"
+	sess, err := a.watchPane(want, 80, 24)
+	if err != nil {
+		t.Fatalf("a pane whose title had changed was refused: %v", err)
+	}
+	if err := sess.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	// And what the client really was told about is still handed over.
+	sess, err = a.watchPane(want, 80, 24)
+	if err != nil {
+		t.Fatalf("watchPane: %v", err)
+	}
+	if err := sess.Close(); err != nil {
+		t.Fatalf("close: %v", err)
 	}
 }

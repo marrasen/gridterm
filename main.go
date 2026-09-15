@@ -98,7 +98,7 @@ func main() {
 		shotScript = flag.String("shot", "",
 			"drive the window through a script and write PNGs, then exit;"+
 				" steps are wait:<frames> key:<chord> type:<text> shot:<file>,"+
-				` e.g. "wait:60 key:ctrl+k shot:palette.png"`)
+				` e.g. "wait:60 key:ctrl+shift+k shot:palette.png"`)
 	)
 	flag.Parse()
 
@@ -106,7 +106,7 @@ func main() {
 		// No window, and nothing on standard output but the protocol:
 		// whatever started this is reading it.
 		panes := mcp.NewWindow()
-		err := mcp.Serve(os.Stdin, os.Stdout, panes)
+		err := mcp.Serve(context.Background(), os.Stdin, os.Stdout, panes)
 		if err := errors.Join(err, panes.Close()); err != nil {
 			log.Fatalf("-mcp: %v", err)
 		}

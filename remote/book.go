@@ -497,9 +497,16 @@ func (b *Book) saveLocked() error {
 	// The file the path really names. A rename replaces a link rather
 	// than what it points at, so a config file linked in from somewhere
 	// else would be quietly detached and stop being updated.
-	path := b.path
-	if real, err := filepath.EvalSymlinks(path); err == nil {
-		path = real
+	// Only "it is not there" means there is no link to follow, which is
+	// what the first save meets. Any other failure -- a directory part
+	// way along that cannot be read -- would otherwise fall back to the
+	// original path and replace the link this is written to follow.
+	path, err := filepath.EvalSymlinks(b.path)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		path = b.path
+	case err != nil:
+		return fmt.Errorf("remote: write the server list %s: %w", b.path, err)
 	}
 
 	dir := filepath.Dir(path)

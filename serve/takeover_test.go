@@ -1000,14 +1000,16 @@ func waitForOpens(t *testing.T, w *Window, ok func([]Open) bool, what string) {
 // A client works in something the serving window already has running,
 // and the window is asked for exactly what the client was told about.
 func TestAWindowWorksInSomethingAlreadyRunning(t *testing.T) {
-	asked := make(chan string, 1)
+	asked := make(chan Attached, 1)
 	running := newEchoSession(100, 40)
-	_, w := takenOverWith(t, nil, func(id string, cols, rows int) (session.Session, error) {
-		asked <- id
+	_, w := takenOverWith(t, nil, func(want Attached, cols, rows int) (session.Session, error) {
+		asked <- want
 		return running, nil
 	})
 
-	sess, err := w.Attach(Open{ID: "7", Kind: "Terminal", Label: "vim README.md"}, 80, 24)
+	sess, err := w.Attach(Open{
+		ID: "7", Host: "margit", Kind: "Terminal", Label: "vim README.md",
+	}, 80, 24)
 	if err != nil {
 		t.Fatalf("attach: %v", err)
 	}
@@ -1015,8 +1017,13 @@ func TestAWindowWorksInSomethingAlreadyRunning(t *testing.T) {
 
 	select {
 	case got := <-asked:
-		if got != "7" {
-			t.Errorf("it asked for %q, not %q", got, "7")
+		if got.ID != "7" {
+			t.Errorf("it asked for %q, not %q", got.ID, "7")
+		}
+		// The machine and the kind as well, so the window can check the
+		// name still stands for what the client was told about.
+		if got.Kind != "Terminal" || got.Host != "margit" {
+			t.Errorf("it was asked for %+v, want what the client was told", got)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("the serving window was never asked")
@@ -1061,8 +1068,8 @@ func TestAWindowThatCannotBeWorkedInSaysSo(t *testing.T) {
 // What the serving window says about something that has gone reaches
 // the client rather than being swallowed.
 func TestAskingForSomethingGoneSaysSo(t *testing.T) {
-	_, w := takenOverWith(t, nil, func(id string, cols, rows int) (session.Session, error) {
-		return nil, fmt.Errorf("there is nothing called %q open here any more", id)
+	_, w := takenOverWith(t, nil, func(want Attached, cols, rows int) (session.Session, error) {
+		return nil, fmt.Errorf("there is nothing called %q open here any more", want.ID)
 	})
 
 	sess, err := w.Attach(Open{ID: "99", Kind: "Terminal", Label: "gone"}, 80, 24)

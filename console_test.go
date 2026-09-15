@@ -11,38 +11,6 @@ import (
 // esc is the byte that starts an escape sequence.
 const esc = "\x1b"
 
-// Whatever a server sends is printed to the terminal gridterm was
-// started from, which obeys escape sequences. Left alone it could move
-// that terminal's cursor, overwrite what was already there, or set its
-// title.
-func TestPlainlyStripsWhatATerminalWouldObey(t *testing.T) {
-	cases := []struct {
-		name string
-		in   string
-		want string
-	}{
-		{"an escape sequence", esc + "[2JCode:", "[2JCode:"},
-		{"a carriage return", "Code:\rFAKE", "Code:FAKE"},
-		{"a title sequence", esc + "]0;owned\x07", "]0;owned"},
-		{"a tab", "a\tb", "a b"},
-		{"ordinary words", "Enter your code", "Enter your code"},
-		{"an accent", "Código", "Código"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got := plainly(tc.in)
-			if got != tc.want {
-				t.Fatalf("plainly(%q) = %q, want %q", tc.in, got, tc.want)
-			}
-			for _, r := range got {
-				if r < ' ' {
-					t.Fatalf("plainly(%q) left a control character %q", tc.in, r)
-				}
-			}
-		})
-	}
-}
-
 // Before the window opens there is no dialog to show a fingerprint in,
 // so an unknown host is a hard failure — and the message has to carry
 // the fingerprint so the user can do something about it.

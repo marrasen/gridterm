@@ -138,6 +138,15 @@ func (a *app) newPane(f vfs.FS, b *browser) *files.Pane {
 		}()
 	}
 	p.OnChange = func() { a.browserMoved(b, p) }
+	// Not from the pane's own key handling: a dialog opened from inside
+	// one is torn down with whatever the key was delivered through.
+	p.OnGoTo = func() {
+		a.pump.post(func() {
+			if err := a.openGoTo(); err != nil {
+				a.reportError("Go to", err)
+			}
+		})
+	}
 	return p
 }
 

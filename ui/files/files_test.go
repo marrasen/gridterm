@@ -936,6 +936,19 @@ func TestTheBarDoesNotHideTheNameTheKeysAreOn(t *testing.T) {
 	}
 }
 
+// barKey is where a chord sits on the bar, so a test does not have to
+// count the keys before it.
+func barKey(t *testing.T, b *Browser, chord string) int {
+	t.Helper()
+	for i, k := range b.keys {
+		if k.Chord == chord {
+			return i
+		}
+	}
+	t.Fatalf("the bar has no %s: %v", chord, b.keys)
+	return -1
+}
+
 // A key with nothing behind it is still shown, so the bar says the same
 // thing wherever it is, but it is shown without being offered.
 func TestTheBarShowsAKeyWithNothingBehindIt(t *testing.T) {
@@ -950,8 +963,8 @@ func TestTheBarShowsAKeyWithNothingBehindIt(t *testing.T) {
 	// Copy is wired and Delete is not, so the two read differently. The
 	// one with nothing behind it is still lit enough to read: dimmer
 	// than a working key and brighter than the bar's own ground.
-	copyAt, _ := keyCell(2, 60, len(b.keys))
-	deleteAt, _ := keyCell(5, 60, len(b.keys))
+	copyAt, _ := keyCell(barKey(t, b, "^C"), 60, len(b.keys))
+	deleteAt, _ := keyCell(barKey(t, b, "F8"), 60, len(b.keys))
 	if got := g.At(copyAt+2, 11).BG; got != styled().SelectedBG {
 		t.Errorf("a wired key is drawn on %v, want it marked out", got)
 	}
@@ -1938,4 +1951,27 @@ func selectedName(t *testing.T, p *Pane) string {
 		t.Fatal("nothing is selected")
 	}
 	return e.Name
+}
+
+// Going somewhere by name is on the bar and on the key, because nothing
+// else says it is there.
+func TestGoToIsOnTheBarAndOnTheKey(t *testing.T) {
+	b, _, _ := two(t)
+	b.Style = styled()
+
+	if barKey(t, b, "^G") < 0 {
+		t.Fatal("the bar does not offer it")
+	}
+	asked := 0
+	pane := b.Panes()[0]
+	pane.OnGoTo = func() { asked++ }
+	took, err := pane.HandleKey(input.Event{
+		Kind: input.KeyPress, Key: input.KeyG, Mods: input.ModCtrl,
+	})
+	if err != nil {
+		t.Fatalf("the key failed: %v", err)
+	}
+	if !took || asked != 1 {
+		t.Fatalf("the key was taken %v and asked %d times", took, asked)
+	}
 }

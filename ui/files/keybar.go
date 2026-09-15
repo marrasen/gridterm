@@ -28,6 +28,7 @@ func (k fkey) matches(ev input.Event) bool {
 func browserKeys() []fkey {
 	return []fkey{
 		{Key: input.KeyTab, Chord: "Tab", Title: "Next"},
+		{Key: input.KeyG, Mods: input.ModCtrl, Chord: "^G", Title: "Go to"},
 		{Key: input.KeyF2, Chord: "F2", Title: "Rename"},
 		// Copy, cut and paste are the chords they are everywhere else. A
 		// file pane is not a terminal, so nothing else wants them here.

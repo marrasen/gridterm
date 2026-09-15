@@ -101,6 +101,11 @@ type Pane struct {
 	// whatever is watching can say where it is.
 	OnChange func()
 
+	// OnGoTo is called when the user asks to go somewhere by name. A
+	// nil one leaves the key alone: asking where to go needs a dialog,
+	// and this package has none.
+	OnGoTo func()
+
 	// Read is how a listing is fetched. It runs the work somewhere else
 	// and calls back with what it found, on the goroutine that draws.
 	//
@@ -676,6 +681,15 @@ func (p *Pane) HandleKey(ev input.Event) (bool, error) {
 		// does everywhere else.
 		p.typeToFind(ev.Rune)
 		return true, nil
+	}
+	if ev.Kind == input.KeyPress && ev.Mods == input.ModCtrl && ev.Key == input.KeyG {
+		// Ctrl+G here as well as the window's own chord: this is not a
+		// terminal, so nothing else wants the key, and a file browser
+		// is where somebody looks for it.
+		if p.OnGoTo != nil {
+			p.OnGoTo()
+			return true, nil
+		}
 	}
 	if ev.Mods != 0 {
 		// Ctrl+Tab and the rest belong to whatever is around the pane.

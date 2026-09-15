@@ -90,6 +90,11 @@ type app struct {
 	// over, by the address each was reached at.
 	windows map[string]*taken
 
+	// knownWindowsAt is where the keys of the windows reached are
+	// recorded, empty in the program and set by a test to a file of its
+	// own: the real one belongs to whoever is running gridterm.
+	knownWindowsAt string
+
 	// served are the panel rows for the windows working in this one,
 	// by the client each stands for.
 	served map[*serve.Client]*conns.Entry

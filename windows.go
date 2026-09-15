@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,7 +16,6 @@ import (
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/serve"
 	"github.com/marrasen/gridterm/ui"
-	"github.com/marrasen/gridterm/ui/term"
 )
 
 // knownWindowsFile is where the keys of gridterm windows this one has
@@ -54,7 +54,8 @@ func (a *app) openTakeOver() error {
 		"That window has to be serving, and has to have",
 		"this machine's public key in its authorized_keys.",
 	}
-	addr := a.AddrField(f)
+	addr := f.AddField("Machine", a.newField(
+		fmt.Sprintf("host[:port], port %d unless given", servePort), 0))
 	key := f.AddField("Key file", a.newField("optional, or the agent's keys", 0))
 
 	f.AddButton(ui.Button{Title: "Take over", Do: func() error {
@@ -63,13 +64,6 @@ func (a *app) openTakeOver() error {
 	f.AddButton(ui.Button{Title: "Cancel"})
 	a.showForm(f, nil)
 	return nil
-}
-
-// AddrField adds the machine field, which carries the port a serving
-// window uses unless one is typed.
-func (a *app) AddrField(f *ui.Form) *ui.Field {
-	return f.AddField("Machine", a.newField("host[:port], port "+
-		fmt.Sprint(servePort)+" unless given", 0))
 }
 
 // takeOver reaches another window and puts it on the panel.
@@ -84,12 +78,14 @@ func (a *app) takeOver(addr, keyFile string) error {
 	if !strings.Contains(addr, ":") {
 		addr = fmt.Sprintf("%s:%d", addr, servePort)
 	}
-	if a.windows[addr] != nil {
+	switch {
+	case a.windows[addr] != nil:
 		return fmt.Errorf("this window has already taken over %s", addr)
-	}
-	known, err := knownWindowsPath()
-	if err != nil {
-		return err
+	case a.opening[addr] != nil:
+		// Two at once would leave the window holding the second and
+		// closing neither: the first's way of being closed is written
+		// over before anything can use it.
+		return fmt.Errorf("gridterm is already taking over %s", addr)
 	}
 
 	ctx, cancel := context.WithCancel(a.ctx)
@@ -107,21 +103,17 @@ func (a *app) takeOver(addr, keyFile string) error {
 
 	ask := &askUser{app: a}
 	go func() {
-		keys, err := a.keysFor(ctx, keyFile, ask)
-		var win *serve.Window
-		if err == nil {
-			var check ssh.HostKeyCallback
-			check, err = remote.HostKeyCheck(ctx, []string{known}, ask)
-			if err == nil {
-				win, err = serve.Dial(ctx, serve.DialConfig{
-					Addr: addr, Keys: keys, HostKey: check,
-				})
-			}
-		}
+		win, err := reachWindow(ctx, reach{
+			addr: addr, keyFile: keyFile, ring: a.keys, ask: ask,
+			known: a.knownWindows, agent: remote.AgentKeys,
+		})
 		a.pump.post(func() {
 			a.connecting--
 			a.registry.Drop(waiting)
 			delete(a.opening, addr)
+			// Read before the context is let go of on the next line,
+			// which would otherwise make every window look like one the
+			// user gave up on.
 			gaveUp := ctx.Err()
 			cancel()
 			if err != nil {
@@ -130,9 +122,11 @@ func (a *app) takeOver(addr, keyFile string) error {
 			}
 			if gaveUp != nil {
 				// Given up on while the last of the handshake was
-				// finishing. Nothing else knows about it.
+				// finishing. Nothing else knows about it, and a failure
+				// to hang up is the user's to see: it is a socket to a
+				// machine that thinks somebody is working in it.
 				if err := win.Close(); err != nil {
-					a.logError(err)
+					a.reportError("Could not let go of "+addr, err)
 				}
 				return
 			}
@@ -145,49 +139,136 @@ func (a *app) takeOver(addr, keyFile string) error {
 	return nil
 }
 
+// reach is everything reaching another window needs.
+//
+// The two functions are here rather than called for, so a test can hand
+// over an agent and a file of its own: the real ones belong to whoever
+// is running gridterm.
+type reach struct {
+	addr, keyFile string
+	ring          *remote.Ring
+	ask           remote.Ask
+
+	// known says where the windows already reached are recorded, and
+	// agent where the keys an SSH agent holds come from.
+	known func() (string, error)
+	agent agentKeys
+}
+
+// reachWindow does the part that must not run on the goroutine that
+// draws: reading the disk, unlocking a key, and the handshake itself.
+func reachWindow(ctx context.Context, r reach) (*serve.Window, error) {
+	known, err := r.known()
+	if err != nil {
+		return nil, err
+	}
+	keys, closer, err := keysFor(ctx, r.keyFile, r.ring, r.ask, r.agent)
+	if err != nil {
+		return nil, err
+	}
+	// Held open until the handshake is done. A signer the agent holds
+	// signs over that socket, so closing it first leaves a key that can
+	// be offered and cannot be used -- and one such key fails the whole
+	// handshake, with the others never tried.
+	if closer != nil {
+		defer closer.Close()
+	}
+
+	check, err := remote.HostKeyCheck(ctx, []string{known}, r.ask)
+	if err != nil {
+		return nil, err
+	}
+	return serve.Dial(ctx, serve.DialConfig{Addr: r.addr, Keys: keys, HostKey: check})
+}
+
+// agentKeys is where the keys an SSH agent holds come from. It is a
+// parameter so a test can hand over an agent of its own: the real one
+// belongs to whoever is running gridterm.
+type agentKeys func() ([]ssh.Signer, io.Closer, error)
+
 // keysFor is what to offer the other window: the key file named, if one
 // was, and otherwise whatever is already unlocked and whatever the
 // agent holds.
-func (a *app) keysFor(ctx context.Context, keyFile string, ask remote.Ask) ([]ssh.Signer, error) {
+//
+// The closer is the connection to the agent, which the caller closes
+// once it has finished signing with what it was given. It is nil when
+// there is nothing to close.
+func keysFor(ctx context.Context, keyFile string, ring *remote.Ring,
+	ask remote.Ask, fromAgent agentKeys) ([]ssh.Signer, io.Closer, error) {
+
 	if keyFile != "" {
-		signer, err := a.keys.Unlock(ctx, keyFile, ask)
+		signer, err := ring.Unlock(ctx, keyFile, ask)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		return []ssh.Signer{signer}, nil
+		return []ssh.Signer{signer}, nil, nil
 	}
-	keys := a.keys.Signers()
-	// The agent's as well, which is where most people keep the key they
-	// would reach any other machine with. No agent is not a failure:
-	// the ring may hold one already, and the error says so if neither
-	// does.
-	if fromAgent, closer, err := remote.AgentKeys(); err == nil {
-		keys = append(keys, fromAgent...)
-		if closer != nil {
-			defer closer.Close()
-		}
+	keys := ring.Signers()
+	agentSigners, closer, agentErr := fromAgent()
+	keys = append(keys, agentSigners...)
+	if len(keys) > 0 {
+		return keys, closer, nil
 	}
-	if len(keys) == 0 {
-		return nil, errors.New(
-			"no keys to offer: name a key file, or add one to the SSH agent")
+	if closer != nil {
+		_ = closer.Close()
 	}
-	return keys, nil
+	if agentErr != nil {
+		// Why there were none, which is not always "there is no
+		// agent": one that answered and then failed is a different
+		// thing to go and fix.
+		return nil, nil, fmt.Errorf(
+			"no keys to offer, and the SSH agent could not be read: %w", agentErr)
+	}
+	return nil, nil, errors.New(
+		"no keys to offer: name a key file, or add one to the SSH agent")
 }
 
 // holdWindow remembers a window and puts a row on the panel for it.
 func (a *app) holdWindow(addr string, win *serve.Window) *taken {
 	t := &taken{name: addr, win: win}
 	t.entry = &conns.Entry{
-		Host:  addr,
-		Kind:  conns.Terminal,
-		Label: "taken over",
-		Meter: &meter.Meter{},
-		Close: func() error { return a.dropWindow(addr) },
+		Host:   addr,
+		Kind:   conns.Terminal,
+		Label:  "taken over",
+		Meter:  &meter.Meter{},
+		Reveal: func() { a.revealWindow(t) },
+		Close:  func() error { return a.dropWindow(addr) },
 	}
 	a.windows[addr] = t
 	a.registry.Add(t.entry)
 	a.refreshServers()
+
+	// A window that quits at the far end is still held here, saying it
+	// is taken over, until something notices. Nothing else here would.
+	go func() {
+		_ = win.Wait()
+		a.pump.post(func() { a.windowDied(t) })
+	}()
 	return t
+}
+
+// windowDied is called when the other window has gone by itself.
+func (a *app) windowDied(t *taken) {
+	if a.windows[t.name] != t {
+		// Already let go of from here, and its row with it.
+		return
+	}
+	if err := a.dropWindow(t.name); err != nil {
+		a.reportError("Trouble letting go of "+t.name, err)
+	}
+}
+
+// revealWindow puts one of a window's panes in front of the user.
+//
+// A window with nothing open on it has nothing to show, so nothing
+// happens: there is no window for a connection itself.
+func (a *app) revealWindow(t *taken) {
+	for pane, on := range a.paneOnWindow {
+		if on == t {
+			a.focus(pane)
+			return
+		}
+	}
 }
 
 // openOnWindow opens a terminal in the other window, drawn in a pane
@@ -241,22 +322,31 @@ func (a *app) dropWindow(addr string) error {
 	return errors.Join(errs...)
 }
 
-// closeWindows lets go of every window this one has taken over.
+// closeWindows hangs up on every window this one took over, for a
+// window that is shutting down.
+//
+// The connections and nothing else. The panes have gone by then, and a
+// window on its way out has no tree left to take one out of and nobody
+// to show a rebuilt menu to.
 func (a *app) closeWindows() error {
 	var errs []error
-	for addr := range a.windows {
-		errs = append(errs, a.dropWindow(addr))
+	for addr, t := range a.windows {
+		delete(a.windows, addr)
+		errs = append(errs, t.win.Close())
 	}
 	return errors.Join(errs...)
 }
 
-// windowNames is every window this one has taken over.
-func (a *app) windowNames() []string {
-	out := make([]string, 0, len(a.windows))
-	for addr := range a.windows {
-		out = append(out, addr)
+// isWindow reports whether a name is a window this one has taken over.
+func (a *app) isWindow(name string) bool { return a.windows[name] != nil }
+
+// knownWindows is where this window records the keys of the windows it
+// has reached. A test points it somewhere of its own.
+func (a *app) knownWindows() (string, error) {
+	if a.knownWindowsAt != "" {
+		return a.knownWindowsAt, nil
 	}
-	return out
+	return knownWindowsPath()
 }
 
 // knownWindowsPath is where the keys of windows this one has reached
@@ -271,6 +361,3 @@ func knownWindowsPath() (string, error) {
 	}
 	return filepath.Join(at, knownWindowsFile), nil
 }
-
-// takenPane reports whether a pane is drawn from another window.
-func (a *app) takenPane(t *term.Terminal) bool { return a.paneOnWindow[t] != nil }

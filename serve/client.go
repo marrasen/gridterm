@@ -118,6 +118,12 @@ func (w *Window) Open(cols, rows int) (session.Session, error) {
 	return s, nil
 }
 
+// Wait blocks until the connection to the other window ends.
+//
+// A window that quit at the far end is still held here, saying it is
+// taken over, until something notices. Nothing else would.
+func (w *Window) Wait() error { return w.client.Wait() }
+
 // Close lets go of the other window. Everything opened on it goes too.
 func (w *Window) Close() error {
 	w.mu.Lock()

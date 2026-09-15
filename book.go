@@ -57,12 +57,19 @@ func (a *app) refreshServers() {
 			Title: "Open a terminal on " + groupName(host),
 			Run:   func() error { return a.openTerminalOn(host) },
 		}
+		a.registerServerCommands(a.reporting(term))
+		if a.isWindow(host) {
+			// A window taken over serves terminals and nothing else
+			// yet. A command to browse its files would be one that
+			// cannot work, greyed out or not.
+			continue
+		}
 		browse := ui.Command{
 			ID:    filesPrefix + remote.CommandName(host),
 			Title: "Browse files on " + groupName(host),
 			Run:   func() error { return a.openFilesOn(host) },
 		}
-		a.registerServerCommands(a.reporting(term), a.reporting(browse))
+		a.registerServerCommands(a.reporting(browse))
 	}
 
 	var items []ui.MenuItem
@@ -118,8 +125,11 @@ func (a *app) registerServerCommands(cmds ...ui.Command) {
 // openTerminalOn opens a terminal on a machine: a tab here when it is
 // this one, and a shell over the connection otherwise.
 func (a *app) openTerminalOn(host string) error {
-	if a.isHere(host) {
+	switch {
+	case a.isHere(host):
 		return a.openTab()
+	case a.isWindow(host):
+		return a.openOnWindow(host, nil)
 	}
 	return a.openOn(host, nil, nil)
 }

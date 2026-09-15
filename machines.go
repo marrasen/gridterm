@@ -516,6 +516,9 @@ func (a *app) disconnectHere() error {
 	if a.isHere(host) {
 		return errors.New("this is the machine gridterm is running on, not one it connected to")
 	}
+	if a.isWindow(host) {
+		return a.dropWindow(host)
+	}
 	if a.machines[host] == nil && a.opening[host] == nil {
 		// Said rather than done quietly. A command that reports success
 		// and changes nothing is how a connection that would not close
@@ -539,9 +542,12 @@ func (a *app) cancelConnecting(host string) error {
 // looking at.
 func (a *app) openTerminalHere() error {
 	host := a.currentHost()
-	if a.isHere(host) {
+	switch {
+	case a.isHere(host):
 		// A new pane already runs there, which is what a new tab is.
 		return a.openTab()
+	case a.isWindow(host):
+		return a.openOnWindow(host, nil)
 	}
 	return a.openOn(host, nil, nil)
 }
@@ -579,7 +585,14 @@ func (a *app) openCommandHere() error {
 
 // forgetPane takes a pane off the record of what runs where, for one
 // that has been closed.
-func (a *app) forgetPane(t *term.Terminal) { delete(a.paneOn, t) }
+func (a *app) forgetPane(t *term.Terminal) {
+	delete(a.paneOn, t)
+	// And the window it was drawn from, if it was drawn from one. Left
+	// behind, the record keeps a terminal that has gone, and letting go
+	// of that window later reports a failure to close a pane that was
+	// closed long before.
+	delete(a.paneOnWindow, t)
+}
 
 // closeMachines ends every connection the window is holding, for a
 // window that is closing.

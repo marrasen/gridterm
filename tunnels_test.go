@@ -326,9 +326,12 @@ func TestOneFailedStreamIsShown_TheRestAreCounted(t *testing.T) {
 		}
 		_ = c.Close()
 	}
-	waitFor(t, a, "every failure to be counted", func() bool {
+	// Both: the row says how many failed only once none are still
+	// live, and a stream that has failed is not finished being let go
+	// of at the moment its failure is counted.
+	waitFor(t, a, "every failure to be counted and let go of", func() bool {
 		open := a.tunnels[row]
-		return open != nil && open.trouble >= tries
+		return open != nil && open.trouble >= tries && open.f.Streams() == 0
 	})
 
 	if got := len(a.modals); got != 1 {

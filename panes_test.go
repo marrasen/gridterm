@@ -149,6 +149,12 @@ func newTestApp(t *testing.T, cols, rows int) *testApp {
 		t.Fatalf("server list: %v", err)
 	}
 	ta.book = book
+	// The windows it reaches are recorded in a file of the test's own.
+	// The real one belongs to whoever is running the tests, and a test
+	// that wrote to it would fill it with the loopback ports of servers
+	// that existed for a tenth of a second -- and leave keys behind to
+	// raise a false alarm if a port ever came round again.
+	ta.knownWindowsAt = filepath.Join(t.TempDir(), "known_windows")
 	ta.newSession = func(int, int) (session.Session, error) {
 		sess := newPipeSession()
 		ta.shells = append(ta.shells, sess)

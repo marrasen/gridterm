@@ -696,18 +696,15 @@ func (a *app) releaseFS(f vfs.FS) error {
 	if len(stopping) == 0 {
 		return f.Close()
 	}
-	// Counted before the goroutine starts, so a window closing in the
-	// same frame still waits for it.
-	a.closing.Add(1)
-	go func() {
-		defer a.closing.Done()
+	a.closes.inBackground(func() error {
 		for _, j := range stopping {
 			<-j.Done()
 		}
 		if err := f.Close(); err != nil {
-			a.closeFailed(fmt.Errorf("could not close %s: %w", f.Name(), err))
+			return fmt.Errorf("could not close %s: %w", f.Name(), err)
 		}
-	}()
+		return nil
+	})
 	return nil
 }
 

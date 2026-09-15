@@ -45,8 +45,8 @@ func TestOneWindowWorksInAnotherMachinesShell(t *testing.T) {
 	}
 
 	w, err := serve.Dial(context.Background(), serve.DialConfig{
-		Addr: a.server.Addr(), Keys: []ssh.Signer{mine},
-		HostKey: ssh.FixedHostKey(a.server.HostKey()),
+		Addr: a.serving.addr(), Keys: []ssh.Signer{mine},
+		HostKey: ssh.FixedHostKey(a.serving.server.HostKey()),
 	})
 	if err != nil {
 		t.Fatalf("dial: %v", err)
@@ -94,7 +94,7 @@ func TestTakingOverAWindowOpensAPaneOnIt(t *testing.T) {
 	withPanel(t, client)
 	panes := len(client.panes)
 
-	if err := client.takeOver(host.server.Addr(), keyFile); err != nil {
+	if err := client.takeOver(host.serving.addr(), keyFile); err != nil {
 		t.Fatalf("take over: %v", err)
 	}
 	// The window has never been reached before, so its key is offered
@@ -102,16 +102,16 @@ func TestTakingOverAWindowOpensAPaneOnIt(t *testing.T) {
 	answer(t, client, "Connect")
 
 	waitFor(t, client, "the window to be taken over", func() bool {
-		return client.windows[host.server.Addr()] != nil && len(client.panes) > panes
+		return client.windows[host.serving.addr()] != nil && len(client.panes) > panes
 	})
-	if got := len(host.server.Clients()); got != 1 {
+	if got := len(host.serving.clients()); got != 1 {
 		t.Errorf("%d clients on the serving window, want one", got)
 	}
 
 	// And the panel says so, under the address it was reached at.
 	var named bool
 	for _, line := range panelText(client, panelNow) {
-		if strings.Contains(line, host.server.Addr()) {
+		if strings.Contains(line, host.serving.addr()) {
 			named = true
 		}
 	}
@@ -129,7 +129,7 @@ func TestLettingGoOfATakenWindowTakesItsPanes(t *testing.T) {
 	if err := host.startServing("0", whereHere); err != nil {
 		t.Fatalf("serve: %v", err)
 	}
-	addr := host.server.Addr()
+	addr := host.serving.addr()
 
 	client := newTestApp(t, 90, 30)
 	withDialogs(t, client)
@@ -154,7 +154,7 @@ func TestLettingGoOfATakenWindowTakesItsPanes(t *testing.T) {
 		t.Errorf("%d panes are left, want the %d there were before", got, panes)
 	}
 	waitFor(t, client, "the serving window to see it go", func() bool {
-		return len(host.server.Clients()) == 0
+		return len(host.serving.clients()) == 0
 	})
 }
 
@@ -197,7 +197,7 @@ func TestTheServedWindowSaysItIsBeingServed(t *testing.T) {
 	if err := host.startServing("0", whereHere); err != nil {
 		t.Fatalf("serve: %v", err)
 	}
-	addr := host.server.Addr()
+	addr := host.serving.addr()
 
 	client := newTestApp(t, 90, 30)
 	withDialogs(t, client)
@@ -271,7 +271,7 @@ func TestAKeyFromTheAgentCanStillSign(t *testing.T) {
 	}
 
 	w, err := reachWindow(context.Background(), reach{
-		addr: a.server.Addr(), ring: a.keys,
+		addr: a.serving.addr(), ring: a.keys,
 		known: func() (string, error) { return known, nil },
 		agent: func() ([]ssh.Signer, io.Closer, error) {
 			return []ssh.Signer{shut}, shut, nil
@@ -287,7 +287,7 @@ func TestAKeyFromTheAgentCanStillSign(t *testing.T) {
 // knownLine is the known_windows line for a window that is serving.
 func knownLine(t *testing.T, a *testApp) string {
 	t.Helper()
-	return knownhosts.Line([]string{a.server.Addr()}, a.server.HostKey()) + "\n"
+	return knownhosts.Line([]string{a.serving.addr()}, a.serving.server.HostKey()) + "\n"
 }
 
 // shutting is a key that stops working once it is closed, the way one
@@ -488,7 +488,7 @@ func TestLettingGoTakesTheRowAway(t *testing.T) {
 // window sitting one row above it.
 func TestTheCommandsOnAWindowReachTheWindow(t *testing.T) {
 	_, client, addr := twoWindows(t)
-	client.actOn, client.acting = addr, true
+	client.hostMenus.nowAbout(addr)
 	panes := len(client.panes)
 
 	if err := client.openTerminalHere(); err != nil {
@@ -540,7 +540,7 @@ func TestShuttingDownHangsUpOnEveryWindow(t *testing.T) {
 		t.Error("a window is still held")
 	}
 	waitFor(t, host, "the serving window to see it go", func() bool {
-		return len(host.server.Clients()) == 0
+		return len(host.serving.clients()) == 0
 	})
 }
 
@@ -556,7 +556,7 @@ func twoWindows(t *testing.T) (host, client *testApp, addr string) {
 	if err := host.startServing("0", whereHere); err != nil {
 		t.Fatalf("serve: %v", err)
 	}
-	addr = host.server.Addr()
+	addr = host.serving.addr()
 
 	client = newTestApp(t, 90, 30)
 	withDialogs(t, client)

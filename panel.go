@@ -210,7 +210,7 @@ func (a *app) refreshPanel(now time.Time) {
 	// the one sitting at it has to be able to tell.
 	for pane, e := range a.panes {
 		want := ""
-		if h := a.handedBy[pane]; h != nil {
+		if h := a.agents.of(pane); h != nil {
 			// Ahead of the far end's size: the user can see a size, and
 			// cannot otherwise see that something else is typing here.
 			want = h.note()

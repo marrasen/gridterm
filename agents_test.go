@@ -17,7 +17,7 @@ func handedOver(t *testing.T, a *testApp) (*term.Terminal, string, *agent.Client
 	if err := a.handPane(pane); err != nil {
 		t.Fatalf("hand it over: %v", err)
 	}
-	h := a.handedBy[pane]
+	h := a.agents.of(pane)
 	if h == nil {
 		t.Fatal("the window did not record the handover")
 	}
@@ -43,7 +43,7 @@ func TestAnAgentWorksInThePaneItWasHanded(t *testing.T) {
 	var got agent.Pane
 	fromAgent(t, a, func() error {
 		var err error
-		got, err = c.Use(a.handedBy[pane].code)
+		got, err = c.Use(a.agents.of(pane).code)
 		return err
 	})
 	if got.Cols != pane.Size().Cols || got.Rows != pane.Size().Rows {
@@ -127,7 +127,7 @@ func TestTakingThePaneBackStopsTheAgent(t *testing.T) {
 	}
 	// And nothing is listening any more, because nothing is handed
 	// over.
-	if a.agents != nil {
+	if a.agents.listening() {
 		t.Error("the window is still listening for agents")
 	}
 }
@@ -138,7 +138,7 @@ func TestNothingListensForAgentsUntilAPaneIsHandedOver(t *testing.T) {
 	withDialogs(t, a)
 	withPanel(t, a)
 
-	if a.agents != nil {
+	if a.agents.listening() {
 		t.Fatal("it is listening for agents with nothing handed over")
 	}
 
@@ -146,13 +146,13 @@ func TestNothingListensForAgentsUntilAPaneIsHandedOver(t *testing.T) {
 	if err := a.handPane(pane); err != nil {
 		t.Fatalf("hand it over: %v", err)
 	}
-	if a.agents == nil {
+	if !a.agents.listening() {
 		t.Fatal("it is not listening after a pane was handed over")
 	}
 	if err := a.takeBackPane(pane); err != nil {
 		t.Fatalf("take it back: %v", err)
 	}
-	if a.agents != nil {
+	if a.agents.listening() {
 		t.Error("it is still listening with nothing handed over")
 	}
 }
@@ -168,7 +168,7 @@ func TestHandingOnePaneOverTwiceKeepsOneCode(t *testing.T) {
 	if err := a.handPane(pane); err != nil {
 		t.Fatalf("hand it over again: %v", err)
 	}
-	if got := a.handedBy[pane].code; got != code {
+	if got := a.agents.of(pane).code; got != code {
 		t.Errorf("it made a second code: %q then %q", code, got)
 	}
 }
@@ -184,10 +184,10 @@ func TestAPaneThatClosesTakesItsHandoverWithIt(t *testing.T) {
 	if err := a.closePane(pane); err != nil {
 		t.Fatalf("close the pane: %v", err)
 	}
-	if a.handedBy[pane] != nil {
+	if a.agents.of(pane) != nil {
 		t.Error("the handover outlived the pane")
 	}
-	if a.agents != nil {
+	if a.agents.listening() {
 		t.Error("the window is still listening with nothing handed over")
 	}
 }
@@ -277,7 +277,7 @@ func TestHandingAPaneOverShowsTheCodeAndCopiesIt(t *testing.T) {
 		t.Fatalf("hand it over: %v", err)
 	}
 
-	code := a.handedBy[pane].code
+	code := a.agents.of(pane).code
 	f := openDialog(t, a)
 	if !strings.Contains(strings.Join(f.Lines, "\n"), code) {
 		t.Errorf("the dialog does not show the code: %v", f.Lines)
@@ -288,7 +288,7 @@ func TestHandingAPaneOverShowsTheCodeAndCopiesIt(t *testing.T) {
 
 	// And the dialog offers to take it straight back.
 	pressButton(t, a, f, "Take it back")
-	if a.handedBy[pane] != nil {
+	if a.agents.of(pane) != nil {
 		t.Error("it is still handed over")
 	}
 }
@@ -359,7 +359,7 @@ func TestHandingAPaneOverAgainShutsOutTheAgentThatHadIt(t *testing.T) {
 	if err := a.handPane(pane); err != nil {
 		t.Fatalf("hand it over again: %v", err)
 	}
-	again := a.handedBy[pane]
+	again := a.agents.of(pane)
 	if again.code == code {
 		t.Fatal("it handed out the same code again")
 	}
@@ -464,7 +464,7 @@ func TestTakingOnePaneBackWithAnotherStillOut(t *testing.T) {
 		}
 	}
 
-	first := a.handedBy[panes[0]]
+	first := a.agents.of(panes[0])
 	c, err := agent.Dial(first.code)
 	if err != nil {
 		t.Fatalf("dial: %v", err)
@@ -481,7 +481,7 @@ func TestTakingOnePaneBackWithAnotherStillOut(t *testing.T) {
 	if err := a.takeBackPane(panes[0]); err != nil {
 		t.Fatalf("take it back: %v", err)
 	}
-	if a.agents == nil {
+	if !a.agents.listening() {
 		t.Fatal("the listener stopped with a pane still handed over")
 	}
 

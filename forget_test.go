@@ -36,7 +36,7 @@ func TestThePlusOnASavedServerOffersToForgetIt(t *testing.T) {
 func TestForgettingAMachineThatIsNotSavedSaysSo(t *testing.T) {
 	a := newTestApp(t, 100, 30)
 	withPanel(t, a)
-	a.actOn, a.acting = "somewhere", true
+	a.hostMenus.nowAbout("somewhere")
 
 	err := a.forgetThisServer()
 
@@ -57,7 +57,7 @@ func TestClosingAConnectionStillOnItsWayGivesUp(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	a.holdNames(&dialling{cancel: cancel, names: []string{"edge"}})
-	a.actOn, a.acting = "edge", true
+	a.hostMenus.nowAbout("edge")
 
 	if err := a.disconnectHere(); err != nil {
 		t.Fatalf("disconnect: %v", err)
@@ -78,7 +78,7 @@ func TestClosingAConnectionStillOnItsWayGivesUp(t *testing.T) {
 func TestClosingNothingSaysSo(t *testing.T) {
 	a := newTestApp(t, 100, 30)
 	withPanel(t, a)
-	a.actOn, a.acting = "edge", true
+	a.hostMenus.nowAbout("edge")
 
 	err := a.disconnectHere()
 

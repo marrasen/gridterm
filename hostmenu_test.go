@@ -229,8 +229,8 @@ func TestThePlusSaysWhichMachineTheCommandsAreFor(t *testing.T) {
 	// And it is forgotten again, so the next command means whatever has
 	// the keys.
 	a.pump.run()
-	if a.acting {
-		t.Fatal("the window is still acting on a machine no menu is open for")
+	if host := a.hostMenus.machine(); host != "" {
+		t.Fatalf("the window is still acting on %q, and no menu is open for it", host)
 	}
 }
 
@@ -249,8 +249,8 @@ func TestAMenuDismissedForgetsItsMachine(t *testing.T) {
 		t.Fatalf("Escape left %T on the stack", a.root.Modal())
 	}
 	a.pump.run()
-	if a.acting {
-		t.Fatal("the machine outlived the menu")
+	if host := a.hostMenus.machine(); host != "" {
+		t.Fatalf("%q outlived the menu", host)
 	}
 }
 
@@ -280,9 +280,8 @@ func TestANewMenuKeepsItsMachineWhileTheOldOneIsForgotten(t *testing.T) {
 	// The clear queued by the first menu runs now, and must leave the
 	// second alone.
 	a.pump.run()
-	if !a.acting || a.actOn != "two" {
-		t.Fatalf("the window is acting on %q (%v), want the machine the open menu is about",
-			a.actOn, a.acting)
+	if host := a.hostMenus.machine(); host != "two" {
+		t.Fatalf("the window is acting on %q, want the machine the open menu is about", host)
 	}
 	if got := a.currentHost(); got != "two" {
 		t.Fatalf("the commands would act on %q", got)
@@ -291,8 +290,8 @@ func TestANewMenuKeepsItsMachineWhileTheOldOneIsForgotten(t *testing.T) {
 	// And once the second goes, nothing is left behind.
 	second.HandleKey(input.Event{Kind: input.KeyPress, Key: input.KeyEscape})
 	a.pump.run()
-	if a.acting {
-		t.Fatal("the machine outlived the last menu")
+	if host := a.hostMenus.machine(); host != "" {
+		t.Fatalf("%q outlived the last menu", host)
 	}
 }
 
@@ -341,7 +340,7 @@ func TestThePlusOnASavedWindowTakesItOver(t *testing.T) {
 	if err := host.startServing("0", whereHere); err != nil {
 		t.Fatalf("serve: %v", err)
 	}
-	addr := host.server.Addr()
+	addr := host.serving.addr()
 
 	client := newTestApp(t, 90, 30)
 	withDialogs(t, client)

@@ -17,20 +17,22 @@ import (
 )
 
 // withServing points a test app's serving files at a directory of its
-// own and writes the keys given there.
-func withServing(t *testing.T, a *testApp, allowed string) {
+// own, writes the keys given there, and says where they went.
+func withServing(t *testing.T, a *testApp, allowed string) servePaths {
 	t.Helper()
 	at := t.TempDir()
-	a.servePaths = servePaths{
+	paths := servePaths{
 		hostKey: filepath.Join(at, "serve_host_key"),
 		allowed: filepath.Join(at, "authorized_keys"),
 	}
+	a.serving.usePaths(paths)
 	if allowed != "" {
-		if err := os.WriteFile(a.servePaths.allowed, []byte(allowed), 0o600); err != nil {
+		if err := os.WriteFile(paths.allowed, []byte(allowed), 0o600); err != nil {
 			t.Fatalf("write the keys: %v", err)
 		}
 	}
 	t.Cleanup(func() { _ = a.stopServing() })
+	return paths
 }
 
 // aPublicKey is one line of an authorized_keys file.
@@ -66,17 +68,17 @@ func aKeyPair(t *testing.T) (ssh.Signer, string) {
 func TestServingNobodySaysWhereToPutAKey(t *testing.T) {
 	a := newTestApp(t, 90, 30)
 	withDialogs(t, a)
-	withServing(t, a, "")
+	paths := withServing(t, a, "")
 
 	err := a.openServing()
 
 	if err == nil {
 		t.Fatal("it offered to serve nobody")
 	}
-	if !strings.Contains(err.Error(), a.servePaths.allowed) {
+	if !strings.Contains(err.Error(), paths.allowed) {
 		t.Errorf("it said %v, without saying where the keys go", err)
 	}
-	if a.server != nil {
+	if a.serving.on() {
 		t.Error("a port was opened")
 	}
 }
@@ -92,9 +94,9 @@ func TestServingThisMachineOnlyStaysOnTheLoopback(t *testing.T) {
 		t.Fatalf("serve: %v", err)
 	}
 
-	host, _, err := net.SplitHostPort(a.server.Addr())
+	host, _, err := net.SplitHostPort(a.serving.addr())
 	if err != nil {
-		t.Fatalf("the server is at %q: %v", a.server.Addr(), err)
+		t.Fatalf("the server is at %q: %v", a.serving.addr(), err)
 	}
 	if host != "127.0.0.1" {
 		t.Errorf("it is listening on %q, want the loopback", host)
@@ -111,7 +113,7 @@ func TestARefusedPortOpensNothing(t *testing.T) {
 		if err := a.startServing(port, whereHere); err == nil {
 			t.Errorf("%q was taken as a port", port)
 		}
-		if a.server != nil {
+		if a.serving.on() {
 			t.Fatalf("%q opened a port", port)
 		}
 	}
@@ -126,13 +128,13 @@ func TestStoppingClosesThePort(t *testing.T) {
 	if err := a.startServing("0", whereHere); err != nil {
 		t.Fatalf("serve: %v", err)
 	}
-	addr := a.server.Addr()
+	addr := a.serving.addr()
 
 	if err := a.stopServing(); err != nil {
 		t.Fatalf("stop: %v", err)
 	}
 
-	if a.server != nil {
+	if a.serving.on() {
 		t.Fatal("the window still holds a server")
 	}
 	c, err := net.Dial("tcp", addr)
@@ -148,7 +150,7 @@ func TestAWindowDoesNotServeUntilItIsTold(t *testing.T) {
 	a := newTestApp(t, 90, 30)
 	withServing(t, a, aPublicKey(t, "marcus@laptop"))
 
-	if a.server != nil {
+	if a.serving.on() {
 		t.Fatal("a window opened a port by itself")
 	}
 }
@@ -169,10 +171,10 @@ func TestPressingServeOnTheDialogAsItOpensWorks(t *testing.T) {
 
 	pressButton(t, a, f, "Serve")
 
-	if a.server == nil {
+	if !a.serving.on() {
 		t.Fatal("pressing Serve did not open a port")
 	}
-	if _, port, _ := net.SplitHostPort(a.server.Addr()); port != strconv.Itoa(servePort) {
+	if _, port, _ := net.SplitHostPort(a.serving.addr()); port != strconv.Itoa(servePort) {
 		t.Errorf("it is serving on port %s, want the %d the dialog offered", port, servePort)
 	}
 }
@@ -198,7 +200,7 @@ func TestTheServingDialogSurvivesTheButtonThatOpensIt(t *testing.T) {
 	if !strings.Contains(text, "SHA256:") {
 		t.Errorf("the dialog does not show a fingerprint:\n%s", text)
 	}
-	if !strings.Contains(text, a.server.Addr()) {
+	if !strings.Contains(text, a.serving.addr()) {
 		t.Errorf("the dialog does not say where it is serving:\n%s", text)
 	}
 }
@@ -212,14 +214,14 @@ func TestTheServingDialogSurvivesTheButtonThatOpensIt(t *testing.T) {
 func TestTheFingerprintShownIsTheOneBeingServed(t *testing.T) {
 	a := newTestApp(t, 90, 30)
 	withDialogs(t, a)
-	withServing(t, a, aPublicKey(t, "marcus@laptop"))
+	paths := withServing(t, a, aPublicKey(t, "marcus@laptop"))
 	if err := a.startServing("0", whereHere); err != nil {
 		t.Fatalf("serve: %v", err)
 	}
-	want := serve.Fingerprint(a.server.HostKey())
+	want := serve.Fingerprint(a.serving.server.HostKey())
 
 	// The file goes, the way a cleanup tool or a tidy-up would take it.
-	if err := os.Remove(a.servePaths.hostKey); err != nil {
+	if err := os.Remove(paths.hostKey); err != nil {
 		t.Fatalf("remove: %v", err)
 	}
 	if err := a.showServing(); err != nil {
@@ -242,15 +244,15 @@ func TestServingTwiceIsRefused(t *testing.T) {
 	if err := a.startServing("0", whereHere); err != nil {
 		t.Fatalf("serve: %v", err)
 	}
-	first := a.server.Addr()
+	first := a.serving.addr()
 
 	err := a.startServing("0", whereHere)
 
 	if err == nil {
 		t.Fatal("it started serving twice")
 	}
-	if a.server.Addr() != first {
-		t.Errorf("the window now holds %s, having let go of %s", a.server.Addr(), first)
+	if a.serving.addr() != first {
+		t.Errorf("the window now holds %s, having let go of %s", a.serving.addr(), first)
 	}
 	if err := a.stopServing(); err != nil {
 		t.Fatalf("stop: %v", err)
@@ -277,7 +279,7 @@ func TestALostListenerIsSaidAndNotClaimed(t *testing.T) {
 
 	a.servingStopped(errors.New("the listener gave up"))
 
-	if a.server != nil {
+	if a.serving.on() {
 		t.Error("the window still says it is being served")
 	}
 	n := openNotice(t, a)
@@ -322,9 +324,9 @@ func TestServingAnywhereListensOnEveryAddress(t *testing.T) {
 		t.Fatalf("serve: %v", err)
 	}
 
-	host, _, err := net.SplitHostPort(a.server.Addr())
+	host, _, err := net.SplitHostPort(a.serving.addr())
 	if err != nil {
-		t.Fatalf("the server is at %q: %v", a.server.Addr(), err)
+		t.Fatalf("the server is at %q: %v", a.serving.addr(), err)
 	}
 	if host != "::" && host != "0.0.0.0" {
 		t.Errorf("it is listening on %q, want every address", host)

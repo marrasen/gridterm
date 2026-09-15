@@ -27,10 +27,78 @@ const servePort = remote.ServePort
 // gridterm, and a test has no business writing keys into it.
 type servePaths struct{ hostKey, allowed string }
 
-// servingPaths returns where this window keeps its serving files.
-func (a *app) servingPaths() (servePaths, error) {
-	if a.servePaths.hostKey != "" {
-		return a.servePaths, nil
+// serving is the listener letting another window take this one over,
+// the rows for the windows that have, and what they were last told is
+// open here.
+//
+// Only the goroutine that draws touches it, with one exception: opens
+// is read from the goroutines serving clients, and the snapshot it
+// gives back holds a lock of its own.
+type serving struct {
+	// server is nil when the window is not being served. Off unless the
+	// user turns it on, and for this run only.
+	server *serve.Server
+
+	// paths points at the key and the list of who may connect, empty in
+	// the program and set by a test to a directory of its own.
+	paths servePaths
+
+	// rows are the panel rows for the windows working in this one, by
+	// the client each stands for.
+	rows map[*serve.Client]*conns.Entry
+
+	// last is what this window last told its clients it had open, so an
+	// unchanged one is not sent again.
+	last serve.Snapshot
+
+	// openNow is the copy of that the goroutines serving clients read.
+	openNow shared
+}
+
+// newServing builds a serving with nothing listening and no rows for
+// clients.
+func newServing() *serving {
+	return &serving{rows: make(map[*serve.Client]*conns.Entry)}
+}
+
+// on reports whether the window is being served.
+func (s *serving) on() bool { return s.server != nil }
+
+// addr is the address the window is served on, empty when it is not.
+func (s *serving) addr() string {
+	if s.server == nil {
+		return ""
+	}
+	return s.server.Addr()
+}
+
+// fingerprint is what a window connecting here checks this machine by,
+// empty when nothing is listening.
+func (s *serving) fingerprint() string {
+	if s.server == nil {
+		return ""
+	}
+	return serve.Fingerprint(s.server.HostKey())
+}
+
+// clients are the windows connected right now, none when nothing is
+// listening.
+func (s *serving) clients() []*serve.Client {
+	if s.server == nil {
+		return nil
+	}
+	return s.server.Clients()
+}
+
+// usePaths points the key and the allowed list at a directory of a
+// test's own.
+func (s *serving) usePaths(p servePaths) { s.paths = p }
+
+// where is the key and the list of who may connect this window serves
+// with.
+func (s *serving) where() (servePaths, error) {
+	if s.paths.hostKey != "" {
+		return s.paths, nil
 	}
 	key, err := serve.HostKeyPath()
 	if err != nil {
@@ -43,17 +111,81 @@ func (a *app) servingPaths() (servePaths, error) {
 	return servePaths{hostKey: key, allowed: at}, nil
 }
 
+// listen opens the port, and fails when one is already open.
+func (s *serving) listen(cfg serve.Config) error {
+	if s.server != nil {
+		return fmt.Errorf("this window is already being served on %s", s.addr())
+	}
+	srv, err := serve.Listen(cfg)
+	if err != nil {
+		return err
+	}
+	s.server = srv
+	return nil
+}
+
+// close stops serving and hands back the server, for the caller to hang
+// up on whoever is connected. It is nil when nothing was listening.
+func (s *serving) close() *serve.Server {
+	srv := s.server
+	s.server = nil
+	return srv
+}
+
+// lost records that the listener has failed, which is the end of it: no
+// further client can connect.
+func (s *serving) lost() { s.server = nil }
+
+// joined records the row for a window that has taken this one over.
+func (s *serving) joined(c *serve.Client, e *conns.Entry) { s.rows[c] = e }
+
+// left takes away one window's row and gives it back, or nil when that
+// window had none.
+func (s *serving) left(c *serve.Client) *conns.Entry {
+	e := s.rows[c]
+	if e != nil {
+		delete(s.rows, c)
+	}
+	return e
+}
+
+// dropRows takes away the rows for every window being served and gives
+// them back, for the caller to take off the panel.
+func (s *serving) dropRows() []*conns.Entry {
+	out := make([]*conns.Entry, 0, len(s.rows))
+	for c, e := range s.rows {
+		delete(s.rows, c)
+		out = append(out, e)
+	}
+	return out
+}
+
+// publish tells the clients what this window has open, when that has
+// changed since the last time they were told.
+func (s *serving) publish(snap serve.Snapshot) {
+	if s.server == nil || sameSnapshot(s.last, snap) {
+		return
+	}
+	s.last = snap
+	s.openNow.set(snap)
+	s.server.Publish(snap)
+}
+
+// opens is the last snapshot the clients were sent, read from the
+// goroutines serving them.
+func (s *serving) opens() serve.Snapshot { return s.openNow.get() }
+
 // openServing asks whether to let another window take this one over.
 //
 // Off unless it is turned on, and turned on for this run only: a window
 // that started serving because it did last time would be one that is
 // serving without anybody having decided to today.
 func (a *app) openServing() error {
-	if a.server != nil {
+	if a.serving.on() {
 		a.showServing()
 		return nil
 	}
-	paths, err := a.servingPaths()
+	paths, err := a.serving.where()
 	if err != nil {
 		return err
 	}
@@ -138,11 +270,11 @@ func listenHost(where string) string {
 
 // startServing opens the port.
 func (a *app) startServing(port, where string) error {
-	if a.server != nil {
+	if a.serving.on() {
 		// Two dialogs can be open at once, and a second listener would
 		// take the place of the first in a window that then had no way
 		// to reach it and no way to close it.
-		return fmt.Errorf("this window is already being served on %s", a.server.Addr())
+		return fmt.Errorf("this window is already being served on %s", a.serving.addr())
 	}
 	// Zero is allowed and means whichever port is free. The dialog says
 	// which one that turned out to be, so it is discoverable rather
@@ -153,7 +285,7 @@ func (a *app) startServing(port, where string) error {
 	}
 	host := listenHost(where)
 
-	paths, err := a.servingPaths()
+	paths, err := a.serving.where()
 	if err != nil {
 		return err
 	}
@@ -166,26 +298,26 @@ func (a *app) startServing(port, where string) error {
 		return err
 	}
 
-	s, err := serve.Listen(serve.Config{
+	return a.serving.listen(serve.Config{
 		Addr:    net.JoinHostPort(host, strconv.Itoa(n)),
 		HostKey: hostKey,
 		Allowed: allowed,
-		// A shell on this machine, sized for the pane the other window
-		// will draw it in. Started straight from session rather than
-		// through the window's own panes: this is the machine being
-		// worked on, not the one doing the drawing, and nothing here
-		// touches the widget tree.
 		// The files of this machine, which the connection already
-		// reaches through the shell above.
+		// reaches through the shell below.
 		Files: a.serveFiles,
 		// What this window has open, for a client that wants to see it.
 		// Read from the goroutine serving that client, so it goes
 		// through the same snapshot the panel was built from rather
 		// than walking the registry from there.
-		Opens: a.openNow.get,
+		Opens: a.serving.opens,
 		// What is already running here, so a window taken over shows
 		// the shell that was left running rather than only new ones.
 		Attach: a.attachTo,
+		// A shell on this machine, sized for the pane the other window
+		// will draw it in. Started straight from session rather than
+		// through the window's own panes: this is the machine being
+		// worked on, not the one doing the drawing, and nothing here
+		// touches the widget tree.
 		Open: func(cols, rows int) (session.Session, error) {
 			return session.StartLocal(session.LocalConfig{Cols: cols, Rows: rows})
 		},
@@ -204,23 +336,17 @@ func (a *app) startServing(port, where string) error {
 			a.pump.post(func() { a.logError(err) })
 		},
 	})
-	if err != nil {
-		return err
-	}
-	a.server = s
-	return nil
 }
 
 // stopServing closes the port and hangs up on whoever is connected.
 func (a *app) stopServing() error {
-	if a.server == nil {
+	if !a.serving.on() {
 		return nil
 	}
-	s := a.server
-	a.server = nil
+	srv := a.serving.close()
 	a.dropServedRows()
 	a.markDirty()
-	return s.Close()
+	return srv.Close()
 }
 
 // clientArrived is told when a window has taken this one over.
@@ -236,7 +362,7 @@ func (a *app) clientArrived(c *serve.Client) {
 		Note:  "from " + c.Addr,
 		Close: func() error { return c.Close() },
 	}
-	a.served[c] = e
+	a.serving.joined(c, e)
 	a.registry.Add(e)
 	a.markDirty()
 }
@@ -248,8 +374,7 @@ func (a *app) clientArrived(c *serve.Client) {
 // a fault is reported, one that hung up is not -- the first is
 // something the user did not ask for.
 func (a *app) clientWent(c *serve.Client, why error) {
-	if e := a.served[c]; e != nil {
-		delete(a.served, c)
+	if e := a.serving.left(c); e != nil {
 		a.registry.Drop(e)
 	}
 	a.markDirty()
@@ -265,7 +390,7 @@ func (a *app) clientWent(c *serve.Client, why error) {
 // to stop serving, and on saying it was being served, would be lying
 // about the one thing the user turned on deliberately.
 func (a *app) servingStopped(err error) {
-	a.server = nil
+	a.serving.lost()
 	a.dropServedRows()
 	a.markDirty()
 	a.reportError("This window is no longer being served", err)
@@ -273,20 +398,20 @@ func (a *app) servingStopped(err error) {
 
 // showServing says what the window is serving and offers to stop.
 func (a *app) showServing() error {
-	if a.server == nil {
+	if !a.serving.on() {
 		return nil
 	}
 	lines := []string{
-		"This window is being served on " + a.server.Addr() + ".",
+		"This window is being served on " + a.serving.addr() + ".",
 		"",
 		"Check this machine by its fingerprint when you first connect:",
-		"  " + serve.Fingerprint(a.server.HostKey()),
+		"  " + a.serving.fingerprint(),
 	}
 	// What is connected as the dialog opens. It says so once rather
 	// than following: a dialog is read and answered, and one that
 	// rewrote itself under the reader would be harder to trust, not
 	// easier.
-	if clients := a.server.Clients(); len(clients) > 0 {
+	if clients := a.serving.clients(); len(clients) > 0 {
 		lines = append(lines, "", "Connected now:")
 		for _, c := range clients {
 			lines = append(lines, "  "+c.Name+" from "+c.Addr)
@@ -306,8 +431,7 @@ func (a *app) showServing() error {
 // served. Nothing is being served any more, so nothing of theirs is
 // left on the panel to close.
 func (a *app) dropServedRows() {
-	for c, e := range a.served {
-		delete(a.served, c)
+	for _, e := range a.serving.dropRows() {
 		a.registry.Drop(e)
 	}
 }

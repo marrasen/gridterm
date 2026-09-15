@@ -821,7 +821,7 @@ func TestASavedWindowIsTakenOverByName(t *testing.T) {
 	if err := host.startServing("0", whereHere); err != nil {
 		t.Fatalf("serve: %v", err)
 	}
-	addr := host.server.Addr()
+	addr := host.serving.addr()
 
 	client := newTestApp(t, 90, 30)
 	withDialogs(t, client)
@@ -922,7 +922,7 @@ func TestAWindowAlreadyTakenOverIsNotTakenOverTwice(t *testing.T) {
 	if err := host.startServing("0", whereHere); err != nil {
 		t.Fatalf("serve: %v", err)
 	}
-	addr := host.server.Addr()
+	addr := host.serving.addr()
 
 	client := newTestApp(t, 90, 30)
 	withDialogs(t, client)
@@ -962,7 +962,7 @@ func TestRenamingATakenOverWindowMovesItsConnection(t *testing.T) {
 	if err := host.startServing("0", whereHere); err != nil {
 		t.Fatalf("serve: %v", err)
 	}
-	addr := host.server.Addr()
+	addr := host.serving.addr()
 
 	client := newTestApp(t, 90, 30)
 	withDialogs(t, client)
@@ -1151,7 +1151,7 @@ func TestASavedWindowIsTakenOverHoweverItIsAskedFor(t *testing.T) {
 	if err := host.startServing("0", whereHere); err != nil {
 		t.Fatalf("serve: %v", err)
 	}
-	addr := host.server.Addr()
+	addr := host.serving.addr()
 
 	for _, how := range []string{"by name", "by address", "as a terminal on it", "from the saved list"} {
 		t.Run(how, func(t *testing.T) {
@@ -1190,7 +1190,7 @@ func TestASavedWindowIsTakenOverHoweverItIsAskedFor(t *testing.T) {
 			waitFor(t, client, "the window to be taken over", func() bool {
 				return client.windows["statio"] != nil
 			})
-			if n := len(host.server.Clients()); n == 0 {
+			if n := len(host.serving.clients()); n == 0 {
 				t.Fatal("the serving window saw no client")
 			}
 			if err := client.dropWindow("statio"); err != nil {

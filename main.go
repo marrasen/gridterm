@@ -29,7 +29,6 @@ import (
 	"github.com/marrasen/gridterm/meter"
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/render"
-	"github.com/marrasen/gridterm/serve"
 	"github.com/marrasen/gridterm/session"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/term"
@@ -177,10 +176,10 @@ func main() {
 	a.machines = make(map[string]*machine)
 	a.opening = make(map[string]*dialling)
 	a.windows = make(map[string]*taken)
-	a.served = make(map[*serve.Client]*conns.Entry)
+	a.serving = newServing()
 	a.paneOnWindow = make(map[*term.Terminal]*taken)
 	a.watching = make(map[*term.Terminal]remoteKey)
-	a.handedBy = make(map[*term.Terminal]*handover)
+	a.agents = newAgents()
 	a.kept = make(map[*term.Terminal]bool)
 	a.paneOn = make(map[*term.Terminal]*machine)
 	a.tunnels = make(map[*conns.Entry]*tunnel)
@@ -276,13 +275,13 @@ func main() {
 	// Then the filesystems waiting on those jobs, which are closed on
 	// goroutines of their own: one still waiting when the process ends
 	// is one never closed.
-	closed = append(closed, a.waitForCloses(jobsGrace)...)
+	closed = append(closed, a.closes.waitFor(jobsGrace)...)
 	closed = append(closed, a.closeTunnels(), a.closeMachines())
 	// The windows this one took over go last: their panes were closed
 	// with the rest, and this hangs up on what carried them. The port
 	// agents reach this window on goes with them: there is nothing left
 	// to hand over.
-	closed = append(closed, a.closeWindows(), a.closeAgents())
+	closed = append(closed, a.closeWindows(), a.agents.stop())
 	if err := errors.Join(closed...); err != nil {
 		log.Fatal(err)
 	}

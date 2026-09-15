@@ -3,13 +3,11 @@ package main
 import (
 	"context"
 	"log"
-	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
 
-	"github.com/marrasen/gridterm/agent"
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/glyph"
 	"github.com/marrasen/gridterm/grid"
@@ -19,7 +17,6 @@ import (
 	"github.com/marrasen/gridterm/meter"
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/render"
-	"github.com/marrasen/gridterm/serve"
 	"github.com/marrasen/gridterm/session"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/term"
@@ -78,34 +75,18 @@ type app struct {
 	// bar is the row of menu titles at the top of the window.
 	bar *ui.Menubar
 
-	// server is the listener letting another window take this one over,
-	// or nil when the window is not being served. Off unless the user
-	// turns it on, and for this run only.
-	server *serve.Server
-
-	// servePaths points at the key and the list of who may connect,
-	// empty in the program and set by a test to a directory of its own.
-	servePaths servePaths
+	// serving is the listener letting another window take this one over,
+	// and the windows that have.
+	serving *serving
 
 	// windows are the other machines' gridterms this one has taken
 	// over, by the address each was reached at.
 	windows map[string]*taken
 
-	// lastSnapshot is what this window last told its clients it had
-	// open, so an unchanged one is not sent again. It belongs to the
-	// goroutine that draws; openNow is the copy the ones serving
-	// clients may read.
-	lastSnapshot serve.Snapshot
-	openNow      shared
-
 	// knownWindowsAt is where the keys of the windows reached are
 	// recorded, empty in the program and set by a test to a file of its
 	// own: the real one belongs to whoever is running gridterm.
 	knownWindowsAt string
-
-	// served are the panel rows for the windows working in this one,
-	// by the client each stands for.
-	served map[*serve.Client]*conns.Entry
 
 	// paneOnWindow says which taken-over window a pane is drawn from,
 	// so letting go of one takes its panes with it.
@@ -116,18 +97,9 @@ type app struct {
 	// opening a second one onto one shell.
 	watching map[*term.Terminal]remoteKey
 
-	// agents listens for agents the user has handed a pane to, and is
-	// nil while none has been. Nothing listens until the user asks.
-	agents *agent.Server
-
-	// handedBy says which panes the user has handed to an agent, and
-	// the code that names each. The codes live here and nowhere else.
-	handedBy map[*term.Terminal]*handover
-
-	// handedNext is the last name given to a handover. It only goes up,
-	// so a name never comes round again and an agent holding an old one
-	// is holding nothing.
-	handedNext uint64
+	// agents are the panes handed to agents, and the listener that lets
+	// those agents in.
+	agents *agents
 
 	// reachPatience is how long a window being taken over has to get
 	// through the handshake. Zero asks the serve package for its own;
@@ -155,15 +127,8 @@ type app struct {
 	side  *sidebar
 	stage *ui.Tabs
 
-	// actOn is the machine a menu opened from the sidebar is about, and
-	// acting says there is such a menu. The commands on that menu act
-	// on the machine the user is looking at, and while the menu is up
-	// that is the machine whose row they clicked. menus counts the menus
-	// opened this way, so the one that forgets a machine is the one that
-	// named it.
-	actOn  string
-	acting bool
-	menus  int
+	// hostMenus is the machine a menu opened from the sidebar is about.
+	hostMenus hostMenus
 
 	// registry is everything the window has open, which is what the
 	// panel draws.
@@ -203,14 +168,9 @@ type app struct {
 	// second manager being opened beside it.
 	files *browser
 
-	// closing counts the filesystems waiting for a job to stop before
-	// they can be let go of, and closeErrs is what those attempts
-	// reported. The window may not wait for one on the goroutine that
-	// draws, so it waits on the way out instead: a filesystem closed
-	// after the process has gone is a filesystem never closed.
-	closing   sync.WaitGroup
-	closeMu   sync.Mutex
-	closeErrs []error
+	// closes are the filesystems being let go of on goroutines of their
+	// own, and what those attempts reported.
+	closes closer
 
 	// queue is the file work running in the background, and jobs are the
 	// panel rows that stand for each piece of it.
@@ -380,7 +340,7 @@ func (a *app) Update() error {
 	// text has not changed is written with the same value, so an idle
 	// panel leaves its layer alone.
 	a.refreshJobs()
-	for _, err := range a.takeCloseErrs() {
+	for _, err := range a.closes.reported() {
 		a.reportError("Could not let go of a filesystem", err)
 	}
 	a.refreshPanel(time.Now())
@@ -536,46 +496,6 @@ func (a *app) logError(err error) {
 		return
 	}
 	log.Print(err)
-}
-
-// takeCloseErrs hands back what the filesystem closes have reported and
-// forgets them, so each failure is shown once.
-func (a *app) takeCloseErrs() []error {
-	a.closeMu.Lock()
-	defer a.closeMu.Unlock()
-	out := a.closeErrs
-	a.closeErrs = nil
-	return out
-}
-
-// closeFailed records a failure from a goroutine letting go of a
-// filesystem. It runs off the drawing goroutine, so it leaves the
-// failure where the window will find it rather than showing it here.
-func (a *app) closeFailed(err error) {
-	a.closeMu.Lock()
-	defer a.closeMu.Unlock()
-	a.closeErrs = append(a.closeErrs, err)
-}
-
-// waitForCloses waits for the filesystems still being let go of, for the
-// window on its way out.
-//
-// Bounded, for the same reason the file work is: cancelling cannot
-// interrupt a read already under way, so a filesystem on a machine that
-// has stopped answering is left rather than waited for. It hands back
-// whatever the closes reported, including the ones that finished while
-// it waited.
-func (a *app) waitForCloses(d time.Duration) []error {
-	done := make(chan struct{})
-	go func() {
-		a.closing.Wait()
-		close(done)
-	}()
-	select {
-	case <-done:
-	case <-time.After(d):
-	}
-	return a.takeCloseErrs()
 }
 
 // onFocused wraps a command that acts on the focused pane, doing nothing

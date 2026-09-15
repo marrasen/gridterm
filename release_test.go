@@ -159,7 +159,7 @@ func TestLettingGoOfAFilesystemAJobIsUsing(t *testing.T) {
 	// The machine answers, the job gives up, and the close happens.
 	f.release()
 	<-j.Done()
-	errs := a.waitForCloses(waitBudget)
+	errs := a.closes.waitFor(waitBudget)
 	if len(errs) != 1 || !errors.Is(errs[0], boom) {
 		t.Fatalf("the close reported %v, want the failure", errs)
 	}
@@ -172,8 +172,8 @@ func TestAFailedCloseIsShownInTheWindow(t *testing.T) {
 	withDialogs(t, a)
 
 	boom := errors.New("the session would not close")
-	a.closeFailed(boom)
-	for _, err := range a.takeCloseErrs() {
+	a.closes.failed(boom)
+	for _, err := range a.closes.reported() {
 		a.reportError("Could not let go of a filesystem", err)
 	}
 	n, ok := a.root.Modal().(*ui.Notice)
@@ -184,7 +184,7 @@ func TestAFailedCloseIsShownInTheWindow(t *testing.T) {
 		t.Fatalf("the dialog says %q", n.Message())
 	}
 	// And it is only shown once.
-	if got := a.takeCloseErrs(); len(got) != 0 {
+	if got := a.closes.reported(); len(got) != 0 {
 		t.Fatalf("%d failures are still waiting to be shown", len(got))
 	}
 }
@@ -208,7 +208,7 @@ func TestWaitingForClosesGivesUp(t *testing.T) {
 		t.Fatalf("releaseFS = %v", err)
 	}
 	start := time.Now()
-	if got := a.waitForCloses(50 * time.Millisecond); len(got) != 0 {
+	if got := a.closes.waitFor(50 * time.Millisecond); len(got) != 0 {
 		t.Fatalf("it reported %v while still waiting", got)
 	}
 	if waited := time.Since(start); waited > waitBudget {
@@ -217,7 +217,7 @@ func TestWaitingForClosesGivesUp(t *testing.T) {
 	// Let the goroutine go, so the test leaves nothing running.
 	f.release()
 	<-j.Done()
-	a.waitForCloses(waitBudget)
+	a.closes.waitFor(waitBudget)
 }
 
 // paneOnFS puts a pane on a filesystem the test owns into the window's

@@ -12,6 +12,133 @@ import (
 	"github.com/marrasen/gridterm/ui/term"
 )
 
+// agents are the panes handed to agents and the listener that lets
+// those agents in.
+//
+// Only the goroutine that draws touches it.
+type agents struct {
+	// server is nil while nothing has been handed over. Nothing listens
+	// until the user asks.
+	server *agent.Server
+
+	// by says which panes the user has handed to an agent, and the code
+	// that names each. The codes live here and nowhere else.
+	by map[*term.Terminal]*handover
+
+	// next is the last name given to a handover. It only goes up, so a
+	// name never comes round again and an agent holding an old one is
+	// holding nothing.
+	next uint64
+}
+
+// newAgents builds an agents with nothing listening and nothing handed
+// over.
+func newAgents() *agents {
+	return &agents{by: make(map[*term.Terminal]*handover)}
+}
+
+// of is the handover for a pane, or nil when the pane has not been
+// handed over.
+func (g *agents) of(pane *term.Terminal) *handover { return g.by[pane] }
+
+// hand records a pane as handed over and gives the handover its name.
+func (g *agents) hand(pane *term.Terminal, code string) *handover {
+	g.next++
+	h := &handover{pane: pane, id: strconv.FormatUint(g.next, 10), code: code}
+	g.by[pane] = h
+	return h
+}
+
+// forget drops a pane's handover and reports whether there was one.
+func (g *agents) forget(pane *term.Terminal) bool {
+	if g.by[pane] == nil {
+		return false
+	}
+	delete(g.by, pane)
+	return true
+}
+
+// withCode is the handover a code names, or nil when no handover holds
+// it.
+func (g *agents) withCode(code string) *handover {
+	for _, h := range g.by {
+		if h.code == code {
+			return h
+		}
+	}
+	return nil
+}
+
+// named is the handover an id names, or nil when no handover holds it.
+func (g *agents) named(id string) *handover {
+	for _, h := range g.by {
+		if h.id == id {
+			return h
+		}
+	}
+	return nil
+}
+
+// mark counts an agent in or out of a handover and reports whether the
+// handover was still there.
+func (g *agents) mark(id string, by int) bool {
+	for _, h := range g.by {
+		if h.id != id {
+			continue
+		}
+		h.working = max(h.working+by, 0)
+		return true
+	}
+	return false
+}
+
+// listening reports whether the window is listening for agents.
+func (g *agents) listening() bool { return g.server != nil }
+
+// listen starts listening, if it is not already.
+func (g *agents) listen(cfg agent.Config) error {
+	if g.server != nil {
+		return nil
+	}
+	s, err := agent.Listen(cfg)
+	if err != nil {
+		return err
+	}
+	g.server = s
+	return nil
+}
+
+// port is the port agents are listened for on, zero when nothing is
+// listening.
+func (g *agents) port() int {
+	if g.server == nil {
+		return 0
+	}
+	return g.server.Port()
+}
+
+// stopIfDone stops listening once nothing is handed over.
+//
+// Nothing to reach means nothing to listen for, and a port that is open
+// for no reason is a port that should not be open.
+func (g *agents) stopIfDone() error {
+	if g.server == nil || len(g.by) > 0 {
+		return nil
+	}
+	return g.stop()
+}
+
+// stop stops listening and forgets every handover.
+func (g *agents) stop() error {
+	if g.server == nil {
+		return nil
+	}
+	s := g.server
+	g.server = nil
+	clear(g.by)
+	return s.Close()
+}
+
 // handover is one pane the user has handed to an agent.
 //
 // The code is the whole of what lets anything in. It is made fresh, it
@@ -52,7 +179,7 @@ func (a *app) handPane(pane *term.Terminal) error {
 	if pane.Exited() {
 		return errors.New("the program in this pane has finished, so there is nothing to work in")
 	}
-	if have := a.handedBy[pane]; have != nil {
+	if have := a.agents.of(pane); have != nil {
 		// Already handed over. The code is shown again rather than a
 		// second one made: two codes for one pane is two things to take
 		// back.
@@ -62,13 +189,11 @@ func (a *app) handPane(pane *term.Terminal) error {
 	if err := a.listenForAgents(); err != nil {
 		return err
 	}
-	code, err := agent.NewCode(a.agents.Port())
+	code, err := agent.NewCode(a.agents.port())
 	if err != nil {
 		return err
 	}
-	a.handedNext++
-	h := &handover{pane: pane, id: strconv.FormatUint(a.handedNext, 10), code: code}
-	a.handedBy[pane] = h
+	h := a.agents.hand(pane, code)
 	a.markDirty()
 	a.showCode(h)
 	return nil
@@ -79,64 +204,29 @@ func (a *app) handPane(pane *term.Terminal) error {
 // At once: the code stops naming anything and the next thing the agent
 // asks fails. It does not wait for the agent to notice.
 func (a *app) takeBackPane(pane *term.Terminal) error {
-	h := a.handedBy[pane]
-	if h == nil {
+	if !a.agents.forget(pane) {
 		return errors.New("no agent has been given this pane")
 	}
-	delete(a.handedBy, pane)
 	a.markDirty()
-	return a.stopListeningIfDone()
+	return a.agents.stopIfDone()
 }
 
 // forgetHandover takes a pane's handover away, for one that has closed.
 func (a *app) forgetHandover(pane *term.Terminal) error {
-	if a.handedBy[pane] == nil {
+	if !a.agents.forget(pane) {
 		return nil
 	}
-	delete(a.handedBy, pane)
-	return a.stopListeningIfDone()
+	return a.agents.stopIfDone()
 }
 
 // listenForAgents starts listening, if it is not already.
 func (a *app) listenForAgents() error {
-	if a.agents != nil {
-		return nil
-	}
-	s, err := agent.Listen(agent.Config{
+	return a.agents.listen(agent.Config{
 		Window:  agentWindow{a: a},
 		OnError: func(err error) { a.pump.post(func() { a.logError(err) }) },
 		OnUse:   func(id string) { a.pump.post(func() { a.agentCame(id) }) },
 		OnGone:  func(id string) { a.pump.post(func() { a.agentWent(id) }) },
 	})
-	if err != nil {
-		return err
-	}
-	a.agents = s
-	return nil
-}
-
-// stopListeningIfDone stops listening once nothing is handed over.
-//
-// Nothing to reach means nothing to listen for, and a port that is open
-// for no reason is a port that should not be open.
-func (a *app) stopListeningIfDone() error {
-	if a.agents == nil || len(a.handedBy) > 0 {
-		return nil
-	}
-	s := a.agents
-	a.agents = nil
-	return s.Close()
-}
-
-// closeAgents stops listening, for a window that is shutting down.
-func (a *app) closeAgents() error {
-	if a.agents == nil {
-		return nil
-	}
-	s := a.agents
-	a.agents = nil
-	clear(a.handedBy)
-	return s.Close()
 }
 
 // agentCame and agentWent say when an agent starts and stops working in
@@ -150,13 +240,8 @@ func (a *app) agentWent(id string) { a.markAgent(id, -1) }
 // after the user took the pane back looks like. There is nothing to say
 // about it: the row it would have changed has gone too.
 func (a *app) markAgent(id string, by int) {
-	for _, h := range a.handedBy {
-		if h.id != id {
-			continue
-		}
-		h.working = max(h.working+by, 0)
+	if a.agents.mark(id, by) {
 		a.markDirty()
-		return
 	}
 }
 
@@ -195,46 +280,43 @@ type agentWindow struct{ a *app }
 
 func (w agentWindow) Use(code string) (agent.Pane, error) {
 	return onDrawing(w.a, func() (agent.Pane, error) {
-		for pane, h := range w.a.handedBy {
-			if h.code != code {
-				continue
-			}
-			e := w.a.panes[pane]
-			if e == nil {
-				return agent.Pane{}, errors.New("that pane is no longer open")
-			}
-			size := pane.Size()
-			return agent.Pane{
-				ID:    h.id,
-				Label: agentLabel(e),
-				Cols:  size.Cols,
-				Rows:  size.Rows,
-			}, nil
+		h := w.a.agents.withCode(code)
+		if h == nil {
+			return agent.Pane{}, errors.New(
+				"that code does not name a pane this window has handed over")
 		}
-		return agent.Pane{}, errors.New(
-			"that code does not name a pane this window has handed over")
+		e := w.a.panes[h.pane]
+		if e == nil {
+			return agent.Pane{}, errors.New("that pane is no longer open")
+		}
+		size := h.pane.Size()
+		return agent.Pane{
+			ID:    h.id,
+			Label: agentLabel(e),
+			Cols:  size.Cols,
+			Rows:  size.Rows,
+		}, nil
 	})
 }
 
 func (w agentWindow) Look(id string) (agent.Look, error) {
 	return onDrawing(w.a, func() (agent.Look, error) {
-		pane, err := w.a.handedPane(id)
+		h, err := w.a.handedPane(id)
 		if err != nil {
 			return agent.Look{}, err
 		}
-		h := w.a.handedBy[pane]
-		said := pane.Said()
+		said := h.pane.Said()
 		// Read again only when the program has said something. A wait
 		// asks twenty times a second, and reading a screen means
 		// rendering the whole of it; a pane that is sitting there would
 		// have it rendered afresh each time for the same answer.
 		if h.screen == nil || h.said != said {
-			text := pane.Text()
+			text := h.pane.Text()
 			h.screen, h.said = &text, said
 		}
 		return agent.Look{
 			Screen:  *h.screen,
-			Gone:    pane.Exited(),
+			Gone:    h.pane.Exited(),
 			Changed: said,
 		}, nil
 	})
@@ -242,31 +324,29 @@ func (w agentWindow) Look(id string) (agent.Look, error) {
 
 func (w agentWindow) Send(id, text string) error {
 	_, err := onDrawing(w.a, func() (struct{}, error) {
-		pane, err := w.a.handedPane(id)
+		h, err := w.a.handedPane(id)
 		if err != nil {
 			return struct{}{}, err
 		}
-		if pane.Exited() {
+		if h.pane.Exited() {
 			return struct{}{}, errors.New(
 				"the program in that pane has finished, so nothing is left to type into")
 		}
-		pane.Send([]byte(text))
+		h.pane.Send([]byte(text))
 		return struct{}{}, nil
 	})
 	return err
 }
 
-// handedPane is the pane an id names, and only while that handover is
-// still the one in force.
+// handedPane is the handover an id names, and only while that handover
+// is still the one in force.
 //
 // An id names one handover. Taking the pane back ends it, and handing
 // the same pane over again starts another with a name of its own, so an
 // agent holding the old name gets nothing.
-func (a *app) handedPane(id string) (*term.Terminal, error) {
-	for pane, h := range a.handedBy {
-		if h.id == id {
-			return pane, nil
-		}
+func (a *app) handedPane(id string) (*handover, error) {
+	if h := a.agents.named(id); h != nil {
+		return h, nil
 	}
 	return nil, fmt.Errorf("%q is not a pane you have been handed any more", id)
 }

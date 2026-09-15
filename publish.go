@@ -55,16 +55,10 @@ func (a *app) snapshot(now time.Time) serve.Snapshot {
 // snapshot arriving sixty times a second is a client that never goes
 // idle, which is the thing the whole display is built to avoid.
 func (a *app) tellWatchers(now time.Time) {
-	if a.server == nil {
+	if !a.serving.on() {
 		return
 	}
-	snap := a.snapshot(now)
-	if same := sameSnapshot(a.lastSnapshot, snap); same {
-		return
-	}
-	a.lastSnapshot = snap
-	a.openNow.set(snap)
-	a.server.Publish(snap)
+	a.serving.publish(a.snapshot(now))
 }
 
 // shared carries the snapshot from the goroutine that draws to the

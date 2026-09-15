@@ -891,11 +891,11 @@ func TestClosingAConnectionStillBeingMadeLetsGoOfItsNames(t *testing.T) {
 
 	// The way the user does it: "Close the connection" on the machine's
 	// own row in the sidebar.
-	a.actOn, a.acting = "db", true
+	a.hostMenus.nowAbout("db")
 	if err := a.disconnectHere(); err != nil {
 		t.Fatalf("close the connection: %v", err)
 	}
-	a.acting = false
+	a.hostMenus.forget()
 	if a.opening["db"] != nil {
 		t.Fatal("the window is still holding the name of a connection nobody is making")
 	}
@@ -1048,11 +1048,11 @@ func TestWhatWaitedForAConnectionThatFailedIsDropped(t *testing.T) {
 	a.pump.run()
 
 	// Given up on, so what was waiting for it has nothing to wait for.
-	a.actOn, a.acting = "box", true
+	a.hostMenus.nowAbout("box")
 	if err := a.disconnectHere(); err != nil {
 		t.Fatalf("give up: %v", err)
 	}
-	a.acting = false
+	a.hostMenus.forget()
 
 	waitFor(t, a, "the pane to say what was thrown away", func() bool {
 		for pane, e := range a.panes {

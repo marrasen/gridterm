@@ -11,13 +11,47 @@ import (
 // unmistakable for any other kind of key, which a bare string is not.
 type hostKey string
 
+// hostMenus is the machine a menu opened from the sidebar is about, kept
+// here because ui.Command.Run takes no argument. Only the goroutine that
+// draws touches it.
+type hostMenus struct {
+	// host is the machine the menu now up is about, empty when no such
+	// menu is up.
+	host string
+
+	// opened counts the menus opened this way.
+	opened int
+}
+
+// opening counts a menu about to open and gives back its number.
+func (m *hostMenus) opening() int {
+	m.opened++
+	return m.opened
+}
+
+// nowAbout records the machine the menu now up is about.
+func (m *hostMenus) nowAbout(host string) { m.host = host }
+
+// forget takes the machine away, for a menu that has closed.
+func (m *hostMenus) forget() { m.host = "" }
+
+// closed forgets the machine the menu numbered n named, unless a later
+// menu has named another.
+func (m *hostMenus) closed(n int) {
+	if m.opened == n {
+		m.forget()
+	}
+}
+
+// machine is the machine the open menu is about, empty when no menu is
+// up.
+func (m *hostMenus) machine() string { return m.host }
+
 // openHostMenu drops down what can be opened on a machine, under the row
 // that names it.
 //
-// The lines name commands, the same ones the menu bar and the keys use,
-// so the three cannot drift apart. Those commands act on the machine the
-// user is looking at, and while this menu is up that is the machine
-// whose row was clicked.
+// The lines name the same commands the menu bar and the keys use, and
+// while this menu is up they act on the machine whose row was clicked.
 func (a *app) openHostMenu(row ui.ListRow) error {
 	host, ok := row.Key.(hostKey)
 	if !ok {
@@ -41,22 +75,15 @@ func (a *app) openHostMenu(row ui.ListRow) error {
 	menu.Style = a.menuStyle()
 	menu.Anchor = a.rowAnchor(row.Key)
 
-	// Which menu this is. The machine is forgotten a frame later, and by
-	// then another menu may have opened and named a different one: a
-	// clear that did not say which menu it belonged to would take that
-	// machine away instead.
-	a.menus++
-	mine := a.menus
+	// Which menu this is, so a later one's machine is not taken away by
+	// this one being forgotten.
+	mine := a.hostMenus.opening()
 	hide = a.showModal(menu, func() {
 		// Not cleared here: a menu closes before it runs the line the
 		// user chose, so this would take the machine away from under
 		// the command. The pump is drained once a frame, which is after
 		// the command has run.
-		a.pump.post(func() {
-			if a.menus == mine {
-				a.acting = false
-			}
-		})
+		a.pump.post(func() { a.hostMenus.closed(mine) })
 	})
 	if a.root.Modal() != ui.Widget(menu) {
 		// It never went up, so nothing will ever take it down and
@@ -64,7 +91,7 @@ func (a *app) openHostMenu(row ui.ListRow) error {
 		return errors.New("there is no room to show the menu")
 	}
 	// Set once the menu is really up, for the same reason.
-	a.actOn, a.acting = string(host), true
+	a.hostMenus.nowAbout(string(host))
 	a.markDirty()
 	return nil
 }

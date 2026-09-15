@@ -299,6 +299,10 @@ func (a *app) openRoute(name string, route []step, command []string, at *spot) {
 	}
 	for i := range missing {
 		missing[i].cfg.Ask = &askUser{app: a, log: log}
+		// What the dial is doing, as it does it. A connection that
+		// stops says where it stopped, which is the whole of what
+		// anybody has to go on.
+		missing[i].cfg.Saying = log.Say
 	}
 	go func() {
 		opened, err := dialRoute(ctx, carrier, missing)
@@ -311,6 +315,7 @@ func (a *app) openRoute(name string, route []step, command []string, at *spot) {
 			gaveUp := ctx.Err()
 			cancel()
 			if err != nil {
+				a.kept[pane] = true
 				if gaveUp != nil {
 					log.GaveUp()
 					return
@@ -322,6 +327,7 @@ func (a *app) openRoute(name string, route []step, command []string, at *spot) {
 			// while the last handshake was finishing. Either way what
 			// was opened is no use and nothing else knows about it.
 			if why := a.stillWanted(gaveUp, through); why != nil {
+				a.kept[pane] = true
 				log.Failed(errors.Join(append([]error{why}, closeAll(opened)...)...))
 				return
 			}
@@ -365,6 +371,7 @@ func (a *app) gaveUpOn(name string, missing []step, cancel context.CancelFunc) {
 func (a *app) becomeShellPane(name string, command []string, pane *term.Terminal, log *connLog) {
 	m := a.machines[name]
 	if m == nil {
+		a.kept[pane] = true
 		log.Failed(fmt.Errorf("nothing is connected to %s", name))
 		return
 	}
@@ -376,6 +383,7 @@ func (a *app) becomeShellPane(name string, command []string, pane *term.Terminal
 		Term:    m.at.term,
 	})
 	if err != nil {
+		a.kept[pane] = true
 		log.Failed(err)
 		return
 	}
@@ -651,6 +659,7 @@ func (a *app) forgetPane(t *term.Terminal) {
 	// closed long before.
 	delete(a.paneOnWindow, t)
 	delete(a.watching, t)
+	delete(a.kept, t)
 	// And the agent the user handed it to, which has nothing left to
 	// work in. Its code stops naming anything the moment this is gone.
 	if err := a.forgetHandover(t); err != nil {

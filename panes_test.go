@@ -163,6 +163,7 @@ func newTestApp(t *testing.T, cols, rows int) *testApp {
 		paneOnWindow: make(map[*term.Terminal]*taken),
 		watching:     make(map[*term.Terminal]remoteKey),
 		handedBy:     make(map[*term.Terminal]*handover),
+		kept:         make(map[*term.Terminal]bool),
 		paneOn:       make(map[*term.Terminal]*machine),
 		tunnels:      make(map[*conns.Entry]*tunnel),
 		queue:        jobs.New(1),

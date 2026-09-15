@@ -126,6 +126,7 @@ func (a *app) takeOver(addr, keyFile string) error {
 			gaveUp := ctx.Err()
 			cancel()
 			if err != nil {
+				a.kept[pane] = true
 				if gaveUp != nil {
 					log.GaveUp()
 					return
@@ -138,6 +139,7 @@ func (a *app) takeOver(addr, keyFile string) error {
 				// finishing. Nothing else knows about it, and a failure
 				// to hang up is the user's to see: it is a socket to a
 				// machine that thinks somebody is working in it.
+				a.kept[pane] = true
 				log.GaveUp()
 				if err := win.Close(); err != nil {
 					a.reportError("Could not let go of "+addr, err)
@@ -156,12 +158,14 @@ func (a *app) takeOver(addr, keyFile string) error {
 func (a *app) becomeWindowPane(addr string, pane *term.Terminal, log *connLog) {
 	t := a.windows[addr]
 	if t == nil {
+		a.kept[pane] = true
 		log.Failed(fmt.Errorf("this window has not taken over %s", addr))
 		return
 	}
 	size := pane.Size()
 	sess, err := t.win.Open(size.Cols, size.Rows)
 	if err != nil {
+		a.kept[pane] = true
 		log.Failed(err)
 		return
 	}

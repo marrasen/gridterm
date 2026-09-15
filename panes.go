@@ -332,7 +332,7 @@ func (a *app) removePane(w ui.Widget, keep bool) error {
 // what it last said.
 func (a *app) paneEnded(t *term.Terminal) error {
 	e := a.panes[t]
-	if e == nil || e.Kind != conns.Command {
+	if e == nil || (e.Kind != conns.Command && !a.kept[t]) {
 		return a.removePane(t, true)
 	}
 	if a.ended[t] {

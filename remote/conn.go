@@ -67,6 +67,14 @@ type Config struct {
 	// password is offered, and an unknown host is a hard failure.
 	Ask Ask
 
+	// Saying is told each step of connecting as it is tried, for showing
+	// somebody what a connection is doing. A nil one is not called.
+	//
+	// It is called from whichever goroutine is connecting, which is not
+	// the one that draws, so an implementation that touches a window has
+	// to hand the work to whatever does.
+	Saying func(what string)
+
 	// Ring holds keys already unlocked, so a passphrase is asked for
 	// once and then used for every connection. A nil one holds nothing
 	// and keeps nothing.
@@ -236,7 +244,7 @@ func connect(ctx context.Context, to reach, via *Conn, cfg Config) (*Conn, error
 	}
 
 	addr := cfg.addr()
-	client, dialErr := dial(ctx, to, addr, cfg.User, a.next, hostKey, bannerOf(ctx, cfg))
+	client, dialErr := dial(ctx, to, addr, cfg.User, a.next, hostKey, bannerOf(ctx, cfg), cfg.Saying)
 	if dialErr != nil {
 		a.close()
 		// What the user said, when they said anything: "the dialog was

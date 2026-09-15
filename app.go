@@ -138,6 +138,15 @@ type app struct {
 	// a slow one. Nil unless it was asked for.
 	stats *watchStats
 
+	// kept are the panes that stay when what was in them ends, rather
+	// than going the way a shell that exited does.
+	//
+	// A connection that could not be made is the case: the pane is the
+	// only account of what happened, and taking it away the moment it
+	// finished writing that account would leave the user with nothing
+	// again.
+	kept map[*term.Terminal]bool
+
 	// dock holds the sidebar beside everything else, panel is the list
 	// in it, and stage is what fills the rest: it holds every pane the
 	// window has open and shows the one the sidebar picked.

@@ -44,7 +44,7 @@ func overTCP(ctx context.Context, addr string) (net.Conn, error) {
 // record, and knownhosts reports "key mismatch" — the man-in-the-middle
 // alarm — when nothing at all is wrong.
 func dial(ctx context.Context, to reach, addr, user string, next ssh.ClientAuthCallback,
-	hostKey ssh.HostKeyCallback, banner ssh.BannerCallback) (*ssh.Client, error) {
+	hostKey ssh.HostKeyCallback, banner ssh.BannerCallback, saying func(string)) (*ssh.Client, error) {
 
 	// AuthCallback rather than Auth: x/crypto's own selection
 	// deduplicates by method name, so of several public-key methods only
@@ -57,7 +57,7 @@ func dial(ctx context.Context, to reach, addr, user string, next ssh.ClientAuthC
 		BannerCallback:  banner,
 		Timeout:         dialTimeout,
 	}
-	client, err := dialOnce(ctx, to, addr, base)
+	client, err := dialOnce(ctx, to, addr, base, saying)
 	if err == nil {
 		return client, nil
 	}
@@ -67,7 +67,8 @@ func dial(ctx context.Context, to reach, addr, user string, next ssh.ClientAuthC
 		if algos := wantedKeyTypes(ke.Want); len(algos) > 0 {
 			retry := *base
 			retry.HostKeyAlgorithms = algos
-			client, err2 := dialOnce(ctx, to, addr, &retry)
+			saySo(saying, "its host key is not the sort this expected; asking again for the one known_hosts holds")
+			client, err2 := dialOnce(ctx, to, addr, &retry, saying)
 			if err2 == nil {
 				return client, nil
 			}
@@ -86,11 +87,15 @@ func dial(ctx context.Context, to reach, addr, user string, next ssh.ClientAuthC
 // nothing else, so a handshake that stops to ask the user a question
 // would hold the goroutine until they answered. Doing the two halves
 // separately is what lets a window that is closing let go.
-func dialOnce(ctx context.Context, to reach, addr string, cfg *ssh.ClientConfig) (*ssh.Client, error) {
+func dialOnce(ctx context.Context, to reach, addr string, cfg *ssh.ClientConfig,
+	saying func(string)) (*ssh.Client, error) {
+
+	saySo(saying, "reaching "+addr)
 	nc, err := to(ctx, addr)
 	if err != nil {
 		return nil, err
 	}
+	saySo(saying, "asking "+addr+" who it is, and signing in as "+cfg.User)
 	// Closing the connection is what unblocks the handshake, whichever
 	// part of it is waiting.
 	stop := context.AfterFunc(ctx, func() { _ = nc.Close() })
@@ -120,7 +125,16 @@ func dialOnce(ctx context.Context, to reach, addr string, cfg *ssh.ClientConfig)
 		_ = cc.Close()
 		return nil, ctx.Err()
 	}
+	saySo(saying, "signed in to "+addr+" as "+cfg.User)
 	return ssh.NewClient(cc, chans, reqs), nil
+}
+
+// saySo tells whoever is watching what is being done now, if anybody
+// is.
+func saySo(saying func(string), what string) {
+	if saying != nil {
+		saying(what)
+	}
 }
 
 // wantedKeyTypes lists the key algorithms known_hosts holds for a host,

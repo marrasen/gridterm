@@ -535,3 +535,47 @@ func TestWhatAServerSaysGoesIntoThePane(t *testing.T) {
 // unwrapped is what a pane shows with the row breaks taken out, for
 // reading something longer than the pane is wide.
 func unwrapped(text string) string { return strings.ReplaceAll(text, "\n", "") }
+
+// A pane that says why a connection failed is not reaped away.
+//
+// The window takes away a terminal whose shell has gone, because there
+// is nothing left to read. A connection that failed is the opposite: the
+// pane is the only account of what happened, and it has to still be
+// there when the user goes looking.
+func TestThePaneThatSaysWhyIsNotReapedAway(t *testing.T) {
+	s := sshtest.New(t)
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	before := len(a.panes)
+
+	cfg := serverConfig(t, s)
+	cfg.Port = 1
+	a.connect(cfg)
+
+	said := waitForFailure(t, a, cfg.Target())
+	if !strings.Contains(said, "The connection was not made") {
+		t.Fatalf("the pane says %q", said)
+	}
+
+	// The window tidies up after shells that have gone, every frame.
+	for i := 0; i < 10; i++ {
+		a.pump.run()
+		a.reapExited()
+	}
+
+	if len(a.panes) != before+1 {
+		t.Fatalf("%d panes after tidying up, want the pane that says why to still be there",
+			len(a.panes))
+	}
+	for pane, e := range a.panes {
+		if e.Host != cfg.Target() {
+			continue
+		}
+		if got := paneText(pane); !strings.Contains(got, "The connection was not made") {
+			t.Errorf("the pane no longer says why: %q", got)
+		}
+		return
+	}
+	t.Error("there is no pane for the machine that could not be reached")
+}

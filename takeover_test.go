@@ -1458,3 +1458,34 @@ func rowFor(a *testApp, addr string) *conns.Entry {
 	}
 	return nil
 }
+
+// The same for a window taken over: the pane that says why stays.
+func TestThePaneThatSaysWhyAWindowFailedStays(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	keyFile, _ := aKeyFile(t)
+	before := len(a.panes)
+
+	// A port nothing is listening on.
+	if err := a.takeOver("127.0.0.1:1", keyFile); err != nil {
+		t.Fatalf("take over: %v", err)
+	}
+	pane := newestPane(t, a)
+	waitFor(t, a, "the pane to say why it could not", func() bool {
+		return strings.Contains(paneText(pane), "The connection was not made")
+	})
+
+	for i := 0; i < 10; i++ {
+		a.pump.run()
+		a.reapExited()
+	}
+
+	if len(a.panes) != before+1 {
+		t.Fatalf("%d panes after tidying up, want the pane that says why to still be there",
+			len(a.panes))
+	}
+	if got := paneText(pane); !strings.Contains(got, "The connection was not made") {
+		t.Errorf("the pane no longer says why: %q", got)
+	}
+}

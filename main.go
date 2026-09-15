@@ -181,6 +181,7 @@ func main() {
 	a.paneOnWindow = make(map[*term.Terminal]*taken)
 	a.watching = make(map[*term.Terminal]remoteKey)
 	a.handedBy = make(map[*term.Terminal]*handover)
+	a.kept = make(map[*term.Terminal]bool)
 	a.paneOn = make(map[*term.Terminal]*machine)
 	a.tunnels = make(map[*conns.Entry]*tunnel)
 	a.queue = jobs.New(0)

@@ -45,8 +45,8 @@ type request struct {
 // response is one answer.
 //
 // ID is always written, even for a message so broken that there was no
-// id to read: null then, which is what says "this answers something,
-// and I could not tell what".
+// id to read. An empty one writes null, which is what says "this
+// answers something, and I could not tell what".
 type response struct {
 	JSONRPC string          `json:"jsonrpc"`
 	ID      json.RawMessage `json:"id"`
@@ -321,9 +321,6 @@ func (s *server) call(req request) (any, *rpcError) {
 
 // fail is an answer that says what was wrong with the message.
 func fail(id json.RawMessage, code int, why string) response {
-	if len(id) == 0 {
-		id = json.RawMessage("null")
-	}
 	return response{JSONRPC: "2.0", ID: id, Error: &rpcError{Code: code, Message: why}}
 }
 

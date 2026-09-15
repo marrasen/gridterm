@@ -362,9 +362,25 @@ func (r *Renderer) pushGlyph(
 	// batches are grown here rather than up front.
 	r.growPages()
 	sz := gl.Rect.Size()
+	left, top := geo.CellX(x)+gl.Offset.X, geo.CellY(y)+gl.Offset.Y
+	width, height := sz.X, sz.Y
+
+	// A line-drawing character is drawn across whatever the grid leaves
+	// between its cell and the next, in whichever direction it reaches.
+	// Left inside its own cell it would stop at the gap, and a rule
+	// would break where a menu crosses the sidebar's margin.
+	if across, down, ok := glyph.Reaches(ch); ok {
+		if across && width == geo.CellW() {
+			left, width = geo.ColBox(x, x+1)
+		}
+		if down && height == geo.CellH() {
+			top, height = geo.RowBox(y, y+1)
+		}
+	}
+
 	r.push(dst, &r.fg[gl.Page],
-		float32(geo.CellX(x)+gl.Offset.X), float32(geo.CellY(y)+gl.Offset.Y),
-		float32(sz.X), float32(sz.Y),
+		float32(left), float32(top),
+		float32(width), float32(height),
 		float32(gl.Rect.Min.X), float32(gl.Rect.Min.Y),
 		float32(gl.Rect.Max.X), float32(gl.Rect.Max.Y),
 		fg)

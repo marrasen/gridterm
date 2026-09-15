@@ -428,3 +428,33 @@ func mustBox(geo *Geometry, x0, x1 int) int {
 	_, size := geo.ColBox(x0, x1)
 	return size
 }
+
+// A line-drawing character is drawn across the padding beside its cell,
+// so a rule crossing a padded column joins up rather than breaking.
+//
+// The padding is where the sidebar's margin goes. A menu opened over
+// that column used to show a gap in every rule it drew, which read as a
+// dark line down the menu.
+func TestALineIsDrawnAcrossThePaddingBesideIt(t *testing.T) {
+	g := grid.New(4, 1, color.RGBA{}, color.RGBA{})
+	// A gap after the second column, the way the sidebar's margin sits.
+	g.SetColPad(1, grid.Pad{After: grid.PadUnit})
+
+	var geo Geometry
+	geo.Layout(g, glyph.Metrics{CellW: 8, CellH: 16, Ascent: 12})
+
+	// The cell itself stops short of the gap; the box around it does
+	// not, and that is what a line is drawn into.
+	cellLeft, cellW := geo.CellX(1), geo.CellW()
+	boxLeft, boxW := geo.ColBox(1, 2)
+	if boxLeft != cellLeft {
+		t.Errorf("the box starts at %d and the cell at %d", boxLeft, cellLeft)
+	}
+	if boxW <= cellW {
+		t.Fatalf("the box is %d wide and the cell %d, so there is no gap to cross", boxW, cellW)
+	}
+	// And it reaches the cell after it, with nothing in between.
+	if next := geo.CellX(2); boxLeft+boxW != next {
+		t.Errorf("the box ends at %d and the next cell starts at %d", boxLeft+boxW, next)
+	}
+}

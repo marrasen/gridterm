@@ -304,7 +304,16 @@ func TestWhichAddressesAChoiceMeans(t *testing.T) {
 }
 
 // Serving anywhere really does listen on every address.
+//
+// Off by default, and asked for by name. Listening on every address is
+// the one thing a test can do that reaches outside the machine running
+// it: on Windows it makes the firewall ask whoever is at the keyboard
+// whether the test binary may accept connections, every run. Set
+// GRIDTERM_TEST_NETWORK=1 to have it.
 func TestServingAnywhereListensOnEveryAddress(t *testing.T) {
+	if os.Getenv("GRIDTERM_TEST_NETWORK") != "1" {
+		t.Skip("set GRIDTERM_TEST_NETWORK=1 to let a test open a port to the network")
+	}
 	a := newTestApp(t, 90, 30)
 	withDialogs(t, a)
 	withServing(t, a, aPublicKey(t, "marcus@laptop"))

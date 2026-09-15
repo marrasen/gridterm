@@ -179,6 +179,22 @@ func drawnRune(r rune) bool {
 	return r >= 0x2580 && r <= 0x2595
 }
 
+// Reaches says which way a line-drawing character reaches out of its
+// cell to meet the ones beside it, and whether it is one at all.
+//
+// A grid can leave a gap between two columns or two rows. A line drawn
+// only inside its own cell stops at that gap, so a rule breaks and a box
+// comes apart; one that reaches is drawn across it instead.
+func Reaches(r rune) (across, down, ok bool) {
+	bl, ok := boxLines[r]
+	if !ok {
+		return false, false, false
+	}
+	return bl.left != wNone || bl.right != wNone,
+		bl.up != wNone || bl.down != wNone,
+		true
+}
+
 // drawCellGlyph renders r into a w by h premultiplied-white mask and
 // reports whether it drew anything.
 func drawCellGlyph(r rune, w, h int, pix []byte) bool {

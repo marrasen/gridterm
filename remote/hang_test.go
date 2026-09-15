@@ -420,3 +420,54 @@ func TestPastTheAgentTheWatchStops(t *testing.T) {
 		t.Fatalf("the agent socket was closed %d times, want not at all", n)
 	}
 }
+
+// An agent that did not answer is asked once, not once per connection.
+//
+// One that accepts a connection and then says nothing costs every
+// connection the wait to find that out. It is remembered instead, so it
+// costs the first one only.
+func TestAnAgentThatDidNotAnswerIsNotAskedAgain(t *testing.T) {
+	s := sshtest.New(t)
+	ring := NewRing()
+	ring.AgentGaveUp(errors.New("the SSH agent had 10s to say what keys it holds and did not"))
+
+	var said []string
+	cfg := testConfig(t, s)
+	cfg.NoAgent = false
+	cfg.Ring = ring
+	cfg.Saying = func(what string) { said = append(said, what) }
+
+	c, err := Connect(t.Context(), cfg)
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	t.Cleanup(func() { _ = c.Close() })
+
+	account := strings.Join(said, "\n")
+	if !strings.Contains(account, "not asking the SSH agent again") {
+		t.Fatalf("the account does not say the agent was left alone:\n%s", account)
+	}
+	if strings.Contains(account, "asking the SSH agent what keys it holds") {
+		t.Fatalf("it asked the agent anyway:\n%s", account)
+	}
+}
+
+// Locking the keys forgets the agent too, for one started or unstuck
+// since.
+func TestLockingTheKeysForgetsTheAgentTrouble(t *testing.T) {
+	ring := NewRing()
+	ring.AgentGaveUp(errors.New("it said nothing"))
+	if ring.AgentTrouble() == nil {
+		t.Fatal("the agent's trouble was not remembered")
+	}
+	// The first reason stands: a later one is the same agent saying
+	// nothing in a different way.
+	ring.AgentGaveUp(errors.New("something else"))
+	if got := ring.AgentTrouble(); got.Error() != "it said nothing" {
+		t.Errorf("it remembers %q, want the first reason", got)
+	}
+	ring.Lock()
+	if why := ring.AgentTrouble(); why != nil {
+		t.Errorf("it still remembers %v", why)
+	}
+}

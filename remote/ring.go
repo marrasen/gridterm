@@ -30,6 +30,11 @@ type Ring struct {
 	// when that unlock finishes. Two connections wanting the same key
 	// would otherwise put two dialogs on screen for it.
 	opening map[string]chan struct{}
+
+	// agentTrouble is why the SSH agent was last given up on, and nil
+	// until one is. It belongs here for the same reason the keys do: it
+	// is learned once and spares every connection after it.
+	agentTrouble error
 }
 
 // NewRing returns an empty ring.
@@ -167,6 +172,34 @@ func (r *Ring) release(path string) {
 	}
 }
 
+// AgentGaveUp remembers that the SSH agent did not answer.
+//
+// An agent that accepts a connection and then says nothing costs every
+// connection the wait to find that out. Remembering it costs the first
+// one only. Locking the keys forgets it, for an agent that has been
+// started or unstuck since.
+func (r *Ring) AgentGaveUp(why error) {
+	if r == nil || why == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.agentTrouble == nil {
+		r.agentTrouble = why
+	}
+}
+
+// AgentTrouble returns why the agent was given up on, or nil when it
+// has not been.
+func (r *Ring) AgentTrouble() error {
+	if r == nil {
+		return nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.agentTrouble
+}
+
 // Forget drops one key, so the next connection asks for it again.
 func (r *Ring) Forget(path string) {
 	if r == nil {
@@ -177,7 +210,10 @@ func (r *Ring) Forget(path string) {
 	delete(r.signers, path)
 }
 
-// Lock drops every key.
+// Lock drops every key, and forgets that the SSH agent did not answer.
+//
+// It is how the user says "forget what you know about my credentials",
+// and an agent started or unstuck since is one of those things.
 func (r *Ring) Lock() {
 	if r == nil {
 		return
@@ -185,4 +221,5 @@ func (r *Ring) Lock() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	clear(r.signers)
+	r.agentTrouble = nil
 }

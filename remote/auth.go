@@ -45,6 +45,10 @@ type auth struct {
 	// one is not called.
 	saying func(string)
 
+	// ring is where an agent that did not answer is remembered, so the
+	// next connection does not wait to find out again.
+	ring *Ring
+
 	// noAgent is why there is no agent, kept for the message shown when
 	// nothing at all worked.
 	noAgent error
@@ -171,10 +175,13 @@ func (a *auth) holdTheAgentTo(patience time.Duration, waitingFor string) {
 		a.watch.Stop()
 	}
 	a.watch = time.AfterFunc(patience, func() {
-		saySo(a.saying, fmt.Sprintf(
-			"the SSH agent has had %v %s and has not, so this is letting go of it."+
-				" It may be waiting for an answer in a window of its own",
-			patience, waitingFor))
+		why := fmt.Errorf("the SSH agent had %v %s and did not", patience, waitingFor)
+		saySo(a.saying, why.Error()+
+			", so this is letting go of it."+
+			" It may be waiting for an answer in a window of its own")
+		// Remembered, so the next connection is not held up finding out
+		// the same thing again.
+		a.ring.AgentGaveUp(why)
 		_ = a.closeAgent()
 	})
 }
@@ -192,15 +199,22 @@ func (f closerFunc) Close() error { return f() }
 // at a time, so a machine with three keys does not ask three times for a
 // connection the first one would have made.
 func authMethods(ctx context.Context, cfg Config) (*auth, error) {
-	a := &auth{saying: cfg.Saying}
+	a := &auth{saying: cfg.Saying, ring: cfg.Ring}
 
 	var agentSigners func() ([]ssh.Signer, error)
-	if cfg.NoAgent {
+	switch why := cfg.Ring.AgentTrouble(); {
+	case cfg.NoAgent:
 		saySo(cfg.Saying, "the SSH agent is not being used for this one")
-	} else {
+	case why != nil:
+		// Asked once already and it did not answer. Asking again would
+		// cost this connection the same wait for the same answer.
+		a.noAgent = why
+		saySo(cfg.Saying, "not asking the SSH agent again: "+why.Error())
+	default:
 		conn, err := dialAgent()
 		if err != nil {
 			a.noAgent = err
+			cfg.Ring.AgentGaveUp(err)
 			saySo(cfg.Saying, "there is no SSH agent here: "+err.Error())
 		} else {
 			a.agent = conn
@@ -249,6 +263,7 @@ func authMethods(ctx context.Context, cfg Config) (*auth, error) {
 						// lost behind whatever the server says at the
 						// end.
 						saySo(cfg.Saying, "the SSH agent: "+err.Error())
+						cfg.Ring.AgentGaveUp(err)
 						return nil, fmt.Errorf("remote: read the SSH agent: %w", err)
 					}
 					saySo(cfg.Saying, fmt.Sprintf(

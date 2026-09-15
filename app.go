@@ -672,7 +672,8 @@ func (a *app) commands() {
 			Run: a.closeSelectedConnection},
 		ui.Command{ID: "conn.clearFinished", Title: "Clear finished connections",
 			Run: a.clearFinished},
-		ui.Command{ID: "keys.lock", Title: "Forget unlocked keys", Run: a.lockKeys},
+		ui.Command{ID: "keys.lock", Title: "Forget unlocked keys and try the agent again",
+			Run: a.lockKeys},
 		ui.Command{ID: "palette.open", Title: "Show all commands", Run: a.openPalette},
 		ui.Command{ID: "menu.open", Title: "Show the menu bar", Run: a.openMenu},
 		ui.Command{ID: "tab.next", Title: "Next tab", Run: func() error {

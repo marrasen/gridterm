@@ -24,6 +24,25 @@ emulator, and draws the resulting character grid as batched triangles.
   rather than a second login. A remote command gets a connection of its
   own, named by what it runs. Connect from inside the window with
   `Ctrl+Shift+N`.
+- **One gridterm window working in another.** A window can serve itself
+  on a port you opt into, and another window on another machine can take
+  it over: its sidebar appears under that window's name, and a pane
+  opened there is drawn here. Key authentication only, from a list of
+  keys you write; there is no password and no way past an unknown host
+  key but saying yes to its fingerprint, and a host key that changed is a
+  hard failure. The window being served keeps drawing and says who is
+  working in it. Closing the connection gives it its screen back.
+- **Working in a shell that is already running over there.** The served
+  window says what it has open, and choosing one of those rows opens a
+  pane here on the program that is already running there, starting with
+  the screen as it stands. Both people see it and either can type. It
+  keeps running over there when this window lets go. A pane already
+  watching something comes forward rather than opening a second one, and
+  the row says when somebody elsewhere is reading it.
+- **The files of the window taken over.** The same connection carries
+  them, as SFTP on a channel of its own, so a browser pane on that
+  machine costs no second login. A window that would rather not offer
+  its files refuses the channel by name.
 - **One machine reached through another.** A saved server can say it is
   behind another one. The second connection is carried inside a channel
   of the first, so no local port is opened for it and nothing else on
@@ -140,6 +159,13 @@ gave. There is no way to pick a font by family name yet; give paths.
 | `Ctrl+Shift+L` | go to the sidebar |
 | `Ctrl+Shift+N` | connect to a server |
 
+Serving this window and taking over another are on the menu rather than
+on a key: "Serve this window…" asks for the port and says the
+fingerprint to check, and "Take over a window…" asks for the address and
+the key to offer. Nothing listens until you ask it to, and the keys
+allowed in are the ones you list in an `authorized_keys` file under
+gridterm's own config directory, not the one in `~/.ssh`.
+
 In the file manager: `Tab` and `Shift+Tab` move between panes, `Enter`
 descends, `Backspace` goes up, `Space` marks, `F2` renames, `F5` copies,
 `F6` cuts, `F7` pastes, `F8` deletes, `F9` makes a directory and `F10`
@@ -177,26 +203,29 @@ encoders and both session types.
 
 | Package | Lines | Needs a GPU? | What it is |
 |---|---|---|---|
-| `vt` | 1,720 | no | the VT emulator: parser, screen model, two buffers, scrollback |
-| `grid` | 863 | no | the display grid, damage tracking, selection, wide-character invariants |
+| `vt` | 2,016 | no | the VT emulator: parser, screen model, two buffers, scrollback |
+| `grid` | 1,109 | no | the display grid, damage tracking, selection, wide-character invariants |
 | `input` | 592 | no | key, text, mouse and paste events to VT bytes |
 | `session` | 362 | no | a shell as a byte stream, and the local pty |
-| `remote` | 3,570 | no | SSH: connections, shells, host keys, unlocked keys, tunnels |
-| `conns` | 221 | no | what the window has open, grouped by machine |
-| `vfs` | 668 | no | a filesystem a file pane works on: this machine, or one over SFTP |
+| `remote` | 3,693 | no | SSH: connections, shells, host keys, unlocked keys, tunnels |
+| `serve` | 1,878 | no | one window served to another: the listener, the client, and what they say |
+| `conns` | 252 | no | what the window has open, grouped by machine |
+| `vfs` | 669 | no | a filesystem a file pane works on: this machine, or one over SFTP |
 | `jobs` | 1,142 | no | copying, moving and deleting in the background, with progress and cancel |
-| `meter` | 257 | no | bytes moved, and how long ago: the four states |
-| `ui` | 5,443 | no | the widget toolkit: panes, tabs, menus, dialogs, fields, lists |
-| `ui/term` | 529 | no | a shell on a widget |
-| `ui/files` | 1,388 | no | the file manager: any number of panes side by side |
+| `meter` | 327 | no | bytes moved, and how long ago: the four states |
+| `ui` | 5,919 | no | the widget toolkit: panes, tabs, menus, dialogs, fields, lists |
+| `ui/term` | 733 | no | a shell on a widget |
+| `ui/files` | 1,455 | no | the file manager: any number of panes side by side |
 | `glyph` | 1,301 | yes | glyph atlas, system font fallback, box drawing |
-| `render` | 1,149 | yes | grid to batched triangles |
-| `main` | 5,424 | yes | the window and the wiring |
+| `render` | 1,779 | yes | grid to batched triangles |
+| `main` | 8,073 | yes | the window and the wiring |
 
 The layering is deliberate: `vt` never imports the renderer, `input`
 never imports ebiten (that lives in `input/ebitenin`), `ui` knows nothing
-about terminals or SSH, and `session` knows nothing about any of them. Everything fiddly is testable without a
-display, which is how the emulator got written.
+about terminals or SSH, `serve` carries bytes without knowing what rides
+on them, and `session` knows nothing about any of them. Everything
+fiddly is testable without a display, which is how the emulator got
+written.
 
 ## Looking at the pixels
 
@@ -307,6 +336,19 @@ emulator under `internal/` where they cannot be imported.
   Five panes in an eighty-column window are sixteen columns each. Closing
   one gives its width back to the rest, but there is no way to make one
   pane wider than another.
+- **A watched pane is not resized to suit the watcher.** The screen is
+  drawn on the machine it is running on as well, and shrinking somebody
+  else's shell to fit a pane they are not looking at would reach further
+  than watching was asked to. So the size travels instead and the row
+  says what it is; a screen wider than the pane showing it wraps.
+- **Two gridterm windows have to be the same build.** What one window
+  says to another uses SSH's own encoding, which is positional: there is
+  no room for a field one end knows and the other does not. A window of
+  another build is refused by name rather than half understood.
+- **The files of a machine the served window reached** are not offered.
+  A window serves the files of the machine it is running on. Something
+  it reached over SSH of its own is another hop, and nothing proxies it
+  yet.
 - **Sixel and the Kitty graphics protocol** are not implemented.
 - **An APC, PM or SOS string with no terminator grows without bound.**
   The parser buffers it before the emulator sees anything, so it cannot

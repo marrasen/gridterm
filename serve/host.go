@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"sync/atomic"
 
 	"golang.org/x/crypto/ssh"
 
@@ -17,6 +18,15 @@ import (
 // make a terminal that size.
 const mostCells = 10000
 
+// How many file sessions one connection may have at once.
+//
+// A file session is not a channel and a buffer: an SFTP server is a
+// dozen goroutines and as many open files as it is asked for, none of
+// which shows anywhere in the window being served. A browser uses one
+// per pane, so this is far more than anybody opens and little enough
+// that a client cannot quietly make this machine run out of handles.
+const mostFileSessions = 16
+
 // serveChannels answers what a client opens on its connection.
 //
 // Everything but a session is refused by name, so an ordinary SSH
@@ -27,6 +37,10 @@ const mostCells = 10000
 // every session it started has been hung up on.
 func (s *Server) serveChannels(chans <-chan ssh.NewChannel, gone <-chan struct{}) {
 	var running sync.WaitGroup
+	// Counted rather than held in a list: nothing needs to name them,
+	// only to know how many there are. Written by the goroutines that
+	// finish and read by this one.
+	var files atomic.Int32
 	for nch := range chans {
 		if nch.ChannelType() == chanControl {
 			ch, reqs, err := nch.Accept()
@@ -42,9 +56,17 @@ func (s *Server) serveChannels(chans <-chan ssh.NewChannel, gone <-chan struct{}
 			continue
 		}
 		if nch.ChannelType() == chanFiles {
+			if files.Load() >= mostFileSessions {
+				_ = nch.Reject(ssh.ResourceShortage,
+					"this gridterm is already serving as many file sessions"+
+						" as it will on one connection")
+				continue
+			}
+			files.Add(1)
 			running.Add(1)
 			go func() {
 				defer running.Done()
+				defer files.Add(-1)
 				s.runFiles(nch)
 			}()
 			continue
@@ -102,6 +124,11 @@ func (s *Server) runFiles(nch ssh.NewChannel) {
 	go ssh.DiscardRequests(reqs)
 
 	if err := s.cfg.Files(ch); err != nil {
+		// Said over there as well as here: the client is left holding
+		// a stream that stopped, and this is the only account of why.
+		if _, werr := io.WriteString(ch.Stderr(), "gridterm: "+err.Error()+"\r\n"); werr != nil {
+			s.onError(fmt.Errorf("serve: say why a file session stopped: %w", werr))
+		}
 		s.onError(fmt.Errorf("serve: carry a file session: %w", err))
 	}
 	if err := ch.Close(); err != nil && !errors.Is(err, io.EOF) {
@@ -114,6 +141,16 @@ func (s *Server) runFiles(nch ssh.NewChannel) {
 // It is handed a channel and returns when it is finished with it,
 // whether because the client went or because it failed. What runs on
 // the channel is the window's business.
+//
+// The channel is not the Filer's to close: it is closed once the Filer
+// returns, and whatever the Filer returns is sent to the client on the
+// channel's error stream first. A Filer that closes it as well would
+// have its own close reported as a failure.
+//
+// It must return when the client goes, which a channel that has gone
+// shows as an end of file on every read. One that waits on anything
+// else holds the whole connection open: this window does not say a
+// client has left until every session it started has finished.
 //
 // It is called from a goroutine of the server's, one per session a
 // client opens.

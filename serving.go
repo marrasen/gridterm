@@ -72,6 +72,13 @@ func (a *app) openServing() error {
 	lines := []string{
 		"Another gridterm can take this window over and work in it.",
 		"",
+		// Said plainly. A shell on this machine already reaches every
+		// file this user can reach, so the files are no more than the
+		// shell was; but somebody deciding whether to open a port has
+		// to be told what goes through it.
+		"It can open shells here, work in the ones already running,",
+		"and read and write this machine's files as you.",
+		"",
 		"These keys may connect:",
 	}
 	for _, name := range allowed.Names() {

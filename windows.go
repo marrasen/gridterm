@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
@@ -284,7 +285,15 @@ func (a *app) revealWindow(t *taken) {
 // It runs on a goroutine of the server's, and touches nothing the
 // window holds.
 func (a *app) serveFiles(ch io.ReadWriteCloser) error {
-	srv, err := sftp.NewServer(ch)
+	// The channel is not this function's to close: whoever handed it
+	// over closes it once, and an SFTP server closes what it was given
+	// as it goes. Left alone, the two would close it twice and the
+	// second would have to be told not to mind.
+	srv, err := sftp.NewServer(keptOpen{ch},
+		// A Windows machine has drives rather than one root. Without
+		// this, "/" is whatever drive this process happens to be on and
+		// the others cannot be reached by going up.
+		sftp.WindowsRootEnumeratesDrives())
 	if err != nil {
 		return fmt.Errorf("could not serve the files of this machine: %w", err)
 	}
@@ -294,6 +303,12 @@ func (a *app) serveFiles(ch io.ReadWriteCloser) error {
 	}
 	return nil
 }
+
+// keptOpen is a stream whose close does nothing, for handing to
+// something that closes what it is given when the caller needs it after.
+type keptOpen struct{ io.ReadWriteCloser }
+
+func (keptOpen) Close() error { return nil }
 
 // windowFiles is the filesystem of the machine a window taken over is
 // on, as a browser pane works on it.
@@ -308,26 +323,60 @@ func (a *app) windowFiles(addr string) (vfs.FS, error) {
 	}
 	client, err := sftp.NewClientPipe(ch, ch)
 	if err != nil {
-		return nil, errors.Join(
-			fmt.Errorf("could not read the files of %s: %w", addr, err), ch.Close())
+		// Whatever the far end said about a session it could not start
+		// is the only account of it: the failure happened over there.
+		// It closes the channel on every failure of its own, so that
+		// account has arrived or is about to.
+		if why := ch.Said(); why != "" {
+			return nil, fmt.Errorf("could not read the files of %s: %s", addr, why)
+		}
+		return nil, fmt.Errorf("could not read the files of %s: %w", addr, err)
 	}
 	return vfs.NewSFTP(addr, client, func() error {
-		// The client first: it says goodbye down the channel it is
-		// closing over.
-		//
-		// EOF from either is the far end having closed already, which
-		// is what letting go of a window looks like from here: the
-		// connection went and then its panes were taken away. It is
-		// agreement, not a failure.
-		errs := []error{client.Close(), ch.Close()}
-		for i, err := range errs {
-			if errors.Is(err, io.EOF) {
-				errs[i] = nil
-			}
-		}
-		return errors.Join(errs...)
+		return closeFilesOver(client, ch)
 	}), nil
 }
+
+// closeFilesOver ends a file session on a window taken over.
+//
+// Closing the SFTP client sends an end of file and then waits for the
+// far end to close the channel. A window that has stopped answering
+// never will, and this runs on the goroutine that draws, so the wait is
+// bounded: after that the channel is closed from here, which is what
+// lets go.
+func closeFilesOver(client, ch io.Closer) error {
+	done := make(chan error, 1)
+	go func() { done <- client.Close() }()
+
+	var errs []error
+	select {
+	case err := <-done:
+		errs = append(errs, err)
+	case <-time.After(filesGrace):
+		errs = append(errs, ch.Close())
+		// Now that the channel has gone, the client's own close can
+		// finish. Waited for rather than abandoned: it holds a
+		// goroutine until it does.
+		errs = append(errs, <-done)
+	}
+	// The client closes the channel as it goes, so this is the path
+	// where it never got that far.
+	errs = append(errs, ch.Close())
+
+	for i, err := range errs {
+		// A channel already closed says so, which is agreement rather
+		// than a failure: this closes it once itself and once through
+		// the client.
+		if errors.Is(err, io.EOF) {
+			errs[i] = nil
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// filesGrace is how long letting go of a window waits for its file
+// session to say goodbye before closing the channel from here.
+const filesGrace = 250 * time.Millisecond
 
 // openOnWindow opens a terminal in the other window, drawn in a pane
 // here.

@@ -1256,3 +1256,75 @@ func TestTheFilesOfAServingWindowCross(t *testing.T) {
 		t.Error("the file session never finished")
 	}
 }
+
+// Only so many file sessions ride on one connection.
+//
+// A file session is a dozen goroutines and as many open files as it is
+// asked for, none of which shows in the window being served. Without a
+// cap a client could quietly make that machine run out of handles.
+func TestOnlySoManyFileSessionsAtOnce(t *testing.T) {
+	stop := make(chan struct{})
+	defer close(stop)
+	s, w := takenOver(t, nil)
+	s.cfg.Files = func(ch io.ReadWriteCloser) error {
+		// Held open until the test is done with it.
+		<-stop
+		return nil
+	}
+
+	var open []*FileSession
+	defer func() {
+		for _, f := range open {
+			_ = f.Close()
+		}
+	}()
+	for i := 0; i < mostFileSessions; i++ {
+		f, err := w.Files()
+		if err != nil {
+			t.Fatalf("file session %d: %v", i, err)
+		}
+		open = append(open, f)
+	}
+
+	f, err := w.Files()
+	if err == nil {
+		_ = f.Close()
+		t.Fatal("it opened one more than it serves")
+	}
+	if !strings.Contains(err.Error(), "as many file sessions") {
+		t.Errorf("it said %v", err)
+	}
+}
+
+// A file session that could not start says why, on the machine that
+// asked for it as well as the one it failed on.
+func TestAFileSessionThatFailedSaysWhyToTheClient(t *testing.T) {
+	told := make(chan error, 8)
+	s, w := takenOverReporting(t, nil, told)
+	s.cfg.Files = func(ch io.ReadWriteCloser) error {
+		return errors.New("the disk is not there")
+	}
+
+	f, err := w.Files()
+	if err != nil {
+		t.Fatalf("files: %v", err)
+	}
+	defer func() { _ = f.Close() }()
+
+	if why := f.Said(); !strings.Contains(why, "the disk is not there") {
+		t.Errorf("the client was told %q", why)
+	}
+	// Asked twice, because a failure is read once for the message and
+	// once by whatever reports it.
+	if why := f.Said(); !strings.Contains(why, "the disk is not there") {
+		t.Errorf("asking again gave %q", why)
+	}
+	select {
+	case got := <-told:
+		if !strings.Contains(got.Error(), "the disk is not there") {
+			t.Errorf("the window was told %v", got)
+		}
+	case <-time.After(5 * time.Second):
+		t.Error("the window serving was told nothing about it")
+	}
+}

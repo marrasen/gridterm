@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -174,7 +175,7 @@ func (w *Window) Attach(open Open, cols, rows int) (session.Session, error) {
 // What comes back is a stream, not a filesystem. What runs on it is the
 // caller's business, the same way it is the serving window's: this
 // package carries the bytes.
-func (w *Window) Files() (io.ReadWriteCloser, error) {
+func (w *Window) Files() (*FileSession, error) {
 	if w.isClosed() {
 		return nil, errors.New("serve: that window has been let go of")
 	}
@@ -183,7 +184,36 @@ func (w *Window) Files() (io.ReadWriteCloser, error) {
 		return nil, fmt.Errorf("serve: ask %s for its files: %w", w.addr, err)
 	}
 	go ssh.DiscardRequests(reqs)
-	return ch, nil
+
+	f := &FileSession{Channel: ch, said: make(chan string, 1)}
+	go func() {
+		out, _ := io.ReadAll(ch.Stderr())
+		f.said <- strings.TrimSpace(string(out))
+	}()
+	return f, nil
+}
+
+// FileSession is a file session on the other machine.
+//
+// It is a stream: read it, write to it, close it. What runs on it is
+// the caller's business.
+type FileSession struct {
+	ssh.Channel
+	said chan string
+}
+
+// Said is what the other end said about a session it could not start.
+//
+// That reason arrives on the channel's error stream, which is the only
+// place it exists: it happened over there. It waits for that stream to
+// end, so it is for the path where starting the session failed and the
+// channel has gone with it. Empty means the other end said nothing.
+func (f *FileSession) Said() string {
+	why := <-f.said
+	// Put back, so asking twice says the same thing rather than the
+	// second asking waiting for a stream that has already ended.
+	f.said <- why
+	return why
 }
 
 // Open starts something to work in on the other machine, sized for the

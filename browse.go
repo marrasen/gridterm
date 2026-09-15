@@ -282,6 +282,12 @@ func (a *app) hostOf(f vfs.FS) string {
 			return name
 		}
 	}
+	// A window taken over is a machine like any other here: its panes
+	// go under its name, the commands on its row work on it, and a copy
+	// to it counts as bytes leaving rather than arriving.
+	if a.isWindow(f.Name()) {
+		return f.Name()
+	}
 	return conns.Local
 }
 

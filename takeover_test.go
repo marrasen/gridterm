@@ -9,12 +9,14 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
 
+	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/serve"
 	"github.com/marrasen/gridterm/ui"
@@ -1152,5 +1154,115 @@ func TestTheFilesOfTheWindowTakenOverAreBrowsable(t *testing.T) {
 	}
 	if got := len(b.view.Panes()); got != 0 {
 		t.Errorf("%d file panes are still reading through a window that has gone", got)
+	}
+}
+
+// A file pane on a window taken over belongs to that window.
+//
+// Everything the window does with a pane starts by asking which machine
+// it is on: which group its row goes under, what the commands on that
+// row act on, and which way a copy is counted. A pane that said it was
+// on this machine would put all of that on the wrong one.
+func TestAFilePaneOnAWindowBelongsToThatWindow(t *testing.T) {
+	_, client, addr := twoWindows(t)
+
+	if err := client.openFilesOn(addr); err != nil {
+		t.Fatalf("a pane on %s: %v", addr, err)
+	}
+	pane := client.files.view.Panes()[0]
+
+	if got := client.hostOf(pane.FS()); got != addr {
+		t.Errorf("the pane says it is on %q, not on the window", got)
+	}
+
+	// Its row goes under the window, not under this machine.
+	client.refreshPanel(panelNow)
+	found := ""
+	for _, group := range client.registry.Groups(time.Now()) {
+		for _, row := range group.Rows {
+			if row.Kind == conns.Files {
+				found = group.Host
+			}
+		}
+	}
+	if found != addr {
+		t.Errorf("its row is under %q", found)
+	}
+
+	// And with that pane in front, the window knows which machine the
+	// user is looking at.
+	client.focus(pane)
+	if got := client.currentHost(); got != addr {
+		t.Errorf("the window thinks the user is looking at %q", got)
+	}
+}
+
+// heldOpen is a file client that finishes closing only once the channel
+// under it has gone, which is what a machine that has stopped answering
+// looks like: the close sends an end of file and waits for a reply that
+// is never coming.
+type heldOpen struct {
+	started chan struct{}
+	freed   chan struct{}
+	once    sync.Once
+}
+
+func (h *heldOpen) Close() error {
+	h.once.Do(func() { close(h.started) })
+	<-h.freed
+	return nil
+}
+
+// theChannel frees the client under it when it is closed.
+type theChannel struct {
+	client *heldOpen
+
+	mu    sync.Mutex
+	times int
+}
+
+func (c *theChannel) Close() error {
+	c.mu.Lock()
+	c.times++
+	first := c.times == 1
+	c.mu.Unlock()
+	if first {
+		close(c.client.freed)
+	}
+	return nil
+}
+
+func (c *theChannel) closed() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.times
+}
+
+// Letting go of a window whose far end has stopped answering does not
+// wait for ever.
+//
+// Closing an SFTP client sends an end of file and waits for the far end
+// to close the channel. A machine that has stopped answering never
+// will, and this runs on the goroutine that draws: without a bound, the
+// one action left to a user with a wedged window would be the one that
+// wedges it.
+func TestLettingGoOfFilesOnAWindowThatStoppedAnsweringComesBack(t *testing.T) {
+	client := &heldOpen{started: make(chan struct{}), freed: make(chan struct{})}
+	ch := &theChannel{client: client}
+
+	done := make(chan error, 1)
+	go func() { done <- closeFilesOver(client, ch) }()
+	<-client.started
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("letting go gave %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("it waited for a window that had stopped answering")
+	}
+	if got := ch.closed(); got == 0 {
+		t.Error("the channel was left open, so nothing freed the client")
 	}
 }

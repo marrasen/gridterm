@@ -1200,3 +1200,83 @@ func TestASavedWindowIsTakenOverHoweverItIsAskedFor(t *testing.T) {
 		})
 	}
 }
+
+// A window cannot be made into a route to log in to, whoever asks.
+//
+// The guard that takes one over lives where connections are opened. This
+// one lives where a route is built, so a caller that forgot to ask gets
+// an answer it cannot ignore rather than an SSH login to a port with no
+// shell behind it.
+func TestAWindowCannotBeMadeIntoARoute(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	if err := a.book.Put(remote.Host{
+		Name: "statio", Address: "10.0.0.5", Port: 2222, Window: true,
+	}, ""); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	a.refreshServers()
+
+	_, err := a.route("statio")
+	if err == nil {
+		t.Fatal("it built a route that would log in to a window")
+	}
+	if !strings.Contains(err.Error(), "taken over") {
+		t.Errorf("it refused with %v, want it to say what to do instead", err)
+	}
+}
+
+// Nothing dials except through openRoute, so the guard there cannot be
+// walked around.
+//
+// Checked in the source rather than at runtime: the mistake each time
+// was believing some other function was the one place everything went
+// through, and only the callers can settle that.
+func TestOnlyOpenRouteDials(t *testing.T) {
+	dialers := callersOf(t, "remote.Connect(", ".Through(")
+	for _, at := range dialers {
+		if !strings.HasPrefix(at, "machines.go") {
+			t.Errorf("something outside machines.go dials: %s", at)
+		}
+	}
+	routes := callersOf(t, "a.openRoute(", "openRoute(")
+	for _, at := range routes {
+		switch {
+		case strings.HasPrefix(at, "machines.go"), strings.HasPrefix(at, "servers.go"):
+		default:
+			t.Errorf("openRoute is called from %s, which the guard was not checked against", at)
+		}
+	}
+}
+
+// callersOf lists the file and line of every use of these snippets in
+// the window's own source, leaving tests out.
+func callersOf(t *testing.T, snippets ...string) []string {
+	t.Helper()
+	names, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatalf("glob: %v", err)
+	}
+	var out []string
+	for _, name := range names {
+		if strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		raw, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		for i, line := range strings.Split(string(raw), "\n") {
+			if strings.HasPrefix(strings.TrimSpace(line), "//") {
+				continue
+			}
+			for _, snippet := range snippets {
+				if strings.Contains(line, snippet) {
+					out = append(out, fmt.Sprintf("%s:%d", name, i+1))
+					break
+				}
+			}
+		}
+	}
+	return out
+}

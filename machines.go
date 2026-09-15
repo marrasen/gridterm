@@ -874,6 +874,15 @@ func (a *app) route(name string) ([]step, error) {
 	}
 	route := make([]step, len(hosts))
 	for i, h := range hosts {
+		if h.Window {
+			// A window serves gridterm's own protocol and has no shell
+			// to log in to. Refused where a route is built rather than
+			// only where one is opened: a caller that forgot to ask
+			// would otherwise log in to the serve port and find out from
+			// the far end refusing a session.
+			return nil, fmt.Errorf(
+				"%s is a gridterm window, which is taken over rather than logged in to", h.Name)
+		}
 		route[i] = hostStep(h)
 	}
 	return route, nil

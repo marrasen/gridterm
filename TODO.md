@@ -76,6 +76,9 @@ each group. A line goes when the work is in and reviewed.
 
 ## Known gaps worth revisiting
 
+- A sidebar row drawn before a window is re-keyed still names the
+  window by its old key until the next frame, so a click on it in that
+  frame finds nothing.
 - The cursor never blinks (`DECSCUSR` styles 1, 3 and 5 draw as the
   steady ones).
 - `-ssh` connects before the window opens, so it asks on the console and

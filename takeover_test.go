@@ -2126,6 +2126,50 @@ func TestARekeyOntoAHeldNameLosesNoWindow(t *testing.T) {
 	}
 }
 
+// The same with the saved window walked first, so the name it wants is
+// one the other window is staying under.
+func TestARekeyOntoANameAnotherWindowKeepsLeavesItAlone(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+
+	pretendWindow(t, a, "zeta:2222", "zeta:2222")
+	pretendWindow(t, a, "office", "alpha:2222")
+	if err := a.book.Put(remote.Host{
+		Name: "zeta:2222", Address: "alpha", Port: 2222, Window: true,
+	}, ""); err != nil {
+		t.Fatalf("save the window: %v", err)
+	}
+
+	a.refreshServers()
+
+	if got := a.windows.names(); !slices.Equal(got, []string{"alpha:2222", "zeta:2222"}) {
+		t.Fatalf("it is holding %v, want the saved window under its address and the other left alone", got)
+	}
+	if got := a.windows.named("zeta:2222").addr; got != "zeta:2222" {
+		t.Errorf("the window at zeta:2222 is now the one at %s", got)
+	}
+}
+
+// A window taken over by an address typed in capitals is still the one
+// the list saves in lower case.
+func TestARekeyMatchesTheAddressWhateverItsCapitals(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+
+	pretendWindow(t, a, "OFFICE-HOST:2222", "OFFICE-HOST:2222")
+	if err := a.book.Put(remote.Host{
+		Name: "office", Address: "office-host", Port: 2222, Window: true,
+	}, ""); err != nil {
+		t.Fatalf("save the window: %v", err)
+	}
+
+	a.refreshServers()
+
+	if got := a.windows.names(); !slices.Equal(got, []string{"office"}) {
+		t.Fatalf("it is holding %v, want the window under the name the list gives its address", got)
+	}
+}
+
 // aWindowServing is a window serving, letting in whoever the line
 // allows.
 func aWindowServing(t *testing.T, allowed string) (a *testApp, addr string) {

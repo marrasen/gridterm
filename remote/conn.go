@@ -261,7 +261,10 @@ func connect(ctx context.Context, to reach, via *Conn, cfg Config) (*Conn, error
 		a.close()
 		return nil, err
 	}
-	c := newConn(client, a.agent, cfg.User, addr)
+	// Past the agent, so the watch on it stops. The connection owns the
+	// socket from here.
+	a.done()
+	c := newConn(client, a.agentCloser(), cfg.User, addr)
 	if via != nil {
 		c.via = via
 		if err := via.register(c); err != nil {

@@ -315,3 +315,78 @@ func waitForConns(t *testing.T, s *sshtest.Server, want int) {
 		time.Sleep(time.Millisecond)
 	}
 }
+
+// shutCounter counts how many times it was closed.
+type shutCounter struct {
+	mu sync.Mutex
+	n  int
+}
+
+func (s *shutCounter) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.n++
+	return nil
+}
+
+func (s *shutCounter) count() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.n
+}
+
+// An agent that does not get a connection past it is let go of.
+//
+// Closing the socket is the only thing that unblocks it. Listing keys
+// reads from memory, but signing with one can go to a smartcard and stop
+// there for a PIN in a window nobody is looking at.
+func TestAnAgentThatDoesNotAnswerIsLetGoOf(t *testing.T) {
+	sock := &shutCounter{}
+	var said []string
+	a := &auth{agent: sock, saying: func(what string) { said = append(said, what) }}
+
+	a.holdTheAgentTo(50 * time.Millisecond)
+	for deadline := time.Now().Add(5 * time.Second); sock.count() == 0; {
+		if time.Now().After(deadline) {
+			t.Fatal("the agent socket was never closed")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if len(said) == 0 || !strings.Contains(strings.Join(said, "\n"), "letting go of it") {
+		t.Errorf("it said %q, want it to say it let go of the agent", said)
+	}
+
+	// And the connection closing it too closes it only the once: an
+	// os.File closed twice reports a failure that means nothing.
+	if err := a.closeAgent(); err != nil {
+		t.Fatalf("close the agent: %v", err)
+	}
+	if n := sock.count(); n != 1 {
+		t.Fatalf("the agent socket was closed %d times, want once", n)
+	}
+}
+
+// A connection that gets past the agent stops watching it, so the socket
+// it hands on is not closed under it.
+func TestGettingPastTheAgentStopsWatchingIt(t *testing.T) {
+	sock := &shutCounter{}
+	a := &auth{agent: sock}
+
+	a.holdTheAgentTo(50 * time.Millisecond)
+	a.done()
+	time.Sleep(200 * time.Millisecond)
+	if n := sock.count(); n != 0 {
+		t.Fatalf("the agent socket was closed %d times, want not at all", n)
+	}
+	// And the connection owns it from there.
+	closer := a.agentCloser()
+	if closer == nil {
+		t.Fatal("the connection was given no way to close the agent socket")
+	}
+	if err := closer.Close(); err != nil {
+		t.Fatalf("close the agent: %v", err)
+	}
+	if n := sock.count(); n != 1 {
+		t.Fatalf("the agent socket was closed %d times, want once", n)
+	}
+}

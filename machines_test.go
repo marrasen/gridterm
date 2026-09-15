@@ -1024,3 +1024,88 @@ func TestAConnectionThatEndedNoLongerSaysItIsConnecting(t *testing.T) {
 		t.Fatalf("the panel does not say what became of it:\n%s", shown)
 	}
 }
+
+// A request waiting for a connection that is not made is thrown away,
+// and the pane says so.
+//
+// It was waiting for that machine. Starting a fresh connection instead
+// is not what "wait for it" says, and on a machine that never answers
+// the window would ask about it again and again.
+func TestWhatWaitedForAConnectionThatFailedIsDropped(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+
+	// A machine that answers and then says nothing, so the first
+	// attempt is still on its way while the second one asks about it.
+	deafHost, deafPort := sshtest.Deaf(t)
+	cfg := serverConfig(t, sshtest.New(t))
+	cfg.Host, cfg.Port = deafHost, deafPort
+	a.connectAs("box", cfg)
+	a.connectAs("box", cfg)
+	f := waitForDialog(t, a, "Already connecting to box")
+	pressButton(t, a, f, "Wait for it")
+	a.pump.run()
+
+	// Given up on, so what was waiting for it has nothing to wait for.
+	a.actOn, a.acting = "box", true
+	if err := a.disconnectHere(); err != nil {
+		t.Fatalf("give up: %v", err)
+	}
+	a.acting = false
+
+	waitFor(t, a, "the pane to say what was thrown away", func() bool {
+		for pane, e := range a.panes {
+			if e.Host == "box" && strings.Contains(paneText(pane), "was not started") {
+				return true
+			}
+		}
+		return false
+	})
+	// Nothing was started in its place, and nothing is being asked about
+	// a second time.
+	waitFor(t, a, "the dial to unwind", func() bool { return a.connecting == 0 })
+	if _, ok := a.root.Modal().(*ui.Form); ok {
+		t.Fatal("it asked about the connection again")
+	}
+}
+
+// A machine renamed while it was being reached is held under the name it
+// has now.
+//
+// The dial goroutine holds the name it started with, so the connection
+// landed under the old name and undid the rename: one machine showed as
+// two all over again.
+func TestAMachineRenamedWhileItWasBeingReachedLandsUnderTheNewName(t *testing.T) {
+	s := sshtest.New(t)
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pinServers(t, a, s)
+
+	saveHost(t, a, "picard", s, "")
+	route := []step{{name: "picard", cfg: a.prepare(serverConfig(t, s))}}
+	held := &dialling{cancel: func() {}, names: []string{"picard"}}
+	a.holdNames(held)
+
+	// Renamed while the dial is still running.
+	h, _ := a.book.Lookup("picard")
+	h.Name = "picard via skylake"
+	if err := a.book.Put(h, "picard"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	a.renamedMachine("picard", h)
+
+	conn, err := remote.Connect(t.Context(), route[0].cfg)
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	a.reached(held, newConnLog(nil), route, 0, conn, "")
+
+	if a.machines["picard"] != nil {
+		t.Fatalf("it landed under the name that is gone: %v", names(a))
+	}
+	if a.machines["picard via skylake"] == nil {
+		t.Fatalf("it did not land under the name it has now: %v", names(a))
+	}
+}

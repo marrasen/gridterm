@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -687,5 +688,111 @@ func TestRenamingAMachineTakesWhatIsOpenWithIt(t *testing.T) {
 	}
 	if a.machines["picard via skylake"] != nil {
 		t.Fatal("closing the renamed connection did nothing")
+	}
+}
+
+// Renaming only the capitals of a name still moves what is open.
+//
+// The book keeps names case-insensitively and the window keys its own
+// record by name exactly, so "picard" to "Picard" left one machine
+// showing as two and let a second connection be made to it.
+func TestRenamingOnlyTheCapitalsStillMovesWhatIsOpen(t *testing.T) {
+	s := sshtest.New(t)
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pinServers(t, a, s)
+
+	saveHost(t, a, "picard", s, "")
+	if err := a.connectSaved("picard"); err != nil {
+		t.Fatalf("connectSaved: %v", err)
+	}
+	waitFor(t, a, "the machine to connect", func() bool { return a.machines["picard"] != nil })
+
+	if err := a.openEditServer("picard"); err != nil {
+		t.Fatalf("edit: %v", err)
+	}
+	f := openDialog(t, a)
+	f.Fields()[0].SetText("Picard")
+	pressButton(t, a, f, "Save")
+	a.pump.run()
+
+	if a.machines["picard"] != nil {
+		t.Fatal("the connection is still held under the old capitals")
+	}
+	if a.machines["Picard"] == nil {
+		t.Fatalf("the connection did not follow the rename: %v", names(a))
+	}
+}
+
+// Renaming a machine onto a name something is already connected as is
+// refused, with the dialog left open to correct.
+func TestRenamingOntoAConnectedNameIsRefused(t *testing.T) {
+	s := sshtest.New(t)
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pinServers(t, a, s)
+
+	// One saved, and one reached by typing a target, which the book
+	// never hears about.
+	saveHost(t, a, "picard", s, "")
+	a.connectAs("enterprise", a.prepare(serverConfig(t, s)))
+	waitFor(t, a, "the typed machine to connect", func() bool {
+		return a.machines["enterprise"] != nil
+	})
+	was := a.machines["enterprise"]
+
+	if err := a.openEditServer("picard"); err != nil {
+		t.Fatalf("edit: %v", err)
+	}
+	f := openDialog(t, a)
+	f.Fields()[0].SetText("enterprise")
+	pressButton(t, a, f, "Save")
+	a.pump.run()
+
+	if a.machines["enterprise"] != was {
+		t.Fatal("the connection that was already there was dropped without being closed")
+	}
+	if _, ok := a.book.Lookup("enterprise"); ok {
+		t.Fatal("the rename was saved anyway")
+	}
+	if _, ok := a.book.Lookup("picard"); !ok {
+		t.Fatal("the machine lost its name")
+	}
+}
+
+// A rename that also changes the address leaves the old connection
+// where it was: it is a connection to the old machine, and the new name
+// is not it.
+func TestRenamingAndRetargetingLeavesTheOldConnection(t *testing.T) {
+	near := sshtest.New(t)
+	far := sshtest.New(t)
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pinServers(t, a, near, far)
+
+	saveHost(t, a, "picard", near, "")
+	if err := a.connectSaved("picard"); err != nil {
+		t.Fatalf("connectSaved: %v", err)
+	}
+	waitFor(t, a, "the machine to connect", func() bool { return a.machines["picard"] != nil })
+
+	host, port := far.Host()
+	if err := a.openEditServer("picard"); err != nil {
+		t.Fatalf("edit: %v", err)
+	}
+	f := openDialog(t, a)
+	f.Fields()[0].SetText("enterprise")
+	f.Fields()[1].SetText(fmt.Sprintf("tester@%s:%d", host, port))
+	pressButton(t, a, f, "Save")
+	a.pump.run()
+
+	if a.machines["enterprise"] != nil {
+		t.Fatal("the connection to the old machine was moved under the new name")
+	}
+	if a.machines["picard"] == nil {
+		t.Fatalf("the connection to the old machine was lost: %v", names(a))
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	stdlog "log"
+	"slices"
 	"strings"
 	"time"
 
@@ -244,6 +245,24 @@ type dialling struct {
 	// settled says the dial has come back, so anything waiting on it has
 	// already run and a new request must run now rather than queue.
 	settled bool
+
+	// say writes into the pane watching this connection, so a request
+	// that was thrown away says so where the user is looking.
+	say func(string)
+
+	// renamed maps what a machine was called when the dial started to
+	// what it is called now, for one renamed while it was on its way.
+	// The dial goroutine holds the old names and cannot be told.
+	renamed map[string]string
+}
+
+// nameNow gives what a machine is called now, which is what it was
+// called when the dial started unless it has been renamed since.
+func (d *dialling) nameNow(was string) string {
+	if now, ok := d.renamed[was]; ok {
+		return now
+	}
+	return was
 }
 
 // holdNames holds every name a connection needs while it is being made.
@@ -287,18 +306,36 @@ func (a *app) giveUp(d *dialling) {
 	// What was queued behind it goes with it. Giving up on a connection
 	// and having the window make it anyway a moment later is not what
 	// giving up means.
-	d.settled, d.waiting = true, nil
+	a.dropWaiting(d)
 }
 
-// settle lets go of a connection that has been made or has failed, and
-// runs whatever was waiting for it.
-func (a *app) settle(d *dialling) {
+// settle lets go of a connection that has been made, and runs whatever
+// was waiting for it.
+//
+// made says the machine answered. What was waiting was waiting for that
+// machine, so a connection that was not made leaves it nothing to do:
+// starting a fresh connection instead is not what "wait for it" says,
+// and on a machine that never answers it would ask again and again.
+func (a *app) settle(d *dialling, made bool) {
 	a.release(d)
+	if !made {
+		a.dropWaiting(d)
+		return
+	}
 	waiting := d.waiting
 	d.settled, d.waiting = true, nil
 	for _, run := range waiting {
 		run()
 	}
+}
+
+// dropWaiting throws away what was queued behind a connection that was
+// not made, saying so where the user is looking.
+func (a *app) dropWaiting(d *dialling) {
+	if len(d.waiting) > 0 && d.say != nil {
+		d.say("what was waiting for this was not started")
+	}
+	d.settled, d.waiting = true, nil
 }
 
 // askAboutTheOneOnItsWay asks what to do about a machine that is
@@ -309,6 +346,14 @@ func (a *app) settle(d *dialling) {
 // the user's to say: the one on its way may be a second from done, or
 // may be stuck on a machine that will never answer.
 func (a *app) askAboutTheOneOnItsWay(d *dialling, name string, again func()) {
+	// Posted, not shown from here. This can be reached from a button of
+	// another dialog, and that dialog closes as soon as the button
+	// returns, taking anything stacked on top of it.
+	a.pump.post(func() { a.showTheOneOnItsWay(d, name, again) })
+}
+
+// showTheOneOnItsWay is the dialog itself, on the goroutine that draws.
+func (a *app) showTheOneOnItsWay(d *dialling, name string, again func()) {
 	f := a.newConfirm("Already connecting to "+name, []string{
 		"gridterm is still connecting to " + name + ".",
 		"",
@@ -365,6 +410,11 @@ func (a *app) openRoute(name string, route []step, command []string, at *spot) {
 		}
 	}
 
+	// A copy, because plan hands back a view on the route the caller
+	// passed in and this fills each step in. A request that runs again
+	// would otherwise be preparing configs that were prepared already.
+	missing = slices.Clone(missing)
+
 	// Filled in here rather than by the caller, so nothing connects
 	// without a way to reach the user and without the keys already
 	// unlocked.
@@ -398,6 +448,7 @@ func (a *app) openRoute(name string, route []step, command []string, at *spot) {
 	// that finishes the dial: a dial that has not come back yet still
 	// has to stop holding them, or nothing can try again.
 	log := newConnLog(func() { a.pump.post(func() { a.giveUp(held) }) })
+	held.say = log.Say
 	pane, err := a.openSessionTab(log, name, kindOf(command), "connecting", at)
 	if err != nil {
 		cancel()
@@ -435,7 +486,6 @@ func (a *app) openRoute(name string, route []step, command []string, at *spot) {
 		}
 		a.pump.post(func() {
 			a.connecting--
-			a.settle(held)
 			// Read before the context is let go of on the next line,
 			// which would otherwise make every connection look like one
 			// the user gave up on.
@@ -443,6 +493,7 @@ func (a *app) openRoute(name string, route []step, command []string, at *spot) {
 			cancel()
 			if err != nil {
 				a.sayStillConnected(log, held)
+				a.settle(held, false)
 				if gaveUp != nil {
 					a.endedAs(pane, "given up on")
 					log.GaveUp()
@@ -456,11 +507,15 @@ func (a *app) openRoute(name string, route []step, command []string, at *spot) {
 			// while the last handshake was finishing.
 			if why := a.stillWanted(gaveUp, through); why != nil {
 				a.sayStillConnected(log, held)
+				a.settle(held, false)
 				a.endedAs(pane, "not connected")
 				log.Failed(why)
 				return
 			}
-			a.becomeShellPane(name, command, pane, log)
+			// The shell first, so the pane the user is watching is the
+			// one in front of them, and then whatever was waiting.
+			a.becomeShellPane(held.nameNow(name), command, pane, log)
+			a.settle(held, true)
 		})
 	}()
 }
@@ -475,6 +530,9 @@ func (a *app) openRoute(name string, route []step, command []string, at *spot) {
 // it is connected to.
 func (a *app) reached(d *dialling, log *connLog, route []step, at int, conn *remote.Conn, first string) {
 	s := route[at]
+	// Renamed while it was being reached, in which case it goes under
+	// what it is called now.
+	s.name = d.nameNow(s.name)
 	// Held even when the route was given up on in the meantime: the
 	// machine answered, and whether this landed a frame before the user
 	// pressed give up or a frame after is not something they can see.
@@ -483,9 +541,9 @@ func (a *app) reached(d *dialling, log *connLog, route []step, at int, conn *rem
 		a.letGoOfConn(s.name, conn)
 		return
 	}
-	via := first
+	via := d.nameNow(first)
 	if at > 0 {
-		via = route[at-1].name
+		via = d.nameNow(route[at-1].name)
 	}
 	a.hold(s, conn, via)
 	d.made = append(d.made, s.name)
@@ -499,14 +557,19 @@ func (a *app) reached(d *dialling, log *connLog, route []step, at int, conn *rem
 // The machine has not changed, only what it is called. What was open
 // under the old name would otherwise show as a second machine in the
 // sidebar, and closing it would look for one that is not there any more.
-func (a *app) renamedMachine(was, now string) {
-	if m := a.machines[was]; m != nil {
+func (a *app) renamedMachine(was string, to remote.Host) {
+	now := to.Name
+	if m := a.machines[was]; m != nil && m.at.cfg.SameMachine(to.Config()) {
+		// Only when it is still the same machine. A rename that also
+		// changed the address left this saying the new name was
+		// connected, to something that was not it.
 		delete(a.machines, was)
 		m.at.name = now
 		a.machines[now] = m
 		// The closure knew the old name, and the row is how the user
 		// closes the connection.
 		m.entry.Close = func() error { return a.dropMachine(now) }
+		a.renamedFiles(was, now)
 	}
 	if d := a.opening[was]; d != nil {
 		delete(a.opening, was)
@@ -521,6 +584,12 @@ func (a *app) renamedMachine(was, now string) {
 				d.made[i] = now
 			}
 		}
+		// The dial goroutine holds the name it started with, so it is
+		// told this way rather than by writing into what it is reading.
+		if d.renamed == nil {
+			d.renamed = map[string]string{}
+		}
+		d.renamed[was] = now
 	}
 	// Every row under the old name: the panes, the tunnels, and the
 	// connection itself. They are the same entries the panel groups by.

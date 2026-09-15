@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -31,7 +32,13 @@ const (
 // opened to do it.
 type auth struct {
 	ladder []rung
-	agent  io.Closer
+
+	// mu guards the agent socket and the watch on it, which a timer
+	// goroutine closes and the connecting goroutine closes too.
+	mu        sync.Mutex
+	agent     io.Closer
+	agentGone bool
+	watch     *time.Timer
 
 	// saying is told which way of signing in is being tried, so somebody
 	// watching a connection that stops can see where it stopped. A nil
@@ -91,10 +98,76 @@ func (a *auth) next(ctx *ssh.ClientAuthContext) (ssh.AuthMethod, error) {
 // close lets go of the agent socket, for a connection that never
 // happened.
 func (a *auth) close() {
-	if a != nil && a.agent != nil {
-		_ = a.agent.Close()
+	if a == nil {
+		return
+	}
+	a.done()
+	_ = a.closeAgent()
+}
+
+// done stops watching the agent, for a connection that got past it.
+func (a *auth) done() {
+	if a == nil {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.watch != nil {
+		a.watch.Stop()
+		a.watch = nil
 	}
 }
+
+// closeAgent closes the agent socket, once, whoever gets there first.
+//
+// Both the connection and the watch on the agent let go of it, and an
+// os.File closed twice reports a failure that means nothing.
+func (a *auth) closeAgent() error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.agent == nil || a.agentGone {
+		return nil
+	}
+	a.agentGone = true
+	return a.agent.Close()
+}
+
+// agentCloser hands the agent socket to the connection without letting
+// it be closed twice. It is nil when there is no agent.
+func (a *auth) agentCloser() io.Closer {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.agent == nil {
+		return nil
+	}
+	return closerFunc(a.closeAgent)
+}
+
+// holdTheAgentTo closes the agent socket if the connection has not got
+// past it in the time given.
+//
+// Closing it is what unblocks the agent, and nothing else will. Listing
+// keys is a read from memory, but signing with one can go to a smartcard
+// and stop there for a PIN in a window nobody is looking at, which is
+// how a connection came to hang with no way to tell what it was waiting
+// for.
+func (a *auth) holdTheAgentTo(patience time.Duration) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.agent == nil || a.watch != nil {
+		return
+	}
+	a.watch = time.AfterFunc(patience, func() {
+		saySo(a.saying, fmt.Sprintf(
+			"the SSH agent has not answered in %v, so this is letting go of it", patience))
+		_ = a.closeAgent()
+	})
+}
+
+// closerFunc makes a function into an io.Closer.
+type closerFunc func() error
+
+func (f closerFunc) Close() error { return f() }
 
 // authMethods assembles what to try, in the order a user expects.
 //
@@ -107,7 +180,9 @@ func authMethods(ctx context.Context, cfg Config) (*auth, error) {
 	a := &auth{saying: cfg.Saying}
 
 	var agentSigners func() ([]ssh.Signer, error)
-	if !cfg.NoAgent {
+	if cfg.NoAgent {
+		saySo(cfg.Saying, "the SSH agent is not being used for this one")
+	} else {
 		conn, err := dialAgent()
 		if err != nil {
 			a.noAgent = err
@@ -124,29 +199,45 @@ func authMethods(ctx context.Context, cfg Config) (*auth, error) {
 		a.close()
 		return nil, err
 	}
-	saySo(cfg.Saying, fmt.Sprintf("%d private keys need no passphrase, %d do",
-		len(plain), len(locked)))
+	if cfg.NoIdentities {
+		saySo(cfg.Saying, "no private key files are being looked at for this one")
+	} else {
+		saySo(cfg.Saying, fmt.Sprintf("%d private keys need no passphrase, %d do",
+			len(plain), len(locked)))
+	}
 
-	if agentSigners != nil || len(plain) > 0 || len(cfg.Ring.Paths()) > 0 {
+	// The keys this window already has, first and separately from the
+	// agent's. An agent that will not answer must not take the key files
+	// down with it: they are what would have worked.
+	if len(plain) > 0 || len(cfg.Ring.Paths()) > 0 {
 		a.ladder = append(a.ladder, rung{method: methodPublicKey, what: "the keys already to hand", build: func() ssh.AuthMethod {
 			return ssh.PublicKeysCallback(func() ([]ssh.Signer, error) {
-				signers := cfg.Ring.Signers()
-				if agentSigners != nil {
-					saySo(cfg.Saying, "asking the SSH agent what keys it holds")
-					got, err := keysWithin(agentPatience, agentSigners)
-					if err != nil {
-						// Returned rather than stepped over. x/crypto
-						// keeps it and goes on to the next way of
-						// signing in, so the ladder is not cut short and
-						// the reason is still there if nothing works.
-						return nil, fmt.Errorf("remote: read the SSH agent: %w", err)
-					}
-					saySo(cfg.Saying, fmt.Sprintf("the agent holds %d keys", len(got)))
-					signers = append(signers, got...)
-				}
-				signers = append(signers, plain...)
-				saySo(cfg.Saying, fmt.Sprintf("offering %d keys", len(signers)))
+				signers := append(cfg.Ring.Signers(), plain...)
+				saySo(cfg.Saying, fmt.Sprintf("offering %d keys of its own", len(signers)))
 				return signers, nil
+			})
+		}})
+	}
+
+	if agentSigners != nil {
+		a.ladder = append(a.ladder, rung{method: methodPublicKey, what: "the keys the SSH agent holds", build: func() ssh.AuthMethod {
+			// From here until the connection is made or fails, the agent
+			// has this long to answer -- the signing as well as the
+			// listing, because signing is the half that can go to a
+			// smartcard and stop.
+			a.holdTheAgentTo(agentGrace)
+			return ssh.PublicKeysCallback(func() ([]ssh.Signer, error) {
+				saySo(cfg.Saying, "asking the SSH agent what keys it holds")
+				got, err := agentSigners()
+				if err != nil {
+					// Said as well as returned: x/crypto keeps only the
+					// last attempt's error, so this one would be lost
+					// behind whatever the server says at the end.
+					saySo(cfg.Saying, "the SSH agent: "+err.Error())
+					return nil, fmt.Errorf("remote: read the SSH agent: %w", err)
+				}
+				saySo(cfg.Saying, fmt.Sprintf("the agent holds %d keys, and they are being offered", len(got)))
+				return got, nil
 			})
 		}})
 	}
@@ -349,32 +440,21 @@ func AgentKeys() (keys []ssh.Signer, closer io.Closer, err error) {
 	}
 }
 
-// keysWithin reads an agent's keys, giving up if it does not answer.
-//
-// An agent can stop to ask a question of its own -- a smartcard PIN, or
-// a passphrase in a window of its own -- and one nobody answers would
-// otherwise hold the connection for ever.
-func keysWithin(patience time.Duration, signers func() ([]ssh.Signer, error)) ([]ssh.Signer, error) {
-	type answer struct {
-		keys []ssh.Signer
-		err  error
-	}
-	back := make(chan answer, 1)
-	go func() {
-		keys, err := signers()
-		back <- answer{keys: keys, err: err}
-	}()
-	select {
-	case got := <-back:
-		return got.keys, got.err
-	case <-time.After(patience):
-		return nil, fmt.Errorf("it did not answer within %v", patience)
-	}
-}
-
 // agentPatience is how long the SSH agent has to say what it holds.
 //
 // It answers from memory, so this is long only by the standards of that:
 // it is here because an agent that has wedged would otherwise stop a
 // connection for ever, with nothing saying why.
 const agentPatience = 5 * time.Second
+
+// agentGrace is how long the agent has to get a connection past it,
+// listing its keys and signing with one.
+//
+// Long, because signing is allowed to be slow: a key on a hardware token
+// waits for the user to touch it, and one on a smartcard waits for a
+// PIN. Short enough that a question nobody is going to answer does not
+// hold the connection for the rest of the day.
+//
+// A variable because the tests shorten it. Nothing in the program writes
+// it.
+var agentGrace = 60 * time.Second

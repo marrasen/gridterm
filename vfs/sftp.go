@@ -31,6 +31,13 @@ func NewSFTP(name string, client *sftp.Client, close func() error) *SFTP {
 // Name is what the panel calls the machine.
 func (s *SFTP) Name() string { return s.name }
 
+// Renamed says the machine is called something else now.
+//
+// The name is what the window matches a pane against to find which
+// machine it is on, so one that kept the old name would be left behind
+// when its connection closed.
+func (s *SFTP) Renamed(name string) { s.name = name }
+
 // Sep is the separator between the parts of a path over there, which
 // SFTP defines as a slash whatever the machine runs.
 func (s *SFTP) Sep() byte { return '/' }

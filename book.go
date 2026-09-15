@@ -254,11 +254,23 @@ func (a *app) openServerForm(under string) error {
 		} else {
 			h.Identities = rest
 		}
+		// Checked before the book is written, so the dialog stays open
+		// with what was typed still in it. The window holds names the
+		// book never saw -- a machine reached by typing a target, and
+		// this machine itself -- and two connections under one name
+		// would leave one of them open with nothing holding it.
+		if under != "" && under != h.Name {
+			if a.machines[h.Name] != nil || a.opening[h.Name] != nil {
+				return fmt.Errorf("something is already connected as %q; close it first", h.Name)
+			}
+		}
 		if err := a.book.Put(h, under); err != nil {
 			return err
 		}
-		if under != "" && !strings.EqualFold(under, h.Name) {
-			a.renamedMachine(under, h.Name)
+		// Exactly, not ignoring case: the window's own record is kept by
+		// name and a change of capitals is a change of name to it.
+		if under != "" && under != h.Name {
+			a.renamedMachine(under, h)
 		}
 		return nil
 	}})

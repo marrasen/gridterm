@@ -567,6 +567,26 @@ func size(n int64) string {
 	return meter.Bytes(uint64(n))
 }
 
+// renamedFiles tells the file panes on a machine that it is called
+// something else now.
+//
+// The name is frozen into the filesystem when the pane opens, and the
+// window finds a pane's machine by matching it. A pane left under the
+// old name would not be closed with its connection, and would sit on a
+// session that had gone.
+func (a *app) renamedFiles(was, now string) {
+	b := a.files
+	if b == nil {
+		return
+	}
+	for _, p := range b.view.Panes() {
+		f, ok := p.FS().(interface{ Renamed(string) })
+		if ok && p.FS().Name() == was {
+			f.Renamed(now)
+		}
+	}
+}
+
 // closeFilesOn takes away every pane of the file manager that is on a
 // machine, for a connection that has gone.
 func (a *app) closeFilesOn(host string) error {

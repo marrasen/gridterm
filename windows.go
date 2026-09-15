@@ -88,11 +88,7 @@ func (a *app) takeOver(addr, keyFile string) error {
 	// Already on its way. Asked about rather than refused: waiting for
 	// it is usually what the user wants.
 	if d := a.opening[addr]; d != nil {
-		a.askAboutTheOneOnItsWay(d, addr, func() {
-			if err := a.takeOver(addr, keyFile); err != nil {
-				a.reportError("Could not take over "+addr, err)
-			}
-		})
+		a.askAboutTheOneOnItsWay(d, addr, func() { a.workOnWindow(addr, keyFile) })
 		return nil
 	}
 
@@ -109,6 +105,7 @@ func (a *app) takeOver(addr, keyFile string) error {
 	// has to stop holding it, or nothing can try again.
 	held := &dialling{cancel: cancel, names: []string{addr}}
 	log := newConnLog(func() { a.pump.post(func() { a.giveUp(held) }) })
+	held.say = log.Say
 	pane, err := a.openSessionTab(log, addr, conns.Terminal, "connecting", nil)
 	if err != nil {
 		cancel()
@@ -128,13 +125,13 @@ func (a *app) takeOver(addr, keyFile string) error {
 		})
 		a.pump.post(func() {
 			a.connecting--
-			a.settle(held)
 			// Read before the context is let go of on the next line,
 			// which would otherwise make every window look like one the
 			// user gave up on.
 			gaveUp := ctx.Err()
 			cancel()
 			if err != nil {
+				a.settle(held, false)
 				if gaveUp != nil {
 					a.endedAs(pane, "given up on")
 					log.GaveUp()
@@ -149,6 +146,7 @@ func (a *app) takeOver(addr, keyFile string) error {
 				// finishing. Nothing else knows about it, and a failure
 				// to hang up is the user's to see: it is a socket to a
 				// machine that thinks somebody is working in it.
+				a.settle(held, false)
 				a.endedAs(pane, "given up on")
 				log.GaveUp()
 				if err := win.Close(); err != nil {
@@ -158,9 +156,28 @@ func (a *app) takeOver(addr, keyFile string) error {
 			}
 			a.holdWindow(addr, win)
 			a.becomeWindowPane(addr, pane, log)
+			a.settle(held, true)
 		})
 	}()
 	return nil
+}
+
+// workOnWindow is what a request that waited for a window being taken
+// over does when it runs.
+//
+// A terminal on it once it has landed, rather than taking it over a
+// second time: that would only report that it has been taken over
+// already, which is not what the user waited for.
+func (a *app) workOnWindow(addr, keyFile string) {
+	if a.windows[addr] != nil {
+		if err := a.openOnWindow(addr, nil); err != nil {
+			a.reportError("Could not open a terminal on "+addr, err)
+		}
+		return
+	}
+	if err := a.takeOver(addr, keyFile); err != nil {
+		a.reportError("Could not take over "+addr, err)
+	}
 }
 
 // becomeWindowPane hands the pane that was watching a window being taken

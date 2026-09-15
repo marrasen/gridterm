@@ -1504,3 +1504,54 @@ func TestThePaneThatSaysWhyAWindowFailedStays(t *testing.T) {
 		t.Errorf("the pane no longer says why: %q", got)
 	}
 }
+
+// The dialog about a window already being taken over really opens.
+//
+// It is reached from the Take over button, and a dialog opened from
+// inside a button is torn down with the dialog the button belongs to.
+// The user pressed the button and nothing happened at all.
+func TestAskingAboutTheWindowOnItsWayOpensFromTheButton(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	keyFile, _ := aKeyFile(t)
+
+	// A port nothing answers on, so the first is still on its way.
+	if err := a.takeOver("127.0.0.1:1", keyFile); err != nil {
+		t.Fatalf("first: %v", err)
+	}
+
+	// The second one the way the user does it: through the form.
+	if err := a.openTakeOver(); err != nil {
+		t.Fatalf("open the form: %v", err)
+	}
+	f := openDialog(t, a)
+	f.Fields()[0].SetText("127.0.0.1:1")
+	f.Fields()[1].SetText(keyFile)
+	pressButton(t, a, f, "Take over")
+
+	ask := waitForDialog(t, a, "Already connecting to 127.0.0.1:1")
+	pressButton(t, a, ask, "Leave it")
+	if a.opening["127.0.0.1:1"] == nil {
+		t.Fatal("the first attempt was let go of")
+	}
+}
+
+// Waiting for a window being taken over opens a terminal on it once it
+// lands, rather than taking it over a second time.
+//
+// Taking it over again only reports that it has been taken over
+// already, so the successful outcome of waiting was an error dialog.
+func TestWaitingForAWindowOpensATerminalOnIt(t *testing.T) {
+	host, client, addr := twoWindows(t)
+	_ = host
+
+	was := len(client.panes)
+	client.workOnWindow(addr, "")
+	waitFor(t, client, "a terminal on the window", func() bool {
+		return len(client.panes) > was
+	})
+	if f, ok := client.root.Modal().(*ui.Form); ok {
+		t.Fatalf("it reported a failure instead: %v", f.Title)
+	}
+}

@@ -1531,7 +1531,8 @@ func TestDialSaysEachStep(t *testing.T) {
 		"reaching " + s.Addr(),
 		"asking " + s.Addr() + " who it is",
 		"host key",
-		"offering 1 keys",
+		"its host key is accepted",
+		"signing in as gridterm, offering 1 keys",
 	} {
 		if !strings.Contains(account, want) {
 			t.Errorf("the account does not say %q:\n%s", want, account)

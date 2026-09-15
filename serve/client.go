@@ -131,13 +131,19 @@ func Dial(ctx context.Context, cfg DialConfig) (*Window, error) {
 
 	cc, chans, reqs, err := ssh.NewClientConn(nc, cfg.Addr, &ssh.ClientConfig{
 		User: "gridterm",
-		Auth: []ssh.AuthMethod{ssh.PublicKeys(cfg.Keys...)},
+		// A callback rather than the keys themselves, so the account
+		// says when signing in starts: everything before it is this end
+		// and the network, everything after it is the other window.
+		Auth: []ssh.AuthMethod{ssh.PublicKeysCallback(func() ([]ssh.Signer, error) {
+			cfg.say(fmt.Sprintf("signing in as gridterm, offering %d keys", len(cfg.Keys)))
+			return cfg.Keys, nil
+		})},
 		HostKeyCallback: func(hostname string, addr net.Addr, key ssh.PublicKey) error {
 			cfg.say("it answered, with a " + key.Type() + " host key")
 			if err := cfg.HostKey(hostname, addr, key); err != nil {
 				return err
 			}
-			cfg.say(fmt.Sprintf("its host key is accepted; offering %d keys", len(cfg.Keys)))
+			cfg.say("its host key is accepted")
 			return nil
 		},
 	})

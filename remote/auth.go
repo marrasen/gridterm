@@ -386,6 +386,17 @@ func keyboardInteractive(ctx context.Context, cfg Config) ssh.KeyboardInteractiv
 	}
 }
 
+// UsualKeys reads the private keys in the usual places: the ones that
+// need no passphrase, and the paths of the ones that do.
+//
+// It is what connecting to a machine offers when nothing else is named,
+// and it is exported so that taking over a window offers the same
+// things. A user with one key in ~/.ssh expects it to be used either
+// way.
+func UsualKeys() (plain []ssh.Signer, locked []string, err error) {
+	return identities(Config{})
+}
+
 // identities sorts the key files into the ones that can be read without
 // asking and the ones that need a passphrase.
 //

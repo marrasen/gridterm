@@ -280,7 +280,7 @@ func (r reach) reach(ctx context.Context) (*serve.Window, error) {
 		return nil, err
 	}
 	r.say(stepKeys)
-	keys, closer, err := keysFor(ctx, r.keyFile, r.ring, r.ask, r.agent)
+	keys, closer, err := keysFor(ctx, r.keyFile, r.ring, r.ask, r.agent, r.saying)
 	if err != nil {
 		return nil, err
 	}
@@ -321,9 +321,13 @@ type agentKeys func() ([]ssh.Signer, io.Closer, error)
 // once it has finished signing with what it was given. It is nil when
 // there is nothing to close.
 func keysFor(ctx context.Context, keyFile string, ring *remote.Ring,
-	ask remote.Ask, fromAgent agentKeys) ([]ssh.Signer, io.Closer, error) {
+	ask remote.Ask, fromAgent agentKeys, say func(string)) ([]ssh.Signer, io.Closer, error) {
 
+	if say == nil {
+		say = func(string) {}
+	}
 	if keyFile != "" {
+		say("unlocking " + keyFile)
 		signer, err := ring.Unlock(ctx, keyFile, ask)
 		if err != nil {
 			return nil, nil, err
@@ -333,20 +337,61 @@ func keysFor(ctx context.Context, keyFile string, ring *remote.Ring,
 	keys := ring.Signers()
 	var closer io.Closer
 	agentErr := ring.AgentTrouble()
-	if agentErr == nil {
+	if agentErr != nil {
+		say("leaving the SSH agent alone: " + agentErr.Error() +
+			". Forget unlocked keys to have it asked again")
+	} else {
+		say("asking the SSH agent what keys it holds")
 		var agentSigners []ssh.Signer
 		agentSigners, closer, agentErr = fromAgent()
-		if errors.Is(agentErr, remote.ErrAgentSilent) {
+		switch {
+		case errors.Is(agentErr, remote.ErrAgentSilent):
 			// Remembered, so the next window taken over does not wait
 			// for the same answer. One that is not running at all is
 			// not remembered: finding that out costs nothing.
 			ring.AgentGaveUp(agentErr)
+			say("the SSH agent: " + agentErr.Error())
+		case agentErr != nil:
+			say("the SSH agent: " + agentErr.Error())
+		default:
+			say(fmt.Sprintf("the agent holds %d keys", len(agentSigners)))
 		}
 		keys = append(keys, agentSigners...)
 	}
+
+	// And the key files in the usual places, which is what connecting to
+	// a machine offers. A user with one key in ~/.ssh expects it to be
+	// used either way.
+	plain, locked, err := remote.UsualKeys()
+	if err != nil {
+		if closer != nil {
+			_ = closer.Close()
+		}
+		return nil, nil, err
+	}
+	say(fmt.Sprintf("%d private keys in the usual places need no passphrase, %d do",
+		len(plain), len(locked)))
+	keys = append(keys, plain...)
 	if len(keys) > 0 {
 		return keys, closer, nil
 	}
+
+	// Nothing that could be read without asking. Only now is a
+	// passphrase worth asking for, and only for the first key: a machine
+	// with three would otherwise ask three times for a window the first
+	// one would have reached.
+	if len(locked) > 0 && ask != nil {
+		say("unlocking " + locked[0])
+		signer, err := ring.Unlock(ctx, locked[0], ask)
+		if err != nil {
+			if closer != nil {
+				_ = closer.Close()
+			}
+			return nil, nil, err
+		}
+		return []ssh.Signer{signer}, closer, nil
+	}
+
 	if closer != nil {
 		_ = closer.Close()
 	}
@@ -358,7 +403,7 @@ func keysFor(ctx context.Context, keyFile string, ring *remote.Ring,
 			"no keys to offer, and the SSH agent could not be read: %w", agentErr)
 	}
 	return nil, nil, errors.New(
-		"no keys to offer: name a key file, or add one to the SSH agent")
+		"no keys to offer: name a key file, put one in ~/.ssh, or add one to the SSH agent")
 }
 
 // holdWindow remembers a window and puts a row on the panel for it.

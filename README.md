@@ -43,6 +43,17 @@ emulator, and draws the resulting character grid as batched triangles.
   them, as SFTP on a channel of its own, so a browser pane on that
   machine costs no second login. A window that would rather not offer
   its files refuses the channel by name.
+- **A pane handed to an agent.** Set a session up -- through whatever
+  machines, as whatever user, with whatever credentials -- and then hand
+  that one pane to a program you are talking to, and watch it work. The
+  agent gets a code; the code is the whole of what lets it in, and with
+  it the agent can read the pane, type into it, and wait for it to
+  settle. It cannot open a connection, start a shell, browse files, or
+  reach a pane you did not hand it. Nothing listens until you hand a pane
+  over, the port is on the loopback address only, and taking the pane
+  back makes the code useless at once. `gridterm -mcp` is the Model
+  Context Protocol server the agent runs; it holds no credentials and
+  reaches nothing until you give it a code.
 - **One machine reached through another.** A saved server can say it is
   behind another one. The second connection is carried inside a channel
   of the first, so no local port is opened for it and nothing else on
@@ -159,6 +170,11 @@ gave. There is no way to pick a font by family name yet; give paths.
 | `Ctrl+Shift+L` | go to the sidebar |
 | `Ctrl+Shift+N` | connect to a server |
 
+Handing a pane to an agent is on the Servers menu and on the plus on
+this machine's row. It shows a code and puts it on the clipboard; give
+that to the agent, which reaches this window through `gridterm -mcp`.
+Take the pane back from the same menu and the code stops working.
+
 Serving this window and taking over another are on the menu rather than
 on a key: "Serve this window…" asks for the port and says the
 fingerprint to check, and "Take over a window…" asks for the address and
@@ -209,6 +225,8 @@ encoders and both session types.
 | `session` | 362 | no | a shell as a byte stream, and the local pty |
 | `remote` | 3,693 | no | SSH: connections, shells, host keys, unlocked keys, tunnels |
 | `serve` | 1,878 | no | one window served to another: the listener, the client, and what they say |
+| `agent` | 666 | no | one pane handed to an agent: the code, the port, and what may be asked |
+| `mcp` | 633 | no | those panes over the Model Context Protocol, on standard input and output |
 | `conns` | 252 | no | what the window has open, grouped by machine |
 | `vfs` | 669 | no | a filesystem a file pane works on: this machine, or one over SFTP |
 | `jobs` | 1,142 | no | copying, moving and deleting in the background, with progress and cancel |
@@ -349,6 +367,12 @@ emulator under `internal/` where they cannot be imported.
   A window serves the files of the machine it is running on. Something
   it reached over SSH of its own is another hop, and nothing proxies it
   yet.
+- **An agent is handed a screen, not a session.** It reads what is on
+  the pane and types into it, the way a person looking over your
+  shoulder would. There is no scrollback, no exit status, and no way for
+  it to tell a command that is still running from one that printed
+  nothing -- it waits for the screen to go quiet and reads what is
+  there.
 - **Sixel and the Kitty graphics protocol** are not implemented.
 - **An APC, PM or SOS string with no terminator grows without bound.**
   The parser buffers it before the emulator sees anything, so it cannot

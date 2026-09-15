@@ -25,6 +25,7 @@ import (
 	"github.com/marrasen/gridterm/glyph"
 	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/jobs"
+	"github.com/marrasen/gridterm/mcp"
 	"github.com/marrasen/gridterm/meter"
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/render"
@@ -88,12 +89,27 @@ func main() {
 			"use this installed monospace family instead of the bundled Go Mono")
 		listFonts = flag.Bool("list-fonts", false,
 			"print the installed monospace families and exit")
+		asMCP = flag.Bool("mcp", false,
+			"serve this machine's gridterm panes to an agent over the Model Context"+
+				" Protocol, on standard input and output, instead of opening a window;"+
+				" it reaches nothing until the user gives it a session code")
 		shotScript = flag.String("shot", "",
 			"drive the window through a script and write PNGs, then exit;"+
 				" steps are wait:<frames> key:<chord> type:<text> shot:<file>,"+
 				` e.g. "wait:60 key:ctrl+k shot:palette.png"`)
 	)
 	flag.Parse()
+
+	if *asMCP {
+		// No window, and nothing on standard output but the protocol:
+		// whatever started this is reading it.
+		panes := mcp.NewWindow()
+		err := mcp.Serve(os.Stdin, os.Stdout, panes)
+		if err := errors.Join(err, panes.Close()); err != nil {
+			log.Fatalf("-mcp: %v", err)
+		}
+		return
+	}
 
 	if *listFonts {
 		if err := printFonts(os.Stdout); err != nil {

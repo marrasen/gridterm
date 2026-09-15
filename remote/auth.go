@@ -62,6 +62,10 @@ type auth struct {
 type rung struct {
 	method string
 
+	// agent says this rung signs with the keys the SSH agent holds, so
+	// the window stops watching the agent once it is past this one.
+	agent bool
+
 	// what names this way of signing in the way a person would, for the
 	// account of the connection the window shows.
 	what string
@@ -87,6 +91,12 @@ func (a *auth) next(ctx *ssh.ClientAuthContext) (ssh.AuthMethod, error) {
 		// a dialog behind it, asks the user for nothing.
 		if !slices.Contains(ctx.AllowedMethods, r.method) {
 			continue
+		}
+		if !r.agent {
+			// Past the agent, so a watch on it is watching nothing. The
+			// rungs after this one can wait on the user for as long as
+			// they like.
+			a.done()
 		}
 		saySo(a.saying, "trying "+r.what)
 		return r.build(), nil
@@ -151,15 +161,20 @@ func (a *auth) agentCloser() io.Closer {
 // and stop there for a PIN in a window nobody is looking at, which is
 // how a connection came to hang with no way to tell what it was waiting
 // for.
-func (a *auth) holdTheAgentTo(patience time.Duration) {
+func (a *auth) holdTheAgentTo(patience time.Duration, waitingFor string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.agent == nil || a.watch != nil {
+	if a.agent == nil {
 		return
+	}
+	if a.watch != nil {
+		a.watch.Stop()
 	}
 	a.watch = time.AfterFunc(patience, func() {
 		saySo(a.saying, fmt.Sprintf(
-			"the SSH agent has not answered in %v, so this is letting go of it", patience))
+			"the SSH agent has had %v %s and has not, so this is letting go of it."+
+				" It may be waiting for an answer in a window of its own",
+			patience, waitingFor))
 		_ = a.closeAgent()
 	})
 }
@@ -220,26 +235,30 @@ func authMethods(ctx context.Context, cfg Config) (*auth, error) {
 	}
 
 	if agentSigners != nil {
-		a.ladder = append(a.ladder, rung{method: methodPublicKey, what: "the keys the SSH agent holds", build: func() ssh.AuthMethod {
-			// From here until the connection is made or fails, the agent
-			// has this long to answer -- the signing as well as the
-			// listing, because signing is the half that can go to a
-			// smartcard and stop.
-			a.holdTheAgentTo(agentGrace)
-			return ssh.PublicKeysCallback(func() ([]ssh.Signer, error) {
-				saySo(cfg.Saying, "asking the SSH agent what keys it holds")
-				got, err := agentSigners()
-				if err != nil {
-					// Said as well as returned: x/crypto keeps only the
-					// last attempt's error, so this one would be lost
-					// behind whatever the server says at the end.
-					saySo(cfg.Saying, "the SSH agent: "+err.Error())
-					return nil, fmt.Errorf("remote: read the SSH agent: %w", err)
-				}
-				saySo(cfg.Saying, fmt.Sprintf("the agent holds %d keys, and they are being offered", len(got)))
-				return got, nil
-			})
-		}})
+		a.ladder = append(a.ladder, rung{method: methodPublicKey, agent: true,
+			what: "the keys the SSH agent holds", build: func() ssh.AuthMethod {
+				return ssh.PublicKeysCallback(func() ([]ssh.Signer, error) {
+					// Listing is a read from memory, so it gets little
+					// time.
+					a.holdTheAgentTo(agentListing, "to say what keys it holds")
+					saySo(cfg.Saying, "asking the SSH agent what keys it holds")
+					got, err := agentSigners()
+					if err != nil {
+						// Said as well as returned: x/crypto keeps only
+						// the last attempt's error, so this one would be
+						// lost behind whatever the server says at the
+						// end.
+						saySo(cfg.Saying, "the SSH agent: "+err.Error())
+						return nil, fmt.Errorf("remote: read the SSH agent: %w", err)
+					}
+					saySo(cfg.Saying, fmt.Sprintf(
+						"the agent holds %d keys, and they are being offered", len(got)))
+					// Signing is allowed to be slow, and happens after
+					// this returns.
+					a.holdTheAgentTo(agentGrace, "to sign")
+					return got, nil
+				})
+			}})
 	}
 
 	if cfg.Ask == nil {
@@ -447,14 +466,16 @@ func AgentKeys() (keys []ssh.Signer, closer io.Closer, err error) {
 // connection for ever, with nothing saying why.
 const agentPatience = 5 * time.Second
 
-// agentGrace is how long the agent has to get a connection past it,
-// listing its keys and signing with one.
+// agentListing is how long the agent has to say what keys it holds,
+// which it reads from memory.
 //
-// Long, because signing is allowed to be slow: a key on a hardware token
-// waits for the user to touch it, and one on a smartcard waits for a
-// PIN. Short enough that a question nobody is going to answer does not
-// hold the connection for the rest of the day.
+// agentGrace is how long it then has to sign with one. Long, because
+// signing is allowed to be slow: a key on a hardware token waits for
+// somebody to touch it, and one on a smartcard waits for a PIN.
 //
-// A variable because the tests shorten it. Nothing in the program writes
-// it.
-var agentGrace = 60 * time.Second
+// Variables because the tests shorten them. Nothing in the program
+// writes them.
+var (
+	agentListing = 10 * time.Second
+	agentGrace   = 60 * time.Second
+)

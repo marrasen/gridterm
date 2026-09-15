@@ -345,7 +345,7 @@ func TestAnAgentThatDoesNotAnswerIsLetGoOf(t *testing.T) {
 	var said []string
 	a := &auth{agent: sock, saying: func(what string) { said = append(said, what) }}
 
-	a.holdTheAgentTo(50 * time.Millisecond)
+	a.holdTheAgentTo(50*time.Millisecond, "to say what keys it holds")
 	for deadline := time.Now().Add(5 * time.Second); sock.count() == 0; {
 		if time.Now().After(deadline) {
 			t.Fatal("the agent socket was never closed")
@@ -372,7 +372,7 @@ func TestGettingPastTheAgentStopsWatchingIt(t *testing.T) {
 	sock := &shutCounter{}
 	a := &auth{agent: sock}
 
-	a.holdTheAgentTo(50 * time.Millisecond)
+	a.holdTheAgentTo(50*time.Millisecond, "to sign")
 	a.done()
 	time.Sleep(200 * time.Millisecond)
 	if n := sock.count(); n != 0 {
@@ -388,5 +388,35 @@ func TestGettingPastTheAgentStopsWatchingIt(t *testing.T) {
 	}
 	if n := sock.count(); n != 1 {
 		t.Fatalf("the agent socket was closed %d times, want once", n)
+	}
+}
+
+// Once the ladder is past the agent, the window stops watching it.
+//
+// Signing in can wait on the user for as long as they take, and a watch
+// still running would close the agent socket under a connection that had
+// stopped asking it anything.
+func TestPastTheAgentTheWatchStops(t *testing.T) {
+	sock := &shutCounter{}
+	a := &auth{agent: sock}
+	a.ladder = []rung{
+		{method: methodPublicKey, agent: true, what: "the agent's keys",
+			build: func() ssh.AuthMethod { return nil }},
+		{method: methodPassword, what: "a password",
+			build: func() ssh.AuthMethod { return nil }},
+	}
+	both := &ssh.ClientAuthContext{AllowedMethods: []string{methodPublicKey, methodPassword}}
+
+	if _, err := a.next(both); err != nil {
+		t.Fatalf("the agent's rung: %v", err)
+	}
+	a.holdTheAgentTo(50*time.Millisecond, "to sign")
+
+	if _, err := a.next(both); err != nil {
+		t.Fatalf("the rung after it: %v", err)
+	}
+	time.Sleep(200 * time.Millisecond)
+	if n := sock.count(); n != 0 {
+		t.Fatalf("the agent socket was closed %d times, want not at all", n)
 	}
 }

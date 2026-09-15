@@ -591,6 +591,7 @@ func (a *app) renamedMachine(was string, to remote.Host) {
 		}
 		d.renamed[was] = now
 	}
+	a.renamedWindow(was, now)
 	// Every row under the old name: the panes, the tunnels, and the
 	// connection itself. They are the same entries the panel groups by.
 	for _, group := range a.registry.Groups(time.Now()) {

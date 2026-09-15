@@ -39,6 +39,14 @@ func (a *app) refreshServers() {
 		return
 	}
 	a.serverHosts = want
+	// Which of them are windows rather than machines, for the panel and
+	// for the commands below.
+	a.savedWindows = make(map[string]bool)
+	for _, h := range a.book.Hosts() {
+		if h.Window {
+			a.savedWindows[h.Name] = true
+		}
+	}
 	// Whatever was registered for the old list goes first, or a server
 	// that has been renamed would answer to both names.
 	for _, id := range a.serverCommands {
@@ -52,9 +60,15 @@ func (a *app) refreshServers() {
 	// there is nothing to connect to on the machine already running.
 	for _, name := range a.everyHost() {
 		host := name
+		title := "Open a terminal on " + groupName(host)
+		if a.savedWindows[host] && a.windows[host] == nil {
+			// Nothing runs on a window until it is taken over, and
+			// taking it over is what asking for a terminal on it means.
+			title = "Take over " + groupName(host)
+		}
 		term := ui.Command{
 			ID:    termPrefix + remote.CommandName(host),
-			Title: "Open a terminal on " + groupName(host),
+			Title: title,
 			Run:   func() error { return a.openTerminalOn(host) },
 		}
 		a.registerServerCommands(a.reporting(term))
@@ -124,6 +138,11 @@ func (a *app) openTerminalOn(host string) error {
 		return a.openTab()
 	case a.isWindow(host):
 		return a.openOnWindow(host, nil)
+	case a.savedWindows[host]:
+		// Nothing runs on a window until it is taken over, and there is
+		// no shell on one to log in to: it serves gridterm's own
+		// protocol and answers nothing else.
+		return a.connectSaved(host)
 	}
 	return a.openOn(host, nil, nil)
 }
@@ -176,6 +195,22 @@ const (
 	kindMachine = "Machine (SSH)"
 	kindWindow  = "gridterm window"
 )
+
+// whichKind reads the Kind field.
+//
+// Anything else is a mistake rather than an instruction. The field
+// takes whatever is typed into it, and a typo quietly turning a window
+// into a machine would leave the user with a saved entry that tries to
+// log in to a port with no shell behind it.
+func whichKind(text string) (window bool, err error) {
+	switch strings.TrimSpace(text) {
+	case kindMachine:
+		return false, nil
+	case kindWindow:
+		return true, nil
+	}
+	return false, fmt.Errorf("the kind has to be %q or %q", kindMachine, kindWindow)
+}
 
 // connectSaved opens a terminal on a saved machine, reaching it through
 // whatever it is saved as being behind.
@@ -245,7 +280,10 @@ func (a *app) openServerForm(under string) error {
 	// typed from memory. Blank first: leaving it empty is the usual
 	// answer, and it is what cycling comes back round to.
 	via.Options = append([]string{""}, a.serverNames(under)...)
-	f.Lines = append(f.Lines, viaHint(via.Options))
+	f.Lines = append(f.Lines,
+		"Kind cycles with the left and right arrows. A gridterm window is",
+		"one serving on another machine, taken over rather than logged in to.",
+		viaHint(via.Options))
 
 	name.SetText(was.Name)
 	kind.SetText(kindMachine)
@@ -259,7 +297,10 @@ func (a *app) openServerForm(under string) error {
 	via.SetText(was.Via)
 
 	f.AddButton(ui.Button{Title: "Save", Do: func() error {
-		window := strings.TrimSpace(kind.Text()) == kindWindow
+		window, err := whichKind(kind.Text())
+		if err != nil {
+			return err
+		}
 		h, err := remote.HostFromTarget(name.Text(), target.Text())
 		if err != nil {
 			// Returned rather than shown here, so the dialog stays open
@@ -269,14 +310,25 @@ func (a *app) openServerForm(under string) error {
 		h.Window = window
 		if window {
 			// Neither means anything to a window: there is no account to
-			// log in to and no machine to go through.
-			h.User, h.Via = "", ""
+			// log in to and no machine to go through. They are kept
+			// rather than dropped, so turning it back into a machine
+			// gives back what it had.
+			h.User, h.Via = was.User, was.Via
+			h.Window = true
+			if h.User != "" || strings.TrimSpace(via.Text()) != was.Via {
+				// Said plainly, because the fields are still on screen
+				// and doing nothing would read as them having been
+				// saved.
+				f.Lines = append(f.Lines,
+					"A window has no account and nothing to go through, so those are left as they were.")
+			}
 		} else {
 			h.Via = strings.TrimSpace(via.Text())
 		}
-		if !window {
-			h.Term = was.Term
-		}
+		// Kept whichever this is. A machine turned into a window and
+		// back should come out the way it went in, and neither field is
+		// something the dialog can show.
+		h.Term = was.Term
 		// The dialog edits the first key file. Any others the machine
 		// had stay: a field that cannot show them must not delete them.
 		rest := was.Identities
@@ -294,9 +346,15 @@ func (a *app) openServerForm(under string) error {
 		// this machine itself -- and two connections under one name
 		// would leave one of them open with nothing holding it.
 		if under != "" && under != h.Name {
-			if a.machines[h.Name] != nil || a.opening[h.Name] != nil {
+			if a.machines[h.Name] != nil || a.opening[h.Name] != nil || a.windows[h.Name] != nil {
 				return fmt.Errorf("something is already connected as %q; close it first", h.Name)
 			}
+		}
+		if t := a.windows[under]; t != nil && (!window || t.addr != h.ServeAddr()) {
+			// The connection is to the machine it was made to, and
+			// saying it is somewhere else does not move it.
+			return fmt.Errorf("%s is taken over at %s; let go of it before changing where it is",
+				under, t.addr)
 		}
 		if err := a.book.Put(h, under); err != nil {
 			return err

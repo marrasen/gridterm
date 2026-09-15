@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -86,16 +88,22 @@ func (a *app) takeOver(addr, keyFile string) error {
 	if addr == "" {
 		return errors.New("no machine to take over")
 	}
-	if !strings.Contains(addr, ":") {
-		addr = fmt.Sprintf("%s:%d", addr, servePort)
+	if _, _, err := net.SplitHostPort(addr); err != nil {
+		// No port, or a bare IPv6 literal, which has colons of its own
+		// and is not an address with a port on the end.
+		addr = net.JoinHostPort(strings.Trim(addr, "[]"), strconv.Itoa(servePort))
+	}
+	// Already held, whatever it is called. By address rather than by
+	// name: saving, renaming or forgetting a window changes its name
+	// and changes nothing about the connection, and a guard that went
+	// by name would let a second one be made to the same far window.
+	if held := a.windowAt(addr); held != nil {
+		return fmt.Errorf("this window has already taken over %s", held.name)
 	}
 	// What this window is called here. A saved one goes under the name
 	// the user gave it, so the sidebar has one heading for it rather
 	// than one for the name and another for the address.
 	name := a.windowNamed(addr)
-	if a.windows[name] != nil {
-		return fmt.Errorf("this window has already taken over %s", name)
-	}
 	// Already on its way. Asked about rather than refused: waiting for
 	// it is usually what the user wants.
 	if d := a.opening[name]; d != nil {
@@ -199,17 +207,54 @@ func (a *app) workOnWindow(addr, keyFile string) {
 // name.
 func (a *app) windowNamed(addr string) string {
 	for _, h := range a.book.Hosts() {
-		if h.Window && h.ServeAddr() == addr {
+		if h.Window && strings.EqualFold(h.ServeAddr(), addr) {
 			return h.Name
 		}
 	}
 	return addr
 }
 
+// windowAt is the window already taken over at an address, or nil.
+func (a *app) windowAt(addr string) *taken {
+	for _, t := range a.windows {
+		if strings.EqualFold(t.addr, addr) {
+			return t
+		}
+	}
+	return nil
+}
+
 // savedWindow reports whether a name is a window in the server list.
-func (a *app) savedWindow(name string) bool {
-	h, ok := a.book.Lookup(name)
-	return ok && h.Window
+//
+// Read off the names the panel already asks for rather than by looking
+// the machine up: this runs for every row of every frame, and cloning a
+// saved machine and its key files to read one flag off it is work for
+// nothing.
+func (a *app) savedWindow(name string) bool { return a.savedWindows[name] }
+
+// renamedWindow follows a rename through what the window holds for a
+// window taken over.
+//
+// The connection is keyed by name the way a machine's is, so a rename
+// that did not move it left the sidebar with a heading that had lost
+// its connection and a connection nothing could reach.
+func (a *app) renamedWindow(was, now string) {
+	t := a.windows[was]
+	if t == nil {
+		return
+	}
+	delete(a.windows, was)
+	t.name = now
+	a.windows[now] = t
+	t.entry.Close = func() error { return a.dropWindow(now) }
+	// The panes drawn from it, and what each is watching over there.
+	for pane, what := range a.watching {
+		if what.window == was {
+			what.window = now
+			a.watching[pane] = what
+		}
+	}
+	a.renamedFiles(was, now)
 }
 
 // becomeWindowPane hands the pane that was watching a window being taken
@@ -448,8 +493,11 @@ func (a *app) holdWindow(name, addr string, win *serve.Window) *taken {
 		note = addr
 	}
 	t.entry = &conns.Entry{
-		Host:   name,
-		Kind:   conns.Terminal,
+		Host: name,
+		// A Server rather than a Terminal: it is the connection itself,
+		// which the heading stands for, and the panel leaves those out
+		// from under their own name rather than saying it twice.
+		Kind:   conns.Server,
 		Label:  "taken over",
 		Note:   note,
 		Meter:  &meter.Meter{},

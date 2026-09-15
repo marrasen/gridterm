@@ -909,3 +909,131 @@ func portOf(t *testing.T, addr string) int {
 	}
 	return n
 }
+
+// A window already taken over is not taken over again because its name
+// changed.
+//
+// Saving, renaming or forgetting one changes what it is called and
+// changes nothing about the connection, so the guard goes by address.
+func TestAWindowAlreadyTakenOverIsNotTakenOverTwice(t *testing.T) {
+	host := newTestApp(t, 90, 30)
+	withDialogs(t, host)
+	keyFile, line := aKeyFile(t)
+	withServing(t, host, line)
+	if err := host.startServing("0", whereHere); err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+	addr := host.server.Addr()
+
+	client := newTestApp(t, 90, 30)
+	withDialogs(t, client)
+	withPanel(t, client)
+	if err := client.takeOver(addr, keyFile); err != nil {
+		t.Fatalf("take over: %v", err)
+	}
+	answer(t, client, "Connect")
+	waitFor(t, client, "the window to be taken over", func() bool {
+		return client.windows[addr] != nil
+	})
+
+	// Saved after the fact, so the name it goes by and the name the
+	// book gives it are now different.
+	if err := client.book.Put(remote.Host{
+		Name: "statio", Address: hostOf(t, addr), Port: portOf(t, addr),
+		Window: true, Identities: []string{keyFile},
+	}, ""); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	client.refreshServers()
+
+	if err := client.takeOver(addr, keyFile); err == nil {
+		t.Fatal("it took over the same window twice")
+	}
+	if n := len(client.windows); n != 1 {
+		t.Fatalf("%d windows are held, want the one", n)
+	}
+}
+
+// Renaming a window that is taken over takes the connection with it.
+func TestRenamingATakenOverWindowMovesItsConnection(t *testing.T) {
+	host := newTestApp(t, 90, 30)
+	withDialogs(t, host)
+	keyFile, line := aKeyFile(t)
+	withServing(t, host, line)
+	if err := host.startServing("0", whereHere); err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+	addr := host.server.Addr()
+
+	client := newTestApp(t, 90, 30)
+	withDialogs(t, client)
+	withPanel(t, client)
+	if err := client.book.Put(remote.Host{
+		Name: "statio", Address: hostOf(t, addr), Port: portOf(t, addr),
+		Window: true, Identities: []string{keyFile},
+	}, ""); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	client.refreshServers()
+	if err := client.connectSaved("statio"); err != nil {
+		t.Fatalf("connectSaved: %v", err)
+	}
+	answer(t, client, "Connect")
+	waitFor(t, client, "the window to be taken over", func() bool {
+		return client.windows["statio"] != nil
+	})
+
+	if err := client.openEditServer("statio"); err != nil {
+		t.Fatalf("edit: %v", err)
+	}
+	f := openDialog(t, client)
+	f.Field("Name").SetText("m-statio")
+	pressButton(t, client, f, "Save")
+	client.pump.run()
+
+	if client.windows["statio"] != nil {
+		t.Fatal("the connection is still held under the old name")
+	}
+	t2 := client.windows["m-statio"]
+	if t2 == nil {
+		t.Fatalf("the connection did not follow the rename: %v", mapKeys(client.windows))
+	}
+	if !client.isWindow("m-statio") {
+		t.Error("it is not known as a window under its new name")
+	}
+	// And closing it under the new name really closes it.
+	if err := client.dropWindow("m-statio"); err != nil {
+		t.Fatalf("let go of it: %v", err)
+	}
+	if client.windows["m-statio"] != nil {
+		t.Fatal("it is still held")
+	}
+}
+
+// A kind that is neither a machine nor a window is a mistake, not an
+// instruction to change what the machine is.
+func TestAKindThatIsNeitherIsRefused(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	if err := a.book.Put(remote.Host{
+		Name: "statio", Address: "10.0.0.5", Window: true,
+	}, ""); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+
+	if err := a.openEditServer("statio"); err != nil {
+		t.Fatalf("edit: %v", err)
+	}
+	f := openDialog(t, a)
+	f.Field("Kind").SetText("windwo")
+	pressButton(t, a, f, "Save")
+	a.pump.run()
+
+	h, ok := a.book.Lookup("statio")
+	if !ok {
+		t.Fatal("the machine was lost")
+	}
+	if !h.Window {
+		t.Fatal("a typo turned the window into a machine")
+	}
+}

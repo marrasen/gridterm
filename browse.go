@@ -36,6 +36,10 @@ func (a *app) openFilesHere() error { return a.openFilesOn(a.currentHost()) }
 // openFilesOn puts a pane on a machine, starting the file manager when
 // there is not one yet.
 func (a *app) openFilesOn(host string) error {
+	if a.savedWindows[host] && a.windows[host] == nil {
+		return fmt.Errorf("take over %s first: it is a gridterm window, "+
+			"and its files come over that connection", host)
+	}
 	f, err := a.filesystem(host)
 	if err != nil {
 		return err

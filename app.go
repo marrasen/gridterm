@@ -174,6 +174,12 @@ type app struct {
 	// the connection already here rather than logging in again.
 	machines map[string]*machine
 
+	// savedWindows names the servers saved as gridterm windows rather
+	// than machines to log in to. Kept as a set because the panel asks
+	// about every row of every frame, and reading it off the book each
+	// time would clone a machine and its key files for one flag.
+	savedWindows map[string]bool
+
 	// opening names every machine being connected to right now, so two
 	// connections to one machine cannot be made at once: the window
 	// would hold the second and close neither. Every name of a route

@@ -123,7 +123,7 @@ func hostItems(about hostAbout) []ui.MenuItem {
 		// a shell applies: it serves gridterm's own protocol and has no
 		// shell to log in to.
 		return []ui.MenuItem{
-			{Command: "server.connect", Title: "Take it over"},
+			{Command: "conn.terminal", Title: "Take it over"},
 			ui.MenuSeparator(),
 			{Command: "server.editThis", Title: "Edit this window…"},
 			{Command: "server.forget", Title: "Forget this window…"},

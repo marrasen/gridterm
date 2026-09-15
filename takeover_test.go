@@ -642,19 +642,33 @@ func TestAttachingShowsWhatIsAlreadyOnTheScreen(t *testing.T) {
 	waitForBoth(t, host, client, "the shell there to say it", func() bool {
 		return strings.Contains(paneText(hostPane), "already-here")
 	})
+
+	// A second shell over there, so the window keeps a row of its own
+	// after this one takes the first shell over. Without it the "listed
+	// twice" check at the end would pass on an empty list.
+	if err := host.openTab(); err != nil {
+		t.Fatalf("a second shell on the serving window: %v", err)
+	}
 	host.refreshPanel(panelNow)
 
-	// The row for it, as this window was told about it.
-	var row remoteKey
-	waitForBoth(t, host, client, "a row for the shell over there", func() bool {
+	// The row for the shell with the text on it, as this window was told
+	// about it, and a row for the second shell beside it.
+	row := remoteKey{window: addr, id: host.panes[hostPane].ID()}
+	waitForBoth(t, host, client, "a row for each shell over there", func() bool {
 		client.refreshPanel(panelNow)
+		var mine, others int
 		for _, r := range client.panel.Rows() {
-			if key, ok := r.Key.(remoteKey); ok && key.window == addr {
-				row = key
-				return true
+			key, ok := r.Key.(remoteKey)
+			if !ok || key.window != addr {
+				continue
+			}
+			if key == row {
+				mine++
+			} else {
+				others++
 			}
 		}
-		return false
+		return mine == 1 && others > 0
 	})
 
 	panes := len(client.panes)
@@ -680,12 +694,24 @@ func TestAttachingShowsWhatIsAlreadyOnTheScreen(t *testing.T) {
 	})
 
 	// One thing open is one row. The row for it over there was there a
-	// moment ago, and goes when a pane of this window is showing it.
+	// moment ago, and goes when a pane of this window is showing it. The
+	// second shell over there keeps its row, which is what says the rows
+	// were filtered rather than lost.
 	client.refreshPanel(panelNow)
+	var others int
 	for _, r := range client.panel.Rows() {
-		if key, ok := r.Key.(remoteKey); ok && key == row {
-			t.Error("it is listed twice: once as a pane and once as a row over there")
+		key, ok := r.Key.(remoteKey)
+		if !ok || key.window != addr {
+			continue
 		}
+		if key == row {
+			t.Error("it is listed twice: once as a pane and once as a row over there")
+			continue
+		}
+		others++
+	}
+	if others == 0 {
+		t.Error("the window over there lost every row, so this proves nothing")
 	}
 
 	// And the window being watched says so, on the row of the pane
@@ -1752,25 +1778,49 @@ func TestARowWithNoScreenCannotBeWatched(t *testing.T) {
 	var serving remoteKey
 	waitForBoth(t, host, client, "the serving row to reach the client", func() bool {
 		host.refreshPanel(time.Now())
+		var screens int
+		var found bool
 		for _, open := range client.windows[addr].win.Opens() {
+			if open.HasScreen() {
+				screens++
+			}
 			if strings.Contains(open.Label, "serving") {
 				serving = remoteKeyFor(addr, open)
-				return !open.HasScreen()
+				found = !open.HasScreen()
 			}
 		}
-		return false
+		return found && screens > 0
 	})
 
-	// It is not offered.
+	// It is not offered, and the shell over there, which has a screen,
+	// still is. Without the second half a list of nothing would pass.
+	shell := remoteKey{window: addr, id: host.panes[onlyPaneOn(t, host)].ID()}
+	var offered int
+	var shellOffered bool
 	for _, row := range client.remoteRows(addr) {
-		if row.Key == serving {
+		key, ok := row.Key.(remoteKey)
+		if !ok {
+			continue
+		}
+		if key == serving {
 			t.Fatal("a row with no screen was offered to watch")
 		}
+		if key == shell {
+			shellOffered = true
+		}
+		offered++
+	}
+	if offered == 0 {
+		t.Fatal("nothing over there was offered to watch, so this proves nothing")
+	}
+	if !shellOffered {
+		t.Error("the shell over there has a screen and was not offered to watch")
 	}
 
-	// And asking for it anyway opens nothing.
+	// And clicking it anyway opens nothing. The click is what the list
+	// runs on the row, which is where the bug was.
 	panes := len(client.panes)
-	err := client.attachHere(serving, nil)
+	err := client.revealRow(ui.ListRow{Key: serving})
 	if err == nil {
 		t.Fatal("it opened a pane on something with no screen")
 	}
@@ -1781,7 +1831,7 @@ func TestARowWithNoScreenCannotBeWatched(t *testing.T) {
 		t.Fatalf("%d panes, want the %d there were", len(client.panes), panes)
 	}
 	// And again, because the bug was that each attempt left a row.
-	if err := client.attachHere(serving, nil); err == nil {
+	if err := client.revealRow(ui.ListRow{Key: serving}); err == nil {
 		t.Fatal("the second attempt opened a pane")
 	}
 	if len(client.panes) != panes {

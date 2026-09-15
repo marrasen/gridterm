@@ -216,6 +216,10 @@ Each item is small; group them into a commit per package.
 - `session` tested on Windows. `newTestApp` closes agents.
 - The menu tripwire runs over `hostItems` for each shape.
 - Source-reading tests use `go/ast`.
+- The skips Phase 0 did not reach, same two shapes: `render/compositor_gpu_test.go:24,266`
+  (an atlas that cannot fail), and `ui/form_test.go:535,633,704`,
+  `ui/palette_test.go:575` (a fixture that decides). Found by Phase 0's
+  reviewer; left for the phases that touch those packages.
 - `TODO.md` and `review/` updated: a line goes when its work is in.
 
 ## What is not in this plan

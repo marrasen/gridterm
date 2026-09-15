@@ -424,7 +424,7 @@ func TestAClickOnADialogOverTheSidebarUsesTheWindow(t *testing.T) {
 	if _, byRegion := a.cellAt(px, py); true {
 		_, byWindow := a.geo.CellAt(px, py)
 		if byRegion == byWindow {
-			t.Skip("the two agree at this pixel, so the test proves nothing")
+			t.Fatal("the two agree at this pixel, so the fixture no longer exercises the case")
 		}
 	}
 
@@ -473,7 +473,7 @@ func TestADragFromOutsideKeepsTheWindowsRows(t *testing.T) {
 	_, byRegion := a.cellAt(px, py)
 	_, byWindow := a.geo.CellAt(px, py)
 	if byRegion == byWindow {
-		t.Skip("the two agree at this pixel, so the test proves nothing")
+		t.Fatal("the two agree at this pixel, so the fixture no longer exercises the case")
 	}
 
 	// Press in the terminal beside the sidebar, which takes the pointer.
@@ -484,7 +484,7 @@ func TestADragFromOutsideKeepsTheWindowsRows(t *testing.T) {
 		t.Fatalf("press: %v", err)
 	}
 	if a.root.Holding() == nil {
-		t.Skip("nothing took the press, so there is no drag to follow")
+		t.Fatal("nothing took the press, so there is no drag to follow")
 	}
 
 	if _, got := a.cellAt(px, py); got != byWindow {

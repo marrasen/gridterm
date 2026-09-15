@@ -187,7 +187,7 @@ func newTestApp(t *testing.T, cols, rows int) *testApp {
 	// asks the renderer how big one is.
 	atlas, err := glyph.NewAtlas(glyph.Fonts{Regular: gomono.TTF}, 12, 96)
 	if err != nil {
-		t.Skipf("no atlas: %v", err)
+		t.Fatalf("no atlas: %v", err)
 	}
 	ta.atlas = atlas
 	ta.renderer = render.New(atlas)
@@ -1286,7 +1286,7 @@ func TestPaletteSurvivesAPaneExiting(t *testing.T) {
 func TestAppDrawPutsTheDialogOnItsLayer(t *testing.T) {
 	atlas, err := glyph.NewAtlas(glyph.Fonts{Regular: gomono.TTF}, 12, 96)
 	if err != nil {
-		t.Skipf("no atlas: %v", err)
+		t.Fatalf("no atlas: %v", err)
 	}
 	a := newTestApp(t, 40, 10)
 	a.renderer = render.New(atlas)

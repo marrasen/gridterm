@@ -714,8 +714,8 @@ func TestFocusPanelRefusesAWindowWithNoRoom(t *testing.T) {
 	a := newTestApp(t, 30, 10)
 	withPanel(t, a)
 	a.relayout()
-	if _, shown := a.dock.ChildArea(a.panel); shown {
-		t.Skip("this window has room for the panel after all")
+	if _, shown := a.dock.ChildArea(a.side); shown {
+		t.Fatal("this window has room for the panel after all, so the fixture no longer exercises a window with no room")
 	}
 
 	if err := a.focusPanel(); err == nil {

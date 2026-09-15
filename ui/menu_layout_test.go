@@ -110,16 +110,16 @@ func TestMenuDrawsTheScrolledItems(t *testing.T) {
 	for i := 0; i < 19; i++ {
 		m.HandleKey(press(input.KeyDown, 0))
 	}
-	if m.top == 0 {
+	if m.place.top == 0 {
 		t.Fatal("the list did not scroll, so this proves nothing")
 	}
 
 	g := drawMenu(m, 40, 6)
 
 	box := menuLines(m)
-	want := m.Items()[m.top].Command
+	want := m.Items()[m.place.top].Command
 	if got := strings.TrimSpace(rowOf(g, box.Y)); !strings.HasPrefix(got, want) {
-		t.Errorf("first drawn row = %q, want item %d, which is %q", got, m.top, want)
+		t.Errorf("first drawn row = %q, want item %d, which is %q", got, m.place.top, want)
 	}
 }
 
@@ -147,8 +147,8 @@ func TestMenuClickIsScrollAware(t *testing.T) {
 		m.HandleKey(press(input.KeyDown, 0))
 	}
 	box := menuLines(m)
-	if box.Y == 0 || m.top == 0 {
-		t.Fatalf("lines at row %d with top %d: this proves nothing", box.Y, m.top)
+	if box.Y == 0 || m.place.top == 0 {
+		t.Fatalf("lines at row %d with top %d: this proves nothing", box.Y, m.place.top)
 	}
 
 	// The second line of the menu.
@@ -156,7 +156,7 @@ func TestMenuClickIsScrollAware(t *testing.T) {
 		t.Fatalf("press: %v", err)
 	}
 
-	if want := m.Items()[m.top+1].Command; ran != want {
+	if want := m.Items()[m.place.top+1].Command; ran != want {
 		t.Errorf("ran %q, want %q: the click ignored the scroll or the box position", ran, want)
 	}
 }
@@ -174,11 +174,11 @@ func TestMenuHighlightsTheSelectedRow(t *testing.T) {
 	for row := 0; row < box.Rows; row++ {
 		got := g.At(box.X+1, box.Y+row).BG
 		want := m.Style.BG
-		if row == m.at-m.top {
+		if row == m.place.at-m.place.top {
 			want = m.Style.SelectedBG
 		}
 		if got != want {
-			t.Errorf("row %d background = %+v, want %+v (selected is %d)", row, got, want, m.at)
+			t.Errorf("row %d background = %+v, want %+v (selected is %d)", row, got, want, m.place.at)
 		}
 	}
 }
@@ -233,11 +233,11 @@ func TestMenuShrunkToFitStillReachesEveryLine(t *testing.T) {
 
 	m.HandleKey(press(input.KeyEnd, 0))
 
-	if m.at != 29 {
-		t.Fatalf("End landed on %d, want the last line", m.at)
+	if m.place.at != 29 {
+		t.Fatalf("End landed on %d, want the last line", m.place.at)
 	}
-	if lines := m.lines(); m.at < m.top || m.at >= m.top+lines {
-		t.Errorf("selected %d with lines %d..%d showing", m.at, m.top, m.top+lines-1)
+	if lines := m.lines(); m.place.at < m.place.top || m.place.at >= m.place.top+lines {
+		t.Errorf("selected %d with lines %d..%d showing", m.place.at, m.place.top, m.place.top+lines-1)
 	}
 }
 
@@ -409,7 +409,7 @@ func TestPressingTheMenuRuleRunsNothing(t *testing.T) {
 	for i := 0; i < 19; i++ {
 		m.HandleKey(press(input.KeyDown, 0))
 	}
-	if m.top == 0 {
+	if m.place.top == 0 {
 		t.Fatal("the menu did not scroll, so this proves nothing")
 	}
 	box = m.box()

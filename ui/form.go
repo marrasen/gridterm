@@ -397,16 +397,16 @@ func (f *Form) paint(v grid.View) {
 	cols, _ := in.Size()
 	room := cols - formPad*2
 
-	in.SetString(formPad, l.title, trimTo(f.Title, room), f.Style.TitleFG, f.Style.BG, grid.AttrBold)
+	in.SetString(formPad, l.title, grid.Trim(f.Title, room), f.Style.TitleFG, f.Style.BG, grid.AttrBold)
 
 	for i, line := range l.lines {
-		in.SetString(formPad, l.linesTop+i, trimTo(line, room), f.Style.HintFG, f.Style.BG, 0)
+		in.SetString(formPad, l.linesTop+i, grid.Trim(line, room), f.Style.HintFG, f.Style.BG, 0)
 	}
 
 	for i := 0; i < l.fields; i++ {
 		r := f.rows[i]
 		y := l.fieldsTop + i
-		in.SetString(formPad, y, trimTo(r.label, room), f.Style.LabelFG, f.Style.BG, 0)
+		in.SetString(formPad, y, grid.Trim(r.label, room), f.Style.LabelFG, f.Style.BG, 0)
 		fg, bg := f.Style.FieldFG, f.Style.FieldBG
 		if i == f.at {
 			fg, bg = f.Style.FocusFG, f.Style.FocusBG
@@ -783,24 +783,6 @@ func (f *Form) errExtra() int {
 		return 0
 	}
 	return min(len(f.errLines(f.wrapWidth(), spare+1)), spare+1) - 1
-}
-
-// trimTo cuts a string to a width, by cluster so a wide character is not
-// halved.
-func trimTo(s string, width int) string {
-	if grid.StringWidth(s) <= width {
-		return s
-	}
-	out, at := "", 0
-	for _, c := range grid.Clusters(s) {
-		w := grid.StringWidth(c)
-		if at+w > width {
-			break
-		}
-		out += c
-		at += w
-	}
-	return out
 }
 
 // buttonWidth is how many columns a button takes: its title with a blank

@@ -72,15 +72,15 @@ func TestAskingForRoomChangesNothing(t *testing.T) {
 	l := spacedList(20)
 	l.Layout(Size{Cols: 20, Rows: 8})
 	l.scrollBy(6)
-	top, at := l.top, l.at
+	top, at := l.place.top, l.place.at
 
 	for rows := 1; rows <= 40; rows++ {
 		l.RowPads(rows)
 	}
 
-	if l.top != top || l.at != at {
+	if l.place.top != top || l.place.at != at {
 		t.Errorf("the list moved to top %d selection %d, from top %d selection %d",
-			l.top, l.at, top, at)
+			l.place.top, l.place.at, top, at)
 	}
 	if got := l.size.Rows; got != 8 {
 		t.Errorf("the list's box became %d rows", got)

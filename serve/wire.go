@@ -13,9 +13,13 @@ package serve
 // to a serving window is refused by name rather than being handed a
 // shell it did not ask for.
 const (
-	// chanSession opens something to work in on the machine being
+	// SessionChannel opens something to work in on the machine being
 	// served. Its payload is openSession.
-	chanSession = "session@gridterm"
+	//
+	// Exported because a machine that refuses an ordinary SSH session
+	// names it in the refusal, and the client that has to recognise that
+	// refusal must match the name rather than a copy of it.
+	SessionChannel = "session@gridterm"
 
 	// reqWindowChange says the pane the session is drawn in has changed
 	// size. Its payload is windowChange, which is the shape OpenSSH

@@ -3,7 +3,6 @@ package remote
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"time"
 
@@ -18,11 +17,13 @@ type Reach struct {
 	Ring          *Ring
 	Ask           Ask
 
-	// Known says where the windows already reached are recorded, and
-	// Agent where the keys an SSH agent holds come from. Given rather
-	// than called for, so a test can hand over a file and an agent of
-	// its own.
+	// Known says where the windows already reached are recorded. Given
+	// rather than looked up, so a test can hand over a file of its own.
 	Known func() (string, error)
+
+	// Agent is where the keys an SSH agent holds come from. A nil one
+	// asks the agent running on this machine; it is here so that a test
+	// can hand over an agent of its own.
 	Agent func() ([]ssh.Signer, io.Closer, error)
 
 	// Saying is told what is being done now, for the row to show. It is
@@ -90,7 +91,11 @@ func (r Reach) reach(ctx context.Context) (win *serve.Window, err error) {
 		return nil, err
 	}
 	r.say(stepKeys)
-	keys, closer, err := keysFor(ctx, r.KeyFile, r.Ring, r.Ask, r.Agent, r.Saying)
+	cfg := Config{Ring: r.Ring, Ask: r.Ask, Saying: r.Saying, KeysOnly: true, agent: r.agentSource()}
+	if r.KeyFile != "" {
+		cfg.Identities = []string{r.KeyFile}
+	}
+	a, err := authMethods(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -98,20 +103,26 @@ func (r Reach) reach(ctx context.Context) (win *serve.Window, err error) {
 	// signs over that socket, so closing it first leaves a key that can
 	// be offered and cannot be used -- and one such key fails the whole
 	// handshake, with the others never tried.
-	if closer != nil {
-		// A socket to the agent that will not close is worth saying out
-		// loud: it is one of eight the agent will hold, and nothing else
-		// here would ever mention it.
-		defer func() { err = errors.Join(err, closer.Close()) }()
+	defer func() {
+		a.done()
+		if closer := a.agentCloser(); closer != nil {
+			// A socket to the agent that will not close is worth saying
+			// out loud: it is one of eight the agent will hold, and
+			// nothing else here would ever mention it.
+			err = errors.Join(err, closer.Close())
+		}
+	}()
+	if len(a.ladder) == 0 {
+		return nil, noKeysToOffer(a.noAgent)
 	}
 
-	check, err := HostKeyCheck(ctx, []string{known}, r.Ask)
+	check, err := hostKeyCheck(ctx, []string{known}, r.Ask)
 	if err != nil {
 		return nil, err
 	}
 	r.say(stepConnect)
 	win, err = serve.Dial(ctx, serve.DialConfig{
-		Addr: r.Addr, Keys: keys, HostKey: check, Patience: r.Patience,
+		Addr: r.Addr, Auth: a.next, HostKey: check, Patience: r.Patience,
 		Saying: r.Saying,
 	})
 	if err != nil {
@@ -121,95 +132,18 @@ func (r Reach) reach(ctx context.Context) (win *serve.Window, err error) {
 	return win, nil
 }
 
-// keysFor is what to offer the other window: the key file named, if one
-// was, and otherwise whatever is already unlocked and whatever the
-// agent holds.
-//
-// The closer is the connection to the agent, which the caller closes
-// once it has finished signing with what it was given. It is nil when
-// there is nothing to close.
-func keysFor(ctx context.Context, keyFile string, ring *Ring, ask Ask,
-	fromAgent func() ([]ssh.Signer, io.Closer, error), say func(string)) ([]ssh.Signer, io.Closer, error) {
-
-	if say == nil {
-		say = func(string) {}
+// agentSource turns the agent the caller handed over into the source the
+// ladder opens. It is nil when the caller named none, which leaves the
+// ladder to open the agent running on this machine.
+func (r Reach) agentSource() agentSource {
+	if r.Agent == nil {
+		return nil
 	}
-	if keyFile != "" {
-		say("unlocking " + keyFile)
-		signer, err := ring.Unlock(ctx, keyFile, ask)
+	return func() (io.Closer, func() ([]ssh.Signer, error), error) {
+		keys, closer, err := r.Agent()
 		if err != nil {
 			return nil, nil, err
 		}
-		return []ssh.Signer{signer}, nil, nil
+		return closer, func() ([]ssh.Signer, error) { return keys, nil }, nil
 	}
-	keys := ring.Signers()
-	var closer io.Closer
-	agentErr := ring.AgentTrouble()
-	if agentErr != nil {
-		say("leaving the SSH agent alone: " + agentErr.Error() +
-			". Forget unlocked keys to have it asked again")
-	} else {
-		say("asking the SSH agent what keys it holds")
-		var agentSigners []ssh.Signer
-		agentSigners, closer, agentErr = fromAgent()
-		switch {
-		case errors.Is(agentErr, ErrAgentSilent):
-			// Remembered, so the next window taken over does not wait
-			// for the same answer. One that is not running at all is
-			// not remembered: finding that out costs nothing.
-			ring.AgentGaveUp(agentErr)
-			say("the SSH agent: " + agentErr.Error())
-		case agentErr != nil:
-			say("the SSH agent: " + agentErr.Error())
-		default:
-			say(fmt.Sprintf("the agent holds %d keys", len(agentSigners)))
-		}
-		keys = append(keys, agentSigners...)
-	}
-
-	// And the key files in the usual places, which is what connecting to
-	// a machine offers. A user with one key in ~/.ssh expects it to be
-	// used either way.
-	plain, locked, err := UsualKeys()
-	if err != nil {
-		if closer != nil {
-			_ = closer.Close()
-		}
-		return nil, nil, err
-	}
-	say(fmt.Sprintf("%d private keys in the usual places need no passphrase, %d do",
-		len(plain), len(locked)))
-	keys = append(keys, plain...)
-	if len(keys) > 0 {
-		return keys, closer, nil
-	}
-
-	// Nothing that could be read without asking. Only now is a
-	// passphrase worth asking for, and only for the first key: a machine
-	// with three would otherwise ask three times for a window the first
-	// one would have reached.
-	if len(locked) > 0 && ask != nil {
-		say("unlocking " + locked[0])
-		signer, err := ring.Unlock(ctx, locked[0], ask)
-		if err != nil {
-			if closer != nil {
-				_ = closer.Close()
-			}
-			return nil, nil, err
-		}
-		return []ssh.Signer{signer}, closer, nil
-	}
-
-	if closer != nil {
-		_ = closer.Close()
-	}
-	if agentErr != nil {
-		// Why there were none, which is not always "there is no
-		// agent": one that answered and then failed is a different
-		// thing to go and fix.
-		return nil, nil, fmt.Errorf(
-			"no keys to offer, and the SSH agent could not be read: %w", agentErr)
-	}
-	return nil, nil, errors.New(
-		"no keys to offer: name a key file, put one in ~/.ssh, or add one to the SSH agent")
 }

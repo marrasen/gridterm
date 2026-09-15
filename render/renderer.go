@@ -28,10 +28,13 @@ const barFraction = 8
 // Thinner than the cursor: it sits under text rather than replacing it.
 const lineFraction = 14
 
-// dimFactor is how far a dim cell's foreground is blended towards its
-// background. SGR 2 has no exact definition; this matches what most
-// terminals do.
-const dimFactor = 0.55
+// dimPart of dimWhole is how far a dim cell's foreground is blended
+// towards its background. SGR 2 has no exact definition; this matches
+// what most terminals do.
+const (
+	dimPart  = 55
+	dimWhole = 100
+)
 
 // Stats reports what the last frame cost, so a caller can see whether
 // batching and damage tracking are actually doing anything.
@@ -235,7 +238,7 @@ func (r *Renderer) Draw(dst *ebiten.Image, g *grid.Grid, geo *Geometry) {
 				fg = g.BGOf(x, y)
 			}
 			if c.Attr&grid.AttrDim != 0 {
-				fg = blend(fg, g.BGOf(x, y), dimFactor)
+				fg = dimmed(fg, g.BGOf(x, y))
 			}
 			r.pushGlyph(dst, x, y, c.Rune, style, fg, geo)
 			for _, cb := range c.Comb {
@@ -298,7 +301,7 @@ func artColour(g *grid.Grid, x, y int, c grid.Cell) (color.RGBA, bool) {
 	}
 	col := g.FGOf(x, y)
 	if c.Attr&grid.AttrDim != 0 {
-		col = blend(col, g.BGOf(x, y), dimFactor)
+		col = dimmed(col, g.BGOf(x, y))
 	}
 	return col, col.A != 0
 }
@@ -418,7 +421,7 @@ func (r *Renderer) pushRules(dst *ebiten.Image, g *grid.Grid, y int, geo *Geomet
 			c := g.At(x, y)
 			col := g.FGOf(x, y)
 			if c.Attr&grid.AttrDim != 0 {
-				col = blend(col, g.BGOf(x, y), dimFactor)
+				col = dimmed(col, g.BGOf(x, y))
 			}
 			on := c.Attr&rule.attr != 0 && c.Attr&grid.AttrHidden == 0 && col.A != 0
 			switch {
@@ -446,11 +449,13 @@ func cellRun(geo *Geometry, x0, x1 int) (at, width int) {
 }
 
 // blend mixes a towards b by t, in straight (non-premultiplied) space.
-func blend(a, b color.RGBA, t float64) color.RGBA {
-	mix := func(x, y uint8) uint8 {
-		return uint8(float64(x)*(1-t) + float64(y)*t)
-	}
-	return color.RGBA{mix(a.R, b.R), mix(a.G, b.G), mix(a.B, b.B), a.A}
+func dimmed(fg, bg color.RGBA) color.RGBA {
+	out := grid.Blend(fg, bg, dimPart, dimWhole)
+	// The foreground's own alpha, because a cell with nothing behind it
+	// is drawn all the same and a mixed alpha would fade the glyph out
+	// rather than dim it.
+	out.A = fg.A
+	return out
 }
 
 // pushCursor queues the cursor's own quad. A block cursor fills the

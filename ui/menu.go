@@ -96,10 +96,9 @@ type Menu struct {
 	keys  *Keymap
 	close func()
 
-	// at is the line Enter would run, and top the first line drawn.
-	at   int
-	top  int
-	size Size
+	// place is the line Enter would run and the first line drawn.
+	place listState
+	size  Size
 
 	// buf keeps the menu off the layer until it is finished, so an
 	// unchanged menu leaves the layer clean.
@@ -112,9 +111,14 @@ type Menu struct {
 func NewMenu(cmds *Commands, keys *Keymap, items []MenuItem, close func()) *Menu {
 	m := &Menu{cmds: cmds, keys: keys, close: close}
 	m.items = usableItems(cmds, items)
-	m.at = m.nextFrom(-1, 1)
+	m.place = listState{count: m.itemCount, rows: m.lines, selectable: m.selectable}
+	m.place.at = m.place.first()
 	return m
 }
+
+// itemCount is how many lines the menu has. lines, which is how many of
+// them fit, is beside the box it measures.
+func (m *Menu) itemCount() int { return len(m.items) }
 
 // usableItems drops the lines a menu cannot name and tidies the
 // separators that leaves stranded.
@@ -163,15 +167,15 @@ func (m *Menu) Items() []MenuItem {
 // Selected returns the command Enter would run, and whether there is
 // one.
 func (m *Menu) Selected() (Command, bool) {
-	if m.cmds == nil || m.at < 0 || m.at >= len(m.items) {
+	if m.cmds == nil || m.place.at < 0 || m.place.at >= len(m.items) {
 		return Command{}, false
 	}
-	return m.cmds.Lookup(m.items[m.at].Command)
+	return m.cmds.Lookup(m.items[m.place.at].Command)
 }
 
 // SelectedIndex returns which line is picked out, or -1 when no line can
 // be chosen.
-func (m *Menu) SelectedIndex() int { return m.at }
+func (m *Menu) SelectedIndex() int { return m.place.at }
 
 // Box returns where the menu sits in the view it draws through, so
 // whatever is showing it can treat that part differently.
@@ -181,7 +185,7 @@ func (m *Menu) Box() Rect { return m.box() }
 // again where it is pointing.
 func (m *Menu) Layout(size Size) {
 	m.size = size
-	m.scroll()
+	m.place.ensureVisible()
 }
 
 // Draw paints the menu over whatever is behind it.
@@ -203,7 +207,7 @@ func (m *Menu) paint(v grid.View) {
 		max(cols-menuFrame*2, 0), max(rows-menuFrame*2, 0))
 	inner, shown := lines.Size()
 	for row := 0; row < shown; row++ {
-		i := m.top + row
+		i := m.place.top + row
 		if i >= len(m.items) {
 			break
 		}
@@ -224,7 +228,7 @@ func (m *Menu) paintItem(line grid.View, i, cols int) {
 	if !m.enabled(i) {
 		fg = m.Style.DisabledFG
 	}
-	if i == m.at {
+	if i == m.place.at {
 		fg, bg = m.Style.SelectedFG, m.Style.SelectedBG
 	}
 	line.Fill(grid.Cell{Rune: ' ', FG: fg, BG: bg, Width: 1})
@@ -239,7 +243,7 @@ func (m *Menu) paintItem(line grid.View, i, cols int) {
 		// menu too narrow for both drops the binding.
 		if at := cols - menuPad - w; at >= menuPad+2 {
 			chordFG := m.Style.ChordFG
-			if i == m.at {
+			if i == m.place.at {
 				chordFG = fg
 			}
 			line.SetString(at, 0, chord, chordFG, bg, 0)
@@ -250,18 +254,8 @@ func (m *Menu) paintItem(line grid.View, i, cols int) {
 }
 
 // paintTitle writes a title, stopping where the key binding starts.
-//
-// It walks grapheme clusters, not runes. A grid draws a base character
-// and its combining marks in one cell, so writing runes one at a time
-// would give the mark a cell of its own.
 func (m *Menu) paintTitle(line grid.View, i int, fg, bg color.RGBA, room int) {
-	at := menuPad
-	for _, cluster := range grid.Clusters(m.titleOf(i)) {
-		if at+grid.StringWidth(cluster) > room {
-			break
-		}
-		at = line.SetString(at, 0, cluster, fg, bg, 0)
-	}
+	line.SetString(menuPad, 0, grid.Trim(m.titleOf(i), max(room-menuPad, 0)), fg, bg, 0)
 }
 
 // HandleKey drives the menu. Keys it has no use for travel on, so the
@@ -292,16 +286,16 @@ func (m *Menu) HandleKey(ev input.Event) (bool, error) {
 	case input.KeyEnter, input.KeySpace:
 		return true, m.run()
 	case input.KeyUp:
-		m.move(-1)
+		m.place.move(-1)
 		return true, nil
 	case input.KeyDown:
-		m.move(1)
+		m.place.move(1)
 		return true, nil
 	case input.KeyHome:
-		m.jump(-1, 1)
+		m.place.moveTo(m.place.first())
 		return true, nil
 	case input.KeyEnd:
-		m.jump(len(m.items), -1)
+		m.place.moveTo(m.place.last())
 		return true, nil
 	case input.KeyLeft:
 		m.edge(-1)
@@ -324,7 +318,7 @@ func (m *Menu) HandleMouse(ev input.MouseEvent) (bool, error) {
 	// user cannot see and did not click.
 	row := -1
 	if at := ev.Row - box.Y - menuFrame; inside && at >= 0 && at < m.lines() {
-		row = m.top + at
+		row = m.place.top + at
 	}
 
 	switch {
@@ -334,7 +328,7 @@ func (m *Menu) HandleMouse(ev input.MouseEvent) (bool, error) {
 		return true, nil
 	case ev.Kind == input.MouseMove:
 		if inside && m.selectable(row) {
-			m.at = row
+			m.place.at = row
 		}
 		return true, nil
 	case ev.Kind != input.MousePress:
@@ -349,7 +343,7 @@ func (m *Menu) HandleMouse(ev input.MouseEvent) (bool, error) {
 		m.dismiss()
 		return true, nil
 	case m.selectable(row):
-		m.at = row
+		m.place.at = row
 		return true, m.run()
 	}
 	// A press on a separator, or on a line with no command behind it.
@@ -481,55 +475,12 @@ func (m *Menu) enabled(i int) bool {
 // cannot, and neither can a command that is not registered.
 func (m *Menu) selectable(i int) bool { return !m.isSeparator(i) && m.enabled(i) }
 
-// move steps through the list, skipping what cannot be chosen and
-// stopping at the ends rather than wrapping.
-func (m *Menu) move(by int) {
-	if next := m.nextFrom(m.at, by); next >= 0 {
-		m.at = next
-	}
-	m.scroll()
-}
-
-// jump goes to the first selectable line from one end.
-func (m *Menu) jump(from, by int) {
-	if next := m.nextFrom(from, by); next >= 0 {
-		m.at = next
-	}
-	m.scroll()
-}
-
-// nextFrom returns the first selectable line past from in the given
-// direction, or -1 when there is none.
-func (m *Menu) nextFrom(from, by int) int {
-	if by == 0 {
-		return -1
-	}
-	for i := from + by; i >= 0 && i < len(m.items); i += by {
-		if m.selectable(i) {
-			return i
-		}
-	}
-	return -1
-}
-
 // edge moves to the menu beside this one, when there is a bar to move
 // along.
 func (m *Menu) edge(step int) {
 	if m.OnEdge != nil {
 		m.OnEdge(step)
 	}
-}
-
-// scroll brings the selected line into the box, so Enter always runs
-// something the user can see.
-func (m *Menu) scroll() {
-	rows := m.lines()
-	if rows <= 0 {
-		m.top = 0
-		return
-	}
-	m.top = min(max(m.top, m.at-rows+1), max(m.at, 0))
-	m.top = min(max(m.top, 0), max(len(m.items)-rows, 0))
 }
 
 // lines is how many items the box has room for, which is its height

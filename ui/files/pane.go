@@ -570,13 +570,13 @@ func (p *Pane) Draw(v grid.View) {
 	// written twice in one frame is a cell that changed, and a window
 	// that redraws a browser nobody is touching is what the whole
 	// display is built to avoid.
-	line(v, 0, cols, trimTail(p.fs.Name(), cols), p.Style.HeaderFG, p.Style.BG, grid.AttrBold)
+	line(v, 0, cols, grid.TrimTail(p.fs.Name(), cols), p.Style.HeaderFG, p.Style.BG, grid.AttrBold)
 
 	// The end of the path rather than the start: which directory this is
 	// matters more than which disk it is on, and there is never room for
 	// both.
 	if rows > 1 {
-		line(v, 1, cols, trimLeft(where, cols), p.Style.PathFG, p.Style.BG, 0)
+		line(v, 1, cols, grid.TrimHead(where, cols), p.Style.PathFG, p.Style.BG, 0)
 	}
 	if p.err != nil && rows > errorRow {
 		// The row says what happened, not why: a reason trimmed to the
@@ -585,7 +585,7 @@ func (p *Pane) Draw(v grid.View) {
 		if p.OnError != nil {
 			said = unreadableHint
 		}
-		line(v, errorRow, cols, trimTail(said, cols), p.Style.ErrorFG, p.Style.BG, 0)
+		line(v, errorRow, cols, grid.TrimTail(said, cols), p.Style.ErrorFG, p.Style.BG, 0)
 	}
 	if rows > p.head() {
 		// The list fills what is under the head, and keeps its own copy
@@ -601,48 +601,6 @@ func line(v grid.View, y, cols int, text string, fg, bg color.RGBA, attr grid.At
 	for x := at; x < cols; x++ {
 		v.Set(x, y, grid.Cell{Rune: ' ', FG: fg, BG: bg, Width: 1})
 	}
-}
-
-// trimTail cuts a string to a width, keeping the start: a machine is
-// known by the front of its name.
-//
-// By cluster rather than by rune, like every other trim here: a grid
-// draws a character and its combining marks in one cell, and cutting
-// between them leaves half a character behind.
-func trimTail(s string, cols int) string {
-	if cols <= 0 {
-		return ""
-	}
-	if grid.StringWidth(s) <= cols {
-		return s
-	}
-	var out strings.Builder
-	at := 0
-	for _, cluster := range grid.Clusters(s) {
-		w := grid.StringWidth(cluster)
-		if at+w+1 > cols {
-			break
-		}
-		out.WriteString(cluster)
-		at += w
-	}
-	return out.String() + "…"
-}
-
-// trimLeft keeps the end of a string when it is too long, because that
-// is the part that says which directory this is.
-func trimLeft(s string, cols int) string {
-	if cols <= 0 {
-		return ""
-	}
-	if grid.StringWidth(s) <= cols {
-		return s
-	}
-	runes := []rune(s)
-	for len(runes) > 0 && grid.StringWidth("…"+string(runes)) > cols {
-		runes = runes[1:]
-	}
-	return "…" + string(runes)
 }
 
 // typeToFind moves the selection to the first name starting with what

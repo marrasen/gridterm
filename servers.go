@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/marrasen/gridterm/conns"
+	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/meter"
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/session"
@@ -99,6 +100,9 @@ const errorLineWidth = 52
 
 // wrapLines breaks a message at spaces so a long question reads as a
 // paragraph rather than being cut off at the edge of the box.
+//
+// Width is counted in cells, not bytes: a line of CJK is half as many
+// characters as a line of Latin and still fills the box.
 func wrapLines(s string, width int) []string {
 	var lines []string
 	line := ""
@@ -106,7 +110,7 @@ func wrapLines(s string, width int) []string {
 		switch {
 		case line == "":
 			line = word
-		case len(line)+1+len(word) <= width:
+		case grid.StringWidth(line)+1+grid.StringWidth(word) <= width:
 			line += " " + word
 		default:
 			lines = append(lines, line)
@@ -114,9 +118,10 @@ func wrapLines(s string, width int) []string {
 		}
 		// A single word longer than the box is cut rather than pushing
 		// the dialog wider than the window.
-		for len(line) > width {
-			lines = append(lines, line[:width])
-			line = line[width:]
+		for grid.StringWidth(line) > width {
+			var head string
+			head, line = grid.Cut(line, width)
+			lines = append(lines, head)
 		}
 	}
 	if line != "" {

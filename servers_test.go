@@ -361,6 +361,12 @@ func TestWrapLines(t *testing.T) {
 		// A word longer than the box is cut rather than pushing the
 		// dialog wider than the window.
 		{"aaaaaaaaaa", 4, []string{"aaaa", "aaaa", "aa"}},
+		// Counted in cells, not bytes. A CJK character takes two cells
+		// and three bytes, so a byte count wrapped this four times too
+		// early and cut a character in half doing it.
+		{"日本語のテ", 6, []string{"日本語", "のテ"}},
+		// A combining mark shares its letter's cell and stays with it.
+		{"éééé", 2, []string{"éé", "éé"}},
 	}
 	for _, tc := range cases {
 		got := wrapLines(tc.in, tc.width)
@@ -373,8 +379,8 @@ func TestWrapLines(t *testing.T) {
 			}
 		}
 		for _, line := range got {
-			if len(line) > tc.width {
-				t.Fatalf("wrapLines(%q, %d) produced a line %d wide", tc.in, tc.width, len(line))
+			if w := grid.StringWidth(line); w > tc.width {
+				t.Fatalf("wrapLines(%q, %d) produced a line %d cells wide", tc.in, tc.width, w)
 			}
 		}
 	}

@@ -198,7 +198,7 @@ func (c *Chooser) paint(v grid.View) {
 	cols, _ := in.Size()
 	room := max(cols-(chooserFrame+chooserPad)*2, 0)
 	in.SetString(chooserFrame+chooserPad, chooserFrame,
-		trimTo(c.title, room), c.Style.TitleFG, c.Style.BG, grid.AttrBold)
+		grid.Trim(c.title, room), c.Style.TitleFG, c.Style.BG, grid.AttrBold)
 
 	c.list.Style = ListStyle{
 		FG: c.Style.FG, BG: c.Style.BG,

@@ -3,22 +3,32 @@ package files
 import (
 	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/input"
+	"github.com/marrasen/gridterm/ui"
 )
 
-// fkey is one key on the bar along the bottom of the browser: the key
-// itself, the modifiers it wants, what the bar calls it, and what it
-// does.
+// fkey is one key on the bar along the bottom of the browser: the chord
+// it wants, what the bar calls it, and what it does.
 type fkey struct {
-	Key   input.Key
-	Mods  input.Mods
-	Chord string
+	Chord ui.Chord
+
+	// Shown is how the bar spells the chord, which is its own spelling
+	// rather than Chord.String(): "^G" fits a bar of ten keys where
+	// "ctrl+G" does not.
+	Shown string
 	Title string
 }
 
 // matches reports whether an event is this key.
-func (k fkey) matches(ev input.Event) bool {
-	return ev.Key == k.Key && ev.Mods == k.Mods
+func (k fkey) matches(ev input.Event) bool { return ui.ChordOf(ev) == k.Chord }
+
+// press is the key press this chord is, for asking whether a key on the
+// bar is this one and for running it from a click.
+func (k fkey) press() input.Event {
+	return input.Event{Kind: input.KeyPress, Key: k.Chord.Key, Mods: k.Chord.Mods}
 }
+
+// chord names a key and the modifiers held with it.
+func chord(k input.Key, mods input.Mods) ui.Chord { return ui.Chord{Key: k, Mods: mods} }
 
 // browserKeys is what the bar offers.
 //
@@ -27,20 +37,20 @@ func (k fkey) matches(ev input.Event) bool {
 // knows those keys should not have to learn these.
 func browserKeys() []fkey {
 	return []fkey{
-		{Key: input.KeyTab, Chord: "Tab", Title: "Next"},
-		{Key: input.KeyG, Mods: input.ModCtrl, Chord: "^G", Title: "Go to"},
-		{Key: input.KeyF2, Chord: "F2", Title: "Rename"},
+		{Chord: chord(input.KeyTab, 0), Shown: "Tab", Title: "Next"},
+		{Chord: chord(input.KeyG, input.ModCtrl), Shown: "^G", Title: "Go to"},
+		{Chord: chord(input.KeyF2, 0), Shown: "F2", Title: "Rename"},
 		// Copy, cut and paste are the chords they are everywhere else. A
 		// file pane is not a terminal, so nothing else wants them here.
-		{Key: input.KeyC, Mods: input.ModCtrl, Chord: "^C", Title: "Copy"},
-		{Key: input.KeyX, Mods: input.ModCtrl, Chord: "^X", Title: "Cut"},
-		{Key: input.KeyV, Mods: input.ModCtrl, Chord: "^V", Title: "Paste"},
-		{Key: input.KeyF8, Chord: "F8", Title: "Delete"},
-		{Key: input.KeyF9, Chord: "F9", Title: "Mkdir"},
+		{Chord: chord(input.KeyC, input.ModCtrl), Shown: "^C", Title: "Copy"},
+		{Chord: chord(input.KeyX, input.ModCtrl), Shown: "^X", Title: "Cut"},
+		{Chord: chord(input.KeyV, input.ModCtrl), Shown: "^V", Title: "Paste"},
+		{Chord: chord(input.KeyF8, 0), Shown: "F8", Title: "Delete"},
+		{Chord: chord(input.KeyF9, 0), Shown: "F9", Title: "Mkdir"},
 		// Not F10: the window opens its menu bar on that, and an
 		// accelerator wins before any widget sees the key. ^D is what
 		// closes a shell, which is near enough the same thing.
-		{Key: input.KeyD, Mods: input.ModCtrl, Chord: "^D", Title: "Close"},
+		{Chord: chord(input.KeyD, input.ModCtrl), Shown: "^D", Title: "Close"},
 	}
 }
 
@@ -86,7 +96,7 @@ func drawKeys(v grid.View, y, cols int, keys []fkey, st Style, wired func(fkey) 
 		// The key itself, on the bar's own ground, the way a number is
 		// on the bar this was copied from.
 		at := start
-		for _, r := range k.Chord {
+		for _, r := range k.Shown {
 			if at >= end {
 				break
 			}
@@ -104,26 +114,10 @@ func drawKeys(v grid.View, y, cols int, keys []fkey, st Style, wired func(fkey) 
 			// enough to read.
 			fg, bg = st.KeyFG, st.OffBG
 		}
-		title := trimTitle(" "+k.Title, end-at)
+		title := grid.Trim(" "+k.Title, end-at)
 		at = v.SetString(at, y, title, fg, bg, 0)
 		for ; at < end; at++ {
 			v.Set(at, y, grid.Cell{Rune: ' ', FG: fg, BG: bg, Width: 1})
 		}
 	}
-}
-
-// trimTitle cuts a key's name to the room the bar has for it.
-//
-// Cut rather than marked with an ellipsis: on a narrow window the bar is
-// a reminder of which key does what, and "Del" reminds where "…" does
-// not.
-func trimTitle(s string, cols int) string {
-	if cols <= 0 {
-		return ""
-	}
-	runes := []rune(s)
-	for len(runes) > 0 && grid.StringWidth(string(runes)) > cols {
-		runes = runes[:len(runes)-1]
-	}
-	return string(runes)
 }

@@ -60,12 +60,9 @@ type Palette struct {
 	q       *Field
 	matches []Match
 
-	// at is the line Enter would run, and top the first line drawn. A
-	// list longer than the box needs both: clamping only the selection
-	// lets it walk off the bottom of what is on screen.
-	at   int
-	top  int
-	size Size
+	// place is the line Enter would run and the first line drawn.
+	place listState
+	size  Size
 
 	// buf keeps the dialog off the layer until it is finished, so an
 	// unchanged dialog leaves the layer clean.
@@ -77,10 +74,17 @@ type Palette struct {
 // the palette does not know what is showing it.
 func NewPalette(cmds *Commands, keys *Keymap, close func()) *Palette {
 	p := &Palette{cmds: cmds, keys: keys, close: close, q: NewField()}
+	p.place = listState{count: p.matchCount, rows: p.rowsShown}
 	p.q.OnChange = func(string) { p.refresh() }
 	p.refresh()
 	return p
 }
+
+// matchCount is how many lines the list has and rowsShown how many of
+// them fit, which is the box less the rule and the query line. Every
+// match can be chosen, so the bar skips nothing.
+func (p *Palette) matchCount() int { return len(p.matches) }
+func (p *Palette) rowsShown() int  { return max(p.lines().Rows-1, 0) }
 
 // SetClipboard backs the paste shortcut in the query line.
 func (p *Palette) SetClipboard(read func() string) { p.q.ReadClipboard = read }
@@ -108,10 +112,10 @@ func (p *Palette) Matches() []Match { return p.matches }
 // Selected returns the command Enter would run, and whether there is
 // one.
 func (p *Palette) Selected() (Command, bool) {
-	if p.at < 0 || p.at >= len(p.matches) {
+	if p.place.at < 0 || p.place.at >= len(p.matches) {
 		return Command{}, false
 	}
-	return p.matches[p.at].Command, true
+	return p.matches[p.place.at].Command, true
 }
 
 // Box returns where the dialog sits in the view it draws through, so
@@ -124,7 +128,7 @@ func (p *Palette) Layout(size Size) {
 	// A shorter box shows fewer lines, so the selection may now be below
 	// it. A taller one can show more, so the list should not be left
 	// scrolled past its end.
-	p.scroll()
+	p.place.ensureVisible()
 	// And the query line is told how much room it has, which is what
 	// lets it scroll to keep the caret in view.
 	if in := p.lines(); !in.Empty() {
@@ -155,10 +159,10 @@ func (p *Palette) HandleKey(ev input.Event) (bool, error) {
 		case input.KeyEnter:
 			return true, p.run()
 		case input.KeyUp:
-			p.move(-1)
+			p.place.move(-1)
 			return true, nil
 		case input.KeyDown:
-			p.move(1)
+			p.place.move(1)
 			return true, nil
 		}
 	}
@@ -186,7 +190,7 @@ func (p *Palette) HandleMouse(ev input.MouseEvent) (bool, error) {
 	// bound is guarding against a future box that is not.
 	row := ev.Row - p.lines().Y - 1
 	if row >= 0 && row < p.rows() {
-		p.at = p.top + row
+		p.place.moveTo(p.place.top + row)
 		return true, p.run()
 	}
 	return true, nil
@@ -253,14 +257,14 @@ func (p *Palette) queryCols(cols int) int { return max(cols-2, 1) }
 // drawMatch paints one line of the list, counting from the first one
 // shown rather than the first there is.
 func (p *Palette) drawMatch(in grid.View, row, cols int) {
-	i := p.top + row
+	i := p.place.top + row
 	if i >= len(p.matches) {
 		return
 	}
 	m := p.matches[i]
 	fg, bg := p.Style.FG, p.Style.BG
 	matchFG, chordFG := p.Style.MatchFG, p.Style.ChordFG
-	if i == p.at {
+	if i == p.place.at {
 		fg, bg = p.Style.SelectedFG, p.Style.SelectedBG
 		// The selected line has a background of its own, and a colour
 		// picked to stand out against the other lines can disappear
@@ -322,7 +326,7 @@ func (p *Palette) drawTitle(line grid.View, m Match, fg, bg, matchFG color.RGBA,
 
 // rows returns how many lines of the list are drawn.
 func (p *Palette) rows() int {
-	return min(len(p.matches)-p.top, max(p.lines().Rows-1, 0))
+	return min(len(p.matches)-p.place.top, max(p.lines().Rows-1, 0))
 }
 
 // box returns where the dialog goes, centred in the area it was given.
@@ -357,38 +361,16 @@ func (p *Palette) chordFor(id string) (string, bool) {
 	return chord.String(), true
 }
 
-// move steps through the list, stopping at the ends rather than
-// wrapping: a list you can run off the end of is hard to aim at.
-func (p *Palette) move(by int) {
-	if len(p.matches) == 0 {
-		return
-	}
-	p.at = min(max(p.at+by, 0), len(p.matches)-1)
-	p.scroll()
-}
-
-// scroll brings the selected line into the box, so Enter always runs
-// something the user can see.
-func (p *Palette) scroll() {
-	rows := max(p.lines().Rows-1, 0)
-	if rows <= 0 {
-		p.top = 0
-		return
-	}
-	p.top = min(max(p.top, p.at-rows+1), p.at)
-	p.top = min(max(p.top, 0), max(len(p.matches)-rows, 0))
-}
-
 // refresh rebuilds the list after the query changed.
 func (p *Palette) refresh() {
 	if p.cmds == nil {
-		p.matches, p.at = nil, 0
+		p.matches, p.place.at, p.place.top = nil, 0, 0
 		return
 	}
 	p.matches = MatchCommands(p.cmds.All(), strings.TrimSpace(p.q.Text()))
 	// A new list is a new answer: the best one is at the top, and the
 	// line the old selection sat on means nothing now.
-	p.at, p.top = 0, 0
+	p.place.at, p.place.top = 0, 0
 }
 
 // run invokes the selected command, closing the dialog first so that a

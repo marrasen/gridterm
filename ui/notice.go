@@ -372,7 +372,7 @@ func (n *Notice) paint(v grid.View) {
 	if n.Failure {
 		title = n.Style.FailureFG
 	}
-	in.SetString(noticePad, noticeTitleRow, trimTo(n.Title, box.Cols-noticePad*2),
+	in.SetString(noticePad, noticeTitleRow, grid.Trim(n.Title, box.Cols-noticePad*2),
 		title, n.Style.BG, grid.AttrBold)
 
 	n.paintText(in, box)
@@ -625,7 +625,7 @@ func wrapOne(s string, width int) []noticeLine {
 			line = word
 		}
 		for grid.StringWidth(line) > width {
-			head := trimTo(line, width)
+			head := grid.Trim(line, width)
 			if head == "" {
 				// A cluster wider than the whole box. It goes on a line
 				// of its own rather than stopping the wrap dead.

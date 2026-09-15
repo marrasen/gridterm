@@ -231,7 +231,7 @@ func TestListScrollsOnTheWheel(t *testing.T) {
 	l := newTestList(t, rows, 20, 5)
 
 	l.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseWheelDown})
-	if l.top == 0 {
+	if l.place.top == 0 {
 		t.Fatal("the wheel did not scroll")
 	}
 	// The selection stays put: the wheel moves the view, not the choice.
@@ -241,14 +241,14 @@ func TestListScrollsOnTheWheel(t *testing.T) {
 	for i := 0; i < 40; i++ {
 		l.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseWheelDown})
 	}
-	if l.top > len(rows)-5 {
-		t.Fatalf("scrolled to %d, past the end of %d rows", l.top, len(rows))
+	if l.place.top > len(rows)-5 {
+		t.Fatalf("scrolled to %d, past the end of %d rows", l.place.top, len(rows))
 	}
 	for i := 0; i < 60; i++ {
 		l.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseWheelUp})
 	}
-	if l.top != 0 {
-		t.Fatalf("scrolled to %d, past the start", l.top)
+	if l.place.top != 0 {
+		t.Fatalf("scrolled to %d, past the start", l.place.top)
 	}
 }
 
@@ -263,12 +263,12 @@ func TestListScrollsToKeepTheSelectionInView(t *testing.T) {
 
 	l.HandleKey(press(input.KeyEnd, 0))
 	at := l.SelectedIndex()
-	if at < l.top || at >= l.top+5 {
-		t.Fatalf("the selection is row %d with rows %d..%d on screen", at, l.top, l.top+4)
+	if at < l.place.top || at >= l.place.top+5 {
+		t.Fatalf("the selection is row %d with rows %d..%d on screen", at, l.place.top, l.place.top+4)
 	}
 	l.HandleKey(press(input.KeyHome, 0))
-	if l.top != 0 {
-		t.Fatalf("after Home the list shows from row %d", l.top)
+	if l.place.top != 0 {
+		t.Fatalf("after Home the list shows from row %d", l.place.top)
 	}
 }
 
@@ -282,8 +282,8 @@ func TestListDoesNotStayScrolledPastItsEnd(t *testing.T) {
 	l.HandleKey(press(input.KeyEnd, 0))
 
 	l.SetRows(rows[:6])
-	if l.top > 1 {
-		t.Fatalf("the list shows from row %d of 6 with 5 on screen", l.top)
+	if l.place.top > 1 {
+		t.Fatalf("the list shows from row %d of 6 with 5 on screen", l.place.top)
 	}
 }
 
@@ -371,8 +371,8 @@ func TestListWithNothingInIt(t *testing.T) {
 	if ran != 0 {
 		t.Fatalf("an empty list ran a row %d times", ran)
 	}
-	if l.top != 0 {
-		t.Fatalf("an empty list scrolled to row %d", l.top)
+	if l.place.top != 0 {
+		t.Fatalf("an empty list scrolled to row %d", l.place.top)
 	}
 
 	g := drawList(l, 20, 5)
@@ -460,21 +460,21 @@ func TestListWheelSurvivesARebuild(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		l.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseWheelDown})
 	}
-	scrolled := l.top
+	scrolled := l.place.top
 	if scrolled == 0 {
 		t.Fatal("the wheel did not scroll")
 	}
 
 	l.SetRows(rows)
-	if l.top != scrolled {
-		t.Fatalf("a rebuild moved the list from row %d back to %d", scrolled, l.top)
+	if l.place.top != scrolled {
+		t.Fatalf("a rebuild moved the list from row %d back to %d", scrolled, l.place.top)
 	}
 
 	// Moving the selection still brings it into view: that is what
 	// moving it means.
 	l.HandleKey(press(input.KeyHome, 0))
-	if l.top != 0 {
-		t.Fatalf("Home left the list showing from row %d", l.top)
+	if l.place.top != 0 {
+		t.Fatalf("Home left the list showing from row %d", l.place.top)
 	}
 }
 

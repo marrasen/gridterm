@@ -84,7 +84,7 @@ func (a *app) newPanel() *ui.List {
 	// Lifted off the list's own ground rather than the window's
 	// selection colour, so it stays darker than any dot drawn on it: the
 	// dot is what says whether the connection is open.
-	l.Style.CurrentBG = mix(a.colours.BG, a.colours.FG, 1, 6)
+	l.Style.CurrentBG = grid.Blend(a.colours.BG, a.colours.FG, 1, 6)
 	// A little air around each machine's name, so it reads as a heading
 	// for the rows under it rather than as another row. A quarter of a
 	// character each way: enough to see, and far less than the blank
@@ -124,28 +124,14 @@ func pulse(from, to color.RGBA, now time.Time) color.RGBA {
 	if at >= steps {
 		at = steps*2 - at
 	}
-	return mix(from, to, at+1, steps+2)
+	return grid.Blend(from, to, at+1, steps+2)
 }
 
 // sidebarTop and sidebarFoot are the two ends of the ground the window's
 // frame is drawn on: the sidebar shades between them down its length,
 // and the menu bar across its width.
-func sidebarTop(p vt.Palette) color.RGBA  { return mix(p.BG, p.ANSI[4], 1, 20) }
-func sidebarFoot(p vt.Palette) color.RGBA { return mix(p.BG, p.ANSI[4], 1, 8) }
-
-// mix blends two colours, at/of the way from the first to the second.
-func mix(from, to color.RGBA, at, of int) color.RGBA {
-	if of <= 0 {
-		return from
-	}
-	part := func(a, b uint8) uint8 { return uint8(int(a) + (int(b)-int(a))*at/of) }
-	return color.RGBA{
-		R: part(from.R, to.R),
-		G: part(from.G, to.G),
-		B: part(from.B, to.B),
-		A: part(from.A, to.A),
-	}
-}
+func sidebarTop(p vt.Palette) color.RGBA  { return grid.Blend(p.BG, p.ANSI[4], 1, 20) }
+func sidebarFoot(p vt.Palette) color.RGBA { return grid.Blend(p.BG, p.ANSI[4], 1, 8) }
 
 // newSidebar puts the list in the panel, with the way to reach a machine
 // that is not open yet pinned under it.

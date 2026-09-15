@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,6 +16,7 @@ import (
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 
+	"github.com/marrasen/gridterm/internal/sshtest"
 	"github.com/marrasen/gridterm/session"
 )
 
@@ -270,7 +270,7 @@ func TestAnOrdinarySSHClientIsToldWhatThisIs(t *testing.T) {
 	if err == nil {
 		t.Fatal("an ordinary SSH client was given a session")
 	}
-	if !strings.Contains(err.Error(), chanSession) {
+	if !strings.Contains(err.Error(), SessionChannel) {
 		t.Errorf("it was told %v, without being told what is served", err)
 	}
 }
@@ -472,7 +472,7 @@ func TestTheReasonTravelsOnItsOwnStream(t *testing.T) {
 	})
 
 	// Straight down a channel, so what each stream carried can be seen.
-	ch, reqs, err := w.client.OpenChannel(chanSession, ssh.Marshal(openSession{
+	ch, reqs, err := w.client.OpenChannel(SessionChannel, ssh.Marshal(openSession{
 		Cols: 80, Rows: 24,
 	}))
 	if err != nil {
@@ -534,7 +534,7 @@ func TestASessionThatCannotStartDoesNotWedgeTheConnection(t *testing.T) {
 		return nil, errors.New("not today")
 	})
 
-	ch, reqs, err := w.client.OpenChannel(chanSession, ssh.Marshal(openSession{Cols: 80, Rows: 24}))
+	ch, reqs, err := w.client.OpenChannel(SessionChannel, ssh.Marshal(openSession{Cols: 80, Rows: 24}))
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
@@ -575,7 +575,7 @@ func TestTheSizeIsClampedWhereItIsUsed(t *testing.T) {
 
 	// Straight down the channel, so the client's own clamp is not in
 	// the way.
-	ch, reqs, err := w.client.OpenChannel(chanSession, ssh.Marshal(openSession{
+	ch, reqs, err := w.client.OpenChannel(SessionChannel, ssh.Marshal(openSession{
 		Cols: 4294967295, Rows: 0,
 	}))
 	if err != nil {
@@ -1382,35 +1382,6 @@ func TestAFileSessionThatFailedSaysWhyToTheClient(t *testing.T) {
 	}
 }
 
-// silentMachine answers and then says nothing, which is what a firewall
-// that accepts, a port forwarded to nothing, or another service on the
-// port looks like from here.
-func silentMachine(t *testing.T) string {
-	t.Helper()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen: %v", err)
-	}
-	held := make(chan net.Conn, 8)
-	go func() {
-		for {
-			c, err := ln.Accept()
-			if err != nil {
-				return
-			}
-			held <- c
-		}
-	}()
-	t.Cleanup(func() {
-		_ = ln.Close()
-		close(held)
-		for c := range held {
-			_ = c.Close()
-		}
-	})
-	return ln.Addr().String()
-}
-
 // Reaching a machine that answers and then says nothing gives up.
 //
 // ssh.ClientConfig.Timeout does not bound this: it bounds the TCP
@@ -1424,10 +1395,11 @@ func TestAMachineThatAnswersAndSaysNothingIsGivenUpOn(t *testing.T) {
 		t.Fatalf("host key: %v", err)
 	}
 
+	addr := sshtest.SilentMachine(t)
 	done := make(chan error, 1)
 	go func() {
 		_, err := Dial(context.Background(), DialConfig{
-			Addr: silentMachine(t), Keys: []ssh.Signer{mine},
+			Addr: addr, Keys: []ssh.Signer{mine},
 			HostKey:  ssh.FixedHostKey(host.PublicKey()),
 			Patience: 300 * time.Millisecond,
 		})
@@ -1454,10 +1426,11 @@ func TestGivingUpOnASilentMachineComesBackAtOnce(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 
+	addr := sshtest.SilentMachine(t)
 	done := make(chan error, 1)
 	go func() {
 		_, err := Dial(ctx, DialConfig{
-			Addr: silentMachine(t), Keys: []ssh.Signer{mine},
+			Addr: addr, Keys: []ssh.Signer{mine},
 			HostKey: ssh.FixedHostKey(host.PublicKey()),
 			// Long, so what ends this can only be the giving up.
 			Patience: 5 * time.Minute,

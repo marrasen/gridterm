@@ -420,7 +420,6 @@ func (a *app) takeOver(addr, keyFile string, at *spot) error {
 		win, err := remote.ReachWindow(ctx, remote.Reach{
 			Addr: addr, KeyFile: keyFile, Ring: a.keys, Ask: ask,
 			Known:    func() (string, error) { return knownWindows(knownAt) },
-			Agent:    remote.AgentKeys,
 			Patience: patience,
 			Saying:   log.Say,
 		})

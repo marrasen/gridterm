@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"golang.org/x/crypto/ssh"
+
+	"github.com/marrasen/gridterm/serve"
 )
 
 // drainGrace is how long Close waits for the remote to finish after its
@@ -29,10 +31,15 @@ const GridtermWindowKind = "gridterm window"
 //
 // It says so in the refusal itself, which is the only thing that
 // crosses: an SSH client is told a channel type is unknown and nothing
-// else. Matched on the channel type it names rather than on the
-// sentence around it.
+// else. Matched on serve's own constant, so renaming the channel is a
+// change this stops compiling over rather than one it stops noticing.
 func isGridterm(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "session@gridterm")
+	var refused *ssh.OpenChannelError
+	if !errors.As(err, &refused) {
+		return false
+	}
+	return refused.Reason == ssh.UnknownChannelType &&
+		strings.Contains(refused.Message, serve.SessionChannel)
 }
 
 // notAMachine says the far end is a gridterm window saved as a machine,

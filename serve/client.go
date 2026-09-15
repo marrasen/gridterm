@@ -60,9 +60,15 @@ type DialConfig struct {
 	// Addr is the machine and port it is serving on.
 	Addr string
 
-	// Keys are the keys to offer. The other window has to have one of
-	// them listed: there is no other way in, and nothing else is tried.
+	// Keys are the keys to offer, all in one attempt. The other window
+	// has to have one of them listed: there is no other way in, and
+	// nothing else is tried.
+	//
+	// Auth is the same thing one attempt at a time, for a caller with a
+	// ladder of keys to climb. One of the two has to be set; Auth wins
+	// when both are.
 	Keys []ssh.Signer
+	Auth ssh.ClientAuthCallback
 
 	// HostKey checks the machine answering is the one meant. It is
 	// never nil: a window that took whatever answered would be one that
@@ -98,7 +104,7 @@ func Dial(ctx context.Context, cfg DialConfig) (*Window, error) {
 	switch {
 	case cfg.Addr == "":
 		return nil, errors.New("serve: no window to reach")
-	case len(cfg.Keys) == 0:
+	case len(cfg.Keys) == 0 && cfg.Auth == nil:
 		return nil, errors.New("serve: no key to reach it with")
 	case cfg.HostKey == nil:
 		return nil, errors.New("serve: nothing to check the machine by")
@@ -129,15 +135,8 @@ func Dial(ctx context.Context, cfg DialConfig) (*Window, error) {
 		return nil, fmt.Errorf("serve: reach %s: %w", cfg.Addr, err)
 	}
 
-	cc, chans, reqs, err := ssh.NewClientConn(nc, cfg.Addr, &ssh.ClientConfig{
+	client := &ssh.ClientConfig{
 		User: "gridterm",
-		// A callback rather than the keys themselves, so the account
-		// says when signing in starts: everything before it is this end
-		// and the network, everything after it is the other window.
-		Auth: []ssh.AuthMethod{ssh.PublicKeysCallback(func() ([]ssh.Signer, error) {
-			cfg.say(fmt.Sprintf("signing in as gridterm, offering %d keys", len(cfg.Keys)))
-			return cfg.Keys, nil
-		})},
 		HostKeyCallback: func(hostname string, addr net.Addr, key ssh.PublicKey) error {
 			cfg.say("it answered, with a " + key.Type() + " host key")
 			if err := cfg.HostKey(hostname, addr, key); err != nil {
@@ -146,7 +145,23 @@ func Dial(ctx context.Context, cfg DialConfig) (*Window, error) {
 			cfg.say("its host key is accepted")
 			return nil
 		},
-	})
+	}
+	if cfg.Auth != nil {
+		// AuthCallback rather than Auth: x/crypto deduplicates by method
+		// name, so of several public-key attempts only the first would be
+		// tried, and a ladder is several.
+		client.AuthCallback = cfg.Auth
+	} else {
+		// A callback rather than the keys themselves, so the account
+		// says when signing in starts: everything before it is this end
+		// and the network, everything after it is the other window.
+		client.Auth = []ssh.AuthMethod{ssh.PublicKeysCallback(func() ([]ssh.Signer, error) {
+			cfg.say(fmt.Sprintf("signing in as gridterm, offering %d keys", len(cfg.Keys)))
+			return cfg.Keys, nil
+		})}
+	}
+
+	cc, chans, reqs, err := ssh.NewClientConn(nc, cfg.Addr, client)
 	if err != nil {
 		if !stop() {
 			_ = nc.Close()
@@ -298,7 +313,7 @@ func (w *Window) session(want openSession) (session.Session, error) {
 	if w.isClosed() {
 		return nil, errors.New("serve: that window has been let go of")
 	}
-	ch, reqs, err := w.client.OpenChannel(chanSession, ssh.Marshal(want))
+	ch, reqs, err := w.client.OpenChannel(SessionChannel, ssh.Marshal(want))
 	if err != nil {
 		return nil, fmt.Errorf("serve: open a session on %s: %w", w.addr, err)
 	}

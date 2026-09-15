@@ -265,7 +265,7 @@ func TestChooserTakesNoChordItNeverOffered(t *testing.T) {
 		press(input.KeyEscape, input.ModCtrl),
 	} {
 		c, took, closed := newTestChooser(t)
-		was := c.list.at
+		was := c.list.place.at
 
 		taken, err := c.HandleKey(ev)
 		if err != nil {
@@ -280,7 +280,7 @@ func TestChooserTakesNoChordItNeverOffered(t *testing.T) {
 		if *closed != 0 {
 			t.Errorf("%v closed the chooser", ev.Key)
 		}
-		if now := c.list.at; now != was {
+		if now := c.list.place.at; now != was {
 			t.Errorf("%v moved the choice from %d to %d", ev.Key, was, now)
 		}
 	}

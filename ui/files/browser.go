@@ -387,34 +387,29 @@ func (b *Browser) Draw(v grid.View) {
 // wired reports whether a key on the bar has anything behind it here.
 func (b *Browser) wired(k fkey) bool {
 	switch {
-	case k.matches(key(input.KeyTab, 0)):
+	case k.Chord == chord(input.KeyTab, 0):
 		return len(b.panes) > 1
-	case k.matches(key(input.KeyG, input.ModCtrl)):
+	case k.Chord == chord(input.KeyG, input.ModCtrl):
 		return b.Here() != nil && b.Here().OnGoTo != nil
-	case k.matches(key(input.KeyF2, 0)):
+	case k.Chord == chord(input.KeyF2, 0):
 		return b.OnRename != nil
-	case k.matches(key(input.KeyC, input.ModCtrl)):
+	case k.Chord == chord(input.KeyC, input.ModCtrl):
 		return b.OnCopy != nil && b.Here() != nil
-	case k.matches(key(input.KeyX, input.ModCtrl)):
+	case k.Chord == chord(input.KeyX, input.ModCtrl):
 		return b.OnMove != nil && b.Here() != nil
-	case k.matches(key(input.KeyV, input.ModCtrl)):
+	case k.Chord == chord(input.KeyV, input.ModCtrl):
 		// Nothing picked out is nothing to paste, so the bar says so
 		// rather than offering a key that does nothing. Which of the two
 		// does the work depends on what is on the clipboard.
 		return !b.clip.Empty() && b.pasteWith() != nil
-	case k.matches(key(input.KeyF8, 0)):
+	case k.Chord == chord(input.KeyF8, 0):
 		return b.OnDelete != nil
-	case k.matches(key(input.KeyF9, 0)):
+	case k.Chord == chord(input.KeyF9, 0):
 		return b.OnMkdir != nil
-	case k.matches(key(input.KeyD, input.ModCtrl)):
+	case k.Chord == chord(input.KeyD, input.ModCtrl):
 		return b.OnClose != nil
 	}
 	return false
-}
-
-// key is one key press, for asking whether a key on the bar is this one.
-func key(k input.Key, mods input.Mods) input.Event {
-	return input.Event{Kind: input.KeyPress, Key: k, Mods: mods}
 }
 
 // SetFocus passes the keys on to the pane that has them.
@@ -665,7 +660,7 @@ func (b *Browser) HandleMouse(ev input.MouseEvent) (bool, error) {
 		// Taken whatever the key does: the press landed on the bar, not
 		// on whatever is under the browser.
 		k := b.keys[i]
-		_, err := b.press(key(k.Key, k.Mods))
+		_, err := b.press(k.press())
 		return true, err
 	}
 	for i, p := range b.panes {

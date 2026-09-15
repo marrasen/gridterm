@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/marrasen/gridterm/conns"
+	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/serve"
 	"github.com/marrasen/gridterm/ui"
 )
@@ -144,7 +145,7 @@ func (a *app) remoteRows(on hostFacts) []ui.ListRow {
 		under[open.Host] = append(under[open.Host], open)
 	}
 
-	dim := mix(a.colours.FG, a.colours.BG, 1, 2)
+	dim := grid.Blend(a.colours.FG, a.colours.BG, 1, 2)
 	var rows []ui.ListRow
 	for _, on := range order {
 		if len(order) > 1 || !isTheirOwn(on) {

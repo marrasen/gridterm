@@ -38,7 +38,7 @@ func TestAUsualKeyThatCannotBeReadIsReported(t *testing.T) {
 		t.Fatalf("make the key path: %v", err)
 	}
 
-	_, _, err := UsualKeys()
+	_, _, err := identities(Config{})
 	if err == nil {
 		t.Fatal("a key file that could not be read was skipped without a word")
 	}
@@ -52,9 +52,9 @@ func TestAUsualKeyThatCannotBeReadIsReported(t *testing.T) {
 func TestAUsualKeyThatIsNotThereIsSkipped(t *testing.T) {
 	homeAt(t)
 
-	plain, locked, err := UsualKeys()
+	plain, locked, err := identities(Config{})
 	if err != nil {
-		t.Fatalf("UsualKeys: %v", err)
+		t.Fatalf("read the usual keys: %v", err)
 	}
 	if len(plain) != 0 || len(locked) != 0 {
 		t.Fatalf("it found %d keys and %d locked ones in an empty .ssh", len(plain), len(locked))
@@ -70,8 +70,8 @@ func TestAUsualKeyThatIsNotAKeyIsSkipped(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 
-	if _, _, err := UsualKeys(); err != nil {
-		t.Fatalf("UsualKeys: %v", err)
+	if _, _, err := identities(Config{}); err != nil {
+		t.Fatalf("read the usual keys: %v", err)
 	}
 }
 
@@ -94,9 +94,9 @@ func TestAUsualKeyThatIsLockedIsOfferedForItsPassphrase(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 
-	plain, wants, err := UsualKeys()
+	plain, wants, err := identities(Config{})
 	if err != nil {
-		t.Fatalf("UsualKeys: %v", err)
+		t.Fatalf("read the usual keys: %v", err)
 	}
 	if len(plain) != 0 {
 		t.Errorf("%d keys came back unlocked", len(plain))

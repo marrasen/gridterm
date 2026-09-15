@@ -39,7 +39,7 @@ func (s MenubarStyle) colAt(x, cols int) color.RGBA {
 	if s.BGEnd.A == 0 || cols <= 1 {
 		return s.BG
 	}
-	return blend(s.BG, s.BGEnd, min(max(x, 0), cols-1), cols-1)
+	return grid.Blend(s.BG, s.BGEnd, min(max(x, 0), cols-1), cols-1)
 }
 
 // Menubar is a row of menu titles above one other widget.

@@ -319,9 +319,9 @@ func TestMenuTallerThanTheWindowScrolls(t *testing.T) {
 	if box.Rows > 8 {
 		t.Fatalf("box is %d rows in a window of 8", box.Rows)
 	}
-	if m.at < m.top || m.at >= m.top+box.Rows {
+	if m.place.at < m.place.top || m.place.at >= m.place.top+box.Rows {
 		t.Errorf("selected %d with lines %d..%d showing: it is off the box",
-			m.at, m.top, m.top+box.Rows-1)
+			m.place.at, m.place.top, m.place.top+box.Rows-1)
 	}
 }
 
@@ -346,14 +346,14 @@ func TestMenuScrollFollowsTheWindow(t *testing.T) {
 	m.Layout(Size{Cols: 40, Rows: 6})
 
 	box := m.box()
-	if m.at < m.top || m.at >= m.top+box.Rows {
+	if m.place.at < m.place.top || m.place.at >= m.place.top+box.Rows {
 		t.Errorf("after shrinking the window, selected %d with lines %d..%d showing",
-			m.at, m.top, m.top+box.Rows-1)
+			m.place.at, m.place.top, m.place.top+box.Rows-1)
 	}
 	// And growing must not leave the list scrolled past its end.
 	m.Layout(Size{Cols: 40, Rows: 24})
-	if m.top != 0 {
-		t.Errorf("top = %d in a window with room for every line, want 0", m.top)
+	if m.place.top != 0 {
+		t.Errorf("top = %d in a window with room for every line, want 0", m.place.top)
 	}
 }
 

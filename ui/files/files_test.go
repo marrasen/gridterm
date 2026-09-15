@@ -839,16 +839,16 @@ func TestClickingTheBarRunsTheKey(t *testing.T) {
 
 	// Copy, then the next pane, then paste: three clicks on the bar, the
 	// same three keys.
-	clickKey := func(chord string) {
+	clickKey := func(shown string) {
 		t.Helper()
 		i := -1
 		for at, key := range b.keys {
-			if key.Chord == chord {
+			if key.Shown == shown {
 				i = at
 			}
 		}
 		if i < 0 {
-			t.Fatalf("%q is not on the bar", chord)
+			t.Fatalf("%q is not on the bar", shown)
 		}
 		start, _ := keyCell(i, 60, len(b.keys))
 		took, err := b.HandleMouse(input.MouseEvent{
@@ -893,10 +893,10 @@ func TestAClickOnTheBarStaysOnIt(t *testing.T) {
 	}
 }
 
-// wiredKey reports whether the bar offers the key with this chord.
-func wiredKey(b *Browser, chord string) bool {
+// wiredKey reports whether the bar offers the key it spells this way.
+func wiredKey(b *Browser, shown string) bool {
 	for _, k := range b.keys {
-		if k.Chord == chord {
+		if k.Shown == shown {
 			return b.wired(k)
 		}
 	}
@@ -922,7 +922,7 @@ func TestEveryColumnOfTheBarIsTheKeyItShows(t *testing.T) {
 			if col < start || col >= end {
 				t.Fatalf("column %d of %d says key %d, drawn at %d..%d", col, cols, i, start, end)
 			}
-			if b.keys[i].Key == input.KeyTab {
+			if b.keys[i].Chord.Key == input.KeyTab {
 				swapped++
 			}
 		}
@@ -1018,16 +1018,16 @@ func TestTheBarDoesNotHideTheNameTheKeysAreOn(t *testing.T) {
 	}
 }
 
-// barKey is where a chord sits on the bar, so a test does not have to
-// count the keys before it.
-func barKey(t *testing.T, b *Browser, chord string) int {
+// barKey is where a key sits on the bar, found by the way the bar spells
+// it, so a test does not have to count the keys before it.
+func barKey(t *testing.T, b *Browser, shown string) int {
 	t.Helper()
 	for i, k := range b.keys {
-		if k.Chord == chord {
+		if k.Shown == shown {
 			return i
 		}
 	}
-	t.Fatalf("the bar has no %s: %v", chord, b.keys)
+	t.Fatalf("the bar has no %s: %v", shown, b.keys)
 	return -1
 }
 

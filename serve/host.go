@@ -71,9 +71,9 @@ func (s *Server) serveChannels(chans <-chan ssh.NewChannel, gone <-chan struct{}
 			}()
 			continue
 		}
-		if nch.ChannelType() != chanSession {
+		if nch.ChannelType() != SessionChannel {
 			_ = nch.Reject(ssh.UnknownChannelType,
-				"this is gridterm, and it serves "+chanSession)
+				"this is gridterm, and it serves "+SessionChannel)
 			continue
 		}
 		var want openSession

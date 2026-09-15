@@ -14,6 +14,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/marrasen/gridterm/internal/sshtest"
+	"github.com/marrasen/gridterm/serve"
 )
 
 // A handshake through another machine can be given up on.
@@ -480,13 +481,23 @@ func TestLockingTheKeysForgetsTheAgentTrouble(t *testing.T) {
 // unknown. A user who saved a window as a machine got that and nothing
 // else, with no hint that one field in the dialog was wrong.
 func TestASessionOnAGridtermWindowSaysWhatItIs(t *testing.T) {
-	refusal := errors.New(
-		`ssh: rejected: unknown channel type ("this is gridterm, and it serves session@gridterm")`)
+	// The refusal a serving window sends, built the way x/crypto hands
+	// one to the client.
+	refusal := error(&ssh.OpenChannelError{
+		Reason:  ssh.UnknownChannelType,
+		Message: "this is gridterm, and it serves " + serve.SessionChannel,
+	})
 	if !isGridterm(refusal) {
 		t.Fatal("it does not recognise a gridterm window")
 	}
-	if isGridterm(errors.New("ssh: rejected: administratively prohibited")) {
+	prohibited := &ssh.OpenChannelError{
+		Reason: ssh.Prohibited, Message: "administratively prohibited",
+	}
+	if isGridterm(prohibited) {
 		t.Error("it calls an ordinary refusal a gridterm window")
+	}
+	if isGridterm(errors.New("ssh: rejected: administratively prohibited")) {
+		t.Error("it calls a failure that is not a refusal a gridterm window")
 	}
 	if isGridterm(nil) {
 		t.Error("it calls no failure a gridterm window")

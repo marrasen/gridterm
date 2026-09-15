@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"image/color"
 	"io"
-	"net"
 	"os"
 	"path/filepath"
 	"slices"
@@ -1510,44 +1509,6 @@ func TestTheRowOfAWindowOpensTheWindowsMenu(t *testing.T) {
 	}
 }
 
-// silentMachine answers and then says nothing, which is what a firewall
-// that accepts, a port forwarded to nothing, or another service on the
-// port looks like from here.
-func silentMachine(t *testing.T) string {
-	t.Helper()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen: %v", err)
-	}
-	// Kept under a lock rather than sent down a channel: the goroutine
-	// can be holding a connection at the moment the test ends, and a
-	// channel closed under it panics.
-	var (
-		mu   sync.Mutex
-		held []net.Conn
-	)
-	go func() {
-		for {
-			c, err := ln.Accept()
-			if err != nil {
-				return
-			}
-			mu.Lock()
-			held = append(held, c)
-			mu.Unlock()
-		}
-	}()
-	t.Cleanup(func() {
-		_ = ln.Close()
-		mu.Lock()
-		defer mu.Unlock()
-		for _, c := range held {
-			_ = c.Close()
-		}
-	})
-	return ln.Addr().String()
-}
-
 // Giving up on a window that is not answering lets it go, and lets the
 // window try again.
 //
@@ -1559,7 +1520,7 @@ func TestGivingUpOnAWindowThatIsNotAnsweringLetsItGo(t *testing.T) {
 	withDialogs(t, a)
 	withPanel(t, a)
 	keyFile, _ := aKeyFile(t)
-	addr := silentMachine(t)
+	addr := sshtest.SilentMachine(t)
 
 	if err := a.takeOver(addr, keyFile, nil); err != nil {
 		t.Fatalf("take over: %v", err)
@@ -1594,7 +1555,7 @@ func TestAWindowThatSaysNothingIsGivenUpOnByItself(t *testing.T) {
 	withDialogs(t, a)
 	withPanel(t, a)
 	keyFile, _ := aKeyFile(t)
-	addr := silentMachine(t)
+	addr := sshtest.SilentMachine(t)
 
 	if err := a.takeOver(addr, keyFile, nil); err != nil {
 		t.Fatalf("take over: %v", err)
@@ -1616,7 +1577,7 @@ func TestThePaneSaysWhatItIsDoing(t *testing.T) {
 	withDialogs(t, a)
 	withPanel(t, a)
 	keyFile, _ := aKeyFile(t)
-	addr := silentMachine(t)
+	addr := sshtest.SilentMachine(t)
 
 	if err := a.takeOver(addr, keyFile, nil); err != nil {
 		t.Fatalf("take over: %v", err)

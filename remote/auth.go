@@ -224,6 +224,22 @@ type closerFunc func() error
 
 func (f closerFunc) Close() error { return f() }
 
+// agentSource opens the SSH agent: the socket to hold until signing is
+// done, and a way to list the keys it holds.
+//
+// A connection takes one rather than opening the agent itself, so a test
+// can hand over an agent of its own.
+type agentSource func() (io.Closer, func() ([]ssh.Signer, error), error)
+
+// localAgent opens the SSH agent running on this machine.
+func localAgent() (io.Closer, func() ([]ssh.Signer, error), error) {
+	conn, err := dialAgent()
+	if err != nil {
+		return nil, nil, err
+	}
+	return conn, agent.NewClient(conn).Signers, nil
+}
+
 // authMethods assembles what to try, in the order a user expects.
 //
 // Keys that need no passphrase come first, all in one attempt: the ring,
@@ -245,7 +261,11 @@ func authMethods(ctx context.Context, cfg Config) (*auth, error) {
 		saySo(cfg.Saying, "leaving the SSH agent alone: "+why.Error()+
 			". Forget unlocked keys to have it asked again")
 	default:
-		conn, err := dialAgent()
+		open := cfg.agent
+		if open == nil {
+			open = localAgent
+		}
+		conn, signers, err := open()
 		if err != nil {
 			// Not remembered: finding out there is no agent is opening a
 			// socket that is not there, which costs nothing. One started
@@ -254,7 +274,7 @@ func authMethods(ctx context.Context, cfg Config) (*auth, error) {
 			saySo(cfg.Saying, "there is no SSH agent here: "+err.Error())
 		} else {
 			a.agent = conn
-			agentSigners = agent.NewClient(conn).Signers
+			agentSigners = signers
 			saySo(cfg.Saying, "an SSH agent is running")
 		}
 	}
@@ -338,6 +358,9 @@ func authMethods(ctx context.Context, cfg Config) (*auth, error) {
 			})
 		}})
 	}
+	if cfg.KeysOnly {
+		return a, nil
+	}
 	a.ladder = append(a.ladder,
 		rung{method: methodKeyboard, what: "whatever the server asks", build: func() ssh.AuthMethod {
 			return ssh.KeyboardInteractive(keyboardInteractive(ctx, cfg))
@@ -385,17 +408,6 @@ func keyboardInteractive(ctx context.Context, cfg Config) ssh.KeyboardInteractiv
 			Echo:        echo,
 		})
 	}
-}
-
-// UsualKeys reads the private keys in the usual places: the ones that
-// need no passphrase, and the paths of the ones that do.
-//
-// It is what connecting to a machine offers when nothing else is named,
-// and it is exported so that taking over a window offers the same
-// things. A user with one key in ~/.ssh expects it to be used either
-// way.
-func UsualKeys() (plain []ssh.Signer, locked []string, err error) {
-	return identities(Config{})
 }
 
 // identities sorts the key files into the ones that can be read without
@@ -513,60 +525,6 @@ func bannerOf(ctx context.Context, cfg Config) ssh.BannerCallback {
 		return nil
 	}
 }
-
-// AgentKeys are the keys the SSH agent holds, and the closer for the
-// connection to it.
-//
-// Exported for one gridterm reaching another, which offers the same
-// keys the user would reach any other machine with. The caller closes
-// what it is given; a nil closer means there was no agent.
-func AgentKeys() (keys []ssh.Signer, closer io.Closer, err error) {
-	conn, err := dialAgent()
-	if err != nil {
-		return nil, nil, fmt.Errorf("remote: no SSH agent: %w", err)
-	}
-	type answer struct {
-		keys []ssh.Signer
-		err  error
-	}
-	back := make(chan answer, 1)
-	go func() {
-		keys, err := agent.NewClient(conn).Signers()
-		back <- answer{keys: keys, err: err}
-	}()
-	select {
-	case got := <-back:
-		if got.err != nil {
-			return nil, nil, errors.Join(
-				fmt.Errorf("remote: read the SSH agent: %w: %w", ErrAgentSilent, got.err),
-				conn.Close())
-		}
-		return got.keys, conn, nil
-	case <-time.After(agentPatience):
-		// Closing it is what unblocks the read, so the goroutine above
-		// ends rather than being left holding the connection. A close
-		// that fails here is the one place a wedged agent socket shows.
-		return nil, nil, errors.Join(
-			fmt.Errorf("remote: %w: it had %v to say what keys it holds",
-				ErrAgentSilent, agentPatience),
-			conn.Close())
-	}
-}
-
-// ErrAgentSilent marks an agent that was reached and then did not
-// answer, as against one that is not running at all.
-//
-// The difference decides whether the window stops asking: an agent that
-// is not there costs nothing to find out about again, and one that
-// answers nothing costs the wait every time.
-var ErrAgentSilent = errors.New("the SSH agent did not answer")
-
-// agentPatience is how long the SSH agent has to say what it holds.
-//
-// It answers from memory, so this is long only by the standards of that:
-// it is here because an agent that has wedged would otherwise stop a
-// connection for ever, with nothing saying why.
-const agentPatience = 5 * time.Second
 
 // agentListing is how long the agent has to say what keys it holds,
 // which it reads from memory.

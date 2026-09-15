@@ -54,23 +54,7 @@ func (l ListStyle) rowBG(y, rows int) color.RGBA {
 	if l.BGEnd.A == 0 || rows <= 1 {
 		return l.BG
 	}
-	return blend(l.BG, l.BGEnd, min(max(y, 0), rows-1), rows-1)
-}
-
-// blend mixes two colours, at/of the way from the first to the second.
-func blend(from, to color.RGBA, at, of int) color.RGBA {
-	if of <= 0 {
-		return from
-	}
-	mix := func(a, b uint8) uint8 {
-		return uint8(int(a) + (int(b)-int(a))*at/of)
-	}
-	return color.RGBA{
-		R: mix(from.R, to.R),
-		G: mix(from.G, to.G),
-		B: mix(from.B, to.B),
-		A: mix(from.A, to.A),
-	}
+	return grid.Blend(l.BG, l.BGEnd, min(max(y, 0), rows-1), rows-1)
 }
 
 // ListRow is one line.
@@ -150,10 +134,8 @@ type List struct {
 
 	rows []ListRow
 
-	// at is the selected row and top the first one drawn. A list longer
-	// than the box needs both: moving only the selection lets it walk
-	// off the bottom of what is on screen.
-	at, top int
+	// place is the selected row and the first one drawn.
+	place listState
 
 	// current is the key of the row that is in front, which is not the
 	// same as the row the bar is on: the bar is the user's, and they
@@ -171,7 +153,19 @@ type List struct {
 }
 
 // NewList returns an empty list.
-func NewList() *List { return &List{at: -1} }
+func NewList() *List {
+	l := &List{}
+	l.place = listState{
+		at: -1, count: l.rowCount, rows: l.boxRows, selectable: l.notAHeader,
+	}
+	return l
+}
+
+// rowCount, boxRows and notAHeader are what the list looks like now: its
+// rows, the room for them, and the headers the bar may not land on.
+func (l *List) rowCount() int         { return len(l.rows) }
+func (l *List) boxRows() int          { return l.size.Rows }
+func (l *List) notAHeader(i int) bool { return !l.rows[i].Header }
 
 // sameKey compares two row keys.
 //
@@ -193,27 +187,27 @@ func sameKey(a, b any) bool {
 // rows above it come and go while the user is looking at them.
 func (l *List) SetRows(rows []ListRow) {
 	var key any
-	if l.at >= 0 && l.at < len(l.rows) {
-		key = l.rows[l.at].Key
+	if l.place.at >= 0 && l.place.at < len(l.rows) {
+		key = l.rows[l.place.at].Key
 	}
 	l.rows = rows
 
-	l.at = -1
+	l.place.at = -1
 	if key != nil {
 		for i, row := range rows {
 			if !row.Header && sameKey(row.Key, key) {
-				l.at = i
+				l.place.at = i
 				break
 			}
 		}
 	}
-	if l.at < 0 {
-		l.at = l.firstSelectable()
+	if l.place.at < 0 {
+		l.place.at = l.place.first()
 	}
 	// Only clamped, not pulled back to the selection: the panel is
 	// rebuilt every frame, and bringing the selection into view here
 	// would undo the wheel within a frame of the user turning it.
-	l.clamp()
+	l.place.clamp()
 }
 
 // Rows returns what the list is showing.
@@ -233,14 +227,14 @@ func (l *List) Current() any { return l.current }
 
 // Selected returns the row Enter would act on, and whether there is one.
 func (l *List) Selected() (ListRow, bool) {
-	if l.at < 0 || l.at >= len(l.rows) {
+	if l.place.at < 0 || l.place.at >= len(l.rows) {
 		return ListRow{}, false
 	}
-	return l.rows[l.at], true
+	return l.rows[l.place.at], true
 }
 
 // SelectedIndex returns which row is selected, or -1.
-func (l *List) SelectedIndex() int { return l.at }
+func (l *List) SelectedIndex() int { return l.place.at }
 
 // RowTop returns how far down the box the row with a key is drawn, or
 // -1 when there is no such row or it is scrolled out of sight.
@@ -252,7 +246,7 @@ func (l *List) RowTop(key any) int {
 		if !sameKey(row.Key, key) {
 			continue
 		}
-		if y := i - l.top; y >= 0 && y < l.size.Rows {
+		if y := i - l.place.top; y >= 0 && y < l.size.Rows {
 			return y
 		}
 		return -1
@@ -263,7 +257,7 @@ func (l *List) RowTop(key any) int {
 // Move steps the bar through the rows, for a caller that acts on a row
 // and then wants the next one: marking a run of names is one key held
 // down rather than two alternating.
-func (l *List) Move(by int) { l.move(by) }
+func (l *List) Move(by int) { l.place.move(by) }
 
 // Reveal scrolls until the selected row is on screen.
 //
@@ -271,14 +265,14 @@ func (l *List) Move(by int) { l.move(by) }
 // and it would undo the wheel. A caller that has just made the list
 // shorter does need it: the selection is where the user put it, and it
 // has to still be somewhere they can see.
-func (l *List) Reveal() { l.reveal() }
+func (l *List) Reveal() { l.place.ensureVisible() }
 
 // Select moves the selection to the row with a key, reporting whether
 // there is one.
 func (l *List) Select(key any) bool {
 	for i, row := range l.rows {
 		if !row.Header && sameKey(row.Key, key) {
-			l.moveTo(i)
+			l.place.moveTo(i)
 			return true
 		}
 	}
@@ -288,7 +282,7 @@ func (l *List) Select(key any) bool {
 // Layout notes how much room the list has.
 func (l *List) Layout(size Size) {
 	l.size = size
-	l.clamp()
+	l.place.clamp()
 }
 
 // RowPads is the room the list wants around each of its rows, were its
@@ -307,7 +301,7 @@ func (l *List) RowPads(rows int) []grid.Pad {
 	if l.Style.HeaderPad.Empty() || rows <= 0 {
 		return nil
 	}
-	top := min(max(l.top, 0), max(len(l.rows)-rows, 0))
+	top := min(max(l.place.top, 0), max(len(l.rows)-rows, 0))
 	l.pads = l.pads[:0]
 	for y := 0; y < rows; y++ {
 		i := top + y
@@ -340,17 +334,17 @@ func (l *List) HandleKey(ev input.Event) (bool, error) {
 
 	switch ev.Key {
 	case input.KeyUp:
-		l.move(-1)
+		l.place.move(-1)
 	case input.KeyDown:
-		l.move(1)
+		l.place.move(1)
 	case input.KeyPageUp:
-		l.move(-max(l.size.Rows-1, 1))
+		l.place.page(-1)
 	case input.KeyPageDown:
-		l.move(max(l.size.Rows-1, 1))
+		l.place.page(1)
 	case input.KeyHome:
-		l.moveTo(l.firstSelectable())
+		l.place.moveTo(l.place.first())
 	case input.KeyEnd:
-		l.moveTo(l.lastSelectable())
+		l.place.moveTo(l.place.last())
 	case input.KeyEnter, input.KeySpace:
 		return true, l.activate()
 	default:
@@ -374,7 +368,7 @@ func (l *List) HandleMouse(ev input.MouseEvent) (bool, error) {
 		return true, nil
 	}
 
-	row := l.top + ev.Row
+	row := l.place.top + ev.Row
 	if row < 0 || row >= len(l.rows) {
 		// The space below the last row. The press is still the list's:
 		// it puts the keys here.
@@ -393,7 +387,7 @@ func (l *List) HandleMouse(ev input.MouseEvent) (bool, error) {
 		// on.
 		return true, nil
 	}
-	l.moveTo(row)
+	l.place.moveTo(row)
 	return true, l.activate()
 }
 
@@ -415,11 +409,11 @@ func (l *List) paint(v grid.View) {
 	}
 
 	for y := 0; y < rows; y++ {
-		i := l.top + y
+		i := l.place.top + y
 		if i >= len(l.rows) {
 			break
 		}
-		l.paintRow(v.Sub(0, y, cols, 1), l.rows[i], i == l.at, y, rows)
+		l.paintRow(v.Sub(0, y, cols, 1), l.rows[i], i == l.place.at, y, rows)
 	}
 }
 
@@ -509,7 +503,7 @@ func (l *List) paintRow(v grid.View, row ListRow, selected bool, y, rows int) {
 	if row.Header {
 		attr = grid.AttrBold
 	}
-	v.SetString(at, 0, trimTo(row.Text, max(room-at, 0)), fg, bg, attr)
+	v.SetString(at, 0, grid.Trim(row.Text, max(room-at, 0)), fg, bg, attr)
 }
 
 // activate runs whatever the selected row means.
@@ -521,97 +515,9 @@ func (l *List) activate() error {
 	return l.OnActivate(row)
 }
 
-// move steps the selection, skipping the headers and stopping at the
-// ends rather than wrapping: a list you can run off the end of is hard
-// to aim at.
-func (l *List) move(by int) {
-	if by == 0 {
-		return
-	}
-	step := 1
-	if by < 0 {
-		step, by = -1, -by
-	}
-	at := l.at
-	for ; by > 0; by-- {
-		next := l.nextFrom(at, step)
-		if next < 0 {
-			break
-		}
-		at = next
-	}
-	l.moveTo(at)
-}
-
-// moveTo puts the selection on one row and tells whoever is listening.
-func (l *List) moveTo(at int) {
-	if at < 0 || at >= len(l.rows) || l.rows[at].Header || at == l.at {
-		l.reveal()
-		return
-	}
-	l.at = at
-	l.reveal()
-}
-
-// nextFrom returns the next row that can be selected in a direction, or
-// -1 when there is none.
-func (l *List) nextFrom(from, step int) int {
-	for at := from + step; at >= 0 && at < len(l.rows); at += step {
-		if !l.rows[at].Header {
-			return at
-		}
-	}
-	return -1
-}
-
-func (l *List) firstSelectable() int {
-	for i, row := range l.rows {
-		if !row.Header {
-			return i
-		}
-	}
-	return -1
-}
-
-func (l *List) lastSelectable() int {
-	for i := len(l.rows) - 1; i >= 0; i-- {
-		if !l.rows[i].Header {
-			return i
-		}
-	}
-	return -1
-}
-
 // scrollBy moves what is shown without moving the selection, for the
 // wheel.
 func (l *List) scrollBy(by int) {
-	l.top += by
-	l.clamp()
-}
-
-// clamp keeps what is shown within the list, for one that has shrunk or
-// a box that has changed size.
-func (l *List) clamp() {
-	rows := l.size.Rows
-	if rows <= 0 {
-		l.top = 0
-		return
-	}
-	l.top = min(max(l.top, 0), max(len(l.rows)-rows, 0))
-}
-
-// reveal brings the selected row into the box, so Enter always acts on
-// something the user can see. It is what moving the selection does.
-func (l *List) reveal() {
-	l.clamp()
-	rows := l.size.Rows
-	if rows <= 0 || l.at < 0 {
-		return
-	}
-	if l.at < l.top {
-		l.top = l.at
-	}
-	if l.at >= l.top+rows {
-		l.top = l.at - rows + 1
-	}
+	l.place.top += by
+	l.place.clamp()
 }

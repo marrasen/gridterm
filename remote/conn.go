@@ -61,6 +61,16 @@ type Config struct {
 	NoAgent      bool
 	NoIdentities bool
 
+	// KeysOnly offers keys and nothing else, which is what taking over
+	// another gridterm window does: that end accepts no password and no
+	// keyboard-interactive.
+	KeysOnly bool
+
+	// agent opens the SSH agent. A nil one opens the agent running on
+	// this machine; it is set so that a test can hand over one of its
+	// own.
+	agent agentSource
+
 	// Ask reaches the user for a passphrase, a password, a one-time code
 	// or a decision about an unknown host key. A nil one refuses
 	// anything that would need asking: encrypted keys are skipped, no
@@ -292,6 +302,22 @@ func nothingToAuthenticateWith(agentErr error) error {
 		return errors.New(msg)
 	}
 	return fmt.Errorf("%s: %w", msg, agentErr)
+}
+
+// noKeysToOffer explains a take-over that had no key to try, naming the
+// agent's own failure when there was one.
+//
+// Its own wording rather than nothingToAuthenticateWith's, because a
+// password is never offered to another gridterm window and saying there
+// was no way to ask for one would send the user looking for a setting
+// that does not exist.
+func noKeysToOffer(agentErr error) error {
+	const where = "remote: no keys to offer: " +
+		"name a key file, put one in ~/.ssh, or add one to the SSH agent"
+	if agentErr != nil {
+		return fmt.Errorf("%s. The SSH agent could not be read: %w", where, agentErr)
+	}
+	return errors.New(where)
 }
 
 // newConn wraps an authenticated client.

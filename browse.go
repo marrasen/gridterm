@@ -12,6 +12,7 @@ import (
 	"github.com/pkg/sftp"
 
 	"github.com/marrasen/gridterm/conns"
+	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/jobs"
 	"github.com/marrasen/gridterm/meter"
 	"github.com/marrasen/gridterm/ui"
@@ -202,7 +203,7 @@ func (a *app) paneStyle() files.Style {
 		// sits on a ground between the bar and a working key -- dimmer
 		// than one that works, and still lit enough to read.
 		KeyFG: a.colours.FG,
-		OffBG: mix(a.colours.BG, a.colours.FG, 1, 5),
+		OffBG: grid.Blend(a.colours.BG, a.colours.FG, 1, 5),
 		// Red, because a line saying why something failed has to read as
 		// a failure before it is read as words.
 		ErrorFG: a.colours.ANSI[1],

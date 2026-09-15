@@ -608,7 +608,7 @@ func TestPaletteScrollsToKeepTheSelectionInView(t *testing.T) {
 		}
 		g := grid.New(40, 12, color.RGBA{}, color.RGBA{})
 		p.Draw(g.View())
-		if !strings.Contains(rowOf(g, p.lines().Y+p.at-p.top+1), want.Title) {
+		if !strings.Contains(rowOf(g, p.lines().Y+p.place.at-p.place.top+1), want.Title) {
 			t.Fatalf("line %d: %q is not drawn where the selection is", i, want.Title)
 		}
 		p.HandleKey(press(input.KeyDown, 0))
@@ -617,15 +617,15 @@ func TestPaletteScrollsToKeepTheSelectionInView(t *testing.T) {
 	for i := 0; i < len(p.Matches()); i++ {
 		p.HandleKey(press(input.KeyUp, 0))
 	}
-	if p.top != 0 || p.at != 0 {
-		t.Errorf("back at the top, top = %d and at = %d, want 0 and 0", p.top, p.at)
+	if p.place.top != 0 || p.place.at != 0 {
+		t.Errorf("back at the top, top = %d and at = %d, want 0 and 0", p.place.top, p.place.at)
 	}
 }
 
 // drawsSelection reports whether the selected line is one of the drawn
 // ones.
 func (p *Palette) drawsSelection() bool {
-	return p.at >= p.top && p.at < p.top+p.rows()
+	return p.place.at >= p.place.top && p.place.at < p.place.top+p.rows()
 }
 
 // TestPaletteTypingSnapsBackToTheTop checks that a new query gives a new
@@ -634,14 +634,14 @@ func TestPaletteTypingSnapsBackToTheTop(t *testing.T) {
 	p, _ := newTestPalette(t, testCommands("Copy", "Close pane", "Cut"))
 	p.HandleKey(press(input.KeyDown, 0))
 	p.HandleKey(press(input.KeyDown, 0))
-	if p.at == 0 {
+	if p.place.at == 0 {
 		t.Fatal("moving down did not move the selection")
 	}
 
 	typeInto(t, p, "c")
 
-	if p.at != 0 || p.top != 0 {
-		t.Errorf("after typing, at = %d and top = %d, want the best match selected", p.at, p.top)
+	if p.place.at != 0 || p.place.top != 0 {
+		t.Errorf("after typing, at = %d and top = %d, want the best match selected", p.place.at, p.place.top)
 	}
 }
 
@@ -681,7 +681,7 @@ func TestPaletteHighlightsTheSelectedLine(t *testing.T) {
 	p.Draw(g.View())
 
 	box := p.lines()
-	selected := box.Y + 1 + (p.at - p.top)
+	selected := box.Y + 1 + (p.place.at - p.place.top)
 	if got := g.At(box.X+1, selected).BG; got != fg {
 		t.Errorf("the selected line's background = %v, want the selected colour %v", got, fg)
 	}
@@ -836,7 +836,7 @@ func TestPaletteScrollFollowsTheWindow(t *testing.T) {
 
 	if !p.drawsSelection() {
 		t.Errorf("after shrinking the window, at = %d and top = %d: the selection is off screen",
-			p.at, p.top)
+			p.place.at, p.place.top)
 	}
 
 	// Growing must not leave the list scrolled past its end either.
@@ -868,10 +868,10 @@ func TestPaletteClickWhileScrolledRunsTheRightLine(t *testing.T) {
 	for i := 0; i < len(p.Matches()); i++ {
 		p.HandleKey(press(input.KeyDown, 0))
 	}
-	if p.top == 0 {
+	if p.place.top == 0 {
 		t.Fatal("the list did not scroll, so there is nothing to get wrong")
 	}
-	want := p.Matches()[p.top].Command.ID
+	want := p.Matches()[p.place.top].Command.ID
 	box := p.lines()
 
 	// The first line of the list as drawn.
@@ -898,14 +898,14 @@ func TestPaletteTypingWhileScrolledGoesBackToTheTop(t *testing.T) {
 	for i := 0; i < len(p.Matches()); i++ {
 		p.HandleKey(press(input.KeyDown, 0))
 	}
-	if p.top == 0 {
+	if p.place.top == 0 {
 		t.Fatal("the list did not scroll")
 	}
 
 	typeInto(t, p, "c")
 
-	if p.top != 0 || p.at != 0 {
-		t.Errorf("after typing, top = %d and at = %d, want the list back at its start", p.top, p.at)
+	if p.place.top != 0 || p.place.at != 0 {
+		t.Errorf("after typing, top = %d and at = %d, want the list back at its start", p.place.top, p.place.at)
 	}
 }
 

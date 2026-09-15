@@ -2,7 +2,6 @@ package main
 
 import (
 	"image/color"
-	"strings"
 
 	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/input"
@@ -126,35 +125,8 @@ func drawRow(v grid.View, text string, fg, bg color.RGBA) {
 	}
 	blank := grid.Cell{Rune: ' ', FG: fg, BG: bg, Width: 1}
 	v.Set(0, 0, blank)
-	at := v.SetString(1, 0, trimTo(text, max(cols-2, 0)), fg, bg, 0)
+	at := v.SetString(1, 0, grid.TrimTail(text, max(cols-2, 0)), fg, bg, 0)
 	for x := max(at, 1); x < cols; x++ {
 		v.Set(x, 0, blank)
 	}
-}
-
-// trimTo cuts a string to a width in cells, marking where it was cut.
-//
-// By cluster rather than by rune: a grid draws a character and its
-// combining marks in one cell, and cutting between them would leave half
-// a character behind.
-func trimTo(s string, cols int) string {
-	if cols <= 0 {
-		return ""
-	}
-	if grid.StringWidth(s) <= cols {
-		return s
-	}
-	var out strings.Builder
-	room := cols - grid.StringWidth("…")
-	var at int
-	for _, cluster := range grid.Clusters(s) {
-		w := grid.StringWidth(cluster)
-		if at+w > room {
-			break
-		}
-		out.WriteString(cluster)
-		at += w
-	}
-	out.WriteString("…")
-	return out.String()
 }

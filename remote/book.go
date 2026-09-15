@@ -351,6 +351,11 @@ func readBook(path string) ([]Host, error) {
 	if name, dup := firstDuplicate(file.Servers); dup {
 		return nil, fmt.Errorf("remote: the server list %s names %q twice", path, name)
 	}
+	if first, second, addr, dup := firstSharedServeAddr(file.Servers); dup {
+		return nil, fmt.Errorf(
+			"remote: the server list %s saves %q and %q as the window at %s",
+			path, first, second, addr)
+	}
 	// Checked on the way in as well as on the way out, or a file with a
 	// broken route would load clean and then refuse every later change
 	// for a reason the user never touched.
@@ -543,6 +548,11 @@ func readableBack(hosts []Host) error {
 	if name, dup := firstDuplicate(hosts); dup {
 		return fmt.Errorf("remote: will not write the server list: it names %q twice", name)
 	}
+	if first, second, addr, dup := firstSharedServeAddr(hosts); dup {
+		return fmt.Errorf(
+			"remote: will not write the server list: it saves %q and %q as the window at %s",
+			first, second, addr)
+	}
 	if err := checkRoutes(hosts); err != nil {
 		return fmt.Errorf("remote: will not write the server list: %w", err)
 	}
@@ -560,6 +570,27 @@ func firstDuplicate(hosts []Host) (string, bool) {
 		seen[key] = true
 	}
 	return "", false
+}
+
+// firstSharedServeAddr returns two saved windows serving at one
+// address, and that address.
+//
+// One window is one connection, held under the name the list gives its
+// address, so two names for one address would leave one of them naming
+// a connection it cannot reach.
+func firstSharedServeAddr(hosts []Host) (first, second, addr string, shared bool) {
+	seen := make(map[string]string, len(hosts))
+	for _, h := range hosts {
+		if !h.Window {
+			continue
+		}
+		at := strings.ToLower(h.ServeAddr())
+		if was, have := seen[at]; have {
+			return was, h.Name, h.ServeAddr(), true
+		}
+		seen[at] = h.Name
+	}
+	return "", "", "", false
 }
 
 // sortHosts puts the list in the order a user reads it, so the file and

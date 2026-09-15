@@ -111,10 +111,7 @@ func hostItems(about hostFacts) []ui.MenuItem {
 			{Command: "conn.files", Title: "Files"},
 		}
 	}
-	// heldAt as well as the kind: a saved window taken over under
-	// another name is a window in front of the user, whatever the maps
-	// are keyed by.
-	if about.kind == hostWindow || about.heldAt != nil {
+	if about.kind == hostWindow {
 		items := []ui.MenuItem{
 			{Command: "conn.terminal", Title: "Terminal"},
 			{Command: "conn.files", Title: "Files"},

@@ -131,7 +131,7 @@ func (a *app) remoteRows(host string) []ui.ListRow {
 		if !open.HasScreen() {
 			continue
 		}
-		if a.watchingPane(remoteKeyFor(host, open)) != nil {
+		if a.windows.watcher(remoteKeyFor(host, open)) != nil {
 			// There is a pane of this window watching it, with a row of
 			// its own. One thing open should be one row, and the row
 			// that can be put in front and closed is the better one.
@@ -233,7 +233,20 @@ func farNote(pane ui.Size, cols, rows int) string {
 	if cols <= 0 || rows <= 0 || (pane.Cols == cols && pane.Rows == rows) {
 		return ""
 	}
-	return farSize + strconv.Itoa(cols) + "x" + strconv.Itoa(rows)
+	return farSize + sizeText(cols, rows)
+}
+
+// heldNote is what the row of a pane says when somebody watching it has
+// taken its size.
+//
+// The size they set, and how many of them are reading it.
+func heldNote(size ui.Size, n int) string {
+	return farSize + sizeText(size.Cols, size.Rows) + ", " + watchedNote(n)
+}
+
+// sizeText writes a screen size the way both notes say it.
+func sizeText(cols, rows int) string {
+	return strconv.Itoa(cols) + "x" + strconv.Itoa(rows)
 }
 
 // isFarNote reports whether a note is one of ours.

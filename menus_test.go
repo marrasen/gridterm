@@ -23,6 +23,8 @@ func withMenubar(t *testing.T, a *testApp) *ui.Menubar {
 	a.bar = a.newMenubar(a.root.Widget())
 	a.root.SetWidget(a.bar)
 	a.relayout()
+	// The Servers menu reaches the bar from here, the way main does it.
+	a.refreshServers()
 	return a.bar
 }
 

@@ -4,8 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"strings"
+	"time"
+
+	"github.com/pkg/sftp"
 
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/jobs"
@@ -41,12 +45,12 @@ func (a *app) openFilesOn(host string) error {
 		return fmt.Errorf("take over %s first: it is a gridterm window, "+
 			"and its files come over that connection", on.name)
 	}
-	// A saved window already taken over under another name: its files
-	// come over the connection being held, and its pane goes under the
-	// name holding it so the sidebar keeps one heading for it.
+	// A window's pane goes under the name holding the connection, which
+	// is not always the name asked about, so the sidebar keeps one
+	// heading for it.
 	name := on.name
-	if on.heldAt != nil {
-		name = on.heldAt.name
+	if t := on.window; t != nil {
+		name = t.name
 	}
 	f, err := a.filesystem(name)
 	if err != nil {
@@ -606,16 +610,30 @@ func size(n int64) string {
 // old name would not be closed with its connection, and would sit on a
 // session that had gone.
 func (a *app) renamedFiles(was, now string) {
+	for _, f := range a.filesystemsOn(was) {
+		f.Renamed(now)
+	}
+}
+
+// renamedFS is a filesystem that can be told its machine is called
+// something else now.
+type renamedFS interface{ Renamed(string) }
+
+// filesystemsOn are the file panes' filesystems on a machine that can
+// be told so.
+func (a *app) filesystemsOn(host string) []renamedFS {
 	b := a.files
 	if b == nil {
-		return
+		return nil
 	}
+	var out []renamedFS
 	for _, p := range b.view.Panes() {
-		f, ok := p.FS().(interface{ Renamed(string) })
-		if ok && p.FS().Name() == was {
-			f.Renamed(now)
+		f, ok := p.FS().(renamedFS)
+		if ok && p.FS().Name() == host {
+			out = append(out, f)
 		}
 	}
+	return out
 }
 
 // openGoTo asks a file pane for somewhere to go.
@@ -737,3 +755,71 @@ func (a *app) stopJobsOn(on ...vfs.FS) []*jobs.Job {
 	}
 	return stopping
 }
+
+// windowFiles is the filesystem of the machine a window taken over is
+// on, as a browser pane works on it.
+func (a *app) windowFiles(addr string) (vfs.FS, error) {
+	t := a.about(addr).window
+	if t == nil {
+		return nil, fmt.Errorf("this window has not taken over %s", addr)
+	}
+	ch, err := t.win.Files()
+	if err != nil {
+		return nil, err
+	}
+	client, err := sftp.NewClientPipe(ch, ch)
+	if err != nil {
+		// Whatever the far end said about a session it could not start
+		// is the only account of it: the failure happened over there.
+		// It closes the channel on every failure of its own, so that
+		// account has arrived or is about to.
+		if why := ch.Said(); why != "" {
+			return nil, fmt.Errorf("could not read the files of %s: %s", addr, why)
+		}
+		return nil, fmt.Errorf("could not read the files of %s: %w", addr, err)
+	}
+	return vfs.NewSFTP(addr, client, func() error {
+		return closeFilesOver(client, ch)
+	}), nil
+}
+
+// closeFilesOver ends a file session on a window taken over.
+//
+// Closing the SFTP client sends an end of file and then waits for the
+// far end to close the channel. A window that has stopped answering
+// never will, and this runs on the goroutine that draws, so the wait is
+// bounded: after that the channel is closed from here, which is what
+// lets go.
+func closeFilesOver(client, ch io.Closer) error {
+	done := make(chan error, 1)
+	go func() { done <- client.Close() }()
+
+	var errs []error
+	select {
+	case err := <-done:
+		errs = append(errs, err)
+	case <-time.After(filesGrace):
+		errs = append(errs, ch.Close())
+		// Now that the channel has gone, the client's own close can
+		// finish. Waited for rather than abandoned: it holds a
+		// goroutine until it does.
+		errs = append(errs, <-done)
+	}
+	// The client closes the channel as it goes, so this is the path
+	// where it never got that far.
+	errs = append(errs, ch.Close())
+
+	for i, err := range errs {
+		// A channel already closed says so, which is agreement rather
+		// than a failure: this closes it once itself and once through
+		// the client.
+		if errors.Is(err, io.EOF) {
+			errs[i] = nil
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// filesGrace is how long letting go of a window waits for its file
+// session to say goodbye before closing the channel from here.
+const filesGrace = 250 * time.Millisecond

@@ -328,3 +328,51 @@ func TestBookPutFromTwoGoroutines(t *testing.T) {
 		t.Fatalf("the book holds %v, want both", got)
 	}
 }
+
+// Two saved windows serving at one address are not a list to guess at.
+//
+// A window is one connection, held under the name the list gives its
+// address. Two names for one address would leave one of them naming a
+// connection it cannot reach.
+func TestBookRefusesTwoWindowsAtOneAddress(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "servers.json")
+	const both = `{"version":1,"servers":[` +
+		`{"name":"office","address":"10.0.0.5","port":2222,"window":true},` +
+		`{"name":"spare","address":"10.0.0.5","port":2222,"window":true}]}`
+	if err := os.WriteFile(path, []byte(both), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	b, err := LoadBook(path)
+	if err == nil {
+		t.Fatal("it loaded a list that saves one window twice")
+	}
+	for _, want := range []string{"office", "spare", "10.0.0.5:2222"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the failure does not name %q: %v", want, err)
+		}
+	}
+	if b.Err() == nil {
+		t.Error("the book does not keep the reason it is unusable")
+	}
+	// And nothing is repaired behind the user's back.
+	if err := b.Put(Host{Name: "dev", Address: "dev.example"}, ""); err == nil {
+		t.Error("it wrote over a list it could not read")
+	}
+}
+
+// A machine and a window can share an address: one is logged in to and
+// the other is taken over, and neither is the other's connection.
+func TestBookAllowsAMachineAtAWindowsAddress(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "servers.json")
+	b, err := LoadBook(path)
+	if err != nil {
+		t.Fatalf("LoadBook: %v", err)
+	}
+	if err := b.Put(Host{Name: "office", Address: "10.0.0.5", Port: 2222, Window: true}, ""); err != nil {
+		t.Fatalf("save the window: %v", err)
+	}
+	if err := b.Put(Host{Name: "box", Address: "10.0.0.5", Port: 2222}, ""); err != nil {
+		t.Fatalf("save the machine at the same address: %v", err)
+	}
+}

@@ -57,6 +57,34 @@ func typeIntoField(t *testing.T, a *testApp, f *ui.Form, label, text string) {
 	t.Fatalf("focus never reached the %q field", label)
 }
 
+// stepOptions moves the focus onto a field that offers a list and steps
+// it on, with the keys the dialog's own hint names.
+func stepOptions(t *testing.T, a *testApp, f *ui.Form, label string) {
+	t.Helper()
+	at := -1
+	for i, have := range f.Fields() {
+		if have == f.Field(label) {
+			at = i
+			break
+		}
+	}
+	if at < 0 {
+		t.Fatalf("the dialog has no %q field", label)
+	}
+	for i := 0; i < len(f.Fields())+len(f.Buttons())+1; i++ {
+		if got, isButton := f.Focused(); !isButton && got == at {
+			if _, err := a.root.HandleKey(press(input.KeyDown, input.ModCtrl)); err != nil {
+				t.Fatalf("stepping the %q field: %v", label, err)
+			}
+			return
+		}
+		if _, err := a.root.HandleKey(press(input.KeyTab, 0)); err != nil {
+			t.Fatalf("to the %q field: %v", label, err)
+		}
+	}
+	t.Fatalf("focus never reached the %q field", label)
+}
+
 // The whole path: add a server, and find it on the menu and in the
 // palette afterwards.
 func TestAddServerRegistersItsCommands(t *testing.T) {
@@ -873,12 +901,12 @@ func TestASavedWindowIsTakenOverByName(t *testing.T) {
 	}
 	answer(t, client, "Connect")
 	waitFor(t, client, "the window to be taken over", func() bool {
-		return client.windows["statio"] != nil
+		return client.windows.named("statio") != nil
 	})
 
 	// Under the name it was given, not under its address: one heading
 	// for it, not two.
-	if client.windows[addr] != nil {
+	if client.windows.named(addr) != nil {
 		t.Fatal("it is also held under its address")
 	}
 	shown := strings.Join(panelText(client, time.Now()), "\n")
@@ -966,7 +994,7 @@ func TestAWindowAlreadyTakenOverIsNotTakenOverTwice(t *testing.T) {
 	}
 	answer(t, client, "Connect")
 	waitFor(t, client, "the window to be taken over", func() bool {
-		return client.windows[addr] != nil
+		return client.windows.named(addr) != nil
 	})
 
 	// Saved after the fact, so the name it goes by and the name the
@@ -982,7 +1010,7 @@ func TestAWindowAlreadyTakenOverIsNotTakenOverTwice(t *testing.T) {
 	if err := client.takeOver(addr, keyFile, nil); err == nil {
 		t.Fatal("it took over the same window twice")
 	}
-	if n := len(client.windows); n != 1 {
+	if n := client.windows.count(); n != 1 {
 		t.Fatalf("%d windows are held, want the one", n)
 	}
 }
@@ -1013,7 +1041,7 @@ func TestRenamingATakenOverWindowMovesItsConnection(t *testing.T) {
 	}
 	answer(t, client, "Connect")
 	waitFor(t, client, "the window to be taken over", func() bool {
-		return client.windows["statio"] != nil
+		return client.windows.named("statio") != nil
 	})
 
 	if err := client.openEditServer("statio"); err != nil {
@@ -1024,12 +1052,12 @@ func TestRenamingATakenOverWindowMovesItsConnection(t *testing.T) {
 	pressButton(t, client, f, "Save")
 	client.pump.run()
 
-	if client.windows["statio"] != nil {
+	if client.windows.named("statio") != nil {
 		t.Fatal("the connection is still held under the old name")
 	}
-	t2 := client.windows["m-statio"]
+	t2 := client.windows.named("m-statio")
 	if t2 == nil {
-		t.Fatalf("the connection did not follow the rename: %v", mapKeys(client.windows))
+		t.Fatalf("the connection did not follow the rename: %v", client.windows.names())
 	}
 	if got := client.about("m-statio").kind; got != hostWindow {
 		t.Errorf("under its new name it is a %v, want a window", got)
@@ -1038,7 +1066,7 @@ func TestRenamingATakenOverWindowMovesItsConnection(t *testing.T) {
 	if err := client.dropWindow("m-statio"); err != nil {
 		t.Fatalf("let go of it: %v", err)
 	}
-	if client.windows["m-statio"] != nil {
+	if client.windows.named("m-statio") != nil {
 		t.Fatal("it is still held")
 	}
 }
@@ -1222,7 +1250,7 @@ func TestASavedWindowIsTakenOverHoweverItIsAskedFor(t *testing.T) {
 			}
 			answer(t, client, "Connect")
 			waitFor(t, client, "the window to be taken over", func() bool {
-				return client.windows["statio"] != nil
+				return client.windows.named("statio") != nil
 			})
 			if n := len(host.serving.clients()); n == 0 {
 				t.Fatal("the serving window saw no client")
@@ -1312,4 +1340,42 @@ func callersOf(t *testing.T, snippets ...string) []string {
 		}
 	}
 	return out
+}
+
+// Taking a window over changes what the palette offers on it, in the
+// frame it is taken over.
+//
+// The rebuild is skipped when nothing the commands are built from has
+// changed, and taking a window over changes no name. So the palette
+// went on offering to take over a window this one was already holding,
+// for the rest of the session.
+func TestTakingAWindowOverChangesWhatThePaletteOffers(t *testing.T) {
+	_, client, addr, keyFile := aServingWindow(t)
+	saveWindowFromTheDialog(t, client, "statio", addr, keyFile)
+
+	id := termPrefix + remote.CommandName("statio")
+	if got := commandTitle(t, client, id); got != "Take over statio" {
+		t.Fatalf("before it is taken over the palette offers %q", got)
+	}
+
+	// The plus on its row, and the line that takes it over.
+	clickTerminalLine(t, client, "statio")
+	waitFor(t, client, "the window to be taken over", func() bool {
+		return client.windows.count() == 1
+	})
+
+	if got := commandTitle(t, client, id); got != "Open a terminal on statio" {
+		t.Errorf("the palette still offers %q on a window this one is holding", got)
+	}
+}
+
+// commandTitle is what the palette lists a command as. The Servers menu
+// shows a different one for the same machine: "Connect to it".
+func commandTitle(t *testing.T, a *testApp, id string) string {
+	t.Helper()
+	cmd, ok := a.root.Commands.Lookup(id)
+	if !ok {
+		t.Fatalf("there is no command %q", id)
+	}
+	return cmd.Title
 }

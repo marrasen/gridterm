@@ -145,32 +145,26 @@ func (ta *testApp) copiedText() string {
 func newTestApp(t *testing.T, cols, rows int) *testApp {
 	t.Helper()
 	ta := &testApp{app: &app{
-		fontSize:     defaultFontSize,
-		colours:      vt.DefaultPalette(),
-		scrollback:   64,
-		panes:        make(map[*term.Terminal]*conns.Entry),
-		ended:        make(map[*term.Terminal]bool),
-		exits:        make(chan struct{}, exitQueue),
-		lastSize:     [2]int{cols, rows},
-		registry:     conns.New(),
-		rates:        make(map[*conns.Entry]*meter.Rate),
-		machines:     make(map[string]*machine),
-		opening:      make(map[string]*dialling),
-		windows:      make(map[string]*taken),
-		serving:      newServing(),
-		paneOnWindow: make(map[*term.Terminal]*taken),
-		watching:     make(map[*term.Terminal]remoteKey),
-		agents:       newAgents(),
-		kept:         make(map[*term.Terminal]bool),
-		paneOn:       make(map[*term.Terminal]*machine),
-		tunnels:      make(map[*conns.Entry]*tunnel),
-		queue:        jobs.New(1),
-		jobs:         make(map[*conns.Entry]*jobs.Job),
-		asking:       make(map[chan jobs.Choice]func()),
+		fontSize:   defaultFontSize,
+		colours:    vt.DefaultPalette(),
+		scrollback: 64,
+		panes:      make(map[*term.Terminal]*conns.Entry),
+		ended:      make(map[*term.Terminal]bool),
+		exits:      make(chan struct{}, exitQueue),
+		lastSize:   [2]int{cols, rows},
+		registry:   conns.New(),
+		rates:      make(map[*conns.Entry]*meter.Rate),
+		machines:   make(map[string]*machine),
+		opening:    make(map[string]*dialling),
+		serving:    newServing(),
+		agents:     newAgents(),
+		kept:       make(map[*term.Terminal]bool),
+		paneOn:     make(map[*term.Terminal]*machine),
+		tunnels:    make(map[*conns.Entry]*tunnel),
+		queue:      jobs.New(1),
+		jobs:       make(map[*conns.Entry]*jobs.Job),
+		asking:     make(map[chan jobs.Choice]func()),
 	}}
-	// Long enough to be a handshake and short enough that a test which
-	// waits one out is not a test that waits twenty seconds.
-	ta.reachPatience = 300 * time.Millisecond
 	// A clipboard of its own. Without this every test that copies
 	// something would overwrite the clipboard of whoever ran it.
 	ta.clip.write = func(s string) error {
@@ -197,12 +191,16 @@ func newTestApp(t *testing.T, cols, rows int) *testApp {
 		t.Fatalf("server list: %v", err)
 	}
 	ta.book = book
+	ta.windows = newWindows(book)
+	// Long enough to be a handshake and short enough that a test which
+	// waits one out is not a test that waits twenty seconds.
+	ta.windows.patience = 300 * time.Millisecond
 	// The windows it reaches are recorded in a file of the test's own.
 	// The real one belongs to whoever is running the tests, and a test
 	// that wrote to it would fill it with the loopback ports of servers
 	// that existed for a tenth of a second -- and leave keys behind to
 	// raise a false alarm if a port ever came round again.
-	ta.knownWindowsAt = filepath.Join(t.TempDir(), "known_windows")
+	ta.windows.knownAt = filepath.Join(t.TempDir(), "known_windows")
 	ta.newSession = func(int, int) (session.Session, error) {
 		sess := newPipeSession()
 		ta.shells = append(ta.shells, sess)

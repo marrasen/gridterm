@@ -82,15 +82,12 @@ type hostFacts struct {
 
 	// window, machine and dialling are what stands behind the name.
 	// Whichever the kind names is set; the others are nil.
+	//
+	// A saved name is also looked for under the list's own spelling of
+	// it, because the list folds case and the maps do not.
 	window   *taken
 	machine  *machine
 	dialling *dialling
-
-	// heldAt is the window already taken over at this saved window's
-	// address, whatever name it is held under. A window taken over by
-	// address and saved afterwards is held under the address, so the
-	// name alone does not say whether it is held.
-	heldAt *taken
 }
 
 // held says the window is holding something under this name: a
@@ -102,7 +99,7 @@ func (f hostFacts) held() bool {
 // toTakeOver says the name is a gridterm window this one is not holding
 // yet, so asking for a terminal on it means taking it over.
 func (f hostFacts) toTakeOver() bool {
-	return f.serves && f.kind != hostWindow && f.heldAt == nil
+	return f.serves && f.window == nil
 }
 
 // record clones the server list's entry for the name out of the book,
@@ -128,14 +125,14 @@ func (a *app) about(host string) hostFacts {
 	f := hostFacts{
 		a:        a,
 		name:     host,
-		window:   a.windows[host],
+		window:   a.windows.named(host),
 		machine:  a.machines[host],
 		dialling: a.opening[host],
 	}
 	if k, saved := a.book.Kind(host); saved {
 		f.saved, f.serves, f.spelling = true, k.Window, k.Name
-		if k.Window {
-			f.heldAt = a.windowAt(k.Serve)
+		if k.Window && f.window == nil {
+			f.window = a.windows.named(k.Name)
 		}
 	}
 

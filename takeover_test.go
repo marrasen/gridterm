@@ -9,7 +9,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -21,10 +20,12 @@ import (
 
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/grid"
+	"github.com/marrasen/gridterm/input"
 	"github.com/marrasen/gridterm/internal/sshtest"
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/serve"
 	"github.com/marrasen/gridterm/ui"
+	"github.com/marrasen/gridterm/ui/files"
 	"github.com/marrasen/gridterm/ui/term"
 	"github.com/marrasen/gridterm/vfs"
 )
@@ -102,7 +103,7 @@ func TestTakingOverAWindowOpensAPaneOnIt(t *testing.T) {
 	answer(t, client, "Connect")
 
 	waitFor(t, client, "the window to be taken over", func() bool {
-		return client.windows[host.serving.addr()] != nil && len(client.panes) > panes
+		return client.windows.named(host.serving.addr()) != nil && len(client.panes) > panes
 	})
 	if got := len(host.serving.clients()); got != 1 {
 		t.Errorf("%d clients on the serving window, want one", got)
@@ -140,14 +141,14 @@ func TestLettingGoOfATakenWindowTakesItsPanes(t *testing.T) {
 	}
 	answer(t, client, "Connect")
 	waitFor(t, client, "the window to be taken over", func() bool {
-		return client.windows[addr] != nil && len(client.panes) > panes
+		return client.windows.named(addr) != nil && len(client.panes) > panes
 	})
 
 	if err := client.dropWindow(addr); err != nil {
 		t.Fatalf("drop: %v", err)
 	}
 
-	if client.windows[addr] != nil {
+	if client.windows.named(addr) != nil {
 		t.Error("the window is still held")
 	}
 	if got := len(client.panes); got != panes {
@@ -178,7 +179,7 @@ func TestTakingOverAWindowThatIsNotThereFails(t *testing.T) {
 	if got := paneText(pane); !strings.Contains(got, "127.0.0.1:1") {
 		t.Errorf("it does not say which machine: %q", got)
 	}
-	if client.windows["127.0.0.1:1"] != nil {
+	if client.windows.named("127.0.0.1:1") != nil {
 		t.Error("a window that answered nothing was held anyway")
 	}
 }
@@ -207,7 +208,7 @@ func TestTheServedWindowSaysItIsBeingServed(t *testing.T) {
 	}
 	answer(t, client, "Connect")
 	waitFor(t, client, "the window to be taken over", func() bool {
-		return client.windows[addr] != nil
+		return client.windows.named(addr) != nil
 	})
 
 	waitFor(t, host, "the served window to say so", func() bool {
@@ -270,10 +271,10 @@ func TestAKeyFromTheAgentCanStillSign(t *testing.T) {
 		t.Fatalf("write the known window: %v", err)
 	}
 
-	w, err := reachWindow(context.Background(), reach{
-		addr: a.serving.addr(), ring: a.keys,
-		known: func() (string, error) { return known, nil },
-		agent: func() ([]ssh.Signer, io.Closer, error) {
+	w, err := remote.ReachWindow(context.Background(), remote.Reach{
+		Addr: a.serving.addr(), Ring: a.keys,
+		Known: func() (string, error) { return known, nil },
+		Agent: func() ([]ssh.Signer, io.Closer, error) {
 			return []ssh.Signer{shut}, shut, nil
 		},
 	})
@@ -307,24 +308,6 @@ func (s *shutting) Sign(rand io.Reader, data []byte) (*ssh.Signature, error) {
 }
 
 func (s *shutting) Close() error { s.closed = true; return nil }
-
-// With no keys anywhere, the reason says which: an agent that answered
-// and failed is a different thing to go and fix from no agent at all.
-func TestNoKeysSaysWhyThereAreNone(t *testing.T) {
-	a := newTestApp(t, 90, 30)
-
-	_, _, err := keysFor(context.Background(), "", a.keys, nil,
-		func() ([]ssh.Signer, io.Closer, error) {
-			return nil, nil, errors.New("the agent said no")
-		}, nil)
-
-	if err == nil {
-		t.Fatal("it found keys where there are none")
-	}
-	if !strings.Contains(err.Error(), "the agent said no") {
-		t.Errorf("it said %v, without saying why there were none", err)
-	}
-}
 
 // Taking over the same window twice at once asks which one to keep.
 //
@@ -424,7 +407,7 @@ func TestGivingUpOnAWindowLeavesNothing(t *testing.T) {
 func TestAPaneClosedOnItsOwnIsForgotten(t *testing.T) {
 	_, client, addr := twoWindows(t)
 	var pane *term.Terminal
-	for p, on := range client.paneOnWindow {
+	for p, on := range client.windows.from {
 		if on.name == addr {
 			pane = p
 		}
@@ -437,8 +420,8 @@ func TestAPaneClosedOnItsOwnIsForgotten(t *testing.T) {
 		t.Fatalf("close the pane: %v", err)
 	}
 
-	if len(client.paneOnWindow) != 0 {
-		t.Errorf("%d panes are still recorded", len(client.paneOnWindow))
+	if client.windows.drawn() != 0 {
+		t.Errorf("%d panes are still recorded", client.windows.drawn())
 	}
 	if err := client.dropWindow(addr); err != nil {
 		t.Errorf("letting go of the window said %v", err)
@@ -457,10 +440,10 @@ func TestAWindowThatQuitsIsLetGoOf(t *testing.T) {
 	}
 
 	waitFor(t, client, "the window to be let go of", func() bool {
-		return client.windows[addr] == nil
+		return client.windows.named(addr) == nil
 	})
-	if len(client.paneOnWindow) != 0 {
-		t.Errorf("%d panes are still drawn from it", len(client.paneOnWindow))
+	if client.windows.drawn() != 0 {
+		t.Errorf("%d panes are still drawn from it", client.windows.drawn())
 	}
 }
 
@@ -501,7 +484,7 @@ func TestTheCommandsOnAWindowReachTheWindow(t *testing.T) {
 	if err := client.disconnectHere(); err != nil {
 		t.Fatalf("close the connection: %v", err)
 	}
-	if client.windows[addr] != nil {
+	if client.windows.named(addr) != nil {
 		t.Error("the window is still held")
 	}
 }
@@ -536,7 +519,7 @@ func TestShuttingDownHangsUpOnEveryWindow(t *testing.T) {
 		t.Fatalf("close: %v", err)
 	}
 
-	if client.windows[addr] != nil {
+	if client.windows.named(addr) != nil {
 		t.Error("a window is still held")
 	}
 	waitFor(t, host, "the serving window to see it go", func() bool {
@@ -546,7 +529,18 @@ func TestShuttingDownHangsUpOnEveryWindow(t *testing.T) {
 
 // twoWindows is one window serving and another that has taken it over,
 // with a pane open on it.
+//
+// Both are 90x30, so a pane one of them watches is held at exactly the
+// room the other has for it, and its row says only how many are
+// watching. A test about the size a watcher takes asks for two sizes.
 func twoWindows(t *testing.T) (host, client *testApp, addr string) {
+	t.Helper()
+	return twoWindowsSized(t, 90, 30)
+}
+
+// twoWindowsSized is twoWindows with the taking-over window a size of
+// the test's choosing, for a test about the size a watcher takes.
+func twoWindowsSized(t *testing.T, cols, rows int) (host, client *testApp, addr string) {
 	t.Helper()
 	host = newTestApp(t, 90, 30)
 	withDialogs(t, host)
@@ -558,7 +552,7 @@ func twoWindows(t *testing.T) (host, client *testApp, addr string) {
 	}
 	addr = host.serving.addr()
 
-	client = newTestApp(t, 90, 30)
+	client = newTestApp(t, cols, rows)
 	withDialogs(t, client)
 	withPanel(t, client)
 	panes := len(client.panes)
@@ -567,7 +561,7 @@ func twoWindows(t *testing.T) (host, client *testApp, addr string) {
 	}
 	answer(t, client, "Connect")
 	waitFor(t, client, "a pane on the other window", func() bool {
-		return client.windows[addr] != nil && len(client.panes) > panes
+		return client.windows.named(addr) != nil && len(client.panes) > panes
 	})
 	return host, client, addr
 }
@@ -593,12 +587,12 @@ func TestTheSidebarShowsWhatTheOtherWindowHasOpen(t *testing.T) {
 
 	// The serving window now has two things open, and says so.
 	waitFor(t, client, "the other window to say it has two open", func() bool {
-		return len(client.windows[addr].win.Opens()) == 2
+		return len(client.windows.named(addr).win.Opens()) == 2
 	})
 
 	// And this window shows a row for each, under the window itself.
 	client.refreshPanel(panelNow)
-	want := len(client.windows[addr].win.Opens())
+	want := len(client.windows.named(addr).win.Opens())
 	var shown int
 	for _, row := range client.panel.Rows() {
 		if key, ok := row.Key.(remoteKey); ok && key.window == addr {
@@ -948,7 +942,7 @@ func TestARowKeepsItsNameWhenSomethingElseCloses(t *testing.T) {
 	}
 	waitForBoth(t, host, client, "the other window to say it has one less", func() bool {
 		host.refreshPanel(panelNow)
-		for _, open := range client.windows[addr].win.Opens() {
+		for _, open := range client.windows.named(addr).win.Opens() {
 			if open.ID == row.id && open.Label == "the-one-i-want" {
 				return true
 			}
@@ -979,7 +973,7 @@ func TestTheSizeOfAScreenOverThereTravels(t *testing.T) {
 	var open serve.Open
 	waitForBoth(t, host, client, "a row with a size on it", func() bool {
 		host.refreshPanel(panelNow)
-		for _, o := range client.windows[addr].win.Opens() {
+		for _, o := range client.windows.named(addr).win.Opens() {
 			if o.Cols > 0 && o.Rows > 0 {
 				open = o
 				return true
@@ -1008,7 +1002,7 @@ func TestWhatIsOpenIsToldWithTheSidebarShut(t *testing.T) {
 
 	waitForBoth(t, host, client, "the name to reach the other window", func() bool {
 		host.refreshPanel(panelNow)
-		for _, o := range client.windows[addr].win.Opens() {
+		for _, o := range client.windows.named(addr).win.Opens() {
 			if o.Label == "named-while-shut" {
 				return true
 			}
@@ -1427,7 +1421,7 @@ func TestGivingUpOnAWindowThatIsNotAnsweringLetsItGo(t *testing.T) {
 	}
 	pane := newestPane(t, a)
 	waitFor(t, a, "the pane to say it is connecting", func() bool {
-		return strings.Contains(paneText(pane), stepConnect)
+		return strings.Contains(paneText(pane), "connecting")
 	})
 
 	// What the user does: close the pane, which is what gives up.
@@ -1487,8 +1481,8 @@ func TestThePaneSaysWhatItIsDoing(t *testing.T) {
 	waitFor(t, a, "the pane to say what it is doing", func() bool {
 		got := paneText(pane)
 		return strings.Contains(got, "taking over "+addr) &&
-			strings.Contains(got, stepKeys) &&
-			strings.Contains(got, stepConnect)
+			strings.Contains(got, "finding a key to offer") &&
+			strings.Contains(got, "connecting")
 	})
 }
 
@@ -1592,177 +1586,6 @@ func TestWaitingForAWindowOpensATerminalOnIt(t *testing.T) {
 	}
 }
 
-// Taking over a window leaves an agent alone once it is known not to
-// answer, the same as connecting to a machine does.
-//
-// It has its own way of reading the agent, and it went on paying the
-// wait every time while every other connection had stopped.
-func TestTakingOverAWindowLeavesASilentAgentAlone(t *testing.T) {
-	ring := remote.NewRing()
-	ring.AgentGaveUp(errors.New("it had 10s to say what keys it holds and did not"))
-
-	asked := false
-	_, _, err := keysFor(t.Context(), "", ring, nil,
-		func() ([]ssh.Signer, io.Closer, error) {
-			asked = true
-			return nil, nil, nil
-		}, nil)
-	if asked {
-		t.Fatal("it asked an agent that is known not to answer")
-	}
-	if err == nil || !strings.Contains(err.Error(), "did not") {
-		t.Fatalf("keysFor = %v, want it to say why there are no keys", err)
-	}
-}
-
-// An agent that is not running is not held against it there either.
-func TestTakingOverAWindowDoesNotHoldAMissingAgentAgainstIt(t *testing.T) {
-	ring := remote.NewRing()
-	_, _, err := keysFor(t.Context(), "", ring, nil,
-		func() ([]ssh.Signer, io.Closer, error) {
-			return nil, nil, errors.New("remote: no SSH agent: open the pipe: not found")
-		}, nil)
-	if err == nil {
-		t.Fatal("it found keys where there are none")
-	}
-	if why := ring.AgentTrouble(); why != nil {
-		t.Fatalf("it will not ask the agent again because %v", why)
-	}
-}
-
-// homeWith puts a private key in the usual place and points the home
-// directory at it, so a test sees what a user's ~/.ssh looks like.
-func homeWith(t *testing.T, name, from string) {
-	t.Helper()
-	home := t.TempDir()
-	dir := filepath.Join(home, ".ssh")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		t.Fatalf("make .ssh: %v", err)
-	}
-	if from != "" {
-		b, err := os.ReadFile(from)
-		if err != nil {
-			t.Fatalf("read the key: %v", err)
-		}
-		if err := os.WriteFile(filepath.Join(dir, name), b, 0o600); err != nil {
-			t.Fatalf("write the key: %v", err)
-		}
-	}
-	if runtime.GOOS == "windows" {
-		t.Setenv("USERPROFILE", home)
-		return
-	}
-	t.Setenv("HOME", home)
-}
-
-// Taking over a window offers the key files in the usual places.
-//
-// It offered only what was already unlocked and what the agent held.
-// A user with one key in ~/.ssh and an agent that says nothing was told
-// there were no keys to offer, when the key that works was sitting
-// there.
-func TestTakingOverAWindowOffersTheUsualKeys(t *testing.T) {
-	homeWith(t, "id_ed25519", sshtest.WriteKey(t))
-
-	keys, closer, err := keysFor(t.Context(), "", remote.NewRing(), nil,
-		func() ([]ssh.Signer, io.Closer, error) {
-			return nil, nil, errors.New("remote: no SSH agent here")
-		}, nil)
-	if closer != nil {
-		_ = closer.Close()
-	}
-	if err != nil {
-		t.Fatalf("keysFor: %v", err)
-	}
-	if len(keys) != 1 {
-		t.Fatalf("it found %d keys, want the one in ~/.ssh", len(keys))
-	}
-}
-
-// A key in the usual place that needs a passphrase is asked about, once
-// there is nothing else left to offer.
-func TestTakingOverAWindowAsksForALockedUsualKey(t *testing.T) {
-	const passphrase = "open sesame"
-	homeWith(t, "id_ed25519", sshtest.WriteEncryptedKey(t, passphrase))
-
-	asked := 0
-	ask := &countingAsk{pass: passphrase, asked: &asked}
-	keys, closer, err := keysFor(t.Context(), "", remote.NewRing(), ask,
-		func() ([]ssh.Signer, io.Closer, error) {
-			return nil, nil, errors.New("remote: no SSH agent here")
-		}, nil)
-	if closer != nil {
-		_ = closer.Close()
-	}
-	if err != nil {
-		t.Fatalf("keysFor: %v", err)
-	}
-	if len(keys) != 1 {
-		t.Fatalf("it found %d keys, want the one in ~/.ssh", len(keys))
-	}
-	if asked != 1 {
-		t.Fatalf("it asked for a passphrase %d times, want once", asked)
-	}
-}
-
-// With nothing anywhere, it says where it looked.
-func TestTakingOverAWindowWithNoKeysSaysWhereToPutOne(t *testing.T) {
-	homeWith(t, "", "")
-
-	_, _, err := keysFor(t.Context(), "", remote.NewRing(), nil,
-		func() ([]ssh.Signer, io.Closer, error) { return nil, nil, nil }, nil)
-	if err == nil {
-		t.Fatal("it found keys where there are none")
-	}
-	for _, want := range []string{"name a key file", "~/.ssh", "SSH agent"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("the failure does not mention %q: %v", want, err)
-		}
-	}
-}
-
-// countingAsk answers a passphrase and counts how often it was asked.
-type countingAsk struct {
-	remote.Ask
-	pass  string
-	asked *int
-}
-
-func (c *countingAsk) Passphrase(context.Context, string) (string, error) {
-	*c.asked++
-	return c.pass, nil
-}
-
-// Finding a key says what it looked at, so a window that could not be
-// reached says why rather than only that it could not.
-func TestFindingAKeySaysWhatItLookedAt(t *testing.T) {
-	homeWith(t, "id_ed25519", sshtest.WriteKey(t))
-	ring := remote.NewRing()
-	ring.AgentGaveUp(errors.New("it had 5s to say what keys it holds and did not"))
-
-	var said []string
-	_, closer, err := keysFor(t.Context(), "", ring, nil,
-		func() ([]ssh.Signer, io.Closer, error) { return nil, nil, nil },
-		func(what string) { said = append(said, what) })
-	if closer != nil {
-		_ = closer.Close()
-	}
-	if err != nil {
-		t.Fatalf("keysFor: %v", err)
-	}
-
-	account := strings.Join(said, "\n")
-	for _, want := range []string{
-		"leaving the SSH agent alone",
-		"Forget unlocked keys",
-		"1 private keys in the usual places need no passphrase",
-	} {
-		if !strings.Contains(account, want) {
-			t.Errorf("the account does not say %q:\n%s", want, account)
-		}
-	}
-}
-
 // A row on the other window with no screen cannot be watched, and
 // asking leaves nothing behind.
 //
@@ -1782,7 +1605,7 @@ func TestARowWithNoScreenCannotBeWatched(t *testing.T) {
 		host.refreshPanel(time.Now())
 		var screens int
 		var found bool
-		for _, open := range client.windows[addr].win.Opens() {
+		for _, open := range client.windows.named(addr).win.Opens() {
 			if open.HasScreen() {
 				screens++
 			}
@@ -1857,7 +1680,7 @@ func TestTheScreensOfAWindowAreGroupedByMachine(t *testing.T) {
 	host.connectAs("margit", host.prepare(serverConfig(t, s)))
 	waitForBoth(t, host, client, "a pane on the machine over there", func() bool {
 		host.refreshPanel(time.Now())
-		for _, open := range client.windows[addr].win.Opens() {
+		for _, open := range client.windows.named(addr).win.Opens() {
 			if open.Host == "margit" && open.HasScreen() {
 				return true
 			}
@@ -1888,5 +1711,501 @@ func TestTheScreensOfAWindowAreGroupedByMachine(t *testing.T) {
 		if strings.Contains(text, "margit: ") {
 			t.Errorf("a row repeats the machine its heading names: %q", text)
 		}
+	}
+}
+
+// takeOverFromTheDialog takes a window over the way a user does: the
+// Servers menu, the take-over line, and the address typed into it.
+func takeOverFromTheDialog(t *testing.T, a *testApp, addr, keyFile string) *term.Terminal {
+	t.Helper()
+	m := openBarMenu(t, a, "Servers")
+	chooseMenuItem(t, m, "serve.takeOver")
+	f := waitForDialog(t, a, "Take over a window")
+	typeIntoField(t, a, f, "Machine", addr)
+	typeIntoField(t, a, f, "Key file", keyFile)
+	pressButton(t, a, f, "Take over")
+	return paneOnTheWindow(t, a)
+}
+
+// paneOnTheWindow is the one pane drawn from the one window this test's
+// app has taken over.
+func paneOnTheWindow(t *testing.T, a *testApp) *term.Terminal {
+	t.Helper()
+	waitFor(t, a, "a pane on the window taken over", func() bool {
+		return a.windows.count() == 1 && a.windows.drawn() == 1
+	})
+	held := a.windows.named(a.windows.names()[0])
+	panes := a.windows.drawnFrom(held)
+	if len(panes) != 1 {
+		t.Fatalf("%d panes are drawn from the window, want the one", len(panes))
+	}
+	return panes[0]
+}
+
+// saveWindowFromTheDialog saves a gridterm window in the server list the
+// way a user does: the Servers menu, the add line, and the fields filled
+// in, with the kind stepped by the keys the dialog names.
+func saveWindowFromTheDialog(t *testing.T, a *testApp, name, addr, keyFile string) {
+	t.Helper()
+	f := addServerFromTheDialog(t, a, name, addr, keyFile)
+	pressButton(t, a, f, "Save")
+	a.pump.run()
+}
+
+// addServerFromTheDialog opens the add dialog and fills it in for a
+// gridterm window, without pressing anything.
+func addServerFromTheDialog(t *testing.T, a *testApp, name, addr, keyFile string) *ui.Form {
+	t.Helper()
+	m := openBarMenu(t, a, "Servers")
+	chooseMenuItem(t, m, "server.add")
+	f := waitForDialog(t, a, "Add a server")
+	typeIntoField(t, a, f, "Name", name)
+	typeIntoField(t, a, f, "Server", addr)
+	typeIntoField(t, a, f, "Key file", keyFile)
+	stepOptions(t, a, f, "Kind")
+	if got := f.Field("Kind").Text(); got != kindWindow {
+		t.Fatalf("the kind stepped to %q, want %q", got, kindWindow)
+	}
+	return f
+}
+
+// forgetFromThePlus forgets a saved machine the way a user does: the
+// plus on its row, the forget line, and the confirmation.
+func forgetFromThePlus(t *testing.T, a *testApp, host string) {
+	t.Helper()
+	chooseMenuItem(t, clickPlus(t, a, host), "server.forget")
+	f := openDialog(t, a)
+	pressButton(t, a, f, "Remove")
+	a.pump.run()
+}
+
+// closeMenu takes down whatever menu is up, the way Escape does.
+func closeMenu(t *testing.T, a *testApp) {
+	t.Helper()
+	if _, err := a.root.HandleKey(press(input.KeyEscape, 0)); err != nil {
+		t.Fatalf("closing the menu: %v", err)
+	}
+	a.pump.run()
+}
+
+// offersTheWindowsLines checks a name stands for a window this one is
+// holding, and that its plus offers what a window offers.
+func offersTheWindowsLines(t *testing.T, a *testApp, host string) {
+	t.Helper()
+	if a.about(host).toTakeOver() {
+		t.Errorf("%q still asks to be taken over", host)
+	}
+	menu := clickPlus(t, a, host)
+	for _, want := range []string{"conn.terminal", "conn.files", "conn.disconnect"} {
+		if !offers(menu, want) {
+			t.Errorf("the plus on %q does not offer %s: %v", host, want, menuCommands(menu))
+		}
+	}
+	closeMenu(t, a)
+}
+
+// filedUnder checks the sidebar has one heading for a window taken over,
+// with the note and the pane under it and nothing left under the name it
+// had. An empty was skips that last check.
+func filedUnder(t *testing.T, a *testApp, pane *term.Terminal, now, note, was string) {
+	t.Helper()
+	a.refreshPanel(panelNow)
+	row, ok := panelRow(a, hostKey(now))
+	if !ok {
+		t.Fatalf("the sidebar has no heading for %q: %v", now, panelText(a, panelNow))
+	}
+	if row.Note != note {
+		t.Errorf("the heading for %q says %q, want %q", now, row.Note, note)
+	}
+	if was != "" {
+		if _, there := panelRow(a, hostKey(was)); there {
+			t.Errorf("the sidebar still has a heading for %q: %v", was, panelText(a, panelNow))
+		}
+	}
+	if got := a.panes[pane].Host; got != now {
+		t.Errorf("the pane's row is filed under %q, want %q", got, now)
+	}
+}
+
+// panelRow is the row the sidebar drew for a key.
+func panelRow(a *testApp, key any) (ui.ListRow, bool) {
+	for _, row := range a.panel.Rows() {
+		if row.Key == key {
+			return row, true
+		}
+	}
+	return ui.ListRow{}, false
+}
+
+// A window taken over is held under the name the server list gives its
+// address, whichever order the two happened in.
+//
+// The key is worked out from the list again whenever the list changes.
+// A first save, a rename and a forget each change what a window is
+// called and none of them changes the connection, so a key left behind
+// is a heading with nothing under it and a connection nothing can
+// reach.
+func TestAWindowIsHeldUnderTheNameTheListGivesIt(t *testing.T) {
+	// The connection is the same one throughout: a re-key that dialled
+	// again, or opened another pane, is not a re-key.
+	stillTheOne := func(t *testing.T, host *testApp, pane, was *term.Terminal) {
+		t.Helper()
+		if n := len(host.serving.clients()); n != 1 {
+			t.Errorf("the serving window has %d clients, want the one", n)
+		}
+		if pane != was {
+			t.Error("the pane on the window was opened again")
+		}
+	}
+
+	t.Run("saved after it was taken over", func(t *testing.T) {
+		host, client, addr, keyFile := aServingWindow(t)
+		pane := takeOverFromTheDialog(t, client, addr, keyFile)
+		// Nothing saved yet, so the address is its own name.
+		if got := client.windows.names(); !slices.Equal(got, []string{addr}) {
+			t.Fatalf("it is holding %v, want the one window under %s", got, addr)
+		}
+		// And a file pane open across the save, because the name is
+		// frozen into a filesystem when its pane opens.
+		chooseMenuItem(t, clickPlus(t, client, addr), "conn.files")
+		files := onlyFilePane(t, client)
+
+		saveWindowFromTheDialog(t, client, "office", addr, keyFile)
+
+		if got := client.windows.names(); !slices.Equal(got, []string{"office"}) {
+			t.Fatalf("it is holding %v, want the one window under office", got)
+		}
+		stillTheOne(t, host, paneOnTheWindow(t, client), pane)
+		filedUnder(t, client, pane, "office", addr, addr)
+		filesFiledUnder(t, client, files, "office")
+		offersTheWindowsLines(t, client, "office")
+	})
+
+	t.Run("saved before it was taken over", func(t *testing.T) {
+		host, client, addr, keyFile := aServingWindow(t)
+		saveWindowFromTheDialog(t, client, "office", addr, keyFile)
+
+		// The plus on its row, and the line that takes it over.
+		clickTerminalLine(t, client, "office")
+		pane := paneOnTheWindow(t, client)
+
+		if got := client.windows.names(); !slices.Equal(got, []string{"office"}) {
+			t.Fatalf("it is holding %v, want the one window under office", got)
+		}
+		stillTheOne(t, host, pane, pane)
+		filedUnder(t, client, pane, "office", addr, "")
+		offersTheWindowsLines(t, client, "office")
+	})
+
+	t.Run("forgotten while it is held", func(t *testing.T) {
+		host, client, addr, keyFile := aServingWindow(t)
+		saveWindowFromTheDialog(t, client, "office", addr, keyFile)
+		clickTerminalLine(t, client, "office")
+		pane := paneOnTheWindow(t, client)
+
+		forgetFromThePlus(t, client, "office")
+
+		// Forgetting a window is not letting go of it: the list stops
+		// naming it, and the connection goes back to being its own
+		// name.
+		if got := client.windows.names(); !slices.Equal(got, []string{addr}) {
+			t.Fatalf("it is holding %v, want the one window under %s", got, addr)
+		}
+		if got := client.about(addr).kind; got != hostWindow {
+			t.Errorf("under its address it is a %v, want a window", got)
+		}
+		stillTheOne(t, host, paneOnTheWindow(t, client), pane)
+		// The address is its own name now, so the heading has nothing
+		// to add beside it.
+		filedUnder(t, client, pane, addr, "", "office")
+
+		// And letting go from the plus on that heading really lets go.
+		if a := client.about(addr); a.toTakeOver() {
+			t.Error("it asks to be taken over again")
+		}
+		chooseMenuItem(t, clickPlus(t, client, addr), "conn.disconnect")
+		if n := client.windows.count(); n != 0 {
+			t.Errorf("it is still holding %v", client.windows.names())
+		}
+	})
+}
+
+// onlyFilePane is the one pane the file manager holds.
+func onlyFilePane(t *testing.T, a *testApp) *files.Pane {
+	t.Helper()
+	if a.files == nil {
+		t.Fatal("the window has no file manager")
+	}
+	panes := a.files.view.Panes()
+	if len(panes) != 1 {
+		t.Fatalf("the manager holds %d panes, want the one", len(panes))
+	}
+	return panes[0]
+}
+
+// filesFiledUnder checks a file pane and its sidebar row followed the
+// window to a new name.
+func filesFiledUnder(t *testing.T, a *testApp, p *files.Pane, now string) {
+	t.Helper()
+	if got := p.FS().Name(); got != now {
+		t.Errorf("the file pane reads %q, want %q", got, now)
+	}
+	row := a.files.rows[p]
+	if row == nil {
+		t.Fatal("the file pane has no row on the sidebar")
+	}
+	if row.Host != now {
+		t.Errorf("the file pane's row is filed under %q, want %q", row.Host, now)
+	}
+}
+
+// A second name for a window's address is refused where it is typed.
+//
+// One window is one connection, held under the name the list gives its
+// address. Two names for one address would leave one of them naming a
+// connection it cannot reach, and the sidebar drawing the same screens
+// under both.
+func TestASecondNameForOneWindowIsRefused(t *testing.T) {
+	_, client, addr, keyFile := aServingWindow(t)
+	saveWindowFromTheDialog(t, client, "office", addr, keyFile)
+	clickTerminalLine(t, client, "office")
+	pane := paneOnTheWindow(t, client)
+
+	f := addServerFromTheDialog(t, client, "spare", addr, keyFile)
+	pressButton(t, client, f, "Save")
+
+	if client.root.Modal() != ui.Widget(f) {
+		t.Fatal("the dialog closed, so what was typed is gone")
+	}
+	// Said where it was typed, in the dialog's own words: the list
+	// refuses it too, but only after the dialog has gone.
+	err := f.Error()
+	if err == nil {
+		t.Fatal("the dialog says nothing about why nothing happened")
+	}
+	for _, want := range []string{"office", "a window has one entry in the list"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the dialog says %q, without %q", err, want)
+		}
+	}
+	if got := client.book.Names(); !slices.Equal(got, []string{"office"}) {
+		t.Errorf("the list holds %v, want only the one name", got)
+	}
+	if got := client.windows.names(); !slices.Equal(got, []string{"office"}) {
+		t.Errorf("it is holding %v, want the one window under office", got)
+	}
+	if got := paneOnTheWindow(t, client); got != pane {
+		t.Error("the pane on the window was opened again")
+	}
+}
+
+// A window saved while it was being taken over lands under its new name,
+// with the pane that watched the dial drawing from it.
+//
+// The name is worked out before the dial starts and the list can change
+// while it runs. The pane was then handed to a window looked up under a
+// name nothing was holding, and said it had not been taken over while
+// the connection was open.
+func TestAWindowSavedDuringTheDialLandsUnderItsNewName(t *testing.T) {
+	_, client, addr, keyFile := aServingWindow(t)
+
+	// The take-over, left in flight: nothing here runs what the dial
+	// posts back.
+	m := openBarMenu(t, client, "Servers")
+	chooseMenuItem(t, m, "serve.takeOver")
+	f := waitForDialog(t, client, "Take over a window")
+	typeIntoField(t, client, f, "Machine", addr)
+	typeIntoField(t, client, f, "Key file", keyFile)
+	pressButton(t, client, f, "Take over")
+	waitUntil(t, func() bool { return client.pump.pending() > 0 })
+
+	// Saved under a name while the dial waits to land. Written straight
+	// to the list rather than through the dialog, because the dialog
+	// drains the pump as it opens and the dial would land first: what
+	// this is about is a list that changed while a dial was in flight.
+	if err := client.book.Put(remote.Host{
+		Name: "office", Address: hostOf(t, addr), Port: portOf(t, addr),
+		Window: true, Identities: []string{keyFile},
+	}, ""); err != nil {
+		t.Fatalf("save the window: %v", err)
+	}
+	client.refreshServers()
+
+	pane := paneOnTheWindow(t, client)
+	if got := client.windows.names(); !slices.Equal(got, []string{"office"}) {
+		t.Fatalf("it is holding %v, want the one window under office", got)
+	}
+	if got := paneText(pane); strings.Contains(got, "not taken over") {
+		t.Errorf("the pane says it was not taken over:\n%s", got)
+	}
+	filedUnder(t, client, pane, "office", addr, addr)
+}
+
+// Two windows that trade names both follow their own.
+//
+// The moves are worked out together. Applied one at a time, the first
+// rename sent one window's rows to the name the second was about to
+// take, and both ended under it.
+func TestTwoWindowsThatTradeNamesBothFollow(t *testing.T) {
+	keyFile, line := aKeyFile(t)
+	first, firstAddr := aWindowServing(t, line)
+	second, secondAddr := aWindowServing(t, line)
+
+	client := newTestApp(t, 90, 30)
+	withDialogs(t, client)
+	withPanel(t, client)
+	withMenubar(t, client)
+	writeKnownWindows(t, client, first, second)
+	saveWindowFromTheDialog(t, client, "one", firstAddr, keyFile)
+	saveWindowFromTheDialog(t, client, "two", secondAddr, keyFile)
+	clickTerminalLine(t, client, "one")
+	waitFor(t, client, "the first window", func() bool { return client.windows.count() == 1 })
+	clickTerminalLine(t, client, "two")
+	waitFor(t, client, "the second window", func() bool { return client.windows.count() == 2 })
+
+	// The list edited elsewhere with the two names swapped, and read
+	// again: the one way a window can be asked to take a name another
+	// is holding.
+	writeBook(t, client, `{"version":1,"servers":[`+
+		windowEntry(t, "one", secondAddr, keyFile)+`,`+
+		windowEntry(t, "two", firstAddr, keyFile)+`]}`)
+	if err := client.reloadBook(); err != nil {
+		t.Fatalf("read the list again: %v", err)
+	}
+
+	if got := client.windows.names(); !slices.Equal(got, []string{"one", "two"}) {
+		t.Fatalf("it is holding %v, want both names", got)
+	}
+	for name, addr := range map[string]string{"one": secondAddr, "two": firstAddr} {
+		held := client.windows.named(name)
+		if held.addr != addr {
+			t.Fatalf("%s is the window at %s, want %s", name, held.addr, addr)
+		}
+		// And the rows followed each window rather than both landing
+		// on one name.
+		panes := client.windows.drawnFrom(held)
+		if len(panes) != 1 {
+			t.Fatalf("%d panes are drawn from %s, want the one", len(panes), name)
+		}
+		if got := client.panes[panes[0]].Host; got != name {
+			t.Errorf("the pane on the window at %s is filed under %q, want %q", addr, got, name)
+		}
+	}
+}
+
+// A list that names one window after another window's address leaves
+// every window holding a key of its own.
+//
+// The name is not free, so that window keeps its address instead. A key
+// handed to two windows would drop one of them from the map with its
+// connection open.
+func TestARekeyOntoAHeldNameLosesNoWindow(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+
+	// One window held under its own address, because nothing saved it.
+	pretendWindow(t, a, "10.0.0.1:2222", "10.0.0.1:2222")
+	// And another whose saved name is the first one's key.
+	pretendWindow(t, a, "office", "10.0.0.2:2222")
+	if err := a.book.Put(remote.Host{
+		Name: "10.0.0.1:2222", Address: "10.0.0.2", Port: 2222, Window: true,
+	}, ""); err != nil {
+		t.Fatalf("save the window: %v", err)
+	}
+
+	a.refreshServers()
+
+	if got := a.windows.names(); !slices.Equal(got, []string{"10.0.0.1:2222", "10.0.0.2:2222"}) {
+		t.Fatalf("it is holding %v, want both windows under keys of their own", got)
+	}
+	if got := a.windows.named("10.0.0.1:2222").addr; got != "10.0.0.1:2222" {
+		t.Errorf("the unsaved window is now the one at %s", got)
+	}
+	if got := a.windows.named("10.0.0.2:2222").addr; got != "10.0.0.2:2222" {
+		t.Errorf("the saved window is now the one at %s", got)
+	}
+}
+
+// aWindowServing is a window serving, letting in whoever the line
+// allows.
+func aWindowServing(t *testing.T, allowed string) (a *testApp, addr string) {
+	t.Helper()
+	a = newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withServing(t, a, allowed)
+	if err := a.startServing("0", whereHere); err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+	return a, a.serving.addr()
+}
+
+// writeKnownWindows records the keys of windows serving, so taking them
+// over asks nothing.
+func writeKnownWindows(t *testing.T, client *testApp, of ...*testApp) {
+	t.Helper()
+	var lines strings.Builder
+	for _, host := range of {
+		lines.WriteString(knownLine(t, host))
+	}
+	if err := os.WriteFile(client.windows.knownAt, []byte(lines.String()), 0o600); err != nil {
+		t.Fatalf("write the known windows: %v", err)
+	}
+}
+
+// writeBook puts a list on disk in place of the window's own.
+func writeBook(t *testing.T, a *testApp, text string) {
+	t.Helper()
+	if err := os.WriteFile(a.book.Path(), []byte(text), 0o600); err != nil {
+		t.Fatalf("write the server list: %v", err)
+	}
+}
+
+// windowEntry is one saved gridterm window, as the file holds it.
+func windowEntry(t *testing.T, name, addr, keyFile string) string {
+	t.Helper()
+	return fmt.Sprintf(`{"name":%q,"address":%q,"port":%d,"window":true,"identities":[%q]}`,
+		name, hostOf(t, addr), portOf(t, addr), keyFile)
+}
+
+// The window whose pane somebody else is reading says the size they
+// took, on the row of that pane.
+//
+// While the size is held this window draws the screen in whatever room
+// it has for it, so the size is the only thing that explains what is on
+// it. The row said how many were watching and nothing else.
+func TestAPaneWhoseSizeAWatcherTookSaysSo(t *testing.T) {
+	host, client, addr := twoWindowsSized(t, 100, 30)
+
+	hostPane := onlyPaneOn(t, host)
+	row := remoteKey{window: addr, id: host.panes[hostPane].ID()}
+	waitForBoth(t, host, client, "the row for the shell over there", func() bool {
+		host.refreshPanel(panelNow)
+		_, there := client.openOver(row)
+		return there
+	})
+
+	// That row on this window's sidebar, chosen: it opens a pane
+	// watching the shell over there, and that pane's size becomes the
+	// shell's.
+	if err := client.revealRow(ui.ListRow{Key: row}); err != nil {
+		t.Fatalf("watch the shell over there: %v", err)
+	}
+	here := newestPane(t, client)
+	waitForBoth(t, host, client, "the watching pane to take the size over there", func() bool {
+		host.refreshPanel(panelNow)
+		return hostPane.Held() && hostPane.Size() == here.Size()
+	})
+
+	size := hostPane.Size()
+	want := fmt.Sprintf("at %dx%d, watched by 1", size.Cols, size.Rows)
+	lines := panelText(host, panelNow)
+	if !slices.ContainsFunc(lines, func(l string) bool { return strings.Contains(l, want) }) {
+		t.Errorf("the panel says %v, want a row saying %q", lines, want)
+	}
+	// Without this a held size that happened to be the size of the box
+	// would pass on a note saying nothing the user could not already
+	// see.
+	if size == hostPane.Box() {
+		t.Errorf("the screen is held at %v, which is the room this window has for it", size)
 	}
 }

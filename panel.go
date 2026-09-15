@@ -214,7 +214,7 @@ func (a *app) refreshPanel(now time.Time) {
 			// Ahead of the far end's size: the user can see a size, and
 			// cannot otherwise see that something else is typing here.
 			want = h.note()
-		} else if what, ok := a.watching[pane]; ok {
+		} else if what, ok := a.windows.watching(pane); ok {
 			// A pane showing a screen that is not its size, which is
 			// the one thing about it the user cannot otherwise work
 			// out from what it draws. Asked for afresh, because the
@@ -222,7 +222,14 @@ func (a *app) refreshPanel(now time.Time) {
 			cols, rows := a.farSize(what)
 			want = farNote(pane.Size(), cols, rows)
 		} else if n := pane.Watched(); n > 0 {
-			want = watchedNote(n)
+			if pane.Held() && pane.Size() != pane.Box() {
+				// Somebody watching set the size, and this window draws
+				// that screen in whatever room it has: the size is the
+				// only thing that explains what is on it.
+				want = heldNote(pane.Size(), n)
+			} else {
+				want = watchedNote(n)
+			}
 		}
 		// Only over a note of our own. The one other note a pane can
 		// carry says its channel could not be let go of, and that is

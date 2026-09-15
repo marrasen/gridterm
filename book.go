@@ -26,42 +26,38 @@ const (
 // by name, the menu shows them, and a key can be bound to one. It is the
 // same shape the font families use.
 func (a *app) refreshServers() {
+	// Before anything reads the list: this is the one place called
+	// whenever it may have changed, and the name a window taken over is
+	// held under comes from it.
+	a.rekeyWindows()
 	if a.root.Commands == nil {
 		return
 	}
-	// Which of them are windows rather than machines, for the comparison
-	// below. Which machines there are and what each one is are two
-	// different questions, and changing a machine from one kind to the
-	// other changes no name at all. The field this used to cache is
-	// gone, and about reads the book live, so reading it after the
-	// shortcut below is safe.
-	windows := make(map[string]bool)
-	for _, h := range a.book.Hosts() {
-		if h.Window {
-			windows[h.Name] = true
-		}
-	}
 
-	// Nothing more to do when the machines are the ones already
-	// registered. This runs whenever a connection is made or lost, and
-	// rebuilding takes the open menu down with it: a menu that vanished
-	// while the user was reading it, because a connection they were not
-	// watching dropped, is the window getting in their way.
-	// The kinds go into the comparison as well as the names. What a
-	// command is called depends on which kind a machine is -- "take
-	// over" rather than "open a terminal on" -- and changing that
-	// changes no name.
-	want := make([]string, 0, len(a.everyHost())+len(a.savedHosts()))
-	for _, host := range append(a.everyHost(), a.savedHosts()...) {
-		if windows[host] {
-			host += " (window)"
+	// Nothing more to do when the commands would come out the same as
+	// the ones already registered. This runs whenever a connection is
+	// made or lost, and rebuilding takes the open menu down with it: a
+	// menu that vanished while the user was reading it, because a
+	// connection they were not watching dropped, is the window getting
+	// in their way.
+	//
+	// So the comparison carries whatever a title depends on, not only
+	// the names. A saved window reads "take over" until it is taken
+	// over and "open a terminal on" after, and taking one over changes
+	// no name at all.
+	every, saved := a.everyHost(), a.savedHosts()
+	want := make([]string, 0, len(every)+len(saved))
+	for _, host := range every {
+		if a.about(host).toTakeOver() {
+			host += " (take over)"
 		}
 		want = append(want, host)
 	}
-	if slices.Equal(want, a.serverHosts) {
+	want = append(want, saved...)
+	if slices.Equal(want, a.builtFor) && !a.serversMenuMissing() {
 		return
 	}
-	a.serverHosts = want
+	a.builtFor = want
 	// Whatever was registered for the old list goes first, or a server
 	// that has been renamed would answer to both names.
 	for _, id := range a.serverCommands {
@@ -73,7 +69,7 @@ func (a *app) refreshServers() {
 	// the palette is searched by name, and a name is the thing the user
 	// has in mind. Connecting and editing are only for the saved ones --
 	// there is nothing to connect to on the machine already running.
-	for _, name := range a.everyHost() {
+	for _, name := range every {
 		host := name
 		title := "Open a terminal on " + groupName(host)
 		if a.about(host).toTakeOver() {
@@ -96,7 +92,7 @@ func (a *app) refreshServers() {
 	}
 
 	var items []ui.MenuItem
-	for _, host := range a.savedHosts() {
+	for _, host := range saved {
 		open := ui.Command{
 			ID:    openPrefix + remote.CommandName(host),
 			Title: "Connect to " + host,
@@ -129,6 +125,31 @@ func (a *app) refreshServers() {
 
 // savedHosts is what the book calls its machines.
 func (a *app) savedHosts() []string { return a.book.Names() }
+
+// savedWindowElsewhere is the saved window already serving at an
+// address under a name other than the one being edited.
+func (a *app) savedWindowElsewhere(under, addr string) (string, bool) {
+	h, ok := a.windows.savedAt(addr)
+	if !ok || strings.EqualFold(h.Name, under) {
+		return "", false
+	}
+	return h.Name, true
+}
+
+// serversMenuMissing reports whether the menu bar is up and has no
+// Servers menu on it yet, which is the one thing that can change while
+// the commands do not.
+func (a *app) serversMenuMissing() bool {
+	if a.bar == nil {
+		return false
+	}
+	for _, have := range a.bar.Menus {
+		if have.Title == serversMenu {
+			return false
+		}
+	}
+	return true
+}
 
 // registerServerCommands puts commands on the registry and remembers
 // their ids, so the next list can take them off again.
@@ -164,10 +185,6 @@ func (a *app) openTerminalOn(host string, at *spot) error {
 		return a.openTab()
 	case f.kind == hostWindow:
 		return a.openOnWindow(f.name, at)
-	case f.heldAt != nil:
-		// Saved as a window and already taken over under another name,
-		// so a terminal on it is a terminal on the one being held.
-		return a.openOnWindow(f.heldAt.name, at)
 	case f.toTakeOver():
 		// Nothing runs on a window until it is taken over, and there is
 		// no shell on one to log in to: it serves gridterm's own
@@ -200,10 +217,6 @@ func (a *app) refreshServerMenu(items []ui.MenuItem) {
 	if a.bar == nil {
 		return
 	}
-	// Whatever is open holds the index of the title it hangs under, and
-	// the list is about to change shape.
-	a.bar.Close()
-
 	if len(items) > 0 {
 		items = append(items, ui.MenuSeparator())
 	}
@@ -218,15 +231,23 @@ func (a *app) refreshServerMenu(items []ui.MenuItem) {
 		ui.MenuItem{Command: "agent.hand"},
 		ui.MenuItem{Command: "agent.take"})
 
-	def := ui.MenuDef{Title: "Servers", Items: items}
+	def := ui.MenuDef{Title: serversMenu, Items: items}
 	for i, have := range a.bar.Menus {
 		if have.Title == def.Title {
+			// Whatever is open holds the index of the title it hangs
+			// under, and these lines are about to change.
+			a.bar.Close()
 			a.bar.Menus[i] = def
 			return
 		}
 	}
+	// Appended after the titles already there, so nothing open moves
+	// and nothing has to be taken down.
 	a.bar.Menus = append(a.bar.Menus, def)
 }
+
+// serversMenu is the menu bar title the saved machines hang under.
+const serversMenu = "Servers"
 
 // kindMachine and kindWindow are what the Kind field offers: a machine
 // to log in to, or another gridterm serving that this one takes over.
@@ -382,6 +403,13 @@ func (a *app) openServerForm(under string) error {
 		if under != "" && under != h.Name {
 			if a.about(h.Name).held() {
 				return fmt.Errorf("something is already connected as %q; close it first", h.Name)
+			}
+		}
+		if window {
+			if at, ok := a.savedWindowElsewhere(under, h.ServeAddr()); ok {
+				return fmt.Errorf(
+					"%s is already saved as the window at %s; a window has one entry in the list",
+					at, h.ServeAddr())
 			}
 		}
 		if t := a.about(under).window; t != nil && (!window || t.addr != h.ServeAddr()) {

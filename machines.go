@@ -560,7 +560,7 @@ func (a *app) savedWindowInRoute(name string, route []step) (remote.Host, bool) 
 	if last.cfg.Port != 0 {
 		addr = net.JoinHostPort(last.cfg.Host, strconv.Itoa(last.cfg.Port))
 	}
-	if h, ok := a.savedWindowAt(addr); ok {
+	if h, ok := a.windows.savedAt(addr); ok {
 		return h, true
 	}
 	if last.cfg.Port == 0 {
@@ -606,6 +606,29 @@ func (a *app) reached(d *dialling, log *connLog, route []step, at int, conn *rem
 	log.Say("connected to " + s.name)
 }
 
+// rowsUnder are the panel rows filed under a machine's name: its panes,
+// its tunnels and the connection itself.
+func (a *app) rowsUnder(host string) []*conns.Entry {
+	var out []*conns.Entry
+	for _, group := range a.registry.Groups(time.Now()) {
+		if group.Host != host {
+			continue
+		}
+		for _, row := range group.Rows {
+			out = append(out, row.Entry)
+		}
+	}
+	return out
+}
+
+// rehostRows moves every panel row under one name to another, for a
+// machine or a window the user has called something else.
+func (a *app) rehostRows(was, now string) {
+	for _, e := range a.rowsUnder(was) {
+		e.Host = now
+	}
+}
+
 // renamedMachine follows a rename through everything the window keys by
 // a machine's name.
 //
@@ -646,17 +669,10 @@ func (a *app) renamedMachine(was string, to remote.Host) {
 		}
 		d.renamed[was] = now
 	}
-	a.renamedWindow(was, now)
 	// Every row under the old name: the panes, the tunnels, and the
-	// connection itself. They are the same entries the panel groups by.
-	for _, group := range a.registry.Groups(time.Now()) {
-		if group.Host != was {
-			continue
-		}
-		for _, row := range group.Rows {
-			row.Entry.Host = now
-		}
-	}
+	// connection itself.
+	a.rehostRows(was, now)
+	// refreshServers re-keys a window taken over under that name too.
 	a.refreshServers()
 	a.markDirty()
 }
@@ -942,10 +958,6 @@ func (a *app) disconnectHere() error {
 	case hostMachine, hostConnecting:
 		return a.dropMachine(h.name)
 	}
-	if h.heldAt != nil {
-		// Saved as a window and already taken over under another name.
-		return a.dropWindow(h.heldAt.name)
-	}
 	// Said rather than done quietly. A command that reports success and
 	// changes nothing is how a connection that would not close looked
 	// like a window that had stopped listening.
@@ -964,7 +976,7 @@ func (a *app) openCommandHere() error {
 		return errors.New(
 			"a command runs on a machine gridterm connected to, and this is the one it is running on")
 	}
-	if h.kind == hostWindow || h.kind == hostSavedWindow || h.heldAt != nil {
+	if h.kind == hostWindow || h.kind == hostSavedWindow {
 		return fmt.Errorf(
 			"%s is a gridterm window: it has no shell, so there is nothing to run a command in. "+
 				"Open a terminal on it instead.",
@@ -1002,8 +1014,7 @@ func (a *app) forgetPane(t *term.Terminal) {
 	// behind, the record keeps a terminal that has gone, and letting go
 	// of that window later reports a failure to close a pane that was
 	// closed long before.
-	delete(a.paneOnWindow, t)
-	delete(a.watching, t)
+	a.windows.forget(t)
 	delete(a.kept, t)
 	// And the agent the user handed it to, which has nothing left to
 	// work in. Its code stops naming anything the moment this is gone.

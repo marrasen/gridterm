@@ -107,12 +107,12 @@ func TestASavedWindowStillServesOnceItIsTakenOver(t *testing.T) {
 	}
 }
 
-// Three names that are two things at once, because the server list and
+// Two names that are two things at once, because the server list and
 // what the window holds are answered separately.
 //
 // Each pair decides whether asking for a terminal means taking a window
-// over. A connection under a name the list saves as a window is not that
-// window, and a window already held is not one to take over again.
+// over: a connection under a name the list saves as a window is not
+// that window.
 func TestAboutOnANameThatIsTwoThings(t *testing.T) {
 	saveWindow := func(t *testing.T, a *testApp, name, address string, port int) {
 		t.Helper()
@@ -156,24 +156,6 @@ func TestAboutOnANameThatIsTwoThings(t *testing.T) {
 		}
 	})
 
-	t.Run("a saved window already held under another name", func(t *testing.T) {
-		a := newTestApp(t, 90, 30)
-		withDialogs(t, a)
-		saveWindow(t, a, "office", "10.0.0.5", 2222)
-		// Taken over by address, before the list knew the window at all.
-		pretendWindow(t, a, "10.0.0.5:2222", "10.0.0.5:2222")
-
-		f := a.about("office")
-		if f.kind != hostSavedWindow {
-			t.Errorf("it is a %v, want a saved window: the maps are keyed by the address", f.kind)
-		}
-		if f.heldAt == nil {
-			t.Fatal("it does not see the window already held at its address")
-		}
-		if f.toTakeOver() {
-			t.Error("it would take over a window this one is already holding")
-		}
-	})
 }
 
 // The case rule: the book folds case, the maps do not.
@@ -181,7 +163,7 @@ func TestAboutOnANameThatIsTwoThings(t *testing.T) {
 // The two cannot be made one. A rename from "picard" to "Picard" is the
 // same name to the book and a new key to the maps, and a guard that
 // folded case for both would refuse that rename as a name already taken.
-func TestAboutFoldsCaseForTheBookAndNotForTheMaps(t *testing.T) {
+func TestTheBookFoldsCaseAndTheWindowsMapDoesNot(t *testing.T) {
 	a := newTestApp(t, 90, 30)
 	withDialogs(t, a)
 	if err := a.book.Put(remote.Host{
@@ -206,11 +188,16 @@ func TestAboutFoldsCaseForTheBookAndNotForTheMaps(t *testing.T) {
 	}
 
 	pretendWindow(t, a, "statio", "10.0.0.5:2222")
-	if got := a.about("STATIO").window; got != nil {
+	if got := a.windows.named("STATIO"); got != nil {
 		t.Error("the maps answered a name they are not keyed by")
 	}
-	if got := a.about("statio").window; got == nil {
+	if got := a.windows.named("statio"); got == nil {
 		t.Error("the maps did not answer the name they are keyed by")
+	}
+	// And about answers for either spelling, because it asks the map
+	// under the list's own spelling of the name.
+	if got := a.about("STATIO").window; got == nil {
+		t.Error("the shouted name does not reach the window the list saves under it")
 	}
 }
 
@@ -232,8 +219,26 @@ func TestATerminalOnAWindowIgnoresCapitals(t *testing.T) {
 	if *dials != 0 {
 		t.Errorf("%d connections were prepared to dial; a window is taken over, not logged in to", *dials)
 	}
-	if n := len(client.windows); n != 1 {
-		t.Errorf("it is holding %v, want the one window", mapKeys(client.windows))
+	if n := client.windows.count(); n != 1 {
+		t.Errorf("it is holding %v, want the one window", client.windows.names())
+	}
+	// And the pane goes under the list's own spelling, so the sidebar
+	// keeps one heading for the window.
+	if got := client.panes[newestPane(t, client)].Host; got != "statio" {
+		t.Errorf("the new pane is filed under %q, want statio", got)
+	}
+
+	// The same again through openTerminalOn, which is the one place the
+	// name as it was asked about reaches a window already held.
+	panes = len(client.panes)
+	if err := client.openTerminalOn("STATIO", nil); err != nil {
+		t.Fatalf("a terminal on it under other capitals: %v", err)
+	}
+	waitFor(t, client, "one more pane on the window", func() bool {
+		return len(client.panes) > panes
+	})
+	if got := client.panes[newestPane(t, client)].Host; got != "statio" {
+		t.Errorf("that pane is filed under %q, want statio", got)
 	}
 }
 
@@ -261,7 +266,7 @@ func TestATerminalOnAWindowHeldUnderAnotherNameOpensOnIt(t *testing.T) {
 		t.Fatalf("take it over: %v", err)
 	}
 	waitFor(t, client, "the window to be taken over", func() bool {
-		return client.windows[addr] != nil
+		return client.windows.named(addr) != nil
 	})
 	if err := client.book.Put(remote.Host{
 		Name: "office", Address: hostOf(t, addr), Port: portOf(t, addr),
@@ -278,14 +283,14 @@ func TestATerminalOnAWindowHeldUnderAnotherNameOpensOnIt(t *testing.T) {
 	waitFor(t, client, "another pane on the window", func() bool {
 		return len(client.panes) > panes
 	})
-	if n := len(client.windows); n != 1 {
-		t.Errorf("it is holding %v, want the one window", mapKeys(client.windows))
+	if n := client.windows.count(); n != 1 {
+		t.Errorf("it is holding %v, want the one window", client.windows.names())
 	}
 }
 
 // aWindowHeldUnder is a window taken over by address and saved under a
-// name afterwards, so what the window holds goes under the address while
-// the server list calls it something else.
+// name afterwards, which is the order that leaves the connection to be
+// re-keyed onto the name the list gives it.
 func aWindowHeldUnder(t *testing.T, name string) (client *testApp, addr string) {
 	t.Helper()
 	_, client, addr, keyFile := aServingWindow(t)
@@ -293,7 +298,7 @@ func aWindowHeldUnder(t *testing.T, name string) (client *testApp, addr string) 
 		t.Fatalf("take it over: %v", err)
 	}
 	waitFor(t, client, "the window to be taken over", func() bool {
-		return client.windows[addr] != nil
+		return client.windows.named(addr) != nil
 	})
 	if err := client.book.Put(remote.Host{
 		Name: name, Address: hostOf(t, addr), Port: portOf(t, addr),
@@ -305,13 +310,13 @@ func aWindowHeldUnder(t *testing.T, name string) (client *testApp, addr string) 
 	return client, addr
 }
 
-// Files on a saved window already taken over under another name are read
-// over the connection being held.
+// Files on a window saved after it was taken over are read over the
+// connection being held, and go under the name the list gives it.
 //
-// The pane asked about the saved name, which the maps hold nothing
+// The pane asked about the saved name, which the maps held nothing
 // under, so the answer was that nothing is connected to it.
-func TestFilesOnAWindowHeldUnderAnotherNameReadItsFiles(t *testing.T) {
-	client, addr := aWindowHeldUnder(t, "office")
+func TestFilesOnAWindowSavedAfterTakeOverGoUnderItsName(t *testing.T) {
+	client, _ := aWindowHeldUnder(t, "office")
 
 	// Something on the serving machine's disk to find. The pane is asked
 	// for a directory by name, so the test does not depend on where
@@ -333,8 +338,8 @@ func TestFilesOnAWindowHeldUnderAnotherNameReadItsFiles(t *testing.T) {
 		t.Fatalf("the manager holds %d panes, want the one", len(panes))
 	}
 	pane := panes[0]
-	if got := pane.FS().Name(); got != addr {
-		t.Errorf("the pane reads %q, want the window held at %s", got, addr)
+	if got := pane.FS().Name(); got != "office" {
+		t.Errorf("the pane reads %q, want the window held under office", got)
 	}
 	// And its sidebar row goes under the name holding the window, so the
 	// sidebar keeps one heading for it.
@@ -342,8 +347,8 @@ func TestFilesOnAWindowHeldUnderAnotherNameReadItsFiles(t *testing.T) {
 	if row == nil {
 		t.Fatal("the pane has no row on the sidebar")
 	}
-	if row.Host != addr {
-		t.Errorf("the row is filed under %q, want %s", row.Host, addr)
+	if row.Host != "office" {
+		t.Errorf("the row is filed under %q, want office", row.Host)
 	}
 
 	var entries []vfs.Entry
@@ -363,28 +368,16 @@ func TestFilesOnAWindowHeldUnderAnotherNameReadItsFiles(t *testing.T) {
 	}
 }
 
-// The plus on a saved window already taken over under another name
-// offers what a window offers, rather than offering to take it over.
-func TestThePlusOnAWindowHeldUnderAnotherNameOffersTheWindowsLines(t *testing.T) {
+// Letting go of a window saved after it was taken over really lets go,
+// rather than reporting that nothing is connected to that name.
+func TestLettingGoOfAWindowSavedAfterTakeOverClosesIt(t *testing.T) {
 	client, _ := aWindowHeldUnder(t, "office")
 
 	menu := clickPlus(t, client, "office")
 
-	for _, item := range menu.Items() {
-		if item.Title == "Take it over" {
-			t.Errorf("it offers to take over a window it is already holding: %v", menuCommands(menu))
-		}
-	}
-	for _, want := range []string{"conn.terminal", "conn.files", "conn.disconnect"} {
-		if !offers(menu, want) {
-			t.Errorf("it does not offer %s: %v", want, menuCommands(menu))
-		}
-	}
-	// And letting go really lets go, rather than reporting that nothing
-	// is connected to that name.
 	chooseMenuItem(t, menu, "conn.disconnect")
-	if n := len(client.windows); n != 0 {
-		t.Errorf("it is still holding %v", mapKeys(client.windows))
+	if n := client.windows.count(); n != 0 {
+		t.Errorf("it is still holding %v", client.windows.names())
 	}
 }
 
@@ -400,7 +393,7 @@ func TestTheTakeOverDialogOnAHeldWindowOpensATerminal(t *testing.T) {
 		t.Fatalf("take it over: %v", err)
 	}
 	waitFor(t, client, "the window to be taken over", func() bool {
-		return client.windows[addr] != nil
+		return client.windows.named(addr) != nil
 	})
 	panes := len(client.panes)
 
@@ -414,8 +407,8 @@ func TestTheTakeOverDialogOnAHeldWindowOpensATerminal(t *testing.T) {
 	waitFor(t, client, "another pane on the window", func() bool {
 		return len(client.panes) > panes
 	})
-	if n := len(client.windows); n != 1 {
-		t.Errorf("it is holding %v, want the one window", mapKeys(client.windows))
+	if n := client.windows.count(); n != 1 {
+		t.Errorf("it is holding %v, want the one window", client.windows.names())
 	}
 }
 
@@ -514,8 +507,10 @@ func pretendMachine(t *testing.T, a *testApp, name string) {
 
 func pretendWindow(t *testing.T, a *testApp, name, addr string) {
 	t.Helper()
-	a.windows[name] = &taken{name: name, addr: addr}
-	t.Cleanup(func() { delete(a.windows, name) })
+	held := &taken{name: name, addr: addr}
+	held.entry = &conns.Entry{Host: name, Kind: conns.Server, Label: "taken over"}
+	a.windows.add(held)
+	t.Cleanup(func() { a.windows.drop(held) })
 }
 
 func pretendDialling(t *testing.T, a *testApp, name string) {
@@ -723,7 +718,7 @@ func TestEveryWayInTakesOverASavedWindow(t *testing.T) {
 			way.open(t, client, "statio", addr, keyFile)
 
 			waitFor(t, client, "the window to be taken over", func() bool {
-				return client.windows["statio"] != nil
+				return client.windows.named("statio") != nil
 			})
 			if *dials != 0 {
 				t.Errorf("%d connections were prepared to dial; a window is taken over, not logged in to", *dials)
@@ -732,10 +727,10 @@ func TestEveryWayInTakesOverASavedWindow(t *testing.T) {
 				t.Errorf("it is holding %v as machines", mapKeys(client.machines))
 			}
 			waitFor(t, client, "a pane drawn from the window", func() bool {
-				return len(client.paneOnWindow) > 0
+				return client.windows.drawn() > 0
 			})
-			if n := len(client.windows); n != 1 {
-				t.Errorf("it is holding %v, want the one window", mapKeys(client.windows))
+			if n := client.windows.count(); n != 1 {
+				t.Errorf("it is holding %v, want the one window", client.windows.names())
 			}
 			if n := len(host.serving.clients()); n != 1 {
 				t.Errorf("the serving window saw %d clients, want the one", n)
@@ -774,8 +769,8 @@ func TestEveryWayInDialsASavedMachineOnce(t *testing.T) {
 			if n := s.Conns(); n != 1 {
 				t.Errorf("the server saw %d logins, want the one", n)
 			}
-			if n := len(a.windows); n != 0 {
-				t.Errorf("it took over %v, which is a machine", mapKeys(a.windows))
+			if n := a.windows.count(); n != 0 {
+				t.Errorf("it took over %v, which is a machine", a.windows.names())
 			}
 		})
 	}
@@ -820,7 +815,7 @@ func TestEveryWayInOpensAPaneHere(t *testing.T) {
 			if *dials != 0 {
 				t.Errorf("%d connections were prepared to dial for a pane on this machine", *dials)
 			}
-			if n := len(a.machines) + len(a.windows); n != 0 {
+			if n := len(a.machines) + a.windows.count(); n != 0 {
 				t.Errorf("it opened %d connections for a pane on this machine", n)
 			}
 		})
@@ -848,7 +843,7 @@ func aServingWindow(t *testing.T) (host, client *testApp, addr, keyFile string) 
 	withDialogs(t, client)
 	withPanel(t, client)
 	withMenubar(t, client)
-	if err := os.WriteFile(client.knownWindowsAt, []byte(knownLine(t, host)), 0o600); err != nil {
+	if err := os.WriteFile(client.windows.knownAt, []byte(knownLine(t, host)), 0o600); err != nil {
 		t.Fatalf("write the known window: %v", err)
 	}
 	return host, client, addr, keyFile
@@ -870,7 +865,7 @@ func aWindowTakenOverAs(t *testing.T, name string) *testApp {
 		t.Fatalf("take it over: %v", err)
 	}
 	waitFor(t, client, "the window to be taken over", func() bool {
-		return client.windows[name] != nil
+		return client.windows.named(name) != nil
 	})
 	return client
 }
@@ -895,7 +890,7 @@ func TestSplittingWithAWindowPutsThePaneInTheSplit(t *testing.T) {
 	takeChoice(t, splitFromTheChord(t, client), "Terminal on statio")
 
 	waitFor(t, client, "the window to be taken over", func() bool {
-		return client.windows["statio"] != nil && len(client.paneOnWindow) > 0
+		return client.windows.named("statio") != nil && client.windows.drawn() > 0
 	})
 	if got := len(client.stage.Children()); got != 1 {
 		t.Fatalf("the stage holds %d things, want the one split", got)
@@ -915,7 +910,7 @@ func TestSplittingWithAWindowPutsThePaneInTheSplit(t *testing.T) {
 	if !ok {
 		t.Fatalf("the other half is %T, want a terminal", kids[1])
 	}
-	if client.paneOnWindow[next] == nil {
+	if client.windows.from[next] == nil {
 		t.Error("the other half is not the pane drawn from the window")
 	}
 	checkTree(t, client)

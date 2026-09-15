@@ -4,16 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
+	"maps"
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/pkg/sftp"
-	"golang.org/x/crypto/ssh"
 
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/meter"
@@ -21,7 +19,6 @@ import (
 	"github.com/marrasen/gridterm/serve"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/term"
-	"github.com/marrasen/gridterm/vfs"
 )
 
 // knownWindowsFile is where the keys of gridterm windows this one has
@@ -53,6 +50,282 @@ type taken struct {
 	// entry is the panel row for the window itself, so one with nothing
 	// open on it is still visible and still closeable.
 	entry *conns.Entry
+}
+
+// windows are the gridterms on other machines this one has taken over,
+// and the panes drawn from them.
+//
+// One connection per address. The key is the name the server list gives
+// that address, or the address itself when the list saves nothing
+// there. It is worked out from the list again whenever the list
+// changes. So a first save, a rename and a forget each move the key,
+// and none of them touches the connection.
+//
+// Only the goroutine that draws touches any of it.
+type windows struct {
+	// book is where the names come from, so a change to it moves keys.
+	book *remote.Book
+
+	// held is every window taken over, by the name above.
+	held map[string]*taken
+
+	// from says which window a pane is drawn from, so letting go of one
+	// takes its panes with it. seen says what each of those panes is
+	// watching over there, so choosing the same thing again brings the
+	// pane forward rather than opening a second one onto one shell.
+	from map[*term.Terminal]*taken
+	seen map[*term.Terminal]remoteKey
+
+	// knownAt is where the keys of the windows reached are recorded,
+	// empty in the program and set by a test to a file of its own: the
+	// real one belongs to whoever is running gridterm.
+	knownAt string
+
+	// patience is how long a window being taken over has to get through
+	// the handshake. Zero asks the serve package for its own; a test
+	// asks for less so it does not wait out the real one.
+	patience time.Duration
+}
+
+// newWindows builds the record of windows taken over, holding none.
+func newWindows(book *remote.Book) *windows {
+	return &windows{
+		book: book,
+		held: make(map[string]*taken),
+		from: make(map[*term.Terminal]*taken),
+		seen: make(map[*term.Terminal]remoteKey),
+	}
+}
+
+// named is the window held under a name, or nil.
+//
+// Exactly, not ignoring case: the key is the server list's own spelling
+// of the name, and a rename that changes only capitals is a new key.
+func (w *windows) named(name string) *taken { return w.held[name] }
+
+// at is the window already taken over at an address, or nil. Case is
+// folded, because an address can be written either way.
+func (w *windows) at(addr string) *taken {
+	for _, t := range w.held {
+		if strings.EqualFold(t.addr, addr) {
+			return t
+		}
+	}
+	return nil
+}
+
+// count is how many windows are held, for a test.
+func (w *windows) count() int { return len(w.held) }
+
+// names are the names the windows are held under, in order, for a test
+// saying what it found instead.
+func (w *windows) names() []string { return slices.Sorted(maps.Keys(w.held)) }
+
+// add records a window taken over, under the name it carries.
+func (w *windows) add(t *taken) { w.held[t.name] = t }
+
+// drop lets go of a window, by identity: the name it is held under is
+// not always the name the caller asked about.
+func (w *windows) drop(t *taken) {
+	for name, have := range w.held {
+		if have == t {
+			delete(w.held, name)
+			return
+		}
+	}
+}
+
+// drain takes every window out and hands them back, for a window that
+// is shutting down.
+func (w *windows) drain() []*taken {
+	out := make([]*taken, 0, len(w.held))
+	for name, t := range w.held {
+		delete(w.held, name)
+		out = append(out, t)
+	}
+	return out
+}
+
+// nameFor is what a window serving at an address is called here.
+//
+// The name the server list gives it, so everything this window keeps
+// about it goes under one name. An address nothing saved is its own
+// name.
+func (w *windows) nameFor(addr string) string {
+	if h, ok := w.savedAt(addr); ok {
+		return h.Name
+	}
+	return addr
+}
+
+// savedAt is the saved gridterm window serving at an address.
+//
+// By address rather than by name, because a connection made from a typed
+// target knows nothing about the list. about answers about a name and
+// this does not, so the two do not overlap.
+func (w *windows) savedAt(addr string) (remote.Host, bool) {
+	for _, h := range w.book.Hosts() {
+		if h.Window && strings.EqualFold(h.ServeAddr(), addr) {
+			return h, true
+		}
+	}
+	return remote.Host{}, false
+}
+
+// windowRename is a window whose name the server list has changed, and
+// what it was called before.
+type windowRename struct {
+	window *taken
+	was    string
+}
+
+// rekey gives every window taken over the name the server list now
+// gives its address, and hands back the ones that moved.
+//
+// A first save, a rename and a forget all land here. Every window ends
+// under a key of its own: the name the list gives it, or its address,
+// or the key it already had. A window that is not moving keeps its key,
+// so nothing else can take it.
+//
+// Nothing moves at all when a window is left with nowhere free, which a
+// list naming one window after another window's address can do. The
+// error says so, and the caller reports it.
+func (w *windows) rekey() ([]windowRename, error) {
+	if len(w.held) == 0 {
+		return nil, nil
+	}
+	saved := w.savedNames()
+	// In name order, so which of two windows keeps a contested name is
+	// the same answer every time.
+	order := slices.Sorted(maps.Keys(w.held))
+
+	// What each window would be called, and which keys are not moving.
+	// Worked out before anything moves, so that two windows can trade
+	// names.
+	want := make([]string, len(order))
+	staying := make(map[string]bool, len(order))
+	for i, was := range order {
+		now := saved[strings.ToLower(w.held[was].addr)]
+		if now == "" {
+			now = w.held[was].addr
+		}
+		want[i] = now
+		staying[was] = now == was
+	}
+
+	// Then the keys, still without writing any of them: a list with no
+	// answer leaves every window where it was.
+	keys := make([]string, len(order))
+	spoken := make(map[string]bool, len(order))
+	for i, was := range order {
+		t := w.held[was]
+		// Free for this window: nothing has taken it, and it is either
+		// the key this one already has or one no other window is
+		// staying under.
+		free := func(key string) bool {
+			return !spoken[key] && (key == was || !staying[key])
+		}
+		switch {
+		case free(want[i]):
+			keys[i] = want[i]
+		case free(t.addr):
+			keys[i] = t.addr
+		case !spoken[was]:
+			keys[i] = was
+		default:
+			return nil, fmt.Errorf(
+				"the server list leaves %s, taken over at %s, no name of its own", was, t.addr)
+		}
+		spoken[keys[i]] = true
+	}
+
+	held := make(map[string]*taken, len(order))
+	var moved []windowRename
+	for i, was := range order {
+		t := w.held[was]
+		held[keys[i]] = t
+		if keys[i] != was {
+			t.name = keys[i]
+			moved = append(moved, windowRename{window: t, was: was})
+		}
+	}
+	w.held = held
+	if len(moved) == 0 {
+		return nil, nil
+	}
+
+	// What each pane is watching names the window it is on, so that
+	// follows the name too.
+	now := make(map[string]string, len(moved))
+	for _, r := range moved {
+		now[r.was] = r.window.name
+	}
+	for pane, what := range w.seen {
+		if to, ok := now[what.window]; ok {
+			what.window = to
+			w.seen[pane] = what
+		}
+	}
+	return moved, nil
+}
+
+// savedNames maps each address the server list saves a window at,
+// folded to lower case, to the name the list gives it.
+//
+// The list holds one name per address, so the map does too.
+func (w *windows) savedNames() map[string]string {
+	out := map[string]string{}
+	for _, h := range w.book.Hosts() {
+		if h.Window {
+			out[strings.ToLower(h.ServeAddr())] = h.Name
+		}
+	}
+	return out
+}
+
+// draws records that a pane is drawn from a window.
+func (w *windows) draws(pane *term.Terminal, t *taken) { w.from[pane] = t }
+
+// drawn is how many panes are drawn from windows taken over, for a
+// test.
+func (w *windows) drawn() int { return len(w.from) }
+
+// drawnFrom are the panes drawn from one window.
+func (w *windows) drawnFrom(t *taken) []*term.Terminal {
+	var out []*term.Terminal
+	for pane, on := range w.from {
+		if on == t {
+			out = append(out, pane)
+		}
+	}
+	return out
+}
+
+// forget takes a pane off the record, for one that has been closed.
+func (w *windows) forget(pane *term.Terminal) {
+	delete(w.from, pane)
+	delete(w.seen, pane)
+}
+
+// watch records what a pane is watching on the window it is drawn from.
+func (w *windows) watch(pane *term.Terminal, what remoteKey) { w.seen[pane] = what }
+
+// watching is what a pane is watching over there, and whether it is
+// watching anything at all.
+func (w *windows) watching(pane *term.Terminal) (remoteKey, bool) {
+	what, ok := w.seen[pane]
+	return what, ok
+}
+
+// watcher is the pane already watching something on a window taken
+// over, or nil when nothing is.
+func (w *windows) watcher(what remoteKey) *term.Terminal {
+	for pane, have := range w.seen {
+		if have == what {
+			return pane
+		}
+	}
+	return nil
 }
 
 // openTakeOver asks which window to take over.
@@ -96,13 +369,13 @@ func (a *app) takeOver(addr, keyFile string, at *spot) error {
 	// name: saving, renaming or forgetting a window changes its name
 	// and changes nothing about the connection, and a guard that went
 	// by name would let a second one be made to the same far window.
-	if held := a.windowAt(addr); held != nil {
+	if held := a.windows.at(addr); held != nil {
 		return fmt.Errorf("this window has already taken over %s", held.name)
 	}
 	// What this window is called here. A saved one goes under the name
 	// the user gave it, so the sidebar has one heading for it rather
 	// than one for the name and another for the address.
-	name := a.windowNamed(addr)
+	name := a.windows.nameFor(addr)
 	// Already on its way. Asked about rather than refused: waiting for
 	// it is usually what the user wants.
 	if d := a.about(name).dialling; d != nil {
@@ -134,12 +407,16 @@ func (a *app) takeOver(addr, keyFile string, at *spot) error {
 	log.Say("taking over " + addr)
 
 	ask := &askUser{app: a, log: log, stop: func() { a.giveUp(held) }}
+	// Read here rather than in the goroutine below: what the window
+	// holds belongs to the goroutine that draws.
+	knownAt, patience := a.windows.knownAt, a.windows.patience
 	go func() {
-		win, err := reachWindow(ctx, reach{
-			addr: addr, keyFile: keyFile, ring: a.keys, ask: ask,
-			known: a.knownWindows, agent: remote.AgentKeys,
-			patience: a.reachPatience,
-			saying:   log.Say,
+		win, err := remote.ReachWindow(ctx, remote.Reach{
+			Addr: addr, KeyFile: keyFile, Ring: a.keys, Ask: ask,
+			Known:    func() (string, error) { return knownWindows(knownAt) },
+			Agent:    remote.AgentKeys,
+			Patience: patience,
+			Saying:   log.Say,
 		})
 		a.pump.post(func() {
 			a.connecting--
@@ -172,8 +449,7 @@ func (a *app) takeOver(addr, keyFile string, at *spot) error {
 				}
 				return
 			}
-			a.holdWindow(name, addr, win)
-			a.becomeWindowPane(name, pane, log)
+			a.becomeWindowPane(a.holdWindow(name, addr, win), pane, log)
 			a.settle(held, true)
 		})
 	}()
@@ -191,7 +467,7 @@ func (a *app) workOnWindow(addr, keyFile string, at *spot) error {
 	// By address rather than by name: a window taken over before it was
 	// saved is held under its address, and a name that was never asked
 	// about is held under nothing.
-	if held := a.windowAt(addr); held != nil {
+	if held := a.windows.at(addr); held != nil {
 		return a.openOnWindow(held.name, at)
 	}
 	return a.takeOver(addr, keyFile, at)
@@ -201,8 +477,8 @@ func (a *app) workOnWindow(addr, keyFile string, at *spot) error {
 // an error to, and says which of the two failed.
 func (a *app) workOnWindowOrSay(addr, keyFile string, at *spot) {
 	where := serveAddr(addr)
-	title := "Could not take over " + a.windowNamed(where)
-	if held := a.windowAt(where); held != nil {
+	title := "Could not take over " + a.windows.nameFor(where)
+	if held := a.windows.at(where); held != nil {
 		title = "Could not open a terminal on " + held.name
 	}
 	if err := a.workOnWindow(addr, keyFile, at); err != nil {
@@ -224,76 +500,48 @@ func serveAddr(addr string) string {
 	return addr
 }
 
-// windowNamed is what a window serving at an address is called here.
+// rekeyWindows follows a change to the server list through the windows
+// taken over.
 //
-// The name the server list gives it, so everything this window keeps
-// about it goes under one name. An address nothing saved is its own
-// name.
-func (a *app) windowNamed(addr string) string {
-	if h, ok := a.savedWindowAt(addr); ok {
-		return h.Name
-	}
-	return addr
-}
-
-// savedWindowAt is the saved gridterm window serving at an address.
-//
-// By address rather than by name, because a connection made from a typed
-// target knows nothing about the list. about answers about a name and
-// this does not, so the two do not overlap.
-func (a *app) savedWindowAt(addr string) (remote.Host, bool) {
-	for _, h := range a.book.Hosts() {
-		if h.Window && strings.EqualFold(h.ServeAddr(), addr) {
-			return h, true
-		}
-	}
-	return remote.Host{}, false
-}
-
-// windowAt is the window already taken over at an address, or nil.
-func (a *app) windowAt(addr string) *taken {
-	for _, t := range a.windows {
-		if strings.EqualFold(t.addr, addr) {
-			return t
-		}
-	}
-	return nil
-}
-
-// renamedWindow follows a rename through what the window holds for a
-// window taken over.
-//
-// The connection is keyed by name the way a machine's is, so a rename
-// that did not move it left the sidebar with a heading that had lost
-// its connection and a connection nothing could reach.
-func (a *app) renamedWindow(was, now string) {
-	t := a.windows[was]
-	if t == nil {
+// Called from refreshServers, which is where the list may have changed.
+// The key a window is held under comes from the list, so whatever else
+// goes by the old name follows here.
+func (a *app) rekeyWindows() {
+	moved, err := a.windows.rekey()
+	if err != nil {
+		// Logged rather than shown: this runs whenever a connection is
+		// made or lost, and a dialog a frame would be unusable.
+		a.logError(err)
 		return
 	}
-	delete(a.windows, was)
-	t.name = now
-	a.windows[now] = t
-	t.entry.Close = func() error { return a.dropWindow(now) }
-	// The panes drawn from it, and what each is watching over there.
-	for pane, what := range a.watching {
-		if what.window == was {
-			what.window = now
-			a.watching[pane] = what
-		}
+	if len(moved) == 0 {
+		return
 	}
-	a.renamedFiles(was, now)
+	// What goes by each old name is gathered before any of it is
+	// renamed, because two windows can trade names.
+	rows := make([][]*conns.Entry, len(moved))
+	reading := make([][]renamedFS, len(moved))
+	for i, r := range moved {
+		rows[i] = a.rowsUnder(r.was)
+		reading[i] = a.filesystemsOn(r.was)
+	}
+	for i, r := range moved {
+		for _, e := range rows[i] {
+			e.Host = r.window.name
+		}
+		for _, f := range reading[i] {
+			f.Renamed(r.window.name)
+		}
+		r.window.entry.Note = windowNote(r.window)
+	}
 }
 
 // becomeWindowPane hands the pane that was watching a window being taken
 // over to a shell on that window.
-func (a *app) becomeWindowPane(addr string, pane *term.Terminal, log *connLog) {
-	t := a.about(addr).window
-	if t == nil {
-		a.endedAs(pane, "not taken over")
-		log.Failed(fmt.Errorf("this window has not taken over %s", addr))
-		return
-	}
+//
+// The window itself rather than its name, which the server list can
+// have changed while the connection was being made.
+func (a *app) becomeWindowPane(t *taken, pane *term.Terminal, log *connLog) {
 	size := pane.Size()
 	sess, err := t.win.Open(size.Cols, size.Rows)
 	if err != nil {
@@ -302,224 +550,23 @@ func (a *app) becomeWindowPane(addr string, pane *term.Terminal, log *connLog) {
 		return
 	}
 	log.Say("connected")
-	a.paneOnWindow[pane] = t
+	a.windows.draws(pane, t)
 	log.Became(sess)
 }
 
-// reach is everything reaching another window needs.
-//
-// The two functions are here rather than called for, so a test can hand
-// over an agent and a file of its own: the real ones belong to whoever
-// is running gridterm.
-type reach struct {
-	addr, keyFile string
-	ring          *remote.Ring
-	ask           remote.Ask
-
-	// known says where the windows already reached are recorded, and
-	// agent where the keys an SSH agent holds come from.
-	known func() (string, error)
-	agent agentKeys
-
-	// saying is told what is being done now, for the row to show. It is
-	// called from the goroutine doing it, so it hands the work to
-	// whatever draws. A nil one is not called.
-	saying func(what string)
-
-	// patience is how long the other end has to get through the
-	// handshake. Zero asks the serve package for its own.
-	patience time.Duration
-}
-
-// say tells the row what is being done now.
-func (r reach) say(what string) {
-	if r.saying != nil {
-		r.saying(what)
+// windowNote is what a window's row says beside its name: the address
+// it serves at, because a name the user gave says nothing about where
+// it is.
+func windowNote(t *taken) string {
+	if t.name == t.addr {
+		return ""
 	}
-}
-
-// What a connection says it is doing, in the order it does them.
-const (
-	stepKeys      = "finding a key to offer"
-	stepConnect   = "connecting"
-	stepGivingUp  = "giving up"
-	stepConnected = "connected"
-)
-
-// reachWindow does the part that must not run on the goroutine that
-// draws: reading the disk, unlocking a key, and the handshake itself.
-func reachWindow(ctx context.Context, r reach) (*serve.Window, error) {
-	type answer struct {
-		win *serve.Window
-		err error
-	}
-	back := make(chan answer, 1)
-	go func() {
-		win, err := r.reach(ctx)
-		back <- answer{win: win, err: err}
-	}()
-	select {
-	case got := <-back:
-		return got.win, got.err
-	case <-ctx.Done():
-		r.say(stepGivingUp)
-		// Given up on. Every step of reaching a window is bounded, so
-		// the one still running ends on its own; it is waited for here
-		// rather than abandoned, because it may yet come back holding a
-		// connection that nothing else would close.
-		go func() {
-			if got := <-back; got.win != nil {
-				_ = got.win.Close()
-			}
-		}()
-		return nil, ctx.Err()
-	}
-}
-
-// reach makes the connection, step by step. It runs on a goroutine of
-// reachWindow's, which is what lets giving up be answered at once
-// however far this has got.
-func (r reach) reach(ctx context.Context) (*serve.Window, error) {
-	known, err := r.known()
-	if err != nil {
-		return nil, err
-	}
-	r.say(stepKeys)
-	keys, closer, err := keysFor(ctx, r.keyFile, r.ring, r.ask, r.agent, r.saying)
-	if err != nil {
-		return nil, err
-	}
-	// Held open until the handshake is done. A signer the agent holds
-	// signs over that socket, so closing it first leaves a key that can
-	// be offered and cannot be used -- and one such key fails the whole
-	// handshake, with the others never tried.
-	if closer != nil {
-		defer closer.Close()
-	}
-
-	check, err := remote.HostKeyCheck(ctx, []string{known}, r.ask)
-	if err != nil {
-		return nil, err
-	}
-	r.say(stepConnect)
-	win, err := serve.Dial(ctx, serve.DialConfig{
-		Addr: r.addr, Keys: keys, HostKey: check, Patience: r.patience,
-		Saying: r.saying,
-	})
-	if err != nil {
-		return nil, err
-	}
-	r.say(stepConnected)
-	return win, nil
-}
-
-// agentKeys is where the keys an SSH agent holds come from. It is a
-// parameter so a test can hand over an agent of its own: the real one
-// belongs to whoever is running gridterm.
-type agentKeys func() ([]ssh.Signer, io.Closer, error)
-
-// keysFor is what to offer the other window: the key file named, if one
-// was, and otherwise whatever is already unlocked and whatever the
-// agent holds.
-//
-// The closer is the connection to the agent, which the caller closes
-// once it has finished signing with what it was given. It is nil when
-// there is nothing to close.
-func keysFor(ctx context.Context, keyFile string, ring *remote.Ring,
-	ask remote.Ask, fromAgent agentKeys, say func(string)) ([]ssh.Signer, io.Closer, error) {
-
-	if say == nil {
-		say = func(string) {}
-	}
-	if keyFile != "" {
-		say("unlocking " + keyFile)
-		signer, err := ring.Unlock(ctx, keyFile, ask)
-		if err != nil {
-			return nil, nil, err
-		}
-		return []ssh.Signer{signer}, nil, nil
-	}
-	keys := ring.Signers()
-	var closer io.Closer
-	agentErr := ring.AgentTrouble()
-	if agentErr != nil {
-		say("leaving the SSH agent alone: " + agentErr.Error() +
-			". Forget unlocked keys to have it asked again")
-	} else {
-		say("asking the SSH agent what keys it holds")
-		var agentSigners []ssh.Signer
-		agentSigners, closer, agentErr = fromAgent()
-		switch {
-		case errors.Is(agentErr, remote.ErrAgentSilent):
-			// Remembered, so the next window taken over does not wait
-			// for the same answer. One that is not running at all is
-			// not remembered: finding that out costs nothing.
-			ring.AgentGaveUp(agentErr)
-			say("the SSH agent: " + agentErr.Error())
-		case agentErr != nil:
-			say("the SSH agent: " + agentErr.Error())
-		default:
-			say(fmt.Sprintf("the agent holds %d keys", len(agentSigners)))
-		}
-		keys = append(keys, agentSigners...)
-	}
-
-	// And the key files in the usual places, which is what connecting to
-	// a machine offers. A user with one key in ~/.ssh expects it to be
-	// used either way.
-	plain, locked, err := remote.UsualKeys()
-	if err != nil {
-		if closer != nil {
-			_ = closer.Close()
-		}
-		return nil, nil, err
-	}
-	say(fmt.Sprintf("%d private keys in the usual places need no passphrase, %d do",
-		len(plain), len(locked)))
-	keys = append(keys, plain...)
-	if len(keys) > 0 {
-		return keys, closer, nil
-	}
-
-	// Nothing that could be read without asking. Only now is a
-	// passphrase worth asking for, and only for the first key: a machine
-	// with three would otherwise ask three times for a window the first
-	// one would have reached.
-	if len(locked) > 0 && ask != nil {
-		say("unlocking " + locked[0])
-		signer, err := ring.Unlock(ctx, locked[0], ask)
-		if err != nil {
-			if closer != nil {
-				_ = closer.Close()
-			}
-			return nil, nil, err
-		}
-		return []ssh.Signer{signer}, closer, nil
-	}
-
-	if closer != nil {
-		_ = closer.Close()
-	}
-	if agentErr != nil {
-		// Why there were none, which is not always "there is no
-		// agent": one that answered and then failed is a different
-		// thing to go and fix.
-		return nil, nil, fmt.Errorf(
-			"no keys to offer, and the SSH agent could not be read: %w", agentErr)
-	}
-	return nil, nil, errors.New(
-		"no keys to offer: name a key file, put one in ~/.ssh, or add one to the SSH agent")
+	return t.addr
 }
 
 // holdWindow remembers a window and puts a row on the panel for it.
 func (a *app) holdWindow(name, addr string, win *serve.Window) *taken {
 	t := &taken{name: name, addr: addr, win: win}
-	note := ""
-	if name != addr {
-		// Which address the name stands for, because the name is the
-		// user's and says nothing about where it is.
-		note = addr
-	}
 	t.entry = &conns.Entry{
 		Host: name,
 		// A Server rather than a Terminal: it is the connection itself,
@@ -527,12 +574,15 @@ func (a *app) holdWindow(name, addr string, win *serve.Window) *taken {
 		// from under their own name rather than saying it twice.
 		Kind:   conns.Server,
 		Label:  "taken over",
-		Note:   note,
+		Note:   windowNote(t),
 		Meter:  &meter.Meter{},
 		Reveal: func() { a.revealWindow(t) },
-		Close:  func() error { return a.dropWindow(name) },
+		// Closed by the window itself rather than by the name it is
+		// held under now: the server list can give it another at any
+		// time.
+		Close: func() error { return a.dropWindow(t.name) },
 	}
-	a.windows[name] = t
+	a.windows.add(t)
 	a.registry.Add(t.entry)
 	a.refreshServers()
 
@@ -548,7 +598,7 @@ func (a *app) holdWindow(name, addr string, win *serve.Window) *taken {
 // windowDied is called when the other window has gone by itself.
 func (a *app) windowDied(t *taken) {
 	// By identity: the name may hold another window by now.
-	if a.windows[t.name] != t {
+	if a.windows.named(t.name) != t {
 		// Already let go of from here, and its row with it.
 		return
 	}
@@ -562,126 +612,11 @@ func (a *app) windowDied(t *taken) {
 // A window with nothing open on it has nothing to show, so nothing
 // happens: there is no window for a connection itself.
 func (a *app) revealWindow(t *taken) {
-	for pane, on := range a.paneOnWindow {
-		if on == t {
-			a.focus(pane)
-			return
-		}
+	for _, pane := range a.windows.drawnFrom(t) {
+		a.focus(pane)
+		return
 	}
 }
-
-// serveFiles gives a client the files of this machine, as SFTP on the
-// channel it was handed.
-//
-// It runs on a goroutine of the server's and touches nothing the window
-// holds.
-func (a *app) serveFiles(ch io.ReadWriteCloser) error {
-	// The channel is not this function's to close: whoever handed it
-	// over closes it once, and an SFTP server closes what it was given
-	// as it goes. Left alone, the two would close it twice and the
-	// second would have to be told not to mind.
-	// Where the user lives, so a pane on this machine opens there. A
-	// file session starts in the serving process's own directory
-	// otherwise, which is wherever the window happened to be launched
-	// from.
-	options := []sftp.ServerOption{
-		// A Windows machine has drives rather than one root. Without
-		// this, "/" is whatever drive this process happens to be on and
-		// the others cannot be reached by going up.
-		sftp.WindowsRootEnumeratesDrives(),
-	}
-	if home, err := os.UserHomeDir(); err == nil {
-		options = append(options, sftp.WithServerWorkingDirectory(home))
-	}
-	srv, err := sftp.NewServer(keptOpen{ch}, options...)
-	if err != nil {
-		return fmt.Errorf("could not serve the files of this machine: %w", err)
-	}
-	served := srv.Serve()
-	if errors.Is(served, io.EOF) {
-		served = nil
-	}
-	// Closed after serving, and its failure said: it lets go of every
-	// file the session left open.
-	if err := errors.Join(served, srv.Close()); err != nil {
-		return fmt.Errorf("serving the files of this machine: %w", err)
-	}
-	return nil
-}
-
-// keptOpen is a stream whose close does nothing, for handing to
-// something that closes what it is given when the caller needs it after.
-type keptOpen struct{ io.ReadWriteCloser }
-
-func (keptOpen) Close() error { return nil }
-
-// windowFiles is the filesystem of the machine a window taken over is
-// on, as a browser pane works on it.
-func (a *app) windowFiles(addr string) (vfs.FS, error) {
-	t := a.about(addr).window
-	if t == nil {
-		return nil, fmt.Errorf("this window has not taken over %s", addr)
-	}
-	ch, err := t.win.Files()
-	if err != nil {
-		return nil, err
-	}
-	client, err := sftp.NewClientPipe(ch, ch)
-	if err != nil {
-		// Whatever the far end said about a session it could not start
-		// is the only account of it: the failure happened over there.
-		// It closes the channel on every failure of its own, so that
-		// account has arrived or is about to.
-		if why := ch.Said(); why != "" {
-			return nil, fmt.Errorf("could not read the files of %s: %s", addr, why)
-		}
-		return nil, fmt.Errorf("could not read the files of %s: %w", addr, err)
-	}
-	return vfs.NewSFTP(addr, client, func() error {
-		return closeFilesOver(client, ch)
-	}), nil
-}
-
-// closeFilesOver ends a file session on a window taken over.
-//
-// Closing the SFTP client sends an end of file and then waits for the
-// far end to close the channel. A window that has stopped answering
-// never will, and this runs on the goroutine that draws, so the wait is
-// bounded: after that the channel is closed from here, which is what
-// lets go.
-func closeFilesOver(client, ch io.Closer) error {
-	done := make(chan error, 1)
-	go func() { done <- client.Close() }()
-
-	var errs []error
-	select {
-	case err := <-done:
-		errs = append(errs, err)
-	case <-time.After(filesGrace):
-		errs = append(errs, ch.Close())
-		// Now that the channel has gone, the client's own close can
-		// finish. Waited for rather than abandoned: it holds a
-		// goroutine until it does.
-		errs = append(errs, <-done)
-	}
-	// The client closes the channel as it goes, so this is the path
-	// where it never got that far.
-	errs = append(errs, ch.Close())
-
-	for i, err := range errs {
-		// A channel already closed says so, which is agreement rather
-		// than a failure: this closes it once itself and once through
-		// the client.
-		if errors.Is(err, io.EOF) {
-			errs[i] = nil
-		}
-	}
-	return errors.Join(errs...)
-}
-
-// filesGrace is how long letting go of a window waits for its file
-// session to say goodbye before closing the channel from here.
-const filesGrace = 250 * time.Millisecond
 
 // openOnWindow opens a terminal in the other window, drawn in a pane
 // here.
@@ -694,24 +629,15 @@ func (a *app) openOnWindow(addr string, at *spot) error {
 	if err != nil {
 		return err
 	}
-	pane, err := a.openSessionTab(sess, addr, conns.Terminal, "terminal", at)
+	// Under the name holding the window, which is not always the name
+	// asked about, so the sidebar keeps one heading for it.
+	pane, err := a.openSessionTab(sess, t.name, conns.Terminal, "terminal", at)
 	if err != nil {
 		// The session is ours and nothing else knows about it.
 		_ = sess.Close()
 		return err
 	}
-	a.paneOnWindow[pane] = t
-	return nil
-}
-
-// watchingPane is the pane already watching something on a window taken
-// over, or nil when nothing is.
-func (a *app) watchingPane(what remoteKey) *term.Terminal {
-	for pane, have := range a.watching {
-		if have == what {
-			return pane
-		}
-	}
+	a.windows.draws(pane, t)
 	return nil
 }
 
@@ -745,22 +671,23 @@ func (a *app) dropWindow(addr string) error {
 		}
 		return nil
 	}
-	delete(a.windows, addr)
+	// Under the name holding it, which is not always the name asked
+	// about: the list can save a second name at one window's address,
+	// and that name reaches the same connection.
+	name := t.name
+	a.windows.drop(t)
 	a.registry.Drop(t.entry)
 
 	// A file pane reading through this window is reading through a
 	// connection that is about to go. It is taken away here, because
 	// nothing else would: a pane does not end by itself the way a shell
 	// does.
-	errs := []error{a.closeFilesOn(addr)}
+	errs := []error{a.closeFilesOn(name)}
 
 	// Then the terminal panes, each closed while the connection
 	// carrying it is still there to hang up politely.
-	for pane, on := range a.paneOnWindow {
-		if on != t {
-			continue
-		}
-		delete(a.paneOnWindow, pane)
+	for _, pane := range a.windows.drawnFrom(t) {
+		a.windows.forget(pane)
 		errs = append(errs, a.closePane(pane))
 	}
 	errs = append(errs, t.win.Close())
@@ -776,18 +703,17 @@ func (a *app) dropWindow(addr string) error {
 // to show a rebuilt menu to.
 func (a *app) closeWindows() error {
 	var errs []error
-	for addr, t := range a.windows {
-		delete(a.windows, addr)
+	for _, t := range a.windows.drain() {
 		errs = append(errs, t.win.Close())
 	}
 	return errors.Join(errs...)
 }
 
-// knownWindows is where this window records the keys of the windows it
-// has reached. A test points it somewhere of its own.
-func (a *app) knownWindows() (string, error) {
-	if a.knownWindowsAt != "" {
-		return a.knownWindowsAt, nil
+// knownWindows is where the keys of the windows reached are recorded:
+// the file a test named, or the usual one.
+func knownWindows(named string) (string, error) {
+	if named != "" {
+		return named, nil
 	}
 	return knownWindowsPath()
 }
@@ -815,7 +741,7 @@ func (a *app) attachHere(what remoteKey, at *spot) error {
 	// Already watching it: the pane comes forward rather than a second
 	// one opening on the same program, which would be two panes typing
 	// into one shell.
-	if pane := a.watchingPane(what); pane != nil {
+	if pane := a.windows.watcher(what); pane != nil {
 		a.focus(pane)
 		return nil
 	}
@@ -834,15 +760,15 @@ func (a *app) attachHere(what remoteKey, at *spot) error {
 	if err != nil {
 		return err
 	}
-	pane, err := a.openSessionTab(sess, what.window, conns.Terminal, open.Label, at)
+	pane, err := a.openSessionTab(sess, t.name, conns.Terminal, open.Label, at)
 	if err != nil {
 		// The session is ours and nothing else knows about it. Failing
 		// to let go of it leaves the pane over there being watched by
 		// nobody, which is worth saying along with why this failed.
 		return errors.Join(err, sess.Close())
 	}
-	a.paneOnWindow[pane] = t
-	a.watching[pane] = what
+	a.windows.draws(pane, t)
+	a.windows.watch(pane, what)
 	return nil
 }
 

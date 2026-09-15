@@ -371,7 +371,7 @@ func TestThePlusOnASavedWindowTakesItOver(t *testing.T) {
 	}
 	answer(t, client, "Connect")
 	waitFor(t, client, "the window to be taken over", func() bool {
-		return client.windows["statio"] != nil
+		return client.windows.named("statio") != nil
 	})
 }
 

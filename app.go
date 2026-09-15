@@ -80,31 +80,12 @@ type app struct {
 	serving *serving
 
 	// windows are the other machines' gridterms this one has taken
-	// over, by the address each was reached at.
-	windows map[string]*taken
-
-	// knownWindowsAt is where the keys of the windows reached are
-	// recorded, empty in the program and set by a test to a file of its
-	// own: the real one belongs to whoever is running gridterm.
-	knownWindowsAt string
-
-	// paneOnWindow says which taken-over window a pane is drawn from,
-	// so letting go of one takes its panes with it.
-	paneOnWindow map[*term.Terminal]*taken
-
-	// watching says what each of those panes is watching over there, so
-	// choosing the same thing again brings the pane forward rather than
-	// opening a second one onto one shell.
-	watching map[*term.Terminal]remoteKey
+	// over, and the panes drawn from them.
+	windows *windows
 
 	// agents are the panes handed to agents, and the listener that lets
 	// those agents in.
 	agents *agents
-
-	// reachPatience is how long a window being taken over has to get
-	// through the handshake. Zero asks the serve package for its own;
-	// a test asks for less so it does not wait out the real one.
-	reachPatience time.Duration
 
 	// stats says how long the window is taking, for somebody looking at
 	// a slow one. Nil unless it was asked for.
@@ -216,11 +197,15 @@ type app struct {
 	book           *remote.Book
 	serverCommands []string
 
-	// serverHosts is the list the registered commands were built from,
-	// so a rebuild that would change nothing is skipped. Rebuilding
-	// closes whatever menu is open, and this runs whenever a connection
+	// builtFor is what the registered commands were built from: every
+	// machine the window knows, each marked when a terminal on it means
+	// taking a window over, and then the saved names.
+	//
+	// refreshServers writes it, and only when it rebuilds, so a refresh
+	// whose lines match it leaves the commands alone. Rebuilding takes
+	// down whatever menu is open, and this runs whenever a connection
 	// is made or lost.
-	serverHosts []string
+	builtFor []string
 
 	// connecting counts the machines being connected to right now. The
 	// panel shows a row for each, so several can be on their way at

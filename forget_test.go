@@ -55,11 +55,14 @@ func TestClosingAConnectionStillOnItsWayGivesUp(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	a.opening["edge"] = cancel
+	a.holdNames(&dialling{cancel: cancel, names: []string{"edge"}})
 	a.actOn, a.acting = "edge", true
 
 	if err := a.disconnectHere(); err != nil {
 		t.Fatalf("disconnect: %v", err)
+	}
+	if a.opening["edge"] != nil {
+		t.Error("the window is still holding the name, so nothing can try again")
 	}
 
 	select {

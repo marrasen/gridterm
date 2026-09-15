@@ -135,12 +135,14 @@ func (a *app) machineDied(m *machine) {
 
 // dropMachine closes a machine's connection and everything riding on it.
 func (a *app) dropMachine(name string) error {
-	if cancel := a.opening[name]; cancel != nil {
+	if d := a.opening[name]; d != nil {
 		// Still on its way. Cancelling closes the connection under the
 		// handshake, wherever it is waiting -- including on a browser
 		// window the user has thought better of -- and the goroutine
-		// that was dialling takes the row away.
-		cancel()
+		// that was dialling takes the row away. The names are let go of
+		// here rather than there, because a handshake carried inside
+		// another connection need not come back at all.
+		a.giveUp(d)
 		return nil
 	}
 	m := a.machines[name]
@@ -220,13 +222,65 @@ func (a *app) plan(route []step) (through *machine, missing []step, err error) {
 	return nil, route, nil
 }
 
+// dialling is a connection being made, and the names the window holds
+// while it is.
+type dialling struct {
+	cancel context.CancelFunc
+
+	// names is every machine of the route and the name the pane goes by.
+	names []string
+
+	// made names the machines of the route that answered, in the order
+	// they did.
+	made []string
+}
+
+// holdNames holds every name a connection needs while it is being made.
+func (a *app) holdNames(d *dialling) {
+	for _, n := range d.names {
+		a.opening[n] = d
+	}
+}
+
+// releaseName stops holding one name of a route, leaving the rest held.
+//
+// It is what a machine that has just connected does. The connection is
+// there now, so the window is no longer connecting to it and a terminal
+// can be opened on it while the machine beyond it is still being
+// reached. A name another attempt has since taken is left alone.
+func (a *app) releaseName(d *dialling, name string) {
+	if a.opening[name] == d {
+		delete(a.opening, name)
+	}
+}
+
+// release stops holding a route's names, so another attempt can have
+// them.
+func (a *app) release(d *dialling) {
+	for _, n := range d.names {
+		a.releaseName(d, n)
+	}
+}
+
+// giveUp cancels a connection being made and lets go of its names at
+// once.
+//
+// The names go now rather than when the dial goroutine comes back. A
+// handshake carried inside another connection can wait as long as the
+// machine carrying it takes, and the window would otherwise answer the
+// next attempt with "already connecting" about a machine nobody is
+// connecting to any more.
+func (a *app) giveUp(d *dialling) {
+	d.cancel()
+	a.release(d)
+}
+
 // openRoute connects to whatever of a route is not connected to yet and
 // then opens a terminal or a command on the far end.
 //
 // The dial runs on its own goroutine because it can stop to ask the user
-// something, and the dialog it asks with is drawn by this one. A row on
-// the panel holds the place until it is done, and cancelling that gives
-// up.
+// something, and the dialog it asks with is drawn by this one. A pane
+// holds the place until it is done, and closing it gives up.
 func (a *app) openRoute(name string, route []step, command []string, at *spot) {
 	through, missing, err := a.plan(route)
 	if err != nil {
@@ -262,16 +316,26 @@ func (a *app) openRoute(name string, route []step, command []string, at *spot) {
 
 	ctx, cancel := context.WithCancel(a.ctx)
 
+	// Every machine still to reach, and the name the pane goes by. That
+	// last one is the end of the route rather than a step being dialled:
+	// it is the name the user sees and the one they will ask to close.
+	names := make([]string, 0, len(missing)+1)
+	for _, s := range missing {
+		names = append(names, s.name)
+	}
+	names = append(names, name)
+	held := &dialling{cancel: cancel, names: names}
+
 	// A pane rather than a row that only says "opening". It is somewhere
 	// to watch from: every machine on the way as it is reached, and
 	// whatever a server says, in full and there to copy. The same pane
 	// carries the shell when there is one, so the account of how it was
 	// reached stays in the scrollback above it.
 	//
-	// Letting go of the connection is done here rather than by the
-	// closure that finishes it: a dial that has not come back yet still
-	// has to stop holding the name, or nothing can try again.
-	log := newConnLog(func() { a.pump.post(func() { a.gaveUpOn(name, missing, cancel) }) })
+	// Letting go of the names is done here rather than by the closure
+	// that finishes the dial: a dial that has not come back yet still
+	// has to stop holding them, or nothing can try again.
+	log := newConnLog(func() { a.pump.post(func() { a.giveUp(held) }) })
 	pane, err := a.openSessionTab(log, name, kindOf(command), "connecting", at)
 	if err != nil {
 		cancel()
@@ -279,36 +343,32 @@ func (a *app) openRoute(name string, route []step, command []string, at *spot) {
 		return
 	}
 	a.connecting++
-	for _, s := range missing {
-		a.opening[s.name] = cancel
-	}
-	// And under the name the pane goes by, which is the end of the route
-	// rather than the step being dialled: it is the name the user sees
-	// and the one they will ask to close.
-	a.opening[name] = cancel
+	a.holdNames(held)
 
 	var carrier *remote.Conn
+	first := ""
 	if through != nil {
 		carrier = through.conn
-	}
-	if through != nil {
-		log.Say("going through " + through.at.name + ", which is already connected")
+		first = through.at.name
+		log.Say("going through " + first + ", which is already connected")
 	}
 	for _, s := range missing {
 		log.Say("connecting to " + s.cfg.Target())
 	}
 	for i := range missing {
 		missing[i].cfg.Ask = &askUser{app: a, log: log}
-		// What the dial is doing, as it does it. A connection that
-		// stops says where it stopped, which is the whole of what
-		// anybody has to go on.
+		// What the dial is doing, as it does it. A connection that stops
+		// says where it stopped, which is the whole of what anybody has
+		// to go on.
 		missing[i].cfg.Saying = log.Say
 	}
 	go func() {
-		opened, err := dialRoute(ctx, carrier, missing)
+		err := dialRoute(ctx, carrier, missing, func(at int, conn *remote.Conn) {
+			a.pump.post(func() { a.reached(held, log, missing, at, conn, first) })
+		})
 		a.pump.post(func() {
 			a.connecting--
-			a.letGoOf(name, missing)
+			a.release(held)
 			// Read before the context is let go of on the next line,
 			// which would otherwise make every connection look like one
 			// the user gave up on.
@@ -316,6 +376,7 @@ func (a *app) openRoute(name string, route []step, command []string, at *spot) {
 			cancel()
 			if err != nil {
 				a.kept[pane] = true
+				a.sayStillConnected(log, held)
 				if gaveUp != nil {
 					log.GaveUp()
 					return
@@ -324,46 +385,62 @@ func (a *app) openRoute(name string, route []step, command []string, at *spot) {
 				return
 			}
 			// Given up on, or the machine it was reached through closed,
-			// while the last handshake was finishing. Either way what
-			// was opened is no use and nothing else knows about it.
+			// while the last handshake was finishing.
 			if why := a.stillWanted(gaveUp, through); why != nil {
 				a.kept[pane] = true
-				log.Failed(errors.Join(append([]error{why}, closeAll(opened)...)...))
+				a.sayStillConnected(log, held)
+				log.Failed(why)
 				return
-			}
-			via := ""
-			if through != nil {
-				via = through.at.name
-			}
-			for i, conn := range opened {
-				a.hold(missing[i], conn, via)
-				via = missing[i].name
-				log.Say("connected to " + missing[i].name)
 			}
 			a.becomeShellPane(name, command, pane, log)
 		})
 	}()
 }
 
-// letGoOf stops the window holding a route's names, so another attempt
-// can have them.
-func (a *app) letGoOf(name string, missing []step) {
-	for _, s := range missing {
-		delete(a.opening, s.name)
+// reached takes a machine of a route that has just connected, while the
+// rest of the route is still being made.
+//
+// The machine is held and its name let go of straight away rather than
+// when the whole route is done. That is what lets a terminal open on a
+// machine that answered while the machine beyond it is still being
+// reached, instead of the window saying it is already connecting to one
+// it is connected to.
+func (a *app) reached(d *dialling, log *connLog, route []step, at int, conn *remote.Conn, first string) {
+	s := route[at]
+	if a.opening[s.name] != d || a.machines[s.name] != nil {
+		// Given up on, or tried again and the new attempt owns the name
+		// now. This connection is nobody's.
+		if err := conn.Close(); err != nil {
+			a.reportError("Could not let go of "+s.name, err)
+		}
+		return
 	}
-	delete(a.opening, name)
+	via := first
+	if at > 0 {
+		via = route[at-1].name
+	}
+	a.hold(s, conn, via)
+	d.made = append(d.made, s.name)
+	a.releaseName(d, s.name)
+	log.Say("connected to " + s.name)
 }
 
-// gaveUpOn lets go of a route the user has given up on, without waiting
-// for the dial to come back.
+// sayStillConnected names the machines of a route that are connected
+// even though the route as a whole was not made.
 //
-// The names go now rather than when the goroutine finishes. A dial that
-// is still unwinding would otherwise go on holding them, and the window
-// would answer the next attempt with "already connecting" to a machine
-// nobody is connecting to any more.
-func (a *app) gaveUpOn(name string, missing []step, cancel context.CancelFunc) {
-	cancel()
-	a.letGoOf(name, missing)
+// A machine that answered is kept: it is a machine like any other now,
+// and closing it because the one beyond it did not answer would throw
+// away a connection the user can work on and would have to make again.
+func (a *app) sayStillConnected(log *connLog, d *dialling) {
+	var still []string
+	for _, name := range d.made {
+		if a.machines[name] != nil {
+			still = append(still, name)
+		}
+	}
+	if len(still) > 0 {
+		log.Say("still connected to " + strings.Join(still, ", "))
+	}
 }
 
 // becomeShellPane hands the pane that was watching a connection being
@@ -415,27 +492,14 @@ func (a *app) stillWanted(gaveUp error, through *machine) error {
 	return nil
 }
 
-// closeAll shuts a set of connections and returns what went wrong.
-func closeAll(conns []*remote.Conn) []error {
-	errs := make([]error, 0, len(conns))
-	for i := len(conns) - 1; i >= 0; i-- {
-		if err := conns[i].Close(); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	return errs
-}
-
 // dialRoute opens each machine of a route in turn, each through the one
-// before it, and hands back what it opened.
+// before it, and reports each as soon as it answers.
 //
-// A failure part way closes what it had already opened. Half a route is
-// a set of connections nothing knows about and nothing would ever close,
-// so a failure to close one of them is reported alongside the failure
-// that caused it.
-func dialRoute(ctx context.Context, through *remote.Conn, route []step) ([]*remote.Conn, error) {
-	opened := make([]*remote.Conn, 0, len(route))
-	for _, s := range route {
+// made is called with every connection the moment it is up, so the
+// window can hold it: a machine that answered stays connected even when
+// the machine beyond it does not. It is called from this goroutine.
+func dialRoute(ctx context.Context, through *remote.Conn, route []step, made func(int, *remote.Conn)) error {
+	for i, s := range route {
 		var (
 			conn *remote.Conn
 			err  error
@@ -449,14 +513,14 @@ func dialRoute(ctx context.Context, through *remote.Conn, route []step) ([]*remo
 			if len(route) > 1 {
 				// Which machine of the route failed, which the caller
 				// cannot work out from the error on its own.
-				err = fmt.Errorf("%s: %w", s.name, err)
+				return fmt.Errorf("%s: %w", s.name, err)
 			}
-			return nil, errors.Join(append([]error{err}, closeAll(opened)...)...)
+			return err
 		}
-		opened = append(opened, conn)
+		made(i, conn)
 		through = conn
 	}
-	return opened, nil
+	return nil
 }
 
 // startOn runs something on a machine that is already connected to.
@@ -596,11 +660,11 @@ func (a *app) disconnectHere() error {
 
 // cancelConnecting gives up on a connection that is still being made.
 func (a *app) cancelConnecting(host string) error {
-	cancel := a.opening[host]
-	if cancel == nil {
+	d := a.opening[host]
+	if d == nil {
 		return fmt.Errorf("gridterm is not connecting to %s", host)
 	}
-	cancel()
+	a.giveUp(d)
 	return nil
 }
 

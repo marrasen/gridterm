@@ -33,6 +33,11 @@ type auth struct {
 	ladder []rung
 	agent  io.Closer
 
+	// saying is told which way of signing in is being tried, so somebody
+	// watching a connection that stops can see where it stopped. A nil
+	// one is not called.
+	saying func(string)
+
 	// noAgent is why there is no agent, kept for the message shown when
 	// nothing at all worked.
 	noAgent error
@@ -49,7 +54,12 @@ type auth struct {
 // user anything.
 type rung struct {
 	method string
-	build  func() ssh.AuthMethod
+
+	// what names this way of signing in the way a person would, for the
+	// account of the connection the window shows.
+	what string
+
+	build func() ssh.AuthMethod
 }
 
 // next picks what to try after the last attempt failed.
@@ -59,6 +69,9 @@ type rung struct {
 // the first is ever tried. A machine with an agent and an encrypted key
 // would offer the agent, be refused, and never try the key.
 func (a *auth) next(ctx *ssh.ClientAuthContext) (ssh.AuthMethod, error) {
+	if a.at == 0 {
+		saySo(a.saying, "it will accept "+strings.Join(ctx.AllowedMethods, ", "))
+	}
 	for a.at < len(a.ladder) {
 		r := a.ladder[a.at]
 		a.at++
@@ -68,8 +81,10 @@ func (a *auth) next(ctx *ssh.ClientAuthContext) (ssh.AuthMethod, error) {
 		if !slices.Contains(ctx.AllowedMethods, r.method) {
 			continue
 		}
+		saySo(a.saying, "trying "+r.what)
 		return r.build(), nil
 	}
+	saySo(a.saying, "there is nothing left to sign in with")
 	return nil, nil
 }
 
@@ -89,7 +104,7 @@ func (a *auth) close() {
 // at a time, so a machine with three keys does not ask three times for a
 // connection the first one would have made.
 func authMethods(ctx context.Context, cfg Config) (*auth, error) {
-	a := &auth{}
+	a := &auth{saying: cfg.Saying}
 
 	var agentSigners func() ([]ssh.Signer, error)
 	if !cfg.NoAgent {
@@ -109,7 +124,7 @@ func authMethods(ctx context.Context, cfg Config) (*auth, error) {
 	}
 
 	if agentSigners != nil || len(plain) > 0 || len(cfg.Ring.Paths()) > 0 {
-		a.ladder = append(a.ladder, rung{method: methodPublicKey, build: func() ssh.AuthMethod {
+		a.ladder = append(a.ladder, rung{method: methodPublicKey, what: "the keys already to hand", build: func() ssh.AuthMethod {
 			return ssh.PublicKeysCallback(func() ([]ssh.Signer, error) {
 				signers := cfg.Ring.Signers()
 				if agentSigners != nil {
@@ -128,7 +143,7 @@ func authMethods(ctx context.Context, cfg Config) (*auth, error) {
 		return a, nil
 	}
 	for _, path := range locked {
-		a.ladder = append(a.ladder, rung{method: methodPublicKey, build: func() ssh.AuthMethod {
+		a.ladder = append(a.ladder, rung{method: methodPublicKey, what: "the private key " + path, build: func() ssh.AuthMethod {
 			return ssh.PublicKeysCallback(func() ([]ssh.Signer, error) {
 				signer, err := cfg.Ring.Unlock(ctx, path, cfg.Ask)
 				if err != nil {
@@ -139,10 +154,10 @@ func authMethods(ctx context.Context, cfg Config) (*auth, error) {
 		}})
 	}
 	a.ladder = append(a.ladder,
-		rung{method: methodKeyboard, build: func() ssh.AuthMethod {
+		rung{method: methodKeyboard, what: "whatever the server asks", build: func() ssh.AuthMethod {
 			return ssh.KeyboardInteractive(keyboardInteractive(ctx, cfg))
 		}},
-		rung{method: methodPassword, build: func() ssh.AuthMethod {
+		rung{method: methodPassword, what: "a password", build: func() ssh.AuthMethod {
 			return ssh.PasswordCallback(func() (string, error) {
 				return cfg.Ask.Password(ctx, cfg.User, cfg.Host)
 			})

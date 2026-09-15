@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"io"
 	"math/rand"
 	"path/filepath"
@@ -157,7 +156,7 @@ func newTestApp(t *testing.T, cols, rows int) *testApp {
 		registry:     conns.New(),
 		rates:        make(map[*conns.Entry]*meter.Rate),
 		machines:     make(map[string]*machine),
-		opening:      make(map[string]context.CancelFunc),
+		opening:      make(map[string]*dialling),
 		windows:      make(map[string]*taken),
 		served:       make(map[*serve.Client]*conns.Entry),
 		paneOnWindow: make(map[*term.Terminal]*taken),

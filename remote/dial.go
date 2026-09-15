@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -81,12 +82,37 @@ func dial(ctx context.Context, to reach, addr, user string, next ssh.ClientAuthC
 	return nil, describeHostKeyError(err, addr)
 }
 
+// helloTimeout is how long the far end has to say who it is.
+//
+// It covers the version exchange and the key exchange, and stops as soon
+// as the host key arrives. Nothing after it is bounded here: signing in
+// can wait on a passphrase dialog, and a deadline running while one is
+// open would close the connection under the user.
+//
+// A variable so a test can shorten it. Nothing else writes it.
+var helloTimeout = 20 * time.Second
+
+// handshake is everything ssh.NewClientConn produced, so the goroutine
+// running it can hand back all of it at once.
+type handshake struct {
+	cc    ssh.Conn
+	chans <-chan ssh.NewChannel
+	reqs  <-chan *ssh.Request
+	err   error
+}
+
 // dialOnce makes one attempt, which cancelling ctx gives up on.
 //
 // ssh.Dial cannot be cancelled: its Timeout covers reaching the host and
 // nothing else, so a handshake that stops to ask the user a question
 // would hold the goroutine until they answered. Doing the two halves
 // separately is what lets a window that is closing let go.
+//
+// The handshake runs on a goroutine of its own so that giving up is
+// immediate whatever it is doing. Closing the connection is what usually
+// stops it, and does when it is a socket. A connection carried inside
+// another one takes no deadline at all and need not stop until the
+// machine carrying it answers, so this waits for none of that.
 func dialOnce(ctx context.Context, to reach, addr string, cfg *ssh.ClientConfig,
 	saying func(string)) (*ssh.Client, error) {
 
@@ -96,37 +122,99 @@ func dialOnce(ctx context.Context, to reach, addr string, cfg *ssh.ClientConfig,
 		return nil, err
 	}
 	saySo(saying, "asking "+addr+" who it is, and signing in as "+cfg.User)
-	// Closing the connection is what unblocks the handshake, whichever
-	// part of it is waiting.
-	stop := context.AfterFunc(ctx, func() { _ = nc.Close() })
 
-	cc, chans, reqs, err := ssh.NewClientConn(nc, addr, cfg)
-	if err != nil {
-		// Only close it ourselves when the cancellation did not: closing
-		// an already-closed connection is not an error worth reporting,
-		// but the reason matters.
-		if !stop() {
-			_ = nc.Close()
-			return nil, errors.Join(ctx.Err(), err)
+	// A copy, so noticing that the far end has answered does not change
+	// the config the caller passed in.
+	once := *cfg
+	late := make(chan struct{})
+	var (
+		mu       sync.Mutex
+		answered bool
+	)
+	hello := time.AfterFunc(helloTimeout, func() {
+		mu.Lock()
+		defer mu.Unlock()
+		if !answered {
+			close(late)
 		}
-		_ = nc.Close()
-		return nil, err
-	}
-	if !stop() {
-		// Cancelled between the handshake finishing and us noticing.
-		// The incoming channels are drained so the multiplexer is not
-		// left with a reader nobody will ever run.
-		go ssh.DiscardRequests(reqs)
-		go func() {
-			for ch := range chans {
-				_ = ch.Reject(ssh.Prohibited, "connection cancelled")
+	})
+	defer hello.Stop()
+	// Left nil when the caller left it nil, so x/crypto still refuses a
+	// connection with nothing checking the host key.
+	if check := cfg.HostKeyCallback; check != nil {
+		once.HostKeyCallback = func(hostname string, remote net.Addr, key ssh.PublicKey) error {
+			mu.Lock()
+			answered = true
+			mu.Unlock()
+			hello.Stop()
+			saySo(saying, "it answered, with a "+key.Type()+" host key")
+			if err := check(hostname, remote, key); err != nil {
+				return err
 			}
-		}()
-		_ = cc.Close()
+			saySo(saying, "its host key is accepted")
+			return nil
+		}
+	}
+
+	done := make(chan handshake, 1)
+	go func() {
+		cc, chans, reqs, err := ssh.NewClientConn(nc, addr, &once)
+		done <- handshake{cc: cc, chans: chans, reqs: reqs, err: err}
+	}()
+
+	var h handshake
+	select {
+	case h = <-done:
+	case <-late:
+		walkAway(nc, done)
+		return nil, fmt.Errorf("remote: %s did not say who it is within %s", addr, helloTimeout)
+	case <-ctx.Done():
+		walkAway(nc, done)
 		return nil, ctx.Err()
 	}
+	if h.err != nil {
+		_ = nc.Close()
+		if why := ctx.Err(); why != nil {
+			return nil, errors.Join(why, h.err)
+		}
+		return nil, h.err
+	}
+	// Cancelled between the handshake finishing and this noticing.
+	// Handing back a live connection would open a terminal on a machine
+	// the user has stopped waiting for.
+	if why := ctx.Err(); why != nil {
+		letGo(h)
+		return nil, why
+	}
 	saySo(saying, "signed in to "+addr+" as "+cfg.User)
-	return ssh.NewClient(cc, chans, reqs), nil
+	return ssh.NewClient(h.cc, h.chans, h.reqs), nil
+}
+
+// walkAway lets go of a handshake that is not coming back.
+//
+// The connection is closed, which is what a socket needs to stop.
+// Whatever the handshake ends up producing is closed when it arrives, so
+// nothing here waits for a machine that may never answer.
+func walkAway(nc net.Conn, done <-chan handshake) {
+	_ = nc.Close()
+	go func() {
+		if h := <-done; h.err == nil {
+			letGo(h)
+		}
+	}()
+}
+
+// letGo closes a connection that was made and is not wanted, draining
+// what the far end opens on it so the multiplexer is not left with a
+// reader nobody will run.
+func letGo(h handshake) {
+	go ssh.DiscardRequests(h.reqs)
+	go func() {
+		for ch := range h.chans {
+			_ = ch.Reject(ssh.Prohibited, "connection cancelled")
+		}
+	}()
+	_ = h.cc.Close()
 }
 
 // saySo tells whoever is watching what is being done now, if anybody

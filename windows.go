@@ -99,14 +99,19 @@ func (a *app) takeOver(addr, keyFile string) error {
 	// says, in full and there to copy. The same pane carries the shell
 	// when there is one, so the account of how it was reached stays in
 	// the scrollback above it.
-	log := newConnLog(cancel)
+	//
+	// Letting go of the address is done here rather than by the closure
+	// that finishes the dial: a dial that has not come back yet still
+	// has to stop holding it, or nothing can try again.
+	held := &dialling{cancel: cancel, names: []string{addr}}
+	log := newConnLog(func() { a.pump.post(func() { a.giveUp(held) }) })
 	pane, err := a.openSessionTab(log, addr, conns.Terminal, "connecting", nil)
 	if err != nil {
 		cancel()
 		return err
 	}
 	a.connecting++
-	a.opening[addr] = cancel
+	a.holdNames(held)
 	log.Say("taking over " + addr)
 
 	ask := &askUser{app: a, log: log}
@@ -119,7 +124,7 @@ func (a *app) takeOver(addr, keyFile string) error {
 		})
 		a.pump.post(func() {
 			a.connecting--
-			delete(a.opening, addr)
+			a.release(held)
 			// Read before the context is let go of on the next line,
 			// which would otherwise make every window look like one the
 			// user gave up on.
@@ -534,10 +539,12 @@ func (a *app) farSize(what remoteKey) (cols, rows int) {
 func (a *app) dropWindow(addr string) error {
 	t := a.windows[addr]
 	if t == nil {
-		if cancel := a.opening[addr]; cancel != nil {
+		if d := a.opening[addr]; d != nil {
 			// Still on its way. Cancelling closes the connection under
-			// the handshake, and the goroutine takes the row away.
-			cancel()
+			// the handshake, and the goroutine takes the row away. The
+			// address is let go of here rather than there, so another
+			// attempt can have it at once.
+			a.giveUp(d)
 			return nil
 		}
 		return nil

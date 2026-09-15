@@ -174,14 +174,14 @@ type app struct {
 	// the connection already here rather than logging in again.
 	machines map[string]*machine
 
-	// opening holds a way to give up on each machine being connected to
-	// right now, and so also names them: two connections to one machine
-	// cannot be made at once, or the window would hold the second and
-	// close neither.
+	// opening names every machine being connected to right now, so two
+	// connections to one machine cannot be made at once: the window
+	// would hold the second and close neither. Every name of a route
+	// points at the same dialling.
 	//
 	// A connection still being made is the one most likely to be given
 	// up on, because it is the one that is taking too long.
-	opening map[string]context.CancelFunc
+	opening map[string]*dialling
 
 	// tunnels are the forwards the window is holding, by the panel row
 	// that stands for each. They ride on a connection, so closing that

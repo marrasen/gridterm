@@ -410,7 +410,13 @@ func TestACodeTheWindowNeverHandedOutOpensNothing(t *testing.T) {
 	withPanel(t, a)
 	_, code, c := handedOver(t, a)
 
-	wrong := code[:len(code)-1] + "z"
+	// A letter the code does not already end in, because a code is
+	// random and one in thirty-two of them ends in any given letter.
+	swap := "z"
+	if strings.HasSuffix(code, swap) {
+		swap = "y"
+	}
+	wrong := code[:len(code)-1] + swap
 	if wrong == code {
 		t.Fatal("the test did not change the code")
 	}

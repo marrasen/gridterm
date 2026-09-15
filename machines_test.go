@@ -276,9 +276,11 @@ func TestAFailedConnectionCanBeRetried(t *testing.T) {
 	}
 }
 
-// Half a route is a set of connections nothing knows about and nothing
-// would ever close, so a failure part way closes what it had opened.
-func TestAFailedRouteLeavesNothingOpen(t *testing.T) {
+// A machine of a route that answered is a machine like any other, so it
+// stays connected when the one beyond it does not. Closing it because
+// the next hop refused would throw away a connection the user can work
+// on and would have to make again.
+func TestAFailedRouteKeepsTheHopItReached(t *testing.T) {
 	near := sshtest.New(t)
 	far := sshtest.New(t)
 	a := newTestApp(t, 80, 24)
@@ -308,25 +310,25 @@ func TestAFailedRouteLeavesNothingOpen(t *testing.T) {
 	if !strings.Contains(said, "db") {
 		t.Fatalf("the failure does not say which machine refused: %q", said)
 	}
-	if len(a.machines) != 0 {
-		t.Fatalf("the first hop was left open: %v", names(a))
+	if a.machines["edge"] == nil {
+		t.Fatalf("the machine that answered was closed: %v", names(a))
 	}
-	// And it was really closed, not merely forgotten about: a connection
-	// nothing holds is one nothing will ever close.
-	for deadline := time.Now().Add(waitBudget); near.Live() > 0; {
-		if time.Now().After(deadline) {
-			t.Fatalf("the machine in the way still has %d connections open", near.Live())
-		}
-		time.Sleep(time.Millisecond)
+	if a.machines["db"] != nil {
+		t.Fatalf("the machine that refused was kept: %v", names(a))
+	}
+	if !strings.Contains(said, "still connected to edge") {
+		t.Errorf("the pane does not say what is still connected: %q", said)
+	}
+	// And no name is held any more, so another attempt at either can be
+	// made straight away.
+	if a.opening["edge"] != nil || a.opening["db"] != nil {
+		t.Fatal("a machine was left marked as being connected to")
 	}
 	// The pane that was watching stays, holding the reason. Closing it
 	// is what takes it away, and leaves what was there before.
 	if len(a.panes) != 2 {
 		t.Fatalf("%d panes after a failed route, want the one that was there"+
 			" and the one that says why", len(a.panes))
-	}
-	if a.opening["edge"] != nil || a.opening["db"] != nil {
-		t.Fatal("a machine was left marked as being connected to")
 	}
 	for pane, e := range a.panes {
 		if e.Host != "db" {
@@ -338,6 +340,17 @@ func TestAFailedRouteLeavesNothingOpen(t *testing.T) {
 	}
 	if len(a.panes) != 1 {
 		t.Fatalf("%d panes after closing it, want the one that was there", len(a.panes))
+	}
+	// Closing the machine that answered really closes it: a connection
+	// nothing holds is one nothing will ever close.
+	if err := a.dropMachine("edge"); err != nil {
+		t.Fatalf("drop the machine that answered: %v", err)
+	}
+	for deadline := time.Now().Add(waitBudget); near.Live() > 0; {
+		if time.Now().After(deadline) {
+			t.Fatalf("the machine in the way still has %d connections open", near.Live())
+		}
+		time.Sleep(time.Millisecond)
 	}
 }
 
@@ -711,5 +724,72 @@ func TestACommandThatWillNotCloseSaysSo(t *testing.T) {
 	a.reapExited()
 	if n := len(a.root.Modals()); n != 1 {
 		t.Fatalf("%d dialogs, want one", n)
+	}
+}
+
+// A machine on the way that answered is connected and named straight
+// away, so a terminal can be opened on it while the machine beyond it is
+// still being reached.
+//
+// It used to hold every name of the route until the whole route was
+// done. A machine further along that never answered then left the
+// window saying it was already connecting to one it was connected to,
+// and there was no way to give up on either.
+func TestAHopThatAnsweredIsUsableWhileTheNextIsStillBeingReached(t *testing.T) {
+	near := sshtest.New(t)
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+
+	// A machine that answers the socket and then says nothing at all,
+	// which is the second hop of the route.
+	deafHost, deafPort := sshtest.Deaf(t)
+	key := sshtest.WriteKey(t)
+	a.prepare = func(cfg remote.Config) remote.Config {
+		cfg.NoAgent = true
+		cfg.Identities = []string{key}
+		cfg.HostKeyCallback = ssh.FixedHostKey(near.HostKey())
+		return cfg
+	}
+	saveHost(t, a, "edge", near, "")
+	if err := a.book.Put(remote.Host{
+		Name: "db", Address: deafHost, Port: deafPort, User: "tester", Via: "edge",
+	}, ""); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+
+	if err := a.connectSaved("db"); err != nil {
+		t.Fatalf("connectSaved: %v", err)
+	}
+	waitFor(t, a, "the machine on the way to answer", func() bool { return a.machines["edge"] != nil })
+	if a.opening["edge"] != nil {
+		t.Fatal("the window is still holding the name of a machine it is connected to")
+	}
+	// Which is the whole point of letting go of it: a terminal opens on
+	// the machine that answered.
+	if err := a.openOn("edge", nil, nil); err != nil {
+		t.Fatalf("a terminal on the machine that answered: %v", err)
+	}
+
+	// The machine beyond it never answers. Giving up on it comes back at
+	// once and lets go of the name, so another attempt can be made.
+	if err := a.dropMachine("db"); err != nil {
+		t.Fatalf("give up on the machine that never answered: %v", err)
+	}
+	if a.opening["db"] != nil {
+		t.Fatal("the window is still holding the name of a machine nobody is connecting to")
+	}
+	waitFor(t, a, "the pane to say it was given up on", func() bool {
+		for pane, e := range a.panes {
+			if e.Host == "db" && strings.Contains(paneText(pane), "given up on") {
+				return true
+			}
+		}
+		return false
+	})
+	// And the machine that answered is still connected: closing it
+	// because the one beyond it did not answer would throw away a
+	// connection the user can work on.
+	if a.machines["edge"] == nil {
+		t.Fatalf("giving up on the machine beyond it closed the one that answered: %v", names(a))
 	}
 }

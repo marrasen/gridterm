@@ -175,7 +175,7 @@ func main() {
 	}
 	a.rates = make(map[*conns.Entry]*meter.Rate)
 	a.machines = make(map[string]*machine)
-	a.opening = make(map[string]context.CancelFunc)
+	a.opening = make(map[string]*dialling)
 	a.windows = make(map[string]*taken)
 	a.served = make(map[*serve.Client]*conns.Entry)
 	a.paneOnWindow = make(map[*term.Terminal]*taken)

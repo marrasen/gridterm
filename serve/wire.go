@@ -120,6 +120,13 @@ type Open struct {
 	Rows int `json:"rows,omitempty"`
 }
 
+// HasScreen reports whether this is something a watcher can be shown.
+//
+// The size is what says so: only something with a screen carries one.
+// A connection, a tunnel or a client working in that window is a row on
+// its panel and nothing a second pair of eyes can be put on.
+func (o Open) HasScreen() bool { return o.Cols > 0 && o.Rows > 0 }
+
 // Snapshot is everything the window being served has open.
 type Snapshot struct {
 	// Window is what the served window calls itself, for a client

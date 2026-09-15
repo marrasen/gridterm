@@ -182,14 +182,17 @@ func farNote(pane ui.Size, cols, rows int) string {
 	if cols <= 0 || rows <= 0 || (pane.Cols == cols && pane.Rows == rows) {
 		return ""
 	}
-	return farSize + " " + strconv.Itoa(cols) + "x" + strconv.Itoa(rows)
+	return farSize + strconv.Itoa(cols) + "x" + strconv.Itoa(rows)
 }
 
 // isFarNote reports whether a note is one of ours.
 func isFarNote(note string) bool { return strings.HasPrefix(note, farSize) }
 
 // farSize begins the note on a pane showing a screen of another size.
-const farSize = "shows"
+//
+// Short, because the note sits on the same line as the title and the
+// sidebar is narrow: a longer one left nothing of the title to read.
+const farSize = "at "
 
 // watchedNote is what a pane's row says when somebody elsewhere is
 // reading it.

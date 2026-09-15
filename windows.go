@@ -709,6 +709,13 @@ func (a *app) attachHere(what remoteKey, at *spot) error {
 	if !ok {
 		return fmt.Errorf("%s no longer has that open", what.window)
 	}
+	if !open.HasScreen() {
+		// Asking anyway opened a pane that showed the refusal, and the
+		// pane was a row of its own: every attempt left another one
+		// behind.
+		return fmt.Errorf("%q on %s has no screen to watch: it is %s, not a terminal",
+			open.Label, what.window, strings.ToLower(open.Kind))
+	}
 	sess, err := t.win.Attach(open, a.lastSize[0], a.lastSize[1])
 	if err != nil {
 		return err

@@ -856,7 +856,7 @@ func TestTheRowChosenIsTheOneAttachedTo(t *testing.T) {
 // screen is, because nothing else explains what it is drawing.
 func TestAPaneSaysWhenTheFarScreenIsAnotherSize(t *testing.T) {
 	pane := ui.Size{Cols: 80, Rows: 24}
-	if got := farNote(pane, 120, 40); got != "shows 120x40" {
+	if got := farNote(pane, 120, 40); got != "at 120x40" {
 		t.Errorf("it said %q", got)
 	}
 	if got := farNote(pane, 80, 24); got != "" {
@@ -865,7 +865,7 @@ func TestAPaneSaysWhenTheFarScreenIsAnotherSize(t *testing.T) {
 	if got := farNote(pane, 0, 0); got != "" {
 		t.Errorf("something with no screen said %q", got)
 	}
-	if !isFarNote("shows 120x40") {
+	if !isFarNote("at 120x40") {
 		t.Error("it does not recognise its own note")
 	}
 	if isFarNote("via bastion") || isOurNote("via bastion") {
@@ -1727,5 +1727,49 @@ func TestFindingAKeySaysWhatItLookedAt(t *testing.T) {
 		if !strings.Contains(account, want) {
 			t.Errorf("the account does not say %q:\n%s", want, account)
 		}
+	}
+}
+
+// A row on the other window with no screen cannot be watched, and
+// asking leaves nothing behind.
+//
+// Asking anyway opened a pane that showed the refusal, and the pane was
+// a row of its own. Every attempt left another one, so a user clicking
+// the row that says somebody is working in that window could make rows
+// for ever.
+func TestARowWithNoScreenCannotBeWatched(t *testing.T) {
+	host, client, addr := twoWindows(t)
+
+	// The row the serving window has for the client working in it. It
+	// is on its panel and has no screen behind it.
+	var serving ui.ListRow
+	waitForBoth(t, host, client, "the serving row to reach the client", func() bool {
+		host.refreshPanel(time.Now())
+		for _, row := range client.remoteRows(addr) {
+			if strings.Contains(row.Text, "serving") {
+				serving = row
+				return true
+			}
+		}
+		return false
+	})
+
+	panes := len(client.panes)
+	err := client.revealRow(serving)
+	if err == nil {
+		t.Fatal("it opened a pane on something with no screen")
+	}
+	if !strings.Contains(err.Error(), "no screen") {
+		t.Errorf("it refused with %v, want it to say there is no screen", err)
+	}
+	if len(client.panes) != panes {
+		t.Fatalf("%d panes, want the %d there were", len(client.panes), panes)
+	}
+	// And again, because the bug was that each attempt left a row.
+	if err := client.revealRow(serving); err == nil {
+		t.Fatal("the second attempt opened a pane")
+	}
+	if len(client.panes) != panes {
+		t.Fatalf("%d panes after two attempts, want the %d there were", len(client.panes), panes)
 	}
 }

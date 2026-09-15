@@ -322,12 +322,12 @@ func TestNoKeysSaysWhyThereAreNone(t *testing.T) {
 	}
 }
 
-// Taking over the same window twice at once is refused.
+// Taking over the same window twice at once asks which one to keep.
 //
-// The second would write over the first's way of being closed, leaving
-// a connection nothing could reach and a serving window showing a
-// client that is not there.
-func TestTakingOverTheSameWindowTwiceIsRefused(t *testing.T) {
+// Two at once would leave the window holding the second and closing
+// neither: a connection nothing could reach, and a serving window
+// showing a client that is not there.
+func TestTakingOverTheSameWindowTwiceAsks(t *testing.T) {
 	a := newTestApp(t, 90, 30)
 	withDialogs(t, a)
 	withPanel(t, a)
@@ -337,13 +337,19 @@ func TestTakingOverTheSameWindowTwiceIsRefused(t *testing.T) {
 	if err := a.takeOver("127.0.0.1:1", keyFile); err != nil {
 		t.Fatalf("first: %v", err)
 	}
-	err := a.takeOver("127.0.0.1:1", keyFile)
-
-	if err == nil {
-		t.Fatal("it started taking over the same window twice")
+	if err := a.takeOver("127.0.0.1:1", keyFile); err != nil {
+		t.Fatalf("second: %v", err)
 	}
-	if !strings.Contains(err.Error(), "already taking over") {
-		t.Errorf("it refused with %v", err)
+
+	// Asked about rather than refused: the user says whether to wait for
+	// the one on its way or to throw it away and start again.
+	f := waitForDialog(t, a, "Already connecting to 127.0.0.1:1")
+	pressButton(t, a, f, "Leave it")
+	if a.connecting != 1 {
+		t.Fatalf("%d windows are being taken over, want the first one only", a.connecting)
+	}
+	if a.opening["127.0.0.1:1"] == nil {
+		t.Fatal("the first attempt was let go of")
 	}
 }
 

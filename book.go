@@ -254,7 +254,13 @@ func (a *app) openServerForm(under string) error {
 		} else {
 			h.Identities = rest
 		}
-		return a.book.Put(h, under)
+		if err := a.book.Put(h, under); err != nil {
+			return err
+		}
+		if under != "" && !strings.EqualFold(under, h.Name) {
+			a.renamedMachine(under, h.Name)
+		}
+		return nil
 	}})
 	if under != "" {
 		f.AddButton(ui.Button{Title: "Remove", Do: func() error {

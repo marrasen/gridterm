@@ -638,3 +638,54 @@ func TestTheServerCommandsAreNotRebuiltForNothing(t *testing.T) {
 		t.Fatalf("the new machine has no commands: %v", commandTitles(a))
 	}
 }
+
+// Renaming a saved machine takes what is open under the old name with
+// it.
+//
+// The machine has not changed, only what it is called. The old name
+// stayed in the sidebar with a pane under it, so one machine showed as
+// two.
+func TestRenamingAMachineTakesWhatIsOpenWithIt(t *testing.T) {
+	s := sshtest.New(t)
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pinServers(t, a, s)
+
+	saveHost(t, a, "picard", s, "")
+	if err := a.connectSaved("picard"); err != nil {
+		t.Fatalf("connectSaved: %v", err)
+	}
+	waitFor(t, a, "the machine to connect", func() bool { return a.machines["picard"] != nil })
+
+	if err := a.openEditServer("picard"); err != nil {
+		t.Fatalf("edit: %v", err)
+	}
+	f := openDialog(t, a)
+	f.Fields()[0].SetText("picard via skylake")
+	pressButton(t, a, f, "Save")
+	a.pump.run()
+
+	if a.machines["picard"] != nil {
+		t.Fatal("the connection is still held under the old name")
+	}
+	m := a.machines["picard via skylake"]
+	if m == nil {
+		t.Fatalf("the connection did not follow the rename: %v", names(a))
+	}
+	shown := strings.Join(panelText(a, time.Now()), "\n")
+	if strings.Contains(shown, "picard\n") || strings.HasSuffix(shown, "picard") {
+		t.Fatalf("the old name is still in the sidebar:\n%s", shown)
+	}
+	if !strings.Contains(shown, "picard via skylake") {
+		t.Fatalf("the new name is not in the sidebar:\n%s", shown)
+	}
+	// And the row still closes the connection, which is what the old
+	// name's closure would have looked for.
+	if err := m.entry.Close(); err != nil {
+		t.Fatalf("close the renamed connection: %v", err)
+	}
+	if a.machines["picard via skylake"] != nil {
+		t.Fatal("closing the renamed connection did nothing")
+	}
+}

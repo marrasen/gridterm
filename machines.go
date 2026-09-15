@@ -6,6 +6,7 @@ import (
 	"fmt"
 	stdlog "log"
 	"strings"
+	"time"
 
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/meter"
@@ -234,6 +235,15 @@ type dialling struct {
 	// made names the machines of the route that answered, in the order
 	// they did.
 	made []string
+
+	// waiting are requests to run once this connection is made or
+	// fails, for a user who asked for the same machine while it was on
+	// its way and chose to wait.
+	waiting []func()
+
+	// settled says the dial has come back, so anything waiting on it has
+	// already run and a new request must run now rather than queue.
+	settled bool
 }
 
 // holdNames holds every name a connection needs while it is being made.
@@ -274,6 +284,57 @@ func (a *app) release(d *dialling) {
 func (a *app) giveUp(d *dialling) {
 	d.cancel()
 	a.release(d)
+	// What was queued behind it goes with it. Giving up on a connection
+	// and having the window make it anyway a moment later is not what
+	// giving up means.
+	d.settled, d.waiting = true, nil
+}
+
+// settle lets go of a connection that has been made or has failed, and
+// runs whatever was waiting for it.
+func (a *app) settle(d *dialling) {
+	a.release(d)
+	waiting := d.waiting
+	d.settled, d.waiting = true, nil
+	for _, run := range waiting {
+		run()
+	}
+}
+
+// askAboutTheOneOnItsWay asks what to do about a machine that is
+// already being connected to.
+//
+// Two connections to one machine at once would leave the window holding
+// the second and closing neither, so one of them has to go. Which one is
+// the user's to say: the one on its way may be a second from done, or
+// may be stuck on a machine that will never answer.
+func (a *app) askAboutTheOneOnItsWay(d *dialling, name string, again func()) {
+	f := a.newConfirm("Already connecting to "+name, []string{
+		"gridterm is still connecting to " + name + ".",
+		"",
+		"Two connections to one machine at once would leave one of them" +
+			" open with nothing holding it. So either this waits for that" +
+			" one, or that one goes.",
+	})
+	f.AddButton(ui.Button{Title: "Wait for it", Do: func() error {
+		if d.settled {
+			// It came back while the dialog was open, so there is
+			// nothing left to wait for.
+			a.pump.post(again)
+			return nil
+		}
+		d.waiting = append(d.waiting, again)
+		return nil
+	}})
+	f.AddButton(ui.Button{Title: "Give up on that one", Do: func() error {
+		a.giveUp(d)
+		// Not from here: this dialog closes as soon as this returns, and
+		// closing one takes anything stacked on top of it.
+		a.pump.post(again)
+		return nil
+	}})
+	f.AddButton(ui.Button{Title: "Leave it"})
+	a.showForm(f, nil)
 }
 
 // openRoute connects to whatever of a route is not connected to yet and
@@ -295,11 +356,11 @@ func (a *app) openRoute(name string, route []step, command []string, at *spot) {
 		return
 	}
 	for _, s := range missing {
-		// Two connections to one machine at once would leave the window
-		// holding the second and closing neither.
-		if a.opening[s.name] != nil {
-			a.reportError("Could not connect to "+name,
-				fmt.Errorf("gridterm is already connecting to %s", s.name))
+		// Already on its way. Asked about rather than refused: waiting
+		// for it is usually what the user wants, and refusing left them
+		// with a machine they could not reach and no way to say so.
+		if d := a.opening[s.name]; d != nil {
+			a.askAboutTheOneOnItsWay(d, s.name, func() { a.openRoute(name, route, command, at) })
 			return
 		}
 	}
@@ -374,27 +435,28 @@ func (a *app) openRoute(name string, route []step, command []string, at *spot) {
 		}
 		a.pump.post(func() {
 			a.connecting--
-			a.release(held)
+			a.settle(held)
 			// Read before the context is let go of on the next line,
 			// which would otherwise make every connection look like one
 			// the user gave up on.
 			gaveUp := ctx.Err()
 			cancel()
 			if err != nil {
-				a.kept[pane] = true
 				a.sayStillConnected(log, held)
 				if gaveUp != nil {
+					a.endedAs(pane, "given up on")
 					log.GaveUp()
 					return
 				}
+				a.endedAs(pane, "not connected")
 				log.Failed(err)
 				return
 			}
 			// Given up on, or the machine it was reached through closed,
 			// while the last handshake was finishing.
 			if why := a.stillWanted(gaveUp, through); why != nil {
-				a.kept[pane] = true
 				a.sayStillConnected(log, held)
+				a.endedAs(pane, "not connected")
 				log.Failed(why)
 				return
 			}
@@ -429,6 +491,61 @@ func (a *app) reached(d *dialling, log *connLog, route []step, at int, conn *rem
 	d.made = append(d.made, s.name)
 	a.releaseName(d, s.name)
 	log.Say("connected to " + s.name)
+}
+
+// renamedMachine follows a rename through everything the window keys by
+// a machine's name.
+//
+// The machine has not changed, only what it is called. What was open
+// under the old name would otherwise show as a second machine in the
+// sidebar, and closing it would look for one that is not there any more.
+func (a *app) renamedMachine(was, now string) {
+	if m := a.machines[was]; m != nil {
+		delete(a.machines, was)
+		m.at.name = now
+		a.machines[now] = m
+		// The closure knew the old name, and the row is how the user
+		// closes the connection.
+		m.entry.Close = func() error { return a.dropMachine(now) }
+	}
+	if d := a.opening[was]; d != nil {
+		delete(a.opening, was)
+		a.opening[now] = d
+		for i := range d.names {
+			if d.names[i] == was {
+				d.names[i] = now
+			}
+		}
+		for i := range d.made {
+			if d.made[i] == was {
+				d.made[i] = now
+			}
+		}
+	}
+	// Every row under the old name: the panes, the tunnels, and the
+	// connection itself. They are the same entries the panel groups by.
+	for _, group := range a.registry.Groups(time.Now()) {
+		if group.Host != was {
+			continue
+		}
+		for _, row := range group.Rows {
+			row.Entry.Host = now
+		}
+	}
+	a.refreshServers()
+	a.markDirty()
+}
+
+// endedAs says on the panel what became of a connection that was being
+// made.
+//
+// The row said "connecting" and nothing took that back, so a connection
+// that failed an hour ago still read as one on its way, greyed out.
+func (a *app) endedAs(pane *term.Terminal, what string) {
+	a.kept[pane] = true
+	if e := a.panes[pane]; e != nil {
+		e.Label = what
+	}
 }
 
 // closeOnTheWayOut closes connections the window is never going to
@@ -488,7 +605,7 @@ func (a *app) sayStillConnected(log *connLog, d *dialling) {
 func (a *app) becomeShellPane(name string, command []string, pane *term.Terminal, log *connLog) {
 	m := a.machines[name]
 	if m == nil {
-		a.kept[pane] = true
+		a.endedAs(pane, "not connected")
 		log.Failed(fmt.Errorf("nothing is connected to %s", name))
 		return
 	}
@@ -500,7 +617,7 @@ func (a *app) becomeShellPane(name string, command []string, pane *term.Terminal
 		Term:    m.at.term,
 	})
 	if err != nil {
-		a.kept[pane] = true
+		a.endedAs(pane, "no terminal")
 		log.Failed(err)
 		return
 	}

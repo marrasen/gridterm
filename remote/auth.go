@@ -111,9 +111,11 @@ func authMethods(ctx context.Context, cfg Config) (*auth, error) {
 		conn, err := dialAgent()
 		if err != nil {
 			a.noAgent = err
+			saySo(cfg.Saying, "there is no SSH agent here: "+err.Error())
 		} else {
 			a.agent = conn
 			agentSigners = agent.NewClient(conn).Signers
+			saySo(cfg.Saying, "an SSH agent is running")
 		}
 	}
 
@@ -122,19 +124,29 @@ func authMethods(ctx context.Context, cfg Config) (*auth, error) {
 		a.close()
 		return nil, err
 	}
+	saySo(cfg.Saying, fmt.Sprintf("%d private keys need no passphrase, %d do",
+		len(plain), len(locked)))
 
 	if agentSigners != nil || len(plain) > 0 || len(cfg.Ring.Paths()) > 0 {
 		a.ladder = append(a.ladder, rung{method: methodPublicKey, what: "the keys already to hand", build: func() ssh.AuthMethod {
 			return ssh.PublicKeysCallback(func() ([]ssh.Signer, error) {
 				signers := cfg.Ring.Signers()
 				if agentSigners != nil {
-					got, err := agentSigners()
+					saySo(cfg.Saying, "asking the SSH agent what keys it holds")
+					got, err := keysWithin(agentPatience, agentSigners)
 					if err != nil {
+						// Returned rather than stepped over. x/crypto
+						// keeps it and goes on to the next way of
+						// signing in, so the ladder is not cut short and
+						// the reason is still there if nothing works.
 						return nil, fmt.Errorf("remote: read the SSH agent: %w", err)
 					}
+					saySo(cfg.Saying, fmt.Sprintf("the agent holds %d keys", len(got)))
 					signers = append(signers, got...)
 				}
-				return append(signers, plain...), nil
+				signers = append(signers, plain...)
+				saySo(cfg.Saying, fmt.Sprintf("offering %d keys", len(signers)))
+				return signers, nil
 			})
 		}})
 	}
@@ -334,6 +346,29 @@ func AgentKeys() (keys []ssh.Signer, closer io.Closer, err error) {
 		_ = conn.Close()
 		return nil, nil, fmt.Errorf(
 			"remote: the SSH agent did not answer within %v", agentPatience)
+	}
+}
+
+// keysWithin reads an agent's keys, giving up if it does not answer.
+//
+// An agent can stop to ask a question of its own -- a smartcard PIN, or
+// a passphrase in a window of its own -- and one nobody answers would
+// otherwise hold the connection for ever.
+func keysWithin(patience time.Duration, signers func() ([]ssh.Signer, error)) ([]ssh.Signer, error) {
+	type answer struct {
+		keys []ssh.Signer
+		err  error
+	}
+	back := make(chan answer, 1)
+	go func() {
+		keys, err := signers()
+		back <- answer{keys: keys, err: err}
+	}()
+	select {
+	case got := <-back:
+		return got.keys, got.err
+	case <-time.After(patience):
+		return nil, fmt.Errorf("it did not answer within %v", patience)
 	}
 }
 

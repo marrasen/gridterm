@@ -252,10 +252,61 @@ func TestOneMachineIsOnlyConnectedToOnce(t *testing.T) {
 	if a.connecting != 1 {
 		t.Fatalf("%d connections are being made, want the first one only", a.connecting)
 	}
-	f := waitForDialog(t, a, "Could not connect to slow")
-	if !strings.Contains(strings.Join(f.Lines, " "), "already connecting") {
-		t.Fatalf("the refusal says %q", strings.Join(f.Lines, " "))
+	// Asked about rather than refused: the user says whether to wait for
+	// the one on its way or to throw it away and start again.
+	f := waitForDialog(t, a, "Already connecting to slow")
+	pressButton(t, a, f, "Leave it")
+	if a.connecting != 1 {
+		t.Fatalf("%d connections are being made, want the first one only", a.connecting)
 	}
+	if a.opening["slow"] == nil {
+		t.Fatal("the first connection was let go of")
+	}
+}
+
+// Waiting for a connection already on its way runs the request again
+// once it is done.
+func TestWaitingForTheOneOnItsWayRunsTheRequestAgain(t *testing.T) {
+	s := sshtest.New(t)
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+
+	cfg := serverConfig(t, s)
+	a.connectAs("box", cfg)
+	a.connectAs("box", cfg)
+	f := waitForDialog(t, a, "Already connecting to box")
+	pressButton(t, a, f, "Wait for it")
+
+	// The first connection lands, and then the second request runs on
+	// the machine it made rather than logging in again.
+	waitFor(t, a, "both panes to be open", func() bool { return len(a.panes) == 3 })
+	if n := s.Conns(); n != 1 {
+		t.Fatalf("the machine saw %d logins, want the one", n)
+	}
+}
+
+// Giving up on the connection already on its way starts the new one.
+func TestGivingUpOnTheOneOnItsWayStartsTheNewOne(t *testing.T) {
+	deafHost, deafPort := sshtest.Deaf(t)
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+
+	cfg := serverConfig(t, sshtest.New(t))
+	cfg.Host, cfg.Port = deafHost, deafPort
+	a.connectAs("slow", cfg)
+	first := a.opening["slow"]
+	if first == nil {
+		t.Fatal("nothing is being connected to")
+	}
+
+	a.connectAs("slow", cfg)
+	f := waitForDialog(t, a, "Already connecting to slow")
+	pressButton(t, a, f, "Give up on that one")
+
+	waitFor(t, a, "the second attempt to take the name", func() bool {
+		d := a.opening["slow"]
+		return d != nil && d != first
+	})
 }
 
 // A machine that failed to connect is not left marked as busy, or the
@@ -946,5 +997,30 @@ func TestGivingUpStopsTheRouteWhereItIs(t *testing.T) {
 	// And it does not blame a machine it never tried to sign in to.
 	if strings.Contains(err.Error(), "db") {
 		t.Fatalf("dialRoute = %v, want it not to name the machine it stopped before", err)
+	}
+}
+
+// A connection that ended says so on the panel, rather than going on
+// saying it is connecting.
+//
+// The row said "connecting" and nothing took that back, so a connection
+// that failed an hour ago still read as one on its way, greyed out.
+func TestAConnectionThatEndedNoLongerSaysItIsConnecting(t *testing.T) {
+	s := sshtest.New(t)
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+
+	cfg := serverConfig(t, s)
+	cfg.Port = 1
+	a.connectAs("box", cfg)
+	waitForFailure(t, a, "box")
+
+	shown := strings.Join(panelText(a, time.Now()), "\n")
+	if strings.Contains(shown, "connecting") {
+		t.Fatalf("the panel still says it is connecting:\n%s", shown)
+	}
+	if !strings.Contains(shown, "not connected") {
+		t.Fatalf("the panel does not say what became of it:\n%s", shown)
 	}
 }

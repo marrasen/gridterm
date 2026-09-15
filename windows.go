@@ -82,14 +82,18 @@ func (a *app) takeOver(addr, keyFile string) error {
 	if !strings.Contains(addr, ":") {
 		addr = fmt.Sprintf("%s:%d", addr, servePort)
 	}
-	switch {
-	case a.windows[addr] != nil:
+	if a.windows[addr] != nil {
 		return fmt.Errorf("this window has already taken over %s", addr)
-	case a.opening[addr] != nil:
-		// Two at once would leave the window holding the second and
-		// closing neither: the first's way of being closed is written
-		// over before anything can use it.
-		return fmt.Errorf("gridterm is already taking over %s", addr)
+	}
+	// Already on its way. Asked about rather than refused: waiting for
+	// it is usually what the user wants.
+	if d := a.opening[addr]; d != nil {
+		a.askAboutTheOneOnItsWay(d, addr, func() {
+			if err := a.takeOver(addr, keyFile); err != nil {
+				a.reportError("Could not take over "+addr, err)
+			}
+		})
+		return nil
 	}
 
 	ctx, cancel := context.WithCancel(a.ctx)
@@ -124,18 +128,19 @@ func (a *app) takeOver(addr, keyFile string) error {
 		})
 		a.pump.post(func() {
 			a.connecting--
-			a.release(held)
+			a.settle(held)
 			// Read before the context is let go of on the next line,
 			// which would otherwise make every window look like one the
 			// user gave up on.
 			gaveUp := ctx.Err()
 			cancel()
 			if err != nil {
-				a.kept[pane] = true
 				if gaveUp != nil {
+					a.endedAs(pane, "given up on")
 					log.GaveUp()
 					return
 				}
+				a.endedAs(pane, "not taken over")
 				log.Failed(err)
 				return
 			}
@@ -144,7 +149,7 @@ func (a *app) takeOver(addr, keyFile string) error {
 				// finishing. Nothing else knows about it, and a failure
 				// to hang up is the user's to see: it is a socket to a
 				// machine that thinks somebody is working in it.
-				a.kept[pane] = true
+				a.endedAs(pane, "given up on")
 				log.GaveUp()
 				if err := win.Close(); err != nil {
 					a.reportError("Could not let go of "+addr, err)
@@ -163,14 +168,14 @@ func (a *app) takeOver(addr, keyFile string) error {
 func (a *app) becomeWindowPane(addr string, pane *term.Terminal, log *connLog) {
 	t := a.windows[addr]
 	if t == nil {
-		a.kept[pane] = true
+		a.endedAs(pane, "not taken over")
 		log.Failed(fmt.Errorf("this window has not taken over %s", addr))
 		return
 	}
 	size := pane.Size()
 	sess, err := t.win.Open(size.Cols, size.Rows)
 	if err != nil {
-		a.kept[pane] = true
+		a.endedAs(pane, "no terminal")
 		log.Failed(err)
 		return
 	}

@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -58,6 +60,12 @@ const (
 	// goroutine of this window for an afternoon.
 	longestWait = 5 * time.Minute
 
+	// acceptAgain is how long to wait before taking connections again
+	// after a failure to take one. Long enough not to spin on a machine
+	// that has run out of something, short enough that an agent
+	// arriving in the meantime only waits a moment.
+	acceptAgain = 50 * time.Millisecond
+
 	// lookEvery is how often a wait asks what is on the screen. Often
 	// enough to feel immediate, rarely enough that a wait costs the
 	// window nothing.
@@ -66,6 +74,12 @@ const (
 	// longestLine caps what one request may be, so an agent that sends
 	// no newline cannot make this window hold an unbounded buffer.
 	longestLine = 1 << 20
+
+	// sayHelloWithin is how long a connection has to say what it is
+	// before it is hung up on. A goroutine and a buffer held by
+	// something that says nothing is a goroutine and a buffer nobody
+	// asked for.
+	sayHelloWithin = 10 * time.Second
 
 	// mostAgents is how many may be connected at once.
 	//
@@ -137,10 +151,15 @@ func (s *Server) accept() {
 	for {
 		c, err := s.ln.Accept()
 		if err != nil {
-			if !s.isClosed() {
-				s.onError(fmt.Errorf("agent: accept: %w", err))
+			if s.isClosed() {
+				return
 			}
-			return
+			// Said and tried again. Running out of handles is a
+			// moment, and a listener that gave up on one would leave
+			// the row saying a pane is offered with nothing behind it.
+			s.onError(fmt.Errorf("agent: accept: %w", err))
+			time.Sleep(acceptAgain)
+			continue
 		}
 		if !s.hold(c) {
 			_ = c.Close()
@@ -205,6 +224,34 @@ func (s *Server) talk(c net.Conn) {
 
 	in := bufio.NewReaderSize(c, 4096)
 	out := json.NewEncoder(c)
+
+	// Nothing is answered until the first line says what this is. A
+	// connection that says something else, or says nothing, is hung up
+	// on rather than talked to: see hello.
+	if err := c.SetReadDeadline(time.Now().Add(sayHelloWithin)); err != nil {
+		s.onError(fmt.Errorf("agent: set a deadline: %w", err))
+		return
+	}
+	first, err := readLine(in)
+	if err != nil {
+		return
+	}
+	var greeting ask
+	if err := json.Unmarshal(first, &greeting); err != nil ||
+		greeting.Do != "hello" || greeting.Protocol != hello {
+		// Answered before hanging up, so an agent of another build is
+		// told why rather than left guessing.
+		_ = out.Encode(said{Error: "this window speaks " + hello})
+		return
+	}
+	if err := out.Encode(said{OK: true}); err != nil {
+		return
+	}
+	if err := c.SetReadDeadline(time.Time{}); err != nil {
+		s.onError(fmt.Errorf("agent: clear a deadline: %w", err))
+		return
+	}
+
 	for {
 		line, err := readLine(in)
 		if err != nil {
@@ -218,10 +265,11 @@ func (s *Server) talk(c net.Conn) {
 		}
 		var want ask
 		if err := json.Unmarshal(line, &want); err != nil {
-			if err := out.Encode(said{Error: "that is not something this window understands"}); err != nil {
-				return
-			}
-			continue
+			// Hung up on rather than answered. A stream that has stopped
+			// making sense is not an agent, and one that is answered and
+			// read from again is one a browser can be made to send.
+			_ = out.Encode(said{Error: "that is not something this window understands"})
+			return
 		}
 		if err := out.Encode(s.answer(want, held)); err != nil {
 			// The agent has gone mid-answer. Nothing here can do
@@ -240,7 +288,15 @@ func readLine(in *bufio.Reader) ([]byte, error) {
 	for {
 		part, more, err := in.ReadLine()
 		if err != nil {
-			return nil, errGone
+			// An agent that hung up, a connection closed from here, or
+			// one that ran out of time to say what it was: all of them
+			// are this conversation ending rather than going wrong.
+			// Anything else is a failure and is said.
+			if errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) ||
+				errors.Is(err, os.ErrDeadlineExceeded) {
+				return nil, errGone
+			}
+			return nil, err
 		}
 		line = append(line, part...)
 		if len(line) > longestLine {

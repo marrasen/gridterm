@@ -19,6 +19,11 @@ type clipboardWriter struct {
 	// clipboard of whoever is running it.
 	write func(string) error
 
+	// failed is told when a copy could not be made. Something the user
+	// was told is on the clipboard and is not is worth saying: they
+	// will go looking for it.
+	failed func(error)
+
 	once sync.Once
 	ch   chan string
 }
@@ -36,7 +41,11 @@ func (c *clipboardWriter) set(text string) {
 		go func() {
 			for s := range c.ch {
 				if err := put(s); err != nil {
-					log.Printf("clipboard: %v", err)
+					if c.failed != nil {
+						c.failed(err)
+					} else {
+						log.Printf("clipboard: %v", err)
+					}
 				}
 			}
 		}()

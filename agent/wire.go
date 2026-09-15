@@ -6,8 +6,13 @@ package agent
 // whole answer, so neither end has to frame anything: this carries a few
 // short messages about a screen, not a stream of a program's output.
 type ask struct {
-	// Do is what is wanted: "use", "panes", "read", "send" or "wait".
+	// Do is what is wanted: "hello", "use", "panes", "read", "send" or
+	// "wait".
 	Do string `json:"do"`
+
+	// Protocol is what the first message carries, and nothing else
+	// does. See hello.
+	Protocol string `json:"protocol,omitempty"`
 
 	// Code is the session code the user gave the agent. Only "use"
 	// carries one.
@@ -40,6 +45,17 @@ type wait struct {
 	// anyway. Zero means the default.
 	TimeoutMS int `json:"timeout_ms,omitempty"`
 }
+
+// hello is what an agent has to say before anything else, and is the
+// first thing on the connection.
+//
+// It is not a version check, though it is that too. A browser can be
+// made to send a chosen body to a port on this machine -- it cannot
+// read the answer, but it does not need to, and typing into somebody's
+// shell blind is enough. What it cannot do is choose the first bytes:
+// an HTTP request begins with a request line, and this window hangs up
+// on a first line that is not exactly this.
+const hello = "gridterm-agent-1"
 
 // said is what the window answers.
 //

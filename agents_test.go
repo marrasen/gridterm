@@ -332,3 +332,69 @@ func TestTakingAPaneBackWhileAnAgentIsAskingComesBack(t *testing.T) {
 		t.Fatal("taking the pane back waited for the agent it was taking it from")
 	}
 }
+
+// Handing a pane over again does not let the agent that had it back in.
+//
+// Taking a pane back has to mean something even when the user changes
+// their mind afterwards. The old agent still holds what it was given;
+// what it was given has to have stopped naming anything.
+func TestHandingAPaneOverAgainShutsOutTheAgentThatHadIt(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pane, code, c := handedOver(t, a)
+
+	var had agent.Pane
+	fromAgent(t, a, func() error {
+		var err error
+		had, err = c.Use(code)
+		return err
+	})
+
+	// The user takes it back, thinks better of it, and hands it over
+	// again -- to somebody else, with a new code.
+	if err := a.takeBackPane(pane); err != nil {
+		t.Fatalf("take it back: %v", err)
+	}
+	if err := a.handPane(pane); err != nil {
+		t.Fatalf("hand it over again: %v", err)
+	}
+	again := a.handedBy[pane]
+	if again.code == code {
+		t.Fatal("it handed out the same code again")
+	}
+	if again.id == had.ID {
+		t.Fatal("the new handover has the name the old one had")
+	}
+
+	// The old agent is holding a name that no longer means anything.
+	// Its connection was closed with the listener, so it reconnects the
+	// way anything that lost a connection would.
+	old, err := agent.Dial(again.code)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer func() { _ = old.Close() }()
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := old.Read(had.ID)
+		done <- err
+	}()
+	waitUntilPumped(t, a, func() bool { return len(done) > 0 })
+	if err := <-done; err == nil {
+		t.Error("the name it was given before still reads the pane")
+	}
+
+	// And typing with it reaches nothing.
+	go func() {
+		done <- old.Send(had.ID, "rm -rf /\r")
+	}()
+	waitUntilPumped(t, a, func() bool { return len(done) > 0 })
+	if err := <-done; err == nil {
+		t.Error("the name it was given before still types into the pane")
+	}
+	if got := a.shells[0].sentText(); got != "" {
+		t.Errorf("the pane was sent %q", got)
+	}
+}

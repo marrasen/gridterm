@@ -20,7 +20,14 @@ type Client struct {
 	in   *bufio.Reader
 	out  *json.Encoder
 
-	mu     sync.Mutex
+	// asking is held for the whole of one question and its answer, so
+	// an answer belongs to the question before it.
+	asking sync.Mutex
+
+	// shut is its own lock, and a small one. Closing must not wait for
+	// a question to be answered: a wait can be minutes long, and the
+	// thing that wants to close is often what would end it.
+	shut   sync.Mutex
 	closed bool
 }
 
@@ -37,7 +44,14 @@ func Dial(code string) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("agent: no gridterm window is listening on port %d: %w", port, err)
 	}
-	return &Client{conn: conn, in: bufio.NewReaderSize(conn, 4096), out: json.NewEncoder(conn)}, nil
+	c := &Client{conn: conn, in: bufio.NewReaderSize(conn, 4096), out: json.NewEncoder(conn)}
+	if _, err := c.say(ask{Do: "hello", Protocol: hello}); err != nil {
+		return nil, errors.Join(
+			fmt.Errorf("agent: %s is not a gridterm window this can talk to: %w",
+				conn.RemoteAddr(), err),
+			c.Close())
+	}
+	return c, nil
 }
 
 // Use gives the window a code and gets back the pane it names.
@@ -107,9 +121,13 @@ type Until struct {
 }
 
 // Close hangs up. The panes go on running, and the user still has them.
+//
+// It does not wait for a question still being answered. Closing the
+// connection is what ends one: the read it is parked in fails, and the
+// question comes back saying the window stopped answering.
 func (c *Client) Close() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.shut.Lock()
+	defer c.shut.Unlock()
 	if c.closed {
 		return nil
 	}
@@ -120,11 +138,18 @@ func (c *Client) Close() error {
 	return nil
 }
 
+// isClosed reports whether this has been hung up on.
+func (c *Client) isClosed() bool {
+	c.shut.Lock()
+	defer c.shut.Unlock()
+	return c.closed
+}
+
 // say asks one thing and waits for the answer to it.
 func (c *Client) say(want ask) (said, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.closed {
+	c.asking.Lock()
+	defer c.asking.Unlock()
+	if c.isClosed() {
 		return said{}, errors.New("agent: that window has been let go of")
 	}
 	if err := c.out.Encode(want); err != nil {

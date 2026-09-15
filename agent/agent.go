@@ -9,12 +9,18 @@
 // like from the outside.
 //
 // The user picks a pane and gets a code. The code is the whole of what
-// lets anything in. It is made fresh, never written anywhere, and taking
-// the pane back makes it useless.
+// lets anything in. It is made fresh and taking the pane back makes it
+// useless. The window writes it nowhere; showing it puts it on the
+// clipboard, which on Windows is kept in the clipboard history and may
+// be sent to the user's Microsoft account, so a code that has been
+// shown has been out of this process.
 //
-// The listener is on the loopback address and nothing else, so anything
-// that can reach it is already running as this user. That is the same
-// standing the clipboard has.
+// The listener is on the loopback address and nothing else. That is not
+// the same as this user: a loopback port on Windows is reachable by
+// every session on the machine. What it is worth reaching is bounded by
+// the code, and what it costs to reach without one is bounded by
+// mostAgents and by hanging up on anything that does not say what it
+// is.
 package agent
 
 import (

@@ -162,6 +162,11 @@ func main() {
 		}
 	}
 	a.registry = conns.New()
+	// A copy that could not be made is said. Something the user was
+	// told is on the clipboard and is not is worth knowing about.
+	a.clip.failed = func(err error) {
+		a.pump.post(func() { a.reportError("Could not copy to the clipboard", err) })
+	}
 	a.rates = make(map[*conns.Entry]*meter.Rate)
 	a.machines = make(map[string]*machine)
 	a.opening = make(map[string]context.CancelFunc)

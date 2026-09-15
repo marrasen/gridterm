@@ -2,6 +2,9 @@ package mcp
 
 import (
 	"errors"
+	"fmt"
+	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/marrasen/gridterm/agent"
@@ -13,80 +16,64 @@ import (
 // which window to reach and opens one pane there, and is not kept: what
 // is kept is the connection it opened.
 type Window struct {
-	mu   sync.Mutex
-	conn *agent.Client
-	// port says which window the connection is to, so a code for
-	// another one opens another connection rather than being offered to
-	// the wrong window.
-	port int
+	mu sync.Mutex
+	// reached is one connection per gridterm window, by the port its
+	// codes name. A user handing over panes of two windows is handing
+	// over two windows, and losing the first the moment the second
+	// arrives would be a pane they thought they had given away.
+	reached map[int]*agent.Client
 }
 
 // NewWindow gives an agent somewhere to use a session code.
-func NewWindow() *Window { return &Window{} }
+func NewWindow() *Window { return &Window{reached: map[int]*agent.Client{}} }
 
 // Use opens the pane a session code names.
-//
-// The first code opens the connection. A second one is used on the same
-// connection when it names the same window, and opens a second one when
-// it does not: a user handing over panes of two windows is handing over
-// two windows.
 func (w *Window) Use(code string) (Pane, error) {
 	port, err := agent.ReadCode(code)
 	if err != nil {
 		return Pane{}, err
 	}
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	if w.conn == nil || w.port != port {
-		if w.conn != nil {
-			if err := w.conn.Close(); err != nil {
-				return Pane{}, err
-			}
-			w.conn = nil
-		}
-		conn, err := agent.Dial(code)
-		if err != nil {
-			return Pane{}, err
-		}
-		w.conn, w.port = conn, port
-	}
-	pane, err := w.conn.Use(code)
+	conn, err := w.connect(port, code)
 	if err != nil {
 		return Pane{}, err
 	}
-	return asPane(pane), nil
+	pane, err := conn.Use(code)
+	if err != nil {
+		return Pane{}, err
+	}
+	return asPane(port, pane), nil
 }
 
-// List is the panes this agent has been given.
+// List is the panes this agent has been given, across every window it
+// has a code for.
 //
 // Nothing handed over is an empty list rather than a failure: being
 // asked what you have and having nothing is an answer.
 func (w *Window) List() ([]Pane, error) {
-	w.mu.Lock()
-	conn := w.conn
-	w.mu.Unlock()
-	if conn == nil {
-		return nil, nil
+	var out []Pane
+	var errs []error
+	for port, conn := range w.connections() {
+		panes, err := conn.Panes()
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		for _, p := range panes {
+			out = append(out, asPane(port, p))
+		}
 	}
-	panes, err := conn.Panes()
-	if err != nil {
-		return nil, err
-	}
-	out := make([]Pane, 0, len(panes))
-	for _, p := range panes {
-		out = append(out, asPane(p))
-	}
-	return out, nil
+	// A window that could not be asked is said, rather than its panes
+	// quietly going missing from the list.
+	return out, errors.Join(errs...)
 }
 
 // Read is what is on a pane now.
 func (w *Window) Read(id string) (Screen, error) {
-	conn, err := w.reach()
+	conn, at, err := w.paneAt(id)
 	if err != nil {
 		return Screen{}, err
 	}
-	look, err := conn.Read(id)
+	look, err := conn.Read(at)
 	if err != nil {
 		return Screen{}, err
 	}
@@ -95,20 +82,20 @@ func (w *Window) Read(id string) (Screen, error) {
 
 // Send types into a pane.
 func (w *Window) Send(id, text string) error {
-	conn, err := w.reach()
+	conn, at, err := w.paneAt(id)
 	if err != nil {
 		return err
 	}
-	return conn.Send(id, text)
+	return conn.Send(at, text)
 }
 
 // Wait watches a pane until something happens or the time runs out.
 func (w *Window) Wait(id string, until Until) (Screen, bool, error) {
-	conn, err := w.reach()
+	conn, at, err := w.paneAt(id)
 	if err != nil {
 		return Screen{}, false, err
 	}
-	look, gaveUp, err := conn.Wait(id, agent.Until{
+	look, gaveUp, err := conn.Wait(at, agent.Until{
 		Contains:  until.Contains,
 		QuietMS:   until.QuietMS,
 		TimeoutMS: until.TimeoutMS,
@@ -119,31 +106,84 @@ func (w *Window) Wait(id string, until Until) (Screen, bool, error) {
 	return Screen{Screen: look.Screen, Gone: look.Gone}, gaveUp, nil
 }
 
-// Close lets go of the window.
+// Close lets go of every window.
 func (w *Window) Close() error {
 	w.mu.Lock()
-	defer w.mu.Unlock()
-	if w.conn == nil {
-		return nil
+	reached := w.reached
+	w.reached = map[int]*agent.Client{}
+	w.mu.Unlock()
+
+	var errs []error
+	for _, conn := range reached {
+		errs = append(errs, conn.Close())
 	}
-	conn := w.conn
-	w.conn = nil
-	return conn.Close()
+	return errors.Join(errs...)
 }
 
-// reach is the connection, or says there is none yet.
-func (w *Window) reach() (*agent.Client, error) {
+// connect is the connection to one window, opening it the first time.
+func (w *Window) connect(port int, code string) (*agent.Client, error) {
+	w.mu.Lock()
+	have := w.reached[port]
+	w.mu.Unlock()
+	if have != nil {
+		return have, nil
+	}
+	conn, err := agent.Dial(code)
+	if err != nil {
+		return nil, err
+	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if w.conn == nil {
-		return nil, errors.New(
+	// Another code for the same window may have opened one while this
+	// was dialling. The first one kept, so an id already handed out
+	// goes on naming something.
+	if have := w.reached[port]; have != nil {
+		return have, conn.Close()
+	}
+	w.reached[port] = conn
+	return conn, nil
+}
+
+// connections is every window reached, by port.
+func (w *Window) connections() map[int]*agent.Client {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	out := make(map[int]*agent.Client, len(w.reached))
+	for port, conn := range w.reached {
+		out[port] = conn
+	}
+	return out
+}
+
+// paneAt finds the window a pane name belongs to, and what that window
+// calls it.
+func (w *Window) paneAt(id string) (*agent.Client, string, error) {
+	port, at, ok := strings.Cut(id, "/")
+	if ok {
+		if n, err := strconv.Atoi(port); err == nil {
+			w.mu.Lock()
+			conn := w.reached[n]
+			w.mu.Unlock()
+			if conn != nil {
+				return conn, at, nil
+			}
+		}
+	}
+	if len(w.connections()) == 0 {
+		return nil, "", errors.New(
 			"the user has not handed you a pane yet: ask them for a session code" +
 				" and use it with use_session_code")
 	}
-	return w.conn, nil
+	return nil, "", fmt.Errorf("%q is not a pane you have been handed", id)
 }
 
-// asPane turns what the window said into what an agent is told.
-func asPane(p agent.Pane) Pane {
-	return Pane{ID: p.ID, Label: p.Label, Cols: p.Cols, Rows: p.Rows}
+// asPane turns what a window said into what an agent is told, naming
+// the window it is on so two windows cannot name the same pane.
+func asPane(port int, p agent.Pane) Pane {
+	return Pane{
+		ID:    strconv.Itoa(port) + "/" + p.ID,
+		Label: p.Label,
+		Cols:  p.Cols,
+		Rows:  p.Rows,
+	}
 }

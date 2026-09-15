@@ -1,16 +1,21 @@
 package mcp
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
+	"sort"
 	"strings"
+	"sync"
 	"testing"
 )
 
 // fakePanes is a window with one pane, for testing what an agent is
 // told and what it may do.
 type fakePanes struct {
+	mu     sync.Mutex
 	code   string
 	screen string
 	typed  string
@@ -18,9 +23,16 @@ type fakePanes struct {
 	gone   bool
 	gaveUp bool
 	waited Until
+
+	// waiting is closed when a wait has started, and letGo lets it
+	// finish, for a test about what else can be asked meanwhile.
+	waiting chan struct{}
+	letGo   chan struct{}
 }
 
 func (f *fakePanes) Use(code string) (Pane, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if code != f.code {
 		return Pane{}, errors.New("that code does not name a pane this window has handed over")
 	}
@@ -29,6 +41,8 @@ func (f *fakePanes) Use(code string) (Pane, error) {
 }
 
 func (f *fakePanes) List() ([]Pane, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if !f.open {
 		return nil, nil
 	}
@@ -36,6 +50,8 @@ func (f *fakePanes) List() ([]Pane, error) {
 }
 
 func (f *fakePanes) Read(id string) (Screen, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if !f.open || id != "pane-1" {
 		return Screen{}, errors.New("that is not a pane you have been handed")
 	}
@@ -43,6 +59,8 @@ func (f *fakePanes) Read(id string) (Screen, error) {
 }
 
 func (f *fakePanes) Send(id, text string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if !f.open || id != "pane-1" {
 		return errors.New("that is not a pane you have been handed")
 	}
@@ -51,18 +69,85 @@ func (f *fakePanes) Send(id, text string) error {
 }
 
 func (f *fakePanes) Wait(id string, until Until) (Screen, bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if !f.open || id != "pane-1" {
 		return Screen{}, false, errors.New("that is not a pane you have been handed")
 	}
 	f.waited = until
-	return Screen{Screen: f.screen, Gone: f.gone}, f.gaveUp, nil
+	waiting, letGo := f.waiting, f.letGo
+	screen, gone, gaveUp := f.screen, f.gone, f.gaveUp
+	f.mu.Unlock()
+	if waiting != nil {
+		close(waiting)
+		<-letGo
+	}
+	f.mu.Lock()
+	return Screen{Screen: screen, Gone: gone}, gaveUp, nil
 }
 
 func (f *fakePanes) Close() error { return nil }
 
-// talk runs a conversation through the server and gives back the
-// answers, one per message that had an id.
+// talk has a conversation with the server, one question at a time, and
+// gives back the answers in the order the questions were asked.
+//
+// One at a time because that is what a client does: it waits for the
+// answer to a question before asking one that depends on it. The server
+// answers several at once, so a test that sent them all and read
+// afterwards would be testing an order nothing promises.
 func talk(t *testing.T, panes Panes, messages ...string) []response {
+	t.Helper()
+	toServer, fromTest := io.Pipe()
+	fromServer, toTest := io.Pipe()
+
+	done := make(chan error, 1)
+	go func() { done <- Serve(toServer, toTest, panes) }()
+
+	in := bufio.NewReaderSize(fromServer, 4096)
+	var answers []response
+	for _, m := range messages {
+		if _, err := io.WriteString(fromTest, m+"\n"); err != nil {
+			t.Fatalf("ask: %v", err)
+		}
+		if !wantsAnAnswer(m) {
+			continue
+		}
+		line, _, err := in.ReadLine()
+		if err != nil {
+			t.Fatalf("it never answered %s: %v", m, err)
+		}
+		var r response
+		if err := json.Unmarshal(line, &r); err != nil {
+			t.Fatalf("it said something unreadable: %q", line)
+		}
+		answers = append(answers, r)
+	}
+	if err := fromTest.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+	if err := toTest.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	return answers
+}
+
+// wantsAnAnswer reports whether a message is one the server answers. A
+// notification is not.
+func wantsAnAnswer(message string) bool {
+	var r request
+	if err := json.Unmarshal([]byte(message), &r); err != nil {
+		// Something the server cannot read, which it says so about.
+		return true
+	}
+	return len(r.ID) > 0
+}
+
+// atOnce asks everything without waiting, for a test about what the
+// server does with messages it cannot match to a question.
+func atOnce(t *testing.T, panes Panes, messages ...string) []response {
 	t.Helper()
 	var out bytes.Buffer
 	if err := Serve(strings.NewReader(strings.Join(messages, "\n")+"\n"), &out, panes); err != nil {
@@ -80,6 +165,24 @@ func talk(t *testing.T, panes Panes, messages ...string) []response {
 		answers = append(answers, r)
 	}
 	return answers
+}
+
+// byID is the answers, by the id of the question each answers.
+//
+// Questions are answered as they come rather than one after another, so
+// where an answer lands in the stream says nothing about which question
+// it belongs to. The id does, which is what it is for.
+func byID(t *testing.T, answers []response) map[int]response {
+	t.Helper()
+	out := map[int]response{}
+	for _, a := range answers {
+		var id int
+		if err := json.Unmarshal(a.ID, &id); err != nil {
+			continue
+		}
+		out[id] = a
+	}
+	return out
 }
 
 // textOf is what a tool call answered, and whether it failed.
@@ -171,6 +274,8 @@ func TestACodeOpensAPane(t *testing.T) {
 	if !strings.Contains(text, "bash on margit") || !strings.Contains(text, "80x24") {
 		t.Errorf("it said %q", text)
 	}
+	panes.mu.Lock()
+	defer panes.mu.Unlock()
 	if !panes.open {
 		t.Error("it did not open the pane")
 	}
@@ -194,8 +299,11 @@ func TestWithoutACodeNothingWorks(t *testing.T) {
 			t.Errorf("it worked without a code: %q", text)
 		}
 	}
-	if panes.typed != "" {
-		t.Errorf("the pane was sent %q", panes.typed)
+	panes.mu.Lock()
+	sent := panes.typed
+	panes.mu.Unlock()
+	if sent != "" {
+		t.Errorf("the pane was sent %q", sent)
 	}
 	text, failed := textOf(t, answers[2])
 	if failed {
@@ -236,6 +344,8 @@ func TestTypingGoesInExactlyAsGiven(t *testing.T) {
 		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":`+
 			`{"name":"send_keys","arguments":{"pane":"pane-1","text":"\u0003"}}}`)
 
+	panes.mu.Lock()
+	defer panes.mu.Unlock()
 	if panes.typed != "uptime\r\x03" {
 		t.Errorf("the pane was sent %q", panes.typed)
 	}
@@ -251,8 +361,11 @@ func TestWaitingSaysWhenItGaveUp(t *testing.T) {
 			`{"name":"wait_for","arguments":{"pane":"pane-1","contains":"done",`+
 			`"quiet_ms":250,"timeout_ms":9000}}}`)
 
-	if panes.waited != (Until{Contains: "done", QuietMS: 250, TimeoutMS: 9000}) {
-		t.Errorf("it waited for %+v", panes.waited)
+	panes.mu.Lock()
+	waited := panes.waited
+	panes.mu.Unlock()
+	if waited != (Until{Contains: "done", QuietMS: 250, TimeoutMS: 9000}) {
+		t.Errorf("it waited for %+v", waited)
 	}
 	text, failed := textOf(t, answers[1])
 	if failed {
@@ -285,7 +398,7 @@ func TestAFinishedProgramIsSaidPlainly(t *testing.T) {
 // Something that is not a message, or is not a method this has, is
 // turned away by name.
 func TestSomethingItCannotAnswerIsTurnedAway(t *testing.T) {
-	answers := talk(t, &fakePanes{},
+	answers := atOnce(t, &fakePanes{},
 		`not json at all`,
 		`{"jsonrpc":"2.0","id":1,"method":"resources/list"}`,
 		`{"jsonrpc":"2.0","id":2}`,
@@ -294,14 +407,32 @@ func TestSomethingItCannotAnswerIsTurnedAway(t *testing.T) {
 	if len(answers) != 4 {
 		t.Fatalf("it gave %d answers", len(answers))
 	}
-	for i, want := range []int{codeParse, codeMethodNotFound, codeInvalidRequest, codeInvalidRequest} {
-		if answers[i].Error == nil {
-			t.Errorf("answer %d was not a failure", i)
-			continue
+	// Two of them carry no id to match on, because the question did not
+	// say what it wanted or was not a message at all.
+	var noID []response
+	for _, a := range answers {
+		if a.Error == nil {
+			t.Errorf("it answered %v rather than saying what was wrong", a.Result)
 		}
-		if answers[i].Error.Code != want {
-			t.Errorf("answer %d said %d, want %d", i, answers[i].Error.Code, want)
+		if len(a.ID) == 0 {
+			noID = append(noID, a)
 		}
+	}
+	said := byID(t, answers)
+	if got := said[1].Error; got == nil || got.Code != codeMethodNotFound {
+		t.Errorf("a method it does not have gave %v", got)
+	}
+	if got := said[2].Error; got == nil || got.Code != codeInvalidRequest {
+		t.Errorf("a message that wants nothing gave %v", got)
+	}
+	// The unreadable line and the batch, in either order.
+	var codes []int
+	for _, a := range noID {
+		codes = append(codes, a.Error.Code)
+	}
+	sort.Ints(codes)
+	if len(codes) != 2 || codes[0] != codeParse || codes[1] != codeInvalidRequest {
+		t.Errorf("the two it could not match gave %v", codes)
 	}
 }
 
@@ -328,5 +459,68 @@ func TestTheAgentGoingEndsIt(t *testing.T) {
 	}
 	if out.Len() != 0 {
 		t.Errorf("it said %q to nobody", out.String())
+	}
+}
+
+// A question is answered while another is still being answered.
+//
+// A wait can be minutes long. An agent that could not ask anything else
+// meanwhile -- not even whether this is still alive -- would have to
+// choose between waiting and keeping in touch.
+func TestAQuestionIsAnsweredWhileAWaitIsStillWaiting(t *testing.T) {
+	panes := &fakePanes{code: "gt1-2222-abc", screen: "$ ", waiting: make(chan struct{}), letGo: make(chan struct{})}
+	toServer, fromTest := io.Pipe()
+	fromServer, toTest := io.Pipe()
+
+	done := make(chan error, 1)
+	go func() { done <- Serve(toServer, toTest, panes) }()
+	in := bufio.NewReaderSize(fromServer, 4096)
+
+	ask := func(m string) {
+		t.Helper()
+		if _, err := io.WriteString(fromTest, m+"\n"); err != nil {
+			t.Fatalf("ask: %v", err)
+		}
+	}
+	answer := func() response {
+		t.Helper()
+		line, _, err := in.ReadLine()
+		if err != nil {
+			t.Fatalf("read: %v", err)
+		}
+		var r response
+		if err := json.Unmarshal(line, &r); err != nil {
+			t.Fatalf("it said something unreadable: %q", line)
+		}
+		return r
+	}
+
+	ask(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":` +
+		`{"name":"use_session_code","arguments":{"code":"gt1-2222-abc"}}}`)
+	answer()
+
+	// A wait that will not come back until this test lets it.
+	ask(`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":` +
+		`{"name":"wait_for","arguments":{"pane":"pane-1"}}}`)
+	<-panes.waiting
+
+	// And a question asked while it is still waiting.
+	ask(`{"jsonrpc":"2.0","id":3,"method":"ping"}`)
+	got := answer()
+	var id int
+	if err := json.Unmarshal(got.ID, &id); err != nil || id != 3 {
+		t.Fatalf("it answered %s first, so the wait was in the way", got.ID)
+	}
+
+	close(panes.letGo)
+	answer()
+	if err := fromTest.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+	if err := toTest.Close(); err != nil {
+		t.Fatalf("close: %v", err)
 	}
 }

@@ -81,15 +81,22 @@ func TestAnAgentReachesARealWindow(t *testing.T) {
 	panes := NewWindow()
 	defer func() { _ = panes.Close() }()
 
+	// What the window calls the pane, which is what the agent is given
+	// and has to hand back.
+	pane, err := panes.Use(code)
+	if err != nil {
+		t.Fatalf("use: %v", err)
+	}
+
 	var out bytes.Buffer
 	in := strings.Join([]string{
 		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`,
 		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":` +
 			`{"name":"use_session_code","arguments":{"code":"` + code + `"}}}`,
 		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":` +
-			`{"name":"read_pane","arguments":{"pane":"pane-1"}}}`,
+			`{"name":"read_pane","arguments":{"pane":"` + pane.ID + `"}}}`,
 		`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":` +
-			`{"name":"send_keys","arguments":{"pane":"pane-1","text":"uptime\r"}}}`,
+			`{"name":"send_keys","arguments":{"pane":"` + pane.ID + `","text":"uptime\r"}}}`,
 		`{"jsonrpc":"2.0","id":5,"method":"tools/call","params":` +
 			`{"name":"list_panes","arguments":{}}}`,
 	}, "\n") + "\n"
@@ -126,16 +133,17 @@ func TestTakingThePaneBackReachesTheAgent(t *testing.T) {
 
 	panes := NewWindow()
 	defer func() { _ = panes.Close() }()
-	if _, err := panes.Use(code); err != nil {
+	pane, err := panes.Use(code)
+	if err != nil {
 		t.Fatalf("use: %v", err)
 	}
 
 	win.takeBack()
 
-	if _, err := panes.Read("pane-1"); err == nil {
+	if _, err := panes.Read(pane.ID); err == nil {
 		t.Error("it read a pane the user had taken back")
 	}
-	if err := panes.Send("pane-1", "x"); err == nil {
+	if err := panes.Send(pane.ID, "x"); err == nil {
 		t.Error("it typed into a pane the user had taken back")
 	}
 	if got := win.sentText(); got != "" {
@@ -198,20 +206,40 @@ func TestACodeForAnotherWindowReachesThatWindow(t *testing.T) {
 	panes := NewWindow()
 	defer func() { _ = panes.Close() }()
 
-	if _, err := panes.Use(first.code); err != nil {
+	onOne, err := panes.Use(first.code)
+	if err != nil {
 		t.Fatalf("the first window: %v", err)
 	}
-	if _, err := panes.Use(second.code); err != nil {
+	onTwo, err := panes.Use(second.code)
+	if err != nil {
 		t.Fatalf("the second window: %v", err)
 	}
-
-	// And what it reads now is the second window's screen.
-	screen, err := panes.Read("pane-1")
-	if err != nil {
-		t.Fatalf("read: %v", err)
+	if onOne.ID == onTwo.ID {
+		t.Fatalf("both panes are called %q", onOne.ID)
 	}
-	if screen.Screen != "the second window" {
-		t.Errorf("it read %q", screen.Screen)
+
+	// Each reads its own window, and the first is not lost by the
+	// second arriving.
+	for _, c := range []struct {
+		pane Pane
+		want string
+	}{{onOne, "the first window"}, {onTwo, "the second window"}} {
+		screen, err := panes.Read(c.pane.ID)
+		if err != nil {
+			t.Fatalf("read %s: %v", c.pane.ID, err)
+		}
+		if screen.Screen != c.want {
+			t.Errorf("%s read %q, want %q", c.pane.ID, screen.Screen, c.want)
+		}
+	}
+
+	// And both are listed.
+	listed, err := panes.List()
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(listed) != 2 {
+		t.Errorf("it holds %v", listed)
 	}
 }
 

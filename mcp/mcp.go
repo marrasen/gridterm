@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
 )
 
 // The protocol this speaks. An agent that asks for another version is
@@ -115,10 +116,24 @@ type Until struct {
 //
 // It returns when the agent closes its end, which is how the process
 // running it says it is done.
+//
+// Questions are answered as they come rather than one after another. A
+// wait can be minutes long, and an agent that could not ask anything
+// else meanwhile -- not even whether this is still alive -- would be an
+// agent that had to choose between waiting and keeping in touch. Only
+// so many run at once; past that the next one waits its turn, which is
+// what tells a flooding client to slow down.
 func Serve(in io.Reader, out io.Writer, panes Panes) error {
 	r := bufio.NewReaderSize(in, 4096)
-	w := json.NewEncoder(out)
-	s := &server{panes: panes}
+	s := &server{panes: panes, out: json.NewEncoder(out)}
+
+	// Whatever is still being answered is waited for. The panes are not
+	// closed here: they were handed in and whoever handed them in lets
+	// go of them, which is what ends a question still in flight.
+	var running sync.WaitGroup
+	atOnce := make(chan struct{}, answersAtOnce)
+	defer running.Wait()
+
 	for {
 		line, err := readLine(r)
 		if errors.Is(err, io.EOF) {
@@ -130,13 +145,50 @@ func Serve(in io.Reader, out io.Writer, panes Panes) error {
 		if len(strings.TrimSpace(string(line))) == 0 {
 			continue
 		}
-		answer, reply := s.handle(line)
-		if !reply {
-			continue
+		select {
+		case atOnce <- struct{}{}:
+			running.Add(1)
+			go func() {
+				defer running.Done()
+				defer func() { <-atOnce }()
+				s.answerOne(line)
+			}()
+		default:
+			// As many are being answered as this will answer at once.
+			// Done here instead, which stops reading until it is over.
+			s.answerOne(line)
 		}
-		if err := w.Encode(answer); err != nil {
-			return fmt.Errorf("mcp: answer: %w", err)
-		}
+	}
+}
+
+// answersAtOnce is how many questions are answered at the same time.
+//
+// Enough that a wait never stops an agent asking anything else, few
+// enough that a client sending faster than it reads cannot make this
+// process hold a goroutine for every line.
+const answersAtOnce = 8
+
+// answerOne does one message and sends the answer, if it has one.
+func (s *server) answerOne(line []byte) {
+	answer, reply := s.handle(line)
+	if !reply {
+		return
+	}
+	s.send(answer)
+}
+
+// send writes one answer.
+//
+// Under a lock, because several may be finished at once and half of one
+// answer inside another is a stream neither end can read.
+func (s *server) send(answer response) {
+	s.writing.Lock()
+	defer s.writing.Unlock()
+	if err := s.out.Encode(answer); err != nil {
+		// The agent has gone mid-answer, or its stream has broken.
+		// Nothing here can do anything about it: reading will find the
+		// same thing and end the conversation.
+		return
 	}
 }
 
@@ -159,7 +211,12 @@ func readLine(r *bufio.Reader) ([]byte, error) {
 }
 
 // server answers one agent.
-type server struct{ panes Panes }
+type server struct {
+	panes Panes
+
+	writing sync.Mutex
+	out     *json.Encoder
+}
 
 // handle answers one message, and reports whether there is an answer to
 // send: a notification is acted on and not answered.

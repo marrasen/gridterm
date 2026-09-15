@@ -124,6 +124,11 @@ type app struct {
 	// the code that names each. The codes live here and nowhere else.
 	handedBy map[*term.Terminal]*handover
 
+	// handedNext is the last name given to a handover. It only goes up,
+	// so a name never comes round again and an agent holding an old one
+	// is holding nothing.
+	handedNext uint64
+
 	// dock holds the sidebar beside everything else, panel is the list
 	// in it, and stage is what fills the rest: it holds every pane the
 	// window has open and shows the one the sidebar picked.

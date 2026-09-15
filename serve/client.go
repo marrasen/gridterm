@@ -152,6 +152,19 @@ func (w *Window) watch() {
 // Addr is where this window was reached.
 func (w *Window) Addr() string { return w.addr }
 
+// Attach works in something the other window already has open, named
+// by the ID it gave for it.
+//
+// What comes back reads as that pane's screen, starting with what is
+// already on it, and writing to it types there. It keeps running on
+// that machine either way: this is a second pair of eyes on it, not a
+// hand-over.
+func (w *Window) Attach(id string, cols, rows int) (session.Session, error) {
+	return w.session(openSession{
+		Cols: uint32(cols), Rows: uint32(rows), Attach: id,
+	})
+}
+
 // Open starts something to work in on the other machine, sized for the
 // pane it will be drawn in.
 func (w *Window) Open(cols, rows int) (session.Session, error) {
@@ -161,15 +174,37 @@ func (w *Window) Open(cols, rows int) (session.Session, error) {
 	// Sent as asked. The machine that has to make a terminal this size
 	// is the one that clamps it, and a second clamp here would only
 	// hide what this window actually asked for.
-	ch, reqs, err := w.client.OpenChannel(chanSession, ssh.Marshal(openSession{
-		Cols: uint32(cols), Rows: uint32(rows),
-	}))
+	return w.session(openSession{Cols: uint32(cols), Rows: uint32(rows)})
+}
+
+// open asks the other window for a session and wraps what comes back.
+func (w *Window) session(want openSession) (session.Session, error) {
+	if w.isClosed() {
+		return nil, errors.New("serve: that window has been let go of")
+	}
+	ch, reqs, err := w.client.OpenChannel(chanSession, ssh.Marshal(want))
 	if err != nil {
 		return nil, fmt.Errorf("serve: open a session on %s: %w", w.addr, err)
 	}
 	s := &remoteSession{ch: ch, done: make(chan struct{})}
 	go s.readRequests(reqs)
+	// What the other end says went wrong, into the same stream as the
+	// program's own output. It is the only place a pane can show it,
+	// and a pane that opened and closed with nothing in it would leave
+	// the user with no idea why.
+	go func() { _, _ = io.Copy(errWriter{s}, ch.Stderr()) }()
 	return s, nil
+}
+
+// errWriter puts what the other end said onto a session's own stream,
+// so a pane drawing that session shows it.
+type errWriter struct{ s *remoteSession }
+
+func (e errWriter) Write(p []byte) (int, error) {
+	e.s.mu.Lock()
+	defer e.s.mu.Unlock()
+	e.s.said = append(e.s.said, p...)
+	return len(p), nil
 }
 
 // Wait blocks until the connection to the other window ends.
@@ -205,6 +240,11 @@ func (w *Window) isClosed() bool {
 type remoteSession struct {
 	ch ssh.Channel
 
+	// said is what the other end sent on the channel's error stream,
+	// waiting to be read as though the program had written it.
+	mu   sync.Mutex
+	said []byte
+
 	// done is closed when the other end has said how the program ended,
 	// or the channel has gone without it saying. status and gotOne are
 	// written before that and read after it, so the close is what keeps
@@ -217,7 +257,37 @@ type remoteSession struct {
 	closeErr  error
 }
 
-func (s *remoteSession) Read(p []byte) (int, error) { return s.ch.Read(p) }
+// Read gives what the program said, and what the other end said about
+// it.
+func (s *remoteSession) Read(p []byte) (int, error) {
+	if n := s.takeSaid(p); n > 0 {
+		return n, nil
+	}
+	n, err := s.ch.Read(p)
+	if n == 0 && err != nil {
+		// The channel has gone. Anything the other end said about why
+		// arrives just before it does, so it is looked for once more:
+		// a refusal that was never read is a pane that closed with
+		// nothing in it.
+		if said := s.takeSaid(p); said > 0 {
+			return said, nil
+		}
+	}
+	return n, err
+}
+
+// takeSaid takes what the other end said about the session, if any is
+// waiting.
+func (s *remoteSession) takeSaid(p []byte) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.said) == 0 {
+		return 0
+	}
+	n := copy(p, s.said)
+	s.said = s.said[n:]
+	return n
+}
 
 // Write sends input. No lock of our own: a session is never written to
 // from two places at once, and a lock shared with Close is how a pane

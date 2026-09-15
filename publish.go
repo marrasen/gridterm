@@ -24,7 +24,7 @@ func (a *app) snapshot(now time.Time) serve.Snapshot {
 				// The machine and the place in its list, which together
 				// name a row for as long as it is there. Nothing here
 				// has an identity of its own to send.
-				ID:    g.Host + "#" + strconv.Itoa(i),
+				ID:    openID(g.Host, i),
 				Host:  g.Host,
 				Kind:  row.Kind.String(),
 				Label: row.Label,
@@ -124,11 +124,11 @@ func (a *app) remoteRows(host string) []ui.ListRow {
 			Text:  text,
 			Note:  open.Note,
 			Depth: 1,
-			Key:   "remote:" + host + ":" + open.ID,
+			Key:   remoteKey{window: host, id: open.ID, label: open.Label},
 			Mark:  remoteMark,
-			// Dimmed, because it is something to look at rather than
-			// something to use: this window cannot put it in front or
-			// close it.
+			// Dimmed, because it is running somewhere else: what this
+			// window can do with it is open a pane to watch it in, not
+			// close it or put it in front.
 			FG: mix(a.colours.FG, a.colours.BG, 1, 2),
 		})
 	}
@@ -136,5 +136,21 @@ func (a *app) remoteRows(host string) []ui.ListRow {
 }
 
 // remoteMark is the dot in front of a row belonging to another window.
-// Hollow, because it is not this window's to act on.
+// Hollow, because what it stands for is not running here.
 const remoteMark = '◦'
+
+// remoteKey names a row belonging to a window taken over, so choosing
+// it can say which thing on which window.
+type remoteKey struct {
+	window string
+	id     string
+	label  string
+}
+
+// openID names one of the things a window has open, for as long as it
+// is open.
+//
+// The machine and the place in its list, which is all there is: nothing
+// in the registry has an identity of its own, and one made up here
+// would have to be kept in step with a list built afresh every frame.
+func openID(host string, at int) string { return host + "#" + strconv.Itoa(at) }

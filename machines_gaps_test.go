@@ -405,3 +405,22 @@ func onlyLocalPane(t *testing.T, a *testApp) ui.Widget {
 	t.Fatal("every pane is running on a machine")
 	return nil
 }
+
+// waitForBoth waits for something while keeping two windows running.
+//
+// Both, because a window taken over answers its client from the
+// goroutine that draws: a test that pumped only one of them would wait
+// for an answer the other was never going to give.
+func waitForBoth(t *testing.T, a, b *testApp, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(waitBudget)
+	for time.Now().Before(deadline) {
+		a.pump.run()
+		b.pump.run()
+		if cond() {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for %s", what)
+}

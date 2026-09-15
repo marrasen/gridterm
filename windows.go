@@ -361,3 +361,24 @@ func knownWindowsPath() (string, error) {
 	}
 	return filepath.Join(at, knownWindowsFile), nil
 }
+
+// attachHere opens a pane on what the window taken over already has
+// running, rather than starting something new there.
+func (a *app) attachHere(addr, id, label string, at *spot) error {
+	t := a.windows[addr]
+	if t == nil {
+		return fmt.Errorf("this window has not taken over %s", addr)
+	}
+	sess, err := t.win.Attach(id, a.lastSize[0], a.lastSize[1])
+	if err != nil {
+		return err
+	}
+	pane, err := a.openSessionTab(sess, addr, conns.Terminal, label, at)
+	if err != nil {
+		// The session is ours and nothing else knows about it.
+		_ = sess.Close()
+		return err
+	}
+	a.paneOnWindow[pane] = t
+	return nil
+}

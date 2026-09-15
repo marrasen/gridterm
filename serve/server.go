@@ -90,6 +90,11 @@ type Config struct {
 	// nothing, and a client that asks is told so.
 	Open Opener
 
+	// Attach gives a client what is already running in one of this
+	// window's panes. A nil one cannot be worked in from elsewhere, and
+	// a client that asks is told so.
+	Attach Attacher
+
 	// Opens is what this window has open, for a client that wants to
 	// see it. It is called from a goroutine of the server's, so an
 	// implementation that reads what the window is drawing has to be

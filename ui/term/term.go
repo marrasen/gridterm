@@ -130,6 +130,12 @@ type Terminal struct {
 	// selecting is true between a press and its release, so motion is
 	// only a drag when a drag started here.
 	selecting bool
+
+	// watchMu guards watchers, who are told what the program says from
+	// the goroutine reading it and are added and removed from whichever
+	// goroutine is carrying the connection they are on.
+	watchMu  sync.Mutex
+	watchers []Watcher
 }
 
 // New starts a terminal on the given session.
@@ -498,6 +504,10 @@ func (t *Terminal) readLoop() {
 			_, _ = t.term.Write(buf[:n])
 			t.mu.Unlock()
 			t.pending.Store(true)
+			// And to anyone watching from another machine, who is
+			// shown the same bytes rather than a second rendering of
+			// them: what they see is then what is on this screen.
+			t.tell(buf[:n])
 		}
 		if err != nil {
 			if !errors.Is(err, io.EOF) {

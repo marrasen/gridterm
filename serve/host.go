@@ -75,16 +75,30 @@ func (s *Server) serveChannels(chans <-chan ssh.NewChannel, gone <-chan struct{}
 func (s *Server) runSession(ch ssh.Channel, reqs <-chan *ssh.Request,
 	want openSession, gone <-chan struct{}) {
 
-	if s.cfg.Open == nil {
-		s.refuseSession(ch, reqs, errors.New("this gridterm has nothing to open"))
-		return
-	}
 	// Clamped here rather than where it was sent from. Nothing stops a
 	// client asking for a pane of four billion cells, and this is the
 	// end that has to make a terminal that size.
 	cols := min(max(int(want.Cols), 1), mostCells)
 	rows := min(max(int(want.Rows), 1), mostCells)
-	sess, err := s.cfg.Open(cols, rows)
+
+	var (
+		sess session.Session
+		err  error
+	)
+	switch {
+	case want.Attach != "":
+		if s.cfg.Attach == nil {
+			s.refuseSession(ch, reqs,
+				errors.New("this gridterm cannot be worked in from elsewhere"))
+			return
+		}
+		sess, err = s.cfg.Attach(want.Attach, cols, rows)
+	case s.cfg.Open == nil:
+		s.refuseSession(ch, reqs, errors.New("this gridterm has nothing to open"))
+		return
+	default:
+		sess, err = s.cfg.Open(cols, rows)
+	}
 	if err != nil {
 		s.refuseSession(ch, reqs, err)
 		return
@@ -201,6 +215,19 @@ func (s *Server) endSession(ch ssh.Channel, why error) {
 	_ = ch.CloseWrite()
 	_ = ch.Close()
 }
+
+// Attacher gives a client what is already running in one of this
+// window's panes, named by the ID it was sent down the control channel.
+//
+// What comes back is a session like any other: reading it gives what
+// the pane shows, starting with the screen as it stands, and writing to
+// it types into the program. Closing it stops watching; the pane goes
+// on running here, which is what lets the screen be right again when
+// the client leaves.
+//
+// It is called from a goroutine of the server's, so an implementation
+// that reaches into the window has to hand the work to whatever draws.
+type Attacher func(id string, cols, rows int) (session.Session, error)
 
 // Opener starts something for a client to work in.
 //

@@ -172,6 +172,9 @@ func (a *app) startServing(port, where string) error {
 		// through the same snapshot the panel was built from rather
 		// than walking the registry from there.
 		Opens: a.openNow.get,
+		// What is already running here, so a window taken over shows
+		// the shell that was left running rather than only new ones.
+		Attach: a.attachTo,
 		Open: func(cols, rows int) (session.Session, error) {
 			return session.StartLocal(session.LocalConfig{Cols: cols, Rows: rows})
 		},

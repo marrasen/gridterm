@@ -37,6 +37,14 @@ const (
 type openSession struct {
 	Cols uint32
 	Rows uint32
+
+	// Attach names something the served window already has open, to
+	// work in that rather than start something new. Empty asks for
+	// something new.
+	//
+	// It is the ID of an Open the served window sent down the control
+	// channel, so a client can only ask for what it was told about.
+	Attach string
 }
 
 // windowChange is the size of the pane a session is drawn in.

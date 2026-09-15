@@ -164,6 +164,11 @@ func (a *app) newSidebar() *sidebar {
 
 // revealRow puts whatever a row names in front of the user.
 func (a *app) revealRow(row ui.ListRow) error {
+	if remote, ok := row.Key.(remoteKey); ok {
+		// Something running on a window this one took over. There is no
+		// pane here to put in front, so one is opened to watch it in.
+		return a.attachHere(remote.window, remote.id, remote.label, nil)
+	}
 	e, ok := row.Key.(*conns.Entry)
 	if !ok || e.Reveal == nil {
 		return nil

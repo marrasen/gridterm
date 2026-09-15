@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"image/color"
 	"io"
 	"os"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
 
+	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/serve"
 	"github.com/marrasen/gridterm/ui/term"
 )
@@ -581,7 +583,7 @@ func TestTheSidebarShowsWhatTheOtherWindowHasOpen(t *testing.T) {
 	want := len(client.windows[addr].win.Opens())
 	var shown int
 	for _, row := range client.panel.Rows() {
-		if key, ok := row.Key.(string); ok && strings.HasPrefix(key, "remote:"+addr+":") {
+		if key, ok := row.Key.(remoteKey); ok && key.window == addr {
 			shown++
 		}
 	}
@@ -597,11 +599,133 @@ func TestOnlyATakenWindowContributesRemoteRows(t *testing.T) {
 	a.refreshPanel(panelNow)
 
 	for _, row := range a.panel.Rows() {
-		if key, ok := row.Key.(string); ok && strings.HasPrefix(key, "remote:") {
+		if _, ok := row.Key.(remoteKey); ok {
 			t.Errorf("a row for another window appeared: %q", row.Text)
 		}
 	}
 	if got := a.remoteRows("nowhere"); got != nil {
 		t.Errorf("a machine that is not a window gave %v", got)
 	}
+}
+
+// Working in a shell that was already running on the other machine.
+//
+// This is what taking over a window means, as against opening a new
+// shell there: the pane shows what is already on that screen, typing in
+// it reaches the program that was running, and the pane keeps running
+// over there when this window lets go.
+func TestAttachingShowsWhatIsAlreadyOnTheScreen(t *testing.T) {
+	host, client, addr := twoWindows(t)
+
+	// Something already on the serving window's screen, put there by
+	// the shell running in it.
+	hostPane := onlyPaneOn(t, host)
+	host.shells[0].out <- []byte("already-here\\r\\n")
+	waitForBoth(t, host, client, "the shell there to say it", func() bool {
+		return strings.Contains(paneText(hostPane), "already-here")
+	})
+	host.refreshPanel(panelNow)
+
+	// The row for it, as this window was told about it.
+	var row remoteKey
+	waitForBoth(t, host, client, "a row for the shell over there", func() bool {
+		client.refreshPanel(panelNow)
+		for _, r := range client.panel.Rows() {
+			if key, ok := r.Key.(remoteKey); ok && key.window == addr {
+				row = key
+				return true
+			}
+		}
+		return false
+	})
+
+	panes := len(client.panes)
+	if err := client.attachHere(row.window, row.id, row.label, nil); err != nil {
+		t.Fatalf("attach: %v", err)
+	}
+	waitForBoth(t, host, client, "a pane watching it", func() bool {
+		return len(client.panes) == panes+1
+	})
+
+	// The screen as it stands, without waiting for the program to say
+	// anything more.
+	here := newestPane(t, client)
+	waitForBoth(t, host, client, "the screen already there", func() bool {
+		return strings.Contains(paneText(here), "already-here")
+	})
+
+	// And typing here reaches the shell there.
+	here.Send([]byte("typed-from-here\\r"))
+	waitForBoth(t, host, client, "what was typed here to reach there", func() bool {
+		return strings.Contains(host.shells[0].sentText(), "typed-from-here")
+	})
+
+	// Letting go leaves it running over there.
+	if err := client.dropWindow(addr); err != nil {
+		t.Fatalf("drop: %v", err)
+	}
+	waitForBoth(t, host, client, "the shell there to be let go of", func() bool {
+		return hostPane.Watched() == 0
+	})
+	host.shells[0].out <- []byte("still-running\\r\\n")
+	waitForBoth(t, host, client, "the shell there to carry on", func() bool {
+		return strings.Contains(paneText(hostPane), "still-running")
+	})
+}
+
+// Attaching to something that is not there says so.
+func TestAttachingToNothingSaysSo(t *testing.T) {
+	host, client, addr := twoWindows(t)
+
+	// The channel opens before the other end has decided, so the reason
+	// arrives in the pane rather than as an error here. That is where
+	// the user would see it.
+	if err := client.attachHere(addr, "Local#99", "gone", nil); err != nil {
+		t.Fatalf("attach: %v", err)
+	}
+	pane := newestPane(t, client)
+
+	waitForBoth(t, host, client, "the reason in the pane", func() bool {
+		return strings.Contains(paneText(pane), "nothing called")
+	})
+}
+
+// onlyPaneOn is the one pane a window has.
+func onlyPaneOn(t *testing.T, a *testApp) *term.Terminal {
+	t.Helper()
+	if len(a.panes) != 1 {
+		t.Fatalf("%d panes, want one", len(a.panes))
+	}
+	for pane := range a.panes {
+		return pane
+	}
+	return nil
+}
+
+// newestPane is the pane most recently opened, which is the one in
+// front.
+func newestPane(t *testing.T, a *testApp) *term.Terminal {
+	t.Helper()
+	pane := a.focusedTerminal()
+	if pane == nil {
+		t.Fatal("no pane is in front")
+	}
+	return pane
+}
+
+// paneText is what a pane is showing.
+func paneText(pane *term.Terminal) string {
+	g := grid.New(pane.Size().Cols, pane.Size().Rows, color.RGBA{}, color.RGBA{})
+	pane.Draw(g.View())
+	var b strings.Builder
+	cols, rows := g.Size()
+	for y := 0; y < rows; y++ {
+		for x := 0; x < cols; x++ {
+			if r := g.At(x, y).Rune; r != 0 {
+				b.WriteRune(r)
+			}
+		}
+		b.WriteByte('\n')
+	}
+	return b.String()
 }

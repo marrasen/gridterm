@@ -426,10 +426,52 @@ func TestAWindowServingNothingSaysSoAndFails(t *testing.T) {
 	}
 }
 
-// And the reason goes on the error stream, not into the bytes a program
-// would have written: sent that way, a client could not tell this
-// window's words from the output of what it thought it started.
-func TestTheReasonIsNotMixedIntoTheOutput(t *testing.T) {
+// And the reason travels on the channel's error stream, not among the
+// bytes a program would have written.
+//
+// Kept apart on the wire even though a pane puts them on one screen:
+// the two are different things, and a client that wanted to tell them
+// apart -- to say "gridterm could not do that" rather than draw it as
+// output -- can only do so if they arrived separately.
+func TestTheReasonTravelsOnItsOwnStream(t *testing.T) {
+	_, w := takenOver(t, func(int, int) (session.Session, error) {
+		return nil, errors.New("there is no shell here")
+	})
+
+	// Straight down a channel, so what each stream carried can be seen.
+	ch, reqs, err := w.client.OpenChannel(chanSession, ssh.Marshal(openSession{
+		Cols: 80, Rows: 24,
+	}))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	go ssh.DiscardRequests(reqs)
+	defer ch.Close()
+
+	said := make(chan string, 1)
+	go func() {
+		got, _ := io.ReadAll(ch.Stderr())
+		said <- string(got)
+	}()
+	out, _ := io.ReadAll(ch)
+
+	if strings.Contains(string(out), "there is no shell here") {
+		t.Errorf("the reason arrived as program output: %q", out)
+	}
+	select {
+	case got := <-said:
+		if !strings.Contains(got, "there is no shell here") {
+			t.Errorf("the error stream carried %q", got)
+		}
+	case <-time.After(5 * time.Second):
+		t.Error("the reason never arrived at all")
+	}
+}
+
+// A pane does put them on one screen, because a terminal has only one.
+// A pane that opened and closed with nothing in it would leave the user
+// with no idea why.
+func TestAPaneIsShownTheReason(t *testing.T) {
 	_, w := takenOver(t, func(int, int) (session.Session, error) {
 		return nil, errors.New("there is no shell here")
 	})
@@ -441,8 +483,8 @@ func TestTheReasonIsNotMixedIntoTheOutput(t *testing.T) {
 
 	got, _ := io.ReadAll(sess)
 
-	if strings.Contains(string(got), "there is no shell here") {
-		t.Errorf("the reason arrived as program output: %q", got)
+	if !strings.Contains(string(got), "there is no shell here") {
+		t.Errorf("the pane was shown %q", got)
 	}
 }
 

@@ -437,3 +437,21 @@ func (t *Terminal) clipboard(params [][]byte) {
 	}
 	t.cb.ClipboardSet(string(raw))
 }
+
+// RenderLive copies the live screen into g, whatever the person at this
+// machine has scrolled back to.
+//
+// Render shows what they are looking at, which may be history. Somebody
+// being handed the screen from elsewhere wants the screen itself: what
+// is on it now, and what the next output will land on.
+func (t *Terminal) RenderLive(g *grid.Grid) { t.scr.RenderLive(g) }
+
+// Screenful is what the screen carries that its grid does not, for
+// sending it somewhere else.
+func (t *Terminal) Screenful() Screenful {
+	return Screenful{
+		Alt:       t.scr.OnAltBuffer(),
+		Wrap:      t.scr.Wrap(),
+		AppCursor: t.scr.AppCursor(),
+	}
+}

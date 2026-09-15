@@ -152,16 +152,21 @@ func (w *Window) watch() {
 // Addr is where this window was reached.
 func (w *Window) Addr() string { return w.addr }
 
-// Attach works in something the other window already has open, named
-// by the ID it gave for it.
+// Attach works in something the other window already has open, as it
+// was described down the control channel.
+//
+// The whole description is sent back, not just its ID: an ID is a place
+// in a list, and the other window checks that the place still holds
+// what this one was told it held.
 //
 // What comes back reads as that pane's screen, starting with what is
 // already on it, and writing to it types there. It keeps running on
 // that machine either way: this is a second pair of eyes on it, not a
 // hand-over.
-func (w *Window) Attach(id string, cols, rows int) (session.Session, error) {
+func (w *Window) Attach(open Open, cols, rows int) (session.Session, error) {
 	return w.session(openSession{
-		Cols: uint32(cols), Rows: uint32(rows), Attach: id,
+		Cols: uint32(cols), Rows: uint32(rows),
+		Attach: open.ID, Kind: open.Kind, Label: open.Label,
 	})
 }
 
@@ -186,13 +191,16 @@ func (w *Window) session(want openSession) (session.Session, error) {
 	if err != nil {
 		return nil, fmt.Errorf("serve: open a session on %s: %w", w.addr, err)
 	}
-	s := &remoteSession{ch: ch, done: make(chan struct{})}
+	s := &remoteSession{ch: ch, done: make(chan struct{}), saidDone: make(chan struct{})}
 	go s.readRequests(reqs)
 	// What the other end says went wrong, into the same stream as the
 	// program's own output. It is the only place a pane can show it,
 	// and a pane that opened and closed with nothing in it would leave
 	// the user with no idea why.
-	go func() { _, _ = io.Copy(errWriter{s}, ch.Stderr()) }()
+	go func() {
+		defer close(s.saidDone)
+		_, _ = io.Copy(errWriter{s}, ch.Stderr())
+	}()
 	return s, nil
 }
 
@@ -245,6 +253,11 @@ type remoteSession struct {
 	mu   sync.Mutex
 	said []byte
 
+	// saidDone is closed when the error stream has ended, so a read
+	// that has run out of program output knows there is no more of it
+	// coming.
+	saidDone chan struct{}
+
 	// done is closed when the other end has said how the program ended,
 	// or the channel has gone without it saying. status and gotOne are
 	// written before that and read after it, so the close is what keeps
@@ -266,9 +279,14 @@ func (s *remoteSession) Read(p []byte) (int, error) {
 	n, err := s.ch.Read(p)
 	if n == 0 && err != nil {
 		// The channel has gone. Anything the other end said about why
-		// arrives just before it does, so it is looked for once more:
-		// a refusal that was never read is a pane that closed with
-		// nothing in it.
+		// came on the error stream, which a goroutine of its own is
+		// copying, so that goroutine is waited for rather than raced
+		// with: a refusal that lost the race is a pane that closed
+		// with nothing in it and a user with no idea why.
+		//
+		// It ends when the channel does, so the wait is as long as the
+		// read that has already returned.
+		<-s.saidDone
 		if said := s.takeSaid(p); said > 0 {
 			return said, nil
 		}

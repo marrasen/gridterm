@@ -33,10 +33,11 @@ func TestAScreenSurvivesBeingWrittenAndReadBack(t *testing.T) {
 		"tab\there",
 		"\x1b[2;5Hplaced",
 		"漢字 and text",
+		"e\u0301clair",
 	} {
 		was := drawn(t, 20, 5, text)
 
-		again := drawn(t, 20, 5, Repaint(was))
+		again := drawn(t, 20, 5, Repaint(was, Screenful{Wrap: true}))
 
 		if diff := gridDiff(was, again); diff != "" {
 			t.Errorf("%q came back different:\n%s", text, diff)
@@ -48,7 +49,7 @@ func TestAScreenSurvivesBeingWrittenAndReadBack(t *testing.T) {
 func TestTheCursorComesBackWhereItWas(t *testing.T) {
 	was := drawn(t, 20, 5, "abc\r\nde")
 
-	again := drawn(t, 20, 5, Repaint(was))
+	again := drawn(t, 20, 5, Repaint(was, Screenful{Wrap: true}))
 
 	if got, want := again.Cursor(), was.Cursor(); got.X != want.X || got.Y != want.Y {
 		t.Errorf("the cursor came back at %d,%d, want %d,%d", got.X, got.Y, want.X, want.Y)
@@ -62,7 +63,7 @@ func TestAHiddenCursorStaysHidden(t *testing.T) {
 		t.Fatal("the cursor was not hidden to begin with")
 	}
 
-	again := drawn(t, 20, 5, Repaint(was))
+	again := drawn(t, 20, 5, Repaint(was, Screenful{Wrap: true}))
 
 	if again.Cursor().Visible {
 		t.Error("it came back visible")
@@ -74,7 +75,7 @@ func TestAHiddenCursorStaysHidden(t *testing.T) {
 func TestAnEmptyScreenIsWrittenShort(t *testing.T) {
 	g := drawn(t, 80, 24, "")
 
-	if got := len(Repaint(g)); got > 200 {
+	if got := len(Repaint(g, Screenful{Wrap: true})); got > 200 {
 		t.Errorf("an empty screen took %d bytes", got)
 	}
 }
@@ -84,7 +85,7 @@ func TestAnEmptyScreenIsWrittenShort(t *testing.T) {
 func TestARunOfOneStyleIsSaidOnce(t *testing.T) {
 	g := drawn(t, 40, 3, "\x1b[31m"+strings.Repeat("x", 40))
 
-	if got := strings.Count(Repaint(g), "38;2;"); got != 1 {
+	if got := strings.Count(Repaint(g, Screenful{Wrap: true}), "38;2;"); got != 1 {
 		t.Errorf("a row of one colour set it %d times", got)
 	}
 }
@@ -142,4 +143,57 @@ func itoa(n int) string {
 		n /= 10
 	}
 	return string(b)
+}
+
+// A mark that sits on the letter before it travels with that letter.
+//
+// It is part of the cell rather than a cell of its own, so a repaint
+// that wrote only the letter would drop the accent and leave a word
+// spelled differently at the other end.
+func TestACombiningMarkComesWithItsLetter(t *testing.T) {
+	was := drawn(t, 20, 3, "éclair")
+
+	out := Repaint(was, Screenful{Wrap: true})
+
+	if !strings.ContainsRune(out, '́') {
+		t.Errorf("the mark was not written: %q", out)
+	}
+	again := drawn(t, 20, 3, out)
+	if diff := gridDiff(was, again); diff != "" {
+		t.Errorf("it came back different:\n%s", diff)
+	}
+}
+
+// The modes that change what happens to what comes next travel with the
+// screen, and are said before anything is drawn.
+func TestTheModesTravelWithTheScreen(t *testing.T) {
+	g := drawn(t, 20, 3, "hello")
+
+	for _, c := range []struct {
+		what Screenful
+		want []string
+		not  []string
+	}{
+		{Screenful{Wrap: true}, []string{"\x1b[?1049l", "\x1b[?7h", "\x1b[?1l"}, nil},
+		{Screenful{Alt: true}, []string{"\x1b[?1049h", "\x1b[?7l"}, []string{"\x1b[?1049l"}},
+		{Screenful{AppCursor: true}, []string{"\x1b[?1h"}, []string{"\x1b[?1l"}},
+	} {
+		out := Repaint(g, c.what)
+		for _, want := range c.want {
+			if !strings.Contains(out, want) {
+				t.Errorf("%+v did not say %q: %q", c.what, want, out)
+			}
+		}
+		for _, not := range c.not {
+			if strings.Contains(out, not) {
+				t.Errorf("%+v said %q: %q", c.what, not, out)
+			}
+		}
+		// Before the screen, or it would be drawn in the wrong buffer.
+		if at := strings.Index(out, "\x1b[H\x1b[2J"); at < 0 {
+			t.Errorf("%+v never cleared the screen: %q", c.what, out)
+		} else if strings.Contains(out[at:], "\x1b[?1049") {
+			t.Errorf("%+v switched buffer after drawing: %q", c.what, out)
+		}
+	}
 }

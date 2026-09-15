@@ -798,3 +798,16 @@ func (s *Screen) clearAlt() {
 func (s *Screen) MouseModes() (click, drag, motion, sgr bool) {
 	return s.mode.MouseClick, s.mode.MouseDrag, s.mode.MouseMotion, s.mode.MouseSGR
 }
+
+// RenderLive copies the live screen into g, ignoring how far back into
+// history the view has been scrolled.
+func (s *Screen) RenderLive(g *grid.Grid) {
+	was := s.scrollOff
+	s.scrollOff = 0
+	s.Render(g)
+	s.scrollOff = was
+}
+
+// Wrap reports whether DECAWM is set, which decides whether a line too
+// long for the screen carries on to the next.
+func (s *Screen) Wrap() bool { return s.mode.Wrap }

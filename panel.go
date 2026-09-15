@@ -167,7 +167,7 @@ func (a *app) revealRow(row ui.ListRow) error {
 	if remote, ok := row.Key.(remoteKey); ok {
 		// Something running on a window this one took over. There is no
 		// pane here to put in front, so one is opened to watch it in.
-		return a.attachHere(remote.window, remote.id, remote.label, nil)
+		return a.attachHere(remote.window, remote.open, nil)
 	}
 	e, ok := row.Key.(*conns.Entry)
 	if !ok || e.Reveal == nil {
@@ -211,6 +211,28 @@ func (a *app) refreshPanel(now time.Time) {
 	// the meter cannot say.
 	for e, open := range a.tunnels {
 		e.Note = open.note()
+	}
+
+	// And a pane says when somebody elsewhere is reading it. Two people
+	// looking at one terminal is what taking over a window means, and
+	// the one sitting at it has to be able to tell.
+	for pane, e := range a.panes {
+		if what, ok := a.watching[pane]; ok {
+			// A pane showing a screen that is not its size, which is
+			// the one thing about it the user cannot otherwise work
+			// out from what it draws.
+			if note := farNote(pane.Size(), what.cols, what.rows); note != "" {
+				e.Note = note
+			} else if isFarNote(e.Note) {
+				e.Note = ""
+			}
+			continue
+		}
+		if n := pane.Watched(); n > 0 {
+			e.Note = watchedNote(n)
+		} else if isWatchedNote(e.Note) {
+			e.Note = ""
+		}
 	}
 
 	// What is still open, so a rate belonging to something that has gone

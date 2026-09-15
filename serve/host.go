@@ -92,7 +92,7 @@ func (s *Server) runSession(ch ssh.Channel, reqs <-chan *ssh.Request,
 				errors.New("this gridterm cannot be worked in from elsewhere"))
 			return
 		}
-		sess, err = s.cfg.Attach(want.Attach, cols, rows)
+		sess, err = s.cfg.Attach(want.Attach, want.Kind, want.Label)
 	case s.cfg.Open == nil:
 		s.refuseSession(ch, reqs, errors.New("this gridterm has nothing to open"))
 		return
@@ -217,7 +217,13 @@ func (s *Server) endSession(ch ssh.Channel, why error) {
 }
 
 // Attacher gives a client what is already running in one of this
-// window's panes, named by the ID it was sent down the control channel.
+// window's panes, named by the ID it was sent down the control channel
+// and by what that ID was said to be.
+//
+// Both, because an ID is a place in a list that is built afresh: an
+// implementation checks what it finds against what the client was told
+// it was asking for, and refuses rather than hand over a different
+// program.
 //
 // What comes back is a session like any other: reading it gives what
 // the pane shows, starting with the screen as it stands, and writing to
@@ -227,7 +233,7 @@ func (s *Server) endSession(ch ssh.Channel, why error) {
 //
 // It is called from a goroutine of the server's, so an implementation
 // that reaches into the window has to hand the work to whatever draws.
-type Attacher func(id string, cols, rows int) (session.Session, error)
+type Attacher func(id, kind, label string) (session.Session, error)
 
 // Opener starts something for a client to work in.
 //

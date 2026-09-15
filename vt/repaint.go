@@ -27,9 +27,30 @@ import (
 // whatever the program asked for into an actual colour, so sending the
 // palette index it came from would mean resolving it again at the other
 // end, against a palette that may not be the same.
-func Repaint(g *grid.Grid) string {
+func Repaint(g *grid.Grid, m Screenful) string {
 	cols, rows := g.Size()
 	var b strings.Builder
+	// Which buffer first, because switching afterwards would throw the
+	// screen away: a program in the alternate buffer is drawn there,
+	// and one that has left it is not.
+	if m.Alt {
+		b.WriteString("\x1b[?1049h")
+	} else {
+		b.WriteString("\x1b[?1049l")
+	}
+	// Then the two modes that change what happens to what comes next
+	// rather than what is already drawn: whether a long line wraps, and
+	// how the arrow keys are spelled back to the program.
+	if m.Wrap {
+		b.WriteString("\x1b[?7h")
+	} else {
+		b.WriteString("\x1b[?7l")
+	}
+	if m.AppCursor {
+		b.WriteString("\x1b[?1h")
+	} else {
+		b.WriteString("\x1b[?1l")
+	}
 	// Home, and no scrollback of the far end's own left showing through
 	// underneath what is written over it.
 	b.WriteString("\x1b[H\x1b[2J")
@@ -71,13 +92,39 @@ func Repaint(g *grid.Grid) string {
 	b.WriteString("\x1b[0m")
 
 	// The cursor last, so it is left where the program had it rather
-	// than after whatever was written last.
-	if cur := g.Cursor(); cur.Visible {
-		fmt.Fprintf(&b, "\x1b[%d;%dH", cur.Y+1, cur.X+1)
+	// than after whatever was written last. Put where it belongs even
+	// when it is hidden: the moment the program shows it again without
+	// moving it, one left at the end of the text would appear in the
+	// wrong place.
+	cur := g.Cursor()
+	fmt.Fprintf(&b, "\x1b[%d;%dH", cur.Y+1, cur.X+1)
+	if cur.Visible {
+		b.WriteString("\x1b[?25h")
 	} else {
 		b.WriteString("\x1b[?25l")
 	}
 	return b.String()
+}
+
+// Screenful is what a screen carries that its grid does not.
+//
+// Only the few that change what is drawn or how the keys are spelled
+// back. The scroll region, origin mode, insert mode, bracketed paste
+// and the mouse modes do not travel: a program that set one of them set
+// it on the terminal it was talking to, and what is sent here is a
+// picture of that terminal rather than a copy of it.
+type Screenful struct {
+	// Alt says the program is drawing in the alternate buffer, which is
+	// where a full-screen program draws.
+	Alt bool
+
+	// Wrap is DECAWM: whether a line too long for the screen carries on
+	// to the next.
+	Wrap bool
+
+	// AppCursor is DECCKM, which changes how the arrow keys are spelled
+	// back to the program.
+	AppCursor bool
 }
 
 // lastShowing is the rightmost cell of a row that would show anything,

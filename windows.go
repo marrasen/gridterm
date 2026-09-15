@@ -16,6 +16,7 @@ import (
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/serve"
 	"github.com/marrasen/gridterm/ui"
+	"github.com/marrasen/gridterm/ui/term"
 )
 
 // knownWindowsFile is where the keys of gridterm windows this one has
@@ -292,6 +293,24 @@ func (a *app) openOnWindow(addr string, at *spot) error {
 	return nil
 }
 
+// watchingPane is the pane already watching something on a window taken
+// over, or nil when nothing is.
+func (a *app) watchingPane(addr, id string) *term.Terminal {
+	for pane, what := range a.watching {
+		if what.window == addr && what.id == id {
+			return pane
+		}
+	}
+	return nil
+}
+
+// watchedID names what a pane is watching on a window taken over, and
+// how big the screen is over there.
+type watchedID struct {
+	window, id string
+	cols, rows int
+}
+
 // dropWindow lets go of another window, taking the panes drawn from it.
 func (a *app) dropWindow(addr string) error {
 	t := a.windows[addr]
@@ -364,21 +383,29 @@ func knownWindowsPath() (string, error) {
 
 // attachHere opens a pane on what the window taken over already has
 // running, rather than starting something new there.
-func (a *app) attachHere(addr, id, label string, at *spot) error {
+func (a *app) attachHere(addr string, open serve.Open, at *spot) error {
 	t := a.windows[addr]
 	if t == nil {
 		return fmt.Errorf("this window has not taken over %s", addr)
 	}
-	sess, err := t.win.Attach(id, a.lastSize[0], a.lastSize[1])
+	// Already watching it: the pane comes forward rather than a second
+	// one opening on the same program, which would be two panes typing
+	// into one shell.
+	if pane := a.watchingPane(addr, open.ID); pane != nil {
+		a.focus(pane)
+		return nil
+	}
+	sess, err := t.win.Attach(open, a.lastSize[0], a.lastSize[1])
 	if err != nil {
 		return err
 	}
-	pane, err := a.openSessionTab(sess, addr, conns.Terminal, label, at)
+	pane, err := a.openSessionTab(sess, addr, conns.Terminal, open.Label, at)
 	if err != nil {
 		// The session is ours and nothing else knows about it.
 		_ = sess.Close()
 		return err
 	}
 	a.paneOnWindow[pane] = t
+	a.watching[pane] = watchedID{window: addr, id: open.ID, cols: open.Cols, rows: open.Rows}
 	return nil
 }

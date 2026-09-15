@@ -592,6 +592,7 @@ func (a *app) forgetPane(t *term.Terminal) {
 	// of that window later reports a failure to close a pane that was
 	// closed long before.
 	delete(a.paneOnWindow, t)
+	delete(a.watching, t)
 }
 
 // closeMachines ends every connection the window is holding, for a

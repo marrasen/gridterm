@@ -110,6 +110,11 @@ type app struct {
 	// so letting go of one takes its panes with it.
 	paneOnWindow map[*term.Terminal]*taken
 
+	// watching says what each of those panes is watching over there, so
+	// choosing the same thing again brings the pane forward rather than
+	// opening a second one onto one shell.
+	watching map[*term.Terminal]watchedID
+
 	// dock holds the sidebar beside everything else, panel is the list
 	// in it, and stage is what fills the rest: it holds every pane the
 	// window has open and shows the one the sidebar picked.

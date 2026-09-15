@@ -17,6 +17,7 @@ import (
 
 	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/serve"
+	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/term"
 )
 
@@ -620,7 +621,7 @@ func TestAttachingShowsWhatIsAlreadyOnTheScreen(t *testing.T) {
 	// Something already on the serving window's screen, put there by
 	// the shell running in it.
 	hostPane := onlyPaneOn(t, host)
-	host.shells[0].out <- []byte("already-here\\r\\n")
+	host.shells[0].out <- []byte("already-here\r\n")
 	waitForBoth(t, host, client, "the shell there to say it", func() bool {
 		return strings.Contains(paneText(hostPane), "already-here")
 	})
@@ -640,7 +641,7 @@ func TestAttachingShowsWhatIsAlreadyOnTheScreen(t *testing.T) {
 	})
 
 	panes := len(client.panes)
-	if err := client.attachHere(row.window, row.id, row.label, nil); err != nil {
+	if err := client.attachHere(row.window, row.open, nil); err != nil {
 		t.Fatalf("attach: %v", err)
 	}
 	waitForBoth(t, host, client, "a pane watching it", func() bool {
@@ -654,8 +655,46 @@ func TestAttachingShowsWhatIsAlreadyOnTheScreen(t *testing.T) {
 		return strings.Contains(paneText(here), "already-here")
 	})
 
+	// What the shell says from now on, which is the whole point: a
+	// screen sent once is a photograph, not a window into it.
+	host.shells[0].out <- []byte("live-after-attach\r\n")
+	waitForBoth(t, host, client, "what it said after the attach", func() bool {
+		return strings.Contains(paneText(here), "live-after-attach")
+	})
+
+	// One thing open is one row. The dimmed row for it over there goes
+	// when a pane of this window is showing it.
+	client.refreshPanel(panelNow)
+	for _, r := range client.panel.Rows() {
+		if key, ok := r.Key.(remoteKey); ok && key.open.ID == row.open.ID {
+			t.Error("it is listed twice: once as a pane and once as a row over there")
+		}
+	}
+
+	// And the window being watched says so, on the row of the pane
+	// being read.
+	waitForBoth(t, host, client, "the host to say it is being watched", func() bool {
+		host.refreshPanel(panelNow)
+		for _, r := range host.panel.Rows() {
+			if strings.HasPrefix(r.Note, watchedBy) {
+				return true
+			}
+		}
+		return false
+	})
+
+	// Choosing the same row again brings that pane forward rather than
+	// opening a second one typing into one shell.
+	was := len(client.panes)
+	if err := client.attachHere(row.window, row.open, nil); err != nil {
+		t.Fatalf("attach again: %v", err)
+	}
+	if len(client.panes) != was {
+		t.Errorf("choosing it twice opened another pane on one shell")
+	}
+
 	// And typing here reaches the shell there.
-	here.Send([]byte("typed-from-here\\r"))
+	here.Send([]byte("typed-from-here\r"))
 	waitForBoth(t, host, client, "what was typed here to reach there", func() bool {
 		return strings.Contains(host.shells[0].sentText(), "typed-from-here")
 	})
@@ -667,7 +706,7 @@ func TestAttachingShowsWhatIsAlreadyOnTheScreen(t *testing.T) {
 	waitForBoth(t, host, client, "the shell there to be let go of", func() bool {
 		return hostPane.Watched() == 0
 	})
-	host.shells[0].out <- []byte("still-running\\r\\n")
+	host.shells[0].out <- []byte("still-running\r\n")
 	waitForBoth(t, host, client, "the shell there to carry on", func() bool {
 		return strings.Contains(paneText(hostPane), "still-running")
 	})
@@ -680,7 +719,7 @@ func TestAttachingToNothingSaysSo(t *testing.T) {
 	// The channel opens before the other end has decided, so the reason
 	// arrives in the pane rather than as an error here. That is where
 	// the user would see it.
-	if err := client.attachHere(addr, "Local#99", "gone", nil); err != nil {
+	if err := client.attachHere(addr, serve.Open{ID: "Local#99", Kind: "Terminal", Label: "gone"}, nil); err != nil {
 		t.Fatalf("attach: %v", err)
 	}
 	pane := newestPane(t, client)
@@ -728,4 +767,91 @@ func paneText(pane *term.Terminal) string {
 		b.WriteByte('\n')
 	}
 	return b.String()
+}
+
+// The row chosen is the one attached to, when the window over there has
+// more than one thing open.
+//
+// A row is named by a machine and a place in its list, so a client that
+// ignored the place would hand back the first shell whichever row was
+// picked, and the user would type into the wrong one.
+func TestTheRowChosenIsTheOneAttachedTo(t *testing.T) {
+	host, client, addr := twoWindows(t)
+	first := onlyPaneOn(t, host)
+
+	// A second pane over there, and a name for each so the rows can be
+	// told apart. The shells this window opened over there are in the
+	// same list, so the new one is counted from where the list stood.
+	second := len(host.shells)
+	if err := host.openTab(); err != nil {
+		t.Fatalf("a second shell there: %v", err)
+	}
+	newest := newestPane(t, host)
+	host.setTitle(t, 0, first, "first-shell")
+	host.setTitle(t, second, newest, "second-shell")
+	host.shells[0].out <- []byte("this-is-the-first\r\n")
+	host.shells[second].out <- []byte("this-is-the-second\r\n")
+
+	// The row for the second one, as this window was told about it.
+	var row remoteKey
+	waitForBoth(t, host, client, "a row named for the second shell", func() bool {
+		host.refreshPanel(panelNow)
+		client.refreshPanel(panelNow)
+		for _, r := range client.panel.Rows() {
+			key, ok := r.Key.(remoteKey)
+			if ok && key.window == addr && key.open.Label == "second-shell" {
+				row = key
+				return true
+			}
+		}
+		return false
+	})
+
+	if err := client.attachHere(addr, row.open, nil); err != nil {
+		t.Fatalf("attach: %v", err)
+	}
+	here := newestPane(t, client)
+	waitForBoth(t, host, client, "the second shell's screen", func() bool {
+		return strings.Contains(paneText(here), "this-is-the-second")
+	})
+	if text := paneText(here); strings.Contains(text, "this-is-the-first") {
+		t.Errorf("it attached to the first shell instead: %q", text)
+	}
+}
+
+// A pane showing a screen that is not its own size says what size that
+// screen is, because nothing else explains what it is drawing.
+func TestAPaneSaysWhenTheFarScreenIsAnotherSize(t *testing.T) {
+	pane := ui.Size{Cols: 80, Rows: 24}
+	if got := farNote(pane, 120, 40); got != "shows 120x40" {
+		t.Errorf("it said %q", got)
+	}
+	if got := farNote(pane, 80, 24); got != "" {
+		t.Errorf("a screen of the same size said %q", got)
+	}
+	if got := farNote(pane, 0, 0); got != "" {
+		t.Errorf("something with no screen said %q", got)
+	}
+	if !isFarNote("shows 120x40") {
+		t.Error("it does not recognise its own note")
+	}
+	if isFarNote("via bastion") {
+		t.Error("it claimed somebody else's note")
+	}
+}
+
+// And a pane being read from elsewhere says how many are reading it.
+func TestAWatchedPaneSaysSo(t *testing.T) {
+	if got := watchedNote(1); got != "watched by 1" {
+		t.Errorf("one watcher gave %q", got)
+	}
+	if got := watchedNote(3); got != "watched by 3" {
+		t.Errorf("three watchers gave %q", got)
+	}
+	if !isWatchedNote(watchedNote(2)) {
+		t.Error("it does not recognise its own note")
+	}
+	if isWatchedNote("exit 3") {
+		t.Error("it claimed somebody else's note")
+	}
 }

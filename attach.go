@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/marrasen/gridterm/conns"
@@ -18,39 +19,50 @@ import (
 // Called from a goroutine serving that client, so the work of finding
 // the pane is handed to the one that draws and waited for here. Nothing
 // in the widget tree may be touched from anywhere else.
-func (a *app) attachTo(id string, cols, rows int) (session.Session, error) {
+func (a *app) attachTo(id, kind, label string) (session.Session, error) {
 	type found struct {
 		sess session.Session
 		err  error
 	}
 	back := make(chan found, 1)
 	a.pump.post(func() {
-		sess, err := a.watchPane(id, cols, rows)
+		sess, err := a.watchPane(id, kind, label)
 		back <- found{sess: sess, err: err}
 	})
-	got := <-back
-	return got.sess, got.err
+	select {
+	case got := <-back:
+		return got.sess, got.err
+	case <-a.ctx.Done():
+		// The window is closing and nothing will run what was posted.
+		// Waiting for it would park this goroutine for the rest of the
+		// process, and the connection it belongs to with it.
+		return nil, errors.New("this window is closing")
+	}
 }
 
 // watchPane finds the pane a client asked for and starts watching it.
 //
 // On the goroutine that draws, which is the only one that may look at
 // what the window has open.
-func (a *app) watchPane(id string, cols, rows int) (session.Session, error) {
+func (a *app) watchPane(id, kind, label string) (session.Session, error) {
 	e := a.entryByID(id)
 	if e == nil {
 		return nil, fmt.Errorf("there is nothing called %q open here any more", id)
+	}
+	// An id is a machine and a place in its list, and that list is
+	// built afresh every frame: something closing shifts everything
+	// after it up one. Checked against what the client was told it was
+	// asking for, so a stale id is refused rather than quietly handing
+	// over somebody else's shell to be typed into.
+	if e.Kind.String() != kind || e.Label != label {
+		return nil, fmt.Errorf(
+			"what was %s %q here is now %s %q: ask again",
+			kind, label, e.Kind, e.Label)
 	}
 	pane := a.paneFor(e)
 	if pane == nil {
 		return nil, errors.New("that is not something with a screen to watch")
 	}
-	// Not resized to suit the watcher. The pane is drawn on this
-	// machine too, and a window that shrank somebody's shell to fit a
-	// laptop they are not looking at would be a window that reaches
-	// further than it was asked to.
-	_ = cols
-	_ = rows
 	return newWatched(pane), nil
 }
 
@@ -98,8 +110,21 @@ type watched struct {
 	// a slow link must not hold up the screen on this machine.
 	out chan []byte
 
+	// behind records that something was dropped, so the next read sends
+	// the whole screen instead of carrying on mid-sentence.
+	behind atomic.Bool
+
+	// ended records that the program has gone, so a read that finds
+	// nothing left says so rather than waiting for more.
+	ended atomic.Bool
+
 	closeOnce sync.Once
 	done      chan struct{}
+
+	// overOnce and over say the program has gone, for a Wait that would
+	// otherwise sit there until somebody closed the session by hand.
+	overOnce sync.Once
+	over     chan struct{}
 
 	// left is what a read has taken from the front of the queue and not
 	// yet given back.
@@ -111,12 +136,22 @@ type watched struct {
 //
 // Dropped rather than waited for. The pane is being drawn on this
 // machine as well, and a watcher on a bad link must not be able to stop
-// it: what they lose is a moment of a screen that is about to be
-// written over anyway.
+// it.
+//
+// What is dropped cannot simply be skipped over. A chunk is whatever a
+// read returned, cut wherever the read happened to end, so it can be
+// the middle of an escape sequence -- and a parser left inside one eats
+// whatever comes next. So a drop is followed by the whole screen, which
+// is the only thing that puts an emulator back in a known state.
 const watchQueue = 256
 
 func newWatched(pane *term.Terminal) *watched {
-	w := &watched{pane: pane, out: make(chan []byte, watchQueue), done: make(chan struct{})}
+	w := &watched{
+		pane: pane,
+		out:  make(chan []byte, watchQueue),
+		done: make(chan struct{}),
+		over: make(chan struct{}),
+	}
 	w.stop = pane.Watch(feed{w: w})
 	return w
 }
@@ -139,20 +174,55 @@ func (f feed) Write(p []byte) (int, error) {
 	select {
 	case f.w.out <- b:
 	default:
-		// Too far behind. What is dropped is a moment of a screen that
-		// is about to be written over, and the alternative is holding
-		// up the pane on this machine for somebody who is not here.
+		// Too far behind to take this one. Everything queued goes with
+		// it and the whole screen is sent instead: half of what was
+		// missed is worse than none of it, because what is missing can
+		// be the start of an escape sequence.
+		f.w.behind.Store(true)
+		f.w.drain()
 	}
 	return len(p), nil
 }
 
+// Ended is called when the program has gone.
+func (f feed) Ended() {
+	f.w.ended.Store(true)
+	f.w.overOnce.Do(func() { close(f.w.over) })
+	// Woken, so a read waiting for output that is never coming returns
+	// rather than sitting there for the life of the window.
+	select {
+	case f.w.out <- nil:
+	default:
+	}
+}
+
+// drain throws away what has been queued and not read.
+func (w *watched) drain() {
+	for {
+		select {
+		case <-w.out:
+		default:
+			return
+		}
+	}
+}
+
 // Read gives what the pane has said.
 func (w *watched) Read(p []byte) (int, error) {
-	if len(w.left) == 0 {
+	for len(w.left) == 0 {
+		// Caught up on by being sent the screen, rather than by being
+		// sent the part of the stream that survived.
+		if w.behind.Swap(false) {
+			w.left = []byte(w.pane.Screen())
+			break
+		}
 		select {
 		case b := <-w.out:
 			w.left = b
 		case <-w.done:
+			return 0, io.EOF
+		}
+		if len(w.left) == 0 && w.ended.Load() {
 			return 0, io.EOF
 		}
 	}
@@ -169,6 +239,11 @@ func (w *watched) Write(p []byte) (int, error) {
 		return 0, io.EOF
 	default:
 	}
+	if w.ended.Load() {
+		// The program has gone. Saying the keystroke went in would be a
+		// lie: there is nothing left to read it.
+		return 0, io.EOF
+	}
 	w.pane.Send(p)
 	return len(p), nil
 }
@@ -177,9 +252,15 @@ func (w *watched) Write(p []byte) (int, error) {
 // size is this machine's business.
 func (w *watched) Resize(int, int) error { return nil }
 
-// Wait blocks until the watcher stops watching.
+// Wait blocks until the program ends or the watcher stops watching.
+//
+// It is not the program's exit status, which belongs to whoever started
+// it on this machine. Watching a shell says nothing about how it ended.
 func (w *watched) Wait() error {
-	<-w.done
+	select {
+	case <-w.done:
+	case <-w.over:
+	}
 	return nil
 }
 

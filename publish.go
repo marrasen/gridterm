@@ -2,6 +2,7 @@ package main
 
 import (
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -20,6 +21,14 @@ func (a *app) snapshot(now time.Time) serve.Snapshot {
 	snap := serve.Snapshot{Window: a.localHost}
 	for _, g := range a.registry.Groups(now) {
 		for i, row := range g.Rows {
+			// The size of its screen, for something that has one. It
+			// is not resized to suit a watcher, so a watcher that
+			// wants to know has to be told.
+			cols, rows := 0, 0
+			if pane := a.paneFor(row.Entry); pane != nil {
+				size := pane.Size()
+				cols, rows = size.Cols, size.Rows
+			}
 			snap.Open = append(snap.Open, serve.Open{
 				// The machine and the place in its list, which together
 				// name a row for as long as it is there. Nothing here
@@ -33,6 +42,8 @@ func (a *app) snapshot(now time.Time) serve.Snapshot {
 				// panel shows them, so both windows say the same
 				// word for the same thing.
 				State: row.State.String(),
+				Cols:  cols,
+				Rows:  rows,
 			})
 		}
 	}
@@ -114,6 +125,12 @@ func (a *app) remoteRows(host string) []ui.ListRow {
 	}
 	var rows []ui.ListRow
 	for _, open := range t.win.Opens() {
+		if a.watchingPane(host, open.ID) != nil {
+			// There is a pane of this window watching it, with a row of
+			// its own. One thing open should be one row, and the row
+			// that can be put in front and closed is the better one.
+			continue
+		}
 		text := open.Label
 		if open.Host != conns.Local && open.Host != "" {
 			// Which machine over there, because "Local" on that window
@@ -124,7 +141,7 @@ func (a *app) remoteRows(host string) []ui.ListRow {
 			Text:  text,
 			Note:  open.Note,
 			Depth: 1,
-			Key:   remoteKey{window: host, id: open.ID, label: open.Label},
+			Key:   remoteKey{window: host, open: open},
 			Mark:  remoteMark,
 			// Dimmed, because it is running somewhere else: what this
 			// window can do with it is open a pane to watch it in, not
@@ -143,8 +160,11 @@ const remoteMark = '◦'
 // it can say which thing on which window.
 type remoteKey struct {
 	window string
-	id     string
-	label  string
+
+	// open is the whole description the other window gave, which is
+	// what goes back when this row is chosen: the place in its list is
+	// not enough on its own to be sure of what is there.
+	open serve.Open
 }
 
 // openID names one of the things a window has open, for as long as it
@@ -154,3 +174,38 @@ type remoteKey struct {
 // in the registry has an identity of its own, and one made up here
 // would have to be kept in step with a list built afresh every frame.
 func openID(host string, at int) string { return host + "#" + strconv.Itoa(at) }
+
+// farNote is what a watching pane's row says about the screen it is
+// showing, when that screen is not the size of the pane.
+//
+// Only when it differs. The far end is not resized to suit the pane, so
+// a wider screen wraps and a taller one runs off the bottom, and the
+// size is the only thing that explains it.
+func farNote(pane ui.Size, cols, rows int) string {
+	if cols <= 0 || rows <= 0 || (pane.Cols == cols && pane.Rows == rows) {
+		return ""
+	}
+	return farSize + " " + strconv.Itoa(cols) + "x" + strconv.Itoa(rows)
+}
+
+// isFarNote reports whether a note is one of ours.
+func isFarNote(note string) bool { return strings.HasPrefix(note, farSize) }
+
+// farSize begins the note on a pane showing a screen of another size.
+const farSize = "shows"
+
+// watchedNote is what a pane's row says when somebody elsewhere is
+// reading it.
+func watchedNote(n int) string {
+	if n == 1 {
+		return watchedBy + " 1"
+	}
+	return watchedBy + " " + strconv.Itoa(n)
+}
+
+// isWatchedNote reports whether a note is one of ours, so it can be
+// taken away again without touching a note something else wrote.
+func isWatchedNote(note string) bool { return strings.HasPrefix(note, watchedBy) }
+
+// watchedBy begins the note on a pane somebody elsewhere is reading.
+const watchedBy = "watched by"

@@ -45,6 +45,14 @@ type openSession struct {
 	// It is the ID of an Open the served window sent down the control
 	// channel, so a client can only ask for what it was told about.
 	Attach string
+
+	// Kind and Label are what that Open said it was. An ID names a
+	// place in a list that is built afresh, so the served window checks
+	// these against what is there now: something closing shifts
+	// everything after it, and a stale ID would otherwise hand over a
+	// different program to be typed into.
+	Kind  string
+	Label string
 }
 
 // windowChange is the size of the pane a session is drawn in.
@@ -96,6 +104,16 @@ type Open struct {
 
 	// State is what it is doing: opened, active, settled or closed.
 	State string `json:"state"`
+
+	// Cols and Rows are how big the screen is over there, for something
+	// with a screen, and zero for anything else.
+	//
+	// Watching does not resize it: it is drawn on that machine too, and
+	// a window that shrank somebody's shell to fit a pane they are not
+	// looking at would reach further than it was asked to. So the size
+	// is sent instead, and the pane watching it can say what it is.
+	Cols int `json:"cols,omitempty"`
+	Rows int `json:"rows,omitempty"`
 }
 
 // Snapshot is everything the window being served has open.

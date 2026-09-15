@@ -136,6 +136,11 @@ type Terminal struct {
 	// goroutine is carrying the connection they are on.
 	watchMu  sync.Mutex
 	watchers []Watcher
+
+	// ended records that the program has gone, so a watcher arriving
+	// afterwards is told at once rather than waiting for output from a
+	// shell that has exited.
+	ended bool
 }
 
 // New starts a terminal on the given session.
@@ -524,6 +529,10 @@ func (t *Terminal) finish() {
 	if t.exited.Swap(true) {
 		return
 	}
+	// Whoever is watching from elsewhere, before the window is told:
+	// their pane is drawing this program and has no other way to learn
+	// it has gone.
+	t.endWatchers()
 	if t.cfg.OnExit != nil {
 		t.cfg.OnExit()
 	}

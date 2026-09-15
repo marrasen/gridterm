@@ -7,6 +7,7 @@ import (
 	"io"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -88,6 +89,13 @@ func (s *echoSession) seenSizes() [][2]int {
 // takenOver starts a window serving and another that has reached it.
 func takenOver(t *testing.T, open Opener) (*Server, *Window) {
 	t.Helper()
+	return takenOverWith(t, open, nil)
+}
+
+// takenOverWith is takenOver for a window that also lets a client work
+// in what it already has running.
+func takenOverWith(t *testing.T, open Opener, attach Attacher) (*Server, *Window) {
+	t.Helper()
 	mine, line := aKey(t, "marcus@laptop")
 	host, err := HostKey(t.TempDir() + "/host_key")
 	if err != nil {
@@ -100,6 +108,7 @@ func takenOver(t *testing.T, open Opener) (*Server, *Window) {
 	s, err := Listen(Config{
 		Addr: "127.0.0.1:0", HostKey: host, Allowed: keys,
 		Open:    open,
+		Attach:  attach,
 		OnError: func(error) {},
 	})
 	if err != nil {
@@ -962,4 +971,82 @@ func waitForOpens(t *testing.T, w *Window, ok func([]Open) bool, what string) {
 		time.Sleep(time.Millisecond)
 	}
 	t.Fatalf("waited for %s, got %v", what, w.Opens())
+}
+
+// A client works in something the serving window already has running,
+// and the window is asked for exactly what the client was told about.
+func TestAWindowWorksInSomethingAlreadyRunning(t *testing.T) {
+	asked := make(chan [3]string, 1)
+	running := newEchoSession(100, 40)
+	_, w := takenOverWith(t, nil, func(id, kind, label string) (session.Session, error) {
+		asked <- [3]string{id, kind, label}
+		return running, nil
+	})
+
+	sess, err := w.Attach(Open{ID: "margit#2", Kind: "Terminal", Label: "vim README.md"}, 80, 24)
+	if err != nil {
+		t.Fatalf("attach: %v", err)
+	}
+	defer func() { _ = sess.Close() }()
+
+	select {
+	case got := <-asked:
+		want := [3]string{"margit#2", "Terminal", "vim README.md"}
+		if got != want {
+			t.Errorf("it asked for %v, not %v", got, want)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the serving window was never asked")
+	}
+
+	// What was already on the screen over there.
+	read(t, sess, "started at 100x40")
+
+	// And typing here reaches it.
+	if _, err := sess.Write([]byte("typed-from-here")); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	read(t, sess, "typed-from-here")
+}
+
+// A window that is not offering what it has running says so, rather
+// than starting something new for a client that asked to watch.
+func TestAWindowThatCannotBeWorkedInSaysSo(t *testing.T) {
+	var opened int32
+	_, w := takenOverWith(t, func(cols, rows int) (session.Session, error) {
+		atomic.AddInt32(&opened, 1)
+		return newEchoSession(cols, rows), nil
+	}, nil)
+
+	sess, err := w.Attach(Open{ID: "Local#0", Kind: "Terminal", Label: "bash"}, 80, 24)
+	if err != nil {
+		t.Fatalf("attach: %v", err)
+	}
+	defer func() { _ = sess.Close() }()
+
+	// The channel opens before the far end has decided, so the reason
+	// arrives as the session's first words.
+	got := read(t, sess, "cannot be worked in")
+	if strings.Contains(got, "started at") {
+		t.Errorf("it started something new instead: %q", got)
+	}
+	if n := atomic.LoadInt32(&opened); n != 0 {
+		t.Errorf("it opened %d new sessions", n)
+	}
+}
+
+// What the serving window says about something that has gone reaches
+// the client rather than being swallowed.
+func TestAskingForSomethingGoneSaysSo(t *testing.T) {
+	_, w := takenOverWith(t, nil, func(id, kind, label string) (session.Session, error) {
+		return nil, fmt.Errorf("there is nothing called %q open here any more", id)
+	})
+
+	sess, err := w.Attach(Open{ID: "Local#9", Kind: "Terminal", Label: "gone"}, 80, 24)
+	if err != nil {
+		t.Fatalf("attach: %v", err)
+	}
+	defer func() { _ = sess.Close() }()
+
+	read(t, sess, `nothing called "Local#9" open here any more`)
 }

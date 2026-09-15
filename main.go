@@ -152,6 +152,7 @@ func main() {
 	a.windows = make(map[string]*taken)
 	a.served = make(map[*serve.Client]*conns.Entry)
 	a.paneOnWindow = make(map[*term.Terminal]*taken)
+	a.watching = make(map[*term.Terminal]watchedID)
 	a.paneOn = make(map[*term.Terminal]*machine)
 	a.tunnels = make(map[*conns.Entry]*tunnel)
 	a.queue = jobs.New(0)

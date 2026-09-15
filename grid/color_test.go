@@ -35,3 +35,38 @@ func TestABlendOverNoDistanceIsWhereItStarts(t *testing.T) {
 		}
 	}
 }
+
+// A blend towards a darker colour rounds down, the way a blend towards a
+// lighter one does.
+//
+// Go's own division rounds towards zero, which rounds a negative step
+// up. Every dim cell on a dark ground moved by one when that went
+// unnoticed.
+func TestABlendTowardsADarkerColourRoundsDown(t *testing.T) {
+	// 7 down to 0, 55 hundredths of the way, is 3.15. Rounding down
+	// gives 3; rounding towards zero gives 4.
+	bright := color.RGBA{R: 7, G: 7, B: 7, A: 255}
+	dark := color.RGBA{A: 255}
+
+	want := color.RGBA{R: 3, G: 3, B: 3, A: 255}
+	if got := Blend(bright, dark, 55, 100); got != want {
+		t.Errorf("Blend(%v, %v, 55, 100) = %v, want %v", bright, dark, got, want)
+	}
+}
+
+// Dimming is what the renderer does with a blend, and it has to give the
+// same colour it gave before the mixer was shared: the float mixer it
+// replaced rounded down at every step.
+func TestABlendMatchesTheFloatMixerItReplaced(t *testing.T) {
+	const t55 = 0.55
+	for x := 0; x < 256; x++ {
+		for y := 0; y < 256; y++ {
+			from := color.RGBA{R: uint8(x), A: 255}
+			to := color.RGBA{R: uint8(y), A: 255}
+			want := uint8(float64(x)*(1-t55) + float64(y)*t55)
+			if got := Blend(from, to, 55, 100).R; got != want {
+				t.Fatalf("%d blended 55/100 towards %d is %d, want %d", x, y, got, want)
+			}
+		}
+	}
+}

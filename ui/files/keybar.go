@@ -18,9 +18,6 @@ type fkey struct {
 	Title string
 }
 
-// matches reports whether an event is this key.
-func (k fkey) matches(ev input.Event) bool { return ui.ChordOf(ev) == k.Chord }
-
 // press is the key press this chord is, for asking whether a key on the
 // bar is this one and for running it from a click.
 func (k fkey) press() input.Event {

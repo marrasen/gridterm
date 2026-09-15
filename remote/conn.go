@@ -66,6 +66,10 @@ type Config struct {
 	// keyboard-interactive.
 	KeysOnly bool
 
+	// NoRing leaves out the keys already unlocked, for a connection that
+	// must offer only the key files it was named.
+	NoRing bool
+
 	// agent opens the SSH agent. A nil one opens the agent running on
 	// this machine; it is set so that a test can hand over one of its
 	// own.
@@ -306,11 +310,6 @@ func nothingToAuthenticateWith(agentErr error) error {
 
 // noKeysToOffer explains a take-over that had no key to try, naming the
 // agent's own failure when there was one.
-//
-// Its own wording rather than nothingToAuthenticateWith's, because a
-// password is never offered to another gridterm window and saying there
-// was no way to ask for one would send the user looking for a setting
-// that does not exist.
 func noKeysToOffer(agentErr error) error {
 	const where = "remote: no keys to offer: " +
 		"name a key file, put one in ~/.ssh, or add one to the SSH agent"

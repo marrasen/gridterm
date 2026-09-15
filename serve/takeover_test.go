@@ -294,6 +294,45 @@ func TestReachingAWindowSaysWhatIsMissing(t *testing.T) {
 	}
 }
 
+// A caller that sets both ways of signing in gets the ladder, because a
+// ladder is what a caller with more than one key to try has and a flat
+// list would try only the first.
+func TestAWindowReachedWithBothWaysOfSigningInUsesTheLadder(t *testing.T) {
+	mine, line := aKey(t, "marcus@laptop")
+	wrong, _ := aKey(t, "somebody@else")
+	host, err := HostKey(t.TempDir() + "/host_key")
+	if err != nil {
+		t.Fatalf("host key: %v", err)
+	}
+	keys, err := ParseAllowed([]byte(line), "the test")
+	if err != nil {
+		t.Fatalf("allowed: %v", err)
+	}
+	s, err := Listen(Config{
+		Addr: "127.0.0.1:0", HostKey: host, Allowed: keys,
+		Open:    func(int, int) (session.Session, error) { return nil, errors.New("nothing to open") },
+		OnError: func(error) {},
+	})
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+
+	// Keys holds the key the window will not have; Auth holds the one it
+	// will.
+	w, err := Dial(context.Background(), DialConfig{
+		Addr: s.Addr(), Keys: []ssh.Signer{wrong},
+		Auth: func(*ssh.ClientAuthContext) (ssh.AuthMethod, error) {
+			return ssh.PublicKeys(mine), nil
+		},
+		HostKey: ssh.FixedHostKey(host.PublicKey()),
+	})
+	if err != nil {
+		t.Fatalf("reach it with both set: %v", err)
+	}
+	_ = w.Close()
+}
+
 // A window answering with a key that is not the one expected is not
 // taken over.
 func TestAWindowWithTheWrongKeyIsRefused(t *testing.T) {

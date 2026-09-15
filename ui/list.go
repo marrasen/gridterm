@@ -118,7 +118,8 @@ func buttonCol(cols int) int {
 	return cols - 2
 }
 
-// List is rows to look through and choose from.
+// List is rows to look through and choose from. NewList builds one; the
+// zero value is not a list.
 //
 // It is rebuilt from whatever it is showing on every frame, so SetRows
 // keeps the selection on the same Key and leaves the scroll where it

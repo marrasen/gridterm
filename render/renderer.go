@@ -448,7 +448,8 @@ func cellRun(geo *Geometry, x0, x1 int) (at, width int) {
 	return at, geo.CellX(x1-1) + geo.CellW() - at
 }
 
-// blend mixes a towards b by t, in straight (non-premultiplied) space.
+// dimmed mixes a cell's foreground towards its background, which is what
+// SGR 2 asks for.
 func dimmed(fg, bg color.RGBA) color.RGBA {
 	out := grid.Blend(fg, bg, dimPart, dimWhole)
 	// The foreground's own alpha, because a cell with nothing behind it

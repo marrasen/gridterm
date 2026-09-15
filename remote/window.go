@@ -21,10 +21,13 @@ type Reach struct {
 	// rather than looked up, so a test can hand over a file of its own.
 	Known func() (string, error)
 
-	// Agent is where the keys an SSH agent holds come from. A nil one
-	// asks the agent running on this machine; it is here so that a test
-	// can hand over an agent of its own.
-	Agent func() ([]ssh.Signer, io.Closer, error)
+	// Agent is where the keys an SSH agent holds come from: the socket to
+	// hold until signing is done, and a way to list what it holds. A nil
+	// one asks the agent running on this machine.
+	//
+	// Listing is left to the ladder to call, so the same bound and the
+	// same "it did not answer" applies here as anywhere else.
+	Agent func() (io.Closer, func() ([]ssh.Signer, error), error)
 
 	// Saying is told what is being done now, for the row to show. It is
 	// called from the goroutine doing it, so it hands the work to
@@ -90,12 +93,15 @@ func (r Reach) reach(ctx context.Context) (win *serve.Window, err error) {
 	if err != nil {
 		return nil, err
 	}
+	// A dialog the user dismisses gives up on the take-over rather than
+	// being treated as one more key that did not work.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	ask := newCancelAsk(r.Ask, cancel)
+	r.Ask = ask.asker()
+
 	r.say(stepKeys)
-	cfg := Config{Ring: r.Ring, Ask: r.Ask, Saying: r.Saying, KeysOnly: true, agent: r.agentSource()}
-	if r.KeyFile != "" {
-		cfg.Identities = []string{r.KeyFile}
-	}
-	a, err := authMethods(ctx, cfg)
+	a, err := r.ladder(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -113,7 +119,7 @@ func (r Reach) reach(ctx context.Context) (win *serve.Window, err error) {
 		}
 	}()
 	if len(a.ladder) == 0 {
-		return nil, noKeysToOffer(a.noAgent)
+		return nil, noKeysToOffer(a.agentTrouble())
 	}
 
 	check, err := hostKeyCheck(ctx, []string{known}, r.Ask)
@@ -126,24 +132,27 @@ func (r Reach) reach(ctx context.Context) (win *serve.Window, err error) {
 		Saying: r.Saying,
 	})
 	if err != nil {
+		// What the user said, when they said anything: "the dialog was
+		// cancelled" beats x/crypto reporting that no method remained.
+		if why := ask.reason(); why != nil {
+			return nil, why
+		}
 		return nil, err
 	}
 	r.say(stepConnected)
 	return win, nil
 }
 
-// agentSource turns the agent the caller handed over into the source the
-// ladder opens. It is nil when the caller named none, which leaves the
-// ladder to open the agent running on this machine.
-func (r Reach) agentSource() agentSource {
-	if r.Agent == nil {
-		return nil
+// ladder is what a take-over offers: keys and nothing else, because the
+// other end accepts nothing else.
+//
+// A key file named is the only key offered, and the SSH agent is left
+// shut: naming one is the user saying which key this address may see.
+func (r Reach) ladder(ctx context.Context) (*auth, error) {
+	cfg := Config{Ring: r.Ring, Ask: r.Ask, Saying: r.Saying, KeysOnly: true, agent: r.Agent}
+	if r.KeyFile != "" {
+		cfg.Identities = []string{r.KeyFile}
+		cfg.NoAgent, cfg.NoRing = true, true
 	}
-	return func() (io.Closer, func() ([]ssh.Signer, error), error) {
-		keys, closer, err := r.Agent()
-		if err != nil {
-			return nil, nil, err
-		}
-		return closer, func() ([]ssh.Signer, error) { return keys, nil }, nil
-	}
+	return authMethods(ctx, cfg)
 }

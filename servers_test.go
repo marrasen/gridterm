@@ -365,6 +365,10 @@ func TestWrapLines(t *testing.T) {
 		// and three bytes, so a byte count wrapped this four times too
 		// early and cut a character in half doing it.
 		{"日本語のテ", 6, []string{"日本語", "のテ"}},
+		// A character wider than the whole box goes on a line of its
+		// own. Cutting it to fit is cutting it to nothing, which left
+		// the wrap going round for ever.
+		{"日本", 1, []string{"日", "本"}},
 		// A combining mark shares its letter's cell and stays with it.
 		{"éééé", 2, []string{"éé", "éé"}},
 	}
@@ -379,7 +383,9 @@ func TestWrapLines(t *testing.T) {
 			}
 		}
 		for _, line := range got {
-			if w := grid.StringWidth(line); w > tc.width {
+			// A line may be wider than the box only when one character
+			// is: nothing can make that one narrower.
+			if w := grid.StringWidth(line); w > tc.width && len(grid.Clusters(line)) > 1 {
 				t.Fatalf("wrapLines(%q, %d) produced a line %d cells wide", tc.in, tc.width, w)
 			}
 		}

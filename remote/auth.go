@@ -57,8 +57,10 @@ type auth struct {
 	ring *Ring
 
 	// noAgent is why there is no agent, kept for the message shown when
-	// nothing at all worked.
-	noAgent error
+	// nothing at all worked. agentBroke says it was reached and then
+	// would not answer, as against not running at all.
+	noAgent    error
+	agentBroke bool
 
 	// at is how far up the ladder the connection has climbed.
 	at int
@@ -114,6 +116,16 @@ func (a *auth) next(ctx *ssh.ClientAuthContext) (ssh.AuthMethod, error) {
 	}
 	saySo(a.saying, "there is nothing left to sign in with")
 	return nil, nil
+}
+
+// agentTrouble is the agent's own failure, for a connection that found
+// nothing to offer. It is nil when there is simply no agent: a user sent
+// to add a key to one would be sent after a fault that is not there.
+func (a *auth) agentTrouble() error {
+	if !a.agentBroke {
+		return nil
+	}
+	return a.noAgent
 }
 
 // close lets go of the agent socket, for a connection that never
@@ -226,9 +238,6 @@ func (f closerFunc) Close() error { return f() }
 
 // agentSource opens the SSH agent: the socket to hold until signing is
 // done, and a way to list the keys it holds.
-//
-// A connection takes one rather than opening the agent itself, so a test
-// can hand over an agent of its own.
 type agentSource func() (io.Closer, func() ([]ssh.Signer, error), error)
 
 // localAgent opens the SSH agent running on this machine.
@@ -257,7 +266,7 @@ func authMethods(ctx context.Context, cfg Config) (*auth, error) {
 	case why != nil:
 		// Asked once already and it did not answer. Asking again would
 		// cost this connection the same wait for the same answer.
-		a.noAgent = why
+		a.noAgent, a.agentBroke = why, true
 		saySo(cfg.Saying, "leaving the SSH agent alone: "+why.Error()+
 			". Forget unlocked keys to have it asked again")
 	default:
@@ -287,17 +296,24 @@ func authMethods(ctx context.Context, cfg Config) (*auth, error) {
 	if cfg.NoIdentities {
 		saySo(cfg.Saying, "no private key files are being looked at for this one")
 	} else {
-		saySo(cfg.Saying, fmt.Sprintf("%d private keys need no passphrase, %d do",
-			len(plain), len(locked)))
+		saySo(cfg.Saying, fmt.Sprintf("private keys with no passphrase: %d; "+
+			"private keys that need one: %d", len(plain), len(locked)))
 	}
 
 	// The keys this window already has, first and separately from the
 	// agent's. An agent that will not answer must not take the key files
 	// down with it: they are what would have worked.
-	if len(plain) > 0 || len(cfg.Ring.Paths()) > 0 {
+	//
+	// A nil ring holds nothing, which is how NoRing leaves the keys
+	// already unlocked out without leaving out the key files.
+	ring := cfg.Ring
+	if cfg.NoRing {
+		ring = nil
+	}
+	if len(plain) > 0 || len(ring.Paths()) > 0 {
 		a.ladder = append(a.ladder, rung{method: methodPublicKey, what: "the keys already to hand", build: func() ssh.AuthMethod {
 			return ssh.PublicKeysCallback(func() ([]ssh.Signer, error) {
-				signers := append(cfg.Ring.Signers(), plain...)
+				signers := append(ring.Signers(), plain...)
 				saySo(cfg.Saying, fmt.Sprintf("offering %d keys of its own", len(signers)))
 				return signers, nil
 			})
@@ -441,8 +457,9 @@ func identities(cfg Config) (plain []ssh.Signer, locked []string, err error) {
 
 	for _, p := range paths {
 		// Already unlocked, so it is among the ring's signers and needs
-		// no rung of its own.
-		if cfg.Ring.Has(p) {
+		// no rung of its own. Not so when the ring is being left out:
+		// then this is the only place the key can come from.
+		if !cfg.NoRing && cfg.Ring.Has(p) {
 			continue
 		}
 		signer, needsPass, read, err := readIdentity(p)

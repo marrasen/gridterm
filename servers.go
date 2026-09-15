@@ -119,9 +119,15 @@ func wrapLines(s string, width int) []string {
 		// A single word longer than the box is cut rather than pushing
 		// the dialog wider than the window.
 		for grid.StringWidth(line) > width {
-			var head string
-			head, line = grid.Cut(line, width)
+			head, rest := grid.Cut(line, width)
+			if head == "" {
+				// A cluster wider than the whole box. It goes on a line
+				// of its own rather than stopping the wrap dead.
+				head = grid.Clusters(line)[0]
+				rest = line[len(head):]
+			}
 			lines = append(lines, head)
+			line = rest
 		}
 	}
 	if line != "" {

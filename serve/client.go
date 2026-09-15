@@ -63,11 +63,13 @@ type DialConfig struct {
 	// Keys are the keys to offer, all in one attempt. The other window
 	// has to have one of them listed: there is no other way in, and
 	// nothing else is tried.
-	//
-	// Auth is the same thing one attempt at a time, for a caller with a
-	// ladder of keys to climb. One of the two has to be set; Auth wins
-	// when both are.
 	Keys []ssh.Signer
+
+	// Auth offers keys one attempt at a time, for a caller with a ladder
+	// of them to climb. It is asked again after each attempt the other
+	// window refuses, and answers nil when it has nothing left.
+	//
+	// One of Auth and Keys has to be set. Auth wins when both are.
 	Auth ssh.ClientAuthCallback
 
 	// HostKey checks the machine answering is the one meant. It is
@@ -123,8 +125,10 @@ func Dial(ctx context.Context, cfg DialConfig) (*Window, error) {
 
 	// And a deadline, because the handshake can wait on a machine that
 	// answered and then went quiet, and nothing else here bounds that.
-	// Cleared once the connection is made: from then on it is a session
-	// that may sit idle for as long as the user likes.
+	// It covers the version exchange and the key exchange, and is
+	// cleared as soon as the host key arrives: signing in can stop to
+	// ask for a passphrase, and a deadline running while that dialog is
+	// open would close the connection under the user.
 	patience := cfg.Patience
 	if patience <= 0 {
 		patience = handshakeTimeout
@@ -135,9 +139,28 @@ func Dial(ctx context.Context, cfg DialConfig) (*Window, error) {
 		return nil, fmt.Errorf("serve: reach %s: %w", cfg.Addr, err)
 	}
 
+	var (
+		mu       sync.Mutex
+		answered bool
+	)
 	client := &ssh.ClientConfig{
 		User: "gridterm",
 		HostKeyCallback: func(hostname string, addr net.Addr, key ssh.PublicKey) error {
+			mu.Lock()
+			first := !answered
+			answered = true
+			mu.Unlock()
+			// Only the first time. This runs again at every later key
+			// exchange, by which point the connection carries sessions
+			// and has no deadline to speak of.
+			if !first {
+				return cfg.HostKey(hostname, addr, key)
+			}
+			// The far end has answered, so what is left is signing in,
+			// which is allowed to wait on the user.
+			if err := nc.SetDeadline(time.Time{}); err != nil {
+				return fmt.Errorf("serve: reach %s: %w", cfg.Addr, err)
+			}
 			cfg.say("it answered, with a " + key.Type() + " host key")
 			if err := cfg.HostKey(hostname, addr, key); err != nil {
 				return err
@@ -175,6 +198,9 @@ func Dial(ctx context.Context, cfg DialConfig) (*Window, error) {
 		_ = cc.Close()
 		return nil, ctx.Err()
 	}
+	// Cleared already by the host-key callback, unless the far end got
+	// through the handshake without one, which x/crypto does not allow.
+	// Belt and braces: a session left with a deadline dies at it.
 	if err := nc.SetDeadline(time.Time{}); err != nil {
 		_ = cc.Close()
 		return nil, fmt.Errorf("serve: reach %s: %w", cfg.Addr, err)

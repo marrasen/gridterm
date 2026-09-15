@@ -2,12 +2,16 @@ package main
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"image/color"
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -273,8 +277,8 @@ func TestAKeyFromTheAgentCanStillSign(t *testing.T) {
 	w, err := remote.ReachWindow(context.Background(), remote.Reach{
 		Addr: a.serving.addr(), Ring: a.keys,
 		Known: func() (string, error) { return known, nil },
-		Agent: func() ([]ssh.Signer, io.Closer, error) {
-			return []ssh.Signer{shut}, shut, nil
+		Agent: func() (io.Closer, func() ([]ssh.Signer, error), error) {
+			return shut, func() ([]ssh.Signer, error) { return []ssh.Signer{shut}, nil }, nil
 		},
 	})
 
@@ -283,6 +287,195 @@ func TestAKeyFromTheAgentCanStillSign(t *testing.T) {
 	}
 	_ = w.Close()
 }
+
+// A take-over unlocks a key that needs a passphrase and signs in with
+// it, asking once.
+//
+// The ladder puts a locked key on a rung of its own and unlocks it only
+// when its turn comes, which is a different path from the one a key
+// needing no passphrase takes.
+func TestTakingOverUnlocksALockedKey(t *testing.T) {
+	const passphrase = "open sesame"
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	keyFile, line := aLockedKeyFile(t, passphrase, "id_ed25519")
+	withServing(t, a, line)
+	if err := a.startServing("0", whereHere); err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+
+	asked := 0
+	ask := &countingPassphrase{pass: passphrase, asked: &asked}
+	w, err := remote.ReachWindow(context.Background(), reachFor(t, a, keyFile, ask))
+	if err != nil {
+		t.Fatalf("take over with a locked key: %v", err)
+	}
+	_ = w.Close()
+	if asked != 1 {
+		t.Fatalf("it asked for the passphrase %d times, want once", asked)
+	}
+}
+
+// The passphrase dialog may be left open longer than the window gives
+// the other end to say who it is.
+//
+// The handshake is bounded because a machine that answers and then goes
+// quiet would leave the pane saying "connecting" for ever. Signing in is
+// not: the bound ran while the dialog was open and closed the connection
+// under the user as they typed.
+func TestALateAnswerToThePassphraseStillTakesTheWindowOver(t *testing.T) {
+	const passphrase = "open sesame"
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	keyFile, line := aLockedKeyFile(t, passphrase, "id_ed25519")
+	withServing(t, a, line)
+	if err := a.startServing("0", whereHere); err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+
+	asked := 0
+	// Answered well after the other end has had its time to say who it
+	// is, which it said at once.
+	ask := &countingPassphrase{pass: passphrase, asked: &asked, after: 900 * time.Millisecond}
+	reach := reachFor(t, a, keyFile, ask)
+	reach.Patience = 300 * time.Millisecond
+
+	w, err := remote.ReachWindow(context.Background(), reach)
+	if err != nil {
+		t.Fatalf("take over with a passphrase answered late: %v", err)
+	}
+	_ = w.Close()
+}
+
+// Dismissing the passphrase dialog gives up on the take-over, and the
+// reason the user is shown is their own.
+//
+// x/crypto treats a key that would not unlock as one more thing that did
+// not work and asks for the next one. Two keys in ~/.ssh meant two
+// dialogs for one decision, and the failure read "no supported methods
+// remain" rather than saying the user stopped.
+func TestDismissingThePassphraseGivesUpOnTheTakeOver(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	_, line := aLockedKeyFile(t, "let me in", "id_ed25519")
+	withServing(t, a, line)
+	if err := a.startServing("0", whereHere); err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+	// Two locked keys in the usual places, so a second dialog has
+	// somewhere to come from.
+	home := t.TempDir()
+	dir := filepath.Join(home, ".ssh")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatalf("make .ssh: %v", err)
+	}
+	for _, name := range []string{"id_ed25519", "id_ecdsa"} {
+		path, _ := aLockedKeyFile(t, "let me in", name)
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read the key: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, name), b, 0o600); err != nil {
+			t.Fatalf("write the key: %v", err)
+		}
+	}
+	if runtime.GOOS == "windows" {
+		t.Setenv("USERPROFILE", home)
+	} else {
+		t.Setenv("HOME", home)
+	}
+
+	asked := 0
+	dismissed := errors.New("the passphrase dialog was dismissed")
+	ask := &countingPassphrase{asked: &asked, refuse: dismissed}
+	_, err := remote.ReachWindow(context.Background(), reachFor(t, a, "", ask))
+
+	if err == nil {
+		t.Fatal("it took the window over with a dialog the user dismissed")
+	}
+	if !errors.Is(err, dismissed) {
+		t.Errorf("it failed with %v, want the reason the user gave", err)
+	}
+	if asked != 1 {
+		t.Fatalf("it asked for a passphrase %d times, want once", asked)
+	}
+}
+
+// reachFor is how a test reaches the window this app is serving: its
+// address, its host key, and no SSH agent, so the keys offered are the
+// test's own and not the developer's.
+func reachFor(t *testing.T, a *testApp, keyFile string, ask remote.Ask) remote.Reach {
+	t.Helper()
+	known := filepath.Join(t.TempDir(), "known_windows")
+	if err := os.WriteFile(known, []byte(knownLine(t, a)), 0o600); err != nil {
+		t.Fatalf("write the known window: %v", err)
+	}
+	return remote.Reach{
+		Addr: a.serving.addr(), KeyFile: keyFile, Ring: remote.NewRing(), Ask: ask,
+		Known: func() (string, error) { return known, nil },
+		Agent: func() (io.Closer, func() ([]ssh.Signer, error), error) {
+			return nil, nil, errors.New("no SSH agent for this test")
+		},
+	}
+}
+
+// aLockedKeyFile writes a private key that needs a passphrase and
+// returns its path and the authorized_keys line for it.
+func aLockedKeyFile(t *testing.T, passphrase, name string) (path, line string) {
+	t.Helper()
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("make a key: %v", err)
+	}
+	block, err := ssh.MarshalPrivateKeyWithPassphrase(priv, "a test", []byte(passphrase))
+	if err != nil {
+		t.Fatalf("encode the key: %v", err)
+	}
+	path = filepath.Join(t.TempDir(), name)
+	if err := os.WriteFile(path, pem.EncodeToMemory(block), 0o600); err != nil {
+		t.Fatalf("write the key: %v", err)
+	}
+	signer, err := ssh.NewPublicKey(pub)
+	if err != nil {
+		t.Fatalf("use the key: %v", err)
+	}
+	return path, strings.TrimSpace(string(ssh.MarshalAuthorizedKey(signer))) + " marcus@laptop"
+}
+
+// countingPassphrase answers a passphrase and counts how often it was
+// asked. A refuse is what a dismissed dialog gives back, and after is
+// how long the user took to answer.
+type countingPassphrase struct {
+	pass   string
+	asked  *int
+	refuse error
+	after  time.Duration
+}
+
+func (c *countingPassphrase) Passphrase(context.Context, string) (string, error) {
+	*c.asked++
+	if c.after > 0 {
+		time.Sleep(c.after)
+	}
+	if c.refuse != nil {
+		return "", c.refuse
+	}
+	return c.pass, nil
+}
+
+func (c *countingPassphrase) Password(context.Context, string, string) (string, error) {
+	return "", errors.New("a window is never asked for a password")
+}
+
+func (c *countingPassphrase) Question(context.Context, remote.Question) ([]string, error) {
+	return nil, errors.New("a window is never asked a question")
+}
+
+func (c *countingPassphrase) TrustHostKey(context.Context, remote.HostKey) (bool, error) {
+	return false, errors.New("the window is already known")
+}
+
+func (c *countingPassphrase) Notice(context.Context, remote.Notice) {}
 
 // knownLine is the known_windows line for a window that is serving.
 func knownLine(t *testing.T, a *testApp) string {

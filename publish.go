@@ -111,12 +111,17 @@ func sameSnapshot(was, now serve.Snapshot) bool {
 // with the machine it is looking at.
 func (a *app) openRows(t *taken) []serve.Open { return t.win.Opens() }
 
-// remoteRows are the rows for what a window taken over has open.
+// remoteRows are the screens a window taken over has open.
 //
 // Shown under the window itself, one line each, saying which machine
-// over there it is on. They cannot be revealed or closed from here: the
-// pane drawing them is that window's, not this one's, and a row that
-// offered to close something it cannot reach would be a row that lies.
+// over there it is on. They cannot be closed from here: the pane
+// drawing them is that window's, not this one's, and a row that offered
+// to close something it cannot reach would be a row that lies.
+//
+// Only what can be opened here. That window's own connections, tunnels
+// and clients are rows on its panel and nothing this one can do
+// anything with, and a list of rows that do nothing is a list nobody
+// can read.
 func (a *app) remoteRows(host string) []ui.ListRow {
 	t := a.windows[host]
 	if t == nil {
@@ -124,6 +129,9 @@ func (a *app) remoteRows(host string) []ui.ListRow {
 	}
 	var rows []ui.ListRow
 	for _, open := range t.win.Opens() {
+		if !open.HasScreen() {
+			continue
+		}
 		if a.watchingPane(remoteKeyFor(host, open)) != nil {
 			// There is a pane of this window watching it, with a row of
 			// its own. One thing open should be one row, and the row

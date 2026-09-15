@@ -330,8 +330,19 @@ func keysFor(ctx context.Context, keyFile string, ring *remote.Ring,
 		return []ssh.Signer{signer}, nil, nil
 	}
 	keys := ring.Signers()
-	agentSigners, closer, agentErr := fromAgent()
-	keys = append(keys, agentSigners...)
+	var closer io.Closer
+	agentErr := ring.AgentTrouble()
+	if agentErr == nil {
+		var agentSigners []ssh.Signer
+		agentSigners, closer, agentErr = fromAgent()
+		if errors.Is(agentErr, remote.ErrAgentSilent) {
+			// Remembered, so the next window taken over does not wait
+			// for the same answer. One that is not running at all is
+			// not remembered: finding that out costs nothing.
+			ring.AgentGaveUp(agentErr)
+		}
+		keys = append(keys, agentSigners...)
+	}
 	if len(keys) > 0 {
 		return keys, closer, nil
 	}

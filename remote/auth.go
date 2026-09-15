@@ -40,6 +40,12 @@ type auth struct {
 	agentGone bool
 	watch     *time.Timer
 
+	// watching counts the watches set on the agent, so one that fires
+	// just as it is replaced knows it is talking about something that
+	// has already happened. Stopping a timer does not stop a run of it
+	// that has already started.
+	watching int
+
 	// saying is told which way of signing in is being tried, so somebody
 	// watching a connection that stops can see where it stopped. A nil
 	// one is not called.
@@ -126,6 +132,7 @@ func (a *auth) done() {
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	a.watching++
 	if a.watch != nil {
 		a.watch.Stop()
 		a.watch = nil
@@ -138,12 +145,26 @@ func (a *auth) done() {
 // os.File closed twice reports a failure that means nothing.
 func (a *auth) closeAgent() error {
 	a.mu.Lock()
-	defer a.mu.Unlock()
 	if a.agent == nil || a.agentGone {
+		a.mu.Unlock()
 		return nil
 	}
 	a.agentGone = true
-	return a.agent.Close()
+	agent := a.agent
+	a.mu.Unlock()
+	// Outside the lock: closing a pipe somebody is reading can wait for
+	// that read to be torn down, and everything else here would wait
+	// with it.
+	return agent.Close()
+}
+
+// weLetGoOfTheAgent reports whether the socket was closed from this
+// side, so a read that failed because of that is not blamed on the
+// agent.
+func (a *auth) weLetGoOfTheAgent() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.agentGone
 }
 
 // agentCloser hands the agent socket to the connection without letting
@@ -158,30 +179,41 @@ func (a *auth) agentCloser() io.Closer {
 }
 
 // holdTheAgentTo closes the agent socket if the connection has not got
-// past it in the time given.
+// past it in the time given. Closing it is what unblocks the agent, and
+// nothing else will.
 //
-// Closing it is what unblocks the agent, and nothing else will. Listing
-// keys is a read from memory, but signing with one can go to a smartcard
-// and stop there for a PIN in a window nobody is looking at, which is
-// how a connection came to hang with no way to tell what it was waiting
-// for.
-func (a *auth) holdTheAgentTo(patience time.Duration, waitingFor string) {
+// blame says to remember the agent as one that will not answer, so
+// later connections do not wait for it. Only the listing is worth
+// remembering: it is a read from memory, and an agent that will not do
+// that will not do it next time either. Signing waits on a person, and
+// somebody slow to touch a key is not a broken agent.
+func (a *auth) holdTheAgentTo(patience time.Duration, waitingFor, hint string, blame bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.agent == nil {
 		return
 	}
+	a.watching++
+	mine := a.watching
 	if a.watch != nil {
 		a.watch.Stop()
 	}
 	a.watch = time.AfterFunc(patience, func() {
+		a.mu.Lock()
+		stale := mine != a.watching
+		a.mu.Unlock()
+		if stale {
+			// Replaced or stopped while this was starting. Whatever it
+			// was waiting for has happened.
+			return
+		}
 		why := fmt.Errorf("the SSH agent had %v %s and did not", patience, waitingFor)
-		saySo(a.saying, why.Error()+
-			", so this is letting go of it."+
-			" It may be waiting for an answer in a window of its own")
-		// Remembered, so the next connection is not held up finding out
-		// the same thing again.
-		a.ring.AgentGaveUp(why)
+		saySo(a.saying, why.Error()+", so this is letting go of it."+hint)
+		if blame {
+			// Remembered, so the next connection is not held up finding
+			// out the same thing again.
+			a.ring.AgentGaveUp(why)
+		}
 		_ = a.closeAgent()
 	})
 }
@@ -209,12 +241,15 @@ func authMethods(ctx context.Context, cfg Config) (*auth, error) {
 		// Asked once already and it did not answer. Asking again would
 		// cost this connection the same wait for the same answer.
 		a.noAgent = why
-		saySo(cfg.Saying, "not asking the SSH agent again: "+why.Error())
+		saySo(cfg.Saying, "leaving the SSH agent alone: "+why.Error()+
+			". Forget unlocked keys to have it asked again")
 	default:
 		conn, err := dialAgent()
 		if err != nil {
+			// Not remembered: finding out there is no agent is opening a
+			// socket that is not there, which costs nothing. One started
+			// after this connection is found by the next one.
 			a.noAgent = err
-			cfg.Ring.AgentGaveUp(err)
 			saySo(cfg.Saying, "there is no SSH agent here: "+err.Error())
 		} else {
 			a.agent = conn
@@ -253,8 +288,9 @@ func authMethods(ctx context.Context, cfg Config) (*auth, error) {
 			what: "the keys the SSH agent holds", build: func() ssh.AuthMethod {
 				return ssh.PublicKeysCallback(func() ([]ssh.Signer, error) {
 					// Listing is a read from memory, so it gets little
-					// time.
-					a.holdTheAgentTo(agentListing, "to say what keys it holds")
+					// time, and an agent that will not do it is one to
+					// stop waiting for.
+					a.holdTheAgentTo(agentListing, "to say what keys it holds", "", true)
 					saySo(cfg.Saying, "asking the SSH agent what keys it holds")
 					got, err := agentSigners()
 					if err != nil {
@@ -263,14 +299,25 @@ func authMethods(ctx context.Context, cfg Config) (*auth, error) {
 						// lost behind whatever the server says at the
 						// end.
 						saySo(cfg.Saying, "the SSH agent: "+err.Error())
-						cfg.Ring.AgentGaveUp(err)
+						if !a.weLetGoOfTheAgent() {
+							// Only when the agent is what went wrong.
+							// The read also fails when this end closes
+							// the socket, because the user gave up or
+							// because the watch ran out and has already
+							// said why, and the agent is not to blame
+							// for either.
+							cfg.Ring.AgentGaveUp(err)
+						}
 						return nil, fmt.Errorf("remote: read the SSH agent: %w", err)
 					}
 					saySo(cfg.Saying, fmt.Sprintf(
 						"the agent holds %d keys, and they are being offered", len(got)))
 					// Signing is allowed to be slow, and happens after
-					// this returns.
-					a.holdTheAgentTo(agentGrace, "to sign")
+					// this returns. Nothing is remembered about it: a
+					// key on a hardware token waits for somebody to
+					// touch it, and somebody slow is not a broken agent.
+					a.holdTheAgentTo(agentGrace, "to sign",
+						" It may be waiting for you to touch a key or type a PIN.", false)
 					return got, nil
 				})
 			}})
@@ -462,17 +509,26 @@ func AgentKeys() (keys []ssh.Signer, closer io.Closer, err error) {
 	case got := <-back:
 		if got.err != nil {
 			_ = conn.Close()
-			return nil, nil, fmt.Errorf("remote: read the SSH agent: %w", got.err)
+			return nil, nil, fmt.Errorf("remote: read the SSH agent: %w: %w",
+				ErrAgentSilent, got.err)
 		}
 		return got.keys, conn, nil
 	case <-time.After(agentPatience):
 		// Closing it is what unblocks the read, so the goroutine above
 		// ends rather than being left holding the connection.
 		_ = conn.Close()
-		return nil, nil, fmt.Errorf(
-			"remote: the SSH agent did not answer within %v", agentPatience)
+		return nil, nil, fmt.Errorf("remote: %w: it had %v to say what keys it holds",
+			ErrAgentSilent, agentPatience)
 	}
 }
+
+// ErrAgentSilent marks an agent that was reached and then did not
+// answer, as against one that is not running at all.
+//
+// The difference decides whether the window stops asking: an agent that
+// is not there costs nothing to find out about again, and one that
+// answers nothing costs the wait every time.
+var ErrAgentSilent = errors.New("the SSH agent did not answer")
 
 // agentPatience is how long the SSH agent has to say what it holds.
 //
@@ -488,8 +544,8 @@ const agentPatience = 5 * time.Second
 // signing is allowed to be slow: a key on a hardware token waits for
 // somebody to touch it, and one on a smartcard waits for a PIN.
 //
-// Variables because the tests shorten them. Nothing in the program
-// writes them.
+// Variables so the tests can shorten them. Nothing in the program writes
+// them.
 var (
 	agentListing = 10 * time.Second
 	agentGrace   = 60 * time.Second

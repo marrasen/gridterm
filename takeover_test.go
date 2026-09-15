@@ -19,6 +19,7 @@ import (
 
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/grid"
+	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/serve"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/term"
@@ -1553,5 +1554,43 @@ func TestWaitingForAWindowOpensATerminalOnIt(t *testing.T) {
 	})
 	if f, ok := client.root.Modal().(*ui.Form); ok {
 		t.Fatalf("it reported a failure instead: %v", f.Title)
+	}
+}
+
+// Taking over a window leaves an agent alone once it is known not to
+// answer, the same as connecting to a machine does.
+//
+// It has its own way of reading the agent, and it went on paying the
+// wait every time while every other connection had stopped.
+func TestTakingOverAWindowLeavesASilentAgentAlone(t *testing.T) {
+	ring := remote.NewRing()
+	ring.AgentGaveUp(errors.New("it had 10s to say what keys it holds and did not"))
+
+	asked := false
+	_, _, err := keysFor(t.Context(), "", ring, nil,
+		func() ([]ssh.Signer, io.Closer, error) {
+			asked = true
+			return nil, nil, nil
+		})
+	if asked {
+		t.Fatal("it asked an agent that is known not to answer")
+	}
+	if err == nil || !strings.Contains(err.Error(), "did not") {
+		t.Fatalf("keysFor = %v, want it to say why there are no keys", err)
+	}
+}
+
+// An agent that is not running is not held against it there either.
+func TestTakingOverAWindowDoesNotHoldAMissingAgentAgainstIt(t *testing.T) {
+	ring := remote.NewRing()
+	_, _, err := keysFor(t.Context(), "", ring, nil,
+		func() ([]ssh.Signer, io.Closer, error) {
+			return nil, nil, errors.New("remote: no SSH agent: open the pipe: not found")
+		})
+	if err == nil {
+		t.Fatal("it found keys where there are none")
+	}
+	if why := ring.AgentTrouble(); why != nil {
+		t.Fatalf("it will not ask the agent again because %v", why)
 	}
 }

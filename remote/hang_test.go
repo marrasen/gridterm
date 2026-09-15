@@ -345,7 +345,7 @@ func TestAnAgentThatDoesNotAnswerIsLetGoOf(t *testing.T) {
 	var said []string
 	a := &auth{agent: sock, saying: func(what string) { said = append(said, what) }}
 
-	a.holdTheAgentTo(50*time.Millisecond, "to say what keys it holds")
+	a.holdTheAgentTo(50*time.Millisecond, "to say what keys it holds", "", false)
 	for deadline := time.Now().Add(5 * time.Second); sock.count() == 0; {
 		if time.Now().After(deadline) {
 			t.Fatal("the agent socket was never closed")
@@ -372,7 +372,7 @@ func TestGettingPastTheAgentStopsWatchingIt(t *testing.T) {
 	sock := &shutCounter{}
 	a := &auth{agent: sock}
 
-	a.holdTheAgentTo(50*time.Millisecond, "to sign")
+	a.holdTheAgentTo(50*time.Millisecond, "to sign", "", false)
 	a.done()
 	time.Sleep(200 * time.Millisecond)
 	if n := sock.count(); n != 0 {
@@ -410,7 +410,7 @@ func TestPastTheAgentTheWatchStops(t *testing.T) {
 	if _, err := a.next(both); err != nil {
 		t.Fatalf("the agent's rung: %v", err)
 	}
-	a.holdTheAgentTo(50*time.Millisecond, "to sign")
+	a.holdTheAgentTo(50*time.Millisecond, "to sign", "", false)
 
 	if _, err := a.next(both); err != nil {
 		t.Fatalf("the rung after it: %v", err)
@@ -444,7 +444,7 @@ func TestAnAgentThatDidNotAnswerIsNotAskedAgain(t *testing.T) {
 	t.Cleanup(func() { _ = c.Close() })
 
 	account := strings.Join(said, "\n")
-	if !strings.Contains(account, "not asking the SSH agent again") {
+	if !strings.Contains(account, "leaving the SSH agent alone") {
 		t.Fatalf("the account does not say the agent was left alone:\n%s", account)
 	}
 	if strings.Contains(account, "asking the SSH agent what keys it holds") {

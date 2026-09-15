@@ -1138,3 +1138,54 @@ func TestChangingAMachineIntoAWindowTakesEffectAtOnce(t *testing.T) {
 		t.Fatalf("the command is %q, want it to offer taking it over", cmd.Title)
 	}
 }
+
+// A saved window is taken over however the user asked for it.
+//
+// Every path that opens a connection by name or by address goes through
+// one place, so none of them can log in to a window's serve port and be
+// refused for it.
+func TestASavedWindowIsTakenOverHoweverItIsAskedFor(t *testing.T) {
+	host := newTestApp(t, 90, 30)
+	withDialogs(t, host)
+	keyFile, line := aKeyFile(t)
+	withServing(t, host, line)
+	if err := host.startServing("0", whereHere); err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+	addr := host.server.Addr()
+
+	for _, how := range []string{"by name", "by address"} {
+		t.Run(how, func(t *testing.T) {
+			client := newTestApp(t, 90, 30)
+			withDialogs(t, client)
+			withPanel(t, client)
+			if err := client.book.Put(remote.Host{
+				Name: "statio", Address: hostOf(t, addr), Port: portOf(t, addr),
+				Window: true, Identities: []string{keyFile},
+			}, ""); err != nil {
+				t.Fatalf("Put: %v", err)
+			}
+			client.refreshServers()
+
+			if how == "by name" {
+				client.connectAs("statio", remote.Config{})
+			} else {
+				// What "connect to a server" does with a typed address,
+				// which knows nothing about the list.
+				client.connect(remote.Config{
+					Host: hostOf(t, addr), Port: portOf(t, addr),
+				})
+			}
+			answer(t, client, "Connect")
+			waitFor(t, client, "the window to be taken over", func() bool {
+				return client.windows["statio"] != nil
+			})
+			if n := len(host.server.Clients()); n == 0 {
+				t.Fatal("the serving window saw no client")
+			}
+			if err := client.dropWindow("statio"); err != nil {
+				t.Fatalf("let go: %v", err)
+			}
+		})
+	}
+}

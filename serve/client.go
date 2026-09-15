@@ -1,7 +1,9 @@
 package serve
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -32,6 +34,12 @@ type Window struct {
 
 	mu     sync.Mutex
 	closed bool
+
+	// open is the last the other window said it had open. Written by
+	// the goroutine reading the control channel and read by whoever is
+	// drawing, so the lock is what keeps a half-written list off the
+	// screen.
+	open []Open
 }
 
 // DialConfig is what reaching another window takes.
@@ -92,7 +100,53 @@ func Dial(ctx context.Context, cfg DialConfig) (*Window, error) {
 		_ = cc.Close()
 		return nil, ctx.Err()
 	}
-	return &Window{client: ssh.NewClient(cc, chans, reqs), addr: cfg.Addr}, nil
+	w := &Window{client: ssh.NewClient(cc, chans, reqs), addr: cfg.Addr}
+	w.watch()
+	return w, nil
+}
+
+// Opens is what the other window last said it had open.
+//
+// The list it sent, not one worked out here: what a window has open is
+// that window's business, and a client that guessed would be a client
+// that disagreed with the machine it is looking at.
+func (w *Window) Opens() []Open {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return append([]Open(nil), w.open...)
+}
+
+// watch listens for what the other window has open.
+//
+// A window that refuses the channel is one of an older build, or one
+// that says nothing about itself. Either way there is nothing to be
+// done about it and nothing to tell the user: what it serves still
+// works, and the list stays empty.
+func (w *Window) watch() {
+	ch, reqs, err := w.client.OpenChannel(chanControl, nil)
+	if err != nil {
+		return
+	}
+	go ssh.DiscardRequests(reqs)
+	go func() {
+		defer ch.Close()
+		// A snapshot a line at a time. The buffer is generous because a
+		// window with a great many things open sends a long line, and a
+		// line cut in half is a snapshot thrown away.
+		lines := bufio.NewScanner(ch)
+		lines.Buffer(make([]byte, 0, 64<<10), 4<<20)
+		for lines.Scan() {
+			var snap Snapshot
+			if err := json.Unmarshal(lines.Bytes(), &snap); err != nil {
+				// One snapshot that cannot be read changes nothing: the
+				// next one replaces it whole.
+				continue
+			}
+			w.mu.Lock()
+			w.open = snap.Open
+			w.mu.Unlock()
+		}
+	}()
 }
 
 // Addr is where this window was reached.

@@ -560,3 +560,48 @@ func mapKeys[V any](m map[string]V) []string {
 	}
 	return out
 }
+
+// The sidebar shows what the window taken over has open, under it.
+func TestTheSidebarShowsWhatTheOtherWindowHasOpen(t *testing.T) {
+	host, client, addr := twoWindows(t)
+
+	// Something on the serving window that this one did not open.
+	if err := host.openTab(); err != nil {
+		t.Fatalf("a shell on the serving window: %v", err)
+	}
+	host.refreshPanel(panelNow)
+
+	// The serving window now has two things open, and says so.
+	waitFor(t, client, "the other window to say it has two open", func() bool {
+		return len(client.windows[addr].win.Opens()) == 2
+	})
+
+	// And this window shows a row for each, under the window itself.
+	client.refreshPanel(panelNow)
+	want := len(client.windows[addr].win.Opens())
+	var shown int
+	for _, row := range client.panel.Rows() {
+		if key, ok := row.Key.(string); ok && strings.HasPrefix(key, "remote:"+addr+":") {
+			shown++
+		}
+	}
+	if shown != want {
+		t.Errorf("%d rows are shown for the %d it said it had open", shown, want)
+	}
+}
+
+// A window this one has not taken over contributes no such rows.
+func TestOnlyATakenWindowContributesRemoteRows(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withPanel(t, a)
+	a.refreshPanel(panelNow)
+
+	for _, row := range a.panel.Rows() {
+		if key, ok := row.Key.(string); ok && strings.HasPrefix(key, "remote:") {
+			t.Errorf("a row for another window appeared: %q", row.Text)
+		}
+	}
+	if got := a.remoteRows("nowhere"); got != nil {
+		t.Errorf("a machine that is not a window gave %v", got)
+	}
+}

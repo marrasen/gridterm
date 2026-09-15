@@ -55,3 +55,47 @@ type windowChange struct {
 type exitStatus struct {
 	Status uint32
 }
+
+// chanControl carries what the window being served has open.
+//
+// The client opens it; the served window writes a snapshot down it
+// whenever what it has open changes, and reads nothing back. One line
+// of JSON per snapshot, because a snapshot is a list of a length
+// neither end knows in advance and SSH's own encoding has no good shape
+// for that. It carries no bytes of anybody's program, so the cost of
+// the encoding does not matter.
+const chanControl = "control@gridterm"
+
+// Open is one thing the window being served has open.
+//
+// Its own type rather than conns.Entry: an entry carries the closures
+// that reveal and close the thing, which mean nothing on the other side
+// of a wire, and the two would drift apart the moment one of them
+// gained a field the other could not carry.
+type Open struct {
+	// ID names this one for as long as it is open, so the client can
+	// ask about it again.
+	ID string `json:"id"`
+
+	// Host is the machine it is on, as the served window calls it. That
+	// window's "Local" is this one's "the machine I took over".
+	Host string `json:"host"`
+
+	// Kind, Label and Note are what the panel says about it.
+	Kind  string `json:"kind"`
+	Label string `json:"label"`
+	Note  string `json:"note"`
+
+	// State is what it is doing: opened, active, settled or closed.
+	State string `json:"state"`
+}
+
+// Snapshot is everything the window being served has open.
+type Snapshot struct {
+	// Window is what the served window calls itself, for a client
+	// showing several at once.
+	Window string `json:"window"`
+
+	// Open is what it has open, in the order it opened them.
+	Open []Open `json:"open"`
+}

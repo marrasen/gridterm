@@ -90,6 +90,13 @@ type app struct {
 	// over, by the address each was reached at.
 	windows map[string]*taken
 
+	// lastSnapshot is what this window last told its clients it had
+	// open, so an unchanged one is not sent again. It belongs to the
+	// goroutine that draws; openNow is the copy the ones serving
+	// clients may read.
+	lastSnapshot serve.Snapshot
+	openNow      shared
+
 	// knownWindowsAt is where the keys of the windows reached are
 	// recorded, empty in the program and set by a test to a file of its
 	// own: the real one belongs to whoever is running gridterm.

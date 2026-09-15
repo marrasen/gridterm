@@ -28,6 +28,19 @@ const mostCells = 10000
 func (s *Server) serveChannels(chans <-chan ssh.NewChannel, gone <-chan struct{}) {
 	var running sync.WaitGroup
 	for nch := range chans {
+		if nch.ChannelType() == chanControl {
+			ch, reqs, err := nch.Accept()
+			if err != nil {
+				s.onError(fmt.Errorf("serve: take a watcher: %w", err))
+				continue
+			}
+			running.Add(1)
+			go func() {
+				defer running.Done()
+				s.runControl(ch, reqs, gone)
+			}()
+			continue
+		}
 		if nch.ChannelType() != chanSession {
 			_ = nch.Reject(ssh.UnknownChannelType,
 				"this is gridterm, and it serves "+chanSession)

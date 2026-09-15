@@ -134,15 +134,16 @@ func readHostKey(path string) (ssh.Signer, error) {
 
 // makeHostKey writes a new key and returns it.
 //
-// Created with O_EXCL, so two windows starting together cannot each
-// think they made the key this machine is known by: the one that loses
-// gets ErrExist and reads what the other wrote. Without it they end up
-// presenting different keys, which is the very alarm a host key is for.
+// Written whole to a file of its own and then linked into place, so the
+// key either exists complete or does not exist at all. Two windows
+// starting together must not each think they made the key this machine
+// is known by -- they would present different ones, which is the very
+// alarm a host key is for -- and the one that loses the link reads what
+// the winner wrote. Creating the real file and then filling it would
+// leave the loser reading an empty one.
 //
-// A window killed between the create and the write leaves a file that
-// is not a key. That is a failure to read next time rather than a key
-// quietly replaced, which is the safer of the two: the error says to
-// delete it.
+// A window killed part way leaves the temporary file behind and nothing
+// else. The next start makes its own.
 func makeHostKey(path string) (ssh.Signer, error) {
 	_, key, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -155,19 +156,34 @@ func makeHostKey(path string) (ssh.Signer, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, fmt.Errorf("serve: make %s: %w", filepath.Dir(path), err)
 	}
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	// In the same directory, so linking it into place cannot cross a
+	// filesystem. CreateTemp makes it readable by its owner and nobody
+	// else, which is what the real one has to be too.
+	f, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+"-*")
+	if err != nil {
+		return nil, fmt.Errorf("serve: write the host key %s: %w", path, err)
+	}
+	tmp := f.Name()
+	if _, err := f.Write(pem.EncodeToMemory(block)); err != nil {
+		f.Close()
+		_ = os.Remove(tmp)
+		return nil, fmt.Errorf("serve: write the host key %s: %w", path, err)
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(tmp)
+		return nil, fmt.Errorf("serve: write the host key %s: %w", path, err)
+	}
+	// Link rather than rename: a rename would write over a key another
+	// window had just made, and this machine would answer to two.
+	err = os.Link(tmp, path)
+	if rmErr := os.Remove(tmp); rmErr != nil && err == nil {
+		return nil, fmt.Errorf("serve: clear up %s: %w", tmp, rmErr)
+	}
 	if err != nil {
 		if errors.Is(err, os.ErrExist) {
 			return nil, err
 		}
-		return nil, fmt.Errorf("serve: write the host key %s: %w", path, err)
-	}
-	if _, err := f.Write(pem.EncodeToMemory(block)); err != nil {
-		f.Close()
-		return nil, fmt.Errorf("serve: write the host key %s: %w", path, err)
-	}
-	if err := f.Close(); err != nil {
-		return nil, fmt.Errorf("serve: write the host key %s: %w", path, err)
+		return nil, fmt.Errorf("serve: put the host key at %s: %w", path, err)
 	}
 	signer, err := ssh.NewSignerFromKey(key)
 	if err != nil {

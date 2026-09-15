@@ -830,3 +830,94 @@ func TestAClientIsSaidToHaveGoneOnlyOnceItsShellsAre(t *testing.T) {
 		t.Fatal("the window was never told the client went")
 	}
 }
+
+// A client is told what the window it took over has open, and is told
+// again when that changes.
+func TestAClientSeesWhatTheOtherWindowHasOpen(t *testing.T) {
+	mine, line := aKey(t, "marcus@laptop")
+	host, err := HostKey(t.TempDir() + "/host_key")
+	if err != nil {
+		t.Fatalf("host key: %v", err)
+	}
+	keys, err := ParseAllowed([]byte(line), "the test")
+	if err != nil {
+		t.Fatalf("allowed: %v", err)
+	}
+	var mu sync.Mutex
+	snap := Snapshot{Window: "Local", Open: []Open{
+		{ID: "Local#0", Host: "Local", Kind: "Terminal", Label: "a shell", State: "settled"},
+	}}
+	s, err := Listen(Config{
+		Addr: "127.0.0.1:0", HostKey: host, Allowed: keys,
+		Opens: func() Snapshot {
+			mu.Lock()
+			defer mu.Unlock()
+			return snap
+		},
+		OnError: func(error) {},
+	})
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+
+	w, err := Dial(context.Background(), DialConfig{
+		Addr: s.Addr(), Keys: []ssh.Signer{mine},
+		HostKey: ssh.FixedHostKey(host.PublicKey()),
+	})
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	t.Cleanup(func() { _ = w.Close() })
+
+	// What it had open as the client arrived, without waiting for
+	// anything on it to change.
+	waitForOpens(t, w, func(got []Open) bool {
+		return len(got) == 1 && got[0].Label == "a shell"
+	}, "the first snapshot")
+
+	// And again when it changes.
+	mu.Lock()
+	snap.Open = append(snap.Open, Open{
+		ID: "margit#0", Host: "margit", Kind: "Files", Label: "/srv", State: "active",
+	})
+	next := snap
+	mu.Unlock()
+	s.Publish(next)
+
+	waitForOpens(t, w, func(got []Open) bool {
+		return len(got) == 2 && got[1].Host == "margit" && got[1].Kind == "Files"
+	}, "the second snapshot")
+}
+
+// A window that says nothing about itself is still worked in. Not every
+// window on the far end is of this build.
+func TestAWindowThatSaysNothingIsStillWorkedIn(t *testing.T) {
+	_, w := takenOver(t, func(cols, rows int) (session.Session, error) {
+		return newEchoSession(cols, rows), nil
+	})
+
+	if got := w.Opens(); len(got) != 0 {
+		t.Errorf("it said it had %v open", got)
+	}
+	sess, err := w.Open(80, 24)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer sess.Close()
+	read(t, sess, "started at")
+}
+
+// waitForOpens waits for what the other window says it has open to
+// look a certain way.
+func waitForOpens(t *testing.T, w *Window, ok func([]Open) bool, what string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if ok(w.Opens()) {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("waited for %s, got %v", what, w.Opens())
+}

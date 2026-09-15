@@ -89,6 +89,15 @@ type Config struct {
 	// Open starts something for a client to work in. A nil one serves
 	// nothing, and a client that asks is told so.
 	Open Opener
+
+	// Opens is what this window has open, for a client that wants to
+	// see it. It is called from a goroutine of the server's, so an
+	// implementation that reads what the window is drawing has to be
+	// safe to call from one.
+	//
+	// A nil one says nothing, and a client watching simply sees an
+	// empty list.
+	Opens func() Snapshot
 }
 
 // Client is one window that has taken this one over.
@@ -131,6 +140,9 @@ type Server struct {
 	// caller that says nothing holds a socket open for the whole
 	// handshake window after the window stopped serving.
 	arriving map[net.Conn]struct{}
+
+	// watching are the clients listening for what this window has open.
+	watching []*watcher
 
 	// refused counts the connections turned away since the last time
 	// the user was told, toldAt is when that was, and turnedAway counts

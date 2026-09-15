@@ -167,6 +167,11 @@ func (a *app) startServing(port, where string) error {
 		// through the window's own panes: this is the machine being
 		// worked on, not the one doing the drawing, and nothing here
 		// touches the widget tree.
+		// What this window has open, for a client that wants to see it.
+		// Read from the goroutine serving that client, so it goes
+		// through the same snapshot the panel was built from rather
+		// than walking the registry from there.
+		Opens: a.openNow.get,
 		Open: func(cols, rows int) (session.Session, error) {
 			return session.StartLocal(session.LocalConfig{Cols: cols, Rows: rows})
 		},

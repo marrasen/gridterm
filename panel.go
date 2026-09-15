@@ -183,6 +183,9 @@ func (a *app) revealRow(row ui.ListRow) error {
 // that did not change alone. A state falls from active to settled by
 // itself, because the text is worked out again from the time passed in.
 func (a *app) refreshPanel(now time.Time) {
+	// Whoever is working in this window from elsewhere is told what it
+	// has open, whether or not anybody here is looking at the panel.
+	a.tellWatchers(now)
 	if a.panel == nil || (a.dock != nil && a.dock.Collapsed) {
 		// Nothing to build while nobody can see it. The rows are worked
 		// out again the moment the panel opens.
@@ -227,6 +230,11 @@ func (a *app) refreshPanel(now time.Time) {
 			}
 			rows = append(rows, a.panelRow(row, now))
 		}
+		// And what the window taken over says it has open, under it.
+		// Its list, not one worked out here: what a window has open is
+		// that window's business, and a client that guessed would
+		// disagree with the machine it is looking at.
+		rows = append(rows, a.remoteRows(host)...)
 	}
 	for e := range a.rates {
 		if !live[e] {

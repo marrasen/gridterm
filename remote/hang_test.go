@@ -592,6 +592,33 @@ func TestOpeningAShellOnASilentMachineGivesUp(t *testing.T) {
 	}
 }
 
+// A machine that answers after the client gave up has opened a session
+// nobody wants. The client closes it rather than leaving it behind.
+func TestASessionAnsweredAfterGivingUpIsClosed(t *testing.T) {
+	was := channelTimeout
+	channelTimeout = 300 * time.Millisecond
+	t.Cleanup(func() { channelTimeout = was })
+
+	s := sshtest.New(t)
+	c := connectTest(t, s)
+	s.StallChannels()
+
+	sh, err := c.Shell(t.Context(), ShellConfig{Cols: 80, Rows: 24})
+	if sh != nil {
+		_ = sh.Close()
+	}
+	if !errors.Is(err, ErrNoAnswer) {
+		t.Fatalf("Shell = %v, want it to say the machine did not answer", err)
+	}
+	if s.SessionsOpened() != 0 {
+		t.Fatal("the server opened a session while stalled, so this proves nothing")
+	}
+
+	s.AnswerChannels()
+	waitForThis(t, "the late answer to open a session", func() bool { return s.SessionsOpened() == 1 })
+	waitForThis(t, "the unwanted session to be closed", func() bool { return s.Sessions() == 0 })
+}
+
 // The same for a file pane: the session it needs is opened the same way.
 func TestOpeningFilesOnASilentMachineGivesUp(t *testing.T) {
 	was := channelTimeout
@@ -897,5 +924,9 @@ func TestClosingAShellWhoseWriteLandsStillSaysGoodbye(t *testing.T) {
 	case <-sh.Shell.done:
 	default:
 		t.Error("Close came back before the remote had finished")
+	}
+	// And the shell is closed to its caller, whatever x/crypto would say.
+	if _, err := sh.Write([]byte("late")); !errors.Is(err, io.ErrClosedPipe) {
+		t.Errorf("Write after Close = %v, want io.ErrClosedPipe", err)
 	}
 }

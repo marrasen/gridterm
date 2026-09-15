@@ -59,6 +59,8 @@ type Server struct {
 	// sessions is how many session channels are open right now, so a
 	// test can tell a channel that was closed from one left behind.
 	sessions int
+	// opened is how many session channels have ever been opened.
+	opened int
 
 	// stalling leaves a request to open a channel unanswered,
 	// stallingSub leaves a request to start a subsystem unanswered,
@@ -79,6 +81,9 @@ type Server struct {
 	frozen     chan struct{}
 	freezeOnce sync.Once
 	stopped    chan struct{}
+	// answer is closed by AnswerChannels, which lets stalled opens through.
+	answer   chan struct{}
+	answered sync.Once
 
 	// bound are the ports the far machine has been asked to listen on.
 	bound []bound
@@ -106,6 +111,7 @@ func New(t testing.TB) *Server {
 		hostKey: signer.PublicKey(),
 		frozen:  make(chan struct{}),
 		stopped: make(chan struct{}),
+		answer:  make(chan struct{}),
 	}
 	s.cfg = &ssh.ServerConfig{
 		// What a server says on the way in, which is how one that signs
@@ -241,6 +247,24 @@ func (s *Server) StopReadingInput() {
 	s.deafInput = true
 }
 
+// AnswerChannels lets every stalled channel open through, the way a
+// machine that comes back to life answers what it was asked while away.
+func (s *Server) AnswerChannels() {
+	s.mu.Lock()
+	s.stalling = false
+	s.mu.Unlock()
+	s.answered.Do(func() { close(s.answer) })
+}
+
+// SessionsOpened returns how many session channels the server has ever
+// opened, so a test can tell an open that was answered late from one
+// that was never answered.
+func (s *Server) SessionsOpened() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.opened
+}
+
 // Conns returns how many connections the server has accepted, so a test
 // can tell one login from several.
 func (s *Server) Conns() int {
@@ -369,9 +393,12 @@ func (s *Server) handle(nc net.Conn) {
 		s.mu.Unlock()
 		if stall {
 			// Neither accepted nor refused, and the connection is left
-			// up. Held until the test ends.
-			<-s.stopped
-			return
+			// up. Held until AnswerChannels or the end of the test.
+			select {
+			case <-s.stopped:
+				return
+			case <-s.answer:
+			}
 		}
 		switch nch.ChannelType() {
 		case "session":
@@ -392,6 +419,7 @@ func (s *Server) handle(nc net.Conn) {
 func (s *Server) session(ch ssh.Channel, reqs <-chan *ssh.Request) {
 	s.mu.Lock()
 	s.sessions++
+	s.opened++
 	s.mu.Unlock()
 	defer func() {
 		s.mu.Lock()

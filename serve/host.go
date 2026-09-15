@@ -41,6 +41,14 @@ func (s *Server) serveChannels(chans <-chan ssh.NewChannel, gone <-chan struct{}
 			}()
 			continue
 		}
+		if nch.ChannelType() == chanFiles {
+			running.Add(1)
+			go func() {
+				defer running.Done()
+				s.runFiles(nch)
+			}()
+			continue
+		}
 		if nch.ChannelType() != chanSession {
 			_ = nch.Reject(ssh.UnknownChannelType,
 				"this is gridterm, and it serves "+chanSession)
@@ -74,6 +82,42 @@ func (s *Server) serveChannels(chans <-chan ssh.NewChannel, gone <-chan struct{}
 	// being hung up on.
 	running.Wait()
 }
+
+// runFiles gives a client the files of this machine and carries it
+// until one end or the other is done.
+func (s *Server) runFiles(nch ssh.NewChannel) {
+	if s.cfg.Files == nil {
+		_ = nch.Reject(ssh.Prohibited, "this gridterm does not serve its files")
+		return
+	}
+	ch, reqs, err := nch.Accept()
+	if err != nil {
+		// The connection has gone, so there is nothing to do but say
+		// so.
+		s.onError(fmt.Errorf("serve: take a file session: %w", err))
+		return
+	}
+	// Drained rather than answered: nothing is asked down this channel,
+	// and sixteen unread requests stop the connection's read loop.
+	go ssh.DiscardRequests(reqs)
+
+	if err := s.cfg.Files(ch); err != nil {
+		s.onError(fmt.Errorf("serve: carry a file session: %w", err))
+	}
+	if err := ch.Close(); err != nil && !errors.Is(err, io.EOF) {
+		s.onError(fmt.Errorf("serve: close a file session: %w", err))
+	}
+}
+
+// Filer gives a client the files of the machine a window is on.
+//
+// It is handed a channel and returns when it is finished with it,
+// whether because the client went or because it failed. What runs on
+// the channel is the window's business.
+//
+// It is called from a goroutine of the server's, one per session a
+// client opens.
+type Filer func(ch io.ReadWriteCloser) error
 
 // runSession starts something for the client to work in and carries it
 // until one end or the other is done.

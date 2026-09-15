@@ -284,3 +284,35 @@ func TestANewMenuKeepsItsMachineWhileTheOldOneIsForgotten(t *testing.T) {
 		t.Fatal("the machine outlived the last menu")
 	}
 }
+
+// The plus on a window taken over offers what that connection carries.
+//
+// Panes and files cross it. A command, a tunnel and a proxy are things
+// this window asks a machine for, and the machine over there is not
+// this one's to ask, so offering them would be offering something that
+// cannot work.
+func TestThePlusOnAWindowOffersPanesAndFiles(t *testing.T) {
+	items := hostItems(false, true, false)
+
+	offered := map[string]bool{}
+	for _, it := range items {
+		offered[it.Command] = true
+	}
+	for _, want := range []string{"conn.terminal", "conn.files", "conn.disconnect"} {
+		if !offered[want] {
+			t.Errorf("it does not offer %s", want)
+		}
+	}
+	for _, not := range []string{"conn.command", "conn.tunnel", "conn.socks"} {
+		if offered[not] {
+			t.Errorf("it offers %s, which cannot work on a window", not)
+		}
+	}
+	// And the wording says what letting go of a window means, rather
+	// than talking about a connection to a machine.
+	for _, it := range items {
+		if it.Command == "conn.disconnect" && it.Title != "Let go of this window" {
+			t.Errorf("it says %q", it.Title)
+		}
+	}
+}

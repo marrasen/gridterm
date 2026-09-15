@@ -72,6 +72,16 @@ type exitStatus struct {
 	Status uint32
 }
 
+// chanFiles carries the files of the machine the window being served is
+// on, as an SFTP session.
+//
+// SFTP rather than a protocol of its own: this window already talks to
+// saved servers that way, so the browser and the copying it does work
+// over this connection without learning anything new. The channel
+// carries the bytes and nothing else -- what runs on it is the window's
+// business, not this package's.
+const chanFiles = "files@gridterm"
+
 // chanControl carries what the window being served has open.
 //
 // The client opens it; the served window writes a snapshot down it

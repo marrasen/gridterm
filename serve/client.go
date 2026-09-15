@@ -169,6 +169,23 @@ func (w *Window) Attach(open Open, cols, rows int) (session.Session, error) {
 	})
 }
 
+// Files opens a file session on the other machine.
+//
+// What comes back is a stream, not a filesystem. What runs on it is the
+// caller's business, the same way it is the serving window's: this
+// package carries the bytes.
+func (w *Window) Files() (io.ReadWriteCloser, error) {
+	if w.isClosed() {
+		return nil, errors.New("serve: that window has been let go of")
+	}
+	ch, reqs, err := w.client.OpenChannel(chanFiles, nil)
+	if err != nil {
+		return nil, fmt.Errorf("serve: ask %s for its files: %w", w.addr, err)
+	}
+	go ssh.DiscardRequests(reqs)
+	return ch, nil
+}
+
 // Open starts something to work in on the other machine, sized for the
 // pane it will be drawn in.
 func (w *Window) Open(cols, rows int) (session.Session, error) {

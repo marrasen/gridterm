@@ -1095,3 +1095,62 @@ func TestANoteAboutAFailureIsNotWrittenOver(t *testing.T) {
 		t.Errorf("the failure was written over with %q", e.Note)
 	}
 }
+
+// The files of the window taken over are browsable from here.
+//
+// One connection carries the shells and the files both: taking over a
+// window is meant to be the whole of that window, not its terminals
+// with a second login for everything else.
+func TestTheFilesOfTheWindowTakenOverAreBrowsable(t *testing.T) {
+	host, client, addr := twoWindows(t)
+	_ = host
+
+	// Something on the serving machine's disk to find. The pane is
+	// asked for a directory by name, so the test does not depend on
+	// where either window happens to be running.
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "over-there.txt"), []byte("hello"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	if err := client.openFilesOn(addr); err != nil {
+		t.Fatalf("a pane on %s: %v", addr, err)
+	}
+	b := client.files
+	if b == nil {
+		t.Fatal("the window has no file manager")
+	}
+	panes := b.view.Panes()
+	if len(panes) != 1 {
+		t.Fatalf("the manager holds %d panes, want one", len(panes))
+	}
+	pane := panes[0]
+	if got := pane.FS().Name(); got != addr {
+		t.Errorf("the pane is on %q, not the window taken over", got)
+	}
+
+	// What is on that machine's disk, read over the same connection the
+	// shells ride on.
+	entries, err := pane.FS().ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read %s over there: %v", dir, err)
+	}
+	found := false
+	for _, e := range entries {
+		if e.Name == "over-there.txt" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("the file was not there: %v", entries)
+	}
+
+	// And letting go of the window takes the pane with it, because
+	// nothing else would.
+	if err := client.dropWindow(addr); err != nil {
+		t.Fatalf("drop: %v", err)
+	}
+	if got := len(b.view.Panes()); got != 0 {
+		t.Errorf("%d file panes are still reading through a window that has gone", got)
+	}
+}

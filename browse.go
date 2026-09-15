@@ -106,6 +106,9 @@ func (a *app) filesystem(host string) (vfs.FS, error) {
 	if host == conns.Local {
 		return vfs.NewLocal(), nil
 	}
+	if a.isWindow(host) {
+		return a.windowFiles(host)
+	}
 	m := a.machines[host]
 	if m == nil {
 		return nil, fmt.Errorf("nothing is connected to %s", host)

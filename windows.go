@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 
 	"github.com/marrasen/gridterm/conns"
@@ -17,6 +18,7 @@ import (
 	"github.com/marrasen/gridterm/serve"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/term"
+	"github.com/marrasen/gridterm/vfs"
 )
 
 // knownWindowsFile is where the keys of gridterm windows this one has
@@ -272,6 +274,61 @@ func (a *app) revealWindow(t *taken) {
 	}
 }
 
+// serveFiles gives a client the files of this machine.
+//
+// An SFTP server on the channel, rooted at the filesystem this process
+// can see. It is no more than the connection already allows: a client
+// that got this far has a key this window lists, and a shell it can run
+// anything in.
+//
+// It runs on a goroutine of the server's, and touches nothing the
+// window holds.
+func (a *app) serveFiles(ch io.ReadWriteCloser) error {
+	srv, err := sftp.NewServer(ch)
+	if err != nil {
+		return fmt.Errorf("could not serve the files of this machine: %w", err)
+	}
+	defer func() { _ = srv.Close() }()
+	if err := srv.Serve(); err != nil && !errors.Is(err, io.EOF) {
+		return fmt.Errorf("serving the files of this machine: %w", err)
+	}
+	return nil
+}
+
+// windowFiles is the filesystem of the machine a window taken over is
+// on, as a browser pane works on it.
+func (a *app) windowFiles(addr string) (vfs.FS, error) {
+	t := a.windows[addr]
+	if t == nil {
+		return nil, fmt.Errorf("this window has not taken over %s", addr)
+	}
+	ch, err := t.win.Files()
+	if err != nil {
+		return nil, err
+	}
+	client, err := sftp.NewClientPipe(ch, ch)
+	if err != nil {
+		return nil, errors.Join(
+			fmt.Errorf("could not read the files of %s: %w", addr, err), ch.Close())
+	}
+	return vfs.NewSFTP(addr, client, func() error {
+		// The client first: it says goodbye down the channel it is
+		// closing over.
+		//
+		// EOF from either is the far end having closed already, which
+		// is what letting go of a window looks like from here: the
+		// connection went and then its panes were taken away. It is
+		// agreement, not a failure.
+		errs := []error{client.Close(), ch.Close()}
+		for i, err := range errs {
+			if errors.Is(err, io.EOF) {
+				errs[i] = nil
+			}
+		}
+		return errors.Join(errs...)
+	}), nil
+}
+
 // openOnWindow opens a terminal in the other window, drawn in a pane
 // here.
 func (a *app) openOnWindow(addr string, at *spot) error {
@@ -334,9 +391,14 @@ func (a *app) dropWindow(addr string) error {
 	delete(a.windows, addr)
 	a.registry.Drop(t.entry)
 
-	// The panes first, so each is closed while the connection carrying
-	// it is still there to hang up politely.
-	var errs []error
+	// A file pane reading through this window is reading through a
+	// connection that is about to go. It is taken away here, because
+	// nothing else would: a pane does not end by itself the way a shell
+	// does.
+	errs := []error{a.closeFilesOn(addr)}
+
+	// Then the terminal panes, each closed while the connection
+	// carrying it is still there to hang up politely.
 	for pane, on := range a.paneOnWindow {
 		if on != t {
 			continue

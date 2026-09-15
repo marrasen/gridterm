@@ -5,12 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 
 	"github.com/marrasen/gridterm/session"
@@ -1174,4 +1177,82 @@ func serve1MB() Snapshot {
 		})
 	}
 	return snap
+}
+
+// A window that does not serve its files says so by name, rather than
+// leaving the client waiting on a channel nobody answers.
+func TestAWindowThatDoesNotServeItsFilesSaysSo(t *testing.T) {
+	_, w := takenOver(t, func(cols, rows int) (session.Session, error) {
+		return newEchoSession(cols, rows), nil
+	})
+
+	ch, err := w.Files()
+
+	if err == nil {
+		_ = ch.Close()
+		t.Fatal("it opened a file session on a window that serves none")
+	}
+	if !strings.Contains(err.Error(), "does not serve its files") {
+		t.Errorf("it said %v", err)
+	}
+}
+
+// And one that does serves them over the connection the shells ride on.
+func TestTheFilesOfAServingWindowCross(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "over-there.txt"), []byte("hello"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	served := make(chan error, 1)
+	s, w := takenOver(t, nil)
+	s.cfg.Files = func(ch io.ReadWriteCloser) error {
+		srv, err := sftp.NewServer(ch)
+		if err != nil {
+			served <- err
+			return err
+		}
+		defer func() { _ = srv.Close() }()
+		err = srv.Serve()
+		if errors.Is(err, io.EOF) {
+			err = nil
+		}
+		served <- err
+		return err
+	}
+
+	ch, err := w.Files()
+	if err != nil {
+		t.Fatalf("files: %v", err)
+	}
+	client, err := sftp.NewClientPipe(ch, ch)
+	if err != nil {
+		t.Fatalf("sftp: %v", err)
+	}
+	entries, err := client.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read %s: %v", dir, err)
+	}
+	found := false
+	for _, e := range entries {
+		if e.Name() == "over-there.txt" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("the file was not there: %v", entries)
+	}
+
+	if err := client.Close(); err != nil {
+		t.Errorf("close the client: %v", err)
+	}
+	_ = ch.Close()
+	select {
+	case err := <-served:
+		if err != nil {
+			t.Errorf("serving gave %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Error("the file session never finished")
+	}
 }

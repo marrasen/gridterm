@@ -2,14 +2,17 @@ package main
 
 import (
 	"context"
+	"image/color"
 	"strings"
 	"testing"
 
 	"golang.org/x/crypto/ssh"
 
+	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/input"
 	"github.com/marrasen/gridterm/serve"
 	"github.com/marrasen/gridterm/ui"
+	"github.com/marrasen/gridterm/vt"
 )
 
 // aBarWindow is a window with a menu bar over its tree, serving nothing.
@@ -88,6 +91,45 @@ func statusColumn(t *testing.T, a *testApp) (int, int) {
 	return area.X + at, area.Y
 }
 
+// Both status colours have to be read against the bar's own ground,
+// which shades from one end of the bar to the other. WCAG asks 4.5:1 for
+// text, so the status is measured against both ends of that shading.
+func TestTheStatusColoursAreReadableOnTheBar(t *testing.T) {
+	const wantText = 4.5
+	p := vt.DefaultPalette()
+	grounds := []struct {
+		where string
+		bg    color.RGBA
+	}{
+		{"the near end of the bar's ground", sidebarTop(p)},
+		{"the far end of it", sidebarFoot(p)},
+	}
+	colours := []struct {
+		what string
+		fg   color.RGBA
+	}{
+		{"the controlled status", statusTakenFG(p)},
+		{"the idle status", statusIdleFG(p)},
+	}
+
+	for _, c := range colours {
+		for _, g := range grounds {
+			if got := grid.Contrast(c.fg, g.bg); got < wantText {
+				t.Errorf("%s is %.2f:1 against %s, want at least %.1f", c.what, got, g.where, wantText)
+			}
+		}
+	}
+	// And a window somebody is working in says so more strongly than one
+	// that is only listening.
+	for _, g := range grounds {
+		taken, idle := grid.Contrast(statusTakenFG(p), g.bg), grid.Contrast(statusIdleFG(p), g.bg)
+		if taken < idle {
+			t.Errorf("against %s the controlled status is %.2f:1 and the idle one %.2f:1, "+
+				"want the controlled one at least as strong", g.where, taken, idle)
+		}
+	}
+}
+
 // A window nobody is being served says nothing on the bar.
 func TestAWindowThatIsNotServedSaysNothingOnTheMenuBar(t *testing.T) {
 	a := aBarWindow(t)
@@ -153,9 +195,10 @@ func TestAWindowTakenOverSaysWhoHasItOnTheMenuBar(t *testing.T) {
 	if got, red := host.bar.StatusFG, statusTakenFG(host.colours); got != red {
 		t.Errorf("the status is %+v, want red %+v", got, red)
 	}
-	// The end of it, because a bar this wide cuts the front off.
-	if tail := want[len(want)-20:]; !strings.Contains(row, tail) {
-		t.Errorf("the bar row is %q, want it to end with %q", row, tail)
+	// The head of it, because a bar this wide cuts the end off and the
+	// head is the part that names who has the window.
+	if head := want[:20]; !strings.Contains(row, head) {
+		t.Errorf("the bar row is %q, want it to start with %q", row, head)
 	}
 
 	// The client lets go, and the window is back to serving nobody.
@@ -165,8 +208,13 @@ func TestAWindowTakenOverSaysWhoHasItOnTheMenuBar(t *testing.T) {
 	waitFor(t, host, "the serving window to see it go", func() bool {
 		return len(host.serving.clients()) == 0
 	}, client)
-	if _, row = barRow(t, host); !strings.Contains(row, "nobody connected") {
-		t.Errorf("the bar row is %q, want it to say nobody is connected", row)
+	// The head of the status again: "Serving on" is what the idle one
+	// starts with, and the only one of the two that does.
+	if _, row = barRow(t, host); !strings.Contains(row, "Serving on") {
+		t.Errorf("the bar row is %q, want it back to saying the window is only served", row)
+	}
+	if !strings.HasSuffix(host.bar.Status, "nobody connected") {
+		t.Errorf("the bar says %q, want it to say nobody is connected", host.bar.Status)
 	}
 
 	// And nothing at all once the port closes.
@@ -206,12 +254,72 @@ func TestPressingTheStatusKicksTheOtherWindowOut(t *testing.T) {
 	waitFor(t, client, "the window over there to see the connection go", func() bool {
 		return client.windows.at(addr) == nil
 	}, host)
+	// And this window to see it too, which is what the bar is read off:
+	// the client sees the connection go first, and the host drops it
+	// when its own end finishes.
+	waitFor(t, host, "the serving window to see the connection go", func() bool {
+		return len(host.serving.clients()) == 0
+	}, client)
 	if !host.serving.on() {
 		t.Error("kicking the window out stopped the port as well")
 	}
-	if _, bar := barRow(t, host); !strings.Contains(bar, "nobody connected") {
-		t.Errorf("the bar row is %q, want it to say nobody is connected", bar)
+	if _, bar := barRow(t, host); !strings.Contains(bar, "Serving on") {
+		t.Errorf("the bar row is %q, want it back to saying the window is only served", bar)
 	}
+	if !strings.HasSuffix(host.bar.Status, "nobody connected") {
+		t.Errorf("the bar says %q, want it to say nobody is connected", host.bar.Status)
+	}
+}
+
+// A window that let go between the dialog opening and the button being
+// pressed is not a failed kick. It has gone, which is what the button
+// was for, so nothing is said about it.
+func TestKickingAWindowThatHasAlreadyGoneSaysNothing(t *testing.T) {
+	host, client, addr := twoWindows(t)
+	withMenubar(t, host)
+	col, row := statusColumn(t, host)
+
+	if _, err := host.root.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft, Col: col, Row: row,
+	}); err != nil {
+		t.Fatalf("pressing the status: %v", err)
+	}
+	f := awaitModal(t, host, "the serving dialog", byTitle[*ui.Form]("Serving this window"))
+	kick := buttonNamed(t, f, "Kick "+host.serving.clients()[0].Name+" out")
+
+	// The window connected lets go while the dialog is up, so the button
+	// names a window that is no longer there.
+	if err := client.dropWindow(addr); err != nil {
+		t.Fatalf("let go: %v", err)
+	}
+	waitFor(t, host, "the serving window to see it go", func() bool {
+		return len(host.serving.clients()) == 0
+	}, client)
+
+	// The button is run rather than pressed: a window going can put a
+	// notice over the dialog, and a press that landed on the notice would
+	// prove nothing either way. What the button carries is the whole of
+	// what the press would run.
+	err := kick.Do()
+
+	if err != nil {
+		t.Errorf("kicking a window that had already gone reported %v", err)
+	}
+	if !host.serving.on() {
+		t.Error("it stopped the port as well")
+	}
+}
+
+// buttonNamed is one of a dialog's buttons, by what it says.
+func buttonNamed(t *testing.T, f *ui.Form, title string) ui.Button {
+	t.Helper()
+	for _, b := range f.Buttons() {
+		if b.Title == title {
+			return b
+		}
+	}
+	t.Fatalf("the dialog has no %q button", title)
+	return ui.Button{}
 }
 
 // With nobody connected there is nothing to kick, and the same dialog

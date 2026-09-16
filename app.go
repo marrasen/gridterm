@@ -73,8 +73,10 @@ type app struct {
 	palette        *ui.Palette
 	dismissPalette func()
 
-	// bar is the row of menu titles at the top of the window.
-	bar *ui.Menubar
+	// bar is the row of menu titles at the top of the window, and
+	// statusWas what its status last said.
+	bar       *ui.Menubar
+	statusWas statusKey
 
 	// serving is the listener letting another window take this one over,
 	// and the windows that have.

@@ -315,9 +315,9 @@ func (a *app) closePane(w ui.Widget) error { return a.removePane(w, false) }
 
 // removePane takes a pane out of the tree and ends every shell under it.
 //
-// keep leaves the panel rows behind, greyed and closed, for a shell of
-// this window's own that ended by itself. A pane the user closed takes
-// its row with it.
+// keep leaves the panel rows behind, greyed and closed and carrying a
+// cross to clear them, for a shell of this window's own that ended by
+// itself. A pane the user closed takes its row with it.
 func (a *app) removePane(w ui.Widget, keep bool) error {
 	if w == nil {
 		return nil
@@ -365,10 +365,12 @@ func (a *app) removePane(w ui.Widget, keep bool) error {
 		if e := a.panes[t]; e != nil {
 			if keep {
 				// The shell went on its own, so the row stays and says
-				// so: what a command did after it stopped is worth
-				// reading. There is nothing left to reveal or close.
+				// so. The pane has gone with it, so there is nothing
+				// left to reveal or close and clearing the row is all
+				// that is left to do with it.
 				e.Meter.Close()
 				e.Reveal, e.Close = nil, nil
+				e.Clear = a.dropRow(e)
 			} else {
 				a.registry.Drop(e)
 			}
@@ -397,10 +399,10 @@ func (a *app) removePane(w ui.Widget, keep bool) error {
 //
 // A command keeps its pane. What it printed is what it was run for, and
 // a window that cleared the screen the moment the program finished would
-// take the answer away with it. A shell takes its pane with it: there is
-// nothing left to read, and the user asked for a shell rather than for
-// what it last said. A pane drawn from a window taken over takes its row
-// with it as well.
+// take the answer away with it. A shell loses its pane and keeps its
+// row: the user asked for a shell rather than for what it last said, and
+// the row stays to say the shell has gone until they clear it. A pane
+// drawn from a window taken over takes its row with it as well.
 func (a *app) paneEnded(t *term.Terminal) error {
 	e := a.panes[t]
 	if a.windows.drawsFromAWindow(t) {

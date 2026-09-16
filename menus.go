@@ -5,7 +5,7 @@ import (
 	"image/color"
 	"slices"
 
-	"github.com/marrasen/gridterm/grid"
+	"github.com/marrasen/gridterm/serve"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/vt"
 )
@@ -95,13 +95,35 @@ func (a *app) newMenubar(child ui.Widget) *ui.Menubar {
 // updateStatus says on the right of the menu bar when this window is
 // being served, and leaves it blank when it is not.
 //
-// Set every frame. The bar draws a status it already had without
-// touching the row, so an unchanged one costs nothing.
+// Called every frame, so the line is only built when what it is made of
+// has changed: a served window would otherwise write the same sentence
+// sixty times a second.
 func (a *app) updateStatus() {
 	if a.bar == nil {
 		return
 	}
+	var key statusKey
+	if a.serving.on() {
+		clients := a.serving.clients()
+		key.addr, key.clients = a.serving.addr(), len(clients)
+		if len(clients) > 0 {
+			key.first = clients[0]
+		}
+	}
+	if key == a.statusWas {
+		return
+	}
+	a.statusWas = key
 	a.bar.Status, a.bar.StatusFG = a.servingStatus()
+}
+
+// statusKey is what the menu bar status is made of: two frames with the
+// same key say the same thing. The first client is held by pointer,
+// because a client keeps the name and address it connected with.
+type statusKey struct {
+	addr    string
+	first   *serve.Client
+	clients int
 }
 
 // servingStatus is what the menu bar says about this window being
@@ -123,10 +145,14 @@ func (a *app) servingStatus() (string, color.RGBA) {
 }
 
 // statusTakenFG is the red the bar says "somebody is working in this
-// window" in, and statusIdleFG the dimmer one for a window that is only
+// window" in, and statusIdleFG the quieter one for a window that is only
 // listening.
-func statusTakenFG(p vt.Palette) color.RGBA { return p.ANSI[1] }
-func statusIdleFG(p vt.Palette) color.RGBA  { return grid.Blend(p.BG, p.ANSI[1], 2, 3) }
+//
+// Both are read against the bar's own ground, so neither is dimmed
+// towards the window's background: that ground is lighter, and a status
+// blended into it stops being legible.
+func statusTakenFG(p vt.Palette) color.RGBA { return p.ANSI[9] }
+func statusIdleFG(p vt.Palette) color.RGBA  { return p.ANSI[1] }
 
 // helpMenu is the menu bar title the key list hangs under. It stays
 // last, so the menus the window adds while it runs go in front of it.

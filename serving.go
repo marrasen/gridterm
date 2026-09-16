@@ -588,7 +588,13 @@ func (a *app) showServing() error {
 	f := a.newConfirm("Serving this window", lines)
 	f.AddButton(ui.Button{Title: "Keep serving"})
 	if len(clients) > 0 {
-		f.AddButton(ui.Button{Title: kickTitle(clients), Do: a.kickOut})
+		f.AddButton(ui.Button{
+			Title: kickTitle(clients),
+			// The windows the dialog named, not whoever is connected
+			// when the button is pressed: the user answered the list
+			// they were shown.
+			Do: func() error { return a.kickOut(clients) },
+		})
 	}
 	f.AddButton(ui.Button{Title: "Stop serving", Do: a.stopServing})
 	a.showForm(f, nil)
@@ -604,12 +610,18 @@ func kickTitle(clients []*serve.Client) string {
 	return "Kick everyone out"
 }
 
-// kickOut hangs up on every window connected right now. The port stays
-// open, so the same person can connect again.
-func (a *app) kickOut() error {
+// kickOut hangs up on the windows given. The port stays open, so the
+// same person can connect again.
+//
+// A window that hung up by itself between the dialog and the press is
+// not a failed kick: closing its socket again says it has already gone,
+// and it has gone, which is what was asked for.
+func (a *app) kickOut(clients []*serve.Client) error {
 	var errs []error
-	for _, c := range a.serving.clients() {
-		errs = append(errs, c.Close())
+	for _, c := range clients {
+		if err := c.Close(); err != nil && !errors.Is(err, net.ErrClosed) && !errors.Is(err, io.EOF) {
+			errs = append(errs, err)
+		}
 	}
 	return errors.Join(errs...)
 }

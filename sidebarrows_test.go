@@ -152,15 +152,21 @@ func TestAJobsRowFillsAsTheBytesGo(t *testing.T) {
 	}
 }
 
-// clickClear presses the column a row's button is drawn in, the way a user
-// presses the × at the end of a finished row: through the tree, at the
-// column the list itself names.
+// clickClear presses the middle of the cell a row's button is drawn in,
+// the way a user presses the × at the end of a finished row: a pixel,
+// through the app's own mapping from pixels to cells.
+//
+// The pixel rather than the cell, because the sidebar is drawn on a grid
+// of its own at its own row heights. Counting window rows down from the
+// top of it names a row it is not drawing there, and a regression in that
+// mapping would go unseen.
 //
 // It presses that column whether or not the row draws anything there, so a
 // test can watch what a row with no × does with the press.
 func clickClear(t *testing.T, a *testApp, key any) {
 	t.Helper()
 	a.refreshPanel(time.Now())
+	a.placeRegions()
 	area, ok := a.root.AreaOf(a.side)
 	if !ok {
 		t.Fatal("the sidebar is not in the tree")
@@ -175,9 +181,11 @@ func clickClear(t *testing.T, a *testApp, key any) {
 	if y < 0 {
 		t.Fatalf("no row for %v: %v", key, panelText(a, time.Now()))
 	}
+	x, wide := a.sideGeo.ColBox(col, col+1)
+	top, high := a.sideGeo.RowBox(y, y+1)
+	at, on := a.cellAt(a.sideRegion.left+x+wide/2, a.sideRegion.top+top+high/2)
 	took, err := a.root.HandleMouse(input.MouseEvent{
-		Kind: input.MousePress, Button: input.MouseLeft,
-		Col: area.X + col, Row: area.Y + y,
+		Kind: input.MousePress, Button: input.MouseLeft, Col: at, Row: on,
 	})
 	if err != nil {
 		t.Fatalf("the press on the × failed: %v", err)
@@ -363,6 +371,52 @@ func TestAFilledRowIsPaintedInTheFillColour(t *testing.T) {
 	}
 }
 
+// A shell that ended by itself loses its pane and keeps its row, and that
+// row carries the ×.
+//
+// There is nothing left to reveal or close, so clearing the row is the one
+// thing left to do with it. Without the ×, "Clear finished connections"
+// was the only way to take the row off the panel.
+func TestTheCrossClearsAShellThatEndedByItself(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+
+	first, ok := onlyPaneWidget(t, a).(*term.Terminal)
+	if !ok {
+		t.Fatal("the window opened on something that is not a terminal")
+	}
+	e := a.panes[first]
+	// A second pane, so the window does not quit when the first one goes.
+	if err := a.splitHere(ui.Columns); err != nil {
+		t.Fatalf("splitHere: %v", err)
+	}
+
+	// The shell in the first pane ends on its own.
+	if err := a.shells[0].Close(); err != nil {
+		t.Fatalf("ending the shell: %v", err)
+	}
+	waitFor(t, a, "the pane of the shell that ended to go", func() bool {
+		a.reapExited()
+		return len(a.panes) == 1
+	})
+
+	a.refreshPanel(time.Now())
+	drawn, ok := panelRow(a, e)
+	if !ok {
+		t.Fatalf("the shell that ended has no row: %v", panelText(a, time.Now()))
+	}
+	if drawn.Button != clearButton {
+		t.Fatalf("the greyed row offers %q, want the ×", drawn.Button)
+	}
+
+	clickClear(t, a, e)
+	a.refreshPanel(time.Now())
+	if _, ok := panelRow(a, e); ok {
+		t.Errorf("the row is still on the panel: %v", panelText(a, time.Now()))
+	}
+}
+
 // A command that has finished keeps its pane, so that what it printed can
 // still be read, and its row carries no ×: clearing the row the way a
 // dropped connection's row is cleared would take the transcript away
@@ -405,6 +459,9 @@ func TestAFinishedCommandsRowHasNoCross(t *testing.T) {
 	}
 
 	// Pressing the column the × would be in leaves the pane where it is.
+	// The row has no button there, so the press is an ordinary press on
+	// the row: it puts that pane in front, which is what a press on a row
+	// with nothing at its end does anywhere else on the panel.
 	clickClear(t, a, e)
 	if len(a.panes) != 1 {
 		t.Fatalf("the press took the pane away: the window holds %d panes", len(a.panes))

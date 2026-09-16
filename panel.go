@@ -417,13 +417,19 @@ func (a *app) greyRow(e *conns.Entry, why error) {
 	e.Reveal = nil
 	// Nothing is left to end, so closing the row and clearing it are the
 	// same act: the row goes off the panel.
-	drop := func() error {
+	drop := a.dropRow(e)
+	e.Close, e.Clear = drop, drop
+}
+
+// dropRow takes one row off the panel, for a row whose connection has
+// already gone.
+func (a *app) dropRow(e *conns.Entry) func() error {
+	return func() error {
 		a.registry.Drop(e)
 		a.refreshServers()
 		a.markDirty()
 		return nil
 	}
-	e.Close, e.Clear = drop, drop
 }
 
 // followTheStage puts the bar on the row for whatever the stage is
@@ -639,6 +645,9 @@ func (a *app) clearFinished() error {
 	if a.registry.DropFinished(now) > 0 {
 		a.markDirty()
 	}
+	// The same as the cross on one row does: what is open has changed,
+	// so the menus and the windows held by name are worked out again.
+	a.refreshServers()
 	return err
 }
 

@@ -262,7 +262,7 @@ func TestASplitWhosePaneWentOpensATabInstead(t *testing.T) {
 		t.Fatalf("closePane: %v", err)
 	}
 
-	a.openRoute("margit", []step{{name: "margit", cfg: serverConfig(t, s)}}, nil, at)
+	a.openRoute("margit", []step{{name: "margit", cfg: serverConfig(t, s)}}, opening{}, at)
 	waitForPanes(t, a, 2)
 	checkTree(t, a)
 	// It is on the stage, as a tab: losing the terminal because the pane
@@ -515,7 +515,7 @@ func TestASplitWhosePaneWentToTheBackgroundOpensATab(t *testing.T) {
 		t.Fatalf("openTab: %v", err)
 	}
 
-	a.openRoute("margit", []step{{name: "margit", cfg: serverConfig(t, s)}}, nil, at)
+	a.openRoute("margit", []step{{name: "margit", cfg: serverConfig(t, s)}}, opening{}, at)
 	waitForPanes(t, a, 3)
 	checkTree(t, a)
 	for _, w := range a.stage.Children() {

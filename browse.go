@@ -34,13 +34,19 @@ type browser struct {
 	rows map[*files.Pane]*conns.Entry
 }
 
-// openFilesOn puts a pane on a machine, starting the file manager when
-// there is not one yet.
+// openFilesOn puts a pane on a machine, connecting to it first when
+// nothing is connected to it yet.
 func (a *app) openFilesOn(host string) error {
 	on := a.about(host)
 	if on.toTakeOver() {
 		return fmt.Errorf("take over %s first: it is a gridterm window, "+
 			"and its files come over that connection", on.name)
+	}
+	// Nothing to read files over yet, so the connection is made first and
+	// the pane opens when it answers, the way "Terminal" does. Under the
+	// server list's own spelling, for the reason openTerminalOn gives.
+	if on.saved && on.kind != hostHere && on.window == nil && on.machine == nil {
+		return a.connectAndBrowse(on.spelling)
 	}
 	// A window's pane goes under the name holding the connection, which
 	// is not always the name asked about, so the sidebar keeps one
@@ -49,6 +55,12 @@ func (a *app) openFilesOn(host string) error {
 	if t := on.window; t != nil {
 		name = t.name
 	}
+	return a.browseOn(name)
+}
+
+// browseOn puts a pane on a machine that can be read now, starting the
+// file manager when there is not one yet.
+func (a *app) browseOn(name string) error {
 	f, err := a.filesystem(name)
 	if err != nil {
 		return err

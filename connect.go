@@ -12,13 +12,37 @@ import (
 	"github.com/marrasen/gridterm/ui/term"
 )
 
+// opening is what a route is opened for: a shell to type into, one
+// command to run, or a pane of the file manager.
+type opening struct {
+	// command is what the shell runs, and empty for a shell to type
+	// into.
+	command []string
+
+	// files opens a pane of the file manager on the machine and no shell
+	// on it, which is what "Files" asks for.
+	files bool
+}
+
+// kind says what sort of connection an opening is, for the row the
+// sidebar draws.
+func (o opening) kind() conns.Kind {
+	switch {
+	case o.files:
+		return conns.Files
+	case len(o.command) == 0:
+		return conns.Terminal
+	}
+	return conns.Command
+}
+
 // openRoute connects to whatever of a route is not connected to yet and
-// then opens a terminal or a command on the far end.
+// then opens what was asked for on the far end.
 //
 // The dial runs on its own goroutine because it can stop to ask the user
 // something, and the dialog it asks with is drawn by this one. A pane
 // holds the place until it is done, and closing it gives up.
-func (a *app) openRoute(name string, route []step, command []string, at *spot) {
+func (a *app) openRoute(name string, route []step, open opening, at *spot) {
 	// A window the server list holds is taken over, not logged in to.
 	//
 	// Here because this is the one place every connection really goes
@@ -36,7 +60,7 @@ func (a *app) openRoute(name string, route []step, command []string, at *spot) {
 		return
 	}
 	if len(missing) == 0 {
-		if err := a.startOn(name, command, at); err != nil {
+		if err := a.startOn(name, open, at); err != nil {
 			a.reportError("Could not open it on "+name, err)
 		}
 		return
@@ -46,7 +70,7 @@ func (a *app) openRoute(name string, route []step, command []string, at *spot) {
 		// for it is usually what the user wants, and refusing left them
 		// with a machine they could not reach and no way to say so.
 		if d := a.about(s.name).dialling; d != nil {
-			a.askAboutTheOneOnItsWay(d, s.name, func() { a.openRoute(name, route, command, at) })
+			a.askAboutTheOneOnItsWay(d, s.name, func() { a.openRoute(name, route, open, at) })
 			return
 		}
 	}
@@ -101,7 +125,7 @@ func (a *app) openRoute(name string, route []step, command []string, at *spot) {
 	// has to stop holding them, or nothing can try again.
 	log := newConnLog(func() { a.pump.post(func() { a.machines.giveUp(held) }) })
 	held.log = log
-	pane, err := a.openSessionTab(log, name, kindOf(command), "connecting", at)
+	pane, err := a.openSessionTab(log, name, open.kind(), "connecting", at)
 	if err != nil {
 		cancel()
 		a.machines.release(held)
@@ -164,9 +188,9 @@ func (a *app) openRoute(name string, route []step, command []string, at *spot) {
 				log.Failed(why)
 				return
 			}
-			// The shell first, so the pane the user is watching is the
-			// one in front of them, and then whatever was waiting.
-			a.becomeShellPane(held.nameNow(name), command, pane, log)
+			// What was asked for first, so the pane the user is watching
+			// is the one in front of them, and then whatever was waiting.
+			a.becamePane(held.nameNow(name), open, pane, log)
 			a.machines.settle(held, true)
 		})
 	}()
@@ -288,9 +312,10 @@ func (a *app) stillWanted(gaveUp error, through *machine) error {
 	return nil
 }
 
-// becomeShellPane hands the pane that was watching a connection being
-// made to a shell on the machine it reached.
-func (a *app) becomeShellPane(name string, command []string, pane *term.Terminal, log *connLog) {
+// becamePane hands the pane that was watching a connection being made
+// to what the route was opened for: a shell in the same pane, or a file
+// pane with this one closed behind it.
+func (a *app) becamePane(name string, open opening, pane *term.Terminal, log *connLog) {
 	m := a.about(name).machine
 	if m == nil {
 		a.endedAs(pane, "not connected")
@@ -301,6 +326,41 @@ func (a *app) becomeShellPane(name string, command []string, pane *term.Terminal
 	// the way shares this account, and a line on each of their rows would
 	// open an account about somewhere else.
 	m.log = log
+	if open.files {
+		a.becomeFilesPane(name, pane, log)
+		return
+	}
+	a.becomeShellPane(m, name, open.command, pane, log)
+}
+
+// becomeFilesPane opens a pane of the file manager on a machine that has
+// just answered, and closes the pane that watched it being reached.
+//
+// That pane goes because nothing rides in it: the connection was made
+// for files and there is no shell on it. Its account is kept on the
+// machine's row, under "How it was reached". A dial that failed keeps
+// its pane, with the account still in it.
+func (a *app) becomeFilesPane(name string, pane *term.Terminal, log *connLog) {
+	if err := a.browseOn(name); err != nil {
+		a.endedAs(pane, "no files")
+		log.Failed(err)
+		return
+	}
+	// Said before the pane goes, so closing it lets go of the account
+	// rather than giving up on the connection under it.
+	log.Connected()
+	// Closed after the file pane is open, because the window quits with
+	// its last pane.
+	if err := a.closePane(pane); err != nil {
+		a.reportError("Could not close the pane that was connecting", err)
+	}
+}
+
+// becomeShellPane hands the pane that was watching a connection being
+// made to a shell on the machine it reached.
+func (a *app) becomeShellPane(m *machine, name string, command []string,
+	pane *term.Terminal, log *connLog) {
+
 	size := pane.Size()
 	sh, err := m.conn.Shell(a.ctx, remote.ShellConfig{
 		Command: command,
@@ -324,14 +384,20 @@ func (a *app) becomeShellPane(name string, command []string, pane *term.Terminal
 	log.Became(name, sh)
 }
 
-// startOn runs something on a machine that is already connected to.
-func (a *app) startOn(name string, command []string, at *spot) error {
+// startOn opens what was asked for on a machine that is already
+// connected to.
+func (a *app) startOn(name string, open opening, at *spot) error {
+	if open.files {
+		// A file pane goes in the file manager, which is a tab of its
+		// own, so the spot the request named is not one it can land in.
+		return a.browseOn(name)
+	}
 	m := a.about(name).machine
 	if m == nil {
 		return fmt.Errorf("nothing is connected to %s", name)
 	}
 	sh, err := m.conn.Shell(a.ctx, remote.ShellConfig{
-		Command: command,
+		Command: open.command,
 		Cols:    a.lastSize[0],
 		Rows:    a.lastSize[1],
 		Term:    m.at.term,
@@ -339,7 +405,7 @@ func (a *app) startOn(name string, command []string, at *spot) error {
 	if err != nil {
 		return err
 	}
-	t, err := a.openSessionTab(sh, name, kindOf(command), labelFor(command), at)
+	t, err := a.openSessionTab(sh, name, open.kind(), labelFor(open.command), at)
 	if err != nil {
 		// The shell is ours and nothing else knows about it.
 		_ = sh.Close()
@@ -358,17 +424,22 @@ func (a *app) openOn(name string, command []string, at *spot) error {
 	if err != nil {
 		return err
 	}
-	a.openRoute(name, route, command, at)
+	a.openRoute(name, route, opening{command: command}, at)
 	return nil
 }
 
-// kindOf says what sort of connection a command is: one program run and
-// finished with, or a shell to type into.
-func kindOf(command []string) conns.Kind {
-	if len(command) == 0 {
-		return conns.Terminal
+// connectAndBrowse connects to a machine and opens a pane of the file
+// manager on it when it answers.
+//
+// The route is built here rather than in browse.go because openRoute is
+// the one place that dials.
+func (a *app) connectAndBrowse(name string) error {
+	route, err := a.route(name)
+	if err != nil {
+		return err
 	}
-	return conns.Command
+	a.openRoute(name, route, opening{files: true}, nil)
+	return nil
 }
 
 // labelFor names a connection by what it is running.

@@ -177,6 +177,18 @@ func (c *connLog) Failed(err error) {
 	c.end()
 }
 
+// Connected says the connection was made with nothing to ride in the
+// pane, which is what a connection opened for files alone is.
+//
+// Nothing more will be written, and closing the pane lets go of the
+// account rather than giving up on the connection under it.
+func (c *connLog) Connected() {
+	c.mu.Lock()
+	c.stop = nil
+	c.mu.Unlock()
+	c.end()
+}
+
 // GaveUp says the user gave up on the connection.
 func (c *connLog) GaveUp() {
 	c.sayBadly("given up on")
@@ -379,12 +391,12 @@ func (c *connLog) Close() error {
 	c.closeOnce.Do(func() {
 		close(c.closed)
 		c.mu.Lock()
-		live := c.live
+		live, stop := c.live, c.stop
 		c.over = true
 		c.mu.Unlock()
 		c.settle()
-		if c.stop != nil {
-			c.stop()
+		if stop != nil {
+			stop()
 		}
 		if live != nil {
 			err = live.Close()

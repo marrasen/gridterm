@@ -56,7 +56,7 @@ func (a *app) connectAs(name string, cfg remote.Config) {
 	if name == "" {
 		name = cfg.Host
 	}
-	a.openRoute(name, []step{{name: name, cfg: cfg}}, nil, nil)
+	a.openRoute(name, []step{{name: name, cfg: cfg}}, opening{}, nil)
 }
 
 // openSessionTab puts a session where it was asked to go: dividing a

@@ -5,8 +5,9 @@ each group. A line goes when the work is in and reviewed.
 
 ## Connections
 
-- **"Files" should connect when the machine is not connected**, the way
-  "Terminal" does. It should work for an SFTP-only connection too.
+- Nothing outstanding. "Files" connects the machine when nothing is
+  connected to it, the way "Terminal" does, and opens the pane over the
+  connection it makes.
 
 ## Copying files
 

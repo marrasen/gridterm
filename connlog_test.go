@@ -518,3 +518,26 @@ func TestTheFarEndCannotColourTheAccount(t *testing.T) {
 		t.Errorf("%d lines in the account, want the one: %q", got, c.Lines())
 	}
 }
+
+// A connection made for files alone has nothing to put in the pane, so
+// closing the pane lets the account go rather than giving up on the
+// connection under it.
+func TestClosingThePaneAfterConnectedDoesNotGiveUp(t *testing.T) {
+	gave := make(chan struct{})
+	c := atTime(newConnLog(func() { close(gave) }))
+
+	c.Say("connecting")
+	c.Connected()
+	if err := c.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	select {
+	case <-gave:
+		t.Fatal("closing the pane gave up on a connection that was made")
+	default:
+	}
+	// The account stays, because the machine's row still offers it.
+	if got := c.Lines(); len(got) != 1 || !strings.Contains(got[0], "connecting") {
+		t.Errorf("the account is %v, want what was said while it connected", got)
+	}
+}

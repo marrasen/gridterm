@@ -12,6 +12,7 @@ import (
 	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/input"
 	"github.com/marrasen/gridterm/internal/sshtest"
+	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/files"
 )
@@ -816,5 +817,241 @@ func TestDraggingAFileBrowserDivider(t *testing.T) {
 	if at := after.X + after.Cols; at != right.X+right.Cols {
 		t.Errorf("the second pane now ends at column %d, want the right edge at %d",
 			at, right.X+right.Cols)
+	}
+}
+
+// aSavedMachine is a window with one machine in the server list, pointed
+// at a test server and nothing connected to it.
+func aSavedMachine(t *testing.T) (*testApp, *sshtest.Server) {
+	t.Helper()
+	s := sshtest.New(t)
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	withMenubar(t, a)
+	pinServers(t, a, s)
+	saveHost(t, a, "margit", s, "")
+	a.refreshServers()
+	return a, s
+}
+
+// filePaneOn returns the file pane the window has on a machine, and nil
+// when it has none.
+func filePaneOn(a *testApp, host string) *files.Pane {
+	if a.files == nil {
+		return nil
+	}
+	for _, p := range a.files.view.Panes() {
+		if p.FS().Name() == host {
+			return p
+		}
+	}
+	return nil
+}
+
+// openAt sends a file pane to a directory on the machine it is on and
+// waits for the listing.
+func openAt(t *testing.T, a *testApp, p *files.Pane, dir string) {
+	t.Helper()
+	// It opens on the user's own directory by itself, on a goroutine of
+	// its own, so that has to land before the test sends it anywhere
+	// else.
+	waitFor(t, a, "the pane to open somewhere", func() bool { return p.At() != "" })
+	p.Open(dir)
+	waitFor(t, a, "the listing of "+dir, func() bool { return p.At() == dir && !p.Busy() })
+}
+
+// rowKindsUnder is the kind of every sidebar row under a machine.
+func rowKindsUnder(a *testApp, host string) []conns.Kind {
+	var kinds []conns.Kind
+	for _, group := range a.registry.Groups(time.Now()) {
+		if group.Host != host {
+			continue
+		}
+		for _, row := range group.Rows {
+			kinds = append(kinds, row.Kind)
+		}
+	}
+	return kinds
+}
+
+// "Files" on a machine nothing is connected to connects to it first and
+// opens the pane on the connection it made, the way "Terminal" does.
+//
+// The connection is made for files alone: no shell is started on it, and
+// the pane that watched it being made goes once there is a file pane to
+// look at instead.
+func TestFilesOnASavedMachineConnectsFirst(t *testing.T) {
+	a, s := aSavedMachine(t)
+	dials := dialCounter(a)
+	dir := filepath.ToSlash(t.TempDir())
+	putFile(t, dir, "one.txt", "the body")
+
+	menu := clickPlus(t, a, "margit")
+	if !offers(menu, "conn.files") {
+		t.Fatalf("the plus offers %v", menuCommands(menu))
+	}
+	chooseMenuItem(t, menu, "conn.files")
+
+	// A pane holds the place while the connection is made.
+	connecting := waitForConnecting(t, a)
+	if connecting.Host != "margit" || connecting.Kind != conns.Files {
+		t.Errorf("the pane watching the connection is %v on %q, want files on margit",
+			connecting.Kind, connecting.Host)
+	}
+
+	var pane *files.Pane
+	waitFor(t, a, "a file pane on margit", func() bool {
+		pane = filePaneOn(a, "margit")
+		return pane != nil
+	})
+
+	// One login, and nothing riding on it.
+	if n := s.Conns(); n != 1 {
+		t.Errorf("the server saw %d logins, want the one the pane reads over", n)
+	}
+	if *dials != 1 {
+		t.Errorf("%d machines were dialled, want the one", *dials)
+	}
+	m := a.machines.named("margit")
+	if m == nil {
+		t.Fatalf("the window holds no connection to margit: %v", a.machines.names())
+	}
+	if on := a.machines.panesOn(m); len(on) != 0 {
+		t.Errorf("%d shells were opened on a connection asked for by Files", len(on))
+	}
+
+	// The pane reads the machine's files.
+	openAt(t, a, pane, dir)
+	got := pane.Entries()
+	if len(got) != 1 || got[0].Name != "one.txt" {
+		t.Errorf("the pane shows %v, want the file the server has", got)
+	}
+
+	// The pane that was connecting has gone, and the sidebar shows the
+	// file pane's row under the machine and no terminal.
+	for _, e := range a.panes {
+		if e.Host == "margit" {
+			t.Errorf("the pane that was connecting is still there, saying %q", e.Label)
+		}
+	}
+	rows := 0
+	for _, kind := range rowKindsUnder(a, "margit") {
+		if kind == conns.Terminal {
+			t.Errorf("the sidebar shows a terminal under margit: %v", panelText(a, time.Now()))
+		}
+		if kind == conns.Files {
+			rows++
+		}
+	}
+	if rows != 1 {
+		t.Errorf("the sidebar shows %d file rows under margit, want the one", rows)
+	}
+	checkTree(t, a)
+
+	// The account of the connection is where every other one is.
+	chooseMenuItem(t, clickPlus(t, a, "margit"), "conn.log")
+	n := awaitModal(t, a, "the account", byTitle[*ui.Notice]("How margit was reached"))
+	if !strings.Contains(n.Message(), "connected to margit") {
+		t.Errorf("the account is %q", n.Message())
+	}
+}
+
+// A terminal on a machine connected for files alone rides on the
+// connection that is already there.
+func TestATerminalRidesOnAConnectionMadeForFiles(t *testing.T) {
+	a, s := aSavedMachine(t)
+	dials := dialCounter(a)
+
+	chooseMenuItem(t, clickPlus(t, a, "margit"), "conn.files")
+	waitFor(t, a, "a file pane on margit", func() bool { return filePaneOn(a, "margit") != nil })
+
+	clickTerminalLine(t, a, "margit")
+	m := a.machines.named("margit")
+	waitFor(t, a, "a shell on margit", func() bool {
+		return m != nil && len(a.machines.panesOn(m)) == 1
+	})
+	if n := s.Conns(); n != 1 {
+		t.Errorf("the server saw %d logins, want the one both ride on", n)
+	}
+	if *dials != 1 {
+		t.Errorf("%d machines were dialled, want the one", *dials)
+	}
+}
+
+// "Files" on a machine already being connected to asks about the one on
+// its way, and waiting for it opens the pane when it lands.
+func TestFilesWaitsForAMachineOnItsWay(t *testing.T) {
+	a, s := aSavedMachine(t)
+	dials := dialCounter(a)
+
+	// A command runs where it is chosen, so nothing the first dial posts
+	// can land between these two clicks: the second request meets a
+	// machine on its way every time.
+	clickTerminalLine(t, a, "margit")
+	if a.about("margit").dialling == nil {
+		t.Fatal("the first request is not on its way")
+	}
+	chooseMenuItem(t, clickPlus(t, a, "margit"), "conn.files")
+
+	f := awaitModal(t, a, "the question about the one on its way",
+		byTitlePrefix[*ui.Form]("Already connecting to"))
+	pressButton(t, a, f, "Wait for it")
+
+	waitFor(t, a, "a file pane on margit", func() bool { return filePaneOn(a, "margit") != nil })
+	if n := s.Conns(); n != 1 {
+		t.Errorf("the server saw %d logins, want the one that was waited for", n)
+	}
+	if *dials != 1 {
+		t.Errorf("%d machines were dialled, want the one that was waited for", *dials)
+	}
+}
+
+// A connection asked for by "Files" that cannot be made keeps its pane,
+// with the account of what happened still in it, and opens no file pane.
+func TestFilesOnAMachineThatWillNotAnswerKeepsItsAccount(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	withMenubar(t, a)
+	// Nothing to dial with but the test's own key, and a port nothing
+	// answers on.
+	pinServers(t, a)
+	if err := a.book.Put(remote.Host{
+		Name: "margit", Address: "127.0.0.1", Port: 1, User: "tester",
+	}, ""); err != nil {
+		t.Fatalf("save the machine: %v", err)
+	}
+	a.refreshServers()
+
+	chooseMenuItem(t, clickPlus(t, a, "margit"), "conn.files")
+	pane := newestPane(t, a)
+	waitFor(t, a, "the pane to say the connection was not made", func() bool {
+		return strings.Contains(paneText(pane), "The connection was not made")
+	})
+	if got := paneText(pane); !strings.Contains(got, "connecting to") {
+		t.Errorf("the account went with the failure: %q", got)
+	}
+	if a.files != nil {
+		t.Fatalf("a file manager opened on a machine that never answered: %v", filesRows(a))
+	}
+}
+
+// A machine that is already connected opens its pane on the connection
+// it has, without dialling again.
+func TestFilesOnAConnectedMachineDialsNothing(t *testing.T) {
+	s := sshtest.New(t)
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	host := connectedTo(t, a, s)
+	dials := dialCounter(a)
+
+	openFilesFromThePlus(t, a, host)
+	if n := s.Conns(); n != 1 {
+		t.Errorf("the server saw %d logins, want the one that was already open", n)
+	}
+	if *dials != 0 {
+		t.Errorf("%d machines were dialled for a pane on a machine already connected", *dials)
 	}
 }

@@ -276,18 +276,25 @@ func (w *Window) Attach(open Open, cols, rows int) (session.Session, error) {
 	})
 }
 
-// Files opens a file session on the other machine.
+// Files opens a file session on the machine the other window is on.
 //
 // What comes back is a stream, not a filesystem. What runs on it is the
 // caller's business, the same way it is the serving window's: this
 // package carries the bytes.
-func (w *Window) Files() (*FileSession, error) {
+func (w *Window) Files() (*FileSession, error) { return w.FilesOn("") }
+
+// FilesOn opens a file session on a machine the other window can reach.
+//
+// host is that machine as the other window names it, which is the name
+// it sent down the control channel. Empty asks for the machine the
+// other window is on.
+func (w *Window) FilesOn(host string) (*FileSession, error) {
 	if w.isClosed() {
 		return nil, errors.New("serve: that window has been let go of")
 	}
-	ch, reqs, err := w.client.OpenChannel(chanFiles, nil)
+	ch, reqs, err := w.client.OpenChannel(chanFiles, ssh.Marshal(openFiles{Host: host}))
 	if err != nil {
-		return nil, fmt.Errorf("serve: ask %s for its files: %w", w.addr, err)
+		return nil, fmt.Errorf("serve: ask %s for %s: %w", w.addr, filesCalled(host), err)
 	}
 	go ssh.DiscardRequests(reqs)
 
@@ -297,6 +304,15 @@ func (w *Window) Files() (*FileSession, error) {
 		f.said <- strings.TrimSpace(string(out))
 	}()
 	return f, nil
+}
+
+// filesCalled names what a file session was asked for, for a failure to
+// open one.
+func filesCalled(host string) string {
+	if host == "" {
+		return "its files"
+	}
+	return "the files of " + host
 }
 
 // FileSession is a file session on the other machine.

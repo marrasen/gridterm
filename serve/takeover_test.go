@@ -1251,13 +1251,26 @@ func TestAWindowThatDoesNotServeItsFilesSaysSo(t *testing.T) {
 // timeout, and says nothing about which one was wrong.
 func filesWithin(t *testing.T, w *Window) (*FileSession, error) {
 	t.Helper()
+	return askingFiles(t, w.Files)
+}
+
+// filesOnWithin is filesWithin for a machine the other window is
+// connected to.
+func filesOnWithin(t *testing.T, w *Window, host string) (*FileSession, error) {
+	t.Helper()
+	return askingFiles(t, func() (*FileSession, error) { return w.FilesOn(host) })
+}
+
+// askingFiles waits out one ask for a file session.
+func askingFiles(t *testing.T, ask func() (*FileSession, error)) (*FileSession, error) {
+	t.Helper()
 	type got struct {
 		f   *FileSession
 		err error
 	}
 	back := make(chan got, 1)
 	go func() {
-		f, err := w.Files()
+		f, err := ask()
 		back <- got{f: f, err: err}
 	}()
 	select {
@@ -1266,6 +1279,53 @@ func filesWithin(t *testing.T, w *Window) (*FileSession, error) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("the other window never answered the ask for its files")
 		return nil, nil
+	}
+}
+
+// A file session says which machine it is for, so a client can ask the
+// window for a machine that window is connected to rather than for its
+// own disk.
+func TestAFileSessionNamesTheMachineItIsFor(t *testing.T) {
+	asked := make(chan string, 2)
+	s, w := takenOver(t, nil)
+	s.cfg.Files = func(host string, ch io.ReadWriteCloser) error {
+		asked <- host
+		return nil
+	}
+
+	// Plain files are the machine the window itself is on, which is no
+	// name at all.
+	f, err := filesWithin(t, w)
+	if err != nil {
+		t.Fatalf("files: %v", err)
+	}
+	if got := whatWasAsked(t, asked); got != "" {
+		t.Errorf("Files asked for %q, want the window's own machine", got)
+	}
+	_ = f.Close()
+
+	// And a named one is that machine, spelled the way the window over
+	// there spells it.
+	f, err = filesOnWithin(t, w, "margit")
+	if err != nil {
+		t.Fatalf("files on margit: %v", err)
+	}
+	if got := whatWasAsked(t, asked); got != "margit" {
+		t.Errorf("FilesOn asked for %q", got)
+	}
+	_ = f.Close()
+}
+
+// whatWasAsked is the machine the window was asked for, or a failed test
+// when it was asked for nothing.
+func whatWasAsked(t *testing.T, asked <-chan string) string {
+	t.Helper()
+	select {
+	case host := <-asked:
+		return host
+	case <-time.After(5 * time.Second):
+		t.Fatal("the window serving was never asked for any files")
+		return ""
 	}
 }
 
@@ -1294,7 +1354,7 @@ func TestTheFilesOfAServingWindowCross(t *testing.T) {
 
 	served := make(chan error, 1)
 	s, w := takenOver(t, nil)
-	s.cfg.Files = func(ch io.ReadWriteCloser) error {
+	s.cfg.Files = func(_ string, ch io.ReadWriteCloser) error {
 		srv, err := sftp.NewServer(ch)
 		if err != nil {
 			served <- err
@@ -1358,7 +1418,7 @@ func TestOnlySoManyFileSessionsAtOnce(t *testing.T) {
 	stop := make(chan struct{})
 	defer close(stop)
 	s, w := takenOver(t, nil)
-	s.cfg.Files = func(ch io.ReadWriteCloser) error {
+	s.cfg.Files = func(_ string, ch io.ReadWriteCloser) error {
 		// Held open until the test is done with it.
 		<-stop
 		return nil
@@ -1393,7 +1453,7 @@ func TestOnlySoManyFileSessionsAtOnce(t *testing.T) {
 func TestAFileSessionThatFailedSaysWhyToTheClient(t *testing.T) {
 	told := make(chan error, 8)
 	s, w := takenOverReporting(t, nil, told)
-	s.cfg.Files = func(ch io.ReadWriteCloser) error {
+	s.cfg.Files = func(_ string, ch io.ReadWriteCloser) error {
 		return errors.New("the disk is not there")
 	}
 

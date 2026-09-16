@@ -56,6 +56,20 @@ func (s *Server) serveChannels(chans <-chan ssh.NewChannel, gone <-chan struct{}
 			continue
 		}
 		if nch.ChannelType() == chanFiles {
+			var want openFiles
+			// No payload asks for the machine being served, which is
+			// what a client of an older build sends.
+			if len(nch.ExtraData()) > 0 {
+				if err := ssh.Unmarshal(nch.ExtraData(), &want); err != nil {
+					// The same shape trouble a session request has: the
+					// encoding is positional, so this is a gridterm of
+					// another build.
+					_ = nch.Reject(ssh.ConnectionFailed,
+						"that is not a file session request this gridterm understands: "+
+							"both windows have to be the same build")
+					continue
+				}
+			}
 			if files.Load() >= mostFileSessions {
 				_ = nch.Reject(ssh.ResourceShortage,
 					"this gridterm is already serving as many file sessions"+
@@ -67,7 +81,7 @@ func (s *Server) serveChannels(chans <-chan ssh.NewChannel, gone <-chan struct{}
 			go func() {
 				defer running.Done()
 				defer files.Add(-1)
-				s.runFiles(nch)
+				s.runFiles(nch, want.Host)
 			}()
 			continue
 		}
@@ -105,9 +119,12 @@ func (s *Server) serveChannels(chans <-chan ssh.NewChannel, gone <-chan struct{}
 	running.Wait()
 }
 
-// runFiles gives a client the files of this machine and carries it
-// until one end or the other is done.
-func (s *Server) runFiles(nch ssh.NewChannel) {
+// runFiles gives a client the files of a machine and carries the
+// session until one end or the other is done.
+//
+// host is the machine the client asked for, empty for the machine being
+// served.
+func (s *Server) runFiles(nch ssh.NewChannel, host string) {
 	if s.cfg.Files == nil {
 		_ = nch.Reject(ssh.Prohibited, "this gridterm does not serve its files")
 		return
@@ -123,7 +140,7 @@ func (s *Server) runFiles(nch ssh.NewChannel) {
 	// and sixteen unread requests stop the connection's read loop.
 	go ssh.DiscardRequests(reqs)
 
-	if err := s.cfg.Files(ch); err != nil {
+	if err := s.cfg.Files(host, ch); err != nil {
 		// Said over there as well as here: the client is left holding
 		// a stream that stopped, and this is the only account of why.
 		if _, werr := io.WriteString(ch.Stderr(), "gridterm: "+err.Error()+"\r\n"); werr != nil {
@@ -136,7 +153,11 @@ func (s *Server) runFiles(nch ssh.NewChannel) {
 	}
 }
 
-// Filer gives a client the files of the machine a window is on.
+// Filer gives a client the files of a machine the window can reach.
+//
+// host is the machine the client asked for, as the window names it on
+// its own panel. Empty is the machine the window is on, which is what a
+// client that asked for nothing in particular means.
 //
 // It is handed a channel and returns when it is finished with it,
 // whether because the client went or because it failed. What runs on
@@ -154,7 +175,7 @@ func (s *Server) runFiles(nch ssh.NewChannel) {
 //
 // It is called from a goroutine of the server's, one per session a
 // client opens.
-type Filer func(ch io.ReadWriteCloser) error
+type Filer func(host string, ch io.ReadWriteCloser) error
 
 // runSession starts something for the client to work in and carries it
 // until one end or the other is done.

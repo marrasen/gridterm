@@ -86,8 +86,10 @@ type exitStatus struct {
 	Status uint32
 }
 
-// chanFiles carries a file session on the machine being served. The
-// channel carries the bytes; what runs on it is the window's business.
+// chanFiles carries a file session on the machine being served, or on
+// a machine that window is connected to. Its payload is openFiles, and
+// no payload at all asks for the machine being served. The channel
+// carries the bytes; what runs on it is the window's business.
 const chanFiles = "files@gridterm"
 
 // chanControl carries what the window being served has open.
@@ -149,4 +151,16 @@ type Snapshot struct {
 
 	// Open is what it has open, in the order it opened them.
 	Open []Open `json:"open"`
+}
+
+// openFiles is what a client asks for when it opens a file session: the
+// machine whose files it wants.
+//
+// Empty, and no payload at all, both ask for the machine the served
+// window is on. That is what a client of an older build sends, and what
+// a client asking for the window's own disk sends.
+type openFiles struct {
+	// Host is the machine as the served window calls it, which is the
+	// name that window sent down the control channel.
+	Host string
 }

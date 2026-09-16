@@ -501,9 +501,9 @@ func (b *Menubar) statusAt() (Rect, string) {
 	if room <= 0 {
 		return Rect{}, ""
 	}
-	// Cut from the left, because the end of a status names the thing it
-	// is about while the front of it repeats.
-	text := grid.TrimHead(b.Status, room)
+	// Cut from the end, because the head of a status is what says which
+	// status it is.
+	text := grid.TrimTail(b.Status, room)
 	width := grid.StringWidth(text)
 	if width <= 0 || text == ellipsis {
 		// Nothing of the status survived the cut. A bare mark that

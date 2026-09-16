@@ -119,9 +119,9 @@ func TestMenubarNarrowBarKeepsEveryTitleAndTrimsTheStatus(t *testing.T) {
 	if strings.Contains(row, "serving") {
 		t.Errorf("bar row = %q, want the status trimmed", row)
 	}
-	// Cut from the left, so the end of the status is what survives.
-	if !strings.Contains(row, "…ng") {
-		t.Errorf("bar row = %q, want the end of the status with the cut marked", row)
+	// Cut from the end, so the head of the status is what survives.
+	if !strings.Contains(row, "se…") {
+		t.Errorf("bar row = %q, want the head of the status with the cut marked", row)
 	}
 	at, text := b.statusAt()
 	if at.X < titlesEnd {

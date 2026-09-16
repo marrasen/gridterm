@@ -467,22 +467,22 @@ func (l *List) paintRow(v grid.View, row ListRow, selected bool, y, rows int) {
 		fg = l.Style.HeaderFG
 	}
 	// washed says the row's ground is light enough to swallow a mark
-	// picked out against the ordinary one, and on says whose ground the
-	// row is drawn on.
-	washed, on := false, listGround
+	// picked out against the ordinary one, and lifted says the row has a
+	// ground of its own rather than the list's.
+	washed, lifted := false, false
 	switch {
 	case selected && l.focused:
 		fg, bg = l.Style.SelectedFG, l.Style.SelectedBG
 		// A colour picked to stand out against the other rows can
 		// disappear against the selected one. Whatever the row writes
 		// its own text in is the one colour known to show there.
-		noteFG, washed, on = fg, true, selectedGround
+		noteFG, washed, lifted = fg, true, true
 	case l.Style.CurrentBG.A != 0 && l.current != nil && sameKey(row.Key, l.current):
 		// Only the ground changes. The mark keeps its own colour,
 		// because what it says is the whole reason it is there and this
 		// is the row the user is looking at.
 		fg, bg = l.Style.CurrentFG, l.Style.CurrentBG
-		noteFG, on = fg, currentGround
+		noteFG, lifted = fg, true
 	}
 	v.Fill(grid.Cell{Rune: ' ', FG: fg, BG: bg, Width: 1})
 
@@ -537,18 +537,8 @@ func (l *List) paintRow(v grid.View, row ListRow, selected bool, y, rows int) {
 		attr = grid.AttrBold
 	}
 	v.SetString(at, 0, grid.Trim(row.Text, max(room-at, 0)), fg, bg, attr)
-	l.paintFill(v, row.Fill, bg, on)
+	l.paintFill(v, row.Fill, fg, bg, lifted)
 }
-
-// rowGround says whose ground a row is drawn on: the list's own, the
-// selected row's, or that of the row in front.
-type rowGround uint8
-
-const (
-	listGround rowGround = iota
-	selectedGround
-	currentGround
-)
 
 // paintFill changes the ground of the first cells of a row to the style's
 // FillBG, for a row saying how far something has got.
@@ -559,10 +549,12 @@ const (
 // own (l.buf, buffer.go) and copies each cell out once, unlike a widget
 // that draws straight onto a layer.
 //
-// on says whose ground the row is drawn on. A row with a ground of its own
-// keeps it, blended towards the fill, so that it still reads as the
-// selected row or the one in front and the fill still reads.
-func (l *List) paintFill(v grid.View, fill float64, bg color.RGBA, on rowGround) {
+// lifted says the row has a ground of its own -- the selected row, or the
+// one in front. Such a row keeps that ground, taken half way towards the
+// fill pulled towards fg: a fill that only lifts an already lifted ground
+// cannot be told from no fill, and fg is the one colour that row is known
+// to show.
+func (l *List) paintFill(v grid.View, fill float64, fg, bg color.RGBA, lifted bool) {
 	if math.IsNaN(fill) || fill <= 0 || l.Style.FillBG.A == 0 {
 		// A fill that is not a number fills nothing. It cannot be
 		// clamped, and it must not reach the conversion below.
@@ -570,14 +562,8 @@ func (l *List) paintFill(v grid.View, fill float64, bg color.RGBA, on rowGround)
 	}
 	cols, _ := v.Size()
 	ground := l.Style.FillBG
-	switch on {
-	case selectedGround:
-		ground = grid.Blend(bg, ground, 1, 2)
-	case currentGround:
-		// Further than on the selected row: the ground of the row in
-		// front is only just lifted off the list's, so half the fill
-		// cannot be told from no fill at all.
-		ground = grid.Blend(bg, ground, 2, 3)
+	if lifted {
+		ground = grid.Blend(bg, grid.Blend(ground, fg, 1, 3), 1, 2)
 	}
 	// Clamped before the conversion, so nothing outside 0 to 1 -- an
 	// infinity among it -- becomes a width.

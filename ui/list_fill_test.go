@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/marrasen/gridterm/grid"
+	"github.com/marrasen/gridterm/vt"
 )
 
 // A row with a fill washes the ground of that share of its width, and
@@ -72,40 +73,83 @@ func TestListFillsTheSelectedRowWithoutLosingIt(t *testing.T) {
 	if far != l.Style.SelectedBG {
 		t.Fatalf("the unfilled half of the selected row is on %v, want %v", far, l.Style.SelectedBG)
 	}
-	// Half way between the two, pinned rather than only "different": a
-	// blend that crept towards either end would lose the selection or the
-	// fill, and both have to read.
-	if want := grid.Blend(l.Style.SelectedBG, filled, 1, 2); near != want {
-		t.Fatalf("the filled half of the selected row is on %v, want the half blend %v", near, want)
+	// Half way between the row's ground and the fill pulled towards the
+	// row's own text colour, pinned rather than only "different": a blend
+	// that crept towards either end would lose the selection or the fill,
+	// and both have to read.
+	want := grid.Blend(l.Style.SelectedBG, grid.Blend(filled, l.Style.SelectedFG, 1, 3), 1, 2)
+	if near != want {
+		t.Fatalf("the filled half of the selected row is on %v, want %v", near, want)
 	}
 }
 
-// The row in front blends further towards the fill than the selected row
-// does. Its own ground is only just lifted off the list's, so half the
-// fill reads as no fill at all.
-func TestListFillsTheRowInFrontFurther(t *testing.T) {
-	filled := color.RGBA{R: 20, G: 40, B: 90, A: 255}
-	l := newTestList(t, []ListRow{
-		{Text: "one.txt to halfway", Depth: 1, Fill: 0.5, Key: 1},
-	}, 40, 4)
-	l.Style.FillBG = filled
-	l.Style.CurrentFG = l.Style.FG
-	l.Style.CurrentBG = grid.Blend(l.Style.BG, l.Style.FG, 1, 6)
-	// Without the keys, so the row is the one in front rather than the
-	// selected one.
-	l.SetFocus(false)
-	l.SetCurrent(1)
-	g := drawList(l, 40, 4)
+// panelStyle is the sidebar's own colours, taken from the default palette
+// the way newPanel builds them.
+//
+// The fill is drawn in these, so this is the palette it has to read in: a
+// fill that reads on colours made up for a test proves nothing.
+func panelStyle() ListStyle {
+	p := vt.DefaultPalette()
+	return ListStyle{
+		FG:         p.FG,
+		BG:         grid.Blend(p.BG, p.ANSI[4], 1, 20),
+		BGEnd:      grid.Blend(p.BG, p.ANSI[4], 1, 8),
+		SelectedFG: p.BG,
+		SelectedBG: p.FG,
+		CurrentFG:  p.FG,
+		CurrentBG:  grid.Blend(p.BG, p.FG, 1, 6),
+		NoteFG:     p.ANSI[8],
+		HeaderFG:   p.ANSI[6],
+		FillBG:     grid.Blend(p.BG, p.ANSI[4], 1, 3),
+	}
+}
 
-	near, far := g.At(0, 0).BG, g.At(39, 0).BG
-	if far != l.Style.CurrentBG {
-		t.Fatalf("the unfilled half of the row in front is on %v, want %v", far, l.Style.CurrentBG)
-	}
-	if want := grid.Blend(l.Style.CurrentBG, filled, 2, 3); near != want {
-		t.Fatalf("the filled half of the row in front is on %v, want %v", near, want)
-	}
-	if half := grid.Blend(l.Style.CurrentBG, filled, 1, 2); near == half {
-		t.Fatal("the row in front takes the same half blend as the selected row, which barely reads on it")
+// fillReads is the contrast a filled part of a row has to reach against
+// the rest of that row, and textReads what the text on it has to reach.
+// Both are the WCAG ratios: 1.5 for a change of ground, 4.5 for text.
+const (
+	fillReads = 1.5
+	textReads = 4.5
+)
+
+// A row with a ground of its own still shows the fill, on the colours the
+// sidebar really uses.
+//
+// Measured as a contrast ratio rather than as a blend fraction. The row in
+// front is already lifted off the list's ground, so most of the way
+// towards the fill still left the two within 1.19:1 of each other, which
+// is a fill nobody can see.
+func TestListFillReadsOnARowWithAGroundOfItsOwn(t *testing.T) {
+	rows := []ListRow{{Text: "one.txt to halfway", Depth: 1, Fill: 0.5, Key: 1}}
+
+	for _, c := range []struct {
+		what    string
+		focused bool
+		fg, bg  color.RGBA
+	}{
+		{"the row in front", false, panelStyle().CurrentFG, panelStyle().CurrentBG},
+		{"the selected row", true, panelStyle().SelectedFG, panelStyle().SelectedBG},
+	} {
+		l := newTestList(t, rows, 40, 4)
+		l.Style = panelStyle()
+		// The row in front is the one without the keys: with them it is
+		// the selected row, which is the other case.
+		l.SetFocus(c.focused)
+		l.SetCurrent(1)
+		g := drawList(l, 40, 4)
+
+		near, far := g.At(0, 0).BG, g.At(39, 0).BG
+		if far != c.bg {
+			t.Errorf("the unfilled half of %s is on %v, want its own ground %v", c.what, far, c.bg)
+		}
+		if got := grid.Contrast(near, far); got < fillReads {
+			t.Errorf("the fill on %s is %.2f:1 against that row's ground, want at least %.1f",
+				c.what, got, fillReads)
+		}
+		if got := grid.Contrast(c.fg, near); got < textReads {
+			t.Errorf("the text over the fill on %s is %.2f:1, want at least %.1f",
+				c.what, got, textReads)
+		}
 	}
 }
 

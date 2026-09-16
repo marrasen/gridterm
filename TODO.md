@@ -38,26 +38,28 @@ Asked for on 2026-09-16, answering the question about capping kept
 panes: the way to stop them piling up is to make the old pane the
 obvious place to go back to.
 
-1. **A button on a dead pane's row connects to the same server again,
-   in that pane.** The transcript stays where it is and the new session
-   carries on underneath it, so going back to a machine reuses the tab
-   instead of opening another.
-   - **What the row shows.** A finished row draws a cross when its
-     entry has a `Clear`, and a pane's entry has none, deliberately.
-     This is a different button on the same column, and `openHostMenu`
-     already dispatches the button by row key.
-   - **What the pane needs.** A terminal owns its session from the
-     moment it is built, so reusing the pane means giving an existing
-     `*term.Terminal` a new session while it keeps its grid and its
-     emulator. That is what keeps the scrollback.
+1. **The pane asks.** A pane whose program has gone puts a question on
+   its last row -- "Connection closed. Reconnect?" with Yes and Close
+   -- and the user picks, or leaves it and goes to another tab. The
+   pane is where the user is looking, so a connection that drops in
+   front of them says so there rather than going quietly grey on a
+   sidebar they may have hidden.
+   - **Done.** `Terminal.Restart` puts a new session under an existing
+     terminal, keeping the grid and the emulator, which is what keeps
+     the transcript.
+   - **The question itself** is the widget's to draw and the window's
+     to word. It is not written into the emulator: the transcript is
+     the program's.
    - **What to reconnect to.** The entry knows the host and the kind.
      A local shell starts the shell it ran; a pane on a machine
      reconnects to it and opens a shell; a command runs again. Each
      pane has to remember how it was started, which nothing records
-     today.
-   - **The size.** A dead pane's emulator is frozen at the size it died
-     at. Coming back to life it has to take the size the pane really
-     is now, which reflows the scrollback the way any resize does.
+     today. A machine that has to be dialled first goes through
+     `openRoute`, so `opening` needs to say "into this pane" the way
+     `at` says which split.
+   - **The wording depends on how it ended.** A shell the user typed
+     exit into did not have its connection closed, and the question
+     has to say what really happened.
 
 ## The agent, through MCP
 

@@ -264,11 +264,10 @@ type app struct {
 	// and blitted to fit.
 	scaled map[*term.Terminal]*scaledPane
 
-	// scaledHeld is the scaled pane a press was taken by, and
-	// scaledButton the button it is waiting for, so a drag that wandered
-	// off the pane still belongs to it.
-	scaledHeld   *scaledPane
-	scaledButton input.MouseButton
+	// scaledHeld keeps the pointer for a pane drawn scaled, the way Root
+	// keeps it for a widget in the tree: a drag that wandered off the
+	// pane still belongs to it.
+	scaledHeld ui.MouseCapture
 
 	// pointer is the pixel the mouse was last read at, for routing a
 	// click by something other than the window's cells.

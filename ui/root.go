@@ -193,6 +193,15 @@ func (r *Root) PopModal() Widget {
 // the pointer has since gone.
 func (r *Root) Holding() Widget { return r.held.Holder() }
 
+// Held reports whether a button is down that the tree is keeping the
+// pointer for, whether or not the widget that took the press is still
+// there.
+//
+// Holding is not the same question: a widget that left the tree is
+// abandoned and its release is owed to nobody, which is a release
+// nothing else may have either.
+func (r *Root) Held() bool { return r.held.Held() }
+
 // Modal returns the topmost dialog, or nil when none is open.
 func (r *Root) Modal() Widget {
 	if len(r.modals) == 0 {

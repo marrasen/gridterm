@@ -3,6 +3,7 @@ package render
 import (
 	"image"
 	"image/color"
+	"math"
 
 	"github.com/hajimehoshi/ebiten/v2"
 
@@ -43,10 +44,10 @@ type Layer struct {
 
 	// Scale shrinks or blows up the texture as it is blitted, for a grid
 	// drawn at a size the room it goes in cannot hold. 0 and 1 both mean
-	// none.
+	// none, and the texture keeps the grid's own pixel size either way.
 	//
-	// The texture keeps the grid's own pixel size, so the text is
-	// rasterised once at full size and the scaling costs one blit.
+	// It does not carry to Frost, whose rectangle is in screen pixels, so
+	// a scaled layer takes no glass.
 	Scale float64
 
 	// Geom is where the layer's grid lands in pixels, for a layer whose
@@ -231,7 +232,8 @@ type placement struct {
 
 	// scale is how big the texture is blitted, because a layer drawn at
 	// a different size covers different pixels with no cell of its grid
-	// touched.
+	// touched. Never a NaN: one would compare unequal to itself and wipe
+	// the screen every frame.
 	scale float64
 
 	// frost is where the glass is, because moving it changes the screen
@@ -407,10 +409,9 @@ func (c *Compositor) Draw(screen *ebiten.Image) {
 }
 
 // blitOp is how a layer's texture goes on screen: scaled if it asked to
-// be, then moved to its place.
-//
-// Linear filtering while it is scaled, because text shrunk by anything
-// but a whole number is a mess when the nearest pixel is taken.
+// be and then moved to its place, with linear filtering while it is
+// scaled, because text shrunk by a fraction is a mess under the nearest
+// pixel.
 func blitOp(l *Layer) *ebiten.DrawImageOptions {
 	op := &ebiten.DrawImageOptions{}
 	if s := l.Scale; s > 0 && s != 1 {
@@ -461,6 +462,9 @@ func (c *Compositor) markAllStale() {
 // mark the layer behind as well.
 func placementOf(l *Layer) placement {
 	p := placement{l: l, x: l.X, y: l.Y, hidden: l.Hidden, scale: l.Scale}
+	if math.IsNaN(p.scale) {
+		p.scale = 0
+	}
 	if l.Frost != nil {
 		p.frost = l.Frost.Rect
 	}

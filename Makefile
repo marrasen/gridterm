@@ -17,10 +17,11 @@ GO_WIN = GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go
 all: test windows
 
 # Everything testable without a display, which is most of the logic.
-# glyph and main are here because their tests only cover font selection.
-# render is here because ebiten allocates textures without a window: the
-# compositor tests check the code path and the frame accounting, not the
-# pixels, which still need a real window to judge.
+# glyph is here because its tests only cover font selection. render and
+# main are here because ebiten allocates textures without a window: they
+# drive the widget tree and the compositor and check the code path and
+# the frame accounting, not the pixels, which still need a real window
+# to judge.
 test:
 	go test . ./conns ./glyph ./grid/... ./input ./internal/... ./meter ./agent ./mcp ./remote ./serve ./jobs ./render ./ui/... ./vfs/... ./vt/... ./session/...
 

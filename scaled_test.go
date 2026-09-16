@@ -329,24 +329,41 @@ func TestAClickOnAScaledScreenLandsOnTheCellUnderIt(t *testing.T) {
 }
 
 // dragOnScreen presses on one cell of a scaled screen and releases on
-// another, the way the window's own mouse reader does it: a pixel, the
-// cell the window makes of it, and the event.
+// another.
 func dragOnScreen(t *testing.T, a *testApp, s *scaledPane, x0, y0, x1, y1 int) {
 	t.Helper()
-	send := func(kind input.MouseKind, x, y int) {
-		px, py := pixelOfCell(s, x, y)
-		col, row := a.cellAt(px, py)
-		ev := input.MouseEvent{Kind: kind, Button: input.MouseLeft, Col: col, Row: row}
-		if kind == input.MouseMove {
-			ev.Button = input.MouseNone
-		}
-		if _, err := a.routeMouse(ev); err != nil {
-			t.Fatalf("%v on the scaled screen: %v", kind, err)
-		}
+	onCell(t, a, s, input.MousePress, x0, y0)
+	onCell(t, a, s, input.MouseMove, x1, y1)
+	onCell(t, a, s, input.MouseRelease, x1, y1)
+}
+
+// onCell sends one event on a cell of a scaled screen. A move carries
+// the button that is down, the way the window's own mouse reader sends
+// it.
+func onCell(t *testing.T, a *testApp, s *scaledPane, kind input.MouseKind, x, y int) bool {
+	t.Helper()
+	px, py := pixelOfCell(s, x, y)
+	return mouseAt(t, a, kind, input.MouseLeft, px, py)
+}
+
+// mouseAt sends one event at a pixel the way the window's own reader
+// does it: the cell the window makes of the pixel, then the event
+// through the window's own routing.
+func mouseAt(t *testing.T, a *testApp, kind input.MouseKind, button input.MouseButton, px, py int) bool {
+	t.Helper()
+	col, row := a.cellAt(px, py)
+	took, err := a.routeMouse(input.MouseEvent{Kind: kind, Button: button, Col: col, Row: row})
+	if err != nil {
+		t.Fatalf("%v at %d,%d: %v", kind, px, py, err)
 	}
-	send(input.MousePress, x0, y0)
-	send(input.MouseMove, x1, y1)
-	send(input.MouseRelease, x1, y1)
+	return took
+}
+
+// pixelOfWindowCell is the middle of one of the window's own cells.
+func pixelOfWindowCell(a *testApp, col, row int) (px, py int) {
+	left, width := a.geo.ColBox(col, col+1)
+	top, height := a.geo.RowBox(row, row+1)
+	return left + width/2, top + height/2
 }
 
 // pixelOfCell is the middle of one cell of a scaled screen, on the

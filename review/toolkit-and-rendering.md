@@ -70,9 +70,10 @@ unclamped as selection anchors.
 And the machine the pane runs on is never told. `refreshPanel` writes
 only "watched by 1". The `farNote` machinery that says *"at 120x40"* is
 used only on the pane that is *watching*, never on the pane whose size
-was taken. `Terminal.Box()` and `Terminal.Held()` have **no callers
-outside tests** -- the feature's read side was never wired. `Terminal.
-Dirty()` is dead too.
+was taken. `Terminal.Box()` and `Terminal.Held()` had **no callers
+outside tests** when this was written -- the feature's read side was
+never wired. Both are read by `panel.go` and by `scaled.go` now.
+`Terminal.Dirty()` is dead too.
 
 Naming hazard: `Terminal.Box() ui.Size` collides with the toolkit's
 `Boxed.Box() Rect` contract. Different signature, so no confusion for
@@ -82,6 +83,17 @@ Partly closed by 4bc67cc Give the taken-over windows a type with its invariant w
 `Layout` still ignores the size while a pane is held, the cursor and the
 mouse are still clipped to the box, and `Terminal.Dirty()` still has no
 caller. That is Step 5 of `review/todo-plan.md`.
+
+Partly closed by 6105bef Scale a held screen down so all of it is visible.
+A screen bigger than its box is drawn whole: on a grid and a layer of
+its own, blitted to fit, with the cursor on it and clicks mapped back
+through the scale. `Layout` still ignores the size while held, which is
+what the feature rests on.
+
+Still open: the smaller-than-box half. A held screen that does not fill
+its box is drawn in the tree as before, and a click past the last column
+or row of it is used as a selection anchor unclamped. `Terminal.Dirty()`
+still has no caller.
 
 ### 4. Every widget handles modifiers differently, and `Form` not at all
 

@@ -56,6 +56,9 @@ func (a *app) showModal(w ui.Widget, onHidden func()) func() {
 		layer:    &render.Layer{Grid: g, Transparent: true, Frost: a.frost()},
 		onHidden: onHidden,
 	}
+	// A drag on a pane drawn scaled is routed outside the tree, so
+	// PushModal does not reach it: its release is not coming either.
+	a.scaledHeld.Abandon()
 	if !a.root.PushModal(w) {
 		// Already on the stack. Keeping a second record of it here would
 		// leave a dialog drawn on a layer that nothing routes keys to.

@@ -9,20 +9,24 @@ import (
 	"github.com/marrasen/gridterm/ui/term"
 )
 
+// mostScaledPixels is the biggest texture a screen may be drawn on, each
+// way.
+//
+// The size is a watcher's to choose, so it is bounded rather than
+// trusted: 4096 is a texture every GPU this runs on can make, and a
+// screen past it is left to the tree and clipped, as it was before.
+const mostScaledPixels = 4096
+
 // scaledPane is a pane whose screen is bigger than the room the layout
 // has for it, drawn on a grid of its own and blitted to fit.
 //
-// A held screen is the case: somebody watching from another machine set
-// the size, so the screen is the shape their window wants and this one
-// draws it in whatever room its own layout gives that pane. Copied cell
-// by cell into that room, the columns and rows past it would simply not
-// be there.
-//
-// The picture keeps its shape and is centred in the room, so what is
-// left over is a band of the same width at each end rather than all of
-// it at one.
+// A held screen is the case: the size is the watcher's, and copied cell
+// by cell into the room this window has, the columns and rows past it
+// would not be there at all. The picture keeps its shape and is centred
+// in that room.
 type scaledPane struct {
 	pane  *term.Terminal
+	full  fullScreen
 	g     *grid.Grid
 	geo   render.Geometry
 	layer *render.Layer
@@ -42,7 +46,7 @@ type scaledPane struct {
 // newScaledPane puts a pane's whole screen on a grid and a layer of its
 // own, hidden until it has been placed.
 func newScaledPane(pane *term.Terminal, g *grid.Grid) *scaledPane {
-	s := &scaledPane{pane: pane, g: g}
+	s := &scaledPane{pane: pane, full: fullScreen{pane}, g: g}
 	s.layer = &render.Layer{Grid: g, Hidden: true, Geom: &s.geo}
 	return s
 }
@@ -57,9 +61,9 @@ func (s *scaledPane) place(area ui.Rect, geo *render.Geometry, m glyph.Metrics) 
 	s.boxLeft, s.boxWidth = geo.ColBox(area.X, area.X+area.Cols)
 	s.boxTop, s.boxHeight = geo.RowBox(area.Y, area.Y+area.Rows)
 	w, h := s.geo.Width(), s.geo.Height()
-	// Never above 1: the room can be a pixel or two wider than the
-	// screen needs -- the window shares out the pixels it has over --
-	// and blowing the text up to fill that would be worse than the band.
+	// Never above 1, because the room can be a pixel or two wider than
+	// the screen needs and blowing the text up to fill that would be
+	// worse than the band.
 	s.scale = min(float64(s.boxWidth)/float64(w), float64(s.boxHeight)/float64(h), 1)
 	s.width, s.height = int(float64(w)*s.scale), int(float64(h)*s.scale)
 	s.left = s.boxLeft + (s.boxWidth-s.width)/2
@@ -70,7 +74,7 @@ func (s *scaledPane) place(area ui.Rect, geo *render.Geometry, m glyph.Metrics) 
 }
 
 // draw paints the pane's whole screen onto its own grid.
-func (s *scaledPane) draw() { ui.DrawApart(fullScreen{s.pane}, s.g.View()) }
+func (s *scaledPane) draw() { ui.DrawApart(s.full, s.g.View()) }
 
 // contains reports whether a pixel is in the room the pane was given.
 func (s *scaledPane) contains(px, py int) bool {
@@ -83,6 +87,10 @@ func (s *scaledPane) contains(px, py int) bool {
 //
 // A pixel in the band around the picture counts as the nearest cell of
 // it, the way a drag past the edge of the window selects to the edge.
+//
+// The pixel is exact, but a move is only read when the pointer changes
+// one of the window's cells, so a drag moves the selection a window
+// cell at a time however many of the pane's cells that is.
 func (s *scaledPane) cellAt(px, py int) (col, row int) {
 	cols, rows := s.g.Size()
 	if s.scale <= 0 {
@@ -105,9 +113,8 @@ func (f fullScreen) Draw(v grid.View) { f.DrawScreen(v) }
 // grid and a layer of its own, and takes them away again when the screen
 // fits.
 //
-// Every frame rather than on a resize: the size of a held screen is set
-// by somebody on another machine, and it changes when they resize their
-// window rather than when anything happens here.
+// Every frame, because the size of a held screen is set by somebody on
+// another machine and changes when they resize their window.
 func (a *app) placeScaled() {
 	// Nothing to place before the window has a grid and a compositor to
 	// put a layer on.
@@ -119,10 +126,19 @@ func (a *app) placeScaled() {
 			a.dropScaled(pane, s)
 		}
 	}
+	cellW, cellH := a.renderer.CellSize()
 	for pane := range a.panes {
 		s := a.scaled[pane]
+		// The cheap questions first: an idle window asks the tree where
+		// nothing is, and walking it allocates.
+		if !overflows(pane) || !fitsATexture(pane.Size(), cellW, cellH) {
+			if s != nil {
+				a.dropScaled(pane, s)
+			}
+			continue
+		}
 		area, shown := a.paneArea(pane)
-		if !shown || !overflows(pane) {
+		if !shown {
 			if s != nil {
 				a.dropScaled(pane, s)
 			}
@@ -151,10 +167,9 @@ func (a *app) dropScaled(pane *term.Terminal, s *scaledPane) {
 	pane.SetElsewhere(false)
 	a.comp.Remove(s.layer)
 	delete(a.scaled, pane)
-	if a.scaledHeld == s {
-		// The press it took will never be released by it.
-		pane.CancelGesture()
-		a.scaledHeld = nil
+	if a.scaledHeld.Holder() == ui.Widget(pane) {
+		// Its release is not coming, and nothing else may have it.
+		a.scaledHeld.Abandon()
 	}
 	a.markDirty()
 }
@@ -164,6 +179,12 @@ func (a *app) dropScaled(pane *term.Terminal, s *scaledPane) {
 func overflows(pane *term.Terminal) bool {
 	size, box := pane.Size(), pane.Box()
 	return pane.Held() && (size.Cols > box.Cols || size.Rows > box.Rows)
+}
+
+// fitsATexture reports whether a screen that size can be drawn on a
+// texture of its own.
+func fitsATexture(size ui.Size, cellW, cellH int) bool {
+	return size.Cols*cellW <= mostScaledPixels && size.Rows*cellH <= mostScaledPixels
 }
 
 // paneArea is where a pane sits in the window, in the window's cells.
@@ -176,11 +197,7 @@ func (a *app) paneArea(pane ui.Widget) (ui.Rect, bool) {
 }
 
 // addUnderModals puts a layer on the stack below any dialog that is
-// open.
-//
-// Add puts it on top, which is where a pane's layer must not be: a pane
-// that started being drawn on one while a dialog was up would be drawn
-// over the dialog.
+// open, because Add puts it on top and a pane must not cover a dialog.
 func (a *app) addUnderModals(l *render.Layer) {
 	a.comp.Add(l)
 	if len(a.modals) == 0 {
@@ -212,48 +229,79 @@ func (a *app) isModalLayer(l *render.Layer) bool {
 	return false
 }
 
-// routeMouse sends one mouse event to whoever should have it.
+// routeMouse sends one mouse event to whoever should have it: the scaled
+// pane holding the pointer, one under the pointer, or the widget tree.
 //
-// A pane drawn scaled has more cells than the room the tree gave it, and
-// the tree can only name a cell inside that room, so the pointer is
-// mapped through the scale here and the event goes straight to the pane.
+// A pane drawn scaled is routed here rather than through the tree,
+// because the tree can only name a cell inside the room it gave the
+// pane and the screen has more cells than that.
 func (a *app) routeMouse(ev input.MouseEvent) (bool, error) {
-	s := a.scaledFor()
+	if a.scaledHeld.Held() {
+		if s := a.holdingScaled(); s != nil {
+			return a.deliverScaled(s, ev, true)
+		}
+		// The pane that took the press is not drawn scaled any more. Its
+		// release belongs to nobody, the same rule Root keeps for a
+		// widget that left the tree.
+		switch {
+		case ev.Button.IsWheel():
+		case ev.Kind == input.MousePress && a.scaledHeld.Waiting(ev.Button):
+			// Pressing a button that is supposedly already down proves
+			// its release was lost.
+			a.scaledHeld.Release()
+		default:
+			a.scaledHeld.Take(nil, ev)
+			return false, nil
+		}
+	}
+	s := a.scaledUnder()
 	if s == nil {
 		return a.root.HandleMouse(ev)
 	}
+	return a.deliverScaled(s, ev, false)
+}
+
+// deliverScaled maps the pointer through the scale and hands the event
+// to the pane.
+//
+// held says the pane already has the pointer, in which case it keeps it
+// until the button it took comes up. A fresh press is only taken if the
+// pane acted on it, so a button it declines starts no drag.
+func (a *app) deliverScaled(s *scaledPane, ev input.MouseEvent, held bool) (bool, error) {
 	local := ev
 	local.Col, local.Row = s.cellAt(a.pointer[0], a.pointer[1])
-	switch {
-	case ev.Kind == input.MousePress && !ev.Button.IsWheel():
-		a.scaledHeld, a.scaledButton = s, ev.Button
+	if held {
+		a.scaledHeld.Take(s.pane, local)
+		return ui.HandleMouse(s.pane, local)
+	}
+	starts := ev.Kind == input.MousePress && !ev.Button.IsWheel()
+	if starts {
 		// Clicking a pane is how the mouse moves focus, the same as in
-		// the tree.
+		// the tree, whether or not the pane wants the button.
 		if ui.FocusedLeaf(a.root.Widget()) != ui.Widget(s.pane) {
 			a.focus(s.pane)
 		}
-	case ev.Kind == input.MouseRelease && a.scaledHeld == s && a.scaledButton == ev.Button:
-		a.scaledHeld = nil
 	}
-	return ui.HandleMouse(s.pane, local)
+	handled, err := ui.HandleMouse(s.pane, local)
+	if starts && handled {
+		a.scaledHeld.Take(s.pane, local)
+	}
+	return handled, err
 }
 
-// scaledFor is the scaled pane an event belongs to, or nil when the tree
-// should have it.
-//
-// A press on one keeps the pointer until the button comes up, the way
-// Root keeps it for the widget that took a press: a drag that has
-// wandered off the pane still belongs to it.
-func (a *app) scaledFor() *scaledPane {
-	if held := a.scaledHeld; held != nil {
-		if a.scaled[held.pane] == held && a.root.Modal() == nil {
-			return held
-		}
-		// A dialog opened over the pane, so the release is not coming.
-		held.pane.CancelGesture()
-		a.scaledHeld = nil
+// holdingScaled is the scaled pane the pointer is being kept for, or nil
+// when the pane it was kept for is not drawn scaled any more.
+func (a *app) holdingScaled() *scaledPane {
+	pane, ok := a.scaledHeld.Holder().(*term.Terminal)
+	if !ok {
 		return nil
 	}
+	return a.scaled[pane]
+}
+
+// scaledUnder is the scaled pane the pointer is over, or nil when the
+// tree should have the event.
+func (a *app) scaledUnder() *scaledPane {
 	switch {
 	case len(a.scaled) == 0:
 		return nil
@@ -261,9 +309,9 @@ func (a *app) scaledFor() *scaledPane {
 		// A dialog is drawn on the window's own grid, over the pane as
 		// much as anywhere else.
 		return nil
-	case a.root.Holding() != nil:
+	case a.root.Held():
 		// A drag that began somewhere else belongs to whoever took the
-		// press.
+		// press, and a release the tree is still owed belongs to nobody.
 		return nil
 	}
 	for _, s := range a.scaled {

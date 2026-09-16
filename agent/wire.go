@@ -24,6 +24,15 @@ type ask struct {
 	// Text is what to type, for "send".
 	Text string `json:"text,omitempty"`
 
+	// Keys are the keys to press after the text, by name, for "send".
+	// See KeyNames.
+	Keys []string `json:"keys,omitempty"`
+
+	// Lines is how many lines of the pane to send back, ending at the
+	// bottom of the screen and reaching into what has scrolled off, for
+	// "read" and "wait". Zero is the screen.
+	Lines int `json:"lines,omitempty"`
+
 	// Until is what "wait" is waiting for.
 	Until wait `json:"until,omitempty"`
 }
@@ -55,7 +64,11 @@ type wait struct {
 // shell blind is enough. What it cannot do is choose the first bytes:
 // an HTTP request begins with a request line, and this window hangs up
 // on a first line that is not exactly this.
-const hello = "gridterm-agent-1"
+//
+// It says 2 because a window of the first version reads a "send" with
+// keys in it and presses nothing, and says it typed: an agent turned
+// away is better than one told it pressed Escape when it did not.
+const hello = "gridterm-agent-2"
 
 // said is what the window answers.
 //

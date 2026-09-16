@@ -47,10 +47,14 @@ import (
 // gives back the pane that code names; a code that names nothing, or one
 // the user has taken back, fails. Look and Send then work on the id Use
 // gave, and fail for any other.
+//
+// Look takes how many lines to give back, ending at the bottom of the
+// screen, and zero for the screen. Send types text and then presses the
+// named keys; a name it does not know is refused and nothing is typed.
 type Window interface {
 	Use(code string) (Pane, error)
-	Look(id string) (Look, error)
-	Send(id, text string) error
+	Look(id string, lines int) (Look, error)
+	Send(id, text string, keys []string) error
 }
 
 // Pane is what a code named.
@@ -70,7 +74,8 @@ type Pane struct {
 // Look is a pane as it stands.
 type Look struct {
 	// Screen is what is on it now, as plain text: one line per row,
-	// trailing spaces cut, no escape sequences. An agent reads it the
+	// trailing spaces cut, no escape sequences, and more rows than the
+	// screen has when lines asked for history. An agent reads it the
 	// way the user does.
 	Screen string `json:"screen"`
 

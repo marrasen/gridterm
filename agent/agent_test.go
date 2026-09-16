@@ -21,6 +21,11 @@ type fakeWindow struct {
 	changed uint64
 	gone    bool
 	taken   bool
+
+	// lines is what the last Look was asked for, and pressed is every
+	// key name a Send has carried.
+	lines   int
+	pressed []string
 }
 
 func (w *fakeWindow) Use(code string) (Pane, error) {
@@ -32,9 +37,10 @@ func (w *fakeWindow) Use(code string) (Pane, error) {
 	return Pane{ID: "pane-1", Label: "bash", Cols: 80, Rows: 24}, nil
 }
 
-func (w *fakeWindow) Look(id string) (Look, error) {
+func (w *fakeWindow) Look(id string, lines int) (Look, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	w.lines = lines
 	if w.taken {
 		return Look{}, errors.New("the user has taken that pane back")
 	}
@@ -44,7 +50,7 @@ func (w *fakeWindow) Look(id string) (Look, error) {
 	return Look{Screen: w.screen, Gone: w.gone, Changed: w.changed}, nil
 }
 
-func (w *fakeWindow) Send(id, text string) error {
+func (w *fakeWindow) Send(id, text string, keys []string) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.taken {
@@ -54,6 +60,7 @@ func (w *fakeWindow) Send(id, text string) error {
 		return errors.New("no such pane")
 	}
 	w.typed += text
+	w.pressed = append(w.pressed, keys...)
 	return nil
 }
 
@@ -115,7 +122,7 @@ func TestAnAgentReadsAndTypesInThePaneItWasGiven(t *testing.T) {
 	}
 
 	w.say("$ whoami\r\nmarcus\r\n$ ")
-	look, err := c.Read(pane.ID)
+	look, err := c.Read(pane.ID, 0)
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
@@ -123,7 +130,7 @@ func TestAnAgentReadsAndTypesInThePaneItWasGiven(t *testing.T) {
 		t.Errorf("it read %q", look.Screen)
 	}
 
-	if err := c.Send(pane.ID, "uptime\r"); err != nil {
+	if err := c.Send(pane.ID, "uptime\r", nil); err != nil {
 		t.Fatalf("send: %v", err)
 	}
 	if got := w.sentText(); got != "uptime\r" {
@@ -143,10 +150,10 @@ func TestWithoutACodeAnAgentCanDoNothing(t *testing.T) {
 
 	// The pane is there and the agent knows its name, having guessed
 	// it. Without a code that is not enough.
-	if _, err := c.Read("pane-1"); err == nil {
+	if _, err := c.Read("pane-1", 0); err == nil {
 		t.Error("it read a pane it was never handed")
 	}
-	if err := c.Send("pane-1", "rm -rf /\r"); err == nil {
+	if err := c.Send("pane-1", "rm -rf /\r", nil); err == nil {
 		t.Error("it typed into a pane it was never handed")
 	}
 	if got := w.sentText(); got != "" {
@@ -197,10 +204,10 @@ func TestOneAgentCannotReachAnothersPane(t *testing.T) {
 	}
 	defer func() { _ = theirs.Close() }()
 
-	if _, err := theirs.Read(pane.ID); err == nil {
+	if _, err := theirs.Read(pane.ID, 0); err == nil {
 		t.Error("it read a pane handed to somebody else")
 	}
-	if err := theirs.Send(pane.ID, "x"); err == nil {
+	if err := theirs.Send(pane.ID, "x", nil); err == nil {
 		t.Error("it typed into a pane handed to somebody else")
 	}
 	if got := w.sentText(); got != "" {
@@ -221,16 +228,16 @@ func TestTakingAPaneBackStopsTheAgent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("use: %v", err)
 	}
-	if _, err := c.Read(pane.ID); err != nil {
+	if _, err := c.Read(pane.ID, 0); err != nil {
 		t.Fatalf("read: %v", err)
 	}
 
 	w.takeBack()
 
-	if _, err := c.Read(pane.ID); err == nil {
+	if _, err := c.Read(pane.ID, 0); err == nil {
 		t.Error("it read a pane the user had taken back")
 	}
-	if err := c.Send(pane.ID, "x"); err == nil {
+	if err := c.Send(pane.ID, "x", nil); err == nil {
 		t.Error("it typed into a pane the user had taken back")
 	}
 	if got := w.sentText(); got != "" {
@@ -266,7 +273,7 @@ func TestWaitingComesBackWhenThePaneGoesQuiet(t *testing.T) {
 		w.say("$ ")
 	}()
 
-	look, timedOut, err := c.Wait(pane.ID, Until{QuietMS: 150, TimeoutMS: 10000})
+	look, timedOut, err := c.Wait(pane.ID, 0, Until{QuietMS: 150, TimeoutMS: 10000})
 	if err != nil {
 		t.Fatalf("wait: %v", err)
 	}
@@ -294,7 +301,7 @@ func TestWaitingForSomethingThatNeverComesGivesUp(t *testing.T) {
 		t.Fatalf("use: %v", err)
 	}
 
-	look, timedOut, err := c.Wait(pane.ID, Until{Contains: "never", TimeoutMS: 200})
+	look, timedOut, err := c.Wait(pane.ID, 0, Until{Contains: "never", TimeoutMS: 200})
 	if err != nil {
 		t.Fatalf("wait: %v", err)
 	}
@@ -415,7 +422,7 @@ func TestClosingHangsUpOnEveryAgent(t *testing.T) {
 	if err := s.Close(); err != nil {
 		t.Fatalf("close: %v", err)
 	}
-	if _, err := c.Read("pane-1"); err == nil {
+	if _, err := c.Read("pane-1", 0); err == nil {
 		t.Error("it went on working in a pane of a window that has gone")
 	}
 }
@@ -538,7 +545,7 @@ func TestAWaitEndsWhenTheWindowStops(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		_, _, _ = c.Wait(pane.ID, Until{Contains: "never", TimeoutMS: 60000})
+		_, _, _ = c.Wait(pane.ID, 0, Until{Contains: "never", TimeoutMS: 60000})
 	}()
 
 	if err := s.Close(); err != nil {
@@ -588,7 +595,7 @@ func TestWaitingForTextComesBackWhileThePaneIsStillBusy(t *testing.T) {
 		}
 	}()
 
-	look, timedOut, err := c.Wait(pane.ID, Until{
+	look, timedOut, err := c.Wait(pane.ID, 0, Until{
 		Contains: "Listening on port", QuietMS: 60000, TimeoutMS: 10000,
 	})
 	if err != nil {
@@ -719,12 +726,12 @@ func TestAWindowThatWentSaysSoEveryTime(t *testing.T) {
 	}
 
 	for i := 0; i < 3; i++ {
-		_, err := c.Read(pane.ID)
+		_, err := c.Read(pane.ID, 0)
 		if !errors.Is(err, ErrGone) {
 			t.Errorf("ask %d gave %v", i, err)
 		}
 	}
-	if err := c.Send(pane.ID, "x"); !errors.Is(err, ErrGone) {
+	if err := c.Send(pane.ID, "x", nil); !errors.Is(err, ErrGone) {
 		t.Errorf("typing gave %v", err)
 	}
 	if !c.Gone() {

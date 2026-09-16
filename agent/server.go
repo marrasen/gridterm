@@ -329,7 +329,7 @@ func (s *Server) answer(want ask, held map[string]Pane) said {
 		if _, ok := held[want.Pane]; !ok {
 			return said{Error: notHanded(want.Pane)}
 		}
-		look, err := s.cfg.Window.Look(want.Pane)
+		look, err := s.cfg.Window.Look(want.Pane, want.Lines)
 		if err != nil {
 			return said{Error: err.Error()}
 		}
@@ -339,7 +339,7 @@ func (s *Server) answer(want ask, held map[string]Pane) said {
 		if _, ok := held[want.Pane]; !ok {
 			return said{Error: notHanded(want.Pane)}
 		}
-		if err := s.cfg.Window.Send(want.Pane, want.Text); err != nil {
+		if err := s.cfg.Window.Send(want.Pane, want.Text, want.Keys); err != nil {
 			return said{Error: err.Error()}
 		}
 		return said{OK: true}
@@ -380,7 +380,7 @@ func (s *Server) waitFor(want ask) said {
 		first    = true
 	)
 	for {
-		look, err := s.cfg.Window.Look(want.Pane)
+		look, err := s.cfg.Window.Look(want.Pane, want.Lines)
 		if err != nil {
 			return said{Error: err.Error()}
 		}

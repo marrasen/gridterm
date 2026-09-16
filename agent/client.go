@@ -88,9 +88,10 @@ func (c *Client) Panes() ([]Pane, error) {
 	return got.Panes, nil
 }
 
-// Read is what is on a pane now.
-func (c *Client) Read(id string) (Look, error) {
-	got, err := c.say(ask{Do: "read", Pane: id})
+// Read is what is on a pane now, as the last lines of it. Zero lines is
+// the screen; more than it holds reaches into what has scrolled off.
+func (c *Client) Read(id string, lines int) (Look, error) {
+	got, err := c.say(ask{Do: "read", Pane: id, Lines: lines})
 	if err != nil {
 		return Look{}, err
 	}
@@ -100,16 +101,19 @@ func (c *Client) Read(id string) (Look, error) {
 	return *got.Look, nil
 }
 
-// Send types into a pane.
-func (c *Client) Send(id, text string) error {
-	_, err := c.say(ask{Do: "send", Pane: id, Text: text})
+// Send types text into a pane and then presses the named keys. Either
+// may be empty, and a name the window does not know is refused with the
+// names it has.
+func (c *Client) Send(id, text string, keys []string) error {
+	_, err := c.say(ask{Do: "send", Pane: id, Text: text, Keys: keys})
 	return err
 }
 
 // Wait watches a pane until it says what was asked for, goes quiet, or
-// the time runs out. It reports whether the time ran out.
-func (c *Client) Wait(id string, until Until) (Look, bool, error) {
-	got, err := c.say(ask{Do: "wait", Pane: id, Until: wait(until)})
+// the time runs out. It reports whether the time ran out. Lines is how
+// much of the pane to give back, as for Read.
+func (c *Client) Wait(id string, lines int, until Until) (Look, bool, error) {
+	got, err := c.say(ask{Do: "wait", Pane: id, Lines: lines, Until: wait(until)})
 	if err != nil {
 		return Look{}, false, err
 	}

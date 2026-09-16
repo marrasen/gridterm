@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"os"
 	"strconv"
@@ -15,6 +16,7 @@ import (
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/serve"
 	"github.com/marrasen/gridterm/session"
+	"github.com/marrasen/gridterm/settings"
 	"github.com/marrasen/gridterm/ui"
 )
 
@@ -56,6 +58,10 @@ type serving struct {
 
 	// openNow is the copy of that the goroutines serving clients read.
 	openNow shared
+
+	// remembered is what the serve dialog was last set to, kept between
+	// runs. Nil until the window is given its settings.
+	remembered *settings.Settings
 }
 
 // newServing builds a serving with nothing listening and no rows for
@@ -96,6 +102,43 @@ func (s *serving) clients() []*serve.Client {
 // usePaths points the key and the allowed list at a directory of a
 // test's own.
 func (s *serving) usePaths(p servePaths) { s.paths = p }
+
+// remember gives the window the settings the serve dialog opens on and
+// writes itself back to.
+func (s *serving) remember(set *settings.Settings) { s.remembered = set }
+
+// startPort is the port the serve dialog opens on: the one last served
+// with, or the default.
+func (s *serving) startPort() int {
+	if s.remembered == nil {
+		return servePort
+	}
+	if port, saved := s.remembered.ServePort(); saved {
+		return port
+	}
+	return servePort
+}
+
+// startReach is how far the serve dialog opens on being reachable from,
+// in the words the dialog uses.
+func (s *serving) startReach() string {
+	if s.remembered == nil {
+		return whereHere
+	}
+	saved, have := s.remembered.ServeReach()
+	if !have {
+		return whereHere
+	}
+	return reachWords(saved)
+}
+
+// rememberServe writes down what the dialog was set to, for the next run.
+func (s *serving) rememberServe(port int, where string) error {
+	if s.remembered == nil {
+		return nil
+	}
+	return s.remembered.PutServe(port, reachSaved(where))
+}
 
 // where is the key and the list of who may connect this window serves
 // with.
@@ -182,7 +225,8 @@ func (s *serving) opens() serve.Snapshot { return s.openNow.get() }
 //
 // Off unless it is turned on, and turned on for this run only: a window
 // that started serving because it did last time would be one that is
-// serving without anybody having decided to today.
+// serving without anybody having decided to today. What the dialog was
+// last set to is remembered; whether it was answered is not.
 func (a *app) openServing() error {
 	if a.serving.on() {
 		a.showServing()
@@ -225,10 +269,10 @@ func (a *app) openServing() error {
 	f := a.newForm("Serve this window")
 	f.Lines = lines
 	port := f.AddField("Port", a.newField("", 0))
-	port.SetText(strconv.Itoa(servePort))
+	port.SetText(strconv.Itoa(a.serving.startPort()))
 	reach := f.AddField("Reachable from", a.newField("", 0))
 	reach.Options = []string{whereHere, whereAnywhere}
-	reach.SetText(whereHere)
+	reach.SetText(a.serving.startReach())
 	f.Lines = append(f.Lines, "",
 		"Reachable from: ctrl+down and ctrl+up choose. \""+whereAnywhere+"\" is"+
 			" what a Tailscale address needs, and is also what every other"+
@@ -257,6 +301,25 @@ const (
 	whereHere     = "This machine only"
 	whereAnywhere = "Anywhere this machine can be reached"
 )
+
+// reachWords is the dialog's wording for a reach that was written down.
+//
+// Anything but the wider one, exactly, reads back as this machine only:
+// the wider one has to be asked for.
+func reachWords(saved string) string {
+	if saved == settings.ReachAnywhere {
+		return whereAnywhere
+	}
+	return whereHere
+}
+
+// reachSaved is how a choice from the dialog is written down.
+func reachSaved(where string) string {
+	if where == whereAnywhere {
+		return settings.ReachAnywhere
+	}
+	return settings.ReachHere
+}
 
 // listenHost is the address a choice from the dialog means.
 //
@@ -301,7 +364,7 @@ func (a *app) startServing(port, where string) error {
 		return err
 	}
 
-	return a.serving.listen(serve.Config{
+	cfg := serve.Config{
 		Addr:    net.JoinHostPort(host, strconv.Itoa(n)),
 		HostKey: hostKey,
 		Allowed: allowed,
@@ -338,7 +401,49 @@ func (a *app) startServing(port, where string) error {
 		OnError: func(err error) {
 			a.pump.post(func() { a.logError(err) })
 		},
+	}
+	if err := a.serving.listen(cfg); err != nil {
+		return err
+	}
+	// Written down after the port is open, and a failure said rather
+	// than stopping a window that is already serving. Posted, because
+	// closing a dialog takes anything stacked on top of it.
+	if err := a.serving.rememberServe(n, where); err != nil {
+		a.pump.post(func() {
+			a.reportError("Could not remember what the serve dialog was set to", err)
+		})
+	}
+	return nil
+}
+
+// useSettings gives the window what it remembers between runs, and says
+// on its first frame when the settings could not be read.
+func (a *app) useSettings(set *settings.Settings) {
+	a.serving.remember(set)
+	err := set.Err()
+	if err == nil {
+		return
+	}
+	a.pump.post(func() {
+		a.reportError("The settings could not be read", errors.Join(err,
+			errors.New("gridterm will not write over them until they are repaired")))
 	})
+}
+
+// openSettings reads the settings file, and gives back settings that
+// remember nothing and refuse to save when it could not be read.
+func openSettings() *settings.Settings {
+	path, err := settings.Path()
+	if err != nil {
+		return settings.Unusable(err)
+	}
+	set, err := settings.Load(path)
+	if err != nil {
+		// Kept on the settings and shown in the window rather than only
+		// here: a window opened from an icon has no console to read.
+		log.Print(err)
+	}
+	return set
 }
 
 // stopServing closes the port and hangs up on whoever is connected.

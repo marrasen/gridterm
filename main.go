@@ -176,6 +176,7 @@ func main() {
 	a.machines = newMachines()
 	a.windows = newWindows(a.book)
 	a.serving = newServing()
+	a.useSettings(openSettings())
 	a.agents = newAgents()
 	a.kept = make(map[*term.Terminal]bool)
 	a.tunnels = make(map[*conns.Entry]*tunnel)

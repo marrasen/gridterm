@@ -24,6 +24,7 @@ import (
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/render"
 	"github.com/marrasen/gridterm/session"
+	"github.com/marrasen/gridterm/settings"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/files"
 	"github.com/marrasen/gridterm/ui/term"
@@ -199,6 +200,13 @@ func newTestApp(t *testing.T, cols, rows int) *testApp {
 		t.Fatalf("server list: %v", err)
 	}
 	ta.book = book
+	// Settings of its own too, so no test reads or writes the ones
+	// belonging to whoever is running it.
+	set, err := settings.Load(filepath.Join(t.TempDir(), "settings.json"))
+	if err != nil {
+		t.Fatalf("settings: %v", err)
+	}
+	ta.serving.remember(set)
 	ta.windows = newWindows(book)
 	// Long enough to be a handshake and short enough that a test which
 	// waits one out is not a test that waits twenty seconds.

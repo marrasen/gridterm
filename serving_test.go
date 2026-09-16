@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/pem"
@@ -12,7 +13,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/marrasen/gridterm/input"
 	"github.com/marrasen/gridterm/serve"
+	"github.com/marrasen/gridterm/settings"
 	"github.com/marrasen/gridterm/ui"
 	"golang.org/x/crypto/ssh"
 )
@@ -34,6 +37,32 @@ func withServing(t *testing.T, a *testApp, allowed string) servePaths {
 	}
 	t.Cleanup(func() { _ = a.stopServing() })
 	return paths
+}
+
+// withSettings points a test app's settings at a file of its own and
+// hands back what was loaded, along with why it could not be read.
+func withSettings(t *testing.T, a *testApp, path string) (*settings.Settings, error) {
+	t.Helper()
+	set, err := settings.Load(path)
+	a.useSettings(set)
+	return set, err
+}
+
+// openServeDialog opens the serve dialog the way a user does, from the
+// palette.
+func openServeDialog(t *testing.T, a *testApp) *ui.Form {
+	t.Helper()
+	runFromPalette(t, a, "serve.window")
+	return awaitModal[*ui.Form](t, a, "the serve dialog",
+		byTitle[*ui.Form]("Serve this window"))
+}
+
+// fieldSays checks what a dialog field is showing.
+func fieldSays(t *testing.T, f *ui.Form, label, want string) {
+	t.Helper()
+	if got := f.Field(label).Text(); got != want {
+		t.Errorf("the %q field says %q, want %q", label, got, want)
+	}
 }
 
 // aPublicKey is one line of an authorized_keys file.
@@ -356,4 +385,151 @@ func aKeyFile(t *testing.T) (path, line string) {
 	}
 	return path, strings.TrimSpace(string(ssh.MarshalAuthorizedKey(signer.PublicKey()))) +
 		" marcus@laptop"
+}
+
+// The serve dialog opens on whatever was last served with, rather than
+// asking for the port again every time.
+func TestTheServeDialogOpensOnWhatWasLastServedWith(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withServing(t, a, aPublicKey(t, "marcus@laptop"))
+	set, err := withSettings(t, a, filepath.Join(t.TempDir(), "settings.json"))
+	if err != nil {
+		t.Fatalf("settings: %v", err)
+	}
+
+	f := openServeDialog(t, a)
+	retypeField(t, a, f, "Port", "2300")
+	pressButton(t, a, f, "Serve")
+	pressButton(t, a, awaitModal[*ui.Form](t, a, "the serving dialog", nil), "Stop serving")
+
+	if port, saved := set.ServePort(); !saved || port != 2300 {
+		t.Errorf("the settings hold port %d, %v; want 2300 saved", port, saved)
+	}
+	if reach, saved := set.ServeReach(); !saved || reach != settings.ReachHere {
+		t.Errorf("the settings hold the reach %q, %v; want %q saved",
+			reach, saved, settings.ReachHere)
+	}
+	again := openServeDialog(t, a)
+	fieldSays(t, again, "Port", "2300")
+	fieldSays(t, again, "Reachable from", whereHere)
+}
+
+// And the next window opens on it too: the settings are a file, not a
+// memory of this run.
+func TestAnotherWindowOpensOnTheSameSettings(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	set, err := settings.Load(path)
+	if err != nil {
+		t.Fatalf("settings: %v", err)
+	}
+	// Written rather than served, because serving anywhere opens a port
+	// to the network and a test has no business doing that.
+	if err := set.PutServe(2300, settings.ReachAnywhere); err != nil {
+		t.Fatalf("save the settings: %v", err)
+	}
+
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withServing(t, a, aPublicKey(t, "marcus@laptop"))
+	if _, err := withSettings(t, a, path); err != nil {
+		t.Fatalf("settings: %v", err)
+	}
+
+	f := openServeDialog(t, a)
+
+	fieldSays(t, f, "Port", "2300")
+	fieldSays(t, f, "Reachable from", whereAnywhere)
+}
+
+// A port of 0 means whichever one is free, and it is remembered as that
+// rather than as the port it happened to get.
+func TestNoPortAskedForIsRememberedAsNoPortAskedFor(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withServing(t, a, aPublicKey(t, "marcus@laptop"))
+	set, err := withSettings(t, a, filepath.Join(t.TempDir(), "settings.json"))
+	if err != nil {
+		t.Fatalf("settings: %v", err)
+	}
+
+	f := openServeDialog(t, a)
+	retypeField(t, a, f, "Port", "0")
+	pressButton(t, a, f, "Serve")
+
+	if port, saved := set.ServePort(); !saved || port != 0 {
+		t.Errorf("the settings hold port %d, %v; want 0 saved", port, saved)
+	}
+	pressButton(t, a, awaitModal[*ui.Form](t, a, "the serving dialog", nil), "Stop serving")
+	fieldSays(t, openServeDialog(t, a), "Port", "0")
+}
+
+// Settings that cannot be written are said, and the window goes on
+// serving: the port is open whatever the file did.
+func TestASettingsFileThatWillNotTakeAWriteIsSaid(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withServing(t, a, aPublicKey(t, "marcus@laptop"))
+	// Nothing is there to read, and nothing can be written either: what
+	// the directory would be called is taken by a file.
+	blocked := filepath.Join(t.TempDir(), "gridterm")
+	if _, err := withSettings(t, a, filepath.Join(blocked, "settings.json")); err != nil {
+		t.Fatalf("settings: %v", err)
+	}
+	if err := os.WriteFile(blocked, []byte("not a directory"), 0o600); err != nil {
+		t.Fatalf("block the directory: %v", err)
+	}
+
+	f := openServeDialog(t, a)
+	pressButton(t, a, f, "Serve")
+
+	if !a.serving.on() {
+		t.Fatal("a settings file that would not take a write stopped the window serving")
+	}
+	pressButton(t, a, awaitModal[*ui.Form](t, a, "the serving dialog", nil), "Stop serving")
+	n := awaitModal[*ui.Notice](t, a, "the settings notice", nil)
+	if !strings.Contains(n.Title, "remember") {
+		t.Errorf("the user was told %q, which does not say the settings were not kept", n.Title)
+	}
+}
+
+// Settings nobody could read are said at the start, the dialog opens on
+// the defaults, and serving does not write over the file.
+func TestUnreadableSettingsAreSaidAndNotWrittenOver(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withServing(t, a, aPublicKey(t, "marcus@laptop"))
+	path := filepath.Join(t.TempDir(), "settings.json")
+	if err := os.WriteFile(path, []byte(`{"version": 1, "servePort": 70000}`), 0o600); err != nil {
+		t.Fatalf("write the settings: %v", err)
+	}
+	was, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read the settings: %v", err)
+	}
+	if _, err := withSettings(t, a, path); err == nil {
+		t.Fatal("a port of 70000 loaded clean")
+	}
+
+	n := awaitModal[*ui.Notice](t, a, "the settings notice", nil)
+	if !strings.Contains(n.Message(), "repaired") {
+		t.Errorf("the user was not told to repair the file:\n%s", n.Message())
+	}
+	sendKey(t, a, press(input.KeyEscape, 0))
+
+	f := openServeDialog(t, a)
+	fieldSays(t, f, "Port", strconv.Itoa(servePort))
+	fieldSays(t, f, "Reachable from", whereHere)
+	pressButton(t, a, f, "Serve")
+
+	if !a.serving.on() {
+		t.Fatal("settings that could not be read stopped the window serving")
+	}
+	now, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read the settings again: %v", err)
+	}
+	if !bytes.Equal(was, now) {
+		t.Errorf("the settings were written over:\n%s\nwant\n%s", now, was)
+	}
 }

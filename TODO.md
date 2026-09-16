@@ -7,9 +7,6 @@ each group. A line goes when the work is in and reviewed.
 
 - **"Files" should connect when the machine is not connected**, the way
   "Terminal" does. It should work for an SFTP-only connection too.
-- **Remember what "Serve this window" was set to.** The dialog asks for
-  the port and where it may be reached from every time, starting from
-  the defaults. It should open on whatever was last used.
 
 ## Copying files
 

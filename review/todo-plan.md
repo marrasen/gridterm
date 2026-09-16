@@ -212,6 +212,10 @@ Three commits.
    refuses to save, like the book. **Reading:** the port is saved as
    typed (0 stays 0); serving itself stays off at start; nothing else
    joins the file yet.
+Done by abe6a00 Close a server's connections when it is forgotten; 323908a Say what else goes when a jump host is forgotten.
+Done by 11d94e5 Let "Files" connect to a saved machine the way "Terminal" does; 42ca0e4 Say "connected, but the files could not be opened" instead of "not made".
+Done by f48ce99 Open the serve dialog on what it was last set to; effdfbe Share the repeated-key check between the two JSON files, and say a newer file plainly.
+Decided in review: the list is asked before anything is closed, because Remove can refuse a hop others are reached through.
 
 ## Step 7 -- copying files: progress, cancel, repeat
 

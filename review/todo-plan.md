@@ -157,6 +157,8 @@ captures the drag. `ui.Dock` is the working model (`dragging`,
 - `files.Browser` gains per-boundary weights in `paneCell` and the
   same gesture.
 - Tests drive `Root.HandleMouse` with press, move, release.
+Done by 73ea052 Let the dividers between panes be dragged.
+Done by 728fc32 End a divider drag only on the button that started it.
 
 ## Step 5 -- scale a held screen
 

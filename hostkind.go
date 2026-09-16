@@ -102,6 +102,18 @@ func (f hostFacts) toTakeOver() bool {
 	return f.serves && f.window == nil
 }
 
+// log is the account of how the name was reached, or nil when the
+// window is holding nothing under it that kept one.
+func (f hostFacts) log() *connLog {
+	switch {
+	case f.window != nil:
+		return f.window.log
+	case f.machine != nil:
+		return f.machine.log
+	}
+	return nil
+}
+
 // headingRow is the row the machine's heading on the panel draws itself
 // from: the connection the name is holding, or nil when it holds none.
 func (f hostFacts) headingRow() *conns.Entry {

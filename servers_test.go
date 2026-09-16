@@ -464,13 +464,16 @@ func TestConnectingOpensAPaneAndSaysWhatItIsDoing(t *testing.T) {
 	}
 }
 
-// What a server says on the way in is written into the pane, whole.
+// What a server says on the way in is kept whole, in the account of how
+// the machine was reached.
 //
 // A server that signs people in through a browser sends the link this
-// way. In a dialog it is cut off at the edge, cannot be selected, and
-// is gone the moment the dialog is dismissed; in the pane it is there
-// to read and to copy.
-func TestWhatAServerSaysGoesIntoThePane(t *testing.T) {
+// way. In a dialog it is cut off at the edge, cannot be selected, and is
+// gone the moment the dialog is dismissed. It goes into the pane while
+// the connection is being made, and the pane folds that away once the
+// shell is there, so the account is where it stays: whole, scrollable
+// and there to copy.
+func TestWhatAServerSaysIsKeptWhole(t *testing.T) {
 	const link = "https://login.tailscale.com/a/0123456789abcdef0123456789abcdef"
 	s := sshtest.New(t)
 	a := newTestApp(t, 80, 24)
@@ -481,22 +484,20 @@ func TestWhatAServerSaysGoesIntoThePane(t *testing.T) {
 
 	cfg := serverConfig(t, s)
 	a.connect(cfg)
-	pane := newestPane(t, a)
 
-	// Joined back up: a link longer than the pane is wide is wrapped
-	// across two rows, the way any long line is. What matters is that
-	// all of it is there.
-	waitFor(t, a, "the link to reach the pane", func() bool {
-		return strings.Contains(unwrapped(paneText(pane)), link)
+	waitFor(t, a, "the machine to answer", func() bool {
+		return a.about(cfg.Target()).log() != nil
 	})
-	if got := paneText(pane); !strings.Contains(got, "says:") {
-		t.Errorf("it does not say who said it: %q", got)
+	account := strings.Join(a.about(cfg.Target()).log().Lines(), "\n")
+	// On one line, with nothing cut off it: a link broken across two
+	// lines is a link nobody can copy.
+	if !strings.Contains(account, link) {
+		t.Errorf("the account does not hold the link whole: %q", account)
+	}
+	if !strings.Contains(account, "says:") {
+		t.Errorf("the account does not say who said it: %q", account)
 	}
 }
-
-// unwrapped is what a pane shows with the row breaks taken out, for
-// reading something longer than the pane is wide.
-func unwrapped(text string) string { return strings.ReplaceAll(text, "\n", "") }
 
 // A pane that says why a connection failed is not reaped away.
 //

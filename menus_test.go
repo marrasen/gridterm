@@ -28,6 +28,21 @@ func withMenubar(t *testing.T, a *testApp) *ui.Menubar {
 	return a.bar
 }
 
+// menuTitled is where a menu sits on the bar, by its title: the bar
+// grows while the window runs, so nothing may go by position.
+func menuTitled(t *testing.T, bar *ui.Menubar, title string) int {
+	t.Helper()
+	var titles []string
+	for i, def := range bar.Menus {
+		titles = append(titles, def.Title)
+		if def.Title == title {
+			return i
+		}
+	}
+	t.Fatalf("there is no %q menu: %v", title, titles)
+	return -1
+}
+
 // TestEveryMenuLineNamesACommand is the tripwire for a typo in the menu
 // definitions. A line naming nothing is drawn greyed out and cannot be
 // chosen, so nothing else in the program would report it.

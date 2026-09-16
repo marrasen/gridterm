@@ -173,7 +173,7 @@ func (a *app) refreshFontMenu(cmds []ui.Command) {
 	for _, cmd := range cmds[1:] {
 		items = append(items, ui.MenuItem{Command: cmd.ID})
 	}
-	a.bar.Menus = append(a.bar.Menus, ui.MenuDef{Title: "Font", Items: items})
+	a.addMenu(ui.MenuDef{Title: "Font", Items: items})
 }
 
 // setFontFamily swaps the typeface, by family name. An empty name goes

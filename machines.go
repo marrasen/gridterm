@@ -269,6 +269,10 @@ type machine struct {
 	// entry is the panel row for the connection itself, so a machine
 	// with nothing open on it is still visible and still closeable.
 	entry *conns.Entry
+
+	// log is the account of how the machine was reached, kept after the
+	// pane folded it away so "How it was reached" can show it.
+	log *connLog
 }
 
 // hold puts a row on the panel for a connection the window has just

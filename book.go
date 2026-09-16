@@ -241,9 +241,7 @@ func (a *app) refreshServerMenu(items []ui.MenuItem) {
 			return
 		}
 	}
-	// Appended after the titles already there, so nothing open moves
-	// and nothing has to be taken down.
-	a.bar.Menus = append(a.bar.Menus, def)
+	a.addMenu(def)
 }
 
 // serversMenu is the menu bar title the saved machines hang under.

@@ -554,6 +554,9 @@ func (a *app) commands() {
 		ui.Command{ID: "files.goTo", Title: "Go to a directory…", Run: a.openGoTo},
 		ui.Command{ID: "conn.disconnect", Title: "Close the connection to this machine",
 			Run: a.disconnectHere},
+		ui.Command{ID: "conn.log", Title: "Show how this was reached",
+			Run: a.showConnLogHere},
+		ui.Command{ID: helpCommand, Title: helpTitle, Run: a.showHelp},
 		ui.Command{ID: "server.editThis", Title: "Edit this server…",
 			Run: a.editThisServer},
 		ui.Command{ID: "server.forget", Title: "Forget this server…",
@@ -617,6 +620,7 @@ func (a *app) commands() {
 		// so the shell would never get it.
 		{Key: input.KeyK, Mods: input.ModCtrl | input.ModShift}: "palette.open",
 		{Key: input.KeyF10}: "menu.open",
+		{Key: input.KeyF1}:  helpCommand,
 	})
 
 	a.root.Commands = cmds

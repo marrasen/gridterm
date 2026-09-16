@@ -86,7 +86,7 @@ type Browser struct {
 	active *Pane
 
 	hasFocus bool
-	keys     []fkey
+	keys     []Key
 	size     ui.Size
 	clip     Clipboard
 }
@@ -97,7 +97,7 @@ type Browser struct {
 // the user wants to look at. Building a browser is not the same thing,
 // so it opens where a browser always has.
 func NewBrowser(panes ...*Pane) *Browser {
-	b := &Browser{keys: browserKeys()}
+	b := &Browser{keys: BrowserKeys()}
 	for _, p := range panes {
 		b.Add(p)
 	}
@@ -385,7 +385,7 @@ func (b *Browser) Draw(v grid.View) {
 }
 
 // wired reports whether a key on the bar has anything behind it here.
-func (b *Browser) wired(k fkey) bool {
+func (b *Browser) wired(k Key) bool {
 	switch {
 	case k.Chord == chord(input.KeyTab, 0):
 		return len(b.panes) > 1

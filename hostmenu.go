@@ -120,6 +120,7 @@ func hostItems(about hostFacts) []ui.MenuItem {
 			ui.MenuSeparator(),
 			{Command: "conn.disconnect", Title: "Let go of this window"},
 		}
+		items = withTheLog(items, about)
 		if about.serves {
 			items = append(items, ui.MenuSeparator(),
 				ui.MenuItem{Command: "server.editThis", Title: "Edit this window…"},
@@ -150,12 +151,23 @@ func hostItems(about hostFacts) []ui.MenuItem {
 		// selected, which is not the machine whose row was clicked.
 		{Command: "conn.disconnect", Title: "Close the connection"},
 	}
+	items = withTheLog(items, about)
 	if about.saved {
 		items = append(items, ui.MenuSeparator(),
 			ui.MenuItem{Command: "server.editThis", Title: "Edit this server…"},
 			ui.MenuItem{Command: "server.forget", Title: "Forget this server…"})
 	}
 	return items
+}
+
+// withTheLog adds the line that opens the account of how the machine was
+// reached, for a name that kept one.
+func withTheLog(items []ui.MenuItem, about hostFacts) []ui.MenuItem {
+	if about.log() == nil {
+		return items
+	}
+	return append(items, ui.MenuSeparator(),
+		ui.MenuItem{Command: "conn.log", Title: "How it was reached"})
 }
 
 // rowAnchor is where a menu opened from a panel row points.

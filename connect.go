@@ -186,7 +186,7 @@ func (a *app) reached(d *dialling, log *connLog, pane *term.Terminal, route []st
 	// Renamed while it was being reached, in which case it goes under
 	// what it is called now.
 	s.name = d.nameNow(s.name)
-	m := &machine{at: s, conn: conn}
+	m := &machine{at: s, conn: conn, log: log}
 	// Held even when the route was given up on in the meantime: the
 	// machine answered, and whether this landed a frame before the user
 	// pressed give up or a frame after is not something they can see.
@@ -317,7 +317,7 @@ func (a *app) becomeShellPane(name string, command []string, pane *term.Terminal
 			e.Label = label
 		}
 	}
-	log.Became(sh)
+	log.Became(name, sh)
 }
 
 // startOn runs something on a machine that is already connected to.

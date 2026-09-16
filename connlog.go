@@ -1,7 +1,9 @@
 package main
 
 import (
+	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -16,8 +18,11 @@ import (
 // A pane opens on it straight away, so there is somewhere to watch from
 // while the connecting happens: each step as it is tried, and whatever
 // the far end says, including a sign-in link. When the connection is
-// made the same pane carries it, and what was written stays above it in
-// the scrollback.
+// made the account is folded away -- the pane is cleared and one line
+// takes its place -- and the same pane carries the shell.
+//
+// The whole account is kept in lines, which Lines hands back and the
+// "How it was reached" dialog shows.
 //
 // The pane cannot tell. It reads a session, and this is one: first its
 // own words, then the shell's.
@@ -26,6 +31,10 @@ type connLog struct {
 	// move.
 	clock func() time.Time
 
+	// started is when the log was opened, for saying how long the
+	// connection took.
+	started time.Time
+
 	// stop is called when the pane is closed before the connection was
 	// made, which is how closing the pane gives up on it.
 	stop func()
@@ -33,6 +42,9 @@ type connLog struct {
 	mu sync.Mutex
 	// said is what has been written and not yet read.
 	said []byte
+	// lines is every line written, in order, without the colour it was
+	// shown in. The pane keeps no copy, so this is the account.
+	lines []string
 	// live is the connection once it has been made, and nil until then.
 	live session.Session
 	// over says nothing more will happen: it failed, or it was given up
@@ -60,6 +72,7 @@ type connLog struct {
 func newConnLog(stop func()) *connLog {
 	return &connLog{
 		clock:   time.Now,
+		started: time.Now(),
 		stop:    stop,
 		wake:    make(chan struct{}, 1),
 		settled: make(chan struct{}),
@@ -67,13 +80,51 @@ func newConnLog(stop func()) *connLog {
 	}
 }
 
+// What a line is drawn in: the time in dark green on a line that went
+// well and dark red on one that did not, and this window's own words in
+// a grey darker than a shell's output.
+const (
+	sgrWent  = "\x1b[32m"
+	sgrWrong = "\x1b[31m"
+	sgrWords = "\x1b[90m"
+	sgrOff   = "\x1b[0m"
+)
+
+// clearPane empties a terminal's screen and its scrollback and puts the
+// cursor back at the top.
+const clearPane = "\x1b[2J\x1b[3J\x1b[H"
+
 // Say writes a line into the pane, stamped with the time.
 //
 // Called from whichever goroutine is doing the connecting, which is not
 // the one that draws: what it writes is read by the pane's own reader
 // like anything else a program says.
-func (c *connLog) Say(what string) {
-	c.write(c.clock().Format("15:04:05") + "  " + what)
+func (c *connLog) Say(what string) { c.say(what, false) }
+
+// sayBadly is Say for a line that reports something going wrong, which
+// stamps the time in red rather than green.
+func (c *connLog) sayBadly(what string) { c.say(what, true) }
+
+// say writes a stamped line, colouring the time by whether it went
+// wrong.
+//
+// The colour is written as SGR, which the far end cannot forge: every
+// word of its own goes through serve.Plain before it reaches here.
+func (c *connLog) say(what string, wrong bool) {
+	now := c.clock().Format("15:04:05")
+	stamp := sgrWent
+	if wrong {
+		stamp = sgrWrong
+	}
+	c.emit(now+"  "+what, stamp+now+sgrOff+"  "+sgrWords+what+sgrOff)
+}
+
+// Lines is the whole account, in the order it was said, without the
+// colour it was shown in.
+func (c *connLog) Lines() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return slices.Clone(c.lines)
 }
 
 // Quote writes what the far end said, marked as its words rather than
@@ -109,25 +160,27 @@ func (c *connLog) Failed(err error) {
 	// first, because Say writes one line and a reason that came on
 	// several is meant to be read on several.
 	for _, line := range strings.Split(err.Error(), "\n") {
-		c.Say(serve.Plain(line))
+		c.sayBadly(serve.Plain(line))
 	}
 	c.write("")
-	c.write("The connection was not made. This pane is only the record of")
-	c.write("it: close it when you have read it.")
+	c.note("The connection was not made. This pane is only the record of")
+	c.note("it: close it when you have read it.")
 	c.end()
 }
 
 // GaveUp says the user gave up on the connection.
 func (c *connLog) GaveUp() {
-	c.Say("given up on")
+	c.sayBadly("given up on")
 	c.end()
 }
 
-// Became hands the pane over to the connection that was made.
+// Became hands the pane over to the connection that was made, under the
+// name it was reached as.
 //
-// From here the pane reads and writes the real thing, and what was
-// written before it stays in the scrollback above.
-func (c *connLog) Became(live session.Session) {
+// The account is folded away first: the pane is cleared, screen and
+// scrollback, and one line says how long it took and where to read the
+// rest. From here the pane reads and writes the real thing.
+func (c *connLog) Became(name string, live session.Session) {
 	c.mu.Lock()
 	if c.over || c.live != nil {
 		c.mu.Unlock()
@@ -137,6 +190,10 @@ func (c *connLog) Became(live session.Session) {
 		_ = live.Close()
 		return
 	}
+	// Folded before live is set, not after: the reader takes the
+	// connection's bytes as soon as there is one, and a clear written
+	// after them would wipe the shell's first screen.
+	c.foldLocked(name)
 	c.live = live
 	cols, rows := c.cols, c.rows
 	c.mu.Unlock()
@@ -153,11 +210,38 @@ func (c *connLog) Became(live session.Session) {
 	c.signal()
 }
 
-// write adds one line, ending it the way a terminal expects.
-func (c *connLog) write(line string) {
+// foldLocked replaces what the pane is showing with one line, with the
+// log's mutex already held.
+//
+// The summary is the pane's, not the account's, so it is not one of the
+// lines: it says where to read them.
+func (c *connLog) foldLocked(name string) {
+	if c.over {
+		return
+	}
+	took := c.clock().Sub(c.started).Seconds()
+	line := fmt.Sprintf(
+		`connected to %s in %.1f s; "How it was reached" on the row's menu shows the log`,
+		name, took)
+	c.said = append(c.said, clearPane...)
+	c.said = append(c.said, []byte(sgrWords+line+sgrOff+"\r\n")...)
+}
+
+// note writes one of this window's own lines that carries no time, in
+// the same grey its stamped words are written in.
+func (c *connLog) note(line string) { c.emit(line, sgrWords+line+sgrOff) }
+
+// write adds one line with no colour on it, which is how the far end's
+// own words are told apart from this window's.
+func (c *connLog) write(line string) { c.emit(line, line) }
+
+// emit adds one line, keeping the plain text and showing the coloured
+// one.
+func (c *connLog) emit(plain, shown string) {
 	c.mu.Lock()
 	if !c.over {
-		c.said = append(c.said, []byte(line+"\r\n")...)
+		c.lines = append(c.lines, plain)
+		c.said = append(c.said, []byte(shown+"\r\n")...)
 	}
 	c.mu.Unlock()
 	c.signal()

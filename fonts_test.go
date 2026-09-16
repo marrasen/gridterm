@@ -192,10 +192,8 @@ func TestFontScanAddsAMenu(t *testing.T) {
 	if len(bar.Menus) != before+1 {
 		t.Fatalf("%d menus, want one more than %d", len(bar.Menus), before)
 	}
-	menu := bar.Menus[len(bar.Menus)-1]
-	if menu.Title != "Font" {
-		t.Errorf("the new menu is called %q, want %q", menu.Title, "Font")
-	}
+	at := menuTitled(t, bar, "Font")
+	menu := bar.Menus[at]
 	named := 0
 	for _, item := range menu.Items {
 		if item.Command == "" {
@@ -410,7 +408,7 @@ func TestFontMenuLinesAreNamedByTheirCommands(t *testing.T) {
 	bar := withMenubar(t, a)
 	deliverFonts(a, fakeFamilies("Consolas"))
 
-	if !bar.Open(len(bar.Menus) - 1) {
+	if !bar.Open(menuTitled(t, bar, "Font")) {
 		t.Fatal("the font menu would not open")
 	}
 	menu, ok := a.root.Modal().(*ui.Menu)

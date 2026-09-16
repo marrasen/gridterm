@@ -6,9 +6,9 @@ import (
 	"github.com/marrasen/gridterm/ui"
 )
 
-// fkey is one key on the bar along the bottom of the browser: the chord
+// Key is one key on the bar along the bottom of the browser: the chord
 // it wants, what the bar calls it, and what it does.
-type fkey struct {
+type Key struct {
 	Chord ui.Chord
 
 	// Shown is how the bar spells the chord, which is its own spelling
@@ -20,20 +20,20 @@ type fkey struct {
 
 // press is the key press this chord is, for asking whether a key on the
 // bar is this one and for running it from a click.
-func (k fkey) press() input.Event {
+func (k Key) press() input.Event {
 	return input.Event{Kind: input.KeyPress, Key: k.Chord.Key, Mods: k.Chord.Mods}
 }
 
 // chord names a key and the modifiers held with it.
 func chord(k input.Key, mods input.Mods) ui.Chord { return ui.Chord{Key: k, Mods: mods} }
 
-// browserKeys is what the bar offers.
+// BrowserKeys is what the bar offers.
 //
 // The order and the names are Midnight Commander's, because that is
 // what a two-pane browser means to anyone who has used one: a user who
 // knows those keys should not have to learn these.
-func browserKeys() []fkey {
-	return []fkey{
+func BrowserKeys() []Key {
+	return []Key{
 		{Chord: chord(input.KeyTab, 0), Shown: "Tab", Title: "Next"},
 		{Chord: chord(input.KeyG, input.ModCtrl), Shown: "^G", Title: "Go to"},
 		{Chord: chord(input.KeyF2, 0), Shown: "F2", Title: "Rename"},
@@ -84,7 +84,7 @@ func keyAt(col, cols, n int) (int, bool) {
 //
 // Every cell is written once, with the same value each frame, so a
 // browser nobody is touching leaves the row clean.
-func drawKeys(v grid.View, y, cols int, keys []fkey, st Style, wired func(fkey) bool) {
+func drawKeys(v grid.View, y, cols int, keys []Key, st Style, wired func(Key) bool) {
 	if cols <= 0 || len(keys) == 0 {
 		return
 	}

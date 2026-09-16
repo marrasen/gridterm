@@ -50,6 +50,10 @@ type taken struct {
 	// entry is the panel row for the window itself, so one with nothing
 	// open on it is still visible and still closeable.
 	entry *conns.Entry
+
+	// log is the account of how the window was taken over, kept after
+	// the pane folded it away so "How it was reached" can show it.
+	log *connLog
 }
 
 // windows are the gridterms on other machines this one has taken over,
@@ -511,6 +515,7 @@ func serveAddr(addr string) string {
 // The window itself rather than its name, which the server list can
 // have changed while the connection was being made.
 func (a *app) becomeWindowPane(t *taken, pane *term.Terminal, log *connLog) {
+	t.log = log
 	size := pane.Size()
 	sess, err := t.win.Open(size.Cols, size.Rows)
 	if err != nil {
@@ -520,7 +525,7 @@ func (a *app) becomeWindowPane(t *taken, pane *term.Terminal, log *connLog) {
 	}
 	log.Say("connected")
 	a.windows.draws(pane, t)
-	log.Became(sess)
+	log.Became(t.name, sess)
 }
 
 // windowNote is what a window's row says beside its name: the address

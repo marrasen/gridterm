@@ -20,15 +20,6 @@ each group. A line goes when the work is in and reviewed.
   coloured dot for its state and then the hand-drawn icon for what it
   is. One mark can do both: draw the type icon and give it the colour
   the dot would have had.
-- **Fold the connection log once the connection is made.** Every
-  terminal starts with the account of how it was reached. Once it has
-  worked, that is scrollback nobody needs open; it should fold, with a
-  way to open it again.
-- **Colour the connection log.** The time in dark green on a line that
-  went well and dark red on one that did not, and the words themselves a
-  darker grey than the shell's output.
-- **A log view.** Somewhere to read the whole of what a connection said,
-  scroll it, and copy out of it.
 - **Remove the grey bar between the sidebar and the panes.**
 
 ## Connections
@@ -82,8 +73,6 @@ each group. A line goes when the work is in and reviewed.
   same case and passes it.
 - `-ssh` connects before the window opens, so it asks on the console and
   has no connection pane.
-- There is no help anywhere. Keys are on the file browser's bar and on
-  the menus; nothing lists them all.
 - A file pane on a gridterm window has no bound. `windowFiles` in
   `browse.go` calls `t.win.Files()` and then `sftp.NewClientPipe`, both
   on the goroutine that draws and neither of them bounded. The same pane

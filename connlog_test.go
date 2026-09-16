@@ -13,6 +13,7 @@ import (
 func atTime(c *connLog) *connLog {
 	at := time.Date(2026, 9, 15, 9, 41, 2, 0, time.UTC)
 	c.clock = func() time.Time { return at }
+	c.started = at
 	return c
 }
 
@@ -135,7 +136,7 @@ func TestThePaneBecomesTheConnection(t *testing.T) {
 	readLog(t, c, "connecting")
 
 	shell := newPipeSession()
-	c.Became(shell)
+	c.Became("picard", shell)
 
 	shell.out <- []byte("marcus@picard:~$ ")
 	readLog(t, c, "marcus@picard:~$")
@@ -160,7 +161,7 @@ func TestTheConnectionIsToldHowBigThePaneAlreadyIs(t *testing.T) {
 		t.Fatalf("resize: %v", err)
 	}
 	shell := newPipeSession()
-	c.Became(shell)
+	c.Became("picard", shell)
 
 	waitUntil(t, "the shell to be told the new size", func() bool { return shell.lastSize() == [2]int{120, 40} })
 
@@ -181,7 +182,7 @@ func TestTypingBeforeThereIsAConnectionGoesNowhere(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 	shell := newPipeSession()
-	c.Became(shell)
+	c.Became("picard", shell)
 
 	// Given a moment in which it could have arrived.
 	time.Sleep(50 * time.Millisecond)
@@ -252,7 +253,7 @@ func TestAConnectionThatArrivesTooLateIsClosed(t *testing.T) {
 	}
 
 	shell := newPipeSession()
-	c.Became(shell)
+	c.Became("picard", shell)
 
 	waitUntil(t, "the shell to be closed", func() bool { return shell.isClosed() })
 }
@@ -261,7 +262,7 @@ func TestAConnectionThatArrivesTooLateIsClosed(t *testing.T) {
 func TestClosingThePaneClosesTheConnection(t *testing.T) {
 	c := atTime(newConnLog(nil))
 	shell := newPipeSession()
-	c.Became(shell)
+	c.Became("picard", shell)
 
 	if err := c.Close(); err != nil {
 		t.Fatalf("close: %v", err)
@@ -295,7 +296,7 @@ func TestWhatTheFarEndSaysCannotDriveThePane(t *testing.T) {
 
 	c.Quote("marcus@picard", "\x1b[2Jsign in here\x1b]0;owned\x07")
 
-	got := readLog(t, c, "sign in here")
+	got := plainly(readLog(t, c, "sign in here"))
 	if strings.ContainsAny(got, "\x1b\x07") {
 		t.Fatalf("the pane was written %q, want nothing a terminal acts on", got)
 	}
@@ -309,8 +310,110 @@ func TestAFailureFromTheFarEndCannotDriveThePane(t *testing.T) {
 
 	c.Failed(errors.New("refused: \x1b[2Jtry somewhere else\x07"))
 
-	got := readLog(t, c, "try somewhere else")
+	got := plainly(readLog(t, c, "try somewhere else"))
 	if strings.ContainsAny(got, "\x1b\x07") {
 		t.Fatalf("the pane was written %q, want nothing a terminal acts on", got)
+	}
+}
+
+// plainly takes this window's own colour off what a pane was written, so
+// what is left is whatever the far end got into it.
+func plainly(s string) string {
+	for _, sgr := range []string{sgrWent, sgrWrong, sgrWords, sgrOff} {
+		s = strings.ReplaceAll(s, sgr, "")
+	}
+	return s
+}
+
+// The whole account is kept, in order and without the colour it was
+// shown in, because the pane keeps no copy of it.
+func TestTheAccountIsKeptWithoutItsColour(t *testing.T) {
+	c := atTime(newConnLog(nil))
+	defer func() { _ = c.Close() }()
+
+	c.Say("connecting to margit:22")
+	c.Quote("margit", "sign in at https://example.test/a/1234")
+	c.Say("connected to margit")
+	c.Became("margit", newPipeSession())
+
+	want := []string{
+		"09:41:02  connecting to margit:22",
+		"09:41:02  margit says:",
+		"    sign in at https://example.test/a/1234",
+		"09:41:02  connected to margit",
+	}
+	got := c.Lines()
+	if len(got) != len(want) {
+		t.Fatalf("the account is %q, want %q", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("line %d is %q, want %q", i, got[i], want[i])
+		}
+	}
+	for _, line := range got {
+		if strings.ContainsAny(line, "") {
+			t.Errorf("the account carries what a terminal acts on: %q", line)
+		}
+	}
+}
+
+// A line that went well is stamped in green, a line that did not in red,
+// and this window's own words are greyer than a shell's output.
+func TestALineIsColouredByHowItWent(t *testing.T) {
+	good := atTime(newConnLog(nil))
+	defer func() { _ = good.Close() }()
+	good.Say("connected to margit")
+	said := readLog(t, good, "connected to margit")
+	if !strings.Contains(said, sgrWent+"09:41:02"+sgrOff) {
+		t.Errorf("the time is not in green: %q", said)
+	}
+	if !strings.Contains(said, sgrWords+"connected to margit"+sgrOff) {
+		t.Errorf("the words are not in grey: %q", said)
+	}
+	if strings.Contains(said, sgrWrong) {
+		t.Errorf("a line that went well is marked as one that did not: %q", said)
+	}
+
+	bad := atTime(newConnLog(nil))
+	defer func() { _ = bad.Close() }()
+	bad.Failed(errors.New("no route to host"))
+	said = readLog(t, bad, "no route to host")
+	if !strings.Contains(said, sgrWrong+"09:41:02"+sgrOff) {
+		t.Errorf("a failure is not stamped in red: %q", said)
+	}
+
+	gave := atTime(newConnLog(nil))
+	defer func() { _ = gave.Close() }()
+	gave.GaveUp()
+	said = readLog(t, gave, "given up on")
+	if !strings.Contains(said, sgrWrong+"09:41:02"+sgrOff) {
+		t.Errorf("giving up is not stamped in red: %q", said)
+	}
+}
+
+// Once the connection is made the pane is emptied, scrollback and all,
+// and one line says how it went and where the rest of it is.
+func TestTheAccountIsFoldedWhenTheConnectionIsMade(t *testing.T) {
+	c := atTime(newConnLog(nil))
+	defer func() { _ = c.Close() }()
+
+	c.Say("connecting to margit:22")
+	readLog(t, c, "connecting to margit:22")
+	c.Became("margit", newPipeSession())
+
+	said := plainly(readLog(t, c, "How it was reached"))
+	if !strings.HasPrefix(said, clearPane) {
+		t.Errorf("the pane was not cleared before the summary: %q", said)
+	}
+	if !strings.Contains(said, "connected to margit in") {
+		t.Errorf("the summary does not say what was connected to: %q", said)
+	}
+	// The summary belongs to the pane, not to the account: it says where
+	// the account is.
+	for _, line := range c.Lines() {
+		if strings.Contains(line, "How it was reached") {
+			t.Errorf("the summary went into the account: %q", line)
+		}
 	}
 }

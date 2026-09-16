@@ -105,6 +105,18 @@ func (a *app) openCommandHere() error {
 	return nil
 }
 
+// showConnLogHere opens the account of how the machine the user is
+// looking at was reached.
+func (a *app) showConnLogHere() error {
+	h := a.about(a.currentHost())
+	log := h.log()
+	if log == nil {
+		return fmt.Errorf("there is no account of how %s was reached", groupName(h.name))
+	}
+	a.showNotice("How "+h.name+" was reached", strings.Join(log.Lines(), "\n"), false)
+	return nil
+}
+
 // openFilesHere puts another pane in the file manager, on the machine
 // the user is looking at.
 func (a *app) openFilesHere() error { return a.openFilesOn(a.currentHost()) }

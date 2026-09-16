@@ -121,10 +121,7 @@ const copyCommand = "edit.copy"
 // holding text can answer that chord itself.
 func (a *app) copyChord(ev input.Event) bool {
 	c := ui.ChordOf(ev)
-	for _, keys := range []*ui.Keymap{a.root.Accelerators, a.root.Keys} {
-		if keys == nil {
-			continue
-		}
+	for _, keys := range a.keymaps() {
 		if id, ok := keys.Lookup(c); ok {
 			return id == copyCommand
 		}

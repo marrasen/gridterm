@@ -167,8 +167,11 @@ func (f *FileRelay) On() *Conn { return f.conn }
 
 // Close ends the subsystem and lets go of the connection's record of it.
 //
-// It is also what unblocks a read that is waiting on a machine which has
-// stopped answering: the channel goes, and the read ends with it.
+// It sends the machine a channel close and nothing more. A read already
+// waiting on the channel ends when that machine answers the close, or
+// when the connection to it goes; a machine that has stopped answering
+// leaves that read where it is, so a caller has to be able to walk away
+// from it.
 func (f *FileRelay) Close() error {
 	err := f.closeRider()
 	f.conn.drop(f)

@@ -89,6 +89,10 @@ type Entry struct {
 	// Close ends it. A nil one cannot be closed from the panel.
 	Close func() error
 
+	// Clear takes a finished row off the panel and nothing else; nil
+	// when the row cannot be cleared.
+	Clear func() error
+
 	// id is what this entry is called for as long as it exists. The
 	// registry gives it when the entry is added.
 	id uint64

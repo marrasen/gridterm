@@ -77,22 +77,113 @@ func (c *Conn) Files(ctx context.Context) (*Files, error) {
 // startSFTP asks for the subsystem and speaks SFTP over the session,
 // both within what is left of the caller's deadline.
 func startSFTP(ctx context.Context, sess *ssh.Session, host string) (*sftp.Client, error) {
-	out, err := sess.StdoutPipe()
+	out, in, err := sftpPipes(ctx, sess, host)
 	if err != nil {
-		return nil, fmt.Errorf("remote: open the read pipe from %s: %w", host, err)
-	}
-	in, err := sess.StdinPipe()
-	if err != nil {
-		return nil, fmt.Errorf("remote: open the write pipe to %s: %w", host, err)
-	}
-	if err := doWithin(ctx, "ask "+host+" for the sftp subsystem", func() error {
-		return sess.RequestSubsystem("sftp")
-	}); err != nil {
 		return nil, err
 	}
 	return openWithin(ctx, "start SFTP on "+host, func() (*sftp.Client, error) {
 		return sftp.NewClientPipe(out, in)
 	})
+}
+
+// sftpPipes asks the machine for the SFTP subsystem and gives back the
+// session's two streams, within what is left of the caller's deadline.
+func sftpPipes(ctx context.Context, sess *ssh.Session, host string) (
+	io.Reader, io.WriteCloser, error) {
+
+	out, err := sess.StdoutPipe()
+	if err != nil {
+		return nil, nil, fmt.Errorf("remote: open the read pipe from %s: %w", host, err)
+	}
+	in, err := sess.StdinPipe()
+	if err != nil {
+		return nil, nil, fmt.Errorf("remote: open the write pipe to %s: %w", host, err)
+	}
+	if err := doWithin(ctx, "ask "+host+" for the sftp subsystem", func() error {
+		return sess.RequestSubsystem("sftp")
+	}); err != nil {
+		return nil, nil, err
+	}
+	return out, in, nil
+}
+
+// FileRelay is a raw SFTP subsystem on a connection, for carrying
+// somebody else's file session rather than reading files here.
+//
+// It rides on the connection: closing the connection closes it, so a
+// machine that goes ends the relay going through it.
+type FileRelay struct {
+	conn *Conn
+	sess *ssh.Session
+	out  io.Reader
+	in   io.WriteCloser
+
+	closeOnce sync.Once
+	closeErr  error
+}
+
+// FileSubsystem starts an SFTP subsystem on the connection and hands
+// back the stream it speaks over.
+//
+// No SFTP client is made: the caller relays the bytes rather than
+// reading files itself. Starting it is bounded by channelTimeout, both
+// round trips together, the way Conn.Files is. A caller that cancels ctx
+// ends it sooner.
+func (c *Conn) FileSubsystem(ctx context.Context) (*FileRelay, error) {
+	// Asked before a channel is opened, so a closed connection says so
+	// rather than reporting whatever the dead transport failed with.
+	if c.isClosing() {
+		return nil, fmt.Errorf("remote: %s: %w", c, ErrClosed)
+	}
+	ctx, cancel := context.WithTimeout(ctx, channelTimeout)
+	defer cancel()
+
+	sess, err := openWithin(ctx, "open a session on "+c.String(), c.client.NewSession)
+	if err != nil {
+		return nil, err
+	}
+	// The session is ours to close from here on, including on every
+	// failure below.
+	out, in, err := sftpPipes(ctx, sess, c.String())
+	if err != nil {
+		return nil, errors.Join(err, closeQuietly(sess))
+	}
+
+	f := &FileRelay{conn: c, sess: sess, out: out, in: in}
+	if err := c.register(f); err != nil {
+		return nil, errors.Join(err, f.closeRider())
+	}
+	return f, nil
+}
+
+// Read gives what the machine has said.
+func (f *FileRelay) Read(p []byte) (int, error) { return f.out.Read(p) }
+
+// Write sends bytes to the machine.
+func (f *FileRelay) Write(p []byte) (int, error) { return f.in.Write(p) }
+
+// On returns the connection it runs over.
+func (f *FileRelay) On() *Conn { return f.conn }
+
+// Close ends the subsystem and lets go of the connection's record of it.
+//
+// It is also what unblocks a read that is waiting on a machine which has
+// stopped answering: the channel goes, and the read ends with it.
+func (f *FileRelay) Close() error {
+	err := f.closeRider()
+	f.conn.drop(f)
+	return err
+}
+
+// closeRider is Close without the deregistering, for a connection that
+// is closing its riders and will throw the whole record away anyway.
+func (f *FileRelay) closeRider() error {
+	f.closeOnce.Do(func() {
+		if err := closeQuietly(f.sess); err != nil {
+			f.closeErr = fmt.Errorf("remote: close a file relay on %s: %w", f.conn, err)
+		}
+	})
+	return f.closeErr
 }
 
 // Client is the SFTP client itself, for whatever works on files.
@@ -172,14 +263,32 @@ func closeQuietly[T io.Closer](c T) error {
 func WindowFiles(ctx context.Context, name string, win *serve.Window) (
 	*serve.FileSession, *sftp.Client, error) {
 
+	return WindowFilesOn(ctx, name, "", win)
+}
+
+// WindowFilesOn starts SFTP on a machine a window taken over is
+// connected to, over a channel of its own.
+//
+// host is that machine as the window taken over names it, and the bytes
+// go through that window: this one has no connection of its own to it.
+// An empty host asks for the machine the window itself is on, which is
+// what WindowFiles does. Bounded the way WindowFiles is.
+func WindowFilesOn(ctx context.Context, name, host string, win *serve.Window) (
+	*serve.FileSession, *sftp.Client, error) {
+
 	ctx, cancel := context.WithTimeout(ctx, channelTimeout)
 	defer cancel()
 
-	ch, err := openWithin(ctx, "open a file session on "+name, win.Files)
+	where := name
+	if host != "" {
+		where = host + " through " + name
+	}
+	ch, err := openWithin(ctx, "open a file session on "+where,
+		func() (*serve.FileSession, error) { return win.FilesOn(host) })
 	if err != nil {
 		return nil, nil, err
 	}
-	client, err := openWithin(ctx, "start SFTP on "+name, func() (*sftp.Client, error) {
+	client, err := openWithin(ctx, "start SFTP on "+where, func() (*sftp.Client, error) {
 		return sftp.NewClientPipe(ch, ch)
 	})
 	if err != nil {

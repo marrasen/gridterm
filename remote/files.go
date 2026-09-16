@@ -11,6 +11,8 @@ import (
 
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
+
+	"github.com/marrasen/gridterm/serve"
 )
 
 // Files is an SFTP session on a connection.
@@ -148,6 +150,74 @@ func (f *Files) closeAll() error {
 // was already shut.
 func closeSession(sess *ssh.Session) error {
 	err := sess.Close()
+	if err == nil || errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) {
+		return nil
+	}
+	return err
+}
+
+// WindowFiles starts SFTP on a window taken over, over a channel of its
+// own.
+//
+// Bounded by channelTimeout, the channel and the SFTP greeting together,
+// for the reason Conn.Files is bounded: it runs on the goroutine that
+// draws, and a window that is still on the network and no longer
+// answering would otherwise stop this one. A caller that cancels ctx
+// gives up sooner. A channel that arrives after that is closed rather
+// than left open on the far window.
+//
+// What comes back is the stream and the SFTP client speaking over it.
+// Both are the caller's to close.
+func WindowFiles(ctx context.Context, win *serve.Window) (*serve.FileSession, *sftp.Client, error) {
+	addr := win.Addr()
+	// One deadline for the whole open, so a window that stalls on the
+	// channel and again on the greeting cannot hold this one for twice
+	// as long.
+	ctx, cancel := context.WithTimeout(ctx, channelTimeout)
+	defer cancel()
+
+	ch, err := openWithin(ctx, "ask "+addr+" for its files", win.Files)
+	if err != nil {
+		return nil, nil, err
+	}
+	client, err := openWithin(ctx, "start SFTP on "+addr, func() (*sftp.Client, error) {
+		return sftp.NewClientPipe(ch, ch)
+	})
+	if err != nil {
+		// The channel is closed first, because closing it is what ends
+		// the stream the far window's own account arrives on.
+		closeErr := closeFileSession(ch)
+		return nil, nil, errors.Join(withWhatItSaid(ctx, ch, err), closeErr)
+	}
+	return ch, client, nil
+}
+
+// withWhatItSaid puts the far window's account of a file session it
+// could not start onto the failure, when it gave one.
+//
+// That account is the only one, because the failure happened over there.
+// Waiting for it is bounded like every other wait on this goroutine, and
+// a window given up on for saying nothing is not asked at all.
+func withWhatItSaid(ctx context.Context, ch *serve.FileSession, err error) error {
+	if ctx.Err() != nil {
+		return err
+	}
+	said := make(chan string, 1)
+	go func() { said <- ch.Said() }()
+	select {
+	case why := <-said:
+		if why != "" {
+			return fmt.Errorf("%w: it said: %s", err, why)
+		}
+	case <-time.After(drainGrace):
+	}
+	return err
+}
+
+// closeFileSession shuts a file session's channel, ignoring the ways it
+// says it was already shut.
+func closeFileSession(ch *serve.FileSession) error {
+	err := ch.Close()
 	if err == nil || errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) {
 		return nil
 	}

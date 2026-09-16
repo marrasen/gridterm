@@ -28,8 +28,3 @@ each group. A line goes when the work is in and reviewed.
 - A watcher taking a screen over sees the far end's default cursor.
   `vt.Repaint` puts the cursor back where the program had it but carries
   neither its shape nor its blink, so `DECSCUSR` is lost over the wire.
-- A file pane on a gridterm window has no bound. `windowFiles` in
-  `browse.go` calls `t.win.Files()` and then `sftp.NewClientPipe`, both
-  on the goroutine that draws and neither of them bounded. The same pane
-  on a machine goes through `Conn.Files`, which gives the whole open one
-  deadline.

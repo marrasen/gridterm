@@ -9,12 +9,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pkg/sftp"
-
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/jobs"
 	"github.com/marrasen/gridterm/meter"
+	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/files"
 	"github.com/marrasen/gridterm/vfs"
@@ -838,25 +837,18 @@ func (a *app) stopJobsOn(on ...vfs.FS) []*jobs.Job {
 
 // windowFiles is the filesystem of the machine a window taken over is
 // on, as a browser pane works on it.
+//
+// Opening it is bounded by remote.WindowFiles, the way the same pane on
+// a machine is bounded by Conn.Files: this runs on the goroutine that
+// draws.
 func (a *app) windowFiles(addr string) (vfs.FS, error) {
 	t := a.about(addr).window
 	if t == nil {
 		return nil, fmt.Errorf("this window has not taken over %s", addr)
 	}
-	ch, err := t.win.Files()
+	ch, client, err := remote.WindowFiles(a.ctx, t.win)
 	if err != nil {
 		return nil, err
-	}
-	client, err := sftp.NewClientPipe(ch, ch)
-	if err != nil {
-		// Whatever the far end said about a session it could not start
-		// is the only account of it: the failure happened over there.
-		// It closes the channel on every failure of its own, so that
-		// account has arrived or is about to.
-		if why := ch.Said(); why != "" {
-			return nil, fmt.Errorf("could not read the files of %s: %s", addr, why)
-		}
-		return nil, fmt.Errorf("could not read the files of %s: %w", addr, err)
 	}
 	// The window taken over is what says which machine this is.
 	return vfs.NewSFTP(addr, t.win, client, func() error {

@@ -2,6 +2,8 @@ package remote
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"io"
@@ -11,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 
 	"github.com/marrasen/gridterm/internal/sshtest"
@@ -1318,5 +1321,134 @@ func TestAResizeToThePtysOwnSizeSendsNothing(t *testing.T) {
 	})
 	if n := s.WindowChanges(); n != 1 {
 		t.Fatalf("the machine saw %d window-change requests, want only the size that changed", n)
+	}
+}
+
+// aWindowServingFiles takes over a window of its own, serving files the
+// way the test asks and nothing else.
+func aWindowServingFiles(t *testing.T, files serve.Filer) *serve.Window {
+	t.Helper()
+	hostKey := aTestSigner(t)
+	mine := aTestSigner(t)
+
+	line := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(mine.PublicKey()))) + " a test"
+	allowed, err := serve.ParseAllowed([]byte(line), "a test")
+	if err != nil {
+		t.Fatalf("the keys allowed to connect: %v", err)
+	}
+	srv, err := serve.Listen(serve.Config{
+		Addr: "127.0.0.1:0", HostKey: hostKey, Allowed: allowed, Files: files,
+	})
+	if err != nil {
+		t.Fatalf("serve a window: %v", err)
+	}
+	t.Cleanup(func() { _ = srv.Close() })
+
+	win, err := serve.Dial(t.Context(), serve.DialConfig{
+		Addr:    srv.Addr(),
+		Keys:    []ssh.Signer{mine},
+		HostKey: ssh.FixedHostKey(hostKey.PublicKey()),
+	})
+	if err != nil {
+		t.Fatalf("take the window over: %v", err)
+	}
+	t.Cleanup(func() { _ = win.Close() })
+	return win
+}
+
+// aTestSigner is a key to serve with or to connect with.
+func aTestSigner(t *testing.T) ssh.Signer {
+	t.Helper()
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("make a key: %v", err)
+	}
+	signer, err := ssh.NewSignerFromKey(priv)
+	if err != nil {
+		t.Fatalf("use the key: %v", err)
+	}
+	return signer
+}
+
+// A window that takes the file channel and then says nothing is given up
+// on.
+//
+// A file pane on a window taken over opens on the goroutine that draws,
+// the same as one on a machine, so it is bounded the same way.
+func TestOpeningFilesOnASilentWindowGivesUp(t *testing.T) {
+	was := channelTimeout
+	channelTimeout = 300 * time.Millisecond
+	t.Cleanup(func() { channelTimeout = was })
+
+	// It reads and never writes, which is a window that took the channel
+	// and stopped: the SFTP greeting is sent and never answered. The read
+	// ends when the channel does, so this is also how the test sees the
+	// session let go of.
+	letGo := make(chan struct{})
+	win := aWindowServingFiles(t, func(ch io.ReadWriteCloser) error {
+		defer close(letGo)
+		_, _ = io.Copy(io.Discard, ch)
+		return nil
+	})
+
+	done := make(chan error, 1)
+	go func() {
+		ch, client, err := WindowFiles(t.Context(), win)
+		if client != nil {
+			_ = client.Close()
+		}
+		if ch != nil {
+			_ = ch.Close()
+		}
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("a file session started on a window that never answered")
+		}
+		if !errors.Is(err, ErrNoAnswer) {
+			t.Fatalf("WindowFiles = %v, want it to say the window did not answer", err)
+		}
+		// Named, because the user has to decide which window to look at.
+		if !strings.Contains(err.Error(), win.Addr()) {
+			t.Fatalf("WindowFiles = %v, want it to name %s", err, win.Addr())
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("opening a file pane on a silent window never came back")
+	}
+
+	// The channel it opened is closed rather than left on the far window.
+	select {
+	case <-letGo:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the file session was left open on the window")
+	}
+}
+
+// A window that answers speaks SFTP, and the pane reads its files.
+func TestOpeningFilesOnAWindowThatAnswers(t *testing.T) {
+	win := aWindowServingFiles(t, func(ch io.ReadWriteCloser) error {
+		srv, err := sftp.NewServer(ch)
+		if err != nil {
+			return err
+		}
+		served := srv.Serve()
+		if errors.Is(served, io.EOF) {
+			served = nil
+		}
+		return errors.Join(served, srv.Close())
+	})
+
+	ch, client, err := WindowFiles(t.Context(), win)
+	if err != nil {
+		t.Fatalf("WindowFiles: %v", err)
+	}
+	defer func() {
+		_ = client.Close()
+		_ = ch.Close()
+	}()
+	if _, err := client.Getwd(); err != nil {
+		t.Fatalf("read the window's files: %v", err)
 	}
 }

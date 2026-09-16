@@ -89,7 +89,8 @@ type Menu struct {
 	// OnOutside reports a press that landed outside the menu, in the
 	// coordinates Layout is given, and returns whether it was dealt with
 	// and whatever dealing with it failed with. A press it does not claim
-	// closes the menu.
+	// closes the menu, and whatever that press failed with is still
+	// reported.
 	OnOutside func(col, row int) (bool, error)
 
 	items []MenuItem
@@ -338,13 +339,18 @@ func (m *Menu) HandleMouse(ev input.MouseEvent) (bool, error) {
 		// make the menu impossible to open with a click.
 		return true, nil
 	case !inside:
+		var err error
 		if m.OnOutside != nil {
-			if took, err := m.OnOutside(ev.Col, ev.Row); took {
+			var took bool
+			if took, err = m.OnOutside(ev.Col, ev.Row); took {
 				return true, err
 			}
 		}
+		// Dismissed, and the failure still handed back: a press the
+		// program looked at and gave up on failed at something, and one
+		// that closed the menu silently threw that away.
 		m.dismiss()
-		return true, nil
+		return true, err
 	case m.selectable(row):
 		m.place.at = row
 		return true, m.run()

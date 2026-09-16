@@ -16,10 +16,6 @@ const (
 	statusPad = 1
 )
 
-// ellipsis is what grid marks a trimmed string with. A status cut down to
-// this and nothing else is not drawn.
-const ellipsis = "…"
-
 // MenuDef is one menu on a bar: the word shown and the lines under it.
 type MenuDef struct {
 	Title string
@@ -505,7 +501,7 @@ func (b *Menubar) statusAt() (Rect, string) {
 	// status it is.
 	text := grid.TrimTail(b.Status, room)
 	width := grid.StringWidth(text)
-	if width <= 0 || text == ellipsis {
+	if width <= 0 || text == grid.Ellipsis {
 		// Nothing of the status survived the cut. A bare mark that
 		// something was trimmed says nothing, and it would still be drawn
 		// and still take the press.

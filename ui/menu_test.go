@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"image/color"
 	"strings"
 	"testing"
@@ -416,6 +417,31 @@ func TestMenuPressOutsideCanBeClaimed(t *testing.T) {
 	}
 	if *closed != 0 {
 		t.Error("the menu closed even though the press was claimed")
+	}
+}
+
+// A press outside that the program looked at and gave up on still
+// reports what it failed at.
+//
+// Declining only says the menu should close, not that nothing went
+// wrong. Thrown away, the failure left a press that did nothing and said
+// nothing.
+func TestMenuPressOutsideReportsADeclinedFailure(t *testing.T) {
+	cmds := testCommands("Copy")
+	m, closed := newTestMenu(t, cmds, items("copy"))
+	want := errors.New("the bar could not answer that press")
+	m.OnOutside = func(col, row int) (bool, error) { return false, want }
+
+	handled, err := m.HandleMouse(pressAt(39, 19))
+
+	if !errors.Is(err, want) {
+		t.Errorf("the press reported %v, want %v", err, want)
+	}
+	if !handled {
+		t.Error("the press was passed on to what is under the menu")
+	}
+	if *closed != 1 {
+		t.Errorf("closed %d times, want the declined press to close the menu once", *closed)
 	}
 }
 

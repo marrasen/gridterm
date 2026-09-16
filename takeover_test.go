@@ -27,6 +27,7 @@ import (
 	"github.com/marrasen/gridterm/internal/sshtest"
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/serve"
+	"github.com/marrasen/gridterm/session"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/files"
 	"github.com/marrasen/gridterm/ui/term"
@@ -42,6 +43,12 @@ import (
 func TestOneWindowWorksInAnotherMachinesShell(t *testing.T) {
 	a := newTestApp(t, 90, 30)
 	withDialogs(t, a)
+	// A real shell rather than the harness's pipe, because the whole
+	// point is what the shell answers. Set before serving starts, which
+	// is when the served window takes the shell it will start.
+	a.newSession = func(cols, rows int) (session.Session, error) {
+		return session.StartLocal(session.LocalConfig{Cols: cols, Rows: rows})
+	}
 	mine, line := aKeyPair(t)
 	withServing(t, a, line)
 	if err := a.startServing("0", whereHere); err != nil {
@@ -2216,6 +2223,17 @@ func TestTheScreensOfAWindowAreGroupedByMachine(t *testing.T) {
 	// is right above them.
 	if !slices.Equal(heads, []string{"margit"}) {
 		t.Errorf("headings %v, want one for margit and none for the window's own machine: %v", heads, rows)
+	}
+	// And drawn in that order: the window's own screen under its name,
+	// then the heading for margit, then the screen on margit.
+	held := windowAt(t, client, addr)
+	client.refreshPanel(time.Now())
+	own := rowAt(client, remoteKey{window: held, id: host.panes[paneOn(t, host, conns.Local)].ID()})
+	head := rowAt(client, remoteHostKey{window: held, host: "margit"})
+	far := rowAt(client, remoteRowOn(t, client, addr, "margit"))
+	if own < 0 || !(own < head && head < far) {
+		t.Errorf("drawn at %d, %d and %d, want the window's own screen, then margit, then its screen: %v",
+			own, head, far, panelText(client, time.Now()))
 	}
 	if len(under) < 2 {
 		t.Errorf("rows %v, want the window's own screen and the one on margit", under)

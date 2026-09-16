@@ -15,7 +15,6 @@ import (
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/serve"
-	"github.com/marrasen/gridterm/session"
 	"github.com/marrasen/gridterm/settings"
 	"github.com/marrasen/gridterm/ui"
 )
@@ -410,13 +409,10 @@ func (a *app) startServing(port, where string) error {
 		// the shell that was left running rather than only new ones.
 		Attach: a.attachTo,
 		// A shell on this machine, sized for the pane the other window
-		// will draw it in. Started straight from session rather than
-		// through the window's own panes: this is the machine being
-		// worked on, not the one doing the drawing, and nothing here
-		// touches the widget tree.
-		Open: func(cols, rows int) (session.Session, error) {
-			return session.StartLocal(session.LocalConfig{Cols: cols, Rows: rows})
-		},
+		// will draw it in. The same shell a pane here starts, without a
+		// pane: this is the machine being worked on, not the one doing
+		// the drawing, and nothing here touches the widget tree.
+		Open: a.newSession,
 		// Every one of these arrives on a goroutine of the server's, so
 		// they are handed to the one that draws.
 		OnJoin: func(c *serve.Client) {

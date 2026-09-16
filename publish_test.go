@@ -9,6 +9,7 @@ import (
 	"github.com/marrasen/gridterm/internal/sshtest"
 	"github.com/marrasen/gridterm/meter"
 	"github.com/marrasen/gridterm/ui"
+	"github.com/marrasen/gridterm/ui/term"
 )
 
 // aWindowConnectedToMargit is two windows, with the serving one also
@@ -17,7 +18,6 @@ func aWindowConnectedToMargit(t *testing.T) (host, client *testApp, addr string)
 	t.Helper()
 	host, client, addr = twoWindows(t)
 	s := sshtest.New(t)
-	withDialogs(t, host)
 	pinServers(t, host, s)
 	host.connectAs("margit", host.prepare(serverConfig(t, s)))
 	// Connected, not only connecting: the window over there lists the
@@ -57,16 +57,40 @@ func remoteRowsOf(a *testApp, addr string) []ui.ListRow {
 	return a.remoteRows(on, mine, now)
 }
 
-// remoteHeadings are the machine headings this window shows under a
-// window taken over.
-func remoteHeadings(a *testApp, addr string) []string {
+// drawnHeadings are the machine headings the sidebar draws under a
+// window taken over, as the user sees them.
+func drawnHeadings(a *testApp, addr string) []string {
+	a.refreshPanel(time.Now())
 	var heads []string
-	for _, row := range remoteRowsOf(a, addr) {
-		if row.Header {
+	for _, row := range a.panel.Rows() {
+		if key, ok := row.Key.(remoteHostKey); ok && row.Header && key.window == a.windows.at(addr) {
 			heads = append(heads, row.Text)
 		}
 	}
 	return heads
+}
+
+// drawnUnder are the rows the sidebar draws under a heading, up to the
+// next heading.
+func drawnUnder(t *testing.T, a *testApp, key any) []ui.ListRow {
+	t.Helper()
+	a.refreshPanel(time.Now())
+	rows := a.panel.Rows()
+	for i, row := range rows {
+		if row.Key != key {
+			continue
+		}
+		var out []ui.ListRow
+		for _, r := range rows[i+1:] {
+			if r.Header {
+				break
+			}
+			out = append(out, r)
+		}
+		return out
+	}
+	t.Fatalf("the sidebar has no heading %v: %v", key, panelText(a, time.Now()))
+	return nil
 }
 
 // remoteRowOn is the row this window shows for a screen on a machine
@@ -86,33 +110,73 @@ func remoteRowOn(t *testing.T, a *testApp, addr, host string) remoteKey {
 	return remoteKey{}
 }
 
-// A machine's heading stays when the screen under it is watched here.
+// paneOn is the pane a window has on a machine, which has to be the one.
+func paneOn(t *testing.T, a *testApp, host string) *term.Terminal {
+	t.Helper()
+	var found *term.Terminal
+	for pane, e := range a.panes {
+		if e.Host != host {
+			continue
+		}
+		if found != nil {
+			t.Fatalf("more than one pane on %q", host)
+		}
+		found = pane
+	}
+	if found == nil {
+		t.Fatalf("no pane on %q", host)
+	}
+	return found
+}
+
+// watchFromTheSidebar chooses a screen over there and waits until the
+// window over there says somebody is watching it.
+//
+// The pane here opens the moment the row is chosen, whether or not the
+// far end has attached yet, so the far end is what is waited for.
+func watchFromTheSidebar(t *testing.T, host, client *testApp, row remoteKey, far *term.Terminal) *term.Terminal {
+	t.Helper()
+	attachFromTheSidebar(t, client, row)
+	waitFor(t, host, "the window over there to be watched", func() bool {
+		return far.Watched() > 0
+	}, client)
+	pane := client.windows.watcher(row)
+	if pane == nil {
+		t.Fatal("nothing here is watching the screen chosen")
+	}
+	return pane
+}
+
+// A machine's heading stays when the screen under it is watched here,
+// and the pane watching it is drawn under that heading.
 //
 // The heading used to be worked out from the rows under it, so choosing
 // the one row on a machine took the heading away with it, and the user
 // was left wondering where the machine had gone.
 func TestAMachineHeadingStaysWhenItsScreenIsWatched(t *testing.T) {
-	_, client, addr := aWindowConnectedToMargit(t)
+	host, client, addr := aWindowConnectedToMargit(t)
 
 	row := remoteRowOn(t, client, addr, "margit")
-	panes := len(client.panes)
-	attachFromTheSidebar(t, client, row)
-	waitFor(t, client, "a pane watching the screen on margit", func() bool {
-		return len(client.panes) == panes+1
-	})
+	pane := watchFromTheSidebar(t, host, client, row, paneOn(t, host, "margit"))
 
-	// The screen has a row of its own now, not one under the heading.
-	if client.windows.watcher(row) == nil {
-		t.Fatal("nothing is watching the screen chosen")
-	}
-	for _, r := range remoteRowsOf(client, addr) {
+	// Drawn: the heading, with the watching pane's own row under it and
+	// no second row for the screen it is watching.
+	heading := remoteHostKey{window: windowAt(t, client, addr), host: "margit"}
+	under := drawnUnder(t, client, heading)
+	var mine, twice bool
+	for _, r := range under {
+		if r.Key == client.panes[pane] {
+			mine = true
+		}
 		if r.Key == row {
-			t.Error("the screen is still listed under the machine as well as having a pane here")
+			twice = true
 		}
 	}
-	// And the heading is still there.
-	if heads := remoteHeadings(client, addr); !slices.Contains(heads, "margit") {
-		t.Errorf("headings %v, want margit still among them", heads)
+	if !mine {
+		t.Errorf("the watching pane is not drawn under margit: %v", panelText(client, time.Now()))
+	}
+	if twice {
+		t.Error("the screen is still listed under margit as well as having a pane here")
 	}
 }
 
@@ -122,12 +186,8 @@ func TestAMachineOverThereHasAHeadingWithNothingOpenOnIt(t *testing.T) {
 	host, client, addr := aWindowConnectedToMargit(t)
 
 	// The one shell on margit closed over there. The connection stays.
-	for pane, e := range host.panes {
-		if e.Host == "margit" {
-			if err := host.closePane(pane); err != nil {
-				t.Fatalf("close the pane on margit: %v", err)
-			}
-		}
+	if err := host.closePane(paneOn(t, host, "margit")); err != nil {
+		t.Fatalf("close the pane on margit: %v", err)
 	}
 	waitFor(t, host, "the window over there to stop listing a screen on margit", func() bool {
 		host.refreshPanel(time.Now())
@@ -139,8 +199,12 @@ func TestAMachineOverThereHasAHeadingWithNothingOpenOnIt(t *testing.T) {
 		return true
 	}, client)
 
-	if heads := remoteHeadings(client, addr); !slices.Contains(heads, "margit") {
+	if heads := drawnHeadings(client, addr); !slices.Contains(heads, "margit") {
 		t.Errorf("headings %v, want margit while the window over there is connected to it", heads)
+	}
+	heading := remoteHostKey{window: windowAt(t, client, addr), host: "margit"}
+	if under := drawnUnder(t, client, heading); len(under) != 0 {
+		t.Errorf("rows under margit with nothing open on it: %v", under)
 	}
 }
 
@@ -149,11 +213,11 @@ func TestAMachineOverThereHasAHeadingWithNothingOpenOnIt(t *testing.T) {
 // whoever is sitting at it.
 func TestAFinishedScreenOverThereIsNotListed(t *testing.T) {
 	host, client, addr := twoWindows(t)
+	own := host.panes[paneOn(t, host, conns.Local)].ID()
 
 	// A machine over there, saved under its own address so a command
 	// can be run on it by name.
 	s := sshtest.New(t)
-	withDialogs(t, host)
 	pinServers(t, host, s)
 	host.connect(serverConfig(t, s))
 	waitForPanes(t, host, 2)
@@ -183,20 +247,26 @@ func TestAFinishedScreenOverThereIsNotListed(t *testing.T) {
 		return false
 	}, client)
 
-	for _, row := range remoteRowsOf(client, addr) {
-		if key, ok := row.Key.(remoteKey); ok && key.id == done.ID() {
-			t.Errorf("the finished command is listed as something to watch: %v", row)
-		}
+	client.refreshPanel(time.Now())
+	held := windowAt(t, client, addr)
+	// The shell still running over there is offered, so an empty list
+	// proves nothing.
+	if _, ok := panelRow(client, remoteKey{window: held, id: own}); !ok {
+		t.Fatalf("the shell over there is not offered, so this proves nothing: %v", panelText(client, time.Now()))
+	}
+	if row, ok := panelRow(client, remoteKey{window: held, id: done.ID()}); ok {
+		t.Errorf("the finished command is listed as something to watch: %v", row)
 	}
 }
 
-// A screen watched here goes without leaving a row when the window over
-// there closes it.
+// A screen watched here goes without leaving a row when the shell in it
+// ends over there.
 //
 // A shell of this window's own that ends keeps a greyed row saying so.
 // One over there never had a row on that window, and what ended it is
 // that window's business, so a greyed row here said nothing the user
-// could use.
+// could use. The window over there keeps its own greyed row and says
+// so, and that is not listed here either.
 func TestAScreenWatchedHereGoesWithoutARow(t *testing.T) {
 	host, client, addr := twoWindows(t)
 
@@ -209,44 +279,66 @@ func TestAScreenWatchedHereGoesWithoutARow(t *testing.T) {
 		_, ok := panelRow(client, row)
 		return ok
 	}, client)
+	pane := watchFromTheSidebar(t, host, client, row, hostPane)
+	mine := client.panes[pane]
 	panes := len(client.panes)
-	attachFromTheSidebar(t, client, row)
-	waitFor(t, host, "a pane watching it", func() bool {
-		return len(client.panes) == panes+1
-	}, client)
-	rows := len(rowsUnderWindow(client, addr))
 
-	// Closed over there, by whoever sits at that window.
-	if err := host.closePane(hostPane); err != nil {
-		t.Fatalf("close the pane over there: %v", err)
+	// The shell over there ends, the way a shell does.
+	if err := host.shells[0].Close(); err != nil {
+		t.Fatalf("end the shell over there: %v", err)
 	}
-	waitFor(t, host, "the watching pane to go", func() bool {
+	reapWhenTold(t, host)
+	// And this window has both heard that it ended and let the pane go.
+	waitFor(t, host, "the watching pane to go and the window over there to say the shell finished", func() bool {
+		host.refreshPanel(time.Now())
 		client.reapExited()
-		return len(client.panes) == panes
+		open, still := client.openOver(row)
+		return len(client.panes) == panes-1 && (!still || open.State == meter.Closed.String())
 	}, client)
 
-	// No row left behind for it, greyed or otherwise.
-	client.refreshPanel(time.Now())
-	under := rowsUnderWindow(client, addr)
-	if len(under) != rows-1 {
-		t.Errorf("%d rows under the window, want %d: %v", len(under), rows-1, panelText(client, time.Now()))
-	}
-	for _, r := range under {
-		if r.State == meter.Closed {
-			t.Errorf("a finished row was left behind: %q", r.Label)
+	// Nothing drawn for it under the window: not the pane's row, not
+	// the screen over there, and nothing greyed.
+	for _, r := range drawnUnder(t, client, hostKey(addr)) {
+		switch {
+		case r.Key == mine:
+			t.Errorf("the watching pane's row was left behind: %q", r.Text)
+		case r.Key == row:
+			t.Errorf("the finished shell over there is still listed: %q", r.Text)
+		case r.FG == client.colours.ANSI[8]:
+			t.Errorf("a greyed row was left behind: %q", r.Text)
 		}
 	}
 }
 
-// rowsUnderWindow are the rows of this window's own filed under a
-// window taken over.
-func rowsUnderWindow(a *testApp, addr string) []conns.Row {
-	for _, g := range a.registry.Groups(time.Now()) {
-		if g.Host == addr {
-			return g.Rows
+// A shell opened on the window from here goes without leaving a row
+// when it ends.
+func TestAShellOnTheWindowGoesWithoutARow(t *testing.T) {
+	host, client, addr := twoWindows(t)
+	pane := paneOnTheWindow(t, client)
+	mine := client.panes[pane]
+	panes := len(client.panes)
+
+	// The shell the window over there started for this one is the one
+	// after its own.
+	host.shellsMu.Lock()
+	served := len(host.shells)
+	host.shellsMu.Unlock()
+	if served != 2 {
+		t.Fatalf("the window over there started %d shells, want its own and this one's", served)
+	}
+	if err := host.shells[1].Close(); err != nil {
+		t.Fatalf("end the shell over there: %v", err)
+	}
+	waitFor(t, host, "the pane to go", func() bool {
+		client.reapExited()
+		return len(client.panes) == panes-1
+	}, client)
+
+	for _, r := range drawnUnder(t, client, hostKey(addr)) {
+		if r.Key == mine || r.FG == client.colours.ANSI[8] {
+			t.Errorf("a row was left behind for the shell that ended: %q", r.Text)
 		}
 	}
-	return nil
 }
 
 // A window's heading says its name and nothing else: the address when

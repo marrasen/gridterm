@@ -127,8 +127,12 @@ func reapWhenTold(t *testing.T, a *testApp) {
 // for every tree operation.
 type testApp struct {
 	*app
-	// shells are the fake sessions, in the order the panes were made.
-	shells []*pipeSession
+	// shells are the fake sessions, in the order they were started. A
+	// shell served to another window is started on a goroutine of the
+	// server's, so shellsMu guards the append; a test reads the list
+	// once it has waited for the pane that uses the shell.
+	shells   []*pipeSession
+	shellsMu sync.Mutex
 
 	// screen is the image the window draws on, kept between frames: a
 	// fresh one arrives blank, and the compositor puts the whole stack
@@ -229,7 +233,9 @@ func newTestApp(t *testing.T, cols, rows int, opts ...testOption) *testApp {
 	ta.windows.knownAt = filepath.Join(t.TempDir(), "known_windows")
 	ta.newSession = func(int, int) (session.Session, error) {
 		sess := newPipeSession()
+		ta.shellsMu.Lock()
 		ta.shells = append(ta.shells, sess)
+		ta.shellsMu.Unlock()
 		return sess, nil
 	}
 	// The flags, the way main reads them: with -ssh there is no first

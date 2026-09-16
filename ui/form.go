@@ -59,9 +59,13 @@ type FormStyle struct {
 // Do runs on the drawing goroutine. Returning an error leaves the form
 // open with the error shown, which is what a connection that failed
 // wants; returning nil means the button is finished and the form closes.
+//
+// Keep leaves the form open after Do worked, for a button the user may
+// want to press alongside another one.
 type Button struct {
 	Title string
 	Do    func() error
+	Keep  bool
 }
 
 // formRow is one labelled field.
@@ -605,6 +609,9 @@ func (f *Form) press(at int) error {
 		// The form stays open showing why, so what was typed is still
 		// there to correct.
 		f.SetError(err)
+		return nil
+	}
+	if b.Keep {
 		return nil
 	}
 	f.dismiss()

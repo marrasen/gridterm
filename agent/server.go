@@ -360,6 +360,10 @@ func notHanded(id string) string {
 
 // waitFor watches a pane until it says what was asked for, goes quiet,
 // or the time runs out.
+//
+// It watches the screen and nothing more, however many lines the agent
+// asked for, because a wait asks twenty times a second and reading
+// lines means rendering them. Those lines are read once, at the end.
 func (s *Server) waitFor(want ask) said {
 	quiet := quietFor
 	if want.Until.QuietMS > 0 {
@@ -380,7 +384,7 @@ func (s *Server) waitFor(want ask) said {
 		first    = true
 	)
 	for {
-		look, err := s.cfg.Window.Look(want.Pane, want.Lines)
+		look, err := s.cfg.Window.Look(want.Pane, 0)
 		if err != nil {
 			return said{Error: err.Error()}
 		}
@@ -392,21 +396,35 @@ func (s *Server) waitFor(want ask) said {
 
 		if want.Until.Contains != "" {
 			if strings.Contains(look.Screen, want.Until.Contains) {
-				return said{Look: &look}
+				return s.ending(want, look, false)
 			}
 		} else if now.Sub(lastMove) >= quiet {
-			return said{Look: &look}
+			return s.ending(want, look, false)
 		}
 		// A program that has finished says nothing more, so there is
 		// nothing left to wait for whichever way the wait was asked.
 		if look.Gone {
-			return said{Look: &look}
+			return s.ending(want, look, false)
 		}
 		// The window is shutting down, so what is on the screen now is
 		// the last thing there will ever be to say about it.
 		if now.After(deadline) || s.isClosed() {
-			return said{Look: &look, Waited: true}
+			return s.ending(want, look, true)
 		}
 		time.Sleep(lookEvery)
 	}
+}
+
+// ending is what a wait answers with: the lines the agent asked for,
+// read now that the waiting is over. A wait that asked for no lines
+// answers with the screen it was already watching.
+func (s *Server) ending(want ask, look Look, waited bool) said {
+	if want.Lines > 0 {
+		full, err := s.cfg.Window.Look(want.Pane, want.Lines)
+		if err != nil {
+			return said{Error: err.Error()}
+		}
+		look = full
+	}
+	return said{Look: &look, Waited: waited}
 }

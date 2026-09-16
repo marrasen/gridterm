@@ -87,6 +87,17 @@ type Look struct {
 	// for a screen to settle watches this rather than comparing text,
 	// so output that redraws the same picture still counts as movement.
 	Changed uint64 `json:"changed"`
+
+	// Row and Col are where the cursor is on the screen, counted from
+	// zero at the top left. They are the screen's own rows, so they say
+	// nothing about lines that have scrolled off.
+	Row int `json:"row"`
+	Col int `json:"col"`
+
+	// Alt says a full-screen program is drawing, such as vim, top or
+	// mc. Nothing has scrolled off while one is, so a read of more than
+	// the screen gives the screen.
+	Alt bool `json:"alt,omitempty"`
 }
 
 // NewCode makes a code for one handed-over pane.

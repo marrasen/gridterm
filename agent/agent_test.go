@@ -22,9 +22,11 @@ type fakeWindow struct {
 	gone    bool
 	taken   bool
 
-	// lines is what the last Look was asked for, and pressed is every
-	// key name a Send has carried.
+	// lines is what the last Look was asked for, looks counts the Looks
+	// by how many lines each asked for, and pressed is every key name a
+	// Send has carried.
 	lines   int
+	looks   map[int]int
 	pressed []string
 }
 
@@ -41,6 +43,10 @@ func (w *fakeWindow) Look(id string, lines int) (Look, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.lines = lines
+	if w.looks == nil {
+		w.looks = map[int]int{}
+	}
+	w.looks[lines]++
 	if w.taken {
 		return Look{}, errors.New("the user has taken that pane back")
 	}
@@ -736,5 +742,53 @@ func TestAWindowThatWentSaysSoEveryTime(t *testing.T) {
 	}
 	if !c.Gone() {
 		t.Error("it does not know the window has gone")
+	}
+}
+
+// A wait watches the screen and nothing more, however many lines it was
+// asked for, and reads those once at the end.
+//
+// A wait asks the window twenty times a second, and reading lines means
+// rendering them. Asking for two thousand lines each time would make a
+// wait on a busy program cost the window the whole of its scrollback,
+// over and over.
+func TestAWaitWatchesTheScreenAndReadsTheLinesOnce(t *testing.T) {
+	w, _, code := listening(t)
+
+	c, err := Dial(code)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer func() { _ = c.Close() }()
+
+	pane, err := c.Use(code)
+	if err != nil {
+		t.Fatalf("use: %v", err)
+	}
+
+	// Something to wait through: the pane says several things and then
+	// goes quiet.
+	go func() {
+		for i := 0; i < 5; i++ {
+			w.say(fmt.Sprintf("line %d", i))
+			time.Sleep(60 * time.Millisecond)
+		}
+	}()
+
+	_, gaveUp, err := c.Wait(pane.ID, 2000, Until{QuietMS: 150, TimeoutMS: 10000})
+	if err != nil {
+		t.Fatalf("wait: %v", err)
+	}
+	if gaveUp {
+		t.Fatal("the wait ran out of time rather than seeing the pane go quiet")
+	}
+
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if got := w.looks[2000]; got != 1 {
+		t.Errorf("the window was asked for 2000 lines %d times, want once", got)
+	}
+	if got := w.looks[0]; got < 5 {
+		t.Errorf("the window was asked for the screen %d times, want many", got)
 	}
 }

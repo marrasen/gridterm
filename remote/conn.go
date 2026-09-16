@@ -334,6 +334,10 @@ func newConn(client *ssh.Client, agentConn io.Closer, user, addr string) *Conn {
 // String names the connection the way a user would: user@host:port.
 func (c *Conn) String() string { return c.user + "@" + c.addr }
 
+// Closed reports whether the connection has been closed, so a caller can
+// tell a session that ended by itself from the connection going under it.
+func (c *Conn) Closed() bool { return c.isClosing() }
+
 // closing reports whether Close has started.
 func (c *Conn) isClosing() bool {
 	c.mu.Lock()

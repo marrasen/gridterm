@@ -87,9 +87,10 @@ type Menu struct {
 	OnEdge func(step int)
 
 	// OnOutside reports a press that landed outside the menu, in the
-	// coordinates Layout is given, and returns whether it was dealt with.
-	// A press it does not claim closes the menu.
-	OnOutside func(col, row int) bool
+	// coordinates Layout is given, and returns whether it was dealt with
+	// and whatever dealing with it failed with. A press it does not claim
+	// closes the menu.
+	OnOutside func(col, row int) (bool, error)
 
 	items []MenuItem
 	cmds  *Commands
@@ -337,8 +338,10 @@ func (m *Menu) HandleMouse(ev input.MouseEvent) (bool, error) {
 		// make the menu impossible to open with a click.
 		return true, nil
 	case !inside:
-		if m.OnOutside != nil && m.OnOutside(ev.Col, ev.Row) {
-			return true, nil
+		if m.OnOutside != nil {
+			if took, err := m.OnOutside(ev.Col, ev.Row); took {
+				return true, err
+			}
 		}
 		m.dismiss()
 		return true, nil

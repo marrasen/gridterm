@@ -287,3 +287,80 @@ func TestMenubarStatusErrorReachesTheCaller(t *testing.T) {
 		t.Errorf("press returned %v, want the status's own error", err)
 	}
 }
+
+// TestMenubarStatusErrorThroughAnOpenMenuReachesTheCaller checks the
+// other way a press arrives. The open menu covers the window, so the
+// press comes in through it, and what the status failed with has to come
+// back out the same way.
+func TestMenubarStatusErrorThroughAnOpenMenuReachesTheCaller(t *testing.T) {
+	boom := errors.New("boom")
+	b, st, _ := newStatusBar(t, "ready")
+	b.OnStatus = func() error { return boom }
+	drawBarOn(b, 40, 20)
+	b.HandleMouse(pressAt(1, 0))
+
+	_, err := st.top().HandleMouse(pressAt(36, 0))
+
+	if !errors.Is(err, boom) {
+		t.Errorf("the press through the menu returned %v, want the status's own error", err)
+	}
+	if b.OpenIndex() != -1 {
+		t.Errorf("open = %d, want the menu closed as well", b.OpenIndex())
+	}
+}
+
+// TestMenubarAStatusTrimmedToNothingIsNotDrawn checks the narrowest bar
+// there is room on. One column left over holds the mark that something
+// was cut and nothing else, which says nothing and would still take the
+// press.
+func TestMenubarAStatusTrimmedToNothingIsNotDrawn(t *testing.T) {
+	b, _, ran := newStatusBar(t, "serving")
+
+	g := drawBarOn(b, titlesEnd+statusPad+1, 20)
+
+	if at, text := b.statusAt(); !at.Empty() || text != "" {
+		t.Errorf("the status is at %+v reading %q, want nowhere", at, text)
+	}
+	if row := rowOf(g, 0); strings.Contains(row, "…") {
+		t.Errorf("bar row = %q, want no mark where none of the status fits", row)
+	}
+	handled, err := b.HandleMouse(pressAt(titlesEnd, 0))
+	if err != nil {
+		t.Fatalf("press: %v", err)
+	}
+	if handled {
+		t.Error("the press on the column the status would have had was claimed")
+	}
+	if *ran != 0 {
+		t.Errorf("the status ran %d times, want not at all", *ran)
+	}
+}
+
+// TestMenubarStatusStartsExactlyWhereTheTitlesEnd checks the bar width
+// where the room is the status's own width: the two are touching, with
+// the last title's own pad as the blank between them.
+func TestMenubarStatusStartsExactlyWhereTheTitlesEnd(t *testing.T) {
+	b, _, _ := newStatusBar(t, "ready")
+	width := grid.StringWidth("ready")
+
+	g := drawBarOn(b, titlesEnd+statusPad+width, 20)
+
+	at, text := b.statusAt()
+	if text != "ready" {
+		t.Fatalf("the status reads %q, want the whole of it: the room is exactly its width", text)
+	}
+	if at.X != titlesEnd {
+		t.Errorf("the status starts at column %d, want the last title's end %d", at.X, titlesEnd)
+	}
+	if got, want := at.X+at.Cols, titlesEnd+width; got != want {
+		t.Errorf("the status ends at column %d, want %d", got, want)
+	}
+	// And drawn there, with the last title whole behind it.
+	if got := g.At(titlesEnd, 0).Rune; got != 'r' {
+		t.Errorf("column %d reads %q, want the status to start there: %q",
+			titlesEnd, got, rowOf(g, 0))
+	}
+	if !strings.Contains(rowOf(g, 0), "Edit") {
+		t.Errorf("bar row = %q, want the last title kept whole", rowOf(g, 0))
+	}
+}

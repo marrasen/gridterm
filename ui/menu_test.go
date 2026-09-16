@@ -407,7 +407,7 @@ func TestMenuPressOutsideCanBeClaimed(t *testing.T) {
 	cmds := testCommands("Copy")
 	m, closed := newTestMenu(t, cmds, items("copy"))
 	var at [2]int
-	m.OnOutside = func(col, row int) bool { at = [2]int{col, row}; return true }
+	m.OnOutside = func(col, row int) (bool, error) { at = [2]int{col, row}; return true, nil }
 
 	m.HandleMouse(pressAt(39, 19))
 

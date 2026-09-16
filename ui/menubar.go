@@ -16,6 +16,10 @@ const (
 	statusPad = 1
 )
 
+// ellipsis is what grid marks a trimmed string with. A status cut down to
+// this and nothing else is not drawn.
+const ellipsis = "…"
+
 // MenuDef is one menu on a bar: the word shown and the lines under it.
 type MenuDef struct {
 	Title string
@@ -72,8 +76,12 @@ type Menubar struct {
 	// ordinary foreground.
 	StatusFG color.RGBA
 
-	// OnStatus runs when the status text is pressed. A nil OnStatus
-	// leaves the press the bar's, but does nothing with it.
+	// OnStatus runs when the status text is pressed, and what it returns
+	// reaches whoever handed the press in, by either way a press arrives:
+	// straight at the bar, or through the open menu that covers the
+	// window.
+	//
+	// A nil OnStatus leaves the press the bar's, but does nothing with it.
 	OnStatus func() error
 
 	// Present shows a menu and returns the function that takes it away.
@@ -373,23 +381,21 @@ func (b *Menubar) clickLabel(col, row int) (bool, error) {
 }
 
 // pressedBar handles a press that fell outside the open menu, reporting
-// whether the bar dealt with it. The point is in the menu's coordinates,
-// which cover the whole window.
-func (b *Menubar) pressedBar(col, row int) bool {
+// whether the bar dealt with it and whatever it failed with. The point is
+// in the menu's coordinates, which cover the whole window.
+func (b *Menubar) pressedBar(col, row int) (bool, error) {
 	origin := b.origin()
 	col, row = col-origin.X, row-origin.Y
 	if !b.bar().Contains(col, row) {
-		return false
+		return false, nil
 	}
 	// A press anywhere on the bar is the bar's, even between titles: it
-	// closes the menu rather than reaching the pane underneath. The
-	// menu's OnOutside has nowhere to put an error, so one from the
-	// status is dropped here.
-	handled, _ := b.clickLabel(col, row)
+	// closes the menu rather than reaching the pane underneath.
+	handled, err := b.clickLabel(col, row)
 	if !handled {
 		b.Close()
 	}
-	return true
+	return true, err
 }
 
 // step moves to the menu beside the one showing, wrapping at the ends.
@@ -499,7 +505,10 @@ func (b *Menubar) statusAt() (Rect, string) {
 	// is about while the front of it repeats.
 	text := grid.TrimHead(b.Status, room)
 	width := grid.StringWidth(text)
-	if width <= 0 {
+	if width <= 0 || text == ellipsis {
+		// Nothing of the status survived the cut. A bare mark that
+		// something was trimmed says nothing, and it would still be drawn
+		// and still take the press.
 		return Rect{}, ""
 	}
 	return Rect{X: bar.Cols - statusPad - width, Cols: width, Rows: barRows}, text

@@ -317,7 +317,7 @@ func (a *app) closePane(w ui.Widget) error { return a.removePane(w, false) }
 //
 // keep leaves the panel rows behind, greyed and closed, for a shell of
 // this window's own that ended by itself. A pane the user closed takes
-// its row with it, and so does one drawn from a window taken over.
+// its row with it.
 func (a *app) removePane(w ui.Widget, keep bool) error {
 	if w == nil {
 		return nil
@@ -399,7 +399,8 @@ func (a *app) removePane(w ui.Widget, keep bool) error {
 // a window that cleared the screen the moment the program finished would
 // take the answer away with it. A shell takes its pane with it: there is
 // nothing left to read, and the user asked for a shell rather than for
-// what it last said.
+// what it last said. A pane drawn from a window taken over takes its row
+// with it as well.
 func (a *app) paneEnded(t *term.Terminal) error {
 	e := a.panes[t]
 	if a.windows.drawsFromAWindow(t) {

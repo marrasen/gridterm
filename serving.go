@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/pkg/sftp"
 
@@ -562,14 +563,14 @@ func (a *app) dropServedRows() {
 // serveFiles gives a client the files of a machine this window can
 // reach, as SFTP on the channel it was handed.
 //
-// An empty host, and this machine's own name, are served from here. Any
-// other name is a machine this window has a connection to, and the bytes
-// are relayed over that connection.
+// This machine's own name, which is empty, is served from here. Any
+// other name is whatever the client asked for, and the bytes are
+// relayed over this window's connection to it.
 //
 // It runs on a goroutine of the server's, so what it needs from the
 // window is asked for on the goroutine that draws.
 func (a *app) serveFiles(host string, ch io.ReadWriteCloser) error {
-	if host == "" || host == conns.Local {
+	if host == conns.Local {
 		return serveLocalFiles(ch)
 	}
 	return a.relayFiles(host, ch)
@@ -590,54 +591,76 @@ func (a *app) relayFiles(host string, ch io.ReadWriteCloser) error {
 		return fmt.Errorf("could not open a file session on %s: %w", host, err)
 	}
 
-	// What the client sends, on to the machine. On a goroutine of its
-	// own, because this one carries the answers back. The client going
-	// is an end of file here, and closing the subsystem then is what
-	// tells the machine and unblocks the read below, so a machine that
-	// has stopped answering cannot hold the relay open.
-	clientGone := make(chan struct{})
+	// What the client sends, on to the machine. The client going is an
+	// end of file here.
 	sent := make(chan error, 1)
 	go func() {
 		_, err := io.Copy(relay, ch)
 		if errors.Is(err, io.EOF) {
 			err = nil
 		}
-		// Closed before the subsystem is, so a read below that ended
-		// because of that close finds this already shut.
-		close(clientGone)
-		sent <- errors.Join(err, relay.Close())
+		sent <- err
 	}()
 
 	// And what the machine says, back to the client. It ends when the
-	// machine's session does, when the connection to it closes, or when
-	// the copy above closes the subsystem.
-	_, back := io.Copy(ch, relay)
-	if errors.Is(back, io.EOF) {
-		back = nil
-	}
-
-	select {
-	case <-clientGone:
-		// The client is finished, which is how a file session usually
-		// ends. The copy above has closed the subsystem already, so its
-		// account is here to be waited for.
-		return errors.Join(back, <-sent)
-	default:
-	}
-
-	// The machine went while the client was still there. The copy above
-	// is parked on a client that has not gone, and closing the channel is
-	// what ends it -- which happens once this returns. So its account is
-	// waited for off this goroutine and logged there, and the client is
-	// told here.
+	// machine's session does and when the connection to it closes.
+	back := make(chan error, 1)
 	go func() {
-		if err := <-sent; err != nil {
-			a.pump.post(func() {
-				a.logError(fmt.Errorf("carrying a file session to %s: %w", host, err))
-			})
+		_, err := io.Copy(ch, relay)
+		if errors.Is(err, io.EOF) {
+			err = nil
 		}
+		back <- err
 	}()
-	return errors.Join(back, fmt.Errorf("the file session on %s ended", host))
+
+	var fromClient, fromMachine error
+	machineDone := false
+	select {
+	case fromClient = <-sent:
+	case fromMachine = <-back:
+		machineDone = true
+		select {
+		case fromClient = <-sent:
+			// Both ended together, which the client going accounts for:
+			// a session the client closed itself is not the machine
+			// ending under it.
+		default:
+			// The machine went while the client was still there. The copy
+			// from the client is parked on a client that has not gone, and
+			// closing the channel is what ends it -- which happens once
+			// this returns. So its account is waited for off this
+			// goroutine and logged there, and the client is told here.
+			closed := relay.Close()
+			go func() {
+				if err := errors.Join(<-sent, closed); err != nil {
+					a.pump.post(func() {
+						a.logError(fmt.Errorf("carrying a file session to %s: %w", host, err))
+					})
+				}
+			}()
+			return errors.Join(fromMachine, fmt.Errorf(
+				"the connection to %s went while a file session was running over it", host))
+		}
+	}
+
+	// The client is finished, which is how a file session usually ends.
+	// Closing the subsystem sends the machine a channel close and nothing
+	// more.
+	errs := []error{fromClient, relay.Close()}
+	if machineDone {
+		return errors.Join(append(errs, fromMachine)...)
+	}
+	select {
+	case fromMachine = <-back:
+		return errors.Join(append(errs, fromMachine)...)
+	case <-time.After(relayGrace):
+	}
+	// A machine that has stopped answering never answers that close, so
+	// the copy from it is left where it is rather than holding open the
+	// row for a client that has gone. It ends when the connection to that
+	// machine closes, and Conn.Close does end it: it tears the transport
+	// down.
+	return errors.Join(errs...)
 }
 
 // connectionTo is the connection this window holds to a machine.
@@ -654,7 +677,8 @@ func (a *app) connectionTo(host string) (*remote.Conn, error) {
 	a.pump.post(func() {
 		m := a.about(host).machine
 		if m == nil {
-			back <- found{err: fmt.Errorf("this window is not connected to %s", host)}
+			back <- found{err: fmt.Errorf(
+				"the window you are reading through is not connected to %s", host)}
 			return
 		}
 		back <- found{conn: m.conn}
@@ -664,7 +688,7 @@ func (a *app) connectionTo(host string) (*remote.Conn, error) {
 		return got.conn, got.err
 	case <-a.ctx.Done():
 		// The window is closing and nothing will run what was posted.
-		return nil, errors.New("this window is closing")
+		return nil, errors.New("the window you are reading through is closing")
 	}
 }
 

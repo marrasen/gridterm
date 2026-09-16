@@ -532,14 +532,15 @@ func (a *app) ridingOn(m *machine) []string {
 	return names
 }
 
-// filePanesOn counts the panes of the file manager reading a machine.
+// filePanesOn counts the panes of the file manager filed under a
+// machine, a pane reading through a window of that name among them.
 func (a *app) filePanesOn(host string) int {
 	if a.files == nil {
 		return 0
 	}
 	n := 0
 	for _, p := range a.files.view.Panes() {
-		if p.FS().Name() == host {
+		if a.filedUnder(p, host) {
 			n++
 		}
 	}

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -1271,7 +1272,12 @@ func TestThePlusOnAMachineOverThereOffersFilesAlone(t *testing.T) {
 	menu := clickPlusFar(t, client, addr, "margit")
 
 	if got := menuCommands(menu); len(got) != 1 || got[0] != "conn.files" {
-		t.Errorf("the plus offers %v, want files alone", got)
+		t.Fatalf("the plus offers %v, want files alone", got)
+	}
+	// And it says so in the word the rest of the sidebar uses, rather
+	// than in whatever the command is called.
+	if got := menu.Items()[0].Title; got != "Files" {
+		t.Errorf("the line reads %q, want Files", got)
 	}
 }
 
@@ -1289,9 +1295,14 @@ func TestFilesOnAMachineOverThereReadItThroughTheWindow(t *testing.T) {
 
 	pane := openFilesFromTheFarPlus(t, client, host, addr, "margit")
 
-	// The window's own name, so the pane goes when the window does.
-	if got := pane.FS().Name(); got != held.name {
-		t.Errorf("the pane says it is on %q, want the window %q", got, held.name)
+	// The machine it reads, through the window carrying the bytes: every
+	// question the pane asks is about margit.
+	if got, want := pane.FS().Name(), "margit through "+held.name; got != want {
+		t.Errorf("the pane says it is on %q, want %q", got, want)
+	}
+	// And it is filed under the window, so it goes when the window does.
+	if got := client.hostOf(pane.FS()); got != held.name {
+		t.Errorf("the pane is filed under %q, want the window %q", got, held.name)
 	}
 	// And margit on that window as its place, so it is neither the
 	// window's own disk nor a machine of this one's.
@@ -1334,6 +1345,18 @@ func TestFilesOnAMachineOverThereReadItThroughTheWindow(t *testing.T) {
 		t.Errorf("the rows are drawn heading %d, pane %d, screen %d: %v",
 			heading, mine, screen, panelText(client, panelNow))
 	}
+
+	// And the heading is drawn the way a machine's is: a step in from
+	// the window's own heading, with its rows beside it, and a state dot
+	// saying the window over there is connected to it.
+	rows := client.panel.Rows()
+	if got := rows[heading]; got.Depth != 2 || got.Mark != dot || got.MarkFG == (color.RGBA{}) {
+		t.Errorf("margit's heading is drawn at depth %d with mark %q in %v, "+
+			"want a machine heading with a state dot", got.Depth, got.Mark, got.MarkFG)
+	}
+	if got := rows[mine]; got.Depth != 2 {
+		t.Errorf("the pane's row is drawn at depth %d, want beside the heading", got.Depth)
+	}
 }
 
 // Letting go of the window takes the pane with it.
@@ -1349,9 +1372,9 @@ func TestLettingGoOfTheWindowClosesAPaneOnAMachineOverThere(t *testing.T) {
 		t.Fatalf("the manager holds %v, want the one pane", filesRows(client))
 	}
 
-	if err := client.dropWindow(addr); err != nil {
-		t.Fatalf("let go of the window: %v", err)
-	}
+	// The user's own path: the plus on the window's heading, and the
+	// line that lets go of it.
+	chooseMenuItem(t, clickPlus(t, client, addr), "conn.disconnect")
 
 	if client.files != nil {
 		for _, p := range client.files.view.Panes() {
@@ -1360,6 +1383,88 @@ func TestLettingGoOfTheWindowClosesAPaneOnAMachineOverThere(t *testing.T) {
 			}
 		}
 		t.Errorf("the manager is still open: %v", filesRows(client))
+	}
+	// And nothing of it is left on the sidebar: no heading for margit,
+	// and no row for a pane on it.
+	for _, line := range panelText(client, panelNow) {
+		if strings.Contains(line, "margit") {
+			t.Errorf("the sidebar still says %q: %v", line, panelText(client, panelNow))
+		}
+	}
+}
+
+// The question before a delete names the machine the files are really
+// on.
+//
+// A pane's own name is what every question about it is written with: the
+// delete, the new directory, the go-to hint and every failure a read
+// reports. One calling itself by the window's name asked about taking
+// files off a machine they were not on.
+func TestDeletingOnAMachineOverThereNamesThatMachine(t *testing.T) {
+	host, client, addr := aWindowConnectedToMargit(t)
+
+	dir := t.TempDir()
+	putFile(t, dir, "one.txt", "the body")
+
+	pane := openFilesFromTheFarPlus(t, client, host, addr, "margit")
+	openAt(t, client, pane, overThere(dir))
+
+	tap(t, client.files.view, input.KeyDown)
+	tap(t, client.files.view, input.KeyF8)
+
+	f := awaitModal(t, client, "the delete question", byTitlePrefix[*ui.Form]("Delete"))
+	said := strings.Join(f.Lines, " ")
+	if !strings.Contains(said, "margit") {
+		t.Errorf("it asks %q, want the machine the files are on", said)
+	}
+	pressButton(t, client, f, "Keep them")
+}
+
+// A window renamed while a pane on one of its machines is open leaves
+// that pane where it is, under the new name.
+//
+// The name is frozen into the filesystem when the pane opens, and the
+// window finds a pane's machine by matching it. A pane left under the
+// old name would be drawn under a heading nothing is held at.
+func TestRenamingTheWindowMovesAPaneOnAMachineOverThere(t *testing.T) {
+	host, client, addr, keyFile := aServingWindowConnectedToMargit(t)
+	held := windowAt(t, client, addr)
+
+	pane := openFilesFromTheFarPlus(t, client, host, addr, "margit")
+
+	saveWindowFromTheDialog(t, client, "office", addr, keyFile)
+
+	if got := client.windows.names(); !slices.Equal(got, []string{"office"}) {
+		t.Fatalf("it is holding %v, want the one window under office", got)
+	}
+	if held != client.windows.named("office") {
+		t.Fatal("the window was taken over again rather than renamed")
+	}
+	// The pane still reads margit, and says so under the new name.
+	if got, want := pane.FS().Name(), "margit through office"; got != want {
+		t.Errorf("the pane says it is on %q, want %q", got, want)
+	}
+	row := client.files.rows[pane]
+	if row == nil {
+		t.Fatal("the pane has no row on the sidebar")
+	}
+	if row.Host != "office" {
+		t.Errorf("the pane's row is filed under %q, want office", row.Host)
+	}
+
+	// And it is drawn under margit's heading, which is under the
+	// window's new name.
+	client.refreshPanel(panelNow)
+	window := rowAt(client, hostKey("office"))
+	heading := rowAt(client, remoteHostKey{window: held, host: "margit"})
+	mine := rowAt(client, row)
+	if window < 0 || heading < 0 || mine < 0 {
+		t.Fatalf("window %d, margit %d, the pane %d: %v",
+			window, heading, mine, panelText(client, panelNow))
+	}
+	if !(window < heading && heading < mine) {
+		t.Errorf("the rows are drawn office %d, margit %d, pane %d: %v",
+			window, heading, mine, panelText(client, panelNow))
 	}
 }
 

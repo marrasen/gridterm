@@ -622,7 +622,7 @@ func TestAJobLetsGoOfTheFilesystemsItOpened(t *testing.T) {
 	mine := newCountingFS()
 	a.runJob(jobs.Op{
 		Kind: jobs.Delete, From: mine, At: dir, Names: []string{"one.txt"},
-	}, conns.Local, conns.Local, []vfs.FS{mine})
+	}, jobEnd{host: conns.Local}, jobEnd{host: conns.Local}, []vfs.FS{mine})
 
 	j := a.jobs[theJobRow(t, a)]
 	<-j.Done()
@@ -717,5 +717,104 @@ func TestAJobsDialogDoesNotPlantARate(t *testing.T) {
 	a.refreshJobsAt(time.Now())
 	if _, ok := a.rates[e]; ok {
 		t.Fatal("the dialog put a rate back for a row the panel had thrown away")
+	}
+}
+
+// pressButtonOver presses a dialog button whose work waits on another
+// window's answer.
+//
+// The work is posted rather than done on the spot, so this window's pump
+// is run on a goroutine of its own and the other window is pumped here:
+// it answers from the goroutine that draws, which is the test one.
+// Nothing here touches the window the dialog is on while that runs.
+func pressButtonOver(t *testing.T, a, other *testApp, f *ui.Form, title string) {
+	t.Helper()
+	at := -1
+	for i, b := range f.Buttons() {
+		if b.Title == title {
+			at = i
+			break
+		}
+	}
+	if at < 0 {
+		t.Fatalf("the dialog has no %q button", title)
+	}
+	for i := 0; i < len(f.Fields())+len(f.Buttons())+1; i++ {
+		if got, isButton := f.Focused(); isButton && got == at {
+			sendKey(t, a, press(input.KeyEnter, 0))
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				a.pump.run()
+			}()
+			waitFor(t, other, "the window over there to answer "+title, func() bool {
+				select {
+				case <-done:
+					return true
+				default:
+					return false
+				}
+			})
+			return
+		}
+		sendKey(t, a, press(input.KeyTab, 0))
+	}
+	t.Fatalf("the focus never reached the %q button", title)
+}
+
+// Repeat on a copy from a machine of a window taken over reads that
+// machine again.
+//
+// The pane is filed under the window, so the job's row says the window,
+// and a repeat that opened the window by that name opened the window's
+// own disk instead: it read the wrong machine, and the other way round
+// it would have written to it. In a test the two are one computer, so
+// what tells them apart is that margit is asked for a file session.
+func TestRepeatingACopyFromAMachineOverThere(t *testing.T) {
+	host, client, addr, margit := aWindowConnectedToMargitOn(t)
+
+	from, into := t.TempDir(), t.TempDir()
+	putFile(t, from, "one.txt", "the body")
+
+	there := openFilesFromTheFarPlus(t, client, host, addr, "margit")
+	here := openFilesFromThePlus(t, client, conns.Local)
+	openAt(t, client, there, overThere(from))
+	openAt(t, client, here, into)
+	client.focus(there)
+
+	copyTheFirstFile(t, client, client.files.view)
+	e := theJobRow(t, client)
+	waitFor(t, client, "the copy to finish", func() bool {
+		client.refreshJobs()
+		return len(client.jobs) == 0
+	})
+	copied := filepath.Join(into, "one.txt")
+	if _, err := os.Stat(copied); err != nil {
+		t.Fatalf("the copy did not arrive: %v", err)
+	}
+	if err := os.Remove(copied); err != nil {
+		t.Fatalf("clearing the copy: %v", err)
+	}
+
+	sessions := margit.SFTPs()
+	openTheRow(t, client, e)
+	d := awaitModal[*jobDialog](t, client, "the job's dialog", nil)
+	pressButtonOver(t, client, host, d.Form, "Repeat")
+
+	waitFor(t, client, "the copy to be done again", func() bool {
+		client.refreshJobs()
+		_, err := os.Stat(copied)
+		return err == nil
+	})
+	// Read from margit, which is the only thing that tells the machine
+	// apart from the window it is reached through.
+	if got := margit.SFTPs(); got <= sessions {
+		t.Errorf("margit served %d file sessions, want one more than the %d it had before the repeat",
+			got, sessions)
+	}
+	// And the end the repeat opened is the machine over there, not the
+	// window's own disk.
+	if got := d.from.far; got.window != windowAt(t, client, addr) || got.host != "margit" {
+		t.Errorf("the job's source end is %v, want margit on the window taken over", got)
 	}
 }

@@ -108,6 +108,11 @@ func selectMenuItem(t *testing.T, m *ui.Menu, id string) {
 // on, so that window's tree stays the goroutine's for as long as the
 // line is running.
 //
+// other must never be the window the menu is on. Pumping it here would
+// run its work on this goroutine while the line is running on the other
+// one, and two goroutines in one window's tree is the race this is built
+// to avoid.
+//
 // A line that failed says so in a notice, the way every command does, so
 // there is nothing to give back here.
 func chooseMenuItemOver(t *testing.T, other *testApp, m *ui.Menu, id string) {
@@ -519,4 +524,60 @@ func functionBody(t *testing.T, name string) (body, where string) {
 	}
 	t.Fatalf("there is no function called %s any more; this test needs rewriting", name)
 	return "", ""
+}
+
+// A command reached by a key while a far machine's menu is up acts on
+// that machine, not on the window it is reached through.
+//
+// A modal menu does not stop the keys reaching a command. The menu on a
+// machine over there offers files alone, so everything else has to
+// refuse: letting go of the whole window is not what the user asked for
+// by opening a menu about one machine on it.
+func TestAKeyedCommandWhileAFarMenuIsUpActsOnThatMachine(t *testing.T) {
+	_, client, addr := aWindowConnectedToMargit(t)
+	held := windowAt(t, client, addr)
+	panes := len(client.panes)
+
+	clickPlusFar(t, client, addr, "margit")
+
+	if got := client.currentHost(); got != "margit" {
+		t.Fatalf("the window is looking at %q, want the machine the menu is about", got)
+	}
+
+	// A command needing a shell says the machine is reached through the
+	// window, rather than opening a dialog that could only fail once it
+	// was filled in.
+	runFromAKey(t, client, "conn.command", "reached through")
+	// And letting go refuses, because nothing here is connected to margit.
+	runFromAKey(t, client, "conn.disconnect", "nothing is connected to margit")
+
+	if client.windows.at(addr) != held {
+		t.Errorf("the window was let go of: %v", client.windows.names())
+	}
+	if len(client.panes) != panes {
+		t.Errorf("%d panes are left of the %d that were open", len(client.panes), panes)
+	}
+}
+
+// runFromAKey runs a command the way an accelerator does and reads the
+// notice it refused with.
+//
+// Every command is wrapped to show what it returned, so a refusal is a
+// dialog rather than an error handed back.
+func runFromAKey(t *testing.T, a *testApp, id, want string) {
+	t.Helper()
+	if err := a.root.Commands.Run(id); err != nil {
+		t.Fatalf("running %s: %v", id, err)
+	}
+	n := awaitModal[*ui.Notice](t, a, "what "+id+" refused with", nil)
+	if !strings.Contains(n.Message(), want) {
+		t.Errorf("%s said %q, want %q in it", id, n.Message(), want)
+	}
+	// Off the stack again, leaving the menu it was stacked on.
+	if _, err := a.root.HandleKey(press(input.KeyEscape, 0)); err != nil {
+		t.Fatalf("Escape: %v", err)
+	}
+	if _, still := a.root.Modal().(*ui.Notice); still {
+		t.Fatal("Escape left the notice up")
+	}
 }

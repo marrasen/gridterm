@@ -324,6 +324,10 @@ func (w *windows) watching(pane *term.Terminal) (remoteKey, bool) {
 	return what, ok
 }
 
+// watched is what every pane drawn from a window is watching over
+// there. The map is the record itself, for a caller that only reads it.
+func (w *windows) watched() map[*term.Terminal]remoteKey { return w.seen }
+
 // watcher is the pane already watching something on a window taken
 // over, or nil when nothing is.
 func (w *windows) watcher(what remoteKey) *term.Terminal {

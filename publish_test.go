@@ -8,6 +8,7 @@ import (
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/internal/sshtest"
 	"github.com/marrasen/gridterm/meter"
+	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/term"
 )
@@ -16,17 +17,48 @@ import (
 // connected to a machine called margit and a shell open on it.
 func aWindowConnectedToMargit(t *testing.T) (host, client *testApp, addr string) {
 	t.Helper()
+	host, client, addr, _ = aWindowConnectedToMargitOn(t)
+	return host, client, addr
+}
+
+// aWindowConnectedToMargitOn is aWindowConnectedToMargit with margit
+// itself handed back, for a test that watches what it is asked.
+func aWindowConnectedToMargitOn(t *testing.T) (
+	host, client *testApp, addr string, margit *sshtest.Server) {
+
+	t.Helper()
 	host, client, addr = twoWindows(t)
+	margit = sshtest.New(t)
+	pinServers(t, host, margit)
+	connectToMargit(t, host, client, addr, serverConfig(t, margit))
+	return host, client, addr, margit
+}
+
+// aServingWindowConnectedToMargit is aWindowConnectedToMargit built the
+// long way, so the key file is there to save the window under a name
+// with. It hands back the key rather than the machine.
+func aServingWindowConnectedToMargit(t *testing.T) (host, client *testApp, addr, keyFile string) {
+	t.Helper()
+	host, client, addr, keyFile = aServingWindow(t)
+	takeOverFromTheDialog(t, client, addr, keyFile)
 	s := sshtest.New(t)
 	pinServers(t, host, s)
-	host.connectAs("margit", host.prepare(serverConfig(t, s)))
+	connectToMargit(t, host, client, addr, serverConfig(t, s))
+	return host, client, addr, keyFile
+}
+
+// connectToMargit connects the window being served to a machine under
+// that name, and waits until the window taken over says so.
+func connectToMargit(t *testing.T, host, client *testApp, addr string, cfg remote.Config) {
+	t.Helper()
+	host.connectAs("margit", host.prepare(cfg))
 	// Connected, not only connecting: the window over there lists the
 	// connection itself once it holds it, and a shell on it with a
 	// screen.
 	waitFor(t, host, "the window over there to hold margit and a shell on it", func() bool {
 		host.refreshPanel(time.Now())
 		var held, shell bool
-		for _, open := range client.windows.named(addr).win.Opens() {
+		for _, open := range client.windows.at(addr).win.Opens() {
 			if open.Host != "margit" {
 				continue
 			}
@@ -38,7 +70,6 @@ func aWindowConnectedToMargit(t *testing.T) (host, client *testApp, addr string)
 		}
 		return held && shell
 	}, client)
-	return host, client, addr
 }
 
 // remoteRowsOf is what this window shows under a window taken over, the
@@ -54,7 +85,7 @@ func remoteRowsOf(a *testApp, addr string) []ui.ListRow {
 			mine = group.Rows
 		}
 	}
-	return a.remoteRows(on, mine, now)
+	return a.remoteRows(on, mine, a.farRows(), now)
 }
 
 // drawnHeadings are the machine headings the sidebar draws under a
@@ -366,5 +397,104 @@ func TestAWindowsHeadingSaysOnlyItsName(t *testing.T) {
 	saveWindowFromTheDialog(t, client, "office", addr, keyFile)
 	if row := heading("office"); row.Text != "office" || row.Note != "" {
 		t.Errorf("the heading says %q with note %q, want the saved name alone", row.Text, row.Note)
+	}
+}
+
+// A machine the window over there is still connecting to gets a heading
+// with no plus on it.
+//
+// The pane watching that dial has a screen, so the machine is worth a
+// heading. Nothing can be read through a connection that is not there
+// yet, so a plus would offer a file pane that is refused the moment it
+// is chosen.
+func TestAMachineStillBeingConnectedToOverThereHasNoPlus(t *testing.T) {
+	host, client, addr := twoWindows(t)
+
+	// A machine that takes the connection and never says anything, so
+	// the window over there stays on its way to it.
+	deafHost, deafPort := sshtest.Deaf(t)
+	s := sshtest.New(t)
+	pinServers(t, host, s)
+	cfg := serverConfig(t, s)
+	cfg.Host, cfg.Port = deafHost, deafPort
+	host.connectAs("margit", host.prepare(cfg))
+	if host.machines.connecting("margit") == nil {
+		t.Fatal("nothing is on its way to the deaf machine, so this proves nothing")
+	}
+
+	waitFor(t, host, "a heading for margit under the window", func() bool {
+		host.refreshPanel(time.Now())
+		return slices.Contains(drawnHeadings(client, addr), "margit")
+	}, client)
+
+	key := remoteHostKey{window: windowAt(t, client, addr), host: "margit"}
+	row, ok := panelRow(client, key)
+	if !ok {
+		t.Fatalf("the heading went: %v", panelText(client, time.Now()))
+	}
+	if row.Button != 0 {
+		t.Errorf("the heading offers %q while the window over there is still connecting",
+			string(row.Button))
+	}
+	// And nothing is connected, so there is no state dot either.
+	if row.Mark != ' ' {
+		t.Errorf("the heading is marked %q, want a blank while nothing is held", string(row.Mark))
+	}
+}
+
+// A window the window over there has itself taken over is drawn as a
+// window, with nothing to open on it.
+//
+// It is a gridterm with panes of its own rather than a machine with a
+// shell, so a file pane there is refused however it is asked for. The
+// colour says which it is without the user having to read the name.
+func TestAWindowTakenOverOverThereIsDrawnAsAWindow(t *testing.T) {
+	keyFile, line := aKeyFile(t)
+	far, farAddr := aWindowServing(t, line)
+
+	// The middle window: serving this one, and taking the far one over.
+	host := newTestApp(t, 90, 30)
+	withDialogs(t, host)
+	withPanel(t, host)
+	withServing(t, host, line)
+	if err := host.startServing("0", whereHere); err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+	addr := host.serving.addr()
+
+	client := newTestApp(t, 90, 30)
+	withDialogs(t, client)
+	withPanel(t, client)
+	writeKnownWindows(t, client, host)
+	if err := client.takeOver(addr, keyFile, nil); err != nil {
+		t.Fatalf("take over the middle window: %v", err)
+	}
+	waitFor(t, client, "a pane on the middle window", func() bool {
+		return client.windows.at(addr) != nil
+	}, host)
+
+	writeKnownWindows(t, host, far)
+	if err := host.takeOver(farAddr, keyFile, nil); err != nil {
+		t.Fatalf("take over the far window: %v", err)
+	}
+	waitFor(t, host, "the middle window to hold the far one", func() bool {
+		return host.windows.at(farAddr) != nil
+	}, far)
+
+	waitFor(t, host, "a heading for the far window", func() bool {
+		host.refreshPanel(time.Now())
+		return slices.Contains(drawnHeadings(client, addr), farAddr)
+	}, client, far)
+
+	row, ok := panelRow(client, remoteHostKey{window: windowAt(t, client, addr), host: farAddr})
+	if !ok {
+		t.Fatalf("the heading went: %v", panelText(client, time.Now()))
+	}
+	if row.Button != 0 {
+		t.Errorf("the heading offers %q on a window, which has no files to serve from here",
+			string(row.Button))
+	}
+	if row.FG != client.colours.ANSI[5] {
+		t.Errorf("the heading is drawn in %v, want the colour a window has", row.FG)
 	}
 }

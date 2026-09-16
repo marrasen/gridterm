@@ -72,6 +72,13 @@ func (a *app) openTerminalHere() error { return a.openTerminalOn(a.currentHost()
 // openCommandHere asks for a command to run on the machine the user is
 // looking at, connecting to it if the connection has since been closed.
 func (a *app) openCommandHere() error {
+	// A menu dropped from a machine of a window taken over offers files
+	// alone. A command reached by a key while it is up is refused here
+	// rather than in a dialog that could only fail once it was filled in.
+	if key, on := a.hostMenus.farMachine(); on {
+		return fmt.Errorf("%s is reached through %s: only its files can be opened from here",
+			key.host, key.window.name)
+	}
 	h := a.about(a.currentHost())
 	if h.kind == hostHere {
 		return errors.New(

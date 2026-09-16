@@ -308,25 +308,59 @@ func (a *app) startJob(kind jobs.Kind, w files.Work) {
 	op := jobs.Op{
 		Kind: kind, From: w.From.FS(), At: w.At, Names: w.Names,
 	}
-	to := conns.Local
+	to := jobEnd{host: conns.Local}
 	if w.To != nil {
 		op.To, op.Into = w.To.FS(), w.To.At()
-		to = a.hostOf(w.To.FS())
+		to = a.endOf(w.To)
 	}
-	a.runJob(op, a.hostOf(w.From.FS()), to, nil)
+	a.runJob(op, a.endOf(w.From), to, nil)
+}
+
+// jobEnd is one end of a piece of file work, kept so that end can be
+// opened again.
+//
+// host is the machine the panel files the work under. far is the machine
+// of a window taken over that the pane read through that window, and is
+// empty for a pane on a machine this window reaches itself: the window's
+// name alone would open the window's own disk.
+type jobEnd struct {
+	host string
+	far  remoteHostKey
+}
+
+// endOf names the end of a piece of file work one pane stands for.
+func (a *app) endOf(p *files.Pane) jobEnd {
+	end := jobEnd{host: a.hostOf(p.FS())}
+	if b := a.files; b != nil {
+		end.far = b.far[p]
+	}
+	return end
+}
+
+// openEnd opens one end of a piece of file work again: a machine this
+// window reaches, or a machine read through a window taken over.
+func (a *app) openEnd(end jobEnd) (vfs.FS, error) {
+	if end.far.window == nil {
+		return a.filesystem(end.host)
+	}
+	t := end.far.window
+	if !a.windows.holds(t) {
+		return nil, fmt.Errorf("this window has let go of %s", t.name)
+	}
+	return a.windowFilesOn(t, end.far.host)
 }
 
 // runJob puts one piece of file work on the queue and a row on the panel
 // for it.
 //
-// from and to name the machines the work is between, kept because they
-// are known now: a repeat looks the filesystems up again by name, and by
-// then there may be nothing to read the name off. owned are the
-// filesystems the job opened for itself, closed once it has stopped.
-func (a *app) runJob(op jobs.Op, from, to string, owned []vfs.FS) {
+// from and to are the ends the work is between, kept because they are
+// known now: a repeat opens the filesystems again from them, and by then
+// there may be nothing to read them off. owned are the filesystems the
+// job opened for itself, closed once it has stopped.
+func (a *app) runJob(op jobs.Op, from, to jobEnd, owned []vfs.FS) {
 	count := meter.New()
 	e := &conns.Entry{
-		Host:  from,
+		Host:  from.host,
 		Kind:  conns.Files,
 		Meter: count,
 	}
@@ -336,7 +370,7 @@ func (a *app) runJob(op jobs.Op, from, to string, owned []vfs.FS) {
 		// end is somewhere else: a copy to another machine is bytes
 		// leaving, and one from it is bytes arriving.
 		Count: count,
-		Out:   op.To != nil && to != conns.Local,
+		Out:   op.To != nil && to.host != conns.Local,
 	})
 	e.Label = j.Name()
 	e.Reveal = func() { a.openJobDialog(j, e, from, to) }
@@ -394,15 +428,38 @@ func (a *app) reloadPanesOn(on ...vfs.FS) {
 	}
 }
 
-// hostOf says which machine a filesystem is, for the panel.
+// hostOf says which machine a filesystem is filed under, for the panel.
+//
+// A pane on a machine of a window taken over is named after that machine
+// through the window, and is filed under the window: the connection
+// carrying it is the window's, so it goes when the window does.
+//
+// A window taken over is otherwise a machine like any other here: its
+// panes go under its name, the commands on its row work on it, and a
+// copy to it counts as bytes leaving rather than arriving.
 func (a *app) hostOf(f vfs.FS) string {
-	// A window taken over is a machine like any other here: its panes
-	// go under its name, the commands on its row work on it, and a copy
-	// to it counts as bytes leaving rather than arriving.
+	if key, over := a.farFS(f); over {
+		return key.window.name
+	}
 	if on := a.about(f.Name()); on.machine != nil || on.window != nil {
 		return on.name
 	}
 	return conns.Local
+}
+
+// farFS is the machine of a window taken over that a filesystem reads,
+// for one a file pane is holding.
+func (a *app) farFS(f vfs.FS) (remoteHostKey, bool) {
+	b := a.files
+	if b == nil {
+		return remoteHostKey{}, false
+	}
+	for p, key := range b.far {
+		if p.FS() == f {
+			return key, true
+		}
+	}
+	return remoteHostKey{}, false
 }
 
 // refreshJobs keeps the panel saying how the file work is going, and
@@ -738,21 +795,55 @@ func size(n int64) string {
 // something else now.
 type renamedFS interface{ Renamed(string) }
 
-// filesystemsOn are the file panes' filesystems on a machine that can
-// be told so.
-func (a *app) filesystemsOn(host string) []renamedFS {
+// renamedPane is one file pane's filesystem and what it is called once
+// the machine it is filed under has another name.
+type renamedPane struct {
+	fs  renamedFS
+	far remoteHostKey
+}
+
+// named is what the filesystem calls itself once the machine it is filed
+// under is called now.
+func (r renamedPane) named(now string) string {
+	if r.far.window == nil {
+		return now
+	}
+	return farName(r.far.host, now)
+}
+
+// filesystemsOn are the file panes' filesystems filed under a machine
+// that can be told it is called something else.
+func (a *app) filesystemsOn(host string) []renamedPane {
 	b := a.files
 	if b == nil {
 		return nil
 	}
-	var out []renamedFS
+	var out []renamedPane
 	for _, p := range b.view.Panes() {
 		f, ok := p.FS().(renamedFS)
-		if ok && p.FS().Name() == host {
-			out = append(out, f)
+		if !ok || !a.filedUnder(p, host) {
+			continue
 		}
+		out = append(out, renamedPane{fs: f, far: b.far[p]})
 	}
 	return out
+}
+
+// filedUnder reports whether a file pane belongs to a machine: one on
+// that machine, and one on a machine reached through a window of that
+// name.
+//
+// A pane through a window is matched by its sidebar row, which is what
+// filing it under a name means. The window itself has been given its new
+// name by the time a rename asks, and the row has not.
+func (a *app) filedUnder(p *files.Pane, host string) bool {
+	if b := a.files; b != nil {
+		if _, over := b.far[p]; over {
+			row := b.rows[p]
+			return row != nil && row.Host == host
+		}
+	}
+	return p.FS().Name() == host
 }
 
 // openGoTo asks a file pane for somewhere to go.
@@ -786,8 +877,11 @@ func (a *app) openGoTo() error {
 	return nil
 }
 
-// closeFilesOn takes away every pane of the file manager that is on a
+// closeFilesOn takes away every pane of the file manager filed under a
 // machine, for a connection that has gone.
+//
+// A pane on a machine reached through a window of that name goes too:
+// the connection carrying it is the window's.
 func (a *app) closeFilesOn(host string) error {
 	b := a.files
 	if b == nil {
@@ -795,7 +889,7 @@ func (a *app) closeFilesOn(host string) error {
 	}
 	var errs []error
 	for _, p := range b.view.Panes() {
-		if p.FS().Name() != host {
+		if !a.filedUnder(p, host) {
 			continue
 		}
 		errs = append(errs, a.closePane(p))
@@ -908,30 +1002,20 @@ func (a *app) windowFilesOn(t *taken, host string) (vfs.FS, error) {
 	if err != nil {
 		return nil, err
 	}
-	// The window's own name, so the pane's row goes under it and goes
-	// when it does. Which machine over there it reads is the place, so
-	// two panes on one machine over there are one place and neither is
-	// the window's own disk.
-	return vfs.NewSFTP(t.name, remoteHostKey{window: t, host: host}, client, func() error {
+	// The machine it reads, through the window carrying the bytes: every
+	// question the pane asks is about that machine, and a pane calling
+	// itself by the window's name answered all of them wrongly. Which
+	// machine over there it reads is the place, so two panes on one
+	// machine over there are one place and neither is the window's own
+	// disk.
+	return vfs.NewSFTP(farName(host, t.name), remoteHostKey{window: t, host: host}, client, func() error {
 		return closeFilesOver(client, ch)
 	}), nil
 }
 
-// farPanes says which machine of a window taken over each file pane's
-// row belongs to, for the sidebar being built.
-func (a *app) farPanes() map[*conns.Entry]remoteHostKey {
-	b := a.files
-	if b == nil || len(b.far) == 0 {
-		return nil
-	}
-	out := make(map[*conns.Entry]remoteHostKey, len(b.far))
-	for p, key := range b.far {
-		if row := b.rows[p]; row != nil {
-			out[row] = key
-		}
-	}
-	return out
-}
+// farName is what a pane on a machine of a window taken over calls the
+// place it reads.
+func farName(host, window string) string { return host + " through " + window }
 
 // closeFilesOver ends a file session on a window taken over.
 //
@@ -973,3 +1057,7 @@ func closeFilesOver(client, ch io.Closer) error {
 // filesGrace is how long letting go of a window waits for its file
 // session to say goodbye before closing the channel from here.
 const filesGrace = 250 * time.Millisecond
+
+// relayGrace is how long a file session relayed to a machine waits for
+// that machine to answer the close, once the client has gone.
+const relayGrace = filesGrace

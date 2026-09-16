@@ -23,8 +23,10 @@ type hostMenus struct {
 
 	// far is the machine of a window taken over that the menu is about,
 	// and onFar says the menu is one of those. Only "Files" is offered
-	// there; host holds the window itself, so any other command reached
-	// by a key acts on something this window really is holding.
+	// there, and only openFilesHere reads it. Every other command reads
+	// host, which holds that machine's bare name: nothing here is
+	// connected to it, so they refuse in plain words rather than acting
+	// on the window.
 	far   remoteHostKey
 	onFar bool
 
@@ -45,11 +47,15 @@ func (m *hostMenus) nowAbout(host string) {
 }
 
 // nowAboutFar records the machine of a window taken over that the menu
-// now up is about, with the window itself as the machine to act on:
-// nothing here holds a connection to that machine, so a command reading
-// its bare name would act on nothing.
+// now up is about, under its bare name.
+//
+// Its bare name and not the window's. A modal menu does not stop the
+// keys reaching a command, so the machine named here is what any of them
+// acts on, and this window holds no connection to that machine: every
+// command but "Files" refuses harmlessly. The window's name would let a
+// key let go of the whole window from a menu that offered no such thing.
 func (m *hostMenus) nowAboutFar(key remoteHostKey) {
-	m.host, m.up = key.window.name, true
+	m.host, m.up = key.host, true
 	m.far, m.onFar = key, true
 }
 

@@ -250,9 +250,9 @@ func (a *app) refreshPanel(now time.Time) {
 		open[group.Host] = group.Rows
 	}
 
-	// Which of this window's file panes read a machine of a window taken
+	// Which of this window's rows are on a machine of a window taken
 	// over, worked out once for the whole sidebar.
-	far := a.farPanes()
+	far := a.farRows()
 
 	var rows []ui.ListRow
 	for _, host := range a.hosts(open) {
@@ -274,10 +274,8 @@ func (a *app) refreshPanel(now time.Time) {
 			}
 			// A row on a machine of the window taken over goes under
 			// that machine's heading further down.
-			if on.window != nil {
-				if _, over := a.farOf(row.Entry, far); over {
-					continue
-				}
+			if key, over := far[row.Entry]; over && key.window == on.window {
+				continue
 			}
 			rows = append(rows, a.panelRow(row, now))
 		}
@@ -285,7 +283,7 @@ func (a *app) refreshPanel(now time.Time) {
 		// Its list, not one worked out here: what a window has open is
 		// that window's business, and a client that guessed would
 		// disagree with the machine it is looking at.
-		rows = append(rows, a.remoteRows(on, open[host], now)...)
+		rows = append(rows, a.remoteRows(on, open[host], far, now)...)
 	}
 	for e := range a.rates {
 		if !live[e] {

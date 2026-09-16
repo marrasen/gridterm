@@ -91,7 +91,7 @@ func (a *app) renamedMachine(was string, to remote.Host) {
 // session that had gone.
 func (a *app) renamedFiles(was, now string) {
 	for _, f := range a.filesystemsOn(was) {
-		f.Renamed(now)
+		f.fs.Renamed(f.named(now))
 	}
 }
 
@@ -115,7 +115,7 @@ func (a *app) rekeyWindows() {
 	// What goes by each old name is gathered before any of it is
 	// renamed, because two windows can trade names.
 	rows := make([][]*conns.Entry, len(moved))
-	reading := make([][]renamedFS, len(moved))
+	reading := make([][]renamedPane, len(moved))
 	for i, r := range moved {
 		rows[i] = a.rowsUnder(r.was)
 		reading[i] = a.filesystemsOn(r.was)
@@ -125,7 +125,7 @@ func (a *app) rekeyWindows() {
 			e.Host = r.window.name
 		}
 		for _, f := range reading[i] {
-			f.Renamed(r.window.name)
+			f.fs.Renamed(f.named(r.window.name))
 		}
 	}
 }

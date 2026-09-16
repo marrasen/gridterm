@@ -27,10 +27,10 @@ type jobDialog struct {
 	job   *jobs.Job
 	entry *conns.Entry
 
-	// from and to are the machines the work was started between, taken
-	// when the job began. A repeat looks them up again by name, because
-	// the filesystems the job ran on may be closed by then.
-	from, to string
+	// from and to are the ends the work was started between, taken when
+	// the job began. A repeat opens them again, because the filesystems
+	// the job ran on may be closed by then.
+	from, to jobEnd
 
 	// said is what the dialog last put under its title, so a frame with
 	// nothing new to say lays nothing out again.
@@ -53,7 +53,7 @@ const jobDialogCols = 46
 
 // openJobDialog shows how a job is going. It runs on the drawing
 // goroutine, from the job's row on the sidebar.
-func (a *app) openJobDialog(j *jobs.Job, e *conns.Entry, from, to string) {
+func (a *app) openJobDialog(j *jobs.Job, e *conns.Entry, from, to jobEnd) {
 	// One dialog per job. The row is behind whatever is on the modal
 	// stack, so a second click on it can only mean the dialog it already
 	// opened, and two of them would answer the same Cancel twice.
@@ -266,12 +266,12 @@ func soFar(d time.Duration) string {
 // repeatJob does a finished piece of work again, on filesystems found
 // afresh.
 //
-// By machine name rather than the filesystems the job held: those belong
-// to panes that may have been closed, and a machine that dropped and
-// came back is a different connection under the same name.
-func (a *app) repeatJob(op jobs.Op, from, to string) {
+// Opened from the ends rather than from the filesystems the job held:
+// those belong to panes that may have been closed, and a machine that
+// dropped and came back is a different connection under the same name.
+func (a *app) repeatJob(op jobs.Op, from, to jobEnd) {
 	title := "Could not " + strings.ToLower(op.Kind.String()) + " it again"
-	source, err := a.filesystem(from)
+	source, err := a.openEnd(from)
 	if err != nil {
 		a.reportError(title, err)
 		return
@@ -279,7 +279,7 @@ func (a *app) repeatJob(op jobs.Op, from, to string) {
 	owned := []vfs.FS{source}
 	op.From = source
 	if op.To != nil {
-		into, err := a.filesystem(to)
+		into, err := a.openEnd(to)
 		if err != nil {
 			// The source is let go of here: nothing else holds it, and
 			// a session nobody closes is a session left open on the

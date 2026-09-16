@@ -11,9 +11,12 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/marrasen/gridterm/input"
+	"github.com/marrasen/gridterm/internal/sshtest"
 	"github.com/marrasen/gridterm/serve"
 	"github.com/marrasen/gridterm/settings"
 	"github.com/marrasen/gridterm/ui"
@@ -568,4 +571,135 @@ func TestTheDialogSaysWhatPortZeroMeans(t *testing.T) {
 	if !strings.Contains(text, "0 asks for whichever port is free") {
 		t.Errorf("the dialog does not say what a port of 0 means:\n%s", text)
 	}
+}
+
+// blackHole carries TCP to another address until it is told to stop,
+// and then keeps both connections open and passes nothing.
+//
+// What a machine that has dropped off the network looks like from here:
+// the socket is still there, and nothing crosses it in either direction.
+// A machine that hung up would be a different thing, and would end
+// everything waiting on it by itself.
+type blackHole struct {
+	host string
+	port int
+
+	shut     chan struct{}
+	shutOnce sync.Once
+
+	mu    sync.Mutex
+	conns []net.Conn
+}
+
+// newBlackHole listens on a port of its own and carries what arrives to
+// an address.
+func newBlackHole(t *testing.T, to string) *blackHole {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	b := &blackHole{
+		host: hostOf(t, ln.Addr().String()),
+		port: portOf(t, ln.Addr().String()),
+		shut: make(chan struct{}),
+	}
+	t.Cleanup(func() {
+		_ = ln.Close()
+		b.stop()
+		// The copying goroutines are parked in a read, and closing what
+		// they are reading is what ends them.
+		b.mu.Lock()
+		defer b.mu.Unlock()
+		for _, c := range b.conns {
+			_ = c.Close()
+		}
+	})
+	go func() {
+		for {
+			in, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			out, err := net.Dial("tcp", to)
+			if err != nil {
+				_ = in.Close()
+				return
+			}
+			b.mu.Lock()
+			b.conns = append(b.conns, in, out)
+			b.mu.Unlock()
+			go b.carry(in, out)
+			go b.carry(out, in)
+		}
+	}()
+	return b
+}
+
+// stop leaves both sides connected and stops carrying anything.
+func (b *blackHole) stop() { b.shutOnce.Do(func() { close(b.shut) }) }
+
+// carry passes bytes one way until the relay is stopped. What arrives
+// after that is dropped rather than written on.
+func (b *blackHole) carry(src, dst net.Conn) {
+	buf := make([]byte, 32*1024)
+	for {
+		n, err := src.Read(buf)
+		select {
+		case <-b.shut:
+			return
+		default:
+		}
+		if n > 0 {
+			if _, werr := dst.Write(buf[:n]); werr != nil {
+				return
+			}
+		}
+		if err != nil {
+			return
+		}
+	}
+}
+
+// A client that goes while the machine its file session was relayed to
+// has stopped answering is still said to have gone.
+//
+// Closing the subsystem sends that machine a channel close and nothing
+// more. One that has dropped off the network never answers it, so the
+// copy from it stays where it is: waited for, it would hold the file
+// session, the connection it rode on, and the row saying a client this
+// window has already lost is still working here.
+func TestAClientThatGoesIsSaidToHaveGoneThoughTheMachineIsWedged(t *testing.T) {
+	host, client, addr := twoWindows(t)
+
+	// margit reached through a relay the test can stop, so the machine
+	// can be made to stop answering without hanging up.
+	margit := sshtest.New(t)
+	pinServers(t, host, margit)
+	relay := newBlackHole(t, margit.Addr())
+	cfg := serverConfig(t, margit)
+	cfg.Host, cfg.Port = relay.host, relay.port
+	connectToMargit(t, host, client, addr, cfg)
+
+	openFilesFromTheFarPlus(t, client, host, addr, "margit")
+	if got := margit.SFTPs(); got != 1 {
+		t.Fatalf("margit served %d file sessions, want the one being relayed", got)
+	}
+
+	// The machine stops answering, and then the client goes.
+	relay.stop()
+	if err := client.dropWindow(addr); err != nil {
+		t.Fatalf("let go of the window: %v", err)
+	}
+
+	waitFor(t, host, "the window serving to say the client has gone", func() bool {
+		for _, group := range host.registry.Groups(time.Now()) {
+			for _, row := range group.Rows {
+				if strings.HasPrefix(row.Label, "serving ") {
+					return false
+				}
+			}
+		}
+		return true
+	})
 }

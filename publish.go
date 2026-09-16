@@ -22,6 +22,10 @@ import (
 func (a *app) snapshot(now time.Time) serve.Snapshot {
 	snap := serve.Snapshot{Window: conns.Local}
 	for _, g := range a.registry.Groups(now) {
+		// Whether the machine these are on is a window this one has
+		// taken over. Asked once per machine: a client offers nothing on
+		// one, because it is a window rather than a machine.
+		window := a.windows.named(g.Host) != nil
 		for _, row := range g.Rows {
 			// The size of its screen, for something that has one. It
 			// is not resized to suit a watcher, so a watcher that
@@ -42,9 +46,10 @@ func (a *app) snapshot(now time.Time) serve.Snapshot {
 				// meter.State already spells these the way the
 				// panel shows them, so both windows say the same
 				// word for the same thing.
-				State: row.State.String(),
-				Cols:  cols,
-				Rows:  rows,
+				State:  row.State.String(),
+				Window: window,
+				Cols:   cols,
+				Rows:   rows,
 			})
 		}
 	}
@@ -107,24 +112,30 @@ func sameSnapshot(was, now serve.Snapshot) bool {
 // with the machine it is looking at.
 func (a *app) openRows(t *taken) []serve.Open { return t.win.Opens() }
 
-// remoteRows are the screens a window taken over has open, and this
-// window's own rows on the machines over there.
+// remoteRows are the screens a window taken over has open, the machines
+// over there, and this window's own rows on those machines.
 //
-// Shown under the window itself, one line each. A screen over there
+// All of it under the window itself, one line each. A screen over there
 // cannot be closed from here: the pane drawing it is that window's, not
 // this one's, and a row that offered to close something it cannot reach
 // would be a row that lies.
 //
 // Only what can be opened here. That window's tunnels and clients are
 // rows on its panel and nothing this one can do anything with, so they
-// are left out. Its connections become the headings, since a pane can
-// read files through them. A screen that has finished is left out too:
-// there is nothing left on it to watch.
+// are left out. Its connections become the headings, and one to a
+// machine it is connected to carries a plus, since a pane here can read
+// that machine's files through it. A machine still being connected to
+// carries none, and neither does a window that window has itself taken
+// over: neither has files this one can ask for. A screen that has
+// finished is left out too: there is nothing left on it to watch.
 //
 // mine are this window's own rows filed under that window, so the ones
 // on a machine over there go under that machine's heading rather than
-// under the window's name.
-func (a *app) remoteRows(on hostFacts, mine []conns.Row, now time.Time) []ui.ListRow {
+// under the window's name. far is what farRows worked out for this
+// frame.
+func (a *app) remoteRows(on hostFacts, mine []conns.Row,
+	far map[*conns.Entry]remoteHostKey, now time.Time) []ui.ListRow {
+
 	t := on.window
 	if t == nil {
 		return nil
@@ -137,6 +148,10 @@ func (a *app) remoteRows(on hostFacts, mine []conns.Row, now time.Time) []ui.Lis
 	// what happens to be under it.
 	var order []string
 	under := map[string][]serve.Open{}
+	// The connection to each machine over there, which is what says the
+	// window is connected to it rather than still on its way, and what
+	// says whether it is a machine at all.
+	held := map[string]serve.Open{}
 	group := func(host string) {
 		if _, seen := under[host]; !seen {
 			order = append(order, host)
@@ -150,6 +165,7 @@ func (a *app) remoteRows(on hostFacts, mine []conns.Row, now time.Time) []ui.Lis
 		if open.Kind == conns.Server.String() && !isTheirOwn(open.Host) {
 			// The connection to a machine over there, which is what
 			// makes the machine worth a heading.
+			held[open.Host] = open
 			group(open.Host)
 			continue
 		}
@@ -170,14 +186,13 @@ func (a *app) remoteRows(on hostFacts, mine []conns.Row, now time.Time) []ui.Lis
 	// over there has let go of still gets a heading, so a pane still
 	// reading it has somewhere to be shown.
 	ours := map[string][]conns.Row{}
-	far := a.farPanes()
 	for _, row := range mine {
-		host, yes := a.farOf(row.Entry, far)
-		if !yes {
+		key, yes := far[row.Entry]
+		if !yes || key.window != t {
 			continue
 		}
-		group(host)
-		ours[host] = append(ours[host], row)
+		group(key.host)
+		ours[key.host] = append(ours[key.host], row)
 	}
 
 	dim := grid.Blend(a.colours.FG, a.colours.BG, 1, 2)
@@ -213,22 +228,37 @@ func (a *app) remoteRows(on hostFacts, mine []conns.Row, now time.Time) []ui.Lis
 		if isTheirOwn(host) {
 			continue
 		}
-		rows = append(rows, ui.ListRow{
+		// A machine heading, a step in from the window's own: the same
+		// vocabulary the sidebar uses at the top level, so it reads as a
+		// machine rather than as a server nobody is connected to.
+		head := ui.ListRow{
 			Text:   host,
 			Header: true,
-			Depth:  1,
+			Depth:  2,
 			Key:    remoteHostKey{window: t, host: host},
-			// What can be opened on it, which is a pane reading its
-			// files through the window.
-			Button: '+',
-			Mark:   ' ',
-			FG:     dim,
-		})
+			// A blank where the dot goes while that window holds nothing
+			// under the name, so the name does not shift sideways.
+			Mark: ' ',
+		}
+		if open, connected := held[host]; connected {
+			head.Mark, head.MarkFG = dot, a.stateFG(stateNamed(open.State), now)
+			if open.Window {
+				// A window that window took over, in the colour a window
+				// has. It has panes of its own and no files to serve
+				// this one, so there is nothing to open on it.
+				head.FG = a.colours.ANSI[5]
+			} else {
+				// What can be opened on it, which is a pane reading its
+				// files through the window.
+				head.Button = '+'
+			}
+		}
+		rows = append(rows, head)
 		for _, row := range ours[host] {
 			mine := a.panelRow(row, now)
 			// A step in, the way the screens over there are: this
 			// heading is itself inside the window's.
-			mine.Depth++
+			mine.Depth = 2
 			rows = append(rows, mine)
 		}
 		rows = append(rows, screens(host)...)
@@ -236,30 +266,63 @@ func (a *app) remoteRows(on hostFacts, mine []conns.Row, now time.Time) []ui.Lis
 	return rows
 }
 
-// farOf says which machine of a window taken over one of this window's
-// rows is on, and whether it is on one at all.
+// stateNamed reads a state back from the word another window published
+// it as, so a row here is marked the colour that window marks it.
+//
+// Anything else is a state this build has no word for, which is drawn
+// the way a connection that is simply there is.
+func stateNamed(said string) meter.State {
+	for _, state := range []meter.State{meter.Opened, meter.Active, meter.Settled, meter.Closed} {
+		if said == state.String() {
+			return state
+		}
+	}
+	return meter.Settled
+}
+
+// farRows says which machine of a window taken over each of this
+// window's rows is on.
 //
 // A file pane reading through that window, and a pane watching a screen
 // over there: both are filed under the window's name, and both belong
-// under the name of the machine they really touch. far is what farPanes
-// worked out for this frame.
-func (a *app) farOf(e *conns.Entry, far map[*conns.Entry]remoteHostKey) (string, bool) {
-	if key, ok := far[e]; ok {
-		return key.host, !isTheirOwn(key.host)
+// under the name of the machine they really touch.
+//
+// Worked out once a frame and handed down. The sidebar asks about every
+// row it draws, and asking a window what it has open takes a copy under
+// a lock.
+func (a *app) farRows() map[*conns.Entry]remoteHostKey {
+	out := map[*conns.Entry]remoteHostKey{}
+	if b := a.files; b != nil {
+		for p, key := range b.far {
+			if row := b.rows[p]; row != nil && !isTheirOwn(key.host) {
+				out[row] = key
+			}
+		}
 	}
-	pane := a.paneFor(e)
-	if pane == nil {
-		return "", false
+	// What each window has open, asked for once per window rather than
+	// once per pane watching one.
+	opens := map[*taken][]serve.Open{}
+	for pane, what := range a.windows.watched() {
+		e := a.panes[pane]
+		if e == nil || what.window == nil || !a.windows.holds(what.window) {
+			continue
+		}
+		list, asked := opens[what.window]
+		if !asked {
+			list = what.window.win.Opens()
+			opens[what.window] = list
+		}
+		for _, open := range list {
+			if open.ID != what.id {
+				continue
+			}
+			if !isTheirOwn(open.Host) {
+				out[e] = remoteHostKey{window: what.window, host: open.Host}
+			}
+			break
+		}
 	}
-	what, ok := a.windows.watching(pane)
-	if !ok {
-		return "", false
-	}
-	open, there := a.openOver(what)
-	if !there || isTheirOwn(open.Host) {
-		return "", false
-	}
-	return open.Host, true
+	return out
 }
 
 // remoteHostKey names a machine of a window taken over, for the heading

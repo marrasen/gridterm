@@ -232,6 +232,8 @@ time; `meter.Rate` already has the speed; `Job.Cancel` exists;
 - **Reading of repeat:** the source and destination are re-resolved by
   host name through `a.filesystem`, so a repeat after the machine
   reconnected still works.
+Done by 4f9d834 Show a copy's progress from its row, with Cancel and Repeat; 5ee27b3 Say when a cancelled copy could not clear up, and keep its dialog still.
+Decided in review: Repeat is offered for a copy only; a delete done again would take something away without asking, and a move cannot work twice.
 
 ## Step 8 -- known gaps
 
@@ -277,6 +279,10 @@ One commit each, smallest first.
    has written the child's last output to the pipe and closed its end.
    So the reaper frees the pseudoconsole and leaves the pipes open, and
    the pending read drains and then ends on its own.
+Item 1 done by a23ef28 Name a far screen's row by the window itself, not by its key.
+Item 3 done by 7eb0cd1 Send a shell's size change without waiting on the wire; 85b07a3 Bound the polite end-of-file the way the session close is bounded; 45c2549 Report a resize that failed after the shell was closed.
+Item 4 done by 049f151 Let the cursor blink when the program asks for it; 1584d13 Keep the cursor's drawn half in step with its phase across hides and grid swaps.
+Item 6 is a known gap recorded by the forget review, not yet done.
 
 ## What is not in this plan
 

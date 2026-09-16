@@ -8,6 +8,7 @@ import (
 
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/grid"
+	"github.com/marrasen/gridterm/meter"
 	"github.com/marrasen/gridterm/serve"
 	"github.com/marrasen/gridterm/ui"
 )
@@ -116,19 +117,37 @@ func (a *app) openRows(t *taken) []serve.Open { return t.win.Opens() }
 // Only what can be opened here. That window's own connections, tunnels
 // and clients are rows on its panel and nothing this one can do
 // anything with, and a list of rows that do nothing is a list nobody
-// can read.
+// can read. A screen that has finished is left out too: there is
+// nothing left on it to watch.
 func (a *app) remoteRows(on hostFacts) []ui.ListRow {
 	t := on.window
 	if t == nil {
 		return nil
 	}
 	// Grouped by the machine over there they run on, the way that
-	// window groups them itself. A flat list with the machine's name
-	// repeated on every line says the same thing many times and hides
-	// what each row actually is.
+	// window groups them itself. The window's own machine has no
+	// heading: the window's name is right above its rows. Every other
+	// machine that window is connected to has one, whether or not
+	// anything is open on it, so a heading does not come and go with
+	// what happens to be under it.
 	var order []string
 	under := map[string][]serve.Open{}
+	group := func(host string) {
+		if _, seen := under[host]; !seen {
+			order = append(order, host)
+			under[host] = nil
+		}
+	}
 	for _, open := range t.win.Opens() {
+		if open.State == meter.Closed.String() {
+			continue
+		}
+		if open.Kind == conns.Server.String() && !isTheirOwn(open.Host) {
+			// The connection to a machine over there, which is what
+			// makes the machine worth a heading.
+			group(open.Host)
+			continue
+		}
 		if !open.HasScreen() {
 			continue
 		}
@@ -138,21 +157,16 @@ func (a *app) remoteRows(on hostFacts) []ui.ListRow {
 			// that can be put in front and closed is the better one.
 			continue
 		}
-		if _, seen := under[open.Host]; !seen {
-			order = append(order, open.Host)
-		}
+		group(open.Host)
 		under[open.Host] = append(under[open.Host], open)
 	}
 
 	dim := grid.Blend(a.colours.FG, a.colours.BG, 1, 2)
 	var rows []ui.ListRow
 	for _, on := range order {
-		if len(order) > 1 || !isTheirOwn(on) {
-			// A heading only when there is something to tell apart.
-			// One machine's worth of panes under a window whose name is
-			// right above them needs no line saying so twice.
+		if !isTheirOwn(on) {
 			rows = append(rows, ui.ListRow{
-				Text:   theirName(on),
+				Text:   on,
 				Header: true,
 				Depth:  1,
 				Key:    remoteHostKey{window: t, host: on},
@@ -192,17 +206,6 @@ type remoteHostKey struct {
 // isTheirOwn reports whether a machine name is the window's own, which
 // is what its Local means.
 func isTheirOwn(host string) bool { return host == conns.Local || host == "" }
-
-// theirName is what to call a machine of a window taken over.
-//
-// Its "Local" is not this machine, and a heading saying so plainly
-// would be read as this one.
-func theirName(host string) string {
-	if isTheirOwn(host) {
-		return "that machine"
-	}
-	return host
-}
 
 // remoteMark is the dot in front of a row belonging to another window.
 // Hollow, because what it stands for is not running here.

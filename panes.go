@@ -402,6 +402,12 @@ func (a *app) removePane(w ui.Widget, keep bool) error {
 // what it last said.
 func (a *app) paneEnded(t *term.Terminal) error {
 	e := a.panes[t]
+	if a.windows.drawsFromAWindow(t) {
+		// A shell on a window taken over, or a screen watched there,
+		// goes without leaving a row: the other window never listed
+		// it, and what ended it is on the window's own row.
+		return a.removePane(t, false)
+	}
 	if e == nil || (e.Kind != conns.Command && !a.kept[t]) {
 		return a.removePane(t, true)
 	}

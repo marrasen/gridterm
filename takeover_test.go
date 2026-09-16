@@ -706,12 +706,9 @@ func TestAWindowThatQuitsKeepsARowThatCanBeCleared(t *testing.T) {
 	if drawn.FG != client.colours.ANSI[8] {
 		t.Errorf("the row is drawn in %v, want the grey a finished connection is drawn in", drawn.FG)
 	}
-	// Saying what became of it, and still saying where it was.
+	// Saying what became of it. Where it was is the heading above it.
 	if drawn.Text != "no longer serving" {
 		t.Errorf("the row says %q, want what became of the window", drawn.Text)
-	}
-	if drawn.Note != addr {
-		t.Errorf("the row notes %q, want the address it was at", drawn.Note)
 	}
 
 	// Hanging up on a window that has already gone reports the socket it
@@ -2214,13 +2211,14 @@ func TestTheScreensOfAWindowAreGroupedByMachine(t *testing.T) {
 		}
 		under = append(under, row.Text)
 	}
-	if len(heads) < 2 {
-		t.Fatalf("headings %v, want one per machine over there: %v", heads, rows)
+	// One heading, for the machine over there that is not the window's
+	// own. The window's own screens sit under the window's name, which
+	// is right above them.
+	if !slices.Equal(heads, []string{"margit"}) {
+		t.Errorf("headings %v, want one for margit and none for the window's own machine: %v", heads, rows)
 	}
-	for _, want := range []string{"that machine", "margit"} {
-		if !slices.Contains(heads, want) {
-			t.Errorf("no heading for %q: %v", want, heads)
-		}
+	if len(under) < 2 {
+		t.Errorf("rows %v, want the window's own screen and the one on margit", under)
 	}
 	// And the rows under them say what they are, not which machine they
 	// are on: the heading above them says that.
@@ -2312,17 +2310,13 @@ func offersTheWindowsLines(t *testing.T, a *testApp, host string) {
 }
 
 // filedUnder checks the sidebar has one heading for a window taken over,
-// with the note and the pane under it and nothing left under the name it
+// with the pane under it and nothing left under the name it
 // had. An empty was skips that last check.
-func filedUnder(t *testing.T, a *testApp, pane *term.Terminal, now, note, was string) {
+func filedUnder(t *testing.T, a *testApp, pane *term.Terminal, now, was string) {
 	t.Helper()
 	a.refreshPanel(panelNow)
-	row, ok := panelRow(a, hostKey(now))
-	if !ok {
+	if _, ok := panelRow(a, hostKey(now)); !ok {
 		t.Fatalf("the sidebar has no heading for %q: %v", now, panelText(a, panelNow))
-	}
-	if row.Note != note {
-		t.Errorf("the heading for %q says %q, want %q", now, row.Note, note)
 	}
 	if was != "" {
 		if _, there := panelRow(a, hostKey(was)); there {
@@ -2383,7 +2377,7 @@ func TestAWindowIsHeldUnderTheNameTheListGivesIt(t *testing.T) {
 			t.Fatalf("it is holding %v, want the one window under office", got)
 		}
 		stillTheOne(t, host, paneOnTheWindow(t, client), pane)
-		filedUnder(t, client, pane, "office", addr, addr)
+		filedUnder(t, client, pane, "office", addr)
 		filesFiledUnder(t, client, files, "office")
 		offersTheWindowsLines(t, client, "office")
 	})
@@ -2400,7 +2394,7 @@ func TestAWindowIsHeldUnderTheNameTheListGivesIt(t *testing.T) {
 			t.Fatalf("it is holding %v, want the one window under office", got)
 		}
 		stillTheOne(t, host, pane, pane)
-		filedUnder(t, client, pane, "office", addr, "")
+		filedUnder(t, client, pane, "office", addr)
 		offersTheWindowsLines(t, client, "office")
 	})
 
@@ -2431,7 +2425,7 @@ func TestAWindowIsHeldUnderTheNameTheListGivesIt(t *testing.T) {
 		stillTheOne(t, host, paneOnTheWindow(t, client), pane)
 		// The address is its own name now, so the heading has nothing
 		// to add beside it.
-		filedUnder(t, client, pane, addr, "", "office")
+		filedUnder(t, client, pane, addr, "office")
 
 		// And letting go from the plus on that heading really lets go.
 		chooseMenuItem(t, clickPlus(t, client, addr), "conn.disconnect")
@@ -2558,7 +2552,7 @@ func TestAWindowSavedDuringTheDialLandsUnderItsNewName(t *testing.T) {
 	if got := paneText(pane); strings.Contains(got, "not taken over") {
 		t.Errorf("the pane says it was not taken over:\n%s", got)
 	}
-	filedUnder(t, client, pane, "office", addr, addr)
+	filedUnder(t, client, pane, "office", addr)
 }
 
 // Two windows that trade names both follow their own.

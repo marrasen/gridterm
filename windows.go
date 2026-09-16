@@ -301,6 +301,13 @@ func (w *windows) drawnFrom(t *taken) []*term.Terminal {
 	return out
 }
 
+// drawsFromAWindow reports whether a pane is drawn from a window taken
+// over.
+func (w *windows) drawsFromAWindow(pane *term.Terminal) bool {
+	_, ok := w.from[pane]
+	return ok
+}
+
 // forget takes a pane off the record, for one that has been closed.
 func (w *windows) forget(pane *term.Terminal) {
 	delete(w.from, pane)
@@ -524,16 +531,6 @@ func (a *app) becomeWindowPane(t *taken, pane *term.Terminal, log *connLog) {
 	log.Became(t.name, sess)
 }
 
-// windowNote is what a window's row says beside its name: the address
-// it serves at, because a name the user gave says nothing about where
-// it is.
-func windowNote(t *taken) string {
-	if t.name == t.addr {
-		return ""
-	}
-	return t.addr
-}
-
 // holdWindow remembers a window and puts a row on the panel for it.
 func (a *app) holdWindow(name, addr string, win *serve.Window) *taken {
 	t := &taken{name: name, addr: addr, win: win}
@@ -544,7 +541,6 @@ func (a *app) holdWindow(name, addr string, win *serve.Window) *taken {
 		// from under their own name rather than saying it twice.
 		Kind:   conns.Server,
 		Label:  "taken over",
-		Note:   windowNote(t),
 		Meter:  &meter.Meter{},
 		Reveal: func() { a.revealWindow(t) },
 		// Closed by the window itself rather than by the name it is

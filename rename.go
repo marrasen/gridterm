@@ -127,7 +127,6 @@ func (a *app) rekeyWindows() {
 		for _, f := range reading[i] {
 			f.Renamed(r.window.name)
 		}
-		r.window.entry.Note = windowNote(r.window)
 	}
 }
 

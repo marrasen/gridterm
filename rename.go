@@ -10,9 +10,10 @@ import (
 
 // The whole of what a rename has to follow: the connection or the dial
 // under the old name, the panel rows filed under it, the file panes
-// reading through it, and the windows taken over, which are keyed by the
-// name the server list gives them. Together in one file so that the next
-// thing keyed by a name is added here rather than found missing later.
+// reading through it, the relayed file sessions parked on it, and the
+// windows taken over, which are keyed by the name the server list gives
+// them. Together in one file so that the next thing keyed by a name is
+// added here rather than found missing later.
 
 // moves says what a rename moved: the connection under the name, or a
 // connection still on its way to it.
@@ -70,6 +71,9 @@ func (a *app) renamedMachine(was string, to remote.Host) {
 	switch {
 	case moved.connection:
 		a.renamedFiles(was, to.Name)
+		// The file sessions relayed to it and left parked, which are
+		// counted against the name.
+		a.serving.relaysRenamed(was, to.Name)
 		// The connection's own row, and the rows of the panes and the
 		// tunnels on it.
 		a.rehostRows(was, to.Name)

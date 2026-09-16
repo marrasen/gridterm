@@ -32,6 +32,11 @@ const (
 	// hostSavedMachine is in the server list with nothing connected to
 	// it.
 	hostSavedMachine
+
+	// hostFar is a machine of a window taken over, reached through that
+	// window. about never gives this out: a name cannot say it, and
+	// a.current is the only thing that hands it over.
+	hostFar
 )
 
 // String names a kind, for a test that has to say what it found.
@@ -49,6 +54,8 @@ func (k hostKind) String() string {
 		return "connecting"
 	case hostSavedMachine:
 		return "saved machine"
+	case hostFar:
+		return "machine of a window taken over"
 	}
 	return "unknown"
 }
@@ -83,6 +90,10 @@ type hostFacts struct {
 	window   *taken
 	machine  *machine
 	dialling *dialling
+
+	// far is the machine of a window taken over, set only on hostFar. Its
+	// window is never nil there.
+	far remoteHostKey
 }
 
 // held says the window is holding something under this name: a

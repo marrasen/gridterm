@@ -19,15 +19,10 @@ import (
 // command that opened a terminal on a machine the user chose ten minutes
 // ago would be opening it somewhere they are not looking.
 func (a *app) currentHost() string {
-	// A menu dropped from a machine of a window taken over names that
-	// machine through the window, which nothing here is holding, so every
-	// command but Files refuses instead of acting on this window's own
-	// machine of the same name.
-	if key, on := a.hostMenus.farMachine(); on && key.window != nil {
-		return farName(key.host, key.window.name)
-	}
 	// A menu dropped from a machine's row beats everything else: the
-	// user named the machine by clicking it.
+	// user named the machine by clicking it. A menu dropped from a
+	// machine of a window taken over is not a name at all, and machine
+	// says so: a.current is what answers for those.
 	if host, up := a.hostMenus.machine(); up {
 		return host
 	}
@@ -54,10 +49,50 @@ func (a *app) currentHost() string {
 	return a.newPaneHost()
 }
 
+// current is the machine the user is looking at, as facts rather than as
+// a name.
+//
+// A menu dropped from a machine of a window taken over is the one case a
+// name cannot carry: that machine is reached through the window, and this
+// window holds nothing under any name for it. So it comes back as
+// hostFar, which every command but Files refuses -- structurally, rather
+// than by a name that a saved server could be called as well.
+func (a *app) current() hostFacts {
+	if key, on := a.hostMenus.farMachine(); on {
+		return hostFacts{a: a, name: key.host, kind: hostFar, far: key}
+	}
+	return a.about(a.currentHost())
+}
+
+// here is what the commands that act on the machine in front of the user
+// work from: the facts, or the refusal for a machine reached through a
+// window taken over.
+func (a *app) here() (hostFacts, error) {
+	h := a.current()
+	if h.kind == hostFar {
+		return h, farRefusal(h.far)
+	}
+	return h, nil
+}
+
+// farRefusal says a command cannot act on a machine of a window taken
+// over, naming the machine and the window.
+//
+// One sentence for every command, because there is one reason: the shells
+// and the tunnels on that machine belong to the window, and a pane
+// reading its files is all this window can open over there.
+func farRefusal(key remoteHostKey) error {
+	return fmt.Errorf("%s is reached through %s: only its files can be opened from here",
+		key.host, key.window.name)
+}
+
 // disconnectHere closes the connection to the machine the user is
 // looking at, and everything riding on it.
 func (a *app) disconnectHere() error {
-	h := a.about(a.currentHost())
+	h, err := a.here()
+	if err != nil {
+		return err
+	}
 	switch h.kind {
 	case hostHere:
 		return errors.New("this is the machine gridterm is running on, not one it connected to")
@@ -74,19 +109,21 @@ func (a *app) disconnectHere() error {
 
 // openTerminalHere opens another terminal on the machine the user is
 // looking at.
-func (a *app) openTerminalHere() error { return a.openTerminalOn(a.currentHost(), nil) }
+func (a *app) openTerminalHere() error {
+	h, err := a.here()
+	if err != nil {
+		return err
+	}
+	return a.openTerminalOn(h.name, nil)
+}
 
 // openCommandHere asks for a command to run on the machine the user is
 // looking at, connecting to it if the connection has since been closed.
 func (a *app) openCommandHere() error {
-	// A menu dropped from a machine of a window taken over offers files
-	// alone. Refused here rather than by the name currentHost gives it,
-	// because this says which machine and which window in its own words.
-	if key, on := a.hostMenus.farMachine(); on {
-		return fmt.Errorf("%s is reached through %s: only its files can be opened from here",
-			key.host, key.window.name)
+	h, err := a.here()
+	if err != nil {
+		return err
 	}
-	h := a.about(a.currentHost())
 	if h.kind == hostHere {
 		return errors.New(
 			"a command runs on a machine gridterm connected to, and this is the one it is running on")
@@ -124,7 +161,10 @@ func (a *app) openCommandHere() error {
 // showConnLogHere opens the account of how the machine the user is
 // looking at was reached, or is being reached.
 func (a *app) showConnLogHere() error {
-	h := a.about(a.currentHost())
+	h, err := a.here()
+	if err != nil {
+		return err
+	}
 	name := groupName(h.name)
 	log := h.log()
 	if log == nil {
@@ -146,19 +186,23 @@ func connLogTitle(name string, kind hostKind) string {
 // openFilesHere puts another pane in the file manager, on the machine
 // the user is looking at.
 func (a *app) openFilesHere() error {
-	// A menu dropped from a machine of a window taken over: the pane
-	// reads that machine through the window, which is the only way this
-	// one can reach it.
-	if key, on := a.hostMenus.farMachine(); on {
-		return a.openFilesFar(key)
+	h := a.current()
+	// A machine of a window taken over: the pane reads it through the
+	// window, which is the only way this one can reach it. The one
+	// command hostFar does not refuse.
+	if h.kind == hostFar {
+		return a.openFilesFar(h.far)
 	}
-	return a.openFilesOn(a.currentHost())
+	return a.openFilesOn(h.name)
 }
 
 // tunnelHost returns the machine to run a tunnel over: the one the user
 // is looking at, if it is one gridterm has a connection to.
 func (a *app) tunnelHost() (string, error) {
-	on := a.about(a.currentHost())
+	on, err := a.here()
+	if err != nil {
+		return "", err
+	}
 	if on.machine == nil {
 		return "", fmt.Errorf(
 			"a tunnel runs over a connection to another machine, and %s is not one",

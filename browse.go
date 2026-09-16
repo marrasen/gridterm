@@ -74,11 +74,10 @@ func (a *app) browseOn(name string) error {
 
 // openFilesFar puts a pane on a machine a window taken over is connected
 // to, read through that window.
+// The key comes from a.current, which only ever names a window the panel
+// drew a row for, so the window is never nil here.
 func (a *app) openFilesFar(key remoteHostKey) error {
 	t := key.window
-	if t == nil {
-		return errors.New("that row names no window to read it through")
-	}
 	if !a.windows.holds(t) {
 		return fmt.Errorf("this window has let go of %s", t.name)
 	}
@@ -1042,13 +1041,22 @@ func (a *app) windowFilesOn(t *taken, host string) (vfs.FS, error) {
 // place it reads.
 func farName(host, window string) string { return host + " through " + window }
 
+// errFilesGraceExpired says the far end never answered a file session's
+// goodbye, so the channel was closed from here.
+//
+// Named rather than anonymous: it is the only difference between the two
+// ways closeFilesOver can end, and what the far end did is worth saying
+// out loud on a window that has stopped answering.
+var errFilesGraceExpired = errors.New(
+	"the file session's goodbye went unanswered, so it was closed from here")
+
 // closeFilesOver ends a file session on a window taken over.
 //
 // Closing the SFTP client sends an end of file and then waits for the
 // far end to close the channel. A window that has stopped answering
 // never will, and this runs on the goroutine that draws, so the wait is
 // bounded: after that the channel is closed from here, which is what
-// lets go.
+// lets go. That path says so with errFilesGraceExpired.
 func closeFilesOver(client, ch io.Closer) error {
 	done := make(chan error, 1)
 	go func() { done <- client.Close() }()
@@ -1058,7 +1066,7 @@ func closeFilesOver(client, ch io.Closer) error {
 	case err := <-done:
 		errs = append(errs, err)
 	case <-time.After(filesGrace):
-		errs = append(errs, ch.Close())
+		errs = append(errs, errFilesGraceExpired, ch.Close())
 		// Now that the channel has gone, the client's own close can
 		// finish. Waited for rather than abandoned: it holds a
 		// goroutine until it does.

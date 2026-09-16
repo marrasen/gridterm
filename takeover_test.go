@@ -1894,8 +1894,10 @@ func TestLettingGoOfFilesOnAWindowThatStoppedAnsweringComesBack(t *testing.T) {
 
 	select {
 	case err := <-done:
-		if err != nil {
-			t.Errorf("letting go gave %v", err)
+		// And it says which of the two ways it ended: the far end never
+		// answered, so the channel was closed from here.
+		if !errors.Is(err, errFilesGraceExpired) {
+			t.Errorf("letting go gave %v, want the goodbye to have gone unanswered", err)
 		}
 	case <-time.After(waitBudget):
 		t.Fatal("it waited for a window that had stopped answering")

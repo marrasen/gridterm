@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -62,12 +63,50 @@ type serving struct {
 	// remembered is what the serve dialog was last set to, kept between
 	// runs. Nil until the window is given its settings.
 	remembered *settings.Settings
+
+	// abandoned counts the relayed file sessions left parked on each
+	// machine, by the name this window holds that machine under. Each one
+	// holds two goroutines and an SSH channel until the connection to the
+	// machine goes, so a machine that stopped answering is not asked for
+	// any more of them.
+	abandoned map[string]int
 }
 
 // newServing builds a serving with nothing listening and no rows for
 // clients.
 func newServing() *serving {
-	return &serving{rows: make(map[*serve.Client]*conns.Entry)}
+	return &serving{
+		rows:      make(map[*serve.Client]*conns.Entry),
+		abandoned: make(map[string]int),
+	}
+}
+
+// mostAbandonedRelays is how many file sessions may be left parked on one
+// machine before this window turns the next one away.
+//
+// Low, because each one is two goroutines and a channel on a machine that
+// is already not answering, and because a browser opens one per pane: a
+// client whose panes keep landing on a dead machine would otherwise pile
+// them up until that connection is closed.
+const mostAbandonedRelays = 4
+
+// relayAbandoned counts one more file session left parked on a machine.
+func (s *serving) relayAbandoned(host string) { s.abandoned[host]++ }
+
+// abandonedRelays is how many file sessions are parked on a machine.
+func (s *serving) abandonedRelays(host string) int { return s.abandoned[host] }
+
+// relaysEnded forgets what was parked on a machine, for a connection that
+// has closed: closing it ends every one of them.
+func (s *serving) relaysEnded(host string) { delete(s.abandoned, host) }
+
+// relaysRenamed moves what is parked on a machine to the name it is now
+// held under. The relays did not go anywhere; only the name changed.
+func (s *serving) relaysRenamed(was, now string) {
+	if n := s.abandoned[was]; n > 0 {
+		delete(s.abandoned, was)
+		s.abandoned[now] = n
+	}
 }
 
 // on reports whether the window is being served.
@@ -591,20 +630,23 @@ func (a *app) dropServedRows() {
 // relayed over this window's connection to it.
 //
 // It runs on a goroutine of the server's, so what it needs from the
-// window is asked for on the goroutine that draws.
-func (a *app) serveFiles(host string, ch io.ReadWriteCloser) error {
+// window is asked for on the goroutine that draws. client ends when that
+// client's connection has finished.
+func (a *app) serveFiles(client context.Context, host string, ch io.ReadWriteCloser) error {
 	if host == conns.Local {
 		return serveLocalFiles(ch)
 	}
-	return a.relayFiles(host, ch)
+	return a.relayFiles(client, host, ch)
 }
 
 // relayFiles carries a client's file session to a machine this window is
 // connected to, over the connection it already holds.
 //
 // Nothing is read here: this window only passes the bytes along, so the
-// client speaks SFTP to the machine rather than to this window.
-func (a *app) relayFiles(host string, ch io.ReadWriteCloser) error {
+// client speaks SFTP to the machine rather than to this window. client
+// ends when that client's connection has finished, which is what says
+// whether anybody is still waiting for the machine to answer.
+func (a *app) relayFiles(client context.Context, host string, ch io.ReadWriteCloser) error {
 	conn, err := a.connectionTo(host)
 	if err != nil {
 		return err
@@ -680,6 +722,12 @@ func (a *app) relayFiles(host string, ch io.ReadWriteCloser) error {
 	select {
 	case fromMachine = <-back:
 		return errors.Join(append(errs, fromMachine)...)
+	case <-client.Done():
+		// The client's whole connection has gone, so the wait below would
+		// buy nothing: nobody is left to read the machine's answer on the
+		// error stream, and the row for that client is held until this
+		// returns. An end of file on the channel does not say which of the
+		// two happened, which is why the client's connection is asked.
 	case <-time.After(relayGrace):
 	}
 	// A machine that has stopped answering never answers that close, so
@@ -689,8 +737,10 @@ func (a *app) relayFiles(host string, ch io.ReadWriteCloser) error {
 	// down.
 	//
 	// Said in the window, so whoever is sitting at this machine can see
-	// that a goroutine is parked on a machine that stopped answering.
+	// that a goroutine is parked on a machine that stopped answering, and
+	// counted so a machine that keeps doing it is asked for no more.
 	a.pump.post(func() {
+		a.serving.relayAbandoned(host)
 		a.logError(fmt.Errorf("abandoned a file session on %s that did not answer the close;"+
 			" it ends when the connection to it does", host))
 	})
@@ -710,7 +760,9 @@ func relayEnded(conn *remote.Conn, host string) error {
 	return fmt.Errorf("the file session on %s ended while it was still in use", host)
 }
 
-// connectionTo is the connection this window holds to a machine.
+// connectionTo is the connection this window holds to a machine, and
+// refuses a machine already holding as many parked file sessions as it
+// will.
 //
 // Called from a goroutine serving a client, so the look-up is handed to
 // the one that draws and waited for here. Nothing the window holds may
@@ -728,6 +780,12 @@ func (a *app) connectionTo(host string) (*remote.Conn, error) {
 				"the window you are reading through is not connected to %s", host)}
 			return
 		}
+		if n := a.serving.abandonedRelays(host); n >= mostAbandonedRelays {
+			back <- found{err: fmt.Errorf(
+				"%s has stopped answering; %s file sessions to it are still waiting to end",
+				host, inWords(n))}
+			return
+		}
 		back <- found{conn: m.conn}
 	})
 	select {
@@ -737,6 +795,17 @@ func (a *app) connectionTo(host string) (*remote.Conn, error) {
 		// The window is closing and nothing will run what was posted.
 		return nil, errors.New("the window you are reading through is closing")
 	}
+}
+
+// inWords spells a small count, for a sentence where a bare digit reads
+// like a code. Anything past the words it has is given as a number.
+func inWords(n int) string {
+	words := [...]string{"no", "one", "two", "three", "four", "five",
+		"six", "seven", "eight", "nine", "ten"}
+	if n >= 0 && n < len(words) {
+		return words[n]
+	}
+	return strconv.Itoa(n)
 }
 
 // serveLocalFiles gives a client the files of this machine, as SFTP on

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/pem"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/marrasen/gridterm/input"
 	"github.com/marrasen/gridterm/internal/sshtest"
+	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/serve"
 	"github.com/marrasen/gridterm/settings"
 	"github.com/marrasen/gridterm/ui"
@@ -590,6 +592,10 @@ type blackHole struct {
 	host string
 	port int
 
+	// server is the machine it carries to, so a test holding the relay can
+	// ask that machine what it is serving. Set by whoever built the pair.
+	server *sshtest.Server
+
 	shut     chan struct{}
 	shutOnce sync.Once
 
@@ -690,16 +696,51 @@ func (b *blackHole) carry(src, dst net.Conn) {
 	}
 }
 
-// A client that goes while the machine its file session was relayed to
-// has stopped answering is still said to have gone.
+// said collects what a window logged, whichever goroutine reported it.
 //
-// Closing the subsystem sends that machine a channel close and nothing
-// more. One that has dropped off the network never answers it, so the
-// copy from it stays where it is: waited for, it would hold the file
-// session, the connection it rode on, and the row saying a client this
-// window has already lost is still working here.
-func TestAClientThatGoesIsSaidToHaveGoneThoughTheMachineIsWedged(t *testing.T) {
-	host, client, addr := twoWindows(t)
+// logError runs wherever the failure was noticed, so the list is guarded:
+// a test reading it while a client's goroutine appends to it would be a
+// race whether or not it ever showed up as a wrong answer.
+type said struct {
+	mu    sync.Mutex
+	lines []string
+}
+
+// add is what a window's onError is pointed at.
+func (s *said) add(err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.lines = append(s.lines, err.Error())
+}
+
+// holds reports whether anything logged so far has a phrase in it.
+func (s *said) holds(what string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, line := range s.lines {
+		if strings.Contains(line, what) {
+			return true
+		}
+	}
+	return false
+}
+
+// all is everything logged so far, for a failure that has to say what it
+// found instead.
+func (s *said) all() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.lines...)
+}
+
+// aWedgedRelay is a window serving a client that has a file pane on
+// margit, with margit made to stop answering without hanging up.
+//
+// What comes back is the two windows, the address the client reached the
+// first one at, and what that window logs from here on.
+func aWedgedRelay(t *testing.T) (host, client *testApp, addr string, logged *said) {
+	t.Helper()
+	host, client, addr = twoWindows(t)
 
 	// margit reached through a relay the test can stop, so the machine
 	// can be made to stop answering without hanging up.
@@ -715,18 +756,37 @@ func TestAClientThatGoesIsSaidToHaveGoneThoughTheMachineIsWedged(t *testing.T) {
 		t.Fatalf("margit served %d file sessions, want the one being relayed", got)
 	}
 	// The row is there to go away. Without this a window that never put
-	// one up would pass the wait below on its first turn.
+	// one up would pass a wait for it to go on its first turn.
 	waitFor(t, host, "a row for the client working in this window", func() bool {
 		return servingRows(host) == 1
 	}, client)
 
 	// What this window logs, so the session it walks away from is not
 	// walked away from quietly.
-	var logged []string
-	host.onError = func(err error) { logged = append(logged, err.Error()) }
+	logged = &said{}
+	host.onError = logged.add
 
-	// The machine stops answering, and then the client goes.
 	relay.stop()
+	return host, client, addr, logged
+}
+
+// A client that goes while the machine its file session was relayed to
+// has stopped answering is still said to have gone, and is said to have
+// gone at once.
+//
+// Closing the subsystem sends that machine a channel close and nothing
+// more. One that has dropped off the network never answers it, so the
+// copy from it stays where it is: waited for, it would hold the file
+// session, the connection it rode on, and the row saying a client this
+// window has already lost is still working here.
+//
+// The grace is for reading the machine's answer back to the client. A
+// client whose whole connection has gone cannot read it, so there is
+// nothing to wait for and the row goes now.
+func TestAClientThatGoesIsSaidToHaveGoneThoughTheMachineIsWedged(t *testing.T) {
+	host, client, addr, logged := aWedgedRelay(t)
+
+	started := time.Now()
 	if err := client.dropWindow(addr); err != nil {
 		t.Fatalf("let go of the window: %v", err)
 	}
@@ -734,13 +794,12 @@ func TestAClientThatGoesIsSaidToHaveGoneThoughTheMachineIsWedged(t *testing.T) {
 	waitFor(t, host, "the window serving to say the client has gone", func() bool {
 		return servingRows(host) == 0
 	})
+	if took := time.Since(started); took > relayGrace/2 {
+		t.Errorf("the row for the client stayed %v, want it gone well inside the %v grace:"+
+			" the client's own connection had gone, so nothing was waiting for margit", took, relayGrace)
+	}
 	waitFor(t, host, "the abandoned file session to be logged", func() bool {
-		for _, said := range logged {
-			if strings.Contains(said, "abandoned a file session on margit") {
-				return true
-			}
-		}
-		return false
+		return logged.holds("abandoned a file session on margit")
 	})
 	// And the connection to margit is still held: the file session is what
 	// went wrong, not the connection carrying it, and a window that closed
@@ -748,6 +807,146 @@ func TestAClientThatGoesIsSaidToHaveGoneThoughTheMachineIsWedged(t *testing.T) {
 	if host.about("margit").machine == nil {
 		t.Errorf("the window let go of margit as well: %v", panelText(host, time.Now()))
 	}
+}
+
+// A file channel that closes on its own, with the client still there,
+// does wait the grace out.
+//
+// The client is still on the other end of the error stream, which is
+// where the machine's account of the session arrives. Walking away at
+// once would throw that away while somebody was waiting to read it.
+func TestAFileChannelThatClosesWaitsForTheWedgedMachine(t *testing.T) {
+	host, client, addr, logged := aWedgedRelay(t)
+	held := windowAt(t, client, addr)
+
+	// The pane goes and the window stays, so the file channel closes and
+	// nothing else does.
+	started := time.Now()
+	if err := client.closeFilesOn(held.name); err != nil {
+		t.Fatalf("closing the pane on margit: %v", err)
+	}
+
+	waitFor(t, host, "the abandoned file session to be logged", func() bool {
+		return logged.holds("abandoned a file session on margit")
+	}, client)
+	if took := time.Since(started); took < relayGrace {
+		t.Errorf("the relay was abandoned after %v, want the %v grace waited out:"+
+			" the client is still there to read what margit says", took, relayGrace)
+	}
+	// And the client is still working in this window, so nothing here
+	// mistook one file channel for the whole connection.
+	if got := servingRows(host); got != 1 {
+		t.Errorf("the window has %d rows for clients, want the one still connected: %v",
+			got, logged.all())
+	}
+}
+
+// A machine holding as many parked file sessions as this window will
+// allow is refused the next one, by name and by count.
+//
+// Each abandoned relay is two goroutines and an SSH channel waiting on a
+// machine that has already stopped answering. They end when the
+// connection to that machine closes, so without a bound a client whose
+// panes keep landing on a dead machine piles them up.
+func TestAMachineWithTooManyParkedFileSessionsIsRefusedTheNext(t *testing.T) {
+	a, margit := aRelayedMachine(t)
+
+	// Opened while the machine still answers: one that has stopped
+	// answering cannot be asked for a subsystem at all.
+	gone, cancel := context.WithCancel(context.Background())
+	pipes := make([]net.Conn, 0, mostAbandonedRelays)
+	for i := 0; i < mostAbandonedRelays; i++ {
+		ours, _ := relayToMargit(t, a, gone)
+		pipes = append(pipes, ours)
+	}
+	waitFor(t, a, "margit to be serving every relay", func() bool {
+		return margit.server.SFTPs() == mostAbandonedRelays
+	})
+
+	// The machine stops answering, the clients go, and every relay is
+	// walked away from.
+	margit.stop()
+	cancel()
+	for _, ours := range pipes {
+		if err := ours.Close(); err != nil {
+			t.Fatalf("close the client end: %v", err)
+		}
+	}
+	waitFor(t, a, "every relay to be abandoned", func() bool {
+		return a.serving.abandonedRelays("margit") == mostAbandonedRelays
+	})
+
+	// The next one is turned away before anything is opened, and says
+	// what is in the way.
+	_, refused := relayToMargit(t, a, gone)
+	var err error
+	waitFor(t, a, "the next file session to be refused", func() bool {
+		select {
+		case err = <-refused:
+			return true
+		default:
+			return false
+		}
+	})
+	want := "margit has stopped answering; four file sessions to it are still waiting to end"
+	if err == nil || !strings.Contains(err.Error(), want) {
+		t.Errorf("it said %v, want %q", err, want)
+	}
+
+	// A rename takes the count with it: the relays are still parked, so
+	// the machine under its new name is still not one to ask.
+	was := a.machines.named("margit")
+	if was == nil {
+		t.Fatal("margit is no longer connected")
+	}
+	a.renamedMachine("margit", remote.Host{Name: "margit2",
+		Address: was.at.cfg.Host, Port: was.at.cfg.Port, User: was.at.cfg.User})
+	if got := a.serving.abandonedRelays("margit2"); got != mostAbandonedRelays {
+		t.Errorf("after the rename %d file sessions are counted against it, want %d",
+			got, mostAbandonedRelays)
+	}
+
+	// Closing the connection ends all of them, so the count goes with it
+	// and the machine can be asked again.
+	if err := a.dropMachine("margit2"); err != nil {
+		t.Fatalf("let go of margit: %v", err)
+	}
+	if got := a.serving.abandonedRelays("margit2"); got != 0 {
+		t.Errorf("%d file sessions are still counted against margit", got)
+	}
+}
+
+// aRelayedMachine is a window connected to a test machine through a relay
+// the test can stop, so the machine can be made to stop answering without
+// hanging up.
+func aRelayedMachine(t *testing.T) (*testApp, *blackHole) {
+	t.Helper()
+	machine := sshtest.New(t)
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	relay := newBlackHole(t, machine.Addr())
+	relay.server = machine
+	cfg := serverConfig(t, machine)
+	cfg.Host, cfg.Port = relay.host, relay.port
+	a.connectAs("margit", cfg)
+	waitFor(t, a, "margit to answer", func() bool { return a.machines.named("margit") != nil })
+	// Kept off the test's own output. What the window logs is not what
+	// this harness is for, and a window with no onError prints it.
+	a.onError = (&said{}).add
+	return a, relay
+}
+
+// relayToMargit starts a relayed file session on margit from a goroutine
+// of its own, the way a client's does.
+//
+// It hands back the end a client would hold and what the relay reported
+// once it finished. gone stands for the client's connection.
+func relayToMargit(t *testing.T, a *testApp, gone context.Context) (net.Conn, chan error) {
+	t.Helper()
+	ours, theirs := net.Pipe()
+	done := make(chan error, 1)
+	go func() { done <- a.relayFiles(gone, "margit", theirs) }()
+	return ours, done
 }
 
 // A relayed file session that ended blames the connection only when the
@@ -758,6 +957,46 @@ func TestAClientThatGoesIsSaidToHaveGoneThoughTheMachineIsWedged(t *testing.T) {
 // connection under it goes. A window that said the connection went either
 // way sent the user looking for a network fault that was not there.
 func TestARelayThatEndedSaysWhetherTheConnectionWent(t *testing.T) {
+	t.Run("still connected", func(t *testing.T) {
+		_, _, host, m := aMachineToRelayTo(t)
+		if got := relayEnded(m.conn, host).Error(); !strings.Contains(got, "ended while it was still in use") {
+			t.Errorf("with %s still connected it says %q", host, got)
+		}
+	})
+
+	t.Run("closed from this window", func(t *testing.T) {
+		a, _, host, m := aMachineToRelayTo(t)
+		if err := a.dropMachine(host); err != nil {
+			t.Fatalf("let go of %s: %v", host, err)
+		}
+		if got := relayEnded(m.conn, host).Error(); !strings.Contains(got, "the connection to "+host+" went") {
+			t.Errorf("with the connection closed it says %q", got)
+		}
+	})
+
+	// The machine drops off the network instead. Nothing here closed the
+	// connection, and the wording about the file server ending by itself
+	// is for exactly the case this is not.
+	t.Run("the machine dropped", func(t *testing.T) {
+		_, s, host, m := aMachineToRelayTo(t)
+		s.CloseClients()
+		if err := m.conn.Wait(); err == nil {
+			t.Fatal("the connection to the machine ended cleanly")
+		}
+		if got := relayEnded(m.conn, host).Error(); !strings.Contains(got, "the connection to "+host+" went") {
+			t.Errorf("with the machine gone it says %q", got)
+		}
+	})
+}
+
+// aMachineToRelayTo is a window with one connection open, the machine at
+// the far end of it, the name the window holds it under, and what it is
+// holding.
+//
+// The server is handed back as well, so a test can cut the connection
+// from the far end.
+func aMachineToRelayTo(t *testing.T) (*testApp, *sshtest.Server, string, *machine) {
+	t.Helper()
 	s := sshtest.New(t)
 	a := newTestApp(t, 80, 24)
 	withDialogs(t, a)
@@ -768,17 +1007,7 @@ func TestARelayThatEndedSaysWhetherTheConnectionWent(t *testing.T) {
 	if m == nil {
 		t.Fatalf("nothing is connected to %s", host)
 	}
-
-	if got := relayEnded(m.conn, host).Error(); !strings.Contains(got, "ended while it was still in use") {
-		t.Errorf("with %s still connected it says %q", host, got)
-	}
-
-	if err := a.dropMachine(host); err != nil {
-		t.Fatalf("let go of %s: %v", host, err)
-	}
-	if got := relayEnded(m.conn, host).Error(); !strings.Contains(got, "the connection to "+host+" went") {
-		t.Errorf("with the connection closed it says %q", got)
-	}
+	return a, s, host, m
 }
 
 // servingRows counts the rows a window has for the clients working in it.

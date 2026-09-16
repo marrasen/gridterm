@@ -617,7 +617,10 @@ func viaHint(options []string) string {
 // editThisServer opens the dialog for the machine whose row was
 // clicked, rather than for one picked from a list.
 func (a *app) editThisServer() error {
-	f := a.about(a.currentHost())
+	f, err := a.here()
+	if err != nil {
+		return err
+	}
 	if !f.saved {
 		return fmt.Errorf("%s is not in the server list", groupName(f.name))
 	}
@@ -630,7 +633,10 @@ func (a *app) editThisServer() error {
 // Asked from here rather than done: a server is a few minutes of typing
 // and the list is the only record of it.
 func (a *app) forgetThisServer() error {
-	f := a.about(a.currentHost())
+	f, err := a.here()
+	if err != nil {
+		return err
+	}
 	if !f.saved {
 		return fmt.Errorf("%s is not in the server list", groupName(f.name))
 	}

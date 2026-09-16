@@ -455,7 +455,10 @@ func TestTheHereCommandsDelegate(t *testing.T) {
 	// that does. "a.openOn(" is not on this list: it is what a caller
 	// runs once the answer is known, so it proves nothing about who
 	// worked the answer out.
-	delegates := []string{"a.about(", "openTerminalOn(", "openFilesOn(", "dropMachine("}
+	delegates := []string{
+		"a.here(", "a.current(", "a.about(",
+		"openTerminalOn(", "openFilesOn(", "dropMachine(",
+	}
 	// Working it out again, in any of the ways the window used to.
 	own := []*regexp.Regexp{
 		regexp.MustCompile(`a\.windows\.named\(`),
@@ -562,28 +565,49 @@ func TestACommandWhileAFarMenuIsUpLeavesThisWindowAlone(t *testing.T) {
 	})
 	panes := len(client.panes)
 
+	// And a saved server called exactly what the far machine used to be
+	// named through its window, so a command that still went by that name
+	// would find something here to act on.
+	through := "margit through " + held.name
+	if err := client.book.Put(remote.Host{
+		Name: through, Address: ownHost, Port: ownPort, User: "tester",
+		Identities: []string{sshtest.WriteKey(t)},
+	}, ""); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	client.refreshServers()
+
 	menu := clickPlusFar(t, client, addr, "margit")
 
-	// The machine through the window it is reached through, which is a
-	// name nothing here is holding.
-	if got, want := client.currentHost(), "margit through "+held.name; got != want {
-		t.Fatalf("the window is looking at %q, want %q", got, want)
+	// The machine of a window taken over is not a name at all: a.current
+	// says what it is, and the name path says no menu is up.
+	if got, up := client.hostMenus.machine(); up {
+		t.Fatalf("the menu offers %q as a name", got)
+	}
+	if got := client.current().kind; got != hostFar {
+		t.Fatalf("the window is looking at a %v, want a machine of a window taken over", got)
+	}
+	if got := client.currentHost(); got == through || got == "margit" {
+		t.Fatalf("the window is looking at %q, which reads as a machine name", got)
 	}
 
-	// A command needing a shell says the machine is reached through the
-	// window, rather than opening a dialog that could only fail once it
-	// was filled in.
-	refuseFromThePalette(t, client, menu, "conn.command", "reached through")
-	// A terminal refuses too, rather than opening one on this window's own
-	// margit or dialling anything.
-	refuseFromThePalette(t, client, menu, "conn.terminal", "margit through "+held.name)
-	// Letting go refuses, and says which machine and which window.
-	refuseFromThePalette(t, client, menu, "conn.disconnect",
-		"nothing is connected to margit through "+held.name)
-	// And so does forgetting, though this window has a saved margit of
-	// its own to forget.
-	refuseFromThePalette(t, client, menu, "server.forget", "not in the server list")
+	// Every command but Files refuses with the one sentence, naming the
+	// machine and the window: not by a name that might miss, and not by
+	// finding something of this window's that happens to be called that.
+	want := "margit is reached through " + held.name +
+		": only its files can be opened from here"
+	for _, id := range []string{
+		"conn.command", "conn.terminal", "conn.disconnect", "conn.log",
+		"conn.tunnel", "conn.socks", "server.editThis", "server.forget",
+	} {
+		refuseFromThePalette(t, client, menu, id, want)
+	}
 
+	// Nothing of this window's was touched, including the server saved
+	// under the name the far machine used to be called by.
+	if _, saved := client.book.Kind(through); !saved {
+		t.Errorf("the server saved as %q was forgotten", through)
+	}
 	if client.windows.at(addr) != held {
 		t.Errorf("the window was let go of: %v", client.windows.names())
 	}

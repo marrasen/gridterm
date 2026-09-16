@@ -1389,15 +1389,15 @@ func TestLettingGoOfTheWindowClosesAPaneOnAMachineOverThere(t *testing.T) {
 
 	// The user's own path: the plus on the window's heading, and the
 	// line that lets go of it.
-	//
-	// Timed: the pane says goodbye to its file session and waits filesGrace
-	// for the answer. A goodbye nobody answers would still let go, and the
-	// window would freeze for a quarter of a second doing it.
-	started := time.Now()
 	chooseMenuItem(t, clickPlus(t, client, addr), "conn.disconnect")
-	if took := time.Since(started); took >= filesGrace {
-		t.Errorf("letting go took %v, as long as the whole grace period:"+
-			" the file session's goodbye went unanswered", took)
+
+	// The pane says goodbye to its file session and waits filesGrace for
+	// the answer. A goodbye nobody answered still lets go, and says so:
+	// that is the only difference between the two paths, and it is read
+	// here rather than timed, because a test machine under load can take
+	// a quarter of a second over anything.
+	if n, up := client.root.Modal().(*ui.Notice); up {
+		t.Errorf("letting go reported %q: %s", n.Title, n.Message())
 	}
 
 	if client.files != nil {

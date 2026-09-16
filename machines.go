@@ -333,6 +333,9 @@ func (a *app) machineDied(m *machine, why error) {
 		return
 	}
 	a.machines.drop(m)
+	// The file sessions relayed to it and left parked have ended with the
+	// transport, so the window stops counting them against it.
+	a.serving.relaysEnded(m.at.name)
 	// A pane of the file manager on this machine is reading through a
 	// session that has gone. It is taken away here, because nothing else
 	// would: a pane does not end by itself the way a shell does.
@@ -372,6 +375,9 @@ func (a *app) dropMachine(name string) error {
 	}
 	a.machines.drop(m)
 	a.registry.Drop(m.entry)
+	// Closing the connection ends every file session left parked on it,
+	// so what was counted against the machine goes too.
+	a.serving.relaysEnded(m.at.name)
 
 	// The file panes on this machine go first, which cancels the jobs
 	// reading through them and lets go of their sessions once those have

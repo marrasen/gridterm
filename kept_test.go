@@ -33,7 +33,7 @@ func endTheShell(t *testing.T, a *testApp, which int, pane *term.Terminal) {
 	}
 	waitFor(t, a, "the window to see the shell end", func() bool {
 		a.reapExited()
-		return a.Ended(pane)
+		return endedAndSaid(a, pane)
 	})
 }
 
@@ -44,7 +44,7 @@ func endTheRemoteShell(t *testing.T, a *testApp, pane *term.Terminal) {
 	pane.Send([]byte("bye\n"))
 	waitFor(t, a, "the window to see the remote shell end", func() bool {
 		a.reapExited()
-		return a.Ended(pane)
+		return endedAndSaid(a, pane)
 	})
 }
 

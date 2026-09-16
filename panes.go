@@ -414,6 +414,9 @@ func (a *app) paneEnded(t *term.Terminal) error {
 		return a.closePane(t)
 	}
 	if a.ended[t] {
+		// The status can land after the program went, and the question
+		// exists to say it.
+		a.askAgainIfMoreIsKnown(t)
 		return nil
 	}
 	// Marked before the close is tried, so a close that failed is not
@@ -425,8 +428,10 @@ func (a *app) paneEnded(t *term.Terminal) error {
 	if m := a.machines.stopped(t); m != nil && m.died {
 		a.endedAs(t, transportLost)
 	}
-	a.sayTheProgramHasFinished(t)
+	// The question first, because the line written into the pane names a
+	// way out only when nothing was asked.
 	a.askWhatNext(t)
+	a.sayTheProgramHasFinished(t)
 	// The session rather than the pane: what the program printed stays
 	// on screen, and a terminal that was closed could take no new one.
 	if err := a.letGoOfTheSession(t); err != nil {
@@ -447,6 +452,9 @@ func (a *app) letGoOfTheSession(t *term.Terminal) error {
 	if s == nil || s.on == nil {
 		return nil
 	}
+	// The terminal stops feeding a session it no longer owns, which would
+	// otherwise leave a goroutine parked on it for the life of the window.
+	t.LetGo()
 	return s.on.Close()
 }
 
@@ -458,8 +466,20 @@ func (a *app) letGoOfTheSession(t *term.Terminal) error {
 // and once, because paneEnded marks the pane before it calls this. It is
 // the record that the program went; what to do about it is the question
 // on the last row.
+//
+// A pane that asks nothing is named a way out here instead. The question
+// is where the other panes say it, and the sidebar that would say it too
+// can be hidden.
 func (a *app) sayTheProgramHasFinished(t *term.Terminal) {
-	t.Say("-- gridterm: the program has finished --")
+	if t.Asking() != "" {
+		t.Say("-- gridterm: the program has finished --")
+		return
+	}
+	how := "Close this pane when you have read it."
+	if chord := a.chordFor("pane.close"); chord != "" {
+		how = chord + " closes this pane."
+	}
+	t.Say("-- gridterm: the program has finished. " + how + " --")
 }
 
 // Ended reports whether a pane is one that has stopped, so it is being

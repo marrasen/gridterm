@@ -60,9 +60,11 @@ type Config struct {
 	OnTitle func(string)
 	OnBell  func()
 
-	// OnExit is called once when the shell goes, from the goroutine
-	// reading the session and after the session has said how the program
-	// ended, so a host reading Ending from it has an answer.
+	// OnExit is called when the shell goes, from the goroutine that
+	// noticed, and again once the session has said how the program ended.
+	// Ending carries the status from that second call on: a program whose
+	// input broke goes on running, and the host is told the pane has
+	// stopped rather than waiting for it.
 	OnExit func()
 
 	// OnError reports a session failure. There is nowhere to return one
@@ -201,6 +203,16 @@ type run struct {
 
 	// wg falls to zero once both loops have returned.
 	wg sync.WaitGroup
+
+	// letGo says the host closed this session itself and kept the pane, so
+	// Close and Restart leave it alone rather than handing back the first
+	// close's error a second time. The drawing goroutine owns it.
+	letGo bool
+
+	// over says the terminal has moved on to another run, so a status
+	// landing late belongs to a program the pane no longer shows. It is
+	// guarded by the terminal's runMu.
+	over bool
 }
 
 // halt tells writeLoop to stop, however many times it is called.
@@ -301,7 +313,32 @@ func (t *Terminal) Close() error {
 	}
 	r := t.current()
 	r.halt()
+	if r.letGo {
+		// The host closed this session itself and has already been told
+		// how that went.
+		return nil
+	}
 	return r.sess.Close()
+}
+
+// LetGo stops the goroutine feeding the session, for a host that is
+// closing the session itself and keeping the pane.
+//
+// Nothing is queued for a pane whose program has gone, so that goroutine
+// would otherwise sit on its select for the life of the window, holding
+// the session and everything behind it.
+func (t *Terminal) LetGo() {
+	r := t.current()
+	r.letGo = true
+	r.halt()
+}
+
+// retire marks a run as one the terminal has finished with, so a status
+// that lands late is not put on the program that took its place.
+func (t *Terminal) retire(r *run) {
+	t.runMu.Lock()
+	r.over = true
+	t.runMu.Unlock()
 }
 
 // Restart puts a new session under the terminal, keeping what is on the
@@ -311,7 +348,8 @@ func (t *Terminal) Close() error {
 //
 // It refuses a terminal whose program is still running, and hands back
 // the old session's hangup error rather than starting a second program
-// on top of one that would not go.
+// on top of one that would not go. A session the host let go of is left
+// alone: the host closed it and has the error already.
 func (t *Terminal) Restart(sess session.Session) error {
 	if sess == nil {
 		return errors.New("restart: no session to put in the pane")
@@ -327,7 +365,11 @@ func (t *Terminal) Restart(sess session.Session) error {
 	// blocked on it, and two readers would take the bytes in turns.
 	old := t.current()
 	old.halt()
-	err := old.sess.Close()
+	t.retire(old)
+	var err error
+	if !old.letGo {
+		err = old.sess.Close()
+	}
 	old.wg.Wait()
 	if err != nil {
 		return fmt.Errorf("restart: close the session that ended: %w", err)
@@ -839,7 +881,7 @@ func (t *Terminal) writeLoop(r *run) {
 		case b := <-t.out:
 			if _, err := r.sess.Write(b); err != nil {
 				t.fail(fmt.Errorf("write session: %w", err))
-				t.finish()
+				t.finish(r)
 				return
 			}
 		}
@@ -872,7 +914,7 @@ func (t *Terminal) readLoop(r *run) {
 			if !errors.Is(err, io.EOF) {
 				t.fail(fmt.Errorf("read session: %w", err))
 			}
-			t.finish()
+			t.finish(r)
 			return
 		}
 	}
@@ -896,21 +938,48 @@ func (t *Terminal) Ending() (error, bool) {
 	return e.err, true
 }
 
-// finish records that the shell has gone and tells the host once.
-func (t *Terminal) finish() {
+// finish records that the shell has gone and tells the host, first that
+// it went and then what it ended with.
+func (t *Terminal) finish(r *run) {
 	if t.exited.Swap(true) {
 		return
 	}
-	// What the program ended with, asked before the host is told so that
-	// the host has it. It is asked here because this runs on the
-	// goroutine that was reading the session, which has nothing left to
-	// do, and because the session has already ended so the answer is
-	// waiting rather than being waited for.
-	t.end.Store(&ending{err: t.current().sess.Wait()})
 	// Whoever is watching from elsewhere, before the window is told:
 	// their pane is drawing this program and has no other way to learn
 	// it has gone.
 	t.endWatchers()
+	t.tellHost()
+	go t.collect(r)
+}
+
+// collect waits for the program's status and tells the host again once
+// there is one.
+//
+// On a goroutine of its own, because Wait blocks for as long as the
+// program runs and a run ends here on a broken input as well as a broken
+// output.
+func (t *Terminal) collect(r *run) {
+	if !t.keepEnding(r, r.sess.Wait()) {
+		return
+	}
+	t.tellHost()
+}
+
+// keepEnding records what a run's program ended with and reports whether
+// it was kept. A status landing after the pane took another program is
+// dropped: it is not that program's.
+func (t *Terminal) keepEnding(r *run, err error) bool {
+	t.runMu.Lock()
+	defer t.runMu.Unlock()
+	if r.over || t.run != r {
+		return false
+	}
+	t.end.Store(&ending{err: err})
+	return true
+}
+
+// tellHost says the program has gone, if the host asked to be told.
+func (t *Terminal) tellHost() {
 	if t.cfg.OnExit != nil {
 		t.cfg.OnExit()
 	}

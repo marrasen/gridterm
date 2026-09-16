@@ -177,6 +177,15 @@ func (ms *machines) stopped(pane *term.Terminal) *machine {
 	return m
 }
 
+// ranOn is the connection a pane whose program has ended was running on,
+// or nil.
+func (ms *machines) ranOn(pane *term.Terminal) *machine { return ms.ran[pane] }
+
+// endedOn records that a pane with nothing running in it belongs to a
+// connection, for one that never got a program: the machine answered and
+// what was asked for on it would not open.
+func (ms *machines) endedOn(pane *term.Terminal, m *machine) { ms.ran[pane] = m }
+
 // panesThatRanOn are the panes whose program has ended and that were
 // running on one connection.
 func (ms *machines) panesThatRanOn(m *machine) []*term.Terminal {

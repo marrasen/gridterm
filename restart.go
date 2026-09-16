@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"os/exec"
 	"strconv"
+	"syscall"
 
 	"golang.org/x/crypto/ssh"
 
 	"github.com/marrasen/gridterm/conns"
+	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/meter"
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/session"
@@ -65,11 +67,93 @@ func (a *app) askWhatNext(t *term.Terminal) {
 		// to ask. The row and the transcript say it has gone.
 		return
 	}
-	status, known := exitStatus(t.Ending())
-	question, start := whatHappened(a.panes[t], s.argv, status, known)
+	e := a.panes[t]
+	question, start := whatHappened(e, s.argv, a.howItEnded(t))
 	t.Ask(question,
 		term.Choice{Label: start, Do: func() error { return a.startAgain(t) }},
-		term.Choice{Label: "Close", Do: func() error { return a.closePane(t) }})
+		// Close by default on a command: Enter at a terminal that has
+		// stopped answering is a reflex, and running a deploy is not.
+		term.Choice{
+			Label:   "Close",
+			Default: e != nil && e.Kind == conns.Command,
+			Do:      func() error { return a.closePane(t) },
+		})
+}
+
+// askAgainIfMoreIsKnown puts the question up again once the program's
+// status has landed, and only when that changes the words: a question
+// rebuilt on every frame would take back the choice the user moved to.
+func (a *app) askAgainIfMoreIsKnown(t *term.Terminal) {
+	s := a.started[t]
+	if s == nil || !s.again {
+		return
+	}
+	question, _ := whatHappened(a.panes[t], s.argv, a.howItEnded(t))
+	if question == t.Asking() {
+		return
+	}
+	a.askWhatNext(t)
+}
+
+// endedHow is the way a pane's program ended, which is what the question
+// on the pane has to word.
+type endedHow int
+
+const (
+	// ranAndStopped is a program that ran and then stopped on its own.
+	ranAndStopped endedHow = iota
+
+	// cutOff is a program whose connection went while it was running, so
+	// it did not finish and has no status.
+	cutOff
+
+	// neverRan is a program whose connection was never made, so nothing
+	// ran at all.
+	neverRan
+)
+
+// outcome is what became of a pane's program: the way it ended, and the
+// status it ended with when there is one.
+type outcome struct {
+	how    endedHow
+	status int
+	known  bool
+}
+
+// argvRoom is how much of a command the question names. Long enough to
+// tell one run from another, and short enough that what the question
+// asks still fits on the row after it.
+const argvRoom = 40
+
+// howItEnded is what became of the program in a pane, as far as the
+// window can tell.
+func (a *app) howItEnded(t *term.Terminal) outcome {
+	why, over := t.Ending()
+	status, known := exitStatus(why, over)
+	end := outcome{status: status, known: known}
+	// A status means the program ran and said how it went, whatever
+	// became of the connection afterwards.
+	if known {
+		return end
+	}
+	switch {
+	case over && errors.Is(why, errNeverConnected):
+		end.how = neverRan
+	case a.transportWent(t, why, over):
+		end.how = cutOff
+	}
+	return end
+}
+
+// transportWent reports whether the connection carrying a pane's program
+// went while the program was running, which leaves the program no status
+// and no end.
+func (a *app) transportWent(t *term.Terminal, why error, over bool) bool {
+	if m := a.machines.ranOn(t); m != nil && m.died {
+		return true
+	}
+	var missing *ssh.ExitMissingError
+	return over && errors.As(why, &missing)
 }
 
 // whatHappened words the question on a pane whose program has ended, and
@@ -78,41 +162,52 @@ func (a *app) askWhatNext(t *term.Terminal) {
 // A command is named and its choice says it will run, because picking it
 // runs that command a second time with whatever it does to the machine;
 // picking it on a shell only opens a prompt.
-//
-// status is what the program exited with, and known says there is one: a
-// transport that broke leaves none, and a question that called that an
-// exit of zero would say the program ended cleanly, which is the one
-// thing a dropped connection did not do.
-func whatHappened(e *conns.Entry, argv []string, status int, known bool) (question, start string) {
-	said := ""
-	if known {
-		said = ", exit " + strconv.Itoa(status)
-	}
+func whatHappened(e *conns.Entry, argv []string, end outcome) (question, start string) {
 	if e != nil && e.Kind == conns.Command {
-		what := labelFor(argv)
-		if what == "" {
-			what = "The command"
-		}
-		// Whatever it was, because which run this was is the whole of
-		// what the user is deciding on.
-		return what + " finished" + said + ". Run it again?", "Run again"
+		return commandQuestion(argv, end), "Run again"
 	}
 	// A shell that ended cleanly is the ordinary way out, and saying so
 	// is noise; one that died is worth knowing about.
-	if status == 0 {
-		said = ""
+	said := ""
+	if end.known && end.status != 0 {
+		said = " Exit " + strconv.Itoa(end.status) + "."
 	}
 	// The words ssh itself prints after a shell is exited, and the same
 	// words fit a transport that went: either way the pane's connection
 	// has closed and reconnecting is what brings it back.
-	return "Connection closed" + said + ". Reconnect?", "Yes"
+	return "Connection closed." + said + " Reconnect?", "Yes"
+}
+
+// commandQuestion words the question on a pane that ran one command,
+// naming it because which run this was is the whole of what the user is
+// deciding on.
+//
+// How it ended is worded rather than assumed: a command that was cut off
+// did not finish, and saying it had is as wrong as reporting an exit of
+// zero.
+func commandQuestion(argv []string, end outcome) string {
+	what := grid.TrimTail(labelFor(argv), argvRoom)
+	if what == "" {
+		what = "The command"
+	}
+	switch end.how {
+	case cutOff:
+		return "The connection went while " + what + " was running. Run it again?"
+	case neverRan:
+		return "The connection was not made, so " + what + " did not run. Run it again?"
+	}
+	if !end.known {
+		return what + " has stopped. Run it again?"
+	}
+	return what + " finished. Exit " + strconv.Itoa(end.status) + ". Run it again?"
 }
 
 // exitStatus is the status a program ended with, taken from what its
 // session reported, and whether one is known at all.
 //
-// over says the program has stopped. One still running has no status,
-// and neither has one whose transport broke before it could send one.
+// over says the session has said how the program ended. One still
+// running has no status, and neither has one whose transport broke
+// before it could send one.
 func exitStatus(why error, over bool) (int, bool) {
 	switch {
 	case !over:
@@ -126,9 +221,34 @@ func exitStatus(why error, over bool) (int, bool) {
 	}
 	var here *exec.ExitError
 	if errors.As(why, &here) {
-		return here.ExitCode(), true
+		return localStatus(here.ExitCode(), here.Sys())
 	}
 	return 0, false
+}
+
+// signalled is a process state that says the program was killed by a
+// signal rather than exiting, which is what exec reports through Sys.
+type signalled interface {
+	Signaled() bool
+	Signal() syscall.Signal
+}
+
+// localStatus is the status a program on this machine ended with, from
+// the exit code and the process state exec reports.
+//
+// A program killed by a signal has an exit code of -1, which is not a
+// status any shell reports, so it is counted the way the shells and the
+// remote side count one: 128 plus the signal. A platform with no signal
+// to name leaves the status unknown rather than passing -1 on.
+func localStatus(code int, sys any) (int, bool) {
+	if code >= 0 {
+		return code, true
+	}
+	s, ok := sys.(signalled)
+	if !ok || !s.Signaled() {
+		return 0, false
+	}
+	return 128 + int(s.Signal()), true
 }
 
 // startAgain runs a pane's program once more in the same pane.
@@ -153,7 +273,8 @@ func (a *app) startAgain(t *term.Terminal) error {
 // startAgainHere starts the shell a pane on this machine ran, on the
 // argv it ran before.
 func (a *app) startAgainHere(t *term.Terminal, s *startedAs) error {
-	sess, err := a.newShell(s.argv, a.lastSize[0], a.lastSize[1])
+	size := t.Size()
+	sess, err := a.newShell(s.argv, size.Cols, size.Rows)
 	if err != nil {
 		return fmt.Errorf("start session: %w", err)
 	}

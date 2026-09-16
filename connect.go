@@ -50,6 +50,11 @@ func (o opening) kind() conns.Kind {
 // something, and the dialog it asks with is drawn by this one. A pane
 // holds the place until it is done, and closing it gives up.
 func (a *app) openRoute(name string, route []step, open opening, at *spot) {
+	if open.into != nil && !a.live(open.into) {
+		// The pane that asked has been closed since, which a dial queued
+		// behind another one and settling minutes later finds.
+		return
+	}
 	// A window the server list holds is taken over, not logged in to.
 	//
 	// Here because this is the one place every connection really goes
@@ -58,6 +63,13 @@ func (a *app) openRoute(name string, route []step, open opening, at *spot) {
 	// logging in to the serve port, and the far end refusing a session
 	// was the first anything heard of it.
 	if h, ok := a.savedWindowInRoute(name, route); ok {
+		if open.into != nil {
+			// Taking a window over draws its panes as panes of its own,
+			// so there is nothing to put in the pane that asked.
+			a.reportError("Could not start it again in this pane", fmt.Errorf(
+				"%s is a gridterm window now, which is taken over rather than logged in to", name))
+			return
+		}
 		a.workOnWindowOrSay(h.ServeAddr(), h.KeyFile(), at)
 		return
 	}
@@ -389,6 +401,10 @@ func (a *app) becomeShellPane(m *machine, name string, command []string,
 	})
 	if err != nil {
 		a.endedAs(pane, "no terminal")
+		// On the machine even with nothing running in it, or closing the
+		// machine's row would leave this pane behind offering to reconnect
+		// to a machine the window no longer holds.
+		a.machines.endedOn(pane, m)
 		log.Refused(name, "a terminal", err)
 		return
 	}
@@ -473,6 +489,7 @@ func (a *app) dialAgainFor(t *term.Terminal, host string, s *startedAs) error {
 		}
 		route = []step{{name: host, cfg: s.at.cfg, term: s.at.term}}
 	}
+	a.sayIfTheTargetMoved(t, host, route, s)
 	a.openRoute(host, route, opening{command: s.argv, into: t}, nil)
 	if a.ended[t] {
 		// The dial never reached the pane, and openRoute has said why.
@@ -481,6 +498,23 @@ func (a *app) dialAgainFor(t *term.Terminal, host string, s *startedAs) error {
 		a.askWhatNext(t)
 	}
 	return nil
+}
+
+// sayIfTheTargetMoved writes a line into a pane whose machine is not at
+// the address the pane was reached at, which a saved entry edited since
+// the pane opened leaves it.
+//
+// Reconnecting dials the new address and puts it under the old
+// transcript, so the two runs would otherwise read as one machine.
+func (a *app) sayIfTheTargetMoved(t *term.Terminal, host string, route []step, s *startedAs) {
+	if len(route) == 0 || s.at.cfg.Host == "" {
+		return
+	}
+	was, now := s.at.cfg.Target(), route[len(route)-1].cfg.Target()
+	if was == now {
+		return
+	}
+	t.Say("-- gridterm: " + host + " is " + now + " now. This pane was on " + was + " --")
 }
 
 // connectAndBrowse connects to a machine and opens a pane of the file

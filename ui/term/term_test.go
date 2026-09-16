@@ -410,7 +410,11 @@ func TestTwoTerminalsOnOneGridInEitherOrder(t *testing.T) {
 		})
 	}
 }
-func TestExitCallsOnExitOnce(t *testing.T) {
+
+// TestExitTellsTheHostGoingAndThenTheStatus is the contract OnExit
+// carries: the program going is reported at once, and its status when
+// that lands. Twice, and no more.
+func TestExitTellsTheHostGoingAndThenTheStatus(t *testing.T) {
 	f := newFakeSession()
 	// OnExit arrives from the goroutine reading the session, so counting
 	// it needs a lock of its own.
@@ -422,10 +426,12 @@ func TestExitCallsOnExitOnce(t *testing.T) {
 
 	_ = f.Close() // the shell goes
 	waitFor(t, term.Exited)
+	waitFor(t, func() bool { _, over := term.Ending(); return over })
 	time.Sleep(20 * time.Millisecond)
 
-	if got := exits.Load(); got != 1 {
-		t.Errorf("OnExit called %d times, want 1", got)
+	if got := exits.Load(); got != 2 {
+		t.Errorf("OnExit called %d times, want the one for the program going"+
+			" and the one for its status", got)
 	}
 	if err := term.Close(); err != nil {
 		t.Errorf("Close after exit: %v", err)
@@ -761,7 +767,8 @@ func TestCloseReportsTheSessionFailure(t *testing.T) {
 
 // TestExitIsReportedOnceAcrossBothGoroutines checks the claim the swap
 // makes: the reader and the writer can both find the session gone, and
-// the host must still be told once.
+// the host must still be told once about it going and once about the
+// status, however many goroutines noticed.
 func TestExitIsReportedOnceAcrossBothGoroutines(t *testing.T) {
 	boom := errors.New("broken pipe")
 	f := newFakeSession()
@@ -781,9 +788,11 @@ func TestExitIsReportedOnceAcrossBothGoroutines(t *testing.T) {
 	_ = f.Close()
 
 	waitFor(t, term.Exited)
+	waitFor(t, func() bool { _, over := term.Ending(); return over })
 	time.Sleep(50 * time.Millisecond)
-	if got := exits.Load(); got != 1 {
-		t.Errorf("OnExit called %d times, want 1", got)
+	if got := exits.Load(); got != 2 {
+		t.Errorf("OnExit called %d times, want the one for the program going"+
+			" and the one for its status", got)
 	}
 }
 

@@ -100,9 +100,8 @@ func TestRestartMakesTheTerminalLiveAgain(t *testing.T) {
 	var exits atomic.Int32
 	term, f := newTestTerm(t, 20, 4, Config{OnExit: func() { exits.Add(1) }})
 	endProgram(t, term, f)
-	if exits.Load() != 1 {
-		t.Fatalf("OnExit called %d times before the restart, want 1", exits.Load())
-	}
+	// Twice for one program: once when it went and once for its status.
+	waitFor(t, func() bool { return exits.Load() == 2 })
 
 	next := restart(t, term)
 	if term.Exited() {
@@ -111,7 +110,7 @@ func TestRestartMakesTheTerminalLiveAgain(t *testing.T) {
 
 	_ = next.Close()
 	waitFor(t, term.Exited)
-	waitFor(t, func() bool { return exits.Load() == 2 })
+	waitFor(t, func() bool { return exits.Load() == 4 })
 }
 
 // TestCloseAfterARestartClosesTheNewSession checks Close follows the
@@ -473,4 +472,101 @@ func (w *fakeWatcher) screenText() string {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return string(w.screen)
+}
+
+// stillRunning is a session whose program goes on running after the
+// terminal has stopped moving bytes for it, so Wait does not come back
+// until the test says it may.
+type stillRunning struct {
+	*fakeSession
+	says chan struct{}
+}
+
+func newStillRunning() *stillRunning {
+	return &stillRunning{fakeSession: newFakeSession(), says: make(chan struct{})}
+}
+
+func (s *stillRunning) Wait() error {
+	<-s.says
+	return nil
+}
+
+// TestLettingGoStopsTheGoroutinesOnTheSession is what keeps a window
+// with a day's worth of finished panes in it from carrying a parked
+// goroutine, a session and a pty handle for each one.
+func TestLettingGoStopsTheGoroutinesOnTheSession(t *testing.T) {
+	term, f := newTestTerm(t, 20, 4, Config{})
+	endProgram(t, term, f)
+	r := term.current()
+
+	term.LetGo()
+
+	stopped := make(chan struct{})
+	go func() { r.wg.Wait(); close(stopped) }()
+	select {
+	case <-stopped:
+	case <-time.After(2 * time.Second):
+		t.Fatal("a goroutine is still on a session the pane has let go of")
+	}
+}
+
+// TestRestartAfterAHangupThatFailed is the pane a user could otherwise
+// never start again: a session close hands back the same error every
+// time after the first, so a restart that closed it a second time would
+// fail on that error for ever.
+func TestRestartAfterAHangupThatFailed(t *testing.T) {
+	term, f := newTestTerm(t, 20, 4, Config{})
+	boom := errors.New("the channel would not let go")
+	f.mu.Lock()
+	f.closeErr = boom
+	f.mu.Unlock()
+	endProgram(t, term, f)
+
+	// The host closes the session itself and is told once that it failed.
+	term.LetGo()
+	if err := f.Close(); !errors.Is(err, boom) {
+		t.Fatalf("the session closed with %v, want the failure the test set up", err)
+	}
+
+	if err := term.Restart(newFakeSession()); err != nil {
+		t.Fatalf("a pane whose hangup failed could not be started again: %v", err)
+	}
+	if term.Exited() {
+		t.Error("the pane still reads as one whose program has gone")
+	}
+}
+
+// TestAProgramStillRunningDoesNotHoldUpTheNotice covers the pane that
+// would otherwise be left dead and silent: its input broke while the
+// program went on running, so waiting for the status would mean never
+// telling the host the pane had stopped.
+func TestAProgramStillRunningDoesNotHoldUpTheNotice(t *testing.T) {
+	sess := newStillRunning()
+	var told atomic.Int64
+	term, err := New(Config{
+		Session: sess,
+		Size:    ui.Size{Cols: 20, Rows: 4},
+		OnExit:  func() { told.Add(1) },
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(func() { _ = term.Close() })
+
+	// The far end closed its input under a program that is still going.
+	sess.setWriteErr(errors.New("the far end closed its input"))
+	term.HandleKey(input.Event{Kind: input.Text, Rune: 'a', NormalText: true})
+
+	waitFor(t, func() bool { return told.Load() > 0 })
+	if _, over := term.Ending(); over {
+		t.Error("a status arrived for a program that is still running")
+	}
+
+	// And when the program does end, the host is told again and the
+	// status is there for it.
+	close(sess.says)
+	waitFor(t, func() bool { return told.Load() > 1 })
+	if _, over := term.Ending(); !over {
+		t.Error("the status never reached the pane")
+	}
 }

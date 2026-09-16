@@ -756,9 +756,10 @@ func TestListDrawsAnIconInFrontOfTheText(t *testing.T) {
 	}, 30, 4)
 	g := drawList(l, 30, 4)
 
-	// The dot stays in the indent, which costs it no column.
-	if got := g.At(0, 1).Rune; got != '•' {
-		t.Fatalf("column 0 holds %q, want the dot", got)
+	// The mark's column stays blank: the icon says what the mark did, in
+	// the same colour.
+	if got := g.At(0, 1).Rune; got != ' ' {
+		t.Fatalf("column 0 holds %q, want a blank beside the icon", got)
 	}
 	// Then the icon where the text used to start, a blank, then the text.
 	if got := g.At(2, 1).Art; got != grid.Icon(grid.IconTerminal) {
@@ -770,7 +771,7 @@ func TestListDrawsAnIconInFrontOfTheText(t *testing.T) {
 	if got := rowOf(g, 1); !strings.Contains(got, "vim") {
 		t.Fatalf("row = %q, want the text as well", got)
 	}
-	// In columns, not bytes: the dot in front is three bytes of one.
+	// In columns, not bytes: the icon's blank is one column.
 	if at := columnOf(rowOf(g, 1), "vim"); at != 4 {
 		t.Fatalf("the text starts at column %d, want it past the icon", at)
 	}
@@ -843,21 +844,101 @@ func TestListWashesTheIconOnTheSelectedRow(t *testing.T) {
 	}
 }
 
-// A frame where nothing moved leaves the layer alone, marks and icons
-// included: a row that dirties itself every frame is a window that
-// redraws sixty times a second with nothing happening.
+// A frame where nothing moved leaves the layer alone, and the icon is
+// still there afterwards: a buffer that dirtied nothing by drawing
+// nothing would pass the first half of this and fail the user.
 func TestListWithMarksDoesNotDirtyAnIdleFrame(t *testing.T) {
 	green := color.RGBA{R: 0, G: 200, B: 0, A: 255}
 	l := newTestList(t, []ListRow{
 		{Text: "margit", Header: true, Mark: '•', MarkFG: green, Depth: 1, Key: 1},
 		{Text: "vim", Depth: 1, Icon: grid.Icon(grid.IconTerminal), IconFG: green, Key: 2},
 	}, 30, 4)
+	l.SetFocus(false)
 	g := grid.New(30, 4, color.RGBA{}, color.RGBA{})
 	l.Draw(g.View())
 	g.ClearDirty()
 	l.Draw(g.View())
 	if g.AnyDirty() {
 		t.Fatal("drawing an unchanged list dirtied the layer")
+	}
+
+	// The second draw wrote the same cells, not no cells.
+	if got := g.At(2, 1); got.Art != grid.Icon(grid.IconTerminal) || got.FG != green {
+		t.Fatalf("after an idle frame the icon cell is %v in %v, want the terminal icon in %v",
+			got.Art, got.FG, green)
+	}
+	if got := g.At(0, 0); got.Rune != '•' || got.FG != green {
+		t.Fatalf("after an idle frame the mark cell is %q in %v, want the dot in %v",
+			got.Rune, got.FG, green)
+	}
+}
+
+// A sidebar dragged too narrow to draw an icon still says what state its
+// rows are in: the mark stands in, in the colour the icon would have had.
+func TestListFallsBackToTheMarkWithNoRoomForAnIcon(t *testing.T) {
+	green := color.RGBA{R: 0, G: 200, B: 0, A: 255}
+	rows := []ListRow{{
+		Text: "vim", Depth: 1,
+		Icon: grid.Icon(grid.IconTerminal), IconFG: green,
+		Mark: '•', MarkFG: green,
+		// The run of the last few seconds takes a column of its own, and
+		// it is what leaves the icon with none.
+		Art: grid.Graph([]int{1, 2, 3}),
+		Key: 1,
+	}}
+
+	// Wide enough for both: the icon is drawn and the mark is not, or
+	// the row would say the same thing twice.
+	l := newTestList(t, rows, 30, 4)
+	l.SetFocus(false)
+	wide := drawList(l, 30, 4)
+	if got := wide.At(2, 0).Art; got != grid.Icon(grid.IconTerminal) {
+		t.Fatalf("at 30 columns the row carries %v, want the icon", got)
+	}
+	if got := wide.At(0, 0).Rune; got == '•' {
+		t.Fatal("the row draws its mark as well as its icon")
+	}
+
+	// Narrow enough that the graph takes the icon's room, so the mark is
+	// back and carries the colour.
+	l = newTestList(t, rows, 7, 4)
+	l.SetFocus(false)
+	narrow := drawList(l, 7, 4)
+	for x := 0; x < 7; x++ {
+		if got := narrow.At(x, 0).Art.Kind; got == grid.ArtIcon {
+			t.Fatalf("column %d carries the icon in a list this narrow", x)
+		}
+	}
+	got := narrow.At(0, 0)
+	if got.Rune != '•' {
+		t.Fatalf("the narrow row holds %q where the mark goes, want the dot", got.Rune)
+	}
+	if got.FG != green {
+		t.Fatalf("the mark is %v, want the %v the icon would have been", got.FG, green)
+	}
+}
+
+// A header with a colour of its own is drawn in it. The style's header
+// colour is what a header falls back to, not what it is held to: a
+// heading that has to read differently from the other headings has
+// nowhere else to say so.
+func TestListDrawsAHeaderInItsOwnColour(t *testing.T) {
+	purple := color.RGBA{R: 180, G: 0, B: 200, A: 255}
+	l := newTestList(t, []ListRow{
+		{Text: "margit", Header: true, Depth: 1, Key: 1},
+		{Text: "statio", Header: true, Depth: 1, FG: purple, Key: 2},
+		{Text: "vim", Depth: 1, Key: 3},
+	}, 30, 4)
+	l.SetFocus(false)
+	g := drawList(l, 30, 4)
+
+	if got := g.At(2, 1).FG; got != purple {
+		t.Fatalf("the header with a colour is drawn in %v, want %v", got, purple)
+	}
+	// And one without keeps the style's.
+	if got := g.At(2, 0).FG; got != l.Style.HeaderFG {
+		t.Fatalf("the plain header is drawn in %v, want the style's %v",
+			got, l.Style.HeaderFG)
 	}
 }
 

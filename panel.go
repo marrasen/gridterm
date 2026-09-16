@@ -22,9 +22,8 @@ import (
 // panelWidth is how wide the connections panel starts.
 const panelWidth = 26
 
-// dot is the mark in front of a machine's heading, saying what state its
-// connection is in. A heading has no kind icon to colour instead, because
-// a machine is not a kind of connection.
+// dot is the mark in front of a heading, and behind a connection's icon
+// in a sidebar too narrow to draw one.
 const dot = '\u2022'
 
 // icon is the little picture that stands for a kind of connection.
@@ -140,11 +139,9 @@ func (a *app) newSidebar() *sidebar {
 	return s
 }
 
-// newDock puts the sidebar beside the rest of the window.
-//
-// The divider has no colour, so the column between the two is blank: a
-// line there read as a bar between the sidebar and the panes rather than
-// as the edge of either. The column stays because it is the drag handle.
+// newDock puts the sidebar beside the rest of the window, with a
+// colourless divider so the column between the two draws blank and is
+// still the drag handle.
 func (a *app) newDock(rest ui.Widget) *ui.Dock {
 	d := ui.NewDock(panelWidth, a.side, rest)
 	d.DividerFG = color.RGBA{}
@@ -446,14 +443,13 @@ func (a *app) showing() *conns.Entry {
 
 // panelRow turns one connection into a line.
 func (a *app) panelRow(row conns.Row, now time.Time) ui.ListRow {
+	// The kind icon in the state colour, with the dot behind it for a
+	// sidebar too narrow to draw the icon.
+	state := a.stateFG(row.State, now)
 	out := ui.ListRow{
 		Text: row.Label, Depth: 1, Key: row.Entry,
-		Note: a.note(row, now), Icon: icon(row.Kind),
-		// The kind icon in the colour the dot had, so one mark says both
-		// what the connection is and what state it is in. No dot beside
-		// it: the column it would have taken stays blank, so the text
-		// does not shift.
-		IconFG: a.stateFG(row.State, now),
+		Note: a.note(row, now), Icon: icon(row.Kind), IconFG: state,
+		Mark: dot, MarkFG: state,
 	}
 	out.Art = a.graph(row.Entry)
 	if row.State == meter.Closed {

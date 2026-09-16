@@ -87,6 +87,10 @@ type ListRow struct {
 	// Mark is a character drawn in the indent in front of the text, and
 	// MarkFG is its colour. It is how a row says what state it is in
 	// without spending words on it.
+	//
+	// A row that drew an Icon draws no mark: the icon carries the same
+	// colour. The mark is what a row falls back to in a list too narrow
+	// for the icon.
 	Mark   rune
 	MarkFG color.RGBA
 
@@ -438,10 +442,11 @@ func (l *List) paintRow(v grid.View, row ListRow, selected bool, y, rows int) {
 	fg, bg := l.Style.FG, l.Style.rowBG(y, rows)
 	noteFG := l.Style.NoteFG
 	switch {
+	case row.FG.A != 0:
+		// A row's own colour wins, headers included.
+		fg = row.FG
 	case row.Header:
 		fg = l.Style.HeaderFG
-	case row.FG.A != 0:
-		fg = row.FG
 	}
 	// washed says the row's ground is light enough to swallow a mark
 	// picked out against the ordinary one.
@@ -494,15 +499,17 @@ func (l *List) paintRow(v grid.View, row ListRow, selected bool, y, rows int) {
 	// The icon goes where the text would start, and the text moves along
 	// to make room: a picture of what a row is says it in one column
 	// where the word for it took eight.
-	if row.Icon.Kind != grid.ArtNone && at+2 < room {
+	drewIcon := row.Icon.Kind != grid.ArtNone && at+2 < room
+	if drewIcon {
 		icon := pickedOut(row.IconFG, fg, washed)
 		v.Set(at, 0, grid.Cell{Rune: ' ', FG: icon, BG: bg, Width: 1, Art: row.Icon})
 		v.Set(at+1, 0, grid.Cell{Rune: ' ', FG: fg, BG: bg, Width: 1})
 		at += 2
 	}
 	// The mark sits in the indent the text leaves in front of it, so it
-	// costs no column of its own.
-	if row.Mark != 0 && row.Depth*2 >= 2 {
+	// costs no column of its own. Left out where the icon was drawn,
+	// which says the same thing in the same colour.
+	if row.Mark != 0 && !drewIcon && row.Depth*2 >= 2 {
 		mark := pickedOut(row.MarkFG, fg, washed)
 		v.Set(row.Depth*2-2, 0, grid.Cell{Rune: row.Mark, FG: mark, BG: bg, Width: 1})
 	}

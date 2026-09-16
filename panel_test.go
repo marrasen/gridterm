@@ -12,6 +12,7 @@ import (
 	"github.com/marrasen/gridterm/input"
 	"github.com/marrasen/gridterm/internal/sshtest"
 	"github.com/marrasen/gridterm/meter"
+	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/term"
 )
@@ -264,6 +265,64 @@ func TestAConnectionRowShowsItsKindInTheStateColour(t *testing.T) {
 	}
 }
 
+// A sidebar dragged as narrow as it goes still says what state its rows
+// are in. The icon is drawn while there is room for it and the dot comes
+// back when there is not, and both carry the state's colour.
+func TestANarrowSidebarStillShowsTheState(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	e := onlyPane(t, a)
+	a.panel.SetFocus(false)
+	// A short note, which a row carries when its connection ended with a
+	// short reason. It and the run take the room the icon wanted.
+	e.Note = "EOF"
+	e.Meter.Moved(64*1024, 0, panelNow)
+	now := panelNow.Add(meter.RateWindow)
+	a.refreshPanel(panelNow)
+
+	// In as far as the dock will let it go.
+	a.dock.Width = 1
+	a.relayout()
+	a.placeRegions()
+	a.refreshPanel(now)
+	at := windowCell(a)
+	paint(a)
+
+	area, shown := sideArea(a)
+	if !shown {
+		t.Fatal("the sidebar is not on screen")
+	}
+	row := a.panel.RowTop(e)
+	if row < 0 {
+		t.Fatalf("the connection has no row on screen: %v", panelText(a, now))
+	}
+	want := a.stateFG(e.State(now), now)
+
+	var drew bool
+	for x := area.X; x < area.X+area.Cols; x++ {
+		c := at(x, area.Y+row)
+		if c.Art.Kind != grid.ArtIcon {
+			continue
+		}
+		drew = true
+		if c.FG != want {
+			t.Fatalf("the icon is %v, want the state's %v", c.FG, want)
+		}
+	}
+	if drew {
+		return
+	}
+	// No room for it, so the dot stands in.
+	got := at(area.X, area.Y+row)
+	if got.Rune != dot {
+		t.Fatalf("a sidebar %d wide holds %q where the mark goes, want the dot",
+			area.Cols, got.Rune)
+	}
+	if got.FG != want {
+		t.Fatalf("the mark is %v, want the state's %v", got.FG, want)
+	}
+}
+
 // The pulse moves the active row's icon and nothing else on the sidebar.
 //
 // A row that changes colour every frame is a row that dirties itself
@@ -279,23 +338,24 @@ func TestThePulseMovesOnlyTheActiveRowsIcon(t *testing.T) {
 	busy.Meter.Moved(64, 0, panelNow)
 
 	a.refreshPanel(panelNow)
-	var row = -1
-	for i, r := range a.panel.Rows() {
-		if r.Key == any(busy) {
-			row = i
-		}
-	}
+	// How far down the sidebar's box the busy row is drawn, asked of the
+	// list rather than counted here: a pinned row or a heading above it
+	// would move it.
+	row := a.panel.RowTop(busy)
 	if row < 0 {
-		t.Fatalf("no row for the busy connection: %v", panelText(a, panelNow))
+		t.Fatalf("the busy connection is not on screen: %v", panelText(a, panelNow))
 	}
 
 	at := windowCell(a)
-	// What the cell looks like, which is all this compares: a grid.Cell
-	// carries a slice and cannot be compared with ==.
+	// Every part of the cell that is drawn: a grid.Cell carries a slice
+	// and cannot be compared with ==, so the combining marks come along
+	// as a string.
 	type look struct {
 		rune   rune
+		comb   string
 		fg, bg color.RGBA
 		attr   grid.Attr
+		width  uint8
 		art    grid.Art
 	}
 	snap := func(now time.Time) map[[2]int]look {
@@ -309,7 +369,9 @@ func TestThePulseMovesOnlyTheActiveRowsIcon(t *testing.T) {
 		for y := area.Y; y < area.Y+area.Rows; y++ {
 			for x := area.X; x < area.X+area.Cols; x++ {
 				c := at(x, y)
-				out[[2]int{x, y}] = look{c.Rune, c.FG, c.BG, c.Attr, c.Art}
+				out[[2]int{x, y}] = look{
+					c.Rune, string(c.Comb), c.FG, c.BG, c.Attr, c.Width, c.Art,
+				}
 			}
 		}
 		return out
@@ -343,16 +405,19 @@ func TestTheSidebarDividerIsBlankAndStillDrags(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withPanel(t, a)
 	a.refreshPanel(panelNow)
-	at := windowCell(a)
 	paint(a)
 
-	area, shown := sideArea(a)
+	// The dock's own idea of where the panel is, so the column read is
+	// the divider rather than whatever the sidebar's grid ends at. The
+	// divider is drawn on the window's grid: the sidebar has a grid of
+	// its own and the column belongs to neither half.
+	area, shown := a.dock.ChildArea(a.side)
 	if !shown {
 		t.Fatal("the sidebar is not on screen")
 	}
 	col := area.X + area.Cols
 	for y := area.Y; y < area.Y+area.Rows; y++ {
-		if got := at(col, y).Rune; got != ' ' && got != 0 {
+		if got := a.g.At(col, y).Rune; got != ' ' {
 			t.Fatalf("the divider column holds %q at row %d, want a blank", got, y)
 		}
 	}
@@ -381,6 +446,48 @@ func TestTheSidebarDividerIsBlankAndStillDrags(t *testing.T) {
 	}
 	if a.dock.Width != was+6 {
 		t.Fatalf("the panel is %d wide after the drag, want %d", a.dock.Width, was+6)
+	}
+}
+
+// A window's heading is drawn in its own colour, which is what tells it
+// apart from a machine without reading the name.
+func TestTheHeadingOfAWindowIsDrawnInItsOwnColour(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	if err := a.book.Put(remote.Host{
+		Name: "statio", Address: "10.0.0.5", Port: 2222, Window: true,
+	}, ""); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	a.refreshServers()
+	a.refreshPanel(panelNow)
+	if !a.about("statio").serves {
+		t.Fatal("the saved window is not known as one")
+	}
+
+	at := windowCell(a)
+	paint(a)
+	area, shown := sideArea(a)
+	if !shown {
+		t.Fatal("the sidebar is not on screen")
+	}
+	row := a.panel.RowTop(hostKey("statio"))
+	if row < 0 {
+		t.Fatalf("the window has no heading on screen: %v", panelText(a, panelNow))
+	}
+	// The heading is indented like the rows under it, so its text starts
+	// two columns in.
+	if got := at(area.X+2, area.Y+row).FG; got != a.colours.ANSI[5] {
+		t.Fatalf("the window's heading is drawn in %v, want the %v a window gets",
+			got, a.colours.ANSI[5])
+	}
+	// And a machine's heading is not: this one is the local machine.
+	local := a.panel.RowTop(hostKey(conns.Local))
+	if local < 0 {
+		t.Fatal("there is no heading for the local machine")
+	}
+	if got := at(area.X+2, area.Y+local).FG; got == a.colours.ANSI[5] {
+		t.Fatal("a machine's heading is drawn in the colour a window gets")
 	}
 }
 

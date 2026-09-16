@@ -99,12 +99,13 @@ emulator, and draws the resulting character grid as batched triangles.
   tunnel and transfer, under the machine it is on with this one at the
   top. Every saved server is on it whether or not anything is connected,
   and every machine carries a plus that drops a menu of what can be
-  opened there. A dot says what each row is doing — green for open,
-  brightening and dimming while bytes are going past, grey once it has
-  finished — and the machine's own heading carries the dot for the
-  connection. The bar follows whatever pane is in front, so the sidebar
-  is the list of what is open and says which one you are looking at.
-  "Connect to server…" is pinned under the list. Nothing polls and
+  opened there. A row's hand-drawn kind icon is coloured for what it is
+  doing — green for open, brightening and dimming while bytes are going
+  past, grey once it has finished — and a machine's own heading carries a
+  dot in the same colours, as does a row in a sidebar dragged too narrow
+  to draw an icon. The bar follows whatever pane is in front, so the
+  sidebar is the list of what is open and says which one you are looking
+  at. "Connect to server…" is pinned under the list. Nothing polls and
   nothing ticks: the row is worked out afresh each frame from when the
   last byte went by, so an idle sidebar redraws nothing at all.
   `Ctrl+Shift+B` hides it and shows it again.

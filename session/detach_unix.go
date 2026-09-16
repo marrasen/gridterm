@@ -3,6 +3,7 @@
 package session
 
 import (
+	"errors"
 	"os"
 
 	"github.com/aymanbagabas/go-pty"
@@ -35,4 +36,14 @@ func detachSlave(p pty.Pty) bool {
 func closeErrIsBenign(err error) bool {
 	return err != nil && os.IsNotExist(err) ||
 		err != nil && errIsClosed(err)
+}
+
+// releaseTerminal does nothing on Unix: detachSlave already handed the
+// slave back when the child started.
+func releaseTerminal(pty.Pty) bool { return false }
+
+// closeReleased is never called on Unix because releaseTerminal never
+// releases anything.
+func closeReleased(pty.Pty) error {
+	return errors.New("closeReleased: nothing is released on Unix")
 }

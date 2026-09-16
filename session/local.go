@@ -59,6 +59,15 @@ type local struct {
 	// detached records that this process no longer holds the pty slave,
 	// which makes go-pty's own Close report a harmless double close.
 	detached bool
+
+	// ptyMu orders releasing the terminal against resizing it, because on
+	// Windows a resize after the pseudoconsole is freed would use a handle
+	// that no longer exists.
+	ptyMu sync.RWMutex
+
+	// released records that the terminal has been let go of, so the close
+	// that follows only has the pipes left to shut.
+	released bool
 }
 
 // StartLocal runs a shell attached to a new pseudo-terminal.
@@ -115,10 +124,17 @@ func StartLocal(cfg LocalConfig) (Session, error) {
 		// holds: one waiting for this channel inside that lock would
 		// wait for a channel this goroutine could no longer close.
 		close(l.done)
-		if !l.detached {
-			// No slave to release, so the only way to unblock a pending
-			// read is to close the pty. On Windows that is also what
-			// flushes the pseudoconsole, so no output is lost.
+		if l.detached {
+			return
+		}
+		// Let go of the terminal now the child is gone, so a pending read
+		// drains the child's last output and then ends by itself. Closing
+		// the pty here instead would throw that output away: on Windows a
+		// ConPTY repaints on its own clock, and a child that writes and
+		// exits in the same instant has not been repainted yet.
+		if !l.release() {
+			// Nothing to let go of, so the only way to unblock a pending
+			// read is to close the pty.
 			_ = l.Close()
 		}
 	}()
@@ -159,6 +175,13 @@ func (l *local) Resize(cols, rows int) error {
 	if cols <= 0 || rows <= 0 {
 		return nil
 	}
+	l.ptyMu.RLock()
+	defer l.ptyMu.RUnlock()
+	if l.released {
+		// The child and its terminal are both gone, so there is nothing
+		// left to resize.
+		return nil
+	}
 	return l.pty.Resize(cols, rows)
 }
 
@@ -167,12 +190,32 @@ func (l *local) Wait() error {
 	return l.waitErr
 }
 
-// Close hangs the child up and then makes sure it is gone.
+// release lets go of the terminal once the child has been reaped, so a
+// pending read drains the child's last output before it ends. It reports
+// whether it could, and is safe to call more than once.
+func (l *local) release() bool {
+	l.ptyMu.Lock()
+	defer l.ptyMu.Unlock()
+	if !l.released && releaseTerminal(l.pty) {
+		l.released = true
+	}
+	return l.released
+}
+
+// Close hangs the child up and then makes sure it is gone. It does not
+// wait for output: the user closed the tab and is not going to read it.
 func (l *local) Close() error {
 	l.closeOnce.Do(func() {
 		// Closing the pty sends the child a hangup. Killing it outright
 		// first would deny a shell the chance to run its exit hooks.
-		err := l.pty.Close()
+		var err error
+		if l.release() {
+			// The reaper may already have done this, and releasing twice
+			// is not safe, so only the pipes are left to shut.
+			err = closeReleased(l.pty)
+		} else {
+			err = l.pty.Close()
+		}
 		if l.detached && closeErrIsBenign(err) {
 			// go-pty closes the slave this process already released.
 			err = nil

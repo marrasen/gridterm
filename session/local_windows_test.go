@@ -64,10 +64,6 @@ func shell(t *testing.T, argv ...string) Session {
 }
 
 // A shell runs, takes what is typed at it, and answers.
-//
-// The command is typed rather than passed on the command line: a
-// ConPTY repaints on its own clock, and a child that exits in the same
-// millisecond it wrote takes its output with it.
 func TestStartLocalRunsACommandOnWindows(t *testing.T) {
 	s := shell(t, "cmd.exe")
 	readUntil(t, s, ">", budget)
@@ -148,11 +144,11 @@ func TestCloseIsSafeConcurrentlyOnWindows(t *testing.T) {
 
 // A child that has been reaped is reported as gone straight away.
 //
-// Windows has no slave handle to hand back, so the reaper closes the pty
-// itself, and that takes the same lock a Close from the window holds.
-// Saying the child had gone only after that close returned meant the
-// window's Close could not be told, and it waited out the hangup grace
-// for a child that had already exited.
+// Windows has no slave handle to hand back, so the reaper lets go of the
+// pty itself, and that takes the same lock a Close from the window holds.
+// Saying the child had gone only after that returned meant the window's
+// Close could not be told, and it waited out the hangup grace for a child
+// that had already exited.
 func TestTheChildIsReportedGoneBeforeTheReaperCloses(t *testing.T) {
 	s := shell(t, "cmd.exe", "/c", "exit 0")
 	l := s.(*local)
@@ -197,6 +193,55 @@ func TestClosingATabDoesNotWaitOutTheHangupGrace(t *testing.T) {
 	if took := time.Since(start); took >= hangupGrace {
 		t.Fatalf("Close took %v, and the grace is %v: it waited for a child "+
 			"that had already gone and then killed it", took, hangupGrace)
+	}
+}
+
+// A child that writes and exits in the same instant keeps its output.
+//
+// A ConPTY repaints on a clock of its own, so the child's last line
+// reaches the pipe after the child has already been reaped.
+func TestOutputSurvivesAChildThatExitsImmediatelyOnWindows(t *testing.T) {
+	const want = "hello-from-a-child-that-exits"
+	s := shell(t, "cmd.exe", "/c", "echo "+want)
+
+	got := readUntil(t, s, want, budget)
+	if !strings.Contains(got, want) {
+		t.Fatalf("output = %q, want it to contain %q: the pseudoconsole was "+
+			"closed before it had written the child's last line", got, want)
+	}
+}
+
+// A child that exits without writing anything ends the session rather
+// than leaving the reader waiting for a flush that will never come.
+func TestASilentChildEndsTheSessionOnWindows(t *testing.T) {
+	// drainCap is the longest the end of a session may take once the
+	// child has gone. Nothing waits on a clock, so this is slack.
+	const drainCap = 2 * time.Second
+
+	s := shell(t, "cmd.exe", "/c", "exit 0")
+
+	read := make(chan error, 1)
+	go func() {
+		b := make([]byte, 4096)
+		for {
+			if _, err := s.Read(b); err != nil {
+				read <- err
+				return
+			}
+		}
+	}()
+
+	start := time.Now()
+	select {
+	case err := <-read:
+		if err != io.EOF {
+			t.Fatalf("Read = %v, want io.EOF", err)
+		}
+	case <-time.After(budget):
+		t.Fatal("the session never ended for a child that wrote nothing")
+	}
+	if took := time.Since(start); took > drainCap {
+		t.Fatalf("the session took %v to end, and the cap is %v", took, drainCap)
 	}
 }
 

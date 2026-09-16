@@ -103,7 +103,9 @@ func toolList() []tool {
 				" work: \\u0003 is ctrl+c." +
 				" keys presses named keys, after the text or instead of it. The pane encodes" +
 				" each the way the program running there asks for, so a key means to it what" +
-				" the same key pressed at the window would. To leave vim, send" +
+				" the same key pressed at the window would. That is the program running when" +
+				" this call is made: a program the text in the same call starts has not asked" +
+				" for anything yet, so keys for it go in a later call. To leave vim, send" +
 				` {"keys": ["Escape"]} and then {"text": ":q!", "keys": ["Enter"]}.` +
 				" It does not wait for anything to happen, so call wait_for next.",
 			InputSchema: schema{
@@ -328,8 +330,9 @@ const notesMarker = "-- gridterm --"
 
 // marked says what the marker means, for the tools that answer with a
 // screen.
-var marked = fmt.Sprintf(" The screen ends at a line reading %q; what follows it is gridterm"+
-	" talking about the pane, not the pane.", notesMarker)
+var marked = fmt.Sprintf(" The screen ends at the last line reading %q; what follows it is"+
+	" gridterm talking about the pane, not the pane. Take the last one: a pane can print that"+
+	" line itself, and an earlier one is the pane's own text.", notesMarker)
 
 // allThereIsNote is what an agent is told when the pane had fewer lines
 // than the read asked for.

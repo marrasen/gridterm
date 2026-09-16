@@ -219,10 +219,11 @@ func (a *app) tunnelsDiedOn(m *machine) error {
 		// the way a finished command stays. It says closed rather than
 		// how many streams it had a moment ago.
 		e.Note = ""
-		e.Close = func() error {
+		drop := func() error {
 			a.registry.Drop(e)
 			return nil
 		}
+		e.Close, e.Clear = drop, drop
 	}
 	return errors.Join(errs...)
 }
@@ -283,10 +284,11 @@ func (a *app) tunnelStopped(e *conns.Entry, err error) {
 	delete(a.tunnels, e)
 	open.count.m.Close()
 	e.Note = ""
-	e.Close = func() error {
+	drop := func() error {
 		a.registry.Drop(e)
 		return nil
 	}
+	e.Close, e.Clear = drop, drop
 	a.markDirty()
 	a.reportError("The tunnel "+e.Label+" stopped", err)
 }

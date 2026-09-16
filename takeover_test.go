@@ -717,6 +717,11 @@ func TestAWindowThatQuitsKeepsARowThatCanBeCleared(t *testing.T) {
 	if drawn.Text != "no longer serving" {
 		t.Errorf("the row says %q, want what became of the window", drawn.Text)
 	}
+	// And offering the cross that clears it, the way a dropped machine's
+	// row does.
+	if drawn.Button != clearButton {
+		t.Errorf("the greyed row offers %q, want the ×", drawn.Button)
+	}
 
 	// Hanging up on a window that has already gone reports the socket it
 	// could not close politely. Dismissed, the way the user would.
@@ -726,10 +731,10 @@ func TestAWindowThatQuitsKeepsARowThatCanBeCleared(t *testing.T) {
 		}
 	}
 
-	// Cleared the way any row is: choose it in the sidebar, then the
-	// menu line that closes what is chosen.
-	chooseRow(t, client, row)
-	clearTheRow(t, client)
+	// Cleared by pressing the cross at the end of the row. The other way
+	// in, the menu line that closes whatever the sidebar has chosen, is
+	// covered where a dropped machine's row is cleared.
+	clickClear(t, client, row)
 
 	panelText(client, time.Now())
 	if _, ok := panelRow(client, row); ok {

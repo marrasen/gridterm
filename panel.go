@@ -415,12 +415,15 @@ func (a *app) greyRow(e *conns.Entry, why error) {
 	dead.Close()
 	e.Meter = dead
 	e.Reveal = nil
-	e.Close = func() error {
+	// Nothing is left to end, so closing the row and clearing it are the
+	// same act: the row goes off the panel.
+	drop := func() error {
 		a.registry.Drop(e)
 		a.refreshServers()
 		a.markDirty()
 		return nil
 	}
+	e.Close, e.Clear = drop, drop
 }
 
 // followTheStage puts the bar on the row for whatever the stage is
@@ -481,9 +484,12 @@ func (a *app) panelRow(row conns.Row, now time.Time) ui.ListRow {
 		// A finished connection reads as finished rather than as one
 		// more thing running.
 		out.FG = a.colours.ANSI[8]
-		if row.Entry.Close != nil {
+		if row.Entry.Clear != nil {
 			// Clearing the row is the one thing left to do with it, so
-			// it is offered on the row itself rather than through a menu.
+			// it is offered on the row itself rather than through a
+			// menu. Asked of Clear rather than of Close: a finished
+			// command keeps its pane, and its Close would throw the
+			// transcript away.
 			out.Button = clearButton
 		}
 	}

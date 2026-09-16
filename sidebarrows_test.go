@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"io"
 	"io/fs"
 	"strings"
@@ -8,8 +9,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/marrasen/gridterm/conns"
+	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/input"
 	"github.com/marrasen/gridterm/internal/sshtest"
+	"github.com/marrasen/gridterm/jobs"
+	"github.com/marrasen/gridterm/meter"
+	"github.com/marrasen/gridterm/ui"
+	"github.com/marrasen/gridterm/ui/term"
 	"github.com/marrasen/gridterm/vfs"
 )
 
@@ -92,8 +99,13 @@ func TestAJobsRowFillsAsTheBytesGo(t *testing.T) {
 	withPanel(t, a)
 
 	held := newHalfwayFS()
-	t.Cleanup(held.let)
 	b, from, _ := browserOnto(t, a, held)
+	// After the browser, which is what makes the directories the copy
+	// runs between. Cleanups run in reverse, so letting the writer go has
+	// to be registered last to happen first: a test that failed early
+	// would otherwise take the directories away while the writer is still
+	// holding a file open in one of them.
+	t.Cleanup(held.let)
 	// More than one read, so the copy counts some of the file and then
 	// stops with the rest of it to go.
 	putFile(t, from, "big.bin", strings.Repeat("x", 3*64*1024))
@@ -140,8 +152,12 @@ func TestAJobsRowFillsAsTheBytesGo(t *testing.T) {
 	}
 }
 
-// clickClear presses the × at the end of a row, the way a user does:
-// through the tree, at the column the list drew it in.
+// clickClear presses the column a row's button is drawn in, the way a user
+// presses the × at the end of a finished row: through the tree, at the
+// column the list itself names.
+//
+// It presses that column whether or not the row draws anything there, so a
+// test can watch what a row with no × does with the press.
 func clickClear(t *testing.T, a *testApp, key any) {
 	t.Helper()
 	a.refreshPanel(time.Now())
@@ -149,13 +165,19 @@ func clickClear(t *testing.T, a *testApp, key any) {
 	if !ok {
 		t.Fatal("the sidebar is not in the tree")
 	}
+	// Asked of the list rather than worked out here, so the test and the
+	// list cannot drift apart about where the button goes.
+	col := a.panel.ButtonCol()
+	if col < 0 {
+		t.Fatalf("the sidebar is %d columns wide, too narrow to draw a button", area.Cols)
+	}
 	y := a.panel.RowTop(key)
 	if y < 0 {
 		t.Fatalf("no row for %v: %v", key, panelText(a, time.Now()))
 	}
 	took, err := a.root.HandleMouse(input.MouseEvent{
 		Kind: input.MousePress, Button: input.MouseLeft,
-		Col: area.X + area.Cols - 2, Row: area.Y + y,
+		Col: area.X + col, Row: area.Y + y,
 	})
 	if err != nil {
 		t.Fatalf("the press on the × failed: %v", err)
@@ -178,9 +200,17 @@ func TestTheCrossClearsADroppedConnection(t *testing.T) {
 	host := serverConfig(t, s).Target()
 	row := serverRow(t, a, host)
 
-	// A connection that is still up offers nothing to clear.
+	// A connection that is still up offers nothing to clear. Asked of the
+	// pane running on it, which is a row the sidebar really draws: the
+	// machine's own entry is the heading above its rows, so asking about
+	// that one proves nothing.
 	a.refreshPanel(time.Now())
-	if drawn, ok := panelRow(a, row); ok && drawn.Button != 0 {
+	live := liveRowUnder(t, a, host)
+	drawn, ok := panelRow(a, live)
+	if !ok {
+		t.Fatalf("the pane on the machine has no row: %v", panelText(a, time.Now()))
+	}
+	if drawn.Button != 0 {
 		t.Errorf("a live row offers %q", drawn.Button)
 	}
 
@@ -191,7 +221,7 @@ func TestTheCrossClearsADroppedConnection(t *testing.T) {
 	})
 
 	a.refreshPanel(time.Now())
-	drawn, ok := panelRow(a, row)
+	drawn, ok = panelRow(a, row)
 	if !ok {
 		t.Fatalf("the dropped connection has no row: %v", panelText(a, time.Now()))
 	}
@@ -247,5 +277,200 @@ func TestTheCrossClearsAFinishedCopy(t *testing.T) {
 	// row is not a cancel and there is nothing to report.
 	if m := a.root.Modal(); m != nil {
 		t.Errorf("clearing the row put %T on screen", m)
+	}
+}
+
+// liveRowUnder is the row of something still running on a machine.
+//
+// Not the connection to the machine itself: that entry is the heading
+// above its rows and is never drawn as one of them, so a test asking
+// about it proves nothing.
+func liveRowUnder(t *testing.T, a *testApp, host string) *conns.Entry {
+	t.Helper()
+	for _, e := range a.rowsUnder(host) {
+		if e.Kind != conns.Server {
+			return e
+		}
+	}
+	t.Fatalf("nothing but the connection itself is open on %q: %v", host, panelText(a, time.Now()))
+	return nil
+}
+
+// The panel really paints the fill: the first cells of a job's row are on
+// the style's fill colour while the copy is part way through, and the rest
+// of the row is on the ground it is on when the copy has finished.
+//
+// Every other test reads the row the panel built rather than the cells it
+// drew, so the fill colour could be taken off the panel's style and
+// nothing would notice.
+func TestAFilledRowIsPaintedInTheFillColour(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	if a.panel.Style.FillBG.A == 0 {
+		t.Fatal("the panel has no fill colour, so a row filling up would show nothing")
+	}
+
+	held := newHalfwayFS()
+	b, from, _ := browserOnto(t, a, held)
+	t.Cleanup(held.let)
+	putFile(t, from, "big.bin", strings.Repeat("x", 3*64*1024))
+	left := b.Panes()[0]
+	left.Reload()
+	waitFor(t, a, "the listing", func() bool { return !left.Busy() })
+
+	copyTheFirstFile(t, a, b)
+	held.partWay(t)
+	e := theJobRow(t, a)
+
+	at := windowCell(a)
+	area, shown := sideArea(a)
+	if !shown {
+		t.Fatal("the sidebar is not on screen")
+	}
+	var near, far grid.Cell
+	waitFor(t, a, "the row to be painted in the fill colour", func() bool {
+		a.refreshJobs()
+		a.refreshPanel(time.Now())
+		paint(a)
+		y := a.panel.RowTop(e)
+		if y < 0 {
+			return false
+		}
+		near = at(area.X, area.Y+y)
+		far = at(area.X+area.Cols-1, area.Y+y)
+		return near.BG == a.panel.Style.FillBG
+	})
+	if far.BG == near.BG {
+		t.Fatalf("the whole row is on the fill %v while the copy is part way through", far.BG)
+	}
+
+	// The copy finishes, the row fills nothing, and the cell that was on
+	// the fill is on the ground the far end of the row was on all along.
+	held.let()
+	waitFor(t, a, "the copy to finish", func() bool {
+		a.refreshJobs()
+		return len(a.jobs) == 0
+	})
+	a.refreshPanel(time.Now())
+	paint(a)
+	y := a.panel.RowTop(e)
+	if y < 0 {
+		t.Fatalf("the finished copy has no row: %v", panelText(a, time.Now()))
+	}
+	if got := at(area.X, area.Y+y).BG; got != far.BG {
+		t.Errorf("the first cell of the finished row is on %v, want the row's ground %v", got, far.BG)
+	}
+}
+
+// A command that has finished keeps its pane, so that what it printed can
+// still be read, and its row carries no ×: clearing the row the way a
+// dropped connection's row is cleared would take the transcript away
+// without asking.
+//
+// "Clear finished connections" is what closes it, which is the user saying
+// they have read it.
+func TestAFinishedCommandsRowHasNoCross(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+
+	pane, ok := onlyPaneWidget(t, a).(*term.Terminal)
+	if !ok {
+		t.Fatal("the window opened on something that is not a terminal")
+	}
+	e := a.panes[pane]
+	// A command rather than a shell: a shell that ends takes its pane with
+	// it, and there would be no row to press.
+	e.Kind = conns.Command
+	if err := a.shells[0].Close(); err != nil {
+		t.Fatalf("ending the command: %v", err)
+	}
+	waitFor(t, a, "the command to end", func() bool {
+		a.reapExited()
+		return a.ended[pane]
+	})
+
+	a.refreshPanel(time.Now())
+	drawn, ok := panelRow(a, e)
+	if !ok {
+		t.Fatalf("the finished command has no row: %v", panelText(a, time.Now()))
+	}
+	if drawn.Button != 0 {
+		t.Errorf("the finished command's row offers %q, which would throw the transcript away",
+			drawn.Button)
+	}
+	if e.Clear != nil {
+		t.Error("the finished command's row says it can be cleared")
+	}
+
+	// Pressing the column the × would be in leaves the pane where it is.
+	clickClear(t, a, e)
+	if len(a.panes) != 1 {
+		t.Fatalf("the press took the pane away: the window holds %d panes", len(a.panes))
+	}
+	if _, ok := panelRow(a, e); !ok {
+		t.Fatalf("the press took the row away: %v", panelText(a, time.Now()))
+	}
+	// And so does the button's own path, which is what the press runs.
+	if err := a.clearRow(e); err != nil {
+		t.Fatalf("clearRow: %v", err)
+	}
+	if len(a.panes) != 1 {
+		t.Fatalf("clearing the row took the pane away: the window holds %d panes", len(a.panes))
+	}
+
+	// Clearing finished connections still does close it.
+	if err := a.clearFinished(); err != nil {
+		t.Fatalf("clearFinished: %v", err)
+	}
+	if len(a.panes) != 0 {
+		t.Errorf("the window still holds %d panes after clearing finished connections", len(a.panes))
+	}
+	a.refreshPanel(time.Now())
+	if _, ok := panelRow(a, e); ok {
+		t.Errorf("the row is still on the panel: %v", panelText(a, time.Now()))
+	}
+}
+
+// A clear that failed is shown under a title naming what was pressed, and
+// the panel is drawn again whatever happened.
+func TestAClearThatFailsSaysWhatWasPressed(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+
+	e := &conns.Entry{Host: conns.Local, Kind: conns.Files, Label: "copy one.txt", Meter: meter.New()}
+	e.Meter.Close()
+	e.Clear = func() error { return errors.New("the row would not go") }
+	a.registry.Add(e)
+
+	a.refreshPanel(time.Now())
+	drawn, ok := panelRow(a, e)
+	if !ok || drawn.Button != clearButton {
+		t.Fatalf("the finished row offers %q, want the ×", drawn.Button)
+	}
+	clickClear(t, a, e)
+	awaitModal(t, a, "a notice about the clear", byTitle[*ui.Notice]("Could not clear that row"))
+}
+
+// jobFill is the share of a job that has gone: in bytes where they are
+// known, and in files until they are.
+func TestJobFillMeasuresWhatHasGone(t *testing.T) {
+	cases := []struct {
+		what string
+		p    jobs.Progress
+		want float64
+	}{
+		{"bytes", jobs.Progress{Files: 1, Bytes: 400, BytesDone: 100}, 0.25},
+		{"files, while the bytes are not known", jobs.Progress{Files: 4, FilesDone: 3}, 0.75},
+		{"a file bigger than it was counted as", jobs.Progress{Files: 1, Bytes: 100, BytesDone: 250}, 1},
+		{"a job that has looked at nothing yet", jobs.Progress{}, 0},
+		{"a job that has finished", jobs.Progress{Files: 1, Bytes: 400, BytesDone: 400, Done: true}, 0},
+	}
+	for _, c := range cases {
+		if got := jobFill(c.p); got != c.want {
+			t.Errorf("%s fills %v, want %v", c.what, got, c.want)
+		}
 	}
 }

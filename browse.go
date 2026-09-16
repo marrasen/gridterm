@@ -374,16 +374,24 @@ func (a *app) runJob(op jobs.Op, from, to jobEnd, owned []vfs.FS) {
 	})
 	e.Label = j.Name()
 	e.Reveal = func() { a.openJobDialog(j, e, from, to) }
-	e.Close = func() error {
+	e.Close = a.dropJobRow(e, j)
+	a.jobs[e] = j
+	a.registry.Add(e)
+	a.letGoWhenDone(j, owned)
+	a.markDirty()
+}
+
+// dropJobRow takes a job off the queue and its row off the panel.
+//
+// Drop on a job that has finished does nothing, so the same function
+// ends a copy that is still going and clears the row of one that is not.
+func (a *app) dropJobRow(e *conns.Entry, j *jobs.Job) func() error {
+	return func() error {
 		a.queue.Drop(j)
 		delete(a.jobs, e)
 		a.registry.Drop(e)
 		return nil
 	}
-	a.jobs[e] = j
-	a.registry.Add(e)
-	a.letGoWhenDone(j, owned)
-	a.markDirty()
 }
 
 // letGoWhenDone closes the filesystems a job opened for itself, once it
@@ -483,6 +491,9 @@ func (a *app) refreshJobsAt(now time.Time) {
 		delete(a.jobs, e)
 		// It has finished, so the meter stops and the row goes grey.
 		e.Meter.Close()
+		// And the row is one the cross can take off the panel, now that
+		// there is nothing left to stop.
+		e.Clear = a.dropJobRow(e, j)
 		// Stopping it is the user's own decision, and cancelling is what
 		// the window does when it takes a browser away. Anything the
 		// failure says beyond that is still shown: a cancel that could
@@ -503,8 +514,10 @@ func (a *app) refreshJobsAt(now time.Time) {
 // jobFill is how much of a job's row is filled: the share of the bytes
 // that have gone, or of the files while the bytes are not known yet.
 //
-// A job that has stopped fills nothing, since its row is read once more
-// after it ended and a full row would say it is still going.
+// A job that has stopped fills nothing. What really keeps a finished row
+// empty is panelRow finding no job on the entry, because refreshJobs
+// takes it off the list before refreshPanel reads the row; this branch is
+// for a caller that asks about a job it is still holding.
 func jobFill(p jobs.Progress) float64 {
 	switch {
 	case p.Done:

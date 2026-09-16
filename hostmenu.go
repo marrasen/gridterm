@@ -80,11 +80,15 @@ func (m *hostMenus) machine() (string, bool) { return m.host, m.up }
 // about. The second result says whether the menu is one of those.
 func (m *hostMenus) farMachine() (remoteHostKey, bool) { return m.far, m.onFar }
 
-// openHostMenu drops down what can be opened on a machine, under the row
-// that names it.
+// openHostMenu is what the button at the end of a sidebar row does.
 //
-// The lines name the same commands the menu bar and the keys use, and
-// while this menu is up they act on the machine whose row was clicked.
+// On the row that names a machine it drops a menu down under the row,
+// with what can be opened there. The lines name the same commands the
+// menu bar and the keys use, and while this menu is up they act on the
+// machine whose row was clicked.
+//
+// On a finished connection's row the button is the cross that clears the
+// row, and there is no menu: clearing is the one thing left to do.
 func (a *app) openHostMenu(row ui.ListRow) error {
 	// What the row offers, and what to remember the menu is about while
 	// it is up.
@@ -141,20 +145,29 @@ func (a *app) openHostMenu(row ui.ListRow) error {
 	return nil
 }
 
-// clearRow takes a finished connection off the panel, which is what the
-// button at the end of its row does and what "clear finished
-// connections" does to all of them at once.
+// clearRow takes a finished row off the panel, which is what the cross at
+// the end of it does.
 //
-// A row that is still going carries no button, so nothing here asks
+// It clears the row and nothing else. What the row named is never ended
+// from here: a finished command keeps its pane so that what it printed
+// can be read, and "clear finished connections" is what takes that pane
+// away.
+//
+// A row with nothing to clear carries no cross, so nothing here asks
 // whether it has finished.
 func (a *app) clearRow(e *conns.Entry) error {
-	if e.Close == nil {
+	if e.Clear == nil {
 		return nil
 	}
-	if err := e.Close(); err != nil {
-		return err
-	}
+	err := e.Clear()
+	// Before the reason is shown, because a clear that failed part way
+	// still changed the panel.
 	a.markDirty()
+	if err != nil {
+		// Shown here rather than returned, so the notice says which
+		// button was pressed instead of "that could not be done".
+		a.reportError("Could not clear that row", err)
+	}
 	return nil
 }
 
@@ -262,9 +275,11 @@ func (a *app) rowAnchor(key any) func() ui.Rect {
 		}
 		// The plus itself, not the whole row: the menu hangs from its
 		// left edge and reaches out over whatever is beside the sidebar,
-		// rather than being squeezed into the sidebar's own width.
+		// rather than being squeezed into the sidebar's own width. Asked
+		// of the list, so the menu points at the column the button was
+		// really drawn in.
 		return ui.Rect{
-			X: area.X + max(area.Cols-2, 0), Y: a.windowRow(y),
+			X: area.X + max(a.panel.ButtonCol(), 0), Y: a.windowRow(y),
 			Cols: 1, Rows: 1,
 		}
 	}

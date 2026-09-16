@@ -48,9 +48,15 @@ func clickPlusOn(t *testing.T, a *testApp, key any, what string) *ui.Menu {
 	if y < 0 {
 		t.Fatalf("no heading for %q: %v", what, panelText(a, time.Now()))
 	}
+	// Asked of the list, so this and the list cannot drift apart about
+	// which column the plus is in.
+	col := a.panel.ButtonCol()
+	if col < 0 {
+		t.Fatalf("the sidebar is %d columns wide, too narrow to draw a button", area.Cols)
+	}
 	took, err := a.root.HandleMouse(input.MouseEvent{
 		Kind: input.MousePress, Button: input.MouseLeft,
-		Col: area.X + area.Cols - 2, Row: area.Y + y,
+		Col: area.X + col, Row: area.Y + y,
 	})
 	if err != nil {
 		t.Fatalf("the press failed: %v", err)

@@ -123,6 +123,7 @@ func (a *app) splitWithNew(dir ui.Dir, current ui.Widget,
 		// Nowhere in the tree, so nothing else knows about it. Closing
 		// the terminal closes its shell with it.
 		delete(a.panes, next)
+		delete(a.started, next)
 		return errors.Join(err, next.Close())
 	}
 	a.showPane(next)

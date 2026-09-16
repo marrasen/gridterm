@@ -9,6 +9,7 @@ import (
 
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/remote"
+	"github.com/marrasen/gridterm/session"
 	"github.com/marrasen/gridterm/ui/term"
 )
 
@@ -22,6 +23,12 @@ type opening struct {
 	// files opens a pane of the file manager on the machine and no shell
 	// on it, which is what "Files" asks for.
 	files bool
+
+	// into is a pane whose program has ended and which takes what is
+	// opened, rather than a pane of its own being made for it. It is the
+	// pane the user answered the question on, and it keeps everything
+	// the last program printed.
+	into *term.Terminal
 }
 
 // kind says what sort of connection an opening is, for the row the
@@ -118,14 +125,20 @@ func (a *app) openRoute(name string, route []step, open opening, at *spot) {
 	// to watch from: every machine on the way as it is reached, and
 	// whatever a server says, in full and there to copy. The same pane
 	// carries the shell when there is one, and the account folds away to
-	// one line that says where to read the rest of it.
+	// one line that says where to read the rest of it. A pane answering
+	// the reconnect question takes all of that on rather than a second
+	// pane opening beside it.
 	//
 	// Letting go of the names is done here rather than by the closure
 	// that finishes the dial: a dial that has not come back yet still
 	// has to stop holding them, or nothing can try again.
 	log := newConnLog(func() { a.pump.post(func() { a.machines.giveUp(held) }) })
+	// A pane taking this on already holds a transcript the user asked to
+	// keep, so the account is left where it is rather than the pane
+	// being cleared when the connection is made.
+	log.keep = open.into != nil
 	held.log = log
-	pane, err := a.openSessionTab(log, name, open.kind(), "connecting", at)
+	pane, err := a.openFor(open, log, name, "connecting", at)
 	if err != nil {
 		cancel()
 		a.machines.release(held)
@@ -382,12 +395,24 @@ func (a *app) becomeShellPane(m *machine, name string, command []string,
 	// Which connection the pane rides on rather than which machine it is
 	// named after, for the reason the on field of machines gives.
 	a.machines.runs(pane, m)
+	a.startsAgain(pane, command, m)
 	if label := labelFor(command); label != "" {
 		if e := a.panes[pane]; e != nil {
 			e.Label = label
 		}
 	}
 	log.Became(name, sh)
+}
+
+// openFor puts a session in the pane a restart named, and in a pane of
+// its own otherwise.
+func (a *app) openFor(open opening, sess session.Session, host, label string,
+	at *spot) (*term.Terminal, error) {
+
+	if open.into != nil {
+		return open.into, a.restartPane(open.into, sess, label)
+	}
+	return a.openSessionTab(sess, host, open.kind(), label, at)
 }
 
 // startOn opens what was asked for on a machine that is already
@@ -410,7 +435,7 @@ func (a *app) startOn(name string, open opening, at *spot) error {
 	if err != nil {
 		return err
 	}
-	t, err := a.openSessionTab(sh, name, open.kind(), labelFor(open.command), at)
+	t, err := a.openFor(open, sh, name, labelFor(open.command), at)
 	if err != nil {
 		// The shell is ours and nothing else knows about it.
 		_ = sh.Close()
@@ -419,6 +444,7 @@ func (a *app) startOn(name string, open opening, at *spot) error {
 	// Which connection the pane rides on rather than which machine it is
 	// named after, for the reason the on field of machines gives.
 	a.machines.runs(t, m)
+	a.startsAgain(t, open.command, m)
 	return nil
 }
 
@@ -430,6 +456,30 @@ func (a *app) openOn(name string, command []string, at *spot) error {
 		return err
 	}
 	a.openRoute(name, route, opening{command: command}, at)
+	return nil
+}
+
+// dialAgainFor connects to a pane's machine once more and puts what the
+// pane was running back in the same pane.
+//
+// The saved route when the list has one, and the step the machine was
+// reached by otherwise: a machine connected to from a typed target is on
+// no list and still has to be reachable again.
+func (a *app) dialAgainFor(t *term.Terminal, host string, s *startedAs) error {
+	route, err := a.route(host)
+	if err != nil {
+		if a.about(host).saved || s.at.cfg.Host == "" {
+			return err
+		}
+		route = []step{{name: host, cfg: s.at.cfg, term: s.at.term}}
+	}
+	a.openRoute(host, route, opening{command: s.argv, into: t}, nil)
+	if a.ended[t] {
+		// The dial never reached the pane, and openRoute has said why.
+		// The question goes back up so it can be answered again: a pane
+		// left dead with nothing to answer could not be tried at all.
+		a.askWhatNext(t)
+	}
 	return nil
 }
 

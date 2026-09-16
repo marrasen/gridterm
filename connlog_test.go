@@ -148,6 +148,23 @@ func TestThePaneBecomesTheConnection(t *testing.T) {
 	waitUntil(t, "the shell to be sent what was typed", func() bool { return shell.sentText() == "uptime\r" })
 }
 
+// A connection that was made reports what its program ended with, which
+// is what lets the pane say how the run went.
+func TestAConnectionThatWasMadeReportsItsProgramsEnding(t *testing.T) {
+	c := atTime(newConnLog(nil))
+	defer func() { _ = c.Close() }()
+	shell := newPipeSession()
+	c.Became("picard", shell)
+
+	if err := shell.Close(); err != nil {
+		t.Fatalf("ending the shell: %v", err)
+	}
+
+	if err := c.Wait(); err != nil {
+		t.Errorf("a shell that ended cleanly reported %v", err)
+	}
+}
+
 // A pane resized before the connection was made tells it how big it is
 // as soon as there is one.
 //
@@ -218,8 +235,11 @@ func TestAConnectionThatFailedSaysWhyAndStays(t *testing.T) {
 			t.Fatal("it never ended")
 		}
 	}
-	if err := waitedFor(t, c); err != nil {
-		t.Errorf("waiting on it gave %v", err)
+	// And it ends with no exit status. Nil would be a program that
+	// exited cleanly, and the pane over it would tell the user a run went
+	// well when the machine never answered.
+	if err := waitedFor(t, c); !errors.Is(err, errNeverConnected) {
+		t.Errorf("waiting on it gave %v, want it to say the connection was not made", err)
 	}
 }
 

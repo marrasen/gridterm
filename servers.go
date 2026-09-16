@@ -78,6 +78,7 @@ func (a *app) openSessionTab(sess session.Session, host string, kind conns.Kind,
 		// Nowhere to put it, so nothing is told about it. Closing the
 		// terminal closes the session with it.
 		delete(a.panes, t)
+		delete(a.started, t)
 		_ = t.Close()
 		return nil, err
 	}
@@ -206,6 +207,10 @@ func (a *app) newTerminalOn(sess session.Session, host string, kind conns.Kind,
 		Close:  func() error { return a.closePane(t) },
 	}
 	a.panes[t] = e
+	// The session, so a program that ends can be let go of with the pane
+	// left open. What it was started on is filled in by whoever knows,
+	// and a pane nobody tells is one the window cannot start again.
+	a.started[t] = &startedAs{on: counted}
 	return t, nil
 }
 

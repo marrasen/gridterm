@@ -193,6 +193,7 @@ func newTestApp(t *testing.T, cols, rows int, opts ...testOption) *testApp {
 		panes:      make(map[*term.Terminal]*conns.Entry),
 		scaled:     make(map[*term.Terminal]*scaledPane),
 		ended:      make(map[*term.Terminal]bool),
+		started:    make(map[*term.Terminal]*startedAs),
 		exits:      make(chan struct{}, exitQueue),
 		lastSize:   [2]int{cols, rows},
 		registry:   conns.New(),

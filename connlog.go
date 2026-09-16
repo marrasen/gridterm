@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"slices"
@@ -38,6 +39,10 @@ type connLog struct {
 	// stop is called when the pane is closed before the connection was
 	// made, which is how closing the pane gives up on it.
 	stop func()
+
+	// keep says the pane already holds a transcript the user asked to
+	// keep, so the account is folded away without clearing it.
+	keep bool
 
 	mu sync.Mutex
 	// said is what has been written and not yet read.
@@ -261,7 +266,9 @@ func (c *connLog) Became(name string, live session.Session) {
 func (c *connLog) foldLocked(name string) {
 	line := "Connected to " + name + " " + howLong(c.clock().Sub(c.started)) +
 		`. "How it was reached", on the plus menu of its row, shows the account.`
-	c.said = append(c.said, clearPane...)
+	if !c.keep {
+		c.said = append(c.said, clearPane...)
+	}
 	c.said = append(c.said, []byte(sgrWords+line+sgrOff+"\r\n")...)
 }
 
@@ -379,13 +386,19 @@ func (c *connLog) Resize(cols, rows int) error {
 	return nil
 }
 
+// errNeverConnected is what a connection that was never made ends with.
+//
+// Not nil, because nil is a program that ended cleanly, and a pane that
+// said its command exited zero when the machine never answered would be
+// telling the user the run went well.
+var errNeverConnected = errors.New("the connection was not made")
+
 // Wait blocks until the connection ends, or until there is nothing left
 // to wait for.
 //
 // A connection that was never made ends here rather than at a program's
-// exit status: there was no program. That is the same answer the pane
-// gets from a shell that closed, which is what leaves the pane on
-// screen with its account of why still in it.
+// exit status: there was no program. The pane is left on screen with its
+// account of why still in it, the same as a shell that closed.
 func (c *connLog) Wait() error {
 	select {
 	case <-c.settled:
@@ -398,7 +411,7 @@ func (c *connLog) Wait() error {
 	if live != nil {
 		return live.Wait()
 	}
-	return nil
+	return errNeverConnected
 }
 
 // Close ends the log and the connection under it.

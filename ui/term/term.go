@@ -61,7 +61,8 @@ type Config struct {
 	OnBell  func()
 
 	// OnExit is called once when the shell goes, from the goroutine
-	// reading the session.
+	// reading the session and after the session has said how the program
+	// ended, so a host reading Ending from it has an answer.
 	OnExit func()
 
 	// OnError reports a session failure. There is nowhere to return one
@@ -112,6 +113,11 @@ type Terminal struct {
 
 	// exited is set once the shell is gone.
 	exited atomic.Bool
+
+	// end is what the session reported when the program stopped, and nil
+	// until it has. Written by whichever goroutine noticed the program
+	// go and read by the one that draws.
+	end atomic.Pointer[ending]
 
 	// closed guards against a second Close. The queue itself is never
 	// closed: a device report can be sent from the reader at any moment,
@@ -331,6 +337,7 @@ func (t *Terminal) Restart(sess session.Session) error {
 	t.drain()
 
 	t.exited.Store(false)
+	t.end.Store(nil)
 	t.revive()
 	// A pane that is alive again has nothing to answer.
 	t.ask = nil
@@ -871,11 +878,35 @@ func (t *Terminal) readLoop(r *run) {
 	}
 }
 
+// ending is what a session reported when its program stopped. A nil
+// error is a program that ended with nothing to report.
+type ending struct{ err error }
+
+// Ending is what the session said when the program stopped, and whether
+// it has stopped at all.
+//
+// It is the exit status, for a host that has to say how the program
+// ended: an error the caller can unwrap for a status, or nil for a
+// program that ended with nothing to report.
+func (t *Terminal) Ending() (error, bool) {
+	e := t.end.Load()
+	if e == nil {
+		return nil, false
+	}
+	return e.err, true
+}
+
 // finish records that the shell has gone and tells the host once.
 func (t *Terminal) finish() {
 	if t.exited.Swap(true) {
 		return
 	}
+	// What the program ended with, asked before the host is told so that
+	// the host has it. It is asked here because this runs on the
+	// goroutine that was reading the session, which has nothing left to
+	// do, and because the session has already ended so the answer is
+	// waiting rather than being waited for.
+	t.end.Store(&ending{err: t.current().sess.Wait()})
 	// Whoever is watching from elsewhere, before the window is told:
 	// their pane is drawing this program and has no other way to learn
 	// it has gone.

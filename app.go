@@ -145,9 +145,15 @@ type app struct {
 	// question is up has to take the question with it.
 	asking map[chan jobs.Choice]func()
 
-	// ended are the panes whose program has stopped and which are being
-	// kept only so the user can read what it printed.
+	// ended are the panes whose program has stopped and which are kept so
+	// the user can read what it printed and answer the question on the
+	// last row.
 	ended map[*term.Terminal]bool
+
+	// started is how each pane's program was started and the session it
+	// is reading, so a pane whose program has ended can start it again
+	// in place.
+	started map[*term.Terminal]*startedAs
 
 	// home is the machine -ssh named, which new panes open on while it
 	// is connected. Empty when the window opens them on this machine.

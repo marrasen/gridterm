@@ -195,6 +195,7 @@ func main() {
 	a.panes = make(map[*term.Terminal]*conns.Entry)
 	a.scaled = make(map[*term.Terminal]*scaledPane)
 	a.ended = make(map[*term.Terminal]bool)
+	a.started = make(map[*term.Terminal]*startedAs)
 	a.exits = make(chan struct{}, exitQueue)
 
 	first, err := a.openFirst(startup{target: *sshTarget, command: a.command})

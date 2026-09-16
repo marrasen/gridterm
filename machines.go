@@ -189,6 +189,11 @@ func (ms *machines) panesThatRanOn(m *machine) []*term.Terminal {
 	return out
 }
 
+// startedAgain takes a pane off the record of what ran where, for one
+// whose program has been started again. What it rides on now is recorded
+// with runs.
+func (ms *machines) startedAgain(pane *term.Terminal) { delete(ms.ran, pane) }
+
 // forget takes a pane off the record, for one that has been closed.
 func (ms *machines) forget(pane *term.Terminal) {
 	delete(ms.on, pane)

@@ -531,15 +531,14 @@ func TestAPaneSaysItsProgramHasFinished(t *testing.T) {
 	if !strings.Contains(said, "the program has finished") {
 		t.Errorf("the pane says nothing about the program finishing: %q", said)
 	}
-	// The real chord, read from the keymap rather than written out here,
-	// so a rebinding cannot leave the pane naming a key that does
-	// nothing.
-	chord := a.chordFor("pane.close")
-	if chord == "" {
-		t.Fatal("nothing is bound to pane.close, so the line has no key to name")
+	// And the last row asks what to do next, which is where closing the
+	// pane is offered. The line above only records that the program
+	// went, so naming a chord there would say it twice.
+	if got := pane.Asking(); got == "" {
+		t.Error("the pane asks nothing, so there is nothing to close it with")
 	}
-	if !strings.Contains(said, chord) {
-		t.Errorf("the pane does not say %s closes it: %q", chord, said)
+	if !strings.Contains(said, "Close") {
+		t.Errorf("the pane draws no way to close it: %q", said)
 	}
 	if screenOf(pane).Cursor().Visible {
 		t.Error("the pane still draws a cursor, so it looks like a shell at a prompt")

@@ -65,6 +65,7 @@ func (a *app) localTerminalOn(argv []string) (*term.Terminal, error) {
 		_ = sess.Close()
 		return nil, err
 	}
+	a.startsAgain(t, argv, nil)
 	return t, nil
 }
 
@@ -91,6 +92,9 @@ func (a *app) terminalOnHome(m *machine) (*term.Terminal, error) {
 	// Which connection the pane rides on rather than which machine it is
 	// named after, for the reason the on field of machines gives.
 	a.machines.runs(t, m)
+	// A shell to type into, which is what this opens and what starting
+	// it again in the pane would open.
+	a.startsAgain(t, nil, m)
 	return t, nil
 }
 
@@ -217,6 +221,7 @@ func (a *app) openTabWith(start func() (*term.Terminal, error)) error {
 	}
 	if err := a.placeTab(next); err != nil {
 		delete(a.panes, next)
+		delete(a.started, next)
 		_ = next.Close()
 		return err
 	}
@@ -324,7 +329,8 @@ func (a *app) isPane(w ui.Widget) bool {
 //
 // This is the only way a pane goes. A shell that ends leaves the pane
 // where it is, so closing one is always the user saying they are done
-// with it.
+// with it: the close key, the row's own close, or Close on the question
+// the last row asks.
 func (a *app) closePane(w ui.Widget) error {
 	if w == nil {
 		return nil
@@ -374,6 +380,7 @@ func (a *app) closePane(w ui.Widget) error {
 		}
 		delete(a.panes, t)
 		delete(a.ended, t)
+		delete(a.started, t)
 		a.forgetPane(t)
 		errs = append(errs, t.Close())
 	}
@@ -397,8 +404,8 @@ func (a *app) closePane(w ui.Widget) error {
 // The pane stays, whatever was in it and however it ended. What it
 // printed is still worth reading, scrollback and all, and a server that
 // was rebooted leaves a pane that says what happened before it went. The
-// row goes grey to say the program has finished, and the user closes the
-// pane when they have read it.
+// row goes grey to say the program has finished, the last row asks what
+// to do next, and the pane goes only when the user answers Close.
 func (a *app) paneEnded(t *term.Terminal) error {
 	e := a.panes[t]
 	if e == nil {
@@ -419,7 +426,10 @@ func (a *app) paneEnded(t *term.Terminal) error {
 		a.endedAs(t, transportLost)
 	}
 	a.sayTheProgramHasFinished(t)
-	if err := t.Close(); err != nil {
+	a.askWhatNext(t)
+	// The session rather than the pane: what the program printed stays
+	// on screen, and a terminal that was closed could take no new one.
+	if err := a.letGoOfTheSession(t); err != nil {
 		// The dot has already gone grey: the stream ended, and that is
 		// what closed the meter. So the note is the only place left to
 		// say the channel was not let go of, and the caller shows the
@@ -430,22 +440,30 @@ func (a *app) paneEnded(t *term.Terminal) error {
 	return nil
 }
 
+// letGoOfTheSession closes the session a pane was reading, leaving the
+// pane itself open with what the program printed.
+func (a *app) letGoOfTheSession(t *term.Terminal) error {
+	s := a.started[t]
+	if s == nil || s.on == nil {
+		return nil
+	}
+	return s.on.Close()
+}
+
 // sayTheProgramHasFinished writes one line into a pane whose program has
 // gone, so the user is not left at a screen that has stopped answering
 // with nothing to say why.
 //
 // Into the pane rather than beside it, so it lands in the transcript,
-// and once, because paneEnded marks the pane before it calls this.
+// and once, because paneEnded marks the pane before it calls this. It is
+// the record that the program went; what to do about it is the question
+// on the last row.
 func (a *app) sayTheProgramHasFinished(t *term.Terminal) {
-	how := "Close this pane when you have read it."
-	if chord := a.chordFor("pane.close"); chord != "" {
-		how = chord + " closes this pane."
-	}
-	t.Say("-- gridterm: the program has finished. " + how + " --")
+	t.Say("-- gridterm: the program has finished --")
 }
 
-// Ended reports whether a pane is one that has stopped and is only being
-// read.
+// Ended reports whether a pane is one that has stopped, so it is being
+// read rather than typed into.
 func (a *app) Ended(t *term.Terminal) bool { return a.ended[t] }
 
 // roomToSplit reports whether a pane has the cells to become two, which
@@ -535,8 +553,8 @@ func (a *app) paneExited() {
 	}
 }
 
-// reapExited closes panes whose shell has gone, from the drawing
-// goroutine where the tree may be touched.
+// reapExited deals with the panes whose program has gone, from the
+// drawing goroutine where the tree may be touched.
 func (a *app) reapExited() {
 	for {
 		select {

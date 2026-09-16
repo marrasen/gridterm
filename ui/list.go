@@ -2,6 +2,7 @@ package ui
 
 import (
 	"image/color"
+	"math"
 	"reflect"
 
 	"github.com/marrasen/gridterm/grid"
@@ -31,6 +32,10 @@ type ListStyle struct {
 
 	// NoteFG is the word at the end of a row: what it is doing, how fast.
 	NoteFG color.RGBA
+
+	// FillBG is the ground of the part of a row its Fill covers. Leaving
+	// it with no alpha fills nothing, whatever a row asks for.
+	FillBG color.RGBA
 
 	// HeaderPad is the room around a header, in quarters of a cell. It
 	// is what makes a name for the rows under it read as a heading
@@ -63,6 +68,12 @@ type ListRow struct {
 	// right aligned and dropped when there is no room for both.
 	Text string
 	Note string
+
+	// Fill washes the ground of the row from the left, in the style's
+	// FillBG: 0 covers nothing and 1 covers the whole width. It is how a
+	// row says how far something has got without spending a column on a
+	// bar.
+	Fill float64
 
 	// Depth indents the line, for something that belongs to the line
 	// above it.
@@ -449,21 +460,22 @@ func (l *List) paintRow(v grid.View, row ListRow, selected bool, y, rows int) {
 		fg = l.Style.HeaderFG
 	}
 	// washed says the row's ground is light enough to swallow a mark
-	// picked out against the ordinary one.
-	washed := false
+	// picked out against the ordinary one, and own that the row has a
+	// ground of its own rather than the list's.
+	washed, own := false, false
 	switch {
 	case selected && l.focused:
 		fg, bg = l.Style.SelectedFG, l.Style.SelectedBG
 		// A colour picked to stand out against the other rows can
 		// disappear against the selected one. Whatever the row writes
 		// its own text in is the one colour known to show there.
-		noteFG, washed = fg, true
+		noteFG, washed, own = fg, true, true
 	case l.Style.CurrentBG.A != 0 && l.current != nil && sameKey(row.Key, l.current):
 		// Only the ground changes. The mark keeps its own colour,
 		// because what it says is the whole reason it is there and this
 		// is the row the user is looking at.
 		fg, bg = l.Style.CurrentFG, l.Style.CurrentBG
-		noteFG = fg
+		noteFG, own = fg, true
 	}
 	v.Fill(grid.Cell{Rune: ' ', FG: fg, BG: bg, Width: 1})
 
@@ -518,6 +530,38 @@ func (l *List) paintRow(v grid.View, row ListRow, selected bool, y, rows int) {
 		attr = grid.AttrBold
 	}
 	v.SetString(at, 0, grid.Trim(row.Text, max(room-at, 0)), fg, bg, attr)
+	l.paintFill(v, row.Fill, bg, own)
+}
+
+// paintFill changes the ground of the first cells of a row to the style's
+// FillBG, for a row saying how far something has got.
+//
+// It goes over the drawn row rather than under it, so the text, the mark,
+// the note and the button keep the colours they were drawn in.
+//
+// own says the row has a ground of its own -- the selected row, or the
+// one in front. Such a row keeps it, blended half way to the fill, so
+// that it still reads as the selected one and the fill still reads.
+func (l *List) paintFill(v grid.View, fill float64, bg color.RGBA, own bool) {
+	if fill <= 0 || l.Style.FillBG.A == 0 {
+		return
+	}
+	cols, _ := v.Size()
+	ground := l.Style.FillBG
+	if own {
+		ground = grid.Blend(bg, ground, 1, 2)
+	}
+	n := min(int(math.Round(fill*float64(cols))), cols)
+	if n < cols && v.At(n, 0).Width == 0 {
+		// The far half of a double-width character. Both halves take the
+		// same ground, or one character is drawn on two.
+		n--
+	}
+	for x := 0; x < n; x++ {
+		c := v.At(x, 0)
+		c.BG = ground
+		v.Set(x, 0, c)
+	}
 }
 
 // activate runs whatever the selected row means.

@@ -570,7 +570,7 @@ func (f *Form) paintButtons(in grid.View, y int) {
 		if focused, isButton := f.Focused(); isButton && focused == i {
 			fg, bg = f.Style.ActiveFG, f.Style.ActiveBG
 		}
-		drawButton(in, at, y, f.buttons[i].Title, fg, bg)
+		DrawButton(in, at, y, f.buttons[i].Title, fg, bg)
 	}
 }
 
@@ -581,12 +581,12 @@ func (f *Form) buttonTitles() []string { return f.titles }
 // buttonCols returns the column each button starts at, or -1 for one
 // there was no room for.
 func (f *Form) buttonCols() []int {
-	return buttonColsIn(f.buttonTitles(), f.box().Cols, formPad)
+	return ButtonColsIn(f.buttonTitles(), f.box().Cols, formPad)
 }
 
 // buttonAt returns which button covers a column.
 func (f *Form) buttonAt(x int) (int, bool) {
-	return buttonAtCol(f.buttonTitles(), f.box().Cols, formPad, x)
+	return ButtonAtCol(f.buttonTitles(), f.box().Cols, formPad, x)
 }
 
 // press runs a button and closes the form when it worked.
@@ -833,35 +833,35 @@ func (f *Form) errExtra() int {
 	return min(len(f.errLines(f.wrapWidth(), spare+1)), spare+1) - 1
 }
 
-// buttonWidth is how many columns a button takes: its title with a blank
+// ButtonWidth is how many columns a button takes: its title with a blank
 // column each side.
-func buttonWidth(title string) int { return grid.StringWidth(title) + 2 }
+func ButtonWidth(title string) int { return grid.StringWidth(title) + 2 }
 
 // buttonsWidth is the room a row of buttons asks for: each button and a
 // column beside it.
 func buttonsWidth(titles []string) int {
 	total := 0
 	for _, t := range titles {
-		total += buttonWidth(t) + 1
+		total += ButtonWidth(t) + 1
 	}
 	return total
 }
 
-// buttonColsIn returns the column each button starts at inside a box
+// ButtonColsIn returns the column each button starts at inside a box
 // cols wide, or -1 for one there was no room for.
 //
 // They are laid out from the right, so the last button is nearest the
 // corner and the first is the first to be dropped. A dropped button is
 // marked with -1 rather than a column off the left edge, because
 // grid.View.Sub shifts a negative origin to zero instead of clipping it.
-func buttonColsIn(titles []string, cols, pad int) []int {
+func ButtonColsIn(titles []string, cols, pad int) []int {
 	if len(titles) == 0 {
 		return nil
 	}
 	at := make([]int, len(titles))
 	x := cols - pad
 	for i := len(titles) - 1; i >= 0; i-- {
-		w := buttonWidth(titles[i])
+		w := ButtonWidth(titles[i])
 		if x-w < pad {
 			at[i] = -1
 			continue
@@ -873,21 +873,21 @@ func buttonColsIn(titles []string, cols, pad int) []int {
 	return at
 }
 
-// buttonAtCol returns which button covers a column.
-func buttonAtCol(titles []string, cols, pad, x int) (int, bool) {
-	for i, at := range buttonColsIn(titles, cols, pad) {
+// ButtonAtCol returns which button covers a column.
+func ButtonAtCol(titles []string, cols, pad, x int) (int, bool) {
+	for i, at := range ButtonColsIn(titles, cols, pad) {
 		if at < 0 {
 			continue
 		}
-		if x >= at && x < at+buttonWidth(titles[i]) {
+		if x >= at && x < at+ButtonWidth(titles[i]) {
 			return i, true
 		}
 	}
 	return 0, false
 }
 
-// drawButton paints one button at a column, blank cell each side.
-func drawButton(v grid.View, x, y int, title string, fg, bg color.RGBA) {
+// DrawButton paints one button at a column, blank cell each side.
+func DrawButton(v grid.View, x, y int, title string, fg, bg color.RGBA) {
 	label := " " + title + " "
 	line := v.Sub(x, y, grid.StringWidth(label), 1)
 	line.Fill(grid.Cell{Rune: ' ', FG: fg, BG: bg, Width: 1})

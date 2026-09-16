@@ -331,7 +331,7 @@ func (n *Notice) HandleMouse(ev input.MouseEvent) (bool, error) {
 			return true, nil
 		}
 		if y == box.Rows-2 {
-			if at, ok := buttonAtCol(noticeButtons, box.Cols, noticePad, x); ok {
+			if at, ok := ButtonAtCol(noticeButtons, box.Cols, noticePad, x); ok {
 				n.at = at
 				n.press(at)
 				return true, nil
@@ -427,7 +427,7 @@ func (n *Notice) paintText(in grid.View, box Rect) {
 
 // paintButtons draws the buttons along the bottom, right aligned.
 func (n *Notice) paintButtons(in grid.View, box Rect) {
-	for i, at := range buttonColsIn(noticeButtons, box.Cols, noticePad) {
+	for i, at := range ButtonColsIn(noticeButtons, box.Cols, noticePad) {
 		if at < 0 {
 			// No room for this one. Drawing it would land it on top of
 			// the buttons that did fit.
@@ -437,7 +437,7 @@ func (n *Notice) paintButtons(in grid.View, box Rect) {
 		if i == n.at {
 			fg, bg = n.Style.ActiveFG, n.Style.ActiveBG
 		}
-		drawButton(in, at, box.Rows-2, noticeButtons[i], fg, bg)
+		DrawButton(in, at, box.Rows-2, noticeButtons[i], fg, bg)
 	}
 }
 

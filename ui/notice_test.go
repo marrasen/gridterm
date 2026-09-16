@@ -93,7 +93,7 @@ func noticeLines(n *Notice, g *grid.Grid) []string {
 }
 
 // drawnButtonCol finds the column a button label is drawn at, read off
-// the grid. Asking buttonColsIn would be asking the layout the hit test
+// the grid. Asking ButtonColsIn would be asking the layout the hit test
 // uses whether it agrees with itself.
 func drawnButtonCol(t *testing.T, g *grid.Grid, box Rect, label string) int {
 	t.Helper()

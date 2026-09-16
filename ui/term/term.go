@@ -148,6 +148,14 @@ type Terminal struct {
 	// room the layout gave it, so Draw leaves that room blank.
 	elsewhere bool
 
+	// pal is the colours the terminal was built with, kept so the window
+	// can draw over the screen in them.
+	pal vt.Palette
+
+	// ask is the question drawn on the pane's last row, and nil when
+	// there is none. The drawing goroutine owns it.
+	ask *asked
+
 	focused bool
 	encBuf  []byte
 
@@ -207,6 +215,7 @@ func New(cfg Config) (*Terminal, error) {
 
 	t := &Terminal{
 		cfg: cfg,
+		pal: pal,
 		out: make(chan []byte, outQueue),
 	}
 	r := t.adopt(cfg.Session)
@@ -323,6 +332,8 @@ func (t *Terminal) Restart(sess session.Session) error {
 
 	t.exited.Store(false)
 	t.revive()
+	// A pane that is alive again has nothing to answer.
+	t.ask = nil
 
 	r := t.adopt(sess)
 	// The pane may have been given other room while it was dead, which
@@ -497,6 +508,9 @@ func (t *Terminal) draw(v grid.View) {
 	if t.focused && !t.exited.Load() {
 		v.SetCursor(t.g.Cursor())
 	}
+	// Last, over the screen: the question is the window talking, not a
+	// line the program printed.
+	t.paintAsk(v)
 }
 
 // Hold gives the size to somebody watching from another machine.
@@ -566,8 +580,12 @@ func (t *Terminal) EncodeKey(ev input.Event) []byte {
 	return input.EncodeMode(ev, t.mode(), nil)
 }
 
-// HandleKey encodes a key for the program and sends it.
+// HandleKey encodes a key for the program and sends it, or answers the
+// question on the pane's last row while one is up.
 func (t *Terminal) HandleKey(ev input.Event) (bool, error) {
+	if t.ask != nil {
+		return t.askKey(ev)
+	}
 	t.encBuf = input.EncodeMode(ev, t.mode(), t.encBuf[:0])
 	if len(t.encBuf) == 0 {
 		return false, nil
@@ -596,6 +614,11 @@ func (t *Terminal) HandleKey(ev input.Event) (bool, error) {
 // is held. That is how xterm lets you select text inside a program that
 // has taken the mouse over, and every terminal since has copied it.
 func (t *Terminal) HandleMouse(ev input.MouseEvent) (bool, error) {
+	// Before the program, which may have taken the mouse over: the
+	// question is about the program and has to be answerable.
+	if took, err := t.askMouse(ev); took {
+		return true, err
+	}
 	mode, onAlt := t.mouseMode()
 	if mode.Enabled() && !ev.Mods.Has(input.ModShift) {
 		if t.reportable(ev) {

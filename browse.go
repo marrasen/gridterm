@@ -1054,6 +1054,14 @@ func farName(host, window string) string { return host + " through " + window }
 var errFilesGraceExpired = errors.New(
 	"the file session's goodbye went unanswered, so it was closed from here")
 
+// errFilesCloseAbandoned says the client's own close never came back
+// after the channel was closed, so it was left behind.
+//
+// Named for the reason errFilesGraceExpired is: it is logged rather than
+// shown, and a test has to be able to tell this path from the others.
+var errFilesCloseAbandoned = errors.New(
+	"the file session's close never came back, so it was left to the connection")
+
 // closeFilesOver ends a file session on a window taken over.
 //
 // Closing the SFTP client sends an end of file and then waits for the
@@ -1062,6 +1070,12 @@ var errFilesGraceExpired = errors.New(
 // over, which is what has to fit inside a frame. After it the channel is
 // closed from here, which is what lets go, and that path says so with
 // errFilesGraceExpired.
+//
+// Closing the channel only sends a message, so a link that is dead both
+// ways leaves the client's close waiting for an answer that cannot
+// arrive. It gets one more grace and is then abandoned, which says so
+// with errFilesCloseAbandoned: that goroutine ends when the connection
+// to the window is closed, which letGoOfWindow does right after this.
 func closeFilesOver(client, ch io.Closer) error {
 	done := make(chan error, 1)
 	go func() { done <- client.Close() }()
@@ -1073,9 +1087,14 @@ func closeFilesOver(client, ch io.Closer) error {
 	case <-time.After(filesGrace):
 		errs = append(errs, errFilesGraceExpired, ch.Close())
 		// Now that the channel has gone, the client's own close can
-		// finish. Waited for rather than abandoned: it holds a
-		// goroutine until it does.
-		errs = append(errs, <-done)
+		// finish, unless the link is dead and nothing wakes the read it
+		// is parked on.
+		select {
+		case err := <-done:
+			errs = append(errs, err)
+		case <-time.After(filesGrace):
+			errs = append(errs, errFilesCloseAbandoned)
+		}
 	}
 	// The client closes the channel as it goes, so this is the path
 	// where it never got that far.
@@ -1100,8 +1119,8 @@ func closeFilesOver(client, ch io.Closer) error {
 // nothing wrong, so running out is logged rather than shown.
 const filesGrace = 250 * time.Millisecond
 
-// graceLogged takes the parts of a failure that are only a file session's
-// unanswered goodbye, logs them, and hands back the rest.
+// graceLogged takes the parts of a failure that are only a file session
+// closing on a bound of its own, logs them, and hands back the rest.
 //
 // The bound they come from is one round trip on the goroutine that draws,
 // which a slow link runs out on its own. There is nothing on a notice
@@ -1114,8 +1133,9 @@ func (a *app) graceLogged(err error) error {
 	return rest
 }
 
-// splitGraceExpired splits a failure into the parts about an unanswered
-// goodbye and everything else, looking inside a joined error.
+// splitGraceExpired splits a failure into the parts about a file session
+// that ran out its bound and everything else, looking inside a joined
+// error.
 func splitGraceExpired(err error) (expired, rest error) {
 	if err == nil {
 		return nil, nil
@@ -1129,7 +1149,8 @@ func splitGraceExpired(err error) (expired, rest error) {
 		}
 		return errors.Join(expireds...), errors.Join(rests...)
 	}
-	if errors.Is(err, errFilesGraceExpired) {
+	if errors.Is(err, errFilesGraceExpired) || errors.Is(err, errFilesCloseAbandoned) ||
+		errors.Is(err, remote.ErrCloseAbandoned) {
 		return err, nil
 	}
 	return nil, err

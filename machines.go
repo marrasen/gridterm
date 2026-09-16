@@ -407,7 +407,9 @@ func (a *app) dropMachine(name string) error {
 	// Last, once everything that was on it has gone: a machine still
 	// holding a pane is still a machine worth a command.
 	a.refreshServers()
-	return errors.Join(errs...)
+	// A file session that closed on a bound of its own is logged rather
+	// than shown: the machine has gone either way.
+	return a.graceLogged(errors.Join(errs...))
 }
 
 // forgetPane takes a pane off the record of what runs where, for one

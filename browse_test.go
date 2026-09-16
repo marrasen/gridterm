@@ -1445,6 +1445,56 @@ func TestLettingGoOfAWindowThatWentQuietSaysNothingToTheUser(t *testing.T) {
 	}
 }
 
+// And letting go of a window whose link is dead in both directions comes
+// back too.
+//
+// Closing the channel only sends a message. A window that is still on
+// the network and carrying nothing never answers it, so the SFTP
+// client's own close stays parked on a read that nothing will wake.
+// Waited for, that read is the goroutine that draws: the one action left
+// to a user with a wedged window would be the one that wedges the window
+// for good.
+func TestLettingGoOfAWindowWhoseLinkIsDeadComesBack(t *testing.T) {
+	client, addr, relay := aRelayedWindow(t)
+
+	// Nothing crosses in either direction from here on, and it never
+	// starts again: the window over there has dropped off the network.
+	relay.stop()
+
+	// The user's own path, run on a goroutine of its own so a wait that
+	// never ends is a failure here rather than the whole package timing
+	// out. Nothing else touches this window meanwhile.
+	menu := clickPlus(t, client, addr)
+	selectMenuItem(t, menu, "conn.disconnect")
+	done := make(chan error, 1)
+	go func() {
+		_, err := menu.HandleKey(input.Event{Kind: input.KeyPress, Key: input.KeyEnter})
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("letting go of the window: %v", err)
+		}
+	case <-time.After(20 * filesGrace):
+		t.Fatal("letting go of a window whose link is dead never came back")
+	}
+
+	// It says nothing to the user: the pane has gone either way, and
+	// there is nothing on a notice about it to act on.
+	if n, up := client.root.Modal().(*ui.Notice); up {
+		t.Errorf("letting go reported %q: %s", n.Title, n.Message())
+	}
+	if !client.logged.holds(errFilesCloseAbandoned.Error()) {
+		t.Errorf("nothing was logged about the close being left behind: %v", client.logged.all())
+	}
+	// And the window has gone, which is what letting go is for, and what
+	// ends the close that was left behind.
+	if client.windows.named(addr) != nil {
+		t.Error("the window is still held")
+	}
+}
+
 // The question before a delete names the machine the files are really
 // on.
 //

@@ -3,33 +3,10 @@
 Things Marcus has asked for that are not done yet. Newest first within
 each group. A line goes when the work is in and reviewed.
 
-## Panes that outlive what ran in them
-
-1. **A pane stays when its shell exits or its connection drops.**
-   Today `paneEnded` in panes.go keeps the pane only for a command, or
-   for a connection that could not be made. Every other shell loses its
-   pane and keeps a grey row. The user should be able to select a pane
-   whose shell has gone and read what it printed, scrollback and all,
-   and close it themselves.
-   - **Where it is decided.** One line: the `e.Kind != conns.Command &&
-     !a.kept[t]` test in `paneEnded`. Keeping everything makes the
-     `removePane(t, true)` branch unreachable from there.
-   - **What it changes for the window.** `removePane` quits the window
-     when the last pane goes, so `exit` in the only shell closes
-     gridterm today. With the pane kept it will not, and the user
-     closes the pane or the window themselves.
-   - **What the row says.** A kept pane's row has to say the shell has
-     gone, the way a finished command's does, and closing the row has
-     to close the pane.
-   - **What it fixes elsewhere.** Three of the agent gaps below. A pane
-     that is never removed is never put through `forgetPane`, so its
-     hand-over survives, the agent listener stays up and the session
-     code goes on naming something.
-
 ## Questions for Marcus
 
-Kept panes raised three decisions that are his, not mine. Each one is
-written down rather than guessed at.
+Keeping a pane when its program ends raised three decisions that are
+his, not mine. Each one is written down rather than guessed at.
 
 1. **Nothing caps the panes a window keeps.** A pane holds its whole
    screen and up to 5000 lines of scrollback, which on a wide window is
@@ -57,26 +34,38 @@ written down rather than guessed at.
 
 Raised after a debugging session in a handed-over pane.
 
-2. **Say when a command has finished and what it exited with.** The
+1. **Say when a command has finished and what it exited with.** The
    agent appends `; echo MARKER` to every command and waits for the
    marker, because `quiet_ms` is guesswork and the prompt is already on
-   screen before the command runs. A `run_command` tool, or an
-   `until_prompt` option on `wait_for`, would remove the ritual.
+   screen before the command runs.
+   - **Half of this is in.** `vt.Terminal.Command()` reads the shell's
+     own marks, OSC 133 and VS Code's OSC 633, and says whether a
+     command is running, what the last one exited with, and whether the
+     shell gave a status at all. Nothing uses it yet.
+   - **What is left.** Carry it through `ui/term`'s `Reading` under the
+     same lock as the screen, so a screen and an exit status come from
+     one moment, then out through `agent.Look` to the tools. `Done` is
+     the signal to key on: it only moves forward, so a tool that reads
+     it before sending keys can tell a real finish from a `Running`
+     that is stuck.
+   - **A shell with no integration still needs an answer.** Mark the
+     pane when `send_keys` runs and let `wait_for` end on the prompt
+     coming back. The tools have to say which of the two they gave.
 
-3. **Give the agent the output of the last command, not the screen.**
+2. **Give the agent the output of the last command, not the screen.**
    `read_pane` hands back a rectangle, so the agent has to work out by
    eye where the current output starts. That is why it kept clearing
    the screen, and the window already knows where the boundary is.
 
-4. **Let the agent ask for a secret.** Put the prompt up, block until
+3. **Let the agent ask for a secret.** Put the prompt up, block until
    the user has typed it into the pane, and return without ever showing
    the agent the characters.
 
-5. **Make the setup line copyable.** The hand-over dialog tells the
+4. **Make the setup line copyable.** The hand-over dialog tells the
    user to add the MCP server with a command line, and there is no way
    to copy that text, so it has to be typed out again by hand.
 
-6. **`clear` takes the scrollback with it.** Not a bug: `clear` sends
+5. **`clear` takes the scrollback with it.** Not a bug: `clear` sends
    `ED 3` as well as `ED 2`, and `Screen.EraseInDisplay` in
    vt/screen.go drops the scrollback for mode 3, which is what the
    sequence means. It is also why the agent's own commands could not be

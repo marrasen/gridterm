@@ -146,6 +146,10 @@ has no callers. `jobs.move`'s same-filesystem branch (`run.go:498-500`)
 repeats a test `do` already made, so it can never run; the two also
 disagree about counting, which is what makes it look live.
 
+Partly closed by 79b4cf5 Double the terminal's throughput and redraw only the rows that changed: `Screen.Modes` is
+gone. `jobs.move`'s same-filesystem branch is still there, and still
+repeats a test `do` has already made.
+
 ### 13. One line allocation per scrolled line under a flood
 
 `vt/buffer.go:166`, `:38-44`. Every line of output allocates a fresh
@@ -168,6 +172,10 @@ Closed by 0d20f84 Stop a copy overwriting a file it could not check.
 check; a malformed exec request panics the whole test binary.
 `sshtest.Deaf`'s `done` channel is created, closed and never read --
 dead synchronisation that reads as if it coordinated something.
+
+Partly closed by 1707651 Fold the duplicated pieces the review named into one of each: `Deaf` is a view of
+the one `silentMachine` and the dead channel has gone with it.
+`server.go` still slices `req.Payload[4:]` with no length check.
 
 ### 16. Smaller things
 
@@ -326,12 +334,9 @@ the window down" -- made in three places. It may well be the right
 decision. Under the house rule it is Marcus's to make, once, and the
 code should then say he made it.
 
-Closed by 0d20f84 Stop a copy overwriting a file it could not check, for the
-job and the two filesystems.
-Closed by 0320a9c Give dialogs one key rule, tell the user why a connection
-went, for the clipboard read.
-Closed by b00f97e Make the font fallback one decision, reported once, for the
-three font rows.
+For the job and the two filesystems: closed by 0d20f84 Stop a copy overwriting a file it could not check.
+For the clipboard read: closed by 0320a9c Give dialogs one key rule, tell the user why a connection went.
+For the three font rows: closed by b00f97e Make the font fallback one decision, reported once.
 
 ### What is sound repo-wide
 

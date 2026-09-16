@@ -157,7 +157,10 @@ directly, so the `conn.files` line on a window's plus menu is never
 exercised end to end. **Speculation**: the failure is one branch from
 the one fixed in `c9186f2`.
 
-Closed by d96de72 Decide what kind of host a name is in one place.
+Partly closed by d96de72 Decide what kind of host a name is in one place: `openFilesOn` goes
+through the one switch that handles every kind. Nothing drove
+`conn.files` from the UI until the test-hygiene step, whose hash goes
+here.
 
 ### 13. `TestTheHereCommandsDelegate` promises the here-commands and checks one [source-reading]
 

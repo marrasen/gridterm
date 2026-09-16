@@ -283,14 +283,9 @@ func TestConnectSavedStartsWithTheMachineInTheWay(t *testing.T) {
 	if err := waiting.Close(); err != nil {
 		t.Fatalf("cancel: %v", err)
 	}
-	for deadline := time.Now().Add(waitBudget); time.Now().Before(deadline); {
-		a.pump.run()
-		if a.machines.beingMade() == 0 {
-			return
-		}
-		time.Sleep(time.Millisecond)
-	}
-	t.Fatal("the route was still being made long after it was cancelled")
+	waitFor(t, a, "the cancelled route to stop being made", func() bool {
+		return a.machines.beingMade() == 0
+	})
 }
 
 // Two names that reduce to the same command id would leave one of the
@@ -1296,21 +1291,11 @@ func TestOnlyOpenRouteDials(t *testing.T) {
 
 // callersOf lists the file and line of everywhere the window's own source
 // names one of these functions, leaving tests out.
-//
-// A name with a dot is a package's, so "remote.Connect" is that function
-// and nothing else; a bare name matches a method or a function of that
-// name however it is reached, and its own declaration does not count.
-// Read from the syntax tree, so a method value counts and a name inside a
-// comment or a string does not.
 func callersOf(t *testing.T, names ...string) []string {
 	t.Helper()
 	files, err := filepath.Glob("*.go")
 	if err != nil {
 		t.Fatalf("glob: %v", err)
-	}
-	wanted := make(map[string]bool, len(names))
-	for _, name := range names {
-		wanted[name] = true
 	}
 	fset := token.NewFileSet()
 	var out []string
@@ -1322,47 +1307,100 @@ func callersOf(t *testing.T, names ...string) []string {
 		if err != nil {
 			t.Fatalf("read %s: %v", at, err)
 		}
-		file, err := parser.ParseFile(fset, at, raw, 0)
-		if err != nil {
-			t.Fatalf("parse %s: %v", at, err)
-		}
-		declared := make(map[*ast.Ident]bool)
-		for _, decl := range file.Decls {
-			if fn, is := decl.(*ast.FuncDecl); is {
-				declared[fn.Name] = true
-			}
-		}
-		seen := make(map[string]bool)
-		note := func(pos token.Pos) {
-			where := fset.Position(pos)
-			at := fmt.Sprintf("%s:%d", filepath.Base(where.Filename), where.Line)
-			if !seen[at] {
-				seen[at] = true
-				out = append(out, at)
-			}
-		}
-		ast.Inspect(file, func(n ast.Node) bool {
-			switch node := n.(type) {
-			case *ast.SelectorExpr:
-				if pkg, is := node.X.(*ast.Ident); is && wanted[pkg.Name+"."+node.Sel.Name] {
-					note(node.Sel.Pos())
-				}
-				if wanted[node.Sel.Name] {
-					note(node.Sel.Pos())
-				}
-				// The Sel is this selector's own name, not a mention of
-				// something else, so only the left-hand side is walked.
-				ast.Inspect(node.X, func(ast.Node) bool { return true })
-				return false
-			case *ast.Ident:
-				if !declared[node] && wanted[node.Name] {
-					note(node.Pos())
-				}
-			}
-			return true
-		})
+		out = append(out, namesUsedIn(t, fset, at, raw, names)...)
 	}
 	return out
+}
+
+// namesUsedIn lists the file and line of everywhere one source file names
+// one of these functions.
+//
+// A name with a dot is a package's, so "remote.Connect" is that function
+// and nothing else; a bare name matches a method or a function of that
+// name however it is reached, and its own declaration does not count.
+// Read from the syntax tree, so a method value counts and a name inside a
+// comment or a string does not.
+func namesUsedIn(t *testing.T, fset *token.FileSet, at string, src []byte, names []string) []string {
+	t.Helper()
+	file, err := parser.ParseFile(fset, at, src, 0)
+	if err != nil {
+		t.Fatalf("parse %s: %v", at, err)
+	}
+	wanted := make(map[string]bool, len(names))
+	for _, name := range names {
+		wanted[name] = true
+	}
+	declared := make(map[*ast.Ident]bool)
+	for _, decl := range file.Decls {
+		if fn, is := decl.(*ast.FuncDecl); is {
+			declared[fn.Name] = true
+		}
+	}
+	var out []string
+	seen := make(map[string]bool)
+	note := func(pos token.Pos) {
+		where := fset.Position(pos)
+		row := fmt.Sprintf("%s:%d", filepath.Base(where.Filename), where.Line)
+		if !seen[row] {
+			seen[row] = true
+			out = append(out, row)
+		}
+	}
+	var visit func(ast.Node) bool
+	visit = func(n ast.Node) bool {
+		switch node := n.(type) {
+		case *ast.SelectorExpr:
+			if pkg, is := node.X.(*ast.Ident); is && wanted[pkg.Name+"."+node.Sel.Name] {
+				note(node.Sel.Pos())
+			}
+			if wanted[node.Sel.Name] {
+				note(node.Sel.Pos())
+			}
+			// Sel is this selector's own name rather than a mention of
+			// something else, so the walk goes on into what it selects
+			// from and not into Sel.
+			ast.Inspect(node.X, visit)
+			return false
+		case *ast.Ident:
+			if !declared[node] && wanted[node.Name] {
+				note(node.Pos())
+			}
+		}
+		return true
+	}
+	ast.Inspect(file, visit)
+	return out
+}
+
+// callersOf has to see a name through a chained call and a method value,
+// and must not count one in a comment, in a string, or its own
+// declaration. Each of those is the difference between the tripwire
+// working and reading as though it did.
+func TestCallersOfCountsUsesAndNotMentions(t *testing.T) {
+	const src = `package main
+
+// openRoute is the one place that dials.
+func (a *app) openRoute(name string) error { return nil }
+
+func wrapped() {
+	remote.Connect(ctx, cfg).Close()
+	register(a.openRoute).Then()
+	log.Print("openRoute")
+}
+`
+	got := namesUsedIn(t, token.NewFileSet(), "sample.go", []byte(src),
+		[]string{"remote.Connect", "openRoute"})
+
+	want := []string{"sample.go:7", "sample.go:8"}
+	if len(got) != len(want) {
+		t.Fatalf("it found %v, want the dial on line 7 and the method value on line 8", got)
+	}
+	for i, at := range want {
+		if got[i] != at {
+			t.Errorf("it found %v, want %v", got, want)
+			break
+		}
+	}
 }
 
 // Taking a window over changes what the palette offers on it, in the

@@ -176,6 +176,7 @@ Closed by d96de72 Decide what kind of host a name is in one place.
 | `opening`, `kept`, `paneOnWindow`, `watching`, `handedBy`, `lastSnapshot`/`openNow`, `shown`, `rates`, `serverCommands` | various | Sound. `giveUp` releasing names eagerly is right and well argued. `handedBy` keyed by id rather than pane is well thought out. |
 
 Closed by 4bc67cc Give the taken-over windows a type with its invariant written down.
+For `paneOn`: closed by 3fa837a Give the connected machines a type and split machines.go six ways.
 
 ### 7. Multiple funnels for one operation
 
@@ -197,7 +198,11 @@ Closed by 4bc67cc Give the taken-over windows a type with its invariant written 
   everything else uses `meter.New()` -- **speculation** whether a zero
   meter reports the same initial state.
 
-Closed by d96de72 Decide what kind of host a name is in one place.
+Partly closed by d96de72 Decide what kind of host a name is in one place: the gate in front of the funnel is gone. The
+rollback is still written out three times, there are still eight
+`conns.Entry` literals with different field subsets, and `windows.go`
+still builds a `&meter.Meter{}` where everything else calls
+`meter.New()`.
 
 ### 8. Threading -- the healthiest part of the package
 
@@ -267,9 +272,10 @@ There because two files needed to share something:
   connection made or lost.
 - `openRows` (`publish.go:112`) is dead.
 
-Closed by 6350ed0 Lift four groups of fields off the app struct into their own types.
-Closed by 4bc67cc Give the taken-over windows a type with its invariant written down.
-Closed by 3fa837a Give the connected machines a type and split machines.go six ways.
+Partly closed by 6350ed0 Lift four groups of fields off the app struct into their own types, 4bc67cc Give the taken-over windows a type with its invariant written down and 3fa837a Give the connected machines a type and split machines.go six ways, which
+lifted seven of the ten concerns off `app` into types of their own.
+`openRows` and `everyHost` are still one-line passthroughs onto the types
+that now hold the state.
 
 ### 10. Splitting the two big files
 
@@ -303,7 +309,10 @@ Closed by 3fa837a Give the connected machines a type and split machines.go six w
 
 What is left is ~350 lines and coherent.
 
-Closed by 3fa837a Give the connected machines a type and split machines.go six ways.
+For `machines.go`: closed by 3fa837a Give the connected machines a type and split machines.go six ways.
+For the key ladder in `windows.go`: closed by 1707651 Fold the duplicated pieces the review named into one of each.
+For `serveFiles` into `serving.go` and `windowFiles` into `browse.go`:
+closed by 4bc67cc Give the taken-over windows a type with its invariant written down.
 
 ## What is sound, and should be kept
 

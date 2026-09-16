@@ -68,7 +68,7 @@ func TestOneWindowWorksInAnotherMachinesShell(t *testing.T) {
 	}
 	var got strings.Builder
 	buf := make([]byte, 4096)
-	deadline := time.Now().Add(20 * time.Second)
+	deadline := time.Now().Add(waitBudget)
 	for time.Now().Before(deadline) {
 		n, err := sess.Read(buf)
 		got.Write(buf[:n])
@@ -1663,7 +1663,7 @@ func TestLettingGoOfFilesOnAWindowThatStoppedAnsweringComesBack(t *testing.T) {
 		if err != nil {
 			t.Errorf("letting go gave %v", err)
 		}
-	case <-time.After(5 * time.Second):
+	case <-time.After(waitBudget):
 		t.Fatal("it waited for a window that had stopped answering")
 	}
 	if got := ch.closed(); got == 0 {

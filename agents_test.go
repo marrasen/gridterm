@@ -293,7 +293,7 @@ func TestTakingAPaneBackWhileAnAgentIsAskingComesBack(t *testing.T) {
 		if err != nil {
 			t.Errorf("taking it back gave %v", err)
 		}
-	case <-time.After(10 * time.Second):
+	case <-time.After(waitBudget):
 		t.Fatal("taking the pane back waited for the agent it was taking it from")
 	}
 }

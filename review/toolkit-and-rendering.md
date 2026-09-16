@@ -78,7 +78,10 @@ Naming hazard: `Terminal.Box() ui.Size` collides with the toolkit's
 `Boxed.Box() Rect` contract. Different signature, so no confusion for
 the compiler; a reader has to check.
 
-Closed by 4bc67cc Give the taken-over windows a type with its invariant written down.
+Partly closed by 4bc67cc Give the taken-over windows a type with its invariant written down: the host's row says the size somebody else set.
+`Layout` still ignores the size while a pane is held, the cursor and the
+mouse are still clipped to the box, and `Terminal.Dirty()` still has no
+caller. That is Step 5 of `review/todo-plan.md`.
 
 ### 4. Every widget handles modifiers differently, and `Form` not at all
 

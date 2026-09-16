@@ -182,7 +182,7 @@ func TestAWatcherIsToldWhenTheProgramHasGone(t *testing.T) {
 		if err != nil {
 			t.Errorf("waiting gave %v", err)
 		}
-	case <-time.After(5 * time.Second):
+	case <-time.After(waitBudget):
 		t.Error("waiting needed somebody to close it by hand")
 	}
 
@@ -249,7 +249,7 @@ func TestAttachingFromAClosingWindowComesBack(t *testing.T) {
 		if err == nil {
 			t.Error("it handed back a session from a window that is closing")
 		}
-	case <-time.After(5 * time.Second):
+	case <-time.After(waitBudget):
 		t.Fatal("it parked waiting for a window that will never draw again")
 	}
 }

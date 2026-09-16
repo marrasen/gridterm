@@ -27,12 +27,9 @@ each group. A line goes when the work is in and reviewed.
 - **Colour the connection log.** The time in dark green on a line that
   went well and dark red on one that did not, and the words themselves a
   darker grey than the shell's output.
-- **Remove the grey bar between the sidebar and the panes.**
-
-## Errors and logs
-
 - **A log view.** Somewhere to read the whole of what a connection said,
   scroll it, and copy out of it.
+- **Remove the grey bar between the sidebar and the panes.**
 
 ## Connections
 
@@ -88,7 +85,7 @@ each group. A line goes when the work is in and reviewed.
 - There is no help anywhere. Keys are on the file browser's bar and on
   the menus; nothing lists them all.
 - A file pane on a gridterm window has no bound. `windowFiles` in
-  `windows.go` calls `t.win.Files()` and then `sftp.NewClientPipe`, both
+  `browse.go` calls `t.win.Files()` and then `sftp.NewClientPipe`, both
   on the goroutine that draws and neither of them bounded. The same pane
   on a machine goes through `Conn.Files`, which gives the whole open one
   deadline.

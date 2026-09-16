@@ -20,7 +20,7 @@ func atTime(c *connLog) *connLog {
 func readLog(t *testing.T, c *connLog, want string) string {
 	t.Helper()
 	var got strings.Builder
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(waitBudget)
 	for time.Now().Before(deadline) {
 		if strings.Contains(got.String(), want) {
 			return got.String()
@@ -54,7 +54,7 @@ func readLogOnce(t *testing.T, c *connLog) ([]byte, error) {
 	select {
 	case g := <-back:
 		return g.b, g.err
-	case <-time.After(5 * time.Second):
+	case <-time.After(waitBudget):
 		t.Fatal("the read never came back")
 		return nil, nil
 	}
@@ -233,7 +233,7 @@ func TestClosingThePaneGivesUpOnTheConnection(t *testing.T) {
 	}
 	select {
 	case <-gave:
-	case <-time.After(5 * time.Second):
+	case <-time.After(waitBudget):
 		t.Fatal("closing the pane did not give up on the connection")
 	}
 

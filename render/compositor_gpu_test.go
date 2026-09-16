@@ -21,7 +21,7 @@ func newTestRenderer(t *testing.T) *Renderer {
 	t.Helper()
 	a, err := glyph.NewAtlas(glyph.Fonts{Regular: gomono.TTF}, 12, 96)
 	if err != nil {
-		t.Fatalf("no atlas: %v", err)
+		t.Fatalf("no atlas from the embedded font, so this is broken code and not this machine: %v", err)
 	}
 	return New(a)
 }
@@ -263,15 +263,13 @@ func TestCompositorUnhidingRepaints(t *testing.T) {
 func TestCompositorRepaintsWhenTheAtlasIsRebuiltInPlace(t *testing.T) {
 	a, err := glyph.NewAtlas(glyph.Fonts{Regular: gomono.TTF}, 12, 96)
 	if err != nil {
-		t.Fatalf("no atlas: %v", err)
+		t.Fatalf("no atlas from the embedded font, so this is broken code and not this machine: %v", err)
 	}
 	r := New(a)
 	before := a.Metrics()
 	if err := a.SetSize(12.5); err != nil {
 		t.Fatalf("SetSize: %v", err)
 	}
-	// The embedded font decides this, so it is the same on every machine:
-	// a change here makes the test meaningless rather than inapplicable.
 	if a.Metrics() != before {
 		t.Fatalf("12pt and 12.5pt no longer share a cell box (%+v vs %+v), so the "+
 			"rebuild this test is about cannot happen; pick two sizes that do", before, a.Metrics())

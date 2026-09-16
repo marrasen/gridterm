@@ -142,29 +142,23 @@ func TestConnectCancelStopsADialThatIsStillRunning(t *testing.T) {
 	}
 
 	// The dial has to end, and end quietly.
-	deadline := time.Now().Add(waitBudget)
-	for time.Now().Before(deadline) {
-		a.pump.run()
-		if a.machines.beingMade() == 0 {
-			if m := a.root.Modal(); m != nil {
-				t.Fatalf("a dialog was left open after cancelling: %T", m)
-			}
-			if len(a.panes) != 1 {
-				t.Fatalf("%d panes after cancelling, want the one that was there", len(a.panes))
-			}
-			// And the row it was waiting in has gone.
-			for _, e := range a.registry.Groups(time.Now()) {
-				for _, row := range e.Rows {
-					if row.Entry == waiting {
-						t.Fatal("the row was left on the panel")
-					}
-				}
-			}
-			return
-		}
-		time.Sleep(time.Millisecond)
+	waitFor(t, a, "the cancelled dial to stop being made", func() bool {
+		return a.machines.beingMade() == 0
+	})
+	if m := a.root.Modal(); m != nil {
+		t.Fatalf("a dialog was left open after cancelling: %T", m)
 	}
-	t.Fatal("the dial was still running long after it was cancelled")
+	if len(a.panes) != 1 {
+		t.Fatalf("%d panes after cancelling, want the one that was there", len(a.panes))
+	}
+	// And the row it was waiting in has gone.
+	for _, e := range a.registry.Groups(time.Now()) {
+		for _, row := range e.Rows {
+			if row.Entry == waiting {
+				t.Fatal("the row was left on the panel")
+			}
+		}
+	}
 }
 
 // Cancelling is the user's own decision, so it is not reported back to
@@ -236,11 +230,9 @@ func TestConnectRunsSeveralAtOnce(t *testing.T) {
 	if err := opening[0].Close(); err != nil {
 		t.Fatalf("cancel: %v", err)
 	}
-	deadline := time.Now().Add(waitBudget)
-	for time.Now().Before(deadline) && a.machines.beingMade() > 2 {
-		a.pump.run()
-		time.Sleep(time.Millisecond)
-	}
+	waitFor(t, a, "the cancelled connection to stop being made", func() bool {
+		return a.machines.beingMade() <= 2
+	})
 	// Long enough that a cancel-all would have landed too.
 	for i := 0; i < 20; i++ {
 		a.pump.run()

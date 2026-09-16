@@ -87,7 +87,7 @@ func TestClosingAConnectionStillOnItsWayGivesUp(t *testing.T) {
 
 	select {
 	case <-ctx.Done():
-	case <-time.After(time.Second):
+	case <-time.After(waitBudget):
 		t.Fatal("the connection was not given up on")
 	}
 }
@@ -131,7 +131,7 @@ func TestAServerMessageIsShownWithoutWaiting(t *testing.T) {
 
 	select {
 	case <-done:
-	case <-time.After(2 * time.Second):
+	case <-time.After(waitBudget):
 		t.Fatal("showing a message waited for an answer")
 	}
 
@@ -158,15 +158,9 @@ func TestAServerMessageGoesWhenTheConnectionIsSettled(t *testing.T) {
 
 	cancel()
 
-	deadline := time.Now().Add(waitBudget)
-	for time.Now().Before(deadline) {
-		a.pump.run()
-		if a.root.Modal() == nil {
-			return
-		}
-		time.Sleep(time.Millisecond)
-	}
-	t.Fatal("the message stayed up after the connection was settled")
+	waitFor(t, a, "the message to go once the connection was settled", func() bool {
+		return a.root.Modal() == nil
+	})
 }
 
 // The "Give up" button on a server's message gives up.

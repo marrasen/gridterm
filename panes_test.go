@@ -2,9 +2,11 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"math/rand"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -546,12 +548,16 @@ func TestSplitCloseFuzz(t *testing.T) {
 	}
 }
 
-// sendKey gives the window a key and fails the test rather than losing
-// what the window said about it.
+// sendKey gives the window a key, and fails the test when the key is
+// refused or nothing takes it.
 func sendKey(t *testing.T, a *testApp, ev input.Event) {
 	t.Helper()
-	if _, err := a.root.HandleKey(ev); err != nil {
-		t.Fatalf("the window refused the key: %v", err)
+	took, err := a.root.HandleKey(ev)
+	if err != nil {
+		t.Fatalf("the window refused %s: %v", keyName(ev), err)
+	}
+	if !took {
+		t.Fatalf("nothing in the window took %s", keyName(ev))
 	}
 }
 
@@ -559,9 +565,24 @@ func sendKey(t *testing.T, a *testApp, ev input.Event) {
 // chooser or a dialog.
 func dismiss(t *testing.T, w ui.KeyHandler) {
 	t.Helper()
-	if _, err := w.HandleKey(press(input.KeyEscape, 0)); err != nil {
-		t.Fatalf("Escape: %v", err)
+	took, err := w.HandleKey(press(input.KeyEscape, 0))
+	if err != nil {
+		t.Fatalf("Escape was refused: %v", err)
 	}
+	if !took {
+		t.Fatalf("%T did not take Escape", w)
+	}
+}
+
+// keyName spells a key event the way a failure should name it.
+func keyName(ev input.Event) string {
+	if ev.Kind == input.Text {
+		return strconv.QuoteRune(ev.Rune)
+	}
+	if ev.Mods == 0 {
+		return ev.Key.String()
+	}
+	return ev.Mods.String() + "+" + ev.Key.String()
 }
 
 // press builds a key press, the way the ui tests do.
@@ -569,40 +590,38 @@ func press(k input.Key, mods input.Mods) input.Event {
 	return input.Event{Kind: input.KeyPress, Key: k, Mods: mods}
 }
 
-// waitFor runs the pump until something is true, or gives up loudly.
-//
-// Further windows can be named after the condition. A window taken over
-// answers its client from the goroutine that draws, so a test that pumped
-// only one of two would wait for an answer the other was never going to
-// give.
-func waitFor(t *testing.T, a *testApp, what string, cond func() bool, also ...*testApp) {
+// waitFor runs the pump of every window it is given until something is
+// true, or fails the test.
+func waitFor(t *testing.T, a *testApp, what any, cond func() bool, also ...*testApp) {
 	t.Helper()
-	deadline := time.Now().Add(waitBudget)
-	for time.Now().Before(deadline) {
-		a.pump.run()
-		for _, b := range also {
-			b.pump.run()
-		}
-		if cond() {
-			return
-		}
-		time.Sleep(time.Millisecond)
-	}
-	t.Fatalf("timed out waiting for %s", what)
+	// A window taken over answers its client from the goroutine that
+	// draws, so a test that pumped only one of two would wait for an
+	// answer the other was never going to give.
+	waitLoop(t, what, cond, append([]*testApp{a}, also...))
 }
 
 // waitUntil waits for something to become true where there is no window
 // to pump, which is a test driving one part of the program on its own.
-func waitUntil(t *testing.T, what string, cond func() bool) {
+func waitUntil(t *testing.T, what any, cond func() bool) {
+	t.Helper()
+	waitLoop(t, what, cond, nil)
+}
+
+// waitLoop is the one waiting loop: one budget, and one failure that says
+// what was waited for.
+func waitLoop(t *testing.T, what any, cond func() bool, windows []*testApp) {
 	t.Helper()
 	deadline := time.Now().Add(waitBudget)
 	for time.Now().Before(deadline) {
+		for _, a := range windows {
+			a.pump.run()
+		}
 		if cond() {
 			return
 		}
 		time.Sleep(time.Millisecond)
 	}
-	t.Fatalf("timed out waiting for %s", what)
+	t.Fatalf("timed out waiting for %v", what)
 }
 
 // awaitModal runs the pump until the modal on top is a T the test is
@@ -610,7 +629,7 @@ func waitUntil(t *testing.T, what string, cond func() bool) {
 func awaitModal[T ui.Widget](t *testing.T, a *testApp, what string, want func(T) bool) T {
 	t.Helper()
 	var found T
-	waitFor(t, a, what, func() bool {
+	waitFor(t, a, modalWanted{what: what, a: a}, func() bool {
 		got, is := a.root.Modal().(T)
 		if !is || (want != nil && !want(got)) {
 			return false
@@ -619,6 +638,18 @@ func awaitModal[T ui.Widget](t *testing.T, a *testApp, what string, want func(T)
 		return true
 	})
 	return found
+}
+
+// modalWanted names what a test waited for and what was on top instead,
+// read when the wait gives up rather than when it starts.
+type modalWanted struct {
+	what string
+	a    *testApp
+}
+
+func (m modalWanted) String() string {
+	return fmt.Sprintf("%s; the modal on top is %T titled %q",
+		m.what, m.a.root.Modal(), titleOf(m.a.root.Modal()))
 }
 
 // byTitle matches a modal by the whole title it draws at its top.
@@ -645,8 +676,8 @@ func titleOf(w ui.Widget) string {
 }
 
 // offWindow runs something that talks to a window from another goroutine
-// and waits for it, pumping meanwhile, because the window answers from the
-// goroutine that draws.
+// and waits for it. The window is pumped meanwhile, because it answers
+// from the goroutine that draws.
 func offWindow(t *testing.T, a *testApp, what string, do func() error) {
 	t.Helper()
 	done := make(chan error, 1)
@@ -751,7 +782,7 @@ func TestPaneExitedNeverBlocks(t *testing.T) {
 
 	select {
 	case <-done:
-	case <-time.After(2 * time.Second):
+	case <-time.After(waitBudget):
 		t.Fatal("paneExited blocked once the queue was full")
 	}
 }

@@ -176,15 +176,9 @@ func TestAskCancelledContextClosesTheDialog(t *testing.T) {
 
 	// And the dialog goes with it, rather than being left on screen with
 	// nothing behind it.
-	deadline := time.Now().Add(waitBudget)
-	for time.Now().Before(deadline) {
-		a.pump.run()
-		if a.root.Modal() == nil {
-			return
-		}
-		time.Sleep(time.Millisecond)
-	}
-	t.Fatal("the dialog was left open after the connection was cancelled")
+	waitFor(t, a, "the dialog to go when the connection was cancelled", func() bool {
+		return a.root.Modal() == nil
+	})
 }
 
 // The fingerprint is the only thing a user can check, so it has to be on

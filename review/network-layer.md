@@ -69,7 +69,9 @@ running.Wait()` means the process never exits even on end of file.
 The dial itself is bounded at five seconds (`agent/client.go:47`); the
 conversation after it is not.
 
-Closed by c788cb0 Filter the far end's text everywhere, bound the agent, report the rest.
+Partly closed by c788cb0 Filter the far end's text everywhere, bound the agent, report the rest: `Client.say`
+sets a deadline on every exchange. `mcp.Serve` still bounds no read and
+still waits on `running.Wait()`, which its own comment now argues for.
 
 ### 4. Server-chosen text goes into the pane's terminal unfiltered
 
@@ -147,6 +149,7 @@ Defensible, and mostly said so in a comment: `remote/dial.go:187,216,
 `remote/shell.go:173,239`.
 
 Closed by c788cb0 Filter the far end's text everywhere, bound the agent, report the rest.
+For the agent socket in `remote/auth.go`: closed by 0b03bf8 Stop the window freezing on a machine that has stopped answering.
 
 ### 8. House rule: disk errors with a fallback substituted
 

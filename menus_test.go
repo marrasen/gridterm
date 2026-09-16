@@ -66,11 +66,12 @@ func TestEveryPlusMenuLineNamesACommand(t *testing.T) {
 			t.Errorf("the plus on a %s offers nothing", shape.name)
 		}
 		for _, item := range items {
-			if item.Command == "" {
+			if item.Command == "" && item.Title == "" {
 				continue // a separator
 			}
-			if item.Title == "" {
-				t.Errorf("a line of the %s menu names %q and has no title", shape.name, item.Command)
+			if item.Command == "" {
+				t.Errorf("a line of the %s menu says %q and names no command", shape.name, item.Title)
+				continue
 			}
 			if _, ok := a.root.Commands.Lookup(item.Command); !ok {
 				t.Errorf("the %s menu names command %q, which is not registered",

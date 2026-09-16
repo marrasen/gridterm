@@ -11,8 +11,9 @@ import (
 // unmistakable for any other kind of key, which a bare string is not.
 type hostKey string
 
-// hostMenus is the machine a menu opened from the sidebar is about, kept
-// here because ui.Command.Run takes no argument. Only the goroutine that
+// hostMenus is the machine a menu opened from the sidebar is about and
+// whether such a menu is up, kept here because ui.Command.Run takes no
+// argument. Only the goroutine that
 // draws touches it.
 type hostMenus struct {
 	// host is the machine the menu now up is about, and up says whether
@@ -44,8 +45,8 @@ func (m *hostMenus) closed(n int) {
 	}
 }
 
-// machine is the machine the open menu is about, and false when no menu
-// is up.
+// machine is the machine the open menu is about. The second result says
+// whether a menu is up at all, which an empty name cannot.
 func (m *hostMenus) machine() (string, bool) { return m.host, m.up }
 
 // openHostMenu drops down what can be opened on a machine, under the row

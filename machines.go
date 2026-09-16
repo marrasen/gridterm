@@ -296,6 +296,9 @@ func (a *app) hold(m *machine, via string) {
 		Close: func() error { return a.dropMachine(m.at.name) },
 	}
 	a.registry.Add(m.entry)
+	// Nothing is parked on a connection this window has only just made, so
+	// what an earlier one under this name was counted for goes.
+	a.serving.relaysEnded(m.at.name)
 	// A machine the window has reached is worth a command of its own,
 	// whether or not it was ever saved.
 	a.refreshServers()
@@ -339,7 +342,7 @@ func (a *app) machineDied(m *machine, why error) {
 	// A pane of the file manager on this machine is reading through a
 	// session that has gone. It is taken away here, because nothing else
 	// would: a pane does not end by itself the way a shell does.
-	if err := a.closeFilesOn(m.at.name); err != nil {
+	if err := a.graceLogged(a.closeFilesOn(m.at.name)); err != nil {
 		a.reportError("Trouble closing the file panes on "+m.at.name, err)
 	}
 	// The tunnels went with it, but a local forward listens on a socket

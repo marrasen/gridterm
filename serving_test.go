@@ -576,7 +576,8 @@ func TestTheDialogSaysWhatPortZeroMeans(t *testing.T) {
 }
 
 // blackHole carries TCP to another address until it is told to stop,
-// and then keeps both connections open and passes nothing.
+// and then keeps both connections open and passes nothing until it is
+// started again.
 //
 // What a machine that has dropped off the network looks like from here:
 // the socket is still there, and nothing crosses it in either direction.
@@ -588,6 +589,10 @@ func TestTheDialogSaysWhatPortZeroMeans(t *testing.T) {
 // mux loop, so the close would be answered and the copy from the machine
 // would end. Here nothing crosses the socket at all, which is what leaves
 // that copy where it is.
+//
+// What arrives while it is stopped is held rather than thrown away, so a
+// machine that comes back answers everything that was said to it in the
+// meantime.
 type blackHole struct {
 	host string
 	port int
@@ -596,11 +601,13 @@ type blackHole struct {
 	// ask that machine what it is serving. Set by whoever built the pair.
 	server *sshtest.Server
 
-	shut     chan struct{}
-	shutOnce sync.Once
-
 	mu    sync.Mutex
 	conns []net.Conn
+
+	// stopped says nothing is being carried, and again is closed when it
+	// starts again, which is what lets a held reader go on.
+	stopped bool
+	again   chan struct{}
 
 	// done says the test has finished and has closed what was held, so a
 	// connection accepted after that closes itself.
@@ -618,19 +625,10 @@ func newBlackHole(t *testing.T, to string) *blackHole {
 	b := &blackHole{
 		host: hostOf(t, ln.Addr().String()),
 		port: portOf(t, ln.Addr().String()),
-		shut: make(chan struct{}),
 	}
 	t.Cleanup(func() {
 		_ = ln.Close()
-		b.stop()
-		// The copying goroutines are parked in a read, and closing what
-		// they are reading is what ends them.
-		b.mu.Lock()
-		defer b.mu.Unlock()
-		b.done = true
-		for _, c := range b.conns {
-			_ = c.Close()
-		}
+		b.shutDown()
 	})
 	go func() {
 		for {
@@ -672,20 +670,57 @@ func (b *blackHole) keep(in, out net.Conn) bool {
 }
 
 // stop leaves both sides connected and stops carrying anything.
-func (b *blackHole) stop() { b.shutOnce.Do(func() { close(b.shut) }) }
+func (b *blackHole) stop() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.stopped || b.done {
+		return
+	}
+	b.stopped, b.again = true, make(chan struct{})
+}
 
-// carry passes bytes one way until the relay is stopped. What arrives
-// after that is dropped rather than written on.
+// resume starts carrying again, and what was held back crosses in the
+// order it arrived. A machine that has come back on the network.
+func (b *blackHole) resume() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.release()
+}
+
+// shutDown ends the relay for good and closes both sides, for a test on
+// its way out.
+func (b *blackHole) shutDown() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.done = true
+	b.release()
+	// The copying goroutines are parked in a read, and closing what they
+	// are reading is what ends them.
+	for _, c := range b.conns {
+		_ = c.Close()
+	}
+}
+
+// release lets go of whatever is being held back, with the lock held.
+func (b *blackHole) release() {
+	if !b.stopped {
+		return
+	}
+	b.stopped = false
+	close(b.again)
+	b.again = nil
+}
+
+// carry passes bytes one way, holding them back while the relay is
+// stopped.
 func (b *blackHole) carry(src, dst net.Conn) {
 	buf := make([]byte, 32*1024)
 	for {
 		n, err := src.Read(buf)
-		select {
-		case <-b.shut:
-			return
-		default:
-		}
 		if n > 0 {
+			if !b.pass() {
+				return
+			}
 			if _, werr := dst.Write(buf[:n]); werr != nil {
 				return
 			}
@@ -696,7 +731,29 @@ func (b *blackHole) carry(src, dst net.Conn) {
 	}
 }
 
+// pass holds a reader up while the relay is stopped, and reports whether
+// it may go on: one released by the test going away never carries again.
+func (b *blackHole) pass() bool {
+	b.mu.Lock()
+	if b.done {
+		b.mu.Unlock()
+		return false
+	}
+	if !b.stopped {
+		b.mu.Unlock()
+		return true
+	}
+	again := b.again
+	b.mu.Unlock()
+
+	<-again
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return !b.done
+}
+
 // said collects what a window logged, whichever goroutine reported it.
+// Every test window has one from the moment it is built, as testApp.logged.
 //
 // logError runs wherever the failure was noticed, so the list is guarded:
 // a test reading it while a client's goroutine appends to it would be a
@@ -733,12 +790,50 @@ func (s *said) all() []string {
 	return append([]string(nil), s.lines...)
 }
 
-// aWedgedRelay is a window serving a client that has a file pane on
+// aRelayedWindow is a window that has taken another over through a relay
+// the test can stop, with a file pane open on the window over there.
+//
+// What comes back is the window doing the taking over, the address it
+// reached the other one at, and the relay, still carrying: it is the
+// test's to stop and start.
+func aRelayedWindow(t *testing.T) (client *testApp, addr string, relay *blackHole) {
+	t.Helper()
+	host := newTestApp(t, 90, 30)
+	withDialogs(t, host)
+	withPanel(t, host)
+	keyFile, line := aKeyFile(t)
+	withServing(t, host, line)
+	if err := host.startServing("0", whereHere); err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+	relay = newBlackHole(t, host.serving.addr())
+	addr = net.JoinHostPort(relay.host, strconv.Itoa(relay.port))
+
+	client = newTestApp(t, 90, 30)
+	withDialogs(t, client)
+	withPanel(t, client)
+	panes := len(client.panes)
+	if err := client.takeOver(addr, keyFile, nil); err != nil {
+		t.Fatalf("take over: %v", err)
+	}
+	answer(t, client, "Connect")
+	waitFor(t, client, "a pane on the other window", func() bool {
+		return client.windows.named(addr) != nil && len(client.panes) > panes
+	}, host)
+	openFilesFromThePlus(t, client, addr)
+	return client, addr, relay
+}
+
+// aWedgedRelay is a window serving a client that has file panes on
 // margit, with margit made to stop answering without hanging up.
 //
-// What comes back is the two windows, the address the client reached the
-// first one at, and what that window logs from here on.
-func aWedgedRelay(t *testing.T) (host, client *testApp, addr string, logged *said) {
+// panes is how many file panes the client opens on margit first. What
+// comes back is the two windows, the address the client reached the first
+// one at, the relay carrying margit so a test can start it again, and
+// what the serving window has logged.
+func aWedgedRelay(t *testing.T, panes int) (
+	host, client *testApp, addr string, relay *blackHole, logged *said) {
+
 	t.Helper()
 	host, client, addr = twoWindows(t)
 
@@ -746,28 +841,26 @@ func aWedgedRelay(t *testing.T) (host, client *testApp, addr string, logged *sai
 	// can be made to stop answering without hanging up.
 	margit := sshtest.New(t)
 	pinServers(t, host, margit)
-	relay := newBlackHole(t, margit.Addr())
+	relay = newBlackHole(t, margit.Addr())
+	relay.server = margit
 	cfg := serverConfig(t, margit)
 	cfg.Host, cfg.Port = relay.host, relay.port
 	connectToMargit(t, host, client, addr, cfg)
 
-	openFilesFromTheFarPlus(t, client, host, addr, "margit")
-	if got := margit.SFTPs(); got != 1 {
-		t.Fatalf("margit served %d file sessions, want the one being relayed", got)
+	for i := 0; i < panes; i++ {
+		openFilesFromTheFarPlus(t, client, host, addr, "margit")
 	}
+	waitFor(t, host, "margit to be serving every relayed file session", func() bool {
+		return margit.SFTPs() == panes
+	}, client)
 	// The row is there to go away. Without this a window that never put
 	// one up would pass a wait for it to go on its first turn.
 	waitFor(t, host, "a row for the client working in this window", func() bool {
 		return servingRows(host) == 1
 	}, client)
 
-	// What this window logs, so the session it walks away from is not
-	// walked away from quietly.
-	logged = &said{}
-	host.onError = logged.add
-
 	relay.stop()
-	return host, client, addr, logged
+	return host, client, addr, relay, host.logged
 }
 
 // A client that goes while the machine its file session was relayed to
@@ -784,7 +877,7 @@ func aWedgedRelay(t *testing.T) (host, client *testApp, addr string, logged *sai
 // client whose whole connection has gone cannot read it, so there is
 // nothing to wait for and the row goes now.
 func TestAClientThatGoesIsSaidToHaveGoneThoughTheMachineIsWedged(t *testing.T) {
-	host, client, addr, logged := aWedgedRelay(t)
+	host, client, addr, _, logged := aWedgedRelay(t, 1)
 
 	started := time.Now()
 	if err := client.dropWindow(addr); err != nil {
@@ -798,14 +891,139 @@ func TestAClientThatGoesIsSaidToHaveGoneThoughTheMachineIsWedged(t *testing.T) {
 		t.Errorf("the row for the client stayed %v, want it gone well inside the %v grace:"+
 			" the client's own connection had gone, so nothing was waiting for margit", took, relayGrace)
 	}
-	waitFor(t, host, "the abandoned file session to be logged", func() bool {
-		return logged.holds("abandoned a file session on margit")
+	// The copy from margit is left where it is, and counted while it is.
+	waitFor(t, host, "the file session to be counted as parked on margit", func() bool {
+		return host.serving.abandonedRelays("margit") == 1
 	})
+	// Not called an abandonment, though. The client walked away, and
+	// margit was never given a grace to answer in.
+	if logged.holds("abandoned a file session on margit") {
+		t.Errorf("it blamed margit for a session the client walked away from: %v", logged.all())
+	}
 	// And the connection to margit is still held: the file session is what
 	// went wrong, not the connection carrying it, and a window that closed
 	// the whole thing would take every pane and shell on margit with it.
 	if host.about("margit").machine == nil {
 		t.Errorf("the window let go of margit as well: %v", panelText(host, time.Now()))
+	}
+}
+
+// A relay whose client goes while the machine is answering is not left
+// counted against that machine.
+//
+// The client going and the machine answering the close are a race, and
+// the copy from the machine ends a round trip later whichever way it
+// falls. A count that only ever went up turned four slow closes into a
+// machine this window would open no more file sessions on.
+func TestARelayWhoseClientGoesWhileTheMachineAnswersIsNotCounted(t *testing.T) {
+	a, relay := aRelayedMachine(t)
+
+	gone, cancel := context.WithCancel(context.Background())
+	ours, done := relayToMargit(t, a, gone)
+	waitFor(t, a, "margit to be serving the relay", func() bool {
+		return relay.server.SFTPs() == 1
+	})
+
+	// The client's whole connection goes first and margit answers the
+	// close a moment later, which is the order that counted it.
+	cancel()
+	if err := ours.Close(); err != nil {
+		t.Fatalf("close the client end: %v", err)
+	}
+	waitFor(t, a, "the relay to finish", func() bool { return finished(done) })
+
+	waitFor(t, a, "nothing to be counted as parked on margit", func() bool {
+		return len(a.serving.abandoned) == 0
+	})
+}
+
+// A relay parked past the grace is counted while it is parked, and
+// uncounted once the machine finally answers.
+//
+// The count is what turns the next file session away, so it has to say
+// how many are parked now. A machine that came back on the network and
+// answered every close is one to ask again.
+func TestARelayParkedPastTheGraceIsUncountedWhenTheMachineAnswers(t *testing.T) {
+	a, relay := aRelayedMachine(t)
+
+	gone, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ours, done := relayToMargit(t, a, gone)
+	waitFor(t, a, "margit to be serving the relay", func() bool {
+		return relay.server.SFTPs() == 1
+	})
+
+	// margit drops off the network, and the file channel closes with the
+	// client still there: the grace is waited out and the copy from margit
+	// is parked.
+	relay.stop()
+	if err := ours.Close(); err != nil {
+		t.Fatalf("close the client end: %v", err)
+	}
+	waitFor(t, a, "the file session to be counted as parked on margit", func() bool {
+		return a.serving.abandonedRelays("margit") == 1
+	})
+	if !a.logged.holds("abandoned a file session on margit") {
+		t.Errorf("nothing said the session was abandoned: %v", a.logged.all())
+	}
+	waitFor(t, a, "the relay to finish", func() bool { return finished(done) })
+
+	// margit comes back and answers the close it was sent.
+	relay.resume()
+
+	waitFor(t, a, "the parked file session to be uncounted", func() bool {
+		return a.serving.abandonedRelays("margit") == 0
+	})
+	if !a.logged.holds("the file session left parked on margit has ended") {
+		t.Errorf("nothing said the parked session ended: %v", a.logged.all())
+	}
+}
+
+// A machine answering again under the same name is not still counted
+// against.
+//
+// The relays were parked on the connection that went, and the new one is
+// carrying none of them. A count left behind would turn away the first
+// file session on a machine that is answering perfectly well.
+func TestAMachineThatConnectsAgainStartsFromNothing(t *testing.T) {
+	a, relay := aRelayedMachine(t)
+
+	gone, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ours, _ := relayToMargit(t, a, gone)
+	waitFor(t, a, "margit to be serving the relay", func() bool {
+		return relay.server.SFTPs() == 1
+	})
+	relay.stop()
+	if err := ours.Close(); err != nil {
+		t.Fatalf("close the client end: %v", err)
+	}
+	waitFor(t, a, "the file session to be counted as parked on margit", func() bool {
+		return a.serving.abandonedRelays("margit") == 1
+	})
+
+	// The window loses the connection with nothing clearing the count,
+	// which is the state a machine answering again has to survive.
+	a.machines.drop(a.machines.named("margit"))
+
+	second := sshtest.New(t)
+	pinServers(t, a, second)
+	a.connectAs("margit", serverConfig(t, second))
+	waitFor(t, a, "margit to answer again", func() bool { return a.machines.named("margit") != nil })
+
+	if got := a.serving.abandonedRelays("margit"); got != 0 {
+		t.Errorf("%d file sessions are counted against margit, want none:"+
+			" nothing is parked on the connection it has now", got)
+	}
+}
+
+// finished reports whether a relay started by relayToMargit has returned.
+func finished(done chan error) bool {
+	select {
+	case <-done:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -816,7 +1034,7 @@ func TestAClientThatGoesIsSaidToHaveGoneThoughTheMachineIsWedged(t *testing.T) {
 // where the machine's account of the session arrives. Walking away at
 // once would throw that away while somebody was waiting to read it.
 func TestAFileChannelThatClosesWaitsForTheWedgedMachine(t *testing.T) {
-	host, client, addr, logged := aWedgedRelay(t)
+	host, client, addr, _, logged := aWedgedRelay(t, 1)
 	held := windowAt(t, client, addr)
 
 	// The pane goes and the window stays, so the file channel closes and
@@ -829,9 +1047,16 @@ func TestAFileChannelThatClosesWaitsForTheWedgedMachine(t *testing.T) {
 	waitFor(t, host, "the abandoned file session to be logged", func() bool {
 		return logged.holds("abandoned a file session on margit")
 	}, client)
-	if took := time.Since(started); took < relayGrace {
+	took := time.Since(started)
+	if took < relayGrace {
 		t.Errorf("the relay was abandoned after %v, want the %v grace waited out:"+
 			" the client is still there to read what margit says", took, relayGrace)
+	}
+	// And bounded at the other end: the wait is one grace, not a wait for
+	// a machine that is never going to answer.
+	if took > 3*relayGrace {
+		t.Errorf("the relay was abandoned after %v, want it inside three times the %v grace",
+			took, relayGrace)
 	}
 	// And the client is still working in this window, so nothing here
 	// mistook one file channel for the whole connection.
@@ -842,76 +1067,62 @@ func TestAFileChannelThatClosesWaitsForTheWedgedMachine(t *testing.T) {
 }
 
 // A machine holding as many parked file sessions as this window will
-// allow is refused the next one, by name and by count.
+// allow is refused the next one, by name and by count, and the client
+// asking is told why.
 //
-// Each abandoned relay is two goroutines and an SSH channel waiting on a
-// machine that has already stopped answering. They end when the
-// connection to that machine closes, so without a bound a client whose
-// panes keep landing on a dead machine piles them up.
+// Each parked relay is a goroutine and an SSH channel waiting on a
+// machine that has already stopped answering. They end when that machine
+// answers after all or when the connection to it closes, so without a
+// bound a client whose panes keep landing on a dead machine piles them
+// up.
 func TestAMachineWithTooManyParkedFileSessionsIsRefusedTheNext(t *testing.T) {
-	a, margit := aRelayedMachine(t)
+	host, client, addr, _, _ := aWedgedRelay(t, mostAbandonedRelays)
+	held := windowAt(t, client, addr)
 
-	// Opened while the machine still answers: one that has stopped
-	// answering cannot be asked for a subsystem at all.
-	gone, cancel := context.WithCancel(context.Background())
-	pipes := make([]net.Conn, 0, mostAbandonedRelays)
-	for i := 0; i < mostAbandonedRelays; i++ {
-		ours, _ := relayToMargit(t, a, gone)
-		pipes = append(pipes, ours)
+	// The panes go and the window stays, so each file channel closes with
+	// the client still there. Every one of them waits its grace out on a
+	// machine that has stopped answering and is parked.
+	if err := client.closeFilesOn(held.name); err != nil {
+		t.Fatalf("closing the panes on margit: %v", err)
 	}
-	waitFor(t, a, "margit to be serving every relay", func() bool {
-		return margit.server.SFTPs() == mostAbandonedRelays
-	})
+	waitFor(t, host, "every relay to be parked on margit", func() bool {
+		return host.serving.abandonedRelays("margit") == mostAbandonedRelays
+	}, client)
 
-	// The machine stops answering, the clients go, and every relay is
-	// walked away from.
-	margit.stop()
-	cancel()
-	for _, ours := range pipes {
-		if err := ours.Close(); err != nil {
-			t.Fatalf("close the client end: %v", err)
-		}
-	}
-	waitFor(t, a, "every relay to be abandoned", func() bool {
-		return a.serving.abandonedRelays("margit") == mostAbandonedRelays
-	})
-
-	// The next one is turned away before anything is opened, and says
-	// what is in the way.
-	_, refused := relayToMargit(t, a, gone)
-	var err error
-	waitFor(t, a, "the next file session to be refused", func() bool {
-		select {
-		case err = <-refused:
-			return true
-		default:
-			return false
-		}
-	})
+	// The next one is turned away before anything is opened, and what
+	// this window said travels back to the client on the file session's
+	// error stream and into the notice the user reads.
+	chooseMenuItemOver(t, host, clickPlusFar(t, client, addr, "margit"), "conn.files")
+	n := awaitModal[*ui.Notice](t, client, "the refusal", nil)
 	want := "margit has stopped answering; four file sessions to it are still waiting to end"
-	if err == nil || !strings.Contains(err.Error(), want) {
-		t.Errorf("it said %v, want %q", err, want)
+	if !strings.Contains(n.Message(), want) {
+		t.Fatalf("the client was told %q, want it to say %q", n.Message(), want)
+	}
+	// And nothing was opened for it: no pane, and no file manager to hold
+	// one.
+	if client.files != nil {
+		t.Errorf("a file pane was opened anyway: %v", filesRows(client))
 	}
 
 	// A rename takes the count with it: the relays are still parked, so
 	// the machine under its new name is still not one to ask.
-	was := a.machines.named("margit")
+	was := host.machines.named("margit")
 	if was == nil {
 		t.Fatal("margit is no longer connected")
 	}
-	a.renamedMachine("margit", remote.Host{Name: "margit2",
+	host.renamedMachine("margit", remote.Host{Name: "margit2",
 		Address: was.at.cfg.Host, Port: was.at.cfg.Port, User: was.at.cfg.User})
-	if got := a.serving.abandonedRelays("margit2"); got != mostAbandonedRelays {
+	if got := host.serving.abandonedRelays("margit2"); got != mostAbandonedRelays {
 		t.Errorf("after the rename %d file sessions are counted against it, want %d",
 			got, mostAbandonedRelays)
 	}
 
 	// Closing the connection ends all of them, so the count goes with it
 	// and the machine can be asked again.
-	if err := a.dropMachine("margit2"); err != nil {
+	if err := host.dropMachine("margit2"); err != nil {
 		t.Fatalf("let go of margit: %v", err)
 	}
-	if got := a.serving.abandonedRelays("margit2"); got != 0 {
+	if got := host.serving.abandonedRelays("margit2"); got != 0 {
 		t.Errorf("%d file sessions are still counted against margit", got)
 	}
 }
@@ -930,9 +1141,6 @@ func aRelayedMachine(t *testing.T) (*testApp, *blackHole) {
 	cfg.Host, cfg.Port = relay.host, relay.port
 	a.connectAs("margit", cfg)
 	waitFor(t, a, "margit to answer", func() bool { return a.machines.named("margit") != nil })
-	// Kept off the test's own output. What the window logs is not what
-	// this harness is for, and a window with no onError prints it.
-	a.onError = (&said{}).add
 	return a, relay
 }
 

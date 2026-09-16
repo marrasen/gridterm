@@ -144,6 +144,11 @@ type testApp struct {
 	// not reach into that.
 	copiedMu sync.Mutex
 	copied   []string
+
+	// logged is everything the window reported through logError, from
+	// before the first frame. A test that has to see one of those lines
+	// reads it; the rest are kept off the test's own output.
+	logged *said
 }
 
 // copiedText is the last thing the window put on the clipboard.
@@ -188,6 +193,11 @@ func newTestApp(t *testing.T, cols, rows int, opts ...testOption) *testApp {
 		jobs:       make(map[*conns.Entry]*jobs.Job),
 		asking:     make(map[chan jobs.Choice]func()),
 	}}
+	// Set before anything runs, because a window logs from the goroutines
+	// it starts and a test that pointed onError at its own collector
+	// afterwards would be writing a field those goroutines are reading.
+	ta.logged = &said{}
+	ta.onError = ta.logged.add
 	// A clipboard of its own. Without this every test that copies
 	// something would overwrite the clipboard of whoever ran it.
 	ta.clip.write = func(s string) error {

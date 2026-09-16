@@ -682,7 +682,10 @@ func (a *app) letGoOfWindow(t *taken) error {
 		errs = append(errs, a.closePane(pane))
 	}
 	errs = append(errs, t.win.Close())
-	return errors.Join(errs...)
+	// A goodbye the window never answered is logged rather than shown:
+	// the bound on it is one round trip on the goroutine that draws, and
+	// a slow link runs it out with nothing wrong.
+	return a.graceLogged(errors.Join(errs...))
 }
 
 // closeWindows hangs up on every window this one took over, for a

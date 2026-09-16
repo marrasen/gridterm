@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"image/color"
 	"strings"
 	"testing"
@@ -12,7 +13,6 @@ import (
 	"github.com/marrasen/gridterm/input"
 	"github.com/marrasen/gridterm/serve"
 	"github.com/marrasen/gridterm/ui"
-	"github.com/marrasen/gridterm/vt"
 )
 
 // aBarWindow is a window with a menu bar over its tree, serving nothing.
@@ -94,15 +94,25 @@ func statusColumn(t *testing.T, a *testApp) (int, int) {
 // Both status colours have to be read against the bar's own ground,
 // which shades from one end of the bar to the other. WCAG asks 4.5:1 for
 // text, so the status is measured against both ends of that shading.
+//
+// And against each other: two colours that say different things have to
+// be told apart, which grid.Contrast puts at 1.5:1.
 func TestTheStatusColoursAreReadableOnTheBar(t *testing.T) {
-	const wantText = 4.5
-	p := vt.DefaultPalette()
+	const (
+		wantText   = 4.5
+		wantChange = 1.5
+	)
+	a := aBarWindow(t)
+	p := a.colours
+	// The bar's own ground, asked of the bar: a test measuring against
+	// sidebarTop and sidebarFoot would go on passing if the bar were
+	// given a ground of its own.
 	grounds := []struct {
 		where string
 		bg    color.RGBA
 	}{
-		{"the near end of the bar's ground", sidebarTop(p)},
-		{"the far end of it", sidebarFoot(p)},
+		{"the near end of the bar's ground", a.bar.Style.BG},
+		{"the far end of it", a.bar.Style.BGEnd},
 	}
 	colours := []struct {
 		what string
@@ -118,6 +128,11 @@ func TestTheStatusColoursAreReadableOnTheBar(t *testing.T) {
 				t.Errorf("%s is %.2f:1 against %s, want at least %.1f", c.what, got, g.where, wantText)
 			}
 		}
+	}
+	// The two are far enough apart to read as a change of colour.
+	if got := grid.Contrast(statusTakenFG(p), statusIdleFG(p)); got < wantChange {
+		t.Errorf("the two statuses are %.2f:1 apart, want at least %.1f: "+
+			"below that they read as the same colour twice", got, wantChange)
 	}
 	// And a window somebody is working in says so more strongly than one
 	// that is only listening.
@@ -296,17 +311,100 @@ func TestKickingAWindowThatHasAlreadyGoneSaysNothing(t *testing.T) {
 		return len(host.serving.clients()) == 0
 	}, client)
 
-	// The button is run rather than pressed: a window going can put a
-	// notice over the dialog, and a press that landed on the notice would
-	// prove nothing either way. What the button carries is the whole of
-	// what the press would run.
-	err := kick.Do()
+	// Pressed, not run: a deliberate let-go arrives as an end of file and
+	// is filtered, so nothing else is on the screen for the press to land
+	// on, and pressing is what a user does.
+	pressButton(t, host, f, kick.Title)
 
-	if err != nil {
-		t.Errorf("kicking a window that had already gone reported %v", err)
+	if n, up := host.root.Modal().(*ui.Notice); up {
+		t.Errorf("kicking a window that had already gone reported %q: %s", n.Title, n.Message())
+	}
+	if host.root.Modal() != nil {
+		t.Error("the dialog is still up after the kick")
 	}
 	if !host.serving.on() {
 		t.Error("it stopped the port as well")
+	}
+}
+
+// A window that let go and connected again under the same name is not
+// kicked by a press that named the old one, and the dialog says so.
+//
+// The press closes a socket that has already gone, which says nothing.
+// Read as a kick that worked, it left the user thinking they had thrown
+// somebody out of their window while that person was still working in it.
+func TestKickingAWindowThatConnectedAgainSaysSo(t *testing.T) {
+	host := aBarWindow(t)
+	mine, line := aKeyPair(t)
+	withServing(t, host, line)
+	if err := host.startServing("0", whereHere); err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+	first := reachHost(t, host, mine)
+	waitFor(t, host, "the first window to connect", func() bool {
+		return len(host.serving.clients()) == 1
+	})
+	// What the dialog would have named when it opened.
+	named := host.serving.clients()
+
+	// It lets go, and the same person connects again under the same name.
+	if err := first.Close(); err != nil {
+		t.Fatalf("let go: %v", err)
+	}
+	waitFor(t, host, "the first window to go", func() bool {
+		return len(host.serving.clients()) == 0
+	})
+	reachHost(t, host, mine)
+	waitFor(t, host, "the second window to connect", func() bool {
+		return len(host.serving.clients()) == 1
+	})
+
+	err := host.kickOut(named)
+
+	if err == nil || !strings.Contains(err.Error(), "connected again since") {
+		t.Fatalf("it said %v, want it to say the window connected again", err)
+	}
+	if got := len(host.serving.clients()); got != 1 {
+		t.Errorf("%d windows are connected, want the one that connected again left alone", got)
+	}
+}
+
+// Kicking a window out says nothing: the user asked for it.
+//
+// The kick closes that client's socket from here, so this window's own
+// read of it fails with "use of closed network connection". Reported,
+// every kick put up a notice saying the window had been lost.
+func TestKickingAWindowOutIsNotReportedAsALoss(t *testing.T) {
+	host, client, _ := twoWindows(t)
+	withMenubar(t, host)
+	col, row := statusColumn(t, host)
+
+	if _, err := host.root.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft, Col: col, Row: row,
+	}); err != nil {
+		t.Fatalf("pressing the status: %v", err)
+	}
+	f := awaitModal(t, host, "the serving dialog", byTitle[*ui.Form]("Serving this window"))
+	pressButton(t, host, f, "Kick "+host.serving.clients()[0].Name+" out")
+
+	waitFor(t, host, "the window serving to let the client go", func() bool {
+		return servingRows(host) == 0
+	}, client)
+	if n, up := host.root.Modal().(*ui.Notice); up {
+		t.Errorf("the kick reported %q: %s", n.Title, n.Message())
+	}
+}
+
+// And a client lost to a fault still is reported.
+func TestAClientLostToAFaultIsStillReported(t *testing.T) {
+	host, _, _ := twoWindows(t)
+	c := host.serving.clients()[0]
+
+	host.clientWent(c, errors.New("the transport broke"))
+
+	n := awaitModal[*ui.Notice](t, host, "the loss", nil)
+	if !strings.Contains(n.Message(), "the transport broke") {
+		t.Errorf("it said %q, want why the window was lost", n.Message())
 	}
 }
 

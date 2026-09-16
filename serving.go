@@ -64,11 +64,21 @@ type serving struct {
 	// runs. Nil until the window is given its settings.
 	remembered *settings.Settings
 
-	// abandoned counts the relayed file sessions left parked on each
-	// machine, by the name this window holds that machine under. Each one
-	// holds two goroutines and an SSH channel until the connection to the
-	// machine goes, so a machine that stopped answering is not asked for
-	// any more of them.
+	// at is the address the listener was opened on, empty when nothing is
+	// listening. Kept here so a frame can ask without taking the
+	// server's own lock.
+	at string
+
+	// came counts the windows that have joined or left, so a frame can
+	// tell one client from another of the same name without holding on
+	// to either.
+	came uint64
+
+	// abandoned counts the relayed file sessions parked on each machine
+	// right now, by the name this window holds that machine under. Each
+	// one holds a goroutine and an SSH channel until the machine answers
+	// the close or the connection to it goes, so a machine that stopped
+	// answering is not asked for any more of them.
 	abandoned map[string]int
 }
 
@@ -81,23 +91,33 @@ func newServing() *serving {
 	}
 }
 
-// mostAbandonedRelays is how many file sessions may be left parked on one
-// machine before this window turns the next one away.
+// mostAbandonedRelays is how many file sessions may be parked on one
+// machine at once before this window turns the next one away.
 //
-// Low, because each one is two goroutines and a channel on a machine that
-// is already not answering, and because a browser opens one per pane: a
+// Low, because each one is a goroutine and a channel on a machine that is
+// already not answering, and because a browser opens one per pane: a
 // client whose panes keep landing on a dead machine would otherwise pile
 // them up until that connection is closed.
 const mostAbandonedRelays = 4
 
-// relayAbandoned counts one more file session left parked on a machine.
+// relayAbandoned counts one more file session parked on a machine.
 func (s *serving) relayAbandoned(host string) { s.abandoned[host]++ }
 
-// abandonedRelays is how many file sessions are parked on a machine.
+// relayStopped counts one fewer, for a parked file session that has ended
+// after all. A machine at nothing is forgotten rather than kept at zero.
+func (s *serving) relayStopped(host string) {
+	if n := s.abandoned[host]; n > 1 {
+		s.abandoned[host] = n - 1
+		return
+	}
+	delete(s.abandoned, host)
+}
+
+// abandonedRelays is how many file sessions are parked on a machine now.
 func (s *serving) abandonedRelays(host string) int { return s.abandoned[host] }
 
 // relaysEnded forgets what was parked on a machine, for a connection that
-// has closed: closing it ends every one of them.
+// has closed or been replaced: neither leaves one of them running.
 func (s *serving) relaysEnded(host string) { delete(s.abandoned, host) }
 
 // relaysRenamed moves what is parked on a machine to the name it is now
@@ -113,12 +133,15 @@ func (s *serving) relaysRenamed(was, now string) {
 func (s *serving) on() bool { return s.server != nil }
 
 // addr is the address the window is served on, empty when it is not.
-func (s *serving) addr() string {
-	if s.server == nil {
-		return ""
-	}
-	return s.server.Addr()
-}
+func (s *serving) addr() string { return s.at }
+
+// joined is how many windows are working in this one, which is one row
+// each.
+func (s *serving) joined() int { return len(s.rows) }
+
+// changes counts the windows that have come and gone, for a caller
+// telling one client from another under the same name.
+func (s *serving) changes() uint64 { return s.came }
 
 // fingerprint is what a window connecting here checks this machine by,
 // empty when nothing is listening.
@@ -205,7 +228,7 @@ func (s *serving) listen(cfg serve.Config) error {
 	if err != nil {
 		return err
 	}
-	s.server = srv
+	s.server, s.at = srv, srv.Addr()
 	return nil
 }
 
@@ -213,20 +236,24 @@ func (s *serving) listen(cfg serve.Config) error {
 // up on whoever is connected. It is nil when nothing was listening.
 func (s *serving) close() *serve.Server {
 	srv := s.server
-	s.server = nil
+	s.server, s.at = nil, ""
 	return srv
 }
 
 // lost records that the listener has failed, which is the end of it: no
 // further client can connect.
-func (s *serving) lost() { s.server = nil }
+func (s *serving) lost() { s.server, s.at = nil, "" }
 
-// joined records the row for a window that has taken this one over.
-func (s *serving) joined(c *serve.Client, e *conns.Entry) { s.rows[c] = e }
+// arrived records the row for a window that has taken this one over.
+func (s *serving) arrived(c *serve.Client, e *conns.Entry) {
+	s.rows[c] = e
+	s.came++
+}
 
 // left takes away one window's row and gives it back, or nil when that
 // window had none.
 func (s *serving) left(c *serve.Client) *conns.Entry {
+	s.came++
 	e := s.rows[c]
 	if e != nil {
 		delete(s.rows, c)
@@ -526,7 +553,7 @@ func (a *app) clientArrived(c *serve.Client) {
 		Note:  "from " + c.Addr,
 		Close: func() error { return c.Close() },
 	}
-	a.serving.joined(c, e)
+	a.serving.arrived(c, e)
 	a.registry.Add(e)
 	a.markDirty()
 }
@@ -535,14 +562,17 @@ func (a *app) clientArrived(c *serve.Client) {
 //
 // The screen comes back to this machine and the port stays open: the
 // user may well be moving from one machine to another. A client lost to
-// a fault is reported, one that hung up is not -- the first is
-// something the user did not ask for.
+// a fault is reported, one that hung up is not -- the first is something
+// the user did not ask for.
+//
+// A kick is not either: it closes that client's socket from here, so this
+// window's own read of it fails with net.ErrClosed.
 func (a *app) clientWent(c *serve.Client, why error) {
 	if e := a.serving.left(c); e != nil {
 		a.registry.Drop(e)
 	}
 	a.markDirty()
-	if why != nil && !errors.Is(why, io.EOF) {
+	if why != nil && !errors.Is(why, io.EOF) && !errors.Is(why, net.ErrClosed) {
 		a.reportError("The window serving "+c.Name+" was lost", why)
 	}
 }
@@ -615,15 +645,52 @@ func kickTitle(clients []*serve.Client) string {
 //
 // A window that hung up by itself between the dialog and the press is
 // not a failed kick: closing its socket again says it has already gone,
-// and it has gone, which is what was asked for.
+// and it has gone, which is what was asked for. A press that reached
+// none of them while somebody is still working here is said, because the
+// dialog would otherwise close on a kick that kicked nobody.
 func (a *app) kickOut(clients []*serve.Client) error {
+	live := make(map[*serve.Client]bool, len(clients))
+	for _, c := range a.serving.clients() {
+		live[c] = true
+	}
 	var errs []error
+	kicked := 0
 	for _, c := range clients {
-		if err := c.Close(); err != nil && !errors.Is(err, net.ErrClosed) && !errors.Is(err, io.EOF) {
+		if live[c] {
+			kicked++
+		}
+		if err := c.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
 			errs = append(errs, err)
 		}
 	}
+	if kicked == 0 {
+		errs = append(errs, missedTheKick(clients, a.serving.clients()))
+	}
 	return errors.Join(errs...)
+}
+
+// missedTheKick says a kick reached none of the windows it named while
+// somebody is still working in this one.
+//
+// Nil when nobody is connected: every window the dialog listed has gone,
+// which is what the button was pressed for. A window that connected again
+// under a name the dialog listed is the one worth naming, because the
+// dialog and the panel both go on showing that name.
+func missedTheKick(named, now []*serve.Client) error {
+	if len(now) == 0 {
+		return nil
+	}
+	for _, c := range named {
+		for _, live := range now {
+			if live.Name == c.Name {
+				return fmt.Errorf("%s had already gone and has connected again since,"+
+					" so nothing was kicked out. Open the dialog again to kick the window connected now",
+					c.Name)
+			}
+		}
+	}
+	return fmt.Errorf("the windows named had already gone, and %s is connected now,"+
+		" so nothing was kicked out", now[0].Name)
 }
 
 // dropServedRows takes away the rows for the windows that were being
@@ -732,6 +799,15 @@ func (a *app) relayFiles(client context.Context, host string, ch io.ReadWriteClo
 	if machineDone {
 		return errors.Join(append(errs, fromMachine)...)
 	}
+	// What the machine has already said, before either wait below is
+	// asked. A machine that answered is not one to walk away from, and a
+	// select offered two ready channels picks either.
+	select {
+	case fromMachine = <-back:
+		return errors.Join(append(errs, fromMachine)...)
+	default:
+	}
+	expired := false
 	select {
 	case fromMachine = <-back:
 		return errors.Join(append(errs, fromMachine)...)
@@ -742,22 +818,42 @@ func (a *app) relayFiles(client context.Context, host string, ch io.ReadWriteClo
 		// returns. An end of file on the channel does not say which of the
 		// two happened, which is why the client's connection is asked.
 	case <-time.After(relayGrace):
+		expired = true
 	}
-	// A machine that has stopped answering never answers that close, so
-	// the copy from it is left where it is rather than holding open the
-	// row for a client that has gone. It ends when the connection to that
-	// machine closes, and Conn.Close does end it: it tears the transport
-	// down.
-	//
-	// Said in the window, so whoever is sitting at this machine can see
-	// that a goroutine is parked on a machine that stopped answering, and
-	// counted so a machine that keeps doing it is asked for no more.
+	a.parkRelay(host, back, expired)
+	return errors.Join(errs...)
+}
+
+// parkRelay leaves the copy from a machine where it is and counts it
+// against that machine until it ends.
+//
+// A machine that has stopped answering never answers the close, so the
+// copy is left rather than holding open the row for a client that has
+// gone. It ends when the machine answers after all or when the connection
+// to it closes, and either one takes the count back off: what the count
+// says is how many are parked right now.
+//
+// expired says the grace ran out with the client still there, which is
+// the machine failing to answer rather than a client that walked away,
+// and is what is worth saying in the window.
+func (a *app) parkRelay(host string, back <-chan error, expired bool) {
 	a.pump.post(func() {
 		a.serving.relayAbandoned(host)
-		a.logError(fmt.Errorf("abandoned a file session on %s that did not answer the close;"+
-			" it ends when the connection to it does", host))
+		if expired {
+			a.logError(fmt.Errorf("abandoned a file session on %s that did not answer the close;"+
+				" it ends when the connection to it does", host))
+		}
 	})
-	return errors.Join(errs...)
+	go func() {
+		fromMachine := <-back
+		a.pump.post(func() {
+			a.serving.relayStopped(host)
+			if expired {
+				a.logError(errors.Join(fmt.Errorf(
+					"the file session left parked on %s has ended", host), fromMachine))
+			}
+		})
+	}()
 }
 
 // relayEnded says what ended a relayed file session whose machine

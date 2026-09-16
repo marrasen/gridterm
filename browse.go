@@ -267,7 +267,7 @@ func (a *app) wireBrowser(b *browser) {
 		// and taking the pane out of the tree underneath it would pull
 		// the ground from under the rest of that key.
 		a.pump.post(func() {
-			if err := a.closePane(p); err != nil {
+			if err := a.graceLogged(a.closePane(p)); err != nil {
 				a.reportError("Could not close the pane", err)
 			}
 		})
@@ -906,6 +906,10 @@ func (a *app) openGoTo() error {
 //
 // A pane on a machine reached through a window of that name goes too:
 // the connection carrying it is the window's.
+//
+// One at a time, so each pane's filesGrace is waited out after the last:
+// closing a pane cuts the widget tree, drops a sidebar row and edits what
+// the window holds, none of which may happen anywhere but here.
 func (a *app) closeFilesOn(host string) error {
 	b := a.files
 	if b == nil {
@@ -1045,18 +1049,19 @@ func farName(host, window string) string { return host + " through " + window }
 // goodbye, so the channel was closed from here.
 //
 // Named rather than anonymous: it is the only difference between the two
-// ways closeFilesOver can end, and what the far end did is worth saying
-// out loud on a window that has stopped answering.
+// ways closeFilesOver can end, and it is logged rather than shown, so a
+// test has to be able to tell the two apart.
 var errFilesGraceExpired = errors.New(
 	"the file session's goodbye went unanswered, so it was closed from here")
 
 // closeFilesOver ends a file session on a window taken over.
 //
 // Closing the SFTP client sends an end of file and then waits for the
-// far end to close the channel. A window that has stopped answering
-// never will, and this runs on the goroutine that draws, so the wait is
-// bounded: after that the channel is closed from here, which is what
-// lets go. That path says so with errFilesGraceExpired.
+// far end to close the channel. This runs on the goroutine that draws, so
+// that wait is bounded by filesGrace: one round trip to the window taken
+// over, which is what has to fit inside a frame. After it the channel is
+// closed from here, which is what lets go, and that path says so with
+// errFilesGraceExpired.
 func closeFilesOver(client, ch io.Closer) error {
 	done := make(chan error, 1)
 	go func() { done <- client.Close() }()
@@ -1089,7 +1094,46 @@ func closeFilesOver(client, ch io.Closer) error {
 
 // filesGrace is how long letting go of a window waits for its file
 // session to say goodbye before closing the channel from here.
+//
+// One round trip to that window, spent on the goroutine that draws. A
+// slow link or a pause in the garbage collector can run it out with
+// nothing wrong, so running out is logged rather than shown.
 const filesGrace = 250 * time.Millisecond
+
+// graceLogged takes the parts of a failure that are only a file session's
+// unanswered goodbye, logs them, and hands back the rest.
+//
+// The bound they come from is one round trip on the goroutine that draws,
+// which a slow link runs out on its own. There is nothing on a notice
+// about it for the user to do, and the pane has gone either way.
+func (a *app) graceLogged(err error) error {
+	expired, rest := splitGraceExpired(err)
+	if expired != nil {
+		a.logError(expired)
+	}
+	return rest
+}
+
+// splitGraceExpired splits a failure into the parts about an unanswered
+// goodbye and everything else, looking inside a joined error.
+func splitGraceExpired(err error) (expired, rest error) {
+	if err == nil {
+		return nil, nil
+	}
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		var expireds, rests []error
+		for _, one := range joined.Unwrap() {
+			was, other := splitGraceExpired(one)
+			expireds = append(expireds, was)
+			rests = append(rests, other)
+		}
+		return errors.Join(expireds...), errors.Join(rests...)
+	}
+	if errors.Is(err, errFilesGraceExpired) {
+		return err, nil
+	}
+	return nil, err
+}
 
 // relayGrace is how long a file session relayed to a machine waits for
 // that machine to answer the close, once the client has gone.

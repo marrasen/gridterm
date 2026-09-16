@@ -1391,11 +1391,9 @@ func TestLettingGoOfTheWindowClosesAPaneOnAMachineOverThere(t *testing.T) {
 	// line that lets go of it.
 	chooseMenuItem(t, clickPlus(t, client, addr), "conn.disconnect")
 
-	// The pane says goodbye to its file session and waits filesGrace for
-	// the answer. A goodbye nobody answered still lets go, and says so:
-	// that is the only difference between the two paths, and it is read
-	// here rather than timed, because a test machine under load can take
-	// a quarter of a second over anything.
+	// The pane says goodbye to its file session and lets go either way,
+	// with nothing to read: letting go of a window is not something that
+	// can half work.
 	if n, up := client.root.Modal().(*ui.Notice); up {
 		t.Errorf("letting go reported %q: %s", n.Title, n.Message())
 	}
@@ -1414,6 +1412,36 @@ func TestLettingGoOfTheWindowClosesAPaneOnAMachineOverThere(t *testing.T) {
 		if strings.Contains(line, "margit") {
 			t.Errorf("the sidebar still says %q: %v", line, panelText(client, panelNow))
 		}
+	}
+}
+
+// And letting go of a window whose goodbye came back late says nothing to
+// the user either.
+//
+// filesGrace is one round trip to that window, spent on the goroutine
+// that draws, so a slow link or a pause in the garbage collector runs it
+// out with nothing wrong. There is nothing on a notice about it for the
+// user to act on, and the pane has gone whichever way it went, so it is
+// logged.
+func TestLettingGoOfAWindowThatWentQuietSaysNothingToTheUser(t *testing.T) {
+	client, addr, relay := aRelayedWindow(t)
+
+	// The link goes quiet for longer than the grace and then comes back,
+	// which is the slow round trip the grace really catches.
+	relay.stop()
+	time.AfterFunc(2*filesGrace, relay.resume)
+
+	chooseMenuItem(t, clickPlus(t, client, addr), "conn.disconnect")
+
+	if n, up := client.root.Modal().(*ui.Notice); up {
+		t.Errorf("letting go reported %q: %s", n.Title, n.Message())
+	}
+	if !client.logged.holds(errFilesGraceExpired.Error()) {
+		t.Errorf("nothing was logged about the goodbye going unanswered: %v", client.logged.all())
+	}
+	// And the window has gone, which is what letting go is for.
+	if client.windows.named(addr) != nil {
+		t.Error("the window is still held")
 	}
 }
 

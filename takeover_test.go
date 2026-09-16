@@ -1895,7 +1895,9 @@ func TestLettingGoOfFilesOnAWindowThatStoppedAnsweringComesBack(t *testing.T) {
 	select {
 	case err := <-done:
 		// And it says which of the two ways it ended: the far end never
-		// answered, so the channel was closed from here.
+		// answered, so the channel was closed from here. That is what the
+		// window logs rather than shows, so the two paths have to stay
+		// apart even though neither reaches the user.
 		if !errors.Is(err, errFilesGraceExpired) {
 			t.Errorf("letting go gave %v, want the goodbye to have gone unanswered", err)
 		}

@@ -995,6 +995,94 @@ func TestPanelKeepsTheRowOfAShellThatEndedOnItsOwn(t *testing.T) {
 	}
 }
 
+// Closing the row of a shell that ended takes it off the panel, the same
+// as clearing it does.
+//
+// The row kept a cross and lost its close, so the one command on the
+// menu answered "Terminal cannot be closed from here" while the row of a
+// connection that dropped closed perfectly well.
+func TestClosingTheRowOfAShellThatEndedTakesItOff(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	if err := a.openTab(); err != nil {
+		t.Fatalf("openTab: %v", err)
+	}
+	panelText(a, panelNow)
+	was := make(map[*term.Terminal]*conns.Entry, len(a.panes))
+	for pane, e := range a.panes {
+		was[pane] = e
+	}
+
+	// The shell on the first pane goes, and its row stays behind.
+	_ = a.shells[0].Close()
+	waitFor(t, a, "the pane of the shell that ended to go", func() bool {
+		a.reapExited()
+		return len(a.panes) == 1
+	})
+	var gone *conns.Entry
+	for pane, e := range was {
+		if a.panes[pane] == nil {
+			gone = e
+		}
+	}
+	if gone == nil {
+		t.Fatalf("no pane went: %v", panelText(a, panelNow))
+	}
+
+	a.panel.Select(gone)
+	if err := a.closeSelectedConnection(); err != nil {
+		t.Fatalf("closing the row of a shell that ended: %v", err)
+	}
+
+	panelText(a, panelNow)
+	for _, row := range a.panel.Rows() {
+		if row.Key == any(gone) {
+			t.Errorf("the row is still on the panel: %v", panelText(a, panelNow))
+		}
+	}
+}
+
+// Clearing the last row under a machine takes its commands with it.
+//
+// The commands are built from what the sidebar holds, and clearing is
+// the one path that empties a machine without closing anything. A window
+// that kept the commands offered a terminal on a machine it no longer
+// showed at all.
+func TestClearingTheLastRowOnAMachineTakesItsCommands(t *testing.T) {
+	s := sshtest.New(t)
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+
+	a.connect(serverConfig(t, s))
+	waitForPanes(t, a, 2)
+	host := serverConfig(t, s).Target()
+	want := termPrefix + remote.CommandName(host)
+	if _, ok := a.root.Commands.Lookup(want); !ok {
+		t.Fatalf("no %q command while %s is connected", want, host)
+	}
+
+	// The machine drops, which greys its row and ends the shell on it.
+	s.CloseClients()
+	waitFor(t, a, "the window to see the machine go", func() bool {
+		a.reapExited()
+		return a.machines.named(host) == nil
+	})
+
+	if err := a.clearFinished(); err != nil {
+		t.Fatalf("clearFinished: %v", err)
+	}
+
+	for _, row := range panelText(a, panelNow) {
+		if strings.Contains(row, host) {
+			t.Fatalf("the sidebar still shows %q after clearing", row)
+		}
+	}
+	if _, ok := a.root.Commands.Lookup(want); ok {
+		t.Errorf("%q is still registered for a machine the sidebar no longer holds", want)
+	}
+}
+
 // The close-pane key with the panel focused used to detach the panel and
 // leave the window with no way to get it back.
 func TestClosePaneWillNotTakeThePanelOutOfTheTree(t *testing.T) {

@@ -366,11 +366,13 @@ func (a *app) removePane(w ui.Widget, keep bool) error {
 			if keep {
 				// The shell went on its own, so the row stays and says
 				// so. The pane has gone with it, so there is nothing
-				// left to reveal or close and clearing the row is all
-				// that is left to do with it.
+				// left to reveal, and closing the row and clearing it
+				// are the same act: the row goes off the panel. The
+				// same as greyRow does for a connection that dropped.
 				e.Meter.Close()
-				e.Reveal, e.Close = nil, nil
-				e.Clear = a.dropRow(e)
+				e.Reveal = nil
+				drop := a.dropRow(e)
+				e.Close, e.Clear = drop, drop
 			} else {
 				a.registry.Drop(e)
 			}

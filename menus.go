@@ -5,7 +5,7 @@ import (
 	"image/color"
 	"slices"
 
-	"github.com/marrasen/gridterm/serve"
+	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/vt"
 )
@@ -104,10 +104,10 @@ func (a *app) updateStatus() {
 	}
 	var key statusKey
 	if a.serving.on() {
-		clients := a.serving.clients()
-		key.addr, key.clients = a.serving.addr(), len(clients)
-		if len(clients) > 0 {
-			key.first = clients[0]
+		key = statusKey{
+			addr:    a.serving.addr(),
+			clients: a.serving.joined(),
+			changes: a.serving.changes(),
 		}
 	}
 	if key == a.statusWas {
@@ -118,12 +118,16 @@ func (a *app) updateStatus() {
 }
 
 // statusKey is what the menu bar status is made of: two frames with the
-// same key say the same thing. The first client is held by pointer,
-// because a client keeps the name and address it connected with.
+// same key say the same thing.
+//
+// It counts the comings and goings rather than holding the client it last
+// named: a key that held one would keep a connection that has gone alive,
+// and one window replaced by another of the same name still moves the
+// count.
 type statusKey struct {
 	addr    string
-	first   *serve.Client
 	clients int
+	changes uint64
 }
 
 // servingStatus is what the menu bar says about this window being
@@ -150,9 +154,13 @@ func (a *app) servingStatus() (string, color.RGBA) {
 //
 // Both are read against the bar's own ground, so neither is dimmed
 // towards the window's background: that ground is lighter, and a status
-// blended into it stops being legible.
-func statusTakenFG(p vt.Palette) color.RGBA { return p.ANSI[9] }
-func statusIdleFG(p vt.Palette) color.RGBA  { return p.ANSI[1] }
+// blended into it stops being legible. The bright red is lifted a fifth
+// of the way to white, which is what puts the two far enough apart to
+// read as a change of colour rather than as the same red twice.
+func statusTakenFG(p vt.Palette) color.RGBA {
+	return grid.Blend(p.ANSI[9], p.ANSI[15], 1, 5)
+}
+func statusIdleFG(p vt.Palette) color.RGBA { return p.ANSI[1] }
 
 // helpMenu is the menu bar title the key list hangs under. It stays
 // last, so the menus the window adds while it runs go in front of it.

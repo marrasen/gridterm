@@ -50,6 +50,9 @@ func icon(k conns.Kind) grid.Art {
 const pulseStep = 200 * time.Millisecond
 
 // newPanel builds the list of connections, in the window's colours.
+//
+// ui/list_fill_test.go has a copy of this style as panelStyle(), so a
+// change here belongs there too.
 func (a *app) newPanel() *ui.List {
 	l := ui.NewList()
 	l.Style = ui.ListStyle{

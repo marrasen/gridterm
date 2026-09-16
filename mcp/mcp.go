@@ -21,6 +21,8 @@ import (
 	"runtime/debug"
 	"strings"
 	"sync"
+
+	"github.com/marrasen/gridterm/agent"
 )
 
 // protocolVersion is the one version this speaks. An agent that asks
@@ -30,7 +32,11 @@ const protocolVersion = "2025-06-18"
 
 // longestLine caps one message, so a client that sends no newline
 // cannot make this process hold an unbounded buffer.
-const longestLine = 1 << 22
+//
+// Half what the wire takes, because what a message carries goes on to
+// the window as a request of its own: a message this takes is one the
+// window will read rather than hang up over.
+const longestLine = agent.LongestRequest / 2
 
 // request is one JSON-RPC message from the agent.
 //
@@ -121,6 +127,14 @@ type Screen struct {
 	// Alt says a full-screen program is drawing, so the screen is all
 	// there is to read.
 	Alt bool `json:"full_screen_program"`
+
+	// All says the read asked for more lines than the pane has kept, so
+	// this is everything there is.
+	All bool `json:"that_is_everything"`
+
+	// Note is what the window had to say about this answer beyond the
+	// screen itself, and is empty when it had nothing.
+	Note string `json:"note,omitempty"`
 }
 
 // Until says what a wait is waiting for.
@@ -446,7 +460,8 @@ Give wait_for contains when you know what the screen will say, or quiet_ms to wa
 screen to stop changing. It gives back the screen either way, and says when the time ran
 out instead. A command whose output goes through a pager -- systemctl, journalctl, git log,
 man -- needs --no-pager or a pipe to cat, or you will be stuck in less, where q gets you out.
-list_panes lists the panes you have been handed, and that is all it lists.`
+list_panes lists the panes you have been handed, and that is all it lists. In an answer with
+a screen, the screen ends at a line reading -- gridterm --, and the rest is gridterm talking.`
 
 // Rules is what an agent may do in a pane it has been handed, and what
 // it may not.

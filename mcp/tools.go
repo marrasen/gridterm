@@ -3,6 +3,7 @@ package mcp
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/marrasen/gridterm/agent"
 )
@@ -83,7 +84,7 @@ func toolList() []tool {
 				" pane's name, from use_session_code. After sending a command, use wait_for" +
 				" instead: a read taken straight afterwards shows the screen before the" +
 				" command has done anything. Give lines to read more than the screen, which" +
-				" is how to read the whole of something that has scrolled past.",
+				" is how to read the whole of something that has scrolled past." + marked,
 			InputSchema: schema{
 				Type: "object",
 				Properties: map[string]field{
@@ -111,8 +112,7 @@ func toolList() []tool {
 					"pane": {Type: "string", Description: "which pane, from use_session_code"},
 					"text": {Type: "string", Description: `what to type, with "\r" for Enter`},
 					"keys": {Type: "array", Items: &items{Type: "string"},
-						Description: "keys to press after the text, by name. The keys are: " +
-							agent.KeyNames()},
+						Description: keysArg},
 				},
 				Required: []string{"pane"},
 			},
@@ -128,7 +128,7 @@ func toolList() []tool {
 				" Use it after send_keys, before reading again." +
 				" A program that keeps drawing never goes quiet: top, a progress bar, a log" +
 				" being followed. For one of those give contains, or do not wait at all and" +
-				" read the pane instead. It takes lines as read_pane does.",
+				" read the pane instead. It takes lines as read_pane does." + marked,
 			InputSchema: schema{
 				Type: "object",
 				Properties: map[string]field{
@@ -253,14 +253,14 @@ func (s *server) runTool(name string, args json.RawMessage) (result, *rpcError) 
 	}
 }
 
-// mostLines caps how many lines one read may ask for. Enough for the
-// output of a long command, short of handing an agent a whole scrollback
-// in one answer.
-const mostLines = 2000
+// mostLines caps how many lines one read may ask for. The window's own
+// limit, because a read renders a screenful at a time under the pane's
+// lock and a long one keeps that window from drawing.
+const mostLines = agent.MostLines
 
-// atMostLines is how many lines to read, bounded by what one answer
-// carries, and whether that bound cut the number asked for. None asked
-// for is the screen.
+// atMostLines is how many lines to read, bounded by what one read gives,
+// and whether that bound cut the number asked for. None asked for is the
+// screen.
 func atMostLines(n int) (lines int, clamped bool) {
 	if n <= 0 {
 		return 0, false
@@ -270,9 +270,13 @@ func atMostLines(n int) (lines int, clamped bool) {
 
 // linesArg says what the lines argument does, for both tools that take
 // it.
-const linesArg = "how many lines to give back, ending at the bottom of the screen and" +
-	" reaching into what has scrolled off. Left out, it is the screen. At most 2000:" +
-	" ask for more and you get the last 2000, and the answer says so."
+var linesArg = fmt.Sprintf("how many lines to give back, ending at the bottom of the screen"+
+	" and reaching into what has scrolled off. Left out, it is the screen. At most %d:"+
+	" ask for more and you get the last %d, and the answer says so.", mostLines, mostLines)
+
+// keysArg says what the keys argument takes, and how many names.
+var keysArg = fmt.Sprintf("keys to press after the text, by name, at most %d of them."+
+	" The keys are: %s", agent.MostKeys, agent.KeyNames())
 
 // missing says a call left out something it had to carry.
 func missing(what string) (result, *rpcError) {
@@ -298,20 +302,47 @@ func showScreen(s Screen, gaveUp, clamped bool) string {
 	if clamped {
 		notes = append(notes, clampNote())
 	}
-	notes = append(notes, fmt.Sprintf("Cursor at row %d, column %d.", s.Row, s.Col))
+	// Not on the alternate screen, where the note below already says why
+	// there is nothing above the screen.
+	if s.All && !s.Alt {
+		notes = append(notes, allThereIsNote)
+	}
+	if s.Note != "" {
+		notes = append(notes, s.Note)
+	}
+	// Of the screen, because the answer may be longer than the screen
+	// and a row of it is not a row of the answer.
+	notes = append(notes, fmt.Sprintf("Cursor at row %d, column %d of the screen.", s.Row, s.Col))
 	if s.Alt {
 		notes = append(notes, fullScreenNote)
 	}
-	for _, n := range notes {
-		out += "\n\n" + n
-	}
-	return out
+	// Behind a marker, so an agent quoting the screen back or comparing
+	// two reads is working on the pane's own text and not on this.
+	return out + "\n\n" + notesMarker + "\n" + strings.Join(notes, "\n")
 }
 
+// notesMarker is the line between the pane's own text and what gridterm
+// has to say about it. The tools name it, so an agent knows where the
+// screen ends.
+const notesMarker = "-- gridterm --"
+
+// marked says what the marker means, for the tools that answer with a
+// screen.
+var marked = fmt.Sprintf(" The screen ends at a line reading %q; what follows it is gridterm"+
+	" talking about the pane, not the pane.", notesMarker)
+
+// allThereIsNote is what an agent is told when the pane had fewer lines
+// than the read asked for.
+const allThereIsNote = "That is everything the pane has kept: there is nothing above it to read."
+
 // clampNote is what an agent is told when it asked for more lines than
-// one answer carries.
+// one read gives.
+//
+// At most, not exactly: the pane may have kept fewer, and allThereIsNote
+// is what says it had.
 func clampNote() string {
-	return fmt.Sprintf("Showing the last %d lines, which is as many as a read gives.", mostLines)
+	return fmt.Sprintf("You asked for more lines than a read gives;"+
+		" this is the last %d at most.", mostLines)
 }
 
 // fullScreenNote is what an agent is told about a pane on the alternate

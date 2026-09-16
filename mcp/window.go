@@ -115,6 +115,8 @@ func asScreen(look agent.Look) Screen {
 		Row:    look.Row,
 		Col:    look.Col,
 		Alt:    look.Alt,
+		All:    look.All,
+		Note:   look.Note,
 	}
 }
 

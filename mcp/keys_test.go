@@ -2,8 +2,11 @@ package mcp
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/marrasen/gridterm/agent"
 )
 
 // use is the call that opens the one pane a fakePanes has.
@@ -158,7 +161,7 @@ func TestTheToolsSayWhatKeysAndLinesAreFor(t *testing.T) {
 			if !there {
 				t.Fatalf("%s does not take lines: %+v", tl.Name, tl.InputSchema.Properties)
 			}
-			if lines.Type != "integer" || !strings.Contains(lines.Description, "2000") {
+			if lines.Type != "integer" || !strings.Contains(lines.Description, strconv.Itoa(mostLines)) {
 				t.Errorf("lines is %+v, and does not say the cap", lines)
 			}
 		}
@@ -221,14 +224,14 @@ func TestAReadCutToTheMostLinesSaysSo(t *testing.T) {
 		if failed {
 			t.Fatalf("%s with %s failed: %q", tc.what, tc.args, told)
 		}
-		if got := strings.Contains(told, "as many as a read gives"); got != tc.clamped {
+		if got := strings.Contains(told, "more lines than a read gives"); got != tc.clamped {
 			t.Errorf("%s with %s said %q", tc.what, tc.args, told)
 		}
 	}
 }
 
-// The tools say that a read of more lines than one answer carries gives
-// the last 2000.
+// The tools say that a read of more lines than one read gives comes back
+// cut to the most a read gives.
 func TestTheToolsSayHowManyLinesAReadGives(t *testing.T) {
 	answers := talk(t, &fakePanes{}, `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
 	raw, err := json.Marshal(answers[0].Result)
@@ -251,8 +254,9 @@ func TestTheToolsSayHowManyLinesAReadGives(t *testing.T) {
 		if said == "" {
 			t.Fatalf("there is no %s", name)
 		}
-		if !strings.Contains(said, "2000") || !strings.Contains(said, "the answer says so") {
-			t.Errorf("%s never says what happens past 2000 lines: %q", name, said)
+		if !strings.Contains(said, strconv.Itoa(mostLines)) ||
+			!strings.Contains(said, "the answer says so") {
+			t.Errorf("%s never says what happens past %d lines: %q", name, mostLines, said)
 		}
 	}
 }
@@ -277,7 +281,7 @@ func TestTheAnswerSaysWhereTheCursorIsAndWhetherTheScreenIsAllThereIs(t *testing
 		if failed {
 			t.Fatalf("%s failed: %q", tc.what, told)
 		}
-		if !strings.Contains(told, "Cursor at row 7, column 2.") {
+		if !strings.Contains(told, "Cursor at row 7, column 2 of the screen.") {
 			t.Errorf("%s did not say where the cursor is: %q", tc.what, told)
 		}
 		if strings.Contains(told, "full-screen program") {
@@ -297,6 +301,162 @@ func TestTheAnswerSaysWhereTheCursorIsAndWhetherTheScreenIsAllThereIs(t *testing
 		if !strings.Contains(told, "This is a full-screen program: the screen is all there is,"+
 			" and lines above it cannot be read.") {
 			t.Errorf("%s did not say the screen is all there is: %q", tc.what, told)
+		}
+	}
+}
+
+// A message too long to be a message is refused here, before it is
+// turned into a request the window would hang up over.
+//
+// This server's limit and the wire's have to agree: a message this takes
+// and the window will not read leaves the agent's connection dead with
+// nothing said about why.
+func TestAMessageTooLongIsRefusedBeforeTheWindowSeesIt(t *testing.T) {
+	panes := &fakePanes{code: "gt1-2222-abc", screen: "$ "}
+	answers := talk(t, panes, use,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":`+
+			`{"name":"send_keys","arguments":{"pane":"pane-1","text":"`+
+			strings.Repeat("x", 2<<20)+`"}}}`)
+
+	if len(answers) < 2 || answers[1].Error == nil {
+		t.Fatalf("a message of two megabytes was taken: %+v", answers)
+	}
+	if !strings.Contains(answers[1].Error.Message, "too long to read") {
+		t.Errorf("it said %q", answers[1].Error.Message)
+	}
+	panes.mu.Lock()
+	defer panes.mu.Unlock()
+	if panes.typed != "" {
+		t.Errorf("%d bytes of it reached the window", len(panes.typed))
+	}
+}
+
+// More key names than one call presses is refused, with the number it
+// takes, and nothing is sent.
+func TestMoreKeysThanOneCallPressesIsRefused(t *testing.T) {
+	panes := &fakePanes{code: "gt1-2222-abc", screen: "$ "}
+	many := make([]string, agent.MostKeys+1)
+	for i := range many {
+		many[i] = `"Enter"`
+	}
+	answers := talk(t, panes, use,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":`+
+			`{"name":"send_keys","arguments":{"pane":"pane-1","keys":[`+
+			strings.Join(many, ",")+`]}}}`)
+
+	text, failed := textOf(t, byID(t, answers)[2])
+	if !failed {
+		t.Errorf("it pressed %d keys: %q", len(many), text)
+	}
+	if !strings.Contains(text, strconv.Itoa(agent.MostKeys)) {
+		t.Errorf("it said %q, which does not say how many it takes", text)
+	}
+	panes.mu.Lock()
+	defer panes.mu.Unlock()
+	if len(panes.pressed) > 0 {
+		t.Errorf("the window was told to press %v", panes.pressed)
+	}
+
+	// And the tool says the cap, so an agent need not find it by being
+	// refused.
+	listed := talk(t, &fakePanes{}, `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
+	raw, err := json.Marshal(listed[0].Result)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var got struct {
+		Tools []tool `json:"tools"`
+	}
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("that is not a tool list: %s", raw)
+	}
+	for _, have := range got.Tools {
+		if have.Name != "send_keys" {
+			continue
+		}
+		if said := have.InputSchema.Properties["keys"].Description; !strings.Contains(
+			said, strconv.Itoa(agent.MostKeys)) {
+			t.Errorf("send_keys does not say how many keys it takes: %q", said)
+		}
+	}
+}
+
+// A read that reached the top of what the pane has kept says so, rather
+// than leaving the agent to ask for the same lines again.
+func TestAReadOfEverythingThereIsSaysSo(t *testing.T) {
+	for _, tc := range []struct {
+		all, alt bool
+		says     bool
+	}{
+		{all: true, says: true},
+		{all: false, says: false},
+		// A full-screen program gets the note about that instead, which
+		// says the same thing for a different reason.
+		{all: true, alt: true, says: false},
+	} {
+		panes := &fakePanes{code: "gt1-2222-abc", screen: "$ ", all: tc.all, alt: tc.alt}
+		answers := talk(t, panes, use,
+			`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":`+
+				`{"name":"read_pane","arguments":{"pane":"pane-1","lines":400}}}`)
+
+		told, failed := textOf(t, byID(t, answers)[2])
+		if failed {
+			t.Fatalf("the read failed: %q", told)
+		}
+		if got := strings.Contains(told, "everything the pane has kept"); got != tc.says {
+			t.Errorf("all=%v alt=%v said %q", tc.all, tc.alt, told)
+		}
+	}
+}
+
+// The screen ends at a marker, and the tools say so.
+//
+// Everything after it is gridterm talking. An agent that compares two
+// reads, or quotes a line back as contains, has to be able to tell the
+// pane's own text from what was added to it.
+func TestTheNotesComeAfterAMarkerTheToolsName(t *testing.T) {
+	panes := &fakePanes{code: "gt1-2222-abc", screen: "$ ls\nfile\n$ "}
+	answers := talk(t, panes, use,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":`+
+			`{"name":"read_pane","arguments":{"pane":"pane-1"}}}`)
+
+	told, failed := textOf(t, byID(t, answers)[2])
+	if failed {
+		t.Fatalf("the read failed: %q", told)
+	}
+	screen, notes, marked := strings.Cut(told, "\n\n"+notesMarker+"\n")
+	if !marked {
+		t.Fatalf("the answer has no marker: %q", told)
+	}
+	if screen != panes.screen {
+		t.Errorf("the screen came back as %q, want %q", screen, panes.screen)
+	}
+	if !strings.Contains(notes, "Cursor at row") {
+		t.Errorf("the notes are %q", notes)
+	}
+
+	// And the tools name the marker, so the agent is not left to notice
+	// it.
+	listed := talk(t, &fakePanes{}, `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
+	raw, err := json.Marshal(listed[0].Result)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var got struct {
+		Tools []tool `json:"tools"`
+	}
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("that is not a tool list: %s", raw)
+	}
+	for _, name := range []string{"read_pane", "wait_for"} {
+		var said string
+		for _, have := range got.Tools {
+			if have.Name == name {
+				said = have.Description
+			}
+		}
+		if !strings.Contains(said, notesMarker) {
+			t.Errorf("%s never names the marker: %q", name, said)
 		}
 	}
 }

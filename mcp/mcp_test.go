@@ -31,10 +31,12 @@ type fakePanes struct {
 	lines   int
 	pressed []string
 
-	// row and col are where the pane says its cursor is, and alt says a
-	// full-screen program is drawing there.
+	// row and col are where the pane says its cursor is, alt says a
+	// full-screen program is drawing there, and all says the pane had
+	// fewer lines than the read asked for.
 	row, col int
 	alt      bool
+	all      bool
 
 	// waiting is closed when a wait has started, and letGo lets it
 	// finish, for a test about what else can be asked meanwhile.
@@ -73,7 +75,7 @@ func (f *fakePanes) Read(id string, lines int) (Screen, error) {
 
 // look is the pane as this fake has it.
 func (f *fakePanes) look() Screen {
-	return Screen{Screen: f.screen, Gone: f.gone, Row: f.row, Col: f.col, Alt: f.alt}
+	return Screen{Screen: f.screen, Gone: f.gone, Row: f.row, Col: f.col, Alt: f.alt, All: f.all}
 }
 
 func (f *fakePanes) Send(id, text string, keys []string) error {

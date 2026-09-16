@@ -57,9 +57,27 @@ obvious place to go back to.
      today. A machine that has to be dialled first goes through
      `openRoute`, so `opening` needs to say "into this pane" the way
      `at` says which split.
-   - **The wording depends on how it ended.** A shell the user typed
-     exit into did not have its connection closed, and the question
-     has to say what really happened.
+   - **The wording.** Every shell gets "Connection closed. Reconnect?",
+     whether the transport went or the user typed exit. That is what
+     ssh itself prints, and gridterm calls every pane a connection.
+   - **A command is the one that differs**, and not for tidiness.
+     Nothing is being connected: the command's channel closed and the
+     SSH connection is still up. Picking the choice re-runs the
+     command, which for `make deploy` or anything with side effects is
+     a thing the user has to see before they press it. So the question
+     names the command and the choice says it runs it again.
+
+2. **Say how the command ended, in the question.** Marcus's own case
+   for the feature: "maybe it errored, maybe this time it doesn't". The
+   question could read "`make deploy` finished, exit 1. Run it again?"
+   - **Remote commands already have it.** `remote.Shell.Wait` gives
+     back an `*ssh.ExitError`, and `ExitStatus()` is the number.
+     Nothing reads it today.
+   - **Ordinary panes have it when the shell says so**, through
+     `vt.Terminal.Command()`, which reads the shell's own OSC 133 and
+     OSC 633 marks. `Exit()` gives the status and whether there was
+     one; a shell with no integration gives nothing, and the question
+     has to stay honest about that rather than saying "exit 0".
 
 ## The agent, through MCP
 

@@ -177,6 +177,25 @@ func (c *connLog) Failed(err error) {
 	c.end()
 }
 
+// Refused says the machine answered but what was asked for on it could
+// not be opened.
+//
+// Not Failed: the connection was made and the window is holding it, so
+// an account saying it was not made would be about a live machine.
+func (c *connLog) Refused(name, what string, err error) {
+	if err == nil {
+		return
+	}
+	// Split first, for the reason Failed gives.
+	for _, line := range strings.Split(err.Error(), "\n") {
+		c.sayBadly(line)
+	}
+	c.write("")
+	c.note(name + " is connected, but " + what + " could not be opened.")
+	c.note("This pane is the record of that: close it when you have read it.")
+	c.end()
+}
+
 // Connected says the connection was made with nothing to ride in the
 // pane, which is what a connection opened for files alone is.
 //

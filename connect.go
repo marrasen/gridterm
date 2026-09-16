@@ -16,7 +16,7 @@ import (
 // command to run, or a pane of the file manager.
 type opening struct {
 	// command is what the shell runs, and empty for a shell to type
-	// into.
+	// into. It is read only when files is false.
 	command []string
 
 	// files opens a pane of the file manager on the machine and no shell
@@ -343,7 +343,7 @@ func (a *app) becamePane(name string, open opening, pane *term.Terminal, log *co
 func (a *app) becomeFilesPane(name string, pane *term.Terminal, log *connLog) {
 	if err := a.browseOn(name); err != nil {
 		a.endedAs(pane, "no files")
-		log.Failed(err)
+		log.Refused(name, "the files", err)
 		return
 	}
 	// Said before the pane goes, so closing it lets go of the account
@@ -370,7 +370,7 @@ func (a *app) becomeShellPane(m *machine, name string, command []string,
 	})
 	if err != nil {
 		a.endedAs(pane, "no terminal")
-		log.Failed(err)
+		log.Refused(name, "a terminal", err)
 		return
 	}
 	// Which connection the pane rides on rather than which machine it is
@@ -388,8 +388,7 @@ func (a *app) becomeShellPane(m *machine, name string, command []string,
 // connected to.
 func (a *app) startOn(name string, open opening, at *spot) error {
 	if open.files {
-		// A file pane goes in the file manager, which is a tab of its
-		// own, so the spot the request named is not one it can land in.
+		// at is not used: a file pane goes in the file manager's own tab.
 		return a.browseOn(name)
 	}
 	m := a.about(name).machine

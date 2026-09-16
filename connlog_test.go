@@ -541,3 +541,28 @@ func TestClosingThePaneAfterConnectedDoesNotGiveUp(t *testing.T) {
 		t.Errorf("the account is %v, want what was said while it connected", got)
 	}
 }
+
+// A machine that answers and then cannot open what was asked for on it
+// is still connected, and the account says that rather than saying the
+// connection was never made.
+func TestTheAccountOfSomethingThatWouldNotOpen(t *testing.T) {
+	c := atTime(newConnLog(nil))
+
+	c.Say("connected to margit")
+	c.Refused("margit", "the files", errors.New("subsystem request failed"))
+
+	said := strings.Join(c.Lines(), "\n")
+	if strings.Contains(said, "The connection was not made") {
+		t.Errorf("it says the dial failed on a machine that answered:\n%s", said)
+	}
+	for _, want := range []string{"subsystem request failed", "margit is connected", "the files"} {
+		if !strings.Contains(said, want) {
+			t.Errorf("the account does not say %q:\n%s", want, said)
+		}
+	}
+	// Nothing more is written after it, the way a failure ends the log.
+	c.Say("later")
+	if got := c.Lines(); strings.Contains(strings.Join(got, "\n"), "later") {
+		t.Errorf("the account went on after it ended:\n%s", strings.Join(got, "\n"))
+	}
+}

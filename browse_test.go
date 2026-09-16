@@ -15,6 +15,7 @@ import (
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/files"
+	"github.com/marrasen/gridterm/ui/term"
 )
 
 // openFilesFromThePlus opens a file pane on a machine the way a user
@@ -893,8 +894,11 @@ func TestFilesOnASavedMachineConnectsFirst(t *testing.T) {
 	}
 	chooseMenuItem(t, menu, "conn.files")
 
-	// A pane holds the place while the connection is made.
-	connecting := waitForConnecting(t, a)
+	// A pane holds the place while the connection is made. Read now
+	// rather than waited for: the command runs where it is chosen, so
+	// the row is there as soon as the line is, and waiting for a row
+	// that goes again when the pane closes is a race.
+	connecting := rowSaying(t, a, "connecting")
 	if connecting.Host != "margit" || connecting.Kind != conns.Files {
 		t.Errorf("the pane watching the connection is %v on %q, want files on margit",
 			connecting.Kind, connecting.Host)
@@ -1053,5 +1057,149 @@ func TestFilesOnAConnectedMachineDialsNothing(t *testing.T) {
 	}
 	if *dials != 0 {
 		t.Errorf("%d machines were dialled for a pane on a machine already connected", *dials)
+	}
+}
+
+// rowSaying is the sidebar row whose label says this, now rather than
+// when it turns up.
+func rowSaying(t *testing.T, a *testApp, label string) *conns.Entry {
+	t.Helper()
+	for _, group := range a.registry.Groups(time.Now()) {
+		for _, row := range group.Rows {
+			if row.Label == label {
+				return row.Entry
+			}
+		}
+	}
+	t.Fatalf("no row says %q: %v", label, panelText(a, time.Now()))
+	return nil
+}
+
+// closeRow closes a pane the way the x on its sidebar row does.
+func closeRow(t *testing.T, a *testApp, pane *term.Terminal) {
+	t.Helper()
+	e := a.panes[pane]
+	if e == nil || e.Close == nil {
+		t.Fatal("the pane has no row to close")
+	}
+	if err := e.Close(); err != nil {
+		t.Fatalf("closing the row: %v", err)
+	}
+}
+
+// The pane that watches the connection can be the last one in the
+// window, so the file pane has to be in before it goes: the window quits
+// with its last pane.
+func TestTheWindowStaysWhenTheConnectingPaneWasItsLast(t *testing.T) {
+	a, _ := aSavedMachine(t)
+
+	chooseMenuItem(t, clickPlus(t, a, "margit"), "conn.files")
+	// Nothing else left in the window while it connects: the pane it
+	// started with goes, the way closing its row does.
+	closeRow(t, a, localPane(t, a))
+
+	waitFor(t, a, "a file pane on margit", func() bool { return filePaneOn(a, "margit") != nil })
+	if a.quit.Load() {
+		t.Fatal("the window quit when the pane that was connecting closed")
+	}
+	if len(a.panes) != 0 {
+		t.Errorf("%d terminals are left, want only the file manager", len(a.panes))
+	}
+	checkTree(t, a)
+}
+
+// A machine that answers but will not open its files stays connected,
+// and the account says what could not be opened rather than saying the
+// connection was never made.
+func TestFilesOnAMachineThatRefusesThemKeepsTheConnection(t *testing.T) {
+	a, s := aSavedMachine(t)
+	s.RefuseSFTP()
+
+	chooseMenuItem(t, clickPlus(t, a, "margit"), "conn.files")
+	pane := newestPane(t, a)
+	waitFor(t, a, "the pane to say the files could not be opened", func() bool {
+		return strings.Contains(paneText(pane), "could not be opened")
+	})
+
+	got := paneText(pane)
+	if strings.Contains(got, "The connection was not made") {
+		t.Errorf("the account says the dial failed on a machine that answered: %q", got)
+	}
+	if !strings.Contains(got, "margit is connected") {
+		t.Errorf("the account does not say the machine is still connected: %q", got)
+	}
+	if a.machines.named("margit") == nil {
+		t.Errorf("the connection went with the files: %v", a.machines.names())
+	}
+	if e := a.panes[pane]; e == nil || e.Label != "no files" {
+		t.Errorf("the row says %q, want it to say the files did not open", e.Label)
+	}
+	if a.files != nil {
+		t.Errorf("a file manager opened on a machine that refused SFTP: %v", filesRows(a))
+	}
+	// And the whole account is where every other one is.
+	chooseMenuItem(t, clickPlus(t, a, "margit"), "conn.log")
+	n := awaitModal(t, a, "the account", byTitle[*ui.Notice]("How margit was reached"))
+	if !strings.Contains(n.Message(), "connected to margit") {
+		t.Errorf("the account is %q", n.Message())
+	}
+}
+
+// "Files" first and "Terminal" while it is still on its way: the shell
+// opens on the connection the files asked for, once it lands.
+func TestATerminalWaitsForAConnectionAskedForByFiles(t *testing.T) {
+	a, s := aSavedMachine(t)
+	dials := dialCounter(a)
+
+	chooseMenuItem(t, clickPlus(t, a, "margit"), "conn.files")
+	if a.about("margit").dialling == nil {
+		t.Fatal("the files request is not on its way")
+	}
+	clickTerminalLine(t, a, "margit")
+
+	f := awaitModal(t, a, "the question about the one on its way",
+		byTitlePrefix[*ui.Form]("Already connecting to"))
+	pressButton(t, a, f, "Wait for it")
+
+	waitFor(t, a, "a shell on margit", func() bool {
+		m := a.machines.named("margit")
+		return m != nil && len(a.machines.panesOn(m)) == 1
+	})
+	if filePaneOn(a, "margit") == nil {
+		t.Error("the file pane the connection was asked for is not there")
+	}
+	if n := s.Conns(); n != 1 {
+		t.Errorf("the server saw %d logins, want the one both ride on", n)
+	}
+	if *dials != 1 {
+		t.Errorf("%d machines were dialled, want the one", *dials)
+	}
+}
+
+// The machine -ssh put the panes on is reached through nothing this
+// window holds, so "Files" on it says so rather than dialling, even when
+// the server list holds the same name.
+func TestFilesOnTheMachineThePanesRunOnDialsNothing(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	withMenubar(t, a)
+	pinServers(t, a)
+	dials := dialCounter(a)
+	a.localHost = "tester@box"
+	saveHostNamed(t, a, "tester@box", "box.example")
+	a.refreshServers()
+
+	chooseMenuItem(t, clickPlus(t, a, "tester@box"), "conn.files")
+
+	n := awaitModal[*ui.Notice](t, a, "the reason it cannot", nil)
+	if !strings.Contains(n.Message(), "did not open that connection") {
+		t.Errorf("it said %q", n.Message())
+	}
+	if *dials != 0 {
+		t.Errorf("%d machines were dialled for the machine the panes already run on", *dials)
+	}
+	if a.files != nil {
+		t.Errorf("a file manager opened: %v", filesRows(a))
 	}
 }

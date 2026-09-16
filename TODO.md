@@ -47,27 +47,55 @@ needs an answer from Marcus is last.
    pointer's cell and calls `ebiten.SetCursorShape`. Tests ask the root
    over each kind of divider and over a pane.
 
-4. **A prompt for the agent, not a bare code.** Handing a pane over
-   puts a ready-to-paste instruction on the clipboard and shows it in
-   the dialog: run `gridterm -mcp` as an MCP server over standard input
-   and output (with the line that adds it to Claude Code, and the JSON
-   for other hosts), then call `use_session_code` with the code, which
-   gives a pane id, then `read_pane`, `send_keys` (with `
-` for Enter)
-   and `wait_for` on that pane, and nothing else. The port is inside the
-   code, so no address is needed; the agent has to run on this machine.
-   The MCP server also says the same in the `instructions` field of its
-   `initialize` answer, so an agent that is already connected learns the
-   workflow without the prompt. The tool descriptions are reread as an
-   agent that knows nothing about gridterm would read them.
+4. **A prompt for the agent, not a bare code.** Done in part. Handing
+   a pane over puts a ready-to-paste instruction on the clipboard and
+   shows it in the dialog: run `gridterm -mcp` as an MCP server over
+   standard input and output, then call `use_session_code` with the
+   code, then `read_pane`, `send_keys` and `wait_for` on that pane. The
+   MCP server says the same in the `instructions` field of its
+   `initialize` answer, and the tool descriptions were reread for an
+   agent that knows nothing about gridterm. Marcus answered the open
+   question on 2026-09-16: let the user pick the agent host, remember
+   the pick, and write a skill as well. That is items 5 and 6.
 
-   **Question for Marcus:** which agent hosts should the prompt give a
-   config line for? Claude Code is one (`claude mcp add gridterm --
-   gridterm -mcp`). Codex, Cursor and a generic `.mcp.json` snippet are
-   the others on offer. And is a prompt enough, or should gridterm also
-   write a skill file (`gridterm -mcp-skill`) for hosts that install
-   skills? The recommendation is the prompt plus the `instructions`
-   field, and no skill file until a host needs one.
+5. **Pick the agent host, and remember it.** The hand-over dialog
+   offers the host the prompt is for: Claude Code, Codex, Cursor, or
+   another host that takes a JSON MCP config. The prompt's setup lines
+   follow the pick. The pick is kept in the settings file, so the next
+   hand-over starts from it.
+
+6. **A skill for the host.** The dialog offers to write a skill for
+   the picked host: a `SKILL.md` that says what gridterm is, how to
+   reach the server, and how to work in a pane, with the tool workflow
+   and the rules from the prompt. For Claude Code it goes under
+   `~/.claude/skills/gridterm/`; for a host whose skill directory is
+   not known it goes under gridterm's own config directory and the
+   dialog says where. `gridterm -mcp-skill` prints the same file. A
+   disk error is reported, never worked around.
+
+7. **Tools enough for real work.** Checked against four jobs on
+   2026-09-16: getting a user out of vim, opening top sorted on memory,
+   installing midnight commander and copying a folder with it, and
+   finding why sshd cannot be reached. What holds today: `send_keys`
+   puts bytes in as given, so Escape, `:q!` and Enter work, and so do
+   `top` and `M`. What is missing:
+   - **Named keys.** An agent should not have to know that Escape is
+     `` or that an arrow key depends on the program's mode.
+     `send_keys` gets a `keys` list of names (Escape, Enter, Tab, Up,
+     Down, Left, Right, Home, End, PageUp, PageDown, Insert, Delete,
+     F1 to F12, Ctrl+C and the like) that the pane's own terminal
+     encodes the way it encodes a key press here. Midnight commander
+     needs Tab, F5, Insert and Enter, and vim needs Escape.
+   - **Scrollback.** `read_pane` shows the screen and nothing above it.
+     A `lines` argument reads that many lines ending at the bottom,
+     reaching into what scrolled off, so `ss -tlnp` and `journalctl`
+     can be read whole.
+   - **Passwords.** The rules must say that a password prompt is the
+     user's to answer: the agent asks the user to type it into the
+     pane and then waits with `wait_for`. `sudo apt install` needs it.
+   - **A screen that never settles.** `wait_for` with nothing to wait
+     for waits for quiet, which `top` never is. The description says
+     to use `contains` or `read_pane` for a program that keeps drawing.
 
 ## Known gaps worth revisiting
 

@@ -954,6 +954,10 @@ type heldWire struct {
 	held   chan struct{}
 	broken error
 
+	// parked counts the writes that have waited to be let through, so a
+	// test can wait for one rather than guess at it.
+	parked int
+
 	// broke is closed by the first write that fails, so a test can wait
 	// for the failure rather than guess at it.
 	broke   chan struct{}
@@ -989,9 +993,19 @@ func (w *heldWire) breakWire(why error) {
 	w.broken = why
 }
 
+// parkedWrites returns how many writes have waited on the hold.
+func (w *heldWire) parkedWrites() int {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.parked
+}
+
 func (w *heldWire) Write(p []byte) (int, error) {
 	w.mu.Lock()
 	held := w.held
+	if held != nil {
+		w.parked++
+	}
 	w.mu.Unlock()
 	if held != nil {
 		<-held
@@ -1068,7 +1082,11 @@ func TestResizingAMachineThatHasStoppedTakingBytesComesBack(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("Resize waited for a machine that had stopped taking bytes")
 	}
-	// And it really is parked: the request has not reached the machine.
+	// And it really is parked: the send is waiting on the wire and
+	// nothing has reached the machine.
+	waitForThis(t, "the window-change to park on the wire", func() bool {
+		return wire.parkedWrites() > 0
+	})
 	if n := s.WindowChanges(); n != 0 {
 		t.Fatalf("the machine saw %d window-change requests through a held wire", n)
 	}
@@ -1076,8 +1094,9 @@ func TestResizingAMachineThatHasStoppedTakingBytesComesBack(t *testing.T) {
 	closed := make(chan error, 1)
 	started := time.Now()
 	go func() { closed <- sh.Close() }()
+	var err error
 	select {
-	case <-closed:
+	case err = <-closed:
 	case <-time.After(10 * time.Second):
 		t.Fatal("closing a shell whose resize is parked never came back")
 	}
@@ -1085,6 +1104,14 @@ func TestResizingAMachineThatHasStoppedTakingBytesComesBack(t *testing.T) {
 	// to close. Anything beyond that is a wait on the machine.
 	if took := time.Since(started); took > 2*time.Second {
 		t.Fatalf("Close took %s, want about %s", took, 2*drainGrace)
+	}
+	// And it says why it gave up rather than reporting a clean close:
+	// closing the session queues behind the same parked write.
+	if !errors.Is(err, ErrNoAnswer) {
+		t.Fatalf("Close = %v, want it to say the machine did not answer", err)
+	}
+	if !strings.Contains(err.Error(), "close the session") {
+		t.Fatalf("Close = %v, want it to name what it gave up on", err)
 	}
 }
 
@@ -1113,8 +1140,9 @@ func TestABurstOfResizesCollapsesToTheLastSize(t *testing.T) {
 		cols, rows := s.Size()
 		return cols == 130 && rows == 74
 	})
-	if n := s.WindowChanges(); n > 3 {
-		t.Fatalf("the machine saw %d window-change requests for fifty resizes, want a handful", n)
+	// Two: the one that parked and the one that followed it.
+	if n := s.WindowChanges(); n > 2 {
+		t.Fatalf("the machine saw %d window-change requests for fifty resizes, want two", n)
 	}
 }
 
@@ -1130,7 +1158,8 @@ func TestAResizeThatFailedIsHandedToTheNextOne(t *testing.T) {
 	wire.breakWire(errors.New("the wire is broken"))
 	// Two sizes, because x/crypto keeps a failed write and reports it to
 	// whoever writes next: the first window-change breaks the wire and
-	// the second is the one told about it.
+	// the second is the one told about it. Waiting on broke only says
+	// that a write has failed, which is what the second one needs.
 	if err := sh.Resize(120, 40); err != nil {
 		t.Fatalf("Resize: %v", err)
 	}
@@ -1139,19 +1168,43 @@ func TestAResizeThatFailedIsHandedToTheNextOne(t *testing.T) {
 		t.Fatalf("Resize = %v, want nothing or the broken wire", err)
 	}
 
-	var failed error
-	waitForThis(t, "the failed window-change to be handed back", func() bool {
-		// The same size again, so this asks for no further send.
-		failed = sh.Resize(121, 41)
-		return failed != nil
+	waitForThis(t, "the window-change to fail", func() bool {
+		sh.writeMu.Lock()
+		defer sh.writeMu.Unlock()
+		return sh.resizeErr != nil
 	})
-	if !strings.Contains(failed.Error(), "the wire is broken") {
-		t.Fatalf("Resize = %v, want it to say what the window-change failed with", failed)
+
+	// Asked for the size that did go out, so collecting the failure sets
+	// no further send going.
+	failed := sh.Resize(120, 40)
+	if failed == nil {
+		t.Fatal("the failed window-change was not handed to the next Resize")
+	}
+	// What failed was the window-change, not some other write: it says
+	// so, and no size ever reached the machine.
+	if !strings.Contains(failed.Error(), "resize the terminal") ||
+		!strings.Contains(failed.Error(), "the wire is broken") {
+		t.Fatalf("Resize = %v, want the window-change and what it failed with", failed)
+	}
+	if n := s.WindowChanges(); n != 0 {
+		t.Fatalf("the machine saw %d window-change requests through a broken wire", n)
+	}
+	if cols, rows := s.Size(); cols != 80 || rows != 24 {
+		t.Fatalf("the machine has %dx%d, want the size the pty was asked for", cols, rows)
 	}
 	// Handed over once. A failure kept for ever would be reported again
 	// on every drag after it.
-	if again := sh.Resize(121, 41); again != nil {
+	if again := sh.Resize(120, 40); again != nil {
 		t.Fatalf("Resize = %v, want the failure to have been handed over already", again)
+	}
+	// And the size that failed was not remembered as sent: what the
+	// machine has been told is the last size that went out, so a later
+	// drag to the failed size asks for it again.
+	sh.writeMu.Lock()
+	sent := sh.sent
+	sh.writeMu.Unlock()
+	if sent != [2]int{120, 40} {
+		t.Fatalf("it remembers %v as sent, want the last size that went out", sent)
 	}
 }
 
@@ -1178,9 +1231,92 @@ func TestAResizeThatFailedIsReportedByClose(t *testing.T) {
 		defer sh.writeMu.Unlock()
 		return sh.resizeErr != nil
 	})
+	if n := s.WindowChanges(); n != 0 {
+		t.Fatalf("the machine saw %d window-change requests through a broken wire", n)
+	}
 
 	err := sh.Close()
 	if err == nil || !strings.Contains(err.Error(), "resize the terminal") {
 		t.Fatalf("Close = %v, want it to report the resize that failed", err)
+	}
+}
+
+// A window-change that fails after the shell is closed is still
+// reported.
+//
+// Close reads the kept failure once and comes back. A send parked on the
+// wire lands after that, and what it reports would be nobody's:
+// ReportLate is where the terminal takes it.
+func TestAResizeThatFailsAfterTheShellIsClosedIsReported(t *testing.T) {
+	s := sshtest.New(t)
+	wire := newHeldWire()
+	sh := shellOver(t, s, wire)
+
+	late := make(chan error, 4)
+	sh.ReportLate(func(err error) { late <- err })
+
+	// A keystroke parks on the wire, which is what holds the channel's
+	// write lock, and the window-change queues behind it.
+	wire.hold()
+	go func() { _, _ = sh.Write([]byte("hello\n")) }()
+	waitForThis(t, "the keystroke to park on the wire", func() bool {
+		return wire.parkedWrites() > 0
+	})
+	if err := sh.Resize(120, 40); err != nil {
+		t.Fatalf("Resize: %v", err)
+	}
+	// Long enough to be queued on the write lock rather than still on
+	// its way there.
+	time.Sleep(200 * time.Millisecond)
+
+	if err := sh.Close(); !errors.Is(err, ErrNoAnswer) {
+		t.Fatalf("Close = %v, want it to say the machine did not answer", err)
+	}
+
+	// The wire comes back broken: the keystroke fails, and the
+	// window-change behind it is the write that is told about it.
+	wire.breakWire(errors.New("the wire is broken"))
+	wire.release()
+
+	select {
+	case err := <-late:
+		if !strings.Contains(err.Error(), "resize the terminal") ||
+			!strings.Contains(err.Error(), "the wire is broken") {
+			t.Fatalf("it reported %v, want the window-change and what it failed with", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("a window-change that failed after the shell was closed was never reported")
+	}
+}
+
+// Resizing to the size the pty was asked for sends nothing: the machine
+// has that size already.
+func TestAResizeToThePtysOwnSizeSendsNothing(t *testing.T) {
+	s := sshtest.New(t)
+	sh := startTest(t, s, nil)
+	readUntil(t, sh, "READY", 5*time.Second)
+
+	if err := sh.Resize(80, 24); err != nil {
+		t.Fatalf("Resize: %v", err)
+	}
+	// Whatever it decided to send has gone by the time no send is in
+	// flight. Resize starts one before it returns, so this cannot run
+	// ahead of the decision.
+	waitForThis(t, "the resize to be dealt with", func() bool {
+		sh.writeMu.Lock()
+		defer sh.writeMu.Unlock()
+		return !sh.resizing
+	})
+
+	// A size that did change, so there is something to wait for.
+	if err := sh.Resize(90, 30); err != nil {
+		t.Fatalf("Resize: %v", err)
+	}
+	waitForThis(t, "the size that changed to reach the machine", func() bool {
+		cols, rows := s.Size()
+		return cols == 90 && rows == 30
+	})
+	if n := s.WindowChanges(); n != 1 {
+		t.Fatalf("the machine saw %d window-change requests, want only the size that changed", n)
 	}
 }

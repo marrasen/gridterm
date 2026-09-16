@@ -286,6 +286,48 @@ func TestResizeFailureIsReported(t *testing.T) {
 	if !errors.Is(got, boom) {
 		t.Errorf("reported %v, want the session's own error", got)
 	}
+	// A remote session hands back the failure of an earlier drag, so the
+	// line must not read as though this drag failed.
+	if !strings.Contains(got.Error(), "an earlier resize of this pane failed") {
+		t.Errorf("reported %v, want it to say the failure is an earlier one", got)
+	}
+}
+
+// lateSession reports a resize failure after the drag, the way a remote
+// session does: the window-change goes out on a goroutine.
+type lateSession struct {
+	*fakeSession
+	report func(error)
+}
+
+func (l *lateSession) ReportLate(report func(error)) { l.report = report }
+
+// A resize that fails after the drag is reported when it fails.
+//
+// The failure has no caller left to go back to. Kept for the next
+// Resize, it waits on a size change that may never come.
+func TestALateResizeFailureIsReported(t *testing.T) {
+	boom := errors.New("the wire is broken")
+	f := newFakeSession()
+	late := &lateSession{fakeSession: f}
+	var got error
+	term, err := New(Config{Session: late, OnError: func(e error) { got = e }})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(func() { _ = term.Close() })
+
+	if late.report == nil {
+		t.Fatal("the terminal took no hook for a failure that lands late")
+	}
+	late.report(boom)
+
+	if !errors.Is(got, boom) {
+		t.Errorf("reported %v, want the session's own error", got)
+	}
+	if !strings.Contains(got.Error(), "an earlier resize of this pane failed") {
+		t.Errorf("reported %v, want it to say the failure is an earlier one", got)
+	}
 }
 
 // TestOnlyTheFocusedTerminalWritesTheCursor checks the rule a shared

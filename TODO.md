@@ -36,6 +36,3 @@ each group. A line goes when the work is in and reviewed.
   on the goroutine that draws and neither of them bounded. The same pane
   on a machine goes through `Conn.Files`, which gives the whole open one
   deadline.
-- `Shell.Resize` can park. It sends a `window-change` request, which
-  takes x/crypto's channel write lock, so it waits when the send buffer
-  to the machine has filled. Dragging a window edge is what calls it.

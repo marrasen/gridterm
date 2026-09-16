@@ -181,6 +181,11 @@ func New(cfg Config) (*Terminal, error) {
 		out:  make(chan []byte, outQueue),
 		done: make(chan struct{}),
 	}
+	// A resize that fails does so after the drag that asked for it, so
+	// the session hands it here rather than to a caller that has gone.
+	if late, ok := cfg.Session.(lateFailures); ok {
+		late.ReportLate(func(err error) { t.fail(lateResize(err)) })
+	}
 	// At least one cell: an emulator with no columns has nowhere to put
 	// the cursor.
 	cols, rows := max(cfg.Size.Cols, 1), max(cfg.Size.Rows, 1)
@@ -257,8 +262,22 @@ func (t *Terminal) resize(size ui.Size) {
 	// A session that has already gone cannot be resized, and saying so
 	// on every window drag would be noise.
 	if err := t.cfg.Session.Resize(cols, rows); err != nil && !t.exited.Load() {
-		t.fail(fmt.Errorf("resize session: %w", err))
+		t.fail(lateResize(err))
 	}
+}
+
+// lateResize words a resize failure as the late news it is: a remote
+// session sends the size on a goroutine, so what comes back here failed
+// on an earlier drag.
+func lateResize(err error) error {
+	return fmt.Errorf("an earlier resize of this pane failed: %w", err)
+}
+
+// lateFailures is a session that reports a failure landing after the
+// call that caused it has returned. A remote session's window-change is
+// one: it is sent on a goroutine so the drag is not held up.
+type lateFailures interface {
+	ReportLate(func(error))
 }
 
 // Draw paints the terminal, or blanks its room when the host is drawing

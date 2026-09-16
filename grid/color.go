@@ -38,7 +38,8 @@ func floorDiv(n, d int) int {
 // colour against itself, and 21 for black against white.
 //
 // Text is readable from about 4.5, and a change of ground reads from
-// about 1.5.
+// about 1.5. Alpha is ignored, so a colour that is drawn part way
+// through another has to be blended first.
 func Contrast(a, b color.RGBA) float64 {
 	high, low := luminance(a), luminance(b)
 	if high < low {

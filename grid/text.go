@@ -1,7 +1,7 @@
 package grid
 
-// ellipsis marks where a string was cut.
-const ellipsis = "…"
+// Ellipsis marks where a string was cut.
+const Ellipsis = "…"
 
 // Cut splits a string at a width in cells: the part that fits, and the
 // rest.
@@ -48,8 +48,8 @@ func TrimTail(s string, cols int) string {
 	if StringWidth(s) <= cols {
 		return s
 	}
-	head, _ := Cut(s, cols-StringWidth(ellipsis))
-	return head + ellipsis
+	head, _ := Cut(s, cols-StringWidth(Ellipsis))
+	return head + Ellipsis
 }
 
 // TrimHead cuts the start off a string too wide for the room it has,
@@ -64,7 +64,7 @@ func TrimHead(s string, cols int) string {
 	if StringWidth(s) <= cols {
 		return s
 	}
-	room := cols - StringWidth(ellipsis)
+	room := cols - StringWidth(Ellipsis)
 	clusters := Clusters(s)
 	at, n := 0, len(s)
 	for i := len(clusters) - 1; i >= 0; i-- {
@@ -75,5 +75,5 @@ func TrimHead(s string, cols int) string {
 		at += w
 		n -= len(clusters[i])
 	}
-	return ellipsis + s[n:]
+	return Ellipsis + s[n:]
 }

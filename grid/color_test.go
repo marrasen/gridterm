@@ -2,6 +2,7 @@ package grid
 
 import (
 	"image/color"
+	"math"
 	"testing"
 )
 
@@ -68,5 +69,36 @@ func TestABlendMatchesTheFloatMixerItReplaced(t *testing.T) {
 				t.Fatalf("%d blended 55/100 towards %d is %d, want %d", x, y, got, want)
 			}
 		}
+	}
+}
+
+// The two ends of the contrast scale, and the rule that it does not
+// matter which way round the two colours are given.
+func TestContrast(t *testing.T) {
+	black := color.RGBA{A: 255}
+	white := color.RGBA{R: 255, G: 255, B: 255, A: 255}
+	if got := Contrast(black, white); math.Abs(got-21) > 0.01 {
+		t.Errorf("black against white is %.4f:1, want 21", got)
+	}
+	if got := Contrast(white, black); math.Abs(got-21) > 0.01 {
+		t.Errorf("white against black is %.4f:1, want the same 21 either way round", got)
+	}
+	for _, c := range []color.RGBA{black, white, {R: 224, G: 108, B: 117, A: 255}} {
+		if got := Contrast(c, c); math.Abs(got-1) > 0.0001 {
+			t.Errorf("%v against itself is %.4f:1, want 1", c, got)
+		}
+	}
+	// Symmetric for any pair, not only for the ends.
+	one := color.RGBA{R: 97, G: 175, B: 239, A: 255}
+	two := color.RGBA{R: 28, G: 32, B: 38, A: 255}
+	if a, b := Contrast(one, two), Contrast(two, one); a != b {
+		t.Errorf("the pair reads %.4f:1 one way and %.4f:1 the other", a, b)
+	}
+	// Alpha is ignored: a see-through colour is measured as if it were
+	// opaque, which is why a blend comes first.
+	clear := one
+	clear.A = 0
+	if got, want := Contrast(clear, two), Contrast(one, two); got != want {
+		t.Errorf("with no alpha it reads %.4f:1 and with full alpha %.4f:1, want alpha ignored", got, want)
 	}
 }

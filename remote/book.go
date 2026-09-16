@@ -12,6 +12,8 @@ import (
 	"slices"
 	"strings"
 	"sync"
+
+	"github.com/marrasen/gridterm/internal/jsoncheck"
 )
 
 // bookVersion is written into the file so a later shape can be told from
@@ -315,8 +317,28 @@ func readBook(path string) ([]Host, error) {
 	// the last one, so a file holding "servers" twice would quietly
 	// become whichever came second -- and the next save would make that
 	// permanent.
-	if err := checkNoRepeatedKeys(raw); err != nil {
+	if err := jsoncheck.NoRepeatedKeys(raw); err != nil {
 		return nil, fmt.Errorf("remote: the server list %s: %w", path, err)
+	}
+
+	// The version before the rest, or a list written by a newer gridterm
+	// that also added a field is turned away for the field instead, in
+	// the decoder's words rather than in words the user can act on.
+	var version struct {
+		Version int `json:"version"`
+	}
+	if err := json.Unmarshal(raw, &version); err != nil {
+		return nil, fmt.Errorf("remote: the server list %s is not readable: %w", path, err)
+	}
+	switch {
+	case version.Version > bookVersion:
+		return nil, fmt.Errorf(
+			"remote: the server list %s was written by a newer gridterm (version %d)",
+			path, version.Version)
+	case version.Version < 1:
+		// Covers a file of "null" or "{}" as well as one written with no
+		// version at all: none of them is a list this can safely replace.
+		return nil, fmt.Errorf("remote: the server list %s has no version number", path)
 	}
 
 	var file saved
@@ -330,17 +352,6 @@ func readBook(path string) ([]Host, error) {
 	}
 	if err := endOfFile(dec); err != nil {
 		return nil, fmt.Errorf("remote: the server list %s: %w", path, err)
-	}
-
-	switch {
-	case file.Version > bookVersion:
-		return nil, fmt.Errorf(
-			"remote: the server list %s was written by a newer gridterm (version %d)",
-			path, file.Version)
-	case file.Version < 1:
-		// Covers a file of "null" or "{}" as well as one written with no
-		// version at all: none of them is a list this can safely replace.
-		return nil, fmt.Errorf("remote: the server list %s has no version number", path)
 	}
 
 	for i, h := range file.Servers {
@@ -373,67 +384,6 @@ func endOfFile(dec *json.Decoder) error {
 		return errors.New("there is more in the file than one server list")
 	}
 	return nil
-}
-
-// checkNoRepeatedKeys reports an object holding the same key twice,
-// which the decoder would otherwise resolve by keeping the last.
-func checkNoRepeatedKeys(raw []byte) error {
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	// What is open, innermost last. Inside an object the tokens are a
-	// key, then its value, then a key again, and that alternation is
-	// the only thing that tells the two apart: both can be strings, and
-	// a server whose name is its address has the same string as a key
-	// and as a value.
-	type scope struct {
-		object  bool
-		wantKey bool
-		keys    map[string]bool
-	}
-	var scopes []scope
-	// filled says the token just read was a value, so the object around
-	// it is back to expecting a key.
-	filled := func() {
-		if n := len(scopes); n > 0 && scopes[n-1].object {
-			scopes[n-1].wantKey = true
-		}
-	}
-	for {
-		tok, err := dec.Token()
-		if errors.Is(err, io.EOF) {
-			return nil
-		}
-		if err != nil {
-			// Not readable as JSON at all, which the decode below says
-			// far better than this can.
-			return nil
-		}
-		if d, ok := tok.(json.Delim); ok {
-			switch d {
-			case '{':
-				filled()
-				scopes = append(scopes, scope{object: true, wantKey: true, keys: map[string]bool{}})
-			case '[':
-				filled()
-				scopes = append(scopes, scope{})
-			case '}', ']':
-				if len(scopes) > 0 {
-					scopes = scopes[:len(scopes)-1]
-				}
-			}
-			continue
-		}
-		n := len(scopes)
-		if n == 0 || !scopes[n-1].object || !scopes[n-1].wantKey {
-			filled()
-			continue
-		}
-		key, _ := tok.(string)
-		if scopes[n-1].keys[key] {
-			return fmt.Errorf("%q is in it twice", key)
-		}
-		scopes[n-1].keys[key] = true
-		scopes[n-1].wantKey = false
-	}
 }
 
 // checkRoutes reports a Via that names nothing, or that goes round in a
@@ -490,7 +440,7 @@ func (b *Book) saveLocked() error {
 	}
 	raw, err := json.MarshalIndent(saved{Version: bookVersion, Servers: b.hosts}, "", "  ")
 	if err != nil {
-		return fmt.Errorf("remote: write the server list: %w", err)
+		return fmt.Errorf("remote: write the server list %s: %w", b.path, err)
 	}
 	raw = append(raw, '\n')
 
@@ -511,32 +461,32 @@ func (b *Book) saveLocked() error {
 
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return fmt.Errorf("remote: write the server list: %w", err)
+		return fmt.Errorf("remote: write the server list %s: %w", b.path, err)
 	}
 	tmp, err := os.CreateTemp(dir, filepath.Base(path)+".*")
 	if err != nil {
-		return fmt.Errorf("remote: write the server list: %w", err)
+		return fmt.Errorf("remote: write the server list %s: %w", b.path, err)
 	}
 	name := tmp.Name()
 	if _, err := tmp.Write(raw); err != nil {
 		_ = tmp.Close()
 		_ = os.Remove(name)
-		return fmt.Errorf("remote: write the server list: %w", err)
+		return fmt.Errorf("remote: write the server list %s: %w", b.path, err)
 	}
 	// Flushed before the rename, or a crash can leave the new name
 	// pointing at an empty file.
 	if err := tmp.Sync(); err != nil {
 		_ = tmp.Close()
 		_ = os.Remove(name)
-		return fmt.Errorf("remote: write the server list: %w", err)
+		return fmt.Errorf("remote: write the server list %s: %w", b.path, err)
 	}
 	if err := tmp.Close(); err != nil {
 		_ = os.Remove(name)
-		return fmt.Errorf("remote: write the server list: %w", err)
+		return fmt.Errorf("remote: write the server list %s: %w", b.path, err)
 	}
 	if err := os.Rename(name, path); err != nil {
 		_ = os.Remove(name)
-		return fmt.Errorf("remote: write the server list: %w", err)
+		return fmt.Errorf("remote: write the server list %s: %w", b.path, err)
 	}
 	return nil
 }

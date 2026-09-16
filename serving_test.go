@@ -57,6 +57,24 @@ func openServeDialog(t *testing.T, a *testApp) *ui.Form {
 		byTitle[*ui.Form]("Serve this window"))
 }
 
+// aFreePort is a port nothing is listening on, for a test that has to
+// name one rather than ask for whichever is free.
+func aFreePort(t *testing.T) string {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("find a free port: %v", err)
+	}
+	_, port, err := net.SplitHostPort(l.Addr().String())
+	if err != nil {
+		t.Fatalf("the listener is at %q: %v", l.Addr(), err)
+	}
+	if err := l.Close(); err != nil {
+		t.Fatalf("let the port go again: %v", err)
+	}
+	return port
+}
+
 // fieldSays checks what a dialog field is showing.
 func fieldSays(t *testing.T, f *ui.Form, label, want string) {
 	t.Helper()
@@ -398,20 +416,22 @@ func TestTheServeDialogOpensOnWhatWasLastServedWith(t *testing.T) {
 		t.Fatalf("settings: %v", err)
 	}
 
+	want := aFreePort(t)
+
 	f := openServeDialog(t, a)
-	retypeField(t, a, f, "Port", "2300")
+	retypeField(t, a, f, "Port", want)
 	pressButton(t, a, f, "Serve")
 	pressButton(t, a, awaitModal[*ui.Form](t, a, "the serving dialog", nil), "Stop serving")
 
-	if port, saved := set.ServePort(); !saved || port != 2300 {
-		t.Errorf("the settings hold port %d, %v; want 2300 saved", port, saved)
+	if port, saved := set.ServePort(); !saved || strconv.Itoa(port) != want {
+		t.Errorf("the settings hold port %d, %v; want %s saved", port, saved, want)
 	}
 	if reach, saved := set.ServeReach(); !saved || reach != settings.ReachHere {
 		t.Errorf("the settings hold the reach %q, %v; want %q saved",
 			reach, saved, settings.ReachHere)
 	}
 	again := openServeDialog(t, a)
-	fieldSays(t, again, "Port", "2300")
+	fieldSays(t, again, "Port", want)
 	fieldSays(t, again, "Reachable from", whereHere)
 }
 
@@ -483,13 +503,14 @@ func TestASettingsFileThatWillNotTakeAWriteIsSaid(t *testing.T) {
 	f := openServeDialog(t, a)
 	pressButton(t, a, f, "Serve")
 
-	if !a.serving.on() {
-		t.Fatal("a settings file that would not take a write stopped the window serving")
-	}
-	pressButton(t, a, awaitModal[*ui.Form](t, a, "the serving dialog", nil), "Stop serving")
+	// On top of the dialog that says what is being served, not under it:
+	// a notice nobody sees is a failure that was swallowed.
 	n := awaitModal[*ui.Notice](t, a, "the settings notice", nil)
 	if !strings.Contains(n.Title, "remember") {
 		t.Errorf("the user was told %q, which does not say the settings were not kept", n.Title)
+	}
+	if !a.serving.on() {
+		t.Fatal("a settings file that would not take a write stopped the window serving")
 	}
 }
 
@@ -531,5 +552,20 @@ func TestUnreadableSettingsAreSaidAndNotWrittenOver(t *testing.T) {
 	}
 	if !bytes.Equal(was, now) {
 		t.Errorf("the settings were written over:\n%s\nwant\n%s", now, was)
+	}
+}
+
+// The dialog says what a port of 0 means, so the 0 it opens on after a
+// run that asked for one is a choice rather than a puzzle.
+func TestTheDialogSaysWhatPortZeroMeans(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withServing(t, a, aPublicKey(t, "marcus@laptop"))
+
+	f := openServeDialog(t, a)
+
+	text := strings.Join(f.Lines, "\n")
+	if !strings.Contains(text, "0 asks for whichever port is free") {
+		t.Errorf("the dialog does not say what a port of 0 means:\n%s", text)
 	}
 }

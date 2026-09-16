@@ -274,12 +274,15 @@ func (a *app) openServing() error {
 	reach.Options = []string{whereHere, whereAnywhere}
 	reach.SetText(a.serving.startReach())
 	f.Lines = append(f.Lines, "",
+		"Port: 0 asks for whichever port is free.",
+		"",
 		"Reachable from: ctrl+down and ctrl+up choose. \""+whereAnywhere+"\" is"+
 			" what a Tailscale address needs, and is also what every other"+
 			" network can reach.")
 
 	f.AddButton(ui.Button{Title: "Serve", Do: func() error {
-		if err := a.startServing(port.Text(), reach.Text()); err != nil {
+		asked, where := port.Text(), reach.Text()
+		if err := a.startServing(asked, where); err != nil {
 			return err
 		}
 		// Not from here: this form closes as soon as this returns, and
@@ -287,6 +290,12 @@ func (a *app) openServing() error {
 		a.pump.post(func() {
 			if err := a.showServing(); err != nil {
 				a.reportError("Could not say what is being served", err)
+			}
+			// After that dialog, so a failure to write the settings
+			// down lands on top of it rather than underneath. The window
+			// goes on serving either way.
+			if err := a.rememberServing(asked, where); err != nil {
+				a.reportError("Could not remember what the serve dialog was set to", err)
 			}
 		})
 		return nil
@@ -334,6 +343,30 @@ func listenHost(where string) string {
 	return "127.0.0.1"
 }
 
+// portAsked is the port number the dialog was set to.
+//
+// Zero is allowed and means whichever port is free. The dialog says
+// which one that turned out to be, so it is discoverable rather than
+// lost.
+func portAsked(port string) (int, error) {
+	n, err := strconv.Atoi(strings.TrimSpace(port))
+	if err != nil || n < 0 || n > 65535 {
+		return 0, fmt.Errorf("%q is not a port number", strings.TrimSpace(port))
+	}
+	return n, nil
+}
+
+// rememberServing writes down what the serve dialog was set to, for the
+// next run. The port goes down as it was typed, so 0 goes on meaning
+// whichever port is free.
+func (a *app) rememberServing(port, where string) error {
+	n, err := portAsked(port)
+	if err != nil {
+		return err
+	}
+	return a.serving.rememberServe(n, where)
+}
+
 // startServing opens the port.
 func (a *app) startServing(port, where string) error {
 	if a.serving.on() {
@@ -342,12 +375,9 @@ func (a *app) startServing(port, where string) error {
 		// to reach it and no way to close it.
 		return fmt.Errorf("this window is already being served on %s", a.serving.addr())
 	}
-	// Zero is allowed and means whichever port is free. The dialog says
-	// which one that turned out to be, so it is discoverable rather
-	// than lost.
-	n, err := strconv.Atoi(strings.TrimSpace(port))
-	if err != nil || n < 0 || n > 65535 {
-		return fmt.Errorf("%q is not a port number", strings.TrimSpace(port))
+	n, err := portAsked(port)
+	if err != nil {
+		return err
 	}
 	host := listenHost(where)
 
@@ -402,18 +432,7 @@ func (a *app) startServing(port, where string) error {
 			a.pump.post(func() { a.logError(err) })
 		},
 	}
-	if err := a.serving.listen(cfg); err != nil {
-		return err
-	}
-	// Written down after the port is open, and a failure said rather
-	// than stopping a window that is already serving. Posted, because
-	// closing a dialog takes anything stacked on top of it.
-	if err := a.serving.rememberServe(n, where); err != nil {
-		a.pump.post(func() {
-			a.reportError("Could not remember what the serve dialog was set to", err)
-		})
-	}
-	return nil
+	return a.serving.listen(cfg)
 }
 
 // useSettings gives the window what it remembers between runs, and says

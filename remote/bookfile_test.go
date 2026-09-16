@@ -92,6 +92,29 @@ func TestBookWillNotGuessAtARepeatedKey(t *testing.T) {
 	}
 }
 
+// A list from a newer gridterm says so, even when that gridterm also
+// added a field this build does not know.
+//
+// The strict decode used to run first, so the user was told "json:
+// unknown field" about a file whose real trouble is that it belongs to a
+// later version.
+func TestANewerListSaysSoRatherThanNamingItsNewField(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "servers.json")
+	const newer = `{"version":2,"servers":[],"colour":"green"}`
+	if err := os.WriteFile(path, []byte(newer), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	_, err := LoadBook(path)
+
+	if err == nil {
+		t.Fatal("a list from a newer gridterm loaded clean")
+	}
+	if !strings.Contains(err.Error(), "newer gridterm") {
+		t.Fatalf("error = %v, want it to say the list is from a newer gridterm", err)
+	}
+}
+
 // A file that is JSON but not a server list is not a first run. Treating
 // it as one is the single reading that licenses overwriting it.
 func TestBookWillNotTreatNonsenseAsAFirstRun(t *testing.T) {

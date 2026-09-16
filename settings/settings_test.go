@@ -114,6 +114,7 @@ func TestUnreadableSettingsAreNotWrittenOver(t *testing.T) {
 		{"a port that is not one", `{"version": 1, "servePort": 70000}`},
 		{"a reach that means nothing", `{"version": 1, "serveReach": "everywhere"}`},
 		{"more than one set of settings", `{"version": 1}{"version": 1}`},
+		{"a key written twice", `{"version": 1, "servePort": 2300, "servePort": 9000}`},
 	}
 	for _, b := range broken {
 		t.Run(b.what, func(t *testing.T) {
@@ -237,5 +238,116 @@ func TestAFailedWriteLeavesTheOldFile(t *testing.T) {
 	// get there.
 	if port, _ := s.ServePort(); port != 2300 {
 		t.Errorf("the settings hold port %d, want the 2300 that is saved", port)
+	}
+}
+
+// The one key written twice is named, so the user knows what to repair.
+//
+// Go's decoder keeps the last of a repeated key, so a file asking for
+// two ports would quietly become whichever came second -- and the next
+// save would make that permanent.
+func TestAKeyWrittenTwiceIsNamed(t *testing.T) {
+	path := at(t)
+	const twice = `{"version": 1, "servePort": 2300, "servePort": 9000}`
+	if err := os.WriteFile(path, []byte(twice), 0o600); err != nil {
+		t.Fatalf("write the file: %v", err)
+	}
+
+	_, err := Load(path)
+
+	if err == nil {
+		t.Fatal("a file asking for two ports loaded as one")
+	}
+	if !strings.Contains(err.Error(), "servePort") || !strings.Contains(err.Error(), "twice") {
+		t.Errorf("it said %v, without naming what is in it twice", err)
+	}
+}
+
+// Settings from a newer gridterm say so, even when that gridterm also
+// added a field this build does not know.
+//
+// The strict decode used to run first, so the user was told "json:
+// unknown field" about a file whose real trouble is that it belongs to a
+// later version.
+func TestNewerSettingsSaySoRatherThanNamingTheirNewField(t *testing.T) {
+	path := at(t)
+	const newer = `{"version": 2, "servePort": 2300, "fontSize": 14}`
+	if err := os.WriteFile(path, []byte(newer), 0o600); err != nil {
+		t.Fatalf("write the file: %v", err)
+	}
+
+	_, err := Load(path)
+
+	if err == nil {
+		t.Fatal("settings from a newer gridterm loaded clean")
+	}
+	if !strings.Contains(err.Error(), "newer gridterm") {
+		t.Errorf("it said %v, without saying the file is from a newer gridterm", err)
+	}
+}
+
+// A settings file linked in from somewhere else goes on being the file
+// that is written, rather than being quietly replaced by a copy.
+func TestSettingsSaveThroughASymlink(t *testing.T) {
+	dir := t.TempDir()
+	real := filepath.Join(dir, "real.json")
+	if err := os.WriteFile(real, []byte(`{"version": 1}`), 0o600); err != nil {
+		t.Fatalf("write the file: %v", err)
+	}
+	link := filepath.Join(dir, "settings.json")
+	if err := os.Symlink(real, link); err != nil {
+		t.Skipf("symlinks are not available here: %v", err)
+	}
+	s, err := Load(link)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+
+	if err := s.PutServe(2300, ReachHere); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	info, err := os.Lstat(link)
+	if err != nil {
+		t.Fatalf("lstat: %v", err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Fatal("the link was replaced by a file, so the real one stopped being updated")
+	}
+	raw, err := os.ReadFile(real)
+	if err != nil {
+		t.Fatalf("read the real file: %v", err)
+	}
+	if !strings.Contains(string(raw), "2300") {
+		t.Errorf("the real file was not updated:\n%s", raw)
+	}
+}
+
+// Two goroutines saving at once both get an answer, and what is on disk
+// is one of the two rather than a mix.
+func TestSavingFromTwoGoroutines(t *testing.T) {
+	path := at(t)
+	s, err := Load(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+
+	done := make(chan error, 2)
+	for _, port := range []int{2300, 9000} {
+		go func() { done <- s.PutServe(port, ReachHere) }()
+	}
+	for i := 0; i < 2; i++ {
+		if err := <-done; err != nil {
+			t.Fatalf("save: %v", err)
+		}
+	}
+
+	again, err := Load(path)
+	if err != nil {
+		t.Fatalf("load again: %v", err)
+	}
+	port, saved := again.ServePort()
+	if !saved || (port != 2300 && port != 9000) {
+		t.Errorf("the file holds port %d, %v; want one of the two that were saved", port, saved)
 	}
 }

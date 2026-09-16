@@ -11,6 +11,8 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/marrasen/gridterm/internal/jsoncheck"
 )
 
 // fileVersion is written into the file so a later shape can be told from
@@ -22,9 +24,6 @@ const fileVersion = 1
 const settingsDir, settingsFile = "gridterm", "settings.json"
 
 // How far a serving window may be reached from, as it is written down.
-//
-// A word of its own rather than the dialog's wording, so the dialog can
-// be reworded without orphaning what somebody saved.
 const (
 	ReachHere     = "here"
 	ReachAnywhere = "anywhere"
@@ -39,12 +38,16 @@ var ErrUnsaveable = errors.New("the settings could not be read, so they will not
 var rename = os.Rename
 
 // stored is the shape of the file.
-//
-// A field left out is a choice nobody has made, which is not the same as
-// one saved as zero: serve port 0 means whichever port is free.
 type stored struct {
-	Version    int     `json:"version"`
-	ServePort  *int    `json:"servePort,omitempty"`
+	Version int `json:"version"`
+
+	// ServePort is a pointer because a field left out is a choice nobody
+	// has made, which is not the same as port 0, meaning whichever port
+	// is free.
+	ServePort *int `json:"servePort,omitempty"`
+
+	// ServeReach is one of the words above rather than the dialog's
+	// wording, so the dialog can be reworded without orphaning it.
 	ServeReach *string `json:"serveReach,omitempty"`
 }
 
@@ -199,6 +202,32 @@ func read(path string) (stored, error) {
 		return stored{}, fmt.Errorf("settings: read %s: %w", path, err)
 	}
 
+	// A key written twice is not a file to guess at: Go's decoder keeps
+	// the last one, so the next save would make that permanent.
+	if err := jsoncheck.NoRepeatedKeys(raw); err != nil {
+		return stored{}, fmt.Errorf("settings: %s: %w", path, err)
+	}
+
+	// The version before the rest, or settings written by a newer
+	// gridterm that also added a field are turned away for the field
+	// instead, in the decoder's words rather than in words the user can
+	// act on.
+	var version struct {
+		Version int `json:"version"`
+	}
+	if err := json.Unmarshal(raw, &version); err != nil {
+		return stored{}, fmt.Errorf("settings: %s is not readable: %w", path, err)
+	}
+	switch {
+	case version.Version > fileVersion:
+		return stored{}, fmt.Errorf(
+			"settings: %s was written by a newer gridterm (version %d)", path, version.Version)
+	case version.Version < 1:
+		// Covers a file of "null" or "{}" as well as one written with no
+		// version at all.
+		return stored{}, fmt.Errorf("settings: %s has no version number", path)
+	}
+
 	var file stored
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	// Nothing is dropped on the way through. A field this build does not
@@ -210,16 +239,6 @@ func read(path string) (stored, error) {
 	}
 	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
 		return stored{}, fmt.Errorf("settings: there is more in %s than one set of settings", path)
-	}
-
-	switch {
-	case file.Version > fileVersion:
-		return stored{}, fmt.Errorf(
-			"settings: %s was written by a newer gridterm (version %d)", path, file.Version)
-	case file.Version < 1:
-		// Covers a file of "null" or "{}" as well as one written with no
-		// version at all.
-		return stored{}, fmt.Errorf("settings: %s has no version number", path)
 	}
 	if err := check(file); err != nil {
 		return stored{}, fmt.Errorf("settings: %s: %w", path, err)
@@ -256,12 +275,12 @@ func (s *Settings) saveLocked() error {
 	// the user out of their own settings: every later change rereads the
 	// file first and fails on the same thing.
 	if err := check(s.have); err != nil {
-		return fmt.Errorf("settings: will not write the settings: %w", err)
+		return fmt.Errorf("settings: will not write the settings %s: %w", s.path, err)
 	}
 	s.have.Version = fileVersion
 	raw, err := json.MarshalIndent(s.have, "", "  ")
 	if err != nil {
-		return fmt.Errorf("settings: write the settings: %w", err)
+		return fmt.Errorf("settings: write the settings %s: %w", s.path, err)
 	}
 	raw = append(raw, '\n')
 
@@ -280,32 +299,32 @@ func (s *Settings) saveLocked() error {
 
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return fmt.Errorf("settings: write the settings: %w", err)
+		return fmt.Errorf("settings: write the settings %s: %w", s.path, err)
 	}
 	tmp, err := os.CreateTemp(dir, filepath.Base(path)+".*")
 	if err != nil {
-		return fmt.Errorf("settings: write the settings: %w", err)
+		return fmt.Errorf("settings: write the settings %s: %w", s.path, err)
 	}
 	name := tmp.Name()
 	if _, err := tmp.Write(raw); err != nil {
 		_ = tmp.Close()
 		_ = os.Remove(name)
-		return fmt.Errorf("settings: write the settings: %w", err)
+		return fmt.Errorf("settings: write the settings %s: %w", s.path, err)
 	}
 	// Flushed before the rename, or a crash can leave the new name
 	// pointing at an empty file.
 	if err := tmp.Sync(); err != nil {
 		_ = tmp.Close()
 		_ = os.Remove(name)
-		return fmt.Errorf("settings: write the settings: %w", err)
+		return fmt.Errorf("settings: write the settings %s: %w", s.path, err)
 	}
 	if err := tmp.Close(); err != nil {
 		_ = os.Remove(name)
-		return fmt.Errorf("settings: write the settings: %w", err)
+		return fmt.Errorf("settings: write the settings %s: %w", s.path, err)
 	}
 	if err := rename(name, path); err != nil {
 		_ = os.Remove(name)
-		return fmt.Errorf("settings: write the settings: %w", err)
+		return fmt.Errorf("settings: write the settings %s: %w", s.path, err)
 	}
 	return nil
 }

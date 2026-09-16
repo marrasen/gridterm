@@ -2,33 +2,54 @@ package main
 
 import (
 	"errors"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/marrasen/gridterm/conns"
+	"github.com/marrasen/gridterm/input"
+	"github.com/marrasen/gridterm/internal/sshtest"
+	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/session"
 	"github.com/marrasen/gridterm/shells"
 	"github.com/marrasen/gridterm/ui"
 )
 
-// testShells is the machine most tests run on: two shells, so there is a
-// choice to make.
+// The programs the harness's machine has, written out here so an
+// assertion about an argv names the whole thing.
+const (
+	cmdPath  = `C:\Windows\system32\cmd.exe`
+	pwshPath = `C:\Program Files\PowerShell\7\pwsh.exe`
+	wslPath  = `C:\Windows\system32\wsl.exe`
+)
+
+// testShells is the machine most tests run on: three shells, so there is
+// a choice to make, and one of them takes arguments.
 func testShells() []shells.Shell {
 	return []shells.Shell{
-		{ID: "cmd", Title: "Command Prompt", Path: `C:\Windows\system32\cmd.exe`},
-		{ID: "pwsh", Title: "PowerShell", Path: `C:\Program Files\PowerShell\7\pwsh.exe`},
+		{ID: "cmd", Title: "Command Prompt", Path: cmdPath},
+		{ID: "pwsh", Title: "PowerShell", Path: pwshPath},
+		{ID: "wsl:Ubuntu", Title: "Ubuntu (WSL)", Path: wslPath,
+			Args: []string{"-d", "Ubuntu"}, Distro: "Ubuntu"},
 	}
 }
 
-// argvOf is the argv a pane on one of those shells runs.
-func argvOf(t *testing.T, list []shells.Shell, id string) []string {
+// argvOf is the argv a pane on one of those shells runs, written out
+// rather than asked of the shell: an assertion that called Command
+// would be comparing the code with itself.
+func argvOf(t *testing.T, id string) []string {
 	t.Helper()
-	sh, ok := shells.Lookup(list, id)
-	if !ok {
-		t.Fatalf("no shell %q on this machine", id)
+	switch id {
+	case "cmd":
+		return []string{cmdPath}
+	case "pwsh":
+		return []string{pwshPath}
+	case "wsl:Ubuntu":
+		return []string{wslPath, "-d", "Ubuntu"}
 	}
-	return sh.Command("")
+	t.Fatalf("no shell %q on this machine", id)
+	return nil
 }
 
 // onMachine gives the window a machine with these shells on it.
@@ -41,13 +62,19 @@ func onMachine(a *testApp, list []shells.Shell) {
 
 // scanShells looks for the shells the way the window does, on a
 // goroutine of its own, and lets the draw loop pick the result up.
+//
+// It waits for the answer rather than for a shell to be found, so a
+// machine with none does not wait the budget out, and a second scan
+// waits for its own answer rather than seeing the first one.
 func scanShells(t *testing.T, a *testApp) {
 	t.Helper()
 	a.startShellScan()
-	waitFor(t, a, "the shell scan to land", func() bool {
-		a.reapShellScan()
-		return len(a.shellPick.found) > 0
-	})
+	scan := a.shellPick.scan
+	waitFor(t, a, "the shell scan to answer", func() bool { return len(scan) > 0 })
+	a.reapShellScan()
+	if !a.shellPick.landed() {
+		t.Fatal("the scan answered and the window did not take it")
+	}
 }
 
 // lastArgv is the argv the window last started a shell on.
@@ -72,8 +99,9 @@ func shellLines(ids []string) []string {
 	return out
 }
 
-// fileMenuLines opens the File menu and returns the command ids on it.
-func fileMenuLines(t *testing.T, a *testApp, bar *ui.Menubar) []string {
+// openFileMenu drops the File menu down, the way pressing its title
+// does, and hands back the menu itself.
+func openFileMenu(t *testing.T, a *testApp, bar *ui.Menubar) *ui.Menu {
 	t.Helper()
 	if !bar.Open(menuTitled(t, bar, "File")) {
 		t.Fatal("the File menu would not open")
@@ -82,9 +110,28 @@ func fileMenuLines(t *testing.T, a *testApp, bar *ui.Menubar) []string {
 	if !ok {
 		t.Fatalf("top modal = %T, want a menu", a.root.Modal())
 	}
-	ids := menuCommands(menu)
+	return menu
+}
+
+// fileMenuLines opens the File menu and returns the command ids on it.
+func fileMenuLines(t *testing.T, a *testApp, bar *ui.Menubar) []string {
+	t.Helper()
+	ids := menuCommands(openFileMenu(t, a, bar))
 	bar.Close()
 	return ids
+}
+
+// lineTitle is what a menu's line for a command says, which is the empty
+// string when the line leaves the naming to the command.
+func lineTitle(t *testing.T, m *ui.Menu, id string) string {
+	t.Helper()
+	for _, item := range m.Items() {
+		if item.Command == id {
+			return item.Title
+		}
+	}
+	t.Fatalf("%s is not on the menu: %v", id, menuCommands(m))
+	return ""
 }
 
 func TestShellCommandID(t *testing.T) {
@@ -112,7 +159,7 @@ func TestChoosingAShellFromThePlusOpensAPaneOnIt(t *testing.T) {
 	menu := clickPlus(t, a, conns.Local)
 	chooseMenuItem(t, menu, shellCommandID("pwsh"))
 
-	want := argvOf(t, testShells(), "pwsh")
+	want := argvOf(t, "pwsh")
 	if got := a.lastArgv(t); !slices.Equal(got, want) {
 		t.Errorf("the pane started on %v, want %v", got, want)
 	}
@@ -120,6 +167,44 @@ func TestChoosingAShellFromThePlusOpensAPaneOnIt(t *testing.T) {
 		t.Errorf("%d panes, want the one the window opened with and the new one", len(a.panes))
 	}
 	checkTree(t, a)
+}
+
+// TestChoosingAWslShellRunsTheDistributionItNames checks the whole argv
+// of the one shell that takes arguments: wsl.exe on its own opens the
+// default distribution, which is the thing this feature is here to stop.
+func TestChoosingAWslShellRunsTheDistributionItNames(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	scanShells(t, a)
+
+	chooseMenuItem(t, clickPlus(t, a, conns.Local), shellCommandID("wsl:Ubuntu"))
+
+	want := argvOf(t, "wsl:Ubuntu")
+	if got := a.lastArgv(t); !slices.Equal(got, want) {
+		t.Errorf("the pane started on %v, want %v", got, want)
+	}
+	if len(a.panes) != 2 {
+		t.Errorf("%d panes, want the one the window opened with and the new one", len(a.panes))
+	}
+}
+
+// TestTheCommandTheWindowWasStartedWithBeatsTheShellPick checks what -e
+// means: one program for the whole window, whatever was picked before.
+func TestTheCommandTheWindowWasStartedWithBeatsTheShellPick(t *testing.T) {
+	a := newTestApp(t, 80, 24, startedWith(startup{command: []string{"top"}}))
+	withDialogs(t, a)
+	withPanel(t, a)
+	scanShells(t, a)
+	if err := a.shellPick.choose("pwsh"); err != nil {
+		t.Fatalf("remember a shell: %v", err)
+	}
+
+	chooseMenuItem(t, clickPlus(t, a, conns.Local), "conn.terminal")
+
+	if got, want := a.lastArgv(t), []string{"top"}; !slices.Equal(got, want) {
+		t.Errorf("the pane ran %v, want the %v the window was started with", got, want)
+	}
 }
 
 // TestThePickedShellIsRememberedForTheNextTerminal checks the pick is
@@ -137,7 +222,13 @@ func TestThePickedShellIsRememberedForTheNextTerminal(t *testing.T) {
 		t.Errorf("the settings remember %q (saved %v), want pwsh", id, saved)
 	}
 	chooseMenuItem(t, clickPlus(t, a, conns.Local), "conn.terminal")
-	want := argvOf(t, testShells(), "pwsh")
+
+	// The pane count first: pwsh is the last argv already, so a Terminal
+	// line that opened nothing at all would leave the argv below right.
+	if len(a.panes) != 3 {
+		t.Fatalf("%d panes, want the first, the one picked and the one Terminal opened", len(a.panes))
+	}
+	want := argvOf(t, "pwsh")
 	if got := a.lastArgv(t); !slices.Equal(got, want) {
 		t.Errorf("Terminal opened on %v, want the remembered %v", got, want)
 	}
@@ -175,14 +266,13 @@ func TestAShellThatIsNotInstalledIsNotOffered(t *testing.T) {
 func TestARememberedShellThatHasGoneFallsBackAndSaysSo(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withDialogs(t, a)
+	withPanel(t, a)
 	if err := a.shellPick.remembered.PutShell("wsl:Ubuntu"); err != nil {
 		t.Fatalf("remember a shell: %v", err)
 	}
 	a.shellPick.namedShell = func(string) (shells.Shell, bool) { return shells.Shell{}, false }
 
-	if err := a.openTabHere(); err != nil {
-		t.Fatalf("open a tab: %v", err)
-	}
+	chooseMenuItem(t, clickPlus(t, a, conns.Local), "conn.terminal")
 
 	if got := a.lastArgv(t); len(got) != 0 {
 		t.Errorf("the pane started on %v, want the default shell", got)
@@ -190,6 +280,9 @@ func TestARememberedShellThatHasGoneFallsBackAndSaysSo(t *testing.T) {
 	n := awaitModal[*ui.Notice](t, a, "a notice about the shell that has gone", nil)
 	if !strings.Contains(n.Message(), "wsl:Ubuntu") {
 		t.Errorf("the notice does not name the shell:\n%s", n.Message())
+	}
+	if !strings.Contains(n.Message(), "plus") {
+		t.Errorf("the notice does not say how to pick another shell:\n%s", n.Message())
 	}
 	// Said once a run: another pane opens on the default in silence.
 	modals := len(a.modals)
@@ -214,7 +307,7 @@ func TestTheFileMenuOffersTheSameShellsAsThePlus(t *testing.T) {
 	onFile := shellLines(fileMenuLines(t, a, bar))
 	onPlus := shellLines(menuCommands(clickPlus(t, a, conns.Local)))
 
-	want := []string{shellCommandID("cmd"), shellCommandID("pwsh")}
+	want := []string{shellCommandID("cmd"), shellCommandID("pwsh"), shellCommandID("wsl:Ubuntu")}
 	if !slices.Equal(onFile, want) {
 		t.Errorf("the File menu offers %v, want %v", onFile, want)
 	}
@@ -273,7 +366,7 @@ func TestAShellThatWillNotStartIsNotRemembered(t *testing.T) {
 func TestTheShellScanReportsAFailureAndKeepsWhatItFound(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withDialogs(t, a)
-	withMenubar(t, a)
+	bar := withMenubar(t, a)
 	var logged []error
 	a.onError = func(err error) { logged = append(logged, err) }
 	reason := "wsl.exe: the operation timed out"
@@ -293,7 +386,389 @@ func TestTheShellScanReportsAFailureAndKeepsWhatItFound(t *testing.T) {
 	if !strings.Contains(n.Message(), reason) {
 		t.Errorf("the notice does not hold the reason:\n%s", n.Message())
 	}
-	if _, ok := a.root.Commands.Lookup(shellCommandID("pwsh")); !ok {
-		t.Error("the shells that were found were thrown away with the failure")
+	// On the menu rather than in the registry: a command nothing offers
+	// is a shell the user cannot open.
+	dismissNotice(t, a)
+	if got := shellLines(fileMenuLines(t, a, bar)); !slices.Contains(got, shellCommandID("pwsh")) {
+		t.Errorf("the File menu offers %v, with none of the shells that were found", got)
+	}
+}
+
+// TestChoosingAShellFromTheFileMenuOpensAPaneOnIt drives the other way
+// in. Those lines carry no title of their own, so nothing else runs one.
+func TestChoosingAShellFromTheFileMenuOpensAPaneOnIt(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	bar := withMenubar(t, a)
+	scanShells(t, a)
+
+	chooseMenuItem(t, openFileMenu(t, a, bar), shellCommandID("pwsh"))
+
+	if len(a.panes) != 2 {
+		t.Fatalf("%d panes, want the one the window opened with and the new one", len(a.panes))
+	}
+	want := argvOf(t, "pwsh")
+	if got := a.lastArgv(t); !slices.Equal(got, want) {
+		t.Errorf("the pane started on %v, want %v", got, want)
+	}
+}
+
+// TestTheLinesAndThePaletteSayWhichShell checks the words the user
+// reads: the plus names the shell, the File menu leaves the naming to
+// the command, and the palette finds that command by its own name.
+func TestTheLinesAndThePaletteSayWhichShell(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	bar := withMenubar(t, a)
+	scanShells(t, a)
+
+	plus := clickPlus(t, a, conns.Local)
+	if got := lineTitle(t, plus, shellCommandID("pwsh")); got != "PowerShell" {
+		t.Errorf("the line on the plus says %q, want the shell's own name", got)
+	}
+	dismiss(t, plus)
+	file := openFileMenu(t, a, bar)
+	if got := lineTitle(t, file, shellCommandID("pwsh")); got != "" {
+		t.Errorf("the line on the File menu says %q, want the command's own title", got)
+	}
+	bar.Close()
+
+	cmd, ok := a.root.Commands.Lookup(shellCommandID("pwsh"))
+	if !ok {
+		t.Fatal("no command opens a pane on pwsh")
+	}
+	if want := "New tab on PowerShell"; cmd.Title != want {
+		t.Errorf("the command is called %q, want %q", cmd.Title, want)
+	}
+	runFromPalette(t, a, shellCommandID("pwsh"))
+
+	if len(a.panes) != 2 {
+		t.Fatalf("%d panes, want the one the window opened with and the new one", len(a.panes))
+	}
+	if got, want := a.lastArgv(t), argvOf(t, "pwsh"); !slices.Equal(got, want) {
+		t.Errorf("the palette opened a pane on %v, want %v", got, want)
+	}
+}
+
+// TestThePickSurvivesARestart is the whole way round: the window is
+// given its settings the way main gives them, and a second window
+// reading the same file opens on the shell the first one picked.
+func TestThePickSurvivesARestart(t *testing.T) {
+	at := filepath.Join(t.TempDir(), "settings.json")
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	if _, err := withSettings(t, a, at); err != nil {
+		t.Fatalf("the first window's settings: %v", err)
+	}
+	scanShells(t, a)
+	chooseMenuItem(t, clickPlus(t, a, conns.Local), shellCommandID("pwsh"))
+
+	b := newTestApp(t, 80, 24)
+	withDialogs(t, b)
+	withPanel(t, b)
+	if _, err := withSettings(t, b, at); err != nil {
+		t.Fatalf("the second window's settings: %v", err)
+	}
+	chooseMenuItem(t, clickPlus(t, b, conns.Local), "conn.terminal")
+
+	if len(b.panes) != 2 {
+		t.Fatalf("%d panes in the second window, want the first and the one Terminal opened",
+			len(b.panes))
+	}
+	want := argvOf(t, "pwsh")
+	if got := b.lastArgv(t); !slices.Equal(got, want) {
+		t.Errorf("the second window opened on %v, want the %v the first one picked", got, want)
+	}
+}
+
+// TestAMachineWithNoShellsStillOpensATerminal checks the machine the
+// looking found nothing on: no lines anywhere, and "Terminal" still
+// opens a pane on whatever the session layer picks.
+func TestAMachineWithNoShellsStillOpensATerminal(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	bar := withMenubar(t, a)
+	onMachine(a, nil)
+	scanShells(t, a)
+
+	if got := shellLines(fileMenuLines(t, a, bar)); len(got) != 0 {
+		t.Errorf("the File menu offers %v on a machine with no shells", got)
+	}
+	menu := clickPlus(t, a, conns.Local)
+	if got := shellLines(menuCommands(menu)); len(got) != 0 {
+		t.Errorf("the plus offers %v on a machine with no shells", got)
+	}
+
+	chooseMenuItem(t, menu, "conn.terminal")
+
+	if len(a.panes) != 2 {
+		t.Fatalf("%d panes, want the one the window opened with and the new one", len(a.panes))
+	}
+	if got := a.lastArgv(t); len(got) != 0 {
+		t.Errorf("the pane started on %v, want the default shell", got)
+	}
+}
+
+// TestASplitAfterAPickOpensOnThePickedShell checks the other way a pane
+// opens here: a split runs the shell that was picked, the same as a tab.
+func TestASplitAfterAPickOpensOnThePickedShell(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	scanShells(t, a)
+	chooseMenuItem(t, clickPlus(t, a, conns.Local), shellCommandID("pwsh"))
+
+	if err := a.splitHere(ui.Columns); err != nil {
+		t.Fatalf("split the pane: %v", err)
+	}
+
+	if len(a.panes) != 3 {
+		t.Fatalf("%d panes, want the first, the one picked and the split", len(a.panes))
+	}
+	want := argvOf(t, "pwsh")
+	if got := a.lastArgv(t); !slices.Equal(got, want) {
+		t.Errorf("the split opened on %v, want the picked %v", got, want)
+	}
+}
+
+// TestASavedServersPlusOffersNoShellLines checks the gate on the lines:
+// they open a pane here, and the row they would be on is a machine
+// somewhere else, with shells of its own that nothing here has looked for.
+func TestASavedServersPlusOffersNoShellLines(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	scanShells(t, a)
+	if err := a.book.Put(remote.Host{Name: "debian", Address: "10.0.0.9", Port: 22}, ""); err != nil {
+		t.Fatalf("save a server: %v", err)
+	}
+	a.refreshServers()
+
+	ids := menuCommands(clickPlus(t, a, "debian"))
+
+	if got := shellLines(ids); len(got) != 0 {
+		t.Errorf("the plus on a saved server offers %v", got)
+	}
+}
+
+// TestUnderSshAShellLineOpensAPaneHereAndTheFileMenuHasNone checks the
+// two menus in a window whose panes open on the machine -ssh named. The
+// row the plus is on says this machine; the File menu has no row, so it
+// offers no shells at all.
+func TestUnderSshAShellLineOpensAPaneHereAndTheFileMenuHasNone(t *testing.T) {
+	s := sshtest.New(t)
+	target := serverConfig(t, s).Target()
+	a := startedWithSsh(t, target)
+	pinServers(t, a, s)
+
+	// A pane here, opened before the target answered, which is what puts
+	// a row for this machine on the sidebar.
+	sendKey(t, a, press(input.KeyT, input.ModCtrl|input.ModShift))
+	waitForPanes(t, a, 2)
+	if a.about(target).machine == nil {
+		t.Fatal("the target is not connected, so this proves nothing")
+	}
+	scanShells(t, a)
+
+	if got := shellLines(fileMenuLines(t, a, a.bar)); len(got) != 0 {
+		t.Errorf("the File menu offers %v in a window whose panes open on %s", got, target)
+	}
+	menu := clickPlus(t, a, conns.Local)
+	if got := shellLines(menuCommands(menu)); len(got) == 0 {
+		t.Fatalf("the plus on this machine's row offers no shells: %v", menuCommands(menu))
+	}
+
+	chooseMenuItem(t, menu, shellCommandID("pwsh"))
+
+	if e := a.panes[newestPane(t, a)]; e == nil || e.Host != conns.Local {
+		t.Fatalf("the new pane's row is %+v, want one on this machine", e)
+	}
+	if got, want := a.lastArgv(t), argvOf(t, "pwsh"); !slices.Equal(got, want) {
+		t.Errorf("the pane started on %v, want %v", got, want)
+	}
+	if n := s.Conns(); n != 1 {
+		t.Errorf("the server saw %d logins, want the one it had already", n)
+	}
+}
+
+// TestTwoShellsWhoseIdsDifferOnlyInPunctuationBothGetALine checks that
+// nothing is dropped over a command id two shells would otherwise share.
+func TestTwoShellsWhoseIdsDifferOnlyInPunctuationBothGetALine(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	onMachine(a, []shells.Shell{
+		{ID: "wsl:Ubuntu-22.04", Title: "Ubuntu-22.04 (WSL)", Path: wslPath,
+			Args: []string{"-d", "Ubuntu-22.04"}, Distro: "Ubuntu-22.04"},
+		{ID: "wsl:Ubuntu 22 04", Title: "Ubuntu 22 04 (WSL)", Path: wslPath,
+			Args: []string{"-d", "Ubuntu 22 04"}, Distro: "Ubuntu 22 04"},
+	})
+	scanShells(t, a)
+
+	menu := clickPlus(t, a, conns.Local)
+	lines := shellLines(menuCommands(menu))
+	if len(lines) != 2 {
+		t.Fatalf("the plus offers %v, want a line for each of the two shells", lines)
+	}
+	if lines[0] == lines[1] {
+		t.Fatalf("both lines run the command %q", lines[0])
+	}
+
+	// The second line opens the second distribution, not the first again.
+	chooseMenuItem(t, menu, lines[1])
+
+	want := []string{wslPath, "-d", "Ubuntu 22 04"}
+	if got := a.lastArgv(t); !slices.Equal(got, want) {
+		t.Errorf("the second line opened %v, want %v", got, want)
+	}
+}
+
+// TestShellCommandIDsDoNotCollide checks the naming: a readable id per
+// shell, and a number where two would come out the same.
+func TestShellCommandIDsDoNotCollide(t *testing.T) {
+	got := shellCommandIDs([]shells.Shell{
+		{ID: "cmd"},
+		{ID: "wsl:Ubuntu-22.04"},
+		{ID: "wsl:Ubuntu 22 04"},
+		{ID: "wsl:ubuntu:22:04"},
+	})
+	want := []string{
+		shellCommandPrefix + "cmd",
+		shellCommandPrefix + "wsl-ubuntu-22-04",
+		shellCommandPrefix + "wsl-ubuntu-22-04-2",
+		shellCommandPrefix + "wsl-ubuntu-22-04-3",
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("the shells are named %v, want %v", got, want)
+	}
+}
+
+// TestASecondScanOffersTheShellsItFound checks that looking again
+// works: the commands of the scan before it are taken away, and a shell
+// installed since is on both menus.
+func TestASecondScanOffersTheShellsItFound(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	bar := withMenubar(t, a)
+	onMachine(a, []shells.Shell{
+		{ID: "cmd", Title: "Command Prompt", Path: cmdPath},
+		{ID: "pwsh", Title: "PowerShell", Path: pwshPath},
+	})
+	scanShells(t, a)
+
+	// pwsh is gone and a distribution has arrived since.
+	onMachine(a, []shells.Shell{
+		{ID: "cmd", Title: "Command Prompt", Path: cmdPath},
+		{ID: "wsl:Ubuntu", Title: "Ubuntu (WSL)", Path: wslPath,
+			Args: []string{"-d", "Ubuntu"}, Distro: "Ubuntu"},
+	})
+	scanShells(t, a)
+
+	want := []string{shellCommandID("cmd"), shellCommandID("wsl:Ubuntu")}
+	if got := shellLines(fileMenuLines(t, a, bar)); !slices.Equal(got, want) {
+		t.Errorf("the File menu offers %v, want %v", got, want)
+	}
+	menu := clickPlus(t, a, conns.Local)
+	if got := shellLines(menuCommands(menu)); !slices.Equal(got, want) {
+		t.Errorf("the plus offers %v, want %v", got, want)
+	}
+	if _, ok := a.root.Commands.Lookup(shellCommandID("pwsh")); ok {
+		t.Error("a command still opens a pane on the shell that has gone")
+	}
+
+	chooseMenuItem(t, menu, shellCommandID("wsl:Ubuntu"))
+
+	if got, want := a.lastArgv(t), argvOf(t, "wsl:Ubuntu"); !slices.Equal(got, want) {
+		t.Errorf("the pane started on %v, want %v", got, want)
+	}
+}
+
+// TestARememberedDistributionThatIsGoneFallsBackOnceTheScanHasLanded
+// checks what the scan is the authority for. Resolving a wsl: id asks
+// only whether wsl.exe is there, so a distribution the user has
+// unregistered still answers, and the pane would start, print wsl.exe's
+// complaint and die, on every new tab of every run.
+func TestARememberedDistributionThatIsGoneFallsBackOnceTheScanHasLanded(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	// A machine with wsl.exe on it and no Ubuntu: the looking finds two
+	// shells, and resolving the id on its own still says yes.
+	a.shellPick.findShells = func() ([]shells.Shell, error) {
+		return []shells.Shell{
+			{ID: "cmd", Title: "Command Prompt", Path: cmdPath},
+			{ID: "pwsh", Title: "PowerShell", Path: pwshPath},
+		}, nil
+	}
+	a.shellPick.namedShell = func(id string) (shells.Shell, bool) {
+		if id == "wsl:Ubuntu" {
+			return shells.Shell{ID: "wsl:Ubuntu", Title: "Ubuntu (WSL)", Path: wslPath,
+				Args: []string{"-d", "Ubuntu"}, Distro: "Ubuntu"}, true
+		}
+		return shells.Lookup(testShells(), id)
+	}
+	if err := a.shellPick.remembered.PutShell("wsl:Ubuntu"); err != nil {
+		t.Fatalf("remember a shell: %v", err)
+	}
+	scanShells(t, a)
+
+	chooseMenuItem(t, clickPlus(t, a, conns.Local), "conn.terminal")
+
+	if got := a.lastArgv(t); len(got) != 0 {
+		t.Errorf("the pane started on %v, want the default shell", got)
+	}
+	n := awaitModal[*ui.Notice](t, a, "a notice about the distribution that has gone", nil)
+	if !strings.Contains(n.Message(), "wsl:Ubuntu") {
+		t.Errorf("the notice does not name the shell:\n%s", n.Message())
+	}
+}
+
+// TestAShellThatGoesAfterAnotherPickIsSaidAgain checks what "once a
+// run" means: the telling starts again at the next pick, or a user who
+// picked a shell after the first notice would never hear about the
+// second one going.
+func TestAShellThatGoesAfterAnotherPickIsSaidAgain(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	// A machine with no cmd on it, and cmd is what was picked last run.
+	onMachine(a, []shells.Shell{
+		{ID: "pwsh", Title: "PowerShell", Path: pwshPath},
+		{ID: "wsl:Ubuntu", Title: "Ubuntu (WSL)", Path: wslPath,
+			Args: []string{"-d", "Ubuntu"}, Distro: "Ubuntu"},
+	})
+	if err := a.shellPick.remembered.PutShell("cmd"); err != nil {
+		t.Fatalf("remember a shell: %v", err)
+	}
+	scanShells(t, a)
+
+	chooseMenuItem(t, clickPlus(t, a, conns.Local), "conn.terminal")
+	n := awaitModal[*ui.Notice](t, a, "a notice about cmd", nil)
+	if !strings.Contains(n.Message(), "cmd") {
+		t.Errorf("the notice does not name the shell:\n%s", n.Message())
+	}
+	dismissNotice(t, a)
+
+	// pwsh is picked, and then it goes too.
+	chooseMenuItem(t, clickPlus(t, a, conns.Local), shellCommandID("pwsh"))
+	onMachine(a, []shells.Shell{
+		{ID: "wsl:Ubuntu", Title: "Ubuntu (WSL)", Path: wslPath,
+			Args: []string{"-d", "Ubuntu"}, Distro: "Ubuntu"},
+	})
+	scanShells(t, a)
+
+	chooseMenuItem(t, clickPlus(t, a, conns.Local), "conn.terminal")
+
+	n = awaitModal[*ui.Notice](t, a, "a notice about pwsh", nil)
+	if !strings.Contains(n.Message(), "pwsh") {
+		t.Errorf("the notice does not name the shell that has just gone:\n%s", n.Message())
+	}
+	if got := a.lastArgv(t); len(got) != 0 {
+		t.Errorf("the pane started on %v, want the default shell", got)
 	}
 }

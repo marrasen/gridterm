@@ -107,11 +107,20 @@ func fileItems(shells []ui.MenuItem) []ui.MenuItem {
 		ui.MenuItem{Command: "pane.close"})
 }
 
+// fileMenuShells are the shell lines the File menu offers. A window
+// whose panes open on the machine -ssh named gets none: "New tab" goes
+// there and a shell line comes back here, and no row behind the line
+// says which machine it means.
+func (a *app) fileMenuShells() []ui.MenuItem {
+	if a.homeMachine() != nil {
+		return nil
+	}
+	return a.shellPick.lines(false)
+}
+
 // refreshFileMenu rebuilds the File menu for the shells a scan has since
-// found, taking it down first when it is the menu showing.
-//
-// That menu alone: rebuilding the bar would take down whatever else is
-// open with it.
+// found. An open menu holds its own copy of the items, so this cannot
+// disturb one the user is reading.
 func (a *app) refreshFileMenu(shells []ui.MenuItem) {
 	if a.bar == nil {
 		return
@@ -119,9 +128,6 @@ func (a *app) refreshFileMenu(shells []ui.MenuItem) {
 	for i, def := range a.bar.Menus {
 		if def.Title != fileMenu {
 			continue
-		}
-		if a.bar.OpenIndex() == i {
-			a.bar.Close()
 		}
 		a.bar.Menus[i].Items = fileItems(shells)
 		return

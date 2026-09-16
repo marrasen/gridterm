@@ -73,10 +73,18 @@ func TestEveryMenuLineNamesACommand(t *testing.T) {
 // a line naming nothing is drawn greyed out wherever it appears.
 func TestEveryPlusMenuLineNamesACommand(t *testing.T) {
 	a := newTestApp(t, 40, 20)
+	withDialogs(t, a)
 	withMenubar(t, a)
+	// The shell lines too, which are registered by a scan rather than at
+	// startup: a line naming a command that never landed is a dead line.
+	scanShells(t, a)
+	lines := a.shellPick.lines(true)
+	if len(lines) == 0 {
+		t.Fatal("the scan found no shells to put on the menu")
+	}
 
 	for _, shape := range hostShapes() {
-		items := hostItems(shape.facts, nil)
+		items := hostItems(shape.facts, lines)
 		if len(items) == 0 {
 			t.Errorf("the plus on a %s offers nothing", shape.name)
 		}

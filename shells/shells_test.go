@@ -2,6 +2,7 @@ package shells
 
 import (
 	"errors"
+	"os"
 	"os/exec"
 	"reflect"
 	"runtime"
@@ -199,6 +200,33 @@ func TestWslNotAnsweringLeavesTheRestOfTheList(t *testing.T) {
 		if !reflect.DeepEqual(ids(got), want) {
 			t.Errorf("when %s the machine offers %v, want %v", c.what, ids(got), want)
 		}
+	}
+}
+
+// wsl.exe ships with every Windows, so it is there and answers on a machine where the feature is off
+// or no distribution is installed. It exits non-zero, which is an answer rather than a failure.
+func TestWslExitingNonZeroIsAnAnswer(t *testing.T) {
+	got, err := find(windowsMachine(t, nil, &exec.ExitError{ProcessState: &os.ProcessState{}}))
+	if err != nil {
+		t.Errorf("wsl.exe exiting non-zero was reported as %v", err)
+	}
+	if want := []string{"cmd", "powershell", "pwsh"}; !reflect.DeepEqual(ids(got), want) {
+		t.Errorf("the machine offers %v, want %v", ids(got), want)
+	}
+}
+
+// What wsl.exe wrote is carried into the error, since exec leaves stderr out of the message.
+func TestTheErrorCarriesWhatWslSaid(t *testing.T) {
+	complaint := "Windows Subsystem for Linux has no installed distributions."
+	exited := &exec.ExitError{
+		ProcessState: &os.ProcessState{},
+		Stderr:       utf16le(complaint+"\r\n", true),
+	}
+	if got, want := said(exited), ": "+complaint; got != want {
+		t.Errorf("the error carries %q, want %q", got, want)
+	}
+	if got := said(errors.New("wsl.exe was never started")); got != "" {
+		t.Errorf("an error with no stderr carries %q, want nothing", got)
 	}
 }
 

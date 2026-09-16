@@ -225,7 +225,8 @@ type app struct {
 	newShell func(argv []string, cols, rows int) (session.Session, error)
 
 	// command is what -e named: the program a pane here runs instead of
-	// a shell.
+	// a shell. It is written once in main, before there is a goroutine
+	// other than the one writing it, and only read after that.
 	command []string
 
 	// What a new pane is started with, kept from the flags.

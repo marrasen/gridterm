@@ -70,8 +70,12 @@ func thisMachine() probe {
 
 // Find returns the shells this machine can open a pane on, best first, and why the WSL distributions
 // could not be listed. It runs wsl.exe to list them, which takes a moment, so a caller that only needs
-// one remembered id should use Named. A machine with no WSL at all gives a nil error, since that is an
-// answer rather than a failure.
+// one remembered id should use Named.
+//
+// wsl.exe being missing and wsl.exe exiting non-zero are both answers rather than failures: it ships
+// with every Windows, and it exits non-zero when the feature is off or nothing is installed. A WSL
+// that is half broken therefore offers no distributions and says nothing about why, which is the
+// price of not putting a notice in front of every Windows user who never had WSL.
 func Find() ([]Shell, error) {
 	return find(thisMachine())
 }
@@ -94,7 +98,9 @@ func find(p probe) ([]Shell, error) {
 	// One line per installed distribution, in the order wsl.exe lists them.
 	names, err := p.distros()
 	if err != nil {
-		if errors.Is(err, exec.ErrNotFound) {
+		// wsl.exe was asked and said it has none.
+		var exited *exec.ExitError
+		if errors.Is(err, exec.ErrNotFound) || errors.As(err, &exited) {
 			return list, nil
 		}
 		return list, err

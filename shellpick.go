@@ -2,8 +2,9 @@ package main
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
-	"sync/atomic"
+	"sync"
 	"unicode"
 
 	"github.com/marrasen/gridterm/session"
@@ -13,34 +14,47 @@ import (
 	"github.com/marrasen/gridterm/ui/term"
 )
 
-// shellCommandPrefix is what a shell's command id starts with, so the
-// commands registered for one scan can be told from the rest.
+// shellCommandPrefix starts the id of every command that opens a pane
+// on a shell, which keeps those ids clear of every other command's.
 const shellCommandPrefix = "shell.open."
 
 // shellPick is the shells a pane on this machine can run, the commands
 // registered for them, and which one the user last chose.
 //
-// The goroutine that draws is the only one that touches it, apart from
-// told: a window being served starts a shell from the server's
-// goroutine.
+// mu guards the fields under it: the goroutine that draws writes what
+// the scan found, while a window being served reads it from the
+// server's goroutine, one per session a client opens.
 type shellPick struct {
+	// scan carries the shells from the goroutine that looked, and
+	// registered names the commands the last scan registered. Both
+	// belong to the goroutine that draws.
+	scan       chan foundShells
+	registered []string
+
+	mu sync.Mutex
+
 	// found are the shells the scan turned up, in the order a menu
-	// offers them, and scan carries them from the goroutine that looked.
-	// One whose command would not register is left out, because nothing
-	// could open it.
+	// offers them, and cmds the command that opens each. One whose
+	// command would not register is left out, because nothing could
+	// open it.
 	found []shells.Shell
-	scan  chan foundShells
+	cmds  []string
+
+	// scanned says the looking is over, which is when found becomes the
+	// authority on what this machine has.
+	scanned bool
 
 	// told records that the user has been told the shell they chose has
 	// gone, which is said once a run.
-	told atomic.Bool
+	told bool
 
 	// remembered is which shell a new pane runs, kept between runs. Nil
 	// until the window is given its settings.
 	remembered *settings.Settings
 
-	// findShells looks for the shells, and namedShell resolves one id.
-	// They are fields so a test can describe a machine.
+	// findShells looks for the shells, and namedShell resolves one id
+	// before the looking is over. They are fields so a test can
+	// describe a machine.
 	findShells func() ([]shells.Shell, error)
 	namedShell func(id string) (shells.Shell, bool)
 }
@@ -57,38 +71,104 @@ func newShellPick() *shellPick {
 }
 
 // remember gives the window the settings the chosen shell is kept in.
-func (p *shellPick) remember(set *settings.Settings) { p.remembered = set }
+func (p *shellPick) remember(set *settings.Settings) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.remembered = set
+}
 
 // chosen is the id of the shell a new pane runs, and whether one was
 // ever chosen.
 func (p *shellPick) chosen() (string, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	if p.remembered == nil {
 		return "", false
 	}
 	return p.remembered.Shell()
 }
 
-// choose writes down which shell was picked, for the next run.
+// choose writes down which shell was picked, for the next run, and lets
+// the next shell that goes be said again.
 func (p *shellPick) choose(id string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.told = false
 	if p.remembered == nil {
 		return nil
 	}
 	return p.remembered.PutShell(id)
 }
 
+// resolve returns the shell an id names, and whether this machine
+// still has it. What the scan found answers once it has landed, and
+// namedShell before then, which is when the first pane opens.
+func (p *shellPick) resolve(id string) (shells.Shell, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.scanned {
+		return shells.Lookup(p.found, id)
+	}
+	return p.namedShell(id)
+}
+
+// titleOf is what a menu calls the shell an id names, and the id itself
+// when nothing the scan found goes by it.
+func (p *shellPick) titleOf(id string) string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if sh, ok := shells.Lookup(p.found, id); ok {
+		return sh.Title
+	}
+	return id
+}
+
+// take keeps what a scan turned up: the shells, and the command that
+// opens a pane on each.
+func (p *shellPick) take(list []shells.Shell, cmds []string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.found, p.cmds, p.scanned = list, cmds, true
+}
+
+// landed says whether the looking is over.
+func (p *shellPick) landed() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.scanned
+}
+
+// finder is the function that looks for the shells.
+func (p *shellPick) finder() func() ([]shells.Shell, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.findShells
+}
+
+// tell reports whether the user has still to be told that a shell has
+// gone, and takes the telling: it is said once a run.
+func (p *shellPick) tell() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.told {
+		return false
+	}
+	p.told = true
+	return true
+}
+
 // lines are the menu items that open a pane on each shell. titled puts
 // the shell's own name on the line, for a menu whose heading already
-// says a terminal is what opens.
-//
-// A machine with one shell gets none: there is nothing to choose
-// between, and "Terminal" is still the way in.
+// says a terminal is what opens. A machine with one shell gets none.
 func (p *shellPick) lines(titled bool) []ui.MenuItem {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	if len(p.found) < 2 {
 		return nil
 	}
 	items := make([]ui.MenuItem, 0, len(p.found))
-	for _, sh := range p.found {
-		item := ui.MenuItem{Command: shellCommandID(sh.ID)}
+	for i, sh := range p.found {
+		item := ui.MenuItem{Command: p.cmds[i]}
 		if titled {
 			item.Title = sh.Title
 		}
@@ -114,7 +194,7 @@ func (a *app) localShell() []string {
 	if !chosen {
 		return nil
 	}
-	sh, ok := a.shellPick.namedShell(id)
+	sh, ok := a.shellPick.resolve(id)
 	if !ok {
 		a.sayShellHasGone(id)
 		return nil
@@ -125,26 +205,23 @@ func (a *app) localShell() []string {
 }
 
 // sayShellHasGone tells the user the shell they chose is no longer on
-// this machine, once a run.
-//
-// Posted rather than shown, because this runs while the first pane is
-// opening and there is no widget tree yet to show a notice in.
+// this machine, once a run. It posts the notice, because the first pane
+// opens before there is a widget tree to show one in.
 func (a *app) sayShellHasGone(id string) {
-	if a.shellPick.told.Swap(true) {
+	if !a.shellPick.tell() {
 		return
 	}
+	name := a.shellPick.titleOf(id)
 	a.pump.post(func() {
 		a.showNotice("The shell you chose is not on this machine",
-			"A pane was to open on "+id+", which is no longer here, so the "+
-				"default shell opened instead.", true)
+			"This machine no longer has "+name+", so the pane opened on "+
+				"the default shell. Pick another shell from the plus on "+
+				"this machine's row.", true)
 	})
 }
 
 // openTabOn opens a tab here on a shell, and writes the pick down once
 // it has started: a shell that would not start is not worth keeping.
-//
-// Here whatever new panes are opening on, because the row the line was
-// chosen from is this machine.
 func (a *app) openTabOn(sh shells.Shell) error {
 	err := a.openTabWith(func() (*term.Terminal, error) {
 		return a.localTerminalOn(sh.Command(""))
@@ -161,12 +238,11 @@ func (a *app) openTabOn(sh shells.Shell) error {
 // startShellScan looks for the shells a pane here can run, on a
 // goroutine of its own, because wsl.exe takes a moment to answer.
 func (a *app) startShellScan() {
-	// The goroutine holds the channel rather than reading the field, so
-	// that starting a second scan cannot race with the first one
-	// finishing.
+	// The goroutine holds the channel, so a second scan cannot race with
+	// the first one finishing.
 	found := make(chan foundShells, 1)
 	a.shellPick.scan = found
-	find := a.shellPick.findShells
+	find := a.shellPick.finder()
 	go func() {
 		list, err := find()
 		found <- foundShells{shells: list, err: err}
@@ -183,29 +259,39 @@ func (a *app) reapShellScan() {
 		return
 	}
 	a.registerShells(got.shells)
-	a.refreshFileMenu(a.shellPick.lines(false))
+	a.refreshFileMenu(a.fileMenuShells())
 	a.reportShellScan(got.err)
 }
 
 // registerShells registers the command that opens a pane on each shell,
 // and keeps the shells whose command took.
 func (a *app) registerShells(list []shells.Shell) {
-	a.shellPick.found = make([]shells.Shell, 0, len(list))
-	for _, sh := range list {
+	// Whatever the last scan registered goes first, or a shell that has
+	// since gone would still answer to its command.
+	for _, id := range a.shellPick.registered {
+		a.root.Commands.Unregister(id)
+	}
+	a.shellPick.registered = nil
+
+	ids := shellCommandIDs(list)
+	found := make([]shells.Shell, 0, len(list))
+	cmds := make([]string, 0, len(list))
+	for i, sh := range list {
 		cmd := ui.Command{
-			ID:    shellCommandID(sh.ID),
+			ID:    ids[i],
 			Title: "New tab on " + sh.Title,
 			Run:   func() error { return a.openTabOn(sh) },
 		}
 		if err := a.root.Commands.Register(a.reporting(cmd)); err != nil {
-			// Two shells whose ids reduce to the same command id, or one
-			// that collides with a command already registered. Neither is
-			// worth losing the rest of the list over.
+			// An id something else is already registered under.
 			a.logError(err)
 			continue
 		}
-		a.shellPick.found = append(a.shellPick.found, sh)
+		a.shellPick.registered = append(a.shellPick.registered, ids[i])
+		found = append(found, sh)
+		cmds = append(cmds, ids[i])
 	}
+	a.shellPick.take(found, cmds)
 }
 
 // reportShellScan says why the WSL distributions could not be listed,
@@ -219,6 +305,24 @@ func (a *app) reportShellScan(err error) {
 	a.showNotice("Some shells could not be found",
 		"The WSL distributions could not be listed, so none of them are offered:\n\n"+
 			err.Error(), true)
+}
+
+// shellCommandIDs names the command that opens a pane on each shell in
+// list, in the same order. Two ids that flatten to the same name are
+// told apart by a number, so neither shell is dropped.
+func shellCommandIDs(list []shells.Shell) []string {
+	taken := make(map[string]bool, len(list))
+	ids := make([]string, 0, len(list))
+	for _, sh := range list {
+		base := shellCommandID(sh.ID)
+		id := base
+		for n := 2; taken[id]; n++ {
+			id = base + "-" + strconv.Itoa(n)
+		}
+		taken[id] = true
+		ids = append(ids, id)
+	}
+	return ids
 }
 
 // shellCommandID names the command that opens a pane on a shell. A

@@ -44,8 +44,9 @@ func TestOneWindowWorksInAnotherMachinesShell(t *testing.T) {
 	a := newTestApp(t, 90, 30)
 	withDialogs(t, a)
 	// A real shell rather than the harness's pipe, because the whole
-	// point is what the shell answers. Set before serving starts, which
-	// is when the served window takes the shell it will start.
+	// point is what the shell answers. Set before serving starts: the
+	// server reads it on a goroutine of its own, once per session a
+	// client opens.
 	a.newShell = func(argv []string, cols, rows int) (session.Session, error) {
 		return session.StartLocal(session.LocalConfig{Command: argv, Cols: cols, Rows: rows})
 	}

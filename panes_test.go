@@ -277,6 +277,9 @@ func newTestApp(t *testing.T, cols, rows int, opts ...testOption) *testApp {
 	for _, opt := range opts {
 		opt(&start)
 	}
+	// What -e named, kept the way main keeps it: it is the program every
+	// pane here runs, not only the first.
+	ta.command = start.command
 	first, err := ta.openFirst(start)
 	if err != nil {
 		t.Fatalf("first pane: %v", err)

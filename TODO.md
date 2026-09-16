@@ -42,6 +42,12 @@ nothing in the code offers it. Raised again on 2026-09-16.
 
 ## Known gaps worth revisiting
 
+- There is no way back to the default shell once one has been picked.
+  The menus offer a line per shell that was found, and none of them
+  means "whatever `COMSPEC` names". Undoing a pick takes editing the
+  settings file by hand. A "Default shell" line on both menus would do
+  it, writing an empty id.
+
 - The cursor keeps blinking while the window is in the background.
   Nothing reads `ebiten.IsFocused`, and most terminals either stop the
   blink or draw the cursor hollow once the window loses focus.

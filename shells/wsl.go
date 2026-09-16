@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
+	"fmt"
 	"os/exec"
 	"strings"
 	"time"
@@ -23,8 +25,8 @@ const wslWaitDelay = time.Second
 var wslBOM = []byte{0xff, 0xfe}
 
 // wslDistros returns the installed WSL distributions, or why wsl.exe could not say. A machine without
-// WSL fails with exec.ErrNotFound, a broken one with a timeout or whatever wsl.exe reported, and find
-// tells the two apart.
+// WSL fails with exec.ErrNotFound, one that ran out of time with a deadline of its own rather than
+// with whatever the kill looked like, and find tells those apart from wsl.exe answering non-zero.
 func wslDistros() ([]string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), wslListTimeout)
 	defer cancel()
@@ -34,9 +36,27 @@ func wslDistros() ([]string, error) {
 	cmd.WaitDelay = wslWaitDelay
 	out, err := cmd.Output()
 	if err != nil {
-		return nil, err
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf("wsl.exe did not answer within %s%s", wslListTimeout, said(err))
+		}
+		return nil, fmt.Errorf("%w%s", err, said(err))
 	}
 	return parseDistros(out), nil
+}
+
+// said is what the program wrote to stderr, ready to go on the end of a message, and "" when it wrote
+// nothing. exec leaves stderr out of the error it hands back, so "exit status 1" is all there is
+// without this.
+func said(err error) string {
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) {
+		return ""
+	}
+	text := strings.TrimSpace(decodeUTF16(exit.Stderr))
+	if text == "" {
+		return ""
+	}
+	return ": " + strings.Join(strings.Fields(text), " ")
 }
 
 // parseDistros reads the distribution names out of what wsl.exe wrote.

@@ -612,6 +612,9 @@ func (f *Form) press(at int) error {
 		return nil
 	}
 	if b.Keep {
+		// This press worked, so whatever an earlier one failed with is
+		// no longer what the form has to say.
+		f.SetError(nil)
 		return nil
 	}
 	f.dismiss()

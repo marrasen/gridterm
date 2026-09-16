@@ -236,6 +236,44 @@ func TestFormKeepsTheFormOpenWhenAButtonFails(t *testing.T) {
 	}
 }
 
+// A button that keeps the form open takes the last failure off it when
+// it works.
+//
+// A form with two buttons that both stay is pressed more than once, and
+// an error left over from an earlier press reads as belonging to the one
+// that just worked.
+func TestFormAKeptButtonThatWorksClearsTheError(t *testing.T) {
+	var fail error
+	closed := 0
+	f := NewForm("An agent may work in this pane", func() { closed++ })
+	f.Style = formStyled()
+	f.AddButton(Button{Title: "Copy the prompt", Keep: true, Do: func() error { return fail }})
+	f.Layout(Size{Cols: 60, Rows: 24})
+	f.SetFocus(true)
+
+	fail = errors.New("the clipboard is not available")
+	if err := f.press(0); err != nil {
+		t.Fatalf("press: %v", err)
+	}
+	if f.Error() == nil {
+		t.Fatal("the form does not say why the press failed")
+	}
+
+	fail = nil
+	if err := f.press(0); err != nil {
+		t.Fatalf("press: %v", err)
+	}
+	if f.Error() != nil {
+		t.Errorf("the form still shows %v, from the press before", f.Error())
+	}
+	if strings.Contains(gridText(drawForm(f, 60, 24)), "clipboard") {
+		t.Error("why the earlier press failed is still drawn")
+	}
+	if closed != 0 {
+		t.Errorf("a button that keeps the form open closed it %d times", closed)
+	}
+}
+
 func TestFormEscapeCloses(t *testing.T) {
 	tf := newTestForm(t)
 	tf.form.HandleKey(press(input.KeyEscape, 0))

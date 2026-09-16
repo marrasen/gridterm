@@ -53,6 +53,10 @@ type stored struct {
 	// AgentHost is the agent program the hand-over dialog last wrote a
 	// prompt for, by the name that dialog offers.
 	AgentHost *string `json:"agentHost,omitempty"`
+
+	// Shell is the shell a new pane on this machine runs, by the id the
+	// shell list gives it.
+	Shell *string `json:"shell,omitempty"`
 }
 
 // Settings are the choices gridterm remembers between runs.
@@ -196,6 +200,34 @@ func (s *Settings) PutAgentHost(name string) error {
 	return nil
 }
 
+// Shell is the shell a new pane was last opened on, and whether one was
+// saved.
+func (s *Settings) Shell() (string, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.have.Shell == nil {
+		return "", false
+	}
+	return *s.have.Shell, true
+}
+
+// PutShell remembers which shell a new pane runs, and saves.
+func (s *Settings) PutShell(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// The file first, for the same reason PutServe reads it first.
+	if err := s.rereadLocked(); err != nil {
+		return fmt.Errorf("%w: %w", ErrUnsaveable, err)
+	}
+	before := s.have
+	s.have.Shell = &id
+	if err := s.saveLocked(); err != nil {
+		s.have = before
+		return err
+	}
+	return nil
+}
+
 // rereadLocked reads the file into the settings, replacing what they
 // hold.
 //
@@ -291,6 +323,11 @@ func check(file stored) error {
 	// turned away: it names nothing and could not be offered back to the dialog.
 	if h := file.AgentHost; h != nil && *h == "" {
 		return errors.New("the agent host has no name")
+	}
+	// Which shells there are is the window's business, not this package's, so only an empty name is
+	// turned away: it names nothing and could not be opened.
+	if sh := file.Shell; sh != nil && *sh == "" {
+		return errors.New("the shell has no name")
 	}
 	return nil
 }

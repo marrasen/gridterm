@@ -114,6 +114,7 @@ func TestUnreadableSettingsAreNotWrittenOver(t *testing.T) {
 		{"a port that is not one", `{"version": 1, "servePort": 70000}`},
 		{"a reach that means nothing", `{"version": 1, "serveReach": "everywhere"}`},
 		{"an agent host with no name", `{"version": 1, "agentHost": ""}`},
+		{"a shell with no name", `{"version": 1, "shell": ""}`},
 		{"more than one set of settings", `{"version": 1}{"version": 1}`},
 		{"a key written twice", `{"version": 1, "servePort": 2300, "servePort": 9000}`},
 	}
@@ -449,5 +450,168 @@ func TestAnAgentWithNoNameIsRefused(t *testing.T) {
 	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
 		raw, _ := os.ReadFile(path)
 		t.Errorf("a file was written anyway:\n%s", raw)
+	}
+}
+
+// Which shell a new pane runs comes back on the next run.
+func TestTheShellIsRemembered(t *testing.T) {
+	path := at(t)
+	s, err := Load(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if id, have := s.Shell(); have {
+		t.Errorf("a missing file remembered the shell %q", id)
+	}
+
+	if err := s.PutShell("wsl:Ubuntu"); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	if id, have := s.Shell(); !have || id != "wsl:Ubuntu" {
+		t.Errorf("the shell reads back as %q, %v; want wsl:Ubuntu", id, have)
+	}
+	again, err := Load(path)
+	if err != nil {
+		t.Fatalf("load again: %v", err)
+	}
+	id, have := again.Shell()
+	if !have || id != "wsl:Ubuntu" {
+		t.Errorf("the shell came back as %q, %v; want wsl:Ubuntu", id, have)
+	}
+}
+
+// Remembering the shell leaves what else was saved alone, because it
+// reads the file before it writes it.
+func TestRememberingTheShellKeepsWhatElseWasSaved(t *testing.T) {
+	path := at(t)
+	s, err := Load(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if err := s.PutServe(2300, ReachAnywhere); err != nil {
+		t.Fatalf("save the port: %v", err)
+	}
+	if err := s.PutAgentHost("Codex"); err != nil {
+		t.Fatalf("save the agent: %v", err)
+	}
+
+	if err := s.PutShell("pwsh"); err != nil {
+		t.Fatalf("save the shell: %v", err)
+	}
+
+	again, err := Load(path)
+	if err != nil {
+		t.Fatalf("load again: %v", err)
+	}
+	if port, have := again.ServePort(); !have || port != 2300 {
+		t.Errorf("the port came back as %d, %v; want 2300", port, have)
+	}
+	if reach, have := again.ServeReach(); !have || reach != ReachAnywhere {
+		t.Errorf("the reach came back as %q, %v; want %q", reach, have, ReachAnywhere)
+	}
+	if name, have := again.AgentHost(); !have || name != "Codex" {
+		t.Errorf("the agent came back as %q, %v; want Codex", name, have)
+	}
+	if id, have := again.Shell(); !have || id != "pwsh" {
+		t.Errorf("the shell came back as %q, %v; want pwsh", id, have)
+	}
+}
+
+// Remembering the shell does not write over a second window's work, because
+// it reads the file again first.
+func TestRememberingTheShellKeepsASecondWindowsWork(t *testing.T) {
+	path := at(t)
+	one, err := Load(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	two, err := Load(path)
+	if err != nil {
+		t.Fatalf("load a second window: %v", err)
+	}
+	if err := two.PutServe(9000, ReachAnywhere); err != nil {
+		t.Fatalf("the second window saves the port: %v", err)
+	}
+
+	if err := one.PutShell("cmd"); err != nil {
+		t.Fatalf("save the shell: %v", err)
+	}
+
+	again, err := Load(path)
+	if err != nil {
+		t.Fatalf("load again: %v", err)
+	}
+	if port, have := again.ServePort(); !have || port != 9000 {
+		t.Errorf("the port came back as %d, %v; want the 9000 the second window saved", port, have)
+	}
+	if id, have := again.Shell(); !have || id != "cmd" {
+		t.Errorf("the shell came back as %q, %v; want cmd", id, have)
+	}
+}
+
+// A shell with no name is not a choice, and the file is turned away in
+// words the user can act on.
+func TestAShellWithNoNameIsRefused(t *testing.T) {
+	path := at(t)
+	if err := os.WriteFile(path, []byte(`{"version": 1, "shell": ""}`), 0o600); err != nil {
+		t.Fatalf("write the file: %v", err)
+	}
+
+	_, err := Load(path)
+
+	if err == nil {
+		t.Fatal("a shell with no name loaded clean")
+	}
+	if !strings.Contains(err.Error(), "shell") {
+		t.Errorf("it said %v, without saying the shell is what is wrong", err)
+	}
+}
+
+// A write that fails leaves the shell that was saved, on disk and in the
+// settings.
+func TestAFailedWriteLeavesTheShellThatWasSaved(t *testing.T) {
+	path := at(t)
+	s, err := Load(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if err := s.PutShell("cmd"); err != nil {
+		t.Fatalf("first save: %v", err)
+	}
+	was, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read the file: %v", err)
+	}
+
+	// The disk gives up on the last step, after the new file is written
+	// and before it takes the old one's place.
+	wasRename := rename
+	rename = func(string, string) error { return errors.New("the disk gave up") }
+	t.Cleanup(func() { rename = wasRename })
+
+	err = s.PutShell("pwsh")
+
+	if err == nil {
+		t.Fatal("a failed write was reported as a save")
+	}
+	now, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read the file again: %v", err)
+	}
+	if !bytes.Equal(was, now) {
+		t.Errorf("the old settings are gone:\n%s\nwant\n%s", now, was)
+	}
+	if id, _ := s.Shell(); id != "cmd" {
+		t.Errorf("the settings hold the shell %q, want the cmd that is saved", id)
+	}
+}
+
+// Settings that cannot be read refuse to remember a shell.
+func TestTheShellIsNotSavedOverUnusableSettings(t *testing.T) {
+	s := Unusable(errors.New("no configuration directory"))
+
+	if err := s.PutShell("cmd"); !errors.Is(err, ErrUnsaveable) {
+		t.Errorf("saving gave %v, want ErrUnsaveable", err)
 	}
 }

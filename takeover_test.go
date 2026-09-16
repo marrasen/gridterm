@@ -874,14 +874,32 @@ func TestShuttingDownHangsUpOnEveryWindow(t *testing.T) {
 // does: the row on the sidebar, and Enter on it.
 func attachFromTheSidebar(t *testing.T, a *testApp, key remoteKey) {
 	t.Helper()
+	panelText(a, time.Now())
+	attachFromTheRowsDrawn(t, a, key)
+}
+
+// attachFromTheRowsDrawn is attachFromTheSidebar on the rows the sidebar
+// already has, for a test clicking in the frame that drew them.
+func attachFromTheRowsDrawn(t *testing.T, a *testApp, key remoteKey) {
+	t.Helper()
 	if err := a.focusPanel(); err != nil {
 		t.Fatalf("focus the sidebar: %v", err)
 	}
-	panelText(a, time.Now())
 	if !a.panel.Select(key) {
 		t.Fatalf("the sidebar has no row for that screen: %v", panelText(a, time.Now()))
 	}
 	sendKey(t, a, press(input.KeyEnter, 0))
+}
+
+// windowAt is the window a test app has taken over at an address, which
+// is what a row belonging to it is keyed by.
+func windowAt(t *testing.T, a *testApp, addr string) *taken {
+	t.Helper()
+	held := a.windows.at(addr)
+	if held == nil {
+		t.Fatalf("no window is held at %s: %v", addr, a.windows.names())
+	}
+	return held
 }
 
 // twoWindows is one window serving and another that has taken it over,
@@ -949,10 +967,11 @@ func TestTheSidebarShowsWhatTheOtherWindowHasOpen(t *testing.T) {
 
 	// And this window shows a row for each, under the window itself.
 	client.refreshPanel(panelNow)
+	held := windowAt(t, client, addr)
 	want := len(client.windows.named(addr).win.Opens())
 	var shown int
 	for _, row := range client.panel.Rows() {
-		if key, ok := row.Key.(remoteKey); ok && key.window == addr {
+		if key, ok := row.Key.(remoteKey); ok && key.window == held {
 			shown++
 		}
 	}
@@ -1004,13 +1023,14 @@ func TestAttachingShowsWhatIsAlreadyOnTheScreen(t *testing.T) {
 
 	// The row for the shell with the text on it, as this window was told
 	// about it, and a row for the second shell beside it.
-	row := remoteKey{window: addr, id: host.panes[hostPane].ID()}
+	held := windowAt(t, client, addr)
+	row := remoteKey{window: held, id: host.panes[hostPane].ID()}
 	waitFor(t, host, "a row for each shell over there", func() bool {
 		client.refreshPanel(panelNow)
 		var mine, others int
 		for _, r := range client.panel.Rows() {
 			key, ok := r.Key.(remoteKey)
-			if !ok || key.window != addr {
+			if !ok || key.window != held {
 				continue
 			}
 			if key == row {
@@ -1050,7 +1070,7 @@ func TestAttachingShowsWhatIsAlreadyOnTheScreen(t *testing.T) {
 	var others int
 	for _, r := range client.panel.Rows() {
 		key, ok := r.Key.(remoteKey)
-		if !ok || key.window != addr {
+		if !ok || key.window != held {
 			continue
 		}
 		if key == row {
@@ -1115,7 +1135,7 @@ func TestAttachingToNothingSaysSo(t *testing.T) {
 	_, client, addr := twoWindows(t)
 	panes := len(client.panes)
 
-	err := client.attachHere(remoteKey{window: addr, id: "no-such-thing"}, nil)
+	err := client.attachHere(remoteKey{window: windowAt(t, client, addr), id: "no-such-thing"}, nil)
 
 	if err == nil {
 		t.Fatal("it attached to something that is not open")
@@ -1192,13 +1212,14 @@ func TestTheRowChosenIsTheOneAttachedTo(t *testing.T) {
 	host.shells[second].out <- []byte("this-is-the-second\r\n")
 
 	// The row for the second one, as this window was told about it.
+	held := windowAt(t, client, addr)
 	var row remoteKey
 	waitFor(t, host, "a row named for the second shell", func() bool {
 		host.refreshPanel(panelNow)
 		client.refreshPanel(panelNow)
 		for _, r := range client.panel.Rows() {
 			key, ok := r.Key.(remoteKey)
-			if !ok || key.window != addr {
+			if !ok || key.window != held {
 				continue
 			}
 			if open, there := client.openOver(key); there && open.Label == "second-shell" {
@@ -1274,13 +1295,14 @@ func TestARowKeepsItsNameWhenSomethingElseCloses(t *testing.T) {
 	host.setTitle(t, second, newest, "the-one-i-want")
 	host.shells[second].out <- []byte("this-is-the-second\r\n")
 
+	held := windowAt(t, client, addr)
 	var row remoteKey
 	waitFor(t, host, "a row for the second shell", func() bool {
 		host.refreshPanel(panelNow)
 		client.refreshPanel(panelNow)
 		for _, r := range client.panel.Rows() {
 			key, ok := r.Key.(remoteKey)
-			if !ok || key.window != addr {
+			if !ok || key.window != held {
 				continue
 			}
 			if open, there := client.openOver(key); there && open.Label == "the-one-i-want" {
@@ -1374,18 +1396,161 @@ func TestARemoteRowKeepsItsKeyWhileItWorks(t *testing.T) {
 	quiet := busy
 	quiet.Note, quiet.State, quiet.Cols, quiet.Rows = "", "settled", 120, 40
 
-	if remoteKeyFor("margit", busy) != remoteKeyFor("margit", quiet) {
+	one := &taken{name: "margit", addr: "margit:7391"}
+	two := &taken{name: "web1", addr: "web1:7391"}
+
+	if remoteKeyFor(one, busy) != remoteKeyFor(one, quiet) {
 		t.Error("the row changed key when the program went quiet")
 	}
 
 	other := busy
 	other.ID = "margit#2"
-	if remoteKeyFor("margit", busy) == remoteKeyFor("margit", other) {
+	if remoteKeyFor(one, busy) == remoteKeyFor(one, other) {
 		t.Error("two different rows share a key")
 	}
-	if remoteKeyFor("margit", busy) == remoteKeyFor("web1", busy) {
+	if remoteKeyFor(one, busy) == remoteKeyFor(two, busy) {
 		t.Error("the same row on two windows shares a key")
 	}
+
+	// And the key is the window itself, so the server list renaming it
+	// leaves the row where the user left it.
+	was := remoteKeyFor(one, busy)
+	one.name = "statio"
+	if remoteKeyFor(one, busy) != was {
+		t.Error("the row changed key when the window was renamed")
+	}
+}
+
+// A row drawn before the server list re-keys the window still opens what
+// it names.
+//
+// The name a window is held under comes from the server list, so saving
+// it under a name moves that name. The sidebar's rows are a frame old,
+// and a click on one of them between the save and the next frame used to
+// find nothing at all.
+func TestARowDrawnBeforeAReKeyStillOpensWhatItNames(t *testing.T) {
+	host, client, addr := twoWindows(t)
+	withMenubar(t, client)
+	keyFile, _ := aKeyFile(t)
+
+	// The shell already running over there, and the sidebar row for it.
+	hostPane := onlyPaneOn(t, host)
+	row := remoteKey{window: windowAt(t, client, addr), id: host.panes[hostPane].ID()}
+	drawTheRowFor(t, host, client, row)
+
+	// The save happens in the frame the rows were drawn in, and moves
+	// the window from its address to the name.
+	panes := len(client.panes)
+	saveWindowFromTheDialog(t, client, "statio", addr, keyFile)
+	if client.windows.named("statio") == nil {
+		t.Fatalf("saving it did not re-key the window: %v", client.windows.names())
+	}
+
+	// Then the click, on the rows drawn before it.
+	attachFromTheRowsDrawn(t, client, row)
+	waitFor(t, host, "a pane watching the shell over there", func() bool {
+		return len(client.panes) == panes+1
+	}, client)
+	watching := newestPane(t, client)
+	if what, ok := client.windows.watching(watching); !ok || what != row {
+		t.Errorf("the pane watches %v, want the screen the row named", what)
+	}
+}
+
+// Saving a window taken over under a name keeps the sidebar's bar on the
+// row the user left it on.
+//
+// The list keeps their place by comparing keys, and a key naming the
+// window by the name it was held under would be a new key the moment the
+// list moved that name.
+func TestReKeyingAWindowKeepsTheBarOnTheSameRow(t *testing.T) {
+	host, client, addr := twoWindows(t)
+	withMenubar(t, client)
+	keyFile, _ := aKeyFile(t)
+
+	hostPane := onlyPaneOn(t, host)
+	row := remoteKey{window: windowAt(t, client, addr), id: host.panes[hostPane].ID()}
+	drawTheRowFor(t, host, client, row)
+
+	// The user's bar on that row.
+	if err := client.focusPanel(); err != nil {
+		t.Fatalf("focus the sidebar: %v", err)
+	}
+	if !client.panel.Select(row) {
+		t.Fatalf("the sidebar has no row for that screen: %v", panelText(client, panelNow))
+	}
+
+	saveWindowFromTheDialog(t, client, "statio", addr, keyFile)
+	client.refreshPanel(panelNow)
+
+	chosen, ok := client.panel.Selected()
+	if !ok {
+		t.Fatalf("the sidebar has nothing chosen: %v", panelText(client, panelNow))
+	}
+	if chosen.Key != row {
+		t.Errorf("the bar moved to %q, want the row it was left on: %v",
+			chosen.Text, panelText(client, panelNow))
+	}
+}
+
+// A re-key leaves a watching pane matched to the screen it is showing.
+//
+// What each pane is watching names the window itself, so the row over
+// there stays folded into the pane's own row and a key from a row drawn
+// earlier still finds the pane rather than opening a second one onto one
+// shell.
+func TestReKeyingAWindowKeepsAWatchingPaneMatched(t *testing.T) {
+	host, client, addr := twoWindows(t)
+	withMenubar(t, client)
+	keyFile, _ := aKeyFile(t)
+
+	hostPane := onlyPaneOn(t, host)
+	row := remoteKey{window: windowAt(t, client, addr), id: host.panes[hostPane].ID()}
+	drawTheRowFor(t, host, client, row)
+	attachFromTheSidebar(t, client, row)
+	watching := newestPane(t, client)
+	waitFor(t, host, "the pane to be watching the shell over there", func() bool {
+		what, ok := client.windows.watching(watching)
+		return ok && what == row
+	}, client)
+
+	saveWindowFromTheDialog(t, client, "statio", addr, keyFile)
+	client.refreshPanel(panelNow)
+
+	// One thing open is one row: the pane's own, not a second one for
+	// the screen it is showing.
+	for _, r := range client.panel.Rows() {
+		if key, ok := r.Key.(remoteKey); ok && key.id == row.id {
+			t.Errorf("it is listed twice: once as a pane and once as a row over there: %v",
+				panelText(client, panelNow))
+		}
+	}
+	// And the key from the row drawn before the save brings that pane
+	// forward rather than opening another.
+	panes := len(client.panes)
+	if err := client.revealRow(ui.ListRow{Key: row}); err != nil {
+		t.Fatalf("choose the screen again: %v", err)
+	}
+	if len(client.panes) != panes {
+		t.Errorf("%d panes, want the %d there were: it opened a second one onto one shell",
+			len(client.panes), panes)
+	}
+	if client.focusedTerminal() != watching {
+		t.Error("the pane already watching it did not come forward")
+	}
+}
+
+// drawTheRowFor waits until the sidebar draws the row for a screen on a
+// window taken over, which is the frame a click acts on.
+func drawTheRowFor(t *testing.T, host, client *testApp, row remoteKey) {
+	t.Helper()
+	waitFor(t, host, "the sidebar to draw a row for the screen over there", func() bool {
+		host.refreshPanel(panelNow)
+		client.refreshPanel(panelNow)
+		return slices.ContainsFunc(client.panel.Rows(), func(r ui.ListRow) bool {
+			return r.Key == row
+		})
+	}, client)
 }
 
 // The size a watching pane reports is the size the far screen is now,
@@ -1399,12 +1564,13 @@ func TestWatchingAScreenGivesItTheWatchersSize(t *testing.T) {
 	hostPane := onlyPaneOn(t, host)
 	was := hostPane.Size()
 
+	held := windowAt(t, client, addr)
 	var row remoteKey
 	waitFor(t, host, "a row for the shell over there", func() bool {
 		host.refreshPanel(panelNow)
 		client.refreshPanel(panelNow)
 		for _, r := range client.panel.Rows() {
-			if key, ok := r.Key.(remoteKey); ok && key.window == addr {
+			if key, ok := r.Key.(remoteKey); ok && key.window == held {
 				row = key
 				return true
 			}
@@ -1455,12 +1621,13 @@ func TestANoteAboutAFailureIsNotWrittenOver(t *testing.T) {
 	host, client, addr := twoWindows(t)
 	hostPane := onlyPaneOn(t, host)
 
+	held := windowAt(t, client, addr)
 	var row remoteKey
 	waitFor(t, host, "a row for the shell over there", func() bool {
 		host.refreshPanel(panelNow)
 		client.refreshPanel(panelNow)
 		for _, r := range client.panel.Rows() {
-			if key, ok := r.Key.(remoteKey); ok && key.window == addr {
+			if key, ok := r.Key.(remoteKey); ok && key.window == held {
 				row = key
 				return true
 			}
@@ -1891,6 +2058,7 @@ func TestARowWithNoScreenCannotBeWatched(t *testing.T) {
 	// is on its panel and has no screen behind it, so this window does
 	// not list it -- but a key naming it can still arrive, from a row
 	// listed a moment before it closed.
+	held := windowAt(t, client, addr)
 	var serving remoteKey
 	waitFor(t, host, "the serving row to reach the client", func() bool {
 		host.refreshPanel(time.Now())
@@ -1901,7 +2069,7 @@ func TestARowWithNoScreenCannotBeWatched(t *testing.T) {
 				screens++
 			}
 			if strings.Contains(open.Label, "serving") {
-				serving = remoteKeyFor(addr, open)
+				serving = remoteKeyFor(held, open)
 				found = !open.HasScreen()
 			}
 		}
@@ -1910,7 +2078,7 @@ func TestARowWithNoScreenCannotBeWatched(t *testing.T) {
 
 	// It is not offered, and the shell over there, which has a screen,
 	// still is. Without the second half a list of nothing would pass.
-	shell := remoteKey{window: addr, id: host.panes[onlyPaneOn(t, host)].ID()}
+	shell := remoteKey{window: held, id: host.panes[onlyPaneOn(t, host)].ID()}
 	var offered int
 	var shellOffered bool
 	for _, row := range client.remoteRows(client.about(addr)) {
@@ -2515,7 +2683,7 @@ func TestAPaneWhoseSizeAWatcherTookSaysSo(t *testing.T) {
 	host, client, addr := twoWindowsSized(t, 100, 30)
 
 	hostPane := onlyPaneOn(t, host)
-	row := remoteKey{window: addr, id: host.panes[hostPane].ID()}
+	row := remoteKey{window: windowAt(t, client, addr), id: host.panes[hostPane].ID()}
 	waitFor(t, host, "the row for the shell over there", func() bool {
 		host.refreshPanel(panelNow)
 		_, there := client.openOver(row)

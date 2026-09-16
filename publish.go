@@ -122,7 +122,6 @@ func (a *app) remoteRows(on hostFacts) []ui.ListRow {
 	if t == nil {
 		return nil
 	}
-	host := on.name
 	// Grouped by the machine over there they run on, the way that
 	// window groups them itself. A flat list with the machine's name
 	// repeated on every line says the same thing many times and hides
@@ -133,7 +132,7 @@ func (a *app) remoteRows(on hostFacts) []ui.ListRow {
 		if !open.HasScreen() {
 			continue
 		}
-		if a.windows.watcher(remoteKeyFor(host, open)) != nil {
+		if a.windows.watcher(remoteKeyFor(t, open)) != nil {
 			// There is a pane of this window watching it, with a row of
 			// its own. One thing open should be one row, and the row
 			// that can be put in front and closed is the better one.
@@ -156,7 +155,7 @@ func (a *app) remoteRows(on hostFacts) []ui.ListRow {
 				Text:   theirName(on),
 				Header: true,
 				Depth:  1,
-				Key:    remoteHostKey{window: host, host: on},
+				Key:    remoteHostKey{window: t, host: on},
 				Mark:   ' ',
 				FG:     dim,
 			})
@@ -166,7 +165,7 @@ func (a *app) remoteRows(on hostFacts) []ui.ListRow {
 				Text:  open.Label,
 				Note:  open.Note,
 				Depth: 2,
-				Key:   remoteKeyFor(host, open),
+				Key:   remoteKeyFor(t, open),
 				Mark:  remoteMark,
 				// Dimmed, because it is running somewhere else: what
 				// this window can do with it is open a pane to watch it
@@ -186,7 +185,8 @@ func (a *app) remoteRows(on hostFacts) []ui.ListRow {
 // key that compared equal to something that can would act on the wrong
 // thing.
 type remoteHostKey struct {
-	window, host string
+	window *taken
+	host   string
 }
 
 // isTheirOwn reports whether a machine name is the window's own, which
@@ -211,18 +211,24 @@ const remoteMark = '◦'
 // remoteKey names a row belonging to a window taken over, so choosing
 // it can say which thing on which window.
 //
+// The window itself rather than the name it is held under, because the
+// server list moves that name: a row drawn before a save or a rename
+// carries the old one, and a click on it in that frame would find
+// nothing.
+//
 // Only what names the thing: the window it is on and what that window
 // calls it. The list keeps the user's place by comparing keys, so a key
 // carrying what the row is doing -- its note, its state, the size of
 // its screen, the title the program gave it a moment ago -- would move
 // the selection out from under them every time any of that changed.
 type remoteKey struct {
-	window, id string
+	window *taken
+	id     string
 }
 
 // remoteKeyFor names one of the things a window taken over has open.
-func remoteKeyFor(window string, open serve.Open) remoteKey {
-	return remoteKey{window: window, id: open.ID}
+func remoteKeyFor(t *taken, open serve.Open) remoteKey {
+	return remoteKey{window: t, id: open.ID}
 }
 
 // farNote is what a watching pane's row says about the screen it is

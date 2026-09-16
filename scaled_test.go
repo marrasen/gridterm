@@ -57,7 +57,7 @@ func aHeldScreen(t *testing.T, cols, rows int) (host, client *testApp, hostPane 
 
 	// And the shell already running over there, watched from the row the
 	// sidebar draws for it: that is what gives its size away.
-	row := remoteKey{window: addr, id: host.panes[hostPane].ID()}
+	row := remoteKey{window: windowAt(t, client, addr), id: host.panes[hostPane].ID()}
 	waitFor(t, host, "the row for the shell over there", func() bool {
 		host.refreshPanel(panelNow)
 		client.refreshPanel(panelNow)

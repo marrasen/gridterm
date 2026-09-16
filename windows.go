@@ -76,7 +76,8 @@ type windows struct {
 	// from says which window a pane is drawn from, so letting go of one
 	// takes its panes with it. seen says what each of those panes is
 	// watching over there, so choosing the same thing again brings the
-	// pane forward rather than opening a second one onto one shell.
+	// pane forward rather than opening a second one onto one shell. Its
+	// keys name the window itself, so a re-key leaves them alone.
 	from map[*term.Terminal]*taken
 	seen map[*term.Terminal]remoteKey
 
@@ -116,6 +117,17 @@ func (w *windows) at(addr string) *taken {
 		}
 	}
 	return nil
+}
+
+// holds reports whether a window is still held, by identity: the name
+// it is held under moves with the server list and the window does not.
+func (w *windows) holds(t *taken) bool {
+	for _, have := range w.held {
+		if have == t {
+			return true
+		}
+	}
+	return false
 }
 
 // count is how many windows are held, for a test.
@@ -254,22 +266,6 @@ func (w *windows) rekey() ([]windowRename, error) {
 		}
 	}
 	w.held = held
-	if len(moved) == 0 {
-		return nil, nil
-	}
-
-	// What each pane is watching names the window it is on, so that
-	// follows the name too.
-	now := make(map[string]string, len(moved))
-	for _, r := range moved {
-		now[r.was] = r.window.name
-	}
-	for pane, what := range w.seen {
-		if to, ok := now[what.window]; ok {
-			what.window = to
-			w.seen[pane] = what
-		}
-	}
 	return moved, nil
 }
 
@@ -728,9 +724,9 @@ func knownWindowsPath() (string, error) {
 // attachHere opens a pane on what the window taken over already has
 // running, rather than starting something new there.
 func (a *app) attachHere(what remoteKey, at *spot) error {
-	t := a.about(what.window).window
-	if t == nil {
-		return fmt.Errorf("this window has not taken over %s", what.window)
+	t := what.window
+	if t == nil || !a.windows.holds(t) {
+		return errors.New("this window has let go of the window that screen was on")
 	}
 	// Already watching it: the pane comes forward rather than a second
 	// one opening on the same program, which would be two panes typing
@@ -741,14 +737,14 @@ func (a *app) attachHere(what remoteKey, at *spot) error {
 	}
 	open, ok := a.openOver(what)
 	if !ok {
-		return fmt.Errorf("%s no longer has that open", what.window)
+		return fmt.Errorf("%s no longer has that open", t.name)
 	}
 	if !open.HasScreen() {
 		// Asking anyway opened a pane that showed the refusal, and the
 		// pane was a row of its own: every attempt left another one
 		// behind.
 		return fmt.Errorf("%q on %s has no screen to watch: it is %s, not a terminal",
-			open.Label, what.window, strings.ToLower(open.Kind))
+			open.Label, t.name, strings.ToLower(open.Kind))
 	}
 	sess, err := t.win.Attach(open, a.lastSize[0], a.lastSize[1])
 	if err != nil {
@@ -769,8 +765,8 @@ func (a *app) attachHere(what remoteKey, at *spot) error {
 // openOver is what a window taken over says about one of the things it
 // has open, and whether it still has it.
 func (a *app) openOver(what remoteKey) (serve.Open, bool) {
-	t := a.about(what.window).window
-	if t == nil || what.id == "" {
+	t := what.window
+	if t == nil || what.id == "" || !a.windows.holds(t) {
 		return serve.Open{}, false
 	}
 	for _, open := range t.win.Opens() {

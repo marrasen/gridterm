@@ -22,9 +22,6 @@ each group. A line goes when the work is in and reviewed.
 
 ## Known gaps worth revisiting
 
-- A sidebar row drawn before a window is re-keyed still names the
-  window by its old key until the next frame, so a click on it in that
-  frame finds nothing.
 - The cursor keeps blinking while the window is in the background.
   Nothing reads `ebiten.IsFocused`, and most terminals either stop the
   blink or draw the cursor hollow once the window loses focus.

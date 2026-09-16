@@ -51,9 +51,9 @@ func repaintsOverASecond(t *testing.T, a *testApp, at *time.Time) int {
 			continue
 		}
 		painted++
-		if got.RowsDrawn != 1 {
-			t.Errorf("a frame at %v repainted %d rows, want only the cursor's",
-				time.Duration(step)*50*time.Millisecond, got.RowsDrawn)
+		if got.Repainted != 1 || got.RowsDrawn != 1 {
+			t.Errorf("a frame at %v repainted %d layers and %d rows, want one layer and only the cursor's row",
+				time.Duration(step)*50*time.Millisecond, got.Repainted, got.RowsDrawn)
 		}
 	}
 	return painted
@@ -126,5 +126,32 @@ func TestAKeyPutsTheBlinkingCursorBackOn(t *testing.T) {
 	frame(t, a)
 	if a.comp.Stats().Skipped {
 		t.Error("the cursor never went off again, so it stopped blinking after the key")
+	}
+}
+
+// Letting go of a key is not typing, so it does not put the cursor back
+// on: a window nobody is at goes on blinking to its own clock.
+func TestAKeyReleaseDoesNotWakeTheCursor(t *testing.T) {
+	a, _, at := aWindowWatchingItsCursor(t, "\x1b[1 q")
+
+	*at = blinkStart.Add(600 * time.Millisecond)
+	frame(t, a)
+	if a.comp.Stats().Skipped {
+		t.Fatal("the cursor did not go off half a second in, so this proves nothing")
+	}
+
+	*at = blinkStart.Add(700 * time.Millisecond)
+	a.handleKeys([]input.Event{{Kind: input.KeyRelease, Key: input.KeyX}})
+
+	frame(t, a)
+	if !a.comp.Stats().Skipped {
+		t.Error("a key coming back up woke the cursor")
+	}
+	// The phase is still the one the cursor started with, so it turns
+	// over a second in rather than half a second after the release.
+	*at = blinkStart.Add(1050 * time.Millisecond)
+	frame(t, a)
+	if a.comp.Stats().Skipped {
+		t.Error("the cursor did not come back a second in, so the release moved the phase")
 	}
 }

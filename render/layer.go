@@ -104,37 +104,50 @@ type Layer struct {
 const blinkPeriod = time.Second
 
 // cursorBlink is where a layer's blinking cursor is in its phase: when
-// the phase started, whether the cursor is showing, and the cursor it
-// was worked out for.
+// the phase started, whether the cursor goes in this frame, whether the
+// texture has it, and the grid and cursor it was worked out for.
 type cursorBlink struct {
 	since   time.Time
 	on      bool
+	shown   bool
 	was     grid.Cursor
+	grid    *grid.Grid
 	running bool
 }
 
 // stepCursorBlink moves a blinking cursor on to now and dirties the
-// cursor's row when the phase flips, so the blink costs one row twice a
-// second rather than a repaint every frame.
+// cursor's row whenever the texture no longer holds the right half of
+// the blink, so the blink costs one row twice a second rather than a
+// repaint every frame.
 //
-// The phase starts afresh whenever the cursor changes, so somebody
-// typing sees a cursor that is on rather than one caught mid-blink.
+// The phase starts afresh whenever the cursor or its grid changes, so
+// somebody typing sees a cursor that is on rather than one caught
+// mid-blink.
 func (l *Layer) stepCursorBlink(now time.Time) {
 	cur := l.Grid.Cursor()
-	if l.Hidden || !cur.Visible || !cur.Blink {
-		l.blink = cursorBlink{}
+	if l.Hidden {
+		// The texture keeps whichever half was last drawn into it, and
+		// the frame the layer comes back on settles the phase again.
+		l.blink.running = false
 		return
 	}
-	if !l.blink.running || l.blink.was != cur {
-		l.blink = cursorBlink{since: now, on: true, was: cur, running: true}
-		return
+	switch {
+	case !cur.Visible || !cur.Blink:
+		l.blink.running = false
+	case !l.blink.running || l.blink.was != cur || l.blink.grid != l.Grid:
+		l.blink = cursorBlink{
+			since: now, on: true, shown: l.blink.shown,
+			was: cur, grid: l.Grid, running: true,
+		}
+	default:
+		l.blink.on = blinkOn(now.Sub(l.blink.since))
 	}
-	on := blinkOn(now.Sub(l.blink.since))
-	if on == l.blink.on {
-		return
+	// The texture holds the half that was drawn into it last, so a phase
+	// that no longer matches needs its row back -- whether it turned
+	// over, started again, or came back with a layer that was hidden.
+	if cur.Visible && l.cursorShowing() != l.blink.shown {
+		l.Grid.MarkRowDirty(cur.Y)
 	}
-	l.blink.on = on
-	l.Grid.MarkRowDirty(cur.Y)
 }
 
 // wakeCursor puts a blinking cursor back on and starts its phase again,
@@ -149,6 +162,9 @@ func (l *Layer) wakeCursor(now time.Time) {
 	}
 	l.blink.since = now
 }
+
+// noteCursorDrawn records which half of the blink the texture now holds.
+func (l *Layer) noteCursorDrawn() { l.blink.shown = l.cursorShowing() }
 
 // cursorShowing reports whether the cursor goes in this frame. A steady
 // cursor always does.
@@ -206,6 +222,7 @@ func (l *Layer) repaint(r *Renderer, geo *Geometry) {
 		l.tex.SubImage(strip).(*ebiten.Image).Clear()
 	}
 	r.draw(l.tex, l.Grid, geo, l.cursorShowing())
+	l.noteCursorDrawn()
 	l.painted, l.full = true, false
 }
 

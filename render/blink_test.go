@@ -57,6 +57,11 @@ func TestABlinkingCursorGoesOnAndOffTwiceASecond(t *testing.T) {
 	if off.Skipped || off.Repainted != 1 || off.RowsDrawn != 1 {
 		t.Fatalf("the frame at 600ms = %+v, want one layer repainting one row", off)
 	}
+	// Nothing moved, so the stack is blitted back over itself: wiping
+	// the screen for a blink would cost the whole window.
+	if off.Cleared {
+		t.Error("the flip to off wiped the screen")
+	}
 	if l.cursorShowing() {
 		t.Error("the cursor is still on 600ms in, which is the off half")
 	}
@@ -75,6 +80,9 @@ func TestABlinkingCursorGoesOnAndOffTwiceASecond(t *testing.T) {
 	if on.Skipped || on.Repainted != 1 || on.RowsDrawn != 1 {
 		t.Fatalf("the frame at 1s = %+v, want one layer repainting one row", on)
 	}
+	if on.Cleared {
+		t.Error("the flip back on wiped the screen")
+	}
 	if !l.cursorShowing() {
 		t.Fatal("the cursor did not come back a second in")
 	}
@@ -92,6 +100,8 @@ func TestTheBlinkDirtiesOnlyTheCursorsRow(t *testing.T) {
 	l := &Layer{Grid: grid.New(20, 8, fg, bg)}
 	l.Grid.SetCursor(grid.Cursor{X: 4, Y: 3, Visible: true, Blink: true})
 	l.stepCursorBlink(blinkStart)
+	// Standing in for the repaint: the texture now holds the on half.
+	l.noteCursorDrawn()
 	l.Grid.ClearDirty()
 
 	l.stepCursorBlink(blinkStart.Add(100 * time.Millisecond))
@@ -185,6 +195,35 @@ func TestMovingTheCursorPutsItBackOn(t *testing.T) {
 	}
 }
 
+// A layer hidden in the off half of the blink comes back with the
+// cursor on it. Its texture is kept while it is away, and that texture
+// has no cursor in it.
+func TestALayerHiddenInTheOffHalfComesBackWithItsCursor(t *testing.T) {
+	c, l, screen, at := blinkStage(t)
+	c.Draw(screen)
+
+	*at = blinkStart.Add(600 * time.Millisecond)
+	c.Draw(screen)
+	if l.cursorShowing() {
+		t.Fatal("the cursor is on 600ms in, so this proves nothing")
+	}
+
+	l.Hidden = true
+	*at = blinkStart.Add(700 * time.Millisecond)
+	c.Draw(screen)
+
+	l.Hidden = false
+	*at = blinkStart.Add(800 * time.Millisecond)
+	c.Draw(screen)
+	if !l.cursorShowing() {
+		t.Fatal("the cursor did not come back with the layer")
+	}
+	if got := c.Stats(); got.Repainted != 1 || got.RowsDrawn != 1 {
+		t.Errorf("the frame the layer came back on = %+v, want the cursor's row repainted; "+
+			"the texture it was hidden with has no cursor in it", got)
+	}
+}
+
 // A key puts the cursor back on the moment it is pressed, because the
 // window cannot see a key from a layer.
 func TestAKeyPutsTheCursorBackOn(t *testing.T) {
@@ -210,5 +249,58 @@ func TestAKeyPutsTheCursorBackOn(t *testing.T) {
 	c.Draw(screen)
 	if !l.cursorShowing() {
 		t.Error("the cursor went off 300ms after the key, so the phase did not start again")
+	}
+}
+
+// A layer hidden in the on half comes back with nothing to do: its
+// texture already holds the cursor, so putting it back is a blit.
+func TestALayerHiddenInTheOnHalfComesBackForFree(t *testing.T) {
+	c, l, screen, at := blinkStage(t)
+	c.Draw(screen)
+
+	l.Hidden = true
+	*at = blinkStart.Add(200 * time.Millisecond)
+	c.Draw(screen)
+
+	l.Hidden = false
+	*at = blinkStart.Add(300 * time.Millisecond)
+	c.Draw(screen)
+	if !l.cursorShowing() {
+		t.Fatal("the cursor came back off, and it was on when the layer went away")
+	}
+	if got := c.Stats(); got.Repainted != 0 {
+		t.Errorf("the frame the layer came back on = %+v, want no repaint: "+
+			"its texture already holds the cursor", got)
+	}
+}
+
+// A layer given a different grid starts the phase again, even when the
+// new grid's cursor happens to sit exactly where the old one did. The
+// texture is repainted from scratch, and it is repainted with a cursor.
+func TestANewGridStartsTheBlinkAgain(t *testing.T) {
+	c, l, screen, at := blinkStage(t)
+	c.Draw(screen)
+
+	*at = blinkStart.Add(600 * time.Millisecond)
+	c.Draw(screen)
+	if l.cursorShowing() {
+		t.Fatal("the cursor is on 600ms in, so this proves nothing")
+	}
+
+	fresh := grid.New(20, 8, fg, bg)
+	fresh.SetString(0, 2, "hello", fg, bg, 0)
+	fresh.SetCursor(l.Grid.Cursor())
+	l.Grid = fresh
+	*at = blinkStart.Add(700 * time.Millisecond)
+	c.Draw(screen)
+	if !l.cursorShowing() {
+		t.Fatal("the new grid was painted with no cursor, and its phase came from the old one")
+	}
+
+	// The phase now runs from the swap.
+	*at = blinkStart.Add(1100 * time.Millisecond)
+	c.Draw(screen)
+	if !l.cursorShowing() {
+		t.Error("the cursor went off 400ms after the swap, so the phase did not start again")
 	}
 }

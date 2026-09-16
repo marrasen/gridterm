@@ -15,7 +15,8 @@ emulator, and draws the resulting character grid as batched triangles.
 - **A real terminal.** bash, vim and less all run: alternate screen,
   scroll regions, scrollback, 256 and true colour, bold, dim, italic,
   underline, strikethrough and reverse video, window title, cursor
-  shapes, device reports, bracketed paste and mouse modes.
+  shapes, a cursor that blinks when the program asks for one, device
+  reports, bracketed paste and mouse modes.
 - **Local shells and SSH.** One `session.Session` interface with two
   implementations. Nothing above it — the emulator, the grid, the
   renderer — can tell the difference.
@@ -127,6 +128,9 @@ emulator, and draws the resulting character grid as batched triangles.
   typically two in total however much text is on screen.
 - **Damage tracking.** Writing a cell that already holds the same
   content does not dirty its row, so an idle screen draws nothing at all.
+  Two things dirty a row on a clock instead of on a change: the sidebar
+  pulses the active connection's row, and a blinking cursor dirties the
+  row it sits on twice a second. A steady cursor dirties nothing.
 - **Wide characters and combining marks.** CJK and emoji take two
   columns; a base character and its marks share one cell.
 - **Box drawing that joins up.** The box and block characters are drawn
@@ -279,6 +283,13 @@ A row wrongly considered clean is a visible bug, so `grid.Set` compares
 before it writes and never dirties a row for content that did not
 change.
 
+Two things dirty a row on a clock rather than on a change, and both are
+meant to. The sidebar pulses the active connection's row every 200 ms,
+which is `panel.go`'s `pulse`. A blinking cursor dirties the one row it
+sits on each time its phase turns over, twice a second, which is
+`render.Layer.stepCursorBlink`. A steady cursor dirties nothing at all,
+so a window showing one is idle between keystrokes.
+
 **Nothing on a UI thread writes to a pty.** Writing to a pty blocks once
 the program stops reading its input. Both the output pump — which holds
 the terminal lock — and the ebiten thread produce input, so both queue
@@ -340,8 +351,6 @@ emulator under `internal/` where they cannot be imported.
   `x/image/font/sfnt` does not apply variation axes, so asking such a
   font for its bold weight gets the default one.
 - **Blink** is parsed and ignored.
-- **The cursor never blinks.** `DECSCUSR` is read and the shape is
-  used, but the blinking styles draw the same as the steady ones.
 - **Colour emoji** do not render. `x/image/font/sfnt` cannot read the
   bitmap tables that colour emoji fonts use.
 - **Emoji ZWJ sequences and flags** show only their first glyph; the

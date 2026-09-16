@@ -31,6 +31,12 @@ each group. A line goes when the work is in and reviewed.
 - A sidebar row drawn before a window is re-keyed still names the
   window by its old key until the next frame, so a click on it in that
   frame finds nothing.
+- The cursor keeps blinking while the window is in the background.
+  Nothing reads `ebiten.IsFocused`, and most terminals either stop the
+  blink or draw the cursor hollow once the window loses focus.
+- A watcher taking a screen over sees the far end's default cursor.
+  `vt.Repaint` puts the cursor back where the program had it but carries
+  neither its shape nor its blink, so `DECSCUSR` is lost over the wire.
 - On Windows a command that writes and exits in the same instant loses
   its output. A ConPTY repaints on a clock of its own, and the reaper
   closes the pseudoconsole as soon as the child is reaped, which is

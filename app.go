@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"slices"
 	"sync/atomic"
 	"time"
 
@@ -360,10 +361,21 @@ func (a *app) handleKeys(evs []input.Event) {
 	}
 	// A cursor caught in the off half of its blink while somebody is
 	// typing reads as a window that has stopped answering, so a key puts
-	// it back on and starts its phase again.
-	if len(evs) > 0 && a.comp != nil {
+	// it back on and starts its phase again. Letting go of a key is not
+	// typing, and neither is holding a modifier down.
+	if a.comp != nil && slices.ContainsFunc(evs, typing) {
 		a.comp.WakeCursors()
 	}
+}
+
+// typing reports whether an event is a key going in rather than one
+// coming back up.
+func typing(ev input.Event) bool {
+	switch ev.Kind {
+	case input.KeyPress, input.KeyRepeat, input.Text:
+		return true
+	}
+	return false
 }
 
 // updateTitle shows the focused pane's title. Read rather than pushed:

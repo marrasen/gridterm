@@ -162,6 +162,9 @@ func (r *Renderer) MeasureAt(g *grid.Grid, x, y int, geo *Geometry) {
 // Callers relying on clean rows being skipped must also call
 // ebiten.SetScreenClearedEveryFrame(false); otherwise the rows this
 // skips are blank rather than showing the previous frame.
+//
+// The cursor is always drawn. A layer goes through draw instead, which
+// takes the half of the blink the compositor settled for that frame.
 func (r *Renderer) Draw(dst *ebiten.Image, g *grid.Grid, geo *Geometry) {
 	r.draw(dst, g, geo, true)
 }

@@ -183,38 +183,65 @@ func (t *Terminal) endWatchers() {
 // It is what somebody reads off the screen, which is what an agent
 // working in this pane is given. Not the escape sequences that would
 // draw it: those are for another terminal, and this is for a reader.
-func (t *Terminal) Text() string {
+func (t *Terminal) Text() string { return t.TextLines(0) }
+
+// TextLines is the last n lines as plain text, ending at the bottom of
+// the live screen and reaching back into the scrollback when n is more
+// than the screen holds.
+//
+// Zero or less is the screen. More lines than there are gives what there
+// is.
+func (t *Terminal) TextLines(n int) string {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	cols, rows := t.g.Size()
-	g := grid.New(cols, rows, t.g.DefaultFG, t.g.DefaultBG)
-	t.term.RenderLive(g)
-
-	var b strings.Builder
-	for y := 0; y < rows; y++ {
-		var line strings.Builder
-		for x := 0; x < cols; x++ {
-			c := g.At(x, y)
-			if c.Width == 0 {
-				// The second half of a double-width character, already
-				// written by the first.
-				continue
-			}
-			if c.Rune == 0 {
-				line.WriteByte(' ')
-			} else {
-				line.WriteRune(c.Rune)
-			}
-			for _, cb := range c.Comb {
-				line.WriteRune(cb)
-			}
-		}
-		if y > 0 {
-			b.WriteByte('\n')
-		}
-		b.WriteString(strings.TrimRight(line.String(), " "))
+	history := t.term.History()
+	if n <= 0 {
+		n = rows
 	}
-	return b.String()
+	n = min(n, rows+history)
+
+	// One grid, rendered once per screenful going back through history,
+	// each row put where it belongs in the answer. first is the line
+	// wanted at the top, counted from the oldest line still kept.
+	g := grid.New(cols, rows, t.g.DefaultFG, t.g.DefaultBG)
+	out := make([]string, n)
+	first := history + rows - n
+	for back := n - rows; ; back -= rows {
+		back = max(back, 0)
+		t.term.RenderBack(g, back)
+		for y := 0; y < rows; y++ {
+			if i := history - back + y - first; i >= 0 && i < n {
+				out[i] = plainRow(g, y, cols)
+			}
+		}
+		if back == 0 {
+			break
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
+// plainRow is one row of a grid as plain text, trailing spaces cut.
+func plainRow(g *grid.Grid, y, cols int) string {
+	var line strings.Builder
+	for x := 0; x < cols; x++ {
+		c := g.At(x, y)
+		if c.Width == 0 {
+			// The second half of a double-width character, already
+			// written by the first.
+			continue
+		}
+		if c.Rune == 0 {
+			line.WriteByte(' ')
+		} else {
+			line.WriteRune(c.Rune)
+		}
+		for _, cb := range c.Comb {
+			line.WriteRune(cb)
+		}
+	}
+	return strings.TrimRight(line.String(), " ")
 }
 
 // Said counts how many times the program has said anything.

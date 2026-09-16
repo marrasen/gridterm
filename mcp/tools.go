@@ -127,7 +127,9 @@ func toolList() []tool {
 				" it waits for the screen to go quiet, which is what waiting for a command" +
 				" to finish looks like when the program cannot be asked. When the time runs" +
 				" out first it still gives back the screen, and says the time ran out." +
-				" Use it after send_keys, before reading again." +
+				" Use it after send_keys, before reading again. Text already on the screen" +
+				" when the wait begins ends it at once, so to wait for a fresh prompt give" +
+				" quiet_ms rather than the prompt's text." +
 				" A program that keeps drawing never goes quiet: top, a progress bar, a log" +
 				" being followed. For one of those give contains, or do not wait at all and" +
 				" read the pane instead. It takes lines as read_pane does." + marked,

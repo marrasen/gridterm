@@ -31,6 +31,11 @@ type fakePanes struct {
 	lines   int
 	pressed []string
 
+	// row and col are where the pane says its cursor is, and alt says a
+	// full-screen program is drawing there.
+	row, col int
+	alt      bool
+
 	// waiting is closed when a wait has started, and letGo lets it
 	// finish, for a test about what else can be asked meanwhile.
 	waiting chan struct{}
@@ -63,7 +68,12 @@ func (f *fakePanes) Read(id string, lines int) (Screen, error) {
 		return Screen{}, errors.New("that is not a pane you have been handed")
 	}
 	f.lines = lines
-	return Screen{Screen: f.screen, Gone: f.gone}, nil
+	return f.look(), nil
+}
+
+// look is the pane as this fake has it.
+func (f *fakePanes) look() Screen {
+	return Screen{Screen: f.screen, Gone: f.gone, Row: f.row, Col: f.col, Alt: f.alt}
 }
 
 func (f *fakePanes) Send(id, text string, keys []string) error {
@@ -86,14 +96,14 @@ func (f *fakePanes) Wait(id string, lines int, until Until) (Screen, bool, error
 	f.lines = lines
 	f.waited = until
 	waiting, letGo := f.waiting, f.letGo
-	screen, gone, gaveUp := f.screen, f.gone, f.gaveUp
+	screen, gaveUp := f.look(), f.gaveUp
 	f.mu.Unlock()
 	if waiting != nil {
 		close(waiting)
 		<-letGo
 	}
 	f.mu.Lock()
-	return Screen{Screen: screen, Gone: gone}, gaveUp, nil
+	return screen, gaveUp, nil
 }
 
 func (f *fakePanes) Close() error { return nil }

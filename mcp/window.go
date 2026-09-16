@@ -77,7 +77,7 @@ func (w *Window) Read(id string, lines int) (Screen, error) {
 	if err != nil {
 		return Screen{}, err
 	}
-	return Screen{Screen: look.Screen, Gone: look.Gone}, nil
+	return asScreen(look), nil
 }
 
 // Send types into a pane and presses the keys named after it.
@@ -103,7 +103,19 @@ func (w *Window) Wait(id string, lines int, until Until) (Screen, bool, error) {
 	if err != nil {
 		return Screen{}, false, err
 	}
-	return Screen{Screen: look.Screen, Gone: look.Gone}, gaveUp, nil
+	return asScreen(look), gaveUp, nil
+}
+
+// asScreen turns what a window said about a pane into what an agent is
+// told.
+func asScreen(look agent.Look) Screen {
+	return Screen{
+		Screen: look.Screen,
+		Gone:   look.Gone,
+		Row:    look.Row,
+		Col:    look.Col,
+		Alt:    look.Alt,
+	}
 }
 
 // Close lets go of every window.

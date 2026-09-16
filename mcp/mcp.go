@@ -112,6 +112,15 @@ type Pane struct {
 type Screen struct {
 	Screen string `json:"screen"`
 	Gone   bool   `json:"program_has_finished"`
+
+	// Row and Col are where the cursor is, counted from zero at the top
+	// left of the screen.
+	Row int `json:"cursor_row"`
+	Col int `json:"cursor_col"`
+
+	// Alt says a full-screen program is drawing, so the screen is all
+	// there is to read.
+	Alt bool `json:"full_screen_program"`
 }
 
 // Until says what a wait is waiting for.
@@ -435,7 +444,9 @@ command needs "\r" at the end for Enter, and presses the keys named in keys: Esc
 the arrows, F1 to F12, Ctrl+C. It does not wait, so call wait_for before you read again.
 Give wait_for contains when you know what the screen will say, or quiet_ms to wait for the
 screen to stop changing. It gives back the screen either way, and says when the time ran
-out instead. list_panes lists the panes you have been handed, and that is all it lists.`
+out instead. A command whose output goes through a pager -- systemctl, journalctl, git log,
+man -- needs --no-pager or a pipe to cat, or you will be stuck in less, where q gets you out.
+list_panes lists the panes you have been handed, and that is all it lists.`
 
 // Rules is what an agent may do in a pane it has been handed, and what
 // it may not.

@@ -207,11 +207,12 @@ func (s *server) runTool(name string, args json.RawMessage) (result, *rpcError) 
 		if in.Pane == "" {
 			return missing("pane")
 		}
-		screen, err := s.panes.Read(in.Pane, atMostLines(in.Lines))
+		lines, clamped := atMostLines(in.Lines)
+		screen, err := s.panes.Read(in.Pane, lines)
 		if err != nil {
 			return wrong(err.Error())
 		}
-		return say(showScreen(screen, false))
+		return say(showScreen(screen, false, clamped))
 
 	case "send_keys":
 		if in.Pane == "" {
@@ -235,7 +236,8 @@ func (s *server) runTool(name string, args json.RawMessage) (result, *rpcError) 
 		if in.Pane == "" {
 			return missing("pane")
 		}
-		screen, gaveUp, err := s.panes.Wait(in.Pane, atMostLines(in.Lines), Until{
+		lines, clamped := atMostLines(in.Lines)
+		screen, gaveUp, err := s.panes.Wait(in.Pane, lines, Until{
 			Contains:  in.Contains,
 			QuietMS:   in.QuietMS,
 			TimeoutMS: in.TimeoutMS,
@@ -243,7 +245,7 @@ func (s *server) runTool(name string, args json.RawMessage) (result, *rpcError) 
 		if err != nil {
 			return wrong(err.Error())
 		}
-		return say(showScreen(screen, gaveUp))
+		return say(showScreen(screen, gaveUp, clamped))
 	}
 	return result{}, &rpcError{
 		Code:    codeInvalidParams,
@@ -257,18 +259,20 @@ func (s *server) runTool(name string, args json.RawMessage) (result, *rpcError) 
 const mostLines = 2000
 
 // atMostLines is how many lines to read, bounded by what one answer
-// carries. None asked for is the screen.
-func atMostLines(n int) int {
+// carries, and whether that bound cut the number asked for. None asked
+// for is the screen.
+func atMostLines(n int) (lines int, clamped bool) {
 	if n <= 0 {
-		return 0
+		return 0, false
 	}
-	return min(n, mostLines)
+	return min(n, mostLines), n > mostLines
 }
 
 // linesArg says what the lines argument does, for both tools that take
 // it.
 const linesArg = "how many lines to give back, ending at the bottom of the screen and" +
-	" reaching into what has scrolled off. Left out, it is the screen. At most 2000."
+	" reaching into what has scrolled off. Left out, it is the screen. At most 2000:" +
+	" ask for more and you get the last 2000, and the answer says so."
 
 // missing says a call left out something it had to carry.
 func missing(what string) (result, *rpcError) {
@@ -280,7 +284,7 @@ func missing(what string) (result, *rpcError) {
 
 // showScreen is a screen as an agent reads it, with what the screen
 // itself cannot say.
-func showScreen(s Screen, gaveUp bool) string {
+func showScreen(s Screen, gaveUp, clamped bool) string {
 	out := s.Screen
 	var notes []string
 	if gaveUp {
@@ -291,11 +295,29 @@ func showScreen(s Screen, gaveUp bool) string {
 		notes = append(notes, "The program in this pane has finished,"+
 			" so nothing more will appear and nothing will read what you type.")
 	}
+	if clamped {
+		notes = append(notes, clampNote())
+	}
+	notes = append(notes, fmt.Sprintf("Cursor at row %d, column %d.", s.Row, s.Col))
+	if s.Alt {
+		notes = append(notes, fullScreenNote)
+	}
 	for _, n := range notes {
 		out += "\n\n" + n
 	}
 	return out
 }
+
+// clampNote is what an agent is told when it asked for more lines than
+// one answer carries.
+func clampNote() string {
+	return fmt.Sprintf("Showing the last %d lines, which is as many as a read gives.", mostLines)
+}
+
+// fullScreenNote is what an agent is told about a pane on the alternate
+// screen, where asking for more lines gives the screen and nothing else.
+const fullScreenNote = "This is a full-screen program: the screen is all there is," +
+	" and lines above it cannot be read."
 
 // say is a tool answer.
 func say(text string) (result, *rpcError) {

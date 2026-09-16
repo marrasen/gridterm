@@ -19,6 +19,14 @@ type harness struct {
 	bells   int
 	titles  []string
 	clips   []string
+	ends    []cmdEnd
+}
+
+// cmdEnd is one CommandDone callback, kept so a test can check what the
+// terminal was told about a command finishing.
+type cmdEnd struct {
+	status int
+	ok     bool
 }
 
 func newHarness(t *testing.T, cols, rows int) *harness {
@@ -29,6 +37,7 @@ func newHarness(t *testing.T, cols, rows int) *harness {
 		Title:        func(s string) { h.titles = append(h.titles, s) },
 		Reply:        func(b []byte) { h.replies = append(h.replies, string(b)) },
 		ClipboardSet: func(s string) { h.clips = append(h.clips, s) },
+		CommandDone:  func(status int, ok bool) { h.ends = append(h.ends, cmdEnd{status: status, ok: ok}) },
 	})
 	h.g = grid.New(cols, rows, DefaultPalette().FG, DefaultPalette().BG)
 	return h

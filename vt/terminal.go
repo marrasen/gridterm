@@ -28,6 +28,29 @@ type Callbacks struct {
 	Reply func([]byte)
 	// ClipboardSet fires on OSC 52 with the decoded text.
 	ClipboardSet func(string)
+	// CommandDone fires when the shell says a command finished, with the
+	// exit status and whether the shell gave one.
+	CommandDone func(status int, ok bool)
+}
+
+// Command is what the shell's OSC 133 marks say about the command line.
+// The zero value is a shell that has never sent one.
+type Command struct {
+	// Integrated says the shell has sent at least one OSC 133 mark.
+	// Everything else here means nothing without it.
+	Integrated bool
+
+	// Running says a command is running, from its C mark to its D mark.
+	Running bool
+
+	// Status is the exit status of the last command that finished, and
+	// HasStatus says the shell gave one at all.
+	Status    int
+	HasStatus bool
+
+	// Done counts the commands that have finished, so a caller can tell
+	// a fresh finish from the same one read twice.
+	Done uint64
 }
 
 // Terminal is a VT emulator: write bytes in, render cells out.
@@ -40,6 +63,9 @@ type Terminal struct {
 	cb     Callbacks
 
 	title string
+
+	// cmd is what the shell's OSC 133 marks have said so far.
+	cmd Command
 
 	// lastRune is the most recent printable character, which REP repeats.
 	lastRune rune
@@ -61,6 +87,10 @@ func (t *Terminal) Screen() *Screen { return t.scr }
 
 // Title returns the last title set by the program.
 func (t *Terminal) Title() string { return t.title }
+
+// Command returns what the shell's OSC 133 marks say about the command
+// line, all from one moment so the parts cannot disagree.
+func (t *Terminal) Command() Command { return t.cmd }
 
 // Write feeds bytes to the emulator. It never returns an error: a
 // terminal has no way to reject what a program sends it.
@@ -422,6 +452,55 @@ func (t *Terminal) OscDispatch(params [][]byte, _ bool) {
 		}
 	case "52":
 		t.clipboard(params)
+	case "133":
+		t.semanticPrompt(params)
+	}
+}
+
+// semanticPrompt handles OSC 133: A is a prompt starting, B its end, C
+// the start of the command's output, and D the command finishing.
+//
+// Extra parameters such as cl=m or aid=1234 are ignored, as are marks
+// sent while a full-screen program draws, which is not a command with a
+// prompt around it.
+func (t *Terminal) semanticPrompt(params [][]byte) {
+	if len(params) < 2 || t.scr.OnAltBuffer() {
+		return
+	}
+	switch string(params[1]) {
+	case "A", "B":
+		// A prompt is on screen, so whatever was running is over. It is
+		// not counted as a command finishing: nothing said how it went.
+		t.cmd.Integrated = true
+		t.cmd.Running = false
+	case "C":
+		t.cmd.Integrated = true
+		t.cmd.Running = true
+	case "D":
+		t.cmd.Integrated = true
+		t.commandDone(params)
+	}
+}
+
+// commandDone handles the D mark. A D with no command running is
+// ignored: the shell was set up mid-session, or a program printed the
+// sequence itself, and neither finished a command.
+func (t *Terminal) commandDone(params [][]byte) {
+	if !t.cmd.Running {
+		return
+	}
+	t.cmd.Running = false
+	t.cmd.Status, t.cmd.HasStatus = 0, false
+	// The status is optional, and a shell may send one that is not a
+	// number.
+	if len(params) > 2 {
+		if n, err := strconv.Atoi(string(params[2])); err == nil {
+			t.cmd.Status, t.cmd.HasStatus = n, true
+		}
+	}
+	t.cmd.Done++
+	if t.cb.CommandDone != nil {
+		t.cb.CommandDone(t.cmd.Status, t.cmd.HasStatus)
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/marrasen/gridterm/internal/sshtest"
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/ui"
 )
@@ -240,5 +241,189 @@ func TestAQuestionForAConnectionAlreadyGivenUpOnIsNotAsked(t *testing.T) {
 	a.pump.run()
 	if f, ok := a.root.Modal().(*ui.Form); ok {
 		t.Errorf("a dialog opened anyway: %v", f.Title)
+	}
+}
+
+// Forgetting a machine the window is connected to closes the connection.
+//
+// It used to drop the name and leave the connection open, so the row
+// stayed behind under a name nothing saved.
+func TestForgettingAConnectedMachineClosesIt(t *testing.T) {
+	s := sshtest.New(t)
+	a := aSavedMachineConnectedTo(t, s, "edge")
+
+	f := openTheForgetDialog(t, a, "edge")
+	saysItCloses(t, f, "edge", "closes that connection")
+	pressButton(t, a, f, "Remove")
+
+	if a.machines.named("edge") != nil {
+		t.Error("the connection is still held")
+	}
+	if _, ok := a.book.Lookup("edge"); ok {
+		t.Error("edge is still in the server list")
+	}
+	waitFor(t, a, "the far end to see the connection close", func() bool { return s.Live() == 0 })
+	a.refreshPanel(panelNow)
+	if _, ok := panelRow(a, hostKey("edge")); ok {
+		t.Errorf("the row stayed behind: %v", panelText(a, panelNow))
+	}
+}
+
+// Forgetting a gridterm window taken over lets go of it.
+func TestForgettingAWindowTakenOverLetsGoOfIt(t *testing.T) {
+	host, client, addr, keyFile := aServingWindow(t)
+	saveWindowFromTheDialog(t, client, "office", addr, keyFile)
+	clickTerminalLine(t, client, "office")
+	waitFor(t, client, "the window to be taken over", func() bool {
+		return client.windows.named("office") != nil
+	}, host)
+
+	f := openTheForgetDialog(t, client, "office")
+	saysItCloses(t, f, "office", "closes that connection")
+	pressButton(t, client, f, "Remove")
+
+	if n := client.windows.count(); n != 0 {
+		t.Errorf("it is still holding %v", client.windows.names())
+	}
+	if _, ok := client.book.Lookup("office"); ok {
+		t.Error("office is still in the server list")
+	}
+	waitFor(t, host, "the serving window to see its client go", func() bool {
+		return len(host.serving.clients()) == 0
+	}, client)
+}
+
+// Forgetting a machine still being connected to gives up on the dial.
+func TestForgettingAMachineStillOnItsWayGivesUp(t *testing.T) {
+	a := newTestApp(t, 100, 30)
+	withPanel(t, a)
+	withDialogs(t, a)
+	saveHostNamed(t, a, "edge", "edge.example")
+	a.refreshServers()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	holdTheNames(t, a, &dialling{cancel: cancel, names: []string{"edge"}})
+
+	f := openTheForgetDialog(t, a, "edge")
+	saysItCloses(t, f, "edge", "gives up on that connection")
+	pressButton(t, a, f, "Remove")
+
+	if a.machines.connecting("edge") != nil {
+		t.Error("the window is still holding the name, so nothing can try again")
+	}
+	if _, ok := a.book.Lookup("edge"); ok {
+		t.Error("edge is still in the server list")
+	}
+	select {
+	case <-ctx.Done():
+	case <-time.After(waitBudget):
+		t.Fatal("the dial was not given up on")
+	}
+}
+
+// Keeping the machine keeps the connection with it.
+func TestKeepingAServerClosesNothing(t *testing.T) {
+	s := sshtest.New(t)
+	a := aSavedMachineConnectedTo(t, s, "edge")
+
+	pressButton(t, a, openTheForgetDialog(t, a, "edge"), "Keep it")
+
+	if a.machines.named("edge") == nil {
+		t.Error("the connection was closed by the button that keeps the machine")
+	}
+	if _, ok := a.book.Lookup("edge"); !ok {
+		t.Error("edge went from the server list anyway")
+	}
+	if n := s.Live(); n != 1 {
+		t.Errorf("the far end has %d connections, want the one that was kept", n)
+	}
+}
+
+// A machine that cannot be forgotten keeps its connection.
+//
+// The list refuses to drop a machine another saved one is reached
+// through. Closing before that answer is known would take away a
+// connection for a forget that then does not happen.
+func TestAServerThatCannotBeForgottenKeepsItsConnection(t *testing.T) {
+	s := sshtest.New(t)
+	a := aSavedMachineConnectedTo(t, s, "edge")
+	saveHost(t, a, "db", s, "edge")
+	a.refreshServers()
+
+	f := openTheForgetDialog(t, a, "edge")
+	pressButton(t, a, f, "Remove")
+
+	if f.Error() == nil {
+		t.Fatal("nothing said why edge could not be forgotten")
+	}
+	if _, ok := a.book.Lookup("edge"); !ok {
+		t.Error("edge went from the server list anyway")
+	}
+	if a.machines.named("edge") == nil {
+		t.Error("the connection was closed for a forget that did not happen")
+	}
+	if n := s.Live(); n != 1 {
+		t.Errorf("the far end has %d connections, want the one that was kept", n)
+	}
+}
+
+// A machine nothing is connected to is forgotten with no word about
+// closing anything.
+func TestForgettingAnUnconnectedServerSaysOnlyThatItIsForgotten(t *testing.T) {
+	a := newTestApp(t, 100, 30)
+	withPanel(t, a)
+	withDialogs(t, a)
+	saveServer(t, a, "edge", "user@edge.example:22")
+	a.refreshServers()
+
+	f := openTheForgetDialog(t, a, "edge")
+
+	body := strings.Join(f.Lines, "\n")
+	if !strings.Contains(body, "It is only forgotten here.") {
+		t.Errorf("the dialog says %q", body)
+	}
+	if strings.Contains(body, "connect") || strings.Contains(body, "closes") {
+		t.Errorf("the dialog talks about a connection there is none of: %q", body)
+	}
+}
+
+// aSavedMachineConnectedTo saves a test server in the list and connects
+// to it from the plus on its row.
+func aSavedMachineConnectedTo(t *testing.T, s *sshtest.Server, name string) *testApp {
+	t.Helper()
+	a := newTestApp(t, 100, 30)
+	withPanel(t, a)
+	withDialogs(t, a)
+	pinServers(t, a, s)
+	saveHost(t, a, name, s, "")
+	a.refreshServers()
+
+	clickTerminalLine(t, a, name)
+	waitForPanes(t, a, 2)
+	if a.machines.named(name) == nil {
+		t.Fatalf("nothing is connected to %s", name)
+	}
+	return a
+}
+
+// openTheForgetDialog runs the forget line on a machine's plus menu and
+// hands back the dialog it opens, without pressing anything.
+func openTheForgetDialog(t *testing.T, a *testApp, name string) *ui.Form {
+	t.Helper()
+	chooseMenuItem(t, clickPlus(t, a, name), "server.forget")
+	return awaitModal(t, a, "the Remove "+name+"? dialog", byTitle[*ui.Form]("Remove "+name+"?"))
+}
+
+// saysItCloses checks a forget dialog names the machine once and says
+// what forgetting it does to the connection.
+func saysItCloses(t *testing.T, f *ui.Form, name, what string) {
+	t.Helper()
+	body := strings.Join(f.Lines, "\n")
+	if n := strings.Count(body, name); n != 1 {
+		t.Errorf("the dialog names %q %d times, want once:\n%s", name, n, body)
+	}
+	if !strings.Contains(body, what) {
+		t.Errorf("the dialog does not say %q:\n%s", what, body)
 	}
 }

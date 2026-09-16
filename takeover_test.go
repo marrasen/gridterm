@@ -2060,16 +2060,6 @@ func addServerFromTheDialog(t *testing.T, a *testApp, name, addr, keyFile string
 	return f
 }
 
-// forgetFromThePlus forgets a saved machine the way a user does: the
-// plus on its row, the forget line, and the confirmation.
-func forgetFromThePlus(t *testing.T, a *testApp, host string) {
-	t.Helper()
-	chooseMenuItem(t, clickPlus(t, a, host), "server.forget")
-	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
-	pressButton(t, a, f, "Remove")
-	a.pump.run()
-}
-
 // closeMenu takes down whatever menu is up, the way Escape does.
 func closeMenu(t *testing.T, a *testApp) {
 	t.Helper()
@@ -2188,37 +2178,6 @@ func TestAWindowIsHeldUnderTheNameTheListGivesIt(t *testing.T) {
 		offersTheWindowsLines(t, client, "office")
 	})
 
-	t.Run("forgotten while it is held", func(t *testing.T) {
-		host, client, addr, keyFile := aServingWindow(t)
-		saveWindowFromTheDialog(t, client, "office", addr, keyFile)
-		clickTerminalLine(t, client, "office")
-		pane := paneOnTheWindow(t, client)
-
-		forgetFromThePlus(t, client, "office")
-
-		// Forgetting a window is not letting go of it: the list stops
-		// naming it, and the connection goes back to being its own
-		// name.
-		if got := client.windows.names(); !slices.Equal(got, []string{addr}) {
-			t.Fatalf("it is holding %v, want the one window under %s", got, addr)
-		}
-		if got := client.about(addr).kind; got != hostWindow {
-			t.Errorf("under its address it is a %v, want a window", got)
-		}
-		stillTheOne(t, host, paneOnTheWindow(t, client), pane)
-		// The address is its own name now, so the heading has nothing
-		// to add beside it.
-		filedUnder(t, client, pane, addr, "", "office")
-
-		// And letting go from the plus on that heading really lets go.
-		if a := client.about(addr); a.toTakeOver() {
-			t.Error("it asks to be taken over again")
-		}
-		chooseMenuItem(t, clickPlus(t, client, addr), "conn.disconnect")
-		if n := client.windows.count(); n != 0 {
-			t.Errorf("it is still holding %v", client.windows.names())
-		}
-	})
 }
 
 // onlyFilePane is the one pane the file manager holds.

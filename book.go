@@ -440,18 +440,62 @@ func (a *app) openServerForm(under string) error {
 	return nil
 }
 
-// confirmRemoveServer asks before forgetting a machine.
+// confirmRemoveServer asks before forgetting a machine, and says when
+// forgetting it closes a connection.
 func (a *app) confirmRemoveServer(name string) {
-	f := a.newConfirm("Remove "+name+"?", []string{
-		"It is only forgotten here. Nothing on the machine changes.",
-	})
+	f := a.newConfirm("Remove "+name+"?", removeLines(a.about(name)))
 	f.AddButton(ui.Button{Title: "Remove", Do: func() error {
-		return a.book.Remove(name)
+		// Read again: the dial may have landed, or the far end gone,
+		// since the dialog opened.
+		on := a.about(name)
+		// The list first: it refuses a machine another saved one is
+		// reached through, and closing first would lose a connection
+		// for a forget that then does not happen.
+		if err := a.book.Remove(name); err != nil {
+			return err
+		}
+		return a.closeWhatIsHeld(on)
 	}})
 	f.AddButton(ui.Button{Title: "Keep it"})
 	// Opens on the button that changes nothing.
 	f.FocusButton(1)
 	a.showForm(f, a.refreshServers)
+}
+
+// removeLines is the body of the forget dialog: what forgetting the
+// machine does, and what it closes when the window is holding it.
+func removeLines(on hostFacts) []string {
+	nothing := "Nothing on the machine changes."
+	switch {
+	case on.window != nil || on.machine != nil:
+		return []string{
+			groupName(on.name) + " is connected.",
+			"Forgetting it closes that connection.",
+			nothing,
+		}
+	case on.dialling != nil:
+		return []string{
+			groupName(on.name) + " is still being connected to.",
+			"Forgetting it gives up on that connection.",
+			nothing,
+		}
+	}
+	return []string{"It is only forgotten here. " + nothing}
+}
+
+// closeWhatIsHeld closes whatever the window is holding under a name --
+// another gridterm taken over, a connection, or a dial on its way --
+// found by identity, because the name has just left the server list.
+func (a *app) closeWhatIsHeld(on hostFacts) error {
+	switch {
+	case on.window != nil:
+		return a.dropWindow(on.window.name)
+	case on.machine != nil:
+		return a.dropMachine(on.machine.at.name)
+	case on.dialling != nil:
+		a.machines.giveUp(on.dialling)
+	}
+	return nil
 }
 
 // reportBookError tells the user their server list could not be read,

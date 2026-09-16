@@ -1,10 +1,12 @@
 // Package shells finds which shells a pane on this machine can run, and translates a Windows
 // directory for WSL.
 //
-// A shell is offered only when it was found, never because the platform usually has it.
+// A shell is offered only when it was found, never because the platform usually has it. Listing the
+// WSL distributions can fail on its own, and Find says why rather than leave them quietly out.
 package shells
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path"
@@ -27,7 +29,8 @@ type Shell struct {
 	// Title is what a menu line says.
 	Title string
 
-	// Path is the program, and Args what goes before the working directory.
+	// Path is the program, and Args the arguments it always takes, such as the -d that picks a WSL
+	// distribution.
 	Path string
 	Args []string
 
@@ -65,17 +68,20 @@ func thisMachine() probe {
 	}
 }
 
-// Find returns the shells this machine can open a pane on, best first.
-//
-// It runs wsl.exe to list the distributions, which takes a moment, so a caller that only needs to
-// resolve one remembered id should use Named.
-func Find() []Shell {
+// Find returns the shells this machine can open a pane on, best first, and why the WSL distributions
+// could not be listed. It runs wsl.exe to list them, which takes a moment, so a caller that only needs
+// one remembered id should use Named. A machine with no WSL at all gives a nil error, since that is an
+// answer rather than a failure.
+func Find() ([]Shell, error) {
 	return find(thisMachine())
 }
 
-func find(p probe) []Shell {
+func find(p probe) ([]Shell, error) {
 	if p.goos != "windows" {
-		return []Shell{p.login()}
+		if s, ok := p.login(); ok {
+			return []Shell{s}, nil
+		}
+		return nil, nil
 	}
 
 	var list []Shell
@@ -88,17 +94,20 @@ func find(p probe) []Shell {
 	// One line per installed distribution, in the order wsl.exe lists them.
 	names, err := p.distros()
 	if err != nil {
-		return list
+		if errors.Is(err, exec.ErrNotFound) {
+			return list, nil
+		}
+		return list, err
 	}
 	for _, name := range names {
 		if s, ok := p.wsl(name); ok {
 			list = append(list, s)
 		}
 	}
-	return list
+	return list, nil
 }
 
-// Named returns the shell an id names, and whether it is still installed.
+// Named returns the shell an id names, and whether this machine could run it.
 //
 // It never lists the WSL distributions, so a window can resolve the shell a user last chose before
 // the first pane opens. A distribution that has been removed shows up when the pane fails to start.
@@ -109,7 +118,7 @@ func Named(id string) (Shell, bool) {
 func named(p probe, id string) (Shell, bool) {
 	if p.goos != "windows" {
 		if id == loginID {
-			return p.login(), true
+			return p.login()
 		}
 		return Shell{}, false
 	}
@@ -136,8 +145,13 @@ func (p probe) windows(id string) (Shell, bool) {
 			continue
 		}
 		prog := ""
+		// COMSPEC names cmd.exe when the file it names is there, and the PATH answers when it is not.
 		if id == "cmd" {
-			prog = p.getenv("COMSPEC")
+			if comspec := p.getenv("COMSPEC"); comspec != "" {
+				if found, err := p.lookPath(comspec); err == nil {
+					prog = found
+				}
+			}
 		}
 		if prog == "" {
 			found, err := p.lookPath(w.file)
@@ -169,20 +183,27 @@ func (p probe) wsl(distro string) (Shell, bool) {
 	}, true
 }
 
-// login returns the user's login shell, which is the only shell a machine that is not Windows offers.
-func (p probe) login() Shell {
+// login returns the shell $SHELL names, or the first of /bin/bash and /bin/sh that is installed, and
+// whether it found one.
+func (p probe) login() (Shell, bool) {
 	sh := p.getenv("SHELL")
 	if sh == "" {
-		sh = "/bin/sh"
-		if _, err := p.lookPath("/bin/bash"); err == nil {
-			sh = "/bin/bash"
+		for _, try := range []string{"/bin/bash", "/bin/sh"} {
+			if _, err := p.lookPath(try); err == nil {
+				sh = try
+				break
+			}
 		}
 	}
-	return Shell{ID: loginID, Title: path.Base(sh), Path: sh}
+	if sh == "" {
+		return Shell{}, false
+	}
+	return Shell{ID: loginID, Title: path.Base(sh), Path: sh}, true
 }
 
-// Command is the argv for a pane on this shell, starting in dir. An empty dir leaves the working
-// directory to the caller.
+// Command is the argv for a pane on this shell. A WSL pane starts in dir, and leaves it out when dir
+// is empty or WSL cannot reach it; every other shell ignores dir, so the caller starts the pane in a
+// directory itself, through session.LocalConfig.Dir.
 func (s Shell) Command(dir string) []string {
 	argv := make([]string, 0, len(s.Args)+3)
 	argv = append(argv, s.Path)
@@ -197,10 +218,8 @@ func (s Shell) Command(dir string) []string {
 	return argv
 }
 
-// UnixPath translates a Windows path for WSL, and returns "" for one WSL cannot reach.
-//
-// A drive letter becomes a mount under /mnt, so C:\Workspace is /mnt/c/Workspace. A UNC path and a
-// relative path both give "".
+// UnixPath translates a Windows path for WSL, turning a drive letter into a mount under /mnt, so
+// C:\Workspace is /mnt/c/Workspace. Anything else, a UNC path and a relative path included, gives "".
 func UnixPath(win string) string {
 	if len(win) < 3 {
 		return ""

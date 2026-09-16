@@ -302,7 +302,9 @@ func (s *Shell) Resize(cols, rows int) error {
 //
 // It runs off the goroutine that draws because a window-change takes the
 // channel's write lock and waits when the send buffer to the machine has
-// filled.
+// filled. A send that has parked there lets go only when the connection
+// is closed, so Close counts it as a parked write rather than waiting
+// for it.
 func (s *Shell) sendSize() {
 	for {
 		s.writeMu.Lock()
@@ -385,13 +387,25 @@ func (s *Shell) closeAll() error {
 	// underneath a write is the race writeMu exists to prevent. Closing
 	// the session below hangs the program up anyway, without the
 	// courtesy.
+	//
+	// On a goroutine, because the end-of-file is a packet like any other
+	// and waits when the send buffer to the machine has filled. An idle
+	// channel does not mean a wire that takes bytes: the buffer fills for
+	// the whole connection, and a goodbye that has parked there lets go
+	// only when the connection is closed.
 	var errs []error
 	saidGoodbye := false
 	if in != nil && !parked {
-		if err := in.Close(); err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, net.ErrClosed) {
-			errs = append(errs, err)
+		hung := make(chan error, 1)
+		go func() { hung <- in.Close() }()
+		select {
+		case err := <-hung:
+			if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, net.ErrClosed) {
+				errs = append(errs, err)
+			}
+			saidGoodbye = true
+		case <-time.After(drainGrace):
 		}
-		saidGoodbye = true
 	}
 
 	// Give the remote a moment to finish on its own, so output already

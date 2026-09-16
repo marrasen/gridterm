@@ -119,6 +119,9 @@ no fold. `ui.Notice` already wraps, scrolls, selects and copies.
 Done when: a connection's lines are coloured; after it connects the
 pane shows one line; the plus menu opens the whole account, copyable;
 F1 lists the keys.
+Done by b52d607 Keep, colour and fold the connection log, and add a help view.
+Done by d1c9a6f Filter the window's own account lines, wake the pane at the fold, align the help.
+Decided in review: help is on Ctrl+Shift+H, not F1, which belongs to the programs in the shell.
 
 ## Step 3 -- the sidebar: the type icon, the grey bar
 

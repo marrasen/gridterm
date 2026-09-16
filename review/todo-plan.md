@@ -184,6 +184,8 @@ keeps stale pixels.
 
 Done when: a 120x40 held screen is fully visible in an 80x24 box and
 the host's row still says the size.
+Done by 6105bef Scale a held screen down so all of it is visible.
+Done by 6b05074 Bound the scaled layer, and give its mouse capture the toolkit's rules.
 
 ## Step 6 -- connections
 
@@ -242,7 +244,11 @@ One commit each, smallest first.
    `pulse` precedent so only the cursor row is dirtied.
 5. `-ssh` opens the window first and connects in a pane through
    `openRoute`, so it asks in a dialog and has a connection log.
-6. Windows lost output: the reaper waits for the ConPTY to drain,
+6. `dropMachine` and `letGoOfWindow` close inline on the drawing
+   goroutine. `Conn.Close` waits a 250 ms drain per rider and
+   `dropMachine` recurses, so forgetting a jump host can stall the
+   window for about a second.
+7. Windows lost output: the reaper waits for the ConPTY to drain,
    bounded, before closing the pseudoconsole when the child exited on
    its own. Tested with `cmd /c echo` on Windows.
 

@@ -45,28 +45,34 @@ func toolList() []tool {
 			Name:  "use_session_code",
 			Title: "Use a session code",
 			Description: "Open the pane a session code names. The user makes the code in" +
-				" gridterm and gives it to you; it is the only way to reach anything here." +
-				" Call this before any other tool.",
+				" gridterm and gives it to you, and it looks like gt1-<port>-<letters>." +
+				" It is the only way to reach anything here. Call this before any other" +
+				" tool: the answer names the pane, and every other tool takes that name.",
 			InputSchema: schema{
 				Type: "object",
 				Properties: map[string]field{
-					"code": {Type: "string", Description: "the session code the user gave you"},
+					"code": {Type: "string",
+						Description: "the session code the user gave you, like gt1-<port>-<letters>"},
 				},
 				Required: []string{"code"},
 			},
 		},
 		{
-			Name:        "list_panes",
-			Title:       "List the panes you have",
-			Description: "The panes the user has handed you, and how big each screen is.",
+			Name:  "list_panes",
+			Title: "List the panes you have",
+			Description: "The panes the user has handed you, each with the name the other" +
+				" tools take and how big its screen is. It takes no arguments. It lists" +
+				" nothing else of the user's, and it is empty until a session code has" +
+				" been used.",
 			InputSchema: schema{Type: "object", Properties: map[string]field{}},
 		},
 		{
 			Name:  "read_pane",
 			Title: "Read a pane",
-			Description: "What is on the pane's screen now, as plain text. After sending a" +
-				" command, use wait_for instead: a read taken straight afterwards shows the" +
-				" screen before the command has done anything.",
+			Description: "What is on the pane's screen now, as plain text. It needs the" +
+				" pane's name, from use_session_code. After sending a command, use wait_for" +
+				" instead: a read taken straight afterwards shows the screen before the" +
+				" command has done anything.",
 			InputSchema: schema{
 				Type: "object",
 				Properties: map[string]field{
@@ -79,13 +85,15 @@ func toolList() []tool {
 			Name:  "send_keys",
 			Title: "Type into a pane",
 			Description: "Put characters into the pane exactly as given, as though typed" +
-				" there. A command needs a carriage return (\\r) at the end to be run." +
-				" Control characters work: \\u0003 is ctrl+c.",
+				" there. Nothing is added: a command needs a carriage return (\\r) at the" +
+				" end, which is Enter, or it sits on the line unrun. Control characters" +
+				" work: \\u0003 is ctrl+c. It does not wait for anything to happen, so call" +
+				" wait_for next.",
 			InputSchema: schema{
 				Type: "object",
 				Properties: map[string]field{
 					"pane": {Type: "string", Description: "which pane, from use_session_code"},
-					"text": {Type: "string", Description: "what to type"},
+					"text": {Type: "string", Description: `what to type, with "\r" for Enter`},
 				},
 				Required: []string{"pane", "text"},
 			},
@@ -93,18 +101,21 @@ func toolList() []tool {
 		{
 			Name:  "wait_for",
 			Title: "Wait for a pane",
-			Description: "Watch a pane until its screen holds some text, or until it stops" +
-				" changing, and give back the screen. With no text to wait for it waits for" +
-				" the screen to go quiet, which is what waiting for a command to finish looks" +
-				" like when the program cannot be asked. It gives back the screen either way," +
-				" saying if it gave up on time.",
+			Description: "Watch a pane until its screen holds the text in contains, or until" +
+				" it has said nothing for quiet_ms, and give back the screen. With neither" +
+				" it waits for the screen to go quiet, which is what waiting for a command" +
+				" to finish looks like when the program cannot be asked. When the time runs" +
+				" out first it still gives back the screen, and says the time ran out." +
+				" Use it after send_keys, before reading again.",
 			InputSchema: schema{
 				Type: "object",
 				Properties: map[string]field{
-					"pane":       {Type: "string", Description: "which pane, from use_session_code"},
-					"contains":   {Type: "string", Description: "text to wait for on the screen"},
-					"quiet_ms":   {Type: "integer", Description: "how long the pane must say nothing for"},
-					"timeout_ms": {Type: "integer", Description: "how long to wait before giving up"},
+					"pane":     {Type: "string", Description: "which pane, from use_session_code"},
+					"contains": {Type: "string", Description: "text to wait for on the screen"},
+					"quiet_ms": {Type: "integer",
+						Description: "how long the pane must say nothing for, in milliseconds"},
+					"timeout_ms": {Type: "integer",
+						Description: "how long to wait before giving up, in milliseconds"},
 				},
 				Required: []string{"pane"},
 			},

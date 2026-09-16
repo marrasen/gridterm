@@ -557,6 +557,42 @@ func TestItSaysWhatAClientNeedsToKnow(t *testing.T) {
 	}
 }
 
+// The initialize answer carries the workflow, so an agent already
+// connected learns it without the prompt the user pastes.
+//
+// The words are the ones the prompt uses, from the same source: two
+// tellings that drift apart is one of them being wrong.
+func TestTheInitializeAnswerCarriesTheWorkflow(t *testing.T) {
+	answers := talk(t, &fakePanes{},
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":`+
+			`{"protocolVersion":"`+protocolVersion+`","capabilities":{},`+
+			`"clientInfo":{"name":"something","version":"1"}}}`)
+
+	raw, err := json.Marshal(answers[0].Result)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var said struct {
+		Instructions string `json:"instructions"`
+	}
+	if err := json.Unmarshal(raw, &said); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	for _, want := range []string{"use_session_code", "wait_for", "read_pane", "send_keys"} {
+		if !strings.Contains(said.Instructions, want) {
+			t.Errorf("the instructions never mention %s: %q", want, said.Instructions)
+		}
+	}
+	if !strings.Contains(said.Instructions, Workflow) {
+		t.Errorf("the instructions do not carry the workflow the prompt carries: %q",
+			said.Instructions)
+	}
+	if !strings.Contains(said.Instructions, Rules) {
+		t.Errorf("the instructions do not carry the rules the prompt carries: %q",
+			said.Instructions)
+	}
+}
+
 // Every tool says what it takes, in a shape a client can check a call
 // against before making it.
 func TestEveryToolSaysWhatItTakes(t *testing.T) {

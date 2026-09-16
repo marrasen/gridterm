@@ -409,22 +409,32 @@ func version() string {
 }
 
 // instructions is what an agent is told about this server when it
-// connects.
-const instructions = `gridterm hands you one terminal pane at a time.
+// connects. It carries the same workflow as the prompt the user pastes,
+// without the code and without the lines that add this server to a host.
+var instructions = strings.Join([]string{
+	`gridterm hands you one terminal pane at a time.
 
 The user sets a session up -- through whatever machines, as whatever
 user -- and then gives you a session code for that one pane. Call
-use_session_code with it before anything else.
+use_session_code with it before anything else. The answer names the
+pane, and every other tool takes that name.`,
+	Workflow,
+	Rules,
+}, "\n\n")
 
-You can read the pane, type into it, and wait for it to settle, and you
-can do that in the panes you have been given and nowhere else. What you
-type goes into a live shell running as whoever the user set it up as, so
-it does whatever that shell does: think before you type, the way you
-would in somebody else's terminal. The user is watching the same screen
-and can take it back at any moment, and then everything here stops
-working.
+// Workflow is how an agent works in a pane it has been handed. This
+// server's initialize answer and gridterm's hand-over prompt both carry
+// it, so the two cannot drift apart.
+const Workflow = `read_pane gives you the pane's screen as plain text. send_keys types into the pane: the
+characters go in exactly as given, so a command needs "\r" at the end for Enter. send_keys
+does not wait. After typing, call wait_for before you read again. Give wait_for contains
+when you know what the screen will say, or quiet_ms to wait for the screen to stop
+changing. It gives back the screen either way, and says when the time ran out instead.
+list_panes lists the panes you have been handed, and that is all it lists.`
 
-Type as a person would: send_keys puts characters in exactly as given,
-so a command needs a carriage return ("\r") at the end. After sending a
-command, call wait_for rather than read_pane: a read taken straight
-afterwards shows the screen before the command has done anything.`
+// Rules is what an agent may do in a pane it has been handed, and what
+// it may not.
+const Rules = `Work in that pane and nowhere else. It is a live shell running as whoever the user set it
+up as, so it does whatever that shell does. Ask the user before anything destructive, the
+way you would in somebody else's terminal. The user is watching the same screen and can
+take the pane back at any moment, and then nothing here works any more.`

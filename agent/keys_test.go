@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -72,5 +73,73 @@ func TestKeysAndLinesReachTheWindow(t *testing.T) {
 	}
 	if w.lines != 300 {
 		t.Errorf("the window was asked for %d lines", w.lines)
+	}
+}
+
+// A call naming more keys than one call presses is refused, and says how
+// many it takes.
+func TestMoreKeysThanOneCallPressesIsRefused(t *testing.T) {
+	many := make([]string, MostKeys)
+	for i := range many {
+		many[i] = "Enter"
+	}
+	if err := CheckKeys(many); err != nil {
+		t.Fatalf("%d keys were refused: %v", MostKeys, err)
+	}
+	err := CheckKeys(append(many, "Enter"))
+	if err == nil {
+		t.Fatal("a call pressing more keys than it says it will was taken")
+	}
+	for _, want := range []string{strconv.Itoa(MostKeys), strconv.Itoa(MostKeys + 1)} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("it said %q, which does not mention %s", err, want)
+		}
+	}
+
+	// And the window refuses it too, rather than trusting whatever is on
+	// the other end of the wire to have checked.
+	w, _, code := listening(t)
+	c, err := Dial(code)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer func() { _ = c.Close() }()
+	pane, err := c.Use(code)
+	if err != nil {
+		t.Fatalf("use: %v", err)
+	}
+	if err := c.Send(pane.ID, "ls", append(many, "Enter")); err == nil {
+		t.Error("the window pressed more keys than it says it will")
+	} else if !strings.Contains(err.Error(), strconv.Itoa(MostKeys)) {
+		t.Errorf("it said %q, which does not say how many it takes", err)
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.typed != "" || len(w.pressed) > 0 {
+		t.Errorf("the pane was sent %q and %v", w.typed, w.pressed)
+	}
+}
+
+// A key name the window does not have is refused by the window as well,
+// whatever reached the wire.
+func TestTheWindowRefusesAKeyNameItDoesNotHave(t *testing.T) {
+	w, _, code := listening(t)
+	c, err := Dial(code)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer func() { _ = c.Close() }()
+	pane, err := c.Use(code)
+	if err != nil {
+		t.Fatalf("use: %v", err)
+	}
+
+	if err := c.Send(pane.ID, "ls", []string{"Enter", "Ecsape"}); err == nil {
+		t.Error("the window pressed a key it has no name for")
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.typed != "" || len(w.pressed) > 0 {
+		t.Errorf("the pane was sent %q and %v", w.typed, w.pressed)
 	}
 }

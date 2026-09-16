@@ -71,6 +71,12 @@ type Pane struct {
 	Rows int `json:"rows"`
 }
 
+// MostLines caps how many lines one read may ask for.
+//
+// A read renders a screenful at a time under the pane's lock, so a long
+// one keeps the window from drawing; this is what one read may cost.
+const MostLines = 500
+
 // Look is a pane as it stands.
 type Look struct {
 	// Screen is what is on it now, as plain text: one line per row,
@@ -98,6 +104,14 @@ type Look struct {
 	// mc. Nothing has scrolled off while one is, so a read of more than
 	// the screen gives the screen.
 	Alt bool `json:"alt,omitempty"`
+
+	// All says the read asked for more lines than the pane has kept, so
+	// what came back is everything there is to read.
+	All bool `json:"all,omitempty"`
+
+	// Note is what the window has to say about this answer beyond the
+	// screen itself, and is empty when it has nothing.
+	Note string `json:"note,omitempty"`
 }
 
 // NewCode makes a code for one handed-over pane.

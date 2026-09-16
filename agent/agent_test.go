@@ -28,6 +28,14 @@ type fakeWindow struct {
 	lines   int
 	looks   map[int]int
 	pressed []string
+
+	// history is what a Look of more than the screen gives back, for a
+	// test about what has scrolled off. Empty means the screen.
+	history string
+
+	// bigLookFails makes a Look of more than the screen fail, which is
+	// what the user taking the pane back between two looks does.
+	bigLookFails bool
 }
 
 func (w *fakeWindow) Use(code string) (Pane, error) {
@@ -52,6 +60,14 @@ func (w *fakeWindow) Look(id string, lines int) (Look, error) {
 	}
 	if id != "pane-1" {
 		return Look{}, errors.New("no such pane")
+	}
+	if lines > 0 {
+		if w.bigLookFails {
+			return Look{}, errors.New("that pane is no longer open")
+		}
+		if w.history != "" {
+			return Look{Screen: w.history, Gone: w.gone, Changed: w.changed}, nil
+		}
 	}
 	return Look{Screen: w.screen, Gone: w.gone, Changed: w.changed}, nil
 }
@@ -790,5 +806,76 @@ func TestAWaitWatchesTheScreenAndReadsTheLinesOnce(t *testing.T) {
 	}
 	if got := w.looks[0]; got < 5 {
 		t.Errorf("the window was asked for the screen %d times, want many", got)
+	}
+}
+
+// A wait that finished and could not then read the lines it was asked
+// for answers with the screen it has and says why.
+//
+// The waiting is over either way. A pane whose shell exited between the
+// last look and the read would otherwise turn a finished wait into a
+// failure, and the agent would never learn what it had been waiting for.
+func TestAWaitWhoseLastReadFailsStillAnswers(t *testing.T) {
+	w, _, code := listening(t)
+	w.bigLookFails = true
+	w.say("$ uptime\r\nup 3 days\r\n$ ")
+
+	c, err := Dial(code)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer func() { _ = c.Close() }()
+	pane, err := c.Use(code)
+	if err != nil {
+		t.Fatalf("use: %v", err)
+	}
+
+	look, waited, err := c.Wait(pane.ID, 500, Until{QuietMS: 20, TimeoutMS: 2000})
+	if err != nil {
+		t.Fatalf("the wait failed rather than answering: %v", err)
+	}
+	if waited {
+		t.Error("it says the time ran out, and it did not")
+	}
+	if !strings.Contains(look.Screen, "up 3 days") {
+		t.Errorf("it answered with %q", look.Screen)
+	}
+	if !strings.Contains(look.Note, "could not be read") {
+		t.Errorf("it said nothing about the read that failed: %q", look.Note)
+	}
+}
+
+// A wait finds what it was waiting for in the lines it reads at the end,
+// even when the line went past the top of the screen while it watched.
+//
+// The watching sees the screen and nothing more, twenty times a second.
+// A line that arrives and scrolls off between two of those looks is one
+// the wait would otherwise sit out to the end of its time and then call
+// a timeout, with the line it wanted in the answer it gives back.
+func TestAWaitFindsWhatScrolledOffInTheLinesItReads(t *testing.T) {
+	w, _, code := listening(t)
+	w.say("$ ")
+	// On the screen it never appears; in the history it is there.
+	w.history = "Build succeeded\n$ "
+
+	c, err := Dial(code)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer func() { _ = c.Close() }()
+	pane, err := c.Use(code)
+	if err != nil {
+		t.Fatalf("use: %v", err)
+	}
+
+	look, waited, err := c.Wait(pane.ID, 500, Until{Contains: "Build succeeded", TimeoutMS: 300})
+	if err != nil {
+		t.Fatalf("wait: %v", err)
+	}
+	if waited {
+		t.Error("it gave up on something that had already happened")
+	}
+	if !strings.Contains(look.Screen, "Build succeeded") {
+		t.Errorf("it answered with %q", look.Screen)
 	}
 }

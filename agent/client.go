@@ -123,7 +123,8 @@ func (c *Client) Wait(id string, lines int, until Until) (Look, bool, error) {
 	return *got.Look, got.Waited, nil
 }
 
-// why says which ending this was.
+// why says which ending this was, keeping what closing the connection
+// said along with it.
 //
 // A window that ran out of time is not the same as one that hung up, and
 // the two ask the user for different things: wait, or go and look at the
@@ -133,11 +134,12 @@ func (c *Client) Wait(id string, lines int, until Until) (Look, bool, error) {
 // The deadline is asked about as well as the error, because readLine
 // reads a timeout as the conversation ending -- which is the right
 // answer on the window's side of it and not here.
-func why(err error, bound time.Duration, by time.Time) error {
+func why(err, closed error, bound time.Duration, by time.Time) error {
+	end := error(ErrGone)
 	if errors.Is(err, os.ErrDeadlineExceeded) || !time.Now().Before(by) {
-		return fmt.Errorf("%w: it did not answer within %v", ErrGone, bound)
+		end = fmt.Errorf("%w: it did not answer within %v", ErrGone, bound)
 	}
-	return ErrGone
+	return errors.Join(end, closed)
 }
 
 // promptly is how long a window has to answer an ordinary question.
@@ -231,21 +233,19 @@ func (c *Client) say(want ask) (said, error) {
 	bound := c.answerWithin(want)
 	by := time.Now().Add(bound)
 	if err := c.conn.SetDeadline(by); err != nil {
-		_ = c.Close()
-		return said{}, ErrGone
+		return said{}, errors.Join(ErrGone, err, c.Close())
 	}
 	if err := c.out.Encode(want); err != nil {
-		_ = c.Close()
-		return said{}, why(err, bound, by)
+		return said{}, why(err, c.Close(), bound, by)
 	}
-	line, err := readLine(c.in)
+	// The answer may be a whole scrollback, so it is read against the
+	// larger of the two limits.
+	line, err := readLine(c.in, longestAnswer)
 	if err != nil {
-		_ = c.Close()
-		return said{}, why(err, bound, by)
+		return said{}, why(err, c.Close(), bound, by)
 	}
 	if err := c.conn.SetDeadline(time.Time{}); err != nil {
-		_ = c.Close()
-		return said{}, ErrGone
+		return said{}, errors.Join(ErrGone, err, c.Close())
 	}
 	var got said
 	if err := json.Unmarshal(line, &got); err != nil {

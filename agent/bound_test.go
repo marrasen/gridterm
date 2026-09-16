@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"strings"
 	"testing"
@@ -33,7 +34,7 @@ func mute(t *testing.T) string {
 		}
 		defer func() { _ = conn.Close() }()
 		in := bufio.NewReaderSize(conn, 4096)
-		if _, err := readLine(in); err != nil {
+		if _, err := readLine(in, LongestRequest); err != nil {
 			return
 		}
 		// The greeting, and then silence.
@@ -105,5 +106,126 @@ func TestAWaitIsGivenTheTimeItAskedFor(t *testing.T) {
 	forever := ask{Do: "wait", Until: wait{TimeoutMS: 1 << 30}}
 	if got := c.answerWithin(forever); got > longestWait+promptly {
 		t.Errorf("a wait with no sensible limit gets %v", got)
+	}
+}
+
+// A read of a big screen comes back whole rather than closing the
+// connection.
+//
+// The most a read gives, on the widest pane anybody has, in characters
+// that are several bytes each: an answer the wire refused would leave
+// the agent holding nothing but "that window has gone", and the user
+// would have to make a new code.
+func TestABigAnswerReachesTheAgent(t *testing.T) {
+	w, _, code := listening(t)
+
+	var wide strings.Builder
+	for i := 0; i < 2000; i++ {
+		if i > 0 {
+			wide.WriteByte('\n')
+		}
+		wide.WriteString(strings.Repeat("\u00e5", 300))
+	}
+	w.say(wide.String())
+
+	c, err := Dial(code)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer func() { _ = c.Close() }()
+	pane, err := c.Use(code)
+	if err != nil {
+		t.Fatalf("use: %v", err)
+	}
+
+	look, err := c.Read(pane.ID, 2000)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if look.Screen != wide.String() {
+		t.Errorf("it read %d bytes, want %d", len(look.Screen), wide.Len())
+	}
+	if c.Gone() {
+		t.Error("the connection closed over an answer the window meant to send")
+	}
+}
+
+// A request longer than a request can be is refused in words, and
+// nothing in it reaches the pane.
+func TestARequestTooLongToBeARequestIsRefused(t *testing.T) {
+	w, s, code := listening(t)
+
+	conn, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", s.Port()))
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+	out := json.NewEncoder(conn)
+	in := bufio.NewReaderSize(conn, 4096)
+
+	// The greeting and a code, so what refuses the request below is its
+	// length and nothing else.
+	for _, want := range []ask{{Do: "hello", Protocol: hello}, {Do: "use", Code: code}} {
+		if err := out.Encode(want); err != nil {
+			t.Fatalf("ask: %v", err)
+		}
+		if _, err := readLine(in, longestAnswer); err != nil {
+			t.Fatalf("answer: %v", err)
+		}
+	}
+
+	go func() {
+		_ = out.Encode(ask{Do: "send", Pane: "pane-1", Text: strings.Repeat("x", LongestRequest)})
+	}()
+	line, err := readLine(in, longestAnswer)
+	if err != nil {
+		t.Fatalf("it never said why: %v", err)
+	}
+	var got said
+	if err := json.Unmarshal(line, &got); err != nil {
+		t.Fatalf("it said something unreadable: %q", line)
+	}
+	if !strings.Contains(got.Error, "too long to read") {
+		t.Errorf("it said %q", got.Error)
+	}
+	if typed := w.sentText(); typed != "" {
+		t.Errorf("%d bytes of it reached the pane", len(typed))
+	}
+}
+
+// A connection speaking another version of the protocol is told which
+// of the two builds is the older one.
+func TestAnotherProtocolVersionIsToldWhichBuildIsOlder(t *testing.T) {
+	for _, tc := range []struct {
+		spoke string
+		want  string
+	}{
+		{"gridterm-agent-1", "the gridterm serving this mcp server is an older build"},
+		{"gridterm-agent-9", "this window is an older build"},
+		{"GET / HTTP/1.1", "not one of gridterm"},
+	} {
+		_, s, _ := listening(t)
+		conn, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", s.Port()))
+		if err != nil {
+			t.Fatalf("dial: %v", err)
+		}
+		out := json.NewEncoder(conn)
+		if err := out.Encode(ask{Do: "hello", Protocol: tc.spoke}); err != nil {
+			t.Fatalf("greet: %v", err)
+		}
+		line, err := readLine(bufio.NewReaderSize(conn, 4096), longestAnswer)
+		if err != nil {
+			t.Fatalf("it never answered %s: %v", tc.spoke, err)
+		}
+		var got said
+		if err := json.Unmarshal(line, &got); err != nil {
+			t.Fatalf("it said something unreadable: %q", line)
+		}
+		if !strings.Contains(strings.ToLower(got.Error), tc.want) {
+			t.Errorf("%s was told %q, want it to say %q", tc.spoke, got.Error, tc.want)
+		}
+		if err := conn.Close(); err != nil {
+			t.Fatalf("close: %v", err)
+		}
 	}
 }

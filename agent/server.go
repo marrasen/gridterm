@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -71,10 +72,6 @@ const (
 	// window nothing.
 	lookEvery = 50 * time.Millisecond
 
-	// longestLine caps what one request may be, so an agent that sends
-	// no newline cannot make this window hold an unbounded buffer.
-	longestLine = 1 << 20
-
 	// sayHelloWithin is how long a connection has to say what it is
 	// before it is hung up on. A goroutine and a buffer held by
 	// something that says nothing is a goroutine and a buffer nobody
@@ -88,6 +85,23 @@ const (
 	// goroutine and a question of the window twenty times a second, and
 	// anything running as this user can open a connection.
 	mostAgents = 8
+)
+
+// How long a line on the wire may be, each way, so that neither end can
+// be made to hold an unbounded buffer.
+//
+// The two differ because what they carry does. A request carries what an
+// agent types, which is a command line and not a file. An answer carries
+// a screen, and has to hold MostLines rows of the widest pane anybody
+// has after JSON escaping: two thousand rows of five hundred columns at
+// six bytes an escaped character is six million.
+const (
+	// LongestRequest caps one request, and is what anything sending
+	// requests has to keep its own messages under.
+	LongestRequest = 1 << 21
+
+	// longestAnswer caps one answer.
+	longestAnswer = 1 << 23
 )
 
 // Listen starts listening for agents on a port of the system's
@@ -228,7 +242,7 @@ func (s *Server) talk(c net.Conn) {
 		s.onError(fmt.Errorf("agent: set a deadline: %w", err))
 		return
 	}
-	first, err := readLine(in)
+	first, err := readLine(in, LongestRequest)
 	if err != nil {
 		return
 	}
@@ -237,7 +251,7 @@ func (s *Server) talk(c net.Conn) {
 		greeting.Do != "hello" || greeting.Protocol != hello {
 		// Answered before hanging up, so an agent of another build is
 		// told why rather than left guessing.
-		_ = out.Encode(said{Error: "this window speaks " + hello})
+		_ = out.Encode(said{Error: whichIsOlder(greeting.Protocol)})
 		return
 	}
 	if err := out.Encode(said{OK: true}); err != nil {
@@ -249,8 +263,13 @@ func (s *Server) talk(c net.Conn) {
 	}
 
 	for {
-		line, err := readLine(in)
+		line, err := readLine(in, LongestRequest)
 		if err != nil {
+			// A request too long to be a request is said before hanging
+			// up, so an agent that sent one is told why.
+			if errors.Is(err, errTooLong) {
+				_ = out.Encode(said{Error: err.Error()})
+			}
 			if !errors.Is(err, errGone) && !s.isClosed() {
 				s.onError(fmt.Errorf("agent: read: %w", err))
 			}
@@ -278,8 +297,11 @@ func (s *Server) talk(c net.Conn) {
 // errGone says the agent hung up, which is not a failure.
 var errGone = errors.New("agent: the agent has gone")
 
-// readLine reads one request, refusing one too long to be a request.
-func readLine(in *bufio.Reader) ([]byte, error) {
+// errTooLong says a line was longer than the limit for that direction.
+var errTooLong = errors.New("agent: that is too long to read")
+
+// readLine reads one line, refusing one longer than most.
+func readLine(in *bufio.Reader, most int) ([]byte, error) {
 	var line []byte
 	for {
 		part, more, err := in.ReadLine()
@@ -295,8 +317,8 @@ func readLine(in *bufio.Reader) ([]byte, error) {
 			return nil, err
 		}
 		line = append(line, part...)
-		if len(line) > longestLine {
-			return nil, fmt.Errorf("a request of %d bytes is not a request", len(line))
+		if len(line) > most {
+			return nil, fmt.Errorf("%w: %d bytes, and the most is %d", errTooLong, len(line), most)
 		}
 		if !more {
 			return line, nil
@@ -339,6 +361,11 @@ func (s *Server) answer(want ask, held map[string]Pane) said {
 		if _, ok := held[want.Pane]; !ok {
 			return said{Error: notHanded(want.Pane)}
 		}
+		// Refused before anything is typed, so an agent that spelled a
+		// key wrong or sent too many has sent nothing.
+		if err := CheckKeys(want.Keys); err != nil {
+			return said{Error: err.Error()}
+		}
 		if err := s.cfg.Window.Send(want.Pane, want.Text, want.Keys); err != nil {
 			return said{Error: err.Error()}
 		}
@@ -356,6 +383,37 @@ func (s *Server) answer(want ask, held map[string]Pane) said {
 // notHanded is what an agent is told about a pane it was never given.
 func notHanded(id string) string {
 	return fmt.Sprintf("%q is not a pane you have been handed", id)
+}
+
+// whichIsOlder is what a connection speaking another protocol is told,
+// naming the build to update rather than only the version it wanted.
+func whichIsOlder(spoke string) string {
+	said := "this window speaks " + hello + "."
+	theirs, ok := protocolNumber(spoke)
+	if !ok {
+		return said + " That greeting is not one of gridterm's."
+	}
+	switch mine, _ := protocolNumber(hello); {
+	case theirs < mine:
+		return said + " The gridterm serving this MCP server is an older build than this window."
+	case theirs > mine:
+		return said + " This window is an older build than the gridterm serving this MCP server."
+	}
+	return said
+}
+
+// protocolNumber is the version out of a greeting, and whether it was
+// one of gridterm's at all.
+func protocolNumber(spoke string) (int, bool) {
+	rest, ok := strings.CutPrefix(spoke, "gridterm-agent-")
+	if !ok {
+		return 0, false
+	}
+	n, err := strconv.Atoi(rest)
+	if err != nil {
+		return 0, false
+	}
+	return n, true
 }
 
 // waitFor watches a pane until it says what was asked for, goes quiet,
@@ -419,12 +477,22 @@ func (s *Server) waitFor(want ask) said {
 // read now that the waiting is over. A wait that asked for no lines
 // answers with the screen it was already watching.
 func (s *Server) ending(want ask, look Look, waited bool) said {
-	if want.Lines > 0 {
-		full, err := s.cfg.Window.Look(want.Pane, want.Lines)
-		if err != nil {
-			return said{Error: err.Error()}
-		}
-		look = full
+	if want.Lines <= 0 {
+		return said{Look: &look, Waited: waited}
 	}
-	return said{Look: &look, Waited: waited}
+	full, err := s.cfg.Window.Look(want.Pane, want.Lines)
+	if err != nil {
+		// The waiting is over and the screen in hand is what there was
+		// at the end of it. A pane the user took back between the two
+		// reads must not turn a finished wait into nothing at all.
+		look.Note = "the " + strconv.Itoa(want.Lines) +
+			" lines you asked for could not be read: " + err.Error()
+		return said{Look: &look, Waited: waited}
+	}
+	// What was waited for may have gone past the top of the screen
+	// between two looks, and the watching only ever sees the screen.
+	if waited && want.Until.Contains != "" && strings.Contains(full.Screen, want.Until.Contains) {
+		waited = false
+	}
+	return said{Look: &full, Waited: waited}
 }

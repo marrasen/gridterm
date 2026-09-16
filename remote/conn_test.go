@@ -446,3 +446,53 @@ func readUntil(t *testing.T, r io.Reader, want string, timeout time.Duration) st
 func drain(r io.Reader) {
 	go func() { _, _ = io.Copy(io.Discard, r) }()
 }
+
+// A connection whose machine dropped off the network reports itself
+// closed.
+//
+// Closed is how a caller tells a session that ended by itself from the
+// connection going under it. A connection that only knew about its own
+// Close said a dead machine was still reachable, and the one caller that
+// asks blamed the file server over there for a network that had gone.
+func TestAConnectionWhoseMachineWentReportsItselfClosed(t *testing.T) {
+	s := sshtest.New(t)
+	c := connectTest(t, s)
+
+	if c.Closed() {
+		t.Fatal("a live connection says it is closed")
+	}
+
+	s.CloseClients()
+	if err := c.Wait(); err == nil {
+		t.Fatal("the connection ended cleanly, so nothing dropped")
+	}
+
+	if !c.Closed() {
+		t.Error("a connection whose transport has ended says it is still usable")
+	}
+}
+
+// And a connection this window closed still says so, from every waiter.
+func TestAClosedConnectionSaysSoToEveryWaiter(t *testing.T) {
+	s := sshtest.New(t)
+	c := connectTest(t, s)
+
+	if err := c.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	if !c.Closed() {
+		t.Error("a closed connection says it is still usable")
+	}
+	// Both callers get an answer: the window watches Wait for a machine
+	// that dropped, and a test or a second watcher may wait as well.
+	for i := 0; i < 2; i++ {
+		done := make(chan error, 1)
+		go func() { done <- c.Wait() }()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Fatalf("waiter %d never came back", i)
+		}
+	}
+}

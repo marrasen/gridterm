@@ -1385,7 +1385,7 @@ func TestOpeningFilesOnASilentWindowGivesUp(t *testing.T) {
 	// ends when the channel does, so this is also how the test sees the
 	// session let go of.
 	letGo := make(chan struct{})
-	win := aWindowServingFiles(t, func(_ string, ch io.ReadWriteCloser) error {
+	win := aWindowServingFiles(t, func(_ context.Context, _ string, ch io.ReadWriteCloser) error {
 		defer close(letGo)
 		_, _ = io.Copy(io.Discard, ch)
 		return nil
@@ -1454,7 +1454,7 @@ func TestOpeningFilesOnAWindowThatAnswers(t *testing.T) {
 //
 // The channel is left alone, as a Filer must: it serves until the
 // channel ends, and whoever handed it over closes it.
-func servingSFTP(_ string, ch io.ReadWriteCloser) error {
+func servingSFTP(_ context.Context, _ string, ch io.ReadWriteCloser) error {
 	srv, err := sftp.NewServer(keptOpen{ch})
 	if err != nil {
 		return err
@@ -1475,7 +1475,7 @@ func (keptOpen) Close() error { return nil }
 // A window that refuses a file session says why, in its own words: the
 // failure happened over there, and nothing here can know it otherwise.
 func TestAWindowThatRefusesAFileSessionSaysWhy(t *testing.T) {
-	win := aWindowServingFiles(t, func(_ string, ch io.ReadWriteCloser) error {
+	win := aWindowServingFiles(t, func(_ context.Context, _ string, ch io.ReadWriteCloser) error {
 		return errors.New("there are no files here")
 	})
 

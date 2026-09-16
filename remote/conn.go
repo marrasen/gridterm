@@ -172,6 +172,12 @@ type Conn struct {
 	// is still being torn down.
 	done     chan struct{}
 	closeErr error
+
+	// gone is closed once the transport has ended, whether this window
+	// closed the connection or the machine dropped off the network.
+	// waitErr is why, and is only read once gone has closed.
+	gone    chan struct{}
+	waitErr error
 }
 
 // Connect opens a connection to a machine and authenticates.
@@ -213,7 +219,11 @@ func (c *Conn) reach(ctx context.Context, addr string) (net.Conn, error) {
 //
 // It is how the window notices a machine that dropped off the network
 // rather than one it closed itself: nothing else here would ever say so.
-func (c *Conn) Wait() error { return c.client.Wait() }
+// Any number of callers may wait, and each gets the same reason.
+func (c *Conn) Wait() error {
+	<-c.gone
+	return c.waitErr
+}
 
 // connect is the body of both: the only difference is how the address is
 // reached and what the result rides on.
@@ -321,22 +331,46 @@ func noKeysToOffer(agentErr error) error {
 
 // newConn wraps an authenticated client.
 func newConn(client *ssh.Client, agentConn io.Closer, user, addr string) *Conn {
-	return &Conn{
+	c := &Conn{
 		client: client,
 		agent:  agentConn,
 		user:   user,
 		addr:   addr,
 		riders: make(map[rider]struct{}),
 		done:   make(chan struct{}),
+		gone:   make(chan struct{}),
 	}
+	// One watcher for the whole connection, so Closed can answer without
+	// blocking and every caller of Wait gets the same reason.
+	go func() {
+		c.waitErr = client.Wait()
+		close(c.gone)
+	}()
+	return c
 }
 
 // String names the connection the way a user would: user@host:port.
 func (c *Conn) String() string { return c.user + "@" + c.addr }
 
-// Closed reports whether the connection has been closed, so a caller can
-// tell a session that ended by itself from the connection going under it.
-func (c *Conn) Closed() bool { return c.isClosing() }
+// Closed reports whether the connection is no longer usable, so a caller
+// can tell a session that ended by itself from the connection going under
+// it.
+//
+// Both ways it can go: this window closed it, or the transport under it
+// ended because the machine dropped off the network. The second one is
+// nobody's decision here, so a connection that only asked whether Close
+// had been called would say a dead machine was still reachable.
+func (c *Conn) Closed() bool {
+	if c.isClosing() {
+		return true
+	}
+	select {
+	case <-c.gone:
+		return true
+	default:
+		return false
+	}
+}
 
 // closing reports whether Close has started.
 func (c *Conn) isClosing() bool {

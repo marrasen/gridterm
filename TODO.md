@@ -25,7 +25,7 @@ each group. A line goes when the work is in and reviewed.
 Asked for on 2026-09-16. In the order they are to be done; the one that
 needs an answer from Marcus is last.
 
-1. **Copy progress as a filled row.** A copy of one big file says
+1. Done. **Copy progress as a filled row.** A copy of one big file says
    "0 of 1" until it is done. The job's row is to fill its background
    from the left in proportion to the bytes copied (files, when the
    bytes are not known yet). `ui.ListRow` gets a `Fill` from 0 to 1 and a
@@ -33,14 +33,14 @@ needs an answer from Marcus is last.
    `jobs.Progress`. The note stays as it is. Tests start from a copy
    made in the file manager and read the row the list paints.
 
-2. **An X that clears a finished row.** A greyed connection or a
+2. Done. **An X that clears a finished row.** A greyed connection or a
    finished transfer gets a `×` button at the end of its row. Clicking
    it drops the row, which is what "Clear finished connections" does
    for all of them at once. The list's `OnButton` learns `*conns.Entry`
    keys and calls the entry's `Close`. Tests click the `×` on a dropped
    connection and on a finished copy.
 
-3. **A resize cursor over a divider.** The pointer becomes an east-west
+3. Done. **A resize cursor over a divider.** The pointer becomes an east-west
    arrow over the sidebar's divider and over a split between panes
    (north-south for a split into rows), and stays so while dragging.
    `ui.Root` answers what is under a cell; the frame loop asks with the
@@ -52,7 +52,8 @@ needs an answer from Marcus is last.
    the dialog: run `gridterm -mcp` as an MCP server over standard input
    and output (with the line that adds it to Claude Code, and the JSON
    for other hosts), then call `use_session_code` with the code, which
-   gives a pane id, then `read_pane`, `send_keys` (with `` for Enter)
+   gives a pane id, then `read_pane`, `send_keys` (with `
+` for Enter)
    and `wait_for` on that pane, and nothing else. The port is inside the
    code, so no address is needed; the agent has to run on this machine.
    The MCP server also says the same in the `instructions` field of its

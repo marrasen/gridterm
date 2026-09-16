@@ -65,10 +65,6 @@ type hostFacts struct {
 
 	kind hostKind
 
-	// local says this is the machine gridterm itself is running on, so
-	// its files are read without a connection.
-	local bool
-
 	// saved says the server list holds this name, and serves narrows
 	// that to one saved as a gridterm window rather than a machine to
 	// log in to. Both stay true once the window is taken over, which is
@@ -167,7 +163,7 @@ func (a *app) about(host string) hostFacts {
 	case f.machine == nil && f.name == conns.Local:
 		// A connection under the same name wins: it is a machine the
 		// window reached, not the one it is running on.
-		f.kind, f.local = hostHere, true
+		f.kind = hostHere
 	case f.machine != nil:
 		f.kind = hostMachine
 	case f.dialling != nil:

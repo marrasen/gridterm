@@ -248,6 +248,22 @@ One commit each, smallest first.
    `pulse` precedent so only the cursor row is dirtied.
 5. `-ssh` opens the window first and connects in a pane through
    `openRoute`, so it asks in a dialog and has a connection log.
+   Done by 22f2f77 Open the window first with -ssh and connect in a pane.
+   Decided in review: the `-ssh` target is an ordinary connected machine
+   and `localHost` is gone, so "here" means the machine gridterm runs on
+   and nothing else. A new tab or split still opens on that machine
+   while it is connected -- the window keeps it as its home machine --
+   and opens here once it has gone; the `-e` command runs only in the
+   pane the window opened with. Only the bare keys follow the home
+   machine: a line that names a machine means that machine, so
+   "Terminal" on this machine's row, its palette command and the
+   chooser's line for it all open a shell here. The window is never left
+   empty: when the connection opens no pane at all, the first frame
+   opens a shell here and says why.
+   Correction: 22f2f77's message says it dropped the `Shell.Resize` line
+   from the TODO. It did not. It dropped the three "Copying files" lines
+   (Step 7's work), the Windows lost-output gap and the `-ssh` gap. The
+   `Shell.Resize` line goes with the resize fix.
 6. `dropMachine` and `letGoOfWindow` close inline on the drawing
    goroutine. `Conn.Close` waits a 250 ms drain per rider and
    `dropMachine` recurses, so forgetting a jump host can stall the

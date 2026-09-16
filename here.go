@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/files"
@@ -43,7 +42,9 @@ func (a *app) currentHost() string {
 	if p, ok := ui.FocusedLeaf(a.root.Widget()).(*files.Pane); ok {
 		return a.hostOf(p.FS())
 	}
-	return conns.Local
+	// Nothing in front to read it off, so it is wherever a new pane
+	// would open: the machine -ssh named, or this one.
+	return a.newPaneHost()
 }
 
 // disconnectHere closes the connection to the machine the user is

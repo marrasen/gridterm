@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/marrasen/gridterm/conns"
+	"github.com/marrasen/gridterm/input"
 	"github.com/marrasen/gridterm/internal/sshtest"
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/ui"
@@ -172,6 +173,200 @@ func TestSshThatCannotConnectKeepsItsPaneAndTheWindow(t *testing.T) {
 	pane := newestPane(t, a)
 	if e := a.panes[pane]; e == nil || e.Label != "not connected" {
 		t.Errorf("the row says %+v, want it to say the connection was not made", e)
+	}
+	checkTree(t, a)
+}
+
+// A tab opened under -ssh opens on the machine -ssh named, on the
+// connection that is already there rather than a second login.
+func TestANewTabUnderSshOpensOnTheTarget(t *testing.T) {
+	s := sshtest.New(t)
+	target := serverConfig(t, s).Target()
+	a := startedWithSsh(t, target)
+	pinServers(t, a, s)
+	waitForPanes(t, a, 1)
+
+	sendKey(t, a, press(input.KeyT, input.ModCtrl|input.ModShift))
+
+	waitForPanes(t, a, 2)
+	pane := newestPane(t, a)
+	if e := a.panes[pane]; e == nil || e.Host != target {
+		t.Fatalf("the new tab's row is %+v, want one on %s", e, target)
+	}
+	if m := a.machines.runningOn(pane); m == nil {
+		t.Error("the new tab is not riding on the connection to the target")
+	}
+	if n := s.Conns(); n != 1 {
+		t.Errorf("the server saw %d logins, want the one both panes ride on", n)
+	}
+	checkTree(t, a)
+}
+
+// So does a split, from the line the chooser opens on.
+func TestASplitUnderSshOpensOnTheTarget(t *testing.T) {
+	s := sshtest.New(t)
+	target := serverConfig(t, s).Target()
+	a := startedWithSsh(t, target)
+	pinServers(t, a, s)
+	waitForPanes(t, a, 1)
+
+	sendKey(t, a, press(input.KeyD, input.ModCtrl|input.ModShift))
+	c, ok := a.root.Modal().(*ui.Chooser)
+	if !ok {
+		t.Fatalf("the split key showed %T, want the chooser", a.root.Modal())
+	}
+	takeChoice(t, c, "New terminal")
+
+	waitForPanes(t, a, 2)
+	pane := newestPane(t, a)
+	if e := a.panes[pane]; e == nil || e.Host != target {
+		t.Fatalf("the split's row is %+v, want one on %s", e, target)
+	}
+	if n := s.Conns(); n != 1 {
+		t.Errorf("the server saw %d logins, want the one both panes ride on", n)
+	}
+	checkTree(t, a)
+}
+
+// Once the machine -ssh named has gone, a new pane opens here: there is
+// nothing left to open one on.
+func TestANewTabOpensHereOnceTheTargetHasGone(t *testing.T) {
+	s := sshtest.New(t)
+	target := serverConfig(t, s).Target()
+	a := startedWithSsh(t, target)
+	pinServers(t, a, s)
+	waitForPanes(t, a, 1)
+
+	if err := a.dropMachine(target); err != nil {
+		t.Fatalf("close the connection: %v", err)
+	}
+	waitFor(t, a, "the connection to go", func() bool { return a.about(target).machine == nil })
+
+	if err := a.openTab(); err != nil {
+		t.Fatalf("a new tab: %v", err)
+	}
+	pane := newestPane(t, a)
+	if e := a.panes[pane]; e == nil || e.Host != conns.Local {
+		t.Fatalf("the new tab's row is %+v, want one on this machine", e)
+	}
+	checkTree(t, a)
+}
+
+// A -ssh target the window will not connect to leaves a window with a
+// shell in it, not an empty one: the connection opens no pane, so
+// nothing else would.
+func TestSshThatOpensNoPaneLeavesAShellHere(t *testing.T) {
+	a := newTestApp(t, 90, 30, startedWith(startup{target: "statio"}))
+	withDialogs(t, a)
+	withPanel(t, a)
+	// Saved as a gridterm window, so -ssh takes it over rather than
+	// logging in, and already held, so the take-over is refused before
+	// it opens a pane of its own. Nothing stands behind the machine, so
+	// nothing may open a shell on it.
+	if err := a.book.Put(remote.Host{
+		Name: "statio", Address: "10.0.0.5", Port: 2222, Window: true,
+	}, ""); err != nil {
+		t.Fatalf("save the window: %v", err)
+	}
+	pretendMachine(t, a, "statio")
+
+	n := awaitModal(t, a, "the reason it was refused", byTitlePrefix[*ui.Notice]("Could not "))
+	if !strings.Contains(n.Message(), "already connected") {
+		t.Errorf("it said %q", n.Message())
+	}
+	if len(a.panes) != 1 {
+		t.Fatalf("%d panes, want the one shell the window fell back to", len(a.panes))
+	}
+	for _, e := range a.panes {
+		if e.Host != conns.Local {
+			t.Errorf("the pane is on %s, want this machine", e.Host)
+		}
+	}
+	if a.quit.Load() {
+		t.Error("the window quit")
+	}
+}
+
+// The keys that act on a pane do nothing at all at the window -ssh opens
+// with, which has none yet: no panic, and nothing quits.
+func TestTheKeysDoNothingAtAWindowWithNoPaneYet(t *testing.T) {
+	s := sshtest.New(t)
+	a := startedWithSsh(t, serverConfig(t, s).Target())
+	if len(a.panes) != 0 {
+		t.Fatalf("%d panes before the first frame, want none", len(a.panes))
+	}
+
+	for _, key := range []input.Key{input.KeyW, input.KeyD, input.KeyH} {
+		if _, err := a.root.HandleKey(press(key, input.ModCtrl|input.ModShift)); err != nil {
+			t.Fatalf("the window refused %v: %v", key, err)
+		}
+		if a.quit.Load() {
+			t.Fatalf("the window quit on %v", key)
+		}
+		// Each says why in a dialog, which the next key would go to.
+		if m, ok := a.root.Modal().(ui.KeyHandler); ok {
+			dismiss(t, m)
+		}
+	}
+	// And the one that opens a pane opens it here, because the machine
+	// -ssh named is not connected yet.
+	sendKey(t, a, press(input.KeyT, input.ModCtrl|input.ModShift))
+	if len(a.panes) != 1 {
+		t.Fatalf("%d panes after a new tab, want the one", len(a.panes))
+	}
+	if a.quit.Load() {
+		t.Error("the window quit")
+	}
+	checkTree(t, a)
+}
+
+// "Terminal" on the row for this machine opens a shell here, even while
+// new panes are opening on the machine -ssh named.
+//
+// The row names the machine, so the line on it means that machine and
+// not the one a bare new tab would use.
+func TestTerminalOnTheLocalRowOpensAShellHere(t *testing.T) {
+	s := sshtest.New(t)
+	target := serverConfig(t, s).Target()
+	a := startedWithSsh(t, target)
+	pinServers(t, a, s)
+
+	// A pane here, opened before the target answered, which is what puts
+	// a row for this machine on the sidebar.
+	sendKey(t, a, press(input.KeyT, input.ModCtrl|input.ModShift))
+	waitForPanes(t, a, 2)
+	if a.about(target).machine == nil {
+		t.Fatal("the target is not connected, so this proves nothing")
+	}
+
+	chooseMenuItem(t, clickPlus(t, a, conns.Local), "conn.terminal")
+
+	if len(a.panes) != 3 {
+		t.Fatalf("%d panes, want the one the line opened", len(a.panes))
+	}
+	pane := newestPane(t, a)
+	if e := a.panes[pane]; e == nil || e.Host != conns.Local {
+		t.Fatalf("the new pane's row is %+v, want one on this machine", e)
+	}
+	if n := s.Conns(); n != 1 {
+		t.Errorf("the server saw %d logins, want the one it had already", n)
+	}
+	checkTree(t, a)
+
+	// And so does the chooser's line for this machine, which is offered
+	// because the line it opens on is the target rather than here.
+	sendKey(t, a, press(input.KeyD, input.ModCtrl|input.ModShift))
+	c, ok := a.root.Modal().(*ui.Chooser)
+	if !ok {
+		t.Fatalf("the split key showed %T, want the chooser", a.root.Modal())
+	}
+	takeChoice(t, c, "Terminal on Local")
+
+	if e := a.panes[newestPane(t, a)]; e == nil || e.Host != conns.Local {
+		t.Fatalf("the split's row is %+v, want one on this machine", e)
+	}
+	if n := s.Conns(); n != 1 {
+		t.Errorf("the server saw %d logins, want the one it had already", n)
 	}
 	checkTree(t, a)
 }

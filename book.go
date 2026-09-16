@@ -177,13 +177,12 @@ func (a *app) openTerminalOn(host string, at *spot) error {
 	f := a.about(host)
 	switch {
 	case f.kind == hostHere:
-		// A new pane already runs there, which is what a new tab is.
+		// A shell on this machine, whatever new panes are opening on:
+		// this row is the machine the user named.
 		if at != nil {
-			// A guard: the chooser skips this machine, because a
-			// terminal here is the line it offers first.
-			return a.splitNewTerminal(at.dir, at.beside)
+			return a.splitNewTerminalHere(at.dir, at.beside)
 		}
-		return a.openTab()
+		return a.openTabHere()
 	case f.kind == hostWindow:
 		return a.openOnWindow(f.name, at)
 	case f.toTakeOver():

@@ -60,9 +60,8 @@ func TestHereIsTheMachineGridtermRunsOn(t *testing.T) {
 	a := newTestApp(t, 90, 30)
 	withDialogs(t, a)
 
-	here := a.about(conns.Local)
-	if here.kind != hostHere || !here.local {
-		t.Errorf("this machine is a %v (local %v)", here.kind, here.local)
+	if got := a.about(conns.Local).kind; got != hostHere {
+		t.Errorf("this machine is a %v, want here", got)
 	}
 	if got := a.about("tester@box").kind; got != hostUnknown {
 		t.Errorf("a machine nothing is connected to is a %v, want unknown", got)

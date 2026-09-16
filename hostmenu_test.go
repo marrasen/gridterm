@@ -119,12 +119,14 @@ func TestThePlusOnLocalOffersFilesAndATerminal(t *testing.T) {
 	withPanel(t, a)
 
 	menu := clickPlus(t, a, conns.Local)
-	for _, want := range []string{"tab.open", "conn.files"} {
+	// conn.terminal, the line every machine's row carries: on this row
+	// it opens a shell here, whatever a new tab would open on.
+	for _, want := range []string{"conn.terminal", "conn.files"} {
 		if !offers(menu, want) {
 			t.Errorf("the menu does not offer %s: %v", want, menuCommands(menu))
 		}
 	}
-	for _, not := range []string{"conn.terminal", "conn.tunnel", "conn.disconnect", "agent.hand"} {
+	for _, not := range []string{"tab.open", "conn.tunnel", "conn.disconnect", "agent.hand"} {
 		if offers(menu, not) {
 			t.Errorf("the menu offers %s, which is not about this machine", not)
 		}

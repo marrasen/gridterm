@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"image/color"
 
-	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/files"
 	"github.com/marrasen/gridterm/ui/term"
@@ -47,7 +46,7 @@ func (a *app) splitFocused(dir ui.Dir) error {
 func (a *app) addSplitChoices(c *ui.Chooser, dir ui.Dir, current ui.Widget) {
 	// First, and so the line the chooser opens on: Enter straight after
 	// the split key is the shell a split used to give without asking.
-	c.Add("New terminal", groupName(conns.Local), func() error {
+	c.Add("New terminal", groupName(a.newPaneHost()), func() error {
 		return a.splitNewTerminal(dir, current)
 	})
 
@@ -84,13 +83,15 @@ func (a *app) addSplitChoices(c *ui.Chooser, dir ui.Dir, current ui.Widget) {
 	// first, and the terminal lands in the split when it arrives.
 	for _, host := range a.allHosts() {
 		on := a.about(host)
-		if on.kind == hostHere {
-			// A terminal there is the local shell already offered.
+		if on.name == a.newPaneHost() {
+			// A terminal there is the shell already offered first.
 			continue
 		}
 		name := on.name
 		at := &spot{beside: current, dir: dir}
-		c.Add("Terminal on "+name, hostNote(on), func() error {
+		// groupName, so the line for this machine reads as a name
+		// rather than as the empty string the panel keys it by.
+		c.Add("Terminal on "+groupName(name), hostNote(on), func() error {
 			// Through the one place that says what a name is worth
 			// opening on, so a window here is taken over rather than
 			// logged in to, and lands in the split all the same.
@@ -99,9 +100,23 @@ func (a *app) addSplitChoices(c *ui.Chooser, dir ui.Dir, current ui.Widget) {
 	}
 }
 
-// splitNewTerminal divides a pane with a shell on this machine.
+// splitNewTerminal divides a pane with a new shell, wherever new panes
+// open.
 func (a *app) splitNewTerminal(dir ui.Dir, current ui.Widget) error {
-	next, err := a.newTerminal()
+	return a.splitWithNew(dir, current, a.newTerminal)
+}
+
+// splitNewTerminalHere divides a pane with a shell on this machine, for
+// the line that names this machine rather than the default one.
+func (a *app) splitNewTerminalHere(dir ui.Dir, current ui.Widget) error {
+	return a.splitWithNew(dir, current, a.localTerminal)
+}
+
+// splitWithNew divides a pane with a shell from start.
+func (a *app) splitWithNew(dir ui.Dir, current ui.Widget,
+	start func() (*term.Terminal, error)) error {
+
+	next, err := start()
 	if err != nil {
 		return err
 	}
@@ -115,9 +130,9 @@ func (a *app) splitNewTerminal(dir ui.Dir, current ui.Widget) error {
 	return nil
 }
 
-// splitHere divides the focused pane with a shell on this machine,
-// without asking. It is what the first line of the chooser does, for a
-// caller that already knows the answer.
+// splitHere divides the focused pane with a new shell, wherever new
+// panes open, without asking. It is what the first line of the chooser
+// does, for a caller that already knows the answer.
 func (a *app) splitHere(dir ui.Dir) error {
 	current := a.paneToPlaceBeside()
 	if err := a.canDivide(dir, current); err != nil {

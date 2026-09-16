@@ -6,6 +6,7 @@ import (
 	"image/color"
 
 	"github.com/marrasen/gridterm/conns"
+	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/files"
 	"github.com/marrasen/gridterm/ui/term"
@@ -18,8 +19,36 @@ func (a *app) focusedTerminal() *term.Terminal {
 	return t
 }
 
-// newTerminal starts another shell, configured like the first.
+// newPaneHost names the machine a new pane opens on, for a line that has
+// to say where it will go.
+func (a *app) newPaneHost() string {
+	if m := a.homeMachine(); m != nil {
+		return m.at.name
+	}
+	return conns.Local
+}
+
+// homeMachine returns the connection new panes open on, and nil when
+// they open a shell on this machine: -ssh named no machine, or the one
+// it named has gone.
+func (a *app) homeMachine() *machine {
+	if a.home == "" {
+		return nil
+	}
+	return a.about(a.home).machine
+}
+
+// newTerminal starts another shell where new panes go: on the machine
+// -ssh named while that is connected, and on this one otherwise.
 func (a *app) newTerminal() (*term.Terminal, error) {
+	if m := a.homeMachine(); m != nil {
+		return a.terminalOnHome(m)
+	}
+	return a.localTerminal()
+}
+
+// localTerminal starts a shell on the machine gridterm is running on.
+func (a *app) localTerminal() (*term.Terminal, error) {
 	sess, err := a.newSession(a.lastSize[0], a.lastSize[1])
 	if err != nil {
 		return nil, fmt.Errorf("start session: %w", err)
@@ -30,6 +59,32 @@ func (a *app) newTerminal() (*term.Terminal, error) {
 		_ = sess.Close()
 		return nil, err
 	}
+	return t, nil
+}
+
+// terminalOnHome starts another shell on the machine -ssh named, riding
+// on the connection that is already open to it.
+//
+// A shell to type into and never the -e command: that command was for
+// the pane the window opened with.
+func (a *app) terminalOnHome(m *machine) (*term.Terminal, error) {
+	sh, err := m.conn.Shell(a.ctx, remote.ShellConfig{
+		Cols: a.lastSize[0],
+		Rows: a.lastSize[1],
+		Term: m.at.term,
+	})
+	if err != nil {
+		return nil, err
+	}
+	t, err := a.newTerminalOn(sh, m.at.name, conns.Terminal, "")
+	if err != nil {
+		// The shell is ours now and nothing else will close it.
+		_ = sh.Close()
+		return nil, err
+	}
+	// Which connection the pane rides on rather than which machine it is
+	// named after, for the reason the on field of machines gives.
+	a.machines.runs(t, m)
 	return t, nil
 }
 
@@ -138,11 +193,19 @@ func (a *app) paneToPlaceBeside() ui.Widget {
 
 // openTab puts a new shell in the strip holding the focused pane,
 // starting a strip if it is not in one.
-func (a *app) openTab() error {
+func (a *app) openTab() error { return a.openTabWith(a.newTerminal) }
+
+// openTabHere is openTab with a shell on this machine, for a window that
+// has no connection to open one on.
+func (a *app) openTabHere() error { return a.openTabWith(a.localTerminal) }
+
+// openTabWith puts a shell from start in a tab, and closes it again when
+// there is nowhere to put it.
+func (a *app) openTabWith(start func() (*term.Terminal, error)) error {
 	if a.paneToPlaceBeside() == nil && a.stage == nil {
 		return errors.New("nothing to open a tab beside")
 	}
-	next, err := a.newTerminal()
+	next, err := start()
 	if err != nil {
 		return err
 	}
@@ -156,11 +219,8 @@ func (a *app) openTab() error {
 }
 
 // placeTab puts a widget in the strip holding the focused pane, starting
-// a strip if it is not in one.
-//
-// A window with no pane at all puts it on the stage, which is how -ssh
-// opens: the window is there before the connection is, and the pane
-// watching that connection is the first one in it.
+// a strip if it is not in one, and putting it straight on the stage when
+// the window has no pane at all, which is how -ssh opens.
 func (a *app) placeTab(next ui.Widget) error {
 	current := a.paneToPlaceBeside()
 	if current == nil {

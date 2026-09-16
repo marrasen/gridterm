@@ -109,7 +109,7 @@ func (a *app) openHostMenu(row ui.ListRow) error {
 func hostItems(about hostFacts) []ui.MenuItem {
 	if about.kind == hostHere {
 		return []ui.MenuItem{
-			{Command: "tab.open", Title: "Terminal"},
+			{Command: "conn.terminal", Title: "Terminal"},
 			{Command: "conn.files", Title: "Files"},
 		}
 	}

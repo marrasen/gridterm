@@ -389,15 +389,11 @@ type startup struct {
 	command []string
 }
 
-// openFirst opens what the window starts with and returns its pane, or
-// nil when there is none yet.
-//
-// With -ssh there is none: the connection is made on the first frame,
-// through openRoute like every other one, so it asks in a dialog and
-// keeps an account in a pane of its own.
+// openFirst opens what the window starts with and returns its pane, which
+// is nil with -ssh because the connection opens its own on the first frame.
 func (a *app) openFirst(s startup) (*term.Terminal, error) {
 	if s.target == "" {
-		t, err := a.newTerminal()
+		t, err := a.localTerminal()
 		if err != nil {
 			return nil, err
 		}
@@ -408,11 +404,21 @@ func (a *app) openFirst(s startup) (*term.Terminal, error) {
 	if err != nil {
 		return nil, fmt.Errorf("-ssh: %w", err)
 	}
-	// On the first frame rather than from here: the pane the connection
-	// opens goes in a tree that is built after this returns, and the
-	// dialogs it asks in are drawn by the window.
+	// Where a new pane goes from now on, so a tab or a split opens on the
+	// machine -ssh named rather than on this one.
+	a.home = cfg.Target()
+	// On the first frame rather than from here, because the tree the pane
+	// goes in and the dialogs it asks in are built after this returns.
 	a.pump.post(func() {
 		a.connectFor(cfg.Target(), cfg, opening{command: s.command})
+		// Never an empty window: a route that was refused, a window that
+		// could not be taken over and a pane that could not be placed all
+		// leave nothing at all in it.
+		if len(a.panes) == 0 {
+			if err := a.openTabHere(); err != nil {
+				a.reportError("Could not open a terminal here", err)
+			}
+		}
 	})
 	return nil, nil
 }

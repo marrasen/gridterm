@@ -159,6 +159,12 @@ go run . -font-size 18
 go run . -font /path/to/Regular.ttf,/path/to/Bold.ttf
 ```
 
+With `-ssh` the window opens first and connects in a pane, so it asks
+about an unknown host key in a dialog and keeps the account of how the
+machine was reached. A new tab or split opens on that machine too, and
+its row on the sidebar offers the rest: files, a command, a tunnel and
+the account.
+
 Text is drawn in the four Go Mono faces compiled into the binary:
 regular, bold, italic and bold italic. `-font` takes font files instead,
 comma separated, in the order regular, bold, italic, bold italic. Only

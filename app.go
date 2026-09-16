@@ -152,6 +152,10 @@ type app struct {
 	// kept only so the user can read what it printed.
 	ended map[*term.Terminal]bool
 
+	// home is the machine -ssh named, which new panes open on while it
+	// is connected. Empty when the window opens them on this machine.
+	home string
+
 	// rates turn a connection's running totals into a speed. One per
 	// connection, because a speed is a difference between two moments
 	// and each has its own.

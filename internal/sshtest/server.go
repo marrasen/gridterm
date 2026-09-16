@@ -40,6 +40,7 @@ type Server struct {
 	mu       sync.Mutex
 	banner   string
 	lastSize [2]int // cols, rows
+	winches  int
 	conns    []net.Conn
 	accepted int
 	live     int
@@ -305,6 +306,15 @@ func (s *Server) Size() (cols, rows int) {
 	return s.lastSize[0], s.lastSize[1]
 }
 
+// WindowChanges returns how many window-change requests the server has
+// been sent, so a test can tell a size that was sent once from one sent
+// for every drag.
+func (s *Server) WindowChanges() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.winches
+}
+
 // CloseClients cuts every accepted connection, which is what a dropped
 // network looks like from the client's side.
 func (s *Server) CloseClients() {
@@ -446,6 +456,7 @@ func (s *Server) session(ch ssh.Channel, reqs <-chan *ssh.Request) {
 			cols, rows := parseWinch(req.Payload)
 			s.mu.Lock()
 			s.lastSize = [2]int{cols, rows}
+			s.winches++
 			s.mu.Unlock()
 			s.say(ch, "SIZE %dx%d\n", cols, rows)
 

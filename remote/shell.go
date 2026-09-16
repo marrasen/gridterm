@@ -99,6 +99,18 @@ type Shell struct {
 	// from a write wedged on a program that stopped reading.
 	quiet chan struct{}
 
+	// wanted is the size Resize was last given and sent is the size last
+	// put on the wire, so a drag that outruns the connection collapses
+	// to the last size. resizing records that a goroutine is sending
+	// them, and it counts in writing while it runs.
+	wanted   [2]int
+	sent     [2]int
+	resizing bool
+
+	// resizeErr keeps a window-change that failed, because the send
+	// outlives the Resize that asked for it.
+	resizeErr error
+
 	// out is fed by the session's stdout and stderr. It is unbuffered,
 	// which is the flow control: the remote stops sending when the
 	// terminal stops reading.
@@ -251,12 +263,73 @@ func (s *Shell) Write(b []byte) (int, error) {
 	return n, err
 }
 
-// Resize reports a new window size in character cells.
+// Resize reports a new window size in character cells. It comes straight
+// back, because it runs on the goroutine that draws: the size is
+// recorded and a goroutine of its own puts it on the wire.
+//
+// Sizes asked for while a send is in flight collapse into one, and the
+// last size always reaches the machine. A window-change that failed
+// cannot be returned here, because the send outlived the call that asked
+// for it: it is kept and returned by the next Resize, and Close returns
+// whatever no Resize came back for, so no failure is lost.
+//
+// A shell that has been closed says so, as Write does.
 func (s *Shell) Resize(cols, rows int) error {
-	if cols <= 0 || rows <= 0 {
-		return nil
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	failed := s.resizeErr
+	s.resizeErr = nil
+	if s.hungUp {
+		return errors.Join(failed, io.ErrClosedPipe)
 	}
-	return s.sess.WindowChange(rows, cols)
+	if cols <= 0 || rows <= 0 {
+		return failed
+	}
+	s.wanted = [2]int{cols, rows}
+	if !s.resizing && s.wanted != s.sent {
+		s.resizing = true
+		// Counted as a write, so Close treats a send parked on a full
+		// send buffer the way it treats a parked keystroke.
+		s.writing++
+		go s.sendSize()
+	}
+	return failed
+}
+
+// sendSize puts the size last asked for on the wire, and again for
+// whatever was asked for while it was sending, until the size stops
+// changing.
+//
+// It runs off the goroutine that draws because a window-change takes the
+// channel's write lock and waits when the send buffer to the machine has
+// filled.
+func (s *Shell) sendSize() {
+	for {
+		s.writeMu.Lock()
+		want := s.wanted
+		if s.hungUp || want == s.sent {
+			s.resizing = false
+			s.writing--
+			if s.writing == 0 && s.quiet != nil {
+				// Close is waiting to hear that the channel is idle.
+				close(s.quiet)
+				s.quiet = nil
+			}
+			s.writeMu.Unlock()
+			return
+		}
+		s.sent = want
+		s.writeMu.Unlock()
+
+		err := s.sess.WindowChange(want[1], want[0])
+		if err == nil || errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) {
+			continue
+		}
+		s.writeMu.Lock()
+		s.resizeErr = errors.Join(s.resizeErr,
+			fmt.Errorf("remote: resize the terminal on %s: %w", s.conn, err))
+		s.writeMu.Unlock()
+	}
 }
 
 // Wait blocks until the program exits and returns its error, if any. It
@@ -349,7 +422,14 @@ func (s *Shell) closeAll() error {
 		errs = append(errs, fmt.Errorf("remote: close the session on %s: %w within %s",
 			s.conn, ErrNoAnswer, drainGrace))
 	}
-	return errors.Join(errs...)
+
+	// A window-change that failed and that no Resize came back for. The
+	// send outlived its caller, so this is the last place to report it.
+	s.writeMu.Lock()
+	failed := s.resizeErr
+	s.resizeErr = nil
+	s.writeMu.Unlock()
+	return errors.Join(append(errs, failed)...)
 }
 
 // StartShell opens a connection and runs one shell on it.

@@ -941,3 +941,246 @@ func TestClosingAShellWhoseWriteLandsStillSaysGoodbye(t *testing.T) {
 		t.Errorf("Write after Close = %v, want io.ErrClosedPipe", err)
 	}
 }
+
+// heldWire is a connection whose writes can be held, and then broken.
+//
+// It is what a full send buffer to the machine looks like from inside
+// x/crypto: a write parks, and every request that takes the channel's
+// write lock parks behind it. A window-change is one of those.
+type heldWire struct {
+	net.Conn
+
+	mu     sync.Mutex
+	held   chan struct{}
+	broken error
+
+	// broke is closed by the first write that fails, so a test can wait
+	// for the failure rather than guess at it.
+	broke   chan struct{}
+	brokeOn sync.Once
+}
+
+func newHeldWire() *heldWire { return &heldWire{broke: make(chan struct{})} }
+
+// hold parks every write from now on, until release.
+func (w *heldWire) hold() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.held == nil {
+		w.held = make(chan struct{})
+	}
+}
+
+// release lets the parked writes through.
+func (w *heldWire) release() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.held != nil {
+		close(w.held)
+		w.held = nil
+	}
+}
+
+// breakWire fails every write from now on, the way a network that has
+// gone does.
+func (w *heldWire) breakWire(why error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.broken = why
+}
+
+func (w *heldWire) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	held := w.held
+	w.mu.Unlock()
+	if held != nil {
+		<-held
+	}
+
+	w.mu.Lock()
+	broken := w.broken
+	w.mu.Unlock()
+	if broken != nil {
+		w.brokeOn.Do(func() { close(w.broke) })
+		return 0, broken
+	}
+	return w.Conn.Write(p)
+}
+
+// connectOver connects to the test server over a wire the test can hold
+// or break.
+func connectOver(t *testing.T, s *sshtest.Server, w *heldWire) *Conn {
+	t.Helper()
+	to := func(ctx context.Context, addr string) (net.Conn, error) {
+		nc, err := overTCP(ctx, addr)
+		if err != nil {
+			return nil, err
+		}
+		w.Conn = nc
+		return w, nil
+	}
+	c, err := connect(t.Context(), to, nil, testConfig(t, s))
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	t.Cleanup(func() { _ = c.Close() })
+	// Registered after, so it runs first: closing the connection must
+	// not be left waiting on a wire the test is still holding.
+	t.Cleanup(w.release)
+	return c
+}
+
+// shellOver opens one shell over a wire the test can hold or break, and
+// waits for the remote to say it is ready.
+func shellOver(t *testing.T, s *sshtest.Server, w *heldWire) *Shell {
+	t.Helper()
+	c := connectOver(t, s, w)
+	sh, err := c.Shell(t.Context(), ShellConfig{Cols: 80, Rows: 24})
+	if err != nil {
+		t.Fatalf("Shell: %v", err)
+	}
+	readUntil(t, sh, "READY", 5*time.Second)
+	return sh
+}
+
+// Resizing a machine that has stopped taking bytes comes straight back,
+// and the pane can still be closed.
+//
+// A window-change takes the channel's write lock and waits when the send
+// buffer to the machine has filled. Sent from the goroutine that draws,
+// which is where a window drag sends it from, that wait is the whole
+// window frozen.
+func TestResizingAMachineThatHasStoppedTakingBytesComesBack(t *testing.T) {
+	s := sshtest.New(t)
+	wire := newHeldWire()
+	sh := shellOver(t, s, wire)
+
+	// Nothing more reaches the machine from here.
+	wire.hold()
+
+	done := make(chan error, 1)
+	go func() { done <- sh.Resize(120, 40) }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Resize: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Resize waited for a machine that had stopped taking bytes")
+	}
+	// And it really is parked: the request has not reached the machine.
+	if n := s.WindowChanges(); n != 0 {
+		t.Fatalf("the machine saw %d window-change requests through a held wire", n)
+	}
+
+	closed := make(chan error, 1)
+	started := time.Now()
+	go func() { closed <- sh.Close() }()
+	select {
+	case <-closed:
+	case <-time.After(10 * time.Second):
+		t.Fatal("closing a shell whose resize is parked never came back")
+	}
+	// Two graces: one for the parked send to land, one for the session
+	// to close. Anything beyond that is a wait on the machine.
+	if took := time.Since(started); took > 2*time.Second {
+		t.Fatalf("Close took %s, want about %s", took, 2*drainGrace)
+	}
+}
+
+// A drag's worth of resizes collapses into as few requests as the
+// connection can take, and the machine ends up with the last size.
+//
+// One window-change per column crossed is what the drawing goroutine
+// asks for. Sending them one at a time makes a drag as slow as the
+// connection.
+func TestABurstOfResizesCollapsesToTheLastSize(t *testing.T) {
+	s := sshtest.New(t)
+	wire := newHeldWire()
+	sh := shellOver(t, s, wire)
+
+	// The send buffer fills part-way through the drag, which is what
+	// makes the sizes pile up behind one send.
+	wire.hold()
+	for i := 1; i <= 50; i++ {
+		if err := sh.Resize(80+i, 24+i); err != nil {
+			t.Fatalf("Resize %d: %v", i, err)
+		}
+	}
+	wire.release()
+
+	waitForThis(t, "the last size of the drag to reach the machine", func() bool {
+		cols, rows := s.Size()
+		return cols == 130 && rows == 74
+	})
+	if n := s.WindowChanges(); n > 3 {
+		t.Fatalf("the machine saw %d window-change requests for fifty resizes, want a handful", n)
+	}
+}
+
+// A window-change that failed is handed to the next Resize.
+//
+// Resize cannot return it: the send outlives the call that asked for it.
+// Dropping it would lose the only report the resize path makes.
+func TestAResizeThatFailedIsHandedToTheNextOne(t *testing.T) {
+	s := sshtest.New(t)
+	wire := newHeldWire()
+	sh := shellOver(t, s, wire)
+
+	wire.breakWire(errors.New("the wire is broken"))
+	// Two sizes, because x/crypto keeps a failed write and reports it to
+	// whoever writes next: the first window-change breaks the wire and
+	// the second is the one told about it.
+	if err := sh.Resize(120, 40); err != nil {
+		t.Fatalf("Resize: %v", err)
+	}
+	<-wire.broke
+	if err := sh.Resize(121, 41); err != nil && !strings.Contains(err.Error(), "the wire is broken") {
+		t.Fatalf("Resize = %v, want nothing or the broken wire", err)
+	}
+
+	var failed error
+	waitForThis(t, "the failed window-change to be handed back", func() bool {
+		// The same size again, so this asks for no further send.
+		failed = sh.Resize(121, 41)
+		return failed != nil
+	})
+	if !strings.Contains(failed.Error(), "the wire is broken") {
+		t.Fatalf("Resize = %v, want it to say what the window-change failed with", failed)
+	}
+	// Handed over once. A failure kept for ever would be reported again
+	// on every drag after it.
+	if again := sh.Resize(121, 41); again != nil {
+		t.Fatalf("Resize = %v, want the failure to have been handed over already", again)
+	}
+}
+
+// A window-change that failed and that no Resize came back for is
+// reported by Close, which is the last chance to report it.
+func TestAResizeThatFailedIsReportedByClose(t *testing.T) {
+	s := sshtest.New(t)
+	wire := newHeldWire()
+	sh := shellOver(t, s, wire)
+
+	wire.breakWire(errors.New("the wire is broken"))
+	// Two, because x/crypto reports a failed write to whoever writes
+	// next: the first window-change breaks the wire and the second is
+	// told about it.
+	if err := sh.Resize(120, 40); err != nil {
+		t.Fatalf("Resize: %v", err)
+	}
+	<-wire.broke
+	if err := sh.Resize(121, 41); err != nil && !strings.Contains(err.Error(), "the wire is broken") {
+		t.Fatalf("Resize = %v, want nothing or the broken wire", err)
+	}
+	waitForThis(t, "the failed window-change to be kept", func() bool {
+		sh.writeMu.Lock()
+		defer sh.writeMu.Unlock()
+		return sh.resizeErr != nil
+	})
+
+	err := sh.Close()
+	if err == nil || !strings.Contains(err.Error(), "resize the terminal") {
+		t.Fatalf("Close = %v, want it to report the resize that failed", err)
+	}
+}

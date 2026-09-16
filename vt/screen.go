@@ -74,6 +74,7 @@ type Screen struct {
 	drawnTo *grid.Grid
 
 	curStyle grid.CursorStyle
+	curBlink bool
 }
 
 // NewScreen returns a screen of the given size.
@@ -92,6 +93,9 @@ func NewScreen(cols, rows int, pal Palette, scrollback int) *Screen {
 	s.cur = s.pri
 	s.mode.Wrap = true
 	s.mode.CursorVis = true
+	// The power-on cursor is a blinking block, which is what xterm and
+	// DECSCUSR 0 mean by the default.
+	s.curBlink = true
 	s.cursor.Pen = s.blank()
 	// Restoring a cursor that was never saved must not install the zero
 	// Cell as the pen: its colours are transparent black, so every
@@ -755,8 +759,10 @@ func (s *Screen) SetPen(c grid.Cell) { s.cursor.Pen = c }
 // CursorPos returns the cursor's column and row.
 func (s *Screen) CursorPos() (x, y int) { return s.cursor.X, s.cursor.Y }
 
-// SetCursorStyle selects how the cursor is drawn.
-func (s *Screen) SetCursorStyle(st grid.CursorStyle) { s.curStyle = st }
+// SetCursorStyle selects how the cursor is drawn and whether it blinks.
+func (s *Screen) SetCursorStyle(st grid.CursorStyle, blink bool) {
+	s.curStyle, s.curBlink = st, blink
+}
 
 // ScrollView moves the view n lines back into history, positive for
 // older. It has no effect on the alternate buffer, which keeps none.
@@ -817,7 +823,7 @@ func (s *Screen) Render(g *grid.Grid) {
 	s.all = false
 	s.drawnTo = g
 
-	cur := grid.Cursor{X: s.cursor.X, Y: s.cursor.Y, Style: s.curStyle}
+	cur := grid.Cursor{X: s.cursor.X, Y: s.cursor.Y, Style: s.curStyle, Blink: s.curBlink}
 	// The cursor belongs to the live screen; scrolled back into history
 	// it would sit on unrelated text.
 	cur.Visible = s.mode.CursorVis && s.scrollOff == 0

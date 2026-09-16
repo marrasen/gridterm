@@ -582,12 +582,16 @@ func TestClipboardReadIsNotAnswered(t *testing.T) {
 
 func TestCursorStyle(t *testing.T) {
 	cases := []struct {
-		seq  string
-		want grid.CursorStyle
+		seq   string
+		want  grid.CursorStyle
+		blink bool
 	}{
-		{"\x1b[2 q", grid.CursorBlock},
-		{"\x1b[4 q", grid.CursorUnderline},
-		{"\x1b[6 q", grid.CursorBar},
+		{"\x1b[1 q", grid.CursorBlock, true},
+		{"\x1b[2 q", grid.CursorBlock, false},
+		{"\x1b[3 q", grid.CursorUnderline, true},
+		{"\x1b[4 q", grid.CursorUnderline, false},
+		{"\x1b[5 q", grid.CursorBar, true},
+		{"\x1b[6 q", grid.CursorBar, false},
 	}
 	for _, tc := range cases {
 		h := newHarness(t, 4, 2)
@@ -596,6 +600,36 @@ func TestCursorStyle(t *testing.T) {
 		if got := h.g.Cursor().Style; got != tc.want {
 			t.Errorf("%q -> style %d, want %d", tc.seq, got, tc.want)
 		}
+		if got := h.g.Cursor().Blink; got != tc.blink {
+			t.Errorf("%q -> blink %v, want %v", tc.seq, got, tc.blink)
+		}
+	}
+}
+
+// The cursor a terminal starts with is a blinking block. DECSCUSR 0 asks
+// for that default back, and so does RIS.
+func TestTheDefaultCursorBlinks(t *testing.T) {
+	h := newHarness(t, 4, 2)
+	h.term.Render(h.g)
+	if cur := h.g.Cursor(); !cur.Blink || cur.Style != grid.CursorBlock {
+		t.Errorf("a fresh screen has cursor %+v, want a blinking block", cur)
+	}
+
+	h.write("\x1b[2 q\x1b[0 q")
+	h.term.Render(h.g)
+	if cur := h.g.Cursor(); !cur.Blink || cur.Style != grid.CursorBlock {
+		t.Errorf("DECSCUSR 0 gave cursor %+v, want a blinking block", cur)
+	}
+
+	h.write("\x1b[4 q")
+	h.term.Render(h.g)
+	if cur := h.g.Cursor(); cur.Blink {
+		t.Fatalf("DECSCUSR 4 gave cursor %+v, want a steady underline", cur)
+	}
+	h.write("\x1bc") // RIS
+	h.term.Render(h.g)
+	if cur := h.g.Cursor(); !cur.Blink || cur.Style != grid.CursorBlock {
+		t.Errorf("after RIS the cursor is %+v, want a blinking block", cur)
 	}
 }
 

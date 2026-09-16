@@ -328,11 +328,7 @@ func (a *app) Update() error {
 	// Shown rather than logged. A key or a click is something the user
 	// asked for, and the sidebar is now the way into most of it: a
 	// window opened from an icon has no console to find the reason in.
-	for _, ev := range a.reader.Poll() {
-		if _, err := a.root.HandleKey(ev); err != nil {
-			a.reportError(ui.ChordOf(ev).String()+" could not be done", err)
-		}
-	}
+	a.handleKeys(a.reader.Poll())
 	// Routed by the measurements the window was last laid out with,
 	// which is what the user was looking at when they clicked. They are
 	// taken together, in placeRegions: a window measured afresh here
@@ -353,6 +349,21 @@ func (a *app) Update() error {
 
 	a.updateTitle()
 	return nil
+}
+
+// handleKeys gives one frame's keys to the widget tree.
+func (a *app) handleKeys(evs []input.Event) {
+	for _, ev := range evs {
+		if _, err := a.root.HandleKey(ev); err != nil {
+			a.reportError(ui.ChordOf(ev).String()+" could not be done", err)
+		}
+	}
+	// A cursor caught in the off half of its blink while somebody is
+	// typing reads as a window that has stopped answering, so a key puts
+	// it back on and starts its phase again.
+	if len(evs) > 0 && a.comp != nil {
+		a.comp.WakeCursors()
+	}
 }
 
 // updateTitle shows the focused pane's title. Read rather than pushed:

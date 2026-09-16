@@ -31,8 +31,6 @@ each group. A line goes when the work is in and reviewed.
 - A sidebar row drawn before a window is re-keyed still names the
   window by its old key until the next frame, so a click on it in that
   frame finds nothing.
-- The cursor never blinks (`DECSCUSR` styles 1, 3 and 5 draw as the
-  steady ones).
 - On Windows a command that writes and exits in the same instant loses
   its output. A ConPTY repaints on a clock of its own, and the reaper
   closes the pseudoconsole as soon as the child is reaped, which is

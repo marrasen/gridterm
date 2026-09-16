@@ -194,6 +194,10 @@ type Cursor struct {
 	X, Y    int
 	Visible bool
 	Style   CursorStyle
+
+	// Blink asks for the cursor to be shown and hidden in turn. The grid
+	// keeps no clock, so whoever draws the cursor decides the phase.
+	Blink bool
 }
 
 // Grid is a rectangular buffer of cells with per-row damage tracking.
@@ -594,6 +598,10 @@ func (g *Grid) ResetCursorClaim() { g.cursorClaimed = false }
 // MarkAllDirty forces a full repaint on the next frame, for when
 // something outside the cell contents changed (window resize, theme).
 func (g *Grid) MarkAllDirty() { g.allDirty = true }
+
+// MarkRowDirty marks one row for repainting, for a change to how the row
+// looks that no cell of it records.
+func (g *Grid) MarkRowDirty(y int) { g.dirtyRow(y) }
 
 func (g *Grid) dirtyRow(y int) {
 	if y >= 0 && y < g.rows {

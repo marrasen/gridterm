@@ -356,6 +356,54 @@ func TestSetCursorUnchangedDoesNotDirty(t *testing.T) {
 	}
 }
 
+// A cursor that starts or stops blinking looks different without
+// moving, so the change has to reach the renderer and dirty the row it
+// sits on.
+func TestAskingTheCursorToBlinkDirtiesItsRow(t *testing.T) {
+	g := New(4, 4, fg, bg)
+	g.SetCursor(Cursor{X: 1, Y: 2, Visible: true})
+	g.ClearDirty()
+
+	g.SetCursor(Cursor{X: 1, Y: 2, Visible: true, Blink: true})
+
+	if !g.Cursor().Blink {
+		t.Fatal("the grid did not keep the cursor's blink")
+	}
+	if !g.RowDirty(2) {
+		t.Error("the cursor's row is clean, so nothing would redraw it")
+	}
+	for _, y := range []int{0, 1, 3} {
+		if g.RowDirty(y) {
+			t.Errorf("row %d was dirtied and the cursor is not on it", y)
+		}
+	}
+
+	// And asking for the same thing again costs nothing.
+	g.ClearDirty()
+	g.SetCursor(Cursor{X: 1, Y: 2, Visible: true, Blink: true})
+	if g.AnyDirty() {
+		t.Error("re-setting the same blinking cursor dirtied the grid")
+	}
+}
+
+// MarkRowDirty is how a caller says a row looks different for a reason
+// no cell of it records, such as a blinking cursor changing phase.
+func TestMarkRowDirtyMarksOneRow(t *testing.T) {
+	g := New(4, 4, fg, bg)
+	g.ClearDirty()
+
+	g.MarkRowDirty(2)
+
+	if !g.RowDirty(2) {
+		t.Fatal("the marked row is clean")
+	}
+	for _, y := range []int{0, 1, 3} {
+		if g.RowDirty(y) {
+			t.Errorf("row %d was dirtied too", y)
+		}
+	}
+}
+
 func TestHidingTheCursorDirtiesItsRow(t *testing.T) {
 	g := New(4, 4, fg, bg)
 	g.SetCursor(Cursor{X: 0, Y: 2, Visible: true})

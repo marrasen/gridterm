@@ -163,9 +163,15 @@ func (r *Renderer) MeasureAt(g *grid.Grid, x, y int, geo *Geometry) {
 // ebiten.SetScreenClearedEveryFrame(false); otherwise the rows this
 // skips are blank rather than showing the previous frame.
 func (r *Renderer) Draw(dst *ebiten.Image, g *grid.Grid, geo *Geometry) {
+	r.draw(dst, g, geo, true)
+}
+
+// draw paints the dirty rows of g onto dst, leaving the cursor out when
+// showCursor is false, which is the off half of a blink.
+func (r *Renderer) draw(dst *ebiten.Image, g *grid.Grid, geo *Geometry, showCursor bool) {
 	cols, rows := g.Size()
 	cur := g.Cursor()
-	curVisible := cur.Visible && cur.X >= 0 && cur.X < cols && cur.Y >= 0 && cur.Y < rows
+	curVisible := showCursor && cur.Visible && cur.X >= 0 && cur.X < cols && cur.Y >= 0 && cur.Y < rows
 	// A cursor on the continuation half of a double-width character
 	// belongs on its lead cell, which is where the glyph actually is.
 	// Left alone, a block cursor would paint over half the character in

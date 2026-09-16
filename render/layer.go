@@ -4,6 +4,7 @@ import (
 	"image"
 	"image/color"
 	"math"
+	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
 
@@ -92,6 +93,73 @@ type Layer struct {
 	// compositor does not measure a layer that brought its own, and a
 	// geometry can change with no cell of the grid touched.
 	lastGeom [4]int
+
+	// blink is where a blinking cursor is in its phase.
+	blink cursorBlink
+}
+
+// blinkPeriod is how long one on-and-off turn of the cursor takes, half
+// of it on, at the rate most terminals use. Slow enough that a blinking
+// cursor costs two one-row repaints a second and not a frame's work.
+const blinkPeriod = time.Second
+
+// cursorBlink is where a layer's blinking cursor is in its phase: when
+// the phase started, whether the cursor is showing, and the cursor it
+// was worked out for.
+type cursorBlink struct {
+	since   time.Time
+	on      bool
+	was     grid.Cursor
+	running bool
+}
+
+// stepCursorBlink moves a blinking cursor on to now and dirties the
+// cursor's row when the phase flips, so the blink costs one row twice a
+// second rather than a repaint every frame.
+//
+// The phase starts afresh whenever the cursor changes, so somebody
+// typing sees a cursor that is on rather than one caught mid-blink.
+func (l *Layer) stepCursorBlink(now time.Time) {
+	cur := l.Grid.Cursor()
+	if l.Hidden || !cur.Visible || !cur.Blink {
+		l.blink = cursorBlink{}
+		return
+	}
+	if !l.blink.running || l.blink.was != cur {
+		l.blink = cursorBlink{since: now, on: true, was: cur, running: true}
+		return
+	}
+	on := blinkOn(now.Sub(l.blink.since))
+	if on == l.blink.on {
+		return
+	}
+	l.blink.on = on
+	l.Grid.MarkRowDirty(cur.Y)
+}
+
+// wakeCursor puts a blinking cursor back on and starts its phase again,
+// for something the layer cannot see, such as a key going to the pane.
+func (l *Layer) wakeCursor(now time.Time) {
+	if !l.blink.running {
+		return
+	}
+	if !l.blink.on {
+		l.blink.on = true
+		l.Grid.MarkRowDirty(l.blink.was.Y)
+	}
+	l.blink.since = now
+}
+
+// cursorShowing reports whether the cursor goes in this frame. A steady
+// cursor always does.
+func (l *Layer) cursorShowing() bool { return !l.blink.running || l.blink.on }
+
+// blinkOn reports whether a cursor is in the on half of its phase.
+func blinkOn(since time.Duration) bool {
+	if since < 0 {
+		return true
+	}
+	return since%blinkPeriod < blinkPeriod/2
 }
 
 // Size returns the layer's pixel size, which is its grid measured by
@@ -137,7 +205,7 @@ func (l *Layer) repaint(r *Renderer, geo *Geometry) {
 		strip := image.Rect(0, at, width, at+height)
 		l.tex.SubImage(strip).(*ebiten.Image).Clear()
 	}
-	r.Draw(l.tex, l.Grid, geo)
+	r.draw(l.tex, l.Grid, geo, l.cursorShowing())
 	l.painted, l.full = true, false
 }
 
@@ -215,6 +283,10 @@ type Compositor struct {
 	// loop calls it and there is nowhere to return one. A nil OnError
 	// drops them.
 	OnError func(error)
+
+	// Now is the clock a blinking cursor's phase is measured on. Nil
+	// means time.Now.
+	Now func() time.Time
 
 	// shaders and scratch are the frosted-glass machinery, built on
 	// first use so a window with nothing frosted never pays for them.
@@ -296,6 +368,7 @@ func (c *Compositor) Stats() CompositorStats { return c.stats }
 // Nothing else may rely on those flags surviving a frame.
 func (c *Compositor) Draw(screen *ebiten.Image) {
 	c.stats = CompositorStats{Layers: len(c.layers)}
+	now := c.clock()
 
 	// A rebuilt atlas re-rasterises every glyph. The cell box is not the
 	// signal for that: two font sizes can share one.
@@ -333,6 +406,9 @@ func (c *Compositor) Draw(screen *ebiten.Image) {
 		if l.ensure(geo) {
 			resized = true
 		}
+		// Before the damage is read, because a blink that has just
+		// flipped dirties the cursor's row and this frame has to draw it.
+		l.stepCursorBlink(now)
 		if l.Grid.AnyDirty() {
 			l.painted = false
 		}
@@ -430,6 +506,25 @@ func (c *Compositor) measure(l *Layer) *Geometry {
 	}
 	c.r.MeasureAt(l.Grid, l.X, l.Y, &c.geo)
 	return &c.geo
+}
+
+// WakeCursors puts every blinking cursor back on and starts its phase
+// again, for a key or a click the layers cannot see themselves.
+func (c *Compositor) WakeCursors() {
+	now := c.clock()
+	for _, l := range c.layers {
+		if l.Grid != nil {
+			l.wakeCursor(now)
+		}
+	}
+}
+
+// clock is the time the cursor's blink is measured against.
+func (c *Compositor) clock() time.Time {
+	if c.Now != nil {
+		return c.Now()
+	}
+	return time.Now()
 }
 
 // onError reports a failure the compositor cannot hand back, because

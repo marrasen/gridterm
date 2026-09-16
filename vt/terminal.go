@@ -291,14 +291,16 @@ func (t *Terminal) repeat(n int) {
 	}
 }
 
+// setCursorStyle handles DECSCUSR. The odd numbers blink and the even
+// ones are steady; 0 is the default, a blinking block.
 func (t *Terminal) setCursorStyle(n int) {
 	switch n {
 	case 0, 1, 2:
-		t.scr.SetCursorStyle(grid.CursorBlock)
+		t.scr.SetCursorStyle(grid.CursorBlock, n != 2)
 	case 3, 4:
-		t.scr.SetCursorStyle(grid.CursorUnderline)
+		t.scr.SetCursorStyle(grid.CursorUnderline, n == 3)
 	case 5, 6:
-		t.scr.SetCursorStyle(grid.CursorBar)
+		t.scr.SetCursorStyle(grid.CursorBar, n == 5)
 	}
 }
 

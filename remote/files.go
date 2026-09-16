@@ -15,6 +15,12 @@ import (
 	"github.com/marrasen/gridterm/serve"
 )
 
+// ErrCloseAbandoned says an SFTP client's own close never came back
+// after its session was closed, so it was left for the connection to
+// end.
+var ErrCloseAbandoned = errors.New(
+	"the file session's close never came back, so it was left to the connection")
+
 // Files is an SFTP session on a connection.
 //
 // It rides on the connection: closing the connection closes it, and the
@@ -217,6 +223,12 @@ func (f *Files) closeRider() error {
 // never will, and this runs on the goroutine that draws, so the wait is
 // bounded the same way a shell's is: after that the channel is closed
 // from here, which is what lets go.
+//
+// Closing the channel only sends a message, so a transport that is dead
+// both ways leaves the client's close waiting for an answer that cannot
+// arrive. It gets one more grace and is then abandoned, which says so
+// with ErrCloseAbandoned: that goroutine ends when the connection is
+// closed, which Conn.Close does as soon as its riders are done.
 func (f *Files) closeAll() error {
 	done := make(chan error, 1)
 	go func() { done <- f.client.Close() }()
@@ -228,9 +240,14 @@ func (f *Files) closeAll() error {
 	case <-time.After(drainGrace):
 		errs = append(errs, closeQuietly(f.sess))
 		// Now that the channel has gone, the client's own close can
-		// finish. Waited for rather than abandoned: it holds a goroutine
-		// until it does.
-		errs = append(errs, <-done)
+		// finish, unless the transport is dead and nothing wakes the
+		// read it is parked on.
+		select {
+		case err := <-done:
+			errs = append(errs, err)
+		case <-time.After(drainGrace):
+			errs = append(errs, ErrCloseAbandoned)
+		}
 	}
 	errs = append(errs, closeQuietly(f.sess))
 

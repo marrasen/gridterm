@@ -1,7 +1,10 @@
 package remote
 
 import (
+	"context"
 	"errors"
+	"net"
+	"sync"
 	"testing"
 	"time"
 
@@ -136,6 +139,116 @@ func TestClosingFilesDoesNotWaitForeverOnADeadMachine(t *testing.T) {
 	case <-time.After(drainGrace * 20):
 		t.Fatal("closing the machine never came back")
 	}
+}
+
+// Closing a session whose transport is dead in both directions comes
+// back, and closing the machine after it comes back too.
+//
+// Closing the channel only sends a message. A machine that is still on
+// the network and carrying nothing never answers it, so the SFTP
+// client's own close stays parked on a read that nothing will wake.
+// Waited for, that read holds the goroutine that draws, and it holds
+// Conn.Close as well: closing the transport is the only thing that ends
+// it, and Conn.Close does that after its riders.
+func TestClosingFilesOnADeadTransportComesBack(t *testing.T) {
+	s := sshtest.New(t)
+	c, wire := connectDeaf(t, s)
+
+	f, err := c.Files(t.Context())
+	if err != nil {
+		t.Fatalf("Files: %v", err)
+	}
+	// Nothing crosses in either direction from here on, and it never
+	// starts again.
+	wire.goDeaf()
+
+	done := make(chan error, 1)
+	go func() { done <- f.Close() }()
+	select {
+	case err := <-done:
+		// And it says which way it ended: the close was left behind
+		// rather than finishing, which is logged rather than shown.
+		if !errors.Is(err, ErrCloseAbandoned) {
+			t.Errorf("close gave %v, want the close to have been left behind", err)
+		}
+	case <-time.After(drainGrace * 20):
+		t.Fatal("closing the session never came back")
+	}
+
+	closed := make(chan error, 1)
+	go func() { closed <- c.Close() }()
+	select {
+	case <-closed:
+	case <-time.After(drainGrace * 20):
+		t.Fatal("closing the machine never came back")
+	}
+	// And the close that was left behind has finished: the transport
+	// going is what wakes the read it was parked on. Asked again, it
+	// waits for that read the same way, so an answer now means the read
+	// has ended.
+	again := make(chan error, 1)
+	go func() { again <- f.Client().Close() }()
+	select {
+	case <-again:
+	case <-time.After(drainGrace * 20):
+		t.Fatal("the close that was left behind is still waiting on the dead transport")
+	}
+}
+
+// deafWire is a connection that carries nothing in either direction
+// without hanging up.
+//
+// What a machine that has dropped off the network looks like from here:
+// the socket is still there, what is written to it goes nowhere, and
+// nothing comes back. A machine that hung up would be a different
+// thing, and would end everything waiting on it by itself.
+type deafWire struct {
+	net.Conn
+
+	mu   sync.Mutex
+	deaf bool
+}
+
+// goDeaf drops everything written from now on, so the machine hears no
+// more and answers nothing.
+func (w *deafWire) goDeaf() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.deaf = true
+}
+
+// Write throws the bytes away once the wire has gone deaf, and says they
+// were sent: a socket into a network that has gone takes them just the
+// same.
+func (w *deafWire) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	deaf := w.deaf
+	w.mu.Unlock()
+	if deaf {
+		return len(p), nil
+	}
+	return w.Conn.Write(p)
+}
+
+// connectDeaf connects to the test server over a wire the test can make
+// deaf.
+func connectDeaf(t *testing.T, s *sshtest.Server) (*Conn, *deafWire) {
+	t.Helper()
+	w := &deafWire{}
+	to := func(ctx context.Context, addr string) (net.Conn, error) {
+		nc, err := overTCP(ctx, addr)
+		if err != nil {
+			return nil, err
+		}
+		w.Conn = nc
+		return w, nil
+	}
+	c, err := connect(t.Context(), to, nil, testConfig(t, s))
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	t.Cleanup(func() { _ = c.Close() })
+	return c, w
 }
 
 // A session opened on a connection that has closed is refused, or it

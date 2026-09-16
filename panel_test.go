@@ -956,11 +956,16 @@ func TestPanelDimsAFinishedRow(t *testing.T) {
 	}
 }
 
-// A shell that ends on its own leaves its row behind, saying what it
-// did. A pane the user closed takes its row with it: they know.
+// A shell that ends on its own leaves its row behind, greyed to say the
+// shell has gone, and leaves its pane with it so that what it printed
+// can still be read.
 func TestPanelKeepsTheRowOfAShellThatEndedOnItsOwn(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withPanel(t, a)
+	first, ok := onlyPaneWidget(t, a).(*term.Terminal)
+	if !ok {
+		t.Fatal("the window opened on something that is not a terminal")
+	}
 	if err := a.openTab(); err != nil {
 		t.Fatalf("openTab: %v", err)
 	}
@@ -968,9 +973,9 @@ func TestPanelKeepsTheRowOfAShellThatEndedOnItsOwn(t *testing.T) {
 
 	// The shell on the first pane goes.
 	_ = a.shells[0].Close()
-	waitFor(t, a, "the pane of the shell that ended to go", func() bool {
+	waitFor(t, a, "the window to see the shell end", func() bool {
 		a.reapExited()
-		return len(a.panes) == 1
+		return a.Ended(first)
 	})
 
 	var closed int
@@ -983,10 +988,16 @@ func TestPanelKeepsTheRowOfAShellThatEndedOnItsOwn(t *testing.T) {
 		t.Fatalf("the panel shows %v, want the shell that ended left behind",
 			panelText(a, panelNow))
 	}
+	if a.panes[first] == nil {
+		t.Fatal("the pane went with its shell")
+	}
 
-	// And clearing takes it off.
+	// And clearing takes the row and its pane off.
 	if err := a.clearFinished(); err != nil {
 		t.Fatalf("clearFinished: %v", err)
+	}
+	if a.panes[first] != nil {
+		t.Fatal("clearing left the pane open with no row to reach it by")
 	}
 	for _, row := range panelText(a, panelNow) {
 		if strings.Contains(row, "[closed]") {
@@ -995,8 +1006,8 @@ func TestPanelKeepsTheRowOfAShellThatEndedOnItsOwn(t *testing.T) {
 	}
 }
 
-// Closing the row of a shell that ended takes it off the panel, the same
-// as clearing it does.
+// Closing the row of a shell that ended takes the row off the panel and
+// the pane with it, which is the user saying they have read it.
 //
 // The row kept a cross and lost its close, so the one command on the
 // menu answered "Terminal cannot be closed from here" while the row of a
@@ -1004,39 +1015,34 @@ func TestPanelKeepsTheRowOfAShellThatEndedOnItsOwn(t *testing.T) {
 func TestClosingTheRowOfAShellThatEndedTakesItOff(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withPanel(t, a)
+	first, ok := onlyPaneWidget(t, a).(*term.Terminal)
+	if !ok {
+		t.Fatal("the window opened on something that is not a terminal")
+	}
 	if err := a.openTab(); err != nil {
 		t.Fatalf("openTab: %v", err)
 	}
 	panelText(a, panelNow)
-	was := make(map[*term.Terminal]*conns.Entry, len(a.panes))
-	for pane, e := range a.panes {
-		was[pane] = e
-	}
+	stopped := a.panes[first]
 
 	// The shell on the first pane goes, and its row stays behind.
 	_ = a.shells[0].Close()
-	waitFor(t, a, "the pane of the shell that ended to go", func() bool {
+	waitFor(t, a, "the window to see the shell end", func() bool {
 		a.reapExited()
-		return len(a.panes) == 1
+		return a.Ended(first)
 	})
-	var gone *conns.Entry
-	for pane, e := range was {
-		if a.panes[pane] == nil {
-			gone = e
-		}
-	}
-	if gone == nil {
-		t.Fatalf("no pane went: %v", panelText(a, panelNow))
-	}
 
-	a.panel.Select(gone)
+	a.panel.Select(stopped)
 	if err := a.closeSelectedConnection(); err != nil {
 		t.Fatalf("closing the row of a shell that ended: %v", err)
 	}
 
+	if a.panes[first] != nil {
+		t.Error("closing the row left the pane open")
+	}
 	panelText(a, panelNow)
 	for _, row := range a.panel.Rows() {
-		if row.Key == any(gone) {
+		if row.Key == any(stopped) {
 			t.Errorf("the row is still on the panel: %v", panelText(a, panelNow))
 		}
 	}

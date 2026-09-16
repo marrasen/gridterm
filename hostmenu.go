@@ -150,8 +150,8 @@ func (a *app) openHostMenu(row ui.ListRow) error {
 // the end of it does.
 //
 // It clears the row and nothing else. What the row named is never ended
-// from here: a finished command keeps its pane so that what it printed
-// can be read, and "clear finished connections" is what takes that pane
+// from here: a pane keeps what it printed after its program has gone,
+// and closing the pane or "clear finished connections" is what takes it
 // away.
 //
 // A row with nothing to clear carries no cross, so nothing here asks

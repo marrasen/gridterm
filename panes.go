@@ -315,19 +315,17 @@ func (a *app) isPane(w ui.Widget) bool {
 	return true
 }
 
-// closePane takes a pane out of the tree and ends every shell under it.
+// closePane takes a pane out of the tree, ends every shell under it and
+// takes its row off the panel.
 //
 // It works on any container, not just a split, because a pane can sit
 // inside anything: asking the tree to detach it is what keeps this from
 // having to know.
-func (a *app) closePane(w ui.Widget) error { return a.removePane(w, false) }
-
-// removePane takes a pane out of the tree and ends every shell under it.
 //
-// keep leaves the panel rows behind, greyed and closed and carrying a
-// cross to clear them, for a shell of this window's own that ended by
-// itself. A pane the user closed takes its row with it.
-func (a *app) removePane(w ui.Widget, keep bool) error {
+// This is the only way a pane goes. A shell that ends leaves the pane
+// where it is, so closing one is always the user saying they are done
+// with it.
+func (a *app) closePane(w ui.Widget) error {
 	if w == nil {
 		return nil
 	}
@@ -372,19 +370,7 @@ func (a *app) removePane(w ui.Widget, keep bool) error {
 			continue
 		}
 		if e := a.panes[t]; e != nil {
-			if keep {
-				// The shell went on its own, so the row stays and says
-				// so. The pane has gone with it, so there is nothing
-				// left to reveal, and closing the row and clearing it
-				// are the same act: the row goes off the panel. The
-				// same as greyRow does for a connection that dropped.
-				e.Meter.Close()
-				e.Reveal = nil
-				drop := a.dropRow(e)
-				e.Close, e.Clear = drop, drop
-			} else {
-				a.registry.Drop(e)
-			}
+			a.registry.Drop(e)
 		}
 		delete(a.panes, t)
 		delete(a.ended, t)
@@ -406,24 +392,25 @@ func (a *app) removePane(w ui.Widget, keep bool) error {
 	return errors.Join(errs...)
 }
 
-// paneEnded deals with a shell that stopped on its own.
+// paneEnded deals with a program that stopped on its own.
 //
-// A command keeps its pane. What it printed is what it was run for, and
-// a window that cleared the screen the moment the program finished would
-// take the answer away with it. A shell loses its pane and keeps its
-// row: the user asked for a shell rather than for what it last said, and
-// the row stays to say the shell has gone until they clear it. A pane
-// drawn from a window taken over takes its row with it as well.
+// The pane stays, whatever was in it and however it ended. What it
+// printed is still worth reading, scrollback and all, and a server that
+// was rebooted leaves a pane that says what happened before it went. The
+// row goes grey to say the program has finished, and the user closes the
+// pane when they have read it.
 func (a *app) paneEnded(t *term.Terminal) error {
 	e := a.panes[t]
 	if a.windows.drawsFromAWindow(t) {
 		// A shell on a window taken over, or a screen watched there,
 		// goes without leaving a row: the other window never listed
 		// it, and what ended it is on the window's own row.
-		return a.removePane(t, false)
+		return a.closePane(t)
 	}
-	if e == nil || (e.Kind != conns.Command && !a.kept[t]) {
-		return a.removePane(t, true)
+	if e == nil {
+		// No row, so there is no way left to reach the pane and nothing
+		// to say the program has gone.
+		return a.closePane(t)
 	}
 	if a.ended[t] {
 		return nil

@@ -200,7 +200,6 @@ func newTestApp(t *testing.T, cols, rows int, opts ...testOption) *testApp {
 		machines:   newMachines(),
 		serving:    newServing(),
 		agents:     newAgents(),
-		kept:       make(map[*term.Terminal]bool),
 		tunnels:    make(map[*conns.Entry]*tunnel),
 		queue:      jobs.New(1),
 		jobs:       make(map[*conns.Entry]*jobs.Job),
@@ -529,9 +528,10 @@ func TestSplitRefusedWithNoRoom(t *testing.T) {
 	checkTree(t, a)
 }
 
-// TestReapClosesExitedPanes checks the path a shell takes when it ends
-// on its own, with two going at once because map order is random.
-func TestReapClosesExitedPanes(t *testing.T) {
+// TestReapKeepsExitedPanes checks the path a shell takes when it ends on
+// its own, with two going at once because map order is random. Every
+// pane stays; only the mark that it has finished is new.
+func TestReapKeepsExitedPanes(t *testing.T) {
 	for run := 0; run < 30; run++ {
 		a := newTestApp(t, 60, 20)
 		for i := 0; i < 2; i++ {
@@ -540,44 +540,33 @@ func TestReapClosesExitedPanes(t *testing.T) {
 			}
 		}
 		panes := ui.Leaves(a.root.Widget())
-		survivor := panes[1].(*term.Terminal)
+		running := panes[1].(*term.Terminal)
 
 		// Two shells end at once.
+		var stopped []*term.Terminal
 		for _, p := range []ui.Widget{panes[0], panes[2]} {
 			pane := p.(*term.Terminal)
+			stopped = append(stopped, pane)
 			_ = pane.Close()
 			waitUntil(t, "the pane to have exited", pane.Exited)
 		}
 		reapWhenTold(t, a)
 
 		checkTree(t, a)
-		if len(a.panes) != 1 {
-			t.Fatalf("run %d: %d panes, want 1", run, len(a.panes))
+		if len(a.panes) != 3 {
+			t.Fatalf("run %d: %d panes, want all three kept", run, len(a.panes))
 		}
-		if _, alive := a.panes[survivor]; !alive {
-			t.Fatalf("run %d: the wrong pane survived", run)
+		for _, pane := range stopped {
+			if !a.Ended(pane) {
+				t.Fatalf("run %d: a pane whose shell ended is not marked finished", run)
+			}
+		}
+		if a.Ended(running) {
+			t.Fatalf("run %d: the pane still running was marked finished", run)
 		}
 		if a.quit.Load() {
-			t.Fatalf("run %d: the window closed with a pane still open", run)
+			t.Fatalf("run %d: the window closed with panes still open", run)
 		}
-	}
-}
-
-// TestReapTheLastPaneQuits checks that a shell exiting on its own with
-// nothing beside it closes the window.
-func TestReapTheLastPaneQuits(t *testing.T) {
-	a := newTestApp(t, 40, 10)
-	only := ui.FocusedLeaf(a.root.Widget()).(*term.Terminal)
-
-	_ = only.Close()
-	waitUntil(t, "the pane to have exited", only.Exited)
-	reapWhenTold(t, a)
-
-	if !a.quit.Load() {
-		t.Error("the last shell exiting did not close the window")
-	}
-	if len(a.panes) != 0 {
-		t.Errorf("%d panes left, want none", len(a.panes))
 	}
 }
 

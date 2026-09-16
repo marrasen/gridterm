@@ -238,7 +238,6 @@ func (a *app) reached(d *dialling, log *connLog, pane *term.Terminal, route []st
 // The row said "connecting" and nothing took that back, so a connection
 // that failed an hour ago still read as one on its way, greyed out.
 func (a *app) endedAs(pane *term.Terminal, what string) {
-	a.kept[pane] = true
 	if e := a.panes[pane]; e != nil {
 		e.Label = what
 	}

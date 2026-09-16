@@ -371,13 +371,13 @@ func TestAFilledRowIsPaintedInTheFillColour(t *testing.T) {
 	}
 }
 
-// A shell that ended by itself loses its pane and keeps its row, and that
-// row carries the ×.
+// A shell that ended by itself keeps its pane, so its row carries no ×.
 //
-// There is nothing left to reveal or close, so clearing the row is the one
-// thing left to do with it. Without the ×, "Clear finished connections"
-// was the only way to take the row off the panel.
-func TestTheCrossClearsAShellThatEndedByItself(t *testing.T) {
+// The pane is still there to read, and clearing the row would leave it
+// open with nothing on the sidebar to reach it by. Pressing where the ×
+// would be puts that pane in front instead, which is what a press on any
+// other row does. "Clear finished connections" is what takes it away.
+func TestTheRowOfAShellThatEndedCarriesNoCross(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withDialogs(t, a)
 	withPanel(t, a)
@@ -387,7 +387,7 @@ func TestTheCrossClearsAShellThatEndedByItself(t *testing.T) {
 		t.Fatal("the window opened on something that is not a terminal")
 	}
 	e := a.panes[first]
-	// A second pane, so the window does not quit when the first one goes.
+	// A second pane, so the one that ends is not the one in front.
 	if err := a.splitHere(ui.Columns); err != nil {
 		t.Fatalf("splitHere: %v", err)
 	}
@@ -396,9 +396,9 @@ func TestTheCrossClearsAShellThatEndedByItself(t *testing.T) {
 	if err := a.shells[0].Close(); err != nil {
 		t.Fatalf("ending the shell: %v", err)
 	}
-	waitFor(t, a, "the pane of the shell that ended to go", func() bool {
+	waitFor(t, a, "the window to see the shell end", func() bool {
 		a.reapExited()
-		return len(a.panes) == 1
+		return a.Ended(first)
 	})
 
 	a.refreshPanel(time.Now())
@@ -406,11 +406,25 @@ func TestTheCrossClearsAShellThatEndedByItself(t *testing.T) {
 	if !ok {
 		t.Fatalf("the shell that ended has no row: %v", panelText(a, time.Now()))
 	}
-	if drawn.Button != clearButton {
-		t.Fatalf("the greyed row offers %q, want the ×", drawn.Button)
+	if drawn.Button != 0 {
+		t.Fatalf("the greyed row offers %q, which would leave the pane unreachable",
+			drawn.Button)
 	}
 
+	// The press lands on the row rather than on a button, so the pane
+	// comes to the front and stays open.
 	clickClear(t, a, e)
+	if a.panes[first] == nil {
+		t.Fatal("the press took the pane away")
+	}
+	if a.focusedTerminal() != first {
+		t.Error("the press did not put the pane in front")
+	}
+
+	// And clearing finished connections is what takes it away.
+	if err := a.clearFinished(); err != nil {
+		t.Fatalf("clearFinished: %v", err)
+	}
 	a.refreshPanel(time.Now())
 	if _, ok := panelRow(a, e); ok {
 		t.Errorf("the row is still on the panel: %v", panelText(a, time.Now()))
@@ -434,8 +448,8 @@ func TestAFinishedCommandsRowHasNoCross(t *testing.T) {
 		t.Fatal("the window opened on something that is not a terminal")
 	}
 	e := a.panes[pane]
-	// A command rather than a shell: a shell that ends takes its pane with
-	// it, and there would be no row to press.
+	// A command rather than a shell, for the kind the rule was written
+	// for. Every pane keeps what it printed now, whatever ran in it.
 	e.Kind = conns.Command
 	if err := a.shells[0].Close(); err != nil {
 		t.Fatalf("ending the command: %v", err)

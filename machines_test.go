@@ -599,27 +599,6 @@ func TestAFinishedCommandKeepsItsOutput(t *testing.T) {
 	}
 }
 
-// A shell that ends takes its pane with it: there is nothing left to
-// read, and the user asked for a shell rather than for what it last
-// said.
-func TestAShellThatEndsTakesItsPane(t *testing.T) {
-	a := newTestApp(t, 80, 24)
-	withDialogs(t, a)
-	if err := a.openTab(); err != nil {
-		t.Fatalf("openTab: %v", err)
-	}
-	if len(a.panes) != 2 {
-		t.Fatalf("%d panes", len(a.panes))
-	}
-
-	_ = a.shells[0].Close()
-	waitFor(t, a, "the pane of the shell that ended to go", func() bool {
-		a.reapExited()
-		return len(a.panes) == 1
-	})
-	checkTree(t, a)
-}
-
 // Clearing the finished connections takes away the pane as well as the
 // row.
 //

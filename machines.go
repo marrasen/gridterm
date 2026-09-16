@@ -323,8 +323,9 @@ func (a *app) revealMachine(m *machine) {
 
 // machineDied takes away a machine whose connection has gone on its own.
 //
-// The panes on it end by themselves, because their shells stop reading.
-// The row stays, greyed, the way greyRow says a dropped connection's row
+// The panes on it end by themselves, because their shells stop reading,
+// and they stay so that what they printed can still be read. The row
+// stays too, greyed, the way greyRow says a dropped connection's row
 // does.
 func (a *app) machineDied(m *machine, why error) {
 	// By identity: the name may hold another connection by now.
@@ -418,7 +419,6 @@ func (a *app) forgetPane(t *term.Terminal) {
 	// of that window later reports a failure to close a pane that was
 	// closed long before.
 	a.windows.forget(t)
-	delete(a.kept, t)
 	// And the agent the user handed it to, which has nothing left to
 	// work in. Its code stops naming anything the moment this is gone.
 	if err := a.forgetHandover(t); err != nil {

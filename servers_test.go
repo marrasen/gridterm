@@ -520,9 +520,7 @@ func TestWhatAServerSaysIsKeptWhole(t *testing.T) {
 
 // A pane that says why a connection failed is not reaped away.
 //
-// The window takes away a terminal whose shell has gone, because there
-// is nothing left to read. A connection that failed is the opposite: the
-// pane is the only account of what happened, and it has to still be
+// The pane is the only account of what happened, and it has to still be
 // there when the user goes looking.
 func TestThePaneThatSaysWhyIsNotReapedAway(t *testing.T) {
 	s := sshtest.New(t)

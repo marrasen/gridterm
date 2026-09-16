@@ -496,9 +496,9 @@ func (a *app) panelRow(row conns.Row, now time.Time) ui.ListRow {
 		if row.Entry.Clear != nil {
 			// Clearing the row is the one thing left to do with it, so
 			// it is offered on the row itself rather than through a
-			// menu. Asked of Clear rather than of Close: a finished
-			// command keeps its pane, and its Close would throw the
-			// transcript away.
+			// menu. Asked of Clear rather than of Close: a pane keeps
+			// what it printed after its program has gone, and its
+			// Close would throw the transcript away.
 			out.Button = clearButton
 		}
 	}
@@ -628,7 +628,7 @@ func (a *app) closeSelectedConnection() error {
 
 // clearFinished takes every connection that has ended off the panel.
 //
-// A command that stopped keeps its pane, so that what it printed can
+// A pane whose program stopped is kept, so that what it printed can
 // still be read. Clearing its row is the user saying they have read it,
 // so the pane goes too: a pane with no row is one the sidebar cannot
 // reach, and the sidebar is the only way to choose what is showing.
@@ -641,7 +641,7 @@ func (a *app) clearFinished() error {
 		if e := a.panes[t]; e == nil || e.State(now) != meter.Closed {
 			continue
 		}
-		if cerr := a.removePane(t, false); cerr != nil && err == nil {
+		if cerr := a.closePane(t); cerr != nil && err == nil {
 			err = cerr
 		}
 	}

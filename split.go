@@ -56,10 +56,9 @@ func (a *app) addSplitChoices(c *ui.Chooser, dir ui.Dir, current ui.Widget) {
 		pane := w
 		c.Add("Move "+a.paneName(pane), a.paneWhere(pane), func() error {
 			// Asked again now rather than when the line was written: a
-			// shell that ended or a connection that dropped while the
-			// question was up takes its pane with it, and splicing a
-			// closed one back into the tree leaves a dead session where
-			// nothing can reach it.
+			// pane closed while the question was up has gone, and
+			// splicing a closed one back into the tree leaves a dead
+			// session where nothing can reach it.
 			if !a.live(pane) || !a.live(current) {
 				return errors.New("that pane has closed")
 			}

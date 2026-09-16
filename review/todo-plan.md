@@ -279,10 +279,13 @@ One commit each, smallest first.
    has written the child's last output to the pipe and closed its end.
    So the reaper frees the pseudoconsole and leaves the pipes open, and
    the pending read drains and then ends on its own.
-Item 1 done by a23ef28 Name a far screen's row by the window itself, not by its key.
+Item 1 done by a23ef28 Name a far screen's row by the window itself, not by its key. Fixed by a94a594 Name the window a stale row refuses, and test the refusal.
+Item 2 done by df82626 Give a file pane on a gridterm window one deadline; 8eaf0f2 Name the window once when a file pane on it cannot open, and test the one deadline.
 Item 3 done by 7eb0cd1 Send a shell's size change without waiting on the wire; 85b07a3 Bound the polite end-of-file the way the session close is bounded; 45c2549 Report a resize that failed after the shell was closed.
 Item 4 done by 049f151 Let the cursor blink when the program asks for it; 1584d13 Keep the cursor's drawn half in step with its phase across hides and grid swaps.
 Item 6 is a known gap recorded by the forget review, not yet done.
+
+All eight steps are done. Every line of TODO.md is closed except the known gaps recorded on the way: the cursor blinks while the window is in the background, a watcher gets the far end's default cursor, and dropMachine and letGoOfWindow close inline on the drawing goroutine.
 
 ## What is not in this plan
 

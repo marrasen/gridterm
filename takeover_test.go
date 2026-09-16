@@ -46,8 +46,8 @@ func TestOneWindowWorksInAnotherMachinesShell(t *testing.T) {
 	// A real shell rather than the harness's pipe, because the whole
 	// point is what the shell answers. Set before serving starts, which
 	// is when the served window takes the shell it will start.
-	a.newSession = func(cols, rows int) (session.Session, error) {
-		return session.StartLocal(session.LocalConfig{Cols: cols, Rows: rows})
+	a.newShell = func(argv []string, cols, rows int) (session.Session, error) {
+		return session.StartLocal(session.LocalConfig{Command: argv, Cols: cols, Rows: rows})
 	}
 	mine, line := aKeyPair(t)
 	withServing(t, a, line)

@@ -96,7 +96,8 @@ func (a *app) openHostMenu(row ui.ListRow) error {
 	)
 	switch key := row.Key.(type) {
 	case hostKey:
-		items, about = hostItems(a.about(string(key))), func() { a.hostMenus.nowAbout(string(key)) }
+		items = hostItems(a.about(string(key)), a.shellPick.lines(true))
+		about = func() { a.hostMenus.nowAbout(string(key)) }
 	case remoteHostKey:
 		if key.window == nil {
 			// The only guard there is: nothing else re-checks, because
@@ -180,7 +181,8 @@ func farItems() []ui.MenuItem {
 	return []ui.MenuItem{{Command: "conn.files", Title: "Files"}}
 }
 
-// hostItems is what the plus on a machine's row offers.
+// hostItems is what the plus on a machine's row offers. shells are the
+// lines that open a pane on a named shell, which only this machine has.
 //
 // A machine gridterm has no connection of its own to gets the short
 // list: a terminal there is one more pane, and there is nothing to
@@ -193,12 +195,17 @@ func farItems() []ui.MenuItem {
 // A machine the server list holds can also be edited and forgotten.
 // This is where they belong: the row is the machine, so the plus on it
 // is where everything about that machine is.
-func hostItems(about hostFacts) []ui.MenuItem {
+func hostItems(about hostFacts, shells []ui.MenuItem) []ui.MenuItem {
 	if about.kind == hostHere {
-		return []ui.MenuItem{
-			{Command: "conn.terminal", Title: "Terminal"},
-			{Command: "conn.files", Title: "Files"},
+		items := []ui.MenuItem{{Command: "conn.terminal", Title: "Terminal"}}
+		// Under Terminal, which already says a pane here is what opens,
+		// so each line says only which shell it opens on.
+		if len(shells) > 0 {
+			items = append(items, ui.MenuSeparator())
+			items = append(items, shells...)
+			items = append(items, ui.MenuSeparator())
 		}
+		return append(items, ui.MenuItem{Command: "conn.files", Title: "Files"})
 	}
 	if about.kind == hostWindow {
 		items := []ui.MenuItem{

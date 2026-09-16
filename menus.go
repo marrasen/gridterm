@@ -18,16 +18,9 @@ import (
 func (a *app) newMenubar(child ui.Widget) *ui.Menubar {
 	bar := ui.NewMenubar(a.root.Commands, a.root.Accelerators, child)
 	bar.Menus = []ui.MenuDef{
-		{Title: "File", Items: []ui.MenuItem{
-			{Command: "tab.open"},
-			{Command: "pane.splitRight"},
-			{Command: "pane.splitDown"},
-			{Command: "pane.unsplit"},
-			ui.MenuSeparator(),
-			{Command: "keys.lock"},
-			ui.MenuSeparator(),
-			{Command: "pane.close"},
-		}},
+		// No shells yet: the looking for them is still running, and
+		// refreshFileMenu puts them on when it lands.
+		{Title: fileMenu, Items: fileItems(nil)},
 		{Title: "Edit", Items: []ui.MenuItem{
 			{Command: "edit.copy"},
 			{Command: "edit.paste"},
@@ -90,6 +83,49 @@ func (a *app) newMenubar(child ui.Widget) *ui.Menubar {
 	// the dialog that says who by and offers to stop.
 	bar.OnStatus = a.showServing
 	return bar
+}
+
+// fileMenu is the menu bar title the panes hang under.
+const fileMenu = "File"
+
+// fileItems is what the File menu offers: the panes, and a line per
+// shell a new tab here can open on.
+func fileItems(shells []ui.MenuItem) []ui.MenuItem {
+	items := []ui.MenuItem{{Command: "tab.open"}}
+	if len(shells) > 0 {
+		items = append(items, ui.MenuSeparator())
+		items = append(items, shells...)
+		items = append(items, ui.MenuSeparator())
+	}
+	return append(items,
+		ui.MenuItem{Command: "pane.splitRight"},
+		ui.MenuItem{Command: "pane.splitDown"},
+		ui.MenuItem{Command: "pane.unsplit"},
+		ui.MenuSeparator(),
+		ui.MenuItem{Command: "keys.lock"},
+		ui.MenuSeparator(),
+		ui.MenuItem{Command: "pane.close"})
+}
+
+// refreshFileMenu rebuilds the File menu for the shells a scan has since
+// found, taking it down first when it is the menu showing.
+//
+// That menu alone: rebuilding the bar would take down whatever else is
+// open with it.
+func (a *app) refreshFileMenu(shells []ui.MenuItem) {
+	if a.bar == nil {
+		return
+	}
+	for i, def := range a.bar.Menus {
+		if def.Title != fileMenu {
+			continue
+		}
+		if a.bar.OpenIndex() == i {
+			a.bar.Close()
+		}
+		a.bar.Menus[i].Items = fileItems(shells)
+		return
+	}
 }
 
 // updateStatus says on the right of the menu bar when this window is

@@ -49,7 +49,13 @@ func (a *app) newTerminal() (*term.Terminal, error) {
 
 // localTerminal starts a shell on the machine gridterm is running on.
 func (a *app) localTerminal() (*term.Terminal, error) {
-	sess, err := a.newSession(a.lastSize[0], a.lastSize[1])
+	return a.localTerminalOn(a.localShell())
+}
+
+// localTerminalOn starts a pane here on argv. A nil argv leaves the
+// shell to session.StartLocal.
+func (a *app) localTerminalOn(argv []string) (*term.Terminal, error) {
+	sess, err := a.newShell(argv, a.lastSize[0], a.lastSize[1])
 	if err != nil {
 		return nil, fmt.Errorf("start session: %w", err)
 	}

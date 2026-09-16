@@ -25,6 +25,7 @@ import (
 	"github.com/marrasen/gridterm/render"
 	"github.com/marrasen/gridterm/session"
 	"github.com/marrasen/gridterm/settings"
+	"github.com/marrasen/gridterm/shells"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/files"
 	"github.com/marrasen/gridterm/ui/term"
@@ -137,11 +138,13 @@ func reapWhenTold(t *testing.T, a *testApp) {
 // for every tree operation.
 type testApp struct {
 	*app
-	// shells are the fake sessions, in the order they were started. A
-	// shell served to another window is started on a goroutine of the
-	// server's, so shellsMu guards the append; a test reads the list
-	// once it has waited for the pane that uses the shell.
+	// shells are the fake sessions, in the order they were started, and
+	// argvs the argv each was started on. A shell served to another
+	// window is started on a goroutine of the server's, so shellsMu
+	// guards the appends; a test reads the lists once it has waited for
+	// the pane that uses the shell.
 	shells   []*pipeSession
+	argvs    [][]string
 	shellsMu sync.Mutex
 
 	// screen is the image the window draws on, kept between frames: a
@@ -242,6 +245,14 @@ func newTestApp(t *testing.T, cols, rows int, opts ...testOption) *testApp {
 	}
 	ta.serving.remember(set)
 	ta.agents.remember(set)
+	// A machine of the test's own: nothing here runs wsl.exe or reads
+	// the PATH of whoever is running the tests.
+	ta.shellPick = newShellPick()
+	ta.shellPick.findShells = func() ([]shells.Shell, error) { return testShells(), nil }
+	ta.shellPick.namedShell = func(id string) (shells.Shell, bool) {
+		return shells.Lookup(testShells(), id)
+	}
+	ta.shellPick.remember(set)
 	ta.windows = newWindows(book)
 	// Long enough to be a handshake and short enough that a test which
 	// waits one out is not a test that waits twenty seconds.
@@ -252,10 +263,11 @@ func newTestApp(t *testing.T, cols, rows int, opts ...testOption) *testApp {
 	// that existed for a tenth of a second -- and leave keys behind to
 	// raise a false alarm if a port ever came round again.
 	ta.windows.knownAt = filepath.Join(t.TempDir(), "known_windows")
-	ta.newSession = func(int, int) (session.Session, error) {
+	ta.newShell = func(argv []string, _, _ int) (session.Session, error) {
 		sess := newPipeSession()
 		ta.shellsMu.Lock()
 		ta.shells = append(ta.shells, sess)
+		ta.argvs = append(ta.argvs, argv)
 		ta.shellsMu.Unlock()
 		return sess, nil
 	}

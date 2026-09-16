@@ -90,6 +90,10 @@ type app struct {
 	// those agents in.
 	agents *agents
 
+	// shellPick is the shells a pane on this machine can run, and which
+	// one the user last chose.
+	shellPick *shellPick
+
 	// stats says how long the window is taking, for somebody looking at
 	// a slow one. Nil unless it was asked for.
 	stats *watchStats
@@ -216,9 +220,13 @@ type app struct {
 	// widget tree.
 	exits chan struct{}
 
-	// newSession starts the shell a new pane runs. It is a field so a
-	// test can drive the tree without spawning anything.
-	newSession func(cols, rows int) (session.Session, error)
+	// newShell starts a shell on this machine, on the argv given. It is
+	// a field so a test can drive the tree without spawning anything.
+	newShell func(argv []string, cols, rows int) (session.Session, error)
+
+	// command is what -e named: the program a pane here runs instead of
+	// a shell.
+	command []string
 
 	// What a new pane is started with, kept from the flags.
 	scrollback int
@@ -317,6 +325,7 @@ func (a *app) Update() error {
 	a.pump.run()
 	a.reapExited()
 	a.reapFontScan()
+	a.reapShellScan()
 	a.reapFontTrouble()
 	// Worked out afresh every frame, which is what makes a connection
 	// fall from active to settled with no timer anywhere. A row whose

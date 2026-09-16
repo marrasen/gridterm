@@ -76,7 +76,7 @@ func TestEveryPlusMenuLineNamesACommand(t *testing.T) {
 	withMenubar(t, a)
 
 	for _, shape := range hostShapes() {
-		items := hostItems(shape.facts)
+		items := hostItems(shape.facts, nil)
 		if len(items) == 0 {
 			t.Errorf("the plus on a %s offers nothing", shape.name)
 		}

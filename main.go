@@ -159,13 +159,13 @@ func main() {
 	a.lastSize = [2]int{initCols, initRows}
 
 	// What every pane is started with, so a split can open another.
-	command := strings.Fields(*cmdline)
+	a.command = strings.Fields(*cmdline)
 	a.keys = remote.NewRing()
 	a.ctx, a.stop = context.WithCancel(context.Background())
 	a.book = loadBook()
-	a.newSession = func(cols, rows int) (session.Session, error) {
+	a.newShell = func(argv []string, cols, rows int) (session.Session, error) {
 		return session.StartLocal(session.LocalConfig{
-			Command: command,
+			Command: argv,
 			Cols:    cols,
 			Rows:    rows,
 		})
@@ -184,6 +184,7 @@ func main() {
 	a.windows = newWindows(a.book)
 	a.serving = newServing()
 	a.agents = newAgents()
+	a.shellPick = newShellPick()
 	a.useSettings(openSettings())
 	a.kept = make(map[*term.Terminal]bool)
 	a.tunnels = make(map[*conns.Entry]*tunnel)
@@ -197,7 +198,7 @@ func main() {
 	a.ended = make(map[*term.Terminal]bool)
 	a.exits = make(chan struct{}, exitQueue)
 
-	first, err := a.openFirst(startup{target: *sshTarget, command: command})
+	first, err := a.openFirst(startup{target: *sshTarget, command: a.command})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -209,8 +210,10 @@ func main() {
 	}
 	a.shot = shot
 	// Off the drawing goroutine: reading every font file the system has
-	// takes long enough to be seen as the window failing to open.
+	// takes long enough to be seen as the window failing to open, and
+	// wsl.exe is slow to say which distributions it has.
 	a.startFontScan()
+	a.startShellScan()
 
 	// The tree: the menu bar over the sidebar and the stage beside it.
 	// Everything the window opens goes on the stage, which shows one at

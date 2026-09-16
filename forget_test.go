@@ -9,6 +9,7 @@ import (
 	"github.com/marrasen/gridterm/internal/sshtest"
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/ui"
+	"github.com/marrasen/gridterm/ui/term"
 )
 
 // A saved machine can be edited and forgotten from its own plus menu.
@@ -253,7 +254,7 @@ func TestForgettingAConnectedMachineClosesIt(t *testing.T) {
 	a := aSavedMachineConnectedTo(t, s, "edge")
 
 	f := openTheForgetDialog(t, a, "edge")
-	saysItCloses(t, f, "edge", "closes that connection")
+	dialogSays(t, f, "edge is connected.", "Forgetting it closes that connection.")
 	pressButton(t, a, f, "Remove")
 
 	if a.machines.named("edge") != nil {
@@ -269,6 +270,52 @@ func TestForgettingAConnectedMachineClosesIt(t *testing.T) {
 	}
 }
 
+// The dialog names the machines and the panes that go with a connection
+// others are reached through, and Remove takes them all.
+//
+// The list refuses to forget a machine another saved one is reached
+// through, so this is the rider whose Through field was edited away: the
+// connection still rides on the machine, and the list no longer says so.
+func TestForgettingAJumpHostSaysWhatElseGoesWithIt(t *testing.T) {
+	near, far, beyond := sshtest.New(t), sshtest.New(t), sshtest.New(t)
+	a := newTestApp(t, 100, 30)
+	withPanel(t, a)
+	withDialogs(t, a)
+	pinServers(t, a, near, far, beyond)
+	saveHost(t, a, "edge", near, "")
+	saveHost(t, a, "db", far, "edge")
+	// Two hops out, because closing the first closes the whole chain
+	// and the dialog has to count all of it.
+	saveHost(t, a, "deep", beyond, "db")
+	a.refreshServers()
+
+	clickTerminalLine(t, a, "deep")
+	waitForPanes(t, a, 2)
+	for _, name := range []string{"edge", "db", "deep"} {
+		if a.machines.named(name) == nil {
+			t.Fatalf("it is holding %v, want all three machines", a.machines.names())
+		}
+	}
+	// The Through field cleared, which is what lets the list forget the
+	// machine db is still reached through.
+	chooseMenuItem(t, clickPlus(t, a, "db"), "server.editThis")
+	edit := awaitModal(t, a, "the Edit db dialog", byTitle[*ui.Form]("Edit db"))
+	retypeField(t, a, edit, "Through", "")
+	pressButton(t, a, edit, "Save")
+
+	f := openTheForgetDialog(t, a, "edge")
+	dialogSays(t, f,
+		"Forgetting it closes that connection, and everything reached through it: 2 machines, 1 pane.")
+	pressButton(t, a, f, "Remove")
+
+	if n := a.machines.count(); n != 0 {
+		t.Errorf("it is still holding %v, want none of them", a.machines.names())
+	}
+	waitFor(t, a, "every far end to see its connection close", func() bool {
+		return near.Live() == 0 && far.Live() == 0 && beyond.Live() == 0
+	})
+}
+
 // Forgetting a gridterm window taken over lets go of it.
 func TestForgettingAWindowTakenOverLetsGoOfIt(t *testing.T) {
 	host, client, addr, keyFile := aServingWindow(t)
@@ -279,7 +326,9 @@ func TestForgettingAWindowTakenOverLetsGoOfIt(t *testing.T) {
 	}, host)
 
 	f := openTheForgetDialog(t, client, "office")
-	saysItCloses(t, f, "office", "closes that connection")
+	dialogSays(t, f,
+		"This window has taken over office.",
+		"Forgetting it lets go of office and closes its panes.")
 	pressButton(t, client, f, "Remove")
 
 	if n := client.windows.count(); n != 0 {
@@ -294,19 +343,27 @@ func TestForgettingAWindowTakenOverLetsGoOfIt(t *testing.T) {
 }
 
 // Forgetting a machine still being connected to gives up on the dial.
+//
+// The machine here accepts and then says nothing at all, so the dial is
+// genuinely still running when Remove is pressed.
 func TestForgettingAMachineStillOnItsWayGivesUp(t *testing.T) {
+	host, port := sshtest.Deaf(t)
 	a := newTestApp(t, 100, 30)
 	withPanel(t, a)
 	withDialogs(t, a)
-	saveHostNamed(t, a, "edge", "edge.example")
+	if err := a.book.Put(remote.Host{Name: "edge", Address: host, Port: port, User: "tester"}, ""); err != nil {
+		t.Fatalf("save edge: %v", err)
+	}
 	a.refreshServers()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	holdTheNames(t, a, &dialling{cancel: cancel, names: []string{"edge"}})
+	clickTerminalLine(t, a, "edge")
+	waitFor(t, a, "the dial to start", func() bool { return a.machines.connecting("edge") != nil })
+	pane := theConnectingPane(t, a, "edge")
 
 	f := openTheForgetDialog(t, a, "edge")
-	saysItCloses(t, f, "edge", "gives up on that connection")
+	dialogSays(t, f,
+		"The window is still connecting to edge.",
+		"Forgetting it gives up on that connection.")
 	pressButton(t, a, f, "Remove")
 
 	if a.machines.connecting("edge") != nil {
@@ -315,10 +372,34 @@ func TestForgettingAMachineStillOnItsWayGivesUp(t *testing.T) {
 	if _, ok := a.book.Lookup("edge"); ok {
 		t.Error("edge is still in the server list")
 	}
-	select {
-	case <-ctx.Done():
-	case <-time.After(waitBudget):
-		t.Fatal("the dial was not given up on")
+	// The pane stays, holding the account of how far it got, and says
+	// what became of the dial.
+	waitFor(t, a, "the pane to say the dial was given up on", func() bool {
+		return a.machines.beingMade() == 0 && a.panes[pane] != nil &&
+			a.panes[pane].Label == "given up on"
+	})
+}
+
+// Trouble closing is reported on its own, and the dialog goes.
+//
+// Leaving it open would leave a Remove button that can only say there is
+// no saved server by that name: the list let go of it before the close
+// was tried.
+func TestForgettingReportsTroubleClosingOnItsOwn(t *testing.T) {
+	s := sshtest.New(t)
+	a := aSavedMachineConnectedTo(t, s, "edge")
+	// A pane taken out of the tree behind the window's back, which is
+	// the one thing closing a connection reports and carries on from.
+	takeOutOfTheTree(t, a, a.machines.panesOn(a.machines.named("edge"))[0])
+
+	pressButton(t, a, openTheForgetDialog(t, a, "edge"), "Remove")
+
+	awaitModal(t, a, "the notice about the close", byTitle[*ui.Notice]("Trouble closing edge"))
+	if _, ok := a.book.Lookup("edge"); ok {
+		t.Error("edge is still in the server list")
+	}
+	if a.machines.named("edge") != nil {
+		t.Error("the connection is still held")
 	}
 }
 
@@ -356,6 +437,9 @@ func TestAServerThatCannotBeForgottenKeepsItsConnection(t *testing.T) {
 
 	if f.Error() == nil {
 		t.Fatal("nothing said why edge could not be forgotten")
+	}
+	if got := f.Error().Error(); !strings.Contains(got, "is reached through") {
+		t.Errorf("the dialog says %q, want the machine that is reached through edge", got)
 	}
 	if _, ok := a.book.Lookup("edge"); !ok {
 		t.Error("edge went from the server list anyway")
@@ -407,6 +491,29 @@ func aSavedMachineConnectedTo(t *testing.T, s *sshtest.Server, name string) *tes
 	return a
 }
 
+// theConnectingPane is the pane watching a machine being connected to.
+func theConnectingPane(t *testing.T, a *testApp, host string) *term.Terminal {
+	t.Helper()
+	for pane, e := range a.panes {
+		if e.Host == host {
+			return pane
+		}
+	}
+	t.Fatalf("no pane is watching %s being connected to", host)
+	return nil
+}
+
+// takeOutOfTheTree detaches a pane without telling the window, so that
+// closing it afterwards fails.
+func takeOutOfTheTree(t *testing.T, a *testApp, pane *term.Terminal) {
+	t.Helper()
+	root, detached := ui.Detach(a.root.Widget(), pane)
+	if !detached {
+		t.Fatal("the pane was not in the tree to start with")
+	}
+	a.root.SetWidget(root)
+}
+
 // openTheForgetDialog runs the forget line on a machine's plus menu and
 // hands back the dialog it opens, without pressing anything.
 func openTheForgetDialog(t *testing.T, a *testApp, name string) *ui.Form {
@@ -415,15 +522,13 @@ func openTheForgetDialog(t *testing.T, a *testApp, name string) *ui.Form {
 	return awaitModal(t, a, "the Remove "+name+"? dialog", byTitle[*ui.Form]("Remove "+name+"?"))
 }
 
-// saysItCloses checks a forget dialog names the machine once and says
-// what forgetting it does to the connection.
-func saysItCloses(t *testing.T, f *ui.Form, name, what string) {
+// dialogSays checks a dialog's body says each of these, word for word.
+func dialogSays(t *testing.T, f *ui.Form, want ...string) {
 	t.Helper()
 	body := strings.Join(f.Lines, "\n")
-	if n := strings.Count(body, name); n != 1 {
-		t.Errorf("the dialog names %q %d times, want once:\n%s", name, n, body)
-	}
-	if !strings.Contains(body, what) {
-		t.Errorf("the dialog does not say %q:\n%s", what, body)
+	for _, line := range want {
+		if !strings.Contains(body, line) {
+			t.Errorf("the dialog does not say %q:\n%s", line, body)
+		}
 	}
 }

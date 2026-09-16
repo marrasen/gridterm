@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/marrasen/gridterm/remote"
@@ -440,21 +441,28 @@ func (a *app) openServerForm(under string) error {
 	return nil
 }
 
-// confirmRemoveServer asks before forgetting a machine, and says when
-// forgetting it closes a connection.
+// confirmRemoveServer asks before forgetting a machine, and says what
+// forgetting it closes.
 func (a *app) confirmRemoveServer(name string) {
-	f := a.newConfirm("Remove "+name+"?", removeLines(a.about(name)))
+	f := a.newConfirm("Remove "+name+"?", a.removeLines(a.about(name)))
 	f.AddButton(ui.Button{Title: "Remove", Do: func() error {
-		// Read again: the dial may have landed, or the far end gone,
-		// since the dialog opened.
+		// Read again: the body above was written when the dialog
+		// opened, and the dial may have landed or the far end gone
+		// since.
 		on := a.about(name)
 		// The list first: it refuses a machine another saved one is
-		// reached through, and closing first would lose a connection
-		// for a forget that then does not happen.
+		// reached through.
 		if err := a.book.Remove(name); err != nil {
 			return err
 		}
-		return a.closeWhatIsHeld(on)
+		if err := a.closeWhatIsHeld(on); err != nil {
+			// Reported on its own rather than on this dialog, which has
+			// nothing left to do: the machine has gone from the list,
+			// so pressing Remove again would only say there is no such
+			// server. Posted, because a dialog cannot open another.
+			a.pump.post(func() { a.reportError("Trouble closing "+groupName(name), err) })
+		}
+		return nil
 	}})
 	f.AddButton(ui.Button{Title: "Keep it"})
 	// Opens on the button that changes nothing.
@@ -463,35 +471,100 @@ func (a *app) confirmRemoveServer(name string) {
 }
 
 // removeLines is the body of the forget dialog: what forgetting the
-// machine does, and what it closes when the window is holding it.
-func removeLines(on hostFacts) []string {
+// machine does, and what goes with it when the window is holding it.
+func (a *app) removeLines(on hostFacts) []string {
 	nothing := "Nothing on the machine changes."
+	name := groupName(on.name)
 	switch {
-	case on.window != nil || on.machine != nil:
+	case on.window != nil:
 		return []string{
-			groupName(on.name) + " is connected.",
-			"Forgetting it closes that connection.",
+			"This window has taken over " + name + ".",
+			"Forgetting it lets go of " + name + " and closes its panes.",
 			nothing,
 		}
+	case on.machine != nil:
+		closes := "Forgetting it closes that connection"
+		if with := a.whatRidesOn(on.machine); with != "" {
+			closes += ", and everything reached through it: " + with
+		}
+		return []string{name + " is connected.", closes + ".", nothing}
 	case on.dialling != nil:
 		return []string{
-			groupName(on.name) + " is still being connected to.",
+			"The window is still connecting to " + name + ".",
 			"Forgetting it gives up on that connection.",
 			nothing,
 		}
 	}
-	return []string{"It is only forgotten here. " + nothing}
+	return []string{"It is only forgotten here.", nothing}
+}
+
+// whatRidesOn counts what else a machine's connection carries -- the
+// machines reached through it and the panes on them -- and is empty when
+// it carries nothing.
+func (a *app) whatRidesOn(m *machine) string {
+	riders := a.ridingOn(m)
+	if len(riders) == 0 {
+		return ""
+	}
+	panes := 0
+	for _, name := range riders {
+		if r := a.machines.named(name); r != nil {
+			panes += len(a.machines.panesOn(r))
+		}
+		panes += a.filePanesOn(name)
+	}
+	what := howMany(len(riders), "machine")
+	if panes > 0 {
+		what += ", " + howMany(panes, "pane")
+	}
+	return what
+}
+
+// ridingOn names every machine reached through one, however many hops
+// away, because closing it closes all of them.
+func (a *app) ridingOn(m *machine) []string {
+	var names []string
+	for _, name := range a.machines.riding(m) {
+		names = append(names, name)
+		if rider := a.machines.named(name); rider != nil {
+			names = append(names, a.ridingOn(rider)...)
+		}
+	}
+	return names
+}
+
+// filePanesOn counts the panes of the file manager reading a machine.
+func (a *app) filePanesOn(host string) int {
+	if a.files == nil {
+		return 0
+	}
+	n := 0
+	for _, p := range a.files.view.Panes() {
+		if p.FS().Name() == host {
+			n++
+		}
+	}
+	return n
+}
+
+// howMany counts things, with the plural.
+func howMany(n int, thing string) string {
+	if n == 1 {
+		return "1 " + thing
+	}
+	return strconv.Itoa(n) + " " + thing + "s"
 }
 
 // closeWhatIsHeld closes whatever the window is holding under a name --
 // another gridterm taken over, a connection, or a dial on its way --
-// found by identity, because the name has just left the server list.
+// taking a window under the name the server list gave it rather than the
+// one that was asked about.
 func (a *app) closeWhatIsHeld(on hostFacts) error {
 	switch {
 	case on.window != nil:
 		return a.dropWindow(on.window.name)
 	case on.machine != nil:
-		return a.dropMachine(on.machine.at.name)
+		return a.dropMachine(on.name)
 	case on.dialling != nil:
 		a.machines.giveUp(on.dialling)
 	}

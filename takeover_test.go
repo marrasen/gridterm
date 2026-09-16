@@ -2178,6 +2178,50 @@ func TestAWindowIsHeldUnderTheNameTheListGivesIt(t *testing.T) {
 		offersTheWindowsLines(t, client, "office")
 	})
 
+	t.Run("dropped from a list read again", func(t *testing.T) {
+		host, client, addr, keyFile := aServingWindow(t)
+		saveWindowFromTheDialog(t, client, "office", addr, keyFile)
+		clickTerminalLine(t, client, "office")
+		pane := paneOnTheWindow(t, client)
+
+		// The file edited by hand, and the menu line that reads it
+		// again.
+		writeTheList(t, client, `{"version":1,"servers":[]}`)
+		chooseMenuItem(t, openBarMenu(t, client, "Servers"), "server.reload")
+		client.pump.run()
+
+		// The list stops naming it and the connection goes back to
+		// being its own name. Nothing was closed: the list changed,
+		// and the user did not ask for anything to go.
+		if got := client.windows.names(); !slices.Equal(got, []string{addr}) {
+			t.Fatalf("it is holding %v, want the one window under %s", got, addr)
+		}
+		if got := client.about(addr).kind; got != hostWindow {
+			t.Errorf("under its address it is a %v, want a window", got)
+		}
+		if client.about(addr).toTakeOver() {
+			t.Error("it asks to be taken over again")
+		}
+		stillTheOne(t, host, paneOnTheWindow(t, client), pane)
+		// The address is its own name now, so the heading has nothing
+		// to add beside it.
+		filedUnder(t, client, pane, addr, "", "office")
+
+		// And letting go from the plus on that heading really lets go.
+		chooseMenuItem(t, clickPlus(t, client, addr), "conn.disconnect")
+		if n := client.windows.count(); n != 0 {
+			t.Errorf("it is still holding %v", client.windows.names())
+		}
+	})
+}
+
+// writeTheList writes the server list file by hand, for a test about a
+// list changed outside gridterm.
+func writeTheList(t *testing.T, a *testApp, text string) {
+	t.Helper()
+	if err := os.WriteFile(a.book.Path(), []byte(text), 0o600); err != nil {
+		t.Fatalf("write the server list: %v", err)
+	}
 }
 
 // onlyFilePane is the one pane the file manager holds.

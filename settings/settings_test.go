@@ -114,7 +114,7 @@ func TestUnreadableSettingsAreNotWrittenOver(t *testing.T) {
 		{"a port that is not one", `{"version": 1, "servePort": 70000}`},
 		{"a reach that means nothing", `{"version": 1, "serveReach": "everywhere"}`},
 		{"an agent host with no name", `{"version": 1, "agentHost": ""}`},
-		{"a shell with no name", `{"version": 1, "shell": ""}`},
+		{"a shell with no id", `{"version": 1, "shell": ""}`},
 		{"more than one set of settings", `{"version": 1}{"version": 1}`},
 		{"a key written twice", `{"version": 1, "servePort": 2300, "servePort": 9000}`},
 	}
@@ -481,8 +481,8 @@ func TestTheShellIsRemembered(t *testing.T) {
 	}
 }
 
-// Remembering the shell leaves what else was saved alone, because it
-// reads the file before it writes it.
+// Remembering the shell leaves what else the same settings saved alone.
+// Another window's work is TestRememberingTheShellKeepsASecondWindowsWork.
 func TestRememberingTheShellKeepsWhatElseWasSaved(t *testing.T) {
 	path := at(t)
 	s, err := Load(path)
@@ -550,9 +550,27 @@ func TestRememberingTheShellKeepsASecondWindowsWork(t *testing.T) {
 	}
 }
 
-// A shell with no name is not a choice, and the file is turned away in
-// words the user can act on.
-func TestAShellWithNoNameIsRefused(t *testing.T) {
+// A shell with no id is not a choice, and is refused rather than written
+// down.
+func TestAShellWithNoIdIsRefused(t *testing.T) {
+	path := at(t)
+	s, err := Load(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+
+	if err := s.PutShell(""); err == nil {
+		t.Error("a shell with no id was saved")
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		raw, _ := os.ReadFile(path)
+		t.Errorf("a file was written anyway:\n%s", raw)
+	}
+}
+
+// A file naming a shell with no id is turned away in words the user can
+// act on.
+func TestAFileWithAnEmptyShellSaysWhatIsWrong(t *testing.T) {
 	path := at(t)
 	if err := os.WriteFile(path, []byte(`{"version": 1, "shell": ""}`), 0o600); err != nil {
 		t.Fatalf("write the file: %v", err)
@@ -561,10 +579,37 @@ func TestAShellWithNoNameIsRefused(t *testing.T) {
 	_, err := Load(path)
 
 	if err == nil {
-		t.Fatal("a shell with no name loaded clean")
+		t.Fatal("a shell with no id loaded clean")
 	}
 	if !strings.Contains(err.Error(), "shell") {
 		t.Errorf("it said %v, without saying the shell is what is wrong", err)
+	}
+}
+
+// Settings that could not be read are not written over by remembering a
+// shell either.
+func TestTheShellIsNotSavedOverUnreadableSettings(t *testing.T) {
+	path := at(t)
+	const broken = "{"
+	if err := os.WriteFile(path, []byte(broken), 0o600); err != nil {
+		t.Fatalf("write the file: %v", err)
+	}
+	s, loadErr := Load(path)
+	if loadErr == nil {
+		t.Fatal("a broken file loaded clean")
+	}
+
+	err := s.PutShell("pwsh")
+
+	if !errors.Is(err, ErrUnsaveable) {
+		t.Errorf("saving gave %v, want ErrUnsaveable", err)
+	}
+	now, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read the file again: %v", err)
+	}
+	if string(now) != broken {
+		t.Errorf("the file was written over:\n%s", now)
 	}
 }
 
@@ -604,6 +649,36 @@ func TestAFailedWriteLeavesTheShellThatWasSaved(t *testing.T) {
 	}
 	if id, _ := s.Shell(); id != "cmd" {
 		t.Errorf("the settings hold the shell %q, want the cmd that is saved", id)
+	}
+}
+
+// Two goroutines remembering different things both survive, which is
+// what the reread before every save is for.
+func TestSavingDifferentThingsAtOnce(t *testing.T) {
+	path := at(t)
+	s, err := Load(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+
+	done := make(chan error, 2)
+	go func() { done <- s.PutShell("pwsh") }()
+	go func() { done <- s.PutAgentHost("Codex") }()
+	for i := 0; i < 2; i++ {
+		if err := <-done; err != nil {
+			t.Fatalf("save: %v", err)
+		}
+	}
+
+	again, err := Load(path)
+	if err != nil {
+		t.Fatalf("load again: %v", err)
+	}
+	if id, have := again.Shell(); !have || id != "pwsh" {
+		t.Errorf("the shell came back as %q, %v; want pwsh", id, have)
+	}
+	if name, have := again.AgentHost(); !have || name != "Codex" {
+		t.Errorf("the agent came back as %q, %v; want Codex", name, have)
 	}
 }
 

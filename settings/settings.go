@@ -54,8 +54,8 @@ type stored struct {
 	// prompt for, by the name that dialog offers.
 	AgentHost *string `json:"agentHost,omitempty"`
 
-	// Shell is the shell a new pane on this machine runs, by the id the
-	// shell list gives it.
+	// Shell is the shell a new pane runs, by the id the shell list gives
+	// it.
 	Shell *string `json:"shell,omitempty"`
 }
 
@@ -324,10 +324,10 @@ func check(file stored) error {
 	if h := file.AgentHost; h != nil && *h == "" {
 		return errors.New("the agent host has no name")
 	}
-	// Which shells there are is the window's business, not this package's, so only an empty name is
+	// Which shells there are is the window's business, not this package's, so only an empty id is
 	// turned away: it names nothing and could not be opened.
 	if sh := file.Shell; sh != nil && *sh == "" {
-		return errors.New("the shell has no name")
+		return errors.New("the shell has no id")
 	}
 	return nil
 }

@@ -140,6 +140,10 @@ type Terminal struct {
 	// it while it is, or this window would take it straight back.
 	held bool
 
+	// elsewhere says the host paints the screen somewhere other than the
+	// room the layout gave it, so Draw leaves that room blank.
+	elsewhere bool
+
 	focused bool
 	encBuf  []byte
 
@@ -257,8 +261,33 @@ func (t *Terminal) resize(size ui.Size) {
 	}
 }
 
-// Draw paints the terminal.
+// Draw paints the terminal, or blanks its room when the host is drawing
+// the screen elsewhere.
 func (t *Terminal) Draw(v grid.View) {
+	if t.elsewhere {
+		// Blank rather than nothing: the screen drawn elsewhere need not
+		// cover the whole of this room, and what is left of it would keep
+		// whatever was painted there before.
+		v.Clear()
+		return
+	}
+	t.draw(v)
+}
+
+// DrawScreen paints the whole screen onto a view of its own, for a host
+// drawing this terminal somewhere other than where the layout put it.
+func (t *Terminal) DrawScreen(v grid.View) { t.draw(v) }
+
+// SetElsewhere says the host paints this terminal's screen itself, so
+// the room the layout gave it is left blank.
+func (t *Terminal) SetElsewhere(on bool) { t.elsewhere = on }
+
+// Elsewhere reports whether the host is painting the screen rather than
+// the layout.
+func (t *Terminal) Elsewhere() bool { return t.elsewhere }
+
+// draw copies the emulator's cells into a view, bounded by its size.
+func (t *Terminal) draw(v grid.View) {
 	if t.pending.Swap(false) {
 		t.mu.Lock()
 		t.term.Render(t.g)

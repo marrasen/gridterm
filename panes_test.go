@@ -129,6 +129,11 @@ type testApp struct {
 	// shells are the fake sessions, in the order the panes were made.
 	shells []*pipeSession
 
+	// screen is the image the window draws on, kept between frames: a
+	// fresh one arrives blank, and the compositor puts the whole stack
+	// back when it does.
+	screen *ebiten.Image
+
 	// copied is what the window has put on the clipboard. Its own, not
 	// the clipboard of whoever is running the tests: a test run must
 	// not reach into that.
@@ -153,6 +158,7 @@ func newTestApp(t *testing.T, cols, rows int) *testApp {
 		colours:    vt.DefaultPalette(),
 		scrollback: 64,
 		panes:      make(map[*term.Terminal]*conns.Entry),
+		scaled:     make(map[*term.Terminal]*scaledPane),
 		ended:      make(map[*term.Terminal]bool),
 		exits:      make(chan struct{}, exitQueue),
 		lastSize:   [2]int{cols, rows},

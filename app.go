@@ -259,6 +259,21 @@ type app struct {
 	// by the sidebar's rows rather than the window's.
 	sideGeo render.Geometry
 
+	// scaled are the panes whose screen is bigger than the room the
+	// layout has for them, each drawn on a grid and a layer of its own
+	// and blitted to fit.
+	scaled map[*term.Terminal]*scaledPane
+
+	// scaledHeld is the scaled pane a press was taken by, and
+	// scaledButton the button it is waiting for, so a drag that wandered
+	// off the pane still belongs to it.
+	scaledHeld   *scaledPane
+	scaledButton input.MouseButton
+
+	// pointer is the pixel the mouse was last read at, for routing a
+	// click by something other than the window's cells.
+	pointer [2]int
+
 	// geo is where the window's grid lands in pixels, for routing a
 	// click and for placing the glass behind a dialog. Kept apart from
 	// the one the renderer draws with.
@@ -325,7 +340,7 @@ func (a *app) Update() error {
 	// and a region measured a frame ago would not agree on where the
 	// sidebar's rows are.
 	for _, ev := range a.mouse.Poll(a.cellAt) {
-		if _, err := a.root.HandleMouse(ev); err != nil {
+		if _, err := a.routeMouse(ev); err != nil {
 			a.reportError("That could not be done", err)
 		}
 	}
@@ -335,6 +350,7 @@ func (a *app) Update() error {
 	// the frame would be laid out for padding the window no longer has.
 	a.applyPads()
 	a.placeRegions()
+	a.placeScaled()
 
 	a.updateTitle()
 	return nil
@@ -367,6 +383,7 @@ func (a *app) Draw(screen *ebiten.Image) {
 	if a.sideRegion != nil {
 		a.sideRegion.draw()
 	}
+	a.drawScaled()
 	a.drawModals()
 	a.comp.Draw(screen)
 	if a.stats != nil {
@@ -412,6 +429,7 @@ func (a *app) resizeTo(pxW, pxH int) {
 	// runs before the first frame, and again before the input of any
 	// frame the window was resized in.
 	a.placeRegions()
+	a.placeScaled()
 }
 
 // setGridSize tells the grids and the widget tree about a new size in

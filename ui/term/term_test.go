@@ -1056,3 +1056,36 @@ type nothing struct{}
 
 func (*nothing) Layout(ui.Size) {}
 func (*nothing) Draw(grid.View) {}
+
+// A terminal the host draws elsewhere leaves the room the layout gave it
+// blank, and still paints its whole screen when the host asks for it.
+//
+// The host is drawing a held screen that does not fit that room, shrunk
+// to fit, on a layer of its own. Whatever the tree last painted there
+// would otherwise show around the picture.
+func TestATerminalDrawnElsewhereBlanksItsRoom(t *testing.T) {
+	term, f := newTestTerm(t, 20, 4, Config{})
+	f.feed(t, term, "hello")
+
+	term.SetElsewhere(true)
+	g := draw(term, 20, 4)
+
+	if got := rowText(g, 0); got != "" {
+		t.Errorf("row 0 = %q, want nothing: the host is drawing this screen", got)
+	}
+	if !term.Elsewhere() {
+		t.Error("the terminal does not say the host is drawing it")
+	}
+
+	// The host's own draw is the one that paints it.
+	own := grid.New(20, 4, color.RGBA{}, color.RGBA{})
+	term.DrawScreen(own.View())
+	if got := rowText(own, 0); got != "hello" {
+		t.Errorf("the host's copy holds %q, want %q", got, "hello")
+	}
+
+	term.SetElsewhere(false)
+	if got := rowText(draw(term, 20, 4), 0); got != "hello" {
+		t.Errorf("back in the tree the row is %q, want %q", got, "hello")
+	}
+}

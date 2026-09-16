@@ -3,17 +3,6 @@
 Things Marcus has asked for that are not done yet. Newest first within
 each group. A line goes when the work is in and reviewed.
 
-## Now
-
-- **Scale a held screen to fit the host's window.** A watched screen now
-  takes the watcher's size, and the machine it runs on draws as much of
-  it as fits in the room its own layout gives that pane. When the
-  watcher's screen is the bigger of the two, the rest is not shown
-  there. Marcus asked for it to be scaled instead, so all of it is
-  visible however the two sizes differ. Needs the pane drawn to an
-  offscreen image and blitted scaled, which the compositor does not do
-  yet.
-
 ## Connections
 
 - **"Files" should connect when the machine is not connected**, the way

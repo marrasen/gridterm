@@ -185,6 +185,7 @@ func main() {
 	a.scrollback = *scroll
 	a.colours = pal
 	a.panes = make(map[*term.Terminal]*conns.Entry)
+	a.scaled = make(map[*term.Terminal]*scaledPane)
 	a.ended = make(map[*term.Terminal]bool)
 	a.exits = make(chan struct{}, exitQueue)
 

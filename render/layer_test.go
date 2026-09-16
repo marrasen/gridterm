@@ -5,9 +5,52 @@ import (
 	"image/color"
 	"testing"
 
+	"github.com/hajimehoshi/ebiten/v2"
+
 	"github.com/marrasen/gridterm/glyph"
 	"github.com/marrasen/gridterm/grid"
 )
+
+// geoMOf reads a blit's matrix as the six numbers it is made of.
+func geoMOf(op *ebiten.DrawImageOptions) [6]float64 {
+	return [6]float64{
+		op.GeoM.Element(0, 0), op.GeoM.Element(0, 1), op.GeoM.Element(0, 2),
+		op.GeoM.Element(1, 0), op.GeoM.Element(1, 1), op.GeoM.Element(1, 2),
+	}
+}
+
+// A layer that asks for a scale is blitted at that size, from the corner
+// it sits on.
+//
+// The scale goes on before the move. The other way round the layer would
+// land at a fraction of its own corner, which is nowhere in particular.
+func TestBlitOpScalesBeforeItMoves(t *testing.T) {
+	op := blitOp(&Layer{X: 30, Y: 12, Scale: 0.5})
+
+	if got, want := geoMOf(op), [6]float64{0.5, 0, 30, 0, 0.5, 12}; got != want {
+		t.Errorf("the blit is %v, want %v: half size at 30,12", got, want)
+	}
+	// Text shrunk by anything but a whole number is a mess when the
+	// nearest pixel is taken.
+	if op.Filter != ebiten.FilterLinear {
+		t.Errorf("filter = %v, want linear while the layer is scaled", op.Filter)
+	}
+}
+
+// A layer with no scale is blitted exactly as it was before there was
+// one: moved, and nothing else.
+func TestBlitOpLeavesAnUnscaledLayerAlone(t *testing.T) {
+	for _, scale := range []float64{0, 1} {
+		op := blitOp(&Layer{X: 30, Y: 12, Scale: scale})
+
+		if got, want := geoMOf(op), [6]float64{1, 0, 30, 0, 1, 12}; got != want {
+			t.Errorf("with Scale %v the blit is %v, want %v", scale, got, want)
+		}
+		if op.Filter != ebiten.FilterNearest {
+			t.Errorf("with Scale %v the filter is %v, want the nearest pixel", scale, op.Filter)
+		}
+	}
+}
 
 var (
 	fg = color.RGBA{0xff, 0xff, 0xff, 0xff}
@@ -89,6 +132,7 @@ func TestSamePlacementsSpotsEveryVisibleChange(t *testing.T) {
 		{"moved", func() { a.X = 5 }, func() { a.X = 0 }},
 		{"moved down", func() { a.Y = 5 }, func() { a.Y = 0 }},
 		{"hidden", func() { b.Hidden = true }, func() { b.Hidden = false }},
+		{"scaled", func() { a.Scale = 0.5 }, func() { a.Scale = 0 }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tc.change()

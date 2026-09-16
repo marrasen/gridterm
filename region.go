@@ -197,10 +197,12 @@ func padOf(pads []grid.Pad, i int) grid.Pad {
 // the divider is dragged and goes away when it is closed, neither of
 // which changes the size of the window.
 func (a *app) placeRegions() {
+	// The window first, whether or not it has a region on it: a pane
+	// drawn on a layer of its own is placed by these measurements too.
+	a.renderer.Measure(a.g, &a.geo)
 	if a.sideRegion == nil {
 		return
 	}
-	a.renderer.Measure(a.g, &a.geo)
 	a.sideRegion.place(a.sidebarArea(), &a.geo, a.g.ColPads())
 	a.sideRegion.measure(&a.geo, a.renderer.Metrics(), &a.sideGeo)
 }
@@ -233,6 +235,10 @@ func (a *app) sidebarArea() ui.Rect {
 // landed on. The same goes for a drag that began somewhere else and has
 // wandered in, which belongs to whoever took the press.
 func (a *app) cellAt(px, py int) (col, row int) {
+	// Kept, because a pane drawn scaled has more cells than the room the
+	// tree gave it: a click on one is routed by the pixel rather than by
+	// the cell.
+	a.pointer = [2]int{px, py}
 	if a.overRegion(px, py) {
 		return a.sideRegion.cellAt(px, py, &a.sideGeo)
 	}

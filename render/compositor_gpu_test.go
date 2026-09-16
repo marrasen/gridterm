@@ -103,6 +103,38 @@ func TestCompositorMovingALayerRedrawsTheScreen(t *testing.T) {
 	}
 }
 
+// A layer drawn at a new scale covers different pixels with no cell of
+// its grid touched, so the screen is put back first.
+//
+// The texture is not repainted: it keeps the grid's own size whatever
+// the scale, so only the blit changes.
+func TestCompositorScalingALayerRedrawsTheScreen(t *testing.T) {
+	r := newTestRenderer(t)
+	c := NewCompositor(r)
+	screen := ebiten.NewImage(320, 240)
+	l := &Layer{Grid: grid.New(20, 8, fg, bg)}
+	c.Add(l)
+	c.Draw(screen)
+	c.Draw(screen)
+	if !c.Stats().Skipped {
+		t.Fatal("the second frame was drawn, so the layer was not idle to begin with")
+	}
+
+	l.Scale = 0.5
+	c.Draw(screen)
+
+	got := c.Stats()
+	if got.Skipped || got.Blits != 1 {
+		t.Errorf("after the scale changed = %+v, want the layer blitted again", got)
+	}
+	if !got.Cleared {
+		t.Error("the screen was not wiped, so the pixels the layer vacated are still there")
+	}
+	if got.Repainted != 0 {
+		t.Errorf("repainted %d layers, want none: the texture is the same size and the same cells", got.Repainted)
+	}
+}
+
 // Padding that moved is drawn, and the screen is put back first.
 //
 // Padding shifts pixels without changing a single cell, so no damage

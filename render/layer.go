@@ -41,6 +41,14 @@ type Layer struct {
 	// already on screen as its backdrop. Nil for an ordinary layer.
 	Frost *Frost
 
+	// Scale shrinks or blows up the texture as it is blitted, for a grid
+	// drawn at a size the room it goes in cannot hold. 0 and 1 both mean
+	// none.
+	//
+	// The texture keeps the grid's own pixel size, so the text is
+	// rasterised once at full size and the scaling costs one blit.
+	Scale float64
+
 	// Geom is where the layer's grid lands in pixels, for a layer whose
 	// owner works that out rather than leaving it to the compositor.
 	// Nil for an ordinary layer, which is measured against the window.
@@ -221,6 +229,11 @@ type placement struct {
 	x, y   int
 	hidden bool
 
+	// scale is how big the texture is blitted, because a layer drawn at
+	// a different size covers different pixels with no cell of its grid
+	// touched.
+	scale float64
+
 	// frost is where the glass is, because moving it changes the screen
 	// without dirtying any grid. Nothing in the program does that today:
 	// a dialog that moves has redrawn its cells. It is here so that a
@@ -387,12 +400,25 @@ func (c *Compositor) Draw(screen *ebiten.Image) {
 		if l.Frost != nil && !l.Frost.Rect.Empty() {
 			c.drawFrost(screen, l)
 		}
-		op := &ebiten.DrawImageOptions{}
-		op.GeoM.Translate(float64(l.X), float64(l.Y))
-		screen.DrawImage(l.tex, op)
+		screen.DrawImage(l.tex, blitOp(l))
 		c.stats.Blits++
 	}
 
+}
+
+// blitOp is how a layer's texture goes on screen: scaled if it asked to
+// be, then moved to its place.
+//
+// Linear filtering while it is scaled, because text shrunk by anything
+// but a whole number is a mess when the nearest pixel is taken.
+func blitOp(l *Layer) *ebiten.DrawImageOptions {
+	op := &ebiten.DrawImageOptions{}
+	if s := l.Scale; s > 0 && s != 1 {
+		op.GeoM.Scale(s, s)
+		op.Filter = ebiten.FilterLinear
+	}
+	op.GeoM.Translate(float64(l.X), float64(l.Y))
+	return op
 }
 
 // measure returns where a layer's grid lands in pixels, working it out
@@ -434,7 +460,7 @@ func (c *Compositor) markAllStale() {
 // part of it: swapping one is caught by Layer.lastGrid, which has to
 // mark the layer behind as well.
 func placementOf(l *Layer) placement {
-	p := placement{l: l, x: l.X, y: l.Y, hidden: l.Hidden}
+	p := placement{l: l, x: l.X, y: l.Y, hidden: l.Hidden, scale: l.Scale}
 	if l.Frost != nil {
 		p.frost = l.Frost.Rect
 	}

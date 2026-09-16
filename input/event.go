@@ -233,6 +233,15 @@ func encodeKey(e Event, m Mode, dst []byte) []byte {
 		if rest := encodeKey(stripped, m, nil); rest != nil {
 			return append(append(dst, 0x1b), rest...)
 		}
+		// A letter carries no sequence of its own and arrives as text,
+		// so Alt+<letter> is ESC and then that letter.
+		if e.Key >= KeyA && e.Key <= KeyZ && !e.Ctrl() {
+			letter := rune('a' + e.Key - KeyA)
+			if e.Shift() {
+				letter = rune('A' + e.Key - KeyA)
+			}
+			return utf8.AppendRune(append(dst, 0x1b), letter)
+		}
 	}
 
 	switch e.Key {

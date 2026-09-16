@@ -252,3 +252,26 @@ func TestEveryKeyHasAName(t *testing.T) {
 		t.Errorf("the key past the last one is named %q, so the walk never stops", got)
 	}
 }
+
+// Alt and a letter is ESC and then that letter, which is what a program
+// reads as Meta+letter: Alt+F is how readline moves forward a word.
+//
+// The letter carries no sequence of its own and would otherwise arrive
+// as ordinary text, with the Alt lost on the way.
+func TestAltLetterIsEscapeThenTheLetter(t *testing.T) {
+	for _, tc := range []struct {
+		ev   Event
+		want string
+	}{
+		{Event{Kind: KeyPress, Key: KeyF, Mods: ModAlt}, "\x1bf"},
+		{Event{Kind: KeyPress, Key: KeyA, Mods: ModAlt}, "\x1ba"},
+		{Event{Kind: KeyPress, Key: KeyZ, Mods: ModAlt}, "\x1bz"},
+		{Event{Kind: KeyPress, Key: KeyF, Mods: ModAlt | ModShift}, "\x1bF"},
+		// Ctrl still wins the letter, and Alt still prefixes it.
+		{Event{Kind: KeyPress, Key: KeyC, Mods: ModAlt | ModCtrl}, "\x1b\x03"},
+	} {
+		if got := enc(tc.ev); string(got) != tc.want {
+			t.Errorf("%v+%v = %q, want %q", tc.ev.Mods, tc.ev.Key, got, tc.want)
+		}
+	}
+}

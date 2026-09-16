@@ -222,6 +222,9 @@ Each item is small; group them into a commit per package.
   reviewer; left for the phases that touch those packages.
 - `TODO.md` and `review/` updated: a line goes when its work is in.
 
+Done by 9ec8421 Make the tests start where the user does, with one way to wait.
+Done by 70caa8c Make the dial tripwire see nested calls, and record what is only partly closed.
+
 ## What is not in this plan
 
 From `TODO.md`, and deliberately later: scaling a held screen; the type

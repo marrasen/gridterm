@@ -86,6 +86,9 @@ named above each exist once.
 - `review/` files: a finding closed by Phases 1-7 gets a line saying
   which commit closed it.
 
+Done by 9ec8421 Make the tests start where the user does, with one way to wait.
+Done by 70caa8c Make the dial tripwire see nested calls, and record what is only partly closed.
+
 ## Step 2 -- the connection log: kept, coloured, folded, viewable
 
 `TODO.md` "Fold the connection log", "Colour the connection log",

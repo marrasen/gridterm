@@ -130,6 +130,8 @@ path. `servers_test.go:91-99` has the same mismatch. Use `openTakeOver`
 plus `typeIntoField` plus `pressButton`, as `TestOpenServerRejectsABadTarget`
 already does for the failure case.
 
+Closed by 9ec8421 Make the tests start where the user does, with one way to wait.
+
 ### 10. Four ways to reach a saved window are tested; none is a way a user asks [bypass]
 
 `book_test.go:1157-1190`.
@@ -140,6 +142,8 @@ the only click-through version is a separate test. Add the plus menu
 and the palette command as fifth and sixth cases -- the two entry
 points that have actually been wrong.
 
+Closed by 9ec8421 Make the tests start where the user does, with one way to wait.
+
 ### 11. Most plus-menu lines are asserted as offered and never chosen [coverage] [bypass]
 
 `chooseMenuItem` is used at three sites; `clickPlus` at six.
@@ -147,6 +151,8 @@ points that have actually been wrong.
 `server.editThis` and `server.forget` are never *run* from a menu.
 `forget_test.go:18` is titled "can be edited and forgotten from its own
 plus menu" and checks only `offers(menu, "server.forget")`.
+
+Closed by 9ec8421 Make the tests start where the user does, with one way to wait.
 
 ### 12. `openFilesOn` has the two-switch shape that caused the last four bugs, and nothing drives it from the UI [bypass] [coverage]
 
@@ -157,10 +163,8 @@ directly, so the `conn.files` line on a window's plus menu is never
 exercised end to end. **Speculation**: the failure is one branch from
 the one fixed in `c9186f2`.
 
-Partly closed by d96de72 Decide what kind of host a name is in one place: `openFilesOn` goes
-through the one switch that handles every kind. Nothing drove
-`conn.files` from the UI until the test-hygiene step, whose hash goes
-here.
+For the two-switch shape: closed by d96de72 Decide what kind of host a name is in one place.
+For the coverage: closed by 9ec8421 Make the tests start where the user does, with one way to wait.
 
 ### 13. `TestTheHereCommandsDelegate` promises the here-commands and checks one [source-reading]
 
@@ -181,6 +185,12 @@ of. But they are substring greps: `callersOf` misses a wrapper, an
 alias or a method value, and skips only whole-line comments. Replace
 the string matching with `go/ast` and keep the same assertions.
 
+Partly closed by 70caa8c Make the dial tripwire see nested calls, and record what is only partly closed:
+`callersOf` reads the syntax tree, so a method value and a name behind a
+chained call both count, and one in a comment or a string does not. The
+verdict itself stands: a source-reading test is a second line, not the
+first.
+
 ### 15. A whole package is untested on the platform it is developed on [coverage]
 
 `session/local_test.go:1` is `//go:build !windows`. On Windows -- the
@@ -196,6 +206,8 @@ goroutine. Under `-race` on a loaded machine this is the most likely
 source of intermittent failures in the root package. Fold it into
 `waitFor`'s budget.
 
+Closed by 9ec8421 Make the tests start where the user does, with one way to wait.
+
 ### 17. Handed-over panes leak a listener past the end of the test [flaky]
 
 `newTestApp`'s cleanup never calls `closeAgents`. Any test that hands a
@@ -204,6 +216,8 @@ accept goroutine running for the rest of the binary (`agents_test.go`
 has about ten). This, not the mutated code, is the likelier cause of
 that test's intermittent failure.
 
+Closed by 9ec8421 Make the tests start where the user does, with one way to wait.
+
 ### 18. Positional field indexing in app dialogs [brittle]
 
 `takeover_test.go:1537-1538`, `servers_test.go:89`, `browse_test.go:362`,
@@ -211,12 +225,16 @@ that test's intermittent failure.
 already hit; `typeIntoField` was written to fix it, with the comment "by
 label rather than by position", and these six sites do not use it.
 
+Closed by 9ec8421 Make the tests start where the user does, with one way to wait.
+
 ### 19. `answer(…, values...)` is positional typing wearing a helper's name [helpers] [brittle]
 
 `ask_test.go:59-72` types values into whatever has focus, tabbing
 between them, never checking a label. Adding a field to the
 keyboard-interactive dialog silently swaps the answers. Make it take
 label and value pairs and delegate to `typeIntoField`.
+
+Closed by 9ec8421 Make the tests start where the user does, with one way to wait.
 
 ### 20. Twelve waiting helpers, three budgets, two ways to open a dialog [helpers]
 
@@ -228,6 +246,8 @@ with different signatures in other packages. `waitUntilPumped` and
 `waitFor` are the same function with the arguments swapped. Six
 open-coded `net.SplitHostPort` calls beside `hostOf`/`portOf`. Four
 key-making helpers.
+
+Closed by 9ec8421 Make the tests start where the user does, with one way to wait.
 
 ### 21. Package variables mutated by tests with no parallel protection [brittle]
 
@@ -257,6 +277,8 @@ Closed by 4c44b5a Make six tests able to fail for the reason they name.
 menus by shape, and a command id there that is never registered draws
 greyed out with no test noticing.
 
+Closed by 9ec8421 Make the tests start where the user does, with one way to wait.
+
 ### 25. An unfalsifiable guard in the wrong-code test [passes-with-bug]
 
 `agents_test.go:419-422`: `swap` is `"z"` unless the code ends in it,
@@ -270,6 +292,8 @@ malformed codes would remove the question.
 `browse_test.go:448` asserts `Panes()[3]`. Adding a heading or a pinned
 row moves all of them. `serverRow` in `machines_gaps_test.go:31` is the
 pattern to use.
+
+Closed by 9ec8421 Make the tests start where the user does, with one way to wait.
 
 ### 27. Coverage shape
 

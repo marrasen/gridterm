@@ -150,7 +150,8 @@ pays back soonest.
    a user action starts at the click, the menu line, the button or the
    chord. Fold the twelve waiting helpers into one. Extend `checkTree`
    to the registry.
-   Partly closed by the test-hygiene step, whose hash goes here.
+   Partly closed by 9ec8421 Make the tests start where the user does, with one way to wait:
+   the tests start at the click and there is one waiting helper.
    `checkTree` still says nothing about the registry.
 6. **Fold the duplicated widget logic**: three list state machines into
    one, five truncation helpers into one, two colour mixers into one,

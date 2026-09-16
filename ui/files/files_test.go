@@ -2494,3 +2494,117 @@ func TestBrowserDragRedrawsAndThenSettles(t *testing.T) {
 		t.Fatalf("an idle frame after the drag dirtied rows %v", dirty)
 	}
 }
+
+// blank is a widget that draws nothing and records what it is handed,
+// for putting a browser somewhere other than the top of the tree.
+type blank struct {
+	size ui.Size
+	seen []input.MouseEvent
+}
+
+func (w *blank) Layout(size ui.Size) { w.size = size }
+func (w *blank) Draw(grid.View)      {}
+func (w *blank) HandleMouse(ev input.MouseEvent) (bool, error) {
+	w.seen = append(w.seen, ev)
+	return true, nil
+}
+
+// Only the button that started the drag ends it. Another one coming up
+// proves nothing: the first may still be down.
+func TestBrowserDragIgnoresAnotherButtonComingUp(t *testing.T) {
+	b, _ := many(t, 3)
+	r := underRoot(b, 92, 12)
+	at := dividerCol(t, b, 92, 12, 0)
+
+	r.HandleMouse(pressCol(at))
+	r.HandleMouse(moveCol(25))
+	r.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseRight, Col: 25, Row: 3,
+	})
+	r.HandleMouse(input.MouseEvent{
+		Kind: input.MouseRelease, Button: input.MouseRight, Col: 25, Row: 3,
+	})
+	r.HandleMouse(moveCol(20))
+
+	if got := widths(b)[0]; got != 20 {
+		t.Fatalf("the first pane is %d wide, want the drag to carry on to 20", got)
+	}
+	// And the left button still ends it.
+	r.HandleMouse(releaseCol(20))
+	r.HandleMouse(moveCol(40))
+	if got := widths(b)[0]; got != 20 {
+		t.Fatalf("the first pane is %d wide after the button came up, want 20", got)
+	}
+}
+
+// A browser below the top of the tree keeps the pointer all the same:
+// the root holds it for whoever took the press, so a drag that wanders
+// out of the browser still moves its divider.
+func TestBrowserDragCarriesOnOutsideItsOwnArea(t *testing.T) {
+	b, _ := many(t, 3)
+	beside := &blank{}
+	r := &ui.Root{}
+	r.SetWidget(ui.NewSplit(ui.Columns, beside, b))
+	r.Layout(ui.Rect{Cols: 185, Rows: 12})
+
+	area, shown := r.AreaOf(b)
+	if !shown {
+		t.Fatal("the browser is not on screen")
+	}
+	if area.X <= 0 {
+		t.Fatalf("the browser starts at column %d, so there is nothing to its left", area.X)
+	}
+	at := dividerCol(t, b, area.Cols, area.Rows, 0)
+
+	r.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft, Col: area.X + at, Row: 3,
+	})
+	if got := r.Holding(); got != ui.Widget(b) {
+		t.Fatalf("the pointer is held by %v, want the browser", got)
+	}
+	// Right out of the browser and into the widget beside it.
+	r.HandleMouse(input.MouseEvent{
+		Kind: input.MouseMove, Button: input.MouseLeft, Col: 0, Row: 3,
+	})
+
+	if got := widths(b)[0]; got != 1 {
+		t.Fatalf("the first pane is %d wide, want the drag clamped to the browser's edge", got)
+	}
+	if len(beside.seen) != 0 {
+		t.Fatalf("the widget beside the browser saw %d events of the drag", len(beside.seen))
+	}
+}
+
+// A browser too narrow to give every pane a cell leaves the panes it
+// squeezed out at the size they had, the way a split does. Telling a
+// pane it has no columns is not the same as telling it nothing.
+func TestBrowserLeavesASqueezedPaneAlone(t *testing.T) {
+	b, _ := many(t, 5)
+	was := widths(b)
+
+	b.Layout(ui.Size{Cols: 4, Rows: 12})
+
+	if got := widths(b); !equalInts(got, was) {
+		t.Fatalf("the panes are %v wide, want the %v they had: there is no room to share", got, was)
+	}
+}
+
+// A browser built without NewBrowser is idle to begin with: nothing is
+// dragged until a press on a divider says so.
+func TestABrowserIsNotDraggingUntilAPressSaysSo(t *testing.T) {
+	b := &Browser{}
+	b.Add(here(t, t.TempDir()))
+	b.Add(here(t, t.TempDir()))
+	b.Layout(ui.Size{Cols: 91, Rows: 12})
+	was := widths(b)
+
+	if _, err := b.HandleMouse(input.MouseEvent{
+		Kind: input.MouseMove, Button: input.MouseLeft, Col: 10, Row: 3,
+	}); err != nil {
+		t.Fatalf("the move failed: %v", err)
+	}
+
+	if got := widths(b); !equalInts(got, was) {
+		t.Fatalf("the panes are %v wide, want the %v they had: nobody has pressed a divider", got, was)
+	}
+}

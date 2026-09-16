@@ -370,3 +370,29 @@ func TestDockDividerWithNoColourIsBlank(t *testing.T) {
 		t.Fatalf("the divider column holds %q, want a blank", got)
 	}
 }
+
+// TestDockDragIgnoresAnotherButtonComingUp checks that only the button
+// that started the drag ends it. Another one coming up proves nothing:
+// the first may still be down, and the pointer is still the dock's.
+func TestDockDragIgnoresAnotherButtonComingUp(t *testing.T) {
+	d, panel, _ := newTestDock(t, 24, 100, 30)
+	r := rootOver(d, 100, 30)
+
+	r.HandleMouse(pressAt(24, 3))
+	r.HandleMouse(moveTo(30, 3))
+	for _, ev := range rightTap(30, 3) {
+		r.HandleMouse(ev)
+	}
+	r.HandleMouse(moveTo(40, 3))
+
+	if d.Width != 40 || panel.size.Cols != 40 {
+		t.Fatalf("width = %d and the panel is %d wide, want the drag to carry on to 40",
+			d.Width, panel.size.Cols)
+	}
+	// And the left button still ends it.
+	r.HandleMouse(releaseAt(40, 3))
+	r.HandleMouse(moveTo(70, 3))
+	if d.Width != 40 {
+		t.Fatalf("width = %d after the button came up, want 40", d.Width)
+	}
+}

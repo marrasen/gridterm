@@ -95,8 +95,10 @@ type Browser struct {
 	clip     Clipboard
 
 	// weights say where each divider sits, one per boundary between two
-	// panes, as a share of the room the panes divide. They rise from
-	// left to right, and the last pane always ends at the right edge, so
+	// panes, as a share of the room the panes divide. They never fall
+	// from left to right, and two may be equal: a divider dragged onto
+	// its neighbour stops there, and cuts is what holds the two rules
+	// apart on screen. The last pane always ends at the right edge, so
 	// there is no weight for it.
 	//
 	// Adding or taking away a pane shares the room out evenly again.
@@ -105,8 +107,11 @@ type Browser struct {
 	// cut is scratch for paneCell, reused to keep drawing off the heap.
 	cut []int
 
-	// dragging is the boundary being moved, or -1 when none is.
-	dragging int
+	// dragging says a divider is being moved, dragAt which boundary, and
+	// dragButton which button has to come up to end it.
+	dragging   bool
+	dragAt     int
+	dragButton input.MouseButton
 }
 
 // NewBrowser puts panes side by side, with the keys on the first.
@@ -115,7 +120,7 @@ type Browser struct {
 // the user wants to look at. Building a browser is not the same thing,
 // so it opens where a browser always has.
 func NewBrowser(panes ...*Pane) *Browser {
-	b := &Browser{keys: BrowserKeys(), dragging: -1}
+	b := &Browser{keys: BrowserKeys()}
 	for _, p := range panes {
 		b.Add(p)
 	}
@@ -344,7 +349,7 @@ func (b *Browser) work(one bool) (Work, bool) {
 // A drag is given up with them: the boundary the pointer was holding is
 // not the same boundary once the panes have changed.
 func (b *Browser) shareEvenly() {
-	b.dragging = -1
+	b.dragging = false
 	n := len(b.panes)
 	if n < 2 {
 		b.weights = nil
@@ -367,7 +372,13 @@ func (b *Browser) weightAt(i, n int) float64 {
 }
 
 // cuts returns the column each pane ends at within the room left after
-// the dividers, keeping a cell for every pane.
+// the dividers, keeping a cell for every pane while there is one to
+// keep.
+//
+// Every pane gets a cell as long as the box is 2n-1 columns or wider,
+// which is a cell each and a rule between. Below that the panes on the
+// right are handed no columns at all, and Layout leaves those alone
+// rather than sizing them to nothing.
 //
 // The last entry is the room itself, so the last pane always ends at the
 // right edge whatever the weights say. The slice is reused between
@@ -419,13 +430,30 @@ func (b *Browser) paneCell(i, cols int) (start, end int) {
 	return min(start, cols), min(max(end, start), cols)
 }
 
+// dividerCol returns the column the rule before pane i is drawn in. It
+// reports false for the first pane, which has no rule before it, and for
+// a pane the sharing left no room for.
+//
+// Drawing the rule and finding the one the pointer grabbed both go
+// through here, so there is one answer rather than two that have to
+// agree. It reads paneCell, which is also where ChildArea gets its
+// answer, so all three are the same arithmetic.
+func (b *Browser) dividerCol(i, cols int) (int, bool) {
+	if i <= 0 || i >= len(b.panes) {
+		return 0, false
+	}
+	start, _ := b.paneCell(i, cols)
+	if start <= 0 {
+		return 0, false
+	}
+	return start - 1, true
+}
+
 // dividerAt returns the boundary drawn in a column, or false when the
 // column belongs to a pane.
 func (b *Browser) dividerAt(col int) (int, bool) {
 	for i := 1; i < len(b.panes); i++ {
-		// The same column Draw puts the rule in.
-		start, _ := b.paneCell(i, b.size.Cols)
-		if start > 0 && col == start-1 {
+		if at, ok := b.dividerCol(i, b.size.Cols); ok && col == at {
 			return i - 1, true
 		}
 	}
@@ -434,11 +462,11 @@ func (b *Browser) dividerAt(col int) (int, bool) {
 
 // dragBoundary reports which boundary the pointer is moving, if any.
 func (b *Browser) dragBoundary() (int, bool) {
-	return b.dragging, b.dragging >= 0 && b.dragging < len(b.panes)-1
+	return b.dragAt, b.dragging && b.dragAt >= 0 && b.dragAt < len(b.panes)-1
 }
 
 // CancelGesture gives up a drag whose release is not coming.
-func (b *Browser) CancelGesture() { b.dragging = -1 }
+func (b *Browser) CancelGesture() { b.dragging = false }
 
 // dragTo moves one divider to a column, stopping it at its neighbours so
 // the weights stay in order.
@@ -462,11 +490,18 @@ func (b *Browser) dragTo(at, col int) {
 }
 
 // Layout gives every pane its share of the width, less the bar of keys.
+//
+// A pane the sharing left no room for keeps the size it had, the way a
+// split leaves a pane it has squeezed out alone: telling a pane it has
+// no columns is not the same as telling it nothing.
 func (b *Browser) Layout(size ui.Size) {
 	b.size = size
 	rows := max(size.Rows-b.barRows(), 0)
 	for i := range b.panes {
 		start, end := b.paneCell(i, size.Cols)
+		if end <= start || rows <= 0 {
+			continue
+		}
 		b.panes[i].Layout(ui.Size{Cols: end - start, Rows: rows})
 	}
 }
@@ -491,10 +526,10 @@ func (b *Browser) Draw(v grid.View) {
 	body := rows - b.barRows()
 	for i, p := range b.panes {
 		start, end := b.paneCell(i, cols)
-		if i > 0 && start > 0 {
+		if at, ok := b.dividerCol(i, cols); ok {
 			// The divider goes in the column the sharing left for it.
 			for y := 0; y < body; y++ {
-				v.Set(start-1, y, grid.Cell{
+				v.Set(at, y, grid.Cell{
 					Rune: divider, FG: b.Style.NoteFG, BG: b.Style.BG, Width: 1,
 				})
 			}
@@ -779,7 +814,11 @@ func (b *Browser) HandleMouse(ev input.MouseEvent) (bool, error) {
 	if at, ok := b.dragBoundary(); ok {
 		switch {
 		case ev.Kind == input.MouseRelease:
-			b.dragging = -1
+			// Only the button that started the drag ends it. Another one
+			// coming up proves nothing: the first may still be down.
+			if ev.Button == b.dragButton {
+				b.dragging = false
+			}
 		case !ev.Button.IsWheel():
 			b.dragTo(at, ev.Col)
 		}
@@ -803,7 +842,7 @@ func (b *Browser) HandleMouse(ev input.MouseEvent) (bool, error) {
 	}
 	if ev.Kind == input.MousePress && !ev.Button.IsWheel() {
 		if at, ok := b.dividerAt(ev.Col); ok {
-			b.dragging = at
+			b.dragging, b.dragAt, b.dragButton = true, at, ev.Button
 			return true, nil
 		}
 	}

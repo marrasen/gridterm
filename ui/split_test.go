@@ -1428,3 +1428,39 @@ func TestSplitDragRedrawsBothHalvesAndThenSettles(t *testing.T) {
 		t.Error("an idle frame after the drag dirtied the grid")
 	}
 }
+
+// rightTap is the other button pressed and let go mid-drag, which must
+// not be read as the end of the drag.
+func rightTap(col, row int) []input.MouseEvent {
+	return []input.MouseEvent{
+		{Kind: input.MousePress, Button: input.MouseRight, Col: col, Row: row},
+		{Kind: input.MouseRelease, Button: input.MouseRight, Col: col, Row: row},
+	}
+}
+
+// TestSplitDragIgnoresAnotherButtonComingUp checks that only the button
+// that started the drag ends it. Another one coming up proves nothing:
+// the first may still be down, and the pointer is still the split's.
+func TestSplitDragIgnoresAnotherButtonComingUp(t *testing.T) {
+	a, b := &filler{ch: 'a'}, &filler{ch: 'b'}
+	s := NewSplit(Columns, a, b)
+	r := rootOver(s, 21, 4)
+
+	r.HandleMouse(pressAt(10, 1))
+	r.HandleMouse(moveTo(8, 1))
+	for _, ev := range rightTap(8, 1) {
+		r.HandleMouse(ev)
+	}
+	r.HandleMouse(moveTo(5, 1))
+
+	if a.size.Cols != 5 || b.size.Cols != 15 {
+		t.Fatalf("the halves are %d and %d wide, want the drag to carry on to 5 and 15",
+			a.size.Cols, b.size.Cols)
+	}
+	// And the left button still ends it.
+	r.HandleMouse(releaseAt(5, 1))
+	r.HandleMouse(moveTo(15, 1))
+	if a.size.Cols != 5 {
+		t.Fatalf("the first half is %d wide after the button came up, want 5", a.size.Cols)
+	}
+}

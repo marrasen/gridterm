@@ -52,9 +52,10 @@ type Split struct {
 	size     Size
 	hasFocus bool
 
-	// dragging records that the divider is being moved, so the drag can
-	// be finished or abandoned.
-	dragging bool
+	// dragging records that the divider is being moved, and dragButton
+	// which button has to come up to end it.
+	dragging   bool
+	dragButton input.MouseButton
 }
 
 // NewSplit divides its area between two widgets, evenly to begin with.
@@ -247,7 +248,11 @@ func (s *Split) HandleMouse(ev input.MouseEvent) (bool, error) {
 	if s.dragging {
 		switch {
 		case ev.Kind == input.MouseRelease:
-			s.dragging = false
+			// Only the button that started the drag ends it. Another one
+			// coming up proves nothing: the first may still be down.
+			if ev.Button == s.dragButton {
+				s.dragging = false
+			}
 		case !ev.Button.IsWheel():
 			s.dragTo(ev.Col, ev.Row)
 		}
@@ -255,7 +260,7 @@ func (s *Split) HandleMouse(ev input.MouseEvent) (bool, error) {
 	}
 	if ev.Kind == input.MousePress && !ev.Button.IsWheel() &&
 		!rd.Empty() && rd.Contains(ev.Col, ev.Row) {
-		s.dragging = true
+		s.dragging, s.dragButton = true, ev.Button
 		return true, nil
 	}
 

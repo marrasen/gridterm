@@ -63,9 +63,10 @@ type Dock struct {
 
 	size Size
 
-	// dragging records that the divider is being moved, so the drag can
-	// be finished or abandoned.
-	dragging bool
+	// dragging records that the divider is being moved, and dragButton
+	// which button has to come up to end it.
+	dragging   bool
+	dragButton input.MouseButton
 }
 
 // NewDock puts a panel beside the rest of the window.
@@ -284,7 +285,11 @@ func (d *Dock) HandleMouse(ev input.MouseEvent) (bool, error) {
 	if d.dragging {
 		switch {
 		case ev.Kind == input.MouseRelease:
-			d.dragging = false
+			// Only the button that started the drag ends it. Another one
+			// coming up proves nothing: the first may still be down.
+			if ev.Button == d.dragButton {
+				d.dragging = false
+			}
 		case !ev.Button.IsWheel():
 			d.dragTo(ev.Col)
 		}
@@ -292,7 +297,7 @@ func (d *Dock) HandleMouse(ev input.MouseEvent) (bool, error) {
 	}
 	if ev.Kind == input.MousePress && !ev.Button.IsWheel() &&
 		!divider.Empty() && divider.Contains(ev.Col, ev.Row) {
-		d.dragging = true
+		d.dragging, d.dragButton = true, ev.Button
 		return true, nil
 	}
 

@@ -25,13 +25,13 @@ func TestSemanticPromptWholeCommand(t *testing.T) {
 	h.wantCommand("after C", Command{Integrated: true, Running: true})
 
 	h.write("\x1b]133;D;0\x07")
-	h.wantCommand("after D", Command{Integrated: true, HasStatus: true, Status: 0, Done: 1})
+	h.wantCommand("after D", Command{Integrated: true, hasStatus: true, status: 0, Done: 1})
 }
 
 func TestSemanticPromptNonZeroStatus(t *testing.T) {
 	h := newHarness(t, 20, 4)
 	h.write("\x1b]133;C\x07\x1b]133;D;127\x07")
-	h.wantCommand("after D;127", Command{Integrated: true, HasStatus: true, Status: 127, Done: 1})
+	h.wantCommand("after D;127", Command{Integrated: true, hasStatus: true, status: 127, Done: 1})
 }
 
 // A shell may end a command without saying how it went, and that is a
@@ -65,7 +65,7 @@ func TestSemanticPromptExtraParameters(t *testing.T) {
 	h.wantCommand("after C with an empty option", Command{Integrated: true, Running: true})
 
 	h.write("\x1b]133;D;2;aid=12345\x07")
-	h.wantCommand("after D;2;aid=12345", Command{Integrated: true, HasStatus: true, Status: 2, Done: 1})
+	h.wantCommand("after D;2;aid=12345", Command{Integrated: true, hasStatus: true, status: 2, Done: 1})
 }
 
 // The prompt marks a shell sends between A and B say what kind of
@@ -82,11 +82,11 @@ func TestSemanticPromptKindMarks(t *testing.T) {
 func TestSemanticPromptBothTerminators(t *testing.T) {
 	h := newHarness(t, 20, 4)
 	h.write("\x1b]133;C\x1b\\\x1b]133;D;3\x1b\\")
-	h.wantCommand("after marks ended with ST", Command{Integrated: true, HasStatus: true, Status: 3, Done: 1})
+	h.wantCommand("after marks ended with ST", Command{Integrated: true, hasStatus: true, status: 3, Done: 1})
 
 	h = newHarness(t, 20, 4)
 	h.write("\x1b]133;C\x07\x1b]133;D;3\x07")
-	h.wantCommand("after marks ended with BEL", Command{Integrated: true, HasStatus: true, Status: 3, Done: 1})
+	h.wantCommand("after marks ended with BEL", Command{Integrated: true, hasStatus: true, status: 3, Done: 1})
 }
 
 // A shell that has never sent a mark must not look like one that just
@@ -96,7 +96,7 @@ func TestSemanticPromptSilentShell(t *testing.T) {
 	h.write("$ ls\r\none\r\n$ ")
 	got := h.term.Command()
 	h.wantCommand("after a shell that says nothing", Command{})
-	if got.HasStatus {
+	if _, ok := got.Exit(); ok {
 		t.Errorf("Command() = %+v: a silent shell claims an exit status", got)
 	}
 	if got.Done != 0 {
@@ -142,26 +142,33 @@ func TestSemanticPromptCommandWithNoPrompt(t *testing.T) {
 	h.wantCommand("after a C with no A", Command{Integrated: true, Running: true})
 
 	h.write("\x1b]133;D;0\x07")
-	h.wantCommand("after its D", Command{Integrated: true, HasStatus: true, Done: 1})
+	h.wantCommand("after its D", Command{Integrated: true, hasStatus: true, Done: 1})
 }
 
 // A prompt means the shell is not running a command, even from a shell
-// that never sends D.
+// that never sends D. The status the prompt clears belongs to the
+// command before it.
 func TestSemanticPromptPromptEndsARunningCommand(t *testing.T) {
 	h := newHarness(t, 20, 4)
-	h.write("\x1b]133;C\x07\x1b]133;A\x07")
-	h.wantCommand("after a prompt with no D", Command{Integrated: true})
+	h.write("\x1b]133;C\x07\x1b]133;D;0\x07")
+	h.wantCommand("after a command that succeeded", Command{Integrated: true, hasStatus: true, Done: 1})
+
+	h.write("\x1b]133;A\x07\x1b]133;B\x07\x1b]133;C\x07")
+	h.wantCommand("after a second command started", Command{Integrated: true, Running: true, hasStatus: true, Done: 1})
+
+	h.write("\x1b]133;A\x07")
+	h.wantCommand("after a prompt with no D", Command{Integrated: true, Done: 1})
 }
 
 func TestSemanticPromptTwoCommands(t *testing.T) {
 	h := newHarness(t, 20, 4)
 	h.write("\x1b]133;A\x07\x1b]133;B\x07\x1b]133;C\x07\x1b]133;D;0\x07")
 	first := h.term.Command()
-	h.wantCommand("after the first command", Command{Integrated: true, HasStatus: true, Done: 1})
+	h.wantCommand("after the first command", Command{Integrated: true, hasStatus: true, Done: 1})
 
 	h.write("\x1b]133;A\x07\x1b]133;B\x07\x1b]133;C\x07\x1b]133;D;1\x07")
 	second := h.term.Command()
-	h.wantCommand("after the second command", Command{Integrated: true, HasStatus: true, Status: 1, Done: 2})
+	h.wantCommand("after the second command", Command{Integrated: true, hasStatus: true, status: 1, Done: 2})
 	if second.Done == first.Done {
 		t.Errorf("Done stayed at %d across two commands", first.Done)
 	}
@@ -196,7 +203,7 @@ func TestSemanticPromptNilCallback(t *testing.T) {
 	if _, err := term.Write([]byte("\x1b]133;C\x07\x1b]133;D;0\x07")); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
-	want := Command{Integrated: true, HasStatus: true, Done: 1}
+	want := Command{Integrated: true, hasStatus: true, Done: 1}
 	if got := term.Command(); got != want {
 		t.Errorf("Command() = %+v, want %+v", got, want)
 	}
@@ -227,5 +234,159 @@ func TestSemanticPromptSurvivesAFullScreenProgram(t *testing.T) {
 
 	h.write("\x1b[?1049l")
 	h.write("\x1b]133;D;0\x07")
-	h.wantCommand("after the program exits", Command{Integrated: true, HasStatus: true, Done: 1})
+	h.wantCommand("after the program exits", Command{Integrated: true, hasStatus: true, Done: 1})
+}
+
+func TestSemanticPromptTwoStartsOneFinish(t *testing.T) {
+	h := newHarness(t, 20, 4)
+	h.write("\x1b]133;C\x07\x1b]133;C\x07")
+	h.wantCommand("after a second C", Command{Integrated: true, Running: true})
+
+	h.write("\x1b]133;D;0\x07")
+	h.wantCommand("after the one D", Command{Integrated: true, hasStatus: true, Done: 1})
+	if len(h.ends) != 1 {
+		t.Fatalf("CommandDone fired %+v for two Cs and one D, want one finish", h.ends)
+	}
+}
+
+// A second D for a command that already finished is dropped.
+func TestSemanticPromptSecondDone(t *testing.T) {
+	h := newHarness(t, 20, 4)
+	h.write("\x1b]133;C\x07\x1b]133;D;0\x07\x1b]133;D;1\x07")
+	h.wantCommand("after a second D", Command{Integrated: true, hasStatus: true, Done: 1})
+	if len(h.ends) != 1 {
+		t.Fatalf("CommandDone fired %+v for a second D, want one finish", h.ends)
+	}
+}
+
+// PowerShell reports a native crash as a negative $LASTEXITCODE, such
+// as -1073741819 for an access violation.
+func TestSemanticPromptNegativeStatus(t *testing.T) {
+	h := newHarness(t, 20, 4)
+	h.write("\x1b]133;C\x07\x1b]133;D;-1073741819\x07")
+	h.wantCommand("after an access violation", Command{Integrated: true, hasStatus: true, status: -1073741819, Done: 1})
+}
+
+// RIS resets the screen and leaves the command state alone: the command
+// that sent it is still running.
+func TestSemanticPromptReset(t *testing.T) {
+	h := newHarness(t, 20, 4)
+	h.write("\x1b]133;C\x07\x1bc")
+	h.wantCommand("after RIS", Command{Integrated: true, Running: true})
+
+	h.write("\x1b]133;D;0\x07")
+	h.wantCommand("after its D", Command{Integrated: true, hasStatus: true, Done: 1})
+}
+
+// A full-screen program killed without restoring the ordinary screen
+// leaves Running true for ever: its D was dropped on the alternate
+// screen, and nothing later says the command ended.
+func TestSemanticPromptFrozenByAFullScreenProgram(t *testing.T) {
+	h := newHarness(t, 20, 4)
+	h.write("\x1b]133;C\x07")
+	h.write("\x1b[?1049h")
+	h.write("\x1b]133;D;0\x07")
+	h.write("\x1b[?1049l")
+	h.wantCommand("after a program that never restored the screen", Command{Integrated: true, Running: true})
+	if len(h.ends) != 0 {
+		t.Fatalf("CommandDone fired %+v for a D on the alternate screen", h.ends)
+	}
+}
+
+// A caller reading the command state from inside the callback sees the
+// finish that fired it, Done included.
+func TestSemanticPromptCallbackSeesTheFinish(t *testing.T) {
+	var term *Terminal
+	var seen []Command
+	term = New(20, 4, DefaultPalette(), 100, Callbacks{
+		CommandDone: func(int, bool) { seen = append(seen, term.Command()) },
+	})
+	if _, err := term.Write([]byte("\x1b]133;C\x07\x1b]133;D;5\x07")); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	want := []Command{{Integrated: true, hasStatus: true, status: 5, Done: 1}}
+	if len(seen) != len(want) {
+		t.Fatalf("CommandDone fired %d times (%+v), want %d", len(seen), seen, len(want))
+	}
+	if seen[0] != want[0] {
+		t.Errorf("Command() inside the callback = %+v, want %+v", seen[0], want[0])
+	}
+}
+
+// VS Code's shell integration sends OSC 633, whose A, B, C and D marks
+// have the grammar OSC 133 gives them.
+func TestSemanticPrompt633WholeCommand(t *testing.T) {
+	h := newHarness(t, 20, 4)
+	h.write("\x1b]633;A\x07$ ")
+	h.wantCommand("after A", Command{Integrated: true})
+
+	h.write("\x1b]633;P;Cwd=C:\\\\Users\\\\marcus\x07")
+	h.wantCommand("after a property", Command{Integrated: true})
+
+	h.write("\x1b]633;B\x07")
+	h.wantCommand("after B", Command{Integrated: true})
+
+	h.write("\x1b]633;E;ls -l;1234\x07")
+	h.wantCommand("after the command line", Command{Integrated: true})
+
+	h.write("\x1b]633;C\x07one\r\n")
+	h.wantCommand("after C", Command{Integrated: true, Running: true})
+
+	h.write("\x1b]633;D;-1073741819\x07")
+	h.wantCommand("after D", Command{Integrated: true, hasStatus: true, status: -1073741819, Done: 1})
+}
+
+// The marks 633 has and 133 does not are ignored, and none of them says
+// the shell is integrated.
+func TestSemanticPrompt633UnreadMarks(t *testing.T) {
+	h := newHarness(t, 20, 4)
+	h.write("\x1b]633;E;ls -l;1234\x07")
+	h.write("\x1b]633;P;IsWindows=True\x07")
+	h.write("\x1b]633;F\x07\x1b]633;G\x07")
+	h.write("\x1b]633;EnvJson;{};1234\x07")
+	h.write("\x1b]633;EnvSingleStart;0;1234\x07")
+	h.write("\x1b]633;EnvSingleEntry;PATH;C:\\\\Windows;1234\x07")
+	h.write("\x1b]633;EnvSingleEnd;1234\x07")
+	h.wantCommand("after marks nothing here reads", Command{})
+}
+
+// A bare D with no status is how VS Code's PowerShell integration ends
+// ctrl-C and Enter on an empty line.
+func TestSemanticPrompt633BareDone(t *testing.T) {
+	h := newHarness(t, 20, 4)
+	h.write("\x1b]633;C\x07\x1b]633;D\x07")
+	h.wantCommand("after a bare D", Command{Integrated: true, Done: 1})
+}
+
+func TestSemanticPrompt633MixedWith133(t *testing.T) {
+	h := newHarness(t, 20, 4)
+	h.write("\x1b]133;A\x07\x1b]633;B\x07\x1b]133;C\x07")
+	h.wantCommand("after a command started with marks of both kinds", Command{Integrated: true, Running: true})
+
+	h.write("\x1b]633;D;3\x07")
+	h.wantCommand("after a 633 D finished a 133 C", Command{Integrated: true, hasStatus: true, status: 3, Done: 1})
+}
+
+// Exit is the only way to read the status, so no caller can mistake a
+// command that reported nothing for one that succeeded.
+func TestCommandExit(t *testing.T) {
+	h := newHarness(t, 20, 4)
+	if status, ok := h.term.Command().Exit(); ok || status != 0 {
+		t.Errorf("Exit() = %d, %v before any mark, want 0, false", status, ok)
+	}
+
+	h.write("\x1b]133;C\x07\x1b]133;D\x07")
+	if status, ok := h.term.Command().Exit(); ok || status != 0 {
+		t.Errorf("Exit() = %d, %v after a bare D, want 0, false", status, ok)
+	}
+
+	h.write("\x1b]133;C\x07\x1b]133;D;1\x07")
+	if status, ok := h.term.Command().Exit(); !ok || status != 1 {
+		t.Errorf("Exit() = %d, %v after D;1, want 1, true", status, ok)
+	}
+
+	h.write("\x1b]133;C\x07\x1b]133;A\x07")
+	if status, ok := h.term.Command().Exit(); ok || status != 0 {
+		t.Errorf("Exit() = %d, %v after a prompt ended a command, want 0, false", status, ok)
+	}
 }

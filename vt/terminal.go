@@ -33,25 +33,38 @@ type Callbacks struct {
 	CommandDone func(status int, ok bool)
 }
 
-// Command is what the shell's OSC 133 marks say about the command line.
-// The zero value is a shell that has never sent one.
+// Command is what the shell's OSC 133 and OSC 633 marks say about the
+// command line. The zero value is a shell that has never sent one.
+//
+// A shell started inside the pane, over ssh or in a container, sends
+// marks of its own. So this is what a shell reported, not what the
+// command did.
 type Command struct {
-	// Integrated says the shell has sent at least one OSC 133 mark.
-	// Everything else here means nothing without it.
+	// Integrated says at least one of the marks read here has arrived,
+	// and any program that writes to the pane can set it. Everything
+	// else here means nothing without it.
 	Integrated bool
 
 	// Running says a command is running, from its C mark to its D mark.
+	// A full-screen program killed without restoring the ordinary screen
+	// leaves this true for ever.
 	Running bool
 
-	// Status is the exit status of the last command that finished, and
-	// HasStatus says the shell gave one at all.
-	Status    int
-	HasStatus bool
+	// status is the exit status of the last command that finished, and
+	// hasStatus says the shell gave one at all.
+	status    int
+	hasStatus bool
 
 	// Done counts the commands that have finished, so a caller can tell
-	// a fresh finish from the same one read twice.
+	// a fresh finish from the same one read twice. It only moves
+	// forward, so a caller that reads it before sending keys can tell a
+	// real finish from a Running that is stuck.
 	Done uint64
 }
+
+// Exit returns the exit status of the last command that finished, and
+// whether the shell gave one at all.
+func (c Command) Exit() (status int, ok bool) { return c.status, c.hasStatus }
 
 // Terminal is a VT emulator: write bytes in, render cells out.
 //
@@ -64,7 +77,7 @@ type Terminal struct {
 
 	title string
 
-	// cmd is what the shell's OSC 133 marks have said so far.
+	// cmd is what the shell's prompt marks have said so far.
 	cmd Command
 
 	// lastRune is the most recent printable character, which REP repeats.
@@ -88,7 +101,7 @@ func (t *Terminal) Screen() *Screen { return t.scr }
 // Title returns the last title set by the program.
 func (t *Terminal) Title() string { return t.title }
 
-// Command returns what the shell's OSC 133 marks say about the command
+// Command returns what the shell's prompt marks say about the command
 // line, all from one moment so the parts cannot disagree.
 func (t *Terminal) Command() Command { return t.cmd }
 
@@ -452,27 +465,27 @@ func (t *Terminal) OscDispatch(params [][]byte, _ bool) {
 		}
 	case "52":
 		t.clipboard(params)
-	case "133":
+	case "133", "633":
 		t.semanticPrompt(params)
 	}
 }
 
-// semanticPrompt handles OSC 133: A is a prompt starting, B its end, C
-// the start of the command's output, and D the command finishing.
-//
-// Extra parameters such as cl=line or aid=12345 are ignored, as are
-// marks sent while a full-screen program draws, which is not a command
-// with a prompt around it.
+// semanticPrompt handles OSC 133 and VS Code's OSC 633: A is a prompt
+// starting, B its end, C the start of the command's output, and D the
+// command finishing. Extra parameters are ignored, as are marks sent on
+// the alternate screen.
 func (t *Terminal) semanticPrompt(params [][]byte) {
 	if len(params) < 2 || t.scr.OnAltBuffer() {
 		return
 	}
 	switch string(params[1]) {
 	case "A", "B":
-		// A prompt is on screen, so whatever was running is over. It is
-		// not counted as a command finishing: nothing said how it went.
+		// A prompt ends a running command, and says nothing about how it went.
 		t.cmd.Integrated = true
-		t.cmd.Running = false
+		if t.cmd.Running {
+			t.cmd.Running = false
+			t.cmd.status, t.cmd.hasStatus = 0, false
+		}
 	case "C":
 		t.cmd.Integrated = true
 		t.cmd.Running = true
@@ -482,25 +495,23 @@ func (t *Terminal) semanticPrompt(params [][]byte) {
 	}
 }
 
-// commandDone handles the D mark. A D with no command running is
-// ignored: the shell was set up mid-session, or a program printed the
-// sequence itself, and neither finished a command.
+// commandDone handles the D mark. A D with no command running finishes
+// nothing and is ignored.
 func (t *Terminal) commandDone(params [][]byte) {
 	if !t.cmd.Running {
 		return
 	}
 	t.cmd.Running = false
-	t.cmd.Status, t.cmd.HasStatus = 0, false
-	// The status is optional, and a shell may send one that is not a
-	// number.
+	t.cmd.status, t.cmd.hasStatus = 0, false
+	// The status is optional, and a shell may send one that is not a number.
 	if len(params) > 2 {
 		if n, err := strconv.Atoi(string(params[2])); err == nil {
-			t.cmd.Status, t.cmd.HasStatus = n, true
+			t.cmd.status, t.cmd.hasStatus = n, true
 		}
 	}
 	t.cmd.Done++
 	if t.cb.CommandDone != nil {
-		t.cb.CommandDone(t.cmd.Status, t.cmd.HasStatus)
+		t.cb.CommandDone(t.cmd.status, t.cmd.hasStatus)
 	}
 }
 

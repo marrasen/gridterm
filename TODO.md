@@ -97,6 +97,16 @@ needs an answer from Marcus is last.
      for waits for quiet, which `top` never is. The description says
      to use `contains` or `read_pane` for a program that keeps drawing.
 
+8. **Say in the menu bar when this window is served or taken over.**
+   Asked for on 2026-09-16. The menu bar gets a right-aligned status in
+   red: "Controlled by <name> from <address>" while a client is
+   attached, and "Serving on <address>, nobody connected" while the
+   port is open with nobody on it. Nothing shows otherwise. Clicking
+   it opens the serving dialog, which says the address, the fingerprint
+   and who is connected, with a button that kicks the client out and a
+   button that stops listening. The menu bar learns a status text with
+   a colour and a click handler; nothing else in the bar moves.
+
 ## Known gaps worth revisiting
 
 - The cursor keeps blinking while the window is in the background.

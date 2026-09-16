@@ -168,7 +168,7 @@ func (c *Conn) Shell(ctx context.Context, cfg ShellConfig) (*Shell, error) {
 		if s.outW != nil {
 			_ = s.outW.CloseWithError(io.EOF)
 		}
-		return nil, errors.Join(err, closeSession(sess))
+		return nil, errors.Join(err, closeQuietly(sess))
 	}
 	if err := c.register(s); err != nil {
 		_ = s.closeRider()

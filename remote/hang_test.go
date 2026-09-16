@@ -1393,7 +1393,7 @@ func TestOpeningFilesOnASilentWindowGivesUp(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		ch, client, err := WindowFiles(t.Context(), win)
+		ch, client, err := WindowFiles(t.Context(), "the other window", win)
 		if client != nil {
 			_ = client.Close()
 		}
@@ -1410,9 +1410,15 @@ func TestOpeningFilesOnASilentWindowGivesUp(t *testing.T) {
 		if !errors.Is(err, ErrNoAnswer) {
 			t.Fatalf("WindowFiles = %v, want it to say the window did not answer", err)
 		}
-		// Named, because the user has to decide which window to look at.
-		if !strings.Contains(err.Error(), win.Addr()) {
-			t.Fatalf("WindowFiles = %v, want it to name %s", err, win.Addr())
+		// Named once, the way the caller knows it: the user has to decide
+		// which window to look at, and what they have in front of them is
+		// the name on the sidebar rather than the address behind it.
+		if strings.Count(err.Error(), "the other window") != 1 {
+			t.Fatalf("WindowFiles = %v, want it to name the window once", err)
+		}
+		if strings.Contains(err.Error(), win.Addr()) {
+			t.Fatalf("WindowFiles = %v, want the name the caller holds"+
+				" rather than %s as well", err, win.Addr())
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("opening a file pane on a silent window never came back")
@@ -1428,19 +1434,9 @@ func TestOpeningFilesOnASilentWindowGivesUp(t *testing.T) {
 
 // A window that answers speaks SFTP, and the pane reads its files.
 func TestOpeningFilesOnAWindowThatAnswers(t *testing.T) {
-	win := aWindowServingFiles(t, func(ch io.ReadWriteCloser) error {
-		srv, err := sftp.NewServer(ch)
-		if err != nil {
-			return err
-		}
-		served := srv.Serve()
-		if errors.Is(served, io.EOF) {
-			served = nil
-		}
-		return errors.Join(served, srv.Close())
-	})
+	win := aWindowServingFiles(t, servingSFTP)
 
-	ch, client, err := WindowFiles(t.Context(), win)
+	ch, client, err := WindowFiles(t.Context(), "the other window", win)
 	if err != nil {
 		t.Fatalf("WindowFiles: %v", err)
 	}
@@ -1451,4 +1447,177 @@ func TestOpeningFilesOnAWindowThatAnswers(t *testing.T) {
 	if _, err := client.Getwd(); err != nil {
 		t.Fatalf("read the window's files: %v", err)
 	}
+}
+
+// servingSFTP is a window serving its files, as the window being taken
+// over does.
+//
+// The channel is left alone, as a Filer must: it serves until the
+// channel ends, and whoever handed it over closes it.
+func servingSFTP(ch io.ReadWriteCloser) error {
+	srv, err := sftp.NewServer(keptOpen{ch})
+	if err != nil {
+		return err
+	}
+	served := srv.Serve()
+	if errors.Is(served, io.EOF) {
+		served = nil
+	}
+	return errors.Join(served, srv.Close())
+}
+
+// keptOpen hides the close from an SFTP server, which closes what it was
+// given as it goes.
+type keptOpen struct{ io.ReadWriteCloser }
+
+func (keptOpen) Close() error { return nil }
+
+// A window that refuses a file session says why, in its own words: the
+// failure happened over there, and nothing here can know it otherwise.
+func TestAWindowThatRefusesAFileSessionSaysWhy(t *testing.T) {
+	win := aWindowServingFiles(t, func(ch io.ReadWriteCloser) error {
+		return errors.New("there are no files here")
+	})
+
+	ch, client, err := WindowFiles(t.Context(), "the other window", win)
+	if client != nil {
+		_ = client.Close()
+	}
+	if ch != nil {
+		_ = ch.Close()
+	}
+	if err == nil {
+		t.Fatal("a file session started on a window that refused one")
+	}
+	if !strings.Contains(err.Error(), "there are no files here") {
+		t.Fatalf("WindowFiles = %v, want what the window said", err)
+	}
+}
+
+// A window that answers the channel late and then says nothing is given
+// up on once, not once per round trip.
+//
+// The open is two round trips. With a deadline each, a window that
+// stalls on both holds this one for the sum of them, which is the whole
+// point of giving the open one deadline.
+func TestOpeningFilesOnAWindowIsBoundedOnceForTheWholeOpen(t *testing.T) {
+	was := channelTimeout
+	channelTimeout = 600 * time.Millisecond
+	t.Cleanup(func() { channelTimeout = was })
+
+	win, _ := aWindowAnsweringAfter(t, 400*time.Millisecond)
+
+	start := time.Now()
+	ch, client, err := WindowFiles(t.Context(), "the other window", win)
+	took := time.Since(start)
+	if client != nil {
+		_ = client.Close()
+	}
+	if ch != nil {
+		_ = ch.Close()
+	}
+	if !errors.Is(err, ErrNoAnswer) {
+		t.Fatalf("WindowFiles = %v, want it to say the window did not answer", err)
+	}
+	if took > channelTimeout+200*time.Millisecond {
+		t.Fatalf("it gave up after %s, want about %s: the open has one deadline,"+
+			" not one per round trip", took, channelTimeout)
+	}
+}
+
+// A window that answers the file channel after the client gave up has
+// opened a channel nobody wants. The client closes it rather than
+// leaving it behind.
+func TestAFileChannelAnsweredAfterGivingUpIsClosed(t *testing.T) {
+	was := channelTimeout
+	channelTimeout = 300 * time.Millisecond
+	t.Cleanup(func() { channelTimeout = was })
+
+	win, ended := aWindowAnsweringAfter(t, 900*time.Millisecond)
+
+	ch, client, err := WindowFiles(t.Context(), "the other window", win)
+	if client != nil {
+		_ = client.Close()
+	}
+	if ch != nil {
+		t.Fatal("a channel was handed back for an open that was given up on")
+	}
+	if !errors.Is(err, ErrNoAnswer) {
+		t.Fatalf("WindowFiles = %v, want it to say the window did not answer", err)
+	}
+
+	select {
+	case <-ended:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the late channel was left open on the window")
+	}
+}
+
+// aWindowAnsweringAfter takes over a window that answers a request to
+// open a channel only after a wait, and then says nothing on it.
+//
+// Written out rather than served by serve.Listen, which answers the open
+// as soon as it has the request: a test that tells one deadline from a
+// deadline each needs both round trips to take time.
+//
+// What comes back says when a channel it accepted has ended, which is
+// how a test sees one let go of.
+func aWindowAnsweringAfter(t *testing.T, wait time.Duration) (*serve.Window, <-chan struct{}) {
+	t.Helper()
+	hostKey := aTestSigner(t)
+	mine := aTestSigner(t)
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+
+	cfg := &ssh.ServerConfig{
+		PublicKeyCallback: func(ssh.ConnMetadata, ssh.PublicKey) (*ssh.Permissions, error) {
+			return nil, nil
+		},
+	}
+	cfg.AddHostKey(hostKey)
+
+	ended := make(chan struct{}, 4)
+	go func() {
+		nc, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		conn, chans, reqs, err := ssh.NewServerConn(nc, cfg)
+		if err != nil {
+			return
+		}
+		defer func() { _ = conn.Close() }()
+		go ssh.DiscardRequests(reqs)
+		for nch := range chans {
+			go func(nch ssh.NewChannel) {
+				time.Sleep(wait)
+				ch, reqs, err := nch.Accept()
+				if err != nil {
+					return
+				}
+				go ssh.DiscardRequests(reqs)
+				// Read and never write, which is a window that took the
+				// channel and stopped. The read ends when the channel
+				// does, which is what says it was let go of.
+				_, _ = io.Copy(io.Discard, ch)
+				_ = ch.Close()
+				ended <- struct{}{}
+			}(nch)
+		}
+	}()
+
+	win, err := serve.Dial(t.Context(), serve.DialConfig{
+		Addr:    ln.Addr().String(),
+		Keys:    []ssh.Signer{mine},
+		HostKey: ssh.FixedHostKey(hostKey.PublicKey()),
+	})
+	if err != nil {
+		t.Fatalf("take the window over: %v", err)
+	}
+	t.Cleanup(func() { _ = win.Close() })
+	return win, ended
 }

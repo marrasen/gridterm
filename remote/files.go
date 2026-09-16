@@ -64,7 +64,7 @@ func (c *Conn) Files(ctx context.Context) (*Files, error) {
 	// machine turns the subsystem down.
 	client, err := startSFTP(ctx, sess, c.String())
 	if err != nil {
-		return nil, errors.Join(err, closeSession(sess))
+		return nil, errors.Join(err, closeQuietly(sess))
 	}
 
 	f := &Files{conn: c, sess: sess, client: client}
@@ -132,13 +132,13 @@ func (f *Files) closeAll() error {
 	case err := <-done:
 		errs = append(errs, err)
 	case <-time.After(drainGrace):
-		errs = append(errs, closeSession(f.sess))
+		errs = append(errs, closeQuietly(f.sess))
 		// Now that the channel has gone, the client's own close can
 		// finish. Waited for rather than abandoned: it holds a goroutine
 		// until it does.
 		errs = append(errs, <-done)
 	}
-	errs = append(errs, closeSession(f.sess))
+	errs = append(errs, closeQuietly(f.sess))
 
 	if err := errors.Join(errs...); err != nil {
 		return fmt.Errorf("remote: close SFTP on %s: %w", f.conn, err)
@@ -146,10 +146,10 @@ func (f *Files) closeAll() error {
 	return nil
 }
 
-// closeSession shuts a session's channel, ignoring the ways it says it
-// was already shut.
-func closeSession(sess *ssh.Session) error {
-	err := sess.Close()
+// closeQuietly shuts a session or a channel, ignoring the ways it says
+// it was already shut.
+func closeQuietly[T io.Closer](c T) error {
+	err := c.Close()
 	if err == nil || errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) {
 		return nil
 	}
@@ -166,27 +166,26 @@ func closeSession(sess *ssh.Session) error {
 // gives up sooner. A channel that arrives after that is closed rather
 // than left open on the far window.
 //
-// What comes back is the stream and the SFTP client speaking over it.
-// Both are the caller's to close.
-func WindowFiles(ctx context.Context, win *serve.Window) (*serve.FileSession, *sftp.Client, error) {
-	addr := win.Addr()
-	// One deadline for the whole open, so a window that stalls on the
-	// channel and again on the greeting cannot hold this one for twice
-	// as long.
+// name is the window as the caller knows it, which is what the error has
+// to say. What comes back is the stream and the SFTP client speaking
+// over it, both the caller's to close.
+func WindowFiles(ctx context.Context, name string, win *serve.Window) (
+	*serve.FileSession, *sftp.Client, error) {
+
 	ctx, cancel := context.WithTimeout(ctx, channelTimeout)
 	defer cancel()
 
-	ch, err := openWithin(ctx, "ask "+addr+" for its files", win.Files)
+	ch, err := openWithin(ctx, "open a file session on "+name, win.Files)
 	if err != nil {
 		return nil, nil, err
 	}
-	client, err := openWithin(ctx, "start SFTP on "+addr, func() (*sftp.Client, error) {
+	client, err := openWithin(ctx, "start SFTP on "+name, func() (*sftp.Client, error) {
 		return sftp.NewClientPipe(ch, ch)
 	})
 	if err != nil {
 		// The channel is closed first, because closing it is what ends
 		// the stream the far window's own account arrives on.
-		closeErr := closeFileSession(ch)
+		closeErr := closeQuietly(ch)
 		return nil, nil, errors.Join(withWhatItSaid(ctx, ch, err), closeErr)
 	}
 	return ch, client, nil
@@ -196,8 +195,8 @@ func WindowFiles(ctx context.Context, win *serve.Window) (*serve.FileSession, *s
 // could not start onto the failure, when it gave one.
 //
 // That account is the only one, because the failure happened over there.
-// Waiting for it is bounded like every other wait on this goroutine, and
-// a window given up on for saying nothing is not asked at all.
+// It is waited for briefly, and no longer than the open's own deadline:
+// once the context has ended it is not asked.
 func withWhatItSaid(ctx context.Context, ch *serve.FileSession, err error) error {
 	if ctx.Err() != nil {
 		return err
@@ -210,16 +209,7 @@ func withWhatItSaid(ctx context.Context, ch *serve.FileSession, err error) error
 			return fmt.Errorf("%w: it said: %s", err, why)
 		}
 	case <-time.After(drainGrace):
-	}
-	return err
-}
-
-// closeFileSession shuts a file session's channel, ignoring the ways it
-// says it was already shut.
-func closeFileSession(ch *serve.FileSession) error {
-	err := ch.Close()
-	if err == nil || errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) {
-		return nil
+	case <-ctx.Done():
 	}
 	return err
 }

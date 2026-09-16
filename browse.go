@@ -846,7 +846,7 @@ func (a *app) windowFiles(addr string) (vfs.FS, error) {
 	if t == nil {
 		return nil, fmt.Errorf("this window has not taken over %s", addr)
 	}
-	ch, client, err := remote.WindowFiles(a.ctx, t.win)
+	ch, client, err := remote.WindowFiles(a.ctx, addr, t.win)
 	if err != nil {
 		return nil, err
 	}

@@ -2,7 +2,9 @@ package main
 
 import (
 	"image/color"
+	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -1173,5 +1175,45 @@ func TestATerminalWaitsForAConnectionAskedForByFiles(t *testing.T) {
 	}
 	if *dials != 1 {
 		t.Errorf("%d machines were dialled, want the one", *dials)
+	}
+}
+
+// A file pane on a window taken over reads the files of the machine that
+// window is on.
+//
+// The whole path in one test: the plus opens the pane, windowFiles opens
+// an SFTP session over the connection to the other window, and the pane
+// lists a directory and reads a file in it.
+func TestAFilePaneOnAWindowReadsItsFiles(t *testing.T) {
+	_, client, addr := twoWindows(t)
+
+	at := t.TempDir()
+	putFile(t, at, "one.txt", "the body")
+	// The same directory as the other window's filesystem spells it: one
+	// root with the drives under it, so a Windows path hangs off "/" and
+	// a POSIX one is already there.
+	dir := path.Join("/", filepath.ToSlash(at))
+
+	pane := openFilesFromThePlus(t, client, addr)
+	openAt(t, client, pane, dir)
+
+	got := pane.Entries()
+	if len(got) != 1 || got[0].Name != "one.txt" {
+		t.Fatalf("the pane shows %v, want the file the other window has", got)
+	}
+
+	// And the file itself comes over the same session, which is the only
+	// thing that proves the filesystem is really on that window.
+	f, err := pane.FS().Open(dir + "/one.txt")
+	if err != nil {
+		t.Fatalf("open a file on the window: %v", err)
+	}
+	defer func() { _ = f.Close() }()
+	body, err := io.ReadAll(f)
+	if err != nil {
+		t.Fatalf("read a file on the window: %v", err)
+	}
+	if string(body) != "the body" {
+		t.Errorf("the file reads %q, want what the other window has in it", body)
 	}
 }

@@ -460,9 +460,9 @@ func (t *Terminal) OscDispatch(params [][]byte, _ bool) {
 // semanticPrompt handles OSC 133: A is a prompt starting, B its end, C
 // the start of the command's output, and D the command finishing.
 //
-// Extra parameters such as cl=m or aid=1234 are ignored, as are marks
-// sent while a full-screen program draws, which is not a command with a
-// prompt around it.
+// Extra parameters such as cl=line or aid=12345 are ignored, as are
+// marks sent while a full-screen program draws, which is not a command
+// with a prompt around it.
 func (t *Terminal) semanticPrompt(params [][]byte) {
 	if len(params) < 2 || t.scr.OnAltBuffer() {
 		return

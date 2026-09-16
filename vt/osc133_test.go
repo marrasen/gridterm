@@ -51,20 +51,32 @@ func TestSemanticPromptStatusIsNotANumber(t *testing.T) {
 }
 
 // Real shells hang extra parameters off every mark. An unknown one is
-// ignored rather than making the mark itself unreadable.
+// ignored rather than making the mark itself unreadable. The sequences
+// here are the ones Ghostty's bash and zsh integrations send.
 func TestSemanticPromptExtraParameters(t *testing.T) {
 	h := newHarness(t, 20, 4)
-	h.write("\x1b]133;A;cl=m\x07")
-	h.wantCommand("after A;cl=m", Command{Integrated: true})
+	h.write("\x1b]133;A;redraw=last;cl=line;aid=12345\x07")
+	h.wantCommand("after A with three options", Command{Integrated: true})
 
-	h.write("\x1b]133;B;aid=1234\x07")
-	h.wantCommand("after B;aid=1234", Command{Integrated: true})
+	h.write("\x1b]133;B;aid=12345\x07")
+	h.wantCommand("after B;aid=12345", Command{Integrated: true})
 
-	h.write("\x1b]133;C;cmdline_url=ls\x07")
-	h.wantCommand("after C;cmdline_url=ls", Command{Integrated: true, Running: true})
+	h.write("\x1b]133;C;\x07") // bash sends the trailing separator
+	h.wantCommand("after C with an empty option", Command{Integrated: true, Running: true})
 
-	h.write("\x1b]133;D;2;aid=1234;err=2\x07")
-	h.wantCommand("after D;2;aid=1234", Command{Integrated: true, HasStatus: true, Status: 2, Done: 1})
+	h.write("\x1b]133;D;2;aid=12345\x07")
+	h.wantCommand("after D;2;aid=12345", Command{Integrated: true, HasStatus: true, Status: 2, Done: 1})
+}
+
+// The prompt marks a shell sends between A and B say what kind of
+// prompt it is. Nothing here reads them, and they change nothing.
+func TestSemanticPromptKindMarks(t *testing.T) {
+	h := newHarness(t, 20, 4)
+	h.write("\x1b]133;A;cl=line\x07\x1b]133;P;k=i\x07$ \x1b]133;B\x07")
+	h.wantCommand("at a prompt", Command{Integrated: true})
+
+	h.write("\x1b]133;P;k=s\x07> \x1b]133;B\x07")
+	h.wantCommand("at a continuation prompt", Command{Integrated: true})
 }
 
 func TestSemanticPromptBothTerminators(t *testing.T) {
@@ -101,6 +113,18 @@ func TestSemanticPromptDoneWithNoCommand(t *testing.T) {
 
 	h.write("\x1b]133;A\x07\x1b]133;D;5\x07")
 	h.wantCommand("after a D following a prompt", Command{Integrated: true})
+}
+
+// Cancelling a half-typed line with ctrl-C sends a D with no C before
+// it, which finishes nothing: the command never ran.
+func TestSemanticPromptCancelledInput(t *testing.T) {
+	h := newHarness(t, 20, 4)
+	h.write("\x1b]133;A\x07$ \x1b]133;B\x07ls -l")
+	h.write("\x1b]133;D;;err=CANCEL\x07")
+	h.wantCommand("after a cancelled line", Command{Integrated: true})
+	if len(h.ends) != 0 {
+		t.Fatalf("CommandDone fired %+v for a cancelled line", h.ends)
+	}
 }
 
 // An OSC 133 with no mark after it, and a mark nothing here reads, are

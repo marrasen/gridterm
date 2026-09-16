@@ -872,19 +872,36 @@ func TestShuttingDownHangsUpOnEveryWindow(t *testing.T) {
 
 // attachFromTheSidebar opens a pane on a screen over there the way a user
 // does: the row on the sidebar, and Enter on it.
+//
+// The sidebar is opened before the rows are built, because a collapsed
+// panel builds none.
 func attachFromTheSidebar(t *testing.T, a *testApp, key remoteKey) {
 	t.Helper()
+	openTheSidebar(t, a)
 	panelText(a, time.Now())
-	attachFromTheRowsDrawn(t, a, key)
+	enterOnTheRow(t, a, key)
 }
 
 // attachFromTheRowsDrawn is attachFromTheSidebar on the rows the sidebar
 // already has, for a test clicking in the frame that drew them.
 func attachFromTheRowsDrawn(t *testing.T, a *testApp, key remoteKey) {
 	t.Helper()
+	openTheSidebar(t, a)
+	enterOnTheRow(t, a, key)
+}
+
+// openTheSidebar opens the panel and puts the keys in it.
+func openTheSidebar(t *testing.T, a *testApp) {
+	t.Helper()
 	if err := a.focusPanel(); err != nil {
 		t.Fatalf("focus the sidebar: %v", err)
 	}
+}
+
+// enterOnTheRow chooses a row and presses Enter on it, which is what a
+// user does to whatever the row names.
+func enterOnTheRow(t *testing.T, a *testApp, key any) {
+	t.Helper()
 	if !a.panel.Select(key) {
 		t.Fatalf("the sidebar has no row for that screen: %v", panelText(a, time.Now()))
 	}
@@ -968,7 +985,7 @@ func TestTheSidebarShowsWhatTheOtherWindowHasOpen(t *testing.T) {
 	// And this window shows a row for each, under the window itself.
 	client.refreshPanel(panelNow)
 	held := windowAt(t, client, addr)
-	want := len(client.windows.named(addr).win.Opens())
+	want := len(held.win.Opens())
 	var shown int
 	for _, row := range client.panel.Rows() {
 		if key, ok := row.Key.(remoteKey); ok && key.window == held {
@@ -1454,6 +1471,47 @@ func TestARowDrawnBeforeAReKeyStillOpensWhatItNames(t *testing.T) {
 	watching := newestPane(t, client)
 	if what, ok := client.windows.watching(watching); !ok || what != row {
 		t.Errorf("the pane watches %v, want the screen the row named", what)
+	}
+}
+
+// A row whose window has been let go of refuses, and reaches into
+// nothing.
+//
+// The rows are a frame old, so one can name a window the user has since
+// closed. The key holds the window itself, which says nothing about
+// whether this one is still holding it: that has to be asked.
+func TestARowWhoseWindowWasLetGoOfRefuses(t *testing.T) {
+	host, client, addr := twoWindows(t)
+	withMenubar(t, client)
+
+	hostPane := onlyPaneOn(t, host)
+	held := windowAt(t, client, addr)
+	row := remoteKey{window: held, id: host.panes[hostPane].ID()}
+	drawTheRowFor(t, host, client, row)
+
+	// The window is let go of from its own plus menu, with the rows
+	// that name it still drawn.
+	chooseMenuItem(t, clickPlus(t, client, addr), "conn.disconnect")
+	waitFor(t, client, "the window to be let go of", func() bool {
+		return client.windows.named(addr) == nil
+	})
+
+	// Then the click on one of those rows.
+	panes := len(client.panes)
+	openTheSidebar(t, client)
+	if !client.panel.Select(row) {
+		t.Fatalf("the sidebar dropped the row before the click: %v", panelText(client, panelNow))
+	}
+	_, err := client.root.HandleKey(press(input.KeyEnter, 0))
+
+	if err == nil {
+		t.Fatal("it watched a screen on a window this one has let go of")
+	}
+	if !strings.Contains(err.Error(), "let go of "+addr) {
+		t.Errorf("it refused with %v, want it to name the window that has gone", err)
+	}
+	if len(client.panes) != panes {
+		t.Errorf("%d panes, want the %d there were", len(client.panes), panes)
 	}
 }
 

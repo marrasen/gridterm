@@ -212,9 +212,7 @@ const remoteMark = '◦'
 // it can say which thing on which window.
 //
 // The window itself rather than the name it is held under, because the
-// server list moves that name: a row drawn before a save or a rename
-// carries the old one, and a click on it in that frame would find
-// nothing.
+// server list moves that name under a row already drawn.
 //
 // Only what names the thing: the window it is on and what that window
 // calls it. The list keeps the user's place by comparing keys, so a key

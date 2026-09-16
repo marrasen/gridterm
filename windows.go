@@ -725,8 +725,13 @@ func knownWindowsPath() (string, error) {
 // running, rather than starting something new there.
 func (a *app) attachHere(what remoteKey, at *spot) error {
 	t := what.window
-	if t == nil || !a.windows.holds(t) {
-		return errors.New("this window has let go of the window that screen was on")
+	if t == nil {
+		// A key with no window behind it. Nothing builds one, so this is
+		// a mistake in this window rather than anything the user did.
+		return errors.New("that row names no window to watch it on")
+	}
+	if !a.windows.holds(t) {
+		return fmt.Errorf("this window has let go of %s", t.name)
 	}
 	// Already watching it: the pane comes forward rather than a second
 	// one opening on the same program, which would be two panes typing

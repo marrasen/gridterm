@@ -234,7 +234,10 @@ func (a *app) refreshPanel(now time.Time) {
 	a.tellWatchers(now)
 	if a.panel == nil || (a.dock != nil && a.dock.Collapsed) {
 		// Nothing to build while nobody can see it. The rows are worked
-		// out again the moment the panel opens.
+		// out again the moment the panel opens, and until then they
+		// hold whatever they named -- a window let go of among it.
+		// Acting on one is refused: attachHere asks whether the window
+		// is still held.
 		return
 	}
 

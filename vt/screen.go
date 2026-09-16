@@ -876,6 +876,10 @@ func (s *Screen) RenderLive(g *grid.Grid) { s.RenderBack(g, 0) }
 // is history for reads as far back as there is.
 func (s *Screen) RenderBack(g *grid.Grid, back int) {
 	was := s.scrollOff
+	defer func() {
+		s.scrollOff = was
+		s.drawnTo = nil
+	}()
 	s.scrollOff = min(max(back, 0), len(s.cur.scrollback))
 	// A different view of the same rows, so what was drawn last time
 	// says nothing about what this one needs -- and what this one leaves
@@ -883,8 +887,6 @@ func (s *Screen) RenderBack(g *grid.Grid, back int) {
 	// again whatever grid it is given.
 	s.touchAll()
 	s.Render(g)
-	s.scrollOff = was
-	s.drawnTo = nil
 }
 
 // History is how many lines have scrolled off the top and are kept.

@@ -580,6 +580,12 @@ func TestTheDialogSaysWhatPortZeroMeans(t *testing.T) {
 // the socket is still there, and nothing crosses it in either direction.
 // A machine that hung up would be a different thing, and would end
 // everything waiting on it by itself.
+//
+// A whole connection rather than sshtest.Freeze: that freezes one SFTP
+// session, and x/crypto answers a channel close from the connection's own
+// mux loop, so the close would be answered and the copy from the machine
+// would end. Here nothing crosses the socket at all, which is what leaves
+// that copy where it is.
 type blackHole struct {
 	host string
 	port int
@@ -589,6 +595,10 @@ type blackHole struct {
 
 	mu    sync.Mutex
 	conns []net.Conn
+
+	// done says the test has finished and has closed what was held, so a
+	// connection accepted after that closes itself.
+	done bool
 }
 
 // newBlackHole listens on a port of its own and carries what arrives to
@@ -611,6 +621,7 @@ func newBlackHole(t *testing.T, to string) *blackHole {
 		// they are reading is what ends them.
 		b.mu.Lock()
 		defer b.mu.Unlock()
+		b.done = true
 		for _, c := range b.conns {
 			_ = c.Close()
 		}
@@ -623,17 +634,35 @@ func newBlackHole(t *testing.T, to string) *blackHole {
 			}
 			out, err := net.Dial("tcp", to)
 			if err != nil {
+				// One connection that could not be carried is not the end
+				// of the listener.
 				_ = in.Close()
-				return
+				continue
 			}
-			b.mu.Lock()
-			b.conns = append(b.conns, in, out)
-			b.mu.Unlock()
+			if !b.keep(in, out) {
+				continue
+			}
 			go b.carry(in, out)
 			go b.carry(out, in)
 		}
 	}()
 	return b
+}
+
+// keep remembers a pair of connections for the test to close on its way
+// out, and says whether it took them. One accepted after the test has
+// already closed what it held is closed here instead, because nothing
+// else ever would.
+func (b *blackHole) keep(in, out net.Conn) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.done {
+		_ = in.Close()
+		_ = out.Close()
+		return false
+	}
+	b.conns = append(b.conns, in, out)
+	return true
 }
 
 // stop leaves both sides connected and stops carrying anything.
@@ -685,6 +714,16 @@ func TestAClientThatGoesIsSaidToHaveGoneThoughTheMachineIsWedged(t *testing.T) {
 	if got := margit.SFTPs(); got != 1 {
 		t.Fatalf("margit served %d file sessions, want the one being relayed", got)
 	}
+	// The row is there to go away. Without this a window that never put
+	// one up would pass the wait below on its first turn.
+	waitFor(t, host, "a row for the client working in this window", func() bool {
+		return servingRows(host) == 1
+	}, client)
+
+	// What this window logs, so the session it walks away from is not
+	// walked away from quietly.
+	var logged []string
+	host.onError = func(err error) { logged = append(logged, err.Error()) }
 
 	// The machine stops answering, and then the client goes.
 	relay.stop()
@@ -693,13 +732,64 @@ func TestAClientThatGoesIsSaidToHaveGoneThoughTheMachineIsWedged(t *testing.T) {
 	}
 
 	waitFor(t, host, "the window serving to say the client has gone", func() bool {
-		for _, group := range host.registry.Groups(time.Now()) {
-			for _, row := range group.Rows {
-				if strings.HasPrefix(row.Label, "serving ") {
-					return false
-				}
+		return servingRows(host) == 0
+	})
+	waitFor(t, host, "the abandoned file session to be logged", func() bool {
+		for _, said := range logged {
+			if strings.Contains(said, "abandoned a file session on margit") {
+				return true
 			}
 		}
-		return true
+		return false
 	})
+	// And the connection to margit is still held: the file session is what
+	// went wrong, not the connection carrying it, and a window that closed
+	// the whole thing would take every pane and shell on margit with it.
+	if host.about("margit").machine == nil {
+		t.Errorf("the window let go of margit as well: %v", panelText(host, time.Now()))
+	}
+}
+
+// A relayed file session that ended blames the connection only when the
+// connection really went.
+//
+// The machine's end of the relay finishing means the far file server
+// stopped, which happens when it exits by itself as much as when the
+// connection under it goes. A window that said the connection went either
+// way sent the user looking for a network fault that was not there.
+func TestARelayThatEndedSaysWhetherTheConnectionWent(t *testing.T) {
+	s := sshtest.New(t)
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	a.connect(serverConfig(t, s))
+	waitForPanes(t, a, 2)
+	host := serverConfig(t, s).Target()
+	m := a.machines.named(host)
+	if m == nil {
+		t.Fatalf("nothing is connected to %s", host)
+	}
+
+	if got := relayEnded(m.conn, host).Error(); !strings.Contains(got, "ended while it was still in use") {
+		t.Errorf("with %s still connected it says %q", host, got)
+	}
+
+	if err := a.dropMachine(host); err != nil {
+		t.Fatalf("let go of %s: %v", host, err)
+	}
+	if got := relayEnded(m.conn, host).Error(); !strings.Contains(got, "the connection to "+host+" went") {
+		t.Errorf("with the connection closed it says %q", got)
+	}
+}
+
+// servingRows counts the rows a window has for the clients working in it.
+func servingRows(a *testApp) int {
+	n := 0
+	for _, group := range a.registry.Groups(time.Now()) {
+		for _, row := range group.Rows {
+			if strings.HasPrefix(row.Label, "serving ") {
+				n++
+			}
+		}
+	}
+	return n
 }

@@ -25,7 +25,10 @@ func (a *app) updatePointer() {
 //
 // The cell it asks about is the one a click there would go to, the
 // sidebar's own rows and all, so the arrow appears over exactly what
-// can be grabbed.
+// can be grabbed. Asking through a.cellAt also records where the pointer
+// is, which is how a click on a pane drawn scaled is routed. Over the
+// sidebar the row is the region's own rather than the window's, which
+// nothing inside the sidebar minds: none of it answers a cursor yet.
 func (a *app) pointerCursor(px, py int) ui.Cursor {
 	col, row := a.cellAt(px, py)
 	switch {

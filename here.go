@@ -19,6 +19,13 @@ import (
 // command that opened a terminal on a machine the user chose ten minutes
 // ago would be opening it somewhere they are not looking.
 func (a *app) currentHost() string {
+	// A menu dropped from a machine of a window taken over names that
+	// machine through the window, which nothing here is holding, so every
+	// command but Files refuses instead of acting on this window's own
+	// machine of the same name.
+	if key, on := a.hostMenus.farMachine(); on && key.window != nil {
+		return farName(key.host, key.window.name)
+	}
 	// A menu dropped from a machine's row beats everything else: the
 	// user named the machine by clicking it.
 	if host, up := a.hostMenus.machine(); up {
@@ -73,8 +80,8 @@ func (a *app) openTerminalHere() error { return a.openTerminalOn(a.currentHost()
 // looking at, connecting to it if the connection has since been closed.
 func (a *app) openCommandHere() error {
 	// A menu dropped from a machine of a window taken over offers files
-	// alone. A command reached by a key while it is up is refused here
-	// rather than in a dialog that could only fail once it was filled in.
+	// alone. Refused here rather than by the name currentHost gives it,
+	// because this says which machine and which window in its own words.
 	if key, on := a.hostMenus.farMachine(); on {
 		return fmt.Errorf("%s is reached through %s: only its files can be opened from here",
 			key.host, key.window.name)

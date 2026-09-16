@@ -14,8 +14,7 @@ type hostKey string
 
 // hostMenus is the machine a menu opened from the sidebar is about and
 // whether such a menu is up, kept here because ui.Command.Run takes no
-// argument. Only the goroutine that
-// draws touches it.
+// argument. Only the goroutine that draws touches it.
 type hostMenus struct {
 	// host is the machine the menu now up is about, and up says whether
 	// one is up at all, because the local machine's name is empty.
@@ -24,10 +23,9 @@ type hostMenus struct {
 
 	// far is the machine of a window taken over that the menu is about,
 	// and onFar says the menu is one of those. Only "Files" is offered
-	// there, and only openFilesHere reads it. Every other command reads
-	// host, which holds that machine's bare name: nothing here is
-	// connected to it, so they refuse in plain words rather than acting
-	// on the window.
+	// there, and only openFilesHere acts on it; currentHost names that
+	// machine through its window, which nothing here is holding, so every
+	// other command refuses.
 	far   remoteHostKey
 	onFar bool
 
@@ -48,13 +46,13 @@ func (m *hostMenus) nowAbout(host string) {
 }
 
 // nowAboutFar records the machine of a window taken over that the menu
-// now up is about, under its bare name.
+// now up is about.
 //
-// Its bare name and not the window's. A modal menu does not stop the
-// keys reaching a command, so the machine named here is what any of them
-// acts on, and this window holds no connection to that machine: every
-// command but "Files" refuses harmlessly. The window's name would let a
-// key let go of the whole window from a menu that offered no such thing.
+// A modal menu does not stop the keys reaching a command, so what
+// currentHost says while this is set is what any of them acts on. It says
+// that machine through its window, a name nothing here is holding: a key
+// can neither let go of the window nor reach this window's own machine of
+// the same name.
 func (m *hostMenus) nowAboutFar(key remoteHostKey) {
 	m.host, m.up = key.host, true
 	m.far, m.onFar = key, true

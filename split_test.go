@@ -584,3 +584,24 @@ func TestDraggingASplitDividerResizesBothShells(t *testing.T) {
 	}
 	checkTree(t, a)
 }
+
+// The pane picker names a pane on a machine over there by that machine,
+// through the window it reads it through.
+//
+// Two panes on two machines over one window are both filed under the
+// window, so the window's name alone would read the same on both lines and
+// the user would pick blind.
+func TestThePanePickerNamesTheMachineAPaneOverThereReads(t *testing.T) {
+	host, client, addr := aWindowConnectedToMargit(t)
+	held := windowAt(t, client, addr)
+
+	over := openFilesFromTheFarPlus(t, client, host, addr, "margit")
+	here := openFilesFromThePlus(t, client, conns.Local)
+
+	if got, want := client.paneWhere(over), "margit through "+held.name; got != want {
+		t.Errorf("the line for the pane over there reads %q, want %q", got, want)
+	}
+	if client.paneWhere(here) == client.paneWhere(over) {
+		t.Errorf("a pane here and one over there both read %q", client.paneWhere(here))
+	}
+}

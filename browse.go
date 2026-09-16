@@ -430,15 +430,15 @@ func (a *app) reloadPanesOn(on ...vfs.FS) {
 
 // hostOf says which machine a filesystem is filed under, for the panel.
 //
-// A pane on a machine of a window taken over is named after that machine
-// through the window, and is filed under the window: the connection
-// carrying it is the window's, so it goes when the window does.
+// A filesystem on a machine of a window taken over is named after that
+// machine through the window, and is filed under the window: the
+// connection carrying it is the window's, so it goes when the window does.
 //
 // A window taken over is otherwise a machine like any other here: its
 // panes go under its name, the commands on its row work on it, and a
 // copy to it counts as bytes leaving rather than arriving.
 func (a *app) hostOf(f vfs.FS) string {
-	if key, over := a.farFS(f); over {
+	if key, over := farFS(f); over {
 		return key.window.name
 	}
 	if on := a.about(f.Name()); on.machine != nil || on.window != nil {
@@ -447,19 +447,14 @@ func (a *app) hostOf(f vfs.FS) string {
 	return conns.Local
 }
 
-// farFS is the machine of a window taken over that a filesystem reads,
-// for one a file pane is holding.
-func (a *app) farFS(f vfs.FS) (remoteHostKey, bool) {
-	b := a.files
-	if b == nil {
-		return remoteHostKey{}, false
-	}
-	for p, key := range b.far {
-		if p.FS() == f {
-			return key, true
-		}
-	}
-	return remoteHostKey{}, false
+// farFS is the machine of a window taken over that a filesystem reads.
+//
+// Read off the place the filesystem calls itself, so one a job opened for
+// itself answers as a pane's does: nothing but a filesystem reading
+// through a window has a place of this kind.
+func farFS(f vfs.FS) (remoteHostKey, bool) {
+	key, over := f.Place().(remoteHostKey)
+	return key, over && key.window != nil
 }
 
 // refreshJobs keeps the panel saying how the file work is going, and
@@ -1077,4 +1072,17 @@ const filesGrace = 250 * time.Millisecond
 
 // relayGrace is how long a file session relayed to a machine waits for
 // that machine to answer the close, once the client has gone.
-const relayGrace = filesGrace
+//
+// Far longer than filesGrace, because it is spent somewhere else:
+// filesGrace holds up the goroutine that draws and has to fit inside a
+// frame, while this runs on a goroutine serving one client and is waiting
+// for a single round trip over the network.
+const relayGrace = 2 * time.Second
+
+// relayTogether is how long a relayed file session whose machine has
+// finished waits to see the client finish too.
+//
+// Long enough to tell two ends that stopped at the same moment from a
+// machine that ended under a client still working, and short enough that
+// the client is told either way while it is still waiting.
+const relayTogether = 20 * time.Millisecond

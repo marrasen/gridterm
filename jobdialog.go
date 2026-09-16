@@ -278,6 +278,10 @@ func (a *app) repeatJob(op jobs.Op, from, to jobEnd) {
 	}
 	owned := []vfs.FS{source}
 	op.From = source
+	// The name the panel files the row under, worked out from the
+	// filesystem that was just opened: a machine or a window renamed since
+	// the job ran would leave the row under a name no heading has.
+	from.host = a.hostOf(source)
 	if op.To != nil {
 		into, err := a.openEnd(to)
 		if err != nil {
@@ -289,6 +293,7 @@ func (a *app) repeatJob(op jobs.Op, from, to jobEnd) {
 		}
 		owned = append(owned, into)
 		op.To = into
+		to.host = a.hostOf(into)
 	}
 	a.runJob(op, from, to, owned)
 }

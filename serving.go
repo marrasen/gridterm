@@ -619,17 +619,22 @@ func (a *app) relayFiles(host string, ch io.ReadWriteCloser) error {
 	case fromClient = <-sent:
 	case fromMachine = <-back:
 		machineDone = true
+		// Waited for rather than asked about on the spot: a client that
+		// closed at the same moment as the machine is its own close, and
+		// which of the two copies finishes first is a race.
 		select {
 		case fromClient = <-sent:
 			// Both ended together, which the client going accounts for:
 			// a session the client closed itself is not the machine
 			// ending under it.
-		default:
-			// The machine went while the client was still there. The copy
-			// from the client is parked on a client that has not gone, and
-			// closing the channel is what ends it -- which happens once
-			// this returns. So its account is waited for off this
-			// goroutine and logged there, and the client is told here.
+		case <-time.After(relayTogether):
+			// The machine's end came first and the client is still there.
+			// The copy from the client is parked on a read of the client's
+			// channel, and closing that channel only sends the client a
+			// close: the read ends when the client answers it or when the
+			// connection to the client goes. So its account is waited for
+			// off this goroutine and logged there, and the client is told
+			// here.
 			closed := relay.Close()
 			go func() {
 				if err := errors.Join(<-sent, closed); err != nil {
@@ -638,8 +643,7 @@ func (a *app) relayFiles(host string, ch io.ReadWriteCloser) error {
 					})
 				}
 			}()
-			return errors.Join(fromMachine, fmt.Errorf(
-				"the connection to %s went while a file session was running over it", host))
+			return errors.Join(fromMachine, relayEnded(conn, host))
 		}
 	}
 
@@ -660,7 +664,27 @@ func (a *app) relayFiles(host string, ch io.ReadWriteCloser) error {
 	// row for a client that has gone. It ends when the connection to that
 	// machine closes, and Conn.Close does end it: it tears the transport
 	// down.
+	//
+	// Said in the window, so whoever is sitting at this machine can see
+	// that a goroutine is parked on a machine that stopped answering.
+	a.pump.post(func() {
+		a.logError(fmt.Errorf("abandoned a file session on %s that did not answer the close;"+
+			" it ends when the connection to it does", host))
+	})
 	return errors.Join(errs...)
+}
+
+// relayEnded says what ended a relayed file session whose machine
+// finished first.
+//
+// The machine's end alone does not mean the connection went: the file
+// server over there can exit by itself, and so can a write back to the
+// client fail. So the connection is asked.
+func relayEnded(conn *remote.Conn, host string) error {
+	if conn.Closed() {
+		return fmt.Errorf("the connection to %s went while a file session was running over it", host)
+	}
+	return fmt.Errorf("the file session on %s ended while it was still in use", host)
 }
 
 // connectionTo is the connection this window holds to a machine.

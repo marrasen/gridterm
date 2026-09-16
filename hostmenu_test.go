@@ -526,49 +526,83 @@ func functionBody(t *testing.T, name string) (body, where string) {
 	return "", ""
 }
 
-// A command reached by a key while a far machine's menu is up acts on
-// that machine, not on the window it is reached through.
+// A command reached from the palette while a far machine's menu is up
+// refuses, and leaves this window's own machine of the same name alone.
 //
-// A modal menu does not stop the keys reaching a command. The menu on a
-// machine over there offers files alone, so everything else has to
-// refuse: letting go of the whole window is not what the user asked for
-// by opening a menu about one machine on it.
-func TestAKeyedCommandWhileAFarMenuIsUpActsOnThatMachine(t *testing.T) {
+// A modal menu does not stop the keys reaching a command, and the palette
+// is one chord away over it. The menu on a machine over there offers
+// files alone, so everything else has to refuse: letting go of the whole
+// window is not what the user asked for by opening a menu about one
+// machine on it, and neither is closing a connection of this window's
+// that happens to be called the same thing.
+func TestACommandWhileAFarMenuIsUpLeavesThisWindowAlone(t *testing.T) {
 	_, client, addr := aWindowConnectedToMargit(t)
 	held := windowAt(t, client, addr)
+
+	// This window's own margit: saved under that name and connected to,
+	// so every command that acts on a name has something here to act on.
+	own := sshtest.New(t)
+	ownHost, ownPort := own.Host()
+	if err := client.book.Put(remote.Host{
+		Name: "margit", Address: ownHost, Port: ownPort, User: "tester",
+		Identities: []string{sshtest.WriteKey(t)},
+	}, ""); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	client.refreshServers()
+	client.connectAs("margit", serverConfig(t, own))
+	waitFor(t, client, "this window's own margit", func() bool {
+		return client.machines.named("margit") != nil
+	})
 	panes := len(client.panes)
 
-	clickPlusFar(t, client, addr, "margit")
+	menu := clickPlusFar(t, client, addr, "margit")
 
-	if got := client.currentHost(); got != "margit" {
-		t.Fatalf("the window is looking at %q, want the machine the menu is about", got)
+	// The machine through the window it is reached through, which is a
+	// name nothing here is holding.
+	if got, want := client.currentHost(), "margit through "+held.name; got != want {
+		t.Fatalf("the window is looking at %q, want %q", got, want)
 	}
 
 	// A command needing a shell says the machine is reached through the
 	// window, rather than opening a dialog that could only fail once it
 	// was filled in.
-	runFromAKey(t, client, "conn.command", "reached through")
-	// And letting go refuses, because nothing here is connected to margit.
-	runFromAKey(t, client, "conn.disconnect", "nothing is connected to margit")
+	refuseFromThePalette(t, client, menu, "conn.command", "reached through")
+	// A terminal refuses too, rather than opening one on this window's own
+	// margit or dialling anything.
+	refuseFromThePalette(t, client, menu, "conn.terminal", "margit through "+held.name)
+	// Letting go refuses, and says which machine and which window.
+	refuseFromThePalette(t, client, menu, "conn.disconnect",
+		"nothing is connected to margit through "+held.name)
+	// And so does forgetting, though this window has a saved margit of
+	// its own to forget.
+	refuseFromThePalette(t, client, menu, "server.forget", "not in the server list")
 
 	if client.windows.at(addr) != held {
 		t.Errorf("the window was let go of: %v", client.windows.names())
+	}
+	if client.machines.named("margit") == nil {
+		t.Error("this window's own margit was closed")
+	}
+	if _, saved := client.book.Kind("margit"); !saved {
+		t.Error("this window's own margit was forgotten")
 	}
 	if len(client.panes) != panes {
 		t.Errorf("%d panes are left of the %d that were open", len(client.panes), panes)
 	}
 }
 
-// runFromAKey runs a command the way an accelerator does and reads the
-// notice it refused with.
+// refuseFromThePalette runs a command the way the user reaches one over a
+// modal menu -- the palette chord, the command's title, Enter -- and
+// reads the notice it refused with.
 //
 // Every command is wrapped to show what it returned, so a refusal is a
-// dialog rather than an error handed back.
-func runFromAKey(t *testing.T, a *testApp, id, want string) {
+// dialog rather than an error handed back. The notice is stacked on the
+// menu, which is still up afterwards: a menu that went away would leave
+// the next command acting on whatever has the keys.
+func refuseFromThePalette(t *testing.T, a *testApp, menu *ui.Menu, id, want string) {
 	t.Helper()
-	if err := a.root.Commands.Run(id); err != nil {
-		t.Fatalf("running %s: %v", id, err)
-	}
+	runFromPalette(t, a, id)
 	n := awaitModal[*ui.Notice](t, a, "what "+id+" refused with", nil)
 	if !strings.Contains(n.Message(), want) {
 		t.Errorf("%s said %q, want %q in it", id, n.Message(), want)
@@ -577,7 +611,7 @@ func runFromAKey(t *testing.T, a *testApp, id, want string) {
 	if _, err := a.root.HandleKey(press(input.KeyEscape, 0)); err != nil {
 		t.Fatalf("Escape: %v", err)
 	}
-	if _, still := a.root.Modal().(*ui.Notice); still {
-		t.Fatal("Escape left the notice up")
+	if got := a.root.Modal(); got != ui.Widget(menu) {
+		t.Fatalf("under the notice is %T, want the menu the command was refused over", got)
 	}
 }

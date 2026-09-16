@@ -72,20 +72,36 @@ func connectToMargit(t *testing.T, host, client *testApp, addr string, cfg remot
 	}, client)
 }
 
-// remoteRowsOf is what this window shows under a window taken over, the
-// way the sidebar builds it: this window's own rows filed under the
-// window are handed in, so the ones on a machine over there land under
-// that machine.
+// remoteRowsOf is what the sidebar draws under a window taken over: the
+// headings for its machines, and the rows belonging to that window.
+//
+// Read off the drawn rows rather than built here, so a sidebar that filed
+// a row under the wrong heading is caught. A window this one is not
+// holding has none.
+//
+// Only the rows keyed to that window. This window's own rows on a machine
+// over there are keyed by their entry, and a test that wants one of those
+// looks it up by that key.
 func remoteRowsOf(a *testApp, addr string) []ui.ListRow {
-	on := a.about(addr)
-	now := time.Now()
-	var mine []conns.Row
-	for _, group := range a.registry.Groups(now) {
-		if group.Host == on.name {
-			mine = group.Rows
+	held := a.windows.at(addr)
+	if held == nil {
+		return nil
+	}
+	a.refreshPanel(time.Now())
+	var out []ui.ListRow
+	for _, row := range a.panel.Rows() {
+		switch key := row.Key.(type) {
+		case remoteKey:
+			if key.window == held {
+				out = append(out, row)
+			}
+		case remoteHostKey:
+			if key.window == held {
+				out = append(out, row)
+			}
 		}
 	}
-	return a.remoteRows(on, mine, a.farRows(), now)
+	return out
 }
 
 // drawnHeadings are the machine headings the sidebar draws under a
@@ -124,11 +140,12 @@ func drawnUnder(t *testing.T, a *testApp, key any) []ui.ListRow {
 	return nil
 }
 
-// remoteRowOn is the row this window shows for a screen on a machine
-// of a window taken over, by the machine's name.
+// remoteRowOn is the row the sidebar drew for a screen on a machine of a
+// window taken over, by the machine's name.
 func remoteRowOn(t *testing.T, a *testApp, addr, host string) remoteKey {
 	t.Helper()
-	for _, row := range remoteRowsOf(a, addr) {
+	drawn := remoteRowsOf(a, addr)
+	for _, row := range drawn {
 		key, ok := row.Key.(remoteKey)
 		if !ok {
 			continue
@@ -137,26 +154,30 @@ func remoteRowOn(t *testing.T, a *testApp, addr, host string) remoteKey {
 			return key
 		}
 	}
-	t.Fatalf("no row for a screen on %s: %v", host, remoteRowsOf(a, addr))
+	t.Fatalf("no row for a screen on %s: %v", host, drawn)
 	return remoteKey{}
 }
 
 // paneOn is the pane a window has on a machine, which has to be the one.
+//
+// Waited for: a pane opens on the goroutine that draws, so a test that
+// looked once could look before the connection had opened one.
 func paneOn(t *testing.T, a *testApp, host string) *term.Terminal {
 	t.Helper()
 	var found *term.Terminal
-	for pane, e := range a.panes {
-		if e.Host != host {
-			continue
+	waitFor(t, a, "a pane on "+host, func() bool {
+		found = nil
+		for pane, e := range a.panes {
+			if e.Host != host {
+				continue
+			}
+			if found != nil {
+				t.Fatalf("more than one pane on %q", host)
+			}
+			found = pane
 		}
-		if found != nil {
-			t.Fatalf("more than one pane on %q", host)
-		}
-		found = pane
-	}
-	if found == nil {
-		t.Fatalf("no pane on %q", host)
-	}
+		return found != nil
+	})
 	return found
 }
 
@@ -432,6 +453,12 @@ func TestAMachineStillBeingConnectedToOverThereHasNoPlus(t *testing.T) {
 	if !ok {
 		t.Fatalf("the heading went: %v", panelText(client, time.Now()))
 	}
+	// Still on its way as the row was read. A machine that had arrived, or
+	// given up, would make the rest of this test say nothing.
+	if host.machines.connecting("margit") == nil {
+		t.Fatalf("margit stopped connecting before the row was read: %v",
+			panelText(host, time.Now()))
+	}
 	if row.Button != 0 {
 		t.Errorf("the heading offers %q while the window over there is still connecting",
 			string(row.Button))
@@ -494,7 +521,20 @@ func TestAWindowTakenOverOverThereIsDrawnAsAWindow(t *testing.T) {
 		t.Errorf("the heading offers %q on a window, which has no files to serve from here",
 			string(row.Button))
 	}
-	if row.FG != client.colours.ANSI[5] {
-		t.Errorf("the heading is drawn in %v, want the colour a window has", row.FG)
+	// The colour this window draws a window's heading in, read off the
+	// heading of the window it took over rather than named as a number.
+	window, ok := panelRow(client, hostKey(addr))
+	if !ok {
+		t.Fatalf("the middle window has no heading: %v", panelText(client, time.Now()))
+	}
+	machine, ok := panelRow(client, hostKey(conns.Local))
+	if !ok {
+		t.Fatalf("this machine has no heading: %v", panelText(client, time.Now()))
+	}
+	if window.FG == machine.FG {
+		t.Fatalf("a window and a machine are both drawn in %v, so this proves nothing", window.FG)
+	}
+	if row.FG != window.FG {
+		t.Errorf("the heading is drawn in %v, want %v, the colour a window has", row.FG, window.FG)
 	}
 }

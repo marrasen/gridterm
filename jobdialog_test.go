@@ -727,6 +727,11 @@ func TestAJobsDialogDoesNotPlantARate(t *testing.T) {
 // is run on a goroutine of its own and the other window is pumped here:
 // it answers from the goroutine that draws, which is the test one.
 // Nothing here touches the window the dialog is on while that runs.
+//
+// other must never be the window the dialog is on. Pumping it here would
+// run its work on this goroutine while the button's work is running on
+// the other one, and two goroutines in one window is the race this is
+// built to avoid.
 func pressButtonOver(t *testing.T, a, other *testApp, f *ui.Form, title string) {
 	t.Helper()
 	at := -1
@@ -807,8 +812,10 @@ func TestRepeatingACopyFromAMachineOverThere(t *testing.T) {
 		return err == nil
 	})
 	// Read from margit, which is the only thing that tells the machine
-	// apart from the window it is reached through.
-	if got := margit.SFTPs(); got <= sessions {
+	// apart from the window it is reached through. Exactly one more
+	// session: one on the other end would be the repeat reading margit
+	// where it should be writing here.
+	if got := margit.SFTPs(); got != sessions+1 {
 		t.Errorf("margit served %d file sessions, want one more than the %d it had before the repeat",
 			got, sessions)
 	}
@@ -816,5 +823,66 @@ func TestRepeatingACopyFromAMachineOverThere(t *testing.T) {
 	// window's own disk.
 	if got := d.from.far; got.window != windowAt(t, client, addr) || got.host != "margit" {
 		t.Errorf("the job's source end is %v, want margit on the window taken over", got)
+	}
+	// The other end is this machine and no window, so the copy went the
+	// way it went the first time.
+	if got := d.to; got.far.window != nil || got.host != conns.Local {
+		t.Errorf("the job's destination end is %+v, want this machine with no window", got)
+	}
+}
+
+// Repeat after the window has been renamed files the new row under the
+// name the window has now.
+//
+// Where a row goes is worked out when the repeat opens its ends, not when
+// the job first ran. One filed under the old name is drawn under a
+// heading nothing is held at, which is to say nowhere.
+func TestRepeatingACopyAfterTheWindowIsRenamedFilesItUnderTheNewName(t *testing.T) {
+	host, client, addr, keyFile := aServingWindowConnectedToMargit(t)
+
+	from, into := t.TempDir(), t.TempDir()
+	putFile(t, from, "one.txt", "the body")
+
+	there := openFilesFromTheFarPlus(t, client, host, addr, "margit")
+	here := openFilesFromThePlus(t, client, conns.Local)
+	openAt(t, client, there, overThere(from))
+	openAt(t, client, here, into)
+	client.focus(there)
+
+	copyTheFirstFile(t, client, client.files.view)
+	e := theJobRow(t, client)
+	waitFor(t, client, "the copy to finish", func() bool {
+		client.refreshJobs()
+		return len(client.jobs) == 0
+	})
+	if e.Host != addr {
+		t.Fatalf("the copy's row is filed under %q, want the window %q", e.Host, addr)
+	}
+
+	// Renamed between the copy and its repeat, which is what moves the
+	// window's rows to another heading.
+	saveWindowFromTheDialog(t, client, "office", addr, keyFile)
+	if client.windows.named("office") == nil {
+		t.Fatalf("the window is held under %v, want office", client.windows.names())
+	}
+
+	openTheRow(t, client, e)
+	d := awaitModal[*jobDialog](t, client, "the job's dialog", nil)
+	pressButtonOver(t, client, host, d.Form, "Repeat")
+
+	again := theJobRow(t, client)
+	if again == e {
+		t.Fatal("the repeat put no new row on the sidebar")
+	}
+	if again.Host != "office" {
+		t.Errorf("the repeated copy's row is filed under %q, want office", again.Host)
+	}
+	// Drawn under the window's heading rather than nowhere.
+	client.refreshPanel(panelNow)
+	window := rowAt(client, hostKey("office"))
+	mine := rowAt(client, again)
+	if window < 0 || mine < 0 || window >= mine {
+		t.Errorf("office is drawn at %d and the repeated copy's row at %d: %v",
+			window, mine, panelText(client, panelNow))
 	}
 }

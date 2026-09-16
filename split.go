@@ -196,6 +196,12 @@ func (a *app) paneWhere(w ui.Widget) string {
 			return groupName(e.Host)
 		}
 	case *files.Pane:
+		if _, over := farFS(pane.FS()); over {
+			// The machine it reads, through the window: two panes on two
+			// machines over one window are both filed under the window, so
+			// the window's name alone would read the same on both lines.
+			return pane.FS().Name()
+		}
 		return groupName(a.hostOf(pane.FS()))
 	}
 	return ""

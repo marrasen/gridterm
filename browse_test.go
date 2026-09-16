@@ -1349,10 +1349,25 @@ func TestFilesOnAMachineOverThereReadItThroughTheWindow(t *testing.T) {
 	// And the heading is drawn the way a machine's is: a step in from
 	// the window's own heading, with its rows beside it, and a state dot
 	// saying the window over there is connected to it.
+	//
+	// The dot's colour is this window's own for the state the window over
+	// there published, so a heading marked "closed" in grey would not pass
+	// for one that is connected.
+	said := ""
+	for _, open := range held.win.Opens() {
+		if open.Host == "margit" && open.Kind == conns.Server.String() {
+			said = open.State
+		}
+	}
+	if said == "" {
+		t.Fatal("the window over there published no connection to margit")
+	}
+	wantMark := client.stateFG(stateNamed(said), panelNow)
 	rows := client.panel.Rows()
-	if got := rows[heading]; got.Depth != 2 || got.Mark != dot || got.MarkFG == (color.RGBA{}) {
+	if got := rows[heading]; got.Depth != 2 || got.Mark != dot || got.MarkFG != wantMark {
 		t.Errorf("margit's heading is drawn at depth %d with mark %q in %v, "+
-			"want a machine heading with a state dot", got.Depth, got.Mark, got.MarkFG)
+			"want a machine heading with a %s dot in %v",
+			got.Depth, got.Mark, got.MarkFG, said, wantMark)
 	}
 	if got := rows[mine]; got.Depth != 2 {
 		t.Errorf("the pane's row is drawn at depth %d, want beside the heading", got.Depth)
@@ -1374,7 +1389,16 @@ func TestLettingGoOfTheWindowClosesAPaneOnAMachineOverThere(t *testing.T) {
 
 	// The user's own path: the plus on the window's heading, and the
 	// line that lets go of it.
+	//
+	// Timed: the pane says goodbye to its file session and waits filesGrace
+	// for the answer. A goodbye nobody answers would still let go, and the
+	// window would freeze for a quarter of a second doing it.
+	started := time.Now()
 	chooseMenuItem(t, clickPlus(t, client, addr), "conn.disconnect")
+	if took := time.Since(started); took >= filesGrace {
+		t.Errorf("letting go took %v, as long as the whole grace period:"+
+			" the file session's goodbye went unanswered", took)
+	}
 
 	if client.files != nil {
 		for _, p := range client.files.view.Panes() {
@@ -1487,12 +1511,37 @@ func TestFilesOnAMachineTheWindowHasLetGoOfSaysSo(t *testing.T) {
 	chooseMenuItemOver(t, host, menu, "conn.files")
 
 	// The failure is shown the way every command's is, with the window
-	// over there quoted in it.
+	// over there quoted in it. The whole sentence: the machine is named,
+	// and so is the fact that this window was reading through another one.
 	n := awaitModal[*ui.Notice](t, client, "the failure", nil)
-	if !strings.Contains(n.Message(), "not connected to margit") {
+	if !strings.Contains(n.Message(), "the window you are reading through is not connected to margit") {
 		t.Errorf("it said %q, want the window's own words about margit", n.Message())
 	}
 	if client.files != nil {
 		t.Errorf("a file manager opened anyway: %v", filesRows(client))
 	}
+}
+
+// The go-to dialog on a pane over there names the machine the pane reads,
+// through the window it reads it through.
+//
+// The hint is the pane's own name, which is the name every question about
+// the pane is written with. One saying the window would be asking for a
+// directory on the wrong machine.
+func TestTheGoToHintOnAMachineOverThereNamesThatMachine(t *testing.T) {
+	host, client, addr := aWindowConnectedToMargit(t)
+	held := windowAt(t, client, addr)
+
+	pane := openFilesFromTheFarPlus(t, client, host, addr, "margit")
+	client.focus(pane)
+
+	// The chord, so the command is reached the way the user reaches it.
+	sendKey(t, client, press(input.KeyG, input.ModCtrl|input.ModShift))
+	f := awaitModal(t, client, "the go-to dialog", byTitle[*ui.Form]("Go to"))
+
+	want := "a directory on margit through " + held.name
+	if got := f.Field("Path").Placeholder; got != want {
+		t.Errorf("the dialog asks for %q, want %q", got, want)
+	}
+	pressButton(t, client, f, "Cancel")
 }

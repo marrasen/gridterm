@@ -869,9 +869,14 @@ func (s *Screen) MouseModes() (click, drag, motion, sgr bool) {
 
 // RenderLive copies the live screen into g, ignoring how far back into
 // history the view has been scrolled.
-func (s *Screen) RenderLive(g *grid.Grid) {
+func (s *Screen) RenderLive(g *grid.Grid) { s.RenderBack(g, 0) }
+
+// RenderBack copies the screen as it stands back lines into history into
+// g, ignoring how far back the view has been scrolled. More than there
+// is history for reads as far back as there is.
+func (s *Screen) RenderBack(g *grid.Grid, back int) {
 	was := s.scrollOff
-	s.scrollOff = 0
+	s.scrollOff = min(max(back, 0), len(s.cur.scrollback))
 	// A different view of the same rows, so what was drawn last time
 	// says nothing about what this one needs -- and what this one leaves
 	// in g is not the live screen either, so the next render starts
@@ -881,6 +886,9 @@ func (s *Screen) RenderLive(g *grid.Grid) {
 	s.scrollOff = was
 	s.drawnTo = nil
 }
+
+// History is how many lines have scrolled off the top and are kept.
+func (s *Screen) History() int { return len(s.cur.scrollback) }
 
 // RenderUnder draws the ordinary screen that an alternate one is
 // covering, and reports whether there was one.

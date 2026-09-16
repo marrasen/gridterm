@@ -451,6 +451,13 @@ func (t *Terminal) clipboard(params [][]byte) {
 // is on it now, and what the next output will land on.
 func (t *Terminal) RenderLive(g *grid.Grid) { t.scr.RenderLive(g) }
 
+// RenderBack copies the screen as it stands back lines into history into
+// g, for a reader asking for more than the screen holds.
+func (t *Terminal) RenderBack(g *grid.Grid, back int) { t.scr.RenderBack(g, back) }
+
+// History is how many lines have scrolled off the top and are kept.
+func (t *Terminal) History() int { return t.scr.History() }
+
 // RenderUnder draws the ordinary screen that an alternate one is
 // covering, and reports whether there was one.
 func (t *Terminal) RenderUnder(g *grid.Grid) bool { return t.scr.RenderUnder(g) }

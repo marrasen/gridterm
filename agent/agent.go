@@ -69,6 +69,10 @@ type Pane struct {
 	// Cols and Rows are the size of its screen.
 	Cols int `json:"cols"`
 	Rows int `json:"rows"`
+
+	// Ended says the program in the pane has already finished, so what
+	// it printed can be read and nothing can be typed into it.
+	Ended bool `json:"ended,omitempty"`
 }
 
 // MostLines caps how many lines one read may ask for.

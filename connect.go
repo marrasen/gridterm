@@ -243,6 +243,13 @@ func (a *app) endedAs(pane *term.Terminal, what string) {
 	}
 }
 
+// transportLost is what the row of a pane says when the connection
+// carrying it went, rather than the program in it finishing.
+//
+// Both leave a grey row, and the reason lives on the machine's row,
+// which the user can clear. This is what is left on the pane's own.
+const transportLost = "connection lost"
+
 // closeOnTheWayOut closes connections the window is never going to
 // take, because it has already stopped.
 //

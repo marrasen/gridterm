@@ -342,13 +342,6 @@ func (w *windows) drawnFrom(t *taken) []*term.Terminal {
 	return out
 }
 
-// drawsFromAWindow reports whether a pane is drawn from a window taken
-// over.
-func (w *windows) drawsFromAWindow(pane *term.Terminal) bool {
-	_, ok := w.from[pane]
-	return ok
-}
-
 // forget takes a pane off the record, for one that has been closed.
 func (w *windows) forget(pane *term.Terminal) {
 	delete(w.from, pane)
@@ -378,6 +371,18 @@ func (w *windows) watcher(what remoteKey) *term.Terminal {
 		}
 	}
 	return nil
+}
+
+// watchingPane is the pane watching something on a window taken over
+// and still drawing it, or nil. A pane whose program has ended is the
+// record of what it saw, not a view of what is running over there, so
+// the screen it was watching can be watched afresh.
+func (a *app) watchingPane(what remoteKey) *term.Terminal {
+	pane := a.windows.watcher(what)
+	if pane == nil || a.ended[pane] {
+		return nil
+	}
+	return pane
 }
 
 // openTakeOver asks which window to take over.
@@ -783,7 +788,7 @@ func (a *app) attachHere(what remoteKey, at *spot) error {
 	// Already watching it: the pane comes forward rather than a second
 	// one opening on the same program, which would be two panes typing
 	// into one shell.
-	if pane := a.windows.watcher(what); pane != nil {
+	if pane := a.watchingPane(what); pane != nil {
 		a.focus(pane)
 		return nil
 	}

@@ -45,6 +45,13 @@ type machines struct {
 	// own panes rather than everything under that name.
 	on map[*term.Terminal]*machine
 
+	// ran says which connection a pane ran on, for one whose program has
+	// ended. A pane with nothing running is not on a connection any
+	// more, so closing the connection leaves its transcript alone; a
+	// connection that dropped still has to reach it to say so on its
+	// row.
+	ran map[*term.Terminal]*machine
+
 	// making counts the connections being made and the windows being
 	// taken over. The panel shows a row for each, so several can be on
 	// their way at once; this is only so a test can tell when they have
@@ -58,6 +65,7 @@ func newMachines() *machines {
 		held:    make(map[string]*machine),
 		opening: make(map[string]*dialling),
 		on:      make(map[*term.Terminal]*machine),
+		ran:     make(map[*term.Terminal]*machine),
 	}
 }
 
@@ -157,8 +165,35 @@ func (ms *machines) panesOn(m *machine) []*term.Terminal {
 	return out
 }
 
+// stopped moves a pane off the connection it was running on, for one
+// whose program has ended, and hands back that connection.
+func (ms *machines) stopped(pane *term.Terminal) *machine {
+	m := ms.on[pane]
+	if m == nil {
+		return nil
+	}
+	delete(ms.on, pane)
+	ms.ran[pane] = m
+	return m
+}
+
+// panesThatRanOn are the panes whose program has ended and that were
+// running on one connection.
+func (ms *machines) panesThatRanOn(m *machine) []*term.Terminal {
+	var out []*term.Terminal
+	for pane, on := range ms.ran {
+		if on == m {
+			out = append(out, pane)
+		}
+	}
+	return out
+}
+
 // forget takes a pane off the record, for one that has been closed.
-func (ms *machines) forget(pane *term.Terminal) { delete(ms.on, pane) }
+func (ms *machines) forget(pane *term.Terminal) {
+	delete(ms.on, pane)
+	delete(ms.ran, pane)
+}
 
 // beingMade is how many connections and take-overs are on their way,
 // for a test.
@@ -273,6 +308,11 @@ type machine struct {
 	// log is the account of how the machine was reached, kept after the
 	// pane folded it away so "How it was reached" can show it.
 	log *connLog
+
+	// died says the far end dropped the connection, so a pane that ends
+	// after that can say its transport went rather than reading like a
+	// shell somebody exited.
+	died bool
 }
 
 // hold puts a row on the panel for a connection the window has just
@@ -332,6 +372,14 @@ func (a *app) machineDied(m *machine, why error) {
 	if a.machines.named(m.at.name) != m {
 		// Already closed from the window, and its row with it.
 		return
+	}
+	// Set before anything else, so a pane that ends after this reads the
+	// reason off the connection it ran on.
+	m.died = true
+	// And the panes that ended before it: their rows say the shell
+	// finished, which is not what happened to them.
+	for _, pane := range a.machines.panesThatRanOn(m) {
+		a.endedAs(pane, transportLost)
 	}
 	a.machines.drop(m)
 	// The file sessions relayed to it and left parked have ended with the

@@ -172,7 +172,7 @@ func (a *app) remoteRows(on hostFacts, mine []conns.Row,
 		if !open.HasScreen() {
 			continue
 		}
-		if a.windows.watcher(remoteKeyFor(t, open)) != nil {
+		if a.watchingPane(remoteKeyFor(t, open)) != nil {
 			// There is a pane of this window watching it, with a row of
 			// its own. One thing open should be one row, and the row
 			// that can be put in front and closed is the better one.

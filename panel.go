@@ -190,9 +190,11 @@ func (a *app) refreshPanel(now time.Time) {
 	// is what the panel shows. Read rather than pushed, the way the
 	// window title is. A program that has named nothing leaves the row
 	// saying what it was started as, which is what a remote command has
-	// instead of a title.
+	// instead of a title. A pane whose program has gone keeps the label
+	// it ended with, which is how "connection lost" stays on the row of
+	// one whose transport went.
 	for t, e := range a.panes {
-		if title := t.Title(); title != "" {
+		if title := t.Title(); title != "" && !a.ended[t] {
 			e.Label = title
 		}
 	}
@@ -208,9 +210,11 @@ func (a *app) refreshPanel(now time.Time) {
 	// the one sitting at it has to be able to tell.
 	for pane, e := range a.panes {
 		want := ""
-		if h := a.agents.of(pane); h != nil {
+		if h := a.agents.of(pane); h != nil && !a.ended[pane] {
 			// Ahead of the far end's size: the user can see a size, and
 			// cannot otherwise see that something else is typing here.
+			// Nothing is worked in once the program has gone, whether or
+			// not the hand-over is still in force.
 			want = h.note()
 		} else if what, ok := a.windows.watching(pane); ok {
 			// A pane showing a screen that is not its size, which is
@@ -635,12 +639,18 @@ func (a *app) closeSelectedConnection() error {
 func (a *app) clearFinished() error {
 	var err error
 	now := time.Now()
-	for t := range a.ended {
-		// Only the ones that really have finished. A pane whose channel
-		// would not close is still open, and its row still says so.
-		if e := a.panes[t]; e == nil || e.State(now) != meter.Closed {
-			continue
+	// Every pane whose meter has closed, not only the ones the window has
+	// reaped: the meter closes on the goroutine reading the session and
+	// the reap happens on this one, and DropFinished below goes by the
+	// meter, so a pane left open here would lose its row.
+	var doomed []*term.Terminal
+	for t, e := range a.panes {
+		if e.State(now) == meter.Closed {
+			doomed = append(doomed, t)
 		}
+	}
+	// Listed first: closing a pane takes it out of the map being walked.
+	for _, t := range doomed {
 		if cerr := a.closePane(t); cerr != nil && err == nil {
 			err = cerr
 		}

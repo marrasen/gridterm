@@ -212,12 +212,13 @@ type handover struct {
 //
 // Nothing listens until this is asked for. What the code lets an agent
 // do is read this one pane, type into it, and wait.
+//
+// A pane whose program has finished can be handed over too: reading what
+// it printed is worth something, and typing into it is refused where the
+// typing happens.
 func (a *app) handPane(pane *term.Terminal) error {
 	if pane == nil {
 		return errors.New("there is no pane here to hand over")
-	}
-	if pane.Exited() {
-		return errors.New("the program in this pane has finished, so there is nothing to work in")
 	}
 	if have := a.agents.of(pane); have != nil {
 		// Already handed over. The code is shown again rather than a
@@ -335,6 +336,7 @@ func (w agentWindow) Use(code string) (agent.Pane, error) {
 			Label: agentLabel(e),
 			Cols:  size.Cols,
 			Rows:  size.Rows,
+			Ended: h.pane.Exited(),
 		}, nil
 	})
 }

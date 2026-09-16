@@ -401,12 +401,6 @@ func (a *app) closePane(w ui.Widget) error {
 // pane when they have read it.
 func (a *app) paneEnded(t *term.Terminal) error {
 	e := a.panes[t]
-	if a.windows.drawsFromAWindow(t) {
-		// A shell on a window taken over, or a screen watched there,
-		// goes without leaving a row: the other window never listed
-		// it, and what ended it is on the window's own row.
-		return a.closePane(t)
-	}
 	if e == nil {
 		// No row, so there is no way left to reach the pane and nothing
 		// to say the program has gone.
@@ -419,6 +413,12 @@ func (a *app) paneEnded(t *term.Terminal) error {
 	// tried again on every frame for the life of the window.
 	a.ended[t] = true
 	a.markDirty()
+	// Off the connection it rode on, which it is not running on any
+	// more, so closing that connection later leaves this transcript.
+	if m := a.machines.stopped(t); m != nil && m.died {
+		a.endedAs(t, transportLost)
+	}
+	a.sayTheProgramHasFinished(t)
 	if err := t.Close(); err != nil {
 		// The dot has already gone grey: the stream ended, and that is
 		// what closed the meter. So the note is the only place left to
@@ -427,10 +427,21 @@ func (a *app) paneEnded(t *term.Terminal) error {
 		e.Note = "could not be closed"
 		return err
 	}
-	// The channel it was running on is let go of. The pane itself stays,
-	// showing what was printed.
-	e.Meter.Close()
 	return nil
+}
+
+// sayTheProgramHasFinished writes one line into a pane whose program has
+// gone, so the user is not left at a screen that has stopped answering
+// with nothing to say why.
+//
+// Into the pane rather than beside it, so it lands in the transcript,
+// and once, because paneEnded marks the pane before it calls this.
+func (a *app) sayTheProgramHasFinished(t *term.Terminal) {
+	how := "Close this pane when you have read it."
+	if chord := a.chordFor("pane.close"); chord != "" {
+		how = chord + " closes this pane."
+	}
+	t.Say("-- gridterm: the program has finished. " + how + " --")
 }
 
 // Ended reports whether a pane is one that has stopped and is only being

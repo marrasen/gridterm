@@ -186,11 +186,15 @@ func (s *server) runTool(name string, args json.RawMessage) (result, *rpcError) 
 		if err != nil {
 			return wrong(err.Error())
 		}
+		what := "Read it with read_pane, type into it with send_keys, and wait for it" +
+			" with wait_for. The user is watching and can take it back at any moment."
+		if pane.Ended {
+			what = "The program in it has finished, so there is nothing left to type" +
+				" into: read what it printed with read_pane."
+		}
 		return say(fmt.Sprintf(
-			"You have %s: a %dx%d screen, as pane %q.\n\n"+
-				"Read it with read_pane, type into it with send_keys, and wait for it"+
-				" with wait_for. The user is watching and can take it back at any moment.",
-			pane.Label, pane.Cols, pane.Rows, pane.ID))
+			"You have %s: a %dx%d screen, as pane %q.\n\n%s",
+			pane.Label, pane.Cols, pane.Rows, pane.ID, what))
 
 	case "list_panes":
 		panes, err := s.panes.List()

@@ -194,6 +194,9 @@ func New(cfg Config) (*Terminal, error) {
 	// At least one cell: an emulator with no columns has nowhere to put
 	// the cursor.
 	cols, rows := max(cfg.Size.Cols, 1), max(cfg.Size.Rows, 1)
+	// The size the screen really is, before any layout, so a terminal
+	// that ends before it is laid out still reports the screen it has.
+	t.size = ui.Size{Cols: cols, Rows: rows}
 	t.g = grid.New(cols, rows, pal.FG, pal.BG)
 	t.g.SelectionBG = pal.Selection
 	t.term = vt.New(cols, rows, pal, cfg.Scrollback, vt.Callbacks{
@@ -237,7 +240,25 @@ func (t *Terminal) Exited() bool { return t.exited.Load() }
 // Dirty reports whether there is new output to draw.
 func (t *Terminal) Dirty() bool { return t.pending.Load() }
 
-// Layout resizes the emulator and the session to match the area.
+// Say writes a line of the host's own onto the screen, as though the
+// program had printed it, so it lands in the transcript the user then
+// scrolls back through.
+//
+// It is for what the host has to tell the user about the pane itself.
+// Nobody watching is told: a watcher reads the program, not this
+// window's remarks about it.
+func (t *Terminal) Say(line string) {
+	t.mu.Lock()
+	_, _ = t.term.Write([]byte("\r\n" + line + "\r\n"))
+	// Counted like anything else that moved the screen, so a reader
+	// holding the last one knows to take it again.
+	t.said.Add(1)
+	t.mu.Unlock()
+	t.pending.Store(true)
+}
+
+// Layout resizes the emulator and the session to match the area, unless
+// somebody else has the size or the program has gone.
 func (t *Terminal) Layout(size ui.Size) {
 	t.box = size
 	if t.held {
@@ -251,7 +272,14 @@ func (t *Terminal) Layout(size ui.Size) {
 }
 
 // resize gives the terminal a size, whoever decided it.
+//
+// A terminal whose program has gone keeps the size it was written at,
+// because reflowing its screen at another width cuts the scrollback
+// rather than moving it.
 func (t *Terminal) resize(size ui.Size) {
+	if t.exited.Load() {
+		return
+	}
 	cols, rows := max(size.Cols, 1), max(size.Rows, 1)
 	if t.haveSize && t.size == size {
 		return
@@ -338,7 +366,10 @@ func (t *Terminal) draw(v grid.View) {
 	// idea who owns it, so an unfocused widget writing even a hidden
 	// cursor would take it from whoever has it. Clearing it once a frame
 	// is the container's job.
-	if t.focused {
+	//
+	// And none at all once the program has gone, or a pane that swallows
+	// every keystroke would look like a shell sitting at a prompt.
+	if t.focused && !t.exited.Load() {
 		v.SetCursor(t.g.Cursor())
 	}
 }

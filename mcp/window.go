@@ -208,5 +208,6 @@ func asPane(port int, p agent.Pane) Pane {
 		Label: p.Label,
 		Cols:  p.Cols,
 		Rows:  p.Rows,
+		Ended: p.Ended,
 	}
 }

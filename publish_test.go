@@ -2,6 +2,7 @@ package main
 
 import (
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -311,15 +312,14 @@ func TestAFinishedScreenOverThereIsNotListed(t *testing.T) {
 	}
 }
 
-// A screen watched here goes without leaving a row when the shell in it
-// ends over there.
+// A screen watched here keeps its pane when the shell in it ends over
+// there, and is listed once rather than twice.
 //
-// A shell of this window's own that ends keeps a greyed row saying so.
-// One over there never had a row on that window, and what ended it is
-// that window's business, so a greyed row here said nothing the user
-// could use. The window over there keeps its own greyed row and says
-// so, and that is not listed here either.
-func TestAScreenWatchedHereGoesWithoutARow(t *testing.T) {
+// The pane holds what it saw, which is the whole of why a pane is kept,
+// and its row is the greyed one. The screen over there is left out, the
+// way every finished screen over there is, so the two do not both
+// appear.
+func TestAScreenWatchedHereKeepsItsPaneWhenItEndsOverThere(t *testing.T) {
 	host, client, addr := twoWindows(t)
 
 	hostPane := onlyPaneOn(t, host)
@@ -335,36 +335,55 @@ func TestAScreenWatchedHereGoesWithoutARow(t *testing.T) {
 	mine := client.panes[pane]
 	panes := len(client.panes)
 
+	// Something to read afterwards, printed over there and drawn here.
+	host.shells[0].out <- []byte("the last thing it said\r\n")
+	waitFor(t, host, "the watching pane to show what the shell said", func() bool {
+		return strings.Contains(paneText(pane), "the last thing it said")
+	}, client)
+
 	// The shell over there ends, the way a shell does.
 	if err := host.shells[0].Close(); err != nil {
 		t.Fatalf("end the shell over there: %v", err)
 	}
 	reapWhenTold(t, host)
-	// And this window has both heard that it ended and let the pane go.
-	waitFor(t, host, "the watching pane to go and the window over there to say the shell finished", func() bool {
+	// And this window has both heard that it ended and marked the pane.
+	waitFor(t, host, "the watching pane to end and the window over there to say the shell finished", func() bool {
 		host.refreshPanel(time.Now())
 		client.reapExited()
 		open, still := client.openOver(row)
-		return len(client.panes) == panes-1 && (!still || open.State == meter.Closed.String())
+		return client.Ended(pane) && (!still || open.State == meter.Closed.String())
 	}, client)
 
-	// Nothing drawn for it under the window: not the pane's row, not
-	// the screen over there, and nothing greyed.
+	if len(client.panes) != panes {
+		t.Fatalf("%d panes, want the %d there were", len(client.panes), panes)
+	}
+	if !strings.Contains(paneText(pane), "the last thing it said") {
+		t.Errorf("the pane no longer holds what it was watching: %q", paneText(pane))
+	}
+	// Drawn once: this window's own row for the pane, and no second row
+	// for the screen over there.
+	var kept, twice bool
 	for _, r := range drawnUnder(t, client, hostKey(addr)) {
 		switch {
 		case r.Key == mine:
-			t.Errorf("the watching pane's row was left behind: %q", r.Text)
+			kept = true
 		case r.Key == row:
-			t.Errorf("the finished shell over there is still listed: %q", r.Text)
-		case r.FG == client.colours.ANSI[8]:
-			t.Errorf("a greyed row was left behind: %q", r.Text)
+			twice = true
 		}
+	}
+	if !kept {
+		t.Errorf("the watching pane has no row left: %v", panelText(client, time.Now()))
+	}
+	if twice {
+		t.Error("the finished screen over there is listed as well as the pane watching it")
 	}
 }
 
-// A shell opened on the window from here goes without leaving a row
-// when it ends.
-func TestAShellOnTheWindowGoesWithoutARow(t *testing.T) {
+// A shell opened on the window from here keeps its pane when it ends.
+//
+// The window over there started that shell for this one and draws it
+// nowhere, so this pane is the only place what it printed ever appeared.
+func TestAShellOnTheWindowKeepsItsPaneWhenItEnds(t *testing.T) {
 	host, client, addr := twoWindows(t)
 	pane := paneOnTheWindow(t, client)
 	mine := client.panes[pane]
@@ -378,18 +397,35 @@ func TestAShellOnTheWindowGoesWithoutARow(t *testing.T) {
 	if served != 2 {
 		t.Fatalf("the window over there started %d shells, want its own and this one's", served)
 	}
+	host.shells[1].out <- []byte("the last thing it said\r\n")
+	waitFor(t, host, "the pane to show what the shell said", func() bool {
+		return strings.Contains(paneText(pane), "the last thing it said")
+	}, client)
 	if err := host.shells[1].Close(); err != nil {
 		t.Fatalf("end the shell over there: %v", err)
 	}
-	waitFor(t, host, "the pane to go", func() bool {
+	waitFor(t, host, "the pane to end", func() bool {
 		client.reapExited()
-		return len(client.panes) == panes-1
+		return client.Ended(pane)
 	}, client)
 
+	if len(client.panes) != panes {
+		t.Fatalf("%d panes, want the %d there were", len(client.panes), panes)
+	}
+	if !strings.Contains(paneText(pane), "the last thing it said") {
+		t.Errorf("the pane lost what the shell printed: %q", paneText(pane))
+	}
+	var kept bool
 	for _, r := range drawnUnder(t, client, hostKey(addr)) {
-		if r.Key == mine || r.FG == client.colours.ANSI[8] {
-			t.Errorf("a row was left behind for the shell that ended: %q", r.Text)
+		if r.Key == mine {
+			kept = true
+			if r.FG != client.colours.ANSI[8] {
+				t.Errorf("the row is drawn in %v, want the grey a finished row is drawn in", r.FG)
+			}
 		}
+	}
+	if !kept {
+		t.Errorf("the pane has no row left: %v", panelText(client, time.Now()))
 	}
 }
 

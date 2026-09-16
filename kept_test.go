@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/marrasen/gridterm/agent"
+	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/internal/sshtest"
 	"github.com/marrasen/gridterm/meter"
 	"github.com/marrasen/gridterm/ui"
@@ -34,6 +35,51 @@ func endTheShell(t *testing.T, a *testApp, which int, pane *term.Terminal) {
 		a.reapExited()
 		return a.Ended(pane)
 	})
+}
+
+// endTheRemoteShell types the line the test server ends a session on and
+// waits for the window to see that pane end.
+func endTheRemoteShell(t *testing.T, a *testApp, pane *term.Terminal) {
+	t.Helper()
+	pane.Send([]byte("bye\n"))
+	waitFor(t, a, "the window to see the remote shell end", func() bool {
+		a.reapExited()
+		return a.Ended(pane)
+	})
+}
+
+// aConnectedWindow is a window with a shell open on a test server, and
+// the name the server is held under.
+func aConnectedWindow(t *testing.T, cols, rows int) (*testApp, *sshtest.Server, string) {
+	t.Helper()
+	s := sshtest.New(t)
+	a := newTestApp(t, cols, rows)
+	withDialogs(t, a)
+	withPanel(t, a)
+	a.connect(serverConfig(t, s))
+	waitForPanes(t, a, 2)
+	host := serverConfig(t, s).Target()
+	if a.machines.named(host) == nil {
+		t.Fatalf("nothing connected: %v", a.machines.names())
+	}
+	return a, s, host
+}
+
+// paneWithNoRow is a pane the window still holds with no row on the
+// sidebar to reach it by, and nil when every pane has one.
+func paneWithNoRow(a *testApp, now time.Time) *term.Terminal {
+	listed := map[*conns.Entry]bool{}
+	for _, group := range a.registry.Groups(now) {
+		for _, row := range group.Rows {
+			listed[row.Entry] = true
+		}
+	}
+	for pane, e := range a.panes {
+		if !listed[e] {
+			return pane
+		}
+	}
+	return nil
 }
 
 // A shell that ends keeps its pane. The user asked for the pane, and
@@ -375,5 +421,465 @@ func TestAPaneWhoseConnectionDroppedStays(t *testing.T) {
 	}
 	if a.panes[pane] != nil {
 		t.Fatal("the pane would not close")
+	}
+}
+
+// wideLine is a line long enough to be cut by a narrower window, so a
+// resize that reflowed the scrollback would be visible in it.
+func wideLine(n int) string {
+	return fmt.Sprintf("line %02d %s", n, strings.Repeat("x", 28))
+}
+
+// aPaneFullOfScrollback is a window whose one shell has printed more
+// long lines than the screen holds, and has then ended.
+func aPaneFullOfScrollback(t *testing.T) (*testApp, *term.Terminal) {
+	t.Helper()
+	// No sidebar: it takes columns off the pane, and these tests are
+	// about what a column costs the scrollback.
+	a := newTestApp(t, 40, 6)
+	withDialogs(t, a)
+	pane, ok := onlyPaneWidget(t, a).(*term.Terminal)
+	if !ok {
+		t.Fatal("the window opened on something that is not a terminal")
+	}
+	if got := pane.Size().Cols; got != 40 {
+		t.Fatalf("the pane is %d columns wide, want the window's 40", got)
+	}
+	for i := 1; i <= 20; i++ {
+		a.shells[0].out <- []byte(wideLine(i) + "\r\n")
+	}
+	waitFor(t, a, "the pane to show what the shell printed", func() bool {
+		return strings.Contains(paneText(pane), wideLine(20))
+	})
+	endTheShell(t, a, 0, pane)
+	return a, pane
+}
+
+// Making the window narrower and wide again leaves the scrollback of a
+// pane whose shell ended exactly as it was.
+//
+// Every pane is laid out, not only the one in front, so a drag of the
+// window edge reaches every pane the user has ever finished with. The
+// emulator reflows the whole scrollback at the new width, and what is
+// cut off does not come back when the window is made wide again.
+func TestAResizeKeepsTheScrollbackOfAPaneWhoseShellEnded(t *testing.T) {
+	a, pane := aPaneFullOfScrollback(t)
+	was := pane.ReadLines(30).Text
+	if !strings.Contains(was, wideLine(3)) {
+		t.Fatalf("the scrollback did not survive the shell, so this proves nothing: %q", was)
+	}
+
+	// Narrower, then wide again, the way a window drag goes.
+	a.setGridSize(20, 6)
+	a.setGridSize(40, 6)
+
+	got := pane.ReadLines(30).Text
+	if !strings.Contains(got, wideLine(3)) {
+		t.Errorf("the resize cut a scrollback line: %q", got)
+	}
+	if got != was {
+		t.Errorf("the resize changed what the pane holds:\nwas %q\nnow %q", was, got)
+	}
+}
+
+// The scrollback of a pane whose shell ended can be scrolled, and the
+// screen it then draws shows a line from early on.
+//
+// Reading it the way an agent does proves the buffer is there. Marcus
+// asked to be able to scroll back through it, which is the half a read
+// does not touch.
+func TestTheScrollbackOfAPaneWhoseShellEndedCanBeScrolled(t *testing.T) {
+	a, pane := aPaneFullOfScrollback(t)
+	if strings.Contains(paneText(pane), wideLine(1)) {
+		t.Fatal("the first line is still on the screen, so this proves nothing")
+	}
+
+	pane.ScrollPages(10)
+
+	if !strings.Contains(paneText(pane), wideLine(1)) {
+		t.Errorf("scrolling back showed %q", paneText(pane))
+	}
+	// And it is still the window's pane, laid out where it always was.
+	if !inTheTree(a, pane) {
+		t.Error("the pane is no longer in the tree")
+	}
+}
+
+// A pane whose program has finished says so on its own screen, and stops
+// drawing a cursor.
+//
+// The row going grey is the whole of what the window said, and the
+// sidebar can be hidden. Left alone, a dead pane looks exactly like a
+// shell sitting at a prompt and swallows every keystroke in silence.
+func TestAPaneSaysItsProgramHasFinished(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	a.commands()
+	pane, ok := onlyPaneWidget(t, a).(*term.Terminal)
+	if !ok {
+		t.Fatal("the window opened on something that is not a terminal")
+	}
+	a.focus(pane)
+	if !screenOf(pane).Cursor().Visible {
+		t.Fatal("the pane draws no cursor while its shell is running, so this proves nothing")
+	}
+
+	endTheShell(t, a, 0, pane)
+
+	said := paneText(pane)
+	if !strings.Contains(said, "the program has finished") {
+		t.Errorf("the pane says nothing about the program finishing: %q", said)
+	}
+	// The real chord, read from the keymap rather than written out here,
+	// so a rebinding cannot leave the pane naming a key that does
+	// nothing.
+	chord := a.chordFor("pane.close")
+	if chord == "" {
+		t.Fatal("nothing is bound to pane.close, so the line has no key to name")
+	}
+	if !strings.Contains(said, chord) {
+		t.Errorf("the pane does not say %s closes it: %q", chord, said)
+	}
+	if screenOf(pane).Cursor().Visible {
+		t.Error("the pane still draws a cursor, so it looks like a shell at a prompt")
+	}
+	// Once, however many frames go by.
+	a.reapExited()
+	a.reapExited()
+	if n := strings.Count(paneText(pane), "the program has finished"); n != 1 {
+		t.Errorf("the line is on the screen %d times", n)
+	}
+}
+
+// Clearing the finished connections between the meter closing and the
+// window reaping the pane leaves no pane without a row.
+//
+// The meter closes on the goroutine reading the session, and the reap
+// happens on the one that draws, so a pane really is finished for a
+// while before it is reaped. Forced here rather than waited for.
+func TestClearingFinishedBeforeTheReapLeavesNoPaneWithoutARow(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	first, ok := onlyPaneWidget(t, a).(*term.Terminal)
+	if !ok {
+		t.Fatal("the window opened on something that is not a terminal")
+	}
+	if err := a.openTab(); err != nil {
+		t.Fatalf("openTab: %v", err)
+	}
+
+	// The shell goes and its meter closes with it. Nothing reaps.
+	if err := a.shells[0].Close(); err != nil {
+		t.Fatalf("ending the shell: %v", err)
+	}
+	waitFor(t, a, "the meter of the shell that went to close", func() bool {
+		return a.panes[first].State(time.Now()) == meter.Closed
+	})
+	if a.Ended(first) {
+		t.Fatal("the pane was reaped, so this proves nothing")
+	}
+
+	if err := a.clearFinished(); err != nil {
+		t.Fatalf("clearFinished: %v", err)
+	}
+
+	if pane := paneWithNoRow(a, time.Now()); pane != nil {
+		t.Errorf("a pane is open with no row on the sidebar to reach it by: %q",
+			paneText(pane))
+	}
+	checkTree(t, a)
+}
+
+// A pane handed to an agent whose connection then drops is still named
+// by its code and still readable, and its row stops saying an agent is
+// working in it.
+//
+// The hand-over outliving the program and the connection dropping have
+// been tested apart. Crossed is what Marcus hit.
+func TestAHandoverOnARemotePaneOutlivesTheConnection(t *testing.T) {
+	a, s, host := aConnectedWindow(t, 90, 30)
+	pane := paneFor(a, host)
+	if pane == nil {
+		t.Fatal("nothing opened on the machine")
+	}
+	waitFor(t, a, "the machine to say something", func() bool {
+		return strings.Contains(paneText(pane), "READY")
+	})
+	if err := a.handPane(pane); err != nil {
+		t.Fatalf("hand it over: %v", err)
+	}
+	h := a.agents.of(pane)
+	if h == nil {
+		t.Fatal("the window did not record the handover")
+	}
+	c, err := agent.Dial(h.code)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	t.Cleanup(func() { _ = c.Close() })
+	var got agent.Pane
+	offWindow(t, a, "the window to answer the agent", func() error {
+		var err error
+		got, err = c.Use(h.code)
+		return err
+	})
+
+	// The far end goes, the way a server being rebooted goes.
+	s.CloseClients()
+	waitFor(t, a, "the window to see the machine go", func() bool {
+		a.reapExited()
+		return a.machines.named(host) == nil && a.Ended(pane)
+	})
+
+	if a.agents.of(pane) == nil {
+		t.Fatal("the handover went with the connection")
+	}
+	// The code still names the pane, and says plainly that there is
+	// nothing left to type into.
+	var again agent.Pane
+	offWindow(t, a, "the window to answer the agent again", func() error {
+		var err error
+		again, err = c.Use(h.code)
+		return err
+	})
+	if again.ID != got.ID {
+		t.Errorf("the code now names %q, want the pane it named before", again.ID)
+	}
+	if !again.Ended {
+		t.Error("the agent was not told the program has finished")
+	}
+	// And what the machine printed is still there to read.
+	var look agent.Look
+	offWindow(t, a, "the window to answer the agent", func() error {
+		var err error
+		look, err = c.Read(got.ID, 0)
+		return err
+	})
+	if !strings.Contains(look.Screen, "READY") {
+		t.Errorf("the agent read %q", look.Screen)
+	}
+	// The row no longer says somebody is working in it: nothing is.
+	a.refreshPanel(time.Now())
+	if note := a.panes[pane].Note; isAgentNote(note) {
+		t.Errorf("the row of a finished pane says %q", note)
+	}
+}
+
+// Closing a connection leaves the transcript of a pane that had already
+// ended on it.
+//
+// A pane with nothing running is not on the connection any more. The
+// user exited a shell, was told the pane is kept, and closing the
+// connection an hour later must not take it back.
+func TestClosingAConnectionKeepsAPaneThatAlreadyEnded(t *testing.T) {
+	a, _, host := aConnectedWindow(t, 80, 24)
+	dead := paneFor(a, host)
+	if dead == nil {
+		t.Fatal("nothing opened on the machine")
+	}
+	// A second shell on the same connection, so closing it has
+	// something live to take.
+	if err := a.openOn(host, nil, nil); err != nil {
+		t.Fatalf("a second terminal: %v", err)
+	}
+	waitForPanes(t, a, 3)
+	endTheRemoteShell(t, a, dead)
+	was := dead.ReadLines(30).Text
+
+	if err := a.dropMachine(host); err != nil {
+		t.Fatalf("close the connection: %v", err)
+	}
+
+	if a.panes[dead] == nil {
+		t.Fatal("closing the connection took the pane of the shell that had already ended")
+	}
+	if !inTheTree(a, dead) {
+		t.Fatal("closing the connection took the pane out of the tree")
+	}
+	if got := dead.ReadLines(30).Text; got != was {
+		t.Errorf("the transcript changed:\nwas %q\nnow %q", was, got)
+	}
+	checkTree(t, a)
+}
+
+// Choosing a machine's row puts a pane still running in front, not one
+// whose shell has ended.
+func TestChoosingAMachineRowPutsALivePaneInFront(t *testing.T) {
+	a, _, host := aConnectedWindow(t, 80, 24)
+	dead := paneFor(a, host)
+	if dead == nil {
+		t.Fatal("nothing opened on the machine")
+	}
+	if err := a.openOn(host, nil, nil); err != nil {
+		t.Fatalf("a second terminal: %v", err)
+	}
+	waitForPanes(t, a, 3)
+	m := a.machines.named(host)
+	var live *term.Terminal
+	for _, pane := range a.machines.panesOn(m) {
+		if pane != dead {
+			live = pane
+		}
+	}
+	if live == nil {
+		t.Fatal("the second terminal is not on the connection")
+	}
+	endTheRemoteShell(t, a, dead)
+
+	// Asked over and over: the record of what runs where is a map, so
+	// one try could land on the live pane by luck.
+	for try := 1; try <= 20; try++ {
+		a.focus(dead)
+		a.revealMachine(m)
+		if a.focusedTerminal() != live {
+			t.Fatalf("try %d put the pane whose shell ended in front", try)
+		}
+	}
+}
+
+// A pane whose shell ended stays when the pane it was split with is
+// closed, and the window stays open with only dead panes left.
+func TestADeadPaneInASplitOutlivesItsNeighbour(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	first, ok := onlyPaneWidget(t, a).(*term.Terminal)
+	if !ok {
+		t.Fatal("the window opened on something that is not a terminal")
+	}
+	if err := a.openTab(); err != nil {
+		t.Fatalf("openTab: %v", err)
+	}
+	second := a.focusedTerminal()
+	if second == nil || second == first {
+		t.Fatal("the tab opened no second pane")
+	}
+	// The pane being divided has to be the one showing, or there is no
+	// room measured for it.
+	a.focus(first)
+	if err := a.splitWith(ui.Columns, first, second); err != nil {
+		t.Fatalf("splitWith: %v", err)
+	}
+
+	endTheShell(t, a, 0, first)
+	if err := a.closePane(second); err != nil {
+		t.Fatalf("close the live pane: %v", err)
+	}
+
+	if a.panes[first] == nil {
+		t.Fatal("closing the live pane took the dead one with it")
+	}
+	if !inTheTree(a, first) {
+		t.Fatal("the dead pane was left out of the tree")
+	}
+	if a.quit.Load() {
+		t.Error("the window closed while a pane that had ended was still open")
+	}
+	checkTree(t, a)
+}
+
+// Connecting to a machine again works while the panes of the last
+// connection are still open, and those panes say what became of them.
+func TestReconnectingToAMachineThatStillHasDeadPanes(t *testing.T) {
+	a, s, host := aConnectedWindow(t, 80, 24)
+	dead := paneFor(a, host)
+	if dead == nil {
+		t.Fatal("nothing opened on the machine")
+	}
+
+	// The far end goes, the way a server being rebooted goes.
+	s.CloseClients()
+	waitFor(t, a, "the window to see the machine go", func() bool {
+		a.reapExited()
+		return a.machines.named(host) == nil && a.Ended(dead)
+	})
+	// The pane's own row says the connection went, not that a shell
+	// exited: the machine's row carries the reason and the user can
+	// clear it.
+	a.refreshPanel(time.Now())
+	if got := a.panes[dead].Label; got != transportLost {
+		t.Errorf("the row of the pane says %q, want %q", got, transportLost)
+	}
+
+	a.connect(serverConfig(t, s))
+	waitForPanes(t, a, 3)
+
+	m := a.machines.named(host)
+	if m == nil {
+		t.Fatalf("the machine would not connect again: %v", a.machines.names())
+	}
+	live := paneFor(a, host)
+	if live == nil || live == dead {
+		t.Fatal("the new connection opened no pane of its own")
+	}
+	if a.panes[dead] == nil {
+		t.Fatal("connecting again took the pane of the last connection")
+	}
+	// And the new connection does not own the old pane either.
+	if err := a.dropMachine(host); err != nil {
+		t.Fatalf("close the new connection: %v", err)
+	}
+	if a.panes[dead] == nil {
+		t.Fatal("closing the new connection took the old pane")
+	}
+	checkTree(t, a)
+}
+
+// A pane whose program has finished can be handed to an agent: reading
+// it is worth something, and typing into it is refused where the typing
+// happens.
+func TestAPaneWhoseProgramHasEndedCanBeHandedOver(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pane := onlyPaneOn(t, a)
+	a.shells[0].out <- []byte("what it left behind\r\n")
+	waitFor(t, a, "the pane to show what the shell said", func() bool {
+		return strings.Contains(paneText(pane), "what it left behind")
+	})
+	endTheShell(t, a, 0, pane)
+
+	if err := a.handPane(pane); err != nil {
+		t.Fatalf("hand over a pane whose program has finished: %v", err)
+	}
+	h := a.agents.of(pane)
+	if h == nil {
+		t.Fatal("the window did not record the handover")
+	}
+	c, err := agent.Dial(h.code)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	t.Cleanup(func() { _ = c.Close() })
+
+	var got agent.Pane
+	offWindow(t, a, "the window to answer the agent", func() error {
+		var err error
+		got, err = c.Use(h.code)
+		return err
+	})
+	if !got.Ended {
+		t.Error("the agent was not told the program has finished")
+	}
+
+	var look agent.Look
+	offWindow(t, a, "the window to answer the agent", func() error {
+		var err error
+		look, err = c.Read(got.ID, 0)
+		return err
+	})
+	if !strings.Contains(look.Screen, "what it left behind") {
+		t.Errorf("the agent read %q", look.Screen)
+	}
+
+	// And typing is still refused, which is what makes handing it over
+	// safe.
+	done := make(chan error, 1)
+	go func() { done <- c.Send(got.ID, "rm -rf /\r", nil) }()
+	waitFor(t, a, "the window to answer", func() bool { return len(done) > 0 })
+	if err := <-done; err == nil {
+		t.Error("the agent typed into a pane whose program has finished")
 	}
 }

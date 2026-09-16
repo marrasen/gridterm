@@ -112,6 +112,9 @@ type Pane struct {
 	Label string `json:"what"`
 	Cols  int    `json:"cols"`
 	Rows  int    `json:"rows"`
+
+	// Ended says the program in the pane has already finished.
+	Ended bool `json:"program_has_finished,omitempty"`
 }
 
 // Screen is a pane as it stands.

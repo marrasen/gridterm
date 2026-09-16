@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -228,11 +229,90 @@ func TestTheRowSaysAnAgentHasThePane(t *testing.T) {
 	})
 }
 
-// Handing a pane over shows the code and puts it on the clipboard.
+// The prompt tells an agent that has never heard of gridterm everything
+// it needs.
 //
-// The next thing a code is for is being pasted into a conversation, and
-// it is thirty-two characters nobody should have to read off a screen.
-func TestHandingAPaneOverShowsTheCodeAndCopiesIt(t *testing.T) {
+// A bare code is no use on its own: the agent has to know what it has
+// been given, how to start the MCP server, and which tools to call.
+func TestTheHandoverPromptStandsOnItsOwn(t *testing.T) {
+	const code = "gt1-54321-abcdefghijklmnopqrstuvwxyz"
+	const exe = `C:\Users\someone\go\bin\gridterm.exe`
+	prompt := handoverPrompt(code, exe)
+	t.Logf("the prompt as generated:\n%s", prompt)
+
+	if got := strings.Count(prompt, code); got != 1 {
+		t.Errorf("the code is in the prompt %d times, want once", got)
+	}
+	// The one line for Claude Code, with this program's own path.
+	if want := "claude mcp add gridterm -- " + exe + " -mcp"; !strings.Contains(prompt, want) {
+		t.Errorf("the prompt does not say %q", want)
+	}
+	// And the same path in the JSON for any other host, where its
+	// backslashes have to be doubled to be read back.
+	var config struct {
+		Servers map[string]struct {
+			Command string   `json:"command"`
+			Args    []string `json:"args"`
+		} `json:"mcpServers"`
+	}
+	snippet := jsonIn(t, prompt)
+	if err := json.Unmarshal([]byte(snippet), &config); err != nil {
+		t.Fatalf("the JSON in the prompt does not parse: %v in %s", err, snippet)
+	}
+	got, there := config.Servers["gridterm"]
+	if !there || got.Command != exe || len(got.Args) != 1 || got.Args[0] != "-mcp" {
+		t.Errorf("the JSON says %+v", config.Servers)
+	}
+
+	for _, tool := range []string{
+		"use_session_code", "list_panes", "read_pane", "send_keys", "wait_for",
+	} {
+		if !strings.Contains(prompt, tool) {
+			t.Errorf("the prompt never mentions %s", tool)
+		}
+	}
+	// How to press Enter, which no agent can guess.
+	if !strings.Contains(prompt, `\r`) {
+		t.Error("the prompt does not say what sends a command")
+	}
+	// And that the server has to run here, because the port is local.
+	if !strings.Contains(prompt, "loopback") && !strings.Contains(prompt, "this machine") {
+		t.Error("the prompt does not say where the server has to run")
+	}
+
+	// A dialog is narrow and a prompt nobody reads is a prompt nobody
+	// pastes.
+	for _, line := range strings.Split(prompt, "\n") {
+		if len(line) > 100 {
+			t.Errorf("a line is %d characters long: %q", len(line), line)
+		}
+	}
+	if lines := strings.Count(strings.TrimRight(prompt, "\n"), "\n") + 1; lines > 32 {
+		t.Errorf("the prompt is %d lines long", lines)
+	}
+}
+
+// jsonIn is the MCP config snippet out of a prompt, from the first brace
+// to the last.
+func jsonIn(t *testing.T, prompt string) string {
+	t.Helper()
+	from := strings.Index(prompt, `{"mcpServers"`)
+	if from < 0 {
+		t.Fatalf("the prompt carries no config for other hosts:\n%s", prompt)
+	}
+	to := strings.LastIndex(prompt, "}}}")
+	if to < from {
+		t.Fatalf("the config in the prompt never ends:\n%s", prompt)
+	}
+	return prompt[from : to+len("}}}")]
+}
+
+// Handing a pane over shows the code and puts the whole prompt on the
+// clipboard.
+//
+// The next thing the prompt is for is being pasted into a conversation,
+// and it is more than anybody should have to read off a screen.
+func TestHandingAPaneOverShowsTheCodeAndCopiesThePrompt(t *testing.T) {
 	a := newTestApp(t, 90, 30)
 	withDialogs(t, a)
 	withPanel(t, a)
@@ -244,12 +324,26 @@ func TestHandingAPaneOverShowsTheCodeAndCopiesIt(t *testing.T) {
 
 	code := a.agents.of(pane).code
 	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
-	if !strings.Contains(strings.Join(f.Lines, "\n"), code) {
+	shown := strings.Join(f.Lines, "\n")
+	if !strings.Contains(shown, code) {
 		t.Errorf("the dialog does not show the code: %v", f.Lines)
+	}
+	// The dialog indents what it quotes of the prompt.
+	opening := "  " + strings.ReplaceAll(promptOpening(handoverPrompt(code, exePath())), "\n", "\n  ")
+	if !strings.Contains(shown, opening) {
+		t.Errorf("the dialog does not show how the prompt starts: %v", f.Lines)
+	}
+	if !strings.Contains(shown, "clipboard") {
+		t.Errorf("the dialog does not say the prompt is on the clipboard: %v", f.Lines)
 	}
 	// The clipboard is written from a goroutine of its own, because on
 	// some systems putting something on it means running a program.
-	waitFor(t, a, "the code to reach the clipboard", func() bool { return a.copiedText() == code })
+	want := handoverPrompt(code, exePath())
+	waitFor(t, a, "the prompt to reach the clipboard", func() bool { return a.copiedText() == want })
+	if got := a.copiedText(); !strings.Contains(got, "use_session_code") ||
+		!strings.Contains(got, "-mcp") {
+		t.Errorf("the clipboard holds %q, which is not a prompt an agent can act on", got)
+	}
 
 	// And the dialog offers to take it straight back.
 	pressButton(t, a, f, "Take it back")

@@ -3,11 +3,13 @@ package main
 import (
 	"errors"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 
 	"github.com/marrasen/gridterm/agent"
 	"github.com/marrasen/gridterm/conns"
+	"github.com/marrasen/gridterm/mcp"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/term"
 )
@@ -397,32 +399,92 @@ func (a *app) handHere() error { return a.handPane(a.focusedTerminal()) }
 // at.
 func (a *app) takeBackHere() error { return a.takeBackPane(a.focusedTerminal()) }
 
-// showCode shows the code for a handed-over pane, and puts it on the
-// clipboard: the next thing it is for is being pasted into a
-// conversation.
+// showCode shows the prompt for a handed-over pane, and puts the whole
+// of it on the clipboard: the next thing it is for is being pasted into
+// a conversation.
 func (a *app) showCode(h *handover) {
-	a.clip.set(h.code)
-	f := a.newConfirm("An agent may work in this pane", []string{
-		"Give this code to the agent. It is on the clipboard already.",
+	prompt := handoverPrompt(h.code, exePath())
+	a.clip.set(prompt)
+	lines := []string{
+		"Paste this to the agent. The whole of it is on the clipboard",
+		"already. It starts:",
 		"",
-		"  " + h.code,
+	}
+	for _, line := range strings.Split(promptOpening(prompt), "\n") {
+		lines = append(lines, "  "+line)
+	}
+	lines = append(lines,
 		"",
-		"With it the agent can read this pane, type into it, and wait",
-		"for it to settle. It reaches no other pane and nothing else of",
-		"this window's.",
+		"Then it says how to run gridterm -mcp as an MCP server, gives",
+		"the agent this code, and says what to do with it:",
 		"",
-		"What it types goes into the shell running here, as whoever you",
-		"set it up as, so it does whatever that shell does.",
+		"  "+h.code,
+		"",
+		"The agent can read this pane, type into it, and wait for it to",
+		"settle. It reaches no other pane and nothing else of this",
+		"window's. What it types goes into the shell running here, as",
+		"whoever you set it up as, so it does whatever that shell does.",
 		"",
 		"You see everything it does, as it does it. The pane's row says",
 		"when an agent is working in it.",
 		"",
 		"Take it back from the Servers menu, and the code stops working",
 		"at once.",
-	})
+	)
+	f := a.newConfirm("An agent may work in this pane", lines)
 	f.AddButton(ui.Button{Title: "Done"})
 	f.AddButton(ui.Button{Title: "Take it back", Do: func() error {
 		return a.takeBackPane(h.pane)
 	}})
 	a.showForm(f, nil)
+}
+
+// handoverPrompt is what the user pastes to an agent that has never
+// heard of gridterm: what it has been handed, how to reach the MCP
+// server, the code, and what to do with it.
+func handoverPrompt(code, exe string) string {
+	// A path inside JSON needs its backslashes doubled.
+	inJSON := strings.ReplaceAll(exe, `\`, `\\`)
+	inJSON = strings.ReplaceAll(inJSON, `"`, `\"`)
+	return fmt.Sprintf(`The user has handed you one terminal pane in gridterm, a terminal
+running on this machine. You work in that pane through gridterm's MCP
+server, and the user watches everything you do.
+
+Start that server with the command below. It speaks MCP on standard input and
+output (stdio), and it has to run on this machine, because the port inside the
+code is on the loopback address. In Claude Code, one line adds it:
+
+  claude mcp add gridterm -- %s -mcp
+For any other host, put this in its MCP config:
+  {"mcpServers": {"gridterm": {
+    "command": "%s", "args": ["-mcp"]}}}
+
+This code is the only credential and it came from the user. Call
+use_session_code with it before anything else. The answer names the pane, and
+every other tool takes that name.
+
+  %s
+
+%s
+
+%s
+`, exe, inJSON, code, mcp.Workflow, mcp.Rules)
+}
+
+// promptOpening is the prompt's first paragraph, which is what the
+// dialog shows of it.
+func promptOpening(prompt string) string {
+	first, _, _ := strings.Cut(prompt, "\n\n")
+	return first
+}
+
+// exePath is this program's own path, for the lines that say how to
+// start the MCP server. A system that will not say gives the plain
+// name, which works wherever gridterm is on the PATH.
+func exePath() string {
+	exe, err := os.Executable()
+	if err != nil || exe == "" {
+		return "gridterm"
+	}
+	return exe
 }

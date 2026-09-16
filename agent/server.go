@@ -422,7 +422,9 @@ func protocolNumber(spoke string) (int, bool) {
 //
 // It watches the screen and nothing more, however many lines the agent
 // asked for, because a wait asks twenty times a second and reading
-// lines means rendering them. Those lines are read once, at the end.
+// lines means rendering them. Those lines are read twice: once before
+// the waiting starts, to see what the pane was already holding, and once
+// at the end.
 func (s *Server) waitFor(want ask) said {
 	quiet := quietFor
 	if want.Until.QuietMS > 0 {
@@ -439,13 +441,14 @@ func (s *Server) waitFor(want ask) said {
 	// What the pane already held, for a wait that will search the lines
 	// it reads at the end. Text that was there before the waiting began
 	// is not what the wait was waiting for.
-	var before string
+	var was witness
 	if want.Until.Contains != "" && want.Lines > 0 {
-		was, err := s.cfg.Window.Look(want.Pane, want.Lines)
-		if err != nil {
-			return said{Error: err.Error()}
+		// A reading that failed is no reading at all, and the waiting goes
+		// on without one: an empty screen makes every line at the end look
+		// new, which is worse than narrowing nothing.
+		if look, err := s.cfg.Window.Look(want.Pane, want.Lines); err == nil {
+			was = witness{screen: look.Screen, cols: look.Cols, rows: look.Rows, read: true}
 		}
-		before = was.Screen
 	}
 
 	deadline := time.Now().Add(upTo)
@@ -467,31 +470,47 @@ func (s *Server) waitFor(want ask) said {
 
 		if want.Until.Contains != "" {
 			if strings.Contains(look.Screen, want.Until.Contains) {
-				return s.ending(want, look, before, false)
+				return s.ending(want, look, was, false)
 			}
 		} else if now.Sub(lastMove) >= quiet {
-			return s.ending(want, look, before, false)
+			return s.ending(want, look, was, false)
 		}
 		// A program that has finished says nothing more, so there is
 		// nothing left to wait for whichever way the wait was asked.
 		if look.Gone {
-			return s.ending(want, look, before, false)
+			return s.ending(want, look, was, false)
 		}
 		// The window is shutting down, so what is on the screen now is
 		// the last thing there will ever be to say about it.
 		if now.After(deadline) || s.isClosed() {
-			return s.ending(want, look, before, true)
+			return s.ending(want, look, was, true)
 		}
 		time.Sleep(lookEvery)
 	}
+}
+
+// witness is the reading a wait takes before it starts, so that what it
+// finds at the end can be narrowed to the lines that arrived while it
+// was waiting.
+type witness struct {
+	// screen is what the lines the agent asked for held then.
+	screen string
+
+	// cols and rows are the size of the pane that screen was read at. A
+	// reading taken at another size does not line up with this one.
+	cols, rows int
+
+	// read says the reading was taken at all; one that failed narrows
+	// nothing.
+	read bool
 }
 
 // ending is what a wait answers with: the lines the agent asked for,
 // read now that the waiting is over. A wait that asked for no lines
 // answers with the screen it was already watching.
 //
-// before is what those lines held when the waiting began.
-func (s *Server) ending(want ask, look Look, before string, waited bool) said {
+// was is the reading taken before the waiting began.
+func (s *Server) ending(want ask, look Look, was witness, waited bool) said {
 	if want.Lines <= 0 {
 		return said{Look: &look, Waited: waited}
 	}
@@ -508,24 +527,40 @@ func (s *Server) ending(want ask, look Look, before string, waited bool) said {
 	// between two looks, and the watching only ever sees the screen. Only
 	// in the lines that arrived while the wait was on: text the pane was
 	// already holding is not something the wait saw happen.
-	if waited && want.Until.Contains != "" &&
-		strings.Contains(addedSince(before, full.Screen), want.Until.Contains) {
+	//
+	// A pane resized while the wait was on was read at two sizes, so its
+	// lines were wrapped differently and no longer line up. Nothing is
+	// narrowed then, and the wait stands as it ended.
+	sameSize := was.cols == full.Cols && was.rows == full.Rows
+	if waited && want.Until.Contains != "" && was.read && sameSize &&
+		strings.Contains(addedSince(was.screen, full.Screen), want.Until.Contains) {
 		waited = false
 	}
 	return said{Look: &full, Waited: waited}
 }
 
-// addedSince is the part of a reading of a pane that was not in an
-// earlier reading of the same pane.
+// addedSince is at most the part of a reading of a pane that was not in
+// an earlier reading of the same pane.
 //
 // Both are the last lines of one pane, and a pane only ever grows at the
 // bottom, so the later reading begins with lines the earlier one already
 // had. The longest run of the earlier one's lines that the later one
-// starts with is those, and what follows is new. A run that stops short
-// of the earlier reading's end is its bottom row having been written
-// over, which is new too. Nothing in common means a whole reading's
-// worth has scrolled past and all of it is new.
+// starts with is taken as old, and what follows is new. A run that stops
+// short of the earlier reading's end is its bottom row having been
+// written over, which is new too. Nothing in common means a whole
+// reading's worth has scrolled past and all of it is new.
+//
+// That longest run is a bound rather than an answer. A pane repeating a
+// block of lines exactly, such as the same command run twice, matches a
+// longer run than really carried over, so what comes back is at most the
+// new text and can be less.
 func addedSince(was, now string) string {
+	// An earlier reading of nothing carried nothing over. Splitting an
+	// empty string gives one empty line, which would swallow the first new
+	// line whenever that line is empty too.
+	if was == "" {
+		return now
+	}
 	had := strings.Split(was, "\n")
 	has := strings.Split(now, "\n")
 	old := 0

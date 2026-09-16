@@ -100,6 +100,11 @@ type Look struct {
 	Row int `json:"row"`
 	Col int `json:"col"`
 
+	// Cols and Rows are the size of the screen this reading came from,
+	// so two readings taken at different sizes can be told apart.
+	Cols int `json:"cols,omitempty"`
+	Rows int `json:"rows,omitempty"`
+
 	// Alt says a full-screen program is drawing, such as vim, top or
 	// mc. Nothing has scrolled off while one is, so a read of more than
 	// the screen gives the screen.

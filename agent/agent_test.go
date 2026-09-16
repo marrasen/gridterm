@@ -36,6 +36,10 @@ type fakeWindow struct {
 	// bigLookFails makes a Look of more than the screen fail, which is
 	// what the user taking the pane back between two looks does.
 	bigLookFails bool
+
+	// cols and rows are the size every Look reports. Zero in a test that
+	// never resizes the pane, which is every reading at the same size.
+	cols, rows int
 }
 
 func (w *fakeWindow) Use(code string) (Pane, error) {
@@ -66,10 +70,12 @@ func (w *fakeWindow) Look(id string, lines int) (Look, error) {
 			return Look{}, errors.New("that pane is no longer open")
 		}
 		if w.history != "" {
-			return Look{Screen: w.history, Gone: w.gone, Changed: w.changed}, nil
+			return Look{Screen: w.history, Gone: w.gone, Changed: w.changed,
+				Cols: w.cols, Rows: w.rows}, nil
 		}
 	}
-	return Look{Screen: w.screen, Gone: w.gone, Changed: w.changed}, nil
+	return Look{Screen: w.screen, Gone: w.gone, Changed: w.changed,
+		Cols: w.cols, Rows: w.rows}, nil
 }
 
 func (w *fakeWindow) Send(id, text string, keys []string) error {
@@ -99,6 +105,22 @@ func (w *fakeWindow) scrollback(text string) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.history = text
+}
+
+// sized says how big the pane is, for a reading that has to carry a
+// size.
+func (w *fakeWindow) sized(cols, rows int) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.cols, w.rows = cols, rows
+}
+
+// resized makes the pane a new size and rewraps what it has kept, which
+// is what a pane the user drags narrower does.
+func (w *fakeWindow) resized(cols, rows int, wrapped string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.cols, w.rows, w.history = cols, rows, wrapped
 }
 
 func (w *fakeWindow) takeBack() {
@@ -931,6 +953,93 @@ func TestAWaitDoesNotFindWhatWasThereBeforeItBegan(t *testing.T) {
 	}
 }
 
+// A pane resized while a wait is on does not make what was already
+// there look like new output.
+//
+// The reading taken before the wait and the one taken at the end were
+// wrapped at different widths, so no line of the first is a line of the
+// second. Every line then looks new, and a build that finished long
+// before the agent asked would answer the wait.
+func TestAWaitDoesNotTakeAResizeForNewOutput(t *testing.T) {
+	w, _, code := listening(t)
+	w.say("$ ")
+	w.sized(40, 24)
+	// The line is there from a build that finished before this wait, and
+	// a second build is running now.
+	w.scrollback("$ make a-very-long-target-name\nBuild succeeded\n$ make again\ncompiling")
+
+	c, err := Dial(code)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer func() { _ = c.Close() }()
+	pane, err := c.Use(code)
+	if err != nil {
+		t.Fatalf("use: %v", err)
+	}
+
+	// The user drags the pane narrower while the wait is on, and the long
+	// command line wraps onto two rows.
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		w.resized(20, 24,
+			"$ make a-very-long-\ntarget-name\nBuild succeeded\n$ make again\ncompiling")
+	}()
+
+	look, waited, err := c.Wait(pane.ID, 500, Until{Contains: "Build succeeded", TimeoutMS: 300})
+	if err != nil {
+		t.Fatalf("wait: %v", err)
+	}
+	if !waited {
+		t.Error("a resize made a line that was there before the wait look like new output")
+	}
+	if !strings.Contains(look.Screen, "Build succeeded") {
+		t.Errorf("it left out what the pane has kept: %q", look.Screen)
+	}
+}
+
+// A wait whose first reading fails still waits.
+//
+// That reading is only there to say what the pane was already holding.
+// One that failed is an empty screen, which makes every line at the end
+// look new, so the waiting goes on with nothing to narrow by rather than
+// failing outright.
+func TestAWaitWhoseFirstReadFailsStillWaits(t *testing.T) {
+	w, _, code := listening(t)
+	w.bigLookFails = true
+	w.say("$ ")
+
+	c, err := Dial(code)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer func() { _ = c.Close() }()
+	pane, err := c.Use(code)
+	if err != nil {
+		t.Fatalf("use: %v", err)
+	}
+
+	// What the wait is waiting for happens while it watches.
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		w.say("$ serve\nlistening on 8080")
+	}()
+
+	look, waited, err := c.Wait(pane.ID, 500, Until{Contains: "listening on", TimeoutMS: 2000})
+	if err != nil {
+		t.Fatalf("the wait failed rather than waiting: %v", err)
+	}
+	if waited {
+		t.Error("it says the time ran out, and it did not")
+	}
+	if !strings.Contains(look.Screen, "listening on") {
+		t.Errorf("it answered with %q", look.Screen)
+	}
+	if !strings.Contains(look.Note, "could not be read") {
+		t.Errorf("it said nothing about the read that failed: %q", look.Note)
+	}
+}
+
 // addedSince is the lines a later reading has that an earlier one did
 // not, however far the pane scrolled in between.
 func TestTheLinesAddedSinceAReadingAreTheNewOnes(t *testing.T) {
@@ -942,6 +1051,17 @@ func TestTheLinesAddedSinceAReadingAreTheNewOnes(t *testing.T) {
 		{"the top scrolled off", "a\nb\nc", "b\nc\nd", "d"},
 		{"all of it scrolled off", "a\nb\nc", "x\ny\nz", "x\ny\nz"},
 		{"the bottom row redrawn", "a\nb\n$ ", "a\nb\n$ ls\nx", "$ ls\nx"},
+		// Nothing was read before, so nothing carried over and all of it
+		// is new, down to a first line that is empty.
+		{"no earlier reading", "", "\nBuild succeeded", "\nBuild succeeded"},
+		{"no earlier reading of anything", "", "", ""},
+		// The bound the doc states: the same command run twice matches a
+		// longer run than really carried over, so the second run is taken
+		// for the first.
+		{"a block repeated exactly", "$ make\nok\n$ make\nok", "$ make\nok\n$ make\nok", ""},
+		{"the screen cleared", "a\nb\nc", "\n\n$ ", "\n\n$ "},
+		{"a full-screen program took over", "$ vim x\n", "  1 package main\n  2\n~",
+			"  1 package main\n  2\n~"},
 	} {
 		if got := addedSince(tc.was, tc.now); got != tc.want {
 			t.Errorf("%s: %q, want %q", tc.what, got, tc.want)

@@ -1,6 +1,7 @@
 package serve
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -169,7 +170,9 @@ func (s *Server) letGoOf(ch ssh.Channel) {
 }
 
 // runControl carries one client's view of what this window has open.
-func (s *Server) runControl(ch ssh.Channel, reqs <-chan *ssh.Request, gone <-chan struct{}) {
+//
+// ctx ends when the client's connection has finished.
+func (s *Server) runControl(ctx context.Context, ch ssh.Channel, reqs <-chan *ssh.Request) {
 	// Drained rather than answered: nothing is asked down this channel,
 	// and sixteen unread requests stop the connection's read loop.
 	go ssh.DiscardRequests(reqs)
@@ -208,6 +211,6 @@ func (s *Server) runControl(ch ssh.Channel, reqs <-chan *ssh.Request, gone <-cha
 	}()
 	select {
 	case <-done:
-	case <-gone:
+	case <-ctx.Done():
 	}
 }

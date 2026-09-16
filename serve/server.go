@@ -1,6 +1,7 @@
 package serve
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -371,17 +372,18 @@ func (s *Server) handshake(nc net.Conn) {
 	}
 
 	go ssh.DiscardRequests(reqs)
-	// gone tells the sessions the connection has finished, and served
-	// closes once every one of them has been hung up on.
-	gone := make(chan struct{})
+	// live ends when the connection has finished, and served closes once
+	// every session on it has been hung up on.
+	live, finished := context.WithCancel(context.Background())
+	defer finished()
 	served := make(chan struct{})
 	go func() {
 		defer close(served)
-		s.serveChannels(chans, gone)
+		s.serveChannels(live, chans)
 	}()
 
 	why := conn.Wait()
-	close(gone)
+	finished()
 	// Waited for before the client is said to have gone. A window that
 	// said so first would be one where a shell is still being hung up
 	// on while the row for it has already left the panel.

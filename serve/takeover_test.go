@@ -1288,7 +1288,7 @@ func askingFiles(t *testing.T, ask func() (*FileSession, error)) (*FileSession, 
 func TestAFileSessionNamesTheMachineItIsFor(t *testing.T) {
 	asked := make(chan string, 2)
 	s, w := takenOver(t, nil)
-	s.cfg.Files = func(host string, ch io.ReadWriteCloser) error {
+	s.cfg.Files = func(_ context.Context, host string, ch io.ReadWriteCloser) error {
 		asked <- host
 		return nil
 	}
@@ -1354,7 +1354,7 @@ func TestTheFilesOfAServingWindowCross(t *testing.T) {
 
 	served := make(chan error, 1)
 	s, w := takenOver(t, nil)
-	s.cfg.Files = func(_ string, ch io.ReadWriteCloser) error {
+	s.cfg.Files = func(_ context.Context, _ string, ch io.ReadWriteCloser) error {
 		srv, err := sftp.NewServer(ch)
 		if err != nil {
 			served <- err
@@ -1418,7 +1418,7 @@ func TestOnlySoManyFileSessionsAtOnce(t *testing.T) {
 	stop := make(chan struct{})
 	defer close(stop)
 	s, w := takenOver(t, nil)
-	s.cfg.Files = func(_ string, ch io.ReadWriteCloser) error {
+	s.cfg.Files = func(_ context.Context, _ string, ch io.ReadWriteCloser) error {
 		// Held open until the test is done with it.
 		<-stop
 		return nil
@@ -1453,7 +1453,7 @@ func TestOnlySoManyFileSessionsAtOnce(t *testing.T) {
 func TestAFileSessionThatFailedSaysWhyToTheClient(t *testing.T) {
 	told := make(chan error, 8)
 	s, w := takenOverReporting(t, nil, told)
-	s.cfg.Files = func(_ string, ch io.ReadWriteCloser) error {
+	s.cfg.Files = func(_ context.Context, _ string, ch io.ReadWriteCloser) error {
 		return errors.New("the disk is not there")
 	}
 
@@ -1660,7 +1660,7 @@ func servingFiles(t *testing.T, files Filer) (*Server, *Window) {
 // machine to ask for, so there was nothing to say.
 func TestAFileSessionWithNoPayloadAsksForTheServedMachine(t *testing.T) {
 	asked := make(chan string, 1)
-	_, w := servingFiles(t, func(host string, ch io.ReadWriteCloser) error {
+	_, w := servingFiles(t, func(_ context.Context, host string, ch io.ReadWriteCloser) error {
 		asked <- host
 		// Read until the client goes, which is what a Filer must do.
 		_, _ = io.Copy(io.Discard, ch)
@@ -1692,7 +1692,7 @@ func TestAFileSessionWithNoPayloadAsksForTheServedMachine(t *testing.T) {
 // like from here.
 func TestAFileSessionRequestOfAnotherBuildIsRefused(t *testing.T) {
 	started := make(chan struct{}, 1)
-	_, w := servingFiles(t, func(string, io.ReadWriteCloser) error {
+	_, w := servingFiles(t, func(context.Context, string, io.ReadWriteCloser) error {
 		started <- struct{}{}
 		return nil
 	})

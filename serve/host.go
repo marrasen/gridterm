@@ -1,6 +1,7 @@
 package serve
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -37,9 +38,9 @@ const mostFileSessions = 16
 // client that finds this port is told what is wrong rather than handed
 // a shell it did not ask for.
 //
-// gone is closed when the connection has finished. It returns once
-// every session it started has been hung up on.
-func (s *Server) serveChannels(chans <-chan ssh.NewChannel, gone <-chan struct{}) {
+// ctx ends when the connection has finished. It returns once every
+// session it started has been hung up on.
+func (s *Server) serveChannels(ctx context.Context, chans <-chan ssh.NewChannel) {
 	var running sync.WaitGroup
 	// Counted rather than held in a list: nothing needs to name them,
 	// only to know how many there are. Written by the goroutines that
@@ -55,7 +56,7 @@ func (s *Server) serveChannels(chans <-chan ssh.NewChannel, gone <-chan struct{}
 			running.Add(1)
 			go func() {
 				defer running.Done()
-				s.runControl(ch, reqs, gone)
+				s.runControl(ctx, ch, reqs)
 			}()
 			continue
 		}
@@ -85,7 +86,7 @@ func (s *Server) serveChannels(chans <-chan ssh.NewChannel, gone <-chan struct{}
 			go func() {
 				defer running.Done()
 				defer files.Add(-1)
-				s.runFiles(nch, want.Host)
+				s.runFiles(ctx, nch, want.Host)
 			}()
 			continue
 		}
@@ -114,7 +115,7 @@ func (s *Server) serveChannels(chans <-chan ssh.NewChannel, gone <-chan struct{}
 		running.Add(1)
 		go func() {
 			defer running.Done()
-			s.runSession(ch, reqs, want, gone)
+			s.runSession(ctx, ch, reqs, want)
 		}()
 	}
 	// The connection is finished. Waiting here is what keeps the window
@@ -127,8 +128,10 @@ func (s *Server) serveChannels(chans <-chan ssh.NewChannel, gone <-chan struct{}
 // session until one end or the other is done.
 //
 // host is the machine the client asked for, empty for the machine being
-// served.
-func (s *Server) runFiles(nch ssh.NewChannel, host string) {
+// served. ctx ends when the client's connection has finished, and is
+// handed to the Filer so it can stop waiting on anything the client was
+// the only reader of.
+func (s *Server) runFiles(ctx context.Context, nch ssh.NewChannel, host string) {
 	if s.cfg.Files == nil {
 		_ = nch.Reject(ssh.Prohibited, "this gridterm does not serve its files")
 		return
@@ -144,7 +147,7 @@ func (s *Server) runFiles(nch ssh.NewChannel, host string) {
 	// and sixteen unread requests stop the connection's read loop.
 	go ssh.DiscardRequests(reqs)
 
-	if err := s.cfg.Files(host, ch); err != nil {
+	if err := s.cfg.Files(ctx, host, ch); err != nil {
 		// Said over there as well as here: the client is left holding
 		// a stream that stopped, and this is the only account of why.
 		if _, werr := io.WriteString(ch.Stderr(), "gridterm: "+err.Error()+"\r\n"); werr != nil {
@@ -177,14 +180,18 @@ func (s *Server) runFiles(nch ssh.NewChannel, host string) {
 // else holds the whole connection open: this window does not say a
 // client has left until every session it started has finished.
 //
+// ctx ends when the client's connection has finished. An end of file on
+// the channel does not say which of the two happened, so a Filer that
+// would wait for something on the client's behalf asks this instead.
+//
 // It is called from a goroutine of the server's, one per session a
 // client opens.
-type Filer func(host string, ch io.ReadWriteCloser) error
+type Filer func(ctx context.Context, host string, ch io.ReadWriteCloser) error
 
 // runSession starts something for the client to work in and carries it
 // until one end or the other is done.
-func (s *Server) runSession(ch ssh.Channel, reqs <-chan *ssh.Request,
-	want openSession, gone <-chan struct{}) {
+func (s *Server) runSession(ctx context.Context, ch ssh.Channel,
+	reqs <-chan *ssh.Request, want openSession) {
 
 	// Clamped here rather than where it was sent from. Nothing stops a
 	// client asking for a pane of four billion cells, and this is the
@@ -228,7 +235,7 @@ func (s *Server) runSession(ch ssh.Channel, reqs <-chan *ssh.Request,
 	defer close(closed)
 	go func() {
 		select {
-		case <-gone:
+		case <-ctx.Done():
 			if err := sess.Close(); err != nil {
 				s.onError(fmt.Errorf("serve: close a session: %w", err))
 			}

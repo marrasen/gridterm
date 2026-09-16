@@ -209,10 +209,10 @@ func TestFontScanAddsAMenu(t *testing.T) {
 	}
 }
 
-// TestFontScanClosesAnOpenMenuFirst checks the rule the menu bar
+// TestFontScanLeavesAMenuThatDidNotMoveOpen checks the rule the menu bar
 // documents: an open menu holds the index of the title it hangs under,
-// and the list of titles is about to grow.
-func TestFontScanClosesAnOpenMenuFirst(t *testing.T) {
+// and the font menu goes in after it.
+func TestFontScanLeavesAMenuThatDidNotMoveOpen(t *testing.T) {
 	a := newTestApp(t, 40, 20)
 	bar := withMenubar(t, a)
 	if err := a.openMenu(); err != nil {
@@ -221,11 +221,11 @@ func TestFontScanClosesAnOpenMenuFirst(t *testing.T) {
 
 	deliverFonts(a, fakeFamilies("Consolas"))
 
-	if bar.OpenIndex() != -1 {
-		t.Errorf("open = %d, want the menu closed before the titles changed", bar.OpenIndex())
+	if bar.OpenIndex() != 0 {
+		t.Errorf("open = %d, want the first menu still open", bar.OpenIndex())
 	}
-	if len(a.modals) != 0 {
-		t.Errorf("%d dialogs left open", len(a.modals))
+	if len(a.modals) != 1 {
+		t.Errorf("%d dialogs open, want the menu", len(a.modals))
 	}
 }
 

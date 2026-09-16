@@ -131,15 +131,21 @@ func (a *app) copyChord(ev input.Event) bool {
 
 // showNotice puts a message on the modal stack. failure draws the title
 // in the error colour.
+func (a *app) showNotice(title, message string, failure bool) *ui.Notice {
+	n := a.newNotice(title, message)
+	n.Failure = failure
+	return a.presentNotice(n)
+}
+
+// presentNotice puts a notice on the modal stack, for a caller that had
+// something of its own to set on it first.
 //
 // An open drop-down goes first, because rebuilding a menu closes the
 // drop-down and takes everything stacked above it away with it.
-func (a *app) showNotice(title, message string, failure bool) *ui.Notice {
+func (a *app) presentNotice(n *ui.Notice) *ui.Notice {
 	if a.bar != nil {
 		a.bar.Close()
 	}
-	n := a.newNotice(title, message)
-	n.Failure = failure
 	n.SetClose(a.showModal(n, nil))
 	return n
 }

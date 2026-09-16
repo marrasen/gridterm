@@ -449,7 +449,7 @@ func (f *Form) errLines(room, rows int) []string {
 		return nil
 	}
 	if f.wrapped == nil || f.wrappedAt != room {
-		lines := wrapText(f.errText, room)
+		lines := wrapText(f.errText, room, false)
 		f.wrapped = make([]string, len(lines))
 		for i, line := range lines {
 			f.wrapped[i] = line.text

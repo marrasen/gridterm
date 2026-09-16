@@ -600,17 +600,7 @@ func runFromPalette(t *testing.T, a *testApp, id string) {
 // F10, then along the titles with the arrow keys.
 func openBarMenu(t *testing.T, a *testApp, title string) *ui.Menu {
 	t.Helper()
-	want := -1
-	var titles []string
-	for i, def := range a.bar.Menus {
-		titles = append(titles, def.Title)
-		if def.Title == title {
-			want = i
-		}
-	}
-	if want < 0 {
-		t.Fatalf("there is no %q menu: %v", title, titles)
-	}
+	want := menuTitled(t, a.bar, title)
 	if _, err := a.root.HandleKey(press(input.KeyF10, 0)); err != nil {
 		t.Fatalf("F10: %v", err)
 	}

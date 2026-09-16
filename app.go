@@ -620,7 +620,9 @@ func (a *app) commands() {
 		// so the shell would never get it.
 		{Key: input.KeyK, Mods: input.ModCtrl | input.ModShift}: "palette.open",
 		{Key: input.KeyF10}: "menu.open",
-		{Key: input.KeyF1}:  helpCommand,
+		// Not F1: that one belongs to whatever is running in the shell,
+		// and every chord this window takes is Ctrl+Shift and a letter.
+		{Key: input.KeyH, Mods: input.ModCtrl | input.ModShift}: helpCommand,
 	})
 
 	a.root.Commands = cmds

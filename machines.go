@@ -246,8 +246,8 @@ func (ms *machines) settle(d *dialling, made bool) {
 // dropWaiting throws away what was queued behind a connection that was
 // not made, saying so where the user is looking.
 func (ms *machines) dropWaiting(d *dialling) {
-	if len(d.waiting) > 0 && d.say != nil {
-		d.say("what was waiting for this was not started")
+	if len(d.waiting) > 0 && d.log != nil {
+		d.log.Say("what was waiting for this was not started")
 	}
 	d.settled, d.waiting = true, nil
 }

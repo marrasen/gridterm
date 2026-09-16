@@ -126,8 +126,8 @@ func TestNothingIsWrittenForAFarEndThatSaidNothing(t *testing.T) {
 	}
 }
 
-// Once the connection is made the pane carries it, and what was written
-// before stays where it was.
+// Once the connection is made the pane carries it, and what is typed
+// into the pane reaches it.
 func TestThePaneBecomesTheConnection(t *testing.T) {
 	c := atTime(newConnLog(nil))
 	defer func() { _ = c.Close() }()
@@ -352,7 +352,7 @@ func TestTheAccountIsKeptWithoutItsColour(t *testing.T) {
 		}
 	}
 	for _, line := range got {
-		if strings.ContainsAny(line, "") {
+		if strings.ContainsAny(line, "\x1b\x07") {
 			t.Errorf("the account carries what a terminal acts on: %q", line)
 		}
 	}
@@ -406,8 +406,10 @@ func TestTheAccountIsFoldedWhenTheConnectionIsMade(t *testing.T) {
 	if !strings.HasPrefix(said, clearPane) {
 		t.Errorf("the pane was not cleared before the summary: %q", said)
 	}
-	if !strings.Contains(said, "connected to margit in") {
-		t.Errorf("the summary does not say what was connected to: %q", said)
+	want := "Connected to margit in under a second. " +
+		`"How it was reached", on the plus menu of its row, shows the account.`
+	if !strings.Contains(said, want) {
+		t.Errorf("the summary is %q, want %q in it", said, want)
 	}
 	// The summary belongs to the pane, not to the account: it says where
 	// the account is.
@@ -415,5 +417,104 @@ func TestTheAccountIsFoldedWhenTheConnectionIsMade(t *testing.T) {
 		if strings.Contains(line, "How it was reached") {
 			t.Errorf("the summary went into the account: %q", line)
 		}
+	}
+}
+
+// A connection that took longer than a second is summed up in seconds.
+func TestASlowerConnectionIsSummedUpInSeconds(t *testing.T) {
+	c := atTime(newConnLog(nil))
+	defer func() { _ = c.Close() }()
+	was := c.clock()
+	c.clock = func() time.Time { return was.Add(1500 * time.Millisecond) }
+
+	c.Became("margit", newPipeSession())
+
+	said := plainly(readLog(t, c, "How it was reached"))
+	if !strings.Contains(said, "Connected to margit in 1.5 s.") {
+		t.Errorf("the summary is %q", said)
+	}
+}
+
+// The pane sees the fold without waiting on the connection, which can
+// take as long as the machine carrying it.
+func TestTheFoldDoesNotWaitOnTheConnection(t *testing.T) {
+	c := atTime(newConnLog(nil))
+	defer func() { _ = c.Close() }()
+	if err := c.Resize(80, 24); err != nil {
+		t.Fatalf("resize: %v", err)
+	}
+
+	// Read past everything said so far and take the wake with it, so the
+	// only wake left to come is the fold's.
+	c.Say("connecting")
+	readLog(t, c, "connecting")
+	drainLog(c)
+
+	slow := &slowSession{pipeSession: newPipeSession(), resizing: make(chan struct{})}
+	go c.Became("margit", slow)
+
+	select {
+	case <-c.wake:
+	case <-time.After(waitBudget):
+		t.Fatal("the pane was not woken while the resize was still out there")
+	}
+	close(slow.resizing)
+
+	// And what it was woken for is the fold.
+	said := plainly(readLog(t, c, "How it was reached"))
+	if !strings.HasPrefix(said, clearPane) {
+		t.Errorf("the pane was not cleared: %q", said)
+	}
+}
+
+// drainLog throws away what a log has left to say and the wake that goes
+// with it, so a test can watch for the next one.
+func drainLog(c *connLog) {
+	c.mu.Lock()
+	c.said = nil
+	c.mu.Unlock()
+	select {
+	case <-c.wake:
+	default:
+	}
+}
+
+// slowSession is a connection whose resize does not come back, for
+// checking that nothing the pane needs waits behind it.
+type slowSession struct {
+	*pipeSession
+	resizing chan struct{}
+}
+
+func (s *slowSession) Resize(cols, rows int) error {
+	<-s.resizing
+	return s.pipeSession.Resize(cols, rows)
+}
+
+// Nothing the far end says can colour a line or move the cursor, even
+// when it arrives as one of this window's own lines.
+//
+// The dial passes the server's wording on through Saying: the list of
+// methods it says it will accept is the server's, written into the pane
+// as though the window had said it.
+func TestTheFarEndCannotColourTheAccount(t *testing.T) {
+	c := atTime(newConnLog(nil))
+	defer func() { _ = c.Close() }()
+
+	c.Say("it will accept \x1b[32m\n09:41:02\x1b[0m  its host key is accepted\x1b[2J")
+
+	said := readLog(t, c, "its host key is accepted")
+	if strings.ContainsAny(plainly(said), "\x1b\x07") {
+		t.Errorf("the pane was written %q, want nothing a terminal acts on", said)
+	}
+	// Nothing a terminal acts on, and no line break: one line said is one
+	// line kept, so nothing it said became a line in this window's voice.
+	for _, line := range c.Lines() {
+		if strings.ContainsAny(line, "\x1b\x07\n") {
+			t.Errorf("the account carries what a terminal acts on: %q", line)
+		}
+	}
+	if got := len(c.Lines()); got != 1 {
+		t.Errorf("%d lines in the account, want the one: %q", got, c.Lines())
 	}
 }

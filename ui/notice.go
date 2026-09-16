@@ -105,6 +105,12 @@ type Notice struct {
 	Title   string
 	Failure bool
 
+	// Preformatted keeps the message's own spacing: a line is shown as
+	// it was written and is broken only where it is wider than the box,
+	// at the last character that fits. It is for a message laid out in
+	// columns, which wrapping at spaces would collapse.
+	Preformatted bool
+
 	// Copy puts text on the clipboard. A nil one leaves the Copy button
 	// with nothing to do: this package cannot reach a clipboard.
 	Copy func(string)
@@ -116,11 +122,13 @@ type Notice struct {
 
 	message string
 
-	// lines is the message wrapped to wrappedAt columns, and top is the
-	// first of them on screen.
-	lines     []noticeLine
-	wrappedAt int
-	top       int
+	// lines is the message wrapped to wrappedAt columns and in
+	// wrappedRaw's spelling of Preformatted, and top is the first of
+	// them on screen.
+	lines      []noticeLine
+	wrappedAt  int
+	wrappedRaw bool
+	top        int
 
 	// wanted is the width the message asks for, and wantedFor the title
 	// it was worked out with. Kept, because box asks for it several times
@@ -157,7 +165,7 @@ func (n *Notice) Message() string { return n.message }
 // selected.
 func (n *Notice) SetMessage(s string) {
 	n.message = cleanText(s)
-	n.lines, n.wrappedAt = nil, 0
+	n.lines, n.wrappedAt, n.wrappedRaw = nil, 0, false
 	n.wanted = 0
 	n.top = 0
 	n.active, n.holding = false, false
@@ -547,8 +555,9 @@ func (n *Notice) wrap() []noticeLine { return n.linesAt(n.box().Cols - noticePad
 // when the width has changed.
 func (n *Notice) linesAt(width int) []noticeLine {
 	width = max(width, 1)
-	if n.lines == nil || n.wrappedAt != width {
-		n.lines, n.wrappedAt = wrapText(n.message, width), width
+	if n.lines == nil || n.wrappedAt != width || n.wrappedRaw != n.Preformatted {
+		n.lines = wrapText(n.message, width, n.Preformatted)
+		n.wrappedAt, n.wrappedRaw = width, n.Preformatted
 	}
 	return n.lines
 }
@@ -594,18 +603,40 @@ func (n *Notice) wantCols() int {
 
 // wrapText breaks a message into lines no wider than width, keeping the
 // line breaks it already has and recording what joined each line to the
-// next.
-func wrapText(s string, width int) []noticeLine {
+// next. asWritten keeps each line's own spacing, breaking only what is
+// too wide for the box.
+func wrapText(s string, width int, asWritten bool) []noticeLine {
 	var out []noticeLine
 	paras := strings.Split(s, "\n")
 	for i, para := range paras {
 		lines := wrapOne(para, width)
+		if asWritten {
+			lines = cutOne(para, width)
+		}
 		if i < len(paras)-1 {
 			lines[len(lines)-1].join = "\n"
 		}
 		out = append(out, lines...)
 	}
 	return out
+}
+
+// cutOne breaks one line at the last character that fits, keeping every
+// space in it, for a message whose spacing is its layout.
+func cutOne(s string, width int) []noticeLine {
+	var out []noticeLine
+	for grid.StringWidth(s) > width {
+		head := grid.Trim(s, width)
+		if head == "" {
+			// A cluster wider than the whole box. It goes on a line of
+			// its own rather than stopping the wrap dead.
+			head = grid.Clusters(s)[0]
+		}
+		// Cut inside a line, so nothing stood between the two halves.
+		out = append(out, noticeLine{text: head})
+		s = s[len(head):]
+	}
+	return append(out, noticeLine{text: s})
 }
 
 // wrapOne breaks one line at spaces, cutting a word wider than the box.

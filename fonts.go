@@ -164,10 +164,6 @@ func (a *app) refreshFontMenu(cmds []ui.Command) {
 	if a.bar == nil || len(cmds) == 0 {
 		return
 	}
-	// Whatever is open holds the index of the title it hangs under, and
-	// the list is about to grow.
-	a.bar.Close()
-
 	items := make([]ui.MenuItem, 0, len(cmds)+1)
 	items = append(items, ui.MenuItem{Command: cmds[0].ID}, ui.MenuSeparator())
 	for _, cmd := range cmds[1:] {

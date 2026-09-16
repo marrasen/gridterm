@@ -392,8 +392,8 @@ func (a *app) takeOver(addr, keyFile string, at *spot) error {
 	// A pane rather than a row that only says "opening". It is somewhere
 	// to watch from: every step as it is tried, and whatever the far end
 	// says, in full and there to copy. The same pane carries the shell
-	// when there is one, so the account of how it was reached stays in
-	// the scrollback above it.
+	// when there is one, and the account folds away to one line that says
+	// where to read the rest of it.
 	//
 	// Letting go of the address is done here rather than by the closure
 	// that finishes the dial: a dial that has not come back yet still
@@ -406,7 +406,7 @@ func (a *app) takeOver(addr, keyFile string, at *spot) error {
 		return err
 	}
 	log := newConnLog(func() { a.pump.post(func() { a.machines.giveUp(held) }) })
-	held.say = log.Say
+	held.log = log
 	pane, err := a.openSessionTab(log, name, conns.Terminal, "connecting", at)
 	if err != nil {
 		cancel()

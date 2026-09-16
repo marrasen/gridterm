@@ -2,12 +2,52 @@ package main
 
 import (
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/marrasen/gridterm/internal/sshtest"
+	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/term"
 )
+
+// paneWatcher records everything a pane is ever written, in order.
+//
+// It is how a test sees what the pane showed at a moment it has already
+// gone past: reading the screen catches only what is on it now, and the
+// fold empties the screen as soon as the shell is there.
+type paneWatcher struct {
+	mu  sync.Mutex
+	saw strings.Builder
+}
+
+func (w *paneWatcher) Screen(p []byte) error { _, err := w.Write(p); return err }
+func (w *paneWatcher) Ended()                {}
+func (w *paneWatcher) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.saw.Write(p)
+	return len(p), nil
+}
+
+// text is what the pane has been written so far.
+func (w *paneWatcher) text() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.saw.String()
+}
+
+// watchPane records what a pane is written until the test ends.
+func watchPane(t *testing.T, pane *term.Terminal) *paneWatcher {
+	t.Helper()
+	w := &paneWatcher{}
+	stop, err := pane.Watch(w)
+	if err != nil {
+		t.Fatalf("watch the pane: %v", err)
+	}
+	t.Cleanup(stop)
+	return w
+}
 
 // paneWithScrollback is everything a pane holds: what is on screen and
 // what has scrolled off the top of it.
@@ -37,7 +77,7 @@ func aConnectedMachine(t *testing.T) (*testApp, *term.Terminal) {
 	})
 	pane := newestPane(t, a)
 	waitFor(t, a, "the pane to fold its account away", func() bool {
-		return strings.Contains(paneText(pane), "connected to margit in")
+		return strings.Contains(paneText(pane), "Connected to margit")
 	})
 	return a, pane
 }
@@ -62,15 +102,21 @@ func TestTheAccountIsFoldedAwayOnceTheShellIsThere(t *testing.T) {
 // A connection that was not made folds nothing away: the pane is the
 // only account of what happened and it stays open, whole.
 func TestAFailedConnectionKeepsItsAccountInThePane(t *testing.T) {
-	s := sshtest.New(t)
 	a := newTestApp(t, 90, 30)
 	withDialogs(t, a)
 	withPanel(t, a)
+	withMenubar(t, a)
+	// Nothing to dial with but the test's own key, and a port nothing
+	// answers on.
+	pinServers(t, a)
+	if err := a.book.Put(remote.Host{
+		Name: "margit", Address: "127.0.0.1", Port: 1, User: "tester",
+	}, ""); err != nil {
+		t.Fatalf("save the machine: %v", err)
+	}
+	a.refreshServers()
 
-	cfg := serverConfig(t, s)
-	// A key the server would accept, pointed at a port nothing answers.
-	cfg.Port = 1
-	a.connect(cfg)
+	clickTerminalLine(t, a, "margit")
 	pane := newestPane(t, a)
 
 	waitFor(t, a, "the pane to say the connection was not made", func() bool {
@@ -110,6 +156,39 @@ func TestThePaletteShowsHowAMachineWasReached(t *testing.T) {
 	n := awaitModal(t, a, "the account", byTitle[*ui.Notice]("How margit was reached"))
 	if !strings.Contains(n.Message(), "connected to margit") {
 		t.Errorf("the account is %q", n.Message())
+	}
+}
+
+// A machine still being reached has an account too, and the dialog says
+// so in the tense the connection is in.
+func TestAMachineStillBeingReachedShowsItsAccountSoFar(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	withMenubar(t, a)
+	// A server that accepts the connection and then never speaks, so
+	// the dial is genuinely still running.
+	host, port := sshtest.Deaf(t)
+	pinServers(t, a)
+	if err := a.book.Put(remote.Host{
+		Name: "margit", Address: host, Port: port, User: "tester",
+	}, ""); err != nil {
+		t.Fatalf("save the machine: %v", err)
+	}
+	a.refreshServers()
+
+	clickTerminalLine(t, a, "margit")
+	waitFor(t, a, "the dial to be under way", func() bool {
+		return a.about("margit").log() != nil
+	})
+
+	menu := clickPlus(t, a, "margit")
+	chooseMenuItem(t, menu, "conn.log")
+
+	n := awaitModal(t, a, "the account so far",
+		byTitle[*ui.Notice]("How margit is being reached"))
+	if !strings.Contains(n.Message(), "connecting to") {
+		t.Errorf("the account so far is %q", n.Message())
 	}
 }
 

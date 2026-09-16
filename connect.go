@@ -93,14 +93,14 @@ func (a *app) openRoute(name string, route []step, command []string, at *spot) {
 	// A pane rather than a row that only says "opening". It is somewhere
 	// to watch from: every machine on the way as it is reached, and
 	// whatever a server says, in full and there to copy. The same pane
-	// carries the shell when there is one, so the account of how it was
-	// reached stays in the scrollback above it.
+	// carries the shell when there is one, and the account folds away to
+	// one line that says where to read the rest of it.
 	//
 	// Letting go of the names is done here rather than by the closure
 	// that finishes the dial: a dial that has not come back yet still
 	// has to stop holding them, or nothing can try again.
 	log := newConnLog(func() { a.pump.post(func() { a.machines.giveUp(held) }) })
-	held.say = log.Say
+	held.log = log
 	pane, err := a.openSessionTab(log, name, kindOf(command), "connecting", at)
 	if err != nil {
 		cancel()
@@ -186,7 +186,7 @@ func (a *app) reached(d *dialling, log *connLog, pane *term.Terminal, route []st
 	// Renamed while it was being reached, in which case it goes under
 	// what it is called now.
 	s.name = d.nameNow(s.name)
-	m := &machine{at: s, conn: conn, log: log}
+	m := &machine{at: s, conn: conn}
 	// Held even when the route was given up on in the meantime: the
 	// machine answered, and whether this landed a frame before the user
 	// pressed give up or a frame after is not something they can see.
@@ -297,6 +297,10 @@ func (a *app) becomeShellPane(name string, command []string, pane *term.Terminal
 		log.Failed(fmt.Errorf("nothing is connected to %s", name))
 		return
 	}
+	// The machine the route was for, and only that one: every machine on
+	// the way shares this account, and a line on each of their rows would
+	// open an account about somewhere else.
+	m.log = log
 	size := pane.Size()
 	sh, err := m.conn.Shell(a.ctx, remote.ShellConfig{
 		Command: command,

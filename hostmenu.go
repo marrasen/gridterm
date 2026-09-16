@@ -132,12 +132,12 @@ func hostItems(about hostFacts) []ui.MenuItem {
 		// Saved as a window and not taken over yet. Nothing that needs
 		// a shell applies: it serves gridterm's own protocol and has no
 		// shell to log in to.
-		return []ui.MenuItem{
+		return withTheLog([]ui.MenuItem{
 			{Command: "conn.terminal", Title: "Take it over"},
 			ui.MenuSeparator(),
 			{Command: "server.editThis", Title: "Edit this window…"},
 			{Command: "server.forget", Title: "Forget this window…"},
-		}
+		}, about)
 	}
 	items := []ui.MenuItem{
 		{Command: "conn.terminal", Title: "Terminal"},

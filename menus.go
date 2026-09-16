@@ -90,18 +90,20 @@ func (a *app) newMenubar(child ui.Widget) *ui.Menubar {
 // last, so the menus the window adds while it runs go in front of it.
 const helpMenu = "Help"
 
-// addMenu puts a menu on the bar, in front of Help.
-//
-// An open menu holds the index of the title it hangs under, so one at or
-// after the new title is taken down rather than left hanging under
-// another menu's name.
+// addMenu puts a menu on the bar in front of Help, taking down an open
+// menu whose index the insert moves.
 func (a *app) addMenu(def ui.MenuDef) {
-	at := len(a.bar.Menus)
+	at := -1
 	for i, have := range a.bar.Menus {
 		if have.Title == helpMenu {
 			at = i
 			break
 		}
+	}
+	if at < 0 {
+		// Every menu goes in front of Help, so there has to be one to go
+		// in front of.
+		panic("the menu bar has no " + helpMenu + " title to add a menu in front of")
 	}
 	if a.bar.OpenIndex() >= at {
 		a.bar.Close()

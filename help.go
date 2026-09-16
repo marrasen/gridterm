@@ -20,19 +20,25 @@ const helpGap = 2
 
 // showHelp lists every command and the key that runs it.
 func (a *app) showHelp() error {
-	a.showNotice(helpTitle, a.helpText(), false)
+	n := a.newNotice(helpTitle, a.helpText())
+	// Laid out in columns, which the dialog would otherwise re-wrap at
+	// spaces and lose.
+	n.Preformatted = true
+	a.presentNotice(n)
 	return nil
 }
 
-// helpText is the list itself: the commands under the menu each hangs
-// on, then the ones no menu offers, then the file browser's own keys.
+// helpText lists the commands under the menu each hangs on, then the
+// keys no menu shows, then the file browser's own keys, read from the
+// registry and the keymaps so it cannot drift from what the keys do.
 //
-// Read from the registry and the keymaps rather than written out, so it
-// cannot drift from what the keys do.
+// Left out: the commands the window builds from the server list and the
+// font scan, because there is one per machine and one per family and
+// the menus that generate them already list them.
 func (a *app) helpText() string {
 	sections := a.commandSections()
 	sections = append(sections, helpSection{
-		title: "The file browser's keys",
+		title: "The file browser's keys, as its bar shows them",
 		lines: browserHelp(),
 	})
 
@@ -77,15 +83,15 @@ type helpSection struct {
 	lines []helpLine
 }
 
-// commandSections groups the registered commands the way the menu bar
-// groups them, and puts whatever no menu offers under its own heading.
+// commandSections groups the menu bar's own lines the way the bar groups
+// them, and puts the keys no menu shows under a heading of their own.
 func (a *app) commandSections() []helpSection {
 	var out []helpSection
 	listed := make(map[string]bool)
 	for _, def := range a.menus() {
 		s := helpSection{title: def.Title}
 		for _, item := range def.Items {
-			if item.Command == "" || listed[item.Command] {
+			if item.Command == "" || listed[item.Command] || generatedCommand(item.Command) {
 				continue
 			}
 			cmd, ok := a.root.Commands.Lookup(item.Command)
@@ -100,19 +106,34 @@ func (a *app) commandSections() []helpSection {
 		}
 	}
 
-	// The commands the menus leave out: the ones only a key, the palette
-	// or a row's plus reaches.
-	rest := helpSection{title: "Other commands"}
+	// Only the ones a key runs. A command with neither a key nor a menu
+	// line is reached from a row's plus, where it says what it does.
+	rest := helpSection{title: "Keys the menus do not show"}
 	for _, cmd := range a.root.Commands.All() {
-		if listed[cmd.ID] {
+		if listed[cmd.ID] || generatedCommand(cmd.ID) {
 			continue
 		}
-		rest.lines = append(rest.lines, helpLine{cmd.Title, a.chordFor(cmd.ID)})
+		if chord := a.chordFor(cmd.ID); chord != "" {
+			rest.lines = append(rest.lines, helpLine{cmd.Title, chord})
+		}
 	}
 	if len(rest.lines) > 0 {
 		out = append(out, rest)
 	}
 	return out
+}
+
+// generatedCommand reports whether an id was built from the server list
+// or the font scan rather than registered by hand.
+func generatedCommand(id string) bool {
+	for _, prefix := range []string{
+		openPrefix, editPrefix, termPrefix, filesPrefix, fontCommandPrefix,
+	} {
+		if strings.HasPrefix(id, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // menus is what the menu bar offers, or nothing when there is no bar.
@@ -124,11 +145,11 @@ func (a *app) menus() []ui.MenuDef {
 }
 
 // browserHelp is the file browser's key bar, read from the bar's own
-// table so the two say the same thing.
+// table and spelled the way the bar spells it.
 func browserHelp() []helpLine {
 	var out []helpLine
 	for _, k := range files.BrowserKeys() {
-		out = append(out, helpLine{k.Title, k.Chord.String()})
+		out = append(out, helpLine{k.Title, k.Shown})
 	}
 	return out
 }
@@ -144,8 +165,8 @@ func (a *app) chordFor(id string) string {
 	return ""
 }
 
-// keymaps are the window's two keymaps, in the order a key press is
-// offered to them, leaving out any the window has not built yet.
+// keymaps are the window's two keymaps, Accelerators first and then
+// Keys, leaving out either one the window has not built yet.
 func (a *app) keymaps() []*ui.Keymap {
 	var out []*ui.Keymap
 	for _, keys := range []*ui.Keymap{a.root.Accelerators, a.root.Keys} {

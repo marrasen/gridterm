@@ -482,11 +482,11 @@ func TestNoticeKeepsTheLineBreaksItWasGiven(t *testing.T) {
 
 // A line that fills the width exactly is one line, not two.
 func TestWrapTextFillsTheWidthBeforeBreaking(t *testing.T) {
-	lines := wrapText("aaaa bbbb", 9)
+	lines := wrapText("aaaa bbbb", 9, false)
 	if len(lines) != 1 || lines[0].text != "aaaa bbbb" {
 		t.Fatalf("wrapText at 9 = %+v, want the one line that fits", lines)
 	}
-	lines = wrapText("aaaa bbbb", 8)
+	lines = wrapText("aaaa bbbb", 8, false)
 	if len(lines) != 2 || lines[0].text != "aaaa" || lines[0].join != " " {
 		t.Fatalf("wrapText at 8 = %+v, want two lines joined by a space", lines)
 	}
@@ -622,5 +622,35 @@ func TestANoticeTakesADragThroughTheRoot(t *testing.T) {
 	r.PushModal(&fake{name: "over"})
 	if n.holding {
 		t.Error("the notice is still dragging a selection nothing will release")
+	}
+}
+
+// A preformatted notice keeps the spacing it was given, so a message
+// laid out in columns still reads as columns.
+func TestAPreformattedNoticeKeepsItsSpacing(t *testing.T) {
+	n := NewNotice("Keys", "Copy      ctrl+shift+C\nPaste     ctrl+shift+V", nil)
+	n.Preformatted = true
+
+	lines := noticeLines(n, drawNotice(n, 60, 18))
+	for i, want := range []string{"Copy      ctrl+shift+C", "Paste     ctrl+shift+V"} {
+		if i >= len(lines) || lines[i] != want {
+			t.Fatalf("line %d is %q, want %q: %v", i, lines[min(i, len(lines)-1)], want, lines)
+		}
+	}
+}
+
+// A preformatted line wider than the box is broken where it runs out of
+// room rather than being cut off.
+func TestAPreformattedLineTooWideIsBrokenWhereItRunsOut(t *testing.T) {
+	n := NewNotice("Keys", "a  bbbbbbbbbb  cccccccccc", nil)
+	n.Preformatted = true
+
+	// Narrow enough that the line has to break.
+	lines := noticeLines(n, drawNotice(n, 20, 18))
+	if len(lines) < 2 {
+		t.Fatalf("it fitted on %v, so nothing was broken", lines)
+	}
+	if got := strings.Join(lines, ""); !strings.Contains(got, "a  bbbbbbbbbb") {
+		t.Errorf("the spacing was lost: %v", lines)
 	}
 }

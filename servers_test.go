@@ -440,21 +440,24 @@ func TestConnectingOpensAPaneAndSaysWhatItIsDoing(t *testing.T) {
 	a.connect(cfg)
 
 	pane := newestPane(t, a)
+	watching := watchPane(t, pane)
 	if len(a.panes) != before+1 {
 		t.Fatalf("%d panes, want one more than the %d there were", len(a.panes), before)
 	}
 	// It says what it is doing before there is anything to connect to.
+	// Read from what the pane was written rather than from the screen:
+	// the fold empties the screen as soon as the shell is there.
 	waitFor(t, a, "the pane to say what it is doing", func() bool {
-		return strings.Contains(paneText(pane), "connecting to "+cfg.Target())
+		return strings.Contains(watching.text(), "connecting to "+cfg.Target())
 	})
 
-	// And the same pane carries the shell, with the account of how it
-	// was reached still above it.
+	// And the same pane carries the shell, with one line in place of the
+	// account of how it was reached.
 	waitFor(t, a, "the connection to be made", func() bool {
 		return a.machines.named(cfg.Target()) != nil
 	})
 	waitFor(t, a, "the pane to say it connected", func() bool {
-		return strings.Contains(paneText(pane), "connected to "+cfg.Target())
+		return strings.Contains(paneText(pane), "Connected to "+cfg.Target())
 	})
 	if a.machines.runningOn(pane) == nil {
 		t.Error("the pane is not on the machine it connected to")
@@ -484,10 +487,26 @@ func TestWhatAServerSaysIsKeptWhole(t *testing.T) {
 
 	cfg := serverConfig(t, s)
 	a.connect(cfg)
+	watching := watchPane(t, newestPane(t, a))
 
-	waitFor(t, a, "the machine to answer", func() bool {
-		return a.about(cfg.Target()).log() != nil
+	waitFor(t, a, "the pane to be folded for the shell", func() bool {
+		return strings.Contains(watching.text(), clearPane)
 	})
+
+	// It was in the pane while the connection was being made, before the
+	// fold cleared the pane for the shell.
+	saw := watching.text()
+	shown, folded := strings.Index(saw, link), strings.Index(saw, clearPane)
+	switch {
+	case shown < 0:
+		t.Errorf("the link never reached the pane: %q", saw)
+	case folded < 0:
+		t.Error("the pane was never folded, so the order proves nothing")
+	case shown > folded:
+		t.Errorf("the link was written after the fold cleared the pane: %q", saw)
+	}
+
+	// And it is still there to read afterwards.
 	account := strings.Join(a.about(cfg.Target()).log().Lines(), "\n")
 	// On one line, with nothing cut off it: a link broken across two
 	// lines is a link nobody can copy.

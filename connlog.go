@@ -108,15 +108,28 @@ func (c *connLog) sayBadly(what string) { c.say(what, true) }
 // say writes a stamped line, colouring the time by whether it went
 // wrong.
 //
-// The colour is written as SGR, which the far end cannot forge: every
-// word of its own goes through serve.Plain before it reaches here.
+// The line is cleaned first, because some of what is said here is the
+// far end's own wording passed on by the dial, and the colour below
+// would otherwise be a hostile server's to forge.
 func (c *connLog) say(what string, wrong bool) {
+	what = oneLine(what)
 	now := c.clock().Format("15:04:05")
 	stamp := sgrWent
 	if wrong {
 		stamp = sgrWrong
 	}
 	c.emit(now+"  "+what, stamp+now+sgrOff+"  "+sgrWords+what+sgrOff)
+}
+
+// oneLine is a line as it may be shown: nothing a terminal acts on, and
+// nothing that breaks one line into two.
+//
+// Every way into the log goes through it, because the far end's words
+// reach this window by more routes than the ones it quotes: the dial
+// hands on what a server says it will accept, and a reason a connection
+// failed often carries the server's own wording inside it.
+func oneLine(s string) string {
+	return strings.ReplaceAll(serve.Plain(s), "\n", " ")
 }
 
 // Lines is the whole account, in the order it was said, without the
@@ -134,10 +147,8 @@ func (c *connLog) Lines() []string {
 // link this way, and a link that is cut off or that cannot be copied is
 // a link nobody can use.
 //
-// Stripped of what a terminal would act on rather than print. The pane
-// parses what is written to it as a terminal stream, so a server left
-// alone here could move the cursor, overwrite the lines above it --
-// "its host key is accepted" among them -- and set the window's title.
+// Split on the line breaks it came with, because write keeps a line a
+// line: what came on several is meant to be read on several.
 func (c *connLog) Quote(who, what string) {
 	what = strings.TrimRight(what, "\r\n")
 	if strings.TrimSpace(what) == "" {
@@ -145,7 +156,7 @@ func (c *connLog) Quote(who, what string) {
 	}
 	c.Say(who + " says:")
 	for _, line := range strings.Split(what, "\n") {
-		c.write("    " + serve.Plain(line))
+		c.write("    " + line)
 	}
 }
 
@@ -155,12 +166,10 @@ func (c *connLog) Failed(err error) {
 	if err == nil {
 		return
 	}
-	// A failure often carries what the far end said inside it, and this
-	// pane acts on escape sequences like any other terminal. Split
-	// first, because Say writes one line and a reason that came on
+	// Split first, because Say writes one line and a reason that came on
 	// several is meant to be read on several.
 	for _, line := range strings.Split(err.Error(), "\n") {
-		c.sayBadly(serve.Plain(line))
+		c.sayBadly(line)
 	}
 	c.write("")
 	c.note("The connection was not made. This pane is only the record of")
@@ -190,13 +199,16 @@ func (c *connLog) Became(name string, live session.Session) {
 		_ = live.Close()
 		return
 	}
-	// Folded before live is set, not after: the reader takes the
-	// connection's bytes as soon as there is one, and a clear written
-	// after them would wipe the shell's first screen.
+	// Read drains said before it looks at live, so the fold has to be in
+	// said before live is set: after it, the shell's first screen could
+	// be read first and then cleared.
 	c.foldLocked(name)
 	c.live = live
 	cols, rows := c.cols, c.rows
 	c.mu.Unlock()
+	// Woken here rather than after the resize below, which goes to the
+	// far end and takes as long as that takes.
+	c.signal()
 	c.settle()
 
 	// The size the pane already had. A shell that started at eighty by
@@ -204,7 +216,7 @@ func (c *connLog) Became(name string, live session.Session) {
 	// screen wrong.
 	if cols > 0 && rows > 0 {
 		if err := live.Resize(cols, rows); err != nil {
-			c.Say("could not tell it how big this pane is: " + err.Error())
+			c.sayBadly("could not tell it how big this pane is: " + err.Error())
 		}
 	}
 	c.signal()
@@ -216,24 +228,34 @@ func (c *connLog) Became(name string, live session.Session) {
 // The summary is the pane's, not the account's, so it is not one of the
 // lines: it says where to read them.
 func (c *connLog) foldLocked(name string) {
-	if c.over {
-		return
-	}
-	took := c.clock().Sub(c.started).Seconds()
-	line := fmt.Sprintf(
-		`connected to %s in %.1f s; "How it was reached" on the row's menu shows the log`,
-		name, took)
+	line := "Connected to " + name + " " + howLong(c.clock().Sub(c.started)) +
+		`. "How it was reached", on the plus menu of its row, shows the account.`
 	c.said = append(c.said, clearPane...)
 	c.said = append(c.said, []byte(sgrWords+line+sgrOff+"\r\n")...)
 }
 
+// howLong says how long something took, in the words a summary line
+// reads with.
+func howLong(d time.Duration) string {
+	if d < time.Second {
+		return "in under a second"
+	}
+	return fmt.Sprintf("in %.1f s", d.Seconds())
+}
+
 // note writes one of this window's own lines that carries no time, in
 // the same grey its stamped words are written in.
-func (c *connLog) note(line string) { c.emit(line, sgrWords+line+sgrOff) }
+func (c *connLog) note(line string) {
+	line = oneLine(line)
+	c.emit(line, sgrWords+line+sgrOff)
+}
 
 // write adds one line with no colour on it, which is how the far end's
 // own words are told apart from this window's.
-func (c *connLog) write(line string) { c.emit(line, line) }
+func (c *connLog) write(line string) {
+	line = oneLine(line)
+	c.emit(line, line)
+}
 
 // emit adds one line, keeping the plain text and showing the coloured
 // one.

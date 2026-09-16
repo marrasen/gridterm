@@ -106,15 +106,25 @@ func (a *app) openCommandHere() error {
 }
 
 // showConnLogHere opens the account of how the machine the user is
-// looking at was reached.
+// looking at was reached, or is being reached.
 func (a *app) showConnLogHere() error {
 	h := a.about(a.currentHost())
+	name := groupName(h.name)
 	log := h.log()
 	if log == nil {
-		return fmt.Errorf("there is no account of how %s was reached", groupName(h.name))
+		return fmt.Errorf("there is no account of how %s was reached", name)
 	}
-	a.showNotice("How "+h.name+" was reached", strings.Join(log.Lines(), "\n"), false)
+	a.showNotice(connLogTitle(name, h.kind), strings.Join(log.Lines(), "\n"), false)
 	return nil
+}
+
+// connLogTitle names the account dialog, in the tense the connection is
+// in.
+func connLogTitle(name string, kind hostKind) string {
+	if kind == hostConnecting {
+		return "How " + name + " is being reached"
+	}
+	return "How " + name + " was reached"
 }
 
 // openFilesHere puts another pane in the file manager, on the machine

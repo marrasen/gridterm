@@ -31,9 +31,10 @@ type dialling struct {
 	// already run and a new request must run now rather than queue.
 	settled bool
 
-	// say writes into the pane watching this connection, so a request
-	// that was thrown away says so where the user is looking.
-	say func(string)
+	// log is the account being written into the pane that watches this
+	// connection, so a request that was thrown away says so where the
+	// user is looking and so the account can be opened while it runs.
+	log *connLog
 
 	// renamed maps what a machine was called when the dial started to
 	// what it is called now, for one renamed while it was on its way.

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/files"
@@ -42,7 +43,7 @@ func (a *app) currentHost() string {
 	if p, ok := ui.FocusedLeaf(a.root.Widget()).(*files.Pane); ok {
 		return a.hostOf(p.FS())
 	}
-	return a.localHost
+	return conns.Local
 }
 
 // disconnectHere closes the connection to the machine the user is

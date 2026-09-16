@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"image/color"
 
+	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/files"
 	"github.com/marrasen/gridterm/ui/term"
@@ -46,7 +47,7 @@ func (a *app) splitFocused(dir ui.Dir) error {
 func (a *app) addSplitChoices(c *ui.Chooser, dir ui.Dir, current ui.Widget) {
 	// First, and so the line the chooser opens on: Enter straight after
 	// the split key is the shell a split used to give without asking.
-	c.Add("New terminal", groupName(a.localHost), func() error {
+	c.Add("New terminal", groupName(conns.Local), func() error {
 		return a.splitNewTerminal(dir, current)
 	})
 

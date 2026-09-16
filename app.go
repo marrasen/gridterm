@@ -152,11 +152,6 @@ type app struct {
 	// kept only so the user can read what it printed.
 	ended map[*term.Terminal]bool
 
-	// localHost is the machine a new pane runs on: this one, unless
-	// -ssh named another. Every pane a split or a tab opens goes there,
-	// because that is where newSession puts it.
-	localHost string
-
 	// rates turn a connection's running totals into a speed. One per
 	// connection, because a speed is a difference between two moments
 	// and each has its own.

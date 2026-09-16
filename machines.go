@@ -39,10 +39,10 @@ type machines struct {
 	opening map[string]*dialling
 
 	// on says which connection a pane runs on. Panes are grouped on the
-	// panel by a name, and a name can mean two things at once -- the
-	// machine -ssh put every pane on, and a connection made from the
-	// window -- so closing one connection must find its own panes
-	// rather than everything under that name.
+	// panel by a name, and a name can hold more panes than one
+	// connection carries -- a pane left behind by a connection that
+	// failed keeps the name -- so closing one connection must find its
+	// own panes rather than everything under that name.
 	on map[*term.Terminal]*machine
 
 	// making counts the connections being made and the windows being

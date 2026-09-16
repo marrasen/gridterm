@@ -153,15 +153,11 @@ func main() {
 	a.ctx, a.stop = context.WithCancel(context.Background())
 	a.book = loadBook()
 	a.newSession = func(cols, rows int) (session.Session, error) {
-		return startSession(*sshTarget, command, a.keys, cols, rows)
-	}
-	// Where a pane opened by a split or a tab runs. With -ssh that is
-	// the machine on the far end, not this one.
-	a.localHost = conns.Local
-	if *sshTarget != "" {
-		if cfg, err := remote.ParseTarget(*sshTarget); err == nil {
-			a.localHost = cfg.Target()
-		}
+		return session.StartLocal(session.LocalConfig{
+			Command: command,
+			Cols:    cols,
+			Rows:    rows,
+		})
 	}
 	if *showStats {
 		a.stats = newWatchStats(os.Stderr)
@@ -190,7 +186,7 @@ func main() {
 	a.ended = make(map[*term.Terminal]bool)
 	a.exits = make(chan struct{}, exitQueue)
 
-	first, err := a.newTerminal()
+	first, err := a.openFirst(startup{target: *sshTarget, command: command})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -204,14 +200,13 @@ func main() {
 	// Off the drawing goroutine: reading every font file the system has
 	// takes long enough to be seen as the window failing to open.
 	a.startFontScan()
-	a.showPane(first)
 
 	// The tree: the menu bar over the sidebar and the stage beside it.
 	// Everything the window opens goes on the stage, which shows one at
 	// a time; the sidebar is what chooses.
 	a.panel = a.newPanel()
 	a.side = a.newSidebar()
-	a.stage = a.newTabs(first)
+	a.stage = a.newTabs(startingPanes(first)...)
 	a.dock = a.newDock(a.stage)
 	// The sidebar is painted onto a grid of its own, over the window's,
 	// so that its rows can have room around them while the terminal
@@ -383,33 +378,50 @@ func loadBook() *remote.Book {
 	return book
 }
 
-// startSession opens either a local shell or an SSH connection. The rest
-// of the program cannot tell the difference: both are a byte stream and
-// a size.
-func startSession(target string, command []string, ring *remote.Ring, cols, rows int) (session.Session, error) {
-	if target == "" {
-		return session.StartLocal(session.LocalConfig{
-			Command: command,
-			Cols:    cols,
-			Rows:    rows,
-		})
+// startup is what the flags say the window opens with: a local shell,
+// or a connection to the machine -ssh named.
+type startup struct {
+	// target is what -ssh was given, and empty for a local shell.
+	target string
+
+	// command is what -e was given: the program the shell runs instead
+	// of the login shell, here or on the far end.
+	command []string
+}
+
+// openFirst opens what the window starts with and returns its pane, or
+// nil when there is none yet.
+//
+// With -ssh there is none: the connection is made on the first frame,
+// through openRoute like every other one, so it asks in a dialog and
+// keeps an account in a pane of its own.
+func (a *app) openFirst(s startup) (*term.Terminal, error) {
+	if s.target == "" {
+		t, err := a.newTerminal()
+		if err != nil {
+			return nil, err
+		}
+		a.showPane(t)
+		return t, nil
 	}
-	cfg, err := remote.ParseTarget(target)
+	cfg, err := remote.ParseTarget(s.target)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("-ssh: %w", err)
 	}
-	// -ssh connects before the window opens, so there is nowhere to draw
-	// a dialog and the console is the only place left to ask. Connecting
-	// from inside the window uses askUser and its dialogs instead.
-	cfg.Ask = consoleAsk{}
-	cfg.Ring = ring
-	sh, err := remote.StartShell(context.Background(), cfg, remote.ShellConfig{
-		Command: command,
-		Cols:    cols,
-		Rows:    rows,
+	// On the first frame rather than from here: the pane the connection
+	// opens goes in a tree that is built after this returns, and the
+	// dialogs it asks in are drawn by the window.
+	a.pump.post(func() {
+		a.connectFor(cfg.Target(), cfg, opening{command: s.command})
 	})
-	if err != nil {
-		return nil, err
+	return nil, nil
+}
+
+// startingPanes is what the stage opens with: the first pane, or nothing
+// at all when -ssh is still connecting.
+func startingPanes(first *term.Terminal) []ui.Widget {
+	if first == nil {
+		return nil
 	}
-	return sh, nil
+	return []ui.Widget{first}
 }

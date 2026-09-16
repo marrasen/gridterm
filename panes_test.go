@@ -152,7 +152,17 @@ func (ta *testApp) copiedText() string {
 	return ta.copied[len(ta.copied)-1]
 }
 
-func newTestApp(t *testing.T, cols, rows int) *testApp {
+// testOption is a flag the window was started with, for a test that has
+// to build the app the way main does.
+type testOption func(*startup)
+
+// startedWith is the -ssh target the window was started with, so a test
+// can drive what the flag does.
+func startedWith(s startup) testOption {
+	return func(into *startup) { *into = s }
+}
+
+func newTestApp(t *testing.T, cols, rows int, opts ...testOption) *testApp {
 	t.Helper()
 	ta := &testApp{app: &app{
 		fontSize:   defaultFontSize,
@@ -222,14 +232,19 @@ func newTestApp(t *testing.T, cols, rows int) *testApp {
 		ta.shells = append(ta.shells, sess)
 		return sess, nil
 	}
-	first, err := ta.newTerminal()
+	// The flags, the way main reads them: with -ssh there is no first
+	// pane, because the connection opens its own on the first frame.
+	var start startup
+	for _, opt := range opts {
+		opt(&start)
+	}
+	first, err := ta.openFirst(start)
 	if err != nil {
 		t.Fatalf("first pane: %v", err)
 	}
-	ta.showPane(first)
 	// The same shape the window has: everything open sits on the stage,
 	// which shows one at a time.
-	ta.stage = ta.newTabs(first)
+	ta.stage = ta.newTabs(startingPanes(first)...)
 	ta.root.SetWidget(ta.stage)
 	ta.root.Layout(ui.Rect{Cols: cols, Rows: rows})
 	t.Cleanup(func() {
@@ -681,6 +696,8 @@ func byTitlePrefix[T ui.Widget](prefix string) func(T) bool {
 // modal that draws none.
 func titleOf(w ui.Widget) string {
 	switch m := w.(type) {
+	case *jobDialog:
+		return m.Title
 	case *ui.Form:
 		return m.Title
 	case *ui.Notice:

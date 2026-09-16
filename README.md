@@ -361,10 +361,6 @@ emulator under `internal/` where they cannot be imported.
 - **A click faster than one frame is missed.** ebiten reports the mouse
   as polled state, so a press and release inside the same 16 ms are
   never seen as either. No human manages it; a test harness does.
-- **`-ssh` still needs its secrets up front.** That flag connects before
-  the window opens, so there is nowhere to draw a dialog yet and the
-  console is the only place left to ask. Connecting from inside the
-  window asks in the window.
 - **File panes share the width evenly, and the split cannot be dragged.**
   Five panes in an eighty-column window are sixteen columns each. Closing
   one gives its width back to the rest, but there is no way to make one

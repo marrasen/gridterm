@@ -1175,31 +1175,3 @@ func TestATerminalWaitsForAConnectionAskedForByFiles(t *testing.T) {
 		t.Errorf("%d machines were dialled, want the one", *dials)
 	}
 }
-
-// The machine -ssh put the panes on is reached through nothing this
-// window holds, so "Files" on it says so rather than dialling, even when
-// the server list holds the same name.
-func TestFilesOnTheMachineThePanesRunOnDialsNothing(t *testing.T) {
-	a := newTestApp(t, 90, 30)
-	withDialogs(t, a)
-	withPanel(t, a)
-	withMenubar(t, a)
-	pinServers(t, a)
-	dials := dialCounter(a)
-	a.localHost = "tester@box"
-	saveHostNamed(t, a, "tester@box", "box.example")
-	a.refreshServers()
-
-	chooseMenuItem(t, clickPlus(t, a, "tester@box"), "conn.files")
-
-	n := awaitModal[*ui.Notice](t, a, "the reason it cannot", nil)
-	if !strings.Contains(n.Message(), "did not open that connection") {
-		t.Errorf("it said %q", n.Message())
-	}
-	if *dials != 0 {
-		t.Errorf("%d machines were dialled for the machine the panes already run on", *dials)
-	}
-	if a.files != nil {
-		t.Errorf("a file manager opened: %v", filesRows(a))
-	}
-}

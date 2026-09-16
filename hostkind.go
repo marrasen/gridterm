@@ -12,8 +12,8 @@ const (
 	// hostUnknown is a name the window knows nothing about.
 	hostUnknown hostKind = iota
 
-	// hostHere is a machine the window has no connection of its own to:
-	// this one, or the one -ssh put every pane on.
+	// hostHere is the machine gridterm itself is running on, which it
+	// needs no connection to.
 	hostHere
 
 	// hostWindow is another gridterm, already taken over.
@@ -65,9 +65,8 @@ type hostFacts struct {
 
 	kind hostKind
 
-	// local says this is the machine gridterm itself is running on
-	// rather than the one -ssh put every pane on. Both are hostHere,
-	// and only this one has files to read without a connection.
+	// local says this is the machine gridterm itself is running on, so
+	// its files are read without a connection.
 	local bool
 
 	// saved says the server list holds this name, and serves narrows
@@ -165,10 +164,10 @@ func (a *app) about(host string) hostFacts {
 	switch {
 	case f.window != nil:
 		f.kind = hostWindow
-	case f.machine == nil && (f.name == conns.Local || f.name == a.localHost):
+	case f.machine == nil && f.name == conns.Local:
 		// A connection under the same name wins: it is a machine the
 		// window reached, not the one it is running on.
-		f.kind, f.local = hostHere, f.name == conns.Local
+		f.kind, f.local = hostHere, true
 	case f.machine != nil:
 		f.kind = hostMachine
 	case f.dialling != nil:

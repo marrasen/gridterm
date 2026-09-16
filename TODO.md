@@ -11,15 +11,9 @@ each group. A line goes when the work is in and reviewed.
 
 ## Copying files
 
-- **A copy should show its progress when its row is clicked.** The row
-  says a copy is happening and nothing else. Clicking it should show how
-  far it has got, how fast it is going and what it is on now.
-- **A copy should be cancellable.** The jobs underneath already take a
-  cancel; nothing offers it.
-- **A copy that has finished should be repeatable from its row.** The
-  row stays when the copy is done, so copying the same file again --
-  a log with new lines in it, say -- should be one click rather than
-  finding both ends again.
+- Nothing outstanding. A copy's row opens a dialog saying what it is on,
+  how far it has got and how fast it is going, with Cancel while it runs
+  and Repeat once it has finished.
 
 ## The file browser
 
@@ -37,15 +31,6 @@ each group. A line goes when the work is in and reviewed.
 - A watcher taking a screen over sees the far end's default cursor.
   `vt.Repaint` puts the cursor back where the program had it but carries
   neither its shape nor its blink, so `DECSCUSR` is lost over the wire.
-- On Windows a command that writes and exits in the same instant loses
-  its output. A ConPTY repaints on a clock of its own, and the reaper
-  closes the pseudoconsole as soon as the child is reaped, which is
-  before the repaint. `session`'s Windows tests type their commands into
-  a shell that stays running rather than passing them on the command
-  line. Unix has `TestOutputSurvivesAChildThatExitsImmediately` for the
-  same case and passes it.
-- `-ssh` connects before the window opens, so it asks on the console and
-  has no connection pane.
 - A file pane on a gridterm window has no bound. `windowFiles` in
   `browse.go` calls `t.win.Files()` and then `sftp.NewClientPipe`, both
   on the goroutine that draws and neither of them bounded. The same pane

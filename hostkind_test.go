@@ -53,39 +53,31 @@ func TestAboutNamesEveryKindOfHost(t *testing.T) {
 	}
 }
 
-// The machine -ssh put the panes on is here too, and says it is not the
-// one gridterm is running on.
-//
-// The two used to disagree: the here-commands counted it as here and the
-// file manager did not, so "browse files on it" was registered and could
-// never work.
-func TestAboutCountsTheSshTargetAsHere(t *testing.T) {
+// Here is the machine gridterm is running on and nothing else. Every
+// other machine, the one -ssh names included, is reached over a
+// connection the window holds.
+func TestHereIsTheMachineGridtermRunsOn(t *testing.T) {
 	a := newTestApp(t, 90, 30)
 	withDialogs(t, a)
-	a.localHost = "tester@box"
 
-	far := a.about("tester@box")
-	if far.kind != hostHere {
-		t.Errorf("the machine every pane runs on is a %v, want here", far.kind)
-	}
-	if far.local {
-		t.Error("it says it is the machine gridterm is running on")
-	}
 	here := a.about(conns.Local)
 	if here.kind != hostHere || !here.local {
 		t.Errorf("this machine is a %v (local %v)", here.kind, here.local)
 	}
+	if got := a.about("tester@box").kind; got != hostUnknown {
+		t.Errorf("a machine nothing is connected to is a %v, want unknown", got)
+	}
 }
 
-// A connection made under a name beats that name being "here", because
-// it is a machine the window reached rather than the one it runs on.
+// A connection made under the local name beats that name being "here",
+// because it is a machine the window reached rather than the one it runs
+// on.
 func TestAConnectionUnderTheLocalNameIsAMachine(t *testing.T) {
 	a := newTestApp(t, 90, 30)
 	withDialogs(t, a)
-	a.localHost = "tester@box"
-	pretendMachine(t, a, "tester@box")
+	pretendMachine(t, a, conns.Local)
 
-	if got := a.about("tester@box").kind; got != hostMachine {
+	if got := a.about(conns.Local).kind; got != hostMachine {
 		t.Errorf("it is a %v, want the connection to win", got)
 	}
 }

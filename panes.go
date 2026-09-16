@@ -24,7 +24,7 @@ func (a *app) newTerminal() (*term.Terminal, error) {
 	if err != nil {
 		return nil, fmt.Errorf("start session: %w", err)
 	}
-	t, err := a.newTerminalOn(sess, a.localHost, conns.Terminal, "")
+	t, err := a.newTerminalOn(sess, conns.Local, conns.Terminal, "")
 	if err != nil {
 		// The session is ours now and nothing else will close it.
 		_ = sess.Close()
@@ -139,7 +139,7 @@ func (a *app) paneToPlaceBeside() ui.Widget {
 // openTab puts a new shell in the strip holding the focused pane,
 // starting a strip if it is not in one.
 func (a *app) openTab() error {
-	if a.paneToPlaceBeside() == nil {
+	if a.paneToPlaceBeside() == nil && a.stage == nil {
 		return errors.New("nothing to open a tab beside")
 	}
 	next, err := a.newTerminal()
@@ -157,10 +157,20 @@ func (a *app) openTab() error {
 
 // placeTab puts a widget in the strip holding the focused pane, starting
 // a strip if it is not in one.
+//
+// A window with no pane at all puts it on the stage, which is how -ssh
+// opens: the window is there before the connection is, and the pane
+// watching that connection is the first one in it.
 func (a *app) placeTab(next ui.Widget) error {
 	current := a.paneToPlaceBeside()
 	if current == nil {
-		return errors.New("nothing to open a tab beside")
+		if a.stage == nil {
+			return errors.New("nothing to open a tab beside")
+		}
+		a.stage.Add(next)
+		a.relayout()
+		a.focus(next)
+		return nil
 	}
 	if strip, _ := a.stripAbove(current); strip != nil {
 		strip.Add(next)

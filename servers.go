@@ -53,10 +53,16 @@ func (a *app) connect(cfg remote.Config) { a.connectAs(cfg.Target(), cfg) }
 // The connection is kept under that name, so a second terminal on the
 // machine rides on it rather than logging in again.
 func (a *app) connectAs(name string, cfg remote.Config) {
+	a.connectFor(name, cfg, opening{})
+}
+
+// connectFor is connectAs with what the connection is being made for,
+// which for -ssh is the command it was given rather than a shell.
+func (a *app) connectFor(name string, cfg remote.Config, open opening) {
 	if name == "" {
 		name = cfg.Host
 	}
-	a.openRoute(name, []step{{name: name, cfg: cfg}}, opening{}, nil)
+	a.openRoute(name, []step{{name: name, cfg: cfg}}, open, nil)
 }
 
 // openSessionTab puts a session where it was asked to go: dividing a

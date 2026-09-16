@@ -19,7 +19,7 @@ import (
 // the two windows are looking at one list rather than at two that agree
 // today.
 func (a *app) snapshot(now time.Time) serve.Snapshot {
-	snap := serve.Snapshot{Window: a.localHost}
+	snap := serve.Snapshot{Window: conns.Local}
 	for _, g := range a.registry.Groups(now) {
 		for _, row := range g.Rows {
 			// The size of its screen, for something that has one. It

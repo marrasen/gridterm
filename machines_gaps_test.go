@@ -303,20 +303,24 @@ func TestClosingAConnectionReallyClosesIt(t *testing.T) {
 }
 
 // The panes closed with a machine are the ones running on it, not every
-// pane filed under the same name. With -ssh every pane carries the name
-// of the machine it runs on, and a connection made from the window can
-// carry that name too.
+// pane filed under the same name. A connection that failed leaves a pane
+// behind under the name it was for, and a later connection to that
+// machine must not take it away.
 func TestClosingAConnectionLeavesOtherPanesUnderThatNameAlone(t *testing.T) {
 	s := sshtest.New(t)
 	a := newTestApp(t, 80, 24)
 	withDialogs(t, a)
 	host := serverConfig(t, s).Target()
 
-	// A pane of its own on the same machine, the way -ssh makes them.
-	a.localHost = host
-	if err := a.openTab(); err != nil {
-		t.Fatalf("openTab: %v", err)
+	// A pane under the machine's name that rides on nothing.
+	left, err := a.newTerminalOn(newPipeSession(), host, conns.Terminal, "")
+	if err != nil {
+		t.Fatalf("the pane under the name: %v", err)
 	}
+	if err := a.placeTab(left); err != nil {
+		t.Fatalf("place it: %v", err)
+	}
+	a.showPane(left)
 	a.connect(serverConfig(t, s))
 	waitForPanes(t, a, 3)
 

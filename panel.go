@@ -26,6 +26,10 @@ const panelWidth = 26
 // in a sidebar too narrow to draw one.
 const dot = '\u2022'
 
+// clearButton is the button at the end of a finished row, which takes
+// the row off the panel. Not named clear, which is a builtin.
+const clearButton = '\u00d7'
+
 // icon is the little picture that stands for a kind of connection.
 func icon(k conns.Kind) grid.Art {
 	switch k {
@@ -60,6 +64,10 @@ func (a *app) newPanel() *ui.List {
 		// Dimmer than the row: what a connection is doing is a note
 		// beside it, not part of its name.
 		NoteFG: a.colours.ANSI[8],
+		// How far a copy has got, further along the line the sidebar's
+		// own ground is shaded on: a row filling up reads as part of the
+		// frame rather than as a colour from somewhere else.
+		FillBG: grid.Blend(a.colours.BG, a.colours.ANSI[4], 1, 3),
 		// A ground of its own, shading down the list, so the sidebar
 		// reads as part of the window's frame rather than as one more
 		// thing running in it.
@@ -464,10 +472,20 @@ func (a *app) panelRow(row conns.Row, now time.Time) ui.ListRow {
 		Mark: dot, MarkFG: state,
 	}
 	out.Art = a.graph(row.Entry)
+	// How far the job on this row has got, asked of the job itself: one
+	// that has finished is off the list, so its row fills nothing.
+	if j := a.jobs[row.Entry]; j != nil {
+		out.Fill = jobFill(j.Progress())
+	}
 	if row.State == meter.Closed {
 		// A finished connection reads as finished rather than as one
 		// more thing running.
 		out.FG = a.colours.ANSI[8]
+		if row.Entry.Close != nil {
+			// Clearing the row is the one thing left to do with it, so
+			// it is offered on the row itself rather than through a menu.
+			out.Button = clearButton
+		}
 	}
 	return out
 }

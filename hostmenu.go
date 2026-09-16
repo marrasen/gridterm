@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 
+	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/ui"
 )
 
@@ -101,6 +102,11 @@ func (a *app) openHostMenu(row ui.ListRow) error {
 			return nil
 		}
 		items, about = farItems(), func() { a.hostMenus.nowAboutFar(key) }
+	case *conns.Entry:
+		// The button on a connection's row is the one that clears a
+		// finished one. There is nothing else left to do with it, so it
+		// is done straight away rather than through a menu.
+		return a.clearRow(key)
 	default:
 		return nil
 	}
@@ -133,6 +139,23 @@ func (a *app) openHostMenu(row ui.ListRow) error {
 	}
 	// Set once the menu is really up, for the same reason.
 	about()
+	a.markDirty()
+	return nil
+}
+
+// clearRow takes a finished connection off the panel, which is what the
+// button at the end of its row does and what "clear finished
+// connections" does to all of them at once.
+//
+// A row that is still going carries no button, so nothing here asks
+// whether it has finished.
+func (a *app) clearRow(e *conns.Entry) error {
+	if e.Close == nil {
+		return nil
+	}
+	if err := e.Close(); err != nil {
+		return err
+	}
 	a.markDirty()
 	return nil
 }

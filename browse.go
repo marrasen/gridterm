@@ -505,6 +505,23 @@ func (a *app) refreshJobsAt(now time.Time) {
 	}
 }
 
+// jobFill is how much of a job's row is filled: the share of the bytes
+// that have gone, or of the files while the bytes are not known yet.
+//
+// A job that has stopped fills nothing, since its row is read once more
+// after it ended and a full row would say it is still going.
+func jobFill(p jobs.Progress) float64 {
+	switch {
+	case p.Done:
+		return 0
+	case p.Bytes > 0:
+		return min(float64(p.BytesDone)/float64(p.Bytes), 1)
+	case p.Files > 0:
+		return min(float64(p.FilesDone)/float64(p.Files), 1)
+	}
+	return 0
+}
+
 // jobNote is what a job's row says at its end.
 func jobNote(p jobs.Progress) string {
 	if !p.Done {

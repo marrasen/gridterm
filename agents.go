@@ -348,10 +348,14 @@ func (w agentWindow) Look(id string, lines int) (agent.Look, error) {
 			text := h.pane.TextLines(lines)
 			h.screen, h.said, h.lines = &text, said, lines
 		}
+		row, col, alt := h.pane.Cursor()
 		return agent.Look{
 			Screen:  *h.screen,
 			Gone:    h.pane.Exited(),
 			Changed: said,
+			Row:     row,
+			Col:     col,
+			Alt:     alt,
 		}, nil
 	})
 }

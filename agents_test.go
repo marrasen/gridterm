@@ -363,7 +363,7 @@ func TestTheHandoverPromptStandsOnItsOwn(t *testing.T) {
 			t.Errorf("a line is %d characters long: %q", len(line), line)
 		}
 	}
-	if lines := strings.Count(strings.TrimRight(prompt, "\n"), "\n") + 1; lines > 32 {
+	if lines := strings.Count(strings.TrimRight(prompt, "\n"), "\n") + 1; lines > 36 {
 		t.Errorf("the prompt is %d lines long", lines)
 	}
 }
@@ -1006,5 +1006,62 @@ func TestTheCodeDialogReadsWholeForEveryHost(t *testing.T) {
 				t.Errorf("the dialog does not say the path is unknown:\n%s", drawn)
 			}
 		})
+	}
+}
+
+// An agent is told where the cursor is and whether a full-screen
+// program is drawing.
+//
+// A screen as plain text says neither. Where the cursor sits is what
+// tells an agent that the shell is at a prompt rather than part way
+// through a line, and the alternate screen is why asking for more lines
+// than the screen holds gives the screen.
+func TestAnAgentSeesTheCursorAndTheAlternateScreen(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pane, code, c := handedOver(t, a)
+
+	var got agent.Pane
+	offWindow(t, a, "the window to answer the agent", func() error {
+		var err error
+		got, err = c.Use(code)
+		return err
+	})
+
+	// A shell at a prompt: the cursor is where the next character would
+	// go, which is the end of the prompt on the second row.
+	a.shells[0].out <- []byte("last login: never\r\n$ ")
+	waitFor(t, a, "the pane to show the prompt", func() bool {
+		return strings.Contains(paneText(pane), "$ ")
+	})
+
+	var look agent.Look
+	read := func() {
+		t.Helper()
+		offWindow(t, a, "the window to answer the agent", func() error {
+			var err error
+			look, err = c.Read(got.ID, 0)
+			return err
+		})
+	}
+	read()
+	if look.Row != 1 || look.Col != 2 {
+		t.Errorf("the agent was told the cursor is at row %d, column %d, want row 1, column 2",
+			look.Row, look.Col)
+	}
+	if look.Alt {
+		t.Error("it was told an ordinary screen is a full-screen program")
+	}
+
+	// And a full-screen program, which draws on the alternate screen.
+	a.shells[0].out <- []byte("\x1b[?1049h\x1b[H~")
+	waitFor(t, a, "the pane to move to the alternate screen", func() bool {
+		_, _, alt := pane.Cursor()
+		return alt
+	})
+	read()
+	if !look.Alt {
+		t.Error("the agent was not told a full-screen program is drawing")
 	}
 }

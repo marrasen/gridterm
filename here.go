@@ -131,7 +131,15 @@ func connLogTitle(name string, kind hostKind) string {
 
 // openFilesHere puts another pane in the file manager, on the machine
 // the user is looking at.
-func (a *app) openFilesHere() error { return a.openFilesOn(a.currentHost()) }
+func (a *app) openFilesHere() error {
+	// A menu dropped from a machine of a window taken over: the pane
+	// reads that machine through the window, which is the only way this
+	// one can reach it.
+	if key, on := a.hostMenus.farMachine(); on {
+		return a.openFilesFar(key)
+	}
+	return a.openFilesOn(a.currentHost())
+}
 
 // tunnelHost returns the machine to run a tunnel over: the one the user
 // is looking at, if it is one gridterm has a connection to.

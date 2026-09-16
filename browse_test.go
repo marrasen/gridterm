@@ -18,6 +18,7 @@ import (
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/files"
 	"github.com/marrasen/gridterm/ui/term"
+	"github.com/marrasen/gridterm/vfs"
 )
 
 // openFilesFromThePlus opens a file pane on a machine the way a user
@@ -1215,5 +1216,178 @@ func TestAFilePaneOnAWindowReadsItsFiles(t *testing.T) {
 	}
 	if string(body) != "the body" {
 		t.Errorf("the file reads %q, want what the other window has in it", body)
+	}
+}
+
+// openFilesFromTheFarPlus opens a file pane on a machine a window taken
+// over is connected to, the way a user does: the plus on that machine's
+// heading, and the line that browses.
+func openFilesFromTheFarPlus(t *testing.T, client, host *testApp, addr, machine string) *files.Pane {
+	t.Helper()
+	was := make(map[*files.Pane]bool)
+	if client.files != nil {
+		for _, p := range client.files.view.Panes() {
+			was[p] = true
+		}
+	}
+	menu := clickPlusFar(t, client, addr, machine)
+	chooseMenuItemOver(t, host, menu, "conn.files")
+	var opened *files.Pane
+	waitFor(t, client, "a file pane on "+machine, func() bool {
+		if client.files == nil {
+			return false
+		}
+		for _, p := range client.files.view.Panes() {
+			if !was[p] {
+				opened = p
+				return true
+			}
+		}
+		return false
+	}, host)
+	return opened
+}
+
+// rowAt is where the sidebar drew a key, and -1 when it drew nothing for
+// it.
+func rowAt(a *testApp, key any) int {
+	for i, row := range a.panel.Rows() {
+		if row.Key == key {
+			return i
+		}
+	}
+	return -1
+}
+
+// The plus on a machine of a window taken over offers files and nothing
+// else.
+//
+// That machine is reached through the window, which holds the shells and
+// the tunnels on it. A terminal, a command or a tunnel there would be
+// this window reaching past the only connection it has.
+func TestThePlusOnAMachineOverThereOffersFilesAlone(t *testing.T) {
+	_, client, addr := aWindowConnectedToMargit(t)
+
+	menu := clickPlusFar(t, client, addr, "margit")
+
+	if got := menuCommands(menu); len(got) != 1 || got[0] != "conn.files" {
+		t.Errorf("the plus offers %v, want files alone", got)
+	}
+}
+
+// Choosing it opens a pane that reads that machine through the window.
+//
+// The whole path in one test: the plus opens the pane, the window over
+// there relays the bytes to the machine it is connected to, and the pane
+// lists a directory on that machine.
+func TestFilesOnAMachineOverThereReadItThroughTheWindow(t *testing.T) {
+	host, client, addr := aWindowConnectedToMargit(t)
+	held := windowAt(t, client, addr)
+
+	dir := t.TempDir()
+	putFile(t, dir, "over-there.txt", "the body")
+
+	pane := openFilesFromTheFarPlus(t, client, host, addr, "margit")
+
+	// The window's own name, so the pane goes when the window does.
+	if got := pane.FS().Name(); got != held.name {
+		t.Errorf("the pane says it is on %q, want the window %q", got, held.name)
+	}
+	// And margit on that window as its place, so it is neither the
+	// window's own disk nor a machine of this one's.
+	want := any(remoteHostKey{window: held, host: "margit"})
+	if got := pane.FS().Place(); got != want {
+		t.Errorf("the pane's place is %v, want margit on that window", got)
+	}
+	if pane.FS().Place() == any(held.win) {
+		t.Error("the pane counts as the window's own disk")
+	}
+
+	// What is on margit's disk, read through the window over there.
+	var entries []vfs.Entry
+	offWindow(t, client, "read the directory on margit", func() error {
+		var err error
+		entries, err = pane.FS().ReadDir(overThere(dir))
+		return err
+	})
+	found := false
+	for _, e := range entries {
+		if e.Name == "over-there.txt" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("the file was not there: %v", entries)
+	}
+
+	// Its row goes under margit: after the heading, and before the
+	// screens over there nobody here is watching.
+	client.refreshPanel(panelNow)
+	heading := rowAt(client, remoteHostKey{window: held, host: "margit"})
+	mine := rowAt(client, client.files.rows[pane])
+	screen := rowAt(client, remoteRowOn(t, client, addr, "margit"))
+	if heading < 0 || mine < 0 || screen < 0 {
+		t.Fatalf("heading %d, the pane %d, a screen over there %d: %v",
+			heading, mine, screen, panelText(client, panelNow))
+	}
+	if !(heading < mine && mine < screen) {
+		t.Errorf("the rows are drawn heading %d, pane %d, screen %d: %v",
+			heading, mine, screen, panelText(client, panelNow))
+	}
+}
+
+// Letting go of the window takes the pane with it.
+//
+// The pane reads through that window's connection. One left behind would
+// be a pane whose every read fails, on a machine this window cannot
+// reach by itself.
+func TestLettingGoOfTheWindowClosesAPaneOnAMachineOverThere(t *testing.T) {
+	host, client, addr := aWindowConnectedToMargit(t)
+
+	pane := openFilesFromTheFarPlus(t, client, host, addr, "margit")
+	if client.files == nil || len(client.files.view.Panes()) != 1 {
+		t.Fatalf("the manager holds %v, want the one pane", filesRows(client))
+	}
+
+	if err := client.dropWindow(addr); err != nil {
+		t.Fatalf("let go of the window: %v", err)
+	}
+
+	if client.files != nil {
+		for _, p := range client.files.view.Panes() {
+			if p == pane {
+				t.Fatal("the pane on margit outlived the window it read through")
+			}
+		}
+		t.Errorf("the manager is still open: %v", filesRows(client))
+	}
+}
+
+// A machine the window over there is no longer connected to says so, in
+// that window's own words.
+//
+// The rows are a snapshot old, so a heading can name a machine the
+// window over there has since let go of. This window cannot tell: it has
+// no connection of its own to try.
+func TestFilesOnAMachineTheWindowHasLetGoOfSaysSo(t *testing.T) {
+	host, client, addr := aWindowConnectedToMargit(t)
+
+	// The menu goes up while the heading is still there, and the machine
+	// over there is let go of before the line is chosen.
+	menu := clickPlusFar(t, client, addr, "margit")
+	if err := host.dropMachine("margit"); err != nil {
+		t.Fatalf("let go of margit: %v", err)
+	}
+
+	chooseMenuItemOver(t, host, menu, "conn.files")
+
+	// The failure is shown the way every command's is, with the window
+	// over there quoted in it.
+	n := awaitModal[*ui.Notice](t, client, "the failure", nil)
+	if !strings.Contains(n.Message(), "not connected to margit") {
+		t.Errorf("it said %q, want the window's own words about margit", n.Message())
+	}
+	if client.files != nil {
+		t.Errorf("a file manager opened anyway: %v", filesRows(client))
 	}
 }

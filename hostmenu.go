@@ -21,6 +21,13 @@ type hostMenus struct {
 	host string
 	up   bool
 
+	// far is the machine of a window taken over that the menu is about,
+	// and onFar says the menu is one of those. Only "Files" is offered
+	// there; host holds the window itself, so any other command reached
+	// by a key acts on something this window really is holding.
+	far   remoteHostKey
+	onFar bool
+
 	// opened counts the menus opened this way.
 	opened int
 }
@@ -32,10 +39,25 @@ func (m *hostMenus) opening() int {
 }
 
 // nowAbout records the machine the menu now up is about.
-func (m *hostMenus) nowAbout(host string) { m.host, m.up = host, true }
+func (m *hostMenus) nowAbout(host string) {
+	m.host, m.up = host, true
+	m.far, m.onFar = remoteHostKey{}, false
+}
+
+// nowAboutFar records the machine of a window taken over that the menu
+// now up is about, with the window itself as the machine to act on:
+// nothing here holds a connection to that machine, so a command reading
+// its bare name would act on nothing.
+func (m *hostMenus) nowAboutFar(key remoteHostKey) {
+	m.host, m.up = key.window.name, true
+	m.far, m.onFar = key, true
+}
 
 // forget takes the machine away, for a menu that has closed.
-func (m *hostMenus) forget() { m.host, m.up = "", false }
+func (m *hostMenus) forget() {
+	m.host, m.up = "", false
+	m.far, m.onFar = remoteHostKey{}, false
+}
 
 // closed forgets the machine the menu numbered n named, unless a later
 // menu has named another.
@@ -49,26 +71,42 @@ func (m *hostMenus) closed(n int) {
 // whether a menu is up at all, which an empty name cannot.
 func (m *hostMenus) machine() (string, bool) { return m.host, m.up }
 
+// farMachine is the machine of a window taken over the open menu is
+// about. The second result says whether the menu is one of those.
+func (m *hostMenus) farMachine() (remoteHostKey, bool) { return m.far, m.onFar }
+
 // openHostMenu drops down what can be opened on a machine, under the row
 // that names it.
 //
 // The lines name the same commands the menu bar and the keys use, and
 // while this menu is up they act on the machine whose row was clicked.
 func (a *app) openHostMenu(row ui.ListRow) error {
-	host, ok := row.Key.(hostKey)
-	if !ok {
+	// What the row offers, and what to remember the menu is about while
+	// it is up.
+	var (
+		items []ui.MenuItem
+		about func()
+	)
+	switch key := row.Key.(type) {
+	case hostKey:
+		items, about = hostItems(a.about(string(key))), func() { a.hostMenus.nowAbout(string(key)) }
+	case remoteHostKey:
+		if key.window == nil {
+			return nil
+		}
+		items, about = farItems(), func() { a.hostMenus.nowAboutFar(key) }
+	default:
 		return nil
 	}
 	// The menu takes itself away, and what it hangs on is only known
 	// once it is up, so it is reached through a variable filled in
 	// below.
 	var hide func()
-	menu := ui.NewMenu(a.root.Commands, a.root.Accelerators,
-		hostItems(a.about(string(host))), func() {
-			if hide != nil {
-				hide()
-			}
-		})
+	menu := ui.NewMenu(a.root.Commands, a.root.Accelerators, items, func() {
+		if hide != nil {
+			hide()
+		}
+	})
 	menu.Style = a.menuStyle()
 	menu.Anchor = a.rowAnchor(row.Key)
 
@@ -88,9 +126,18 @@ func (a *app) openHostMenu(row ui.ListRow) error {
 		return errors.New("there is no room to show the menu")
 	}
 	// Set once the menu is really up, for the same reason.
-	a.hostMenus.nowAbout(string(host))
+	about()
 	a.markDirty()
 	return nil
+}
+
+// farItems is what the plus on a machine of a window taken over offers.
+//
+// Files and nothing else. That machine is reached through the window,
+// which has the shells and the tunnels on it: a pane reading its files
+// is the one thing this window can open over there.
+func farItems() []ui.MenuItem {
+	return []ui.MenuItem{{Command: "conn.files", Title: "Files"}}
 }
 
 // hostItems is what the plus on a machine's row offers.

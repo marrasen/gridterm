@@ -31,6 +31,11 @@ type browser struct {
 	// rows is the sidebar row for each pane, so a manager touching
 	// several machines is shown under each of them.
 	rows map[*files.Pane]*conns.Entry
+
+	// far is the machine of a window taken over that a pane reads, for a
+	// pane whose bytes go through that window. A pane on this machine or
+	// on a window's own disk is not in it.
+	far map[*files.Pane]remoteHostKey
 }
 
 // openFilesOn puts a pane on a machine, connecting to it first when
@@ -64,6 +69,35 @@ func (a *app) browseOn(name string) error {
 	if err != nil {
 		return err
 	}
+	return a.browseWith(f, name, remoteHostKey{})
+}
+
+// openFilesFar puts a pane on a machine a window taken over is connected
+// to, read through that window.
+func (a *app) openFilesFar(key remoteHostKey) error {
+	t := key.window
+	if t == nil {
+		return errors.New("that row names no window to read it through")
+	}
+	if !a.windows.holds(t) {
+		return fmt.Errorf("this window has let go of %s", t.name)
+	}
+	f, err := a.windowFilesOn(t, key.host)
+	if err != nil {
+		return err
+	}
+	// Under the window's name, the way the window's own file pane is:
+	// the connection carrying it is the window's, so the pane goes when
+	// the window does.
+	return a.browseWith(f, t.name, key)
+}
+
+// browseWith puts a pane holding a filesystem in the manager, under the
+// name given.
+//
+// far is the machine of a window taken over that the pane reads, and is
+// empty for a pane on a machine this window reaches itself.
+func (a *app) browseWith(f vfs.FS, name string, far remoteHostKey) error {
 	if a.files == nil {
 		if err := a.openFileManager(); err != nil {
 			return errors.Join(err, f.Close())
@@ -79,6 +113,9 @@ func (a *app) browseOn(name string) error {
 	}
 	row := a.browserRow(p, name)
 	b.rows[p] = row
+	if far.window != nil {
+		b.far[p] = far
+	}
 	a.registry.Add(row)
 	a.focus(p)
 	a.relayout()
@@ -92,7 +129,10 @@ func (a *app) browseOn(name string) error {
 
 // openFileManager puts an empty file manager in the window.
 func (a *app) openFileManager() error {
-	b := &browser{rows: map[*files.Pane]*conns.Entry{}}
+	b := &browser{
+		rows: map[*files.Pane]*conns.Entry{},
+		far:  map[*files.Pane]remoteHostKey{},
+	}
 	b.view = files.NewBrowser()
 	// The dividers and the bar of keys are drawn in the panes' own
 	// colours, so both read as part of the manager.
@@ -782,6 +822,7 @@ func (a *app) filesPaneGone(p *files.Pane) error {
 		a.registry.Drop(row)
 		delete(b.rows, p)
 	}
+	delete(b.far, p)
 	if len(b.rows) == 0 {
 		// The manager went with its last pane, so the window has none.
 		a.files = nil
@@ -854,6 +895,42 @@ func (a *app) windowFiles(addr string) (vfs.FS, error) {
 	return vfs.NewSFTP(addr, t.win, client, func() error {
 		return closeFilesOver(client, ch)
 	}), nil
+}
+
+// windowFilesOn is the filesystem of a machine a window taken over is
+// connected to, as a browser pane works on it.
+//
+// The bytes go through that window: this one has no connection to the
+// machine, and the window it took over has. Bounded by
+// remote.WindowFilesOn, the way windowFiles is.
+func (a *app) windowFilesOn(t *taken, host string) (vfs.FS, error) {
+	ch, client, err := remote.WindowFilesOn(a.ctx, t.name, host, t.win)
+	if err != nil {
+		return nil, err
+	}
+	// The window's own name, so the pane's row goes under it and goes
+	// when it does. Which machine over there it reads is the place, so
+	// two panes on one machine over there are one place and neither is
+	// the window's own disk.
+	return vfs.NewSFTP(t.name, remoteHostKey{window: t, host: host}, client, func() error {
+		return closeFilesOver(client, ch)
+	}), nil
+}
+
+// farPanes says which machine of a window taken over each file pane's
+// row belongs to, for the sidebar being built.
+func (a *app) farPanes() map[*conns.Entry]remoteHostKey {
+	b := a.files
+	if b == nil || len(b.far) == 0 {
+		return nil
+	}
+	out := make(map[*conns.Entry]remoteHostKey, len(b.far))
+	for p, key := range b.far {
+		if row := b.rows[p]; row != nil {
+			out[row] = key
+		}
+	}
+	return out
 }
 
 // closeFilesOver ends a file session on a window taken over.

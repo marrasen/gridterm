@@ -41,11 +41,27 @@ func aWindowConnectedToMargit(t *testing.T) (host, client *testApp, addr string)
 	return host, client, addr
 }
 
+// remoteRowsOf is what this window shows under a window taken over, the
+// way the sidebar builds it: this window's own rows filed under the
+// window are handed in, so the ones on a machine over there land under
+// that machine.
+func remoteRowsOf(a *testApp, addr string) []ui.ListRow {
+	on := a.about(addr)
+	now := time.Now()
+	var mine []conns.Row
+	for _, group := range a.registry.Groups(now) {
+		if group.Host == on.name {
+			mine = group.Rows
+		}
+	}
+	return a.remoteRows(on, mine, now)
+}
+
 // remoteHeadings are the machine headings this window shows under a
 // window taken over.
 func remoteHeadings(a *testApp, addr string) []string {
 	var heads []string
-	for _, row := range a.remoteRows(a.about(addr)) {
+	for _, row := range remoteRowsOf(a, addr) {
 		if row.Header {
 			heads = append(heads, row.Text)
 		}
@@ -57,7 +73,7 @@ func remoteHeadings(a *testApp, addr string) []string {
 // of a window taken over, by the machine's name.
 func remoteRowOn(t *testing.T, a *testApp, addr, host string) remoteKey {
 	t.Helper()
-	for _, row := range a.remoteRows(a.about(addr)) {
+	for _, row := range remoteRowsOf(a, addr) {
 		key, ok := row.Key.(remoteKey)
 		if !ok {
 			continue
@@ -66,7 +82,7 @@ func remoteRowOn(t *testing.T, a *testApp, addr, host string) remoteKey {
 			return key
 		}
 	}
-	t.Fatalf("no row for a screen on %s: %v", host, a.remoteRows(a.about(addr)))
+	t.Fatalf("no row for a screen on %s: %v", host, remoteRowsOf(a, addr))
 	return remoteKey{}
 }
 
@@ -89,7 +105,7 @@ func TestAMachineHeadingStaysWhenItsScreenIsWatched(t *testing.T) {
 	if client.windows.watcher(row) == nil {
 		t.Fatal("nothing is watching the screen chosen")
 	}
-	for _, r := range client.remoteRows(client.about(addr)) {
+	for _, r := range remoteRowsOf(client, addr) {
 		if r.Key == row {
 			t.Error("the screen is still listed under the machine as well as having a pane here")
 		}
@@ -167,7 +183,7 @@ func TestAFinishedScreenOverThereIsNotListed(t *testing.T) {
 		return false
 	}, client)
 
-	for _, row := range client.remoteRows(client.about(addr)) {
+	for _, row := range remoteRowsOf(client, addr) {
 		if key, ok := row.Key.(remoteKey); ok && key.id == done.ID() {
 			t.Errorf("the finished command is listed as something to watch: %v", row)
 		}

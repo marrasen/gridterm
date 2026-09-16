@@ -315,9 +315,9 @@ func (a *app) closePane(w ui.Widget) error { return a.removePane(w, false) }
 
 // removePane takes a pane out of the tree and ends every shell under it.
 //
-// keep leaves the panel rows behind, greyed and closed, for a shell that
-// ended on its own. A pane the user closed takes its row with it: they
-// know what happened to it.
+// keep leaves the panel rows behind, greyed and closed, for a shell of
+// this window's own that ended by itself. A pane the user closed takes
+// its row with it, and so does one drawn from a window taken over.
 func (a *app) removePane(w ui.Widget, keep bool) error {
 	if w == nil {
 		return nil

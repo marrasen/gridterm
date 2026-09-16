@@ -398,9 +398,9 @@ func (a *app) startServing(port, where string) error {
 		Addr:    net.JoinHostPort(host, strconv.Itoa(n)),
 		HostKey: hostKey,
 		Allowed: allowed,
-		// The files of this machine, which the connection already
-		// reaches through the shell below.
-		Files: serveFiles,
+		// The files of this machine, and of the machines this window is
+		// connected to, which the client cannot reach for itself.
+		Files: a.serveFiles,
 		// What this window has open, for a client that wants to see it.
 		// Read from the goroutine serving that client, so it goes
 		// through the same snapshot the panel was built from rather
@@ -563,12 +563,121 @@ func (a *app) dropServedRows() {
 	}
 }
 
-// serveFiles gives a client the files of this machine, as SFTP on the
-// channel it was handed.
+// serveFiles gives a client the files of a machine this window can
+// reach, as SFTP on the channel it was handed.
+//
+// An empty host, and this machine's own name, are served from here. Any
+// other name is a machine this window has a connection to, and the bytes
+// are relayed over that connection.
+//
+// It runs on a goroutine of the server's, so what it needs from the
+// window is asked for on the goroutine that draws.
+func (a *app) serveFiles(host string, ch io.ReadWriteCloser) error {
+	if host == "" || host == conns.Local {
+		return serveLocalFiles(ch)
+	}
+	return a.relayFiles(host, ch)
+}
+
+// relayFiles carries a client's file session to a machine this window is
+// connected to, over the connection it already holds.
+//
+// Nothing is read here: this window only passes the bytes along, so the
+// client speaks SFTP to the machine rather than to this window.
+func (a *app) relayFiles(host string, ch io.ReadWriteCloser) error {
+	conn, err := a.connectionTo(host)
+	if err != nil {
+		return err
+	}
+	relay, err := conn.FileSubsystem(a.ctx)
+	if err != nil {
+		return fmt.Errorf("could not open a file session on %s: %w", host, err)
+	}
+
+	// What the client sends, on to the machine. On a goroutine of its
+	// own, because this one carries the answers back. The client going
+	// is an end of file here, and closing the subsystem then is what
+	// tells the machine and unblocks the read below, so a machine that
+	// has stopped answering cannot hold the relay open.
+	clientGone := make(chan struct{})
+	sent := make(chan error, 1)
+	go func() {
+		_, err := io.Copy(relay, ch)
+		if errors.Is(err, io.EOF) {
+			err = nil
+		}
+		// Closed before the subsystem is, so a read below that ended
+		// because of that close finds this already shut.
+		close(clientGone)
+		sent <- errors.Join(err, relay.Close())
+	}()
+
+	// And what the machine says, back to the client. It ends when the
+	// machine's session does, when the connection to it closes, or when
+	// the copy above closes the subsystem.
+	_, back := io.Copy(ch, relay)
+	if errors.Is(back, io.EOF) {
+		back = nil
+	}
+
+	select {
+	case <-clientGone:
+		// The client is finished, which is how a file session usually
+		// ends. The copy above has closed the subsystem already, so its
+		// account is here to be waited for.
+		return errors.Join(back, <-sent)
+	default:
+	}
+
+	// The machine went while the client was still there. The copy above
+	// is parked on a client that has not gone, and closing the channel is
+	// what ends it -- which happens once this returns. So its account is
+	// waited for off this goroutine and logged there, and the client is
+	// told here.
+	go func() {
+		if err := <-sent; err != nil {
+			a.pump.post(func() {
+				a.logError(fmt.Errorf("carrying a file session to %s: %w", host, err))
+			})
+		}
+	}()
+	return errors.Join(back, fmt.Errorf("the file session on %s ended", host))
+}
+
+// connectionTo is the connection this window holds to a machine.
+//
+// Called from a goroutine serving a client, so the look-up is handed to
+// the one that draws and waited for here. Nothing the window holds may
+// be read from anywhere else.
+func (a *app) connectionTo(host string) (*remote.Conn, error) {
+	type found struct {
+		conn *remote.Conn
+		err  error
+	}
+	back := make(chan found, 1)
+	a.pump.post(func() {
+		m := a.about(host).machine
+		if m == nil {
+			back <- found{err: fmt.Errorf("this window is not connected to %s", host)}
+			return
+		}
+		back <- found{conn: m.conn}
+	})
+	select {
+	case got := <-back:
+		return got.conn, got.err
+	case <-a.ctx.Done():
+		// The window is closing and nothing will run what was posted.
+		return nil, errors.New("this window is closing")
+	}
+}
+
+// serveLocalFiles gives a client the files of this machine, as SFTP on
+// the channel it was handed.
 //
 // It runs on a goroutine of the server's and touches nothing the window
 // holds.
-func serveFiles(ch io.ReadWriteCloser) error {
+func serveLocalFiles(ch io.ReadWriteCloser) error {
 	// The channel is not this function's to close: whoever handed it
 	// over closes it once, and an SFTP server closes what it was given
 	// as it goes. Left alone, the two would close it twice and the

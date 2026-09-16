@@ -574,8 +574,8 @@ func (a *app) windowDied(t *taken, why error) {
 		a.reportError("Trouble letting go of "+t.name, err)
 	}
 	// The row stays, the way greyRow says a dropped connection's row
-	// does. It says what became of the window and keeps the address,
-	// which is what somebody reading it afterwards has to go on.
+	// does. It says what became of the window, under the name it was
+	// held by.
 	t.entry.Label = "no longer serving"
 	a.greyRow(t.entry, why)
 	a.refreshServers()

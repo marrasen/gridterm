@@ -24,14 +24,29 @@ import (
 // does: through the tree, at the column the list drew it in.
 func clickPlus(t *testing.T, a *testApp, host string) *ui.Menu {
 	t.Helper()
+	return clickPlusOn(t, a, hostKey(host), host)
+}
+
+// clickPlusFar presses the plus on the heading of a machine a window
+// taken over is connected to.
+func clickPlusFar(t *testing.T, a *testApp, addr, host string) *ui.Menu {
+	t.Helper()
+	key := remoteHostKey{window: windowAt(t, a, addr), host: host}
+	return clickPlusOn(t, a, key, host+" under "+addr)
+}
+
+// clickPlusOn presses the plus on the heading a key names. what says
+// which heading it was, for a test that cannot find it.
+func clickPlusOn(t *testing.T, a *testApp, key any, what string) *ui.Menu {
+	t.Helper()
 	a.refreshPanel(time.Now())
 	area, ok := a.root.AreaOf(a.side)
 	if !ok {
 		t.Fatal("the sidebar is not in the tree")
 	}
-	y := a.panel.RowTop(hostKey(host))
+	y := a.panel.RowTop(key)
 	if y < 0 {
-		t.Fatalf("no heading for %q: %v", host, panelText(a, time.Now()))
+		t.Fatalf("no heading for %q: %v", what, panelText(a, time.Now()))
 	}
 	took, err := a.root.HandleMouse(input.MouseEvent{
 		Kind: input.MousePress, Button: input.MouseLeft,
@@ -62,11 +77,18 @@ func menuCommands(m *ui.Menu) []string {
 // chooseMenuItem runs the line naming a command, the way Enter does.
 func chooseMenuItem(t *testing.T, m *ui.Menu, id string) {
 	t.Helper()
+	selectMenuItem(t, m, id)
+	if _, err := m.HandleKey(input.Event{Kind: input.KeyPress, Key: input.KeyEnter}); err != nil {
+		t.Fatalf("running %s: %v", id, err)
+	}
+}
+
+// selectMenuItem moves the bar onto the line naming a command, the way
+// the arrow keys do.
+func selectMenuItem(t *testing.T, m *ui.Menu, id string) {
+	t.Helper()
 	for step := 0; step < len(m.Items()); step++ {
 		if cmd, ok := m.Selected(); ok && cmd.ID == id {
-			if _, err := m.HandleKey(input.Event{Kind: input.KeyPress, Key: input.KeyEnter}); err != nil {
-				t.Fatalf("running %s: %v", id, err)
-			}
 			return
 		}
 		if _, err := m.HandleKey(input.Event{Kind: input.KeyPress, Key: input.KeyDown}); err != nil {
@@ -74,6 +96,40 @@ func chooseMenuItem(t *testing.T, m *ui.Menu, id string) {
 		}
 	}
 	t.Fatalf("%s is not on the menu: %v", id, menuCommands(m))
+}
+
+// chooseMenuItemOver runs a menu line that waits on another window's
+// answer.
+//
+// The line runs on a goroutine of its own and the other window is pumped
+// meanwhile: it answers from the goroutine that draws, which is the test
+// one, so a test that ran the line straight would wait for an answer
+// nothing was going to give. Nothing here touches the window the menu is
+// on, so that window's tree stays the goroutine's for as long as the
+// line is running.
+//
+// A line that failed says so in a notice, the way every command does, so
+// there is nothing to give back here.
+func chooseMenuItemOver(t *testing.T, other *testApp, m *ui.Menu, id string) {
+	t.Helper()
+	selectMenuItem(t, m, id)
+	done := make(chan error, 1)
+	go func() {
+		_, err := m.HandleKey(input.Event{Kind: input.KeyPress, Key: input.KeyEnter})
+		done <- err
+	}()
+	var err error
+	waitFor(t, other, "the window over there to answer "+id, func() bool {
+		select {
+		case err = <-done:
+			return true
+		default:
+			return false
+		}
+	})
+	if err != nil {
+		t.Fatalf("running %s: %v", id, err)
+	}
 }
 
 // offers reports whether a command is on a menu.

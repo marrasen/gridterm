@@ -1005,7 +1005,7 @@ func TestOnlyATakenWindowContributesRemoteRows(t *testing.T) {
 			t.Errorf("a row for another window appeared: %q", row.Text)
 		}
 	}
-	if got := a.remoteRows(a.about("nowhere")); got != nil {
+	if got := remoteRowsOf(a, "nowhere"); got != nil {
 		t.Errorf("a machine that is not a window gave %v", got)
 	}
 }
@@ -2136,7 +2136,7 @@ func TestARowWithNoScreenCannotBeWatched(t *testing.T) {
 	shell := remoteKey{window: held, id: host.panes[onlyPaneOn(t, host)].ID()}
 	var offered int
 	var shellOffered bool
-	for _, row := range client.remoteRows(client.about(addr)) {
+	for _, row := range remoteRowsOf(client, addr) {
 		key, ok := row.Key.(remoteKey)
 		if !ok {
 			continue
@@ -2202,7 +2202,7 @@ func TestTheScreensOfAWindowAreGroupedByMachine(t *testing.T) {
 		return false
 	}, client)
 
-	rows := client.remoteRows(client.about(addr))
+	rows := remoteRowsOf(client, addr)
 	var heads, under []string
 	for _, row := range rows {
 		if row.Header {

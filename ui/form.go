@@ -84,7 +84,8 @@ type Form struct {
 	//
 	// Both are read while the dialog is being built. Changing either
 	// once it is open does not re-lay the fields, which is what the
-	// width they were given comes from.
+	// width they were given comes from. SetLines is how a dialog whose
+	// text changes while it is open says so.
 	Title string
 	Lines []string
 
@@ -141,6 +142,16 @@ func NewConfirm(title string, lines []string, close func()) *Form {
 	return f
 }
 
+// SetLines replaces the lines under the title, for a dialog whose text
+// changes while it is open.
+//
+// The fields are laid out again, because how much room they have comes
+// from a width the lines are part of.
+func (f *Form) SetLines(lines []string) {
+	f.Lines = lines
+	f.layoutFields()
+}
+
 // AddField puts a labelled field at the bottom of the form and returns
 // it, so a caller can read what was typed without keeping its own list.
 func (f *Form) AddField(label string, field *Field) *Field {
@@ -168,6 +179,24 @@ func (f *Form) AddField(label string, field *Field) *Field {
 func (f *Form) AddButton(b Button) {
 	f.buttons = append(f.buttons, b)
 	f.titles = append(f.titles, b.Title)
+}
+
+// SetButtons replaces the buttons, for a dialog whose choices change
+// while it is open.
+//
+// The focus stays where it is, unless there are fewer buttons than
+// there were and it was on one of the ones that went.
+func (f *Form) SetButtons(buttons []Button) {
+	// A fresh list rather than the old one refilled: Buttons hands the
+	// slice itself out, and a caller holding one would find it changed
+	// under them.
+	f.buttons, f.titles = nil, nil
+	for _, b := range buttons {
+		f.AddButton(b)
+	}
+	if n := len(f.rows) + len(f.buttons); f.at >= n {
+		f.focus(max(n-1, 0))
+	}
 }
 
 // FocusButton puts the focus on one of the buttons, for a question whose

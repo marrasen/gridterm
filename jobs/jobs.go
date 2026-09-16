@@ -85,9 +85,11 @@ type Progress struct {
 	// Skipped counts what the user chose not to overwrite.
 	Skipped int
 
-	// Started is when the job began, for a panel that wants to say how
-	// long it has been going.
+	// Started is when the job began and Ended when it stopped, for a
+	// panel that wants to say how long it has been going. Ended is zero
+	// until it has stopped.
 	Started time.Time
+	Ended   time.Time
 
 	// Err is why it stopped, and Done says it has stopped. A job that
 	// finished everything is done with no error.
@@ -199,6 +201,7 @@ func (j *Job) finish(err error) {
 			p.Err = err
 			p.Done = true
 			p.Current = ""
+			p.Ended = time.Now()
 		})
 		close(j.done)
 		// The job has stopped, so its context is only a registration on

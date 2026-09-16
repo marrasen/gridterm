@@ -521,3 +521,34 @@ func TestMoveKeepsWhatItSkipped(t *testing.T) {
 		t.Fatalf("what was there holds %q", got)
 	}
 }
+
+// A job says when it stopped as well as when it began, so whatever shows
+// it can say how long it took however long ago it ended.
+func TestAJobSaysWhenItEnded(t *testing.T) {
+	from := local(t)
+	write(t, from.real, "one.txt", "the body")
+	to := local(t)
+
+	q := New(1)
+	j := q.Start(t.Context(), Op{
+		Kind: Copy, From: from.fs, At: from.at, Names: []string{"one.txt"},
+		To: to.fs, Into: to.at,
+	}, Options{})
+	if err := ends(t, j); err != nil {
+		t.Fatalf("the job: %v", err)
+	}
+
+	p := j.Progress()
+	if p.Ended.IsZero() {
+		t.Fatal("the job never said when it ended")
+	}
+	if p.Ended.Before(p.Started) {
+		t.Fatalf("it ended at %v, before it began at %v", p.Ended, p.Started)
+	}
+	// It stops moving once the job has: how long it took is not how long
+	// ago it was.
+	time.Sleep(time.Millisecond)
+	if again := j.Progress().Ended; !again.Equal(p.Ended) {
+		t.Fatalf("it says it ended at %v and then at %v", p.Ended, again)
+	}
+}

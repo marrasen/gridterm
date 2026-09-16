@@ -963,3 +963,95 @@ func TestShiftInsertPastesIntoAFormField(t *testing.T) {
 		t.Errorf("the field holds %q", fld.Text())
 	}
 }
+
+// A dialog told the same lines again writes the same cells, so a dialog
+// refreshed on every frame leaves the layer alone.
+func TestAFormGivenTheSameLinesAgainDirtiesNothing(t *testing.T) {
+	tf := newTestForm(t)
+	f := tf.form
+	f.SetLines([]string{"12 of 40 files", "3.2 MB of 9.0 MB"})
+
+	g := grid.New(60, 24, color.RGBA{}, color.RGBA{})
+	f.Layout(Size{Cols: 60, Rows: 24})
+	f.Draw(g.View())
+	g.ClearDirty()
+
+	f.SetLines([]string{"12 of 40 files", "3.2 MB of 9.0 MB"})
+	f.Draw(g.View())
+	if g.AnyDirty() {
+		t.Fatal("a dialog told the same lines again dirtied the layer")
+	}
+	// The second draw wrote the same cells, not no cells.
+	if !strings.Contains(gridText(g), "12 of 40 files") {
+		t.Fatalf("the lines are not on screen:\n%s", gridText(g))
+	}
+}
+
+// New lines change the shape of the box, so the fields are laid out
+// again: one that kept its old width would scroll its text to a caret
+// that is somewhere else now.
+func TestAFormGivenNewLinesLaysItsFieldsOutAgain(t *testing.T) {
+	tf := newTestForm(t)
+	f := tf.form
+	was := f.Fields()[0].cols
+
+	f.SetLines([]string{strings.Repeat("a long line of it, ", 4)})
+
+	now := f.Fields()[0].cols
+	if now <= was {
+		t.Fatalf("the field is %d columns wide in a box the lines widened, was %d", now, was)
+	}
+	if want := f.box().Cols - formPad - f.fieldX(); now != want {
+		t.Errorf("the field is %d columns wide, want %d for the box it is in", now, want)
+	}
+	if !strings.Contains(gridText(drawForm(f, 60, 24)), "a long line of it") {
+		t.Error("the new lines were not drawn")
+	}
+}
+
+// A dialog whose choices change swaps its buttons, and the focus stays
+// where the user left it.
+func TestAFormSwapsItsButtons(t *testing.T) {
+	tf := newTestForm(t)
+	f := tf.form
+	f.FocusButton(1)
+
+	var ran string
+	f.SetButtons([]Button{
+		{Title: "Repeat", Do: func() error { ran = "repeat"; return nil }},
+		{Title: "Close"},
+	})
+
+	if titles := f.buttonTitles(); len(titles) != 2 || titles[0] != "Repeat" || titles[1] != "Close" {
+		t.Fatalf("the dialog offers %v", titles)
+	}
+	if at, isButton := f.Focused(); !isButton || at != 1 {
+		t.Fatalf("the focus is on %d (button %v), want the second button still", at, isButton)
+	}
+	if got := gridText(drawForm(f, 60, 24)); !strings.Contains(got, "Repeat") ||
+		strings.Contains(got, "Cancel") {
+		t.Fatalf("the dialog draws\n%s\nwant the buttons it was given", got)
+	}
+	// And the new buttons are what a press runs.
+	f.HandleKey(press(input.KeyTab, 0))
+	f.HandleKey(press(input.KeyEnter, 0))
+	if ran != "repeat" {
+		t.Fatalf("pressing the first button ran %q", ran)
+	}
+}
+
+// A dialog left with fewer buttons than the focus was on moves the focus
+// to one that is there, rather than leaving it on a button nobody can
+// see.
+func TestAFormWithFewerButtonsMovesTheFocus(t *testing.T) {
+	tf := newTestForm(t)
+	f := tf.form
+	f.FocusButton(1)
+
+	f.SetButtons([]Button{{Title: "Close"}})
+
+	at, isButton := f.Focused()
+	if !isButton || at != 0 {
+		t.Fatalf("the focus is on %d (button %v), want the only button left", at, isButton)
+	}
+}

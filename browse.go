@@ -276,13 +276,25 @@ func (a *app) startJob(kind jobs.Kind, w files.Work) {
 	op := jobs.Op{
 		Kind: kind, From: w.From.FS(), At: w.At, Names: w.Names,
 	}
+	to := conns.Local
 	if w.To != nil {
 		op.To, op.Into = w.To.FS(), w.To.At()
+		to = a.hostOf(w.To.FS())
 	}
+	a.runJob(op, a.hostOf(w.From.FS()), to, nil)
+}
 
+// runJob puts one piece of file work on the queue and a row on the panel
+// for it.
+//
+// from and to name the machines the work is between, kept because they
+// are known now: a repeat looks the filesystems up again by name, and by
+// then there may be nothing to read the name off. owned are the
+// filesystems the job opened for itself, closed once it has stopped.
+func (a *app) runJob(op jobs.Op, from, to string, owned []vfs.FS) {
 	count := meter.New()
 	e := &conns.Entry{
-		Host:  a.hostOf(w.From.FS()),
+		Host:  from,
 		Kind:  conns.Files,
 		Meter: count,
 	}
@@ -292,9 +304,10 @@ func (a *app) startJob(kind jobs.Kind, w files.Work) {
 		// end is somewhere else: a copy to another machine is bytes
 		// leaving, and one from it is bytes arriving.
 		Count: count,
-		Out:   w.To != nil && a.hostOf(w.To.FS()) != conns.Local,
+		Out:   op.To != nil && to != conns.Local,
 	})
 	e.Label = j.Name()
+	e.Reveal = func() { a.openJobDialog(j, e, from, to) }
 	e.Close = func() error {
 		a.queue.Drop(j)
 		delete(a.jobs, e)
@@ -303,7 +316,30 @@ func (a *app) startJob(kind jobs.Kind, w files.Work) {
 	}
 	a.jobs[e] = j
 	a.registry.Add(e)
+	a.letGoWhenDone(j, owned)
 	a.markDirty()
+}
+
+// letGoWhenDone closes the filesystems a job opened for itself, once it
+// has stopped.
+//
+// On a goroutine of its own, the way releaseFS lets go of a filesystem a
+// job is still using: waiting for a job to stop cannot happen on the
+// goroutine that draws.
+func (a *app) letGoWhenDone(j *jobs.Job, owned []vfs.FS) {
+	if len(owned) == 0 {
+		return
+	}
+	a.closes.inBackground(func() error {
+		<-j.Done()
+		var errs []error
+		for _, f := range owned {
+			if err := f.Close(); err != nil {
+				errs = append(errs, fmt.Errorf("could not close %s: %w", f.Name(), err))
+			}
+		}
+		return errors.Join(errs...)
+	})
 }
 
 // reloadPanesOn reads again every pane of the file manager that is on
@@ -343,6 +379,14 @@ func (a *app) hostOf(f vfs.FS) string {
 // Called every frame. A job's progress is a plain value read under a
 // lock, so asking costs nothing and nothing is pushed into the tree.
 func (a *app) refreshJobs() {
+	// Before the sweep below, because a job that has just finished is
+	// taken off the list there and the dialog showing it stays open.
+	now := time.Now()
+	for _, m := range a.modals {
+		if d, ok := m.w.(*jobDialog); ok {
+			d.refresh(now)
+		}
+	}
 	for e, j := range a.jobs {
 		p := j.Progress()
 		e.Note = jobNote(p)
@@ -370,6 +414,10 @@ func (a *app) refreshJobs() {
 // jobNote is what a job's row says at its end.
 func jobNote(p jobs.Progress) string {
 	switch {
+	case p.Done && errors.Is(p.Err, context.Canceled):
+		return "cancelled"
+	case p.Done && errors.Is(p.Err, jobs.ErrStopped):
+		return "stopped"
 	case p.Done && p.Err != nil:
 		return "failed"
 	case p.Done:

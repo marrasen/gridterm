@@ -1618,3 +1618,96 @@ func TestDialSaysEachStep(t *testing.T) {
 		}
 	}
 }
+
+// servingFiles is a window serving file sessions and another that has
+// reached it.
+func servingFiles(t *testing.T, files Filer) (*Server, *Window) {
+	t.Helper()
+	mine, line := aKey(t, "marcus@laptop")
+	host, err := HostKey(t.TempDir() + "/host_key")
+	if err != nil {
+		t.Fatalf("host key: %v", err)
+	}
+	keys, err := ParseAllowed([]byte(line), "the test")
+	if err != nil {
+		t.Fatalf("allowed: %v", err)
+	}
+	s, err := Listen(Config{
+		Addr: "127.0.0.1:0", HostKey: host, Allowed: keys,
+		Files:   files,
+		OnError: func(error) {},
+	})
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+
+	w, err := Dial(context.Background(), DialConfig{
+		Addr: s.Addr(), Keys: []ssh.Signer{mine},
+		HostKey: ssh.FixedHostKey(host.PublicKey()),
+	})
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	t.Cleanup(func() { _ = w.Close() })
+	return s, w
+}
+
+// A file session opened with no payload at all asks for the machine
+// being served.
+//
+// That is what a client of an older build sends: it knew only one
+// machine to ask for, so there was nothing to say.
+func TestAFileSessionWithNoPayloadAsksForTheServedMachine(t *testing.T) {
+	asked := make(chan string, 1)
+	_, w := servingFiles(t, func(host string, ch io.ReadWriteCloser) error {
+		asked <- host
+		// Read until the client goes, which is what a Filer must do.
+		_, _ = io.Copy(io.Discard, ch)
+		return nil
+	})
+
+	ch, reqs, err := w.client.OpenChannel(chanFiles, nil)
+	if err != nil {
+		t.Fatalf("open a file session: %v", err)
+	}
+	go ssh.DiscardRequests(reqs)
+	defer func() { _ = ch.Close() }()
+
+	select {
+	case got := <-asked:
+		if got != "" {
+			t.Errorf("it was asked for %q, want the machine being served", got)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no file session was started")
+	}
+}
+
+// A payload this build cannot read is refused by name, and the reason
+// reaches the client.
+//
+// The encoding is positional, with no room for a field one end knows and
+// the other does not, so this is what a gridterm of another build looks
+// like from here.
+func TestAFileSessionRequestOfAnotherBuildIsRefused(t *testing.T) {
+	started := make(chan struct{}, 1)
+	_, w := servingFiles(t, func(string, io.ReadWriteCloser) error {
+		started <- struct{}{}
+		return nil
+	})
+
+	// One byte: a string on the wire needs four for its length alone.
+	_, _, err := w.client.OpenChannel(chanFiles, []byte{0x01})
+	if err == nil {
+		t.Fatal("a request this build cannot read was accepted")
+	}
+	if !strings.Contains(err.Error(), "same build") {
+		t.Errorf("it was refused with %q, want the reason a user can act on", err)
+	}
+	select {
+	case <-started:
+		t.Error("a file session was started for a request that could not be read")
+	default:
+	}
+}

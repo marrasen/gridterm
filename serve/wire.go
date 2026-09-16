@@ -125,6 +125,14 @@ type Open struct {
 	// State is what it is doing: opened, active, settled or closed.
 	State string `json:"state"`
 
+	// Window says the machine it is on is another gridterm the served
+	// window has taken over, rather than a machine it has a shell on.
+	//
+	// A client cannot open anything there: it is a window, with panes of
+	// its own, and the files behind it are that window's to serve. So a
+	// client shows it as a window and offers nothing on it.
+	Window bool `json:"window,omitempty"`
+
 	// Cols and Rows are how big the screen is over there, for something
 	// with a screen, and zero for anything else.
 	//

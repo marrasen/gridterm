@@ -20,6 +20,10 @@ import (
 // this does not have types nothing at all. The pane is asked to encode
 // each name and the bytes go down the same quiet path as text, which
 // leaves the user's scroll position and their selection alone.
+//
+// The keys are encoded as the pane stands when the call is made: a
+// program the text in the same call starts has not set its modes yet, so
+// keys for it belong in a call after it has.
 func typeInto(pane *term.Terminal, text string, keys []string) error {
 	if err := agent.CheckKeys(keys); err != nil {
 		return err
@@ -42,7 +46,7 @@ func typeInto(pane *term.Terminal, text string, keys []string) error {
 
 // keyPress is what a key name presses, for the pane's own terminal to
 // encode: Up in vim and Up in a shell are different bytes, and the pane
-// is what knows which.
+// is what knows which, as it stands at the moment of the call.
 //
 // Space is the character it types, which is how it reaches a program.
 func keyPress(name string) (input.Event, error) {

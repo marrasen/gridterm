@@ -86,32 +86,38 @@ func (h agentHost) setupLines(exe string) []string {
 			"",
 			"  " + h.cmd + " mcp add gridterm --",
 		}
-		lines = append(lines, wrapped("  "+quotedPath(exe)+" -mcp", "  ", dialogCols)...)
+		lines = append(lines, wrapped("  "+quotedPath(exe)+" -mcp", dialogCols)...)
 		return append(lines, "",
 			"It only writes the config, so start "+h.called+" again first.")
 	}
 	lines := []string{"First put gridterm's MCP server in " + h.configIn() + ":", ""}
 	for _, line := range strings.Split(mcpConfig(exe), "\n") {
-		lines = append(lines, wrapped(line, "  ", dialogCols)...)
+		lines = append(lines, wrapped(line, dialogCols)...)
 	}
 	return append(lines, "",
 		"Then start "+h.called+" again, and paste the prompt to it.")
 }
 
-// wrapped breaks a line too wide for a dialog, carrying the rest on with indent in front of it.
+// wrapped breaks a line too wide for a dialog, carrying the rest onto lines of its own.
 //
 // It breaks anywhere, because a path has no words to break between, and a path the user cannot
-// read at all is worse than one they have to join up.
-func wrapped(line, indent string, room int) []string {
+// read at all is worse than one they have to join up. Nothing goes in front of what carries on:
+// the line is a command the user copies, and an indent would land inside the path.
+func wrapped(line string, room int) []string {
 	var out []string
-	for len(line) > room && room > len(indent) {
+	for len(line) > room && room > 0 {
 		cut := room
 		// Never in the middle of a character.
-		for cut > len(indent) && !utf8.RuneStart(line[cut]) {
+		for cut > 0 && !utf8.RuneStart(line[cut]) {
 			cut--
 		}
+		if cut == 0 {
+			// Nothing in a line's worth of room begins a character, so it is broken where it does
+			// not fit rather than not at all.
+			cut = room
+		}
 		out = append(out, line[:cut])
-		line = indent + line[cut:]
+		line = line[cut:]
 	}
 	return append(out, line)
 }
@@ -238,6 +244,10 @@ func skillPathFor(host agentHost) (path string, ownPlace bool, err error) {
 	if len(host.skillIn) > 0 {
 		// The host's own setting for where its configuration lives, which moves its skills with it.
 		if dir := os.Getenv(host.skillEnv); host.skillEnv != "" && dir != "" {
+			dir, err := fromHome(dir)
+			if err != nil {
+				return "", true, err
+			}
 			parts := append([]string{dir}, host.skillIn[1:]...)
 			return filepath.Join(append(parts, skillFile)...), true, nil
 		}
@@ -256,6 +266,28 @@ func skillPathFor(host agentHost) (path string, ownPlace bool, err error) {
 		return "", false, err
 	}
 	return filepath.Join(filepath.Dir(path), "skills", "gridterm", skillFile), false, nil
+}
+
+// fromHome is a directory a host's own setting named, as an absolute path.
+//
+// A leading ~ is the user's home directory, and so is what a relative path is read from: a host
+// reads its configuration from its own home, not from wherever gridterm happened to be started.
+func fromHome(dir string) (string, error) {
+	var rest string
+	switch {
+	case dir == "~":
+	case strings.HasPrefix(dir, "~/"), strings.HasPrefix(dir, `~\`):
+		rest = dir[2:]
+	case filepath.IsAbs(dir):
+		return dir, nil
+	default:
+		rest = dir
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("there is no home directory to read %s from: %w", dir, err)
+	}
+	return filepath.Join(home, filepath.FromSlash(rest)), nil
 }
 
 // writeSkill writes a host's skill and says where it went.

@@ -504,15 +504,44 @@ func TestTheSetupLinesFitTheDialog(t *testing.T) {
 			// And the path is all there, however it had to be broken up.
 			// A host set up by a file shows it inside JSON, where a
 			// backslash is doubled.
+			//
+			// Only the line breaks are taken out, not the spaces: the
+			// user copies this and an indent at a break would go inside
+			// the path.
 			want := exe
 			if host.cmd == "" {
 				want = strings.ReplaceAll(exe, `\`, `\\`)
 			}
-			joined := strings.ReplaceAll(strings.Join(lines, ""), " ", "")
-			if !strings.Contains(joined, strings.ReplaceAll(want, " ", "")) {
-				t.Errorf("%s with a path of %d does not show the whole path: %q",
+			if joined := strings.Join(lines, ""); !strings.Contains(joined, want) {
+				t.Errorf("%s with a path of %d does not show the whole path unbroken: %q",
 					host.name, len(exe), lines)
 			}
+		}
+	}
+}
+
+// wrapped breaks a line to fit and puts nothing in front of what carries
+// on, so the path the user copies out of the dialog joins back up as it
+// was.
+//
+// A run of bytes that begins no character has nowhere to break at all,
+// and is broken where it does not fit rather than looked at for ever.
+func TestWrappedBreaksWithoutInsertingAnything(t *testing.T) {
+	const room = 20
+	for _, tc := range []struct{ what, line string }{
+		{"a quoted path", `  "C:\` + strings.Repeat("d", 90) + `\gridterm.exe" -mcp`},
+		{"bytes that begin no character", strings.Repeat("\x80", 30)},
+		{"one that already fits", "  claude mcp add"},
+	} {
+		lines := wrapped(tc.line, room)
+		for _, line := range lines {
+			if len(line) > room {
+				t.Errorf("%s: a line is %d characters, over %d: %q",
+					tc.what, len(line), room, line)
+			}
+		}
+		if joined := strings.Join(lines, ""); joined != tc.line {
+			t.Errorf("%s: it broke into %q, which joins back up as %q", tc.what, lines, joined)
 		}
 	}
 }
@@ -1120,15 +1149,17 @@ func TestTwoReadsOfAlmostTheSameLengthRenderOnce(t *testing.T) {
 		return strings.Contains(paneText(pane), "root@margit")
 	})
 
+	// Two counts a line apart and both inside what one read gives, so it
+	// is the reading kept here that answers the second and not the cap.
 	var first, second agent.Look
-	offWindow(t, a, "the window to read 2000 lines", func() error {
+	offWindow(t, a, "the window to read 400 lines", func() error {
 		var err error
-		first, err = c.Read(got.ID, 2000)
+		first, err = c.Read(got.ID, 400)
 		return err
 	})
-	offWindow(t, a, "the window to read 1999 lines", func() error {
+	offWindow(t, a, "the window to read 399 lines", func() error {
 		var err error
-		second, err = c.Read(got.ID, 1999)
+		second, err = c.Read(got.ID, 399)
 		return err
 	})
 
@@ -1139,7 +1170,7 @@ func TestTwoReadsOfAlmostTheSameLengthRenderOnce(t *testing.T) {
 		t.Errorf("the second read says something else:\n%q\n%q", first.Screen, second.Screen)
 	}
 	// And both say this is everything the pane has kept, because a pane
-	// that has said one line has nothing like two thousand.
+	// that has said one line has nothing like four hundred.
 	if !first.All || !second.All {
 		t.Errorf("a read of the whole of a short pane did not say so: %v, %v",
 			first.All, second.All)
@@ -1158,6 +1189,62 @@ func TestTwoReadsOfAlmostTheSameLengthRenderOnce(t *testing.T) {
 	}
 	if got := countLines(screen.Screen); got != pane.Size().Rows {
 		t.Errorf("the screen is %d lines, want %d", got, pane.Size().Rows)
+	}
+}
+
+// A read taken after the pane is resized is of the pane as it is now.
+//
+// The reading kept here is answered from again when the pane has said
+// nothing since, and a resize says nothing. An agent served from the old
+// one is given rows of a screen that has gone and a cursor below the
+// bottom of the one it has.
+func TestAReadAfterAResizeIsOfTheScreenAsItIsNow(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pane, code, c := handedOver(t, a)
+
+	var got agent.Pane
+	offWindow(t, a, "the window to answer the agent", func() error {
+		var err error
+		got, err = c.Use(code)
+		return err
+	})
+
+	// Enough lines to fill the screen, so the cursor sits on its last
+	// row and a shorter screen has no such row.
+	a.shells[0].out <- []byte(strings.Repeat("filling up\r\n", 40) + "root@margit:~# ")
+	waitFor(t, a, "the pane to fill up", func() bool {
+		return strings.Contains(paneText(pane), "root@margit")
+	})
+
+	// A read of the whole of what the pane has kept, which is what the
+	// reading here is left holding.
+	offWindow(t, a, "the window to read what the pane has kept", func() error {
+		_, err := c.Read(got.ID, 500)
+		return err
+	})
+	rendered := a.agents.of(pane).rendered
+
+	was := pane.Size()
+	a.setGridSize(60, 14)
+	waitFor(t, a, "the pane to take the new size", func() bool { return pane.Size() != was })
+	rows := pane.Size().Rows
+
+	var look agent.Look
+	offWindow(t, a, "the window to read the screen", func() error {
+		var err error
+		look, err = c.Read(got.ID, 0)
+		return err
+	})
+	if a.agents.of(pane).rendered == rendered {
+		t.Error("the read after the resize was cut from the reading of the screen before it")
+	}
+	if lines := countLines(look.Screen); lines != rows {
+		t.Errorf("the agent was given %d lines, want the pane's %d rows", lines, rows)
+	}
+	if look.Row >= rows {
+		t.Errorf("the cursor is on row %d of a screen %d rows tall", look.Row, rows)
 	}
 }
 
@@ -1228,6 +1315,41 @@ func TestClaudeConfigDirMovesTheSkill(t *testing.T) {
 	}
 	if _, err := os.ReadFile(want); err != nil {
 		t.Fatalf("read the skill back: %v", err)
+	}
+}
+
+// A setting naming a directory under the home directory is read from
+// there, not from wherever gridterm was started.
+//
+// Claude Code reads that setting the same way. A skill written beside
+// gridterm's working directory is a skill the host never finds.
+func TestARelativeClaudeConfigDirIsReadFromTheHomeDirectory(t *testing.T) {
+	host := hostNamed(hostClaudeCode)
+	for _, tc := range []struct {
+		what, set string
+		want      []string
+	}{
+		{"a relative directory", "claude-config", []string{"claude-config"}},
+		{"one under a tilde", "~/elsewhere/.claude", []string{"elsewhere", ".claude"}},
+		{"a tilde on its own", "~", nil},
+	} {
+		t.Run(tc.what, func(t *testing.T) {
+			home := withHome(t)
+			t.Setenv("CLAUDE_CONFIG_DIR", tc.set)
+
+			path, ownPlace, err := skillPathFor(host)
+			if err != nil {
+				t.Fatalf("where the skill goes: %v", err)
+			}
+			parts := append([]string{home}, tc.want...)
+			want := filepath.Join(append(parts, "skills", "gridterm", skillFile)...)
+			if path != want {
+				t.Errorf("the skill goes to %q, want %q", path, want)
+			}
+			if !ownPlace {
+				t.Error("it does not think that is where Claude Code looks")
+			}
+		})
 	}
 }
 

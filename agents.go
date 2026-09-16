@@ -193,14 +193,15 @@ type handover struct {
 	// than one is unusual and is said plainly rather than hidden.
 	working int
 
-	// read is the last reading of the pane and lines is how many were
-	// asked for. A wait asks over and over, and a pane that has said
-	// nothing since has the same screen as last time. A read of fewer
-	// lines than the last one is cut from it rather than rendered again,
-	// so alternating counts cannot make the window render on every
-	// question.
+	// read is the last reading of the pane, lines is how many were asked
+	// for, and size is how big the pane was. A wait asks over and over,
+	// and a pane of the same size that has said nothing since has the
+	// same screen as last time. A read of fewer lines than the last one
+	// is cut from it rather than rendered again, so alternating counts
+	// cannot make the window render on every question.
 	read  *term.Reading
 	lines int
+	size  ui.Size
 
 	// rendered counts the reads that went to the pane rather than to
 	// the reading kept here.
@@ -347,17 +348,20 @@ func (w agentWindow) Look(id string, lines int) (agent.Look, error) {
 		// Bounded here as well as in the MCP server, because an agent
 		// speaking to the wire itself does not go through that.
 		want := min(max(lines, 0), agent.MostLines)
+		size := h.pane.Size()
 		if want == 0 {
-			want = h.pane.Size().Rows
+			want = size.Rows
 		}
-		// Read again only when the program has said something or more
-		// lines are wanted than were read last time. A wait asks twenty
-		// times a second, and reading a screen means rendering the whole
-		// of it; a pane that is sitting there would have it rendered
-		// afresh each time for the same answer.
-		if h.read == nil || h.read.Said != h.pane.Said() || want > h.lines {
+		// Read again only when the program has said something, the pane
+		// has been resized, or more lines are wanted than were read last
+		// time. A wait asks twenty times a second, and reading a screen
+		// means rendering the whole of it; a pane that is sitting there
+		// would have it rendered afresh each time for the same answer. A
+		// resize says nothing, and the reading kept here is of a screen
+		// that no longer exists.
+		if h.read == nil || h.read.Said != h.pane.Said() || want > h.lines || size != h.size {
 			read := h.pane.ReadLines(want)
-			h.read, h.lines = &read, want
+			h.read, h.lines, h.size = &read, want, size
 			h.rendered++
 		}
 		// The cursor comes from the reading, so it says where it was on

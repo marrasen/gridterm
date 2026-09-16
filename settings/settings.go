@@ -49,6 +49,10 @@ type stored struct {
 	// ServeReach is one of the words above rather than the dialog's
 	// wording, so the dialog can be reworded without orphaning it.
 	ServeReach *string `json:"serveReach,omitempty"`
+
+	// AgentHost is the agent program the hand-over dialog last wrote a
+	// prompt for, by the name that dialog offers.
+	AgentHost *string `json:"agentHost,omitempty"`
 }
 
 // Settings are the choices gridterm remembers between runs.
@@ -163,6 +167,35 @@ func (s *Settings) PutServe(port int, reach string) error {
 	return nil
 }
 
+// AgentHost is the agent the hand-over dialog was last set to, and
+// whether one was saved.
+func (s *Settings) AgentHost() (string, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.have.AgentHost == nil {
+		return "", false
+	}
+	return *s.have.AgentHost, true
+}
+
+// PutAgentHost remembers which agent the hand-over dialog was set to,
+// and saves.
+func (s *Settings) PutAgentHost(name string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// The file first, for the same reason PutServe reads it first.
+	if err := s.rereadLocked(); err != nil {
+		return fmt.Errorf("%w: %w", ErrUnsaveable, err)
+	}
+	before := s.have
+	s.have.AgentHost = &name
+	if err := s.saveLocked(); err != nil {
+		s.have = before
+		return err
+	}
+	return nil
+}
+
 // rereadLocked reads the file into the settings, replacing what they
 // hold.
 //
@@ -253,6 +286,11 @@ func check(file stored) error {
 	}
 	if r := file.ServeReach; r != nil && *r != ReachHere && *r != ReachAnywhere {
 		return fmt.Errorf("%q is not somewhere a window can be reached from", *r)
+	}
+	// Which agents there are is the window's business, not this package's, so only an empty name is
+	// turned away: it names nothing and could not be offered back to the dialog.
+	if h := file.AgentHost; h != nil && *h == "" {
+		return errors.New("the agent host has no name")
 	}
 	return nil
 }

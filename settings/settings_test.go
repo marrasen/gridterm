@@ -113,6 +113,7 @@ func TestUnreadableSettingsAreNotWrittenOver(t *testing.T) {
 		{"a field this build does not know", `{"version": 1, "fontSize": 14}`},
 		{"a port that is not one", `{"version": 1, "servePort": 70000}`},
 		{"a reach that means nothing", `{"version": 1, "serveReach": "everywhere"}`},
+		{"an agent host with no name", `{"version": 1, "agentHost": ""}`},
 		{"more than one set of settings", `{"version": 1}{"version": 1}`},
 		{"a key written twice", `{"version": 1, "servePort": 2300, "servePort": 9000}`},
 	}
@@ -349,5 +350,104 @@ func TestSavingFromTwoGoroutines(t *testing.T) {
 	port, saved := again.ServePort()
 	if !saved || (port != 2300 && port != 9000) {
 		t.Errorf("the file holds port %d, %v; want one of the two that were saved", port, saved)
+	}
+}
+
+// Which agent the hand-over dialog was set to comes back on the next
+// run.
+func TestTheAgentHostIsRemembered(t *testing.T) {
+	path := at(t)
+	s, err := Load(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if name, have := s.AgentHost(); have {
+		t.Errorf("a missing file remembered the agent %q", name)
+	}
+
+	if err := s.PutAgentHost("Codex"); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	again, err := Load(path)
+	if err != nil {
+		t.Fatalf("load again: %v", err)
+	}
+	name, have := again.AgentHost()
+	if !have || name != "Codex" {
+		t.Errorf("the agent came back as %q, %v; want Codex", name, have)
+	}
+}
+
+// Remembering the agent leaves what else was saved alone, because it
+// reads the file before it writes it.
+func TestRememberingTheAgentKeepsWhatElseWasSaved(t *testing.T) {
+	path := at(t)
+	s, err := Load(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if err := s.PutServe(2300, ReachAnywhere); err != nil {
+		t.Fatalf("save the port: %v", err)
+	}
+
+	if err := s.PutAgentHost("Cursor"); err != nil {
+		t.Fatalf("save the agent: %v", err)
+	}
+
+	again, err := Load(path)
+	if err != nil {
+		t.Fatalf("load again: %v", err)
+	}
+	if port, have := again.ServePort(); !have || port != 2300 {
+		t.Errorf("the port came back as %d, %v; want 2300", port, have)
+	}
+	if name, have := again.AgentHost(); !have || name != "Cursor" {
+		t.Errorf("the agent came back as %q, %v; want Cursor", name, have)
+	}
+}
+
+// Settings that could not be read are not written over by remembering an
+// agent either.
+func TestTheAgentIsNotSavedOverUnreadableSettings(t *testing.T) {
+	path := at(t)
+	const broken = "{"
+	if err := os.WriteFile(path, []byte(broken), 0o600); err != nil {
+		t.Fatalf("write the file: %v", err)
+	}
+	s, loadErr := Load(path)
+	if loadErr == nil {
+		t.Fatal("a broken file loaded clean")
+	}
+
+	err := s.PutAgentHost("Codex")
+
+	if !errors.Is(err, ErrUnsaveable) {
+		t.Errorf("saving gave %v, want ErrUnsaveable", err)
+	}
+	now, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read the file again: %v", err)
+	}
+	if string(now) != broken {
+		t.Errorf("the file was written over:\n%s", now)
+	}
+}
+
+// An agent with no name is not a choice, and is refused rather than
+// written down.
+func TestAnAgentWithNoNameIsRefused(t *testing.T) {
+	path := at(t)
+	s, err := Load(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+
+	if err := s.PutAgentHost(""); err == nil {
+		t.Error("an agent with no name was saved")
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		raw, _ := os.ReadFile(path)
+		t.Errorf("a file was written anyway:\n%s", raw)
 	}
 }

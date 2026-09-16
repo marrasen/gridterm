@@ -146,6 +146,13 @@ func buttonCol(cols int) int {
 	return cols - 2
 }
 
+// ButtonCol is the column this list draws a row's button in, at the width
+// it was last laid out for, or -1 when it is too narrow to spare one.
+//
+// It is what a caller pointing at the button asks, so nothing has to keep
+// a copy of where the button goes.
+func (l *List) ButtonCol() int { return buttonCol(l.size.Cols) }
+
 // List is rows to look through and choose from. NewList builds one; the
 // zero value is not a list.
 //
@@ -460,22 +467,22 @@ func (l *List) paintRow(v grid.View, row ListRow, selected bool, y, rows int) {
 		fg = l.Style.HeaderFG
 	}
 	// washed says the row's ground is light enough to swallow a mark
-	// picked out against the ordinary one, and own that the row has a
-	// ground of its own rather than the list's.
-	washed, own := false, false
+	// picked out against the ordinary one, and on says whose ground the
+	// row is drawn on.
+	washed, on := false, listGround
 	switch {
 	case selected && l.focused:
 		fg, bg = l.Style.SelectedFG, l.Style.SelectedBG
 		// A colour picked to stand out against the other rows can
 		// disappear against the selected one. Whatever the row writes
 		// its own text in is the one colour known to show there.
-		noteFG, washed, own = fg, true, true
+		noteFG, washed, on = fg, true, selectedGround
 	case l.Style.CurrentBG.A != 0 && l.current != nil && sameKey(row.Key, l.current):
 		// Only the ground changes. The mark keeps its own colour,
 		// because what it says is the whole reason it is there and this
 		// is the row the user is looking at.
 		fg, bg = l.Style.CurrentFG, l.Style.CurrentBG
-		noteFG, own = fg, true
+		noteFG, on = fg, currentGround
 	}
 	v.Fill(grid.Cell{Rune: ' ', FG: fg, BG: bg, Width: 1})
 
@@ -530,28 +537,51 @@ func (l *List) paintRow(v grid.View, row ListRow, selected bool, y, rows int) {
 		attr = grid.AttrBold
 	}
 	v.SetString(at, 0, grid.Trim(row.Text, max(room-at, 0)), fg, bg, attr)
-	l.paintFill(v, row.Fill, bg, own)
+	l.paintFill(v, row.Fill, bg, on)
 }
+
+// rowGround says whose ground a row is drawn on: the list's own, the
+// selected row's, or that of the row in front.
+type rowGround uint8
+
+const (
+	listGround rowGround = iota
+	selectedGround
+	currentGround
+)
 
 // paintFill changes the ground of the first cells of a row to the style's
 // FillBG, for a row saying how far something has got.
 //
 // It goes over the drawn row rather than under it, so the text, the mark,
-// the note and the button keep the colours they were drawn in.
+// the note and the button keep the colours they were drawn in. Writing a
+// cell twice costs nothing here: the list paints through a buffer of its
+// own (l.buf, buffer.go) and copies each cell out once, unlike a widget
+// that draws straight onto a layer.
 //
-// own says the row has a ground of its own -- the selected row, or the
-// one in front. Such a row keeps it, blended half way to the fill, so
-// that it still reads as the selected one and the fill still reads.
-func (l *List) paintFill(v grid.View, fill float64, bg color.RGBA, own bool) {
-	if fill <= 0 || l.Style.FillBG.A == 0 {
+// on says whose ground the row is drawn on. A row with a ground of its own
+// keeps it, blended towards the fill, so that it still reads as the
+// selected row or the one in front and the fill still reads.
+func (l *List) paintFill(v grid.View, fill float64, bg color.RGBA, on rowGround) {
+	if math.IsNaN(fill) || fill <= 0 || l.Style.FillBG.A == 0 {
+		// A fill that is not a number fills nothing. It cannot be
+		// clamped, and it must not reach the conversion below.
 		return
 	}
 	cols, _ := v.Size()
 	ground := l.Style.FillBG
-	if own {
+	switch on {
+	case selectedGround:
 		ground = grid.Blend(bg, ground, 1, 2)
+	case currentGround:
+		// Further than on the selected row: the ground of the row in
+		// front is only just lifted off the list's, so half the fill
+		// cannot be told from no fill at all.
+		ground = grid.Blend(bg, ground, 2, 3)
 	}
-	n := min(int(math.Round(fill*float64(cols))), cols)
+	// Clamped before the conversion, so nothing outside 0 to 1 -- an
+	// infinity among it -- becomes a width.
+	n := int(math.Round(min(max(fill, 0), 1) * float64(cols)))
 	if n < cols && v.At(n, 0).Width == 0 {
 		// The far half of a double-width character. Both halves take the
 		// same ground, or one character is drawn on two.

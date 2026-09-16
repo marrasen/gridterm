@@ -273,6 +273,10 @@ type app struct {
 	// click by something other than the window's cells.
 	pointer [2]int
 
+	// pointerShape is the shape the mouse pointer was last set to, so it
+	// is only set again when it changes.
+	pointerShape ui.Cursor
+
 	// geo is where the window's grid lands in pixels, for routing a
 	// click and for placing the glass behind a dialog. Kept apart from
 	// the one the renderer draws with.
@@ -347,6 +351,9 @@ func (a *app) Update() error {
 	a.placeRegions()
 	a.placeScaled()
 
+	// After the layout, so the pointer is the one for the frame about to
+	// be drawn rather than the one before it.
+	a.updatePointer()
 	a.updateTitle()
 	return nil
 }

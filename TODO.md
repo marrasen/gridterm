@@ -8,12 +8,14 @@ each group. A line goes when the work is in and reviewed.
 Keeping a pane when its program ends raised three decisions that are
 his, not mine. Each one is written down rather than guessed at.
 
-1. **Nothing caps the panes a window keeps.** A pane holds its whole
-   screen and up to 5000 lines of scrollback, which on a wide window is
-   tens of megabytes. A day of opening and exiting shells leaves them
-   all. The choices: leave it, trim the scrollback when a pane ends, or
-   close the oldest ended pane past some number. Trimming is the one
-   that argues with what was asked for.
+1. ~~Nothing caps the panes a window keeps.~~ **Answered on 2026-09-16:
+   no cap.** A pane that is worth keeping is worth reusing, so the
+   answer is to make reusing it the easy thing rather than to throw the
+   transcript away. See "Connect again in the same pane" below. Closing
+   a pane does release what it held: `closePane` drops it from
+   `a.panes`, from `a.ended` and from the registry, and `forgetPane`
+   clears the machine, window and hand-over records, so nothing is left
+   holding the grid or the emulator.
 
 2. **The cross means nothing on a pane's row.** It drops the row on a
    machine, a window, a tunnel and a job. A pane's row has none,
@@ -29,6 +31,33 @@ his, not mine. Each one is written down rather than guessed at.
    undone. But hand fifty panes over, exit all fifty shells, and the
    window holds fifty hand-overs and an open loopback port with nothing
    left to type into.
+
+## Connect again in the same pane
+
+Asked for on 2026-09-16, answering the question about capping kept
+panes: the way to stop them piling up is to make the old pane the
+obvious place to go back to.
+
+1. **A button on a dead pane's row connects to the same server again,
+   in that pane.** The transcript stays where it is and the new session
+   carries on underneath it, so going back to a machine reuses the tab
+   instead of opening another.
+   - **What the row shows.** A finished row draws a cross when its
+     entry has a `Clear`, and a pane's entry has none, deliberately.
+     This is a different button on the same column, and `openHostMenu`
+     already dispatches the button by row key.
+   - **What the pane needs.** A terminal owns its session from the
+     moment it is built, so reusing the pane means giving an existing
+     `*term.Terminal` a new session while it keeps its grid and its
+     emulator. That is what keeps the scrollback.
+   - **What to reconnect to.** The entry knows the host and the kind.
+     A local shell starts the shell it ran; a pane on a machine
+     reconnects to it and opens a shell; a command runs again. Each
+     pane has to remember how it was started, which nothing records
+     today.
+   - **The size.** A dead pane's emulator is frozen at the size it died
+     at. Coming back to life it has to take the size the pane really
+     is now, which reflows the scrollback the way any resize does.
 
 ## The agent, through MCP
 

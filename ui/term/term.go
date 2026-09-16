@@ -37,7 +37,7 @@ const wheelLines = 3
 // workable defaults.
 type Config struct {
 	// Session is the shell, local or remote. The widget takes it over
-	// and closes it.
+	// and closes it, and Restart puts another one in its place.
 	Session session.Session
 
 	// Size is how big the terminal starts. Output can arrive before the
@@ -113,11 +113,15 @@ type Terminal struct {
 	// exited is set once the shell is gone.
 	exited atomic.Bool
 
-	// closed guards against a second Close, and done stops writeLoop.
-	// The queue itself is never closed: a device report can be sent from
-	// the reader at any moment, and closing under it would panic.
+	// closed guards against a second Close. The queue itself is never
+	// closed: a device report can be sent from the reader at any moment,
+	// and closing under it would panic.
 	closed atomic.Bool
-	done   chan struct{}
+
+	// runMu guards run, which Restart swaps while the drawing goroutine
+	// may be closing or resizing.
+	runMu sync.Mutex
+	run   *run
 
 	// title is what the program last called the window, kept out here so
 	// the drawing goroutine can read it without waiting on the reader,
@@ -168,6 +172,26 @@ type Terminal struct {
 	ended bool
 }
 
+// run is a session and the two goroutines moving bytes to and from it.
+//
+// A restart makes a new one rather than pointing the old goroutines at
+// another session, so a loop that is about to read cannot pick up a
+// session that was swapped under it.
+type run struct {
+	sess session.Session
+
+	// stop ends writeLoop. Close and Restart both end a run, and either
+	// may follow the other, so it is closed once and no more.
+	stop     chan struct{}
+	stopOnce sync.Once
+
+	// wg falls to zero once both loops have returned.
+	wg sync.WaitGroup
+}
+
+// halt tells writeLoop to stop, however many times it is called.
+func (r *run) halt() { r.stopOnce.Do(func() { close(r.stop) }) }
+
 // New starts a terminal on the given session.
 func New(cfg Config) (*Terminal, error) {
 	if cfg.Session == nil {
@@ -182,15 +206,10 @@ func New(cfg Config) (*Terminal, error) {
 	}
 
 	t := &Terminal{
-		cfg:  cfg,
-		out:  make(chan []byte, outQueue),
-		done: make(chan struct{}),
+		cfg: cfg,
+		out: make(chan []byte, outQueue),
 	}
-	// A resize that fails does so after the drag that asked for it, so
-	// the session hands it here rather than to a caller that has gone.
-	if late, ok := cfg.Session.(lateFailures); ok {
-		late.ReportLate(func(err error) { t.fail(lateResize(err)) })
-	}
+	r := t.adopt(cfg.Session)
 	// At least one cell: an emulator with no columns has nowhere to put
 	// the cursor.
 	cols, rows := max(cfg.Size.Cols, 1), max(cfg.Size.Rows, 1)
@@ -219,9 +238,44 @@ func New(cfg Config) (*Terminal, error) {
 		Reply: t.send,
 	})
 
-	go t.writeLoop()
-	go t.readLoop()
+	t.begin(r)
 	return t, nil
+}
+
+// adopt takes a session over and makes it the one this terminal is on.
+// The goroutines are begun separately, so a restart can size the session
+// before anything reads it.
+func (t *Terminal) adopt(sess session.Session) *run {
+	r := &run{sess: sess, stop: make(chan struct{})}
+	// A resize that fails does so after the drag that asked for it, so
+	// the session hands it here rather than to a caller that has gone.
+	if late, ok := sess.(lateFailures); ok {
+		late.ReportLate(func(err error) {
+			// And not at all from a session this terminal has let go of,
+			// whose resize failed on a pane that now has a program in it.
+			if t.current() == r {
+				t.fail(lateResize(err))
+			}
+		})
+	}
+	t.runMu.Lock()
+	t.run = r
+	t.runMu.Unlock()
+	return r
+}
+
+// begin sets a run's goroutines going.
+func (t *Terminal) begin(r *run) {
+	r.wg.Add(2)
+	go t.writeLoop(r)
+	go t.readLoop(r)
+}
+
+// current is the run the terminal is on now.
+func (t *Terminal) current() *run {
+	t.runMu.Lock()
+	defer t.runMu.Unlock()
+	return t.run
 }
 
 // Close stops the terminal and hands back the session's error. It has to
@@ -230,8 +284,72 @@ func (t *Terminal) Close() error {
 	if t.closed.Swap(true) {
 		return nil
 	}
-	close(t.done)
-	return t.cfg.Session.Close()
+	r := t.current()
+	r.halt()
+	return r.sess.Close()
+}
+
+// Restart puts a new session under the terminal, keeping what is on the
+// screen and in the scrollback, and gives both the room the pane has
+// now, which reflows the scrollback and cuts it where the pane has
+// narrowed since.
+//
+// It refuses a terminal whose program is still running, and hands back
+// the old session's hangup error rather than starting a second program
+// on top of one that would not go.
+func (t *Terminal) Restart(sess session.Session) error {
+	if sess == nil {
+		return errors.New("restart: no session to put in the pane")
+	}
+	if t.closed.Load() {
+		return errors.New("restart: that pane is closed")
+	}
+	if !t.exited.Load() {
+		return errors.New("restart: the program in that pane is still running")
+	}
+
+	// The old session first and all the way: its reader may still be
+	// blocked on it, and two readers would take the bytes in turns.
+	old := t.current()
+	old.halt()
+	err := old.sess.Close()
+	old.wg.Wait()
+	if err != nil {
+		return fmt.Errorf("restart: close the session that ended: %w", err)
+	}
+	// Input typed at the program that has gone. A new shell would run
+	// half a line of it at its own prompt.
+	t.drain()
+
+	t.exited.Store(false)
+	t.revive()
+
+	r := t.adopt(sess)
+	// The pane may have been given other room while it was dead, which
+	// the emulator did not take because there was nothing to take it for.
+	t.setSize(t.restartSize())
+	t.begin(r)
+	return nil
+}
+
+// restartSize is the size a restarted terminal takes: the room the
+// layout has for it, unless somebody watching holds the size.
+func (t *Terminal) restartSize() ui.Size {
+	if t.held || !t.haveSize {
+		return t.size
+	}
+	return t.box
+}
+
+// drain throws away input queued for a session that has gone.
+func (t *Terminal) drain() {
+	for {
+		select {
+		case <-t.out:
+		default:
+			return
+		}
+	}
 }
 
 // Exited reports whether the shell has gone.
@@ -280,10 +398,17 @@ func (t *Terminal) resize(size ui.Size) {
 	if t.exited.Load() {
 		return
 	}
-	cols, rows := max(size.Cols, 1), max(size.Rows, 1)
 	if t.haveSize && t.size == size {
 		return
 	}
+	t.setSize(size)
+}
+
+// setSize resizes the emulator and the session whether the size has
+// changed or not, which is how a restart tells a new session a size the
+// pane has had all along.
+func (t *Terminal) setSize(size ui.Size) {
+	cols, rows := max(size.Cols, 1), max(size.Rows, 1)
 	t.size, t.haveSize = size, true
 
 	t.mu.Lock()
@@ -294,7 +419,7 @@ func (t *Terminal) resize(size ui.Size) {
 
 	// A session that has already gone cannot be resized, and saying so
 	// on every window drag would be noise.
-	if err := t.cfg.Session.Resize(cols, rows); err != nil && !t.exited.Load() {
+	if err := t.current().sess.Resize(cols, rows); err != nil && !t.exited.Load() {
 		t.fail(lateResize(err))
 	}
 }
@@ -671,16 +796,18 @@ func (t *Terminal) send(b []byte) {
 	}
 }
 
-// writeLoop moves queued bytes into the session until Close, which
-// abandons whatever is still queued. Close hangs up the session in the
-// same breath, so those bytes had nowhere to go.
-func (t *Terminal) writeLoop() {
+// writeLoop moves queued bytes into this run's session until the run
+// ends, which abandons whatever is still queued. Whatever ends a run
+// hangs its session up in the same breath, so those bytes had nowhere to
+// go.
+func (t *Terminal) writeLoop(r *run) {
+	defer r.wg.Done()
 	for {
 		select {
-		case <-t.done:
+		case <-r.stop:
 			return
 		case b := <-t.out:
-			if _, err := t.cfg.Session.Write(b); err != nil {
+			if _, err := r.sess.Write(b); err != nil {
 				t.fail(fmt.Errorf("write session: %w", err))
 				t.finish()
 				return
@@ -689,11 +816,13 @@ func (t *Terminal) writeLoop() {
 	}
 }
 
-// readLoop copies session output into the emulator until it ends.
-func (t *Terminal) readLoop() {
+// readLoop copies this run's session output into the emulator until it
+// ends.
+func (t *Terminal) readLoop(r *run) {
+	defer r.wg.Done()
 	buf := make([]byte, readChunk)
 	for {
-		n, err := t.cfg.Session.Read(buf)
+		n, err := r.sess.Read(buf)
 		if n > 0 {
 			t.mu.Lock()
 			_, _ = t.term.Write(buf[:n])

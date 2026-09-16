@@ -71,6 +71,20 @@ func (f *fakeSession) Close() error {
 
 func (f *fakeSession) Wait() error { return nil }
 
+// setWriteErr makes every write from now on fail.
+func (f *fakeSession) setWriteErr(err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.writeErr = err
+}
+
+// isClosed reports whether the terminal has hung this session up.
+func (f *fakeSession) isClosed() bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.closed
+}
+
 // feed hands bytes to the terminal and waits for it to parse them.
 //
 // The dirty flag is cleared first: Layout sets it too, so waiting on it

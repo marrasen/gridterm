@@ -177,6 +177,19 @@ func (t *Terminal) endWatchers() {
 	}
 }
 
+// revive lets watchers attach again, after a restart has put another
+// program in the pane.
+//
+// Nobody is carried across: the watchers this terminal had were told the
+// program had gone and dropped when it did. One arriving now is given
+// the screen as it stands, with the old transcript above where the new
+// program is writing.
+func (t *Terminal) revive() {
+	t.watchMu.Lock()
+	t.ended = false
+	t.watchMu.Unlock()
+}
+
 // Text is the live screen as plain text: one line per row, trailing
 // spaces cut, nothing else.
 //

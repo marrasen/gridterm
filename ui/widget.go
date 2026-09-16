@@ -192,6 +192,22 @@ type Focusable interface {
 	SetFocus(on bool)
 }
 
+// FocusesFirst is a widget that takes a press moving the keys to it as
+// nothing but that move.
+//
+// The container moving the keys keeps such a press: the widget is
+// focused and the press goes no further, so the widget's first press is
+// the next one. It is for a widget where a press does something as well
+// -- a terminal starts a selection, a list opens what is under the
+// pointer -- and clicking one to look at it should not also act on it.
+//
+// A press that moves no keys is delivered whatever this answers, so a
+// widget that has them already works on the first press as before.
+type FocusesFirst interface {
+	Widget
+	FocusesFirst() bool
+}
+
 // SetFocus tells a widget that focus arrived or left, if it cares. A
 // container passes focus to its active child with this.
 func SetFocus(w Widget, on bool) {

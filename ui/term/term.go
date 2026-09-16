@@ -500,6 +500,10 @@ func (t *Terminal) HandleMouse(ev input.MouseEvent) (bool, error) {
 	return true, nil
 }
 
+// FocusesFirst says a press that moves the keys to this pane does
+// nothing else, so the press that starts a selection is the next one.
+func (t *Terminal) FocusesFirst() bool { return true }
+
 // CancelGesture lets go of a drag whose release will never arrive,
 // because a dialog opened over the terminal or its pane left the screen.
 // Left alone, the next time the pointer crossed the terminal with no

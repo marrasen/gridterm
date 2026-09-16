@@ -1464,3 +1464,48 @@ func TestSplitDragIgnoresAnotherButtonComingUp(t *testing.T) {
 		t.Fatalf("the first half is %d wide after the button came up, want 5", a.size.Cols)
 	}
 }
+
+// A press on the half without the keys moves them and goes no further,
+// for a child that asks for that. The press after it is the child's.
+func TestSplitKeepsThePressThatMovesTheKeys(t *testing.T) {
+	a, b := &picky{fake{name: "a"}}, &picky{fake{name: "b"}}
+	s := NewSplit(Columns, a, b)
+	r := rootOver(s, 21, 4)
+	s.SetFocus(true)
+
+	if took, err := r.HandleMouse(pressAt(15, 1)); err != nil || !took {
+		t.Fatalf("the press was taken=%v: %v", took, err)
+	}
+
+	if s.Focused() != Widget(b) {
+		t.Error("the press did not move the keys to the half it landed in")
+	}
+	if len(b.clicks) != 0 {
+		t.Errorf("the half was handed %d presses as well, want none", len(b.clicks))
+	}
+
+	r.HandleMouse(releaseAt(15, 1))
+	r.HandleMouse(pressAt(15, 1))
+	if len(b.clicks) == 0 {
+		t.Error("the second press was kept as well, so the half is never clicked")
+	}
+}
+
+// A child that does not ask to be spared gets the press that moves the
+// keys. The sidebar is one: its rows are buttons, and a press on one
+// means the button whether or not the sidebar has the keys.
+func TestSplitDeliversThePressToAChildThatWantsIt(t *testing.T) {
+	a, b := &fake{name: "a"}, &fake{name: "b"}
+	s := NewSplit(Columns, a, b)
+	r := rootOver(s, 21, 4)
+	s.SetFocus(true)
+
+	r.HandleMouse(pressAt(15, 1))
+
+	if s.Focused() != Widget(b) {
+		t.Error("the press did not move the keys to the half it landed in")
+	}
+	if len(b.clicks) != 1 {
+		t.Errorf("the half was handed %d presses, want the one that moved the keys", len(b.clicks))
+	}
+}

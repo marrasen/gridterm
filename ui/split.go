@@ -240,8 +240,9 @@ func (s *Split) HandleKey(ev input.Event) (bool, error) {
 }
 
 // HandleMouse sends the event to the pane under the pointer, in that
-// pane's own coordinates, focuses a pane that was clicked, and moves the
-// divider when that is what was grabbed.
+// pane's own coordinates, focuses a pane that was clicked and keeps the
+// press when that is all it does, and moves the divider when that is
+// what was grabbed.
 //
 // A drag that wanders out of the pane it began in is not this split's
 // problem: the root holds the pointer for the pane that took the press
@@ -270,6 +271,14 @@ func (s *Split) HandleMouse(ev input.MouseEvent) (bool, error) {
 	if ev.Kind == input.MousePress && !ev.Button.IsWheel() &&
 		!rd.Empty() && rd.Contains(ev.Col, ev.Row) {
 		s.dragging, s.dragButton = true, ev.Button
+		return true, nil
+	}
+
+	// A press that moves the keys to a pane which takes such a press as
+	// nothing else stops here. A dock above this split catches most of
+	// them first; a split at the top of a tree of its own has nobody
+	// else to catch them.
+	if focusingPress(s, s.size.rect(), ev) {
 		return true, nil
 	}
 
@@ -498,6 +507,44 @@ func LeafAt(root Widget, area Rect, x, y int) (Widget, Rect, bool) {
 		}
 	}
 	return root, area, true
+}
+
+// focusingPress reports whether ev is a press that moves the keys to a
+// widget which takes such a press as nothing else, and moves them when
+// it is. A container told true keeps the press and delivers nothing.
+//
+// The leaf under the pointer is asked, not the child the event would go
+// to: that child may be a subtree with the leaf somewhere inside it.
+// Whether the keys move at all is the container's own question, because
+// a press on the widget that already has them is an ordinary press.
+func focusingPress(c Container, area Rect, ev input.MouseEvent) bool {
+	if ev.Kind != input.MousePress || ev.Button.IsWheel() {
+		return false
+	}
+	leaf, _, ok := LeafAt(c, area, ev.Col, ev.Row)
+	if !ok || leaf == FocusedLeaf(c) {
+		return false
+	}
+	first, ok := leaf.(FocusesFirst)
+	if !ok || !first.FocusesFirst() {
+		return false
+	}
+	pointFocus(c, leaf)
+	return true
+}
+
+// pointFocus points every container between c and target at the child
+// holding it, deepest first so the keys arrive down a path that is
+// already set rather than moving twice.
+func pointFocus(c Container, target Widget) {
+	for w := target; w != Widget(c); {
+		parent := ParentOf(c, w)
+		if parent == nil {
+			return
+		}
+		parent.Focus(w)
+		w = parent
+	}
 }
 
 // Detach takes a widget out of the tree under root and returns the new

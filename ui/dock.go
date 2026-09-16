@@ -273,8 +273,9 @@ func (d *Dock) HandleKey(ev input.Event) (bool, error) {
 	return HandleKey(d.Focused(), ev)
 }
 
-// HandleMouse routes to whichever half was clicked, and drags the
-// divider when that is what was grabbed.
+// HandleMouse routes to whichever half was clicked, keeps a press that
+// only moves the keys, and drags the divider when that is what was
+// grabbed.
 //
 // Taking the press on the divider is what makes the drag work: Root
 // keeps the pointer for whoever took it, so every move and the release
@@ -298,6 +299,13 @@ func (d *Dock) HandleMouse(ev input.MouseEvent) (bool, error) {
 	if ev.Kind == input.MousePress && !ev.Button.IsWheel() &&
 		!divider.Empty() && divider.Contains(ev.Col, ev.Row) {
 		d.dragging, d.dragButton = true, ev.Button
+		return true, nil
+	}
+
+	// A press that moves the keys to a pane which takes such a press as
+	// nothing else stops here, pointed at the pane under the pointer
+	// rather than only at the half it is in.
+	if focusingPress(d, d.size.rect(), ev) {
 		return true, nil
 	}
 

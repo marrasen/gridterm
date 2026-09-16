@@ -34,6 +34,11 @@ each group. A line goes when the work is in and reviewed.
 - The cursor keeps blinking while the window is in the background.
   Nothing reads `ebiten.IsFocused`, and most terminals either stop the
   blink or draw the cursor hollow once the window loses focus.
+- A click that brings the window to the front is acted on as well. A
+  press that moves the keys to a pane stops there, through
+  `ui.FocusesFirst`, but the window cannot do that for itself: nothing
+  reads `ebiten.IsFocused`, so the click that woke it looks like any
+  other. A headless test cannot drive that flag either.
 - A watcher taking a screen over sees the far end's default cursor.
   `vt.Repaint` puts the cursor back where the program had it but carries
   neither its shape nor its blink, so `DECSCUSR` is lost over the wire.

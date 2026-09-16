@@ -396,3 +396,34 @@ func TestDockDragIgnoresAnotherButtonComingUp(t *testing.T) {
 		t.Fatalf("width = %d after the button came up, want 40", d.Width)
 	}
 }
+
+// The dock points the keys at the pane under the pointer rather than
+// only at the half it is in.
+//
+// Focus travels down from the half, and the path it takes may end at
+// another pane entirely: the split below it hands the keys to whichever
+// half it was already pointing at. A press on the other one has to land
+// there.
+func TestDockMovesTheKeysToThePaneUnderThePointer(t *testing.T) {
+	panel := &fake{name: "panel"}
+	left, right := &picky{fake{name: "left"}}, &picky{fake{name: "right"}}
+	d := NewDock(10, panel, NewSplit(Columns, left, right))
+	r := rootOver(d, 41, 4)
+	d.Focus(panel)
+
+	// The right-hand pane, which is not the one the split is pointing
+	// at while the panel has the keys.
+	if took, err := r.HandleMouse(pressAt(35, 1)); err != nil || !took {
+		t.Fatalf("the press was taken=%v: %v", took, err)
+	}
+
+	if got := FocusedLeaf(d); got != Widget(right) {
+		t.Error("the keys went somewhere other than the pane under the pointer")
+	}
+	if !right.focus {
+		t.Error("the pane under the pointer was not told it has the keys")
+	}
+	if len(left.clicks)+len(right.clicks) != 0 {
+		t.Error("the press was delivered as well as moving the keys")
+	}
+}

@@ -58,6 +58,10 @@ const divider = '│'
 // the next one along. That is what makes one key enough for a copy
 // between two machines, and it is why the window can hold as many panes
 // as the user wants to put in it.
+//
+// Every divider can be dragged. A press on one is taken, so whatever
+// routes the mouse keeps the pointer here until the button comes up,
+// however far it has wandered.
 type Browser struct {
 	// OnCopy, OnMove and OnDelete are what the F keys ask for. A nil one
 	// means that key does nothing.
@@ -89,6 +93,20 @@ type Browser struct {
 	keys     []Key
 	size     ui.Size
 	clip     Clipboard
+
+	// weights say where each divider sits, one per boundary between two
+	// panes, as a share of the room the panes divide. They rise from
+	// left to right, and the last pane always ends at the right edge, so
+	// there is no weight for it.
+	//
+	// Adding or taking away a pane shares the room out evenly again.
+	weights []float64
+
+	// cut is scratch for paneCell, reused to keep drawing off the heap.
+	cut []int
+
+	// dragging is the boundary being moved, or -1 when none is.
+	dragging int
 }
 
 // NewBrowser puts panes side by side, with the keys on the first.
@@ -97,7 +115,7 @@ type Browser struct {
 // the user wants to look at. Building a browser is not the same thing,
 // so it opens where a browser always has.
 func NewBrowser(panes ...*Pane) *Browser {
-	b := &Browser{keys: BrowserKeys()}
+	b := &Browser{keys: BrowserKeys(), dragging: -1}
 	for _, p := range panes {
 		b.Add(p)
 	}
@@ -129,6 +147,7 @@ func (b *Browser) Add(p *Pane) bool {
 		return false
 	}
 	b.panes = append(b.panes, p)
+	b.shareEvenly()
 	b.Focus(p)
 	b.Layout(b.size)
 	return true
@@ -169,6 +188,7 @@ func (b *Browser) Remove(w ui.Widget) (ui.Widget, bool) {
 	b.panes[len(b.panes)-1] = nil
 	b.panes = b.panes[:len(b.panes)-1]
 
+	b.shareEvenly()
 	if len(b.panes) == 0 {
 		b.active = nil
 		return nil, true
@@ -318,12 +338,69 @@ func (b *Browser) work(one bool) (Work, bool) {
 	return Work{From: here, At: here.At(), Names: names}, true
 }
 
+// shareEvenly puts every divider back where an even division would put
+// it, which is what adding or taking away a pane does.
+//
+// A drag is given up with them: the boundary the pointer was holding is
+// not the same boundary once the panes have changed.
+func (b *Browser) shareEvenly() {
+	b.dragging = -1
+	n := len(b.panes)
+	if n < 2 {
+		b.weights = nil
+		return
+	}
+	b.weights = make([]float64, n-1)
+	for i := range b.weights {
+		b.weights[i] = float64(i+1) / float64(n)
+	}
+}
+
+// weightAt is where a boundary sits, as a share of the room the panes
+// divide. A browser whose weights have not been worked out yet divides
+// its room evenly.
+func (b *Browser) weightAt(i, n int) float64 {
+	if i < len(b.weights) {
+		return b.weights[i]
+	}
+	return float64(i+1) / float64(n)
+}
+
+// cuts returns the column each pane ends at within the room left after
+// the dividers, keeping a cell for every pane.
+//
+// The last entry is the room itself, so the last pane always ends at the
+// right edge whatever the weights say. The slice is reused between
+// calls, so read it before asking again.
+func (b *Browser) cuts(room int) []int {
+	n := len(b.panes)
+	if cap(b.cut) < n {
+		b.cut = make([]int, n)
+	}
+	out := b.cut[:n]
+	out[n-1] = room
+	for i := 0; i < n-1; i++ {
+		out[i] = int(float64(room)*b.weightAt(i, n) + 0.5)
+	}
+	// One pass out from the left edge and one back from the right, so a
+	// pane is not squeezed to nothing from either side.
+	for i := 0; i < n-1; i++ {
+		lower := 1
+		if i > 0 {
+			lower = out[i-1] + 1
+		}
+		out[i] = min(max(out[i], lower), room)
+	}
+	for i := n - 2; i >= 0; i-- {
+		out[i] = max(min(out[i], out[i+1]-1), 0)
+	}
+	return out
+}
+
 // paneCell returns the columns one pane is drawn in.
 //
-// The width is divided by counting from the left edge each time rather
-// than by stepping, so the remainder is spread across the panes and the
-// last one ends at the right edge. A divider sits in the column before
-// every pane but the first.
+// A divider sits in the column before every pane but the first, and the
+// last pane ends at the right edge.
 func (b *Browser) paneCell(i, cols int) (start, end int) {
 	n := len(b.panes)
 	if n <= 0 || cols <= 0 || i < 0 || i >= n {
@@ -331,9 +408,57 @@ func (b *Browser) paneCell(i, cols int) (start, end int) {
 	}
 	// The dividers come off the top, and what is left is shared out.
 	room := max(cols-(n-1), 0)
-	start = min(room*i/n+i, cols)
-	end = min(room*(i+1)/n+i, cols)
-	return start, max(end, start)
+	cut := b.cuts(room)
+	// Each pane starts a divider along from where the one before it
+	// ended, so i dividers stand before pane i.
+	start = i
+	if i > 0 {
+		start = cut[i-1] + i
+	}
+	end = cut[i] + i
+	return min(start, cols), min(max(end, start), cols)
+}
+
+// dividerAt returns the boundary drawn in a column, or false when the
+// column belongs to a pane.
+func (b *Browser) dividerAt(col int) (int, bool) {
+	for i := 1; i < len(b.panes); i++ {
+		// The same column Draw puts the rule in.
+		start, _ := b.paneCell(i, b.size.Cols)
+		if start > 0 && col == start-1 {
+			return i - 1, true
+		}
+	}
+	return 0, false
+}
+
+// dragBoundary reports which boundary the pointer is moving, if any.
+func (b *Browser) dragBoundary() (int, bool) {
+	return b.dragging, b.dragging >= 0 && b.dragging < len(b.panes)-1
+}
+
+// CancelGesture gives up a drag whose release is not coming.
+func (b *Browser) CancelGesture() { b.dragging = -1 }
+
+// dragTo moves one divider to a column, stopping it at its neighbours so
+// the weights stay in order.
+func (b *Browser) dragTo(at, col int) {
+	n := len(b.panes)
+	room := max(b.size.Cols-(n-1), 0)
+	if at < 0 || at >= len(b.weights) || room <= 0 {
+		return
+	}
+	lo, hi := 0.0, 1.0
+	if at > 0 {
+		lo = b.weights[at-1]
+	}
+	if at < len(b.weights)-1 {
+		hi = b.weights[at+1]
+	}
+	// The dividers to the left of this one take a column each, so the
+	// room before it is the column less the number of them.
+	b.weights[at] = min(max(float64(col-at)/float64(room), lo), hi)
+	b.Layout(b.size)
 }
 
 // Layout gives every pane its share of the width, less the bar of keys.
@@ -644,9 +769,22 @@ func (b *Browser) ask(to func(Work), one bool) (bool, error) {
 	return true, nil
 }
 
-// HandleMouse runs a key clicked on the bar, and otherwise hands the
-// event to the pane the pointer is over, putting the keys on it.
+// HandleMouse moves a divider that was grabbed, runs a key clicked on
+// the bar, and otherwise hands the event to the pane the pointer is
+// over, putting the keys on it.
+//
+// The drag comes first, before the bar: the gesture belongs to the
+// divider until the button comes up, wherever the pointer has gone.
 func (b *Browser) HandleMouse(ev input.MouseEvent) (bool, error) {
+	if at, ok := b.dragBoundary(); ok {
+		switch {
+		case ev.Kind == input.MouseRelease:
+			b.dragging = -1
+		case !ev.Button.IsWheel():
+			b.dragTo(at, ev.Col)
+		}
+		return true, nil
+	}
 	if b.barRows() > 0 && ev.Row == b.size.Rows-1 {
 		if ev.Kind != input.MousePress || ev.Button != input.MouseLeft {
 			// A release or a drag over the bar is swallowed rather than
@@ -662,6 +800,12 @@ func (b *Browser) HandleMouse(ev input.MouseEvent) (bool, error) {
 		k := b.keys[i]
 		_, err := b.press(k.press())
 		return true, err
+	}
+	if ev.Kind == input.MousePress && !ev.Button.IsWheel() {
+		if at, ok := b.dividerAt(ev.Col); ok {
+			b.dragging = at
+			return true, nil
+		}
 	}
 	for i, p := range b.panes {
 		start, end := b.paneCell(i, b.size.Cols)

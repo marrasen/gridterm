@@ -2127,3 +2127,370 @@ func TestEscapeTakesBackTheFindBeforeTheClipboard(t *testing.T) {
 		t.Error("Escape left the clipboard standing with nothing else to take back")
 	}
 }
+
+// underRoot puts a browser in a root, so a test drives the mouse the way
+// the window does: press, move and release all go in at the top.
+func underRoot(b *Browser, cols, rows int) *ui.Root {
+	r := &ui.Root{}
+	r.SetWidget(b)
+	r.Layout(ui.Rect{Cols: cols, Rows: rows})
+	return r
+}
+
+// widths is how wide each pane was laid out, left to right.
+func widths(b *Browser) []int {
+	panes := b.Panes()
+	out := make([]int, len(panes))
+	for i, p := range panes {
+		out[i] = p.laidOut().Cols
+	}
+	return out
+}
+
+// checkSpread is the browser's invariant: every pane keeps a cell, and
+// the panes and the dividers between them fill the box, so the last pane
+// ends at the right edge.
+func checkSpread(t *testing.T, b *Browser, cols int) {
+	t.Helper()
+	got := widths(b)
+	total := len(got) - 1
+	for i, w := range got {
+		if w < 1 {
+			t.Fatalf("pane %d is %d columns wide, want at least one: %v", i, w, got)
+		}
+		total += w
+	}
+	if total != cols {
+		t.Fatalf("the panes and dividers come to %d of %d columns: %v", total, cols, got)
+	}
+	// And what the browser says is where a pane sits agrees with it.
+	last := b.Panes()[len(got)-1]
+	area, ok := b.ChildArea(last)
+	if !ok {
+		t.Fatal("the last pane has nowhere to be drawn")
+	}
+	if at := area.X + area.Cols; at != cols {
+		t.Fatalf("the last pane ends at column %d, want the right edge at %d", at, cols)
+	}
+}
+
+// pressCol, moveCol and releaseCol are the three events of a drag, on a
+// row of the panes rather than the bar.
+func pressCol(col int) input.MouseEvent {
+	return input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: col, Row: 3}
+}
+
+func moveCol(col int) input.MouseEvent {
+	return input.MouseEvent{Kind: input.MouseMove, Button: input.MouseLeft, Col: col, Row: 3}
+}
+
+func releaseCol(col int) input.MouseEvent {
+	return input.MouseEvent{Kind: input.MouseRelease, Button: input.MouseLeft, Col: col, Row: 3}
+}
+
+// dividerCol is the column the rule between two panes is drawn in, read
+// off the drawing rather than out of the arithmetic.
+func dividerCol(t *testing.T, b *Browser, cols, rows, which int) int {
+	t.Helper()
+	g := grid.New(cols, rows, color.RGBA{}, color.RGBA{})
+	b.Draw(g.View())
+	var at []int
+	for x := 0; x < cols; x++ {
+		if g.At(x, 0).Rune == divider {
+			at = append(at, x)
+		}
+	}
+	if which >= len(at) {
+		t.Fatalf("%d dividers are drawn, want one at %d", len(at), which)
+	}
+	return at[which]
+}
+
+// A divider is dragged where the user drags it, and the panes each side
+// take the room. The whole gesture goes in through the root, the way it
+// does in the window.
+func TestBrowserDividerCanBeDragged(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		panes int
+		cols  int
+		// which divider is grabbed, and the column it is dropped in.
+		which, to int
+		want      []int
+	}{
+		{name: "two panes", panes: 2, cols: 91, which: 0, to: 20, want: []int{20, 70}},
+		{name: "three panes, the first divider", panes: 3, cols: 92, which: 0, to: 20,
+			want: []int{20, 40, 30}},
+		{name: "three panes, the second divider", panes: 3, cols: 92, which: 1, to: 70,
+			want: []int{30, 39, 21}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			b, _ := many(t, tc.panes)
+			r := underRoot(b, tc.cols, 12)
+			at := dividerCol(t, b, tc.cols, 12, tc.which)
+
+			took, err := r.HandleMouse(pressCol(at))
+			if err != nil {
+				t.Fatalf("the press failed: %v", err)
+			}
+			if !took {
+				t.Fatal("the press on the divider was not taken, so no drag can follow")
+			}
+			r.HandleMouse(moveCol(tc.to))
+			r.HandleMouse(releaseCol(tc.to))
+
+			if got := widths(b); !equalInts(got, tc.want) {
+				t.Fatalf("the panes are %v wide, want %v", got, tc.want)
+			}
+			checkSpread(t, b, tc.cols)
+			if got := dividerCol(t, b, tc.cols, 12, tc.which); got != tc.to {
+				t.Fatalf("the rule is drawn in column %d, want where it was dropped, %d", got, tc.to)
+			}
+
+			// And a move once the button is up is nothing to do with it.
+			was := widths(b)
+			r.HandleMouse(moveCol(tc.to + 10))
+			if got := widths(b); !equalInts(got, was) {
+				t.Fatalf("the panes are %v wide after the button came up, want %v", got, was)
+			}
+		})
+	}
+}
+
+// equalInts reports whether two lists of widths are the same.
+func equalInts(a, b []int) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// A divider dragged off the end of the box leaves every pane on screen,
+// and one dragged into its neighbour stops there rather than pushing it
+// out of the way.
+func TestBrowserDragKeepsACellForEveryPane(t *testing.T) {
+	b, _ := many(t, 3)
+	r := underRoot(b, 92, 12)
+	at := dividerCol(t, b, 92, 12, 0)
+
+	r.HandleMouse(pressCol(at))
+	r.HandleMouse(moveCol(-99))
+	if got := widths(b)[0]; got != 1 {
+		t.Fatalf("dragged off the left the first pane is %d wide, want 1", got)
+	}
+	checkSpread(t, b, 92)
+
+	r.HandleMouse(moveCol(999))
+	// It stops at the divider beside it, which keeps its own pane's cell.
+	if got := widths(b)[1]; got != 1 {
+		t.Fatalf("dragged off the right the middle pane is %d wide, want 1", got)
+	}
+	checkSpread(t, b, 92)
+	r.HandleMouse(releaseCol(999))
+
+	// And the last divider dragged off the right edge leaves the pane
+	// beyond it on screen: there is nothing further right to stop it.
+	last := dividerCol(t, b, 92, 12, 1)
+	r.HandleMouse(pressCol(last))
+	r.HandleMouse(moveCol(999))
+	if got := widths(b)[2]; got != 1 {
+		t.Fatalf("dragged off the right the last pane is %d wide, want 1", got)
+	}
+	checkSpread(t, b, 92)
+	r.HandleMouse(releaseCol(999))
+}
+
+// A divider dragged into the one beside it stops there rather than
+// shoving it along: every divider is where the user put it, and only the
+// one being dragged moves.
+func TestBrowserDividerStopsAtItsNeighbour(t *testing.T) {
+	b, _ := many(t, 3)
+	r := underRoot(b, 92, 12)
+	at := dividerCol(t, b, 92, 12, 0)
+
+	r.HandleMouse(pressCol(at))
+	r.HandleMouse(moveCol(999))
+	r.HandleMouse(releaseCol(999))
+
+	// The middle pane is down to its cell and the last one is where it
+	// was, one column along to make room for it.
+	if got, want := widths(b), []int{60, 1, 29}; !equalInts(got, want) {
+		t.Fatalf("the panes are %v wide, want %v", got, want)
+	}
+	checkSpread(t, b, 92)
+}
+
+// A drag whose release never comes must not leave the divider stuck to
+// the pointer.
+func TestBrowserCancelGestureEndsADrag(t *testing.T) {
+	b, _ := many(t, 3)
+	r := underRoot(b, 92, 12)
+	at := dividerCol(t, b, 92, 12, 0)
+	was := widths(b)
+
+	r.HandleMouse(pressCol(at))
+	b.CancelGesture()
+	r.HandleMouse(moveCol(10))
+
+	if got := widths(b); !equalInts(got, was) {
+		t.Fatalf("the panes are %v wide, want the drag to have stopped at %v", got, was)
+	}
+}
+
+// Scrolling mid-drag is not a move: a wheel notch has no release, and
+// acting on one would put the divider where the pointer is not.
+func TestBrowserWheelDuringADragDoesNotMoveIt(t *testing.T) {
+	b, _ := many(t, 3)
+	r := underRoot(b, 92, 12)
+	at := dividerCol(t, b, 92, 12, 0)
+	was := widths(b)
+
+	r.HandleMouse(pressCol(at))
+	r.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseWheelUp, Col: 10, Row: 3,
+	})
+
+	if got := widths(b); !equalInts(got, was) {
+		t.Fatalf("the panes are %v wide, want the notch ignored and %v", got, was)
+	}
+	// The drag is still on: the notch did not end it either.
+	r.HandleMouse(moveCol(20))
+	if got := widths(b)[0]; got != 20 {
+		t.Fatalf("the first pane is %d wide, want the drag to carry on after the notch", got)
+	}
+}
+
+// The handle is the divider and nothing more: the column beside it
+// belongs to the pane, and a press there puts the keys on it.
+func TestBrowserPressBesideADividerReachesThePane(t *testing.T) {
+	b, dirs := many(t, 3)
+	r := underRoot(b, 92, 12)
+	at := dividerCol(t, b, 92, 12, 0)
+	was := widths(b)
+
+	r.HandleMouse(pressCol(at - 1))
+	r.HandleMouse(moveCol(10))
+	r.HandleMouse(releaseCol(10))
+
+	if got := b.Here().At(); got != dirs[0] {
+		t.Fatalf("the keys are in %q, want the pane beside the divider", got)
+	}
+	if got := widths(b); !equalInts(got, was) {
+		t.Fatalf("the panes are %v wide, want a press beside the divider to leave them at %v", got, was)
+	}
+}
+
+// A click lands in the pane the drag left under it: the browser routes
+// by the cells it now draws, not the ones it started with.
+func TestBrowserClicksFollowADraggedDivider(t *testing.T) {
+	b, dirs := many(t, 3)
+	r := underRoot(b, 92, 12)
+	at := dividerCol(t, b, 92, 12, 0)
+
+	r.HandleMouse(pressCol(at))
+	r.HandleMouse(moveCol(10))
+	r.HandleMouse(releaseCol(10))
+
+	// Column 20 was the first pane's before the drag and is the second
+	// pane's after it.
+	if at <= 20 {
+		t.Fatalf("the divider started at column %d, so column 20 was never the first pane's", at)
+	}
+	r.HandleMouse(pressCol(20))
+
+	if got := b.Here().At(); got != dirs[1] {
+		t.Fatalf("the click put the keys in %q, want the pane the drag moved under it", got)
+	}
+}
+
+// Opening another pane shares the room out evenly again, which is the
+// rule: a boundary the user dragged is not the same boundary once the
+// panes have changed.
+func TestAddingAPaneSharesTheRoomAgain(t *testing.T) {
+	b, _ := many(t, 3)
+	r := underRoot(b, 92, 12)
+	at := dividerCol(t, b, 92, 12, 0)
+	r.HandleMouse(pressCol(at))
+	r.HandleMouse(moveCol(10))
+	r.HandleMouse(releaseCol(10))
+
+	if !b.Add(here(t, t.TempDir())) {
+		t.Fatal("Add refused a new pane")
+	}
+
+	got := widths(b)
+	checkSpread(t, b, 92)
+	for i, w := range got {
+		if w < 21 || w > 23 {
+			t.Fatalf("pane %d is %d wide, want the room shared evenly: %v", i, w, got)
+		}
+	}
+	// And taking one away shares it out again too.
+	if _, ok := b.Remove(b.Panes()[0]); !ok {
+		t.Fatal("Remove refused a pane that was there")
+	}
+	checkSpread(t, b, 92)
+}
+
+// A pane that closed mid-drag ends the drag with it: the boundary the
+// pointer was holding is gone.
+func TestRemovingAPaneDuringADragEndsIt(t *testing.T) {
+	b, _ := many(t, 3)
+	r := underRoot(b, 92, 12)
+	at := dividerCol(t, b, 92, 12, 0)
+	r.HandleMouse(pressCol(at))
+
+	if _, ok := b.Remove(b.Panes()[2]); !ok {
+		t.Fatal("Remove refused a pane that was there")
+	}
+	was := widths(b)
+	r.HandleMouse(moveCol(5))
+
+	if got := widths(b); !equalInts(got, was) {
+		t.Fatalf("the panes are %v wide, want the drag to have ended at %v", got, was)
+	}
+}
+
+// The drag repaints the panes it moved, and the frame after it writes
+// nothing: a divider that is not moving must not repaint the window.
+func TestBrowserDragRedrawsAndThenSettles(t *testing.T) {
+	b, dirs := many(t, 3)
+	for _, at := range dirs {
+		write(t, at, "a.txt", "a")
+	}
+	b.Reload()
+	r := underRoot(b, 92, 12)
+	g := grid.New(92, 12, color.RGBA{}, color.RGBA{})
+	b.Draw(g.View())
+	g.ClearDirty()
+
+	at := dividerCol(t, b, 92, 12, 0)
+	r.HandleMouse(pressCol(at))
+	r.HandleMouse(moveCol(20))
+	r.HandleMouse(releaseCol(20))
+	b.Draw(g.View())
+
+	if !g.AnyDirty() {
+		t.Fatal("the drag moved the panes and dirtied nothing")
+	}
+	if got := dividerCol(t, b, 92, 12, 0); got != 20 {
+		t.Fatalf("the rule is drawn in column %d, want 20", got)
+	}
+
+	g.ClearDirty()
+	b.Draw(g.View())
+	if g.AnyDirty() {
+		var dirty []int
+		for y := 0; y < 12; y++ {
+			if g.RowDirty(y) {
+				dirty = append(dirty, y)
+			}
+		}
+		t.Fatalf("an idle frame after the drag dirtied rows %v", dirty)
+	}
+}

@@ -31,6 +31,11 @@ func (d Dir) dividerRune() rune {
 //
 // A child is itself a widget, so a Split whose child is another Split is
 // how a layout of any shape is built.
+//
+// The divider can be dragged. A press on it is taken, so Root keeps the
+// pointer until the button comes up, however far it has wandered. A
+// divider with no colour is still the handle: the cell is there to grab
+// whether or not a line is drawn in it.
 type Split struct {
 	// Weight is the first child's share of the room left after the
 	// divider, from 0 to 1. Each child always keeps at least one cell.
@@ -46,6 +51,10 @@ type Split struct {
 	focused  Widget
 	size     Size
 	hasFocus bool
+
+	// dragging records that the divider is being moved, so the drag can
+	// be finished or abandoned.
+	dragging bool
 }
 
 // NewSplit divides its area between two widgets, evenly to begin with.
@@ -221,13 +230,34 @@ func (s *Split) HandleKey(ev input.Event) (bool, error) {
 }
 
 // HandleMouse sends the event to the pane under the pointer, in that
-// pane's own coordinates, and focuses a pane that was clicked.
+// pane's own coordinates, focuses a pane that was clicked, and moves the
+// divider when that is what was grabbed.
 //
 // A drag that wanders out of the pane it began in is not this split's
 // problem: the root holds the pointer for the pane that took the press
 // and delivers to it directly.
+//
+// A press on the divider is a gesture the split keeps for itself. Taking
+// it is what makes the drag work: Root holds the pointer for whoever
+// took the press, so every move and the release come back here however
+// far the pointer has gone.
 func (s *Split) HandleMouse(ev input.MouseEvent) (bool, error) {
-	ra, rb, _ := s.rects()
+	ra, rb, rd := s.rects()
+
+	if s.dragging {
+		switch {
+		case ev.Kind == input.MouseRelease:
+			s.dragging = false
+		case !ev.Button.IsWheel():
+			s.dragTo(ev.Col, ev.Row)
+		}
+		return true, nil
+	}
+	if ev.Kind == input.MousePress && !ev.Button.IsWheel() &&
+		!rd.Empty() && rd.Contains(ev.Col, ev.Row) {
+		s.dragging = true
+		return true, nil
+	}
 
 	var target Widget
 	var area Rect
@@ -247,6 +277,26 @@ func (s *Split) HandleMouse(ev input.MouseEvent) (bool, error) {
 
 	ev.Col, ev.Row = area.Local(ev.Col, ev.Row)
 	return HandleMouse(target, ev)
+}
+
+// CancelGesture gives up a drag whose release is not coming.
+func (s *Split) CancelGesture() { s.dragging = false }
+
+// dragTo puts the divider under a point, as a share of the room the two
+// children divide.
+//
+// Nothing is clamped beyond the weight's own range: rects keeps a cell
+// for each child, so a divider dragged past the end stops one cell in.
+func (s *Split) dragTo(col, row int) {
+	pos, room := col, s.size.Cols-1
+	if s.dir == Rows {
+		pos, room = row, s.size.Rows-1
+	}
+	if room <= 0 {
+		return
+	}
+	s.Weight = min(max(float64(pos)/float64(room), 0), 1)
+	s.Layout(s.size)
 }
 
 // rects returns where the two children and the divider go.
@@ -391,9 +441,10 @@ func AreaOf(root Widget, area Rect, target Widget) (Rect, bool) {
 //
 // Which means a container that answers true to a press on its own chrome
 // is promising to handle the whole gesture: every move and the release
-// come back to it, not to the child under the pointer. One that has
-// nothing to do with the press must answer false, as a split does for
-// its divider.
+// come back to it, not to the child under the pointer. A split promises
+// that for its divider, which follows the pointer until the button comes
+// up. A container with nothing to do with a press on its chrome must
+// answer false instead.
 func LeafAt(root Widget, area Rect, x, y int) (Widget, Rect, bool) {
 	if root == nil || !area.Contains(x, y) {
 		return nil, Rect{}, false

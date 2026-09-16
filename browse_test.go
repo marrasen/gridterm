@@ -772,3 +772,49 @@ func TestAFilePaneWithoutTheKeysWaitsToSayWhyAReadFailed(t *testing.T) {
 	}
 	noNoticeOpens(t, a, "coming back to a pane whose reason has been read")
 }
+
+// Dragging the divider between two file panes gives one of them more
+// room. It starts at the press on the window's own root, the way the
+// user does it.
+func TestDraggingAFileBrowserDivider(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	b, _, _ := onlyBrowser(t, a)
+	panes := b.view.Panes()
+
+	area, shown := a.root.AreaOf(panes[0])
+	if !shown {
+		t.Fatal("the first file pane is not on screen")
+	}
+	right, shown := a.root.AreaOf(panes[1])
+	if !shown {
+		t.Fatal("the second file pane is not on screen")
+	}
+	// The divider is the column the first pane ends in.
+	at, row := area.X+area.Cols, area.Y+1
+	wasLeft, wasRight := area.Cols, right.Cols
+
+	for _, ev := range []input.MouseEvent{
+		{Kind: input.MousePress, Button: input.MouseLeft, Col: at, Row: row},
+		{Kind: input.MouseMove, Button: input.MouseLeft, Col: at - 10, Row: row},
+		{Kind: input.MouseRelease, Button: input.MouseLeft, Col: at - 10, Row: row},
+	} {
+		if _, err := a.root.HandleMouse(ev); err != nil {
+			t.Fatalf("the drag failed: %v", err)
+		}
+	}
+
+	got, _ := a.root.AreaOf(panes[0])
+	after, _ := a.root.AreaOf(panes[1])
+	if got.Cols != wasLeft-10 {
+		t.Errorf("the first pane is %d columns wide, want %d", got.Cols, wasLeft-10)
+	}
+	if after.Cols != wasRight+10 {
+		t.Errorf("the second pane is %d columns wide, want %d", after.Cols, wasRight+10)
+	}
+	// The panes and the rule between them still fill the browser.
+	if at := after.X + after.Cols; at != right.X+right.Cols {
+		t.Errorf("the second pane now ends at column %d, want the right edge at %d",
+			at, right.X+right.Cols)
+	}
+}

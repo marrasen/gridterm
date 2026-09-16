@@ -7,6 +7,7 @@ import (
 
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/grid"
+	"github.com/marrasen/gridterm/input"
 	"github.com/marrasen/gridterm/internal/sshtest"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/term"
@@ -525,4 +526,61 @@ func TestASplitWhosePaneWentToTheBackgroundOpensATab(t *testing.T) {
 	if got := len(a.stage.Children()); got != 3 {
 		t.Fatalf("the stage holds %d things, want three tabs", got)
 	}
+}
+
+// Dragging the divider between two shells is how the user gives one of
+// them more room. It starts at the press, on the window's own root, so
+// the whole way from the click to the shell being told its new size is
+// under test.
+func TestDraggingASplitDividerResizesBothShells(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	if err := a.splitHere(ui.Columns); err != nil {
+		t.Fatalf("splitHere: %v", err)
+	}
+	split, ok := a.stage.Children()[0].(*ui.Split)
+	if !ok {
+		t.Fatalf("the stage holds %T, want a split", a.stage.Children()[0])
+	}
+	left, okLeft := split.Children()[0].(*term.Terminal)
+	right, okRight := split.Children()[1].(*term.Terminal)
+	if !okLeft || !okRight {
+		t.Fatalf("the split holds %T and %T, want two terminals",
+			split.Children()[0], split.Children()[1])
+	}
+	area, shown := a.root.AreaOf(left)
+	if !shown {
+		t.Fatal("the first pane is not on screen")
+	}
+	// The divider is the column the first pane ends in.
+	at, row := area.X+area.Cols, area.Y+1
+	wasLeft, wasRight := left.Size().Cols, right.Size().Cols
+
+	if _, err := a.root.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft, Col: at, Row: row,
+	}); err != nil {
+		t.Fatalf("the press failed: %v", err)
+	}
+	if _, err := a.root.HandleMouse(input.MouseEvent{
+		Kind: input.MouseMove, Button: input.MouseLeft, Col: at - 10, Row: row,
+	}); err != nil {
+		t.Fatalf("the drag failed: %v", err)
+	}
+	if _, err := a.root.HandleMouse(input.MouseEvent{
+		Kind: input.MouseRelease, Button: input.MouseLeft, Col: at - 10, Row: row,
+	}); err != nil {
+		t.Fatalf("the release failed: %v", err)
+	}
+
+	if got := left.Size().Cols; got != wasLeft-10 {
+		t.Errorf("the first shell is %d columns wide, want %d", got, wasLeft-10)
+	}
+	if got := right.Size().Cols; got != wasRight+10 {
+		t.Errorf("the second shell is %d columns wide, want %d", got, wasRight+10)
+	}
+	// And the pane that was dragged past keeps the keys it had: a drag is
+	// not a click on the pane the pointer ended over.
+	if ui.FocusedLeaf(a.root.Widget()) != ui.Widget(right) {
+		t.Error("the drag moved the keys")
+	}
+	checkTree(t, a)
 }

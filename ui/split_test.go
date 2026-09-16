@@ -268,9 +268,9 @@ func TestSplitClickFocusesThePaneUnderThePointer(t *testing.T) {
 	}
 }
 
-// TestSplitClickOnTheDividerDoesNothing checks that the divider is not
-// mistaken for either pane.
-func TestSplitClickOnTheDividerDoesNothing(t *testing.T) {
+// TestSplitClickOnTheDividerReachesNoPane checks that the divider is not
+// mistaken for either pane. The split keeps the press for itself.
+func TestSplitClickOnTheDividerReachesNoPane(t *testing.T) {
 	a, b := &filler{ch: 'a'}, &filler{ch: 'b'}
 	s := NewSplit(Columns, a, b)
 	s.SetFocus(true)
@@ -283,7 +283,10 @@ func TestSplitClickOnTheDividerDoesNothing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("HandleMouse: %v", err)
 	}
-	if handled || len(a.seen) != 0 || len(b.seen) != 0 {
+	if !handled {
+		t.Error("the press on the divider was not taken, so no drag can follow")
+	}
+	if len(a.seen) != 0 || len(b.seen) != 0 {
 		t.Error("a click on the divider was routed to a pane")
 	}
 }
@@ -1067,16 +1070,26 @@ func TestDragOnAPaneThatGoesAwayReachesNobody(t *testing.T) {
 	}
 }
 
-// TestClickOnADividerHoldsNothing checks that a press on a divider,
-// which belongs to no pane, does not take the pointer.
-func TestClickOnADividerHoldsNothing(t *testing.T) {
+// TestClickOnADividerIsHeldByTheSplit checks that a press on a divider,
+// which belongs to no pane, is kept by the split itself. That is what
+// makes the whole drag come back to it.
+func TestClickOnADividerIsHeldByTheSplit(t *testing.T) {
 	a, b := &filler{ch: 'a'}, &filler{ch: 'b'}
-	r := rootOver(NewSplit(Columns, a, b), 11, 2)
+	s := NewSplit(Columns, a, b)
+	r := rootOver(s, 11, 2)
 
-	if handled, _ := r.HandleMouse(pressAt(5, 0)); handled {
-		t.Error("a press on the divider was handled")
+	if handled, _ := r.HandleMouse(pressAt(5, 0)); !handled {
+		t.Error("a press on the divider was not handled")
 	}
-	// With nothing held, the next press goes where it landed.
+	if got := r.Holding(); got != Widget(s) {
+		t.Errorf("the pointer is held by %v, want the split", got)
+	}
+	if len(a.seen) != 0 || len(b.seen) != 0 {
+		t.Error("the press on the divider reached a pane")
+	}
+
+	// And once the button comes up, the next press goes where it landed.
+	r.HandleMouse(releaseAt(5, 0))
 	r.HandleMouse(pressAt(8, 0))
 
 	if len(b.seen) != 1 {
@@ -1197,5 +1210,221 @@ func TestSplitReplaceRefusesADuplicate(t *testing.T) {
 	// Replacing a child with itself is harmless and stays allowed.
 	if !s.Replace(a, a) {
 		t.Error("Replace refused a child with itself")
+	}
+}
+
+// wheelAt is a notch of the wheel, which has a press and no release.
+func wheelAt(col, row int) input.MouseEvent {
+	return input.MouseEvent{Kind: input.MousePress, Button: input.MouseWheelUp, Col: col, Row: row}
+}
+
+// TestSplitDividerCanBeDragged is the whole gesture the user makes:
+// press on the divider, move, let go. Root holds the pointer for the
+// split, so every event comes back to it.
+func TestSplitDividerCanBeDragged(t *testing.T) {
+	a, b := &filler{ch: 'a'}, &filler{ch: 'b'}
+	s := NewSplit(Columns, a, b)
+	r := rootOver(s, 21, 4)
+	if a.size.Cols != 10 || b.size.Cols != 10 {
+		t.Fatalf("the halves start %d and %d wide, want the room shared evenly", a.size.Cols, b.size.Cols)
+	}
+
+	if took, _ := r.HandleMouse(pressAt(10, 1)); !took {
+		t.Fatal("a press on the divider was not taken, so no drag can follow")
+	}
+	r.HandleMouse(moveTo(5, 1))
+
+	if a.size.Cols != 5 || b.size.Cols != 15 {
+		t.Fatalf("the halves are %d and %d wide, want 5 and 15", a.size.Cols, b.size.Cols)
+	}
+	r.HandleMouse(releaseAt(5, 1))
+
+	// And a move once the button is up is nothing to do with the divider.
+	r.HandleMouse(moveTo(17, 1))
+	if a.size.Cols != 5 {
+		t.Fatalf("the first half is %d wide after the button came up, want 5", a.size.Cols)
+	}
+}
+
+// TestSplitDividerDragsTheOtherWayToo checks a split that stacks its
+// children: the row the pointer is on is what moves the divider.
+func TestSplitDividerDragsTheOtherWayToo(t *testing.T) {
+	top, bottom := &filler{ch: 't'}, &filler{ch: 'b'}
+	s := NewSplit(Rows, top, bottom)
+	r := rootOver(s, 8, 21)
+
+	r.HandleMouse(pressAt(3, 10))
+	r.HandleMouse(moveTo(3, 15))
+	r.HandleMouse(releaseAt(3, 15))
+
+	if top.size.Rows != 15 || bottom.size.Rows != 5 {
+		t.Fatalf("the halves are %d and %d rows tall, want 15 and 5", top.size.Rows, bottom.size.Rows)
+	}
+}
+
+// TestSplitDragKeepsACellForEachHalf checks that a divider dragged off
+// the end of the window leaves both panes on screen. A pane squeezed to
+// nothing is one the user cannot get back.
+func TestSplitDragKeepsACellForEachHalf(t *testing.T) {
+	a, b := &filler{ch: 'a'}, &filler{ch: 'b'}
+	s := NewSplit(Columns, a, b)
+	r := rootOver(s, 21, 4)
+
+	r.HandleMouse(pressAt(10, 1))
+	r.HandleMouse(moveTo(-99, 1))
+	if a.size.Cols != 1 || b.size.Cols != 19 {
+		t.Fatalf("dragged off the left the halves are %d and %d wide, want 1 and 19",
+			a.size.Cols, b.size.Cols)
+	}
+	r.HandleMouse(moveTo(999, 1))
+	if a.size.Cols != 19 || b.size.Cols != 1 {
+		t.Fatalf("dragged off the right the halves are %d and %d wide, want 19 and 1",
+			a.size.Cols, b.size.Cols)
+	}
+	// Both are still on screen, so both can be grabbed back.
+	if _, ok := s.ChildArea(a); !ok {
+		t.Error("the first half has nowhere to be drawn")
+	}
+	if _, ok := s.ChildArea(b); !ok {
+		t.Error("the second half has nowhere to be drawn")
+	}
+
+	// The root clamps the pointer into the split's area on the way in.
+	// The weight keeps its own range anyway, for a caller that does not:
+	// it is a share from 0 to 1 whatever point it is handed.
+	s.HandleMouse(moveTo(999, 1))
+	if s.Weight > 1 {
+		t.Errorf("weight = %v, want no more than 1", s.Weight)
+	}
+	s.HandleMouse(moveTo(-99, 1))
+	if s.Weight < 0 {
+		t.Errorf("weight = %v, want no less than 0", s.Weight)
+	}
+}
+
+// TestSplitCancelGestureEndsADrag checks the drag whose release never
+// comes: a dialog opening over the window must not leave the divider
+// stuck to the pointer.
+func TestSplitCancelGestureEndsADrag(t *testing.T) {
+	a, b := &filler{ch: 'a'}, &filler{ch: 'b'}
+	s := NewSplit(Columns, a, b)
+	r := rootOver(s, 21, 4)
+
+	r.HandleMouse(pressAt(10, 1))
+	s.CancelGesture()
+	r.HandleMouse(moveTo(4, 1))
+
+	if s.Weight != 0.5 || a.size.Cols != 10 {
+		t.Fatalf("weight = %v and the first half is %d wide, want the drag to have stopped",
+			s.Weight, a.size.Cols)
+	}
+}
+
+// TestSplitWheelDuringADragDoesNotMoveIt checks that scrolling mid-drag
+// is not read as a move. A notch has no release, so acting on one would
+// put the divider where the pointer is not.
+func TestSplitWheelDuringADragDoesNotMoveIt(t *testing.T) {
+	a, b := &filler{ch: 'a'}, &filler{ch: 'b'}
+	s := NewSplit(Columns, a, b)
+	r := rootOver(s, 21, 4)
+
+	r.HandleMouse(pressAt(10, 1))
+	r.HandleMouse(wheelAt(2, 1))
+
+	if s.Weight != 0.5 || a.size.Cols != 10 {
+		t.Fatalf("weight = %v and the first half is %d wide, want the wheel ignored",
+			s.Weight, a.size.Cols)
+	}
+	// The drag is still on: the notch did not end it either.
+	r.HandleMouse(moveTo(5, 1))
+	if a.size.Cols != 5 {
+		t.Fatalf("the first half is %d wide, want the drag to carry on after the notch", a.size.Cols)
+	}
+}
+
+// TestSplitPressBesideTheDividerStillReachesThePane checks that the
+// handle is the divider and nothing more: the column next to it belongs
+// to the pane.
+func TestSplitPressBesideTheDividerStillReachesThePane(t *testing.T) {
+	a, b := &filler{ch: 'a'}, &filler{ch: 'b'}
+	s := NewSplit(Columns, a, b)
+	r := rootOver(s, 21, 4)
+
+	r.HandleMouse(pressAt(9, 1))
+	r.HandleMouse(moveTo(9, 2))
+	r.HandleMouse(releaseAt(9, 2))
+
+	if got := kindsOf(a); len(got) != 3 {
+		t.Fatalf("the pane beside the divider saw %v, want its press, move and release", got)
+	}
+	if s.Weight != 0.5 {
+		t.Errorf("weight = %v, want a press beside the divider to leave it alone", s.Weight)
+	}
+}
+
+// TestSplitWeightSurvivesReplace checks that swapping a pane keeps the
+// width the user dragged it to. A pane that reconnects should not put
+// the divider back in the middle.
+func TestSplitWeightSurvivesReplace(t *testing.T) {
+	a, b := &filler{ch: 'a'}, &filler{ch: 'b'}
+	s := NewSplit(Columns, a, b)
+	r := rootOver(s, 21, 4)
+
+	r.HandleMouse(pressAt(10, 1))
+	r.HandleMouse(moveTo(5, 1))
+	r.HandleMouse(releaseAt(5, 1))
+	want := s.Weight
+
+	next := &filler{ch: 'c'}
+	if !s.Replace(b, next) {
+		t.Fatal("Replace refused a child that was there")
+	}
+
+	if s.Weight != want {
+		t.Errorf("weight = %v after Replace, want %v", s.Weight, want)
+	}
+	if a.size.Cols != 5 || next.size.Cols != 15 {
+		t.Errorf("the halves are %d and %d wide, want the width the drag left",
+			a.size.Cols, next.size.Cols)
+	}
+}
+
+// TestSplitDragRedrawsBothHalvesAndThenSettles checks the damage a drag
+// makes. Both panes moved, so both are drawn again, and the frame after
+// writes nothing: a divider that is not moving must not repaint the
+// window.
+func TestSplitDragRedrawsBothHalvesAndThenSettles(t *testing.T) {
+	a, b := &filler{ch: 'a'}, &filler{ch: 'b'}
+	s := NewSplit(Columns, a, b)
+	s.DividerFG = fg
+	r := rootOver(s, 21, 4)
+	g := grid.New(21, 4, fg, bg)
+	s.Draw(g.View())
+	g.ClearDirty()
+
+	a.drawn, b.drawn = false, false
+	r.HandleMouse(pressAt(10, 1))
+	r.HandleMouse(moveTo(5, 1))
+	r.HandleMouse(releaseAt(5, 1))
+	s.Draw(g.View())
+
+	if !a.drawn || !b.drawn {
+		t.Fatalf("after the drag a was drawn=%v and b drawn=%v, want both", a.drawn, b.drawn)
+	}
+	if a.size.Cols != 5 || b.size.Cols != 15 {
+		t.Fatalf("the halves are %d and %d wide, want both laid out again", a.size.Cols, b.size.Cols)
+	}
+	if !g.AnyDirty() {
+		t.Fatal("the drag changed the layout and dirtied nothing")
+	}
+	if got := rowOf(g, 0); got != "aaaaa│bbbbbbbbbbbbbbb" {
+		t.Errorf("the row reads %q, want the divider where it was dragged", got)
+	}
+
+	// And an idle frame after it writes nothing.
+	g.ClearDirty()
+	s.Draw(g.View())
+	if g.AnyDirty() {
+		t.Error("an idle frame after the drag dirtied the grid")
 	}
 }

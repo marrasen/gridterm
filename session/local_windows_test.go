@@ -52,6 +52,34 @@ func readUntil(t *testing.T, s Session, want string, timeout time.Duration) stri
 	return buf.String()
 }
 
+// readerSeeing starts the session's one reader and returns a channel that
+// is closed when want has gone by. The reader keeps draining afterwards,
+// because a close with nothing reading leaves the console host nowhere to
+// write its last output.
+func readerSeeing(t *testing.T, s Session, want string) <-chan struct{} {
+	t.Helper()
+	seen := make(chan struct{})
+	go func() {
+		var buf bytes.Buffer
+		told := false
+		b := make([]byte, 4096)
+		for {
+			n, err := s.Read(b)
+			if !told {
+				buf.Write(b[:n])
+				if strings.Contains(buf.String(), want) {
+					close(seen)
+					told = true
+				}
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+	return seen
+}
+
 // shell starts a shell for a test and makes sure it is let go of.
 func shell(t *testing.T, argv ...string) Session {
 	t.Helper()
@@ -181,10 +209,14 @@ func TestTheChildIsReportedGoneBeforeTheReaperCloses(t *testing.T) {
 // takes the hint.
 func TestClosingATabDoesNotWaitOutTheHangupGrace(t *testing.T) {
 	s := shell(t, "cmd.exe")
-	go func() { _, _ = io.Copy(io.Discard, s) }()
-	// Up and running, so the close is the one being timed rather than
-	// the start.
-	readUntil(t, s, ">", budget)
+	// Up and running, so the close is the one being timed rather than the
+	// start. One reader, because Read may not be called concurrently with
+	// itself.
+	select {
+	case <-readerSeeing(t, s, ">"):
+	case <-time.After(budget):
+		t.Fatal("the shell never showed a prompt")
+	}
 
 	start := time.Now()
 	if err := s.Close(); err != nil {
@@ -202,13 +234,59 @@ func TestClosingATabDoesNotWaitOutTheHangupGrace(t *testing.T) {
 // reaches the pipe after the child has already been reaped.
 func TestOutputSurvivesAChildThatExitsImmediatelyOnWindows(t *testing.T) {
 	const want = "hello-from-a-child-that-exits"
-	s := shell(t, "cmd.exe", "/c", "echo "+want)
 
-	got := readUntil(t, s, want, budget)
-	if !strings.Contains(got, want) {
-		t.Fatalf("output = %q, want it to contain %q: the pseudoconsole was "+
-			"closed before it had written the child's last line", got, want)
+	// The line was lost on a race, so one child is not enough to show it
+	// stays. Ten cost about half a second between them.
+	for run := 0; run < 10; run++ {
+		s := shell(t, "cmd.exe", "/c", "echo "+want)
+
+		got := readUntil(t, s, want, budget)
+		if !strings.Contains(got, want) {
+			t.Fatalf("run %d: output = %q, want it to contain %q: the "+
+				"pseudoconsole was closed before it had written the child's "+
+				"last line", run, got, want)
+		}
 	}
+}
+
+// Resizing a session whose child has gone does nothing, rather than
+// reaching for a pseudoconsole that has been freed.
+func TestResizeAfterTheChildHasGoneOnWindows(t *testing.T) {
+	s := shell(t, "cmd.exe", "/c", "exit 0")
+	l := s.(*local)
+
+	// One reader, so the console host has somewhere to put its last output.
+	go func() {
+		b := make([]byte, 4096)
+		for {
+			if _, err := s.Read(b); err != nil {
+				return
+			}
+		}
+	}()
+
+	_ = s.Wait()
+	awaitRelease(t, l)
+
+	if err := s.Resize(100, 40); err != nil {
+		t.Fatalf("Resize after the child had gone: %v", err)
+	}
+}
+
+// awaitRelease waits for the reaper to let go of the terminal.
+func awaitRelease(t *testing.T, l *local) {
+	t.Helper()
+	deadline := time.Now().Add(budget)
+	for time.Now().Before(deadline) {
+		l.ptyMu.RLock()
+		released := l.released
+		l.ptyMu.RUnlock()
+		if released {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("the reaper never let go of the terminal")
 }
 
 // A child that exits without writing anything ends the session rather

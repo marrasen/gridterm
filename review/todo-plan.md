@@ -255,6 +255,12 @@ One commit each, smallest first.
 7. Windows lost output: the reaper waits for the ConPTY to drain,
    bounded, before closing the pseudoconsole when the child exited on
    its own. Tested with `cmd /c echo` on Windows.
+   Done by 1e8ac89 Keep a short-lived command's output on Windows.
+   Not as planned: there is no timer and no bound. `ClosePseudoConsole`
+   is itself the flush signal -- it returns only once the console host
+   has written the child's last output to the pipe and closed its end.
+   So the reaper frees the pseudoconsole and leaves the pipes open, and
+   the pending read drains and then ends on its own.
 
 ## What is not in this plan
 

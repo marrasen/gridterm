@@ -62,7 +62,9 @@ type local struct {
 
 	// ptyMu orders releasing the terminal against resizing it, because on
 	// Windows a resize after the pseudoconsole is freed would use a handle
-	// that no longer exists.
+	// that no longer exists. Read and Write stay outside it: release holds
+	// it while the console host drains, and a reader waiting for the lock
+	// would deadlock the reaper.
 	ptyMu sync.RWMutex
 
 	// released records that the terminal has been let go of, so the close
@@ -127,11 +129,7 @@ func StartLocal(cfg LocalConfig) (Session, error) {
 		if l.detached {
 			return
 		}
-		// Let go of the terminal now the child is gone, so a pending read
-		// drains the child's last output and then ends by itself. Closing
-		// the pty here instead would throw that output away: on Windows a
-		// ConPTY repaints on its own clock, and a child that writes and
-		// exits in the same instant has not been repainted yet.
+		// Let go of the terminal so a pending read drains the last output
 		if !l.release() {
 			// Nothing to let go of, so the only way to unblock a pending
 			// read is to close the pty.
@@ -190,9 +188,8 @@ func (l *local) Wait() error {
 	return l.waitErr
 }
 
-// release lets go of the terminal once the child has been reaped, so a
-// pending read drains the child's last output before it ends. It reports
-// whether it could, and is safe to call more than once.
+// release lets go of the terminal so a pending read drains the child's last
+// output before it ends, and reports whether it could.
 func (l *local) release() bool {
 	l.ptyMu.Lock()
 	defer l.ptyMu.Unlock()
@@ -202,8 +199,8 @@ func (l *local) release() bool {
 	return l.released
 }
 
-// Close hangs the child up and then makes sure it is gone. It does not
-// wait for output: the user closed the tab and is not going to read it.
+// Close hangs the child up and then makes sure it is gone, without waiting
+// for output the user is no longer going to read.
 func (l *local) Close() error {
 	l.closeOnce.Do(func() {
 		// Closing the pty sends the child a hangup. Killing it outright

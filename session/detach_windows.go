@@ -19,13 +19,9 @@ func detachSlave(pty.Pty) bool { return false }
 // pty twice.
 func closeErrIsBenign(error) bool { return false }
 
-// releaseTerminal frees the pseudoconsole, leaving the pipes open, and
-// reports whether it could.
-//
-// ClosePseudoConsole returns only once the console host has written the
-// child's last output to the pipe and closed its end, so a pending read
-// drains that output and then sees the end of the file by itself. Closing
-// the pipes here instead would discard whatever was still buffered.
+// releaseTerminal frees the pseudoconsole, leaving the pipes open so a
+// pending read drains the child's last output, and reports whether the pty
+// was a ConPty.
 func releaseTerminal(p pty.Pty) bool {
 	c, ok := p.(pty.ConPty)
 	if !ok {

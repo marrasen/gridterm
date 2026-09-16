@@ -535,7 +535,8 @@ func (a *app) showServing() error {
 	// than following: a dialog is read and answered, and one that
 	// rewrote itself under the reader would be harder to trust, not
 	// easier.
-	if clients := a.serving.clients(); len(clients) > 0 {
+	clients := a.serving.clients()
+	if len(clients) > 0 {
 		lines = append(lines, "", "Connected now:")
 		for _, c := range clients {
 			lines = append(lines, "  "+c.Name+" from "+c.Addr)
@@ -546,9 +547,31 @@ func (a *app) showServing() error {
 
 	f := a.newConfirm("Serving this window", lines)
 	f.AddButton(ui.Button{Title: "Keep serving"})
+	if len(clients) > 0 {
+		f.AddButton(ui.Button{Title: kickTitle(clients), Do: a.kickOut})
+	}
 	f.AddButton(ui.Button{Title: "Stop serving", Do: a.stopServing})
 	a.showForm(f, nil)
 	return nil
+}
+
+// kickTitle is what the button that hangs up on the connected windows
+// says, naming the one client there is.
+func kickTitle(clients []*serve.Client) string {
+	if len(clients) == 1 {
+		return "Kick " + clients[0].Name + " out"
+	}
+	return "Kick everyone out"
+}
+
+// kickOut hangs up on every window connected right now. The port stays
+// open, so the same person can connect again.
+func (a *app) kickOut() error {
+	var errs []error
+	for _, c := range a.serving.clients() {
+		errs = append(errs, c.Close())
+	}
+	return errors.Join(errs...)
 }
 
 // dropServedRows takes away the rows for the windows that were being

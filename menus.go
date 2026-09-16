@@ -1,10 +1,13 @@
 package main
 
 import (
+	"fmt"
 	"image/color"
 	"slices"
 
+	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/ui"
+	"github.com/marrasen/gridterm/vt"
 )
 
 // newMenubar puts a row of menu titles above the widget tree.
@@ -83,8 +86,47 @@ func (a *app) newMenubar(child ui.Widget) *ui.Menubar {
 		area, _ := a.root.AreaOf(bar)
 		return area
 	}
+	// The status says this window is being served, and pressing it opens
+	// the dialog that says who by and offers to stop.
+	bar.OnStatus = a.showServing
 	return bar
 }
+
+// updateStatus says on the right of the menu bar when this window is
+// being served, and leaves it blank when it is not.
+//
+// Set every frame. The bar draws a status it already had without
+// touching the row, so an unchanged one costs nothing.
+func (a *app) updateStatus() {
+	if a.bar == nil {
+		return
+	}
+	a.bar.Status, a.bar.StatusFG = a.servingStatus()
+}
+
+// servingStatus is what the menu bar says about this window being
+// served, and the colour to say it in. Both are empty when nothing is
+// listening.
+func (a *app) servingStatus() (string, color.RGBA) {
+	if !a.serving.on() {
+		return "", color.RGBA{}
+	}
+	clients := a.serving.clients()
+	if len(clients) == 0 {
+		return "Serving on " + a.serving.addr() + ", nobody connected", statusIdleFG(a.colours)
+	}
+	text := "Controlled by " + clients[0].Name + " from " + clients[0].Addr
+	if more := len(clients) - 1; more > 0 {
+		text += fmt.Sprintf(" and %d more", more)
+	}
+	return text, statusTakenFG(a.colours)
+}
+
+// statusTakenFG is the red the bar says "somebody is working in this
+// window" in, and statusIdleFG the dimmer one for a window that is only
+// listening.
+func statusTakenFG(p vt.Palette) color.RGBA { return p.ANSI[1] }
+func statusIdleFG(p vt.Palette) color.RGBA  { return grid.Blend(p.BG, p.ANSI[1], 2, 3) }
 
 // helpMenu is the menu bar title the key list hangs under. It stays
 // last, so the menus the window adds while it runs go in front of it.

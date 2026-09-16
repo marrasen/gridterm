@@ -355,6 +355,7 @@ func (a *app) Update() error {
 	// be drawn rather than the one before it.
 	a.updatePointer()
 	a.updateTitle()
+	a.updateStatus()
 	return nil
 }
 

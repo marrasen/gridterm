@@ -93,6 +93,14 @@ func (w *fakeWindow) say(text string) {
 	w.changed++
 }
 
+// scrollback sets what a Look of more than the screen gives back, for a
+// test about lines arriving while a wait is on.
+func (w *fakeWindow) scrollback(text string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.history = text
+}
+
 func (w *fakeWindow) takeBack() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -855,8 +863,49 @@ func TestAWaitWhoseLastReadFailsStillAnswers(t *testing.T) {
 func TestAWaitFindsWhatScrolledOffInTheLinesItReads(t *testing.T) {
 	w, _, code := listening(t)
 	w.say("$ ")
-	// On the screen it never appears; in the history it is there.
-	w.history = "Build succeeded\n$ "
+	// A build running, and nothing yet about how it ended.
+	w.scrollback("$ make\ncompiling")
+
+	c, err := Dial(code)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer func() { _ = c.Close() }()
+	pane, err := c.Use(code)
+	if err != nil {
+		t.Fatalf("use: %v", err)
+	}
+
+	// The build ends while the wait is on, and the line saying so never
+	// reaches the screen the wait is watching.
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		w.scrollback("$ make\ncompiling\nBuild succeeded\n$ ")
+	}()
+
+	look, waited, err := c.Wait(pane.ID, 500, Until{Contains: "Build succeeded", TimeoutMS: 400})
+	if err != nil {
+		t.Fatalf("wait: %v", err)
+	}
+	if waited {
+		t.Error("it gave up on something that happened while it was watching")
+	}
+	if !strings.Contains(look.Screen, "Build succeeded") {
+		t.Errorf("it answered with %q", look.Screen)
+	}
+}
+
+// A wait does not find what the pane was already holding when it began.
+//
+// The lines read at the end reach back into what scrolled off long
+// before the agent asked for anything. A wait answered from those is a
+// wait that says a build finished because the last one did.
+func TestAWaitDoesNotFindWhatWasThereBeforeItBegan(t *testing.T) {
+	w, _, code := listening(t)
+	w.say("$ ")
+	// The line is there from a build that finished before this wait, and
+	// a second build is running now.
+	w.scrollback("$ make\nBuild succeeded\n$ make\ncompiling")
 
 	c, err := Dial(code)
 	if err != nil {
@@ -872,10 +921,30 @@ func TestAWaitFindsWhatScrolledOffInTheLinesItReads(t *testing.T) {
 	if err != nil {
 		t.Fatalf("wait: %v", err)
 	}
-	if waited {
-		t.Error("it gave up on something that had already happened")
+	if !waited {
+		t.Error("it says it saw a line that was there before it started watching")
 	}
+	// The lines it read still come back whole: what the pane has kept is
+	// worth reading whether or not the wait was answered by it.
 	if !strings.Contains(look.Screen, "Build succeeded") {
-		t.Errorf("it answered with %q", look.Screen)
+		t.Errorf("it left out what the pane has kept: %q", look.Screen)
+	}
+}
+
+// addedSince is the lines a later reading has that an earlier one did
+// not, however far the pane scrolled in between.
+func TestTheLinesAddedSinceAReadingAreTheNewOnes(t *testing.T) {
+	for _, tc := range []struct {
+		what, was, now, want string
+	}{
+		{"nothing said", "a\nb\nc", "a\nb\nc", ""},
+		{"two lines more", "a\nb\nc", "a\nb\nc\nd\ne", "d\ne"},
+		{"the top scrolled off", "a\nb\nc", "b\nc\nd", "d"},
+		{"all of it scrolled off", "a\nb\nc", "x\ny\nz", "x\ny\nz"},
+		{"the bottom row redrawn", "a\nb\n$ ", "a\nb\n$ ls\nx", "$ ls\nx"},
+	} {
+		if got := addedSince(tc.was, tc.now); got != tc.want {
+			t.Errorf("%s: %q, want %q", tc.what, got, tc.want)
+		}
 	}
 }

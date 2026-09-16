@@ -113,20 +113,30 @@ func TestAWaitIsGivenTheTimeItAskedFor(t *testing.T) {
 // connection.
 //
 // The most a read gives, on the widest pane anybody has, in characters
-// that are several bytes each: an answer the wire refused would leave
+// JSON writes as six bytes each: an answer the wire refused would leave
 // the agent holding nothing but "that window has gone", and the user
-// would have to make a new code.
+// would have to make a new code. It is well over what a request may be,
+// which is the point of the two limits differing.
 func TestABigAnswerReachesTheAgent(t *testing.T) {
 	w, _, code := listening(t)
 
 	var wide strings.Builder
-	for i := 0; i < 2000; i++ {
+	for i := 0; i < MostLines; i++ {
 		if i > 0 {
 			wide.WriteByte('\n')
 		}
-		wide.WriteString(strings.Repeat("\u00e5", 300))
+		// A screenful of XML, where every character is one JSON escapes.
+		wide.WriteString(strings.Repeat("<", 800))
 	}
 	w.say(wide.String())
+	onTheWire, err := json.Marshal(said{Look: &Look{Screen: wide.String()}})
+	if err != nil {
+		t.Fatalf("measure the answer: %v", err)
+	}
+	if len(onTheWire) <= LongestRequest {
+		t.Fatalf("that answer is %d bytes on the wire, which is inside what a request may be",
+			len(onTheWire))
+	}
 
 	c, err := Dial(code)
 	if err != nil {
@@ -138,7 +148,7 @@ func TestABigAnswerReachesTheAgent(t *testing.T) {
 		t.Fatalf("use: %v", err)
 	}
 
-	look, err := c.Read(pane.ID, 2000)
+	look, err := c.Read(pane.ID, MostLines)
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
@@ -147,6 +157,62 @@ func TestABigAnswerReachesTheAgent(t *testing.T) {
 	}
 	if c.Gone() {
 		t.Error("the connection closed over an answer the window meant to send")
+	}
+}
+
+// An answer longer than an answer can be reaches the agent as what went
+// wrong, and not only as a window that has gone.
+//
+// The two are not the same thing to whoever is watching: a window that
+// hung up wants looking at, and one that sent too much is a build of
+// gridterm that disagrees with this one about how big an answer may be.
+func TestAnAnswerTooLongToReadIsSaidInWords(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer func() { _ = conn.Close() }()
+		in := bufio.NewReaderSize(conn, 4096)
+		// The greeting, the question, and then more than one line may
+		// ever carry back.
+		if _, err := readLine(in, LongestRequest); err != nil {
+			return
+		}
+		if err := json.NewEncoder(conn).Encode(said{OK: true}); err != nil {
+			return
+		}
+		if _, err := readLine(in, LongestRequest); err != nil {
+			return
+		}
+		_, _ = conn.Write(append([]byte(strings.Repeat("x", longestAnswer+1)), '\n'))
+	}()
+
+	code, err := NewCode(ln.Addr().(*net.TCPAddr).Port)
+	if err != nil {
+		t.Fatalf("code: %v", err)
+	}
+	c, err := Dial(code)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer func() { _ = c.Close() }()
+
+	if _, err := c.Read("pane-1", 0); err == nil {
+		t.Fatal("an answer longer than the wire allows was read as an answer")
+	} else {
+		if !errors.Is(err, ErrGone) {
+			t.Errorf("it said %v, want it to say the window is no longer answering", err)
+		}
+		if !strings.Contains(err.Error(), "too long to read") {
+			t.Errorf("it said %q, and not what went wrong", err)
+		}
 	}
 }
 

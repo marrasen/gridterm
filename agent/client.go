@@ -123,8 +123,8 @@ func (c *Client) Wait(id string, lines int, until Until) (Look, bool, error) {
 	return *got.Look, got.Waited, nil
 }
 
-// why says which ending this was, keeping what closing the connection
-// said along with it.
+// why says which ending this was, keeping what went wrong and what
+// closing the connection said along with it.
 //
 // A window that ran out of time is not the same as one that hung up, and
 // the two ask the user for different things: wait, or go and look at the
@@ -139,7 +139,12 @@ func why(err, closed error, bound time.Duration, by time.Time) error {
 	if errors.Is(err, os.ErrDeadlineExceeded) || !time.Now().Before(by) {
 		end = fmt.Errorf("%w: it did not answer within %v", ErrGone, bound)
 	}
-	return errors.Join(end, closed)
+	if errors.Is(err, errGone) {
+		// The conversation ending, which end already says, and says in
+		// the words of this side of it.
+		err = nil
+	}
+	return errors.Join(end, err, closed)
 }
 
 // promptly is how long a window has to answer an ordinary question.

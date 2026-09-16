@@ -93,8 +93,9 @@ const (
 // The two differ because what they carry does. A request carries what an
 // agent types, which is a command line and not a file. An answer carries
 // a screen, and has to hold MostLines rows of the widest pane anybody
-// has after JSON escaping: two thousand rows of five hundred columns at
-// six bytes an escaped character is six million.
+// has after JSON escaping: five hundred rows of eight hundred columns at
+// six bytes an escaped character is two and a half million, and the
+// limit leaves room over that.
 const (
 	// LongestRequest caps one request, and is what anything sending
 	// requests has to keep its own messages under.
@@ -435,6 +436,18 @@ func (s *Server) waitFor(want ask) said {
 		upTo = longestWait
 	}
 
+	// What the pane already held, for a wait that will search the lines
+	// it reads at the end. Text that was there before the waiting began
+	// is not what the wait was waiting for.
+	var before string
+	if want.Until.Contains != "" && want.Lines > 0 {
+		was, err := s.cfg.Window.Look(want.Pane, want.Lines)
+		if err != nil {
+			return said{Error: err.Error()}
+		}
+		before = was.Screen
+	}
+
 	deadline := time.Now().Add(upTo)
 	var (
 		last     Look
@@ -454,20 +467,20 @@ func (s *Server) waitFor(want ask) said {
 
 		if want.Until.Contains != "" {
 			if strings.Contains(look.Screen, want.Until.Contains) {
-				return s.ending(want, look, false)
+				return s.ending(want, look, before, false)
 			}
 		} else if now.Sub(lastMove) >= quiet {
-			return s.ending(want, look, false)
+			return s.ending(want, look, before, false)
 		}
 		// A program that has finished says nothing more, so there is
 		// nothing left to wait for whichever way the wait was asked.
 		if look.Gone {
-			return s.ending(want, look, false)
+			return s.ending(want, look, before, false)
 		}
 		// The window is shutting down, so what is on the screen now is
 		// the last thing there will ever be to say about it.
 		if now.After(deadline) || s.isClosed() {
-			return s.ending(want, look, true)
+			return s.ending(want, look, before, true)
 		}
 		time.Sleep(lookEvery)
 	}
@@ -476,7 +489,9 @@ func (s *Server) waitFor(want ask) said {
 // ending is what a wait answers with: the lines the agent asked for,
 // read now that the waiting is over. A wait that asked for no lines
 // answers with the screen it was already watching.
-func (s *Server) ending(want ask, look Look, waited bool) said {
+//
+// before is what those lines held when the waiting began.
+func (s *Server) ending(want ask, look Look, before string, waited bool) said {
 	if want.Lines <= 0 {
 		return said{Look: &look, Waited: waited}
 	}
@@ -490,9 +505,36 @@ func (s *Server) ending(want ask, look Look, waited bool) said {
 		return said{Look: &look, Waited: waited}
 	}
 	// What was waited for may have gone past the top of the screen
-	// between two looks, and the watching only ever sees the screen.
-	if waited && want.Until.Contains != "" && strings.Contains(full.Screen, want.Until.Contains) {
+	// between two looks, and the watching only ever sees the screen. Only
+	// in the lines that arrived while the wait was on: text the pane was
+	// already holding is not something the wait saw happen.
+	if waited && want.Until.Contains != "" &&
+		strings.Contains(addedSince(before, full.Screen), want.Until.Contains) {
 		waited = false
 	}
 	return said{Look: &full, Waited: waited}
+}
+
+// addedSince is the part of a reading of a pane that was not in an
+// earlier reading of the same pane.
+//
+// Both are the last lines of one pane, and a pane only ever grows at the
+// bottom, so the later reading begins with lines the earlier one already
+// had. The longest run of the earlier one's lines that the later one
+// starts with is those, and what follows is new. A run that stops short
+// of the earlier reading's end is its bottom row having been written
+// over, which is new too. Nothing in common means a whole reading's
+// worth has scrolled past and all of it is new.
+func addedSince(was, now string) string {
+	had := strings.Split(was, "\n")
+	has := strings.Split(now, "\n")
+	old := 0
+	for i := range had {
+		n := 0
+		for i+n < len(had) && n < len(has) && had[i+n] == has[n] {
+			n++
+		}
+		old = max(old, n)
+	}
+	return strings.Join(has[old:], "\n")
 }

@@ -26,6 +26,33 @@ each group. A line goes when the work is in and reviewed.
      hand-over survives, the agent listener stays up and the session
      code goes on naming something.
 
+## Questions for Marcus
+
+Kept panes raised three decisions that are his, not mine. Each one is
+written down rather than guessed at.
+
+1. **Nothing caps the panes a window keeps.** A pane holds its whole
+   screen and up to 5000 lines of scrollback, which on a wide window is
+   tens of megabytes. A day of opening and exiting shells leaves them
+   all. The choices: leave it, trim the scrollback when a pane ends, or
+   close the oldest ended pane past some number. Trimming is the one
+   that argues with what was asked for.
+
+2. **The cross means nothing on a pane's row.** It drops the row on a
+   machine, a window, a tunnel and a job. A pane's row has none,
+   deliberately: `clearRow` says the cross must not throw a transcript
+   away. But a pane row's `Close` already closes the pane and the row
+   together, which is what a user wants, and a cross backed by that
+   would be consistent. Today getting rid of one dead pane is a click
+   and a chord, or three clicks with the mouse alone.
+
+3. **The agent's listener never stops while a dead pane keeps its
+   hand-over.** That is the mechanism that fixed the complaint about a
+   rebooted host spending the session code, so it cannot simply be
+   undone. But hand fifty panes over, exit all fifty shells, and the
+   window holds fifty hand-overs and an open loopback port with nothing
+   left to type into.
+
 ## The agent, through MCP
 
 Raised after a debugging session in a handed-over pane.

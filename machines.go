@@ -296,9 +296,6 @@ func (a *app) hold(m *machine, via string) {
 		Close: func() error { return a.dropMachine(m.at.name) },
 	}
 	a.registry.Add(m.entry)
-	// Nothing is parked on a connection this window has only just made, so
-	// what an earlier one under this name was counted for goes.
-	a.serving.relaysEnded(m.at.name)
 	// A machine the window has reached is worth a command of its own,
 	// whether or not it was ever saved.
 	a.refreshServers()
@@ -338,7 +335,7 @@ func (a *app) machineDied(m *machine, why error) {
 	a.machines.drop(m)
 	// The file sessions relayed to it and left parked have ended with the
 	// transport, so the window stops counting them against it.
-	a.serving.relaysEnded(m.at.name)
+	a.serving.relaysEnded(m.conn)
 	// A pane of the file manager on this machine is reading through a
 	// session that has gone. It is taken away here, because nothing else
 	// would: a pane does not end by itself the way a shell does.
@@ -380,7 +377,7 @@ func (a *app) dropMachine(name string) error {
 	a.registry.Drop(m.entry)
 	// Closing the connection ends every file session left parked on it,
 	// so what was counted against the machine goes too.
-	a.serving.relaysEnded(m.at.name)
+	a.serving.relaysEnded(m.conn)
 
 	// The file panes on this machine go first, which cancels the jobs
 	// reading through them and lets go of their sessions once those have

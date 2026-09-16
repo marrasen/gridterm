@@ -75,11 +75,13 @@ type serving struct {
 	came uint64
 
 	// abandoned counts the relayed file sessions parked on each machine
-	// right now, by the name this window holds that machine under. Each
-	// one holds a goroutine and an SSH channel until the machine answers
-	// the close or the connection to it goes, so a machine that stopped
-	// answering is not asked for any more of them.
-	abandoned map[string]int
+	// right now, by the connection they are parked on rather than by the
+	// name it is held under: a rename moves the name and leaves the
+	// relays where they are. Each one holds a goroutine and an SSH
+	// channel until the machine answers the close or the connection to it
+	// goes, so a machine that stopped answering is not asked for any more
+	// of them.
+	abandoned map[*remote.Conn]int
 }
 
 // newServing builds a serving with nothing listening and no rows for
@@ -87,7 +89,7 @@ type serving struct {
 func newServing() *serving {
 	return &serving{
 		rows:      make(map[*serve.Client]*conns.Entry),
-		abandoned: make(map[string]int),
+		abandoned: make(map[*remote.Conn]int),
 	}
 }
 
@@ -100,34 +102,27 @@ func newServing() *serving {
 // them up until that connection is closed.
 const mostAbandonedRelays = 4
 
-// relayAbandoned counts one more file session parked on a machine.
-func (s *serving) relayAbandoned(host string) { s.abandoned[host]++ }
+// relayAbandoned counts one more file session parked on a connection.
+func (s *serving) relayAbandoned(conn *remote.Conn) { s.abandoned[conn]++ }
 
 // relayStopped counts one fewer, for a parked file session that has ended
-// after all. A machine at nothing is forgotten rather than kept at zero.
-func (s *serving) relayStopped(host string) {
-	if n := s.abandoned[host]; n > 1 {
-		s.abandoned[host] = n - 1
+// after all. A connection at nothing is forgotten rather than kept at
+// zero.
+func (s *serving) relayStopped(conn *remote.Conn) {
+	if n := s.abandoned[conn]; n > 1 {
+		s.abandoned[conn] = n - 1
 		return
 	}
-	delete(s.abandoned, host)
+	delete(s.abandoned, conn)
 }
 
-// abandonedRelays is how many file sessions are parked on a machine now.
-func (s *serving) abandonedRelays(host string) int { return s.abandoned[host] }
+// abandonedRelays is how many file sessions are parked on a connection
+// now.
+func (s *serving) abandonedRelays(conn *remote.Conn) int { return s.abandoned[conn] }
 
-// relaysEnded forgets what was parked on a machine, for a connection that
-// has closed or been replaced: neither leaves one of them running.
-func (s *serving) relaysEnded(host string) { delete(s.abandoned, host) }
-
-// relaysRenamed moves what is parked on a machine to the name it is now
-// held under. The relays did not go anywhere; only the name changed.
-func (s *serving) relaysRenamed(was, now string) {
-	if n := s.abandoned[was]; n > 0 {
-		delete(s.abandoned, was)
-		s.abandoned[now] = n
-	}
-}
+// relaysEnded forgets what was parked on a connection that has closed:
+// closing it ends every one of them.
+func (s *serving) relaysEnded(conn *remote.Conn) { delete(s.abandoned, conn) }
 
 // on reports whether the window is being served.
 func (s *serving) on() bool { return s.server != nil }
@@ -659,7 +654,9 @@ func (a *app) kickOut(clients []*serve.Client) error {
 		if live[c] {
 			kicked++
 		}
-		if err := c.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+		// An end of file is a window that has already gone too, which
+		// some transports say that way rather than with net.ErrClosed.
+		if err := c.Close(); err != nil && !errors.Is(err, net.ErrClosed) && !errors.Is(err, io.EOF) {
 			errs = append(errs, err)
 		}
 	}
@@ -820,12 +817,12 @@ func (a *app) relayFiles(client context.Context, host string, ch io.ReadWriteClo
 	case <-time.After(relayGrace):
 		expired = true
 	}
-	a.parkRelay(host, back, expired)
+	a.parkRelay(host, conn, back, expired)
 	return errors.Join(errs...)
 }
 
 // parkRelay leaves the copy from a machine where it is and counts it
-// against that machine until it ends.
+// against the connection it rode on until it ends.
 //
 // A machine that has stopped answering never answers the close, so the
 // copy is left rather than holding open the row for a client that has
@@ -833,12 +830,16 @@ func (a *app) relayFiles(client context.Context, host string, ch io.ReadWriteClo
 // to it closes, and either one takes the count back off: what the count
 // says is how many are parked right now.
 //
+// Counted against the connection rather than the name, because a rename
+// moves the name and leaves the relay where it is. host is what to call
+// the machine in the lines this logs.
+//
 // expired says the grace ran out with the client still there, which is
 // the machine failing to answer rather than a client that walked away,
 // and is what is worth saying in the window.
-func (a *app) parkRelay(host string, back <-chan error, expired bool) {
+func (a *app) parkRelay(host string, conn *remote.Conn, back <-chan error, expired bool) {
 	a.pump.post(func() {
-		a.serving.relayAbandoned(host)
+		a.serving.relayAbandoned(conn)
 		if expired {
 			a.logError(fmt.Errorf("abandoned a file session on %s that did not answer the close;"+
 				" it ends when the connection to it does", host))
@@ -847,7 +848,7 @@ func (a *app) parkRelay(host string, back <-chan error, expired bool) {
 	go func() {
 		fromMachine := <-back
 		a.pump.post(func() {
-			a.serving.relayStopped(host)
+			a.serving.relayStopped(conn)
 			if expired {
 				a.logError(errors.Join(fmt.Errorf(
 					"the file session left parked on %s has ended", host), fromMachine))
@@ -889,7 +890,7 @@ func (a *app) connectionTo(host string) (*remote.Conn, error) {
 				"the window you are reading through is not connected to %s", host)}
 			return
 		}
-		if n := a.serving.abandonedRelays(host); n >= mostAbandonedRelays {
+		if n := a.serving.abandonedRelays(m.conn); n >= mostAbandonedRelays {
 			back <- found{err: fmt.Errorf(
 				"%s has stopped answering; %s file sessions to it are still waiting to end",
 				host, inWords(n))}

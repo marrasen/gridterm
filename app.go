@@ -323,9 +323,7 @@ func (a *app) Update() error {
 	// text has not changed is written with the same value, so an idle
 	// panel leaves its layer alone.
 	a.refreshJobs()
-	for _, err := range a.closes.reported() {
-		a.reportError("Could not let go of a filesystem", err)
-	}
+	a.reportClosed()
 	a.refreshPanel(time.Now())
 	if a.shot != nil {
 		a.shot.update(a)

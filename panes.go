@@ -283,8 +283,11 @@ func (a *app) newSplit(dir ui.Dir, first, second ui.Widget) *ui.Split {
 
 // closeFocused shuts the focused pane and gives its room to whatever
 // shared the split. Closing the last pane closes the window.
+//
+// A file session that ran its own bound out on the way is logged rather
+// than shown: the pane has gone either way.
 func (a *app) closeFocused() error {
-	return a.closePane(ui.FocusedLeaf(a.root.Widget()))
+	return a.graceLogged(a.closePane(ui.FocusedLeaf(a.root.Widget())))
 }
 
 // isPane reports whether a widget is something closePane may take out.

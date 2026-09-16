@@ -893,7 +893,7 @@ func TestAClientThatGoesIsSaidToHaveGoneThoughTheMachineIsWedged(t *testing.T) {
 	}
 	// The copy from margit is left where it is, and counted while it is.
 	waitFor(t, host, "the file session to be counted as parked on margit", func() bool {
-		return host.serving.abandonedRelays("margit") == 1
+		return parkedOn(host, "margit") == 1
 	})
 	// Not called an abandonment, though. The client walked away, and
 	// margit was never given a grace to answer in.
@@ -961,7 +961,7 @@ func TestARelayParkedPastTheGraceIsUncountedWhenTheMachineAnswers(t *testing.T) 
 		t.Fatalf("close the client end: %v", err)
 	}
 	waitFor(t, a, "the file session to be counted as parked on margit", func() bool {
-		return a.serving.abandonedRelays("margit") == 1
+		return parkedOn(a, "margit") == 1
 	})
 	if !a.logged.holds("abandoned a file session on margit") {
 		t.Errorf("nothing said the session was abandoned: %v", a.logged.all())
@@ -972,7 +972,7 @@ func TestARelayParkedPastTheGraceIsUncountedWhenTheMachineAnswers(t *testing.T) 
 	relay.resume()
 
 	waitFor(t, a, "the parked file session to be uncounted", func() bool {
-		return a.serving.abandonedRelays("margit") == 0
+		return parkedOn(a, "margit") == 0
 	})
 	if !a.logged.holds("the file session left parked on margit has ended") {
 		t.Errorf("nothing said the parked session ended: %v", a.logged.all())
@@ -999,7 +999,7 @@ func TestAMachineThatConnectsAgainStartsFromNothing(t *testing.T) {
 		t.Fatalf("close the client end: %v", err)
 	}
 	waitFor(t, a, "the file session to be counted as parked on margit", func() bool {
-		return a.serving.abandonedRelays("margit") == 1
+		return parkedOn(a, "margit") == 1
 	})
 
 	// The window loses the connection with nothing clearing the count,
@@ -1011,7 +1011,7 @@ func TestAMachineThatConnectsAgainStartsFromNothing(t *testing.T) {
 	a.connectAs("margit", serverConfig(t, second))
 	waitFor(t, a, "margit to answer again", func() bool { return a.machines.named("margit") != nil })
 
-	if got := a.serving.abandonedRelays("margit"); got != 0 {
+	if got := parkedOn(a, "margit"); got != 0 {
 		t.Errorf("%d file sessions are counted against margit, want none:"+
 			" nothing is parked on the connection it has now", got)
 	}
@@ -1076,7 +1076,7 @@ func TestAFileChannelThatClosesWaitsForTheWedgedMachine(t *testing.T) {
 // bound a client whose panes keep landing on a dead machine piles them
 // up.
 func TestAMachineWithTooManyParkedFileSessionsIsRefusedTheNext(t *testing.T) {
-	host, client, addr, _, _ := aWedgedRelay(t, mostAbandonedRelays)
+	host, client, addr, relay, _ := aWedgedRelay(t, mostAbandonedRelays)
 	held := windowAt(t, client, addr)
 
 	// The panes go and the window stays, so each file channel closes with
@@ -1086,7 +1086,7 @@ func TestAMachineWithTooManyParkedFileSessionsIsRefusedTheNext(t *testing.T) {
 		t.Fatalf("closing the panes on margit: %v", err)
 	}
 	waitFor(t, host, "every relay to be parked on margit", func() bool {
-		return host.serving.abandonedRelays("margit") == mostAbandonedRelays
+		return parkedOn(host, "margit") == mostAbandonedRelays
 	}, client)
 
 	// The next one is turned away before anything is opened, and what
@@ -1112,19 +1112,113 @@ func TestAMachineWithTooManyParkedFileSessionsIsRefusedTheNext(t *testing.T) {
 	}
 	host.renamedMachine("margit", remote.Host{Name: "margit2",
 		Address: was.at.cfg.Host, Port: was.at.cfg.Port, User: was.at.cfg.User})
-	if got := host.serving.abandonedRelays("margit2"); got != mostAbandonedRelays {
+	if got := parkedOn(host, "margit2"); got != mostAbandonedRelays {
 		t.Errorf("after the rename %d file sessions are counted against it, want %d",
 			got, mostAbandonedRelays)
 	}
 
-	// Closing the connection ends all of them, so the count goes with it
-	// and the machine can be asked again.
-	if err := host.dropMachine("margit2"); err != nil {
+	// And the machine comes back under the name it has now. Every parked
+	// relay ends, the count goes to nothing, and the machine is one to ask
+	// again: the relays are counted against the connection, which the
+	// rename did not touch, so ending them takes the count off the machine
+	// the user is looking at.
+	relay.resume()
+	waitFor(t, host, "the parked file sessions on margit2 to end", func() bool {
+		return parkedOn(host, "margit2") == 0
+	}, client)
+	if host.machines.named("margit2") == nil {
+		t.Error("margit2 is no longer connected")
+	}
+}
+
+// A file session parked on a connection that is gone leaves the count of
+// the connection holding that name now alone.
+//
+// The window can hold a machine under a name, lose it, and answer under
+// that name again while the first connection's relays are still parked.
+// Counted by name, the old one ending took the new one's count with it,
+// and a machine answering perfectly well was refused the file session
+// after that.
+func TestAParkedRelayFromAnOldConnectionLeavesTheNewCountAlone(t *testing.T) {
+	a, first := aRelayedMachine(t)
+	old := a.machines.named("margit")
+	if old == nil {
+		t.Fatal("margit is not connected")
+	}
+
+	// One parked on the connection this window has now: margit stops
+	// answering and the client's end closes, so the grace runs out.
+	gone, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ours, _ := relayToMargit(t, a, gone)
+	waitFor(t, a, "margit to be serving the relay", func() bool {
+		return first.server.SFTPs() == 1
+	})
+	first.stop()
+	if err := ours.Close(); err != nil {
+		t.Fatalf("close the client end: %v", err)
+	}
+	waitFor(t, a, "the file session to be counted as parked on margit", func() bool {
+		return parkedOn(a, "margit") == 1
+	})
+
+	// The window loses the connection while that relay is still parked on
+	// it, and another machine answers under the same name.
+	a.machines.drop(old)
+	second := sshtest.New(t)
+	other := newBlackHole(t, second.Addr())
+	other.server = second
+	cfg := serverConfig(t, second)
+	cfg.Host, cfg.Port = other.host, other.port
+	a.connectAs("margit", cfg)
+	waitFor(t, a, "margit to answer again", func() bool {
+		m := a.machines.named("margit")
+		return m != nil && m != old
+	})
+	now := a.machines.named("margit")
+
+	// One parked on the new connection, the same way.
+	theirs, _ := relayToMargit(t, a, gone)
+	waitFor(t, a, "the new margit to be serving the relay", func() bool {
+		return second.SFTPs() == 1
+	})
+	other.stop()
+	if err := theirs.Close(); err != nil {
+		t.Fatalf("close the client end: %v", err)
+	}
+	waitFor(t, a, "the file session to be counted as parked on the new margit", func() bool {
+		return a.serving.abandonedRelays(now.conn) == 1
+	})
+
+	// The old connection's relay ends at last. It was never the new
+	// connection's, so the new connection is still holding the one it has.
+	first.resume()
+	waitFor(t, a, "the old connection's parked relay to end", func() bool {
+		return a.serving.abandonedRelays(old.conn) == 0
+	})
+	if got := a.serving.abandonedRelays(now.conn); got != 1 {
+		t.Errorf("%d file sessions are counted against the connection margit has now, want the one"+
+			" parked on it: a relay parked on the connection before it took the count with it", got)
+	}
+
+	// And closing that connection ends the one parked on it, so the count
+	// goes with it.
+	if err := a.dropMachine("margit"); err != nil {
 		t.Fatalf("let go of margit: %v", err)
 	}
-	if got := host.serving.abandonedRelays("margit2"); got != 0 {
-		t.Errorf("%d file sessions are still counted against margit", got)
+	if got := a.serving.abandonedRelays(now.conn); got != 0 {
+		t.Errorf("%d file sessions are still counted against a connection that has been closed", got)
 	}
+}
+
+// parkedOn is how many relayed file sessions are parked on the connection
+// a window holds a machine under now.
+func parkedOn(a *testApp, host string) int {
+	m := a.machines.named(host)
+	if m == nil {
+		return 0
+	}
+	return a.serving.abandonedRelays(m.conn)
 }
 
 // aRelayedMachine is a window connected to a test machine through a relay

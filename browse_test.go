@@ -1,6 +1,8 @@
 package main
 
 import (
+	"errors"
+	"fmt"
 	"image/color"
 	"io"
 	"os"
@@ -15,6 +17,8 @@ import (
 	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/input"
 	"github.com/marrasen/gridterm/internal/sshtest"
+	"github.com/marrasen/gridterm/jobs"
+	"github.com/marrasen/gridterm/meter"
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/files"
@@ -1493,6 +1497,164 @@ func TestLettingGoOfAWindowWhoseLinkIsDeadComesBack(t *testing.T) {
 	if client.windows.named(addr) != nil {
 		t.Error("the window is still held")
 	}
+}
+
+// Closing the focused pane with the close-pane key says nothing to the
+// user when its file session only ran the grace out.
+//
+// Ctrl+Shift+W and the File menu both come here, and it is the commonest
+// way a file pane goes. The grace is one round trip on the goroutine that
+// draws, which a slow link runs out with nothing wrong, so a notice about
+// it is a notice the user can do nothing with.
+func TestClosingTheFocusedPaneSaysNothingAboutTheGrace(t *testing.T) {
+	client, _, relay := aRelayedWindow(t)
+	pane := onlyFilePane(t, client)
+
+	// The link goes quiet for longer than the grace and then comes back,
+	// which is the slow round trip the grace really catches.
+	relay.stop()
+	time.AfterFunc(2*filesGrace, relay.resume)
+
+	client.focus(pane)
+	if err := client.closeFocused(); err != nil {
+		t.Fatalf("closing the focused pane reported %v", err)
+	}
+	if n, up := client.root.Modal().(*ui.Notice); up {
+		t.Errorf("closing the pane reported %q: %s", n.Title, n.Message())
+	}
+	if !client.logged.holds(errFilesGraceExpired.Error()) {
+		t.Errorf("nothing was logged about the goodbye going unanswered: %v", client.logged.all())
+	}
+	// And the pane has gone, which is what the key is for.
+	if client.files != nil {
+		t.Errorf("the pane is still open: %v", filesRows(client))
+	}
+}
+
+// The cross on a pane's row says nothing about the grace either.
+func TestTheCrossOnAFilePaneSaysNothingAboutTheGrace(t *testing.T) {
+	client, _, relay := aRelayedWindow(t)
+	pane := onlyFilePane(t, client)
+	row := client.files.rows[pane]
+	if row == nil || row.Close == nil {
+		t.Fatal("the pane has no row to close from")
+	}
+
+	relay.stop()
+	time.AfterFunc(2*filesGrace, relay.resume)
+
+	if err := row.Close(); err != nil {
+		t.Fatalf("the cross on the row reported %v", err)
+	}
+	if n, up := client.root.Modal().(*ui.Notice); up {
+		t.Errorf("the cross reported %q: %s", n.Title, n.Message())
+	}
+	if !client.logged.holds(errFilesGraceExpired.Error()) {
+		t.Errorf("nothing was logged about the goodbye going unanswered: %v", client.logged.all())
+	}
+	if client.files != nil {
+		t.Errorf("the pane is still open: %v", filesRows(client))
+	}
+}
+
+// A filesystem let go of on a goroutine of its own says nothing about the
+// grace when the frame picks its failure up.
+//
+// A pane a job was reading through is closed elsewhere, so what that
+// close reported reaches the user a frame or more later. It is the same
+// grace either way.
+func TestACloseInTheBackgroundSaysNothingAboutTheGrace(t *testing.T) {
+	client, _, relay := aRelayedWindow(t)
+	pane := onlyFilePane(t, client)
+
+	// A job of the pane's that has already finished, which is what sends
+	// the close off this goroutine: the window waits for the job before
+	// it lets go of what the job was reading.
+	finishedJobOn(t, client, pane.FS())
+
+	relay.stop()
+	time.AfterFunc(2*filesGrace, relay.resume)
+	if err := client.closePane(pane); err != nil {
+		t.Fatalf("closing the pane reported %v", err)
+	}
+
+	// The frames go on coming, and one of them picks the close up.
+	waitFor(t, client, "the background close to be picked up", func() bool {
+		client.reportClosed()
+		return client.logged.holds(errFilesGraceExpired.Error())
+	})
+	if n, up := client.root.Modal().(*ui.Notice); up {
+		t.Errorf("letting go in the background reported %q: %s", n.Title, n.Message())
+	}
+}
+
+// A failure carrying a grace and real trouble together is still shown.
+//
+// Only the grace is quiet. A close that ran its bound out and also failed
+// for a reason of its own is a failure the user can act on, and the words
+// around it say what was being closed.
+func TestAGraceAlongsideRealTroubleIsStillShown(t *testing.T) {
+	boom := errors.New("the session would not close")
+
+	t.Run("joined", func(t *testing.T) {
+		expired, rest := splitGraceExpired(errors.Join(errFilesGraceExpired, boom))
+		if !errors.Is(expired, errFilesGraceExpired) {
+			t.Errorf("the grace was not taken out to be logged: %v", expired)
+		}
+		if !errors.Is(rest, boom) {
+			t.Errorf("the real failure was hidden: %v", rest)
+		}
+	})
+
+	// The way a close in the background reports it: the join is wrapped in
+	// the words saying what was being closed.
+	t.Run("wrapped", func(t *testing.T) {
+		err := fmt.Errorf("could not close margit: %w", errors.Join(errFilesGraceExpired, boom))
+		expired, rest := splitGraceExpired(err)
+		if !errors.Is(rest, boom) {
+			t.Errorf("the real failure was hidden: expired %v, shown %v", expired, rest)
+		}
+		if rest != nil && !strings.Contains(rest.Error(), "could not close margit") {
+			t.Errorf("what is shown lost the words saying what was closed: %v", rest)
+		}
+	})
+
+	// And a wrap carrying nothing but the grace is still quiet.
+	t.Run("wrapped grace alone", func(t *testing.T) {
+		err := fmt.Errorf("could not close margit: %w", errors.Join(errFilesGraceExpired, nil))
+		expired, rest := splitGraceExpired(err)
+		if rest != nil {
+			t.Errorf("a close that only ran the grace out was shown: %v", rest)
+		}
+		if !errors.Is(expired, errFilesGraceExpired) {
+			t.Errorf("the grace was not logged: %v", expired)
+		}
+	})
+}
+
+// finishedJobOn leaves a job that has already stopped on the window's
+// list, against a filesystem.
+//
+// A filesystem with a job on it is let go of on a goroutine of its own,
+// which is the path this is for. The job has finished, so that goroutine
+// has nothing to wait for.
+func finishedJobOn(t *testing.T, a *testApp, f vfs.FS) {
+	t.Helper()
+	count := meter.New()
+	e := &conns.Entry{Host: conns.Local, Kind: conns.Files, Meter: count}
+	j := a.queue.Start(a.ctx, jobs.Op{
+		Kind: jobs.Delete, From: f, At: "/", Names: []string{"no-such-file"},
+	}, jobs.Options{Count: count})
+	a.jobs[e] = j
+	a.registry.Add(e)
+	waitFor(t, a, "the job to finish", func() bool {
+		select {
+		case <-j.Done():
+			return true
+		default:
+			return false
+		}
+	})
 }
 
 // The question before a delete names the machine the files are really

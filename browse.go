@@ -285,7 +285,9 @@ func (a *app) browserRow(p *files.Pane, host string) *conns.Entry {
 		Kind:   conns.Files,
 		Label:  p.At(),
 		Reveal: func() { a.focus(p) },
-		Close:  func() error { return a.closePane(p) },
+		// The grace is logged rather than shown here too: the cross took
+		// the pane away whichever way its session closed.
+		Close: func() error { return a.graceLogged(a.closePane(p)) },
 	}
 }
 
@@ -977,6 +979,20 @@ func (a *app) releaseFS(f vfs.FS) error {
 	return nil
 }
 
+// reportClosed shows what the filesystems let go of on goroutines of
+// their own reported, once each.
+//
+// A close that only ran a bound of its own out is logged instead, the way
+// one on the goroutine that draws is: there is nothing on a notice about
+// it for the user to do.
+func (a *app) reportClosed() {
+	for _, err := range a.closes.reported() {
+		if err := a.graceLogged(err); err != nil {
+			a.reportError("Could not let go of a filesystem", err)
+		}
+	}
+}
+
 // stopJobsOn gives up on the jobs using any of these filesystems, and
 // hands them back so a caller can wait for them to stop.
 func (a *app) stopJobsOn(on ...vfs.FS) []*jobs.Job {
@@ -1135,19 +1151,30 @@ func (a *app) graceLogged(err error) error {
 
 // splitGraceExpired splits a failure into the parts about a file session
 // that ran out its bound and everything else, looking inside a joined
-// error.
+// error and inside a wrapping one.
+//
+// A wrap carrying a grace and real trouble together is left whole and
+// shown: the words around it say what was being closed, and a failure
+// the user can act on is in there.
 func splitGraceExpired(err error) (expired, rest error) {
 	if err == nil {
 		return nil, nil
 	}
-	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+	switch under := err.(type) {
+	case interface{ Unwrap() []error }:
 		var expireds, rests []error
-		for _, one := range joined.Unwrap() {
+		for _, one := range under.Unwrap() {
 			was, other := splitGraceExpired(one)
 			expireds = append(expireds, was)
 			rests = append(rests, other)
 		}
 		return errors.Join(expireds...), errors.Join(rests...)
+	case interface{ Unwrap() error }:
+		was, other := splitGraceExpired(under.Unwrap())
+		if was != nil && other == nil {
+			return err, nil
+		}
+		return nil, err
 	}
 	if errors.Is(err, errFilesGraceExpired) || errors.Is(err, errFilesCloseAbandoned) ||
 		errors.Is(err, remote.ErrCloseAbandoned) {

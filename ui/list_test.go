@@ -789,6 +789,78 @@ func columnOf(row, want string) int {
 	return len([]rune(row[:at]))
 }
 
+// An icon is drawn in its own colour, which is how one mark says what a
+// row is and what state it is in at once.
+func TestListDrawsAnIconInItsOwnColour(t *testing.T) {
+	green := color.RGBA{R: 0, G: 200, B: 0, A: 255}
+	l := newTestList(t, []ListRow{
+		{Text: "margit", Header: true, Key: 1},
+		{Text: "vim", Depth: 1, Icon: grid.Icon(grid.IconTerminal), IconFG: green, Key: 2},
+		{Text: "scp", Depth: 1, Icon: grid.Icon(grid.IconFiles), Key: 3},
+	}, 30, 4)
+	l.SetFocus(false)
+	g := drawList(l, 30, 4)
+
+	if got := g.At(2, 1).FG; got != green {
+		t.Fatalf("the icon is drawn in %v, want the colour the row gave it", got)
+	}
+	// The blank after it is not the icon, so the colour ends with the
+	// picture.
+	if got := g.At(3, 1).FG; got == green {
+		t.Fatal("the blank after the icon took the icon's colour")
+	}
+	// A row that gave no colour draws its icon in the row's own.
+	if got := g.At(2, 2).FG; got != fg {
+		t.Fatalf("an icon with no colour is drawn in %v, want the row's %v", got, fg)
+	}
+}
+
+// A colour picked to stand out against the other rows can disappear
+// against the selected one, so the selected row draws its icon in
+// whatever it writes its text in.
+func TestListWashesTheIconOnTheSelectedRow(t *testing.T) {
+	green := color.RGBA{R: 0, G: 200, B: 0, A: 255}
+	l := newTestList(t, []ListRow{
+		{Text: "margit", Header: true, Key: 1},
+		{Text: "vim", Depth: 1, Icon: grid.Icon(grid.IconTerminal), IconFG: green, Key: 2},
+	}, 30, 4)
+	l.SetFocus(true)
+	if l.SelectedIndex() != 1 {
+		t.Fatalf("row %d is selected, want the one with the icon", l.SelectedIndex())
+	}
+	g := drawList(l, 30, 4)
+
+	if got := g.At(2, 1).FG; got != l.Style.SelectedFG {
+		t.Fatalf("the icon on the selected row is %v, want the row's own %v",
+			got, l.Style.SelectedFG)
+	}
+	// And without the keys it keeps its colour: the wash is about the
+	// selected row's ground, not about the selection.
+	l.SetFocus(false)
+	g = drawList(l, 30, 4)
+	if got := g.At(2, 1).FG; got != green {
+		t.Fatalf("the icon is %v once the list has lost the keys, want %v", got, green)
+	}
+}
+
+// A frame where nothing moved leaves the layer alone, marks and icons
+// included: a row that dirties itself every frame is a window that
+// redraws sixty times a second with nothing happening.
+func TestListWithMarksDoesNotDirtyAnIdleFrame(t *testing.T) {
+	green := color.RGBA{R: 0, G: 200, B: 0, A: 255}
+	l := newTestList(t, []ListRow{
+		{Text: "margit", Header: true, Mark: '•', MarkFG: green, Depth: 1, Key: 1},
+		{Text: "vim", Depth: 1, Icon: grid.Icon(grid.IconTerminal), IconFG: green, Key: 2},
+	}, 30, 4)
+	g := grid.New(30, 4, color.RGBA{}, color.RGBA{})
+	l.Draw(g.View())
+	g.ClearDirty()
+	l.Draw(g.View())
+	if g.AnyDirty() {
+		t.Fatal("drawing an unchanged list dirtied the layer")
+	}
+}
+
 // A list too narrow for an icon and a word draws the word.
 func TestListWithNoRoomForAnIcon(t *testing.T) {
 	l := newTestList(t, []ListRow{

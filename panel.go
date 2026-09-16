@@ -22,20 +22,10 @@ import (
 // panelWidth is how wide the connections panel starts.
 const panelWidth = 26
 
-// dot is the mark in front of a row, saying what state it is in: a
-// bullet rather than a word, because the word was the widest thing on
-// most rows and said the least.
+// dot is the mark in front of a machine's heading, saying what state its
+// connection is in. A heading has no kind icon to colour instead, because
+// a machine is not a kind of connection.
 const dot = '\u2022'
-
-// The icon in front of a connection, in place of the word for what kind
-// it is. "Terminal" and "Files" were the widest thing on most rows and
-// said the same thing on every one of them.
-const (
-	terminalIcon = '$'      // a shell prompt
-	commandIcon  = '\u25b8' // something that was run
-	filesIcon    = '\u25a4' // a listing
-	tunnelIcon   = '\u21c4' // going both ways
-)
 
 // icon is the little picture that stands for a kind of connection.
 func icon(k conns.Kind) grid.Art {
@@ -82,8 +72,8 @@ func (a *app) newPanel() *ui.List {
 	// to say which one is being looked at.
 	l.Style.CurrentFG = a.colours.FG
 	// Lifted off the list's own ground rather than the window's
-	// selection colour, so it stays darker than any dot drawn on it: the
-	// dot is what says whether the connection is open.
+	// selection colour, so it stays darker than the mark drawn on it:
+	// the mark is what says whether the connection is open.
 	l.Style.CurrentBG = grid.Blend(a.colours.BG, a.colours.FG, 1, 6)
 	// A little air around each machine's name, so it reads as a heading
 	// for the rows under it rather than as another row. A quarter of a
@@ -95,19 +85,19 @@ func (a *app) newPanel() *ui.List {
 	return l
 }
 
-// mark is the dot in front of a row and the colour it is drawn in.
+// stateFG is the colour of the mark in front of a row.
 //
 // Green for something that is there, brightening and dimming while bytes
 // are going past, and grey once it has finished.
-func (a *app) mark(state meter.State, now time.Time) (rune, color.RGBA) {
+func (a *app) stateFG(state meter.State, now time.Time) color.RGBA {
 	green := a.colours.ANSI[2]
 	switch state {
 	case meter.Closed:
-		return dot, a.colours.ANSI[8]
+		return a.colours.ANSI[8]
 	case meter.Active:
-		return dot, pulse(green, a.colours.ANSI[10], now)
+		return pulse(green, a.colours.ANSI[10], now)
 	}
-	return dot, green
+	return green
 }
 
 // pulse moves between two colours in steps, resting on neither.
@@ -115,7 +105,7 @@ func (a *app) mark(state meter.State, now time.Time) (rune, color.RGBA) {
 // The step comes from the time passed in rather than from a count, so
 // every row pulsing at once is in time with the rest and a row that
 // stops being busy simply stops moving. It never reaches either end: a
-// dot resting on the steady colour could not be told from a row that is
+// mark resting on the steady colour could not be told from a row that is
 // only sitting there.
 func pulse(from, to color.RGBA, now time.Time) color.RGBA {
 	// A triangle: up the steps and back down them.
@@ -148,6 +138,18 @@ func (a *app) newSidebar() *sidebar {
 	// it.
 	s.BG = a.panel.Style.BGEnd
 	return s
+}
+
+// newDock puts the sidebar beside the rest of the window.
+//
+// The divider has no colour, so the column between the two is blank: a
+// line there read as a bar between the sidebar and the panes rather than
+// as the edge of either. The column stays because it is the drag handle.
+func (a *app) newDock(rest ui.Widget) *ui.Dock {
+	d := ui.NewDock(panelWidth, a.side, rest)
+	d.DividerFG = color.RGBA{}
+	d.DividerBG = a.colours.BG
+	return d
 }
 
 // revealRow puts whatever a row names in front of the user.
@@ -363,7 +365,7 @@ func (a *app) hostRow(on hostFacts, now time.Time) ui.ListRow {
 		return row
 	}
 	state := e.State(now)
-	row.Mark, row.MarkFG = a.mark(state, now)
+	row.Mark, row.MarkFG = dot, a.stateFG(state, now)
 	row.Note = a.note(conns.Row{Entry: e, State: state}, now)
 	return row
 }
@@ -447,8 +449,12 @@ func (a *app) panelRow(row conns.Row, now time.Time) ui.ListRow {
 	out := ui.ListRow{
 		Text: row.Label, Depth: 1, Key: row.Entry,
 		Note: a.note(row, now), Icon: icon(row.Kind),
+		// The kind icon in the colour the dot had, so one mark says both
+		// what the connection is and what state it is in. No dot beside
+		// it: the column it would have taken stays blank, so the text
+		// does not shift.
+		IconFG: a.stateFG(row.State, now),
 	}
-	out.Mark, out.MarkFG = a.mark(row.State, now)
 	out.Art = a.graph(row.Entry)
 	if row.State == meter.Closed {
 		// A finished connection reads as finished rather than as one
@@ -460,7 +466,7 @@ func (a *app) panelRow(row conns.Row, now time.Time) ui.ListRow {
 
 // note is what a row says at its end.
 //
-// What state it is in is the dot's business, and how busy it is the
+// What state it is in is the mark's business, and how busy it is the
 // graph's. The note is for what neither can say: a count of streams, the
 // machine a connection is reached through, how far a job has got.
 func (a *app) note(row conns.Row, now time.Time) string {

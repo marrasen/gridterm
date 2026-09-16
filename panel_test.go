@@ -26,7 +26,7 @@ func withPanel(t *testing.T, a *testApp) {
 	t.Helper()
 	a.panel = a.newPanel()
 	a.side = a.newSidebar()
-	a.dock = ui.NewDock(panelWidth, a.side, a.root.Widget())
+	a.dock = a.newDock(a.root.Widget())
 	a.sideRegion = newRegion(a.side, grid.New(0, 0, a.colours.FG, a.colours.BG), &a.sideGeo)
 	a.dock.PanelElsewhere = true
 	a.root.SetWidget(a.dock)
@@ -127,15 +127,16 @@ func panelText(a *testApp, now time.Time) []string {
 	return out
 }
 
-// panelMarks returns the colour of the dot in front of each connection,
-// for the rows that have one. A machine's heading is left out: its dot
-// is about the connection rather than about anything running on it.
+// panelMarks returns the colour of the mark in front of each connection,
+// which is its kind icon. A machine's heading is left out: it carries a
+// dot rather than an icon, and it is about the connection rather than
+// about anything running on it.
 func panelMarks(a *testApp, now time.Time) []color.RGBA {
 	a.refreshPanel(now)
 	var out []color.RGBA
 	for _, row := range a.panel.Rows() {
-		if !row.Header && row.Mark != 0 {
-			out = append(out, row.MarkFG)
+		if !row.Header && row.Icon.Kind != grid.ArtNone {
+			out = append(out, row.IconFG)
 		}
 	}
 	return out
@@ -184,7 +185,7 @@ func TestPanelShowsTheFourStates(t *testing.T) {
 		t.Fatalf("a row with nothing moved is %v, want the green of something that is there", got)
 	}
 
-	// While bytes are going past the dot brightens and dims, so it is
+	// While bytes are going past the mark brightens and dims, so it is
 	// green but not the steady green of a row that is only there.
 	e.Meter.Moved(64, 0, panelNow)
 	busy := panelMarks(a, panelNow)[0]
@@ -199,7 +200,7 @@ func TestPanelShowsTheFourStates(t *testing.T) {
 		}
 	}
 	if !moved {
-		t.Fatal("the dot does not move while bytes are going past")
+		t.Fatal("the mark does not move while bytes are going past")
 	}
 
 	// Nothing is told to change it: the same panel, asked about a later
@@ -215,8 +216,176 @@ func TestPanelShowsTheFourStates(t *testing.T) {
 	}
 }
 
-// What a row is doing is the dot's business, so the words beside it are
-// only what the dot cannot say.
+// A connection's row draws its kind icon in the colour the state dot had,
+// and no dot beside it: one mark says both what the connection is and
+// whether it is open.
+func TestAConnectionRowShowsItsKindInTheStateColour(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	e := onlyPane(t, a)
+	// The keys are in the pane, not the sidebar, so nothing washes the
+	// mark to the row's own colour.
+	a.panel.SetFocus(false)
+
+	at := windowCell(a)
+	iconAt := func(now time.Time) grid.Cell {
+		a.refreshPanel(now)
+		paint(a)
+		area, shown := sideArea(a)
+		if !shown {
+			t.Fatal("the sidebar is not on screen")
+		}
+		// The heading is row 0 and the shell under it is row 1. The icon
+		// goes where the text would start, two columns in.
+		return at(area.X+2, area.Y+1)
+	}
+
+	settled := iconAt(panelNow.Add(meter.Settle))
+	if settled.Art != grid.Icon(grid.IconTerminal) {
+		t.Fatalf("the row carries %v, want the terminal icon", settled.Art)
+	}
+	if want := a.colours.ANSI[2]; settled.FG != want {
+		t.Fatalf("the icon is %v, want the green of something that is there", settled.FG)
+	}
+
+	// And nothing is drawn in the column the dot used to have.
+	area, _ := sideArea(a)
+	if got := at(area.X, area.Y+1).Rune; got == dot {
+		t.Fatal("the row still draws a dot beside its icon")
+	}
+
+	e.Meter.Close()
+	closed := iconAt(panelNow.Add(meter.Settle))
+	if closed.Art != grid.Icon(grid.IconTerminal) {
+		t.Fatalf("a finished row carries %v, want the terminal icon still", closed.Art)
+	}
+	if want := a.colours.ANSI[8]; closed.FG != want {
+		t.Fatalf("a finished row's icon is %v, want grey", closed.FG)
+	}
+}
+
+// The pulse moves the active row's icon and nothing else on the sidebar.
+//
+// A row that changes colour every frame is a row that dirties itself
+// every frame, and the pulse is the one place that is wanted.
+func TestThePulseMovesOnlyTheActiveRowsIcon(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	if err := a.openTab(); err != nil {
+		t.Fatalf("openTab: %v", err)
+	}
+	a.panel.SetFocus(false)
+	busy := a.panes[a.focusedTerminal()]
+	busy.Meter.Moved(64, 0, panelNow)
+
+	a.refreshPanel(panelNow)
+	var row = -1
+	for i, r := range a.panel.Rows() {
+		if r.Key == any(busy) {
+			row = i
+		}
+	}
+	if row < 0 {
+		t.Fatalf("no row for the busy connection: %v", panelText(a, panelNow))
+	}
+
+	at := windowCell(a)
+	// What the cell looks like, which is all this compares: a grid.Cell
+	// carries a slice and cannot be compared with ==.
+	type look struct {
+		rune   rune
+		fg, bg color.RGBA
+		attr   grid.Attr
+		art    grid.Art
+	}
+	snap := func(now time.Time) map[[2]int]look {
+		a.refreshPanel(now)
+		paint(a)
+		area, shown := sideArea(a)
+		if !shown {
+			t.Fatal("the sidebar is not on screen")
+		}
+		out := map[[2]int]look{}
+		for y := area.Y; y < area.Y+area.Rows; y++ {
+			for x := area.X; x < area.X+area.Cols; x++ {
+				c := at(x, y)
+				out[[2]int{x, y}] = look{c.Rune, c.FG, c.BG, c.Attr, c.Art}
+			}
+		}
+		return out
+	}
+
+	before := snap(panelNow)
+	after := snap(panelNow.Add(pulseStep))
+
+	area, _ := sideArea(a)
+	want := [2]int{area.X + 2, area.Y + row}
+	var moved int
+	for where, cell := range before {
+		if cell == after[where] {
+			continue
+		}
+		moved++
+		if where != want {
+			t.Fatalf("the cell at %v changed a pulse step later, and only the active row's icon should",
+				where)
+		}
+	}
+	if moved != 1 {
+		t.Fatalf("%d cells changed a pulse step later, want the active row's icon", moved)
+	}
+}
+
+// The column between the sidebar and the panes is blank -- a line there
+// read as a bar between the two rather than as the edge of either -- and
+// it is still what the divider is dragged by.
+func TestTheSidebarDividerIsBlankAndStillDrags(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	a.refreshPanel(panelNow)
+	at := windowCell(a)
+	paint(a)
+
+	area, shown := sideArea(a)
+	if !shown {
+		t.Fatal("the sidebar is not on screen")
+	}
+	col := area.X + area.Cols
+	for y := area.Y; y < area.Y+area.Rows; y++ {
+		if got := at(col, y).Rune; got != ' ' && got != 0 {
+			t.Fatalf("the divider column holds %q at row %d, want a blank", got, y)
+		}
+	}
+
+	// Grabbed at the column, moved right, let go: the panel is that much
+	// wider.
+	was := a.dock.Width
+	took, err := a.root.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft, Col: col, Row: area.Y + 1,
+	})
+	if err != nil {
+		t.Fatalf("pressing on the divider: %v", err)
+	}
+	if !took {
+		t.Fatal("a press on the divider was not taken, so no drag can follow")
+	}
+	if _, err := a.root.HandleMouse(input.MouseEvent{
+		Kind: input.MouseMove, Col: col + 6, Row: area.Y + 1,
+	}); err != nil {
+		t.Fatalf("dragging the divider: %v", err)
+	}
+	if _, err := a.root.HandleMouse(input.MouseEvent{
+		Kind: input.MouseRelease, Button: input.MouseLeft, Col: col + 6, Row: area.Y + 1,
+	}); err != nil {
+		t.Fatalf("letting the divider go: %v", err)
+	}
+	if a.dock.Width != was+6 {
+		t.Fatalf("the panel is %d wide after the drag, want %d", a.dock.Width, was+6)
+	}
+}
+
+// What a row is doing is the mark's business, so the words beside it are
+// only what the mark cannot say.
 func TestPanelSaysNoStateInWords(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withPanel(t, a)
@@ -564,7 +733,7 @@ func TestPanelDoesNotDirtyAnIdleFrame(t *testing.T) {
 		t.Fatal("an idle panel dirtied the layer")
 	}
 
-	// And the moment the state changes, it does: the dot goes from the
+	// And the moment the state changes, it does: the mark goes from the
 	// one that moves to the one that does not.
 	a.refreshPanel(panelNow.Add(meter.Settle))
 	paint(a)
@@ -572,7 +741,7 @@ func TestPanelDoesNotDirtyAnIdleFrame(t *testing.T) {
 		t.Fatal("a row that changed from active to settled did not redraw")
 	}
 
-	// Nor does time passing, once nothing is moving any more. The dot
+	// Nor does time passing, once nothing is moving any more. The mark
 	// brightens and dims while bytes are going past, so a panel that
 	// kept pulsing after a connection settled would redraw for as long
 	// as the window was open.

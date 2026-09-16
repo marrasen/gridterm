@@ -210,9 +210,7 @@ func main() {
 	a.panel = a.newPanel()
 	a.side = a.newSidebar()
 	a.stage = a.newTabs(first)
-	a.dock = ui.NewDock(panelWidth, a.side, a.stage)
-	a.dock.DividerFG = a.colours.ANSI[8]
-	a.dock.DividerBG = a.colours.BG
+	a.dock = a.newDock(a.stage)
 	// The sidebar is painted onto a grid of its own, over the window's,
 	// so that its rows can have room around them while the terminal
 	// beside it keeps every line the same height.

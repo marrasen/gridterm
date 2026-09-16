@@ -17,7 +17,7 @@ func withRegion(t *testing.T, a *testApp) {
 	t.Helper()
 	a.panel = a.newPanel()
 	a.side = a.newSidebar()
-	a.dock = ui.NewDock(panelWidth, a.side, a.root.Widget())
+	a.dock = a.newDock(a.root.Widget())
 	a.sideRegion = newRegion(a.side, grid.New(0, 0, a.colours.FG, a.colours.BG), &a.sideGeo)
 	a.dock.PanelElsewhere = true
 	a.bar = a.newMenubar(a.dock)

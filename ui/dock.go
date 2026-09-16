@@ -24,7 +24,9 @@ const (
 // its longest line needs, whatever size the window is.
 //
 // The divider can be dragged. A press on it is taken, so Root keeps the
-// pointer until the button comes up, however far it has wandered.
+// pointer until the button comes up, however far it has wandered. A
+// divider with no colour is still the handle: the column is there to
+// grab whether or not a line is drawn in it.
 type Dock struct {
 	// Width is how many columns the panel gets, not counting the
 	// divider. It is clamped to what the window can spare.

@@ -103,7 +103,20 @@ type ListRow struct {
 	// Icon is drawn in front of the text, for a row whose kind is better
 	// shown than named. It takes the column it sits in and a blank after
 	// it, and the text starts beyond them.
-	Icon grid.Art
+	//
+	// IconFG is its colour, drawn by the same rules as MarkFG, so one
+	// mark can say what a row is and what state it is in at once.
+	Icon   grid.Art
+	IconFG color.RGBA
+}
+
+// pickedOut is the colour a mark or an icon is drawn in: its own where
+// it has one, and the row's where its own would be lost.
+func pickedOut(own, fg color.RGBA, washed bool) color.RGBA {
+	if own.A == 0 || washed {
+		return fg
+	}
+	return own
 }
 
 // buttonCol is the column a row's button is drawn in, or -1 when the
@@ -482,22 +495,15 @@ func (l *List) paintRow(v grid.View, row ListRow, selected bool, y, rows int) {
 	// to make room: a picture of what a row is says it in one column
 	// where the word for it took eight.
 	if row.Icon.Kind != grid.ArtNone && at+2 < room {
-		v.Set(at, 0, grid.Cell{Rune: ' ', FG: fg, BG: bg, Width: 1, Art: row.Icon})
+		icon := pickedOut(row.IconFG, fg, washed)
+		v.Set(at, 0, grid.Cell{Rune: ' ', FG: icon, BG: bg, Width: 1, Art: row.Icon})
 		v.Set(at+1, 0, grid.Cell{Rune: ' ', FG: fg, BG: bg, Width: 1})
 		at += 2
 	}
 	// The mark sits in the indent the text leaves in front of it, so it
 	// costs no column of its own.
 	if row.Mark != 0 && row.Depth*2 >= 2 {
-		mark := row.MarkFG
-		if mark.A == 0 {
-			mark = fg
-		}
-		if washed {
-			// A colour chosen against the other rows can disappear
-			// against this one.
-			mark = fg
-		}
+		mark := pickedOut(row.MarkFG, fg, washed)
 		v.Set(row.Depth*2-2, 0, grid.Cell{Rune: row.Mark, FG: mark, BG: bg, Width: 1})
 	}
 	attr := grid.Attr(0)

@@ -14,14 +14,6 @@ each group. A line goes when the work is in and reviewed.
   offscreen image and blitted scaled, which the compositor does not do
   yet.
 
-## The sidebar and the panes
-
-- **Use the type icon instead of the dot.** A connection's row draws a
-  coloured dot for its state and then the hand-drawn icon for what it
-  is. One mark can do both: draw the type icon and give it the colour
-  the dot would have had.
-- **Remove the grey bar between the sidebar and the panes.**
-
 ## Connections
 
 - **"Files" should connect when the machine is not connected**, the way

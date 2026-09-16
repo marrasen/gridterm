@@ -193,13 +193,18 @@ type handover struct {
 	// than one is unusual and is said plainly rather than hidden.
 	working int
 
-	// screen is the last screen read, said is how much the program had
-	// said when it was read, and lines is how many were asked for. A
-	// wait asks over and over, and a pane that has said nothing since
-	// has the same screen as last time.
-	screen *string
-	said   uint64
-	lines  int
+	// read is the last reading of the pane and lines is how many were
+	// asked for. A wait asks over and over, and a pane that has said
+	// nothing since has the same screen as last time. A read of fewer
+	// lines than the last one is cut from it rather than rendered again,
+	// so alternating counts cannot make the window render on every
+	// question.
+	read  *term.Reading
+	lines int
+
+	// rendered counts the reads that went to the pane rather than to
+	// the reading kept here.
+	rendered int
 }
 
 // handPane hands a pane to an agent and shows the user the code.
@@ -339,26 +344,57 @@ func (w agentWindow) Look(id string, lines int) (agent.Look, error) {
 		if err != nil {
 			return agent.Look{}, err
 		}
-		said := h.pane.Said()
-		// Read again only when the program has said something. A wait
-		// asks twenty times a second, and reading a screen means
-		// rendering the whole of it; a pane that is sitting there would
-		// have it rendered afresh each time for the same answer.
-		if h.screen == nil || h.said != said || h.lines != lines {
-			text := h.pane.TextLines(lines)
-			h.screen, h.said, h.lines = &text, said, lines
+		// Bounded here as well as in the MCP server, because an agent
+		// speaking to the wire itself does not go through that.
+		want := min(max(lines, 0), agent.MostLines)
+		if want == 0 {
+			want = h.pane.Size().Rows
 		}
-		row, col, alt := h.pane.Cursor()
+		// Read again only when the program has said something or more
+		// lines are wanted than were read last time. A wait asks twenty
+		// times a second, and reading a screen means rendering the whole
+		// of it; a pane that is sitting there would have it rendered
+		// afresh each time for the same answer.
+		if h.read == nil || h.read.Said != h.pane.Said() || want > h.lines {
+			read := h.pane.ReadLines(want)
+			h.read, h.lines = &read, want
+			h.rendered++
+		}
+		// The cursor comes from the reading, so it says where it was on
+		// the screen that came with it.
+		screen := lastLines(h.read.Text, want)
 		return agent.Look{
-			Screen:  *h.screen,
+			Screen:  screen,
 			Gone:    h.pane.Exited(),
-			Changed: said,
-			Row:     row,
-			Col:     col,
-			Alt:     alt,
+			Changed: h.read.Said,
+			Row:     h.read.Row,
+			Col:     h.read.Col,
+			Alt:     h.read.Alt,
+			All:     countLines(screen) < want,
 		}, nil
 	})
 }
+
+// lastLines is the last n lines of some text, and the whole of it when
+// it has no more than that.
+func lastLines(text string, n int) string {
+	if n <= 0 {
+		return ""
+	}
+	from := len(text)
+	for left := n; left > 0; left-- {
+		cut := strings.LastIndexByte(text[:from], '\n')
+		if cut < 0 {
+			return text
+		}
+		from = cut
+	}
+	return text[from+1:]
+}
+
+// countLines is how many lines some text has, counting an empty one at
+// the end as the line it is.
+func countLines(text string) int { return strings.Count(text, "\n") + 1 }
 
 func (w agentWindow) Send(id, text string, keys []string) error {
 	_, err := onDrawing(w.a, func() (struct{}, error) {
@@ -444,10 +480,12 @@ func (a *app) showHandover(h *handover) {
 	f := a.newForm("An agent may work in this pane")
 	f.Lines = []string{
 		"An agent can read this pane, type into it and wait for it to",
-		"settle. It reaches no other pane. What it types goes into the",
-		"shell running here, as whoever you set it up as, and you watch",
-		"all of it. Take the pane back from the Servers menu and the",
-		"code stops working at once.",
+		"settle. It reaches no other pane, and you watch all of it. Take",
+		"the pane back from the Servers menu and the code stops working",
+		"at once.",
+		"",
+		"The code for this pane is:",
+		"  " + h.code,
 	}
 	pick := f.AddField("Agent", a.newField("", 0))
 	pick.Options = agentHostNames()
@@ -455,18 +493,21 @@ func (a *app) showHandover(h *handover) {
 	f.Lines = append(f.Lines, "",
 		"Agent: ctrl+down and ctrl+up choose. \"Copy the prompt\" copies",
 		"an instruction for that agent; \"Write the skill\" saves a",
-		"SKILL.md where it reads skills from.")
+		"SKILL.md where it reads skills from. Both leave this open.")
 
-	f.AddButton(ui.Button{Title: "Copy the prompt", Do: func() error {
+	// Both leave the form open, so the user can copy the prompt and write the
+	// skill without handing the pane over twice.
+	f.AddButton(ui.Button{Title: "Copy the prompt", Keep: true, Do: func() error {
 		host := hostNamed(pick.Text())
 		exe, err := exePath()
 		if err != nil {
-			// The prompt still says "gridterm", and the dialog says so.
+			// Said and carried on: the prompt still says "gridterm", which works
+			// where gridterm is on the PATH, and the dialog says so.
 			a.logError(err)
 		}
 		a.clip.set(handoverPrompt(host, h.code, exe))
-		// Not from here: this form closes as soon as this returns, and
-		// closing a dialog takes anything stacked on top of it.
+		// Not from here: a dialog opened while this button is running would be
+		// stacked before the form has finished with the press.
 		a.pump.post(func() {
 			a.showCode(h, host, exe, err)
 			// After that dialog, so a failure to write the settings down
@@ -476,7 +517,7 @@ func (a *app) showHandover(h *handover) {
 		})
 		return nil
 	}})
-	f.AddButton(ui.Button{Title: "Write the skill", Do: func() error {
+	f.AddButton(ui.Button{Title: "Write the skill", Keep: true, Do: func() error {
 		host := hostNamed(pick.Text())
 		a.pump.post(func() {
 			a.writeSkillFor(host, false)

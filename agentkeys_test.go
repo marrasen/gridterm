@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -126,12 +128,151 @@ func TestEveryKeyNameTheWireAllowsIsOneThisWindowPresses(t *testing.T) {
 			t.Errorf("%s: %v", name, err)
 			continue
 		}
-		var went []byte
-		for _, ev := range press {
-			went = input.EncodeMode(ev, input.Mode{}, went)
-		}
-		if len(went) == 0 {
+		if went := input.EncodeMode(press, input.Mode{}, nil); len(went) == 0 {
 			t.Errorf("%s presses %+v, which is no input at all", name, press)
 		}
+	}
+}
+
+// Keys pressed in one call reach the shell in one write.
+//
+// Split across writes they arrive apart, and over a connection that is a
+// round trip between them: Escape and then Enter a round trip later is
+// how vim's escape timeout decides the user pressed Escape on its own.
+func TestKeysInOneCallReachTheShellInOneWrite(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	_, code, c := handedOver(t, a)
+
+	var got agent.Pane
+	offWindow(t, a, "the window to answer the agent", func() error {
+		var err error
+		got, err = c.Use(code)
+		return err
+	})
+
+	was := a.shells[0].writeCount()
+	offWindow(t, a, "the window to press Escape and Enter", func() error {
+		return c.Send(got.ID, "", []string{"Escape", "Enter"})
+	})
+	waitFor(t, a, "the shell to be sent Escape and Enter", func() bool {
+		return a.shells[0].sentText() == "\x1b\r"
+	})
+	if writes := a.shells[0].writeCount() - was; writes != 1 {
+		t.Errorf("Escape and Enter went in %d writes, want one", writes)
+	}
+
+	// Text and keys together are one write too, the text first.
+	was = a.shells[0].writeCount()
+	offWindow(t, a, "the window to type and press", func() error {
+		return c.Send(got.ID, ":q!", []string{"Enter"})
+	})
+	waitFor(t, a, "the shell to be sent the line and Enter", func() bool {
+		return strings.HasSuffix(a.shells[0].sentText(), ":q!\r")
+	})
+	if writes := a.shells[0].writeCount() - was; writes != 1 {
+		t.Errorf("the text and Enter went in %d writes, want one", writes)
+	}
+}
+
+// An agent pressing a key leaves the user's view and their selection
+// where they were.
+//
+// The user is watching a pane an agent is working in. Scrolling back to
+// read something and having it jump to the bottom, or losing a selection
+// part way through making it, is the agent taking the window over.
+func TestAKeyFromAnAgentLeavesTheUsersViewAlone(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pane, code, c := handedOver(t, a)
+
+	var got agent.Pane
+	offWindow(t, a, "the window to answer the agent", func() error {
+		var err error
+		got, err = c.Use(code)
+		return err
+	})
+
+	// Enough output to scroll back through.
+	var said strings.Builder
+	for i := 1; i <= 60; i++ {
+		fmt.Fprintf(&said, "line %d\r\n", i)
+	}
+	a.shells[0].out <- []byte(said.String())
+	waitFor(t, a, "the pane to show what the shell said", func() bool {
+		return strings.Contains(paneText(pane), "line 60")
+	})
+
+	// The user scrolls back and selects something.
+	pane.ScrollView(10)
+	for _, ev := range []input.MouseEvent{
+		{Kind: input.MousePress, Button: input.MouseLeft, Col: 0, Row: 0},
+		{Kind: input.MouseMove, Button: input.MouseLeft, Col: 5, Row: 0},
+		{Kind: input.MouseRelease, Button: input.MouseLeft, Col: 5, Row: 0},
+	} {
+		if _, err := pane.HandleMouse(ev); err != nil {
+			t.Fatalf("the mouse: %v", err)
+		}
+	}
+	view, selected := pane.ViewOffset(), pane.SelectionText()
+	if view == 0 || selected == "" {
+		t.Fatalf("the test scrolled to %d and selected %q", view, selected)
+	}
+
+	offWindow(t, a, "the window to press Enter", func() error {
+		return c.Send(got.ID, "", []string{"Enter"})
+	})
+	waitFor(t, a, "the shell to be sent Enter", func() bool {
+		return strings.HasSuffix(a.shells[0].sentText(), "\r")
+	})
+
+	if now := pane.ViewOffset(); now != view {
+		t.Errorf("the view is %d lines back, want %d", now, view)
+	}
+	if now := pane.SelectionText(); now != selected {
+		t.Errorf("the selection is %q, want %q", now, selected)
+	}
+}
+
+// More key names than one call presses is refused, by the window as well
+// as by the MCP server, and nothing goes in.
+func TestMoreKeysThanOneCallPressesIsRefusedByTheWindow(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	_, code, c := handedOver(t, a)
+
+	var got agent.Pane
+	offWindow(t, a, "the window to answer the agent", func() error {
+		var err error
+		got, err = c.Use(code)
+		return err
+	})
+
+	many := make([]string, agent.MostKeys+1)
+	for i := range many {
+		many[i] = "Enter"
+	}
+	failed := make(chan error, 1)
+	go func() { failed <- c.Send(got.ID, "ls", many) }()
+	var err error
+	waitFor(t, a, "the window to refuse too many keys", func() bool {
+		select {
+		case err = <-failed:
+			return true
+		default:
+			return false
+		}
+	})
+	if err == nil {
+		t.Fatal("the window pressed more keys than it says it will")
+	}
+	if !strings.Contains(err.Error(), strconv.Itoa(agent.MostKeys)) {
+		t.Errorf("it said %q, which does not say how many it takes", err)
+	}
+	if sent := a.shells[0].sentText(); sent != "" {
+		t.Errorf("the pane was sent %q", sent)
 	}
 }

@@ -7,7 +7,9 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/marrasen/gridterm/mcp"
 	"github.com/marrasen/gridterm/settings"
@@ -33,6 +35,10 @@ type agentHost struct {
 	// skillIn is where this host reads skills from, under the user's home directory. Empty means
 	// gridterm knows of nowhere, so the skill goes under gridterm's own settings instead.
 	skillIn []string
+
+	// skillEnv names an environment variable holding this host's configuration directory, which
+	// stands in for the first part of skillIn when it is set.
+	skillEnv string
 }
 
 // The hosts the dialog offers, by name.
@@ -46,8 +52,9 @@ const (
 // agentHosts are the hosts a prompt and a skill can be written for. Claude Code is first, and is
 // what a name from another build of gridterm falls back to.
 var agentHosts = []agentHost{
-	{name: hostClaudeCode, called: hostClaudeCode, cmd: "claude", skillIn: []string{".claude", "skills", "gridterm"}},
-	{name: hostCodex, called: hostCodex, cmd: "codex", skillIn: []string{".codex", "skills", "gridterm"}},
+	{name: hostClaudeCode, called: hostClaudeCode, cmd: "claude",
+		skillIn: []string{".claude", "skills", "gridterm"}, skillEnv: "CLAUDE_CONFIG_DIR"},
+	{name: hostCodex, called: hostCodex, cmd: "codex"},
 	{name: hostCursor, called: hostCursor, configAt: "~/.cursor/mcp.json"},
 	{name: hostOther, called: "the host"},
 }
@@ -65,24 +72,48 @@ func (h agentHost) configIn() string {
 	return "its MCP config"
 }
 
+// dialogCols is the room a dialog has for one line of text.
+const dialogCols = 72
+
 // setupLines say how the user adds gridterm's MCP server to this host, as lines for a dialog.
 //
-// Wrapped by hand, because a dialog draws a line it is given and trims what will not fit.
+// Wrapped by hand, because a dialog draws a line it is given and trims what will not fit. The
+// path goes on a line of its own, and is broken across lines when even that will not hold it.
 func (h agentHost) setupLines(exe string) []string {
 	if h.cmd != "" {
-		return []string{
-			"First add gridterm's MCP server to " + h.called + ":",
+		lines := []string{
+			"First add gridterm's MCP server to " + h.called + ", as one command line:",
 			"",
-			h.addLine(exe),
-			"",
-			"That writes the config only, so start " + h.called + " afterwards,",
-			"or restart it if it is already running. Then paste the prompt.",
+			"  " + h.cmd + " mcp add gridterm --",
 		}
+		lines = append(lines, wrapped("  "+quotedPath(exe)+" -mcp", "  ", dialogCols)...)
+		return append(lines, "",
+			"It only writes the config, so start "+h.called+" again first.")
 	}
 	lines := []string{"First put gridterm's MCP server in " + h.configIn() + ":", ""}
-	lines = append(lines, strings.Split(mcpConfig(exe), "\n")...)
+	for _, line := range strings.Split(mcpConfig(exe), "\n") {
+		lines = append(lines, wrapped(line, "  ", dialogCols)...)
+	}
 	return append(lines, "",
 		"Then start "+h.called+" again, and paste the prompt to it.")
+}
+
+// wrapped breaks a line too wide for a dialog, carrying the rest on with indent in front of it.
+//
+// It breaks anywhere, because a path has no words to break between, and a path the user cannot
+// read at all is worse than one they have to join up.
+func wrapped(line, indent string, room int) []string {
+	var out []string
+	for len(line) > room && room > len(indent) {
+		cut := room
+		// Never in the middle of a character.
+		for cut > len(indent) && !utf8.RuneStart(line[cut]) {
+			cut--
+		}
+		out = append(out, line[:cut])
+		line = indent + line[cut:]
+	}
+	return append(out, line)
 }
 
 // setupForAgent says the same to an agent that cannot see gridterm's tools: what to ask the user
@@ -95,11 +126,21 @@ func (h agentHost) setupForAgent(exe string) string {
 		" again:\n\n" + indented(mcpConfig(exe), "  ")
 }
 
-// quotedPath is a path as one argument on a command line.
+// quotedPath is a path as one argument on a command line of this platform's shell.
 //
 // In quotes, because a path with a space in it would otherwise be two arguments.
-func quotedPath(path string) string {
-	return `"` + strings.ReplaceAll(path, `"`, `\"`) + `"`
+func quotedPath(path string) string { return quotedPathOn(path, runtime.GOOS) }
+
+// quotedPathOn is quotedPath for a named platform, so both kinds can be tested anywhere.
+//
+// Windows shells take double quotes, and a backslash in a path there is an ordinary character.
+// Everywhere else a single-quoted string ends at the first quote, so an inner quote closes the
+// string, adds an escaped quote and opens it again.
+func quotedPathOn(path, goos string) string {
+	if goos == "windows" {
+		return `"` + strings.ReplaceAll(path, `"`, `\"`) + `"`
+	}
+	return `'` + strings.ReplaceAll(path, `'`, `'\''`) + `'`
 }
 
 // mcpConfig is the MCP config that starts gridterm's server, for a host set up by a file.
@@ -182,6 +223,8 @@ answer names the pane, and every other tool takes that name.
 
 // printSkill writes the skill for Claude Code, for -mcp-skill.
 func printSkill(w io.Writer) error {
+	// Refused rather than written with the bare name, because a file sits there saying the wrong
+	// thing long after the failure is forgotten, where the dialog is read once and warns as it goes.
 	exe, err := exePath()
 	if err != nil {
 		return err
@@ -193,6 +236,11 @@ func printSkill(w io.Writer) error {
 // skillPathFor is where a host's skill goes, and whether that is where the host reads skills from.
 func skillPathFor(host agentHost) (path string, ownPlace bool, err error) {
 	if len(host.skillIn) > 0 {
+		// The host's own setting for where its configuration lives, which moves its skills with it.
+		if dir := os.Getenv(host.skillEnv); host.skillEnv != "" && dir != "" {
+			parts := append([]string{dir}, host.skillIn[1:]...)
+			return filepath.Join(append(parts, skillFile)...), true, nil
+		}
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return "", true, fmt.Errorf("there is no home directory to write a skill in: %w", err)

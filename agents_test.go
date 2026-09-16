@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -331,9 +332,18 @@ func TestTheHandoverPromptFollowsTheHostItIsFor(t *testing.T) {
 // A bare code is no use on its own: the agent has to know what it has
 // been given, how to start the MCP server, and which tools to call.
 func TestTheHandoverPromptStandsOnItsOwn(t *testing.T) {
+	for _, host := range agentHosts {
+		t.Run(host.name, func(t *testing.T) { promptStandsOnItsOwn(t, host) })
+	}
+}
+
+// promptStandsOnItsOwn checks the prompt for one host. Every host has
+// its own setup lines, and the file-based ones are the longest.
+func promptStandsOnItsOwn(t *testing.T, host agentHost) {
+	t.Helper()
 	const code = "gt1-54321-abcdefghijklmnopqrstuvwxyz"
 	const exe = `C:\Users\someone\go\bin\gridterm.exe`
-	prompt := handoverPrompt(hostNamed(hostClaudeCode), code, exe)
+	prompt := handoverPrompt(host, code, exe)
 	t.Logf("the prompt as generated:\n%s", prompt)
 
 	if got := strings.Count(prompt, code); got != 1 {
@@ -449,7 +459,8 @@ func TestHandingAPaneOverShowsTheCodeAndCopiesThePrompt(t *testing.T) {
 	drawn := strings.Join(drawnLines(a, shownIn), "\n")
 	// What the user has to do, and the code, on the screen rather than
 	// only in f.Lines.
-	for _, say := range []string{"clipboard", code, "claude mcp add gridterm --", "restart"} {
+	for _, say := range []string{"clipboard", code, "claude mcp add gridterm --",
+		"start Claude Code again"} {
 		if !strings.Contains(drawn, say) {
 			t.Errorf("the dialog does not draw %q:\n%s", say, drawn)
 		}
@@ -470,18 +481,37 @@ func TestHandingAPaneOverShowsTheCodeAndCopiesThePrompt(t *testing.T) {
 	}
 }
 
-// The setup line fits the dialog for a path of a real length, so the
-// exact line the user has to run is not trimmed at the edge of the box.
+// The setup lines fit the dialog for a path of any length, so the exact
+// command the user has to run is not trimmed at the edge of the box.
 func TestTheSetupLinesFitTheDialog(t *testing.T) {
-	const exe = `C:\Program Files\gridterm\gridterm.exe`
 	// formMaxCols less the blank column each side, which is the widest a
 	// dialog line is ever drawn.
 	const room = 72
-	for _, host := range agentHosts {
-		for _, line := range host.setupLines(exe) {
-			if len(line) > room {
-				t.Errorf("%s: a setup line is %d characters, over %d: %q",
-					host.name, len(line), room, line)
+	paths := []string{
+		`C:\Program Files\gridterm\gridterm.exe`,
+		`C:\` + strings.Repeat("d", 47) + `\gridterm.exe`,
+		`C:\` + strings.Repeat("d", 67) + `\gridterm.exe`,
+	}
+	for _, exe := range paths {
+		for _, host := range agentHosts {
+			lines := host.setupLines(exe)
+			for _, line := range lines {
+				if len(line) > room {
+					t.Errorf("%s with a path of %d: a setup line is %d characters, over %d: %q",
+						host.name, len(exe), len(line), room, line)
+				}
+			}
+			// And the path is all there, however it had to be broken up.
+			// A host set up by a file shows it inside JSON, where a
+			// backslash is doubled.
+			want := exe
+			if host.cmd == "" {
+				want = strings.ReplaceAll(exe, `\`, `\\`)
+			}
+			joined := strings.ReplaceAll(strings.Join(lines, ""), " ", "")
+			if !strings.Contains(joined, strings.ReplaceAll(want, " ", "")) {
+				t.Errorf("%s with a path of %d does not show the whole path: %q",
+					host.name, len(exe), lines)
 			}
 		}
 	}
@@ -1063,5 +1093,272 @@ func TestAnAgentSeesTheCursorAndTheAlternateScreen(t *testing.T) {
 	read()
 	if !look.Alt {
 		t.Error("the agent was not told a full-screen program is drawing")
+	}
+}
+
+// Two reads a line apart on a pane that has said nothing render once.
+//
+// Rendering is the expensive half of a read and it happens under the
+// pane's lock, so an agent alternating two counts could keep the window
+// from drawing. A read of fewer lines than the last one is cut from what
+// was already read.
+func TestTwoReadsOfAlmostTheSameLengthRenderOnce(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pane, code, c := handedOver(t, a)
+
+	var got agent.Pane
+	offWindow(t, a, "the window to answer the agent", func() error {
+		var err error
+		got, err = c.Use(code)
+		return err
+	})
+
+	a.shells[0].out <- []byte("root@margit:~# \r\n")
+	waitFor(t, a, "the pane to show what the shell said", func() bool {
+		return strings.Contains(paneText(pane), "root@margit")
+	})
+
+	var first, second agent.Look
+	offWindow(t, a, "the window to read 2000 lines", func() error {
+		var err error
+		first, err = c.Read(got.ID, 2000)
+		return err
+	})
+	offWindow(t, a, "the window to read 1999 lines", func() error {
+		var err error
+		second, err = c.Read(got.ID, 1999)
+		return err
+	})
+
+	if h := a.agents.of(pane); h.rendered != 1 {
+		t.Errorf("two reads rendered the pane %d times, want once", h.rendered)
+	}
+	if first.Screen != second.Screen {
+		t.Errorf("the second read says something else:\n%q\n%q", first.Screen, second.Screen)
+	}
+	// And both say this is everything the pane has kept, because a pane
+	// that has said one line has nothing like two thousand.
+	if !first.All || !second.All {
+		t.Errorf("a read of the whole of a short pane did not say so: %v, %v",
+			first.All, second.All)
+	}
+
+	// The screen itself is not the whole of what has been kept, so it
+	// says nothing of the sort.
+	var screen agent.Look
+	offWindow(t, a, "the window to read the screen", func() error {
+		var err error
+		screen, err = c.Read(got.ID, 0)
+		return err
+	})
+	if screen.All {
+		t.Error("a read of the screen was called everything the pane has kept")
+	}
+	if got := countLines(screen.Screen); got != pane.Size().Rows {
+		t.Errorf("the screen is %d lines, want %d", got, pane.Size().Rows)
+	}
+}
+
+// Codex's skill goes under gridterm's own settings, with the notice that
+// says to move it.
+//
+// gridterm has never checked where Codex reads skills from, and a file
+// written into a directory a host does not read is a skill nobody will
+// ever see.
+func TestTheSkillForCodexGoesUnderGridtermsOwnSettings(t *testing.T) {
+	withHome(t)
+	host := hostNamed(hostCodex)
+	if len(host.skillIn) > 0 {
+		t.Errorf("gridterm claims Codex reads skills from %v", host.skillIn)
+	}
+
+	path, ownPlace, err := skillPathFor(host)
+	if err != nil {
+		t.Fatalf("where the skill goes: %v", err)
+	}
+	if ownPlace {
+		t.Error("it thinks that is where Codex looks")
+	}
+	if want := gridtermSkillPath(t); path != want {
+		t.Errorf("the skill goes to %q, want %q", path, want)
+	}
+	if said := skillWritten(host, path); !strings.Contains(said, "Copy it") ||
+		!strings.Contains(said, "does not know where") {
+		t.Errorf("the notice says %q, and not that gridterm is guessing", said)
+	}
+}
+
+// Claude Code's own setting for where its configuration lives takes the
+// skill with it.
+func TestClaudeConfigDirMovesTheSkill(t *testing.T) {
+	home := withHome(t)
+	host := hostNamed(hostClaudeCode)
+
+	// Unset, it is the ordinary place under the home directory.
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	path, ownPlace, err := skillPathFor(host)
+	if err != nil {
+		t.Fatalf("where the skill goes: %v", err)
+	}
+	if want := filepath.Join(home, ".claude", "skills", "gridterm", skillFile); path != want {
+		t.Errorf("the skill goes to %q, want %q", path, want)
+	}
+	if !ownPlace {
+		t.Error("it does not think that is where Claude Code looks")
+	}
+
+	// Set, it goes there instead, and the skill really lands there.
+	dir := filepath.Join(t.TempDir(), "claude-config")
+	t.Setenv("CLAUDE_CONFIG_DIR", dir)
+	path, ownPlace, err = skillPathFor(host)
+	if err != nil {
+		t.Fatalf("where the skill goes: %v", err)
+	}
+	want := filepath.Join(dir, "skills", "gridterm", skillFile)
+	if path != want {
+		t.Errorf("the skill goes to %q, want %q", path, want)
+	}
+	if !ownPlace {
+		t.Error("it does not think that is where Claude Code looks")
+	}
+	if _, _, err := writeSkill(host, `C:\gridterm.exe`, true); err != nil {
+		t.Fatalf("write the skill: %v", err)
+	}
+	if _, err := os.ReadFile(want); err != nil {
+		t.Fatalf("read the skill back: %v", err)
+	}
+}
+
+// A path is quoted for the shell of the platform it will be typed into.
+func TestAPathIsQuotedForTheShellItIsTypedInto(t *testing.T) {
+	for _, tc := range []struct {
+		goos, path, want string
+	}{
+		{"windows", `C:\Program Files\gridterm.exe`, `"C:\Program Files\gridterm.exe"`},
+		{"windows", `C:\say "hi"\gridterm.exe`, `"C:\say \"hi\"\gridterm.exe"`},
+		{"linux", "/usr/local/bin/grid term", `'/usr/local/bin/grid term'`},
+		{"darwin", "/Users/o'brien/gridterm", `'/Users/o'\''brien/gridterm'`},
+	} {
+		if got := quotedPathOn(tc.path, tc.goos); got != tc.want {
+			t.Errorf("on %s %q quotes as %q, want %q", tc.goos, tc.path, got, tc.want)
+		}
+	}
+	// And this platform gets its own.
+	got := quotedPath("/tmp/grid term")
+	if runtime.GOOS == "windows" {
+		if got != `"/tmp/grid term"` {
+			t.Errorf("here a path quotes as %q", got)
+		}
+	} else if got != `'/tmp/grid term'` {
+		t.Errorf("here a path quotes as %q", got)
+	}
+}
+
+// The hand-over dialog does both of its offers in one visit, and shows
+// the code without being asked.
+//
+// A user who presses "Done" has a live code they were never shown, and
+// one who copies the prompt should not have to hand the pane over again
+// to write the skill.
+func TestTheHandoverDialogDoesBothInOneVisit(t *testing.T) {
+	withHome(t)
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pane := onlyPaneOn(t, a)
+
+	f := handoverDialog(t, a, pane)
+	code := a.agents.of(pane).code
+	drawsEveryLine(t, a, f)
+	if drawn := strings.Join(drawnLines(a, f), "\n"); !strings.Contains(drawn, code) {
+		t.Errorf("the first dialog never shows the code:\n%s", drawn)
+	}
+
+	// The prompt, and the dialog that says what to do with it.
+	pressButton(t, a, f, "Copy the prompt")
+	shown := awaitModal[*ui.Form](t, a, "the dialog showing the code",
+		byTitle[*ui.Form]("Paste the prompt to "+hostClaudeCode))
+	pressButton(t, a, shown, "Done")
+
+	// And then the skill, without handing the pane over again.
+	pressButton(t, a, f, "Write the skill")
+	n := awaitModal[*ui.Notice](t, a, "a notice saying where the skill went", nil)
+	if n.Failure {
+		t.Fatalf("writing the skill failed: %s", n.Message())
+	}
+	if !strings.Contains(n.Message(), skillFile) {
+		t.Errorf("the notice says %q", n.Message())
+	}
+
+	// Still the one hand-over, with the one code.
+	if h := a.agents.of(pane); h == nil || h.code != code {
+		t.Errorf("the pane is handed over as %+v, want the code it started with", h)
+	}
+}
+
+// A look's screen and its cursor come from the same moment, whatever the
+// pane has been saying in between.
+//
+// Read separately, the cursor can be from after the screen: the agent is
+// then told the shell is part way through a line that the screen it was
+// given does not have.
+func TestALooksScreenAndCursorComeFromTheSameMoment(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pane, code, c := handedOver(t, a)
+
+	var got agent.Pane
+	offWindow(t, a, "the window to answer the agent", func() error {
+		var err error
+		got, err = c.Use(code)
+		return err
+	})
+
+	// Nothing ends in a space: a screen as plain text has its trailing
+	// spaces cut, and a cursor sitting past one is not a mismatch.
+	for i, said := range []string{"$", " uptime\r\nup 3 days\r\n$", " wh"} {
+		a.shells[0].out <- []byte(said)
+		want := pane.Said() + 1
+		waitFor(t, a, "the pane to read what the shell said", func() bool {
+			return pane.Said() >= want
+		})
+
+		var look agent.Look
+		offWindow(t, a, "the window to answer the agent", func() error {
+			var err error
+			look, err = c.Read(got.ID, 0)
+			return err
+		})
+		// The cursor is at the end of what has been written on its row,
+		// so the row it names in the screen it came with has to be that
+		// long.
+		lines := strings.Split(look.Screen, "\n")
+		if look.Row < 0 || look.Row >= len(lines) {
+			t.Fatalf("after %d the cursor is on row %d of %d", i, look.Row, len(lines))
+		}
+		if len(lines[look.Row]) != look.Col {
+			t.Errorf("after %d the cursor is at column %d of %q", i, look.Col, lines[look.Row])
+		}
+	}
+
+	// And a second look at a pane that has said nothing since says the
+	// same thing, rather than a cursor read afresh against a screen that
+	// was not.
+	var first, again agent.Look
+	offWindow(t, a, "the window to answer the agent", func() error {
+		var err error
+		first, err = c.Read(got.ID, 0)
+		return err
+	})
+	offWindow(t, a, "the window to answer the agent", func() error {
+		var err error
+		again, err = c.Read(got.ID, 0)
+		return err
+	})
+	if first != again {
+		t.Errorf("two looks at a quiet pane say %+v and %+v", first, again)
 	}
 }

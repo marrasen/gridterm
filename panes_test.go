@@ -37,6 +37,7 @@ type pipeSession struct {
 	mu      sync.Mutex
 	out     chan []byte
 	written []byte
+	writes  int
 	size    [2]int
 	closed  bool
 
@@ -69,7 +70,16 @@ func (p *pipeSession) Write(b []byte) (int, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.written = append(p.written, b...)
+	p.writes++
 	return len(b), nil
+}
+
+// writeCount is how many writes the terminal has made to this shell,
+// for a test about input that has to arrive together.
+func (p *pipeSession) writeCount() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.writes
 }
 
 // isClosed reports whether this shell has been closed.

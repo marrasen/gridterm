@@ -65,6 +65,8 @@ A `TODO.md` line goes in the same commit as the work that closes it.
 
 Done when: no behaviour changes; the suite is the check; the helpers
 named above each exist once.
+Done by 1707651 Fold the duplicated pieces the review named into one of each.
+Done by e1de8df Keep the take-over's passphrase dialog and cancel working under one ladder.
 
 ## Step 1 -- Phase 9, test hygiene
 

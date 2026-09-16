@@ -1353,6 +1353,39 @@ func TestARelativeClaudeConfigDirIsReadFromTheHomeDirectory(t *testing.T) {
 	}
 }
 
+// A setting naming a directory from the root of a disk is left where it
+// is, spelt either way.
+//
+// Windows calls neither /c/Users/me/.claude nor \opt\claude absolute, and joining
+// one onto the home directory would write the skill somewhere nobody
+// named.
+func TestARootedClaudeConfigDirIsLeftAlone(t *testing.T) {
+	host := hostNamed(hostClaudeCode)
+	for _, tc := range []struct{ what, set string }{
+		{"with forward slashes", "/c/Users/agent/.claude"},
+		{"with backslashes", `\opt\claude`},
+	} {
+		t.Run(tc.what, func(t *testing.T) {
+			home := withHome(t)
+			t.Setenv("CLAUDE_CONFIG_DIR", tc.set)
+
+			path, ownPlace, err := skillPathFor(host)
+			if err != nil {
+				t.Fatalf("where the skill goes: %v", err)
+			}
+			if want := filepath.Join(tc.set, "skills", "gridterm", skillFile); path != want {
+				t.Errorf("the skill goes to %q, want %q", path, want)
+			}
+			if strings.HasPrefix(path, home) {
+				t.Errorf("the skill goes under the home directory %q: %q", home, path)
+			}
+			if !ownPlace {
+				t.Error("it does not think that is where Claude Code looks")
+			}
+		})
+	}
+}
+
 // A path is quoted for the shell of the platform it will be typed into.
 func TestAPathIsQuotedForTheShellItIsTypedInto(t *testing.T) {
 	for _, tc := range []struct {

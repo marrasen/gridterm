@@ -375,6 +375,8 @@ func (w agentWindow) Look(id string, lines int) (agent.Look, error) {
 			Col:     h.read.Col,
 			Alt:     h.read.Alt,
 			All:     countLines(screen) < want,
+			Cols:    size.Cols,
+			Rows:    size.Rows,
 		}, nil
 	})
 }

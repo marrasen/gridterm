@@ -1025,13 +1025,16 @@ func (a *app) windowFiles(addr string) (vfs.FS, error) {
 	if t == nil {
 		return nil, fmt.Errorf("this window has not taken over %s", addr)
 	}
+	if err := a.roomForFilesOver(t); err != nil {
+		return nil, err
+	}
 	ch, client, err := remote.WindowFiles(a.ctx, addr, t.win)
 	if err != nil {
 		return nil, err
 	}
 	// The window taken over is what says which machine this is.
 	return vfs.NewSFTP(addr, t.win, client, func() error {
-		return closeFilesOver(client, ch)
+		return a.letGoOfFilesOver(t, client, ch)
 	}), nil
 }
 
@@ -1042,6 +1045,9 @@ func (a *app) windowFiles(addr string) (vfs.FS, error) {
 // machine, and the window it took over has. Bounded by
 // remote.WindowFilesOn, the way windowFiles is.
 func (a *app) windowFilesOn(t *taken, host string) (vfs.FS, error) {
+	if err := a.roomForFilesOver(t); err != nil {
+		return nil, err
+	}
 	ch, client, err := remote.WindowFilesOn(a.ctx, t.name, host, t.win)
 	if err != nil {
 		return nil, err
@@ -1053,8 +1059,50 @@ func (a *app) windowFilesOn(t *taken, host string) (vfs.FS, error) {
 	// machine over there are one place and neither is the window's own
 	// disk.
 	return vfs.NewSFTP(farName(host, t.name), remoteHostKey{window: t, host: host}, client, func() error {
-		return closeFilesOver(client, ch)
+		return a.letGoOfFilesOver(t, client, ch)
 	}), nil
+}
+
+// roomForFilesOver refuses a file pane on a window already holding as
+// many abandoned closes as this one will.
+//
+// Each one waits on a window that has stopped answering and ends only
+// when this window hangs up on it, so the count is what says a window is
+// no longer one to ask.
+func (a *app) roomForFilesOver(t *taken) error {
+	if n := a.windows.abandonedCloses(t.win); n >= mostAbandonedCloses {
+		return fmt.Errorf(
+			"%s has stopped answering; %s file sessions to it are still waiting to end",
+			t.name, inWords(n))
+	}
+	return nil
+}
+
+// letGoOfFilesOver ends a file session on a window taken over and counts
+// one left behind against that window until it ends.
+//
+// A close that was abandoned holds a goroutine and the file session's
+// error stream. Both end when this window hangs up on that one, which
+// letGoOfWindow does and closing a pane does not, so the count is what
+// keeps them bounded in between.
+func (a *app) letGoOfFilesOver(t *taken, client, ch io.Closer) error {
+	left, err := closeFilesOver(client, ch)
+	if left == nil {
+		return err
+	}
+	// The window as it is called now, which is what the line saying the
+	// close ended has to say.
+	win, name := t.win, t.name
+	a.pump.post(func() { a.windows.closeAbandoned(win) })
+	go func() {
+		fromWindow := <-left
+		a.pump.post(func() {
+			a.windows.closeStopped(win)
+			a.logError(errors.Join(fmt.Errorf(
+				"the file session left on %s has ended", name), fromWindow))
+		})
+	}()
+	return err
 }
 
 // farName is what a pane on a machine of a window taken over calls the
@@ -1090,9 +1138,11 @@ var errFilesCloseAbandoned = errors.New(
 // Closing the channel only sends a message, so a link that is dead both
 // ways leaves the client's close waiting for an answer that cannot
 // arrive. It gets one more grace and is then abandoned, which says so
-// with errFilesCloseAbandoned: that goroutine ends when the connection
-// to the window is closed, which letGoOfWindow does right after this.
-func closeFilesOver(client, ch io.Closer) error {
+// with errFilesCloseAbandoned. That goroutine ends when the connection
+// to the window is closed, which only letting go of the window does:
+// closing a pane leaves it where it is, so left comes back carrying it
+// and is nil on every other path.
+func closeFilesOver(client, ch io.Closer) (left <-chan error, err error) {
 	done := make(chan error, 1)
 	go func() { done <- client.Close() }()
 
@@ -1110,6 +1160,7 @@ func closeFilesOver(client, ch io.Closer) error {
 			errs = append(errs, err)
 		case <-time.After(filesGrace):
 			errs = append(errs, errFilesCloseAbandoned)
+			left = done
 		}
 	}
 	// The client closes the channel as it goes, so this is the path
@@ -1124,7 +1175,7 @@ func closeFilesOver(client, ch io.Closer) error {
 			errs[i] = nil
 		}
 	}
-	return errors.Join(errs...)
+	return left, errors.Join(errs...)
 }
 
 // filesGrace is how long letting go of a window waits for its file

@@ -1129,6 +1129,28 @@ func TestAMachineWithTooManyParkedFileSessionsIsRefusedTheNext(t *testing.T) {
 	if host.machines.named("margit2") == nil {
 		t.Error("margit2 is no longer connected")
 	}
+
+	// And the next file session is allowed rather than turned away, which
+	// is what the count falling is for. Asked the way a goroutine serving
+	// a client asks, on one of its own, because the answer comes from the
+	// goroutine that draws.
+	back := make(chan error, 1)
+	go func() {
+		_, err := host.connectionTo("margit2")
+		back <- err
+	}()
+	var asked error
+	waitFor(t, host, "the window to say whether margit2 is one to ask again", func() bool {
+		select {
+		case asked = <-back:
+			return true
+		default:
+			return false
+		}
+	}, client)
+	if asked != nil {
+		t.Errorf("a file session on margit2 was still refused: %v", asked)
+	}
 }
 
 // A file session parked on a connection that is gone leaves the count of
@@ -1213,10 +1235,14 @@ func TestAParkedRelayFromAnOldConnectionLeavesTheNewCountAlone(t *testing.T) {
 
 // parkedOn is how many relayed file sessions are parked on the connection
 // a window holds a machine under now.
+//
+// It is -1 when the window is not holding that machine at all. A count of
+// zero would read as a machine with nothing parked on it, and a test
+// waiting for the count to fall would pass on a machine that had gone.
 func parkedOn(a *testApp, host string) int {
 	m := a.machines.named(host)
 	if m == nil {
-		return 0
+		return -1
 	}
 	return a.serving.abandonedRelays(m.conn)
 }

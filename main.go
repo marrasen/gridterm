@@ -252,13 +252,26 @@ func main() {
 	// have to be closed into a separate error or every failure to shut
 	// one down is dropped on the path the user actually takes.
 	err = ebiten.RunGame(a)
-	// Every connection still being made, and every dialog waiting for an
-	// answer, is let go of here rather than left holding a goroutine.
-	a.stop()
 	if errors.Is(err, ebiten.Termination) {
 		err = nil
 	}
-	closed := []error{err}
+	if err := a.shutDown(err); err != nil {
+		log.Fatal(err)
+	}
+}
+
+// shutDown closes everything the window is still holding and returns
+// what is left to report.
+//
+// ran is what the game loop ended with, and comes back with the rest. A
+// file session's goodbye that went unanswered is logged rather than
+// returned: the window is going either way, a dead link runs that bound
+// out on its own, and there is nothing in it for the user to act on.
+func (a *app) shutDown(ran error) error {
+	// Every connection still being made, and every dialog waiting for an
+	// answer, is let go of here rather than left holding a goroutine.
+	a.stop()
+	closed := []error{ran}
 	// The listener first, so a window that has taken this one over is
 	// hung up on cleanly rather than finding the socket reset under it
 	// as the process goes.
@@ -284,9 +297,7 @@ func main() {
 	// agents reach this window on goes with them: there is nothing left
 	// to hand over.
 	closed = append(closed, a.closeWindows(), a.agents.stop())
-	if err := errors.Join(closed...); err != nil {
-		log.Fatal(err)
-	}
+	return a.graceLogged(errors.Join(closed...))
 }
 
 // chooseFonts resolves the typeface flags into what the window starts

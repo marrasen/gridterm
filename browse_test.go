@@ -1510,10 +1510,12 @@ func TestClosingTheFocusedPaneSaysNothingAboutTheGrace(t *testing.T) {
 	client, _, relay := aRelayedWindow(t)
 	pane := onlyFilePane(t, client)
 
-	// The link goes quiet for longer than the grace and then comes back,
-	// which is the slow round trip the grace really catches.
+	// The link goes quiet and comes back long after both bounds, so the
+	// goodbye goes unanswered however late the close starts. Timed to come
+	// back inside them, a close that started a moment late would find the
+	// link working and log nothing.
 	relay.stop()
-	time.AfterFunc(2*filesGrace, relay.resume)
+	time.AfterFunc(8*filesGrace, relay.resume)
 
 	client.focus(pane)
 	if err := client.closeFocused(); err != nil {
@@ -1540,8 +1542,10 @@ func TestTheCrossOnAFilePaneSaysNothingAboutTheGrace(t *testing.T) {
 		t.Fatal("the pane has no row to close from")
 	}
 
+	// Back long after both bounds, so the goodbye goes unanswered however
+	// late the close starts.
 	relay.stop()
-	time.AfterFunc(2*filesGrace, relay.resume)
+	time.AfterFunc(8*filesGrace, relay.resume)
 
 	if err := row.Close(); err != nil {
 		t.Fatalf("the cross on the row reported %v", err)
@@ -1588,6 +1592,105 @@ func TestACloseInTheBackgroundSaysNothingAboutTheGrace(t *testing.T) {
 	}
 }
 
+// Quitting with a machine that has stopped answering exits cleanly.
+//
+// Closing the connection closes the file session riding on it, and a link
+// that is dead both ways never answers, so that close is abandoned. Left
+// in the join the window hands to log.Fatal, it would turn an ordinary
+// quit into a failure and an exit code of 1.
+func TestQuittingWithAWedgedMachineDoesNotFail(t *testing.T) {
+	a, relay := aRelayedMachine(t)
+	if err := a.openFilesOn("margit"); err != nil {
+		t.Fatalf("open a file pane on margit: %v", err)
+	}
+	waitFor(t, a, "a file pane on margit", func() bool { return a.files != nil })
+
+	// margit drops off the network, and the user quits.
+	relay.stop()
+
+	// On a goroutine of its own, so a shutdown that never comes back is a
+	// failure here rather than the whole package timing out.
+	done := make(chan error, 1)
+	go func() { done <- a.shutDown(nil) }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("quitting reported %v, want the abandoned close logged and a clean exit", err)
+		}
+	case <-time.After(waitBudget):
+		t.Fatal("quitting with a machine that had stopped answering never came back")
+	}
+	if !a.logged.holds(remote.ErrCloseAbandoned.Error()) {
+		t.Errorf("nothing was logged about the close being left behind: %v", a.logged.all())
+	}
+}
+
+// And a real failure on the way out still fails.
+func TestQuittingStillFailsOnRealTrouble(t *testing.T) {
+	a, _ := aRelayedMachine(t)
+	boom := errors.New("the game loop fell over")
+
+	if err := a.shutDown(boom); !errors.Is(err, boom) {
+		t.Errorf("quitting reported %v, want the failure the window ended with", err)
+	}
+}
+
+// A window taken over that has stopped answering is refused the next file
+// pane once too many closes have been left behind on it.
+//
+// An abandoned close holds a goroutine and the file session's error
+// stream until this window hangs up on that one, which letting go of the
+// window does and closing a pane does not. Without a bound, panes opened
+// and closed on a wedged window pile them up.
+func TestAWindowWithTooManyAbandonedFileClosesIsRefusedTheNext(t *testing.T) {
+	client, addr, relay := aRelayedWindow(t)
+	held := windowAt(t, client, addr)
+	// aRelayedWindow opens the first, so this is as many as the window
+	// will leave closes behind for.
+	for i := 1; i < mostAbandonedCloses; i++ {
+		openFilesFromThePlus(t, client, addr)
+	}
+	panes := append([]*files.Pane(nil), client.files.view.Panes()...)
+	if len(panes) != mostAbandonedCloses {
+		t.Fatalf("the window holds %d file panes, want %d", len(panes), mostAbandonedCloses)
+	}
+
+	// The window over there drops off the network for good, and the panes
+	// are closed one at a time: each goodbye goes unanswered, and so does
+	// the close that follows it.
+	relay.stop()
+	for _, pane := range panes {
+		// The way the cross on the row closes one: an unanswered goodbye
+		// is logged rather than handed back.
+		if err := client.graceLogged(client.closePane(pane)); err != nil {
+			t.Fatalf("closing a file pane: %v", err)
+		}
+	}
+	waitFor(t, client, "every close to be counted against the window", func() bool {
+		return client.windows.abandonedCloses(held.win) == mostAbandonedCloses
+	})
+
+	// The next one is turned away before anything is opened, by name and
+	// by count.
+	_, err := client.windowFiles(addr)
+	if err == nil {
+		t.Fatal("a file pane was opened on a window with every close left behind on it")
+	}
+	want := addr + " has stopped answering; four file sessions to it are still waiting to end"
+	if err.Error() != want {
+		t.Errorf("it said %q, want %q", err, want)
+	}
+
+	// And letting go of the window ends every one of them, so the count
+	// goes with it.
+	if err := client.dropWindow(addr); err != nil {
+		t.Fatalf("let go of the window: %v", err)
+	}
+	if got := client.windows.abandonedCloses(held.win); got != 0 {
+		t.Errorf("%d closes are still counted against a window that has been let go of", got)
+	}
+}
+
 // A failure carrying a grace and real trouble together is still shown.
 //
 // Only the grace is quiet. A close that ran its bound out and also failed
@@ -1616,6 +1719,11 @@ func TestAGraceAlongsideRealTroubleIsStillShown(t *testing.T) {
 		}
 		if rest != nil && !strings.Contains(rest.Error(), "could not close margit") {
 			t.Errorf("what is shown lost the words saying what was closed: %v", rest)
+		}
+		// And nothing was taken out to be logged: the whole thing is
+		// shown, so logging a copy of it would say it twice.
+		if expired != nil {
+			t.Errorf("it logged %v as well as showing it", expired)
 		}
 	})
 

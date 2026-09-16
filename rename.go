@@ -72,7 +72,6 @@ func (a *app) renamedMachine(was string, to remote.Host) {
 		a.renamedFiles(was, to.Name)
 		// The file sessions left parked on it need nothing: they are
 		// counted against the connection, which the rename did not touch.
-
 		// The connection's own row, and the rows of the panes and the
 		// tunnels on it.
 		a.rehostRows(was, to.Name)

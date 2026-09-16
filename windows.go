@@ -90,17 +90,58 @@ type windows struct {
 	// the handshake. Zero asks the serve package for its own; a test
 	// asks for less so it does not wait out the real one.
 	patience time.Duration
+
+	// abandoned counts the file sessions whose own close never came
+	// back, by the connection to the window they were on rather than the
+	// name it is held under: a rename moves the name and leaves the
+	// close where it is. Each one holds a goroutine and the session's
+	// error stream until this window hangs up on that one, so a window
+	// that stopped answering is not asked for any more file panes.
+	abandoned map[*serve.Window]int
 }
 
 // newWindows builds the record of windows taken over, holding none.
 func newWindows(book *remote.Book) *windows {
 	return &windows{
-		book: book,
-		held: make(map[string]*taken),
-		from: make(map[*term.Terminal]*taken),
-		seen: make(map[*term.Terminal]remoteKey),
+		book:      book,
+		held:      make(map[string]*taken),
+		from:      make(map[*term.Terminal]*taken),
+		seen:      make(map[*term.Terminal]remoteKey),
+		abandoned: make(map[*serve.Window]int),
 	}
 }
+
+// mostAbandonedCloses is how many file sessions may be left unclosed on
+// one window taken over before this one refuses to open another there.
+//
+// Low, for the reason mostAbandonedRelays is low: each one is a
+// goroutine and a stream on a window that has already stopped answering,
+// and a browser opens one per pane. They end when this window hangs up
+// on that one, so a user opening and closing panes on a wedged window
+// would otherwise pile them up.
+const mostAbandonedCloses = 4
+
+// closeAbandoned counts one more file session whose close was left
+// behind on a window.
+func (w *windows) closeAbandoned(win *serve.Window) { w.abandoned[win]++ }
+
+// closeStopped counts one fewer, for a close that came back after all. A
+// window at nothing is forgotten rather than kept at zero.
+func (w *windows) closeStopped(win *serve.Window) {
+	if n := w.abandoned[win]; n > 1 {
+		w.abandoned[win] = n - 1
+		return
+	}
+	delete(w.abandoned, win)
+}
+
+// abandonedCloses is how many file sessions are left unclosed on a
+// window now.
+func (w *windows) abandonedCloses(win *serve.Window) int { return w.abandoned[win] }
+
+// closesEnded forgets what was left on a window this one has hung up on:
+// closing the connection ends every one of them.
+func (w *windows) closesEnded(win *serve.Window) { delete(w.abandoned, win) }
 
 // named is the window held under a name, or nil.
 //
@@ -682,6 +723,9 @@ func (a *app) letGoOfWindow(t *taken) error {
 		errs = append(errs, a.closePane(pane))
 	}
 	errs = append(errs, t.win.Close())
+	// Hanging up ends every close left behind on that window, so the
+	// count goes with it.
+	a.windows.closesEnded(t.win)
 	// A goodbye the window never answered is logged rather than shown:
 	// the bound on it is one round trip on the goroutine that draws, and
 	// a slow link runs it out with nothing wrong.

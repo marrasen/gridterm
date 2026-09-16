@@ -278,6 +278,11 @@ func fromHome(dir string) (string, error) {
 	case dir == "~":
 	case strings.HasPrefix(dir, "~/"), strings.HasPrefix(dir, `~\`):
 		rest = dir[2:]
+	case strings.HasPrefix(dir, "/"), strings.HasPrefix(dir, `\`):
+		// Rooted already, and left alone. On Windows /c/Users/me/.claude is not
+		// filepath.IsAbs, and joining it onto the home directory would put the skill somewhere
+		// nobody named.
+		return dir, nil
 	case filepath.IsAbs(dir):
 		return dir, nil
 	default:

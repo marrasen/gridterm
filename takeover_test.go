@@ -1889,7 +1889,10 @@ func TestLettingGoOfFilesOnAWindowThatStoppedAnsweringComesBack(t *testing.T) {
 	ch := &theChannel{client: client}
 
 	done := make(chan error, 1)
-	go func() { done <- closeFilesOver(client, ch) }()
+	go func() {
+		_, err := closeFilesOver(client, ch)
+		done <- err
+	}()
 	<-client.started
 
 	select {

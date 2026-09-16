@@ -25,6 +25,10 @@ const mostCells = 10000
 // which shows anywhere in the window being served. A browser uses one
 // per pane, so this is far more than anybody opens and little enough
 // that a client cannot quietly make this machine run out of handles.
+//
+// It counts the sessions being served right now. A relay left parked on a
+// machine that stopped answering has already ended its session and is not
+// counted, so this is no bound on those.
 const mostFileSessions = 16
 
 // serveChannels answers what a client opens on its connection.

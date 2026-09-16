@@ -1705,9 +1705,12 @@ func TestAFileSessionRequestOfAnotherBuildIsRefused(t *testing.T) {
 	if !strings.Contains(err.Error(), "same build") {
 		t.Errorf("it was refused with %q, want the reason a user can act on", err)
 	}
+	// Given a moment: the refusal comes back from the goroutine answering
+	// channels, and a session started an instant later would slip past a
+	// read that only looked once.
 	select {
 	case <-started:
 		t.Error("a file session was started for a request that could not be read")
-	default:
+	case <-time.After(200 * time.Millisecond):
 	}
 }

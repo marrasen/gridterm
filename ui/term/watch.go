@@ -222,6 +222,16 @@ func (t *Terminal) TextLines(n int) string {
 	return strings.Join(out, "\n")
 }
 
+// Cursor is where the cursor is on the live screen, counted from zero
+// at the top left, and whether a full-screen program is drawing.
+func (t *Terminal) Cursor() (row, col int, alt bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	scr := t.term.Screen()
+	col, row = scr.CursorPos()
+	return row, col, scr.OnAltBuffer()
+}
+
 // plainRow is one row of a grid as plain text, trailing spaces cut.
 func plainRow(g *grid.Grid, y, cols int) string {
 	var line strings.Builder

@@ -119,6 +119,7 @@ no fold. `ui.Notice` already wraps, scrolls, selects and copies.
 Done when: a connection's lines are coloured; after it connects the
 pane shows one line; the plus menu opens the whole account, copyable;
 F1 lists the keys.
+
 Done by b52d607 Keep, colour and fold the connection log, and add a help view.
 Done by d1c9a6f Filter the window's own account lines, wake the pane at the fold, align the help.
 Decided in review: help is on Ctrl+Shift+H, not F1, which belongs to the programs in the shell.
@@ -136,6 +137,8 @@ Decided in review: help is on Ctrl+Shift+H, not F1, which belongs to the program
   column instead of `│`. The column stays: it is the drag handle, and
   Step 4 makes the other dividers draggable too. **Reading:** the
   column's background stays the window's.
+Done by 065865d Draw a connection's kind icon in its state colour, and blank the dock's divider.
+Done by 8f5ea0b Keep the state visible in a narrow sidebar, and let a heading have its own colour.
 
 ## Step 4 -- draggable dividers
 

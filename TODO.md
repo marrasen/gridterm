@@ -97,7 +97,7 @@ needs an answer from Marcus is last.
      for waits for quiet, which `top` never is. The description says
      to use `contains` or `read_pane` for a program that keeps drawing.
 
-8. **Say in the menu bar when this window is served or taken over.**
+8. Done. **Say in the menu bar when this window is served or taken over.**
    Asked for on 2026-09-16. The menu bar gets a right-aligned status in
    red: "Controlled by <name> from <address>" while a client is
    attached, and "Serving on <address>, nobody connected" while the

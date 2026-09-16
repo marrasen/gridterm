@@ -475,6 +475,7 @@ func (a *app) startServing(port, where string) error {
 // on its first frame when the settings could not be read.
 func (a *app) useSettings(set *settings.Settings) {
 	a.serving.remember(set)
+	a.agents.remember(set)
 	err := set.Err()
 	if err == nil {
 		return

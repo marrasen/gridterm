@@ -47,7 +47,7 @@ needs an answer from Marcus is last.
    pointer's cell and calls `ebiten.SetCursorShape`. Tests ask the root
    over each kind of divider and over a pane.
 
-4. **A prompt for the agent, not a bare code.** Done in part. Handing
+4. Done. **A prompt for the agent, not a bare code.** Handing
    a pane over puts a ready-to-paste instruction on the clipboard and
    shows it in the dialog: run `gridterm -mcp` as an MCP server over
    standard input and output, then call `use_session_code` with the
@@ -58,22 +58,23 @@ needs an answer from Marcus is last.
    question on 2026-09-16: let the user pick the agent host, remember
    the pick, and write a skill as well. That is items 5 and 6.
 
-5. **Pick the agent host, and remember it.** The hand-over dialog
+5. Done. **Pick the agent host, and remember it.** The hand-over dialog
    offers the host the prompt is for: Claude Code, Codex, Cursor, or
    another host that takes a JSON MCP config. The prompt's setup lines
    follow the pick. The pick is kept in the settings file, so the next
    hand-over starts from it.
 
-6. **A skill for the host.** The dialog offers to write a skill for
+6. Done. **A skill for the host.** The dialog offers to write a skill for
    the picked host: a `SKILL.md` that says what gridterm is, how to
    reach the server, and how to work in a pane, with the tool workflow
    and the rules from the prompt. For Claude Code it goes under
-   `~/.claude/skills/gridterm/`; for a host whose skill directory is
+   `~/.claude/skills/gridterm/` and for Codex under
+   `~/.codex/skills/gridterm/`; for a host whose skill directory is
    not known it goes under gridterm's own config directory and the
    dialog says where. `gridterm -mcp-skill` prints the same file. A
    disk error is reported, never worked around.
 
-7. **Tools enough for real work.** Checked against four jobs on
+7. Done. **Tools enough for real work.** Checked against four jobs on
    2026-09-16: getting a user out of vim, opening top sorted on memory,
    installing midnight commander and copying a folder with it, and
    finding why sshd cannot be reached. What holds today: `send_keys`

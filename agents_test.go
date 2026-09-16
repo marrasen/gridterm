@@ -2,11 +2,16 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/marrasen/gridterm/agent"
+	"github.com/marrasen/gridterm/mcp"
+	"github.com/marrasen/gridterm/settings"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/term"
 )
@@ -61,7 +66,7 @@ func TestAnAgentWorksInThePaneItWasHanded(t *testing.T) {
 	var look agent.Look
 	offWindow(t, a, "the window to answer the agent", func() error {
 		var err error
-		look, err = c.Read(got.ID)
+		look, err = c.Read(got.ID, 0)
 		return err
 	})
 	if !strings.Contains(look.Screen, "root@margit") {
@@ -72,7 +77,7 @@ func TestAnAgentWorksInThePaneItWasHanded(t *testing.T) {
 	}
 
 	// And what it types reaches the program.
-	offWindow(t, a, "the window to answer the agent", func() error { return c.Send(got.ID, "uptime\r") })
+	offWindow(t, a, "the window to answer the agent", func() error { return c.Send(got.ID, "uptime\r", nil) })
 	waitFor(t, a, "the shell to be sent what the agent typed", func() bool {
 		return strings.Contains(a.shells[0].sentText(), "uptime")
 	})
@@ -93,10 +98,10 @@ func TestAnAgentWithoutACodeCanDoNothing(t *testing.T) {
 		t.Fatal("the pane has no name")
 	}
 
-	if _, err := c.Read(id); err == nil {
+	if _, err := c.Read(id, 0); err == nil {
 		t.Error("it read a pane it had given no code for")
 	}
-	if err := c.Send(id, "rm -rf /\r"); err == nil {
+	if err := c.Send(id, "rm -rf /\r", nil); err == nil {
 		t.Error("it typed into a pane it had given no code for")
 	}
 	if got := a.shells[0].sentText(); got != "" {
@@ -122,10 +127,10 @@ func TestTakingThePaneBackStopsTheAgent(t *testing.T) {
 		t.Fatalf("take it back: %v", err)
 	}
 
-	if _, err := c.Read(got.ID); err == nil {
+	if _, err := c.Read(got.ID, 0); err == nil {
 		t.Error("it read a pane the user had taken back")
 	}
-	if err := c.Send(got.ID, "x"); err == nil {
+	if err := c.Send(got.ID, "x", nil); err == nil {
 		t.Error("it typed into a pane the user had taken back")
 	}
 	if got := a.shells[0].sentText(); got != "" {
@@ -229,6 +234,97 @@ func TestTheRowSaysAnAgentHasThePane(t *testing.T) {
 	})
 }
 
+// exeHere is this program's own path, which every prompt and skill a test
+// builds has to be built from.
+func exeHere(t *testing.T) string {
+	t.Helper()
+	exe, err := exePath()
+	if err != nil {
+		t.Fatalf("this program's own path: %v", err)
+	}
+	return exe
+}
+
+// The prompt's setup lines are the picked host's, and no other host's.
+//
+// A prompt that offers an agent four ways of adding the server is a
+// prompt it has to choose from, and the user already chose.
+func TestTheHandoverPromptFollowsTheHostItIsFor(t *testing.T) {
+	const code = "gt1-54321-abcdefghijklmnopqrstuvwxyz"
+	// A path with a space in it, because that is where an unquoted
+	// command line falls apart.
+	const exe = `C:\Program Files\gridterm\gridterm.exe`
+	// The line that sets each host up, and so the line no other host's
+	// prompt may carry. The path is in quotes on a command line.
+	setup := map[string]string{
+		hostClaudeCode: `claude mcp add gridterm -- "` + exe + `" -mcp`,
+		hostCodex:      `codex mcp add gridterm -- "` + exe + `" -mcp`,
+		hostCursor:     "put this in ~/.cursor/mcp.json",
+		hostOther:      "put this in its MCP config",
+	}
+	// What each prompt says has to happen after the setup, which is the
+	// step an agent cannot take for itself.
+	restart := map[string]string{
+		hostClaudeCode: "start you again",
+		hostCodex:      "start you again",
+		hostCursor:     "start Cursor again",
+		hostOther:      "start the host again",
+	}
+	// The hosts set up by a JSON config rather than by a command of
+	// their own.
+	byConfig := map[string]bool{hostCursor: true, hostOther: true}
+
+	for _, host := range agentHosts {
+		t.Run(host.name, func(t *testing.T) {
+			prompt := handoverPrompt(host, code, exe)
+			t.Logf("the prompt as generated:\n%s", prompt)
+
+			if want := setup[host.name]; !strings.Contains(prompt, want) {
+				t.Errorf("the prompt does not say %q", want)
+			}
+			for other, line := range setup {
+				if other == host.name {
+					continue
+				}
+				if strings.Contains(prompt, line) {
+					t.Errorf("it also carries %s's %q", other, line)
+				}
+			}
+			// The agent cannot do the setup itself. Adding the server only
+			// writes config, and a session already running will not pick
+			// it up. So the prompt has the agent ask the user, and say
+			// what has to happen after that.
+			for _, say := range []string{"Ask the user to", restart[host.name]} {
+				if !strings.Contains(prompt, say) {
+					t.Errorf("the prompt does not say %q", say)
+				}
+			}
+			if got := strings.Contains(prompt, `{"mcpServers"`); got != byConfig[host.name] {
+				t.Errorf("it carries a JSON config: %v, want %v", got, byConfig[host.name])
+			}
+			if !byConfig[host.name] {
+				return
+			}
+			// The path in the JSON, where its backslashes have to be
+			// doubled to be read back.
+			var config struct {
+				Servers map[string]struct {
+					Command string   `json:"command"`
+					Args    []string `json:"args"`
+				} `json:"mcpServers"`
+			}
+			snippet := jsonIn(t, prompt)
+			if err := json.Unmarshal([]byte(snippet), &config); err != nil {
+				t.Fatalf("the JSON in the prompt does not parse: %v in %s", err, snippet)
+			}
+			got, there := config.Servers["gridterm"]
+			if !there || got.Command != exe || len(got.Args) != 1 || got.Args[0] != "-mcp" {
+				t.Errorf("the JSON says %+v", config.Servers)
+			}
+		})
+	}
+}
+
 // The prompt tells an agent that has never heard of gridterm everything
 // it needs.
 //
@@ -237,31 +333,11 @@ func TestTheRowSaysAnAgentHasThePane(t *testing.T) {
 func TestTheHandoverPromptStandsOnItsOwn(t *testing.T) {
 	const code = "gt1-54321-abcdefghijklmnopqrstuvwxyz"
 	const exe = `C:\Users\someone\go\bin\gridterm.exe`
-	prompt := handoverPrompt(code, exe)
+	prompt := handoverPrompt(hostNamed(hostClaudeCode), code, exe)
 	t.Logf("the prompt as generated:\n%s", prompt)
 
 	if got := strings.Count(prompt, code); got != 1 {
 		t.Errorf("the code is in the prompt %d times, want once", got)
-	}
-	// The one line for Claude Code, with this program's own path.
-	if want := "claude mcp add gridterm -- " + exe + " -mcp"; !strings.Contains(prompt, want) {
-		t.Errorf("the prompt does not say %q", want)
-	}
-	// And the same path in the JSON for any other host, where its
-	// backslashes have to be doubled to be read back.
-	var config struct {
-		Servers map[string]struct {
-			Command string   `json:"command"`
-			Args    []string `json:"args"`
-		} `json:"mcpServers"`
-	}
-	snippet := jsonIn(t, prompt)
-	if err := json.Unmarshal([]byte(snippet), &config); err != nil {
-		t.Fatalf("the JSON in the prompt does not parse: %v in %s", err, snippet)
-	}
-	got, there := config.Servers["gridterm"]
-	if !there || got.Command != exe || len(got.Args) != 1 || got.Args[0] != "-mcp" {
-		t.Errorf("the JSON says %+v", config.Servers)
 	}
 
 	for _, tool := range []string{
@@ -307,49 +383,157 @@ func jsonIn(t *testing.T, prompt string) string {
 	return prompt[from : to+len("}}}")]
 }
 
-// Handing a pane over shows the code and puts the whole prompt on the
-// clipboard.
+// handoverDialog hands a pane over and gives back the dialog that asks
+// which agent it is for.
+func handoverDialog(t *testing.T, a *testApp, pane *term.Terminal) *ui.Form {
+	t.Helper()
+	if err := a.handPane(pane); err != nil {
+		t.Fatalf("hand it over: %v", err)
+	}
+	return awaitModal[*ui.Form](t, a, "the hand-over dialog",
+		byTitle[*ui.Form]("An agent may work in this pane"))
+}
+
+// drawsEveryLine checks a dialog really draws every line it was given.
 //
-// The next thing the prompt is for is being pasted into a conversation,
-// and it is more than anybody should have to read off a screen.
+// Form drops the lines that will not fit in the window and says nothing
+// about it, so a dialog that runs long stops mid-sentence.
+func drawsEveryLine(t *testing.T, a *testApp, f *ui.Form) {
+	t.Helper()
+	joined := strings.Join(drawnLines(a, f), "\n")
+	for _, line := range f.Lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		// A line too wide for the box is trimmed rather than dropped, so
+		// only the start of it is looked for.
+		want := line
+		if len(want) > 40 {
+			want = want[:40]
+		}
+		if !strings.Contains(joined, want) {
+			t.Errorf("at %dx%d the dialog stops before %q:\n%s",
+				a.lastSize[0], a.lastSize[1], line, joined)
+		}
+	}
+}
+
+// Handing a pane over puts the whole prompt on the clipboard, shows the
+// code, and says what the user has to do first.
+//
+// At eighty columns by twenty four rows, which is the smallest window
+// anybody uses: a dialog that runs longer than that is cut off without a
+// word, and the part that goes is the end.
 func TestHandingAPaneOverShowsTheCodeAndCopiesThePrompt(t *testing.T) {
-	a := newTestApp(t, 90, 30)
+	a := newTestApp(t, 80, 24)
 	withDialogs(t, a)
 	withPanel(t, a)
 	pane := onlyPaneOn(t, a)
 
-	if err := a.handPane(pane); err != nil {
-		t.Fatalf("hand it over: %v", err)
-	}
+	f := handoverDialog(t, a, pane)
+	drawsEveryLine(t, a, f)
+	pressButton(t, a, f, "Copy the prompt")
 
 	code := a.agents.of(pane).code
-	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
-	shown := strings.Join(f.Lines, "\n")
-	if !strings.Contains(shown, code) {
-		t.Errorf("the dialog does not show the code: %v", f.Lines)
+	host := hostNamed(hostClaudeCode)
+	// Under go test this is the test binary, and under go run a
+	// temporary one: a real path either way, and one worth nothing
+	// tomorrow.
+	exe := exeHere(t)
+	prompt := handoverPrompt(host, code, exe)
+
+	shownIn := awaitModal[*ui.Form](t, a, "the dialog showing the code",
+		byTitle[*ui.Form]("Paste the prompt to "+host.name))
+	drawsEveryLine(t, a, shownIn)
+	drawn := strings.Join(drawnLines(a, shownIn), "\n")
+	// What the user has to do, and the code, on the screen rather than
+	// only in f.Lines.
+	for _, say := range []string{"clipboard", code, "claude mcp add gridterm --", "restart"} {
+		if !strings.Contains(drawn, say) {
+			t.Errorf("the dialog does not draw %q:\n%s", say, drawn)
+		}
 	}
-	// The dialog indents what it quotes of the prompt.
-	opening := "  " + strings.ReplaceAll(promptOpening(handoverPrompt(code, exePath())), "\n", "\n  ")
-	if !strings.Contains(shown, opening) {
-		t.Errorf("the dialog does not show how the prompt starts: %v", f.Lines)
-	}
-	if !strings.Contains(shown, "clipboard") {
-		t.Errorf("the dialog does not say the prompt is on the clipboard: %v", f.Lines)
-	}
+
 	// The clipboard is written from a goroutine of its own, because on
 	// some systems putting something on it means running a program.
-	want := handoverPrompt(code, exePath())
-	waitFor(t, a, "the prompt to reach the clipboard", func() bool { return a.copiedText() == want })
+	waitFor(t, a, "the prompt to reach the clipboard", func() bool { return a.copiedText() == prompt })
 	if got := a.copiedText(); !strings.Contains(got, "use_session_code") ||
 		!strings.Contains(got, "-mcp") {
 		t.Errorf("the clipboard holds %q, which is not a prompt an agent can act on", got)
 	}
 
 	// And the dialog offers to take it straight back.
-	pressButton(t, a, f, "Take it back")
+	pressButton(t, a, shownIn, "Take it back")
 	if a.agents.of(pane) != nil {
 		t.Error("it is still handed over")
 	}
+}
+
+// The setup line fits the dialog for a path of a real length, so the
+// exact line the user has to run is not trimmed at the edge of the box.
+func TestTheSetupLinesFitTheDialog(t *testing.T) {
+	const exe = `C:\Program Files\gridterm\gridterm.exe`
+	// formMaxCols less the blank column each side, which is the widest a
+	// dialog line is ever drawn.
+	const room = 72
+	for _, host := range agentHosts {
+		for _, line := range host.setupLines(exe) {
+			if len(line) > room {
+				t.Errorf("%s: a setup line is %d characters, over %d: %q",
+					host.name, len(line), room, line)
+			}
+		}
+	}
+}
+
+// The prompt is written for the agent the user picked, and the next
+// hand-over opens on that agent.
+//
+// Whoever hands panes to Codex today will hand panes to Codex tomorrow,
+// and picking it again every time is a question already answered.
+func TestTheHandoverDialogWritesForThePickedAgentAndRemembersIt(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	path := filepath.Join(t.TempDir(), "settings.json")
+	set, err := withSettings(t, a, path)
+	if err != nil {
+		t.Fatalf("settings: %v", err)
+	}
+	pane := onlyPaneOn(t, a)
+
+	f := handoverDialog(t, a, pane)
+	// Nothing remembered yet, so it opens on Claude Code.
+	fieldSays(t, f, "Agent", hostClaudeCode)
+	stepOptions(t, a, f, "Agent")
+	fieldSays(t, f, "Agent", hostCodex)
+	pressButton(t, a, f, "Copy the prompt")
+
+	code := a.agents.of(pane).code
+	want := handoverPrompt(hostNamed(hostCodex), code, exeHere(t))
+	waitFor(t, a, "the prompt for Codex to reach the clipboard",
+		func() bool { return a.copiedText() == want })
+
+	// The pick is written down, in the file as well as in this window.
+	waitFor(t, a, "the pick to be remembered", func() bool {
+		got, saved := set.AgentHost()
+		return saved && got == hostCodex
+	})
+	again, err := settings.Load(path)
+	if err != nil {
+		t.Fatalf("load the settings again: %v", err)
+	}
+	if got, saved := again.AgentHost(); !saved || got != hostCodex {
+		t.Errorf("the file remembered %q, %v; want %q", got, saved, hostCodex)
+	}
+
+	// And the next hand-over opens on it.
+	code1 := awaitModal[*ui.Form](t, a, "the dialog showing the code",
+		byTitle[*ui.Form]("Paste the prompt to "+hostCodex))
+	pressButton(t, a, code1, "Done")
+	next := handoverDialog(t, a, pane)
+	fieldSays(t, next, "Agent", hostCodex)
 }
 
 // Taking a pane back while an agent is waiting on it comes back.
@@ -375,7 +559,7 @@ func TestTakingAPaneBackWhileAnAgentIsAskingComesBack(t *testing.T) {
 	asking := make(chan struct{})
 	go func() {
 		close(asking)
-		_, _, _ = c.Wait("1", agent.Until{QuietMS: 60000, TimeoutMS: 60000})
+		_, _, _ = c.Wait("1", 0, agent.Until{QuietMS: 60000, TimeoutMS: 60000})
 	}()
 	<-asking
 	waitUntil(t, "work to be queued for the window", func() bool { return a.pump.pending() > 0 })
@@ -437,7 +621,7 @@ func TestHandingAPaneOverAgainShutsOutTheAgentThatHadIt(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		_, err := old.Read(had.ID)
+		_, err := old.Read(had.ID, 0)
 		done <- err
 	}()
 	waitFor(t, a, "the window to answer", func() bool { return len(done) > 0 })
@@ -447,7 +631,7 @@ func TestHandingAPaneOverAgainShutsOutTheAgentThatHadIt(t *testing.T) {
 
 	// And typing with it reaches nothing.
 	go func() {
-		done <- old.Send(had.ID, "rm -rf /\r")
+		done <- old.Send(had.ID, "rm -rf /\r", nil)
 	}()
 	waitFor(t, a, "the window to answer", func() bool { return len(done) > 0 })
 	if err := <-done; err == nil {
@@ -548,7 +732,7 @@ func TestTakingOnePaneBackWithAnotherStillOut(t *testing.T) {
 	// window.
 	done := make(chan error, 1)
 	go func() {
-		_, err := c.Read(had.ID)
+		_, err := c.Read(had.ID, 0)
 		done <- err
 	}()
 	waitFor(t, a, "the window to answer", func() bool { return len(done) > 0 })
@@ -556,7 +740,7 @@ func TestTakingOnePaneBackWithAnotherStillOut(t *testing.T) {
 		t.Error("it read a pane the user had taken back")
 	}
 
-	go func() { done <- c.Send(had.ID, "rm -rf /\r") }()
+	go func() { done <- c.Send(had.ID, "rm -rf /\r", nil) }()
 	waitFor(t, a, "the window to answer", func() bool { return len(done) > 0 })
 	if err := <-done; err == nil {
 		t.Error("it typed into a pane the user had taken back")
@@ -604,5 +788,223 @@ func TestTheDialogNamesSomewhereTheCommandsReallyAre(t *testing.T) {
 	}
 	if !offered {
 		t.Error("the Servers menu does not offer taking the pane back")
+	}
+}
+
+// withHome points os.UserHomeDir and os.UserConfigDir at a directory the
+// test owns, and returns it.
+//
+// The real ones belong to whoever is running the tests, and a test that
+// wrote a skill into them would replace a skill that person wrote.
+func withHome(t *testing.T) string {
+	t.Helper()
+	home := t.TempDir()
+	config := filepath.Join(home, "config")
+	// HOME and XDG_CONFIG_HOME on Unix, USERPROFILE and APPDATA on
+	// Windows. Setting all four keeps the test the same on either.
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("XDG_CONFIG_HOME", config)
+	t.Setenv("APPDATA", config)
+	return home
+}
+
+// gridtermSkillPath is where a skill goes for a host gridterm knows no
+// skill directory for: under gridterm's own settings.
+func gridtermSkillPath(t *testing.T) string {
+	t.Helper()
+	path, err := settings.Path()
+	if err != nil {
+		t.Fatalf("where the settings live: %v", err)
+	}
+	return filepath.Join(filepath.Dir(path), "skills", "gridterm", "SKILL.md")
+}
+
+// The dialog writes the skill where the picked host reads skills from,
+// and says where that was.
+func TestWritingTheSkillPutsItWhereTheHostLooks(t *testing.T) {
+	for _, host := range agentHosts {
+		t.Run(host.name, func(t *testing.T) {
+			home := withHome(t)
+			a := newTestApp(t, 90, 30)
+			withDialogs(t, a)
+			withPanel(t, a)
+			pane := onlyPaneOn(t, a)
+
+			want := gridtermSkillPath(t)
+			if len(host.skillIn) > 0 {
+				want = filepath.Join(append([]string{home}, append(host.skillIn, "SKILL.md")...)...)
+			}
+
+			f := handoverDialog(t, a, pane)
+			f.Field("Agent").SetText(host.name)
+			pressButton(t, a, f, "Write the skill")
+
+			n := awaitModal[*ui.Notice](t, a, "a notice saying where the skill went", nil)
+			if n.Failure {
+				t.Fatalf("writing the skill failed: %s", n.Message())
+			}
+			if !strings.Contains(n.Message(), want) {
+				t.Errorf("the notice says %q, and not where the skill went", n.Message())
+			}
+			// A host gridterm knows no skill directory for has to be
+			// told where to find it, or the file sits there unread.
+			if len(host.skillIn) == 0 && !strings.Contains(n.Message(), "Copy it") {
+				t.Errorf("the notice does not say to copy it: %q", n.Message())
+			}
+
+			got, err := os.ReadFile(want)
+			if err != nil {
+				t.Fatalf("read the skill back: %v", err)
+			}
+			if string(got) != skillFor(host, exeHere(t)) {
+				t.Errorf("the file holds something else:\n%s", got)
+			}
+		})
+	}
+}
+
+// A skill already there that says something else is not written over
+// without the user's word.
+//
+// The file is the user's to edit once it is written, and a second press
+// of the same button must not throw those edits away.
+func TestWritingTheSkillWillNotLoseYourOwnEdits(t *testing.T) {
+	home := withHome(t)
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pane := onlyPaneOn(t, a)
+
+	path := filepath.Join(home, ".claude", "skills", "gridterm", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatalf("make the skill directory: %v", err)
+	}
+	const mine = "---\nname: gridterm\n---\n\nMy own notes.\n"
+	if err := os.WriteFile(path, []byte(mine), 0o600); err != nil {
+		t.Fatalf("write my own skill: %v", err)
+	}
+
+	// Asked, and told to keep what is there.
+	f := handoverDialog(t, a, pane)
+	pressButton(t, a, f, "Write the skill")
+	ask := awaitModal[*ui.Form](t, a, "the dialog asking before it replaces the skill",
+		byTitlePrefix[*ui.Form]("Replace"))
+	if lines := strings.Join(ask.Lines, "\n"); !strings.Contains(lines, path) {
+		t.Errorf("the question does not say which file: %v", ask.Lines)
+	}
+	pressButton(t, a, ask, "Keep")
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read the skill back: %v", err)
+	}
+	if string(got) != mine {
+		t.Fatalf("my own skill was written over:\n%s", got)
+	}
+
+	// Asked again, and told to replace it.
+	f = handoverDialog(t, a, pane)
+	pressButton(t, a, f, "Write the skill")
+	ask = awaitModal[*ui.Form](t, a, "the dialog asking before it replaces the skill",
+		byTitlePrefix[*ui.Form]("Replace"))
+	pressButton(t, a, ask, "Replace")
+	want := skillFor(hostNamed(hostClaudeCode), exeHere(t))
+	waitFor(t, a, "the skill to be written", func() bool {
+		got, err := os.ReadFile(path)
+		return err == nil && string(got) == want
+	})
+}
+
+// A skill that could not be written is said, not worked around.
+func TestASkillThatCannotBeWrittenIsSaid(t *testing.T) {
+	home := withHome(t)
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pane := onlyPaneOn(t, a)
+
+	// A directory where the file has to go.
+	path := filepath.Join(home, ".claude", "skills", "gridterm", "SKILL.md")
+	if err := os.MkdirAll(path, 0o700); err != nil {
+		t.Fatalf("make a directory in the way: %v", err)
+	}
+
+	f := handoverDialog(t, a, pane)
+	pressButton(t, a, f, "Write the skill")
+
+	n := awaitModal[*ui.Notice](t, a, "the failure", nil)
+	if !n.Failure {
+		t.Errorf("it was not shown as a failure: %q", n.Message())
+	}
+	if !strings.Contains(n.Message(), path) {
+		t.Errorf("the failure does not say which file: %q", n.Message())
+	}
+}
+
+// The skill says what gridterm is, how to reach the server for this
+// host, and carries the workflow and the rules as the server states them.
+func TestTheSkillSaysHowToWorkInAHandedOverPane(t *testing.T) {
+	const exe = `C:\Users\someone\go\bin\gridterm.exe`
+	for _, host := range agentHosts {
+		t.Run(host.name, func(t *testing.T) {
+			skill := skillFor(host, exe)
+			t.Logf("the skill as generated:\n%s", skill)
+
+			// The front matter, which is how a host finds the skill at
+			// all.
+			const front = "---\nname: gridterm\ndescription: Work in a terminal pane the user" +
+				" handed over in gridterm, through its MCP server\n---\n"
+			if !strings.HasPrefix(skill, front) {
+				t.Errorf("the skill does not start with the front matter")
+			}
+			// The workflow and the rules word for word, so the skill and
+			// the server's own instructions cannot drift apart.
+			if !strings.Contains(skill, mcp.Workflow) {
+				t.Error("the skill does not carry the workflow")
+			}
+			if !strings.Contains(skill, mcp.Rules) {
+				t.Error("the skill does not carry the rules")
+			}
+			// This host's setup, and how to get a code.
+			if !strings.Contains(skill, host.setupForAgent(exe)) {
+				t.Errorf("the skill does not say how to get the server added to %s", host.name)
+			}
+			if !strings.Contains(skill, "use_session_code") {
+				t.Error("the skill does not say what to do with a session code")
+			}
+			if !strings.Contains(skill, "gridterm is a terminal") {
+				t.Error("the skill does not say what gridterm is")
+			}
+		})
+	}
+}
+
+// The code dialog reads whole in a small window for every host, and with
+// the line more it has to say when gridterm could not read its own path.
+func TestTheCodeDialogReadsWholeForEveryHost(t *testing.T) {
+	for _, host := range agentHosts {
+		t.Run(host.name, func(t *testing.T) {
+			a := newTestApp(t, 80, 24)
+			withDialogs(t, a)
+			withPanel(t, a)
+			pane := onlyPaneOn(t, a)
+			f := handoverDialog(t, a, pane)
+			drawsEveryLine(t, a, f)
+
+			// The longest it gets: a path with a space in it, and the
+			// note about not having read the path at all.
+			const exe = `C:\Program Files\gridterm\gridterm.exe`
+			a.showCode(a.agents.of(pane), host, exe, errors.New("gridterm could not read its own path"))
+
+			shown := awaitModal[*ui.Form](t, a, "the dialog showing the code",
+				byTitle[*ui.Form]("Paste the prompt to "+host.name))
+			drawsEveryLine(t, a, shown)
+			// And it says the path is a guess, rather than showing a line
+			// that will not work and leaving the user to find out.
+			drawn := strings.Join(drawnLines(a, shown), "\n")
+			if !strings.Contains(drawn, "could not read its own path") {
+				t.Errorf("the dialog does not say the path is unknown:\n%s", drawn)
+			}
+		})
 	}
 }

@@ -88,6 +88,10 @@ func main() {
 			"use this installed monospace family instead of the bundled Go Mono")
 		listFonts = flag.Bool("list-fonts", false,
 			"print the installed monospace families and exit")
+		mcpSkill = flag.Bool("mcp-skill", false,
+			"print the skill that tells an agent how to work in a pane handed over in"+
+				" gridterm, and exit; the hand-over dialog writes it for you, or save it"+
+				" yourself as ~/.claude/skills/gridterm/SKILL.md")
 		asMCP = flag.Bool("mcp", false,
 			"serve this machine's gridterm panes to an agent over the Model Context"+
 				" Protocol, on standard input and output, instead of opening a window;"+
@@ -109,6 +113,13 @@ func main() {
 		err := mcp.Serve(context.Background(), os.Stdin, os.Stdout, panes)
 		if err := errors.Join(err, panes.Close()); err != nil {
 			log.Fatalf("-mcp: %v", err)
+		}
+		return
+	}
+
+	if *mcpSkill {
+		if err := printSkill(os.Stdout); err != nil {
+			log.Fatalf("-mcp-skill: %v", err)
 		}
 		return
 	}
@@ -172,8 +183,8 @@ func main() {
 	a.machines = newMachines()
 	a.windows = newWindows(a.book)
 	a.serving = newServing()
-	a.useSettings(openSettings())
 	a.agents = newAgents()
+	a.useSettings(openSettings())
 	a.kept = make(map[*term.Terminal]bool)
 	a.tunnels = make(map[*conns.Entry]*tunnel)
 	a.queue = jobs.New(0)

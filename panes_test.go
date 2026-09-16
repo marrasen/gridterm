@@ -221,6 +221,7 @@ func newTestApp(t *testing.T, cols, rows int, opts ...testOption) *testApp {
 		t.Fatalf("settings: %v", err)
 	}
 	ta.serving.remember(set)
+	ta.agents.remember(set)
 	ta.windows = newWindows(book)
 	// Long enough to be a handshake and short enough that a test which
 	// waits one out is not a test that waits twenty seconds.

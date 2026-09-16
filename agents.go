@@ -10,6 +10,7 @@ import (
 	"github.com/marrasen/gridterm/agent"
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/mcp"
+	"github.com/marrasen/gridterm/settings"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/term"
 )
@@ -31,12 +32,41 @@ type agents struct {
 	// name never comes round again and an agent holding an old one is
 	// holding nothing.
 	next uint64
+
+	// remembered is which agent the hand-over dialog opens on, kept
+	// between runs. Nil until the window is given its settings.
+	remembered *settings.Settings
 }
 
 // newAgents builds an agents with nothing listening and nothing handed
 // over.
 func newAgents() *agents {
 	return &agents{by: make(map[*term.Terminal]*handover)}
+}
+
+// remember gives the window the settings the hand-over dialog opens on
+// and writes itself back to.
+func (g *agents) remember(set *settings.Settings) { g.remembered = set }
+
+// startHost is the agent the hand-over dialog opens on: the one last
+// picked, or Claude Code.
+func (g *agents) startHost() agentHost {
+	if g.remembered == nil {
+		return hostNamed(hostClaudeCode)
+	}
+	name, saved := g.remembered.AgentHost()
+	if !saved {
+		return hostNamed(hostClaudeCode)
+	}
+	return hostNamed(name)
+}
+
+// rememberHost writes down which agent was picked, for the next run.
+func (g *agents) rememberHost(name string) error {
+	if g.remembered == nil {
+		return nil
+	}
+	return g.remembered.PutAgentHost(name)
 }
 
 // of is the handover for a pane, or nil when the pane has not been
@@ -163,11 +193,13 @@ type handover struct {
 	// than one is unusual and is said plainly rather than hidden.
 	working int
 
-	// screen is the last screen read, and said is how much the program
-	// had said when it was read. A wait asks over and over, and a pane
-	// that has said nothing since has the same screen as last time.
+	// screen is the last screen read, said is how much the program had
+	// said when it was read, and lines is how many were asked for. A
+	// wait asks over and over, and a pane that has said nothing since
+	// has the same screen as last time.
 	screen *string
 	said   uint64
+	lines  int
 }
 
 // handPane hands a pane to an agent and shows the user the code.
@@ -185,7 +217,7 @@ func (a *app) handPane(pane *term.Terminal) error {
 		// Already handed over. The code is shown again rather than a
 		// second one made: two codes for one pane is two things to take
 		// back.
-		a.showCode(have)
+		a.showHandover(have)
 		return nil
 	}
 	if err := a.listenForAgents(); err != nil {
@@ -197,7 +229,7 @@ func (a *app) handPane(pane *term.Terminal) error {
 	}
 	h := a.agents.hand(pane, code)
 	a.markDirty()
-	a.showCode(h)
+	a.showHandover(h)
 	return nil
 }
 
@@ -301,7 +333,7 @@ func (w agentWindow) Use(code string) (agent.Pane, error) {
 	})
 }
 
-func (w agentWindow) Look(id string) (agent.Look, error) {
+func (w agentWindow) Look(id string, lines int) (agent.Look, error) {
 	return onDrawing(w.a, func() (agent.Look, error) {
 		h, err := w.a.handedPane(id)
 		if err != nil {
@@ -312,9 +344,9 @@ func (w agentWindow) Look(id string) (agent.Look, error) {
 		// asks twenty times a second, and reading a screen means
 		// rendering the whole of it; a pane that is sitting there would
 		// have it rendered afresh each time for the same answer.
-		if h.screen == nil || h.said != said {
-			text := h.pane.Text()
-			h.screen, h.said = &text, said
+		if h.screen == nil || h.said != said || h.lines != lines {
+			text := h.pane.TextLines(lines)
+			h.screen, h.said, h.lines = &text, said, lines
 		}
 		return agent.Look{
 			Screen:  *h.screen,
@@ -324,7 +356,7 @@ func (w agentWindow) Look(id string) (agent.Look, error) {
 	})
 }
 
-func (w agentWindow) Send(id, text string) error {
+func (w agentWindow) Send(id, text string, keys []string) error {
 	_, err := onDrawing(w.a, func() (struct{}, error) {
 		h, err := w.a.handedPane(id)
 		if err != nil {
@@ -334,8 +366,7 @@ func (w agentWindow) Send(id, text string) error {
 			return struct{}{}, errors.New(
 				"the program in that pane has finished, so nothing is left to type into")
 		}
-		h.pane.Send([]byte(text))
-		return struct{}{}, nil
+		return struct{}{}, typeInto(h.pane, text, keys)
 	})
 	return err
 }
@@ -399,39 +430,147 @@ func (a *app) handHere() error { return a.handPane(a.focusedTerminal()) }
 // at.
 func (a *app) takeBackHere() error { return a.takeBackPane(a.focusedTerminal()) }
 
-// showCode shows the prompt for a handed-over pane, and puts the whole
-// of it on the clipboard: the next thing it is for is being pasted into
-// a conversation.
-func (a *app) showCode(h *handover) {
-	prompt := handoverPrompt(h.code, exePath())
-	a.clip.set(prompt)
+// showHandover asks which agent the pane is being handed to, and offers
+// the prompt and the skill for it.
+//
+// Which agent is asked first because the setup lines the prompt and the
+// skill carry are that agent's, and because the skill goes wherever that
+// agent reads skills from.
+func (a *app) showHandover(h *handover) {
+	f := a.newForm("An agent may work in this pane")
+	f.Lines = []string{
+		"An agent can read this pane, type into it and wait for it to",
+		"settle. It reaches no other pane. What it types goes into the",
+		"shell running here, as whoever you set it up as, and you watch",
+		"all of it. Take the pane back from the Servers menu and the",
+		"code stops working at once.",
+	}
+	pick := f.AddField("Agent", a.newField("", 0))
+	pick.Options = agentHostNames()
+	pick.SetText(a.agents.startHost().name)
+	f.Lines = append(f.Lines, "",
+		"Agent: ctrl+down and ctrl+up choose. \"Copy the prompt\" copies",
+		"an instruction for that agent; \"Write the skill\" saves a",
+		"SKILL.md where it reads skills from.")
+
+	f.AddButton(ui.Button{Title: "Copy the prompt", Do: func() error {
+		host := hostNamed(pick.Text())
+		exe, err := exePath()
+		if err != nil {
+			// The prompt still says "gridterm", and the dialog says so.
+			a.logError(err)
+		}
+		a.clip.set(handoverPrompt(host, h.code, exe))
+		// Not from here: this form closes as soon as this returns, and
+		// closing a dialog takes anything stacked on top of it.
+		a.pump.post(func() {
+			a.showCode(h, host, exe, err)
+			// After that dialog, so a failure to write the settings down
+			// lands on top of it rather than underneath. The pane is
+			// handed over either way.
+			a.rememberAgentHost(host)
+		})
+		return nil
+	}})
+	f.AddButton(ui.Button{Title: "Write the skill", Do: func() error {
+		host := hostNamed(pick.Text())
+		a.pump.post(func() {
+			a.writeSkillFor(host, false)
+			a.rememberAgentHost(host)
+		})
+		return nil
+	}})
+	f.AddButton(ui.Button{Title: "Done"})
+	f.AddButton(ui.Button{Title: "Take it back", Do: func() error {
+		return a.takeBackPane(h.pane)
+	}})
+	a.showForm(f, nil)
+}
+
+// rememberAgentHost writes down which agent was picked, and says so when
+// it could not be written.
+func (a *app) rememberAgentHost(host agentHost) {
+	if err := a.agents.rememberHost(host.name); err != nil {
+		a.reportError("Could not remember which agent this was for", err)
+	}
+}
+
+// writeSkillFor writes a host's skill and says where it went.
+//
+// over writes over a skill already there that says something else;
+// without it the user is asked first, so their own edits are not lost.
+func (a *app) writeSkillFor(host agentHost, over bool) {
+	// The path is not guessed here: a skill saying only "gridterm" would sit on disk saying the
+	// wrong thing long after the failure was forgotten.
+	exe, err := exePath()
+	if err != nil {
+		a.reportError("Could not write the skill for "+host.name, err)
+		return
+	}
+	path, ask, err := writeSkill(host, exe, over)
+	if err != nil {
+		a.reportError("Could not write the skill for "+host.name, err)
+		return
+	}
+	if ask {
+		a.askToReplaceSkill(host, path)
+		return
+	}
+	a.showNotice("The skill for "+host.name+" is written", skillWritten(host, path), false)
+}
+
+// skillWritten says where a skill went, and says to move it when it went
+// somewhere the host will not look.
+func skillWritten(host agentHost, path string) string {
+	if len(host.skillIn) > 0 {
+		return "The skill is at\n\n  " + path + "\n\n" +
+			"Start " + host.name + " again and it will read it."
+	}
+	return "gridterm does not know where " + host.name + " reads skills from," +
+		" so the skill went under gridterm's own settings:\n\n  " + path + "\n\n" +
+		"Copy it to wherever that host reads skills from."
+}
+
+// askToReplaceSkill asks before writing over a skill that says something
+// else, which is a skill the user may have edited.
+func (a *app) askToReplaceSkill(host agentHost, path string) {
+	f := a.newConfirm("Replace the skill that is there?", []string{
+		"There is already a skill at",
+		"",
+		"  " + path,
+		"",
+		"and it says something else. Replacing it loses whatever was",
+		"changed in it.",
+	})
+	f.AddButton(ui.Button{Title: "Replace", Do: func() error {
+		// Not from here: this form closes as soon as this returns, and
+		// closing a dialog takes anything stacked on top of it.
+		a.pump.post(func() { a.writeSkillFor(host, true) })
+		return nil
+	}})
+	f.AddButton(ui.Button{Title: "Keep"})
+	a.showForm(f, nil)
+}
+
+// showCode shows the code for a handed-over pane, and says what the user
+// has to do before the prompt on the clipboard is any use: the setup for
+// the picked host, and starting that host afterwards.
+//
+// Short on purpose. A dialog draws the lines that fit and drops the
+// rest, and this one has to read whole in eighty columns by twenty four.
+func (a *app) showCode(h *handover, host agentHost, exe string, exeErr error) {
 	lines := []string{
-		"Paste this to the agent. The whole of it is on the clipboard",
-		"already. It starts:",
+		"The whole prompt is on the clipboard. The code in it is:",
+		"  " + h.code,
 		"",
 	}
-	for _, line := range strings.Split(promptOpening(prompt), "\n") {
-		lines = append(lines, "  "+line)
+	lines = append(lines, host.setupLines(exe)...)
+	if exeErr != nil {
+		lines = append(lines, "",
+			"gridterm could not read its own path, so that says just",
+			"gridterm, which works where gridterm is on the PATH.")
 	}
-	lines = append(lines,
-		"",
-		"Then it says how to run gridterm -mcp as an MCP server, gives",
-		"the agent this code, and says what to do with it:",
-		"",
-		"  "+h.code,
-		"",
-		"The agent can read this pane, type into it, and wait for it to",
-		"settle. It reaches no other pane and nothing else of this",
-		"window's. What it types goes into the shell running here, as",
-		"whoever you set it up as, so it does whatever that shell does.",
-		"",
-		"You see everything it does, as it does it. The pane's row says",
-		"when an agent is working in it.",
-		"",
-		"Take it back from the Servers menu, and the code stops working",
-		"at once.",
-	)
-	f := a.newConfirm("An agent may work in this pane", lines)
+	f := a.newConfirm("Paste the prompt to "+host.name, lines)
 	f.AddButton(ui.Button{Title: "Done"})
 	f.AddButton(ui.Button{Title: "Take it back", Do: func() error {
 		return a.takeBackPane(h.pane)
@@ -441,23 +580,17 @@ func (a *app) showCode(h *handover) {
 
 // handoverPrompt is what the user pastes to an agent that has never
 // heard of gridterm: what it has been handed, how to reach the MCP
-// server, the code, and what to do with it.
-func handoverPrompt(code, exe string) string {
-	// A path inside JSON needs its backslashes doubled.
-	inJSON := strings.ReplaceAll(exe, `\`, `\\`)
-	inJSON = strings.ReplaceAll(inJSON, `"`, `\"`)
+// server on the host it is running in, the code, and what to do with it.
+func handoverPrompt(host agentHost, code, exe string) string {
 	return fmt.Sprintf(`The user has handed you one terminal pane in gridterm, a terminal
 running on this machine. You work in that pane through gridterm's MCP
 server, and the user watches everything you do.
 
-Start that server with the command below. It speaks MCP on standard input and
-output (stdio), and it has to run on this machine, because the port inside the
-code is on the loopback address. In Claude Code, one line adds it:
+That server runs on this machine, on standard input and output (stdio), because
+the port inside the code is on the loopback address. If you do not have
+gridterm's tools, it has not been added here yet.
 
-  claude mcp add gridterm -- %s -mcp
-For any other host, put this in its MCP config:
-  {"mcpServers": {"gridterm": {
-    "command": "%s", "args": ["-mcp"]}}}
+%s
 
 This code is the only credential and it came from the user. Call
 use_session_code with it before anything else. The answer names the pane, and
@@ -468,23 +601,23 @@ every other tool takes that name.
 %s
 
 %s
-`, exe, inJSON, code, mcp.Workflow, mcp.Rules)
-}
-
-// promptOpening is the prompt's first paragraph, which is what the
-// dialog shows of it.
-func promptOpening(prompt string) string {
-	first, _, _ := strings.Cut(prompt, "\n\n")
-	return first
+`, host.setupForAgent(exe), code, mcp.Workflow, mcp.Rules)
 }
 
 // exePath is this program's own path, for the lines that say how to
-// start the MCP server. A system that will not say gives the plain
-// name, which works wherever gridterm is on the PATH.
-func exePath() string {
+// start the MCP server, and the error when the system would not say.
+//
+// The plain name comes back alongside the error, and works only where
+// gridterm is on the PATH. Every caller either says so or refuses. Under
+// go run the path is a temporary binary, which is a real path and a
+// useless one.
+func exePath() (string, error) {
 	exe, err := os.Executable()
-	if err != nil || exe == "" {
-		return "gridterm"
+	if err != nil {
+		return "gridterm", fmt.Errorf("gridterm could not read its own path: %w", err)
 	}
-	return exe
+	if exe == "" {
+		return "gridterm", errors.New("gridterm could not read its own path")
+	}
+	return exe, nil
 }

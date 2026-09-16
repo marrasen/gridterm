@@ -185,10 +185,15 @@ gave. There is no way to pick a font by family name yet; give paths.
 | `Ctrl+Shift+N` | connect to a server |
 
 Handing a pane to an agent is on the Servers menu and on the plus on
-this machine's row. It puts a prompt on the clipboard and shows how it
-starts. Paste the whole of it to the agent: it carries the code, and it
-says how to reach this window through `gridterm -mcp` and what the tools
-do. Take the pane back from the same menu and the code stops working.
+this machine's row. The dialog asks which agent it is for -- Claude
+Code, Codex, Cursor, or another host that takes a JSON MCP config -- and
+remembers the answer for next time. "Copy the prompt" puts a prompt on
+the clipboard and shows how it starts. Paste the whole of it to the
+agent: it carries the code, it says how that host adds this window's
+`gridterm -mcp` server, and it says what the tools do. "Write the skill"
+saves a `SKILL.md` where that host reads skills from, and says where it
+went; `gridterm -mcp-skill` prints the same file. Take the pane back
+from the same menu and the code stops working.
 
 Serving this window and taking over another are on the menu rather than
 on a key: "Serve this window…" asks for the port and says the

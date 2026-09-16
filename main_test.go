@@ -1,8 +1,11 @@
 package main
 
 import (
+	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -59,3 +62,36 @@ func TestLoadFonts(t *testing.T) {
 		}
 	})
 }
+
+// -mcp-skill prints the skill for Claude Code, whole, so a user can save
+// it themselves or pipe it somewhere.
+func TestPrintSkillWritesTheClaudeCodeSkill(t *testing.T) {
+	var out bytes.Buffer
+
+	if err := printSkill(&out); err != nil {
+		t.Fatalf("printSkill: %v", err)
+	}
+
+	got := out.String()
+	if want := skillFor(hostNamed(hostClaudeCode), exeHere(t)); got != want {
+		t.Errorf("it printed\n%s\nwant\n%s", got, want)
+	}
+	if !strings.Contains(got, "claude mcp add gridterm") {
+		t.Errorf("it does not say how Claude Code adds the server:\n%s", got)
+	}
+	if strings.Contains(got, "codex mcp add") || strings.Contains(got, `{"mcpServers"`) {
+		t.Errorf("it carries another host's setup:\n%s", got)
+	}
+}
+
+// A write that fails is returned rather than being printed over.
+func TestPrintSkillReportsAWriteThatFailed(t *testing.T) {
+	if err := printSkill(brokenWriter{}); err == nil {
+		t.Error("a failed write was reported as a print")
+	}
+}
+
+// brokenWriter is a place nothing can be written to.
+type brokenWriter struct{}
+
+func (brokenWriter) Write([]byte) (int, error) { return 0, errors.New("the disk gave up") }

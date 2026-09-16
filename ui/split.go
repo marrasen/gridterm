@@ -26,6 +26,15 @@ func (d Dir) dividerRune() rune {
 	return '│'
 }
 
+// cursor is the arrow for a divider that divides this way: sideways for
+// a split into columns, up and down for one into rows.
+func (d Dir) cursor() Cursor {
+	if d == Rows {
+		return CursorNSResize
+	}
+	return CursorEWResize
+}
+
 // Split shows two widgets side by side or one above the other, with a
 // divider between them.
 //
@@ -286,6 +295,26 @@ func (s *Split) HandleMouse(ev input.MouseEvent) (bool, error) {
 
 // CancelGesture gives up a drag whose release is not coming.
 func (s *Split) CancelGesture() { s.dragging = false }
+
+// CursorAt returns the resize arrow over the divider, and over
+// everything else while the divider is being dragged.
+func (s *Split) CursorAt(col, row int) (Cursor, bool) {
+	if s.dragging {
+		return s.dir.cursor(), true
+	}
+	ra, rb, rd := s.rects()
+	switch {
+	case !rd.Empty() && rd.Contains(col, row):
+		return s.dir.cursor(), true
+	case s.a != nil && ra.Contains(col, row):
+		x, y := ra.Local(col, row)
+		return CursorAt(s.a, x, y)
+	case s.b != nil && rb.Contains(col, row):
+		x, y := rb.Local(col, row)
+		return CursorAt(s.b, x, y)
+	}
+	return CursorDefault, false
+}
 
 // dragTo puts the divider under a point, as a share of the room the two
 // children divide.

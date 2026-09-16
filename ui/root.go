@@ -373,6 +373,35 @@ func (r *Root) clampInto(area Rect, x, y int) (int, int) {
 		min(max(y, area.Y), area.Y+max(area.Rows-1, 0))
 }
 
+// CursorAt is the pointer over a cell, in the same coordinates a mouse
+// event is in.
+//
+// A dialog on top wants the ordinary pointer: the tree behind it cannot
+// be clicked, so nothing in it can be dragged either.
+//
+// A drag belongs to whoever took the press, so the pointer does too. It
+// keeps whatever shape that widget asks for however far it has wandered,
+// which is what stops the resize arrow flickering back to an arrow as
+// the divider is pulled across the pane beside it.
+func (r *Root) CursorAt(col, row int) Cursor {
+	if len(r.modals) > 0 || r.widget == nil {
+		return CursorDefault
+	}
+	col, row = r.area.Local(col, row)
+	held := r.held.Holder()
+	if held == nil {
+		c, _ := CursorAt(r.widget, col, row)
+		return c
+	}
+	area, shown := AreaOf(r.widget, r.area.Size().rect(), held)
+	if !shown {
+		return CursorDefault
+	}
+	col, row = area.Local(col, row)
+	c, _ := CursorAt(held, col, row)
+	return c
+}
+
 // AreaOf returns where a widget sits in the tree, in the tree's own
 // coordinates. It saves a caller having to know the root's area and get
 // it wrong.

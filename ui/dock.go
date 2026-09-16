@@ -327,6 +327,26 @@ func (d *Dock) HandleMouse(ev input.MouseEvent) (bool, error) {
 // CancelGesture gives up a drag whose release is not coming.
 func (d *Dock) CancelGesture() { d.dragging = false }
 
+// CursorAt returns the sideways arrow over the divider, and over
+// everything else while the divider is being dragged.
+func (d *Dock) CursorAt(col, row int) (Cursor, bool) {
+	if d.dragging {
+		return CursorEWResize, true
+	}
+	panel, rest, divider := d.rects()
+	switch {
+	case !divider.Empty() && divider.Contains(col, row):
+		return CursorEWResize, true
+	case !panel.Empty() && panel.Contains(col, row):
+		x, y := panel.Local(col, row)
+		return CursorAt(d.panel, x, y)
+	case !rest.Empty() && rest.Contains(col, row):
+		x, y := rest.Local(col, row)
+		return CursorAt(d.rest, x, y)
+	}
+	return CursorDefault, false
+}
+
 // dragTo moves the divider to a column, within what the window can
 // spare.
 func (d *Dock) dragTo(col int) {

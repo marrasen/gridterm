@@ -82,15 +82,19 @@ type Panes interface {
 	// List is the panes this agent has been given.
 	List() ([]Pane, error)
 
-	// Read is what is on a pane now.
-	Read(id string) (Screen, error)
+	// Read is the last lines of a pane, ending at the bottom of the
+	// screen. Zero lines is the screen, and more than it holds reaches
+	// into what has scrolled off.
+	Read(id string, lines int) (Screen, error)
 
-	// Send types into a pane.
-	Send(id, text string) error
+	// Send types text into a pane and then presses the keys named in
+	// keys. Either may be empty.
+	Send(id, text string, keys []string) error
 
 	// Wait watches a pane until it says what was asked for, goes quiet,
-	// or the time runs out, and reports whether the time ran out.
-	Wait(id string, until Until) (Screen, bool, error)
+	// or the time runs out, and reports whether the time ran out. Lines
+	// is how much of the pane to give back, as for Read.
+	Wait(id string, lines int, until Until) (Screen, bool, error)
 
 	// Close lets go of the window.
 	Close() error
@@ -425,16 +429,18 @@ pane, and every other tool takes that name.`,
 // Workflow is how an agent works in a pane it has been handed. This
 // server's initialize answer and gridterm's hand-over prompt both carry
 // it, so the two cannot drift apart.
-const Workflow = `read_pane gives you the pane's screen as plain text. send_keys types into the pane: the
-characters go in exactly as given, so a command needs "\r" at the end for Enter. send_keys
-does not wait. After typing, call wait_for before you read again. Give wait_for contains
-when you know what the screen will say, or quiet_ms to wait for the screen to stop
-changing. It gives back the screen either way, and says when the time ran out instead.
-list_panes lists the panes you have been handed, and that is all it lists.`
+const Workflow = `read_pane gives you the pane's screen as plain text, and takes lines to read that many,
+back through what has scrolled off the top. send_keys types text in exactly as given, so a
+command needs "\r" at the end for Enter, and presses the keys named in keys: Escape, Tab,
+the arrows, F1 to F12, Ctrl+C. It does not wait, so call wait_for before you read again.
+Give wait_for contains when you know what the screen will say, or quiet_ms to wait for the
+screen to stop changing. It gives back the screen either way, and says when the time ran
+out instead. list_panes lists the panes you have been handed, and that is all it lists.`
 
 // Rules is what an agent may do in a pane it has been handed, and what
 // it may not.
-const Rules = `Work in that pane and nowhere else. It is a live shell running as whoever the user set it
-up as, so it does whatever that shell does. Ask the user before anything destructive, the
-way you would in somebody else's terminal. The user is watching the same screen and can
-take the pane back at any moment, and then nothing here works any more.`
+const Rules = `Work in that pane and nowhere else. It is a live shell running as whoever the user set it up
+as, so it does whatever that shell does. Ask the user before anything destructive, the way
+you would in somebody else's terminal. A password prompt is the user's to answer: ask them
+to type it into the pane, wait with wait_for, and never type a password yourself. The user
+watches this screen and can take the pane back at any moment, and then nothing here works.`

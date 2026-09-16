@@ -26,6 +26,11 @@ type fakePanes struct {
 	gaveUp bool
 	waited Until
 
+	// lines is what the last read or wait was asked for, and pressed is
+	// every key name a send has carried.
+	lines   int
+	pressed []string
+
 	// waiting is closed when a wait has started, and letGo lets it
 	// finish, for a test about what else can be asked meanwhile.
 	waiting chan struct{}
@@ -51,31 +56,34 @@ func (f *fakePanes) List() ([]Pane, error) {
 	return []Pane{{ID: "pane-1", Label: "bash on margit", Cols: 80, Rows: 24}}, nil
 }
 
-func (f *fakePanes) Read(id string) (Screen, error) {
+func (f *fakePanes) Read(id string, lines int) (Screen, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if !f.open || id != "pane-1" {
 		return Screen{}, errors.New("that is not a pane you have been handed")
 	}
+	f.lines = lines
 	return Screen{Screen: f.screen, Gone: f.gone}, nil
 }
 
-func (f *fakePanes) Send(id, text string) error {
+func (f *fakePanes) Send(id, text string, keys []string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if !f.open || id != "pane-1" {
 		return errors.New("that is not a pane you have been handed")
 	}
 	f.typed += text
+	f.pressed = append(f.pressed, keys...)
 	return nil
 }
 
-func (f *fakePanes) Wait(id string, until Until) (Screen, bool, error) {
+func (f *fakePanes) Wait(id string, lines int, until Until) (Screen, bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if !f.open || id != "pane-1" {
 		return Screen{}, false, errors.New("that is not a pane you have been handed")
 	}
+	f.lines = lines
 	f.waited = until
 	waiting, letGo := f.waiting, f.letGo
 	screen, gone, gaveUp := f.screen, f.gone, f.gaveUp
@@ -114,7 +122,9 @@ func talk(t *testing.T, panes Panes, messages ...string) []response {
 		if !wantsAnAnswer(m) {
 			continue
 		}
-		line, _, err := in.ReadLine()
+		// The whole line, however long: a tool list runs past any one
+		// buffer, and half an answer is unreadable.
+		line, err := in.ReadBytes('\n')
 		if err != nil {
 			t.Fatalf("it never answered %s: %v", m, err)
 		}
@@ -623,7 +633,7 @@ func TestEveryToolSaysWhatItTakes(t *testing.T) {
 		"use_session_code": {"code"},
 		"list_panes":       nil,
 		"read_pane":        {"pane"},
-		"send_keys":        {"pane", "text"},
+		"send_keys":        {"pane"},
 		"wait_for":         {"pane"},
 	}
 	for _, tl := range listed.Tools {

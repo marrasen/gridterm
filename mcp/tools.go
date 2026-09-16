@@ -3,6 +3,8 @@ package mcp
 import (
 	"encoding/json"
 	"fmt"
+
+	"github.com/marrasen/gridterm/agent"
 )
 
 // tool is one thing an agent can ask for.
@@ -24,6 +26,14 @@ type schema struct {
 type field struct {
 	Type        string `json:"type"`
 	Description string `json:"description"`
+
+	// Items says what an array argument holds, and is nil for the rest.
+	Items *items `json:"items,omitempty"`
+}
+
+// items is what an array argument holds.
+type items struct {
+	Type string `json:"type"`
 }
 
 // result is what a tool call gives back: text, because what an agent is
@@ -72,11 +82,13 @@ func toolList() []tool {
 			Description: "What is on the pane's screen now, as plain text. It needs the" +
 				" pane's name, from use_session_code. After sending a command, use wait_for" +
 				" instead: a read taken straight afterwards shows the screen before the" +
-				" command has done anything.",
+				" command has done anything. Give lines to read more than the screen, which" +
+				" is how to read the whole of something that has scrolled past.",
 			InputSchema: schema{
 				Type: "object",
 				Properties: map[string]field{
-					"pane": {Type: "string", Description: "which pane, from use_session_code"},
+					"pane":  {Type: "string", Description: "which pane, from use_session_code"},
+					"lines": {Type: "integer", Description: linesArg},
 				},
 				Required: []string{"pane"},
 			},
@@ -87,15 +99,22 @@ func toolList() []tool {
 			Description: "Put characters into the pane exactly as given, as though typed" +
 				" there. Nothing is added: a command needs a carriage return (\\r) at the" +
 				" end, which is Enter, or it sits on the line unrun. Control characters" +
-				" work: \\u0003 is ctrl+c. It does not wait for anything to happen, so call" +
-				" wait_for next.",
+				" work: \\u0003 is ctrl+c." +
+				" keys presses named keys, after the text or instead of it. The pane encodes" +
+				" each the way the program running there asks for, so a key means to it what" +
+				" the same key pressed at the window would. To leave vim, send" +
+				` {"keys": ["Escape"]} and then {"text": ":q!", "keys": ["Enter"]}.` +
+				" It does not wait for anything to happen, so call wait_for next.",
 			InputSchema: schema{
 				Type: "object",
 				Properties: map[string]field{
 					"pane": {Type: "string", Description: "which pane, from use_session_code"},
 					"text": {Type: "string", Description: `what to type, with "\r" for Enter`},
+					"keys": {Type: "array", Items: &items{Type: "string"},
+						Description: "keys to press after the text, by name. The keys are: " +
+							agent.KeyNames()},
 				},
-				Required: []string{"pane", "text"},
+				Required: []string{"pane"},
 			},
 		},
 		{
@@ -106,12 +125,16 @@ func toolList() []tool {
 				" it waits for the screen to go quiet, which is what waiting for a command" +
 				" to finish looks like when the program cannot be asked. When the time runs" +
 				" out first it still gives back the screen, and says the time ran out." +
-				" Use it after send_keys, before reading again.",
+				" Use it after send_keys, before reading again." +
+				" A program that keeps drawing never goes quiet: top, a progress bar, a log" +
+				" being followed. For one of those give contains, or do not wait at all and" +
+				" read the pane instead. It takes lines as read_pane does.",
 			InputSchema: schema{
 				Type: "object",
 				Properties: map[string]field{
 					"pane":     {Type: "string", Description: "which pane, from use_session_code"},
 					"contains": {Type: "string", Description: "text to wait for on the screen"},
+					"lines":    {Type: "integer", Description: linesArg},
 					"quiet_ms": {Type: "integer",
 						Description: "how long the pane must say nothing for, in milliseconds"},
 					"timeout_ms": {Type: "integer",
@@ -132,12 +155,14 @@ func toolList() []tool {
 // asks for.
 func (s *server) runTool(name string, args json.RawMessage) (result, *rpcError) {
 	var in struct {
-		Code      string `json:"code"`
-		Pane      string `json:"pane"`
-		Text      string `json:"text"`
-		Contains  string `json:"contains"`
-		QuietMS   int    `json:"quiet_ms"`
-		TimeoutMS int    `json:"timeout_ms"`
+		Code      string   `json:"code"`
+		Pane      string   `json:"pane"`
+		Text      string   `json:"text"`
+		Keys      []string `json:"keys"`
+		Lines     int      `json:"lines"`
+		Contains  string   `json:"contains"`
+		QuietMS   int      `json:"quiet_ms"`
+		TimeoutMS int      `json:"timeout_ms"`
 	}
 	if len(args) > 0 {
 		if err := json.Unmarshal(args, &in); err != nil {
@@ -182,7 +207,7 @@ func (s *server) runTool(name string, args json.RawMessage) (result, *rpcError) 
 		if in.Pane == "" {
 			return missing("pane")
 		}
-		screen, err := s.panes.Read(in.Pane)
+		screen, err := s.panes.Read(in.Pane, atMostLines(in.Lines))
 		if err != nil {
 			return wrong(err.Error())
 		}
@@ -192,17 +217,25 @@ func (s *server) runTool(name string, args json.RawMessage) (result, *rpcError) 
 		if in.Pane == "" {
 			return missing("pane")
 		}
-		if err := s.panes.Send(in.Pane, in.Text); err != nil {
+		if in.Text == "" && len(in.Keys) == 0 {
+			return missing("text and no keys")
+		}
+		// Refused before anything is typed, so an agent that spelled a
+		// key wrong is told which names there are and has sent nothing.
+		if err := agent.CheckKeys(in.Keys); err != nil {
 			return wrong(err.Error())
 		}
-		return say("Typed. Use wait_for to see what happens: the screen has not" +
+		if err := s.panes.Send(in.Pane, in.Text, in.Keys); err != nil {
+			return wrong(err.Error())
+		}
+		return say("Sent. Use wait_for to see what happens: the screen has not" +
 			" caught up yet.")
 
 	case "wait_for":
 		if in.Pane == "" {
 			return missing("pane")
 		}
-		screen, gaveUp, err := s.panes.Wait(in.Pane, Until{
+		screen, gaveUp, err := s.panes.Wait(in.Pane, atMostLines(in.Lines), Until{
 			Contains:  in.Contains,
 			QuietMS:   in.QuietMS,
 			TimeoutMS: in.TimeoutMS,
@@ -217,6 +250,25 @@ func (s *server) runTool(name string, args json.RawMessage) (result, *rpcError) 
 		Message: fmt.Sprintf("%q is not a tool this server has", name),
 	}
 }
+
+// mostLines caps how many lines one read may ask for. Enough for the
+// output of a long command, short of handing an agent a whole scrollback
+// in one answer.
+const mostLines = 2000
+
+// atMostLines is how many lines to read, bounded by what one answer
+// carries. None asked for is the screen.
+func atMostLines(n int) int {
+	if n <= 0 {
+		return 0
+	}
+	return min(n, mostLines)
+}
+
+// linesArg says what the lines argument does, for both tools that take
+// it.
+const linesArg = "how many lines to give back, ending at the bottom of the screen and" +
+	" reaching into what has scrolled off. Left out, it is the screen. At most 2000."
 
 // missing says a call left out something it had to carry.
 func missing(what string) (result, *rpcError) {

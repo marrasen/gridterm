@@ -17,6 +17,11 @@ type oneWindow struct {
 	screen string
 	typed  string
 	taken  bool
+
+	// lines is what the last Look was asked for, and pressed is every
+	// key name a Send has carried.
+	lines   int
+	pressed []string
 }
 
 func (w *oneWindow) Use(code string) (agent.Pane, error) {
@@ -28,22 +33,24 @@ func (w *oneWindow) Use(code string) (agent.Pane, error) {
 	return agent.Pane{ID: "pane-1", Label: "bash on this machine", Cols: 80, Rows: 24}, nil
 }
 
-func (w *oneWindow) Look(id string) (agent.Look, error) {
+func (w *oneWindow) Look(id string, lines int) (agent.Look, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.taken || id != "pane-1" {
 		return agent.Look{}, errors.New("that is not a pane you have been handed")
 	}
+	w.lines = lines
 	return agent.Look{Screen: w.screen}, nil
 }
 
-func (w *oneWindow) Send(id, text string) error {
+func (w *oneWindow) Send(id, text string, keys []string) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.taken || id != "pane-1" {
 		return errors.New("that is not a pane you have been handed")
 	}
 	w.typed += text
+	w.pressed = append(w.pressed, keys...)
 	return nil
 }
 
@@ -146,10 +153,10 @@ func TestTakingThePaneBackReachesTheAgent(t *testing.T) {
 
 	win.takeBack()
 
-	if _, err := panes.Read(pane.ID); err == nil {
+	if _, err := panes.Read(pane.ID, 0); err == nil {
 		t.Error("it read a pane the user had taken back")
 	}
-	if err := panes.Send(pane.ID, "x"); err == nil {
+	if err := panes.Send(pane.ID, "x", nil); err == nil {
 		t.Error("it typed into a pane the user had taken back")
 	}
 	if got := win.sentText(); got != "" {
@@ -230,7 +237,7 @@ func TestACodeForAnotherWindowReachesThatWindow(t *testing.T) {
 		pane Pane
 		want string
 	}{{onOne, "the first window"}, {onTwo, "the second window"}} {
-		screen, err := panes.Read(c.pane.ID)
+		screen, err := panes.Read(c.pane.ID, 0)
 		if err != nil {
 			t.Fatalf("read %s: %v", c.pane.ID, err)
 		}
@@ -292,7 +299,7 @@ func TestAFreshCodeAfterTheConnectionBrokeIsDialledAgain(t *testing.T) {
 	if err := s.Close(); err != nil {
 		t.Fatalf("close: %v", err)
 	}
-	if _, err := panes.Read(pane.ID); err == nil {
+	if _, err := panes.Read(pane.ID, 0); err == nil {
 		t.Fatal("it read a window that had gone")
 	}
 

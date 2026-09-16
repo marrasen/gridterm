@@ -67,35 +67,35 @@ func (w *Window) List() ([]Pane, error) {
 	return out, errors.Join(errs...)
 }
 
-// Read is what is on a pane now.
-func (w *Window) Read(id string) (Screen, error) {
+// Read is the last lines of a pane, the screen when lines is zero.
+func (w *Window) Read(id string, lines int) (Screen, error) {
 	conn, at, err := w.paneAt(id)
 	if err != nil {
 		return Screen{}, err
 	}
-	look, err := conn.Read(at)
+	look, err := conn.Read(at, lines)
 	if err != nil {
 		return Screen{}, err
 	}
 	return Screen{Screen: look.Screen, Gone: look.Gone}, nil
 }
 
-// Send types into a pane.
-func (w *Window) Send(id, text string) error {
+// Send types into a pane and presses the keys named after it.
+func (w *Window) Send(id, text string, keys []string) error {
 	conn, at, err := w.paneAt(id)
 	if err != nil {
 		return err
 	}
-	return conn.Send(at, text)
+	return conn.Send(at, text, keys)
 }
 
 // Wait watches a pane until something happens or the time runs out.
-func (w *Window) Wait(id string, until Until) (Screen, bool, error) {
+func (w *Window) Wait(id string, lines int, until Until) (Screen, bool, error) {
 	conn, at, err := w.paneAt(id)
 	if err != nil {
 		return Screen{}, false, err
 	}
-	look, gaveUp, err := conn.Wait(at, agent.Until{
+	look, gaveUp, err := conn.Wait(at, lines, agent.Until{
 		Contains:  until.Contains,
 		QuietMS:   until.QuietMS,
 		TimeoutMS: until.TimeoutMS,

@@ -7,11 +7,13 @@ import (
 	"github.com/marrasen/gridterm/input"
 )
 
-// barRows is how tall the row of menu titles is, and barPad the blank
-// column each side of a title.
+// barRows is how tall the row of menu titles is, barPad the blank
+// column each side of a title, and statusPad the blank column between
+// the status text and the right edge.
 const (
-	barRows = 1
-	barPad  = 1
+	barRows   = 1
+	barPad    = 1
+	statusPad = 1
 )
 
 // MenuDef is one menu on a bar: the word shown and the lines under it.
@@ -60,6 +62,19 @@ type Menubar struct {
 	// is open: the open menu holds the index of the title it hangs under,
 	// and changing the list moves that title out from under it.
 	Menus []MenuDef
+
+	// Status is a line drawn right-aligned on the bar, or empty for
+	// none. It is chrome like the titles: it says what the window is
+	// doing rather than naming a menu.
+	Status string
+
+	// StatusFG colours the status text. A zero alpha means the bar's
+	// ordinary foreground.
+	StatusFG color.RGBA
+
+	// OnStatus runs when the status text is pressed. A nil OnStatus
+	// leaves the press the bar's, but does nothing with it.
+	OnStatus func() error
 
 	// Present shows a menu and returns the function that takes it away.
 	// The bar knows nothing about the modal stack or the layers a menu is
@@ -275,6 +290,23 @@ func (b *Menubar) paintBar(row grid.View) {
 			at = next
 		}
 	}
+
+	if at, text := b.statusAt(); !at.Empty() {
+		fg := b.StatusFG
+		if fg.A == 0 {
+			fg = b.Style.FG
+		}
+		cell := at.In(row)
+		x := 0
+		for _, cluster := range grid.Clusters(text) {
+			bg := b.Style.colAt(at.X+x, cols)
+			next := cell.SetString(x, 0, cluster, fg, bg, 0)
+			if next <= x {
+				break
+			}
+			x = next
+		}
+	}
 }
 
 // SetFocus passes focus on to the widget under the bar. The bar itself
@@ -301,7 +333,7 @@ func (b *Menubar) HandleMouse(ev input.MouseEvent) (bool, error) {
 		if ev.Kind != input.MousePress || ev.Button.IsWheel() {
 			return false, nil
 		}
-		return b.clickLabel(ev.Col, ev.Row), nil
+		return b.clickLabel(ev.Col, ev.Row)
 	}
 
 	body := b.body()
@@ -315,19 +347,29 @@ func (b *Menubar) HandleMouse(ev input.MouseEvent) (bool, error) {
 // clickLabel acts on a press in the title row, reporting whether it
 // meant anything. Pressing the title of the menu already showing closes
 // it, which is what a control that opens something is expected to do.
-func (b *Menubar) clickLabel(col, row int) bool {
+func (b *Menubar) clickLabel(col, row int) (bool, error) {
+	if at, _ := b.statusAt(); at.Contains(col, row) {
+		// The status is a control of its own. It takes the press
+		// whatever is open, closing the menu first as a press
+		// elsewhere on the bar does.
+		b.Close()
+		if b.OnStatus == nil {
+			return true, nil
+		}
+		return true, b.OnStatus()
+	}
 	for i, label := range b.labels() {
 		if label.Empty() || !label.Contains(col, row) {
 			continue
 		}
 		if i == b.openAt {
 			b.Close()
-			return true
+			return true, nil
 		}
-		return b.Open(i)
+		return b.Open(i), nil
 	}
 	// The empty part of the bar belongs to nothing.
-	return false
+	return false, nil
 }
 
 // pressedBar handles a press that fell outside the open menu, reporting
@@ -340,8 +382,11 @@ func (b *Menubar) pressedBar(col, row int) bool {
 		return false
 	}
 	// A press anywhere on the bar is the bar's, even between titles: it
-	// closes the menu rather than reaching the pane underneath.
-	if !b.clickLabel(col, row) {
+	// closes the menu rather than reaching the pane underneath. The
+	// menu's OnOutside has nowhere to put an error, so one from the
+	// status is dropped here.
+	handled, _ := b.clickLabel(col, row)
+	if !handled {
 		b.Close()
 	}
 	return true
@@ -426,4 +471,36 @@ func (b *Menubar) labels() []Rect {
 		at += width
 	}
 	return out
+}
+
+// statusAt returns where the status goes, in the bar's own coordinates,
+// and the text to put there. Both are empty when there is no status or
+// no room left beside the titles.
+//
+// The titles keep their columns. The status takes what is left, one
+// column in from the right edge, and the last title's own pad is the
+// blank on the other side of it.
+func (b *Menubar) statusAt() (Rect, string) {
+	bar := b.bar()
+	if b.Status == "" || bar.Empty() {
+		return Rect{}, ""
+	}
+	left := 0
+	for _, label := range b.labels() {
+		if !label.Empty() {
+			left = label.X + label.Cols
+		}
+	}
+	room := bar.Cols - statusPad - left
+	if room <= 0 {
+		return Rect{}, ""
+	}
+	// Cut from the left, because the end of a status names the thing it
+	// is about while the front of it repeats.
+	text := grid.TrimHead(b.Status, room)
+	width := grid.StringWidth(text)
+	if width <= 0 {
+		return Rect{}, ""
+	}
+	return Rect{X: bar.Cols - statusPad - width, Cols: width, Rows: barRows}, text
 }

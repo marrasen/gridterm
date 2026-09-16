@@ -394,6 +394,17 @@ func (t *Terminal) Focused() bool { return t.focused }
 // Size returns the terminal's size in cells.
 func (t *Terminal) Size() ui.Size { return t.size }
 
+// EncodeKey is the bytes a key press puts into the program running
+// here, encoded for the modes it has asked for.
+//
+// It is how something outside this window presses a key without
+// touching the view: HandleKey jumps back to the live screen and drops
+// the selection, which is right for somebody typing here and wrong for
+// an agent working in the pane.
+func (t *Terminal) EncodeKey(ev input.Event) []byte {
+	return input.EncodeMode(ev, t.mode(), nil)
+}
+
 // HandleKey encodes a key for the program and sends it.
 func (t *Terminal) HandleKey(ev input.Event) (bool, error) {
 	t.encBuf = input.EncodeMode(ev, t.mode(), t.encBuf[:0])
@@ -626,9 +637,11 @@ func (t *Terminal) readLoop() {
 			// Still under the lock, so a chunk cannot be handed on
 			// after a screen that was taken once it was parsed.
 			t.tell(buf[:n])
+			// Counted under the lock, so a reader that takes the lock
+			// sees the screen and the count from the same moment.
+			t.said.Add(1)
 			t.mu.Unlock()
 			t.pending.Store(true)
-			t.said.Add(1)
 		}
 		if err != nil {
 			if !errors.Is(err, io.EOF) {

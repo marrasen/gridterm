@@ -83,3 +83,34 @@ func rows(g *grid.Grid) string {
 	}
 	return strings.Join(out, "\n")
 }
+
+// A reading is one moment: its lines, its cursor and how much the
+// program has said all describe the same pane.
+//
+// Taken separately they need not. The reader counts what the program
+// said under the emulator's lock, so somebody holding a count has a
+// screen and a cursor that go with it.
+func TestAReadingIsOneMoment(t *testing.T) {
+	term, f := newTestTerm(t, 20, 3, Config{})
+
+	for _, said := range []string{"one\r\n", "two\r\n", "three\r\n", "$ wh"} {
+		f.feed(t, term, said)
+
+		got := term.ReadLines(0)
+		if got.Text != term.TextLines(0) {
+			t.Errorf("the reading says %q and TextLines says %q", got.Text, term.TextLines(0))
+		}
+		if got.Said != term.Said() {
+			t.Errorf("the reading counts %d, and the pane counts %d", got.Said, term.Said())
+		}
+		// The cursor sits at the end of what was written on its row, so
+		// the row it names has to be that long.
+		lines := strings.Split(got.Text, "\n")
+		if got.Row < 0 || got.Row >= len(lines) {
+			t.Fatalf("the cursor is on row %d of %d", got.Row, len(lines))
+		}
+		if len(lines[got.Row]) != got.Col {
+			t.Errorf("the cursor is at column %d of %q", got.Col, lines[got.Row])
+		}
+	}
+}

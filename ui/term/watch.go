@@ -194,7 +194,47 @@ func (t *Terminal) Text() string { return t.TextLines(0) }
 func (t *Terminal) TextLines(n int) string {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	return t.textLinesLocked(n)
+}
+
+// Reading is a pane as it stood at one moment.
+type Reading struct {
+	// Text is the last lines that were asked for, as plain text.
+	Text string
+
+	// Row and Col are where the cursor was on the screen, counted from
+	// zero at the top left, and Alt says a full-screen program was
+	// drawing.
+	Row, Col int
+	Alt      bool
+
+	// Said is how many times the program had said anything by then.
+	Said uint64
+}
+
+// ReadLines is the last n lines of the pane, where the cursor is and how
+// much the program has said, all from one moment. Zero or less is the
+// screen.
+//
+// One lock for all of it, because a screen from one moment and a cursor
+// from another describe a pane that never existed.
+func (t *Terminal) ReadLines(n int) Reading {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	text := t.textLinesLocked(n)
+	scr := t.term.Screen()
+	col, row := scr.CursorPos()
+	return Reading{Text: text, Row: row, Col: col, Alt: scr.OnAltBuffer(), Said: t.said.Load()}
+}
+
+// textLinesLocked is TextLines with the emulator's lock already held.
+func (t *Terminal) textLinesLocked(n int) string {
 	cols, rows := t.g.Size()
+	if rows <= 0 {
+		// A terminal with no rows has nothing to read, and the walk back
+		// through history below would step by nothing and never end.
+		return ""
+	}
 	history := t.term.History()
 	if n <= 0 {
 		n = rows
@@ -220,6 +260,14 @@ func (t *Terminal) TextLines(n int) string {
 		}
 	}
 	return strings.Join(out, "\n")
+}
+
+// ViewOffset is how far back into the scrollback the user has scrolled,
+// in lines, and zero when they are looking at the live screen.
+func (t *Terminal) ViewOffset() int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.term.Screen().ViewOffset()
 }
 
 // Cursor is where the cursor is on the live screen, counted from zero

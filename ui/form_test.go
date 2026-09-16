@@ -1055,3 +1055,43 @@ func TestAFormWithFewerButtonsMovesTheFocus(t *testing.T) {
 		t.Fatalf("the focus is on %d (button %v), want the only button left", at, isButton)
 	}
 }
+
+// Buttons are part of what the box is wide enough for, so swapping them
+// lays the fields out again: one that kept its old width would scroll
+// its text to a caret that is somewhere else now.
+func TestAFormThatSwappedItsButtonsLaysItsFieldsOutAgain(t *testing.T) {
+	tf := newTestForm(t)
+	f := tf.form
+	was := f.Fields()[0].cols
+
+	f.SetButtons([]Button{{Title: strings.Repeat("a wide button ", 4)}})
+
+	now := f.Fields()[0].cols
+	if now <= was {
+		t.Fatalf("the field is %d columns wide in a box the buttons widened, was %d", now, was)
+	}
+	if want := f.box().Cols - formPad - f.fieldX(); now != want {
+		t.Errorf("the field is %d columns wide, want %d for the box it is in", now, want)
+	}
+}
+
+// A dialog told the least room it may have keeps its box as the text in
+// it changes, so a line of numbers does not shuffle the box sideways
+// every time one of them grows a digit.
+func TestAFormWithMinColsKeepsItsBox(t *testing.T) {
+	f := NewConfirm("Copy one.txt", []string{"0 B of 9.0 MB"}, nil)
+	f.Style = formStyled()
+	f.MinCols = 46
+	f.Layout(Size{Cols: 80, Rows: 24})
+	was := f.Box()
+
+	f.SetLines([]string{"3.2 MB of 9.0 MB, 12 of 40 files"})
+	if now := f.Box(); now != was {
+		t.Fatalf("the box moved from %+v to %+v as the numbers grew", was, now)
+	}
+	// It is the floor, not the width: a line wider than it still fits.
+	f.SetLines([]string{strings.Repeat("a much longer line ", 3)})
+	if now := f.Box(); now.Cols <= was.Cols {
+		t.Fatalf("the box is %d columns for a line too wide for %d", now.Cols, was.Cols)
+	}
+}

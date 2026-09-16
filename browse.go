@@ -130,15 +130,8 @@ func (a *app) startAt(p *files.Pane) {
 func (a *app) filesystem(host string) (vfs.FS, error) {
 	on := a.about(host)
 	switch {
-	case on.local:
-		return vfs.NewLocal(), nil
 	case on.kind == hostHere:
-		// The machine -ssh put every pane on. The panes run there, but
-		// the window holds no connection of its own to read files over.
-		return nil, fmt.Errorf(
-			"the panes here run on %s, but gridterm did not open that connection, "+
-				"so it cannot read files over it",
-			on.name)
+		return vfs.NewLocal(), nil
 	case on.window != nil:
 		return a.windowFiles(on.name)
 	case on.machine == nil:
@@ -378,10 +371,13 @@ func (a *app) hostOf(f vfs.FS) string {
 //
 // Called every frame. A job's progress is a plain value read under a
 // lock, so asking costs nothing and nothing is pushed into the tree.
-func (a *app) refreshJobs() {
+func (a *app) refreshJobs() { a.refreshJobsAt(time.Now()) }
+
+// refreshJobsAt is refreshJobs at one moment, so everything a frame says
+// about a job is worked out from the same clock.
+func (a *app) refreshJobsAt(now time.Time) {
 	// Before the sweep below, because a job that has just finished is
 	// taken off the list there and the dialog showing it stays open.
-	now := time.Now()
 	for _, m := range a.modals {
 		if d, ok := m.w.(*jobDialog); ok {
 			d.refresh(now)
@@ -397,10 +393,12 @@ func (a *app) refreshJobs() {
 		// It has finished, so the meter stops and the row goes grey.
 		e.Meter.Close()
 		// Stopping it is the user's own decision, and cancelling is what
-		// the window does when it takes a browser away.
-		if p.Err != nil && !errors.Is(p.Err, jobs.ErrStopped) &&
-			!errors.Is(p.Err, context.Canceled) {
-			a.reportError("Could not finish "+j.Name(), p.Err)
+		// the window does when it takes a browser away. Anything the
+		// failure says beyond that is still shown: a cancel that could
+		// not take away what it half wrote is a disk that did not do
+		// what it was told.
+		if why := trouble(p.Err); why != nil {
+			a.reportError("Could not finish "+j.Name(), why)
 		}
 		// What it changed is in front of the user, so it is read again.
 		// Only the panes it touched: the window can hold as many panes
@@ -413,19 +411,55 @@ func (a *app) refreshJobs() {
 
 // jobNote is what a job's row says at its end.
 func jobNote(p jobs.Progress) string {
-	switch {
-	case p.Done && errors.Is(p.Err, context.Canceled):
-		return "cancelled"
-	case p.Done && errors.Is(p.Err, jobs.ErrStopped):
-		return "stopped"
-	case p.Done && p.Err != nil:
-		return "failed"
-	case p.Done:
-		return ""
-	case p.Files == 0:
-		return "looking"
+	if !p.Done {
+		if p.Files == 0 {
+			return "looking"
+		}
+		return fmt.Sprintf("%d of %d", p.FilesDone, p.Files)
 	}
-	return fmt.Sprintf("%d of %d", p.FilesDone, p.Files)
+	how := ""
+	switch {
+	case errors.Is(p.Err, context.Canceled):
+		how = "cancelled"
+	case errors.Is(p.Err, jobs.ErrStopped):
+		how = "stopped"
+	case p.Err != nil:
+		return "failed"
+	default:
+		return ""
+	}
+	// Stopping it was the user's own decision; whatever else went wrong
+	// was not, and the row is where they would look for it.
+	if trouble(p.Err) != nil {
+		return how + ", trouble"
+	}
+	return how
+}
+
+// trouble is what a job's failure says beyond the user having stopped
+// it, and nil when stopping it is the whole story.
+//
+// A cancel that could not take away the part it had written reports
+// both, and the disk failure is the half nobody asked for.
+func trouble(err error) error {
+	for err != nil {
+		if !errors.Is(err, context.Canceled) && !errors.Is(err, jobs.ErrStopped) {
+			return err
+		}
+		if joined, ok := err.(interface{ Unwrap() []error }); ok {
+			var rest []error
+			for _, e := range joined.Unwrap() {
+				rest = append(rest, trouble(e))
+			}
+			return errors.Join(rest...)
+		}
+		next, ok := err.(interface{ Unwrap() error })
+		if !ok {
+			return nil
+		}
+		err = next.Unwrap()
+	}
+	return nil
 }
 
 // confirmDelete asks before taking anything away.

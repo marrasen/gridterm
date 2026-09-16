@@ -89,6 +89,12 @@ type Form struct {
 	Title string
 	Lines []string
 
+	// MinCols is the least room the text inside the box may have, for a
+	// dialog whose lines change while it is open: without it the box
+	// follows the longest line and re-centres itself every time a number
+	// in it grows a digit.
+	MinCols int
+
 	// Copy puts text on the clipboard, and CopyChord reports whether a
 	// key is the window's copy chord. A nil pair leaves the error on
 	// screen and nowhere else: this package cannot reach a clipboard or
@@ -197,6 +203,9 @@ func (f *Form) SetButtons(buttons []Button) {
 	if n := len(f.rows) + len(f.buttons); f.at >= n {
 		f.focus(max(n-1, 0))
 	}
+	// The buttons are part of what the box is wide enough for, so the
+	// fields have to be told what they have left.
+	f.layoutFields()
 }
 
 // FocusButton puts the focus on one of the buttons, for a question whose
@@ -748,7 +757,7 @@ func (f *Form) boxCols() int {
 // wantCols returns how wide the dialog would like to be: enough for the
 // longest thing in it, capped.
 func (f *Form) wantCols() int {
-	width := grid.StringWidth(f.Title)
+	width := max(grid.StringWidth(f.Title), f.MinCols)
 	for _, l := range f.Lines {
 		width = max(width, grid.StringWidth(l))
 	}

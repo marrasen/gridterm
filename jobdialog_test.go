@@ -14,8 +14,10 @@ import (
 	"time"
 
 	"github.com/marrasen/gridterm/conns"
+	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/input"
 	"github.com/marrasen/gridterm/internal/sshtest"
+	"github.com/marrasen/gridterm/jobs"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/files"
 	"github.com/marrasen/gridterm/vfs"
@@ -38,6 +40,10 @@ type pausedFS struct {
 	writing chan struct{}
 
 	release sync.Once
+
+	// removeErr is what Remove hands back instead of doing it, for a
+	// machine that will not let go of what a cancelled copy half wrote.
+	removeErr error
 }
 
 func newPausedFS() *pausedFS {
@@ -46,6 +52,14 @@ func newPausedFS() *pausedFS {
 		held:    make(chan struct{}),
 		writing: make(chan struct{}),
 	}
+}
+
+// Remove takes something away, or refuses when the test says so.
+func (f *pausedFS) Remove(path string) error {
+	if f.removeErr != nil {
+		return f.removeErr
+	}
+	return f.FS.Remove(path)
 }
 
 // Name is what the panel calls it. Not a machine the window knows, so
@@ -161,7 +175,7 @@ func TestAJobsRowShowsHowFarItHasGot(t *testing.T) {
 		t.Errorf("the dialog is titled %q, want the job it is about", d.Title)
 	}
 	said := dialogText(d)
-	for _, want := range []string{"Copying one.txt", "0 of 1 file", "8 B"} {
+	for _, want := range []string{"Copying one.txt", "0 of 1 file, 0 B of 8 B"} {
 		if !strings.Contains(said, want) {
 			t.Errorf("the dialog says\n%s\nwant a line with %q", said, want)
 		}
@@ -169,6 +183,155 @@ func TestAJobsRowShowsHowFarItHasGot(t *testing.T) {
 	// And it offers to stop the copy while it is running.
 	if !offersButton(d, "Cancel") {
 		t.Errorf("the dialog offers %v while the copy runs", buttonTitles(d))
+	}
+	// The row opens the one dialog it already has rather than a twin.
+	openTheRow(t, a, theJobRow(t, a))
+	if got := a.root.Modal(); got != ui.Widget(d) {
+		t.Fatalf("choosing the row again put %T on top, want the dialog it opened", got)
+	}
+	if n := len(a.modals); n != 1 {
+		t.Fatalf("the window holds %d dialogs for one job", n)
+	}
+}
+
+// The box keeps its width as the counts in it grow, so a copy does not
+// shuffle sideways while the user is reading it.
+func TestAJobsDialogDoesNotMoveAsItCounts(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+
+	held := newPausedFS()
+	t.Cleanup(held.let)
+	b, from, _ := browserOnto(t, a, held)
+	putFile(t, from, "one.txt", "the body")
+	left := b.Panes()[0]
+	left.Reload()
+	waitFor(t, a, "the listing", func() bool { return !left.Busy() })
+
+	copyTheFirstFile(t, a, b)
+	held.started(t)
+	openTheRow(t, a, theJobRow(t, a))
+	d := awaitModal[*jobDialog](t, a, "the job's dialog", nil)
+	d.Layout(ui.Size{Cols: 80, Rows: 24})
+
+	// Two readings of the same copy, one further along than the other.
+	// The numbers are the test's own: what a job does with a real file is
+	// not what this is about.
+	started := time.Now()
+	early := jobs.Progress{
+		Files: 40, Bytes: 9_000_000, BytesDone: 8,
+		Current: "one.txt", Started: started,
+	}
+	later := jobs.Progress{
+		Files: 40, FilesDone: 12, Bytes: 9_000_000, BytesDone: 3_200_000,
+		Current: "one.txt", Started: started,
+	}
+
+	d.SetLines(d.report(early, started))
+	was := d.Box()
+	d.SetLines(d.report(later, started))
+	if now := d.Box(); now != was {
+		t.Fatalf("the box moved from %+v to %+v as the numbers grew:\n%s",
+			was, now, dialogText(d))
+	}
+	if !strings.Contains(dialogText(d), "12 of 40 files") {
+		t.Fatalf("the dialog says\n%s\nwant the larger numbers", dialogText(d))
+	}
+}
+
+// A copy the user cancelled that could not take away what it half wrote
+// says both, on the row and in the dialog, and the disk failure is shown
+// rather than left behind the user's own decision.
+func TestACancelThatCouldNotClearUpSaysSo(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+
+	held := newPausedFS()
+	held.removeErr = errors.New("the disk is read-only")
+	t.Cleanup(held.let)
+	b, from, _ := browserOnto(t, a, held)
+	putFile(t, from, "one.txt", "the body")
+	left := b.Panes()[0]
+	left.Reload()
+	waitFor(t, a, "the listing", func() bool { return !left.Busy() })
+
+	copyTheFirstFile(t, a, b)
+	held.started(t)
+	e := theJobRow(t, a)
+	j := a.jobs[e]
+	openTheRow(t, a, e)
+	d := awaitModal[*jobDialog](t, a, "the job's dialog", nil)
+
+	pressButton(t, a, d.Form, "Cancel")
+	held.let()
+	waitFor(t, a, "the job to stop", func() bool {
+		a.refreshJobs()
+		return j.Progress().Done
+	})
+
+	if !errors.Is(j.Progress().Err, context.Canceled) {
+		t.Fatalf("the job ended with %v, want it cancelled", j.Progress().Err)
+	}
+	// The row says both.
+	if e.Note != "cancelled, trouble" {
+		t.Errorf("the row says %q, want the cancel and the trouble", e.Note)
+	}
+	// So does the account of it.
+	said := outcomeOf(j.Progress())
+	if !strings.Contains(said, "could not be taken away") ||
+		!strings.Contains(said, "read-only") {
+		t.Errorf("the outcome reads %q", said)
+	}
+	// And the window shows the disk failure rather than swallowing it.
+	n := awaitModal(t, a, "a dialog saying the copy could not finish",
+		byTitlePrefix[*ui.Notice]("Could not finish"))
+	if !strings.Contains(n.Message(), "read-only") {
+		t.Fatalf("it says %q, want what the disk said", n.Message())
+	}
+}
+
+// A delete is not offered again: doing it twice would take something
+// away without asking.
+func TestAFinishedDeleteIsNotRepeated(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+
+	b, from, _ := browserOnto(t, a, vfs.NewLocal())
+	putFile(t, from, "one.txt", "the body")
+	left := b.Panes()[0]
+	left.Reload()
+	waitFor(t, a, "the listing", func() bool { return !left.Busy() })
+
+	// Down onto the file and F8, which asks first.
+	tap(t, b, input.KeyDown)
+	tap(t, b, input.KeyF8)
+	ask := awaitModal(t, a, "the delete question", byTitlePrefix[*ui.Form]("Delete"))
+	pressButton(t, a, ask, "Delete")
+
+	var e *conns.Entry
+	waitFor(t, a, "the delete to start", func() bool {
+		if len(a.jobs) != 1 {
+			return false
+		}
+		e = theJobRow(t, a)
+		return true
+	})
+	waitFor(t, a, "the delete to finish", func() bool {
+		a.refreshJobs()
+		return len(a.jobs) == 0
+	})
+
+	openTheRow(t, a, e)
+	d := awaitModal[*jobDialog](t, a, "the job's dialog", nil)
+	a.refreshJobs()
+	if offersButton(d, "Repeat") {
+		t.Fatalf("a finished delete offers %v", buttonTitles(d))
+	}
+	if !strings.Contains(dialogText(d), "It finished.") {
+		t.Fatalf("the dialog says\n%s", dialogText(d))
 	}
 }
 
@@ -192,6 +355,11 @@ func TestAFinishedJobIsRepeatedFromItsDialog(t *testing.T) {
 	openTheRow(t, a, theJobRow(t, a))
 	d := awaitModal[*jobDialog](t, a, "the job's dialog", nil)
 
+	// The finger was on Cancel when it finished.
+	sendKey(t, a, press(input.KeyTab, 0))
+	if at, isButton := d.Focused(); !isButton || at != 0 {
+		t.Fatalf("the focus is on %d (button %v), want Cancel", at, isButton)
+	}
 	held.let()
 	waitFor(t, a, "the copy to finish", func() bool {
 		a.refreshJobs()
@@ -199,6 +367,11 @@ func TestAFinishedJobIsRepeatedFromItsDialog(t *testing.T) {
 	})
 	if said := dialogText(d); !strings.Contains(said, "1 file") {
 		t.Errorf("the finished dialog says\n%s\nwant what it did", said)
+	}
+	// And the focus moved off where Cancel was, so Enter cannot start a
+	// repeat the user never asked for.
+	if at, isButton := d.Focused(); !isButton || at != len(d.Buttons())-1 {
+		t.Fatalf("the focus is on %d (button %v), want Close", at, isButton)
 	}
 
 	// The file is copied again from the dialog, with nothing to find at
@@ -364,16 +537,185 @@ func TestAFinishedJobsDialogSettles(t *testing.T) {
 
 	openTheRow(t, a, e)
 	d := awaitModal[*jobDialog](t, a, "the job's dialog", nil)
-	a.refreshJobs()
+	ended := j.Progress().Ended
+	a.refreshJobsAt(ended.Add(time.Second))
 	was := dialogText(d)
 	if !strings.Contains(was, "It finished.") {
 		t.Fatalf("the dialog says %q", was)
 	}
-	// Two frames a second apart. How long it took is settled, so the
-	// lines are the same however long the dialog is left open.
-	d.refresh(j.Progress().Ended.Add(time.Second))
-	d.refresh(j.Progress().Ended.Add(time.Minute))
+	// A copy of eight bytes took no measurable time, and the words for
+	// that are the connection log's own.
+	if !strings.Contains(was, "in under a second") {
+		t.Fatalf("the dialog says %q about how long it took", was)
+	}
+
+	// The frame the window really draws, onto the layer the dialog has.
+	m := a.modals[len(a.modals)-1]
+	a.root.DrawModal(m.w, m.g.View())
+	m.g.ClearDirty()
+	laidOut := d.laidOut
+
+	// A minute later. How long it took is settled, so nothing on the
+	// dialog has anything new to say.
+	a.refreshJobsAt(ended.Add(time.Minute))
+	a.root.DrawModal(m.w, m.g.View())
+	if m.g.AnyDirty() {
+		t.Fatalf("a frame with nothing new to say dirtied the dialog's layer:\n%s", dialogText(d))
+	}
+	if d.laidOut != laidOut {
+		t.Fatalf("the lines were laid out %d more times with nothing to say", d.laidOut-laidOut)
+	}
 	if now := dialogText(d); now != was {
 		t.Fatalf("the dialog says\n%s\nafter a minute, want\n%s", now, was)
+	}
+	// It is still drawn, rather than not drawn at all.
+	if !strings.Contains(gridRows(m.g), "It finished.") {
+		t.Fatalf("the dialog is not on its layer:\n%s", gridRows(m.g))
+	}
+}
+
+// gridRows reads a grid back as one string.
+func gridRows(g *grid.Grid) string {
+	cols, rows := g.Size()
+	var b strings.Builder
+	for y := 0; y < rows; y++ {
+		for x := 0; x < cols; x++ {
+			r := g.At(x, y).Rune
+			if r == 0 {
+				r = ' '
+			}
+			b.WriteRune(r)
+		}
+		b.WriteByte('\n')
+	}
+	return b.String()
+}
+
+// countingFS is a filesystem that records being closed, for the jobs
+// that open one of their own.
+type countingFS struct {
+	vfs.FS
+	closed chan struct{}
+	once   sync.Once
+}
+
+func newCountingFS() *countingFS {
+	return &countingFS{FS: vfs.NewLocal(), closed: make(chan struct{})}
+}
+
+func (f *countingFS) Name() string { return "counted" }
+
+func (f *countingFS) Close() error {
+	f.once.Do(func() { close(f.closed) })
+	return nil
+}
+
+// A filesystem a job opened for itself is let go of once the job has
+// stopped: nothing else holds it, so nothing else would ever close it.
+func TestAJobLetsGoOfTheFilesystemsItOpened(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+
+	dir := t.TempDir()
+	putFile(t, dir, "one.txt", "the body")
+	mine := newCountingFS()
+	a.runJob(jobs.Op{
+		Kind: jobs.Delete, From: mine, At: dir, Names: []string{"one.txt"},
+	}, conns.Local, conns.Local, []vfs.FS{mine})
+
+	j := a.jobs[theJobRow(t, a)]
+	<-j.Done()
+	if errs := a.closes.waitFor(waitBudget); len(errs) != 0 {
+		t.Fatalf("letting go reported %v", errs)
+	}
+	select {
+	case <-mine.closed:
+	default:
+		t.Fatal("the filesystem the job opened was abandoned rather than closed")
+	}
+}
+
+// A repeat that cannot reach the far end starts nothing: no second row,
+// no second job, and the source it had already opened is let go of.
+func TestARepeatThatCannotReachTheFarEndStartsNothing(t *testing.T) {
+	s := sshtest.New(t)
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	host := connectedTo(t, a, s)
+
+	here := openFilesFromThePlus(t, a, conns.Local)
+	there := openFilesFromThePlus(t, a, host)
+	from, into := t.TempDir(), filepath.ToSlash(t.TempDir())
+	putFile(t, from, "one.txt", "the body")
+	a.focus(here)
+	openAt(t, a, here, from)
+	openAt(t, a, there, into)
+
+	copyTheFirstFile(t, a, a.files.view)
+	e := theJobRow(t, a)
+	waitFor(t, a, "the copy to finish", func() bool {
+		a.refreshJobs()
+		return len(a.jobs) == 0
+	})
+	openTheRow(t, a, e)
+	d := awaitModal[*jobDialog](t, a, "the job's dialog", nil)
+
+	// The machine the copy went to is gone, and this machine is not.
+	if err := a.dropMachine(host); err != nil {
+		t.Fatalf("dropMachine: %v", err)
+	}
+	rows := len(a.registry.Groups(time.Now()))
+	pressButton(t, a, d.Form, "Repeat")
+
+	n := awaitModal(t, a, "a dialog saying it could not be done again",
+		byTitle[*ui.Notice]("Could not copy it again"))
+	if !strings.Contains(n.Message(), host) {
+		t.Fatalf("it says %q, want which machine is gone", n.Message())
+	}
+	if len(a.jobs) != 0 {
+		t.Fatalf("%d jobs were started by a repeat that could not reach the far end", len(a.jobs))
+	}
+	if got := len(a.registry.Groups(time.Now())); got != rows {
+		t.Fatalf("the sidebar grew from %d groups to %d", rows, got)
+	}
+}
+
+// The dialog reads the panel's rates and never adds to them: the panel
+// owns that map and throws away the rate of a row that has gone, so one
+// planted here would come back every frame for ever.
+func TestAJobsDialogDoesNotPlantARate(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+
+	held := newPausedFS()
+	t.Cleanup(held.let)
+	b, from, _ := browserOnto(t, a, held)
+	putFile(t, from, "one.txt", "the body")
+	left := b.Panes()[0]
+	left.Reload()
+	waitFor(t, a, "the listing", func() bool { return !left.Busy() })
+
+	copyTheFirstFile(t, a, b)
+	held.started(t)
+	e := theJobRow(t, a)
+	openTheRow(t, a, e)
+	awaitModal[*jobDialog](t, a, "the job's dialog", nil)
+
+	// The row is closed from the sidebar, and the panel throws its rate
+	// away with it. The dialog is still open on the job.
+	if err := e.Close(); err != nil {
+		t.Fatalf("closing the row: %v", err)
+	}
+	a.refreshPanel(time.Now())
+	if _, ok := a.rates[e]; ok {
+		t.Fatal("the panel kept a rate for a row that has gone")
+	}
+
+	a.refreshJobsAt(time.Now())
+	if _, ok := a.rates[e]; ok {
+		t.Fatal("the dialog put a rate back for a row the panel had thrown away")
 	}
 }

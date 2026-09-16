@@ -39,11 +39,29 @@ type jobDialog struct {
 	// done is whether the buttons on screen are the ones a finished job
 	// offers.
 	done bool
+
+	// laidOut counts how often the lines have been handed to the form.
+	// It is a field so a test can see that an unchanged frame does no
+	// work.
+	laidOut int
 }
+
+// jobDialogCols is the room the progress lines are given whatever they
+// say, so the box does not re-centre itself every time a byte count
+// grows a digit.
+const jobDialogCols = 46
 
 // openJobDialog shows how a job is going. It runs on the drawing
 // goroutine, from the job's row on the sidebar.
 func (a *app) openJobDialog(j *jobs.Job, e *conns.Entry, from, to string) {
+	// One dialog per job. The row is behind whatever is on the modal
+	// stack, so a second click on it can only mean the dialog it already
+	// opened, and two of them would answer the same Cancel twice.
+	for _, m := range a.modals {
+		if open, ok := m.w.(*jobDialog); ok && open.job == j {
+			return
+		}
+	}
 	d := &jobDialog{
 		Form:  a.newForm(j.Kind().String() + " " + j.Name()),
 		app:   a,
@@ -52,13 +70,11 @@ func (a *app) openJobDialog(j *jobs.Job, e *conns.Entry, from, to string) {
 		from:  from,
 		to:    to,
 	}
+	d.MinCols = jobDialogCols
 	// The running pair first, so refresh has something to swap: it only
 	// changes the buttons when the job's state does.
 	d.setButtons()
 	d.refresh(time.Now())
-	// Opens on the button that changes nothing, the way the question
-	// about deleting does.
-	d.FocusButton(1)
 	d.SetClose(a.showModal(d, nil))
 }
 
@@ -70,6 +86,7 @@ func (d *jobDialog) refresh(now time.Time) {
 	// dirties no row -- but laying the fields out again does not.
 	if said := d.report(p, now); !slices.Equal(said, d.said) {
 		d.said = said
+		d.laidOut++
 		d.SetLines(said)
 	}
 	if p.Done != d.done {
@@ -81,6 +98,10 @@ func (d *jobDialog) refresh(now time.Time) {
 // setButtons offers what can be done with the job as it stands: stopping
 // one that is running, and doing a finished one again.
 func (d *jobDialog) setButtons() {
+	// Whichever pair it is, the focus lands on Close: a job that
+	// finished while the finger was on Cancel must not turn that key
+	// into a repeat.
+	defer func() { d.FocusButton(len(d.Buttons()) - 1) }()
 	if !d.done {
 		d.SetButtons([]ui.Button{
 			{Title: "Cancel", Do: func() error {
@@ -94,8 +115,12 @@ func (d *jobDialog) setButtons() {
 		})
 		return
 	}
-	d.SetButtons([]ui.Button{
-		{Title: "Repeat", Do: func() error {
+	var buttons []ui.Button
+	// Only a copy: doing a delete again would take something away
+	// without asking, and a move has already taken the original away, so
+	// there is nothing at that end to move a second time.
+	if d.job.Kind() == jobs.Copy {
+		buttons = append(buttons, ui.Button{Title: "Repeat", Do: func() error {
 			// Posted for the reason AddButton gives: this dialog closes
 			// as soon as this returns, and closing one takes anything
 			// stacked on top of it -- which is where a failure to start
@@ -103,9 +128,9 @@ func (d *jobDialog) setButtons() {
 			op, from, to := d.job.Op(), d.from, d.to
 			d.app.pump.post(func() { d.app.repeatJob(op, from, to) })
 			return nil
-		}},
-		{Title: "Close"},
-	})
+		}})
+	}
+	d.SetButtons(append(buttons, ui.Button{Title: "Close"}))
 }
 
 // report is what the dialog says about a job at one moment.
@@ -118,7 +143,7 @@ func (d *jobDialog) report(p jobs.Progress, now time.Time) []string {
 		}
 	}
 	lines := wrapLines(outcomeOf(p), errorLineWidth)
-	return append(lines, amountOf(p, true)+" in "+lasted(p.Ended.Sub(p.Started)))
+	return append(lines, amountOf(p, true)+" "+howLong(p.Ended.Sub(p.Started)))
 }
 
 // onNow is the name the job is working on, or what it is doing instead.
@@ -143,7 +168,7 @@ func (d *jobDialog) onNow(p jobs.Progress) string {
 
 // pace is how fast the job is going and how long it has been going for.
 func (d *jobDialog) pace(p jobs.Progress, now time.Time) string {
-	going := lasted(now.Sub(p.Started)) + " so far"
+	going := soFar(now.Sub(p.Started))
 	if speed := meter.Speed(d.speed(now)); speed != "" {
 		return speed + ", " + going
 	}
@@ -156,13 +181,12 @@ func (d *jobDialog) pace(p jobs.Progress, now time.Time) string {
 // From the row's own rate rather than a new one: a speed is a difference
 // between two moments, and the panel is already taking those.
 func (d *jobDialog) speed(now time.Time) uint64 {
-	if d.entry == nil || d.entry.Meter == nil {
-		return 0
-	}
+	// Read, never made: the panel owns that map and throws away the rate
+	// of anything that has gone. A row nothing has sampled yet has no
+	// speed to show, which is the truth anyway.
 	rate := d.app.rates[d.entry]
-	if rate == nil {
-		rate = &meter.Rate{}
-		d.app.rates[d.entry] = rate
+	if rate == nil || d.entry.Meter == nil {
+		return 0
 	}
 	in, out := rate.Sample(d.entry.Meter, now)
 	return max(in, out)
@@ -201,31 +225,42 @@ func fileWord(n int) string {
 
 // outcomeOf says how a job ended.
 func outcomeOf(p jobs.Progress) string {
+	how := ""
 	switch {
 	case p.Err == nil:
 		return "It finished."
 	case errors.Is(p.Err, context.Canceled):
-		return "It was cancelled."
+		how = "It was cancelled"
 	case errors.Is(p.Err, jobs.ErrStopped):
-		return "It was stopped."
+		how = "It was stopped"
+	default:
+		return "It failed: " + p.Err.Error()
 	}
-	return "It failed: " + p.Err.Error()
+	// They asked for it to stop. They did not ask for half a file to be
+	// left behind, so that is said as well.
+	if why := trouble(p.Err); why != nil {
+		return how + ", but what was half written could not be taken away: " + why.Error()
+	}
+	return how + "."
 }
 
-// lasted says how long something took, in whole seconds so a dialog
+// soFar says how long a job has been going, in whole seconds so a dialog
 // refreshed every frame says the same thing until there is something new
 // to say.
-func lasted(d time.Duration) string {
-	d = d.Round(time.Second)
+//
+// The finished line uses howLong instead. That one counts tenths, which
+// on a line redrawn every frame would dirty a row ten times a second.
+func soFar(d time.Duration) string {
+	d = d.Truncate(time.Second)
 	switch {
-	case d < 0:
-		return "0 s"
+	case d < time.Second:
+		return "going under a second"
 	case d < time.Minute:
-		return fmt.Sprintf("%d s", int(d/time.Second))
+		return fmt.Sprintf("going %d s", int(d/time.Second))
 	case d < time.Hour:
-		return fmt.Sprintf("%d min %d s", int(d/time.Minute), int(d/time.Second)%60)
+		return fmt.Sprintf("going %d min %d s", int(d/time.Minute), int(d/time.Second)%60)
 	}
-	return fmt.Sprintf("%d h %d min", int(d/time.Hour), int(d/time.Minute)%60)
+	return fmt.Sprintf("going %d h %d min", int(d/time.Hour), int(d/time.Minute)%60)
 }
 
 // repeatJob does a finished piece of work again, on filesystems found

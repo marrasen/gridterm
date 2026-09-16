@@ -296,3 +296,38 @@ func TestADialogOverAScaledScreenEndsADrag(t *testing.T) {
 		t.Errorf("the selection grew to %q while a dialog had the pointer", got)
 	}
 }
+
+// A press on a scaled pane that does not have the keys moves them and
+// does nothing else, the same as a press on a pane in the tree.
+//
+// The user cannot tell the two apart by looking. It is the same pane in
+// the same slot, and the only difference is that somebody on another
+// machine made their window bigger.
+func TestAPressOnAScaledPaneWithoutTheKeysOnlyMovesThem(t *testing.T) {
+	host, _, hostPane := aHeldScreen(t, 140, 44)
+	fillScreen(t, host, 0, hostPane)
+	frame(t, host)
+	s := host.scaled[hostPane]
+	if err := host.focusPanel(); err != nil {
+		t.Fatalf("focus the sidebar: %v", err)
+	}
+
+	onCell(t, host, s, input.MousePress, 4, 4)
+
+	if !hostPane.Focused() {
+		t.Error("the press did not move the keys to the pane")
+	}
+	if got := hostPane.SelectionText(); got != "" {
+		t.Errorf("the press selected %q, want nothing: it only moved the keys", got)
+	}
+	if host.scaledHeld.Held() {
+		t.Error("a press that only moved the keys took the pointer")
+	}
+
+	// And the next press is the pane's own.
+	onCell(t, host, s, input.MouseRelease, 4, 4)
+	onCell(t, host, s, input.MousePress, 4, 4)
+	if got, want := hostPane.SelectionText(), string(cellRune(4, 4)); got != want {
+		t.Errorf("the second press selected %q, want the cell under it, %q", got, want)
+	}
+}

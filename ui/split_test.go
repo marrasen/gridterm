@@ -1468,7 +1468,7 @@ func TestSplitDragIgnoresAnotherButtonComingUp(t *testing.T) {
 // A press on the half without the keys moves them and goes no further,
 // for a child that asks for that. The press after it is the child's.
 func TestSplitKeepsThePressThatMovesTheKeys(t *testing.T) {
-	a, b := &picky{fake{name: "a"}}, &picky{fake{name: "b"}}
+	a, b := &picky{fake: fake{name: "a"}, first: true}, &picky{fake: fake{name: "b"}, first: true}
 	s := NewSplit(Columns, a, b)
 	r := rootOver(s, 21, 4)
 	s.SetFocus(true)
@@ -1479,6 +1479,9 @@ func TestSplitKeepsThePressThatMovesTheKeys(t *testing.T) {
 
 	if s.Focused() != Widget(b) {
 		t.Error("the press did not move the keys to the half it landed in")
+	}
+	if !b.focus {
+		t.Error("the half the press landed in was not told it has the keys")
 	}
 	if len(b.clicks) != 0 {
 		t.Errorf("the half was handed %d presses as well, want none", len(b.clicks))

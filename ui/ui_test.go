@@ -61,11 +61,14 @@ func (f *fake) HandleKey(ev input.Event) (bool, error) {
 	return true, f.fails
 }
 
-// picky is a widget that takes a press moving the keys to it as nothing
-// but that move, the way a terminal does.
-type picky struct{ fake }
+// picky is a widget that answers FocusesFirst, the way a terminal does.
+type picky struct {
+	fake
+	// first is the answer it gives.
+	first bool
+}
 
-func (p *picky) FocusesFirst() bool { return true }
+func (p *picky) FocusesFirst() bool { return p.first }
 
 func press(k input.Key, mods input.Mods) input.Event {
 	return input.Event{Kind: input.KeyPress, Key: k, Mods: mods}

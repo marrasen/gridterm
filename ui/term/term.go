@@ -151,6 +151,11 @@ type Terminal struct {
 	// only a drag when a drag started here.
 	selecting bool
 
+	// reported is a bit per button the program was told went down, so a
+	// drag or a release from a gesture it never saw the press for is
+	// held back.
+	reported uint8
+
 	// watchMu guards watchers, who are told what the program says from
 	// the goroutine reading it and are added and removed from whichever
 	// goroutine is carrying the connection they are on.
@@ -437,7 +442,9 @@ func (t *Terminal) HandleKey(ev input.Event) (bool, error) {
 func (t *Terminal) HandleMouse(ev input.MouseEvent) (bool, error) {
 	mode, onAlt := t.mouseMode()
 	if mode.Enabled() && !ev.Mods.Has(input.ModShift) {
-		t.send(input.EncodeMouse(ev, mode, nil))
+		if t.reportable(ev) {
+			t.send(input.EncodeMouse(ev, mode, nil))
+		}
 		return true, nil
 	}
 
@@ -500,6 +507,30 @@ func (t *Terminal) HandleMouse(ev input.MouseEvent) (bool, error) {
 	return true, nil
 }
 
+// reportable reports whether ev belongs to a gesture the program was
+// told about, remembering a press and forgetting its release. It is what
+// holds back the drag and the release that follow a press a container
+// kept to move the keys here.
+//
+// Motion with no button held belongs to no gesture, so it is always
+// reported.
+func (t *Terminal) reportable(ev input.MouseEvent) bool {
+	if ev.Button == input.MouseNone || ev.Button.IsWheel() {
+		return true
+	}
+	bit := uint8(1) << ev.Button
+	switch ev.Kind {
+	case input.MousePress:
+		t.reported |= bit
+		return true
+	case input.MouseRelease:
+		was := t.reported&bit != 0
+		t.reported &^= bit
+		return was
+	}
+	return t.reported&bit != 0
+}
+
 // FocusesFirst says a press that moves the keys to this pane does
 // nothing else, so the press that starts a selection is the next one.
 func (t *Terminal) FocusesFirst() bool { return true }
@@ -508,7 +539,7 @@ func (t *Terminal) FocusesFirst() bool { return true }
 // because a dialog opened over the terminal or its pane left the screen.
 // Left alone, the next time the pointer crossed the terminal with no
 // button down it would carry on extending the selection.
-func (t *Terminal) CancelGesture() { t.selecting = false }
+func (t *Terminal) CancelGesture() { t.selecting, t.reported = false, 0 }
 
 // SelectionText returns the text currently selected, or "" when nothing
 // is.

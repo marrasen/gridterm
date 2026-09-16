@@ -273,9 +273,11 @@ func (d *Dock) HandleKey(ev input.Event) (bool, error) {
 	return HandleKey(d.Focused(), ev)
 }
 
-// HandleMouse routes to whichever half was clicked, keeps a press that
-// only moves the keys, and drags the divider when that is what was
-// grabbed.
+// HandleMouse does one of three things with an event:
+//
+//   - It drags the divider, when that is what was grabbed.
+//   - It keeps a press whose only job is to move the keys to a pane.
+//   - It routes the event to whichever half the pointer is in.
 //
 // Taking the press on the divider is what makes the drag work: Root
 // keeps the pointer for whoever took it, so every move and the release

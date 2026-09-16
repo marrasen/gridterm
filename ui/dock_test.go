@@ -406,10 +406,14 @@ func TestDockDragIgnoresAnotherButtonComingUp(t *testing.T) {
 // there.
 func TestDockMovesTheKeysToThePaneUnderThePointer(t *testing.T) {
 	panel := &fake{name: "panel"}
-	left, right := &picky{fake{name: "left"}}, &picky{fake{name: "right"}}
+	left, right := &picky{fake: fake{name: "left"}, first: true},
+		&picky{fake: fake{name: "right"}, first: true}
 	d := NewDock(10, panel, NewSplit(Columns, left, right))
 	r := rootOver(d, 41, 4)
 	d.Focus(panel)
+	// What the left pane had been told before the press, so the test
+	// asks only about the press itself.
+	told := len(left.focused)
 
 	// The right-hand pane, which is not the one the split is pointing
 	// at while the panel has the keys.
@@ -425,5 +429,62 @@ func TestDockMovesTheKeysToThePaneUnderThePointer(t *testing.T) {
 	}
 	if len(left.clicks)+len(right.clicks) != 0 {
 		t.Error("the press was delivered as well as moving the keys")
+	}
+	// Deepest first, so the keys travel down a path already pointing at
+	// the right pane. The other way round the left pane would be told it
+	// gained and then lost them, for a click that never touched it.
+	if got := left.focused[told:]; len(got) != 0 {
+		t.Errorf("the pane that was not clicked was told %v about the keys, want nothing", got)
+	}
+}
+
+// The dock keeps the press itself when there is no split below it to do
+// the job. Its other half is the pane, and the dock is the only
+// container between the keys and it.
+func TestDockKeepsThePressThatMovesTheKeysToItsOtherHalf(t *testing.T) {
+	panel := &fake{name: "panel"}
+	rest := &picky{fake: fake{name: "rest"}, first: true}
+	d := NewDock(10, panel, rest)
+	r := rootOver(d, 41, 4)
+	d.Focus(panel)
+
+	if took, err := r.HandleMouse(pressAt(35, 1)); err != nil || !took {
+		t.Fatalf("the press was taken=%v: %v", took, err)
+	}
+
+	if !rest.focus {
+		t.Error("the press did not move the keys to the pane beside the panel")
+	}
+	if len(rest.clicks) != 0 {
+		t.Errorf("the pane was handed %d presses as well, want none", len(rest.clicks))
+	}
+
+	// And the next press is the pane's own.
+	r.HandleMouse(releaseAt(35, 1))
+	r.HandleMouse(pressAt(35, 1))
+	if len(rest.clicks) == 0 {
+		t.Error("the second press was kept as well, so the pane is never clicked")
+	}
+}
+
+// A pane that answers FocusesFirst with false gets the press that moves
+// the keys to it, the same as a widget that does not answer at all.
+func TestDockDeliversThePressToAPaneThatDoesNotAskToBeSpared(t *testing.T) {
+	panel := &fake{name: "panel"}
+	rest := &picky{fake: fake{name: "rest"}}
+	d := NewDock(10, panel, rest)
+	r := rootOver(d, 41, 4)
+	d.Focus(panel)
+
+	if took, err := r.HandleMouse(pressAt(35, 1)); err != nil || !took {
+		t.Fatalf("the press was taken=%v: %v", took, err)
+	}
+
+	if !rest.focus {
+		t.Error("the press did not move the keys to the pane beside the panel")
+	}
+	if len(rest.clicks) != 1 {
+		t.Errorf("the pane was handed %d presses, want the one that moved the keys",
+			len(rest.clicks))
 	}
 }

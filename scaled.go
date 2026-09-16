@@ -275,11 +275,15 @@ func (a *app) deliverScaled(s *scaledPane, ev input.MouseEvent, held bool) (bool
 		return ui.HandleMouse(s.pane, local)
 	}
 	starts := ev.Kind == input.MousePress && !ev.Button.IsWheel()
-	if starts {
+	if starts && ui.FocusedLeaf(a.root.Widget()) != ui.Widget(s.pane) {
 		// Clicking a pane is how the mouse moves focus, the same as in
 		// the tree, whether or not the pane wants the button.
-		if ui.FocusedLeaf(a.root.Widget()) != ui.Widget(s.pane) {
-			a.focus(s.pane)
+		a.focus(s.pane)
+		// And the same rule the tree keeps, because the user cannot tell
+		// a scaled pane from an ordinary one: a left press that only
+		// moves the keys stops there.
+		if ev.Button == input.MouseLeft && s.pane.FocusesFirst() {
+			return true, nil
 		}
 	}
 	handled, err := ui.HandleMouse(s.pane, local)

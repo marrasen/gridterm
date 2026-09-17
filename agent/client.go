@@ -114,6 +114,18 @@ func (c *Client) Output(id string, most int) (Look, error) {
 	return *got.Look, nil
 }
 
+// Secret asks the user to type something into a pane and waits for them
+// to, up to wait. It reports whether they typed it, and never what.
+func (c *Client) Secret(id, what string, wait time.Duration) (bool, error) {
+	got, err := c.say(ask{
+		Do: "secret", Pane: id, Text: what, WaitMS: int(wait.Milliseconds()),
+	})
+	if err != nil {
+		return false, err
+	}
+	return got.Typed, nil
+}
+
 // Restart starts a pane's program again and gives back the pane, which
 // is the pane it was.
 func (c *Client) Restart(id string) (Pane, error) {
@@ -203,6 +215,15 @@ func (c *Client) answerWithin(want ask) time.Duration {
 	patience := c.patience
 	if patience <= 0 {
 		patience = promptly
+	}
+	// A secret waits for a person to type, which is the one thing here
+	// slower than a wait.
+	if want.Do == "secret" {
+		asked := time.Duration(want.WaitMS) * time.Millisecond
+		if asked <= 0 || asked > LongestSecretWait {
+			asked = LongestSecretWait
+		}
+		return asked + patience
 	}
 	if want.Do != "wait" {
 		return patience

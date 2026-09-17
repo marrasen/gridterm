@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/marrasen/gridterm/agent"
 )
@@ -146,6 +147,33 @@ func toolList() []tool {
 			},
 		},
 		{
+			Name:  "ask_for_secret",
+			Title: "Ask the user to type a secret",
+			Description: "Ask the user to type something into the pane that you must not" +
+				" see: a password, a passphrase, a one-time code. gridterm puts a line on" +
+				" the pane saying what you asked for and who asked, the user types it there," +
+				" and it goes to the program in the pane. You are told that they typed" +
+				" something and never what." +
+				" Use it when a program in the pane is waiting for a password. Do not ask" +
+				" the user to paste one to you instead, and do not type one yourself." +
+				" It waits for them, so it can take a while, and it says so if they never" +
+				" type anything. A program that echoes what is typed puts it on the screen," +
+				" where you can read it like anything else: this hides what you are told," +
+				" not what the pane shows.",
+			InputSchema: schema{
+				Type: "object",
+				Properties: map[string]field{
+					"pane": {Type: "string", Description: "which pane, from use_session_code"},
+					"what": {Type: "string", Description: "what to ask for, in a few words," +
+						` such as "the sudo password for prod". It is shown to the user.`},
+					"wait_ms": {Type: "integer", Description: fmt.Sprintf(
+						"how long to wait for them, in milliseconds. Left out, it waits up"+
+							" to %d minutes.", int(agent.LongestSecretWait.Minutes()))},
+				},
+				Required: []string{"pane", "what"},
+			},
+		},
+		{
 			Name:  "restart_pane",
 			Title: "Start a pane's program again",
 			Description: "Start the pane's program again after it has finished: the shell" +
@@ -235,6 +263,8 @@ func (s *server) runTool(name string, args json.RawMessage) (result, *rpcError) 
 		Contains  string   `json:"contains"`
 		QuietMS   int      `json:"quiet_ms"`
 		TimeoutMS int      `json:"timeout_ms"`
+		What      string   `json:"what"`
+		WaitMS    int      `json:"wait_ms"`
 	}
 	if len(args) > 0 {
 		if err := json.Unmarshal(args, &in); err != nil {
@@ -327,6 +357,26 @@ func (s *server) runTool(name string, args json.RawMessage) (result, *rpcError) 
 		return say("Sent. Use wait_for to see what happens: the screen has not" +
 			" caught up yet, and wait_for ends when what you sent finishes. Then" +
 			" read_output for what it printed.")
+
+	case "ask_for_secret":
+		if in.Pane == "" {
+			return missing("pane")
+		}
+		if strings.TrimSpace(in.What) == "" {
+			return missing("what to ask the user for")
+		}
+		typed, err := s.panes.Secret(in.Pane, in.What,
+			time.Duration(in.WaitMS)*time.Millisecond)
+		if err != nil {
+			return wrong(err.Error())
+		}
+		if !typed {
+			return say("The user has not typed anything into the pane. They may not have" +
+				" seen the line, or may not want to: read the pane to see where it is," +
+				" and ask them in your own words before asking again.")
+		}
+		return say("The user typed something into the pane. You were not told what," +
+			" and you will not be. Use wait_for to see what the program does with it.")
 
 	case "restart_pane":
 		if in.Pane == "" {

@@ -39,6 +39,12 @@ type fakeWindow struct {
 	output     string
 	mostOutput int
 
+	// askedFor is what the last Secret asked the user for, and
+	// typesSecret is closed when the user types it. A nil one is a user
+	// who never does.
+	askedFor    string
+	typesSecret chan struct{}
+
 	// What this hand-over allows, and how many times each was used.
 	mayRestart bool
 	mayOpen    bool
@@ -172,6 +178,30 @@ func (w *fakeWindow) Output(id string, most int) (Look, error) {
 	look := w.lookAt(w.output)
 	look.Note = "this is what the last command printed"
 	return look, nil
+}
+
+func (w *fakeWindow) Secret(id, what string, wait time.Duration) (bool, error) {
+	w.mu.Lock()
+	if w.taken || id != "pane-1" {
+		w.mu.Unlock()
+		return false, errors.New("that is not a pane you have been handed")
+	}
+	w.askedFor = what
+	typed := w.typesSecret
+	w.mu.Unlock()
+	if typed == nil {
+		// Nobody types, and the wait is the caller's to bound.
+		select {
+		case <-time.After(wait):
+		}
+		return false, nil
+	}
+	select {
+	case <-typed:
+		return true, nil
+	case <-time.After(wait):
+		return false, nil
+	}
 }
 
 func (w *fakeWindow) Restart(id string) (Pane, error) {

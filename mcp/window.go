@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/marrasen/gridterm/agent"
 )
@@ -126,6 +127,15 @@ func (w *Window) portOf(id string) int {
 	port, _, _ := strings.Cut(id, "/")
 	n, _ := strconv.Atoi(port)
 	return n
+}
+
+// Secret asks the user to type something into a pane and waits.
+func (w *Window) Secret(id, what string, wait time.Duration) (bool, error) {
+	conn, at, err := w.paneAt(id)
+	if err != nil {
+		return false, err
+	}
+	return conn.Secret(at, what, wait)
 }
 
 // Send types into a pane and presses the keys named after it.

@@ -2985,3 +2985,150 @@ func TestReadingAboveAClearReachesTheLastCommandsOutput(t *testing.T) {
 		t.Errorf("the box is ticked and the output still stops at the clear:\n%s", look.Screen)
 	}
 }
+
+// The agent asks the user for a password, the user types it into the
+// pane, and the agent is told they did and nothing else.
+//
+// This is the whole of it: a program in the pane wants a credential the
+// agent must not have, and the agent can get past the prompt without
+// ever being given one.
+func TestTheAgentAsksTheUserToTypeASecret(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pane, code, c := handedOver(t, a)
+
+	var got agent.Pane
+	offWindow(t, a, "the window to answer the agent", func() error {
+		var err error
+		got, err = c.Use(code)
+		return err
+	})
+
+	// The hand-over dialog is open over the pane, and the user has to be
+	// typing into the pane rather than into it.
+	f := awaitModal[*ui.Form](t, a, "the hand-over dialog",
+		byTitle[*ui.Form]("An agent may work in this pane"))
+	pressButton(t, a, f, "Done")
+
+	a.shells[0].out <- []byte("[sudo] password for marcus: ")
+	waitFor(t, a, "the pane to show the prompt", func() bool {
+		return strings.Contains(paneText(pane), "sudo")
+	})
+
+	// The agent asks, from a goroutine of its own: the call waits for a
+	// person.
+	typed := make(chan bool, 1)
+	failed := make(chan error, 1)
+	go func() {
+		ok, err := c.Secret(got.ID, "the sudo password for this machine", 10*time.Second)
+		typed <- ok
+		failed <- err
+	}()
+
+	// The pane says what is wanted, and says the agent will not see it.
+	// The line runs wider than the pane, so it is read with the wrapping
+	// taken out.
+	unwrapped := func() string { return strings.ReplaceAll(paneText(pane), "\n", "") }
+	waitFor(t, a, "the pane to ask for the secret", func() bool {
+		return strings.Contains(unwrapped(), "the sudo password for this machine")
+	})
+	if !strings.Contains(unwrapped(), "not to the agent") {
+		t.Errorf("the pane does not say where what is typed goes:\n%s", paneText(pane))
+	}
+	if !pane.AskedForASecret() {
+		t.Error("the pane is not waiting for anything")
+	}
+
+	// The user types it. The characters go to the program, the way
+	// anything typed into a pane does.
+	pane.SetFocus(true)
+	for _, r := range "hunter2" {
+		sendKey(t, a, input.Event{Kind: input.Text, Rune: r, NormalText: true})
+	}
+	sendKey(t, a, press(input.KeyEnter, 0))
+
+	waitFor(t, a, "the agent to be told", func() bool {
+		select {
+		case ok := <-typed:
+			if err := <-failed; err != nil {
+				t.Fatalf("asking for the secret: %v", err)
+			}
+			if !ok {
+				t.Fatal("the agent was told the user typed nothing")
+			}
+			return true
+		default:
+			return false
+		}
+	})
+
+	// The program in the pane was given what was typed, and the agent
+	// was not: nothing it can read carries the characters.
+	if got := a.shells[0].sentText(); !strings.Contains(got, "hunter2") {
+		t.Errorf("the program was sent %q, want what the user typed", got)
+	}
+	look := looked(t, a, c, got.ID)
+	if strings.Contains(look.Screen, "hunter2") {
+		t.Errorf("the agent can read what was typed:\n%s", look.Screen)
+	}
+	if pane.AskedForASecret() {
+		t.Error("the pane is still waiting after the user typed")
+	}
+}
+
+// A user who types nothing leaves the agent waiting, and then told
+// plainly that nothing was typed.
+func TestTheAgentIsToldWhenNobodyTypesTheSecret(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pane, code, c := handedOver(t, a)
+
+	var got agent.Pane
+	offWindow(t, a, "the window to answer the agent", func() error {
+		var err error
+		got, err = c.Use(code)
+		return err
+	})
+
+	typed := make(chan bool, 1)
+	go func() {
+		ok, _ := c.Secret(got.ID, "a one-time code", 150*time.Millisecond)
+		typed <- ok
+	}()
+
+	waitFor(t, a, "the agent to give up", func() bool {
+		select {
+		case ok := <-typed:
+			if ok {
+				t.Fatal("it was told the user typed something")
+			}
+			return true
+		default:
+			return false
+		}
+	})
+	// And the pane has stopped waiting, so a later ask starts clean.
+	waitFor(t, a, "the pane to stop waiting", func() bool { return !pane.AskedForASecret() })
+}
+
+// An agent's own words go on the user's screen, so they are cut down to
+// one plain line.
+func TestWhatTheAgentAsksForIsCutDownBeforeItIsShown(t *testing.T) {
+	line := secretLine("the password\x1b[2J for\r\nprod")
+	for _, gone := range []string{"\x1b", "\r", "\n"} {
+		if strings.Contains(line, gone) {
+			t.Errorf("the line carries %q: %q", gone, line)
+		}
+	}
+	if !strings.Contains(line, "the password") {
+		t.Errorf("the line lost what was asked for: %q", line)
+	}
+	if long := secretLine(strings.Repeat("x", 500)); len(long) > 300 {
+		t.Errorf("a long ask makes a line %d characters long", len(long))
+	}
+	if empty := secretLine("   "); !strings.Contains(empty, "something it cannot see") {
+		t.Errorf("an empty ask reads %q", empty)
+	}
+}

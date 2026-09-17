@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/marrasen/gridterm/agent"
 	"github.com/marrasen/gridterm/conns"
@@ -865,6 +866,94 @@ func (w agentWindow) Open(id string) (agent.Pane, error) {
 		return w.a.toldAbout(next)
 	})
 }
+
+// Secret asks the user to type something into a pane, and waits.
+//
+// The characters never come here. The user types them into the pane, the
+// pane passes them to the program that asked for them, and all that
+// comes back is whether a line was typed at all. That is the whole point
+// of it: an agent that needs a password can get past the prompt without
+// ever being given one.
+//
+// The waiting happens off the goroutine that draws. Everything else an
+// agent asks is answered on it, and a question that waits for a person
+// would stop the window drawing for as long as they took.
+func (w agentWindow) Secret(id, what string, wait time.Duration) (bool, error) {
+	ask, err := onDrawing(w.a, func() (secretAsk, error) {
+		h, err := w.a.handedPane(id)
+		if err != nil {
+			return secretAsk{}, err
+		}
+		if h.pane.Exited() {
+			return secretAsk{}, errors.New(
+				"the program in that pane has finished, so nothing is waiting to be told anything")
+		}
+		typed, stop := h.pane.WaitForSecret(secretLine(what))
+		w.a.markDirty()
+		return secretAsk{typed: typed, stop: stop}, nil
+	})
+	if err != nil {
+		return false, err
+	}
+	// On the goroutine that draws, like everything else that touches the
+	// pane.
+	defer w.a.pump.post(ask.stop)
+
+	select {
+	case <-ask.typed:
+		return true, nil
+	case <-time.After(wait):
+		return false, nil
+	case <-w.a.ctx.Done():
+		return false, errors.New("this window is closing")
+	}
+}
+
+// secretAsk is a pane waiting for the user to type something: the
+// channel that says they have, and what stops waiting.
+type secretAsk struct {
+	typed <-chan struct{}
+	stop  func()
+}
+
+// secretLine is what the pane says when an agent asks for a secret.
+//
+// It names the agent as the one asking and says plainly that what is
+// typed does not go back to it, because a line asking for a password is
+// exactly the line somebody should be suspicious of.
+func secretLine(what string) string {
+	if what = strings.TrimSpace(cleanSecretAsk(what)); what == "" {
+		what = "something it cannot see"
+	}
+	return "-- gridterm: the agent is asking you to type " + what + " here." +
+		" What you type goes to the program in this pane, not to the agent. --"
+}
+
+// cleanSecretAsk cuts an agent's own words down to one plain line.
+//
+// It is the agent's text on the user's screen, so it carries nothing
+// that could draw somewhere else or pretend to be the window talking.
+func cleanSecretAsk(what string) string {
+	var out strings.Builder
+	for _, r := range what {
+		switch {
+		case r == '\n' || r == '\t' || r == '\r':
+			out.WriteByte(' ')
+		case r < ' ' || r == 0x7f:
+			// Dropped: an escape sequence in it would draw.
+		default:
+			out.WriteRune(r)
+		}
+		if out.Len() >= mostSecretWords {
+			break
+		}
+	}
+	return out.String()
+}
+
+// mostSecretWords is how much of an agent's asking is put on the screen.
+// Enough to say what is wanted, short enough to stay one line.
+const mostSecretWords = 120
 
 // connectedAlready says whether the window already holds a connection to
 // a machine, so that opening another pane there opens nothing.

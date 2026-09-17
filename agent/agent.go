@@ -35,7 +35,16 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 )
+
+// LongestSecretWait is the most an agent may be left waiting for the
+// user to type a secret.
+//
+// It is long because the user may be fetching the password from
+// somewhere, and bounded because a window that never answers would park
+// a goroutine of the agent's for the rest of the process.
+const LongestSecretWait = 10 * time.Minute
 
 // Window is what an agent may do with the panes it has been handed.
 //
@@ -56,6 +65,11 @@ import (
 // it. A window that cannot tell where that command's output began says
 // so and gives nothing.
 //
+// Secret asks the user to type something into the pane and waits for
+// them to. It reports whether they did before the time ran out, and
+// never what they typed: the characters go to the program in the pane
+// and nowhere else.
+//
 // Restart starts a pane's program again, for a pane whose program has
 // finished and whose hand-over allows it. The pane is the same pane, so
 // the id goes on naming it.
@@ -70,6 +84,7 @@ type Window interface {
 	Send(id, text string, keys []string) error
 	Restart(id string) (Pane, error)
 	Open(id string) (Pane, error)
+	Secret(id, what string, wait time.Duration) (bool, error)
 }
 
 // May is what a hand-over allows beyond reading a pane and typing into

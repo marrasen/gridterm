@@ -90,20 +90,16 @@ guessed at.
 
 Raised after a debugging session in a handed-over pane.
 
-1. **Let the agent ask for a secret.** Put the prompt up, block until
-   the user has typed it into the pane, and return without ever showing
-   the agent the characters.
-
-2. **No expiry for now.** Answered on 2026-09-17. A hand-over lasts
+1. **No expiry for now.** Answered on 2026-09-17. A hand-over lasts
    until the user takes it back or closes the pane. Revisit if forgotten
    hand-overs ever pile up in practice.
 
-3. **Drop the hand-over when the pane is closed.** Answered on
+2. **Drop the hand-over when the pane is closed.** Answered on
    2026-09-17. A pane whose program has ended keeps its hand-over, so a
    rebooted host still cannot spend the code twice. Closing the pane is
    what releases it, and the listener stops once the last one has gone.
 
-4. **A command pane can be handed over already**, running or not.
+3. **A command pane can be handed over already**, running or not.
    `handPane` looks at no kind and no state. A running one takes keys on
    the command's stdin; an ended one can be read and not typed into,
    which is worth having for a failed build. Nothing to do here: it is

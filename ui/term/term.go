@@ -116,6 +116,12 @@ type Terminal struct {
 	// exited is set once the shell is gone.
 	exited atomic.Bool
 
+	// secret is closed when the user types a line after being asked for
+	// one, and is nil when nobody is waiting. Its own lock, because the
+	// goroutine waiting is not the one that draws.
+	secretMu sync.Mutex
+	secret   chan struct{}
+
 	// end is what the session reported when the program stopped, and nil
 	// until it has. Written by whichever goroutine noticed the program
 	// go and read by the one that draws.
@@ -435,6 +441,59 @@ func (t *Terminal) Say(line string) {
 	t.pending.Store(true)
 }
 
+// WaitForSecret says the user has been asked to type something into this
+// pane, and gives back a channel that is closed when they have.
+//
+// The characters are the program's. Nothing here reads them, keeps them
+// or passes them on: all this reports is that a line was typed, which is
+// what lets something else stop waiting. The line says what is wanted
+// and goes into the transcript like anything else the window says.
+//
+// Stop takes the question away, for a caller that gave up first. Asking
+// again replaces the first ask, whose channel is closed as though the
+// user had typed: a caller cannot tell the two apart and neither is
+// waiting for anything any more.
+func (t *Terminal) WaitForSecret(line string) (typed <-chan struct{}, stop func()) {
+	t.Say(line)
+	t.secretMu.Lock()
+	if was := t.secret; was != nil {
+		close(was)
+	}
+	done := make(chan struct{})
+	t.secret = done
+	t.secretMu.Unlock()
+	return done, func() { t.endSecret(done) }
+}
+
+// typedSecret tells whoever is waiting that a line has been typed.
+func (t *Terminal) typedSecret() {
+	t.secretMu.Lock()
+	done := t.secret
+	t.secret = nil
+	t.secretMu.Unlock()
+	if done != nil {
+		close(done)
+	}
+}
+
+// endSecret stops waiting for one particular ask, leaving a later one
+// alone.
+func (t *Terminal) endSecret(which chan struct{}) {
+	t.secretMu.Lock()
+	if t.secret == which {
+		t.secret = nil
+	}
+	t.secretMu.Unlock()
+}
+
+// AskedForASecret reports whether the pane is waiting for one to be
+// typed.
+func (t *Terminal) AskedForASecret() bool {
+	t.secretMu.Lock()
+	defer t.secretMu.Unlock()
+	return t.secret != nil
+}
+
 // Layout resizes the emulator and the session to match the area, unless
 // somebody else has the size or the program has gone.
 func (t *Terminal) Layout(size ui.Size) {
@@ -634,6 +693,12 @@ func (t *Terminal) EncodeKey(ev input.Event) []byte {
 func (t *Terminal) HandleKey(ev input.Event) (bool, error) {
 	if t.ask != nil {
 		return t.askKey(ev)
+	}
+	// Something is waiting to hear that the user has typed a secret
+	// here. The keys go to the program as they always do; what this
+	// watches for is the return at the end of them.
+	if ev.Kind == input.KeyPress && ev.Key == input.KeyEnter {
+		t.typedSecret()
 	}
 	t.encBuf = input.EncodeMode(ev, t.mode(), t.encBuf[:0])
 	if len(t.encBuf) == 0 {

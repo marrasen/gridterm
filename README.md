@@ -192,7 +192,10 @@ pane, and four tick boxes say what the agent may do beyond reading it
 and typing into it: restart a closed connection, open another pane on
 the same machine, read only, and read above a clear. Every box starts
 off, what you tick is remembered, and turning one over takes effect on
-the agent's next call. "Copy the prompt" puts a prompt on the clipboard and does nothing
+the agent's next call. An agent that hits a password prompt can ask you
+to type it into the pane: a line appears saying what it wants, what you
+type goes to the program, and the agent is told you typed something and
+never what. "Copy the prompt" puts a prompt on the clipboard and does nothing
 else: paste the whole of it to the agent, and it carries the code and
 says how that host adds this window's `gridterm -mcp` server. What the
 tools do and what the rules are come from the server's own instructions

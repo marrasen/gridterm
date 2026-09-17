@@ -412,6 +412,20 @@ func (s *Server) answer(want ask, held map[string]Pane) said {
 		held[pane.ID] = pane
 		return said{Pane: &pane}
 
+	case "secret":
+		if _, ok := held[want.Pane]; !ok {
+			return said{Error: notHanded(want.Pane)}
+		}
+		wait := time.Duration(want.WaitMS) * time.Millisecond
+		if wait <= 0 || wait > LongestSecretWait {
+			wait = LongestSecretWait
+		}
+		typed, err := s.cfg.Window.Secret(want.Pane, want.Text, wait)
+		if err != nil {
+			return said{Error: err.Error()}
+		}
+		return said{OK: true, Typed: typed}
+
 	case "open":
 		if _, ok := held[want.Pane]; !ok {
 			return said{Error: notHanded(want.Pane)}

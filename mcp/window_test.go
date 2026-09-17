@@ -5,6 +5,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/marrasen/gridterm/agent"
 )
@@ -29,6 +30,11 @@ type oneWindow struct {
 
 	// output is what this window says the last command printed.
 	output string
+
+	// askedFor is what the last Secret asked for, and typesSecret says
+	// the user typed it.
+	askedFor    string
+	typesSecret bool
 }
 
 func (w *oneWindow) Use(code string) (agent.Pane, error) {
@@ -62,6 +68,13 @@ func (w *oneWindow) Output(id string, most int) (agent.Look, error) {
 	look.Screen = w.output
 	look.Note = "this is what the last command printed"
 	return look, nil
+}
+
+func (w *oneWindow) Secret(id, what string, wait time.Duration) (bool, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.askedFor = what
+	return w.typesSecret, nil
 }
 
 func (w *oneWindow) Restart(id string) (agent.Pane, error) {

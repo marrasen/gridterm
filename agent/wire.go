@@ -21,8 +21,13 @@ type ask struct {
 	// Pane is which of the panes handed over this is about.
 	Pane string `json:"pane,omitempty"`
 
-	// Text is what to type, for "send".
+	// Text is what to type, for "send", and what is being asked for, for
+	// "secret".
 	Text string `json:"text,omitempty"`
+
+	// WaitMS is how long to wait for the user to type a secret, for
+	// "secret". Zero is the window's own idea of long enough.
+	WaitMS int `json:"wait_ms,omitempty"`
 
 	// Keys are the keys to press after the text, by name, for "send".
 	// See KeyNames.
@@ -98,4 +103,9 @@ type said struct {
 
 	// OK says a request that has nothing to give back succeeded.
 	OK bool `json:"ok,omitempty"`
+
+	// Typed says the user typed the secret that was asked for, for
+	// "secret". False is the time running out, and never what they
+	// typed.
+	Typed bool `json:"typed,omitempty"`
 }

@@ -41,6 +41,12 @@ type fakePanes struct {
 	output     string
 	mostOutput int
 
+	// askedFor is what the last ask_for_secret asked for, waitedFor is
+	// how long it was given, and typesSecret says the user typed it.
+	askedFor    string
+	waitedFor   time.Duration
+	typesSecret bool
+
 	// may is what this hand-over allows, and the counts are how often
 	// each of the two tools behind a box was used.
 	may       May
@@ -125,6 +131,16 @@ func (f *fakePanes) Output(id string, most int) (Screen, error) {
 	screen.Screen = f.output
 	screen.Note = "this is what the last command printed"
 	return screen, nil
+}
+
+func (f *fakePanes) Secret(id, what string, wait time.Duration) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !f.open || id != "pane-1" {
+		return false, errors.New("that is not a pane you have been handed")
+	}
+	f.askedFor, f.waitedFor = what, wait
+	return f.typesSecret, nil
 }
 
 func (f *fakePanes) Restart(id string) (Pane, error) {
@@ -322,7 +338,7 @@ func TestItSaysWhatItIsAndWhatItCanDo(t *testing.T) {
 	raw, _ = json.Marshal(answers[1].Result)
 	for _, want := range []string{
 		"use_session_code", "list_panes", "read_pane", "read_output", "send_keys",
-		"restart_pane", "open_pane", "wait_for",
+		"ask_for_secret", "restart_pane", "open_pane", "wait_for",
 	} {
 		if !strings.Contains(string(raw), want) {
 			t.Errorf("it does not offer %s", want)
@@ -336,7 +352,7 @@ func TestItSaysWhatItIsAndWhatItCanDo(t *testing.T) {
 	if err := json.Unmarshal(raw, &listed); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if len(listed.Tools) != 8 {
+	if len(listed.Tools) != 9 {
 		var names []string
 		for _, tl := range listed.Tools {
 			names = append(names, tl.Name)
@@ -709,7 +725,7 @@ func TestEveryToolSaysWhatItTakes(t *testing.T) {
 	if err := json.Unmarshal(raw, &listed); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if len(listed.Tools) != 8 {
+	if len(listed.Tools) != 9 {
 		t.Fatalf("it offers %d tools", len(listed.Tools))
 	}
 	needs := map[string][]string{
@@ -717,6 +733,7 @@ func TestEveryToolSaysWhatItTakes(t *testing.T) {
 		"list_panes":       nil,
 		"read_pane":        {"pane"},
 		"read_output":      {"pane"},
+		"ask_for_secret":   {"pane", "what"},
 		"restart_pane":     {"pane"},
 		"open_pane":        {"pane"},
 		"send_keys":        {"pane"},

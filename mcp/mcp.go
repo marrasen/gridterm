@@ -21,6 +21,7 @@ import (
 	"runtime/debug"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/marrasen/gridterm/agent"
 )
@@ -112,6 +113,10 @@ type Panes interface {
 
 	// Open opens another pane where a pane is, handed over as it opens.
 	Open(id string) (Pane, error)
+
+	// Secret asks the user to type something into a pane and waits for
+	// them to, reporting whether they did and never what they typed.
+	Secret(id, what string, wait time.Duration) (bool, error)
 
 	// Close lets go of the window.
 	Close() error
@@ -556,5 +561,6 @@ above it, and the user can still scroll up to everything that was there.`
 const Rules = `You are being trusted with a live machine. The pane is a real shell, running as whoever
 the user set it up as, and it does whatever you type into it. Do not spend that trust:
 work in that pane and nowhere else, and ask before anything you would not want undone.
-A password is the user's to type. Ask them to type it into the pane, and never type one
-yourself. They are watching this screen and can take the pane back at any moment.`
+A password is the user's to type. ask_for_secret puts the question on the pane and they
+type it there; never type one yourself, and never ask them to give one to you. They are
+watching this screen and can take the pane back at any moment.`

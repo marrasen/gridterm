@@ -339,6 +339,21 @@ drawing pure black, because a `SubImage` of the render target silently
 draws nothing when used as a source on the Direct3D backend. Nothing
 errored. It simply looked wrong, and nothing was looking.
 
+### The icon
+
+The drawing is the source: `appicon` gives the icon in fractions of its
+side and renders it at whatever size is asked for, so there is no image
+file to edit by hand. A window sets its own icon from it, which is what
+the window frame and the taskbar show while gridterm runs.
+
+The executable's own icon, which Explorer and a pinned shortcut show, is
+a Windows resource built from the same drawing.
+`rsrc_windows_amd64.syso` is checked in and `go build` links it by its
+name alone, so building needs neither the network nor an extra tool. Run
+`make icon` after changing the drawing, and a test fails if you forget.
+Only `windows/amd64` gets one: the name is what the toolchain matches
+on.
+
 ## Design notes worth knowing
 
 **Damage tracking is load-bearing.** `ebiten.SetScreenClearedEveryFrame(false)`

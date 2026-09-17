@@ -13,7 +13,7 @@ GO_LINUX = CGO_ENABLED=1 \
 
 GO_WIN = GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go
 
-.PHONY: test windows linux vet fmt all
+.PHONY: test windows linux vet fmt icon all
 all: test windows
 
 # Everything testable without a display, which is most of the logic.
@@ -23,7 +23,7 @@ all: test windows
 # the frame accounting, not the pixels, which still need a real window
 # to judge.
 test:
-	go test . ./conns ./glyph ./grid/... ./input ./internal/... ./meter ./agent ./mcp ./remote ./serve ./jobs ./render ./settings ./shells ./ui/... ./vfs/... ./vt/... ./session/...
+	go test . ./agent ./appicon ./conf ./conns ./glyph ./grid/... ./input ./internal/... ./jobs ./keys ./mcp ./meter ./remote ./render ./serve ./settings ./shells ./themes ./ui/... ./vfs/... ./vt/... ./session/...
 
 vet:
 	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go vet ./...
@@ -35,6 +35,12 @@ fmt:
 
 windows:
 	$(GO_WIN) build -o gridterm.exe .
+
+# The executable's own icon, for Explorer and a pinned shortcut. Only
+# needed when the drawing changes, and a test fails when it has changed
+# and this has not been run. See "The icon" in the README.
+icon:
+	go run github.com/akavel/rsrc@v0.10.2 -ico "$$(go run ./internal/mkico)" -arch amd64 -o rsrc_windows_amd64.syso
 
 linux:
 	$(GO_LINUX) build -o gridterm-linux .

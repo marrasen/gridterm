@@ -281,21 +281,42 @@ func (r *Renderer) pushArt(dst *ebiten.Image, g *grid.Grid, y int, geo *Geometry
 		if !ok {
 			continue
 		}
-		for _, b := range artBars(c.Art, x, y, geo) {
+		for _, b := range artBars(c.Art, x, y, artCols(g, x, y), geo) {
 			r.push(dst, &r.bg, b.X, b.Y, b.W, b.H, 0, 0, 1, 1, col)
 		}
 	}
 }
 
-// artBars is where a piece of art's rectangles go inside one cell.
-func artBars(art grid.Art, x, y int, geo *Geometry) []bar {
+// artBars is where a piece of art's rectangles go inside the cells it
+// has been given.
+func artBars(art grid.Art, x, y, cols int, geo *Geometry) []bar {
 	switch art.Kind {
 	case grid.ArtGraph:
 		return graphBars(art, x, y, geo)
 	case grid.ArtIcon:
-		return iconBars(art, x, y, geo)
+		return iconBars(art, x, y, cols, geo)
 	}
 	return nil
+}
+
+// artCols is how many cells a piece of art may draw across: its own, and
+// the one after it while nothing else is drawn there.
+func artCols(g *grid.Grid, x, y int) int {
+	cols, _ := g.Size()
+	if x+1 >= cols {
+		return 1
+	}
+	switch next := g.At(x+1, y); {
+	case next.Art.Kind != grid.ArtNone:
+		return 1
+	case next.Rune != 0 && next.Rune != ' ':
+		return 1
+	case len(next.Comb) > 0:
+		return 1
+	case next.Attr&(grid.AttrUnderline|grid.AttrStrike) != 0:
+		return 1
+	}
+	return 2
 }
 
 // artColour is what a cell's art is drawn in, and whether to draw it at

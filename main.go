@@ -21,6 +21,7 @@ import (
 	"golang.org/x/image/font/gofont/gomonobolditalic"
 	"golang.org/x/image/font/gofont/gomonoitalic"
 
+	"github.com/marrasen/gridterm/appicon"
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/glyph"
 	"github.com/marrasen/gridterm/grid"
@@ -254,6 +255,8 @@ func main() {
 	a.root.SetWidget(a.bar)
 	a.root.Layout(ui.Rect{Cols: initCols, Rows: initRows})
 
+	// What the window frame and the taskbar show while gridterm runs.
+	ebiten.SetWindowIcon(appicon.Images())
 	ebiten.SetWindowTitle("gridterm")
 	// Room for the padding on top of the cells, or the window opens a
 	// column and a row short of the size it was asked for.

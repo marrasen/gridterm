@@ -63,27 +63,36 @@ var icons = [numIconKinds][]unit{
 // numIconKinds is how many icons there are to draw.
 const numIconKinds = 4
 
-// iconBars is where an icon's rectangles go inside one cell.
+// iconBars is where an icon's rectangles go inside the cols cells from
+// x on.
 //
-// Square, as wide as the cell allows and no taller than the letters
-// beside it, sitting on the baseline so it lines up with the text.
+// Square, filling the cells given less half a cell for the gap before
+// the text, and never taller than the text's own ascent. It sits on the
+// baseline and starts where the text would, so a row with an icon lines
+// up with one without.
 //
 // Every rectangle is at least a pixel each way. Quads are not
 // antialiased, so one narrower than a pixel is drawn only when a pixel
 // centre happens to fall inside it, and half an icon would go missing at
 // the sizes where an icon is doing the most work.
-func iconBars(art grid.Art, x, y int, geo *Geometry) []bar {
+func iconBars(art grid.Art, x, y, cols int, geo *Geometry) []bar {
 	kind, ok := art.Icon()
 	if !ok || int(kind) >= len(icons) {
 		return nil
 	}
-	cellW, ascent := geo.CellW(), geo.Ascent()
-	// No taller than a capital letter, and never wider than the cell.
-	side := min(cellW, ascent*7/10)
+	cols = min(max(cols, 1), max(geo.Cols()-x, 1))
+	left, width := geo.CellsX(x, x+cols)
+	// Half a cell of the room kept back for the gap, and only where
+	// there is a second cell to take it out of.
+	room := width
+	if cols > 1 {
+		room -= geo.CellW() / 2
+	}
+	ascent := geo.Ascent()
+	side := min(room, ascent)
 	if side < 2 {
 		return nil
 	}
-	left := geo.CellX(x) + (cellW-side)/2
 	top := geo.CellY(y) + ascent - side
 
 	shape := icons[kind]

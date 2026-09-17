@@ -139,39 +139,47 @@ func TestArtColourFollowsTheCell(t *testing.T) {
 	}
 }
 
-// Every icon draws something, inside its own cell, with no rectangle
-// thinner than a pixel.
+// Every icon draws something, inside the cells it is given, with no
+// rectangle thinner than a pixel.
 //
 // Quads are not antialiased, so a rectangle narrower than a pixel is
 // drawn only when a pixel centre falls inside it: half an icon would go
 // missing at the sizes where an icon is doing the most work.
-func TestEveryIconDrawsInsideItsCell(t *testing.T) {
+func TestEveryIconDrawsInsideTheCellsItIsGiven(t *testing.T) {
 	kinds := []grid.IconKind{
 		grid.IconTerminal, grid.IconCommand, grid.IconFiles, grid.IconTunnel,
 	}
-	for _, kind := range kinds {
-		for _, m := range cellSizes {
-			bars := iconBars(grid.Icon(kind), 2, 3, plainGeo(m))
-			if len(bars) == 0 {
-				t.Fatalf("icon %d at %+v drew nothing", kind, m)
+	for _, cols := range []int{1, 2} {
+		for _, kind := range kinds {
+			for _, m := range cellSizes {
+				iconInside(t, kind, cols, m)
 			}
-			left := float32(2 * m.CellW)
-			right := left + float32(m.CellW)
-			top := float32(3 * m.CellH)
-			foot := float32(3*m.CellH + m.Ascent)
-			for i, b := range bars {
-				if b.W < 1 || b.H < 1 {
-					t.Fatalf("icon %d at %+v: piece %d is %vx%v", kind, m, i, b.W, b.H)
-				}
-				if b.X < left || b.X+b.W > right {
-					t.Fatalf("icon %d at %+v: piece %d spans %v..%v, outside %v..%v",
-						kind, m, i, b.X, b.X+b.W, left, right)
-				}
-				if b.Y < top || b.Y+b.H > foot {
-					t.Fatalf("icon %d at %+v: piece %d spans %v..%v, outside %v..%v",
-						kind, m, i, b.Y, b.Y+b.H, top, foot)
-				}
-			}
+		}
+	}
+}
+
+// iconInside checks one icon at one size stays in the cells it is given.
+func iconInside(t *testing.T, kind grid.IconKind, cols int, m glyph.Metrics) {
+	t.Helper()
+	bars := iconBars(grid.Icon(kind), 2, 3, cols, plainGeo(m))
+	if len(bars) == 0 {
+		t.Fatalf("icon %d at %+v drew nothing", kind, m)
+	}
+	left := float32(2 * m.CellW)
+	right := left + float32(cols*m.CellW)
+	top := float32(3 * m.CellH)
+	foot := float32(3*m.CellH + m.Ascent)
+	for i, b := range bars {
+		if b.W < 1 || b.H < 1 {
+			t.Fatalf("icon %d at %+v: piece %d is %vx%v", kind, m, i, b.W, b.H)
+		}
+		if b.X < left || b.X+b.W > right {
+			t.Fatalf("icon %d at %+v: piece %d spans %v..%v, outside %v..%v",
+				kind, m, i, b.X, b.X+b.W, left, right)
+		}
+		if b.Y < top || b.Y+b.H > foot {
+			t.Fatalf("icon %d at %+v: piece %d spans %v..%v, outside %v..%v",
+				kind, m, i, b.Y, b.Y+b.H, top, foot)
 		}
 	}
 }
@@ -185,7 +193,7 @@ func TestTheIconsAreToldApart(t *testing.T) {
 		grid.IconTerminal, grid.IconCommand, grid.IconFiles, grid.IconTunnel,
 	} {
 		var shape string
-		for _, b := range iconBars(grid.Icon(kind), 0, 0, plainGeo(m)) {
+		for _, b := range iconBars(grid.Icon(kind), 0, 0, 2, plainGeo(m)) {
 			shape += string(rune('0'+int(b.X))) + string(rune('0'+int(b.Y))) +
 				string(rune('0'+int(b.W))) + string(rune('0'+int(b.H)))
 		}
@@ -205,7 +213,7 @@ func TestIconBarsRefusesWhatIsNotAnIcon(t *testing.T) {
 		grid.Graph([]int{1, 2}),
 		{Kind: grid.ArtIcon, Data: 99},
 	} {
-		if got := iconBars(art, 0, 0, plainGeo(m)); got != nil {
+		if got := iconBars(art, 0, 0, 2, plainGeo(m)); got != nil {
 			t.Fatalf("%v drew %v", art, got)
 		}
 	}
@@ -222,11 +230,143 @@ func TestArtBarsReachesEveryKind(t *testing.T) {
 		grid.Icon(grid.IconTunnel),
 		grid.Icon(grid.IconCommand),
 	} {
-		if got := artBars(art, 0, 0, plainGeo(m)); len(got) == 0 {
+		if got := artBars(art, 0, 0, 2, plainGeo(m)); len(got) == 0 {
 			t.Fatalf("%v drew nothing", art)
 		}
 	}
-	if got := artBars(grid.Art{}, 0, 0, plainGeo(m)); got != nil {
+	if got := artBars(grid.Art{}, 0, 0, 2, plainGeo(m)); got != nil {
 		t.Fatalf("no art drew %v", got)
+	}
+}
+
+// An icon is taller than one cell is wide. A cell is about half as wide
+// as it is tall, so one squeezed into a single cell is shorter than the
+// letters beside it and its strokes collapse to a pixel.
+func TestAnIconIsTallerThanOneCellIsWide(t *testing.T) {
+	for _, m := range cellSizes {
+		bars := iconBars(grid.Icon(grid.IconTerminal), 2, 3, 2, plainGeo(m))
+
+		var top, foot float32 = 1 << 20, 0
+		for _, b := range bars {
+			top = min(top, b.Y)
+			foot = max(foot, b.Y+b.H)
+		}
+
+		got := foot - top
+		if want := float32(min(2*m.CellW-m.CellW/2, m.Ascent)); got != want {
+			t.Errorf("at %+v the icon is %v tall, want %v", m, got, want)
+		}
+		if got <= float32(m.CellW) {
+			t.Errorf("at %+v the icon is %v tall, no more than the %d a single cell allows",
+				m, got, m.CellW)
+		}
+	}
+}
+
+// An icon with one cell to itself fills it. There is no second cell to
+// take a gap out of, so taking one anyway would leave a smudge where the
+// picture was.
+func TestAnIconWithOneCellFillsIt(t *testing.T) {
+	for _, m := range cellSizes {
+		bars := iconBars(grid.Icon(grid.IconTerminal), 2, 3, 1, plainGeo(m))
+
+		var top, foot float32 = 1 << 20, 0
+		for _, b := range bars {
+			top = min(top, b.Y)
+			foot = max(foot, b.Y+b.H)
+		}
+
+		if want := float32(min(m.CellW, m.Ascent)); foot-top != want {
+			t.Errorf("at %+v the icon is %v tall, want the %v its one cell allows",
+				m, foot-top, want)
+		}
+	}
+}
+
+// And one asked for more cells than the grid has left stays inside it.
+func TestAnIconAtTheEndOfARowStaysInTheGrid(t *testing.T) {
+	m := glyph.Metrics{CellW: 12, CellH: 25, Ascent: 20}
+	geo := plainGeo(m)
+	last := geo.Cols() - 1
+
+	bars := iconBars(grid.Icon(grid.IconTerminal), last, 3, 2, geo)
+
+	for i, b := range bars {
+		if want := float32(geo.CellX(last) + m.CellW); b.X+b.W > want {
+			t.Errorf("piece %d ends at %v, past the %v the grid does", i, b.X+b.W, want)
+		}
+	}
+}
+
+// And it leaves a gap before the text, which starts in the cell after
+// the one it takes. An icon filling both cells would sit against the
+// first letter.
+func TestAnIconLeavesAGapBeforeTheText(t *testing.T) {
+	for _, m := range cellSizes {
+		bars := iconBars(grid.Icon(grid.IconFiles), 2, 3, 2, plainGeo(m))
+
+		var left, right float32 = 1 << 20, 0
+		for _, b := range bars {
+			left = min(left, b.X)
+			right = max(right, b.X+b.W)
+		}
+
+		// It starts where the text on a row without one would.
+		if want := float32(2 * m.CellW); left != want {
+			t.Errorf("at %+v the icon starts at %v, want %v", m, left, want)
+		}
+		text := float32(4 * m.CellW)
+		if gap := text - right; gap < 2 {
+			t.Errorf("at %+v the icon ends %v before the text, which reads as touching it", m, gap)
+		}
+	}
+}
+
+// An icon sits on the baseline, so it lines up with the text on its row.
+func TestAnIconSitsOnTheBaseline(t *testing.T) {
+	m := glyph.Metrics{CellW: 12, CellH: 25, Ascent: 20}
+
+	bars := iconBars(grid.Icon(grid.IconFiles), 2, 3, 2, plainGeo(m))
+
+	var foot float32
+	for _, b := range bars {
+		foot = max(foot, b.Y+b.H)
+	}
+	if want := float32(3*m.CellH + m.Ascent); foot != want {
+		t.Errorf("the icon rests at %v, want the baseline at %v", foot, want)
+	}
+}
+
+// A row gives an icon the cell after it when that one is empty, and
+// keeps it to one cell when something else is there.
+func TestAnIconTakesTheCellAfterItOnlyWhenItIsEmpty(t *testing.T) {
+	for _, c := range []struct {
+		what string
+		next grid.Cell
+		want int
+	}{
+		{"nothing at all", grid.Cell{}, 2},
+		{"a space", grid.Cell{Rune: ' ', Width: 1}, 2},
+		{"a letter", grid.Cell{Rune: 'A', Width: 1}, 1},
+		{"another icon", grid.Cell{Rune: ' ', Width: 1, Art: grid.Icon(grid.IconFiles)}, 1},
+		// A blank cell can still have ink on it, and the icon would be
+		// drawn under it.
+		{"a combining mark", grid.Cell{Rune: ' ', Width: 1, Comb: []rune{0x0301}}, 1},
+		{"an underline", grid.Cell{Rune: ' ', Width: 1, Attr: grid.AttrUnderline}, 1},
+		{"a strikethrough", grid.Cell{Rune: ' ', Width: 1, Attr: grid.AttrStrike}, 1},
+	} {
+		g := grid.New(4, 2, color.RGBA{}, color.RGBA{})
+		g.Set(1, 0, grid.Cell{Rune: ' ', Width: 1, Art: grid.Icon(grid.IconTerminal)})
+		g.Set(2, 0, c.next)
+
+		if got := artCols(g, 1, 0); got != c.want {
+			t.Errorf("with %s after it an icon gets %d cells, want %d", c.what, got, c.want)
+		}
+	}
+	// And the last cell of a row has nothing after it to take.
+	g := grid.New(2, 1, color.RGBA{}, color.RGBA{})
+	g.Set(1, 0, grid.Cell{Rune: ' ', Width: 1, Art: grid.Icon(grid.IconTerminal)})
+	if got := artCols(g, 1, 0); got != 1 {
+		t.Errorf("an icon in the last cell gets %d cells, want 1", got)
 	}
 }

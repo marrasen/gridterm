@@ -308,6 +308,26 @@ there is one key for position and one for recency.
   there. `remote.MakeKey` shows the pattern to follow: write a file of
   its own, flush it, and link it into place.
 
+- **A Windows build for arm64 gets no icon of its own.** `go build`
+  links a resource by its filename, and the one checked in is
+  `rsrc_windows_amd64.syso`. `.gitignore` names `gridterm-arm64.exe`, so
+  somebody builds that by hand and it shows the default icon. One more
+  `rsrc -arch arm64` line in the Makefile's icon target closes it.
+
+- **The icon target still needs the network the first time.** It runs
+  `rsrc` through `go run …@v0.10.2`, which downloads the module. `rsrc`
+  only wraps the icon in a one-section COFF object, so `internal/mkico`
+  could write the `.syso` itself: that would drop the download, the
+  temporary file and the whole second command, and would let the drift
+  test compare byte for byte instead of looking for the images inside.
+  About 120 lines of COFF writing.
+
+- **`TestClosingAPaneLeavesDetachedWorkRunning` fails now and then under
+  load.** It says `the wait ended with 0x0 inside 500ms` at
+  session/job_windows_test.go:42. Seen once while the whole suite was
+  running; fifteen runs of it alone passed, so it is the half-second
+  budget rather than the job object.
+
 - **`TestAMachineWithTooManyParkedFileSessionsIsRefusedTheNext` fails
   about one run in twelve.** It says `the plus opened <nil>, want a
   menu` at serving_test.go:1095, so the menu is not up yet when the test
@@ -412,10 +432,6 @@ there is one key for position and one for recency.
 Marcus's own list, in his words, kept until each has been looked at
 properly and either written up above or done.
 
-- **UI.** The border on the File menu glitches to the left. The
-  connection menu has odd spaces in its items where the sidebar's drag
-  handle goes. The Terminal and File icons are too small. The app has
-  no icon of its own.
 - **Context menu.** Make use of one. On the sidebar it opens the menu
   that is already there.
 - **Panel switcher.** Zoom every pane out, split panes and all, and lay

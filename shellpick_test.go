@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"github.com/marrasen/gridterm/ui/term"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/marrasen/gridterm/internal/sshtest"
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/session"
+	"github.com/marrasen/gridterm/settings"
 	"github.com/marrasen/gridterm/shells"
 	"github.com/marrasen/gridterm/ui"
 )
@@ -890,5 +892,226 @@ func TestAShellThatGoesAfterAnotherPickIsSaidAgain(t *testing.T) {
 	}
 	if got := a.lastArgv(t); len(got) != 0 {
 		t.Errorf("the pane started on %v, want the default shell", got)
+	}
+}
+
+// menuHasShellLine reports whether the shell lines offer a command.
+func menuHasShellLine(a *testApp, command string) bool {
+	for _, item := range a.shellPick.lines(true) {
+		if item.Command == command {
+			return true
+		}
+	}
+	return false
+}
+
+// The way back to the default is offered once a shell has been picked,
+// and not before: a line that undoes nothing is a line the user reads
+// and tries. On the File menu as well as the plus, because the File
+// menu keeps a copy of its lines.
+func TestTheDefaultShellLineArrivesWithThePick(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	bar := withMenubar(t, a)
+	scanShells(t, a)
+
+	if menuHasShellLine(a, defaultShellCommand) {
+		t.Error("the plus offers the way back before a shell has been picked")
+	}
+	if got := fileMenuLines(t, a, bar); slices.Contains(got, defaultShellCommand) {
+		t.Errorf("the File menu offers %v before a shell has been picked", got)
+	}
+
+	a.rememberShell(testShells()[1])
+
+	if !menuHasShellLine(a, defaultShellCommand) {
+		t.Error("the plus does not offer the way back after a shell was picked")
+	}
+	if got := fileMenuLines(t, a, bar); !slices.Contains(got, defaultShellCommand) {
+		t.Errorf("the File menu offers %v after a shell was picked", got)
+	}
+}
+
+// A machine with one shell has nothing to pick between, and can still be
+// carrying a pick for a shell that has since gone. The way back is what
+// the notice about that shell tells the user to look for.
+func TestTheWayBackIsOfferedWithOneShellLeft(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	onMachine(a, testShells())
+	scanShells(t, a)
+	if err := a.shellPick.choose("pwsh"); err != nil {
+		t.Fatalf("pick a shell: %v", err)
+	}
+
+	// The shell that was picked is gone, and one is left.
+	onMachine(a, testShells()[:1])
+	scanShells(t, a)
+
+	if !menuHasShellLine(a, defaultShellCommand) {
+		t.Errorf("the plus offers %v, want the way back", a.shellPick.lines(true))
+	}
+}
+
+// Taking the default opens a pane on whatever the machine's own default
+// is, and every pane after it opens on the default too.
+func TestTakingTheDefaultForgetsThePick(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	scanShells(t, a)
+	a.rememberShell(testShells()[1])
+	if got := a.localShell(); !slices.Equal(got, argvOf(t, "pwsh")) {
+		t.Fatalf("a new pane runs %v, so the pick did not take", got)
+	}
+	was := len(a.panes)
+
+	if err := a.openPaneOnDefault(); err != nil {
+		t.Fatalf("open on the default: %v", err)
+	}
+
+	if _, picked := a.shellPick.chosen(); picked {
+		t.Error("a shell is still picked")
+	}
+	if got := a.localShell(); got != nil {
+		t.Errorf("a new pane runs %v, want whatever the machine picks", got)
+	}
+	// The pane count first: the first pane ran a nil argv too, so a line
+	// that opened nothing at all would leave the argv below right.
+	if got := len(a.panes); got != was+1 {
+		t.Fatalf("the window has %d panes, want the one it opened", got)
+	}
+	if got := a.lastArgv(t); got != nil {
+		t.Errorf("the pane it opened runs %v", got)
+	}
+	if menuHasShellLine(a, defaultShellCommand) {
+		t.Error("the plus still offers the way back with nothing picked")
+	}
+}
+
+// A settings file that cannot be written costs the user the reason, not
+// the pane they asked for.
+func TestAPickThatCannotBeForgottenStillOpensThePane(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	scanShells(t, a)
+	a.rememberShell(testShells()[1])
+	was := len(a.panes)
+	// Settings that hold the pick and cannot be written back: the file
+	// reads, and the directory it would be written into is a file, so
+	// the save has nowhere to put its temporary copy.
+	dir := filepath.Join(t.TempDir(), "settings")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatalf("make the directory: %v", err)
+	}
+	path := filepath.Join(dir, "settings.json")
+	set, err := settings.Load(path)
+	if err != nil {
+		t.Fatalf("settings: %v", err)
+	}
+	if err := set.PutShell("pwsh"); err != nil {
+		t.Fatalf("put the shell: %v", err)
+	}
+	a.shellPick.remember(set)
+	blockSaving(t, path)
+
+	if err := a.openPaneOnDefault(); err != nil {
+		t.Fatalf("open on the default: %v", err)
+	}
+
+	if got := len(a.panes); got != was+1 {
+		t.Errorf("the window has %d panes, want the one it opened", got)
+	}
+	awaitModal(t, a, "the reason the pick could not be forgotten",
+		byTitle[*ui.Notice]("Could not forget which shell to open"))
+}
+
+// A window whose panes open on another machine has no local pick to
+// undo, and the line must not open a local pane in it.
+func TestTheDefaultShellIsRefusedOnARemoteWindow(t *testing.T) {
+	s := sshtest.New(t)
+	a := startedWithSsh(t, serverConfig(t, s).Target())
+	pinServers(t, a, s)
+	waitForPanes(t, a, 1)
+	waitFor(t, a, "the window to reach the machine", func() bool {
+		return a.homeMachine() != nil
+	})
+	was := len(a.panes)
+
+	err := a.openPaneOnDefault()
+
+	if err == nil {
+		t.Fatal("it opened a local pane in a window whose panes are elsewhere")
+	}
+	if got := len(a.panes); got != was {
+		t.Errorf("the window has %d panes, want the %d it had", got, was)
+	}
+}
+
+// The pick coming back is written to the settings file, so it is gone on
+// the next run too, and nothing else in the file goes with it.
+func TestForgettingTheShellReachesTheFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	set, err := settings.Load(path)
+	if err != nil {
+		t.Fatalf("settings: %v", err)
+	}
+	if err := set.PutShell("pwsh"); err != nil {
+		t.Fatalf("put the shell: %v", err)
+	}
+	if err := set.KeepCommand(settings.SavedCommand{Line: "make deploy"}, 10); err != nil {
+		t.Fatalf("keep a command: %v", err)
+	}
+
+	if err := set.ForgetShell(); err != nil {
+		t.Fatalf("forget: %v", err)
+	}
+
+	again, err := settings.Load(path)
+	if err != nil {
+		t.Fatalf("read it again: %v", err)
+	}
+	if id, picked := again.Shell(); picked {
+		t.Errorf("the file still says %q", id)
+	}
+	// It is the first thing that takes a key out of the file, so what
+	// else was in it has to still be there.
+	if got := again.Commands(); len(got) != 1 || got[0].Line != "make deploy" {
+		t.Errorf("the file holds %v, want the command that was in it", got)
+	}
+}
+
+// blockSaving leaves a settings file readable and makes writing it fail,
+// by turning the directory it sits in into a file of its own.
+func blockSaving(t *testing.T, path string) {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read the settings: %v", err)
+	}
+	dir := filepath.Dir(path)
+	kept := filepath.Join(filepath.Dir(dir), "kept.json")
+	if err := os.WriteFile(kept, raw, 0o600); err != nil {
+		t.Fatalf("keep a copy: %v", err)
+	}
+	if err := os.RemoveAll(dir); err != nil {
+		t.Fatalf("take the directory away: %v", err)
+	}
+	// A file where the directory was: MkdirAll then refuses, so the
+	// save cannot make itself somewhere to write.
+	if err := os.WriteFile(dir, raw, 0o600); err != nil {
+		t.Fatalf("put a file in its place: %v", err)
+	}
+}
+
+// Forgetting when nothing is picked writes nothing: every run of the
+// line from the palette would otherwise rewrite the settings file.
+func TestForgettingWithNothingPickedWritesNothing(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	// Settings that fail any write, so a write that should not happen
+	// says so instead of passing quietly.
+	a.shellPick.remember(settings.Unusable(errors.New("the settings file is unreadable")))
+
+	if err := a.shellPick.forget(); err != nil {
+		t.Errorf("forgetting with nothing picked tried to save: %v", err)
 	}
 }

@@ -617,6 +617,8 @@ func (a *app) commands() {
 			Run: a.unsplitFocused},
 		ui.Command{ID: "pane.close", Title: "Close pane", Run: a.closeFocused},
 		ui.Command{ID: "pane.open", Title: "New pane", Run: a.openPane},
+		ui.Command{ID: defaultShellCommand, Title: "New pane on the default shell",
+			Run: a.openPaneOnDefault},
 		ui.Command{ID: "server.connect", Title: "Connect to a server", Run: a.openServer},
 		ui.Command{ID: "server.add", Title: "Add a server", Run: a.openAddServer},
 		ui.Command{ID: "server.reload", Title: "Reread the server list", Run: a.reloadBook},

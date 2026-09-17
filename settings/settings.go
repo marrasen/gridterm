@@ -347,6 +347,24 @@ func (s *Settings) PutShell(id string) error {
 	return nil
 }
 
+// ForgetShell takes the pick away, so a new pane runs whatever the
+// machine's own default is, and saves.
+func (s *Settings) ForgetShell() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// The file first, for the same reason PutServe reads it first.
+	if err := s.rereadLocked(); err != nil {
+		return fmt.Errorf("%w: %w", ErrUnsaveable, err)
+	}
+	before := s.have
+	s.have.Shell = nil
+	if err := s.saveLocked(); err != nil {
+		s.have = before
+		return err
+	}
+	return nil
+}
+
 // rereadLocked reads the file into the settings, replacing what they
 // hold.
 //

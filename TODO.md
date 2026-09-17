@@ -322,13 +322,6 @@ order Ctrl+Tab moves in, and expected recently used.
   `files.Pane.At()`, and no command opens a terminal from it. The
   working directory field under "Run a command" wants the same thing.
 
-- There is no way back to the default shell once one has been picked.
-  The menus offer a line per shell that was found, and none of them
-  means "whatever `COMSPEC` names". Undoing a pick takes editing the
-  settings file by hand. A "Default shell" line on both menus would do
-  it, but `settings.check` turns an empty id away, so clearing the pick
-  needs a way to say "nothing is picked" that is not an empty string.
-
 - `TestKickingAWindowThatHasAlreadyGoneSaysNothing` in status_test.go
   fails about one run in four, with "focus never reached the Kick
   marcus@laptop out button". It predates the shell work.

@@ -101,6 +101,21 @@ func (p *shellPick) choose(id string) error {
 	return p.remembered.PutShell(id)
 }
 
+// forget takes the pick away, so a new pane runs whatever the machine's
+// own default is.
+func (p *shellPick) forget() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if !p.pickedLocked() {
+		return nil
+	}
+	if err := p.remembered.ForgetShell(); err != nil {
+		return err
+	}
+	p.told = false
+	return nil
+}
+
 // resolve returns the shell an id names, and whether this machine
 // still has it. What the scan found answers once it has landed, and
 // namedShell before then, which is when the first pane opens.
@@ -182,18 +197,38 @@ func (p *shellPick) tell() bool {
 func (p *shellPick) lines(titled bool) []ui.MenuItem {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if len(p.found) < 2 {
-		return nil
+	var items []ui.MenuItem
+	// A machine with one shell has nothing to pick between, but it can
+	// still be carrying a pick for a shell that has since gone.
+	if len(p.found) > 1 {
+		items = make([]ui.MenuItem, 0, len(p.found)+1)
+		for i, sh := range p.found {
+			item := ui.MenuItem{Command: p.cmds[i]}
+			if titled {
+				item.Title = sh.Title
+			}
+			items = append(items, item)
+		}
 	}
-	items := make([]ui.MenuItem, 0, len(p.found))
-	for i, sh := range p.found {
-		item := ui.MenuItem{Command: p.cmds[i]}
+	// And the way back, while a shell is picked.
+	if p.pickedLocked() {
+		item := ui.MenuItem{Command: defaultShellCommand}
 		if titled {
-			item.Title = sh.Title
+			item.Title = defaultShellTitle
 		}
 		items = append(items, item)
 	}
 	return items
+}
+
+// pickedLocked reports whether a shell is picked, with p.mu already
+// held.
+func (p *shellPick) pickedLocked() bool {
+	if p.remembered == nil {
+		return false
+	}
+	_, picked := p.remembered.Shell()
+	return picked
 }
 
 // newSession starts the shell a new pane on this machine runs.
@@ -252,6 +287,39 @@ func (a *app) openPaneOn(sh shells.Shell) error {
 	return nil
 }
 
+// defaultShellCommand opens a pane on whatever this machine's own
+// default shell is, and forgets the shell that was picked.
+const defaultShellCommand = "shell.default"
+
+// defaultShellTitle names that line on a menu whose heading already says
+// a terminal is what opens.
+const defaultShellTitle = "Default shell"
+
+// openPaneOnDefault opens a pane on this machine's own default shell and
+// forgets the pick, so every pane after it opens on the default too.
+func (a *app) openPaneOnDefault() error {
+	if m := a.homeMachine(); m != nil {
+		return fmt.Errorf("this window's panes open on %s, which picks its own shell", m.at.name)
+	}
+	err := a.openPaneWith(func() (*term.Terminal, error) {
+		return a.localTerminalOn(nil)
+	})
+	if err != nil {
+		return err
+	}
+	// Once it has started, the way rememberShell writes a pick down
+	// once: a shell that would not start is not worth acting on. Said
+	// rather than returned, so a settings file that cannot be written
+	// does not cost the user the pane they asked for.
+	if err := a.shellPick.forget(); err != nil {
+		a.reportError("Could not forget which shell to open", err)
+	}
+	// The File menu holds a copy of its lines, so the way back has to be
+	// taken off it here rather than at the next scan.
+	a.refreshFileMenu(a.fileMenuShells())
+	return nil
+}
+
 // splitOnShell divides a pane with a new one running a named shell.
 func (a *app) splitOnShell(dir ui.Dir, current ui.Widget, sh shells.Shell) error {
 	err := a.splitWithNew(dir, current, func() (*term.Terminal, error) {
@@ -270,6 +338,7 @@ func (a *app) rememberShell(sh shells.Shell) {
 	if err := a.shellPick.choose(sh.ID); err != nil {
 		a.reportError("Could not remember which shell to open", err)
 	}
+	a.refreshFileMenu(a.fileMenuShells())
 }
 
 // startShellScan looks for the shells a pane here can run, on a

@@ -5,83 +5,57 @@ each group. A line goes when the work is in and reviewed.
 
 ## Questions for Marcus
 
-Keeping a pane when its program ends raised three decisions that are
-his, not mine. Each one is written down rather than guessed at.
+Open calls that are his, not mine. Each one is written down rather than
+guessed at. Nothing is open right now.
 
-1. ~~Nothing caps the panes a window keeps.~~ **Answered on 2026-09-16:
-   no cap.** A pane that is worth keeping is worth reusing, so the
-   answer is to make reusing it the easy thing rather than to throw the
-   transcript away. See "Connect again in the same pane" below. Closing
-   a pane does release what it held: `closePane` drops it from
-   `a.panes`, from `a.ended` and from the registry, and `forgetPane`
-   clears the machine, window and hand-over records, so nothing is left
-   holding the grid or the emulator.
+## Answered on 2026-09-17
 
-2. **The cross means nothing on a pane's row.** It drops the row on a
-   machine, a window, a tunnel and a job. A pane's row has none,
-   deliberately: `clearRow` says the cross must not throw a transcript
-   away. But a pane row's `Close` already closes the pane and the row
-   together, which is what a user wants, and a cross backed by that
-   would be consistent. Today getting rid of one dead pane is a click
-   and a chord, or three clicks with the mouse alone.
+1. **A cross on a pane's row, shown on hover.** A pane row gets a cross
+   like every other row, and it does what the row's `Close` already
+   does: closes the pane and the row together. It appears only while the
+   pointer is over the row, so a transcript is never one stray click
+   away. This replaces the rule in `clearRow` that a pane row carries no
+   cross. The remote case under "Panes and the sidebar" is the same gap
+   from the other side.
 
-3. **The agent's listener never stops while a dead pane keeps its
-   hand-over.** That is the mechanism that fixed the complaint about a
-   rebooted host spending the session code, so it cannot simply be
-   undone. But hand fifty panes over, exit all fifty shells, and the
-   window holds fifty hand-overs and an open loopback port with nothing
-   left to type into.
+2. **A hand-over lasts as long as the pane, not as long as the
+   program.** Closing the pane is what drops it and stops the listener.
+   Nothing changes for a host that reboots: the pane is still there, so
+   the code still cannot be spent again. Two things follow, written up
+   under "The agent, through MCP":
+   - Reconnecting in the same pane keeps the same hand-over code.
+   - The agent can start that reconnect itself, when the user has ticked
+     the box for it. The boxes are item 4 there.
 
-## Connect again in the same pane
+3. **The hand-over prompt shrinks to the setup lines and the code.** The
+   workflow and the rules come from the MCP server's own `instructions`,
+   which the agent reads when it connects, so `handoverPrompt` stops
+   repeating `mcp.Workflow` and `mcp.Rules`.
 
-Asked for on 2026-09-16, answering the question about capping kept
-panes: the way to stop them piling up is to make the old pane the
-obvious place to go back to.
+4. **A local command gets a command row, like a remote one.** Named by
+   what it runs, with the same "Run it again?" question when it ends.
+   `startAgainHere` already opens a ConPTY on an argv, so that is the
+   piece to reuse.
 
-1. **The pane asks.** A pane whose program has gone puts a question on
-   its last row -- "Connection closed. Reconnect?" with Yes and Close
-   -- and the user picks, or leaves it and goes to another tab. The
-   pane is where the user is looking, so a connection that drops in
-   front of them says so there rather than going quietly grey on a
-   sidebar they may have hidden.
-   - **Done.** `Terminal.Restart` puts a new session under an existing
-     terminal, keeping the grid and the emulator, which is what keeps
-     the transcript.
-   - **The question itself** is the widget's to draw and the window's
-     to word. It is not written into the emulator: the transcript is
-     the program's.
-   - **What to reconnect to.** The entry knows the host and the kind.
-     A local shell starts the shell it ran; a pane on a machine
-     reconnects to it and opens a shell; a command runs again. Each
-     pane has to remember how it was started, which nothing records
-     today. A machine that has to be dialled first goes through
-     `openRoute`, so `opening` needs to say "into this pane" the way
-     `at` says which split.
-   - **The wording.** Every shell gets "Connection closed. Reconnect?",
-     whether the transport went or the user typed exit, and whether the
-     shell is on a machine or on this one. That is what ssh itself
-     prints, and gridterm calls every pane a connection. Settled twice,
-     on 2026-09-17: a reviewer argued a local shell was never connected
-     and reconnecting it only forks a process, and Marcus kept the one
-     wording anyway. Do not re-open it.
-   - **A command is the one that differs**, and not for tidiness.
-     Nothing is being connected: the command's channel closed and the
-     SSH connection is still up. Picking the choice re-runs the
-     command, which for `make deploy` or anything with side effects is
-     a thing the user has to see before they press it. So the question
-     names the command and the choice says it runs it again.
+## Settled, do not re-open
 
-2. **Say how the command ended, in the question.** Marcus's own case
-   for the feature: "maybe it errored, maybe this time it doesn't". The
-   question could read "`make deploy` finished, exit 1. Run it again?"
-   - **Remote commands already have it.** `remote.Shell.Wait` gives
-     back an `*ssh.ExitError`, and `ExitStatus()` is the number.
-     Nothing reads it today.
-   - **Ordinary panes have it when the shell says so**, through
-     `vt.Terminal.Command()`, which reads the shell's own OSC 133 and
-     OSC 633 marks. `Exit()` gives the status and whether there was
-     one; a shell with no integration gives nothing, and the question
-     has to stay honest about that rather than saying "exit 0".
+- **Nothing caps the panes a window keeps.** Answered on 2026-09-16: no
+  cap. A pane worth keeping is worth reusing, so reusing it is made the
+  easy thing rather than throwing the transcript away. Closing a pane
+  does release what it held.
+
+- **Every shell gets "Connection closed. Reconnect?"**, whether the
+  transport went or the user typed exit, and whether the shell is on a
+  machine or on this one. That is what ssh itself prints, and gridterm
+  calls every pane a connection. Settled twice, on 2026-09-17: a
+  reviewer argued a local shell was never connected and reconnecting it
+  only forks a process, and Marcus kept the one wording anyway.
+
+- **A command is worded differently**, and not for tidiness. Nothing is
+  being connected: the command's channel closed and the SSH connection
+  is still up. The question names the command and the choice says it
+  runs it again, because running `make deploy` a second time is a thing
+  the user has to see before they press it.
 
 ## The agent, through MCP
 
@@ -114,18 +88,321 @@ Raised after a debugging session in a handed-over pane.
    the user has typed it into the pane, and return without ever showing
    the agent the characters.
 
-4. **Make the setup line copyable.** The hand-over dialog tells the
-   user to add the MCP server with a command line, and there is no way
-   to copy that text, so it has to be typed out again by hand.
+4. **Tick boxes on the hand-over dialog say what the agent may do.**
+   Asked for and answered on 2026-09-17. A hand-over gives reading and
+   typing today and nothing else is possible. Each box below adds one
+   thing, per pane, decided at the moment the pane is handed over.
+   - **The window enforces; the agent is only told.** The checks live in
+     `agentWindow`'s methods, beside the one that looks the pane id up.
+     What the agent may do goes back in the `Use` answer so it does not
+     waste calls, but being told is not the enforcement.
+   - **A box takes effect at once**, the way "Take it back" does, and
+     not at the next hand-over. Turning one off while the agent is
+     mid-call makes the next call fail, which is what taking a pane back
+     already does.
+   - **Off, and remembered.** Every box starts off. Whatever is ticked
+     is written down and pre-ticked next time, the way the picked agent
+     already is.
+   - **Restart a closed connection.** The agent picks the choice the
+     question on the pane offers. `restartPane` keeps the pane and so
+     keeps the hand-over, which means the agent's code still names it
+     afterwards. On a command pane this runs the command again, which is
+     why it is a box and not a rule in the tool.
+   - **Open another pane to the same server.** A second pane on a
+     machine the window is already connected to, handed over as it
+     opens. On a local pane it means another pane on this machine. This
+     relaxes the rule that MCP support opens no connections of its own:
+     it opens no connection, it takes a channel on one the window
+     already holds. Nothing here dials.
+   - **Read only.** `send_keys` is refused. For watching a build or a
+     tail without being able to touch it.
+   - **Read above a clear.** The agent may read the scrollback above the
+     last `ED 3`. Off is what item 11 settles; this box says yes for one
+     pane.
+   - **Read only and Restart together are legal.** Restarting is not
+     typing, so watching a pane and bringing it back when it dies
+     without ever typing into it is a real thing to want. Nothing
+     refuses the pair.
+   - **Every tool still reaches only a handed-over pane.** The boxes
+     widen what may be done to that pane. They do not widen which panes
+     are reachable.
 
-5. **`clear` takes the scrollback with it.** Not a bug: `clear` sends
-   `ED 3` as well as `ED 2`, and `Screen.EraseInDisplay` in
-   vt/screen.go drops the scrollback for mode 3, which is what the
-   sequence means. It is also why the agent's own commands could not be
-   found afterwards -- the screen and the history above it went
-   together. `clear -x` leaves the history alone. If the history should
-   survive `clear` anyway, that is a choice to make and write down, not
-   a fault to fix.
+5. **No expiry for now.** Answered on 2026-09-17. A hand-over lasts
+   until the user takes it back or closes the pane. Revisit if forgotten
+   hand-overs ever pile up in practice.
+
+6. **Drop the hand-over when the pane is closed.** Answered on
+   2026-09-17. A pane whose program has ended keeps its hand-over, so a
+   rebooted host still cannot spend the code twice. Closing the pane is
+   what releases it, and the listener stops once the last one has gone.
+
+7. **Shrink the hand-over prompt.** Answered on 2026-09-17.
+   `handoverPrompt` in agents.go keeps the setup lines for the picked
+   host and the code, and drops `mcp.Workflow` and `mcp.Rules`. The MCP
+   server's own `instructions` already carry both, and the agent reads
+   them when it connects.
+
+8. **A command pane can be handed over already**, running or not.
+   `handPane` looks at no kind and no state. A running one takes keys on
+   the command's stdin; an ended one can be read and not typed into,
+   which is worth having for a failed build. Nothing to do here: it is
+   written down because it looked like a gap and is not one.
+
+9. **Copy opens a second dialog on top of the first.** Pick an agent,
+   press "Copy the prompt", and `showCode` stacks another dialog over
+   the hand-over form, so there are two to close. Marcus wants a second
+   button, "Install instructions", that opens that dialog when he asks
+   for it. Copy then only copies.
+
+10. **Make the setup line copyable.** The dialog that says how to add the
+   MCP server names a command line, and there is no way to copy it, so
+   it has to be typed out again by hand. A form's copy chord only copies
+   the error text. `ui.Notice` copies its whole message, and this dialog
+   is a `newConfirm`, not a notice.
+
+11. **`clear` keeps the history, and hides it from the agent.** Answered
+   on 2026-09-17. `clear` sends `ED 3` as well as `ED 2`, and
+   `Screen.EraseInDisplay` in vt/screen.go drops the scrollback for mode
+   3 today, which is what the sequence means. That changes: the user
+   scrolls up and still sees everything the agent did, which is the
+   point of watching it.
+   - **`ED 3` becomes a floor, not a delete.** It marks where the agent
+     may read from. The rows above it stay in the buffer and stay on
+     screen when the user scrolls.
+   - **`read_pane` stops at the floor.** An agent asking for more lines
+     than there are below it gets what is below it and is told that is
+     all there is, the way `Look.All` already says so.
+   - **Why both halves are wanted.** An agent clears to cut down what it
+     has to read, and that is a fair thing for it to want. The user
+     wants the record of what it did. A floor gives each of them what
+     they are asking for.
+   - **The privacy case is the cost, and it is accepted.** A token that
+     scrolled past is no longer gone after `clear`; it is one scroll up
+     and stays until the pane closes.
+
+## SSH keys
+
+Asked for on 2026-09-17. Nothing in gridterm makes a key or keeps track
+of one today. `remote.Config.Identities` lists key files, the server
+dialog has no field for one, and an empty list means the usual `~/.ssh`
+names.
+
+1. **Make a key.** A menu item opens a dialog that writes a new key pair
+   to disk. It then says how to install the public half in the common
+   places: OpenSSH on Linux, sshd on Windows, and gridterm's own served
+   window, which takes a list of keys.
+
+2. **Keep an index of keys.** The user adds keys to the index, and picks
+   one from it when making or editing a connection. That fills
+   `Identities` for that connection instead of leaving it to the
+   defaults.
+
+## Run a command
+
+Asked for on 2026-09-17. The dialog is `openCommandHere` in here.go and
+has one field.
+
+1. **An optional working directory.** Empty means wherever the shell
+   lands.
+
+2. **Run it on this machine too.** As a command row, like a remote
+   one. Answered on 2026-09-17; see the answers at the top.
+
+3. **Save a command, and pick a saved one.** The dialog offers the
+   commands already saved, so one that is run often is not retyped.
+
+## The file browser's "Go to"
+
+Reported on 2026-09-17, with a request to look into it properly. It is
+one bug with two halves, and then two things Marcus wants.
+
+- **What happens.** Type a path that does not exist, say `X:\`, and
+  press Go. The dialog closes. An error dialog then appears saying the
+  directory could not be read. The listing stays on `D:\`. Click the
+  `Marras` folder in that `D:\` listing and the error is about
+  `X:\Marras`.
+
+- **Why the dialog closes first.** The read is asynchronous. `Go` calls
+  `files.Pane.Open` and returns, which closes the form, and the failure
+  arrives frames later through `p.OnError`, which posts a dialog of its
+  own. Nothing tells the button to wait for the read.
+
+- **Why the next click is wrong.** `openAt` in ui/files/pane.go sets
+  `p.at = path` before the read starts, and `show` keeps the old entries
+  when the read fails. So the pane is showing `D:\` while `At()` says
+  `X:\`, and opening a row joins the name onto the wrong one. Keeping
+  the old names is the fallback Marcus approved and that part is fine.
+  Leaving `at` moved is not. Put `at` back when a read fails, or do not
+  move it until one succeeds.
+
+- **Keep the dialog open on an error.** Marcus wants to fix a typo and
+  try again in the same dialog. The button has to wait for the read and
+  show the reason in the form, which is what `f.errText` is for.
+
+- **Autocomplete would be nice.** Complete a path as it is typed, from
+  the filesystem the pane is on.
+
+## Switching between panes
+
+Asked about and answered on 2026-09-17. Marcus could not work out the
+order Ctrl+Tab moves in, and expected recently used.
+
+- **What the two pairs do today.** Both walk an order nothing on screen
+  shows. Ctrl+PageUp and Ctrl+PageDown step one along the stage, which
+  holds every pane in creation order, because `a.stage.Add` appends.
+  The sidebar groups by machine instead: local, then the saved machines
+  in book order, then the rest sorted. The two orders agree only if the
+  panes were opened in sidebar order and none was ever closed, so the
+  keys look like they jump between machines at random. Ctrl+Tab and
+  Ctrl+Shift+Tab call `focusPane`, which walks `ui.Leaves` of the whole
+  tree and does not filter, so the connections sidebar is in the cycle
+  as though it were a pane. Landing on it then makes Ctrl+PageUp and
+  Ctrl+PageDown do nothing at all, because the sidebar has no stage
+  above it.
+
+- **Ctrl+PageUp and Ctrl+PageDown follow the sidebar.** Answered on
+  2026-09-17. The keys step through panes in the order the sidebar
+  lists them, down the rows and across the machine headings, so the list
+  on screen is the only order there is. The stage's creation order stops
+  being something the user can feel.
+
+- **Ctrl+Tab stops landing on the sidebar.** `focusPane` filters its
+  list through `a.isPane`, which already exists and already excludes the
+  sidebar and the panel. One line, and it removes the dead-key symptom
+  above with it.
+
+- **Ctrl+Tab becomes recently used, with the modifier held.** Hold
+  Ctrl, press Tab to walk back through panes in the order they last had
+  focus, release Ctrl to land. Ctrl+Shift+Tab walks the other way. This
+  is what Alt+Tab, VS Code and Firefox's recently-used setting do, and
+  it is the same idea as screen's `Ctrl+A Ctrl+A` and tmux's
+  `prefix l` with more than two steps.
+
+- **The list must not re-order while Ctrl is held.** Freeze it on the
+  first press, walk the frozen list, and move the pane landed on to the
+  front only on release. A list that re-orders as you walk swaps the top
+  two entries on the first press and then bounces between the same pair.
+
+- **Every pane in the window, whatever tab it is in.** The list is the
+  leaves, ordered by when each last had focus, so a file pane is in it
+  as well as a terminal. Landing on a pane in another tab brings that
+  tab forward, which `focus` already does. Ctrl+PageUp and Ctrl+PageDown
+  stay positional over tabs, so there is one key for position and one
+  for recency.
+
+- **An overlay while Ctrl is held.** A small list in recency order with
+  the pane that would be landed on marked, gone on release. Without it a
+  walk of more than one or two steps is counting in the dark.
+
+- **Releases do not reach a command today.** `ChordOf` in ui/keymap.go
+  returns the zero chord for anything that is not a press or a repeat,
+  so nothing can be bound to letting go of a key. That is the one piece
+  of plumbing this needs.
+
+- **Do not rely on seeing the release.** Alt+Tab away from gridterm
+  mid-walk and the release lands in another window. Commit on the first
+  frame where Ctrl is not held rather than waiting for an event that may
+  never come. Polling the modifier also covers the window losing focus,
+  which nothing here can see: `ebiten.IsFocused` is unread, as the known
+  gaps below say.
+
+- **A pane that closes while the overlay is up** comes off the frozen
+  list, and the mark moves to the one after it.
+
+- **The shortcuts config file has to be able to say this.** A binding
+  that holds a modifier is not a plain chord. Worth settling when the
+  keyboard config under "Asked for, not yet worked out" is designed, so
+  the file does not have to change shape twice.
+
+## The tab strip is a remnant: delete it and rename what is left
+
+Asked about and answered on 2026-09-17. Marcus guessed this was left
+over from before the sidebar, and it is. Commit c52e0a1, "The sidebar
+chooses what is showing, not a row of tabs", says in its own message
+"So the strip is gone" -- but it was switched off with a flag rather
+than deleted. `newTabs` sets `HideStrip = true` for every strip the
+window makes, and nothing outside the `ui` package's own tests ever
+sets it false.
+
+- **Delete the strip.** About 127 of the 374 lines of ui/tabs.go:
+  `stripRows`, the `Titled` interface, the four colour fields, `Label`,
+  `HideStrip`, `stripHeld` and `stripButton`, the `buf`, and the methods
+  `strip`, `labels`, `labelOf`, `drawStrip`, `paintStrip` and
+  `CancelGesture`, plus the strip branch of `HandleMouse`. `Draw`,
+  `body` and `ChildArea` all shrink. About 13 of the 37 tests in
+  ui/tabs_test.go go with it. `Titled` is used by `labelOf` and by
+  nothing else. No behaviour changes.
+
+- **Delete the nesting branch in `placeTab`.** panes.go:249 wraps the
+  focused pane in a strip of its own when nothing above it is one. It
+  cannot run: the stage sits above every pane, so `stripAbove` always
+  finds it, and a new pane opened while the keys are inside a split is
+  added to the stage beside that split. Probed rather than assumed --
+  the tree after a split and another new pane is
+  `Stage[leaf, Split[leaf, leaf], leaf]`, flat. Nothing is ever stacked
+  behind anything, and the "+" already opens a pane at the top level,
+  which is what Marcus wants it to do.
+
+- **Rename `Tabs` to `Deck`.** A deck of panes, one face up. The word
+  "tab" names a thing that has not been on screen since 2026-09-14, and
+  it is what made an explanation of the switching keys unreadable: it
+  described a widget the user has never seen. `focusTab` and the
+  `tab.next` and `tab.previous` command ids go with it, and `stripAbove`
+  becomes the deck above a pane.
+
+- **"New tab" becomes "New pane".** It matches "Close pane" and "Split
+  pane", which already say pane, and there is no tab left in the product
+  to name.
+
+## The New split menu
+
+Asked for on 2026-09-17. `addSplitChoices` in split.go offers three
+kinds of line: "New terminal", "Move <pane>" for every other pane open,
+and "Terminal on <machine>" for every machine the window knows.
+
+- **Offer what the "+" on a machine's row offers.** That menu has
+  Terminal, Files and "Command…", and on this machine a line per shell
+  found -- CMD, PowerShell, each WSL distribution. The split chooser has
+  only Terminal. "Command…" and the shells belong in it.
+
+- **Leave Files out.** A file pane belongs to the file manager and is
+  split inside it, not into a terminal split. This is the one place the
+  two menus deliberately differ.
+
+- **Finding a pane to move is hard.** The lines that move an open pane
+  into the split sit in one flat list mixed in with the machines, one
+  line each, named by `paneName` with `paneWhere` beside it. Group them
+  by machine the way the sidebar does, or let the chooser be typed into
+  to narrow the list.
+
+## Panes and the sidebar
+
+- **A pane on a taken-over window cannot be reconnected.** Marcus typed
+  `exit` in a pane opened through a remote gridterm window. The shell
+  ended and the pane said "-- gridterm: the program has finished.
+  ctrl+shift+W closes this pane. --" with no "Reconnect?" question, no
+  cross on the row and no context menu. "Clear finished connections" was
+  the way out.
+  - **Why nothing is asked.** `startedAs.again` is false for a pane
+    drawn from a window taken over, because the program belongs to the
+    other window. So `askWhatNext` asks nothing, and the line naming a
+    key combination is the fallback.
+  - **What it needs.** The window that took over has to be able to say
+    "open another shell there, into this pane" to the window it is
+    serving from, the way `startAgainOn` says it to a machine. That is a
+    new message on the wire, not a flag to flip.
+  - **Getting rid of it is answered** by the cross on hover. See the
+    answers at the top.
+
+- **CMD and PowerShell rows say the path to the binary.** `labelFor`
+  joins the argv, so the row reads the full path under System32. Say
+  "Command Prompt" and "PowerShell" instead. `shells.Shell.Title`
+  already holds those words; nothing carries them to the row.
+
+- **An optional title bar in a pane.** The user turns it on, and the
+  first row of the terminal shows the server name and the pane's title.
+  Marcus wants it for split views, where nothing on screen says which
+  pane is which.
 
 ## Known gaps worth revisiting
 
@@ -135,7 +412,8 @@ Raised after a debugging session in a handed-over pane.
   the window passes an empty directory at both call sites in
   shellpick.go, so `--cd` is never sent. Nothing in the window tracks a
   pane's working directory yet. The file browser knows one, through
-  `files.Pane.At()`, and no command opens a terminal from it.
+  `files.Pane.At()`, and no command opens a terminal from it. The
+  working directory field under "Run a command" wants the same thing.
 
 - There is no way back to the default shell once one has been picked.
   The menus offer a line per shell that was found, and none of them

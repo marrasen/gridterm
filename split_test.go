@@ -38,15 +38,23 @@ func choiceTexts(c *ui.Chooser) []string {
 }
 
 // takeChoice runs the line whose text contains want.
+//
+// By the line's own key rather than by where it sits: a heading is a row
+// and not a line to take, so the two stopped counting alike.
 func takeChoice(t *testing.T, c *ui.Chooser, want string) {
 	t.Helper()
-	for i, text := range choiceTexts(c) {
-		if strings.Contains(text, want) {
-			if err := c.Take(i); err != nil {
-				t.Fatalf("taking %q: %v", text, err)
-			}
-			return
+	for _, row := range c.Rows() {
+		if row.Header || !strings.Contains(strings.TrimSpace(row.Text), want) {
+			continue
 		}
+		at, ok := row.Key.(int)
+		if !ok {
+			t.Fatalf("the line %q has no place to take", row.Text)
+		}
+		if err := c.Take(at); err != nil {
+			t.Fatalf("taking %q: %v", row.Text, err)
+		}
+		return
 	}
 	t.Fatalf("%q is not offered: %v", want, choiceTexts(c))
 }
@@ -357,6 +365,99 @@ func TestSplittingOnAWindowOpenedWithSsh(t *testing.T) {
 	}
 }
 
+// The panes a split could take are grouped under the machine each is on,
+// the way the sidebar groups them. One flat list mixed in with the
+// machines was hard to find a pane in.
+func TestSplittingGroupsThePanesToMoveByMachine(t *testing.T) {
+	s := sshtest.New(t)
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pinServers(t, a, s)
+	first := onlyPaneWidget(t, a)
+	a.connectAs("margit", serverConfig(t, s))
+	waitForPanes(t, a, 2)
+	// Opened so the two machines interleave in the tree: this machine, a
+	// machine, this machine, a machine. Grouping has to gather each
+	// machine's panes into one run, and the pane doing the splitting is
+	// left out of the list, so the first one is the one to split from.
+	if err := a.openTabHere(); err != nil {
+		t.Fatalf("openTabHere: %v", err)
+	}
+	if err := a.openTerminalOn("margit", nil); err != nil {
+		t.Fatalf("a second pane on the machine: %v", err)
+	}
+	waitForPanes(t, a, 4)
+	a.focus(first)
+
+	c := splitChoices(t, a, ui.Columns)
+	var under string
+	seen := map[string]string{}
+	for _, row := range c.Rows() {
+		if row.Header {
+			under = row.Text
+			continue
+		}
+		if !strings.HasPrefix(strings.TrimSpace(row.Text), "Move ") {
+			continue
+		}
+		if under == "" {
+			t.Errorf("%q sits under no machine", strings.TrimSpace(row.Text))
+		}
+		seen[strings.TrimSpace(row.Text)] = under
+	}
+	if len(seen) == 0 {
+		t.Fatalf("nothing to move is offered: %v", choiceTexts(c))
+	}
+	// Every pane is under the machine it is on, and each machine gets
+	// one heading rather than one per pane.
+	headings := map[string]int{}
+	for _, row := range c.Rows() {
+		if row.Header {
+			headings[row.Text]++
+		}
+	}
+	for name, n := range headings {
+		if n != 1 {
+			t.Errorf("%q has %d headings, want one run of lines", name, n)
+		}
+	}
+	if _, ok := headings["margit"]; !ok {
+		t.Errorf("the machine's panes are under no heading of its own: %v", choiceTexts(c))
+	}
+}
+
+// Typing narrows the chooser to the lines that match, and drops a
+// heading with nothing left under it.
+func TestSplittingNarrowsToWhatIsTyped(t *testing.T) {
+	s := sshtest.New(t)
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pinServers(t, a, s)
+	a.connectAs("margit", serverConfig(t, s))
+	waitForPanes(t, a, 2)
+
+	c := splitChoices(t, a, ui.Columns)
+	before := len(c.Rows())
+	for _, r := range "margit" {
+		sendKey(t, a, input.Event{Kind: input.Text, Rune: r})
+	}
+
+	got := choiceTexts(c)
+	if len(got) >= before {
+		t.Fatalf("typing narrowed nothing: %d lines before, %d after", before, len(got))
+	}
+	for _, line := range got {
+		if !strings.Contains(strings.ToLower(line), "margit") {
+			t.Errorf("it still offers %q, which is not what was typed", line)
+		}
+	}
+	if c.Query() != "margit" {
+		t.Errorf("the chooser holds %q, want what was typed", c.Query())
+	}
+}
+
 // A terminal opened on a machine for a split lands in that split, not in
 // a tab of its own.
 func TestSplittingWithAMachineLandsInTheSplit(t *testing.T) {
@@ -576,12 +677,16 @@ func TestAPaneThatClosedWhileAskingIsNotSplicedBack(t *testing.T) {
 	}
 
 	var took bool
-	for i, text := range choiceTexts(c) {
-		if !strings.Contains(text, "Move") {
+	for _, row := range c.Rows() {
+		if row.Header || !strings.Contains(row.Text, "Move") {
 			continue
 		}
+		at, ok := row.Key.(int)
+		if !ok {
+			t.Fatalf("the line %q has no place to take", row.Text)
+		}
 		took = true
-		if err := c.Take(i); err == nil {
+		if err := c.Take(at); err == nil {
 			t.Fatal("moving a pane that has closed reported nothing")
 		}
 	}

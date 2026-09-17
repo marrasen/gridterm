@@ -3,6 +3,7 @@ package ui
 import (
 	"errors"
 	"image/color"
+	"slices"
 	"strings"
 	"testing"
 
@@ -11,6 +12,132 @@ import (
 )
 
 // chooserStyled colours a chooser so a test can tell its parts apart.
+// chooserLines is what a chooser is showing, with a heading marked.
+func chooserLines(c *Chooser) []string {
+	var out []string
+	for _, row := range c.Rows() {
+		if row.Header {
+			out = append(out, "# "+row.Text)
+			continue
+		}
+		out = append(out, row.Text)
+	}
+	return out
+}
+
+// typeIntoChooser gives a chooser letters, the way a user types them.
+func typeIntoChooser(t *testing.T, c *Chooser, text string) {
+	t.Helper()
+	for _, r := range text {
+		took, err := c.HandleKey(input.Event{Kind: input.Text, Rune: r})
+		if err != nil {
+			t.Fatalf("typing %q: %v", r, err)
+		}
+		if !took {
+			t.Fatalf("the chooser did not take %q", r)
+		}
+	}
+}
+
+// A chooser groups its lines under the headings they were added with.
+func TestChooserGroupsLinesUnderHeadings(t *testing.T) {
+	c := NewChooser("Split with", func() {})
+	c.Add("New terminal", "Local", nil)
+	c.Under("Local")
+	c.Add("Move Command Prompt", "", nil)
+	c.Under("margit")
+	c.Add("Move Terminal vim", "", nil)
+	c.Under("")
+	c.Add("Terminal on margit", "connected", nil)
+
+	want := []string{
+		"New terminal",
+		"# Local", "Move Command Prompt",
+		"# margit", "Move Terminal vim",
+		"Terminal on margit",
+	}
+	if got := chooserLines(c); !slices.Equal(got, want) {
+		t.Errorf("the chooser shows %v, want %v", got, want)
+	}
+}
+
+// Typing keeps the lines that match and the headings they sit under, and
+// drops a heading with nothing left under it.
+func TestChooserNarrowsToWhatWasTyped(t *testing.T) {
+	c := NewChooser("Split with", func() {})
+	c.Under("Local")
+	c.Add("Move Command Prompt", "", nil)
+	c.Under("margit")
+	c.Add("Move Terminal vim", "", nil)
+	c.Add("Move make deploy", "", nil)
+	c.Layout(Size{Cols: 40, Rows: 12})
+
+	typeIntoChooser(t, c, "vim")
+	want := []string{"# margit", "Move Terminal vim"}
+	if got := chooserLines(c); !slices.Equal(got, want) {
+		t.Errorf("after typing vim the chooser shows %v, want %v", got, want)
+	}
+	if c.Query() != "vim" {
+		t.Errorf("the chooser holds %q, want what was typed", c.Query())
+	}
+}
+
+// Backspace gives a letter back, and Escape gives the whole list back
+// before it puts the chooser away.
+func TestChooserGivesBackWhatWasTyped(t *testing.T) {
+	gone := 0
+	c := NewChooser("Split with", func() { gone++ })
+	c.Under("Local")
+	c.Add("Move Command Prompt", "", nil)
+	c.Under("margit")
+	c.Add("Move Terminal vim", "", nil)
+	c.Layout(Size{Cols: 40, Rows: 12})
+
+	typeIntoChooser(t, c, "vimx")
+	if got := chooserLines(c); len(got) != 0 {
+		t.Fatalf("the chooser shows %v for a query nothing matches", got)
+	}
+	if _, err := c.HandleKey(input.Event{Kind: input.KeyPress, Key: input.KeyBackspace}); err != nil {
+		t.Fatalf("backspace: %v", err)
+	}
+	if got := chooserLines(c); !slices.Equal(got, []string{"# margit", "Move Terminal vim"}) {
+		t.Errorf("after a backspace the chooser shows %v", got)
+	}
+
+	if _, err := c.HandleKey(input.Event{Kind: input.KeyPress, Key: input.KeyEscape}); err != nil {
+		t.Fatalf("escape: %v", err)
+	}
+	if c.Query() != "" {
+		t.Errorf("Escape left %q typed in", c.Query())
+	}
+	if gone != 0 {
+		t.Error("Escape put the chooser away instead of giving the list back")
+	}
+	if _, err := c.HandleKey(input.Event{Kind: input.KeyPress, Key: input.KeyEscape}); err != nil {
+		t.Fatalf("escape again: %v", err)
+	}
+	if gone != 1 {
+		t.Errorf("Escape on the whole list put the chooser away %d times", gone)
+	}
+}
+
+// A heading is not a line to take. Enter on the first row takes the
+// first thing under it.
+func TestChooserTakesALineAndNotAHeading(t *testing.T) {
+	took := ""
+	c := NewChooser("Split with", func() {})
+	c.Under("margit")
+	c.Add("Move Terminal vim", "", func() error { took = "vim"; return nil })
+	c.Layout(Size{Cols: 40, Rows: 12})
+
+	if _, err := c.HandleKey(input.Event{Kind: input.KeyPress, Key: input.KeyEnter}); err != nil {
+		t.Fatalf("enter: %v", err)
+	}
+	if took != "vim" {
+		t.Errorf("Enter took %q, want the line under the heading", took)
+	}
+}
+
 func chooserStyled() ChooserStyle {
 	return ChooserStyle{
 		FG: fg, BG: bg, TitleFG: fg,

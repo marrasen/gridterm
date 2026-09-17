@@ -186,18 +186,6 @@ sets it false.
   pane", which already say pane, and there is no tab left in the product
   to name.
 
-## The New split menu
-
-Asked for on 2026-09-17. `addSplitChoices` in split.go offers three
-kinds of line: "New terminal", "Move <pane>" for every other pane open,
-and "Terminal on <machine>" for every machine the window knows.
-
-- **Finding a pane to move is hard.** The lines that move an open pane
-  into the split sit in one flat list mixed in with the machines, one
-  line each, named by `paneName` with `paneWhere` beside it. Group them
-  by machine the way the sidebar does, or let the chooser be typed into
-  to narrow the list.
-
 ## Panes and the sidebar
 
 - **A pane on a taken-over window cannot be reconnected.** Marcus typed

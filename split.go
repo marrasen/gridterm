@@ -1,9 +1,11 @@
 package main
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"image/color"
+	"slices"
 
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/ui"
@@ -56,10 +58,12 @@ func (a *app) addSplitChoices(c *ui.Chooser, dir ui.Dir, current ui.Widget) {
 	}
 
 	// What is already open, so a pane can be moved in beside this one
-	// rather than a second one being started.
-	for _, w := range a.otherPanes(current) {
+	// rather than a second one being started. Under the machine each is
+	// on, the way the sidebar groups them.
+	for _, w := range a.panesToMove(current) {
 		pane := w
-		c.Add("Move "+a.paneName(pane), a.paneWhere(pane), func() error {
+		c.Under(a.paneWhere(pane))
+		c.Add("Move "+a.paneName(pane), "", func() error {
 			// Asked again now rather than when the line was written: a
 			// pane closed while the question was up has gone, and
 			// splicing a closed one back into the tree leaves a dead
@@ -81,6 +85,7 @@ func (a *app) addSplitChoices(c *ui.Chooser, dir ui.Dir, current ui.Widget) {
 			return nil
 		})
 	}
+	c.Under("")
 
 	// And every machine, so the half that opens up can be a terminal on
 	// one of them. A machine nothing is connected to yet is connected to
@@ -110,6 +115,16 @@ func (a *app) addSplitChoices(c *ui.Chooser, dir ui.Dir, current ui.Widget) {
 			})
 		}
 	}
+}
+
+// panesToMove is every pane a split could take, grouped by the machine
+// it is on so that the headings come out in one run each.
+func (a *app) panesToMove(except ui.Widget) []ui.Widget {
+	out := a.otherPanes(except)
+	slices.SortStableFunc(out, func(x, y ui.Widget) int {
+		return cmp.Compare(a.paneWhere(x), a.paneWhere(y))
+	})
+	return out
 }
 
 // addShellChoices puts a line per shell this machine has under the line

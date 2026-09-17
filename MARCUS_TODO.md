@@ -1,3 +1,13 @@
+# MCP and Remote Control
+
+I want panes that are shared with an agent or being remote controlled to be marked clearly. Add a border to the pane
+that glows, make it animate slowly, and add an overlay to the top right that shows the current status, "Agent connected",
+"Agent running: ls -la" (crop long commands). If it is remote AND agent controlled, add two borders with different colors
+and two chips. Clicking on a chip pops up the dialog where it can be closed. Also, add somewhere where we can see what
+commands the agent performed in hindsight.
+
+# Closing processes
+
 What happens when I close the gridterm window? Will the app close all connections and processes gracefully?
 I'm asking because I found hundreds of cmd.exe running on my system. I don't know if that's processes detached from 
 gridterm or not but I'm guessing it is.

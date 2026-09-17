@@ -37,20 +37,34 @@ type ChooserStyle struct {
 	ShadowBG color.RGBA
 }
 
-// Chooser is a modal list of things to pick one of.
-//
 // A menu names commands, so that a menu, a key binding and the palette
 // are three ways into one list. A chooser is for picking one of a set of
 // things that exist only right now -- a pane to move, a machine to open
 // on -- which no command can name, because they come and go while the
 // program runs.
+//
+// chooserLine is one thing to pick, or a heading over the lines under
+// it. A heading has no do and is never taken.
+type chooserLine struct {
+	text, note string
+	under      string
+	do         func() error
+}
+
+// Chooser is a modal list of things to pick one of.
 type Chooser struct {
 	Style ChooserStyle
 
 	title string
 	list  *List
+	lns   []chooserLine
 	dos   []func() error
 	close func()
+
+	// query is what has been typed to narrow the list, and under is the
+	// heading the next line added goes under.
+	query string
+	under string
 
 	size Size
 	buf  buffer
@@ -69,11 +83,46 @@ func NewChooser(title string, close func()) *Chooser {
 	return c
 }
 
-// Add puts a line at the bottom. note is shown at its end, and do is
-// what taking the line does.
+// Add puts a line at the bottom, under the last heading. note is shown
+// at its end, and do is what taking the line does.
 func (c *Chooser) Add(text, note string, do func() error) {
 	c.dos = append(c.dos, do)
-	rows := append(c.list.Rows(), ListRow{Text: text, Note: note, Key: len(c.dos) - 1})
+	c.lns = append(c.lns, chooserLine{text: text, note: note, under: c.under, do: do})
+	c.fill()
+}
+
+// Under starts a heading. Every line added after it sits under it, until
+// the next one. An empty name puts the lines back at the top level.
+func (c *Chooser) Under(heading string) {
+	c.under = heading
+}
+
+// Query is what has been typed to narrow the list.
+func (c *Chooser) Query() string { return c.query }
+
+// fill builds the rows from the lines the query keeps, dropping a
+// heading with nothing left under it.
+func (c *Chooser) fill() {
+	var rows []ListRow
+	heading := ""
+	for i, ln := range c.lns {
+		if _, _, ok := matchTitle(c.query, ln.text); !ok {
+			continue
+		}
+		// A heading is written when the first line under it is kept, so
+		// one with nothing left never appears.
+		if ln.under != heading {
+			heading = ln.under
+			if heading != "" {
+				rows = append(rows, ListRow{Text: heading, Header: true, Key: "head:" + heading})
+			}
+		}
+		depth := 0
+		if ln.under != "" {
+			depth = 1
+		}
+		rows = append(rows, ListRow{Text: ln.text, Note: ln.note, Depth: depth, Key: i})
+	}
 	c.list.SetRows(rows)
 }
 
@@ -114,6 +163,15 @@ func (c *Chooser) run(do func() error) error {
 	return do()
 }
 
+// narrow sets what has been typed and builds the list again.
+func (c *Chooser) narrow(q string) {
+	if q == c.query {
+		return
+	}
+	c.query = q
+	c.fill()
+}
+
 // dismiss takes the chooser away, once.
 func (c *Chooser) dismiss() {
 	close := c.close
@@ -132,10 +190,11 @@ func (c *Chooser) box() Rect {
 	if c.size.Empty() || len(c.dos) == 0 {
 		return Rect{}
 	}
+	showing := max(len(c.list.Rows()), 1)
 	cols := min(c.size.Cols-chooserMargin*2, c.width())
 	// The title, a blank row, the lines, and the rule at each end.
 	rows := min(c.size.Rows-chooserMargin*2,
-		min(len(c.dos), chooserMaxRow)+2+chooserFrame*2)
+		min(showing, chooserMaxRow)+2+chooserFrame*2)
 	// Room for the rule, the title, its blank row and a line to pick.
 	if cols < chooserMinCol || rows < 3+chooserFrame*2 {
 		return Rect{}
@@ -197,8 +256,12 @@ func (c *Chooser) paint(v grid.View) {
 
 	cols, _ := in.Size()
 	room := max(cols-(chooserFrame+chooserPad)*2, 0)
+	title := c.title
+	if c.query != "" {
+		title += "  " + c.query
+	}
 	in.SetString(chooserFrame+chooserPad, chooserFrame,
-		grid.Trim(c.title, room), c.Style.TitleFG, c.Style.BG, grid.AttrBold)
+		grid.Trim(title, room), c.Style.TitleFG, c.Style.BG, grid.AttrBold)
 
 	c.list.Style = ListStyle{
 		FG: c.Style.FG, BG: c.Style.BG,
@@ -230,13 +293,29 @@ func (c *Chooser) HandleKey(ev input.Event) (bool, error) {
 		return true, nil
 	}
 	if ev.Kind == input.KeyPress && ev.Key == input.KeyEscape && isPlainKey(ev) {
+		if c.query != "" {
+			// The letters first: Escape on a narrowed list puts the
+			// whole list back before it puts the chooser away.
+			c.narrow("")
+			return true, nil
+		}
 		c.dismiss()
+		return true, nil
+	}
+	if ev.Kind == input.KeyPress && ev.Key == input.KeyBackspace && isPlainKey(ev) {
+		if r := []rune(c.query); len(r) > 0 {
+			c.narrow(string(r[:len(r)-1]))
+		}
 		return true, nil
 	}
 	// The list declines every chord it was not offered, so Ctrl+Down
 	// moves nothing here.
 	if took, err := c.list.HandleKey(ev); took {
 		return true, err
+	}
+	if ev.Kind == input.Text && ev.Rune >= ' ' {
+		c.narrow(c.query + string(ev.Rune))
+		return true, nil
 	}
 	// Everything else is swallowed: the chooser is a question, and a key
 	// reaching a pane behind it would be typed into something the user

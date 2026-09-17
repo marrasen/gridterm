@@ -55,6 +55,12 @@ func (a *app) refreshServers() {
 		want = append(want, host)
 	}
 	want = append(want, saved...)
+	// And whether a share is open, which is what the line that shares a
+	// pane is worded from and what puts the line that shows the share on
+	// the menu at all.
+	if a.agents.sharing() {
+		want = append(want, "(sharing)")
+	}
 	if slices.Equal(want, a.builtFor) && !a.serversMenuMissing() {
 		return
 	}
@@ -228,8 +234,13 @@ func (a *app) refreshServerMenu(items []ui.MenuItem) {
 		ui.MenuItem{Command: "serve.window"},
 		ui.MenuItem{Command: "serve.takeOver"},
 		ui.MenuSeparator(),
-		ui.MenuItem{Command: "agent.hand"},
+		ui.MenuItem{Command: "agent.hand", Title: a.shareItem()},
 		ui.MenuItem{Command: "agent.take"})
+	if a.agents.sharing() {
+		// Only while there is one: a line that opens nothing is a line
+		// the user reads and tries.
+		items = append(items, ui.MenuItem{Command: "agent.share"})
+	}
 
 	def := ui.MenuDef{Title: serversMenu, Items: items}
 	for i, have := range a.bar.Menus {

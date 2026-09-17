@@ -433,7 +433,7 @@ func (a *app) handPane(pane *term.Terminal) error {
 	if have := a.agents.of(pane); have != nil {
 		// Already in the share. What it allows is shown again rather
 		// than the pane being added twice.
-		a.showHandover(have)
+		a.showPaneBoxes(have)
 		return nil
 	}
 	if err := a.listenForAgents(); err != nil {
@@ -451,7 +451,8 @@ func (a *app) handPane(pane *term.Terminal) error {
 		return errors.New("there is no share to add this pane to")
 	}
 	a.markDirty()
-	a.showHandover(h)
+	a.refreshServers()
+	a.showPaneBoxes(h)
 	return nil
 }
 
@@ -464,6 +465,7 @@ func (a *app) takeBackPane(pane *term.Terminal) error {
 		return errors.New("this pane is not in a share")
 	}
 	a.markDirty()
+	a.refreshServers()
 	return a.agents.stopIfDone()
 }
 
@@ -1277,6 +1279,15 @@ func onDrawing[T any](a *app, f func() (T, error)) (T, error) {
 	}
 }
 
+// shareItem is what the menu line that shares a pane says: a share is
+// started once, and after that panes join the one that is open.
+func (a *app) shareItem() string {
+	if a.agents.sharing() {
+		return "Add this pane to the share…"
+	}
+	return "Share this pane with an agent…"
+}
+
 // handHere hands the pane the user is looking at to an agent.
 func (a *app) handHere() error { return a.handPane(a.focusedTerminal()) }
 
@@ -1284,34 +1295,63 @@ func (a *app) handHere() error { return a.handPane(a.focusedTerminal()) }
 // at.
 func (a *app) takeBackHere() error { return a.takeBackPane(a.focusedTerminal()) }
 
-// showHandover asks which agent the pane is being handed to, and offers
-// the prompt and the skill for it.
+// showPaneBoxes asks what the agent may do in one pane of the share.
+//
+// The code is not here: it belongs to the share and one is enough for
+// all of it. What is here is the four boxes, which are this pane's own.
+func (a *app) showPaneBoxes(h *handover) {
+	f := a.newForm(paneBoxesTitle)
+	f.Lines = []string{
+		"This pane is in the share. An agent reads it and types into it,",
+		"and each box below adds one thing, the moment you tick it.",
+		"",
+		"The code is the share's, and \"Show the share\" on the Servers",
+		"menu has it, along with every pane in it.",
+	}
+	a.addAgentBoxes(f, h)
+	f.Lines = append(f.Lines, "", "Space ticks a box.")
+	f.AddButton(ui.Button{Title: "Done"})
+	f.AddButton(ui.Button{Title: "Take it out", Do: func() error {
+		return a.takeBackPane(h.pane)
+	}})
+	a.showForm(f, func() { a.rememberAgentMay(h.may) })
+}
+
+// paneBoxesTitle names the dialog that says what an agent may do in one
+// pane.
+const paneBoxesTitle = "What an agent may do in this pane"
+
+// showShare is the share: the code, the panes in it, and what to paste
+// to an agent.
 //
 // Which agent is asked first because the setup lines the prompt and the
 // skill carry are that agent's, and because the skill goes wherever that
 // agent reads skills from.
-func (a *app) showHandover(h *handover) {
-	f := a.newForm("An agent may work in this pane")
-	f.Lines = []string{
-		"An agent reads this pane and types into it, and reaches no other.",
-		"Each box below adds one thing, the moment you tick it.",
-		"The code for this pane is:",
-		"  " + h.in.code,
+func (a *app) showShare() error {
+	if !a.agents.sharing() {
+		return errors.New("nothing is shared with an agent")
 	}
+	code := a.agents.code()
+	f := a.newForm(shareTitle)
+	f.Lines = []string{
+		"An agent with this code reads the panes below and types into",
+		"them, and nothing else of yours. The code is:",
+		"  " + code,
+	}
+	// The code on its own, for an agent that has had the prompt already.
+	f.Copyable = code
+
 	pick := f.AddField("Agent", a.newField("", 0))
 	pick.Options = agentHostNames()
 	pick.SetText(a.agents.startHost().name)
-	a.addAgentBoxes(f, h)
-	// The code on its own, for a second pane handed to an agent that has
-	// had the prompt already: pasting the whole prompt again to say one
-	// more code is forty characters of the two hundred.
-	f.Copyable = h.in.code
-	f.Lines = append(f.Lines, "",
-		"Ctrl+down picks the agent, space ticks a box.",
-		a.copiesTheCode()+" The Servers menu takes the pane back.")
+	a.addShareRows(f)
 
-	// All three leave the form open, so the user can copy the prompt, read
-	// the setup and write the skill without handing the pane over twice.
+	f.Lines = append(f.Lines, "",
+		"Ctrl+down picks the agent, space takes a pane out or puts it",
+		"back. "+a.copiesTheCode())
+
+	// The three leave the form open, so the user can copy the prompt,
+	// read the setup and write the skill in one visit.
 	f.AddButton(ui.Button{Title: "Copy the prompt", Keep: true, Do: func() error {
 		host := hostNamed(pick.Text())
 		exe, err := exePath()
@@ -1320,7 +1360,7 @@ func (a *app) showHandover(h *handover) {
 			// where gridterm is on the PATH, and the instructions say so.
 			a.logError(err)
 		}
-		a.clip.set(handoverPrompt(host, h.in.code, exe))
+		a.clip.set(handoverPrompt(host, code, exe))
 		a.pump.post(func() {
 			if err != nil {
 				// The prompt on the clipboard says just "gridterm", which
@@ -1346,8 +1386,7 @@ func (a *app) showHandover(h *handover) {
 		a.pump.post(func() {
 			a.showSetup(host, exe, err)
 			// After that dialog, so a failure to write the settings down
-			// lands on top of it rather than underneath. The pane is
-			// handed over either way.
+			// lands on top of it rather than underneath.
 			a.rememberAgentHost(host)
 		})
 		return nil
@@ -1361,12 +1400,76 @@ func (a *app) showHandover(h *handover) {
 		return nil
 	}})
 	f.AddButton(ui.Button{Title: "Done"})
-	f.AddButton(ui.Button{Title: "Take it back", Do: func() error {
-		return a.takeBackPane(h.pane)
-	}})
-	// Written down when the dialog goes rather than on every press of
-	// the space bar, which would be a file written per keystroke.
-	a.showForm(f, func() { a.rememberAgentMay(h.may) })
+	f.AddButton(ui.Button{Title: "Stop sharing", Do: a.stopSharing})
+	a.showForm(f, nil)
+	return nil
+}
+
+// shareTitle names the dialog that shows the share.
+const shareTitle = "Sharing with an agent"
+
+// addShareRows puts a row on the share dialog for every pane in it: a
+// tick box that takes the pane out and puts it back.
+//
+// A box rather than a list, because taking a pane out is the thing the
+// dialog is for and a box is one key. The row stays after the pane goes,
+// so putting it back is the same key again.
+func (a *app) addShareRows(f *ui.Form) {
+	for _, h := range a.agents.shared() {
+		pane, in := h.pane, h
+		tick := f.AddTick(a.shareRowLabel(h), true)
+		tick.OnChange = func(string) {
+			if tick.On() {
+				a.agents.hand(pane)
+			} else {
+				a.agents.forget(pane)
+			}
+			a.markDirty()
+			_ = a.agents.stopIfDone()
+			_ = in
+		}
+	}
+}
+
+// shareRowLabel names a pane on the share dialog, and says what it
+// allows beyond reading and typing.
+func (a *app) shareRowLabel(h *handover) string {
+	name := "a pane"
+	if e := a.panes[h.pane]; e != nil {
+		name = agentLabel(e)
+	}
+	may := a.agents.allowed(h)
+	var adds []string
+	if may.ReadOnly {
+		adds = append(adds, "read only")
+	}
+	if may.Restart {
+		adds = append(adds, "restart")
+	}
+	if may.OpenMore {
+		adds = append(adds, "open panes")
+	}
+	if may.ReadBack {
+		adds = append(adds, "read above a clear")
+	}
+	if len(adds) == 0 {
+		return name
+	}
+	return name + " (" + strings.Join(adds, ", ") + ")"
+}
+
+// stopSharing ends the share, so the code stops working and every pane
+// in it comes back.
+func (a *app) stopSharing() error {
+	if !a.agents.sharing() {
+		return errors.New("nothing is shared with an agent")
+	}
+	for _, h := range a.agents.shared() {
+		a.agents.forget(h.pane)
+	}
+	a.markDirty()
+	a.refreshServers()
+	return a.agents.stopIfDone()
 }
 
 // addAgentBoxes puts the tick boxes on the hand-over dialog: what this

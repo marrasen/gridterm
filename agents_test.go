@@ -431,10 +431,24 @@ func jsonIn(t *testing.T, prompt string) string {
 func handoverDialog(t *testing.T, a *testApp, pane *term.Terminal) *ui.Form {
 	t.Helper()
 	if err := a.handPane(pane); err != nil {
-		t.Fatalf("hand it over: %v", err)
+		t.Fatalf("share it: %v", err)
 	}
-	return awaitModal[*ui.Form](t, a, "the hand-over dialog",
-		byTitle[*ui.Form]("An agent may work in this pane"))
+	return awaitModal[*ui.Form](t, a, "the dialog with the pane's boxes on it",
+		byTitle[*ui.Form](paneBoxesTitle))
+}
+
+// shareDialog puts a pane in the share and opens the share itself,
+// which is where the code and what to paste to an agent live.
+func shareDialog(t *testing.T, a *testApp, pane *term.Terminal) *ui.Form {
+	t.Helper()
+	if a.agents.of(pane) == nil {
+		boxes := handoverDialog(t, a, pane)
+		pressButton(t, a, boxes, "Done")
+	}
+	if err := a.showShare(); err != nil {
+		t.Fatalf("show the share: %v", err)
+	}
+	return awaitModal[*ui.Form](t, a, "the share dialog", byTitle[*ui.Form](shareTitle))
 }
 
 // drawsEveryLine checks a dialog really draws every line it was given.
@@ -491,7 +505,7 @@ func TestHandingAPaneOverShowsTheCodeAndCopiesThePrompt(t *testing.T) {
 	withPanel(t, a)
 	pane := onlyPaneOn(t, a)
 
-	f := handoverDialog(t, a, pane)
+	f := shareDialog(t, a, pane)
 	drawsEveryLine(t, a, f)
 	drawsEveryButton(t, a, f)
 	code := a.agents.code()
@@ -519,7 +533,7 @@ func TestHandingAPaneOverShowsTheCodeAndCopiesThePrompt(t *testing.T) {
 	// Copying copies and nothing else: the dialog the user was on is
 	// still the one in front, with nothing stacked over it to close.
 	if top := a.root.Modal(); top != ui.Widget(f) {
-		t.Errorf("copying the prompt put %T over the hand-over dialog", top)
+		t.Errorf("copying the prompt put %T over the share dialog", top)
 	}
 
 	// The instructions are a button away, and say what to run.
@@ -550,10 +564,14 @@ func TestHandingAPaneOverShowsTheCodeAndCopiesThePrompt(t *testing.T) {
 	}
 
 	pressButton(t, a, shownIn, "Done")
-	// Taking it back is still one button away, on the dialog underneath.
-	pressButton(t, a, f, "Take it back")
+	// Ending the share is one button away, on the dialog underneath, and
+	// it takes every pane back.
+	pressButton(t, a, f, "Stop sharing")
 	if a.agents.of(pane) != nil {
-		t.Error("it is still handed over")
+		t.Error("the pane is still shared")
+	}
+	if a.agents.sharing() {
+		t.Error("the share is still open")
 	}
 }
 
@@ -572,7 +590,7 @@ func TestCopyingThePromptWithoutAPathSaysSo(t *testing.T) {
 	exePath = func() (string, error) { return "gridterm", errors.New("no path for this process") }
 	t.Cleanup(func() { exePath = was })
 
-	f := handoverDialog(t, a, pane)
+	f := shareDialog(t, a, pane)
 	pressButton(t, a, f, "Copy the prompt")
 
 	n := awaitModal[*ui.Notice](t, a, "a notice about the path", nil)
@@ -596,7 +614,7 @@ func TestTheCopyChordOnTheInstallInstructionsCopiesTheSetupLine(t *testing.T) {
 	withPanel(t, a)
 	pane := onlyPaneOn(t, a)
 
-	f := handoverDialog(t, a, pane)
+	f := shareDialog(t, a, pane)
 	pressButton(t, a, f, "Instructions")
 	host := hostNamed(hostClaudeCode)
 	shown := awaitModal[*ui.Form](t, a, "the install instructions",
@@ -695,7 +713,7 @@ func TestTheHandoverDialogWritesForThePickedAgentAndRemembersIt(t *testing.T) {
 	}
 	pane := onlyPaneOn(t, a)
 
-	f := handoverDialog(t, a, pane)
+	f := shareDialog(t, a, pane)
 	// Nothing remembered yet, so it opens on Claude Code.
 	fieldSays(t, f, "Agent", hostClaudeCode)
 	stepOptions(t, a, f, "Agent")
@@ -736,7 +754,7 @@ func TestTheHandoverDialogWritesForThePickedAgentAndRemembersIt(t *testing.T) {
 
 	// And the next hand-over opens on it.
 	pressButton(t, a, f, "Done")
-	next := handoverDialog(t, a, pane)
+	next := shareDialog(t, a, pane)
 	fieldSays(t, next, "Agent", hostCodex)
 }
 
@@ -1041,7 +1059,7 @@ func TestWritingTheSkillPutsItWhereTheHostLooks(t *testing.T) {
 				want = filepath.Join(append([]string{home}, append(host.skillIn, "SKILL.md")...)...)
 			}
 
-			f := handoverDialog(t, a, pane)
+			f := shareDialog(t, a, pane)
 			f.Field("Agent").SetText(host.name)
 			pressButton(t, a, f, "Write the skill")
 
@@ -1091,7 +1109,7 @@ func TestWritingTheSkillWillNotLoseYourOwnEdits(t *testing.T) {
 	}
 
 	// Asked, and told to keep what is there.
-	f := handoverDialog(t, a, pane)
+	f := shareDialog(t, a, pane)
 	pressButton(t, a, f, "Write the skill")
 	ask := awaitModal[*ui.Form](t, a, "the dialog asking before it replaces the skill",
 		byTitlePrefix[*ui.Form]("Replace"))
@@ -1108,7 +1126,7 @@ func TestWritingTheSkillWillNotLoseYourOwnEdits(t *testing.T) {
 	}
 
 	// Asked again, and told to replace it.
-	f = handoverDialog(t, a, pane)
+	f = shareDialog(t, a, pane)
 	pressButton(t, a, f, "Write the skill")
 	ask = awaitModal[*ui.Form](t, a, "the dialog asking before it replaces the skill",
 		byTitlePrefix[*ui.Form]("Replace"))
@@ -1134,7 +1152,7 @@ func TestASkillThatCannotBeWrittenIsSaid(t *testing.T) {
 		t.Fatalf("make a directory in the way: %v", err)
 	}
 
-	f := handoverDialog(t, a, pane)
+	f := shareDialog(t, a, pane)
 	pressButton(t, a, f, "Write the skill")
 
 	n := awaitModal[*ui.Notice](t, a, "the failure", nil)
@@ -1194,7 +1212,7 @@ func TestTheInstallInstructionsReadWholeForEveryHost(t *testing.T) {
 			withDialogs(t, a)
 			withPanel(t, a)
 			pane := onlyPaneOn(t, a)
-			f := handoverDialog(t, a, pane)
+			f := shareDialog(t, a, pane)
 			drawsEveryLine(t, a, f)
 
 			// The longest it gets: a path with a space in it, and the
@@ -1592,7 +1610,7 @@ func TestTheHandoverDialogDoesBothInOneVisit(t *testing.T) {
 	withPanel(t, a)
 	pane := onlyPaneOn(t, a)
 
-	f := handoverDialog(t, a, pane)
+	f := shareDialog(t, a, pane)
 	code := a.agents.code()
 	drawsEveryLine(t, a, f)
 	if drawn := strings.Join(drawnLines(a, f), "\n"); !strings.Contains(drawn, code) {
@@ -2487,7 +2505,7 @@ func TestReadOnlyRefusesTheAgentsTyping(t *testing.T) {
 	// The dialog is open behind the hand-over, and the box is ticked
 	// while the agent is working.
 	f := awaitModal[*ui.Form](t, a, "the hand-over dialog",
-		byTitle[*ui.Form]("An agent may work in this pane"))
+		byTitle[*ui.Form](paneBoxesTitle))
 	tickBox(t, a, f, "Read only")
 
 	var err error
@@ -2562,7 +2580,7 @@ func TestReadingAboveAClearIsABoxTheUserTicks(t *testing.T) {
 	}
 
 	f := awaitModal[*ui.Form](t, a, "the hand-over dialog",
-		byTitle[*ui.Form]("An agent may work in this pane"))
+		byTitle[*ui.Form](paneBoxesTitle))
 	tickBox(t, a, f, "Read above a clear")
 
 	look := read()
@@ -2657,7 +2675,7 @@ func TestAnAgentRestartsAPaneWhenTheBoxIsTicked(t *testing.T) {
 	}
 
 	f := awaitModal[*ui.Form](t, a, "the hand-over dialog",
-		byTitle[*ui.Form]("An agent may work in this pane"))
+		byTitle[*ui.Form](paneBoxesTitle))
 	tickBox(t, a, f, "Restart a closed connection")
 
 	var back agent.Pane
@@ -2714,7 +2732,7 @@ func TestAnAgentOpensASecondPaneWhenTheBoxIsTicked(t *testing.T) {
 	}
 
 	f := awaitModal[*ui.Form](t, a, "the hand-over dialog",
-		byTitle[*ui.Form]("An agent may work in this pane"))
+		byTitle[*ui.Form](paneBoxesTitle))
 	tickBox(t, a, f, "Open another pane there")
 
 	var next agent.Pane
@@ -2864,7 +2882,7 @@ func TestUntickingABoxReachesThePanesTheAgentOpened(t *testing.T) {
 		return err
 	})
 	f := awaitModal[*ui.Form](t, a, "the hand-over dialog",
-		byTitle[*ui.Form]("An agent may work in this pane"))
+		byTitle[*ui.Form](paneBoxesTitle))
 	tickBox(t, a, f, "Open another pane there")
 
 	var next agent.Pane
@@ -2919,7 +2937,7 @@ func TestAnAgentCannotOpenPanesWithoutEnd(t *testing.T) {
 		return err
 	})
 	f := awaitModal[*ui.Form](t, a, "the hand-over dialog",
-		byTitle[*ui.Form]("An agent may work in this pane"))
+		byTitle[*ui.Form](paneBoxesTitle))
 	tickBox(t, a, f, "Open another pane there")
 
 	opened := 0
@@ -2981,7 +2999,7 @@ func TestReadingAboveAClearReachesTheLastCommandsOutput(t *testing.T) {
 	}
 
 	f := awaitModal[*ui.Form](t, a, "the hand-over dialog",
-		byTitle[*ui.Form]("An agent may work in this pane"))
+		byTitle[*ui.Form](paneBoxesTitle))
 	tickBox(t, a, f, "Read above a clear")
 
 	look, err := outputOf(t, a, c, got.ID)
@@ -3015,7 +3033,7 @@ func TestTheAgentAsksTheUserToTypeASecret(t *testing.T) {
 	// The hand-over dialog is open over the pane, and the user has to be
 	// typing into the pane rather than into it.
 	f := awaitModal[*ui.Form](t, a, "the hand-over dialog",
-		byTitle[*ui.Form]("An agent may work in this pane"))
+		byTitle[*ui.Form](paneBoxesTitle))
 	pressButton(t, a, f, "Done")
 
 	a.shells[0].out <- []byte("[sudo] password for marcus: ")
@@ -3187,7 +3205,7 @@ func TestAnAgentCannotAnswerItsOwnAskForASecret(t *testing.T) {
 		return err
 	})
 	f := awaitModal[*ui.Form](t, a, "the hand-over dialog",
-		byTitle[*ui.Form]("An agent may work in this pane"))
+		byTitle[*ui.Form](paneBoxesTitle))
 	pressButton(t, a, f, "Done")
 
 	typed := make(chan bool, 1)
@@ -3256,7 +3274,7 @@ func askedForASecret(t *testing.T, a *testApp, wait time.Duration) (
 		return err
 	})
 	f := awaitModal[*ui.Form](t, a, "the hand-over dialog",
-		byTitle[*ui.Form]("An agent may work in this pane"))
+		byTitle[*ui.Form](paneBoxesTitle))
 	pressButton(t, a, f, "Done")
 
 	typed := make(chan bool, 1)
@@ -3400,7 +3418,7 @@ func TestReadOnlyRefusesAnAskForASecret(t *testing.T) {
 		return err
 	})
 	f := awaitModal[*ui.Form](t, a, "the hand-over dialog",
-		byTitle[*ui.Form]("An agent may work in this pane"))
+		byTitle[*ui.Form](paneBoxesTitle))
 	tickBox(t, a, f, "Read only")
 
 	var failed error
@@ -3476,7 +3494,7 @@ func TestTheHandoverDialogCopiesTheCodeOnItsOwn(t *testing.T) {
 	withPanel(t, a)
 	pane := onlyPaneOn(t, a)
 
-	f := handoverDialog(t, a, pane)
+	f := shareDialog(t, a, pane)
 	code := a.agents.code()
 	chord := copyChordOf(t, a)
 	sendKey(t, a, press(chord.Key, chord.Mods))
@@ -3681,4 +3699,172 @@ func firstOf(sh agent.Share, err error) (agent.Pane, error) {
 		return agent.Pane{}, fmt.Errorf("share %d has no panes in it", sh.ID)
 	}
 	return sh.Panes[0], nil
+}
+
+// twoSharedPanes opens a second pane, puts both in the share and gives
+// them back.
+func twoSharedPanes(t *testing.T, a *testApp) (*term.Terminal, *term.Terminal) {
+	t.Helper()
+	first := onlyPaneOn(t, a)
+	if err := a.openTabHere(); err != nil {
+		t.Fatalf("open a second pane: %v", err)
+	}
+	var second *term.Terminal
+	for pane := range a.panes {
+		if pane != first {
+			second = pane
+		}
+	}
+	if second == nil {
+		t.Fatal("the window did not open a second pane")
+	}
+	for _, pane := range []*term.Terminal{first, second} {
+		f := handoverDialog(t, a, pane)
+		pressButton(t, a, f, "Done")
+	}
+	return first, second
+}
+
+// The share dialog lists every pane in the share, and a row takes one
+// out and puts it back.
+//
+// Taking a pane out is what the dialog is for, so it is one key on the
+// row rather than a dialog of its own.
+func TestTheShareDialogTakesAPaneOutAndPutsItBack(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	first, second := twoSharedPanes(t, a)
+
+	// The second pane is read only, so the row says so.
+	boxes := handoverDialog(t, a, second)
+	tickBox(t, a, boxes, "Read only")
+	pressButton(t, a, boxes, "Done")
+
+	if err := a.showShare(); err != nil {
+		t.Fatalf("show the share: %v", err)
+	}
+	f := awaitModal[*ui.Form](t, a, "the share dialog", byTitle[*ui.Form](shareTitle))
+	if len(f.Fields()) != 3 {
+		t.Fatalf("the share dialog has %d rows, want the agent and two panes", len(f.Fields()))
+	}
+	drawsEveryLine(t, a, f)
+	drawsEveryButton(t, a, f)
+	drawn := strings.Join(drawnLines(a, f), "\n")
+	if !strings.Contains(drawn, a.agents.code()) {
+		t.Errorf("the share dialog does not show the code:\n%s", drawn)
+	}
+	if !strings.Contains(drawn, "read only") {
+		t.Errorf("the share dialog does not say what a pane allows:\n%s", drawn)
+	}
+
+	// The row for the second pane takes it out, at once.
+	label := a.shareRowLabel(a.agents.of(second))
+	tickBox(t, a, f, label)
+	if a.agents.of(second) != nil {
+		t.Error("the pane is still in the share")
+	}
+	if a.agents.of(first) == nil {
+		t.Error("taking one pane out took the other with it")
+	}
+	// And the same key puts it back.
+	tickBox(t, a, f, label)
+	if a.agents.of(second) == nil {
+		t.Error("the pane did not go back into the share")
+	}
+	// Still the one share, and the one code.
+	if a.agents.code() == "" {
+		t.Error("putting the pane back made a new share")
+	}
+}
+
+// Taking the last pane out ends the share, and the code stops working.
+func TestTakingTheLastPaneOutEndsTheShare(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pane := onlyPaneOn(t, a)
+	f := handoverDialog(t, a, pane)
+	pressButton(t, a, f, "Done")
+	code := a.agents.code()
+
+	c, err := agent.Dial(code)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	t.Cleanup(func() { _ = c.Close() })
+
+	if err := a.takeBackPane(pane); err != nil {
+		t.Fatalf("take it out: %v", err)
+	}
+	if a.agents.sharing() {
+		t.Error("the share is still open with nothing in it")
+	}
+	if a.agents.listening() {
+		t.Error("the window is still listening for agents")
+	}
+	if err := a.showShare(); err == nil {
+		t.Error("the share dialog opened with no share")
+	}
+}
+
+// The menu line says what pressing it does: start a share, or add to
+// the one that is open.
+func TestTheMenuLineSaysWhetherAShareIsOpen(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	withMenubar(t, a)
+	pane := onlyPaneOn(t, a)
+
+	a.refreshServers()
+	if got := serverMenuLine(t, a, "agent.hand"); got != "Share this pane with an agent…" {
+		t.Errorf("with nothing shared the line reads %q", got)
+	}
+	if serverMenuHas(t, a, "agent.share") {
+		t.Error("the line that shows the share is there with no share")
+	}
+
+	f := handoverDialog(t, a, pane)
+	pressButton(t, a, f, "Done")
+
+	if got := serverMenuLine(t, a, "agent.hand"); got != "Add this pane to the share…" {
+		t.Errorf("with a share open the line reads %q", got)
+	}
+	if !serverMenuHas(t, a, "agent.share") {
+		t.Error("there is no line that shows the share")
+	}
+}
+
+// serverMenuLine is what the Servers menu says for a command, and
+// serverMenuHas whether it offers one at all.
+func serverMenuLine(t *testing.T, a *testApp, command string) string {
+	t.Helper()
+	for _, menu := range a.bar.Menus {
+		if menu.Title != serversMenu {
+			continue
+		}
+		for _, item := range menu.Items {
+			if item.Command == command {
+				return item.Title
+			}
+		}
+	}
+	t.Fatalf("the Servers menu does not offer %q", command)
+	return ""
+}
+
+func serverMenuHas(t *testing.T, a *testApp, command string) bool {
+	t.Helper()
+	for _, menu := range a.bar.Menus {
+		if menu.Title != serversMenu {
+			continue
+		}
+		for _, item := range menu.Items {
+			if item.Command == command {
+				return true
+			}
+		}
+	}
+	return false
 }

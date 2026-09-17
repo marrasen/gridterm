@@ -142,20 +142,27 @@ func (b *buffer) pushScrollback(l line) bool {
 const scrollSlack = 256
 
 // scrollUp moves lines [top,bot] up by n, discarding the top n, and
-// reports how many of them were kept as history.
+// reports how many of them left the top of the screen and how many of
+// those history kept.
 //
-// Lines only become history when the region is the whole screen. A
+// Lines only leave the top when the region is the whole screen. A
 // program scrolling a smaller region — one that has reserved a status
 // line, say — is redrawing, and pushing those lines into history would
 // fill it with fragments of its own interface.
-func (b *buffer) scrollUp(top, bot, n int, history bool, fill grid.Cell) int {
+//
+// The two counts differ when there is no history to keep them in. Lines
+// that left are what names a line; lines that were kept are what a
+// scrolled-back view has to be moved along by.
+func (b *buffer) scrollUp(top, bot, n int, history bool, fill grid.Cell) (left, kept int) {
 	b.fill = fill
 	if n <= 0 || top < 0 || bot >= len(b.lines) || top > bot {
-		return 0
+		return 0, 0
 	}
 	n = min(n, bot-top+1)
-	kept := 0
 	whole := top == 0 && bot == len(b.lines)-1
+	if history && whole {
+		left = n
+	}
 	for i := 0; i < n; i++ {
 		if history && whole && b.pushScrollback(b.lines[top+i]) {
 			kept++
@@ -165,7 +172,7 @@ func (b *buffer) scrollUp(top, bot, n int, history bool, fill grid.Cell) int {
 	for i := bot + 1 - n; i <= bot; i++ {
 		b.lines[i] = b.blankLine()
 	}
-	return kept
+	return left, kept
 }
 
 // scrollDown moves lines [top,bot] down by n, discarding the bottom n.

@@ -123,13 +123,17 @@ func toolList() []tool {
 		{
 			Name:  "wait_for",
 			Title: "Wait for a pane",
-			Description: "Watch a pane until the command you sent finishes, or its screen" +
-				" holds the text in contains, or it has said nothing for quiet_ms, and give" +
-				" back the screen. The answer says which of those ended the waiting. When the" +
-				" time runs out first it still gives back the screen, and says the time ran" +
-				" out. Use it after send_keys, before reading again. Text already on the" +
-				" screen when the wait begins ends it at once, so to wait for a fresh prompt" +
-				" give neither contains nor quiet_ms." +
+			Description: "Watch a pane and give back its screen once the waiting is over." +
+				" Use it after send_keys, before reading again. With no contains it ends when" +
+				" the command you sent finishes, or when the pane has said nothing for" +
+				" quiet_ms. With contains it ends when the screen holds that text, and the" +
+				" quiet is switched off; a command that finishes still ends it, because text" +
+				" that has not appeared by then is not going to." +
+				" contains is checked against the screen as it already is, so text that is" +
+				" there when the wait begins ends it at once. Leaving quiet_ms out does not" +
+				" switch the quiet off: it uses about three quarters of a second." +
+				" The answer says which of those ended the waiting, and says so when the time" +
+				" ran out instead." +
 				" A program that keeps drawing never goes quiet: top, a progress bar, a log" +
 				" being followed. For one of those give contains, or do not wait at all and" +
 				" read the pane instead. It takes lines as read_pane does." +
@@ -310,6 +314,9 @@ func showScreen(s Screen, ended Ending, clamped bool) string {
 		notes = append(notes, "The program in this pane has finished,"+
 			" so nothing more will appear and nothing will read what you type.")
 	}
+	if note := commandNote(s); note != "" {
+		notes = append(notes, note)
+	}
 	if clamped {
 		notes = append(notes, clampNote())
 	}
@@ -321,7 +328,6 @@ func showScreen(s Screen, ended Ending, clamped bool) string {
 	if s.Note != "" {
 		notes = append(notes, s.Note)
 	}
-	notes = append(notes, commandNote(s))
 	// Of the screen, because the answer may be longer than the screen
 	// and a row of it is not a row of the answer.
 	notes = append(notes, fmt.Sprintf("Cursor at row %d, column %d of the screen.", s.Row, s.Col))
@@ -334,30 +340,62 @@ func showScreen(s Screen, ended Ending, clamped bool) string {
 }
 
 // commandNote is what the shell said about the command line, and what
-// the window guessed when the shell says nothing.
+// the window watched for when the shell says nothing.
 //
-// Which of the two this is is said plainly. A shell that marks its
-// commands is being reported; a shell that does not is being watched,
-// and an agent acting on a guess should know it is one.
+// Which of the two this is is said plainly, because one is a report and
+// the other is a guess. A full-screen program has no command line to
+// report on, and a pane whose program has gone has no more to say, so
+// both get nothing.
 func commandNote(s Screen) string {
-	if !s.Marks {
-		if s.Back {
-			return "This shell does not mark its commands, so nothing here knows for" +
-				" certain whether one is running. The prompt you last typed at is back" +
-				" on the screen, which usually means what you sent has finished."
+	if s.Alt {
+		return ""
+	}
+	if s.Gone {
+		if s.Marks && s.Running {
+			return "The shell was part way through a command when the program went."
 		}
-		return "This shell does not mark its commands, so nothing here knows whether" +
-			" one is running or what it exited with. Watch the screen, or run a shell" +
-			" that sends OSC 133 marks."
+		return ""
+	}
+	if !s.Marks {
+		return watchedNote(s)
 	}
 	if s.Running {
-		return "The shell says a command is running now."
+		return "The shell says a command is running now, so call wait_for again rather" +
+			" than acting on what is on the screen."
 	}
 	if !s.HasStatus {
 		return "The shell says no command is running, and gave no exit status for the" +
 			" last one."
 	}
-	return fmt.Sprintf("The shell says the last command finished with exit status %d.", s.Status)
+	whose := " That is the last command anyone ran in this pane, which may be the" +
+		" user's rather than yours."
+	if s.Yours {
+		whose = " That is what you sent."
+	}
+	return fmt.Sprintf(
+		"The shell says the last command finished with exit status %d.", s.Status) + whose
+}
+
+// watchedNote is what an agent is told about a pane whose shell says
+// nothing about its commands.
+//
+// The prompt coming back is the only sign there is, and it is a guess:
+// a prompt that carries the time or a branch name never comes back the
+// same, and a command that prints the prompt's own text looks like one.
+const noMarks = "This shell does not tell gridterm when a command starts or stops," +
+	" so nothing here knows for certain whether one is running."
+
+func watchedNote(s Screen) string {
+	switch {
+	case !s.Watching:
+		return noMarks + " Nothing has been typed here yet through these tools," +
+			" so there is no prompt to watch for. Read the screen and judge for yourself."
+	case s.Back:
+		return noMarks + " The prompt you last typed at is back on the screen," +
+			" which usually means what you sent has finished."
+	}
+	return noMarks + " The prompt you last typed at has not come back," +
+		" which usually means what you sent is still running."
 }
 
 // notesMarker is the line between the pane's own text and what gridterm
@@ -370,10 +408,11 @@ const notesMarker = "-- gridterm --"
 //
 // Which of the two it is is always said, because one is the shell
 // reporting and the other is this window guessing from the screen.
-const status = " Every screen comes with what is known about the command line: a shell" +
-	" that sends OSC 133 marks says whether a command is running and what the last one" +
-	" exited with, and for a shell that sends none the answer says so and tells you when" +
-	" the prompt you typed at has come back."
+const status = " Every screen comes with what is known about the command line. A shell" +
+	" with shell integration turned on tells gridterm when each command starts and stops," +
+	" and then the answer says whether one is running and what the last one exited with." +
+	" A shell without it tells gridterm nothing, and the answer says so: all it has then" +
+	" is whether the prompt you typed at has come back, which is a guess."
 
 // marked says what the marker means, for the tools that answer with a
 // screen.

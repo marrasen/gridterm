@@ -72,6 +72,17 @@ const (
 	// window nothing.
 	lookEvery = 50 * time.Millisecond
 
+	// stuckIsQuietFor is how many times the ordinary quiet a pane has to
+	// say nothing for before a wait gives up on a shell that still says
+	// a command is running.
+	stuckIsQuietFor = 10
+
+	// settledFor is how long a pane has to say nothing before a prompt
+	// that looks like the one the agent typed at is taken for the real
+	// thing. Long enough to be past the end of a chunk of output, short
+	// enough that a finish is still answered at once.
+	settledFor = 150 * time.Millisecond
+
 	// sayHelloWithin is how long a connection has to say what it is
 	// before it is hung up on. A goroutine and a buffer held by
 	// something that says nothing is a goroutine and a buffer nobody
@@ -456,12 +467,6 @@ func (s *Server) waitFor(want ask) said {
 		last     Look
 		lastMove = time.Now()
 		first    = true
-		// What the pane said about the command line when the waiting
-		// began. A finish is one that happens while this wait is on:
-		// the count of commands that had already finished, and a prompt
-		// that was already back, are not it.
-		wasDone uint64
-		wasBack bool
 	)
 	for {
 		look, err := s.cfg.Window.Look(want.Pane, 0)
@@ -469,27 +474,45 @@ func (s *Server) waitFor(want ask) said {
 			return said{Error: err.Error()}
 		}
 		now := time.Now()
-		if first {
-			wasDone, wasBack = look.Done, look.Back
-		}
 		if first || look.Changed != last.Changed {
 			lastMove, first = now, false
 		}
 		last = look
 
 		switch {
+		// The shell's own marks come first, and end the wait even when
+		// the agent asked for text: a command that has finished will not
+		// print that text now, and the agent is better told so than left
+		// until the time runs out.
+		//
+		// Since the agent last typed, not since this wait began. Sending
+		// keys and waiting are two calls, and anything short -- ls, echo,
+		// git status -- has finished before the second one arrives.
+		case look.Marks && !look.Running && look.Yours:
+			return s.ending(want, look, was, false, EndedOnMarks)
 		case want.Until.Contains != "":
 			if strings.Contains(look.Screen, want.Until.Contains) {
 				return s.ending(want, look, was, false, EndedOnText)
 			}
-		// The shell's own marks, which are the only answer here that is
-		// not guesswork.
-		case look.Marks && look.Done > wasDone:
-			return s.ending(want, look, was, false, EndedOnMarks)
 		// A shell that marks nothing, where the prompt coming back is
-		// what a finish looks like.
-		case look.Back && !wasBack:
-			return s.ending(want, look, was, false, EndedOnPrompt)
+		// what a finish looks like. It has to have been quiet for a
+		// moment first: mid-output the cursor sits wherever the last
+		// chunk of bytes left it, and a line that happens to read like
+		// the prompt is not the prompt.
+		case look.Watching && look.Back:
+			if now.Sub(lastMove) >= settledFor {
+				return s.ending(want, look, was, false, EndedOnPrompt)
+			}
+		// A pane that has stopped saying anything. A shell that says a
+		// command is still running is given far longer, because a
+		// command that thinks before it prints goes quiet at once and is
+		// not finished; the longer wait is there because a mark can be
+		// left stuck running for ever, and waiting out the whole timeout
+		// for one is worse than saying what happened.
+		case look.Marks && look.Running:
+			if now.Sub(lastMove) >= quiet*stuckIsQuietFor {
+				return s.ending(want, look, was, false, EndedOnStuck)
+			}
 		case now.Sub(lastMove) >= quiet:
 			return s.ending(want, look, was, false, EndedOnQuiet)
 		}

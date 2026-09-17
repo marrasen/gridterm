@@ -213,6 +213,15 @@ type handover struct {
 	// nothing: there are no lines there to count.
 	typed     string
 	typedLine uint64
+
+	// typedDone is how many commands the shell had finished when the
+	// agent last typed, so a finish since then is the agent's own and
+	// one before it belongs to whatever ran here first.
+	typedDone uint64
+
+	// sent says the agent has typed here at all, which is what tells a
+	// prompt that has not come back from a pane nobody has typed in.
+	sent bool
 }
 
 // handPane hands a pane to an agent and shows the user the code.
@@ -393,6 +402,8 @@ func (w agentWindow) Look(id string, lines int) (agent.Look, error) {
 			Status:    status,
 			HasStatus: hasStatus,
 			Back:      h.promptIsBack(*h.read),
+			Watching:  h.typed != "",
+			Yours:     h.sent && h.read.Cmd.Done > h.typedDone,
 		}, nil
 	})
 }
@@ -445,8 +456,20 @@ func (w agentWindow) Send(id, text string, keys []string) error {
 // written down for one.
 func (h *handover) markPrompt() {
 	read := h.pane.ReadLines(1)
+	h.sent, h.typedDone = true, read.Cmd.Done
+	// A full-screen program has no prompt and no lines to count. What
+	// was written down last time is left alone: the shell underneath is
+	// still at the prompt it was, and clearing it would leave the agent
+	// with nothing to watch for from the moment it pressed q to leave
+	// less.
 	if read.Alt {
-		h.typed, h.typedLine = "", 0
+		return
+	}
+	// A command typed in two calls -- the text in one, the return in the
+	// next -- comes through here twice, and the second time what is in
+	// front of the cursor is the prompt with the command after it.
+	// Whatever was written down first on that line is the prompt.
+	if h.typed != "" && read.Line == h.typedLine && strings.HasPrefix(read.Before, h.typed) {
 		return
 	}
 	h.typed, h.typedLine = read.Before, read.Line
@@ -455,14 +478,20 @@ func (h *handover) markPrompt() {
 // promptIsBack reports whether the prompt the agent last typed at is
 // back, further down the pane than it was typed at.
 //
-// Further down is the whole of it. The prompt is still on the screen the
-// moment after the keys go in, and the shell echoing what was typed
-// leaves it there, so a match on the same line says nothing.
+// The whole of what is in front of the cursor has to be the prompt and
+// nothing else. A prefix would take any line of output that starts the
+// way the prompt does -- a file of shell script read with cat under a
+// prompt of "$", a diff under one of ">" -- for the prompt coming back,
+// and tell the agent a command had finished half way through its output.
+//
+// Further down the pane, because the prompt is still on the screen the
+// moment after the keys go in and the shell echoing what was typed
+// leaves it there.
 func (h *handover) promptIsBack(read term.Reading) bool {
 	if h.typed == "" || read.Alt {
 		return false
 	}
-	return read.Line > h.typedLine && strings.HasPrefix(read.Before, h.typed)
+	return read.Line > h.typedLine && read.Before == h.typed
 }
 
 // handedPane is the handover an id names, and only while that handover

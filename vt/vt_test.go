@@ -813,3 +813,88 @@ func TestTheAlternateScreenDoesNotMoveLineNumbers(t *testing.T) {
 		t.Errorf("the top row is line %d, want %d as before the full-screen program", got, was)
 	}
 }
+
+// A resize while a full-screen program is up moves the primary screen's
+// line numbers, not the alternate screen's.
+//
+// The two buffers resize separately and by different amounts: the
+// alternate screen keeps no history, so it has nothing to revive and
+// nothing to push. A window resized in vim and then left there would
+// otherwise leave every line number written down before it wrong.
+func TestLineNumbersFollowAResizeTakenOnTheAlternateScreen(t *testing.T) {
+	h := newHarness(t, 20, 2)
+	h.write("one\r\ntwo\r\nthree\r\nfour")
+	scr := h.term.Screen()
+	if got := scr.LineNumber(0); got != 2 {
+		t.Fatalf("the top row is line %d, want 2", got)
+	}
+
+	// Into a full-screen program, resize there, and out again.
+	h.write("\x1b[?1049h")
+	h.term.Resize(20, 4)
+	h.write("\x1b[?1049l")
+
+	// Two lines came back out of the primary screen's history, so the
+	// top row is the second line this screen ever had.
+	if got := scr.LineNumber(0); got != 0 {
+		t.Errorf("after the resize the top row is line %d, want 0", got)
+	}
+	if got := scr.LineNumber(3); got != 3 {
+		t.Errorf("the bottom row is line %d, want 3", got)
+	}
+}
+
+// A screen with no history at all still counts the lines that leave it,
+// because a line that nothing kept still happened.
+func TestLinesAreCountedWithNoScrollbackToKeepThem(t *testing.T) {
+	term := New(20, 2, DefaultPalette(), 0, Callbacks{})
+	for i := 0; i < 5; i++ {
+		if _, err := term.Write([]byte("x\r\n")); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+	}
+	scr := term.Screen()
+	if kept := scr.History(); kept != 0 {
+		t.Fatalf("a screen with no scrollback kept %d lines", kept)
+	}
+	if got := scr.LineNumber(0); got != 4 {
+		t.Errorf("the top row is line %d, want 4", got)
+	}
+}
+
+// A program scrolling a region of its own is redrawing, so the lines of
+// the screen keep their numbers.
+func TestAScrollRegionDoesNotMoveLineNumbers(t *testing.T) {
+	h := newHarness(t, 20, 4)
+	h.write("one\r\ntwo\r\nthree")
+	scr := h.term.Screen()
+	was := scr.LineNumber(0)
+
+	// A region holding the top row still, and output scrolling inside it.
+	h.write("\x1b[2;4r")
+	for i := 0; i < 6; i++ {
+		h.write("\x1b[4;1Hfilling\n")
+	}
+	h.write("\x1b[r")
+
+	if got := scr.LineNumber(0); got != was {
+		t.Errorf("the top row is line %d, want %d as before the region", got, was)
+	}
+}
+
+// A reset clears the screen and goes on counting. Everything on it has
+// gone, which is lines leaving rather than lines never having been
+// there, and a line number written down before has to stay behind the
+// cursor.
+func TestAResetGoesOnCountingLines(t *testing.T) {
+	h := newHarness(t, 20, 3)
+	h.write("one\r\ntwo\r\nthree\r\nfour\r\n")
+	scr := h.term.Screen()
+	was := scr.LineNumber(scr.CursorRow())
+
+	h.write("\x1bc")
+	if got := scr.LineNumber(0); got <= was {
+		t.Errorf("after a reset the top row is line %d, and the cursor was on %d before it",
+			got, was)
+	}
+}

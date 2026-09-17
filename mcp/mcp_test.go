@@ -52,6 +52,8 @@ type fakePanes struct {
 	status    int
 	hasStatus bool
 	back      bool
+	watching  bool
+	yours     bool
 
 	// waiting is closed when a wait has started, and letGo lets it
 	// finish, for a test about what else can be asked meanwhile.
@@ -94,6 +96,7 @@ func (f *fakePanes) look() Screen {
 		Screen: f.screen, Gone: f.gone, Row: f.row, Col: f.col, Alt: f.alt, All: f.all,
 		Marks: f.marks, Running: f.running, Done: f.done,
 		Status: f.status, HasStatus: f.hasStatus, Back: f.back,
+		Watching: f.watching, Yours: f.yours,
 	}
 }
 
@@ -873,28 +876,46 @@ func TestAScreenSaysWhatIsKnownAboutTheCommand(t *testing.T) {
 		says  []string
 		not   []string
 	}{{
-		what:  "a shell that marks nothing",
+		what:  "a shell that says nothing, before the agent has typed",
 		panes: fakePanes{screen: "$ "},
-		says:  []string{"does not mark its commands"},
-		not:   []string{"exit status"},
+		says:  []string{"does not tell gridterm", "Nothing has been typed here yet"},
+		not:   []string{"exit status", "still running"},
 	}, {
-		what:  "a shell that marks nothing, with the prompt back",
-		panes: fakePanes{screen: "$ ", back: true},
-		says:  []string{"does not mark its commands", "prompt you last typed at is back"},
+		what:  "a shell that says nothing, while what was sent runs",
+		panes: fakePanes{screen: "$ make", watching: true},
+		says:  []string{"does not tell gridterm", "has not come back", "still running"},
+	}, {
+		what:  "a shell that says nothing, with the prompt back",
+		panes: fakePanes{screen: "$ ", watching: true, back: true},
+		says:  []string{"does not tell gridterm", "prompt you last typed at is back", "usually"},
 	}, {
 		what:  "a command running",
 		panes: fakePanes{screen: "$ make", marks: true, running: true},
-		says:  []string{"a command is running"},
-		not:   []string{"does not mark"},
+		says:  []string{"a command is running", "call wait_for again"},
+		not:   []string{"does not tell gridterm"},
 	}, {
-		what:  "a command that finished",
-		panes: fakePanes{screen: "$ ", marks: true, done: 1, status: 2, hasStatus: true},
-		says:  []string{"finished with exit status 2"},
-		not:   []string{"does not mark"},
+		what: "a command the agent sent, finished",
+		panes: fakePanes{screen: "$ ", marks: true, done: 1, status: 2,
+			hasStatus: true, yours: true},
+		says: []string{"finished with exit status 2", "That is what you sent"},
+		not:  []string{"does not tell gridterm", "may be the user's"},
+	}, {
+		what:  "a command that finished before the agent typed",
+		panes: fakePanes{screen: "$ ", marks: true, done: 1, status: 0, hasStatus: true},
+		says:  []string{"exit status 0", "may be the user's rather than yours"},
 	}, {
 		what:  "a shell that marks but gave no status",
 		panes: fakePanes{screen: "$ ", marks: true, done: 1},
 		says:  []string{"gave no exit status"},
+	}, {
+		what:  "a full-screen program, which has no command line to report",
+		panes: fakePanes{screen: "~ VIM ~", alt: true},
+		not:   []string{"does not tell gridterm", "command is running", "exit status"},
+	}, {
+		what:  "a pane whose program has gone",
+		panes: fakePanes{screen: "logout", gone: true},
+		says:  []string{"has finished"},
+		not:   []string{"does not tell gridterm", "Read the screen and judge"},
 	}} {
 		t.Run(tc.what, func(t *testing.T) {
 			panes := tc.panes

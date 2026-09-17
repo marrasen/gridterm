@@ -148,6 +148,10 @@ func TestSemanticPromptCommandWithNoPrompt(t *testing.T) {
 // A prompt means the shell is not running a command, even from a shell
 // that never sends D. The status the prompt clears belongs to the
 // command before it.
+//
+// It counts as a command finishing. A command stopped with ctrl+c ends
+// this way, and something waiting for a command to finish is waiting for
+// exactly that.
 func TestSemanticPromptPromptEndsARunningCommand(t *testing.T) {
 	h := newHarness(t, 20, 4)
 	h.write("\x1b]133;C\x07\x1b]133;D;0\x07")
@@ -157,7 +161,19 @@ func TestSemanticPromptPromptEndsARunningCommand(t *testing.T) {
 	h.wantCommand("after a second command started", Command{Integrated: true, Running: true, hasStatus: true, Done: 1})
 
 	h.write("\x1b]133;A\x07")
-	h.wantCommand("after a prompt with no D", Command{Integrated: true, Done: 1})
+	h.wantCommand("after a prompt with no D", Command{Integrated: true, Done: 2})
+}
+
+// A prompt where nothing was running finishes nothing, so the count
+// stands still. A shell redrawing its prompt is not a command.
+func TestSemanticPromptAPromptWithNothingRunningFinishesNothing(t *testing.T) {
+	h := newHarness(t, 20, 4)
+	h.write("\x1b]133;C\x07\x1b]133;D;0\x07")
+	h.wantCommand("after a command that succeeded", Command{Integrated: true, hasStatus: true, Done: 1})
+
+	h.write("\x1b]133;A\x07\x1b]133;B\x07\x1b]133;A\x07\x1b]133;B\x07")
+	h.wantCommand("after two prompts with nothing between them",
+		Command{Integrated: true, hasStatus: true, Done: 1})
 }
 
 func TestSemanticPromptTwoCommands(t *testing.T) {

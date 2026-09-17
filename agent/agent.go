@@ -141,10 +141,22 @@ type Look struct {
 	HasStatus bool `json:"shell_gave_a_status,omitempty"`
 
 	// Back says the prompt the last keys were typed at is back at the
-	// bottom of the screen. It is what a shell that marks nothing has
-	// instead of a finish, and it is guesswork: a prompt that carries
-	// the time or a branch name never comes back the same.
+	// bottom of the screen, with nothing typed at it yet. It is what a
+	// shell that marks nothing has instead of a finish, and it is
+	// guesswork: a prompt that carries the time or a branch name never
+	// comes back the same.
 	Back bool `json:"prompt_is_back,omitempty"`
+
+	// Watching says the window wrote a prompt down when the agent last
+	// typed, so Back is a question it can answer. Without it nothing has
+	// been typed here yet, or there was no prompt to write down.
+	Watching bool `json:"watching_for_the_prompt,omitempty"`
+
+	// Yours says the last command to finish did so after the agent last
+	// typed, so the shell is reporting on what the agent sent. Without
+	// it the status belongs to whatever ran here before, which may be
+	// the user's own work.
+	Yours bool `json:"the_last_finish_is_yours,omitempty"`
 }
 
 // How a wait ended, in the words the agent is given.
@@ -153,8 +165,9 @@ type Look struct {
 // word the answer, and the two must not drift.
 const (
 	EndedOnMarks  = "the shell said the command had finished"
-	EndedOnPrompt = "the prompt you typed at came back"
-	EndedOnQuiet  = "the pane went quiet"
+	EndedOnPrompt = "the prompt you typed at came back, which usually means the command finished"
+	EndedOnQuiet  = "the pane stopped changing, which is not the same as a command finishing"
+	EndedOnStuck  = "the pane stopped changing while the shell still says a command is running"
 	EndedOnText   = "the text you were waiting for is on the screen"
 	EndedOnGone   = "the program in the pane finished"
 	EndedOnTime   = "the time ran out"

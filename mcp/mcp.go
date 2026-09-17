@@ -160,6 +160,14 @@ type Screen struct {
 	// Back says the prompt the last keys were typed at is back on the
 	// screen, which is what a shell that marks nothing has instead.
 	Back bool `json:"prompt_is_back,omitempty"`
+
+	// Watching says a prompt was written down when the agent last typed,
+	// so Back is a question the window can answer at all.
+	Watching bool `json:"watching_for_the_prompt,omitempty"`
+
+	// Yours says the last command to finish did so after the agent last
+	// typed here.
+	Yours bool `json:"the_last_finish_is_yours,omitempty"`
 }
 
 // Ending says how a wait ended.
@@ -493,19 +501,27 @@ const Workflow = `read_pane gives you the pane's screen as plain text, and takes
 back through what has scrolled off the top. send_keys types text in exactly as given, so a
 command needs "\r" at the end for Enter, and presses the keys named in keys: Escape, Tab,
 the arrows, F1 to F12, Ctrl+C. It does not wait, so call wait_for before you read again.
-wait_for on its own ends when the command you sent finishes: a shell that sends OSC 133
-marks is taken at its word, and one that does not is watched for the prompt coming back or
-the screen going quiet. The answer says which of those ended the wait, whether a command is
-running, and what the last one exited with. Give contains when you know what the screen
-will say. It gives back the screen either way, and says when the time ran out instead. A command whose output goes through a pager -- systemctl, journalctl, git log,
+wait_for on its own ends when the command you sent finishes, or when the pane has said
+nothing for quiet_ms, which is about three quarters of a second unless you ask for another.
+A shell with shell integration on says when a command finishes and what it exited with. A
+shell without it says nothing, and then the prompt coming back is all there is to go on,
+which is a guess: read the screen before you report a result. Give contains when you know
+what the screen will say, and it ends on that text instead. Every answer says which of
+those ended the waiting, and says when the time ran out instead. A command whose output goes through a pager -- systemctl, journalctl, git log,
 man -- needs --no-pager or a pipe to cat, or you will be stuck in less, where q gets you out.
 list_panes lists the panes you have been handed, and that is all it lists. In an answer with
 a screen, the screen ends at a line reading -- gridterm --, and the rest is gridterm talking.`
 
 // Rules is what an agent may do in a pane it has been handed, and what
 // it may not.
-const Rules = `Work in that pane and nowhere else. It is a live shell running as whoever the user set it up
-as, so it does whatever that shell does. Ask the user before anything destructive, the way
-you would in somebody else's terminal. A password prompt is the user's to answer: ask them
-to type it into the pane, wait with wait_for, and never type a password yourself. The user
-watches this screen and can take the pane back at any moment, and then nothing here works.`
+//
+// It is short on purpose. A list of prohibitions invites an agent to
+// work out what is not on it; being told plainly that this is somebody's
+// machine and that the trust is real does the same work in fewer words.
+// The one thing spelled out is the password, because typing one is
+// taking a credential the user never handed over.
+const Rules = `You are being trusted with a live machine. The pane is a real shell, running as whoever
+the user set it up as, and it does whatever you type into it. Do not spend that trust:
+work in that pane and nowhere else, and ask before anything you would not want undone.
+A password is the user's to type. Ask them to type it into the pane, and never type one
+yourself. They are watching this screen and can take the pane back at any moment.`

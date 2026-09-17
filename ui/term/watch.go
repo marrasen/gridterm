@@ -249,9 +249,9 @@ type Reading struct {
 func (t *Terminal) ReadLines(n int) Reading {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	text := t.textLinesLocked(n)
 	scr := t.term.Screen()
 	col, row := scr.CursorPos()
+	text, before := t.linesLocked(n, row, col)
 	return Reading{
 		Text:   text,
 		Row:    row,
@@ -260,29 +260,29 @@ func (t *Terminal) ReadLines(n int) Reading {
 		Said:   t.said.Load(),
 		Cmd:    t.term.Command(),
 		Line:   scr.LineNumber(row),
-		Before: t.beforeCursorLocked(row, col),
+		Before: before,
 	}
-}
-
-// beforeCursorLocked is the text on a row up to a column, with trailing
-// spaces cut. The emulator's lock is already held.
-func (t *Terminal) beforeCursorLocked(row, col int) string {
-	cols, rows := t.g.Size()
-	if row < 0 || row >= rows || col <= 0 {
-		return ""
-	}
-	g := grid.New(cols, rows, t.g.DefaultFG, t.g.DefaultBG)
-	t.term.RenderLive(g)
-	return strings.TrimRight(plainRow(g, row, min(col, cols)), " ")
 }
 
 // textLinesLocked is TextLines with the emulator's lock already held.
 func (t *Terminal) textLinesLocked(n int) string {
+	text, _ := t.linesLocked(n, -1, -1)
+	return text
+}
+
+// linesLocked is the last n lines and the text on one row up to one
+// column, from one rendering. The emulator's lock is already held.
+//
+// The two come from the same walk because rendering a screen touches
+// every row of it: taken separately, a read of a pane would render it
+// twice and make the window paint the whole pane again afterwards. A row
+// of less than zero asks for no such text.
+func (t *Terminal) linesLocked(n, row, col int) (text, before string) {
 	cols, rows := t.g.Size()
 	if rows <= 0 {
 		// A terminal with no rows has nothing to read, and the walk back
 		// through history below would step by nothing and never end.
-		return ""
+		return "", ""
 	}
 	history := t.term.History()
 	if n <= 0 {
@@ -305,10 +305,14 @@ func (t *Terminal) textLinesLocked(n int) string {
 			}
 		}
 		if back == 0 {
+			// The live screen, so this is the row the cursor is on.
+			if row >= 0 && row < rows && col > 0 {
+				before = strings.TrimRight(plainRow(g, row, min(col, cols)), " ")
+			}
 			break
 		}
 	}
-	return strings.Join(out, "\n")
+	return strings.Join(out, "\n"), before
 }
 
 // ViewOffset is how far back into the scrollback the user has scrolled,

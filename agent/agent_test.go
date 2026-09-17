@@ -50,30 +50,51 @@ type fakeWindow struct {
 	status    int
 	hasStatus bool
 	back      bool
+	watching  bool
+	yours     bool
 }
 
-// finished is a shell with marks saying a command has just finished.
+// finished is a shell with marks saying the command the agent sent has
+// just finished.
 func (w *fakeWindow) finished(status int) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	w.marks, w.running = true, false
+	w.marks, w.running, w.yours = true, false, true
 	w.done++
 	w.status, w.hasStatus = status, true
 	w.changed++
+}
+
+// ranBefore is a command that finished before the agent typed here, so
+// its status is somebody else's.
+func (w *fakeWindow) ranBefore(status int) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.marks, w.running, w.yours = true, false, false
+	w.done++
+	w.status, w.hasStatus = status, true
 }
 
 // marking is a shell that marks its commands, with one running now.
 func (w *fakeWindow) marking() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	w.marks, w.running = true, true
+	w.marks, w.running, w.yours = true, true, false
 }
 
-// promptBack is a shell that marks nothing, whose prompt has come back.
+// typedAt is the window watching for the prompt the agent typed at, for
+// a shell that marks nothing.
+func (w *fakeWindow) typedAt() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.watching, w.back = true, false
+}
+
+// promptBack is the prompt the agent typed at coming back.
 func (w *fakeWindow) promptBack(back bool) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	w.back = back
+	w.watching, w.back = true, back
 	w.changed++
 }
 
@@ -119,6 +140,7 @@ func (w *fakeWindow) lookAt(screen string) Look {
 		Cols: w.cols, Rows: w.rows,
 		Marks: w.marks, Running: w.running, Done: w.done,
 		Status: w.status, HasStatus: w.hasStatus, Back: w.back,
+		Watching: w.watching, Yours: w.yours,
 	}
 }
 
@@ -956,6 +978,11 @@ func TestAWaitFindsWhatScrolledOffInTheLinesItReads(t *testing.T) {
 	if waited.GaveUp {
 		t.Error("it gave up on something that happened while it was watching")
 	}
+	// And it says so, rather than leaving the answer carrying the words
+	// for a wait that ran out of time.
+	if waited.Because != EndedOnText {
+		t.Errorf("it ended %+v, want %q", waited, EndedOnText)
+	}
 	if !strings.Contains(look.Screen, "Build succeeded") {
 		t.Errorf("it answered with %q", look.Screen)
 	}
@@ -1178,12 +1205,11 @@ func TestAWaitEndsWhenTheShellSaysTheCommandFinished(t *testing.T) {
 	}
 }
 
-// A command that had already finished before the wait began does not end
-// it: a wait watches for what happens while it is on.
-func TestAWaitIgnoresACommandThatHadAlreadyFinished(t *testing.T) {
+// A command that finished before the agent typed here does not end a
+// wait: its status is somebody else's.
+func TestAWaitIgnoresACommandThatWasNotTheAgents(t *testing.T) {
 	w, _, code := listening(t)
-	w.marking()
-	w.finished(0)
+	w.ranBefore(0)
 	w.say("$ ")
 	c := dialled(t, code)
 	pane := opened(t, c, code)
@@ -1202,6 +1228,7 @@ func TestAWaitIgnoresACommandThatHadAlreadyFinished(t *testing.T) {
 func TestAWaitEndsWhenThePromptComesBack(t *testing.T) {
 	w, _, code := listening(t)
 	w.say("$ sleep 1")
+	w.typedAt()
 	c := dialled(t, code)
 	pane := opened(t, c, code)
 
@@ -1223,12 +1250,11 @@ func TestAWaitEndsWhenThePromptComesBack(t *testing.T) {
 	}
 }
 
-// A prompt that was already back when the wait began does not end it.
-// Otherwise a wait asked twice comes back at once the second time.
-func TestAWaitDoesNotEndOnAPromptThatWasAlreadyBack(t *testing.T) {
+// A pane nobody has typed in has no prompt to watch for, so a wait on it
+// ends the way it always did.
+func TestAWaitOnAPaneTheAgentHasNotTypedInEndsOnTheQuiet(t *testing.T) {
 	w, _, code := listening(t)
 	w.say("$ ")
-	w.promptBack(true)
 	c := dialled(t, code)
 	pane := opened(t, c, code)
 
@@ -1238,6 +1264,43 @@ func TestAWaitDoesNotEndOnAPromptThatWasAlreadyBack(t *testing.T) {
 	}
 	if ended.Because != EndedOnQuiet {
 		t.Errorf("the wait ended %+v, want %q", ended, EndedOnQuiet)
+	}
+}
+
+// A prompt is not taken for the prompt until the pane has been quiet for
+// a moment.
+//
+// Mid-output the cursor sits wherever the last chunk of bytes left it,
+// and a line that happens to read like the prompt is not the prompt. A
+// wait that ended on one would hand the agent half of what it asked for
+// and call it finished.
+func TestAWaitDoesNotTakeAPromptSeenMidOutputForTheRealOne(t *testing.T) {
+	w, _, code := listening(t)
+	w.say("$ cat notes")
+	w.typedAt()
+	c := dialled(t, code)
+	pane := opened(t, c, code)
+
+	// Output that keeps arriving, looking like the prompt each time it
+	// is read, and then a real prompt at the end of it.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 8; i++ {
+			w.promptBack(true)
+			time.Sleep(20 * time.Millisecond)
+		}
+	}()
+
+	_, ended, err := c.Wait(pane.ID, 0, Until{QuietMS: 30000, TimeoutMS: 3000})
+	<-done
+	if err != nil {
+		t.Fatalf("wait: %v", err)
+	}
+	// It ends once the output stops, and not before: the prompt was on
+	// screen from the first look.
+	if ended.GaveUp || ended.Because != EndedOnPrompt {
+		t.Errorf("the wait ended %+v, want %q once the pane settled", ended, EndedOnPrompt)
 	}
 }
 
@@ -1289,4 +1352,82 @@ func TestAWaitSaysHowElseItEnded(t *testing.T) {
 			t.Errorf("the wait ended %+v, want %q", ended, EndedOnGone)
 		}
 	})
+}
+
+// A command that finishes ends a wait that was watching for text, and
+// says that is why.
+//
+// The text was going to be printed by the command, so a command that
+// has finished without printing it is not going to. An agent left until
+// the time ran out would pay the whole timeout for every failed build.
+func TestACommandFinishingEndsAWaitForText(t *testing.T) {
+	w, _, code := listening(t)
+	w.marking()
+	w.say("$ make")
+	c := dialled(t, code)
+	pane := opened(t, c, code)
+
+	go func() {
+		time.Sleep(30 * time.Millisecond)
+		w.say("$ make\nBuild failed\n$ ")
+		w.finished(1)
+	}()
+
+	_, ended, err := c.Wait(pane.ID, 0, Until{Contains: "Build succeeded", TimeoutMS: 10000})
+	if err != nil {
+		t.Fatalf("wait: %v", err)
+	}
+	if ended.GaveUp || ended.Because != EndedOnMarks {
+		t.Errorf("the wait ended %+v, want %q", ended, EndedOnMarks)
+	}
+}
+
+// A pane that goes quiet while the shell says a command is running does
+// not end the wait.
+//
+// A command that thinks before it prints -- sleep, apt update, ssh
+// before the banner -- is silent from the moment it starts. Ending there
+// would hand the agent a screen from the middle of the command and call
+// it finished, which is the whole thing this is meant to stop.
+func TestAWaitDoesNotGiveUpOnACommandTheShellSaysIsRunning(t *testing.T) {
+	w, _, code := listening(t)
+	w.marking()
+	w.say("$ sleep 5")
+	c := dialled(t, code)
+	pane := opened(t, c, code)
+
+	go func() {
+		// Well past the quiet, and silent throughout.
+		time.Sleep(200 * time.Millisecond)
+		w.say("$ sleep 5\n$ ")
+		w.finished(0)
+	}()
+
+	_, ended, err := c.Wait(pane.ID, 0, Until{QuietMS: 40, TimeoutMS: 10000})
+	if err != nil {
+		t.Fatalf("wait: %v", err)
+	}
+	if ended.Because != EndedOnMarks {
+		t.Errorf("the wait ended %+v, want it to have waited for the command", ended)
+	}
+}
+
+// A mark left stuck saying a command is running does not cost the whole
+// timeout. The wait ends far later than an ordinary quiet, and says
+// exactly what it saw.
+func TestAWaitGivesUpOnAMarkLeftStuckRunning(t *testing.T) {
+	w, _, code := listening(t)
+	w.marking()
+	w.say("$ ")
+	c := dialled(t, code)
+	pane := opened(t, c, code)
+
+	// Ten times the quiet is 300ms, which is well inside the timeout.
+	_, ended, err := c.Wait(pane.ID, 0, Until{QuietMS: 30, TimeoutMS: 10000})
+	if err != nil {
+		t.Fatalf("wait: %v", err)
+	}
+	if ended.GaveUp || ended.Because != EndedOnStuck {
+		t.Errorf("the wait ended %+v, want %q", ended, EndedOnStuck)
+	}
 }

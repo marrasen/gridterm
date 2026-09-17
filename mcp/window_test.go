@@ -22,6 +22,10 @@ type oneWindow struct {
 	// key name a Send has carried.
 	lines   int
 	pressed []string
+
+	// cmd is what this window says about the command line, which every
+	// Look carries.
+	cmd agent.Look
 }
 
 func (w *oneWindow) Use(code string) (agent.Pane, error) {
@@ -40,7 +44,9 @@ func (w *oneWindow) Look(id string, lines int) (agent.Look, error) {
 		return agent.Look{}, errors.New("that is not a pane you have been handed")
 	}
 	w.lines = lines
-	return agent.Look{Screen: w.screen}, nil
+	look := w.cmd
+	look.Screen = w.screen
+	return look, nil
 }
 
 func (w *oneWindow) Send(id, text string, keys []string) error {
@@ -311,5 +317,67 @@ func TestAFreshCodeAfterTheConnectionBrokeIsDialledAgain(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "is listening on port") {
 		t.Errorf("it answered with the old connection rather than dialling: %v", err)
+	}
+}
+
+// What the shell said about the command line reaches the agent through
+// every layer.
+//
+// The window says it, the wire carries it, and the tool answer words it.
+// Nothing between the window and the agent's text is tested anywhere
+// else: the fakes on either side of it agree with each other by
+// construction.
+func TestWhatTheShellSaidReachesTheAgent(t *testing.T) {
+	win := &oneWindow{screen: "marcus@margit:~$ "}
+	win.cmd = agent.Look{
+		Marks: true, Done: 3, Status: 1, HasStatus: true, Yours: true,
+	}
+	s, err := agent.Listen(agent.Config{Window: win, OnError: func(error) {}})
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer func() { _ = s.Close() }()
+
+	code, err := agent.NewCode(s.Port())
+	if err != nil {
+		t.Fatalf("code: %v", err)
+	}
+	win.code = code
+
+	panes := NewWindow()
+	defer func() { _ = panes.Close() }()
+	pane, err := panes.Use(code)
+	if err != nil {
+		t.Fatalf("use: %v", err)
+	}
+
+	answers := talk(t, panes,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":`+
+			`{"name":"use_session_code","arguments":{"code":"`+code+`"}}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":`+
+			`{"name":"read_pane","arguments":{"pane":"`+pane.ID+`"}}}`,
+		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":`+
+			`{"name":"wait_for","arguments":{"pane":"`+pane.ID+`","quiet_ms":30,`+
+			`"timeout_ms":5000}}}`)
+
+	said := byID(t, answers)
+	screen, failed := textOf(t, said[2])
+	if failed {
+		t.Fatalf("reading failed: %q", screen)
+	}
+	for _, want := range []string{"exit status 1", "That is what you sent"} {
+		if !strings.Contains(screen, want) {
+			t.Errorf("the read does not say %q:\n%s", want, screen)
+		}
+	}
+
+	// And the wait says why it ended, which is the window's word for it
+	// carried the whole way.
+	waited, failed := textOf(t, said[3])
+	if failed {
+		t.Fatalf("waiting failed: %q", waited)
+	}
+	if !strings.Contains(waited, agent.EndedOnMarks) {
+		t.Errorf("the wait does not say why it ended:\n%s", waited)
 	}
 }

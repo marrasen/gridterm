@@ -123,6 +123,8 @@ func asScreen(look agent.Look) Screen {
 		Status:    look.Status,
 		HasStatus: look.HasStatus,
 		Back:      look.Back,
+		Watching:  look.Watching,
+		Yours:     look.Yours,
 	}
 }
 

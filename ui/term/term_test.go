@@ -1217,14 +1217,25 @@ func TestAReadingSaysWhatIsInFrontOfTheCursor(t *testing.T) {
 		t.Errorf("the cursor is on line %d, want 2", read.Line)
 	}
 
+	// Only what is in front of the cursor. A shell that draws a
+	// suggestion after it, or a cursor moved back along the line, must
+	// not put the rest of the row into what the prompt is taken to be.
+	f.feed(t, term, "ls -la\x1b[3D")
+	read = term.ReadLines(0)
+	// With its trailing space cut, as every reading of a row is.
+	if read.Before != "$ ls" {
+		t.Errorf("in front of the cursor is %q, want %q", read.Before, "$ ls")
+	}
+	f.feed(t, term, "\x1b[3C\r\n$ ")
+
 	// Enough output to scroll, and the line number goes on counting
 	// rather than starting again at the top of the screen.
 	f.feed(t, term, "one\r\ntwo\r\nthree\r\n$ ")
 	read = term.ReadLines(0)
-	// Three lines written on a three row screen, the first of them
-	// carrying on the prompt's own line: three lines have gone off the
-	// top and the cursor is on the bottom row of the three showing.
-	if read.Line != 5 {
-		t.Errorf("after scrolling the cursor is on line %d, want 5", read.Line)
+	// Four lines written on a three row screen: the cursor is on the
+	// bottom row of the three showing, and the lines before them have
+	// gone off the top.
+	if read.Line != 6 {
+		t.Errorf("after scrolling the cursor is on line %d, want 6", read.Line)
 	}
 }

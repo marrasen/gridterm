@@ -55,10 +55,10 @@ type Command struct {
 	status    int
 	hasStatus bool
 
-	// Done counts the commands that have finished, so a caller can tell
-	// a fresh finish from the same one read twice. It only moves
-	// forward, so a caller that reads it before sending keys can tell a
-	// real finish from a Running that is stuck.
+	// Done counts the commands that have finished, however they ended:
+	// with a D mark, or with the next prompt arriving while one was
+	// running. It only moves forward, so a caller that reads it before
+	// sending keys can tell a real finish from a Running that is stuck.
 	Done uint64
 }
 
@@ -480,11 +480,15 @@ func (t *Terminal) semanticPrompt(params [][]byte) {
 	}
 	switch string(params[1]) {
 	case "A", "B":
-		// A prompt ends a running command, and says nothing about how it went.
+		// A prompt ends a running command, and says nothing about how it went. It
+		// counts as finished all the same: a shell printing its next prompt is a
+		// shell whose command is over, which is what a caller waiting for one is
+		// asking about. A command stopped with ctrl+c ends this way.
 		t.cmd.Integrated = true
 		if t.cmd.Running {
 			t.cmd.Running = false
 			t.cmd.status, t.cmd.hasStatus = 0, false
+			t.cmd.Done++
 		}
 	case "C":
 		t.cmd.Integrated = true

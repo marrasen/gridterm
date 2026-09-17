@@ -8,31 +8,27 @@ each group. A line goes when the work is in and reviewed.
 Open calls that are his, not mine. Each one is written down rather than
 guessed at.
 
-1. **The rules now reach Claude Code for certain and the other three
-   hosts on trust.** Your answer of 17 September took `mcp.Workflow` and
-   `mcp.Rules` out of the hand-over prompt, and that is done. The MCP
-   server's `instructions` are now the only place an agent is told them.
-   - **A client may ignore `instructions`.** The protocol says a client
-     may use them; it does not say it must. Claude Code puts them in
-     front of the model. gridterm cannot check what Codex, Cursor or
-     another host does.
-   - **The skill is no fallback for those three.** Only Claude Code has
-     a place gridterm knows to write a skill into. For the rest it goes
-     under gridterm's own settings, where nothing reads it.
-   - **What is at stake is the rules, not the workflow.** The five lines
-     of `mcp.Rules` are the ones with a cost: never type a password, ask
-     before anything destructive, work in that pane and nowhere else,
-     the user can take the pane back at any moment.
-   - **The question.** Put `mcp.Rules` back in the prompt for hosts
-     other than Claude Code, or leave it as you asked? Two reviewers
-     raised it separately. The prompt is as you asked for now.
+1. **Should the short rules go in the hand-over prompt as well?** The
+   rules are five lines now, so carrying them in both places costs
+   little. The reason to: the MCP server's `instructions` are the only
+   place an agent is told them, and a client is free to ignore
+   `instructions`. Claude Code shows them; gridterm cannot check what
+   Codex, Cursor or another host does, and the skill is no fallback
+   there because only Claude Code has a place gridterm knows to write
+   one into. The prompt says nothing about them for now, as you asked
+   on 17 September.
 
-2. **The button is called "Instructions", not "Install
-   instructions".** Five buttons of that length do not fit an eighty
-   column window, and a form drops the ones that will not fit without
-   saying so. "Instructions" is the longest wording that fits, and it
-   does not promise that gridterm will do the installing. Say the word
-   and it changes; anything longer means dropping another button.
+## Answered on 2026-09-18
+
+1. **The rules say the agent is trusted, and stop there.** `mcp.Rules`
+   was a list of prohibitions. It now says the pane is a live machine
+   somebody has trusted it with, and asks it not to spend that trust.
+   The password stays spelled out, because typing one is taking a
+   credential the user never handed over.
+
+2. **The button is "Instructions".** Five buttons of the length of
+   "Install instructions" do not fit an eighty column window, and a form
+   drops the ones that will not fit without saying so.
 
 ## Answered on 2026-09-17
 
@@ -51,7 +47,7 @@ guessed at.
    under "The agent, through MCP":
    - Reconnecting in the same pane keeps the same hand-over code.
    - The agent can start that reconnect itself, when the user has ticked
-     the box for it. The boxes are item 4 there.
+     the box for it. The boxes are item 3 there.
 
 3. **A local command gets a command row, like a remote one.** Named by
    what it runs, with the same "Run it again?" question when it ends.
@@ -82,34 +78,16 @@ guessed at.
 
 Raised after a debugging session in a handed-over pane.
 
-1. **Say when a command has finished and what it exited with.** The
-   agent appends `; echo MARKER` to every command and waits for the
-   marker, because `quiet_ms` is guesswork and the prompt is already on
-   screen before the command runs.
-   - **Half of this is in.** `vt.Terminal.Command()` reads the shell's
-     own marks, OSC 133 and VS Code's OSC 633, and says whether a
-     command is running, what the last one exited with, and whether the
-     shell gave a status at all. Nothing uses it yet.
-   - **What is left.** Carry it through `ui/term`'s `Reading` under the
-     same lock as the screen, so a screen and an exit status come from
-     one moment, then out through `agent.Look` to the tools. `Done` is
-     the signal to key on: it only moves forward, so a tool that reads
-     it before sending keys can tell a real finish from a `Running`
-     that is stuck.
-   - **A shell with no integration still needs an answer.** Mark the
-     pane when `send_keys` runs and let `wait_for` end on the prompt
-     coming back. The tools have to say which of the two they gave.
-
-2. **Give the agent the output of the last command, not the screen.**
+1. **Give the agent the output of the last command, not the screen.**
    `read_pane` hands back a rectangle, so the agent has to work out by
    eye where the current output starts. That is why it kept clearing
    the screen, and the window already knows where the boundary is.
 
-3. **Let the agent ask for a secret.** Put the prompt up, block until
+2. **Let the agent ask for a secret.** Put the prompt up, block until
    the user has typed it into the pane, and return without ever showing
    the agent the characters.
 
-4. **Tick boxes on the hand-over dialog say what the agent may do.**
+3. **Tick boxes on the hand-over dialog say what the agent may do.**
    Asked for and answered on 2026-09-17. A hand-over gives reading and
    typing today and nothing else is possible. Each box below adds one
    thing, per pane, decided at the moment the pane is handed over.
@@ -138,7 +116,7 @@ Raised after a debugging session in a handed-over pane.
    - **Read only.** `send_keys` is refused. For watching a build or a
      tail without being able to touch it.
    - **Read above a clear.** The agent may read the scrollback above the
-     last `ED 3`. Off is what item 8 settles; this box says yes for one
+     last `ED 3`. Off is what item 7 settles; this box says yes for one
      pane.
    - **Read only and Restart together are legal.** Restarting is not
      typing, so watching a pane and bringing it back when it dies
@@ -148,22 +126,22 @@ Raised after a debugging session in a handed-over pane.
      widen what may be done to that pane. They do not widen which panes
      are reachable.
 
-5. **No expiry for now.** Answered on 2026-09-17. A hand-over lasts
+4. **No expiry for now.** Answered on 2026-09-17. A hand-over lasts
    until the user takes it back or closes the pane. Revisit if forgotten
    hand-overs ever pile up in practice.
 
-6. **Drop the hand-over when the pane is closed.** Answered on
+5. **Drop the hand-over when the pane is closed.** Answered on
    2026-09-17. A pane whose program has ended keeps its hand-over, so a
    rebooted host still cannot spend the code twice. Closing the pane is
    what releases it, and the listener stops once the last one has gone.
 
-7. **A command pane can be handed over already**, running or not.
+6. **A command pane can be handed over already**, running or not.
    `handPane` looks at no kind and no state. A running one takes keys on
    the command's stdin; an ended one can be read and not typed into,
    which is worth having for a failed build. Nothing to do here: it is
    written down because it looked like a gap and is not one.
 
-8. **`clear` keeps the history, and hides it from the agent.** Answered
+7. **`clear` keeps the history, and hides it from the agent.** Answered
    on 2026-09-17. `clear` sends `ED 3` as well as `ED 2`, and
    `Screen.EraseInDisplay` in vt/screen.go drops the scrollback for mode
    3 today, which is what the sequence means. That changes: the user

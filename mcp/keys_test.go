@@ -183,11 +183,20 @@ func TestTheToolsSayWhatKeysAndLinesAreFor(t *testing.T) {
 
 // The rules say a password is the user's to type, because an agent that
 // types one has taken a credential it was never given.
+//
+// And they say what the pane is: a live machine somebody has trusted it
+// with. That is the whole of the rest of them, so it has to be there.
 func TestTheRulesLeaveAPasswordToTheUser(t *testing.T) {
-	for _, want := range []string{"password", "wait_for", "never type a password yourself"} {
+	for _, want := range []string{
+		"password", "never type one", "trusted with a live machine", "take the pane back",
+	} {
 		if !strings.Contains(Rules, want) {
 			t.Errorf("the rules do not say %q: %q", want, Rules)
 		}
+	}
+	// Short enough to be read rather than skimmed past.
+	if lines := strings.Count(strings.TrimRight(Rules, "\n"), "\n") + 1; lines > 6 {
+		t.Errorf("the rules are %d lines long", lines)
 	}
 }
 
@@ -197,6 +206,28 @@ func TestTheWorkflowMentionsKeysAndLines(t *testing.T) {
 	for _, want := range []string{"keys", "lines"} {
 		if !strings.Contains(Workflow, want) {
 			t.Errorf("the workflow does not mention %s: %q", want, Workflow)
+		}
+	}
+}
+
+// read_pane and wait_for say that every answer carries what is known
+// about the command line, and that one of the two sources is a guess.
+//
+// It is the only place an agent is told those fields exist at all.
+func TestTheToolsSayWhatIsKnownAboutTheCommand(t *testing.T) {
+	want := map[string][]string{
+		"read_pane": {"command line", "shell integration", "guess"},
+		// And what ends a wait, including the thing that ends it whatever
+		// else it was told to watch for.
+		"wait_for": {"command line", "shell integration", "guess",
+			"ends when the command you sent finishes", "the quiet is switched off",
+			"a command that finishes still ends it"},
+	}
+	for _, tl := range toolList() {
+		for _, say := range want[tl.Name] {
+			if !strings.Contains(tl.Description, say) {
+				t.Errorf("%s does not say %q: %q", tl.Name, say, tl.Description)
+			}
 		}
 	}
 }

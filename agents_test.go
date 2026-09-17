@@ -1735,6 +1735,24 @@ func TestAnAgentIsToldWhatTheShellSaidAboutTheCommand(t *testing.T) {
 	if !look.HasStatus || look.Status != 2 {
 		t.Errorf("the agent was told exit %d, known %v; want 2", look.Status, look.HasStatus)
 	}
+	// The agent has typed nothing, so that command was the user's.
+	if look.Yours {
+		t.Error("the agent was told a command it never sent was its own")
+	}
+
+	// Its own command, and the status that comes back after it is.
+	offWindow(t, a, "the window to take the keys", func() error {
+		return c.Send(got.ID, "ls\r", nil)
+	})
+	a.shells[0].out <- []byte("\x1b]133;C\aone\n\x1b]133;D;0\a$ ")
+	waitFor(t, a, "the pane to show the second command finishing", func() bool {
+		return strings.Contains(paneText(pane), "one")
+	})
+	look = looked(t, a, c, got.ID)
+	if !look.Yours || look.Status != 0 {
+		t.Errorf("the agent was told yours %v, exit %d; want its own command at exit 0",
+			look.Yours, look.Status)
+	}
 }
 
 // A shell that marks nothing is watched instead: the window writes down
@@ -1805,4 +1823,116 @@ func looked(t *testing.T, a *testApp, c *agent.Client, id string) agent.Look {
 		return err
 	})
 	return look
+}
+
+// A wait does not end on output that reads like the prompt.
+//
+// A prompt of "#" and a file full of comments is the plainest case. Mid
+// output the cursor sits wherever the last chunk of bytes left it, so a
+// line beginning "#" looks exactly like the prompt with nothing typed at
+// it. A wait that ended there would hand the agent half the file and
+// tell it the command had finished, so it waits for the pane to settle
+// first.
+func TestAWaitDoesNotEndOnOutputThatReadsLikeThePrompt(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pane, code, c := handedOver(t, a)
+
+	var got agent.Pane
+	offWindow(t, a, "the window to answer the agent", func() error {
+		var err error
+		got, err = c.Use(code)
+		return err
+	})
+
+	// A root shell, whose prompt is one character.
+	a.shells[0].out <- []byte("# ")
+	waitFor(t, a, "the pane to show a prompt", func() bool {
+		return strings.Contains(paneText(pane), "#")
+	})
+	offWindow(t, a, "the window to take the keys", func() error {
+		return c.Send(got.ID, "cat nginx.conf\r", nil)
+	})
+
+	// The file, arriving a chunk at a time, every chunk ending part way
+	// through a line that begins the way the prompt does.
+	chunks := []string{
+		"cat nginx.conf\r\n#user  nobody;\r\n#",
+		"worker_processes 1;\r\n#",
+		"error_log logs/error.log;\r\n#",
+		"pid logs/nginx.pid;\r\n# ",
+	}
+	go func() {
+		for _, chunk := range chunks {
+			time.Sleep(40 * time.Millisecond)
+			a.shells[0].out <- []byte(chunk)
+		}
+	}()
+
+	var look agent.Look
+	var ended agent.Ending
+	offWindow(t, a, "the window to answer the wait", func() error {
+		var err error
+		look, ended, err = c.Wait(got.ID, 0, agent.Until{QuietMS: 30000, TimeoutMS: 9000})
+		return err
+	})
+
+	if ended.GaveUp {
+		t.Fatalf("the wait gave up: %+v", ended)
+	}
+	// Everything the command printed is on the screen, so the wait went
+	// the whole way rather than ending on a chunk that looked right.
+	if !strings.Contains(look.Screen, "pid logs/nginx.pid") {
+		t.Errorf("the wait came back part way through the output:\n%s", look.Screen)
+	}
+	if ended.Because != agent.EndedOnPrompt {
+		t.Errorf("the wait ended %+v, want the prompt coming back", ended)
+	}
+}
+
+// A command typed in two calls -- the text, then the return -- keeps the
+// prompt it was typed at.
+//
+// The second call reads the prompt with the command already on the line
+// after it. Writing that down as the prompt would leave a prompt that
+// can never come back.
+func TestACommandTypedInTwoCallsKeepsThePromptItWasTypedAt(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pane, code, c := handedOver(t, a)
+
+	var got agent.Pane
+	offWindow(t, a, "the window to answer the agent", func() error {
+		var err error
+		got, err = c.Use(code)
+		return err
+	})
+
+	a.shells[0].out <- []byte("marcus@margit:~$ ")
+	waitFor(t, a, "the pane to show a prompt", func() bool {
+		return strings.Contains(paneText(pane), "marcus@margit")
+	})
+
+	// The command, echoed, and then the return in a call of its own.
+	offWindow(t, a, "the window to take the text", func() error {
+		return c.Send(got.ID, "uptime", nil)
+	})
+	a.shells[0].out <- []byte("uptime")
+	waitFor(t, a, "the pane to echo the command", func() bool {
+		return strings.Contains(paneText(pane), "uptime")
+	})
+	offWindow(t, a, "the window to take the return", func() error {
+		return c.Send(got.ID, "\r", nil)
+	})
+
+	// The output, and the prompt again.
+	a.shells[0].out <- []byte("\r\n 14:02:11 up 3 days\r\nmarcus@margit:~$ ")
+	waitFor(t, a, "the prompt to come back", func() bool {
+		return strings.Count(paneText(pane), "marcus@margit") > 1
+	})
+	if look := looked(t, a, c, got.ID); !look.Back {
+		t.Errorf("the prompt coming back was not noticed:\n%s", look.Screen)
+	}
 }

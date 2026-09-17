@@ -71,6 +71,10 @@ type Screen struct {
 	// the screen scrolls under it. Something marking a place in the
 	// output -- where a command's output began, where a clear was --
 	// keeps that number.
+	//
+	// It counts the whole screen scrolling, which is what output does. A
+	// program scrolling a region of its own is redrawing, and its rows
+	// are not lines of the output.
 	gone uint64
 
 	// touched are the rows written since the last Render, and all says
@@ -460,7 +464,7 @@ func (s *Screen) CursorRow() int {
 // at the bottom.
 func (s *Screen) lineFeed() {
 	if s.cursor.Y == s.bot {
-		s.historyGrew(s.cur.scrollUp(s.top, s.bot, 1, s.cur == s.pri, s.eraseCell()))
+		s.scrolledOff(s.cur.scrollUp(s.top, s.bot, 1, s.cur == s.pri, s.eraseCell()))
 		s.touchAll()
 		return
 	}
@@ -559,19 +563,22 @@ func (s *Screen) SetScrollRegion(top, bot int) {
 // ScrollUp and ScrollDown are the SU and SD sequences, which move the
 // region without moving the cursor.
 func (s *Screen) ScrollUp(n int) {
-	s.historyGrew(s.cur.scrollUp(s.top, s.bot, n, s.cur == s.pri, s.eraseCell()))
+	s.scrolledOff(s.cur.scrollUp(s.top, s.bot, n, s.cur == s.pri, s.eraseCell()))
 	s.touchAll()
 }
 
-// historyGrew keeps a scrolled-back view on the same text when new lines
-// push into history underneath it. Without this the view drifts forward
-// on its own while output arrives, which is disorienting to read.
-func (s *Screen) historyGrew(n int) {
-	if n > 0 {
-		s.gone += uint64(n)
+// scrolledOff counts lines that have left the top of the screen and
+// keeps a scrolled-back view on the same text.
+//
+// left names lines and kept moves the view: a line that left with no
+// history to go into still happened, and a view pinned to text that was
+// thrown away has nothing to be pinned to.
+func (s *Screen) scrolledOff(left, kept int) {
+	if left > 0 {
+		s.gone += uint64(left)
 	}
-	if n > 0 && s.scrollOff > 0 {
-		s.scrollOff += n
+	if kept > 0 && s.scrollOff > 0 {
+		s.scrollOff += kept
 		s.clampScrollOff()
 	}
 }
@@ -595,12 +602,14 @@ func (s *Screen) InsertLines(n int) {
 
 // DeleteLines removes n lines at the cursor row, pulling the rest of the
 // region up.
+// DeleteLines and InsertLines edit the screen rather than scrolling it,
+// so nothing leaves the top and no line changes its number.
 func (s *Screen) DeleteLines(n int) {
 	if s.cursor.Y < s.top || s.cursor.Y > s.bot {
 		return
 	}
 	// Deleting inside the screen is never history, even at row 0.
-	_ = s.cur.scrollUp(s.cursor.Y, s.bot, n, false, s.eraseCell())
+	_, _ = s.cur.scrollUp(s.cursor.Y, s.bot, n, false, s.eraseCell())
 	s.cursor.X = 0
 	s.cursor.WrapNext = false
 	s.touchAll()
@@ -744,11 +753,18 @@ func (s *Screen) UseAltBuffer(on, clearOnEntry bool) {
 }
 
 // Reset returns the screen to its power-on state (RIS).
+//
+// The count of lines that have left the top survives it. Everything on
+// the screen has gone, which is lines leaving rather than lines never
+// having been there, and a caller holding a line number has to go on
+// being able to tell that the cursor is past it.
 func (s *Screen) Reset() {
 	pal := s.palette
 	cols, rows := s.cols, s.rows
 	scrollback := s.pri.maxScroll
+	gone := s.gone + uint64(rows)
 	*s = *NewScreen(cols, rows, pal, scrollback)
+	s.gone = gone
 	s.touchAll()
 }
 

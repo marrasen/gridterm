@@ -70,6 +70,12 @@ type local struct {
 	// released records that the terminal has been let go of, so the close
 	// that follows only has the pipes left to shut.
 	released bool
+
+	// job holds the shell and everything it starts, so closing it takes
+	// the whole tree down. On Windows the kernel closes it when gridterm
+	// ends, crash included; on Unix there is no such thing and Close kills
+	// the shell itself.
+	job shellJob
 }
 
 // StartLocal runs a shell attached to a new pseudo-terminal.
@@ -110,7 +116,14 @@ func StartLocal(cfg LocalConfig) (Session, error) {
 		return nil, fmt.Errorf("start %s: %w", argv[0], err)
 	}
 
-	l := &local{pty: p, cmd: c, done: make(chan struct{})}
+	job, err := holdShell(c.Process.Pid)
+	if err != nil {
+		_ = c.Process.Kill()
+		_ = p.Close()
+		return nil, err
+	}
+
+	l := &local{pty: p, cmd: c, job: job, done: make(chan struct{})}
 
 	// Hand the slave back to the child alone. With this process no
 	// longer holding it, the master drains and then reports the child's
@@ -222,9 +235,15 @@ func (l *local) Close() error {
 		// A child that ignores SIGHUP would outlive the window, holding
 		// the terminal's file descriptors and, with tabs, leaking one
 		// process per closed tab.
+		reaped := false
 		select {
 		case <-l.done:
+			reaped = true
 		case <-time.After(hangupGrace):
+		}
+		// Ending the job takes down whatever the shell started as well,
+		// which killing the shell alone leaves running.
+		if !l.job.end() && !reaped {
 			if p := l.cmd.Process; p != nil {
 				_ = p.Kill()
 			}

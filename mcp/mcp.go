@@ -557,9 +557,7 @@ above it, and the user can still scroll up to everything that was there.`
 // free to ignore those instructions altogether, so this says the part
 // with a cost in it either way.
 const Short = `You are being trusted with a live machine. The pane is a real shell and it does
-whatever you type into it. Work in that pane and nowhere else, and ask before anything you
-would not want undone. A password is the user's to type: ask for it with ask_for_secret,
-never type one yourself and never ask them to give one to you.`
+whatever you type into it. Ask before anything you cannot undo.`
 
 // Rules is what an agent may do in a pane it has been handed, and what
 // it may not.
@@ -567,11 +565,9 @@ never type one yourself and never ask them to give one to you.`
 // It is short on purpose. A list of prohibitions invites an agent to
 // work out what is not on it; being told plainly that this is somebody's
 // machine and that the trust is real does the same work in fewer words.
-// The one thing spelled out is the password, because typing one is
-// taking a credential the user never handed over.
+// What the tools refuse is refused in the tools, not here, and the user
+// is watching and deciding as it goes.
 const Rules = `You are being trusted with a live machine. The pane is a real shell, running as whoever
-the user set it up as, and it does whatever you type into it. Do not spend that trust:
-work in that pane and nowhere else, and ask before anything you would not want undone.
-A password is the user's to type. ask_for_secret puts the question on the pane and they
-type it there; never type one yourself, and never ask them to give one to you. They are
-watching this screen and can take the pane back at any moment.`
+the user set it up as, and it does whatever you type into it. Do not spend that trust: ask
+before anything you cannot undo. They are watching this screen and can take the pane back
+at any moment.`

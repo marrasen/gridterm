@@ -149,13 +149,13 @@ func toolList() []tool {
 		{
 			Name:  "ask_for_secret",
 			Title: "Ask the user to type a secret",
-			Description: "Ask the user to type something into the pane that you must not" +
-				" see: a password, a passphrase, a one-time code. gridterm puts a line on" +
+			Description: "Ask the user to type something into the pane without showing it" +
+				" to you: a password, a passphrase, a one-time code. gridterm puts a line on" +
 				" the pane saying what you asked for and who asked, the user types it there," +
 				" and it goes to the program in the pane. You are told that they typed" +
 				" something and never what." +
-				" Use it when a program in the pane is waiting for a password. Do not ask" +
-				" the user to paste one to you instead, and do not type one yourself." +
+				" It is the way past a program that is waiting for a password when the user" +
+				" would rather you did not have one." +
 				" It waits for them, so it can take a while, and it says so if they never" +
 				" type anything. Nothing else of yours is answered while it waits, so ask" +
 				" when you have nothing else to do and give wait_ms if you will not wait" +

@@ -181,14 +181,15 @@ func TestTheToolsSayWhatKeysAndLinesAreFor(t *testing.T) {
 	}
 }
 
-// The rules say a password is the user's to type, because an agent that
-// types one has taken a credential it was never given.
+// The rules say what the pane is and who is watching, and stop there.
 //
-// And they say what the pane is: a live machine somebody has trusted it
-// with. That is the whole of the rest of them, so it has to be there.
-func TestTheRulesLeaveAPasswordToTheUser(t *testing.T) {
+// They are not a list of prohibitions. What the tools refuse is refused
+// in the tools; what is left is the part an agent cannot work out for
+// itself, which is that this is somebody's live machine and that some of
+// what a shell does cannot be taken back.
+func TestTheRulesSayWhatThePaneIsAndStopThere(t *testing.T) {
 	for _, want := range []string{
-		"password", "never type one", "trusted with a live machine", "take the pane back",
+		"trusted with a live machine", "cannot undo", "take the pane back",
 	} {
 		if !strings.Contains(Rules, want) {
 			t.Errorf("the rules do not say %q: %q", want, Rules)
@@ -197,6 +198,15 @@ func TestTheRulesLeaveAPasswordToTheUser(t *testing.T) {
 	// Short enough to be read rather than skimmed past.
 	if lines := strings.Count(strings.TrimRight(Rules, "\n"), "\n") + 1; lines > 6 {
 		t.Errorf("the rules are %d lines long", lines)
+	}
+	// The short form the pasted prompt carries says the same, in less.
+	for _, want := range []string{"trusted with a live machine", "cannot undo"} {
+		if !strings.Contains(Short, want) {
+			t.Errorf("the short rules do not say %q: %q", want, Short)
+		}
+	}
+	if lines := strings.Count(strings.TrimRight(Short, "\n"), "\n") + 1; lines > 3 {
+		t.Errorf("the short rules are %d lines long", lines)
 	}
 }
 

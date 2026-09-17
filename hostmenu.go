@@ -320,15 +320,11 @@ func (a *app) rowAnchor(key any) func() ui.Rect {
 			// itself is still the right thing to point at.
 			return area
 		}
-		// The plus itself, not the whole row: the menu hangs from its
-		// left edge and reaches out over whatever is beside the sidebar,
-		// rather than being squeezed into the sidebar's own width. Asked
-		// of the list, so the menu points at the column the button was
-		// really drawn in.
-		return ui.Rect{
-			X: area.X + max(a.panel.ButtonCol(), 0), Y: a.windowRow(y),
-			Cols: 1, Rows: 1,
-		}
+		// Past the sidebar rather than at the plus, so the menu reaches out
+		// over whatever is beside it and clears the gap the window leaves
+		// after the sidebar's last column. A menu that started before that
+		// gap would have it running down the inside of its own border.
+		return ui.Rect{X: area.X + area.Cols, Y: a.windowRow(y), Cols: 1, Rows: 1}
 	}
 }
 

@@ -108,6 +108,32 @@ func (geo *Geometry) Rows() int { return len(geo.rows) }
 func (geo *Geometry) CellX(x int) int { return cellStart(geo.cols, x, geo.cellW) }
 func (geo *Geometry) CellY(y int) int { return cellStart(geo.rows, y, geo.cellH) }
 
+// CellsX is the box the glyphs of the columns from x0 up to but not
+// including x1 are drawn in, without the padding around them. Anything
+// painted on it leaves that padding to whatever is behind.
+func (geo *Geometry) CellsX(x0, x1 int) (at, size int) {
+	return cellBox(geo.cols, x0, x1, geo.cellW)
+}
+
+// CellsY is the same for rows.
+func (geo *Geometry) CellsY(y0, y1 int) (at, size int) {
+	return cellBox(geo.rows, y0, y1, geo.cellH)
+}
+
+// ColGap is the padding either side of one column's own box, in pixels.
+func (geo *Geometry) ColGap(x int) (before, after int) {
+	at, size := geo.ColBox(x, x+1)
+	in := geo.CellX(x)
+	return in - at, at + size - in - geo.cellW
+}
+
+// RowGap is the padding either side of one row's own box, in pixels.
+func (geo *Geometry) RowGap(y int) (before, after int) {
+	at, size := geo.RowBox(y, y+1)
+	in := geo.CellY(y)
+	return in - at, at + size - in - geo.cellH
+}
+
 // ColBox is the outer box of the columns from x0 up to but not
 // including x1, padding included.
 func (geo *Geometry) ColBox(x0, x1 int) (at, size int) { return box(geo.cols, x0, x1, geo.cellW) }
@@ -226,6 +252,16 @@ func cellStart(spans []span, i, size int) int {
 		return last.in + (i-len(spans)+1)*size
 	}
 	return spans[i].in
+}
+
+// cellBox is the box the glyphs of a run of columns or rows are drawn
+// in, from the first one's own box to the end of the last one's.
+func cellBox(spans []span, i0, i1, size int) (at, length int) {
+	start := cellStart(spans, i0, size)
+	if i1 <= i0 {
+		return start, 0
+	}
+	return start, cellStart(spans, i1-1, size) + size - start
 }
 
 // box is the outer box covering a run of columns or rows.

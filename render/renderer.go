@@ -377,25 +377,54 @@ func (r *Renderer) pushGlyph(
 	left, top := geo.CellX(x)+gl.Offset.X, geo.CellY(y)+gl.Offset.Y
 	width, height := sz.X, sz.Y
 
-	// A line-drawing character is drawn across whatever the grid leaves
-	// between its cell and the next, in whichever direction it reaches.
-	// Left inside its own cell it would stop at the gap, and a rule
-	// would break where a menu crosses the sidebar's margin.
-	if across, down, ok := glyph.Reaches(ch); ok {
-		if across && width == geo.CellW() {
-			left, width = geo.ColBox(x, x+1)
-		}
-		if down && height == geo.CellH() {
-			top, height = geo.RowBox(y, y+1)
-		}
-	}
-
 	r.push(dst, &r.fg[gl.Page],
 		float32(left), float32(top),
 		float32(width), float32(height),
 		float32(gl.Rect.Min.X), float32(gl.Rect.Min.Y),
 		float32(gl.Rect.Max.X), float32(gl.Rect.Max.Y),
 		fg)
+	r.pushArms(dst, x, y, ch, gl, left, top, width, height, fg, geo)
+}
+
+// pushArms carries a line-drawing character's arms across whatever the
+// grid leaves between its cell and the ones beside it. Left inside its
+// own cell a line would stop at the gap, and a rule would break where a
+// menu crosses the sidebar's margin.
+//
+// One pixel of the glyph's own edge repeated across the gap, rather than
+// the glyph stretched to cover it: stretching moves every stroke in it,
+// so a corner drawn that way sits beside the edge it should meet.
+func (r *Renderer) pushArms(
+	dst *ebiten.Image, x, y int, ch rune, gl glyph.Glyph,
+	left, top, width, height int, fg color.RGBA, geo *Geometry,
+) {
+	armLeft, armRight, armUp, armDown, ok := glyph.Arms(ch)
+	if !ok {
+		return
+	}
+	b, s := &r.fg[gl.Page], gl.Rect
+	if width == geo.CellW() {
+		before, after := geo.ColGap(x)
+		if armLeft && before > 0 {
+			r.push(dst, b, float32(left-before), float32(top), float32(before), float32(height),
+				float32(s.Min.X), float32(s.Min.Y), float32(s.Min.X+1), float32(s.Max.Y), fg)
+		}
+		if armRight && after > 0 {
+			r.push(dst, b, float32(left+width), float32(top), float32(after), float32(height),
+				float32(s.Max.X-1), float32(s.Min.Y), float32(s.Max.X), float32(s.Max.Y), fg)
+		}
+	}
+	if height == geo.CellH() {
+		before, after := geo.RowGap(y)
+		if armUp && before > 0 {
+			r.push(dst, b, float32(left), float32(top-before), float32(width), float32(before),
+				float32(s.Min.X), float32(s.Min.Y), float32(s.Max.X), float32(s.Min.Y+1), fg)
+		}
+		if armDown && after > 0 {
+			r.push(dst, b, float32(left), float32(top+height), float32(width), float32(after),
+				float32(s.Min.X), float32(s.Max.Y-1), float32(s.Max.X), float32(s.Max.Y), fg)
+		}
+	}
 }
 
 // pushRules queues the underline and strikethrough rules for a row,
@@ -447,16 +476,6 @@ func (r *Renderer) pushRules(dst *ebiten.Image, g *grid.Grid, y int, geo *Geomet
 	}
 }
 
-// cellRun is where the cells from x0 up to but not including x1 are
-// drawn, without the padding around them.
-func cellRun(geo *Geometry, x0, x1 int) (at, width int) {
-	at = geo.CellX(x0)
-	if x1 <= x0 {
-		return at, 0
-	}
-	return at, geo.CellX(x1-1) + geo.CellW() - at
-}
-
 // dimmed mixes a cell's foreground towards its background, which is what
 // SGR 2 asks for.
 func dimmed(fg, bg color.RGBA) color.RGBA {
@@ -498,7 +517,7 @@ func bgRect(geo *Geometry, x0, x1, y int) bar {
 // furniture rather than part of the text, and a rule reaching into it
 // is a line sticking out past what it underlines.
 func ruleRect(geo *Geometry, x0, x1, y int, top, thick float32) bar {
-	at, width := cellRun(geo, x0, x1)
+	at, width := geo.CellsX(x0, x1)
 	return bar{
 		X: float32(at), Y: float32(geo.CellY(y)) + top,
 		W: float32(width), H: thick,
@@ -523,7 +542,7 @@ func cursorRect(g *grid.Grid, cur grid.Cursor, geo *Geometry) bar {
 	left, width := geo.ColBox(cur.X, cur.X+wide)
 	top, height := geo.RowBox(cur.Y, cur.Y+1)
 	if cur.Style != grid.CursorBlock {
-		left, width = cellRun(geo, cur.X, cur.X+wide)
+		left, width = geo.CellsX(cur.X, cur.X+wide)
 		top, height = geo.CellY(cur.Y), geo.CellH()
 	}
 	x, y := float32(left), float32(top)

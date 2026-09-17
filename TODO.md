@@ -273,6 +273,22 @@ there is one key for position and one for recency.
   and that is the whole of what it can do. Refusing a path outside the
   user's own profile would be the next step.
 
+- **The gap beside the sidebar still runs through any dialog wide enough
+  to cross it.** The window leaves half a cell after the sidebar's last
+  column, and every modal grid is given the same padding so the two
+  agree about where a column sits. A dialog whose box spans that column
+  therefore has the gap running down the inside of it, breaking every
+  line of text across it. The menu from a sidebar row now opens past the
+  gap, which was the case in the report, but the File menu, the palette,
+  the chooser and any wide form still cross it. Selected rows and rules
+  hide it, because a background covers the padding and a line reaches
+  across it; plain text does not.
+  The fix is for modal grids not to carry that gap at all. What stops it
+  being a one-liner is the mouse: a pixel becomes a column through one
+  geometry, the window's, so a dialog whose columns sat elsewhere would
+  take a click on the wrong one. The frost would have to be measured
+  from the modal layer's own geometry too.
+
 - **The keyboard shortcuts file is read once, at startup.** Colour
   schemes have a "Reload", and this does not. Applying the changes again
   on top of a keymap they have already changed would not give a deleted

@@ -458,3 +458,62 @@ func TestALineIsDrawnAcrossThePaddingBesideIt(t *testing.T) {
 		t.Errorf("the box ends at %d and the next cell starts at %d", boxLeft+boxW, next)
 	}
 }
+
+// The cell box covers the glyphs and nothing else. A frosted panel sits
+// on it, so a panel measured from the outer boxes would reach out over
+// the padding and no longer line up with the border drawn on it.
+func TestTheCellBoxCoversTheGlyphsAndNotThePadding(t *testing.T) {
+	g := geoGrid(6, 3)
+	g.SetColPad(0, grid.Pad{Before: 2})
+	g.SetColPad(2, grid.Pad{After: 4})
+	geo := measured(g)
+
+	at, size := geo.CellsX(0, 3)
+
+	if want := geo.CellX(0); at != want {
+		t.Errorf("it starts at %d, want the %d the first glyph is drawn at", at, want)
+	}
+	if want := geo.CellX(2) + 8; at+size != want {
+		t.Errorf("it ends at %d, want the %d the last glyph ends at", at+size, want)
+	}
+	// And the outer box does cover the padding, which is what a
+	// background wants.
+	outer, wide := geo.ColBox(0, 3)
+	if outer >= at || outer+wide <= at+size {
+		t.Errorf("the outer box is %d..%d and the cells are %d..%d, want the cells inside it",
+			outer, outer+wide, at, at+size)
+	}
+}
+
+// The cell box of one cell is that cell, and of none is nothing.
+func TestTheCellBoxOfOneCellIsThatCell(t *testing.T) {
+	g := geoGrid(4, 2)
+	g.SetColPad(1, grid.Pad{Before: 2, After: 4})
+	geo := measured(g)
+
+	at, size := geo.CellsX(1, 2)
+
+	if at != geo.CellX(1) || size != 8 {
+		t.Errorf("the cell box of column 1 is %d..%d, want %d..%d",
+			at, at+size, geo.CellX(1), geo.CellX(1)+8)
+	}
+	if _, none := geo.CellsX(2, 2); none != 0 {
+		t.Errorf("no columns measure %d wide", none)
+	}
+}
+
+// Rows work the same way.
+func TestTheCellBoxOfRowsSkipsTheirPadding(t *testing.T) {
+	g := geoGrid(3, 4)
+	g.SetRowPad(0, grid.Pad{Before: 2})
+	geo := measured(g)
+
+	at, size := geo.CellsY(0, 2)
+
+	if want := geo.CellY(0); at != want {
+		t.Errorf("it starts at %d, want the %d the first row is drawn at", at, want)
+	}
+	if want := geo.CellY(1) + 16; at+size != want {
+		t.Errorf("it ends at %d, want %d", at+size, want)
+	}
+}

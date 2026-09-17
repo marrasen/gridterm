@@ -136,10 +136,10 @@ func (a *app) drawModals() {
 			continue
 		}
 		if box := boxed.Box(); !box.Empty() {
-			// Measured, not multiplied: the glass has to land on the same
-			// pixels the dialog does, and padding moves them.
-			left, width := a.geo.ColBox(box.X, box.X+box.Cols)
-			top, height := a.geo.RowBox(box.Y, box.Y+box.Rows)
+			// The cells, not their outer boxes: the glass has to land on the
+			// same pixels the dialog's glyphs do.
+			left, width := a.geo.CellsX(box.X, box.X+box.Cols)
+			top, height := a.geo.CellsY(box.Y, box.Y+box.Rows)
 			m.layer.Frost.Rect = image.Rect(left, top, left+width, top+height)
 			// The corner is measured in cells too, so changing the font
 			// size with a dialog open keeps it in proportion.

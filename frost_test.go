@@ -5,6 +5,7 @@ import (
 
 	"github.com/hajimehoshi/ebiten/v2"
 
+	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/input"
 	"github.com/marrasen/gridterm/render"
 	"github.com/marrasen/gridterm/ui"
@@ -120,5 +121,63 @@ func TestFrostGoesWithTheDialog(t *testing.T) {
 		if l.Frost != nil && !l.Frost.Rect.Empty() {
 			t.Error("a panel is still on screen with no dialog behind it")
 		}
+	}
+}
+
+// The glass lands on the cells the dialog draws in, not on the padding
+// around them. The window puts a half-cell margin before column 0, so a
+// panel measured from the outer boxes reached out over it and the menu
+// at the left edge looked as though its border had slipped.
+func TestTheGlassLandsOnTheCellsTheDialogDrawsIn(t *testing.T) {
+	a := newTestApp(t, 40, 20)
+	a.comp = render.NewCompositor(a.renderer)
+	a.layer = &render.Layer{Grid: a.g}
+	a.comp.Add(a.layer)
+	a.commands()
+	a.bar = a.newMenubar(a.root.Widget())
+	a.root.SetWidget(a.bar)
+	a.relayout()
+	a.applyPads()
+	if err := a.openMenu(); err != nil {
+		t.Fatalf("open menu: %v", err)
+	}
+	menu, ok := a.root.Modal().(*ui.Menu)
+	if !ok {
+		t.Fatalf("top modal = %T, want a menu", a.root.Modal())
+	}
+	box := menu.Box()
+	if box.X != 0 {
+		t.Fatalf("the menu is at column %d, and this tests the one at the left edge", box.X)
+	}
+	// The window pads row 0 for the menu bar, and the menu starts below
+	// it, so the row the glass is measured from is padded here.
+	a.g.SetRowPad(box.Y, grid.Pad{Before: 2, After: 2})
+	a.modals[0].g.SetRowPad(box.Y, grid.Pad{Before: 2, After: 2})
+
+	a.drawModals()
+
+	// The padding is there, or the two ways of measuring agree and this
+	// tests nothing.
+	if a.geo.CellX(0) == 0 {
+		t.Fatal("column 0 has no padding before it, so this proves nothing")
+	}
+	got := a.modals[0].layer.Frost.Rect
+	if want := a.geo.CellX(box.X); got.Min.X != want {
+		t.Errorf("the glass starts at %d, want the %d the border is drawn at", got.Min.X, want)
+	}
+	cw, ch := a.renderer.CellSize()
+	if want := a.geo.CellX(box.X+box.Cols-1) + cw; got.Max.X != want {
+		t.Errorf("the glass ends at %d, want the %d the border ends at", got.Max.X, want)
+	}
+	if at, _ := a.geo.RowBox(box.Y, box.Y+1); a.geo.CellY(box.Y) == at {
+		t.Fatal("the menu's first row has no padding before it, so this proves nothing")
+	}
+	if want := a.geo.CellY(box.Y); got.Min.Y != want {
+		t.Errorf("the glass starts at row pixel %d, want the %d the border is drawn at",
+			got.Min.Y, want)
+	}
+	if want := a.geo.CellY(box.Y+box.Rows-1) + ch; got.Max.Y != want {
+		t.Errorf("the glass ends at row pixel %d, want the %d the border ends at",
+			got.Max.Y, want)
 	}
 }

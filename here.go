@@ -7,6 +7,7 @@ import (
 
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/remote"
+	"github.com/marrasen/gridterm/settings"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/files"
 )
@@ -141,7 +142,34 @@ func (a *app) askCommandOn(host string, at *spot) {
 	where := groupName(host)
 	f := a.newForm("Run a command on " + where)
 	what := f.AddField("Command", a.newField("the program and its arguments", 0))
+	what.Options = a.saved.lines()
 	in := f.AddField("Directory", a.newField("where to run it, or leave it empty", 0))
+	keep := f.AddTick("Remember this command", false)
+	f.Lines = []string{
+		"Ctrl+down and Ctrl+up step through the commands you have kept.",
+		"Clearing the box on one of those forgets it.",
+	}
+	// picked is the saved command taken off the list, and "" until one
+	// is. Only that one can be forgotten here, so a command typed out by
+	// hand is never thrown away by a box the user did not tick.
+	picked := ""
+	// On a pick and not on a keystroke, or a saved command that is the
+	// start of a longer one would tick the box half way through typing
+	// it.
+	what.OnPick = func(text string) {
+		saved, have := a.saved.find(commandLine(text))
+		if !have {
+			return
+		}
+		picked = saved.Line
+		keep.SetOn(true)
+		// Only from the machine it was saved on, and only over an empty
+		// field: a path belongs to its machine, and what the user typed
+		// is theirs.
+		if saved.Dir != "" && saved.Host == host && strings.TrimSpace(in.Text()) == "" {
+			in.SetText(saved.Dir)
+		}
+	}
 	f.AddButton(ui.Button{Title: "Run", Do: func() error {
 		command := strings.Fields(what.Text())
 		if len(command) == 0 {
@@ -150,6 +178,20 @@ func (a *app) askCommandOn(host string, at *spot) {
 			return errors.New("there is nothing to run")
 		}
 		dir := strings.TrimSpace(in.Text())
+		line := commandLine(what.Text())
+		switch {
+		case keep.On():
+			cmd := settings.SavedCommand{Line: line, Dir: dir, Host: host}
+			if err := a.saved.keep(cmd); err != nil {
+				return err
+			}
+		case picked == line:
+			// Taken off the list and then unticked, which is how the
+			// user says to forget it.
+			if err := a.saved.forget(line); err != nil {
+				return err
+			}
+		}
 		// Not from here: this dialog closes as soon as this returns, and
 		// closing one takes anything stacked on top of it.
 		a.pump.post(func() {

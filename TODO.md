@@ -126,13 +126,6 @@ names.
    `Identities` for that connection instead of leaving it to the
    defaults.
 
-## Run a command
-
-Asked for on 2026-09-17. The dialog is `openCommandHere` in here.go.
-
-1. **Save a command, and pick a saved one.** The dialog offers the
-   commands already saved, so one that is run often is not retyped.
-
 ## Folders on a connection
 
 Asked for on 2026-09-17. A connection has no folders today: `remote.Host`

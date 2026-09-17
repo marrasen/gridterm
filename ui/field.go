@@ -39,6 +39,11 @@ type Field struct {
 	// typed is unchanged; only the drawing differs.
 	Mask rune
 
+	// OnPick is called when one of the Options is put in the field by
+	// Ctrl+Down or Ctrl+Up, and not when the same text is typed. It is
+	// how a caller tells the two apart.
+	OnPick func(string)
+
 	// OnChange is called after every change to the text.
 	OnChange func(string)
 
@@ -500,5 +505,8 @@ func (f *Field) cycle(step int) bool {
 		return false
 	}
 	f.SetText(f.Options[next])
+	if f.OnPick != nil {
+		f.OnPick(f.text)
+	}
 	return true
 }

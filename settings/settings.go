@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 
 	"github.com/marrasen/gridterm/internal/jsoncheck"
@@ -61,6 +62,21 @@ type stored struct {
 	// AgentMay is what the hand-over dialog's tick boxes were last set
 	// to. A field left out is a box that was not ticked.
 	AgentMay *AgentMay `json:"agentMay,omitempty"`
+
+	// Commands are the commands the user asked to keep, newest first.
+	Commands []SavedCommand `json:"commands,omitempty"`
+}
+
+// SavedCommand is a command line the user asked to keep, the directory
+// it runs in, and the machine it was saved on.
+//
+// The line is offered on every machine, because the same command often
+// runs on several. The directory is not: a path belongs to the machine
+// it was typed on.
+type SavedCommand struct {
+	Line string `json:"line"`
+	Dir  string `json:"dir,omitempty"`
+	Host string `json:"host,omitempty"`
 }
 
 // AgentMay is what a hand-over allows an agent beyond reading a pane and
@@ -252,6 +268,57 @@ func (s *Settings) PutAgentMay(may AgentMay) error {
 	return nil
 }
 
+// Commands are the commands the user asked to keep, newest first.
+func (s *Settings) Commands() []SavedCommand {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.have.Commands)
+}
+
+// KeepCommand puts a command at the front of the list and saves, keeping
+// at most most of them. A command already in the list moves to the front
+// with whatever it was given here.
+//
+// The list is edited after the file has been reread, not before, so a
+// command another window saved in the meantime is kept.
+func (s *Settings) KeepCommand(cmd SavedCommand, most int) error {
+	return s.putCommands(func(have []SavedCommand) []SavedCommand {
+		want := append([]SavedCommand{cmd}, dropLine(have, cmd.Line)...)
+		if most > 0 && len(want) > most {
+			want = want[:most]
+		}
+		return want
+	})
+}
+
+// DropCommand takes a command out of the list and saves.
+func (s *Settings) DropCommand(line string) error {
+	return s.putCommands(func(have []SavedCommand) []SavedCommand {
+		return dropLine(have, line)
+	})
+}
+
+// putCommands rereads the file, edits the list it holds and saves.
+func (s *Settings) putCommands(edit func([]SavedCommand) []SavedCommand) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.rereadLocked(); err != nil {
+		return fmt.Errorf("%w: %w", ErrUnsaveable, err)
+	}
+	before := s.have
+	s.have.Commands = edit(slices.Clone(s.have.Commands))
+	if err := s.saveLocked(); err != nil {
+		s.have = before
+		return err
+	}
+	return nil
+}
+
+// dropLine is the commands with one line left out.
+func dropLine(have []SavedCommand, line string) []SavedCommand {
+	return slices.DeleteFunc(have, func(cmd SavedCommand) bool { return cmd.Line == line })
+}
+
 // Shell is the shell a new pane was last opened on, and whether one was
 // saved.
 func (s *Settings) Shell() (string, bool) {
@@ -380,6 +447,20 @@ func check(file stored) error {
 	// turned away: it names nothing and could not be opened.
 	if sh := file.Shell; sh != nil && *sh == "" {
 		return errors.New("the shell has no id")
+	}
+	seen := make(map[string]bool, len(file.Commands))
+	for i, cmd := range file.Commands {
+		// What runs is the window's business, so only an empty line is
+		// turned away: it names nothing and could not be offered back.
+		if cmd.Line == "" {
+			return fmt.Errorf("saved command %d has nothing to run", i+1)
+		}
+		// A line twice over is a dead key in the dialog that offers
+		// them: stepping from it lands on itself.
+		if seen[cmd.Line] {
+			return fmt.Errorf("saved command %d, %q, is in the list twice", i+1, cmd.Line)
+		}
+		seen[cmd.Line] = true
 	}
 	return nil
 }

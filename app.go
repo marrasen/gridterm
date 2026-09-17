@@ -122,6 +122,10 @@ type app struct {
 	// closes them; this is what takes their rows away with it.
 	tunnels map[*conns.Entry]*tunnel
 
+	// saved are the commands the user asked to keep, offered by the
+	// dialog that runs one.
+	saved *savedCommands
+
 	// shared is the glowing border over each pane somebody else is in,
 	// one layer per pane.
 	shared map[*term.Terminal]*sharedMark

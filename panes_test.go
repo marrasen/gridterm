@@ -250,6 +250,8 @@ func newTestApp(t *testing.T, cols, rows int, opts ...testOption) *testApp {
 	if err != nil {
 		t.Fatalf("settings: %v", err)
 	}
+	ta.saved = newSavedCommands()
+	ta.saved.remember(set)
 	ta.serving.remember(set)
 	ta.agents.remember(set)
 	// A machine of the test's own: nothing here runs wsl.exe or reads

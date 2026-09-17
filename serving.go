@@ -499,6 +499,7 @@ func (a *app) useSettings(set *settings.Settings) {
 	a.serving.remember(set)
 	a.agents.remember(set)
 	a.shellPick.remember(set)
+	a.saved.remember(set)
 	err := set.Err()
 	if err == nil {
 		return

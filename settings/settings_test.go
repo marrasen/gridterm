@@ -5,6 +5,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -689,4 +691,194 @@ func TestTheShellIsNotSavedOverUnusableSettings(t *testing.T) {
 	if err := s.PutShell("cmd"); !errors.Is(err, ErrUnsaveable) {
 		t.Errorf("saving gave %v, want ErrUnsaveable", err)
 	}
+}
+
+// A saved command with nothing to run names nothing, so the file is
+// turned away rather than read back as a command that cannot be offered.
+func TestASavedCommandWithNothingToRunIsRefused(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	raw := `{"version":1,"commands":[{"line":"make deploy"},{"line":""}]}`
+	if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("a command with nothing to run was read back")
+	}
+	// The one that is wrong, by the place it sits in the file: a message
+	// that does not say which cannot be acted on.
+	if !strings.Contains(err.Error(), "saved command 2") {
+		t.Errorf("it said %q, want it to name the second command", err)
+	}
+}
+
+// The same line twice is turned away: the dialog steps through the
+// commands, and stepping from one to its twin lands on itself.
+func TestASavedCommandTwiceOverIsRefused(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	raw := `{"version":1,"commands":[{"line":"make deploy"},{"line":"make deploy"}]}`
+	if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("the same command twice was read back")
+	}
+	if !strings.Contains(err.Error(), "twice") {
+		t.Errorf("it said %q", err)
+	}
+}
+
+// And a file whose commands are all good is read back whole.
+func TestSavedCommandsAreReadBack(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	raw := `{"version":1,"commands":[` +
+		`{"line":"make deploy","dir":"/src","host":"margit"},{"line":"ls -la"}]}`
+	if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	set, err := Load(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	got := set.Commands()
+	want := []SavedCommand{
+		{Line: "make deploy", Dir: "/src", Host: "margit"},
+		{Line: "ls -la"},
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("it read %v, want %v", got, want)
+	}
+}
+
+// What Commands gives back is the caller's own, so changing it cannot
+// change what is saved.
+func TestCommandsGivesBackACopy(t *testing.T) {
+	set := settingsAt(t)
+	if err := set.KeepCommand(SavedCommand{Line: "make deploy"}, 10); err != nil {
+		t.Fatalf("keep: %v", err)
+	}
+
+	got := set.Commands()
+	got[0].Line = "rm -rf /"
+
+	if again := set.Commands(); again[0].Line != "make deploy" {
+		t.Errorf("the settings now say %q", again[0].Line)
+	}
+}
+
+// Keeping a command puts it at the front, and keeping one already there
+// moves it rather than doubling it.
+func TestKeepCommandPutsItAtTheFront(t *testing.T) {
+	set := settingsAt(t)
+	for _, line := range []string{"first", "second", "third"} {
+		if err := set.KeepCommand(SavedCommand{Line: line, Dir: "/old"}, 10); err != nil {
+			t.Fatalf("keep %q: %v", line, err)
+		}
+	}
+
+	if err := set.KeepCommand(SavedCommand{Line: "first", Dir: "/new"}, 10); err != nil {
+		t.Fatalf("keep it again: %v", err)
+	}
+
+	got := set.Commands()
+	want := []SavedCommand{
+		{Line: "first", Dir: "/new"},
+		{Line: "third", Dir: "/old"},
+		{Line: "second", Dir: "/old"},
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("it holds %v, want %v", got, want)
+	}
+}
+
+// The list is capped, and it is the one kept longest ago that goes.
+func TestKeepCommandDropsTheOldest(t *testing.T) {
+	set := settingsAt(t)
+	for i := 0; i < 6; i++ {
+		if err := set.KeepCommand(SavedCommand{Line: "echo " + strconv.Itoa(i)}, 4); err != nil {
+			t.Fatalf("keep %d: %v", i, err)
+		}
+	}
+
+	var got []string
+	for _, cmd := range set.Commands() {
+		got = append(got, cmd.Line)
+	}
+	want := []string{"echo 5", "echo 4", "echo 3", "echo 2"}
+	if !slices.Equal(got, want) {
+		t.Errorf("it holds %v, want %v", got, want)
+	}
+}
+
+// DropCommand takes one out and leaves the rest in order.
+func TestDropCommandTakesOneOut(t *testing.T) {
+	set := settingsAt(t)
+	for _, line := range []string{"first", "second", "third"} {
+		if err := set.KeepCommand(SavedCommand{Line: line}, 10); err != nil {
+			t.Fatalf("keep %q: %v", line, err)
+		}
+	}
+
+	if err := set.DropCommand("second"); err != nil {
+		t.Fatalf("drop: %v", err)
+	}
+
+	var got []string
+	for _, cmd := range set.Commands() {
+		got = append(got, cmd.Line)
+	}
+	if want := []string{"third", "first"}; !slices.Equal(got, want) {
+		t.Errorf("it holds %v, want %v", got, want)
+	}
+}
+
+// A command another window saved while this one was not looking is
+// still there afterwards. The list is edited after the file is reread,
+// not before.
+func TestKeepCommandDoesNotLoseWhatAnotherWindowSaved(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	one, err := Load(path)
+	if err != nil {
+		t.Fatalf("settings: %v", err)
+	}
+	two, err := Load(path)
+	if err != nil {
+		t.Fatalf("settings: %v", err)
+	}
+	// Read by both before either writes, which is what makes one of
+	// them stale.
+	_, _ = one.Commands(), two.Commands()
+
+	if err := one.KeepCommand(SavedCommand{Line: "make deploy"}, 10); err != nil {
+		t.Fatalf("the first window: %v", err)
+	}
+	if err := two.KeepCommand(SavedCommand{Line: "ls -la"}, 10); err != nil {
+		t.Fatalf("the second window: %v", err)
+	}
+
+	again, err := Load(path)
+	if err != nil {
+		t.Fatalf("read it again: %v", err)
+	}
+	var got []string
+	for _, cmd := range again.Commands() {
+		got = append(got, cmd.Line)
+	}
+	if want := []string{"ls -la", "make deploy"}; !slices.Equal(got, want) {
+		t.Errorf("the file holds %v, want both windows' commands", got)
+	}
+}
+
+// settingsAt is settings in a directory the test owns.
+func settingsAt(t *testing.T) *Settings {
+	t.Helper()
+	set, err := Load(filepath.Join(t.TempDir(), "settings.json"))
+	if err != nil {
+		t.Fatalf("settings: %v", err)
+	}
+	return set
 }

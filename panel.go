@@ -7,6 +7,7 @@ import (
 	"io"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/marrasen/gridterm/conns"
@@ -228,35 +229,11 @@ func (a *app) refreshPanel(now time.Time) {
 	// looking at one terminal is what taking over a window means, and
 	// the one sitting at it has to be able to tell.
 	for pane, e := range a.panes {
-		want := ""
-		if h := a.agents.of(pane); h != nil && !a.ended[pane] {
-			// Ahead of the far end's size: the user can see a size, and
-			// cannot otherwise see that something else is typing here.
-			// Nothing is worked in once the program has gone, whether or
-			// not the hand-over is still in force.
-			want = h.note()
-		} else if what, ok := a.windows.watching(pane); ok {
-			// A pane showing a screen that is not its size, which is
-			// the one thing about it the user cannot otherwise work
-			// out from what it draws. Asked for afresh, because the
-			// far end is redrawn at its own size whenever it changes.
-			cols, rows := a.farSize(what)
-			want = farNote(pane.Size(), cols, rows)
-		} else if n := pane.Watched(); n > 0 {
-			if pane.Held() && pane.Size() != pane.Box() {
-				// Somebody watching set the size, and this window draws
-				// that screen in whatever room it has: the size is the
-				// only thing that explains what is on it.
-				want = heldNote(pane.Size(), n)
-			} else {
-				want = watchedNote(n)
-			}
-		}
 		// Only over a note of our own. The one other note a pane can
 		// carry says its channel could not be let go of, and that is
 		// the only place the user can read it.
 		if e.Note == "" || isOurNote(e.Note) || isAgentNote(e.Note) {
-			e.Note = want
+			e.Note = a.paneNote(pane)
 		}
 	}
 
@@ -524,6 +501,39 @@ func (a *app) panelRow(row conns.Row, now time.Time) ui.ListRow {
 		out.HoverButton = clearButton
 	}
 	return out
+}
+
+// paneNote is what a pane's row says about who else is in it: an agent,
+// somebody reading it from another window, or both at once.
+func (a *app) paneNote(pane *term.Terminal) string {
+	var say []string
+	// Ahead of the far end's size: the user can see a size, and cannot
+	// otherwise see that something else is typing here. Nothing is
+	// worked in once the program has gone, whether or not the hand-over
+	// is still in force.
+	if h := a.agents.of(pane); h != nil && !a.ended[pane] {
+		say = append(say, h.note())
+	}
+	if what, ok := a.windows.watching(pane); ok {
+		// A pane showing a screen that is not its size, which is the one
+		// thing about it the user cannot otherwise work out from what it
+		// draws. Asked for afresh, because the far end is redrawn at its
+		// own size whenever it changes.
+		cols, rows := a.farSize(what)
+		if note := farNote(pane.Size(), cols, rows); note != "" {
+			say = append(say, note)
+		}
+	} else if n := pane.Watched(); n > 0 {
+		if pane.Held() && pane.Size() != pane.Box() {
+			// Somebody watching set the size, and this window draws that
+			// screen in whatever room it has: the size is the only thing
+			// that explains what is on it.
+			say = append(say, heldNote(pane.Size(), n))
+		} else {
+			say = append(say, watchedNote(n))
+		}
+	}
+	return strings.Join(say, ", ")
 }
 
 // note is what a row says at its end.

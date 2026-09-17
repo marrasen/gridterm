@@ -207,6 +207,62 @@ func TestAPaneThatClosesTakesItsHandoverWithIt(t *testing.T) {
 	}
 }
 
+// A pane that is handed to an agent and read from somewhere else says
+// both. It used to say only the agent half, because the row picked one
+// of the two and stopped.
+func TestAPaneSaysBothAnAgentAndAWatcher(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pane := onlyPaneWidget(t, a).(*term.Terminal)
+
+	if err := a.handPane(pane); err != nil {
+		t.Fatalf("hand it over: %v", err)
+	}
+	dismissNotice(t, a)
+	watchPane(t, pane)
+
+	a.refreshPanel(time.Now())
+	note := a.panes[pane].Note
+	if !isAgentNote(note) {
+		t.Errorf("the row says %q, and an agent has the pane", note)
+	}
+	if !strings.Contains(note, watchedBy) {
+		t.Errorf("the row says %q, and somebody is reading the pane", note)
+	}
+}
+
+// And it goes back to saying one when the other goes.
+func TestAPaneStopsSayingAWatcherWhoLeft(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pane := onlyPaneWidget(t, a).(*term.Terminal)
+
+	if err := a.handPane(pane); err != nil {
+		t.Fatalf("hand it over: %v", err)
+	}
+	dismissNotice(t, a)
+	stop, err := pane.Watch(&paneWatcher{})
+	if err != nil {
+		t.Fatalf("watch the pane: %v", err)
+	}
+	a.refreshPanel(time.Now())
+	if note := a.panes[pane].Note; !strings.Contains(note, watchedBy) {
+		t.Fatalf("the row says %q before the watcher went", note)
+	}
+
+	stop()
+	a.refreshPanel(time.Now())
+	note := a.panes[pane].Note
+	if strings.Contains(note, watchedBy) {
+		t.Errorf("the row still says %q", note)
+	}
+	if !isAgentNote(note) {
+		t.Errorf("the row says %q, and the agent is still there", note)
+	}
+}
+
 // The pane's row says an agent has been given it, and says the
 // difference between offered and being worked in.
 func TestTheRowSaysAnAgentHasThePane(t *testing.T) {

@@ -545,7 +545,7 @@ func (h *handover) note() string {
 	if h.in.working == 1 {
 		return agentAt
 	}
-	return strconv.Itoa(h.in.working) + " agents are working here"
+	return strconv.Itoa(h.in.working) + agentsWorking
 }
 
 // The two things a pane's row says about an agent. Offered is not the
@@ -554,12 +554,17 @@ func (h *handover) note() string {
 const (
 	agentAt      = "an agent is working here"
 	agentOffered = "offered to an agent"
+
+	// agentsWorking ends the note for more than one, and is what tells
+	// that note apart from anything else a row can say.
+	agentsWorking = " agents are working here"
 )
 
-// isAgentNote reports whether a note is one of ours.
+// isAgentNote reports whether a note begins with one of ours. A note
+// carries a second part when somebody is reading the pane as well.
 func isAgentNote(note string) bool {
-	return note == agentAt || note == agentOffered ||
-		strings.HasSuffix(note, " agents are working here")
+	return strings.HasPrefix(note, agentAt) || strings.HasPrefix(note, agentOffered) ||
+		strings.Contains(note, agentsWorking)
 }
 
 // agentWindow is what an agent may do with the panes handed to it.

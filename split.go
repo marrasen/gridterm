@@ -51,13 +51,8 @@ func (a *app) addSplitChoices(c *ui.Chooser, dir ui.Dir, current ui.Widget) {
 		return a.splitNewTerminal(dir, current)
 	})
 
-	// Each shell this machine has, under the line that opens a terminal
-	// here, the way the plus on a machine's row offers them.
-	for _, sh := range a.shellPick.list() {
-		shell := sh
-		c.Add(shell.Title, groupName(conns.Local), func() error {
-			return a.splitOnShell(dir, current, shell)
-		})
+	if a.newPaneHost() == conns.Local {
+		a.addShellChoices(c, dir, current)
 	}
 
 	// What is already open, so a pane can be moved in beside this one
@@ -92,26 +87,37 @@ func (a *app) addSplitChoices(c *ui.Chooser, dir ui.Dir, current ui.Widget) {
 	// first, and the terminal lands in the split when it arrives.
 	for _, host := range a.allHosts() {
 		on := a.about(host)
-		if on.name == a.newPaneHost() {
-			// A terminal there is the shell already offered first.
-			continue
-		}
 		name := on.name
 		at := &spot{beside: current, dir: dir}
-		// groupName, so the line for this machine reads as a name
-		// rather than as the empty string the panel keys it by.
-		c.Add("Terminal on "+groupName(name), hostNote(on), func() error {
-			// Through the one place that says what a name is worth
-			// opening on, so a window here is taken over rather than
-			// logged in to, and lands in the split all the same.
-			return a.openTerminalOn(name, at)
-		})
-		if !on.runsCommands() {
-			continue
+		// A terminal where new panes go is the line offered first.
+		if name != a.newPaneHost() {
+			// groupName, so the line for this machine reads as a name
+			// rather than as the empty string the panel keys it by.
+			c.Add("Terminal on "+groupName(name), hostNote(on), func() error {
+				// Through the one place that says what a name is worth
+				// opening on, so a window here is taken over rather than
+				// logged in to, and lands in the split all the same.
+				return a.openTerminalOn(name, at)
+			})
+			if name == conns.Local {
+				a.addShellChoices(c, dir, current)
+			}
 		}
-		c.Add("Command on "+groupName(name)+"…", hostNote(on), func() error {
-			a.askCommandOn(name, at)
-			return nil
+		if on.runsCommands() {
+			c.Add("Command on "+groupName(name)+"…", hostNote(on), func() error {
+				a.askCommandOn(name, at)
+				return nil
+			})
+		}
+	}
+}
+
+// addShellChoices puts a line per shell this machine has under the line
+// that opens a terminal on it, the way the plus on its row does.
+func (a *app) addShellChoices(c *ui.Chooser, dir ui.Dir, current ui.Widget) {
+	for _, sh := range a.shellPick.list() {
+		c.Add(sh.Title, groupName(conns.Local), func() error {
+			return a.splitOnShell(dir, current, sh)
 		})
 	}
 }

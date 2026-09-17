@@ -40,13 +40,6 @@ const (
 )
 
 // String names a kind, for a test that has to say what it found.
-// runsCommands reports whether a machine can be asked to run one. This
-// machine has no connection to run it over, and a gridterm window has no
-// shell to run it in.
-func (f hostFacts) runsCommands() bool {
-	return f.kind != hostHere && f.kind != hostWindow && f.kind != hostSavedWindow && !f.serves
-}
-
 func (k hostKind) String() string {
 	switch k {
 	case hostHere:
@@ -105,6 +98,12 @@ type hostFacts struct {
 
 // held says the window is holding something under this name: a
 // connection, another gridterm taken over, or one being reached.
+// runsCommands reports whether a command can be run on a machine, which
+// needs a connection and a shell.
+func (f hostFacts) runsCommands() bool {
+	return f.kind != hostHere && f.kind != hostWindow && !f.serves
+}
+
 func (f hostFacts) held() bool {
 	return f.window != nil || f.machine != nil || f.dialling != nil
 }

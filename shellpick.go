@@ -132,9 +132,8 @@ func (p *shellPick) take(list []shells.Shell, cmds []string) {
 	p.found, p.cmds, p.scanned = list, cmds, true
 }
 
-// list is the shells that were found, for a chooser that offers a line
-// per shell. A machine with one shell gets none, the way lines does: the
-// line that opens a terminal already opens on it.
+// list is the shells that were found, and nil when there are fewer than
+// two, the way lines is.
 func (p *shellPick) list() []shells.Shell {
 	p.mu.Lock()
 	defer p.mu.Unlock()

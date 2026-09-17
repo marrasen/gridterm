@@ -11,7 +11,6 @@ import (
 	"github.com/marrasen/gridterm/input"
 	"github.com/marrasen/gridterm/internal/sshtest"
 	"github.com/marrasen/gridterm/remote"
-	"github.com/marrasen/gridterm/shells"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/term"
 )
@@ -222,17 +221,22 @@ func TestSplittingOffersEveryShell(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withDialogs(t, a)
 	withPanel(t, a)
-	a.registerShells([]shells.Shell{
-		{ID: "cmd", Title: "Command Prompt", Path: "cmd.exe"},
-		{ID: "powershell", Title: "Windows PowerShell", Path: "powershell.exe"},
-	})
+	scanShells(t, a)
 
 	c := splitChoices(t, a, ui.Columns)
 	got := choiceTexts(c)
-	for _, want := range []string{"Command Prompt", "Windows PowerShell"} {
+	for _, want := range []string{"Command Prompt", "PowerShell", "Ubuntu (WSL)"} {
 		if !slices.Contains(got, want) {
 			t.Errorf("it offers %v, missing %q", got, want)
 		}
+	}
+	// Under the line that opens a terminal here, the way the plus
+	// arranges them.
+	if got[0] != "New terminal" {
+		t.Fatalf("the chooser opens on %q, want the terminal line", got[0])
+	}
+	if got[1] != "Command Prompt" {
+		t.Errorf("the line after the terminal is %q, want the first shell", got[1])
 	}
 	// A file pane belongs to the file manager and is split inside it,
 	// which is the one place this chooser and that menu differ.
@@ -248,15 +252,16 @@ func TestSplittingOnAShellLandsInTheSplit(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withDialogs(t, a)
 	withPanel(t, a)
-	a.registerShells([]shells.Shell{
-		{ID: "cmd", Title: "Command Prompt", Path: "cmd.exe"},
-		{ID: "powershell", Title: "Windows PowerShell", Path: "powershell.exe"},
-	})
+	scanShells(t, a)
 
 	c := splitChoices(t, a, ui.Columns)
-	takeChoice(t, c, "Windows PowerShell")
+	// The one that takes arguments, so the whole argv is checked.
+	takeChoice(t, c, "Ubuntu (WSL)")
 
 	waitForPanes(t, a, 2)
+	if got, want := a.lastArgv(t), argvOf(t, "wsl:Ubuntu"); !slices.Equal(got, want) {
+		t.Errorf("the pane in the split started on %v, want %v", got, want)
+	}
 	if got := len(a.stage.Children()); got != 1 {
 		t.Fatalf("the stage holds %d things, want the one split", got)
 	}
@@ -264,7 +269,7 @@ func TestSplittingOnAShellLandsInTheSplit(t *testing.T) {
 		t.Fatalf("the stage holds %T, want the split", a.stage.Children()[0])
 	}
 	// And the pane it opened is the one the next one opens on.
-	if id, ok := a.shellPick.chosen(); !ok || id != "powershell" {
+	if id, ok := a.shellPick.chosen(); !ok || id != "wsl:Ubuntu" {
 		t.Errorf("the window remembers %q, want the shell that was picked", id)
 	}
 	checkTree(t, a)
@@ -299,6 +304,48 @@ func TestSplittingOffersACommandOnAMachine(t *testing.T) {
 		if strings.HasPrefix(line, "Command on ") && line != "Command on margit…" {
 			t.Errorf("it offers %q, and only a machine reached over a connection runs one", line)
 		}
+	}
+}
+
+// With -ssh naming a machine, new panes open there, and the chooser
+// still offers a command on it and the shells of this one.
+//
+// The line that opens a terminal where new panes go is offered first and
+// not again further down, so the machine it names used to be skipped
+// whole and lost its command line with it.
+func TestSplittingOnAWindowOpenedWithSsh(t *testing.T) {
+	s := sshtest.New(t)
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pinServers(t, a, s)
+	scanShells(t, a)
+	// Connected, because new panes go to the machine -ssh named only
+	// while that connection is up.
+	a.connectAs("margit", serverConfig(t, s))
+	waitForPanes(t, a, 2)
+	a.home = "margit"
+	if got := a.newPaneHost(); got != "margit" {
+		t.Fatalf("new panes open on %q, want the machine -ssh named", got)
+	}
+
+	c := splitChoices(t, a, ui.Columns)
+	got := choiceTexts(c)
+	if !slices.Contains(got, "Command on margit…") {
+		t.Errorf("it offers %v, missing a command on the machine new panes open on", got)
+	}
+	// The shells are this machine's, so they sit with the line that
+	// opens a terminal here rather than under the one that opens there.
+	terminalHere := slices.Index(got, "Terminal on Local")
+	if terminalHere < 0 {
+		t.Fatalf("it offers %v, missing a terminal on this machine", got)
+	}
+	if got[terminalHere+1] != "Command Prompt" {
+		t.Errorf("the line after %q is %q, want the first shell of this machine",
+			got[terminalHere], got[terminalHere+1])
+	}
+	if first := slices.Index(got, "Command Prompt"); first < terminalHere {
+		t.Errorf("the shells come before the machine they open on: %v", got)
 	}
 }
 

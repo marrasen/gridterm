@@ -199,6 +199,9 @@ func toolList() []tool {
 			Description: "Open a second pane where a pane you have is: another shell on the" +
 				" same machine, handed to you as it opens. The answer names it and the other" +
 				" tools take that name." +
+				" It does not run anything: it opens a shell, and a pane that was opened to" +
+				" run one command is refused, because another pane there would read as that" +
+				" command run again." +
 				" It opens no connection. gridterm must already be connected to that machine," +
 				" and if it is not this says so and the user is the one to connect." +
 				" It works only if the user ticked \"Open another pane there\" when they" +

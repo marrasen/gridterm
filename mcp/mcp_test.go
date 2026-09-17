@@ -1127,3 +1127,72 @@ func TestReadingTheOutputTakesALineCount(t *testing.T) {
 		}
 	}
 }
+
+// What the user did with the ask is what the agent is told, each way
+// round.
+//
+// The two answers are opposites and the agent acts on them: one says a
+// password reached the program, the other says nobody answered.
+func TestTheAnswerToAnAskForASecretSaysWhatHappened(t *testing.T) {
+	for _, tc := range []struct {
+		typed bool
+		says  string
+		not   string
+	}{
+		{true, "The user typed something", "not typed anything"},
+		{false, "has not typed anything", "typed something into the pane"},
+	} {
+		panes := &fakePanes{code: "gt1-2222-abc", screen: "$ ", typesSecret: tc.typed}
+		answers := talk(t, panes,
+			`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":`+
+				`{"name":"use_session_code","arguments":{"code":"gt1-2222-abc"}}}`,
+			`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":`+
+				`{"name":"ask_for_secret","arguments":{"pane":"pane-1",`+
+				`"what":"the sudo password","wait_ms":4000}}}`)
+
+		text, failed := textOf(t, answers[1])
+		if failed {
+			t.Fatalf("asking failed: %s", text)
+		}
+		if !strings.Contains(text, tc.says) {
+			t.Errorf("the user typed %v and the agent was told:\n%s", tc.typed, text)
+		}
+		if strings.Contains(text, tc.not) {
+			t.Errorf("the user typed %v and the agent was also told %q:\n%s",
+				tc.typed, tc.not, text)
+		}
+		// And it never carries what was typed, which the window never
+		// gave it.
+		panes.mu.Lock()
+		asked, waited := panes.askedFor, panes.waitedFor
+		panes.mu.Unlock()
+		if asked != "the sudo password" {
+			t.Errorf("the window was asked for %q", asked)
+		}
+		if waited != 4*time.Second {
+			t.Errorf("the window was given %v to wait", waited)
+		}
+	}
+}
+
+// An ask with nothing to ask for is a broken call: the line it would put
+// on the user's screen would name nothing.
+func TestAnAskForASecretSaysWhatItIsFor(t *testing.T) {
+	panes := &fakePanes{code: "gt1-2222-abc", screen: "$ "}
+	answers := talk(t, panes,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":`+
+			`{"name":"use_session_code","arguments":{"code":"gt1-2222-abc"}}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":`+
+			`{"name":"ask_for_secret","arguments":{"pane":"pane-1","what":"  "}}}`)
+
+	if answers[1].Error == nil {
+		text, _ := textOf(t, answers[1])
+		t.Fatalf("it asked the user for nothing at all: %s", text)
+	}
+	panes.mu.Lock()
+	asked := panes.askedFor
+	panes.mu.Unlock()
+	if asked != "" {
+		t.Errorf("the window was asked anyway, for %q", asked)
+	}
+}

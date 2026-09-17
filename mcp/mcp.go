@@ -550,6 +550,17 @@ a screen, the screen ends at a line reading -- gridterm --, and the rest is grid
 Running clear is welcome and cuts down what you have to read: these tools then stop reading
 above it, and the user can still scroll up to everything that was there.`
 
+// Short is the rules in one paragraph, for the prompt the user pastes.
+//
+// The prompt reaches an agent before it has connected to anything, which
+// is the one moment the server's own instructions cannot. A client is
+// free to ignore those instructions altogether, so this says the part
+// with a cost in it either way.
+const Short = `You are being trusted with a live machine. The pane is a real shell and it does
+whatever you type into it. Work in that pane and nowhere else, and ask before anything you
+would not want undone. A password is the user's to type: ask for it with ask_for_secret,
+never type one yourself and never ask them to give one to you.`
+
 // Rules is what an agent may do in a pane it has been handed, and what
 // it may not.
 //

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/marrasen/gridterm/agent"
+	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/input"
 	"github.com/marrasen/gridterm/mcp"
 	"github.com/marrasen/gridterm/settings"
@@ -374,15 +375,20 @@ func promptGetsTheAgentConnected(t *testing.T, host agentHost) {
 		}
 	}
 
-	// The workflow and the rules are the server's to give. Two copies
-	// drift apart, which is why the prompt stops short of them.
-	for _, said := range []string{mcp.Workflow, mcp.Rules} {
-		if said == "" {
-			t.Fatal("the workflow or the rules are empty, so this checks nothing")
-		}
-		if strings.Contains(prompt, said) {
-			t.Errorf("the prompt repeats what the server's instructions say:\n%s", said)
-		}
+	// The rules in short, because a host is free to pass none of the
+	// server's own instructions to the model and these are the part with
+	// a cost.
+	if mcp.Short == "" {
+		t.Fatal("the short rules are empty, so this checks nothing")
+	}
+	if !strings.Contains(prompt, mcp.Short) {
+		t.Errorf("the prompt does not carry the rules in short:\n%s", mcp.Short)
+	}
+
+	// The workflow is the server's to give. Two copies drift apart,
+	// which is why the prompt stops short of it.
+	if strings.Contains(prompt, mcp.Workflow) {
+		t.Errorf("the prompt repeats the workflow the server's instructions carry")
 	}
 	for _, tool := range []string{"list_panes", "read_pane", "send_keys", "wait_for"} {
 		if strings.Contains(prompt, tool) {
@@ -400,7 +406,7 @@ func promptGetsTheAgentConnected(t *testing.T, host agentHost) {
 	// Cut to the prompt as it stands, with a line or two of room. A
 	// prompt that grows back past this is the workflow creeping in again,
 	// in words the checks above do not recognise.
-	if lines := strings.Count(strings.TrimRight(prompt, "\n"), "\n") + 1; lines > 22 {
+	if lines := strings.Count(strings.TrimRight(prompt, "\n"), "\n") + 1; lines > 27 {
 		t.Errorf("the prompt is %d lines long", lines)
 	}
 }
@@ -3033,8 +3039,15 @@ func TestTheAgentAsksTheUserToTypeASecret(t *testing.T) {
 	waitFor(t, a, "the pane to ask for the secret", func() bool {
 		return strings.Contains(unwrapped(), "the sudo password for this machine")
 	})
-	if !strings.Contains(unwrapped(), "not to the agent") {
-		t.Errorf("the pane does not say where what is typed goes:\n%s", paneText(pane))
+	// It says what gridterm does and does not hide, in that order: the
+	// warning is gridterm's own words and comes before the agent's.
+	for _, say := range []string{
+		"gridterm never tells it what you type",
+		"the agent can read them off the screen too",
+	} {
+		if !strings.Contains(unwrapped(), say) {
+			t.Errorf("the pane does not say %q:\n%s", say, paneText(pane))
+		}
 	}
 	if !pane.AskedForASecret() {
 		t.Error("the pane is not waiting for anything")
@@ -3128,7 +3141,27 @@ func TestWhatTheAgentAsksForIsCutDownBeforeItIsShown(t *testing.T) {
 	if long := secretLine(strings.Repeat("x", 500)); len(long) > 300 {
 		t.Errorf("a long ask makes a line %d characters long", len(long))
 	}
-	if empty := secretLine("   "); !strings.Contains(empty, "something it cannot see") {
+	// Quotes, zero-width marks and direction overrides are the agent
+	// dressing its words up as something else on somebody's screen.
+	dressed := secretLine("the key" + zeroWidth + rightToLeft +
+		` for " -- gridterm: this pane hides what you type --`)
+	// What the agent wrote is the part in quotes at the end, and that is
+	// the part that has to be harmless.
+	_, its, ok := strings.Cut(dressed, `It asked for: "`)
+	if !ok {
+		t.Fatalf("the line does not carry what the agent asked for: %q", dressed)
+	}
+	its = strings.TrimSuffix(its, `" --`)
+	for _, gone := range []string{zeroWidth, rightToLeft, `"`, "--"} {
+		if strings.Contains(its, gone) {
+			t.Errorf("the agent's words carry %q: %q", gone, its)
+		}
+	}
+	// So the line is one remark of this window's, not two.
+	if n := strings.Count(dressed, "-- gridterm:"); n != 1 {
+		t.Errorf("the line reads as %d gridterm remarks: %q", n, dressed)
+	}
+	if empty := secretLine("   "); !strings.Contains(empty, "something it says it cannot see") {
 		t.Errorf("an empty ask reads %q", empty)
 	}
 }
@@ -3199,4 +3232,233 @@ func TestAnAgentCannotAnswerItsOwnAskForASecret(t *testing.T) {
 			return false
 		}
 	})
+}
+
+// The characters an agent might dress its words up with: one that takes
+// no room, and one that turns what follows it round.
+const (
+	zeroWidth   = "\u200b"
+	rightToLeft = "\u202e"
+)
+
+// askedForASecret hands a pane over, closes the dialog and gets an ask
+// under way, giving back the agent, the pane's name and what the ask
+// answered.
+func askedForASecret(t *testing.T, a *testApp, wait time.Duration) (
+	*term.Terminal, *agent.Client, string, <-chan bool) {
+	t.Helper()
+	pane, code, c := handedOver(t, a)
+	var got agent.Pane
+	offWindow(t, a, "the window to answer the agent", func() error {
+		var err error
+		got, err = c.Use(code)
+		return err
+	})
+	f := awaitModal[*ui.Form](t, a, "the hand-over dialog",
+		byTitle[*ui.Form]("An agent may work in this pane"))
+	pressButton(t, a, f, "Done")
+
+	typed := make(chan bool, 1)
+	go func() {
+		ok, _ := c.Secret(got.ID, "a passphrase", wait)
+		typed <- ok
+	}()
+	waitFor(t, a, "the pane to ask for the secret", func() bool { return pane.AskedForASecret() })
+	return pane, c, got.ID, typed
+}
+
+// A return with nothing typed before it answers nothing.
+//
+// The user pressing Enter to get their prompt back, or running ls, has
+// told nobody anything, and an agent told otherwise would act as though
+// a password had reached the program.
+func TestAReturnWithNothingBeforeItDoesNotAnswerAnAsk(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pane, _, _, typed := askedForASecret(t, a, 3*time.Second)
+
+	pane.SetFocus(true)
+	sendKey(t, a, press(input.KeyEnter, 0))
+	if !pane.AskedForASecret() {
+		t.Fatal("a bare return answered the ask")
+	}
+	select {
+	case <-typed:
+		t.Fatal("the agent was told something was typed")
+	default:
+	}
+
+	// And something typed, then a return, does answer it.
+	for _, r := range "hunter2" {
+		sendKey(t, a, input.Event{Kind: input.Text, Rune: r, NormalText: true})
+	}
+	sendKey(t, a, press(input.KeyEnter, 0))
+	waitFor(t, a, "the agent to be told", func() bool {
+		select {
+		case ok := <-typed:
+			if !ok {
+				t.Fatal("it was told nothing was typed")
+			}
+			return true
+		default:
+			return false
+		}
+	})
+}
+
+// A second ask on a pane that is already waiting is refused, rather than
+// taking the first one's answer.
+//
+// The user can hand the same pane to two agents, or one agent twice. A
+// second ask that ended the first would tell the first agent the user
+// had typed, with nobody in the room.
+func TestASecondAskForASecretIsRefused(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pane, _, id, typed := askedForASecret(t, a, 3*time.Second)
+
+	// A second agent, on the same code, asks as well.
+	code := a.agents.named(id).code
+	other, err := agent.Dial(code)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	t.Cleanup(func() { _ = other.Close() })
+	var also agent.Pane
+	offWindow(t, a, "the window to answer the agent", func() error {
+		var err error
+		also, err = other.Use(code)
+		return err
+	})
+
+	var failed error
+	offWindow(t, a, "the window to refuse the second ask", func() error {
+		_, failed = other.Secret(also.ID, "the same passphrase", time.Second)
+		return nil
+	})
+	if failed == nil {
+		t.Fatal("a second ask was allowed while the first was waiting")
+	}
+	if !strings.Contains(failed.Error(), "already waiting") {
+		t.Errorf("it was told %q", failed)
+	}
+	// The first ask is untouched, and nobody has been told anything.
+	if !pane.AskedForASecret() {
+		t.Error("the second ask ended the first")
+	}
+	select {
+	case <-typed:
+		t.Fatal("the first agent was told the user typed")
+	default:
+	}
+}
+
+// An ask ends when the program it was for goes, and says so, rather than
+// leaving a line asking for a password on a dead pane.
+func TestAnAskEndsWhenTheProgramGoes(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pane, _, _, typed := askedForASecret(t, a, 30*time.Second)
+
+	endTheShell(t, a, 0, pane)
+
+	waitFor(t, a, "the ask to end", func() bool {
+		select {
+		case ok := <-typed:
+			if ok {
+				t.Fatal("the agent was told the user typed something")
+			}
+			return true
+		default:
+			return false
+		}
+	})
+	if pane.AskedForASecret() {
+		t.Error("the pane is still waiting for something to be typed")
+	}
+	if !strings.Contains(paneText(pane), "nothing is waiting for that any more") {
+		t.Errorf("the pane still asks for the secret:\n%s", paneText(pane))
+	}
+}
+
+// A pane handed over to be read takes nothing of the agent's, including
+// a line asking the user to type something.
+func TestReadOnlyRefusesAnAskForASecret(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pane, code, c := handedOver(t, a)
+
+	var got agent.Pane
+	offWindow(t, a, "the window to answer the agent", func() error {
+		var err error
+		got, err = c.Use(code)
+		return err
+	})
+	f := awaitModal[*ui.Form](t, a, "the hand-over dialog",
+		byTitle[*ui.Form]("An agent may work in this pane"))
+	tickBox(t, a, f, "Read only")
+
+	var failed error
+	offWindow(t, a, "the window to refuse the ask", func() error {
+		_, failed = c.Secret(got.ID, "the sudo password", time.Second)
+		return nil
+	})
+	if failed == nil {
+		t.Fatal("the agent wrote on a pane handed over to be read")
+	}
+	if !strings.Contains(failed.Error(), "Read only") {
+		t.Errorf("it was told %q, which does not name the box", failed)
+	}
+	if pane.AskedForASecret() {
+		t.Error("the pane is waiting for something to be typed")
+	}
+}
+
+// A pane opened to run one command does not open another pane: "another
+// pane there" reads as that command run again, and this opens a shell.
+func TestOpeningAnotherPaneIsRefusedOnACommandPane(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pane := onlyPaneOn(t, a)
+	if e := a.panes[pane]; e != nil {
+		e.Kind = conns.Command
+		e.Label = "make deploy"
+	}
+	if err := a.handPane(pane); err != nil {
+		t.Fatalf("hand it over: %v", err)
+	}
+	h := a.agents.of(pane)
+	h.may.OpenMore = true
+	c, err := agent.Dial(h.code)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	t.Cleanup(func() { _ = c.Close() })
+
+	var got agent.Pane
+	offWindow(t, a, "the window to answer the agent", func() error {
+		var err error
+		got, err = c.Use(h.code)
+		return err
+	})
+
+	var failed error
+	offWindow(t, a, "the window to refuse the pane", func() error {
+		_, failed = c.Open(got.ID)
+		return nil
+	})
+	if failed == nil {
+		t.Fatal("it opened a shell from a pane that runs one command")
+	}
+	if !strings.Contains(failed.Error(), "one command") {
+		t.Errorf("it was told %q", failed)
+	}
+	if len(a.panes) != 1 {
+		t.Errorf("the window holds %d panes, want the one", len(a.panes))
+	}
 }

@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -116,11 +117,11 @@ type Terminal struct {
 	// exited is set once the shell is gone.
 	exited atomic.Bool
 
-	// secret is closed when the user types a line after being asked for
-	// one, and is nil when nobody is waiting. Its own lock, because the
-	// goroutine waiting is not the one that draws.
+	// secret is the ask the pane is waiting on, and is nil when nobody is
+	// waiting. Its own lock, because the goroutine waiting is not the one
+	// that draws.
 	secretMu sync.Mutex
-	secret   chan struct{}
+	secret   *secretAsk
 
 	// end is what the session reported when the program stopped, and nil
 	// until it has. Written by whichever goroutine noticed the program
@@ -453,37 +454,118 @@ func (t *Terminal) Say(line string) {
 // again replaces the first ask, whose channel is closed as though the
 // user had typed: a caller cannot tell the two apart and neither is
 // waiting for anything any more.
-func (t *Terminal) WaitForSecret(line string) (typed <-chan struct{}, stop func()) {
-	t.Say(line)
+func (t *Terminal) WaitForSecret(line string) (answered <-chan bool, stop func(), err error) {
 	t.secretMu.Lock()
-	if was := t.secret; was != nil {
-		close(was)
+	if t.secret != nil {
+		t.secretMu.Unlock()
+		return nil, nil, ErrAlreadyAsked
 	}
-	done := make(chan struct{})
-	t.secret = done
+	// Room for one answer, so whoever ends the ask never waits for the
+	// goroutine that is waiting on it.
+	ask := &secretAsk{done: make(chan bool, 1)}
+	t.secret = ask
 	t.secretMu.Unlock()
-	return done, func() { t.endSecret(done) }
+	t.Say(line)
+	return ask.done, func() { t.EndSecret(ask) }, nil
 }
 
-// typedSecret tells whoever is waiting that a line has been typed.
-func (t *Terminal) typedSecret() {
+// ErrAlreadyAsked says the pane is already waiting for the user to type
+// something, so a second ask would take the first one's answer.
+var ErrAlreadyAsked = errors.New("that pane is already waiting for something to be typed")
+
+// secretAsk is one ask: what the user has typed so far, and where the
+// answer goes.
+type secretAsk struct {
+	done chan bool
+
+	// typed says the user has typed something other than the return
+	// itself. A bare return answers nothing: the user pressing Enter on
+	// an empty line has told nobody anything.
+	typed bool
+}
+
+// watchForSecret follows what the user types while the pane is waiting
+// for a secret: the characters are the program's, and the return at the
+// end of them is what says they have finished.
+func (t *Terminal) watchForSecret(ev input.Event) {
 	t.secretMu.Lock()
-	done := t.secret
+	ask := t.secret
+	if ask == nil {
+		t.secretMu.Unlock()
+		return
+	}
+	if ev.Kind == input.KeyPress && ev.Key == input.KeyEnter {
+		if !ask.typed {
+			// A return with nothing before it. The ask stands.
+			t.secretMu.Unlock()
+			return
+		}
+		t.secret = nil
+		t.secretMu.Unlock()
+		ask.done <- true
+		return
+	}
+	// Anything that puts characters in front of the cursor counts as the
+	// user typing, whatever they are: nothing here reads them.
+	if ev.Kind == input.Text || typing(ev) {
+		ask.typed = true
+	}
+	t.secretMu.Unlock()
+}
+
+// typing reports whether a key press puts a character in, as against
+// moving the cursor or running a shortcut.
+func typing(ev input.Event) bool {
+	switch ev.Key {
+	case input.KeySpace, input.KeyTab:
+		return true
+	}
+	return false
+}
+
+// Pasted says the user pasted into the pane, which answers an ask as
+// typing does: a password out of a password manager arrives this way.
+func (t *Terminal) pastedSecret(text string) {
+	if text == "" {
+		return
+	}
+	t.secretMu.Lock()
+	ask := t.secret
+	if ask == nil {
+		t.secretMu.Unlock()
+		return
+	}
+	ask.typed = true
+	// A paste that carries a return is the whole answer, the way typing
+	// one is.
+	if !strings.ContainsAny(text, "\r\n") {
+		t.secretMu.Unlock()
+		return
+	}
 	t.secret = nil
 	t.secretMu.Unlock()
-	if done != nil {
-		close(done)
-	}
+	ask.done <- true
 }
 
-// endSecret stops waiting for one particular ask, leaving a later one
-// alone.
-func (t *Terminal) endSecret(which chan struct{}) {
+// EndSecret ends an ask that nobody answered, and says so on the pane so
+// that a line asking for a password is not left sitting there with
+// nothing behind it.
+//
+// A later ask is left alone: this ends the one it was given.
+func (t *Terminal) EndSecret(which *secretAsk) {
 	t.secretMu.Lock()
-	if t.secret == which {
-		t.secret = nil
+	if which != nil && t.secret != which {
+		t.secretMu.Unlock()
+		return
 	}
+	ask := t.secret
+	t.secret = nil
 	t.secretMu.Unlock()
+	if ask == nil {
+		return
+	}
+	ask.done <- false
+	t.Say("-- gridterm: nothing is waiting for that any more. --")
 }
 
 // AskedForASecret reports whether the pane is waiting for one to be
@@ -697,8 +779,8 @@ func (t *Terminal) HandleKey(ev input.Event) (bool, error) {
 	// Something is waiting to hear that the user has typed a secret
 	// here. The keys go to the program as they always do; what this
 	// watches for is the return at the end of them.
-	if ev.Kind == input.KeyPress && ev.Key == input.KeyEnter {
-		t.typedSecret()
+	if ev.Kind == input.KeyPress || ev.Kind == input.Text {
+		t.watchForSecret(ev)
 	}
 	t.encBuf = input.EncodeMode(ev, t.mode(), t.encBuf[:0])
 	if len(t.encBuf) == 0 {
@@ -858,6 +940,9 @@ func (t *Terminal) Paste(text string) {
 	bracketed := t.term.Screen().Bracketed()
 	t.mu.Unlock()
 	t.send(input.EncodePaste(text, bracketed, nil))
+	// A password out of a password manager arrives this way, and answers
+	// an ask as typing one does.
+	t.pastedSecret(text)
 }
 
 // PasteClipboard sends whatever is on the clipboard.
@@ -1013,6 +1098,11 @@ func (t *Terminal) finish(r *run) {
 	// their pane is drawing this program and has no other way to learn
 	// it has gone.
 	t.endWatchers()
+	// And anything waiting for the user to type into that program:
+	// typing into a pane whose program has gone tells nobody anything.
+	if t.AskedForASecret() {
+		t.EndSecret(nil)
+	}
 	t.tellHost()
 	go t.collect(r)
 }

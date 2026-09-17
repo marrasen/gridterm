@@ -7,9 +7,11 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/marrasen/gridterm/agent"
 	"github.com/marrasen/gridterm/conns"
+	"github.com/marrasen/gridterm/mcp"
 	"github.com/marrasen/gridterm/settings"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/term"
@@ -104,6 +106,16 @@ func (g *agents) rememberMay(may settings.AgentMay) error {
 	return g.remembered.PutAgentMay(may)
 }
 
+// endAsks ends anything an agent was waiting for the user to type in
+// these panes, for panes that are being taken back.
+func endAsks(panes ...*term.Terminal) {
+	for _, pane := range panes {
+		if pane != nil && pane.AskedForASecret() {
+			pane.EndSecret(nil)
+		}
+	}
+}
+
 // forget drops a pane's handover, and with it every pane the agent
 // opened from it, and reports whether there was one.
 //
@@ -116,9 +128,11 @@ func (g *agents) forget(pane *term.Terminal) bool {
 		return false
 	}
 	delete(g.by, pane)
+	endAsks(pane)
 	for other, from := range g.by {
 		if g.openedBy(from, h) {
 			delete(g.by, other)
+			endAsks(other)
 		}
 	}
 	return true
@@ -827,6 +841,15 @@ func (w agentWindow) Open(id string) (agent.Pane, error) {
 		if e == nil {
 			return agent.Pane{}, errors.New("that pane is no longer open")
 		}
+		// Not from a pane that was opened to run one command. "Another
+		// pane there" reads as that command run a second time, and this
+		// opens a shell; neither is what the user meant to allow, so
+		// they are asked for the pane they want instead.
+		if e.Kind == conns.Command {
+			return agent.Pane{}, errors.New(
+				"that pane was opened to run one command, and this does not run commands." +
+					" Ask the user to open the pane you need")
+		}
 		if err := w.a.connectedAlready(e.Host); err != nil {
 			return agent.Pane{}, err
 		}
@@ -884,36 +907,65 @@ func (w agentWindow) Secret(id, what string, wait time.Duration) (bool, error) {
 		if err != nil {
 			return secretAsk{}, err
 		}
+		// Read only means the agent puts nothing in the user's pane, and
+		// this line is the one thing it could otherwise put there.
+		if w.a.agents.allowed(h).ReadOnly {
+			return secretAsk{}, errors.New(
+				"the user handed this pane over to be read, so nothing of yours goes on it." +
+					` Ask them to turn "Read only" off, or ask them for what you need` +
+					" in your own words")
+		}
 		if h.pane.Exited() {
 			return secretAsk{}, errors.New(
 				"the program in that pane has finished, so nothing is waiting to be told anything")
 		}
-		typed, stop := h.pane.WaitForSecret(secretLine(what))
+		answered, stop, err := h.pane.WaitForSecret(secretLine(what))
+		if err != nil {
+			return secretAsk{}, err
+		}
 		w.a.markDirty()
-		return secretAsk{typed: typed, stop: stop}, nil
+		return secretAsk{answered: answered, stop: stop}, nil
 	})
 	if err != nil {
 		return false, err
 	}
 	// On the goroutine that draws, like everything else that touches the
-	// pane.
+	// pane, and however this ends: the line has to come off the pane and
+	// the pane has to stop waiting.
 	defer w.a.pump.post(ask.stop)
 
+	// A person needs a moment, so the wait is not allowed to be an
+	// instant: an ask that came back at once could be asked again and
+	// again, and each one writes a line on the user's screen.
+	wait = min(max(wait, shortestSecretWait), agent.LongestSecretWait)
+	giveUp := time.NewTimer(wait)
+	defer giveUp.Stop()
+
 	select {
-	case <-ask.typed:
+	case answered := <-ask.answered:
+		if !answered {
+			return false, errors.New(
+				"that ask ended without the user answering it: the pane closed, the program" +
+					" in it finished, or the user took the pane back")
+		}
 		return true, nil
-	case <-time.After(wait):
+	case <-giveUp.C:
 		return false, nil
 	case <-w.a.ctx.Done():
 		return false, errors.New("this window is closing")
 	}
 }
 
-// secretAsk is a pane waiting for the user to type something: the
-// channel that says they have, and what stops waiting.
+// shortestSecretWait is the least an ask waits, whatever the agent asked
+// for. Long enough that asking again and again is not a way to write on
+// somebody's screen.
+const shortestSecretWait = 5 * time.Second
+
+// secretAsk is a pane waiting for the user to type something: where the
+// answer comes back, and what stops waiting.
 type secretAsk struct {
-	typed <-chan struct{}
-	stop  func()
+	answered <-chan bool
+	stop     func()
 }
 
 // secretLine is what the pane says when an agent asks for a secret.
@@ -923,10 +975,15 @@ type secretAsk struct {
 // exactly the line somebody should be suspicious of.
 func secretLine(what string) string {
 	if what = strings.TrimSpace(cleanSecretAsk(what)); what == "" {
-		what = "something it cannot see"
+		what = "something it says it cannot see"
 	}
-	return "-- gridterm: the agent is asking you to type " + what + " here." +
-		" What you type goes to the program in this pane, not to the agent. --"
+	// gridterm's own words first and the agent's last, in quotes: the
+	// agent cannot push the warning off the first rows, and cannot make
+	// its own text read as another line of this one.
+	return `-- gridterm: an agent wants something typed here. gridterm never tells it` +
+		` what you type. The program in this pane gets it, so if you can see the` +
+		` characters as you type them, the agent can read them off the screen too.` +
+		` It asked for: "` + what + `" --`
 }
 
 // cleanSecretAsk cuts an agent's own words down to one plain line.
@@ -935,25 +992,37 @@ func secretLine(what string) string {
 // that could draw somewhere else or pretend to be the window talking.
 func cleanSecretAsk(what string) string {
 	var out strings.Builder
+	shown := 0
 	for _, r := range what {
 		switch {
 		case r == '\n' || r == '\t' || r == '\r':
 			out.WriteByte(' ')
 		case r < ' ' || r == 0x7f:
 			// Dropped: an escape sequence in it would draw.
+		case r == '"':
+			// The quotes around it are gridterm's, and a quote inside
+			// would look like the end of them.
+			out.WriteByte('\'')
+		case unicode.Is(unicode.Cf, r) || unicode.Is(unicode.Cs, r) || unicode.Is(unicode.Co, r):
+			// Zero-width marks, direction overrides and the like: they
+			// take no room and change how the rest reads.
+		case r == '-' && strings.HasSuffix(out.String(), "-"):
+			// Two dashes are how one of this window's own remarks opens
+			// and closes, and the agent's words are not one.
 		default:
 			out.WriteRune(r)
 		}
-		if out.Len() >= mostSecretWords {
+		if shown++; shown >= mostSecretWords {
 			break
 		}
 	}
 	return out.String()
 }
 
-// mostSecretWords is how much of an agent's asking is put on the screen.
-// Enough to say what is wanted, short enough to stay one line.
-const mostSecretWords = 120
+// mostSecretWords is how many characters of an agent's asking go on the
+// screen. Enough to name what is wanted, short enough that the line it
+// sits in is still read.
+const mostSecretWords = 60
 
 // connectedAlready says whether the window already holds a connection to
 // a machine, so that opening another pane there opens nothing.
@@ -1299,9 +1368,10 @@ func (a *app) showSetup(host agentHost, exe string, exeErr error) {
 // heard of gridterm: what it has been handed, how to reach the MCP
 // server on the host it is running in, and the code.
 //
-// It stops there. How to work in a pane and what the rules are come from
+// It carries the rules in short as well. How the tools work comes from
 // the MCP server's own instructions, which a host passes to the agent
-// when it connects, so this does not repeat them.
+// when it connects; the rules are here too, because a host is free to
+// pass none of that on and the rules are the part with a cost.
 func handoverPrompt(host agentHost, code, exe string) string {
 	return fmt.Sprintf(`The user has handed you one terminal pane in gridterm, a terminal
 running on this machine. You work in that pane through gridterm's MCP
@@ -1319,8 +1389,10 @@ every other tool takes that name.
 
   %s
 
-The server's own instructions say how the tools work and what the rules are.
-`, host.setupForAgent(exe), code)
+%s
+
+The server's own instructions say how the tools work, and say this again.
+`, host.setupForAgent(exe), code, mcp.Short)
 }
 
 // exePath is this program's own path, for the lines that say how to

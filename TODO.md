@@ -3,42 +3,25 @@
 Things Marcus has asked for that are not done yet. Newest first within
 each group. A line goes when the work is in and reviewed.
 
-## Questions for Marcus
-
-Open calls that are his, not mine. Each one is written down rather than
-guessed at.
-
-1. **"Open another pane there" opens a shell, whatever the pane it was
-   opened from was running.** Hand over a pane running `docker exec sh`,
-   or `kubectl logs -f`, or a command that has already finished, tick
-   the box, and the agent gets a plain login shell on that machine. It
-   never had one.
-   - **Why it is written this way.** "Another pane to the same server"
-     is what the "+" on a machine's row opens, which is a shell. Opening
-     another `docker exec` would be a different feature.
-   - **The question.** Should the box be refused on a pane that was
-     opened with a command, so it only ever widens a shell to a second
-     shell? A reviewer raised it. It opens a shell for now.
-
-2. **Should the short rules go in the hand-over prompt as well?** The
-   rules are five lines now, so carrying them in both places costs
-   little. The reason to: the MCP server's `instructions` are the only
-   place an agent is told them, and a client is free to ignore
-   `instructions`. Claude Code shows them; gridterm cannot check what
-   Codex, Cursor or another host does, and the skill is no fallback
-   there because only Claude Code has a place gridterm knows to write
-   one into. The prompt says nothing about them for now, as you asked
-   on 17 September.
-
 ## Answered on 2026-09-18
 
-1. **The rules say the agent is trusted, and stop there.** `mcp.Rules`
+1. **"Open another pane there" is off for a command pane.** Another pane
+   where a command is running reads as that command run again, which is
+   not something to hand an agent. It opens a shell, and a pane opened
+   to run one command is refused.
+
+2. **The rules go in the pasted prompt as well, short.** `mcp.Short` is
+   the four lines with a cost in them: this is a live machine, work in
+   that pane, ask before anything you would not want undone, and a
+   password is the user's to type. The workflow stays with the server.
+
+3. **The rules say the agent is trusted, and stop there.** `mcp.Rules`
    was a list of prohibitions. It now says the pane is a live machine
    somebody has trusted it with, and asks it not to spend that trust.
    The password stays spelled out, because typing one is taking a
    credential the user never handed over.
 
-2. **The button is "Instructions".** Five buttons of the length of
+4. **The button is "Instructions".** Five buttons of the length of
    "Install instructions" do not fit an eighty column window, and a form
    drops the ones that will not fit without saying so.
 

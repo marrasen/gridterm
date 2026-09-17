@@ -1520,3 +1520,47 @@ func TestAWaitGivesUpOnAMarkLeftStuckRunning(t *testing.T) {
 		t.Errorf("the wait ended %+v, want %q", ended, EndedOnStuck)
 	}
 }
+
+// Asking for a secret reaches only a pane this agent has been handed,
+// like everything else.
+func TestAskingForASecretNeedsTheCodeFirst(t *testing.T) {
+	w, _, code := listening(t)
+	c := dialled(t, code)
+
+	// No code used yet, so this agent holds nothing.
+	if _, err := c.Secret("pane-1", "a passphrase", time.Second); err == nil {
+		t.Fatal("it asked on a pane it had not been handed")
+	}
+	if got := w.secretAskedFor(); got != "" {
+		t.Errorf("the window was asked for %q", got)
+	}
+
+	// And with the code, it reaches the pane it was given.
+	pane := opened(t, c, code)
+	w.typesSecretNow()
+	typed, err := c.Secret(pane.ID, "a passphrase", 2*time.Second)
+	if err != nil {
+		t.Fatalf("asking: %v", err)
+	}
+	if !typed {
+		t.Error("it was told the user typed nothing")
+	}
+	if got := w.secretAskedFor(); got != "a passphrase" {
+		t.Errorf("the window was asked for %q", got)
+	}
+}
+
+// secretAskedFor is what the last ask asked the user for.
+func (w *fakeWindow) secretAskedFor() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.askedFor
+}
+
+// typesSecretNow is a user who answers the next ask at once.
+func (w *fakeWindow) typesSecretNow() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.typesSecret = make(chan struct{})
+	close(w.typesSecret)
+}

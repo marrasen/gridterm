@@ -96,14 +96,14 @@ type hostFacts struct {
 	far remoteHostKey
 }
 
-// held says the window is holding something under this name: a
-// connection, another gridterm taken over, or one being reached.
 // runsCommands reports whether a command can be run on a machine, which
 // needs a shell. A gridterm window has none.
 func (f hostFacts) runsCommands() bool {
 	return f.kind != hostWindow && !f.serves
 }
 
+// held says the window is holding something under this name: a
+// connection, another gridterm taken over, or one being reached.
 func (f hostFacts) held() bool {
 	return f.window != nil || f.machine != nil || f.dialling != nil
 }

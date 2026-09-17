@@ -16,6 +16,7 @@ import (
 	"github.com/marrasen/gridterm/internal/sshtest"
 	"github.com/marrasen/gridterm/meter"
 	"github.com/marrasen/gridterm/remote"
+	"github.com/marrasen/gridterm/session"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/term"
 )
@@ -492,6 +493,112 @@ func TestRunACommandOnThisMachine(t *testing.T) {
 	}
 	if !strings.Contains(pane.Asking(), "again") {
 		t.Errorf("the pane asks %q, want the offer to run it again", pane.Asking())
+	}
+}
+
+// A command taken from the split chooser lands in the split.
+func TestACommandHereLandsInTheSplit(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+
+	c := splitChoices(t, a, ui.Columns)
+	takeChoice(t, c, "Command on Local…")
+	f := awaitModal(t, a, "the command dialog", byTitle[*ui.Form]("Run a command on Local"))
+	typeIntoField(t, a, f, "Command", "make deploy")
+	pressButton(t, a, f, "Run")
+	waitForPanes(t, a, 2)
+
+	if got := len(a.stage.Children()); got != 1 {
+		t.Fatalf("the stage holds %d things, want the one split", got)
+	}
+	if _, isSplit := a.stage.Children()[0].(*ui.Split); !isSplit {
+		t.Fatalf("the stage holds %T, want the split", a.stage.Children()[0])
+	}
+	checkTree(t, a)
+}
+
+// A command here that cannot be started says so, and opens no pane.
+func TestACommandHereThatWillNotStartSaysSo(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	boom := errors.New("there is no such program")
+	a.newShell = func([]string, int, int) (session.Session, error) { return nil, boom }
+
+	if err := a.openCommandHere(); err != nil {
+		t.Fatalf("a command on this machine: %v", err)
+	}
+	f := awaitModal[*ui.Form](t, a, "the command dialog", nil)
+	typeIntoField(t, a, f, "Command", "nowhere")
+	pressButton(t, a, f, "Run")
+
+	n := awaitModal[*ui.Notice](t, a, "a notice", nil)
+	if n.Title != "Could not run it on Local" {
+		t.Errorf("the dialog is titled %q, want the machine named", n.Title)
+	}
+	if !strings.Contains(n.Message(), boom.Error()) {
+		t.Errorf("the dialog says\n%s\nwant it to hold %q", n.Message(), boom)
+	}
+	if len(a.panes) != 1 {
+		t.Errorf("%d panes, want nothing opened", len(a.panes))
+	}
+}
+
+// A command that has ended keeps its name on the row, so the sidebar
+// still says what the pane holds.
+func TestACommandHereKeepsItsNameOnTheRowAfterItEnds(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+
+	if err := a.openCommandHere(); err != nil {
+		t.Fatalf("a command on this machine: %v", err)
+	}
+	f := awaitModal[*ui.Form](t, a, "the command dialog", nil)
+	typeIntoField(t, a, f, "Command", "make deploy")
+	pressButton(t, a, f, "Run")
+	waitForPanes(t, a, 2)
+
+	pane := a.focusedTerminal()
+	endTheShell(t, a, len(a.shells)-1, pane)
+
+	a.refreshPanel(time.Now())
+	row, ok := panelRow(a, a.panes[pane])
+	if !ok {
+		t.Fatalf("the pane has no row: %v", panelText(a, time.Now()))
+	}
+	if row.Text != "make deploy" {
+		t.Errorf("the row says %q once it has ended, want what it ran", row.Text)
+	}
+}
+
+// A shell run as a command keeps the command's name on its row. A
+// command row says the command, whatever the command happens to be.
+func TestAShellRunAsACommandHereKeepsTheCommandName(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	scanShells(t, a)
+
+	if err := a.openCommandHere(); err != nil {
+		t.Fatalf("a command on this machine: %v", err)
+	}
+	f := awaitModal[*ui.Form](t, a, "the command dialog", nil)
+	// The path of a shell this machine has, so the row could be renamed
+	// after it if a command row were named the way a terminal row is.
+	typeIntoField(t, a, f, "Command", cmdPath)
+	pressButton(t, a, f, "Run")
+	waitForPanes(t, a, 2)
+
+	pane := a.focusedTerminal()
+	a.refreshPanel(time.Now())
+	row, ok := panelRow(a, a.panes[pane])
+	if !ok {
+		t.Fatalf("the pane has no row: %v", panelText(a, time.Now()))
+	}
+	if row.Text != cmdPath {
+		t.Errorf("the row says %q, want the command that was typed", row.Text)
 	}
 }
 

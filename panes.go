@@ -74,11 +74,8 @@ func (a *app) localTerminalOn(argv []string) (*term.Terminal, error) {
 }
 
 // runCommandHere opens a pane running a command on this machine, at a
-// spot or in a tab of its own.
-//
-// A command row rather than a terminal one, so the pane is named by what
-// it runs and asks whether to run it again when it ends, the way a
-// command on a machine does.
+// spot or in a tab of its own. The pane gets a command row, so it is
+// named by what it runs and offers to run it again when it ends.
 func (a *app) runCommandHere(argv []string, at *spot) error {
 	sess, err := a.newShell(argv, a.lastSize[0], a.lastSize[1])
 	if err != nil {
@@ -86,12 +83,12 @@ func (a *app) runCommandHere(argv []string, at *spot) error {
 	}
 	t, err := a.openSessionTab(sess, conns.Local, conns.Command, labelFor(argv), at)
 	if err != nil {
-		// The session is ours now and nothing else will close it.
+		// Ours unless openSessionTab closed it already, and closing
+		// twice is safe.
 		_ = sess.Close()
 		return err
 	}
 	a.startsAgain(t, argv, nil)
-	a.focus(t)
 	return nil
 }
 
@@ -141,8 +138,12 @@ func (a *app) localArgv(t *term.Terminal) []string {
 }
 
 // shellName is what a pane's row calls the shell it runs, and empty when
-// this machine has no name for it.
+// this machine has no name for it. A command row is named by what it
+// runs, even when what it runs is a shell.
 func (a *app) shellName(t *term.Terminal) string {
+	if e := a.panes[t]; e == nil || e.Kind != conns.Terminal {
+		return ""
+	}
 	argv := a.localArgv(t)
 	if len(argv) == 0 {
 		return ""

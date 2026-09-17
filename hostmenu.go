@@ -107,8 +107,13 @@ func (a *app) openHostMenu(row ui.ListRow) error {
 		items, about = farItems(), func() { a.hostMenus.nowAboutFar(key) }
 	case *conns.Entry:
 		// The button on a connection's row clears a finished one or
-		// closes the pane a row stands for. Neither needs a menu.
-		return a.pressRowCross(key)
+		// closes the pane a row stands for. Neither needs a menu. Which
+		// of the two is whichever cross the row drew: a row that carries
+		// one whatever the pointer is doing is the clearing one.
+		if row.Button != 0 {
+			return a.clearRow(key)
+		}
+		return a.closePaneRow(key)
 	default:
 		return nil
 	}
@@ -145,14 +150,13 @@ func (a *app) openHostMenu(row ui.ListRow) error {
 	return nil
 }
 
-// pressRowCross does what the cross at the end of a connection's row
-// does: clears a finished row, and closes the pane a live one stands
-// for.
-func (a *app) pressRowCross(e *conns.Entry) error {
-	if e.Clear != nil {
-		return a.clearRow(e)
-	}
-	if !a.paneRows[e] || e.Close == nil {
+// closePaneRow closes the pane a row stands for, which is what the cross
+// on a pane's row does.
+//
+// Asked of the panes rather than of paneRows: that set is a frame old,
+// and a key in the same frame can have closed the pane already.
+func (a *app) closePaneRow(e *conns.Entry) error {
+	if !a.stillAPane(e) || e.Close == nil {
 		return nil
 	}
 	if err := e.Close(); err != nil {
@@ -164,6 +168,25 @@ func (a *app) pressRowCross(e *conns.Entry) error {
 	return nil
 }
 
+// stillAPane reports whether a row stands for a pane the window still
+// holds.
+func (a *app) stillAPane(e *conns.Entry) bool {
+	for _, have := range a.panes {
+		if have == e {
+			return true
+		}
+	}
+	if a.files == nil {
+		return false
+	}
+	for _, have := range a.files.rows {
+		if have == e {
+			return true
+		}
+	}
+	return false
+}
+
 // clearRow takes a finished row off the panel, which is what the cross at
 // the end of it does.
 //
@@ -172,8 +195,8 @@ func (a *app) pressRowCross(e *conns.Entry) error {
 // and closing the pane or "clear finished connections" is what takes it
 // away.
 //
-// A row with nothing to clear carries no cross, so nothing here asks
-// whether it has finished.
+// A row with nothing to clear draws no clearing cross, so nothing here
+// asks whether it has finished.
 func (a *app) clearRow(e *conns.Entry) error {
 	if e.Clear == nil {
 		return nil

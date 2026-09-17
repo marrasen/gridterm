@@ -509,9 +509,8 @@ func (a *app) panelRow(row conns.Row, now time.Time) ui.ListRow {
 		}
 	}
 	if out.Button == 0 && a.paneRows[row.Entry] && row.Entry.Close != nil {
-		// A pane's row closes the pane and the row together, which is
-		// more than a click the user did not mean should do, so it is
-		// offered only while the pointer is on the row.
+		// A pane's row closes the pane and the row together, so its
+		// cross is offered only while the pointer is on the row.
 		out.HoverButton = clearButton
 	}
 	return out

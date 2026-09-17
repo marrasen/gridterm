@@ -429,7 +429,12 @@ func TestTheCrossOnAPaneRowClosesThePane(t *testing.T) {
 		t.Fatalf("the pane has no row: %v", panelText(a, time.Now()))
 	}
 	if drawn.HoverButton == 0 {
-		t.Fatal("a pane's row offers nothing while the pointer is on it")
+		t.Fatal("a pane's row carries nothing to offer under the pointer")
+	}
+	// And the pointer is on that row, which is what makes the list draw
+	// it. The row carries the same character whatever the pointer does.
+	if got, want := a.panel.Hover(), a.panel.RowTop(e); got != want {
+		t.Fatalf("the pointer is on row %d, want the pane's row %d", got, want)
 	}
 
 	clickClear(t, a, e)
@@ -440,6 +445,101 @@ func TestTheCrossOnAPaneRowClosesThePane(t *testing.T) {
 	if _, ok := panelRow(a, e); ok {
 		t.Errorf("the row is still on the panel: %v", panelText(a, time.Now()))
 	}
+}
+
+// A file pane's row carries the cross too. The manager holds a pane per
+// machine and the sidebar gives each one a row, so each is closed from
+// its own.
+func TestTheCrossOnAFilePaneRowClosesThatPane(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	p := openFilesFromThePlus(t, a, conns.Local)
+	waitFor(t, a, "the pane to land somewhere", func() bool { return p.At() != "" })
+
+	e := a.files.rows[p]
+	if e == nil {
+		t.Fatal("the file pane has no row")
+	}
+	pointAtRow(t, a, e)
+	clickClear(t, a, e)
+
+	if a.files != nil && a.files.rows[p] != nil {
+		t.Fatal("the press left the file pane open")
+	}
+	a.refreshPanel(time.Now())
+	if _, ok := panelRow(a, e); ok {
+		t.Errorf("the row is still on the panel: %v", panelText(a, time.Now()))
+	}
+}
+
+// The cross goes when the window does. ebiten hands back the last place
+// it saw the pointer, so a window that lost the focus would keep drawing
+// a cross under a pointer that is somewhere else.
+func TestNoCrossOnceTheWindowHasLostThePointer(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	first, ok := onlyPaneWidget(t, a).(*term.Terminal)
+	if !ok {
+		t.Fatal("the window opened on something that is not a terminal")
+	}
+	e := a.panes[first]
+	if err := a.openTab(); err != nil {
+		t.Fatalf("openTab: %v", err)
+	}
+
+	pointAtRow(t, a, e)
+	a.pointerGone = true
+	a.refreshPanel(time.Now())
+	if got := a.panel.Hover(); got >= 0 {
+		t.Errorf("the pointer is on row %d with the window not under it", got)
+	}
+
+	// So the press lands on the row and puts the pane in front.
+	clickClear(t, a, e)
+	if a.panes[first] == nil {
+		t.Fatal("the press took the pane away")
+	}
+}
+
+// A pane closed by a key in the same frame is not closed again by the
+// cross. The rows that stand for a pane are a frame old.
+func TestTheCrossSaysNothingAboutAPaneAKeyHasClosed(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	first, ok := onlyPaneWidget(t, a).(*term.Terminal)
+	if !ok {
+		t.Fatal("the window opened on something that is not a terminal")
+	}
+	e := a.panes[first]
+	if err := a.openTab(); err != nil {
+		t.Fatalf("openTab: %v", err)
+	}
+
+	pointAtRow(t, a, e)
+	// Where the cross is, worked out while the pane is still there.
+	col, y := a.panel.ButtonCol(), a.panel.RowTop(e)
+	if col < 0 || y < 0 {
+		t.Fatalf("no cross to press: column %d, row %d", col, y)
+	}
+	x, wide := a.sideGeo.ColBox(col, col+1)
+	top, high := a.sideGeo.RowBox(y, y+1)
+	at, on := a.cellAt(a.sideRegion.left+x+wide/2, a.sideRegion.top+top+high/2)
+
+	if err := a.closePane(first); err != nil {
+		t.Fatalf("closePane: %v", err)
+	}
+	// No refreshPanel between the two, which is the frame a key and a
+	// press share.
+	if _, err := a.root.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft, Col: at, Row: on,
+	}); err != nil {
+		t.Fatalf("the press on the ×: %v", err)
+	}
+
+	noNoticeOpens(t, a, "the cross on a pane that had already closed")
 }
 
 // With the pointer somewhere else the row carries no ×, so a transcript

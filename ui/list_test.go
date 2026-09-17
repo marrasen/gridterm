@@ -31,6 +31,114 @@ func panelRows() []ListRow {
 	}
 }
 
+// hoverRows is a list where the second row offers something only while
+// the pointer is on it.
+func hoverRows() []ListRow {
+	rows := panelRows()
+	rows[1].HoverButton = '×'
+	return rows
+}
+
+// A row draws its HoverButton only while the pointer is on it.
+func TestListDrawsAHoverButtonOnlyUnderThePointer(t *testing.T) {
+	l := newTestList(t, hoverRows(), 30, 6)
+	at := l.ButtonCol()
+	if at < 0 {
+		t.Fatal("the list is too narrow to draw a button")
+	}
+
+	if got := drawList(l, 30, 6).At(at, 1).Rune; got == '×' {
+		t.Error("the row draws its button with the pointer on no row")
+	}
+	l.SetHover(1)
+	if got := drawList(l, 30, 6).At(at, 1).Rune; got != '×' {
+		t.Errorf("the row under the pointer draws %q, want the button", got)
+	}
+	// And the rows either side of it draw none.
+	for _, y := range []int{0, 2} {
+		if got := drawList(l, 30, 6).At(at, y).Rune; got == '×' {
+			t.Errorf("row %d draws a button, and the pointer is on row 1", y)
+		}
+	}
+	l.SetHover(-1)
+	if got := drawList(l, 30, 6).At(at, 1).Rune; got == '×' {
+		t.Error("the row still draws its button once the pointer has gone")
+	}
+}
+
+// The pointer stays on the row it is over when the list scrolls under
+// it, rather than being carried along with the rows.
+func TestListHoverStaysWhereThePointerIsWhenItScrolls(t *testing.T) {
+	// Every row offers something, so which row draws it says where the
+	// pointer is rather than which rows can draw at all.
+	rows := panelRows()
+	for i := range rows {
+		rows[i].HoverButton = '×'
+	}
+	l := newTestList(t, rows, 30, 3)
+	at := l.ButtonCol()
+	l.SetHover(1)
+	if got := drawList(l, 30, 3).At(at, 1).Rune; got != '×' {
+		t.Fatalf("the row under the pointer draws %q, want the button", got)
+	}
+
+	// The list scrolls under a pointer that has not moved. The row it is
+	// on is a different one of the list, in the same place on screen.
+	if _, err := l.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseWheelDown,
+	}); err != nil {
+		t.Fatalf("the wheel: %v", err)
+	}
+	g := drawList(l, 30, 3)
+	if got := g.At(at, 1).Rune; got != '×' {
+		t.Errorf("the row under the pointer draws %q after scrolling: the pointer "+
+			"was carried along with the rows", got)
+	}
+	for _, y := range []int{0, 2} {
+		if got := g.At(at, y).Rune; got == '×' {
+			t.Errorf("row %d draws a button after scrolling, and the pointer is on row 1", y)
+		}
+	}
+}
+
+// Pressing the button column runs OnButton only while the pointer is on
+// the row, so a row that draws nothing there is chosen instead.
+func TestListPressesAHoverButtonOnlyUnderThePointer(t *testing.T) {
+	l := newTestList(t, hoverRows(), 30, 6)
+	at := l.ButtonCol()
+	var pressed, chosen []string
+	l.OnButton = func(row ListRow) error {
+		pressed = append(pressed, row.Text)
+		return nil
+	}
+	l.OnActivate = func(row ListRow) error {
+		chosen = append(chosen, row.Text)
+		return nil
+	}
+
+	press := input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: at, Row: 1}
+	if _, err := l.HandleMouse(press); err != nil {
+		t.Fatalf("pressing with the pointer away: %v", err)
+	}
+	if len(pressed) != 0 {
+		t.Errorf("the button ran with the pointer on no row: %v", pressed)
+	}
+	if len(chosen) != 1 {
+		t.Errorf("the press chose %v, want the row it landed on", chosen)
+	}
+
+	l.SetHover(1)
+	if _, err := l.HandleMouse(press); err != nil {
+		t.Fatalf("pressing with the pointer on the row: %v", err)
+	}
+	if len(pressed) != 1 {
+		t.Errorf("the button ran %d times with the pointer on the row", len(pressed))
+	}
+	if len(chosen) != 1 {
+		t.Errorf("the press chose a row as well as running its button: %v", chosen)
+	}
+}
+
 func newTestList(t *testing.T, rows []ListRow, cols, lines int) *List {
 	t.Helper()
 	l := NewList()

@@ -112,8 +112,7 @@ type ListRow struct {
 	Button rune
 
 	// HoverButton is a Button the row carries only while the pointer is
-	// on it, for something worth offering and not worth one stray click.
-	// A row that sets Button as well keeps that one.
+	// on it. A row that sets Button as well keeps that one.
 	HoverButton rune
 
 	// Art is drawn in the cell before the note, for a row with
@@ -141,32 +140,32 @@ func pickedOut(own, fg color.RGBA, washed bool) color.RGBA {
 
 // buttonOf is the character row i draws at its end, which is its
 // HoverButton only while the pointer is on it.
+//
+// The pointer is held as a drawn row rather than as a place in the list,
+// so that scrolling and rebuilding the rows cannot move it out from
+// under the pointer for a frame.
 func (l *List) buttonOf(i int) rune {
 	if l.rows[i].Button != 0 {
 		return l.rows[i].Button
 	}
-	if i == l.hovered {
+	if i-l.place.top == l.hovered {
 		return l.rows[i].HoverButton
 	}
 	return 0
 }
 
-// Hover says which row the pointer is on, by its place in the list, and
-// -1 for none. Whatever is showing the list works it out: a list is
-// drawn where its owner puts it and cannot see the pointer.
+// Hover says which drawn row the pointer is on, counted from the top of
+// what is showing, and -1 for none. Whatever is showing the list works it
+// out: a list cannot see the pointer.
 func (l *List) Hover() int { return l.hovered }
 
-// SetHover says which drawn row the pointer is on, counted from the top
-// of what is showing the way a mouse event counts them. Anything outside
-// the rows means none.
+// SetHover says which drawn row the pointer is on, counted the way a
+// mouse event counts them. Below zero means none.
 func (l *List) SetHover(row int) {
-	l.hovered = -1
 	if row < 0 {
-		return
+		row = -1
 	}
-	if at := l.place.top + row; at < len(l.rows) {
-		l.hovered = at
-	}
+	l.hovered = row
 }
 
 // buttonCol is the column a row's button is drawn in, or -1 when the
@@ -218,9 +217,8 @@ type List struct {
 	// height, which asks several times over, does not allocate.
 	pads []grid.Pad
 
-	// hovered is the row the pointer is on, and -1 when it is on none of
-	// them. It is the only thing a rebuild does not touch that the user
-	// did not put there.
+	// hovered is the row the pointer is on, counted from the top of what
+	// is showing, and -1 when it is on none of them.
 	hovered int
 
 	size    Size

@@ -265,6 +265,9 @@ func (a *app) hoverRow() int {
 	if a.sideRegion == nil || a.side == nil {
 		return -1
 	}
+	if a.pointerGone {
+		return -1
+	}
 	px, py := a.pointer[0], a.pointer[1]
 	if !a.overRegion(px, py) {
 		return -1

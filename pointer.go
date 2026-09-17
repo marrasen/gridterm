@@ -12,6 +12,10 @@ import (
 // Once a frame, and only when the answer changed: an idle window asks
 // the tree for nothing and tells ebiten nothing.
 func (a *app) updatePointer() {
+	// ebiten hands back the last place it saw the pointer, so a window
+	// that lost the focus would keep answering with a pointer that is
+	// somewhere else entirely.
+	a.pointerGone = !ebiten.IsFocused()
 	px, py := ebiten.CursorPosition()
 	want := a.pointerCursor(px, py)
 	if want == a.pointerShape {

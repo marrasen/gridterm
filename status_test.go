@@ -70,13 +70,13 @@ func titlesEnd(a *testApp) int {
 	return end
 }
 
-// statusColumn is the last column the status is drawn on, for a press
-// that lands on it.
-func statusColumn(t *testing.T, a *testApp) (int, int) {
+// chipColumn is a column of the last chip on the bar, for a press that
+// lands on it.
+func chipColumn(t *testing.T, a *testApp) (int, int) {
 	t.Helper()
 	area, row := barRow(t, a)
-	// By column, not by byte: a trimmed status starts with the mark that
-	// says it was cut, which is three bytes of one column.
+	// By column, not by byte: a chip can say something that takes more
+	// than one byte to a column.
 	at := -1
 	columns := []rune(row)
 	for x := len(columns) - 1; x >= 0; x-- {
@@ -86,9 +86,19 @@ func statusColumn(t *testing.T, a *testApp) (int, int) {
 		}
 	}
 	if at < titlesEnd(a) {
-		t.Fatalf("the bar row is %q, want a status past the titles", row)
+		t.Fatalf("the bar row is %q, want a chip past the titles", row)
 	}
 	return area.X + at, area.Y
+}
+
+// chipsSay is what the chips on the bar say, in the order they are drawn
+// in.
+func chipsSay(a *testApp) []string {
+	out := make([]string, 0, len(a.bar.Status))
+	for _, chip := range a.bar.Status {
+		out = append(out, chip.Text)
+	}
+	return out
 }
 
 // Both status colours have to be read against the bar's own ground,
@@ -120,7 +130,15 @@ func TestTheStatusColoursAreReadableOnTheBar(t *testing.T) {
 	}{
 		{"the controlled status", statusTakenFG(p)},
 		{"the idle status", statusIdleFG(p)},
+		{"the agent status", statusAgentFG(p)},
 	}
+
+	// Every chip is read against its own ground as well, which is the
+	// one thing on the bar that is not the bar's.
+	grounds = append(grounds, struct {
+		where string
+		bg    color.RGBA
+	}{"a chip's own ground", chipBG(p)})
 
 	for _, c := range colours {
 		for _, g := range grounds {
@@ -151,8 +169,8 @@ func TestAWindowThatIsNotServedSaysNothingOnTheMenuBar(t *testing.T) {
 
 	_, row := barRow(t, a)
 
-	if a.bar.Status != "" {
-		t.Errorf("the bar says %q, want nothing", a.bar.Status)
+	if got := chipsSay(a); len(got) != 0 {
+		t.Errorf("the bar says %q, want nothing", got)
 	}
 	if got := strings.TrimSpace(row[titlesEnd(a):]); got != "" {
 		t.Errorf("the bar row reads %q past the titles, want it blank", got)
@@ -171,12 +189,15 @@ func TestServingWithNobodyConnectedSaysSoOnTheMenuBar(t *testing.T) {
 
 	area, row := barRow(t, a)
 
-	want := "Serving on " + a.serving.addr() + ", nobody connected"
-	if a.bar.Status != want {
-		t.Errorf("the bar says %q, want %q", a.bar.Status, want)
+	const want = "Serving"
+	if got := chipsSay(a); len(got) != 1 || got[0] != want {
+		t.Errorf("the bar says %q, want just %q: the address is the dialog's", got, want)
 	}
-	if got, red := a.bar.StatusFG, statusIdleFG(a.colours); got != red {
-		t.Errorf("the status is %+v, want the dimmer red %+v", got, red)
+	if got, red := a.bar.Status[0].FG, statusIdleFG(a.colours); got != red {
+		t.Errorf("the chip is %+v, want the dimmer red %+v", got, red)
+	}
+	if got, ground := a.bar.Status[0].BG, chipBG(a.colours); got != ground {
+		t.Errorf("the chip sits on %+v, want a ground of its own %+v", got, ground)
 	}
 	at := strings.Index(row, want)
 	if at < 0 {
@@ -203,17 +224,19 @@ func TestAWindowTakenOverSaysWhoHasItOnTheMenuBar(t *testing.T) {
 	}
 	_, row := barRow(t, host)
 
-	want := "Controlled by " + clients[0].Name + " from " + clients[0].Addr
-	if host.bar.Status != want {
-		t.Errorf("the bar says %q, want %q", host.bar.Status, want)
+	const want = "Remote controlled"
+	if got := chipsSay(host); len(got) != 1 || got[0] != want {
+		t.Errorf("the bar says %q, want just %q", got, want)
 	}
-	if got, red := host.bar.StatusFG, statusTakenFG(host.colours); got != red {
-		t.Errorf("the status is %+v, want red %+v", got, red)
+	if got, red := host.bar.Status[0].FG, statusTakenFG(host.colours); got != red {
+		t.Errorf("the chip is %+v, want red %+v", got, red)
 	}
-	// The head of it, because a bar this wide cuts the end off and the
-	// head is the part that names who has the window.
-	if head := want[:20]; !strings.Contains(row, head) {
-		t.Errorf("the bar row is %q, want it to start with %q", row, head)
+	if !strings.Contains(row, want) {
+		t.Errorf("the bar row is %q, want %q on it", row, want)
+	}
+	// Who has the window, and from where, is the dialog's to say.
+	if strings.Contains(row, clients[0].Name) || strings.Contains(row, clients[0].Addr) {
+		t.Errorf("the bar row is %q, want the name and the address kept off it", row)
 	}
 
 	// The client lets go, and the window is back to serving nobody.
@@ -223,13 +246,11 @@ func TestAWindowTakenOverSaysWhoHasItOnTheMenuBar(t *testing.T) {
 	waitFor(t, host, "the serving window to see it go", func() bool {
 		return len(host.serving.clients()) == 0
 	}, client)
-	// The head of the status again: "Serving on" is what the idle one
-	// starts with, and the only one of the two that does.
-	if _, row = barRow(t, host); !strings.Contains(row, "Serving on") {
+	if _, row = barRow(t, host); !strings.Contains(row, "Serving") {
 		t.Errorf("the bar row is %q, want it back to saying the window is only served", row)
 	}
-	if !strings.HasSuffix(host.bar.Status, "nobody connected") {
-		t.Errorf("the bar says %q, want it to say nobody is connected", host.bar.Status)
+	if got := chipsSay(host); len(got) != 1 || got[0] != "Serving" {
+		t.Errorf("the bar says %q, want it back to just serving", got)
 	}
 
 	// And nothing at all once the port closes.
@@ -237,8 +258,8 @@ func TestAWindowTakenOverSaysWhoHasItOnTheMenuBar(t *testing.T) {
 		t.Fatalf("stop serving: %v", err)
 	}
 	_, row = barRow(t, host)
-	if host.bar.Status != "" {
-		t.Errorf("the bar says %q with nothing served, want nothing", host.bar.Status)
+	if got := chipsSay(host); len(got) != 0 {
+		t.Errorf("the bar says %q with nothing served, want nothing", got)
 	}
 	if got := strings.TrimSpace(row[titlesEnd(host):]); got != "" {
 		t.Errorf("the bar row reads %q past the titles, want it blank", got)
@@ -250,17 +271,17 @@ func TestAWindowTakenOverSaysWhoHasItOnTheMenuBar(t *testing.T) {
 func TestPressingTheStatusKicksTheOtherWindowOut(t *testing.T) {
 	host, client, addr := twoWindows(t)
 	withMenubar(t, host)
-	col, row := statusColumn(t, host)
+	col, row := chipColumn(t, host)
 
 	took, err := host.root.HandleMouse(input.MouseEvent{
 		Kind: input.MousePress, Button: input.MouseLeft, Col: col, Row: row,
 	})
 
 	if err != nil {
-		t.Fatalf("pressing the status: %v", err)
+		t.Fatalf("pressing the chip: %v", err)
 	}
 	if !took {
-		t.Fatal("the press on the status travelled on")
+		t.Fatal("the press on the chip travelled on")
 	}
 	f := awaitModal(t, host, "the serving dialog", byTitle[*ui.Form]("Serving this window"))
 	kick := "Kick " + host.serving.clients()[0].Name + " out"
@@ -278,11 +299,11 @@ func TestPressingTheStatusKicksTheOtherWindowOut(t *testing.T) {
 	if !host.serving.on() {
 		t.Error("kicking the window out stopped the port as well")
 	}
-	if _, bar := barRow(t, host); !strings.Contains(bar, "Serving on") {
+	if _, bar := barRow(t, host); !strings.Contains(bar, "Serving") {
 		t.Errorf("the bar row is %q, want it back to saying the window is only served", bar)
 	}
-	if !strings.HasSuffix(host.bar.Status, "nobody connected") {
-		t.Errorf("the bar says %q, want it to say nobody is connected", host.bar.Status)
+	if got := chipsSay(host); len(got) != 1 || got[0] != "Serving" {
+		t.Errorf("the bar says %q, want it back to just serving", got)
 	}
 }
 
@@ -292,12 +313,12 @@ func TestPressingTheStatusKicksTheOtherWindowOut(t *testing.T) {
 func TestKickingAWindowThatHasAlreadyGoneSaysNothing(t *testing.T) {
 	host, client, addr := twoWindows(t)
 	withMenubar(t, host)
-	col, row := statusColumn(t, host)
+	col, row := chipColumn(t, host)
 
 	if _, err := host.root.HandleMouse(input.MouseEvent{
 		Kind: input.MousePress, Button: input.MouseLeft, Col: col, Row: row,
 	}); err != nil {
-		t.Fatalf("pressing the status: %v", err)
+		t.Fatalf("pressing the chip: %v", err)
 	}
 	f := awaitModal(t, host, "the serving dialog", byTitle[*ui.Form]("Serving this window"))
 	kick := buttonNamed(t, f, "Kick "+host.serving.clients()[0].Name+" out")
@@ -377,12 +398,12 @@ func TestKickingAWindowThatConnectedAgainSaysSo(t *testing.T) {
 func TestKickingAWindowOutIsNotReportedAsALoss(t *testing.T) {
 	host, client, _ := twoWindows(t)
 	withMenubar(t, host)
-	col, row := statusColumn(t, host)
+	col, row := chipColumn(t, host)
 
 	if _, err := host.root.HandleMouse(input.MouseEvent{
 		Kind: input.MousePress, Button: input.MouseLeft, Col: col, Row: row,
 	}); err != nil {
-		t.Fatalf("pressing the status: %v", err)
+		t.Fatalf("pressing the chip: %v", err)
 	}
 	f := awaitModal(t, host, "the serving dialog", byTitle[*ui.Form]("Serving this window"))
 	pressButton(t, host, f, "Kick "+host.serving.clients()[0].Name+" out")
@@ -424,12 +445,12 @@ func buttonNamed(t *testing.T, f *ui.Form, title string) ui.Button {
 // still stops serving.
 func TestTheServingDialogOffersNoKickWithNobodyConnected(t *testing.T) {
 	a := aServedWindow(t)
-	col, row := statusColumn(t, a)
+	col, row := chipColumn(t, a)
 
 	if _, err := a.root.HandleMouse(input.MouseEvent{
 		Kind: input.MousePress, Button: input.MouseLeft, Col: col, Row: row,
 	}); err != nil {
-		t.Fatalf("pressing the status: %v", err)
+		t.Fatalf("pressing the chip: %v", err)
 	}
 
 	f := awaitModal(t, a, "the serving dialog", byTitle[*ui.Form]("Serving this window"))
@@ -442,7 +463,7 @@ func TestTheServingDialogOffersNoKickWithNobodyConnected(t *testing.T) {
 	if a.serving.on() {
 		t.Error("the port is still open")
 	}
-	if _, bar := barRow(t, a); strings.Contains(bar, "Serving on") {
+	if _, bar := barRow(t, a); strings.Contains(bar, "Serving") {
 		t.Errorf("the bar row is %q, want nothing about serving", bar)
 	}
 }
@@ -464,14 +485,17 @@ func TestKickingEveryoneOutClosesEveryConnection(t *testing.T) {
 
 	_, row := barRow(t, host)
 
-	if !strings.Contains(row, "and 1 more") {
-		t.Errorf("the bar row is %q, want it to count the second window", row)
+	if got := chipsSay(host); len(got) != 1 || got[0] != "Remote controlled" {
+		t.Errorf("the bar says %q, want the one chip however many are connected", got)
 	}
-	col, at := statusColumn(t, host)
+	if strings.Contains(row, "more") {
+		t.Errorf("the bar row is %q, want the count kept off it", row)
+	}
+	col, at := chipColumn(t, host)
 	if _, err := host.root.HandleMouse(input.MouseEvent{
 		Kind: input.MousePress, Button: input.MouseLeft, Col: col, Row: at,
 	}); err != nil {
-		t.Fatalf("pressing the status: %v", err)
+		t.Fatalf("pressing the chip: %v", err)
 	}
 	f := awaitModal(t, host, "the serving dialog", byTitle[*ui.Form]("Serving this window"))
 	pressButton(t, host, f, "Kick everyone out")

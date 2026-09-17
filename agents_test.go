@@ -3868,3 +3868,76 @@ func serverMenuHas(t *testing.T, a *testApp, command string) bool {
 	}
 	return false
 }
+
+// The bar says a share is open, and the chip opens it.
+func TestTheMenuBarSaysAShareIsOpenAndOpensIt(t *testing.T) {
+	a := newTestApp(t, 120, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	withMenubar(t, a)
+	pane := onlyPaneOn(t, a)
+
+	barRow(t, a)
+	if got := chipsSay(a); len(got) != 0 {
+		t.Fatalf("the bar says %q with nothing shared, want nothing", got)
+	}
+
+	boxes := handoverDialog(t, a, pane)
+	pressButton(t, a, boxes, "Done")
+
+	_, row := barRow(t, a)
+	if got := chipsSay(a); len(got) != 1 || got[0] != shareTitle {
+		t.Fatalf("the bar says %q, want %q", got, shareTitle)
+	}
+	if !strings.Contains(row, shareTitle) {
+		t.Errorf("the bar row is %q, want %q on it", row, shareTitle)
+	}
+	// The code is the dialog's: the bar is read by whoever walks past.
+	if strings.Contains(row, a.agents.code()) {
+		t.Errorf("the bar row is %q, want the code kept off it", row)
+	}
+
+	col, at := chipColumn(t, a)
+	took, err := a.root.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft, Col: col, Row: at,
+	})
+
+	if err != nil {
+		t.Fatalf("pressing the chip: %v", err)
+	}
+	if !took {
+		t.Fatal("the press on the chip travelled on")
+	}
+	awaitModal(t, a, "the share dialog", byTitle[*ui.Form](shareTitle))
+
+	// And the chip goes when the share does.
+	if err := a.takeBackPane(pane); err != nil {
+		t.Fatalf("take it out: %v", err)
+	}
+	barRow(t, a)
+	if got := chipsSay(a); len(got) != 0 {
+		t.Errorf("the bar says %q with the share over, want nothing", got)
+	}
+}
+
+// A window that is both served and shared says both, and says them in
+// the order they happened to it.
+func TestTheMenuBarSaysBothServingAndSharing(t *testing.T) {
+	a := aServedWindow(t)
+	pane := onlyPaneOn(t, a)
+	boxes := handoverDialog(t, a, pane)
+	pressButton(t, a, boxes, "Done")
+
+	_, row := barRow(t, a)
+
+	if got := chipsSay(a); len(got) != 2 || got[0] != "Serving" || got[1] != shareTitle {
+		t.Fatalf("the bar says %q, want serving and then the share", got)
+	}
+	served, shared := strings.Index(row, "Serving"), strings.Index(row, shareTitle)
+	if served < 0 || shared < 0 {
+		t.Fatalf("the bar row is %q, want both chips on it", row)
+	}
+	if served > shared {
+		t.Errorf("the bar row is %q, want serving drawn first", row)
+	}
+}

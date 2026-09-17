@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"image/color"
 	"slices"
 
@@ -79,9 +78,6 @@ func (a *app) newMenubar(child ui.Widget) *ui.Menubar {
 		area, _ := a.root.AreaOf(bar)
 		return area
 	}
-	// The status says this window is being served, and pressing it opens
-	// the dialog that says who by and offers to stop.
-	bar.OnStatus = a.showServing
 	return bar
 }
 
@@ -144,19 +140,17 @@ func (a *app) updateStatus() {
 	if a.bar == nil {
 		return
 	}
-	var key statusKey
+	key := statusKey{sharing: a.agents.sharing()}
 	if a.serving.on() {
-		key = statusKey{
-			addr:    a.serving.addr(),
-			clients: a.serving.joined(),
-			changes: a.serving.changes(),
-		}
+		key.addr = a.serving.addr()
+		key.clients = a.serving.joined()
+		key.changes = a.serving.changes()
 	}
 	if key == a.statusWas {
 		return
 	}
 	a.statusWas = key
-	a.bar.Status, a.bar.StatusFG = a.servingStatus()
+	a.bar.Status = a.statusChips()
 }
 
 // statusKey is what the menu bar status is made of: two frames with the
@@ -170,25 +164,40 @@ type statusKey struct {
 	addr    string
 	clients int
 	changes uint64
+	sharing bool
 }
 
-// servingStatus is what the menu bar says about this window being
-// served, and the colour to say it in. Both are empty when nothing is
-// listening.
-func (a *app) servingStatus() (string, color.RGBA) {
-	if !a.serving.on() {
-		return "", color.RGBA{}
+// statusChips is what the menu bar says this window is doing: whether
+// somebody is working in it from another machine, and whether an agent
+// has been let in. There are none when neither is true.
+//
+// Each is a word or two and a press. Who is connected, from where, and
+// which panes an agent has are the dialogs', because the bar has room
+// for a handful of columns and those lists grow.
+func (a *app) statusChips() []ui.Chip {
+	var chips []ui.Chip
+	if a.serving.on() {
+		text, fg := "Serving", statusIdleFG(a.colours)
+		if len(a.serving.clients()) > 0 {
+			text, fg = "Remote controlled", statusTakenFG(a.colours)
+		}
+		chips = append(chips, ui.Chip{
+			Text: text, FG: fg, BG: chipBG(a.colours), Do: a.showServing,
+		})
 	}
-	clients := a.serving.clients()
-	if len(clients) == 0 {
-		return "Serving on " + a.serving.addr() + ", nobody connected", statusIdleFG(a.colours)
+	if a.agents.sharing() {
+		chips = append(chips, ui.Chip{
+			Text: shareTitle, FG: statusAgentFG(a.colours), BG: chipBG(a.colours),
+			Do: a.showShare,
+		})
 	}
-	text := "Controlled by " + clients[0].Name + " from " + clients[0].Addr
-	if more := len(clients) - 1; more > 0 {
-		text += fmt.Sprintf(" and %d more", more)
-	}
-	return text, statusTakenFG(a.colours)
+	return chips
 }
+
+// chipBG is the ground a chip on the menu bar sits on: darker than the
+// bar, which sets a chip apart without costing the reds on it the
+// contrast a lighter ground would.
+func chipBG(p vt.Palette) color.RGBA { return grid.Blend(p.BG, color.RGBA{A: 0xff}, 1, 3) }
 
 // statusTakenFG is the red the bar says "somebody is working in this
 // window" in, and statusIdleFG the quieter one for a window that is only
@@ -203,6 +212,12 @@ func statusTakenFG(p vt.Palette) color.RGBA {
 	return grid.Blend(p.ANSI[9], p.ANSI[15], 1, 5)
 }
 func statusIdleFG(p vt.Palette) color.RGBA { return p.ANSI[1] }
+
+// statusAgentFG is the colour the bar says an agent has been let into
+// this window in. It is a cyan, away from the reds that say somebody is
+// working here from another machine: an agent at work is the user's own
+// doing, and the two say different things.
+func statusAgentFG(p vt.Palette) color.RGBA { return p.ANSI[6] }
 
 // helpMenu is the menu bar title the key list hangs under. It stays
 // last, so the menus the window adds while it runs go in front of it.

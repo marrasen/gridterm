@@ -8,12 +8,15 @@ import (
 )
 
 // barRows is how tall the row of menu titles is, barPad the blank
-// column each side of a title, and statusPad the blank column between
-// the status text and the right edge.
+// column each side of a title, statusPad the blank column between the
+// chips and the right edge, chipPad the blank column each side of a
+// chip's text and chipGap the blank column between two chips.
 const (
 	barRows   = 1
 	barPad    = 1
 	statusPad = 1
+	chipPad   = 1
+	chipGap   = 1
 )
 
 // MenuDef is one menu on a bar: the word shown and the lines under it.
@@ -44,6 +47,25 @@ func (s MenubarStyle) colAt(x, cols int) color.RGBA {
 	return grid.Blend(s.BG, s.BGEnd, min(max(x, 0), cols-1), cols-1)
 }
 
+// Chip is one thing the bar says the window is doing, drawn as a short
+// label on a ground of its own so it reads as something to press.
+type Chip struct {
+	// Text is what it says, in a word or two. The detail belongs in
+	// whatever Do opens.
+	Text string
+
+	// FG and BG colour it. A zero alpha in either takes the bar's own.
+	FG, BG color.RGBA
+
+	// Do runs when the chip is pressed, and what it returns reaches
+	// whoever handed the press in, by either way a press arrives:
+	// straight at the bar, or through the open menu that covers the
+	// window.
+	//
+	// A nil Do leaves the press the bar's, but does nothing with it.
+	Do func() error
+}
+
 // Menubar is a row of menu titles above one other widget.
 //
 // The bar never takes focus. It is chrome: keys go straight through to
@@ -63,22 +85,15 @@ type Menubar struct {
 	// and changing the list moves that title out from under it.
 	Menus []MenuDef
 
-	// Status is a line drawn right-aligned on the bar, or empty for
-	// none. It is chrome like the titles: it says what the window is
-	// doing rather than naming a menu.
-	Status string
-
-	// StatusFG colours the status text. A zero alpha means the bar's
-	// ordinary foreground.
-	StatusFG color.RGBA
-
-	// OnStatus runs when the status text is pressed, and what it returns
-	// reaches whoever handed the press in, by either way a press arrives:
-	// straight at the bar, or through the open menu that covers the
-	// window.
+	// Status are the chips drawn along the right of the bar, or empty
+	// for none. They are chrome like the titles: each says something the
+	// window is doing rather than naming a menu.
 	//
-	// A nil OnStatus leaves the press the bar's, but does nothing with it.
-	OnStatus func() error
+	// They read left to right in the order given, with the last against
+	// the right edge. One there is no room for is dropped rather than
+	// shortened: a chip cut in half says nothing and would still take
+	// the press.
+	Status []Chip
 
 	// Present shows a menu and returns the function that takes it away.
 	// The bar knows nothing about the modal stack or the layers a menu is
@@ -295,16 +310,26 @@ func (b *Menubar) paintBar(row grid.View) {
 		}
 	}
 
-	if at, text := b.statusAt(); !at.Empty() {
-		fg := b.StatusFG
+	for _, chip := range b.chipsAt() {
+		fg, bg := chip.FG, chip.BG
 		if fg.A == 0 {
 			fg = b.Style.FG
 		}
-		cell := at.In(row)
-		x := 0
-		for _, cluster := range grid.Clusters(text) {
-			bg := b.Style.colAt(at.X+x, cols)
-			next := cell.SetString(x, 0, cluster, fg, bg, 0)
+		cell := chip.at.In(row)
+		for x := 0; x < chip.at.Cols; x++ {
+			under := bg
+			if under.A == 0 {
+				under = b.Style.colAt(chip.at.X+x, cols)
+			}
+			cell.SetString(x, 0, " ", fg, under, 0)
+		}
+		x := chipPad
+		for _, cluster := range grid.Clusters(chip.Text) {
+			under := bg
+			if under.A == 0 {
+				under = b.Style.colAt(chip.at.X+x, cols)
+			}
+			next := cell.SetString(x, 0, cluster, fg, under, 0)
 			if next <= x {
 				break
 			}
@@ -352,15 +377,18 @@ func (b *Menubar) HandleMouse(ev input.MouseEvent) (bool, error) {
 // meant anything. Pressing the title of the menu already showing closes
 // it, which is what a control that opens something is expected to do.
 func (b *Menubar) clickLabel(col, row int) (bool, error) {
-	if at, _ := b.statusAt(); at.Contains(col, row) {
-		// The status is a control of its own. It takes the press
-		// whatever is open, closing the menu first as a press
-		// elsewhere on the bar does.
+	for _, chip := range b.chipsAt() {
+		if !chip.at.Contains(col, row) {
+			continue
+		}
+		// A chip is a control of its own. It takes the press whatever is
+		// open, closing the menu first as a press elsewhere on the bar
+		// does.
 		b.Close()
-		if b.OnStatus == nil {
+		if chip.Do == nil {
 			return true, nil
 		}
-		return true, b.OnStatus()
+		return true, chip.Do()
 	}
 	for i, label := range b.labels() {
 		if label.Empty() || !label.Contains(col, row) {
@@ -475,17 +503,22 @@ func (b *Menubar) labels() []Rect {
 	return out
 }
 
-// statusAt returns where the status goes, in the bar's own coordinates,
-// and the text to put there. Both are empty when there is no status or
-// no room left beside the titles.
+// placedChip is a chip and the columns the bar gave it.
+type placedChip struct {
+	Chip
+	at Rect
+}
+
+// chipsAt lays the chips out along the right of the bar, in the bar's
+// own coordinates, and returns the ones there was room for.
 //
-// The titles keep their columns. The status takes what is left, one
-// column in from the right edge, and the last title's own pad is the
-// blank on the other side of it.
-func (b *Menubar) statusAt() (Rect, string) {
+// The titles keep their columns. The chips take what is left, one column
+// in from the right edge, and the last title's own pad is the blank on
+// the other side of them.
+func (b *Menubar) chipsAt() []placedChip {
 	bar := b.bar()
-	if b.Status == "" || bar.Empty() {
-		return Rect{}, ""
+	if len(b.Status) == 0 || bar.Empty() {
+		return nil
 	}
 	left := 0
 	for _, label := range b.labels() {
@@ -495,17 +528,42 @@ func (b *Menubar) statusAt() (Rect, string) {
 	}
 	room := bar.Cols - statusPad - left
 	if room <= 0 {
-		return Rect{}, ""
+		return nil
 	}
-	// Cut from the end, because the head of a status is what says which
-	// status it is.
-	text := grid.TrimTail(b.Status, room)
-	width := grid.StringWidth(text)
-	if width <= 0 || text == grid.Ellipsis {
-		// Nothing of the status survived the cut. A bare mark that
-		// something was trimmed says nothing, and it would still be drawn
-		// and still take the press.
-		return Rect{}, ""
+
+	show := make([]placedChip, 0, len(b.Status))
+	for _, chip := range b.Status {
+		width := grid.StringWidth(chip.Text)
+		if width <= 0 {
+			// A chip with nothing on it would still be drawn and would
+			// still take the press.
+			continue
+		}
+		show = append(show, placedChip{Chip: chip, at: Rect{Cols: width + chipPad*2, Rows: barRows}})
 	}
-	return Rect{X: bar.Cols - statusPad - width, Cols: width, Rows: barRows}, text
+	// Dropped whole, and from the left, so the chips by the edge stay
+	// where they were.
+	for len(show) > 0 && chipsWide(show) > room {
+		show = show[1:]
+	}
+	if len(show) == 0 {
+		return nil
+	}
+
+	at := bar.Cols - statusPad - chipsWide(show)
+	for i := range show {
+		show[i].at.X = at
+		at += show[i].at.Cols + chipGap
+	}
+	return show
+}
+
+// chipsWide is how many columns the chips take, the gaps between them
+// counted in.
+func chipsWide(show []placedChip) int {
+	wide := 0
+	for _, chip := range show {
+		wide += chip.at.Cols
+	}
+	return wide + chipGap*(len(show)-1)
 }

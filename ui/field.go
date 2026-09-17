@@ -59,12 +59,26 @@ type Field struct {
 	// that is typed into it.
 	Options []string
 
+	// Ghost is the rest of an answer the caller thinks is being typed,
+	// drawn after the text in the placeholder's colour. It is not part
+	// of the value: Right or End at the end of the text takes it, and
+	// anything else leaves it behind.
+	//
+	// The field never clears it. Whoever sets it clears it, which is the
+	// same thing that knows when the answer has gone stale.
+	Ghost string
+
 	// Tick makes this a tick box rather than something to type in. It
 	// holds Ticked or nothing, space turns it over, and nothing is typed
 	// into it.
 	Tick bool
 
 	text string
+
+	// ghostDrawn is the Ghost the field last drew, so only one the user
+	// has seen can be taken.
+	ghostDrawn string
+
 	at   int // the caret, a byte offset into text at a cluster boundary
 	left int // the first byte drawn, for text wider than the field
 
@@ -219,6 +233,10 @@ func (f *Field) HandleKey(ev input.Event) (bool, error) {
 			f.at = f.prev(f.at)
 		}
 	case input.KeyRight:
+		// Right at the end of the text takes the rest of the answer.
+		if !ev.Ctrl() && f.TakeGhost() {
+			return true, nil
+		}
 		if ev.Ctrl() {
 			f.at = f.wordRight(f.at)
 		} else {
@@ -227,6 +245,9 @@ func (f *Field) HandleKey(ev input.Event) (bool, error) {
 	case input.KeyHome:
 		f.at = 0
 	case input.KeyEnd:
+		if !ev.Ctrl() && f.TakeGhost() {
+			return true, nil
+		}
 		f.at = len(f.text)
 	case input.KeyBackspace:
 		to := f.prev(f.at)
@@ -301,6 +322,11 @@ func (f *Field) Draw(v grid.View) {
 		}
 		at = v.SetString(at, 0, shown, f.Style.FG, f.Style.BG, 0)
 	}
+	// After the text, so the caret sits on the first character of it.
+	if f.ghostShows() && at < cols {
+		f.ghostDrawn = f.Ghost
+		v.SetString(at, 0, grid.Trim(f.Ghost, cols-at), f.Style.PlaceholderFG, f.Style.BG, 0)
+	}
 
 	// Only the focused field may place the cursor: the grid has one and
 	// no idea who owns it.
@@ -309,6 +335,28 @@ func (f *Field) Draw(v grid.View) {
 			v.SetCursor(grid.Cursor{X: col, Y: 0, Visible: true, Style: grid.CursorBar})
 		}
 	}
+}
+
+// ghostShows reports whether the rest of the answer is drawn: only in
+// the focused field, unmasked, with the caret at the end of the text,
+// where taking it would land.
+func (f *Field) ghostShows() bool {
+	return f.Ghost != "" && f.Mask == 0 && f.focused && f.text != "" && f.at == len(f.text)
+}
+
+// TakeGhost puts the rest of the answer in the field and reports whether
+// there was one.
+//
+// Only one the field has drawn, so a key cannot take an answer that
+// arrived in the same frame and was never on screen.
+func (f *Field) TakeGhost() bool {
+	if !f.ghostShows() || f.ghostDrawn != f.Ghost {
+		return false
+	}
+	ghost := f.Ghost
+	f.Ghost, f.ghostDrawn = "", ""
+	f.insert(ghost)
+	return true
 }
 
 // insert puts text at the caret and moves it past.

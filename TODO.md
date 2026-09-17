@@ -18,6 +18,15 @@ each group. A line goes when the work is in and reviewed.
   Keep a keystroke record and accept that it holds secrets. Or drop the
   idea.
 
+- **Should a listing that fails while completing a path be shown?** The
+  file browser's "Go to" now completes a directory name as it is typed,
+  which means reading the directory above it. A directory that is not
+  there yet is what half a typed path looks like, so that one is
+  dropped. Every other failure -- no permission, a connection that has
+  gone, a disk error -- is written to the log and not shown, because a
+  dialog per keystroke would be worse than the fault. That is a bare log
+  without an answer from you, which the rules say to ask about.
+
 - **Should a pane that cannot be put in a job object open anyway?** It
   does not today: `StartLocal` returns the error, and for the first pane
   `main.go` calls `log.Fatal`. Launched from Explorer there is no console,
@@ -167,11 +176,6 @@ a terminal.
 
 - **Dropping a file on the window is the same question** with the path
   already on disk. `ebiten.DroppedFiles` reports it.
-
-## The file browser's "Go to"
-
-- **Autocomplete would be nice.** Complete a path as it is typed, from
-  the filesystem the pane is on.
 
 ## Switching between panes
 

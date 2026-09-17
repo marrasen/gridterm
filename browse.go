@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/grid"
@@ -921,6 +922,7 @@ func (a *app) openGoTo() error {
 	// away rather than something to remember the letter of.
 	where.Options = append([]string{p.At()}, p.FS().Roots()...)
 	where.SetText(p.At())
+	a.completePath(where, p.FS())
 	// Both set once the dialog is up, which is before any button can be
 	// pressed.
 	var (
@@ -1305,3 +1307,144 @@ const relayGrace = 2 * time.Second
 // machine that ended under a client still working, and short enough that
 // the client is told either way while it is still waiting.
 const relayTogether = 20 * time.Millisecond
+
+// completePath fills in the rest of a directory name as one is typed,
+// from the filesystem the pane is on.
+func (a *app) completePath(where *ui.Field, f vfs.FS) {
+	// The listing of the directory last read, so typing on in one
+	// directory reads it once rather than once a keystroke, and reading
+	// is the directory a read is out for.
+	var (
+		lastDir string
+		have    []vfs.Entry
+		reading string
+		show    func(string)
+	)
+	show = func(text string) {
+		where.Ghost = ""
+		dir, leaf, ok := splitLeaf(f, text)
+		if !ok {
+			return
+		}
+		if dir == lastDir && have != nil {
+			where.Ghost = restOf(f, have, leaf)
+			return
+		}
+		if dir == reading {
+			return
+		}
+		reading = dir
+		go func() {
+			entries, err := f.ReadDir(dir)
+			a.pump.post(func() {
+				if reading == dir {
+					reading = ""
+				}
+				if err != nil {
+					// A directory that is not there yet is what half a
+					// typed path looks like. Anything else is written
+					// down, and is a question at the top of the to-do
+					// list.
+					if !errors.Is(err, fs.ErrNotExist) {
+						a.logError(fmt.Errorf("completing a path on %s: %w", f.Name(), err))
+					}
+					return
+				}
+				lastDir, have = dir, entries
+				// Against what the field says now rather than what asked
+				// for the listing: the user has gone on typing, and this
+				// is the answer for where they are.
+				show(where.Text())
+			})
+		}()
+	}
+	where.OnChange = show
+}
+
+// splitLeaf divides a typed path into the directory to list and the part
+// of a name that has been typed. It says no for a path with no separator
+// in it, which names no directory to read.
+func splitLeaf(f vfs.FS, text string) (dir, leaf string, ok bool) {
+	sep := string(f.Sep())
+	if sep == `\` {
+		// Windows takes either separator, so a path typed with the
+		// other one still completes.
+		text = strings.ReplaceAll(text, "/", sep)
+	}
+	if !strings.Contains(text, sep) {
+		return "", "", false
+	}
+	if strings.HasSuffix(text, sep) {
+		return text, "", true
+	}
+	return vfs.Dir(f, text), vfs.Base(f, text), true
+}
+
+// restOf is what every directory whose name begins with leaf agrees on
+// after it, and empty when none does, when they disagree at once, or
+// when leaf already names a directory of its own.
+func restOf(f vfs.FS, entries []vfs.Entry, leaf string) string {
+	match := matcher(f)
+	rest := ""
+	found := false
+	for _, e := range entries {
+		// A link is offered too. Most of /bin, /lib and /sbin are links
+		// on a modern machine, and Go to is for reaching a directory
+		// however it is spelt.
+		if !e.IsDir() && !e.IsLink() {
+			continue
+		}
+		if match(e.Name, leaf) < 0 {
+			continue
+		}
+		// A name that is leaf itself adds nothing, which is what leaves
+		// a path that already works alone.
+		after := e.Name[len(leaf):]
+		if !found {
+			rest, found = after, true
+			continue
+		}
+		rest = sharedStart(rest, after)
+		if rest == "" {
+			return ""
+		}
+	}
+	return rest
+}
+
+// matcher compares a name against what has been typed: 0 when they are
+// the same name, 1 when the name begins with it, and -1 otherwise.
+//
+// Case counts on a machine whose filesystem counts it. On Windows it
+// does not, and a user who types in lower case means the directory
+// whatever its own spelling is.
+func matcher(f vfs.FS) func(name, leaf string) int {
+	same := func(a, b string) bool { return a == b }
+	if f.Sep() == '\\' {
+		same = strings.EqualFold
+	}
+	return func(name, leaf string) int {
+		switch {
+		case same(name, leaf):
+			return 0
+		case len(name) > len(leaf) && same(name[:len(leaf)], leaf):
+			return 1
+		}
+		return -1
+	}
+}
+
+// sharedStart is the longest run two strings begin with, cut at a
+// character boundary so half of one is never offered.
+func sharedStart(a, b string) string {
+	at := 0
+	for at < len(a) && at < len(b) && a[at] == b[at] {
+		at++
+	}
+	// The end of a is a boundary in its own right; only a cut inside it
+	// has to step back.
+	for at > 0 && at < len(a) && !utf8.RuneStart(a[at]) {
+		at--
+	}
+	return a[:at]
+}

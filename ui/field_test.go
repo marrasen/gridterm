@@ -466,3 +466,128 @@ func TestATickBoxTakesNoTyping(t *testing.T) {
 		}
 	}
 }
+
+// ghosted returns a field of a known width whose placeholder colour can
+// be told from its text colour.
+func ghosted(cols int, text, ghost string) *Field {
+	f := NewField()
+	f.Style = FieldStyle{FG: fg, BG: bg, PlaceholderFG: bg}
+	f.Layout(Size{Cols: cols, Rows: 1})
+	f.SetFocus(true)
+	f.SetText(text)
+	f.Ghost = ghost
+	return f
+}
+
+// A field shows the rest of an answer after what has been typed, in the
+// placeholder's colour, and Right takes it.
+func TestAFieldShowsAndTakesTheRestOfAnAnswer(t *testing.T) {
+	f := ghosted(20, "/va", "r")
+
+	row, _ := drawField(f, 20)
+	if row != "/var" {
+		t.Errorf("the field draws %q, want the rest of the answer after it", row)
+	}
+	g := grid.New(20, 1, color.RGBA{}, color.RGBA{})
+	f.Draw(g.View())
+	if got := g.At(3, 0).FG; got != bg {
+		t.Errorf("the rest is drawn in %v, want the placeholder's colour %v", got, bg)
+	}
+	if f.Text() != "/va" {
+		t.Errorf("the rest is part of the value: %q", f.Text())
+	}
+
+	f.HandleKey(press(input.KeyRight, 0))
+
+	if f.Text() != "/var" {
+		t.Errorf("Right left the field saying %q", f.Text())
+	}
+	if f.Ghost != "" {
+		t.Errorf("the rest is still offered: %q", f.Ghost)
+	}
+}
+
+// The rest is only shown with the caret at the end, where taking it
+// would land.
+func TestTheRestOfAnAnswerIsHiddenAwayFromTheEnd(t *testing.T) {
+	f := ghosted(20, "/va", "r")
+	f.HandleKey(press(input.KeyHome, 0))
+
+	if row, _ := drawField(f, 20); row != "/va" {
+		t.Errorf("the field draws %q with the caret at the start", row)
+	}
+	f.HandleKey(press(input.KeyRight, 0))
+	if f.Text() != "/va" {
+		t.Errorf("Right away from the end took the rest: %q", f.Text())
+	}
+}
+
+// End takes it too, because End at the end of the text has nowhere else
+// to go.
+func TestEndTakesTheRestOfAnAnswer(t *testing.T) {
+	f := ghosted(20, "/va", "r")
+	drawField(f, 20)
+
+	f.HandleKey(press(input.KeyEnd, 0))
+
+	if f.Text() != "/var" {
+		t.Errorf("End left the field saying %q", f.Text())
+	}
+}
+
+// A masked field never shows one: the whole point of the mask is that
+// what is in the field is not on screen.
+func TestAMaskedFieldShowsNoRestOfAnAnswer(t *testing.T) {
+	f := ghosted(20, "/va", "r")
+	f.Mask = '*'
+
+	if row, _ := drawField(f, 20); strings.Contains(row, "r") {
+		t.Errorf("the masked field draws %q", row)
+	}
+	f.HandleKey(press(input.KeyRight, 0))
+	if f.Text() != "/va" {
+		t.Errorf("Right took the rest into a masked field: %q", f.Text())
+	}
+}
+
+// A rest that has not been drawn is not taken. It can arrive in the
+// same frame as the key that would take it, and nobody accepts what
+// they have not seen.
+func TestARestThatWasNeverDrawnIsNotTaken(t *testing.T) {
+	f := ghosted(20, "/va", "r")
+
+	f.HandleKey(press(input.KeyRight, 0))
+
+	if f.Text() != "/va" {
+		t.Errorf("Right took a rest that was never on screen: %q", f.Text())
+	}
+	drawField(f, 20)
+	f.HandleKey(press(input.KeyRight, 0))
+	if f.Text() != "/var" {
+		t.Errorf("Right did not take it once it had been drawn: %q", f.Text())
+	}
+}
+
+// Nor is one in a field the keys have left, where the caret is not.
+func TestAnUnfocusedFieldShowsNoRestOfAnAnswer(t *testing.T) {
+	f := ghosted(20, "/va", "r")
+	drawField(f, 20)
+	f.SetFocus(false)
+
+	if row, _ := drawField(f, 20); row != "/va" {
+		t.Errorf("the field draws %q with the keys elsewhere", row)
+	}
+}
+
+// Ctrl+End moves the caret, the way Ctrl+Right does, rather than taking
+// the rest.
+func TestCtrlEndDoesNotTakeTheRestOfAnAnswer(t *testing.T) {
+	f := ghosted(20, "/va", "r")
+	drawField(f, 20)
+
+	f.HandleKey(press(input.KeyEnd, input.ModCtrl))
+
+	if f.Text() != "/va" {
+		t.Errorf("Ctrl+End took the rest: %q", f.Text())
+	}
+}

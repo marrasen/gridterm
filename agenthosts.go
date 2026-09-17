@@ -90,12 +90,12 @@ func (h agentHost) setupLines(exe string) []string {
 		return append(lines, "",
 			"It only writes the config, so start "+h.called+" again first.")
 	}
-	lines := []string{"First put gridterm's MCP server in " + h.configIn() + ":", ""}
+	lines := []string{"First add gridterm's MCP server to " + h.configIn() + ":", ""}
 	for _, line := range strings.Split(mcpConfig(exe), "\n") {
 		lines = append(lines, wrapped(line, dialogCols)...)
 	}
 	return append(lines, "",
-		"Then start "+h.called+" again, and paste the prompt to it.")
+		"It goes beside any servers already there. Then start "+h.called+" again.")
 }
 
 // wrapped breaks a line too wide for a dialog, carrying the rest onto lines of its own.
@@ -137,6 +137,14 @@ func (h agentHost) copyTitle() string {
 		return "Copy the command"
 	}
 	return "Copy the config"
+}
+
+// copyWhat is what that button puts on the clipboard, for a sentence about it.
+func (h agentHost) copyWhat() string {
+	if h.cmd != "" {
+		return "the command line"
+	}
+	return "the config"
 }
 
 // setupForAgent says the same to an agent that cannot see gridterm's tools: what to ask the user

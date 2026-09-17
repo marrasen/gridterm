@@ -454,6 +454,23 @@ func drawsEveryLine(t *testing.T, a *testApp, f *ui.Form) {
 	}
 }
 
+// drawsEveryButton checks a dialog really draws every button it was
+// given.
+//
+// A form lays its buttons out from the right and drops the ones that
+// will not fit, silently. pressButton works off the list rather than the
+// screen, so a test that only presses buttons never sees the drop.
+func drawsEveryButton(t *testing.T, a *testApp, f *ui.Form) {
+	t.Helper()
+	drawn := strings.Join(drawnLines(a, f), "\n")
+	for _, b := range f.Buttons() {
+		if !strings.Contains(drawn, b.Title) {
+			t.Errorf("at %dx%d the dialog does not draw the %q button:\n%s",
+				a.lastSize[0], a.lastSize[1], b.Title, drawn)
+		}
+	}
+}
+
 // Handing a pane over shows the code and copies the prompt, and copying
 // opens nothing on top of the dialog.
 //
@@ -468,6 +485,7 @@ func TestHandingAPaneOverShowsTheCodeAndCopiesThePrompt(t *testing.T) {
 
 	f := handoverDialog(t, a, pane)
 	drawsEveryLine(t, a, f)
+	drawsEveryButton(t, a, f)
 	code := a.agents.of(pane).code
 	// The code is on the dialog the user is already looking at.
 	if drawn := strings.Join(drawnLines(a, f), "\n"); !strings.Contains(drawn, code) {
@@ -497,22 +515,31 @@ func TestHandingAPaneOverShowsTheCodeAndCopiesThePrompt(t *testing.T) {
 	}
 
 	// The instructions are a button away, and say what to run.
-	pressButton(t, a, f, "Install")
+	pressButton(t, a, f, "Instructions")
 	shownIn := awaitModal[*ui.Form](t, a, "the install instructions",
-		byTitle[*ui.Form]("Add gridterm to "+host.called))
+		byTitle[*ui.Form]("Adding gridterm to "+host.called))
 	drawsEveryLine(t, a, shownIn)
+	drawsEveryButton(t, a, shownIn)
 	drawn := strings.Join(drawnLines(a, shownIn), "\n")
-	for _, say := range []string{"claude mcp add gridterm --", "start Claude Code again"} {
+	for _, say := range []string{
+		"claude mcp add gridterm --", "start Claude Code again", "clipboard",
+	} {
 		if !strings.Contains(drawn, say) {
 			t.Errorf("the dialog does not draw %q:\n%s", say, drawn)
 		}
 	}
 
 	// And the command line can be taken off it, which is the whole point
-	// of a dialog naming a command.
-	pressButton(t, a, shownIn, host.copyTitle())
-	want := host.setupToCopy(exe)
-	waitFor(t, a, "the setup line to reach the clipboard", func() bool { return a.copiedText() == want })
+	// of a dialog naming a command. The line itself, not the prompt and
+	// not the dialog.
+	pressButton(t, a, shownIn, "Copy the command")
+	waitFor(t, a, "the setup line to reach the clipboard", func() bool {
+		got := a.copiedText()
+		return strings.HasPrefix(got, "claude mcp add gridterm -- ") && strings.Contains(got, exe)
+	})
+	if got := a.copiedText(); strings.Contains(got, "use_session_code") {
+		t.Errorf("the button copied the prompt, not the setup line: %q", got)
+	}
 
 	pressButton(t, a, shownIn, "Done")
 	// Taking it back is still one button away, on the dialog underneath.
@@ -520,6 +547,37 @@ func TestHandingAPaneOverShowsTheCodeAndCopiesThePrompt(t *testing.T) {
 	if a.agents.of(pane) != nil {
 		t.Error("it is still handed over")
 	}
+}
+
+// A prompt copied without gridterm's own path says so, there and then.
+//
+// The prompt still works where gridterm is on the PATH, and nowhere
+// else. The user need never open the instructions, so the copy is where
+// this has to be said.
+func TestCopyingThePromptWithoutAPathSaysSo(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pane := onlyPaneOn(t, a)
+
+	was := exePath
+	exePath = func() (string, error) { return "gridterm", errors.New("no path for this process") }
+	t.Cleanup(func() { exePath = was })
+
+	f := handoverDialog(t, a, pane)
+	pressButton(t, a, f, "Copy the prompt")
+
+	n := awaitModal[*ui.Notice](t, a, "a notice about the path", nil)
+	if !n.Failure {
+		t.Error("the notice does not read as a failure")
+	}
+	if !strings.Contains(n.Message(), "PATH") {
+		t.Errorf("the notice says %q", n.Message())
+	}
+	// And the prompt is on the clipboard anyway: it is worth pasting.
+	waitFor(t, a, "the prompt to reach the clipboard", func() bool {
+		return strings.Contains(a.copiedText(), a.agents.of(pane).code)
+	})
 }
 
 // The copy chord copies the setup line too, for a user who reaches for
@@ -531,15 +589,18 @@ func TestTheCopyChordOnTheInstallInstructionsCopiesTheSetupLine(t *testing.T) {
 	pane := onlyPaneOn(t, a)
 
 	f := handoverDialog(t, a, pane)
-	pressButton(t, a, f, "Install")
+	pressButton(t, a, f, "Instructions")
 	host := hostNamed(hostClaudeCode)
 	shown := awaitModal[*ui.Form](t, a, "the install instructions",
-		byTitle[*ui.Form]("Add gridterm to "+host.called))
+		byTitle[*ui.Form]("Adding gridterm to "+host.called))
 
 	chord := copyChordOf(t, a)
 	sendKey(t, a, press(chord.Key, chord.Mods))
-	want := host.setupToCopy(exeHere(t))
-	waitFor(t, a, "the setup line to reach the clipboard", func() bool { return a.copiedText() == want })
+	waitFor(t, a, "the setup line to reach the clipboard", func() bool {
+		got := a.copiedText()
+		return strings.HasPrefix(got, "claude mcp add gridterm -- ") &&
+			strings.Contains(got, exeHere(t))
+	})
 	if shown.ErrorText() != "" {
 		t.Errorf("the dialog is showing an error: %q", shown.ErrorText())
 	}
@@ -650,6 +711,20 @@ func TestTheHandoverDialogWritesForThePickedAgentAndRemembersIt(t *testing.T) {
 	if got, saved := again.AgentHost(); !saved || got != hostCodex {
 		t.Errorf("the file remembered %q, %v; want %q", got, saved, hostCodex)
 	}
+
+	// The instructions follow the pick too, rather than the agent the
+	// dialog opened on.
+	pressButton(t, a, f, "Instructions")
+	shown := awaitModal[*ui.Form](t, a, "the install instructions for Codex",
+		byTitle[*ui.Form]("Adding gridterm to "+hostNamed(hostCodex).called))
+	if drawn := strings.Join(drawnLines(a, shown), "\n"); !strings.Contains(drawn, "codex mcp add") {
+		t.Errorf("the instructions are not Codex's:\n%s", drawn)
+	}
+	pressButton(t, a, shown, "Copy the command")
+	waitFor(t, a, "Codex's setup line to reach the clipboard", func() bool {
+		return strings.HasPrefix(a.copiedText(), "codex mcp add gridterm -- ")
+	})
+	pressButton(t, a, shown, "Done")
 
 	// And the next hand-over opens on it.
 	pressButton(t, a, f, "Done")
@@ -1119,8 +1194,29 @@ func TestTheInstallInstructionsReadWholeForEveryHost(t *testing.T) {
 			a.showSetup(host, exe, errors.New("gridterm could not read its own path"))
 
 			shown := awaitModal[*ui.Form](t, a, "the install instructions",
-				byTitle[*ui.Form]("Add gridterm to "+host.called))
+				byTitle[*ui.Form]("Adding gridterm to "+host.called))
 			drawsEveryLine(t, a, shown)
+			drawsEveryButton(t, a, shown)
+			for _, line := range shown.Lines {
+				if len(line) > dialogCols {
+					t.Errorf("a line is %d characters and the dialog draws %d: %q",
+						len(line), dialogCols, line)
+				}
+			}
+
+			// What the button says, and what it copies, for this host.
+			// Spelled out rather than asked of the code being tested.
+			copies := map[string][2]string{
+				hostClaudeCode: {"Copy the command", `claude mcp add gridterm -- "` + exe + `" -mcp`},
+				hostCodex:      {"Copy the command", `codex mcp add gridterm -- "` + exe + `" -mcp`},
+				hostCursor:     {"Copy the config", `{"mcpServers": {"gridterm": {`},
+				hostOther:      {"Copy the config", `{"mcpServers": {"gridterm": {`},
+			}
+			want := copies[host.name]
+			pressButton(t, a, shown, want[0])
+			waitFor(t, a, "the setup to reach the clipboard", func() bool {
+				return strings.Contains(a.copiedText(), want[1])
+			})
 			// And it says the path is a guess, rather than showing a line
 			// that will not work and leaving the user to find out.
 			drawn := strings.Join(drawnLines(a, shown), "\n")
@@ -1496,9 +1592,9 @@ func TestTheHandoverDialogDoesBothInOneVisit(t *testing.T) {
 
 	// The prompt, and the dialog that says how to install the server.
 	pressButton(t, a, f, "Copy the prompt")
-	pressButton(t, a, f, "Install")
+	pressButton(t, a, f, "Instructions")
 	shown := awaitModal[*ui.Form](t, a, "the install instructions",
-		byTitle[*ui.Form]("Add gridterm to "+hostNamed(hostClaudeCode).called))
+		byTitle[*ui.Form]("Adding gridterm to "+hostNamed(hostClaudeCode).called))
 	pressButton(t, a, shown, "Done")
 
 	// And then the skill, without handing the pane over again.

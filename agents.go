@@ -499,8 +499,8 @@ func (a *app) showHandover(h *handover) {
 	pick.SetText(a.agents.startHost().name)
 	f.Lines = append(f.Lines, "",
 		"Agent: ctrl+down and ctrl+up choose. \"Copy the prompt\" copies an",
-		"instruction for it, \"Install\" says how to add gridterm to it, and",
-		"\"Write the skill\" saves a SKILL.md. All three leave this open.")
+		"instruction for that agent. \"Instructions\" says how to add gridterm",
+		"to it. \"Write the skill\" saves a SKILL.md. All three leave this open.")
 
 	// All three leave the form open, so the user can copy the prompt, read
 	// the setup and write the skill without handing the pane over twice.
@@ -513,10 +513,21 @@ func (a *app) showHandover(h *handover) {
 			a.logError(err)
 		}
 		a.clip.set(handoverPrompt(host, h.code, exe))
-		a.pump.post(func() { a.rememberAgentHost(host) })
+		a.pump.post(func() {
+			if err != nil {
+				// The prompt on the clipboard says just "gridterm", which
+				// works only where gridterm is on the PATH. Said here
+				// because the user may never open the instructions.
+				a.showNotice("The prompt says gridterm, not a path",
+					"gridterm could not read its own path, so the line the prompt asks"+
+						" the user to run says just gridterm. That works where gridterm"+
+						" is on the PATH, and nowhere else.", true)
+			}
+			a.rememberAgentHost(host)
+		})
 		return nil
 	}})
-	f.AddButton(ui.Button{Title: "Install", Keep: true, Do: func() error {
+	f.AddButton(ui.Button{Title: "Instructions", Keep: true, Do: func() error {
 		host := hostNamed(pick.Text())
 		exe, err := exePath()
 		if err != nil {
@@ -625,10 +636,14 @@ func (a *app) showSetup(host agentHost, exe string, exeErr error) {
 			"gridterm could not read its own path, so that says just",
 			"gridterm, which works where gridterm is on the PATH.")
 	}
+	// Two lines, because one runs wider than a dialog draws and a line
+	// too wide is trimmed at the edge without a word.
 	lines = append(lines, "",
-		`"`+host.copyTitle()+`" puts it on the clipboard, and so does the`,
-		"copy chord.")
-	f := a.newConfirm("Add gridterm to "+host.called, lines)
+		`"`+host.copyTitle()+`" puts `+host.copyWhat()+" on the clipboard.")
+	if chord := a.chordFor(copyCommand); chord != "" {
+		lines = append(lines, chord+" does the same.")
+	}
+	f := a.newConfirm("Adding gridterm to "+host.called, lines)
 	// The line itself, not the dialog: what the user does with this is
 	// paste it into a shell or a config file.
 	f.Copyable = host.setupToCopy(exe)
@@ -675,7 +690,9 @@ The server's own instructions say how the tools work and what the rules are.
 // gridterm is on the PATH. Every caller either says so or refuses. Under
 // go run the path is a temporary binary, which is a real path and a
 // useless one.
-func exePath() (string, error) {
+// A variable so a test can fail it: the path is read from the system,
+// and every caller has something to say when it cannot be.
+var exePath = func() (string, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return "gridterm", fmt.Errorf("gridterm could not read its own path: %w", err)

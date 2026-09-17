@@ -192,9 +192,10 @@ pane. "Copy the prompt" puts a prompt on the clipboard and does nothing
 else: paste the whole of it to the agent, and it carries the code and
 says how that host adds this window's `gridterm -mcp` server. What the
 tools do and what the rules are come from the server's own instructions
-once the agent connects, so the prompt does not repeat them. "Install"
-opens those setup lines on their own, and the copy chord or the button
-beside them takes the command line off the dialog. "Write the skill"
+once the agent connects, so the prompt does not repeat them.
+"Instructions" opens those setup lines on their own, with a button and
+the copy chord that take the command line -- or the JSON, for a host set
+up by a file -- off the dialog. "Write the skill"
 saves a `SKILL.md` where that host reads skills from, and says where it
 went; `gridterm -mcp-skill` prints the same file. Take the pane back
 from the same menu and the code stops working.

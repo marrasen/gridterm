@@ -997,11 +997,49 @@ func TestTheCopyChordCopiesWhatAFormSaysIsCopyable(t *testing.T) {
 
 	// And the line comes back once the error has gone.
 	f.SetError(nil)
-	if _, err := f.HandleKey(press(input.KeyC, input.ModCtrl|input.ModShift)); err != nil {
+	took, err := f.HandleKey(press(input.KeyC, input.ModCtrl|input.ModShift))
+	if err != nil {
 		t.Fatalf("the copy chord: %v", err)
+	}
+	// Taken here, so the chord does not go on to whatever is behind the
+	// dialog and copy something else as well.
+	if !took {
+		t.Error("the copy chord went past the dialog")
 	}
 	if copied != f.Copyable {
 		t.Errorf("after the error cleared it copied %q", copied)
+	}
+
+	// A form with nothing to copy copies nothing, rather than handing
+	// the clipboard an empty string.
+	copied = "not touched"
+	f.Copyable = ""
+	if _, err := f.HandleKey(press(input.KeyC, input.ModCtrl|input.ModShift)); err != nil {
+		t.Fatalf("the copy chord: %v", err)
+	}
+	if copied != "not touched" {
+		t.Errorf("a form with nothing to copy copied %q", copied)
+	}
+}
+
+// A dialog that was never given a clipboard takes the chord and does
+// nothing, rather than taking the window down with it.
+func TestTheCopyChordOnAFormWithNoClipboardDoesNothing(t *testing.T) {
+	tf := newTestForm(t)
+	f := tf.form
+	f.Copy = nil
+	f.CopyChord = func(ev input.Event) bool {
+		return ev.Key == input.KeyC && ev.Mods == input.ModCtrl|input.ModShift
+	}
+	f.Copyable = "something worth copying"
+	f.SetError(errors.New("and an error too"))
+
+	took, err := f.HandleKey(press(input.KeyC, input.ModCtrl|input.ModShift))
+	if err != nil {
+		t.Fatalf("the copy chord: %v", err)
+	}
+	if !took {
+		t.Error("the copy chord went past the dialog")
 	}
 }
 

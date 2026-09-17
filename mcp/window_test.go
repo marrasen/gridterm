@@ -64,6 +64,14 @@ func (w *oneWindow) Output(id string, most int) (agent.Look, error) {
 	return look, nil
 }
 
+func (w *oneWindow) Restart(id string) (agent.Pane, error) {
+	return agent.Pane{ID: "pane-1", Label: "bash on this machine", Cols: 80, Rows: 24}, nil
+}
+
+func (w *oneWindow) Open(id string) (agent.Pane, error) {
+	return agent.Pane{ID: "pane-2", Label: "bash on this machine", Cols: 80, Rows: 24}, nil
+}
+
 func (w *oneWindow) Send(id, text string, keys []string) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()

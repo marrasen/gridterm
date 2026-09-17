@@ -106,6 +106,13 @@ type Panes interface {
 	// Read.
 	Wait(id string, lines int, until Until) (Screen, Ending, error)
 
+	// Restart starts a pane's program again, for a pane whose program has
+	// finished and whose hand-over allows it.
+	Restart(id string) (Pane, error)
+
+	// Open opens another pane where a pane is, handed over as it opens.
+	Open(id string) (Pane, error)
+
 	// Close lets go of the window.
 	Close() error
 }

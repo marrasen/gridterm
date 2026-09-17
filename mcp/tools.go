@@ -146,6 +146,44 @@ func toolList() []tool {
 			},
 		},
 		{
+			Name:  "restart_pane",
+			Title: "Start a pane's program again",
+			Description: "Start the pane's program again after it has finished: the shell" +
+				" that ended, or the command that ran. It is the same pane, so its name does" +
+				" not change and what it printed before is still above what runs now." +
+				" On a pane that ran one command this runs that command again, with" +
+				" whatever that does to the machine, so ask the user before you use it there." +
+				" It works only if the user ticked \"Restart a closed connection\" when they" +
+				" handed the pane over, and use_session_code says whether they did.",
+			InputSchema: schema{
+				Type: "object",
+				Properties: map[string]field{
+					"pane": {Type: "string", Description: "which pane, from use_session_code"},
+				},
+				Required: []string{"pane"},
+			},
+		},
+		{
+			Name:  "open_pane",
+			Title: "Open another pane there",
+			Description: "Open a second pane where a pane you have is: another shell on the" +
+				" same machine, handed to you as it opens. The answer names it and the other" +
+				" tools take that name." +
+				" It opens no connection. gridterm must already be connected to that machine," +
+				" and if it is not this says so and the user is the one to connect." +
+				" It works only if the user ticked \"Open another pane there\" when they" +
+				" handed the pane over, and use_session_code says whether they did.",
+			InputSchema: schema{
+				Type: "object",
+				Properties: map[string]field{
+					"pane": {Type: "string",
+						Description: "a pane you have, from use_session_code; the new one" +
+							" opens where it is"},
+				},
+				Required: []string{"pane"},
+			},
+		},
+		{
 			Name:  "wait_for",
 			Title: "Wait for a pane",
 			Description: "Watch a pane and give back its screen once the waiting is over." +
@@ -289,6 +327,32 @@ func (s *server) runTool(name string, args json.RawMessage) (result, *rpcError) 
 		return say("Sent. Use wait_for to see what happens: the screen has not" +
 			" caught up yet, and wait_for ends when what you sent finishes. Then" +
 			" read_output for what it printed.")
+
+	case "restart_pane":
+		if in.Pane == "" {
+			return missing("pane")
+		}
+		pane, err := s.panes.Restart(in.Pane)
+		if err != nil {
+			return wrong(err.Error())
+		}
+		return say(fmt.Sprintf(
+			"%s is running again, as pane %q. What it printed before is still above it,"+
+				" and read_output gives you what the new run prints.",
+			pane.Label, pane.ID))
+
+	case "open_pane":
+		if in.Pane == "" {
+			return missing("pane")
+		}
+		pane, err := s.panes.Open(in.Pane)
+		if err != nil {
+			return wrong(err.Error())
+		}
+		return say(fmt.Sprintf(
+			"You have a second pane on %s: a %dx%d screen, as pane %q."+
+				" It is yours the same way the first one is, and the user is watching it too.",
+			pane.Label, pane.Cols, pane.Rows, pane.ID))
 
 	case "wait_for":
 		if in.Pane == "" {

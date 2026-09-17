@@ -55,11 +55,20 @@ import (
 // Output is the last command's output on its own, at most most lines of
 // it. A window that cannot tell where that command's output began says
 // so and gives nothing.
+// Restart starts a pane's program again, for a pane whose program has
+// finished and whose hand-over allows it. The pane is the same pane, so
+// the id goes on naming it.
+//
+// Open opens another pane where a pane is, handed over as it opens, and
+// gives back the new one. It opens no connection: a machine the window
+// is not connected to is refused.
 type Window interface {
 	Use(code string) (Pane, error)
 	Look(id string, lines int) (Look, error)
 	Output(id string, most int) (Look, error)
 	Send(id, text string, keys []string) error
+	Restart(id string) (Pane, error)
+	Open(id string) (Pane, error)
 }
 
 // May is what a hand-over allows beyond reading a pane and typing into

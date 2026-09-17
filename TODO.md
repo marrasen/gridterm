@@ -47,7 +47,7 @@ guessed at.
    under "The agent, through MCP":
    - Reconnecting in the same pane keeps the same hand-over code.
    - The agent can start that reconnect itself, when the user has ticked
-     the box for it. The boxes are item 2 there.
+     the box for it. The boxes are done.
 
 3. **A local command gets a command row, like a remote one.** Named by
    what it runs, with the same "Run it again?" question when it ends.
@@ -82,55 +82,16 @@ Raised after a debugging session in a handed-over pane.
    the user has typed it into the pane, and return without ever showing
    the agent the characters.
 
-2. **Tick boxes on the hand-over dialog say what the agent may do.**
-   Asked for and answered on 2026-09-17. A hand-over gives reading and
-   typing today and nothing else is possible. Each box below adds one
-   thing, per pane, decided at the moment the pane is handed over.
-   - **The window enforces; the agent is only told.** The checks live in
-     `agentWindow`'s methods, beside the one that looks the pane id up.
-     What the agent may do goes back in the `Use` answer so it does not
-     waste calls, but being told is not the enforcement.
-   - **A box takes effect at once**, the way "Take it back" does, and
-     not at the next hand-over. Turning one off while the agent is
-     mid-call makes the next call fail, which is what taking a pane back
-     already does.
-   - **Off, and remembered.** Every box starts off. Whatever is ticked
-     is written down and pre-ticked next time, the way the picked agent
-     already is.
-   - **Restart a closed connection.** The agent picks the choice the
-     question on the pane offers. `restartPane` keeps the pane and so
-     keeps the hand-over, which means the agent's code still names it
-     afterwards. On a command pane this runs the command again, which is
-     why it is a box and not a rule in the tool.
-   - **Open another pane to the same server.** A second pane on a
-     machine the window is already connected to, handed over as it
-     opens. On a local pane it means another pane on this machine. This
-     relaxes the rule that MCP support opens no connections of its own:
-     it opens no connection, it takes a channel on one the window
-     already holds. Nothing here dials.
-   - **Read only.** `send_keys` is refused. For watching a build or a
-     tail without being able to touch it.
-   - **Read above a clear.** The agent may read the scrollback above the
-     last `ED 3`. Off is what "`clear` keeps the history" settled; this
-     box says yes for one pane.
-   - **Read only and Restart together are legal.** Restarting is not
-     typing, so watching a pane and bringing it back when it dies
-     without ever typing into it is a real thing to want. Nothing
-     refuses the pair.
-   - **Every tool still reaches only a handed-over pane.** The boxes
-     widen what may be done to that pane. They do not widen which panes
-     are reachable.
-
-3. **No expiry for now.** Answered on 2026-09-17. A hand-over lasts
+2. **No expiry for now.** Answered on 2026-09-17. A hand-over lasts
    until the user takes it back or closes the pane. Revisit if forgotten
    hand-overs ever pile up in practice.
 
-4. **Drop the hand-over when the pane is closed.** Answered on
+3. **Drop the hand-over when the pane is closed.** Answered on
    2026-09-17. A pane whose program has ended keeps its hand-over, so a
    rebooted host still cannot spend the code twice. Closing the pane is
    what releases it, and the listener stops once the last one has gone.
 
-5. **A command pane can be handed over already**, running or not.
+4. **A command pane can be handed over already**, running or not.
    `handPane` looks at no kind and no state. A running one takes keys on
    the command's stdin; an ended one can be read and not typed into,
    which is worth having for a failed build. Nothing to do here: it is

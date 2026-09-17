@@ -93,6 +93,41 @@ func (w *Window) Output(id string, most int) (Screen, error) {
 	return asScreen(look), nil
 }
 
+// Restart starts a pane's program again.
+func (w *Window) Restart(id string) (Pane, error) {
+	conn, at, err := w.paneAt(id)
+	if err != nil {
+		return Pane{}, err
+	}
+	pane, err := conn.Restart(at)
+	if err != nil {
+		return Pane{}, err
+	}
+	return asPane(w.portOf(id), pane), nil
+}
+
+// Open opens another pane where a pane is.
+func (w *Window) Open(id string) (Pane, error) {
+	conn, at, err := w.paneAt(id)
+	if err != nil {
+		return Pane{}, err
+	}
+	pane, err := conn.Open(at)
+	if err != nil {
+		return Pane{}, err
+	}
+	return asPane(w.portOf(id), pane), nil
+}
+
+// portOf is the window a pane name belongs to, which is the number in
+// front of it. A name that has no number is one paneAt would have turned
+// away already.
+func (w *Window) portOf(id string) int {
+	port, _, _ := strings.Cut(id, "/")
+	n, _ := strconv.Atoi(port)
+	return n
+}
+
 // Send types into a pane and presses the keys named after it.
 func (w *Window) Send(id, text string, keys []string) error {
 	conn, at, err := w.paneAt(id)

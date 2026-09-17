@@ -7,7 +7,7 @@ package agent
 // short messages about a screen, not a stream of a program's output.
 type ask struct {
 	// Do is what is wanted: "hello", "use", "panes", "read", "output",
-	// "send" or "wait".
+	// "send", "wait", "restart" or "open".
 	Do string `json:"do"`
 
 	// Protocol is what the first message carries, and nothing else

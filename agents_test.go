@@ -2608,3 +2608,182 @@ func TestTheHandoverBoxesAreRemembered(t *testing.T) {
 		t.Error("the next hand-over does not allow what the box says")
 	}
 }
+
+// The agent picks the choice the question on a dead pane offers, when
+// the user has ticked the box for it.
+//
+// The pane is the same pane, so the code the agent holds goes on naming
+// it and the transcript of what died is still above what runs now.
+func TestAnAgentRestartsAPaneWhenTheBoxIsTicked(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pane, code, c := handedOver(t, a)
+
+	var got agent.Pane
+	offWindow(t, a, "the window to answer the agent", func() error {
+		var err error
+		got, err = c.Use(code)
+		return err
+	})
+	if got.May.Restart {
+		t.Fatal("the pane may be restarted before anything was ticked")
+	}
+
+	a.shells[0].out <- []byte("$ exit\r\n")
+	waitFor(t, a, "the pane to show the exit", func() bool {
+		return strings.Contains(paneText(pane), "exit")
+	})
+	endTheShell(t, a, 0, pane)
+
+	// Refused while the box is empty, and the refusal names the box.
+	var err error
+	offWindow(t, a, "the window to refuse the restart", func() error {
+		_, err = c.Restart(got.ID)
+		return nil
+	})
+	if err == nil {
+		t.Fatal("it restarted a pane the user had not allowed it to")
+	}
+	if !strings.Contains(err.Error(), "Restart a closed connection") {
+		t.Errorf("it was told %q, which does not name the box to tick", err)
+	}
+
+	f := awaitModal[*ui.Form](t, a, "the hand-over dialog",
+		byTitle[*ui.Form]("An agent may work in this pane"))
+	tickBox(t, a, f, "Restart a closed connection")
+
+	var back agent.Pane
+	offWindow(t, a, "the window to restart the pane", func() error {
+		var err error
+		back, err = c.Restart(got.ID)
+		return err
+	})
+	if back.ID != got.ID {
+		t.Errorf("the pane came back as %q, want the name it had, %q", back.ID, got.ID)
+	}
+	if back.Ended {
+		t.Error("the pane is still said to have finished")
+	}
+	waitFor(t, a, "the pane to be running again", func() bool {
+		a.reapExited()
+		return !pane.Exited()
+	})
+	// And what the pane printed before is still above what runs now.
+	if !strings.Contains(paneText(pane), "exit") {
+		t.Errorf("the restart threw the transcript away:\n%s", paneText(pane))
+	}
+	// The question the user would have answered has been answered.
+	if pane.Asking() != "" {
+		t.Errorf("the pane is still asking %q", pane.Asking())
+	}
+}
+
+// The agent opens a second pane where its own pane is, when the user has
+// ticked the box, and the new one is handed over as it opens.
+func TestAnAgentOpensASecondPaneWhenTheBoxIsTicked(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	_, code, c := handedOver(t, a)
+
+	var got agent.Pane
+	offWindow(t, a, "the window to answer the agent", func() error {
+		var err error
+		got, err = c.Use(code)
+		return err
+	})
+
+	var err error
+	offWindow(t, a, "the window to refuse the pane", func() error {
+		_, err = c.Open(got.ID)
+		return nil
+	})
+	if err == nil {
+		t.Fatal("it opened a pane the user had not allowed it to")
+	}
+	if !strings.Contains(err.Error(), "Open another pane there") {
+		t.Errorf("it was told %q, which does not name the box to tick", err)
+	}
+
+	f := awaitModal[*ui.Form](t, a, "the hand-over dialog",
+		byTitle[*ui.Form]("An agent may work in this pane"))
+	tickBox(t, a, f, "Open another pane there")
+
+	var next agent.Pane
+	offWindow(t, a, "the window to open another pane", func() error {
+		var err error
+		next, err = c.Open(got.ID)
+		return err
+	})
+	if next.ID == got.ID {
+		t.Fatalf("the second pane has the first one's name, %q", next.ID)
+	}
+	if !next.May.OpenMore {
+		t.Error("the second pane was handed over with different boxes ticked")
+	}
+
+	// It is the agent's the way the first one is: it can read it.
+	if look := looked(t, a, c, next.ID); look.Screen == "" && look.Cols == 0 {
+		t.Error("the agent cannot read the pane it was given")
+	}
+	// And the window really has two panes now.
+	if len(a.panes) != 2 {
+		t.Errorf("the window holds %d panes, want 2", len(a.panes))
+	}
+	// Both are listed as handed over.
+	var panes []agent.Pane
+	offWindow(t, a, "the window to list the panes", func() error {
+		var err error
+		panes, err = c.Panes()
+		return err
+	})
+	if len(panes) != 2 {
+		t.Errorf("the agent was handed %d panes, want 2", len(panes))
+	}
+}
+
+// Opening a pane on a machine this window is no longer connected to is
+// refused: opening connections is the user's to do.
+func TestAnAgentDoesNotOpenAPaneOnAMachineNobodyIsConnectedTo(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pane := onlyPaneOn(t, a)
+
+	// A pane whose machine the window has no connection to.
+	if e := a.panes[pane]; e != nil {
+		e.Host = "margit"
+	}
+	if err := a.handPane(pane); err != nil {
+		t.Fatalf("hand it over: %v", err)
+	}
+	h := a.agents.of(pane)
+	h.may.OpenMore = true
+	c, err := agent.Dial(h.code)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	t.Cleanup(func() { _ = c.Close() })
+
+	var got agent.Pane
+	offWindow(t, a, "the window to answer the agent", func() error {
+		var err error
+		got, err = c.Use(h.code)
+		return err
+	})
+
+	var failed error
+	offWindow(t, a, "the window to refuse the pane", func() error {
+		_, failed = c.Open(got.ID)
+		return nil
+	})
+	if failed == nil {
+		t.Fatal("the agent opened a pane on a machine nothing is connected to")
+	}
+	for _, say := range []string{"not connected", "ask them"} {
+		if !strings.Contains(failed.Error(), say) {
+			t.Errorf("it was told %q, which does not say %q", failed, say)
+		}
+	}
+}

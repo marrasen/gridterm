@@ -41,6 +41,12 @@ type fakePanes struct {
 	output     string
 	mostOutput int
 
+	// may is what this hand-over allows, and the counts are how often
+	// each of the two tools behind a box was used.
+	may       May
+	restarted int
+	opened    int
+
 	// row and col are where the pane says its cursor is, alt says a
 	// full-screen program is drawing there, and all says the pane had
 	// fewer lines than the read asked for.
@@ -73,7 +79,7 @@ func (f *fakePanes) Use(code string) (Pane, error) {
 		return Pane{}, errors.New("that code does not name a pane this window has handed over")
 	}
 	f.open = true
-	return Pane{ID: "pane-1", Label: "bash on margit", Cols: 80, Rows: 24}, nil
+	return Pane{ID: "pane-1", Label: "bash on margit", Cols: 80, Rows: 24, May: f.may}, nil
 }
 
 func (f *fakePanes) List() ([]Pane, error) {
@@ -119,6 +125,32 @@ func (f *fakePanes) Output(id string, most int) (Screen, error) {
 	screen.Screen = f.output
 	screen.Note = "this is what the last command printed"
 	return screen, nil
+}
+
+func (f *fakePanes) Restart(id string) (Pane, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !f.open || id != "pane-1" {
+		return Pane{}, errors.New("that is not a pane you have been handed")
+	}
+	if !f.may.Restart {
+		return Pane{}, errors.New("this hand-over does not let you restart the pane")
+	}
+	f.restarted++
+	return Pane{ID: "pane-1", Label: "bash on margit", Cols: 80, Rows: 24, May: f.may}, nil
+}
+
+func (f *fakePanes) Open(id string) (Pane, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !f.open || id != "pane-1" {
+		return Pane{}, errors.New("that is not a pane you have been handed")
+	}
+	if !f.may.OpenMore {
+		return Pane{}, errors.New("this hand-over does not let you open another pane")
+	}
+	f.opened++
+	return Pane{ID: "pane-2", Label: "bash on margit", Cols: 80, Rows: 24, May: f.may}, nil
 }
 
 func (f *fakePanes) Send(id, text string, keys []string) error {
@@ -289,7 +321,8 @@ func TestItSaysWhatItIsAndWhatItCanDo(t *testing.T) {
 
 	raw, _ = json.Marshal(answers[1].Result)
 	for _, want := range []string{
-		"use_session_code", "list_panes", "read_pane", "read_output", "send_keys", "wait_for",
+		"use_session_code", "list_panes", "read_pane", "read_output", "send_keys",
+		"restart_pane", "open_pane", "wait_for",
 	} {
 		if !strings.Contains(string(raw), want) {
 			t.Errorf("it does not offer %s", want)
@@ -303,7 +336,7 @@ func TestItSaysWhatItIsAndWhatItCanDo(t *testing.T) {
 	if err := json.Unmarshal(raw, &listed); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if len(listed.Tools) != 6 {
+	if len(listed.Tools) != 8 {
 		var names []string
 		for _, tl := range listed.Tools {
 			names = append(names, tl.Name)
@@ -676,7 +709,7 @@ func TestEveryToolSaysWhatItTakes(t *testing.T) {
 	if err := json.Unmarshal(raw, &listed); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if len(listed.Tools) != 6 {
+	if len(listed.Tools) != 8 {
 		t.Fatalf("it offers %d tools", len(listed.Tools))
 	}
 	needs := map[string][]string{
@@ -684,6 +717,8 @@ func TestEveryToolSaysWhatItTakes(t *testing.T) {
 		"list_panes":       nil,
 		"read_pane":        {"pane"},
 		"read_output":      {"pane"},
+		"restart_pane":     {"pane"},
+		"open_pane":        {"pane"},
 		"send_keys":        {"pane"},
 		"wait_for":         {"pane"},
 	}

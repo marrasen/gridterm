@@ -188,7 +188,11 @@ Handing a pane to an agent is on the Servers menu and on the plus on
 this machine's row. The dialog asks which agent it is for -- Claude
 Code, Codex, Cursor, or another host that takes a JSON MCP config -- and
 remembers the answer for next time. The dialog shows the code for the
-pane. "Copy the prompt" puts a prompt on the clipboard and does nothing
+pane, and four tick boxes say what the agent may do beyond reading it
+and typing into it: restart a closed connection, open another pane on
+the same machine, read only, and read above a clear. Every box starts
+off, what you tick is remembered, and turning one over takes effect on
+the agent's next call. "Copy the prompt" puts a prompt on the clipboard and does nothing
 else: paste the whole of it to the agent, and it carries the code and
 says how that host adds this window's `gridterm -mcp` server. What the
 tools do and what the rules are come from the server's own instructions

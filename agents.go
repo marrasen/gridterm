@@ -371,19 +371,7 @@ func (w agentWindow) Use(code string) (agent.Pane, error) {
 			return agent.Pane{}, errors.New(
 				"that code does not name a pane this window has handed over")
 		}
-		e := w.a.panes[h.pane]
-		if e == nil {
-			return agent.Pane{}, errors.New("that pane is no longer open")
-		}
-		size := h.pane.Size()
-		return agent.Pane{
-			ID:    h.id,
-			Label: agentLabel(e),
-			Cols:  size.Cols,
-			Rows:  size.Rows,
-			Ended: h.pane.Exited(),
-			May:   asMay(h.may),
-		}, nil
+		return w.a.toldAbout(h)
 	})
 }
 
@@ -698,6 +686,144 @@ func (h *handover) promptIsBack(read term.Reading) bool {
 		return false
 	}
 	return read.Line > h.typedLine && read.Before == h.typed
+}
+
+// Restart starts a pane's program again, which is what the question on a
+// dead pane offers the user.
+//
+// The same pane, so the code the agent holds goes on naming it and what
+// the pane printed before is still above what runs now. On a pane that
+// ran one command this runs that command again, which is why it is a box
+// the user ticks and not a rule in the tool.
+func (w agentWindow) Restart(id string) (agent.Pane, error) {
+	return onDrawing(w.a, func() (agent.Pane, error) {
+		h, err := w.a.handedPane(id)
+		if err != nil {
+			return agent.Pane{}, err
+		}
+		if !h.may.Restart {
+			return agent.Pane{}, errors.New(
+				"this hand-over does not let you restart the pane." +
+					` Ask the user to tick "Restart a closed connection"`)
+		}
+		if !h.pane.Exited() {
+			return agent.Pane{}, errors.New(
+				"the program in that pane is still running, so there is nothing to start again")
+		}
+		if err := w.a.startAgain(h.pane); err != nil {
+			return agent.Pane{}, err
+		}
+		// The question on the pane was offering exactly this, and it has
+		// been answered.
+		h.pane.Ask("")
+		return w.a.toldAbout(h)
+	})
+}
+
+// Open opens another pane where a pane is, handed over as it opens.
+//
+// It opens no connection. A pane on this machine means another pane on
+// this machine; a pane on a machine means another channel on the
+// connection the window already holds, and a machine the window is not
+// connected to is refused rather than dialled.
+func (w agentWindow) Open(id string) (agent.Pane, error) {
+	return onDrawing(w.a, func() (agent.Pane, error) {
+		h, err := w.a.handedPane(id)
+		if err != nil {
+			return agent.Pane{}, err
+		}
+		if !h.may.OpenMore {
+			return agent.Pane{}, errors.New(
+				"this hand-over does not let you open another pane." +
+					` Ask the user to tick "Open another pane there"`)
+		}
+		e := w.a.panes[h.pane]
+		if e == nil {
+			return agent.Pane{}, errors.New("that pane is no longer open")
+		}
+		if err := w.a.connectedAlready(e.Host); err != nil {
+			return agent.Pane{}, err
+		}
+		was := w.a.panesNow()
+		if err := w.a.openTerminalOn(e.Host, nil); err != nil {
+			return agent.Pane{}, err
+		}
+		opened := w.a.paneOpenedSince(was)
+		if opened == nil {
+			return agent.Pane{}, errors.New("the window opened no pane")
+		}
+		// Handed over as it opens, with the same boxes ticked: the user
+		// said what an agent may do where this pane is, and this is
+		// where this pane is.
+		code, err := agent.NewCode(w.a.agents.port())
+		if err != nil {
+			return agent.Pane{}, err
+		}
+		next := w.a.agents.hand(opened, code)
+		next.may = h.may
+		w.a.markDirty()
+		return w.a.toldAbout(next)
+	})
+}
+
+// connectedAlready says whether the window already holds a connection to
+// a machine, so that opening another pane there opens nothing.
+//
+// This is the whole of the rule that an agent never dials. A machine the
+// user has closed the connection to is theirs to open again.
+func (a *app) connectedAlready(host string) error {
+	if host == conns.Local {
+		return nil
+	}
+	f := a.about(host)
+	if f.machine != nil || f.window != nil {
+		return nil
+	}
+	return fmt.Errorf("this window is not connected to %s any more,"+
+		" and opening connections is the user's to do: ask them to connect to it", host)
+}
+
+// panesNow is the panes the window holds, for telling a new one from the
+// ones that were already there.
+func (a *app) panesNow() map[*term.Terminal]bool {
+	was := make(map[*term.Terminal]bool, len(a.panes))
+	for pane := range a.panes {
+		was[pane] = true
+	}
+	return was
+}
+
+// paneOpenedSince is the one pane the window has that it did not have
+// before, and nil when there is none or more than one.
+func (a *app) paneOpenedSince(was map[*term.Terminal]bool) *term.Terminal {
+	var found *term.Terminal
+	for pane := range a.panes {
+		if was[pane] {
+			continue
+		}
+		if found != nil {
+			return nil
+		}
+		found = pane
+	}
+	return found
+}
+
+// toldAbout is a handover as an agent is told about it.
+func (a *app) toldAbout(h *handover) (agent.Pane, error) {
+	e := a.panes[h.pane]
+	if e == nil {
+		return agent.Pane{}, errors.New("that pane is no longer open")
+	}
+	size := h.pane.Size()
+	return agent.Pane{
+		ID:    h.id,
+		Label: agentLabel(e),
+		Cols:  size.Cols,
+		Rows:  size.Rows,
+		Ended: h.pane.Exited(),
+		May:   asMay(h.may),
+	}, nil
 }
 
 // handedPane is the handover an id names, and only while that handover

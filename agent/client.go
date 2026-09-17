@@ -114,6 +114,32 @@ func (c *Client) Output(id string, most int) (Look, error) {
 	return *got.Look, nil
 }
 
+// Restart starts a pane's program again and gives back the pane, which
+// is the pane it was.
+func (c *Client) Restart(id string) (Pane, error) {
+	got, err := c.say(ask{Do: "restart", Pane: id})
+	if err != nil {
+		return Pane{}, err
+	}
+	if got.Pane == nil {
+		return Pane{}, errors.New("agent: the window named no pane")
+	}
+	return *got.Pane, nil
+}
+
+// Open opens another pane where a pane is and gives back the new one,
+// handed over as it opened.
+func (c *Client) Open(id string) (Pane, error) {
+	got, err := c.say(ask{Do: "open", Pane: id})
+	if err != nil {
+		return Pane{}, err
+	}
+	if got.Pane == nil {
+		return Pane{}, errors.New("agent: the window named no pane")
+	}
+	return *got.Pane, nil
+}
+
 // Send types text into a pane and then presses the named keys. Either
 // may be empty, and a name the window does not know is refused with the
 // names it has.

@@ -39,6 +39,12 @@ type fakeWindow struct {
 	output     string
 	mostOutput int
 
+	// What this hand-over allows, and how many times each was used.
+	mayRestart bool
+	mayOpen    bool
+	restarted  int
+	opened     int
+
 	// bigLookFails makes a Look of more than the screen fail, which is
 	// what the user taking the pane back between two looks does.
 	bigLookFails bool
@@ -166,6 +172,35 @@ func (w *fakeWindow) Output(id string, most int) (Look, error) {
 	look := w.lookAt(w.output)
 	look.Note = "this is what the last command printed"
 	return look, nil
+}
+
+func (w *fakeWindow) Restart(id string) (Pane, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.taken || id != "pane-1" {
+		return Pane{}, errors.New("that is not a pane you have been handed")
+	}
+	if !w.mayRestart {
+		return Pane{}, errors.New("this hand-over does not let you restart the pane")
+	}
+	w.restarted++
+	w.gone = false
+	return Pane{ID: "pane-1", Label: "bash", Cols: 80, Rows: 24,
+		May: May{Restart: true, OpenMore: w.mayOpen}}, nil
+}
+
+func (w *fakeWindow) Open(id string) (Pane, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.taken || id != "pane-1" {
+		return Pane{}, errors.New("that is not a pane you have been handed")
+	}
+	if !w.mayOpen {
+		return Pane{}, errors.New("this hand-over does not let you open another pane")
+	}
+	w.opened++
+	return Pane{ID: "pane-2", Label: "bash", Cols: 80, Rows: 24,
+		May: May{Restart: w.mayRestart, OpenMore: true}}, nil
 }
 
 func (w *fakeWindow) Send(id, text string, keys []string) error {

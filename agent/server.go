@@ -398,6 +398,35 @@ func (s *Server) answer(want ask, held map[string]Pane) said {
 			return said{Error: notHanded(want.Pane)}
 		}
 		return s.waitFor(want)
+
+	case "restart":
+		if _, ok := held[want.Pane]; !ok {
+			return said{Error: notHanded(want.Pane)}
+		}
+		pane, err := s.cfg.Window.Restart(want.Pane)
+		if err != nil {
+			return said{Error: err.Error()}
+		}
+		// The same pane, so the same id: what changed is what is running
+		// in it.
+		held[pane.ID] = pane
+		return said{Pane: &pane}
+
+	case "open":
+		if _, ok := held[want.Pane]; !ok {
+			return said{Error: notHanded(want.Pane)}
+		}
+		pane, err := s.cfg.Window.Open(want.Pane)
+		if err != nil {
+			return said{Error: err.Error()}
+		}
+		// Handed over as it opens, so this agent holds it the way it
+		// holds the pane it asked from.
+		held[pane.ID] = pane
+		if s.cfg.OnUse != nil {
+			s.cfg.OnUse(pane.ID)
+		}
+		return said{Pane: &pane}
 	}
 	return said{Error: fmt.Sprintf("%q is not something this window does", want.Do)}
 }

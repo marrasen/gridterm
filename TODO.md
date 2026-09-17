@@ -260,6 +260,14 @@ order Ctrl+Tab moves in, and expected recently used.
 
 ## Known gaps worth revisiting
 
+- **A shared pane never lets the window idle.** The border and the
+  sidebar stripe glow for as long as an agent or another window has the
+  pane, so two layers repaint four times a second and the compositor
+  never takes the skip. The connection pulse settles four seconds after
+  the last byte and this does not, because a glow that stops is not a
+  glow. `TestASharedPaneCostsNothingBetweenGlowSteps` pins the cost at
+  two layers a step, so it cannot grow unnoticed.
+
 - An orphaned `conhost.exe` can be left with no `cmd.exe` under it. Seen
   on a live window while the shell leak was being looked into: the shell
   had exited and the console host was still running. The job object put

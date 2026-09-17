@@ -194,11 +194,11 @@ func (a *app) refreshPanel(now time.Time) {
 	// it ended with, which is how "connection lost" stays on the row of
 	// one whose transport went.
 	if a.paneRows == nil {
-		a.paneRows = make(map[*conns.Entry]bool, len(a.panes))
+		a.paneRows = make(map[*conns.Entry]*term.Terminal, len(a.panes))
 	}
 	clear(a.paneRows)
 	for t, e := range a.panes {
-		a.paneRows[e] = true
+		a.paneRows[e] = t
 		if a.ended[t] {
 			continue
 		}
@@ -215,7 +215,9 @@ func (a *app) refreshPanel(now time.Time) {
 	}
 	if a.files != nil {
 		for _, e := range a.files.rows {
-			a.paneRows[e] = true
+			// A file browser's pane has no terminal, so its row maps to
+			// nil: on the list, with nothing to share.
+			a.paneRows[e] = nil
 		}
 	}
 
@@ -477,6 +479,9 @@ func (a *app) panelRow(row conns.Row, now time.Time) ui.ListRow {
 		Mark: dot, MarkFG: state,
 	}
 	out.Art = a.graph(row.Entry)
+	if pane := a.paneRows[row.Entry]; pane != nil {
+		out.Edge = a.sharedEdge(pane, now)
+	}
 	// How far the job on this row has got, asked of the job itself: one
 	// that has finished is off the list, so its row fills nothing.
 	if j := a.jobs[row.Entry]; j != nil {
@@ -495,7 +500,8 @@ func (a *app) panelRow(row conns.Row, now time.Time) ui.ListRow {
 			out.Button = clearButton
 		}
 	}
-	if out.Button == 0 && a.paneRows[row.Entry] && row.Entry.Close != nil {
+	_, isPane := a.paneRows[row.Entry]
+	if out.Button == 0 && isPane && row.Entry.Close != nil {
 		// A pane's row closes the pane and the row together, so its
 		// cross is offered only while the pointer is on the row.
 		out.HoverButton = clearButton

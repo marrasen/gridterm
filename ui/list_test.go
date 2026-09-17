@@ -1062,3 +1062,162 @@ func TestListWithNoRoomForAnIcon(t *testing.T) {
 		}
 	}
 }
+
+// edgedRow is the row edged stripes: one that is not the selected one,
+// whose ground is its own.
+const edgedRow = 3
+
+// edged is the panel's rows with a stripe down the left of one of them.
+func edged(one, two color.RGBA) []ListRow {
+	rows := panelRows()
+	rows[edgedRow].Edge = [2]color.RGBA{one, two}
+	return rows
+}
+
+// notSelected fails the test if the striped row is the selected one,
+// whose ground is its own and would hide what the stripe did.
+func notSelected(t *testing.T, l *List) {
+	t.Helper()
+	if got, ok := l.Selected(); ok && got.Key == panelRows()[edgedRow].Key {
+		t.Fatalf("row %d is selected, and these tests want a row with the list's own ground", edgedRow)
+	}
+}
+
+// A row's stripe colours the ground of its first cells and reaches no
+// further along the row.
+func TestARowsEdgeColoursItsFirstCells(t *testing.T) {
+	red := color.RGBA{R: 0xff, A: 0x80}
+	l := newTestList(t, edged(red, color.RGBA{}), 40, 10)
+	notSelected(t, l)
+	g := drawList(l, 40, 10)
+	plain := drawList(newTestList(t, panelRows(), 40, 10), 40, 10)
+
+	was, got := plain.At(0, 3).BG, g.At(0, 3).BG
+	if got == was {
+		t.Errorf("the striped row's first cell is %v, the same as it is with no stripe", got)
+	}
+	if got.R <= was.R {
+		t.Errorf("the stripe took the ground from %v to %v, and the colour on it is red", was, got)
+	}
+	if second := g.At(1, 3).BG; second != plain.At(1, 3).BG {
+		t.Errorf("the second cell is %v with only one colour on the row, want the ordinary %v",
+			second, plain.At(1, 3).BG)
+	}
+	if rest := g.At(6, 3).BG; rest != plain.At(6, 3).BG {
+		t.Errorf("the stripe reached column 6, which is %v", rest)
+	}
+	if got.A != was.A {
+		t.Errorf("the stripe left the ground %#x see-through, and it was %#x", got.A, was.A)
+	}
+}
+
+// Two colours take a cell each, in the order they are given.
+func TestTwoEdgeColoursTakeACellEach(t *testing.T) {
+	red := color.RGBA{R: 0xff, A: 0x80}
+	blue := color.RGBA{B: 0xff, A: 0x80}
+	l := newTestList(t, edged(red, blue), 40, 10)
+	g := drawList(l, 40, 10)
+
+	first, second := g.At(0, 3).BG, g.At(1, 3).BG
+	if first.R <= second.R {
+		t.Errorf("the first cell is %v and the second %v, want the red one first", first, second)
+	}
+	if second.B <= first.B {
+		t.Errorf("the first cell is %v and the second %v, want the blue one second", first, second)
+	}
+}
+
+// The stripe changes the ground and nothing else, so what is written on
+// the row reads as it did. On the selected row, which has a ground of
+// its own for the stripe to go over.
+func TestARowsEdgeLeavesWhatIsDrawnOnIt(t *testing.T) {
+	red := color.RGBA{R: 0xff, A: 0xff}
+	rows := panelRows()
+	rows[1].Depth = 0
+	striped := make([]ListRow, len(rows))
+	copy(striped, rows)
+	striped[1].Edge = [2]color.RGBA{red, red}
+
+	g := drawList(newTestList(t, striped, 40, 10), 40, 10)
+	want := drawList(newTestList(t, rows, 40, 10), 40, 10)
+	for x := 0; x < 2; x++ {
+		if got := g.At(x, 1).Rune; got != want.At(x, 1).Rune {
+			t.Errorf("column %d says %q under the stripe and %q without it",
+				x, got, want.At(x, 1).Rune)
+		}
+		if got := g.At(x, 1).FG; got != want.At(x, 1).FG {
+			t.Errorf("column %d is written in %v under the stripe and %v without it",
+				x, got, want.At(x, 1).FG)
+		}
+	}
+	if g.At(0, 1).BG == want.At(0, 1).BG {
+		t.Error("the stripe changed no ground at all")
+	}
+}
+
+// A second colour with no room for it draws nothing, rather than
+// spilling onto the first colour's cell.
+func TestASecondEdgeColourWithNoRoomDrawsNothing(t *testing.T) {
+	red := color.RGBA{R: 0xff, A: 0x80}
+	blue := color.RGBA{B: 0xff, A: 0x80}
+	one := drawList(newTestList(t, edged(red, blue), 1, 10), 1, 10)
+	only := drawList(newTestList(t, edged(red, color.RGBA{}), 1, 10), 1, 10)
+
+	if got, want := one.At(0, 3).BG, only.At(0, 3).BG; got != want {
+		t.Errorf("the one column that fits is %v with a second colour and %v without it", got, want)
+	}
+}
+
+// A row that says how far something has got keeps its stripe. The fill
+// washes the same cells, so the stripe has to go on after it.
+func TestARowsEdgeSurvivesItsFill(t *testing.T) {
+	red := color.RGBA{R: 0xff, A: 0x80}
+	filling := func(rows []ListRow) *grid.Grid {
+		rows[edgedRow].Fill = 1
+		l := newTestList(t, rows, 40, 10)
+		l.Style.FillBG = color.RGBA{G: 0x60, A: 0xff}
+		return drawList(l, 40, 10)
+	}
+	g, want := filling(edged(red, color.RGBA{})), filling(panelRows())
+
+	if got := want.At(0, 3).BG; got.G == 0 {
+		t.Fatalf("the fill washed nothing, so this proves nothing: the cell is %v", got)
+	}
+	if got := g.At(0, 3).BG; got == want.At(0, 3).BG {
+		t.Errorf("a filled row's first cell is %v with a stripe and without one", got)
+	}
+}
+
+// A double-width character takes one ground, not two. The stripe stops
+// short rather than colouring half of it, which is what the fill does.
+func TestARowsEdgeDoesNotSplitAWideCharacter(t *testing.T) {
+	red := color.RGBA{R: 0xff, A: 0x80}
+	blue := color.RGBA{B: 0xff, A: 0x80}
+	rows := edged(red, blue)
+	// Depth 0 so the text starts in the first column, and a character
+	// two columns wide standing across the two the stripe wants.
+	rows[edgedRow].Depth = 0
+	rows[edgedRow].Text = "世界"
+	g := drawList(newTestList(t, rows, 40, 10), 40, 10)
+
+	if g.At(1, 3).Width != 0 {
+		t.Fatalf("column 1 is not the far half of a wide character, so this proves nothing")
+	}
+	if first, second := g.At(0, 3).BG, g.At(1, 3).BG; first != second {
+		t.Errorf("the two halves of one character stand on %v and %v", first, second)
+	}
+}
+
+// A list drawn on a see-through ground gets no stripe: there is nothing
+// under it for the wash to change, and writing the cell would dirty the
+// row for no pixels.
+func TestARowsEdgeLeavesASeeThroughGroundAlone(t *testing.T) {
+	red := color.RGBA{R: 0xff, A: 0x80}
+	clear := newTestList(t, edged(red, color.RGBA{}), 40, 10)
+	clear.Style.BG = color.RGBA{}
+	g := drawList(clear, 40, 10)
+
+	if got := g.At(0, 3).BG; got != (color.RGBA{}) {
+		t.Errorf("the first cell is %v, want it left see-through", got)
+	}
+}

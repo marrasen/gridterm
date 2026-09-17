@@ -126,9 +126,13 @@ type app struct {
 	// one layer per pane.
 	shared map[*term.Terminal]*sharedMark
 
-	// now is the clock the glow is measured against, so a test can hold
-	// it still.
+	// now is the clock this window runs on, so a test can hold it still.
 	now func() time.Time
+
+	// frameAt is when the frame being built began. Everything that glows
+	// reads it rather than the clock, so the border and the sidebar row
+	// cannot land either side of a step.
+	frameAt time.Time
 
 	// pointerGone says the pointer is not on this window, so nothing is
 	// under it.
@@ -136,7 +140,7 @@ type app struct {
 
 	// paneRows are the rows that stand for a pane of this window, worked
 	// out once a frame.
-	paneRows map[*conns.Entry]bool
+	paneRows map[*conns.Entry]*term.Terminal
 
 	// shown is the sidebar row for whatever the stage last had in front.
 	// The bar follows it when it changes, and is left alone in between.
@@ -349,7 +353,8 @@ func (a *app) Update() error {
 	// panel leaves its layer alone.
 	a.refreshJobs()
 	a.reportClosed()
-	a.refreshPanel(time.Now())
+	a.frameAt = a.clock()
+	a.refreshPanel(a.frameAt)
 	if a.shot != nil {
 		a.shot.update(a)
 	}
@@ -439,7 +444,7 @@ func (a *app) Draw(screen *ebiten.Image) {
 		a.sideRegion.draw()
 	}
 	a.drawScaled()
-	a.drawShared(a.clock())
+	a.drawShared(a.frameTime())
 	a.drawModals()
 	a.comp.Draw(screen)
 	if a.stats != nil {

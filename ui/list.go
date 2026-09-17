@@ -115,6 +115,11 @@ type ListRow struct {
 	// on it. A row that sets Button as well keeps that one.
 	HoverButton rune
 
+	// Edge colours the ground of the row's first cells, one cell per
+	// colour, for a row that carries the same mark as something drawn
+	// elsewhere in the window. A colour with no alpha draws nothing.
+	Edge [2]color.RGBA
+
 	// Art is drawn in the cell before the note, for a row with
 	// something to show that no words would say as well.
 	Art grid.Art
@@ -578,6 +583,43 @@ func (l *List) paintRow(v grid.View, row ListRow, selected bool, y, rows int) {
 	}
 	v.SetString(at, 0, grid.Trim(row.Text, max(room-at, 0)), fg, bg, attr)
 	l.paintFill(v, row.Fill, fg, bg, lifted)
+	paintEdge(v, row.Edge)
+}
+
+// paintEdge washes the ground of the row's first cells, one cell per
+// colour, and leaves whatever is drawn in them alone. It goes on after
+// the fill, which washes the same cells.
+func paintEdge(v grid.View, edge [2]color.RGBA) {
+	cols, _ := v.Size()
+	n := 0
+	for i, c := range edge {
+		if c.A != 0 {
+			n = i + 1
+		}
+	}
+	if n < cols && v.At(n, 0).Width == 0 {
+		// The far half of a double-width character. Both halves take the
+		// same ground, or one character is drawn on two.
+		n--
+	}
+	for x := 0; x < n; x++ {
+		c := v.At(x, 0)
+		if c.BG.A == 0 {
+			// A see-through ground shows nothing whatever is washed over
+			// it, and writing it would dirty the row for no pixels.
+			continue
+		}
+		hue := edge[x]
+		if c.Width == 0 && x > 0 {
+			// The far half of a wide character takes the colour its lead
+			// took, or one character is drawn on two grounds.
+			hue = edge[x-1]
+		}
+		was := c.BG.A
+		c.BG = grid.Blend(c.BG, hue, int(hue.A), 0xff)
+		c.BG.A = was
+		v.Set(x, 0, c)
+	}
 }
 
 // paintFill changes the ground of the first cells of a row to the style's

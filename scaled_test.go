@@ -90,7 +90,10 @@ func withScreen(t *testing.T, a *testApp) {
 func frame(t *testing.T, a *testApp) {
 	t.Helper()
 	a.pump.run()
-	a.refreshPanel(panelNow)
+	// The window's own clock, so a test that moves it moves everything
+	// the frame measures against it.
+	a.frameAt = a.clock()
+	a.refreshPanel(a.frameAt)
 	a.placeRegions()
 	a.placeScaled()
 	a.placeShared()

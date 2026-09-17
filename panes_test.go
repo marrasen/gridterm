@@ -195,8 +195,10 @@ func newTestApp(t *testing.T, cols, rows int, opts ...testOption) *testApp {
 		scaled:     make(map[*term.Terminal]*scaledPane),
 		shared:     make(map[*term.Terminal]*sharedMark),
 		// A clock that stands still, so no test's frame is the one the
-		// glow happened to move on.
-		now:      func() time.Time { return time.UnixMilli(0) },
+		// glow happened to move on. The moment the sidebar's own tests
+		// use, so a window measures ages against a date rather than
+		// against 1970.
+		now:      func() time.Time { return panelNow },
 		ended:    make(map[*term.Terminal]bool),
 		started:  make(map[*term.Terminal]*startedAs),
 		exits:    make(chan struct{}, exitQueue),

@@ -45,12 +45,21 @@ func (a *app) borderColours() markColours {
 	return markColours{agent: statusAgentFG(a.colours), watched: statusTakenFG(a.colours)}
 }
 
-// clock is the time this frame's glow is measured against.
+// clock is the time the window measures itself against.
 func (a *app) clock() time.Time {
 	if a.now != nil {
 		return a.now()
 	}
 	return time.Now()
+}
+
+// frameTime is when this frame began, and the clock for a draw that
+// comes before the window's first update.
+func (a *app) frameTime() time.Time {
+	if a.frameAt.IsZero() {
+		return a.clock()
+	}
+	return a.frameAt
 }
 
 // sharedMark is the glowing border round one shared pane, on a layer of
@@ -71,9 +80,24 @@ type sharedMark struct {
 // drawnMark is everything a border's picture depends on.
 type drawnMark struct {
 	area ui.Rect
-	in   sharing
-	hues markColours
-	step int
+	hues [2]color.RGBA
+}
+
+// sharedHues are the colours a shared pane is marked in, outermost
+// first. It is the one place the order is decided, so the border's rings
+// and the row's stripe cannot drift apart.
+func (a *app) sharedHues(in sharing, step int) [2]color.RGBA {
+	colours := a.borderColours()
+	var out [2]color.RGBA
+	at := 0
+	if in.agent {
+		out[at] = glow(colours.agent, step)
+		at++
+	}
+	if in.watched {
+		out[at] = glow(colours.watched, step)
+	}
+	return out
 }
 
 // newSharedMark puts a border on a grid and a layer of its own, hidden
@@ -111,20 +135,18 @@ func glowAt(now time.Time) int {
 
 // draw paints the border, and leaves the grid alone when the picture
 // has not changed.
-func (m *sharedMark) draw(in sharing, now time.Time, hues markColours) {
-	want := drawnMark{area: m.area, in: in, hues: hues, step: glowAt(now)}
+func (m *sharedMark) draw(hues [2]color.RGBA) {
+	want := drawnMark{area: m.area, hues: hues}
 	if want == m.was {
 		return
 	}
 	m.was = want
 	m.g.Clear()
-	ring := 0
-	if in.agent {
-		m.ring(ring, glow(hues.agent, want.step))
-		ring++
-	}
-	if in.watched {
-		m.ring(ring, glow(hues.watched, want.step))
+	for at, c := range hues {
+		if c.A == 0 {
+			continue
+		}
+		m.ring(at, c)
 	}
 }
 
@@ -214,9 +236,9 @@ func drawnAfter(c *render.Compositor, l, under *render.Layer) bool {
 
 // drawShared paints each border onto its own grid.
 func (a *app) drawShared(now time.Time) {
-	hues := a.borderColours()
+	step := glowAt(now)
 	for pane, m := range a.shared {
-		m.draw(a.sharedIn(pane), now, hues)
+		m.draw(a.sharedHues(a.sharedIn(pane), step))
 	}
 }
 
@@ -224,4 +246,14 @@ func (a *app) drawShared(now time.Time) {
 func (a *app) dropShared(pane *term.Terminal, m *sharedMark) {
 	a.comp.Remove(m.layer)
 	delete(a.shared, pane)
+}
+
+// sharedEdge is the stripe a shared pane's row carries: the border's
+// own colours, one cell each, at the same point in the glow.
+//
+// A row is marked whether or not the pane is in front, because a pane
+// in a tab behind has no border and its row is the only place the user
+// can see that somebody else is in it.
+func (a *app) sharedEdge(pane *term.Terminal, now time.Time) [2]color.RGBA {
+	return a.sharedHues(a.sharedIn(pane), glowAt(now))
 }

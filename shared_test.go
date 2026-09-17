@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/term"
 )
@@ -250,6 +251,40 @@ func TestABorderFollowsThePaneItIsRound(t *testing.T) {
 	if cols != area.Cols || rows != area.Rows {
 		t.Errorf("the border is %dx%d and the pane is %dx%d", cols, rows, area.Cols, area.Rows)
 	}
+	// The ring itself, not just the room for it: the cell on the new
+	// right edge was inside the old border and had nothing drawn on it.
+	if got := m.g.At(cols-1, rows/2).BG; got.A == 0 {
+		t.Error("the border kept its old edges, so the ring is no longer round the pane")
+	}
+}
+
+// The border is drawn at the moment the frame began rather than the
+// moment it reached the drawing, so it cannot land a step away from the
+// row the same frame drew.
+func TestTheBorderGlowsAtTheMomentTheFrameBegan(t *testing.T) {
+	a, pane := aSharedWindow(t)
+	handOver(t, a, pane)
+	frame(t, a)
+	m := a.shared[pane]
+	if m == nil {
+		t.Fatal("no border")
+	}
+
+	began := panelNow
+	a.frameAt = began
+	// The clock moves on between the update and the draw, the way it
+	// does in a window that took a while over its frame.
+	a.now = func() time.Time { return began.Add(glowStep) }
+	a.Draw(a.screen)
+
+	want := a.sharedHues(a.sharedIn(pane), glowAt(began))[0]
+	late := a.sharedHues(a.sharedIn(pane), glowAt(began.Add(glowStep)))[0]
+	if want == late {
+		t.Fatal("the glow did not move over the step, so this proves nothing")
+	}
+	if got := m.g.At(0, 0).BG; got != want {
+		t.Errorf("the border is %v, want the %v the frame began on", got, want)
+	}
 }
 
 // The glow reaches the border itself, not just the step count: the
@@ -378,5 +413,209 @@ func TestTheBorderStaysAboveAScaledScreen(t *testing.T) {
 
 	if !drawnAfter(host.comp, m.layer, s.layer) {
 		t.Error("the screen is drawn over the border, which hides it")
+	}
+}
+
+// rowOf is the sidebar row for a pane, after a refresh at the given
+// moment.
+func rowOf(t *testing.T, a *testApp, pane *term.Terminal, now time.Time) ui.ListRow {
+	t.Helper()
+	a.refreshPanel(now)
+	e := a.panes[pane]
+	if e == nil {
+		t.Fatal("the pane is not one of the window's")
+	}
+	row, ok := panelRow(a, any(e))
+	if !ok {
+		t.Fatalf("no row for the pane among the %d the sidebar drew", len(a.panel.Rows()))
+	}
+	return row
+}
+
+// The sidebar row carries the border's own colours, so the row and the
+// pane say the same thing.
+func TestTheRowCarriesTheSameMarkAsTheBorder(t *testing.T) {
+	a, pane := aSharedWindow(t)
+	handOver(t, a, pane)
+	watchPane(t, pane)
+
+	got := rowOf(t, a, pane, panelNow).Edge
+	want := a.sharedEdge(pane, panelNow)
+	if got != want {
+		t.Fatalf("the row's stripe is %v and the pane's border %v", got, want)
+	}
+	if !sameHue(got[0], statusAgentFG(a.colours)) {
+		t.Errorf("the first stripe is %v, want the cyan an agent is said in", got[0])
+	}
+	if !sameHue(got[1], statusTakenFG(a.colours)) {
+		t.Errorf("the second stripe is %v, want the red a watcher is said in", got[1])
+	}
+}
+
+// A pane nobody else is in has a plain row.
+func TestTheRowOfAPaneNobodyElseIsInHasNoMark(t *testing.T) {
+	a, pane := aSharedWindow(t)
+
+	if got := rowOf(t, a, pane, panelNow).Edge; got != [2]color.RGBA{} {
+		t.Errorf("the row of a pane the user has to themselves is striped %v", got)
+	}
+}
+
+// The mark goes when the agent does.
+func TestTheRowsMarkGoesWithTheAgent(t *testing.T) {
+	a, pane := aSharedWindow(t)
+	handOver(t, a, pane)
+	if got := rowOf(t, a, pane, panelNow).Edge; got[0].A == 0 {
+		t.Fatal("the row of a pane an agent has is not striped")
+	}
+
+	if !a.agents.forget(pane) {
+		t.Fatal("the window did not take the pane back")
+	}
+	if got := rowOf(t, a, pane, panelNow).Edge; got != [2]color.RGBA{} {
+		t.Errorf("the row is still striped %v with no agent in the pane", got)
+	}
+}
+
+// The row's stripe glows in step with the border, off the same clock.
+func TestTheRowsMarkGlowsWithTheBorder(t *testing.T) {
+	a, pane := aSharedWindow(t)
+	handOver(t, a, pane)
+
+	start := time.UnixMilli(0)
+	var dim, bright uint8 = 0xff, 0
+	for i := 0; i < glowSteps*2; i++ {
+		at := a.sharedEdge(pane, start.Add(time.Duration(i)*glowStep))[0].A
+		dim, bright = min(dim, at), max(bright, at)
+	}
+	if dim >= bright {
+		t.Errorf("the row's stripe ran from %#x to %#x over a lap, and it is meant to glow", dim, bright)
+	}
+}
+
+// The row's stripe and the pane's border are the same colour at the
+// same moment: one glow, drawn in two places.
+func TestTheRowAndTheBorderGlowTogether(t *testing.T) {
+	a, pane := aSharedWindow(t)
+	handOver(t, a, pane)
+	frame(t, a)
+	m := a.shared[pane]
+	if m == nil {
+		t.Fatal("no border")
+	}
+
+	start := time.UnixMilli(0)
+	var dim, bright uint8 = 0xff, 0
+	for i := 0; i < glowSteps*2; i++ {
+		now := start.Add(time.Duration(i) * glowStep)
+		a.drawShared(now)
+		border := m.g.At(0, 0).BG
+		row := rowOf(t, a, pane, now).Edge[0]
+		if border != row {
+			t.Fatalf("at step %d the border is %v and the row %v", i, border, row)
+		}
+		dim, bright = min(dim, border.A), max(bright, border.A)
+	}
+	if dim >= bright {
+		t.Errorf("the two agreed on one colour for a whole lap, %#x throughout", dim)
+	}
+}
+
+// A pane only somebody else's window is reading gets its stripe in the
+// first cell, the same place its one border ring is.
+func TestAWatchedPaneStripesTheFirstCell(t *testing.T) {
+	a, pane := aSharedWindow(t)
+	watchPane(t, pane)
+
+	got := rowOf(t, a, pane, panelNow).Edge
+	if !sameHue(got[0], statusTakenFG(a.colours)) {
+		t.Errorf("the first cell is %v, want the red a watcher is said in", got[0])
+	}
+	if got[1].A != 0 {
+		t.Errorf("the second cell is %v, and only one window is reading the pane", got[1])
+	}
+}
+
+// Two shared panes carry their own marks, not one another's.
+func TestTwoSharedPanesCarryTheirOwnMarks(t *testing.T) {
+	a, first := aSharedWindow(t)
+	if err := a.openPane(); err != nil {
+		t.Fatalf("open a second pane: %v", err)
+	}
+	second := newestPane(t, a)
+	if second == first {
+		t.Fatal("the window opened no second pane")
+	}
+	handOver(t, a, first)
+	watchPane(t, second)
+
+	one := rowOf(t, a, first, panelNow).Edge
+	two := rowOf(t, a, second, panelNow).Edge
+	if !sameHue(one[0], statusAgentFG(a.colours)) {
+		t.Errorf("the pane an agent has is striped %v, want the agent's cyan", one[0])
+	}
+	if !sameHue(two[0], statusTakenFG(a.colours)) {
+		t.Errorf("the pane a window is reading is striped %v, want the watcher's red", two[0])
+	}
+	if one[1].A != 0 || two[1].A != 0 {
+		t.Errorf("a pane one thing has is striped twice: %v and %v", one, two)
+	}
+}
+
+// A file browser's pane is on the sidebar too, and it has no terminal
+// for anybody to share. Its row carries no stripe and keeps the cross
+// that closes it.
+func TestAFileBrowsersRowHasNoMarkAndKeepsItsCross(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	p := openFilesFromThePlus(t, a, conns.Local)
+	waitFor(t, a, "the pane to land somewhere", func() bool { return p.At() != "" })
+
+	e := a.files.rows[p]
+	if e == nil {
+		t.Fatal("the file pane has no row")
+	}
+	pointAtRow(t, a, e)
+	a.refreshPanel(panelNow)
+	row, ok := panelRow(a, any(e))
+	if !ok {
+		t.Fatal("the file pane's row is not on the sidebar")
+	}
+	if row.Edge != [2]color.RGBA{} {
+		t.Errorf("the file browser's row is striped %v, and nothing is sharing it", row.Edge)
+	}
+	if row.HoverButton == 0 {
+		t.Error("the file browser's row lost the cross that closes it")
+	}
+}
+
+// A shared pane costs nothing between glow steps, and a repaint when
+// the glow moves. The glow does not stop while the pane is shared, so
+// what one step costs is what it costs for as long as the hand-over
+// lasts.
+func TestASharedPaneCostsNothingBetweenGlowSteps(t *testing.T) {
+	a, pane := aSharedWindow(t)
+	handOver(t, a, pane)
+	at := panelNow
+	a.now = func() time.Time { return at }
+	// Three, because the frame the border first appears on moves the
+	// layers about and the one after it settles them.
+	frame(t, a)
+	frame(t, a)
+
+	frame(t, a)
+	if got := a.comp.Stats(); !got.Skipped {
+		t.Errorf("a second frame in the same step of the glow = %+v, want it skipped entirely", got)
+	}
+
+	at = at.Add(glowStep)
+	frame(t, a)
+	got := a.comp.Stats()
+	if got.Skipped {
+		t.Fatal("the glow moved on and the window drew nothing")
+	}
+	if got.Repainted != 2 {
+		t.Errorf("a step of the glow repainted %d layers, want the border and the sidebar row", got.Repainted)
 	}
 }

@@ -9,7 +9,6 @@ import (
 
 	"github.com/marrasen/gridterm/agent"
 	"github.com/marrasen/gridterm/conns"
-	"github.com/marrasen/gridterm/mcp"
 	"github.com/marrasen/gridterm/settings"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/term"
@@ -633,7 +632,11 @@ func (a *app) showCode(h *handover, host agentHost, exe string, exeErr error) {
 
 // handoverPrompt is what the user pastes to an agent that has never
 // heard of gridterm: what it has been handed, how to reach the MCP
-// server on the host it is running in, the code, and what to do with it.
+// server on the host it is running in, and the code.
+//
+// It stops there. How to work in a pane and what the rules are come from
+// the MCP server's own instructions, which the agent reads when it
+// connects, so this does not repeat them.
 func handoverPrompt(host agentHost, code, exe string) string {
 	return fmt.Sprintf(`The user has handed you one terminal pane in gridterm, a terminal
 running on this machine. You work in that pane through gridterm's MCP
@@ -647,14 +650,11 @@ gridterm's tools, it has not been added here yet.
 
 This code is the only credential and it came from the user. Call
 use_session_code with it before anything else. The answer names the pane, and
-every other tool takes that name.
+every other tool takes that name. The server tells you the rest when you
+connect to it.
 
   %s
-
-%s
-
-%s
-`, host.setupForAgent(exe), code, mcp.Workflow, mcp.Rules)
+`, host.setupForAgent(exe), code)
 }
 
 // exePath is this program's own path, for the lines that say how to

@@ -326,20 +326,22 @@ func TestTheHandoverPromptFollowsTheHostItIsFor(t *testing.T) {
 	}
 }
 
-// The prompt tells an agent that has never heard of gridterm everything
-// it needs.
+// The prompt gets an agent that has never heard of gridterm as far as
+// the first tool call, and no further.
 //
-// A bare code is no use on its own: the agent has to know what it has
-// been given, how to start the MCP server, and which tools to call.
-func TestTheHandoverPromptStandsOnItsOwn(t *testing.T) {
+// It carries what the server cannot tell the agent itself: how to add
+// the server, where it has to run, and the code. Everything past that --
+// which tools there are, how to press Enter, what the rules are -- comes
+// from the server's own instructions when the agent connects.
+func TestTheHandoverPromptGetsTheAgentConnected(t *testing.T) {
 	for _, host := range agentHosts {
-		t.Run(host.name, func(t *testing.T) { promptStandsOnItsOwn(t, host) })
+		t.Run(host.name, func(t *testing.T) { promptGetsTheAgentConnected(t, host) })
 	}
 }
 
-// promptStandsOnItsOwn checks the prompt for one host. Every host has
-// its own setup lines, and the file-based ones are the longest.
-func promptStandsOnItsOwn(t *testing.T, host agentHost) {
+// promptGetsTheAgentConnected checks the prompt for one host. Every host
+// has its own setup lines, and the file-based ones are the longest.
+func promptGetsTheAgentConnected(t *testing.T, host agentHost) {
 	t.Helper()
 	const code = "gt1-54321-abcdefghijklmnopqrstuvwxyz"
 	const exe = `C:\Users\someone\go\bin\gridterm.exe`
@@ -350,20 +352,27 @@ func promptStandsOnItsOwn(t *testing.T, host agentHost) {
 		t.Errorf("the code is in the prompt %d times, want once", got)
 	}
 
-	for _, tool := range []string{
-		"use_session_code", "list_panes", "read_pane", "send_keys", "wait_for",
-	} {
-		if !strings.Contains(prompt, tool) {
-			t.Errorf("the prompt never mentions %s", tool)
-		}
-	}
-	// How to press Enter, which no agent can guess.
-	if !strings.Contains(prompt, `\r`) {
-		t.Error("the prompt does not say what sends a command")
+	// The one call an agent has to make before the server will say
+	// anything about the pane.
+	if !strings.Contains(prompt, "use_session_code") {
+		t.Error("the prompt never mentions use_session_code")
 	}
 	// And that the server has to run here, because the port is local.
 	if !strings.Contains(prompt, "loopback") && !strings.Contains(prompt, "this machine") {
 		t.Error("the prompt does not say where the server has to run")
+	}
+
+	// The workflow and the rules are the server's to give. Two copies
+	// drift apart, which is why the prompt stops short of them.
+	for _, said := range []string{mcp.Workflow, mcp.Rules} {
+		if strings.Contains(prompt, said) {
+			t.Errorf("the prompt repeats what the server's instructions say:\n%s", said)
+		}
+	}
+	for _, tool := range []string{"list_panes", "read_pane", "send_keys", "wait_for"} {
+		if strings.Contains(prompt, tool) {
+			t.Errorf("the prompt lists %s, which the server's instructions do", tool)
+		}
 	}
 
 	// A dialog is narrow and a prompt nobody reads is a prompt nobody

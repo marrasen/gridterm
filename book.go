@@ -358,6 +358,10 @@ func (a *app) openServerForm(under string) error {
 	kind.Options = []string{kindMachine, kindWindow}
 	target := f.AddField("Server", a.newField("[user@]host[:port]", 0))
 	key := f.AddField("Key file", a.newField("optional", 0))
+	// The keys this window keeps, so one is a key away rather than a
+	// path to remember. Blank first: leaving it empty is the usual
+	// answer, and it is what cycling comes back round to.
+	key.Options = append([]string{""}, a.keyFiles.all()...)
 	via := f.AddField("Through", a.newField("another saved server, optional", 0))
 	folders := f.AddField("Folders", a.newField("where to open files, separated by commas", 0))
 	// The machines already saved, so the field can be cycled rather than
@@ -369,7 +373,8 @@ func (a *app) openServerForm(under string) error {
 		"serving on another machine, taken over rather than logged in to.",
 		viaHint(via.Options),
 		"Folders are where the file browser opens on this server. One and",
-		"it opens there; several and the plus offers a line for each.")
+		"it opens there; several and the plus offers a line for each.",
+		"Key file steps through the keys this window keeps.")
 
 	name.SetText(was.Name)
 	kind.SetText(kindMachine)
@@ -436,7 +441,8 @@ func (a *app) openServerForm(under string) error {
 		if len(rest) > 0 {
 			rest = rest[1:]
 		}
-		if path := strings.TrimSpace(key.Text()); path != "" {
+		path := strings.TrimSpace(key.Text())
+		if path != "" {
 			h.Identities = append([]string{path}, rest...)
 		} else {
 			h.Identities = rest
@@ -469,6 +475,15 @@ func (a *app) openServerForm(under string) error {
 		}
 		// Exactly, not ignoring case: the window's own record is kept by
 		// name and a change of capitals is a change of name to it.
+		if path != "" && path != firstIdentity(was) {
+			// A key the user typed or picked, not one the dialog had
+			// already filled in. Said rather than returned: the server
+			// is saved, and failing to remember the key is not a reason
+			// to report that it was not.
+			if err := a.keyFiles.keep(path); err != nil {
+				a.reportError("The server was saved and its key was not added to the list", err)
+			}
+		}
 		if under != "" && under != h.Name {
 			a.renamedMachine(under, h)
 		}
@@ -718,4 +733,13 @@ func (a *app) folderItems(host string) []ui.MenuItem {
 		items = append(items, ui.MenuItem{Command: id, Title: "Files in " + folder})
 	}
 	return items
+}
+
+// firstIdentity is the key file a saved server's dialog shows, and empty
+// for one with none.
+func firstIdentity(h remote.Host) string {
+	if len(h.Identities) == 0 {
+		return ""
+	}
+	return h.Identities[0]
 }

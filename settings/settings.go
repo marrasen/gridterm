@@ -68,6 +68,10 @@ type stored struct {
 
 	// PaneTitles turns on the line above each pane naming it.
 	PaneTitles *bool `json:"paneTitles,omitempty"`
+
+	// Keys are the private key files the user keeps, newest first, to
+	// pick from when making a connection.
+	Keys []string `json:"keys,omitempty"`
 }
 
 // SavedCommand is a command line the user asked to keep, the directory
@@ -322,6 +326,46 @@ func dropLine(have []SavedCommand, line string) []SavedCommand {
 	return slices.DeleteFunc(have, func(cmd SavedCommand) bool { return cmd.Line == line })
 }
 
+// Keys are the key files the user keeps, newest first.
+func (s *Settings) Keys() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.have.Keys)
+}
+
+// KeepKey puts a key file at the front of the list and saves, keeping at
+// most most of them. One already in the list moves to the front.
+func (s *Settings) KeepKey(path string, most int) error {
+	return s.putKeys(func(have []string) []string {
+		want := append([]string{path}, dropKey(have, path)...)
+		if most > 0 && len(want) > most {
+			want = want[:most]
+		}
+		return want
+	})
+}
+
+// putKeys rereads the file, edits the list it holds and saves.
+func (s *Settings) putKeys(edit func([]string) []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.rereadLocked(); err != nil {
+		return fmt.Errorf("%w: %w", ErrUnsaveable, err)
+	}
+	before := s.have
+	s.have.Keys = edit(slices.Clone(s.have.Keys))
+	if err := s.saveLocked(); err != nil {
+		s.have = before
+		return err
+	}
+	return nil
+}
+
+// dropKey is the key files with one left out.
+func dropKey(have []string, path string) []string {
+	return slices.DeleteFunc(have, func(at string) bool { return at == path })
+}
+
 // PaneTitles reports whether each pane shows a line naming it.
 func (s *Settings) PaneTitles() bool {
 	s.mu.Lock()
@@ -492,6 +536,19 @@ func check(file stored) error {
 	// turned away: it names nothing and could not be opened.
 	if sh := file.Shell; sh != nil && *sh == "" {
 		return errors.New("the shell has no id")
+	}
+	kept := make(map[string]bool, len(file.Keys))
+	for i, path := range file.Keys {
+		// Which key files there are is the window's business, so only an
+		// empty path is turned away: it names nothing and could not be
+		// offered back.
+		if path == "" {
+			return fmt.Errorf("key file %d has no path", i+1)
+		}
+		if kept[path] {
+			return fmt.Errorf("key file %d, %q, is in the list twice", i+1, path)
+		}
+		kept[path] = true
 	}
 	seen := make(map[string]bool, len(file.Commands))
 	for i, cmd := range file.Commands {

@@ -118,23 +118,6 @@ Raised after a debugging session in a handed-over pane.
    which is worth having for a failed build. Nothing to do here: it is
    written down because it looked like a gap and is not one.
 
-## SSH keys
-
-Asked for on 2026-09-17. Nothing in gridterm makes a key or keeps track
-of one today. `remote.Config.Identities` lists key files, the server
-dialog has no field for one, and an empty list means the usual `~/.ssh`
-names.
-
-1. **Make a key.** A menu item opens a dialog that writes a new key pair
-   to disk. It then says how to install the public half in the common
-   places: OpenSSH on Linux, sshd on Windows, and gridterm's own served
-   window, which takes a list of keys.
-
-2. **Keep an index of keys.** The user adds keys to the index, and picks
-   one from it when making or editing a connection. That fills
-   `Identities` for that connection instead of leaving it to the
-   defaults.
-
 ## Reading a file without a shell
 
 Asked for on 2026-09-17. A new kind of pane, opened from the file
@@ -304,6 +287,18 @@ order Ctrl+Tab moves in, and expected recently used.
   title and nothing else, so nesting is not something the menus can draw
   yet. The lines sit beside "Files" instead, which keeps the way to
   home.
+
+- **There is no way to take a key out of the list.** Keys go in when one
+  is made and when one is typed into a server, and the list is capped at
+  twenty, so a path typed wrong stays in the list the dialog steps
+  through until twenty more push it out.
+
+- **A new key is only as private as its directory on Windows.** A file
+  mode says nothing there, so `0600` on the private half is a no-op and
+  the key takes the directory's own permissions. `MakeKey` insists on a
+  full path, which stops a key landing wherever gridterm was started,
+  and that is the whole of what it can do. Refusing a path outside the
+  user's own profile would be the next step.
 
 - An orphaned `conhost.exe` can be left with no `cmd.exe` under it. Seen
   on a live window while the shell leak was being looked into: the shell

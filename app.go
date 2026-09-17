@@ -129,6 +129,10 @@ type app struct {
 	// paneTitles is whether each pane shows a line naming it.
 	paneTitles *paneTitles
 
+	// keyFiles are the key files the user keeps, offered when a
+	// connection is made or edited.
+	keyFiles *keyIndex
+
 	// shared is the glowing border over each pane somebody else is in,
 	// one layer per pane.
 	shared map[*term.Terminal]*sharedMark
@@ -636,6 +640,7 @@ func (a *app) commands() {
 		ui.Command{ID: "agent.share", Title: "Show the share…", Run: a.showShare},
 		ui.Command{ID: "pane.titles", Title: "Show or hide the line naming each pane",
 			Run: a.togglePaneTitles},
+		ui.Command{ID: "key.make", Title: "Make an SSH key…", Run: a.openMakeKey},
 		ui.Command{ID: "panel.toggle", Title: "Show or hide the connections",
 			Run: a.togglePanel},
 		ui.Command{ID: "panel.focus", Title: "Go to the connections", Run: a.focusPanel},

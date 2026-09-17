@@ -136,11 +136,6 @@ func TestTheToolsSayWhatKeysAndLinesAreFor(t *testing.T) {
 			if !strings.Contains(tl.Description, "keys") {
 				t.Errorf("send_keys does not mention keys: %q", tl.Description)
 			}
-			// The example, which is the shortest way to say what a key
-			// name looks like in a call.
-			if !strings.Contains(tl.Description, `{"keys": ["Escape"]}`) {
-				t.Errorf("send_keys shows no example: %q", tl.Description)
-			}
 			keys, there := tl.InputSchema.Properties["keys"]
 			if !there {
 				t.Fatalf("send_keys does not take keys: %+v", tl.InputSchema.Properties)
@@ -154,9 +149,9 @@ func TestTheToolsSayWhatKeysAndLinesAreFor(t *testing.T) {
 				}
 			}
 		case "read_pane", "wait_for":
-			if !strings.Contains(tl.Description, "lines") {
-				t.Errorf("%s does not mention lines: %q", tl.Name, tl.Description)
-			}
+			// The argument itself, not the description: the description
+			// says what the tool is for and the argument says what it
+			// takes.
 			lines, there := tl.InputSchema.Properties["lines"]
 			if !there {
 				t.Fatalf("%s does not take lines: %+v", tl.Name, tl.InputSchema.Properties)

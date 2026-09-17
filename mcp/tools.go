@@ -57,11 +57,9 @@ func toolList() []tool {
 			Name:  "use_session_code",
 			Title: "Use a session code",
 			Description: "Open the share a session code names. A share holds one or more" +
-				" panes, on whatever machines the user put in it. The user makes the code" +
-				" in gridterm and gives it to you, and it looks like gt1-<port>-<letters>." +
-				" It is the only way to reach anything here. Call this before any other" +
-				" tool: the answer lists the panes, and every other tool takes a pane's" +
-				" name.",
+				" panes, on whatever machines the user put in it. Call this before any" +
+				" other tool: the answer lists the panes, and every other tool takes a" +
+				" pane's name.",
 			InputSchema: schema{
 				Type: "object",
 				Properties: map[string]field{
@@ -75,20 +73,16 @@ func toolList() []tool {
 			Name:  "list_panes",
 			Title: "List the panes you have",
 			Description: "The panes in your share now, each with the name the other tools" +
-				" take and how big its screen is. It takes no arguments. The user adds" +
-				" panes and takes them out while you work, so call this again whenever you" +
-				" want to know what you have. It lists nothing else of the user's, and it" +
-				" is empty until a session code has been used.",
+				" take and the size of its screen. The user adds panes and takes them out" +
+				" while you work, so call it again when you want to know what you have.",
 			InputSchema: schema{Type: "object", Properties: map[string]field{}},
 		},
 		{
 			Name:  "read_pane",
 			Title: "Read a pane",
-			Description: "What is on the pane's screen now, as plain text. It needs the" +
-				" pane's name, from use_session_code. After sending a command, use wait_for" +
-				" instead: a read taken straight afterwards shows the screen before the" +
-				" command has done anything. Give lines to read more than the screen, which" +
-				" is how to read the whole of something that has scrolled past." +
+			Description: "What is on the pane's screen now, as plain text. After sending a" +
+				" command use wait_for instead: a read straight afterwards shows the screen" +
+				" before the command has done anything." +
 				status + marked,
 			InputSchema: schema{
 				Type: "object",
@@ -103,14 +97,10 @@ func toolList() []tool {
 			Name:  "read_output",
 			Title: "Read what the last command printed",
 			Description: "What the last command in the pane printed, without the screen" +
-				" around it. Use this after wait_for rather than read_pane: read_pane gives" +
-				" you a rectangle of the screen, with the end of whatever ran before still" +
-				" in it, and you have to work out by eye where your own output starts." +
-				" The pane knows. A shell with shell integration on says where each" +
-				" command's output began; without it, this is everything the pane has said" +
-				" since you last typed. If it is neither -- a shell that says nothing, in a" +
-				" pane you have not typed in -- this says so and you want read_pane." +
-				" A full-screen program has no command output, and this says that too." +
+				" around it. Use it after wait_for rather than read_pane. A shell with shell" +
+				" integration on says where each command's output began; without it, this is" +
+				" everything the pane has said since you last typed. It says so when it is" +
+				" neither, and when a full-screen program has no command output at all." +
 				status + marked,
 			InputSchema: schema{
 				Type: "object",
@@ -127,17 +117,11 @@ func toolList() []tool {
 		{
 			Name:  "send_keys",
 			Title: "Type into a pane",
-			Description: "Put characters into the pane exactly as given, as though typed" +
-				" there. Nothing is added: a command needs a carriage return (\\r) at the" +
-				" end, which is Enter, or it sits on the line unrun. Control characters" +
-				" work: \\u0003 is ctrl+c." +
-				" keys presses named keys, after the text or instead of it. The pane encodes" +
-				" each the way the program running there asks for, so a key means to it what" +
-				" the same key pressed at the window would. That is the program running when" +
-				" this call is made: a program the text in the same call starts has not asked" +
-				" for anything yet, so keys for it go in a later call. To leave vim, send" +
-				` {"keys": ["Escape"]} and then {"text": ":q!", "keys": ["Enter"]}.` +
-				" It does not wait for anything to happen, so call wait_for next.",
+			Description: "Put characters into the pane exactly as given. Nothing is added:" +
+				" a command needs \\r at the end, or it sits on the line unrun. keys presses" +
+				" named keys instead, encoded the way the program running now asks for -- a" +
+				" program this same call starts gets its keys in a later call." +
+				" It does not wait: call wait_for next.",
 			InputSchema: schema{
 				Type: "object",
 				Properties: map[string]field{
@@ -153,18 +137,12 @@ func toolList() []tool {
 			Name:  "ask_for_secret",
 			Title: "Ask the user to type a secret",
 			Description: "Ask the user to type something into the pane without showing it" +
-				" to you: a password, a passphrase, a one-time code. gridterm puts a line on" +
-				" the pane saying what you asked for and who asked, the user types it there," +
-				" and it goes to the program in the pane. You are told that they typed" +
-				" something and never what." +
-				" It is the way past a program that is waiting for a password when the user" +
-				" would rather you did not have one." +
-				" It waits for them, so it can take a while, and it says so if they never" +
-				" type anything. Nothing else of yours is answered while it waits, so ask" +
-				" when you have nothing else to do and give wait_ms if you will not wait" +
-				" long. A program that echoes what is typed puts it on the screen, where you" +
-				" can read it like anything else: this hides what you are told, not what the" +
-				" pane shows.",
+				" to you: a password, a passphrase, a one-time code. They type it on the" +
+				" pane and it goes to the program there; you are told that they typed and" +
+				" never what. It waits for them, and nothing else of yours is answered" +
+				" while it waits. A program that echoes what is typed puts it on the" +
+				" screen, where you can read it: this hides what you are told, not what" +
+				" the pane shows.",
 			InputSchema: schema{
 				Type: "object",
 				Properties: map[string]field{
@@ -182,12 +160,11 @@ func toolList() []tool {
 			Name:  "restart_pane",
 			Title: "Start a pane's program again",
 			Description: "Start the pane's program again after it has finished: the shell" +
-				" that ended, or the command that ran. It is the same pane, so its name does" +
-				" not change and what it printed before is still above what runs now." +
-				" On a pane that ran one command this runs that command again, with" +
-				" whatever that does to the machine, so ask the user before you use it there." +
-				" It works only if the user ticked \"Restart a closed connection\" when they" +
-				" shared the pane, and use_session_code and list_panes both say whether they did.",
+				" that ended, or the command that ran. The same pane, so its name does not" +
+				" change and what it printed before is still above what runs now. On a pane" +
+				" that ran one command this runs that command again." +
+				" It works only if the user ticked \"Restart a closed connection\", which" +
+				" use_session_code and list_panes both report.",
 			InputSchema: schema{
 				Type: "object",
 				Properties: map[string]field{
@@ -200,15 +177,11 @@ func toolList() []tool {
 			Name:  "open_pane",
 			Title: "Open another pane there",
 			Description: "Open a second pane where a pane you have is: another shell on the" +
-				" same machine, handed to you as it opens. The answer names it and the other" +
-				" tools take that name." +
-				" It does not run anything: it opens a shell, and a pane that was opened to" +
-				" run one command is refused, because another pane there would read as that" +
-				" command run again." +
-				" It opens no connection. gridterm must already be connected to that machine," +
-				" and if it is not this says so and the user is the one to connect." +
-				" It works only if the user ticked \"Open another pane there\" when they" +
-				" shared the pane, and use_session_code and list_panes both say whether they did.",
+				" same machine, handed to you as it opens. The answer names it. It runs" +
+				" nothing, and it opens no connection: gridterm must already be connected" +
+				" to that machine. A pane opened to run one command is refused." +
+				" It works only if the user ticked \"Open another pane there\", which" +
+				" use_session_code and list_panes both report.",
 			InputSchema: schema{
 				Type: "object",
 				Properties: map[string]field{
@@ -223,19 +196,17 @@ func toolList() []tool {
 			Name:  "wait_for",
 			Title: "Wait for a pane",
 			Description: "Watch a pane and give back its screen once the waiting is over." +
-				" Use it after send_keys, before reading again. With no contains it ends when" +
-				" the command you sent finishes, or when the pane has said nothing for" +
-				" quiet_ms. With contains it ends when the screen holds that text, and the" +
-				" quiet is switched off; a command that finishes still ends it, because text" +
-				" that has not appeared by then is not going to." +
-				" contains is checked against the screen as it already is, so text that is" +
-				" there when the wait begins ends it at once. Leaving quiet_ms out does not" +
-				" switch the quiet off: it uses about three quarters of a second." +
-				" The answer says which of those ended the waiting, and says so when the time" +
-				" ran out instead." +
-				" A program that keeps drawing never goes quiet: top, a progress bar, a log" +
-				" being followed. For one of those give contains, or do not wait at all and" +
-				" read the pane instead. It takes lines as read_pane does." +
+				" Use it after send_keys. With no contains it ends when the command you" +
+				" sent finishes, or when the pane has said nothing for quiet_ms, which is" +
+				" about three quarters of a second unless you give another. With contains" +
+				" it ends when the screen holds that text, checked against the screen as it" +
+				" already is, so text that is there when the wait begins ends it at once," +
+				" and the quiet is switched off, though a command that finishes still ends" +
+				" it." +
+				" The answer says which of those ended it, or that the time ran out." +
+				" A program that keeps drawing never goes quiet -- top, a progress bar, a" +
+				" log being followed -- so give contains for one of those, or read the pane" +
+				" instead. It takes lines as read_pane does." +
 				status + marked,
 			InputSchema: schema{
 				Type: "object",
@@ -637,17 +608,15 @@ const notesMarker = "-- gridterm --"
 //
 // Which of the two it is is always said, because one is the shell
 // reporting and the other is this window guessing from the screen.
-const status = " Every screen comes with what is known about the command line. A shell" +
-	" with shell integration turned on tells gridterm when each command starts and stops," +
-	" and then the answer says whether one is running and what the last one exited with." +
-	" A shell without it tells gridterm nothing, and the answer says so: all it has then" +
-	" is whether the prompt you typed at has come back, which is a guess."
+const status = " Every screen says what is known about the command line: with shell" +
+	" integration on, whether one is running and what the last one exited with; without" +
+	" it, only whether the prompt has come back, which is a guess."
 
 // marked says what the marker means, for the tools that answer with a
 // screen.
-var marked = fmt.Sprintf(" The screen ends at the last line reading %q; what follows it is"+
-	" gridterm talking about the pane, not the pane. Take the last one: a pane can print that"+
-	" line itself, and an earlier one is the pane's own text.", notesMarker)
+var marked = fmt.Sprintf(" The screen ends at the last line reading %q; what follows is"+
+	" gridterm, not the pane. The last one, because a pane can print that line itself.",
+	notesMarker)
 
 // allThereIsNote is what an agent is told when the pane had fewer lines
 // than the read asked for.

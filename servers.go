@@ -66,8 +66,8 @@ func (a *app) connectFor(name string, cfg remote.Config, open opening) {
 }
 
 // openSessionTab puts a session where it was asked to go: dividing a
-// pane when one was named, and in a tab of its own otherwise.
-func (a *app) openSessionTab(sess session.Session, host string, kind conns.Kind,
+// pane when one was named, and on the stage otherwise.
+func (a *app) openSessionPane(sess session.Session, host string, kind conns.Kind,
 	label string, at *spot) (*term.Terminal, error) {
 
 	t, err := a.newTerminalOn(sess, host, kind, label)

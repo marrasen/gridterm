@@ -27,7 +27,7 @@ type Command struct {
 
 // Commands is the registry every way of invoking something goes through.
 //
-// The set changes while the program runs: a tab or a pane registers its
+// The set changes while the program runs: a pane registers its
 // own commands when it opens and takes them away when it closes, so
 // Unregister is as ordinary as Register.
 type Commands struct {

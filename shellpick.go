@@ -239,9 +239,9 @@ func (a *app) sayShellHasGone(id string) {
 	})
 }
 
-// openTabOn opens a tab here on a shell, and writes the pick down once
+// openPaneOn opens a pane here on a shell, and writes the pick down once
 // it has started: a shell that would not start is not worth keeping.
-func (a *app) openTabOn(sh shells.Shell) error {
+func (a *app) openPaneOn(sh shells.Shell) error {
 	err := a.openPaneWith(func() (*term.Terminal, error) {
 		return a.localTerminalOn(sh.Command(""))
 	})
@@ -317,7 +317,7 @@ func (a *app) registerShells(list []shells.Shell) {
 		cmd := ui.Command{
 			ID:    ids[i],
 			Title: "New pane on " + sh.Title,
-			Run:   func() error { return a.openTabOn(sh) },
+			Run:   func() error { return a.openPaneOn(sh) },
 		}
 		if err := a.root.Commands.Register(a.reporting(cmd)); err != nil {
 			// An id something else is already registered under.

@@ -173,12 +173,12 @@ func (a *app) registerServerCommands(cmds ...ui.Command) {
 	}
 }
 
-// openTerminalOn opens a terminal on a machine: a tab here when it is
+// openTerminalOn opens a terminal on a machine: a pane here when it is
 // this one, and a shell over the connection otherwise.
 //
 // about says what a name is; this says what to open on it, so every way
 // in gets the same answer. at is the split the terminal should land in,
-// or nil for a tab of its own.
+// or nil for a pane of its own.
 func (a *app) openTerminalOn(host string, at *spot) error {
 	f := a.about(host)
 	switch {

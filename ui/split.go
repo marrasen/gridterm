@@ -480,7 +480,7 @@ func AreaOf(root Widget, area Rect, target Widget) (Rect, bool) {
 // both in the coordinates the given area is in.
 //
 // A point inside a container but in none of its children -- a split's
-// divider, a tab strip's own row -- belongs to the container itself. It
+// divider -- belongs to the container itself. It
 // is that container's own chrome, and a press there is that container's
 // to keep until the button comes up.
 //

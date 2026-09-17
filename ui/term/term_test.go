@@ -1029,15 +1029,15 @@ func TestTerminalsInADeck(t *testing.T) {
 	waitFor(t, func() bool { return sf.sentText() == "y" })
 }
 
-// TestTabCursorBelongsToTheShellBeingShown checks that the hidden shell
-// does not draw a cursor into the shared grid.
-func TestTabCursorBelongsToTheShellBeingShown(t *testing.T) {
+// The cursor belongs to the shell in front: a hidden one must not draw
+// its own into the shared grid.
+func TestTheCursorBelongsToTheShellInFront(t *testing.T) {
 	pal := vt.DefaultPalette()
 	first, ff := newTestTerm(t, 1, 1, Config{Palette: &pal})
 	second, sf := newTestTerm(t, 1, 1, Config{Palette: &pal})
-	strip := ui.NewDeck(first, second)
+	deck := ui.NewDeck(first, second)
 	var root ui.Root
-	root.SetWidget(strip)
+	root.SetWidget(deck)
 	root.Layout(ui.Rect{Cols: 14, Rows: 3})
 	ff.feed(t, first, "AB")
 	sf.feed(t, second, "CDEF")
@@ -1049,7 +1049,7 @@ func TestTabCursorBelongsToTheShellBeingShown(t *testing.T) {
 		t.Errorf("cursor = %+v, want it after the first shell's text", cur)
 	}
 
-	strip.Focus(second)
+	deck.Focus(second)
 	root.Draw(host.View())
 
 	cur = host.Cursor()

@@ -429,7 +429,7 @@ func (a *app) openFirst(s startup) (*term.Terminal, error) {
 	if err != nil {
 		return nil, fmt.Errorf("-ssh: %w", err)
 	}
-	// Where a new pane goes from now on, so a tab or a split opens on the
+	// Where a new pane goes from now on, so a new pane or a split opens on the
 	// machine -ssh named rather than on this one.
 	a.home = cfg.Target()
 	// On the first frame rather than from here, because the tree the pane

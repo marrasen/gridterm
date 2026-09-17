@@ -460,7 +460,7 @@ func (a *app) takeOver(addr, keyFile string, at *spot) error {
 	}
 	log := newConnLog(func() { a.pump.post(func() { a.machines.giveUp(held) }) })
 	held.log = log
-	pane, err := a.openSessionTab(log, name, conns.Terminal, "connecting", at)
+	pane, err := a.openSessionPane(log, name, conns.Terminal, "connecting", at)
 	if err != nil {
 		cancel()
 		a.machines.release(held)
@@ -656,7 +656,7 @@ func (a *app) openOnWindow(addr string, at *spot) error {
 	}
 	// Under the name holding the window, which is not always the name
 	// asked about, so the sidebar keeps one heading for it.
-	pane, err := a.openSessionTab(sess, t.name, conns.Terminal, "terminal", at)
+	pane, err := a.openSessionPane(sess, t.name, conns.Terminal, "terminal", at)
 	if err != nil {
 		// The session is ours and nothing else knows about it.
 		_ = sess.Close()
@@ -807,7 +807,7 @@ func (a *app) attachHere(what remoteKey, at *spot) error {
 	if err != nil {
 		return err
 	}
-	pane, err := a.openSessionTab(sess, t.name, conns.Terminal, open.Label, at)
+	pane, err := a.openSessionPane(sess, t.name, conns.Terminal, open.Label, at)
 	if err != nil {
 		// The session is ours and nothing else knows about it. Failing
 		// to let go of it leaves the pane over there being watched by

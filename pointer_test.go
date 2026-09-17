@@ -53,8 +53,8 @@ func TestThePointerOverTheSidebarDivider(t *testing.T) {
 }
 
 // A split into columns has a divider dragged sideways, and one into rows
-// a divider dragged up and down. Both sit under the tab strip, which has
-// nothing to say about the pointer.
+// a divider dragged up and down. Both sit in the deck, which has nothing
+// to say about the pointer.
 func TestThePointerOverASplitDivider(t *testing.T) {
 	for _, c := range []struct {
 		name string

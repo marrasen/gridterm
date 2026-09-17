@@ -55,7 +55,7 @@ type app struct {
 	comp     *render.Compositor
 	root     ui.Root
 
-	// g is the layer the widget tree draws on. Splits and tabs divide it
+	// g is the layer the widget tree draws on. Splits and decks divide it
 	// up; a dialog gets a layer of its own above it.
 	g     *grid.Grid
 	layer *render.Layer

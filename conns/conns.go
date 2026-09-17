@@ -83,7 +83,7 @@ type Entry struct {
 	Meter *meter.Meter
 
 	// Reveal puts this in front of the user: focuses its pane, or its
-	// tab. A nil one cannot be revealed.
+	// pane. A nil one cannot be revealed.
 	Reveal func()
 
 	// Close ends it. A nil one cannot be closed from the panel.

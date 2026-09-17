@@ -58,7 +58,7 @@ type MenuStyle struct {
 	ShadowBG color.RGBA
 
 	// DisabledFG is an item naming a command that is not registered.
-	// Panes and tabs register commands as they open, so a menu written
+	// Panes register commands as they open, so a menu written
 	// once can hold lines that are not always available.
 	DisabledFG color.RGBA
 }

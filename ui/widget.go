@@ -1,5 +1,5 @@
 // Package ui is a widget toolkit for text-mode interfaces: panes,
-// tabs, menus and dialogs drawn as characters on a grid.
+// decks, menus and dialogs drawn as characters on a grid.
 //
 // It knows nothing about terminals. A terminal is one widget among
 // others, so nothing here imports an emulator or a shell session. The
@@ -224,8 +224,8 @@ func HandleKey(w Widget, ev input.Event) (bool, error) {
 // Container is a widget made of other widgets.
 //
 // Implementing it lets the tree helpers walk and rearrange a layout
-// without knowing what kind of container each node is, so a split, a tab
-// strip and anything written later all work with the same code.
+// without knowing what kind of container each node is, so a split, a
+// deck and anything written later all work with the same code.
 type Container interface {
 	Widget
 
@@ -270,7 +270,7 @@ type Container interface {
 	// a container that works it out twice has two chances to disagree
 	// with itself.
 	//
-	// A child that is laid out but not on screen, such as a tab that is
+	// A child that is laid out but not on screen, such as a pane that is
 	// not the one showing, reports false: it has a size but nowhere to
 	// be clicked.
 	ChildArea(w Widget) (Rect, bool)

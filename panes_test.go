@@ -650,7 +650,7 @@ func TestTheSidebarKeysStepInFromTheSidebarItself(t *testing.T) {
 	withDialogs(t, a)
 	withPanel(t, a)
 	if err := a.openPane(); err != nil {
-		t.Fatalf("open tab: %v", err)
+		t.Fatalf("open pane: %v", err)
 	}
 	a.relayout()
 	a.refreshPanel(panelNow)
@@ -953,36 +953,35 @@ func TestClosePaneEndsTheShellEvenWhenTheTreeSurgeryFails(t *testing.T) {
 	}
 }
 
-// TestOpenTabStartsAStrip checks the first tab opened beside a plain
-// pane, which has to become a strip holding both.
-func TestOpenTabStartsAStrip(t *testing.T) {
+// The first pane opened beside another joins the deck holding it.
+func TestOpenPaneJoinsTheDeck(t *testing.T) {
 	a := newTestApp(t, 40, 10)
 	first := ui.FocusedLeaf(a.root.Widget()).(*term.Terminal)
 
 	if err := a.openPane(); err != nil {
-		t.Fatalf("open tab: %v", err)
+		t.Fatalf("open pane: %v", err)
 	}
 
 	checkTree(t, a)
-	strip, ok := a.root.Widget().(*ui.Deck)
+	deck, ok := a.root.Widget().(*ui.Deck)
 	if !ok {
-		t.Fatalf("root = %T, want a tab strip", a.root.Widget())
+		t.Fatalf("root = %T, want the deck", a.root.Widget())
 	}
-	if got := strip.Children(); len(got) != 2 || got[0] != ui.Widget(first) {
-		t.Errorf("tabs = %v, want the original first", got)
+	if got := deck.Children(); len(got) != 2 || got[0] != ui.Widget(first) {
+		t.Errorf("panes = %v, want the original first", got)
 	}
 	if ui.FocusedLeaf(a.root.Widget()) == ui.Widget(first) {
-		t.Error("the new tab is not the one being shown")
+		t.Error("the new pane is not the one in front")
 	}
 }
 
-// TestOpenTabAddsToAnExistingStrip checks that a second tab joins the
-// strip rather than nesting another one inside it.
-func TestOpenTabAddsToAnExistingStrip(t *testing.T) {
+// TestOpenPaneAddsToTheDeck checks that a second pane joins the
+// deck rather than nesting another one inside it.
+func TestOpenPaneAddsToTheDeck(t *testing.T) {
 	a := newTestApp(t, 40, 10)
 	for i := 0; i < 2; i++ {
 		if err := a.openPane(); err != nil {
-			t.Fatalf("open tab: %v", err)
+			t.Fatalf("open pane: %v", err)
 		}
 	}
 
@@ -1002,7 +1001,7 @@ func TestTheStageGivesThePaneEveryRow(t *testing.T) {
 	a := newTestApp(t, 40, 10)
 	for i := 0; i < 2; i++ {
 		if err := a.openPane(); err != nil {
-			t.Fatalf("open tab: %v", err)
+			t.Fatalf("open pane: %v", err)
 		}
 	}
 	// The pane being shown gets every row: nothing is drawn above it.
@@ -1015,15 +1014,15 @@ func TestTheStageGivesThePaneEveryRow(t *testing.T) {
 	}
 }
 
-// TestTabsAndSplitsNest checks the two containers working together: a
+// TestDecksAndSplitsNest checks the two containers working together: a
 // split is one of the things the stage holds, beside a pane of its own.
-func TestTabsAndSplitsNest(t *testing.T) {
+func TestDecksAndSplitsNest(t *testing.T) {
 	a := newTestApp(t, 60, 20)
 	if err := a.splitHere(ui.Columns); err != nil {
 		t.Fatalf("split: %v", err)
 	}
 	if err := a.openPane(); err != nil {
-		t.Fatalf("open tab: %v", err)
+		t.Fatalf("open pane: %v", err)
 	}
 
 	checkTree(t, a)
@@ -1054,7 +1053,7 @@ func TestTheKeysCycleThroughEveryPane(t *testing.T) {
 	a := newTestApp(t, 40, 10)
 	for i := 0; i < 2; i++ {
 		if err := a.openPane(); err != nil {
-			t.Fatalf("open tab: %v", err)
+			t.Fatalf("open pane: %v", err)
 		}
 	}
 	panes := ui.Leaves(a.root.Widget())
@@ -1105,14 +1104,14 @@ func TestTheKeysDoNothingWithOnePane(t *testing.T) {
 // carries on as panes close, it is still there with one left, and the
 // window goes with the last one.
 //
-// It does not stand aside for its last pane the way a plain strip does.
+// It does not stand aside for its last pane the way a plain deck does.
 // Every pane the window opens goes in it, so a stage replaced by a
 // terminal is a window with nowhere to put the next one.
 func TestTheStageOutlivesItsPanes(t *testing.T) {
 	a := newTestApp(t, 40, 10)
 	for i := 0; i < 2; i++ {
 		if err := a.openPane(); err != nil {
-			t.Fatalf("open tab: %v", err)
+			t.Fatalf("open pane: %v", err)
 		}
 	}
 
@@ -1137,10 +1136,10 @@ func TestTheStageOutlivesItsPanes(t *testing.T) {
 	}
 }
 
-// TestTabsAndSplitsFuzz drives both containers together and checks the
+// TestDecksAndSplitsFuzz drives both containers together and checks the
 // invariants after every step. Mixing them is where a pane gets left
 // running unseen.
-func TestTabsAndSplitsFuzz(t *testing.T) {
+func TestDecksAndSplitsFuzz(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	rng := rand.New(rand.NewSource(7))
 
@@ -1155,7 +1154,7 @@ func TestTabsAndSplitsFuzz(t *testing.T) {
 			_ = a.splitHere(dir)
 		case 1:
 			if err := a.openPane(); err != nil {
-				t.Fatalf("step %d: open tab: %v", step, err)
+				t.Fatalf("step %d: open pane: %v", step, err)
 			}
 		case 2:
 			if len(a.panes) > 1 {
@@ -1170,7 +1169,7 @@ func TestTabsAndSplitsFuzz(t *testing.T) {
 		case 4:
 			before := ui.FocusedLeaf(a.root.Widget())
 			if err := a.focusInSidebarOrder(1); err != nil {
-				t.Fatalf("step %d: next tab: %v", step, err)
+				t.Fatalf("step %d: next pane: %v", step, err)
 			}
 			// A window with more than one pane must actually move, or a
 			// command that quietly does nothing looks like success.
@@ -1179,7 +1178,7 @@ func TestTabsAndSplitsFuzz(t *testing.T) {
 			}
 		case 5:
 			if err := a.focusInSidebarOrder(-1); err != nil {
-				t.Fatalf("step %d: previous tab: %v", step, err)
+				t.Fatalf("step %d: previous pane: %v", step, err)
 			}
 		}
 		if a.quit.Load() {
@@ -1244,7 +1243,7 @@ func TestTheSidebarKeysWalkDownTheSidebar(t *testing.T) {
 	// sidebar.
 	first := onlyPaneWidget(t, a)
 	if err := a.openPane(); err != nil {
-		t.Fatalf("open tab: %v", err)
+		t.Fatalf("open pane: %v", err)
 	}
 	a.focus(first)
 	if err := a.splitHere(ui.Columns); err != nil {
@@ -1356,42 +1355,42 @@ func TestTheKeysReachEveryPaneWithTheSidebarShut(t *testing.T) {
 	}
 }
 
-// openAPane opens a tab and returns the pane it put in front.
+// openAPane opens a pane and returns the one it put in front.
 func openAPane(t *testing.T, a *testApp) ui.Widget {
 	t.Helper()
 	if err := a.openPane(); err != nil {
-		t.Fatalf("open tab: %v", err)
+		t.Fatalf("open pane: %v", err)
 	}
 	return ui.FocusedLeaf(a.root.Widget())
 }
 
-// TestOpenTabFromInsideASplitJoinsTheStripAbove checks that a new tab
-// joins the strip the pane is already under, rather than starting a
-// second strip nested inside the split.
-func TestOpenTabFromInsideASplitJoinsTheStripAbove(t *testing.T) {
+// TestOpenPaneFromInsideASplitJoinsTheDeckAbove checks that a new pane
+// joins the deck the pane is already under, rather than starting a
+// second deck nested inside the split.
+func TestOpenPaneFromInsideASplitJoinsTheDeckAbove(t *testing.T) {
 	a := newTestApp(t, 60, 20)
 	if err := a.openPane(); err != nil {
-		t.Fatalf("open tab: %v", err)
+		t.Fatalf("open pane: %v", err)
 	}
 	if err := a.splitHere(ui.Columns); err != nil {
 		t.Fatalf("split: %v", err)
 	}
 
 	if err := a.openPane(); err != nil {
-		t.Fatalf("open tab: %v", err)
+		t.Fatalf("open pane: %v", err)
 	}
 
 	checkTree(t, a)
-	strip, ok := a.root.Widget().(*ui.Deck)
+	deck, ok := a.root.Widget().(*ui.Deck)
 	if !ok {
-		t.Fatalf("root = %T, want one strip", a.root.Widget())
+		t.Fatalf("root = %T, want the one deck", a.root.Widget())
 	}
-	if got := len(strip.Children()); got != 3 {
-		t.Errorf("%d tabs, want 3 in the one strip", got)
+	if got := len(deck.Children()); got != 3 {
+		t.Errorf("%d panes, want 3 in the one deck", got)
 	}
-	for _, tab := range strip.Children() {
-		if _, nested := tab.(*ui.Deck); nested {
-			t.Error("a second strip was started inside the first")
+	for _, pane := range deck.Children() {
+		if _, nested := pane.(*ui.Deck); nested {
+			t.Error("a second deck was started inside the first")
 		}
 	}
 }

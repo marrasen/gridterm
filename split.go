@@ -73,7 +73,7 @@ func (a *app) addSplitChoices(c *ui.Chooser, dir ui.Dir, current ui.Widget) {
 			}
 			if err := a.splitWith(dir, current, pane); err != nil {
 				// It is out of the tree now and nothing else holds it,
-				// so it goes back as a tab rather than being left
+				// so it goes back on the stage rather than being left
 				// running where nobody can see it.
 				if a.stage != nil && ui.ParentOf(a.root.Widget(), pane) == nil {
 					a.stage.Add(pane)

@@ -339,8 +339,8 @@ func TestClosingAConnectionLeavesOtherPanesUnderThatNameAlone(t *testing.T) {
 }
 
 // A terminal opened while the panel has the keys goes beside the panes,
-// not into the panel. A tab strip built around the connections list puts
-// the list in a tab, where hiding the panel hides a terminal with it.
+// not into the panel. The connections list in the deck would be hidden
+// with the panel, and a terminal with it.
 func TestOpeningATerminalFromThePanelDoesNotSwallowIt(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withDialogs(t, a)

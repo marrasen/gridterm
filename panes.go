@@ -74,14 +74,14 @@ func (a *app) localTerminalOn(argv []string) (*term.Terminal, error) {
 }
 
 // runCommandHere opens a pane running a command on this machine, at a
-// spot or in a tab of its own. The pane gets a command row, so it is
+// spot or on the stage. The pane gets a command row, so it is
 // named by what it runs and offers to run it again when it ends.
 func (a *app) runCommandHere(argv []string, at *spot) error {
 	sess, err := a.newShell(argv, a.lastSize[0], a.lastSize[1])
 	if err != nil {
 		return fmt.Errorf("start session: %w", err)
 	}
-	t, err := a.openSessionTab(sess, conns.Local, conns.Command, labelFor(argv), at)
+	t, err := a.openSessionPane(sess, conns.Local, conns.Command, labelFor(argv), at)
 	if err != nil {
 		// Ours unless openSessionTab closed it already, and closing
 		// twice is safe.
@@ -202,7 +202,7 @@ func (a *app) closePalette() {
 	}
 }
 
-// newTabs builds the thing that holds several panes and shows one.
+// newDeck builds the thing that holds several panes and shows one.
 //
 // Which pane is showing is chosen from the sidebar, which has room to
 // say what each one is and which machine it is on.
@@ -214,19 +214,19 @@ func (a *app) newDeck(kids ...ui.Widget) *ui.Deck {
 	return tb
 }
 
-// stripAbove returns the nearest tab strip containing w.
+// deckAbove returns the nearest deck holding w.
 //
 // It walks rather than asking for w's own parent: a pane that has been
-// split is a grandchild of the strip, and the strip is still the one a
-// new pane joins.
+// split is a grandchild of the deck, and the deck is still the one a new
+// pane joins.
 func (a *app) deckAbove(w ui.Widget) *ui.Deck {
 	for child := w; child != nil; {
 		parent := ui.ParentOf(a.root.Widget(), child)
 		if parent == nil {
 			return nil
 		}
-		if strip, ok := parent.(*ui.Deck); ok {
-			return strip
+		if deck, ok := parent.(*ui.Deck); ok {
+			return deck
 		}
 		child = parent
 	}
@@ -287,9 +287,8 @@ func (a *app) openPaneWith(start func() (*term.Terminal, error)) error {
 // placePane puts a widget beside the focused pane, and straight on the
 // stage when the window has no pane at all, which is how -ssh opens.
 func (a *app) placePane(next ui.Widget) error {
-	// The one holding the focused pane, and the stage when there is no
-	// pane to go beside. They are the same thing today: the stage is
-	// above every pane, and nothing else holds one.
+	// The deck holding the focused pane, and the stage when there is no
+	// pane to go beside.
 	holder := a.stage
 	if current := a.paneToPlaceBeside(); current != nil {
 		if above := a.deckAbove(current); above != nil {
@@ -696,7 +695,7 @@ func (a *app) reapExited() {
 }
 
 // spot is where a pane the window is opening should go: dividing another
-// pane, rather than going in a tab of its own.
+// pane, rather than going on the stage.
 //
 // It travels with the request rather than being recorded on the window,
 // because a connection takes as long as it takes. A pane arriving from
@@ -709,7 +708,7 @@ type spot struct {
 
 // place puts a new pane where it was asked to go.
 //
-// A split that cannot be made falls back to a tab of its own, whatever
+// A split that cannot be made falls back to the stage, whatever
 // the reason: the pane it was to sit beside may have closed, or gone
 // into the background, or the window may have been made too narrow while
 // the connection was on its way. The terminal is open either way, and
@@ -728,7 +727,7 @@ func (a *app) place(next ui.Widget, at *spot) error {
 // splitWith divides one pane and puts another in the half that opens up.
 //
 // next may be a pane that is already somewhere else in the tree, which
-// is what splitting with an existing tab means: it is taken out of where
+// is what splitting with an existing pane means: it is taken out of where
 // it was first.
 //
 // A failure leaves next out of the tree, and whoever asked owns it: a
@@ -824,7 +823,7 @@ func (a *app) live(w ui.Widget) bool {
 }
 
 // unsplitFocused takes the focused pane out of the split it is in and
-// gives it a tab of its own.
+// puts it on the stage.
 //
 // Nothing is closed. The pane beside it takes the whole of the room the
 // split had, which is what undoing a split means.

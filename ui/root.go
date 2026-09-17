@@ -416,7 +416,7 @@ func (r *Root) AreaOf(target Widget) (Rect, bool) {
 // run looks a chord up in one keymap and runs what it finds.
 //
 // A binding naming a command that is not registered does not consume the
-// key. Bindings outlive the panes and tabs that register commands, and a
+// key. Bindings outlive the panes that register commands, and a
 // stale one that swallowed its key would kill that key for good.
 func (r *Root) run(keys *Keymap, chord Chord) (bool, error) {
 	if keys == nil || r.Commands == nil {

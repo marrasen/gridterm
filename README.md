@@ -164,7 +164,7 @@ go run . -font /path/to/Regular.ttf,/path/to/Bold.ttf
 
 With `-ssh` the window opens first and connects in a pane, so it asks
 about an unknown host key in a dialog and keeps the account of how the
-machine was reached. A new tab or split opens on that machine too, and
+machine was reached. A new pane or split opens on that machine too, and
 its row on the sidebar offers the rest: files, a command, a tunnel and
 the account.
 
@@ -272,7 +272,7 @@ encoders and both session types.
 | `vfs` | 669 | no | a filesystem a file pane works on: this machine, or one over SFTP |
 | `jobs` | 1,142 | no | copying, moving and deleting in the background, with progress and cancel |
 | `meter` | 327 | no | bytes moved, and how long ago: the four states |
-| `ui` | 5,919 | no | the widget toolkit: panes, tabs, menus, dialogs, fields, lists |
+| `ui` | 5,919 | no | the widget toolkit: panes, decks, menus, dialogs, fields, lists |
 | `ui/term` | 787 | no | a shell on a widget |
 | `ui/files` | 1,455 | no | the file manager: any number of panes side by side |
 | `glyph` | 1,301 | yes | glyph atlas, system font fallback, box drawing |

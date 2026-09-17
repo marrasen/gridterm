@@ -136,7 +136,7 @@ func (a *app) openCommandHere() error {
 }
 
 // askCommandOn asks for a command to run on a machine and puts the pane
-// it opens at a spot, or in a tab of its own when at is nil.
+// it opens at a spot, or on the stage when at is nil.
 func (a *app) askCommandOn(host string, at *spot) {
 	where := groupName(host)
 	f := a.newForm("Run a command on " + where)

@@ -85,7 +85,7 @@ func (a *app) newMenubar(child ui.Widget) *ui.Menubar {
 const fileMenu = "File"
 
 // fileItems is what the File menu offers: the panes, and a line per
-// shell a new tab here can open on.
+// shell a new pane here can open on.
 func fileItems(shells []ui.MenuItem) []ui.MenuItem {
 	items := []ui.MenuItem{{Command: "pane.open"}}
 	if len(shells) > 0 {

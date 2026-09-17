@@ -222,7 +222,7 @@ func (a *app) paneStyle() files.Style {
 	return files.Style{
 		FG: a.colours.FG,
 		BG: a.colours.BG,
-		// The bar is marked the way a selected tab is, so the two read
+		// The bar is marked the way the pane in front is, so the two read
 		// as the same thing.
 		SelectedFG: a.colours.BG,
 		SelectedBG: a.colours.FG,

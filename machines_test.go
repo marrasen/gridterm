@@ -746,7 +746,7 @@ func TestAFinishedCommandKeepsItsOutput(t *testing.T) {
 // row.
 //
 // A pane with no row cannot be reached: the sidebar is the only way to
-// choose what is showing, and there is no strip of tabs any more.
+// choose what is showing.
 func TestClearingAFinishedCommandTakesItsPaneToo(t *testing.T) {
 	s := sshtest.New(t)
 	a := newTestApp(t, 80, 24)
@@ -1022,7 +1022,7 @@ func TestAMachineNobodyHasANameForIsClosed(t *testing.T) {
 	// The pane the first attempt is being watched in, which is where
 	// anything it has to say has to land.
 	log := newConnLog(nil)
-	pane, err := a.openSessionTab(log, "edge", conns.Terminal, "connecting", nil)
+	pane, err := a.openSessionPane(log, "edge", conns.Terminal, "connecting", nil)
 	if err != nil {
 		t.Fatalf("the pane watching it: %v", err)
 	}

@@ -428,14 +428,14 @@ func (a *app) openFor(open opening, sess session.Session, host, label string,
 	if open.into != nil {
 		return open.into, a.restartPane(open.into, sess, label)
 	}
-	return a.openSessionTab(sess, host, open.kind(), label, at)
+	return a.openSessionPane(sess, host, open.kind(), label, at)
 }
 
 // startOn opens what was asked for on a machine that is already
 // connected to.
 func (a *app) startOn(name string, open opening, at *spot) error {
 	if open.files {
-		// at is not used: a file pane goes in the file manager's own tab.
+		// at is not used: a file pane goes in the file manager itself.
 		return a.browseOn(name)
 	}
 	m := a.about(name).machine

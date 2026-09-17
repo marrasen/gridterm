@@ -109,10 +109,10 @@ func (d *Deck) Replace(old, new Widget) bool {
 	return true
 }
 
-// Remove takes a pane out. One pane left has nothing to choose between,
-// so that pane is reported as what should stand in its place; with none left
-// nothing is reported. Keep set reports itself either way and stays
-// where it is.
+// Remove takes a pane out. A deck with one pane left has nothing to
+// choose between, so that pane is reported as what should stand in the
+// deck's place; with none left nothing is reported. Keep set reports the
+// deck either way and stays where it is.
 func (d *Deck) Remove(w Widget) (Widget, bool) {
 	at := -1
 	for i, kid := range d.kids {

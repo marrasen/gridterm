@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path"
 	"runtime"
+	"slices"
 	"strings"
 )
 
@@ -132,6 +133,19 @@ func named(p probe, id string) (Shell, bool) {
 		return p.wsl(distro)
 	}
 	return p.windows(id)
+}
+
+// Running returns the shell an argv runs, and whether the list holds one.
+// The whole argv, because every WSL distribution runs wsl.exe and only
+// the arguments tell them apart. Windows ignores case in a path, so this
+// does too.
+func Running(list []Shell, argv []string) (Shell, bool) {
+	for _, s := range list {
+		if slices.EqualFunc(s.Command(""), argv, strings.EqualFold) {
+			return s, true
+		}
+	}
+	return Shell{}, false
 }
 
 // Lookup returns the shell in list that id names, for the case where a remembered shell has gone.

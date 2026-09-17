@@ -143,6 +143,13 @@ func (p *shellPick) list() []shells.Shell {
 	return slices.Clone(p.found)
 }
 
+// running returns the shell an argv runs, of the ones that were found.
+func (p *shellPick) running(argv []string) (shells.Shell, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return shells.Running(p.found, argv)
+}
+
 // landed says whether the looking is over.
 func (p *shellPick) landed() bool {
 	p.mu.Lock()

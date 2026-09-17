@@ -2,10 +2,12 @@ package main
 
 import (
 	"errors"
+	"github.com/marrasen/gridterm/ui/term"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/input"
@@ -167,6 +169,113 @@ func TestChoosingAShellFromThePlusOpensAPaneOnIt(t *testing.T) {
 		t.Errorf("%d panes, want the one the window opened with and the new one", len(a.panes))
 	}
 	checkTree(t, a)
+}
+
+// A pane's row says the name of the shell it runs, not the path of the
+// program. cmd.exe and PowerShell both call their window by their own
+// path, and the row used to show it.
+func TestAShellPaneRowSaysTheShellsName(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	scanShells(t, a)
+
+	menu := clickPlus(t, a, conns.Local)
+	chooseMenuItem(t, menu, shellCommandID("pwsh"))
+	pane := a.focusedTerminal()
+	if pane == nil {
+		t.Fatal("the shell opened no pane")
+	}
+	a.setTitle(t, len(a.shells)-1, pane, pwshPath)
+
+	a.refreshPanel(time.Now())
+	row, ok := panelRow(a, a.panes[pane])
+	if !ok {
+		t.Fatalf("the pane has no row: %v", panelText(a, time.Now()))
+	}
+	if row.Text != "PowerShell" {
+		t.Errorf("the row says %q, want the name this machine has for that shell", row.Text)
+	}
+}
+
+// A pane on the shell nobody picked says the same. Nothing was handed to
+// the session, so what it runs is COMSPEC.
+func TestThePaneOnTheDefaultShellSaysWhatComspecNames(t *testing.T) {
+	t.Setenv("COMSPEC", cmdPath)
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	scanShells(t, a)
+
+	pane, ok := onlyPaneWidget(t, a).(*term.Terminal)
+	if !ok {
+		t.Fatal("the window opened on something that is not a terminal")
+	}
+	if got := a.lastArgv(t); len(got) != 0 {
+		t.Fatalf("the first pane was started on %v, want the default shell", got)
+	}
+	a.setTitle(t, 0, pane, cmdPath)
+
+	a.refreshPanel(time.Now())
+	row, ok := panelRow(a, a.panes[pane])
+	if !ok {
+		t.Fatalf("the pane has no row: %v", panelText(a, time.Now()))
+	}
+	if row.Text != "Command Prompt" {
+		t.Errorf("the row says %q, want the name of the shell COMSPEC names", row.Text)
+	}
+}
+
+// A program that names the window something of its own is still what the
+// row says. Only a name that is the program's own path is passed over.
+func TestAPaneRowSaysWhatTheProgramCalledTheWindow(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	scanShells(t, a)
+
+	pane, ok := onlyPaneWidget(t, a).(*term.Terminal)
+	if !ok {
+		t.Fatal("the window opened on something that is not a terminal")
+	}
+	a.setTitle(t, 0, pane, "make deploy")
+
+	a.refreshPanel(time.Now())
+	row, ok := panelRow(a, a.panes[pane])
+	if !ok {
+		t.Fatalf("the pane has no row: %v", panelText(a, time.Now()))
+	}
+	if row.Text != "make deploy" {
+		t.Errorf("the row says %q, want what the program called the window", row.Text)
+	}
+}
+
+// A WSL pane's row says which distribution it runs. Every distribution
+// runs wsl.exe, so only the arguments tell them apart.
+func TestAWslPaneRowSaysWhichDistribution(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	onMachine(a, append(testShells(), shells.Shell{
+		ID: "wsl:Debian", Title: "Debian (WSL)", Path: wslPath,
+		Args: []string{"-d", "Debian"}, Distro: "Debian",
+	}))
+	scanShells(t, a)
+
+	chooseMenuItem(t, clickPlus(t, a, conns.Local), shellCommandID("wsl:Debian"))
+	pane := a.focusedTerminal()
+	if pane == nil {
+		t.Fatal("the shell opened no pane")
+	}
+
+	a.refreshPanel(time.Now())
+	row, ok := panelRow(a, a.panes[pane])
+	if !ok {
+		t.Fatalf("the pane has no row: %v", panelText(a, time.Now()))
+	}
+	if row.Text != "Debian (WSL)" {
+		t.Errorf("the row says %q, want the distribution the pane runs", row.Text)
+	}
 }
 
 // TestChoosingAWslShellRunsTheDistributionItNames checks the whole argv

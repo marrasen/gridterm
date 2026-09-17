@@ -198,8 +198,18 @@ func (a *app) refreshPanel(now time.Time) {
 	clear(a.paneRows)
 	for t, e := range a.panes {
 		a.paneRows[e] = true
-		if title := t.Title(); title != "" && !a.ended[t] {
+		if a.ended[t] {
+			continue
+		}
+		// A shell that calls its window by the path of the program it is
+		// running says nothing the row does not already say, so the row
+		// keeps the name this machine has for that shell.
+		if title := t.Title(); title != "" && !a.namesItself(t, title) {
 			e.Label = title
+			continue
+		}
+		if name := a.shellName(t); name != "" {
+			e.Label = name
 		}
 	}
 	if a.files != nil {

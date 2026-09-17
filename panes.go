@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"image/color"
+	"os"
 	"slices"
+	"strings"
 
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/remote"
@@ -98,6 +100,43 @@ func (a *app) terminalOnHome(m *machine) (*term.Terminal, error) {
 	// it again in the pane would open.
 	a.startsAgain(t, nil, m)
 	return t, nil
+}
+
+// localArgv is the argv a pane on this machine runs, with the default
+// shell filled in: session.StartLocal picks COMSPEC when it is handed
+// nothing, and a row has to be able to name what that is.
+func (a *app) localArgv(t *term.Terminal) []string {
+	if e := a.panes[t]; e == nil || e.Host != conns.Local {
+		return nil
+	}
+	if s := a.started[t]; s != nil && len(s.argv) > 0 {
+		return s.argv
+	}
+	if comspec := os.Getenv("COMSPEC"); comspec != "" {
+		return []string{comspec}
+	}
+	return []string{"cmd.exe"}
+}
+
+// shellName is what a pane's row calls the shell it runs, and empty when
+// this machine has no name for it.
+func (a *app) shellName(t *term.Terminal) string {
+	argv := a.localArgv(t)
+	if len(argv) == 0 {
+		return ""
+	}
+	sh, ok := a.shellPick.running(argv)
+	if !ok {
+		return ""
+	}
+	return sh.Title
+}
+
+// namesItself reports whether what a pane called its window is only the
+// path of the program it is running, which says nothing its row does not.
+func (a *app) namesItself(t *term.Terminal, title string) bool {
+	argv := a.localArgv(t)
+	return len(argv) > 0 && strings.EqualFold(title, argv[0])
 }
 
 // openPalette shows the command dialog, or closes it when it is already

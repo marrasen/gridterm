@@ -285,24 +285,11 @@ func (s *server) runTool(name string, args json.RawMessage) (result, *rpcError) 
 		if in.Code == "" {
 			return missing("code")
 		}
-		pane, err := s.panes.Use(in.Code)
+		panes, err := s.panes.Use(in.Code)
 		if err != nil {
 			return wrong(err.Error())
 		}
-		what := "Read it with read_pane, type into it with send_keys, and wait for it" +
-			" with wait_for. The user is watching and can take it back at any moment."
-		if pane.May.ReadOnly {
-			what = "Read it with read_pane and wait for it with wait_for. The user handed" +
-				" it over to be read: send_keys is refused. They are watching and can take" +
-				" it back at any moment."
-		}
-		if pane.Ended {
-			what = "The program in it has finished, so there is nothing left to type" +
-				" into: read what it printed with read_pane."
-		}
-		return say(fmt.Sprintf(
-			"You have %s: a %dx%d screen, as pane %q.\n\n%s%s",
-			pane.Label, pane.Cols, pane.Rows, pane.ID, what, alsoAllowed(pane.May)))
+		return say(sharedWithYou(panes))
 
 	case "list_panes":
 		panes, err := s.panes.List()
@@ -428,6 +415,49 @@ func (s *server) runTool(name string, args json.RawMessage) (result, *rpcError) 
 		Code:    codeInvalidParams,
 		Message: fmt.Sprintf("%q is not a tool this server has", name),
 	}
+}
+
+// sharedWithYou is what an agent is told when it uses a code: every pane
+// in the share, and what each one allows.
+//
+// The set is not fixed. The user adds panes and takes them out while the
+// agent works, so it is told to ask again rather than to hold this list
+// as the answer.
+func sharedWithYou(panes []Pane) string {
+	if len(panes) == 0 {
+		return "That code names a share with no panes in it yet." +
+			" Ask the user to add one, and call list_panes to see it."
+	}
+	out := fmt.Sprintf("The user has shared %s with you:\n", howManyPanes(len(panes)))
+	for _, p := range panes {
+		out += fmt.Sprintf("\n%s: %s, a %dx%d screen. %s%s",
+			p.ID, p.Label, p.Cols, p.Rows, whatItTakes(p), alsoAllowed(p.May))
+	}
+	return out + "\n\nThe user adds panes and takes them out while you work," +
+		" so call list_panes again when you want to know what you have." +
+		" They are watching all of it and can take any of it back at any moment."
+}
+
+// howManyPanes counts the panes in a share, in words.
+func howManyPanes(n int) string {
+	if n == 1 {
+		return "one pane"
+	}
+	return fmt.Sprintf("%d panes", n)
+}
+
+// whatItTakes is what an agent may do with one pane of a share.
+func whatItTakes(p Pane) string {
+	switch {
+	case p.Ended:
+		return "The program in it has finished, so there is nothing left to type into:" +
+			" read what it printed with read_pane."
+	case p.May.ReadOnly:
+		return "Read it with read_pane and wait for it with wait_for. The user shared it" +
+			" to be read: send_keys is refused."
+	}
+	return "Read it with read_pane, type into it with send_keys, and wait for it" +
+		" with wait_for."
 }
 
 // alsoAllowed says what the user ticked for this pane, and says nothing

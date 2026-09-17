@@ -37,19 +37,33 @@ type oneWindow struct {
 	typesSecret bool
 }
 
-func (w *oneWindow) Use(code string) (agent.Pane, error) {
+func (w *oneWindow) Use(code string) (agent.Share, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.taken || code != w.code {
-		return agent.Pane{}, errors.New("that code does not name a pane this window has handed over")
+		return agent.Share{}, errors.New("that code does not name a share this window is offering")
 	}
-	return agent.Pane{ID: "pane-1", Label: "bash on this machine", Cols: 80, Rows: 24}, nil
+	return agent.Share{ID: 1, Panes: w.inShare()}, nil
+}
+
+func (w *oneWindow) Shared(share uint64) ([]agent.Pane, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.taken || share != 1 {
+		return nil, errors.New("that share is over")
+	}
+	return w.inShare(), nil
+}
+
+// inShare is the panes this window is sharing. The lock is already held.
+func (w *oneWindow) inShare() []agent.Pane {
+	return []agent.Pane{{ID: "1.1", Label: "bash on this machine", Cols: 80, Rows: 24}}
 }
 
 func (w *oneWindow) Look(id string, lines int) (agent.Look, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if w.taken || id != "pane-1" {
+	if w.taken || id != "1.1" {
 		return agent.Look{}, errors.New("that is not a pane you have been handed")
 	}
 	w.lines = lines
@@ -61,7 +75,7 @@ func (w *oneWindow) Look(id string, lines int) (agent.Look, error) {
 func (w *oneWindow) Output(id string, most int) (agent.Look, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if w.taken || id != "pane-1" {
+	if w.taken || id != "1.1" {
 		return agent.Look{}, errors.New("that is not a pane you have been handed")
 	}
 	look := w.cmd
@@ -78,17 +92,17 @@ func (w *oneWindow) Secret(id, what string, wait time.Duration) (bool, error) {
 }
 
 func (w *oneWindow) Restart(id string) (agent.Pane, error) {
-	return agent.Pane{ID: "pane-1", Label: "bash on this machine", Cols: 80, Rows: 24}, nil
+	return agent.Pane{ID: "1.1", Label: "bash on this machine", Cols: 80, Rows: 24}, nil
 }
 
 func (w *oneWindow) Open(id string) (agent.Pane, error) {
-	return agent.Pane{ID: "pane-2", Label: "bash on this machine", Cols: 80, Rows: 24}, nil
+	return agent.Pane{ID: "1.2", Label: "bash on this machine", Cols: 80, Rows: 24}, nil
 }
 
 func (w *oneWindow) Send(id, text string, keys []string) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if w.taken || id != "pane-1" {
+	if w.taken || id != "1.1" {
 		return errors.New("that is not a pane you have been handed")
 	}
 	w.typed += text
@@ -131,10 +145,14 @@ func TestAnAgentReachesARealWindow(t *testing.T) {
 
 	// What the window calls the pane, which is what the agent is given
 	// and has to hand back.
-	pane, err := panes.Use(code)
+	shared, err := panes.Use(code)
 	if err != nil {
 		t.Fatalf("use: %v", err)
 	}
+	if len(shared) == 0 {
+		t.Fatal("the share has no panes in it")
+	}
+	pane := shared[0]
 
 	answers := talk(t, panes,
 		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`,
@@ -188,10 +206,14 @@ func TestTakingThePaneBackReachesTheAgent(t *testing.T) {
 
 	panes := NewWindow()
 	defer func() { _ = panes.Close() }()
-	pane, err := panes.Use(code)
+	shared, err := panes.Use(code)
 	if err != nil {
 		t.Fatalf("use: %v", err)
 	}
+	if len(shared) == 0 {
+		t.Fatal("the share has no panes in it")
+	}
+	pane := shared[0]
 
 	win.takeBack()
 
@@ -261,14 +283,20 @@ func TestACodeForAnotherWindowReachesThatWindow(t *testing.T) {
 	panes := NewWindow()
 	defer func() { _ = panes.Close() }()
 
-	onOne, err := panes.Use(first.code)
+	sharedOne, err := panes.Use(first.code)
 	if err != nil {
 		t.Fatalf("the first window: %v", err)
 	}
-	onTwo, err := panes.Use(second.code)
+	sharedTwo, err := panes.Use(second.code)
 	if err != nil {
 		t.Fatalf("the second window: %v", err)
 	}
+	if len(sharedOne) == 0 || len(sharedTwo) == 0 {
+		t.Fatalf("the windows shared %d and %d panes", len(sharedOne), len(sharedTwo))
+	}
+	onOne, onTwo := sharedOne[0], sharedTwo[0]
+	// The share id is each window's own count, so the port in front of it
+	// is what keeps two windows' panes apart.
 	if onOne.ID == onTwo.ID {
 		t.Fatalf("both panes are called %q", onOne.ID)
 	}
@@ -333,10 +361,14 @@ func TestAFreshCodeAfterTheConnectionBrokeIsDialledAgain(t *testing.T) {
 
 	panes := NewWindow()
 	defer func() { _ = panes.Close() }()
-	pane, err := panes.Use(win.code)
+	shared, err := panes.Use(win.code)
 	if err != nil {
 		t.Fatalf("use: %v", err)
 	}
+	if len(shared) == 0 {
+		t.Fatal("the share has no panes in it")
+	}
+	pane := shared[0]
 
 	if err := s.Close(); err != nil {
 		t.Fatalf("close: %v", err)
@@ -382,10 +414,14 @@ func TestWhatTheShellSaidReachesTheAgent(t *testing.T) {
 
 	panes := NewWindow()
 	defer func() { _ = panes.Close() }()
-	pane, err := panes.Use(code)
+	shared, err := panes.Use(code)
 	if err != nil {
 		t.Fatalf("use: %v", err)
 	}
+	if len(shared) == 0 {
+		t.Fatal("the share has no panes in it")
+	}
+	pane := shared[0]
 
 	win.output = "altscreen.png\nshell.png"
 	answers := talk(t, panes,

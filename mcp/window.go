@@ -28,21 +28,25 @@ type Window struct {
 // NewWindow gives an agent somewhere to use a session code.
 func NewWindow() *Window { return &Window{reached: map[int]*agent.Client{}} }
 
-// Use opens the pane a session code names.
-func (w *Window) Use(code string) (Pane, error) {
+// Use opens the panes a session code names.
+func (w *Window) Use(code string) ([]Pane, error) {
 	port, err := agent.ReadCode(code)
 	if err != nil {
-		return Pane{}, err
+		return nil, err
 	}
 	conn, err := w.connect(port, code)
 	if err != nil {
-		return Pane{}, err
+		return nil, err
 	}
-	pane, err := conn.Use(code)
+	sh, err := conn.Use(code)
 	if err != nil {
-		return Pane{}, err
+		return nil, err
 	}
-	return asPane(port, pane), nil
+	out := make([]Pane, 0, len(sh.Panes))
+	for _, p := range sh.Panes {
+		out = append(out, asPane(port, p))
+	}
+	return out, nil
 }
 
 // List is the panes this agent has been given, across every window it

@@ -143,10 +143,7 @@ func TestABigAnswerReachesTheAgent(t *testing.T) {
 		t.Fatalf("dial: %v", err)
 	}
 	defer func() { _ = c.Close() }()
-	pane, err := c.Use(code)
-	if err != nil {
-		t.Fatalf("use: %v", err)
-	}
+	pane := opened(t, c, code)
 
 	look, err := c.Read(pane.ID, MostLines)
 	if err != nil {

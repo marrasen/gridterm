@@ -83,8 +83,8 @@ const (
 // to one gridterm window; nothing here knows how.
 type Panes interface {
 	// Use takes a session code the user gave the agent and opens the
-	// pane it names.
-	Use(code string) (Pane, error)
+	// panes the share it names holds.
+	Use(code string) ([]Pane, error)
 
 	// List is the panes this agent has been given.
 	List() ([]Pane, error)

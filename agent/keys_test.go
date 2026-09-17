@@ -52,10 +52,7 @@ func TestKeysAndLinesReachTheWindow(t *testing.T) {
 	}
 	defer func() { _ = c.Close() }()
 
-	pane, err := c.Use(code)
-	if err != nil {
-		t.Fatalf("use: %v", err)
-	}
+	pane := opened(t, c, code)
 	if err := c.Send(pane.ID, ":q!", []string{"Enter", "Ctrl+C"}); err != nil {
 		t.Fatalf("send: %v", err)
 	}
@@ -104,10 +101,7 @@ func TestMoreKeysThanOneCallPressesIsRefused(t *testing.T) {
 		t.Fatalf("dial: %v", err)
 	}
 	defer func() { _ = c.Close() }()
-	pane, err := c.Use(code)
-	if err != nil {
-		t.Fatalf("use: %v", err)
-	}
+	pane := opened(t, c, code)
 	if err := c.Send(pane.ID, "ls", append(many, "Enter")); err == nil {
 		t.Error("the window pressed more keys than it says it will")
 	} else if !strings.Contains(err.Error(), strconv.Itoa(MostKeys)) {
@@ -129,10 +123,7 @@ func TestTheWindowRefusesAKeyNameItDoesNotHave(t *testing.T) {
 		t.Fatalf("dial: %v", err)
 	}
 	defer func() { _ = c.Close() }()
-	pane, err := c.Use(code)
-	if err != nil {
-		t.Fatalf("use: %v", err)
-	}
+	pane := opened(t, c, code)
 
 	if err := c.Send(pane.ID, "ls", []string{"Enter", "Ecsape"}); err == nil {
 		t.Error("the window pressed a key it has no name for")

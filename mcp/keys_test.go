@@ -19,9 +19,9 @@ func TestKeysReachTheWindowByName(t *testing.T) {
 	panes := &fakePanes{code: "gt1-2222-abc", screen: "$ "}
 	talk(t, panes, use,
 		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":`+
-			`{"name":"send_keys","arguments":{"pane":"pane-1","keys":["Escape"]}}}`,
+			`{"name":"send_keys","arguments":{"pane":"1.1","keys":["Escape"]}}}`,
 		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":`+
-			`{"name":"send_keys","arguments":{"pane":"pane-1","text":":q!",`+
+			`{"name":"send_keys","arguments":{"pane":"1.1","text":":q!",`+
 			`"keys":["Enter"]}}}`)
 
 	panes.mu.Lock()
@@ -40,7 +40,7 @@ func TestAKeyNameThisDoesNotHaveIsRefusedWithTheOnesItHas(t *testing.T) {
 	panes := &fakePanes{code: "gt1-2222-abc", screen: "$ "}
 	answers := talk(t, panes, use,
 		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":`+
-			`{"name":"send_keys","arguments":{"pane":"pane-1","text":"ls",`+
+			`{"name":"send_keys","arguments":{"pane":"1.1","text":"ls",`+
 			`"keys":["Ecsape"]}}}`)
 
 	text, failed := textOf(t, answers[1])
@@ -65,7 +65,7 @@ func TestSendingNeitherTextNorKeysIsRefused(t *testing.T) {
 	panes := &fakePanes{code: "gt1-2222-abc", screen: "$ "}
 	answers := talk(t, panes, use,
 		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":`+
-			`{"name":"send_keys","arguments":{"pane":"pane-1"}}}`)
+			`{"name":"send_keys","arguments":{"pane":"1.1"}}}`)
 
 	if answers[1].Error == nil {
 		t.Fatalf("a call with nothing to send was taken: %+v", answers[1].Result)
@@ -83,10 +83,10 @@ func TestHowManyLinesToReadReachesTheWindow(t *testing.T) {
 		args  string
 		lines int
 	}{
-		{"read_pane", `{"pane":"pane-1"}`, 0},
-		{"read_pane", `{"pane":"pane-1","lines":400}`, 400},
-		{"read_pane", `{"pane":"pane-1","lines":100000}`, mostLines},
-		{"wait_for", `{"pane":"pane-1","contains":"$","lines":250}`, 250},
+		{"read_pane", `{"pane":"1.1"}`, 0},
+		{"read_pane", `{"pane":"1.1","lines":400}`, 400},
+		{"read_pane", `{"pane":"1.1","lines":100000}`, mostLines},
+		{"wait_for", `{"pane":"1.1","contains":"$","lines":250}`, 250},
 	} {
 		panes := &fakePanes{code: "gt1-2222-abc", screen: "$ "}
 		talk(t, panes, use,
@@ -263,11 +263,11 @@ func TestAReadCutToTheMostLinesSaysSo(t *testing.T) {
 		args    string
 		clamped bool
 	}{
-		{"read_pane", `{"pane":"pane-1","lines":100000}`, true},
-		{"read_pane", `{"pane":"pane-1","lines":400}`, false},
-		{"read_pane", `{"pane":"pane-1"}`, false},
-		{"wait_for", `{"pane":"pane-1","contains":"$","lines":100000}`, true},
-		{"wait_for", `{"pane":"pane-1","contains":"$","lines":400}`, false},
+		{"read_pane", `{"pane":"1.1","lines":100000}`, true},
+		{"read_pane", `{"pane":"1.1","lines":400}`, false},
+		{"read_pane", `{"pane":"1.1"}`, false},
+		{"wait_for", `{"pane":"1.1","contains":"$","lines":100000}`, true},
+		{"wait_for", `{"pane":"1.1","contains":"$","lines":400}`, false},
 	} {
 		panes := &fakePanes{code: "gt1-2222-abc", screen: "$ "}
 		answers := talk(t, panes, use,
@@ -322,8 +322,8 @@ func TestTheAnswerSaysWhereTheCursorIsAndWhetherTheScreenIsAllThereIs(t *testing
 		what string
 		args string
 	}{
-		{"read_pane", `{"pane":"pane-1"}`},
-		{"wait_for", `{"pane":"pane-1","contains":"$"}`},
+		{"read_pane", `{"pane":"1.1"}`},
+		{"wait_for", `{"pane":"1.1","contains":"$"}`},
 	} {
 		// An ordinary screen: where the cursor is, and nothing about a
 		// full-screen program.
@@ -369,7 +369,7 @@ func TestAMessageTooLongIsRefusedBeforeTheWindowSeesIt(t *testing.T) {
 	panes := &fakePanes{code: "gt1-2222-abc", screen: "$ "}
 	answers := talk(t, panes, use,
 		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":`+
-			`{"name":"send_keys","arguments":{"pane":"pane-1","text":"`+
+			`{"name":"send_keys","arguments":{"pane":"1.1","text":"`+
 			strings.Repeat("x", 2<<20)+`"}}}`)
 
 	if len(answers) < 2 || answers[1].Error == nil {
@@ -395,7 +395,7 @@ func TestMoreKeysThanOneCallPressesIsRefused(t *testing.T) {
 	}
 	answers := talk(t, panes, use,
 		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":`+
-			`{"name":"send_keys","arguments":{"pane":"pane-1","keys":[`+
+			`{"name":"send_keys","arguments":{"pane":"1.1","keys":[`+
 			strings.Join(many, ",")+`]}}}`)
 
 	text, failed := textOf(t, byID(t, answers)[2])
@@ -451,7 +451,7 @@ func TestAReadOfEverythingThereIsSaysSo(t *testing.T) {
 		panes := &fakePanes{code: "gt1-2222-abc", screen: "$ ", all: tc.all, alt: tc.alt}
 		answers := talk(t, panes, use,
 			`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":`+
-				`{"name":"read_pane","arguments":{"pane":"pane-1","lines":400}}}`)
+				`{"name":"read_pane","arguments":{"pane":"1.1","lines":400}}}`)
 
 		told, failed := textOf(t, byID(t, answers)[2])
 		if failed {
@@ -472,7 +472,7 @@ func TestTheNotesComeAfterAMarkerTheToolsName(t *testing.T) {
 	panes := &fakePanes{code: "gt1-2222-abc", screen: "$ ls\nfile\n$ "}
 	answers := talk(t, panes, use,
 		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":`+
-			`{"name":"read_pane","arguments":{"pane":"pane-1"}}}`)
+			`{"name":"read_pane","arguments":{"pane":"1.1"}}}`)
 
 	told, failed := textOf(t, byID(t, answers)[2])
 	if failed {

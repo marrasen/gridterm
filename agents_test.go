@@ -32,12 +32,12 @@ func handedOver(t *testing.T, a *testApp) (*term.Terminal, string, *agent.Client
 	if h == nil {
 		t.Fatal("the window did not record the handover")
 	}
-	c, err := agent.Dial(h.code)
+	c, err := agent.Dial(h.in.code)
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}
 	t.Cleanup(func() { _ = c.Close() })
-	return pane, h.code, c
+	return pane, h.in.code, c
 }
 
 // An agent given a code reads the pane and types into it.
@@ -54,7 +54,7 @@ func TestAnAgentWorksInThePaneItWasHanded(t *testing.T) {
 	var got agent.Pane
 	offWindow(t, a, "the window to answer the agent", func() error {
 		var err error
-		got, err = c.Use(a.agents.of(pane).code)
+		got, err = firstOf(c.Use(a.agents.code()))
 		return err
 	})
 	if got.Cols != pane.Size().Cols || got.Rows != pane.Size().Rows {
@@ -123,7 +123,7 @@ func TestTakingThePaneBackStopsTheAgent(t *testing.T) {
 	var got agent.Pane
 	offWindow(t, a, "the window to answer the agent", func() error {
 		var err error
-		got, err = c.Use(code)
+		got, err = firstOf(c.Use(code))
 		return err
 	})
 
@@ -183,7 +183,7 @@ func TestHandingOnePaneOverTwiceKeepsOneCode(t *testing.T) {
 	if err := a.handPane(pane); err != nil {
 		t.Fatalf("hand it over again: %v", err)
 	}
-	if got := a.agents.of(pane).code; got != code {
+	if got := a.agents.code(); got != code {
 		t.Errorf("it made a second code: %q then %q", code, got)
 	}
 }
@@ -221,7 +221,7 @@ func TestTheRowSaysAnAgentHasThePane(t *testing.T) {
 	}
 
 	offWindow(t, a, "the window to answer the agent", func() error {
-		_, err := c.Use(code)
+		_, err := firstOf(c.Use(code))
 		return err
 	})
 	waitFor(t, a, "the row to say an agent is working here", func() bool {
@@ -494,7 +494,7 @@ func TestHandingAPaneOverShowsTheCodeAndCopiesThePrompt(t *testing.T) {
 	f := handoverDialog(t, a, pane)
 	drawsEveryLine(t, a, f)
 	drawsEveryButton(t, a, f)
-	code := a.agents.of(pane).code
+	code := a.agents.code()
 	// The code is on the dialog the user is already looking at.
 	if drawn := strings.Join(drawnLines(a, f), "\n"); !strings.Contains(drawn, code) {
 		t.Errorf("the hand-over dialog never shows the code:\n%s", drawn)
@@ -584,7 +584,7 @@ func TestCopyingThePromptWithoutAPathSaysSo(t *testing.T) {
 	}
 	// And the prompt is on the clipboard anyway: it is worth pasting.
 	waitFor(t, a, "the prompt to reach the clipboard", func() bool {
-		return strings.Contains(a.copiedText(), a.agents.of(pane).code)
+		return strings.Contains(a.copiedText(), a.agents.code())
 	})
 }
 
@@ -702,7 +702,7 @@ func TestTheHandoverDialogWritesForThePickedAgentAndRemembersIt(t *testing.T) {
 	fieldSays(t, f, "Agent", hostCodex)
 	pressButton(t, a, f, "Copy the prompt")
 
-	code := a.agents.of(pane).code
+	code := a.agents.code()
 	want := handoverPrompt(hostNamed(hostCodex), code, exeHere(t))
 	waitFor(t, a, "the prompt for Codex to reach the clipboard",
 		func() bool { return a.copiedText() == want })
@@ -753,8 +753,10 @@ func TestTakingAPaneBackWhileAnAgentIsAskingComesBack(t *testing.T) {
 	withPanel(t, a)
 	pane, code, c := handedOver(t, a)
 
+	var got agent.Pane
 	offWindow(t, a, "the window to answer the agent", func() error {
-		_, err := c.Use(code)
+		var err error
+		got, err = firstOf(c.Use(code))
 		return err
 	})
 
@@ -763,7 +765,7 @@ func TestTakingAPaneBackWhileAnAgentIsAskingComesBack(t *testing.T) {
 	asking := make(chan struct{})
 	go func() {
 		close(asking)
-		_, _, _ = c.Wait("1", 0, agent.Until{QuietMS: 60000, TimeoutMS: 60000})
+		_, _, _ = c.Wait(got.ID, 0, agent.Until{QuietMS: 60000, TimeoutMS: 60000})
 	}()
 	<-asking
 	waitUntil(t, "work to be queued for the window", func() bool { return a.pump.pending() > 0 })
@@ -794,7 +796,7 @@ func TestHandingAPaneOverAgainShutsOutTheAgentThatHadIt(t *testing.T) {
 	var had agent.Pane
 	offWindow(t, a, "the window to answer the agent", func() error {
 		var err error
-		had, err = c.Use(code)
+		had, err = firstOf(c.Use(code))
 		return err
 	})
 
@@ -807,17 +809,17 @@ func TestHandingAPaneOverAgainShutsOutTheAgentThatHadIt(t *testing.T) {
 		t.Fatalf("hand it over again: %v", err)
 	}
 	again := a.agents.of(pane)
-	if again.code == code {
+	if a.agents.code() == code {
 		t.Fatal("it handed out the same code again")
 	}
-	if again.id == had.ID {
-		t.Fatal("the new handover has the name the old one had")
+	if again.name() == had.ID {
+		t.Fatal("the new share gave the pane the name the old one had")
 	}
 
 	// The old agent is holding a name that no longer means anything.
 	// Its connection was closed with the listener, so it reconnects the
 	// way anything that lost a connection would.
-	old, err := agent.Dial(again.code)
+	old, err := agent.Dial(a.agents.code())
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}
@@ -911,8 +913,7 @@ func TestTakingOnePaneBackWithAnotherStillOut(t *testing.T) {
 		}
 	}
 
-	first := a.agents.of(panes[0])
-	c, err := agent.Dial(first.code)
+	c, err := agent.Dial(a.agents.code())
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}
@@ -921,7 +922,7 @@ func TestTakingOnePaneBackWithAnotherStillOut(t *testing.T) {
 	var had agent.Pane
 	offWindow(t, a, "the window to answer the agent", func() error {
 		var err error
-		had, err = c.Use(first.code)
+		had, err = firstOf(c.Use(a.agents.code()))
 		return err
 	})
 
@@ -1251,7 +1252,7 @@ func TestAnAgentSeesTheCursorAndTheAlternateScreen(t *testing.T) {
 	var got agent.Pane
 	offWindow(t, a, "the window to answer the agent", func() error {
 		var err error
-		got, err = c.Use(code)
+		got, err = firstOf(c.Use(code))
 		return err
 	})
 
@@ -1307,7 +1308,7 @@ func TestTwoReadsOfAlmostTheSameLengthRenderOnce(t *testing.T) {
 	var got agent.Pane
 	offWindow(t, a, "the window to answer the agent", func() error {
 		var err error
-		got, err = c.Use(code)
+		got, err = firstOf(c.Use(code))
 		return err
 	})
 
@@ -1374,7 +1375,7 @@ func TestAReadAfterAResizeIsOfTheScreenAsItIsNow(t *testing.T) {
 	var got agent.Pane
 	offWindow(t, a, "the window to answer the agent", func() error {
 		var err error
-		got, err = c.Use(code)
+		got, err = firstOf(c.Use(code))
 		return err
 	})
 
@@ -1592,7 +1593,7 @@ func TestTheHandoverDialogDoesBothInOneVisit(t *testing.T) {
 	pane := onlyPaneOn(t, a)
 
 	f := handoverDialog(t, a, pane)
-	code := a.agents.of(pane).code
+	code := a.agents.code()
 	drawsEveryLine(t, a, f)
 	if drawn := strings.Join(drawnLines(a, f), "\n"); !strings.Contains(drawn, code) {
 		t.Errorf("the first dialog never shows the code:\n%s", drawn)
@@ -1616,7 +1617,7 @@ func TestTheHandoverDialogDoesBothInOneVisit(t *testing.T) {
 	}
 
 	// Still the one hand-over, with the one code.
-	if h := a.agents.of(pane); h == nil || h.code != code {
+	if h := a.agents.of(pane); h == nil || h.in.code != code {
 		t.Errorf("the pane is handed over as %+v, want the code it started with", h)
 	}
 }
@@ -1636,7 +1637,7 @@ func TestALooksScreenAndCursorComeFromTheSameMoment(t *testing.T) {
 	var got agent.Pane
 	offWindow(t, a, "the window to answer the agent", func() error {
 		var err error
-		got, err = c.Use(code)
+		got, err = firstOf(c.Use(code))
 		return err
 	})
 
@@ -1713,7 +1714,7 @@ func TestAnAgentIsToldWhatTheShellSaidAboutTheCommand(t *testing.T) {
 	var got agent.Pane
 	offWindow(t, a, "the window to answer the agent", func() error {
 		var err error
-		got, err = c.Use(code)
+		got, err = firstOf(c.Use(code))
 		return err
 	})
 
@@ -1778,7 +1779,7 @@ func TestAnAgentIsToldWhenThePromptItTypedAtComesBack(t *testing.T) {
 	var got agent.Pane
 	offWindow(t, a, "the window to answer the agent", func() error {
 		var err error
-		got, err = c.Use(code)
+		got, err = firstOf(c.Use(code))
 		return err
 	})
 
@@ -1850,7 +1851,7 @@ func TestAWaitDoesNotEndOnOutputThatReadsLikeThePrompt(t *testing.T) {
 	var got agent.Pane
 	offWindow(t, a, "the window to answer the agent", func() error {
 		var err error
-		got, err = c.Use(code)
+		got, err = firstOf(c.Use(code))
 		return err
 	})
 
@@ -1914,7 +1915,7 @@ func TestACommandTypedInTwoCallsKeepsThePromptItWasTypedAt(t *testing.T) {
 	var got agent.Pane
 	offWindow(t, a, "the window to answer the agent", func() error {
 		var err error
-		got, err = c.Use(code)
+		got, err = firstOf(c.Use(code))
 		return err
 	})
 
@@ -1959,7 +1960,7 @@ func TestAnAgentReadsWhatTheLastCommandPrinted(t *testing.T) {
 	var got agent.Pane
 	offWindow(t, a, "the window to answer the agent", func() error {
 		var err error
-		got, err = c.Use(code)
+		got, err = firstOf(c.Use(code))
 		return err
 	})
 
@@ -2020,7 +2021,7 @@ func TestAnAgentReadsEverythingSinceItTypedOnASilentShell(t *testing.T) {
 	var got agent.Pane
 	offWindow(t, a, "the window to answer the agent", func() error {
 		var err error
-		got, err = c.Use(code)
+		got, err = firstOf(c.Use(code))
 		return err
 	})
 
@@ -2082,7 +2083,7 @@ func TestReadingTheOutputOfAFullScreenProgramIsRefused(t *testing.T) {
 	var got agent.Pane
 	offWindow(t, a, "the window to answer the agent", func() error {
 		var err error
-		got, err = c.Use(code)
+		got, err = firstOf(c.Use(code))
 		return err
 	})
 
@@ -2112,7 +2113,7 @@ func TestReadingFewerLinesOfTheOutputSaysWhatIsMissing(t *testing.T) {
 	var got agent.Pane
 	offWindow(t, a, "the window to answer the agent", func() error {
 		var err error
-		got, err = c.Use(code)
+		got, err = firstOf(c.Use(code))
 		return err
 	})
 
@@ -2162,7 +2163,7 @@ func TestAStaleMarkIsNotTakenForTheAgentsOwnCommand(t *testing.T) {
 	var got agent.Pane
 	offWindow(t, a, "the window to answer the agent", func() error {
 		var err error
-		got, err = c.Use(code)
+		got, err = firstOf(c.Use(code))
 		return err
 	})
 
@@ -2208,7 +2209,7 @@ func TestReadingTheOutputLeavesTheNextReadOfThePaneWhole(t *testing.T) {
 	var got agent.Pane
 	offWindow(t, a, "the window to answer the agent", func() error {
 		var err error
-		got, err = c.Use(code)
+		got, err = firstOf(c.Use(code))
 		return err
 	})
 
@@ -2242,7 +2243,7 @@ func TestReadingTheOutputAfterAClearStartsAtTheClear(t *testing.T) {
 	var got agent.Pane
 	offWindow(t, a, "the window to answer the agent", func() error {
 		var err error
-		got, err = c.Use(code)
+		got, err = firstOf(c.Use(code))
 		return err
 	})
 
@@ -2292,7 +2293,7 @@ func TestAClearHidesWhatCameBeforeItFromTheAgent(t *testing.T) {
 	var got agent.Pane
 	offWindow(t, a, "the window to answer the agent", func() error {
 		var err error
-		got, err = c.Use(code)
+		got, err = firstOf(c.Use(code))
 		return err
 	})
 
@@ -2373,7 +2374,7 @@ func TestAClearCutsThePaneOffAtExactlyTheClear(t *testing.T) {
 	var got agent.Pane
 	offWindow(t, a, "the window to answer the agent", func() error {
 		var err error
-		got, err = c.Use(code)
+		got, err = firstOf(c.Use(code))
 		return err
 	})
 
@@ -2473,7 +2474,7 @@ func TestReadOnlyRefusesTheAgentsTyping(t *testing.T) {
 	var got agent.Pane
 	offWindow(t, a, "the window to answer the agent", func() error {
 		var err error
-		got, err = c.Use(code)
+		got, err = firstOf(c.Use(code))
 		return err
 	})
 	if got.May.ReadOnly {
@@ -2509,7 +2510,7 @@ func TestReadOnlyRefusesTheAgentsTyping(t *testing.T) {
 	var again agent.Pane
 	offWindow(t, a, "the window to answer the agent", func() error {
 		var err error
-		again, err = c.Use(code)
+		again, err = firstOf(c.Use(code))
 		return err
 	})
 	if !again.May.ReadOnly {
@@ -2528,7 +2529,7 @@ func TestReadingAboveAClearIsABoxTheUserTicks(t *testing.T) {
 	var got agent.Pane
 	offWindow(t, a, "the window to answer the agent", func() error {
 		var err error
-		got, err = c.Use(code)
+		got, err = firstOf(c.Use(code))
 		return err
 	})
 
@@ -2629,7 +2630,7 @@ func TestAnAgentRestartsAPaneWhenTheBoxIsTicked(t *testing.T) {
 	var got agent.Pane
 	offWindow(t, a, "the window to answer the agent", func() error {
 		var err error
-		got, err = c.Use(code)
+		got, err = firstOf(c.Use(code))
 		return err
 	})
 	if got.May.Restart {
@@ -2696,7 +2697,7 @@ func TestAnAgentOpensASecondPaneWhenTheBoxIsTicked(t *testing.T) {
 	var got agent.Pane
 	offWindow(t, a, "the window to answer the agent", func() error {
 		var err error
-		got, err = c.Use(code)
+		got, err = firstOf(c.Use(code))
 		return err
 	})
 
@@ -2766,7 +2767,7 @@ func TestAnAgentDoesNotOpenAPaneOnAMachineNobodyIsConnectedTo(t *testing.T) {
 	}
 	h := a.agents.of(pane)
 	h.may.OpenMore = true
-	c, err := agent.Dial(h.code)
+	c, err := agent.Dial(h.in.code)
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}
@@ -2775,7 +2776,7 @@ func TestAnAgentDoesNotOpenAPaneOnAMachineNobodyIsConnectedTo(t *testing.T) {
 	var got agent.Pane
 	offWindow(t, a, "the window to answer the agent", func() error {
 		var err error
-		got, err = c.Use(h.code)
+		got, err = firstOf(c.Use(h.in.code))
 		return err
 	})
 
@@ -2813,7 +2814,7 @@ func TestAnAgentDoesNotRestartAPaneOnAMachineNobodyIsConnectedTo(t *testing.T) {
 	}
 	h := a.agents.of(pane)
 	h.may.Restart = true
-	c, err := agent.Dial(h.code)
+	c, err := agent.Dial(h.in.code)
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}
@@ -2822,7 +2823,7 @@ func TestAnAgentDoesNotRestartAPaneOnAMachineNobodyIsConnectedTo(t *testing.T) {
 	var got agent.Pane
 	offWindow(t, a, "the window to answer the agent", func() error {
 		var err error
-		got, err = c.Use(h.code)
+		got, err = firstOf(c.Use(h.in.code))
 		return err
 	})
 	endTheShell(t, a, 0, pane)
@@ -2859,7 +2860,7 @@ func TestUntickingABoxReachesThePanesTheAgentOpened(t *testing.T) {
 	var got agent.Pane
 	offWindow(t, a, "the window to answer the agent", func() error {
 		var err error
-		got, err = c.Use(code)
+		got, err = firstOf(c.Use(code))
 		return err
 	})
 	f := awaitModal[*ui.Form](t, a, "the hand-over dialog",
@@ -2914,7 +2915,7 @@ func TestAnAgentCannotOpenPanesWithoutEnd(t *testing.T) {
 	var got agent.Pane
 	offWindow(t, a, "the window to answer the agent", func() error {
 		var err error
-		got, err = c.Use(code)
+		got, err = firstOf(c.Use(code))
 		return err
 	})
 	f := awaitModal[*ui.Form](t, a, "the hand-over dialog",
@@ -2958,7 +2959,7 @@ func TestReadingAboveAClearReachesTheLastCommandsOutput(t *testing.T) {
 	var got agent.Pane
 	offWindow(t, a, "the window to answer the agent", func() error {
 		var err error
-		got, err = c.Use(code)
+		got, err = firstOf(c.Use(code))
 		return err
 	})
 
@@ -3007,7 +3008,7 @@ func TestTheAgentAsksTheUserToTypeASecret(t *testing.T) {
 	var got agent.Pane
 	offWindow(t, a, "the window to answer the agent", func() error {
 		var err error
-		got, err = c.Use(code)
+		got, err = firstOf(c.Use(code))
 		return err
 	})
 
@@ -3101,7 +3102,7 @@ func TestTheAgentIsToldWhenNobodyTypesTheSecret(t *testing.T) {
 	var got agent.Pane
 	offWindow(t, a, "the window to answer the agent", func() error {
 		var err error
-		got, err = c.Use(code)
+		got, err = firstOf(c.Use(code))
 		return err
 	})
 
@@ -3182,7 +3183,7 @@ func TestAnAgentCannotAnswerItsOwnAskForASecret(t *testing.T) {
 	var got agent.Pane
 	offWindow(t, a, "the window to answer the agent", func() error {
 		var err error
-		got, err = c.Use(code)
+		got, err = firstOf(c.Use(code))
 		return err
 	})
 	f := awaitModal[*ui.Form](t, a, "the hand-over dialog",
@@ -3207,7 +3208,7 @@ func TestAnAgentCannotAnswerItsOwnAskForASecret(t *testing.T) {
 	var also agent.Pane
 	offWindow(t, a, "the window to answer the agent", func() error {
 		var err error
-		also, err = typing.Use(code)
+		also, err = firstOf(typing.Use(code))
 		return err
 	})
 	offWindow(t, a, "the window to take the keys", func() error {
@@ -3251,7 +3252,7 @@ func askedForASecret(t *testing.T, a *testApp, wait time.Duration) (
 	var got agent.Pane
 	offWindow(t, a, "the window to answer the agent", func() error {
 		var err error
-		got, err = c.Use(code)
+		got, err = firstOf(c.Use(code))
 		return err
 	})
 	f := awaitModal[*ui.Form](t, a, "the hand-over dialog",
@@ -3317,10 +3318,10 @@ func TestASecondAskForASecretIsRefused(t *testing.T) {
 	a := newTestApp(t, 90, 30)
 	withDialogs(t, a)
 	withPanel(t, a)
-	pane, _, id, typed := askedForASecret(t, a, 3*time.Second)
+	pane, _, _, typed := askedForASecret(t, a, 3*time.Second)
 
 	// A second agent, on the same code, asks as well.
-	code := a.agents.named(id).code
+	code := a.agents.code()
 	other, err := agent.Dial(code)
 	if err != nil {
 		t.Fatalf("dial: %v", err)
@@ -3329,7 +3330,7 @@ func TestASecondAskForASecretIsRefused(t *testing.T) {
 	var also agent.Pane
 	offWindow(t, a, "the window to answer the agent", func() error {
 		var err error
-		also, err = other.Use(code)
+		also, err = firstOf(other.Use(code))
 		return err
 	})
 
@@ -3395,7 +3396,7 @@ func TestReadOnlyRefusesAnAskForASecret(t *testing.T) {
 	var got agent.Pane
 	offWindow(t, a, "the window to answer the agent", func() error {
 		var err error
-		got, err = c.Use(code)
+		got, err = firstOf(c.Use(code))
 		return err
 	})
 	f := awaitModal[*ui.Form](t, a, "the hand-over dialog",
@@ -3434,7 +3435,7 @@ func TestOpeningAnotherPaneIsRefusedOnACommandPane(t *testing.T) {
 	}
 	h := a.agents.of(pane)
 	h.may.OpenMore = true
-	c, err := agent.Dial(h.code)
+	c, err := agent.Dial(h.in.code)
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}
@@ -3443,7 +3444,7 @@ func TestOpeningAnotherPaneIsRefusedOnACommandPane(t *testing.T) {
 	var got agent.Pane
 	offWindow(t, a, "the window to answer the agent", func() error {
 		var err error
-		got, err = c.Use(h.code)
+		got, err = firstOf(c.Use(h.in.code))
 		return err
 	})
 
@@ -3476,7 +3477,7 @@ func TestTheHandoverDialogCopiesTheCodeOnItsOwn(t *testing.T) {
 	pane := onlyPaneOn(t, a)
 
 	f := handoverDialog(t, a, pane)
-	code := a.agents.of(pane).code
+	code := a.agents.code()
 	chord := copyChordOf(t, a)
 	sendKey(t, a, press(chord.Key, chord.Mods))
 
@@ -3488,13 +3489,13 @@ func TestTheHandoverDialogCopiesTheCodeOnItsOwn(t *testing.T) {
 	}
 }
 
-// The user hands two panes to one agent, with a code each, and the agent
-// holds both.
+// The user puts two panes in one share, and one code reaches both.
 //
-// A hand-over is per pane. Nothing says an agent gets one: the user
-// hands over as many as they mean to, each with its own code and its own
-// boxes, and list_panes is where the agent finds what it has.
-func TestAUserHandsTwoPanesToOneAgent(t *testing.T) {
+// A share is what a code names. The user adds panes to it, each with its
+// own tick boxes, and the agent uses the code once: what it holds is
+// every pane in the share, and list_panes is how it learns what that is
+// now.
+func TestAUserSharesTwoPanesUnderOneCode(t *testing.T) {
 	a := newTestApp(t, 90, 30)
 	withDialogs(t, a)
 	withPanel(t, a)
@@ -3512,40 +3513,114 @@ func TestAUserHandsTwoPanesToOneAgent(t *testing.T) {
 		t.Fatal("the window did not open a second pane")
 	}
 
-	// Each pane handed over on its own, and the second one read only.
-	codes := map[*term.Terminal]string{}
-	for _, pane := range []*term.Terminal{first, second} {
-		f := handoverDialog(t, a, pane)
-		if pane == second {
-			tickBox(t, a, f, "Read only")
-		}
-		codes[pane] = a.agents.of(pane).code
-		pressButton(t, a, f, "Done")
+	// The first pane starts the share; the second joins it, read only.
+	f := handoverDialog(t, a, first)
+	pressButton(t, a, f, "Done")
+	code := a.agents.code()
+	if code == "" {
+		t.Fatal("sharing a pane made no code")
 	}
-	if codes[first] == codes[second] {
-		t.Fatal("the two panes were handed over with one code")
+	f = handoverDialog(t, a, second)
+	tickBox(t, a, f, "Read only")
+	pressButton(t, a, f, "Done")
+	if got := a.agents.code(); got != code {
+		t.Errorf("the second pane made a second code, %q", got)
 	}
 
-	// One agent, both codes: the same connection, because both panes are
-	// this window's.
-	c, err := agent.Dial(codes[first])
+	// One code, both panes.
+	c, err := agent.Dial(code)
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}
 	t.Cleanup(func() { _ = c.Close() })
-	named := map[*term.Terminal]agent.Pane{}
-	for _, pane := range []*term.Terminal{first, second} {
-		offWindow(t, a, "the window to answer the agent", func() error {
-			got, err := c.Use(codes[pane])
-			named[pane] = got
-			return err
-		})
+	var sh agent.Share
+	offWindow(t, a, "the window to answer the agent", func() error {
+		var err error
+		sh, err = c.Use(code)
+		return err
+	})
+	if len(sh.Panes) != 2 {
+		t.Fatalf("the code named %d panes, want 2", len(sh.Panes))
 	}
-	if named[first].ID == named[second].ID {
-		t.Fatalf("both panes are called %q", named[first].ID)
+	named := map[bool]agent.Pane{}
+	for _, p := range sh.Panes {
+		named[p.May.ReadOnly] = p
+	}
+	if named[true].ID == "" || named[false].ID == "" {
+		t.Fatalf("the boxes did not stay with their own panes: %+v", sh.Panes)
+	}
+	// Both names begin with the share, which is what keeps one share's
+	// panes out of another's reach.
+	for _, p := range sh.Panes {
+		if got, ok := agent.ShareOf(p.ID); !ok || got != sh.ID {
+			t.Errorf("pane %q is not named for share %d", p.ID, sh.ID)
+		}
 	}
 
-	// It holds both, and is told what each one allows.
+	// They are two panes, not one, and the boxes are each pane's own.
+	a.shells[0].out <- []byte("first pane")
+	waitFor(t, a, "the first pane to say something", func() bool {
+		return strings.Contains(paneText(first), "first pane")
+	})
+	if look := looked(t, a, c, named[false].ID); !strings.Contains(look.Screen, "first pane") {
+		t.Errorf("reading the pane that may be typed into gave:\n%s", look.Screen)
+	}
+	offWindow(t, a, "the window to take the keys", func() error {
+		return c.Send(named[false].ID, "ls\r", nil)
+	})
+	var failed error
+	offWindow(t, a, "the window to refuse the keys", func() error {
+		failed = c.Send(named[true].ID, "ls\r", nil)
+		return nil
+	})
+	if failed == nil {
+		t.Error("it typed into the pane shared to be read")
+	}
+}
+
+// A pane added while the agent works turns up the next time it asks.
+//
+// This is what a share is for: today's answer is not the answer for the
+// rest of the session, and the agent is told to ask again rather than to
+// hold the first list.
+func TestAPaneAddedWhileTheAgentWorksTurnsUp(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	first := onlyPaneOn(t, a)
+	f := handoverDialog(t, a, first)
+	pressButton(t, a, f, "Done")
+	code := a.agents.code()
+
+	c, err := agent.Dial(code)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	t.Cleanup(func() { _ = c.Close() })
+	var sh agent.Share
+	offWindow(t, a, "the window to answer the agent", func() error {
+		var err error
+		sh, err = c.Use(code)
+		return err
+	})
+	if len(sh.Panes) != 1 {
+		t.Fatalf("the share holds %d panes, want the one", len(sh.Panes))
+	}
+
+	// The user opens another pane and adds it, while the agent holds the
+	// code it already used.
+	if err := a.openTabHere(); err != nil {
+		t.Fatalf("open a second pane: %v", err)
+	}
+	var second *term.Terminal
+	for pane := range a.panes {
+		if pane != first {
+			second = pane
+		}
+	}
+	f = handoverDialog(t, a, second)
+	pressButton(t, a, f, "Done")
+
 	var listed []agent.Pane
 	offWindow(t, a, "the window to list the panes", func() error {
 		var err error
@@ -3553,34 +3628,57 @@ func TestAUserHandsTwoPanesToOneAgent(t *testing.T) {
 		return err
 	})
 	if len(listed) != 2 {
-		t.Fatalf("the agent was handed %d panes, want 2", len(listed))
+		t.Fatalf("the agent was told it has %d panes, want 2", len(listed))
 	}
-	if named[first].May.ReadOnly || !named[second].May.ReadOnly {
-		t.Errorf("the boxes did not stay with their own panes: %+v and %+v",
-			named[first].May, named[second].May)
+	// And it can work in the new one without using another code.
+	var added agent.Pane
+	for _, p := range listed {
+		if p.ID != sh.Panes[0].ID {
+			added = p
+		}
+	}
+	if look := looked(t, a, c, added.ID); look.Cols == 0 {
+		t.Errorf("the agent cannot read the pane that was added: %+v", look)
 	}
 
-	// And they are two panes, not one: what it types reaches the first
-	// and is refused on the second.
-	a.shells[0].out <- []byte("first pane")
-	waitFor(t, a, "the first pane to say something", func() bool {
-		return strings.Contains(paneText(first), "first pane")
-	})
-	if look := looked(t, a, c, named[first].ID); !strings.Contains(look.Screen, "first pane") {
-		t.Errorf("reading the first pane gave:\n%s", look.Screen)
+	// Taking it out again takes it off the list.
+	if err := a.takeBackPane(second); err != nil {
+		t.Fatalf("take it back: %v", err)
 	}
-	if look := looked(t, a, c, named[second].ID); strings.Contains(look.Screen, "first pane") {
-		t.Errorf("reading the second pane gave the first one:\n%s", look.Screen)
-	}
-	offWindow(t, a, "the window to take the keys", func() error {
-		return c.Send(named[first].ID, "ls\r", nil)
+	offWindow(t, a, "the window to list the panes", func() error {
+		var err error
+		listed, err = c.Panes()
+		return err
 	})
+	if len(listed) != 1 {
+		t.Fatalf("the agent was told it has %d panes, want the one left", len(listed))
+	}
+	if _, err := lookedAt(t, a, c, added.ID); err == nil {
+		t.Error("it still reads the pane the user took out of the share")
+	}
+}
+
+// lookedAt is a reading of a pane, and the failure when there is one.
+func lookedAt(t *testing.T, a *testApp, c *agent.Client, id string) (agent.Look, error) {
+	t.Helper()
+	var look agent.Look
 	var failed error
-	offWindow(t, a, "the window to refuse the keys", func() error {
-		failed = c.Send(named[second].ID, "ls\r", nil)
+	offWindow(t, a, "the window to answer the agent", func() error {
+		look, failed = c.Read(id, 0)
 		return nil
 	})
-	if failed == nil {
-		t.Error("it typed into the pane handed over to be read")
+	return look, failed
+}
+
+// firstOf is the first pane of a share, for a test about one pane. A
+// share with nothing in it is a failure of the test's own setup, and
+// says so through the error the caller already checks.
+func firstOf(sh agent.Share, err error) (agent.Pane, error) {
+	if err != nil {
+		return agent.Pane{}, err
 	}
+	if len(sh.Panes) == 0 {
+		return agent.Pane{}, fmt.Errorf("share %d has no panes in it", sh.ID)
+	}
+	return sh.Panes[0], nil
 }

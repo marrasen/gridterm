@@ -78,14 +78,14 @@ type fakePanes struct {
 	letGo   chan struct{}
 }
 
-func (f *fakePanes) Use(code string) (Pane, error) {
+func (f *fakePanes) Use(code string) ([]Pane, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if code != f.code {
-		return Pane{}, errors.New("that code does not name a pane this window has handed over")
+		return nil, errors.New("that code does not name a share this window is offering")
 	}
 	f.open = true
-	return Pane{ID: "pane-1", Label: "bash on margit", Cols: 80, Rows: 24, May: f.may}, nil
+	return []Pane{{ID: "1.1", Label: "bash on margit", Cols: 80, Rows: 24, May: f.may}}, nil
 }
 
 func (f *fakePanes) List() ([]Pane, error) {
@@ -94,13 +94,13 @@ func (f *fakePanes) List() ([]Pane, error) {
 	if !f.open {
 		return nil, nil
 	}
-	return []Pane{{ID: "pane-1", Label: "bash on margit", Cols: 80, Rows: 24}}, nil
+	return []Pane{{ID: "1.1", Label: "bash on margit", Cols: 80, Rows: 24}}, nil
 }
 
 func (f *fakePanes) Read(id string, lines int) (Screen, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if !f.open || id != "pane-1" {
+	if !f.open || id != "1.1" {
 		return Screen{}, errors.New("that is not a pane you have been handed")
 	}
 	f.lines = lines
@@ -120,7 +120,7 @@ func (f *fakePanes) look() Screen {
 func (f *fakePanes) Output(id string, most int) (Screen, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if !f.open || id != "pane-1" {
+	if !f.open || id != "1.1" {
 		return Screen{}, errors.New("that is not a pane you have been handed")
 	}
 	f.mostOutput = most
@@ -136,7 +136,7 @@ func (f *fakePanes) Output(id string, most int) (Screen, error) {
 func (f *fakePanes) Secret(id, what string, wait time.Duration) (bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if !f.open || id != "pane-1" {
+	if !f.open || id != "1.1" {
 		return false, errors.New("that is not a pane you have been handed")
 	}
 	f.askedFor, f.waitedFor = what, wait
@@ -146,33 +146,33 @@ func (f *fakePanes) Secret(id, what string, wait time.Duration) (bool, error) {
 func (f *fakePanes) Restart(id string) (Pane, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if !f.open || id != "pane-1" {
+	if !f.open || id != "1.1" {
 		return Pane{}, errors.New("that is not a pane you have been handed")
 	}
 	if !f.may.Restart {
 		return Pane{}, errors.New("this hand-over does not let you restart the pane")
 	}
 	f.restarted++
-	return Pane{ID: "pane-1", Label: "bash on margit", Cols: 80, Rows: 24, May: f.may}, nil
+	return Pane{ID: "1.1", Label: "bash on margit", Cols: 80, Rows: 24, May: f.may}, nil
 }
 
 func (f *fakePanes) Open(id string) (Pane, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if !f.open || id != "pane-1" {
+	if !f.open || id != "1.1" {
 		return Pane{}, errors.New("that is not a pane you have been handed")
 	}
 	if !f.may.OpenMore {
 		return Pane{}, errors.New("this hand-over does not let you open another pane")
 	}
 	f.opened++
-	return Pane{ID: "pane-2", Label: "bash on margit", Cols: 80, Rows: 24, May: f.may}, nil
+	return Pane{ID: "1.2", Label: "bash on margit", Cols: 80, Rows: 24, May: f.may}, nil
 }
 
 func (f *fakePanes) Send(id, text string, keys []string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if !f.open || id != "pane-1" {
+	if !f.open || id != "1.1" {
 		return errors.New("that is not a pane you have been handed")
 	}
 	f.typed += text
@@ -183,7 +183,7 @@ func (f *fakePanes) Send(id, text string, keys []string) error {
 func (f *fakePanes) Wait(id string, lines int, until Until) (Screen, Ending, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if !f.open || id != "pane-1" {
+	if !f.open || id != "1.1" {
 		return Screen{}, Ending{}, errors.New("that is not a pane you have been handed")
 	}
 	f.lines = lines
@@ -403,9 +403,9 @@ func TestWithoutACodeNothingWorks(t *testing.T) {
 	panes := &fakePanes{code: "gt1-2222-abc"}
 	answers := talk(t, panes,
 		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":`+
-			`{"name":"read_pane","arguments":{"pane":"pane-1"}}}`,
+			`{"name":"read_pane","arguments":{"pane":"1.1"}}}`,
 		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":`+
-			`{"name":"send_keys","arguments":{"pane":"pane-1","text":"rm -rf /\r"}}}`,
+			`{"name":"send_keys","arguments":{"pane":"1.1","text":"rm -rf /\r"}}}`,
 		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":`+
 			`{"name":"list_panes","arguments":{}}}`)
 
@@ -444,7 +444,7 @@ func TestAWrongCodeIsAnAnswerNotACrash(t *testing.T) {
 	if !failed {
 		t.Errorf("a wrong code was taken: %q", text)
 	}
-	if !strings.Contains(text, "does not name a pane") {
+	if !strings.Contains(text, "does not name a share") {
 		t.Errorf("it said %q", text)
 	}
 }
@@ -456,9 +456,9 @@ func TestTypingGoesInExactlyAsGiven(t *testing.T) {
 		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":`+
 			`{"name":"use_session_code","arguments":{"code":"gt1-2222-abc"}}}`,
 		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":`+
-			`{"name":"send_keys","arguments":{"pane":"pane-1","text":"uptime\r"}}}`,
+			`{"name":"send_keys","arguments":{"pane":"1.1","text":"uptime\r"}}}`,
 		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":`+
-			`{"name":"send_keys","arguments":{"pane":"pane-1","text":"\u0003"}}}`)
+			`{"name":"send_keys","arguments":{"pane":"1.1","text":"\u0003"}}}`)
 
 	panes.mu.Lock()
 	defer panes.mu.Unlock()
@@ -474,7 +474,7 @@ func TestWaitingSaysWhenItGaveUp(t *testing.T) {
 		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":`+
 			`{"name":"use_session_code","arguments":{"code":"gt1-2222-abc"}}}`,
 		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":`+
-			`{"name":"wait_for","arguments":{"pane":"pane-1","contains":"done",`+
+			`{"name":"wait_for","arguments":{"pane":"1.1","contains":"done",`+
 			`"quiet_ms":250,"timeout_ms":9000}}}`)
 
 	panes.mu.Lock()
@@ -503,7 +503,7 @@ func TestAFinishedProgramIsSaidPlainly(t *testing.T) {
 		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":`+
 			`{"name":"use_session_code","arguments":{"code":"gt1-2222-abc"}}}`,
 		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":`+
-			`{"name":"read_pane","arguments":{"pane":"pane-1"}}}`)
+			`{"name":"read_pane","arguments":{"pane":"1.1"}}}`)
 
 	text, _ := textOf(t, answers[1])
 	if !strings.Contains(text, "has finished") {
@@ -818,7 +818,7 @@ func TestAQuestionIsAnsweredWhileAWaitIsStillWaiting(t *testing.T) {
 
 	// A wait that will not come back until this test lets it.
 	ask(`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":` +
-		`{"name":"wait_for","arguments":{"pane":"pane-1"}}}`)
+		`{"name":"wait_for","arguments":{"pane":"1.1"}}}`)
 	<-panes.waiting
 
 	// And a question asked while it is still waiting.
@@ -1002,7 +1002,7 @@ func TestAScreenSaysWhatIsKnownAboutTheCommand(t *testing.T) {
 				`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":`+
 					`{"name":"use_session_code","arguments":{"code":"gt1-2222-abc"}}}`,
 				`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":`+
-					`{"name":"read_pane","arguments":{"pane":"pane-1"}}}`)
+					`{"name":"read_pane","arguments":{"pane":"1.1"}}}`)
 
 			text, failed := textOf(t, answers[1])
 			if failed {
@@ -1033,7 +1033,7 @@ func TestAWaitSaysWhyItEnded(t *testing.T) {
 		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":`+
 			`{"name":"use_session_code","arguments":{"code":"gt1-2222-abc"}}}`,
 		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":`+
-			`{"name":"wait_for","arguments":{"pane":"pane-1"}}}`)
+			`{"name":"wait_for","arguments":{"pane":"1.1"}}}`)
 
 	text, failed := textOf(t, answers[1])
 	if failed {
@@ -1058,7 +1058,7 @@ func TestReadingTheOutputOfTheLastCommand(t *testing.T) {
 		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":`+
 			`{"name":"use_session_code","arguments":{"code":"gt1-2222-abc"}}}`,
 		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":`+
-			`{"name":"read_output","arguments":{"pane":"pane-1"}}}`)
+			`{"name":"read_output","arguments":{"pane":"1.1"}}}`)
 
 	text, failed := textOf(t, answers[1])
 	if failed {
@@ -1092,7 +1092,7 @@ func TestReadingTheOutputWithNoBoundarySaysSo(t *testing.T) {
 		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":`+
 			`{"name":"use_session_code","arguments":{"code":"gt1-2222-abc"}}}`,
 		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":`+
-			`{"name":"read_output","arguments":{"pane":"pane-1"}}}`)
+			`{"name":"read_output","arguments":{"pane":"1.1"}}}`)
 
 	text, failed := textOf(t, answers[1])
 	if !failed {
@@ -1118,7 +1118,7 @@ func TestReadingTheOutputTakesALineCount(t *testing.T) {
 			`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":`+
 				`{"name":"use_session_code","arguments":{"code":"gt1-2222-abc"}}}`,
 			`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":`+
-				`{"name":"read_output","arguments":{"pane":"pane-1"`+tc.asked+`}}}`)
+				`{"name":"read_output","arguments":{"pane":"1.1"`+tc.asked+`}}}`)
 		panes.mu.Lock()
 		most := panes.mostOutput
 		panes.mu.Unlock()
@@ -1147,7 +1147,7 @@ func TestTheAnswerToAnAskForASecretSaysWhatHappened(t *testing.T) {
 			`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":`+
 				`{"name":"use_session_code","arguments":{"code":"gt1-2222-abc"}}}`,
 			`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":`+
-				`{"name":"ask_for_secret","arguments":{"pane":"pane-1",`+
+				`{"name":"ask_for_secret","arguments":{"pane":"1.1",`+
 				`"what":"the sudo password","wait_ms":4000}}}`)
 
 		text, failed := textOf(t, answers[1])
@@ -1183,7 +1183,7 @@ func TestAnAskForASecretSaysWhatItIsFor(t *testing.T) {
 		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":`+
 			`{"name":"use_session_code","arguments":{"code":"gt1-2222-abc"}}}`,
 		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":`+
-			`{"name":"ask_for_secret","arguments":{"pane":"pane-1","what":"  "}}}`)
+			`{"name":"ask_for_secret","arguments":{"pane":"1.1","what":"  "}}}`)
 
 	if answers[1].Error == nil {
 		text, _ := textOf(t, answers[1])

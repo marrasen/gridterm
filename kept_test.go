@@ -327,7 +327,7 @@ func TestAHandoverOutlivesTheShell(t *testing.T) {
 	var got agent.Pane
 	offWindow(t, a, "the window to answer the agent", func() error {
 		var err error
-		got, err = c.Use(code)
+		got, err = firstOf(c.Use(code))
 		return err
 	})
 	a.shells[0].out <- []byte("the last thing it said\r\n")
@@ -613,7 +613,7 @@ func TestAHandoverOnARemotePaneOutlivesTheConnection(t *testing.T) {
 	if h == nil {
 		t.Fatal("the window did not record the handover")
 	}
-	c, err := agent.Dial(h.code)
+	c, err := agent.Dial(a.agents.code())
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}
@@ -621,7 +621,7 @@ func TestAHandoverOnARemotePaneOutlivesTheConnection(t *testing.T) {
 	var got agent.Pane
 	offWindow(t, a, "the window to answer the agent", func() error {
 		var err error
-		got, err = c.Use(h.code)
+		got, err = firstOf(c.Use(a.agents.code()))
 		return err
 	})
 
@@ -640,7 +640,7 @@ func TestAHandoverOnARemotePaneOutlivesTheConnection(t *testing.T) {
 	var again agent.Pane
 	offWindow(t, a, "the window to answer the agent again", func() error {
 		var err error
-		again, err = c.Use(h.code)
+		again, err = firstOf(c.Use(a.agents.code()))
 		return err
 	})
 	if again.ID != got.ID {
@@ -847,7 +847,7 @@ func TestAPaneWhoseProgramHasEndedCanBeHandedOver(t *testing.T) {
 	if h == nil {
 		t.Fatal("the window did not record the handover")
 	}
-	c, err := agent.Dial(h.code)
+	c, err := agent.Dial(a.agents.code())
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}
@@ -856,7 +856,7 @@ func TestAPaneWhoseProgramHasEndedCanBeHandedOver(t *testing.T) {
 	var got agent.Pane
 	offWindow(t, a, "the window to answer the agent", func() error {
 		var err error
-		got, err = c.Use(h.code)
+		got, err = firstOf(c.Use(a.agents.code()))
 		return err
 	})
 	if !got.Ended {

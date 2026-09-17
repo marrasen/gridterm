@@ -67,16 +67,17 @@ func Dial(code string) (*Client, error) {
 	return c, nil
 }
 
-// Use gives the window a code and gets back the pane it names.
-func (c *Client) Use(code string) (Pane, error) {
+// Use gives the window a code and gets back the share it names, with the
+// panes in it.
+func (c *Client) Use(code string) (Share, error) {
 	got, err := c.say(ask{Do: "use", Code: code})
 	if err != nil {
-		return Pane{}, err
+		return Share{}, err
 	}
-	if got.Pane == nil {
-		return Pane{}, errors.New("agent: the window named no pane")
+	if got.Share == nil {
+		return Share{}, errors.New("agent: the window named no share")
 	}
-	return *got.Pane, nil
+	return *got.Share, nil
 }
 
 // Panes is what this agent has been handed.

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -17,33 +18,87 @@ import (
 	"github.com/marrasen/gridterm/ui/term"
 )
 
-// agents are the panes handed to agents and the listener that lets
-// those agents in.
+// agents are the panes shared with an agent and the listener that lets
+// agents in.
 //
 // Only the goroutine that draws touches it.
 type agents struct {
-	// server is nil while nothing has been handed over. Nothing listens
-	// until the user asks.
+	// server is nil while nothing is shared. Nothing listens until the
+	// user asks.
 	server *agent.Server
 
-	// by says which panes the user has handed to an agent, and the code
-	// that names each. The codes live here and nowhere else.
+	// open is the share the user is building, and nil when nothing is
+	// shared. One at a time: a second would mean the menu asking which
+	// share a pane joins.
+	open *share
+
+	// by says which panes are in that share. It is the share's own map,
+	// kept here as well so that a pane's row can ask about itself.
 	by map[*term.Terminal]*handover
 
-	// next is the last name given to a handover. It only goes up, so a
-	// name never comes round again and an agent holding an old one is
-	// holding nothing.
+	// next is the last name given to a share and to a pane in one. It
+	// only goes up, so a name never comes round again and an agent
+	// holding an old one is holding nothing.
 	next uint64
 
-	// remembered is which agent the hand-over dialog opens on, kept
-	// between runs. Nil until the window is given its settings.
+	// remembered is which agent the share dialog opens on, kept between
+	// runs. Nil until the window is given its settings.
 	remembered *settings.Settings
 }
 
-// newAgents builds an agents with nothing listening and nothing handed
-// over.
+// share is one code and the panes it reaches.
+//
+// The code is the whole of what lets anything in. It is made when the
+// share starts, it lives here and nowhere else, and the share ending
+// throws it away. Panes come and go while an agent works: it finds what
+// it has by asking, and what it asks is answered from here.
+type share struct {
+	// id names this share. A pane's name carries it, which is how a
+	// connection holding one share cannot reach another's panes.
+	id uint64
+
+	code string
+
+	// panes is what is in the share.
+	panes map[*term.Terminal]*handover
+
+	// working counts the agents that have used the code, so a row can
+	// say a pane is being worked in rather than merely offered. More
+	// than one is unusual and is said plainly rather than hidden.
+	working int
+}
+
+// newAgents builds an agents with nothing listening and nothing shared.
 func newAgents() *agents {
 	return &agents{by: make(map[*term.Terminal]*handover)}
+}
+
+// sharing reports whether the user has a share open.
+func (g *agents) sharing() bool { return g.open != nil }
+
+// code is the code the share is reached by, and "" when nothing is
+// shared.
+func (g *agents) code() string {
+	if g.open == nil {
+		return ""
+	}
+	return g.open.code
+}
+
+// shared is the panes in the open share, in the order they were added.
+func (g *agents) shared() []*handover { return g.inShare(g.open) }
+
+// inShare is the panes in one share, in the order they were added.
+func (g *agents) inShare(sh *share) []*handover {
+	if sh == nil {
+		return nil
+	}
+	out := make([]*handover, 0, len(sh.panes))
+	for _, h := range sh.panes {
+		out = append(out, h)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].n < out[j].n })
+	return out
 }
 
 // remember gives the window the settings the hand-over dialog opens on
@@ -75,14 +130,32 @@ func (g *agents) rememberHost(name string) error {
 // handed over.
 func (g *agents) of(pane *term.Terminal) *handover { return g.by[pane] }
 
-// hand records a pane as handed over and gives the handover its name.
+// start opens a share with a code of its own, and does nothing when one
+// is already open.
+func (g *agents) start(code string) *share {
+	if g.open != nil {
+		return g.open
+	}
+	g.next++
+	g.open = &share{id: g.next, code: code, panes: map[*term.Terminal]*handover{}}
+	return g.open
+}
+
+// hand puts a pane in the open share and gives it its name.
 //
 // It starts on whatever the boxes were last set to, which is what the
 // dialog opens showing. Nothing is allowed that the user has not ticked
 // at some point.
-func (g *agents) hand(pane *term.Terminal, code string) *handover {
+func (g *agents) hand(pane *term.Terminal) *handover {
+	if g.open == nil {
+		return nil
+	}
+	if have := g.by[pane]; have != nil {
+		return have
+	}
 	g.next++
-	h := &handover{pane: pane, id: strconv.FormatUint(g.next, 10), code: code, may: g.startMay()}
+	h := &handover{pane: pane, n: g.next, in: g.open, may: g.startMay()}
+	g.open.panes[pane] = h
 	g.by[pane] = h
 	return h
 }
@@ -127,15 +200,27 @@ func (g *agents) forget(pane *term.Terminal) bool {
 	if h == nil {
 		return false
 	}
-	delete(g.by, pane)
-	endAsks(pane)
+	g.drop(pane)
 	for other, from := range g.by {
 		if g.openedBy(from, h) {
-			delete(g.by, other)
-			endAsks(other)
+			g.drop(other)
 		}
 	}
+	// A share with nothing in it is over, and its code stops naming
+	// anything.
+	if g.open != nil && len(g.open.panes) == 0 {
+		g.open = nil
+	}
 	return true
+}
+
+// drop takes one pane out of the share.
+func (g *agents) drop(pane *term.Terminal) {
+	delete(g.by, pane)
+	if g.open != nil {
+		delete(g.open.panes, pane)
+	}
+	endAsks(pane)
 }
 
 // openedBy reports whether a handover was opened from another, however
@@ -149,38 +234,41 @@ func (g *agents) openedBy(h, from *handover) bool {
 	return false
 }
 
-// withCode is the handover a code names, or nil when no handover holds
-// it.
-func (g *agents) withCode(code string) *handover {
-	for _, h := range g.by {
-		if h.code == code {
-			return h
-		}
+// withCode is the share a code names, or nil when no share holds it.
+func (g *agents) withCode(code string) *share {
+	if g.open != nil && g.open.code == code {
+		return g.open
 	}
 	return nil
 }
 
-// named is the handover an id names, or nil when no handover holds it.
+// withID is the share an id names, or nil when no share has it.
+func (g *agents) withID(id uint64) *share {
+	if g.open != nil && g.open.id == id {
+		return g.open
+	}
+	return nil
+}
+
+// named is the handover an id names, or nil when no share holds it.
 func (g *agents) named(id string) *handover {
 	for _, h := range g.by {
-		if h.id == id {
+		if h.name() == id {
 			return h
 		}
 	}
 	return nil
 }
 
-// mark counts an agent in or out of a handover and reports whether the
-// handover was still there.
-func (g *agents) mark(id string, by int) bool {
-	for _, h := range g.by {
-		if h.id != id {
-			continue
-		}
-		h.working = max(h.working+by, 0)
-		return true
+// mark counts an agent in or out of a share and reports whether the
+// share was still there.
+func (g *agents) mark(id uint64, by int) bool {
+	sh := g.withID(id)
+	if sh == nil {
+		return false
 	}
-	return false
+	sh.working = max(sh.working+by, 0)
+	return true
 }
 
 // listening reports whether the window is listening for agents.
@@ -208,7 +296,7 @@ func (g *agents) port() int {
 	return g.server.Port()
 }
 
-// stopIfDone stops listening once nothing is handed over.
+// stopIfDone stops listening once nothing is shared.
 //
 // Nothing to reach means nothing to listen for, and a port that is open
 // for no reason is a port that should not be open.
@@ -219,7 +307,7 @@ func (g *agents) stopIfDone() error {
 	return g.stop()
 }
 
-// stop stops listening and forgets every handover.
+// stop stops listening and ends the share.
 func (g *agents) stop() error {
 	if g.server == nil {
 		return nil
@@ -227,6 +315,7 @@ func (g *agents) stop() error {
 	s := g.server
 	g.server = nil
 	clear(g.by)
+	g.open = nil
 	return s.Close()
 }
 
@@ -237,20 +326,15 @@ func (g *agents) stop() error {
 type handover struct {
 	pane *term.Terminal
 
-	// id names this handover rather than the pane.
+	// n names this pane's place in the share, and in is the share it is
+	// in. Together they are the name an agent is given.
 	//
-	// Handing the same pane over again makes a new one, so an agent
-	// still holding the old id is holding something that no longer
-	// exists: taking a pane back has to mean something even when the
-	// user hands it over again afterwards.
-	id string
-
-	code string
-
-	// working counts the agents that have used the code, so the row can
-	// say the pane is being worked in rather than merely offered. More
-	// than one is unusual and is said plainly rather than hidden.
-	working int
+	// Adding the same pane again after taking it out makes a new one, so
+	// an agent still holding the old name is holding something that no
+	// longer exists: taking a pane out has to mean something even when
+	// the user puts it back afterwards.
+	n  uint64
+	in *share
 
 	// read is the last reading of the pane, lines is how many were asked
 	// for, and size is how big the pane was. A wait asks over and over,
@@ -344,23 +428,28 @@ func (g *agents) openedFrom(h *handover) int {
 // typing happens.
 func (a *app) handPane(pane *term.Terminal) error {
 	if pane == nil {
-		return errors.New("there is no pane here to hand over")
+		return errors.New("there is no pane here to share")
 	}
 	if have := a.agents.of(pane); have != nil {
-		// Already handed over. The code is shown again rather than a
-		// second one made: two codes for one pane is two things to take
-		// back.
+		// Already in the share. What it allows is shown again rather
+		// than the pane being added twice.
 		a.showHandover(have)
 		return nil
 	}
 	if err := a.listenForAgents(); err != nil {
 		return err
 	}
-	code, err := agent.NewCode(a.agents.port())
-	if err != nil {
-		return err
+	if !a.agents.sharing() {
+		code, err := agent.NewCode(a.agents.port())
+		if err != nil {
+			return err
+		}
+		a.agents.start(code)
 	}
-	h := a.agents.hand(pane, code)
+	h := a.agents.hand(pane)
+	if h == nil {
+		return errors.New("there is no share to add this pane to")
+	}
 	a.markDirty()
 	a.showHandover(h)
 	return nil
@@ -372,7 +461,7 @@ func (a *app) handPane(pane *term.Terminal) error {
 // asks fails. It does not wait for the agent to notice.
 func (a *app) takeBackPane(pane *term.Terminal) error {
 	if !a.agents.forget(pane) {
-		return errors.New("no agent has been given this pane")
+		return errors.New("this pane is not in a share")
 	}
 	a.markDirty()
 	return a.agents.stopIfDone()
@@ -391,36 +480,46 @@ func (a *app) listenForAgents() error {
 	return a.agents.listen(agent.Config{
 		Window:  agentWindow{a: a},
 		OnError: func(err error) { a.pump.post(func() { a.logError(err) }) },
-		OnUse:   func(id string) { a.pump.post(func() { a.agentCame(id) }) },
-		OnGone:  func(id string) { a.pump.post(func() { a.agentWent(id) }) },
+		OnUse:   func(share uint64) { a.pump.post(func() { a.agentCame(share) }) },
+		OnGone:  func(share uint64) { a.pump.post(func() { a.agentWent(share) }) },
 	})
 }
 
 // agentCame and agentWent say when an agent starts and stops working in
-// a pane, so its row can say so.
-func (a *app) agentCame(id string) { a.markAgent(id, 1) }
-func (a *app) agentWent(id string) { a.markAgent(id, -1) }
+// a share, so the rows of its panes can say so.
+func (a *app) agentCame(share uint64) { a.markAgent(share, 1) }
+func (a *app) agentWent(share uint64) { a.markAgent(share, -1) }
 
-// markAgent counts an agent in or out of a handover.
+// markAgent counts an agent in or out of a share.
 //
-// A handover that has gone is not found, which is what an agent leaving
-// after the user took the pane back looks like. There is nothing to say
-// about it: the row it would have changed has gone too.
-func (a *app) markAgent(id string, by int) {
+// A share that has ended is not found, which is what an agent leaving
+// after the user ended it looks like. There is nothing to say about it:
+// the rows it would have changed have gone too.
+func (a *app) markAgent(id uint64, by int) {
 	if a.agents.mark(id, by) {
 		a.markDirty()
 	}
 }
 
-// note is what a pane's row says about the agent it was handed to.
+// name is what an agent calls this pane: the share it is in and the pane
+// inside it.
+//
+// The share is in the name so that a connection holding one share cannot
+// reach another's panes, and so that a name from a share that has ended
+// names nothing.
+func (h *handover) name() string {
+	return strconv.FormatUint(h.in.id, 10) + "." + strconv.FormatUint(h.n, 10)
+}
+
+// note is what a pane's row says about the agent it is shared with.
 func (h *handover) note() string {
-	switch h.working {
+	switch h.in.working {
 	case 0:
 		return agentOffered
 	case 1:
 		return agentAt
 	}
-	return strconv.Itoa(h.working) + " agents are working here"
+	return strconv.Itoa(h.in.working) + " agents are working here"
 }
 
 // The two things a pane's row says about an agent. Offered is not the
@@ -445,15 +544,47 @@ func isAgentNote(note string) bool {
 // the window holds.
 type agentWindow struct{ a *app }
 
-func (w agentWindow) Use(code string) (agent.Pane, error) {
-	return onDrawing(w.a, func() (agent.Pane, error) {
-		h := w.a.agents.withCode(code)
-		if h == nil {
-			return agent.Pane{}, errors.New(
-				"that code does not name a pane this window has handed over")
+func (w agentWindow) Use(code string) (agent.Share, error) {
+	return onDrawing(w.a, func() (agent.Share, error) {
+		sh := w.a.agents.withCode(code)
+		if sh == nil {
+			return agent.Share{}, errors.New(
+				"that code does not name a share this window is offering")
 		}
-		return w.a.toldAbout(h)
+		panes, err := w.a.told(sh)
+		if err != nil {
+			return agent.Share{}, err
+		}
+		return agent.Share{ID: sh.id, Panes: panes}, nil
 	})
+}
+
+// Shared is the panes in a share as it stands now, which is how an agent
+// learns that the user has added one or taken one out.
+func (w agentWindow) Shared(id uint64) ([]agent.Pane, error) {
+	return onDrawing(w.a, func() ([]agent.Pane, error) {
+		sh := w.a.agents.withID(id)
+		if sh == nil {
+			return nil, errors.New("that share is over")
+		}
+		return w.a.told(sh)
+	})
+}
+
+// told is every pane in a share, as an agent is told about them.
+//
+// A pane the window has since closed is left out rather than failing the
+// whole answer: what the agent wants is the panes it still has.
+func (a *app) told(sh *share) ([]agent.Pane, error) {
+	var out []agent.Pane
+	for _, h := range a.agents.inShare(sh) {
+		pane, err := a.toldAbout(h)
+		if err != nil {
+			continue
+		}
+		out = append(out, pane)
+	}
+	return out, nil
 }
 
 // asMay is what a hand-over allows, as an agent is told it.
@@ -875,15 +1006,14 @@ func (w agentWindow) Open(id string) (agent.Pane, error) {
 		if opened == nil {
 			return agent.Pane{}, errors.New("the window opened no pane")
 		}
-		// Handed over as it opens, under the pane it was opened from:
+		// In the share as it opens, under the pane it was opened from:
 		// the user said what an agent may do where that pane is, and
 		// what they allow there is what this one gets, for as long as
 		// they go on allowing it.
-		code, err := agent.NewCode(w.a.agents.port())
-		if err != nil {
-			return agent.Pane{}, err
+		next := w.a.agents.hand(opened)
+		if next == nil {
+			return agent.Pane{}, errors.New("that share is over")
 		}
-		next := w.a.agents.hand(opened, code)
 		next.from = h
 		w.a.markDirty()
 		return w.a.toldAbout(next)
@@ -1086,7 +1216,7 @@ func (a *app) toldAbout(h *handover) (agent.Pane, error) {
 	}
 	size := h.pane.Size()
 	return agent.Pane{
-		ID:    h.id,
+		ID:    h.name(),
 		Label: agentLabel(e),
 		Cols:  size.Cols,
 		Rows:  size.Rows,
@@ -1166,7 +1296,7 @@ func (a *app) showHandover(h *handover) {
 		"An agent reads this pane and types into it, and reaches no other.",
 		"Each box below adds one thing, the moment you tick it.",
 		"The code for this pane is:",
-		"  " + h.code,
+		"  " + h.in.code,
 	}
 	pick := f.AddField("Agent", a.newField("", 0))
 	pick.Options = agentHostNames()
@@ -1175,7 +1305,7 @@ func (a *app) showHandover(h *handover) {
 	// The code on its own, for a second pane handed to an agent that has
 	// had the prompt already: pasting the whole prompt again to say one
 	// more code is forty characters of the two hundred.
-	f.Copyable = h.code
+	f.Copyable = h.in.code
 	f.Lines = append(f.Lines, "",
 		"Ctrl+down picks the agent, space ticks a box.",
 		a.copiesTheCode()+" The Servers menu takes the pane back.")
@@ -1190,7 +1320,7 @@ func (a *app) showHandover(h *handover) {
 			// where gridterm is on the PATH, and the instructions say so.
 			a.logError(err)
 		}
-		a.clip.set(handoverPrompt(host, h.code, exe))
+		a.clip.set(handoverPrompt(host, h.in.code, exe))
 		a.pump.post(func() {
 			if err != nil {
 				// The prompt on the clipboard says just "gridterm", which

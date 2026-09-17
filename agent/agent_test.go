@@ -39,6 +39,9 @@ type fakeWindow struct {
 	output     string
 	mostOutput int
 
+	// second says the user has put a second pane in the share.
+	second bool
+
 	// askedFor is what the last Secret asked the user for, and
 	// typesSecret is closed when the user types it. A nil one is a user
 	// who never does.
@@ -116,13 +119,40 @@ func (w *fakeWindow) promptBack(back bool) {
 	w.changed++
 }
 
-func (w *fakeWindow) Use(code string) (Pane, error) {
+func (w *fakeWindow) Use(code string) (Share, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.taken || code != w.code {
-		return Pane{}, errors.New("that code does not name a pane this window has handed over")
+		return Share{}, errors.New("that code does not name a share this window is offering")
 	}
-	return Pane{ID: "pane-1", Label: "bash", Cols: 80, Rows: 24}, nil
+	return Share{ID: 1, Panes: w.inShare()}, nil
+}
+
+func (w *fakeWindow) Shared(share uint64) ([]Pane, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.taken || share != 1 {
+		return nil, errors.New("that share is over")
+	}
+	return w.inShare(), nil
+}
+
+// inShare is the panes this window is sharing. The lock is already held.
+func (w *fakeWindow) inShare() []Pane {
+	panes := []Pane{{ID: "1.1", Label: "bash", Cols: 80, Rows: 24,
+		May: May{Restart: w.mayRestart, OpenMore: w.mayOpen}}}
+	if w.second {
+		panes = append(panes, Pane{ID: "1.2", Label: "bash", Cols: 80, Rows: 24})
+	}
+	return panes
+}
+
+// adds puts a second pane in the share, the way the user does while an
+// agent is working.
+func (w *fakeWindow) adds() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.second = true
 }
 
 func (w *fakeWindow) Look(id string, lines int) (Look, error) {
@@ -136,7 +166,7 @@ func (w *fakeWindow) Look(id string, lines int) (Look, error) {
 	if w.taken {
 		return Look{}, errors.New("the user has taken that pane back")
 	}
-	if id != "pane-1" {
+	if id != "1.1" {
 		return Look{}, errors.New("no such pane")
 	}
 	if lines > 0 {
@@ -169,7 +199,7 @@ func (w *fakeWindow) Output(id string, most int) (Look, error) {
 	if w.taken {
 		return Look{}, errors.New("the user has taken that pane back")
 	}
-	if id != "pane-1" {
+	if id != "1.1" {
 		return Look{}, errors.New("no such pane")
 	}
 	if w.output == "" {
@@ -182,7 +212,7 @@ func (w *fakeWindow) Output(id string, most int) (Look, error) {
 
 func (w *fakeWindow) Secret(id, what string, wait time.Duration) (bool, error) {
 	w.mu.Lock()
-	if w.taken || id != "pane-1" {
+	if w.taken || id != "1.1" {
 		w.mu.Unlock()
 		return false, errors.New("that is not a pane you have been handed")
 	}
@@ -207,7 +237,7 @@ func (w *fakeWindow) Secret(id, what string, wait time.Duration) (bool, error) {
 func (w *fakeWindow) Restart(id string) (Pane, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if w.taken || id != "pane-1" {
+	if w.taken || id != "1.1" {
 		return Pane{}, errors.New("that is not a pane you have been handed")
 	}
 	if !w.mayRestart {
@@ -215,21 +245,21 @@ func (w *fakeWindow) Restart(id string) (Pane, error) {
 	}
 	w.restarted++
 	w.gone = false
-	return Pane{ID: "pane-1", Label: "bash", Cols: 80, Rows: 24,
+	return Pane{ID: "1.1", Label: "bash", Cols: 80, Rows: 24,
 		May: May{Restart: true, OpenMore: w.mayOpen}}, nil
 }
 
 func (w *fakeWindow) Open(id string) (Pane, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if w.taken || id != "pane-1" {
+	if w.taken || id != "1.1" {
 		return Pane{}, errors.New("that is not a pane you have been handed")
 	}
 	if !w.mayOpen {
 		return Pane{}, errors.New("this hand-over does not let you open another pane")
 	}
 	w.opened++
-	return Pane{ID: "pane-2", Label: "bash", Cols: 80, Rows: 24,
+	return Pane{ID: "1.2", Label: "bash", Cols: 80, Rows: 24,
 		May: May{Restart: w.mayRestart, OpenMore: true}}, nil
 }
 
@@ -239,7 +269,7 @@ func (w *fakeWindow) Send(id, text string, keys []string) error {
 	if w.taken {
 		return errors.New("the user has taken that pane back")
 	}
-	if id != "pane-1" {
+	if id != "1.1" {
 		return errors.New("no such pane")
 	}
 	w.typed += text
@@ -320,10 +350,7 @@ func TestAnAgentReadsAndTypesInThePaneItWasGiven(t *testing.T) {
 	}
 	defer func() { _ = c.Close() }()
 
-	pane, err := c.Use(code)
-	if err != nil {
-		t.Fatalf("use: %v", err)
-	}
+	pane := opened(t, c, code)
 	if pane.Label != "bash" || pane.Cols != 80 {
 		t.Errorf("it was handed %+v", pane)
 	}
@@ -357,10 +384,10 @@ func TestWithoutACodeAnAgentCanDoNothing(t *testing.T) {
 
 	// The pane is there and the agent knows its name, having guessed
 	// it. Without a code that is not enough.
-	if _, err := c.Read("pane-1", 0); err == nil {
+	if _, err := c.Read("1.1", 0); err == nil {
 		t.Error("it read a pane it was never handed")
 	}
-	if err := c.Send("pane-1", "rm -rf /\r", nil); err == nil {
+	if err := c.Send("1.1", "rm -rf /\r", nil); err == nil {
 		t.Error("it typed into a pane it was never handed")
 	}
 	if got := w.sentText(); got != "" {
@@ -399,10 +426,7 @@ func TestOneAgentCannotReachAnothersPane(t *testing.T) {
 		t.Fatalf("dial: %v", err)
 	}
 	defer func() { _ = mine.Close() }()
-	pane, err := mine.Use(code)
-	if err != nil {
-		t.Fatalf("use: %v", err)
-	}
+	pane := opened(t, mine, code)
 
 	// A second agent on the same window, with no code of its own.
 	theirs, err := Dial(code)
@@ -431,10 +455,7 @@ func TestTakingAPaneBackStopsTheAgent(t *testing.T) {
 		t.Fatalf("dial: %v", err)
 	}
 	defer func() { _ = c.Close() }()
-	pane, err := c.Use(code)
-	if err != nil {
-		t.Fatalf("use: %v", err)
-	}
+	pane := opened(t, c, code)
 	if _, err := c.Read(pane.ID, 0); err != nil {
 		t.Fatalf("read: %v", err)
 	}
@@ -464,10 +485,7 @@ func TestWaitingComesBackWhenThePaneGoesQuiet(t *testing.T) {
 		t.Fatalf("dial: %v", err)
 	}
 	defer func() { _ = c.Close() }()
-	pane, err := c.Use(code)
-	if err != nil {
-		t.Fatalf("use: %v", err)
-	}
+	pane := opened(t, c, code)
 
 	// Something running, then stopping.
 	done := make(chan struct{})
@@ -503,10 +521,7 @@ func TestWaitingForSomethingThatNeverComesGivesUp(t *testing.T) {
 		t.Fatalf("dial: %v", err)
 	}
 	defer func() { _ = c.Close() }()
-	pane, err := c.Use(code)
-	if err != nil {
-		t.Fatalf("use: %v", err)
-	}
+	pane := opened(t, c, code)
 
 	look, timedOut, err := c.Wait(pane.ID, 0, Until{Contains: "never", TimeoutMS: 200})
 	if err != nil {
@@ -629,7 +644,7 @@ func TestClosingHangsUpOnEveryAgent(t *testing.T) {
 	if err := s.Close(); err != nil {
 		t.Fatalf("close: %v", err)
 	}
-	if _, err := c.Read("pane-1", 0); err == nil {
+	if _, err := c.Read("1.1", 0); err == nil {
 		t.Error("it went on working in a pane of a window that has gone")
 	}
 }
@@ -648,13 +663,13 @@ func TestClosingTwiceIsFine(t *testing.T) {
 // An agent is told when the user hands a pane over and when it lets go.
 func TestTheWindowIsToldWhenAnAgentComesAndGoes(t *testing.T) {
 	w := &fakeWindow{screen: "$ "}
-	used := make(chan string, 4)
-	gone := make(chan string, 4)
+	used := make(chan uint64, 4)
+	gone := make(chan uint64, 4)
 	s, err := Listen(Config{
 		Window:  w,
 		OnError: func(error) {},
-		OnUse:   func(id string) { used <- id },
-		OnGone:  func(id string) { gone <- id },
+		OnUse:   func(share uint64) { used <- share },
+		OnGone:  func(share uint64) { gone <- share },
 	})
 	if err != nil {
 		t.Fatalf("listen: %v", err)
@@ -675,8 +690,8 @@ func TestTheWindowIsToldWhenAnAgentComesAndGoes(t *testing.T) {
 	}
 	select {
 	case id := <-used:
-		if id != "pane-1" {
-			t.Errorf("it was told about %q", id)
+		if id != 1 {
+			t.Errorf("it was told about share %d", id)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("the window was never told an agent had arrived")
@@ -687,8 +702,8 @@ func TestTheWindowIsToldWhenAnAgentComesAndGoes(t *testing.T) {
 	}
 	select {
 	case id := <-gone:
-		if id != "pane-1" {
-			t.Errorf("it was told about %q", id)
+		if id != 1 {
+			t.Errorf("it was told about share %d", id)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("the window was never told the agent had gone")
@@ -744,10 +759,7 @@ func TestAWaitEndsWhenTheWindowStops(t *testing.T) {
 		t.Fatalf("dial: %v", err)
 	}
 	defer func() { _ = c.Close() }()
-	pane, err := c.Use(code)
-	if err != nil {
-		t.Fatalf("use: %v", err)
-	}
+	pane := opened(t, c, code)
 
 	done := make(chan struct{})
 	go func() {
@@ -778,10 +790,7 @@ func TestWaitingForTextComesBackWhileThePaneIsStillBusy(t *testing.T) {
 		t.Fatalf("dial: %v", err)
 	}
 	defer func() { _ = c.Close() }()
-	pane, err := c.Use(code)
-	if err != nil {
-		t.Fatalf("use: %v", err)
-	}
+	pane := opened(t, c, code)
 
 	// Something that says the thing and then keeps going, so the screen
 	// never settles.
@@ -923,10 +932,7 @@ func TestAWindowThatWentSaysSoEveryTime(t *testing.T) {
 		t.Fatalf("dial: %v", err)
 	}
 	defer func() { _ = c.Close() }()
-	pane, err := c.Use(code)
-	if err != nil {
-		t.Fatalf("use: %v", err)
-	}
+	pane := opened(t, c, code)
 
 	if err := s.Close(); err != nil {
 		t.Fatalf("close: %v", err)
@@ -962,10 +968,7 @@ func TestAWaitWatchesTheScreenAndReadsTheLinesOnce(t *testing.T) {
 	}
 	defer func() { _ = c.Close() }()
 
-	pane, err := c.Use(code)
-	if err != nil {
-		t.Fatalf("use: %v", err)
-	}
+	pane := opened(t, c, code)
 
 	// Something to wait through: the pane says several things and then
 	// goes quiet.
@@ -1010,10 +1013,7 @@ func TestAWaitWhoseLastReadFailsStillAnswers(t *testing.T) {
 		t.Fatalf("dial: %v", err)
 	}
 	defer func() { _ = c.Close() }()
-	pane, err := c.Use(code)
-	if err != nil {
-		t.Fatalf("use: %v", err)
-	}
+	pane := opened(t, c, code)
 
 	look, waited, err := c.Wait(pane.ID, 500, Until{QuietMS: 20, TimeoutMS: 2000})
 	if err != nil {
@@ -1048,10 +1048,7 @@ func TestAWaitFindsWhatScrolledOffInTheLinesItReads(t *testing.T) {
 		t.Fatalf("dial: %v", err)
 	}
 	defer func() { _ = c.Close() }()
-	pane, err := c.Use(code)
-	if err != nil {
-		t.Fatalf("use: %v", err)
-	}
+	pane := opened(t, c, code)
 
 	// The build ends while the wait is on, and the line saying so never
 	// reaches the screen the wait is watching.
@@ -1094,10 +1091,7 @@ func TestAWaitDoesNotFindWhatWasThereBeforeItBegan(t *testing.T) {
 		t.Fatalf("dial: %v", err)
 	}
 	defer func() { _ = c.Close() }()
-	pane, err := c.Use(code)
-	if err != nil {
-		t.Fatalf("use: %v", err)
-	}
+	pane := opened(t, c, code)
 
 	look, waited, err := c.Wait(pane.ID, 500, Until{Contains: "Build succeeded", TimeoutMS: 300})
 	if err != nil {
@@ -1133,10 +1127,7 @@ func TestAWaitDoesNotTakeAResizeForNewOutput(t *testing.T) {
 		t.Fatalf("dial: %v", err)
 	}
 	defer func() { _ = c.Close() }()
-	pane, err := c.Use(code)
-	if err != nil {
-		t.Fatalf("use: %v", err)
-	}
+	pane := opened(t, c, code)
 
 	// The user drags the pane narrower while the wait is on, and the long
 	// command line wraps onto two rows.
@@ -1174,10 +1165,7 @@ func TestAWaitWhoseFirstReadFailsStillWaits(t *testing.T) {
 		t.Fatalf("dial: %v", err)
 	}
 	defer func() { _ = c.Close() }()
-	pane, err := c.Use(code)
-	if err != nil {
-		t.Fatalf("use: %v", err)
-	}
+	pane := opened(t, c, code)
 
 	// What the wait is waiting for happens while it watches.
 	go func() {
@@ -1241,14 +1229,18 @@ func dialled(t *testing.T, code string) *Client {
 	return c
 }
 
-// opened is the pane a code names.
+// opened is the first pane of the share a code names, for a test about
+// one pane.
 func opened(t *testing.T, c *Client, code string) Pane {
 	t.Helper()
-	pane, err := c.Use(code)
+	sh, err := c.Use(code)
 	if err != nil {
 		t.Fatalf("use: %v", err)
 	}
-	return pane
+	if len(sh.Panes) == 0 {
+		t.Fatalf("the share has no panes in it: %+v", sh)
+	}
+	return sh.Panes[0]
 }
 
 // finish is the program in the pane ending.
@@ -1528,7 +1520,7 @@ func TestAskingForASecretNeedsTheCodeFirst(t *testing.T) {
 	c := dialled(t, code)
 
 	// No code used yet, so this agent holds nothing.
-	if _, err := c.Secret("pane-1", "a passphrase", time.Second); err == nil {
+	if _, err := c.Secret("1.1", "a passphrase", time.Second); err == nil {
 		t.Fatal("it asked on a pane it had not been handed")
 	}
 	if got := w.secretAskedFor(); got != "" {

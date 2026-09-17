@@ -25,7 +25,7 @@ func TestTheNamedKeysAnAgentPressesAreEncodedByThePane(t *testing.T) {
 	var got agent.Pane
 	offWindow(t, a, "the window to answer the agent", func() error {
 		var err error
-		got, err = c.Use(code)
+		got, err = firstOf(c.Use(code))
 		return err
 	})
 
@@ -85,7 +85,7 @@ func TestAKeyNameTheWindowDoesNotHaveTypesNothing(t *testing.T) {
 	var got agent.Pane
 	offWindow(t, a, "the window to answer the agent", func() error {
 		var err error
-		got, err = c.Use(code)
+		got, err = firstOf(c.Use(code))
 		return err
 	})
 
@@ -148,7 +148,7 @@ func TestKeysInOneCallReachTheShellInOneWrite(t *testing.T) {
 	var got agent.Pane
 	offWindow(t, a, "the window to answer the agent", func() error {
 		var err error
-		got, err = c.Use(code)
+		got, err = firstOf(c.Use(code))
 		return err
 	})
 
@@ -191,7 +191,7 @@ func TestAKeyFromAnAgentLeavesTheUsersViewAlone(t *testing.T) {
 	var got agent.Pane
 	offWindow(t, a, "the window to answer the agent", func() error {
 		var err error
-		got, err = c.Use(code)
+		got, err = firstOf(c.Use(code))
 		return err
 	})
 
@@ -247,7 +247,7 @@ func TestMoreKeysThanOneCallPressesIsRefusedByTheWindow(t *testing.T) {
 	var got agent.Pane
 	offWindow(t, a, "the window to answer the agent", func() error {
 		var err error
-		got, err = c.Use(code)
+		got, err = firstOf(c.Use(code))
 		return err
 	})
 

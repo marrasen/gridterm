@@ -28,9 +28,10 @@ type Config struct {
 	OnError func(error)
 
 	// OnUse and OnGone say when an agent starts and stops working in a
-	// pane, so the window can show it. Called the same way as OnError.
-	OnUse  func(id string)
-	OnGone func(id string)
+	// share, so the window can show it on the rows of its panes. Called
+	// the same way as OnError.
+	OnUse  func(share uint64)
+	OnGone func(share uint64)
 }
 
 // Server listens for agents on the loopback address.
@@ -232,10 +233,10 @@ func (s *Server) talk(c net.Conn) {
 		}
 	}()
 
-	// What this agent has been handed, which is only what it has given a
-	// code for. One connection cannot reach another's panes, and a pane
-	// the user has taken back fails on the next request.
-	held := map[string]Pane{}
+	// The shares this agent has given a code for. A pane's name begins
+	// with its share, so a connection cannot reach another's panes, and
+	// a share the user has ended fails on the next request.
+	held := map[uint64]bool{}
 	defer func() {
 		for id := range held {
 			if s.cfg.OnGone != nil {
@@ -339,28 +340,39 @@ func readLine(in *bufio.Reader, most int) ([]byte, error) {
 }
 
 // answer does one request.
-func (s *Server) answer(want ask, held map[string]Pane) said {
+func (s *Server) answer(want ask, held map[uint64]bool) said {
 	switch want.Do {
 	case "use":
-		pane, err := s.cfg.Window.Use(want.Code)
+		sh, err := s.cfg.Window.Use(want.Code)
 		if err != nil {
 			return said{Error: err.Error()}
 		}
-		held[pane.ID] = pane
-		if s.cfg.OnUse != nil {
-			s.cfg.OnUse(pane.ID)
+		if !held[sh.ID] {
+			held[sh.ID] = true
+			if s.cfg.OnUse != nil {
+				s.cfg.OnUse(sh.ID)
+			}
 		}
-		return said{Pane: &pane}
+		return said{Share: &sh}
 
 	case "panes":
+		// Asked of the window rather than remembered, because the user
+		// adds panes and takes them out while the agent works: what it
+		// wants is what it has now.
 		out := make([]Pane, 0, len(held))
-		for _, p := range held {
-			out = append(out, p)
+		for id := range held {
+			panes, err := s.cfg.Window.Shared(id)
+			if err != nil {
+				// A share that has ended is not an answer of its own:
+				// the agent asked what it has, and it has the rest.
+				continue
+			}
+			out = append(out, panes...)
 		}
 		return said{Panes: out}
 
 	case "read":
-		if _, ok := held[want.Pane]; !ok {
+		if !holds(held, want.Pane) {
 			return said{Error: notHanded(want.Pane)}
 		}
 		look, err := s.cfg.Window.Look(want.Pane, want.Lines)
@@ -370,7 +382,7 @@ func (s *Server) answer(want ask, held map[string]Pane) said {
 		return said{Look: &look}
 
 	case "output":
-		if _, ok := held[want.Pane]; !ok {
+		if !holds(held, want.Pane) {
 			return said{Error: notHanded(want.Pane)}
 		}
 		look, err := s.cfg.Window.Output(want.Pane, want.Lines)
@@ -380,7 +392,7 @@ func (s *Server) answer(want ask, held map[string]Pane) said {
 		return said{Look: &look}
 
 	case "send":
-		if _, ok := held[want.Pane]; !ok {
+		if !holds(held, want.Pane) {
 			return said{Error: notHanded(want.Pane)}
 		}
 		// Refused before anything is typed, so an agent that spelled a
@@ -394,26 +406,25 @@ func (s *Server) answer(want ask, held map[string]Pane) said {
 		return said{OK: true}
 
 	case "wait":
-		if _, ok := held[want.Pane]; !ok {
+		if !holds(held, want.Pane) {
 			return said{Error: notHanded(want.Pane)}
 		}
 		return s.waitFor(want)
 
 	case "restart":
-		if _, ok := held[want.Pane]; !ok {
+		if !holds(held, want.Pane) {
 			return said{Error: notHanded(want.Pane)}
 		}
 		pane, err := s.cfg.Window.Restart(want.Pane)
 		if err != nil {
 			return said{Error: err.Error()}
 		}
-		// The same pane, so the same id: what changed is what is running
-		// in it.
-		held[pane.ID] = pane
+		// The same pane, so the same name: what changed is what is
+		// running in it.
 		return said{Pane: &pane}
 
 	case "secret":
-		if _, ok := held[want.Pane]; !ok {
+		if !holds(held, want.Pane) {
 			return said{Error: notHanded(want.Pane)}
 		}
 		wait := time.Duration(want.WaitMS) * time.Millisecond
@@ -427,22 +438,28 @@ func (s *Server) answer(want ask, held map[string]Pane) said {
 		return said{OK: true, Typed: typed}
 
 	case "open":
-		if _, ok := held[want.Pane]; !ok {
+		if !holds(held, want.Pane) {
 			return said{Error: notHanded(want.Pane)}
 		}
 		pane, err := s.cfg.Window.Open(want.Pane)
 		if err != nil {
 			return said{Error: err.Error()}
 		}
-		// Handed over as it opens, so this agent holds it the way it
-		// holds the pane it asked from.
-		held[pane.ID] = pane
-		if s.cfg.OnUse != nil {
-			s.cfg.OnUse(pane.ID)
-		}
+		// In the same share as the pane it was opened from, so this
+		// agent holds it already.
 		return said{Pane: &pane}
 	}
 	return said{Error: fmt.Sprintf("%q is not something this window does", want.Do)}
+}
+
+// holds reports whether a pane belongs to a share this agent has given a
+// code for.
+//
+// The share is the whole of the check here. Whether the pane is still in
+// it, and still open, is the window's to say on the request itself.
+func holds(held map[uint64]bool, pane string) bool {
+	share, ok := ShareOf(pane)
+	return ok && held[share]
 }
 
 // notHanded is what an agent is told about a pane it was never given.

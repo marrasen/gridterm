@@ -71,10 +71,10 @@ type wait struct {
 // an HTTP request begins with a request line, and this window hangs up
 // on a first line that is not exactly this.
 //
-// It says 3 because a window of the second version answers a "read"
-// without saying anything about the command line, and an agent reading
-// that would tell the user the shell reports no status when it does.
-const hello = "gridterm-agent-3"
+// It says 4 because a window of the third version answers "use" with one
+// pane rather than with a share, and an agent talking to one would hold
+// the first pane of a share and never learn about the rest.
+const hello = "gridterm-agent-4"
 
 // said is what the window answers.
 //
@@ -84,8 +84,11 @@ type said struct {
 	// Error says what went wrong, and is empty when nothing did.
 	Error string `json:"error,omitempty"`
 
-	// Pane is the pane a "use" opened.
+	// Pane is the pane a "restart" or an "open" gave back.
 	Pane *Pane `json:"pane,omitempty"`
+
+	// Share is what a "use" opened: the share and the panes in it.
+	Share *Share `json:"share,omitempty"`
 
 	// Panes is what this agent has been handed, for "panes".
 	Panes []Pane `json:"panes,omitempty"`

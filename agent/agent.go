@@ -53,9 +53,13 @@ const LongestSecretWait = 10 * time.Minute
 // whatever draws.
 //
 // Use is the only way in. It takes a code the user gave the agent and
-// gives back the pane that code names; a code that names nothing, or one
-// the user has taken back, fails. Look and Send then work on the id Use
-// gave, and fail for any other.
+// gives back the share that code names, with the panes in it; a code
+// that names nothing, or a share the user has ended, fails. Look and
+// Send then work on the names Use gave, and fail for any other.
+//
+// Shared is the panes of a share as it stands. The user adds panes and
+// takes them out while an agent works, so an agent that asks again gets
+// what it has now.
 //
 // Look takes how many lines to give back, ending at the bottom of the
 // screen, and zero for the screen. Send types text and then presses the
@@ -78,7 +82,8 @@ const LongestSecretWait = 10 * time.Minute
 // gives back the new one. It opens no connection: a machine the window
 // is not connected to is refused.
 type Window interface {
-	Use(code string) (Pane, error)
+	Use(code string) (Share, error)
+	Shared(share uint64) ([]Pane, error)
 	Look(id string, lines int) (Look, error)
 	Output(id string, most int) (Look, error)
 	Send(id, text string, keys []string) error
@@ -107,9 +112,38 @@ type May struct {
 	ReadBack bool `json:"read_above_a_clear,omitempty"`
 }
 
-// Pane is what a code named.
+// Share is what a code names: a set of panes the user has put in it.
+//
+// The set changes while an agent works. What does not change is the
+// share itself, which is why its id is in every pane's name: a name from
+// a share that has ended names nothing, and a connection holding one
+// share cannot reach another's panes.
+type Share struct {
+	// ID names the share, and begins the name of every pane in it.
+	ID uint64 `json:"share"`
+
+	// Panes is what was in it at the moment the code was used.
+	Panes []Pane `json:"panes"`
+}
+
+// ShareOf is the share a pane's name begins with, and whether the name
+// is one of these at all.
+func ShareOf(pane string) (uint64, bool) {
+	at, _, ok := strings.Cut(pane, ".")
+	if !ok {
+		return 0, false
+	}
+	id, err := strconv.ParseUint(at, 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	return id, true
+}
+
+// Pane is one pane of a share.
 type Pane struct {
-	// ID names the pane for as long as the user leaves it handed over.
+	// ID names the pane for as long as the user leaves it in the share.
+	// It begins with the share's own id.
 	ID string `json:"id"`
 
 	// Label is what the window calls it, so an agent holding two panes

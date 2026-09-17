@@ -61,7 +61,9 @@ func (a *app) localTerminal() (*term.Terminal, error) {
 func (a *app) localTerminalOn(argv []string) (*term.Terminal, error) {
 	sess, err := a.newShell(argv, "", a.lastSize[0], a.lastSize[1])
 	if err != nil {
-		return nil, fmt.Errorf("start session: %w", err)
+		// Unwrapped: what failed already says so, and the user reads this
+		// in a dialog.
+		return nil, err
 	}
 	t, err := a.newTerminalOn(sess, conns.Local, conns.Terminal, "")
 	if err != nil {

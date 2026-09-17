@@ -432,20 +432,27 @@ type startup struct {
 	command []string
 }
 
-// openFirst opens what the window starts with and returns its pane, which
-// is nil with -ssh because the connection opens its own on the first frame.
+// openFirst opens what the window starts with and returns its pane.
+//
+// The pane is nil with -ssh, because the connection opens its own on the
+// first frame, and nil when what the window would have opened could not
+// be opened. Either way the window opens: a failure is posted as a
+// notice, because a gridterm started from Explorer has no console for a
+// message to reach.
 func (a *app) openFirst(s startup) (*term.Terminal, error) {
 	if s.target == "" {
 		t, err := a.localTerminal()
 		if err != nil {
-			return nil, err
+			a.noteFirstPane(noFirstPane, err)
+			return nil, nil
 		}
 		a.showPane(t)
 		return t, nil
 	}
 	cfg, err := remote.ParseTarget(s.target)
 	if err != nil {
-		return nil, fmt.Errorf("-ssh: %w", err)
+		a.noteFirstPane("Could not read what -ssh names", err)
+		return nil, nil
 	}
 	// Where a new pane goes from now on, so a new pane or a split opens on the
 	// machine -ssh named rather than on this one.
@@ -454,9 +461,10 @@ func (a *app) openFirst(s startup) (*term.Terminal, error) {
 	// goes in and the dialogs it asks in are built after this returns.
 	a.pump.post(func() {
 		a.connectFor(cfg.Target(), cfg, opening{command: s.command})
-		// Never an empty window: a route that was refused, a window that
+		// A pane here instead: a route that was refused, a window that
 		// could not be taken over and a pane that could not be placed all
-		// leave nothing at all in it.
+		// leave nothing at all in it. A local shell that will not start
+		// leaves the window empty, and says so above.
 		if len(a.panes) == 0 {
 			if err := a.openPaneHere(); err != nil {
 				a.reportError("Could not open a terminal here", err)
@@ -466,8 +474,22 @@ func (a *app) openFirst(s startup) (*term.Terminal, error) {
 	return nil, nil
 }
 
+// noFirstPane heads the notice a window shows when it could not open
+// the pane it starts with.
+const noFirstPane = "Could not open a terminal"
+
+// noteFirstPane says why the window is opening with nothing in it, in a
+// notice on the first frame and in the log.
+//
+// Both, because a notice is gone once it is dismissed and a log is there
+// for a machine that has one.
+func (a *app) noteFirstPane(title string, err error) {
+	a.logError(err)
+	a.pump.post(func() { a.reportError(title, err) })
+}
+
 // startingPanes is what the stage opens with: the first pane, or nothing
-// at all when -ssh is still connecting.
+// at all when there is none to open on.
 func startingPanes(first *term.Terminal) []ui.Widget {
 	if first == nil {
 		return nil

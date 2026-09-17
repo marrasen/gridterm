@@ -3,6 +3,7 @@
 package session
 
 import (
+	"errors"
 	"os/exec"
 	"strings"
 	"testing"
@@ -219,4 +220,29 @@ func endProcess(pid int) {
 	}
 	defer func() { _ = windows.CloseHandle(h) }()
 	_ = windows.TerminateProcess(h, 1)
+}
+
+// A shell that cannot be held in a job object says so in words a user
+// reads in a dialog: what happened first, what a job object is for, then
+// what Windows said.
+func TestAShellThatCannotBeHeldSaysSoInWords(t *testing.T) {
+	got := jobFailed("making the job object", errors.New("Access is denied.")).Error()
+
+	if !strings.HasPrefix(got, "Windows would not put this shell in a job object.") {
+		t.Errorf("it opens with %q, want what happened", got)
+	}
+	// What the job object is for, because the user has no other way to
+	// know what they have lost.
+	if !strings.Contains(got, "closes a shell, and everything it started, when gridterm closes") {
+		t.Errorf("it does not say what a job object is for: %q", got)
+	}
+	// The reason before the step, which is for whoever reads the log.
+	reason := strings.Index(got, "Access is denied.")
+	step := strings.Index(got, "making the job object")
+	if reason < 0 || step < 0 {
+		t.Fatalf("it says %q", got)
+	}
+	if step < reason {
+		t.Errorf("it names the step before the reason: %q", got)
+	}
 }

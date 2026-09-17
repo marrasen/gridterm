@@ -5,24 +5,16 @@ each group. A line goes when the work is in and reviewed.
 
 ## Waiting on an answer from Marcus
 
-- **A pane that cannot be put in a job object stops gridterm without a
-  word. Should it open a window and say so instead?** A job object is a
-  box Windows puts processes in: everything a shell starts lands in the
-  box too, and Windows kills what is in the box when gridterm lets go of
-  it, however gridterm ends. That is what stops a crash leaving shells
-  running with nothing on screen.
-  Today a shell that cannot be boxed does not open, and for the first
-  pane `main.go` calls `log.Fatal`. A program started from a shell
-  prints that and exits; one started from Explorer has nowhere to print
-  to, so the window simply never appears and nothing says why.
-  Opening the pane anyway would bring back the orphaned shells the box
-  is there to stop, in silence, so that is the wrong trade. The third
-  way is to open the window and show the failure in it, which keeps the
-  box and loses the silence. It is a small change. Worth doing, or leave
-  it, given the failure needs a Windows older than the one gridterm's
-  ConPTY already requires?
+Nothing.
 
 ## Settled, do not re-open
+
+- **A pane that cannot be put in a job object opens no pane, and the
+  window says why.** Answered on 2026-09-17: open the window and show
+  the failure in it. Opening the pane anyway was the wrong trade,
+  because it brings back the orphaned shells the job object is there to
+  stop, in silence. `log.Fatal` was the wrong trade too: started from
+  Explorer there is no console for it to reach.
 
 - **The keyboard shortcuts file holds changes, not the whole map.**
   Answered on 2026-09-17: leave it holding changes for now. Moving a

@@ -25,17 +25,40 @@ const jobLimits = windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE |
 // closes, and the kernel closes gridterm's handles however gridterm ends.
 type shellJob windows.Handle
 
+// jobFailed is a failure to hold a shell in a job object, worded for the
+// user who reads it in a dialog. doing names the step for a reader of
+// the log, after the reason rather than in front of it.
+func jobFailed(doing string, err error) error {
+	return fmt.Errorf(
+		"Windows would not put this shell in a job object."+
+			" That is what closes a shell, and everything it started, when gridterm"+
+			" closes. %w (%s)", err, doing)
+}
+
 // holdShell puts a process, and everything it later starts, in a job
 // object that kills its members when the job closes. A shell that has
 // already exited gives back no job: there is nothing left to hold.
+//
+// Every failure is worded here, so none of the steps can word one of its
+// own.
 func holdShell(pid int) (shellJob, error) {
+	j, doing, err := hold(pid)
+	if err != nil {
+		return 0, jobFailed(doing, err)
+	}
+	return j, nil
+}
+
+// hold does the work of holdShell and says which step it was on when it
+// failed.
+func hold(pid int) (shellJob, string, error) {
 	h, err := windows.CreateJobObject(nil, nil)
 	if err != nil {
-		return 0, fmt.Errorf("create job object: %w", err)
+		return 0, "making the job object", err
 	}
 	if err := limitJob(h, jobLimits); err != nil {
 		_ = windows.CloseHandle(h)
-		return 0, fmt.Errorf("set job object limits: %w", err)
+		return 0, "setting its limits", err
 	}
 
 	// go-pty still holds a handle to the process, so the id is still this
@@ -46,18 +69,18 @@ func holdShell(pid int) (shellJob, error) {
 	proc, err := windows.OpenProcess(rights, false, uint32(pid))
 	if err != nil {
 		_ = windows.CloseHandle(h)
-		return 0, fmt.Errorf("open process %d: %w", pid, err)
+		return 0, fmt.Sprintf("opening process %d", pid), err
 	}
 	defer func() { _ = windows.CloseHandle(proc) }()
 
 	if err := windows.AssignProcessToJobObject(h, proc); err != nil {
 		_ = windows.CloseHandle(h)
 		if exited(proc) {
-			return 0, nil
+			return 0, "", nil
 		}
-		return 0, fmt.Errorf("put process %d in a job object: %w", pid, err)
+		return 0, fmt.Sprintf("putting process %d in it", pid), err
 	}
-	return shellJob(h), nil
+	return shellJob(h), "", nil
 }
 
 // letGo takes kill-on-close off the job and closes it, leaving the shell

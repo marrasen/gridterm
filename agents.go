@@ -1172,9 +1172,13 @@ func (a *app) showHandover(h *handover) {
 	pick.Options = agentHostNames()
 	pick.SetText(a.agents.startHost().name)
 	a.addAgentBoxes(f, h)
+	// The code on its own, for a second pane handed to an agent that has
+	// had the prompt already: pasting the whole prompt again to say one
+	// more code is forty characters of the two hundred.
+	f.Copyable = h.code
 	f.Lines = append(f.Lines, "",
-		"Ctrl+down picks the agent, space ticks a box, the Servers menu",
-		"takes the pane back.")
+		"Ctrl+down picks the agent, space ticks a box.",
+		a.copiesTheCode()+" The Servers menu takes the pane back.")
 
 	// All three leave the form open, so the user can copy the prompt, read
 	// the setup and write the skill without handing the pane over twice.
@@ -1266,6 +1270,15 @@ func (a *app) rememberAgentMay(may settings.AgentMay) {
 	if err := a.agents.rememberMay(may); err != nil {
 		a.reportError("Could not remember what this hand-over allows", err)
 	}
+}
+
+// copiesTheCode names the key that copies the code on its own, for a
+// dialog that has room for the words and not for a button.
+func (a *app) copiesTheCode() string {
+	if chord := a.chordFor(copyCommand); chord != "" {
+		return chord + " copies the code."
+	}
+	return "The copy chord copies the code."
 }
 
 // rememberAgentHost writes down which agent was picked, and says so when

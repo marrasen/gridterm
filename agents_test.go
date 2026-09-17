@@ -3462,3 +3462,125 @@ func TestOpeningAnotherPaneIsRefusedOnACommandPane(t *testing.T) {
 		t.Errorf("the window holds %d panes, want the one", len(a.panes))
 	}
 }
+
+// A second pane handed to the same agent needs only its code, so the
+// dialog gives up the code on its own.
+//
+// Pasting the whole prompt again to say one more code is two hundred
+// characters to carry forty, and the setup lines in it are about a
+// server the agent already has.
+func TestTheHandoverDialogCopiesTheCodeOnItsOwn(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pane := onlyPaneOn(t, a)
+
+	f := handoverDialog(t, a, pane)
+	code := a.agents.of(pane).code
+	chord := copyChordOf(t, a)
+	sendKey(t, a, press(chord.Key, chord.Mods))
+
+	waitFor(t, a, "the code to reach the clipboard", func() bool { return a.copiedText() == code })
+	// And the dialog says which key does it.
+	drawn := strings.Join(drawnLines(a, f), "\n")
+	if !strings.Contains(drawn, "copies the code") {
+		t.Errorf("the dialog does not say the code can be copied:\n%s", drawn)
+	}
+}
+
+// The user hands two panes to one agent, with a code each, and the agent
+// holds both.
+//
+// A hand-over is per pane. Nothing says an agent gets one: the user
+// hands over as many as they mean to, each with its own code and its own
+// boxes, and list_panes is where the agent finds what it has.
+func TestAUserHandsTwoPanesToOneAgent(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	first := onlyPaneOn(t, a)
+	if err := a.openTabHere(); err != nil {
+		t.Fatalf("open a second pane: %v", err)
+	}
+	var second *term.Terminal
+	for pane := range a.panes {
+		if pane != first {
+			second = pane
+		}
+	}
+	if second == nil {
+		t.Fatal("the window did not open a second pane")
+	}
+
+	// Each pane handed over on its own, and the second one read only.
+	codes := map[*term.Terminal]string{}
+	for _, pane := range []*term.Terminal{first, second} {
+		f := handoverDialog(t, a, pane)
+		if pane == second {
+			tickBox(t, a, f, "Read only")
+		}
+		codes[pane] = a.agents.of(pane).code
+		pressButton(t, a, f, "Done")
+	}
+	if codes[first] == codes[second] {
+		t.Fatal("the two panes were handed over with one code")
+	}
+
+	// One agent, both codes: the same connection, because both panes are
+	// this window's.
+	c, err := agent.Dial(codes[first])
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	t.Cleanup(func() { _ = c.Close() })
+	named := map[*term.Terminal]agent.Pane{}
+	for _, pane := range []*term.Terminal{first, second} {
+		offWindow(t, a, "the window to answer the agent", func() error {
+			got, err := c.Use(codes[pane])
+			named[pane] = got
+			return err
+		})
+	}
+	if named[first].ID == named[second].ID {
+		t.Fatalf("both panes are called %q", named[first].ID)
+	}
+
+	// It holds both, and is told what each one allows.
+	var listed []agent.Pane
+	offWindow(t, a, "the window to list the panes", func() error {
+		var err error
+		listed, err = c.Panes()
+		return err
+	})
+	if len(listed) != 2 {
+		t.Fatalf("the agent was handed %d panes, want 2", len(listed))
+	}
+	if named[first].May.ReadOnly || !named[second].May.ReadOnly {
+		t.Errorf("the boxes did not stay with their own panes: %+v and %+v",
+			named[first].May, named[second].May)
+	}
+
+	// And they are two panes, not one: what it types reaches the first
+	// and is refused on the second.
+	a.shells[0].out <- []byte("first pane")
+	waitFor(t, a, "the first pane to say something", func() bool {
+		return strings.Contains(paneText(first), "first pane")
+	})
+	if look := looked(t, a, c, named[first].ID); !strings.Contains(look.Screen, "first pane") {
+		t.Errorf("reading the first pane gave:\n%s", look.Screen)
+	}
+	if look := looked(t, a, c, named[second].ID); strings.Contains(look.Screen, "first pane") {
+		t.Errorf("reading the second pane gave the first one:\n%s", look.Screen)
+	}
+	offWindow(t, a, "the window to take the keys", func() error {
+		return c.Send(named[first].ID, "ls\r", nil)
+	})
+	var failed error
+	offWindow(t, a, "the window to refuse the keys", func() error {
+		failed = c.Send(named[second].ID, "ls\r", nil)
+		return nil
+	})
+	if failed == nil {
+		t.Error("it typed into the pane handed over to be read")
+	}
+}

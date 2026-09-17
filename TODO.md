@@ -5,6 +5,19 @@ each group. A line goes when the work is in and reviewed.
 
 ## Waiting on an answer from Marcus
 
+- **Should the window keep a record of what an agent typed?** The
+  account below needs one. The obvious version was built on 2026-09-17
+  and thrown away, because writing down what an agent sends keeps a
+  password it types at a `sudo` prompt. Those characters do not echo, so
+  until now the window never held them, and `Terminal.WaitForSecret` in
+  ui/term/term.go says plainly that the characters are the program's and
+  nothing here keeps them or passes them on. A keystroke record breaks
+  that, and it puts the password in a dialog with a Copy button.
+  There are three ways to go. Build the reader that takes the command
+  off the screen instead, which is more work and is described below.
+  Keep a keystroke record and accept that it holds secrets. Or drop the
+  idea.
+
 - **Should a pane that cannot be put in a job object open anyway?** It
   does not today: `StartLocal` returns the error, and for the first pane
   `main.go` calls `log.Fatal`. Launched from Explorer there is no console,
@@ -45,10 +58,35 @@ user has to know which is which.
 - **A chip in the top right saying what is happening.** "Agent
   connected", "Agent running: ls -la", with a long command cropped.
   Clicking a chip opens the dialog that can end it. Two chips when both
-  are in force, one per border.
+  are in force, one per border. The half that names the command waits
+  on the account below: nothing tells the window what an agent ran.
 
 - **An account of what the agent did.** Somewhere to read the commands
   an agent ran, after the fact, rather than scrolling the pane.
+
+  - **Do not build it from what the agent sent.** That was tried on
+    2026-09-17 and thrown away. It keeps secrets, which is the question
+    at the top, and it is not a record of what ran. Backspace, Tab
+    completion and Up through the history all change the line before
+    the shell sees it. Ctrl+U throws the line away and the text then
+    glues itself onto the next command. A here-document reads as four
+    commands. In a full-screen program every line typed reads as a
+    command.
+
+  - **Build it from what the pane echoed.** The line a shell prints
+    back is the command it is about to run, after completion and after
+    editing. It is already on the screen, so a dialog showing it gives
+    away nothing the user could not read by scrolling, and a password
+    at a prompt that does not echo never appears at all.
+    `handover.markPrompt` in agents.go already writes down the prompt
+    and the line it was typed at, which is where such a reader starts.
+
+  - **Say nothing on the alternate screen.** `markPrompt` already stops
+    there, because a full-screen program has no prompt and no commands.
+
+  - **When to read the echo is the open question.** It lands after the
+    send has returned, so something has to look afterwards: the next
+    call the agent makes, or a frame while the pane is handed over.
 
 - **A pane on a window taken over from elsewhere gets no border.** The
   border reads `pane.Watched()` and the handover list, and the pane

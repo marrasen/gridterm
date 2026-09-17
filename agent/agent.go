@@ -62,6 +62,26 @@ type Window interface {
 	Send(id, text string, keys []string) error
 }
 
+// May is what a hand-over allows beyond reading a pane and typing into
+// it.
+//
+// Each one is a box the user ticked when they handed the pane over. The
+// window enforces them; an agent is told what they are so it does not
+// spend calls finding out.
+type May struct {
+	// Restart lets the agent start a closed pane's program again.
+	Restart bool `json:"restart_a_closed_connection,omitempty"`
+
+	// OpenMore lets it open another pane on the machine this one is on.
+	OpenMore bool `json:"open_another_pane_there,omitempty"`
+
+	// ReadOnly refuses its typing, for watching without touching.
+	ReadOnly bool `json:"read_only,omitempty"`
+
+	// ReadBack lets it read above the last clear.
+	ReadBack bool `json:"read_above_a_clear,omitempty"`
+}
+
 // Pane is what a code named.
 type Pane struct {
 	// ID names the pane for as long as the user leaves it handed over.
@@ -78,6 +98,10 @@ type Pane struct {
 	// Ended says the program in the pane has already finished, so what
 	// it printed can be read and nothing can be typed into it.
 	Ended bool `json:"ended,omitempty"`
+
+	// May is what the user allowed for this pane beyond reading and
+	// typing.
+	May May `json:"may,omitempty"`
 }
 
 // MostLines caps how many lines one read may ask for.

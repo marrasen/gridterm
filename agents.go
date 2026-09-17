@@ -73,11 +73,34 @@ func (g *agents) rememberHost(name string) error {
 func (g *agents) of(pane *term.Terminal) *handover { return g.by[pane] }
 
 // hand records a pane as handed over and gives the handover its name.
+//
+// It starts on whatever the boxes were last set to, which is what the
+// dialog opens showing. Nothing is allowed that the user has not ticked
+// at some point.
 func (g *agents) hand(pane *term.Terminal, code string) *handover {
 	g.next++
-	h := &handover{pane: pane, id: strconv.FormatUint(g.next, 10), code: code}
+	h := &handover{pane: pane, id: strconv.FormatUint(g.next, 10), code: code, may: g.startMay()}
 	g.by[pane] = h
 	return h
+}
+
+// startMay is what the tick boxes open on: whatever was last ticked, and
+// nothing at all the first time.
+func (g *agents) startMay() settings.AgentMay {
+	if g.remembered == nil {
+		return settings.AgentMay{}
+	}
+	may, _ := g.remembered.AgentMay()
+	return may
+}
+
+// rememberMay writes down what the boxes were set to, for the next
+// hand-over.
+func (g *agents) rememberMay(may settings.AgentMay) error {
+	if g.remembered == nil {
+		return nil
+	}
+	return g.remembered.PutAgentMay(may)
 }
 
 // forget drops a pane's handover and reports whether there was one.
@@ -222,6 +245,12 @@ type handover struct {
 	// sent says the agent has typed here at all, which is what tells a
 	// prompt that has not come back from a pane nobody has typed in.
 	sent bool
+
+	// may is what the user ticked when they handed this pane over. It
+	// takes effect at once: turning a box off while the agent is
+	// mid-call makes the next call fail, the way taking the pane back
+	// does.
+	may settings.AgentMay
 }
 
 // handPane hands a pane to an agent and shows the user the code.
@@ -353,8 +382,19 @@ func (w agentWindow) Use(code string) (agent.Pane, error) {
 			Cols:  size.Cols,
 			Rows:  size.Rows,
 			Ended: h.pane.Exited(),
+			May:   asMay(h.may),
 		}, nil
 	})
+}
+
+// asMay is what a hand-over allows, as an agent is told it.
+func asMay(may settings.AgentMay) agent.May {
+	return agent.May{
+		Restart:  may.Restart,
+		OpenMore: may.OpenMore,
+		ReadOnly: may.ReadOnly,
+		ReadBack: may.ReadBack,
+	}
 }
 
 func (w agentWindow) Look(id string, lines int) (agent.Look, error) {
@@ -385,7 +425,10 @@ func (w agentWindow) Look(id string, lines int) (agent.Look, error) {
 		// The cursor comes from the reading, so it says where it was on
 		// the screen that came with it.
 		screen := lastLines(h.read.Text, want)
-		screen, atFloor, note := stopAtTheFloor(screen, *h.read)
+		screen, atFloor, note := screen, false, ""
+		if !h.may.ReadBack {
+			screen, atFloor, note = stopAtTheFloor(screen, *h.read)
+		}
 		status, hasStatus := h.read.Cmd.Exit()
 		return agent.Look{
 			Screen:    screen,
@@ -489,7 +532,7 @@ func (w agentWindow) Output(id string, most int) (agent.Look, error) {
 		// the lines above it are not offered, whoever put them there. It
 		// replaces the note rather than being added to it, because what
 		// that said about where this starts is no longer true.
-		if from < at.Floor {
+		if from < at.Floor && !h.may.ReadBack {
 			from = at.Floor
 			note = "The pane was cleared after this output began, so this is only what has" +
 				" been printed since the clear. The lines above it are still in the pane," +
@@ -592,6 +635,11 @@ func (w agentWindow) Send(id, text string, keys []string) error {
 		h, err := w.a.handedPane(id)
 		if err != nil {
 			return struct{}{}, err
+		}
+		if h.may.ReadOnly {
+			return struct{}{}, errors.New(
+				"the user handed this pane over to be read and not typed into." +
+					" Ask them to turn \"Read only\" off if you need to type")
 		}
 		if h.pane.Exited() {
 			return struct{}{}, errors.New(
@@ -720,21 +768,18 @@ func (a *app) takeBackHere() error { return a.takeBackPane(a.focusedTerminal()) 
 func (a *app) showHandover(h *handover) {
 	f := a.newForm("An agent may work in this pane")
 	f.Lines = []string{
-		"An agent can read this pane, type into it and wait for it to",
-		"settle. It reaches no other pane, and you watch all of it. Take",
-		"the pane back from the Servers menu and the code stops working",
-		"at once.",
-		"",
+		"An agent reads this pane and types into it, and reaches no other.",
+		"Each box below adds one thing, the moment you tick it.",
 		"The code for this pane is:",
 		"  " + h.code,
 	}
 	pick := f.AddField("Agent", a.newField("", 0))
 	pick.Options = agentHostNames()
 	pick.SetText(a.agents.startHost().name)
+	a.addAgentBoxes(f, h)
 	f.Lines = append(f.Lines, "",
-		"Agent: ctrl+down and ctrl+up choose. \"Copy the prompt\" copies an",
-		"instruction for that agent. \"Instructions\" says how to add gridterm",
-		"to it. \"Write the skill\" saves a SKILL.md. All three leave this open.")
+		"Ctrl+down picks the agent, space ticks a box, the Servers menu",
+		"takes the pane back.")
 
 	// All three leave the form open, so the user can copy the prompt, read
 	// the setup and write the skill without handing the pane over twice.
@@ -790,7 +835,42 @@ func (a *app) showHandover(h *handover) {
 	f.AddButton(ui.Button{Title: "Take it back", Do: func() error {
 		return a.takeBackPane(h.pane)
 	}})
-	a.showForm(f, nil)
+	// Written down when the dialog goes rather than on every press of
+	// the space bar, which would be a file written per keystroke.
+	a.showForm(f, func() { a.rememberAgentMay(h.may) })
+}
+
+// addAgentBoxes puts the tick boxes on the hand-over dialog: what this
+// agent may do with this pane beyond reading it and typing into it.
+//
+// Every box is off unless the user has ticked it before, and turning one
+// over changes what the agent may do at once -- the next call it makes
+// is answered by the new answer, the way taking the pane back is.
+func (a *app) addAgentBoxes(f *ui.Form, h *handover) {
+	for _, box := range []struct {
+		label string
+		on    func(*settings.AgentMay) *bool
+	}{
+		{"Restart a closed connection", func(m *settings.AgentMay) *bool { return &m.Restart }},
+		{"Open another pane there", func(m *settings.AgentMay) *bool { return &m.OpenMore }},
+		{"Read only", func(m *settings.AgentMay) *bool { return &m.ReadOnly }},
+		{"Read above a clear", func(m *settings.AgentMay) *bool { return &m.ReadBack }},
+	} {
+		at := box.on
+		tick := f.AddTick(box.label, *at(&h.may))
+		tick.OnChange = func(string) {
+			*at(&h.may) = tick.On()
+			a.markDirty()
+		}
+	}
+}
+
+// rememberAgentMay writes down what the boxes were set to, and says so
+// when it could not be written.
+func (a *app) rememberAgentMay(may settings.AgentMay) {
+	if err := a.agents.rememberMay(may); err != nil {
+		a.reportError("Could not remember what this hand-over allows", err)
+	}
 }
 
 // rememberAgentHost writes down which agent was picked, and says so when

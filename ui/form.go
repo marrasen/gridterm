@@ -183,6 +183,12 @@ func (f *Form) AddField(label string, field *Field) *Field {
 	return field
 }
 
+// AddTick puts a tick box at the bottom of the fields. Space turns it
+// over, as do the keys that step through a field's options.
+func (f *Form) AddTick(label string, on bool) *Field {
+	return f.AddField(label, NewTick(on))
+}
+
 // AddButton puts a button at the bottom. The first one added is the one
 // Enter presses from a field, and the one that has the focus when the
 // form has no fields.

@@ -230,5 +230,11 @@ func asPane(port int, p agent.Pane) Pane {
 		Cols:  p.Cols,
 		Rows:  p.Rows,
 		Ended: p.Ended,
+		May: May{
+			Restart:  p.May.Restart,
+			OpenMore: p.May.OpenMore,
+			ReadOnly: p.May.ReadOnly,
+			ReadBack: p.May.ReadBack,
+		},
 	}
 }

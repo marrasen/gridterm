@@ -57,6 +57,29 @@ type stored struct {
 	// Shell is the shell a new pane runs, by the id the shell list gives
 	// it.
 	Shell *string `json:"shell,omitempty"`
+
+	// AgentMay is what the hand-over dialog's tick boxes were last set
+	// to. A field left out is a box that was not ticked.
+	AgentMay *AgentMay `json:"agentMay,omitempty"`
+}
+
+// AgentMay is what a hand-over allows an agent beyond reading a pane and
+// typing into it.
+//
+// Every one of them is off unless the user ticks it, so the zero value
+// is what a hand-over gives when nothing has been remembered.
+type AgentMay struct {
+	// Restart lets the agent start a closed pane's program again.
+	Restart bool `json:"restart,omitempty"`
+
+	// OpenMore lets it open another pane on the machine this one is on.
+	OpenMore bool `json:"openMore,omitempty"`
+
+	// ReadOnly refuses its typing, for watching without touching.
+	ReadOnly bool `json:"readOnly,omitempty"`
+
+	// ReadBack lets it read above the last clear.
+	ReadBack bool `json:"readBack,omitempty"`
 }
 
 // Settings are the choices gridterm remembers between runs.
@@ -193,6 +216,35 @@ func (s *Settings) PutAgentHost(name string) error {
 	}
 	before := s.have
 	s.have.AgentHost = &name
+	if err := s.saveLocked(); err != nil {
+		s.have = before
+		return err
+	}
+	return nil
+}
+
+// AgentMay is what the hand-over dialog's tick boxes were last set to,
+// and whether anything was saved.
+func (s *Settings) AgentMay() (AgentMay, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.have.AgentMay == nil {
+		return AgentMay{}, false
+	}
+	return *s.have.AgentMay, true
+}
+
+// PutAgentMay remembers what the hand-over dialog's tick boxes were set
+// to, and saves.
+func (s *Settings) PutAgentMay(may AgentMay) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// The file first, for the same reason PutServe reads it first.
+	if err := s.rereadLocked(); err != nil {
+		return fmt.Errorf("%w: %w", ErrUnsaveable, err)
+	}
+	before := s.have
+	s.have.AgentMay = &may
 	if err := s.saveLocked(); err != nil {
 		s.have = before
 		return err

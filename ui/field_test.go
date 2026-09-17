@@ -431,3 +431,38 @@ func TestFieldLeavesAKeyThatChangesNothing(t *testing.T) {
 		t.Error("ctrl+down was left alone with an option to reach")
 	}
 }
+
+// A tick box is turned over with the space bar, and is off to begin
+// with.
+func TestATickBoxIsTurnedOverWithSpace(t *testing.T) {
+	f := NewTick(false)
+	if f.On() {
+		t.Error("a box built off is on")
+	}
+	if took, _ := f.HandleKey(press(input.KeySpace, 0)); !took {
+		t.Fatal("space went past the tick box")
+	}
+	if !f.On() {
+		t.Error("space did not tick it")
+	}
+	if took, _ := f.HandleKey(press(input.KeySpace, 0)); !took || f.On() {
+		t.Error("space did not untick it")
+	}
+}
+
+// Nothing is typed into a tick box, and the keys it does not want go
+// past it to whatever is showing it.
+func TestATickBoxTakesNoTyping(t *testing.T) {
+	f := NewTick(false)
+	if took, _ := f.HandleKey(input.Event{Kind: input.Text, Rune: 'x', NormalText: true}); took {
+		t.Error("a letter was typed into a tick box")
+	}
+	if f.Text() != "" {
+		t.Errorf("it holds %q", f.Text())
+	}
+	for _, key := range []input.Key{input.KeyLeft, input.KeyBackspace, input.KeyEnd} {
+		if took, _ := f.HandleKey(press(key, 0)); took {
+			t.Errorf("%v was taken by a tick box", key)
+		}
+	}
+}

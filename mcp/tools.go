@@ -218,13 +218,18 @@ func (s *server) runTool(name string, args json.RawMessage) (result, *rpcError) 
 		}
 		what := "Read it with read_pane, type into it with send_keys, and wait for it" +
 			" with wait_for. The user is watching and can take it back at any moment."
+		if pane.May.ReadOnly {
+			what = "Read it with read_pane and wait for it with wait_for. The user handed" +
+				" it over to be read: send_keys is refused. They are watching and can take" +
+				" it back at any moment."
+		}
 		if pane.Ended {
 			what = "The program in it has finished, so there is nothing left to type" +
 				" into: read what it printed with read_pane."
 		}
 		return say(fmt.Sprintf(
-			"You have %s: a %dx%d screen, as pane %q.\n\n%s",
-			pane.Label, pane.Cols, pane.Rows, pane.ID, what))
+			"You have %s: a %dx%d screen, as pane %q.\n\n%s%s",
+			pane.Label, pane.Cols, pane.Rows, pane.ID, what, alsoAllowed(pane.May)))
 
 	case "list_panes":
 		panes, err := s.panes.List()
@@ -304,6 +309,30 @@ func (s *server) runTool(name string, args json.RawMessage) (result, *rpcError) 
 		Code:    codeInvalidParams,
 		Message: fmt.Sprintf("%q is not a tool this server has", name),
 	}
+}
+
+// alsoAllowed says what the user ticked for this pane, and says nothing
+// when they ticked nothing.
+//
+// An agent is told rather than left to find out by being refused. Being
+// told is not what allows it: the window decides on every call, and a
+// box turned off while the agent is working takes effect at once.
+func alsoAllowed(may May) string {
+	var can []string
+	if may.Restart {
+		can = append(can, "start the program again when it has finished, with restart_pane")
+	}
+	if may.OpenMore {
+		can = append(can, "open another pane where this one is, with open_pane")
+	}
+	if may.ReadBack {
+		can = append(can, "read above a clear, so clearing the screen hides nothing from you")
+	}
+	if len(can) == 0 {
+		return ""
+	}
+	return "\n\nThe user has also allowed you to " + strings.Join(can, "; ") +
+		". They can take any of that back while you work, and then the next call fails."
 }
 
 // mostLines caps how many lines one read may ask for. The window's own

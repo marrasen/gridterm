@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/marrasen/gridterm/agent"
+	"github.com/marrasen/gridterm/input"
 	"github.com/marrasen/gridterm/mcp"
 	"github.com/marrasen/gridterm/settings"
 	"github.com/marrasen/gridterm/ui"
@@ -2402,5 +2403,208 @@ func TestAClearCutsThePaneOffAtExactlyTheClear(t *testing.T) {
 	// read is exactly those thirty rows.
 	if got := countLines(look.Screen); got != 30 {
 		t.Errorf("it read %d lines, want the 30 rows below the clear:\n%s", got, look.Screen)
+	}
+}
+
+// tickBox turns a tick box over the way the user does: move the focus to
+// its row and press space.
+func tickBox(t *testing.T, a *testApp, f *ui.Form, label string) {
+	t.Helper()
+	fld := f.Field(label)
+	if fld == nil {
+		t.Fatalf("the dialog has no %q box", label)
+	}
+	was := fld.On()
+	for i := 0; i < len(f.Fields())+len(f.Buttons())+1; i++ {
+		if at, isButton := f.Focused(); !isButton && f.Fields()[at] == fld {
+			break
+		}
+		sendKey(t, a, press(input.KeyTab, 0))
+	}
+	if at, isButton := f.Focused(); isButton || f.Fields()[at] != fld {
+		t.Fatalf("focus never reached the %q box", label)
+	}
+	sendKey(t, a, press(input.KeySpace, 0))
+	if fld.On() == was {
+		t.Fatalf("space did not turn the %q box over", label)
+	}
+}
+
+// Every box starts off, so a hand-over gives reading and typing and
+// nothing else until the user says otherwise.
+func TestTheHandoverBoxesStartOff(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pane := onlyPaneOn(t, a)
+
+	f := handoverDialog(t, a, pane)
+	for _, label := range []string{
+		"Restart a closed connection", "Open another pane there", "Read only",
+		"Read above a clear",
+	} {
+		fld := f.Field(label)
+		if fld == nil {
+			t.Fatalf("the dialog has no %q box", label)
+		}
+		if fld.On() {
+			t.Errorf("%q starts ticked", label)
+		}
+	}
+	if may := a.agents.of(pane).may; may != (settings.AgentMay{}) {
+		t.Errorf("the hand-over allows %+v before anything was ticked", may)
+	}
+}
+
+// "Read only" refuses the agent's typing, and does it the moment the box
+// is ticked rather than at the next hand-over.
+func TestReadOnlyRefusesTheAgentsTyping(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	_, code, c := handedOver(t, a)
+
+	var got agent.Pane
+	offWindow(t, a, "the window to answer the agent", func() error {
+		var err error
+		got, err = c.Use(code)
+		return err
+	})
+	if got.May.ReadOnly {
+		t.Fatal("the pane is read only before anything was ticked")
+	}
+	offWindow(t, a, "the window to take the keys", func() error {
+		return c.Send(got.ID, "whoami\r", nil)
+	})
+
+	// The dialog is open behind the hand-over, and the box is ticked
+	// while the agent is working.
+	f := awaitModal[*ui.Form](t, a, "the hand-over dialog",
+		byTitle[*ui.Form]("An agent may work in this pane"))
+	tickBox(t, a, f, "Read only")
+
+	var err error
+	offWindow(t, a, "the window to refuse the keys", func() error {
+		err = c.Send(got.ID, "rm -rf /\r", nil)
+		return nil
+	})
+	if err == nil {
+		t.Fatal("the agent typed into a pane handed over to be read")
+	}
+	if !strings.Contains(err.Error(), "Read only") {
+		t.Errorf("it was told %q, which does not name the box to turn off", err)
+	}
+	// Reading still works: that is what read only means.
+	if look := looked(t, a, c, got.ID); look.Screen == "" {
+		t.Error("it cannot read the pane either")
+	}
+
+	// And an agent that uses the code now is told what it may do.
+	var again agent.Pane
+	offWindow(t, a, "the window to answer the agent", func() error {
+		var err error
+		again, err = c.Use(code)
+		return err
+	})
+	if !again.May.ReadOnly {
+		t.Error("the agent is not told the pane is read only")
+	}
+}
+
+// "Read above a clear" gives the agent back what a clear put away, for
+// one pane.
+func TestReadingAboveAClearIsABoxTheUserTicks(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pane, code, c := handedOver(t, a)
+
+	var got agent.Pane
+	offWindow(t, a, "the window to answer the agent", func() error {
+		var err error
+		got, err = c.Use(code)
+		return err
+	})
+
+	var filling strings.Builder
+	for i := 0; i < 40; i++ {
+		fmt.Fprintf(&filling, "line %d\r\n", i)
+	}
+	a.shells[0].out <- []byte("$ cat secrets\r\nhunter2\r\n" + filling.String())
+	waitFor(t, a, "the secret to scroll off the screen", func() bool {
+		return strings.Contains(paneText(pane), "line 39") &&
+			!strings.Contains(paneText(pane), "hunter2")
+	})
+	a.shells[0].out <- []byte("\x1b[H\x1b[2J\x1b[3J$ ")
+	waitFor(t, a, "the pane to be cleared", func() bool {
+		return !strings.Contains(paneText(pane), "line 39")
+	})
+
+	read := func() agent.Look {
+		t.Helper()
+		var look agent.Look
+		offWindow(t, a, "the window to answer the agent", func() error {
+			var err error
+			look, err = c.Read(got.ID, 400)
+			return err
+		})
+		return look
+	}
+	if look := read(); strings.Contains(look.Screen, "hunter2") {
+		t.Fatalf("the agent read past the clear before the box was ticked:\n%s", look.Screen)
+	}
+
+	f := awaitModal[*ui.Form](t, a, "the hand-over dialog",
+		byTitle[*ui.Form]("An agent may work in this pane"))
+	tickBox(t, a, f, "Read above a clear")
+
+	look := read()
+	if !strings.Contains(look.Screen, "hunter2") {
+		t.Errorf("the box is ticked and the agent still cannot read past the clear:\n%s",
+			look.Screen)
+	}
+	if strings.Contains(look.Note, "cleared") {
+		t.Errorf("it is still told the pane was cleared: %q", look.Note)
+	}
+}
+
+// What was ticked is remembered, and the next hand-over opens on it.
+func TestTheHandoverBoxesAreRemembered(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	path := filepath.Join(t.TempDir(), "settings.json")
+	set, err := withSettings(t, a, path)
+	if err != nil {
+		t.Fatalf("settings: %v", err)
+	}
+	pane := onlyPaneOn(t, a)
+
+	f := handoverDialog(t, a, pane)
+	tickBox(t, a, f, "Read only")
+	pressButton(t, a, f, "Done")
+
+	waitFor(t, a, "the box to be remembered", func() bool {
+		may, saved := set.AgentMay()
+		return saved && may.ReadOnly
+	})
+	again, err := settings.Load(path)
+	if err != nil {
+		t.Fatalf("load the settings again: %v", err)
+	}
+	if may, saved := again.AgentMay(); !saved || !may.ReadOnly {
+		t.Errorf("the file remembered %+v, %v", may, saved)
+	}
+
+	// And the next hand-over opens on it, ticked.
+	if err := a.takeBackPane(pane); err != nil {
+		t.Fatalf("take it back: %v", err)
+	}
+	next := handoverDialog(t, a, pane)
+	if fld := next.Field("Read only"); fld == nil || !fld.On() {
+		t.Error("the next hand-over opens with the box empty")
+	}
+	if !a.agents.of(pane).may.ReadOnly {
+		t.Error("the next hand-over does not allow what the box says")
 	}
 }

@@ -54,6 +54,11 @@ type Field struct {
 	// that is typed into it.
 	Options []string
 
+	// Tick makes this a tick box rather than something to type in. It
+	// holds Ticked or nothing, space turns it over, and nothing is typed
+	// into it.
+	Tick bool
+
 	text string
 	at   int // the caret, a byte offset into text at a cluster boundary
 	left int // the first byte drawn, for text wider than the field
@@ -64,6 +69,35 @@ type Field struct {
 
 // NewField returns an empty field.
 func NewField() *Field { return &Field{} }
+
+// Ticked is what a tick box holds when it is on. A tick box is a field,
+// so what it holds is text like any other field's.
+const Ticked = "yes"
+
+// NewTick returns a tick box.
+func NewTick(on bool) *Field {
+	f := &Field{Tick: true}
+	f.SetOn(on)
+	return f
+}
+
+// On reports whether a tick box is ticked.
+func (f *Field) On() bool { return f.text == Ticked }
+
+// SetOn ticks a box or clears it.
+func (f *Field) SetOn(on bool) {
+	if on {
+		f.SetText(Ticked)
+		return
+	}
+	f.SetText("")
+}
+
+// Toggle turns a tick box over and reports what it holds now.
+func (f *Field) Toggle() bool {
+	f.SetOn(!f.On())
+	return f.On()
+}
 
 // Text returns what has been typed.
 func (f *Field) Text() string { return f.text }
@@ -115,6 +149,24 @@ func (f *Field) Focused() bool { return f.focused }
 // HandleKey edits the text. Keys it has no use for travel on, so Enter,
 // Escape and Tab still reach whatever is showing the field.
 func (f *Field) HandleKey(ev input.Event) (bool, error) {
+	// A tick box takes space and the keys that step through options, and
+	// nothing else: there is nothing to type into it, and every other
+	// key belongs to whatever is showing it.
+	if f.Tick {
+		if ev.Kind == input.Text && ev.Rune == ' ' {
+			f.Toggle()
+			return true, nil
+		}
+		if ev.Kind != input.KeyPress && ev.Kind != input.KeyRepeat {
+			return false, nil
+		}
+		if ev.Key == input.KeySpace ||
+			ev.Ctrl() && (ev.Key == input.KeyDown || ev.Key == input.KeyUp) {
+			f.Toggle()
+			return true, nil
+		}
+		return false, nil
+	}
 	if ev.Kind == input.Text {
 		// Delete is not a character to type, whatever the platform says.
 		if !ev.NormalText || ev.Rune < ' ' || ev.Rune == 0x7f {
@@ -205,6 +257,20 @@ func (f *Field) Draw(v grid.View) {
 
 	blank := grid.Cell{Rune: ' ', FG: f.Style.FG, BG: f.Style.BG, Width: 1}
 	v.Sub(0, 0, cols, 1).Fill(blank)
+
+	if f.Tick {
+		box := "[ ]"
+		if f.On() {
+			box = "[x]"
+		}
+		v.SetString(0, 0, grid.Trim(box, cols), f.Style.FG, f.Style.BG, 0)
+		// The caret sits on the tick itself, so the row with the keys on
+		// it is the row that looks answerable.
+		if f.focused && cols > 1 {
+			v.SetCursor(grid.Cursor{X: 1, Y: 0, Visible: true, Style: grid.CursorBlock})
+		}
+		return
+	}
 
 	if f.text == "" && f.Placeholder != "" {
 		// Shown even with the caret in it: an empty field is exactly

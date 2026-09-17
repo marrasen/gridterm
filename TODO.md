@@ -192,15 +192,6 @@ Asked for on 2026-09-17. `addSplitChoices` in split.go offers three
 kinds of line: "New terminal", "Move <pane>" for every other pane open,
 and "Terminal on <machine>" for every machine the window knows.
 
-- **Offer what the "+" on a machine's row offers.** That menu has
-  Terminal, Files and "Command…", and on this machine a line per shell
-  found -- CMD, PowerShell, each WSL distribution. The split chooser has
-  only Terminal. "Command…" and the shells belong in it.
-
-- **Leave Files out.** A file pane belongs to the file manager and is
-  split inside it, not into a terminal split. This is the one place the
-  two menus deliberately differ.
-
 - **Finding a pane to move is hard.** The lines that move an open pane
   into the split sit in one flat list mixed in with the machines, one
   line each, named by `paneName` with `paneWhere` beside it. Group them

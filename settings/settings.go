@@ -48,6 +48,12 @@ type stored struct {
 	// is free.
 	ServePort *int `json:"servePort,omitempty"`
 
+	// ServeOn says a window was serving when it was last closed, so the
+	// next one can offer to serve again. A field left out is a gridterm
+	// that has never served. There is one file per user rather than one
+	// per window, so this is the last window to say either way.
+	ServeOn *bool `json:"serveOn,omitempty"`
+
 	// ServeReach is one of the words above rather than the dialog's
 	// wording, so the dialog can be reworded without orphaning it.
 	ServeReach *string `json:"serveReach,omitempty"`
@@ -178,6 +184,34 @@ func (s *Settings) Err() error {
 
 // Path returns the file the settings are kept in.
 func (s *Settings) Path() string { return s.path }
+
+// ServeOn reports whether this window was serving when it was last
+// closed.
+func (s *Settings) ServeOn() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.have.ServeOn != nil && *s.have.ServeOn
+}
+
+// PutServeOn writes down whether the window is serving, for the next run
+// to offer.
+func (s *Settings) PutServeOn(on bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// The file first: another window may have changed it since this one
+	// read it, and writing a copy built from a stale read would throw
+	// that work away.
+	if err := s.rereadLocked(); err != nil {
+		return fmt.Errorf("%w: %w", ErrUnsaveable, err)
+	}
+	before := s.have
+	s.have.ServeOn = &on
+	if err := s.saveLocked(); err != nil {
+		s.have = before
+		return err
+	}
+	return nil
+}
 
 // ServePort is the port the serve dialog was last set to, and whether one
 // was saved.

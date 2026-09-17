@@ -5,7 +5,39 @@ each group. A line goes when the work is in and reviewed.
 
 ## Waiting on an answer from Marcus
 
-Nothing.
+These are all about the context menu, which is planned below.
+
+- **Right click in a pane where a program owns the mouse.** vim, mc and
+  htop ask for the mouse, and then the right button is theirs. The
+  window already has a rule for this: hold Shift and the program is
+  bypassed, which is how a selection is made over one. Should the menu
+  follow that rule, so Shift+right-click opens it and a plain right
+  click goes to the program? The other way is for the menu to win
+  always, and for those programs never to see the right button.
+
+- **A connection row on the sidebar has no menu to open.** The plus on a
+  machine heading opens one; a row's button is a cross that closes it.
+  Should a right click on a row open a new menu, and what should be on
+  it: go to it, close it, share it with an agent, write down what the
+  agent typed? Or should a row have no menu?
+
+- **Which pane does the menu act on?** A right click on a pane that is
+  not in front could focus it first, so "Close pane" cannot close a pane
+  the user was not pointing at. Or the menu could act on the pane in
+  front whatever was clicked. The first is what most windows do.
+
+- **What goes on a terminal's menu?** Suggested, in this order: Copy,
+  Paste, a rule, Split right, Split down, Take this pane out of its
+  split, a rule, Share this pane with an agent, Close pane. That is nine
+  lines, which may be too many to read at a glance.
+
+- **The file browser.** Its operations are on the key bar: rename, copy,
+  cut, paste, delete, make a directory. Should a right click offer
+  those, and should it move the selection to the item under the pointer
+  first?
+
+- **A keyboard way in?** Shift+F10 and the Menu key are what other
+  windows use. Worth binding, or is the palette enough?
 
 ## Settled, do not re-open
 
@@ -311,6 +343,19 @@ there is one key for position and one for recency.
   looks. It was already failing this way before the shortcuts file went
   in, so it is the test that is wrong rather than the window.
 
+- **A row for a shell a client started does not say which client.**
+  Every one reads "started from another window", so a host with two
+  windows connected sees rows it cannot tell apart, while the row above
+  them names the client and its address. `serve.Config.Open` is
+  `func(cols, rows int)` and does not carry the client, so naming one
+  means changing that signature.
+
+- **Whether a window was serving is one flag for the whole user.** The
+  settings file is shared, so two gridterms running at once write over
+  each other's answer, and the offer at the next start is whichever one
+  closed last. Per-window would need a name for a window, which nothing
+  has yet.
+
 - **The pane switcher draws every pane twice while it is open.** The
   tiles cover the window, but the tree underneath still draws each pane
   into the window's own grid, and then each one is drawn again into its
@@ -432,6 +477,33 @@ properly and either written up above or done.
 
 - **Context menu.** Make use of one. On the sidebar it opens the menu
   that is already there.
-- **Serving.** When "Serve this window" is switched on, offer to switch
-  it on again at every start. Terminals made remotely on a host do not
-  show up on the host.
+
+  A context menu is a `ui.Menu` anchored at the pointer. Everything it
+  needs is already there: `ui.NewMenu` takes command ids, `menu.Anchor`
+  is a function returning a rectangle, and `a.showModal` puts it up. The
+  plus on a machine heading does exactly this, anchored at a row instead
+  of a cell.
+
+  Where a right click can land, and what is there today:
+
+  - A terminal pane. Nothing: the right button falls through
+    (ui/term/term.go:943).
+  - A machine heading on the sidebar. Its plus already opens a menu, so
+    this is routing and no new lines.
+  - A connection row on the sidebar. Nothing. Its button is a cross that
+    closes the pane or clears a finished row, not a plus, so there is no
+    menu to open.
+  - A file browser pane. Its operations live on its key bar rather than
+    in a menu.
+  - A split divider, the menu bar, the ground between tiles. Nothing.
+
+  The press reaches `a.root.HandleMouse` and walks the tree. Widgets
+  return false for the right button today, so the window can take it
+  after the tree has declined and work out what is under the pointer the
+  same way the pointer shape is chosen.
+
+  The one hard part is a program that owns the mouse. vim, mc and htop
+  turn mouse reporting on, and the right button is then theirs
+  (ui/term/term.go:909). Selection already answers this: hold Shift and
+  the program is bypassed. The menu should follow that rule rather than
+  invent a second one.

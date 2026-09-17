@@ -882,3 +882,103 @@ func settingsAt(t *testing.T) *Settings {
 	}
 	return set
 }
+
+// Whether the window was serving is remembered, so the next one can
+// offer to serve again.
+func TestWhetherItWasServingIsRemembered(t *testing.T) {
+	path := at(t)
+	s, err := Load(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if s.ServeOn() {
+		t.Error("a missing file says the window was serving")
+	}
+
+	if err := s.PutServeOn(true); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	if !s.ServeOn() {
+		t.Error("it does not read back")
+	}
+	again, err := Load(path)
+	if err != nil {
+		t.Fatalf("load again: %v", err)
+	}
+	if !again.ServeOn() {
+		t.Error("the next window does not know it was serving")
+	}
+	// And it can be taken back.
+	if err := again.PutServeOn(false); err != nil {
+		t.Fatalf("save it off: %v", err)
+	}
+	third, err := Load(path)
+	if err != nil {
+		t.Fatalf("load a third time: %v", err)
+	}
+	if third.ServeOn() {
+		t.Error("it still says the window was serving")
+	}
+}
+
+// Writing it down keeps what a second window saved in between.
+func TestRememberingItWasServingKeepsASecondWindowsWork(t *testing.T) {
+	path := at(t)
+	one, err := Load(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	two, err := Load(path)
+	if err != nil {
+		t.Fatalf("load a second window: %v", err)
+	}
+	if err := two.PutServe(9000, ReachAnywhere); err != nil {
+		t.Fatalf("the second window saves the port: %v", err)
+	}
+
+	if err := one.PutServeOn(true); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	again, err := Load(path)
+	if err != nil {
+		t.Fatalf("load again: %v", err)
+	}
+	if port, have := again.ServePort(); !have || port != 9000 {
+		t.Errorf("the port came back as %d, %v; want the 9000 the second window saved", port, have)
+	}
+	if !again.ServeOn() {
+		t.Error("it does not say the window was serving")
+	}
+}
+
+// It is not saved over settings that could not be read, and the value
+// in hand is left as it was.
+func TestItIsNotSavedOverUnreadableSettings(t *testing.T) {
+	path := at(t)
+	const broken = "{"
+	if err := os.WriteFile(path, []byte(broken), 0o600); err != nil {
+		t.Fatalf("write the file: %v", err)
+	}
+	s, loadErr := Load(path)
+	if loadErr == nil {
+		t.Fatal("a broken file loaded clean")
+	}
+
+	err := s.PutServeOn(true)
+
+	if !errors.Is(err, ErrUnsaveable) {
+		t.Errorf("saving gave %v, want ErrUnsaveable", err)
+	}
+	if s.ServeOn() {
+		t.Error("the value in hand was changed by a save that failed")
+	}
+	now, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read the file again: %v", err)
+	}
+	if string(now) != broken {
+		t.Errorf("the file is now %q, want the %q it was", now, broken)
+	}
+}

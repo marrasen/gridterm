@@ -197,6 +197,20 @@ func (s *serving) rememberServe(port int, where string) error {
 	return s.remembered.PutServe(port, reachSaved(where))
 }
 
+// rememberOn writes down whether the window is serving, for the next run
+// to offer.
+func (s *serving) rememberOn(on bool) error {
+	if s.remembered == nil {
+		return nil
+	}
+	return s.remembered.PutServeOn(on)
+}
+
+// wasOn reports whether the window was serving when it last closed.
+func (s *serving) wasOn() bool {
+	return s.remembered != nil && s.remembered.ServeOn()
+}
+
 // where is the key and the list of who may connect this window serves
 // with.
 func (s *serving) where() (servePaths, error) {
@@ -284,10 +298,10 @@ func (s *serving) opens() serve.Snapshot { return s.openNow.get() }
 
 // openServing asks whether to let another window take this one over.
 //
-// Off unless it is turned on, and turned on for this run only: a window
-// that started serving because it did last time would be one that is
-// serving without anybody having decided to today. What the dialog was
-// last set to is remembered; whether it was answered is not.
+// Off unless it is turned on: a window that started serving because it
+// did last time would be one that is serving without anybody having
+// decided to today. A window that was serving is offered the port again
+// at its next start, by offerToServeAgain.
 func (a *app) openServing() error {
 	if a.serving.on() {
 		a.showServing()
@@ -490,7 +504,17 @@ func (a *app) startServing(port, where string) error {
 			a.pump.post(func() { a.logError(err) })
 		},
 	}
-	return a.serving.listen(cfg)
+	if err := a.serving.listen(cfg); err != nil {
+		return err
+	}
+	// Posted, because this runs from a dialog's button and the dialog
+	// takes anything stacked on it away as it closes.
+	if err := a.serving.rememberOn(true); err != nil {
+		a.pump.post(func() {
+			a.reportError("This window is serving, but that could not be written down", err)
+		})
+	}
+	return nil
 }
 
 // useSettings gives the window what it remembers between runs, and says
@@ -626,7 +650,12 @@ func (a *app) showServing() error {
 			Do: func() error { return a.kickOut(clients) },
 		})
 	}
-	f.AddButton(ui.Button{Title: "Stop serving", Do: a.stopServing})
+	f.AddButton(ui.Button{Title: "Stop serving", Do: func() error {
+		// Forgotten here rather than in stopServing, which a window
+		// closing also calls: quitting is not the user saying they are
+		// done serving.
+		return errors.Join(a.stopServing(), a.serving.rememberOn(false))
+	}})
 	a.showForm(f, nil)
 	return nil
 }
@@ -967,3 +996,43 @@ func serveLocalFiles(ch io.ReadWriteCloser) error {
 type keptOpen struct{ io.ReadWriteCloser }
 
 func (keptOpen) Close() error { return nil }
+
+// serveAgainTitle heads the dialog a window that was serving opens with.
+const serveAgainTitle = "Serve this window again?"
+
+// offerToServeAgain asks whether to open the port again, for a window
+// that was serving when it last closed. It asks rather than opening one.
+func (a *app) offerToServeAgain() {
+	if !a.serving.wasOn() || a.serving.on() {
+		return
+	}
+	a.pump.post(func() {
+		port := a.serving.startPort()
+		where := a.serving.startReach()
+		f := a.newConfirm(serveAgainTitle, []string{
+			"This window was serving when it was last closed.",
+			"",
+			"Port:            " + servePortWords(port),
+			"Reachable from:  " + where,
+			"",
+			"Nothing is listening until you say so.",
+		})
+		f.AddButton(ui.Button{Title: "Serve", Do: func() error {
+			return a.startServing(strconv.Itoa(port), where)
+		}})
+		f.AddButton(ui.Button{Title: "Not now"})
+		f.AddButton(ui.Button{Title: "Forget that it served", Do: func() error {
+			return a.serving.rememberOn(false)
+		}})
+		a.showForm(f, nil)
+	})
+}
+
+// servePortWords is a port as the dialog says it, because 0 means
+// whichever one is free rather than port zero.
+func servePortWords(port int) string {
+	if port == 0 {
+		return "whichever is free"
+	}
+	return strconv.Itoa(port)
+}

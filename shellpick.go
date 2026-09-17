@@ -8,7 +8,6 @@ import (
 	"sync"
 	"unicode"
 
-	"github.com/marrasen/gridterm/session"
 	"github.com/marrasen/gridterm/settings"
 	"github.com/marrasen/gridterm/shells"
 	"github.com/marrasen/gridterm/ui"
@@ -229,11 +228,6 @@ func (p *shellPick) pickedLocked() bool {
 	}
 	_, picked := p.remembered.Shell()
 	return picked
-}
-
-// newSession starts the shell a new pane on this machine runs.
-func (a *app) newSession(cols, rows int) (session.Session, error) {
-	return a.newShell(a.localShell(), "", cols, rows)
 }
 
 // localShell is the argv a new pane on this machine runs, and is nil

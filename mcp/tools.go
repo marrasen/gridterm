@@ -296,7 +296,7 @@ func (s *server) runTool(name string, args json.RawMessage) (result, *rpcError) 
 
 	case "list_panes":
 		panes, err := s.panes.List()
-		if err != nil {
+		if err != nil && len(panes) == 0 {
 			return wrong(err.Error())
 		}
 		if len(panes) == 0 {
@@ -307,6 +307,12 @@ func (s *server) runTool(name string, args json.RawMessage) (result, *rpcError) 
 		var out string
 		for _, p := range panes {
 			out += fmt.Sprintf("%s: %s, %dx%d\n", p.ID, p.Label, p.Cols, p.Rows)
+		}
+		if err != nil {
+			// The panes that did answer, and then what went wrong: an
+			// agent that is told only the failure loses the rest.
+			out += "\nA window could not be asked, so this may not be all" +
+				" of it: " + err.Error()
 		}
 		return say(out)
 

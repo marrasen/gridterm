@@ -32,6 +32,7 @@ package agent
 import (
 	"crypto/rand"
 	"encoding/base32"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -128,9 +129,13 @@ type Share struct {
 
 // ShareOf is the share a pane's name begins with, and whether the name
 // is one of these at all.
+//
+// A name is two numbers with one dot between them and nothing else. A
+// name that is nearly one is not one: this is half of what keeps an
+// agent out of a share it has no code for.
 func ShareOf(pane string) (uint64, bool) {
-	at, _, ok := strings.Cut(pane, ".")
-	if !ok {
+	at, n, ok := strings.Cut(pane, ".")
+	if !ok || !counting(at) || !counting(n) {
 		return 0, false
 	}
 	id, err := strconv.ParseUint(at, 10, 64)
@@ -139,6 +144,24 @@ func ShareOf(pane string) (uint64, bool) {
 	}
 	return id, true
 }
+
+// counting reports whether s is a number the way these names write one:
+// digits, no sign, no space, and no leading zero.
+func counting(s string) bool {
+	if s == "" || (len(s) > 1 && s[0] == '0') {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// ErrShareOver says a share has ended, so the panes that were in it are
+// nobody's to reach.
+var ErrShareOver = errors.New("that share is over")
 
 // Pane is one pane of a share.
 type Pane struct {

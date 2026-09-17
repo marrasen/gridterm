@@ -22,6 +22,10 @@ type fakeWindow struct {
 	gone    bool
 	taken   bool
 
+	// cannotAsk is what Shared fails with, for a window that is there
+	// and cannot answer.
+	cannotAsk error
+
 	// lines is what the last Look was asked for, looks counts the Looks
 	// by how many lines each asked for, and pressed is every key name a
 	// Send has carried.
@@ -131,8 +135,11 @@ func (w *fakeWindow) Use(code string) (Share, error) {
 func (w *fakeWindow) Shared(share uint64) ([]Pane, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	if w.cannotAsk != nil {
+		return nil, w.cannotAsk
+	}
 	if w.taken || share != 1 {
-		return nil, errors.New("that share is over")
+		return nil, ErrShareOver
 	}
 	return w.inShare(), nil
 }
@@ -1555,4 +1562,71 @@ func (w *fakeWindow) typesSecretNow() {
 	defer w.mu.Unlock()
 	w.typesSecret = make(chan struct{})
 	close(w.typesSecret)
+}
+
+// A name that is nearly a pane name is not one.
+//
+// holds is half of what keeps an agent out of a share it has no code
+// for, and the window's own check is the other half. This one has to
+// stand on its own.
+func TestANameThatIsNearlyAPaneNameNamesNothing(t *testing.T) {
+	for _, name := range []string{
+		"", ".", "1", "1.", ".1", "1.1.1", "01.2", "1.01", " 1.1", "1.1 ",
+		"1..1", "-1.1", "1.-1", "99999999999999999999.1", "one.two", "1.1x",
+	} {
+		if share, ok := ShareOf(name); ok {
+			t.Errorf("%q names share %d, want it refused", name, share)
+		}
+		if holds(map[uint64]bool{1: true, 0: true}, name) {
+			t.Errorf("an agent holding share 1 is given %q", name)
+		}
+	}
+	// And the names the window does make.
+	for _, name := range []string{"1.2", "3.7", "10.11"} {
+		if _, ok := ShareOf(name); !ok {
+			t.Errorf("%q is a name this window makes, and was refused", name)
+		}
+	}
+}
+
+// A window that cannot be asked what is in a share says so, rather than
+// the agent being told it has nothing.
+//
+// The two are different answers. A share that has ended is skipped,
+// because the agent asked what it has and it has the rest. Anything else
+// is the window failing, and an agent told "you have no panes" goes back
+// to the user for a code it does not need.
+func TestAWindowThatCannotBeAskedIsNotAnEmptyShare(t *testing.T) {
+	w, _, code := listening(t)
+	c, err := Dial(code)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer func() { _ = c.Close() }()
+	opened(t, c, code)
+
+	w.mu.Lock()
+	w.cannotAsk = errors.New("this window is closing")
+	w.mu.Unlock()
+
+	panes, err := c.Panes()
+	if err == nil {
+		t.Fatalf("the agent was told it has %+v, want the failure", panes)
+	}
+	if !strings.Contains(err.Error(), "this window is closing") {
+		t.Errorf("it said %v, want what the window said", err)
+	}
+
+	// A share that has ended is still skipped.
+	w.mu.Lock()
+	w.cannotAsk = nil
+	w.taken = true
+	w.mu.Unlock()
+	panes, err = c.Panes()
+	if err != nil {
+		t.Fatalf("asking what it has after the share ended: %v", err)
+	}
+	if len(panes) != 0 {
+		t.Errorf("the agent was told it has %+v, want nothing", panes)
+	}
 }

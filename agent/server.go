@@ -362,10 +362,14 @@ func (s *Server) answer(want ask, held map[uint64]bool) said {
 		out := make([]Pane, 0, len(held))
 		for id := range held {
 			panes, err := s.cfg.Window.Shared(id)
-			if err != nil {
-				// A share that has ended is not an answer of its own:
-				// the agent asked what it has, and it has the rest.
+			if errors.Is(err, ErrShareOver) {
+				// The agent asked what it has, and it has the rest.
 				continue
+			}
+			if err != nil {
+				// Anything else is the window failing to answer, which
+				// is not the same as having nothing.
+				return said{Error: err.Error()}
 			}
 			out = append(out, panes...)
 		}

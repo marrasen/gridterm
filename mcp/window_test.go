@@ -472,3 +472,64 @@ func TestWhatTheShellSaidReachesTheAgent(t *testing.T) {
 		t.Errorf("the answer carries the screen rather than the output:\n%s", printed)
 	}
 }
+
+// A window that has gone does not take another window's panes with it.
+//
+// list_panes is how an agent finds out what it has. One dead connection
+// used to fail the whole answer, for ever: the agent was handed an error
+// where a list of the panes it could still reach belonged.
+func TestOneWindowGoingLeavesTheOthersPanesListed(t *testing.T) {
+	first := &oneWindow{screen: "the first window"}
+	one, err := agent.Listen(agent.Config{Window: first, OnError: func(error) {}})
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer func() { _ = one.Close() }()
+	first.code, err = agent.NewCode(one.Port())
+	if err != nil {
+		t.Fatalf("code: %v", err)
+	}
+
+	second := &oneWindow{screen: "the second window"}
+	two, err := agent.Listen(agent.Config{Window: second, OnError: func(error) {}})
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer func() { _ = two.Close() }()
+	second.code, err = agent.NewCode(two.Port())
+	if err != nil {
+		t.Fatalf("code: %v", err)
+	}
+
+	panes := NewWindow()
+	defer func() { _ = panes.Close() }()
+	if _, err := panes.Use(first.code); err != nil {
+		t.Fatalf("the first window: %v", err)
+	}
+	shared, err := panes.Use(second.code)
+	if err != nil {
+		t.Fatalf("the second window: %v", err)
+	}
+	if len(shared) == 0 {
+		t.Fatal("the second window shared nothing")
+	}
+
+	// The first window closes. The agent is still holding a code for it.
+	if err := one.Close(); err != nil {
+		t.Fatalf("closing the first window: %v", err)
+	}
+	// Reaching it is what tells this end the connection has gone.
+	if _, err := panes.Read(shared[0].ID, 0); err != nil {
+		t.Fatalf("the second window is still there: %v", err)
+	}
+
+	for i := 0; i < 3; i++ {
+		listed, err := panes.List()
+		if err != nil {
+			t.Fatalf("list %d: %v", i, err)
+		}
+		if len(listed) != 1 || listed[0].ID != shared[0].ID {
+			t.Fatalf("list %d holds %v, want the pane in the window still there", i, listed)
+		}
+	}
+}

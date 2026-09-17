@@ -60,6 +60,13 @@ func (w *Window) List() ([]Pane, error) {
 	for port, conn := range w.connections() {
 		panes, err := conn.Panes()
 		if err != nil {
+			if conn.Gone() {
+				// The window has closed. Its panes are nobody's to
+				// reach, and saying so on every later list would bury
+				// the panes that are.
+				w.forget(port)
+				continue
+			}
 			errs = append(errs, err)
 			continue
 		}
@@ -243,9 +250,22 @@ func (w *Window) connections() map[int]*agent.Client {
 	defer w.mu.Unlock()
 	out := make(map[int]*agent.Client, len(w.reached))
 	for port, conn := range w.reached {
+		if conn.Gone() {
+			// A window that has closed cannot be asked again, and one
+			// left here would fail every later list.
+			delete(w.reached, port)
+			continue
+		}
 		out[port] = conn
 	}
 	return out
+}
+
+// forget drops a window this agent had reached.
+func (w *Window) forget(port int) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	delete(w.reached, port)
 }
 
 // paneAt finds the window a pane name belongs to, and what that window

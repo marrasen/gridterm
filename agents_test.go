@@ -3963,3 +3963,55 @@ func pressChip(t *testing.T, a *testApp, col, row int) {
 		t.Fatal("the press on the chip travelled on")
 	}
 }
+
+// A pane added to a share the agent is already using is only offered
+// until the agent asks what it has.
+//
+// The row is the user's one per-pane signal. An agent an hour into a
+// share has not touched a pane added a moment ago, and the row must not
+// say it has.
+func TestAPaneAddedLaterIsOnlyOfferedUntilTheAgentAsks(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	first, second := twoSharedPanes(t, a)
+	// The second is out of the share again, so it can be added after the
+	// agent has connected.
+	if err := a.takeBackPane(second); err != nil {
+		t.Fatalf("take it out: %v", err)
+	}
+	code := a.agents.code()
+
+	c, err := agent.Dial(code)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	t.Cleanup(func() { _ = c.Close() })
+	offWindow(t, a, "the window to answer the agent", func() error {
+		_, err := firstOf(c.Use(code))
+		return err
+	})
+	waitFor(t, a, "the row to say an agent is working here", func() bool {
+		a.refreshPanel(panelNow)
+		return a.panes[first].Note == agentAt
+	})
+
+	// Added now, with the agent connected and knowing nothing about it.
+	if err := a.handPane(second); err != nil {
+		t.Fatalf("add it: %v", err)
+	}
+	a.refreshPanel(panelNow)
+	if got := a.panes[second].Note; got != agentOffered {
+		t.Errorf("the row for a pane the agent has not been given says %q", got)
+	}
+
+	// And it says so the moment the agent asks what it has.
+	offWindow(t, a, "the window to list the panes", func() error {
+		_, err := c.Panes()
+		return err
+	})
+	waitFor(t, a, "the row to say the agent has it", func() bool {
+		a.refreshPanel(panelNow)
+		return a.panes[second].Note == agentAt
+	})
+}

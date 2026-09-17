@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -197,6 +198,24 @@ func TestThePlusOnLocalOffersFilesAndATerminal(t *testing.T) {
 		if offers(menu, not) {
 			t.Errorf("the menu offers %s, which is not about this machine", not)
 		}
+	}
+}
+
+// The plus on this machine's row offers a command, now that one runs
+// here. It is the only way to reach the dialog from the sidebar.
+func TestThePlusOnThisMachineOffersACommand(t *testing.T) {
+	a := newTestApp(t, 40, 20)
+	withDialogs(t, a)
+	withPanel(t, a)
+	scanShells(t, a)
+
+	menu := clickPlus(t, a, conns.Local)
+	var titles []string
+	for _, item := range menu.Items() {
+		titles = append(titles, item.Title)
+	}
+	if !slices.Contains(titles, "Command…") {
+		t.Errorf("the plus offers %v, missing the command line", titles)
 	}
 }
 

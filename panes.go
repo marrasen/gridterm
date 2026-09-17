@@ -73,6 +73,28 @@ func (a *app) localTerminalOn(argv []string) (*term.Terminal, error) {
 	return t, nil
 }
 
+// runCommandHere opens a pane running a command on this machine, at a
+// spot or in a tab of its own.
+//
+// A command row rather than a terminal one, so the pane is named by what
+// it runs and asks whether to run it again when it ends, the way a
+// command on a machine does.
+func (a *app) runCommandHere(argv []string, at *spot) error {
+	sess, err := a.newShell(argv, a.lastSize[0], a.lastSize[1])
+	if err != nil {
+		return fmt.Errorf("start session: %w", err)
+	}
+	t, err := a.openSessionTab(sess, conns.Local, conns.Command, labelFor(argv), at)
+	if err != nil {
+		// The session is ours now and nothing else will close it.
+		_ = sess.Close()
+		return err
+	}
+	a.startsAgain(t, argv, nil)
+	a.focus(t)
+	return nil
+}
+
 // terminalOnHome starts another shell on the machine -ssh named, riding
 // on the connection that is already open to it.
 //

@@ -5,15 +5,7 @@ each group. A line goes when the work is in and reviewed.
 
 ## Answered on 2026-09-17
 
-1. **A cross on a pane's row, shown on hover.** A pane row gets a cross
-   like every other row, and it does what the row's `Close` already
-   does: closes the pane and the row together. It appears only while the
-   pointer is over the row, so a transcript is never one stray click
-   away. This replaces the rule in `clearRow` that a pane row carries no
-   cross. The remote case under "Panes and the sidebar" is the same gap
-   from the other side.
-
-2. **A hand-over lasts as long as the pane, not as long as the
+1. **A hand-over lasts as long as the pane, not as long as the
    program.** Closing the pane is what drops it and stops the listener.
    Nothing changes for a host that reboots: the pane is still there, so
    the code still cannot be spent again. Two things follow, written up
@@ -21,11 +13,6 @@ each group. A line goes when the work is in and reviewed.
    - Reconnecting in the same pane keeps the same hand-over code.
    - The agent can start that reconnect itself, when the user has ticked
      the box for it. The boxes are done.
-
-3. **A local command gets a command row, like a remote one.** Named by
-   what it runs, with the same "Run it again?" question when it ends.
-   `startAgainHere` already opens a ConPTY on an argv, so that is the
-   piece to reuse.
 
 ## Settled, do not re-open
 

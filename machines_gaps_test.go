@@ -35,9 +35,13 @@ func serverRow(t *testing.T, a *testApp, host string) *conns.Entry {
 func TestACommandThatFailsSaysSo(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withDialogs(t, a)
+	withPanel(t, a)
+	// A gridterm window has no shell, so a command on one refuses.
+	if err := a.book.Put(remote.Host{Name: "desk", Address: "10.0.0.9", Window: true}, ""); err != nil {
+		t.Fatalf("save the window: %v", err)
+	}
+	a.hostMenus.nowAbout("desk")
 
-	// Running a command needs a machine to run it on, and the local pane
-	// has the keys, so this one refuses.
 	if err := a.root.Commands.Run("conn.command"); err != nil {
 		t.Fatalf("the command reported a failure to nobody: %v", err)
 	}

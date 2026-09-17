@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/files"
@@ -124,10 +125,6 @@ func (a *app) openCommandHere() error {
 	if err != nil {
 		return err
 	}
-	if h.kind == hostHere {
-		return errors.New(
-			"a command runs on a machine gridterm connected to, and this is the one it is running on")
-	}
 	if h.kind == hostWindow || h.kind == hostSavedWindow {
 		return fmt.Errorf(
 			"%s is a gridterm window: it has no shell, so there is nothing to run a command in. "+
@@ -141,7 +138,8 @@ func (a *app) openCommandHere() error {
 // askCommandOn asks for a command to run on a machine and puts the pane
 // it opens at a spot, or in a tab of its own when at is nil.
 func (a *app) askCommandOn(host string, at *spot) {
-	f := a.newForm("Run a command on " + host)
+	where := groupName(host)
+	f := a.newForm("Run a command on " + where)
 	what := f.AddField("Command", a.newField("the program and its arguments", 0))
 	f.AddButton(ui.Button{Title: "Run", Do: func() error {
 		command := strings.Fields(what.Text())
@@ -153,14 +151,23 @@ func (a *app) askCommandOn(host string, at *spot) {
 		// Not from here: this dialog closes as soon as this returns, and
 		// closing one takes anything stacked on top of it.
 		a.pump.post(func() {
-			if err := a.openOn(host, command, at); err != nil {
-				a.reportError("Could not run it on "+host, err)
+			if err := a.runCommandOn(host, command, at); err != nil {
+				a.reportError("Could not run it on "+where, err)
 			}
 		})
 		return nil
 	}})
 	f.AddButton(ui.Button{Title: "Cancel"})
 	a.showForm(f, nil)
+}
+
+// runCommandOn opens a pane running a command, on this machine or on one
+// the window connects to.
+func (a *app) runCommandOn(host string, command []string, at *spot) error {
+	if host == conns.Local {
+		return a.runCommandHere(command, at)
+	}
+	return a.openOn(host, command, at)
 }
 
 // showConnLogHere opens the account of how the machine the user is

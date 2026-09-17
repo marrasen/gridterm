@@ -300,9 +300,15 @@ func TestSplittingOffersACommandOnAMachine(t *testing.T) {
 	if !slices.Contains(got, "Terminal on desk") {
 		t.Fatalf("it offers %v, missing the saved window: the test has nothing to check", got)
 	}
+	// This machine runs one too, now that a command here opens a pane
+	// like any other.
+	if !slices.Contains(got, "Command on Local…") {
+		t.Errorf("it offers %v, missing a command on this machine", got)
+	}
+	// A gridterm window has no shell, so it never offers one.
 	for _, line := range got {
-		if strings.HasPrefix(line, "Command on ") && line != "Command on margit…" {
-			t.Errorf("it offers %q, and only a machine reached over a connection runs one", line)
+		if line == "Command on desk…" {
+			t.Error("it offers a command on a gridterm window, which has no shell to run one in")
 		}
 	}
 }

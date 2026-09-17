@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -445,17 +446,52 @@ func TestRunACommandRefusesAnEmptyOne(t *testing.T) {
 	}
 }
 
-// There is no connection to run a command on when the machine is the one
-// gridterm is running on, and saying so beats a dialog that cannot work.
-func TestRunACommandRefusesThisMachine(t *testing.T) {
+// A command runs on this machine too, and gets a command row: named by
+// what it runs, and asking whether to run it again when it ends.
+func TestRunACommandOnThisMachine(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withDialogs(t, a)
+	withPanel(t, a)
 
-	if err := a.openCommandHere(); err == nil {
-		t.Fatal("a command was offered on the machine gridterm is running on")
+	if err := a.openCommandHere(); err != nil {
+		t.Fatalf("a command on this machine: %v", err)
 	}
-	if m := a.root.Modal(); m != nil {
-		t.Fatalf("a dialog opened anyway: %T", m)
+	f := awaitModal[*ui.Form](t, a, "the command dialog", nil)
+	typeIntoField(t, a, f, "Command", "make deploy")
+	pressButton(t, a, f, "Run")
+	waitForPanes(t, a, 2)
+
+	pane := a.focusedTerminal()
+	if pane == nil {
+		t.Fatal("the command opened no pane")
+	}
+	if got := a.lastArgv(t); !slices.Equal(got, []string{"make", "deploy"}) {
+		t.Fatalf("the pane runs %v, want the command that was typed", got)
+	}
+	e := a.panes[pane]
+	if e == nil {
+		t.Fatal("the pane has no row")
+	}
+	if e.Kind != conns.Command {
+		t.Errorf("the row is a %v, want a command", e.Kind)
+	}
+	a.refreshPanel(time.Now())
+	row, ok := panelRow(a, e)
+	if !ok {
+		t.Fatalf("the pane has no row: %v", panelText(a, time.Now()))
+	}
+	if row.Text != "make deploy" {
+		t.Errorf("the row says %q, want what it runs", row.Text)
+	}
+
+	// And when it ends the pane asks whether to run it again, the way a
+	// command on a machine does.
+	endTheShell(t, a, len(a.shells)-1, pane)
+	if q := pane.Asking(); !strings.Contains(q, "make deploy") {
+		t.Errorf("the pane asks %q, want the command named in it", q)
+	}
+	if !strings.Contains(pane.Asking(), "again") {
+		t.Errorf("the pane asks %q, want the offer to run it again", pane.Asking())
 	}
 }
 

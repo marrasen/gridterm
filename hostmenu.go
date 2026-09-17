@@ -246,7 +246,9 @@ func hostItems(about hostFacts, shells []ui.MenuItem) []ui.MenuItem {
 			items = append(items, shells...)
 			items = append(items, ui.MenuSeparator())
 		}
-		return append(items, ui.MenuItem{Command: "conn.files", Title: "Files"})
+		return append(items,
+			ui.MenuItem{Command: "conn.files", Title: "Files"},
+			ui.MenuItem{Command: "conn.command", Title: "Command…"})
 	}
 	if about.kind == hostWindow {
 		items := []ui.MenuItem{

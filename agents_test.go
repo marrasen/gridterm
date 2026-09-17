@@ -1936,3 +1936,123 @@ func TestACommandTypedInTwoCallsKeepsThePromptItWasTypedAt(t *testing.T) {
 		t.Errorf("the prompt coming back was not noticed:\n%s", look.Screen)
 	}
 }
+
+// An agent reads what the last command printed, not the screen.
+//
+// The screen is a rectangle with the end of whatever ran before still in
+// it. Where one command's output begins is something the window knows
+// and the agent would have to guess.
+func TestAnAgentReadsWhatTheLastCommandPrinted(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pane, code, c := handedOver(t, a)
+
+	var got agent.Pane
+	offWindow(t, a, "the window to answer the agent", func() error {
+		var err error
+		got, err = c.Use(code)
+		return err
+	})
+
+	// Something the user ran before the agent arrived.
+	a.shells[0].out <- []byte("$ whoami\r\nmarcus\r\n$ ")
+	waitFor(t, a, "the pane to show the first command", func() bool {
+		return strings.Contains(paneText(pane), "marcus")
+	})
+
+	// Nothing marks its commands and the agent has typed nothing, so
+	// there is no boundary and it is told to read the pane instead.
+	_, err := outputOf(t, a, c, got.ID)
+	if err == nil {
+		t.Fatal("it was given output from a pane with no boundary")
+	}
+	if !strings.Contains(err.Error(), "read_pane") {
+		t.Errorf("it was told %q, which does not say what to do instead", err)
+	}
+
+	// Now the agent runs something of its own, on a shell that marks
+	// where the output begins.
+	offWindow(t, a, "the window to take the keys", func() error {
+		return c.Send(got.ID, "ls docs\r", nil)
+	})
+	a.shells[0].out <- []byte("ls docs\r\n" +
+		"\x1b]133;C\aaltscreen.png\r\nshell.png\r\n\x1b]133;D;0\a$ ")
+	waitFor(t, a, "the pane to show the second command", func() bool {
+		return strings.Contains(paneText(pane), "shell.png")
+	})
+
+	look, err := outputOf(t, a, c, got.ID)
+	if err != nil {
+		t.Fatalf("read the output: %v", err)
+	}
+	if !strings.Contains(look.Screen, "altscreen.png") || !strings.Contains(look.Screen, "shell.png") {
+		t.Errorf("the output is missing what the command printed:\n%s", look.Screen)
+	}
+	// And none of what came before it.
+	for _, gone := range []string{"whoami", "marcus", "ls docs"} {
+		if strings.Contains(look.Screen, gone) {
+			t.Errorf("the output carries %q, which is above where the command started:\n%s",
+				gone, look.Screen)
+		}
+	}
+	if !strings.Contains(look.Note, "the shell said") {
+		t.Errorf("the answer does not say where the boundary came from: %q", look.Note)
+	}
+}
+
+// A shell that marks nothing gives everything since the agent typed,
+// which is the best boundary there is.
+func TestAnAgentReadsEverythingSinceItTypedOnASilentShell(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pane, code, c := handedOver(t, a)
+
+	var got agent.Pane
+	offWindow(t, a, "the window to answer the agent", func() error {
+		var err error
+		got, err = c.Use(code)
+		return err
+	})
+
+	a.shells[0].out <- []byte("$ date\r\nThu 18 Sep\r\n$ ")
+	waitFor(t, a, "the pane to show the first command", func() bool {
+		return strings.Contains(paneText(pane), "Thu 18 Sep")
+	})
+
+	offWindow(t, a, "the window to take the keys", func() error {
+		return c.Send(got.ID, "uname\r", nil)
+	})
+	a.shells[0].out <- []byte("uname\r\nLinux\r\n$ ")
+	waitFor(t, a, "the pane to show the second command", func() bool {
+		return strings.Contains(paneText(pane), "Linux")
+	})
+
+	look, err := outputOf(t, a, c, got.ID)
+	if err != nil {
+		t.Fatalf("read the output: %v", err)
+	}
+	if !strings.Contains(look.Screen, "Linux") {
+		t.Errorf("the output is missing what the command printed:\n%s", look.Screen)
+	}
+	if strings.Contains(look.Screen, "Thu 18 Sep") {
+		t.Errorf("the output reaches back past what the agent typed:\n%s", look.Screen)
+	}
+	if !strings.Contains(look.Note, "does not mark") {
+		t.Errorf("the answer does not say the boundary is the line you typed on: %q", look.Note)
+	}
+}
+
+// outputOf is what the last command printed, taken through the agent
+// while the window answers.
+func outputOf(t *testing.T, a *testApp, c *agent.Client, id string) (agent.Look, error) {
+	t.Helper()
+	var look agent.Look
+	var failed error
+	offWindow(t, a, "the window to answer the agent", func() error {
+		look, failed = c.Output(id, 0)
+		return nil
+	})
+	return look, failed
+}

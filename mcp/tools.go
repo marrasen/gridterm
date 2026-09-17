@@ -96,6 +96,31 @@ func toolList() []tool {
 			},
 		},
 		{
+			Name:  "read_output",
+			Title: "Read what the last command printed",
+			Description: "What the last command in the pane printed, without the screen" +
+				" around it. Use this after wait_for rather than read_pane: read_pane gives" +
+				" you a rectangle of the screen, with the end of whatever ran before still" +
+				" in it, and you have to work out by eye where your own output starts." +
+				" The pane knows. A shell with shell integration on says where each" +
+				" command's output began; without it, this is everything the pane has said" +
+				" since you last typed. If it is neither -- a shell that says nothing, in a" +
+				" pane you have not typed in -- this says so and you want read_pane." +
+				" A full-screen program has no command output, and this says that too." +
+				status + marked,
+			InputSchema: schema{
+				Type: "object",
+				Properties: map[string]field{
+					"pane": {Type: "string", Description: "which pane, from use_session_code"},
+					"lines": {Type: "integer", Description: fmt.Sprintf(
+						"the most lines to give back, ending at the bottom. Left out, it is"+
+							" %d. A longer output gives the last %d and says so.",
+						mostLines, mostLines)},
+				},
+				Required: []string{"pane"},
+			},
+		},
+		{
 			Name:  "send_keys",
 			Title: "Type into a pane",
 			Description: "Put characters into the pane exactly as given, as though typed" +
@@ -227,6 +252,20 @@ func (s *server) runTool(name string, args json.RawMessage) (result, *rpcError) 
 		}
 		return say(showScreen(screen, Ending{}, clamped))
 
+	case "read_output":
+		if in.Pane == "" {
+			return missing("pane")
+		}
+		most, clamped := atMostLines(in.Lines)
+		if most == 0 {
+			most = mostLines
+		}
+		screen, err := s.panes.Output(in.Pane, most)
+		if err != nil {
+			return wrong(err.Error())
+		}
+		return say(showScreen(screen, Ending{}, clamped))
+
 	case "send_keys":
 		if in.Pane == "" {
 			return missing("pane")
@@ -243,7 +282,8 @@ func (s *server) runTool(name string, args json.RawMessage) (result, *rpcError) 
 			return wrong(err.Error())
 		}
 		return say("Sent. Use wait_for to see what happens: the screen has not" +
-			" caught up yet, and wait_for ends when what you sent finishes.")
+			" caught up yet, and wait_for ends when what you sent finishes. Then" +
+			" read_output for what it printed.")
 
 	case "wait_for":
 		if in.Pane == "" {

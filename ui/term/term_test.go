@@ -1239,3 +1239,37 @@ func TestAReadingSaysWhatIsInFrontOfTheCursor(t *testing.T) {
 		t.Errorf("after scrolling the cursor is on line %d, want 6", read.Line)
 	}
 }
+
+// Reading from a line gives what the pane has said since that line,
+// however far it has scrolled in the meantime.
+func TestReadingFromALine(t *testing.T) {
+	term, f := newTestTerm(t, 40, 4, Config{})
+	f.feed(t, term, "$ ls\r\n")
+
+	// The line the output starts on, taken the way a caller would.
+	from := term.ReadLines(0).Line
+	f.feed(t, term, "one\r\ntwo\r\nthree\r\nfour\r\n$ ")
+
+	read := term.ReadFrom(from, 500)
+	for _, want := range []string{"one", "two", "three", "four"} {
+		if !strings.Contains(read.Text, want) {
+			t.Errorf("reading from line %d misses %q:\n%s", from, want, read.Text)
+		}
+	}
+	if strings.Contains(read.Text, "$ ls") {
+		t.Errorf("reading from line %d reaches back above it:\n%s", from, read.Text)
+	}
+
+	// At most what was asked for, counted from the bottom.
+	if short := term.ReadFrom(from, 2); strings.Contains(short.Text, "one") {
+		t.Errorf("a read of two lines gave %q", short.Text)
+	} else if !strings.Contains(short.Text, "four") {
+		t.Errorf("a read of two lines gave %q, want the last of it", short.Text)
+	}
+
+	// A line the screen has not reached gives the bottom row rather than
+	// nothing at all.
+	if ahead := term.ReadFrom(from+10_000, 500); strings.Count(ahead.Text, "\n") != 0 {
+		t.Errorf("reading from a line that has not happened gave %q", ahead.Text)
+	}
+}

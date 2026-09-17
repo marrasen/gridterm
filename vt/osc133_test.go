@@ -21,17 +21,21 @@ func TestSemanticPromptWholeCommand(t *testing.T) {
 	h.write("\x1b]133;B\x07ls\r\n")
 	h.wantCommand("after B", Command{Integrated: true})
 
+	// The command line was written on row 0, so its output begins on row
+	// 1, which is the second line this screen ever had.
 	h.write("\x1b]133;C\x07one\r\n")
-	h.wantCommand("after C", Command{Integrated: true, Running: true})
+	h.wantCommand("after C", Command{Integrated: true, Running: true, from: 1, hasFrom: true})
 
 	h.write("\x1b]133;D;0\x07")
-	h.wantCommand("after D", Command{Integrated: true, hasStatus: true, status: 0, Done: 1})
+	h.wantCommand("after D",
+		Command{Integrated: true, hasStatus: true, status: 0, Done: 1, from: 1, hasFrom: true})
 }
 
 func TestSemanticPromptNonZeroStatus(t *testing.T) {
 	h := newHarness(t, 20, 4)
 	h.write("\x1b]133;C\x07\x1b]133;D;127\x07")
-	h.wantCommand("after D;127", Command{Integrated: true, hasStatus: true, status: 127, Done: 1})
+	h.wantCommand("after D;127",
+		Command{Integrated: true, hasStatus: true, status: 127, Done: 1, hasFrom: true})
 }
 
 // A shell may end a command without saying how it went, and that is a
@@ -39,14 +43,14 @@ func TestSemanticPromptNonZeroStatus(t *testing.T) {
 func TestSemanticPromptNoStatus(t *testing.T) {
 	h := newHarness(t, 20, 4)
 	h.write("\x1b]133;C\x07\x1b]133;D\x07")
-	h.wantCommand("after a bare D", Command{Integrated: true, Done: 1})
+	h.wantCommand("after a bare D", Command{Integrated: true, Done: 1, hasFrom: true})
 }
 
 func TestSemanticPromptStatusIsNotANumber(t *testing.T) {
 	for _, status := range []string{"", "ok", "SIGINT", "0x7f"} {
 		h := newHarness(t, 20, 4)
 		h.write("\x1b]133;C\x07\x1b]133;D;" + status + "\x07")
-		h.wantCommand("after D;"+status, Command{Integrated: true, Done: 1})
+		h.wantCommand("after D;"+status, Command{Integrated: true, Done: 1, hasFrom: true})
 	}
 }
 
@@ -62,10 +66,12 @@ func TestSemanticPromptExtraParameters(t *testing.T) {
 	h.wantCommand("after B;aid=12345", Command{Integrated: true})
 
 	h.write("\x1b]133;C;\x07") // bash sends the trailing separator
-	h.wantCommand("after C with an empty option", Command{Integrated: true, Running: true})
+	h.wantCommand("after C with an empty option",
+		Command{Integrated: true, Running: true, hasFrom: true})
 
 	h.write("\x1b]133;D;2;aid=12345\x07")
-	h.wantCommand("after D;2;aid=12345", Command{Integrated: true, hasStatus: true, status: 2, Done: 1})
+	h.wantCommand("after D;2;aid=12345",
+		Command{Integrated: true, hasStatus: true, status: 2, Done: 1, hasFrom: true})
 }
 
 // The prompt marks a shell sends between A and B say what kind of
@@ -82,11 +88,13 @@ func TestSemanticPromptKindMarks(t *testing.T) {
 func TestSemanticPromptBothTerminators(t *testing.T) {
 	h := newHarness(t, 20, 4)
 	h.write("\x1b]133;C\x1b\\\x1b]133;D;3\x1b\\")
-	h.wantCommand("after marks ended with ST", Command{Integrated: true, hasStatus: true, status: 3, Done: 1})
+	h.wantCommand("after marks ended with ST",
+		Command{Integrated: true, hasStatus: true, status: 3, Done: 1, hasFrom: true})
 
 	h = newHarness(t, 20, 4)
 	h.write("\x1b]133;C\x07\x1b]133;D;3\x07")
-	h.wantCommand("after marks ended with BEL", Command{Integrated: true, hasStatus: true, status: 3, Done: 1})
+	h.wantCommand("after marks ended with BEL",
+		Command{Integrated: true, hasStatus: true, status: 3, Done: 1, hasFrom: true})
 }
 
 // A shell that has never sent a mark must not look like one that just
@@ -139,10 +147,10 @@ func TestSemanticPromptUnreadableMarks(t *testing.T) {
 func TestSemanticPromptCommandWithNoPrompt(t *testing.T) {
 	h := newHarness(t, 20, 4)
 	h.write("\x1b]133;C\x07")
-	h.wantCommand("after a C with no A", Command{Integrated: true, Running: true})
+	h.wantCommand("after a C with no A", Command{Integrated: true, Running: true, hasFrom: true})
 
 	h.write("\x1b]133;D;0\x07")
-	h.wantCommand("after its D", Command{Integrated: true, hasStatus: true, Done: 1})
+	h.wantCommand("after its D", Command{Integrated: true, hasStatus: true, Done: 1, hasFrom: true})
 }
 
 // A prompt means the shell is not running a command, even from a shell
@@ -155,13 +163,13 @@ func TestSemanticPromptCommandWithNoPrompt(t *testing.T) {
 func TestSemanticPromptPromptEndsARunningCommand(t *testing.T) {
 	h := newHarness(t, 20, 4)
 	h.write("\x1b]133;C\x07\x1b]133;D;0\x07")
-	h.wantCommand("after a command that succeeded", Command{Integrated: true, hasStatus: true, Done: 1})
+	h.wantCommand("after a command that succeeded", Command{Integrated: true, hasStatus: true, Done: 1, hasFrom: true})
 
 	h.write("\x1b]133;A\x07\x1b]133;B\x07\x1b]133;C\x07")
-	h.wantCommand("after a second command started", Command{Integrated: true, Running: true, hasStatus: true, Done: 1})
+	h.wantCommand("after a second command started", Command{Integrated: true, Running: true, hasStatus: true, Done: 1, hasFrom: true})
 
 	h.write("\x1b]133;A\x07")
-	h.wantCommand("after a prompt with no D", Command{Integrated: true, Done: 2})
+	h.wantCommand("after a prompt with no D", Command{Integrated: true, Done: 2, hasFrom: true})
 }
 
 // A prompt where nothing was running finishes nothing, so the count
@@ -169,22 +177,22 @@ func TestSemanticPromptPromptEndsARunningCommand(t *testing.T) {
 func TestSemanticPromptAPromptWithNothingRunningFinishesNothing(t *testing.T) {
 	h := newHarness(t, 20, 4)
 	h.write("\x1b]133;C\x07\x1b]133;D;0\x07")
-	h.wantCommand("after a command that succeeded", Command{Integrated: true, hasStatus: true, Done: 1})
+	h.wantCommand("after a command that succeeded", Command{Integrated: true, hasStatus: true, Done: 1, hasFrom: true})
 
 	h.write("\x1b]133;A\x07\x1b]133;B\x07\x1b]133;A\x07\x1b]133;B\x07")
 	h.wantCommand("after two prompts with nothing between them",
-		Command{Integrated: true, hasStatus: true, Done: 1})
+		Command{Integrated: true, hasStatus: true, Done: 1, hasFrom: true})
 }
 
 func TestSemanticPromptTwoCommands(t *testing.T) {
 	h := newHarness(t, 20, 4)
 	h.write("\x1b]133;A\x07\x1b]133;B\x07\x1b]133;C\x07\x1b]133;D;0\x07")
 	first := h.term.Command()
-	h.wantCommand("after the first command", Command{Integrated: true, hasStatus: true, Done: 1})
+	h.wantCommand("after the first command", Command{Integrated: true, hasStatus: true, Done: 1, hasFrom: true})
 
 	h.write("\x1b]133;A\x07\x1b]133;B\x07\x1b]133;C\x07\x1b]133;D;1\x07")
 	second := h.term.Command()
-	h.wantCommand("after the second command", Command{Integrated: true, hasStatus: true, status: 1, Done: 2})
+	h.wantCommand("after the second command", Command{Integrated: true, hasStatus: true, status: 1, Done: 2, hasFrom: true})
 	if second.Done == first.Done {
 		t.Errorf("Done stayed at %d across two commands", first.Done)
 	}
@@ -219,7 +227,7 @@ func TestSemanticPromptNilCallback(t *testing.T) {
 	if _, err := term.Write([]byte("\x1b]133;C\x07\x1b]133;D;0\x07")); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
-	want := Command{Integrated: true, hasStatus: true, Done: 1}
+	want := Command{Integrated: true, hasStatus: true, Done: 1, hasFrom: true}
 	if got := term.Command(); got != want {
 		t.Errorf("Command() = %+v, want %+v", got, want)
 	}
@@ -246,20 +254,20 @@ func TestSemanticPromptSurvivesAFullScreenProgram(t *testing.T) {
 	h := newHarness(t, 20, 4)
 	h.write("\x1b]133;A\x07\x1b]133;B\x07\x1b]133;C\x07")
 	h.write("\x1b[?1049h")
-	h.wantCommand("while the program draws", Command{Integrated: true, Running: true})
+	h.wantCommand("while the program draws", Command{Integrated: true, Running: true, hasFrom: true})
 
 	h.write("\x1b[?1049l")
 	h.write("\x1b]133;D;0\x07")
-	h.wantCommand("after the program exits", Command{Integrated: true, hasStatus: true, Done: 1})
+	h.wantCommand("after the program exits", Command{Integrated: true, hasStatus: true, Done: 1, hasFrom: true})
 }
 
 func TestSemanticPromptTwoStartsOneFinish(t *testing.T) {
 	h := newHarness(t, 20, 4)
 	h.write("\x1b]133;C\x07\x1b]133;C\x07")
-	h.wantCommand("after a second C", Command{Integrated: true, Running: true})
+	h.wantCommand("after a second C", Command{Integrated: true, Running: true, hasFrom: true})
 
 	h.write("\x1b]133;D;0\x07")
-	h.wantCommand("after the one D", Command{Integrated: true, hasStatus: true, Done: 1})
+	h.wantCommand("after the one D", Command{Integrated: true, hasStatus: true, Done: 1, hasFrom: true})
 	if len(h.ends) != 1 {
 		t.Fatalf("CommandDone fired %+v for two Cs and one D, want one finish", h.ends)
 	}
@@ -269,7 +277,7 @@ func TestSemanticPromptTwoStartsOneFinish(t *testing.T) {
 func TestSemanticPromptSecondDone(t *testing.T) {
 	h := newHarness(t, 20, 4)
 	h.write("\x1b]133;C\x07\x1b]133;D;0\x07\x1b]133;D;1\x07")
-	h.wantCommand("after a second D", Command{Integrated: true, hasStatus: true, Done: 1})
+	h.wantCommand("after a second D", Command{Integrated: true, hasStatus: true, Done: 1, hasFrom: true})
 	if len(h.ends) != 1 {
 		t.Fatalf("CommandDone fired %+v for a second D, want one finish", h.ends)
 	}
@@ -280,7 +288,8 @@ func TestSemanticPromptSecondDone(t *testing.T) {
 func TestSemanticPromptNegativeStatus(t *testing.T) {
 	h := newHarness(t, 20, 4)
 	h.write("\x1b]133;C\x07\x1b]133;D;-1073741819\x07")
-	h.wantCommand("after an access violation", Command{Integrated: true, hasStatus: true, status: -1073741819, Done: 1})
+	h.wantCommand("after an access violation", Command{
+		Integrated: true, hasStatus: true, status: -1073741819, Done: 1, hasFrom: true})
 }
 
 // RIS resets the screen and leaves the command state alone: the command
@@ -288,10 +297,11 @@ func TestSemanticPromptNegativeStatus(t *testing.T) {
 func TestSemanticPromptReset(t *testing.T) {
 	h := newHarness(t, 20, 4)
 	h.write("\x1b]133;C\x07\x1bc")
-	h.wantCommand("after RIS", Command{Integrated: true, Running: true})
+	h.wantCommand("after RIS", Command{Integrated: true, Running: true, hasFrom: true})
 
 	h.write("\x1b]133;D;0\x07")
-	h.wantCommand("after its D", Command{Integrated: true, hasStatus: true, Done: 1})
+	h.wantCommand("after its D",
+		Command{Integrated: true, hasStatus: true, Done: 1, hasFrom: true})
 }
 
 // A full-screen program killed without restoring the ordinary screen
@@ -303,7 +313,8 @@ func TestSemanticPromptFrozenByAFullScreenProgram(t *testing.T) {
 	h.write("\x1b[?1049h")
 	h.write("\x1b]133;D;0\x07")
 	h.write("\x1b[?1049l")
-	h.wantCommand("after a program that never restored the screen", Command{Integrated: true, Running: true})
+	h.wantCommand("after a program that never restored the screen",
+		Command{Integrated: true, Running: true, hasFrom: true})
 	if len(h.ends) != 0 {
 		t.Fatalf("CommandDone fired %+v for a D on the alternate screen", h.ends)
 	}
@@ -320,7 +331,7 @@ func TestSemanticPromptCallbackSeesTheFinish(t *testing.T) {
 	if _, err := term.Write([]byte("\x1b]133;C\x07\x1b]133;D;5\x07")); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
-	want := []Command{{Integrated: true, hasStatus: true, status: 5, Done: 1}}
+	want := []Command{{Integrated: true, hasStatus: true, status: 5, Done: 1, hasFrom: true}}
 	if len(seen) != len(want) {
 		t.Fatalf("CommandDone fired %d times (%+v), want %d", len(seen), seen, len(want))
 	}
@@ -346,10 +357,11 @@ func TestSemanticPrompt633WholeCommand(t *testing.T) {
 	h.wantCommand("after the command line", Command{Integrated: true})
 
 	h.write("\x1b]633;C\x07one\r\n")
-	h.wantCommand("after C", Command{Integrated: true, Running: true})
+	h.wantCommand("after C", Command{Integrated: true, Running: true, hasFrom: true})
 
 	h.write("\x1b]633;D;-1073741819\x07")
-	h.wantCommand("after D", Command{Integrated: true, hasStatus: true, status: -1073741819, Done: 1})
+	h.wantCommand("after D", Command{
+		Integrated: true, hasStatus: true, status: -1073741819, Done: 1, hasFrom: true})
 }
 
 // The marks 633 has and 133 does not are ignored, and none of them says
@@ -371,16 +383,18 @@ func TestSemanticPrompt633UnreadMarks(t *testing.T) {
 func TestSemanticPrompt633BareDone(t *testing.T) {
 	h := newHarness(t, 20, 4)
 	h.write("\x1b]633;C\x07\x1b]633;D\x07")
-	h.wantCommand("after a bare D", Command{Integrated: true, Done: 1})
+	h.wantCommand("after a bare D", Command{Integrated: true, Done: 1, hasFrom: true})
 }
 
 func TestSemanticPrompt633MixedWith133(t *testing.T) {
 	h := newHarness(t, 20, 4)
 	h.write("\x1b]133;A\x07\x1b]633;B\x07\x1b]133;C\x07")
-	h.wantCommand("after a command started with marks of both kinds", Command{Integrated: true, Running: true})
+	h.wantCommand("after a command started with marks of both kinds",
+		Command{Integrated: true, Running: true, hasFrom: true})
 
 	h.write("\x1b]633;D;3\x07")
-	h.wantCommand("after a 633 D finished a 133 C", Command{Integrated: true, hasStatus: true, status: 3, Done: 1})
+	h.wantCommand("after a 633 D finished a 133 C",
+		Command{Integrated: true, hasStatus: true, status: 3, Done: 1, hasFrom: true})
 }
 
 // Exit is the only way to read the status, so no caller can mistake a
@@ -404,5 +418,43 @@ func TestCommandExit(t *testing.T) {
 	h.write("\x1b]133;C\x07\x1b]133;A\x07")
 	if status, ok := h.term.Command().Exit(); ok || status != 0 {
 		t.Errorf("Exit() = %d, %v after a prompt ended a command, want 0, false", status, ok)
+	}
+}
+
+// The line a command's output began on is remembered, and goes on naming
+// the same line as the screen scrolls under it.
+//
+// It is what lets a caller read what one command printed rather than a
+// rectangle of the screen with the end of the last command still in it.
+func TestSemanticPromptRemembersWhereTheOutputBegan(t *testing.T) {
+	h := newHarness(t, 20, 3)
+	h.write("\x1b]133;A\x07$ \x1b]133;B\x07ls\r\n\x1b]133;C\x07")
+	from, ok := h.term.Command().Output()
+	if !ok || from != 1 {
+		t.Fatalf("the output begins on line %d, known %v; want line 1", from, ok)
+	}
+
+	// Enough output to push that line off the top of the screen. The
+	// number stands still: it names the line, not a row.
+	h.write("one\r\ntwo\r\nthree\r\nfour\r\n")
+	if got, ok := h.term.Command().Output(); !ok || got != from {
+		t.Errorf("after scrolling the output begins on line %d, want %d", got, from)
+	}
+
+	// The next command moves it on.
+	h.write("\x1b]133;D;0\x07\x1b]133;A\x07$ \x1b]133;B\x07df\r\n\x1b]133;C\x07")
+	next, ok := h.term.Command().Output()
+	if !ok || next <= from {
+		t.Errorf("the second command's output begins on line %d, and the first on %d",
+			next, from)
+	}
+}
+
+// A shell that marks nothing has no boundary to give.
+func TestASilentShellMarksNoOutput(t *testing.T) {
+	h := newHarness(t, 20, 3)
+	h.write("$ ls\r\none\r\n$ ")
+	if from, ok := h.term.Command().Output(); ok {
+		t.Errorf("a silent shell says its output began on line %d", from)
 	}
 }

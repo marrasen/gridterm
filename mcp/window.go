@@ -80,6 +80,19 @@ func (w *Window) Read(id string, lines int) (Screen, error) {
 	return asScreen(look), nil
 }
 
+// Output is what the last command in a pane printed.
+func (w *Window) Output(id string, most int) (Screen, error) {
+	conn, at, err := w.paneAt(id)
+	if err != nil {
+		return Screen{}, err
+	}
+	look, err := conn.Output(at, most)
+	if err != nil {
+		return Screen{}, err
+	}
+	return asScreen(look), nil
+}
+
 // Send types into a pane and presses the keys named after it.
 func (w *Window) Send(id, text string, keys []string) error {
 	conn, at, err := w.paneAt(id)

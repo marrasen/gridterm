@@ -26,6 +26,9 @@ type oneWindow struct {
 	// cmd is what this window says about the command line, which every
 	// Look carries.
 	cmd agent.Look
+
+	// output is what this window says the last command printed.
+	output string
 }
 
 func (w *oneWindow) Use(code string) (agent.Pane, error) {
@@ -46,6 +49,18 @@ func (w *oneWindow) Look(id string, lines int) (agent.Look, error) {
 	w.lines = lines
 	look := w.cmd
 	look.Screen = w.screen
+	return look, nil
+}
+
+func (w *oneWindow) Output(id string, most int) (agent.Look, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.taken || id != "pane-1" {
+		return agent.Look{}, errors.New("that is not a pane you have been handed")
+	}
+	look := w.cmd
+	look.Screen = w.output
+	look.Note = "this is what the last command printed"
 	return look, nil
 }
 

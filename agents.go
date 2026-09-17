@@ -429,6 +429,80 @@ func lastLines(text string, n int) string {
 // the end as the line it is.
 func countLines(text string) int { return strings.Count(text, "\n") + 1 }
 
+// Output is what the last command in a pane printed, without the screen
+// around it.
+//
+// Where that output began comes from the shell when it marks its
+// commands, and from the line the agent last typed on when it does not.
+// A pane with neither is refused rather than answered with a rectangle
+// of the screen, which is what read_pane is for.
+func (w agentWindow) Output(id string, most int) (agent.Look, error) {
+	return onDrawing(w.a, func() (agent.Look, error) {
+		h, err := w.a.handedPane(id)
+		if err != nil {
+			return agent.Look{}, err
+		}
+		size := h.pane.Size()
+		if h.pane.ReadLines(1).Alt {
+			return agent.Look{}, errors.New(
+				"a full-screen program is drawing in that pane, so there is no command" +
+					" output to read: read the pane instead")
+		}
+		from, note, err := h.outputFrom()
+		if err != nil {
+			return agent.Look{}, err
+		}
+		// None asked for is as much as one read gives, the way the tool
+		// asks for it; an agent speaking to the wire itself gets the same.
+		want := agent.MostLines
+		if most > 0 {
+			want = min(most, agent.MostLines)
+		}
+		read := h.pane.ReadFrom(from, want)
+		// Not kept as the pane's last reading: it starts at a boundary
+		// rather than at the bottom, so a later read of fewer lines
+		// cannot be cut from it.
+		status, hasStatus := read.Cmd.Exit()
+		return agent.Look{
+			Screen:    read.Text,
+			Gone:      h.pane.Exited(),
+			Changed:   read.Said,
+			Row:       read.Row,
+			Col:       read.Col,
+			Alt:       read.Alt,
+			All:       countLines(read.Text) < want,
+			Cols:      size.Cols,
+			Rows:      size.Rows,
+			Note:      note,
+			Marks:     read.Cmd.Integrated,
+			Running:   read.Cmd.Running,
+			Done:      read.Cmd.Done,
+			Status:    status,
+			HasStatus: hasStatus,
+			Back:      h.promptIsBack(read),
+			Watching:  h.typed != "",
+			Yours:     h.sent && read.Cmd.Done > h.typedDone,
+		}, nil
+	})
+}
+
+// outputFrom is the line the last command's output began on, and what to
+// say about where that boundary came from.
+func (h *handover) outputFrom() (uint64, string, error) {
+	if from, ok := h.pane.ReadLines(1).Cmd.Output(); ok {
+		return from, "This is what the last command printed, from where the shell said its" +
+			" output began.", nil
+	}
+	if h.sent && h.typed != "" {
+		return h.typedLine + 1, "This shell does not mark where a command's output begins," +
+			" so this is everything the pane has said since you last typed.", nil
+	}
+	return 0, "", errors.New(
+		"nothing here knows where the last command's output began: this shell does not" +
+			" mark its commands, and you have not typed in this pane. Read the pane with" +
+			" read_pane instead")
+}
+
 func (w agentWindow) Send(id, text string, keys []string) error {
 	_, err := onDrawing(w.a, func() (struct{}, error) {
 		h, err := w.a.handedPane(id)

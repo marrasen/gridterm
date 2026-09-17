@@ -33,6 +33,12 @@ type fakeWindow struct {
 	// test about what has scrolled off. Empty means the screen.
 	history string
 
+	// output is what the last command printed, and mostOutput is how
+	// many lines of it the last Output was asked for. Empty output is a
+	// pane with no boundary to read from.
+	output     string
+	mostOutput int
+
 	// bigLookFails makes a Look of more than the screen fail, which is
 	// what the user taking the pane back between two looks does.
 	bigLookFails bool
@@ -142,6 +148,24 @@ func (w *fakeWindow) lookAt(screen string) Look {
 		Status: w.status, HasStatus: w.hasStatus, Back: w.back,
 		Watching: w.watching, Yours: w.yours,
 	}
+}
+
+func (w *fakeWindow) Output(id string, most int) (Look, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.mostOutput = most
+	if w.taken {
+		return Look{}, errors.New("the user has taken that pane back")
+	}
+	if id != "pane-1" {
+		return Look{}, errors.New("no such pane")
+	}
+	if w.output == "" {
+		return Look{}, errors.New("nothing here knows where the last command's output began")
+	}
+	look := w.lookAt(w.output)
+	look.Note = "this is what the last command printed"
+	return look, nil
 }
 
 func (w *fakeWindow) Send(id, text string, keys []string) error {

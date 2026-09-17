@@ -101,6 +101,19 @@ func (c *Client) Read(id string, lines int) (Look, error) {
 	return *got.Look, nil
 }
 
+// Output is what the last command in a pane printed, at most most lines
+// of it. A window that cannot tell where that output began says so.
+func (c *Client) Output(id string, most int) (Look, error) {
+	got, err := c.say(ask{Do: "output", Pane: id, Lines: most})
+	if err != nil {
+		return Look{}, err
+	}
+	if got.Look == nil {
+		return Look{}, errors.New("agent: the window sent no screen")
+	}
+	return *got.Look, nil
+}
+
 // Send types text into a pane and then presses the named keys. Either
 // may be empty, and a name the window does not know is refused with the
 // names it has.

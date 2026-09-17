@@ -55,6 +55,13 @@ type Command struct {
 	status    int
 	hasStatus bool
 
+	// from is the line the last command's output began on, and hasFrom
+	// says a command has started at all. It is where the shell put its C
+	// mark, which is after the command line on every shell that sends
+	// one.
+	from    uint64
+	hasFrom bool
+
 	// Done counts the commands that have finished, however they ended:
 	// with a D mark, or with the next prompt arriving while one was
 	// running. It only moves forward, so a caller that reads it before
@@ -65,6 +72,13 @@ type Command struct {
 // Exit returns the exit status of the last command that finished, and
 // whether the shell gave one at all.
 func (c Command) Exit() (status int, ok bool) { return c.status, c.hasStatus }
+
+// Output returns the line the last command's output began on, and
+// whether the shell has marked one.
+//
+// It is a line number of the screen it came from, which goes on naming
+// that line as the screen scrolls. The command line itself is above it.
+func (c Command) Output() (from uint64, ok bool) { return c.from, c.hasFrom }
 
 // Terminal is a VT emulator: write bytes in, render cells out.
 //
@@ -493,6 +507,10 @@ func (t *Terminal) semanticPrompt(params [][]byte) {
 	case "C":
 		t.cmd.Integrated = true
 		t.cmd.Running = true
+		// Where the output starts, which is where the cursor is when the
+		// shell says the command is about to run.
+		_, row := t.scr.CursorPos()
+		t.cmd.from, t.cmd.hasFrom = t.scr.LineNumber(row), true
 	case "D":
 		t.cmd.Integrated = true
 		t.commandDone(params)

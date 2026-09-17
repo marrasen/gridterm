@@ -36,6 +36,11 @@ type fakePanes struct {
 	lines   int
 	pressed []string
 
+	// output is what the last command printed, and mostOutput is how
+	// many lines of it the last read of it asked for.
+	output     string
+	mostOutput int
+
 	// row and col are where the pane says its cursor is, alt says a
 	// full-screen program is drawing there, and all says the pane had
 	// fewer lines than the read asked for.
@@ -98,6 +103,22 @@ func (f *fakePanes) look() Screen {
 		Status: f.status, HasStatus: f.hasStatus, Back: f.back,
 		Watching: f.watching, Yours: f.yours,
 	}
+}
+
+func (f *fakePanes) Output(id string, most int) (Screen, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !f.open || id != "pane-1" {
+		return Screen{}, errors.New("that is not a pane you have been handed")
+	}
+	f.mostOutput = most
+	if f.output == "" {
+		return Screen{}, errors.New("nothing here knows where the last command's output began")
+	}
+	screen := f.look()
+	screen.Screen = f.output
+	screen.Note = "this is what the last command printed"
+	return screen, nil
 }
 
 func (f *fakePanes) Send(id, text string, keys []string) error {
@@ -268,7 +289,7 @@ func TestItSaysWhatItIsAndWhatItCanDo(t *testing.T) {
 
 	raw, _ = json.Marshal(answers[1].Result)
 	for _, want := range []string{
-		"use_session_code", "list_panes", "read_pane", "send_keys", "wait_for",
+		"use_session_code", "list_panes", "read_pane", "read_output", "send_keys", "wait_for",
 	} {
 		if !strings.Contains(string(raw), want) {
 			t.Errorf("it does not offer %s", want)
@@ -282,7 +303,7 @@ func TestItSaysWhatItIsAndWhatItCanDo(t *testing.T) {
 	if err := json.Unmarshal(raw, &listed); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if len(listed.Tools) != 5 {
+	if len(listed.Tools) != 6 {
 		var names []string
 		for _, tl := range listed.Tools {
 			names = append(names, tl.Name)
@@ -655,13 +676,14 @@ func TestEveryToolSaysWhatItTakes(t *testing.T) {
 	if err := json.Unmarshal(raw, &listed); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if len(listed.Tools) != 5 {
+	if len(listed.Tools) != 6 {
 		t.Fatalf("it offers %d tools", len(listed.Tools))
 	}
 	needs := map[string][]string{
 		"use_session_code": {"code"},
 		"list_panes":       nil,
 		"read_pane":        {"pane"},
+		"read_output":      {"pane"},
 		"send_keys":        {"pane"},
 		"wait_for":         {"pane"},
 	}
@@ -871,56 +893,60 @@ func TestACancelledContextEndsTheConversation(t *testing.T) {
 // were an exit status.
 func TestAScreenSaysWhatIsKnownAboutTheCommand(t *testing.T) {
 	for _, tc := range []struct {
-		what  string
-		panes fakePanes
-		says  []string
-		not   []string
+		what string
+		pane func(*fakePanes)
+		says []string
+		not  []string
 	}{{
-		what:  "a shell that says nothing, before the agent has typed",
-		panes: fakePanes{screen: "$ "},
-		says:  []string{"does not tell gridterm", "Nothing has been typed here yet"},
-		not:   []string{"exit status", "still running"},
+		what: "a shell that says nothing, before the agent has typed",
+		pane: func(f *fakePanes) { f.screen = "$ " },
+		says: []string{"does not tell gridterm", "Nothing has been typed here yet"},
+		not:  []string{"exit status", "still running"},
 	}, {
-		what:  "a shell that says nothing, while what was sent runs",
-		panes: fakePanes{screen: "$ make", watching: true},
-		says:  []string{"does not tell gridterm", "has not come back", "still running"},
+		what: "a shell that says nothing, while what was sent runs",
+		pane: func(f *fakePanes) { f.screen, f.watching = "$ make", true },
+		says: []string{"does not tell gridterm", "has not come back", "still running"},
 	}, {
-		what:  "a shell that says nothing, with the prompt back",
-		panes: fakePanes{screen: "$ ", watching: true, back: true},
-		says:  []string{"does not tell gridterm", "prompt you last typed at is back", "usually"},
+		what: "a shell that says nothing, with the prompt back",
+		pane: func(f *fakePanes) { f.screen, f.watching, f.back = "$ ", true, true },
+		says: []string{"does not tell gridterm", "prompt you last typed at is back", "usually"},
 	}, {
-		what:  "a command running",
-		panes: fakePanes{screen: "$ make", marks: true, running: true},
-		says:  []string{"a command is running", "call wait_for again"},
-		not:   []string{"does not tell gridterm"},
+		what: "a command running",
+		pane: func(f *fakePanes) { f.screen, f.marks, f.running = "$ make", true, true },
+		says: []string{"a command is running", "call wait_for again"},
+		not:  []string{"does not tell gridterm"},
 	}, {
 		what: "a command the agent sent, finished",
-		panes: fakePanes{screen: "$ ", marks: true, done: 1, status: 2,
-			hasStatus: true, yours: true},
+		pane: func(f *fakePanes) {
+			f.screen, f.marks, f.done = "$ ", true, 1
+			f.status, f.hasStatus, f.yours = 2, true, true
+		},
 		says: []string{"finished with exit status 2", "That is what you sent"},
 		not:  []string{"does not tell gridterm", "may be the user's"},
 	}, {
-		what:  "a command that finished before the agent typed",
-		panes: fakePanes{screen: "$ ", marks: true, done: 1, status: 0, hasStatus: true},
-		says:  []string{"exit status 0", "may be the user's rather than yours"},
+		what: "a command that finished before the agent typed",
+		pane: func(f *fakePanes) {
+			f.screen, f.marks, f.done, f.hasStatus = "$ ", true, 1, true
+		},
+		says: []string{"exit status 0", "may be the user's rather than yours"},
 	}, {
-		what:  "a shell that marks but gave no status",
-		panes: fakePanes{screen: "$ ", marks: true, done: 1},
-		says:  []string{"gave no exit status"},
+		what: "a shell that marks but gave no status",
+		pane: func(f *fakePanes) { f.screen, f.marks, f.done = "$ ", true, 1 },
+		says: []string{"gave no exit status"},
 	}, {
-		what:  "a full-screen program, which has no command line to report",
-		panes: fakePanes{screen: "~ VIM ~", alt: true},
-		not:   []string{"does not tell gridterm", "command is running", "exit status"},
+		what: "a full-screen program, which has no command line to report",
+		pane: func(f *fakePanes) { f.screen, f.alt = "~ VIM ~", true },
+		not:  []string{"does not tell gridterm", "command is running", "exit status"},
 	}, {
-		what:  "a pane whose program has gone",
-		panes: fakePanes{screen: "logout", gone: true},
-		says:  []string{"has finished"},
-		not:   []string{"does not tell gridterm", "Read the screen and judge"},
+		what: "a pane whose program has gone",
+		pane: func(f *fakePanes) { f.screen, f.gone = "logout", true },
+		says: []string{"has finished"},
+		not:  []string{"does not tell gridterm", "Read the screen and judge"},
 	}} {
 		t.Run(tc.what, func(t *testing.T) {
-			panes := tc.panes
-			panes.code = "gt1-2222-abc"
-			answers := talk(t, &panes,
+			panes := &fakePanes{code: "gt1-2222-abc"}
+			tc.pane(panes)
+			answers := talk(t, panes,
 				`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":`+
 					`{"name":"use_session_code","arguments":{"code":"gt1-2222-abc"}}}`,
 				`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":`+
@@ -966,5 +992,86 @@ func TestAWaitSaysWhyItEnded(t *testing.T) {
 	}
 	if strings.Contains(text, "time ran out") {
 		t.Errorf("the answer says the time ran out:\n%s", text)
+	}
+}
+
+// read_output asks the window for the last command's output and hands it
+// back with what the window said about it.
+func TestReadingTheOutputOfTheLastCommand(t *testing.T) {
+	panes := &fakePanes{
+		code: "gt1-2222-abc", screen: "$ ", output: "altscreen.png\nshell.png",
+		marks: true, done: 1, hasStatus: true, yours: true,
+	}
+	answers := talk(t, panes,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":`+
+			`{"name":"use_session_code","arguments":{"code":"gt1-2222-abc"}}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":`+
+			`{"name":"read_output","arguments":{"pane":"pane-1"}}}`)
+
+	text, failed := textOf(t, answers[1])
+	if failed {
+		t.Fatalf("reading the output failed: %s", text)
+	}
+	if !strings.Contains(text, "shell.png") {
+		t.Errorf("the answer does not carry the output:\n%s", text)
+	}
+	if !strings.Contains(text, "this is what the last command printed") {
+		t.Errorf("the answer drops what the window said about it:\n%s", text)
+	}
+	// And the screen the pane is showing is not what came back.
+	if strings.Contains(text, "$ ") {
+		t.Errorf("the answer carries the screen as well:\n%s", text)
+	}
+
+	// None asked for is as much as one read gives.
+	panes.mu.Lock()
+	most := panes.mostOutput
+	panes.mu.Unlock()
+	if most != mostLines {
+		t.Errorf("it asked for %d lines, want %d", most, mostLines)
+	}
+}
+
+// A pane with no boundary says so, and the failure is the tool's answer
+// rather than a broken call: the agent can act on it.
+func TestReadingTheOutputWithNoBoundarySaysSo(t *testing.T) {
+	panes := &fakePanes{code: "gt1-2222-abc", screen: "$ "}
+	answers := talk(t, panes,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":`+
+			`{"name":"use_session_code","arguments":{"code":"gt1-2222-abc"}}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":`+
+			`{"name":"read_output","arguments":{"pane":"pane-1"}}}`)
+
+	text, failed := textOf(t, answers[1])
+	if !failed {
+		t.Fatalf("it answered as though it had the output: %s", text)
+	}
+	if !strings.Contains(text, "where the last command's output began") {
+		t.Errorf("it does not say why: %q", text)
+	}
+}
+
+// An agent may ask for fewer lines, and too many are cut to what one
+// read gives.
+func TestReadingTheOutputTakesALineCount(t *testing.T) {
+	for _, tc := range []struct {
+		asked string
+		want  int
+	}{
+		{`,"lines":20`, 20},
+		{`,"lines":100000`, mostLines},
+	} {
+		panes := &fakePanes{code: "gt1-2222-abc", screen: "$ ", output: "one\ntwo"}
+		talk(t, panes,
+			`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":`+
+				`{"name":"use_session_code","arguments":{"code":"gt1-2222-abc"}}}`,
+			`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":`+
+				`{"name":"read_output","arguments":{"pane":"pane-1"`+tc.asked+`}}}`)
+		panes.mu.Lock()
+		most := panes.mostOutput
+		panes.mu.Unlock()
+		if most != tc.want {
+			t.Errorf("asked%s: it asked the window for %d lines, want %d", tc.asked, most, tc.want)
+		}
 	}
 }

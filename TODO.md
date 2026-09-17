@@ -47,7 +47,7 @@ guessed at.
    under "The agent, through MCP":
    - Reconnecting in the same pane keeps the same hand-over code.
    - The agent can start that reconnect itself, when the user has ticked
-     the box for it. The boxes are item 3 there.
+     the box for it. The boxes are item 2 there.
 
 3. **A local command gets a command row, like a remote one.** Named by
    what it runs, with the same "Run it again?" question when it ends.
@@ -78,16 +78,11 @@ guessed at.
 
 Raised after a debugging session in a handed-over pane.
 
-1. **Give the agent the output of the last command, not the screen.**
-   `read_pane` hands back a rectangle, so the agent has to work out by
-   eye where the current output starts. That is why it kept clearing
-   the screen, and the window already knows where the boundary is.
-
-2. **Let the agent ask for a secret.** Put the prompt up, block until
+1. **Let the agent ask for a secret.** Put the prompt up, block until
    the user has typed it into the pane, and return without ever showing
    the agent the characters.
 
-3. **Tick boxes on the hand-over dialog say what the agent may do.**
+2. **Tick boxes on the hand-over dialog say what the agent may do.**
    Asked for and answered on 2026-09-17. A hand-over gives reading and
    typing today and nothing else is possible. Each box below adds one
    thing, per pane, decided at the moment the pane is handed over.
@@ -116,7 +111,7 @@ Raised after a debugging session in a handed-over pane.
    - **Read only.** `send_keys` is refused. For watching a build or a
      tail without being able to touch it.
    - **Read above a clear.** The agent may read the scrollback above the
-     last `ED 3`. Off is what item 7 settles; this box says yes for one
+     last `ED 3`. Off is what item 6 settles; this box says yes for one
      pane.
    - **Read only and Restart together are legal.** Restarting is not
      typing, so watching a pane and bringing it back when it dies
@@ -126,22 +121,22 @@ Raised after a debugging session in a handed-over pane.
      widen what may be done to that pane. They do not widen which panes
      are reachable.
 
-4. **No expiry for now.** Answered on 2026-09-17. A hand-over lasts
+3. **No expiry for now.** Answered on 2026-09-17. A hand-over lasts
    until the user takes it back or closes the pane. Revisit if forgotten
    hand-overs ever pile up in practice.
 
-5. **Drop the hand-over when the pane is closed.** Answered on
+4. **Drop the hand-over when the pane is closed.** Answered on
    2026-09-17. A pane whose program has ended keeps its hand-over, so a
    rebooted host still cannot spend the code twice. Closing the pane is
    what releases it, and the listener stops once the last one has gone.
 
-6. **A command pane can be handed over already**, running or not.
+5. **A command pane can be handed over already**, running or not.
    `handPane` looks at no kind and no state. A running one takes keys on
    the command's stdin; an ended one can be read and not typed into,
    which is worth having for a failed build. Nothing to do here: it is
    written down because it looked like a gap and is not one.
 
-7. **`clear` keeps the history, and hides it from the agent.** Answered
+6. **`clear` keeps the history, and hides it from the agent.** Answered
    on 2026-09-17. `clear` sends `ED 3` as well as `ED 2`, and
    `Screen.EraseInDisplay` in vt/screen.go drops the scrollback for mode
    3 today, which is what the sequence means. That changes: the user

@@ -398,8 +398,9 @@ emulator under `internal/` where they cannot be imported.
 - **An agent is handed a screen, not a session.** It reads what is on
   the pane and types into it, the way a person looking over your
   shoulder would. A shell with shell integration on tells it when a
-  command finished and what it exited with; a shell without it leaves it
-  watching for the prompt to come back, which is a guess.
+  command finished, what it exited with, and where that command's output
+  began, so it can read the output on its own. A shell without it leaves
+  it watching for the prompt to come back, which is a guess.
 - **The port an agent reaches is the machine's, not the session's.** A
   loopback port on Windows is reachable by every session on the machine,
   not only by the one that opened it. Nothing gets past it without the

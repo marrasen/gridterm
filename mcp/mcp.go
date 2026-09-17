@@ -93,6 +93,9 @@ type Panes interface {
 	// into what has scrolled off.
 	Read(id string, lines int) (Screen, error)
 
+	// Output is what the last command printed, at most most lines of it.
+	Output(id string, most int) (Screen, error)
+
 	// Send types text into a pane and then presses the keys named in
 	// keys. Either may be empty.
 	Send(id, text string, keys []string) error
@@ -498,7 +501,8 @@ pane, and every other tool takes that name.`,
 // server's initialize answer and the skill gridterm writes both carry
 // it, so the two cannot drift apart.
 const Workflow = `read_pane gives you the pane's screen as plain text, and takes lines to read that many,
-back through what has scrolled off the top. send_keys types text in exactly as given, so a
+back through what has scrolled off the top. read_output gives you what the last command
+printed instead of a rectangle of the screen, which is what you want after running one. send_keys types text in exactly as given, so a
 command needs "\r" at the end for Enter, and presses the keys named in keys: Escape, Tab,
 the arrows, F1 to F12, Ctrl+C. It does not wait, so call wait_for before you read again.
 wait_for on its own ends when the command you sent finishes, or when the pane has said

@@ -369,6 +369,16 @@ func (s *Server) answer(want ask, held map[string]Pane) said {
 		}
 		return said{Look: &look}
 
+	case "output":
+		if _, ok := held[want.Pane]; !ok {
+			return said{Error: notHanded(want.Pane)}
+		}
+		look, err := s.cfg.Window.Output(want.Pane, want.Lines)
+		if err != nil {
+			return said{Error: err.Error()}
+		}
+		return said{Look: &look}
+
 	case "send":
 		if _, ok := held[want.Pane]; !ok {
 			return said{Error: notHanded(want.Pane)}

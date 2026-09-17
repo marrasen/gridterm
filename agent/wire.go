@@ -6,8 +6,8 @@ package agent
 // whole answer, so neither end has to frame anything: this carries a few
 // short messages about a screen, not a stream of a program's output.
 type ask struct {
-	// Do is what is wanted: "hello", "use", "panes", "read", "send" or
-	// "wait".
+	// Do is what is wanted: "hello", "use", "panes", "read", "output",
+	// "send" or "wait".
 	Do string `json:"do"`
 
 	// Protocol is what the first message carries, and nothing else
@@ -30,7 +30,8 @@ type ask struct {
 
 	// Lines is how many lines of the pane to send back, ending at the
 	// bottom of the screen and reaching into what has scrolled off, for
-	// "read" and "wait". Zero is the screen.
+	// "read" and "wait". Zero is the screen. For "output" it is the most
+	// lines to give back of what the last command printed.
 	Lines int `json:"lines,omitempty"`
 
 	// Until is what "wait" is waiting for.

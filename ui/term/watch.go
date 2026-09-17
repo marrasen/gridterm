@@ -249,6 +249,29 @@ type Reading struct {
 func (t *Terminal) ReadLines(n int) Reading {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	return t.readingLocked(n)
+}
+
+// ReadFrom is the pane from a line to the bottom of the screen, at most
+// most lines of it.
+//
+// The line is one LineNumber gave, so it names the same text however far
+// the screen has scrolled since. A line already off the bottom -- one
+// this screen has not reached -- gives the bottom row.
+func (t *Terminal) ReadFrom(line uint64, most int) Reading {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	_, rows := t.g.Size()
+	bottom := t.term.Screen().LineNumber(max(rows-1, 0))
+	n := 1
+	if bottom > line {
+		n = int(min(bottom-line, uint64(most-1))) + 1
+	}
+	return t.readingLocked(n)
+}
+
+// readingLocked is ReadLines with the emulator's lock already held.
+func (t *Terminal) readingLocked(n int) Reading {
 	scr := t.term.Screen()
 	col, row := scr.CursorPos()
 	text, before := t.linesLocked(n, row, col)

@@ -51,9 +51,14 @@ import (
 // Look takes how many lines to give back, ending at the bottom of the
 // screen, and zero for the screen. Send types text and then presses the
 // named keys; a name it does not know is refused and nothing is typed.
+//
+// Output is the last command's output on its own, at most most lines of
+// it. A window that cannot tell where that command's output began says
+// so and gives nothing.
 type Window interface {
 	Use(code string) (Pane, error)
 	Look(id string, lines int) (Look, error)
+	Output(id string, most int) (Look, error)
 	Send(id, text string, keys []string) error
 }
 

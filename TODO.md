@@ -47,9 +47,6 @@ user has to know which is which.
   Clicking a chip opens the dialog that can end it. Two chips when both
   are in force, one per border.
 
-- **The same borders on the sidebar row, thinner.** The row is where the
-  user looks for what is open, so it has to carry the same mark.
-
 - **An account of what the agent did.** Somewhere to read the commands
   an agent ran, after the fact, rather than scrolling the pane.
 

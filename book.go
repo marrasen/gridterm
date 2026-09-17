@@ -254,7 +254,8 @@ func (a *app) refreshServerMenu(items []ui.MenuItem) {
 		ui.MenuItem{Command: "serve.takeOver"},
 		ui.MenuSeparator(),
 		ui.MenuItem{Command: "agent.hand", Title: a.shareItem()},
-		ui.MenuItem{Command: "agent.take"})
+		ui.MenuItem{Command: "agent.take"},
+		ui.MenuItem{Command: typedCommand})
 	if a.agents.sharing() {
 		// Only while there is one: a line that opens nothing is a line
 		// the user reads and tries.

@@ -887,6 +887,7 @@ func (w agentWindow) Send(id, text string, keys []string) error {
 		// Before the typing, so what is in front of the cursor is the
 		// prompt rather than the prompt and what was typed at it.
 		h.markPrompt()
+		w.a.agentTyped(h.pane, text, keys)
 		return struct{}{}, typeInto(h.pane, text, keys)
 	})
 	return err

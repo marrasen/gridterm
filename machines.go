@@ -486,6 +486,9 @@ func (a *app) forgetPane(t *term.Terminal) {
 	if err := a.forgetHandover(t); err != nil {
 		a.reportError("Trouble letting go of the agent on that pane", err)
 	}
+	// And what the agent typed in it, which is of no use once there is
+	// no pane to read it against.
+	a.forgetTyped(t)
 }
 
 // closeMachines ends every connection the window is holding, for a

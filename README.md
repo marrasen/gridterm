@@ -224,6 +224,16 @@ password prompt can ask you to type it into the pane: a line appears
 saying what it wants, what you type goes to the program, and the agent
 is told you typed something and never what.
 
+gridterm writes down what an agent types, and "What the agent typed" on
+the Servers menu shows it for the pane you are on. You hand the pane
+over, you give the access and you hold the secrets, so what the agent
+does in there is yours to read. It is what the agent sent, not what the
+shell ran: a line it edited before pressing Enter is there as it was
+typed. A secret you type at the agent's asking is not in it, because
+you typed that yourself. The record lives as long as the pane: it is
+capped, it says how many of the oldest lines it has dropped, and it goes
+when the pane closes.
+
 "Show the share…" on the same menu, or the "Sharing with an agent" chip
 on the menu bar, opens the share itself: the one code, a row per pane
 that takes it out and puts it back, and what to give the agent. It asks

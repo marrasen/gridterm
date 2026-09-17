@@ -144,6 +144,10 @@ type app struct {
 	// overlay is the list of panes drawn while a walk is on.
 	overlay *walkOverlay
 
+	// typed is what an agent has typed in each pane, so the user who
+	// handed a pane over can go back over what was done in it.
+	typed map[*term.Terminal]*typedLog
+
 	// theme is the colour scheme the window is drawn in.
 	theme *themePick
 
@@ -659,6 +663,7 @@ func (a *app) commands() {
 		ui.Command{ID: "agent.take", Title: "Take this pane out of the share",
 			Run: a.takeBackHere},
 		ui.Command{ID: "agent.share", Title: "Show the share…", Run: a.showShare},
+		ui.Command{ID: typedCommand, Title: typedTitle + "…", Run: a.showTyped},
 		ui.Command{ID: "view.theme", Title: "Colour scheme…", Run: a.openThemePick},
 		ui.Command{ID: "view.themesReload", Title: "Reload colour schemes",
 			Run: a.reloadThemes},

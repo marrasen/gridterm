@@ -5,53 +5,34 @@ each group. A line goes when the work is in and reviewed.
 
 ## Waiting on an answer from Marcus
 
-- **Should the shortcuts file be the whole map instead of changes?** It
-  holds changes now: a line adds a shortcut, a line set to "nothing"
-  takes one away, and a line deleted goes back to what gridterm comes
-  with. That means shortcuts added to a later gridterm arrive on their
-  own. The cost is that moving a shortcut takes two lines, because
-  editing the chord on a line leaves the old chord where it was and the
-  command then runs on both. "Write a starting keyboard shortcuts file"
-  writes the whole map, which makes that trap easy to fall into. The
-  other way round -- the file is the whole map -- makes editing a line
-  move the shortcut, at the price of a file that pins the keys to the
-  version it was written from. The notice and the README explain the
-  behaviour as built.
-
-- **Should the window keep a record of what an agent typed?** The
-  account below needs one. The obvious version was built on 2026-09-17
-  and thrown away, because writing down what an agent sends keeps a
-  password it types at a `sudo` prompt. Those characters do not echo, so
-  until now the window never held them, and `Terminal.WaitForSecret` in
-  ui/term/term.go says plainly that the characters are the program's and
-  nothing here keeps them or passes them on. A keystroke record breaks
-  that, and it puts the password in a dialog with a Copy button.
-  There are three ways to go. Build the reader that takes the command
-  off the screen instead, which is more work and is described below.
-  Keep a keystroke record and accept that it holds secrets. Or drop the
-  idea.
-
-- **Should a listing that fails while completing a path be shown?** The
-  file browser's "Go to" now completes a directory name as it is typed,
-  which means reading the directory above it. A directory that is not
-  there yet is what half a typed path looks like, so that one is
-  dropped. Every other failure -- no permission, a connection that has
-  gone, a disk error -- is written to the log and not shown, because a
-  dialog per keystroke would be worse than the fault. That is a bare log
-  without an answer from you, which the rules say to ask about.
-
-- **Should a pane that cannot be put in a job object open anyway?** It
-  does not today: `StartLocal` returns the error, and for the first pane
-  `main.go` calls `log.Fatal`. Launched from Explorer there is no console,
-  so the window would not start and would say nothing about why. Two
-  reviewers argued for logging it and opening the pane. Against that:
-  carrying on brings back the orphaned shells that the job object is
-  there to stop, in silence. The one reachable failure -- a shell that
-  exited before the job could hold it -- is already handled and is not an
-  error. What is left needs Windows to refuse a nested job, which needs a
-  build older than gridterm's own ConPTY requirement.
+- **A pane that cannot be put in a job object stops gridterm without a
+  word. Should it open a window and say so instead?** A job object is a
+  box Windows puts processes in: everything a shell starts lands in the
+  box too, and Windows kills what is in the box when gridterm lets go of
+  it, however gridterm ends. That is what stops a crash leaving shells
+  running with nothing on screen.
+  Today a shell that cannot be boxed does not open, and for the first
+  pane `main.go` calls `log.Fatal`. A program started from a shell
+  prints that and exits; one started from Explorer has nowhere to print
+  to, so the window simply never appears and nothing says why.
+  Opening the pane anyway would bring back the orphaned shells the box
+  is there to stop, in silence, so that is the wrong trade. The third
+  way is to open the window and show the failure in it, which keeps the
+  box and loses the silence. It is a small change. Worth doing, or leave
+  it, given the failure needs a Windows older than the one gridterm's
+  ConPTY already requires?
 
 ## Settled, do not re-open
+
+- **The keyboard shortcuts file holds changes, not the whole map.**
+  Answered on 2026-09-17: leave it holding changes for now. Moving a
+  shortcut therefore takes two lines, and the notice and the README say
+  so.
+
+- **A listing that fails while a path is being completed is not shown.**
+  Answered on 2026-09-17: keep it off the screen. A dialog per keystroke
+  would be worse than the fault, so the failure goes to the log and the
+  completion offers nothing.
 
 - **Nothing caps the panes a window keeps.** Answered on 2026-09-16: no
   cap. A pane worth keeping is worth reusing, so reusing it is made the
@@ -80,24 +61,28 @@ user has to know which is which.
 - **A chip in the top right saying what is happening.** "Agent
   connected", "Agent running: ls -la", with a long command cropped.
   Clicking a chip opens the dialog that can end it. Two chips when both
-  are in force, one per border. The half that names the command waits
-  on the account below: nothing tells the window what an agent ran.
+  are in force, one per border. The half that names the command could
+  use the record of what the agent typed, which now exists, though the
+  last line sent is not always the command that is running.
 
 - **An account of what the agent did.** Somewhere to read the commands
   an agent ran, after the fact, rather than scrolling the pane.
 
-  - **Do not build it from what the agent sent.** That was tried on
-    2026-09-17 and thrown away. It keeps secrets, which is the question
-    at the top, and it is not a record of what ran. Backspace, Tab
-    completion and Up through the history all change the line before
-    the shell sees it. Ctrl+U throws the line away and the text then
-    glues itself onto the next command. A here-document reads as four
-    commands. In a full-screen program every line typed reads as a
-    command.
+  - **What the agent sent is written down, and is on the Servers menu
+    as "What the agent typed".** Answered on 2026-09-17: keep the
+    record. The user hands the pane over, gives the access and holds
+    the secrets, so what the agent does there is theirs to read and is
+    not hidden. It is what was sent, not what ran: Backspace, Tab
+    completion and Up through the history all change a line before the
+    shell sees it, Ctrl+U throws a line away and the text glues itself
+    onto the next one, a here-document reads as four commands, and in a
+    full-screen program every line typed reads as a command. The dialog
+    says so. A secret the user types at the agent's asking is not in
+    it, because the user types that themselves.
 
-  - **Build it from what the pane echoed.** The line a shell prints
-    back is the command it is about to run, after completion and after
-    editing. It is already on the screen, so a dialog showing it gives
+  - **A nicer account can still be built from what the pane echoed.**
+    The line a shell prints back is the command it is about to run,
+    after completion and after editing. It is already on the screen, so a dialog showing it gives
     away nothing the user could not read by scrolling, and a password
     at a prompt that does not echo never appears at all.
     `handover.markPrompt` in agents.go already writes down the prompt
@@ -333,6 +318,13 @@ there is one key for position and one for recency.
   menu` at serving_test.go:1095, so the menu is not up yet when the test
   looks. It was already failing this way before the shortcuts file went
   in, so it is the test that is wrong rather than the window.
+
+- **The record of what an agent typed lives only as long as the
+  window.** It is in memory, capped at two thousand sends or a quarter
+  of a megabyte a pane, and it goes when the pane closes. A user who
+  wants to go back over a run after closing gridterm has nothing. A
+  file would hold it, and would then be a file holding whatever an
+  agent typed, which is worth deciding on before writing one.
 
 - **A serving window carried on a USB stick cannot start.** `makeHostKey`
   links the key into place rather than renaming it, so two windows

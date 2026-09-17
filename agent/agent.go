@@ -130,9 +130,7 @@ type Share struct {
 // ShareOf is the share a pane's name begins with, and whether the name
 // is one of these at all.
 //
-// A name is two numbers with one dot between them and nothing else. A
-// name that is nearly one is not one: this is half of what keeps an
-// agent out of a share it has no code for.
+// A name is two numbers with one dot between them and nothing else.
 func ShareOf(pane string) (uint64, bool) {
 	at, n, ok := strings.Cut(pane, ".")
 	if !ok || !counting(at) || !counting(n) {

@@ -72,6 +72,10 @@ type fakePanes struct {
 	watching  bool
 	yours     bool
 
+	// added is a second pane the user put in the share after the code was
+	// used, which an agent meets for the first time in list_panes.
+	added bool
+
 	// waiting is closed when a wait has started, and letGo lets it
 	// finish, for a test about what else can be asked meanwhile.
 	waiting chan struct{}
@@ -94,7 +98,12 @@ func (f *fakePanes) List() ([]Pane, error) {
 	if !f.open {
 		return nil, nil
 	}
-	return []Pane{{ID: "1.1", Label: "bash on margit", Cols: 80, Rows: 24}}, nil
+	out := []Pane{{ID: "1.1", Label: "bash on margit", Cols: 80, Rows: 24, May: f.may}}
+	if f.added {
+		out = append(out, Pane{ID: "1.2", Label: "bash on nyx", Cols: 100, Rows: 30,
+			May: May{ReadOnly: true}})
+	}
+	return out, nil
 }
 
 func (f *fakePanes) Read(id string, lines int) (Screen, error) {
@@ -1194,5 +1203,34 @@ func TestAnAskForASecretSaysWhatItIsFor(t *testing.T) {
 	panes.mu.Unlock()
 	if asked != "" {
 		t.Errorf("the window was asked anyway, for %q", asked)
+	}
+}
+
+// list_panes says what each pane allows, because it is where an agent
+// meets a pane that was added after the code was used.
+//
+// use_session_code cannot say: the agent called it once and cannot call
+// it again without a new code. Told only a name and a size, an agent
+// types into a read-only pane and finds out by being refused.
+func TestListingPanesSaysWhatEachOneAllows(t *testing.T) {
+	panes := &fakePanes{code: "gt1-2222-abc", screen: "$ ", added: true}
+	answers := talk(t, panes,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":`+
+			`{"name":"use_session_code","arguments":{"code":"gt1-2222-abc"}}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":`+
+			`{"name":"list_panes","arguments":{}}}`)
+
+	text, failed := textOf(t, answers[1])
+	if failed {
+		t.Fatalf("it failed: %s", text)
+	}
+	for _, want := range []string{"1.1", "bash on margit", "80x24",
+		"1.2", "bash on nyx", "100x30"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("the list does not say %q: %q", want, text)
+		}
+	}
+	if !strings.Contains(text, "send_keys is refused") {
+		t.Errorf("the list does not say the second pane is read only: %q", text)
 	}
 }

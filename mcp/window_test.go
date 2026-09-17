@@ -518,7 +518,8 @@ func TestOneWindowGoingLeavesTheOthersPanesListed(t *testing.T) {
 	if err := one.Close(); err != nil {
 		t.Fatalf("closing the first window: %v", err)
 	}
-	// Reaching it is what tells this end the connection has gone.
+	// The second window is untouched, and this end has not noticed the
+	// first one go yet: it finds that out inside the list itself.
 	if _, err := panes.Read(shared[0].ID, 0); err != nil {
 		t.Fatalf("the second window is still there: %v", err)
 	}
@@ -531,5 +532,49 @@ func TestOneWindowGoingLeavesTheOthersPanesListed(t *testing.T) {
 		if len(listed) != 1 || listed[0].ID != shared[0].ID {
 			t.Fatalf("list %d holds %v, want the pane in the window still there", i, listed)
 		}
+	}
+}
+
+// A window reached again on the same port is not thrown away by the
+// list that found the old connection dead.
+//
+// A fresh code for a window whose connection broke dials again and takes
+// the port back, on a goroutine of its own. list_panes runs on another,
+// and it used to delete by port alone: the agent was handed panes and
+// then could not reach them.
+func TestForgettingAWindowLeavesTheOneThatTookItsPlace(t *testing.T) {
+	one := &oneWindow{screen: "the window"}
+	served, err := agent.Listen(agent.Config{Window: one, OnError: func(error) {}})
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer func() { _ = served.Close() }()
+	one.code, err = agent.NewCode(served.Port())
+	if err != nil {
+		t.Fatalf("code: %v", err)
+	}
+
+	panes := NewWindow()
+	defer func() { _ = panes.Close() }()
+	shared, err := panes.Use(one.code)
+	if err != nil {
+		t.Fatalf("use: %v", err)
+	}
+	if len(shared) == 0 {
+		t.Fatal("the window shared nothing")
+	}
+
+	// A connection that is not the one reached, being forgotten.
+	panes.forget(served.Port(), nil)
+
+	listed, err := panes.List()
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(listed) != 1 || listed[0].ID != shared[0].ID {
+		t.Fatalf("the list holds %v, wanted the pane still there", listed)
+	}
+	if _, err := panes.Read(shared[0].ID, 0); err != nil {
+		t.Errorf("reading the pane it still has: %v", err)
 	}
 }

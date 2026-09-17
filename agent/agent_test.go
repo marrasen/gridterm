@@ -4,7 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -1581,8 +1583,11 @@ func TestANameThatIsNearlyAPaneNameNamesNothing(t *testing.T) {
 			t.Errorf("an agent holding share 1 is given %q", name)
 		}
 	}
-	// And the names the window does make.
-	for _, name := range []string{"1.2", "3.7", "10.11"} {
+	// And the names the window does make, up to the ceiling of the
+	// counter they are built from.
+	for _, name := range []string{"1.2", "3.7", "10.11",
+		strconv.FormatUint(math.MaxUint64, 10) + ".1",
+		"1." + strconv.FormatUint(math.MaxUint64, 10)} {
 		if _, ok := ShareOf(name); !ok {
 			t.Errorf("%q is a name this window makes, and was refused", name)
 		}

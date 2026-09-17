@@ -198,10 +198,26 @@ func (a *app) statusChips() []ui.Chip {
 	return chips
 }
 
-// chipBG is the ground a chip on the menu bar sits on: black, which is
-// as far from the bar's own ground as a chip can go and still have the
-// red on it readable.
-func chipBG(vt.Palette) color.RGBA { return color.RGBA{A: 0xff} }
+// chipBG is the ground a chip on the menu bar sits on: black under a
+// dark window, white under a light one, which is away from the bar in
+// the direction the text on a chip leaves room for.
+//
+// A chip cannot meet grid.Contrast's 1.5:1 for a change of ground here.
+// The bar is already as far from the window's background as the dimmer
+// red on a chip can be read against, so the chip goes the other way, and
+// this is as far as it goes.
+func chipBG(p vt.Palette) color.RGBA {
+	if grid.Contrast(chipWhite, p.BG) >= grid.Contrast(chipBlack, p.BG) {
+		return chipBlack
+	}
+	return chipWhite
+}
+
+// The two grounds a chip picks between.
+var (
+	chipBlack = color.RGBA{A: 0xff}
+	chipWhite = color.RGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff}
+)
 
 // statusTakenFG is the red the bar says "somebody is working in this
 // window" in, and statusIdleFG the quieter one for a window that is only

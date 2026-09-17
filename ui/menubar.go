@@ -522,10 +522,9 @@ type placedChip struct {
 // in from the right edge, and the last title's own pad is the blank on
 // the other side of them.
 //
-// They are fitted from the right, and one that will not fit is passed
-// over rather than ending the row: the chip by the edge is the one the
-// window most wants read, and a narrower chip to its left still fits
-// beside it.
+// They are fitted from the right, widest room first, and one that will
+// not fit is passed over rather than ending the row. So a chip is kept
+// or dropped on its own width, not on where it is in the list.
 func (b *Menubar) chipsAt() []placedChip {
 	bar := b.bar()
 	if len(b.Chips) == 0 || bar.Empty() {

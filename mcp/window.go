@@ -14,8 +14,8 @@ import (
 // Window is the panes of one gridterm window, as an agent reaches them.
 //
 // It holds no credentials. A session code arrives in a tool call, says
-// which window to reach and opens one pane there, and is not kept: what
-// is kept is the connection it opened.
+// which window to reach and opens the panes of one share there, and is
+// not kept: what is kept is the connection it opened.
 type Window struct {
 	mu sync.Mutex
 	// reached is one connection per gridterm window, by the port its
@@ -61,10 +61,8 @@ func (w *Window) List() ([]Pane, error) {
 		panes, err := conn.Panes()
 		if err != nil {
 			if conn.Gone() {
-				// The window has closed. Its panes are nobody's to
-				// reach, and saying so on every later list would bury
-				// the panes that are.
-				w.forget(port)
+				// The window has closed.
+				w.forget(port, conn)
 				continue
 			}
 			errs = append(errs, err)
@@ -251,8 +249,7 @@ func (w *Window) connections() map[int]*agent.Client {
 	out := make(map[int]*agent.Client, len(w.reached))
 	for port, conn := range w.reached {
 		if conn.Gone() {
-			// A window that has closed cannot be asked again, and one
-			// left here would fail every later list.
+			// A window that has closed cannot be asked again.
 			delete(w.reached, port)
 			continue
 		}
@@ -261,11 +258,18 @@ func (w *Window) connections() map[int]*agent.Client {
 	return out
 }
 
-// forget drops a window this agent had reached.
-func (w *Window) forget(port int) {
+// forget drops a window this agent had reached, and only while it is
+// still the one reached on that port.
+//
+// A fresh code for the same window dials again and takes the port back,
+// on a goroutine of its own. Deleting by port alone would throw that
+// connection away instead.
+func (w *Window) forget(port int, conn *agent.Client) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	delete(w.reached, port)
+	if w.reached[port] == conn {
+		delete(w.reached, port)
+	}
 }
 
 // paneAt finds the window a pane name belongs to, and what that window
@@ -284,8 +288,8 @@ func (w *Window) paneAt(id string) (*agent.Client, string, error) {
 	}
 	if len(w.connections()) == 0 {
 		return nil, "", errors.New(
-			"the user has not handed you a pane yet: ask them for a session code" +
-				" and use it with use_session_code")
+			"you have no panes: ask the user for a session code and use it with" +
+				" use_session_code")
 	}
 	return nil, "", fmt.Errorf("%q is not a pane you have been handed", id)
 }

@@ -374,6 +374,16 @@ func promptGetsTheAgentConnected(t *testing.T, host agentHost) {
 			t.Errorf("the prompt does not say %q", say)
 		}
 	}
+	// And the code names a share of panes, not one pane. An agent told
+	// it has one pane has no reason to ask what else it has.
+	for _, say := range []string{"panes", "lists the panes"} {
+		if !strings.Contains(prompt, say) {
+			t.Errorf("the prompt does not say %q:\n%s", say, prompt)
+		}
+	}
+	if strings.Contains(prompt, "one terminal pane") {
+		t.Errorf("the prompt still hands over one pane:\n%s", prompt)
+	}
 
 	// The rules in short, because a host is free to pass none of the
 	// server's own instructions to the model and these are the part with
@@ -1188,6 +1198,19 @@ func TestTheSkillSaysHowToWorkInAHandedOverPane(t *testing.T) {
 			if !strings.Contains(skill, mcp.Rules) {
 				t.Error("the skill does not carry the rules")
 			}
+			// A share of panes, and that the set changes while the agent
+			// works: the skill is read once and then not again.
+			for _, say := range []string{
+				"share", "list_panes", "adds panes and takes them out",
+			} {
+				if !strings.Contains(skill, say) {
+					t.Errorf("the skill does not say %q", say)
+				}
+			}
+			if strings.Contains(skill, "hands you one pane") {
+				t.Error("the skill still hands over one pane")
+			}
+
 			// This host's setup, and how to get a code.
 			if !strings.Contains(skill, host.setupForAgent(exe)) {
 				t.Errorf("the skill does not say how to get the server added to %s", host.name)
@@ -4014,4 +4037,57 @@ func TestAPaneAddedLaterIsOnlyOfferedUntilTheAgentAsks(t *testing.T) {
 		a.refreshPanel(panelNow)
 		return a.panes[second].Note == agentAt
 	})
+}
+
+// A call the window refuses does not make the pane's row say an agent is
+// working there.
+//
+// The row is the user's one per-pane signal, and a refusal is the agent
+// getting nowhere.
+func TestARefusedCallDoesNotSayAnAgentIsWorkingThere(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	first, second := twoSharedPanes(t, a)
+	// The second is read only, and out of the share until the agent is
+	// connected, so it is never named in the answer to the code.
+	boxes := handoverDialog(t, a, second)
+	tickBox(t, a, boxes, "Read only")
+	pressButton(t, a, boxes, "Done")
+	if err := a.takeBackPane(second); err != nil {
+		t.Fatalf("take it out: %v", err)
+	}
+	code := a.agents.code()
+
+	c, err := agent.Dial(code)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	t.Cleanup(func() { _ = c.Close() })
+	offWindow(t, a, "the window to answer the agent", func() error {
+		_, err := firstOf(c.Use(code))
+		return err
+	})
+	waitFor(t, a, "the row to say an agent is working here", func() bool {
+		a.refreshPanel(panelNow)
+		return a.panes[first].Note == agentAt
+	})
+
+	// Added back, read only, and the agent types into it anyway, naming a
+	// pane it has never been told about.
+	if err := a.handPane(second); err != nil {
+		t.Fatalf("add it: %v", err)
+	}
+	name := a.agents.of(second).name()
+	offWindow(t, a, "the window to refuse the agent", func() error {
+		if err := c.Send(name, "whoami\r", nil); err == nil {
+			t.Error("typing into a read-only pane was allowed")
+		}
+		return nil
+	})
+
+	a.refreshPanel(panelNow)
+	if got := a.panes[second].Note; got != agentOffered {
+		t.Errorf("the row for a pane the agent was refused says %q", got)
+	}
 }

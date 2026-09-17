@@ -193,6 +193,18 @@ func TestTheChipGroundIsToldFromTheBar(t *testing.T) {
 	if got := grid.Contrast(ground, a.bar.Style.BGEnd); got < 1.4 {
 		t.Errorf("a chip's ground is %.2f:1 where the chips sit, want at least 1.4", got)
 	}
+
+	// It follows the window's colours rather than being one colour: the
+	// text on a chip is dark under a light window, so the ground there
+	// goes the other way.
+	if ground != chipBlack {
+		t.Errorf("a chip on this window sits on %+v, want black", ground)
+	}
+	light := a.colours
+	light.BG = color.RGBA{0xfa, 0xfa, 0xfa, 0xff}
+	if got := chipBG(light); got != chipWhite {
+		t.Errorf("a chip on a light window sits on %+v, want white", got)
+	}
 }
 
 // A window nobody is being served says nothing on the bar.

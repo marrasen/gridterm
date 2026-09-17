@@ -93,7 +93,7 @@ func toolList() []tool {
 			InputSchema: schema{
 				Type: "object",
 				Properties: map[string]field{
-					"pane":  {Type: "string", Description: "which pane, from use_session_code"},
+					"pane":  {Type: "string", Description: "which pane, from use_session_code or list_panes"},
 					"lines": {Type: "integer", Description: linesArg},
 				},
 				Required: []string{"pane"},
@@ -115,7 +115,7 @@ func toolList() []tool {
 			InputSchema: schema{
 				Type: "object",
 				Properties: map[string]field{
-					"pane": {Type: "string", Description: "which pane, from use_session_code"},
+					"pane": {Type: "string", Description: "which pane, from use_session_code or list_panes"},
 					"lines": {Type: "integer", Description: fmt.Sprintf(
 						"the most lines to give back, ending at the bottom. Left out, it is"+
 							" %d. A longer output gives the last %d and says so.",
@@ -141,7 +141,7 @@ func toolList() []tool {
 			InputSchema: schema{
 				Type: "object",
 				Properties: map[string]field{
-					"pane": {Type: "string", Description: "which pane, from use_session_code"},
+					"pane": {Type: "string", Description: "which pane, from use_session_code or list_panes"},
 					"text": {Type: "string", Description: `what to type, with "\r" for Enter`},
 					"keys": {Type: "array", Items: &items{Type: "string"},
 						Description: keysArg},
@@ -168,7 +168,7 @@ func toolList() []tool {
 			InputSchema: schema{
 				Type: "object",
 				Properties: map[string]field{
-					"pane": {Type: "string", Description: "which pane, from use_session_code"},
+					"pane": {Type: "string", Description: "which pane, from use_session_code or list_panes"},
 					"what": {Type: "string", Description: "what to ask for, in a few words," +
 						` such as "the sudo password for prod". It is shown to the user.`},
 					"wait_ms": {Type: "integer", Description: fmt.Sprintf(
@@ -187,11 +187,11 @@ func toolList() []tool {
 				" On a pane that ran one command this runs that command again, with" +
 				" whatever that does to the machine, so ask the user before you use it there." +
 				" It works only if the user ticked \"Restart a closed connection\" when they" +
-				" handed the pane over, and use_session_code says whether they did.",
+				" shared the pane, and use_session_code and list_panes both say whether they did.",
 			InputSchema: schema{
 				Type: "object",
 				Properties: map[string]field{
-					"pane": {Type: "string", Description: "which pane, from use_session_code"},
+					"pane": {Type: "string", Description: "which pane, from use_session_code or list_panes"},
 				},
 				Required: []string{"pane"},
 			},
@@ -208,12 +208,12 @@ func toolList() []tool {
 				" It opens no connection. gridterm must already be connected to that machine," +
 				" and if it is not this says so and the user is the one to connect." +
 				" It works only if the user ticked \"Open another pane there\" when they" +
-				" handed the pane over, and use_session_code says whether they did.",
+				" shared the pane, and use_session_code and list_panes both say whether they did.",
 			InputSchema: schema{
 				Type: "object",
 				Properties: map[string]field{
 					"pane": {Type: "string",
-						Description: "a pane you have, from use_session_code; the new one" +
+						Description: "a pane you have, from use_session_code or list_panes; the new one" +
 							" opens where it is"},
 				},
 				Required: []string{"pane"},
@@ -240,7 +240,7 @@ func toolList() []tool {
 			InputSchema: schema{
 				Type: "object",
 				Properties: map[string]field{
-					"pane":     {Type: "string", Description: "which pane, from use_session_code"},
+					"pane":     {Type: "string", Description: "which pane, from use_session_code or list_panes"},
 					"contains": {Type: "string", Description: "text to wait for on the screen"},
 					"lines":    {Type: "integer", Description: linesArg},
 					"quiet_ms": {Type: "integer",
@@ -300,17 +300,18 @@ func (s *server) runTool(name string, args json.RawMessage) (result, *rpcError) 
 			return wrong(err.Error())
 		}
 		if len(panes) == 0 {
-			return say("You have no panes. Either the user has not given you a session" +
-				" code yet, or they have taken every pane out of the share you used." +
+			return say("You have no panes. The user has not given you a session code" +
+				" yet, or they have taken every pane out of the share you used, or" +
+				" the gridterm window has closed." +
 				" Ask them for a code and use it with use_session_code.")
 		}
 		var out string
 		for _, p := range panes {
-			out += fmt.Sprintf("%s: %s, %dx%d\n", p.ID, p.Label, p.Cols, p.Rows)
+			out += fmt.Sprintf("%s: %s, %dx%d. %s%s\n",
+				p.ID, p.Label, p.Cols, p.Rows, whatItTakes(p), alsoAllowed(p.May))
 		}
 		if err != nil {
-			// The panes that did answer, and then what went wrong: an
-			// agent that is told only the failure loses the rest.
+			// The panes that did answer, and then what went wrong.
 			out += "\nA window could not be asked, so this may not be all" +
 				" of it: " + err.Error()
 		}

@@ -187,6 +187,7 @@ func main() {
 	a.agents = newAgents()
 	a.shellPick = newShellPick()
 	a.saved = newSavedCommands()
+	a.paneTitles = newPaneTitles()
 	a.useSettings(openSettings())
 	a.tunnels = make(map[*conns.Entry]*tunnel)
 	a.queue = jobs.New(0)

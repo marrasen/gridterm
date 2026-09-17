@@ -177,7 +177,10 @@ func (a *app) dropScaled(pane *term.Terminal, s *scaledPane) {
 // overflows reports whether a pane's screen is bigger than the room the
 // layout has for it, which only a held screen is.
 func overflows(pane *term.Terminal) bool {
-	size, box := pane.Size(), pane.Box()
+	// The room the screen is drawn in rather than the pane's own: a line
+	// above the screen takes a row, and a screen that no longer fits
+	// under it has to be drawn on a layer of its own.
+	size, box := pane.Size(), pane.ScreenRoom()
 	return pane.Held() && (size.Cols > box.Cols || size.Rows > box.Rows)
 }
 

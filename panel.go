@@ -530,7 +530,7 @@ func (a *app) paneNote(pane *term.Terminal) string {
 			say = append(say, note)
 		}
 	} else if n := pane.Watched(); n > 0 {
-		if pane.Held() && pane.Size() != pane.Box() {
+		if pane.Held() && pane.Size() != pane.ScreenRoom() {
 			// Somebody watching set the size, and this window draws that
 			// screen in whatever room it has: the size is the only thing
 			// that explains what is on it.

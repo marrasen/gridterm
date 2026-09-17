@@ -167,6 +167,10 @@ type Terminal struct {
 	// can draw over the screen in them.
 	pal vt.Palette
 
+	// caption is the line above the screen, and empty for a pane without
+	// one.
+	caption string
+
 	// ask is the question drawn on the pane's last row, and nil when
 	// there is none. The drawing goroutine owns it.
 	ask *asked
@@ -405,7 +409,7 @@ func (t *Terminal) restartSize() ui.Size {
 	if t.held || !t.haveSize {
 		return t.size
 	}
-	return t.box
+	return t.screenBox(t.box)
 }
 
 // drain throws away input queued for a session that has gone.
@@ -580,6 +584,7 @@ func (t *Terminal) AskedForASecret() bool {
 // somebody else has the size or the program has gone.
 func (t *Terminal) Layout(size ui.Size) {
 	t.box = size
+	size = t.screenBox(size)
 	if t.held {
 		// The size belongs to somebody watching. The screen keeps the
 		// size they asked for and is drawn in whatever room this window
@@ -649,7 +654,72 @@ func (t *Terminal) Draw(v grid.View) {
 		v.Clear()
 		return
 	}
+	if n := t.capRows(); n > 0 {
+		cols, rows := v.Size()
+		t.paintCaption(v.Sub(0, 0, cols, n))
+		t.draw(v.Sub(0, n, cols, rows-n))
+		return
+	}
 	t.draw(v)
+}
+
+// Caption is the line above the screen naming the pane, and empty for a
+// pane with no line above it. The program gets one row fewer while there
+// is one.
+func (t *Terminal) Caption() string { return t.caption }
+
+// SetCaption puts a line above the screen, or takes it away.
+func (t *Terminal) SetCaption(text string) {
+	if text == t.caption {
+		return
+	}
+	t.caption = text
+	if t.held {
+		// The size belongs to somebody watching, the same reason Layout
+		// leaves it alone.
+		return
+	}
+	t.resize(t.screenBox(t.box))
+}
+
+// capRows is how many rows the line above the screen takes.
+//
+// None while the host paints the screen itself, and none unless the
+// screen has left a row for it: a size that is somebody else's -- a
+// watcher holding it, or a program that has ended and kept the size it
+// was written at -- is not the layout's to take a row from, and a line
+// over such a screen would cut its bottom row off.
+func (t *Terminal) capRows() int {
+	if t.caption == "" || t.elsewhere || t.box.Rows < 2 {
+		return 0
+	}
+	if t.size.Rows > t.box.Rows-1 {
+		return 0
+	}
+	return 1
+}
+
+// screenBox is the room left for the program once the line above it has
+// its row.
+//
+// From the room rather than from capRows, which asks whether the screen
+// has already left a row: this is what leaves it.
+func (t *Terminal) screenBox(box ui.Size) ui.Size {
+	if t.caption != "" && box.Rows >= 2 {
+		box.Rows--
+	}
+	return box
+}
+
+// paintCaption draws the line above the screen.
+func (t *Terminal) paintCaption(v grid.View) {
+	cols, rows := v.Size()
+	if cols <= 0 || rows <= 0 {
+		return
+	}
+	bg := askBG(t.pal)
+	v.Fill(grid.Cell{Rune: ' ', FG: t.pal.FG, BG: bg, Width: 1})
+	v.SetString(0, 0, grid.TrimTail(t.caption, cols), t.pal.FG, bg, 0)
 }
 
 // DrawScreen paints the whole screen onto a view of its own, for a host
@@ -724,11 +794,15 @@ func (t *Terminal) Release() {
 		return
 	}
 	t.held = false
-	t.resize(t.box)
+	t.resize(t.screenBox(t.box))
 }
 
 // Held reports whether somebody else has this terminal's size.
 func (t *Terminal) Held() bool { return t.held }
+
+// ScreenRoom is the room the program's screen is drawn in: the pane's
+// own room, less the line above it when there is one.
+func (t *Terminal) ScreenRoom() ui.Size { return t.screenBox(t.Box()) }
 
 // Box is the room the layout has for this terminal, which differs from
 // its size only while the size is held.
@@ -811,9 +885,25 @@ func (t *Terminal) HandleKey(ev input.Event) (bool, error) {
 // has taken the mouse over, and every terminal since has copied it.
 func (t *Terminal) HandleMouse(ev input.MouseEvent) (bool, error) {
 	// Before the program, which may have taken the mouse over: the
-	// question is about the program and has to be answerable.
+	// question is about the program and has to be answerable. It is
+	// asked in the pane's own rows, so it comes before the line above
+	// the screen is taken off them.
 	if took, err := t.askMouse(ev); took {
 		return true, err
+	}
+	if n := t.capRows(); n > 0 {
+		if ev.Row < n {
+			if ev.Kind == input.MousePress {
+				// The line above the screen takes the press.
+				return true, nil
+			}
+			// A drag or a release that wandered onto the line belongs to
+			// the row under it: swallowing a release leaves the button
+			// down in the program and the selection following the
+			// pointer with nothing held.
+			ev.Row = n
+		}
+		ev.Row -= n
 	}
 	mode, onAlt := t.mouseMode()
 	if mode.Enabled() && !ev.Mods.Has(input.ModShift) {

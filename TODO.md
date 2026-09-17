@@ -269,10 +269,17 @@ order Ctrl+Tab moves in, and expected recently used.
   - **Getting rid of it is answered** by the cross on hover. See the
     answers at the top.
 
-- **An optional title bar in a pane.** The user turns it on, and the
-  first row of the terminal shows the server name and the pane's title.
-  Marcus wants it for split views, where nothing on screen says which
-  pane is which.
+- **A file browser's pane gets no line naming it.** The line above a
+  pane is a terminal's, and the file manager's panes are not terminals:
+  `refreshCaptions` walks `a.panes`, and `ui/files.Pane` has no caption
+  at all. A split holding a shell and a browser names the shell and not
+  the browser, which is half of what the line is for.
+
+- **A pane drawn on a layer of its own shows no line.** A held screen
+  too big for its room is painted by the window rather than by the tree,
+  and that painting draws the screen alone. The pane keeps its row for
+  the screen instead, so nothing is cut; there is simply nothing to read
+  on it.
 
 ## Known gaps worth revisiting
 

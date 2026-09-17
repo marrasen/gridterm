@@ -65,6 +65,9 @@ type stored struct {
 
 	// Commands are the commands the user asked to keep, newest first.
 	Commands []SavedCommand `json:"commands,omitempty"`
+
+	// PaneTitles turns on the line above each pane naming it.
+	PaneTitles *bool `json:"paneTitles,omitempty"`
 }
 
 // SavedCommand is a command line the user asked to keep, the directory
@@ -317,6 +320,30 @@ func (s *Settings) putCommands(edit func([]SavedCommand) []SavedCommand) error {
 // dropLine is the commands with one line left out.
 func dropLine(have []SavedCommand, line string) []SavedCommand {
 	return slices.DeleteFunc(have, func(cmd SavedCommand) bool { return cmd.Line == line })
+}
+
+// PaneTitles reports whether each pane shows a line naming it.
+func (s *Settings) PaneTitles() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.have.PaneTitles != nil && *s.have.PaneTitles
+}
+
+// PutPaneTitles turns the line above each pane on or off, and saves.
+func (s *Settings) PutPaneTitles(on bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// The file first, for the same reason PutServe reads it first.
+	if err := s.rereadLocked(); err != nil {
+		return fmt.Errorf("%w: %w", ErrUnsaveable, err)
+	}
+	before := s.have
+	s.have.PaneTitles = &on
+	if err := s.saveLocked(); err != nil {
+		s.have = before
+		return err
+	}
+	return nil
 }
 
 // Shell is the shell a new pane was last opened on, and whether one was

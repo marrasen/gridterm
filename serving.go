@@ -500,6 +500,7 @@ func (a *app) useSettings(set *settings.Settings) {
 	a.agents.remember(set)
 	a.shellPick.remember(set)
 	a.saved.remember(set)
+	a.paneTitles.remember(set)
 	err := set.Err()
 	if err == nil {
 		return

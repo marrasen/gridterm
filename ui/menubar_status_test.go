@@ -23,7 +23,7 @@ func newChipBar(t *testing.T, texts ...string) (*Menubar, *stage, []int) {
 	b, st := newTestBar(t, &filler{ch: 'x'})
 	ran := make([]int, len(texts))
 	for i, text := range texts {
-		b.Status = append(b.Status, Chip{
+		b.Chips = append(b.Chips, Chip{
 			Text: text, FG: chipFG, BG: chipGround,
 			Do: func() error { ran[i]++; return nil },
 		})
@@ -59,7 +59,7 @@ func TestMenubarDrawsAChipAgainstTheRightEdge(t *testing.T) {
 	}
 	// One blank cell of margin at the right edge, then the chip's own
 	// pad, then what it says.
-	if want := 40 - statusPad - chipWide("ready") + chipPad; at != want {
+	if want := 40 - chipMargin - chipWide("ready") + chipPad; at != want {
 		t.Errorf("the chip says its word at column %d, want %d", at, want)
 	}
 	if got := g.At(39, 0).Rune; got != ' ' {
@@ -91,8 +91,8 @@ func TestMenubarDrawsAChipAgainstTheRightEdge(t *testing.T) {
 // alpha, which is what a program that only sets the text gets.
 func TestMenubarAChipWithNoColoursOfItsOwnTakesTheBars(t *testing.T) {
 	b, _, _ := newChipBar(t, "ready")
-	b.Status[0].FG = color.RGBA{}
-	b.Status[0].BG = color.RGBA{}
+	b.Chips[0].FG = color.RGBA{}
+	b.Chips[0].BG = color.RGBA{}
 
 	g := drawBarOn(b, 40, 20)
 
@@ -118,11 +118,11 @@ func TestMenubarWithNoChipsDrawsTheRowAsBefore(t *testing.T) {
 	if got := strings.TrimRight(plain, " "); got != " File  Edit" {
 		t.Errorf("bar row = %q, want the titles and nothing else", plain)
 	}
-	b.Status = []Chip{{Text: "ready"}}
+	b.Chips = []Chip{{Text: "ready"}}
 	if with := rowOf(drawBarOn(b, 40, 20), 0); with == plain {
 		t.Fatalf("the chip changed nothing: %q", with)
 	}
-	b.Status = nil
+	b.Chips = nil
 	if again := rowOf(drawBarOn(b, 40, 20), 0); again != plain {
 		t.Errorf("bar row = %q after taking the chip away, want %q", again, plain)
 	}
@@ -145,7 +145,7 @@ func TestMenubarChipsReadLeftToRightWithTheLastAtTheEdge(t *testing.T) {
 		t.Errorf("bar row = %q, want the first chip given to be the one on the left", row)
 	}
 	// The last chip ends where one chip on its own would.
-	if want := 40 - statusPad - chipPad - grid.StringWidth("busy"); second != want {
+	if want := 40 - chipMargin - chipPad - grid.StringWidth("busy"); second != want {
 		t.Errorf("the last chip says its word at column %d, want %d", second, want)
 	}
 	// A blank of the bar's own between the two grounds, so they read as
@@ -159,13 +159,13 @@ func TestMenubarChipsReadLeftToRightWithTheLastAtTheEdge(t *testing.T) {
 	}
 }
 
-// TestMenubarDropsTheChipsThatWillNotFitFromTheLeft checks which one
-// gives way. The titles are the controls, so a chip goes first, and the
-// chip by the edge keeps its place.
-func TestMenubarDropsTheChipsThatWillNotFitFromTheLeft(t *testing.T) {
+// TestMenubarFitsTheChipsItCanFromTheRight checks which one gives way.
+// The titles are the controls, so a chip goes first, and the chip by the
+// edge keeps its place.
+func TestMenubarFitsTheChipsItCanFromTheRight(t *testing.T) {
 	b, _, ran := newChipBar(t, "ready", "busy")
 
-	g := drawBarOn(b, titlesEnd+statusPad+chipWide("busy"), 20)
+	g := drawBarOn(b, titlesEnd+chipMargin+chipWide("busy"), 20)
 
 	row := rowOf(g, 0)
 	if !strings.Contains(row, "File") || !strings.Contains(row, "Edit") {
@@ -185,6 +185,15 @@ func TestMenubarDropsTheChipsThatWillNotFitFromTheLeft(t *testing.T) {
 	if chips[0].at.X < titlesEnd {
 		t.Errorf("the chip starts at column %d, which is inside a title", chips[0].at.X)
 	}
+	// Still against the right edge, and still no wider than the room
+	// there was.
+	cols := titlesEnd + chipMargin + chipWide("busy")
+	if got, want := chips[0].at.X+chips[0].at.Cols, cols-chipMargin; got != want {
+		t.Errorf("the chip ends at column %d, want %d", got, want)
+	}
+	if room := cols - chipMargin - titlesEnd; chips[0].at.Cols > room {
+		t.Errorf("the chip is %d columns wide, want at most %d", chips[0].at.Cols, room)
+	}
 	// The dropped chip takes no press, whoever presses where it was.
 	if _, err := b.HandleMouse(pressAt(titlesEnd, 0)); err != nil {
 		t.Fatalf("press: %v", err)
@@ -200,7 +209,7 @@ func TestMenubarDropsTheChipsThatWillNotFitFromTheLeft(t *testing.T) {
 func TestMenubarAChipThatWillNotFitAtAllIsNotDrawn(t *testing.T) {
 	b, _, ran := newChipBar(t, "serving")
 
-	g := drawBarOn(b, titlesEnd+statusPad+1, 20)
+	g := drawBarOn(b, titlesEnd+chipMargin+1, 20)
 
 	if chips := b.chipsAt(); len(chips) != 0 {
 		t.Errorf("the bar laid out %+v, want nothing", chips)
@@ -234,7 +243,7 @@ func TestMenubarAChipWithNothingOnItIsNotDrawn(t *testing.T) {
 	}
 	// The one chip left sits where a single chip does, with no room kept
 	// for the empty one.
-	start := 40 - statusPad - chipWide("busy")
+	start := 40 - chipMargin - chipWide("busy")
 	if chips[0].at.X != start {
 		t.Errorf("the chip starts at column %d, want %d", chips[0].at.X, start)
 	}
@@ -246,6 +255,37 @@ func TestMenubarAChipWithNothingOnItIsNotDrawn(t *testing.T) {
 	}
 	if ran[0] != 0 {
 		t.Errorf("the empty chip ran %d times, want not at all", ran[0])
+	}
+}
+
+// TestMenubarKeepsAChipThatStillFitsBesideOneThatDoesNot is the reason
+// the chips are fitted from the right rather than dropped from the left.
+//
+// A wide chip by the edge must not take a narrow one with it: the bar
+// would go blank on a window that had room to say something.
+func TestMenubarKeepsAChipThatStillFitsBesideOneThatDoesNot(t *testing.T) {
+	b, _, ran := newChipBar(t, "hi", "sharing with an agent")
+
+	// Room for the narrow chip and nowhere near the wide one.
+	cols := titlesEnd + chipMargin + chipWide("hi")
+	g := drawBarOn(b, cols, 20)
+
+	chips := b.chipsAt()
+	if len(chips) != 1 || chips[0].Text != "hi" {
+		t.Fatalf("the bar laid out %+v, want the chip that fits", chips)
+	}
+	if got, want := chips[0].at.X, cols-chipMargin-chipWide("hi"); got != want {
+		t.Errorf("the chip starts at column %d, want %d", got, want)
+	}
+	if row := rowOf(g, 0); !strings.Contains(row, "hi") {
+		t.Errorf("bar row = %q, want the chip that fits drawn", row)
+	}
+	// And it is the one that takes the press.
+	if _, err := b.HandleMouse(pressAt(chips[0].at.X, 0)); err != nil {
+		t.Fatalf("press: %v", err)
+	}
+	if ran[0] != 1 || ran[1] != 0 {
+		t.Errorf("the chips ran %d and %d times, want the one that fits alone", ran[0], ran[1])
 	}
 }
 
@@ -285,17 +325,24 @@ func TestMenubarClickOnAChipPicksTheOneUnderIt(t *testing.T) {
 	b, _, ran := newChipBar(t, "ready", "busy")
 	drawBarOn(b, 40, 20)
 
+	// Worked out by hand rather than read off the layout: both chips
+	// against the right edge of a 40-column bar, "busy" last.
+	if _, err := b.HandleMouse(pressAt(34, 0)); err != nil {
+		t.Fatalf("press: %v", err)
+	}
+	if ran[1] != 1 {
+		t.Errorf("the chip by the edge ran %d times, want once", ran[1])
+	}
+	if _, err := b.HandleMouse(pressAt(26, 0)); err != nil {
+		t.Fatalf("press: %v", err)
+	}
+	if ran[0] != 1 {
+		t.Errorf("the chip beside it ran %d times, want once", ran[0])
+	}
+
 	chips := b.chipsAt()
 	if len(chips) != 2 {
 		t.Fatalf("the bar laid out %+v, want both chips", chips)
-	}
-	for _, chip := range chips {
-		if _, err := b.HandleMouse(pressAt(chip.at.X, 0)); err != nil {
-			t.Fatalf("press: %v", err)
-		}
-	}
-	if ran[0] != 1 || ran[1] != 1 {
-		t.Errorf("the chips ran %d and %d times, want once each", ran[0], ran[1])
 	}
 
 	// The blank between them belongs to neither.
@@ -384,7 +431,7 @@ func TestMenubarAChipIsMeasuredInColumns(t *testing.T) {
 
 	g := drawBarOn(b, 40, 20)
 
-	start := 40 - statusPad - chipWide("世界") + chipPad
+	start := 40 - chipMargin - chipWide("世界") + chipPad
 	if got := g.At(start, 0); got.Rune != '世' || got.Width != 2 {
 		t.Errorf("column %d holds %+v, want the first character on two columns", start, got)
 	}
@@ -410,14 +457,14 @@ func TestMenubarChipsSetToTheSameValueLeavesTheLayerClean(t *testing.T) {
 
 	g.ClearDirty()
 	for i := 0; i < 2; i++ {
-		b.Status = []Chip{{Text: "ready", FG: chipFG, BG: chipGround}}
+		b.Chips = []Chip{{Text: "ready", FG: chipFG, BG: chipGround}}
 		b.Draw(g.View())
 		if g.RowDirty(0) {
 			t.Fatalf("draw %d with the same chip dirtied the bar's row", i)
 		}
 	}
 
-	b.Status = []Chip{{Text: "busy", FG: chipFG, BG: chipGround}}
+	b.Chips = []Chip{{Text: "busy", FG: chipFG, BG: chipGround}}
 	b.Draw(g.View())
 	if !g.RowDirty(0) {
 		t.Error("a new chip did not change the bar")
@@ -427,7 +474,7 @@ func TestMenubarChipsSetToTheSameValueLeavesTheLayerClean(t *testing.T) {
 func TestMenubarChipErrorReachesTheCaller(t *testing.T) {
 	boom := errors.New("boom")
 	b, _, _ := newChipBar(t, "ready")
-	b.Status[0].Do = func() error { return boom }
+	b.Chips[0].Do = func() error { return boom }
 	drawBarOn(b, 40, 20)
 
 	_, err := b.HandleMouse(pressAt(34, 0))
@@ -441,7 +488,7 @@ func TestMenubarChipErrorReachesTheCaller(t *testing.T) {
 // which is what a chip that only says something gets.
 func TestMenubarAChipWithNothingToDoStillTakesThePress(t *testing.T) {
 	b, st, _ := newChipBar(t, "ready")
-	b.Status[0].Do = nil
+	b.Chips[0].Do = nil
 	drawBarOn(b, 40, 20)
 
 	handled, err := b.HandleMouse(pressAt(34, 0))
@@ -464,7 +511,7 @@ func TestMenubarAChipWithNothingToDoStillTakesThePress(t *testing.T) {
 func TestMenubarChipErrorThroughAnOpenMenuReachesTheCaller(t *testing.T) {
 	boom := errors.New("boom")
 	b, st, _ := newChipBar(t, "ready")
-	b.Status[0].Do = func() error { return boom }
+	b.Chips[0].Do = func() error { return boom }
 	drawBarOn(b, 40, 20)
 	b.HandleMouse(pressAt(1, 0))
 
@@ -485,7 +532,7 @@ func TestMenubarChipsStartExactlyWhereTheTitlesEnd(t *testing.T) {
 	b, _, _ := newChipBar(t, "ready")
 	width := chipWide("ready")
 
-	g := drawBarOn(b, titlesEnd+statusPad+width, 20)
+	g := drawBarOn(b, titlesEnd+chipMargin+width, 20)
 
 	chips := b.chipsAt()
 	if len(chips) != 1 {

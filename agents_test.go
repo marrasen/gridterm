@@ -3898,16 +3898,9 @@ func TestTheMenuBarSaysAShareIsOpenAndOpensIt(t *testing.T) {
 	}
 
 	col, at := chipColumn(t, a)
-	took, err := a.root.HandleMouse(input.MouseEvent{
-		Kind: input.MousePress, Button: input.MouseLeft, Col: col, Row: at,
-	})
 
-	if err != nil {
-		t.Fatalf("pressing the chip: %v", err)
-	}
-	if !took {
-		t.Fatal("the press on the chip travelled on")
-	}
+	pressChip(t, a, col, at)
+
 	awaitModal(t, a, "the share dialog", byTitle[*ui.Form](shareTitle))
 
 	// And the chip goes when the share does.
@@ -3920,8 +3913,11 @@ func TestTheMenuBarSaysAShareIsOpenAndOpensIt(t *testing.T) {
 	}
 }
 
-// A window that is both served and shared says both, and says them in
-// the order they happened to it.
+// A window that is both served and shared says both, and each chip opens
+// its own dialog.
+//
+// Serving goes by the right edge, because a window too narrow for both
+// drops the share first.
 func TestTheMenuBarSaysBothServingAndSharing(t *testing.T) {
 	a := aServedWindow(t)
 	pane := onlyPaneOn(t, a)
@@ -3930,14 +3926,40 @@ func TestTheMenuBarSaysBothServingAndSharing(t *testing.T) {
 
 	_, row := barRow(t, a)
 
-	if got := chipsSay(a); len(got) != 2 || got[0] != "Serving" || got[1] != shareTitle {
-		t.Fatalf("the bar says %q, want serving and then the share", got)
+	if got := chipsSay(a); len(got) != 2 || got[0] != shareTitle || got[1] != "Serving" {
+		t.Fatalf("the bar says %q, want the share and then serving", got)
 	}
-	served, shared := strings.Index(row, "Serving"), strings.Index(row, shareTitle)
-	if served < 0 || shared < 0 {
+	shared, served := strings.Index(row, shareTitle), strings.Index(row, "Serving")
+	if shared < 0 || served < 0 {
 		t.Fatalf("the bar row is %q, want both chips on it", row)
 	}
-	if served > shared {
-		t.Errorf("the bar row is %q, want serving drawn first", row)
+	if shared > served {
+		t.Errorf("the bar row is %q, want serving drawn last", row)
+	}
+
+	// The chip by the edge is the serving one, and it opens the serving
+	// dialog rather than the share.
+	col, at := chipColumn(t, a)
+	pressChip(t, a, col, at)
+	f := awaitModal(t, a, "the serving dialog", byTitle[*ui.Form]("Serving this window"))
+	pressButton(t, a, f, "Keep serving")
+
+	// And the one beside it opens the share.
+	area, _ := barRow(t, a)
+	pressChip(t, a, area.X+shared, area.Y)
+	awaitModal(t, a, "the share dialog", byTitle[*ui.Form](shareTitle))
+}
+
+// pressChip is a left press on one cell of the menu bar.
+func pressChip(t *testing.T, a *testApp, col, row int) {
+	t.Helper()
+	took, err := a.root.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft, Col: col, Row: row,
+	})
+	if err != nil {
+		t.Fatalf("pressing the chip: %v", err)
+	}
+	if !took {
+		t.Fatal("the press on the chip travelled on")
 	}
 }

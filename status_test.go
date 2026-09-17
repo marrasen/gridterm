@@ -94,8 +94,8 @@ func chipColumn(t *testing.T, a *testApp) (int, int) {
 // chipsSay is what the chips on the bar say, in the order they are drawn
 // in.
 func chipsSay(a *testApp) []string {
-	out := make([]string, 0, len(a.bar.Status))
-	for _, chip := range a.bar.Status {
+	out := make([]string, 0, len(a.bar.Chips))
+	for _, chip := range a.bar.Chips {
 		out = append(out, chip.Text)
 	}
 	return out
@@ -163,6 +163,38 @@ func TestTheStatusColoursAreReadableOnTheBar(t *testing.T) {
 	}
 }
 
+// A chip's ground has to be told from the bar it sits on, or the chip is
+// just words on the bar.
+//
+// grid.Contrast puts a change of ground at 1.5:1, and a chip cannot
+// reach that here. The bar's own ground is already as light as the
+// dimmer red on a chip can be read against, so the chip has to go the
+// other way, and black against this bar is 1.44:1 at the end the chips
+// sit at and 1.25:1 at the other. The test holds it there, which is what
+// stops the ground drifting back into the bar's own.
+func TestTheChipGroundIsToldFromTheBar(t *testing.T) {
+	const wantGround = 1.2
+	a := aBarWindow(t)
+	ground := chipBG(a.colours)
+
+	for _, end := range []struct {
+		where string
+		bg    color.RGBA
+	}{
+		{"the near end of the bar's ground", a.bar.Style.BG},
+		{"the far end of it, where the chips sit", a.bar.Style.BGEnd},
+	} {
+		if got := grid.Contrast(ground, end.bg); got < wantGround {
+			t.Errorf("a chip's ground is %.2f:1 against %s, want at least %.1f",
+				got, end.where, wantGround)
+		}
+	}
+	// And the end the chips sit at is the one that has to carry it.
+	if got := grid.Contrast(ground, a.bar.Style.BGEnd); got < 1.4 {
+		t.Errorf("a chip's ground is %.2f:1 where the chips sit, want at least 1.4", got)
+	}
+}
+
 // A window nobody is being served says nothing on the bar.
 func TestAWindowThatIsNotServedSaysNothingOnTheMenuBar(t *testing.T) {
 	a := aBarWindow(t)
@@ -193,10 +225,10 @@ func TestServingWithNobodyConnectedSaysSoOnTheMenuBar(t *testing.T) {
 	if got := chipsSay(a); len(got) != 1 || got[0] != want {
 		t.Errorf("the bar says %q, want just %q: the address is the dialog's", got, want)
 	}
-	if got, red := a.bar.Status[0].FG, statusIdleFG(a.colours); got != red {
+	if got, red := a.bar.Chips[0].FG, statusIdleFG(a.colours); got != red {
 		t.Errorf("the chip is %+v, want the dimmer red %+v", got, red)
 	}
-	if got, ground := a.bar.Status[0].BG, chipBG(a.colours); got != ground {
+	if got, ground := a.bar.Chips[0].BG, chipBG(a.colours); got != ground {
 		t.Errorf("the chip sits on %+v, want a ground of its own %+v", got, ground)
 	}
 	at := strings.Index(row, want)
@@ -228,7 +260,7 @@ func TestAWindowTakenOverSaysWhoHasItOnTheMenuBar(t *testing.T) {
 	if got := chipsSay(host); len(got) != 1 || got[0] != want {
 		t.Errorf("the bar says %q, want just %q", got, want)
 	}
-	if got, red := host.bar.Status[0].FG, statusTakenFG(host.colours); got != red {
+	if got, red := host.bar.Chips[0].FG, statusTakenFG(host.colours); got != red {
 		t.Errorf("the chip is %+v, want red %+v", got, red)
 	}
 	if !strings.Contains(row, want) {

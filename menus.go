@@ -130,12 +130,11 @@ func (a *app) refreshFileMenu(shells []ui.MenuItem) {
 	}
 }
 
-// updateStatus says on the right of the menu bar when this window is
-// being served, and leaves it blank when it is not.
+// updateStatus puts the chips on the right of the menu bar, and leaves
+// it blank when the window is neither served nor shared.
 //
-// Called every frame, so the line is only built when what it is made of
-// has changed: a served window would otherwise write the same sentence
-// sixty times a second.
+// Called every frame, so the chips are only built when what they are
+// made of has changed.
 func (a *app) updateStatus() {
 	if a.bar == nil {
 		return
@@ -143,17 +142,20 @@ func (a *app) updateStatus() {
 	key := statusKey{sharing: a.agents.sharing()}
 	if a.serving.on() {
 		key.addr = a.serving.addr()
-		key.clients = a.serving.joined()
+		// The clients the chip is read off, not the panel rows: the
+		// server takes a client on its own goroutine and the row follows
+		// a frame later.
+		key.clients = len(a.serving.clients())
 		key.changes = a.serving.changes()
 	}
 	if key == a.statusWas {
 		return
 	}
 	a.statusWas = key
-	a.bar.Status = a.statusChips()
+	a.bar.Chips = a.statusChips()
 }
 
-// statusKey is what the menu bar status is made of: two frames with the
+// statusKey is what the menu bar chips are made of: two frames with the
 // same key say the same thing.
 //
 // It counts the comings and goings rather than holding the client it last
@@ -167,15 +169,23 @@ type statusKey struct {
 	sharing bool
 }
 
-// statusChips is what the menu bar says this window is doing: whether
-// somebody is working in it from another machine, and whether an agent
-// has been let in. There are none when neither is true.
+// statusChips is what the menu bar says this window is doing: whether an
+// agent has been let in, and whether somebody is working in it from
+// another machine. There are none when neither is true.
 //
 // Each is a word or two and a press. Who is connected, from where, and
-// which panes an agent has are the dialogs', because the bar has room
-// for a handful of columns and those lists grow.
+// which panes an agent has are the dialogs' to say.
+//
+// Serving goes last, against the right edge, because it is the one the
+// bar drops last when the window is too narrow for both.
 func (a *app) statusChips() []ui.Chip {
 	var chips []ui.Chip
+	if a.agents.sharing() {
+		chips = append(chips, ui.Chip{
+			Text: shareTitle, FG: statusAgentFG(a.colours), BG: chipBG(a.colours),
+			Do: a.showShare,
+		})
+	}
 	if a.serving.on() {
 		text, fg := "Serving", statusIdleFG(a.colours)
 		if len(a.serving.clients()) > 0 {
@@ -185,38 +195,31 @@ func (a *app) statusChips() []ui.Chip {
 			Text: text, FG: fg, BG: chipBG(a.colours), Do: a.showServing,
 		})
 	}
-	if a.agents.sharing() {
-		chips = append(chips, ui.Chip{
-			Text: shareTitle, FG: statusAgentFG(a.colours), BG: chipBG(a.colours),
-			Do: a.showShare,
-		})
-	}
 	return chips
 }
 
-// chipBG is the ground a chip on the menu bar sits on: darker than the
-// bar, which sets a chip apart without costing the reds on it the
-// contrast a lighter ground would.
-func chipBG(p vt.Palette) color.RGBA { return grid.Blend(p.BG, color.RGBA{A: 0xff}, 1, 3) }
+// chipBG is the ground a chip on the menu bar sits on: black, which is
+// as far from the bar's own ground as a chip can go and still have the
+// red on it readable.
+func chipBG(vt.Palette) color.RGBA { return color.RGBA{A: 0xff} }
 
 // statusTakenFG is the red the bar says "somebody is working in this
 // window" in, and statusIdleFG the quieter one for a window that is only
 // listening.
 //
-// Both are read against the bar's own ground, so neither is dimmed
-// towards the window's background: that ground is lighter, and a status
-// blended into it stops being legible. The bright red is lifted a fifth
-// of the way to white, which is what puts the two far enough apart to
-// read as a change of colour rather than as the same red twice.
+// Neither is dimmed towards the window's background, because they are
+// read against the bar and a chip rather than against it. The bright red
+// is lifted a fifth of the way to white, which puts the two far enough
+// apart to read as a change of colour rather than as the same red
+// twice.
 func statusTakenFG(p vt.Palette) color.RGBA {
 	return grid.Blend(p.ANSI[9], p.ANSI[15], 1, 5)
 }
 func statusIdleFG(p vt.Palette) color.RGBA { return p.ANSI[1] }
 
 // statusAgentFG is the colour the bar says an agent has been let into
-// this window in. It is a cyan, away from the reds that say somebody is
-// working here from another machine: an agent at work is the user's own
-// doing, and the two say different things.
+// this window in: a cyan, away from the reds that say somebody is
+// working here from another machine.
 func statusAgentFG(p vt.Palette) color.RGBA { return p.ANSI[6] }
 
 // helpMenu is the menu bar title the key list hangs under. It stays

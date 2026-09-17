@@ -2,21 +2,28 @@ package ui
 
 import (
 	"image/color"
+	"slices"
 
 	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/input"
 )
 
-// barRows is how tall the row of menu titles is, barPad the blank
-// column each side of a title, statusPad the blank column between the
-// chips and the right edge, chipPad the blank column each side of a
-// chip's text and chipGap the blank column between two chips.
 const (
-	barRows   = 1
-	barPad    = 1
-	statusPad = 1
-	chipPad   = 1
-	chipGap   = 1
+	// barRows is how tall the row of menu titles is.
+	barRows = 1
+
+	// barPad is the blank column each side of a title.
+	barPad = 1
+
+	// chipMargin is the blank column between the chips and the right
+	// edge.
+	chipMargin = 1
+
+	// chipPad is the blank column each side of a chip's text.
+	chipPad = 1
+
+	// chipGap is the blank column between two chips.
+	chipGap = 1
 )
 
 // MenuDef is one menu on a bar: the word shown and the lines under it.
@@ -48,7 +55,7 @@ func (s MenubarStyle) colAt(x, cols int) color.RGBA {
 }
 
 // Chip is one thing the bar says the window is doing, drawn as a short
-// label on a ground of its own so it reads as something to press.
+// label on a ground of its own.
 type Chip struct {
 	// Text is what it says, in a word or two. The detail belongs in
 	// whatever Do opens.
@@ -85,15 +92,14 @@ type Menubar struct {
 	// and changing the list moves that title out from under it.
 	Menus []MenuDef
 
-	// Status are the chips drawn along the right of the bar, or empty
-	// for none. They are chrome like the titles: each says something the
-	// window is doing rather than naming a menu.
+	// Chips are drawn along the right of the bar, or empty for none.
+	// They are chrome like the titles: each says something the window is
+	// doing rather than naming a menu.
 	//
 	// They read left to right in the order given, with the last against
-	// the right edge. One there is no room for is dropped rather than
-	// shortened: a chip cut in half says nothing and would still take
-	// the press.
-	Status []Chip
+	// the right edge. The bar fits what it can, taking them from the
+	// right, and drops whole any it cannot.
+	Chips []Chip
 
 	// Present shows a menu and returns the function that takes it away.
 	// The bar knows nothing about the modal stack or the layers a menu is
@@ -515,9 +521,14 @@ type placedChip struct {
 // The titles keep their columns. The chips take what is left, one column
 // in from the right edge, and the last title's own pad is the blank on
 // the other side of them.
+//
+// They are fitted from the right, and one that will not fit is passed
+// over rather than ending the row: the chip by the edge is the one the
+// window most wants read, and a narrower chip to its left still fits
+// beside it.
 func (b *Menubar) chipsAt() []placedChip {
 	bar := b.bar()
-	if len(b.Status) == 0 || bar.Empty() {
+	if len(b.Chips) == 0 || bar.Empty() {
 		return nil
 	}
 	left := 0
@@ -526,44 +537,43 @@ func (b *Menubar) chipsAt() []placedChip {
 			left = label.X + label.Cols
 		}
 	}
-	room := bar.Cols - statusPad - left
+	room := bar.Cols - chipMargin - left
 	if room <= 0 {
 		return nil
 	}
 
-	show := make([]placedChip, 0, len(b.Status))
-	for _, chip := range b.Status {
+	show := make([]placedChip, 0, len(b.Chips))
+	wide := 0
+	for i := len(b.Chips) - 1; i >= 0; i-- {
+		chip := b.Chips[i]
 		width := grid.StringWidth(chip.Text)
 		if width <= 0 {
-			// A chip with nothing on it would still be drawn and would
+			// A chip with nothing on it is a ground with no word on it.
+			continue
+		}
+		width += chipPad * 2
+		gap := 0
+		if len(show) > 0 {
+			gap = chipGap
+		}
+		if wide+gap+width > room {
+			// Whole or not at all: half a chip says nothing and would
 			// still take the press.
 			continue
 		}
-		show = append(show, placedChip{Chip: chip, at: Rect{Cols: width + chipPad*2, Rows: barRows}})
-	}
-	// Dropped whole, and from the left, so the chips by the edge stay
-	// where they were.
-	for len(show) > 0 && chipsWide(show) > room {
-		show = show[1:]
+		wide += gap + width
+		show = append(show, placedChip{Chip: chip, at: Rect{Cols: width, Rows: barRows}})
 	}
 	if len(show) == 0 {
 		return nil
 	}
+	// Gathered from the right, so they are in the wrong order to draw.
+	slices.Reverse(show)
 
-	at := bar.Cols - statusPad - chipsWide(show)
+	at := bar.Cols - chipMargin - wide
 	for i := range show {
 		show[i].at.X = at
 		at += show[i].at.Cols + chipGap
 	}
 	return show
-}
-
-// chipsWide is how many columns the chips take, the gaps between them
-// counted in.
-func chipsWide(show []placedChip) int {
-	wide := 0
-	for _, chip := range show {
-		wide += chip.at.Cols
-	}
-	return wide + chipGap*(len(show)-1)
 }

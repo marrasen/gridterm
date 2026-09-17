@@ -13,6 +13,7 @@ import (
 	"slices"
 	"sync"
 
+	"github.com/marrasen/gridterm/conf"
 	"github.com/marrasen/gridterm/internal/jsoncheck"
 )
 
@@ -20,9 +21,9 @@ import (
 // this one.
 const fileVersion = 1
 
-// settingsDir and settingsFile are what the settings are kept in, under
-// the directory the operating system gives a program for its settings.
-const settingsDir, settingsFile = "gridterm", "settings.json"
+// File is what the settings are kept in, in the directory conf gives
+// gridterm.
+const File = "settings.json"
 
 // How far a serving window may be reached from, as it is written down.
 const (
@@ -131,13 +132,7 @@ type Settings struct {
 }
 
 // Dir returns the directory gridterm keeps its files in.
-func Dir() (string, error) {
-	dir, err := os.UserConfigDir()
-	if err != nil {
-		return "", fmt.Errorf("settings: no configuration directory: %w", err)
-	}
-	return filepath.Join(dir, settingsDir), nil
-}
+func Dir() (string, error) { return conf.Dir() }
 
 // Path returns where the settings live.
 func Path() (string, error) {
@@ -145,7 +140,7 @@ func Path() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, settingsFile), nil
+	return filepath.Join(dir, File), nil
 }
 
 // Load reads the settings.

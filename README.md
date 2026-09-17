@@ -220,8 +220,14 @@ Serving this window and taking over another are on the menu rather than
 on a key: "Serve this window…" asks for the port and says the
 fingerprint to check, and "Take over a window…" asks for the address and
 the key to offer. Nothing listens until you ask it to, and the keys
-allowed in are the ones you list in an `authorized_keys` file under
-gridterm's own config directory, not the one in `~/.ssh`.
+allowed in are the ones you list in an `authorized_keys` file in
+gridterm's own directory, not the one in `~/.ssh`.
+
+gridterm keeps its files where the operating system puts a program's.
+Make a directory called `gridterm-files` beside `gridterm.exe` and it
+keeps them there instead, so one machine can hold several copies with
+files of their own. "Where gridterm keeps its files" on the Help menu
+names every file and says how to move them.
 
 In the file manager: `Tab` and `Shift+Tab` move between panes, `Enter`
 descends, `Backspace` goes up, `Space` marks, `F2` renames, `F5` copies,

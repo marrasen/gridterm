@@ -260,6 +260,39 @@ there is one key for position and one for recency.
   and that is the whole of what it can do. Refusing a path outside the
   user's own profile would be the next step.
 
+- **A serving window carried on a USB stick cannot start.** `makeHostKey`
+  links the key into place rather than renaming it, so two windows
+  cannot write over each other's. FAT32 and exFAT have no hard links, so
+  on a stick the link fails with `ERROR_INVALID_FUNCTION`, which is not
+  `os.ErrExist`, and serving is refused every time. A stick is the
+  obvious place for a copy that carries its own files. The fix is to
+  claim the name with `O_CREATE|O_EXCL` and then rename onto it when the
+  filesystem has no links, which keeps the same guarantee by a different
+  means. Not built, because it changes a write path the window's identity
+  hangs on.
+
+- **A copy carrying its own files does not carry its SSH keys.** A key
+  gridterm makes goes to `~/.ssh/id_ed25519_gridterm`, and `known_hosts`
+  stays in `~/.ssh`, so gridterm and `ssh` agree on both. A copy moved to
+  another machine therefore has saved servers naming key files that are
+  not there, and every machine prompts as new. The notice says so; there
+  is nothing that moves them.
+
+- **Nothing helps a user set up a copy that carries its own files.** They
+  make the directory and copy six files into it by hand, and a copy done
+  wrong looks like a window that was freshly installed. A "Make this copy
+  carry its own files" button on the notice would do the whole thing, and
+  would still not have gridterm making the directory on its own, because
+  the user would have asked.
+
+- **The key a carried copy serves with is only as private as its
+  directory.** Windows ignores the mode on the file, and `os.MkdirAll`
+  ignores the mode on the directory, so a copy under `C:\Program Files`
+  or on a share hands the key to every account that can read the path.
+  Anybody holding it can pretend to be this window. The notice says to
+  keep the directory somewhere only you can read, and that is the whole
+  of what gridterm does about it. Same class as the key line above.
+
 - **Changing the colour scheme leaves what is on a screen behind.** A
   cell holds the colours it is drawn in, not which entry of the scheme
   they came from, so there is nothing to look the new ones up with. New
@@ -325,9 +358,8 @@ there is one key for position and one for recency.
 Marcus's own list, in his words, kept until each has been looked at
 properly and either written up above or done.
 
-- **Settings beside the binary.** Keep the settings where the
-  executable is, so the user can have copies. Add a config file for the
-  keyboard shortcuts.
+- **A config file for the keyboard shortcuts.** Settings beside the
+  binary was done on 2026-09-17; this half of the line was not.
 - **UI.** The border on the File menu glitches to the left. The
   connection menu has odd spaces in its items where the sidebar's drag
   handle goes. The Terminal and File icons are too small. The app has

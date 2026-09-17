@@ -20,41 +20,24 @@ import (
 	"path/filepath"
 	"runtime"
 
+	"github.com/marrasen/gridterm/conf"
 	"golang.org/x/crypto/ssh"
 )
 
-// Where a serving window keeps its files, under the OS config
-// directory.
+// The files a serving window keeps, in the directory conf gives
+// gridterm. The host key is private and goes wherever conf.Private says.
 const (
-	dir      = "gridterm"
-	keyFile  = "serve_host_key"
-	authFile = "authorized_keys"
+	keyFile = "serve_host_key"
+
+	// AuthFile lists the keys allowed to take this window over.
+	AuthFile = "authorized_keys"
 )
 
 // Dir returns the directory a serving window keeps its public files in.
-func Dir() (string, error) {
-	base, err := os.UserConfigDir()
-	if err != nil {
-		return "", fmt.Errorf("serve: no configuration directory: %w", err)
-	}
-	return filepath.Join(base, dir), nil
-}
+func Dir() (string, error) { return conf.Dir() }
 
 // privateDir returns the directory the host key lives in.
-//
-// On Windows that is the local profile rather than the roaming one.
-// os.UserConfigDir gives %AppData%, which a domain account syncs to a
-// file server at every logon and logoff: a private key kept there is
-// copied off this machine and onto every other machine the user signs
-// in to. %LocalAppData% stays where it is put.
-func privateDir() (string, error) {
-	if runtime.GOOS == "windows" {
-		if local := os.Getenv("LOCALAPPDATA"); local != "" {
-			return filepath.Join(local, dir), nil
-		}
-	}
-	return Dir()
-}
+func privateDir() (string, error) { return conf.Private() }
 
 // HostKeyPath returns where the host key lives.
 func HostKeyPath() (string, error) {
@@ -71,7 +54,7 @@ func AuthorizedKeysPath() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(at, authFile), nil
+	return filepath.Join(at, AuthFile), nil
 }
 
 // HostKey reads the window's own key, making one the first time.

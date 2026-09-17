@@ -156,9 +156,13 @@ func Built() []Theme {
 	}
 }
 
-// Path is where the file of the user's own themes lives, beside the
-// settings.
-func Path(dir string) string { return filepath.Join(dir, "themes.json") }
+// File is what the user's own themes are kept in, in the directory conf
+// gives gridterm.
+const File = "themes.json"
+
+// Path is where the file of the user's own themes lives, in a
+// directory.
+func Path(dir string) string { return filepath.Join(dir, File) }
 
 // Load reads the themes from a file, and returns the built-in ones with
 // those after them.

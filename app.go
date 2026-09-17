@@ -678,6 +678,7 @@ func (a *app) commands() {
 		ui.Command{ID: "conn.log", Title: "Show how this was reached",
 			Run: a.showConnLogHere},
 		ui.Command{ID: helpCommand, Title: helpTitle, Run: a.showHelp},
+		ui.Command{ID: filesCommand, Title: filesTitle, Run: a.showWhereFiles},
 		ui.Command{ID: "server.editThis", Title: "Edit this server…",
 			Run: a.editThisServer},
 		ui.Command{ID: "server.forget", Title: "Forget this server…",

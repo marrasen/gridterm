@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/marrasen/gridterm/conf"
 	"github.com/marrasen/gridterm/internal/jsoncheck"
 )
 
@@ -20,9 +21,9 @@ import (
 // this one.
 const bookVersion = 1
 
-// bookFile is what the saved servers are kept in, under the directory
-// the operating system gives a program for its settings.
-const bookDir, bookFile = "gridterm", "servers.json"
+// BookFile is what the saved servers are kept in, in the directory conf
+// gives gridterm.
+const BookFile = "servers.json"
 
 // ErrUnsaveable is returned when the book cannot be written because it
 // could not be read.
@@ -58,11 +59,11 @@ type Book struct {
 
 // BookPath returns where the saved servers live.
 func BookPath() (string, error) {
-	dir, err := os.UserConfigDir()
+	dir, err := conf.Dir()
 	if err != nil {
-		return "", fmt.Errorf("remote: no configuration directory: %w", err)
+		return "", err
 	}
-	return filepath.Join(dir, bookDir, bookFile), nil
+	return filepath.Join(dir, BookFile), nil
 }
 
 // LoadBook reads the saved servers.

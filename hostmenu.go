@@ -96,7 +96,7 @@ func (a *app) openHostMenu(row ui.ListRow) error {
 	)
 	switch key := row.Key.(type) {
 	case hostKey:
-		items = hostItems(a.about(string(key)), a.shellPick.lines(true))
+		items = hostItems(a.about(string(key)), a.shellPick.lines(true), a.folderItems(string(key)))
 		about = func() { a.hostMenus.nowAbout(string(key)) }
 	case remoteHostKey:
 		if key.window == nil {
@@ -236,7 +236,7 @@ func farItems() []ui.MenuItem {
 // A machine the server list holds can also be edited and forgotten.
 // This is where they belong: the row is the machine, so the plus on it
 // is where everything about that machine is.
-func hostItems(about hostFacts, shells []ui.MenuItem) []ui.MenuItem {
+func hostItems(about hostFacts, shells, folders []ui.MenuItem) []ui.MenuItem {
 	if about.kind == hostHere {
 		items := []ui.MenuItem{{Command: "conn.terminal", Title: "Terminal"}}
 		// Under Terminal, which already says a pane here is what opens,
@@ -246,17 +246,15 @@ func hostItems(about hostFacts, shells []ui.MenuItem) []ui.MenuItem {
 			items = append(items, shells...)
 			items = append(items, ui.MenuSeparator())
 		}
-		return append(items,
-			ui.MenuItem{Command: "conn.files", Title: "Files"},
-			ui.MenuItem{Command: "conn.command", Title: "Command…"})
+		items = append(items, filesLines(folders)...)
+		return append(items, ui.MenuItem{Command: "conn.command", Title: "Command…"})
 	}
 	if about.kind == hostWindow {
-		items := []ui.MenuItem{
-			{Command: "conn.terminal", Title: "Terminal"},
-			{Command: "conn.files", Title: "Files"},
+		items := []ui.MenuItem{{Command: "conn.terminal", Title: "Terminal"}}
+		items = append(items, filesLines(folders)...)
+		items = append(items,
 			ui.MenuSeparator(),
-			{Command: "conn.disconnect", Title: "Let go of this window"},
-		}
+			ui.MenuItem{Command: "conn.disconnect", Title: "Let go of this window"})
 		items = withTheLog(items, about)
 		if about.serves {
 			items = append(items, ui.MenuSeparator(),
@@ -276,18 +274,17 @@ func hostItems(about hostFacts, shells []ui.MenuItem) []ui.MenuItem {
 			{Command: "server.forget", Title: "Forget this window…"},
 		}, about)
 	}
-	items := []ui.MenuItem{
-		{Command: "conn.terminal", Title: "Terminal"},
-		{Command: "conn.files", Title: "Files"},
-		{Command: "conn.command", Title: "Command…"},
+	items := []ui.MenuItem{{Command: "conn.terminal", Title: "Terminal"}}
+	items = append(items, filesLines(folders)...)
+	items = append(items,
+		ui.MenuItem{Command: "conn.command", Title: "Command…"},
 		ui.MenuSeparator(),
-		{Command: "conn.tunnel", Title: "Tunnel…"},
-		{Command: "conn.socks", Title: "SOCKS proxy…"},
+		ui.MenuItem{Command: "conn.tunnel", Title: "Tunnel…"},
+		ui.MenuItem{Command: "conn.socks", Title: "SOCKS proxy…"},
 		ui.MenuSeparator(),
 		// Not conn.close: that one closes whatever the list has
 		// selected, which is not the machine whose row was clicked.
-		{Command: "conn.disconnect", Title: "Close the connection"},
-	}
+		ui.MenuItem{Command: "conn.disconnect", Title: "Close the connection"})
 	items = withTheLog(items, about)
 	if about.saved {
 		items = append(items, ui.MenuSeparator(),
@@ -333,4 +330,11 @@ func (a *app) rowAnchor(key any) func() ui.Rect {
 			Cols: 1, Rows: 1,
 		}
 	}
+}
+
+// filesLines is what the plus offers for reading files: "Files", which
+// opens at home or at the one folder saved, and a line per folder for a
+// machine with several.
+func filesLines(folders []ui.MenuItem) []ui.MenuItem {
+	return append([]ui.MenuItem{{Command: "conn.files", Title: "Files"}}, folders...)
 }

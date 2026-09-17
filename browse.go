@@ -40,7 +40,11 @@ type browser struct {
 
 // openFilesOn puts a pane on a machine, connecting to it first when
 // nothing is connected to it yet.
-func (a *app) openFilesOn(host string) error {
+func (a *app) openFilesOn(host string) error { return a.openFilesAt(host, a.oneFolderOn(host)) }
+
+// openFilesAt opens a pane of the file manager on a machine, at a folder
+// of its own or at whatever the machine calls home.
+func (a *app) openFilesAt(host, at string) error {
 	on := a.about(host)
 	if on.toTakeOver() {
 		return fmt.Errorf("take over %s first: it is a gridterm window, "+
@@ -50,7 +54,7 @@ func (a *app) openFilesOn(host string) error {
 	// the pane opens when it answers, the way "Terminal" does. Under the
 	// server list's own spelling, for the reason openTerminalOn gives.
 	if on.saved && on.kind != hostHere && on.window == nil && on.machine == nil {
-		return a.connectAndBrowse(on.spelling)
+		return a.connectAndBrowse(on.spelling, at)
 	}
 	// A window's pane goes under the name holding the connection, which
 	// is not always the name asked about, so the sidebar keeps one
@@ -59,17 +63,18 @@ func (a *app) openFilesOn(host string) error {
 	if t := on.window; t != nil {
 		name = t.name
 	}
-	return a.browseOn(name)
+	return a.browseOn(name, at)
 }
 
 // browseOn puts a pane on a machine that can be read now, starting the
-// file manager when there is not one yet.
-func (a *app) browseOn(name string) error {
+// file manager when there is not one yet. at is where the pane opens,
+// and empty is home.
+func (a *app) browseOn(name, at string) error {
 	f, err := a.filesystem(name)
 	if err != nil {
 		return err
 	}
-	return a.browseWith(f, name, remoteHostKey{})
+	return a.browseWith(f, name, remoteHostKey{}, at)
 }
 
 // openFilesFar puts a pane on a machine a window taken over is connected
@@ -88,7 +93,7 @@ func (a *app) openFilesFar(key remoteHostKey) error {
 	// Under the window's name, the way the window's own file pane is:
 	// the connection carrying it is the window's, so the pane goes when
 	// the window does.
-	return a.browseWith(f, t.name, key)
+	return a.browseWith(f, t.name, key, "")
 }
 
 // browseWith puts a pane holding a filesystem in the manager, under the
@@ -96,7 +101,7 @@ func (a *app) openFilesFar(key remoteHostKey) error {
 //
 // far is the machine of a window taken over that the pane reads, and is
 // empty for a pane on a machine this window reaches itself.
-func (a *app) browseWith(f vfs.FS, name string, far remoteHostKey) error {
+func (a *app) browseWith(f vfs.FS, name string, far remoteHostKey, at string) error {
 	if a.files == nil {
 		if err := a.openFileManager(); err != nil {
 			return errors.Join(err, f.Close())
@@ -122,7 +127,7 @@ func (a *app) browseWith(f vfs.FS, name string, far remoteHostKey) error {
 	// Somewhere to start. Asking a machine where home is takes as long
 	// as anything else it is asked, so it happens off this goroutine and
 	// the pane fills in when the answer arrives.
-	a.startAt(p)
+	a.startAt(p, at)
 	return nil
 }
 
@@ -149,7 +154,18 @@ func (a *app) openFileManager() error {
 // Until it has one a pane is on no directory at all: the keys have
 // nothing to act on, and a path built from nowhere is a relative one,
 // which would land in whatever directory gridterm itself was started in.
-func (a *app) startAt(p *files.Pane) {
+func (a *app) startAt(p *files.Pane, at string) {
+	if at != "" {
+		// A folder saved on the server, and the reason when it cannot be
+		// read. The pane stays where it is rather than being moved
+		// somewhere it was not asked for.
+		p.OpenThen(at, func(err error) {
+			if err != nil {
+				a.reportError("Could not open "+at+" on "+p.FS().Name(), err)
+			}
+		})
+		return
+	}
 	f := p.FS()
 	go func() {
 		home, err := f.Home()
@@ -161,6 +177,25 @@ func (a *app) startAt(p *files.Pane) {
 			p.Open(home)
 		})
 	}()
+}
+
+// foldersOn are the folders saved for a machine, and none for one that
+// is not in the server list.
+func (a *app) foldersOn(host string) []string {
+	h, ok := a.book.Lookup(host)
+	if !ok {
+		return nil
+	}
+	return h.Folders
+}
+
+// oneFolderOn is where "Files" opens on a machine: the one folder saved
+// for it, and home when it has none or several.
+func (a *app) oneFolderOn(host string) string {
+	if folders := a.foldersOn(host); len(folders) == 1 {
+		return folders[0]
+	}
+	return ""
 }
 
 // filesystem opens a filesystem for a machine: this one, or one reached

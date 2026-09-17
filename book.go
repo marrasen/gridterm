@@ -61,6 +61,15 @@ func (a *app) refreshServers() {
 	if a.agents.sharing() {
 		want = append(want, "(sharing)")
 	}
+	// And the folders saved on each machine, under the machine's own
+	// name: a bare list of paths reads the same when two machines swap
+	// one, and the commands would not be built again.
+	for _, host := range every {
+		if folders := a.foldersOn(host); len(folders) > 0 {
+			want = append(want, host+" folders "+strconv.Itoa(len(folders)))
+			want = append(want, folders...)
+		}
+	}
 	if slices.Equal(want, a.builtFor) && !a.serversMenuMissing() {
 		return
 	}
@@ -96,6 +105,16 @@ func (a *app) refreshServers() {
 			Run:   func() error { return a.openFilesOn(host) },
 		}
 		a.registerServerCommands(a.reporting(browse))
+		// And one per folder saved on it, so the palette can be searched
+		// by the folder rather than only by the machine.
+		for i, folder := range a.foldersOn(host) {
+			at := folder
+			a.registerServerCommands(a.reporting(ui.Command{
+				ID:    folderCommandID(host, i),
+				Title: "Browse " + at + " on " + groupName(host),
+				Run:   func() error { return a.openFilesAt(host, at) },
+			}))
+		}
 	}
 
 	var items []ui.MenuItem
@@ -340,6 +359,7 @@ func (a *app) openServerForm(under string) error {
 	target := f.AddField("Server", a.newField("[user@]host[:port]", 0))
 	key := f.AddField("Key file", a.newField("optional", 0))
 	via := f.AddField("Through", a.newField("another saved server, optional", 0))
+	folders := f.AddField("Folders", a.newField("where to open files, separated by commas", 0))
 	// The machines already saved, so the field can be cycled rather than
 	// typed from memory. Blank first: leaving it empty is the usual
 	// answer, and it is what cycling comes back round to.
@@ -347,7 +367,9 @@ func (a *app) openServerForm(under string) error {
 	f.Lines = append(f.Lines,
 		"Kind steps with ctrl+down and ctrl+up. A gridterm window is one",
 		"serving on another machine, taken over rather than logged in to.",
-		viaHint(via.Options))
+		viaHint(via.Options),
+		"Folders are where the file browser opens on this server. One and",
+		"it opens there; several and the plus offers a line for each.")
 
 	name.SetText(was.Name)
 	kind.SetText(kindMachine)
@@ -359,6 +381,7 @@ func (a *app) openServerForm(under string) error {
 		key.SetText(was.Identities[0])
 	}
 	via.SetText(was.Via)
+	folders.SetText(was.FoldersJoined())
 
 	f.AddButton(ui.Button{Title: "Save", Do: func() error {
 		window, err := whichKind(kind.Text())
@@ -393,6 +416,20 @@ func (a *app) openServerForm(under string) error {
 		// back should come out the way it went in, and neither field is
 		// something the dialog can show.
 		h.Term = was.Term
+		// The folders are one line, which a path holding a comma or a
+		// space at either end cannot come back from. One that cannot is
+		// left as it was when the field was not touched, and refused
+		// when it was.
+		h.Folders = remote.FoldersFrom(folders.Text())
+		if !remote.FoldersRoundTrip(was.Folders) {
+			if folders.Text() != was.FoldersJoined() {
+				return fmt.Errorf(
+					"a folder on %s holds a comma or a space at one end, which this field"+
+						" cannot show. Edit the folders in the server list file instead",
+					was.Name)
+			}
+			h.Folders = was.Folders
+		}
 		// The dialog edits the first key file. Any others the machine
 		// had stay: a field that cannot show them must not delete them.
 		rest := was.Identities
@@ -653,4 +690,32 @@ func (a *app) forgetThisServer() error {
 	}
 	a.confirmRemoveServer(f.name)
 	return nil
+}
+
+// folderCommandID names the command that opens a file browser at one of
+// a machine's saved folders. By place in the list rather than by path: a
+// path is not a command name and two of them may reduce to one.
+func folderCommandID(host string, at int) string {
+	return filesPrefix + remote.CommandName(host) + "." + strconv.Itoa(at+1)
+}
+
+// folderItems are the plus menu's lines for a machine with more than one
+// folder saved, and none for a machine with one or none: one folder is
+// where "Files" already opens.
+func (a *app) folderItems(host string) []ui.MenuItem {
+	folders := a.foldersOn(host)
+	if len(folders) < 2 {
+		return nil
+	}
+	items := make([]ui.MenuItem, 0, len(folders))
+	for i, folder := range folders {
+		id := folderCommandID(host, i)
+		if _, ok := a.root.Commands.Lookup(id); !ok {
+			// A line naming a command that is not there is drawn greyed
+			// out and cannot be chosen, which reads as a fault.
+			continue
+		}
+		items = append(items, ui.MenuItem{Command: id, Title: "Files in " + folder})
+	}
+	return items
 }

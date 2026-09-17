@@ -20,12 +20,13 @@ type opening struct {
 	// into. It is read only when files is false.
 	command []string
 
-	// dir is where the command runs, and empty for wherever the login
-	// lands.
+	// dir is where the command runs, or where a file pane opens. Empty
+	// is wherever the login lands, and for files whatever the machine
+	// calls home.
 	dir string
 
 	// files opens a pane of the file manager on the machine and no shell
-	// on it, which is what "Files" asks for.
+	// on it, which is what "Files" asks for. command is not read for one.
 	files bool
 
 	// into is a pane whose program has ended and which takes what is
@@ -362,7 +363,7 @@ func (a *app) becamePane(name string, open opening, pane *term.Terminal, log *co
 	// open an account about somewhere else.
 	m.log = log
 	if open.files {
-		a.becomeFilesPane(name, pane, log)
+		a.becomeFilesPane(name, pane, log, open.dir)
 		return
 	}
 	a.becomeShellPane(m, name, open.command, pane, log)
@@ -375,8 +376,8 @@ func (a *app) becamePane(name string, open opening, pane *term.Terminal, log *co
 // for files and there is no shell on it. Its account is kept on the
 // machine's row, under "How it was reached". A dial that failed keeps
 // its pane, with the account still in it.
-func (a *app) becomeFilesPane(name string, pane *term.Terminal, log *connLog) {
-	if err := a.browseOn(name); err != nil {
+func (a *app) becomeFilesPane(name string, pane *term.Terminal, log *connLog, at string) {
+	if err := a.browseOn(name, at); err != nil {
 		a.endedAs(pane, "no files")
 		log.Refused(name, "the files", err)
 		return
@@ -440,7 +441,7 @@ func (a *app) openFor(open opening, sess session.Session, host, label string,
 func (a *app) startOn(name string, open opening, at *spot) error {
 	if open.files {
 		// at is not used: a file pane goes in the file manager itself.
-		return a.browseOn(name)
+		return a.browseOn(name, open.dir)
 	}
 	m := a.about(name).machine
 	if m == nil {
@@ -527,12 +528,12 @@ func (a *app) sayIfTheTargetMoved(t *term.Terminal, host string, route []step, s
 //
 // The route is built here rather than in browse.go because openRoute is
 // the one place that dials.
-func (a *app) connectAndBrowse(name string) error {
+func (a *app) connectAndBrowse(name, at string) error {
 	route, err := a.route(name)
 	if err != nil {
 		return err
 	}
-	a.openRoute(name, route, opening{files: true}, nil)
+	a.openRoute(name, route, opening{files: true, dir: at}, nil)
 	return nil
 }
 

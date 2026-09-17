@@ -126,22 +126,6 @@ names.
    `Identities` for that connection instead of leaving it to the
    defaults.
 
-## Folders on a connection
-
-Asked for on 2026-09-17. A connection has no folders today: `remote.Host`
-in remote/host.go keeps the address, the user, Via, the key files and
-Term, and no path at all.
-
-- **A connection keeps a list of folders.** The server dialog gets a
-  field for them, and `remote.Host` a place to save them.
-
-- **What the list changes.** No folder and the browser opens where it
-  does today. One folder and that is where the browser opens for that
-  server. Several and the "Files" line on the plus menu becomes a
-  submenu with a line per folder, while "Browse files" in the
-  all-commands list gets a line per folder per server. "Files" is the
-  `conn.files` command in hostmenu.go.
-
 ## Reading a file without a shell
 
 Asked for on 2026-09-17. A new kind of pane, opened from the file
@@ -295,6 +279,20 @@ order Ctrl+Tab moves in, and expected recently used.
   the last byte and this does not, because a glow that stops is not a
   glow. `TestASharedPaneCostsNothingBetweenGlowSteps` pins the cost at
   two layers a step, so it cannot grow unnoticed.
+
+- **A folder holding a comma cannot be typed in the server dialog.** The
+  folders are one field and a comma parts them, so a path with one in it
+  can only be written in the server list file by hand. The dialog does
+  not lose it: a save that did not touch the field writes the folders
+  back as they were, and one that did is refused. A separator no path can
+  hold would need a field of more than one line, which the form has no
+  widget for.
+
+- **The plus offers a line per folder rather than a submenu.** The list
+  asked for a submenu under "Files". `ui.MenuItem` holds a command and a
+  title and nothing else, so nesting is not something the menus can draw
+  yet. The lines sit beside "Files" instead, which keeps the way to
+  home.
 
 - An orphaned `conhost.exe` can be left with no `cmd.exe` under it. Seen
   on a live window while the shell leak was being looked into: the shell

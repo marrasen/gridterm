@@ -79,6 +79,17 @@ func scanShells(t *testing.T, a *testApp) {
 	}
 }
 
+// lastDir is the directory the window last started a shell in.
+func (ta *testApp) lastDir(t *testing.T) string {
+	t.Helper()
+	ta.shellsMu.Lock()
+	defer ta.shellsMu.Unlock()
+	if len(ta.dirs) == 0 {
+		t.Fatal("no shell has been started")
+	}
+	return ta.dirs[len(ta.dirs)-1]
+}
+
 // lastArgv is the argv the window last started a shell on.
 func (ta *testApp) lastArgv(t *testing.T) []string {
 	t.Helper()
@@ -454,7 +465,7 @@ func TestAShellThatWillNotStartIsNotRemembered(t *testing.T) {
 	withDialogs(t, a)
 	withPanel(t, a)
 	scanShells(t, a)
-	a.newShell = func([]string, int, int) (session.Session, error) {
+	a.newShell = func([]string, string, int, int) (session.Session, error) {
 		return nil, errors.New("pwsh.exe is not where it was")
 	}
 

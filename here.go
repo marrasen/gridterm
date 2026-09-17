@@ -141,6 +141,7 @@ func (a *app) askCommandOn(host string, at *spot) {
 	where := groupName(host)
 	f := a.newForm("Run a command on " + where)
 	what := f.AddField("Command", a.newField("the program and its arguments", 0))
+	in := f.AddField("Directory", a.newField("where to run it, or leave it empty", 0))
 	f.AddButton(ui.Button{Title: "Run", Do: func() error {
 		command := strings.Fields(what.Text())
 		if len(command) == 0 {
@@ -148,10 +149,11 @@ func (a *app) askCommandOn(host string, at *spot) {
 			// with what was typed still there to correct.
 			return errors.New("there is nothing to run")
 		}
+		dir := strings.TrimSpace(in.Text())
 		// Not from here: this dialog closes as soon as this returns, and
 		// closing one takes anything stacked on top of it.
 		a.pump.post(func() {
-			if err := a.runCommandOn(host, command, at); err != nil {
+			if err := a.runCommandOn(host, command, dir, at); err != nil {
 				a.reportError("Could not run it on "+where, err)
 			}
 		})
@@ -162,12 +164,13 @@ func (a *app) askCommandOn(host string, at *spot) {
 }
 
 // runCommandOn opens a pane running a command, on this machine or on one
-// the window connects to.
-func (a *app) runCommandOn(host string, command []string, at *spot) error {
+// the window connects to. dir is where it runs, and empty is wherever
+// the shell lands.
+func (a *app) runCommandOn(host string, command []string, dir string, at *spot) error {
 	if host == conns.Local {
-		return a.runCommandHere(command, at)
+		return a.runCommandHere(command, dir, at)
 	}
-	return a.openOn(host, command, at)
+	return a.openOn(host, command, dir, at)
 }
 
 // showConnLogHere opens the account of how the machine the user is

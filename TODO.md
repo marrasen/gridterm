@@ -90,16 +90,9 @@ names.
 
 ## Run a command
 
-Asked for on 2026-09-17. The dialog is `openCommandHere` in here.go and
-has one field.
+Asked for on 2026-09-17. The dialog is `openCommandHere` in here.go.
 
-1. **An optional working directory.** Empty means wherever the shell
-   lands.
-
-2. **Run it on this machine too.** As a command row, like a remote
-   one. Answered on 2026-09-17; see the answers at the top.
-
-3. **Save a command, and pick a saved one.** The dialog offers the
+1. **Save a command, and pick a saved one.** The dialog offers the
    commands already saved, so one that is run often is not retyped.
 
 ## The file browser's "Go to"

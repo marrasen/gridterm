@@ -59,7 +59,7 @@ func (a *app) localTerminal() (*term.Terminal, error) {
 // localTerminalOn starts a pane here on argv. A nil argv leaves the
 // shell to session.StartLocal.
 func (a *app) localTerminalOn(argv []string) (*term.Terminal, error) {
-	sess, err := a.newShell(argv, a.lastSize[0], a.lastSize[1])
+	sess, err := a.newShell(argv, "", a.lastSize[0], a.lastSize[1])
 	if err != nil {
 		return nil, fmt.Errorf("start session: %w", err)
 	}
@@ -69,15 +69,16 @@ func (a *app) localTerminalOn(argv []string) (*term.Terminal, error) {
 		_ = sess.Close()
 		return nil, err
 	}
-	a.startsAgain(t, argv, nil)
+	a.startsAgain(t, argv, "", nil)
 	return t, nil
 }
 
 // runCommandHere opens a pane running a command on this machine, at a
-// spot or on the stage. The pane gets a command row, so it is
-// named by what it runs and offers to run it again when it ends.
-func (a *app) runCommandHere(argv []string, at *spot) error {
-	sess, err := a.newShell(argv, a.lastSize[0], a.lastSize[1])
+// spot or on the stage. dir is where it runs, and empty is wherever the
+// shell lands. The pane gets a command row, so it is named by what it
+// runs and offers to run it again when it ends.
+func (a *app) runCommandHere(argv []string, dir string, at *spot) error {
+	sess, err := a.newShell(argv, dir, a.lastSize[0], a.lastSize[1])
 	if err != nil {
 		return fmt.Errorf("start session: %w", err)
 	}
@@ -88,7 +89,7 @@ func (a *app) runCommandHere(argv []string, at *spot) error {
 		_ = sess.Close()
 		return err
 	}
-	a.startsAgain(t, argv, nil)
+	a.startsAgain(t, argv, dir, nil)
 	return nil
 }
 
@@ -117,7 +118,7 @@ func (a *app) terminalOnHome(m *machine) (*term.Terminal, error) {
 	a.machines.runs(t, m)
 	// A shell to type into, which is what this opens and what starting
 	// it again in the pane would open.
-	a.startsAgain(t, nil, m)
+	a.startsAgain(t, nil, "", m)
 	return t, nil
 }
 

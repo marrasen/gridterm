@@ -198,7 +198,7 @@ func (p *shellPick) lines(titled bool) []ui.MenuItem {
 
 // newSession starts the shell a new pane on this machine runs.
 func (a *app) newSession(cols, rows int) (session.Session, error) {
-	return a.newShell(a.localShell(), cols, rows)
+	return a.newShell(a.localShell(), "", cols, rows)
 }
 
 // localShell is the argv a new pane on this machine runs, and is nil

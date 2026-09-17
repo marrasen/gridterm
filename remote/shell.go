@@ -65,6 +65,11 @@ type ShellConfig struct {
 	// Command is what to run. Empty asks for the user's login shell.
 	Command []string
 
+	// Dir is the directory to run Command in. Empty runs wherever the
+	// login lands. It is ignored without a Command: a shell to type into
+	// is started where the far end starts it.
+	Dir string
+
 	// Cols and Rows are the initial window size.
 	Cols, Rows int
 
@@ -213,7 +218,14 @@ func (s *Shell) start(ctx context.Context, cfg ShellConfig) error {
 
 	run := s.sess.Shell
 	if len(cfg.Command) > 0 {
-		run = func() error { return s.sess.Start(shellQuote(cfg.Command)) }
+		line := shellQuote(cfg.Command)
+		if cfg.Dir != "" {
+			// Through the far end's shell, which is what Start runs. A
+			// directory that is not there stops the command rather than
+			// running it somewhere unexpected.
+			line = "cd -- " + shellQuote([]string{cfg.Dir}) + " && " + line
+		}
+		run = func() error { return s.sess.Start(line) }
 	}
 	if err := doWithin(ctx, "start the program on "+s.conn.String(), run); err != nil {
 		return err

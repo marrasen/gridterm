@@ -77,7 +77,7 @@ func TestASecondTerminalRidesOnTheSameConnection(t *testing.T) {
 	if a.machines.named(host) == nil {
 		t.Fatalf("the connection was not kept: %v", a.machines.names())
 	}
-	if err := a.openOn(host, nil, nil); err != nil {
+	if err := a.openOn(host, nil, "", nil); err != nil {
 		t.Fatalf("a second terminal: %v", err)
 	}
 	if len(a.panes) != 3 {
@@ -101,7 +101,7 @@ func TestRunACommandOnAConnectedMachine(t *testing.T) {
 	waitForPanes(t, a, 2)
 	host := serverConfig(t, s).Target()
 
-	if err := a.openOn(host, []string{"apt-get", "upgrade"}, nil); err != nil {
+	if err := a.openOn(host, []string{"apt-get", "upgrade"}, "", nil); err != nil {
 		t.Fatalf("run a command: %v", err)
 	}
 	if len(a.panes) != 3 {
@@ -181,7 +181,7 @@ func TestClosingABastionClosesWhatRidesOnIt(t *testing.T) {
 	waitForPanes(t, a, 2)
 	// A terminal on the machine in the middle as well, so there is
 	// something of its own to lose.
-	if err := a.openOn("edge", nil, nil); err != nil {
+	if err := a.openOn("edge", nil, "", nil); err != nil {
 		t.Fatalf("a terminal on edge: %v", err)
 	}
 	if len(a.panes) != 3 {
@@ -372,7 +372,7 @@ func TestOpenOnRefusesAMachineItDoesNotKnow(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withDialogs(t, a)
 
-	err := a.openOn("nowhere", nil, nil)
+	err := a.openOn("nowhere", nil, "", nil)
 	if err == nil {
 		t.Fatal("a machine nothing knows about was connected to")
 	}
@@ -524,7 +524,7 @@ func TestACommandHereThatWillNotStartSaysSo(t *testing.T) {
 	withDialogs(t, a)
 	withPanel(t, a)
 	boom := errors.New("there is no such program")
-	a.newShell = func([]string, int, int) (session.Session, error) { return nil, boom }
+	a.newShell = func([]string, string, int, int) (session.Session, error) { return nil, boom }
 
 	if err := a.openCommandHere(); err != nil {
 		t.Fatalf("a command on this machine: %v", err)
@@ -570,6 +570,82 @@ func TestACommandHereKeepsItsNameOnTheRowAfterItEnds(t *testing.T) {
 	}
 	if row.Text != "make deploy" {
 		t.Errorf("the row says %q once it has ended, want what it ran", row.Text)
+	}
+}
+
+// A command runs in the directory the dialog asked for.
+func TestACommandHereRunsInTheDirectoryAsked(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+
+	if err := a.openCommandHere(); err != nil {
+		t.Fatalf("a command on this machine: %v", err)
+	}
+	f := awaitModal[*ui.Form](t, a, "the command dialog", nil)
+	typeIntoField(t, a, f, "Command", "make deploy")
+	typeIntoField(t, a, f, "Directory", `C:\Workspace\gridterm`)
+	pressButton(t, a, f, "Run")
+	waitForPanes(t, a, 2)
+
+	if got := a.lastDir(t); got != `C:\Workspace\gridterm` {
+		t.Errorf("the command was started in %q, want the directory asked for", got)
+	}
+}
+
+// An empty directory means wherever the shell lands.
+func TestACommandHereWithNoDirectoryRunsWhereverTheShellLands(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+
+	if err := a.openCommandHere(); err != nil {
+		t.Fatalf("a command on this machine: %v", err)
+	}
+	f := awaitModal[*ui.Form](t, a, "the command dialog", nil)
+	typeIntoField(t, a, f, "Command", "make deploy")
+	pressButton(t, a, f, "Run")
+	waitForPanes(t, a, 2)
+
+	if got := a.lastDir(t); got != "" {
+		t.Errorf("the command was started in %q, want nowhere in particular", got)
+	}
+}
+
+// Running it again runs it in the same place. The pane remembers where
+// it ran, not just what it ran.
+func TestACommandRunAgainRunsInTheSameDirectory(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+
+	if err := a.openCommandHere(); err != nil {
+		t.Fatalf("a command on this machine: %v", err)
+	}
+	f := awaitModal[*ui.Form](t, a, "the command dialog", nil)
+	typeIntoField(t, a, f, "Command", "make deploy")
+	typeIntoField(t, a, f, "Directory", `C:\Workspace\gridterm`)
+	pressButton(t, a, f, "Run")
+	waitForPanes(t, a, 2)
+
+	pane := a.focusedTerminal()
+	was := len(a.shells)
+	endTheShell(t, a, was-1, pane)
+	// The choice by name: Enter on a command pane closes it, because
+	// running a deploy twice is not a reflex.
+	clickTheAnswer(t, a, pane, "Run again")
+
+	// A second shell, and waited for by counting them: lastDir would
+	// still be the first one's, so a check on it alone would pass
+	// without a restart at all.
+	waitFor(t, a, "the command to run again", func() bool {
+		a.reapExited()
+		a.shellsMu.Lock()
+		defer a.shellsMu.Unlock()
+		return len(a.shells) > was
+	})
+	if got := a.lastDir(t); got != `C:\Workspace\gridterm` {
+		t.Errorf("it ran again in %q, want where it ran before", got)
 	}
 }
 
@@ -685,7 +761,7 @@ func TestAFinishedCommandKeepsItsOutput(t *testing.T) {
 	waitForPanes(t, a, 2)
 	host := serverConfig(t, s).Target()
 
-	if err := a.openOn(host, []string{"uname", "-a"}, nil); err != nil {
+	if err := a.openOn(host, []string{"uname", "-a"}, "", nil); err != nil {
 		t.Fatalf("run a command: %v", err)
 	}
 	if len(a.panes) != 3 {
@@ -756,7 +832,7 @@ func TestClearingAFinishedCommandTakesItsPaneToo(t *testing.T) {
 	a.connect(serverConfig(t, s))
 	waitForPanes(t, a, 2)
 	host := serverConfig(t, s).Target()
-	if err := a.openOn(host, []string{"uname", "-a"}, nil); err != nil {
+	if err := a.openOn(host, []string{"uname", "-a"}, "", nil); err != nil {
 		t.Fatalf("run a command: %v", err)
 	}
 	waitFor(t, a, "the command to finish", func() bool {
@@ -887,7 +963,7 @@ func TestAHopThatAnsweredIsUsableWhileTheNextIsStillBeingReached(t *testing.T) {
 	}
 	// Which is the whole point of letting go of it: a terminal opens on
 	// the machine that answered.
-	if err := a.openOn("edge", nil, nil); err != nil {
+	if err := a.openOn("edge", nil, "", nil); err != nil {
 		t.Fatalf("a terminal on the machine that answered: %v", err)
 	}
 

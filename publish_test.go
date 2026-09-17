@@ -276,7 +276,7 @@ func TestAFinishedScreenOverThereIsNotListed(t *testing.T) {
 	waitForPanes(t, host, 2)
 	margit := serverConfig(t, s).Target()
 
-	if err := host.openOn(margit, []string{"uname", "-a"}, nil); err != nil {
+	if err := host.openOn(margit, []string{"uname", "-a"}, "", nil); err != nil {
 		t.Fatalf("run a command on %s: %v", margit, err)
 	}
 	var done *conns.Entry

@@ -163,9 +163,10 @@ func main() {
 	a.keys = remote.NewRing()
 	a.ctx, a.stop = context.WithCancel(context.Background())
 	a.book = loadBook()
-	a.newShell = func(argv []string, cols, rows int) (session.Session, error) {
+	a.newShell = func(argv []string, dir string, cols, rows int) (session.Session, error) {
 		return session.StartLocal(session.LocalConfig{
 			Command: argv,
+			Dir:     dir,
 			Cols:    cols,
 			Rows:    rows,
 		})

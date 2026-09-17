@@ -28,6 +28,11 @@ type startedAs struct {
 	// machine, which is a shell to type into.
 	argv []string
 
+	// dir is where the command was run, so running it again runs it in
+	// the same place. Empty for a shell, and for a command with no
+	// directory asked for.
+	dir string
+
 	// at is the machine the pane's connection was made to, so one that
 	// has gone can be dialled again even when the server list has never
 	// heard of it.
@@ -47,12 +52,12 @@ type startedAs struct {
 // startsAgain records what a pane's program was started on, so the
 // question on it can offer to start it again. m is the connection it
 // rides on, and nil for a pane on this machine.
-func (a *app) startsAgain(t *term.Terminal, argv []string, m *machine) {
+func (a *app) startsAgain(t *term.Terminal, argv []string, dir string, m *machine) {
 	s := a.started[t]
 	if s == nil {
 		return
 	}
-	s.argv, s.again = argv, true
+	s.argv, s.dir, s.again = argv, dir, true
 	if m != nil {
 		s.at = m.at
 	}
@@ -274,7 +279,7 @@ func (a *app) startAgain(t *term.Terminal) error {
 // argv it ran before.
 func (a *app) startAgainHere(t *term.Terminal, s *startedAs) error {
 	size := t.Size()
-	sess, err := a.newShell(s.argv, size.Cols, size.Rows)
+	sess, err := a.newShell(s.argv, s.dir, size.Cols, size.Rows)
 	if err != nil {
 		return fmt.Errorf("start session: %w", err)
 	}
@@ -292,6 +297,7 @@ func (a *app) startAgainOn(t *term.Terminal, m *machine, s *startedAs) error {
 	size := t.Size()
 	sh, err := m.conn.Shell(a.ctx, remote.ShellConfig{
 		Command: s.argv,
+		Dir:     s.dir,
 		Cols:    size.Cols,
 		Rows:    size.Rows,
 		Term:    m.at.term,

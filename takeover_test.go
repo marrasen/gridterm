@@ -47,7 +47,7 @@ func TestOneWindowWorksInAnotherMachinesShell(t *testing.T) {
 	// point is what the shell answers. Set before serving starts: the
 	// server reads it on a goroutine of its own, once per session a
 	// client opens.
-	a.newShell = func(argv []string, cols, rows int) (session.Session, error) {
+	a.newShell = func(argv []string, _ string, cols, rows int) (session.Session, error) {
 		return session.StartLocal(session.LocalConfig{Command: argv, Cols: cols, Rows: rows})
 	}
 	mine, line := aKeyPair(t)

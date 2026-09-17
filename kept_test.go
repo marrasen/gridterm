@@ -749,7 +749,7 @@ func TestClosingAConnectionKeepsAPaneThatAlreadyEnded(t *testing.T) {
 	}
 	// A second shell on the same connection, so closing it has
 	// something live to take.
-	if err := a.openOn(host, nil, nil); err != nil {
+	if err := a.openOn(host, nil, "", nil); err != nil {
 		t.Fatalf("a second terminal: %v", err)
 	}
 	waitForPanes(t, a, 3)
@@ -780,7 +780,7 @@ func TestChoosingAMachineRowPutsALivePaneInFront(t *testing.T) {
 	if dead == nil {
 		t.Fatal("nothing opened on the machine")
 	}
-	if err := a.openOn(host, nil, nil); err != nil {
+	if err := a.openOn(host, nil, "", nil); err != nil {
 		t.Fatalf("a second terminal: %v", err)
 	}
 	waitForPanes(t, a, 3)

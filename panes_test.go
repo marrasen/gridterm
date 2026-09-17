@@ -145,6 +145,7 @@ type testApp struct {
 	// the pane that uses the shell.
 	shells   []*pipeSession
 	argvs    [][]string
+	dirs     []string
 	shellsMu sync.Mutex
 
 	// screen is the image the window draws on, kept between frames: a
@@ -263,11 +264,12 @@ func newTestApp(t *testing.T, cols, rows int, opts ...testOption) *testApp {
 	// that existed for a tenth of a second -- and leave keys behind to
 	// raise a false alarm if a port ever came round again.
 	ta.windows.knownAt = filepath.Join(t.TempDir(), "known_windows")
-	ta.newShell = func(argv []string, _, _ int) (session.Session, error) {
+	ta.newShell = func(argv []string, dir string, _, _ int) (session.Session, error) {
 		sess := newPipeSession()
 		ta.shellsMu.Lock()
 		ta.shells = append(ta.shells, sess)
 		ta.argvs = append(ta.argvs, argv)
+		ta.dirs = append(ta.dirs, dir)
 		ta.shellsMu.Unlock()
 		return sess, nil
 	}

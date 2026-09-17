@@ -20,6 +20,10 @@ type opening struct {
 	// into. It is read only when files is false.
 	command []string
 
+	// dir is where the command runs, and empty for wherever the login
+	// lands.
+	dir string
+
 	// files opens a pane of the file manager on the machine and no shell
 	// on it, which is what "Files" asks for.
 	files bool
@@ -411,7 +415,7 @@ func (a *app) becomeShellPane(m *machine, name string, command []string,
 	// Which connection the pane rides on rather than which machine it is
 	// named after, for the reason the on field of machines gives.
 	a.machines.runs(pane, m)
-	a.startsAgain(pane, command, m)
+	a.startsAgain(pane, command, "", m)
 	if label := labelFor(command); label != "" {
 		if e := a.panes[pane]; e != nil {
 			e.Label = label
@@ -444,6 +448,7 @@ func (a *app) startOn(name string, open opening, at *spot) error {
 	}
 	sh, err := m.conn.Shell(a.ctx, remote.ShellConfig{
 		Command: open.command,
+		Dir:     open.dir,
 		Cols:    a.lastSize[0],
 		Rows:    a.lastSize[1],
 		Term:    m.at.term,
@@ -460,18 +465,18 @@ func (a *app) startOn(name string, open opening, at *spot) error {
 	// Which connection the pane rides on rather than which machine it is
 	// named after, for the reason the on field of machines gives.
 	a.machines.runs(t, m)
-	a.startsAgain(t, open.command, m)
+	a.startsAgain(t, open.command, open.dir, m)
 	return nil
 }
 
 // openOn puts a terminal or a command on a machine, connecting to it
 // first when nothing is connected to it yet.
-func (a *app) openOn(name string, command []string, at *spot) error {
+func (a *app) openOn(name string, command []string, dir string, at *spot) error {
 	route, err := a.route(name)
 	if err != nil {
 		return err
 	}
-	a.openRoute(name, route, opening{command: command}, at)
+	a.openRoute(name, route, opening{command: command, dir: dir}, at)
 	return nil
 }
 

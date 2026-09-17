@@ -206,7 +206,7 @@ func (a *app) openTerminalOn(host string, at *spot) error {
 	if f.saved {
 		name = f.spelling
 	}
-	return a.openOn(name, nil, at)
+	return a.openOn(name, nil, "", at)
 }
 
 // everyHost is every machine worth a command of its own: this one, the

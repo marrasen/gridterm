@@ -235,7 +235,7 @@ func commandPane(t *testing.T, a *testApp) *term.Terminal {
 func TestACommandRunsAgainOnTheConnectionItHas(t *testing.T) {
 	a, s, host := aConnectedWindow(t, 80, 24)
 	m := a.machines.named(host)
-	if err := a.openOn(host, []string{"make", "deploy"}, nil); err != nil {
+	if err := a.openOn(host, []string{"make", "deploy"}, "", nil); err != nil {
 		t.Fatalf("running the command: %v", err)
 	}
 	pane := commandPane(t, a)
@@ -288,7 +288,7 @@ func TestACommandRunsAgainOnTheConnectionItHas(t *testing.T) {
 // user this run was not the one that went wrong.
 func TestACommandThatWorkedSaysItsStatus(t *testing.T) {
 	a, _, host := aConnectedWindow(t, 80, 24)
-	if err := a.openOn(host, []string{"make", "deploy"}, nil); err != nil {
+	if err := a.openOn(host, []string{"make", "deploy"}, "", nil); err != nil {
 		t.Fatalf("running the command: %v", err)
 	}
 	pane := commandPane(t, a)
@@ -588,7 +588,7 @@ func TestYesThatCannotStartLeavesTheQuestionUp(t *testing.T) {
 	asked := pane.Asking()
 
 	boom := errors.New("no shell to start")
-	a.newShell = func([]string, int, int) (session.Session, error) { return nil, boom }
+	a.newShell = func([]string, string, int, int) (session.Session, error) { return nil, boom }
 	a.focus(pane)
 	took, err := a.root.HandleKey(press(input.KeyEnter, 0))
 	if !took {
@@ -780,7 +780,7 @@ func TestACommandCutOffDoesNotSayItFinished(t *testing.T) {
 // on every pane that is not a shell.
 func TestACommandRunsAgainAfterTheMachineIsDialledBack(t *testing.T) {
 	a, s, host := aConnectedWindow(t, 80, 24)
-	if err := a.openOn(host, []string{"make", "deploy"}, nil); err != nil {
+	if err := a.openOn(host, []string{"make", "deploy"}, "", nil); err != nil {
 		t.Fatalf("running the command: %v", err)
 	}
 	pane := commandPane(t, a)
@@ -998,7 +998,7 @@ func TestAStatusThatLandsLateStillReachesTheQuestion(t *testing.T) {
 	withDialogs(t, a)
 	withPanel(t, a)
 	held := newHeldSession()
-	a.newShell = func([]string, int, int) (session.Session, error) { return held, nil }
+	a.newShell = func([]string, string, int, int) (session.Session, error) { return held, nil }
 	if err := a.openPane(); err != nil {
 		t.Fatalf("openPane: %v", err)
 	}
@@ -1034,7 +1034,7 @@ func TestAStatusThatLandsLateStillReachesTheQuestion(t *testing.T) {
 // says so. "Finished" would be a lie about a run that never started.
 func TestACommandWhoseRedialFailedSaysNothingRan(t *testing.T) {
 	a, s, host := aConnectedWindow(t, 80, 24)
-	if err := a.openOn(host, []string{"make", "deploy"}, nil); err != nil {
+	if err := a.openOn(host, []string{"make", "deploy"}, "", nil); err != nil {
 		t.Fatalf("running the command: %v", err)
 	}
 	pane := commandPane(t, a)
@@ -1094,9 +1094,9 @@ func TestAShellStartedAgainHereGetsThePanesSize(t *testing.T) {
 
 	var started [2]int
 	shell := a.newShell
-	a.newShell = func(argv []string, cols, rows int) (session.Session, error) {
+	a.newShell = func(argv []string, dir string, cols, rows int) (session.Session, error) {
 		started = [2]int{cols, rows}
-		return shell(argv, cols, rows)
+		return shell(argv, dir, cols, rows)
 	}
 	pressTheAnswer(t, a, pane)
 

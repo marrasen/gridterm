@@ -125,6 +125,38 @@ func TestShellRunsACommand(t *testing.T) {
 	}
 }
 
+// A command with a directory runs there. SSH has no way to ask for a
+// working directory, so the far end's shell is told to change into it
+// first, and a directory that is not there stops the command.
+func TestShellRunsACommandInADirectory(t *testing.T) {
+	s := sshtest.New(t)
+	sess := startTest(t, s, func(sh *ShellConfig) {
+		sh.Command = []string{"echo", "hello"}
+		sh.Dir = "/var/log/my logs"
+	})
+
+	got := readUntil(t, sess, "RAN", 5*time.Second)
+	want := `RAN cd -- '/var/log/my logs' && 'echo' 'hello'`
+	if !strings.Contains(got, want) {
+		t.Fatalf("server ran %q, want %q", strings.TrimSpace(got), want)
+	}
+}
+
+// A shell to type into ignores the directory: there is no command for it
+// to run in front of.
+func TestShellToTypeIntoIgnoresTheDirectory(t *testing.T) {
+	s := sshtest.New(t)
+	sess := startTest(t, s, func(sh *ShellConfig) {
+		sh.Dir = "/var/log"
+	})
+
+	// Short, because this waits for something that must never arrive.
+	got := readUntil(t, sess, "cd --", 500*time.Millisecond)
+	if strings.Contains(got, "cd --") {
+		t.Fatalf("the shell was sent %q", strings.TrimSpace(got))
+	}
+}
+
 // A dropped connection is not a clean logout. Reporting it as one hides
 // the difference between closing a window and losing the network.
 func TestShellDroppedConnectionIsNotReportedAsACleanExit(t *testing.T) {

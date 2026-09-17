@@ -226,9 +226,10 @@ type app struct {
 	// widget tree.
 	exits chan struct{}
 
-	// newShell starts a shell on this machine, on the argv given. It is
-	// a field so a test can drive the tree without spawning anything.
-	newShell func(argv []string, cols, rows int) (session.Session, error)
+	// newShell starts a shell on this machine, on the argv given, in dir
+	// when dir is not empty. It is a field so a test can drive the tree
+	// without spawning anything.
+	newShell func(argv []string, dir string, cols, rows int) (session.Session, error)
 
 	// command is what -e named: the program a pane here runs instead of
 	// a shell. It is written once in main, before there is a goroutine

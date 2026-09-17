@@ -58,8 +58,12 @@ obvious place to go back to.
      `openRoute`, so `opening` needs to say "into this pane" the way
      `at` says which split.
    - **The wording.** Every shell gets "Connection closed. Reconnect?",
-     whether the transport went or the user typed exit. That is what
-     ssh itself prints, and gridterm calls every pane a connection.
+     whether the transport went or the user typed exit, and whether the
+     shell is on a machine or on this one. That is what ssh itself
+     prints, and gridterm calls every pane a connection. Settled twice,
+     on 2026-09-17: a reviewer argued a local shell was never connected
+     and reconnecting it only forks a process, and Marcus kept the one
+     wording anyway. Do not re-open it.
    - **A command is the one that differs**, and not for tidiness.
      Nothing is being connected: the command's channel closed and the
      SSH connection is still up. Picking the choice re-runs the

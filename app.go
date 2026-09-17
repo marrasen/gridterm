@@ -147,6 +147,10 @@ type app struct {
 	// theme is the colour scheme the window is drawn in.
 	theme *themePick
 
+	// keysDir is the directory the keyboard shortcuts file lives in.
+	// Empty means the one gridterm keeps its files in.
+	keysDir string
+
 	// shared is the glowing border over each pane somebody else is in,
 	// one layer per pane.
 	shared map[*term.Terminal]*sharedMark
@@ -679,6 +683,7 @@ func (a *app) commands() {
 			Run: a.showConnLogHere},
 		ui.Command{ID: helpCommand, Title: helpTitle, Run: a.showHelp},
 		ui.Command{ID: filesCommand, Title: filesTitle, Run: a.showWhereFiles},
+		ui.Command{ID: keysCommand, Title: keysTitle, Run: a.writeShortcutStart},
 		ui.Command{ID: "server.editThis", Title: "Edit this server…",
 			Run: a.editThisServer},
 		ui.Command{ID: "server.forget", Title: "Forget this server…",

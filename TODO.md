@@ -5,6 +5,19 @@ each group. A line goes when the work is in and reviewed.
 
 ## Waiting on an answer from Marcus
 
+- **Should the shortcuts file be the whole map instead of changes?** It
+  holds changes now: a line adds a shortcut, a line set to "nothing"
+  takes one away, and a line deleted goes back to what gridterm comes
+  with. That means shortcuts added to a later gridterm arrive on their
+  own. The cost is that moving a shortcut takes two lines, because
+  editing the chord on a line leaves the old chord where it was and the
+  command then runs on both. "Write a starting keyboard shortcuts file"
+  writes the whole map, which makes that trap easy to fall into. The
+  other way round -- the file is the whole map -- makes editing a line
+  move the shortcut, at the price of a file that pins the keys to the
+  version it was written from. The notice and the README explain the
+  behaviour as built.
+
 - **Should the window keep a record of what an agent typed?** The
   account below needs one. The obvious version was built on 2026-09-17
   and thrown away, because writing down what an agent sends keeps a
@@ -260,6 +273,31 @@ there is one key for position and one for recency.
   and that is the whole of what it can do. Refusing a path outside the
   user's own profile would be the next step.
 
+- **The keyboard shortcuts file is read once, at startup.** Colour
+  schemes have a "Reload", and this does not. Applying the changes again
+  on top of a keymap they have already changed would not give a deleted
+  line's built-in chord back, so a real reload has to build the default
+  keymap from scratch first. That means pulling the `MustBind` block out
+  of `commands()` in app.go into a function of its own.
+
+- **The shortcuts file reaches the window's shortcuts only.** The file
+  browser's own keys are fixed in `ui/files/keybar.go`, and "Keys and
+  commands" lists both kinds. The heading says which is which, and that
+  is the whole of what it does about it.
+
+- **A starting file is written straight to its own name.** Both
+  `keys.WriteStart` and `themes.WriteStart` create the real file and
+  then fill it, so a write that fails part way leaves a short file that
+  the next attempt then refuses to write over, because it is already
+  there. `remote.MakeKey` shows the pattern to follow: write a file of
+  its own, flush it, and link it into place.
+
+- **`TestAMachineWithTooManyParkedFileSessionsIsRefusedTheNext` fails
+  about one run in twelve.** It says `the plus opened <nil>, want a
+  menu` at serving_test.go:1095, so the menu is not up yet when the test
+  looks. It was already failing this way before the shortcuts file went
+  in, so it is the test that is wrong rather than the window.
+
 - **A serving window carried on a USB stick cannot start.** `makeHostKey`
   links the key into place rather than renaming it, so two windows
   cannot write over each other's. FAT32 and exFAT have no hard links, so
@@ -358,8 +396,6 @@ there is one key for position and one for recency.
 Marcus's own list, in his words, kept until each has been looked at
 properly and either written up above or done.
 
-- **A config file for the keyboard shortcuts.** Settings beside the
-  binary was done on 2026-09-17; this half of the line was not.
 - **UI.** The border on the File menu glitches to the left. The
   connection menu has odd spaces in its items where the sidebar's drag
   handle goes. The Terminal and File icons are too small. The app has

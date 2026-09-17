@@ -1,6 +1,8 @@
 package main
 
 import (
+	"cmp"
+	"slices"
 	"strings"
 
 	"github.com/marrasen/gridterm/grid"
@@ -38,14 +40,22 @@ func (a *app) showHelp() error {
 func (a *app) helpText() string {
 	sections := a.commandSections()
 	sections = append(sections, helpSection{
-		title: "The file browser's keys, as its bar shows them",
+		title: "The file browser's keys, which the shortcuts file does not change",
 		lines: browserHelp(),
+	})
+	sections = append(sections, helpSection{
+		title: "What the keyboard shortcuts file calls each command",
+		lines: a.commandNames(),
+		tight: true,
 	})
 
 	// One column across the whole list, so the chords line up from the
-	// top of the dialog to the bottom.
+	// top of the dialog to the bottom. A tight section keeps its own.
 	width := 0
 	for _, s := range sections {
+		if s.tight {
+			continue
+		}
 		for _, l := range s.lines {
 			width = max(width, grid.StringWidth(l.what))
 		}
@@ -57,8 +67,15 @@ func (a *app) helpText() string {
 			out = append(out, "")
 		}
 		out = append(out, s.title)
+		at := width
+		if s.tight {
+			at = 0
+			for _, l := range s.lines {
+				at = max(at, grid.StringWidth(l.what))
+			}
+		}
 		for _, l := range s.lines {
-			out = append(out, "  "+l.write(width))
+			out = append(out, "  "+l.write(at))
 		}
 	}
 	return strings.Join(out, "\n")
@@ -77,10 +94,27 @@ func (l helpLine) write(width int) string {
 	return l.what + strings.Repeat(" ", max(pad, 1)) + l.chord
 }
 
-// helpSection is one heading of the list and the lines under it.
+// helpSection is one heading of the list and the lines under it. A
+// tight section lines its own second column up rather than the one the
+// rest of the list shares.
 type helpSection struct {
 	title string
 	lines []helpLine
+	tight bool
+}
+
+// commandNames lists what the shortcuts file calls each command, against
+// the title the menus and the palette show.
+func (a *app) commandNames() []helpLine {
+	var out []helpLine
+	for _, cmd := range a.root.Commands.All() {
+		if generatedCommand(cmd.ID) {
+			continue
+		}
+		out = append(out, helpLine{cmd.ID, cmd.Title})
+	}
+	slices.SortFunc(out, func(a, b helpLine) int { return cmp.Compare(a.what, b.what) })
+	return out
 }
 
 // commandSections groups the menu bar's own lines the way the bar groups
@@ -123,11 +157,12 @@ func (a *app) commandSections() []helpSection {
 	return out
 }
 
-// generatedCommand reports whether an id was built from the server list
-// or the font scan rather than registered by hand.
+// generatedCommand reports whether an id was built from the server list,
+// the font scan or the shell scan rather than registered by hand.
 func generatedCommand(id string) bool {
 	for _, prefix := range []string{
 		openPrefix, editPrefix, termPrefix, filesPrefix, fontCommandPrefix,
+		shellCommandPrefix,
 	} {
 		if strings.HasPrefix(id, prefix) {
 			return true

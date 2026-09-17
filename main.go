@@ -216,6 +216,9 @@ func main() {
 	}
 
 	a.commands()
+	if err := a.loadShortcuts(); err != nil {
+		log.Fatal(err)
+	}
 	shot, err := parseShotScript(*shotScript)
 	if err != nil {
 		log.Fatalf("-shot: %v", err)

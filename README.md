@@ -174,6 +174,8 @@ comma separated, in the order regular, bold, italic, bold italic. Only
 the regular font is required — a style you leave out borrows one you
 gave. There is no way to pick a font by family name yet; give paths.
 
+gridterm comes with:
+
 | Key | |
 |---|---|
 | `Shift+PageUp` / `Shift+PageDown` | scroll the scrollback |
@@ -186,6 +188,29 @@ gave. There is no way to pick a font by family name yet; give paths.
 | `Ctrl+Shift+B` | show or hide the sidebar |
 | `Ctrl+Shift+L` | go to the sidebar |
 | `Ctrl+Shift+N` | connect to a server |
+
+"Keys and commands" on the Help menu lists every command, the key that
+runs it, and the name the shortcuts file calls it by.
+
+To change a shortcut, take "Write a starting keyboard shortcuts file" on
+the same menu. It writes `keys.json` holding every shortcut you have
+now, and gridterm reads the file the next time it starts.
+
+The file says what to change, not what the whole window does:
+
+- Add a line to put a command on another chord. To move it, set the old
+  chord to `"nothing"` as well, or the command runs on both.
+- Delete a line and that chord goes back to what gridterm comes with.
+- Shortcuts added to a later gridterm arrive on their own. A built-in
+  chord that a later gridterm moves does not, because your file still
+  names the old one.
+
+Every chord in the file runs before the pane sees it, so a chord a
+program in the pane needs stops reaching it. A chord you would type,
+such as a plain letter, is refused for that reason: hold `Ctrl`, `Alt`
+or `Super`, or use a function key.
+
+The file browser's own keys are not in the file.
 
 Sharing a pane with an agent is on the Servers menu and on the plus on
 this machine's row. The first pane starts the share; after that the same

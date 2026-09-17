@@ -64,6 +64,7 @@ func TestTheNoticeNamesEveryFileAgainstWhatItIsFor(t *testing.T) {
 		{"Settings", "settings.json"},
 		{"Saved servers", "servers.json"},
 		{"Colour schemes", "themes.json"},
+		{"Keyboard shortcuts", "keys.json"},
 		{"Keys allowed to take this window over", "authorized_keys"},
 		{"Windows this one has taken over", "known_windows"},
 		{"The key this window serves with", "serve_host_key"},

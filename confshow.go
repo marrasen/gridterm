@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/marrasen/gridterm/conf"
+	"github.com/marrasen/gridterm/keys"
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/serve"
 	"github.com/marrasen/gridterm/settings"
@@ -72,6 +73,7 @@ func filesSay(f where) string {
 		{"Settings", settings.File},
 		{"Saved servers", remote.BookFile},
 		{"Colour schemes", themes.File},
+		{"Keyboard shortcuts", keys.File},
 		{"Keys allowed to take this window over", serve.AuthFile},
 		{"Windows this one has taken over", knownWindowsFile},
 	} {

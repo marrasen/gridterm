@@ -201,6 +201,19 @@ func TestTheWorkflowMentionsKeysAndLines(t *testing.T) {
 	}
 }
 
+// The workflow says a command needs a carriage return at the end, which
+// no agent can guess and nothing else it reads says.
+//
+// The hand-over prompt used to say it as well. It stopped, so this is
+// the only telling left.
+func TestTheWorkflowSaysWhatSendsACommand(t *testing.T) {
+	for _, want := range []string{`\r`, "Enter"} {
+		if !strings.Contains(Workflow, want) {
+			t.Errorf("the workflow does not say %q: %q", want, Workflow)
+		}
+	}
+}
+
 // A read cut down to the most lines one answer carries says so, and one
 // that was not cut says nothing.
 func TestAReadCutToTheMostLinesSaysSo(t *testing.T) {

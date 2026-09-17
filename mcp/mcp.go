@@ -439,8 +439,9 @@ func version() string {
 }
 
 // instructions is what an agent is told about this server when it
-// connects. It carries the same workflow as the prompt the user pastes,
-// without the code and without the lines that add this server to a host.
+// connects: what a pane is, how to work in one, and the rules. It is the
+// only place an agent is told those, so the prompt the user pastes says
+// none of it.
 var instructions = strings.Join([]string{
 	`gridterm hands you one terminal pane at a time.
 
@@ -453,7 +454,7 @@ pane, and every other tool takes that name.`,
 }, "\n\n")
 
 // Workflow is how an agent works in a pane it has been handed. This
-// server's initialize answer and gridterm's hand-over prompt both carry
+// server's initialize answer and the skill gridterm writes both carry
 // it, so the two cannot drift apart.
 const Workflow = `read_pane gives you the pane's screen as plain text, and takes lines to read that many,
 back through what has scrolled off the top. send_keys types text in exactly as given, so a

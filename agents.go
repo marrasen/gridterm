@@ -645,8 +645,8 @@ func (a *app) showSetup(host agentHost, exe string, exeErr error) {
 // server on the host it is running in, and the code.
 //
 // It stops there. How to work in a pane and what the rules are come from
-// the MCP server's own instructions, which the agent reads when it
-// connects, so this does not repeat them.
+// the MCP server's own instructions, which a host passes to the agent
+// when it connects, so this does not repeat them.
 func handoverPrompt(host agentHost, code, exe string) string {
 	return fmt.Sprintf(`The user has handed you one terminal pane in gridterm, a terminal
 running on this machine. You work in that pane through gridterm's MCP
@@ -660,10 +660,11 @@ gridterm's tools, it has not been added here yet.
 
 This code is the only credential and it came from the user. Call
 use_session_code with it before anything else. The answer names the pane, and
-every other tool takes that name. The server tells you the rest when you
-connect to it.
+every other tool takes that name.
 
   %s
+
+The server's own instructions say how the tools work and what the rules are.
 `, host.setupForAgent(exe), code)
 }
 

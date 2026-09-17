@@ -6,7 +6,26 @@ each group. A line goes when the work is in and reviewed.
 ## Questions for Marcus
 
 Open calls that are his, not mine. Each one is written down rather than
-guessed at. Nothing is open right now.
+guessed at.
+
+1. **The rules now reach Claude Code for certain and the other three
+   hosts on trust.** Your answer of 17 September took `mcp.Workflow` and
+   `mcp.Rules` out of the hand-over prompt, and that is done. The MCP
+   server's `instructions` are now the only place an agent is told them.
+   - **A client may ignore `instructions`.** The protocol says a client
+     may use them; it does not say it must. Claude Code puts them in
+     front of the model. gridterm cannot check what Codex, Cursor or
+     another host does.
+   - **The skill is no fallback for those three.** Only Claude Code has
+     a place gridterm knows to write a skill into. For the rest it goes
+     under gridterm's own settings, where nothing reads it.
+   - **What is at stake is the rules, not the workflow.** The five lines
+     of `mcp.Rules` are the ones with a cost: never type a password, ask
+     before anything destructive, work in that pane and nowhere else,
+     the user can take the pane back at any moment.
+   - **The question.** Put `mcp.Rules` back in the prompt for hosts
+     other than Claude Code, or leave it as you asked? Two reviewers
+     raised it separately. The prompt is as you asked for now.
 
 ## Answered on 2026-09-17
 
@@ -27,12 +46,7 @@ guessed at. Nothing is open right now.
    - The agent can start that reconnect itself, when the user has ticked
      the box for it. The boxes are item 4 there.
 
-3. **The hand-over prompt shrinks to the setup lines and the code.** The
-   workflow and the rules come from the MCP server's own `instructions`,
-   which the agent reads when it connects, so `handoverPrompt` stops
-   repeating `mcp.Workflow` and `mcp.Rules`.
-
-4. **A local command gets a command row, like a remote one.** Named by
+3. **A local command gets a command row, like a remote one.** Named by
    what it runs, with the same "Run it again?" question when it ends.
    `startAgainHere` already opens a ConPTY on an argv, so that is the
    piece to reuse.
@@ -117,7 +131,7 @@ Raised after a debugging session in a handed-over pane.
    - **Read only.** `send_keys` is refused. For watching a build or a
      tail without being able to touch it.
    - **Read above a clear.** The agent may read the scrollback above the
-     last `ED 3`. Off is what item 11 settles; this box says yes for one
+     last `ED 3`. Off is what item 10 settles; this box says yes for one
      pane.
    - **Read only and Restart together are legal.** Restarting is not
      typing, so watching a pane and bringing it back when it dies
@@ -136,31 +150,25 @@ Raised after a debugging session in a handed-over pane.
    rebooted host still cannot spend the code twice. Closing the pane is
    what releases it, and the listener stops once the last one has gone.
 
-7. **Shrink the hand-over prompt.** Answered on 2026-09-17.
-   `handoverPrompt` in agents.go keeps the setup lines for the picked
-   host and the code, and drops `mcp.Workflow` and `mcp.Rules`. The MCP
-   server's own `instructions` already carry both, and the agent reads
-   them when it connects.
-
-8. **A command pane can be handed over already**, running or not.
+7. **A command pane can be handed over already**, running or not.
    `handPane` looks at no kind and no state. A running one takes keys on
    the command's stdin; an ended one can be read and not typed into,
    which is worth having for a failed build. Nothing to do here: it is
    written down because it looked like a gap and is not one.
 
-9. **Copy opens a second dialog on top of the first.** Pick an agent,
+8. **Copy opens a second dialog on top of the first.** Pick an agent,
    press "Copy the prompt", and `showCode` stacks another dialog over
    the hand-over form, so there are two to close. Marcus wants a second
    button, "Install instructions", that opens that dialog when he asks
    for it. Copy then only copies.
 
-10. **Make the setup line copyable.** The dialog that says how to add the
+9. **Make the setup line copyable.** The dialog that says how to add the
    MCP server names a command line, and there is no way to copy it, so
    it has to be typed out again by hand. A form's copy chord only copies
    the error text. `ui.Notice` copies its whole message, and this dialog
    is a `newConfirm`, not a notice.
 
-11. **`clear` keeps the history, and hides it from the agent.** Answered
+10. **`clear` keeps the history, and hides it from the agent.** Answered
    on 2026-09-17. `clear` sends `ED 3` as well as `ED 2`, and
    `Screen.EraseInDisplay` in vt/screen.go drops the scrollback for mode
    3 today, which is what the sequence means. That changes: the user

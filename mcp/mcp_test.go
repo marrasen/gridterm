@@ -579,11 +579,8 @@ func TestItSaysWhatAClientNeedsToKnow(t *testing.T) {
 	}
 }
 
-// The initialize answer carries the workflow, so an agent already
-// connected learns it without the prompt the user pastes.
-//
-// The words are the ones the prompt uses, from the same source: two
-// tellings that drift apart is one of them being wrong.
+// The initialize answer carries the workflow, which is the only place an
+// agent is told it: the prompt the user pastes says none of it.
 func TestTheInitializeAnswerCarriesTheWorkflow(t *testing.T) {
 	answers := talk(t, &fakePanes{},
 		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":`+
@@ -606,12 +603,10 @@ func TestTheInitializeAnswerCarriesTheWorkflow(t *testing.T) {
 		}
 	}
 	if !strings.Contains(said.Instructions, Workflow) {
-		t.Errorf("the instructions do not carry the workflow the prompt carries: %q",
-			said.Instructions)
+		t.Errorf("the instructions do not carry the workflow: %q", said.Instructions)
 	}
 	if !strings.Contains(said.Instructions, Rules) {
-		t.Errorf("the instructions do not carry the rules the prompt carries: %q",
-			said.Instructions)
+		t.Errorf("the instructions do not carry the rules: %q", said.Instructions)
 	}
 }
 

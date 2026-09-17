@@ -362,9 +362,22 @@ func promptGetsTheAgentConnected(t *testing.T, host agentHost) {
 		t.Error("the prompt does not say where the server has to run")
 	}
 
+	// What the prompt is for: the code is the only way in, the first
+	// call is named, and the agent is told where the rest comes from.
+	for _, say := range []string{
+		"the only credential", "before anything else", "The server's own instructions",
+	} {
+		if !strings.Contains(prompt, say) {
+			t.Errorf("the prompt does not say %q", say)
+		}
+	}
+
 	// The workflow and the rules are the server's to give. Two copies
 	// drift apart, which is why the prompt stops short of them.
 	for _, said := range []string{mcp.Workflow, mcp.Rules} {
+		if said == "" {
+			t.Fatal("the workflow or the rules are empty, so this checks nothing")
+		}
 		if strings.Contains(prompt, said) {
 			t.Errorf("the prompt repeats what the server's instructions say:\n%s", said)
 		}
@@ -382,7 +395,10 @@ func promptGetsTheAgentConnected(t *testing.T, host agentHost) {
 			t.Errorf("a line is %d characters long: %q", len(line), line)
 		}
 	}
-	if lines := strings.Count(strings.TrimRight(prompt, "\n"), "\n") + 1; lines > 36 {
+	// Cut to the prompt as it stands, with a line or two of room. A
+	// prompt that grows back past this is the workflow creeping in again,
+	// in words the checks above do not recognise.
+	if lines := strings.Count(strings.TrimRight(prompt, "\n"), "\n") + 1; lines > 22 {
 		t.Errorf("the prompt is %d lines long", lines)
 	}
 }

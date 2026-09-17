@@ -366,6 +366,7 @@ func TestWhatTheShellSaidReachesTheAgent(t *testing.T) {
 		t.Fatalf("use: %v", err)
 	}
 
+	win.output = "altscreen.png\nshell.png"
 	answers := talk(t, panes,
 		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":`+
 			`{"name":"use_session_code","arguments":{"code":"`+code+`"}}}`,
@@ -373,7 +374,9 @@ func TestWhatTheShellSaidReachesTheAgent(t *testing.T) {
 			`{"name":"read_pane","arguments":{"pane":"`+pane.ID+`"}}}`,
 		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":`+
 			`{"name":"wait_for","arguments":{"pane":"`+pane.ID+`","quiet_ms":30,`+
-			`"timeout_ms":5000}}}`)
+			`"timeout_ms":5000}}}`,
+		`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":`+
+			`{"name":"read_output","arguments":{"pane":"`+pane.ID+`"}}}`)
 
 	said := byID(t, answers)
 	screen, failed := textOf(t, said[2])
@@ -394,5 +397,21 @@ func TestWhatTheShellSaidReachesTheAgent(t *testing.T) {
 	}
 	if !strings.Contains(waited, agent.EndedOnMarks) {
 		t.Errorf("the wait does not say why it ended:\n%s", waited)
+	}
+
+	// And the last command's output comes back through the same layers,
+	// carrying what the window said about where it began.
+	printed, failed := textOf(t, said[4])
+	if failed {
+		t.Fatalf("reading the output failed: %q", printed)
+	}
+	if !strings.Contains(printed, "shell.png") {
+		t.Errorf("the output never reached the agent:\n%s", printed)
+	}
+	if !strings.Contains(printed, "this is what the last command printed") {
+		t.Errorf("the answer drops what the window said about it:\n%s", printed)
+	}
+	if strings.Contains(printed, "marcus@margit") {
+		t.Errorf("the answer carries the screen rather than the output:\n%s", printed)
 	}
 }

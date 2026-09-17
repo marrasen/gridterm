@@ -2039,8 +2039,14 @@ func TestAnAgentReadsEverythingSinceItTypedOnASilentShell(t *testing.T) {
 	if strings.Contains(look.Screen, "Thu 18 Sep") {
 		t.Errorf("the output reaches back past what the agent typed:\n%s", look.Screen)
 	}
-	if !strings.Contains(look.Note, "does not mark") {
+	if !strings.Contains(look.Note, "since you last typed") {
 		t.Errorf("the answer does not say the boundary is the line you typed on: %q", look.Note)
+	}
+	// The command line the shell echoed is the first line of it, which
+	// the answer says: a command too long for one row is echoed over two,
+	// and starting below the first would cut the answer off inside it.
+	if !strings.HasPrefix(look.Screen, "$ uname") {
+		t.Errorf("the output does not start at the command line:\n%s", look.Screen)
 	}
 }
 
@@ -2055,4 +2061,196 @@ func outputOf(t *testing.T, a *testApp, c *agent.Client, id string) (agent.Look,
 		return nil
 	})
 	return look, failed
+}
+
+// A full-screen program has no command output, and is refused rather
+// than answered with a rectangle of vim.
+func TestReadingTheOutputOfAFullScreenProgramIsRefused(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pane, code, c := handedOver(t, a)
+
+	var got agent.Pane
+	offWindow(t, a, "the window to answer the agent", func() error {
+		var err error
+		got, err = c.Use(code)
+		return err
+	})
+
+	a.shells[0].out <- []byte("\x1b]133;C\a")
+	a.shells[0].out <- []byte("\x1b[?1049h~ VIM ~")
+	waitFor(t, a, "the pane to show the full-screen program", func() bool {
+		return strings.Contains(paneText(pane), "VIM")
+	})
+
+	_, err := outputOf(t, a, c, got.ID)
+	if err == nil {
+		t.Fatal("it was given command output from a full-screen program")
+	}
+	if !strings.Contains(err.Error(), "read the pane") {
+		t.Errorf("it was told %q, which does not say what to do instead", err)
+	}
+}
+
+// An agent that asks for fewer lines gets fewer, and is told how many
+// there were.
+func TestReadingFewerLinesOfTheOutputSaysWhatIsMissing(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pane, code, c := handedOver(t, a)
+
+	var got agent.Pane
+	offWindow(t, a, "the window to answer the agent", func() error {
+		var err error
+		got, err = c.Use(code)
+		return err
+	})
+
+	a.shells[0].out <- []byte("$ ")
+	waitFor(t, a, "the pane to show a prompt", func() bool {
+		return strings.Contains(paneText(pane), "$")
+	})
+	offWindow(t, a, "the window to take the keys", func() error {
+		return c.Send(got.ID, "seq 6\r", nil)
+	})
+	a.shells[0].out <- []byte("seq 6\r\n\x1b]133;C\a" +
+		"1\r\n2\r\n3\r\n4\r\n5\r\n6\r\n\x1b]133;D;0\a$ ")
+	waitFor(t, a, "the pane to show the output", func() bool {
+		return strings.Contains(paneText(pane), "6")
+	})
+
+	var look agent.Look
+	offWindow(t, a, "the window to answer the agent", func() error {
+		var err error
+		look, err = c.Output(got.ID, 3)
+		return err
+	})
+	if got := countLines(look.Screen); got != 3 {
+		t.Errorf("it asked for 3 lines and got %d: %q\nnote: %s\npane:\n%s",
+			got, look.Screen, look.Note, paneText(pane))
+	}
+	if strings.Contains(look.Screen, "1") && strings.Contains(look.Screen, "6") {
+		t.Errorf("a read of three lines gave the whole output:\n%s", look.Screen)
+	}
+	if !strings.Contains(look.Note, "start of it is missing") {
+		t.Errorf("the answer does not say the top is missing: %q", look.Note)
+	}
+}
+
+// A mark left by the command before the agent's is not taken for the
+// agent's own.
+//
+// Sending the text and the return in two calls is the ordinary way to
+// reach this: after the first call nothing has run, and the shell's mark
+// still names the command before it.
+func TestAStaleMarkIsNotTakenForTheAgentsOwnCommand(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pane, code, c := handedOver(t, a)
+
+	var got agent.Pane
+	offWindow(t, a, "the window to answer the agent", func() error {
+		var err error
+		got, err = c.Use(code)
+		return err
+	})
+
+	// Something the user ran, with marks around it.
+	a.shells[0].out <- []byte("$ date\r\n\x1b]133;C\aThu 18 Sep\r\n\x1b]133;D;0\a$ ")
+	waitFor(t, a, "the pane to show the first command", func() bool {
+		return strings.Contains(paneText(pane), "Thu 18 Sep")
+	})
+
+	// The agent types the text of its own command and nothing else, so
+	// nothing has run since.
+	offWindow(t, a, "the window to take the text", func() error {
+		return c.Send(got.ID, "uptime", nil)
+	})
+	a.shells[0].out <- []byte("uptime")
+	waitFor(t, a, "the pane to echo the command", func() bool {
+		return strings.Contains(paneText(pane), "uptime")
+	})
+
+	look, err := outputOf(t, a, c, got.ID)
+	if err != nil {
+		t.Fatalf("read the output: %v", err)
+	}
+	if strings.Contains(look.Screen, "Thu 18 Sep") {
+		t.Errorf("it gave the previous command's output as the agent's:\n%s", look.Screen)
+	}
+	if !strings.Contains(look.Note, "since you last typed") {
+		t.Errorf("the answer claims the shell said where this began: %q", look.Note)
+	}
+}
+
+// Reading the output does not spoil the next read of the pane.
+//
+// The output starts at a boundary rather than at the bottom, so keeping
+// it as the pane's last reading would leave a later read of the screen
+// cut from a reading that never held the top of it.
+func TestReadingTheOutputLeavesTheNextReadOfThePaneWhole(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pane, code, c := handedOver(t, a)
+
+	var got agent.Pane
+	offWindow(t, a, "the window to answer the agent", func() error {
+		var err error
+		got, err = c.Use(code)
+		return err
+	})
+
+	a.shells[0].out <- []byte("$ whoami\r\nmarcus\r\n$ ls\r\n\x1b]133;C\adocs\r\n\x1b]133;D;0\a$ ")
+	waitFor(t, a, "the pane to show both commands", func() bool {
+		return strings.Contains(paneText(pane), "docs")
+	})
+
+	if _, err := outputOf(t, a, c, got.ID); err != nil {
+		t.Fatalf("read the output: %v", err)
+	}
+	look := looked(t, a, c, got.ID)
+	if !strings.Contains(look.Screen, "whoami") {
+		t.Errorf("the read of the pane after a read of the output is missing its top:\n%s",
+			look.Screen)
+	}
+}
+
+// A screen cleared since the command started says so, rather than
+// handing back the blank rows where the output used to be.
+func TestReadingTheOutputAfterAClearSaysItHasGone(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pane, code, c := handedOver(t, a)
+
+	var got agent.Pane
+	offWindow(t, a, "the window to answer the agent", func() error {
+		var err error
+		got, err = c.Use(code)
+		return err
+	})
+
+	// A command with marks around it, six rows down the screen.
+	a.shells[0].out <- []byte("$\r\n$\r\n$\r\n$\r\n$ ls\r\n\x1b]133;C\adocs\r\n\x1b]133;D;0\a$ ")
+	waitFor(t, a, "the pane to show the command", func() bool {
+		return strings.Contains(paneText(pane), "docs")
+	})
+
+	// And then the screen is cleared: history dropped, cursor home.
+	a.shells[0].out <- []byte("\x1b[3J\x1b[H\x1b[2J$ ")
+	waitFor(t, a, "the pane to be cleared", func() bool {
+		return !strings.Contains(paneText(pane), "docs")
+	})
+
+	_, err := outputOf(t, a, c, got.ID)
+	if err == nil {
+		t.Fatal("it was given output from a screen that had been cleared")
+	}
+	if !strings.Contains(err.Error(), "cleared") || !strings.Contains(err.Error(), "read_pane") {
+		t.Errorf("it was told %q, which does not say what happened or what to do", err)
+	}
 }

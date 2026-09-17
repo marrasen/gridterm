@@ -450,6 +450,37 @@ func TestSemanticPromptRemembersWhereTheOutputBegan(t *testing.T) {
 	}
 }
 
+// The boundary is a line of the output, not a row of the screen.
+//
+// Recorded on a screen that has already scrolled, it is the line's own
+// number: rows start again at the top and lines do not. A boundary kept
+// as a row would name the wrong text the moment anything scrolled, which
+// is every command that prints more than a screenful.
+func TestTheOutputBoundaryIsALineAndNotARow(t *testing.T) {
+	h := newHarness(t, 20, 3)
+	// Five lines through a three row screen, so three have gone off the
+	// top and the cursor is on the bottom row.
+	h.write("one\r\ntwo\r\nthree\r\nfour\r\n$ ls\r\n")
+	scr := h.term.Screen()
+	_, row := scr.CursorPos()
+	if scr.LineNumber(0) == 0 {
+		t.Fatal("the screen has not scrolled, so this proves nothing")
+	}
+
+	h.write("\x1b]133;C\x07")
+	from, ok := h.term.Command().Output()
+	if !ok {
+		t.Fatal("the shell's mark recorded no boundary")
+	}
+	if want := scr.LineNumber(row); from != want {
+		t.Errorf("the output begins on line %d, want %d; the cursor is on row %d",
+			from, want, row)
+	}
+	if from == uint64(row) {
+		t.Errorf("the boundary is %d, which is the row rather than the line", from)
+	}
+}
+
 // A shell that marks nothing has no boundary to give.
 func TestASilentShellMarksNoOutput(t *testing.T) {
 	h := newHarness(t, 20, 3)

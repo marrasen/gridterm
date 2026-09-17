@@ -253,21 +253,50 @@ func (t *Terminal) ReadLines(n int) Reading {
 }
 
 // ReadFrom is the pane from a line to the bottom of the screen, at most
-// most lines of it.
+// most lines of it, and how many lines there are from that line
+// altogether.
 //
 // The line is one LineNumber gave, so it names the same text however far
-// the screen has scrolled since. A line already off the bottom -- one
-// this screen has not reached -- gives the bottom row.
-func (t *Terminal) ReadFrom(line uint64, most int) Reading {
+// the screen has scrolled since. A caller that got fewer lines than the
+// second answer is missing the top of what it asked for, because it
+// asked for fewer or because the pane no longer keeps them.
+//
+// Zero or less is one line, not an unbounded read: what this is for is
+// output, and output has no bound.
+func (t *Terminal) ReadFrom(line uint64, most int) (Reading, int) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	_, rows := t.g.Size()
-	bottom := t.term.Screen().LineNumber(max(rows-1, 0))
-	n := 1
-	if bottom > line {
-		n = int(min(bottom-line, uint64(most-1))) + 1
+	if rows <= 0 {
+		return Reading{}, 0
 	}
-	return t.readingLocked(n)
+	scr := t.term.Screen()
+	_, row := scr.CursorPos()
+
+	// It ends at the cursor, not at the bottom of the screen. The rows
+	// under the cursor are the blank end of the screen, and a caller
+	// asking what a command printed is not asking for those.
+	there := 1
+	if at := scr.LineNumber(row); at > line {
+		there = min(int(at-line)+1, rows+t.term.History())
+	}
+	want := min(max(most, 1), there)
+	below := rows - 1 - row
+	read := t.readingLocked(want + below)
+	read.Text = dropLast(read.Text, below)
+	return read, there
+}
+
+// dropLast takes n lines off the end of some text.
+func dropLast(text string, n int) string {
+	for ; n > 0; n-- {
+		cut := strings.LastIndexByte(text, '\n')
+		if cut < 0 {
+			return ""
+		}
+		text = text[:cut]
+	}
+	return text
 }
 
 // readingLocked is ReadLines with the emulator's lock already held.

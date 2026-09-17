@@ -1250,7 +1250,7 @@ func TestReadingFromALine(t *testing.T) {
 	from := term.ReadLines(0).Line
 	f.feed(t, term, "one\r\ntwo\r\nthree\r\nfour\r\n$ ")
 
-	read := term.ReadFrom(from, 500)
+	read, there := term.ReadFrom(from, 500)
 	for _, want := range []string{"one", "two", "three", "four"} {
 		if !strings.Contains(read.Text, want) {
 			t.Errorf("reading from line %d misses %q:\n%s", from, want, read.Text)
@@ -1259,17 +1259,62 @@ func TestReadingFromALine(t *testing.T) {
 	if strings.Contains(read.Text, "$ ls") {
 		t.Errorf("reading from line %d reaches back above it:\n%s", from, read.Text)
 	}
-
-	// At most what was asked for, counted from the bottom.
-	if short := term.ReadFrom(from, 2); strings.Contains(short.Text, "one") {
-		t.Errorf("a read of two lines gave %q", short.Text)
-	} else if !strings.Contains(short.Text, "four") {
-		t.Errorf("a read of two lines gave %q, want the last of it", short.Text)
+	// Four lines of output and the row the prompt came back on.
+	if there != 5 {
+		t.Errorf("it says there are %d lines from line %d, want 5", there, from)
 	}
 
-	// A line the screen has not reached gives the bottom row rather than
-	// nothing at all.
-	if ahead := term.ReadFrom(from+10_000, 500); strings.Count(ahead.Text, "\n") != 0 {
-		t.Errorf("reading from a line that has not happened gave %q", ahead.Text)
+	// At most what was asked for, counted from the bottom, and it still
+	// says how many there were.
+	short, there := term.ReadFrom(from, 2)
+	if strings.Contains(short.Text, "one") {
+		t.Errorf("a read of two lines gave %q", short.Text)
+	}
+	if !strings.HasSuffix(short.Text, "$") {
+		t.Errorf("a read of two lines gave %q, want the last of it", short.Text)
+	}
+	if there != 5 {
+		t.Errorf("a read of two lines says there are %d, want 5", there)
+	}
+
+	// A line the screen has not reached gives the row the cursor is on
+	// rather than nothing at all.
+	if ahead, there := term.ReadFrom(from+10_000, 500); strings.Count(ahead.Text, "\n") != 0 || there != 1 {
+		t.Errorf("reading from a line that has not happened gave %q, %d lines", ahead.Text, there)
+	}
+
+	// Zero lines is one line, not the whole of history: this reads
+	// output, and output has no bound.
+	if none, _ := term.ReadFrom(from, 0); strings.Count(none.Text, "\n") != 0 {
+		t.Errorf("a read of no lines gave %q", none.Text)
+	}
+}
+
+// A boundary written down before the screen scrolled still names the
+// same line afterwards, which is the whole point of numbering lines.
+func TestReadingFromALineThatHasScrolledAway(t *testing.T) {
+	term, f := newTestTerm(t, 40, 4, Config{})
+	// Fill the screen and push it along, so the boundary is written down
+	// on a screen that has already scrolled.
+	f.feed(t, term, "old one\r\nold two\r\nold three\r\nold four\r\nold five\r\n$ ls\r\n")
+	from := term.ReadLines(0).Line
+	if from < 4 {
+		t.Fatalf("the boundary is line %d, and the screen has not scrolled far enough", from)
+	}
+
+	// Enough output to push the boundary off the screen and into history.
+	f.feed(t, term, "one\r\ntwo\r\nthree\r\nfour\r\nfive\r\nsix\r\n$ ")
+
+	read, there := term.ReadFrom(from, 500)
+	for _, want := range []string{"one", "two", "three", "four", "five", "six"} {
+		if !strings.Contains(read.Text, want) {
+			t.Errorf("reading from line %d misses %q:\n%s", from, want, read.Text)
+		}
+	}
+	if strings.Contains(read.Text, "old five") || strings.Contains(read.Text, "$ ls") {
+		t.Errorf("reading from line %d reaches back above it:\n%s", from, read.Text)
+	}
+	if there != 7 {
+		t.Errorf("it says there are %d lines from line %d, want 7", there, from)
 	}
 }

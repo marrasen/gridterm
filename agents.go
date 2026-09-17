@@ -443,14 +443,25 @@ func (w agentWindow) Output(id string, most int) (agent.Look, error) {
 			return agent.Look{}, err
 		}
 		size := h.pane.Size()
-		if h.pane.ReadLines(1).Alt {
+		// One reading for the alternate screen and the boundary both,
+		// because reading a pane renders it.
+		at := h.pane.ReadLines(1)
+		if at.Alt {
 			return agent.Look{}, errors.New(
 				"a full-screen program is drawing in that pane, so there is no command" +
 					" output to read: read the pane instead")
 		}
-		from, note, err := h.outputFrom()
+		from, note, err := h.outputFrom(at)
 		if err != nil {
 			return agent.Look{}, err
+		}
+		// The cursor above where the output began is the screen having
+		// been cleared or reset since: the output is not in the pane any
+		// more, and the rows where it was are blank.
+		if at.Line < from {
+			return agent.Look{}, errors.New(
+				"the screen has been cleared since that command started, so what it printed" +
+					" is not in this pane any more: read the pane with read_pane instead")
 		}
 		// None asked for is as much as one read gives, the way the tool
 		// asks for it; an agent speaking to the wire itself gets the same.
@@ -458,19 +469,38 @@ func (w agentWindow) Output(id string, most int) (agent.Look, error) {
 		if most > 0 {
 			want = min(most, agent.MostLines)
 		}
-		read := h.pane.ReadFrom(from, want)
+		read, there := h.pane.ReadFrom(from, want)
 		// Not kept as the pane's last reading: it starts at a boundary
 		// rather than at the bottom, so a later read of fewer lines
 		// cannot be cut from it.
+		if read.Alt {
+			// A full-screen program started between the two readings, so
+			// what came back is its screen and not any command's output.
+			return agent.Look{}, errors.New(
+				"a full-screen program started drawing in that pane while this was" +
+					" reading it, so there is no command output to give: read the pane instead")
+		}
 		status, hasStatus := read.Cmd.Exit()
+		text := strings.TrimRight(read.Text, "\n")
+		if countLines(read.Text) < there {
+			note += fmt.Sprintf(" The start of it is missing: it printed %d lines and this"+
+				" is the last %d.", there, countLines(read.Text))
+		}
+		if strings.TrimSpace(text) == "" {
+			note += " Nothing is there: either it has printed nothing yet, or the screen" +
+				" has been cleared since it started."
+		}
 		return agent.Look{
-			Screen:    read.Text,
-			Gone:      h.pane.Exited(),
-			Changed:   read.Said,
-			Row:       read.Row,
-			Col:       read.Col,
-			Alt:       read.Alt,
-			All:       countLines(read.Text) < want,
+			// Trailing blank rows are the screen below the output, not
+			// the output, and this answer is meant to be the output.
+			Screen:  text,
+			Gone:    h.pane.Exited(),
+			Changed: read.Said,
+			Row:     read.Row,
+			Col:     read.Col,
+			Alt:     read.Alt,
+			// Not All: this read ends at a boundary the agent asked for,
+			// so how much the pane has kept above it says nothing.
 			Cols:      size.Cols,
 			Rows:      size.Rows,
 			Note:      note,
@@ -487,20 +517,34 @@ func (w agentWindow) Output(id string, most int) (agent.Look, error) {
 }
 
 // outputFrom is the line the last command's output began on, and what to
-// say about where that boundary came from.
-func (h *handover) outputFrom() (uint64, string, error) {
-	if from, ok := h.pane.ReadLines(1).Cmd.Output(); ok {
+// say about where that boundary came from. at is a reading of the pane
+// taken now.
+//
+// The shell's own mark is taken only for a command that is the agent's:
+// one running now, or one that finished since the agent typed. A mark
+// from before that names the command before this one, and the line the
+// agent typed on is the better boundary then. Sending the text and the
+// return in two calls is the ordinary way to reach that.
+func (h *handover) outputFrom(at term.Reading) (uint64, string, error) {
+	from, marked := at.Cmd.Output()
+	mine := at.Cmd.Running || (h.sent && at.Cmd.Done > h.typedDone)
+	switch {
+	case marked && (!h.sent || mine):
 		return from, "This is what the last command printed, from where the shell said its" +
 			" output began.", nil
-	}
-	if h.sent && h.typed != "" {
-		return h.typedLine + 1, "This shell does not mark where a command's output begins," +
-			" so this is everything the pane has said since you last typed.", nil
+	case h.sent:
+		// The line typed on rather than the one after it: a command line
+		// too long for the screen is echoed over two rows, and starting
+		// below the first would cut the answer off inside it.
+		return h.typedLine, "This shell does not say where a command's output begins, so" +
+			" this is everything the pane has said since you last typed. It starts on the" +
+			" line you typed at, so the first line is the prompt with your command echoed" +
+			" after it.", nil
 	}
 	return 0, "", errors.New(
 		"nothing here knows where the last command's output began: this shell does not" +
-			" mark its commands, and you have not typed in this pane. Read the pane with" +
-			" read_pane instead")
+			" mark its commands, and you have typed nothing in this pane. Read the pane" +
+			" with read_pane instead")
 }
 
 func (w agentWindow) Send(id, text string, keys []string) error {

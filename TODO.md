@@ -3,28 +3,6 @@
 Things Marcus has asked for that are not done yet. Newest first within
 each group. A line goes when the work is in and reviewed.
 
-## Answered on 2026-09-18
-
-1. **"Open another pane there" is off for a command pane.** Another pane
-   where a command is running reads as that command run again, which is
-   not something to hand an agent. It opens a shell, and a pane opened
-   to run one command is refused.
-
-2. **The rules go in the pasted prompt as well, short.** `mcp.Short` is
-   the four lines with a cost in them: this is a live machine, work in
-   that pane, ask before anything you would not want undone, and a
-   password is the user's to type. The workflow stays with the server.
-
-3. **The rules say the agent is trusted, and stop there.** `mcp.Rules`
-   was a list of prohibitions. It now says the pane is a live machine
-   somebody has trusted it with, and asks it not to spend that trust.
-   The password stays spelled out, because typing one is taking a
-   credential the user never handed over.
-
-4. **The button is "Instructions".** Five buttons of the length of
-   "Install instructions" do not fit an eighty column window, and a form
-   drops the ones that will not fit without saying so.
-
 ## Answered on 2026-09-17
 
 1. **A cross on a pane's row, shown on hover.** A pane row gets a cross

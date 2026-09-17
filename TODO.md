@@ -311,6 +311,20 @@ there is one key for position and one for recency.
   looks. It was already failing this way before the shortcuts file went
   in, so it is the test that is wrong rather than the window.
 
+- **The pane switcher draws every pane twice while it is open.** The
+  tiles cover the window, but the tree underneath still draws each pane
+  into the window's own grid, and then each one is drawn again into its
+  tile. `placeScaled` avoids this with `SetElsewhere`, which the
+  switcher cannot use without taking that flag off it. An idle window
+  still skips its frames; it is a busy one that pays twice.
+
+- **The pane switcher names a pane that has closed since it opened.**
+  The tiles are laid out when it opens and the names go with them, so a
+  pane that closes while it is up loses its picture and keeps its name.
+  Picking that tile does nothing. Laying the tiles out again would move
+  every other one under the user's eye, which is worse; greying the name
+  would be better than both.
+
 - **The record of what an agent typed lives only as long as the
   window.** It is in memory, capped at two thousand sends or a quarter
   of a megabyte a pane, and it goes when the pane closes. A user who
@@ -418,9 +432,6 @@ properly and either written up above or done.
 
 - **Context menu.** Make use of one. On the sidebar it opens the menu
   that is already there.
-- **Panel switcher.** Zoom every pane out, split panes and all, and lay
-  them on a grid with live previews. Walk between them with the arrow
-  keys. Scaled through the OpenGL layer so it stays fast.
 - **Serving.** When "Serve this window" is switched on, offer to switch
   it on again at every start. Terminals made remotely on a host do not
   show up on the host.

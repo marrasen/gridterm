@@ -61,13 +61,8 @@ func (s *scaledPane) place(area ui.Rect, geo *render.Geometry, m glyph.Metrics) 
 	s.boxLeft, s.boxWidth = geo.ColBox(area.X, area.X+area.Cols)
 	s.boxTop, s.boxHeight = geo.RowBox(area.Y, area.Y+area.Rows)
 	w, h := s.geo.Width(), s.geo.Height()
-	// Never above 1, because the room can be a pixel or two wider than
-	// the screen needs and blowing the text up to fill that would be
-	// worse than the band.
-	s.scale = min(float64(s.boxWidth)/float64(w), float64(s.boxHeight)/float64(h), 1)
+	s.left, s.top, s.scale = fitInside(w, h, s.boxLeft, s.boxTop, s.boxWidth, s.boxHeight)
 	s.width, s.height = int(float64(w)*s.scale), int(float64(h)*s.scale)
-	s.left = s.boxLeft + (s.boxWidth-s.width)/2
-	s.top = s.boxTop + (s.boxHeight-s.height)/2
 
 	s.layer.X, s.layer.Y, s.layer.Scale = s.left, s.top, s.scale
 	s.layer.Hidden = false
@@ -101,6 +96,22 @@ func (s *scaledPane) cellAt(px, py int) (col, row int) {
 	col = min(max(s.geo.ColAt(x), 0), max(cols-1, 0))
 	row = min(max(s.geo.RowAt(y), 0), max(rows-1, 0))
 	return col, row
+}
+
+// fitInside is where a picture of w by h pixels lands inside a box, and
+// how much it is shrunk to get there.
+//
+// It keeps the picture's shape and centres it, and never blows it up:
+// the room can be a pixel or two wider than the screen needs, and
+// stretching the text to fill that would be worse than the band.
+func fitInside(w, h, left, top, width, height int) (x, y int, scale float64) {
+	if w <= 0 || h <= 0 {
+		return left, top, 1
+	}
+	scale = min(float64(width)/float64(w), float64(height)/float64(h), 1)
+	return left + (width-int(float64(w)*scale))/2,
+		top + (height-int(float64(h)*scale))/2,
+		scale
 }
 
 // fullScreen draws a terminal's whole screen rather than the blank the

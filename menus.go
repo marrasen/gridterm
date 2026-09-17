@@ -54,6 +54,8 @@ func (a *app) newMenubar(child ui.Widget) *ui.Menubar {
 			{Command: "pane.next"},
 			{Command: "pane.previous"},
 			ui.MenuSeparator(),
+			{Command: switcherCommand},
+			ui.MenuSeparator(),
 			{Command: "pane.nextInSidebar"},
 			{Command: "pane.previousInSidebar"},
 			ui.MenuSeparator(),

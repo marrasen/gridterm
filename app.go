@@ -148,6 +148,10 @@ type app struct {
 	// handed a pane over can go back over what was done in it.
 	typed map[*term.Terminal]*typedLog
 
+	// switcher is every pane drawn small at once, and nil when it is not
+	// showing.
+	switcher *switcher
+
 	// theme is the colour scheme the window is drawn in.
 	theme *themePick
 
@@ -419,6 +423,7 @@ func (a *app) Update() error {
 	a.placeScaled()
 	a.placeShared()
 	a.placeWalk()
+	a.placeSwitcher()
 
 	// After the layout, so the pointer is the one for the frame about to
 	// be drawn rather than the one before it.
@@ -701,6 +706,7 @@ func (a *app) commands() {
 			Run: a.lockKeys},
 		ui.Command{ID: "palette.open", Title: "Show all commands", Run: a.openPalette},
 		ui.Command{ID: "menu.open", Title: "Show the menu bar", Run: a.openMenu},
+		ui.Command{ID: switcherCommand, Title: switcherTitle + "…", Run: a.openSwitcher},
 		ui.Command{ID: "pane.nextInSidebar", Title: "Next pane, down the sidebar", Run: func() error {
 			return a.focusInSidebarOrder(1)
 		}},
@@ -745,6 +751,7 @@ func (a *app) commands() {
 		{Key: input.KeyPageDown, Mods: input.ModCtrl}:                "pane.nextInSidebar",
 		{Key: input.KeyPageUp, Mods: input.ModCtrl}:                  "pane.previousInSidebar",
 		{Key: input.KeyG, Mods: input.ModCtrl | input.ModShift}:      "files.goTo",
+		{Key: input.KeyA, Mods: input.ModCtrl | input.ModShift}:      switcherCommand,
 		// Ctrl+Shift+K, not Ctrl+K: Ctrl+K is readline's kill-to-end-of-
 		// line, and an accelerator runs before any widget sees the key,
 		// so the shell would never get it.

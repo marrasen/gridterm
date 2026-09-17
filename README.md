@@ -188,6 +188,7 @@ gridterm comes with:
 | `Ctrl+Shift+B` | show or hide the sidebar |
 | `Ctrl+Shift+L` | go to the sidebar |
 | `Ctrl+Shift+N` | connect to a server |
+| `Ctrl+Shift+A` | show every pane at once |
 
 "Keys and commands" on the Help menu lists every command, the key that
 runs it, and the name the shortcuts file calls it by.
@@ -211,6 +212,13 @@ such as a plain letter, is refused for that reason: hold `Ctrl`, `Alt`
 or `Super`, or use a function key.
 
 The file browser's own keys are not in the file.
+
+"Show every pane" on the Go menu, or `Ctrl+Shift+A`, draws every pane at
+once on a grid, each one live and shrunk to fit. The arrows walk them,
+`Enter` goes to the one marked and `Escape` leaves you where you were. A
+click goes straight there. The pictures are shrunk by the GPU rather
+than cell by cell, and a window with nothing happening in it still skips
+the frames it would have skipped anyway.
 
 Sharing a pane with an agent is on the Servers menu and on the plus on
 this machine's row. The first pane starts the share; after that the same

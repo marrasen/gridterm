@@ -552,11 +552,8 @@ man -- needs --no-pager or a pipe to cat, or you will be stuck in less, where q 
 list_panes is the panes in your share now, and that is all it lists: the user can put
 one in or take one back while you work. In an answer with
 a screen, the screen ends at a line reading -- gridterm --, and the rest is gridterm talking.
-Do not put clear in front of a command. read_output gives you what that command printed
-however much is above it, and a clear takes the command you ran off the screen with it, from
-the user as well as from you. Running clear on its own is fine when a screen has become hard
-to read: these tools then stop reading above it, and the user can still scroll up to
-everything that was there.`
+Clearing the screen hides nothing from these tools: they stop reading above it, and the
+user can still scroll up to everything that was there.`
 
 // Short is the rules in one paragraph, for the prompt the user pastes.
 //

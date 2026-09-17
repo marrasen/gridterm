@@ -111,6 +111,11 @@ type ListRow struct {
 	// something to do.
 	Button rune
 
+	// HoverButton is a Button the row carries only while the pointer is
+	// on it, for something worth offering and not worth one stray click.
+	// A row that sets Button as well keeps that one.
+	HoverButton rune
+
 	// Art is drawn in the cell before the note, for a row with
 	// something to show that no words would say as well.
 	Art grid.Art
@@ -132,6 +137,36 @@ func pickedOut(own, fg color.RGBA, washed bool) color.RGBA {
 		return fg
 	}
 	return own
+}
+
+// buttonOf is the character row i draws at its end, which is its
+// HoverButton only while the pointer is on it.
+func (l *List) buttonOf(i int) rune {
+	if l.rows[i].Button != 0 {
+		return l.rows[i].Button
+	}
+	if i == l.hovered {
+		return l.rows[i].HoverButton
+	}
+	return 0
+}
+
+// Hover says which row the pointer is on, by its place in the list, and
+// -1 for none. Whatever is showing the list works it out: a list is
+// drawn where its owner puts it and cannot see the pointer.
+func (l *List) Hover() int { return l.hovered }
+
+// SetHover says which drawn row the pointer is on, counted from the top
+// of what is showing the way a mouse event counts them. Anything outside
+// the rows means none.
+func (l *List) SetHover(row int) {
+	l.hovered = -1
+	if row < 0 {
+		return
+	}
+	if at := l.place.top + row; at < len(l.rows) {
+		l.hovered = at
+	}
 }
 
 // buttonCol is the column a row's button is drawn in, or -1 when the
@@ -183,6 +218,11 @@ type List struct {
 	// height, which asks several times over, does not allocate.
 	pads []grid.Pad
 
+	// hovered is the row the pointer is on, and -1 when it is on none of
+	// them. It is the only thing a rebuild does not touch that the user
+	// did not put there.
+	hovered int
+
 	size    Size
 	focused bool
 	buf     buffer
@@ -190,7 +230,7 @@ type List struct {
 
 // NewList returns an empty list.
 func NewList() *List {
-	l := &List{}
+	l := &List{hovered: -1}
 	l.place = listState{
 		at: -1, count: l.rowCount, rows: l.boxRows, selectable: l.notAHeader,
 	}
@@ -412,7 +452,7 @@ func (l *List) HandleMouse(ev input.MouseEvent) (bool, error) {
 	}
 	// The button first, because it is the one thing a header can be
 	// clicked for and it sits on rows that can be chosen as well.
-	if at := buttonCol(l.size.Cols); at >= 0 && l.rows[row].Button != 0 && ev.Col == at {
+	if at := buttonCol(l.size.Cols); at >= 0 && l.buttonOf(row) != 0 && ev.Col == at {
 		if l.OnButton == nil {
 			return true, nil
 		}
@@ -449,7 +489,9 @@ func (l *List) paint(v grid.View) {
 		if i >= len(l.rows) {
 			break
 		}
-		l.paintRow(v.Sub(0, y, cols, 1), l.rows[i], i == l.place.at, y, rows)
+		row := l.rows[i]
+		row.Button = l.buttonOf(i)
+		l.paintRow(v.Sub(0, y, cols, 1), row, i == l.place.at, y, rows)
 	}
 }
 

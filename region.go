@@ -259,6 +259,24 @@ func (a *app) overRegion(px, py int) bool {
 	return true
 }
 
+// hoverRow is the sidebar row the pointer is on, and -1 when it is
+// somewhere else. The pinned row under the list is not one of them.
+func (a *app) hoverRow() int {
+	if a.sideRegion == nil || a.side == nil {
+		return -1
+	}
+	px, py := a.pointer[0], a.pointer[1]
+	if !a.overRegion(px, py) {
+		return -1
+	}
+	_, row := a.sideRegion.cellAt(px, py, &a.sideGeo)
+	row -= a.sideRegion.rect.Y
+	if rows := a.sideRegion.rect.Rows; row >= rows-a.side.pinnedRows(rows) {
+		return -1
+	}
+	return row
+}
+
 // windowRow is the window row a sidebar row is drawn on.
 //
 // A menu is a dialog, drawn on the window's own grid with the window's

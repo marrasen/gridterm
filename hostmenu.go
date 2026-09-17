@@ -106,10 +106,9 @@ func (a *app) openHostMenu(row ui.ListRow) error {
 		}
 		items, about = farItems(), func() { a.hostMenus.nowAboutFar(key) }
 	case *conns.Entry:
-		// The button on a connection's row is the one that clears a
-		// finished one. There is nothing else left to do with it, so it
-		// is done straight away rather than through a menu.
-		return a.clearRow(key)
+		// The button on a connection's row clears a finished one or
+		// closes the pane a row stands for. Neither needs a menu.
+		return a.pressRowCross(key)
 	default:
 		return nil
 	}
@@ -142,6 +141,25 @@ func (a *app) openHostMenu(row ui.ListRow) error {
 	}
 	// Set once the menu is really up, for the same reason.
 	about()
+	a.markDirty()
+	return nil
+}
+
+// pressRowCross does what the cross at the end of a connection's row
+// does: clears a finished row, and closes the pane a live one stands
+// for.
+func (a *app) pressRowCross(e *conns.Entry) error {
+	if e.Clear != nil {
+		return a.clearRow(e)
+	}
+	if !a.paneRows[e] || e.Close == nil {
+		return nil
+	}
+	if err := e.Close(); err != nil {
+		// Shown here rather than returned, so the notice says which
+		// button was pressed instead of "that could not be done".
+		a.reportError("Could not close that pane", err)
+	}
 	a.markDirty()
 	return nil
 }

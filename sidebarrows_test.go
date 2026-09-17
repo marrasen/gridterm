@@ -132,9 +132,15 @@ func TestAJobsRowFillsAsTheBytesGo(t *testing.T) {
 	if e.Note != "0 of 1" {
 		t.Errorf("the row says %q, want the count of files", e.Note)
 	}
-	// And a copy that is still going offers nothing to clear.
+	// And a copy that is still going offers nothing to clear, with the
+	// pointer on it or away: the cross on hover is a pane's, and a copy
+	// is stopped from the menu.
 	if row, _ := panelRow(a, e); row.Button != 0 {
 		t.Errorf("a running copy's row offers %q", row.Button)
+	}
+	pointAtRow(t, a, e)
+	if row, _ := panelRow(a, e); row.Button != 0 || row.HoverButton != 0 {
+		t.Errorf("a running copy's row offers %q with the pointer on it", row.HoverButton)
 	}
 
 	held.let()
@@ -371,13 +377,105 @@ func TestAFilledRowIsPaintedInTheFillColour(t *testing.T) {
 	}
 }
 
-// A shell that ended by itself keeps its pane, so its row carries no ×.
+// pointAtRow puts the pointer on a sidebar row, the way moving the mouse
+// there does, and builds the rows again so they are drawn for it.
 //
-// The pane is still there to read, and clearing the row would leave it
-// open with nothing on the sidebar to reach it by. Pressing where the ×
-// would be puts that pane in front instead, which is what a press on any
-// other row does. "Clear finished connections" is what takes it away.
-func TestTheRowOfAShellThatEndedCarriesNoCross(t *testing.T) {
+// The pixel rather than the cell, for the reason clickClear gives: the
+// sidebar is drawn on a grid of its own at its own row heights.
+func pointAtRow(t *testing.T, a *testApp, key any) {
+	t.Helper()
+	a.refreshPanel(time.Now())
+	a.placeRegions()
+	y := a.panel.RowTop(key)
+	if y < 0 {
+		t.Fatalf("no row for %v: %v", key, panelText(a, time.Now()))
+	}
+	top, high := a.sideGeo.RowBox(y, y+1)
+	a.cellAt(a.sideRegion.left+1, a.sideRegion.top+top+high/2)
+	a.refreshPanel(time.Now())
+	if got := a.panel.Hover(); got < 0 {
+		t.Fatalf("the pointer is on no row after being put on %v", key)
+	}
+}
+
+// pointAway takes the pointer off the sidebar.
+func pointAway(t *testing.T, a *testApp) {
+	t.Helper()
+	a.placeRegions()
+	a.cellAt(a.sideRegion.left+a.sideRegion.width+1, a.sideRegion.top)
+	a.refreshPanel(time.Now())
+}
+
+// A pane's row carries a × while the pointer is on it, and pressing it
+// closes the pane and the row together.
+func TestTheCrossOnAPaneRowClosesThePane(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+
+	first, ok := onlyPaneWidget(t, a).(*term.Terminal)
+	if !ok {
+		t.Fatal("the window opened on something that is not a terminal")
+	}
+	e := a.panes[first]
+	// A second pane, so closing the first does not close the window.
+	if err := a.openTab(); err != nil {
+		t.Fatalf("openTab: %v", err)
+	}
+
+	pointAtRow(t, a, e)
+	drawn, ok := panelRow(a, e)
+	if !ok {
+		t.Fatalf("the pane has no row: %v", panelText(a, time.Now()))
+	}
+	if drawn.HoverButton == 0 {
+		t.Fatal("a pane's row offers nothing while the pointer is on it")
+	}
+
+	clickClear(t, a, e)
+	if a.panes[first] != nil {
+		t.Fatal("the press left the pane open")
+	}
+	a.refreshPanel(time.Now())
+	if _, ok := panelRow(a, e); ok {
+		t.Errorf("the row is still on the panel: %v", panelText(a, time.Now()))
+	}
+}
+
+// With the pointer somewhere else the row carries no ×, so a transcript
+// is never one stray click away. The press lands on the row instead and
+// puts the pane in front.
+func TestAPaneRowCarriesNoCrossWithThePointerAway(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+
+	first, ok := onlyPaneWidget(t, a).(*term.Terminal)
+	if !ok {
+		t.Fatal("the window opened on something that is not a terminal")
+	}
+	e := a.panes[first]
+	if err := a.openTab(); err != nil {
+		t.Fatalf("openTab: %v", err)
+	}
+
+	pointAway(t, a)
+	clickClear(t, a, e)
+	if a.panes[first] == nil {
+		t.Fatal("the press took the pane away")
+	}
+	if a.focusedTerminal() != first {
+		t.Error("the press did not put the pane in front")
+	}
+}
+
+// A shell that ended by itself keeps its pane, and its row carries no ×
+// unless the pointer is on it.
+//
+// The pane is still there to read. Pressing where the × would be puts
+// that pane in front instead, which is what a press on any other row
+// does. "Clear finished connections" is what takes it away.
+func TestTheRowOfAShellThatEndedCarriesNoCrossUntilHovered(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withDialogs(t, a)
 	withPanel(t, a)
@@ -407,8 +505,7 @@ func TestTheRowOfAShellThatEndedCarriesNoCross(t *testing.T) {
 		t.Fatalf("the shell that ended has no row: %v", panelText(a, time.Now()))
 	}
 	if drawn.Button != 0 {
-		t.Fatalf("the greyed row offers %q, which would leave the pane unreachable",
-			drawn.Button)
+		t.Fatalf("the greyed row offers %q with no pointer on it", drawn.Button)
 	}
 
 	// The press lands on the row rather than on a button, so the pane
@@ -432,13 +529,12 @@ func TestTheRowOfAShellThatEndedCarriesNoCross(t *testing.T) {
 }
 
 // A command that has finished keeps its pane, so that what it printed can
-// still be read, and its row carries no ×: clearing the row the way a
-// dropped connection's row is cleared would take the transcript away
-// without asking.
+// still be read, and its row carries no × unless the pointer is on it:
+// a stray click must not take the transcript away.
 //
-// "Clear finished connections" is what closes it, which is the user saying
-// they have read it.
-func TestAFinishedCommandsRowHasNoCross(t *testing.T) {
+// The row has nothing to clear either. "Clear finished connections"
+// closes it, which is the user saying they have read it.
+func TestAFinishedCommandsRowHasNoCrossUntilHovered(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withDialogs(t, a)
 	withPanel(t, a)

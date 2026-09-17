@@ -192,9 +192,19 @@ func (a *app) refreshPanel(now time.Time) {
 	// instead of a title. A pane whose program has gone keeps the label
 	// it ended with, which is how "connection lost" stays on the row of
 	// one whose transport went.
+	if a.paneRows == nil {
+		a.paneRows = make(map[*conns.Entry]bool, len(a.panes))
+	}
+	clear(a.paneRows)
 	for t, e := range a.panes {
+		a.paneRows[e] = true
 		if title := t.Title(); title != "" && !a.ended[t] {
 			e.Label = title
+		}
+	}
+	if a.files != nil {
+		for _, e := range a.files.rows {
+			a.paneRows[e] = true
 		}
 	}
 
@@ -254,6 +264,8 @@ func (a *app) refreshPanel(now time.Time) {
 		// is still held.
 		return
 	}
+
+	a.panel.SetHover(a.hoverRow())
 
 	// What is still open, so a rate belonging to something that has gone
 	// is not kept for the life of the window.
@@ -495,6 +507,12 @@ func (a *app) panelRow(row conns.Row, now time.Time) ui.ListRow {
 			// Close would throw the transcript away.
 			out.Button = clearButton
 		}
+	}
+	if out.Button == 0 && a.paneRows[row.Entry] && row.Entry.Close != nil {
+		// A pane's row closes the pane and the row together, which is
+		// more than a click the user did not mean should do, so it is
+		// offered only while the pointer is on the row.
+		out.HoverButton = clearButton
 	}
 	return out
 }

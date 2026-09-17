@@ -122,6 +122,11 @@ type app struct {
 	// closes them; this is what takes their rows away with it.
 	tunnels map[*conns.Entry]*tunnel
 
+	// paneRows are the rows that stand for a pane of this window, worked
+	// out once a frame. A pane's row offers a cross and a machine's does
+	// not, and a row cannot say which it is on its own.
+	paneRows map[*conns.Entry]bool
+
 	// shown is the sidebar row for whatever the stage last had in front.
 	// The bar follows it when it changes, and is left alone in between.
 	shown *conns.Entry

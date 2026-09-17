@@ -99,32 +99,6 @@ has one field.
 
 ## The file browser's "Go to"
 
-Reported on 2026-09-17, with a request to look into it properly. It is
-one bug with two halves, and then two things Marcus wants.
-
-- **What happens.** Type a path that does not exist, say `X:\`, and
-  press Go. The dialog closes. An error dialog then appears saying the
-  directory could not be read. The listing stays on `D:\`. Click the
-  `Marras` folder in that `D:\` listing and the error is about
-  `X:\Marras`.
-
-- **Why the dialog closes first.** The read is asynchronous. `Go` calls
-  `files.Pane.Open` and returns, which closes the form, and the failure
-  arrives frames later through `p.OnError`, which posts a dialog of its
-  own. Nothing tells the button to wait for the read.
-
-- **Why the next click is wrong.** `openAt` in ui/files/pane.go sets
-  `p.at = path` before the read starts, and `show` keeps the old entries
-  when the read fails. So the pane is showing `D:\` while `At()` says
-  `X:\`, and opening a row joins the name onto the wrong one. Keeping
-  the old names is the fallback Marcus approved and that part is fine.
-  Leaving `at` moved is not. Put `at` back when a read fails, or do not
-  move it until one succeeds.
-
-- **Keep the dialog open on an error.** Marcus wants to fix a typo and
-  try again in the same dialog. The button has to wait for the read and
-  show the reason in the form, which is what `f.errText` is for.
-
 - **Autocomplete would be nice.** Complete a path as it is typed, from
   the filesystem the pane is on.
 

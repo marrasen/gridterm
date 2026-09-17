@@ -625,11 +625,11 @@ func (a *app) commands() {
 			Run: a.lockKeys},
 		ui.Command{ID: "palette.open", Title: "Show all commands", Run: a.openPalette},
 		ui.Command{ID: "menu.open", Title: "Show the menu bar", Run: a.openMenu},
-		ui.Command{ID: "tab.next", Title: "Next pane in the sidebar", Run: func() error {
-			return a.focusListed(1)
+		ui.Command{ID: "tab.next", Title: "Next pane, down the sidebar", Run: func() error {
+			return a.focusInSidebarOrder(1)
 		}},
-		ui.Command{ID: "tab.previous", Title: "Previous pane in the sidebar", Run: func() error {
-			return a.focusListed(-1)
+		ui.Command{ID: "tab.previous", Title: "Previous pane, up the sidebar", Run: func() error {
+			return a.focusInSidebarOrder(-1)
 		}},
 		ui.Command{ID: "pane.next", Title: "Next pane", Run: func() error {
 			return a.focusPane(1)

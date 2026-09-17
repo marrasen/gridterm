@@ -107,29 +107,30 @@ has one field.
 Asked about and answered on 2026-09-17. Marcus could not work out the
 order Ctrl+Tab moves in, and expected recently used.
 
-- **What the two pairs do today.** Both walk an order nothing on screen
-  shows. Ctrl+PageUp and Ctrl+PageDown step one along the stage, which
-  holds every pane in creation order, because `a.stage.Add` appends.
-  The sidebar groups by machine instead: local, then the saved machines
-  in book order, then the rest sorted. The two orders agree only if the
-  panes were opened in sidebar order and none was ever closed, so the
-  keys look like they jump between machines at random. Ctrl+Tab and
-  Ctrl+Shift+Tab call `focusPane`, which walks `ui.Leaves` of the whole
-  tree and does not filter, so the connections sidebar is in the cycle
-  as though it were a pane. Landing on it then makes Ctrl+PageUp and
-  Ctrl+PageDown do nothing at all, because the sidebar has no stage
-  above it.
+- **Where Ctrl+Tab stands.** It walks `ui.Leaves` of the whole tree,
+  filtered to panes. That order is nothing on screen, and it is the one
+  Marcus could not work out. Ctrl+PageUp and Ctrl+PageDown now follow
+  the sidebar, so this is the only key left walking an invisible order.
+  Recency is meant to replace it, below.
 
-- **Ctrl+PageUp and Ctrl+PageDown follow the sidebar.** Answered on
-  2026-09-17. The keys step through panes in the order the sidebar
-  lists them, down the rows and across the machine headings, so the list
-  on screen is the only order there is. The stage's creation order stops
-  being something the user can feel.
+- **No key steps a whole tab any more.** Ctrl+PageUp and Ctrl+PageDown
+  used to move between stage children, taking a split as one unit.
+  Following the sidebar means stopping on every pane, so flipping to
+  the tab behind now takes a press per pane. The strip that would have
+  made tabs visible is switched off, so nothing was lost that the user
+  could see. Worth a key of its own if it turns out to be missed.
 
-- **Ctrl+Tab stops landing on the sidebar.** `focusPane` filters its
-  list through `a.isPane`, which already exists and already excludes the
-  sidebar and the panel. One line, and it removes the dead-key symptom
-  above with it.
+- **A file manager is entered twice per lap.** The sidebar gives each of
+  its panes a row, under whichever machine that pane reads, so a browser
+  with a local pane and a remote one is two stops far apart in the walk.
+  Two of the presses only move the highlight inside a browser already in
+  front, which can read as the key doing nothing.
+
+- **The order goes stale while the sidebar is shut.** `refreshPanel`
+  stops building rows when the dock is collapsed, so the walk follows
+  the last order it saw, with panes opened since on the end. Everything
+  stays reachable. Nothing on screen contradicts it, because there is
+  nothing on screen.
 
 - **Ctrl+Tab becomes recently used, with the modifier held.** Hold
   Ctrl, press Tab to walk back through panes in the order they last had
@@ -206,9 +207,9 @@ sets it false.
 - **Rename `Tabs` to `Deck`.** A deck of panes, one face up. The word
   "tab" names a thing that has not been on screen since 2026-09-14, and
   it is what made an explanation of the switching keys unreadable: it
-  described a widget the user has never seen. `focusTab` and the
-  `tab.next` and `tab.previous` command ids go with it, and `stripAbove`
-  becomes the deck above a pane.
+  described a widget the user has never seen. The `tab.next` and
+  `tab.previous` command ids go with it, and `stripAbove` becomes the
+  deck above a pane.
 
 - **"New tab" becomes "New pane".** It matches "Close pane" and "Split
   pane", which already say pane, and there is no tab left in the product

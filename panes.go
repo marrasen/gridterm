@@ -1,9 +1,11 @@
 package main
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"image/color"
+	"slices"
 
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/remote"
@@ -157,24 +159,23 @@ func (a *app) newTabs(kids ...ui.Widget) *ui.Tabs {
 	return tb
 }
 
-// stripAbove returns the nearest tab strip containing w, along with the
-// tab of that strip that w sits inside.
+// stripAbove returns the nearest tab strip containing w.
 //
 // It walks rather than asking for w's own parent: a pane that has been
-// split is a grandchild of the strip, and the strip is still the one its
-// tab keys mean.
-func (a *app) stripAbove(w ui.Widget) (*ui.Tabs, ui.Widget) {
+// split is a grandchild of the strip, and the strip is still the one a
+// new pane joins.
+func (a *app) stripAbove(w ui.Widget) *ui.Tabs {
 	for child := w; child != nil; {
 		parent := ui.ParentOf(a.root.Widget(), child)
 		if parent == nil {
-			return nil, nil
+			return nil
 		}
 		if strip, ok := parent.(*ui.Tabs); ok {
-			return strip, child
+			return strip
 		}
 		child = parent
 	}
-	return nil, nil
+	return nil
 }
 
 // paneToPlaceBeside returns the pane a new one goes next to: the focused
@@ -243,7 +244,7 @@ func (a *app) placeTab(next ui.Widget) error {
 		a.focus(next)
 		return nil
 	}
-	if strip, _ := a.stripAbove(current); strip != nil {
+	if strip := a.stripAbove(current); strip != nil {
 		strip.Add(next)
 	} else {
 		strip := a.newTabs(current, next)
@@ -259,84 +260,91 @@ func (a *app) placeTab(next ui.Widget) error {
 	return nil
 }
 
-// focusListed moves focus n panes along the order the sidebar lists
-// them in, wrapping at the ends.
-func (a *app) focusListed(n int) error {
-	return stepFocus(a.panesInOrder(), ui.FocusedLeaf(a.root.Widget()), n, a.focus)
+// focusInSidebarOrder moves focus n panes along the order the sidebar
+// lists them in, wrapping at the ends.
+func (a *app) focusInSidebarOrder(n int) error {
+	stepFocus(a.panesInSidebarOrder(), ui.FocusedLeaf(a.root.Widget()), n, a.focus)
+	return nil
 }
 
-// panesInOrder is the window's panes in the order the sidebar lists
-// them: down the rows and across the machine headings.
-//
-// Read off the rows the sidebar built rather than worked out again, so
-// the keys walk the order that is on screen and not one of their own.
-func (a *app) panesInOrder() []ui.Widget {
-	var open []ui.Widget
+// panesInSidebarOrder is the window's panes in the order the sidebar
+// lists them: down the rows and across the machine headings.
+func (a *app) panesInSidebarOrder() []ui.Widget {
+	var here []ui.Widget
 	for _, leaf := range ui.Leaves(a.root.Widget()) {
 		if a.isPane(leaf) {
-			open = append(open, leaf)
+			here = append(here, leaf)
 		}
 	}
-	if a.panel == nil || len(open) < 2 {
-		return open
+	if a.panel == nil || len(here) < 2 {
+		return here
 	}
 
-	// Which pane each row stands for. A row names a connection, and only
-	// these two maps say which widget a connection is being read in.
-	at := make(map[*conns.Entry]ui.Widget, len(open))
-	for t, e := range a.panes {
-		at[e] = t
-	}
-	if a.files != nil {
-		for p, e := range a.files.rows {
-			at[e] = p
+	// Which row each connection is on.
+	rows := a.panel.Rows()
+	rank := make(map[*conns.Entry]int, len(rows))
+	for i, row := range rows {
+		if e, ok := row.Key.(*conns.Entry); ok {
+			rank[e] = i
 		}
 	}
-
-	left := make(map[ui.Widget]bool, len(open))
-	for _, w := range open {
-		left[w] = true
-	}
-	ordered := make([]ui.Widget, 0, len(open))
-	for _, row := range a.panel.Rows() {
-		e, ok := row.Key.(*conns.Entry)
-		if !ok {
-			continue
+	// A pane the sidebar has not named sorts last, so a collapsed
+	// sidebar cannot strand it.
+	place := func(w ui.Widget) int {
+		if i, ok := rank[a.entryOf(w)]; ok {
+			return i
 		}
-		w := at[e]
-		if w == nil || !left[w] {
-			continue
-		}
-		delete(left, w)
-		ordered = append(ordered, w)
+		return len(rows)
 	}
-	// A pane the sidebar has not named goes on the end. A collapsed
-	// sidebar stops building rows, and a pane has to stay reachable.
-	for _, w := range open {
-		if left[w] {
-			ordered = append(ordered, w)
-		}
-	}
-	return ordered
+	slices.SortStableFunc(here, func(x, y ui.Widget) int {
+		return cmp.Compare(place(x), place(y))
+	})
+	return here
 }
 
-// stepFocus moves n along a list of panes from the one that has the focus,
-// wrapping at the ends, and does nothing when there is nowhere to go.
-func stepFocus(panes []ui.Widget, current ui.Widget, n int, focus func(ui.Widget)) error {
-	if len(panes) < 2 {
-		return nil
+// entryOf is the sidebar row a pane is listed on, and nil for a widget
+// that is not a pane.
+func (a *app) entryOf(w ui.Widget) *conns.Entry {
+	switch p := w.(type) {
+	case *term.Terminal:
+		return a.panes[p]
+	case *files.Pane:
+		if a.files == nil {
+			return nil
+		}
+		return a.files.rows[p]
 	}
-	at := 0
+	return nil
+}
+
+// stepFocus focuses the pane n along from current, wrapping at the ends.
+func stepFocus(panes []ui.Widget, current ui.Widget, n int, focus func(ui.Widget)) {
+	if len(panes) == 0 {
+		return
+	}
+	at := -1
 	for i, p := range panes {
 		if p == current {
 			at = i
 			break
 		}
 	}
+	if at < 0 {
+		// The keys are on something that is not a pane, the sidebar
+		// most likely, so the step comes in at an end.
+		if n < 0 {
+			focus(panes[len(panes)-1])
+		} else {
+			focus(panes[0])
+		}
+		return
+	}
+	if len(panes) < 2 {
+		return
+	}
 	// Go's % keeps the sign of the dividend, so a step backwards from
 	// the first pane needs the extra turn to land on the last.
 	focus(panes[((at+n)%len(panes)+len(panes))%len(panes)])
-	return nil
 }
 
 // newSplit builds a split carrying the window's divider colours.
@@ -558,11 +566,7 @@ func (a *app) roomToSplit(w ui.Widget, dir ui.Dir) bool {
 	return along >= 3
 }
 
-// focusPane moves focus n panes along, wrapping at the ends.
-//
-// The sidebar and the panel are leaves of the tree like a terminal is,
-// so without isPane the keys walk onto the connections list as though it
-// were a pane.
+// focusPane moves focus n panes along the tree, wrapping at the ends.
 func (a *app) focusPane(n int) error {
 	var panes []ui.Widget
 	for _, leaf := range ui.Leaves(a.root.Widget()) {
@@ -570,7 +574,8 @@ func (a *app) focusPane(n int) error {
 			panes = append(panes, leaf)
 		}
 	}
-	return stepFocus(panes, ui.FocusedLeaf(a.root.Widget()), n, a.focus)
+	stepFocus(panes, ui.FocusedLeaf(a.root.Widget()), n, a.focus)
+	return nil
 }
 
 // focus points the whole chain of splits at one pane.

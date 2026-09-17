@@ -14,7 +14,6 @@ import (
 	"github.com/marrasen/gridterm/meter"
 	"github.com/marrasen/gridterm/serve"
 	"github.com/marrasen/gridterm/ui"
-	"github.com/marrasen/gridterm/ui/files"
 	"github.com/marrasen/gridterm/ui/term"
 	"github.com/marrasen/gridterm/vt"
 )
@@ -465,16 +464,7 @@ func (a *app) showing() *conns.Entry {
 	if a.stage == nil {
 		return nil
 	}
-	switch w := ui.FocusedLeaf(a.stage).(type) {
-	case *term.Terminal:
-		return a.panes[w]
-	case *files.Pane:
-		if a.files == nil {
-			return nil
-		}
-		return a.files.rows[w]
-	}
-	return nil
+	return a.entryOf(ui.FocusedLeaf(a.stage))
 }
 
 // panelRow turns one connection into a line.

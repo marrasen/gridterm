@@ -609,11 +609,8 @@ func TestSplitCloseFuzz(t *testing.T) {
 	}
 }
 
-// Ctrl+Tab walks panes and nothing else.
-//
-// The sidebar is a leaf of the tree the way a terminal is, so the walk
-// used to land on it. The keys then sat on the connections list, where
-// no pane key means anything.
+// Ctrl+Tab walks panes and nothing else. The sidebar is a leaf of the
+// tree the way a terminal is.
 func TestCtrlTabWalksPanesAndNotTheSidebar(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withDialogs(t, a)
@@ -624,6 +621,7 @@ func TestCtrlTabWalksPanesAndNotTheSidebar(t *testing.T) {
 
 	// Twice round a walk of two panes, so anything else in the order
 	// turns up wherever it sits.
+	seen := map[ui.Widget]bool{}
 	for step := 1; step <= 6; step++ {
 		sendKey(t, a, press(input.KeyTab, input.ModCtrl))
 		got := ui.FocusedLeaf(a.root.Widget())
@@ -633,6 +631,59 @@ func TestCtrlTabWalksPanesAndNotTheSidebar(t *testing.T) {
 		if !a.isPane(got) {
 			t.Fatalf("step %d: the keys landed on %T, which is not a pane", step, got)
 		}
+		seen[got] = true
+	}
+	// A walk that never moved would pass every check above.
+	if len(seen) != 2 {
+		t.Fatalf("the walk reached %d panes, want both", len(seen))
+	}
+}
+
+// The keys step into the list from the sidebar, rather than past its
+// first pane.
+//
+// Ctrl+Shift+L puts the keys on the sidebar, and so does a click. The
+// sidebar is not a pane, so the walk has nowhere to step from and has to
+// come in at an end.
+func TestTheSidebarKeysStepInFromTheSidebarItself(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	if err := a.openTab(); err != nil {
+		t.Fatalf("open tab: %v", err)
+	}
+	a.relayout()
+	a.refreshPanel(panelNow)
+
+	panes := a.panesInSidebarOrder()
+	if len(panes) != 2 {
+		t.Fatalf("%d panes, want the two that were opened", len(panes))
+	}
+
+	onTheSidebar := func() {
+		t.Helper()
+		sendKey(t, a, press(input.KeyL, input.ModCtrl|input.ModShift))
+		if got := ui.FocusedLeaf(a.root.Widget()); got != ui.Widget(a.side) {
+			t.Fatalf("the keys are on %T, want the sidebar", got)
+		}
+	}
+
+	onTheSidebar()
+	sendKey(t, a, press(input.KeyPageDown, input.ModCtrl))
+	if got := ui.FocusedLeaf(a.root.Widget()); got != panes[0] {
+		t.Fatalf("stepping on from the sidebar reached %p, want the first pane %p", got, panes[0])
+	}
+
+	onTheSidebar()
+	sendKey(t, a, press(input.KeyPageUp, input.ModCtrl))
+	if got, want := ui.FocusedLeaf(a.root.Widget()), panes[len(panes)-1]; got != want {
+		t.Fatalf("stepping back from the sidebar reached %p, want the last pane %p", got, want)
+	}
+
+	onTheSidebar()
+	sendKey(t, a, press(input.KeyTab, input.ModCtrl))
+	if got := ui.FocusedLeaf(a.root.Widget()); got != panes[0] {
+		t.Fatalf("Ctrl+Tab from the sidebar reached %p, want the first pane %p", got, panes[0])
 	}
 }
 
@@ -1001,54 +1052,54 @@ func TestTabsAndSplitsNest(t *testing.T) {
 	}
 }
 
-// The sidebar keys reach every pane and come back round.
-func TestTheSidebarKeysCycleThroughEveryPane(t *testing.T) {
+// The keys reach every pane and come back round.
+func TestTheKeysCycleThroughEveryPane(t *testing.T) {
 	a := newTestApp(t, 40, 10)
 	for i := 0; i < 2; i++ {
 		if err := a.openTab(); err != nil {
 			t.Fatalf("open tab: %v", err)
 		}
 	}
-	tabs := ui.Leaves(a.root.Widget())
-	if len(tabs) != 3 {
-		t.Fatalf("%d tabs, want 3", len(tabs))
+	panes := ui.Leaves(a.root.Widget())
+	if len(panes) != 3 {
+		t.Fatalf("%d panes, want 3", len(panes))
 	}
-	a.focus(tabs[0])
+	a.focus(panes[0])
 
 	seen := map[ui.Widget]bool{}
-	for i := 0; i < len(tabs); i++ {
+	for i := 0; i < len(panes); i++ {
 		seen[ui.FocusedLeaf(a.root.Widget())] = true
-		if err := a.focusListed(1); err != nil {
-			t.Fatalf("next tab: %v", err)
+		if err := a.focusInSidebarOrder(1); err != nil {
+			t.Fatalf("next pane: %v", err)
 		}
 	}
 
-	if len(seen) != len(tabs) {
-		t.Errorf("cycling reached %d of %d tabs", len(seen), len(tabs))
+	if len(seen) != len(panes) {
+		t.Errorf("cycling reached %d of %d panes", len(seen), len(panes))
 	}
-	if got := ui.FocusedLeaf(a.root.Widget()); got != tabs[0] {
-		t.Error("a full cycle did not come back to the first tab")
+	if got := ui.FocusedLeaf(a.root.Widget()); got != panes[0] {
+		t.Error("a full cycle did not come back to the first pane")
 	}
-	if err := a.focusListed(-1); err != nil {
-		t.Fatalf("previous tab: %v", err)
+	if err := a.focusInSidebarOrder(-1); err != nil {
+		t.Fatalf("previous pane: %v", err)
 	}
-	if got := ui.FocusedLeaf(a.root.Widget()); got != tabs[len(tabs)-1] {
-		t.Error("stepping back from the first tab did not reach the last")
+	if got := ui.FocusedLeaf(a.root.Widget()); got != panes[len(panes)-1] {
+		t.Error("stepping back from the first pane did not reach the last")
 	}
 }
 
-// The sidebar keys are harmless in a window with one pane: there is
-// nowhere to step to.
-func TestTheSidebarKeysDoNothingWithOnePane(t *testing.T) {
+// The keys are harmless in a window with one pane: there is nowhere to
+// step to.
+func TestTheKeysDoNothingWithOnePane(t *testing.T) {
 	a := newTestApp(t, 40, 10)
 	before := ui.FocusedLeaf(a.root.Widget())
 
-	if err := a.focusListed(1); err != nil {
-		t.Fatalf("next tab: %v", err)
+	if err := a.focusInSidebarOrder(1); err != nil {
+		t.Fatalf("next pane: %v", err)
 	}
 
 	if ui.FocusedLeaf(a.root.Widget()) != before {
-		t.Error("moving between tabs moved focus with no tabs open")
+		t.Error("stepping moved the keys in a window with one pane")
 	}
 	checkTree(t, a)
 }
@@ -1121,16 +1172,16 @@ func TestTabsAndSplitsFuzz(t *testing.T) {
 			}
 		case 4:
 			before := ui.FocusedLeaf(a.root.Widget())
-			if err := a.focusListed(1); err != nil {
+			if err := a.focusInSidebarOrder(1); err != nil {
 				t.Fatalf("step %d: next tab: %v", step, err)
 			}
 			// A window with more than one pane must actually move, or a
 			// command that quietly does nothing looks like success.
-			if len(a.panesInOrder()) > 1 && ui.FocusedLeaf(a.root.Widget()) == before {
+			if len(a.panes) > 1 && ui.FocusedLeaf(a.root.Widget()) == before {
 				t.Fatalf("step %d: the next pane command did nothing", step)
 			}
 		case 5:
-			if err := a.focusListed(-1); err != nil {
+			if err := a.focusInSidebarOrder(-1); err != nil {
 				t.Fatalf("step %d: previous tab: %v", step, err)
 			}
 		}
@@ -1141,60 +1192,59 @@ func TestTabsAndSplitsFuzz(t *testing.T) {
 	}
 }
 
-// The sidebar keys step into a split rather than over it.
+// The keys stop on each side of a split rather than stepping over it.
 //
-// The sidebar lists a split's panes one to a row, so the keys that
-// follow it have to stop on each. Stepping along the stage instead
-// jumped the whole split in one press, and the pane beside the one in
-// front could not be reached by these keys at all.
+// The sidebar lists a split's panes one to a row, so each side is a
+// stop. Stepping along the stage took a whole split in one press, and
+// the side that was not in front could not be reached by these keys at
+// all.
 func TestTheSidebarKeysStepIntoASplitRatherThanOverIt(t *testing.T) {
-	a := newTestApp(t, 60, 20)
+	a := newTestApp(t, 90, 30)
 	withDialogs(t, a)
 	withPanel(t, a)
+	// A third pane on the stage, or the stage walk would look the same:
+	// with one stage child there is nothing to step over.
+	first := onlyPaneWidget(t, a)
+	openAPane(t, a)
+	a.focus(first)
 	if err := a.splitHere(ui.Columns); err != nil {
 		t.Fatalf("split: %v", err)
 	}
 	a.relayout()
 	a.refreshPanel(panelNow)
 
-	stage, ok := a.stage.Children()[0].(*ui.Split)
-	if !ok {
-		t.Fatalf("the stage holds %T, want the split", a.stage.Children()[0])
+	var panes []ui.Widget
+	for _, leaf := range ui.Leaves(a.root.Widget()) {
+		if a.isPane(leaf) {
+			panes = append(panes, leaf)
+		}
 	}
-	sides := stage.Children()
-	if len(sides) != 2 {
-		t.Fatalf("the split has %d sides, want 2", len(sides))
+	if len(panes) != 3 {
+		t.Fatalf("%d panes, want the two on the stage and the one split off", len(panes))
 	}
 
-	a.focus(sides[0])
-	if err := a.focusListed(1); err != nil {
-		t.Fatalf("next pane: %v", err)
+	seen := map[ui.Widget]bool{}
+	for range panes {
+		seen[ui.FocusedLeaf(a.root.Widget())] = true
+		sendKey(t, a, press(input.KeyPageDown, input.ModCtrl))
 	}
 	checkTree(t, a)
-	if got := ui.FocusedLeaf(a.root.Widget()); got != sides[1] {
-		t.Fatalf("the keys went to %p, want the other side of the split %p", got, sides[1])
-	}
-	if err := a.focusListed(-1); err != nil {
-		t.Fatalf("previous pane: %v", err)
-	}
-	if got := ui.FocusedLeaf(a.root.Widget()); got != sides[0] {
-		t.Fatalf("stepping back reached %p, want the side it came from %p", got, sides[0])
+	if len(seen) != len(panes) {
+		t.Fatalf("a full round reached %d of %d panes: a split is being taken in one step",
+			len(seen), len(panes))
 	}
 }
 
-// The keys walk the order the sidebar lists, not an order of their own.
-//
-// This is what the keys are for: the list on screen is the only order
-// there is, so anything the walk does has to be readable off it.
-func TestTheSidebarKeysFollowTheOrderTheSidebarShows(t *testing.T) {
+// The keys walk down the sidebar, one row at a time, and wrap at the
+// bottom.
+func TestTheSidebarKeysWalkDownTheSidebar(t *testing.T) {
 	a := newTestApp(t, 90, 30)
 	withDialogs(t, a)
 	withPanel(t, a)
-	// Opened in an order the tree does not hold: the second pane is put
-	// on the stage after the first, and the third is then split off the
-	// first, which puts it between the two in the tree and after both in
-	// the sidebar. A walk of the tree and a walk of the sidebar disagree
-	// from here on.
+	// Opened in an order the tree does not hold: the second pane goes on
+	// the stage after the first, and the third is split off the first,
+	// which puts it between the two in the tree and after both in the
+	// sidebar.
 	first := onlyPaneWidget(t, a)
 	if err := a.openTab(); err != nil {
 		t.Fatalf("open tab: %v", err)
@@ -1205,52 +1255,117 @@ func TestTheSidebarKeysFollowTheOrderTheSidebarShows(t *testing.T) {
 	}
 	openFilesFromThePlus(t, a, conns.Local)
 	a.relayout()
+
+	// Which row the sidebar has in front, asked of the sidebar rather
+	// than of the walk being tested.
+	rowOf := func() int {
+		t.Helper()
+		a.refreshPanel(panelNow)
+		showing := a.showing()
+		for i, row := range a.panel.Rows() {
+			if row.Key == any(showing) {
+				return i
+			}
+		}
+		t.Fatal("the pane in front is on no row of the sidebar")
+		return 0
+	}
+
+	// In at the top, from the sidebar itself.
+	sendKey(t, a, press(input.KeyL, input.ModCtrl|input.ModShift))
+	sendKey(t, a, press(input.KeyPageDown, input.ModCtrl))
+	was := rowOf()
+	for step := 1; step <= 3; step++ {
+		sendKey(t, a, press(input.KeyPageDown, input.ModCtrl))
+		now := rowOf()
+		if now <= was {
+			t.Fatalf("step %d went from row %d to row %d, which is not down the sidebar",
+				step, was, now)
+		}
+		was = now
+	}
+	// And off the bottom, back to the top.
+	sendKey(t, a, press(input.KeyPageDown, input.ModCtrl))
+	if now := rowOf(); now >= was {
+		t.Fatalf("the walk ended on row %d after row %d, want it back at the top", now, was)
+	}
+}
+
+// The walk crosses a machine heading where the sidebar does, which is
+// not where the panes were opened.
+func TestTheSidebarKeysCrossAMachineHeading(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	first := onlyPaneWidget(t, a)
+	second := openAPane(t, a)
+	third := openAPane(t, a)
+
+	// The second pane is filed under another machine, which puts it
+	// under a heading of its own below this machine's panes. It was
+	// opened between the other two, so the sidebar and the order they
+	// were opened in now disagree.
+	e := a.entryOf(second)
+	if e == nil {
+		t.Fatal("the second pane has no sidebar row")
+	}
+	e.Host = "margit"
+	a.relayout()
 	a.refreshPanel(panelNow)
 
-	var tree []ui.Widget
+	a.focus(first)
+	sendKey(t, a, press(input.KeyPageDown, input.ModCtrl))
+	if got := ui.FocusedLeaf(a.root.Widget()); got != third {
+		t.Fatalf("the first step reached %p, want the other pane on this machine %p", got, third)
+	}
+	sendKey(t, a, press(input.KeyPageDown, input.ModCtrl))
+	if got := ui.FocusedLeaf(a.root.Widget()); got != second {
+		t.Fatalf("the second step reached %p, want the pane under the other machine %p", got, second)
+	}
+}
+
+// The keys reach every pane with the sidebar shut. It stops building
+// rows while it is, so a pane opened meanwhile is on none of them.
+func TestTheKeysReachEveryPaneWithTheSidebarShut(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	a.relayout()
+	a.refreshPanel(panelNow)
+
+	sendKey(t, a, press(input.KeyB, input.ModCtrl|input.ModShift))
+	if !a.dock.Collapsed {
+		t.Fatal("the sidebar is still open")
+	}
+	openAPane(t, a)
+	openAPane(t, a)
+
+	var panes []ui.Widget
 	for _, leaf := range ui.Leaves(a.root.Widget()) {
 		if a.isPane(leaf) {
-			tree = append(tree, leaf)
+			panes = append(panes, leaf)
 		}
 	}
+	if len(panes) != 3 {
+		t.Fatalf("%d panes, want the three that are open", len(panes))
+	}
+	seen := map[ui.Widget]bool{}
+	for range panes {
+		seen[ui.FocusedLeaf(a.root.Widget())] = true
+		sendKey(t, a, press(input.KeyPageDown, input.ModCtrl))
+	}
+	if len(seen) != len(panes) {
+		t.Fatalf("the walk reached %d of %d panes with the sidebar shut", len(seen), len(panes))
+	}
+}
 
-	// What the sidebar shows, in the order it shows it.
-	at := map[*conns.Entry]ui.Widget{}
-	for term, e := range a.panes {
-		at[e] = term
+// openAPane opens a tab and returns the pane it put in front.
+func openAPane(t *testing.T, a *testApp) ui.Widget {
+	t.Helper()
+	if err := a.openTab(); err != nil {
+		t.Fatalf("open tab: %v", err)
 	}
-	for p, e := range a.files.rows {
-		at[e] = p
-	}
-	var listed []ui.Widget
-	for _, row := range a.panel.Rows() {
-		e, ok := row.Key.(*conns.Entry)
-		if !ok {
-			continue
-		}
-		if w := at[e]; w != nil {
-			listed = append(listed, w)
-		}
-	}
-	if len(listed) < 4 {
-		t.Fatalf("the sidebar lists %d panes, want the four that are open", len(listed))
-	}
-	// Or the walk below proves nothing.
-	if len(tree) == len(listed) && slicesEqual(tree, listed) {
-		t.Fatal("the tree and the sidebar are in the same order, so this test cannot tell them apart")
-	}
-
-	// And the walk, from the first of them.
-	a.focus(listed[0])
-	for i := 1; i < len(listed); i++ {
-		if err := a.focusListed(1); err != nil {
-			t.Fatalf("next pane: %v", err)
-		}
-		if got := ui.FocusedLeaf(a.root.Widget()); got != listed[i] {
-			t.Fatalf("step %d landed on %T at %p, want the row after it at %p",
-				i, got, got, listed[i])
-		}
-	}
+	return ui.FocusedLeaf(a.root.Widget())
 }
 
 // TestOpenTabFromInsideASplitJoinsTheStripAbove checks that a new tab
@@ -1754,18 +1869,4 @@ func TestAClipboardThatCanBeReadIsPasted(t *testing.T) {
 		t.Fatalf("a paste that worked showed %T", a.root.Modal())
 	}
 	waitFor(t, a, "the shell to be sent what was typed", func() bool { return a.shells[0].sentText() == "uptime" })
-}
-
-// slicesEqual reports whether two lists of widgets hold the same things
-// in the same order.
-func slicesEqual(a, b []ui.Widget) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }

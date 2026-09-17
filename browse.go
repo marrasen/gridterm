@@ -208,10 +208,8 @@ func (a *app) newPane(f vfs.FS, b *browser) *files.Pane {
 		})
 	}
 	// Posted for the same reason: the dialog is opened from a click the
-	// pane is still handling. The directory is read now, because the pane
-	// may have moved on by the time the closure runs.
-	p.OnError = func(err error) {
-		at := p.At()
+	// pane is still handling.
+	p.OnError = func(at string, err error) {
 		a.pump.post(func() {
 			a.reportError("Could not read a directory", fmt.Errorf("%s\n\n%w", at, err))
 		})
@@ -888,18 +886,30 @@ func (a *app) openGoTo() error {
 	// away rather than something to remember the letter of.
 	where.Options = append([]string{p.At()}, p.FS().Roots()...)
 	where.SetText(p.At())
-	f.AddButton(ui.Button{Title: "Go", Do: func() error {
+	// Set once the dialog is up, and reached only from the answer to a
+	// read, which cannot arrive before then.
+	var dismiss func()
+	// Kept open until the read answers: a path that is not there is a
+	// typo to correct in this dialog, not a second dialog to dismiss.
+	f.AddButton(ui.Button{Title: "Go", Keep: true, Do: func() error {
 		path := strings.TrimSpace(where.Text())
 		if path == "" {
 			// Returned rather than shown here, so the dialog stays open
 			// with what was typed still there to correct.
 			return errors.New("there is nowhere to go")
 		}
-		p.Open(path)
+		f.SetError(nil)
+		p.OpenThen(path, func(err error) {
+			if err != nil {
+				f.SetError(err)
+				return
+			}
+			dismiss()
+		})
 		return nil
 	}})
 	f.AddButton(ui.Button{Title: "Cancel"})
-	a.showForm(f, nil)
+	dismiss = a.showForm(f, nil)
 	return nil
 }
 

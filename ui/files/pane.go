@@ -115,12 +115,15 @@ type Pane struct {
 	// and this package has none.
 	OnGoTo func()
 
-	// OnError is called with the whole of a failed read: once when the
-	// pane that has the keys fails, or when a pane whose read failed gains
-	// them, and again whenever the row reporting it is clicked. A nil one
-	// takes the offer off that row: showing an error needs a dialog, and
-	// this package has none.
-	OnError func(err error)
+	// OnError is called with the directory that could not be read and the
+	// whole of the failure: once when the pane that has the keys fails, or
+	// when a pane whose read failed gains them, and again whenever the row
+	// reporting it is clicked. A nil one takes the offer off that row:
+	// showing an error needs a dialog, and this package has none.
+	//
+	// The directory is passed because it is not where the pane is: a move
+	// that failed leaves the pane where it was.
+	OnError func(path string, err error)
 
 	// Read is how a listing is fetched. It runs the work somewhere else
 	// and calls back with what it found, on the goroutine that draws.
@@ -134,11 +137,20 @@ type Pane struct {
 	sort Sort
 
 	// entries is what is in the directory, in the order shown, and err
-	// is why the last read failed. told says the reason has been shown
-	// already, so one failure produces one dialog.
+	// is why the last read failed. errAt is the directory that read was
+	// about, which is not where the pane is when a move failed. told says
+	// the reason has been shown already, so one failure produces one
+	// dialog.
 	entries []vfs.Entry
 	err     error
+	errAt   string
 	told    bool
+
+	// going is the directory a move is waiting on, and then who is
+	// waiting. The pane does not move until the read comes back, so a
+	// move that failed leaves it showing what it had.
+	going string
+	then  func(error)
 
 	// reading counts the reads on their way back, so the pane can say it
 	// is waiting, and asked is which read is the one being waited for:
@@ -223,27 +235,36 @@ func (p *Pane) Busy() bool { return p.reading > 0 }
 // The pane shows what it had until the answer comes back, so a slow read
 // leaves the user looking at the last thing that worked rather than at
 // nothing.
-func (p *Pane) Open(path string) { p.openAt(path, "") }
+func (p *Pane) Open(path string) { p.openAt(path, "", nil) }
 
-// openAt moves the pane, remembering a name to put the bar on once the
-// listing arrives. It is set before the read starts, because a read that
-// answers straight away answers before this returns.
-func (p *Pane) openAt(path, land string) {
+// OpenThen moves the pane and says how the read went, for a caller that
+// waits on it. then takes the place of OnError for that read, so a dialog
+// asking where to go can show the reason itself and stay open.
+func (p *Pane) OpenThen(path string, then func(error)) { p.openAt(path, "", then) }
+
+// openAt asks for a directory, remembering a name to put the bar on once
+// the listing arrives. It is set before the read starts, because a read
+// that answers straight away answers before this returns.
+func (p *Pane) openAt(path, land string, then func(error)) {
 	if path == "" {
 		return
 	}
-	p.at = path
-	p.marked = map[string]bool{}
-	p.land = land
-	if p.OnChange != nil {
-		p.OnChange()
+	// A pane with nothing showing has nothing to keep, so it moves now.
+	// Waiting would leave it nowhere at all when the first read fails,
+	// with no directory to reload.
+	if p.at == "" {
+		p.arrive(path)
 	}
-	p.Reload()
+	p.going, p.land, p.then = path, land, then
+	p.read(path)
 }
 
 // Reload reads the directory again.
-func (p *Pane) Reload() {
-	if p.Read == nil || p.at == "" {
+func (p *Pane) Reload() { p.read(p.at) }
+
+// read asks for a listing and shows it when it arrives.
+func (p *Pane) read(path string) {
+	if p.Read == nil || path == "" {
 		return
 	}
 	p.reading++
@@ -252,12 +273,12 @@ func (p *Pane) Reload() {
 	// been asked for is about a directory the user has left, whichever
 	// order the two came back in.
 	want := p.asked
-	p.Read(p.fs, p.at, func(entries []vfs.Entry, err error) {
+	p.Read(p.fs, path, func(entries []vfs.Entry, err error) {
 		p.reading--
 		if want != p.asked {
 			return
 		}
-		p.show(entries, err)
+		p.show(path, entries, err)
 	})
 }
 
@@ -266,10 +287,12 @@ func (p *Pane) Reload() {
 // A read that failed leaves the names that were there, which is the
 // fallback Marcus approved: the whole of the error goes to OnError, and
 // the row that reports it brings it back.
-func (p *Pane) show(entries []vfs.Entry, err error) {
+func (p *Pane) show(path string, entries []vfs.Entry, err error) {
 	was := p.head()
-	p.err, p.told = err, false
+	p.err, p.errAt, p.told = err, path, false
+	p.going = ""
 	if err == nil {
+		p.arrive(path)
 		p.entries = entries
 		p.order()
 	}
@@ -294,10 +317,31 @@ func (p *Pane) show(entries []vfs.Entry, err error) {
 		// put it, and it has to still be somewhere they can see.
 		p.list.Reveal()
 	}
+	// Whoever asked for the move hears first, and hears instead of
+	// OnError: a dialog that is waiting shows the reason itself.
+	if then := p.then; then != nil {
+		p.then, p.told = nil, true
+		then(err)
+		return
+	}
 	// Straight away in the pane the user asked in; SetFocus does it for
 	// a pane they are not looking at.
 	if p.Focused() {
 		p.tell()
+	}
+}
+
+// arrive moves the pane to a directory a read has just come back from.
+func (p *Pane) arrive(path string) {
+	if p.at == path {
+		return
+	}
+	p.at = path
+	// The marks were about what was in front of the user, and that has
+	// changed.
+	p.marked = map[string]bool{}
+	if p.OnChange != nil {
+		p.OnChange()
 	}
 }
 
@@ -307,7 +351,7 @@ func (p *Pane) tell() {
 		return
 	}
 	p.told = true
-	p.OnError(p.err)
+	p.OnError(p.errAt, p.err)
 }
 
 // SetSort changes the order and redraws.
@@ -530,7 +574,7 @@ func (p *Pane) Up() {
 	// rather than selected: the rows of the directory above have not
 	// been read yet.
 	was := vfs.Base(p.fs, p.at)
-	p.openAt(vfs.Dir(p.fs, p.at), was)
+	p.openAt(vfs.Dir(p.fs, p.at), was, nil)
 }
 
 // Layout tells the pane how much room it has.
@@ -732,7 +776,7 @@ func (p *Pane) HandleMouse(ev input.MouseEvent) (bool, error) {
 	if ev.Row < head {
 		if p.err != nil && ev.Row == errorRow && p.OnError != nil &&
 			ev.Kind == input.MousePress && ev.Button == input.MouseLeft {
-			p.OnError(p.err)
+			p.OnError(p.errAt, p.err)
 		}
 		return true, nil
 	}

@@ -636,6 +636,53 @@ func TestGoToSendsAFilePaneAnywhere(t *testing.T) {
 	}
 }
 
+// A path that is not there keeps the go-to dialog open and says why in
+// it, so the typo can be fixed and tried again in the same dialog.
+func TestGoToStaysOpenWhenThePathIsNotThere(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	openFilesFromThePlus(t, a, conns.Local)
+	p, ok := ui.FocusedLeaf(a.root.Widget()).(*files.Pane)
+	if !ok {
+		t.Fatal("the keys are not on a file pane")
+	}
+	// The pane reads through the pump, so where it lands is not known
+	// until it has.
+	waitFor(t, a, "the pane to land somewhere", func() bool { return p.At() != "" })
+	was := p.At()
+
+	if err := a.openGoTo(); err != nil {
+		t.Fatalf("go to: %v", err)
+	}
+	f := awaitModal(t, a, "the go-to dialog", byTitle[*ui.Form]("Go to"))
+	nowhere := filepath.Join(t.TempDir(), "nowhere-at-all")
+	retypeField(t, a, f, "Path", nowhere)
+	pressButton(t, a, f, "Go")
+
+	waitFor(t, a, "the dialog to say why", func() bool { return f.ErrorText() != "" })
+	// The same dialog, and the only one: a second dialog on top is what
+	// the user had to dismiss before they could try again.
+	if got := a.root.Modal(); got != f {
+		t.Fatalf("the dialog on top is %T, want the go-to dialog", got)
+	}
+	if n := len(a.modals); n != 1 {
+		t.Errorf("%d dialogs are open, want only the go-to dialog", n)
+	}
+	// With what was typed still in it.
+	if got := f.Field("Path").Text(); got != nowhere {
+		t.Errorf("the field holds %q, want what was typed", got)
+	}
+	if p.At() != was {
+		t.Errorf("the pane moved to %q, want it to stay in %q", p.At(), was)
+	}
+
+	// And a path that is there closes it.
+	retypeField(t, a, f, "Path", was)
+	pressButton(t, a, f, "Go")
+	waitFor(t, a, "the dialog to go", func() bool { return a.root.Modal() == nil })
+}
+
 // paneDrawn reads a pane back off a grid of its own, one string per row.
 func paneDrawn(p *files.Pane, cols, rows int) []string {
 	g := grid.New(cols, rows, color.RGBA{}, color.RGBA{})

@@ -258,6 +258,60 @@ func TestPaneKeepsWhatItHadWhenAReadFails(t *testing.T) {
 	}
 }
 
+// A move that fails leaves the pane where it was, so the next name
+// opened is joined onto the directory on screen.
+func TestAFailedMoveLeavesThePaneWhereItWas(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "sub/two.txt", "two")
+
+	p := alone(t, dir)
+	p.Open(filepath.Join(dir, "nowhere-at-all"))
+
+	if p.At() != dir {
+		t.Fatalf("the pane says it is in %q, want %q", p.At(), dir)
+	}
+	if got := names(p); len(got) != 1 || got[0] != "sub" {
+		t.Fatalf("it shows %v, want what it had", got)
+	}
+	// Opening a row is where the wrong directory used to show up: the
+	// name was joined onto the path that failed.
+	press(t, p, input.KeyDown)
+	press(t, p, input.KeyEnter)
+	if want := filepath.Join(dir, "sub"); p.At() != want {
+		t.Fatalf("opening a row went to %q, want %q", p.At(), want)
+	}
+}
+
+// The reason names the directory that could not be read, which is not
+// where the pane is once a move has failed.
+func TestTheReasonNamesTheDirectoryThatFailed(t *testing.T) {
+	dir := t.TempDir()
+	p := alone(t, dir)
+	var at string
+	p.OnError = func(path string, _ error) { at = path }
+
+	nowhere := filepath.Join(dir, "nowhere-at-all")
+	p.Open(nowhere)
+	if at != nowhere {
+		t.Fatalf("the reason was about %q, want %q", at, nowhere)
+	}
+}
+
+// A move that fails keeps the marks. They are about what is in front of
+// the user, and that has not changed.
+func TestAFailedMoveKeepsTheMarks(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "one.txt", "one")
+
+	p := alone(t, dir)
+	p.Mark("one.txt", true)
+	p.Open(filepath.Join(dir, "nowhere-at-all"))
+
+	if got := p.Marked(); len(got) != 1 || got[0] != "one.txt" {
+		t.Fatalf("after a move that failed it offers %v", got)
+	}
+}
+
 // The reason is shown at once in the pane the user is working in, and it
 // is shown once: they asked for that directory and are waiting for it.
 func TestPaneWithTheKeysShowsWhyAReadFailedStraightAway(t *testing.T) {
@@ -266,7 +320,7 @@ func TestPaneWithTheKeysShowsWhyAReadFailedStraightAway(t *testing.T) {
 
 	p := alone(t, dir)
 	var shown []error
-	p.OnError = func(err error) { shown = append(shown, err) }
+	p.OnError = func(_ string, err error) { shown = append(shown, err) }
 
 	want := errors.New("the machine went away")
 	p.Read = func(_ vfs.FS, _ string, then func([]vfs.Entry, error)) { then(nil, want) }
@@ -290,7 +344,7 @@ func TestPaneShowsASecondFailureToo(t *testing.T) {
 
 	p := alone(t, dir)
 	var shown []error
-	p.OnError = func(err error) { shown = append(shown, err) }
+	p.OnError = func(_ string, err error) { shown = append(shown, err) }
 
 	first := errors.New("the machine went away")
 	p.Read = func(_ vfs.FS, _ string, then func([]vfs.Entry, error)) { then(nil, first) }
@@ -312,7 +366,7 @@ func TestPaneWithoutTheKeysWaitsForThemToShowWhyAReadFailed(t *testing.T) {
 
 	p := here(t, dir)
 	var shown []error
-	p.OnError = func(err error) { shown = append(shown, err) }
+	p.OnError = func(_ string, err error) { shown = append(shown, err) }
 
 	want := errors.New("the machine went away")
 	p.Read = func(_ vfs.FS, _ string, then func([]vfs.Entry, error)) { then(nil, want) }

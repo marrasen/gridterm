@@ -27,6 +27,8 @@ test:
 
 vet:
 	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go vet ./...
+	# session has Unix files the Windows build never sees.
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go vet ./session/...
 
 fmt:
 	gofmt -l .

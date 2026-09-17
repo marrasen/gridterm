@@ -71,10 +71,8 @@ type local struct {
 	// that follows only has the pipes left to shut.
 	released bool
 
-	// job holds the shell and everything it starts, so closing it takes
-	// the whole tree down. On Windows the kernel closes it when gridterm
-	// ends, crash included; on Unix there is no such thing and Close kills
-	// the shell itself.
+	// job holds the shell and everything it starts. It kills them if
+	// gridterm ends without reaching Close; on Unix it is empty.
 	job shellJob
 }
 
@@ -230,20 +228,17 @@ func (l *local) Close() error {
 			// go-pty closes the slave this process already released.
 			err = nil
 		}
-		l.closeErr = err
+		// The job is there for a gridterm that never reaches this point, so
+		// a pane the user closed lets go of it rather than killing what the
+		// shell started.
+		l.closeErr = errors.Join(err, l.job.letGo())
 
 		// A child that ignores SIGHUP would outlive the window, holding
 		// the terminal's file descriptors and, with tabs, leaking one
 		// process per closed tab.
-		reaped := false
 		select {
 		case <-l.done:
-			reaped = true
 		case <-time.After(hangupGrace):
-		}
-		// Ending the job takes down whatever the shell started as well,
-		// which killing the shell alone leaves running.
-		if !l.job.end() && !reaped {
 			if p := l.cmd.Process; p != nil {
 				_ = p.Kill()
 			}

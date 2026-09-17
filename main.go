@@ -195,6 +195,7 @@ func main() {
 	a.colours = pal
 	a.panes = make(map[*term.Terminal]*conns.Entry)
 	a.scaled = make(map[*term.Terminal]*scaledPane)
+	a.shared = make(map[*term.Terminal]*sharedMark)
 	a.ended = make(map[*term.Terminal]bool)
 	a.started = make(map[*term.Terminal]*startedAs)
 	a.exits = make(chan struct{}, exitQueue)

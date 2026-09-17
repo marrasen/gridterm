@@ -93,6 +93,7 @@ func frame(t *testing.T, a *testApp) {
 	a.refreshPanel(panelNow)
 	a.placeRegions()
 	a.placeScaled()
+	a.placeShared()
 	if a.screen == nil {
 		cw, ch := a.renderer.CellSize()
 		cols, rows := a.g.Size()

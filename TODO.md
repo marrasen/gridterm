@@ -42,10 +42,6 @@ Asked for on 2026-09-17, from Marcus's own notes. A pane handed to an
 agent or driven from another window looks like every other pane, and the
 user has to know which is which.
 
-- **A border round the pane that says it is shared.** It glows, and the
-  glow moves slowly rather than flashing. A pane that is both handed over
-  and remote controlled gets two borders in different colours.
-
 - **A chip in the top right saying what is happening.** "Agent
   connected", "Agent running: ls -la", with a long command cropped.
   Clicking a chip opens the dialog that can end it. Two chips when both
@@ -56,6 +52,13 @@ user has to know which is which.
 
 - **An account of what the agent did.** Somewhere to read the commands
   an agent ran, after the fact, rather than scrolling the pane.
+
+- **A pane on a window taken over from elsewhere gets no border.** The
+  border reads `pane.Watched()` and the handover list, and the pane
+  drawn on the window that took over has neither: what is shared is the
+  pane on the other machine. So the window doing the driving marks
+  nothing, and the window being driven marks everything. Worth deciding
+  whether the driving window should mark it too.
 
 ## The agent, through MCP
 

@@ -122,6 +122,14 @@ type app struct {
 	// closes them; this is what takes their rows away with it.
 	tunnels map[*conns.Entry]*tunnel
 
+	// shared is the glowing border over each pane somebody else is in,
+	// one layer per pane.
+	shared map[*term.Terminal]*sharedMark
+
+	// now is the clock the glow is measured against, so a test can hold
+	// it still.
+	now func() time.Time
+
 	// pointerGone says the pointer is not on this window, so nothing is
 	// under it.
 	pointerGone bool
@@ -367,6 +375,7 @@ func (a *app) Update() error {
 	a.applyPads()
 	a.placeRegions()
 	a.placeScaled()
+	a.placeShared()
 
 	// After the layout, so the pointer is the one for the frame about to
 	// be drawn rather than the one before it.
@@ -430,6 +439,7 @@ func (a *app) Draw(screen *ebiten.Image) {
 		a.sideRegion.draw()
 	}
 	a.drawScaled()
+	a.drawShared(a.clock())
 	a.drawModals()
 	a.comp.Draw(screen)
 	if a.stats != nil {
@@ -476,6 +486,7 @@ func (a *app) resizeTo(pxW, pxH int) {
 	// frame the window was resized in.
 	a.placeRegions()
 	a.placeScaled()
+	a.placeShared()
 }
 
 // setGridSize tells the grids and the widget tree about a new size in

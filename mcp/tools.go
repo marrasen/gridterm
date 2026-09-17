@@ -137,6 +137,9 @@ func toolList() []tool {
 				" this call is made: a program the text in the same call starts has not asked" +
 				" for anything yet, so keys for it go in a later call. To leave vim, send" +
 				` {"keys": ["Escape"]} and then {"text": ":q!", "keys": ["Enter"]}.` +
+				" Do not put clear in front of a command: read_output gives you what the" +
+				" command printed however much is above it, and a clear takes the command" +
+				" you ran off the screen, from the user as well as from you." +
 				" It does not wait for anything to happen, so call wait_for next.",
 			InputSchema: schema{
 				Type: "object",

@@ -328,6 +328,31 @@ func textOf(t *testing.T, r response) (string, bool) {
 }
 
 // A server says what it is and what it can do.
+// And the workflow says it, because that is what an agent reads before
+// it sends anything.
+func TestTheWorkflowSaysACommandNeedsNoClear(t *testing.T) {
+	if !strings.Contains(Workflow, "Do not put clear in front of a command") {
+		t.Errorf("the workflow does not say it: %q", Workflow)
+	}
+	if strings.Contains(Workflow, "Running clear is welcome") {
+		t.Error("the workflow still reads as an invitation to clear")
+	}
+}
+
+// send_keys says it too: that is the call that types a command.
+func TestSendKeysSaysACommandNeedsNoClear(t *testing.T) {
+	for _, tool := range toolList() {
+		if tool.Name != "send_keys" {
+			continue
+		}
+		if !strings.Contains(tool.Description, "Do not put clear in front of a command") {
+			t.Errorf("send_keys does not say it: %q", tool.Description)
+		}
+		return
+	}
+	t.Fatal("there is no send_keys tool")
+}
+
 func TestItSaysWhatItIsAndWhatItCanDo(t *testing.T) {
 	answers := talk(t, &fakePanes{},
 		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`,

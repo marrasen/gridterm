@@ -3,6 +3,19 @@
 Things Marcus has asked for that are not done yet. Newest first within
 each group. A line goes when the work is in and reviewed.
 
+## Waiting on an answer from Marcus
+
+- **Should a pane that cannot be put in a job object open anyway?** It
+  does not today: `StartLocal` returns the error, and for the first pane
+  `main.go` calls `log.Fatal`. Launched from Explorer there is no console,
+  so the window would not start and would say nothing about why. Two
+  reviewers argued for logging it and opening the pane. Against that:
+  carrying on brings back the orphaned shells that the job object is
+  there to stop, in silence. The one reachable failure -- a shell that
+  exited before the job could hold it -- is already handled and is not an
+  error. What is left needs Windows to refuse a nested job, which needs a
+  build older than gridterm's own ConPTY requirement.
+
 ## Settled, do not re-open
 
 - **Nothing caps the panes a window keeps.** Answered on 2026-09-16: no
@@ -22,6 +35,27 @@ each group. A line goes when the work is in and reviewed.
   is still up. The question names the command and the choice says it
   runs it again, because running `make deploy` a second time is a thing
   the user has to see before they press it.
+
+## Showing which panes are shared
+
+Asked for on 2026-09-17, from Marcus's own notes. A pane handed to an
+agent or driven from another window looks like every other pane, and the
+user has to know which is which.
+
+- **A border round the pane that says it is shared.** It glows, and the
+  glow moves slowly rather than flashing. A pane that is both handed over
+  and remote controlled gets two borders in different colours.
+
+- **A chip in the top right saying what is happening.** "Agent
+  connected", "Agent running: ls -la", with a long command cropped.
+  Clicking a chip opens the dialog that can end it. Two chips when both
+  are in force, one per border.
+
+- **The same borders on the sidebar row, thinner.** The row is where the
+  user looks for what is open, so it has to carry the same mark.
+
+- **An account of what the agent did.** Somewhere to read the commands
+  an agent ran, after the fact, rather than scrolling the pane.
 
 ## The agent, through MCP
 
@@ -171,6 +205,18 @@ order Ctrl+Tab moves in, and expected recently used.
   pane is which.
 
 ## Known gaps worth revisiting
+
+- An orphaned `conhost.exe` can be left with no `cmd.exe` under it. Seen
+  on a live window while the shell leak was being looked into: the shell
+  had exited and the console host was still running. The job object put
+  in for that leak does not cover it, because the console host is not in
+  the job.
+
+- A shell can start something in the microseconds between
+  `CreateProcess` and the job assignment, and that escapes the job for
+  good. Starting the shell suspended would close it, and go-pty closes
+  the thread handle, so there is no way to resume it without patching
+  go-pty.
 
 - One connection to the window answers one question at a time, so a long
   `wait_for` or an `ask_for_secret` that is waiting for the user stops

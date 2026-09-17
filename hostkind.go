@@ -40,6 +40,13 @@ const (
 )
 
 // String names a kind, for a test that has to say what it found.
+// runsCommands reports whether a machine can be asked to run one. This
+// machine has no connection to run it over, and a gridterm window has no
+// shell to run it in.
+func (f hostFacts) runsCommands() bool {
+	return f.kind != hostHere && f.kind != hostWindow && f.kind != hostSavedWindow && !f.serves
+}
+
 func (k hostKind) String() string {
 	switch k {
 	case hostHere:

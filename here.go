@@ -134,7 +134,13 @@ func (a *app) openCommandHere() error {
 				"Open a terminal on it instead.",
 			h.name)
 	}
-	host := h.name
+	a.askCommandOn(h.name, nil)
+	return nil
+}
+
+// askCommandOn asks for a command to run on a machine and puts the pane
+// it opens at a spot, or in a tab of its own when at is nil.
+func (a *app) askCommandOn(host string, at *spot) {
 	f := a.newForm("Run a command on " + host)
 	what := f.AddField("Command", a.newField("the program and its arguments", 0))
 	f.AddButton(ui.Button{Title: "Run", Do: func() error {
@@ -147,7 +153,7 @@ func (a *app) openCommandHere() error {
 		// Not from here: this dialog closes as soon as this returns, and
 		// closing one takes anything stacked on top of it.
 		a.pump.post(func() {
-			if err := a.openOn(host, command, nil); err != nil {
+			if err := a.openOn(host, command, at); err != nil {
 				a.reportError("Could not run it on "+host, err)
 			}
 		})
@@ -155,7 +161,6 @@ func (a *app) openCommandHere() error {
 	}})
 	f.AddButton(ui.Button{Title: "Cancel"})
 	a.showForm(f, nil)
-	return nil
 }
 
 // showConnLogHere opens the account of how the machine the user is

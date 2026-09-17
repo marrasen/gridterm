@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -131,6 +132,18 @@ func (p *shellPick) take(list []shells.Shell, cmds []string) {
 	p.found, p.cmds, p.scanned = list, cmds, true
 }
 
+// list is the shells that were found, for a chooser that offers a line
+// per shell. A machine with one shell gets none, the way lines does: the
+// line that opens a terminal already opens on it.
+func (p *shellPick) list() []shells.Shell {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if len(p.found) < 2 {
+		return nil
+	}
+	return slices.Clone(p.found)
+}
+
 // landed says whether the looking is over.
 func (p *shellPick) landed() bool {
 	p.mu.Lock()
@@ -229,10 +242,28 @@ func (a *app) openTabOn(sh shells.Shell) error {
 	if err != nil {
 		return err
 	}
+	a.rememberShell(sh)
+	return nil
+}
+
+// splitOnShell divides a pane with a new one running a named shell.
+func (a *app) splitOnShell(dir ui.Dir, current ui.Widget, sh shells.Shell) error {
+	err := a.splitWithNew(dir, current, func() (*term.Terminal, error) {
+		return a.localTerminalOn(sh.Command(""))
+	})
+	if err != nil {
+		return err
+	}
+	a.rememberShell(sh)
+	return nil
+}
+
+// rememberShell writes down which shell a pane was opened on, so the
+// next one opens on it too.
+func (a *app) rememberShell(sh shells.Shell) {
 	if err := a.shellPick.choose(sh.ID); err != nil {
 		a.reportError("Could not remember which shell to open", err)
 	}
-	return nil
 }
 
 // startShellScan looks for the shells a pane here can run, on a

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"image/color"
 
+	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/files"
 	"github.com/marrasen/gridterm/ui/term"
@@ -49,6 +50,15 @@ func (a *app) addSplitChoices(c *ui.Chooser, dir ui.Dir, current ui.Widget) {
 	c.Add("New terminal", groupName(a.newPaneHost()), func() error {
 		return a.splitNewTerminal(dir, current)
 	})
+
+	// Each shell this machine has, under the line that opens a terminal
+	// here, the way the plus on a machine's row offers them.
+	for _, sh := range a.shellPick.list() {
+		shell := sh
+		c.Add(shell.Title, groupName(conns.Local), func() error {
+			return a.splitOnShell(dir, current, shell)
+		})
+	}
 
 	// What is already open, so a pane can be moved in beside this one
 	// rather than a second one being started.
@@ -95,6 +105,13 @@ func (a *app) addSplitChoices(c *ui.Chooser, dir ui.Dir, current ui.Widget) {
 			// opening on, so a window here is taken over rather than
 			// logged in to, and lands in the split all the same.
 			return a.openTerminalOn(name, at)
+		})
+		if !on.runsCommands() {
+			continue
+		}
+		c.Add("Command on "+groupName(name)+"…", hostNote(on), func() error {
+			a.askCommandOn(name, at)
+			return nil
 		})
 	}
 }

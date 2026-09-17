@@ -1,6 +1,7 @@
 package main
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -9,6 +10,8 @@ import (
 	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/input"
 	"github.com/marrasen/gridterm/internal/sshtest"
+	"github.com/marrasen/gridterm/remote"
+	"github.com/marrasen/gridterm/shells"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/term"
 )
@@ -210,6 +213,92 @@ func TestSplittingOffersEveryMachine(t *testing.T) {
 	}
 	if got := notes["Terminal on live"]; got != "connected" {
 		t.Errorf("a machine already connected says %q", got)
+	}
+}
+
+// The split chooser offers a line per shell this machine has, the way
+// the plus on its row does.
+func TestSplittingOffersEveryShell(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	a.registerShells([]shells.Shell{
+		{ID: "cmd", Title: "Command Prompt", Path: "cmd.exe"},
+		{ID: "powershell", Title: "Windows PowerShell", Path: "powershell.exe"},
+	})
+
+	c := splitChoices(t, a, ui.Columns)
+	got := choiceTexts(c)
+	for _, want := range []string{"Command Prompt", "Windows PowerShell"} {
+		if !slices.Contains(got, want) {
+			t.Errorf("it offers %v, missing %q", got, want)
+		}
+	}
+	// A file pane belongs to the file manager and is split inside it,
+	// which is the one place this chooser and that menu differ.
+	for _, line := range got {
+		if strings.Contains(line, "Files") {
+			t.Errorf("it offers %q, and a file pane is split inside the manager", line)
+		}
+	}
+}
+
+// Taking a shell line puts a pane running that shell in the split.
+func TestSplittingOnAShellLandsInTheSplit(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	a.registerShells([]shells.Shell{
+		{ID: "cmd", Title: "Command Prompt", Path: "cmd.exe"},
+		{ID: "powershell", Title: "Windows PowerShell", Path: "powershell.exe"},
+	})
+
+	c := splitChoices(t, a, ui.Columns)
+	takeChoice(t, c, "Windows PowerShell")
+
+	waitForPanes(t, a, 2)
+	if got := len(a.stage.Children()); got != 1 {
+		t.Fatalf("the stage holds %d things, want the one split", got)
+	}
+	if _, isSplit := a.stage.Children()[0].(*ui.Split); !isSplit {
+		t.Fatalf("the stage holds %T, want the split", a.stage.Children()[0])
+	}
+	// And the pane it opened is the one the next one opens on.
+	if id, ok := a.shellPick.chosen(); !ok || id != "powershell" {
+		t.Errorf("the window remembers %q, want the shell that was picked", id)
+	}
+	checkTree(t, a)
+}
+
+// The split chooser offers a command on a machine, and not on this one:
+// this is the machine gridterm is running on, with no connection to run
+// one over.
+func TestSplittingOffersACommandOnAMachine(t *testing.T) {
+	s := sshtest.New(t)
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pinServers(t, a, s)
+	saveHost(t, a, "margit", s, "")
+
+	// A gridterm window is in the list too. It has no shell, so there is
+	// nothing to run a command in.
+	if err := a.book.Put(remote.Host{Name: "desk", Address: "10.0.0.9", Window: true}, ""); err != nil {
+		t.Fatalf("save the window: %v", err)
+	}
+
+	c := splitChoices(t, a, ui.Columns)
+	got := choiceTexts(c)
+	if !slices.Contains(got, "Command on margit…") {
+		t.Errorf("it offers %v, missing a command on the saved machine", got)
+	}
+	if !slices.Contains(got, "Terminal on desk") {
+		t.Fatalf("it offers %v, missing the saved window: the test has nothing to check", got)
+	}
+	for _, line := range got {
+		if strings.HasPrefix(line, "Command on ") && line != "Command on margit…" {
+			t.Errorf("it offers %q, and only a machine reached over a connection runs one", line)
+		}
 	}
 }
 

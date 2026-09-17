@@ -259,28 +259,83 @@ func (a *app) placeTab(next ui.Widget) error {
 	return nil
 }
 
-// focusTab moves n tabs along in the strip holding the focused pane,
-// wrapping at the ends. It does nothing when the pane is not in a strip.
-func (a *app) focusTab(n int) error {
-	strip, mine := a.stripAbove(ui.FocusedLeaf(a.root.Widget()))
-	if strip == nil {
-		return nil
+// focusListed moves focus n panes along the order the sidebar lists
+// them in, wrapping at the ends.
+func (a *app) focusListed(n int) error {
+	return stepFocus(a.panesInOrder(), ui.FocusedLeaf(a.root.Widget()), n, a.focus)
+}
+
+// panesInOrder is the window's panes in the order the sidebar lists
+// them: down the rows and across the machine headings.
+//
+// Read off the rows the sidebar built rather than worked out again, so
+// the keys walk the order that is on screen and not one of their own.
+func (a *app) panesInOrder() []ui.Widget {
+	var open []ui.Widget
+	for _, leaf := range ui.Leaves(a.root.Widget()) {
+		if a.isPane(leaf) {
+			open = append(open, leaf)
+		}
 	}
-	tabs := strip.Children()
-	if len(tabs) < 2 {
+	if a.panel == nil || len(open) < 2 {
+		return open
+	}
+
+	// Which pane each row stands for. A row names a connection, and only
+	// these two maps say which widget a connection is being read in.
+	at := make(map[*conns.Entry]ui.Widget, len(open))
+	for t, e := range a.panes {
+		at[e] = t
+	}
+	if a.files != nil {
+		for p, e := range a.files.rows {
+			at[e] = p
+		}
+	}
+
+	left := make(map[ui.Widget]bool, len(open))
+	for _, w := range open {
+		left[w] = true
+	}
+	ordered := make([]ui.Widget, 0, len(open))
+	for _, row := range a.panel.Rows() {
+		e, ok := row.Key.(*conns.Entry)
+		if !ok {
+			continue
+		}
+		w := at[e]
+		if w == nil || !left[w] {
+			continue
+		}
+		delete(left, w)
+		ordered = append(ordered, w)
+	}
+	// A pane the sidebar has not named goes on the end. A collapsed
+	// sidebar stops building rows, and a pane has to stay reachable.
+	for _, w := range open {
+		if left[w] {
+			ordered = append(ordered, w)
+		}
+	}
+	return ordered
+}
+
+// stepFocus moves n along a list of panes from the one that has the focus,
+// wrapping at the ends, and does nothing when there is nowhere to go.
+func stepFocus(panes []ui.Widget, current ui.Widget, n int, focus func(ui.Widget)) error {
+	if len(panes) < 2 {
 		return nil
 	}
 	at := 0
-	for i, tab := range tabs {
-		if tab == mine {
+	for i, p := range panes {
+		if p == current {
 			at = i
 			break
 		}
 	}
 	// Go's % keeps the sign of the dividend, so a step backwards from
-	// the first tab needs the extra turn to land on the last.
-	next := ((at+n)%len(tabs) + len(tabs)) % len(tabs)
-	a.focus(ui.FocusedLeaf(tabs[next]))
+	// the first pane needs the extra turn to land on the last.
+	focus(panes[((at+n)%len(panes)+len(panes))%len(panes)])
 	return nil
 }
 
@@ -504,24 +559,18 @@ func (a *app) roomToSplit(w ui.Widget, dir ui.Dir) bool {
 }
 
 // focusPane moves focus n panes along, wrapping at the ends.
+//
+// The sidebar and the panel are leaves of the tree like a terminal is,
+// so without isPane the keys walk onto the connections list as though it
+// were a pane.
 func (a *app) focusPane(n int) error {
-	panes := ui.Leaves(a.root.Widget())
-	if len(panes) < 2 {
-		return nil
-	}
-	current := ui.FocusedLeaf(a.root.Widget())
-	at := 0
-	for i, p := range panes {
-		if p == current {
-			at = i
-			break
+	var panes []ui.Widget
+	for _, leaf := range ui.Leaves(a.root.Widget()) {
+		if a.isPane(leaf) {
+			panes = append(panes, leaf)
 		}
 	}
-	// Go's % keeps the sign of the dividend, so a step backwards from
-	// the first pane needs the extra turn to land on the last.
-	next := ((at+n)%len(panes) + len(panes)) % len(panes)
-	a.focus(panes[next])
-	return nil
+	return stepFocus(panes, ui.FocusedLeaf(a.root.Widget()), n, a.focus)
 }
 
 // focus points the whole chain of splits at one pane.

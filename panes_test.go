@@ -609,6 +609,33 @@ func TestSplitCloseFuzz(t *testing.T) {
 	}
 }
 
+// Ctrl+Tab walks panes and nothing else.
+//
+// The sidebar is a leaf of the tree the way a terminal is, so the walk
+// used to land on it. The keys then sat on the connections list, where
+// no pane key means anything.
+func TestCtrlTabWalksPanesAndNotTheSidebar(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	if err := a.openTab(); err != nil {
+		t.Fatalf("openTab: %v", err)
+	}
+
+	// Twice round a walk of two panes, so anything else in the order
+	// turns up wherever it sits.
+	for step := 1; step <= 6; step++ {
+		sendKey(t, a, press(input.KeyTab, input.ModCtrl))
+		got := ui.FocusedLeaf(a.root.Widget())
+		if got == ui.Widget(a.side) {
+			t.Fatalf("step %d: the keys landed on the sidebar", step)
+		}
+		if !a.isPane(got) {
+			t.Fatalf("step %d: the keys landed on %T, which is not a pane", step, got)
+		}
+	}
+}
+
 // sendKey gives the window a key, and fails the test when the key is
 // refused or nothing takes it.
 func sendKey(t *testing.T, a *testApp, ev input.Event) {
@@ -974,7 +1001,8 @@ func TestTabsAndSplitsNest(t *testing.T) {
 	}
 }
 
-func TestFocusTabCycles(t *testing.T) {
+// The sidebar keys reach every pane and come back round.
+func TestTheSidebarKeysCycleThroughEveryPane(t *testing.T) {
 	a := newTestApp(t, 40, 10)
 	for i := 0; i < 2; i++ {
 		if err := a.openTab(); err != nil {
@@ -990,7 +1018,7 @@ func TestFocusTabCycles(t *testing.T) {
 	seen := map[ui.Widget]bool{}
 	for i := 0; i < len(tabs); i++ {
 		seen[ui.FocusedLeaf(a.root.Widget())] = true
-		if err := a.focusTab(1); err != nil {
+		if err := a.focusListed(1); err != nil {
 			t.Fatalf("next tab: %v", err)
 		}
 	}
@@ -1001,7 +1029,7 @@ func TestFocusTabCycles(t *testing.T) {
 	if got := ui.FocusedLeaf(a.root.Widget()); got != tabs[0] {
 		t.Error("a full cycle did not come back to the first tab")
 	}
-	if err := a.focusTab(-1); err != nil {
+	if err := a.focusListed(-1); err != nil {
 		t.Fatalf("previous tab: %v", err)
 	}
 	if got := ui.FocusedLeaf(a.root.Widget()); got != tabs[len(tabs)-1] {
@@ -1009,13 +1037,13 @@ func TestFocusTabCycles(t *testing.T) {
 	}
 }
 
-// TestFocusTabDoesNothingOutsideAStrip checks that the tab keys are
-// harmless in a window that has no tabs.
-func TestFocusTabDoesNothingOutsideAStrip(t *testing.T) {
+// The sidebar keys are harmless in a window with one pane: there is
+// nowhere to step to.
+func TestTheSidebarKeysDoNothingWithOnePane(t *testing.T) {
 	a := newTestApp(t, 40, 10)
 	before := ui.FocusedLeaf(a.root.Widget())
 
-	if err := a.focusTab(1); err != nil {
+	if err := a.focusListed(1); err != nil {
 		t.Fatalf("next tab: %v", err)
 	}
 
@@ -1093,18 +1121,16 @@ func TestTabsAndSplitsFuzz(t *testing.T) {
 			}
 		case 4:
 			before := ui.FocusedLeaf(a.root.Widget())
-			if err := a.focusTab(1); err != nil {
+			if err := a.focusListed(1); err != nil {
 				t.Fatalf("step %d: next tab: %v", step, err)
 			}
-			// A strip with more than one tab must actually move, or a
+			// A window with more than one pane must actually move, or a
 			// command that quietly does nothing looks like success.
-			if strip, _ := a.stripAbove(before); strip != nil && len(strip.Children()) > 1 {
-				if ui.FocusedLeaf(a.root.Widget()) == before {
-					t.Fatalf("step %d: the next tab command did nothing", step)
-				}
+			if len(a.panesInOrder()) > 1 && ui.FocusedLeaf(a.root.Widget()) == before {
+				t.Fatalf("step %d: the next pane command did nothing", step)
 			}
 		case 5:
-			if err := a.focusTab(-1); err != nil {
+			if err := a.focusListed(-1); err != nil {
 				t.Fatalf("step %d: previous tab: %v", step, err)
 			}
 		}
@@ -1115,37 +1141,115 @@ func TestTabsAndSplitsFuzz(t *testing.T) {
 	}
 }
 
-// TestFocusTabWorksAfterSplittingATab checks the tab keys in a tree
-// where the focused pane's own parent is a split, not the strip. Asking
-// for the direct parent finds no strip and the tab keys go dead.
-func TestFocusTabWorksAfterSplittingATab(t *testing.T) {
+// The sidebar keys step into a split rather than over it.
+//
+// The sidebar lists a split's panes one to a row, so the keys that
+// follow it have to stop on each. Stepping along the stage instead
+// jumped the whole split in one press, and the pane beside the one in
+// front could not be reached by these keys at all.
+func TestTheSidebarKeysStepIntoASplitRatherThanOverIt(t *testing.T) {
 	a := newTestApp(t, 60, 20)
-	if err := a.openTab(); err != nil {
-		t.Fatalf("open tab: %v", err)
-	}
+	withDialogs(t, a)
+	withPanel(t, a)
 	if err := a.splitHere(ui.Columns); err != nil {
 		t.Fatalf("split: %v", err)
 	}
-	before := ui.FocusedLeaf(a.root.Widget())
+	a.relayout()
+	a.refreshPanel(panelNow)
 
-	if err := a.focusTab(1); err != nil {
-		t.Fatalf("next tab: %v", err)
-	}
-
-	checkTree(t, a)
-	if ui.FocusedLeaf(a.root.Widget()) == before {
-		t.Error("moving to the next tab did nothing: the strip above the split was not found")
-	}
-	// And back again lands inside the split, on one of its panes.
-	if err := a.focusTab(-1); err != nil {
-		t.Fatalf("previous tab: %v", err)
-	}
-	strip, ok := a.root.Widget().(*ui.Tabs)
+	stage, ok := a.stage.Children()[0].(*ui.Split)
 	if !ok {
-		t.Fatalf("root = %T, want the strip", a.root.Widget())
+		t.Fatalf("the stage holds %T, want the split", a.stage.Children()[0])
 	}
-	if _, isSplit := strip.Children()[1].(*ui.Split); !isSplit {
-		t.Fatalf("the second tab is %T, want the split", strip.Children()[1])
+	sides := stage.Children()
+	if len(sides) != 2 {
+		t.Fatalf("the split has %d sides, want 2", len(sides))
+	}
+
+	a.focus(sides[0])
+	if err := a.focusListed(1); err != nil {
+		t.Fatalf("next pane: %v", err)
+	}
+	checkTree(t, a)
+	if got := ui.FocusedLeaf(a.root.Widget()); got != sides[1] {
+		t.Fatalf("the keys went to %p, want the other side of the split %p", got, sides[1])
+	}
+	if err := a.focusListed(-1); err != nil {
+		t.Fatalf("previous pane: %v", err)
+	}
+	if got := ui.FocusedLeaf(a.root.Widget()); got != sides[0] {
+		t.Fatalf("stepping back reached %p, want the side it came from %p", got, sides[0])
+	}
+}
+
+// The keys walk the order the sidebar lists, not an order of their own.
+//
+// This is what the keys are for: the list on screen is the only order
+// there is, so anything the walk does has to be readable off it.
+func TestTheSidebarKeysFollowTheOrderTheSidebarShows(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	// Opened in an order the tree does not hold: the second pane is put
+	// on the stage after the first, and the third is then split off the
+	// first, which puts it between the two in the tree and after both in
+	// the sidebar. A walk of the tree and a walk of the sidebar disagree
+	// from here on.
+	first := onlyPaneWidget(t, a)
+	if err := a.openTab(); err != nil {
+		t.Fatalf("open tab: %v", err)
+	}
+	a.focus(first)
+	if err := a.splitHere(ui.Columns); err != nil {
+		t.Fatalf("split: %v", err)
+	}
+	openFilesFromThePlus(t, a, conns.Local)
+	a.relayout()
+	a.refreshPanel(panelNow)
+
+	var tree []ui.Widget
+	for _, leaf := range ui.Leaves(a.root.Widget()) {
+		if a.isPane(leaf) {
+			tree = append(tree, leaf)
+		}
+	}
+
+	// What the sidebar shows, in the order it shows it.
+	at := map[*conns.Entry]ui.Widget{}
+	for term, e := range a.panes {
+		at[e] = term
+	}
+	for p, e := range a.files.rows {
+		at[e] = p
+	}
+	var listed []ui.Widget
+	for _, row := range a.panel.Rows() {
+		e, ok := row.Key.(*conns.Entry)
+		if !ok {
+			continue
+		}
+		if w := at[e]; w != nil {
+			listed = append(listed, w)
+		}
+	}
+	if len(listed) < 4 {
+		t.Fatalf("the sidebar lists %d panes, want the four that are open", len(listed))
+	}
+	// Or the walk below proves nothing.
+	if len(tree) == len(listed) && slicesEqual(tree, listed) {
+		t.Fatal("the tree and the sidebar are in the same order, so this test cannot tell them apart")
+	}
+
+	// And the walk, from the first of them.
+	a.focus(listed[0])
+	for i := 1; i < len(listed); i++ {
+		if err := a.focusListed(1); err != nil {
+			t.Fatalf("next pane: %v", err)
+		}
+		if got := ui.FocusedLeaf(a.root.Widget()); got != listed[i] {
+			t.Fatalf("step %d landed on %T at %p, want the row after it at %p",
+				i, got, got, listed[i])
+		}
 	}
 }
 
@@ -1650,4 +1754,18 @@ func TestAClipboardThatCanBeReadIsPasted(t *testing.T) {
 		t.Fatalf("a paste that worked showed %T", a.root.Modal())
 	}
 	waitFor(t, a, "the shell to be sent what was typed", func() bool { return a.shells[0].sentText() == "uptime" })
+}
+
+// slicesEqual reports whether two lists of widgets hold the same things
+// in the same order.
+func slicesEqual(a, b []ui.Widget) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }

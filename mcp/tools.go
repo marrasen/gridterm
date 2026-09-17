@@ -56,10 +56,12 @@ func toolList() []tool {
 		{
 			Name:  "use_session_code",
 			Title: "Use a session code",
-			Description: "Open the pane a session code names. The user makes the code in" +
-				" gridterm and gives it to you, and it looks like gt1-<port>-<letters>." +
+			Description: "Open the share a session code names. A share holds one or more" +
+				" panes, on whatever machines the user put in it. The user makes the code" +
+				" in gridterm and gives it to you, and it looks like gt1-<port>-<letters>." +
 				" It is the only way to reach anything here. Call this before any other" +
-				" tool: the answer names the pane, and every other tool takes that name.",
+				" tool: the answer lists the panes, and every other tool takes a pane's" +
+				" name.",
 			InputSchema: schema{
 				Type: "object",
 				Properties: map[string]field{
@@ -72,10 +74,11 @@ func toolList() []tool {
 		{
 			Name:  "list_panes",
 			Title: "List the panes you have",
-			Description: "The panes the user has handed you, each with the name the other" +
-				" tools take and how big its screen is. It takes no arguments. It lists" +
-				" nothing else of the user's, and it is empty until a session code has" +
-				" been used.",
+			Description: "The panes in your share now, each with the name the other tools" +
+				" take and how big its screen is. It takes no arguments. The user adds" +
+				" panes and takes them out while you work, so call this again whenever you" +
+				" want to know what you have. It lists nothing else of the user's, and it" +
+				" is empty until a session code has been used.",
 			InputSchema: schema{Type: "object", Properties: map[string]field{}},
 		},
 		{
@@ -297,8 +300,9 @@ func (s *server) runTool(name string, args json.RawMessage) (result, *rpcError) 
 			return wrong(err.Error())
 		}
 		if len(panes) == 0 {
-			return say("The user has not handed you a pane yet." +
-				" Ask them for a session code and use it with use_session_code.")
+			return say("You have no panes. Either the user has not given you a session" +
+				" code yet, or they have taken every pane out of the share you used." +
+				" Ask them for a code and use it with use_session_code.")
 		}
 		var out string
 		for _, p := range panes {

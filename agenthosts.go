@@ -215,18 +215,18 @@ func hostNamed(name string) agentHost {
 // skillFile is what a skill is called wherever it goes.
 const skillFile = "SKILL.md"
 
-// skillFor is the skill that tells a host what gridterm is and how to work in a pane it handed over.
+// skillFor is the skill that tells a host what gridterm is and how to work in the panes it shared.
 func skillFor(host agentHost, exe string) string {
 	return fmt.Sprintf(`---
 name: gridterm
-description: Work in a terminal pane the user handed over in gridterm, through its MCP server
+description: Work in the terminal panes the user shared with you in gridterm, through its MCP server
 ---
 
-# Working in a gridterm pane
+# Working in gridterm panes
 
-gridterm is a terminal on the user's machine. The user sets a session up -- through whatever
-machines, as whatever user -- and hands you one pane of it. You work in that pane through
-gridterm's MCP server, and the user watches everything you do.
+gridterm is a terminal on the user's machine. The user puts panes into a share -- on whatever
+machines, as whatever user -- and gives you one code for the whole share. You work in those panes
+through gridterm's MCP server, and the user watches everything you do.
 
 ## Reaching the server
 
@@ -236,13 +236,16 @@ been added here yet.
 
 %s
 
-## Getting a pane
+## Getting the panes
 
-The user hands a pane over in gridterm and gets a session code for that one pane. Ask the user for
-the code if you have not been given one. Call use_session_code with it before anything else. The
-answer names the pane, and every other tool takes that name.
+The user starts a share in gridterm, adds panes to it, and gets one session code for the whole
+share. Ask the user for the code if you have not been given one. Call use_session_code with it
+before anything else. The answer lists the panes, and every other tool takes a pane's name.
 
-## Working in the pane
+The share is not a fixed set. The user adds panes and takes them out while you work, so call
+list_panes when you want to know what you have now.
+
+## Working in a pane
 
 %s
 

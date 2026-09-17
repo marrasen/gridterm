@@ -189,7 +189,7 @@ func TestTheToolsSayWhatKeysAndLinesAreFor(t *testing.T) {
 // what a shell does cannot be taken back.
 func TestTheRulesSayWhatThePaneIsAndStopThere(t *testing.T) {
 	for _, want := range []string{
-		"trusted with a live machine", "cannot undo", "take the pane back",
+		"trusted with live machines", "cannot undo", "take a pane back",
 	} {
 		if !strings.Contains(Rules, want) {
 			t.Errorf("the rules do not say %q: %q", want, Rules)
@@ -200,13 +200,47 @@ func TestTheRulesSayWhatThePaneIsAndStopThere(t *testing.T) {
 		t.Errorf("the rules are %d lines long", lines)
 	}
 	// The short form the pasted prompt carries says the same, in less.
-	for _, want := range []string{"trusted with a live machine", "cannot undo"} {
+	for _, want := range []string{"trusted with live machines", "cannot undo"} {
 		if !strings.Contains(Short, want) {
 			t.Errorf("the short rules do not say %q: %q", want, Short)
 		}
 	}
 	if lines := strings.Count(strings.TrimRight(Short, "\n"), "\n") + 1; lines > 3 {
 		t.Errorf("the short rules are %d lines long", lines)
+	}
+}
+
+// A code names a share of panes, and the words say so everywhere an
+// agent reads them.
+//
+// An agent reads the tool schema before it reads any answer. Told it has
+// one pane, it has no reason to call list_panes again, and a share it
+// never looks at again is a share of one pane.
+func TestTheWordsSayACodeNamesAShare(t *testing.T) {
+	for _, want := range []string{"share", "list_panes", "adds panes and takes them out"} {
+		if !strings.Contains(instructions, want) {
+			t.Errorf("the server's instructions do not say %q:\n%s", want, instructions)
+		}
+	}
+	if strings.Contains(instructions, "one terminal pane at a time") {
+		t.Errorf("the server's instructions still hand out one pane:\n%s", instructions)
+	}
+
+	said := map[string]string{}
+	for _, tl := range toolList() {
+		said[tl.Name] = tl.Description
+	}
+	for _, want := range []string{"share", "lists the panes"} {
+		if !strings.Contains(said["use_session_code"], want) {
+			t.Errorf("use_session_code does not say %q: %q", want, said["use_session_code"])
+		}
+	}
+	// The set changes under the agent, which is the one thing it cannot
+	// find out by being careful.
+	for _, want := range []string{"share", "takes them out while you work"} {
+		if !strings.Contains(said["list_panes"], want) {
+			t.Errorf("list_panes does not say %q: %q", want, said["list_panes"])
+		}
 	}
 }
 

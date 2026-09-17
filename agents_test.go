@@ -1175,8 +1175,8 @@ func TestTheSkillSaysHowToWorkInAHandedOverPane(t *testing.T) {
 
 			// The front matter, which is how a host finds the skill at
 			// all.
-			const front = "---\nname: gridterm\ndescription: Work in a terminal pane the user" +
-				" handed over in gridterm, through its MCP server\n---\n"
+			const front = "---\nname: gridterm\ndescription: Work in the terminal panes the" +
+				" user shared with you in gridterm, through its MCP server\n---\n"
 			if !strings.HasPrefix(skill, front) {
 				t.Errorf("the skill does not start with the front matter")
 			}

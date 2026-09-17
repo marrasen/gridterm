@@ -1619,8 +1619,8 @@ func (a *app) showSetup(host agentHost, exe string, exeErr error) {
 // when it connects; the rules are here too, because a host is free to
 // pass none of that on and the rules are the part with a cost.
 func handoverPrompt(host agentHost, code, exe string) string {
-	return fmt.Sprintf(`The user has handed you one terminal pane in gridterm, a terminal
-running on this machine. You work in that pane through gridterm's MCP
+	return fmt.Sprintf(`The user has shared terminal panes with you in gridterm, a terminal
+running on this machine. You work in those panes through gridterm's MCP
 server, and the user watches everything you do.
 
 That server runs on this machine, on standard input and output (stdio), because
@@ -1630,8 +1630,8 @@ gridterm's tools, it has not been added here yet.
 %s
 
 This code is the only credential and it came from the user. Call
-use_session_code with it before anything else. The answer names the pane, and
-every other tool takes that name.
+use_session_code with it before anything else. The answer lists the panes, and
+every other tool takes a pane's name.
 
   %s
 

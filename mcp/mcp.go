@@ -8,7 +8,7 @@
 //
 // It runs as its own process, started by whatever runs the agent, and
 // holds no credentials. A session code arrives in a tool call and opens
-// one pane.
+// the panes of one share.
 package mcp
 
 import (
@@ -515,21 +515,25 @@ func version() string {
 }
 
 // instructions is what an agent is told about this server when it
-// connects: what a pane is, how to work in one, and the rules. It is the
-// only place an agent is told those, so the prompt the user pastes says
-// none of it.
+// connects: what a share is, how to work in a pane of one, and the
+// rules. It is the only place an agent is told those, so the prompt the
+// user pastes says none of it.
 var instructions = strings.Join([]string{
-	`gridterm hands you one terminal pane at a time.
+	`gridterm hands you terminal panes to work in.
 
-The user sets a session up -- through whatever machines, as whatever
-user -- and then gives you a session code for that one pane. Call
-use_session_code with it before anything else. The answer names the
-pane, and every other tool takes that name.`,
+The user puts panes into a share -- on whatever machines, as whatever
+user -- and gives you one session code for the whole share. Call
+use_session_code with it before anything else. The answer lists the
+panes in the share, and every other tool takes a pane's name.
+
+The share is not a fixed set. The user adds panes and takes them out
+while you work, so call list_panes when you want to know what you have
+now.`,
 	Workflow,
 	Rules,
 }, "\n\n")
 
-// Workflow is how an agent works in a pane it has been handed. This
+// Workflow is how an agent works in a pane of its share. This
 // server's initialize answer and the skill gridterm writes both carry
 // it, so the two cannot drift apart.
 const Workflow = `read_pane gives you the pane's screen as plain text, and takes lines to read that many,
@@ -545,7 +549,8 @@ which is a guess: read the screen before you report a result. Give contains when
 what the screen will say, and it ends on that text instead. Every answer says which of
 those ended the waiting, and says when the time ran out instead. A command whose output goes through a pager -- systemctl, journalctl, git log,
 man -- needs --no-pager or a pipe to cat, or you will be stuck in less, where q gets you out.
-list_panes lists the panes you have been handed, and that is all it lists. In an answer with
+list_panes is the panes in your share now, and that is all it lists: the user can put
+one in or take one back while you work. In an answer with
 a screen, the screen ends at a line reading -- gridterm --, and the rest is gridterm talking.
 Running clear is welcome and cuts down what you have to read: these tools then stop reading
 above it, and the user can still scroll up to everything that was there.`
@@ -556,18 +561,18 @@ above it, and the user can still scroll up to everything that was there.`
 // is the one moment the server's own instructions cannot. A client is
 // free to ignore those instructions altogether, so this says the part
 // with a cost in it either way.
-const Short = `You are being trusted with a live machine. The pane is a real shell and it does
+const Short = `You are being trusted with live machines. A pane is a real shell and it does
 whatever you type into it. Ask before anything you cannot undo.`
 
-// Rules is what an agent may do in a pane it has been handed, and what
-// it may not.
+// Rules is what an agent may do in the panes it has been given, and
+// what it may not.
 //
 // It is short on purpose. A list of prohibitions invites an agent to
 // work out what is not on it; being told plainly that this is somebody's
 // machine and that the trust is real does the same work in fewer words.
 // What the tools refuse is refused in the tools, not here, and the user
 // is watching and deciding as it goes.
-const Rules = `You are being trusted with a live machine. The pane is a real shell, running as whoever
+const Rules = `You are being trusted with live machines. A pane is a real shell, running as whoever
 the user set it up as, and it does whatever you type into it. Do not spend that trust: ask
-before anything you cannot undo. They are watching this screen and can take the pane back
+before anything you cannot undo. They are watching these screens and can take a pane back
 at any moment.`

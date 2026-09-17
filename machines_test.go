@@ -799,7 +799,7 @@ func TestACommandThatWillNotCloseSaysSo(t *testing.T) {
 
 	// A second pane standing in for a command: what it printed is what
 	// it was run for, so it keeps its pane when it stops.
-	if err := a.openTab(); err != nil {
+	if err := a.openPane(); err != nil {
 		t.Fatalf("open tab: %v", err)
 	}
 	pane := a.focusedTerminal()

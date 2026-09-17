@@ -242,7 +242,7 @@ func TestANewTabOpensHereOnceTheTargetHasGone(t *testing.T) {
 	}
 	waitFor(t, a, "the connection to go", func() bool { return a.about(target).machine == nil })
 
-	if err := a.openTab(); err != nil {
+	if err := a.openPane(); err != nil {
 		t.Fatalf("a new tab: %v", err)
 	}
 	pane := newestPane(t, a)

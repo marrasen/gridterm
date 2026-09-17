@@ -982,7 +982,7 @@ func TestTheSidebarShowsWhatTheOtherWindowHasOpen(t *testing.T) {
 	host, client, addr := twoWindows(t)
 
 	// Something on the serving window that this one did not open.
-	if err := host.openTab(); err != nil {
+	if err := host.openPane(); err != nil {
 		t.Fatalf("a shell on the serving window: %v", err)
 	}
 	host.refreshPanel(panelNow)
@@ -1043,7 +1043,7 @@ func TestAttachingShowsWhatIsAlreadyOnTheScreen(t *testing.T) {
 	// A second shell over there, so the window keeps a row of its own
 	// after this one takes the first shell over. Without it the "listed
 	// twice" check at the end would pass on an empty list.
-	if err := host.openTab(); err != nil {
+	if err := host.openPane(); err != nil {
 		t.Fatalf("a second shell on the serving window: %v", err)
 	}
 	host.refreshPanel(panelNow)
@@ -1229,7 +1229,7 @@ func TestTheRowChosenIsTheOneAttachedTo(t *testing.T) {
 	// told apart. The shells this window opened over there are in the
 	// same list, so the new one is counted from where the list stood.
 	second := len(host.shells)
-	if err := host.openTab(); err != nil {
+	if err := host.openPane(); err != nil {
 		t.Fatalf("a second shell there: %v", err)
 	}
 	newest := newestPane(t, host)
@@ -1315,7 +1315,7 @@ func TestARowKeepsItsNameWhenSomethingElseCloses(t *testing.T) {
 	first := onlyPaneOn(t, host)
 
 	second := len(host.shells)
-	if err := host.openTab(); err != nil {
+	if err := host.openPane(); err != nil {
 		t.Fatalf("a second shell there: %v", err)
 	}
 	newest := newestPane(t, host)

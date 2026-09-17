@@ -146,46 +146,6 @@ order Ctrl+Tab moves in, and expected recently used.
   keyboard config under "Asked for, not yet worked out" is designed, so
   the file does not have to change shape twice.
 
-## The tab strip is a remnant: delete it and rename what is left
-
-Asked about and answered on 2026-09-17. Marcus guessed this was left
-over from before the sidebar, and it is. Commit c52e0a1, "The sidebar
-chooses what is showing, not a row of tabs", says in its own message
-"So the strip is gone" -- but it was switched off with a flag rather
-than deleted. `newTabs` sets `HideStrip = true` for every strip the
-window makes, and nothing outside the `ui` package's own tests ever
-sets it false.
-
-- **Delete the strip.** About 127 of the 374 lines of ui/tabs.go:
-  `stripRows`, the `Titled` interface, the four colour fields, `Label`,
-  `HideStrip`, `stripHeld` and `stripButton`, the `buf`, and the methods
-  `strip`, `labels`, `labelOf`, `drawStrip`, `paintStrip` and
-  `CancelGesture`, plus the strip branch of `HandleMouse`. `Draw`,
-  `body` and `ChildArea` all shrink. About 13 of the 37 tests in
-  ui/tabs_test.go go with it. `Titled` is used by `labelOf` and by
-  nothing else. No behaviour changes.
-
-- **Delete the nesting branch in `placeTab`.** panes.go:249 wraps the
-  focused pane in a strip of its own when nothing above it is one. It
-  cannot run: the stage sits above every pane, so `stripAbove` always
-  finds it, and a new pane opened while the keys are inside a split is
-  added to the stage beside that split. Probed rather than assumed --
-  the tree after a split and another new pane is
-  `Stage[leaf, Split[leaf, leaf], leaf]`, flat. Nothing is ever stacked
-  behind anything, and the "+" already opens a pane at the top level,
-  which is what Marcus wants it to do.
-
-- **Rename `Tabs` to `Deck`.** A deck of panes, one face up. The word
-  "tab" names a thing that has not been on screen since 2026-09-14, and
-  it is what made an explanation of the switching keys unreadable: it
-  described a widget the user has never seen. The `tab.next` and
-  `tab.previous` command ids go with it, and `stripAbove` becomes the
-  deck above a pane.
-
-- **"New tab" becomes "New pane".** It matches "Close pane" and "Split
-  pane", which already say pane, and there is no tab left in the product
-  to name.
-
 ## Panes and the sidebar
 
 - **A pane on a taken-over window cannot be reconnected.** Marcus typed

@@ -166,8 +166,8 @@ func TestACommandThatFinishedNamesWhatYesWouldRun(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withDialogs(t, a)
 	withPanel(t, a)
-	if err := a.openTab(); err != nil {
-		t.Fatalf("openTab: %v", err)
+	if err := a.openPane(); err != nil {
+		t.Fatalf("openPane: %v", err)
 	}
 	pane := a.focusedTerminal()
 	if pane == nil {
@@ -381,8 +381,8 @@ func TestAPaneWhoseProgramIsRunningAsksNothing(t *testing.T) {
 	withDialogs(t, a)
 	withPanel(t, a)
 	first := firstPane(t, a)
-	if err := a.openTab(); err != nil {
-		t.Fatalf("openTab: %v", err)
+	if err := a.openPane(); err != nil {
+		t.Fatalf("openPane: %v", err)
 	}
 	second := a.focusedTerminal()
 
@@ -418,8 +418,8 @@ func TestPickingCloseClosesThePane(t *testing.T) {
 	withDialogs(t, a)
 	withPanel(t, a)
 	first := firstPane(t, a)
-	if err := a.openTab(); err != nil {
-		t.Fatalf("openTab: %v", err)
+	if err := a.openPane(); err != nil {
+		t.Fatalf("openPane: %v", err)
 	}
 	endTheShell(t, a, 0, first)
 	// The pane put in front, which is how the user reaches a question on
@@ -819,8 +819,8 @@ func TestAPaneThatEndedInAnotherTabIsFoundAsking(t *testing.T) {
 	withDialogs(t, a)
 	withPanel(t, a)
 	first := firstPane(t, a)
-	if err := a.openTab(); err != nil {
-		t.Fatalf("openTab: %v", err)
+	if err := a.openPane(); err != nil {
+		t.Fatalf("openPane: %v", err)
 	}
 	second := a.focusedTerminal()
 	sayOnPane(t, a, 0, first, "before it went")
@@ -851,8 +851,8 @@ func TestEnterOnACommandPaneDoesNotRunItAgain(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withDialogs(t, a)
 	withPanel(t, a)
-	if err := a.openTab(); err != nil {
-		t.Fatalf("openTab: %v", err)
+	if err := a.openPane(); err != nil {
+		t.Fatalf("openPane: %v", err)
 	}
 	pane := a.focusedTerminal()
 	a.panes[pane].Kind = conns.Command
@@ -999,8 +999,8 @@ func TestAStatusThatLandsLateStillReachesTheQuestion(t *testing.T) {
 	withPanel(t, a)
 	held := newHeldSession()
 	a.newShell = func([]string, int, int) (session.Session, error) { return held, nil }
-	if err := a.openTab(); err != nil {
-		t.Fatalf("openTab: %v", err)
+	if err := a.openPane(); err != nil {
+		t.Fatalf("openPane: %v", err)
 	}
 	pane := a.focusedTerminal()
 	a.panes[pane].Kind = conns.Command

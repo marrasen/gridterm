@@ -68,8 +68,8 @@ func TestThePointerOverASplitDivider(t *testing.T) {
 			a := newTestApp(t, 160, 48)
 			withDialogs(t, a)
 			withPanel(t, a)
-			if err := a.openTab(); err != nil {
-				t.Fatalf("openTab: %v", err)
+			if err := a.openPane(); err != nil {
+				t.Fatalf("openPane: %v", err)
 			}
 			next := a.focusedTerminal()
 			current := otherTerminal(t, a, next)

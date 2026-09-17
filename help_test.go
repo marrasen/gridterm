@@ -121,7 +121,7 @@ func TestTheHelpMenuListsTheKeys(t *testing.T) {
 	chooseMenuItem(t, m, helpCommand)
 
 	n := awaitModal(t, a, "the key list", byTitle[*ui.Notice](helpTitle))
-	if !strings.Contains(n.Message(), "New tab") {
+	if !strings.Contains(n.Message(), "New pane") {
 		t.Errorf("the list leaves out a command the menus offer: %q", n.Message())
 	}
 }

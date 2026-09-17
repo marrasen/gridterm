@@ -227,7 +227,7 @@ func TestCursorFindsADividerUnderPlainContainers(t *testing.T) {
 	a := &filler{ch: 'a'}
 	s := NewSplit(Columns, a, &filler{ch: 'b'})
 	panel := &fake{name: "panel"}
-	d := NewDock(20, panel, NewTabs(s))
+	d := NewDock(20, panel, NewDeck(s))
 	r := rootOver(NewMenubar(nil, nil, d), 100, 30)
 
 	dockAt, ok := r.AreaOf(d)

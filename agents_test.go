@@ -925,7 +925,7 @@ func TestTakingOnePaneBackWithAnotherStillOut(t *testing.T) {
 	withPanel(t, a)
 
 	// Two panes, both handed over.
-	if err := a.openTab(); err != nil {
+	if err := a.openPane(); err != nil {
 		t.Fatalf("a second pane: %v", err)
 	}
 	panes := make([]*term.Terminal, 0, 2)
@@ -3541,7 +3541,7 @@ func TestAUserSharesTwoPanesUnderOneCode(t *testing.T) {
 	withDialogs(t, a)
 	withPanel(t, a)
 	first := onlyPaneOn(t, a)
-	if err := a.openTabHere(); err != nil {
+	if err := a.openPaneHere(); err != nil {
 		t.Fatalf("open a second pane: %v", err)
 	}
 	var second *term.Terminal
@@ -3650,7 +3650,7 @@ func TestAPaneAddedWhileTheAgentWorksTurnsUp(t *testing.T) {
 
 	// The user opens another pane and adds it, while the agent holds the
 	// code it already used.
-	if err := a.openTabHere(); err != nil {
+	if err := a.openPaneHere(); err != nil {
 		t.Fatalf("open a second pane: %v", err)
 	}
 	var second *term.Terminal
@@ -3729,7 +3729,7 @@ func firstOf(sh agent.Share, err error) (agent.Pane, error) {
 func twoSharedPanes(t *testing.T, a *testApp) (*term.Terminal, *term.Terminal) {
 	t.Helper()
 	first := onlyPaneOn(t, a)
-	if err := a.openTabHere(); err != nil {
+	if err := a.openPaneHere(); err != nil {
 		t.Fatalf("open a second pane: %v", err)
 	}
 	var second *term.Terminal

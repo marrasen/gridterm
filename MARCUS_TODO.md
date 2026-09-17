@@ -6,6 +6,13 @@ that glows, make it animate slowly, and add an overlay to the top right that sho
 and two chips. Clicking on a chip pops up the dialog where it can be closed. Also, add somewhere where we can see what
 commands the agent performed in hindsight.
 
+# MCP
+
+Agents feel like they need to prepend commands with "clear;", we need to make it clear (PUN INTENDEND!) to them
+that it's not needed. The commands they run disappear when they use clear, and it also causes problems sometimes.
+
+Should we add this to the prompt or to the MCP tool description? The tool description?
+
 # Closing processes
 
 What happens when I close the gridterm window? Will the app close all connections and processes gracefully?

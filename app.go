@@ -104,7 +104,7 @@ type app struct {
 	dock  *ui.Dock
 	panel *ui.List
 	side  *sidebar
-	stage *ui.Tabs
+	stage *ui.Deck
 
 	// hostMenus is the machine a menu opened from the sidebar is about.
 	hostMenus hostMenus
@@ -595,7 +595,7 @@ func (a *app) commands() {
 		ui.Command{ID: "pane.unsplit", Title: "Take this pane out of its split",
 			Run: a.unsplitFocused},
 		ui.Command{ID: "pane.close", Title: "Close pane", Run: a.closeFocused},
-		ui.Command{ID: "tab.open", Title: "New tab", Run: a.openTab},
+		ui.Command{ID: "pane.open", Title: "New pane", Run: a.openPane},
 		ui.Command{ID: "server.connect", Title: "Connect to a server", Run: a.openServer},
 		ui.Command{ID: "server.add", Title: "Add a server", Run: a.openAddServer},
 		ui.Command{ID: "server.reload", Title: "Reread the server list", Run: a.reloadBook},
@@ -633,10 +633,10 @@ func (a *app) commands() {
 			Run: a.lockKeys},
 		ui.Command{ID: "palette.open", Title: "Show all commands", Run: a.openPalette},
 		ui.Command{ID: "menu.open", Title: "Show the menu bar", Run: a.openMenu},
-		ui.Command{ID: "tab.next", Title: "Next pane, down the sidebar", Run: func() error {
+		ui.Command{ID: "pane.nextInSidebar", Title: "Next pane, down the sidebar", Run: func() error {
 			return a.focusInSidebarOrder(1)
 		}},
-		ui.Command{ID: "tab.previous", Title: "Previous pane, up the sidebar", Run: func() error {
+		ui.Command{ID: "pane.previousInSidebar", Title: "Previous pane, up the sidebar", Run: func() error {
 			return a.focusInSidebarOrder(-1)
 		}},
 		ui.Command{ID: "pane.next", Title: "Next pane", Run: func() error {
@@ -672,12 +672,12 @@ func (a *app) commands() {
 		{Key: input.KeyW, Mods: input.ModCtrl | input.ModShift}:      "pane.close",
 		{Key: input.KeyTab, Mods: input.ModCtrl}:                     "pane.next",
 		{Key: input.KeyTab, Mods: input.ModCtrl | input.ModShift}:    "pane.previous",
-		{Key: input.KeyT, Mods: input.ModCtrl | input.ModShift}:      "tab.open",
+		{Key: input.KeyT, Mods: input.ModCtrl | input.ModShift}:      "pane.open",
 		{Key: input.KeyN, Mods: input.ModCtrl | input.ModShift}:      "server.connect",
 		{Key: input.KeyB, Mods: input.ModCtrl | input.ModShift}:      "panel.toggle",
 		{Key: input.KeyL, Mods: input.ModCtrl | input.ModShift}:      "panel.focus",
-		{Key: input.KeyPageDown, Mods: input.ModCtrl}:                "tab.next",
-		{Key: input.KeyPageUp, Mods: input.ModCtrl}:                  "tab.previous",
+		{Key: input.KeyPageDown, Mods: input.ModCtrl}:                "pane.nextInSidebar",
+		{Key: input.KeyPageUp, Mods: input.ModCtrl}:                  "pane.previousInSidebar",
 		{Key: input.KeyG, Mods: input.ModCtrl | input.ModShift}:      "files.goTo",
 		// Ctrl+Shift+K, not Ctrl+K: Ctrl+K is readline's kill-to-end-of-
 		// line, and an accelerator runs before any widget sees the key,

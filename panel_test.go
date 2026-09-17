@@ -330,8 +330,8 @@ func TestANarrowSidebarStillShowsTheState(t *testing.T) {
 func TestThePulseMovesOnlyTheActiveRowsIcon(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withPanel(t, a)
-	if err := a.openTab(); err != nil {
-		t.Fatalf("openTab: %v", err)
+	if err := a.openPane(); err != nil {
+		t.Fatalf("openPane: %v", err)
 	}
 	a.panel.SetFocus(false)
 	busy := a.panes[a.focusedTerminal()]
@@ -531,8 +531,8 @@ func TestPanelSaysNoStateInWords(t *testing.T) {
 func TestTheSidebarMarksThePaneInFront(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withPanel(t, a)
-	if err := a.openTab(); err != nil {
-		t.Fatalf("openTab: %v", err)
+	if err := a.openPane(); err != nil {
+		t.Fatalf("openPane: %v", err)
 	}
 	// The keys are in a pane, not in the sidebar.
 	a.panel.SetFocus(false)
@@ -631,8 +631,8 @@ func TestPanelGroupsByMachine(t *testing.T) {
 func TestPanelRowGoesWithItsPane(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withPanel(t, a)
-	if err := a.openTab(); err != nil {
-		t.Fatalf("openTab: %v", err)
+	if err := a.openPane(); err != nil {
+		t.Fatalf("openPane: %v", err)
 	}
 	if got := panelText(a, panelNow); len(got) != 3 {
 		t.Fatalf("the panel shows %v, want a heading and two rows", got)
@@ -678,8 +678,8 @@ func TestPanelKeepsAFinishedConnectionUntilItIsCleared(t *testing.T) {
 func TestPanelActivatingARowRevealsIt(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withPanel(t, a)
-	if err := a.openTab(); err != nil {
-		t.Fatalf("openTab: %v", err)
+	if err := a.openPane(); err != nil {
+		t.Fatalf("openPane: %v", err)
 	}
 	// The pane that does not have the keys.
 	first := unfocusedPaneRow(t, a)
@@ -700,8 +700,8 @@ func TestPanelActivatingARowRevealsIt(t *testing.T) {
 func TestPanelClosesTheSelectedConnection(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withPanel(t, a)
-	if err := a.openTab(); err != nil {
-		t.Fatalf("openTab: %v", err)
+	if err := a.openPane(); err != nil {
+		t.Fatalf("openPane: %v", err)
 	}
 	e := unfocusedPaneRow(t, a).Key.(*conns.Entry)
 	a.panel.Select(e)
@@ -793,8 +793,8 @@ func TestFocusPanelOpensItFirst(t *testing.T) {
 func TestPanelTakesTheKeysWhileItHasThem(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withPanel(t, a)
-	if err := a.openTab(); err != nil {
-		t.Fatalf("openTab: %v", err)
+	if err := a.openPane(); err != nil {
+		t.Fatalf("openPane: %v", err)
 	}
 	panelText(a, panelNow)
 	if err := a.focusPanel(); err != nil {
@@ -899,8 +899,8 @@ func TestPanelSeesTheShellGo(t *testing.T) {
 func TestPanelEnterRevealsThroughTheList(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withPanel(t, a)
-	if err := a.openTab(); err != nil {
-		t.Fatalf("openTab: %v", err)
+	if err := a.openPane(); err != nil {
+		t.Fatalf("openPane: %v", err)
 	}
 	if err := a.focusPanel(); err != nil {
 		t.Fatalf("focusPanel: %v", err)
@@ -966,8 +966,8 @@ func TestPanelKeepsTheRowOfAShellThatEndedOnItsOwn(t *testing.T) {
 	if !ok {
 		t.Fatal("the window opened on something that is not a terminal")
 	}
-	if err := a.openTab(); err != nil {
-		t.Fatalf("openTab: %v", err)
+	if err := a.openPane(); err != nil {
+		t.Fatalf("openPane: %v", err)
 	}
 	panelText(a, panelNow)
 
@@ -1019,8 +1019,8 @@ func TestClosingTheRowOfAShellThatEndedTakesItOff(t *testing.T) {
 	if !ok {
 		t.Fatal("the window opened on something that is not a terminal")
 	}
-	if err := a.openTab(); err != nil {
-		t.Fatalf("openTab: %v", err)
+	if err := a.openPane(); err != nil {
+		t.Fatalf("openPane: %v", err)
 	}
 	panelText(a, panelNow)
 	stopped := a.panes[first]
@@ -1598,8 +1598,8 @@ func TestTheBarFollowsWhatTheStageShows(t *testing.T) {
 		t.Fatal("the bar is not on the pane the window opened with")
 	}
 
-	if err := a.openTab(); err != nil {
-		t.Fatalf("openTab: %v", err)
+	if err := a.openPane(); err != nil {
+		t.Fatalf("openPane: %v", err)
 	}
 	next := a.panes[a.focusedTerminal()]
 	a.refreshPanel(panelNow)

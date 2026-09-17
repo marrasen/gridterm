@@ -286,7 +286,7 @@ func newTestApp(t *testing.T, cols, rows int, opts ...testOption) *testApp {
 	}
 	// The same shape the window has: everything open sits on the stage,
 	// which shows one at a time.
-	ta.stage = ta.newTabs(startingPanes(first)...)
+	ta.stage = ta.newDeck(startingPanes(first)...)
 	ta.root.SetWidget(ta.stage)
 	ta.root.Layout(ui.Rect{Cols: cols, Rows: rows})
 	t.Cleanup(func() {
@@ -615,8 +615,8 @@ func TestCtrlTabWalksPanesAndNotTheSidebar(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withDialogs(t, a)
 	withPanel(t, a)
-	if err := a.openTab(); err != nil {
-		t.Fatalf("openTab: %v", err)
+	if err := a.openPane(); err != nil {
+		t.Fatalf("openPane: %v", err)
 	}
 
 	// Twice round a walk of two panes, so anything else in the order
@@ -649,7 +649,7 @@ func TestTheSidebarKeysStepInFromTheSidebarItself(t *testing.T) {
 	a := newTestApp(t, 90, 30)
 	withDialogs(t, a)
 	withPanel(t, a)
-	if err := a.openTab(); err != nil {
+	if err := a.openPane(); err != nil {
 		t.Fatalf("open tab: %v", err)
 	}
 	a.relayout()
@@ -959,12 +959,12 @@ func TestOpenTabStartsAStrip(t *testing.T) {
 	a := newTestApp(t, 40, 10)
 	first := ui.FocusedLeaf(a.root.Widget()).(*term.Terminal)
 
-	if err := a.openTab(); err != nil {
+	if err := a.openPane(); err != nil {
 		t.Fatalf("open tab: %v", err)
 	}
 
 	checkTree(t, a)
-	strip, ok := a.root.Widget().(*ui.Tabs)
+	strip, ok := a.root.Widget().(*ui.Deck)
 	if !ok {
 		t.Fatalf("root = %T, want a tab strip", a.root.Widget())
 	}
@@ -981,7 +981,7 @@ func TestOpenTabStartsAStrip(t *testing.T) {
 func TestOpenTabAddsToAnExistingStrip(t *testing.T) {
 	a := newTestApp(t, 40, 10)
 	for i := 0; i < 2; i++ {
-		if err := a.openTab(); err != nil {
+		if err := a.openPane(); err != nil {
 			t.Fatalf("open tab: %v", err)
 		}
 	}
@@ -998,17 +998,14 @@ func TestOpenTabAddsToAnExistingStrip(t *testing.T) {
 // The stage draws no row of labels. Which pane is showing is chosen from
 // the sidebar, which has room to say what each one is and which machine
 // it is on.
-func TestTheStageHasNoTabStrip(t *testing.T) {
+func TestTheStageGivesThePaneEveryRow(t *testing.T) {
 	a := newTestApp(t, 40, 10)
 	for i := 0; i < 2; i++ {
-		if err := a.openTab(); err != nil {
+		if err := a.openPane(); err != nil {
 			t.Fatalf("open tab: %v", err)
 		}
 	}
-	if !a.stage.HideStrip {
-		t.Fatal("the stage draws a strip of labels")
-	}
-	// The pane being shown gets every row, rather than all but one.
+	// The pane being shown gets every row: nothing is drawn above it.
 	area, shown := a.root.AreaOf(ui.FocusedLeaf(a.root.Widget()))
 	if !shown {
 		t.Fatal("the pane being shown is not on screen")
@@ -1025,7 +1022,7 @@ func TestTabsAndSplitsNest(t *testing.T) {
 	if err := a.splitHere(ui.Columns); err != nil {
 		t.Fatalf("split: %v", err)
 	}
-	if err := a.openTab(); err != nil {
+	if err := a.openPane(); err != nil {
 		t.Fatalf("open tab: %v", err)
 	}
 
@@ -1056,7 +1053,7 @@ func TestTabsAndSplitsNest(t *testing.T) {
 func TestTheKeysCycleThroughEveryPane(t *testing.T) {
 	a := newTestApp(t, 40, 10)
 	for i := 0; i < 2; i++ {
-		if err := a.openTab(); err != nil {
+		if err := a.openPane(); err != nil {
 			t.Fatalf("open tab: %v", err)
 		}
 	}
@@ -1114,7 +1111,7 @@ func TestTheKeysDoNothingWithOnePane(t *testing.T) {
 func TestTheStageOutlivesItsPanes(t *testing.T) {
 	a := newTestApp(t, 40, 10)
 	for i := 0; i < 2; i++ {
-		if err := a.openTab(); err != nil {
+		if err := a.openPane(); err != nil {
 			t.Fatalf("open tab: %v", err)
 		}
 	}
@@ -1157,7 +1154,7 @@ func TestTabsAndSplitsFuzz(t *testing.T) {
 			// Refusing for want of room is an answer, not a failure.
 			_ = a.splitHere(dir)
 		case 1:
-			if err := a.openTab(); err != nil {
+			if err := a.openPane(); err != nil {
 				t.Fatalf("step %d: open tab: %v", step, err)
 			}
 		case 2:
@@ -1246,7 +1243,7 @@ func TestTheSidebarKeysWalkDownTheSidebar(t *testing.T) {
 	// which puts it between the two in the tree and after both in the
 	// sidebar.
 	first := onlyPaneWidget(t, a)
-	if err := a.openTab(); err != nil {
+	if err := a.openPane(); err != nil {
 		t.Fatalf("open tab: %v", err)
 	}
 	a.focus(first)
@@ -1362,7 +1359,7 @@ func TestTheKeysReachEveryPaneWithTheSidebarShut(t *testing.T) {
 // openAPane opens a tab and returns the pane it put in front.
 func openAPane(t *testing.T, a *testApp) ui.Widget {
 	t.Helper()
-	if err := a.openTab(); err != nil {
+	if err := a.openPane(); err != nil {
 		t.Fatalf("open tab: %v", err)
 	}
 	return ui.FocusedLeaf(a.root.Widget())
@@ -1373,19 +1370,19 @@ func openAPane(t *testing.T, a *testApp) ui.Widget {
 // second strip nested inside the split.
 func TestOpenTabFromInsideASplitJoinsTheStripAbove(t *testing.T) {
 	a := newTestApp(t, 60, 20)
-	if err := a.openTab(); err != nil {
+	if err := a.openPane(); err != nil {
 		t.Fatalf("open tab: %v", err)
 	}
 	if err := a.splitHere(ui.Columns); err != nil {
 		t.Fatalf("split: %v", err)
 	}
 
-	if err := a.openTab(); err != nil {
+	if err := a.openPane(); err != nil {
 		t.Fatalf("open tab: %v", err)
 	}
 
 	checkTree(t, a)
-	strip, ok := a.root.Widget().(*ui.Tabs)
+	strip, ok := a.root.Widget().(*ui.Deck)
 	if !ok {
 		t.Fatalf("root = %T, want one strip", a.root.Widget())
 	}
@@ -1393,7 +1390,7 @@ func TestOpenTabFromInsideASplitJoinsTheStripAbove(t *testing.T) {
 		t.Errorf("%d tabs, want 3 in the one strip", got)
 	}
 	for _, tab := range strip.Children() {
-		if _, nested := tab.(*ui.Tabs); nested {
+		if _, nested := tab.(*ui.Deck); nested {
 			t.Error("a second strip was started inside the first")
 		}
 	}
@@ -1787,8 +1784,8 @@ func TestClosingAPaneForgetsItEvenWithTheSidebarHidden(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withDialogs(t, a)
 	withPanel(t, a)
-	if err := a.openTab(); err != nil {
-		t.Fatalf("openTab: %v", err)
+	if err := a.openPane(); err != nil {
+		t.Fatalf("openPane: %v", err)
 	}
 	a.refreshPanel(panelNow)
 	if a.shown == nil {

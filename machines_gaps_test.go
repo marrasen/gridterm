@@ -321,7 +321,7 @@ func TestClosingAConnectionLeavesOtherPanesUnderThatNameAlone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the pane under the name: %v", err)
 	}
-	if err := a.placeTab(left); err != nil {
+	if err := a.placePane(left); err != nil {
 		t.Fatalf("place it: %v", err)
 	}
 	a.showPane(left)

@@ -92,8 +92,8 @@ func TestAShellThatEndsKeepsItsPane(t *testing.T) {
 	if !ok {
 		t.Fatal("the window opened on something that is not a terminal")
 	}
-	if err := a.openTab(); err != nil {
-		t.Fatalf("openTab: %v", err)
+	if err := a.openPane(); err != nil {
+		t.Fatalf("openPane: %v", err)
 	}
 
 	endTheShell(t, a, 0, first)
@@ -120,8 +120,8 @@ func TestAPaneWhoseShellEndedCanStillBeChosen(t *testing.T) {
 	if !ok {
 		t.Fatal("the window opened on something that is not a terminal")
 	}
-	if err := a.openTab(); err != nil {
-		t.Fatalf("openTab: %v", err)
+	if err := a.openPane(); err != nil {
+		t.Fatalf("openPane: %v", err)
 	}
 	endTheShell(t, a, 0, first)
 
@@ -188,8 +188,8 @@ func TestTheRowOfAPaneWhoseShellEndedSaysSo(t *testing.T) {
 	if !ok {
 		t.Fatal("the window opened on something that is not a terminal")
 	}
-	if err := a.openTab(); err != nil {
-		t.Fatalf("openTab: %v", err)
+	if err := a.openPane(); err != nil {
+		t.Fatalf("openPane: %v", err)
 	}
 	running := paneRow(t, a, a.panes[first])
 
@@ -225,8 +225,8 @@ func TestClearingFinishedTakesAwayAPaneWhoseShellEnded(t *testing.T) {
 	if !ok {
 		t.Fatal("the window opened on something that is not a terminal")
 	}
-	if err := a.openTab(); err != nil {
-		t.Fatalf("openTab: %v", err)
+	if err := a.openPane(); err != nil {
+		t.Fatalf("openPane: %v", err)
 	}
 	endTheShell(t, a, 0, first)
 	e := a.panes[first]
@@ -261,8 +261,8 @@ func TestClosePaneTakesAwayAPaneWhoseShellEnded(t *testing.T) {
 	if !ok {
 		t.Fatal("the window opened on something that is not a terminal")
 	}
-	if err := a.openTab(); err != nil {
-		t.Fatalf("openTab: %v", err)
+	if err := a.openPane(); err != nil {
+		t.Fatalf("openPane: %v", err)
 	}
 	endTheShell(t, a, 0, first)
 	a.focus(first)
@@ -565,8 +565,8 @@ func TestClearingFinishedBeforeTheReapLeavesNoPaneWithoutARow(t *testing.T) {
 	if !ok {
 		t.Fatal("the window opened on something that is not a terminal")
 	}
-	if err := a.openTab(); err != nil {
-		t.Fatalf("openTab: %v", err)
+	if err := a.openPane(); err != nil {
+		t.Fatalf("openPane: %v", err)
 	}
 
 	// The shell goes and its meter closes with it. Nothing reaps.
@@ -817,8 +817,8 @@ func TestADeadPaneInASplitOutlivesItsNeighbour(t *testing.T) {
 	if !ok {
 		t.Fatal("the window opened on something that is not a terminal")
 	}
-	if err := a.openTab(); err != nil {
-		t.Fatalf("openTab: %v", err)
+	if err := a.openPane(); err != nil {
+		t.Fatalf("openPane: %v", err)
 	}
 	second := a.focusedTerminal()
 	if second == nil || second == first {

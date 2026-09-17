@@ -80,8 +80,8 @@ func TestSplittingAsksWhatGoesBesideIt(t *testing.T) {
 
 	// Something else open, so being first is a place rather than the
 	// only place there is.
-	if err := a.openTab(); err != nil {
-		t.Fatalf("openTab: %v", err)
+	if err := a.openPane(); err != nil {
+		t.Fatalf("openPane: %v", err)
 	}
 
 	c := splitChoices(t, a, ui.Columns)
@@ -110,8 +110,8 @@ func TestSplittingWithAPaneAlreadyOpen(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withDialogs(t, a)
 	withPanel(t, a)
-	if err := a.openTab(); err != nil {
-		t.Fatalf("openTab: %v", err)
+	if err := a.openPane(); err != nil {
+		t.Fatalf("openPane: %v", err)
 	}
 	moved := a.focusedTerminal()
 	first := otherTerminal(t, a, moved)
@@ -145,8 +145,8 @@ func TestAPaneMovedIntoASplitLeavesItsOldPlace(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withDialogs(t, a)
 	withPanel(t, a)
-	if err := a.openTab(); err != nil {
-		t.Fatalf("openTab: %v", err)
+	if err := a.openPane(); err != nil {
+		t.Fatalf("openPane: %v", err)
 	}
 	moved := a.focusedTerminal()
 	first := otherTerminal(t, a, moved)
@@ -381,8 +381,8 @@ func TestSplittingGroupsThePanesToMoveByMachine(t *testing.T) {
 	// machine, this machine, a machine. Grouping has to gather each
 	// machine's panes into one run, and the pane doing the splitting is
 	// left out of the list, so the first one is the one to split from.
-	if err := a.openTabHere(); err != nil {
-		t.Fatalf("openTabHere: %v", err)
+	if err := a.openPaneHere(); err != nil {
+		t.Fatalf("openPaneHere: %v", err)
 	}
 	if err := a.openTerminalOn("margit", nil); err != nil {
 		t.Fatalf("a second pane on the machine: %v", err)
@@ -498,8 +498,8 @@ func TestASplitWhosePaneWentOpensATabInstead(t *testing.T) {
 	withPanel(t, a)
 	pinServers(t, a, s)
 
-	if err := a.openTab(); err != nil {
-		t.Fatalf("openTab: %v", err)
+	if err := a.openPane(); err != nil {
+		t.Fatalf("openPane: %v", err)
 	}
 	doomed := a.focusedTerminal()
 	at := &spot{beside: doomed, dir: ui.Columns}
@@ -663,8 +663,8 @@ func TestAPaneThatClosedWhileAskingIsNotSplicedBack(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withDialogs(t, a)
 	withPanel(t, a)
-	if err := a.openTab(); err != nil {
-		t.Fatalf("openTab: %v", err)
+	if err := a.openPane(); err != nil {
+		t.Fatalf("openPane: %v", err)
 	}
 	doomed := a.focusedTerminal()
 	first := otherTerminal(t, a, doomed)
@@ -760,8 +760,8 @@ func TestASplitWhosePaneWentToTheBackgroundOpensATab(t *testing.T) {
 	at := &spot{beside: first, dir: ui.Columns}
 	// Another tab, so the pane the split was meant for is no longer the
 	// one showing and has no area to divide.
-	if err := a.openTab(); err != nil {
-		t.Fatalf("openTab: %v", err)
+	if err := a.openPane(); err != nil {
+		t.Fatalf("openPane: %v", err)
 	}
 
 	a.openRoute("margit", []step{{name: "margit", cfg: serverConfig(t, s)}}, opening{}, at)

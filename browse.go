@@ -137,7 +137,7 @@ func (a *app) openFileManager() error {
 	// colours, so both read as part of the manager.
 	b.view.Style = a.paneStyle()
 	a.wireBrowser(b)
-	if err := a.placeTab(b.view); err != nil {
+	if err := a.placePane(b.view); err != nil {
 		return err
 	}
 	a.files = b

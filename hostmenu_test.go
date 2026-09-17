@@ -193,7 +193,7 @@ func TestThePlusOnLocalOffersFilesAndATerminal(t *testing.T) {
 			t.Errorf("the menu does not offer %s: %v", want, menuCommands(menu))
 		}
 	}
-	for _, not := range []string{"tab.open", "conn.tunnel", "conn.disconnect", "agent.hand"} {
+	for _, not := range []string{"pane.open", "conn.tunnel", "conn.disconnect", "agent.hand"} {
 		if offers(menu, not) {
 			t.Errorf("the menu offers %s, which is not about this machine", not)
 		}
@@ -222,7 +222,7 @@ func TestThePlusOnAServerOffersWhatAConnectionCanCarry(t *testing.T) {
 	}
 	// And not the one that opens a plain tab here, which would say it
 	// runs on the server and not.
-	if offers(menu, "tab.open") {
+	if offers(menu, "pane.open") {
 		t.Errorf("the menu offers a local tab: %v", menuCommands(menu))
 	}
 	// Nor the one that closes whatever the list has selected. Clicking

@@ -419,8 +419,8 @@ func TestTheCrossOnAPaneRowClosesThePane(t *testing.T) {
 	}
 	e := a.panes[first]
 	// A second pane, so closing the first does not close the window.
-	if err := a.openTab(); err != nil {
-		t.Fatalf("openTab: %v", err)
+	if err := a.openPane(); err != nil {
+		t.Fatalf("openPane: %v", err)
 	}
 
 	pointAtRow(t, a, e)
@@ -485,8 +485,8 @@ func TestNoCrossOnceTheWindowHasLostThePointer(t *testing.T) {
 		t.Fatal("the window opened on something that is not a terminal")
 	}
 	e := a.panes[first]
-	if err := a.openTab(); err != nil {
-		t.Fatalf("openTab: %v", err)
+	if err := a.openPane(); err != nil {
+		t.Fatalf("openPane: %v", err)
 	}
 
 	pointAtRow(t, a, e)
@@ -514,8 +514,8 @@ func TestTheCrossSaysNothingAboutAPaneAKeyHasClosed(t *testing.T) {
 		t.Fatal("the window opened on something that is not a terminal")
 	}
 	e := a.panes[first]
-	if err := a.openTab(); err != nil {
-		t.Fatalf("openTab: %v", err)
+	if err := a.openPane(); err != nil {
+		t.Fatalf("openPane: %v", err)
 	}
 
 	pointAtRow(t, a, e)
@@ -555,8 +555,8 @@ func TestAPaneRowCarriesNoCrossWithThePointerAway(t *testing.T) {
 		t.Fatal("the window opened on something that is not a terminal")
 	}
 	e := a.panes[first]
-	if err := a.openTab(); err != nil {
-		t.Fatalf("openTab: %v", err)
+	if err := a.openPane(); err != nil {
+		t.Fatalf("openPane: %v", err)
 	}
 
 	pointAway(t, a)

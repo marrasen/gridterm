@@ -986,36 +986,30 @@ func TestSplitKeepsDamageTrackingAcrossPanes(t *testing.T) {
 func fgOf() color.RGBA { return color.RGBA{0xff, 0xff, 0xff, 0xff} }
 func bgOf() color.RGBA { return color.RGBA{0x00, 0x00, 0x00, 0xff} }
 
-// TestTerminalsInATabStrip is the whole point of tabs: two shells, one
-// shown at a time, with a strip naming them by what their programs set
-// the title to.
-func TestTerminalsInATabStrip(t *testing.T) {
+// TestTerminalsInADeck is the whole point of it: two shells, one shown
+// at a time, each told the whole of the room.
+func TestTerminalsInADeck(t *testing.T) {
 	pal := vt.DefaultPalette()
 	first, ff := newTestTerm(t, 1, 1, Config{Palette: &pal})
 	second, sf := newTestTerm(t, 1, 1, Config{Palette: &pal})
 
-	strip := ui.NewTabs(first, second)
-	strip.InactiveFG, strip.ActiveFG = pal.FG, pal.BG
-	strip.ActiveBG, strip.StripBG = pal.FG, pal.BG
+	deck := ui.NewDeck(first, second)
 	var root ui.Root
-	root.SetWidget(strip)
+	root.SetWidget(deck)
 	root.Layout(ui.Rect{Cols: 14, Rows: 3})
 
-	ff.feed(t, first, "\x1b]0;one\x07FIRST")
-	sf.feed(t, second, "\x1b]0;two\x07SECOND")
+	ff.feed(t, first, "FIRST")
+	sf.feed(t, second, "SECOND")
 	host := grid.New(14, 3, pal.FG, pal.BG)
 	root.Draw(host.View())
 
-	if got := rowText(host, 0); got != " one  two" {
-		t.Errorf("strip = %q, want both titles", got)
-	}
-	if got := rowText(host, 1); got != "FIRST" {
-		t.Errorf("body = %q, want the first shell", got)
+	if got := rowText(host, 0); got != "FIRST" {
+		t.Errorf("the top row = %q, want the first shell", got)
 	}
 
-	// Each shell was told the body's size, not the window's.
-	if got := first.Size(); got != (ui.Size{Cols: 14, Rows: 2}) {
-		t.Errorf("the shown shell has %+v, want 14x2 below the strip", got)
+	// Each shell was told the whole of the room, not all but a row.
+	if got := first.Size(); got != (ui.Size{Cols: 14, Rows: 3}) {
+		t.Errorf("the shown shell has %+v, want 14x3", got)
 	}
 
 	// Typing reaches the shell being shown, and only that one.
@@ -1025,17 +1019,11 @@ func TestTerminalsInATabStrip(t *testing.T) {
 		t.Errorf("the hidden shell received %q", got)
 	}
 
-	// Clicking the other label brings it forward.
-	root.HandleMouse(input.MouseEvent{
-		Kind: input.MousePress, Button: input.MouseLeft, Col: 7, Row: 0,
-	})
-	root.HandleMouse(input.MouseEvent{
-		Kind: input.MouseRelease, Button: input.MouseLeft, Col: 7, Row: 0,
-	})
+	// Bringing the other one forward gives it the screen and the keys.
+	deck.Focus(second)
 	root.Draw(host.View())
-
-	if got := rowText(host, 1); got != "SECOND" {
-		t.Errorf("body = %q, want the second shell after clicking its label", got)
+	if got := rowText(host, 0); got != "SECOND" {
+		t.Errorf("the top row = %q, want the second shell once it is in front", got)
 	}
 	root.HandleKey(input.Event{Kind: input.Text, Rune: 'y', NormalText: true})
 	waitFor(t, func() bool { return sf.sentText() == "y" })
@@ -1047,7 +1035,7 @@ func TestTabCursorBelongsToTheShellBeingShown(t *testing.T) {
 	pal := vt.DefaultPalette()
 	first, ff := newTestTerm(t, 1, 1, Config{Palette: &pal})
 	second, sf := newTestTerm(t, 1, 1, Config{Palette: &pal})
-	strip := ui.NewTabs(first, second)
+	strip := ui.NewDeck(first, second)
 	var root ui.Root
 	root.SetWidget(strip)
 	root.Layout(ui.Rect{Cols: 14, Rows: 3})
@@ -1057,7 +1045,7 @@ func TestTabCursorBelongsToTheShellBeingShown(t *testing.T) {
 
 	root.Draw(host.View())
 	cur := host.Cursor()
-	if !cur.Visible || cur.Y != 1 || cur.X != 2 {
+	if !cur.Visible || cur.Y != 0 || cur.X != 2 {
 		t.Errorf("cursor = %+v, want it after the first shell's text", cur)
 	}
 

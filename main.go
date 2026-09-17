@@ -220,7 +220,7 @@ func main() {
 	// a time; the sidebar is what chooses.
 	a.panel = a.newPanel()
 	a.side = a.newSidebar()
-	a.stage = a.newTabs(startingPanes(first)...)
+	a.stage = a.newDeck(startingPanes(first)...)
 	a.dock = a.newDock(a.stage)
 	// The sidebar is painted onto a grid of its own, over the window's,
 	// so that its rows can have room around them while the terminal
@@ -440,7 +440,7 @@ func (a *app) openFirst(s startup) (*term.Terminal, error) {
 		// could not be taken over and a pane that could not be placed all
 		// leave nothing at all in it.
 		if len(a.panes) == 0 {
-			if err := a.openTabHere(); err != nil {
+			if err := a.openPaneHere(); err != nil {
 				a.reportError("Could not open a terminal here", err)
 			}
 		}

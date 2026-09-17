@@ -32,31 +32,6 @@ func TestMenubarDrawnTwiceLeavesTheLayerClean(t *testing.T) {
 	}
 }
 
-// TestTabsDrawnTwiceLeavesTheLayerClean is the same rule for the label
-// strip, which had the same fault.
-func TestTabsDrawnTwiceLeavesTheLayerClean(t *testing.T) {
-	a, c := &filler{ch: 'a'}, &filler{ch: 'c'}
-	tb := NewTabs(a, c)
-	tb.StripBG, tb.InactiveFG, tb.ActiveFG, tb.ActiveBG = bg, fg, bg, fg
-	tb.Layout(Size{Cols: 40, Rows: 20})
-	g := grid.New(40, 20, fg, bg)
-	tb.Draw(g.View())
-
-	g.ClearDirty()
-	for i := 0; i < 2; i++ {
-		tb.Draw(g.View())
-		if g.RowDirty(0) {
-			t.Fatalf("draw %d of an unchanged strip dirtied its row", i)
-		}
-	}
-
-	tb.Focus(c)
-	tb.Draw(g.View())
-	if !g.RowDirty(0) {
-		t.Error("switching tabs did not change the strip")
-	}
-}
-
 // TestMenubarTitleHasASpaceBeforeIt checks the title is drawn inside its
 // label rather than against the edge of it, so two titles beside each
 // other do not read as one word.

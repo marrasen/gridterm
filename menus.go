@@ -49,8 +49,8 @@ func (a *app) newMenubar(child ui.Widget) *ui.Menubar {
 			{Command: "pane.next"},
 			{Command: "pane.previous"},
 			ui.MenuSeparator(),
-			{Command: "tab.next"},
-			{Command: "tab.previous"},
+			{Command: "pane.nextInSidebar"},
+			{Command: "pane.previousInSidebar"},
 			ui.MenuSeparator(),
 			{Command: "palette.open"},
 		}},
@@ -87,7 +87,7 @@ const fileMenu = "File"
 // fileItems is what the File menu offers: the panes, and a line per
 // shell a new tab here can open on.
 func fileItems(shells []ui.MenuItem) []ui.MenuItem {
-	items := []ui.MenuItem{{Command: "tab.open"}}
+	items := []ui.MenuItem{{Command: "pane.open"}}
 	if len(shells) > 0 {
 		items = append(items, ui.MenuSeparator())
 		items = append(items, shells...)
@@ -104,7 +104,7 @@ func fileItems(shells []ui.MenuItem) []ui.MenuItem {
 }
 
 // fileMenuShells are the shell lines the File menu offers. A window
-// whose panes open on the machine -ssh named gets none: "New tab" goes
+// whose panes open on the machine -ssh named gets none: "New pane" goes
 // there and a shell line comes back here, and no row behind the line
 // says which machine it means.
 func (a *app) fileMenuShells() []ui.MenuItem {

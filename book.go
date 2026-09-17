@@ -188,7 +188,7 @@ func (a *app) openTerminalOn(host string, at *spot) error {
 		if at != nil {
 			return a.splitNewTerminalHere(at.dir, at.beside)
 		}
-		return a.openTabHere()
+		return a.openPaneHere()
 	case f.kind == hostWindow:
 		return a.openOnWindow(f.name, at)
 	case f.toTakeOver():

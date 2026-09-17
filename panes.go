@@ -204,20 +204,13 @@ func (a *app) closePalette() {
 
 // newTabs builds the thing that holds several panes and shows one.
 //
-// It draws no strip of labels: which pane is showing is chosen from the
-// sidebar, which has room to say what each one is and which machine it
-// is on. A row of names along the top would say the same thing twice,
-// and worse.
-func (a *app) newTabs(kids ...ui.Widget) *ui.Tabs {
-	tb := ui.NewTabs(kids...)
-	tb.HideStrip = true
+// Which pane is showing is chosen from the sidebar, which has room to
+// say what each one is and which machine it is on.
+func (a *app) newDeck(kids ...ui.Widget) *ui.Deck {
+	tb := ui.NewDeck(kids...)
 	// It is the window's stage: every pane sits in it, and it has to
 	// still be there for the next one when the last is closed.
 	tb.Keep = true
-	tb.StripBG = a.colours.BG
-	tb.InactiveFG = a.colours.FG
-	tb.ActiveFG = a.colours.BG
-	tb.ActiveBG = a.colours.FG
 	return tb
 }
 
@@ -226,13 +219,13 @@ func (a *app) newTabs(kids ...ui.Widget) *ui.Tabs {
 // It walks rather than asking for w's own parent: a pane that has been
 // split is a grandchild of the strip, and the strip is still the one a
 // new pane joins.
-func (a *app) stripAbove(w ui.Widget) *ui.Tabs {
+func (a *app) deckAbove(w ui.Widget) *ui.Deck {
 	for child := w; child != nil; {
 		parent := ui.ParentOf(a.root.Widget(), child)
 		if parent == nil {
 			return nil
 		}
-		if strip, ok := parent.(*ui.Tabs); ok {
+		if strip, ok := parent.(*ui.Deck); ok {
 			return strip
 		}
 		child = parent
@@ -245,8 +238,8 @@ func (a *app) stripAbove(w ui.Widget) *ui.Tabs {
 // inside the rest of the window.
 //
 // The connections panel is a leaf of the tree like a terminal is, so
-// without this a new tab opened while the panel had the keys would build
-// a tab strip around the panel and put the connections list in a tab.
+// without this a new pane opened while the panel had the keys would put
+// the connections list in the deck.
 func (a *app) paneToPlaceBeside() ui.Widget {
 	if w := ui.FocusedLeaf(a.root.Widget()); a.isPane(w) {
 		return w
@@ -264,25 +257,24 @@ func (a *app) paneToPlaceBeside() ui.Widget {
 	return nil
 }
 
-// openTab puts a new shell in the strip holding the focused pane,
-// starting a strip if it is not in one.
-func (a *app) openTab() error { return a.openTabWith(a.newTerminal) }
+// openPane puts a new shell beside the focused pane.
+func (a *app) openPane() error { return a.openPaneWith(a.newTerminal) }
 
-// openTabHere is openTab with a shell on this machine, for a window that
-// has no connection to open one on.
-func (a *app) openTabHere() error { return a.openTabWith(a.localTerminal) }
+// openPaneHere is openPane with a shell on this machine, for a window
+// that has no connection to open one on.
+func (a *app) openPaneHere() error { return a.openPaneWith(a.localTerminal) }
 
-// openTabWith puts a shell from start in a tab, and closes it again when
-// there is nowhere to put it.
-func (a *app) openTabWith(start func() (*term.Terminal, error)) error {
+// openPaneWith puts a shell from start in a pane, and closes it again
+// when there is nowhere to put it.
+func (a *app) openPaneWith(start func() (*term.Terminal, error)) error {
 	if a.paneToPlaceBeside() == nil && a.stage == nil {
-		return errors.New("nothing to open a tab beside")
+		return errors.New("nothing to open a pane beside")
 	}
 	next, err := start()
 	if err != nil {
 		return err
 	}
-	if err := a.placeTab(next); err != nil {
+	if err := a.placePane(next); err != nil {
 		delete(a.panes, next)
 		delete(a.started, next)
 		_ = next.Close()
@@ -292,31 +284,22 @@ func (a *app) openTabWith(start func() (*term.Terminal, error)) error {
 	return nil
 }
 
-// placeTab puts a widget in the strip holding the focused pane, starting
-// a strip if it is not in one, and putting it straight on the stage when
-// the window has no pane at all, which is how -ssh opens.
-func (a *app) placeTab(next ui.Widget) error {
-	current := a.paneToPlaceBeside()
-	if current == nil {
-		if a.stage == nil {
-			return errors.New("nothing to open a tab beside")
+// placePane puts a widget beside the focused pane, and straight on the
+// stage when the window has no pane at all, which is how -ssh opens.
+func (a *app) placePane(next ui.Widget) error {
+	// The one holding the focused pane, and the stage when there is no
+	// pane to go beside. They are the same thing today: the stage is
+	// above every pane, and nothing else holds one.
+	holder := a.stage
+	if current := a.paneToPlaceBeside(); current != nil {
+		if above := a.deckAbove(current); above != nil {
+			holder = above
 		}
-		a.stage.Add(next)
-		a.relayout()
-		a.focus(next)
-		return nil
 	}
-	if strip := a.stripAbove(current); strip != nil {
-		strip.Add(next)
-	} else {
-		strip := a.newTabs(current, next)
-		if parent := ui.ParentOf(a.root.Widget(), current); parent != nil {
-			parent.Replace(current, strip)
-		} else {
-			a.root.SetWidget(strip)
-		}
-		strip.Focus(next)
+	if holder == nil {
+		return errors.New("nothing to open a pane beside")
 	}
+	holder.Add(next)
 	a.relayout()
 	a.focus(next)
 	return nil
@@ -734,10 +717,10 @@ type spot struct {
 // would be worse than putting it somewhere else.
 func (a *app) place(next ui.Widget, at *spot) error {
 	if at == nil {
-		return a.placeTab(next)
+		return a.placePane(next)
 	}
 	if err := a.canSplit(at.dir, at.beside, next); err != nil {
-		return a.placeTab(next)
+		return a.placePane(next)
 	}
 	return a.splitWith(at.dir, at.beside, next)
 }

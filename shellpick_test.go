@@ -395,7 +395,7 @@ func TestARememberedShellThatHasGoneFallsBackAndSaysSo(t *testing.T) {
 	}
 	// Said once a run: another pane opens on the default in silence.
 	modals := len(a.modals)
-	if err := a.openTabHere(); err != nil {
+	if err := a.openPaneHere(); err != nil {
 		t.Fatalf("open another tab: %v", err)
 	}
 	a.pump.run()
@@ -548,7 +548,7 @@ func TestTheLinesAndThePaletteSayWhichShell(t *testing.T) {
 	if !ok {
 		t.Fatal("no command opens a pane on pwsh")
 	}
-	if want := "New tab on PowerShell"; cmd.Title != want {
+	if want := "New pane on PowerShell"; cmd.Title != want {
 		t.Errorf("the command is called %q, want %q", cmd.Title, want)
 	}
 	runFromPalette(t, a, shellCommandID("pwsh"))

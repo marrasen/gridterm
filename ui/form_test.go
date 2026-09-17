@@ -1211,3 +1211,29 @@ func TestAFormWithMinColsKeepsItsBox(t *testing.T) {
 		t.Fatalf("the box is %d columns for a line too wide for %d", now.Cols, was.Cols)
 	}
 }
+
+// A click on a tick box turns it over, because a box drawn on screen
+// looks like something to click.
+func TestClickingATickBoxTurnsItOver(t *testing.T) {
+	tf := newTestForm(t)
+	f := tf.form
+	box := f.AddTick("Read only", false)
+	f.Layout(Size{Cols: 80, Rows: 24})
+
+	at := f.Box()
+	row := at.Y + f.rowsTop() + len(f.Fields()) - 1
+	col := at.X + f.fieldX()
+	if took, err := f.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Col: col, Row: row,
+	}); err != nil || !took {
+		t.Fatalf("the click was not taken: %v, %v", took, err)
+	}
+	if !box.On() {
+		t.Error("the click did not tick the box")
+	}
+	if took, _ := f.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Col: col, Row: row,
+	}); !took || box.On() {
+		t.Error("a second click did not untick it")
+	}
+}

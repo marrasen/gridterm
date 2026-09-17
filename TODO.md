@@ -8,7 +8,19 @@ each group. A line goes when the work is in and reviewed.
 Open calls that are his, not mine. Each one is written down rather than
 guessed at.
 
-1. **Should the short rules go in the hand-over prompt as well?** The
+1. **"Open another pane there" opens a shell, whatever the pane it was
+   opened from was running.** Hand over a pane running `docker exec sh`,
+   or `kubectl logs -f`, or a command that has already finished, tick
+   the box, and the agent gets a plain login shell on that machine. It
+   never had one.
+   - **Why it is written this way.** "Another pane to the same server"
+     is what the "+" on a machine's row opens, which is a shell. Opening
+     another `docker exec` would be a different feature.
+   - **The question.** Should the box be refused on a pane that was
+     opened with a command, so it only ever widens a shell to a second
+     shell? A reviewer raised it. It opens a shell for now.
+
+2. **Should the short rules go in the hand-over prompt as well?** The
    rules are five lines now, so carrying them in both places costs
    little. The reason to: the MCP server's `instructions` are the only
    place an agent is told them, and a client is free to ignore

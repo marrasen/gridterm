@@ -103,13 +103,35 @@ func (g *agents) rememberMay(may settings.AgentMay) error {
 	return g.remembered.PutAgentMay(may)
 }
 
-// forget drops a pane's handover and reports whether there was one.
+// forget drops a pane's handover, and with it every pane the agent
+// opened from it, and reports whether there was one.
+//
+// The panes it opened were allowed by this one. Leaving them handed over
+// after the user has taken this one back would leave the agent holding
+// what they just took away.
 func (g *agents) forget(pane *term.Terminal) bool {
-	if g.by[pane] == nil {
+	h := g.by[pane]
+	if h == nil {
 		return false
 	}
 	delete(g.by, pane)
+	for other, from := range g.by {
+		if g.openedBy(from, h) {
+			delete(g.by, other)
+		}
+	}
 	return true
+}
+
+// openedBy reports whether a handover was opened from another, however
+// many panes along the way.
+func (g *agents) openedBy(h, from *handover) bool {
+	for at := h.from; at != nil; at = at.from {
+		if at == from {
+			return true
+		}
+	}
+	return false
 }
 
 // withCode is the handover a code names, or nil when no handover holds
@@ -250,7 +272,51 @@ type handover struct {
 	// takes effect at once: turning a box off while the agent is
 	// mid-call makes the next call fail, the way taking the pane back
 	// does.
+	//
+	// A pane the agent opened has none of its own and reads the one it
+	// was opened from, through from.
 	may settings.AgentMay
+
+	// from is the handover this one was opened from, and nil for a pane
+	// the user handed over.
+	//
+	// What the user allowed there is what this pane gets, for as long as
+	// they go on allowing it: unticking a box on the pane they handed
+	// over reaches every pane the agent opened from it, and taking that
+	// pane back takes these with it.
+	from *handover
+}
+
+// allowed is what this handover lets an agent do.
+//
+// A pane opened from another asks that one, all the way back to the pane
+// the user handed over. A chain that no longer reaches one -- the user
+// took the first pane back -- allows nothing beyond reading and typing.
+func (g *agents) allowed(h *handover) settings.AgentMay {
+	for from := h; from != nil; from = from.from {
+		if g.by[from.pane] != from {
+			return settings.AgentMay{}
+		}
+		if from.from == nil {
+			return from.may
+		}
+	}
+	return settings.AgentMay{}
+}
+
+// openedFrom is how many panes an agent has open that were opened from
+// this handover, counting the ones opened from those.
+func (g *agents) openedFrom(h *handover) int {
+	n := 0
+	for _, other := range g.by {
+		for from := other.from; from != nil; from = from.from {
+			if from == h {
+				n++
+				break
+			}
+		}
+	}
+	return n
 }
 
 // handPane hands a pane to an agent and shows the user the code.
@@ -414,7 +480,7 @@ func (w agentWindow) Look(id string, lines int) (agent.Look, error) {
 		// the screen that came with it.
 		screen := lastLines(h.read.Text, want)
 		screen, atFloor, note := screen, false, ""
-		if !h.may.ReadBack {
+		if !w.a.agents.allowed(h).ReadBack {
 			screen, atFloor, note = stopAtTheFloor(screen, *h.read)
 		}
 		status, hasStatus := h.read.Cmd.Exit()
@@ -520,7 +586,7 @@ func (w agentWindow) Output(id string, most int) (agent.Look, error) {
 		// the lines above it are not offered, whoever put them there. It
 		// replaces the note rather than being added to it, because what
 		// that said about where this starts is no longer true.
-		if from < at.Floor && !h.may.ReadBack {
+		if from < at.Floor && !w.a.agents.allowed(h).ReadBack {
 			from = at.Floor
 			note = "The pane was cleared after this output began, so this is only what has" +
 				" been printed since the clear. The lines above it are still in the pane," +
@@ -624,7 +690,7 @@ func (w agentWindow) Send(id, text string, keys []string) error {
 		if err != nil {
 			return struct{}{}, err
 		}
-		if h.may.ReadOnly {
+		if w.a.agents.allowed(h).ReadOnly {
 			return struct{}{}, errors.New(
 				"the user handed this pane over to be read and not typed into." +
 					" Ask them to turn \"Read only\" off if you need to type")
@@ -701,7 +767,7 @@ func (w agentWindow) Restart(id string) (agent.Pane, error) {
 		if err != nil {
 			return agent.Pane{}, err
 		}
-		if !h.may.Restart {
+		if !w.a.agents.allowed(h).Restart {
 			return agent.Pane{}, errors.New(
 				"this hand-over does not let you restart the pane." +
 					` Ask the user to tick "Restart a closed connection"`)
@@ -710,8 +776,27 @@ func (w agentWindow) Restart(id string) (agent.Pane, error) {
 			return agent.Pane{}, errors.New(
 				"the program in that pane is still running, so there is nothing to start again")
 		}
+		e := w.a.panes[h.pane]
+		if e == nil {
+			return agent.Pane{}, errors.New("that pane is no longer open")
+		}
+		// Starting the program again on a machine the window has let go
+		// of means dialling it, and dialling is the user's. What the box
+		// allows is a program started again on a connection this window
+		// already holds.
+		if err := w.a.connectedAlready(e.Host); err != nil {
+			return agent.Pane{}, err
+		}
 		if err := w.a.startAgain(h.pane); err != nil {
 			return agent.Pane{}, err
+		}
+		if h.pane.Exited() {
+			// startAgain reports some failures to the user rather than to
+			// its caller. The question on the pane is what offers the
+			// user the same choice, so it is left where it is.
+			return agent.Pane{}, errors.New(
+				"the window could not start it again; the pane says why, and the user" +
+					" can answer the question on it")
 		}
 		// The question on the pane was offering exactly this, and it has
 		// been answered.
@@ -732,7 +817,7 @@ func (w agentWindow) Open(id string) (agent.Pane, error) {
 		if err != nil {
 			return agent.Pane{}, err
 		}
-		if !h.may.OpenMore {
+		if !w.a.agents.allowed(h).OpenMore {
 			return agent.Pane{}, errors.New(
 				"this hand-over does not let you open another pane." +
 					` Ask the user to tick "Open another pane there"`)
@@ -744,23 +829,38 @@ func (w agentWindow) Open(id string) (agent.Pane, error) {
 		if err := w.a.connectedAlready(e.Host); err != nil {
 			return agent.Pane{}, err
 		}
+		if opened := w.a.agents.openedFrom(h); opened >= mostOpened {
+			return agent.Pane{}, fmt.Errorf(
+				"you have opened %d panes from this one, which is as many as a hand-over"+
+					" gives: work in the ones you have, or ask the user for another pane",
+				opened)
+		}
 		was := w.a.panesNow()
-		if err := w.a.openTerminalOn(e.Host, nil); err != nil {
-			return agent.Pane{}, err
+		// Beside the agent's own pane, and the keys stay where the user
+		// left them: a pane that opened itself under somebody's hands
+		// would take the next thing they typed.
+		focused := ui.FocusedLeaf(w.a.root.Widget())
+		opening := w.a.openTerminalOn(e.Host, &spot{beside: h.pane})
+		if focused != nil {
+			w.a.focus(focused)
+		}
+		if opening != nil {
+			return agent.Pane{}, opening
 		}
 		opened := w.a.paneOpenedSince(was)
 		if opened == nil {
 			return agent.Pane{}, errors.New("the window opened no pane")
 		}
-		// Handed over as it opens, with the same boxes ticked: the user
-		// said what an agent may do where this pane is, and this is
-		// where this pane is.
+		// Handed over as it opens, under the pane it was opened from:
+		// the user said what an agent may do where that pane is, and
+		// what they allow there is what this one gets, for as long as
+		// they go on allowing it.
 		code, err := agent.NewCode(w.a.agents.port())
 		if err != nil {
 			return agent.Pane{}, err
 		}
 		next := w.a.agents.hand(opened, code)
-		next.may = h.may
+		next.from = h
 		w.a.markDirty()
 		return w.a.toldAbout(next)
 	})
@@ -776,12 +876,23 @@ func (a *app) connectedAlready(host string) error {
 		return nil
 	}
 	f := a.about(host)
-	if f.machine != nil || f.window != nil {
+	// A window that has not been taken over is reached by taking it
+	// over, which is a connection of its own however the name is
+	// recorded.
+	if !f.toTakeOver() && (f.machine != nil || f.window != nil) {
 		return nil
 	}
 	return fmt.Errorf("this window is not connected to %s any more,"+
 		" and opening connections is the user's to do: ask them to connect to it", host)
 }
+
+// mostOpened is how many panes one handed-over pane may have opened from
+// it.
+//
+// A pane opened this way is handed over as it opens, so without a cap an
+// agent could open panes from panes without end. Enough for a shell to
+// watch a log in beside the one being worked in, and no more.
+const mostOpened = 4
 
 // panesNow is the panes the window holds, for telling a new one from the
 // ones that were already there.
@@ -822,7 +933,7 @@ func (a *app) toldAbout(h *handover) (agent.Pane, error) {
 		Cols:  size.Cols,
 		Rows:  size.Rows,
 		Ended: h.pane.Exited(),
-		May:   asMay(h.may),
+		May:   asMay(a.agents.allowed(h)),
 	}, nil
 }
 

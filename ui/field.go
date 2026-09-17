@@ -153,15 +153,18 @@ func (f *Field) HandleKey(ev input.Event) (bool, error) {
 	// nothing else: there is nothing to type into it, and every other
 	// key belongs to whatever is showing it.
 	if f.Tick {
-		if ev.Kind == input.Text && ev.Rune == ' ' {
+		// A press, not a repeat: a box held down would flicker, and a
+		// box is answered once.
+		if ev.Kind == input.Text && ev.Rune == ' ' && ev.NormalText {
 			f.Toggle()
 			return true, nil
 		}
-		if ev.Kind != input.KeyPress && ev.Kind != input.KeyRepeat {
+		if ev.Kind != input.KeyPress {
 			return false, nil
 		}
-		if ev.Key == input.KeySpace ||
-			ev.Ctrl() && (ev.Key == input.KeyDown || ev.Key == input.KeyUp) {
+		switch {
+		case ev.Key == input.KeySpace && ev.Mods == 0,
+			ev.Mods == input.ModCtrl && (ev.Key == input.KeyDown || ev.Key == input.KeyUp):
 			f.Toggle()
 			return true, nil
 		}

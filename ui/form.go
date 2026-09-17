@@ -425,9 +425,15 @@ func (f *Form) HandleMouse(ev input.MouseEvent) (bool, error) {
 	x, y := box.Local(ev.Col, ev.Row)
 	if row := y - f.rowsTop(); row >= 0 && row < len(f.rows) {
 		f.focus(row)
+		fld := f.rows[row].field
+		// A tick box is turned over by clicking it, which is what a box
+		// drawn on screen looks like it does.
+		if fld.Tick {
+			fld.Toggle()
+			return true, nil
+		}
 		// The caret goes where it was clicked, so a long value can be
 		// corrected in the middle rather than only at the end.
-		fld := f.rows[row].field
 		fld.SetCaret(f.caretFor(fld, x-f.fieldX()))
 		return true, nil
 	}

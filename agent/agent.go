@@ -55,6 +55,7 @@ import (
 // Output is the last command's output on its own, at most most lines of
 // it. A window that cannot tell where that command's output began says
 // so and gives nothing.
+//
 // Restart starts a pane's program again, for a pane whose program has
 // finished and whose hand-over allows it. The pane is the same pane, so
 // the id goes on naming it.

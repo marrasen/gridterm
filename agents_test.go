@@ -2787,3 +2787,201 @@ func TestAnAgentDoesNotOpenAPaneOnAMachineNobodyIsConnectedTo(t *testing.T) {
 		}
 	}
 }
+
+// Restarting a pane on a machine the window has let go of is refused.
+//
+// Starting the program again there means dialling the machine, and
+// dialling is the user's: it can ask for a password and for a host key
+// they have to look at. The box says the agent may restart a pane, not
+// that it may open connections.
+func TestAnAgentDoesNotRestartAPaneOnAMachineNobodyIsConnectedTo(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pane := onlyPaneOn(t, a)
+	if e := a.panes[pane]; e != nil {
+		e.Host = "margit"
+	}
+	if err := a.handPane(pane); err != nil {
+		t.Fatalf("hand it over: %v", err)
+	}
+	h := a.agents.of(pane)
+	h.may.Restart = true
+	c, err := agent.Dial(h.code)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	t.Cleanup(func() { _ = c.Close() })
+
+	var got agent.Pane
+	offWindow(t, a, "the window to answer the agent", func() error {
+		var err error
+		got, err = c.Use(h.code)
+		return err
+	})
+	endTheShell(t, a, 0, pane)
+
+	var failed error
+	offWindow(t, a, "the window to refuse the restart", func() error {
+		_, failed = c.Restart(got.ID)
+		return nil
+	})
+	if failed == nil {
+		t.Fatal("the agent restarted a pane on a machine nothing is connected to")
+	}
+	if !strings.Contains(failed.Error(), "not connected") {
+		t.Errorf("it was told %q", failed)
+	}
+	// And the machine was not dialled: nothing is connecting.
+	if n := a.machines.beingMade(); n != 0 {
+		t.Errorf("%d connections are being made", n)
+	}
+}
+
+// Taking a box off the pane the user handed over reaches the panes the
+// agent opened from it.
+//
+// Otherwise a pane opened while a box was ticked keeps what the user has
+// since taken away, and the dialog they took it off says nothing about
+// the other pane.
+func TestUntickingABoxReachesThePanesTheAgentOpened(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	_, code, c := handedOver(t, a)
+
+	var got agent.Pane
+	offWindow(t, a, "the window to answer the agent", func() error {
+		var err error
+		got, err = c.Use(code)
+		return err
+	})
+	f := awaitModal[*ui.Form](t, a, "the hand-over dialog",
+		byTitle[*ui.Form]("An agent may work in this pane"))
+	tickBox(t, a, f, "Open another pane there")
+
+	var next agent.Pane
+	offWindow(t, a, "the window to open another pane", func() error {
+		var err error
+		next, err = c.Open(got.ID)
+		return err
+	})
+
+	// Typing into the new pane works, because "Read only" is off.
+	offWindow(t, a, "the window to take the keys", func() error {
+		return c.Send(next.ID, "whoami\r", nil)
+	})
+
+	// The user ticks "Read only" on the pane they handed over.
+	tickBox(t, a, f, "Read only")
+
+	var failed error
+	offWindow(t, a, "the window to refuse the keys", func() error {
+		failed = c.Send(next.ID, "rm -rf /\r", nil)
+		return nil
+	})
+	if failed == nil {
+		t.Fatal("the pane the agent opened kept what the user took away")
+	}
+
+	// And taking the first pane back takes the opened one with it.
+	tickBox(t, a, f, "Read only")
+	if err := a.takeBackPane(a.agents.named(got.ID).pane); err != nil {
+		t.Fatalf("take it back: %v", err)
+	}
+	offWindow(t, a, "the window to refuse the agent", func() error {
+		failed = c.Send(next.ID, "ls\r", nil)
+		return nil
+	})
+	if failed == nil {
+		t.Fatal("the agent still holds a pane opened from one that was taken back")
+	}
+}
+
+// A hand-over opens a few panes, not an unbounded number.
+func TestAnAgentCannotOpenPanesWithoutEnd(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	_, code, c := handedOver(t, a)
+
+	var got agent.Pane
+	offWindow(t, a, "the window to answer the agent", func() error {
+		var err error
+		got, err = c.Use(code)
+		return err
+	})
+	f := awaitModal[*ui.Form](t, a, "the hand-over dialog",
+		byTitle[*ui.Form]("An agent may work in this pane"))
+	tickBox(t, a, f, "Open another pane there")
+
+	opened := 0
+	var failed error
+	for i := 0; i < mostOpened+2; i++ {
+		offWindow(t, a, "the window to answer the agent", func() error {
+			if _, err := c.Open(got.ID); err != nil {
+				failed = err
+				return nil
+			}
+			opened++
+			return nil
+		})
+		if failed != nil {
+			break
+		}
+	}
+	if failed == nil {
+		t.Fatalf("the agent opened %d panes and was never refused", opened)
+	}
+	if opened != mostOpened {
+		t.Errorf("it opened %d panes before being refused, want %d", opened, mostOpened)
+	}
+	if !strings.Contains(failed.Error(), "as many as a hand-over gives") {
+		t.Errorf("it was told %q", failed)
+	}
+}
+
+// "Read above a clear" reaches what the last command printed as well,
+// not only the screen.
+func TestReadingAboveAClearReachesTheLastCommandsOutput(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pane, code, c := handedOver(t, a)
+
+	var got agent.Pane
+	offWindow(t, a, "the window to answer the agent", func() error {
+		var err error
+		got, err = c.Use(code)
+		return err
+	})
+
+	// A command still running, and a clear part way through what it
+	// printed.
+	a.shells[0].out <- []byte("$ tail -f log\r\n\x1b]133;C\afirst line\r\n")
+	waitFor(t, a, "the pane to show the command", func() bool {
+		return strings.Contains(paneText(pane), "first line")
+	})
+	a.shells[0].out <- []byte("\x1b[H\x1b[2J\x1b[3Jsecond line\r\n")
+	waitFor(t, a, "the pane to be cleared", func() bool {
+		return !strings.Contains(paneText(pane), "first line")
+	})
+
+	if look, err := outputOf(t, a, c, got.ID); err != nil {
+		t.Fatalf("read the output: %v", err)
+	} else if strings.Contains(look.Screen, "first line") {
+		t.Fatalf("it read past the clear before the box was ticked:\n%s", look.Screen)
+	}
+
+	f := awaitModal[*ui.Form](t, a, "the hand-over dialog",
+		byTitle[*ui.Form]("An agent may work in this pane"))
+	tickBox(t, a, f, "Read above a clear")
+
+	look, err := outputOf(t, a, c, got.ID)
+	if err != nil {
+		t.Fatalf("read the output: %v", err)
+	}
+	if !strings.Contains(look.Screen, "first line") {
+		t.Errorf("the box is ticked and the output still stops at the clear:\n%s", look.Screen)
+	}
+}

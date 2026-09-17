@@ -385,7 +385,7 @@ func (w agentWindow) Look(id string, lines int) (agent.Look, error) {
 		// The cursor comes from the reading, so it says where it was on
 		// the screen that came with it.
 		screen := lastLines(h.read.Text, want)
-		screen, note := stopAtTheFloor(screen, *h.read)
+		screen, atFloor, note := stopAtTheFloor(screen, *h.read)
 		status, hasStatus := h.read.Cmd.Exit()
 		return agent.Look{
 			Screen:    screen,
@@ -395,7 +395,7 @@ func (w agentWindow) Look(id string, lines int) (agent.Look, error) {
 			Row:       h.read.Row,
 			Col:       h.read.Col,
 			Alt:       h.read.Alt,
-			All:       countLines(screen) < want,
+			All:       atFloor || countLines(screen) < want,
 			Cols:      size.Cols,
 			Rows:      size.Rows,
 			Marks:     h.read.Cmd.Integrated,
@@ -420,16 +420,22 @@ func (w agentWindow) Look(id string, lines int) (agent.Look, error) {
 //
 // The alternate screen has no lines of the output to count, so nothing
 // is cut there.
-func stopAtTheFloor(screen string, read term.Reading) (string, string) {
+func stopAtTheFloor(screen string, read term.Reading) (string, bool, string) {
+	// A floor of zero is a pane nobody has cleared. It is also a clear on
+	// the very first line, where there is nothing above to hold back, so
+	// the two need not be told apart.
 	if read.Alt || read.Floor == 0 || read.Bottom < read.Floor {
-		return screen, ""
+		return screen, false, ""
 	}
 	below := int(read.Bottom-read.Floor) + 1
-	if below >= countLines(screen) {
-		return screen, ""
+	if below > countLines(screen) {
+		return screen, false, ""
 	}
-	return lastLines(screen, below), "The pane was cleared, so the lines above the clear" +
-		" are not offered here. They are still in the pane, and the user can scroll up to them."
+	// Reaching the floor is as far as this goes, whether or not a line
+	// was cut off: asking for more gives no more.
+	return lastLines(screen, below), true, "The pane was cleared, so the lines above the" +
+		" clear are not offered here. They are still in the pane, and the user can scroll" +
+		" up to them."
 }
 
 // lastLines is the last n lines of some text, and the whole of it when
@@ -480,10 +486,14 @@ func (w agentWindow) Output(id string, most int) (agent.Look, error) {
 			return agent.Look{}, err
 		}
 		// A clear since the command started is where this begins instead:
-		// the lines above it are not offered, whoever put them there.
+		// the lines above it are not offered, whoever put them there. It
+		// replaces the note rather than being added to it, because what
+		// that said about where this starts is no longer true.
 		if from < at.Floor {
 			from = at.Floor
-			note += " The pane was cleared while it was running, so this starts at the clear."
+			note = "The pane was cleared after this output began, so this is only what has" +
+				" been printed since the clear. The lines above it are still in the pane," +
+				" and the user can scroll up to them."
 		}
 		// The cursor above where the output began is the screen having
 		// been cleared or reset since: the output is not in the pane any

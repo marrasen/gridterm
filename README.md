@@ -401,8 +401,8 @@ emulator under `internal/` where they cannot be imported.
   command finished, what it exited with, and where that command's output
   began, so it can read the output on its own. A shell without it leaves
   it watching for the prompt to come back, which is a guess. Clearing the
-  screen stops the agent reading what was above it; the lines stay in the
-  pane and you can still scroll up to them.
+  screen stops the agent reading what was above it; the screen it took
+  away goes into the history, so you can still scroll up to all of it.
 - **The port an agent reaches is the machine's, not the session's.** A
   loopback port on Windows is reachable by every session on the machine,
   not only by the one that opened it. Nothing gets past it without the

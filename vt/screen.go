@@ -181,8 +181,10 @@ func (s *Screen) Resize(cols, rows int) {
 	if cols == s.cols && rows == s.rows {
 		return
 	}
-	priShift := s.pri.resize(cols, rows, s.eraseCell(), s.cursor.Y)
-	altShift := s.alt.resize(cols, rows, s.eraseCell(), s.cursor.Y)
+	// Lines below the floor are what a clear put behind the screen, and
+	// they stay behind it however much taller the window gets.
+	priShift := s.pri.resize(cols, rows, s.eraseCell(), s.cursor.Y, int(s.gone-min(s.floor, s.gone)))
+	altShift := s.alt.resize(cols, rows, s.eraseCell(), s.cursor.Y, rows)
 	shift := priShift
 	if s.cur == s.alt {
 		shift = altShift
@@ -691,19 +693,63 @@ func (s *Screen) EraseInDisplay(mode int) {
 		s.EraseInLine(1)
 		s.eraseRows(0, s.cursor.Y-1)
 	case 2:
-		s.eraseRows(0, s.rows-1)
+		s.clearScreen()
 	case 3:
 		// The scrollback stays. Erasing it is what the sequence means,
 		// and what the person at this machine wants is to scroll up
 		// afterwards and still see what was there; a reader from outside
 		// gets the floor instead. The alternate screen keeps no history,
 		// so a clear there marks nothing.
-		if s.cur == s.pri {
-			s.floor = s.gone
-		}
+		s.clearedTo(s.gone)
 		s.touchAll()
 	}
 	s.cursor.WrapNext = false
+}
+
+// clearScreen empties the screen, keeping what was on it when the cursor
+// is at the top left.
+//
+// That is what `clear` sends, and what it means to the person who typed
+// it is a blank screen they can scroll back out of. So the rows go into
+// history rather than being written over, and the floor moves past them
+// so that a reader from outside starts below the clear. A program
+// erasing the screen from anywhere else is redrawing, and its rows are
+// written over as they always were.
+func (s *Screen) clearScreen() {
+	home := s.cursor.X == 0 && s.cursor.Y == 0
+	if !home || s.cur != s.pri {
+		s.eraseRows(0, s.rows-1)
+		return
+	}
+	if n := s.written(); n > 0 {
+		s.scrolledOff(s.cur.scrollUp(0, s.rows-1, n, true, s.eraseCell()))
+	}
+	s.eraseRows(0, s.rows-1)
+	s.clearedTo(s.gone)
+}
+
+// written is how many rows from the top have anything on them.
+func (s *Screen) written() int {
+	for y := s.rows - 1; y >= 0; y-- {
+		for _, c := range s.line(y) {
+			if c.Rune != 0 && c.Rune != ' ' {
+				return y + 1
+			}
+		}
+	}
+	return 0
+}
+
+// clearedTo marks a line as the one a clear left behind.
+//
+// It only ever moves forward. A resize pulls lines back out of history
+// and moves the count of what has left the screen back with them, and a
+// floor that followed it down would offer lines a clear had put out of
+// reach.
+func (s *Screen) clearedTo(line uint64) {
+	if s.cur == s.pri {
+		s.floor = max(s.floor, line)
+	}
 }
 
 func (s *Screen) eraseRows(from, to int) {

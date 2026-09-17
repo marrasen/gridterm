@@ -95,8 +95,13 @@ const (
 	sgrOff   = "\x1b[0m"
 )
 
-// clearPane empties a terminal's screen and its scrollback and puts the
-// cursor back at the top.
+// clearPane empties a terminal's screen and puts the cursor back at the
+// top.
+//
+// The lines it takes off the screen stay in the pane's history, the way
+// any cleared screen does now, so the account is a scroll away as well
+// as being on the "How it was reached" dialog. What the fold is for is a
+// pane that reads as one line, and that is what this leaves.
 const clearPane = "\x1b[2J\x1b[3J\x1b[H"
 
 // Say writes a line into the pane, stamped with the time.

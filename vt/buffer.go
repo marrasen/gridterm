@@ -47,7 +47,11 @@ func (b *buffer) blankLine() line {
 // truncated or extended in place; rows are added at the bottom and
 // removed from the top, so growing a window reveals scrollback rather
 // than pushing the prompt down.
-func (b *buffer) resize(cols, rows int, fill grid.Cell, cursorY int) int {
+//
+// revive caps how many lines a taller window may take back out of
+// history. A screen that has been cleared takes back none of what the
+// clear put behind it: a window dragged taller must not undo a clear.
+func (b *buffer) resize(cols, rows int, fill grid.Cell, cursorY, revive int) int {
 	b.fill = fill
 	if cols == b.cols && rows == len(b.lines) {
 		return 0
@@ -69,7 +73,7 @@ func (b *buffer) resize(cols, rows int, fill grid.Cell, cursorY int) int {
 		// so making a window taller reveals what scrolled off rather
 		// than adding blank space.
 		want := rows - len(b.lines)
-		take := min(want, len(b.scrollback))
+		take := min(min(want, len(b.scrollback)), max(revive, 0))
 		if take > 0 {
 			revived := b.scrollback[len(b.scrollback)-take:]
 			b.scrollback = b.scrollback[:len(b.scrollback)-take]

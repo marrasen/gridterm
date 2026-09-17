@@ -2220,9 +2220,13 @@ func TestReadingTheOutputLeavesTheNextReadOfThePaneWhole(t *testing.T) {
 	}
 }
 
-// A screen cleared since the command started says so, rather than
-// handing back the blank rows where the output used to be.
-func TestReadingTheOutputAfterAClearSaysItHasGone(t *testing.T) {
+// A clear since the command started cuts the output off at the clear,
+// and says so.
+//
+// The lines are still in the pane and the user can scroll to them. What
+// the agent is offered starts where the clear did, which is what a clear
+// means everywhere else in these tools.
+func TestReadingTheOutputAfterAClearStartsAtTheClear(t *testing.T) {
 	a := newTestApp(t, 90, 30)
 	withDialogs(t, a)
 	withPanel(t, a)
@@ -2235,24 +2239,34 @@ func TestReadingTheOutputAfterAClearSaysItHasGone(t *testing.T) {
 		return err
 	})
 
-	// A command with marks around it, six rows down the screen.
-	a.shells[0].out <- []byte("$\r\n$\r\n$\r\n$\r\n$ ls\r\n\x1b]133;C\adocs\r\n\x1b]133;D;0\a$ ")
+	// A command with marks around it, still running.
+	a.shells[0].out <- []byte("$ tail -f log\r\n\x1b]133;C\afirst line\r\n")
 	waitFor(t, a, "the pane to show the command", func() bool {
-		return strings.Contains(paneText(pane), "docs")
+		return strings.Contains(paneText(pane), "first line")
 	})
 
-	// And then the screen is cleared: history dropped, cursor home.
-	a.shells[0].out <- []byte("\x1b[3J\x1b[H\x1b[2J$ ")
+	// And then the screen is cleared: home, erase, erase the scrollback.
+	a.shells[0].out <- []byte("\x1b[H\x1b[2J\x1b[3Jsecond line\r\n")
 	waitFor(t, a, "the pane to be cleared", func() bool {
-		return !strings.Contains(paneText(pane), "docs")
+		return !strings.Contains(paneText(pane), "first line")
 	})
 
-	_, err := outputOf(t, a, c, got.ID)
-	if err == nil {
-		t.Fatal("it was given output from a screen that had been cleared")
+	look, err := outputOf(t, a, c, got.ID)
+	if err != nil {
+		t.Fatalf("read the output: %v", err)
 	}
-	if !strings.Contains(err.Error(), "cleared") || !strings.Contains(err.Error(), "read_pane") {
-		t.Errorf("it was told %q, which does not say what happened or what to do", err)
+	if strings.Contains(look.Screen, "first line") {
+		t.Errorf("it read past the clear:\n%s", look.Screen)
+	}
+	if !strings.Contains(look.Screen, "second line") {
+		t.Errorf("it did not give what was printed after the clear:\n%s", look.Screen)
+	}
+	if !strings.Contains(look.Note, "cleared") || !strings.Contains(look.Note, "scroll up") {
+		t.Errorf("the answer does not say what happened: %q", look.Note)
+	}
+	// And the user still has the line the agent may not read.
+	if !strings.Contains(pane.TextLines(400), "first line") {
+		t.Error("the pane threw the line away, so the user cannot scroll back to it")
 	}
 }
 
@@ -2334,5 +2348,59 @@ func TestAClearHidesWhatCameBeforeItFromTheAgent(t *testing.T) {
 	// whole point of a floor rather than a delete.
 	if !strings.Contains(pane.TextLines(400), "hunter2") {
 		t.Error("the pane threw the lines away, so the user cannot scroll back to them")
+	}
+}
+
+// The clear is the boundary exactly: the line printed before it is out,
+// the line printed after it is in, and nothing in between is invented.
+//
+// The other test about a clear puts forty lines between the secret and
+// the floor, so a clamp that is out by a line or ten still passes it.
+// This one is out by nothing.
+func TestAClearCutsThePaneOffAtExactlyTheClear(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pane, code, c := handedOver(t, a)
+
+	var got agent.Pane
+	offWindow(t, a, "the window to answer the agent", func() error {
+		var err error
+		got, err = c.Use(code)
+		return err
+	})
+
+	// Enough to fill the screen and push lines into history, then the
+	// one line that must not be readable, then the clear.
+	var filling strings.Builder
+	for i := 0; i < 40; i++ {
+		fmt.Fprintf(&filling, "line %d\r\n", i)
+	}
+	a.shells[0].out <- []byte(filling.String() + "last before the clear\r\n")
+	waitFor(t, a, "the pane to show the last line before the clear", func() bool {
+		return strings.Contains(paneText(pane), "last before the clear")
+	})
+	a.shells[0].out <- []byte("\x1b[H\x1b[2J\x1b[3Jfirst after the clear\r\n$ ")
+	waitFor(t, a, "the pane to be cleared", func() bool {
+		return strings.Contains(paneText(pane), "first after the clear") &&
+			!strings.Contains(paneText(pane), "last before the clear")
+	})
+
+	var look agent.Look
+	offWindow(t, a, "the window to answer the agent", func() error {
+		var err error
+		look, err = c.Read(got.ID, 400)
+		return err
+	})
+	if strings.Contains(look.Screen, "last before the clear") {
+		t.Errorf("the line printed before the clear is readable:\n%s", look.Screen)
+	}
+	if !strings.Contains(look.Screen, "first after the clear") {
+		t.Errorf("the line printed after the clear is not readable:\n%s", look.Screen)
+	}
+	// The pane is thirty rows and the clear left it blank, so what may be
+	// read is exactly those thirty rows.
+	if got := countLines(look.Screen); got != 30 {
+		t.Errorf("it read %d lines, want the 30 rows below the clear:\n%s", got, look.Screen)
 	}
 }

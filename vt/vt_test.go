@@ -899,18 +899,19 @@ func TestAResetGoesOnCountingLines(t *testing.T) {
 	}
 }
 
-// Clearing the screen keeps the history and marks where the clear was.
+// Clearing the screen keeps everything that was on it and marks where
+// the clear was.
 //
-// The sequence says to erase the scrollback. What the person who typed
-// `clear` wants is a blank screen; what they also want, later, is to
-// scroll up and find what they did. So the lines stay and the clear
-// leaves a floor behind, which is what a reader from outside is offered
-// down to.
+// The sequence says to erase the screen and the scrollback. What the
+// person who typed `clear` wants is a blank screen; what they also want,
+// later, is to scroll up and find what they did. So the screen goes into
+// history rather than being written over, and the clear leaves a floor
+// behind, which is what a reader from outside is offered down to.
 func TestClearingTheScreenKeepsTheHistoryAndLeavesAFloor(t *testing.T) {
 	h := newHarness(t, 20, 3)
 	h.write("one\r\ntwo\r\nthree\r\nfour\r\nfive\r\n")
 	scr := h.term.Screen()
-	kept, top := scr.History(), scr.LineNumber(0)
+	kept := scr.History()
 	if kept == 0 {
 		t.Fatal("nothing scrolled into history, so this proves nothing")
 	}
@@ -918,20 +919,49 @@ func TestClearingTheScreenKeepsTheHistoryAndLeavesAFloor(t *testing.T) {
 		t.Fatalf("a screen nobody has cleared has a floor of %d", scr.Floor())
 	}
 
-	// What `clear` sends: erase the scrollback, home, erase the screen.
-	h.write("\x1b[3J\x1b[H\x1b[2J")
+	// What `clear` sends: home, erase the screen, erase the scrollback.
+	h.write("\x1b[H\x1b[2J\x1b[3J")
 
-	if got := scr.History(); got != kept {
-		t.Errorf("history holds %d lines after a clear, want the %d it had", got, kept)
+	// The two rows that were on the screen went into history rather than
+	// being written over.
+	if got := scr.History(); got != kept+2 {
+		t.Errorf("history holds %d lines after a clear, want the %d it had and the 2 rows"+
+			" that were on the screen", got, kept)
 	}
-	if got := scr.Floor(); got != top {
-		t.Errorf("the clear left a floor of %d, want the top row's line %d", got, top)
+	// Nothing at or above the floor is offered to a reader from outside,
+	// and the screen is blank, so the floor is the top row's line.
+	if got, want := scr.Floor(), scr.LineNumber(0); got != want {
+		t.Errorf("the clear left a floor of %d, want the top row's line %d", got, want)
 	}
-	// And the lines above it are still there to scroll back to.
+	// And all of it is still there to scroll back to, including the
+	// screenful that was showing when the clear happened.
 	g := grid.New(20, 3, DefaultPalette().FG, DefaultPalette().BG)
-	scr.RenderBack(g, kept)
+	scr.RenderBack(g, scr.History())
 	if row := rowOf(g, 0); !strings.Contains(row, "one") {
 		t.Errorf("scrolling back to the top shows %q, want the first line", row)
+	}
+	scr.RenderBack(g, 2)
+	if row := rowOf(g, 0); !strings.Contains(row, "four") {
+		t.Errorf("scrolling back two lines shows %q, want the screen the clear took away", row)
+	}
+}
+
+// A screen erased from anywhere but the top left is a program redrawing,
+// and its rows are written over as they always were.
+func TestErasingTheScreenMidWayThroughIsNotAClear(t *testing.T) {
+	h := newHarness(t, 20, 3)
+	h.write("one\r\ntwo\r\nthree\r\nfour\r\nfive")
+	scr := h.term.Screen()
+	kept := scr.History()
+
+	// The cursor is at the end of "five", not at the top left.
+	h.write("\x1b[2J")
+
+	if got := scr.History(); got != kept {
+		t.Errorf("history holds %d lines, want the %d it had", got, kept)
+	}
+	if got := scr.Floor(); got != 0 {
+		t.Errorf("a redraw left a floor of %d", got)
 	}
 }
 
@@ -959,4 +989,50 @@ func rowOf(g *grid.Grid, y int) string {
 		}
 	}
 	return strings.TrimRight(b.String(), " ")
+}
+
+// A window dragged taller after a clear does not undo the clear.
+//
+// Growing a screen takes lines back out of history, which is what makes
+// a taller window show what scrolled off. A cleared screen takes none of
+// them back: the clear is what the person at this machine asked for, and
+// a resize is not them asking for it back.
+func TestGrowingAPaneDoesNotUndoAClear(t *testing.T) {
+	h := newHarness(t, 20, 3)
+	h.write("one\r\ntwo\r\nthree\r\nfour\r\nfive\r\n")
+	h.write("\x1b[H\x1b[2J\x1b[3J")
+	scr := h.term.Screen()
+	floor := scr.Floor()
+
+	h.term.Resize(20, 6)
+
+	for _, row := range h.lines() {
+		if strings.TrimSpace(row) != "" {
+			t.Errorf("growing the pane put %q back on a cleared screen", row)
+		}
+	}
+	if got := scr.Floor(); got != floor {
+		t.Errorf("the floor moved to %d, want %d", got, floor)
+	}
+	if got := scr.LineNumber(0); got != floor {
+		t.Errorf("the top row is line %d, want the floor at %d", got, floor)
+	}
+}
+
+// A second clear on a pane that has been resized does not lower the
+// floor onto lines the first clear put away.
+func TestTheFloorOnlyEverMovesForward(t *testing.T) {
+	h := newHarness(t, 20, 3)
+	h.write("one\r\ntwo\r\nthree\r\nfour\r\nfive\r\n")
+	h.write("\x1b[H\x1b[2J\x1b[3J")
+	scr := h.term.Screen()
+	first := scr.Floor()
+
+	// Taller, then cleared again with nothing printed in between.
+	h.term.Resize(20, 6)
+	h.write("\x1b[H\x1b[2J\x1b[3J")
+
+	if got := scr.Floor(); got < first {
+		t.Errorf("the second clear left a floor of %d, below the first at %d", got, first)
+	}
 }

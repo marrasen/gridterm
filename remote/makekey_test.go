@@ -133,6 +133,10 @@ func TestMakeKeyMakesTheDirectory(t *testing.T) {
 // than written wherever gridterm happened to be started. On Windows
 // where a key sits is the whole of what keeps it private.
 func TestAKeyWithoutAFullPathIsRefused(t *testing.T) {
+	// In a directory of the test's own, so a build that has lost the
+	// check writes its keys there rather than into the source tree.
+	t.Chdir(t.TempDir())
+
 	for _, path := range []string{"", "   ", "id_ed25519", filepath.Join("keys", "id"), "~/.ssh/id"} {
 		if _, err := MakeKey(path, "", ""); err == nil {
 			t.Errorf("a key at %q was written", path)

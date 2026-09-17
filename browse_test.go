@@ -683,6 +683,43 @@ func TestGoToStaysOpenWhenThePathIsNotThere(t *testing.T) {
 	waitFor(t, a, "the dialog to go", func() bool { return a.root.Modal() == nil })
 }
 
+// Cancelling the go-to dialog while the read is still out does not lose
+// the reason. It arrives the way every other one does.
+func TestGoToCancelledWhileTheReadIsOutStillSaysWhy(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	openFilesFromThePlus(t, a, conns.Local)
+	p, ok := ui.FocusedLeaf(a.root.Widget()).(*files.Pane)
+	if !ok {
+		t.Fatal("the keys are not on a file pane")
+	}
+	waitFor(t, a, "the pane to land somewhere", func() bool { return p.At() != "" })
+
+	// Held rather than answered, so Cancel comes first.
+	var held func([]vfs.Entry, error)
+	p.Read = func(_ vfs.FS, _ string, then func([]vfs.Entry, error)) { held = then }
+
+	if err := a.openGoTo(); err != nil {
+		t.Fatalf("go to: %v", err)
+	}
+	f := awaitModal(t, a, "the go-to dialog", byTitle[*ui.Form]("Go to"))
+	retypeField(t, a, f, "Path", filepath.Join(t.TempDir(), "nowhere-at-all"))
+	pressButton(t, a, f, "Go")
+	pressButton(t, a, f, "Cancel")
+
+	want := errors.New("the machine went away")
+	held(nil, want)
+
+	n := awaitModal[*ui.Notice](t, a, "a notice", nil)
+	if n.Title != "Could not read a directory" {
+		t.Errorf("the dialog is titled %q", n.Title)
+	}
+	if !strings.Contains(n.Message(), want.Error()) {
+		t.Errorf("the dialog says\n%s\nwant it to hold %q", n.Message(), want)
+	}
+}
+
 // paneDrawn reads a pane back off a grid of its own, one string per row.
 func paneDrawn(p *files.Pane, cols, rows int) []string {
 	g := grid.New(cols, rows, color.RGBA{}, color.RGBA{})

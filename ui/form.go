@@ -635,6 +635,11 @@ func (f *Form) press(at int) error {
 		f.dismiss()
 		return nil
 	}
+	// Whatever an earlier press failed with is no longer what the form
+	// has to say. Cleared before the button runs, not after: a button
+	// that answers later sets the reason itself, and clearing after
+	// would wipe it.
+	f.SetError(nil)
 	if err := b.Do(); err != nil {
 		// The form stays open showing why, so what was typed is still
 		// there to correct.
@@ -642,9 +647,6 @@ func (f *Form) press(at int) error {
 		return nil
 	}
 	if b.Keep {
-		// This press worked, so whatever an earlier one failed with is
-		// no longer what the form has to say.
-		f.SetError(nil)
 		return nil
 	}
 	f.dismiss()

@@ -236,6 +236,29 @@ func TestFormKeepsTheFormOpenWhenAButtonFails(t *testing.T) {
 	}
 }
 
+// A button that keeps the form open can say why itself, because the last
+// failure is taken off before it runs rather than after.
+//
+// The go-to dialog reads a directory and hears back later. Clearing after
+// the button ran would wipe the reason it had just put there.
+func TestFormAKeptButtonCanSayWhyItself(t *testing.T) {
+	f := NewForm("Go to", func() {})
+	f.Style = formStyled()
+	f.AddButton(Button{Title: "Go", Keep: true, Do: func() error {
+		f.SetError(errors.New("there is no such directory"))
+		return nil
+	}})
+	f.Layout(Size{Cols: 60, Rows: 24})
+	f.SetFocus(true)
+
+	if err := f.press(0); err != nil {
+		t.Fatalf("press: %v", err)
+	}
+	if got := f.ErrorText(); got != "there is no such directory" {
+		t.Fatalf("the form says %q, want what the button put there", got)
+	}
+}
+
 // A button that keeps the form open takes the last failure off it when
 // it works.
 //

@@ -309,7 +309,7 @@ func TestAFinishedJobReadsOnlyThePanesItTouched(t *testing.T) {
 	reads := map[*files.Pane]int{}
 	for _, p := range []*files.Pane{mine, other} {
 		at := p
-		at.Read = func(vfs.FS, string, func([]vfs.Entry, error)) { reads[at]++ }
+		at.Read = func(_ vfs.FS, _ string, then func([]vfs.Entry, error)) { reads[at]++; then(nil, nil) }
 		at.Open("/")
 	}
 	reads[mine], reads[other] = 0, 0
@@ -341,7 +341,7 @@ func TestTheFinishedJobSweepReadsThePanesItTouched(t *testing.T) {
 	reads := map[*files.Pane]int{}
 	for _, p := range []*files.Pane{touched, untouched} {
 		at := p
-		at.Read = func(vfs.FS, string, func([]vfs.Entry, error)) { reads[at]++ }
+		at.Read = func(_ vfs.FS, _ string, then func([]vfs.Entry, error)) { reads[at]++; then(nil, nil) }
 		at.Open(dir)
 	}
 
@@ -378,7 +378,7 @@ func TestBothPanesOnThisMachineAreReadAgain(t *testing.T) {
 	reads := map[*files.Pane]int{}
 	for _, p := range []*files.Pane{one, two} {
 		at := p
-		at.Read = func(vfs.FS, string, func([]vfs.Entry, error)) { reads[at]++ }
+		at.Read = func(_ vfs.FS, _ string, then func([]vfs.Entry, error)) { reads[at]++; then(nil, nil) }
 		at.Open(t.TempDir())
 	}
 	reads[one], reads[two] = 0, 0

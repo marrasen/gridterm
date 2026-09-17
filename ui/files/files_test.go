@@ -310,6 +310,92 @@ func TestAFailedMoveKeepsTheMarks(t *testing.T) {
 	if got := p.Marked(); len(got) != 1 || got[0] != "one.txt" {
 		t.Fatalf("after a move that failed it offers %v", got)
 	}
+	// Marked falls back to the name under the bar when nothing is picked
+	// out, so the mark itself is what is checked: it is drawn in front of
+	// the name.
+	if got := strings.Join(drawn(p, 40, 8), "\n"); !strings.Contains(got, "*one.txt") {
+		t.Fatalf("the mark is not on screen:\n%s", got)
+	}
+}
+
+// A reload that lands while a move is waiting is left out, so whoever
+// asked for the move is not answered with the directory being left.
+//
+// A file job finishing reloads every pane on its filesystem, and it does
+// that whatever else is going on.
+func TestAReloadDoesNotCutInOnAMoveThatIsWaiting(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "sub/two.txt", "two")
+
+	p := alone(t, dir)
+	// Reads are held here rather than answered, which is how a move on a
+	// slow machine sits while something else happens.
+	var held []func([]vfs.Entry, error)
+	p.Read = func(_ vfs.FS, _ string, then func([]vfs.Entry, error)) {
+		held = append(held, then)
+	}
+
+	var answered []error
+	p.OpenThen(filepath.Join(dir, "sub"), func(err error) {
+		answered = append(answered, err)
+	})
+	p.Reload()
+	if len(held) != 1 {
+		t.Fatalf("%d reads went out, want the move on its own", len(held))
+	}
+
+	// The move's own answer is the one that reaches it.
+	held[0](nil, nil)
+	if len(answered) != 1 || answered[0] != nil {
+		t.Fatalf("the move was answered %v, want once and with nothing wrong", answered)
+	}
+	if want := filepath.Join(dir, "sub"); p.At() != want {
+		t.Fatalf("the pane is in %q, want %q", p.At(), want)
+	}
+	// And a reload is welcome again once the move has landed.
+	p.Reload()
+	if len(held) != 2 {
+		t.Fatalf("%d reads went out in all, want the reload as well", len(held))
+	}
+}
+
+// A pane on its way somewhere says where it is going, so a slow
+// directory says what is being waited for.
+func TestAPaneSaysWhereItIsGoing(t *testing.T) {
+	dir := t.TempDir()
+	p := alone(t, dir)
+	p.Read = func(_ vfs.FS, _ string, then func([]vfs.Entry, error)) {}
+
+	sub := filepath.Join(dir, "sub")
+	p.Open(sub)
+	if got := strings.Join(drawn(p, 140, 8), "\n"); !strings.Contains(got, sub+" …") {
+		t.Fatalf("the pane does not say it is going to %q:\n%s", sub, got)
+	}
+}
+
+// A pane whose very first read fails still has a directory to read
+// again: it had nothing to keep, so it moved.
+func TestAPaneWhoseFirstReadFailsCanTryAgain(t *testing.T) {
+	dir := t.TempDir()
+	want := errors.New("the machine went away")
+	reads := 0
+
+	p := New(vfs.NewLocal())
+	p.Style = styled()
+	p.Read = func(_ vfs.FS, _ string, then func([]vfs.Entry, error)) {
+		reads++
+		then(nil, want)
+	}
+	p.Layout(ui.Size{Cols: 40, Rows: 12})
+
+	p.Open(dir)
+	if p.At() != dir {
+		t.Fatalf("the pane is in %q, want %q", p.At(), dir)
+	}
+	p.Reload()
+	if reads != 2 {
+		t.Fatalf("it read %d times, want the reload to have gone out too", reads)
+	}
 }
 
 // The reason is shown at once in the pane the user is working in, and it

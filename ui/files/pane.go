@@ -120,9 +120,6 @@ type Pane struct {
 	// when a pane whose read failed gains them, and again whenever the row
 	// reporting it is clicked. A nil one takes the offer off that row:
 	// showing an error needs a dialog, and this package has none.
-	//
-	// The directory is passed because it is not where the pane is: a move
-	// that failed leaves the pane where it was.
 	OnError func(path string, err error)
 
 	// Read is how a listing is fetched. It runs the work somewhere else
@@ -146,11 +143,10 @@ type Pane struct {
 	errAt   string
 	told    bool
 
-	// going is the directory a move is waiting on, and then who is
-	// waiting. The pane does not move until the read comes back, so a
-	// move that failed leaves it showing what it had.
-	going string
-	then  func(error)
+	// going is the directory a move is waiting on, and waiting is who
+	// asked for it.
+	going   string
+	waiting func(error)
 
 	// reading counts the reads on their way back, so the pane can say it
 	// is waiting, and asked is which read is the one being waited for:
@@ -237,33 +233,37 @@ func (p *Pane) Busy() bool { return p.reading > 0 }
 // nothing.
 func (p *Pane) Open(path string) { p.openAt(path, "", nil) }
 
-// OpenThen moves the pane and says how the read went, for a caller that
-// waits on it. then takes the place of OnError for that read, so a dialog
-// asking where to go can show the reason itself and stay open.
+// OpenThen moves the pane and says how the read went. then takes the
+// place of OnError for that read.
 func (p *Pane) OpenThen(path string, then func(error)) { p.openAt(path, "", then) }
 
 // openAt asks for a directory, remembering a name to put the bar on once
-// the listing arrives. It is set before the read starts, because a read
-// that answers straight away answers before this returns.
+// the listing arrives.
 func (p *Pane) openAt(path, land string, then func(error)) {
 	if path == "" {
 		return
 	}
 	// A pane with nothing showing has nothing to keep, so it moves now.
-	// Waiting would leave it nowhere at all when the first read fails,
-	// with no directory to reload.
 	if p.at == "" {
 		p.arrive(path)
 	}
-	p.going, p.land, p.then = path, land, then
-	p.read(path)
+	p.going = path
+	p.ask(path, land, then)
 }
 
-// Reload reads the directory again.
-func (p *Pane) Reload() { p.read(p.at) }
+// Reload reads the directory again. A move that is still waiting for its
+// listing is left alone: the pane is on its way somewhere else, and
+// cutting in would answer whoever asked for the move with the wrong
+// directory.
+func (p *Pane) Reload() {
+	if p.going != "" {
+		return
+	}
+	p.ask(p.at, "", nil)
+}
 
-// read asks for a listing and shows it when it arrives.
-func (p *Pane) read(path string) {
+// ask asks for a listing and shows it when it arrives.
+func (p *Pane) ask(path, land string, then func(error)) {
 	if p.Read == nil || path == "" {
 		return
 	}
@@ -278,6 +278,9 @@ func (p *Pane) read(path string) {
 		if want != p.asked {
 			return
 		}
+		// Carried by the read rather than by the pane, so an answer
+		// lands on whoever asked for that read and nobody else.
+		p.land, p.waiting = land, then
 		p.show(path, entries, err)
 	})
 }
@@ -289,12 +292,14 @@ func (p *Pane) read(path string) {
 // the row that reports it brings it back.
 func (p *Pane) show(path string, entries []vfs.Entry, err error) {
 	was := p.head()
-	p.err, p.errAt, p.told = err, path, false
-	p.going = ""
-	if err == nil {
-		p.arrive(path)
+	p.err, p.told, p.going = err, false, ""
+	if err != nil {
+		p.errAt = path
+	} else {
 		p.entries = entries
 		p.order()
+		// After the listing, so anything OnChange reads is the new one.
+		p.arrive(path)
 	}
 	// The rows are about to be built, so a name to land on can be
 	// reached now and not before.
@@ -317,11 +322,11 @@ func (p *Pane) show(path string, entries []vfs.Entry, err error) {
 		// put it, and it has to still be somewhere they can see.
 		p.list.Reveal()
 	}
-	// Whoever asked for the move hears first, and hears instead of
-	// OnError: a dialog that is waiting shows the reason itself.
-	if then := p.then; then != nil {
-		p.then, p.told = nil, true
-		then(err)
+	// Whoever asked for the move hears instead of OnError, because they
+	// are showing the reason themselves.
+	if waiting := p.waiting; waiting != nil {
+		p.waiting, p.told = nil, true
+		waiting(err)
 		return
 	}
 	// Straight away in the pane the user asked in; SetFocus does it for
@@ -337,8 +342,7 @@ func (p *Pane) arrive(path string) {
 		return
 	}
 	p.at = path
-	// The marks were about what was in front of the user, and that has
-	// changed.
+	// The marks were about the old directory.
 	p.marked = map[string]bool{}
 	if p.OnChange != nil {
 		p.OnChange()
@@ -602,7 +606,12 @@ func (p *Pane) Draw(v grid.View) {
 	}
 	p.dress()
 
+	// Where it is going while it is going there, so a slow directory
+	// says what is being waited for rather than only that something is.
 	where := p.at
+	if p.going != "" {
+		where = p.going
+	}
 	if p.Busy() {
 		where += " …"
 	}

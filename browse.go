@@ -886,11 +886,13 @@ func (a *app) openGoTo() error {
 	// away rather than something to remember the letter of.
 	where.Options = append([]string{p.At()}, p.FS().Roots()...)
 	where.SetText(p.At())
-	// Set once the dialog is up, and reached only from the answer to a
-	// read, which cannot arrive before then.
-	var dismiss func()
-	// Kept open until the read answers: a path that is not there is a
-	// typo to correct in this dialog, not a second dialog to dismiss.
+	// Both set once the dialog is up, which is before any button can be
+	// pressed.
+	var (
+		dismiss func()
+		gone    bool
+	)
+	// Kept open until the read answers.
 	f.AddButton(ui.Button{Title: "Go", Keep: true, Do: func() error {
 		path := strings.TrimSpace(where.Text())
 		if path == "" {
@@ -898,8 +900,16 @@ func (a *app) openGoTo() error {
 			// with what was typed still there to correct.
 			return errors.New("there is nowhere to go")
 		}
-		f.SetError(nil)
 		p.OpenThen(path, func(err error) {
+			if gone {
+				// Cancelled while the read was out, so the reason goes
+				// where every other one goes.
+				if err != nil {
+					a.reportError("Could not read a directory",
+						fmt.Errorf("%s\n\n%w", path, err))
+				}
+				return
+			}
 			if err != nil {
 				f.SetError(err)
 				return
@@ -909,7 +919,7 @@ func (a *app) openGoTo() error {
 		return nil
 	}})
 	f.AddButton(ui.Button{Title: "Cancel"})
-	dismiss = a.showForm(f, nil)
+	dismiss = a.showForm(f, func() { gone = true })
 	return nil
 }
 

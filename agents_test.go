@@ -3132,3 +3132,71 @@ func TestWhatTheAgentAsksForIsCutDownBeforeItIsShown(t *testing.T) {
 		t.Errorf("an empty ask reads %q", empty)
 	}
 }
+
+// An agent cannot answer its own question.
+//
+// It asks the user to type a secret, and then types a return itself. If
+// that counted, an agent could be told "the user typed something" with
+// nobody in the room, and then act as though a password had been given.
+// What the agent sends goes to the program as bytes; what the user types
+// goes through the pane's own keyboard, and only that is watched.
+func TestAnAgentCannotAnswerItsOwnAskForASecret(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pane, code, c := handedOver(t, a)
+
+	var got agent.Pane
+	offWindow(t, a, "the window to answer the agent", func() error {
+		var err error
+		got, err = c.Use(code)
+		return err
+	})
+	f := awaitModal[*ui.Form](t, a, "the hand-over dialog",
+		byTitle[*ui.Form]("An agent may work in this pane"))
+	pressButton(t, a, f, "Done")
+
+	typed := make(chan bool, 1)
+	go func() {
+		ok, _ := c.Secret(got.ID, "the deploy key passphrase", 2*time.Second)
+		typed <- ok
+	}()
+	waitFor(t, a, "the pane to ask for the secret", func() bool { return pane.AskedForASecret() })
+
+	// The agent types a password and a return of its own. On a second
+	// connection, because one connection answers one question at a time
+	// and this one is waiting for a person.
+	typing, err := agent.Dial(code)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	t.Cleanup(func() { _ = typing.Close() })
+	var also agent.Pane
+	offWindow(t, a, "the window to answer the agent", func() error {
+		var err error
+		also, err = typing.Use(code)
+		return err
+	})
+	offWindow(t, a, "the window to take the keys", func() error {
+		return typing.Send(also.ID, "hunter2\r", nil)
+	})
+	offWindow(t, a, "the window to take the keys", func() error {
+		return typing.Send(also.ID, "", []string{"Enter"})
+	})
+
+	// The pane is still waiting for a person.
+	if !pane.AskedForASecret() {
+		t.Fatal("the agent answered its own question")
+	}
+	waitFor(t, a, "the ask to run out of time", func() bool {
+		select {
+		case ok := <-typed:
+			if ok {
+				t.Fatal("the agent was told the user typed something")
+			}
+			return true
+		default:
+			return false
+		}
+	})
+}

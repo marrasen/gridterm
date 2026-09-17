@@ -331,6 +331,13 @@ and "Terminal on <machine>" for every machine the window knows.
 
 ## Known gaps worth revisiting
 
+- One connection to the window answers one question at a time, so a long
+  `wait_for` or an `ask_for_secret` that is waiting for the user stops
+  that agent asking anything else until it ends. The tools say so, and
+  an agent that wants both opens a second connection with the same code.
+  Giving requests ids so one connection can carry several at once is the
+  real answer, and it is a protocol change.
+
 - A WSL pane does not start in the directory the window is looking at.
   `shells.Shell.Command` translates a Windows directory into a `/mnt`
   path and passes it as `--cd`, and `shells.UnixPath` is tested, but

@@ -157,9 +157,11 @@ func toolList() []tool {
 				" Use it when a program in the pane is waiting for a password. Do not ask" +
 				" the user to paste one to you instead, and do not type one yourself." +
 				" It waits for them, so it can take a while, and it says so if they never" +
-				" type anything. A program that echoes what is typed puts it on the screen," +
-				" where you can read it like anything else: this hides what you are told," +
-				" not what the pane shows.",
+				" type anything. Nothing else of yours is answered while it waits, so ask" +
+				" when you have nothing else to do and give wait_ms if you will not wait" +
+				" long. A program that echoes what is typed puts it on the screen, where you" +
+				" can read it like anything else: this hides what you are told, not what the" +
+				" pane shows.",
 			InputSchema: schema{
 				Type: "object",
 				Properties: map[string]field{

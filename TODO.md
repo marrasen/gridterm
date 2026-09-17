@@ -3,17 +3,6 @@
 Things Marcus has asked for that are not done yet. Newest first within
 each group. A line goes when the work is in and reviewed.
 
-## Answered on 2026-09-17
-
-1. **A hand-over lasts as long as the pane, not as long as the
-   program.** Closing the pane is what drops it and stops the listener.
-   Nothing changes for a host that reboots: the pane is still there, so
-   the code still cannot be spent again. Two things follow, written up
-   under "The agent, through MCP":
-   - Reconnecting in the same pane keeps the same hand-over code.
-   - The agent can start that reconnect itself, when the user has ticked
-     the box for it. The boxes are done.
-
 ## Settled, do not re-open
 
 - **Nothing caps the panes a window keeps.** Answered on 2026-09-16: no
@@ -42,12 +31,7 @@ Raised after a debugging session in a handed-over pane.
    until the user takes it back or closes the pane. Revisit if forgotten
    hand-overs ever pile up in practice.
 
-2. **Drop the hand-over when the pane is closed.** Answered on
-   2026-09-17. A pane whose program has ended keeps its hand-over, so a
-   rebooted host still cannot spend the code twice. Closing the pane is
-   what releases it, and the listener stops once the last one has gone.
-
-3. **A command pane can be handed over already**, running or not.
+2. **A command pane can be handed over already**, running or not.
    `handPane` looks at no kind and no state. A running one takes keys on
    the command's stdin; an ended one can be read and not typed into,
    which is worth having for a failed build. Nothing to do here: it is

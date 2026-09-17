@@ -666,6 +666,75 @@ func TestAHandoverOnARemotePaneOutlivesTheConnection(t *testing.T) {
 	}
 }
 
+// A pane that reconnects keeps the same hand-over code.
+//
+// This is the whole of "a hand-over lasts as long as the pane": the host
+// reboots, the user answers Yes, and the agent is still working in the
+// pane it was handed, under the code it was given.
+func TestAHandoverSurvivesThePaneReconnecting(t *testing.T) {
+	a, s, host := aConnectedWindow(t, 90, 30)
+	pane := paneFor(a, host)
+	if pane == nil {
+		t.Fatal("nothing opened on the machine")
+	}
+	waitFor(t, a, "the machine to say something", func() bool {
+		return strings.Contains(paneText(pane), "READY")
+	})
+	if err := a.handPane(pane); err != nil {
+		t.Fatalf("hand it over: %v", err)
+	}
+	// The dialog that shows the code stays up until the user puts it
+	// away, and it takes every key while it is there.
+	dismissNotice(t, a)
+	code := a.agents.code()
+	c, err := agent.Dial(code)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	t.Cleanup(func() { _ = c.Close() })
+	var got agent.Pane
+	offWindow(t, a, "the window to answer the agent", func() error {
+		var err error
+		got, err = firstOf(c.Use(code))
+		return err
+	})
+
+	// The far end goes, the way a server being rebooted goes, and the
+	// user answers the question the pane puts up.
+	s.CloseClients()
+	waitFor(t, a, "the window to see the machine go", func() bool {
+		a.reapExited()
+		return a.machines.named(host) == nil && endedAndSaid(a, pane)
+	})
+	pressTheAnswer(t, a, pane)
+	cameBack(t, a, host, pane)
+
+	if a.agents.of(pane) == nil {
+		t.Fatal("the hand-over went with the reconnection")
+	}
+	if now := a.agents.code(); now != code {
+		t.Errorf("the code is now %q, want the one the agent was given", now)
+	}
+	// The same code, still naming the same pane, and typing works again.
+	var again agent.Pane
+	offWindow(t, a, "the window to answer the agent again", func() error {
+		var err error
+		again, err = firstOf(c.Use(code))
+		return err
+	})
+	if again.ID != got.ID {
+		t.Errorf("the code now names %q, want the pane it named before", again.ID)
+	}
+	if again.Ended {
+		t.Error("the agent was told the program has finished, and it is running again")
+	}
+	// And the row says an agent is working in it once more.
+	a.refreshPanel(time.Now())
+	if note := a.panes[pane].Note; !isAgentNote(note) {
+		t.Errorf("the row of a pane that came back says %q, want the agent note", note)
+	}
+}
+
 // Closing a connection leaves the transcript of a pane that had already
 // ended on it.
 //

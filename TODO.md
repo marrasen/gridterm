@@ -255,11 +255,6 @@ and "Terminal on <machine>" for every machine the window knows.
   - **Getting rid of it is answered** by the cross on hover. See the
     answers at the top.
 
-- **CMD and PowerShell rows say the path to the binary.** `labelFor`
-  joins the argv, so the row reads the full path under System32. Say
-  "Command Prompt" and "PowerShell" instead. `shells.Shell.Title`
-  already holds those words; nothing carries them to the row.
-
 - **An optional title bar in a pane.** The user turns it on, and the
   first row of the terminal shows the server name and the pane's title.
   Marcus wants it for split views, where nothing on screen says which

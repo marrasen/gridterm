@@ -106,6 +106,11 @@ type Form struct {
 	Copy      func(string)
 	CopyChord func(input.Event) bool
 
+	// Copyable is what the copy chord copies when the form is showing no
+	// error, for a dialog whose point is a line the user has to run
+	// somewhere else. Empty leaves the chord with nothing to copy.
+	Copyable string
+
 	rows    []formRow
 	buttons []Button
 
@@ -279,14 +284,27 @@ func (f *Form) SetError(err error) {
 // grid cannot draw.
 func (f *Form) ErrorText() string { return f.errText }
 
-// CopyNow puts the error on the clipboard, for the window's copy chord.
+// CopyNow puts the error on the clipboard, or Copyable when the form is
+// showing no error, for the window's copy chord.
 //
-// The error is the part of a form worth copying: a connection that
-// failed says why in words the user will want to paste somewhere.
+// The error comes first: a connection that failed says why in words the
+// user will want to paste somewhere, and that is the reason they reached
+// for the chord.
 func (f *Form) CopyNow() {
-	if f.Copy != nil && f.errText != "" {
-		f.Copy(f.errText)
+	if f.Copy == nil {
+		return
 	}
+	if text := f.CopyText(); text != "" {
+		f.Copy(text)
+	}
+}
+
+// CopyText is what the copy chord would put on the clipboard.
+func (f *Form) CopyText() string {
+	if f.errText != "" {
+		return f.errText
+	}
+	return f.Copyable
 }
 
 // Box returns where the dialog sits in the view it draws through, so

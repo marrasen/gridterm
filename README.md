@@ -187,10 +187,14 @@ gave. There is no way to pick a font by family name yet; give paths.
 Handing a pane to an agent is on the Servers menu and on the plus on
 this machine's row. The dialog asks which agent it is for -- Claude
 Code, Codex, Cursor, or another host that takes a JSON MCP config -- and
-remembers the answer for next time. "Copy the prompt" puts a prompt on
-the clipboard and shows how it starts. Paste the whole of it to the
-agent: it carries the code, it says how that host adds this window's
-`gridterm -mcp` server, and it says what the tools do. "Write the skill"
+remembers the answer for next time. The dialog shows the code for the
+pane. "Copy the prompt" puts a prompt on the clipboard and does nothing
+else: paste the whole of it to the agent, and it carries the code and
+says how that host adds this window's `gridterm -mcp` server. What the
+tools do and what the rules are come from the server's own instructions
+once the agent connects, so the prompt does not repeat them. "Install"
+opens those setup lines on their own, and the copy chord or the button
+beside them takes the command line off the dialog. "Write the skill"
 saves a `SKILL.md` where that host reads skills from, and says where it
 went; `gridterm -mcp-skill` prints the same file. Take the pane back
 from the same menu and the code stops working.

@@ -122,6 +122,23 @@ func wrapped(line string, room int) []string {
 	return append(out, line)
 }
 
+// setupToCopy is the setup as one piece of text to paste elsewhere: the command line for a host
+// that has one, and the config for a host set up by a file.
+func (h agentHost) setupToCopy(exe string) string {
+	if h.cmd != "" {
+		return h.addLine(exe)
+	}
+	return mcpConfig(exe)
+}
+
+// copyTitle is what the button that copies the setup says, naming what it copies.
+func (h agentHost) copyTitle() string {
+	if h.cmd != "" {
+		return "Copy the command"
+	}
+	return "Copy the config"
+}
+
 // setupForAgent says the same to an agent that cannot see gridterm's tools: what to ask the user
 // for, and the exact thing to ask them to run or write.
 func (h agentHost) setupForAgent(exe string) string {

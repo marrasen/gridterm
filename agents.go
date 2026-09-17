@@ -498,25 +498,34 @@ func (a *app) showHandover(h *handover) {
 	pick.Options = agentHostNames()
 	pick.SetText(a.agents.startHost().name)
 	f.Lines = append(f.Lines, "",
-		"Agent: ctrl+down and ctrl+up choose. \"Copy the prompt\" copies",
-		"an instruction for that agent; \"Write the skill\" saves a",
-		"SKILL.md where it reads skills from. Both leave this open.")
+		"Agent: ctrl+down and ctrl+up choose. \"Copy the prompt\" copies an",
+		"instruction for it, \"Install\" says how to add gridterm to it, and",
+		"\"Write the skill\" saves a SKILL.md. All three leave this open.")
 
-	// Both leave the form open, so the user can copy the prompt and write the
-	// skill without handing the pane over twice.
+	// All three leave the form open, so the user can copy the prompt, read
+	// the setup and write the skill without handing the pane over twice.
 	f.AddButton(ui.Button{Title: "Copy the prompt", Keep: true, Do: func() error {
 		host := hostNamed(pick.Text())
 		exe, err := exePath()
 		if err != nil {
 			// Said and carried on: the prompt still says "gridterm", which works
-			// where gridterm is on the PATH, and the dialog says so.
+			// where gridterm is on the PATH, and the instructions say so.
 			a.logError(err)
 		}
 		a.clip.set(handoverPrompt(host, h.code, exe))
+		a.pump.post(func() { a.rememberAgentHost(host) })
+		return nil
+	}})
+	f.AddButton(ui.Button{Title: "Install", Keep: true, Do: func() error {
+		host := hostNamed(pick.Text())
+		exe, err := exePath()
+		if err != nil {
+			a.logError(err)
+		}
 		// Not from here: a dialog opened while this button is running would be
 		// stacked before the form has finished with the press.
 		a.pump.post(func() {
-			a.showCode(h, host, exe, err)
+			a.showSetup(host, exe, err)
 			// After that dialog, so a failure to write the settings down
 			// lands on top of it rather than underneath. The pane is
 			// handed over either way.
@@ -604,29 +613,30 @@ func (a *app) askToReplaceSkill(host agentHost, path string) {
 	a.showForm(f, nil)
 }
 
-// showCode shows the code for a handed-over pane, and says what the user
-// has to do before the prompt on the clipboard is any use: the setup for
-// the picked host, and starting that host afterwards.
+// showSetup says how to add gridterm's MCP server to a host: what to run
+// or write, and that the host has to be started again afterwards.
 //
 // Short on purpose. A dialog draws the lines that fit and drops the
 // rest, and this one has to read whole in eighty columns by twenty four.
-func (a *app) showCode(h *handover, host agentHost, exe string, exeErr error) {
-	lines := []string{
-		"The whole prompt is on the clipboard. The code in it is:",
-		"  " + h.code,
-		"",
-	}
-	lines = append(lines, host.setupLines(exe)...)
+func (a *app) showSetup(host agentHost, exe string, exeErr error) {
+	lines := host.setupLines(exe)
 	if exeErr != nil {
 		lines = append(lines, "",
 			"gridterm could not read its own path, so that says just",
 			"gridterm, which works where gridterm is on the PATH.")
 	}
-	f := a.newConfirm("Paste the prompt to "+host.name, lines)
-	f.AddButton(ui.Button{Title: "Done"})
-	f.AddButton(ui.Button{Title: "Take it back", Do: func() error {
-		return a.takeBackPane(h.pane)
+	lines = append(lines, "",
+		`"`+host.copyTitle()+`" puts it on the clipboard, and so does the`,
+		"copy chord.")
+	f := a.newConfirm("Add gridterm to "+host.called, lines)
+	// The line itself, not the dialog: what the user does with this is
+	// paste it into a shell or a config file.
+	f.Copyable = host.setupToCopy(exe)
+	f.AddButton(ui.Button{Title: host.copyTitle(), Keep: true, Do: func() error {
+		a.clip.set(f.Copyable)
+		return nil
 	}})
+	f.AddButton(ui.Button{Title: "Done"})
 	a.showForm(f, nil)
 }
 

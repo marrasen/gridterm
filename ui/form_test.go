@@ -965,6 +965,46 @@ func TestTheCopyChordCopiesAFormError(t *testing.T) {
 	}
 }
 
+// A dialog whose point is a line to run somewhere else copies that line,
+// so the copy chord is worth pressing on a form that is showing no
+// error.
+func TestTheCopyChordCopiesWhatAFormSaysIsCopyable(t *testing.T) {
+	tf := newTestForm(t)
+	f := tf.form
+	var copied string
+	f.Copy = func(s string) { copied = s }
+	f.CopyChord = func(ev input.Event) bool {
+		return ev.Key == input.KeyC && ev.Mods == input.ModCtrl|input.ModShift
+	}
+	f.Copyable = `claude mcp add gridterm -- "gridterm.exe" -mcp`
+
+	if _, err := f.HandleKey(press(input.KeyC, input.ModCtrl|input.ModShift)); err != nil {
+		t.Fatalf("the copy chord: %v", err)
+	}
+	if copied != f.Copyable {
+		t.Errorf("it copied %q, want %q", copied, f.Copyable)
+	}
+
+	// An error is what the user reached for the chord about, so it wins
+	// while it is on screen.
+	f.SetError(errors.New("could not write the config"))
+	if _, err := f.HandleKey(press(input.KeyC, input.ModCtrl|input.ModShift)); err != nil {
+		t.Fatalf("the copy chord: %v", err)
+	}
+	if copied != "could not write the config" {
+		t.Errorf("with an error showing it copied %q", copied)
+	}
+
+	// And the line comes back once the error has gone.
+	f.SetError(nil)
+	if _, err := f.HandleKey(press(input.KeyC, input.ModCtrl|input.ModShift)); err != nil {
+		t.Fatalf("the copy chord: %v", err)
+	}
+	if copied != f.Copyable {
+		t.Errorf("after the error cleared it copied %q", copied)
+	}
+}
+
 // A far end can put anything in an error, and it is drawn into a grid.
 func TestAFormErrorIsCleanedBeforeItIsDrawn(t *testing.T) {
 	tf := newTestForm(t)

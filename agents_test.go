@@ -438,8 +438,8 @@ func drawsEveryLine(t *testing.T, a *testApp, f *ui.Form) {
 	}
 }
 
-// Handing a pane over puts the whole prompt on the clipboard, shows the
-// code, and says what the user has to do first.
+// Handing a pane over shows the code and copies the prompt, and copying
+// opens nothing on top of the dialog.
 //
 // At eighty columns by twenty four rows, which is the smallest window
 // anybody uses: a dialog that runs longer than that is cut off without a
@@ -452,28 +452,19 @@ func TestHandingAPaneOverShowsTheCodeAndCopiesThePrompt(t *testing.T) {
 
 	f := handoverDialog(t, a, pane)
 	drawsEveryLine(t, a, f)
+	code := a.agents.of(pane).code
+	// The code is on the dialog the user is already looking at.
+	if drawn := strings.Join(drawnLines(a, f), "\n"); !strings.Contains(drawn, code) {
+		t.Errorf("the hand-over dialog never shows the code:\n%s", drawn)
+	}
 	pressButton(t, a, f, "Copy the prompt")
 
-	code := a.agents.of(pane).code
 	host := hostNamed(hostClaudeCode)
 	// Under go test this is the test binary, and under go run a
 	// temporary one: a real path either way, and one worth nothing
 	// tomorrow.
 	exe := exeHere(t)
 	prompt := handoverPrompt(host, code, exe)
-
-	shownIn := awaitModal[*ui.Form](t, a, "the dialog showing the code",
-		byTitle[*ui.Form]("Paste the prompt to "+host.name))
-	drawsEveryLine(t, a, shownIn)
-	drawn := strings.Join(drawnLines(a, shownIn), "\n")
-	// What the user has to do, and the code, on the screen rather than
-	// only in f.Lines.
-	for _, say := range []string{"clipboard", code, "claude mcp add gridterm --",
-		"start Claude Code again"} {
-		if !strings.Contains(drawn, say) {
-			t.Errorf("the dialog does not draw %q:\n%s", say, drawn)
-		}
-	}
 
 	// The clipboard is written from a goroutine of its own, because on
 	// some systems putting something on it means running a program.
@@ -483,10 +474,58 @@ func TestHandingAPaneOverShowsTheCodeAndCopiesThePrompt(t *testing.T) {
 		t.Errorf("the clipboard holds %q, which is not a prompt an agent can act on", got)
 	}
 
-	// And the dialog offers to take it straight back.
-	pressButton(t, a, shownIn, "Take it back")
+	// Copying copies and nothing else: the dialog the user was on is
+	// still the one in front, with nothing stacked over it to close.
+	if top := a.root.Modal(); top != ui.Widget(f) {
+		t.Errorf("copying the prompt put %T over the hand-over dialog", top)
+	}
+
+	// The instructions are a button away, and say what to run.
+	pressButton(t, a, f, "Install")
+	shownIn := awaitModal[*ui.Form](t, a, "the install instructions",
+		byTitle[*ui.Form]("Add gridterm to "+host.called))
+	drawsEveryLine(t, a, shownIn)
+	drawn := strings.Join(drawnLines(a, shownIn), "\n")
+	for _, say := range []string{"claude mcp add gridterm --", "start Claude Code again"} {
+		if !strings.Contains(drawn, say) {
+			t.Errorf("the dialog does not draw %q:\n%s", say, drawn)
+		}
+	}
+
+	// And the command line can be taken off it, which is the whole point
+	// of a dialog naming a command.
+	pressButton(t, a, shownIn, host.copyTitle())
+	want := host.setupToCopy(exe)
+	waitFor(t, a, "the setup line to reach the clipboard", func() bool { return a.copiedText() == want })
+
+	pressButton(t, a, shownIn, "Done")
+	// Taking it back is still one button away, on the dialog underneath.
+	pressButton(t, a, f, "Take it back")
 	if a.agents.of(pane) != nil {
 		t.Error("it is still handed over")
+	}
+}
+
+// The copy chord copies the setup line too, for a user who reaches for
+// the chord rather than the button.
+func TestTheCopyChordOnTheInstallInstructionsCopiesTheSetupLine(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pane := onlyPaneOn(t, a)
+
+	f := handoverDialog(t, a, pane)
+	pressButton(t, a, f, "Install")
+	host := hostNamed(hostClaudeCode)
+	shown := awaitModal[*ui.Form](t, a, "the install instructions",
+		byTitle[*ui.Form]("Add gridterm to "+host.called))
+
+	chord := copyChordOf(t, a)
+	sendKey(t, a, press(chord.Key, chord.Mods))
+	want := host.setupToCopy(exeHere(t))
+	waitFor(t, a, "the setup line to reach the clipboard", func() bool { return a.copiedText() == want })
+	if shown.ErrorText() != "" {
+		t.Errorf("the dialog is showing an error: %q", shown.ErrorText())
 	}
 }
 
@@ -597,9 +636,7 @@ func TestTheHandoverDialogWritesForThePickedAgentAndRemembersIt(t *testing.T) {
 	}
 
 	// And the next hand-over opens on it.
-	code1 := awaitModal[*ui.Form](t, a, "the dialog showing the code",
-		byTitle[*ui.Form]("Paste the prompt to "+hostCodex))
-	pressButton(t, a, code1, "Done")
+	pressButton(t, a, f, "Done")
 	next := handoverDialog(t, a, pane)
 	fieldSays(t, next, "Agent", hostCodex)
 }
@@ -1047,9 +1084,10 @@ func TestTheSkillSaysHowToWorkInAHandedOverPane(t *testing.T) {
 	}
 }
 
-// The code dialog reads whole in a small window for every host, and with
-// the line more it has to say when gridterm could not read its own path.
-func TestTheCodeDialogReadsWholeForEveryHost(t *testing.T) {
+// The install instructions read whole in a small window for every host,
+// and with the line more they have to say when gridterm could not read
+// its own path.
+func TestTheInstallInstructionsReadWholeForEveryHost(t *testing.T) {
 	for _, host := range agentHosts {
 		t.Run(host.name, func(t *testing.T) {
 			a := newTestApp(t, 80, 24)
@@ -1062,10 +1100,10 @@ func TestTheCodeDialogReadsWholeForEveryHost(t *testing.T) {
 			// The longest it gets: a path with a space in it, and the
 			// note about not having read the path at all.
 			const exe = `C:\Program Files\gridterm\gridterm.exe`
-			a.showCode(a.agents.of(pane), host, exe, errors.New("gridterm could not read its own path"))
+			a.showSetup(host, exe, errors.New("gridterm could not read its own path"))
 
-			shown := awaitModal[*ui.Form](t, a, "the dialog showing the code",
-				byTitle[*ui.Form]("Paste the prompt to "+host.name))
+			shown := awaitModal[*ui.Form](t, a, "the install instructions",
+				byTitle[*ui.Form]("Add gridterm to "+host.called))
 			drawsEveryLine(t, a, shown)
 			// And it says the path is a guess, rather than showing a line
 			// that will not work and leaving the user to find out.
@@ -1440,10 +1478,11 @@ func TestTheHandoverDialogDoesBothInOneVisit(t *testing.T) {
 		t.Errorf("the first dialog never shows the code:\n%s", drawn)
 	}
 
-	// The prompt, and the dialog that says what to do with it.
+	// The prompt, and the dialog that says how to install the server.
 	pressButton(t, a, f, "Copy the prompt")
-	shown := awaitModal[*ui.Form](t, a, "the dialog showing the code",
-		byTitle[*ui.Form]("Paste the prompt to "+hostClaudeCode))
+	pressButton(t, a, f, "Install")
+	shown := awaitModal[*ui.Form](t, a, "the install instructions",
+		byTitle[*ui.Form]("Add gridterm to "+hostNamed(hostClaudeCode).called))
 	pressButton(t, a, shown, "Done")
 
 	// And then the skill, without handing the pane over again.
@@ -1525,4 +1564,17 @@ func TestALooksScreenAndCursorComeFromTheSameMoment(t *testing.T) {
 	if first != again {
 		t.Errorf("two looks at a quiet pane say %+v and %+v", first, again)
 	}
+}
+
+// copyChordOf is the chord bound to copy in this window, so a test can
+// press the key the user presses rather than call CopyNow by hand.
+func copyChordOf(t *testing.T, a *testApp) ui.Chord {
+	t.Helper()
+	for _, keys := range a.keymaps() {
+		if c, ok := keys.ChordFor(copyCommand); ok {
+			return c
+		}
+	}
+	t.Fatal("nothing is bound to copy")
+	return ui.Chord{}
 }

@@ -65,6 +65,14 @@ type Screen struct {
 	// scrollOff is how many lines back into history the view is.
 	scrollOff int
 
+	// gone counts the lines that have left the top of the primary
+	// screen, whether history kept them or not. A row's number is this
+	// plus the row, which is a name for a line that does not change as
+	// the screen scrolls under it. Something marking a place in the
+	// output -- where a command's output began, where a clear was --
+	// keeps that number.
+	gone uint64
+
 	// touched are the rows written since the last Render, and all says
 	// the whole screen was. drawnTo is the grid that render went to: any
 	// other grid is missing rows this screen no longer knows about, so
@@ -169,6 +177,11 @@ func (s *Screen) Resize(cols, rows int) {
 	if s.cur == s.alt {
 		shift = altShift
 	}
+
+	// Lines revived from history come back onto the screen and lines
+	// taken from the top go into it, so the boundary a row number is
+	// counted from moves with them.
+	s.gone = uint64(max(int64(s.gone)-int64(priShift), 0))
 
 	s.cols, s.rows = cols, rows
 	s.top, s.bot = 0, rows-1
@@ -554,6 +567,9 @@ func (s *Screen) ScrollUp(n int) {
 // push into history underneath it. Without this the view drifts forward
 // on its own while output arrives, which is disorienting to read.
 func (s *Screen) historyGrew(n int) {
+	if n > 0 {
+		s.gone += uint64(n)
+	}
 	if n > 0 && s.scrollOff > 0 {
 		s.scrollOff += n
 		s.clampScrollOff()
@@ -888,6 +904,15 @@ func (s *Screen) RenderBack(g *grid.Grid, back int) {
 	s.touchAll()
 	s.Render(g)
 }
+
+// LineNumber names the line showing at a row of the primary screen.
+//
+// It counts from the first line the screen ever had and goes on counting
+// past what history keeps, so it names a line for as long as the screen
+// lives: a caller that wrote one down can tell whether the cursor has
+// passed it. Rows of the alternate screen are not lines of this at all,
+// and it says what the primary screen has there.
+func (s *Screen) LineNumber(row int) uint64 { return s.gone + uint64(max(row, 0)) }
 
 // History is how many lines have scrolled off the top and are kept.
 func (s *Screen) History() int { return len(s.cur.scrollback) }

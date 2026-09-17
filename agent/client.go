@@ -110,17 +110,17 @@ func (c *Client) Send(id, text string, keys []string) error {
 }
 
 // Wait watches a pane until it says what was asked for, goes quiet, or
-// the time runs out. It reports whether the time ran out. Lines is how
-// much of the pane to give back, as for Read.
-func (c *Client) Wait(id string, lines int, until Until) (Look, bool, error) {
+// the time runs out. It says how the waiting ended. Lines is how much of
+// the pane to give back, as for Read.
+func (c *Client) Wait(id string, lines int, until Until) (Look, Ending, error) {
 	got, err := c.say(ask{Do: "wait", Pane: id, Lines: lines, Until: wait(until)})
 	if err != nil {
-		return Look{}, false, err
+		return Look{}, Ending{}, err
 	}
 	if got.Look == nil {
-		return Look{}, false, errors.New("agent: the window sent no screen")
+		return Look{}, Ending{}, errors.New("agent: the window sent no screen")
 	}
-	return *got.Look, got.Waited, nil
+	return *got.Look, Ending{GaveUp: got.Waited, Because: got.Because}, nil
 }
 
 // why says which ending this was, keeping what went wrong and what

@@ -205,6 +205,14 @@ type handover struct {
 	// rendered counts the reads that went to the pane rather than to
 	// the reading kept here.
 	rendered int
+
+	// typed is the prompt the agent last typed at and the line it was
+	// on, for a shell that marks nothing. The prompt coming back below
+	// that line is what stands in for a command finishing. Empty until
+	// the agent has typed, and a pane on the alternate screen records
+	// nothing: there are no lines there to count.
+	typed     string
+	typedLine uint64
 }
 
 // handPane hands a pane to an agent and shows the user the code.
@@ -368,16 +376,23 @@ func (w agentWindow) Look(id string, lines int) (agent.Look, error) {
 		// The cursor comes from the reading, so it says where it was on
 		// the screen that came with it.
 		screen := lastLines(h.read.Text, want)
+		status, hasStatus := h.read.Cmd.Exit()
 		return agent.Look{
-			Screen:  screen,
-			Gone:    h.pane.Exited(),
-			Changed: h.read.Said,
-			Row:     h.read.Row,
-			Col:     h.read.Col,
-			Alt:     h.read.Alt,
-			All:     countLines(screen) < want,
-			Cols:    size.Cols,
-			Rows:    size.Rows,
+			Screen:    screen,
+			Gone:      h.pane.Exited(),
+			Changed:   h.read.Said,
+			Row:       h.read.Row,
+			Col:       h.read.Col,
+			Alt:       h.read.Alt,
+			All:       countLines(screen) < want,
+			Cols:      size.Cols,
+			Rows:      size.Rows,
+			Marks:     h.read.Cmd.Integrated,
+			Running:   h.read.Cmd.Running,
+			Done:      h.read.Cmd.Done,
+			Status:    status,
+			HasStatus: hasStatus,
+			Back:      h.promptIsBack(*h.read),
 		}, nil
 	})
 }
@@ -413,9 +428,41 @@ func (w agentWindow) Send(id, text string, keys []string) error {
 			return struct{}{}, errors.New(
 				"the program in that pane has finished, so nothing is left to type into")
 		}
+		// Before the typing, so what is in front of the cursor is the
+		// prompt rather than the prompt and what was typed at it.
+		h.markPrompt()
 		return struct{}{}, typeInto(h.pane, text, keys)
 	})
 	return err
+}
+
+// markPrompt writes down the prompt the agent is about to type at and
+// the line it is on.
+//
+// It is what a shell that sends no marks has instead: the same prompt,
+// further down the pane, is what finishing looks like from outside. A
+// full-screen program has no prompt and no lines to count, so nothing is
+// written down for one.
+func (h *handover) markPrompt() {
+	read := h.pane.ReadLines(1)
+	if read.Alt {
+		h.typed, h.typedLine = "", 0
+		return
+	}
+	h.typed, h.typedLine = read.Before, read.Line
+}
+
+// promptIsBack reports whether the prompt the agent last typed at is
+// back, further down the pane than it was typed at.
+//
+// Further down is the whole of it. The prompt is still on the screen the
+// moment after the keys go in, and the shell echoing what was typed
+// leaves it there, so a match on the same line says nothing.
+func (h *handover) promptIsBack(read term.Reading) bool {
+	if h.typed == "" || read.Alt {
+		return false
+	}
+	return read.Line > h.typedLine && strings.HasPrefix(read.Before, h.typed)
 }
 
 // handedPane is the handover an id names, and only while that handover

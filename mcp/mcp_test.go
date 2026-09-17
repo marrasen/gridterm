@@ -12,6 +12,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/marrasen/gridterm/agent"
 )
 
 // fakePanes is a window with one pane, for testing what an agent is
@@ -24,7 +26,10 @@ type fakePanes struct {
 	open   bool
 	gone   bool
 	gaveUp bool
-	waited Until
+
+	// because is how the window said the waiting ended.
+	because string
+	waited  Until
 
 	// lines is what the last read or wait was asked for, and pressed is
 	// every key name a send has carried.
@@ -37,6 +42,16 @@ type fakePanes struct {
 	row, col int
 	alt      bool
 	all      bool
+
+	// What the pane says about the command line: whether the shell marks
+	// its commands, whether one is running, how many have finished, the
+	// last status, and whether the prompt the agent typed at is back.
+	marks     bool
+	running   bool
+	done      uint64
+	status    int
+	hasStatus bool
+	back      bool
 
 	// waiting is closed when a wait has started, and letGo lets it
 	// finish, for a test about what else can be asked meanwhile.
@@ -75,7 +90,11 @@ func (f *fakePanes) Read(id string, lines int) (Screen, error) {
 
 // look is the pane as this fake has it.
 func (f *fakePanes) look() Screen {
-	return Screen{Screen: f.screen, Gone: f.gone, Row: f.row, Col: f.col, Alt: f.alt, All: f.all}
+	return Screen{
+		Screen: f.screen, Gone: f.gone, Row: f.row, Col: f.col, Alt: f.alt, All: f.all,
+		Marks: f.marks, Running: f.running, Done: f.done,
+		Status: f.status, HasStatus: f.hasStatus, Back: f.back,
+	}
 }
 
 func (f *fakePanes) Send(id, text string, keys []string) error {
@@ -89,23 +108,23 @@ func (f *fakePanes) Send(id, text string, keys []string) error {
 	return nil
 }
 
-func (f *fakePanes) Wait(id string, lines int, until Until) (Screen, bool, error) {
+func (f *fakePanes) Wait(id string, lines int, until Until) (Screen, Ending, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if !f.open || id != "pane-1" {
-		return Screen{}, false, errors.New("that is not a pane you have been handed")
+		return Screen{}, Ending{}, errors.New("that is not a pane you have been handed")
 	}
 	f.lines = lines
 	f.waited = until
 	waiting, letGo := f.waiting, f.letGo
-	screen, gaveUp := f.look(), f.gaveUp
+	screen, ended := f.look(), Ending{GaveUp: f.gaveUp, Because: f.because}
 	f.mu.Unlock()
 	if waiting != nil {
 		close(waiting)
 		<-letGo
 	}
 	f.mu.Lock()
-	return screen, gaveUp, nil
+	return screen, ended, nil
 }
 
 func (f *fakePanes) Close() error { return nil }
@@ -839,5 +858,92 @@ func TestACancelledContextEndsTheConversation(t *testing.T) {
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("Serve parked on a read after it was cancelled")
+	}
+}
+
+// Every screen says what is known about the command line, and says
+// whether the shell reported it or the window guessed.
+//
+// An agent that cannot tell the two apart acts on a guess as though it
+// were an exit status.
+func TestAScreenSaysWhatIsKnownAboutTheCommand(t *testing.T) {
+	for _, tc := range []struct {
+		what  string
+		panes fakePanes
+		says  []string
+		not   []string
+	}{{
+		what:  "a shell that marks nothing",
+		panes: fakePanes{screen: "$ "},
+		says:  []string{"does not mark its commands"},
+		not:   []string{"exit status"},
+	}, {
+		what:  "a shell that marks nothing, with the prompt back",
+		panes: fakePanes{screen: "$ ", back: true},
+		says:  []string{"does not mark its commands", "prompt you last typed at is back"},
+	}, {
+		what:  "a command running",
+		panes: fakePanes{screen: "$ make", marks: true, running: true},
+		says:  []string{"a command is running"},
+		not:   []string{"does not mark"},
+	}, {
+		what:  "a command that finished",
+		panes: fakePanes{screen: "$ ", marks: true, done: 1, status: 2, hasStatus: true},
+		says:  []string{"finished with exit status 2"},
+		not:   []string{"does not mark"},
+	}, {
+		what:  "a shell that marks but gave no status",
+		panes: fakePanes{screen: "$ ", marks: true, done: 1},
+		says:  []string{"gave no exit status"},
+	}} {
+		t.Run(tc.what, func(t *testing.T) {
+			panes := tc.panes
+			panes.code = "gt1-2222-abc"
+			answers := talk(t, &panes,
+				`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":`+
+					`{"name":"use_session_code","arguments":{"code":"gt1-2222-abc"}}}`,
+				`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":`+
+					`{"name":"read_pane","arguments":{"pane":"pane-1"}}}`)
+
+			text, failed := textOf(t, answers[1])
+			if failed {
+				t.Fatalf("reading failed: %s", text)
+			}
+			for _, want := range tc.says {
+				if !strings.Contains(text, want) {
+					t.Errorf("the answer does not say %q:\n%s", want, text)
+				}
+			}
+			for _, not := range tc.not {
+				if strings.Contains(text, not) {
+					t.Errorf("the answer says %q, and should not:\n%s", not, text)
+				}
+			}
+		})
+	}
+}
+
+// A wait says why it ended, so an agent can tell a command that finished
+// from a screen that merely stopped moving.
+func TestAWaitSaysWhyItEnded(t *testing.T) {
+	panes := &fakePanes{
+		code: "gt1-2222-abc", screen: "$ ", because: agent.EndedOnMarks,
+		marks: true, done: 1, hasStatus: true,
+	}
+	answers := talk(t, panes,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":`+
+			`{"name":"use_session_code","arguments":{"code":"gt1-2222-abc"}}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":`+
+			`{"name":"wait_for","arguments":{"pane":"pane-1"}}}`)
+
+	text, failed := textOf(t, answers[1])
+	if failed {
+		t.Fatalf("waiting failed: %s", text)
+	}
+	if !strings.Contains(text, agent.EndedOnMarks) {
+		t.Errorf("the answer does not say why the waiting ended:\n%s", text)
+	}
+	if strings.Contains(text, "time ran out") {
+		t.Errorf("the answer says the time ran out:\n%s", text)
 	}
 }

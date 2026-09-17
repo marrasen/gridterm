@@ -721,3 +721,95 @@ func TestIdleRenderDirtiesNothing(t *testing.T) {
 		t.Fatal("re-rendering an unchanged screen dirtied the grid")
 	}
 }
+
+// A line keeps its number as the screen scrolls under it, which is what
+// lets something mark a place in the output and find it again.
+func TestALineKeepsItsNumberAsTheScreenScrolls(t *testing.T) {
+	h := newHarness(t, 20, 4)
+	scr := h.term.Screen()
+
+	// Nothing has scrolled, so the top row is the first line there was.
+	if got := scr.LineNumber(0); got != 0 {
+		t.Errorf("the top row is line %d, want 0", got)
+	}
+	h.write("one\r\ntwo\r\nthree\r\n")
+	// Three lines written on a four row screen: still nothing off the top.
+	if got := scr.LineNumber(0); got != 0 {
+		t.Errorf("after three lines the top row is line %d, want 0", got)
+	}
+
+	// The fourth pushes the first off, and the line the cursor is on is
+	// the fourth line this screen ever had.
+	h.write("four\r\n")
+	if got := scr.LineNumber(0); got != 1 {
+		t.Errorf("after four lines the top row is line %d, want 1", got)
+	}
+	_, row := scr.CursorPos()
+	if got := scr.LineNumber(row); got != 4 {
+		t.Errorf("the cursor is on line %d, want 4", got)
+	}
+
+	// And it goes on counting past what history keeps, so a number
+	// written down long ago is still a number the cursor has passed.
+	small := New(20, 2, DefaultPalette(), 1, Callbacks{})
+	const wrote = 500
+	for i := 0; i < wrote; i++ {
+		if _, err := small.Write([]byte("x\r\n")); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+	}
+	if kept := small.Screen().History(); kept >= wrote {
+		t.Fatalf("history kept %d of %d lines, so nothing was thrown away here", kept, wrote)
+	}
+	if got := small.Screen().LineNumber(0); got != wrote-1 {
+		t.Errorf("the top row is line %d, want %d", got, wrote-1)
+	}
+}
+
+// Making the window taller pulls lines back out of history, so the rows
+// they land on carry the numbers they had.
+func TestLineNumbersFollowAResize(t *testing.T) {
+	h := newHarness(t, 20, 2)
+	h.write("one\r\ntwo\r\nthree\r\nfour")
+	scr := h.term.Screen()
+	// Two rows showing "three" and "four", so two lines have gone off
+	// the top.
+	if got := scr.LineNumber(0); got != 2 {
+		t.Fatalf("the top row is line %d, want 2", got)
+	}
+
+	// Two rows taller, and both lines come back out of history with it.
+	h.term.Resize(20, 4)
+	if got := scr.LineNumber(0); got != 0 {
+		t.Errorf("after growing, the top row is line %d, want 0", got)
+	}
+	if got := scr.LineNumber(3); got != 3 {
+		t.Errorf("the bottom row is line %d, want 3", got)
+	}
+
+	// Back down again, and the rows taken off the top count again.
+	h.term.Resize(20, 2)
+	if got := scr.LineNumber(0); got != 2 {
+		t.Errorf("after shrinking, the top row is line %d, want 2", got)
+	}
+}
+
+// A full-screen program scrolling its own screen does not move the
+// numbers of the lines underneath it: the alternate screen keeps no
+// history and is not part of the output.
+func TestTheAlternateScreenDoesNotMoveLineNumbers(t *testing.T) {
+	h := newHarness(t, 20, 3)
+	h.write("one\r\ntwo\r\nthree\r\nfour\r\n")
+	scr := h.term.Screen()
+	was := scr.LineNumber(0)
+
+	h.write("\x1b[?1049h")
+	for i := 0; i < 20; i++ {
+		h.write("filling\r\n")
+	}
+	h.write("\x1b[?1049l")
+
+	if got := scr.LineNumber(0); got != was {
+		t.Errorf("the top row is line %d, want %d as before the full-screen program", got, was)
+	}
+}

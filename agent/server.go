@@ -456,6 +456,12 @@ func (s *Server) waitFor(want ask) said {
 		last     Look
 		lastMove = time.Now()
 		first    = true
+		// What the pane said about the command line when the waiting
+		// began. A finish is one that happens while this wait is on:
+		// the count of commands that had already finished, and a prompt
+		// that was already back, are not it.
+		wasDone uint64
+		wasBack bool
 	)
 	for {
 		look, err := s.cfg.Window.Look(want.Pane, 0)
@@ -463,27 +469,39 @@ func (s *Server) waitFor(want ask) said {
 			return said{Error: err.Error()}
 		}
 		now := time.Now()
+		if first {
+			wasDone, wasBack = look.Done, look.Back
+		}
 		if first || look.Changed != last.Changed {
 			lastMove, first = now, false
 		}
 		last = look
 
-		if want.Until.Contains != "" {
+		switch {
+		case want.Until.Contains != "":
 			if strings.Contains(look.Screen, want.Until.Contains) {
-				return s.ending(want, look, was, false)
+				return s.ending(want, look, was, false, EndedOnText)
 			}
-		} else if now.Sub(lastMove) >= quiet {
-			return s.ending(want, look, was, false)
+		// The shell's own marks, which are the only answer here that is
+		// not guesswork.
+		case look.Marks && look.Done > wasDone:
+			return s.ending(want, look, was, false, EndedOnMarks)
+		// A shell that marks nothing, where the prompt coming back is
+		// what a finish looks like.
+		case look.Back && !wasBack:
+			return s.ending(want, look, was, false, EndedOnPrompt)
+		case now.Sub(lastMove) >= quiet:
+			return s.ending(want, look, was, false, EndedOnQuiet)
 		}
 		// A program that has finished says nothing more, so there is
 		// nothing left to wait for whichever way the wait was asked.
 		if look.Gone {
-			return s.ending(want, look, was, false)
+			return s.ending(want, look, was, false, EndedOnGone)
 		}
 		// The window is shutting down, so what is on the screen now is
 		// the last thing there will ever be to say about it.
 		if now.After(deadline) || s.isClosed() {
-			return s.ending(want, look, was, true)
+			return s.ending(want, look, was, true, EndedOnTime)
 		}
 		time.Sleep(lookEvery)
 	}
@@ -510,9 +528,9 @@ type witness struct {
 // answers with the screen it was already watching.
 //
 // was is the reading taken before the waiting began.
-func (s *Server) ending(want ask, look Look, was witness, waited bool) said {
+func (s *Server) ending(want ask, look Look, was witness, waited bool, because string) said {
 	if want.Lines <= 0 {
-		return said{Look: &look, Waited: waited}
+		return said{Look: &look, Waited: waited, Because: because}
 	}
 	full, err := s.cfg.Window.Look(want.Pane, want.Lines)
 	if err != nil {
@@ -521,7 +539,7 @@ func (s *Server) ending(want ask, look Look, was witness, waited bool) said {
 		// reads must not turn a finished wait into nothing at all.
 		look.Note = "the " + strconv.Itoa(want.Lines) +
 			" lines you asked for could not be read: " + err.Error()
-		return said{Look: &look, Waited: waited}
+		return said{Look: &look, Waited: waited, Because: because}
 	}
 	// What was waited for may have gone past the top of the screen
 	// between two looks, and the watching only ever sees the screen. Only
@@ -534,9 +552,9 @@ func (s *Server) ending(want ask, look Look, was witness, waited bool) said {
 	sameSize := was.cols == full.Cols && was.rows == full.Rows
 	if waited && want.Until.Contains != "" && was.read && sameSize &&
 		strings.Contains(addedSince(was.screen, full.Screen), want.Until.Contains) {
-		waited = false
+		waited, because = false, EndedOnText
 	}
-	return said{Look: &full, Waited: waited}
+	return said{Look: &full, Waited: waited, Because: because}
 }
 
 // addedSince is at most the part of a reading of a pane that was not in

@@ -1690,3 +1690,119 @@ func copyChordOf(t *testing.T, a *testApp) ui.Chord {
 	t.Fatal("nothing is bound to copy")
 	return ui.Chord{}
 }
+
+// An agent is told what the shell said about the command line, from the
+// pane itself.
+//
+// A shell that sends OSC 133 marks is quoted rather than guessed at:
+// the agent is told a command is running, and then what it exited with.
+func TestAnAgentIsToldWhatTheShellSaidAboutTheCommand(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pane, code, c := handedOver(t, a)
+
+	var got agent.Pane
+	offWindow(t, a, "the window to answer the agent", func() error {
+		var err error
+		got, err = c.Use(code)
+		return err
+	})
+
+	// A prompt, a command, and the command running, in the marks a shell
+	// with integration sends.
+	a.shells[0].out <- []byte("\x1b]133;A\a$ \x1b]133;B\amake\r\n\x1b]133;C\a")
+	waitFor(t, a, "the pane to show the command", func() bool {
+		return strings.Contains(paneText(pane), "make")
+	})
+
+	look := looked(t, a, c, got.ID)
+	if !look.Marks || !look.Running {
+		t.Errorf("the agent was told marks %v, running %v; want a command running",
+			look.Marks, look.Running)
+	}
+
+	// And the command finishing, with the status the shell gave.
+	a.shells[0].out <- []byte("built\r\n\x1b]133;D;2\a$ ")
+	waitFor(t, a, "the pane to show the command finishing", func() bool {
+		return strings.Contains(paneText(pane), "built")
+	})
+
+	look = looked(t, a, c, got.ID)
+	if look.Running || look.Done != 1 {
+		t.Errorf("the agent was told running %v, %d finished", look.Running, look.Done)
+	}
+	if !look.HasStatus || look.Status != 2 {
+		t.Errorf("the agent was told exit %d, known %v; want 2", look.Status, look.HasStatus)
+	}
+}
+
+// A shell that marks nothing is watched instead: the window writes down
+// the prompt the agent typed at, and says when it is back.
+//
+// The prompt is still on the screen the moment after the keys go in, and
+// the shell echoing what was typed leaves it there, so it counts only
+// once the cursor has moved past the line it was typed on.
+func TestAnAgentIsToldWhenThePromptItTypedAtComesBack(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pane, code, c := handedOver(t, a)
+
+	var got agent.Pane
+	offWindow(t, a, "the window to answer the agent", func() error {
+		var err error
+		got, err = c.Use(code)
+		return err
+	})
+
+	a.shells[0].out <- []byte("marcus@margit:~$ ")
+	waitFor(t, a, "the pane to show a prompt", func() bool {
+		return strings.Contains(paneText(pane), "marcus@margit")
+	})
+
+	// Nothing has been typed, so there is no prompt to be back at.
+	if look := looked(t, a, c, got.ID); look.Back {
+		t.Error("the agent was told the prompt is back before it typed anything")
+	}
+
+	offWindow(t, a, "the window to take the keys", func() error {
+		return c.Send(got.ID, "whoami\r", nil)
+	})
+
+	// The shell echoing what was typed leaves the prompt on the screen,
+	// and that is not the prompt coming back.
+	a.shells[0].out <- []byte("whoami")
+	waitFor(t, a, "the pane to echo the command", func() bool {
+		return strings.Contains(paneText(pane), "whoami")
+	})
+	if look := looked(t, a, c, got.ID); look.Back {
+		t.Error("the echo of what was typed was taken for the prompt coming back")
+	}
+
+	// The output, and then the prompt again, further down.
+	a.shells[0].out <- []byte("\r\nmarcus\r\nmarcus@margit:~$ ")
+	waitFor(t, a, "the prompt to come back", func() bool {
+		return strings.Count(paneText(pane), "marcus@margit") > 1
+	})
+	look := looked(t, a, c, got.ID)
+	if !look.Back {
+		t.Errorf("the agent was not told the prompt is back:\n%s", look.Screen)
+	}
+	if look.Marks {
+		t.Error("the agent was told this shell marks its commands")
+	}
+}
+
+// looked is one reading of a pane, taken through the agent while the
+// window answers.
+func looked(t *testing.T, a *testApp, c *agent.Client, id string) agent.Look {
+	t.Helper()
+	var look agent.Look
+	offWindow(t, a, "the window to answer the agent", func() error {
+		var err error
+		look, err = c.Read(id, 0)
+		return err
+	})
+	return look
+}

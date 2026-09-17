@@ -90,33 +90,39 @@ func (w *Window) Send(id, text string, keys []string) error {
 }
 
 // Wait watches a pane until something happens or the time runs out.
-func (w *Window) Wait(id string, lines int, until Until) (Screen, bool, error) {
+func (w *Window) Wait(id string, lines int, until Until) (Screen, Ending, error) {
 	conn, at, err := w.paneAt(id)
 	if err != nil {
-		return Screen{}, false, err
+		return Screen{}, Ending{}, err
 	}
-	look, gaveUp, err := conn.Wait(at, lines, agent.Until{
+	look, ended, err := conn.Wait(at, lines, agent.Until{
 		Contains:  until.Contains,
 		QuietMS:   until.QuietMS,
 		TimeoutMS: until.TimeoutMS,
 	})
 	if err != nil {
-		return Screen{}, false, err
+		return Screen{}, Ending{}, err
 	}
-	return asScreen(look), gaveUp, nil
+	return asScreen(look), Ending{GaveUp: ended.GaveUp, Because: ended.Because}, nil
 }
 
 // asScreen turns what a window said about a pane into what an agent is
 // told.
 func asScreen(look agent.Look) Screen {
 	return Screen{
-		Screen: look.Screen,
-		Gone:   look.Gone,
-		Row:    look.Row,
-		Col:    look.Col,
-		Alt:    look.Alt,
-		All:    look.All,
-		Note:   look.Note,
+		Screen:    look.Screen,
+		Gone:      look.Gone,
+		Row:       look.Row,
+		Col:       look.Col,
+		Alt:       look.Alt,
+		All:       look.All,
+		Note:      look.Note,
+		Marks:     look.Marks,
+		Running:   look.Running,
+		Done:      look.Done,
+		Status:    look.Status,
+		HasStatus: look.HasStatus,
+		Back:      look.Back,
 	}
 }
 

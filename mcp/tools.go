@@ -84,7 +84,8 @@ func toolList() []tool {
 				" pane's name, from use_session_code. After sending a command, use wait_for" +
 				" instead: a read taken straight afterwards shows the screen before the" +
 				" command has done anything. Give lines to read more than the screen, which" +
-				" is how to read the whole of something that has scrolled past." + marked,
+				" is how to read the whole of something that has scrolled past." +
+				status + marked,
 			InputSchema: schema{
 				Type: "object",
 				Properties: map[string]field{
@@ -122,17 +123,17 @@ func toolList() []tool {
 		{
 			Name:  "wait_for",
 			Title: "Wait for a pane",
-			Description: "Watch a pane until its screen holds the text in contains, or until" +
-				" it has said nothing for quiet_ms, and give back the screen. With neither" +
-				" it waits for the screen to go quiet, which is what waiting for a command" +
-				" to finish looks like when the program cannot be asked. When the time runs" +
-				" out first it still gives back the screen, and says the time ran out." +
-				" Use it after send_keys, before reading again. Text already on the screen" +
-				" when the wait begins ends it at once, so to wait for a fresh prompt give" +
-				" quiet_ms rather than the prompt's text." +
+			Description: "Watch a pane until the command you sent finishes, or its screen" +
+				" holds the text in contains, or it has said nothing for quiet_ms, and give" +
+				" back the screen. The answer says which of those ended the waiting. When the" +
+				" time runs out first it still gives back the screen, and says the time ran" +
+				" out. Use it after send_keys, before reading again. Text already on the" +
+				" screen when the wait begins ends it at once, so to wait for a fresh prompt" +
+				" give neither contains nor quiet_ms." +
 				" A program that keeps drawing never goes quiet: top, a progress bar, a log" +
 				" being followed. For one of those give contains, or do not wait at all and" +
-				" read the pane instead. It takes lines as read_pane does." + marked,
+				" read the pane instead. It takes lines as read_pane does." +
+				status + marked,
 			InputSchema: schema{
 				Type: "object",
 				Properties: map[string]field{
@@ -220,7 +221,7 @@ func (s *server) runTool(name string, args json.RawMessage) (result, *rpcError) 
 		if err != nil {
 			return wrong(err.Error())
 		}
-		return say(showScreen(screen, false, clamped))
+		return say(showScreen(screen, Ending{}, clamped))
 
 	case "send_keys":
 		if in.Pane == "" {
@@ -238,14 +239,14 @@ func (s *server) runTool(name string, args json.RawMessage) (result, *rpcError) 
 			return wrong(err.Error())
 		}
 		return say("Sent. Use wait_for to see what happens: the screen has not" +
-			" caught up yet.")
+			" caught up yet, and wait_for ends when what you sent finishes.")
 
 	case "wait_for":
 		if in.Pane == "" {
 			return missing("pane")
 		}
 		lines, clamped := atMostLines(in.Lines)
-		screen, gaveUp, err := s.panes.Wait(in.Pane, lines, Until{
+		screen, ended, err := s.panes.Wait(in.Pane, lines, Until{
 			Contains:  in.Contains,
 			QuietMS:   in.QuietMS,
 			TimeoutMS: in.TimeoutMS,
@@ -253,7 +254,7 @@ func (s *server) runTool(name string, args json.RawMessage) (result, *rpcError) 
 		if err != nil {
 			return wrong(err.Error())
 		}
-		return say(showScreen(screen, gaveUp, clamped))
+		return say(showScreen(screen, ended, clamped))
 	}
 	return result{}, &rpcError{
 		Code:    codeInvalidParams,
@@ -296,12 +297,14 @@ func missing(what string) (result, *rpcError) {
 
 // showScreen is a screen as an agent reads it, with what the screen
 // itself cannot say.
-func showScreen(s Screen, gaveUp, clamped bool) string {
+func showScreen(s Screen, ended Ending, clamped bool) string {
 	out := s.Screen
 	var notes []string
-	if gaveUp {
+	if ended.GaveUp {
 		notes = append(notes, "This is the screen as time ran out;"+
 			" what you were waiting for has not happened.")
+	} else if ended.Because != "" {
+		notes = append(notes, "The waiting ended because "+ended.Because+".")
 	}
 	if s.Gone {
 		notes = append(notes, "The program in this pane has finished,"+
@@ -318,6 +321,7 @@ func showScreen(s Screen, gaveUp, clamped bool) string {
 	if s.Note != "" {
 		notes = append(notes, s.Note)
 	}
+	notes = append(notes, commandNote(s))
 	// Of the screen, because the answer may be longer than the screen
 	// and a row of it is not a row of the answer.
 	notes = append(notes, fmt.Sprintf("Cursor at row %d, column %d of the screen.", s.Row, s.Col))
@@ -329,10 +333,47 @@ func showScreen(s Screen, gaveUp, clamped bool) string {
 	return out + "\n\n" + notesMarker + "\n" + strings.Join(notes, "\n")
 }
 
+// commandNote is what the shell said about the command line, and what
+// the window guessed when the shell says nothing.
+//
+// Which of the two this is is said plainly. A shell that marks its
+// commands is being reported; a shell that does not is being watched,
+// and an agent acting on a guess should know it is one.
+func commandNote(s Screen) string {
+	if !s.Marks {
+		if s.Back {
+			return "This shell does not mark its commands, so nothing here knows for" +
+				" certain whether one is running. The prompt you last typed at is back" +
+				" on the screen, which usually means what you sent has finished."
+		}
+		return "This shell does not mark its commands, so nothing here knows whether" +
+			" one is running or what it exited with. Watch the screen, or run a shell" +
+			" that sends OSC 133 marks."
+	}
+	if s.Running {
+		return "The shell says a command is running now."
+	}
+	if !s.HasStatus {
+		return "The shell says no command is running, and gave no exit status for the" +
+			" last one."
+	}
+	return fmt.Sprintf("The shell says the last command finished with exit status %d.", s.Status)
+}
+
 // notesMarker is the line between the pane's own text and what gridterm
 // has to say about it. The tools name it, so an agent knows where the
 // screen ends.
 const notesMarker = "-- gridterm --"
+
+// status says what an answer carries about the command line, for the
+// tools that answer with a screen.
+//
+// Which of the two it is is always said, because one is the shell
+// reporting and the other is this window guessing from the screen.
+const status = " Every screen comes with what is known about the command line: a shell" +
+	" that sends OSC 133 marks says whether a command is running and what the last one" +
+	" exited with, and for a shell that sends none the answer says so and tells you when" +
+	" the prompt you typed at has come back."
 
 // marked says what the marker means, for the tools that answer with a
 // screen.

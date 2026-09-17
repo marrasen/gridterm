@@ -121,6 +121,54 @@ type Look struct {
 	// Note is what the window has to say about this answer beyond the
 	// screen itself, and is empty when it has nothing.
 	Note string `json:"note,omitempty"`
+
+	// Marks says the shell sends the marks that say when a command
+	// starts and finishes. Nothing else about the command line means
+	// anything without it.
+	Marks bool `json:"shell_marks_commands,omitempty"`
+
+	// Running says a command is running, from the shell's own marks.
+	Running bool `json:"command_running,omitempty"`
+
+	// Done counts the commands the shell has said finished. It only
+	// moves forward, so a reading taken before keys were sent and one
+	// taken after tell a real finish from a command that is stuck.
+	Done uint64 `json:"commands_finished,omitempty"`
+
+	// Status is what the last command that finished exited with, and
+	// HasStatus says the shell gave a status at all.
+	Status    int  `json:"exit_status,omitempty"`
+	HasStatus bool `json:"shell_gave_a_status,omitempty"`
+
+	// Back says the prompt the last keys were typed at is back at the
+	// bottom of the screen. It is what a shell that marks nothing has
+	// instead of a finish, and it is guesswork: a prompt that carries
+	// the time or a branch name never comes back the same.
+	Back bool `json:"prompt_is_back,omitempty"`
+}
+
+// How a wait ended, in the words the agent is given.
+//
+// They are constants because the window decides the ending and the tools
+// word the answer, and the two must not drift.
+const (
+	EndedOnMarks  = "the shell said the command had finished"
+	EndedOnPrompt = "the prompt you typed at came back"
+	EndedOnQuiet  = "the pane went quiet"
+	EndedOnText   = "the text you were waiting for is on the screen"
+	EndedOnGone   = "the program in the pane finished"
+	EndedOnTime   = "the time ran out"
+)
+
+// Ending says how a wait ended.
+type Ending struct {
+	// GaveUp says the time ran out rather than what was waited for
+	// happening.
+	GaveUp bool
+
+	// Because is one of the reasons above, and empty from a window of an
+	// older build that did not say.
+	Because string
 }
 
 // NewCode makes a code for one handed-over pane.

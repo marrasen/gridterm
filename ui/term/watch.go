@@ -223,11 +223,26 @@ type Reading struct {
 
 	// Said is how many times the program had said anything by then.
 	Said uint64
+
+	// Cmd is what the shell's own marks said about the command line: a
+	// shell that sends none leaves it zero.
+	Cmd vt.Command
+
+	// Line names the line the cursor was on, counted from the first line
+	// the screen ever had. It does not change as the screen scrolls, so
+	// a caller that wrote one down can tell the cursor has moved past
+	// it. It is the primary screen's count, and means nothing while Alt.
+	Line uint64
+
+	// Before is the text on the cursor's row in front of the cursor. For
+	// a shell that marks nothing, it is the prompt the user or an agent
+	// is typing at.
+	Before string
 }
 
-// ReadLines is the last n lines of the pane, where the cursor is and how
-// much the program has said, all from one moment. Zero or less is the
-// screen.
+// ReadLines is the last n lines of the pane, where the cursor is, what
+// the shell said about the command line and how much the program has
+// said, all from one moment. Zero or less is the screen.
 //
 // One lock for all of it, because a screen from one moment and a cursor
 // from another describe a pane that never existed.
@@ -237,7 +252,28 @@ func (t *Terminal) ReadLines(n int) Reading {
 	text := t.textLinesLocked(n)
 	scr := t.term.Screen()
 	col, row := scr.CursorPos()
-	return Reading{Text: text, Row: row, Col: col, Alt: scr.OnAltBuffer(), Said: t.said.Load()}
+	return Reading{
+		Text:   text,
+		Row:    row,
+		Col:    col,
+		Alt:    scr.OnAltBuffer(),
+		Said:   t.said.Load(),
+		Cmd:    t.term.Command(),
+		Line:   scr.LineNumber(row),
+		Before: t.beforeCursorLocked(row, col),
+	}
+}
+
+// beforeCursorLocked is the text on a row up to a column, with trailing
+// spaces cut. The emulator's lock is already held.
+func (t *Terminal) beforeCursorLocked(row, col int) string {
+	cols, rows := t.g.Size()
+	if row < 0 || row >= rows || col <= 0 {
+		return ""
+	}
+	g := grid.New(cols, rows, t.g.DefaultFG, t.g.DefaultBG)
+	t.term.RenderLive(g)
+	return strings.TrimRight(plainRow(g, row, min(col, cols)), " ")
 }
 
 // textLinesLocked is TextLines with the emulator's lock already held.

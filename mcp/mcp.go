@@ -97,10 +97,11 @@ type Panes interface {
 	// keys. Either may be empty.
 	Send(id, text string, keys []string) error
 
-	// Wait watches a pane until it says what was asked for, goes quiet,
-	// or the time runs out, and reports whether the time ran out. Lines
-	// is how much of the pane to give back, as for Read.
-	Wait(id string, lines int, until Until) (Screen, bool, error)
+	// Wait watches a pane until it says what was asked for, a command
+	// finishes, it goes quiet, or the time runs out, and says which of
+	// those it was. Lines is how much of the pane to give back, as for
+	// Read.
+	Wait(id string, lines int, until Until) (Screen, Ending, error)
 
 	// Close lets go of the window.
 	Close() error
@@ -138,6 +139,38 @@ type Screen struct {
 	// Note is what the window had to say about this answer beyond the
 	// screen itself, and is empty when it had nothing.
 	Note string `json:"note,omitempty"`
+
+	// Marks says the shell sends the marks that say when a command
+	// starts and finishes, and the four fields under it mean nothing
+	// without it.
+	Marks bool `json:"shell_marks_commands,omitempty"`
+
+	// Running says a command is running now.
+	Running bool `json:"command_running,omitempty"`
+
+	// Done counts the commands the shell has said finished, and only
+	// moves forward.
+	Done uint64 `json:"commands_finished,omitempty"`
+
+	// Status is what the last command that finished exited with, and
+	// HasStatus says the shell gave one.
+	Status    int  `json:"exit_status,omitempty"`
+	HasStatus bool `json:"shell_gave_a_status,omitempty"`
+
+	// Back says the prompt the last keys were typed at is back on the
+	// screen, which is what a shell that marks nothing has instead.
+	Back bool `json:"prompt_is_back,omitempty"`
+}
+
+// Ending says how a wait ended.
+type Ending struct {
+	// GaveUp says the time ran out rather than what was waited for
+	// happening.
+	GaveUp bool
+
+	// Because is how it ended, in the window's words, and is empty when
+	// the window did not say.
+	Because string
 }
 
 // Until says what a wait is waiting for.
@@ -460,9 +493,11 @@ const Workflow = `read_pane gives you the pane's screen as plain text, and takes
 back through what has scrolled off the top. send_keys types text in exactly as given, so a
 command needs "\r" at the end for Enter, and presses the keys named in keys: Escape, Tab,
 the arrows, F1 to F12, Ctrl+C. It does not wait, so call wait_for before you read again.
-Give wait_for contains when you know what the screen will say, or quiet_ms to wait for the
-screen to stop changing. It gives back the screen either way, and says when the time ran
-out instead. A command whose output goes through a pager -- systemctl, journalctl, git log,
+wait_for on its own ends when the command you sent finishes: a shell that sends OSC 133
+marks is taken at its word, and one that does not is watched for the prompt coming back or
+the screen going quiet. The answer says which of those ended the wait, whether a command is
+running, and what the last one exited with. Give contains when you know what the screen
+will say. It gives back the screen either way, and says when the time ran out instead. A command whose output goes through a pager -- systemctl, journalctl, git log,
 man -- needs --no-pager or a pipe to cat, or you will be stuck in less, where q gets you out.
 list_panes lists the panes you have been handed, and that is all it lists. In an answer with
 a screen, the screen ends at a line reading -- gridterm --, and the rest is gridterm talking.`

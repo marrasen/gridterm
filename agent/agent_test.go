@@ -40,6 +40,41 @@ type fakeWindow struct {
 	// cols and rows are the size every Look reports. Zero in a test that
 	// never resizes the pane, which is every reading at the same size.
 	cols, rows int
+
+	// What the pane says about the command line: whether the shell marks
+	// its commands, whether one is running, how many have finished, the
+	// last status, and whether the prompt the agent typed at is back.
+	marks     bool
+	running   bool
+	done      uint64
+	status    int
+	hasStatus bool
+	back      bool
+}
+
+// finished is a shell with marks saying a command has just finished.
+func (w *fakeWindow) finished(status int) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.marks, w.running = true, false
+	w.done++
+	w.status, w.hasStatus = status, true
+	w.changed++
+}
+
+// marking is a shell that marks its commands, with one running now.
+func (w *fakeWindow) marking() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.marks, w.running = true, true
+}
+
+// promptBack is a shell that marks nothing, whose prompt has come back.
+func (w *fakeWindow) promptBack(back bool) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.back = back
+	w.changed++
 }
 
 func (w *fakeWindow) Use(code string) (Pane, error) {
@@ -70,12 +105,21 @@ func (w *fakeWindow) Look(id string, lines int) (Look, error) {
 			return Look{}, errors.New("that pane is no longer open")
 		}
 		if w.history != "" {
-			return Look{Screen: w.history, Gone: w.gone, Changed: w.changed,
-				Cols: w.cols, Rows: w.rows}, nil
+			return w.lookAt(w.history), nil
 		}
 	}
-	return Look{Screen: w.screen, Gone: w.gone, Changed: w.changed,
-		Cols: w.cols, Rows: w.rows}, nil
+	return w.lookAt(w.screen), nil
+}
+
+// lookAt is a reading of some text, with what this window says about the
+// command line on it. The lock is already held.
+func (w *fakeWindow) lookAt(screen string) Look {
+	return Look{
+		Screen: screen, Gone: w.gone, Changed: w.changed,
+		Cols: w.cols, Rows: w.rows,
+		Marks: w.marks, Running: w.running, Done: w.done,
+		Status: w.status, HasStatus: w.hasStatus, Back: w.back,
+	}
 }
 
 func (w *fakeWindow) Send(id, text string, keys []string) error {
@@ -329,7 +373,7 @@ func TestWaitingComesBackWhenThePaneGoesQuiet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("wait: %v", err)
 	}
-	if timedOut {
+	if timedOut.GaveUp {
 		t.Error("it gave up rather than seeing the pane go quiet")
 	}
 	if look.Screen != "$ " {
@@ -357,7 +401,7 @@ func TestWaitingForSomethingThatNeverComesGivesUp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("wait: %v", err)
 	}
-	if !timedOut {
+	if !timedOut.GaveUp {
 		t.Error("it said it saw what it was waiting for")
 	}
 	if look.Screen != "still going" {
@@ -653,7 +697,7 @@ func TestWaitingForTextComesBackWhileThePaneIsStillBusy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("wait: %v", err)
 	}
-	if timedOut {
+	if timedOut.GaveUp {
 		t.Error("it waited for a busy pane to go quiet instead of for the text")
 	}
 	if !strings.Contains(look.Screen, "Listening on port") {
@@ -825,7 +869,7 @@ func TestAWaitWatchesTheScreenAndReadsTheLinesOnce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("wait: %v", err)
 	}
-	if gaveUp {
+	if gaveUp.GaveUp {
 		t.Fatal("the wait ran out of time rather than seeing the pane go quiet")
 	}
 
@@ -864,7 +908,7 @@ func TestAWaitWhoseLastReadFailsStillAnswers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the wait failed rather than answering: %v", err)
 	}
-	if waited {
+	if waited.GaveUp {
 		t.Error("it says the time ran out, and it did not")
 	}
 	if !strings.Contains(look.Screen, "up 3 days") {
@@ -909,7 +953,7 @@ func TestAWaitFindsWhatScrolledOffInTheLinesItReads(t *testing.T) {
 	if err != nil {
 		t.Fatalf("wait: %v", err)
 	}
-	if waited {
+	if waited.GaveUp {
 		t.Error("it gave up on something that happened while it was watching")
 	}
 	if !strings.Contains(look.Screen, "Build succeeded") {
@@ -943,7 +987,7 @@ func TestAWaitDoesNotFindWhatWasThereBeforeItBegan(t *testing.T) {
 	if err != nil {
 		t.Fatalf("wait: %v", err)
 	}
-	if !waited {
+	if !waited.GaveUp {
 		t.Error("it says it saw a line that was there before it started watching")
 	}
 	// The lines it read still come back whole: what the pane has kept is
@@ -990,7 +1034,7 @@ func TestAWaitDoesNotTakeAResizeForNewOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("wait: %v", err)
 	}
-	if !waited {
+	if !waited.GaveUp {
 		t.Error("a resize made a line that was there before the wait look like new output")
 	}
 	if !strings.Contains(look.Screen, "Build succeeded") {
@@ -1029,7 +1073,7 @@ func TestAWaitWhoseFirstReadFailsStillWaits(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the wait failed rather than waiting: %v", err)
 	}
-	if waited {
+	if waited.GaveUp {
 		t.Error("it says the time ran out, and it did not")
 	}
 	if !strings.Contains(look.Screen, "listening on") {
@@ -1067,4 +1111,182 @@ func TestTheLinesAddedSinceAReadingAreTheNewOnes(t *testing.T) {
 			t.Errorf("%s: %q, want %q", tc.what, got, tc.want)
 		}
 	}
+}
+
+// dialled is an agent connected to a window, hung up on when the test
+// ends.
+func dialled(t *testing.T, code string) *Client {
+	t.Helper()
+	c, err := Dial(code)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	t.Cleanup(func() { _ = c.Close() })
+	return c
+}
+
+// opened is the pane a code names.
+func opened(t *testing.T, c *Client, code string) Pane {
+	t.Helper()
+	pane, err := c.Use(code)
+	if err != nil {
+		t.Fatalf("use: %v", err)
+	}
+	return pane
+}
+
+// finish is the program in the pane ending.
+func (w *fakeWindow) finish() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.gone = true
+	w.changed++
+}
+
+// A wait ends when the shell says the command finished, and says that is
+// why it ended.
+//
+// The count of finished commands is what it watches: it only moves
+// forward, so a finish while the wait is on is one this wait saw.
+func TestAWaitEndsWhenTheShellSaysTheCommandFinished(t *testing.T) {
+	w, _, code := listening(t)
+	w.marking()
+	w.say("$ make")
+	c := dialled(t, code)
+	pane := opened(t, c, code)
+
+	go func() {
+		time.Sleep(30 * time.Millisecond)
+		w.say("$ make\nbuilt\n$ ")
+		w.finished(2)
+	}()
+
+	// A long quiet, so a wait that ended because the pane went quiet
+	// rather than because the command finished fails here.
+	look, ended, err := c.Wait(pane.ID, 0, Until{QuietMS: 30000, TimeoutMS: 10000})
+	if err != nil {
+		t.Fatalf("wait: %v", err)
+	}
+	if ended.GaveUp || ended.Because != EndedOnMarks {
+		t.Errorf("the wait ended %+v, want %q", ended, EndedOnMarks)
+	}
+	if !look.Marks || look.Running {
+		t.Errorf("the look says marks %v, running %v", look.Marks, look.Running)
+	}
+	if !look.HasStatus || look.Status != 2 {
+		t.Errorf("the look says exit %d, known %v; want 2", look.Status, look.HasStatus)
+	}
+}
+
+// A command that had already finished before the wait began does not end
+// it: a wait watches for what happens while it is on.
+func TestAWaitIgnoresACommandThatHadAlreadyFinished(t *testing.T) {
+	w, _, code := listening(t)
+	w.marking()
+	w.finished(0)
+	w.say("$ ")
+	c := dialled(t, code)
+	pane := opened(t, c, code)
+
+	_, ended, err := c.Wait(pane.ID, 0, Until{QuietMS: 40, TimeoutMS: 10000})
+	if err != nil {
+		t.Fatalf("wait: %v", err)
+	}
+	if ended.Because != EndedOnQuiet {
+		t.Errorf("the wait ended %+v, want %q", ended, EndedOnQuiet)
+	}
+}
+
+// A shell that marks nothing is watched for the prompt coming back,
+// which is what a command finishing looks like from outside.
+func TestAWaitEndsWhenThePromptComesBack(t *testing.T) {
+	w, _, code := listening(t)
+	w.say("$ sleep 1")
+	c := dialled(t, code)
+	pane := opened(t, c, code)
+
+	go func() {
+		time.Sleep(30 * time.Millisecond)
+		w.say("$ sleep 1\n$ ")
+		w.promptBack(true)
+	}()
+
+	look, ended, err := c.Wait(pane.ID, 0, Until{QuietMS: 30000, TimeoutMS: 10000})
+	if err != nil {
+		t.Fatalf("wait: %v", err)
+	}
+	if ended.GaveUp || ended.Because != EndedOnPrompt {
+		t.Errorf("the wait ended %+v, want %q", ended, EndedOnPrompt)
+	}
+	if look.Marks {
+		t.Error("the look says the shell marks its commands")
+	}
+}
+
+// A prompt that was already back when the wait began does not end it.
+// Otherwise a wait asked twice comes back at once the second time.
+func TestAWaitDoesNotEndOnAPromptThatWasAlreadyBack(t *testing.T) {
+	w, _, code := listening(t)
+	w.say("$ ")
+	w.promptBack(true)
+	c := dialled(t, code)
+	pane := opened(t, c, code)
+
+	_, ended, err := c.Wait(pane.ID, 0, Until{QuietMS: 40, TimeoutMS: 10000})
+	if err != nil {
+		t.Fatalf("wait: %v", err)
+	}
+	if ended.Because != EndedOnQuiet {
+		t.Errorf("the wait ended %+v, want %q", ended, EndedOnQuiet)
+	}
+}
+
+// Every other way a wait can end says which one it was, so an agent can
+// tell a command that finished from a screen that merely stopped moving.
+func TestAWaitSaysHowElseItEnded(t *testing.T) {
+	t.Run("the text", func(t *testing.T) {
+		w, _, code := listening(t)
+		w.say("Build succeeded")
+		c := dialled(t, code)
+		pane := opened(t, c, code)
+
+		_, ended, err := c.Wait(pane.ID, 0, Until{Contains: "succeeded", TimeoutMS: 2000})
+		if err != nil {
+			t.Fatalf("wait: %v", err)
+		}
+		if ended.GaveUp || ended.Because != EndedOnText {
+			t.Errorf("the wait ended %+v, want %q", ended, EndedOnText)
+		}
+	})
+
+	t.Run("the time", func(t *testing.T) {
+		w, _, code := listening(t)
+		w.say("still going")
+		c := dialled(t, code)
+		pane := opened(t, c, code)
+
+		_, ended, err := c.Wait(pane.ID, 0, Until{Contains: "never", TimeoutMS: 150})
+		if err != nil {
+			t.Fatalf("wait: %v", err)
+		}
+		if !ended.GaveUp || ended.Because != EndedOnTime {
+			t.Errorf("the wait ended %+v, want the time running out", ended)
+		}
+	})
+
+	t.Run("the program", func(t *testing.T) {
+		w, _, code := listening(t)
+		w.say("$ exit")
+		c := dialled(t, code)
+		pane := opened(t, c, code)
+		w.finish()
+
+		_, ended, err := c.Wait(pane.ID, 0, Until{Contains: "never", TimeoutMS: 2000})
+		if err != nil {
+			t.Fatalf("wait: %v", err)
+		}
+		if ended.GaveUp || ended.Because != EndedOnGone {
+			t.Errorf("the wait ended %+v, want %q", ended, EndedOnGone)
+		}
+	})
 }

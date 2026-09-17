@@ -65,10 +65,10 @@ type wait struct {
 // an HTTP request begins with a request line, and this window hangs up
 // on a first line that is not exactly this.
 //
-// It says 2 because a window of the first version reads a "send" with
-// keys in it and presses nothing, and says it typed: an agent turned
-// away is better than one told it pressed Escape when it did not.
-const hello = "gridterm-agent-2"
+// It says 3 because a window of the second version answers a "read"
+// without saying anything about the command line, and an agent reading
+// that would tell the user the shell reports no status when it does.
+const hello = "gridterm-agent-3"
 
 // said is what the window answers.
 //
@@ -91,6 +91,9 @@ type said struct {
 	// was waiting for happened. The screen still comes with it: what is
 	// on a screen that never settled is worth reading.
 	Waited bool `json:"waited,omitempty"`
+
+	// Because is how a "wait" ended, as one of the reasons in agent.go.
+	Because string `json:"because,omitempty"`
 
 	// OK says a request that has nothing to give back succeeded.
 	OK bool `json:"ok,omitempty"`

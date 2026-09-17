@@ -1154,3 +1154,77 @@ func TestATerminalDrawnElsewhereBlanksItsRoom(t *testing.T) {
 		t.Errorf("back in the tree the row is %q, want %q", got, "hello")
 	}
 }
+
+// A reading carries what the shell said about the command line, from the
+// same moment as the screen it came with.
+//
+// Read separately, an exit status can be from after the screen: the
+// agent is then told a command finished that the screen it was given
+// still shows running.
+func TestAReadingCarriesTheCommandTheShellMarked(t *testing.T) {
+	term, f := newTestTerm(t, 40, 6, Config{})
+
+	// A shell with no marks says nothing about its commands.
+	f.feed(t, term, "$ ")
+	if read := term.ReadLines(0); read.Cmd.Integrated || read.Cmd.Done != 0 {
+		t.Errorf("a shell that marked nothing reads as %+v", read.Cmd)
+	}
+
+	// The prompt, the command, and the command running.
+	f.feed(t, term, "\x1b]133;A\a$ \x1b]133;B\amake\r\n"+"\x1b]133;C\a")
+	read := term.ReadLines(0)
+	if !read.Cmd.Integrated || !read.Cmd.Running {
+		t.Errorf("while the command runs the reading says %+v", read.Cmd)
+	}
+
+	// And the command finishing, with the status it gave.
+	f.feed(t, term, "built\r\n"+"\x1b]133;D;2\a$ ")
+	read = term.ReadLines(0)
+	if read.Cmd.Running || read.Cmd.Done != 1 {
+		t.Errorf("after the command finished the reading says %+v", read.Cmd)
+	}
+	if status, ok := read.Cmd.Exit(); !ok || status != 2 {
+		t.Errorf("it says exit %d, known %v; want 2", status, ok)
+	}
+	if !strings.Contains(read.Text, "built") {
+		t.Errorf("the screen that came with it reads %q", read.Text)
+	}
+}
+
+// A reading says which line the cursor is on and what is in front of it,
+// which is what a shell that marks nothing has instead of a mark.
+func TestAReadingSaysWhatIsInFrontOfTheCursor(t *testing.T) {
+	term, f := newTestTerm(t, 40, 3, Config{})
+
+	f.feed(t, term, "$ ")
+	read := term.ReadLines(0)
+	if read.Before != "$" {
+		// The prompt with its trailing space cut, which is what the text
+		// in front of the cursor is worth comparing on.
+		t.Errorf("in front of the cursor is %q, want %q", read.Before, "$")
+	}
+	if read.Line != 0 {
+		t.Errorf("the cursor is on line %d, want 0", read.Line)
+	}
+
+	// A command and its output, and the prompt comes back further down.
+	f.feed(t, term, "whoami\r\nmarcus\r\n$ ")
+	read = term.ReadLines(0)
+	if read.Before != "$" {
+		t.Errorf("in front of the cursor is %q, want the prompt", read.Before)
+	}
+	if read.Line != 2 {
+		t.Errorf("the cursor is on line %d, want 2", read.Line)
+	}
+
+	// Enough output to scroll, and the line number goes on counting
+	// rather than starting again at the top of the screen.
+	f.feed(t, term, "one\r\ntwo\r\nthree\r\n$ ")
+	read = term.ReadLines(0)
+	// Three lines written on a three row screen, the first of them
+	// carrying on the prompt's own line: three lines have gone off the
+	// top and the cursor is on the bottom row of the three showing.
+	if read.Line != 5 {
+		t.Errorf("after scrolling the cursor is on line %d, want 5", read.Line)
+	}
+}

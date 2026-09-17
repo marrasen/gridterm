@@ -162,71 +162,31 @@ a terminal.
 
 ## Switching between panes
 
-Asked about and answered on 2026-09-17. Marcus could not work out the
-order Ctrl+Tab moves in, and expected recently used.
-
-- **Where Ctrl+Tab stands.** It walks `ui.Leaves` of the whole tree,
-  filtered to panes. That order is nothing on screen, and it is the one
-  Marcus could not work out. Ctrl+PageUp and Ctrl+PageDown now follow
-  the sidebar, so this is the only key left walking an invisible order.
-  Recency is meant to replace it, below.
-
-- **No key steps a whole tab any more.** Ctrl+PageUp and Ctrl+PageDown
-  used to move between stage children, taking a split as one unit.
-  Following the sidebar means stopping on every pane, so flipping to
-  the tab behind now takes a press per pane. The strip that would have
-  made tabs visible is switched off, so nothing was lost that the user
-  could see. Worth a key of its own if it turns out to be missed.
+Asked about and answered on 2026-09-17, and done on the same day.
+Ctrl+Tab walks the panes in the order they last had focus: hold Ctrl,
+press Tab to go back through them, Ctrl+Shift+Tab to go the other way,
+and let Ctrl go to land. A list in the middle of the window says where
+the walk is. Ctrl+PageUp and Ctrl+PageDown still follow the sidebar, so
+there is one key for position and one for recency.
 
 - **A file manager is entered twice per lap.** The sidebar gives each of
   its panes a row, under whichever machine that pane reads, so a browser
-  with a local pane and a remote one is two stops far apart in the walk.
-  Two of the presses only move the highlight inside a browser already in
-  front, which can read as the key doing nothing.
+  with a local pane and a remote one is two stops far apart in the walk
+  of the sidebar. Two of the presses only move the highlight inside a
+  browser already in front, which can read as the key doing nothing.
+  This is about Ctrl+PageUp and Ctrl+PageDown, not about Ctrl+Tab.
 
 - **The order goes stale while the sidebar is shut.** `refreshPanel`
-  stops building rows when the dock is collapsed, so the walk follows
-  the last order it saw, with panes opened since on the end. Everything
-  stays reachable. Nothing on screen contradicts it, because there is
-  nothing on screen.
+  stops building rows when the dock is collapsed, so the walk of the
+  sidebar follows the last order it saw, with panes opened since on the
+  end. Everything stays reachable. Nothing on screen contradicts it,
+  because there is nothing on screen.
 
-- **Ctrl+Tab becomes recently used, with the modifier held.** Hold
-  Ctrl, press Tab to walk back through panes in the order they last had
-  focus, release Ctrl to land. Ctrl+Shift+Tab walks the other way. This
-  is what Alt+Tab, VS Code and Firefox's recently-used setting do, and
-  it is the same idea as screen's `Ctrl+A Ctrl+A` and tmux's
-  `prefix l` with more than two steps.
-
-- **The list must not re-order while Ctrl is held.** Freeze it on the
-  first press, walk the frozen list, and move the pane landed on to the
-  front only on release. A list that re-orders as you walk swaps the top
-  two entries on the first press and then bounces between the same pair.
-
-- **Every pane in the window, whatever tab it is in.** The list is the
-  leaves, ordered by when each last had focus, so a file pane is in it
-  as well as a terminal. Landing on a pane in another tab brings that
-  tab forward, which `focus` already does. Ctrl+PageUp and Ctrl+PageDown
-  stay positional over tabs, so there is one key for position and one
-  for recency.
-
-- **An overlay while Ctrl is held.** A small list in recency order with
-  the pane that would be landed on marked, gone on release. Without it a
-  walk of more than one or two steps is counting in the dark.
-
-- **Releases do not reach a command today.** `ChordOf` in ui/keymap.go
-  returns the zero chord for anything that is not a press or a repeat,
-  so nothing can be bound to letting go of a key. That is the one piece
-  of plumbing this needs.
-
-- **Do not rely on seeing the release.** Alt+Tab away from gridterm
-  mid-walk and the release lands in another window. Commit on the first
-  frame where Ctrl is not held rather than waiting for an event that may
-  never come. Polling the modifier also covers the window losing focus,
-  which nothing here can see: `ebiten.IsFocused` is unread, as the known
-  gaps below say.
-
-- **A pane that closes while the overlay is up** comes off the frozen
-  list, and the mark moves to the one after it.
+- **Two panes can read the same in the list.** It names a pane the way
+  the sidebar does, and two fresh shells on this machine whose programs
+  have set no title are both "PowerShell on this machine". Which one the
+  walk is on is still marked, so nothing is ambiguous about where it
+  will land, but the names do not tell them apart.
 
 - **The shortcuts config file has to be able to say this.** A binding
   that holds a modifier is not a plain chord. Worth settling when the

@@ -88,9 +88,15 @@ func (r *MouseReader) Poll(at func(px, py int) (col, row int)) []input.MouseEven
 	return r.out
 }
 
-// currentMods reads the modifier keys. Mouse state is polled rather than
-// delivered as events, so unlike a key event it carries no modifier mask
-// of its own.
+// Mods reads the modifier keys held now.
+//
+// Polled rather than delivered as events. A mouse event carries no
+// modifier mask of its own, and a window that wants to know whether a
+// key is still down cannot wait for a release that may land in another
+// window.
+func Mods() input.Mods { return currentMods() }
+
+// currentMods reads the modifier keys.
 func currentMods() input.Mods {
 	var m input.Mods
 	if ebiten.IsKeyPressed(ebiten.KeyShift) {

@@ -473,6 +473,10 @@ func (a *app) closePane(w ui.Widget) error {
 	// would go unsaid.
 	var errs []error
 	for _, leaf := range doomed {
+		// Whichever kind it is, the order panes were last used in lets
+		// go of it: that list would otherwise hold a pane nobody can
+		// reach, and its scrollback with it.
+		a.forgetRecent(leaf)
 		// A file pane is not a terminal: it holds a filesystem, which
 		// may be a session on a connection.
 		if p, isFiles := leaf.(*files.Pane); isFiles {

@@ -93,11 +93,14 @@ func frame(t *testing.T, a *testApp) {
 	// The window's own clock, so a test that moves it moves everything
 	// the frame measures against it.
 	a.frameAt = a.clock()
+	a.stepWalk()
+	a.noteFocus()
 	a.refreshCaptions()
 	a.refreshPanel(a.frameAt)
 	a.placeRegions()
 	a.placeScaled()
 	a.placeShared()
+	a.placeWalk()
 	if a.screen == nil {
 		cw, ch := a.renderer.CellSize()
 		cols, rows := a.g.Size()

@@ -624,7 +624,7 @@ func TestSplitCloseFuzz(t *testing.T) {
 }
 
 // Ctrl+Tab walks panes and nothing else. The sidebar is a leaf of the
-// tree the way a terminal is.
+// tree the way a terminal is, and the walk is of panes.
 func TestCtrlTabWalksPanesAndNotTheSidebar(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withDialogs(t, a)
@@ -653,12 +653,12 @@ func TestCtrlTabWalksPanesAndNotTheSidebar(t *testing.T) {
 	}
 }
 
-// The keys step into the list from the sidebar, rather than past its
-// first pane.
+// The keys step into the panes from the sidebar, rather than past the
+// first of them.
 //
 // Ctrl+Shift+L puts the keys on the sidebar, and so does a click. The
-// sidebar is not a pane, so the walk has nowhere to step from and has to
-// come in at an end.
+// sidebar is not a pane, so there is nothing to step on from: the first
+// press has to come in rather than go past.
 func TestTheSidebarKeysStepInFromTheSidebarItself(t *testing.T) {
 	a := newTestApp(t, 90, 30)
 	withDialogs(t, a)
@@ -694,6 +694,8 @@ func TestTheSidebarKeysStepInFromTheSidebarItself(t *testing.T) {
 		t.Fatalf("stepping back from the sidebar reached %p, want the last pane %p", got, want)
 	}
 
+	// Ctrl+Tab is the walk of panes last used, and nothing has been used
+	// yet, so it comes in at the pane the tree holds first.
 	onTheSidebar()
 	sendKey(t, a, press(input.KeyTab, input.ModCtrl))
 	if got := ui.FocusedLeaf(a.root.Widget()); got != panes[0] {

@@ -133,6 +133,17 @@ type app struct {
 	// connection is made or edited.
 	keyFiles *keyIndex
 
+	// recent are the panes in the order they last had focus, newest
+	// first, and walk is the walk back through them while Ctrl is held.
+	recent []ui.Widget
+	walk   *paneWalk
+
+	// modsNow reads the modifier keys held, so a test can say which.
+	modsNow func() input.Mods
+
+	// overlay is the list of panes drawn while a walk is on.
+	overlay *walkOverlay
+
 	// shared is the glowing border over each pane somebody else is in,
 	// one layer per pane.
 	shared map[*term.Terminal]*sharedMark
@@ -388,12 +399,15 @@ func (a *app) Update() error {
 	// After the input, so a key or a click that opens or closes the
 	// sidebar is drawn this frame rather than the next one. Before it,
 	// the frame would be laid out for padding the window no longer has.
+	a.stepWalk()
+	a.noteFocus()
 	// Before the layout, which is what takes the row off the pane.
 	a.refreshCaptions()
 	a.applyPads()
 	a.placeRegions()
 	a.placeScaled()
 	a.placeShared()
+	a.placeWalk()
 
 	// After the layout, so the pointer is the one for the frame about to
 	// be drawn rather than the one before it.
@@ -674,12 +688,10 @@ func (a *app) commands() {
 		ui.Command{ID: "pane.previousInSidebar", Title: "Previous pane, up the sidebar", Run: func() error {
 			return a.focusInSidebarOrder(-1)
 		}},
-		ui.Command{ID: "pane.next", Title: "Next pane", Run: func() error {
-			return a.focusPane(1)
-		}},
-		ui.Command{ID: "pane.previous", Title: "Previous pane", Run: func() error {
-			return a.focusPane(-1)
-		}},
+		ui.Command{ID: "pane.next", Title: "Next pane, the one used before this",
+			Run: func() error { return a.walkRecent(1) }},
+		ui.Command{ID: "pane.previous", Title: "Previous pane, back the other way",
+			Run: func() error { return a.walkRecent(-1) }},
 	})...)
 
 	// Ctrl+Shift is the usual escape hatch: Ctrl+C has to stay available

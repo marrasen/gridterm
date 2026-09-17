@@ -256,6 +256,8 @@ func newTestApp(t *testing.T, cols, rows int, opts ...testOption) *testApp {
 	ta.paneTitles.remember(set)
 	ta.keyFiles = newKeyIndex()
 	ta.keyFiles.remember(set)
+	ta.theme = newThemePick()
+	ta.theme.remember(set)
 	ta.serving.remember(set)
 	ta.agents.remember(set)
 	// A machine of the test's own: nothing here runs wsl.exe or reads
@@ -828,6 +830,8 @@ func titleOf(w ui.Widget) string {
 		return m.Title
 	case *ui.Notice:
 		return m.Title
+	case *ui.Chooser:
+		return m.Title()
 	}
 	return ""
 }

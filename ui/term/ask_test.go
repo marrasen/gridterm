@@ -117,8 +117,10 @@ func TestAskMarksTheSelectedChoice(t *testing.T) {
 	if got := g.At(yes+1, 3).BG; got != pal.FG {
 		t.Errorf("the selected choice's background is %v, want the palette's foreground %v", got, pal.FG)
 	}
-	if got := g.At(no+1, 3).BG; got != pal.ANSI[0] {
-		t.Errorf("an unpicked choice's background is %v, want the palette's %v", got, pal.ANSI[0])
+	// A ground just off the window's own, derived from the scheme's two
+	// ends: a light scheme has no dark numbered colour to sit on.
+	if got := g.At(no+1, 3).BG; got != pal.Surface() {
+		t.Errorf("an unpicked choice's background is %v, want the surface %v", got, pal.Surface())
 	}
 }
 

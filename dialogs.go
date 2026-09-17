@@ -21,11 +21,11 @@ func (a *app) formStyle() ui.FormStyle {
 		// A field is marked by its background rather than a border, so a
 		// one-line box does not cost three rows of frame.
 		FieldFG:  a.colours.FG,
-		FieldBG:  a.colours.ANSI[0],
+		FieldBG:  a.colours.Surface(),
 		FocusFG:  a.colours.FG,
 		FocusBG:  a.colours.Selection,
 		ButtonFG: a.colours.FG,
-		ButtonBG: a.colours.ANSI[0],
+		ButtonBG: a.colours.Surface(),
 		ActiveFG: a.colours.BG,
 		ActiveBG: a.colours.FG,
 		// Red, because a line saying why something failed has to read as
@@ -94,7 +94,7 @@ func (a *app) noticeStyle() ui.NoticeStyle {
 		SelectionFG: a.colours.FG,
 		SelectionBG: a.colours.Selection,
 		ButtonFG:    a.colours.FG,
-		ButtonBG:    a.colours.ANSI[0],
+		ButtonBG:    a.colours.Surface(),
 		ActiveFG:    a.colours.BG,
 		ActiveBG:    a.colours.FG,
 		BorderFG:    a.colours.ANSI[8],

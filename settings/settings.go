@@ -72,6 +72,9 @@ type stored struct {
 	// Keys are the private key files the user keeps, newest first, to
 	// pick from when making a connection.
 	Keys []string `json:"keys,omitempty"`
+
+	// Theme is the colour scheme the window is drawn in, by name.
+	Theme *string `json:"theme,omitempty"`
 }
 
 // SavedCommand is a command line the user asked to keep, the directory
@@ -127,13 +130,22 @@ type Settings struct {
 	loadErr error
 }
 
-// Path returns where the settings live.
-func Path() (string, error) {
+// Dir returns the directory gridterm keeps its files in.
+func Dir() (string, error) {
 	dir, err := os.UserConfigDir()
 	if err != nil {
 		return "", fmt.Errorf("settings: no configuration directory: %w", err)
 	}
-	return filepath.Join(dir, settingsDir, settingsFile), nil
+	return filepath.Join(dir, settingsDir), nil
+}
+
+// Path returns where the settings live.
+func Path() (string, error) {
+	dir, err := Dir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, settingsFile), nil
 }
 
 // Load reads the settings.
@@ -324,6 +336,34 @@ func (s *Settings) putCommands(edit func([]SavedCommand) []SavedCommand) error {
 // dropLine is the commands with one line left out.
 func dropLine(have []SavedCommand, line string) []SavedCommand {
 	return slices.DeleteFunc(have, func(cmd SavedCommand) bool { return cmd.Line == line })
+}
+
+// Theme is the colour scheme the window is drawn in, and whether one
+// was picked.
+func (s *Settings) Theme() (string, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.have.Theme == nil {
+		return "", false
+	}
+	return *s.have.Theme, true
+}
+
+// PutTheme remembers the colour scheme, and saves.
+func (s *Settings) PutTheme(name string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// The file first, for the same reason PutServe reads it first.
+	if err := s.rereadLocked(); err != nil {
+		return fmt.Errorf("%w: %w", ErrUnsaveable, err)
+	}
+	before := s.have
+	s.have.Theme = &name
+	if err := s.saveLocked(); err != nil {
+		s.have = before
+		return err
+	}
+	return nil
 }
 
 // Keys are the key files the user keeps, newest first.
@@ -536,6 +576,11 @@ func check(file stored) error {
 	// turned away: it names nothing and could not be opened.
 	if sh := file.Shell; sh != nil && *sh == "" {
 		return errors.New("the shell has no id")
+	}
+	// Which themes there are is the window's business, so only an empty
+	// name is turned away: it names nothing and could not be found.
+	if th := file.Theme; th != nil && *th == "" {
+		return errors.New("the theme has no name")
 	}
 	kept := make(map[string]bool, len(file.Keys))
 	for i, path := range file.Keys {

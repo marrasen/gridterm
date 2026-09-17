@@ -55,41 +55,7 @@ const pulseStep = 200 * time.Millisecond
 // change here belongs there too.
 func (a *app) newPanel() *ui.List {
 	l := ui.NewList()
-	l.Style = ui.ListStyle{
-		FG: a.colours.FG,
-		BG: a.colours.BG,
-		// The selected row is marked the way a selected tab is, so the
-		// two read as the same thing.
-		SelectedFG: a.colours.BG,
-		SelectedBG: a.colours.FG,
-		// A machine's name is a heading, not one of its connections.
-		HeaderFG: a.colours.ANSI[6],
-		// Dimmer than the row: what a connection is doing is a note
-		// beside it, not part of its name.
-		NoteFG: a.colours.ANSI[8],
-		// How far a copy has got, further along the line the sidebar's
-		// own ground is shaded on: a row filling up reads as part of the
-		// frame rather than as a colour from somewhere else.
-		FillBG: grid.Blend(a.colours.BG, a.colours.ANSI[4], 1, 3),
-		// A ground of its own, shading down the list, so the sidebar
-		// reads as part of the window's frame rather than as one more
-		// thing running in it.
-		BGEnd: sidebarFoot(a.colours),
-	}
-	l.Style.BG = sidebarTop(a.colours)
-	// The row for whatever is in front, marked even while the keys are
-	// somewhere else: the sidebar is the list of what is open, so it has
-	// to say which one is being looked at.
-	l.Style.CurrentFG = a.colours.FG
-	// Lifted off the list's own ground rather than the window's
-	// selection colour, so it stays darker than the mark drawn on it:
-	// the mark is what says whether the connection is open.
-	l.Style.CurrentBG = grid.Blend(a.colours.BG, a.colours.FG, 1, 6)
-	// A little air around each machine's name, so it reads as a heading
-	// for the rows under it rather than as another row. A quarter of a
-	// character each way: enough to see, and far less than the blank
-	// line it would otherwise take.
-	l.Style.HeaderPad = grid.Pad{Before: 1, After: 1}
+	l.Style = a.panelStyle()
 	l.OnActivate = func(row ui.ListRow) error { return a.revealRow(row) }
 	l.OnButton = func(row ui.ListRow) error { return a.openHostMenu(row) }
 	return l
@@ -713,4 +679,45 @@ func (a *app) selectedConnection() (*conns.Entry, bool) {
 	}
 	e, ok := row.Key.(*conns.Entry)
 	return e, ok
+}
+
+// panelStyle is the sidebar's colours, built afresh whenever the window
+// changes scheme.
+func (a *app) panelStyle() ui.ListStyle {
+	st := ui.ListStyle{
+		FG: a.colours.FG,
+		BG: a.colours.BG,
+		// The selected row is marked the way a selected tab is, so the
+		// two read as the same thing.
+		SelectedFG: a.colours.BG,
+		SelectedBG: a.colours.FG,
+		// A machine's name is a heading, not one of its connections.
+		HeaderFG: a.colours.ANSI[6],
+		// Dimmer than the row: what a connection is doing is a note
+		// beside it, not part of its name.
+		NoteFG: a.colours.ANSI[8],
+		// How far a copy has got, further along the line the sidebar's
+		// own ground is shaded on: a row filling up reads as part of the
+		// frame rather than as a colour from somewhere else.
+		FillBG: grid.Blend(a.colours.BG, a.colours.ANSI[4], 1, 3),
+		// A ground of its own, shading down the list, so the sidebar
+		// reads as part of the window's frame rather than as one more
+		// thing running in it.
+		BGEnd: sidebarFoot(a.colours),
+	}
+	st.BG = sidebarTop(a.colours)
+	// The row for whatever is in front, marked even while the keys are
+	// somewhere else: the sidebar is the list of what is open, so it has
+	// to say which one is being looked at.
+	st.CurrentFG = a.colours.FG
+	// Lifted off the list's own ground rather than the window's
+	// selection colour, so it stays darker than the mark drawn on it:
+	// the mark is what says whether the connection is open.
+	st.CurrentBG = grid.Blend(a.colours.BG, a.colours.FG, 1, 6)
+	// A little air around each machine's name, so it reads as a heading
+	// for the rows under it rather than as another row. A quarter of a
+	// character each way: enough to see, and far less than the blank
+	// line it would otherwise take.
+	st.HeaderPad = grid.Pad{Before: 1, After: 1}
+	return st
 }

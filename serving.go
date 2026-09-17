@@ -502,6 +502,7 @@ func (a *app) useSettings(set *settings.Settings) {
 	a.saved.remember(set)
 	a.paneTitles.remember(set)
 	a.keyFiles.remember(set)
+	a.theme.remember(set)
 	err := set.Err()
 	if err == nil {
 		return

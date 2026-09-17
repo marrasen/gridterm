@@ -146,7 +146,7 @@ func (t *Terminal) paintAsk(v grid.View) {
 			// the choices that did fit.
 			continue
 		}
-		fg, cbg := t.pal.FG, t.pal.ANSI[0]
+		fg, cbg := t.pal.FG, t.pal.Surface()
 		if i == q.at {
 			// The colours swapped, the way a selected row or tab is
 			// marked everywhere else in the window.

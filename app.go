@@ -144,6 +144,9 @@ type app struct {
 	// overlay is the list of panes drawn while a walk is on.
 	overlay *walkOverlay
 
+	// theme is the colour scheme the window is drawn in.
+	theme *themePick
+
 	// shared is the glowing border over each pane somebody else is in,
 	// one layer per pane.
 	shared map[*term.Terminal]*sharedMark
@@ -652,6 +655,11 @@ func (a *app) commands() {
 		ui.Command{ID: "agent.take", Title: "Take this pane out of the share",
 			Run: a.takeBackHere},
 		ui.Command{ID: "agent.share", Title: "Show the share…", Run: a.showShare},
+		ui.Command{ID: "view.theme", Title: "Colour scheme…", Run: a.openThemePick},
+		ui.Command{ID: "view.themesReload", Title: "Reload colour schemes",
+			Run: a.reloadThemes},
+		ui.Command{ID: "view.themesStart", Title: "Write a colour scheme to edit…",
+			Run: a.writeThemeStart},
 		ui.Command{ID: "pane.titles", Title: "Show or hide the line naming each pane",
 			Run: a.togglePaneTitles},
 		ui.Command{ID: "key.make", Title: "Make an SSH key…", Run: a.openMakeKey},

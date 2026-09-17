@@ -32,6 +32,11 @@ func (a *app) newMenubar(child ui.Widget) *ui.Menubar {
 			{Command: "font.decrease"},
 			{Command: "font.reset"},
 			ui.MenuSeparator(),
+			{Command: "view.theme"},
+			{Command: "view.themesReload"},
+			{Command: "view.themesStart"},
+			{Command: "pane.titles"},
+			ui.MenuSeparator(),
 			{Command: "view.scrollUp"},
 			{Command: "view.scrollDown"},
 		}},
@@ -58,16 +63,7 @@ func (a *app) newMenubar(child ui.Widget) *ui.Menubar {
 			{Command: helpCommand},
 		}},
 	}
-	bar.Style = ui.MenubarStyle{
-		FG: a.colours.FG,
-		// The sidebar's own ground, running across the bar rather than
-		// down it. The two are one frame around the window, so they are
-		// drawn in one colour.
-		BG:     sidebarTop(a.colours),
-		BGEnd:  sidebarFoot(a.colours),
-		OpenFG: a.colours.BG,
-		OpenBG: a.colours.FG,
-	}
+	bar.Style = a.menubarStyle()
 	bar.MenuStyle = a.menuStyle()
 	// The bar reaches the modal stack and the compositor only through
 	// these: everything about which menu is showing stays in the widget.
@@ -229,7 +225,16 @@ var (
 // apart to read as a change of colour rather than as the same red
 // twice.
 func statusTakenFG(p vt.Palette) color.RGBA {
-	return grid.Blend(p.ANSI[9], p.ANSI[15], 1, 5)
+	return grid.Blend(p.ANSI[9], farFrom(p), 2, 5)
+}
+
+// farFrom is whichever of black and white the window's ground is not, so
+// a colour lifted towards it is lifted away from what it is read on.
+func farFrom(p vt.Palette) color.RGBA {
+	if grid.Contrast(chipWhite, p.BG) >= grid.Contrast(chipBlack, p.BG) {
+		return chipWhite
+	}
+	return chipBlack
 }
 func statusIdleFG(p vt.Palette) color.RGBA { return p.ANSI[1] }
 
@@ -293,4 +298,19 @@ func (a *app) openMenu() error {
 	}
 	a.bar.Open(0)
 	return nil
+}
+
+// menubarStyle is the menu bar's colours, built afresh whenever the
+// window changes scheme.
+func (a *app) menubarStyle() ui.MenubarStyle {
+	return ui.MenubarStyle{
+		FG: a.colours.FG,
+		// The sidebar's own ground, running across the bar rather than
+		// down it. The two are one frame around the window, so they are
+		// drawn in one colour.
+		BG:     sidebarTop(a.colours),
+		BGEnd:  sidebarFoot(a.colours),
+		OpenFG: a.colours.BG,
+		OpenBG: a.colours.FG,
+	}
 }

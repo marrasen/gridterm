@@ -260,6 +260,15 @@ there is one key for position and one for recency.
   and that is the whole of what it can do. Refusing a path outside the
   user's own profile would be the next step.
 
+- **Changing the colour scheme leaves what is on a screen behind.** A
+  cell holds the colours it is drawn in, not which entry of the scheme
+  they came from, so there is nothing to look the new ones up with. New
+  output and anything the program clears take the new scheme; what was
+  printed before keeps what it was printed in, until the program draws
+  it again. Doing better means keeping the entry a colour came from on
+  every cell, through `grid`, `vt`, the renderer and the wire a watcher
+  reads over. Worth deciding whether that is wanted before building it.
+
 - An orphaned `conhost.exe` can be left with no `cmd.exe` under it. Seen
   on a live window while the shell leak was being looked into: the shell
   had exited and the console host was still running. The job object put
@@ -316,8 +325,6 @@ there is one key for position and one for recency.
 Marcus's own list, in his words, kept until each has been looked at
 properly and either written up above or done.
 
-- **Themes.** Change the colour scheme, and maybe build one, perhaps by
-  editing a JSON file.
 - **Settings beside the binary.** Keep the settings where the
   executable is, so the user can have copies. Add a config file for the
   keyboard shortcuts.

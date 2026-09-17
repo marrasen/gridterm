@@ -263,7 +263,7 @@ func (o *walkOverlay) draw(lines []string, at int, pal vt.Palette) {
 	}
 	o.was, o.at = slices.Clone(lines), at
 	cols, rows := o.g.Size()
-	fg, bg := pal.FG, pal.ANSI[0]
+	fg, bg := pal.FG, pal.Surface()
 	o.g.View().Fill(grid.Cell{Rune: ' ', FG: fg, BG: bg, Width: 1})
 	for i, line := range lines {
 		if i+1 >= rows-1 {

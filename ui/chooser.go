@@ -350,3 +350,6 @@ func (c *Chooser) HandleMouse(ev input.MouseEvent) (bool, error) {
 // nothing between a press and its release, and saying so keeps the rule
 // visible.
 func (c *Chooser) CancelGesture() {}
+
+// Title is what the chooser draws at its top.
+func (c *Chooser) Title() string { return c.title }

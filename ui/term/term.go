@@ -1238,3 +1238,19 @@ func (t *Terminal) fail(err error) {
 		t.cfg.OnError(err)
 	}
 }
+
+// SetPalette gives the terminal the colours it draws in.
+//
+// What the program has already printed keeps the colours it was printed
+// in: a cell holds what it is drawn in, not which entry of the scheme it
+// came from. New output takes the new one.
+func (t *Terminal) SetPalette(pal vt.Palette) {
+	t.mu.Lock()
+	t.term.Screen().SetPalette(pal)
+	t.pal = pal
+	t.g.DefaultFG, t.g.DefaultBG = pal.FG, pal.BG
+	t.g.SelectionBG = pal.Selection
+	t.g.MarkAllDirty()
+	t.mu.Unlock()
+	t.pending.Store(true)
+}

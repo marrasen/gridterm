@@ -189,6 +189,7 @@ func main() {
 	a.saved = newSavedCommands()
 	a.paneTitles = newPaneTitles()
 	a.keyFiles = newKeyIndex()
+	a.theme = newThemePick()
 	a.useSettings(openSettings())
 	a.tunnels = make(map[*conns.Entry]*tunnel)
 	a.queue = jobs.New(0)
@@ -196,6 +197,12 @@ func main() {
 	a.asking = make(map[chan jobs.Choice]func())
 	a.scrollback = *scroll
 	a.colours = pal
+	a.loadThemes()
+	if err := a.useTheme(a.startTheme()); err != nil {
+		// The scheme the window opens on comes from the list, which was
+		// checked as it was read, so this is not reachable from a file.
+		a.logError(err)
+	}
 	a.panes = make(map[*term.Terminal]*conns.Entry)
 	a.scaled = make(map[*term.Terminal]*scaledPane)
 	a.shared = make(map[*term.Terminal]*sharedMark)

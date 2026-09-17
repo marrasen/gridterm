@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -2252,5 +2253,86 @@ func TestReadingTheOutputAfterAClearSaysItHasGone(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "cleared") || !strings.Contains(err.Error(), "read_pane") {
 		t.Errorf("it was told %q, which does not say what happened or what to do", err)
+	}
+}
+
+// A clear hides what came before it from the agent, and from nobody
+// else.
+//
+// An agent clears the screen to cut down what it has to read, which is a
+// fair thing to want. The user wants the record of what it did. The
+// lines stay in the pane and stop being offered.
+func TestAClearHidesWhatCameBeforeItFromTheAgent(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pane, code, c := handedOver(t, a)
+
+	var got agent.Pane
+	offWindow(t, a, "the window to answer the agent", func() error {
+		var err error
+		got, err = c.Use(code)
+		return err
+	})
+
+	a.shells[0].out <- []byte("$ cat secrets\r\nhunter2\r\n$ ")
+	waitFor(t, a, "the pane to show the secret", func() bool {
+		return strings.Contains(paneText(pane), "hunter2")
+	})
+	// It is readable now: nothing has been cleared.
+	if look := looked(t, a, c, got.ID); !strings.Contains(look.Screen, "hunter2") {
+		t.Fatalf("the agent cannot read the pane at all:\n%s", look.Screen)
+	}
+
+	// Enough output to push it off the top, so it is in the history that
+	// a clear would otherwise throw away.
+	var filling strings.Builder
+	for i := 0; i < 40; i++ {
+		fmt.Fprintf(&filling, "line %d\r\n", i)
+	}
+	a.shells[0].out <- []byte(filling.String() + "$ ")
+	waitFor(t, a, "the secret to scroll off the screen", func() bool {
+		return strings.Contains(paneText(pane), "line 39") &&
+			!strings.Contains(paneText(pane), "hunter2")
+	})
+	// Still readable, because reading past the screen reaches history.
+	var deep agent.Look
+	offWindow(t, a, "the window to answer the agent", func() error {
+		var err error
+		deep, err = c.Read(got.ID, 400)
+		return err
+	})
+	if !strings.Contains(deep.Screen, "hunter2") {
+		t.Fatalf("the agent cannot read back into the history at all:\n%s", deep.Screen)
+	}
+
+	// What `clear` sends.
+	a.shells[0].out <- []byte("\x1b[3J\x1b[H\x1b[2J$ ")
+	waitFor(t, a, "the pane to be cleared", func() bool {
+		return !strings.Contains(paneText(pane), "line 39")
+	})
+
+	// The agent asks for far more lines than the pane has, and is given
+	// what is below the clear.
+	var look agent.Look
+	offWindow(t, a, "the window to answer the agent", func() error {
+		var err error
+		look, err = c.Read(got.ID, 400)
+		return err
+	})
+	if strings.Contains(look.Screen, "hunter2") {
+		t.Errorf("the agent read past the clear:\n%s", look.Screen)
+	}
+	if !look.All {
+		t.Error("the agent was not told that is everything there is to read")
+	}
+	if !strings.Contains(look.Note, "cleared") || !strings.Contains(look.Note, "scroll up") {
+		t.Errorf("the answer does not say what happened: %q", look.Note)
+	}
+
+	// And the user still has it: the pane kept the lines, which is the
+	// whole point of a floor rather than a delete.
+	if !strings.Contains(pane.TextLines(400), "hunter2") {
+		t.Error("the pane threw the lines away, so the user cannot scroll back to them")
 	}
 }

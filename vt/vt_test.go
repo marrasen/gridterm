@@ -898,3 +898,65 @@ func TestAResetGoesOnCountingLines(t *testing.T) {
 			got, was)
 	}
 }
+
+// Clearing the screen keeps the history and marks where the clear was.
+//
+// The sequence says to erase the scrollback. What the person who typed
+// `clear` wants is a blank screen; what they also want, later, is to
+// scroll up and find what they did. So the lines stay and the clear
+// leaves a floor behind, which is what a reader from outside is offered
+// down to.
+func TestClearingTheScreenKeepsTheHistoryAndLeavesAFloor(t *testing.T) {
+	h := newHarness(t, 20, 3)
+	h.write("one\r\ntwo\r\nthree\r\nfour\r\nfive\r\n")
+	scr := h.term.Screen()
+	kept, top := scr.History(), scr.LineNumber(0)
+	if kept == 0 {
+		t.Fatal("nothing scrolled into history, so this proves nothing")
+	}
+	if scr.Floor() != 0 {
+		t.Fatalf("a screen nobody has cleared has a floor of %d", scr.Floor())
+	}
+
+	// What `clear` sends: erase the scrollback, home, erase the screen.
+	h.write("\x1b[3J\x1b[H\x1b[2J")
+
+	if got := scr.History(); got != kept {
+		t.Errorf("history holds %d lines after a clear, want the %d it had", got, kept)
+	}
+	if got := scr.Floor(); got != top {
+		t.Errorf("the clear left a floor of %d, want the top row's line %d", got, top)
+	}
+	// And the lines above it are still there to scroll back to.
+	g := grid.New(20, 3, DefaultPalette().FG, DefaultPalette().BG)
+	scr.RenderBack(g, kept)
+	if row := rowOf(g, 0); !strings.Contains(row, "one") {
+		t.Errorf("scrolling back to the top shows %q, want the first line", row)
+	}
+}
+
+// A clear on the alternate screen marks nothing: there is no history
+// there to keep and no lines of the output to floor.
+func TestAClearOnTheAlternateScreenLeavesNoFloor(t *testing.T) {
+	h := newHarness(t, 20, 3)
+	h.write("one\r\ntwo\r\nthree\r\nfour\r\n")
+	scr := h.term.Screen()
+
+	h.write("\x1b[?1049h\x1b[3J\x1b[2J\x1b[?1049l")
+
+	if got := scr.Floor(); got != 0 {
+		t.Errorf("a clear on the alternate screen left a floor of %d", got)
+	}
+}
+
+// rowOf is one row of a grid as plain text.
+func rowOf(g *grid.Grid, y int) string {
+	cols, _ := g.Size()
+	var b strings.Builder
+	for x := 0; x < cols; x++ {
+		if c := g.At(x, y); c.Rune != 0 {
+			b.WriteRune(c.Rune)
+		}
+	}
+	return strings.TrimRight(b.String(), " ")
+}

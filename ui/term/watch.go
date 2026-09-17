@@ -238,6 +238,13 @@ type Reading struct {
 	// a shell that marks nothing, it is the prompt the user or an agent
 	// is typing at.
 	Before string
+
+	// Floor is the line the last clear left behind, and Bottom names the
+	// bottom row of the screen. The lines between them are what a reader
+	// from outside is offered; the ones above the floor are still here
+	// and still drawn for the person at this machine.
+	Floor  uint64
+	Bottom uint64
 }
 
 // ReadLines is the last n lines of the pane, where the cursor is, what
@@ -304,6 +311,7 @@ func (t *Terminal) readingLocked(n int) Reading {
 	scr := t.term.Screen()
 	col, row := scr.CursorPos()
 	text, before := t.linesLocked(n, row, col)
+	_, rows := t.g.Size()
 	return Reading{
 		Text:   text,
 		Row:    row,
@@ -313,6 +321,8 @@ func (t *Terminal) readingLocked(n int) Reading {
 		Cmd:    t.term.Command(),
 		Line:   scr.LineNumber(row),
 		Before: before,
+		Floor:  scr.Floor(),
+		Bottom: scr.LineNumber(max(rows-1, 0)),
 	}
 }
 

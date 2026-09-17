@@ -77,6 +77,12 @@ type Screen struct {
 	// are not lines of the output.
 	gone uint64
 
+	// floor is the line a clear left behind: the top row of the screen
+	// when the program last erased the scrollback. The lines above it
+	// are still here and the person at this machine still scrolls back
+	// to them; something reading the pane from outside starts here.
+	floor uint64
+
 	// touched are the rows written since the last Render, and all says
 	// the whole screen was. drawnTo is the grid that render went to: any
 	// other grid is missing rows this screen no longer knows about, so
@@ -687,8 +693,14 @@ func (s *Screen) EraseInDisplay(mode int) {
 	case 2:
 		s.eraseRows(0, s.rows-1)
 	case 3:
-		s.cur.scrollback = nil
-		s.scrollOff = 0
+		// The scrollback stays. Erasing it is what the sequence means,
+		// and what the person at this machine wants is to scroll up
+		// afterwards and still see what was there; a reader from outside
+		// gets the floor instead. The alternate screen keeps no history,
+		// so a clear there marks nothing.
+		if s.cur == s.pri {
+			s.floor = s.gone
+		}
 		s.touchAll()
 	}
 	s.cursor.WrapNext = false
@@ -764,7 +776,7 @@ func (s *Screen) Reset() {
 	scrollback := s.pri.maxScroll
 	gone := s.gone + uint64(rows)
 	*s = *NewScreen(cols, rows, pal, scrollback)
-	s.gone = gone
+	s.gone, s.floor = gone, gone
 	s.touchAll()
 }
 
@@ -920,6 +932,14 @@ func (s *Screen) RenderBack(g *grid.Grid, back int) {
 	s.touchAll()
 	s.Render(g)
 }
+
+// Floor is the line a clear left behind, and zero when nothing has
+// cleared this screen.
+//
+// Everything above it is still kept and still drawn. It is what a reader
+// from outside is offered down to, so that clearing the screen means
+// what it looks like it means to whoever typed it.
+func (s *Screen) Floor() uint64 { return s.floor }
 
 // LineNumber names the line showing at a row of the primary screen.
 //

@@ -111,8 +111,8 @@ Raised after a debugging session in a handed-over pane.
    - **Read only.** `send_keys` is refused. For watching a build or a
      tail without being able to touch it.
    - **Read above a clear.** The agent may read the scrollback above the
-     last `ED 3`. Off is what item 6 settles; this box says yes for one
-     pane.
+     last `ED 3`. Off is what "`clear` keeps the history" settled; this
+     box says yes for one pane.
    - **Read only and Restart together are legal.** Restarting is not
      typing, so watching a pane and bringing it back when it dies
      without ever typing into it is a real thing to want. Nothing
@@ -135,26 +135,6 @@ Raised after a debugging session in a handed-over pane.
    the command's stdin; an ended one can be read and not typed into,
    which is worth having for a failed build. Nothing to do here: it is
    written down because it looked like a gap and is not one.
-
-6. **`clear` keeps the history, and hides it from the agent.** Answered
-   on 2026-09-17. `clear` sends `ED 3` as well as `ED 2`, and
-   `Screen.EraseInDisplay` in vt/screen.go drops the scrollback for mode
-   3 today, which is what the sequence means. That changes: the user
-   scrolls up and still sees everything the agent did, which is the
-   point of watching it.
-   - **`ED 3` becomes a floor, not a delete.** It marks where the agent
-     may read from. The rows above it stay in the buffer and stay on
-     screen when the user scrolls.
-   - **`read_pane` stops at the floor.** An agent asking for more lines
-     than there are below it gets what is below it and is told that is
-     all there is, the way `Look.All` already says so.
-   - **Why both halves are wanted.** An agent clears to cut down what it
-     has to read, and that is a fair thing for it to want. The user
-     wants the record of what it did. A floor gives each of them what
-     they are asking for.
-   - **The privacy case is the cost, and it is accepted.** A token that
-     scrolled past is no longer gone after `clear`; it is one scroll up
-     and stays until the pane closes.
 
 ## SSH keys
 

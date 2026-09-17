@@ -385,9 +385,11 @@ func (w agentWindow) Look(id string, lines int) (agent.Look, error) {
 		// The cursor comes from the reading, so it says where it was on
 		// the screen that came with it.
 		screen := lastLines(h.read.Text, want)
+		screen, note := stopAtTheFloor(screen, *h.read)
 		status, hasStatus := h.read.Cmd.Exit()
 		return agent.Look{
 			Screen:    screen,
+			Note:      note,
 			Gone:      h.pane.Exited(),
 			Changed:   h.read.Said,
 			Row:       h.read.Row,
@@ -406,6 +408,28 @@ func (w agentWindow) Look(id string, lines int) (agent.Look, error) {
 			Yours:     h.sent && h.read.Cmd.Done > h.typedDone,
 		}, nil
 	})
+}
+
+// stopAtTheFloor cuts a reading off where the pane was last cleared, and
+// says so when it cut anything.
+//
+// Clearing the screen means what it looks like it means: what was above
+// it is not offered to an agent. It is not gone -- the person at this
+// machine scrolls up and sees all of it -- which is what the note says,
+// so an agent does not take a clear for a way of hiding anything.
+//
+// The alternate screen has no lines of the output to count, so nothing
+// is cut there.
+func stopAtTheFloor(screen string, read term.Reading) (string, string) {
+	if read.Alt || read.Floor == 0 || read.Bottom < read.Floor {
+		return screen, ""
+	}
+	below := int(read.Bottom-read.Floor) + 1
+	if below >= countLines(screen) {
+		return screen, ""
+	}
+	return lastLines(screen, below), "The pane was cleared, so the lines above the clear" +
+		" are not offered here. They are still in the pane, and the user can scroll up to them."
 }
 
 // lastLines is the last n lines of some text, and the whole of it when
@@ -454,6 +478,12 @@ func (w agentWindow) Output(id string, most int) (agent.Look, error) {
 		from, note, err := h.outputFrom(at)
 		if err != nil {
 			return agent.Look{}, err
+		}
+		// A clear since the command started is where this begins instead:
+		// the lines above it are not offered, whoever put them there.
+		if from < at.Floor {
+			from = at.Floor
+			note += " The pane was cleared while it was running, so this starts at the clear."
 		}
 		// The cursor above where the output began is the screen having
 		// been cleared or reset since: the output is not in the pane any

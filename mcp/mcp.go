@@ -514,7 +514,9 @@ what the screen will say, and it ends on that text instead. Every answer says wh
 those ended the waiting, and says when the time ran out instead. A command whose output goes through a pager -- systemctl, journalctl, git log,
 man -- needs --no-pager or a pipe to cat, or you will be stuck in less, where q gets you out.
 list_panes lists the panes you have been handed, and that is all it lists. In an answer with
-a screen, the screen ends at a line reading -- gridterm --, and the rest is gridterm talking.`
+a screen, the screen ends at a line reading -- gridterm --, and the rest is gridterm talking.
+Running clear is welcome and cuts down what you have to read: these tools then stop reading
+above it, and the user can still scroll up to everything that was there.`
 
 // Rules is what an agent may do in a pane it has been handed, and what
 // it may not.

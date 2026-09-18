@@ -242,7 +242,7 @@ func printFonts(w io.Writer) error {
 		return err
 	}
 	if len(families) == 0 {
-		fmt.Fprintln(w, "no monospace font families found")
+		_, _ = fmt.Fprintln(w, "no monospace font families found")
 		return nil
 	}
 	names := map[glyph.Style]string{
@@ -256,7 +256,7 @@ func printFonts(w io.Writer) error {
 		for _, s := range family.Styles() {
 			styles = append(styles, names[s])
 		}
-		fmt.Fprintf(w, "%-34s %s\n", family.Name, strings.Join(styles, ", "))
+		_, _ = fmt.Fprintf(w, "%-34s %s\n", family.Name, strings.Join(styles, ", "))
 	}
 	return nil
 }

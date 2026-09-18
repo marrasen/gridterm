@@ -32,8 +32,6 @@ func newBuffer(cols, rows, maxScroll int, fill grid.Cell) *buffer {
 	return b
 }
 
-func (b *buffer) rows() int { return len(b.lines) }
-
 // blankLine allocates a row of fill cells.
 func (b *buffer) blankLine() line {
 	l := make(line, b.cols)

@@ -156,14 +156,6 @@ func (w *fakeWindow) inShare() []Pane {
 	return panes
 }
 
-// adds puts a second pane in the share, the way the user does while an
-// agent is working.
-func (w *fakeWindow) adds() {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	w.second = true
-}
-
 func (w *fakeWindow) Look(id string, lines int) (Look, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -230,9 +222,7 @@ func (w *fakeWindow) Secret(id, what string, wait time.Duration) (bool, error) {
 	w.mu.Unlock()
 	if typed == nil {
 		// Nobody types, and the wait is the caller's to bound.
-		select {
-		case <-time.After(wait):
-		}
+		<-time.After(wait)
 		return false, nil
 	}
 	select {

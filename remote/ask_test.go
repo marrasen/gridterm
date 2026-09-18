@@ -87,13 +87,6 @@ func (a *testAsk) Notice(ctx context.Context, n Notice) {
 	a.notices = append(a.notices, n)
 }
 
-// told returns what servers have said without asking.
-func (a *testAsk) told() []Notice {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return append([]Notice(nil), a.notices...)
-}
-
 func (a *testAsk) asked() (keyfiles []string, passwords int, hostKeys []HostKey) {
 	a.mu.Lock()
 	defer a.mu.Unlock()

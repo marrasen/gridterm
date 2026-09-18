@@ -68,7 +68,7 @@ func (s *watchStats) frame(took time.Duration, got render.CompositorStats, read 
 	if read >= s.bytes {
 		moved = read - s.bytes
 	}
-	fmt.Fprintf(s.to,
+	_, _ = fmt.Fprintf(s.to,
 		"%d frames, %d drawn, %.1fms average, %.1fms slowest, %d rows, %d quads, %s read\n",
 		s.frames, s.drawn,
 		float64(s.total.Microseconds())/float64(max(s.frames, 1))/1000,

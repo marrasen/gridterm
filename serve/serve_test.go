@@ -102,7 +102,7 @@ func TestAnUnlistedKeyIsRefused(t *testing.T) {
 
 	client, err := connect(t, s, other)
 	if err == nil {
-		client.Close()
+		_ = client.Close()
 		t.Fatal("a key nobody listed was let in")
 	}
 	if got := s.Clients(); len(got) != 0 {
@@ -730,7 +730,7 @@ func TestRefusalsAreCountedRatherThanToldOneAtATime(t *testing.T) {
 	const tries = 20
 	for range tries {
 		if c, err := connect(t, s, other); err == nil {
-			c.Close()
+			_ = c.Close()
 			t.Fatal("a key nobody listed was let in")
 		}
 	}

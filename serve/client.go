@@ -247,7 +247,7 @@ func (w *Window) watch() {
 	go ssh.DiscardRequests(reqs)
 	go func() {
 		defer close(w.watched)
-		defer ch.Close()
+		defer func() { _ = ch.Close() }()
 		// A snapshot a line at a time. The buffer is generous because a
 		// window with a great many things open sends a long line, and a
 		// line cut in half is a snapshot thrown away.

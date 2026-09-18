@@ -1098,15 +1098,6 @@ func twoWindowsSized(t *testing.T, cols, rows int) (host, client *testApp, addr 
 	return host, client, addr
 }
 
-// mapKeys is what a map is keyed by, for saying what was found instead.
-func mapKeys[V any](m map[string]V) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	return out
-}
-
 // The sidebar shows what the window taken over has open, under it.
 func TestTheSidebarShowsWhatTheOtherWindowHasOpen(t *testing.T) {
 	host, client, addr := twoWindows(t)
@@ -2168,22 +2159,6 @@ func TestThePaneSaysWhatItIsDoing(t *testing.T) {
 			strings.Contains(got, "finding a key to offer") &&
 			strings.Contains(got, "connecting")
 	})
-}
-
-// rowFor is the row for a window being taken over, or nil when there is
-// none.
-func rowFor(a *testApp, addr string) *conns.Entry {
-	for _, group := range a.registry.Groups(time.Now()) {
-		if group.Host != addr {
-			continue
-		}
-		for _, row := range group.Rows {
-			if row.Label == "taking over" {
-				return row.Entry
-			}
-		}
-	}
-	return nil
 }
 
 // The same for a window taken over: the pane that says why stays.

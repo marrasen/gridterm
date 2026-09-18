@@ -684,7 +684,7 @@ func TestASavedServersPlusOffersNoShellLines(t *testing.T) {
 func TestUnderSshAShellLineOpensAPaneHereAndTheFileMenuHasNone(t *testing.T) {
 	s := sshtest.New(t)
 	target := serverConfig(t, s).Target()
-	a := startedWithSsh(t, target)
+	a := startedWithSSH(t, target)
 	pinServers(t, a, s)
 
 	// A pane here, opened before the target answered, which is what puts
@@ -1029,7 +1029,7 @@ func TestAPickThatCannotBeForgottenStillOpensThePane(t *testing.T) {
 // undo, and the line must not open a local pane in it.
 func TestTheDefaultShellIsRefusedOnARemoteWindow(t *testing.T) {
 	s := sshtest.New(t)
-	a := startedWithSsh(t, serverConfig(t, s).Target())
+	a := startedWithSSH(t, serverConfig(t, s).Target())
 	pinServers(t, a, s)
 	waitForPanes(t, a, 1)
 	waitFor(t, a, "the window to reach the machine", func() bool {

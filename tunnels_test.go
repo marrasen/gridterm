@@ -537,13 +537,11 @@ func TestATunnelRowSaysHowManyStreamsItHas(t *testing.T) {
 	}
 
 	addr := a.tunnels[row].f.Addr()
-	var open []net.Conn
 	for range 2 {
 		c, err := net.Dial("tcp", addr)
 		if err != nil {
 			t.Fatalf("dial: %v", err)
 		}
-		open = append(open, c)
 		t.Cleanup(func() { _ = c.Close() })
 	}
 	waitFor(t, a, "both streams to be counted", func() bool {

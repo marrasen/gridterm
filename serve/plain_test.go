@@ -24,7 +24,7 @@ func TestPlainDropsWhatATerminalWouldObey(t *testing.T) {
 		{"a carriage return", "Code:\rFAKE", "Code:FAKE"},
 		{"a line feed", "one\ntwo", "one\ntwo"},
 		{"a tab", "a\tb", "a b"},
-		{"a C1 control", "ab", "ab"},
+		{"a C1 control", "a\u009bb", "ab"},
 		{"a byte that is not a character", "a\xffb", "a�b"},
 		{"ordinary words", "Enter your code", "Enter your code"},
 		{"an accent", "Código", "Código"},

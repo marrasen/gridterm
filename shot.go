@@ -158,7 +158,9 @@ func (s *shooter) captured(screen *ebiten.Image) error {
 	}
 	img := &image.RGBA{Pix: pix, Stride: 4 * b.Dx(), Rect: image.Rect(0, 0, b.Dx(), b.Dy())}
 	if err := png.Encode(f, img); err != nil {
-		f.Close()
+		// The encode failure is what went wrong. Closing after it is
+		// housekeeping, and its own failure would say less.
+		_ = f.Close()
 		return fmt.Errorf("screenshot %s: %w", path, err)
 	}
 	return f.Close()

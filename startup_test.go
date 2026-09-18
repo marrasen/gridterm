@@ -14,10 +14,10 @@ import (
 	"github.com/marrasen/gridterm/ui"
 )
 
-// startedWithSsh builds the window the way main does for "gridterm -ssh
+// startedWithSSH builds the window the way main does for "gridterm -ssh
 // <target>", with the dialogs, the sidebar and the menu bar it needs to
 // ask anything and to show what it holds.
-func startedWithSsh(t *testing.T, target string, command ...string) *testApp {
+func startedWithSSH(t *testing.T, target string, command ...string) *testApp {
 	t.Helper()
 	a := newTestApp(t, 90, 30, startedWith(startup{target: target, command: command}))
 	withDialogs(t, a)
@@ -53,7 +53,7 @@ func unknownHostKey(t *testing.T, a *testApp) {
 func TestSshConnectsInAPaneAndAsksInADialog(t *testing.T) {
 	s := sshtest.New(t)
 	target := serverConfig(t, s).Target()
-	a := startedWithSsh(t, target)
+	a := startedWithSSH(t, target)
 	unknownHostKey(t, a)
 	dials := dialCounter(a)
 
@@ -100,7 +100,7 @@ func TestSshConnectsInAPaneAndAsksInADialog(t *testing.T) {
 func TestSshTargetIsAMachineOnTheSidebar(t *testing.T) {
 	s := sshtest.New(t)
 	target := serverConfig(t, s).Target()
-	a := startedWithSsh(t, target)
+	a := startedWithSSH(t, target)
 	pinServers(t, a, s)
 	waitForPanes(t, a, 1)
 
@@ -127,7 +127,7 @@ func TestSshTargetIsAMachineOnTheSidebar(t *testing.T) {
 func TestSshRunsTheCommandItWasGiven(t *testing.T) {
 	s := sshtest.New(t)
 	target := serverConfig(t, s).Target()
-	a := startedWithSsh(t, target, "echo", "hi")
+	a := startedWithSSH(t, target, "echo", "hi")
 	pinServers(t, a, s)
 
 	// Watched from the moment the pane opens: the fold empties the
@@ -157,7 +157,7 @@ func TestSshThatCannotConnectKeepsItsPaneAndTheWindow(t *testing.T) {
 	// A machine the test can name, at a port nothing answers on.
 	cfg.Port = 1
 	target := cfg.Target()
-	a := startedWithSsh(t, target)
+	a := startedWithSSH(t, target)
 	unknownHostKey(t, a)
 
 	said := waitForFailure(t, a, target)
@@ -182,7 +182,7 @@ func TestSshThatCannotConnectKeepsItsPaneAndTheWindow(t *testing.T) {
 func TestANewTabUnderSshOpensOnTheTarget(t *testing.T) {
 	s := sshtest.New(t)
 	target := serverConfig(t, s).Target()
-	a := startedWithSsh(t, target)
+	a := startedWithSSH(t, target)
 	pinServers(t, a, s)
 	waitForPanes(t, a, 1)
 
@@ -206,7 +206,7 @@ func TestANewTabUnderSshOpensOnTheTarget(t *testing.T) {
 func TestASplitUnderSshOpensOnTheTarget(t *testing.T) {
 	s := sshtest.New(t)
 	target := serverConfig(t, s).Target()
-	a := startedWithSsh(t, target)
+	a := startedWithSSH(t, target)
 	pinServers(t, a, s)
 	waitForPanes(t, a, 1)
 
@@ -233,7 +233,7 @@ func TestASplitUnderSshOpensOnTheTarget(t *testing.T) {
 func TestANewTabOpensHereOnceTheTargetHasGone(t *testing.T) {
 	s := sshtest.New(t)
 	target := serverConfig(t, s).Target()
-	a := startedWithSsh(t, target)
+	a := startedWithSSH(t, target)
 	pinServers(t, a, s)
 	waitForPanes(t, a, 1)
 
@@ -291,7 +291,7 @@ func TestSshThatOpensNoPaneLeavesAShellHere(t *testing.T) {
 // with, which has none yet: no panic, and nothing quits.
 func TestTheKeysDoNothingAtAWindowWithNoPaneYet(t *testing.T) {
 	s := sshtest.New(t)
-	a := startedWithSsh(t, serverConfig(t, s).Target())
+	a := startedWithSSH(t, serverConfig(t, s).Target())
 	if len(a.panes) != 0 {
 		t.Fatalf("%d panes before the first frame, want none", len(a.panes))
 	}
@@ -328,7 +328,7 @@ func TestTheKeysDoNothingAtAWindowWithNoPaneYet(t *testing.T) {
 func TestTerminalOnTheLocalRowOpensAShellHere(t *testing.T) {
 	s := sshtest.New(t)
 	target := serverConfig(t, s).Target()
-	a := startedWithSsh(t, target)
+	a := startedWithSSH(t, target)
 	pinServers(t, a, s)
 
 	// A pane here, opened before the target answered, which is what puts

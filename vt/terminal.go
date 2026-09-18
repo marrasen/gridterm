@@ -166,8 +166,9 @@ func (t *Terminal) Execute(b byte) {
 	}
 }
 
-// Hook, Put and Unhook cover DCS sequences. Nothing here implements one,
-// but they must be consumed or their payload would be printed as text.
+// Hook takes the start of a DCS sequence, as Put takes its payload and
+// Unhook its end. Nothing here implements one, but they must be consumed
+// or the payload would be printed as text.
 func (t *Terminal) Hook(_ [][]uint16, _ []byte, _ bool, _ rune) {}
 func (t *Terminal) Put(_ byte)                                  {}
 func (t *Terminal) Unhook()                                     {}

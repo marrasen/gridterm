@@ -70,12 +70,12 @@ func TestMenuArrowsSkipSeparators(t *testing.T) {
 	cmds := testCommands("Copy", "Paste")
 	m, _ := newTestMenu(t, cmds, []MenuItem{{Command: "copy"}, MenuSeparator(), {Command: "paste"}})
 
-	m.HandleKey(press(input.KeyDown, 0))
+	keyTo(t, m, press(input.KeyDown, 0))
 
 	if got := m.SelectedIndex(); got != 2 {
 		t.Errorf("down landed on %d, want 2: the separator was not stepped over", got)
 	}
-	m.HandleKey(press(input.KeyUp, 0))
+	keyTo(t, m, press(input.KeyUp, 0))
 	if got := m.SelectedIndex(); got != 0 {
 		t.Errorf("up landed on %d, want 0", got)
 	}
@@ -86,13 +86,13 @@ func TestMenuArrowsStopAtTheEnds(t *testing.T) {
 	m, _ := newTestMenu(t, cmds, items("copy", "paste"))
 
 	for range 5 {
-		m.HandleKey(press(input.KeyDown, 0))
+		keyTo(t, m, press(input.KeyDown, 0))
 	}
 	if got := m.SelectedIndex(); got != 1 {
 		t.Errorf("selected %d after running off the bottom, want 1", got)
 	}
 	for range 5 {
-		m.HandleKey(press(input.KeyUp, 0))
+		keyTo(t, m, press(input.KeyUp, 0))
 	}
 	if got := m.SelectedIndex(); got != 0 {
 		t.Errorf("selected %d after running off the top, want 0", got)
@@ -106,11 +106,11 @@ func TestMenuHomeAndEnd(t *testing.T) {
 		{Command: "copy"}, MenuSeparator(), {Command: "paste"}, {Command: "quit"},
 	})
 
-	m.HandleKey(press(input.KeyEnd, 0))
+	keyTo(t, m, press(input.KeyEnd, 0))
 	if got := m.SelectedIndex(); got != 3 {
 		t.Errorf("End landed on %d, want the last line that can be run", got)
 	}
-	m.HandleKey(press(input.KeyHome, 0))
+	keyTo(t, m, press(input.KeyHome, 0))
 	if got := m.SelectedIndex(); got != 0 {
 		t.Errorf("Home landed on %d, want the first line that can be run", got)
 	}
@@ -170,7 +170,7 @@ func TestMenuEnterRunsAndCloses(t *testing.T) {
 	)
 	m, closed := newTestMenu(t, cmds, items("copy", "paste"))
 
-	m.HandleKey(press(input.KeyDown, 0))
+	keyTo(t, m, press(input.KeyDown, 0))
 	handled, err := m.HandleKey(press(input.KeyEnter, 0))
 
 	if err != nil {
@@ -313,7 +313,7 @@ func TestMenuTallerThanTheWindowScrolls(t *testing.T) {
 	m.Layout(Size{Cols: 40, Rows: 8})
 
 	for i := 0; i < len(lines); i++ {
-		m.HandleKey(press(input.KeyDown, 0))
+		keyTo(t, m, press(input.KeyDown, 0))
 	}
 
 	box := m.box()
@@ -341,7 +341,7 @@ func TestMenuScrollFollowsTheWindow(t *testing.T) {
 	m, _ := newTestMenu(t, cmds, lines)
 	m.Layout(Size{Cols: 40, Rows: 24})
 	for i := 0; i < len(lines); i++ {
-		m.HandleKey(press(input.KeyDown, 0))
+		keyTo(t, m, press(input.KeyDown, 0))
 	}
 
 	m.Layout(Size{Cols: 40, Rows: 6})
@@ -364,8 +364,8 @@ func TestMenuLeftAndRightAskForTheNeighbour(t *testing.T) {
 	var steps []int
 	m.OnEdge = func(step int) { steps = append(steps, step) }
 
-	m.HandleKey(press(input.KeyRight, 0))
-	m.HandleKey(press(input.KeyLeft, 0))
+	keyTo(t, m, press(input.KeyRight, 0))
+	keyTo(t, m, press(input.KeyLeft, 0))
 
 	if len(steps) != 2 || steps[0] != 1 || steps[1] != -1 {
 		t.Errorf("steps = %v, want [1 -1]", steps)
@@ -410,7 +410,7 @@ func TestMenuPressOutsideCanBeClaimed(t *testing.T) {
 	var at [2]int
 	m.OnOutside = func(col, row int) (bool, error) { at = [2]int{col, row}; return true, nil }
 
-	m.HandleMouse(pressAt(39, 19))
+	mouseTo(t, m, pressAt(39, 19))
 
 	if at != [2]int{39, 19} {
 		t.Errorf("reported %v, want the point that was pressed", at)
@@ -489,7 +489,7 @@ func TestMenuPointerHighlightsALine(t *testing.T) {
 	m, _ := newTestMenu(t, cmds, items("copy", "paste"))
 	box := menuLines(m)
 
-	m.HandleMouse(moveTo(box.X+1, box.Y+1))
+	mouseTo(t, m, moveTo(box.X+1, box.Y+1))
 
 	if got := m.SelectedIndex(); got != 1 {
 		t.Errorf("selected %d, want the line under the pointer", got)
@@ -504,8 +504,8 @@ func TestMenuPressOnASeparatorDoesNothing(t *testing.T) {
 	m, closed := newTestMenu(t, cmds, []MenuItem{{Command: "copy"}, MenuSeparator(), {Command: "paste"}})
 	box := menuLines(m)
 
-	m.HandleMouse(moveTo(box.X+1, box.Y+1))
-	m.HandleMouse(pressAt(box.X+1, box.Y+1))
+	mouseTo(t, m, moveTo(box.X+1, box.Y+1))
+	mouseTo(t, m, pressAt(box.X+1, box.Y+1))
 
 	if got := m.SelectedIndex(); got != 0 {
 		t.Errorf("selected %d, want the separator to have been left alone", got)
@@ -555,7 +555,7 @@ func TestMenuDrawnTwiceLeavesTheLayerClean(t *testing.T) {
 	}
 
 	// And a real change still gets through.
-	m.HandleKey(press(input.KeyDown, 0))
+	keyTo(t, m, press(input.KeyDown, 0))
 	m.Draw(g.View())
 	if !g.AnyDirty() {
 		t.Error("moving the selection did not change anything on the layer")

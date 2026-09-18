@@ -278,8 +278,8 @@ func (s *server) runTool(name string, args json.RawMessage) (result, *rpcError) 
 		}
 		var out strings.Builder
 		for _, p := range panes {
-			out.WriteString(fmt.Sprintf("%s: %s, %dx%d. %s%s\n",
-				p.ID, p.Label, p.Cols, p.Rows, whatItTakes(p), alsoAllowed(p.May)))
+			fmt.Fprintf(&out, "%s: %s, %dx%d. %s%s\n",
+				p.ID, p.Label, p.Cols, p.Rows, whatItTakes(p), alsoAllowed(p.May))
 		}
 		if err != nil {
 			// The panes that did answer, and then what went wrong.
@@ -411,10 +411,10 @@ func sharedWithYou(panes []Pane) string {
 			" Ask the user to add one, and call list_panes to see it."
 	}
 	var out strings.Builder
-	out.WriteString(fmt.Sprintf("The user has shared %s with you:\n", howManyPanes(len(panes))))
+	fmt.Fprintf(&out, "The user has shared %s with you:\n", howManyPanes(len(panes)))
 	for _, p := range panes {
-		out.WriteString(fmt.Sprintf("\n%s: %s, a %dx%d screen. %s%s",
-			p.ID, p.Label, p.Cols, p.Rows, whatItTakes(p), alsoAllowed(p.May)))
+		fmt.Fprintf(&out, "\n%s: %s, a %dx%d screen. %s%s",
+			p.ID, p.Label, p.Cols, p.Rows, whatItTakes(p), alsoAllowed(p.May))
 	}
 	return out.String() + "\n\nThe user adds panes and takes them out while you work," +
 		" so call list_panes again when you want to know what you have." +

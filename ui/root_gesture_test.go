@@ -33,9 +33,9 @@ func TestRootPressThatOpensADialogHandsItTheGesture(t *testing.T) {
 	r.SetWidget(tree)
 	r.Layout(Rect{Cols: 10, Rows: 4})
 
-	r.HandleMouse(pressAt(1, 0))
-	r.HandleMouse(moveTo(3, 2))
-	r.HandleMouse(releaseAt(3, 2))
+	mouseTo(t, r, pressAt(1, 0))
+	mouseTo(t, r, moveTo(3, 2))
+	mouseTo(t, r, releaseAt(3, 2))
 
 	var moved bool
 	for _, ev := range dialog.seen {
@@ -58,16 +58,16 @@ func TestRootPressThatOpensADialogKeepsTheTreeOutOfIt(t *testing.T) {
 	r.SetWidget(tree)
 	r.Layout(Rect{Cols: 10, Rows: 4})
 
-	r.HandleMouse(pressAt(1, 0))
+	mouseTo(t, r, pressAt(1, 0))
 	before := len(dialog.seen)
-	r.HandleMouse(moveTo(3, 2))
+	mouseTo(t, r, moveTo(3, 2))
 
 	if len(dialog.seen) == before {
 		t.Fatal("the drag reached nobody")
 	}
 	// And the pointer is let go when the button comes up, so the next
 	// press starts afresh rather than being swallowed.
-	r.HandleMouse(releaseAt(3, 2))
+	mouseTo(t, r, releaseAt(3, 2))
 	if r.held.Held() {
 		t.Error("the pointer is still held after the button came up")
 	}

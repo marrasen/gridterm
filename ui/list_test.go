@@ -172,11 +172,11 @@ func TestListOpensOnTheFirstRowThatIsNotAHeader(t *testing.T) {
 func TestListArrowsSkipHeaders(t *testing.T) {
 	l := newTestList(t, panelRows(), 40, 10)
 
-	l.HandleKey(press(input.KeyDown, 0))
+	keyTo(t, l, press(input.KeyDown, 0))
 	if got, _ := l.Selected(); got.Key != "margit-vim" {
 		t.Fatalf("Down went to %v, want the row past the header", got.Key)
 	}
-	l.HandleKey(press(input.KeyUp, 0))
+	keyTo(t, l, press(input.KeyUp, 0))
 	if got, _ := l.Selected(); got.Key != "local-files" {
 		t.Fatalf("Up went to %v, want back past the header", got.Key)
 	}
@@ -186,13 +186,13 @@ func TestListArrowsSkipHeaders(t *testing.T) {
 func TestListStopsAtTheEnds(t *testing.T) {
 	l := newTestList(t, panelRows(), 40, 10)
 	for range 10 {
-		l.HandleKey(press(input.KeyDown, 0))
+		keyTo(t, l, press(input.KeyDown, 0))
 	}
 	if got, _ := l.Selected(); got.Key != "margit-tunnel" {
 		t.Fatalf("selected %v after running down, want the last row", got.Key)
 	}
 	for range 10 {
-		l.HandleKey(press(input.KeyUp, 0))
+		keyTo(t, l, press(input.KeyUp, 0))
 	}
 	if got, _ := l.Selected(); got.Key != "local-files" {
 		t.Fatalf("selected %v after running up, want the first row", got.Key)
@@ -201,11 +201,11 @@ func TestListStopsAtTheEnds(t *testing.T) {
 
 func TestListHomeAndEnd(t *testing.T) {
 	l := newTestList(t, panelRows(), 40, 10)
-	l.HandleKey(press(input.KeyEnd, 0))
+	keyTo(t, l, press(input.KeyEnd, 0))
 	if got, _ := l.Selected(); got.Key != "margit-tunnel" {
 		t.Fatalf("End selected %v", got.Key)
 	}
-	l.HandleKey(press(input.KeyHome, 0))
+	keyTo(t, l, press(input.KeyHome, 0))
 	if got, _ := l.Selected(); got.Key != "local-files" {
 		t.Fatalf("Home selected %v", got.Key)
 	}
@@ -215,7 +215,7 @@ func TestListHomeAndEnd(t *testing.T) {
 // user's place each time would make it impossible to use.
 func TestListKeepsTheSelectionAcrossARebuild(t *testing.T) {
 	l := newTestList(t, panelRows(), 40, 10)
-	l.HandleKey(press(input.KeyDown, 0))
+	keyTo(t, l, press(input.KeyDown, 0))
 	if got, _ := l.Selected(); got.Key != "margit-vim" {
 		t.Fatalf("selected %v", got.Key)
 	}
@@ -241,7 +241,7 @@ func TestListKeepsTheSelectionAcrossARebuild(t *testing.T) {
 // A row that goes takes the selection with it to whatever is left.
 func TestListSelectionSurvivesARowGoing(t *testing.T) {
 	l := newTestList(t, panelRows(), 40, 10)
-	l.HandleKey(press(input.KeyEnd, 0))
+	keyTo(t, l, press(input.KeyEnd, 0))
 
 	rows := panelRows()
 	rows = rows[:len(rows)-1] // the selected one goes
@@ -264,9 +264,9 @@ func TestListActivateRunsTheSelectedRow(t *testing.T) {
 		return nil
 	}
 
-	l.HandleKey(press(input.KeyEnter, 0))
-	l.HandleKey(press(input.KeyDown, 0))
-	l.HandleKey(press(input.KeySpace, 0))
+	keyTo(t, l, press(input.KeyEnter, 0))
+	keyTo(t, l, press(input.KeyDown, 0))
+	keyTo(t, l, press(input.KeySpace, 0))
 
 	if len(ran) != 2 || ran[0] != "local-files" || ran[1] != "margit-vim" {
 		t.Fatalf("ran %v", ran)
@@ -296,7 +296,7 @@ func TestListClickSelectsAndRuns(t *testing.T) {
 	}
 
 	// Row 3 is the terminal under margit.
-	l.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Row: 3})
+	mouseTo(t, l, input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Row: 3})
 	if got, _ := l.Selected(); got.Key != "margit-vim" {
 		t.Fatalf("clicking row 3 selected %v", got.Key)
 	}
@@ -338,7 +338,7 @@ func TestListScrollsOnTheWheel(t *testing.T) {
 	}
 	l := newTestList(t, rows, 20, 5)
 
-	l.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseWheelDown})
+	mouseTo(t, l, input.MouseEvent{Kind: input.MousePress, Button: input.MouseWheelDown})
 	if l.place.top == 0 {
 		t.Fatal("the wheel did not scroll")
 	}
@@ -347,13 +347,13 @@ func TestListScrollsOnTheWheel(t *testing.T) {
 		t.Fatalf("the wheel moved the selection to %v", got.Key)
 	}
 	for range 40 {
-		l.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseWheelDown})
+		mouseTo(t, l, input.MouseEvent{Kind: input.MousePress, Button: input.MouseWheelDown})
 	}
 	if l.place.top > len(rows)-5 {
 		t.Fatalf("scrolled to %d, past the end of %d rows", l.place.top, len(rows))
 	}
 	for range 60 {
-		l.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseWheelUp})
+		mouseTo(t, l, input.MouseEvent{Kind: input.MousePress, Button: input.MouseWheelUp})
 	}
 	if l.place.top != 0 {
 		t.Fatalf("scrolled to %d, past the start", l.place.top)
@@ -369,12 +369,12 @@ func TestListScrollsToKeepTheSelectionInView(t *testing.T) {
 	}
 	l := newTestList(t, rows, 20, 5)
 
-	l.HandleKey(press(input.KeyEnd, 0))
+	keyTo(t, l, press(input.KeyEnd, 0))
 	at := l.SelectedIndex()
 	if at < l.place.top || at >= l.place.top+5 {
 		t.Fatalf("the selection is row %d with rows %d..%d on screen", at, l.place.top, l.place.top+4)
 	}
-	l.HandleKey(press(input.KeyHome, 0))
+	keyTo(t, l, press(input.KeyHome, 0))
 	if l.place.top != 0 {
 		t.Fatalf("after Home the list shows from row %d", l.place.top)
 	}
@@ -387,7 +387,7 @@ func TestListDoesNotStayScrolledPastItsEnd(t *testing.T) {
 		rows = append(rows, ListRow{Text: "row", Key: i})
 	}
 	l := newTestList(t, rows, 20, 5)
-	l.HandleKey(press(input.KeyEnd, 0))
+	keyTo(t, l, press(input.KeyEnd, 0))
 
 	l.SetRows(rows[:6])
 	if l.place.top > 1 {
@@ -467,9 +467,9 @@ func TestListWithNothingInIt(t *testing.T) {
 		t.Fatalf("the selection is row %d in an empty list", l.SelectedIndex())
 	}
 
-	l.HandleKey(press(input.KeyDown, 0))
-	l.HandleKey(press(input.KeyEnter, 0))
-	l.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseWheelDown})
+	keyTo(t, l, press(input.KeyDown, 0))
+	keyTo(t, l, press(input.KeyEnter, 0))
+	mouseTo(t, l, input.MouseEvent{Kind: input.MousePress, Button: input.MouseWheelDown})
 	took, _ := l.HandleMouse(input.MouseEvent{
 		Kind: input.MousePress, Button: input.MouseLeft, Row: 0,
 	})
@@ -500,7 +500,7 @@ func TestListOfOnlyHeaders(t *testing.T) {
 	if _, ok := l.Selected(); ok {
 		t.Fatal("a header is selected")
 	}
-	l.HandleKey(press(input.KeyDown, 0))
+	keyTo(t, l, press(input.KeyDown, 0))
 	if _, ok := l.Selected(); ok {
 		t.Fatal("Down selected a header")
 	}
@@ -566,7 +566,7 @@ func TestListWheelSurvivesARebuild(t *testing.T) {
 	l := newTestList(t, rows, 20, 5)
 
 	for range 3 {
-		l.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseWheelDown})
+		mouseTo(t, l, input.MouseEvent{Kind: input.MousePress, Button: input.MouseWheelDown})
 	}
 	scrolled := l.place.top
 	if scrolled == 0 {
@@ -580,7 +580,7 @@ func TestListWheelSurvivesARebuild(t *testing.T) {
 
 	// Moving the selection still brings it into view: that is what
 	// moving it means.
-	l.HandleKey(press(input.KeyHome, 0))
+	keyTo(t, l, press(input.KeyHome, 0))
 	if l.place.top != 0 {
 		t.Fatalf("Home left the list showing from row %d", l.place.top)
 	}
@@ -595,7 +595,7 @@ func TestListSurvivesAKeyThatCannotBeCompared(t *testing.T) {
 
 	rows := []ListRow{{Text: "one", Key: []int{1}}, {Text: "two", Key: "two"}}
 	l.SetRows(rows)
-	l.HandleKey(press(input.KeyDown, 0))
+	keyTo(t, l, press(input.KeyDown, 0))
 	l.SetRows(rows)
 	if l.Select([]string{"x"}) {
 		t.Fatal("a key that cannot be compared was found")
@@ -673,7 +673,7 @@ func TestListButtonBeatsChoosingTheRow(t *testing.T) {
 	l.OnButton = func(ListRow) error { button++; return nil }
 	l.OnActivate = func(ListRow) error { activate++; return nil }
 
-	l.HandleMouse(input.MouseEvent{
+	mouseTo(t, l, input.MouseEvent{
 		Kind: input.MousePress, Button: input.MouseLeft, Row: 1, Col: 38,
 	})
 	if button != 1 || activate != 0 {
@@ -734,7 +734,7 @@ func TestListTooNarrowForAButton(t *testing.T) {
 	var ran int
 	l.OnButton = func(ListRow) error { ran++; return nil }
 	for col := range 5 {
-		l.HandleMouse(input.MouseEvent{
+		mouseTo(t, l, input.MouseEvent{
 			Kind: input.MousePress, Button: input.MouseLeft, Row: 0, Col: col,
 		})
 	}

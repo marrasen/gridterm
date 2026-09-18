@@ -45,11 +45,6 @@ func (f *filler) HandleMouse(ev input.MouseEvent) (bool, error) {
 	return true, nil
 }
 
-func sizeOf(v grid.View) Size {
-	cols, rows := v.Size()
-	return Size{Cols: cols, Rows: rows}
-}
-
 // rowOf reads a row back as a string. The second half of a double-width
 // character is skipped: it carries no rune of its own.
 func rowOf(g *grid.Grid, y int) string {
@@ -204,7 +199,7 @@ func TestSplitKeysGoToTheFocusedPane(t *testing.T) {
 	}
 
 	s.Focus(b)
-	s.HandleKey(press(input.KeyQ, 0))
+	keyTo(t, s, press(input.KeyQ, 0))
 	if len(b.keys) != 1 {
 		t.Error("the newly focused pane did not get the key")
 	}
@@ -255,7 +250,7 @@ func TestSplitClickFocusesThePaneUnderThePointer(t *testing.T) {
 	s.SetFocus(true)
 	s.Layout(Size{Cols: 11, Rows: 2})
 
-	s.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 8, Row: 1})
+	mouseTo(t, s, input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 8, Row: 1})
 
 	if !b.focused {
 		t.Error("clicking a pane did not focus it")
@@ -550,7 +545,7 @@ func TestSplitWheelDoesNotStealFocus(t *testing.T) {
 	s.SetFocus(true)
 	s.Layout(Size{Cols: 11, Rows: 2})
 
-	s.HandleMouse(input.MouseEvent{
+	mouseTo(t, s, input.MouseEvent{
 		Kind: input.MousePress, Button: input.MouseWheelUp, Col: 8, Row: 1,
 	})
 
@@ -980,9 +975,9 @@ func TestDragStaysWithThePaneItStartedIn(t *testing.T) {
 	s := NewSplit(Columns, a, b)
 	r := rootOver(s, 11, 2)
 
-	r.HandleMouse(pressAt(1, 0))
-	r.HandleMouse(moveTo(9, 1))
-	r.HandleMouse(releaseAt(9, 1))
+	mouseTo(t, r, pressAt(1, 0))
+	mouseTo(t, r, moveTo(9, 1))
+	mouseTo(t, r, releaseAt(9, 1))
 
 	if len(b.seen) != 0 {
 		t.Errorf("the other pane saw %d events during the drag", len(b.seen))
@@ -1007,12 +1002,12 @@ func TestDragSurvivesThePaneBeingSplit(t *testing.T) {
 	outer := NewSplit(Columns, dragging, other)
 	r := rootOver(outer, 21, 2)
 
-	r.HandleMouse(pressAt(1, 0))
+	mouseTo(t, r, pressAt(1, 0))
 	// Splitting the pane that holds the drag, which is legal while a
 	// button is down.
 	outer.Replace(dragging, NewSplit(Columns, dragging, &filler{ch: 'n'}))
-	r.HandleMouse(moveTo(8, 0))
-	r.HandleMouse(releaseAt(8, 0))
+	mouseTo(t, r, moveTo(8, 0))
+	mouseTo(t, r, releaseAt(8, 0))
 
 	if got := kindsOf(dragging); len(got) != 3 || got[2] != input.MouseRelease {
 		t.Errorf("the dragging pane saw %v, want its press, move and release", got)
@@ -1039,7 +1034,7 @@ func TestDragOnAPaneThatGoesAwayReachesNobody(t *testing.T) {
 	outer := NewSplit(Columns, other, inner)
 	r := rootOver(outer, 11, 4)
 
-	r.HandleMouse(pressAt(8, 3))
+	mouseTo(t, r, pressAt(8, 3))
 	if len(dying.seen) != 1 {
 		t.Fatalf("the press reached %d events, want 1", len(dying.seen))
 	}
@@ -1048,7 +1043,7 @@ func TestDragOnAPaneThatGoesAwayReachesNobody(t *testing.T) {
 	if _, ok := Detach(outer, dying); !ok {
 		t.Fatal("Detach refused")
 	}
-	r.HandleMouse(moveTo(1, 0))
+	mouseTo(t, r, moveTo(1, 0))
 	handled, err := r.HandleMouse(releaseAt(1, 0))
 
 	if err != nil {
@@ -1063,7 +1058,7 @@ func TestDragOnAPaneThatGoesAwayReachesNobody(t *testing.T) {
 		}
 	}
 	// And the pointer is free again for the next press.
-	r.HandleMouse(pressAt(1, 0))
+	mouseTo(t, r, pressAt(1, 0))
 	if got := kindsOf(other); len(got) == 0 || got[len(got)-1] != input.MousePress {
 		t.Errorf("the surviving pane saw %v, want a fresh press to reach it", got)
 	}
@@ -1088,8 +1083,8 @@ func TestClickOnADividerIsHeldByTheSplit(t *testing.T) {
 	}
 
 	// And once the button comes up, the next press goes where it landed.
-	r.HandleMouse(releaseAt(5, 0))
-	r.HandleMouse(pressAt(8, 0))
+	mouseTo(t, r, releaseAt(5, 0))
+	mouseTo(t, r, pressAt(8, 0))
 
 	if len(b.seen) != 1 {
 		t.Errorf("the pane under the second press saw %d events, want 1", len(b.seen))
@@ -1231,15 +1226,15 @@ func TestSplitDividerCanBeDragged(t *testing.T) {
 	if took, _ := r.HandleMouse(pressAt(10, 1)); !took {
 		t.Fatal("a press on the divider was not taken, so no drag can follow")
 	}
-	r.HandleMouse(moveTo(5, 1))
+	mouseTo(t, r, moveTo(5, 1))
 
 	if a.size.Cols != 5 || b.size.Cols != 15 {
 		t.Fatalf("the halves are %d and %d wide, want 5 and 15", a.size.Cols, b.size.Cols)
 	}
-	r.HandleMouse(releaseAt(5, 1))
+	mouseTo(t, r, releaseAt(5, 1))
 
 	// And a move once the button is up is nothing to do with the divider.
-	r.HandleMouse(moveTo(17, 1))
+	mouseTo(t, r, moveTo(17, 1))
 	if a.size.Cols != 5 {
 		t.Fatalf("the first half is %d wide after the button came up, want 5", a.size.Cols)
 	}
@@ -1252,9 +1247,9 @@ func TestSplitDividerDragsTheOtherWayToo(t *testing.T) {
 	s := NewSplit(Rows, top, bottom)
 	r := rootOver(s, 8, 21)
 
-	r.HandleMouse(pressAt(3, 10))
-	r.HandleMouse(moveTo(3, 15))
-	r.HandleMouse(releaseAt(3, 15))
+	mouseTo(t, r, pressAt(3, 10))
+	mouseTo(t, r, moveTo(3, 15))
+	mouseTo(t, r, releaseAt(3, 15))
 
 	if top.size.Rows != 15 || bottom.size.Rows != 5 {
 		t.Fatalf("the halves are %d and %d rows tall, want 15 and 5", top.size.Rows, bottom.size.Rows)
@@ -1269,13 +1264,13 @@ func TestSplitDragKeepsACellForEachHalf(t *testing.T) {
 	s := NewSplit(Columns, a, b)
 	r := rootOver(s, 21, 4)
 
-	r.HandleMouse(pressAt(10, 1))
-	r.HandleMouse(moveTo(-99, 1))
+	mouseTo(t, r, pressAt(10, 1))
+	mouseTo(t, r, moveTo(-99, 1))
 	if a.size.Cols != 1 || b.size.Cols != 19 {
 		t.Fatalf("dragged off the left the halves are %d and %d wide, want 1 and 19",
 			a.size.Cols, b.size.Cols)
 	}
-	r.HandleMouse(moveTo(999, 1))
+	mouseTo(t, r, moveTo(999, 1))
 	if a.size.Cols != 19 || b.size.Cols != 1 {
 		t.Fatalf("dragged off the right the halves are %d and %d wide, want 19 and 1",
 			a.size.Cols, b.size.Cols)
@@ -1291,11 +1286,11 @@ func TestSplitDragKeepsACellForEachHalf(t *testing.T) {
 	// The root clamps the pointer into the split's area on the way in.
 	// The weight keeps its own range anyway, for a caller that does not:
 	// it is a share from 0 to 1 whatever point it is handed.
-	s.HandleMouse(moveTo(999, 1))
+	mouseTo(t, s, moveTo(999, 1))
 	if s.Weight > 1 {
 		t.Errorf("weight = %v, want no more than 1", s.Weight)
 	}
-	s.HandleMouse(moveTo(-99, 1))
+	mouseTo(t, s, moveTo(-99, 1))
 	if s.Weight < 0 {
 		t.Errorf("weight = %v, want no less than 0", s.Weight)
 	}
@@ -1309,9 +1304,9 @@ func TestSplitCancelGestureEndsADrag(t *testing.T) {
 	s := NewSplit(Columns, a, b)
 	r := rootOver(s, 21, 4)
 
-	r.HandleMouse(pressAt(10, 1))
+	mouseTo(t, r, pressAt(10, 1))
 	s.CancelGesture()
-	r.HandleMouse(moveTo(4, 1))
+	mouseTo(t, r, moveTo(4, 1))
 
 	if s.Weight != 0.5 || a.size.Cols != 10 {
 		t.Fatalf("weight = %v and the first half is %d wide, want the drag to have stopped",
@@ -1327,15 +1322,15 @@ func TestSplitWheelDuringADragDoesNotMoveIt(t *testing.T) {
 	s := NewSplit(Columns, a, b)
 	r := rootOver(s, 21, 4)
 
-	r.HandleMouse(pressAt(10, 1))
-	r.HandleMouse(wheelAt(2, 1))
+	mouseTo(t, r, pressAt(10, 1))
+	mouseTo(t, r, wheelAt(2, 1))
 
 	if s.Weight != 0.5 || a.size.Cols != 10 {
 		t.Fatalf("weight = %v and the first half is %d wide, want the wheel ignored",
 			s.Weight, a.size.Cols)
 	}
 	// The drag is still on: the notch did not end it either.
-	r.HandleMouse(moveTo(5, 1))
+	mouseTo(t, r, moveTo(5, 1))
 	if a.size.Cols != 5 {
 		t.Fatalf("the first half is %d wide, want the drag to carry on after the notch", a.size.Cols)
 	}
@@ -1349,9 +1344,9 @@ func TestSplitPressBesideTheDividerStillReachesThePane(t *testing.T) {
 	s := NewSplit(Columns, a, b)
 	r := rootOver(s, 21, 4)
 
-	r.HandleMouse(pressAt(9, 1))
-	r.HandleMouse(moveTo(9, 2))
-	r.HandleMouse(releaseAt(9, 2))
+	mouseTo(t, r, pressAt(9, 1))
+	mouseTo(t, r, moveTo(9, 2))
+	mouseTo(t, r, releaseAt(9, 2))
 
 	if got := kindsOf(a); len(got) != 3 {
 		t.Fatalf("the pane beside the divider saw %v, want its press, move and release", got)
@@ -1369,9 +1364,9 @@ func TestSplitWeightSurvivesReplace(t *testing.T) {
 	s := NewSplit(Columns, a, b)
 	r := rootOver(s, 21, 4)
 
-	r.HandleMouse(pressAt(10, 1))
-	r.HandleMouse(moveTo(5, 1))
-	r.HandleMouse(releaseAt(5, 1))
+	mouseTo(t, r, pressAt(10, 1))
+	mouseTo(t, r, moveTo(5, 1))
+	mouseTo(t, r, releaseAt(5, 1))
 	want := s.Weight
 
 	next := &filler{ch: 'c'}
@@ -1402,9 +1397,9 @@ func TestSplitDragRedrawsBothHalvesAndThenSettles(t *testing.T) {
 	g.ClearDirty()
 
 	a.drawn, b.drawn = false, false
-	r.HandleMouse(pressAt(10, 1))
-	r.HandleMouse(moveTo(5, 1))
-	r.HandleMouse(releaseAt(5, 1))
+	mouseTo(t, r, pressAt(10, 1))
+	mouseTo(t, r, moveTo(5, 1))
+	mouseTo(t, r, releaseAt(5, 1))
 	s.Draw(g.View())
 
 	if !a.drawn || !b.drawn {
@@ -1445,20 +1440,20 @@ func TestSplitDragIgnoresAnotherButtonComingUp(t *testing.T) {
 	s := NewSplit(Columns, a, b)
 	r := rootOver(s, 21, 4)
 
-	r.HandleMouse(pressAt(10, 1))
-	r.HandleMouse(moveTo(8, 1))
+	mouseTo(t, r, pressAt(10, 1))
+	mouseTo(t, r, moveTo(8, 1))
 	for _, ev := range rightTap(8, 1) {
-		r.HandleMouse(ev)
+		mouseTo(t, r, ev)
 	}
-	r.HandleMouse(moveTo(5, 1))
+	mouseTo(t, r, moveTo(5, 1))
 
 	if a.size.Cols != 5 || b.size.Cols != 15 {
 		t.Fatalf("the halves are %d and %d wide, want the drag to carry on to 5 and 15",
 			a.size.Cols, b.size.Cols)
 	}
 	// And the left button still ends it.
-	r.HandleMouse(releaseAt(5, 1))
-	r.HandleMouse(moveTo(15, 1))
+	mouseTo(t, r, releaseAt(5, 1))
+	mouseTo(t, r, moveTo(15, 1))
 	if a.size.Cols != 5 {
 		t.Fatalf("the first half is %d wide after the button came up, want 5", a.size.Cols)
 	}
@@ -1486,8 +1481,8 @@ func TestSplitKeepsThePressThatMovesTheKeys(t *testing.T) {
 		t.Errorf("the half was handed %d presses as well, want none", len(b.clicks))
 	}
 
-	r.HandleMouse(releaseAt(15, 1))
-	r.HandleMouse(pressAt(15, 1))
+	mouseTo(t, r, releaseAt(15, 1))
+	mouseTo(t, r, pressAt(15, 1))
 	if len(b.clicks) == 0 {
 		t.Error("the second press was kept as well, so the half is never clicked")
 	}
@@ -1502,7 +1497,7 @@ func TestSplitDeliversThePressToAChildThatWantsIt(t *testing.T) {
 	r := rootOver(s, 21, 4)
 	s.SetFocus(true)
 
-	r.HandleMouse(pressAt(15, 1))
+	mouseTo(t, r, pressAt(15, 1))
 
 	if s.Focused() != Widget(b) {
 		t.Error("the press did not move the keys to the half it landed in")

@@ -97,6 +97,15 @@ func (r *MouseReader) Poll(at func(px, py int) (col, row int)) []input.MouseEven
 func Mods() input.Mods { return currentMods() }
 
 // currentMods reads the modifier keys.
+//
+// It reads nothing on Windows. IsKeyPressed is deprecated in the ebiten
+// this builds against and answers from a map only the browser and
+// mobile backends fill, so every mouse event here carries no modifier
+// at all. Written up in TODO.md under "The modifier keys are dead on
+// the mouse"; the answer is the modifiers that AppendInputEvents
+// already carries for the keyboard.
+//
+//nolint:staticcheck // deprecated, and the replacement is the fix above
 func currentMods() input.Mods {
 	var m input.Mods
 	if ebiten.IsKeyPressed(ebiten.KeyShift) {

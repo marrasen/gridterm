@@ -364,7 +364,7 @@ func TestMenubarClickOnAChipPicksTheOneUnderIt(t *testing.T) {
 func TestMenubarClickOnAChipWithAMenuOpenClosesItAndRuns(t *testing.T) {
 	b, st, ran := newChipBar(t, "ready")
 	drawBarOn(b, 40, 20)
-	b.HandleMouse(pressAt(1, 0))
+	mouseTo(t, b, pressAt(1, 0))
 
 	handled, err := st.top().HandleMouse(pressAt(36, 0))
 
@@ -385,7 +385,7 @@ func TestMenubarClickOnAChipWithAMenuOpenClosesItAndRuns(t *testing.T) {
 	}
 
 	// And the same press handed to the bar itself.
-	b.HandleMouse(pressAt(1, 0))
+	mouseTo(t, b, pressAt(1, 0))
 	handled, err = b.HandleMouse(pressAt(36, 0))
 	if err != nil {
 		t.Fatalf("press: %v", err)
@@ -513,7 +513,7 @@ func TestMenubarChipErrorThroughAnOpenMenuReachesTheCaller(t *testing.T) {
 	b, st, _ := newChipBar(t, "ready")
 	b.Chips[0].Do = func() error { return boom }
 	drawBarOn(b, 40, 20)
-	b.HandleMouse(pressAt(1, 0))
+	mouseTo(t, b, pressAt(1, 0))
 
 	_, err := st.top().HandleMouse(pressAt(36, 0))
 

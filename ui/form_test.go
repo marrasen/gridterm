@@ -94,11 +94,11 @@ func TestFormTypingGoesToTheFocusedField(t *testing.T) {
 	f := tf.form
 
 	for _, r := range "margit" {
-		f.HandleKey(input.Event{Kind: input.Text, Rune: r, NormalText: true})
+		keyTo(t, f, input.Event{Kind: input.Text, Rune: r, NormalText: true})
 	}
-	f.HandleKey(press(input.KeyTab, 0))
+	keyTo(t, f, press(input.KeyTab, 0))
 	for _, r := range "marcus" {
-		f.HandleKey(input.Event{Kind: input.Text, Rune: r, NormalText: true})
+		keyTo(t, f, input.Event{Kind: input.Text, Rune: r, NormalText: true})
 	}
 
 	if got := f.Fields()[0].Text(); got != "margit" {
@@ -119,7 +119,7 @@ func TestFormTabMovesThroughFieldsThenButtons(t *testing.T) {
 		button bool
 	}{{1, false}, {0, true}, {1, true}, {0, false}}
 	for i, w := range want {
-		f.HandleKey(press(input.KeyTab, 0))
+		keyTo(t, f, press(input.KeyTab, 0))
 		at, isButton := f.Focused()
 		if at != w.at || isButton != w.button {
 			t.Fatalf("after %d tabs, focus is %d (button %v), want %d (button %v)",
@@ -131,7 +131,7 @@ func TestFormTabMovesThroughFieldsThenButtons(t *testing.T) {
 func TestFormShiftTabGoesBack(t *testing.T) {
 	tf := newTestForm(t)
 	f := tf.form
-	f.HandleKey(press(input.KeyTab, input.ModShift))
+	keyTo(t, f, press(input.KeyTab, input.ModShift))
 	at, isButton := f.Focused()
 	if !isButton || at != 1 {
 		t.Fatalf("Shift+Tab from the first field went to %d (button %v), want the last button",
@@ -146,7 +146,7 @@ func TestFormMovesTheCaretWithTheFocus(t *testing.T) {
 	f := tf.form
 	f.SetFocus(true)
 
-	f.HandleKey(press(input.KeyTab, 0))
+	keyTo(t, f, press(input.KeyTab, 0))
 	if f.Fields()[0].Focused() {
 		t.Error("the first field kept the caret after focus moved on")
 	}
@@ -154,7 +154,7 @@ func TestFormMovesTheCaretWithTheFocus(t *testing.T) {
 		t.Error("the second field did not take the caret")
 	}
 
-	f.HandleKey(press(input.KeyTab, 0)) // onto a button
+	keyTo(t, f, press(input.KeyTab, 0)) // onto a button
 	for i, fld := range f.Fields() {
 		if fld.Focused() {
 			t.Errorf("field %d still has the caret while a button is focused", i)
@@ -170,7 +170,7 @@ func TestFormMovesTheCaretWithTheFocus(t *testing.T) {
 // for. Getting there should not need four tabs.
 func TestFormEnterFromAFieldRunsTheFirstButton(t *testing.T) {
 	tf := newTestForm(t)
-	tf.form.HandleKey(press(input.KeyEnter, 0))
+	keyTo(t, tf.form, press(input.KeyEnter, 0))
 	if len(tf.ran) != 1 || tf.ran[0] != "connect" {
 		t.Fatalf("Enter ran %q, want the first button", tf.ran)
 	}
@@ -182,10 +182,10 @@ func TestFormEnterFromAFieldRunsTheFirstButton(t *testing.T) {
 func TestFormEnterOnAButtonRunsThatButton(t *testing.T) {
 	tf := newTestForm(t)
 	f := tf.form
-	f.HandleKey(press(input.KeyTab, 0))
-	f.HandleKey(press(input.KeyTab, 0))
-	f.HandleKey(press(input.KeyTab, 0)) // the second button
-	f.HandleKey(press(input.KeyEnter, 0))
+	keyTo(t, f, press(input.KeyTab, 0))
+	keyTo(t, f, press(input.KeyTab, 0))
+	keyTo(t, f, press(input.KeyTab, 0)) // the second button
+	keyTo(t, f, press(input.KeyEnter, 0))
 	if len(tf.ran) != 1 || tf.ran[0] != "cancel" {
 		t.Fatalf("Enter ran %q, want the focused button", tf.ran)
 	}
@@ -197,7 +197,7 @@ func TestFormSpaceTypesInAFieldAndPressesAButton(t *testing.T) {
 	tf := newTestForm(t)
 	f := tf.form
 
-	f.HandleKey(input.Event{Kind: input.Text, Rune: ' ', NormalText: true})
+	keyTo(t, f, input.Event{Kind: input.Text, Rune: ' ', NormalText: true})
 	if got := f.Fields()[0].Text(); got != " " {
 		t.Fatalf("a space in a field gave %q, want it typed", got)
 	}
@@ -205,9 +205,9 @@ func TestFormSpaceTypesInAFieldAndPressesAButton(t *testing.T) {
 		t.Fatalf("a space in a field ran %q", tf.ran)
 	}
 
-	f.HandleKey(press(input.KeyTab, 0))
-	f.HandleKey(press(input.KeyTab, 0))
-	f.HandleKey(press(input.KeySpace, 0))
+	keyTo(t, f, press(input.KeyTab, 0))
+	keyTo(t, f, press(input.KeyTab, 0))
+	keyTo(t, f, press(input.KeySpace, 0))
 	if len(tf.ran) != 1 || tf.ran[0] != "connect" {
 		t.Fatalf("Space on a button ran %q, want the button", tf.ran)
 	}
@@ -221,7 +221,7 @@ func TestFormKeepsTheFormOpenWhenAButtonFails(t *testing.T) {
 	f := tf.form
 	f.Fields()[0].SetText("margit")
 
-	f.HandleKey(press(input.KeyEnter, 0))
+	keyTo(t, f, press(input.KeyEnter, 0))
 	if tf.closed != 0 {
 		t.Fatalf("the form closed after its button failed")
 	}
@@ -299,7 +299,7 @@ func TestFormAKeptButtonThatWorksClearsTheError(t *testing.T) {
 
 func TestFormEscapeCloses(t *testing.T) {
 	tf := newTestForm(t)
-	tf.form.HandleKey(press(input.KeyEscape, 0))
+	keyTo(t, tf.form, press(input.KeyEscape, 0))
 	if tf.closed != 1 {
 		t.Fatalf("Escape closed the form %d times, want 1", tf.closed)
 	}
@@ -316,7 +316,7 @@ func TestFormClickOnAFieldMovesTheFocus(t *testing.T) {
 
 	// The second row of fields.
 	y := box.Y + f.rowsTop() + 1
-	f.HandleMouse(input.MouseEvent{
+	mouseTo(t, f, input.MouseEvent{
 		Kind: input.MousePress, Button: input.MouseLeft,
 		Col: box.X + f.fieldX(), Row: y,
 	})
@@ -335,7 +335,7 @@ func TestFormClickPutsTheCaretWhereItLanded(t *testing.T) {
 	drawForm(f, 60, 24)
 	box := f.Box()
 
-	f.HandleMouse(input.MouseEvent{
+	mouseTo(t, f, input.MouseEvent{
 		Kind: input.MousePress, Button: input.MouseLeft,
 		Col: box.X + f.fieldX() + 6, Row: box.Y + f.rowsTop(),
 	})
@@ -351,7 +351,7 @@ func TestFormClickOnAButtonRunsIt(t *testing.T) {
 	box := f.Box()
 
 	at := f.buttonCols()[1]
-	f.HandleMouse(input.MouseEvent{
+	mouseTo(t, f, input.MouseEvent{
 		Kind: input.MousePress, Button: input.MouseLeft,
 		Col: box.X + at, Row: box.Y + f.buttonsRow(),
 	})
@@ -365,7 +365,7 @@ func TestFormClickOutsideCloses(t *testing.T) {
 	f := tf.form
 	drawForm(f, 60, 24)
 
-	f.HandleMouse(input.MouseEvent{
+	mouseTo(t, f, input.MouseEvent{
 		Kind: input.MousePress, Button: input.MouseLeft, Col: 0, Row: 0,
 	})
 	if tf.closed != 1 {
@@ -512,16 +512,16 @@ func TestFormWithNoRoomForItsFieldsDoesNotOpen(t *testing.T) {
 
 	// And it takes nothing but Escape while it cannot be seen.
 	for _, r := range "secret" {
-		f.HandleKey(input.Event{Kind: input.Text, Rune: r, NormalText: true})
+		keyTo(t, f, input.Event{Kind: input.Text, Rune: r, NormalText: true})
 	}
 	if got := f.Fields()[0].Text(); got != "" {
 		t.Errorf("an invisible dialog took %q", got)
 	}
-	f.HandleKey(press(input.KeyEnter, 0))
+	keyTo(t, f, press(input.KeyEnter, 0))
 	if len(tf.ran) != 0 {
 		t.Errorf("an invisible dialog ran %q", tf.ran)
 	}
-	f.HandleKey(press(input.KeyEscape, 0))
+	keyTo(t, f, press(input.KeyEscape, 0))
 	if tf.closed != 1 {
 		t.Errorf("Escape closed an invisible dialog %d times, want 1", tf.closed)
 	}
@@ -586,12 +586,12 @@ func TestFormIgnoresAHeldKeyOnAButton(t *testing.T) {
 	f := tf.form
 	f.FocusButton(0)
 
-	f.HandleKey(input.Event{Kind: input.KeyRepeat, Key: input.KeyEnter})
-	f.HandleKey(input.Event{Kind: input.KeyRepeat, Key: input.KeySpace})
+	keyTo(t, f, input.Event{Kind: input.KeyRepeat, Key: input.KeyEnter})
+	keyTo(t, f, input.Event{Kind: input.KeyRepeat, Key: input.KeySpace})
 	if len(tf.ran) != 0 {
 		t.Fatalf("a held key ran %q", tf.ran)
 	}
-	f.HandleKey(press(input.KeyEnter, 0))
+	keyTo(t, f, press(input.KeyEnter, 0))
 	if len(tf.ran) != 1 {
 		t.Fatalf("a fresh press ran %q, want the button once", tf.ran)
 	}
@@ -612,7 +612,7 @@ func TestFormFocusButtonChoosesWhereItOpens(t *testing.T) {
 	if !isButton || at != 1 {
 		t.Fatalf("focus is %d (button %v), want the second button", at, isButton)
 	}
-	f.HandleKey(press(input.KeyEnter, 0))
+	keyTo(t, f, press(input.KeyEnter, 0))
 	if len(ran) != 1 || ran[0] != "cancel" {
 		t.Fatalf("Enter ran %q, want the focused button", ran)
 	}
@@ -671,7 +671,7 @@ func TestFormClickLandsOnTheFieldThatWasDrawn(t *testing.T) {
 			t.Fatalf("%dx%d: the User label was not drawn", size.Cols, size.Rows)
 		}
 
-		f.HandleMouse(input.MouseEvent{
+		mouseTo(t, f, input.MouseEvent{
 			Kind: input.MousePress, Button: input.MouseLeft,
 			Col: box.X + f.fieldX(), Row: want,
 		})
@@ -704,7 +704,7 @@ func TestFormClickLandsOnTheButtonThatWasDrawn(t *testing.T) {
 	}
 
 	at := f.buttonCols()[1]
-	f.HandleMouse(input.MouseEvent{
+	mouseTo(t, f, input.MouseEvent{
 		Kind: input.MousePress, Button: input.MouseLeft,
 		Col: box.X + at, Row: want,
 	})
@@ -746,7 +746,7 @@ func TestFormClickLandsWhenHintLinesAreElided(t *testing.T) {
 	if want < 0 {
 		t.Fatal("the Password label was not drawn")
 	}
-	f.HandleMouse(input.MouseEvent{
+	mouseTo(t, f, input.MouseEvent{
 		Kind: input.MousePress, Button: input.MouseLeft,
 		Col: box.X + f.fieldX(), Row: want,
 	})
@@ -820,7 +820,7 @@ func TestFormWillNotPressAButtonItCannotShow(t *testing.T) {
 	}
 
 	// And Tab steps over it, onto the one that is drawn.
-	f.HandleKey(press(input.KeyTab, 0))
+	keyTo(t, f, press(input.KeyTab, 0))
 	at, isButton := f.Focused()
 	if !isButton {
 		t.Fatalf("Tab left the focus on field %d", at)
@@ -1172,8 +1172,8 @@ func TestAFormSwapsItsButtons(t *testing.T) {
 		t.Fatalf("the dialog draws\n%s\nwant the buttons it was given", got)
 	}
 	// And the new buttons are what a press runs.
-	f.HandleKey(press(input.KeyTab, 0))
-	f.HandleKey(press(input.KeyEnter, 0))
+	keyTo(t, f, press(input.KeyTab, 0))
+	keyTo(t, f, press(input.KeyEnter, 0))
 	if ran != "repeat" {
 		t.Fatalf("pressing the first button ran %q", ran)
 	}

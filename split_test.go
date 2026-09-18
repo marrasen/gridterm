@@ -735,9 +735,9 @@ func TestAFilePaneIsNotOfferedToMoveIntoASplit(t *testing.T) {
 }
 
 // focusedTerminalAnywhere returns any terminal the window holds.
-func (a *testApp) focusedTerminalAnywhere(t *testing.T) *term.Terminal {
+func (ta *testApp) focusedTerminalAnywhere(t *testing.T) *term.Terminal {
 	t.Helper()
-	for pane := range a.panes {
+	for pane := range ta.panes {
 		return pane
 	}
 	t.Fatal("the window has no terminal")

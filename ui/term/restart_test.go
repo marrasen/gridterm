@@ -77,13 +77,13 @@ func TestRestartKeepsTheTranscript(t *testing.T) {
 // to it rather than to the one that ended.
 func TestRestartCarriesTheNewSessionBothWays(t *testing.T) {
 	term, f := newTestTerm(t, 20, 4, Config{})
-	term.HandleKey(input.Event{Kind: input.Text, Rune: 'a', NormalText: true})
+	keyTo(t, term, input.Event{Kind: input.Text, Rune: 'a', NormalText: true})
 	waitFor(t, func() bool { return f.sentText() == "a" })
 	endProgram(t, term, f)
 
 	next := restart(t, term)
 	next.feed(t, term, "hello")
-	term.HandleKey(input.Event{Kind: input.Text, Rune: 'b', NormalText: true})
+	keyTo(t, term, input.Event{Kind: input.Text, Rune: 'b', NormalText: true})
 	waitFor(t, func() bool { return next.sentText() == "b" })
 
 	if got := rowText(draw(term, 20, 4), 0); got != "hello" {
@@ -196,7 +196,7 @@ func TestRestartIsRefusedWhileTheProgramRuns(t *testing.T) {
 	}
 
 	f.feed(t, term, "carrying on")
-	term.HandleKey(input.Event{Kind: input.Text, Rune: 'a', NormalText: true})
+	keyTo(t, term, input.Event{Kind: input.Text, Rune: 'a', NormalText: true})
 	waitFor(t, func() bool { return f.sentText() == "a" })
 
 	if got := rowText(draw(term, 20, 4), 0); got != "carrying on" {
@@ -245,7 +245,7 @@ func TestTwoRestartsInARow(t *testing.T) {
 
 	third := restart(t, term)
 	third.feed(t, term, "third\r\n")
-	term.HandleKey(input.Event{Kind: input.Text, Rune: 'c', NormalText: true})
+	keyTo(t, term, input.Event{Kind: input.Text, Rune: 'c', NormalText: true})
 	waitFor(t, func() bool { return third.sentText() == "c" })
 
 	text := term.TextLines(40)
@@ -314,7 +314,7 @@ func TestRestartLeavesNothingRunning(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 	t.Cleanup(func() { _ = term.Close() })
-	term.HandleKey(input.Event{Kind: input.Text, Rune: 'a', NormalText: true})
+	keyTo(t, term, input.Event{Kind: input.Text, Rune: 'a', NormalText: true})
 	waitFor(t, func() bool { return old.sentText() == "a" })
 	endProgram(t, term, old.fakeSession)
 
@@ -325,7 +325,7 @@ func TestRestartLeavesNothingRunning(t *testing.T) {
 	// Anything the restarted terminal does must reach the new session
 	// alone.
 	next.feed(t, term, "hello")
-	term.HandleKey(input.Event{Kind: input.Text, Rune: 'b', NormalText: true})
+	keyTo(t, term, input.Event{Kind: input.Text, Rune: 'b', NormalText: true})
 	waitFor(t, func() bool { return next.sentText() == "b" })
 	time.Sleep(20 * time.Millisecond)
 
@@ -368,7 +368,7 @@ func TestRestartDropsInputTypedAtTheProgramThatWent(t *testing.T) {
 
 	next := restart(t, term)
 	next.feed(t, term, "$ ")
-	term.HandleKey(input.Event{Kind: input.Text, Rune: 'x', NormalText: true})
+	keyTo(t, term, input.Event{Kind: input.Text, Rune: 'x', NormalText: true})
 	waitFor(t, func() bool { return next.sentText() == "x" })
 
 	if got := next.sentText(); got != "x" {
@@ -555,7 +555,7 @@ func TestAProgramStillRunningDoesNotHoldUpTheNotice(t *testing.T) {
 
 	// The far end closed its input under a program that is still going.
 	sess.setWriteErr(errors.New("the far end closed its input"))
-	term.HandleKey(input.Event{Kind: input.Text, Rune: 'a', NormalText: true})
+	keyTo(t, term, input.Event{Kind: input.Text, Rune: 'a', NormalText: true})
 
 	waitFor(t, func() bool { return told.Load() > 0 })
 	if _, over := term.Ending(); over {

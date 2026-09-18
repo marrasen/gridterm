@@ -55,15 +55,6 @@ func mustScan(t *testing.T, dirs []string) []Family {
 	return fams
 }
 
-func findFamily(fams []Family, name string) (Family, bool) {
-	for _, f := range fams {
-		if f.Name == name {
-			return f, true
-		}
-	}
-	return Family{}, false
-}
-
 func TestScanGroupsAFamilysFourStyles(t *testing.T) {
 	dir := fontDir(t, goMonoFiles())
 

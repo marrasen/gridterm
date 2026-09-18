@@ -105,7 +105,9 @@ func (a *app) askAgainIfMoreIsKnown(t *term.Terminal) {
 type endedHow int
 
 const (
-	// ranAndStopped is a program that ran and then stopped on its own.
+	// ranAndStopped is a program that ran and stopped, which is the zero
+	// value and so has to stay first: a pane that ended with nothing
+	// else said about it means this one.
 	ranAndStopped endedHow = iota
 
 	// cutOff is a program whose connection went while it was running, so

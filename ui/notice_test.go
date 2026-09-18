@@ -574,7 +574,7 @@ func TestCleanTextKeepsLineBreaksAndDropsTheRest(t *testing.T) {
 		{"one\rtwo", "onetwo"},
 		{"one\ttwo", "one two"},
 		{"one\x07\x1b[31mtwo", "one[31mtwo"},
-		{"onetwo", "onetwo"},
+		{"one\u009btwo", "onetwo"},
 		{"first\n\nsecond", "first\n\nsecond"},
 		{"plain å text", "plain å text"},
 	} {

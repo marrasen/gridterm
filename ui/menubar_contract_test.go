@@ -25,7 +25,7 @@ func TestMenubarDrawnTwiceLeavesTheLayerClean(t *testing.T) {
 	}
 
 	// And a real change still gets through.
-	b.HandleMouse(pressAt(1, 0))
+	mouseTo(t, b, pressAt(1, 0))
 	b.Draw(g.View())
 	if !g.RowDirty(0) {
 		t.Error("opening a menu did not change the bar")

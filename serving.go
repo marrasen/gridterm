@@ -130,10 +130,6 @@ func (s *serving) on() bool { return s.server != nil }
 // addr is the address the window is served on, empty when it is not.
 func (s *serving) addr() string { return s.at }
 
-// joined is how many windows are working in this one, which is one row
-// each.
-func (s *serving) joined() int { return len(s.rows) }
-
 // changes counts the windows that have come and gone, for a caller
 // telling one client from another under the same name.
 func (s *serving) changes() uint64 { return s.came }
@@ -304,8 +300,7 @@ func (s *serving) opens() serve.Snapshot { return s.openNow.get() }
 // at its next start, by offerToServeAgain.
 func (a *app) openServing() error {
 	if a.serving.on() {
-		a.showServing()
-		return nil
+		return a.showServing()
 	}
 	paths, err := a.serving.where()
 	if err != nil {

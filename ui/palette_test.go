@@ -182,7 +182,6 @@ func TestPaletteBackspace(t *testing.T) {
 	p, _ := newTestPalette(t, testCommands("Copy", "Paste"))
 	typeInto(t, p, "co")
 
-	press(input.KeyBackspace, 0)
 	if _, err := p.HandleKey(press(input.KeyBackspace, 0)); err != nil {
 		t.Fatalf("backspace: %v", err)
 	}
@@ -204,13 +203,13 @@ func TestPaletteMoveStopsAtTheEnds(t *testing.T) {
 	p, _ := newTestPalette(t, testCommands("One", "Two", "Three"))
 
 	// Up from the first stays on the first.
-	p.HandleKey(press(input.KeyUp, 0))
+	keyTo(t, p, press(input.KeyUp, 0))
 	if got, _ := p.Selected(); got.ID != matchIDs(p.Matches())[0] {
 		t.Error("moving up from the first line went somewhere")
 	}
 
 	for range 10 {
-		p.HandleKey(press(input.KeyDown, 0))
+		keyTo(t, p, press(input.KeyDown, 0))
 	}
 	last := p.Matches()[len(p.Matches())-1].Command.ID
 	if got, _ := p.Selected(); got.ID != last {
@@ -474,7 +473,7 @@ func TestPaletteWithNoCommandsIsSafe(t *testing.T) {
 	if *closed != 1 {
 		t.Error("Enter did not close the dialog")
 	}
-	p.HandleKey(press(input.KeyDown, 0))
+	keyTo(t, p, press(input.KeyDown, 0))
 	p.Draw(grid.New(40, 12, fg, bg).View())
 }
 
@@ -612,11 +611,11 @@ func TestPaletteScrollsToKeepTheSelectionInView(t *testing.T) {
 		if !strings.Contains(rowOf(g, p.lines().Y+p.place.at-p.place.top+1), want.Title) {
 			t.Fatalf("line %d: %q is not drawn where the selection is", i, want.Title)
 		}
-		p.HandleKey(press(input.KeyDown, 0))
+		keyTo(t, p, press(input.KeyDown, 0))
 	}
 	// And back up to the top again.
 	for i := 0; i < len(p.Matches()); i++ {
-		p.HandleKey(press(input.KeyUp, 0))
+		keyTo(t, p, press(input.KeyUp, 0))
 	}
 	if p.place.top != 0 || p.place.at != 0 {
 		t.Errorf("back at the top, top = %d and at = %d, want 0 and 0", p.place.top, p.place.at)
@@ -633,8 +632,8 @@ func (p *Palette) drawsSelection() bool {
 // answer: the line the old selection sat on means nothing now.
 func TestPaletteTypingSnapsBackToTheTop(t *testing.T) {
 	p, _ := newTestPalette(t, testCommands("Copy", "Close pane", "Cut"))
-	p.HandleKey(press(input.KeyDown, 0))
-	p.HandleKey(press(input.KeyDown, 0))
+	keyTo(t, p, press(input.KeyDown, 0))
+	keyTo(t, p, press(input.KeyDown, 0))
 	if p.place.at == 0 {
 		t.Fatal("moving down did not move the selection")
 	}
@@ -676,7 +675,7 @@ func TestPaletteHighlightsTheSelectedLine(t *testing.T) {
 		FG: fg, BG: bg, MatchFG: fg,
 		SelectedFG: bg, SelectedBG: fg, ChordFG: fg,
 	}
-	p.HandleKey(press(input.KeyDown, 0))
+	keyTo(t, p, press(input.KeyDown, 0))
 	g := grid.New(40, 12, color.RGBA{}, color.RGBA{})
 
 	p.Draw(g.View())
@@ -827,7 +826,7 @@ func TestPaletteScrollFollowsTheWindow(t *testing.T) {
 	p, _ := newTestPalette(t, testCommands(titles...))
 	p.Style = styled()
 	for i := 0; i < len(p.Matches()); i++ {
-		p.HandleKey(press(input.KeyDown, 0))
+		keyTo(t, p, press(input.KeyDown, 0))
 	}
 	if !p.drawsSelection() {
 		t.Fatal("the selection is off screen before the resize")
@@ -867,7 +866,7 @@ func TestPaletteClickWhileScrolledRunsTheRightLine(t *testing.T) {
 	p, _ := newTestPalette(t, cmds)
 	p.Style = styled()
 	for i := 0; i < len(p.Matches()); i++ {
-		p.HandleKey(press(input.KeyDown, 0))
+		keyTo(t, p, press(input.KeyDown, 0))
 	}
 	if p.place.top == 0 {
 		t.Fatal("the list did not scroll, so there is nothing to get wrong")
@@ -897,7 +896,7 @@ func TestPaletteTypingWhileScrolledGoesBackToTheTop(t *testing.T) {
 	}
 	p, _ := newTestPalette(t, testCommands(titles...))
 	for i := 0; i < len(p.Matches()); i++ {
-		p.HandleKey(press(input.KeyDown, 0))
+		keyTo(t, p, press(input.KeyDown, 0))
 	}
 	if p.place.top == 0 {
 		t.Fatal("the list did not scroll")
@@ -1073,13 +1072,13 @@ func TestPaletteQueryCanBeEditedInTheMiddle(t *testing.T) {
 	p, _ := newTestPalette(t, cmds)
 
 	typeInto(t, p, "slpit")
-	p.HandleKey(press(input.KeyLeft, 0))
-	p.HandleKey(press(input.KeyLeft, 0))
-	p.HandleKey(press(input.KeyLeft, 0))
-	p.HandleKey(press(input.KeyBackspace, 0))
-	p.HandleKey(press(input.KeyRight, 0))
+	keyTo(t, p, press(input.KeyLeft, 0))
+	keyTo(t, p, press(input.KeyLeft, 0))
+	keyTo(t, p, press(input.KeyLeft, 0))
+	keyTo(t, p, press(input.KeyBackspace, 0))
+	keyTo(t, p, press(input.KeyRight, 0))
 	typeInto(t, p, "l")
-	p.HandleKey(press(input.KeyEnd, 0))
+	keyTo(t, p, press(input.KeyEnd, 0))
 	typeInto(t, p, " r")
 
 	if got := p.Query(); got != "split r" {
@@ -1099,7 +1098,7 @@ func TestPaletteArrowsStillMoveTheSelection(t *testing.T) {
 	p, _ := newTestPalette(t, cmds)
 
 	first, _ := p.Selected()
-	p.HandleKey(press(input.KeyDown, 0))
+	keyTo(t, p, press(input.KeyDown, 0))
 	second, ok := p.Selected()
 	if !ok || second.ID == first.ID {
 		t.Fatalf("Down left the selection on %q", first.ID)
@@ -1149,7 +1148,7 @@ func TestAPaletteWithNoRoomToBeDrawn(t *testing.T) {
 		if *closed != 0 {
 			t.Fatalf("in %d rows Enter closed it, so it ran something", rows)
 		}
-		p.HandleKey(press(input.KeyEscape, 0))
+		keyTo(t, p, press(input.KeyEscape, 0))
 		if *closed != 1 {
 			t.Fatalf("in %d rows Escape closed it %d times", rows, *closed)
 		}

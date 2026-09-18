@@ -1,0 +1,57 @@
+version: "2"
+
+# What this window is linted with. Run it with:
+#
+#	golangci-lint run ./...
+#
+# The defaults cap each linter at fifty findings and hide the rest, which
+# reads as "fifty problems" whatever the real number is. The caps are off
+# here: a number that is wrong is worse than a number that is large.
+run:
+  timeout: 10m
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+linters:
+  default: standard
+
+  settings:
+    staticcheck:
+      checks:
+        - all
+        # Error strings are sentences here, and a sentence ends with a
+        # full stop. The house style is plain English, which wins over
+        # the Go convention of a lower-case fragment.
+        - -ST1005
+        # "could apply De Morgan's law" and "could remove the embedded
+        # field from the selector". Both trade a line that says what it
+        # means for one that is shorter.
+        - -QF1001
+        - -QF1008
+        # "could use a tagged switch". Sometimes, and not always more
+        # readable than the ifs it replaces.
+        - -QF1002
+
+  exclusions:
+    rules:
+      # A close in a test, on a file or a connection the test opened
+      # itself. The test fails on what it came to check, and a close
+      # that would not go says nothing about that.
+      #
+      # Not excluded in the program: a close there can be the write that
+      # never reached the disk.
+      - path: _test\.go
+        linters: [errcheck]
+        source: ^\s*defer .*\.Close\(\)$
+
+      # Writing to stdout or stderr on the way out. There is nowhere
+      # left to report a failure to.
+      - linters: [errcheck]
+        source: fmt\.Fprint(f|ln)?\(os\.(Stdout|Stderr)
+
+      # Test scaffolding says what went wrong by failing the test, and
+      # has no caller to return an error to.
+      - path: internal/sshtest/
+        linters: [errcheck]

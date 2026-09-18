@@ -189,9 +189,9 @@ func TestChooserOpensOnItsFirstLine(t *testing.T) {
 func TestChooserArrowsAndEnter(t *testing.T) {
 	c, took, _ := newTestChooser(t)
 
-	c.HandleKey(press(input.KeyDown, 0))
-	c.HandleKey(press(input.KeyDown, 0))
-	c.HandleKey(press(input.KeyEnter, 0))
+	keyTo(t, c, press(input.KeyDown, 0))
+	keyTo(t, c, press(input.KeyDown, 0))
+	keyTo(t, c, press(input.KeyEnter, 0))
 
 	if len(*took) != 1 || (*took)[0] != "Terminal on margit" {
 		t.Fatalf("it took %v, want the third line", *took)
@@ -222,7 +222,7 @@ func TestChooserClosesBeforeItActs(t *testing.T) {
 	c.Add("one", "", func() error { order = append(order, "did"); return nil })
 	c.Layout(Size{Cols: 40, Rows: 12})
 
-	c.HandleKey(press(input.KeyEnter, 0))
+	keyTo(t, c, press(input.KeyEnter, 0))
 	if len(order) != 2 || order[0] != "closed" || order[1] != "did" {
 		t.Fatalf("it went %v, want it closed first", order)
 	}
@@ -257,7 +257,7 @@ func TestChooserClicks(t *testing.T) {
 		{lines.X, lines.Y - 1, "the blank under the title"},
 		{lines.X, lines.Y - 2, "the title"},
 	} {
-		c.HandleMouse(pressAt(at.x, at.y))
+		mouseTo(t, c, pressAt(at.x, at.y))
 		if len(*took) != 0 {
 			t.Fatalf("a press on %s took %v", at.why, *took)
 		}
@@ -266,7 +266,7 @@ func TestChooserClicks(t *testing.T) {
 		}
 	}
 
-	c.HandleMouse(pressAt(lines.X+1, lines.Y+1))
+	mouseTo(t, c, pressAt(lines.X+1, lines.Y+1))
 	if len(*took) != 1 || (*took)[0] != "Move vim" {
 		t.Fatalf("clicking the second line took %v", *took)
 	}
@@ -277,7 +277,7 @@ func TestChooserPressOutsideCloses(t *testing.T) {
 	c, took, closed := newTestChooser(t)
 	drawChooser(c, 60, 20)
 
-	c.HandleMouse(pressAt(0, 0))
+	mouseTo(t, c, pressAt(0, 0))
 	if len(*took) != 0 {
 		t.Fatalf("a press outside took %v", *took)
 	}
@@ -322,7 +322,7 @@ func TestAChooserWithNoRoom(t *testing.T) {
 		if len(*took) != 0 {
 			t.Fatalf("in %d rows Enter took %v", rows, *took)
 		}
-		c.HandleKey(press(input.KeyEscape, 0))
+		keyTo(t, c, press(input.KeyEscape, 0))
 		if *closed != 1 {
 			t.Fatalf("in %d rows Escape closed it %d times", rows, *closed)
 		}

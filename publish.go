@@ -105,13 +105,6 @@ func sameSnapshot(was, now serve.Snapshot) bool {
 	return true
 }
 
-// openRows are the rows for what a window taken over has open.
-//
-// They are shown under that window, and are what it says they are: a
-// client that worked them out for itself would be a client disagreeing
-// with the machine it is looking at.
-func (a *app) openRows(t *taken) []serve.Open { return t.win.Opens() }
-
 // remoteRows are the screens a window taken over has open, the machines
 // over there, and this window's own rows on those machines.
 //

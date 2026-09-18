@@ -542,7 +542,7 @@ func TestSetStringWideClusterAtTheRowEndBlanksAndStops(t *testing.T) {
 // Only real zero-width marks stack on a base rune. The trailing runes of
 // an emoji ZWJ sequence are full glyphs and would draw on top of it.
 func TestClusterCellKeepsOnlyZeroWidthMarks(t *testing.T) {
-	c := ClusterCell("\U0001F468‍\U0001F469", 2)
+	c := ClusterCell("\U0001F468\u200d\U0001F469", 2)
 	for _, r := range c.Comb {
 		if RuneWidth(r) != 0 {
 			t.Errorf("Comb holds %U, which is %d columns wide", r, RuneWidth(r))
@@ -717,7 +717,7 @@ func TestSelectedTextIsEmptyWhenInactive(t *testing.T) {
 func TestStringWidthMatchesWhatSetStringSpends(t *testing.T) {
 	for _, s := range []string{
 		"", "abc", "日本", "a日b", "éx", "́abc",
-		"a\tb", "\x07bell", "x​z", "🚀 go",
+		"a\tb", "\x07bell", "x\u200bz", "🚀 go",
 	} {
 		g := New(40, 1, fg, bg)
 

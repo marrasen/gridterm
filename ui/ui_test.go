@@ -1186,9 +1186,9 @@ func TestRootMouseDragThatLeavesTheAreaStillFinishes(t *testing.T) {
 	r.SetWidget(w)
 	r.Layout(Rect{Cols: 10, Rows: 4})
 
-	r.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 2, Row: 1})
-	r.HandleMouse(input.MouseEvent{Kind: input.MouseMove, Button: input.MouseLeft, Col: 40, Row: 40})
-	r.HandleMouse(input.MouseEvent{Kind: input.MouseRelease, Button: input.MouseLeft, Col: 40, Row: 40})
+	mouseTo(t, r, input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 2, Row: 1})
+	mouseTo(t, r, input.MouseEvent{Kind: input.MouseMove, Button: input.MouseLeft, Col: 40, Row: 40})
+	mouseTo(t, r, input.MouseEvent{Kind: input.MouseRelease, Button: input.MouseLeft, Col: 40, Row: 40})
 
 	kinds := w.kinds()
 	if len(kinds) != 3 {
@@ -1232,7 +1232,7 @@ func TestRootWheelDoesNotHoldThePointer(t *testing.T) {
 	r.SetWidget(w)
 	r.Layout(Rect{Cols: 10, Rows: 4})
 
-	r.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseWheelUp, Col: 1, Row: 1})
+	mouseTo(t, r, input.MouseEvent{Kind: input.MousePress, Button: input.MouseWheelUp, Col: 1, Row: 1})
 	handled, err := r.HandleMouse(input.MouseEvent{
 		Kind: input.MousePress, Button: input.MouseLeft, Col: 99, Row: 99,
 	})
@@ -1254,12 +1254,12 @@ func TestRootOpeningADialogEndsTheDragUnderIt(t *testing.T) {
 	under := &mouser{}
 	r.SetWidget(under)
 	r.Layout(Rect{Cols: 10, Rows: 4})
-	r.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 1, Row: 1})
+	mouseTo(t, r, input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 1, Row: 1})
 
 	dialog := &mouser{}
 	r.PushModal(dialog)
-	r.HandleMouse(input.MouseEvent{Kind: input.MouseMove, Button: input.MouseLeft, Col: 2, Row: 1})
-	r.HandleMouse(input.MouseEvent{Kind: input.MouseRelease, Button: input.MouseLeft, Col: 2, Row: 1})
+	mouseTo(t, r, input.MouseEvent{Kind: input.MouseMove, Button: input.MouseLeft, Col: 2, Row: 1})
+	mouseTo(t, r, input.MouseEvent{Kind: input.MouseRelease, Button: input.MouseLeft, Col: 2, Row: 1})
 
 	if len(under.kinds()) != 1 {
 		t.Errorf("the widget under the dialog saw %d events, want only its press", len(under.kinds()))
@@ -1268,7 +1268,7 @@ func TestRootOpeningADialogEndsTheDragUnderIt(t *testing.T) {
 		t.Errorf("the dialog saw %v, want none of a drag that began before it", dialog.kinds())
 	}
 	// Once the button is up, the dialog takes the mouse as usual.
-	r.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 2, Row: 1})
+	mouseTo(t, r, input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 2, Row: 1})
 	if len(dialog.kinds()) != 1 {
 		t.Errorf("the dialog saw %v after the button came up, want a fresh press", dialog.kinds())
 	}
@@ -1283,7 +1283,7 @@ func TestRootAFreshPressUnwedgesALostRelease(t *testing.T) {
 	w := &mouser{}
 	r.SetWidget(w)
 	r.Layout(Rect{Cols: 10, Rows: 4})
-	r.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 1, Row: 1})
+	mouseTo(t, r, input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 1, Row: 1})
 	// A dialog opens and closes with the button still down.
 	r.PushModal(&fake{name: "d"})
 	r.PopModal()
@@ -1303,7 +1303,7 @@ func TestRootAFreshPressUnwedgesALostRelease(t *testing.T) {
 	if r.held.Holder() != Widget(w) {
 		t.Errorf("the pointer is held by %v, want the widget the press landed on", r.held.Holder())
 	}
-	r.HandleMouse(input.MouseEvent{Kind: input.MouseMove, Button: input.MouseLeft, Col: 99, Row: 99})
+	mouseTo(t, r, input.MouseEvent{Kind: input.MouseMove, Button: input.MouseLeft, Col: 99, Row: 99})
 	if got := w.kinds(); len(got) != 3 || got[2] != input.MouseMove {
 		t.Errorf("the widget saw %v, want the drag that followed", got)
 	}
@@ -1319,13 +1319,13 @@ func TestRootLostReleaseDoesNotLetAnotherButtonThrough(t *testing.T) {
 	r.SetWidget(under)
 	r.Layout(Rect{Cols: 10, Rows: 4})
 	r.PushModal(&mouser{})
-	r.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 3, Row: 3})
+	mouseTo(t, r, input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 3, Row: 3})
 	r.PopModal()
 
 	// A second button comes and goes while the first is still down.
-	r.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseRight, Col: 3, Row: 3})
-	r.HandleMouse(input.MouseEvent{Kind: input.MouseRelease, Button: input.MouseRight, Col: 3, Row: 3})
-	r.HandleMouse(input.MouseEvent{Kind: input.MouseRelease, Button: input.MouseLeft, Col: 3, Row: 3})
+	mouseTo(t, r, input.MouseEvent{Kind: input.MousePress, Button: input.MouseRight, Col: 3, Row: 3})
+	mouseTo(t, r, input.MouseEvent{Kind: input.MouseRelease, Button: input.MouseRight, Col: 3, Row: 3})
+	mouseTo(t, r, input.MouseEvent{Kind: input.MouseRelease, Button: input.MouseLeft, Col: 3, Row: 3})
 
 	if got := under.kinds(); len(got) != 0 {
 		t.Errorf("the tree saw %v, want none of a gesture the dialog took", got)
@@ -1340,7 +1340,7 @@ func TestRootWheelWorksWithALostRelease(t *testing.T) {
 	r.SetWidget(w)
 	r.Layout(Rect{Cols: 10, Rows: 4})
 	r.PushModal(&mouser{})
-	r.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 3, Row: 3})
+	mouseTo(t, r, input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 3, Row: 3})
 	r.PopModal()
 
 	handled, err := r.HandleMouse(input.MouseEvent{
@@ -1364,8 +1364,8 @@ func TestRootPressPathTranslatesLikeTheHeldPath(t *testing.T) {
 	r.SetWidget(w)
 	r.Layout(Rect{X: 3, Y: 2, Cols: 6, Rows: 4})
 
-	r.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 5, Row: 3})
-	r.HandleMouse(input.MouseEvent{Kind: input.MouseMove, Button: input.MouseLeft, Col: 5, Row: 3})
+	mouseTo(t, r, input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 5, Row: 3})
+	mouseTo(t, r, input.MouseEvent{Kind: input.MouseMove, Button: input.MouseLeft, Col: 5, Row: 3})
 
 	if len(w.seen) != 2 {
 		t.Fatalf("the widget saw %d events, want 2", len(w.seen))
@@ -1496,8 +1496,8 @@ func TestRootMouseReleaseEndsTheCapture(t *testing.T) {
 	r.SetWidget(w)
 	r.Layout(Rect{Cols: 10, Rows: 4})
 
-	r.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 2, Row: 1})
-	r.HandleMouse(input.MouseEvent{Kind: input.MouseRelease, Button: input.MouseLeft, Col: 2, Row: 1})
+	mouseTo(t, r, input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 2, Row: 1})
+	mouseTo(t, r, input.MouseEvent{Kind: input.MouseRelease, Button: input.MouseLeft, Col: 2, Row: 1})
 
 	if r.held.Holder() != nil {
 		t.Fatal("the release did not end the capture")
@@ -1523,10 +1523,10 @@ func TestRootSecondButtonDoesNotEndADrag(t *testing.T) {
 	r.SetWidget(w)
 	r.Layout(Rect{Cols: 10, Rows: 4})
 
-	r.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 2, Row: 1})
-	r.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseMiddle, Col: 3, Row: 1})
-	r.HandleMouse(input.MouseEvent{Kind: input.MouseRelease, Button: input.MouseMiddle, Col: 3, Row: 1})
-	r.HandleMouse(input.MouseEvent{Kind: input.MouseMove, Button: input.MouseLeft, Col: 40, Row: 40})
+	mouseTo(t, r, input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 2, Row: 1})
+	mouseTo(t, r, input.MouseEvent{Kind: input.MousePress, Button: input.MouseMiddle, Col: 3, Row: 1})
+	mouseTo(t, r, input.MouseEvent{Kind: input.MouseRelease, Button: input.MouseMiddle, Col: 3, Row: 1})
+	mouseTo(t, r, input.MouseEvent{Kind: input.MouseMove, Button: input.MouseLeft, Col: 40, Row: 40})
 
 	if r.held.Holder() == nil {
 		t.Fatal("the other button's release ended the drag")
@@ -1568,7 +1568,7 @@ func TestRootMotionOutsideTheAreaIsStillReported(t *testing.T) {
 	r.SetWidget(w)
 	r.Layout(Rect{Cols: 10, Rows: 4})
 
-	r.HandleMouse(input.MouseEvent{Kind: input.MouseMove, Col: 5, Row: 9})
+	mouseTo(t, r, input.MouseEvent{Kind: input.MouseMove, Col: 5, Row: 9})
 
 	if len(w.seen) != 1 {
 		t.Error("motion in the leftover strip was dropped")
@@ -1582,7 +1582,7 @@ func TestRootSetWidgetReleasesThePointer(t *testing.T) {
 	old := &mouser{}
 	r.SetWidget(old)
 	r.Layout(Rect{Cols: 10, Rows: 4})
-	r.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 1, Row: 1})
+	mouseTo(t, r, input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 1, Row: 1})
 
 	r.SetWidget(&mouser{})
 
@@ -1707,9 +1707,9 @@ func TestRootDialogClosingMidPressSwallowsTheRelease(t *testing.T) {
 	dialog := &mouser{}
 	r.PushModal(dialog)
 
-	r.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 3, Row: 3})
+	mouseTo(t, r, input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 3, Row: 3})
 	r.PopModal()
-	r.HandleMouse(input.MouseEvent{Kind: input.MouseRelease, Button: input.MouseLeft, Col: 3, Row: 3})
+	mouseTo(t, r, input.MouseEvent{Kind: input.MouseRelease, Button: input.MouseLeft, Col: 3, Row: 3})
 
 	for _, ev := range under.seen {
 		if ev.Kind == input.MouseRelease {
@@ -1728,7 +1728,7 @@ func TestRootDialogDismissingItselfDoesNotKeepThePointer(t *testing.T) {
 	dialog := &selfClosing{root: r}
 	r.PushModal(dialog)
 
-	r.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 3, Row: 3})
+	mouseTo(t, r, input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 3, Row: 3})
 
 	if r.held.Holder() != nil {
 		t.Errorf("the pointer is held by %v, which is no longer on the stack", r.held.Holder())
@@ -1762,8 +1762,8 @@ func TestRootDialogClosingOnItsOwnPressSwallowsTheRelease(t *testing.T) {
 	r.Layout(Rect{Cols: 10, Rows: 4})
 	r.PushModal(&selfClosing{root: r})
 
-	r.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 3, Row: 3})
-	r.HandleMouse(input.MouseEvent{Kind: input.MouseRelease, Button: input.MouseLeft, Col: 3, Row: 3})
+	mouseTo(t, r, input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 3, Row: 3})
+	mouseTo(t, r, input.MouseEvent{Kind: input.MouseRelease, Button: input.MouseLeft, Col: 3, Row: 3})
 
 	for _, ev := range under.seen {
 		if ev.Kind == input.MouseRelease {
@@ -1781,9 +1781,9 @@ func TestRootReleaseIsOwedOnlyOnce(t *testing.T) {
 	r.Layout(Rect{Cols: 10, Rows: 4})
 	r.PushModal(&selfClosing{root: r})
 
-	r.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 3, Row: 3})
-	r.HandleMouse(input.MouseEvent{Kind: input.MouseRelease, Button: input.MouseLeft, Col: 3, Row: 3})
-	r.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 2, Row: 2})
+	mouseTo(t, r, input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 3, Row: 3})
+	mouseTo(t, r, input.MouseEvent{Kind: input.MouseRelease, Button: input.MouseLeft, Col: 3, Row: 3})
+	mouseTo(t, r, input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 2, Row: 2})
 
 	if len(under.seen) == 0 {
 		t.Fatal("the tree saw nothing after the dialog went")
@@ -1791,4 +1791,41 @@ func TestRootReleaseIsOwedOnlyOnce(t *testing.T) {
 	if got := under.seen[0].Kind; got != input.MousePress {
 		t.Errorf("the tree's first event was %v, want the next press", got)
 	}
+}
+
+// keyHandler and mouseHandler are anything a test can press a key on or
+// click. Narrower than Widget, because Root lays out differently and is
+// still something a test drives.
+type keyHandler interface {
+	HandleKey(input.Event) (bool, error)
+}
+
+type mouseHandler interface {
+	HandleMouse(input.MouseEvent) (bool, error)
+}
+
+// keyTo sends a key to a widget and fails the test if the widget
+// reported trouble.
+//
+// The answer matters: a test that pressed a key, ignored a failure and
+// then asserted on what happened next would walk straight past the one
+// thing that went wrong.
+func keyTo(t *testing.T, w keyHandler, ev input.Event) bool {
+	t.Helper()
+	took, err := w.HandleKey(ev)
+	if err != nil {
+		t.Fatalf("%T handling %v: %v", w, ev.Key, err)
+	}
+	return took
+}
+
+// mouseTo sends a mouse event to a widget and fails the test if the
+// widget reported trouble.
+func mouseTo(t *testing.T, w mouseHandler, ev input.MouseEvent) bool {
+	t.Helper()
+	took, err := w.HandleMouse(ev)
+	if err != nil {
+		t.Fatalf("%T handling the mouse at %d,%d: %v", w, ev.Col, ev.Row, err)
+	}
+	return took
 }

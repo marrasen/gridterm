@@ -826,7 +826,8 @@ func (s *Screen) Reset() {
 	s.touchAll()
 }
 
-// DECALN fills the screen with E, a self-test pattern.
+// DecAln handles DECALN, which fills the screen with E as a self-test
+// pattern.
 func (s *Screen) DecAln() {
 	c := s.blank()
 	c.Rune = 'E'

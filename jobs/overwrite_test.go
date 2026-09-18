@@ -455,7 +455,7 @@ func TestDeletingWhatHasAlreadyGone(t *testing.T) {
 	// Something else takes one of them away while the job is planning.
 	q := New(1)
 	j := q.Start(t.Context(), Op{
-		Kind: Delete, From: vanishing{FS: here.fs, at: filepath.Join(here.real, "tree", "two.txt")},
+		Kind: Delete, From: &vanishing{FS: here.fs, at: filepath.Join(here.real, "tree", "two.txt")},
 		At: here.at, Names: []string{"tree"},
 	}, Options{})
 
@@ -472,7 +472,7 @@ type vanishing struct {
 	at string
 }
 
-func (v vanishing) Remove(path string) error {
+func (v *vanishing) Remove(path string) error {
 	if v.at != "" {
 		_ = os.Remove(v.at)
 		v.at = ""

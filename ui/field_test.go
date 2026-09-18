@@ -19,9 +19,10 @@ func newTestField(cols int) *Field {
 }
 
 // typeInto sends each rune as the text event a keyboard would produce.
-func typeField(f *Field, s string) {
+func typeField(t *testing.T, f *Field, s string) {
+	t.Helper()
 	for _, r := range s {
-		f.HandleKey(input.Event{Kind: input.Text, Rune: r, NormalText: true})
+		keyTo(t, f, input.Event{Kind: input.Text, Rune: r, NormalText: true})
 	}
 }
 
@@ -36,7 +37,7 @@ func drawField(f *Field, cols int) (string, grid.Cursor) {
 
 func TestFieldTypingAppends(t *testing.T) {
 	f := newTestField(20)
-	typeField(f, "hello")
+	typeField(t, f, "hello")
 	if f.Text() != "hello" {
 		t.Fatalf("text = %q, want %q", f.Text(), "hello")
 	}
@@ -49,9 +50,9 @@ func TestFieldTypingAppends(t *testing.T) {
 // be editable in the middle, or a mistyped hostname has to be retyped.
 func TestFieldTypesInTheMiddle(t *testing.T) {
 	f := newTestField(20)
-	typeField(f, "helo")
+	typeField(t, f, "helo")
 	f.SetCaret(3)
-	typeField(f, "l")
+	typeField(t, f, "l")
 	if f.Text() != "hello" {
 		t.Fatalf("text = %q, want %q", f.Text(), "hello")
 	}
@@ -59,31 +60,31 @@ func TestFieldTypesInTheMiddle(t *testing.T) {
 
 func TestFieldCaretMoves(t *testing.T) {
 	f := newTestField(20)
-	typeField(f, "abc")
+	typeField(t, f, "abc")
 
-	f.HandleKey(press(input.KeyLeft, 0))
+	keyTo(t, f, press(input.KeyLeft, 0))
 	if f.Caret() != 2 {
 		t.Errorf("after Left, caret = %d, want 2", f.Caret())
 	}
-	f.HandleKey(press(input.KeyHome, 0))
+	keyTo(t, f, press(input.KeyHome, 0))
 	if f.Caret() != 0 {
 		t.Errorf("after Home, caret = %d, want 0", f.Caret())
 	}
-	f.HandleKey(press(input.KeyRight, 0))
+	keyTo(t, f, press(input.KeyRight, 0))
 	if f.Caret() != 1 {
 		t.Errorf("after Right, caret = %d, want 1", f.Caret())
 	}
-	f.HandleKey(press(input.KeyEnd, 0))
+	keyTo(t, f, press(input.KeyEnd, 0))
 	if f.Caret() != 3 {
 		t.Errorf("after End, caret = %d, want 3", f.Caret())
 	}
 	// The ends stop rather than wrapping.
-	f.HandleKey(press(input.KeyRight, 0))
+	keyTo(t, f, press(input.KeyRight, 0))
 	if f.Caret() != 3 {
 		t.Errorf("Right past the end moved the caret to %d", f.Caret())
 	}
-	f.HandleKey(press(input.KeyHome, 0))
-	f.HandleKey(press(input.KeyLeft, 0))
+	keyTo(t, f, press(input.KeyHome, 0))
+	keyTo(t, f, press(input.KeyLeft, 0))
 	if f.Caret() != 0 {
 		t.Errorf("Left past the start moved the caret to %d", f.Caret())
 	}
@@ -91,22 +92,22 @@ func TestFieldCaretMoves(t *testing.T) {
 
 func TestFieldBackspaceAndDelete(t *testing.T) {
 	f := newTestField(20)
-	typeField(f, "abcd")
+	typeField(t, f, "abcd")
 	f.SetCaret(2)
 
-	f.HandleKey(press(input.KeyBackspace, 0))
+	keyTo(t, f, press(input.KeyBackspace, 0))
 	if f.Text() != "acd" {
 		t.Fatalf("after Backspace, text = %q, want %q", f.Text(), "acd")
 	}
-	f.HandleKey(press(input.KeyDelete, 0))
+	keyTo(t, f, press(input.KeyDelete, 0))
 	if f.Text() != "ad" {
 		t.Fatalf("after Delete, text = %q, want %q", f.Text(), "ad")
 	}
 	// Neither does anything at the edge it cannot move past.
-	f.HandleKey(press(input.KeyHome, 0))
-	f.HandleKey(press(input.KeyBackspace, 0))
-	f.HandleKey(press(input.KeyEnd, 0))
-	f.HandleKey(press(input.KeyDelete, 0))
+	keyTo(t, f, press(input.KeyHome, 0))
+	keyTo(t, f, press(input.KeyBackspace, 0))
+	keyTo(t, f, press(input.KeyEnd, 0))
+	keyTo(t, f, press(input.KeyDelete, 0))
 	if f.Text() != "ad" {
 		t.Fatalf("editing past the edges changed the text to %q", f.Text())
 	}
@@ -114,19 +115,19 @@ func TestFieldBackspaceAndDelete(t *testing.T) {
 
 func TestFieldWordMoves(t *testing.T) {
 	f := newTestField(40)
-	typeField(f, "deploy@web1 example")
+	typeField(t, f, "deploy@web1 example")
 
-	f.HandleKey(press(input.KeyLeft, input.ModCtrl))
+	keyTo(t, f, press(input.KeyLeft, input.ModCtrl))
 	if got := f.Text()[f.Caret():]; got != "example" {
 		t.Errorf("Ctrl+Left left the caret before %q, want %q", got, "example")
 	}
 	// Ctrl+Backspace takes the word before the caret, and the space it
 	// was separated by with it.
-	f.HandleKey(press(input.KeyBackspace, input.ModCtrl))
+	keyTo(t, f, press(input.KeyBackspace, input.ModCtrl))
 	if f.Text() != "deploy@example" {
 		t.Errorf("text = %q, want %q", f.Text(), "deploy@example")
 	}
-	f.HandleKey(press(input.KeyRight, input.ModCtrl))
+	keyTo(t, f, press(input.KeyRight, input.ModCtrl))
 	if f.Caret() != len("deploy@example") {
 		t.Errorf("Ctrl+Right left the caret at %d, want the end", f.Caret())
 	}
@@ -134,9 +135,9 @@ func TestFieldWordMoves(t *testing.T) {
 
 func TestFieldCtrlUClearsToTheStart(t *testing.T) {
 	f := newTestField(20)
-	typeField(f, "abcdef")
+	typeField(t, f, "abcdef")
 	f.SetCaret(4)
-	f.HandleKey(press(input.KeyU, input.ModCtrl))
+	keyTo(t, f, press(input.KeyU, input.ModCtrl))
 	if f.Text() != "ef" {
 		t.Fatalf("text = %q, want %q", f.Text(), "ef")
 	}
@@ -148,7 +149,7 @@ func TestFieldMaskHidesTheTextButNotTheCaret(t *testing.T) {
 	f := newTestField(20)
 	f.Mask = '*'
 	f.SetFocus(true)
-	typeField(f, "hunter2")
+	typeField(t, f, "hunter2")
 
 	row, cur := drawField(f, 20)
 	if row != "*******" {
@@ -167,7 +168,7 @@ func TestFieldMaskHidesTheTextButNotTheCaret(t *testing.T) {
 func TestFieldScrollsToKeepTheCaretInView(t *testing.T) {
 	f := newTestField(10)
 	f.SetFocus(true)
-	typeField(f, "abcdefghijklmno")
+	typeField(t, f, "abcdefghijklmno")
 
 	row, cur := drawField(f, 10)
 	if !strings.HasSuffix(row, "o") {
@@ -178,7 +179,7 @@ func TestFieldScrollsToKeepTheCaretInView(t *testing.T) {
 	}
 
 	// Back to the start, and the other end shows instead.
-	f.HandleKey(press(input.KeyHome, 0))
+	keyTo(t, f, press(input.KeyHome, 0))
 	row, cur = drawField(f, 10)
 	if !strings.HasPrefix(row, "abc") {
 		t.Fatalf("after Home, drew %q, want the start of the text", row)
@@ -194,16 +195,16 @@ func TestFieldCaretStepsByCluster(t *testing.T) {
 	f := newTestField(20)
 	// "e" followed by a combining acute accent.
 	const combined = "é"
-	typeField(f, "a")
+	typeField(t, f, "a")
 	f.insert(combined)
-	typeField(f, "b")
+	typeField(t, f, "b")
 
-	f.HandleKey(press(input.KeyLeft, 0)) // past "b"
-	f.HandleKey(press(input.KeyLeft, 0)) // past the whole cluster
+	keyTo(t, f, press(input.KeyLeft, 0)) // past "b"
+	keyTo(t, f, press(input.KeyLeft, 0)) // past the whole cluster
 	if got := f.Caret(); got != 1 {
 		t.Fatalf("caret = %d, want 1: the caret stopped inside a cluster", got)
 	}
-	f.HandleKey(press(input.KeyDelete, 0))
+	keyTo(t, f, press(input.KeyDelete, 0))
 	if f.Text() != "ab" {
 		t.Fatalf("text = %q, want %q: Delete took half a cluster", f.Text(), "ab")
 	}
@@ -212,7 +213,7 @@ func TestFieldCaretStepsByCluster(t *testing.T) {
 func TestFieldPasteTakesOneLine(t *testing.T) {
 	f := newTestField(40)
 	f.ReadClipboard = func() string { return "one\ntwo" }
-	f.HandleKey(press(input.KeyV, input.ModCtrl))
+	keyTo(t, f, press(input.KeyV, input.ModCtrl))
 	if f.Text() != "one" {
 		t.Fatalf("text = %q, want the first line only", f.Text())
 	}
@@ -265,7 +266,7 @@ func TestFieldLetsTheFormsKeysThrough(t *testing.T) {
 // without it would take the cursor from whoever has it.
 func TestFieldWithoutFocusPlacesNoCursor(t *testing.T) {
 	f := newTestField(20)
-	typeField(f, "abc")
+	typeField(t, f, "abc")
 
 	g := grid.New(20, 1, color.RGBA{}, color.RGBA{})
 	g.ResetCursorClaim()
@@ -292,7 +293,7 @@ func TestFieldPlaceholderShowsWhileEmpty(t *testing.T) {
 	if !cur.Visible || cur.X != 0 {
 		t.Fatalf("cursor = %+v, want a visible one at the start", cur)
 	}
-	typeField(f, "a")
+	typeField(t, f, "a")
 	if row, _ := drawField(f, 20); row != "a" {
 		t.Fatalf("drew %q, want what was typed", row)
 	}
@@ -316,8 +317,8 @@ func TestFieldSetTextReportsTheChange(t *testing.T) {
 	f.OnChange = func(s string) { seen = append(seen, s) }
 
 	f.SetText("abc")
-	typeField(f, "d")
-	f.HandleKey(press(input.KeyBackspace, 0))
+	typeField(t, f, "d")
+	keyTo(t, f, press(input.KeyBackspace, 0))
 	// Setting the same text again changes nothing and must say nothing.
 	f.SetText("abc")
 
@@ -378,12 +379,12 @@ func TestFieldCyclesFromSomethingTyped(t *testing.T) {
 	f.Layout(Size{Cols: 20, Rows: 1})
 	f.SetText("somewhere else")
 
-	f.HandleKey(input.Event{Kind: input.KeyPress, Key: input.KeyDown, Mods: input.ModCtrl})
+	keyTo(t, f, input.Event{Kind: input.KeyPress, Key: input.KeyDown, Mods: input.ModCtrl})
 	if got := f.Text(); got != "edge" {
 		t.Fatalf("stepping on from something typed gave %q", got)
 	}
 	f.SetText("somewhere else")
-	f.HandleKey(input.Event{Kind: input.KeyPress, Key: input.KeyUp, Mods: input.ModCtrl})
+	keyTo(t, f, input.Event{Kind: input.KeyPress, Key: input.KeyUp, Mods: input.ModCtrl})
 	if got := f.Text(); got != "db" {
 		t.Fatalf("stepping back from something typed gave %q", got)
 	}
@@ -497,7 +498,7 @@ func TestAFieldShowsAndTakesTheRestOfAnAnswer(t *testing.T) {
 		t.Errorf("the rest is part of the value: %q", f.Text())
 	}
 
-	f.HandleKey(press(input.KeyRight, 0))
+	keyTo(t, f, press(input.KeyRight, 0))
 
 	if f.Text() != "/var" {
 		t.Errorf("Right left the field saying %q", f.Text())
@@ -511,12 +512,12 @@ func TestAFieldShowsAndTakesTheRestOfAnAnswer(t *testing.T) {
 // would land.
 func TestTheRestOfAnAnswerIsHiddenAwayFromTheEnd(t *testing.T) {
 	f := ghosted(20, "/va", "r")
-	f.HandleKey(press(input.KeyHome, 0))
+	keyTo(t, f, press(input.KeyHome, 0))
 
 	if row, _ := drawField(f, 20); row != "/va" {
 		t.Errorf("the field draws %q with the caret at the start", row)
 	}
-	f.HandleKey(press(input.KeyRight, 0))
+	keyTo(t, f, press(input.KeyRight, 0))
 	if f.Text() != "/va" {
 		t.Errorf("Right away from the end took the rest: %q", f.Text())
 	}
@@ -528,7 +529,7 @@ func TestEndTakesTheRestOfAnAnswer(t *testing.T) {
 	f := ghosted(20, "/va", "r")
 	drawField(f, 20)
 
-	f.HandleKey(press(input.KeyEnd, 0))
+	keyTo(t, f, press(input.KeyEnd, 0))
 
 	if f.Text() != "/var" {
 		t.Errorf("End left the field saying %q", f.Text())
@@ -544,7 +545,7 @@ func TestAMaskedFieldShowsNoRestOfAnAnswer(t *testing.T) {
 	if row, _ := drawField(f, 20); strings.Contains(row, "r") {
 		t.Errorf("the masked field draws %q", row)
 	}
-	f.HandleKey(press(input.KeyRight, 0))
+	keyTo(t, f, press(input.KeyRight, 0))
 	if f.Text() != "/va" {
 		t.Errorf("Right took the rest into a masked field: %q", f.Text())
 	}
@@ -556,13 +557,13 @@ func TestAMaskedFieldShowsNoRestOfAnAnswer(t *testing.T) {
 func TestARestThatWasNeverDrawnIsNotTaken(t *testing.T) {
 	f := ghosted(20, "/va", "r")
 
-	f.HandleKey(press(input.KeyRight, 0))
+	keyTo(t, f, press(input.KeyRight, 0))
 
 	if f.Text() != "/va" {
 		t.Errorf("Right took a rest that was never on screen: %q", f.Text())
 	}
 	drawField(f, 20)
-	f.HandleKey(press(input.KeyRight, 0))
+	keyTo(t, f, press(input.KeyRight, 0))
 	if f.Text() != "/var" {
 		t.Errorf("Right did not take it once it had been drawn: %q", f.Text())
 	}
@@ -585,7 +586,7 @@ func TestCtrlEndDoesNotTakeTheRestOfAnAnswer(t *testing.T) {
 	f := ghosted(20, "/va", "r")
 	drawField(f, 20)
 
-	f.HandleKey(press(input.KeyEnd, input.ModCtrl))
+	keyTo(t, f, press(input.KeyEnd, input.ModCtrl))
 
 	if f.Text() != "/va" {
 		t.Errorf("Ctrl+End took the rest: %q", f.Text())

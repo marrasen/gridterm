@@ -376,9 +376,8 @@ func TestMoveOnOneFilesystemDoesNotRead(t *testing.T) {
 // watched records whether a filesystem was asked to rename anything.
 type watched struct {
 	vfs.FS
-	mu       sync.Mutex
-	renames  int
-	theOther vfs.FS
+	mu      sync.Mutex
+	renames int
 }
 
 func (w *watched) Rename(from, to string) error {

@@ -106,7 +106,7 @@ func TestDeckMouseReachesThePaneInFront(t *testing.T) {
 	tb := NewDeck(one, two)
 	tb.Layout(Size{Cols: 8, Rows: 4})
 
-	tb.HandleMouse(input.MouseEvent{
+	mouseTo(t, tb, input.MouseEvent{
 		Kind: input.MousePress, Button: input.MouseLeft, Col: 3, Row: 2,
 	})
 

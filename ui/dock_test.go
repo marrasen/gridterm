@@ -152,12 +152,12 @@ func TestDockKeysGoToWhicheverHalfHasFocus(t *testing.T) {
 	panel.takes, rest.takes = input.KeyA, input.KeyA
 	d.SetFocus(true)
 
-	d.HandleKey(press(input.KeyA, 0))
+	keyTo(t, d, press(input.KeyA, 0))
 	if len(rest.seen) != 1 || len(panel.seen) != 0 {
 		t.Fatalf("the key went to panel=%d rest=%d", len(panel.seen), len(rest.seen))
 	}
 	d.Focus(panel)
-	d.HandleKey(press(input.KeyA, 0))
+	keyTo(t, d, press(input.KeyA, 0))
 	if len(panel.seen) != 1 {
 		t.Fatalf("the key did not reach the panel")
 	}
@@ -169,7 +169,7 @@ func TestDockRoutesTheMouseToWhatWasClicked(t *testing.T) {
 	d, panel, rest := newTestDock(t, 24, 100, 30)
 	d.SetFocus(true)
 
-	d.HandleMouse(input.MouseEvent{
+	mouseTo(t, d, input.MouseEvent{
 		Kind: input.MousePress, Button: input.MouseLeft, Col: 5, Row: 7,
 	})
 	if len(panel.clicks) != 1 || len(rest.clicks) != 0 {
@@ -183,7 +183,7 @@ func TestDockRoutesTheMouseToWhatWasClicked(t *testing.T) {
 	}
 
 	area, _ := d.ChildArea(rest)
-	d.HandleMouse(input.MouseEvent{
+	mouseTo(t, d, input.MouseEvent{
 		Kind: input.MousePress, Button: input.MouseLeft, Col: area.X + 3, Row: 7,
 	})
 	if len(rest.clicks) != 1 {
@@ -208,14 +208,14 @@ func TestDockDividerCanBeDragged(t *testing.T) {
 	if !took {
 		t.Fatal("a press on the divider was not taken, so no drag can follow")
 	}
-	d.HandleMouse(input.MouseEvent{Kind: input.MouseMove, Col: 40, Row: 3})
+	mouseTo(t, d, input.MouseEvent{Kind: input.MouseMove, Col: 40, Row: 3})
 	if d.Width != 40 || panel.size.Cols != 40 {
 		t.Fatalf("width = %d and the panel is %d wide, want 40", d.Width, panel.size.Cols)
 	}
-	d.HandleMouse(input.MouseEvent{Kind: input.MouseRelease, Button: input.MouseLeft, Col: 40, Row: 3})
+	mouseTo(t, d, input.MouseEvent{Kind: input.MouseRelease, Button: input.MouseLeft, Col: 40, Row: 3})
 
 	// And a move afterwards is nothing to do with the divider.
-	d.HandleMouse(input.MouseEvent{Kind: input.MouseMove, Col: 70, Row: 3})
+	mouseTo(t, d, input.MouseEvent{Kind: input.MouseMove, Col: 70, Row: 3})
 	if d.Width != 40 {
 		t.Fatalf("width = %d after the button came up", d.Width)
 	}
@@ -224,13 +224,13 @@ func TestDockDividerCanBeDragged(t *testing.T) {
 // A drag has to stop somewhere: neither half may be squeezed away.
 func TestDockDragStaysWithinWhatTheWindowCanSpare(t *testing.T) {
 	d, _, _ := newTestDock(t, 24, 100, 30)
-	d.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 24, Row: 3})
+	mouseTo(t, d, input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 24, Row: 3})
 
-	d.HandleMouse(input.MouseEvent{Kind: input.MouseMove, Col: -50, Row: 3})
+	mouseTo(t, d, input.MouseEvent{Kind: input.MouseMove, Col: -50, Row: 3})
 	if d.Width < dockMin {
 		t.Fatalf("width = %d, want at least %d", d.Width, dockMin)
 	}
-	d.HandleMouse(input.MouseEvent{Kind: input.MouseMove, Col: 500, Row: 3})
+	mouseTo(t, d, input.MouseEvent{Kind: input.MouseMove, Col: 500, Row: 3})
 	if d.Width > 100-dockRest-1 {
 		t.Fatalf("width = %d, want room left for the rest of the window", d.Width)
 	}
@@ -252,10 +252,10 @@ func TestDockDragStaysWithinWhatTheWindowCanSpare(t *testing.T) {
 // the pointer.
 func TestDockCancelGestureEndsADrag(t *testing.T) {
 	d, _, _ := newTestDock(t, 24, 100, 30)
-	d.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 24, Row: 3})
+	mouseTo(t, d, input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 24, Row: 3})
 	d.CancelGesture()
 
-	d.HandleMouse(input.MouseEvent{Kind: input.MouseMove, Col: 60, Row: 3})
+	mouseTo(t, d, input.MouseEvent{Kind: input.MouseMove, Col: 60, Row: 3})
 	if d.Width != 24 {
 		t.Fatalf("width = %d after the drag was cancelled, want 24", d.Width)
 	}
@@ -378,20 +378,20 @@ func TestDockDragIgnoresAnotherButtonComingUp(t *testing.T) {
 	d, panel, _ := newTestDock(t, 24, 100, 30)
 	r := rootOver(d, 100, 30)
 
-	r.HandleMouse(pressAt(24, 3))
-	r.HandleMouse(moveTo(30, 3))
+	mouseTo(t, r, pressAt(24, 3))
+	mouseTo(t, r, moveTo(30, 3))
 	for _, ev := range rightTap(30, 3) {
-		r.HandleMouse(ev)
+		mouseTo(t, r, ev)
 	}
-	r.HandleMouse(moveTo(40, 3))
+	mouseTo(t, r, moveTo(40, 3))
 
 	if d.Width != 40 || panel.size.Cols != 40 {
 		t.Fatalf("width = %d and the panel is %d wide, want the drag to carry on to 40",
 			d.Width, panel.size.Cols)
 	}
 	// And the left button still ends it.
-	r.HandleMouse(releaseAt(40, 3))
-	r.HandleMouse(moveTo(70, 3))
+	mouseTo(t, r, releaseAt(40, 3))
+	mouseTo(t, r, moveTo(70, 3))
 	if d.Width != 40 {
 		t.Fatalf("width = %d after the button came up, want 40", d.Width)
 	}
@@ -460,8 +460,8 @@ func TestDockKeepsThePressThatMovesTheKeysToItsOtherHalf(t *testing.T) {
 	}
 
 	// And the next press is the pane's own.
-	r.HandleMouse(releaseAt(35, 1))
-	r.HandleMouse(pressAt(35, 1))
+	mouseTo(t, r, releaseAt(35, 1))
+	mouseTo(t, r, pressAt(35, 1))
 	if len(rest.clicks) == 0 {
 		t.Error("the second press was kept as well, so the pane is never clicked")
 	}

@@ -461,9 +461,9 @@ func TestCopyAndPaste(t *testing.T) {
 	// Draw so the widget's grid holds the text the selection covers.
 	draw(term, 20, 4)
 
-	term.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft})
-	term.HandleMouse(input.MouseEvent{Kind: input.MouseMove, Button: input.MouseLeft, Col: 4})
-	term.HandleMouse(input.MouseEvent{Kind: input.MouseRelease, Button: input.MouseLeft, Col: 4})
+	mouseTo(t, term, input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft})
+	mouseTo(t, term, input.MouseEvent{Kind: input.MouseMove, Button: input.MouseLeft, Col: 4})
+	mouseTo(t, term, input.MouseEvent{Kind: input.MouseRelease, Button: input.MouseLeft, Col: 4})
 
 	if !term.Copy() {
 		t.Fatal("Copy reported nothing selected")
@@ -499,8 +499,8 @@ func TestClickWithoutDraggingClearsTheSelection(t *testing.T) {
 	f.feed(t, term, "hello")
 	draw(term, 20, 4)
 
-	term.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 2})
-	term.HandleMouse(input.MouseEvent{Kind: input.MouseRelease, Button: input.MouseLeft, Col: 2})
+	mouseTo(t, term, input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 2})
+	mouseTo(t, term, input.MouseEvent{Kind: input.MouseRelease, Button: input.MouseLeft, Col: 2})
 
 	if term.Copy() {
 		t.Error("a click left a selection behind")
@@ -559,7 +559,7 @@ func TestScrollView(t *testing.T) {
 	}
 
 	// Typing jumps back to the live screen.
-	term.HandleKey(input.Event{Kind: input.Text, Rune: 'x', NormalText: true})
+	keyTo(t, term, input.Event{Kind: input.Text, Rune: 'x', NormalText: true})
 	g = draw(term, 20, 3)
 	if got := rowText(g, 2); got != "five" {
 		t.Errorf("after typing, row 2 = %q, want %q", got, "five")
@@ -585,7 +585,7 @@ func TestWriteFailureIsReportedAndEndsTheTerminal(t *testing.T) {
 	t.Cleanup(func() { _ = term.Close() })
 	term.Layout(ui.Size{Cols: 20, Rows: 4})
 
-	term.HandleKey(input.Event{Kind: input.Text, Rune: 'a', NormalText: true})
+	keyTo(t, term, input.Event{Kind: input.Text, Rune: 'a', NormalText: true})
 
 	waitFor(t, func() bool {
 		mu.Lock()
@@ -629,8 +629,8 @@ func TestSelectionIsVisibleInTheDrawnGrid(t *testing.T) {
 	host := grid.New(20, 4, pal.FG, pal.BG)
 	term.Draw(host.View())
 
-	term.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft})
-	term.HandleMouse(input.MouseEvent{Kind: input.MouseMove, Button: input.MouseLeft, Col: 4})
+	mouseTo(t, term, input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft})
+	mouseTo(t, term, input.MouseEvent{Kind: input.MouseMove, Button: input.MouseLeft, Col: 4})
 	term.Draw(host.View())
 
 	if got := host.BGOf(2, 0); got != pal.Selection {
@@ -668,13 +668,13 @@ func TestTypingClearsTheSelection(t *testing.T) {
 	term, f := newTestTerm(t, 20, 4, Config{WriteClipboard: func(string) {}})
 	f.feed(t, term, "hello")
 	draw(term, 20, 4)
-	term.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft})
-	term.HandleMouse(input.MouseEvent{Kind: input.MouseMove, Button: input.MouseLeft, Col: 4})
+	mouseTo(t, term, input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft})
+	mouseTo(t, term, input.MouseEvent{Kind: input.MouseMove, Button: input.MouseLeft, Col: 4})
 	if !term.Copy() {
 		t.Fatal("the drag selected nothing")
 	}
 
-	term.HandleKey(input.Event{Kind: input.Text, Rune: 'x', NormalText: true})
+	keyTo(t, term, input.Event{Kind: input.Text, Rune: 'x', NormalText: true})
 
 	if term.Copy() {
 		t.Error("typing left the selection behind")
@@ -692,8 +692,8 @@ func TestShiftOverridesMouseReporting(t *testing.T) {
 	before := len(f.sentText())
 
 	// Without shift the program gets the report and no selection starts.
-	term.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft})
-	term.HandleMouse(input.MouseEvent{Kind: input.MouseMove, Button: input.MouseLeft, Col: 4})
+	mouseTo(t, term, input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft})
+	mouseTo(t, term, input.MouseEvent{Kind: input.MouseMove, Button: input.MouseLeft, Col: 4})
 	waitFor(t, func() bool { return len(f.sentText()) > before })
 	if term.Copy() {
 		t.Error("a drag started a selection while the program owned the mouse")
@@ -701,10 +701,10 @@ func TestShiftOverridesMouseReporting(t *testing.T) {
 
 	// With shift held the selection works and the program hears nothing.
 	sent := len(f.sentText())
-	term.HandleMouse(input.MouseEvent{
+	mouseTo(t, term, input.MouseEvent{
 		Kind: input.MousePress, Button: input.MouseLeft, Mods: input.ModShift,
 	})
-	term.HandleMouse(input.MouseEvent{
+	mouseTo(t, term, input.MouseEvent{
 		Kind: input.MouseMove, Button: input.MouseLeft, Col: 4, Mods: input.ModShift,
 	})
 
@@ -722,7 +722,7 @@ func TestMouseReportingReachesTheProgram(t *testing.T) {
 	term, f := newTestTerm(t, 20, 4, Config{})
 	f.feed(t, term, "\x1b[?1000h")
 
-	term.HandleMouse(input.MouseEvent{
+	mouseTo(t, term, input.MouseEvent{
 		Kind: input.MousePress, Button: input.MouseLeft, Col: 3, Row: 1,
 	})
 
@@ -881,20 +881,20 @@ func TestTwoTerminalsInASplit(t *testing.T) {
 	}
 
 	// Typing reaches the focused pane only.
-	root.HandleKey(input.Event{Kind: input.Text, Rune: 'x', NormalText: true})
+	keyTo(t, &root, input.Event{Kind: input.Text, Rune: 'x', NormalText: true})
 	waitFor(t, func() bool { return lf.sentText() == "x" })
 	if got := rf.sentText(); got != "" {
 		t.Errorf("the unfocused pane received %q", got)
 	}
 
 	// Clicking the other pane moves focus, and then typing follows.
-	root.HandleMouse(input.MouseEvent{
+	mouseTo(t, &root, input.MouseEvent{
 		Kind: input.MousePress, Button: input.MouseLeft, Col: 8, Row: 1,
 	})
-	root.HandleMouse(input.MouseEvent{
+	mouseTo(t, &root, input.MouseEvent{
 		Kind: input.MouseRelease, Button: input.MouseLeft, Col: 8, Row: 1,
 	})
-	root.HandleKey(input.Event{Kind: input.Text, Rune: 'y', NormalText: true})
+	keyTo(t, &root, input.Event{Kind: input.Text, Rune: 'y', NormalText: true})
 
 	waitFor(t, func() bool { return rf.sentText() == "y" })
 	if got := lf.sentText(); got != "x" {
@@ -1013,7 +1013,7 @@ func TestTerminalsInADeck(t *testing.T) {
 	}
 
 	// Typing reaches the shell being shown, and only that one.
-	root.HandleKey(input.Event{Kind: input.Text, Rune: 'x', NormalText: true})
+	keyTo(t, &root, input.Event{Kind: input.Text, Rune: 'x', NormalText: true})
 	waitFor(t, func() bool { return ff.sentText() == "x" })
 	if got := sf.sentText(); got != "" {
 		t.Errorf("the hidden shell received %q", got)
@@ -1025,7 +1025,7 @@ func TestTerminalsInADeck(t *testing.T) {
 	if got := rowText(host, 0); got != "SECOND" {
 		t.Errorf("the top row = %q, want the second shell once it is in front", got)
 	}
-	root.HandleKey(input.Event{Kind: input.Text, Rune: 'y', NormalText: true})
+	keyTo(t, &root, input.Event{Kind: input.Text, Rune: 'y', NormalText: true})
 	waitFor(t, func() bool { return sf.sentText() == "y" })
 }
 
@@ -1068,15 +1068,15 @@ func TestTerminalCancelGestureEndsADrag(t *testing.T) {
 	f.feed(t, term, "hello")
 	draw(term, 20, 4)
 
-	term.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft})
-	term.HandleMouse(input.MouseEvent{Kind: input.MouseMove, Button: input.MouseLeft, Col: 2})
+	mouseTo(t, term, input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft})
+	mouseTo(t, term, input.MouseEvent{Kind: input.MouseMove, Button: input.MouseLeft, Col: 2})
 	if !term.Copy() {
 		t.Fatal("the drag selected nothing")
 	}
 
 	// The release never comes: a dialog opened over it.
 	term.CancelGesture()
-	term.HandleMouse(input.MouseEvent{Kind: input.MouseMove, Col: 4})
+	mouseTo(t, term, input.MouseEvent{Kind: input.MouseMove, Col: 4})
 
 	if got := term.SelectionText(); got != "hel" {
 		t.Errorf("selection = %q, want it left where the drag ended: a hover extended it", got)
@@ -1093,11 +1093,11 @@ func TestTerminalCancelGestureThroughTheRoot(t *testing.T) {
 	root.Layout(ui.Rect{Cols: 20, Rows: 4})
 	root.Draw(grid.New(20, 4, fgOf(), bgOf()).View())
 
-	root.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft})
-	root.HandleMouse(input.MouseEvent{Kind: input.MouseMove, Button: input.MouseLeft, Col: 2})
+	mouseTo(t, &root, input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft})
+	mouseTo(t, &root, input.MouseEvent{Kind: input.MouseMove, Button: input.MouseLeft, Col: 2})
 	root.PushModal(&nothing{})
 	root.PopModal()
-	root.HandleMouse(input.MouseEvent{Kind: input.MouseMove, Col: 8})
+	mouseTo(t, &root, input.MouseEvent{Kind: input.MouseMove, Col: 8})
 
 	if got := term.SelectionText(); got != "hel" {
 		t.Errorf("selection = %q, want the dialog to have ended the drag", got)

@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/session"
 	"github.com/marrasen/gridterm/ui/term"
 )
@@ -174,10 +173,4 @@ func paneFromAnotherWindow(t *testing.T, a *testApp) *term.Terminal {
 		t.Fatalf("no pane says it came from another window: %v", panelText(a, time.Now()))
 	}
 	return found
-}
-
-// servedRow is the row for the one pane another window opened here.
-func servedRow(t *testing.T, a *testApp) *conns.Entry {
-	t.Helper()
-	return a.panes[paneFromAnotherWindow(t, a)]
 }

@@ -144,7 +144,8 @@ func lacksFinalNewline(path string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	defer f.Close()
+	// Opened to read, so a close that fails has lost nothing.
+	defer func() { _ = f.Close() }()
 	var last [1]byte
 	if _, err := f.ReadAt(last[:], info.Size()-1); err != nil {
 		return false, err

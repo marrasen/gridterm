@@ -1129,3 +1129,16 @@ func TestReconnectingToATargetThatMovedSaysSo(t *testing.T) {
 		return strings.Contains(pane.ReadLines(200).Text, "This pane was on")
 	})
 }
+
+// A program that ran and stopped is the zero way to end.
+//
+// So ranAndStopped has to stay first in its block. Taking it out shifted
+// cutOff into the zero value, and every pane that ended with nothing
+// else said about it started claiming its connection had gone.
+func TestTheZeroWayToEndIsHavingRunAndStopped(t *testing.T) {
+	var how endedHow
+
+	if how != ranAndStopped {
+		t.Errorf("the zero endedHow is %d, want the one for a program that ran and stopped", how)
+	}
+}

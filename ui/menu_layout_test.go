@@ -108,7 +108,7 @@ func TestMenuDrawsTheScrolledItems(t *testing.T) {
 	m := longMenu(t, 20)
 	m.Layout(Size{Cols: 40, Rows: 6})
 	for range 19 {
-		m.HandleKey(press(input.KeyDown, 0))
+		keyTo(t, m, press(input.KeyDown, 0))
 	}
 	if m.place.top == 0 {
 		t.Fatal("the list did not scroll, so this proves nothing")
@@ -144,7 +144,7 @@ func TestMenuClickIsScrollAware(t *testing.T) {
 	m.Anchor = func() Rect { return Rect{X: 0, Y: 2, Cols: 4, Rows: 1} }
 	m.Layout(Size{Cols: 40, Rows: 9})
 	for range 19 {
-		m.HandleKey(press(input.KeyDown, 0))
+		keyTo(t, m, press(input.KeyDown, 0))
 	}
 	box := menuLines(m)
 	if box.Y == 0 || m.place.top == 0 {
@@ -166,7 +166,7 @@ func TestMenuClickIsScrollAware(t *testing.T) {
 func TestMenuHighlightsTheSelectedRow(t *testing.T) {
 	cmds := testCommands("Copy", "Paste", "Quit")
 	m, _ := newTestMenu(t, cmds, items("copy", "paste", "quit"))
-	m.HandleKey(press(input.KeyDown, 0))
+	keyTo(t, m, press(input.KeyDown, 0))
 
 	g := drawMenu(m, 40, 20)
 
@@ -231,7 +231,7 @@ func TestMenuShrunkToFitStillReachesEveryLine(t *testing.T) {
 	m.Anchor = func() Rect { return Rect{X: 0, Y: 0, Cols: 4, Rows: 1} }
 	m.Layout(Size{Cols: 40, Rows: 6})
 
-	m.HandleKey(press(input.KeyEnd, 0))
+	keyTo(t, m, press(input.KeyEnd, 0))
 
 	if m.place.at != 29 {
 		t.Fatalf("End landed on %d, want the last line", m.place.at)
@@ -299,7 +299,7 @@ func TestMenuClosesBeforeItRuns(t *testing.T) {
 	m.Style = menuStyled()
 	m.Layout(Size{Cols: 40, Rows: 20})
 
-	m.HandleKey(press(input.KeyEnter, 0))
+	keyTo(t, m, press(input.KeyEnter, 0))
 
 	if openWhenRun {
 		t.Error("the command ran while the menu was still on the stack")
@@ -398,7 +398,7 @@ func TestPressingTheMenuRuleRunsNothing(t *testing.T) {
 		t.Fatal("the menu is not truncated, so this proves nothing")
 	}
 	for _, y := range []int{box.Y, box.Y + box.Rows - 1} {
-		m.HandleMouse(pressAt(box.X+1, y))
+		mouseTo(t, m, pressAt(box.X+1, y))
 		if ran != "" {
 			t.Fatalf("a press on the rule at row %d ran %q", y, ran)
 		}
@@ -407,7 +407,7 @@ func TestPressingTheMenuRuleRunsNothing(t *testing.T) {
 	// And scrolled to the end, where the top rule would name a real line
 	// as well.
 	for range 19 {
-		m.HandleKey(press(input.KeyDown, 0))
+		keyTo(t, m, press(input.KeyDown, 0))
 	}
 	if m.place.top == 0 {
 		t.Fatal("the menu did not scroll, so this proves nothing")
@@ -415,11 +415,11 @@ func TestPressingTheMenuRuleRunsNothing(t *testing.T) {
 	box = m.box()
 	was := m.SelectedIndex()
 	for _, y := range []int{box.Y, box.Y + box.Rows - 1} {
-		m.HandleMouse(moveTo(box.X+1, y))
+		mouseTo(t, m, moveTo(box.X+1, y))
 		if got := m.SelectedIndex(); got != was {
 			t.Fatalf("the pointer on the rule at row %d selected %d, want %d", y, got, was)
 		}
-		m.HandleMouse(pressAt(box.X+1, y))
+		mouseTo(t, m, pressAt(box.X+1, y))
 		if ran != "" {
 			t.Fatalf("a press on the rule at row %d ran %q", y, ran)
 		}
@@ -458,7 +458,7 @@ func TestAMenuWithNoRoomForALine(t *testing.T) {
 		if ran != "" {
 			t.Fatalf("in %d rows Enter ran %q from a menu nobody can see", rows, ran)
 		}
-		m.HandleKey(press(input.KeyEscape, 0))
+		keyTo(t, m, press(input.KeyEscape, 0))
 		if closed != 1 {
 			t.Fatalf("in %d rows Escape closed it %d times", rows, closed)
 		}

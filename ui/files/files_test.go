@@ -1087,7 +1087,7 @@ func TestABrowserTooShortForTheBar(t *testing.T) {
 	// And a click where the bar would have been reaches the panes.
 	var asked int
 	b.OnCopy = func(Work) { asked++ }
-	b.HandleMouse(input.MouseEvent{
+	mouseTo(t, b, input.MouseEvent{
 		Kind: input.MousePress, Button: input.MouseLeft, Row: 2, Col: 25,
 	})
 	if asked != 0 {
@@ -2096,11 +2096,11 @@ func TestTheBrowserTakesOnlyTheChordsItOffers(t *testing.T) {
 func TestTypingANameMovesToIt(t *testing.T) {
 	p := alone(t, dirWith(t, "alpha", "gamma", "gazebo", "zulu"))
 
-	typeName(p, "ga")
+	typeName(t, p, "ga")
 	if got := selectedName(t, p); got != "gamma" {
 		t.Fatalf("it is on %q, want gamma", got)
 	}
-	typeName(p, "z")
+	typeName(t, p, "z")
 	if got := selectedName(t, p); got != "gazebo" {
 		t.Fatalf("it is on %q, want gazebo", got)
 	}
@@ -2110,7 +2110,7 @@ func TestTypingANameMovesToIt(t *testing.T) {
 
 	// Backspace takes a letter back rather than going up a directory.
 	was := p.At()
-	p.HandleKey(input.Event{Kind: input.KeyPress, Key: input.KeyBackspace})
+	keyTo(t, p, input.Event{Kind: input.KeyPress, Key: input.KeyBackspace})
 	if p.At() != was {
 		t.Fatalf("it left %q for %q on a backspace while typing", was, p.At())
 	}
@@ -2119,7 +2119,7 @@ func TestTypingANameMovesToIt(t *testing.T) {
 	}
 
 	// Escape gives up on the name, so backspace goes up again.
-	p.HandleKey(input.Event{Kind: input.KeyPress, Key: input.KeyEscape})
+	keyTo(t, p, input.Event{Kind: input.KeyPress, Key: input.KeyEscape})
 	if got := p.Finding(); got != "" {
 		t.Errorf("it is still looking for %q", got)
 	}
@@ -2130,8 +2130,8 @@ func TestTypingANameMovesToIt(t *testing.T) {
 func TestTypingStartsAgainWhenNothingMatches(t *testing.T) {
 	p := alone(t, dirWith(t, "alpha", "gamma"))
 
-	typeName(p, "al")
-	typeName(p, "g")
+	typeName(t, p, "al")
+	typeName(t, p, "g")
 	if got := selectedName(t, p); got != "gamma" {
 		t.Fatalf("it is on %q, want gamma", got)
 	}
@@ -2139,9 +2139,9 @@ func TestTypingStartsAgainWhenNothingMatches(t *testing.T) {
 	// And a pause between letters is two searches, not one.
 	now := time.Now()
 	p.clock = func() time.Time { return now }
-	typeName(p, "a")
+	typeName(t, p, "a")
 	now = now.Add(2 * findPause)
-	typeName(p, "g")
+	typeName(t, p, "g")
 	if got := selectedName(t, p); got != "gamma" {
 		t.Fatalf("it is on %q, want the name the second letter starts", got)
 	}
@@ -2160,9 +2160,10 @@ func dirWith(t *testing.T, names ...string) string {
 }
 
 // typeName types letters into a pane the way the platform delivers them.
-func typeName(p *Pane, text string) {
+func typeName(t *testing.T, p *Pane, text string) {
+	t.Helper()
 	for _, r := range text {
-		p.HandleKey(input.Event{Kind: input.Text, Rune: r, NormalText: true})
+		keyTo(t, p, input.Event{Kind: input.Text, Rune: r, NormalText: true})
 	}
 }
 
@@ -2377,8 +2378,8 @@ func TestBrowserDividerCanBeDragged(t *testing.T) {
 			if !took {
 				t.Fatal("the press on the divider was not taken, so no drag can follow")
 			}
-			r.HandleMouse(moveCol(tc.to))
-			r.HandleMouse(releaseCol(tc.to))
+			mouseTo(t, r, moveCol(tc.to))
+			mouseTo(t, r, releaseCol(tc.to))
 
 			if got := widths(b); !equalInts(got, tc.want) {
 				t.Fatalf("the panes are %v wide, want %v", got, tc.want)
@@ -2390,7 +2391,7 @@ func TestBrowserDividerCanBeDragged(t *testing.T) {
 
 			// And a move once the button is up is nothing to do with it.
 			was := widths(b)
-			r.HandleMouse(moveCol(tc.to + 10))
+			mouseTo(t, r, moveCol(tc.to+10))
 			if got := widths(b); !equalInts(got, was) {
 				t.Fatalf("the panes are %v wide after the button came up, want %v", got, was)
 			}
@@ -2419,31 +2420,31 @@ func TestBrowserDragKeepsACellForEveryPane(t *testing.T) {
 	r := underRoot(b, 92, 12)
 	at := dividerCol(t, b, 92, 12, 0)
 
-	r.HandleMouse(pressCol(at))
-	r.HandleMouse(moveCol(-99))
+	mouseTo(t, r, pressCol(at))
+	mouseTo(t, r, moveCol(-99))
 	if got := widths(b)[0]; got != 1 {
 		t.Fatalf("dragged off the left the first pane is %d wide, want 1", got)
 	}
 	checkSpread(t, b, 92)
 
-	r.HandleMouse(moveCol(999))
+	mouseTo(t, r, moveCol(999))
 	// It stops at the divider beside it, which keeps its own pane's cell.
 	if got := widths(b)[1]; got != 1 {
 		t.Fatalf("dragged off the right the middle pane is %d wide, want 1", got)
 	}
 	checkSpread(t, b, 92)
-	r.HandleMouse(releaseCol(999))
+	mouseTo(t, r, releaseCol(999))
 
 	// And the last divider dragged off the right edge leaves the pane
 	// beyond it on screen: there is nothing further right to stop it.
 	last := dividerCol(t, b, 92, 12, 1)
-	r.HandleMouse(pressCol(last))
-	r.HandleMouse(moveCol(999))
+	mouseTo(t, r, pressCol(last))
+	mouseTo(t, r, moveCol(999))
 	if got := widths(b)[2]; got != 1 {
 		t.Fatalf("dragged off the right the last pane is %d wide, want 1", got)
 	}
 	checkSpread(t, b, 92)
-	r.HandleMouse(releaseCol(999))
+	mouseTo(t, r, releaseCol(999))
 }
 
 // A divider dragged into the one beside it stops there rather than
@@ -2454,9 +2455,9 @@ func TestBrowserDividerStopsAtItsNeighbour(t *testing.T) {
 	r := underRoot(b, 92, 12)
 	at := dividerCol(t, b, 92, 12, 0)
 
-	r.HandleMouse(pressCol(at))
-	r.HandleMouse(moveCol(999))
-	r.HandleMouse(releaseCol(999))
+	mouseTo(t, r, pressCol(at))
+	mouseTo(t, r, moveCol(999))
+	mouseTo(t, r, releaseCol(999))
 
 	// The middle pane is down to its cell and the last one is where it
 	// was, one column along to make room for it.
@@ -2474,9 +2475,9 @@ func TestBrowserCancelGestureEndsADrag(t *testing.T) {
 	at := dividerCol(t, b, 92, 12, 0)
 	was := widths(b)
 
-	r.HandleMouse(pressCol(at))
+	mouseTo(t, r, pressCol(at))
 	b.CancelGesture()
-	r.HandleMouse(moveCol(10))
+	mouseTo(t, r, moveCol(10))
 
 	if got := widths(b); !equalInts(got, was) {
 		t.Fatalf("the panes are %v wide, want the drag to have stopped at %v", got, was)
@@ -2491,8 +2492,8 @@ func TestBrowserWheelDuringADragDoesNotMoveIt(t *testing.T) {
 	at := dividerCol(t, b, 92, 12, 0)
 	was := widths(b)
 
-	r.HandleMouse(pressCol(at))
-	r.HandleMouse(input.MouseEvent{
+	mouseTo(t, r, pressCol(at))
+	mouseTo(t, r, input.MouseEvent{
 		Kind: input.MousePress, Button: input.MouseWheelUp, Col: 10, Row: 3,
 	})
 
@@ -2500,7 +2501,7 @@ func TestBrowserWheelDuringADragDoesNotMoveIt(t *testing.T) {
 		t.Fatalf("the panes are %v wide, want the notch ignored and %v", got, was)
 	}
 	// The drag is still on: the notch did not end it either.
-	r.HandleMouse(moveCol(20))
+	mouseTo(t, r, moveCol(20))
 	if got := widths(b)[0]; got != 20 {
 		t.Fatalf("the first pane is %d wide, want the drag to carry on after the notch", got)
 	}
@@ -2514,9 +2515,9 @@ func TestBrowserPressBesideADividerReachesThePane(t *testing.T) {
 	at := dividerCol(t, b, 92, 12, 0)
 	was := widths(b)
 
-	r.HandleMouse(pressCol(at - 1))
-	r.HandleMouse(moveCol(10))
-	r.HandleMouse(releaseCol(10))
+	mouseTo(t, r, pressCol(at-1))
+	mouseTo(t, r, moveCol(10))
+	mouseTo(t, r, releaseCol(10))
 
 	if got := b.Here().At(); got != dirs[0] {
 		t.Fatalf("the keys are in %q, want the pane beside the divider", got)
@@ -2533,16 +2534,16 @@ func TestBrowserClicksFollowADraggedDivider(t *testing.T) {
 	r := underRoot(b, 92, 12)
 	at := dividerCol(t, b, 92, 12, 0)
 
-	r.HandleMouse(pressCol(at))
-	r.HandleMouse(moveCol(10))
-	r.HandleMouse(releaseCol(10))
+	mouseTo(t, r, pressCol(at))
+	mouseTo(t, r, moveCol(10))
+	mouseTo(t, r, releaseCol(10))
 
 	// Column 20 was the first pane's before the drag and is the second
 	// pane's after it.
 	if at <= 20 {
 		t.Fatalf("the divider started at column %d, so column 20 was never the first pane's", at)
 	}
-	r.HandleMouse(pressCol(20))
+	mouseTo(t, r, pressCol(20))
 
 	if got := b.Here().At(); got != dirs[1] {
 		t.Fatalf("the click put the keys in %q, want the pane the drag moved under it", got)
@@ -2556,9 +2557,9 @@ func TestAddingAPaneSharesTheRoomAgain(t *testing.T) {
 	b, _ := many(t, 3)
 	r := underRoot(b, 92, 12)
 	at := dividerCol(t, b, 92, 12, 0)
-	r.HandleMouse(pressCol(at))
-	r.HandleMouse(moveCol(10))
-	r.HandleMouse(releaseCol(10))
+	mouseTo(t, r, pressCol(at))
+	mouseTo(t, r, moveCol(10))
+	mouseTo(t, r, releaseCol(10))
 
 	if !b.Add(here(t, t.TempDir())) {
 		t.Fatal("Add refused a new pane")
@@ -2584,13 +2585,13 @@ func TestRemovingAPaneDuringADragEndsIt(t *testing.T) {
 	b, _ := many(t, 3)
 	r := underRoot(b, 92, 12)
 	at := dividerCol(t, b, 92, 12, 0)
-	r.HandleMouse(pressCol(at))
+	mouseTo(t, r, pressCol(at))
 
 	if _, ok := b.Remove(b.Panes()[2]); !ok {
 		t.Fatal("Remove refused a pane that was there")
 	}
 	was := widths(b)
-	r.HandleMouse(moveCol(5))
+	mouseTo(t, r, moveCol(5))
 
 	if got := widths(b); !equalInts(got, was) {
 		t.Fatalf("the panes are %v wide, want the drag to have ended at %v", got, was)
@@ -2611,9 +2612,9 @@ func TestBrowserDragRedrawsAndThenSettles(t *testing.T) {
 	g.ClearDirty()
 
 	at := dividerCol(t, b, 92, 12, 0)
-	r.HandleMouse(pressCol(at))
-	r.HandleMouse(moveCol(20))
-	r.HandleMouse(releaseCol(20))
+	mouseTo(t, r, pressCol(at))
+	mouseTo(t, r, moveCol(20))
+	mouseTo(t, r, releaseCol(20))
 	b.Draw(g.View())
 
 	if !g.AnyDirty() {
@@ -2657,22 +2658,22 @@ func TestBrowserDragIgnoresAnotherButtonComingUp(t *testing.T) {
 	r := underRoot(b, 92, 12)
 	at := dividerCol(t, b, 92, 12, 0)
 
-	r.HandleMouse(pressCol(at))
-	r.HandleMouse(moveCol(25))
-	r.HandleMouse(input.MouseEvent{
+	mouseTo(t, r, pressCol(at))
+	mouseTo(t, r, moveCol(25))
+	mouseTo(t, r, input.MouseEvent{
 		Kind: input.MousePress, Button: input.MouseRight, Col: 25, Row: 3,
 	})
-	r.HandleMouse(input.MouseEvent{
+	mouseTo(t, r, input.MouseEvent{
 		Kind: input.MouseRelease, Button: input.MouseRight, Col: 25, Row: 3,
 	})
-	r.HandleMouse(moveCol(20))
+	mouseTo(t, r, moveCol(20))
 
 	if got := widths(b)[0]; got != 20 {
 		t.Fatalf("the first pane is %d wide, want the drag to carry on to 20", got)
 	}
 	// And the left button still ends it.
-	r.HandleMouse(releaseCol(20))
-	r.HandleMouse(moveCol(40))
+	mouseTo(t, r, releaseCol(20))
+	mouseTo(t, r, moveCol(40))
 	if got := widths(b)[0]; got != 20 {
 		t.Fatalf("the first pane is %d wide after the button came up, want 20", got)
 	}
@@ -2697,14 +2698,14 @@ func TestBrowserDragCarriesOnOutsideItsOwnArea(t *testing.T) {
 	}
 	at := dividerCol(t, b, area.Cols, area.Rows, 0)
 
-	r.HandleMouse(input.MouseEvent{
+	mouseTo(t, r, input.MouseEvent{
 		Kind: input.MousePress, Button: input.MouseLeft, Col: area.X + at, Row: 3,
 	})
 	if got := r.Holding(); got != ui.Widget(b) {
 		t.Fatalf("the pointer is held by %v, want the browser", got)
 	}
 	// Right out of the browser and into the widget beside it.
-	r.HandleMouse(input.MouseEvent{
+	mouseTo(t, r, input.MouseEvent{
 		Kind: input.MouseMove, Button: input.MouseLeft, Col: 0, Row: 3,
 	})
 

@@ -105,9 +105,9 @@ func TestMenubarClickOpensAMenu(t *testing.T) {
 
 func TestMenubarClickOnTheOpenTitleCloses(t *testing.T) {
 	b, st := newTestBar(t, &filler{ch: 'x'})
-	b.HandleMouse(pressAt(1, 0))
+	mouseTo(t, b, pressAt(1, 0))
 
-	b.HandleMouse(pressAt(1, 0))
+	mouseTo(t, b, pressAt(1, 0))
 
 	if b.OpenIndex() != -1 {
 		t.Errorf("open = %d, want nothing open", b.OpenIndex())
@@ -136,7 +136,7 @@ func TestMenubarPassesAClickBelowToTheChild(t *testing.T) {
 	child := &filler{ch: 'x'}
 	b, _ := newTestBar(t, child)
 
-	b.HandleMouse(pressAt(5, 3))
+	mouseTo(t, b, pressAt(5, 3))
 
 	if len(child.seen) != 1 {
 		t.Fatalf("the child saw %d events, want one", len(child.seen))
@@ -181,7 +181,7 @@ func TestMenubarAnchorsAMenuUnderItsTitle(t *testing.T) {
 
 	// "Edit" is the second title: "File" takes six columns with a space
 	// each side.
-	b.HandleMouse(pressAt(7, 0))
+	mouseTo(t, b, pressAt(7, 0))
 
 	menu := st.top()
 	if menu == nil {
@@ -222,7 +222,7 @@ func TestMenubarAnchorFollowsTheBarsOwnPosition(t *testing.T) {
 	b, st := newTestBar(t, &filler{ch: 'x'})
 	b.Origin = func() Rect { return Rect{X: 10, Y: 4, Cols: 40, Rows: 20} }
 
-	b.HandleMouse(pressAt(1, 0))
+	mouseTo(t, b, pressAt(1, 0))
 
 	menu := st.top()
 	if menu == nil {
@@ -240,19 +240,19 @@ func TestMenubarAnchorFollowsTheBarsOwnPosition(t *testing.T) {
 
 func TestMenubarArrowsMoveBetweenMenus(t *testing.T) {
 	b, st := newTestBar(t, &filler{ch: 'x'})
-	b.HandleMouse(pressAt(1, 0))
+	mouseTo(t, b, pressAt(1, 0))
 
-	st.top().HandleKey(press(input.KeyRight, 0))
+	keyTo(t, st.top(), press(input.KeyRight, 0))
 
 	if b.OpenIndex() != 1 {
 		t.Errorf("open = %d, want the second menu", b.OpenIndex())
 	}
 	// And it wraps at the ends rather than stopping.
-	st.top().HandleKey(press(input.KeyRight, 0))
+	keyTo(t, st.top(), press(input.KeyRight, 0))
 	if b.OpenIndex() != 0 {
 		t.Errorf("open = %d after stepping past the last, want the first", b.OpenIndex())
 	}
-	st.top().HandleKey(press(input.KeyLeft, 0))
+	keyTo(t, st.top(), press(input.KeyLeft, 0))
 	if b.OpenIndex() != 1 {
 		t.Errorf("open = %d after stepping back from the first, want the last", b.OpenIndex())
 	}
@@ -262,9 +262,9 @@ func TestMenubarArrowsMoveBetweenMenus(t *testing.T) {
 // bar leaves one menu on screen, not two.
 func TestMenubarOpeningAnotherClosesTheFirst(t *testing.T) {
 	b, st := newTestBar(t, &filler{ch: 'x'})
-	b.HandleMouse(pressAt(1, 0))
+	mouseTo(t, b, pressAt(1, 0))
 
-	b.HandleMouse(pressAt(7, 0))
+	mouseTo(t, b, pressAt(7, 0))
 
 	if st.closed != 1 {
 		t.Errorf("closed %d times, want the first menu taken away", st.closed)
@@ -282,7 +282,7 @@ func TestMenubarOpeningAnotherClosesTheFirst(t *testing.T) {
 // that press directly.
 func TestMenubarPressOnAnotherTitleSwitchesMenus(t *testing.T) {
 	b, st := newTestBar(t, &filler{ch: 'x'})
-	b.HandleMouse(pressAt(1, 0))
+	mouseTo(t, b, pressAt(1, 0))
 	menu := st.top()
 
 	// A press on "Edit", which lands outside the open menu.
@@ -304,7 +304,7 @@ func TestMenubarPressOnAnotherTitleSwitchesMenus(t *testing.T) {
 // menu rather than reaching the pane underneath.
 func TestMenubarPressBesideTheTitlesClosesTheMenu(t *testing.T) {
 	b, st := newTestBar(t, &filler{ch: 'x'})
-	b.HandleMouse(pressAt(1, 0))
+	mouseTo(t, b, pressAt(1, 0))
 
 	handled, _ := st.top().HandleMouse(pressAt(39, 0))
 
@@ -324,9 +324,9 @@ func TestMenubarPressBesideTheTitlesClosesTheMenu(t *testing.T) {
 // bar must not claim it as a title.
 func TestMenubarPressBelowTheBarDoesNotSwitch(t *testing.T) {
 	b, st := newTestBar(t, &filler{ch: 'x'})
-	b.HandleMouse(pressAt(1, 0))
+	mouseTo(t, b, pressAt(1, 0))
 
-	st.top().HandleMouse(pressAt(1, 10))
+	mouseTo(t, st.top(), pressAt(1, 10))
 
 	if b.OpenIndex() != -1 {
 		t.Errorf("open = %d, want the menu closed", b.OpenIndex())
@@ -339,7 +339,7 @@ func TestMenubarClosingWhenNothingIsOpenIsHarmless(t *testing.T) {
 	b, st := newTestBar(t, &filler{ch: 'x'})
 
 	b.Close()
-	b.HandleMouse(pressAt(1, 0))
+	mouseTo(t, b, pressAt(1, 0))
 	b.Close()
 	b.Close()
 
@@ -380,7 +380,7 @@ func TestMenubarOpenRejectsATitleThatIsNotThere(t *testing.T) {
 // down, so the two do not look unrelated.
 func TestMenubarMarksTheOpenTitle(t *testing.T) {
 	b, _ := newTestBar(t, &filler{ch: 'x'})
-	b.HandleMouse(pressAt(1, 0))
+	mouseTo(t, b, pressAt(1, 0))
 	g := grid.New(40, 20, fg, bg)
 
 	b.Draw(g.View())

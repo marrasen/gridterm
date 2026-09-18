@@ -160,12 +160,12 @@ func TestMenuDrawsItsRuleAndKeepsItsLinesStraight(t *testing.T) {
 		t.Fatalf("row %d = %q, want the first line", lines.Y, rowOf(g, lines.Y))
 	}
 	// And a press on that row runs that line.
-	m.HandleMouse(moveTo(lines.X+1, lines.Y))
+	mouseTo(t, m, moveTo(lines.X+1, lines.Y))
 	if got := m.SelectedIndex(); got != 0 {
 		t.Fatalf("the pointer on the first line selected %d", got)
 	}
 	// A press on the rule itself chooses nothing and leaves the menu up.
-	m.HandleMouse(moveTo(box.X, box.Y))
+	mouseTo(t, m, moveTo(box.X, box.Y))
 	if got := m.SelectedIndex(); got != 0 {
 		t.Fatalf("the pointer on the rule selected %d", got)
 	}

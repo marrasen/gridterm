@@ -35,8 +35,10 @@ func TestWriterCountsWhatWentPast(t *testing.T) {
 	}
 
 	// The other way counts as leaving.
-	Writer{W: io.Discard, M: m, Out: true, Clock: func() time.Time { return at }}.
-		Write([]byte("bye"))
+	if _, err := (Writer{W: io.Discard, M: m, Out: true,
+		Clock: func() time.Time { return at }}).Write([]byte("bye")); err != nil {
+		t.Fatalf("write the other way: %v", err)
+	}
 	if in, out = m.Totals(); in != 5 || out != 3 {
 		t.Fatalf("totals = %d in, %d out, want 5 and 3", in, out)
 	}

@@ -1026,30 +1026,23 @@ func (s *Screen) Wrap() bool { return s.mode.Wrap }
 // and the wrap it owes has not happened yet.
 func (s *Screen) WrapNext() bool { return s.cursor.WrapNext }
 
-// SetPalette gives the screen the colours it resolves into from now on.
+// SetPalette gives the screen the colours it draws in, and moves what is
+// already on it to the same places in the new scheme, matching colour
+// against colour since a cell holds no entry number.
 //
-// Cells already written keep the colours they were written in: a cell
-// holds what it is drawn in, not which entry it came from. New output,
-// and anything the screen blanks, takes the new scheme.
+// A colour an escape named outright is left alone, unless the old scheme
+// held the same one.
 func (s *Screen) SetPalette(pal Palette) {
-	was := s.palette
+	if pal == s.palette {
+		return
+	}
+	move := recolour(s.palette, pal)
 	s.palette = pal
-	// What a blank line is made of comes from the pen, which every
-	// resize and every scroll sets afresh, so only the pen is moved
-	// here. The pen holds colours rather than which entry they came
-	// from, so
-	// one still writing in the old scheme's default takes the new one's.
-	// A pen an escape put a colour in keeps it.
-	retint := func(pen *grid.Cell) {
-		if pen.FG == was.FG {
-			pen.FG = pal.FG
-		}
-		if pen.BG == was.BG {
-			pen.BG = pal.BG
-		}
-	}
-	retint(&s.cursor.Pen)
+	move.cell(&s.cursor.Pen)
 	for i := range s.saved {
-		retint(&s.saved[i].Pen)
+		move.cell(&s.saved[i].Pen)
 	}
+	move.buffer(s.pri)
+	move.buffer(s.alt)
+	s.touchAll()
 }

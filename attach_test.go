@@ -10,6 +10,7 @@ import (
 
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/serve"
+	"github.com/marrasen/gridterm/themes"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/term"
 )
@@ -121,6 +122,28 @@ func TestAWatcherIsSentTheLiveScreenNotTheScrolledView(t *testing.T) {
 	if strings.Contains(got, "one") {
 		t.Errorf("it sent what the user had scrolled back to: %q", got)
 	}
+}
+
+// A scheme change on the machine being watched is sent on, so the
+// watcher does not sit on the old scheme until the program next redraws.
+func TestAWatcherIsSentTheScreenWhenTheSchemeChanges(t *testing.T) {
+	pane, shell, w := watchedPane(t, 40, 8)
+	readUntil(t, w, "\x1b[H\x1b[2J")
+	shell.out <- []byte("printed before")
+	readUntil(t, w, "printed before")
+
+	paper, have := themes.Named(themes.Built(), "Paper")
+	if !have {
+		t.Fatal("there is no Paper scheme to change to")
+	}
+	pal, err := paper.Palette()
+	if err != nil {
+		t.Fatalf("Paper's colours: %v", err)
+	}
+	pane.SetPalette(pal)
+
+	// The screen again, with the program having said nothing more.
+	readUntil(t, w, "printed before")
 }
 
 // A watcher that fell too far behind is given the whole screen, not the

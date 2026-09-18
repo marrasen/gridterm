@@ -429,14 +429,13 @@ there is one key for position and one for recency.
   keep the directory somewhere only you can read, and that is the whole
   of what gridterm does about it. Same class as the key line above.
 
-- **Changing the colour scheme leaves what is on a screen behind.** A
-  cell holds the colours it is drawn in, not which entry of the scheme
-  they came from, so there is nothing to look the new ones up with. New
-  output and anything the program clears take the new scheme; what was
-  printed before keeps what it was printed in, until the program draws
-  it again. Doing better means keeping the entry a colour came from on
-  every cell, through `grid`, `vt`, the renderer and the wire a watcher
-  reads over. Worth deciding whether that is wanted before building it.
+- **A pane watched over the wire keeps the host's named colours.** The
+  window the pane belongs to sends its screen again when the scheme
+  changes, so a watcher sees the change at once. What it sees is a mix.
+  The wire leaves the default ground and text out, so those take the
+  watcher's own scheme. Everything the program named is carried as a
+  resolved colour, so the reds and blues stay the host's. Carrying the
+  entry a colour came from over the wire would close it.
 
 - An orphaned `conhost.exe` can be left with no `cmd.exe` under it. Seen
   on a live window while the shell leak was being looked into: the shell

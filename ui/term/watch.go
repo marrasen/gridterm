@@ -115,6 +115,25 @@ func (t *Terminal) liveScreen() string {
 	return vt.Repaint(g, full)
 }
 
+// sendScreen hands everyone watching the screen again. The emulator's
+// lock is already held, as it is in Watch and Resync, so a watcher gets
+// the screen at one moment and its stream carries on from there.
+func (t *Terminal) sendScreen() {
+	t.watchMu.Lock()
+	defer t.watchMu.Unlock()
+	if t.ended || len(t.watchers) == 0 {
+		return
+	}
+	screen := []byte(t.liveScreen())
+	for _, w := range append([]Watcher(nil), t.watchers...) {
+		if err := w.Screen(screen); err != nil {
+			// A connection that has gone, which the thing carrying the
+			// client reports. Nothing here can do anything about it.
+			t.forget(w)
+		}
+	}
+}
+
 // Unwatch stops showing this terminal to somebody.
 func (t *Terminal) Unwatch(w Watcher) {
 	t.watchMu.Lock()

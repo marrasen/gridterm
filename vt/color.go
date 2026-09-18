@@ -8,9 +8,10 @@ import (
 
 // Palette is the colour scheme a terminal resolves SGR colours against.
 //
-// Colours are resolved to RGBA as cells are written, not stored as
-// indices. That keeps the grid a pure display structure, at the cost of
-// a palette change not recolouring text already on screen.
+// Colours are resolved to RGBA as cells are written rather than stored
+// as indices, which keeps the grid a pure display structure. Changing
+// the scheme moves what is already on a screen by matching each colour
+// against the old scheme.
 type Palette struct {
 	// ANSI holds the 256-colour palette: 0-7 normal, 8-15 bright,
 	// 16-231 the 6x6x6 cube, 232-255 greyscale.

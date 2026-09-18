@@ -94,24 +94,59 @@ func TestAPaneTakesTheScheme(t *testing.T) {
 	}
 }
 
-// What the shell printed before keeps the colours it was printed in. A
-// cell holds what it is drawn in, not which entry of the scheme it came
-// from, so there is nothing to look the new one up with.
-func TestWhatWasPrintedBeforeKeepsItsColours(t *testing.T) {
+// What the shell printed before the change moves into the new scheme,
+// so a light scheme does not leave the pane on a black ground.
+func TestWhatWasPrintedBeforeMovesToTheNewScheme(t *testing.T) {
 	a, _ := aThemedWindow(t)
 	pane := onlyPaneWidget(t, a).(*term.Terminal)
 	was := a.colours
+	paper := themeNamed(t, a, "Paper")
+	want, _ := paper.Palette()
 	a.shells[0].out <- []byte("printed before the scheme changed")
 	waitFor(t, a, "the shell to print", func() bool {
 		return strings.Contains(paneText(pane), "printed before")
 	})
 
-	if err := a.takeTheme(themeNamed(t, a, "Paper")); err != nil {
+	if err := a.takeTheme(paper); err != nil {
 		t.Fatalf("take it: %v", err)
 	}
 
-	if got := gridOfPane(t, pane).At(0, 0).FG; got != was.FG {
-		t.Errorf("what was printed before is now %v, want the %v it was printed in", got, was.FG)
+	c := gridOfPane(t, pane).At(0, 0)
+	if c.FG != want.FG || c.BG != want.BG {
+		t.Errorf("what was printed before is %v on %v, want %v on %v (it was printed in %v on %v)",
+			c.FG, c.BG, want.FG, want.BG, was.FG, was.BG)
+	}
+}
+
+// A named colour a pane printed moves to the same name in the new
+// scheme. Two things used to break this with the real schemes: a scheme
+// repeats some of its named colours further up the 256, and its ground
+// colour is usually one of them.
+func TestANamedColourInAPaneMovesToTheSameName(t *testing.T) {
+	a, _ := aThemedWindow(t)
+	pane := onlyPaneWidget(t, a).(*term.Terminal)
+	if err := a.takeTheme(themeNamed(t, a, "Contrast")); err != nil {
+		t.Fatalf("take Contrast: %v", err)
+	}
+	// Red, which Contrast also holds at entry 203, and black, which is
+	// Contrast's own ground colour.
+	a.shells[0].out <- []byte("\x1b[31mr\x1b[30mk\x1b[0m")
+	waitFor(t, a, "the shell to print", func() bool {
+		return strings.Contains(paneText(pane), "rk")
+	})
+	paper := themeNamed(t, a, "Paper")
+	want, _ := paper.Palette()
+
+	if err := a.takeTheme(paper); err != nil {
+		t.Fatalf("take Paper: %v", err)
+	}
+
+	g := gridOfPane(t, pane)
+	if got := g.At(0, 0).FG; got != want.ANSI[1] {
+		t.Errorf("the red is %v, want Paper's red %v", got, want.ANSI[1])
+	}
+	if got := g.At(1, 0).FG; got != want.ANSI[0] {
+		t.Errorf("the black text is %v, want Paper's black %v", got, want.ANSI[0])
 	}
 }
 

@@ -163,8 +163,8 @@ type Terminal struct {
 	// room the layout gave it, so Draw leaves that room blank.
 	elsewhere bool
 
-	// pal is the colours the terminal was built with, kept so the window
-	// can draw over the screen in them.
+	// pal is the colours the terminal draws in, kept so the window can
+	// draw over the screen in them.
 	pal vt.Palette
 
 	// caption is the line above the screen, and empty for a pane without
@@ -1239,11 +1239,8 @@ func (t *Terminal) fail(err error) {
 	}
 }
 
-// SetPalette gives the terminal the colours it draws in.
-//
-// What the program has already printed keeps the colours it was printed
-// in: a cell holds what it is drawn in, not which entry of the scheme it
-// came from. New output takes the new one.
+// SetPalette gives the terminal the colours it draws in, and moves what
+// the program has already printed into the new scheme.
 func (t *Terminal) SetPalette(pal vt.Palette) {
 	t.mu.Lock()
 	t.term.Screen().SetPalette(pal)
@@ -1251,6 +1248,7 @@ func (t *Terminal) SetPalette(pal vt.Palette) {
 	t.g.DefaultFG, t.g.DefaultBG = pal.FG, pal.BG
 	t.g.SelectionBG = pal.Selection
 	t.g.MarkAllDirty()
+	t.sendScreen()
 	t.mu.Unlock()
 	t.pending.Store(true)
 }

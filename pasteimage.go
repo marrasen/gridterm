@@ -212,3 +212,26 @@ func takeSentPicture(raw []byte) error {
 	}
 	return setClipboardImage(img)
 }
+
+// paste puts whatever is on the clipboard into a pane.
+//
+// Text when there is text, and the picture when there is no text and
+// there is a picture. A clipboard holding both is text: that is what
+// copying from a browser leaves, and the words are what was meant far
+// more often than the picture. edit.pasteImage asks for the other one.
+func (a *app) paste(pane *term.Terminal) error {
+	if a.clipboardText() {
+		pane.Paste(a.pasteText())
+		return nil
+	}
+	if _, have, err := a.clipboardPicture(); err != nil || !have {
+		// No picture either, so this is an empty clipboard and pasting
+		// nothing is what was asked for. A clipboard that would not be
+		// read is worth saying.
+		if err != nil {
+			return err
+		}
+		return nil
+	}
+	return a.pasteImage(pane)
+}

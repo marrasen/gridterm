@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"image"
 	"log"
@@ -69,17 +70,13 @@ func (c *clipboardWriter) set(text string) {
 // one that calls it.
 func (a *app) pasteText() string {
 	if !a.clipboardText() {
-		// An empty clipboard is an ordinary thing to meet and says
-		// nothing. A clipboard holding a picture is worth a word,
-		// because the user meant to paste something and there is a way
-		// to paste it.
+		// Nothing to paste. An empty clipboard says nothing, and a
+		// clipboard holding a picture is worth a word here: this is the
+		// text path, which a dialog field pastes through, and a field
+		// has nowhere to put a picture. A pane takes one -- see paste.
 		if img, have, err := a.clipboardPicture(); err == nil && have && img != nil {
-			how := `"Paste a picture as a file" on the Edit menu pastes it`
-			if chord := a.chordFor("edit.pasteImage"); chord != "" {
-				how = chord + " pastes it as a file"
-			}
-			a.reportError("Could not paste", fmt.Errorf(
-				"the clipboard holds a picture rather than text. %s", how))
+			a.reportError("Could not paste", errors.New(
+				"the clipboard holds a picture rather than text, and this takes text"))
 		}
 		return ""
 	}

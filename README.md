@@ -446,11 +446,15 @@ italic as the regular glyph again, so `ESC[1m` printed nothing different.
 A fallback face stands in for a *rune* the family cannot draw rather
 than for a style, so what it draws is left alone.
 
+**Paste takes whatever is on the clipboard.** Text when there is text,
+and the picture when there is none. A clipboard holding both is text:
+that is what copying from a browser leaves, and the words are what was
+meant far more often. `edit.pasteImage` asks for the other one.
+
 **A picture is handed over as a path, not as bytes.** A program reading
-a terminal cannot be given an image: the pipe carries text. So
-`edit.pasteImage` writes what is on the clipboard to a PNG under the
-system's temporary directory and types the path in its place, which is
-what the programs that take pasted images already expect to read.
+a terminal cannot be given an image: the pipe carries text. So what is
+typed is a PNG's path, which is what the programs that take pasted
+images already expect to read.
 
 Reading the clipboard is per-platform. `clipboard_image_windows.go` asks
 the operating system for a device independent bitmap and turns it into

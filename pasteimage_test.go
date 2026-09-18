@@ -202,9 +202,70 @@ func TestPastingTextWithAPictureOnTheClipboardSaysWhatIsThere(t *testing.T) {
 	if strings.Contains(said, "completed successfully") {
 		t.Errorf("it said %q, which is what a success looks like", said)
 	}
-	// And it names the way to paste it.
-	if !strings.Contains(said, a.chordFor("edit.pasteImage")) {
-		t.Errorf("it said %q, want the chord that pastes a picture", said)
+}
+
+// Pasting into a pane takes whatever is there: text when there is text,
+// and the picture when there is none. The user pressed paste, and there
+// is one thing on the clipboard to paste.
+func TestPastingIntoAPaneTakesThePictureWhenThereIsNoText(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	pane := firstPane(t, a)
+	a.panes[pane] = &conns.Entry{Host: conns.Local, Kind: conns.Terminal}
+	a.hasClipText = func() bool { return false }
+	a.readClipImage = func() (image.Image, bool, error) {
+		return image.NewRGBA(image.Rect(0, 0, 2, 2)), true, nil
+	}
+
+	if err := a.paste(pane); err != nil {
+		t.Fatalf("paste: %v", err)
+	}
+
+	waitFor(t, a, "the path to reach the shell", func() bool {
+		return strings.Contains(a.shells[0].sentText(), ".png")
+	})
+	typed := strings.TrimSpace(a.shells[0].sentText())
+	t.Cleanup(func() { os.Remove(typed) })
+	if _, err := os.Stat(typed); err != nil {
+		t.Errorf("it typed a path to nothing: %v", err)
+	}
+}
+
+// A clipboard holding both is text. That is what copying from a browser
+// leaves, and the words are what was meant far more often.
+func TestPastingIntoAPaneTakesTheTextWhenThereIsBoth(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	pane := firstPane(t, a)
+	a.panes[pane] = &conns.Entry{Host: conns.Local, Kind: conns.Terminal}
+	a.hasClipText = func() bool { return true }
+	a.readClip = func() (string, error) { return "the words", nil }
+	a.readClipImage = func() (image.Image, bool, error) {
+		t.Error("it went for the picture with text on the clipboard")
+		return nil, false, nil
+	}
+
+	if err := a.paste(pane); err != nil {
+		t.Fatalf("paste: %v", err)
+	}
+
+	waitFor(t, a, "the text to reach the shell", func() bool {
+		return strings.Contains(a.shells[0].sentText(), "the words")
+	})
+}
+
+// An empty clipboard pastes nothing and says nothing.
+func TestPastingIntoAPaneWithAnEmptyClipboardSaysNothing(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	pane := firstPane(t, a)
+	a.hasClipText = func() bool { return false }
+	a.readClipImage = func() (image.Image, bool, error) { return nil, false, nil }
+
+	if err := a.paste(pane); err != nil {
+		t.Fatalf("paste: %v", err)
+	}
+
+	if len(a.modals) != 0 {
+		t.Errorf("an empty clipboard put %d dialogs up", len(a.modals))
 	}
 }
 

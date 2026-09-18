@@ -469,8 +469,13 @@ was on that clipboard before.
 There is no standard for this. OSC 52 is the standard for a clipboard
 over a terminal and it carries text only; Sixel and the rest draw a
 picture rather than putting one anywhere. So this is gridterm's own
-channel between two gridterms, which is why it does nothing for a pane
-reached by SSH.
+channel between two gridterms.
+
+A pane on a machine reached by SSH has no gridterm over there to hand a
+clipboard to, so the picture is written on that machine instead and the
+path typed names a file it can open. Under the home directory of
+whoever the connection logs in as, because where a temporary directory
+is depends on the machine and this has only a path separator to go on.
 
 **Damage tracking is load-bearing.** `ebiten.SetScreenClearedEveryFrame(false)`
 means a row the renderer skips shows the *previous* frame, not a blank.

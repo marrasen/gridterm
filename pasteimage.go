@@ -8,10 +8,12 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/ui/term"
+	"github.com/marrasen/gridterm/vfs"
 )
 
 // pastedDir is where a picture taken off the clipboard is written, under
@@ -50,9 +52,92 @@ func (a *app) pasteImage(pane *term.Terminal) error {
 		// own clipboard and the program reads it the way it reads one
 		// pasted by somebody sitting at it.
 		return a.sendPictureTo(on, pane, img)
+	case on.machine != nil:
+		// A machine reached by SSH. There is no gridterm over there to
+		// hand a clipboard to, so the picture is written on it and the
+		// path typed names a file that machine can open.
+		return a.writePictureOn(on, pane, img)
 	}
-	return fmt.Errorf(
-		"this pane is running on %s, and a picture cannot be pasted there yet", on.name)
+	return fmt.Errorf("nothing is connected to %s", on.name)
+}
+
+// writePictureOn writes a picture on a machine reached by SSH and types
+// the path into the pane.
+//
+// Opening the filesystem here rather than on the goroutine below is what
+// opening a file manager on that machine already does: it is a moment
+// after a key was pressed, which is when the user expects one. The
+// writing is the part that can take a while, and that goes elsewhere.
+func (a *app) writePictureOn(on hostFacts, pane *term.Terminal, img image.Image) error {
+	raw, err := asPNG(img)
+	if err != nil {
+		return err
+	}
+	fs, err := a.filesystem(on.name)
+	if err != nil {
+		return err
+	}
+	at, host := a.clock(), on.name
+	go func() {
+		defer func() {
+			if err := fs.Close(); err != nil {
+				a.pump.post(func() {
+					a.logError(fmt.Errorf("let go of the files on %s: %w", host, err))
+				})
+			}
+		}()
+		path, err := putPictureOn(fs, raw, at)
+		a.pump.post(func() {
+			if err != nil {
+				a.reportError("Could not paste a picture onto "+host, err)
+				return
+			}
+			pane.Paste(path)
+		})
+	}()
+	return nil
+}
+
+// putPictureOn writes a picture into a directory of its own under the
+// home directory of whoever the connection logs in as.
+//
+// Under home rather than a temporary directory, because where that is
+// depends on the machine and this has only a path separator to go on.
+// A directory of its own so the files are together and can be cleared
+// out in one go.
+func putPictureOn(fs vfs.FS, raw []byte, at time.Time) (string, error) {
+	home, err := fs.Home()
+	if err != nil {
+		return "", fmt.Errorf("find somewhere to put the picture: %w", err)
+	}
+	sep := string(fs.Sep())
+	dir := strings.TrimSuffix(home, sep) + sep + pastedDir
+	if _, err := fs.Stat(dir); err != nil {
+		if err := fs.Mkdir(dir, 0o700); err != nil {
+			return "", fmt.Errorf("make somewhere to put the picture: %w", err)
+		}
+	}
+	path := dir + sep + at.Format("20060102-150405.000") + ".png"
+	w, err := fs.Create(path, 0o600)
+	if err != nil {
+		return "", fmt.Errorf("write the picture: %w", err)
+	}
+	if _, err := w.Write(raw); err != nil {
+		return "", fmt.Errorf("write the picture: %w", errors.Join(err, w.Close()))
+	}
+	if err := w.Close(); err != nil {
+		return "", fmt.Errorf("write the picture: %w", err)
+	}
+	return path, nil
+}
+
+// asPNG is a picture as the bytes that go over a connection.
+func asPNG(img image.Image) ([]byte, error) {
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		return nil, fmt.Errorf("read the picture: %w", err)
+	}
+	return buf.Bytes(), nil
 }
 
 // sendPictureTo puts a picture on the clipboard of a window this one has
@@ -63,11 +148,11 @@ func (a *app) pasteImage(pane *term.Terminal) error {
 // paste is only pressed once the picture has landed: pressing it first
 // would paste whatever was on that clipboard before.
 func (a *app) sendPictureTo(on hostFacts, pane *term.Terminal, img image.Image) error {
-	var buf bytes.Buffer
-	if err := png.Encode(&buf, img); err != nil {
-		return fmt.Errorf("read the picture: %w", err)
+	raw, err := asPNG(img)
+	if err != nil {
+		return err
 	}
-	raw, win, name := buf.Bytes(), on.window.win, on.name
+	win, name := on.window.win, on.name
 	go func() {
 		err := win.SendPicture(raw)
 		a.pump.post(func() {

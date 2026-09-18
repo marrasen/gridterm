@@ -24,10 +24,26 @@ type Reader struct {
 // only valid until the next Poll.
 func (r *Reader) Poll() []input.Event {
 	r.raw = ebiten.AppendInputEvents(r.raw[:0])
+	return r.take(r.raw, ebiten.IsFocused())
+}
+
+// take turns one frame's raw events into the toolkit-free ones, and
+// counts the modifier keys as it goes.
+//
+// Split from Poll so it can be tested: what is left up there is the two
+// calls that need a window.
+func (r *Reader) take(raw []ebiten.InputEvent, focused bool) []input.Event {
 	r.out = r.out[:0]
-	for _, ev := range r.raw {
+	// A window nobody is typing into cannot see a key let go of
+	// elsewhere, so what it thought was held would stay held.
+	if !focused {
+		forgetMods()
+	}
+	for _, ev := range raw {
 		switch ev.Kind {
 		case ebiten.InputEventKindKey:
+			// The mouse carries no modifiers of its own and takes these.
+			sawKey(ev.Key, ev.Action, ev.Mods)
 			r.out = append(r.out, input.Event{
 				Kind:   actionKind(ev.Action),
 				Key:    fromKey(ev.Key),

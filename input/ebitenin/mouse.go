@@ -87,38 +87,3 @@ func (r *MouseReader) Poll(at func(px, py int) (col, row int)) []input.MouseEven
 	r.lastCol, r.lastRow, r.haveLast = col, row, true
 	return r.out
 }
-
-// Mods reads the modifier keys held now.
-//
-// Polled rather than delivered as events. A mouse event carries no
-// modifier mask of its own, and a window that wants to know whether a
-// key is still down cannot wait for a release that may land in another
-// window.
-func Mods() input.Mods { return currentMods() }
-
-// currentMods reads the modifier keys.
-//
-// It reads nothing on Windows. IsKeyPressed is deprecated in the ebiten
-// this builds against and answers from a map only the browser and
-// mobile backends fill, so every mouse event here carries no modifier
-// at all. Written up in TODO.md under "The modifier keys are dead on
-// the mouse"; the answer is the modifiers that AppendInputEvents
-// already carries for the keyboard.
-//
-//nolint:staticcheck // deprecated, and the replacement is the fix above
-func currentMods() input.Mods {
-	var m input.Mods
-	if ebiten.IsKeyPressed(ebiten.KeyShift) {
-		m |= input.ModShift
-	}
-	if ebiten.IsKeyPressed(ebiten.KeyControl) {
-		m |= input.ModCtrl
-	}
-	if ebiten.IsKeyPressed(ebiten.KeyAlt) {
-		m |= input.ModAlt
-	}
-	if ebiten.IsKeyPressed(ebiten.KeyMeta) {
-		m |= input.ModSuper
-	}
-	return m
-}

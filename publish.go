@@ -27,12 +27,6 @@ func (a *app) snapshot(now time.Time) serve.Snapshot {
 		// one, because it is a window rather than a machine.
 		window := a.windows.named(g.Host) != nil
 		for _, row := range g.Rows {
-			// Not a shell a client started here: the window that opened
-			// it is already drawing it, and it has no pane here to
-			// attach to.
-			if a.servedRows[row.Entry] {
-				continue
-			}
 			// The size of its screen, for something that has one. It
 			// is not resized to suit a watcher, so a watcher that
 			// wants to know has to be told.

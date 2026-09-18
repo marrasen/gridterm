@@ -65,10 +65,7 @@ func TestOneWindowWorksInAnotherMachinesShell(t *testing.T) {
 	}
 	defer func() { _ = w.Close() }()
 
-	sess, err := w.Open(80, 24)
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
+	sess := openOverTheWire(t, a, w, 80, 24)
 	defer func() { _ = sess.Close() }()
 
 	if _, err := sess.Write([]byte("echo taken-over-ok\r")); err != nil {
@@ -173,7 +170,7 @@ func TestLettingGoOfATakenWindowTakesItsPanes(t *testing.T) {
 	}
 	waitFor(t, client, "the serving window to see it go", func() bool {
 		return len(host.serving.clients()) == 0
-	})
+	}, host)
 }
 
 // A window that is not serving is not taken over, and the pane that was
@@ -1092,9 +1089,12 @@ func twoWindowsSized(t *testing.T, cols, rows int) (host, client *testApp, addr 
 		t.Fatalf("take over: %v", err)
 	}
 	answer(t, client, "Connect")
+	// Both: the window over there opens the pane on its own goroutine
+	// that draws, so a test that pumped only this one would wait for a
+	// pane the other window was never going to open.
 	waitFor(t, client, "a pane on the other window", func() bool {
 		return client.windows.named(addr) != nil && len(client.panes) > panes
-	})
+	}, host)
 	return host, client, addr
 }
 
@@ -1117,15 +1117,23 @@ func TestTheSidebarShowsWhatTheOtherWindowHasOpen(t *testing.T) {
 	}
 	host.refreshPanel(panelNow)
 
-	// The serving window now has two things open, and says so.
-	waitFor(t, client, "the other window to say it has two open", func() bool {
-		return len(client.windows.named(addr).win.Opens()) == 2
-	})
+	// Four: the pane the serving window already had, its row for this
+	// window being served, the pane this window opened over there, and
+	// the one just opened there. A pane opened from here is a pane of
+	// that window's like any other.
+	waitFor(t, client, "the other window to say it has four open", func() bool {
+		return len(client.windows.named(addr).win.Opens()) == 4
+	}, host)
 
 	// And this window shows a row for each, under the window itself.
 	client.refreshPanel(panelNow)
 	held := windowAt(t, client, addr)
-	want := len(held.win.Opens())
+	want := 0
+	for _, open := range held.win.Opens() {
+		if open.HasScreen() {
+			want++
+		}
+	}
 	var shown int
 	for _, row := range client.panel.Rows() {
 		if key, ok := row.Key.(remoteKey); ok && key.window == held {
@@ -1133,7 +1141,7 @@ func TestTheSidebarShowsWhatTheOtherWindowHasOpen(t *testing.T) {
 		}
 	}
 	if shown != want {
-		t.Errorf("%d rows are shown for the %d it said it had open", shown, want)
+		t.Errorf("%d rows are shown for the %d screens it said it had open", shown, want)
 	}
 }
 
@@ -1308,13 +1316,26 @@ func TestAttachingToNothingSaysSo(t *testing.T) {
 // onlyPaneOn is the one pane a window has.
 func onlyPaneOn(t *testing.T, a *testApp) *term.Terminal {
 	t.Helper()
-	if len(a.panes) != 1 {
-		t.Fatalf("%d panes, want one", len(a.panes))
+	own := ownPanes(a)
+	if len(own) != 1 {
+		t.Fatalf("%d panes of its own, want one", len(own))
 	}
-	for pane := range a.panes {
-		return pane
+	return own[0]
+}
+
+// ownPanes are the panes a window opened for itself. A pane a client
+// opened here is a pane of this window's, and still belongs to the
+// conversation with that client, so a test counting what a window has
+// open does not mean one.
+func ownPanes(a *testApp) []*term.Terminal {
+	var own []*term.Terminal
+	for pane, e := range a.panes {
+		if e != nil && e.Note == servedLabel {
+			continue
+		}
+		own = append(own, pane)
 	}
-	return nil
+	return own
 }
 
 // newestPane is the pane most recently opened, which is the one in
@@ -2927,4 +2948,39 @@ func TestAPaneWhoseSizeAWatcherTookSaysSo(t *testing.T) {
 	if size == hostPane.Box() {
 		t.Errorf("the screen is held at %v, which is the room this window has for it", size)
 	}
+}
+
+// openOverTheWire opens something to work in through a real connection,
+// running the window that serves it while it waits.
+//
+// The window opens a pane of its own for this, on the goroutine that
+// draws, so nothing comes back until that goroutine has run. A test
+// that called Open and then waited would be waiting for a window it had
+// stopped running.
+func openOverTheWire(t *testing.T, a *testApp, w *serve.Window, cols, rows int) session.Session {
+	t.Helper()
+	type made struct {
+		sess session.Session
+		err  error
+	}
+	back := make(chan made, 1)
+	go func() {
+		sess, err := w.Open(cols, rows)
+		back <- made{sess: sess, err: err}
+	}()
+	deadline := time.Now().Add(waitBudget)
+	for time.Now().Before(deadline) {
+		a.pump.run()
+		select {
+		case got := <-back:
+			if got.err != nil {
+				t.Fatalf("open: %v", got.err)
+			}
+			return got.sess
+		default:
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("the window never opened anything to work in")
+	return nil
 }

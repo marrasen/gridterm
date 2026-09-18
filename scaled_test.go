@@ -45,6 +45,11 @@ func aHeldScreen(t *testing.T, cols, rows int) (host, client *testApp, hostPane 
 	}
 	addr := host.serving.addr()
 	takeOverFromTheDialog(t, client, addr, keyFile)
+	// Taking over opens a pane over there as well, and this test is
+	// about the pane the host already had. Closed, so the host's own
+	// pane has the window to itself the way it did before a client
+	// opening one put a pane here too.
+	closeThePaneOpenedFromElsewhere(t, host, client)
 
 	// The shell says something and this window draws it where its own
 	// layout put it, so that what the window does once the size is taken
@@ -422,4 +427,24 @@ func hasLineWith(lines []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// closeThePaneOpenedFromElsewhere closes the pane a client opened on a
+// window, for a test that is about the panes the window already had.
+func closeThePaneOpenedFromElsewhere(t *testing.T, a, client *testApp) {
+	t.Helper()
+	var opened *term.Terminal
+	waitFor(t, a, "the pane the client opened", func() bool {
+		opened = nil
+		for pane, e := range a.panes {
+			if e != nil && e.Note == servedLabel {
+				opened = pane
+			}
+		}
+		return opened != nil
+	}, client)
+	if err := a.closePane(opened); err != nil {
+		t.Fatalf("close the pane the client opened: %v", err)
+	}
+	a.pump.run()
 }

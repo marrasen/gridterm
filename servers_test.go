@@ -40,8 +40,8 @@ func serverConfig(t *testing.T, s *sshtest.Server) remote.Config {
 // before there was anything to connect to.
 func waitForPanes(t *testing.T, a *testApp, n int) {
 	t.Helper()
-	waitFor(t, a, fmt.Sprintf("%d panes and nothing still connecting", n), func() bool {
-		return len(a.panes) == n && a.machines.beingMade() == 0
+	waitFor(t, a, fmt.Sprintf("%d panes of its own and nothing still connecting", n), func() bool {
+		return len(ownPanes(a)) == n && a.machines.beingMade() == 0
 	})
 }
 

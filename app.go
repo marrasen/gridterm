@@ -152,11 +152,6 @@ type app struct {
 	// showing.
 	switcher *switcher
 
-	// servedRows are the rows standing for a shell a client started
-	// here. They are on the sidebar and left out of what is published:
-	// the window that opened one is already drawing it.
-	servedRows map[*conns.Entry]bool
-
 	// theme is the colour scheme the window is drawn in.
 	theme *themePick
 

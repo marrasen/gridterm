@@ -159,7 +159,9 @@ func remoteRowOn(t *testing.T, a *testApp, addr, host string) remoteKey {
 	return remoteKey{}
 }
 
-// paneOn is the pane a window has on a machine, which has to be the one.
+// paneOn is the pane a window opened on a machine, which has to be the
+// one. A pane another window opened here is left out: it belongs to the
+// window that asked for it, and no test that asks this means one.
 //
 // Waited for: a pane opens on the goroutine that draws, so a test that
 // looked once could look before the connection had opened one.
@@ -169,7 +171,7 @@ func paneOn(t *testing.T, a *testApp, host string) *term.Terminal {
 	waitFor(t, a, "a pane on "+host, func() bool {
 		found = nil
 		for pane, e := range a.panes {
-			if e.Host != host {
+			if e.Host != host || e.Note == servedLabel {
 				continue
 			}
 			if found != nil {

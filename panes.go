@@ -270,21 +270,28 @@ func (a *app) openPaneHere() error { return a.openPaneWith(a.localTerminal) }
 // openPaneWith puts a shell from start in a pane, and closes it again
 // when there is nowhere to put it.
 func (a *app) openPaneWith(start func() (*term.Terminal, error)) error {
+	_, err := a.openAPaneWith(start)
+	return err
+}
+
+// openAPaneWith is openPaneWith for a caller that needs the pane it
+// opened.
+func (a *app) openAPaneWith(start func() (*term.Terminal, error)) (*term.Terminal, error) {
 	if a.paneToPlaceBeside() == nil && a.stage == nil {
-		return errors.New("nothing to open a pane beside")
+		return nil, errors.New("nothing to open a pane beside")
 	}
 	next, err := start()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := a.placePane(next); err != nil {
 		delete(a.panes, next)
 		delete(a.started, next)
 		_ = next.Close()
-		return err
+		return nil, err
 	}
 	a.showPane(next)
-	return nil
+	return next, nil
 }
 
 // placePane puts a widget beside the focused pane, and straight on the

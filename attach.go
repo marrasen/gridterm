@@ -54,6 +54,15 @@ func (a *app) watchPane(want serve.Attached, cols, rows int) (session.Session, e
 	if pane == nil {
 		return nil, errors.New("that is not something with a screen to watch")
 	}
+	return a.watchOpenPane(pane, cols, rows)
+}
+
+// watchOpenPane starts a watch on a pane of this window's, sized for the
+// pane the other window draws it in.
+//
+// On the goroutine that draws, which is the only one that may touch the
+// widget tree.
+func (a *app) watchOpenPane(pane *term.Terminal, cols, rows int) (session.Session, error) {
 	w, err := newWatched(pane)
 	if err != nil {
 		return nil, err

@@ -27,6 +27,10 @@ type wanted struct {
 	atlas      *glyph.Atlas
 	fontSize   float64
 	fontFamily string
+
+	// fontFixed says a typeface was named on the command line, which a
+	// theme does not overrule.
+	fontFixed  bool
 	command    []string
 	scrollback int
 	ssh        string
@@ -53,9 +57,9 @@ const openWindowCols, openWindowRows = 100, 32
 func openWindow(w wanted) (*app, error) {
 
 	a := &app{atlas: w.atlas, renderer: render.New(w.atlas), fontSize: w.fontSize}
-	// What -font-w.fontFamily chose, so the font menu treats it as the one in
+	// What -font-family chose, so the font menu treats it as the one in
 	// use rather than offering to switch to it again.
-	a.fontFamily = w.fontFamily
+	a.fontFamily, a.fontFixed = w.fontFamily, w.fontFixed
 	a.comp = render.NewCompositor(a.renderer)
 	// The compositor is called by the game loop and has nowhere to hand
 	// a failure back to.
@@ -113,8 +117,10 @@ func openWindow(w wanted) (*app, error) {
 	a.loadThemes()
 	a.offerToServeAgain()
 	if err := a.useTheme(a.startTheme()); err != nil {
-		// The theme the window opens on comes from the list, which was
-		// checked as it was read, so this is not reachable from a file.
+		// The theme the window opens on comes from the list, and every
+		// theme in it was read and checked when the file was. A typeface
+		// it names is not a reason to fail: useWantedFont says so itself
+		// and leaves the colours alone.
 		a.logError(err)
 	}
 	a.panes = make(map[*term.Terminal]*conns.Entry)

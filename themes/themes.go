@@ -39,6 +39,14 @@ type Theme struct {
 	// worked out from the two ends above. Nil for a theme that leaves it
 	// to the window.
 	Frame *Frame `json:"frame,omitempty"`
+
+	// Font names the typeface the window is drawn in while this theme is
+	// on, by family name. Empty leaves the font alone, which is what a
+	// theme that is only about colour does.
+	//
+	// A name this machine has no font for is not an error: the window
+	// keeps the typeface it was already drawn in.
+	Font string `json:"font,omitempty"`
 }
 
 // stored is the shape of the file.
@@ -152,6 +160,10 @@ func Built() []Theme {
 			// window writes its own labels and notes in those colours.
 			Name: "Turbo", FG: "#ffff55", BG: "#0000aa",
 			Selection: "#007b7b",
+			// The IBM VGA character set, which comes with gridterm, so
+			// the theme reads as a DOS program rather than as DOS
+			// colours in a modern typeface.
+			Font: "PxPlus IBM VGA8",
 			// The furniture written down rather than shaded off the blue:
 			// black on the light grey a DOS dialog sat on, a double rule
 			// round it, and green buttons the way Turbo Pascal drew them.

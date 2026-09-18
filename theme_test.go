@@ -14,6 +14,7 @@ import (
 	"github.com/marrasen/gridterm/themes"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/term"
+	"github.com/marrasen/gridterm/vt"
 )
 
 // aThemedWindow is a window whose settings are in a file the test owns.
@@ -799,5 +800,208 @@ func TestOnlyAFrameThemeCastsButtonShadows(t *testing.T) {
 	}
 	if got := a.formStyle().ButtonShadowBG; got.A != 0 {
 		t.Errorf("a button on a theme with no frame casts %v, and it casts none", got)
+	}
+}
+
+// A theme that names a typeface takes it, and one that names none leaves
+// the window's own alone.
+func TestAThemeTakesTheTypefaceItNames(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+
+	if err := a.useTheme(themeNamed(t, a, "Turbo")); err != nil {
+		t.Fatalf("take Turbo: %v", err)
+	}
+	if got := a.fontFamily; got != dosFamily {
+		t.Errorf("the window is drawn in %q, want the %q Turbo names", got, dosFamily)
+	}
+
+	// Dark names none, so the window keeps what it has rather than being
+	// dragged back to the face it opened on.
+	if err := a.useTheme(themeNamed(t, a, "Dark")); err != nil {
+		t.Fatalf("take Dark: %v", err)
+	}
+	if got := a.fontFamily; got != dosFamily {
+		t.Errorf("a theme naming no typeface changed it to %q", got)
+	}
+}
+
+// A theme naming a typeface this machine has no font for keeps the one
+// the window is already drawn in, rather than refusing the theme.
+func TestAThemeNamingAMissingTypefaceKeepsTheOne(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	if err := a.setFontFamily(dosFamily); err != nil {
+		t.Fatalf("start on the DOS face: %v", err)
+	}
+
+	theme := themeNamed(t, a, "Dark")
+	theme.Font = "No Such Family At All"
+	if err := a.useTheme(theme); err != nil {
+		t.Fatalf("a theme naming a typeface that is not here was refused: %v", err)
+	}
+
+	if got := a.fontFamily; got != dosFamily {
+		t.Errorf("the window is drawn in %q, want the %q it had", got, dosFamily)
+	}
+	if got := a.colours.BG; got != paletteOf(t, theme).BG {
+		t.Error("the theme's colours were not taken")
+	}
+}
+
+// A typeface a theme names that has to be found on disk is taken when
+// the scan lands, because a window opens on its theme before the scan
+// has finished.
+func TestATypefaceFoundLaterIsStillTaken(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withMenubar(t, a)
+
+	theme := themeNamed(t, a, "Dark")
+	theme.Font = "Consolas"
+	if err := a.useTheme(theme); err != nil {
+		t.Fatalf("take it: %v", err)
+	}
+	if a.fontFamily == "Consolas" {
+		t.Fatal("the family was found before the scan ran, so this proves nothing")
+	}
+
+	deliverFonts(a, realFamilies(t, "Consolas", "Courier New"))
+
+	if got := a.fontFamily; got != "Consolas" {
+		t.Errorf("the window is drawn in %q, want the %q the theme named", got, "Consolas")
+	}
+}
+
+// paletteOf reads a theme's palette or fails the test.
+func paletteOf(t *testing.T, theme themes.Theme) vt.Palette {
+	t.Helper()
+	p, err := theme.Palette()
+	if err != nil {
+		t.Fatalf("%s: %v", theme.Name, err)
+	}
+	return p
+}
+
+// A typeface named on the command line beats the one a theme asks for.
+// The flag is an instruction and the theme's name is a wish.
+func TestACommandLineTypefaceBeatsTheThemes(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	a.fontFixed = true
+
+	if err := a.useTheme(themeNamed(t, a, "Turbo")); err != nil {
+		t.Fatalf("take Turbo: %v", err)
+	}
+
+	if got := a.fontFamily; got == dosFamily {
+		t.Errorf("the theme changed the typeface to %q over the one the flag named", got)
+	}
+	if got, want := a.colours.BG, paletteOf(t, themeNamed(t, a, "Turbo")).BG; got != want {
+		t.Errorf("the window's ground is %v, want the theme's %v: only the typeface is pinned", got, want)
+	}
+}
+
+// A theme may name the face compiled in by the name the Font menu shows,
+// which is the one somebody writing a theme would copy.
+func TestAThemeCanNameTheBundledFaceTheWayTheMenuDoes(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	if err := a.setFontFamily(dosFamily); err != nil {
+		t.Fatalf("start on the DOS face: %v", err)
+	}
+
+	theme := themeNamed(t, a, "Dark")
+	theme.Font = bundledFamily
+	if err := a.useTheme(theme); err != nil {
+		t.Fatalf("take it: %v", err)
+	}
+
+	if got := a.fontFamily; got != "" {
+		t.Errorf("the window is drawn in %q, want the face compiled in", got)
+	}
+}
+
+// A typeface the user picked for themselves survives the theme being
+// taken again, which is what reloading the themes file does.
+func TestReloadingTheThemesKeepsTheTypefaceThatWasPicked(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+
+	if err := a.useTheme(themeNamed(t, a, "Turbo")); err != nil {
+		t.Fatalf("take Turbo: %v", err)
+	}
+	if err := a.pickFontFamily(""); err != nil {
+		t.Fatalf("pick the bundled face: %v", err)
+	}
+
+	// The same theme again, the way a reload takes it.
+	if err := a.useTheme(themeNamed(t, a, "Turbo")); err != nil {
+		t.Fatalf("take Turbo again: %v", err)
+	}
+
+	if got := a.fontFamily; got != "" {
+		t.Errorf("the window went back to %q, and the typeface was picked by hand", got)
+	}
+}
+
+// A theme naming a typeface does not leave its colours behind, whatever
+// the typeface does.
+func TestATypefaceThatWillNotReadStillLeavesTheColours(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withMenubar(t, a)
+	// A family whose file is not there, so loading it fails.
+	deliverFonts(a, fakeFamilies("Ghost"))
+
+	theme := themeNamed(t, a, "Paper")
+	theme.Font = "Ghost"
+	if err := a.useTheme(theme); err != nil {
+		t.Fatalf("a theme whose typeface will not read was refused: %v", err)
+	}
+
+	if got, want := a.colours.BG, paletteOf(t, theme).BG; got != want {
+		t.Errorf("the window's ground is %v, want the theme's %v", got, want)
+	}
+	if a.g != nil && a.g.DefaultBG != paletteOf(t, theme).BG {
+		t.Error("the grid kept the colours of the theme before, so restyle was skipped")
+	}
+}
+
+// A theme naming a typeface does not shrink the window it is taken in.
+//
+// A window opens on its theme before it has been laid out, and the
+// typeface swap used to resize the grid to the pixels it had, which were
+// none. The grid settled at one cell and the first shell was started a
+// column wide, so its banner and its prompt were laid out for a window
+// that never existed.
+func TestTakingATypefaceBeforeTheWindowHasASizeKeepsTheGrid(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	a.lastPixels = [2]int{}
+	a.lastSize = [2]int{80, 24}
+
+	if err := a.setFontFamily(dosFamily); err != nil {
+		t.Fatalf("take the DOS face: %v", err)
+	}
+
+	if got := a.lastSize; got != [2]int{80, 24} {
+		t.Errorf("the window is %v cells, want the %v it had", got, [2]int{80, 24})
+	}
+	if got := a.fontFamily; got != dosFamily {
+		t.Errorf("the typeface is %q, want it taken all the same", got)
+	}
+}
+
+// Taking a different theme overrules a typeface picked by hand, because
+// the new theme is a fresh choice about how the window should look.
+func TestADifferentThemeOverrulesAPickedTypeface(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+
+	if err := a.useTheme(themeNamed(t, a, "Dark")); err != nil {
+		t.Fatalf("take Dark: %v", err)
+	}
+	if err := a.pickFontFamily(""); err != nil {
+		t.Fatalf("pick the bundled face: %v", err)
+	}
+
+	if err := a.useTheme(themeNamed(t, a, "Turbo")); err != nil {
+		t.Fatalf("take Turbo: %v", err)
+	}
+
+	if got := a.fontFamily; got != dosFamily {
+		t.Errorf("the window is drawn in %q, want the %q Turbo names", got, dosFamily)
 	}
 }

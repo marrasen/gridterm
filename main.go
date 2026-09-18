@@ -15,7 +15,9 @@ import (
 	"os"
 	"strings"
 
+	_ "embed"
 	"github.com/hajimehoshi/ebiten/v2"
+
 	"golang.org/x/image/font/gofont/gomono"
 	"golang.org/x/image/font/gofont/gomonobold"
 	"golang.org/x/image/font/gofont/gomonobolditalic"
@@ -29,6 +31,13 @@ import (
 	"github.com/marrasen/gridterm/vt"
 )
 
+// dosFontTTF is the IBM VGA 8x16 character set, compiled in so a theme
+// can ask for it on a machine that has no such font installed. See
+// fonts/README.md for where it came from and what it may be used for.
+//
+//go:embed fonts/PxPlus_IBM_VGA8.ttf
+var dosFontTTF []byte
+
 // bundledFonts returns the Go Mono faces compiled into the binary.
 func bundledFonts() glyph.Fonts {
 	return glyph.Fonts{
@@ -38,6 +47,10 @@ func bundledFonts() glyph.Fonts {
 		BoldItalic: gomonobolditalic.TTF,
 	}
 }
+
+// dosFonts returns the bundled DOS face. It has the one style, so the
+// atlas draws bold and italic from it too.
+func dosFonts() glyph.Fonts { return glyph.Fonts{Regular: dosFontTTF} }
 
 // loadFonts reads the comma-separated font files given to -font, in the
 // order regular, bold, italic, bold italic. A trailing style may be left
@@ -138,6 +151,7 @@ func main() {
 		atlas:      atlas,
 		fontSize:   *fontSize,
 		fontFamily: family,
+		fontFixed:  *fontFiles != "" || *fontFamily != "",
 		command:    strings.Fields(*cmdline),
 		scrollback: *scroll,
 		ssh:        *sshTarget,

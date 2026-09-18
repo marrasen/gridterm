@@ -304,6 +304,19 @@ type app struct {
 	// fontSize is the current size in points.
 	fontSize float64
 
+	// wantFont is the family the theme asked for, kept because the theme
+	// is taken before the scan of the system's fonts has finished.
+	wantFont string
+
+	// fontFixed says a typeface was named on the command line. A theme
+	// names one as a wish, and a wish does not overrule an instruction.
+	fontFixed bool
+
+	// fontPicked says the user chose the typeface from the Font menu
+	// while this theme was on, so taking the same theme again does not
+	// drag them off it. Taking a different theme clears it.
+	fontPicked bool
+
 	// fontFamily names the installed family in use, empty while the
 	// typeface compiled into the binary is. What that typeface is comes
 	// from bundledFonts, not from a field: a window handed its starting

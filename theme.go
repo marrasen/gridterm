@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/marrasen/gridterm/settings"
 	"github.com/marrasen/gridterm/themes"
@@ -106,8 +107,18 @@ func (a *app) useTheme(t themes.Theme) error {
 		return err
 	}
 	a.colours, a.look = pal, look
+	if !strings.EqualFold(t.Name, a.theme.showing) {
+		// A different theme, so its wish about the typeface stands even
+		// over one picked by hand for the theme before.
+		a.fontPicked = false
+	}
 	a.theme.showing = t.Name
 	a.restyle()
+	// After the colours, and never instead of them: a typeface that will
+	// not read is worth saying, and it is no reason to leave the window
+	// half in one theme and half in another.
+	a.wantFont = t.Font
+	a.useWantedFont()
 	return nil
 }
 

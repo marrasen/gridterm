@@ -15,4 +15,4 @@ is the best to use though.
 
 # Duplicate pane
 
-I conected a client to a host and the same pane appeared twice in the side bar. They contained the exact same content
+I connected a client to a host and the same pane appeared twice in the side bar. They contain the exact same content, in the "view all panes" view I can see both panes (that's the same pane) update exactly the same

@@ -420,6 +420,22 @@ numbered sixteen is now drawn on a second ground, so `app.onFrame` moves
 it towards the frame's own text until it can be read there, which keeps
 what it can of the hue.
 
+**A theme may name a typeface, and the name is a wish.** `Theme.Font` is
+a family name. A window takes it when it has that font, compiled in or
+installed, and keeps the one it is already drawn in when it does not.
+A window opens on its theme before the scan of the system's fonts has
+finished, so `useWantedFont` runs again when the scan lands.
+
+Two things are not wishes. A typeface named with `-font` or
+`-font-family` is an instruction, and a theme does not overrule it. And
+a font that is there and will not read is a failure rather than a miss,
+so that error reaches the user instead of being swallowed as "not
+found".
+
+Two faces are compiled in: Go Mono, and the IBM VGA set the Turbo theme
+asks for. `fonts/README.md` says where the second came from and what its
+licence asks of anyone shipping it.
+
 **Damage tracking is load-bearing.** `ebiten.SetScreenClearedEveryFrame(false)`
 means a row the renderer skips shows the *previous* frame, not a blank.
 A row wrongly considered clean is a visible bug, so `grid.Set` compares

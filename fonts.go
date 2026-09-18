@@ -17,6 +17,27 @@ const fontCommandPrefix = "font.use."
 // binary, which are always available and need no file.
 const bundledFamily = "Go Mono (bundled)"
 
+// dosFamily is the other face compiled in: the IBM VGA character set, so
+// a theme can ask for the look of a DOS program on a machine that has no
+// such font installed.
+const dosFamily = "PxPlus IBM VGA8"
+
+// compiledIn returns the faces for a family that needs no file, the name
+// to remember it by, and whether the name is one of them.
+//
+// Go Mono answers to the empty name and to what the Font menu calls it,
+// because the menu's own wording is what somebody writing a theme will
+// copy. It is remembered as the empty name either way.
+func compiledIn(name string) (glyph.Fonts, string, bool) {
+	switch {
+	case name == "", strings.EqualFold(name, bundledFamily):
+		return bundledFonts(), "", true
+	case strings.EqualFold(name, dosFamily):
+		return dosFonts(), dosFamily, true
+	}
+	return glyph.Fonts{}, "", false
+}
+
 // startFontScan reads the system's fonts on a goroutine of its own.
 //
 // It takes a second or two, which is far too long on the goroutine that
@@ -56,14 +77,25 @@ func (a *app) reapFontScan() {
 	cmds = append(cmds, ui.Command{
 		ID:    fontCommandPrefix + "bundled",
 		Title: "Font: " + bundledFamily,
-		Run:   func() error { return a.setFontFamily("") },
+		Run:   func() error { return a.pickFontFamily("") },
+	})
+	cmds = append(cmds, ui.Command{
+		ID:    fontCommandID(dosFamily),
+		Title: "Font: " + dosFamily,
+		Run:   func() error { return a.pickFontFamily(dosFamily) },
 	})
 	for _, family := range got.families {
 		name := family.Name
+		if strings.EqualFold(name, dosFamily) {
+			// The same face is compiled in and has its line already.
+			// Registering a second command under one id would only log a
+			// clash on every start.
+			continue
+		}
 		cmds = append(cmds, ui.Command{
 			ID:    fontCommandID(name),
 			Title: "Font: " + name,
-			Run:   func() error { return a.setFontFamily(name) },
+			Run:   func() error { return a.pickFontFamily(name) },
 		})
 	}
 	// Only the ones that registered go on the menu. A line naming a
@@ -81,6 +113,9 @@ func (a *app) reapFontScan() {
 		registered = append(registered, cmd)
 	}
 	a.refreshFontMenu(registered)
+	// The theme was taken before the scan finished, so a face it named
+	// that had to be found on disk can only be taken now.
+	a.useWantedFont()
 	a.reportFontScan(got.err)
 }
 
@@ -175,11 +210,16 @@ func (a *app) refreshFontMenu(cmds []ui.Command) {
 // setFontFamily swaps the typeface, by family name. An empty name goes
 // back to the faces compiled into the binary.
 func (a *app) setFontFamily(name string) error {
+	// A face that needs no file has its name settled first, so every
+	// spelling of it is recognised as the face already in use.
+	fonts, settled, compiled := compiledIn(name)
+	if compiled {
+		name = settled
+	}
 	if strings.EqualFold(name, a.fontFamily) {
 		return nil
 	}
-	fonts := bundledFonts()
-	if name != "" {
+	if !compiled {
 		family, ok := a.familyNamed(name)
 		if !ok {
 			return fmt.Errorf("no font family %q", name)
@@ -197,12 +237,29 @@ func (a *app) setFontFamily(name string) error {
 		return fmt.Errorf("font %q: %w", name, err)
 	}
 	a.fontFamily = name
+	if a.lastPixels == [2]int{} {
+		// The window has not been laid out yet, which is where the theme
+		// it opens on asks for a typeface. Resizing to no pixels at all
+		// would settle the grid at one cell and start the first shell a
+		// column wide.
+		return nil
+	}
 	// A new typeface is a new cell box, so the window holds a different
 	// number of cells and every glyph quad has to be measured again.
 	a.lastSize = [2]int{0, 0}
 	a.resizeTo(a.lastPixels[0], a.lastPixels[1])
 	a.markDirty()
 	return nil
+}
+
+// haveFontFamily reports whether a name picks out a face this window can
+// draw with: one compiled in, or one the scan found installed.
+func (a *app) haveFontFamily(name string) bool {
+	if _, _, ok := compiledIn(name); ok {
+		return true
+	}
+	_, ok := a.familyNamed(name)
+	return ok
 }
 
 // familyNamed finds an installed family, ignoring case so a name typed
@@ -214,4 +271,36 @@ func (a *app) familyNamed(name string) (glyph.Family, bool) {
 		}
 	}
 	return glyph.Family{}, false
+}
+
+// useWantedFont takes the typeface the theme asked for.
+//
+// A theme that named none leaves the window's own alone, and so does one
+// that named a face this machine has no font for: the name is a wish,
+// not a requirement, and a window drawn in the wrong typeface is better
+// than one that refuses the theme. A face that is there and will not
+// read is a different thing, and that error reaches the user.
+//
+// A typeface named on the command line is an instruction rather than a
+// wish, and a theme does not overrule it.
+//
+// It is called again when the scan of the system's fonts lands, because
+// a window opens on its theme before the scan has finished.
+func (a *app) useWantedFont() {
+	if a.fontFixed || a.fontPicked || a.wantFont == "" || !a.haveFontFamily(a.wantFont) {
+		return
+	}
+	if err := a.setFontFamily(a.wantFont); err != nil {
+		a.logError(err)
+		a.reportError("The theme's typeface could not be read", err)
+	}
+}
+
+// pickFontFamily is the Font menu's route into setFontFamily. It writes
+// down that the user chose for themselves, so taking the same theme
+// again -- which is what reloading the themes file does -- does not drag
+// them back off the typeface they just picked.
+func (a *app) pickFontFamily(name string) error {
+	a.fontPicked = true
+	return a.setFontFamily(name)
 }

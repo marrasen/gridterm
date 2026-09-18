@@ -148,9 +148,9 @@ func TestFontScanRegistersACommandPerFamily(t *testing.T) {
 
 	deliverFonts(a, fakeFamilies("Consolas", "Courier New"))
 
-	// One per family, plus the bundled face.
-	if got := a.root.Commands.Len() - before; got != 3 {
-		t.Errorf("%d commands registered, want 3", got)
+	// One per family, plus the two faces compiled in.
+	if got := a.root.Commands.Len() - before; got != 4 {
+		t.Errorf("%d commands registered, want 4", got)
 	}
 	for _, name := range []string{"Consolas", "Courier New"} {
 		id := fontCommandID(name)
@@ -204,8 +204,8 @@ func TestFontScanAddsAMenu(t *testing.T) {
 		}
 		named++
 	}
-	if named != 3 {
-		t.Errorf("%d lines on the font menu, want 3", named)
+	if named != 4 {
+		t.Errorf("%d lines on the font menu, want 4", named)
 	}
 }
 
@@ -417,8 +417,8 @@ func TestFontMenuLinesAreNamedByTheirCommands(t *testing.T) {
 	}
 
 	// Every line survived the drop that removes what cannot be named.
-	if got := len(menu.Items()); got != 3 {
-		t.Errorf("%d lines showing, want 3: a line was dropped as unnameable", got)
+	if got := len(menu.Items()); got != 4 {
+		t.Errorf("%d lines showing, want 4: a line was dropped as unnameable", got)
 	}
 }
 
@@ -541,5 +541,27 @@ func TestTheFontDialogSaysWhatTheListIsAndWhatIsLeft(t *testing.T) {
 					got, tc.menu, n.Message())
 			}
 		})
+	}
+}
+
+// The DOS face is compiled in, so an installed copy of the same family
+// is passed over rather than registered under an id that is taken.
+//
+// The pack it comes from is a common thing to install, and a clash would
+// log an error on every start and drop a line from the menu.
+func TestAnInstalledCopyOfTheBundledDosFaceIsPassedOver(t *testing.T) {
+	a := newTestApp(t, 40, 20)
+	withMenubar(t, a)
+	before := a.root.Commands.Len()
+
+	deliverFonts(a, fakeFamilies(dosFamily, "Consolas"))
+
+	// Consolas, plus the two faces compiled in. The installed copy of
+	// the DOS face adds nothing.
+	if got := a.root.Commands.Len() - before; got != 3 {
+		t.Errorf("%d commands registered, want 3", got)
+	}
+	if _, ok := a.root.Commands.Lookup(fontCommandID(dosFamily)); !ok {
+		t.Error("there is no command for the DOS face at all")
 	}
 }

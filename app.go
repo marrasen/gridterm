@@ -405,11 +405,7 @@ func (a *app) Update() error {
 	// taken together, in placeRegions: a window measured afresh here
 	// and a region measured a frame ago would not agree on where the
 	// sidebar's rows are.
-	for _, ev := range a.mouse.Poll(a.cellAt) {
-		if _, err := a.routeMouse(ev); err != nil {
-			a.reportError("That could not be done", err)
-		}
-	}
+	a.handleMouse(a.mouse.Poll(a.cellAt))
 
 	// After the input, so a key or a click that opens or closes the
 	// sidebar is drawn this frame rather than the next one. Before it,
@@ -555,6 +551,42 @@ func (a *app) setGridSize(cols, rows int) {
 
 // setFontSize rebuilds the atlas and re-derives the grid size, because
 // changing the font changes how many cells fit in the window.
+// handleMouse gives a frame's mouse events to whatever they belong to.
+//
+// Split from the frame so it can be tested: what is left up there is
+// the poll, which needs a window.
+func (a *app) handleMouse(evs []input.MouseEvent) {
+	for _, ev := range evs {
+		took, err := a.zoomedFont(ev)
+		if err != nil {
+			a.reportError("The font size could not be changed", err)
+			continue
+		}
+		if took {
+			continue
+		}
+		if _, err := a.routeMouse(ev); err != nil {
+			a.reportError("That could not be done", err)
+		}
+	}
+}
+
+// zoomedFont makes the font bigger or smaller for ctrl and the wheel,
+// and reports whether it took the event.
+//
+// Taken before the tree sees it, because a pane scrolls on the wheel
+// and one that scrolled as well would do both at once.
+func (a *app) zoomedFont(ev input.MouseEvent) (bool, error) {
+	if !ev.Button.IsWheel() || !ev.Mods.Has(input.ModCtrl) {
+		return false, nil
+	}
+	step := float64(fontStep)
+	if ev.Button == input.MouseWheelDown {
+		step = -step
+	}
+	return true, a.setFontSize(a.fontSize + step)
+}
+
 func (a *app) setFontSize(pt float64) error {
 	pt = min(max(pt, minFontSize), maxFontSize)
 	if pt == a.fontSize {
@@ -669,9 +701,10 @@ func (a *app) commands() {
 			Run: a.takeBackHere},
 		ui.Command{ID: "agent.share", Title: "Show the share…", Run: a.showShare},
 		ui.Command{ID: typedCommand, Title: typedTitle + "…", Run: a.showTyped},
-		ui.Command{ID: "view.theme", Title: "Colour scheme…", Run: a.openThemePick},
+		ui.Command{ID: "view.theme", Title: "Colour scheme…", Run: a.openThemePick,
+			AlsoFind: []string{"theme", "colors"}},
 		ui.Command{ID: "view.themesReload", Title: "Reload colour schemes",
-			Run: a.reloadThemes},
+			Run: a.reloadThemes, AlsoFind: []string{"theme", "colors"}},
 		ui.Command{ID: "view.themesStart", Title: "Write a colour scheme to edit…",
 			Run: a.writeThemeStart},
 		ui.Command{ID: "pane.titles", Title: "Show or hide the line naming each pane",

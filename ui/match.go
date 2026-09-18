@@ -43,7 +43,12 @@ func MatchCommands(cmds []Command, query string) []Match {
 	for _, cmd := range cmds {
 		at, score, ok := matchTitle(query, cmd.Title)
 		if !ok {
-			continue
+			// Another word it answers to. Nothing is marked on the
+			// title, because the match is not in it.
+			if !answersTo(query, cmd.AlsoFind) {
+				continue
+			}
+			at, score = nil, worstMatch
 		}
 		out = append(out, Match{Command: cmd, At: at, score: score})
 	}
@@ -60,6 +65,21 @@ func MatchCommands(cmds []Command, query string) []Match {
 		return cmp.Compare(a.Command.ID, b.Command.ID)
 	})
 	return out
+}
+
+// worstMatch is the score a command found by one of its other words
+// gets, so it sorts below everything found by its title.
+const worstMatch = -1 << 30
+
+// answersTo reports whether a query finds one of a command's other
+// words.
+func answersTo(query string, also []string) bool {
+	for _, word := range also {
+		if _, _, ok := matchTitle(query, word); ok {
+			return true
+		}
+	}
+	return false
 }
 
 // matchTitle finds the query in a title as a subsequence, ignoring case,

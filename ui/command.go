@@ -21,6 +21,15 @@ type Command struct {
 	// Title is the line a person reads in a menu or the palette.
 	Title string
 
+	// AlsoFind are other words this command answers to in the palette.
+	// The title is what a person reads, and it is not always the word
+	// they would look for: the colour schemes are found under "theme"
+	// as well, which the title never says.
+	//
+	// Matching one of these never beats matching the title, so the
+	// order the palette shows is the order the titles give.
+	AlsoFind []string
+
 	// Run does the work.
 	Run func() error
 }

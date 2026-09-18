@@ -44,16 +44,6 @@ From Marcus's inbox.
   worked out", so the shortcuts file does not have to change shape
   twice.
 
-- **Ctrl and the mouse wheel should change the font size.** The mouse
-  now carries modifier keys, so this is a binding rather than an
-  obstacle. `MouseWheelUp` and `MouseWheelDown` already arrive with
-  their mask.
-
-- **The colour schemes cannot be found in the palette.** There is a
-  command, `view.theme`, but its title is "Colour scheme…" and
-  `MatchCommands` matches the title and nothing else, so typing "theme"
-  finds nothing. A command needs other words it can be found by.
-
 - **Ctrl+Tab only reaches two panes.** Probably fixed on 2026-09-19 by
   the modifier keys reaching the mouse. The walk ended on the frame
   after it opened, because it ends when Ctrl is not held and Ctrl never

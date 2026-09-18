@@ -181,15 +181,56 @@ func TestTheWindowsResourceHoldsTheIconAsItIsDrawnNow(t *testing.T) {
 		t.Fatalf("read %s: %v", at, err)
 	}
 
-	// rsrc stores each image whole, so finding every one of them is
-	// enough to say the resource is this icon.
+	// Every image the icon holds has to be in there, compared as
+	// pixels rather than as bytes. Two PNG encoders can spell the same
+	// picture differently, and Go 1.27 did: the images were identical
+	// and every compressed byte had changed, which failed this test for
+	// a toolchain bump rather than for a drawing that had drifted.
 	count := int(binary.LittleEndian.Uint16(raw[4:]))
 	for i := 0; i < count; i++ {
 		e := raw[6+16*i:]
 		size := int(binary.LittleEndian.Uint32(e[8:]))
 		from := int(binary.LittleEndian.Uint32(e[12:]))
-		if !bytes.Contains(syso, raw[from:from+size]) {
-			t.Fatalf("%s does not hold the %d pixel icon. Run \"make icon\"", at, Sizes[i])
+		drawn, err := png.Decode(bytes.NewReader(raw[from : from+size]))
+		if err != nil {
+			t.Fatalf("read the %d pixel icon as drawn now: %v", Sizes[i], err)
+		}
+		stored := storedIcon(syso, drawn.Bounds())
+		if stored == nil {
+			t.Fatalf("%s holds no %d pixel image at all. Run \"make icon\"", at, Sizes[i])
+		}
+		if x, y, same := firstDifference(drawn, stored); !same {
+			t.Fatalf("%s draws the %d pixel icon differently at %d,%d. Run \"make icon\"",
+				at, Sizes[i], x, y)
 		}
 	}
+}
+
+// storedIcon is the image of these bounds inside a resource file, or nil
+// when it holds none.
+func storedIcon(syso []byte, want image.Rectangle) image.Image {
+	signature := []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}
+	for at := 0; ; {
+		i := bytes.Index(syso[at:], signature)
+		if i < 0 {
+			return nil
+		}
+		at += i
+		if img, err := png.Decode(bytes.NewReader(syso[at:])); err == nil && img.Bounds() == want {
+			return img
+		}
+		at += len(signature)
+	}
+}
+
+// firstDifference is where two images first disagree.
+func firstDifference(a, b image.Image) (x, y int, same bool) {
+	for y := a.Bounds().Min.Y; y < a.Bounds().Max.Y; y++ {
+		for x := a.Bounds().Min.X; x < a.Bounds().Max.X; x++ {
+			if a.At(x, y) != b.At(x, y) {
+				return x, y, false
+			}
+		}
+	}
+	return 0, 0, true
 }

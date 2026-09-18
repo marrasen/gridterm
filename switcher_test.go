@@ -430,71 +430,165 @@ func renamePane(t *testing.T, a *testApp, w ui.Widget, name string) {
 	e.Label = name
 }
 
-// The pictures zoom out of the room the panes were in, and settle on
-// their tiles.
-func TestThePicturesZoomOutOfTheRoomThePanesWereIn(t *testing.T) {
+// The pictures zoom out of the room their panes were in, shrinking on
+// to their tiles rather than jumping there.
+func TestThePicturesZoomOutOfTheRoomTheirPanesWereIn(t *testing.T) {
 	a := aWindowOfPanes(t, 4)
 	tiles := openTilesZooming(t, a)
-
-	a.placeSwitcher()
-
-	// Part way, the picture is not where it ends up.
-	first := a.switcher.shown[a.switcher.panes[0]]
-	starting := first.layer.X
-	a.renderer.Measure(a.g, &a.geo)
+	s := a.switcher
 	inside := tiles.Inside(0)
-	settled, _ := a.geo.CellsX(inside.X, inside.X+inside.Cols)
-	if starting == settled {
-		t.Error("the picture opened where it settles, so nothing zoomed")
+	from := a.paneRoom(s.panes[0])
+	if from.Empty() {
+		t.Fatal("the pane has no room to zoom out of")
 	}
 
+	// It starts on the pane's own room and ends on the tile.
+	if got := s.boxAt(from, inside, a.frameTime()); got != from {
+		t.Errorf("it opens at %v, want the %v the pane was in", got, from)
+	}
 	zoomDone(a)
-	a.placeSwitcher()
-
-	if first.layer.X < settled {
-		t.Errorf("the picture settled at %d, before its box at %d", first.layer.X, settled)
+	if got := s.boxAt(from, inside, a.frameTime()); got != inside {
+		t.Errorf("it settles at %v, want the tile's %v", got, inside)
 	}
 }
 
-// The zoom asks for a frame of its own while it runs, which an idle
-// window would otherwise skip.
-func TestTheZoomAsksForItsOwnFrames(t *testing.T) {
+// And it shrinks every step of the way, rather than going out before it
+// comes in.
+func TestTheZoomOnlyEverShrinks(t *testing.T) {
 	a := aWindowOfPanes(t, 4)
+	tiles := openTilesZooming(t, a)
+	s := a.switcher
+	inside := tiles.Inside(0)
+	from := a.paneRoom(s.panes[0])
+	if from.Cols <= inside.Cols {
+		t.Fatalf("the pane's room %v is no wider than its tile %v", from, inside)
+	}
+
+	was := from.Cols + 1
+	for step := range 8 {
+		at := s.opened.Add(zoomTime * time.Duration(step) / 7)
+		got := s.boxAt(from, inside, at).Cols
+		if got > was {
+			t.Errorf("step %d is %d columns wide, after %d", step, got, was)
+		}
+		was = got
+	}
+	if was != inside.Cols {
+		t.Errorf("it ends %d columns wide, want the tile's %d", was, inside.Cols)
+	}
+	// And it stays there. The ease runs backwards past its end, so a
+	// zoom with nothing to stop it would swing back out again.
+	late := s.opened.Add(zoomTime * 4)
+	if got := s.boxAt(from, inside, late); got != inside {
+		t.Errorf("long after it settled it is at %v, want the tile's %v", got, inside)
+	}
+	if s.zooming(late) {
+		t.Error("it is still zooming long after its time was up")
+	}
+}
+
+// The zoom lasts long enough to be seen and not long enough to be a
+// wait.
+func TestTheZoomLastsLongEnoughToSee(t *testing.T) {
+	if zoomTime < 60*time.Millisecond {
+		t.Errorf("the zoom takes %v, too quick to read as a movement", zoomTime)
+	}
+	if zoomTime > 300*time.Millisecond {
+		t.Errorf("the zoom takes %v, long enough to be a wait", zoomTime)
+	}
+	// And it really is still running part way through.
+	s := &switcher{opened: time.Now()}
+	if !s.zooming(s.opened.Add(zoomTime / 2)) {
+		t.Error("it is over half way through its own time")
+	}
+}
+
+// Two panes side by side zoom out of their own halves of the window,
+// not out of one box they share. A pane that started somewhere it never
+// was reads as a shuffle rather than a zoom.
+func TestTwoPanesZoomOutOfTheirOwnHalves(t *testing.T) {
+	a := aWindowOfPanes(t, 2)
+	takeChoice(t, splitChoices(t, a, ui.Columns), "Move")
+	panes := a.panesInSidebarOrder()
+	if len(panes) != 2 {
+		t.Fatalf("the window holds %d panes", len(panes))
+	}
+
+	first, second := a.paneRoom(panes[0]), a.paneRoom(panes[1])
+
+	if first.Empty() || second.Empty() {
+		t.Fatalf("a pane in the split has no room: %v and %v", first, second)
+	}
+	if first == second {
+		t.Errorf("both panes zoom out of %v, want each out of its own half", first)
+	}
+	// And each is its own pane's room, not the stage they sit on.
+	for i, pane := range panes {
+		area, ok := a.paneArea(pane)
+		if !ok {
+			t.Fatalf("pane %d is not in the tree", i)
+		}
+		if got := a.paneRoom(pane); got != area {
+			t.Errorf("pane %d zooms out of %v, want the %v it is in", i, got, area)
+		}
+	}
+}
+
+// The zoom is timed from the frame it opened on, not from the moment
+// the key was pressed. A key is handled after the frame began, so a
+// zoom timed from the key is already a frame old and snaps into place
+// before jumping back out.
+func TestTheZoomIsTimedFromTheFrameItOpenedOn(t *testing.T) {
+	a := aWindowOfPanes(t, 4)
+	// The frame began, and the key arrives a moment later.
+	a.frameAt = a.clock()
+	was := a.clock()
+	a.now = func() time.Time { return was.Add(3 * time.Millisecond) }
+
 	openTilesZooming(t, a)
 
+	if got := a.switcher.opened; !got.Equal(a.frameAt) {
+		t.Errorf("the zoom is timed from %v, want the frame at %v", got, a.frameAt)
+	}
 	if !a.switcher.zooming(a.frameTime()) {
-		t.Fatal("the switcher is not zooming just after it opened")
+		t.Error("the zoom was over before the frame it opened on had drawn")
 	}
+}
+
+// The zoom does not mark the window dirty. The compositor already
+// re-blits a layer that has moved, and the window's own grid has not
+// changed.
+func TestTheZoomDoesNotRepaintTheWindow(t *testing.T) {
+	a := aWindowOfPanes(t, 4)
+	openTilesZooming(t, a)
+	a.placeSwitcher()
+
 	a.g.ClearDirty()
 	a.placeSwitcher()
-	if !a.g.AnyDirty() {
-		t.Error("a frame part way through the zoom did not ask for another")
-	}
 
-	zoomDone(a)
-
-	if a.switcher.zooming(a.frameTime()) {
-		t.Error("the zoom is still running after its time is up")
-	}
-	// And a settled switcher stops asking, so an idle window goes back
-	// to skipping frames.
-	a.placeSwitcher()
-	a.g.ClearDirty()
-	a.placeSwitcher()
 	if a.g.AnyDirty() {
-		t.Error("a settled switcher still asks for a frame every frame")
+		t.Error("a frame of the zoom repainted every cell of the window")
 	}
 }
 
 // A switcher with nowhere to zoom out of goes straight to its tiles
 // rather than starting from a box of nothing.
 func TestASwitcherWithNowhereToZoomFromSettlesAtOnce(t *testing.T) {
-	s := &switcher{}
+	tile := ui.Rect{X: 4, Y: 2, Cols: 10, Rows: 6}
 
-	if got := s.zoomedTo(time.Now()); got != 1 {
-		t.Errorf("it is %v of the way through, want all of it", got)
+	// One that has never opened has no time to measure against.
+	never := &switcher{}
+	if got := never.zoomedTo(time.Now()); got != 1 {
+		t.Errorf("one that never opened is %v of the way through, want all of it", got)
 	}
-	if s.zooming(time.Now()) {
-		t.Error("it says it is zooming")
+	if never.zooming(time.Now()) {
+		t.Error("one that never opened says it is zooming")
+	}
+
+	// And one whose pane has no room on screen goes straight to its
+	// tile rather than growing out of a box of nothing.
+	open := &switcher{opened: time.Now()}
+	if got := open.boxAt(ui.Rect{}, tile, time.Now()); got != tile {
+		t.Errorf("a pane with no room opens at %v, want its tile %v", got, tile)
 	}
 }

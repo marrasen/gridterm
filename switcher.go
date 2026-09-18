@@ -31,21 +31,18 @@ type switcher struct {
 	// shown is the picture inside each tile, one per pane.
 	shown map[ui.Widget]*tile
 
-	// opened is when it went up, which the pictures zoom out from.
+	// opened is the frame it went up on, which the pictures zoom out
+	// from.
 	opened time.Time
-
-	// from is where they zoom out of: the room the panes were in.
-	from ui.Rect
 }
 
 // zoomTime is how long the pictures take to shrink into their tiles.
-// Short enough to read as one movement rather than a wait.
 const zoomTime = 140 * time.Millisecond
 
 // zoomedTo is how far through the zoom a frame is, from 0 to 1, easing
 // off at the end so it settles rather than stops.
 func (s *switcher) zoomedTo(now time.Time) float64 {
-	if s.from.Empty() || s.opened.IsZero() {
+	if s.opened.IsZero() {
 		return 1
 	}
 	gone := now.Sub(s.opened)
@@ -60,9 +57,12 @@ func (s *switcher) zoomedTo(now time.Time) float64 {
 func (s *switcher) zooming(now time.Time) bool { return s.zoomedTo(now) < 1 }
 
 // boxAt is where a tile's picture goes on this frame: its own box once
-// the zoom has finished, and on the way there before that.
-func (s *switcher) boxAt(inside ui.Rect, now time.Time) ui.Rect {
-	return between(s.from, inside, s.zoomedTo(now))
+// the zoom has finished, and on the way out of from before that.
+func (s *switcher) boxAt(from, inside ui.Rect, now time.Time) ui.Rect {
+	if from.Empty() {
+		return inside
+	}
+	return between(from, inside, s.zoomedTo(now))
 }
 
 // between is a box part of the way from one to another.
@@ -137,9 +137,12 @@ func (a *app) openSwitcher() error {
 	tiles.Style = a.tilesStyle()
 	tiles.Mark(indexOf(panes, ui.FocusedLeaf(a.root.Widget())))
 
+	// The frame's own clock, not the wall's: a key is handled after the
+	// frame began, so a zoom timed from now would be a frame old before
+	// it started and would snap into place and then jump back out.
 	s := &switcher{
 		tiles: tiles, panes: panes, shown: map[ui.Widget]*tile{},
-		opened: a.clock(), from: a.paneRoom(),
+		opened: a.frameTime(),
 	}
 	var hide func()
 	tiles.Close = func() {
@@ -209,8 +212,7 @@ func (a *app) placeSwitcher() {
 		if !a.paneIsOpen(what) {
 			continue
 		}
-		// Every frame: a pane renames itself as the program in it says
-		// what it is doing, and the tile says what the pane says.
+		// The name the pane goes by now.
 		s.tiles.Rename(i, a.paneName(what))
 		size, ok := a.paneScreen(what)
 		// A held screen is sized by somebody on another machine, so it is
@@ -228,21 +230,20 @@ func (a *app) placeSwitcher() {
 			s.shown[what] = t
 			a.comp.Add(t.layer)
 		}
-		t.place(size, s.boxAt(inside, now), &a.geo, m)
+		t.place(size, s.boxAt(a.paneRoom(what), inside, now), &a.geo, m)
 		if !t.layer.Hidden {
 			t.draw()
 		}
 	}
-	// A frame of its own for every step of the zoom, which an idle
-	// window would otherwise skip.
-	if s.zooming(now) {
-		a.markDirty()
-	}
 }
 
-// paneRoom is the room the panes are in, which is where the pictures
-// zoom out of.
-func (a *app) paneRoom() ui.Rect {
+// paneRoom is the room a pane is in, which is where its picture zooms
+// out of. A pane behind another has none of its own, so it zooms out of
+// the stage they share.
+func (a *app) paneRoom(w ui.Widget) ui.Rect {
+	if area, ok := a.paneArea(w); ok && !area.Empty() {
+		return area
+	}
 	if a.stage == nil || a.root.Widget() == nil {
 		return ui.Rect{}
 	}

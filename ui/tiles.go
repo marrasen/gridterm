@@ -3,6 +3,7 @@ package ui
 import (
 	"image/color"
 	"math"
+	"slices"
 
 	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/input"
@@ -12,7 +13,9 @@ import (
 // no room for the gap, the rule and a name inside them.
 const (
 	leastTileCols = 16
-	leastTileRows = 8
+	// Six leaves two rows of picture inside the rule. Any less and the
+	// tile has a name and nothing to go with it.
+	leastTileRows = 6
 )
 
 // tileGap is the room left around a tile, in cells, so two pictures side
@@ -36,7 +39,8 @@ type TilesStyle struct {
 // Tiles lays a name out per pane on a grid, for picking one by eye.
 //
 // It draws the frames and the names. What goes inside a tile is the
-// caller's: Areas says where each one is, so a pane can be drawn there.
+// caller's: Inside says where each picture goes, within the rule rather
+// than over it.
 type Tiles struct {
 	Style TilesStyle
 
@@ -53,13 +57,13 @@ type Tiles struct {
 }
 
 // NewTiles returns a grid of tiles, one per name, with the first marked.
-func NewTiles(names []string) *Tiles { return &Tiles{names: names} }
+// It keeps a copy of the names, which Rename writes to.
+func NewTiles(names []string) *Tiles { return &Tiles{names: slices.Clone(names)} }
 
 // Len is how many tiles there are.
 func (t *Tiles) Len() int { return len(t.names) }
 
-// Rename gives a tile the name it goes by now. A pane's title changes
-// while the tiles are up, and the tile says what the pane says.
+// Rename gives a tile the name it goes by now.
 func (t *Tiles) Rename(at int, name string) {
 	if at >= 0 && at < len(t.names) {
 		t.names[at] = name
@@ -89,11 +93,8 @@ func (t *Tiles) Mark(at int) {
 func (t *Tiles) Areas() []Rect { return t.areas }
 
 // Inside is the box a tile's picture goes in: its own box, less the gap
-// between tiles and the rule around it. It is empty when there is no
-// room left for one.
-//
-// The caller draws the picture there, so the rule is always around it
-// rather than under it.
+// between tiles and the rule around it, so the rule is around the
+// picture rather than under it. It is empty when there is no room left.
 func (t *Tiles) Inside(i int) Rect {
 	if i < 0 || i >= len(t.areas) {
 		return Rect{}

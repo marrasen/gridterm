@@ -381,12 +381,16 @@ func TestTheNameIsBelowThePicture(t *testing.T) {
 	tiles.Draw(g.View())
 
 	inside := tiles.Inside(0)
-	at := strings.Index(gridText(g), "one pane")
-	if at < 0 {
+	row := -1
+	for i, line := range strings.Split(gridText(g), "\n") {
+		if strings.Contains(line, "one pane") {
+			row = i
+			break
+		}
+	}
+	if row < 0 {
 		t.Fatal("the first tile has no name")
 	}
-	// One row of the text is size.Cols wide plus the newline.
-	row := at / (size.Cols + 1)
 	if row < inside.Y+inside.Rows {
 		t.Errorf("the name is on row %d, inside the picture's rows %d..%d",
 			row, inside.Y, inside.Y+inside.Rows-1)
@@ -399,16 +403,22 @@ func TestTwoTilesLeaveRoomBetweenTheirPictures(t *testing.T) {
 	size := Size{Cols: 120, Rows: 40}
 	tiles := aTiles(tileNames(4), size)
 
-	left, right := tiles.Inside(0), tiles.Inside(1)
+	// The rules, not the pictures: two rules touching would read as one
+	// heavy line rather than as two tiles.
+	left, right := framed(tiles.Areas()[0]), framed(tiles.Areas()[1])
 	if left.Empty() || right.Empty() {
-		t.Fatal("a tile has no room for a picture")
+		t.Fatal("a tile has no room for a rule")
 	}
-	if gap := right.X - (left.X + left.Cols); gap < 2 {
-		t.Errorf("the two pictures are %d columns apart, want room for both rules", gap)
+	if gap := right.X - (left.X + left.Cols); gap < 1 {
+		t.Errorf("the two rules are %d columns apart, want room between them", gap)
 	}
-	above, below := tiles.Inside(0), tiles.Inside(2)
-	if gap := below.Y - (above.Y + above.Rows); gap < 2 {
-		t.Errorf("the two pictures are %d rows apart, want room for both rules", gap)
+	above, below := framed(tiles.Areas()[0]), framed(tiles.Areas()[2])
+	if gap := below.Y - (above.Y + above.Rows); gap < 1 {
+		t.Errorf("the two rules are %d rows apart, want room between them", gap)
+	}
+	// And the pictures stand off the rules as well as each other.
+	if gap := tiles.Inside(1).X - (tiles.Inside(0).X + tiles.Inside(0).Cols); gap < 2+2*tileGap {
+		t.Errorf("the two pictures are %d columns apart, want %d", gap, 2+2*tileGap)
 	}
 }
 
@@ -426,5 +436,39 @@ func TestATileTooSmallHasNoPictureBox(t *testing.T) {
 	// And one asked for out of range.
 	if got := tiles.Inside(99); !got.Empty() {
 		t.Errorf("tile 99 of 2 has a picture box %v", got)
+	}
+}
+
+// The tiles keep a copy of the names they are given, so renaming one
+// does not write into a slice the caller is still holding.
+func TestTheTilesKeepACopyOfTheNames(t *testing.T) {
+	names := []string{"one", "two"}
+	tiles := NewTiles(names)
+
+	tiles.Rename(0, "something else")
+
+	if names[0] != "one" {
+		t.Errorf("the caller's slice now says %q", names[0])
+	}
+	if got := tiles.Name(0); got != "something else" {
+		t.Errorf("the tile says %q", got)
+	}
+}
+
+// Renaming a tile that is not there changes nothing.
+func TestRenamingATileThatIsNotThereChangesNothing(t *testing.T) {
+	tiles := NewTiles([]string{"one", "two"})
+
+	tiles.Rename(2, "three")
+	tiles.Rename(-1, "nought")
+
+	if got := tiles.Len(); got != 2 {
+		t.Errorf("it holds %d names, want the 2 it was given", got)
+	}
+	if got := tiles.Name(0); got != "one" {
+		t.Errorf("the first tile says %q", got)
+	}
+	if got := tiles.Name(5); got != "" {
+		t.Errorf("a tile that is not there is called %q", got)
 	}
 }

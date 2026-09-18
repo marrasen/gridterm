@@ -334,7 +334,7 @@ func TestFamilyLoadReadsEveryStyle(t *testing.T) {
 		}
 	}
 	// And the bytes actually build faces.
-	if _, err := buildFaces(fonts, 12, 96); err != nil {
+	if _, _, err := buildFaces(fonts, 12, 96); err != nil {
 		t.Errorf("build faces from the loaded family: %v", err)
 	}
 }
@@ -437,12 +437,12 @@ func TestFontsIndexReachesTheFace(t *testing.T) {
 	fonts := Fonts{Regular: gomono.TTF}
 	fonts.Index[Regular] = 3
 
-	if _, err := buildFaces(fonts, 12, 96); err == nil {
+	if _, _, err := buildFaces(fonts, 12, 96); err == nil {
 		t.Error("an index past the end of the file was accepted")
 	}
 
 	fonts.Index[Regular] = 0
-	if _, err := buildFaces(fonts, 12, 96); err != nil {
+	if _, _, err := buildFaces(fonts, 12, 96); err != nil {
 		t.Errorf("index 0 of an ordinary font file: %v", err)
 	}
 }

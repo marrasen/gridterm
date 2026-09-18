@@ -145,7 +145,7 @@ func TestCollectionIndexReachesTheFace(t *testing.T) {
 		t.Fatalf("indices = %v, want regular at 0 and bold at 1", fonts.Index)
 	}
 
-	faces, err := buildFaces(fonts, 24, 96)
+	faces, _, err := buildFaces(fonts, 24, 96)
 	if err != nil {
 		t.Fatalf("build faces: %v", err)
 	}

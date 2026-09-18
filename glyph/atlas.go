@@ -78,7 +78,12 @@ type Metrics struct {
 // An Atlas is not safe for concurrent use: ebiten drives drawing from a
 // single goroutine and the atlas sits on that path.
 type Atlas struct {
-	faces   [numStyles]font.Face
+	faces [numStyles]font.Face
+
+	// faked says what each style has to be drawn with, because the
+	// family has no face of its own for it: a smear for bold, a shear
+	// for italic, both for bold italic. Zero for a style with a face.
+	faked   [numStyles]Style
 	metrics Metrics
 
 	// src keeps the font bytes so the atlas can be rebuilt at a new
@@ -122,13 +127,13 @@ type Atlas struct {
 
 // NewAtlas builds an atlas from the given font bytes at the given size.
 func NewAtlas(fonts Fonts, sizePt, dpi float64) (*Atlas, error) {
-	faces, err := buildFaces(fonts, sizePt, dpi)
+	faces, faked, err := buildFaces(fonts, sizePt, dpi)
 	if err != nil {
 		return nil, err
 	}
 	a := &Atlas{
 		cache:  make(map[key]Glyph, 512),
-		sizePt: sizePt, dpi: dpi, src: fonts, faces: faces,
+		sizePt: sizePt, dpi: dpi, src: fonts, faces: faces, faked: faked,
 	}
 
 	// Derive the cell box from the regular face. A monospace face gives
@@ -328,6 +333,21 @@ func (a *Atlas) rasterise(r rune, style Style) Glyph {
 	}
 	d.DrawString(string(r))
 
+	// A style the family has no face for is faked from the one it
+	// borrowed. A fallback face stands in for a rune rather than for a
+	// style, so what it draws is left alone.
+	if fake := a.faked[style]; fake != 0 && face == a.faces[style] {
+		if fake&Italic != 0 {
+			var moved int
+			mask, moved = slant(mask, floor26_6(pen.Y))
+			offset.X += moved
+		}
+		if fake&Bold != 0 {
+			mask = embolden(mask)
+		}
+		w, h = mask.Rect.Dx(), mask.Rect.Dy()
+	}
+
 	page, rect := a.alloc(w, h)
 	a.pages[page].SubImage(rect).(*ebiten.Image).WritePixels(mask.Pix)
 
@@ -464,12 +484,13 @@ func (a *Atlas) loadNextFallback() font.Face {
 
 // buildFaces opens one face per style at the given size. A style with no
 // bytes of its own shares the face of the style substitute picks for it.
-func buildFaces(fonts Fonts, sizePt, dpi float64) ([numStyles]font.Face, error) {
+func buildFaces(fonts Fonts, sizePt, dpi float64) ([numStyles]font.Face, [numStyles]Style, error) {
 	var faces [numStyles]font.Face
+	var faked [numStyles]Style
 	// Every other style falls back to regular, so without it the array
 	// would come back full of nil faces.
 	if fonts.Regular == nil {
-		return faces, fmt.Errorf("no regular font")
+		return faces, faked, fmt.Errorf("no regular font")
 	}
 
 	// ParseCollection rather than Parse: it reads a single font too, so
@@ -504,15 +525,16 @@ func buildFaces(fonts Fonts, sizePt, dpi float64) ([numStyles]font.Face, error) 
 	// Ascending order, so the face a style borrows is already built.
 	for s := range numStyles {
 		if srcs[s] == nil {
-			faces[s] = faces[substitute(s, srcs)]
+			borrowed := substitute(s, srcs)
+			faces[s], faked[s] = faces[borrowed], missing(s, borrowed)
 			continue
 		}
 		var err error
 		if faces[s], err = mkFace(srcs[s], fonts.Index[s]); err != nil {
-			return faces, err
+			return faces, faked, err
 		}
 	}
-	return faces, nil
+	return faces, faked, nil
 }
 
 // substitute picks the style whose face stands in for a style with no

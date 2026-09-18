@@ -373,14 +373,6 @@ From Marcus's inbox, after working in a shared window.
   glow. `TestASharedPaneCostsNothingBetweenGlowSteps` pins the cost at
   two layers a step, so it cannot grow unnoticed.
 
-- **Bold text is not bold in a face that has only one style.** The DOS
-  face gridterm comes with has a regular style and nothing else, so the
-  atlas borrows it for bold and `ESC[1m` prints the same as plain text.
-  A VGA text mode drew bold as a brighter foreground, which is both the
-  historical answer and a cheap one: when the atlas has no bold face,
-  take colour 8 to 15 instead. It would change every single-style font,
-  not only this one, so it is worth deciding rather than doing quietly.
-
 - **A folder holding a comma cannot be typed in the server dialog.** The
   folders are one field and a comma parts them, so a path with one in it
   can only be written in the server list file by hand. The dialog does

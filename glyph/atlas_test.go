@@ -20,7 +20,7 @@ func TestStyleFaces(t *testing.T) {
 		Italic:     gomonoitalic.TTF,
 		BoldItalic: gomonobolditalic.TTF,
 	}
-	faces, err := buildFaces(full, 15, 96)
+	faces, _, err := buildFaces(full, 15, 96)
 	if err != nil {
 		t.Fatalf("buildFaces: %v", err)
 	}
@@ -54,7 +54,7 @@ func TestStyleFaces(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			faces, err := buildFaces(tc.fonts, 15, 96)
+			faces, _, err := buildFaces(tc.fonts, 15, 96)
 			if err != nil {
 				t.Fatalf("buildFaces: %v", err)
 			}

@@ -436,6 +436,16 @@ Two faces are compiled in: Go Mono, and the IBM VGA set the Turbo theme
 asks for. `fonts/README.md` says where the second came from and what its
 licence asks of anyone shipping it.
 
+**A style the family has no face for is faked, not borrowed.** A family
+may ship one face or four. `buildFaces` records what each style has to
+fake in `Atlas.faked`, and the rasteriser applies it to the mask after
+the glyph is drawn: bold is a smear a pixel to the right, italic is a
+shear about the baseline. Before this, a one-face family drew bold and
+italic as the regular glyph again, so `ESC[1m` printed nothing different.
+
+A fallback face stands in for a *rune* the family cannot draw rather
+than for a style, so what it draws is left alone.
+
 **Damage tracking is load-bearing.** `ebiten.SetScreenClearedEveryFrame(false)`
 means a row the renderer skips shows the *previous* frame, not a blank.
 A row wrongly considered clean is a visible bug, so `grid.Set` compares

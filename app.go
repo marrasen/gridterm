@@ -411,6 +411,7 @@ func (a *app) Update() error {
 	// sidebar is drawn this frame rather than the next one. Before it,
 	// the frame would be laid out for padding the window no longer has.
 	a.stepWalk()
+	a.stepSwitcher()
 	a.noteFocus()
 	// Before the layout, which is what takes the row off the pane.
 	a.refreshCaptions()

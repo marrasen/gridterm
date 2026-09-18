@@ -305,10 +305,14 @@ From Marcus's inbox, after working in a shared window.
   the menu line, the dialog and `serve.takeOver`, and `takeOver`,
   `workOnWindow` and `taken` in windows.go all carry the old word.
 
-- **"Show every pane" breaks when the window is resized.** The switcher
-  is laid out when it opens and `placeSwitcher` runs every frame after,
-  so a resize while it is up leaves the tiles and the pictures
-  disagreeing. Not diagnosed.
+- **A window too small for the switcher closes it rather than saying
+  so.** Shrinking past the size it would open at now takes it away,
+  which is better than the row of empty tiles it used to leave but is
+  still abrupt: nudge an edge one column too far and the switcher
+  vanishes. Saying "the window is too small to draw every pane at once"
+  in its place, and coming back when there is room again, would be
+  kinder. Worth doing with the animation work, which is the other thing
+  that wants this dialog opened and closed smoothly.
 
 ## Panes and the sidebar
 

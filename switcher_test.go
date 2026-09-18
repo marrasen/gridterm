@@ -592,3 +592,59 @@ func TestASwitcherWithNowhereToZoomFromSettlesAtOnce(t *testing.T) {
 		t.Errorf("a pane with no room opens at %v, want its tile %v", got, tile)
 	}
 }
+
+// The switcher goes when the window becomes too small to draw every
+// pane at once.
+//
+// It refuses to open at that size. Staying open at it left a row of
+// tiles with nothing inside them: the pictures have no room, so every
+// one is hidden and what is left is empty boxes and names.
+func TestTheSwitcherGoesWhenTheWindowIsTooSmallForIt(t *testing.T) {
+	a := aWindowOfPanes(t, 4)
+	openTiles(t, a)
+	frame(t, a)
+	if a.switcher == nil {
+		t.Fatal("the switcher did not open")
+	}
+
+	a.setGridSize(24, 8)
+	frame(t, a)
+
+	if a.switcher != nil {
+		t.Error("the switcher is still up in a window with no room for it")
+	}
+	if _, is := a.root.Modal().(*ui.Tiles); is {
+		t.Error("the tiles are still the dialog on top")
+	}
+}
+
+// And it stays while there is still room, so a window nudged smaller
+// does not lose it.
+func TestTheSwitcherStaysWhileThereIsRoom(t *testing.T) {
+	a := aWindowOfPanes(t, 4)
+	openTiles(t, a)
+	frame(t, a)
+
+	a.setGridSize(70, 22)
+	frame(t, a)
+
+	if a.switcher == nil {
+		t.Fatal("the switcher went from a window that still had room")
+	}
+	shown := 0
+	for _, tile := range a.switcher.shown {
+		if !tile.layer.Hidden {
+			shown++
+		}
+	}
+	if shown != 4 {
+		t.Errorf("%d pictures are shown after the resize, want 4", shown)
+	}
+	// And the tiles are laid out for the window it is now, not the one
+	// it opened in.
+	for i, area := range a.switcher.tiles.Areas() {
+		if area.X+area.Cols > 70 || area.Y+area.Rows > 22 {
+			t.Errorf("tile %d is at %v, which is off a 70x22 window", i, area)
+		}
+	}
+}

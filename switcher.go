@@ -34,6 +34,10 @@ type switcher struct {
 	// opened is the frame it went up on, which the pictures zoom out
 	// from.
 	opened time.Time
+
+	// hide closes the dialog, for a window that has become too small to
+	// draw every pane at once.
+	hide func()
 }
 
 // zoomTime is how long the pictures take to shrink into their tiles.
@@ -164,9 +168,28 @@ func (a *app) openSwitcher() error {
 	if a.root.Modal() != ui.Widget(tiles) {
 		return errors.New("the window would not show the panes")
 	}
+	s.hide = hide
 	a.switcher = s
 	a.markDirty()
 	return nil
+}
+
+// stepSwitcher closes the switcher when the window has become too small
+// to draw every pane at once.
+//
+// It refuses to open at that size, so it does not stay open at it
+// either: the tiles are drawn with nothing inside them, and what is
+// left is a row of empty boxes to dismiss.
+func (a *app) stepSwitcher() {
+	s := a.switcher
+	if s == nil || a.g == nil || s.hide == nil {
+		return
+	}
+	cols, rows := a.g.Size()
+	if ui.TilesFit(len(s.panes), ui.Size{Cols: cols, Rows: rows}) {
+		return
+	}
+	s.hide()
 }
 
 // closeSwitcher takes the pictures off the window.

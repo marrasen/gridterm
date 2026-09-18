@@ -733,6 +733,56 @@ func TestAWindowThatWentWithoutSayingWhyIsNotCalledAStop(t *testing.T) {
 	}
 }
 
+// A connection that went is offered a way back, and taking it up
+// reaches the window again.
+//
+// The window it was reached with is what reaching it again takes, so the
+// offer carries the address and the key file rather than asking for them
+// a second time.
+func TestAConnectionThatWentIsOfferedAWayBack(t *testing.T) {
+	host, client, addr := twoWindows(t)
+
+	// The socket goes with nothing said, which is a connection that
+	// dropped rather than a window that closed it.
+	for _, c := range host.serving.clients() {
+		if err := c.Close(); err != nil {
+			t.Fatalf("drop the connection: %v", err)
+		}
+	}
+	waitFor(t, client, "the window to be let go of", func() bool {
+		return client.windows.named(addr) == nil
+	})
+
+	f := awaitModal(t, client, "the offer to take over again",
+		byTitle[*ui.Form]("Connection lost"))
+	if f == nil {
+		t.Fatal("nothing was offered")
+	}
+	pressButton(t, client, f, "Take over again")
+
+	waitFor(t, client, "the window to be taken over again", func() bool {
+		return client.windows.named(addr) != nil
+	}, host)
+}
+
+// A window that stopped sharing is not offered a way back: it said it
+// was going on purpose, and a button would be answering that decision.
+func TestAWindowThatStoppedSharingIsNotOfferedAWayBack(t *testing.T) {
+	host, client, addr := twoWindows(t)
+
+	if err := host.stopServing(); err != nil {
+		t.Fatalf("stop serving: %v", err)
+	}
+	waitFor(t, client, "the window to be let go of", func() bool {
+		return client.windows.named(addr) == nil
+	})
+	client.pump.run()
+
+	if m := client.root.Modal(); m != nil {
+		t.Errorf("stopping sharing opened %T, want nothing", m)
+	}
+}
+
 // A window that quits at the far end keeps a row too, greyed, and the
 // user can clear it. The address is free to take over again once it has
 // gone.

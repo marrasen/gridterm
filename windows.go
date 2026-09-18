@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"net"
 	"os"
@@ -42,8 +43,11 @@ type taken struct {
 	// everything else uses, the way a machine's name is.
 	name string
 
-	// addr is where it serves, which is what reaching it again needs.
-	addr string
+	// addr is where it serves, and keyFile the key it was reached with,
+	// which is what reaching it again needs. An empty keyFile is what
+	// the dialog's empty field is: whatever keys the ring holds.
+	addr    string
+	keyFile string
 
 	win *serve.Window
 
@@ -511,7 +515,7 @@ func (a *app) takeOver(addr, keyFile string, at *spot) error {
 				}
 				return
 			}
-			a.becomeWindowPane(a.holdWindow(name, addr, win), pane, log)
+			a.becomeWindowPane(a.holdWindow(name, addr, keyFile, win), pane, log)
 			a.machines.settle(held, true)
 		})
 	}()
@@ -582,8 +586,8 @@ func (a *app) becomeWindowPane(t *taken, pane *term.Terminal, log *connLog) {
 }
 
 // holdWindow remembers a window and puts a row on the panel for it.
-func (a *app) holdWindow(name, addr string, win *serve.Window) *taken {
-	t := &taken{name: name, addr: addr, win: win}
+func (a *app) holdWindow(name, addr, keyFile string, win *serve.Window) *taken {
+	t := &taken{name: name, addr: addr, keyFile: keyFile, win: win}
 	t.entry = &conns.Entry{
 		Host: name,
 		// A Server rather than a Terminal: it is the connection itself,
@@ -636,11 +640,36 @@ func (a *app) windowDied(t *taken, why error) {
 		t.entry.Label = "the window closed this connection"
 		a.greyRow(t.entry, nil)
 	default:
+		// It went without saying why, so it is the connection that went
+		// rather than a window that meant to close it. That is the one
+		// worth offering a way back on.
 		t.entry.Label = "no longer serving"
 		a.greyRow(t.entry, why)
+		a.offerToTakeOverAgain(t, why)
 	}
 	a.refreshServers()
 	a.markDirty()
+}
+
+// offerToTakeOverAgain asks whether to reach a window whose connection
+// went, and reaches it again the way it was reached the first time.
+//
+// Only for a connection that went. A window that stopped sharing, or
+// that threw this one out, said so on purpose, and offering to walk
+// back in would be answering a decision with a button.
+func (a *app) offerToTakeOverAgain(t *taken, why error) {
+	f := a.newForm("Connection lost")
+	said := "The connection to " + t.name + " went."
+	if why != nil && !errors.Is(why, io.EOF) {
+		said = "The connection to " + t.name + " went: " + serve.Plain(why.Error())
+	}
+	f.Lines = wrapLines(said, errorLineWidth)
+	addr, keyFile := t.addr, t.keyFile
+	f.AddButton(ui.Button{Title: "Take over again", Do: func() error {
+		return a.workOnWindow(addr, keyFile, nil)
+	}})
+	f.AddButton(ui.Button{Title: "Close"})
+	a.showForm(f, nil)
 }
 
 // revealWindow puts one of a window's panes in front of the user.

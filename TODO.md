@@ -459,7 +459,7 @@ there is one key for position and one for recency.
 - A WSL pane does not start in the directory the window is looking at.
   `shells.Shell.Command` translates a Windows directory into a `/mnt`
   path and passes it as `--cd`, and `shells.UnixPath` is tested, but
-  the window passes an empty directory at both call sites in
+  the window passes an empty directory at all three call sites in
   shellpick.go, so `--cd` is never sent. Nothing in the window tracks a
   pane's working directory yet. The file browser knows one, through
   `files.Pane.At()`, and no command opens a terminal from it. The
@@ -476,13 +476,15 @@ there is one key for position and one for recency.
   `testApp.shells` off the mutex the harness appends under. It is the
   test harness, not the window.
 
-- The cursor keeps blinking while the window is in the background.
-  Nothing reads `ebiten.IsFocused`, and most terminals either stop the
-  blink or draw the cursor hollow once the window loses focus.
+- The cursor keeps blinking while the window is in the background. Most
+  terminals either stop the blink or draw the cursor hollow once the
+  window loses focus. `updatePointer` already reads `ebiten.IsFocused`
+  once a frame, so the answer is there to read.
 - A click that brings the window to the front is acted on as well. A
   press that moves the keys to a pane stops there, through
-  `ui.FocusesFirst`, but the window cannot do that for itself: nothing
-  reads `ebiten.IsFocused`, so the click that woke it looks like any
+  `ui.FocusesFirst`, and the window does not do the same for itself: it
+  reads `ebiten.IsFocused` in `updatePointer` but only to decide whether
+  the pointer is on the window, so the click that woke it looks like any
   other. A headless test cannot drive that flag either.
 - A watcher taking a screen over sees the far end's default cursor.
   `vt.Repaint` puts the cursor back where the program had it but carries

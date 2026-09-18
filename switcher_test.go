@@ -3,6 +3,7 @@ package main
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/input"
@@ -33,8 +34,17 @@ func aWindowOfPanes(t *testing.T, n int) *testApp {
 	return a
 }
 
-// openTiles opens the switcher and returns it.
+// openTiles opens the switcher, lets the zoom finish and returns the
+// tiles. A test about where a picture settles wants it settled.
 func openTiles(t *testing.T, a *testApp) *ui.Tiles {
+	t.Helper()
+	tiles := openTilesZooming(t, a)
+	zoomDone(a)
+	return tiles
+}
+
+// openTilesZooming opens the switcher with the zoom still to run.
+func openTilesZooming(t *testing.T, a *testApp) *ui.Tiles {
 	t.Helper()
 	if err := a.openSwitcher(); err != nil {
 		t.Fatalf("open the switcher: %v", err)
@@ -44,6 +54,16 @@ func openTiles(t *testing.T, a *testApp) *ui.Tiles {
 		t.Fatalf("it showed %T, want the tiles", a.root.Modal())
 	}
 	return tiles
+}
+
+// zoomDone moves the window's clock past the zoom.
+func zoomDone(a *testApp) { moveClock(a, zoomTime) }
+
+// moveClock moves the window's clock on by d.
+func moveClock(a *testApp, d time.Duration) {
+	was := a.clock()
+	a.now = func() time.Time { return was.Add(d) }
+	a.frameAt = a.now()
 }
 
 // The switcher shows one tile per pane, named the way the sidebar names
@@ -140,13 +160,15 @@ func TestEachTileGetsAScaledLayer(t *testing.T) {
 				a.paneName(what), tile.layer.Scale)
 		}
 	}
-	// And every picture lands inside the tile it belongs to.
+	// And every picture lands inside the rule round its tile, not over
+	// it.
 	a.renderer.Measure(a.g, &a.geo)
-	for i, area := range tiles.Areas() {
+	for i := range tiles.Areas() {
 		what := a.switcher.panes[i]
 		tile := a.switcher.shown[what]
-		left, width := a.geo.CellsX(area.X, area.X+area.Cols)
-		top, height := a.geo.CellsY(area.Y, area.Y+area.Rows)
+		inside := tiles.Inside(i)
+		left, width := a.geo.CellsX(inside.X, inside.X+inside.Cols)
+		top, height := a.geo.CellsY(inside.Y, inside.Y+inside.Rows)
 		if tile.layer.X < left || tile.layer.Y < top {
 			t.Errorf("tile %d starts at %d,%d, before its box at %d,%d",
 				i, tile.layer.X, tile.layer.Y, left, top)
@@ -370,5 +392,109 @@ func TestAScreenTooBigForATextureIsLeftOut(t *testing.T) {
 	// The rest are still drawn.
 	if got := len(a.switcher.shown); got != 3 {
 		t.Errorf("%d panes have a picture, want the 3 that fit", got)
+	}
+}
+
+// A tile says what its pane is called now, not what it was called when
+// the switcher opened. A program renames a pane as it goes.
+func TestATileSaysWhatThePaneIsCalledNow(t *testing.T) {
+	a := aWindowOfPanes(t, 4)
+	tiles := openTiles(t, a)
+	a.placeSwitcher()
+	pane := a.switcher.panes[0]
+	was := tiles.Name(0)
+
+	renamePane(t, a, pane, "a new title")
+	a.placeSwitcher()
+
+	got := tiles.Name(0)
+	if got == was {
+		t.Fatalf("the tile still says %q", got)
+	}
+	if !strings.Contains(got, "a new title") {
+		t.Errorf("the tile says %q, want the pane's new name", got)
+	}
+}
+
+// renamePane gives a pane a new label the way the window does.
+func renamePane(t *testing.T, a *testApp, w ui.Widget, name string) {
+	t.Helper()
+	pane, is := w.(*term.Terminal)
+	if !is {
+		t.Fatalf("%T is not a terminal", w)
+	}
+	e := a.panes[pane]
+	if e == nil {
+		t.Fatal("the pane has no row")
+	}
+	e.Label = name
+}
+
+// The pictures zoom out of the room the panes were in, and settle on
+// their tiles.
+func TestThePicturesZoomOutOfTheRoomThePanesWereIn(t *testing.T) {
+	a := aWindowOfPanes(t, 4)
+	tiles := openTilesZooming(t, a)
+
+	a.placeSwitcher()
+
+	// Part way, the picture is not where it ends up.
+	first := a.switcher.shown[a.switcher.panes[0]]
+	starting := first.layer.X
+	a.renderer.Measure(a.g, &a.geo)
+	inside := tiles.Inside(0)
+	settled, _ := a.geo.CellsX(inside.X, inside.X+inside.Cols)
+	if starting == settled {
+		t.Error("the picture opened where it settles, so nothing zoomed")
+	}
+
+	zoomDone(a)
+	a.placeSwitcher()
+
+	if first.layer.X < settled {
+		t.Errorf("the picture settled at %d, before its box at %d", first.layer.X, settled)
+	}
+}
+
+// The zoom asks for a frame of its own while it runs, which an idle
+// window would otherwise skip.
+func TestTheZoomAsksForItsOwnFrames(t *testing.T) {
+	a := aWindowOfPanes(t, 4)
+	openTilesZooming(t, a)
+
+	if !a.switcher.zooming(a.frameTime()) {
+		t.Fatal("the switcher is not zooming just after it opened")
+	}
+	a.g.ClearDirty()
+	a.placeSwitcher()
+	if !a.g.AnyDirty() {
+		t.Error("a frame part way through the zoom did not ask for another")
+	}
+
+	zoomDone(a)
+
+	if a.switcher.zooming(a.frameTime()) {
+		t.Error("the zoom is still running after its time is up")
+	}
+	// And a settled switcher stops asking, so an idle window goes back
+	// to skipping frames.
+	a.placeSwitcher()
+	a.g.ClearDirty()
+	a.placeSwitcher()
+	if a.g.AnyDirty() {
+		t.Error("a settled switcher still asks for a frame every frame")
+	}
+}
+
+// A switcher with nowhere to zoom out of goes straight to its tiles
+// rather than starting from a box of nothing.
+func TestASwitcherWithNowhereToZoomFromSettlesAtOnce(t *testing.T) {
+	s := &switcher{}
+
+	if got := s.zoomedTo(time.Now()); got != 1 {
+		t.Errorf("it is %v of the way through, want all of it", got)
+	}
+	if s.zooming(time.Now()) {
+		t.Error("it says it is zooming")
 	}
 }

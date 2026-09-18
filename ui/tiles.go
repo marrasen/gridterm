@@ -9,11 +9,15 @@ import (
 )
 
 // leastTile is the smallest a tile may be, in cells. Below this there is
-// no room for a frame and a name inside it.
+// no room for the gap, the rule and a name inside them.
 const (
-	leastTileCols = 12
-	leastTileRows = 4
+	leastTileCols = 16
+	leastTileRows = 8
 )
+
+// tileGap is the room left around a tile, in cells, so two pictures side
+// by side do not touch.
+const tileGap = 1
 
 // TilesStyle colours the grid of tiles.
 type TilesStyle struct {
@@ -54,6 +58,22 @@ func NewTiles(names []string) *Tiles { return &Tiles{names: names} }
 // Len is how many tiles there are.
 func (t *Tiles) Len() int { return len(t.names) }
 
+// Rename gives a tile the name it goes by now. A pane's title changes
+// while the tiles are up, and the tile says what the pane says.
+func (t *Tiles) Rename(at int, name string) {
+	if at >= 0 && at < len(t.names) {
+		t.names[at] = name
+	}
+}
+
+// Name is what a tile is called, and empty for a tile that is not there.
+func (t *Tiles) Name(at int) string {
+	if at < 0 || at >= len(t.names) {
+		return ""
+	}
+	return t.names[at]
+}
+
 // At is which tile is marked.
 func (t *Tiles) At() int { return t.at }
 
@@ -64,8 +84,35 @@ func (t *Tiles) Mark(at int) {
 	}
 }
 
-// Areas is where each tile sits, in the room Layout last gave.
+// Areas is where each tile sits, in the room Layout last gave. It is
+// what a click lands in, and it takes in the gap around the tile.
 func (t *Tiles) Areas() []Rect { return t.areas }
+
+// Inside is the box a tile's picture goes in: its own box, less the gap
+// between tiles and the rule around it. It is empty when there is no
+// room left for one.
+//
+// The caller draws the picture there, so the rule is always around it
+// rather than under it.
+func (t *Tiles) Inside(i int) Rect {
+	if i < 0 || i >= len(t.areas) {
+		return Rect{}
+	}
+	return inset(framed(t.areas[i]), 1)
+}
+
+// framed is the box a tile's rule is drawn on.
+func framed(area Rect) Rect { return inset(area, tileGap) }
+
+// inset shrinks a box by the same amount on every side, and gives back
+// an empty one when there is nothing left.
+func inset(r Rect, by int) Rect {
+	out := Rect{X: r.X + by, Y: r.Y + by, Cols: r.Cols - 2*by, Rows: r.Rows - 2*by}
+	if out.Cols <= 0 || out.Rows <= 0 {
+		return Rect{}
+	}
+	return out
+}
 
 // Title names the grid of tiles, for a caller looking for it among the
 // dialogs that are open.
@@ -89,12 +136,16 @@ func (t *Tiles) Draw(v grid.View) {
 	}
 	v.Fill(grid.Cell{Rune: ' ', FG: t.Style.FG, BG: t.Style.BG, Width: 1})
 	for i, area := range t.areas {
+		box := framed(area)
+		if box.Empty() {
+			continue
+		}
 		border := t.Style.Border
 		if i == t.at {
 			border = t.Style.Marked
 		}
-		drawFrame(v, area, border, t.Style.BG)
-		t.name(v, i, area)
+		drawFrame(v, box, border, t.Style.BG)
+		t.name(v, i, box)
 	}
 }
 

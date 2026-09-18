@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"image/color"
+	"time"
 
 	"github.com/marrasen/gridterm/glyph"
 	"github.com/marrasen/gridterm/grid"
@@ -29,6 +30,53 @@ type switcher struct {
 
 	// shown is the picture inside each tile, one per pane.
 	shown map[ui.Widget]*tile
+
+	// opened is when it went up, which the pictures zoom out from.
+	opened time.Time
+
+	// from is where they zoom out of: the room the panes were in.
+	from ui.Rect
+}
+
+// zoomTime is how long the pictures take to shrink into their tiles.
+// Short enough to read as one movement rather than a wait.
+const zoomTime = 140 * time.Millisecond
+
+// zoomedTo is how far through the zoom a frame is, from 0 to 1, easing
+// off at the end so it settles rather than stops.
+func (s *switcher) zoomedTo(now time.Time) float64 {
+	if s.from.Empty() || s.opened.IsZero() {
+		return 1
+	}
+	gone := now.Sub(s.opened)
+	if gone >= zoomTime || gone < 0 {
+		return 1
+	}
+	t := float64(gone) / float64(zoomTime)
+	return 1 - (1-t)*(1-t)
+}
+
+// zooming reports that the pictures are still on their way in.
+func (s *switcher) zooming(now time.Time) bool { return s.zoomedTo(now) < 1 }
+
+// boxAt is where a tile's picture goes on this frame: its own box once
+// the zoom has finished, and on the way there before that.
+func (s *switcher) boxAt(inside ui.Rect, now time.Time) ui.Rect {
+	return between(s.from, inside, s.zoomedTo(now))
+}
+
+// between is a box part of the way from one to another.
+func between(from, to ui.Rect, t float64) ui.Rect {
+	if t >= 1 {
+		return to
+	}
+	at := func(a, b int) int { return a + int(float64(b-a)*t) }
+	return ui.Rect{
+		X:    at(from.X, to.X),
+		Y:    at(from.Y, to.Y),
+		Cols: max(at(from.Cols, to.Cols), 1),
+		Rows: max(at(from.Rows, to.Rows), 1),
+	}
 }
 
 // tile is one pane drawn small, on a grid and a layer of its own.
@@ -89,7 +137,10 @@ func (a *app) openSwitcher() error {
 	tiles.Style = a.tilesStyle()
 	tiles.Mark(indexOf(panes, ui.FocusedLeaf(a.root.Widget())))
 
-	s := &switcher{tiles: tiles, panes: panes, shown: map[ui.Widget]*tile{}}
+	s := &switcher{
+		tiles: tiles, panes: panes, shown: map[ui.Widget]*tile{},
+		opened: a.clock(), from: a.paneRoom(),
+	}
 	var hide func()
 	tiles.Close = func() {
 		if hide != nil {
@@ -149,7 +200,8 @@ func (a *app) placeSwitcher() {
 	a.renderer.Measure(a.g, &a.geo)
 	m := a.renderer.Metrics()
 	cellW, cellH := a.renderer.CellSize()
-	for i, area := range s.tiles.Areas() {
+	now := a.frameTime()
+	for i := range s.tiles.Areas() {
 		if i >= len(s.panes) {
 			break
 		}
@@ -157,10 +209,17 @@ func (a *app) placeSwitcher() {
 		if !a.paneIsOpen(what) {
 			continue
 		}
+		// Every frame: a pane renames itself as the program in it says
+		// what it is doing, and the tile says what the pane says.
+		s.tiles.Rename(i, a.paneName(what))
 		size, ok := a.paneScreen(what)
 		// A held screen is sized by somebody on another machine, so it is
 		// bounded rather than trusted: one past a texture is left out.
 		if !ok || !fitsATexture(size, cellW, cellH) {
+			continue
+		}
+		inside := s.tiles.Inside(i)
+		if inside.Empty() {
 			continue
 		}
 		t := s.shown[what]
@@ -169,11 +228,30 @@ func (a *app) placeSwitcher() {
 			s.shown[what] = t
 			a.comp.Add(t.layer)
 		}
-		t.place(size, area, &a.geo, m)
+		t.place(size, s.boxAt(inside, now), &a.geo, m)
 		if !t.layer.Hidden {
 			t.draw()
 		}
 	}
+	// A frame of its own for every step of the zoom, which an idle
+	// window would otherwise skip.
+	if s.zooming(now) {
+		a.markDirty()
+	}
+}
+
+// paneRoom is the room the panes are in, which is where the pictures
+// zoom out of.
+func (a *app) paneRoom() ui.Rect {
+	if a.stage == nil || a.root.Widget() == nil {
+		return ui.Rect{}
+	}
+	cols, rows := a.g.Size()
+	area, ok := ui.AreaOf(a.root.Widget(), ui.Rect{Cols: cols, Rows: rows}, a.stage)
+	if !ok {
+		return ui.Rect{}
+	}
+	return area
 }
 
 // paneIsOpen reports whether a widget is still one of the window's

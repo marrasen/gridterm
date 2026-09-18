@@ -215,6 +215,53 @@ there is one key for position and one for recency.
   keyboard config under "Asked for, not yet worked out" is designed, so
   the file does not have to change shape twice.
 
+## Asked for on 2026-09-19
+
+From Marcus's inbox, after working in a shared window.
+
+- **Closing the client kills a pane it started on the host.** Marcus
+  opened a pane on the host from the client, left the client, and the
+  pane on the host went with it. That is what the code does today:
+  `serveSession` in serve/host.go closes the session when the client's
+  channel closes, once where the client's keystrokes stop arriving
+  (:275) and again after the output copy ends (:287). For a pane the
+  client is only watching that is right, because the pane belongs to the
+  host and stays. For a pane the client started it is wrong: the shell
+  is running on the host and the user expects it to still be there.
+  Letting it live means the host keeping the session rather than the
+  channel owning it, and offering it back through `Attach` the way it
+  offers the panes it opened itself.
+
+  Marcus thought the row for such a shell was also missing. That part is
+  done: `servedshell.go` gives it a sidebar row reading "started from
+  another window". What is still open about that row is further up this
+  file: every one reads the same, so two clients cannot be told apart.
+
+- **A file copy cannot be repeated without opening a browser.** Copying
+  a log, and copying the same log again later, is a thing worth doing
+  twice. Marcus wants a "Remember" button on a file copy that outlives a
+  restart, so the same copy can be run again from wherever remembered
+  copies are listed, without opening a file browser pane to find the
+  file. Needs somewhere to keep them, which is a settings file question,
+  and somewhere to show them.
+
+- **A pane drawn from another window is grey until it is clicked.** It
+  does not appear to redraw on its own, so what it shows is the screen
+  as it was when it was last looked at. Not diagnosed.
+
+- **"Take over" is the wrong name now.** It is from the first version,
+  where the client took a pane away from the host. Panes are shared now:
+  they stay on the host and on the client at once. The host's side says
+  "Serve this window…", so the client's side should match it. Marcus
+  suggests "Share host panes" and is open to better. It is the title of
+  the menu line, the dialog and `serve.takeOver`, and `takeOver`,
+  `workOnWindow` and `taken` in windows.go all carry the old word.
+
+- **"Show every pane" breaks when the window is resized.** The switcher
+  is laid out when it opens and `placeSwitcher` runs every frame after,
+  so a resize while it is up leaves the tiles and the pictures
+  disagreeing. Not diagnosed.
+
 ## Panes and the sidebar
 
 - **A pane on a taken-over window cannot be reconnected.** Marcus typed

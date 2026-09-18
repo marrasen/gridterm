@@ -113,7 +113,7 @@ func clipboardImage() (image.Image, bool, error) {
 // screenshot and a copied picture arrive as. Anything else is refused by
 // name rather than drawn wrongly.
 func imageFromDIB(dib []byte) (image.Image, error) {
-	const headerLeast = 40
+	const headerLeast = headerSize
 	if len(dib) < headerLeast {
 		return nil, fmt.Errorf("the picture on the clipboard is %d bytes, too short for a header", len(dib))
 	}
@@ -191,4 +191,100 @@ func anyOpaque(img *image.RGBA) bool {
 		}
 	}
 	return false
+}
+
+// Putting a picture on the clipboard.
+const (
+	gmemMoveable = 0x0002
+	headerSize   = 40
+)
+
+var (
+	emptyClipboard   = user32.NewProc("EmptyClipboard")
+	setClipboardData = user32.NewProc("SetClipboardData")
+
+	globalAlloc = kernel32.NewProc("GlobalAlloc")
+	globalFree  = kernel32.NewProc("GlobalFree")
+)
+
+// setClipboardImage puts a picture on the clipboard, as the bitmap every
+// Windows program knows how to read.
+func setClipboardImage(img image.Image) error {
+	dib := dibFrom(img)
+
+	mem, _, err := globalAlloc.Call(gmemMoveable, uintptr(len(dib)))
+	if mem == 0 {
+		return fmt.Errorf("make room for the picture: %w", err)
+	}
+	// Given to the clipboard on success, and freed here on every way
+	// out before that.
+	handed := false
+	defer func() {
+		if !handed {
+			_, _, _ = globalFree.Call(mem)
+		}
+	}()
+	ptr, _, err := globalLock.Call(mem)
+	if ptr == 0 {
+		return fmt.Errorf("lock the room for the picture: %w", err)
+	}
+	copy(unsafe.Slice((*byte)(unsafe.Pointer(ptr)), len(dib)), dib)
+	_, _, _ = globalUnlock.Call(mem)
+
+	if ok, _, err := openClipboard.Call(0); ok == 0 {
+		return fmt.Errorf("open the clipboard: %w", err)
+	}
+	defer func() { _, _, _ = closeClipboard.Call() }()
+	if ok, _, err := emptyClipboard.Call(); ok == 0 {
+		return fmt.Errorf("empty the clipboard: %w", err)
+	}
+	if got, _, err := setClipboardData.Call(cfDIB, mem); got == 0 {
+		return fmt.Errorf("put the picture on the clipboard: %w", err)
+	}
+	// The clipboard owns it now, and freeing it would take the picture
+	// out from under whoever pastes it.
+	handed = true
+	return nil
+}
+
+// dibFrom lays a picture out as a device independent bitmap: a header
+// and then the pixels, bottom row first, thirty-two bits a pixel.
+//
+// Thirty-two rather than twenty-four so the alpha survives, and rows of
+// four bytes a pixel need no padding.
+func dibFrom(img image.Image) []byte {
+	b := img.Bounds()
+	width, height := b.Dx(), b.Dy()
+	out := make([]byte, headerSize+width*height*4)
+	binary.LittleEndian.PutUint32(out[0:4], headerSize)
+	binary.LittleEndian.PutUint32(out[4:8], uint32(int32(width)))
+	binary.LittleEndian.PutUint32(out[8:12], uint32(int32(height)))
+	binary.LittleEndian.PutUint16(out[12:14], 1)
+	binary.LittleEndian.PutUint16(out[14:16], 32)
+	binary.LittleEndian.PutUint32(out[16:20], biRGB)
+	binary.LittleEndian.PutUint32(out[20:24], uint32(width*height*4))
+
+	at := headerSize
+	for y := height - 1; y >= 0; y-- {
+		for x := range width {
+			r, g, bl, a := img.At(b.Min.X+x, b.Min.Y+y).RGBA()
+			// Windows writes blue, green, red, alpha, and wants the
+			// colours as they are rather than multiplied by the alpha.
+			out[at+0] = unmultiply(bl, a)
+			out[at+1] = unmultiply(g, a)
+			out[at+2] = unmultiply(r, a)
+			out[at+3] = uint8(a >> 8)
+			at += 4
+		}
+	}
+	return out
+}
+
+// unmultiply takes a colour back out of its alpha, for a picture Go
+// holds multiplied by it and Windows does not.
+func unmultiply(c, a uint32) uint8 {
+	if a == 0 {
+		return 0
+	}
+	return uint8(min(c*0xff/a, 0xff))
 }

@@ -1252,3 +1252,13 @@ func (t *Terminal) SetPalette(pal vt.Palette) {
 	t.mu.Unlock()
 	t.pending.Store(true)
 }
+
+// PressPaste sends the key a program reads as paste, which is Ctrl+V.
+//
+// It is for a picture that has been put on the machine's clipboard from
+// somewhere else: the program reads that clipboard itself, so what it
+// needs is the keystroke rather than any text.
+func (t *Terminal) PressPaste() {
+	t.send(input.EncodeMode(
+		input.Event{Kind: input.KeyPress, Key: input.KeyV, Mods: input.ModCtrl}, t.mode(), nil))
+}

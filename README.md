@@ -457,8 +457,20 @@ the operating system for a device independent bitmap and turns it into
 an image; everywhere else reports that there is no picture, so the
 command says so rather than failing in a way that reads like a fault.
 
-A pane on another machine is refused: the file would be written here and
-the path would mean nothing there.
+Where the picture goes depends on what the pane is connected through. A
+pane on this machine gets a file here. A pane on a gridterm this window
+has taken over gets the picture put on *that* machine's clipboard, over
+a channel of its own on the connection that is already open, and then
+the paste key is pressed for it -- so the program reads the picture the
+way it reads one pasted by somebody sitting at that machine. The paste
+is pressed only once the picture has landed, or it would paste whatever
+was on that clipboard before.
+
+There is no standard for this. OSC 52 is the standard for a clipboard
+over a terminal and it carries text only; Sixel and the rest draw a
+picture rather than putting one anywhere. So this is gridterm's own
+channel between two gridterms, which is why it does nothing for a pane
+reached by SSH.
 
 **Damage tracking is load-bearing.** `ebiten.SetScreenClearedEveryFrame(false)`
 means a row the renderer skips shows the *previous* frame, not a blank.

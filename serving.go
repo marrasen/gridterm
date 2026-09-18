@@ -476,6 +476,12 @@ func (a *app) startServing(port, where string) error {
 		// through the same snapshot the panel was built from rather
 		// than walking the registry from there.
 		Opens: a.serving.opens,
+		// A picture a client pasted, for the clipboard of this machine,
+		// so a program running here can be handed one. It arrives on a
+		// goroutine of the server's, and the clipboard is the operating
+		// system's rather than the window's, so it is put there without
+		// going through the goroutine that draws.
+		Picture: takeSentPicture,
 		// What is already running here, so a window taken over shows
 		// the shell that was left running rather than only new ones.
 		Attach: a.attachTo,

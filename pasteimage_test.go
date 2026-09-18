@@ -83,12 +83,15 @@ func TestTwoPicturesPastedTogetherGetTheirOwnFiles(t *testing.T) {
 	}
 }
 
-// A pane running somewhere else is told so rather than handed a path to
-// a file on this machine.
-func TestPastingAPictureIntoARemotePaneSaysWhereTheFileWouldGo(t *testing.T) {
+// A pane on a machine reached by SSH is told so rather than handed a
+// path to a file on this machine.
+func TestPastingAPictureIntoAnSSHPaneSaysItCannotYet(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	pane := firstPane(t, a)
 	a.panes[pane] = &conns.Entry{Host: "kettle", Kind: conns.Terminal}
+	a.readClipImage = func() (image.Image, bool, error) {
+		return image.NewRGBA(image.Rect(0, 0, 1, 1)), true, nil
+	}
 
 	err := a.pasteImage(pane)
 

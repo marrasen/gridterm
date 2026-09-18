@@ -4,6 +4,7 @@ package main
 
 import (
 	"encoding/binary"
+	"image"
 	"image/color"
 	"strings"
 	"testing"
@@ -155,5 +156,60 @@ func TestABitmapThisCannotReadIsRefused(t *testing.T) {
 		} else if !strings.Contains(err.Error(), "clipboard") {
 			t.Errorf("a bitmap %s says %q, which does not say where it came from", what, err)
 		}
+	}
+}
+
+// A picture laid out for the clipboard reads back as the one that went
+// in, which is the check that the two halves agree.
+func TestAPictureLaidOutForTheClipboardReadsBack(t *testing.T) {
+	want := image.NewRGBA(image.Rect(0, 0, 2, 3))
+	want.SetRGBA(0, 0, color.RGBA{0x11, 0x22, 0x33, 0xff})
+	want.SetRGBA(1, 0, color.RGBA{0x44, 0x55, 0x66, 0xff})
+	want.SetRGBA(0, 2, color.RGBA{0x77, 0x88, 0x99, 0xff})
+
+	got, err := imageFromDIB(dibFrom(want))
+
+	if err != nil {
+		t.Fatalf("read it back: %v", err)
+	}
+	if got.Bounds() != want.Bounds() {
+		t.Fatalf("it came back %v, want %v", got.Bounds(), want.Bounds())
+	}
+	for y := range 3 {
+		for x := range 2 {
+			if got, want := got.At(x, y), want.At(x, y); got != want {
+				t.Errorf("pixel %d,%d is %v, want %v", x, y, got, want)
+			}
+		}
+	}
+}
+
+// A picture Go holds multiplied by its alpha is written out as the
+// colours themselves, which is what Windows expects to be handed.
+func TestAlphaIsTakenBackOutOfTheColours(t *testing.T) {
+	// Half-transparent red, as Go holds it: the red is already halved.
+	img := image.NewRGBA(image.Rect(0, 0, 1, 1))
+	img.SetRGBA(0, 0, color.RGBA{R: 0x80, A: 0x80})
+
+	dib := dibFrom(img)
+
+	px := dib[headerSize : headerSize+4]
+	if px[3] != 0x80 {
+		t.Errorf("the alpha is %#x, want %#x", px[3], 0x80)
+	}
+	// Red at full strength, because the alpha says how see-through it
+	// is rather than how red it is.
+	if px[2] < 0xf0 {
+		t.Errorf("the red is %#x, want it taken back out of the alpha", px[2])
+	}
+}
+
+// A picture with no pixels at all is laid out as a header and nothing,
+// rather than reaching past the end of the buffer.
+func TestAnEmptyPictureIsLaidOutAsAHeaderAlone(t *testing.T) {
+	got := dibFrom(image.NewRGBA(image.Rect(0, 0, 0, 0)))
+
+	if len(got) != headerSize {
+		t.Errorf("it laid out %d bytes, want the %d of a header", len(got), headerSize)
 	}
 }

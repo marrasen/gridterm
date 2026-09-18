@@ -225,10 +225,13 @@ the system's temporary directory and types the path. What is left:
   the command says there is none. Linux and macOS each need their own
   reader.
 
-- **A pane on another machine is refused.** The file is written here and
-  the path would mean nothing there. Sending it over the connection
-  first is the answer, and the file transfer already exists for the
-  browser.
+- **A pane on a machine reached by SSH is refused.** The file is written
+  here and the path would mean nothing there. Marcus asked on 2026-09-19
+  for the file to be written on that machine instead: `a.filesystem`
+  already reaches it and `vfs.FS` can `Create`, so the work is doing it
+  off the goroutine that draws and typing the path when it lands. A pane
+  on a gridterm this window has taken over is done: the picture goes on
+  that machine's clipboard.
 
 - **Nothing takes the files away again.** They pile up in the temporary
   directory under `gridterm-pasted` until the system clears it.

@@ -3,6 +3,7 @@
 package main
 
 import (
+	"errors"
 	"image"
 	"runtime"
 )
@@ -21,4 +22,12 @@ func clipboardHasText() bool { return true }
 func clipboardImage() (image.Image, bool, error) {
 	_ = runtime.GOOS
 	return nil, false, nil
+}
+
+// setClipboardImage puts a picture on the clipboard.
+//
+// Only Windows is wired up, so everywhere else this says so rather than
+// reporting that it worked and leaving the clipboard untouched.
+func setClipboardImage(image.Image) error {
+	return errors.New("this gridterm cannot put a picture on the clipboard of " + runtime.GOOS)
 }

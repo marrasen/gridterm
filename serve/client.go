@@ -593,3 +593,48 @@ func (s *remoteSession) readRequests(reqs <-chan *ssh.Request) {
 		}
 	}
 }
+
+// SendPicture puts a picture on the clipboard of the window being
+// served, so a program running there can be pasted it.
+//
+// It blocks until the window has said whether the picture landed, so it
+// is called from a goroutine of its own rather than from whatever draws.
+func (w *Window) SendPicture(png []byte) error {
+	if w.isClosed() {
+		return errors.New("serve: that window has been let go of")
+	}
+	if len(png) == 0 {
+		return errors.New("serve: there is no picture to send")
+	}
+	if len(png) > mostClipboardBytes {
+		return fmt.Errorf("serve: the picture is %d bytes, and a window takes %d",
+			len(png), mostClipboardBytes)
+	}
+	ch, reqs, err := w.client.OpenChannel(chanClipboard, nil)
+	if err != nil {
+		return fmt.Errorf("serve: send a picture to %s: %w", w.addr, err)
+	}
+	defer func() { _ = ch.Close() }()
+	go ssh.DiscardRequests(reqs)
+
+	if _, err := ch.Write(png); err != nil {
+		return fmt.Errorf("serve: send a picture to %s: %w", w.addr, err)
+	}
+	// Nothing more is coming, which is what the other end reads to.
+	if err := ch.CloseWrite(); err != nil {
+		return fmt.Errorf("serve: send a picture to %s: %w", w.addr, err)
+	}
+	// Nothing back means it landed. Anything else is why it did not.
+	said, err := io.ReadAll(io.LimitReader(ch, mostSaid))
+	if err != nil {
+		return fmt.Errorf("serve: %s took a picture and said nothing back: %w", w.addr, err)
+	}
+	if len(said) > 0 {
+		return fmt.Errorf("serve: %s would not take the picture: %s", w.addr, said)
+	}
+	return nil
+}
+
+// mostSaid caps what a window can say went wrong, so a window that
+// answers with a stream rather than a sentence cannot fill this one.
+const mostSaid = 4 << 10

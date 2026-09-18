@@ -87,6 +87,11 @@ type Config struct {
 	// short rather than waiting out the real one.
 	Handshake time.Duration
 
+	// Picture takes a picture a client sent, for the clipboard of this
+	// machine. A nil one takes none, and a client that sends one is
+	// told so.
+	Picture PicturePutter
+
 	// Open starts something for a client to work in. A nil one serves
 	// nothing, and a client that asks is told so.
 	Open Opener

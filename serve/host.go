@@ -58,6 +58,10 @@ func (s *Server) serveChannels(ctx context.Context, c *Client, chans <-chan ssh.
 			})
 			continue
 		}
+		if nch.ChannelType() == chanClipboard {
+			running.Go(func() { s.runClipboard(ctx, nch) })
+			continue
+		}
 		if nch.ChannelType() == chanFiles {
 			var want openFiles
 			// No payload asks for the machine being served, which is

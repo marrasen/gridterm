@@ -23,6 +23,7 @@ func (a *app) newMenubar(child ui.Widget) *ui.Menubar {
 		{Title: "Edit", Items: []ui.MenuItem{
 			{Command: "edit.copy"},
 			{Command: "edit.paste"},
+			{Command: "edit.pasteImage"},
 		}},
 		{Title: "View", Items: []ui.MenuItem{
 			{Command: "panel.toggle"},

@@ -446,6 +446,20 @@ italic as the regular glyph again, so `ESC[1m` printed nothing different.
 A fallback face stands in for a *rune* the family cannot draw rather
 than for a style, so what it draws is left alone.
 
+**A picture is handed over as a path, not as bytes.** A program reading
+a terminal cannot be given an image: the pipe carries text. So
+`edit.pasteImage` writes what is on the clipboard to a PNG under the
+system's temporary directory and types the path in its place, which is
+what the programs that take pasted images already expect to read.
+
+Reading the clipboard is per-platform. `clipboard_image_windows.go` asks
+the operating system for a device independent bitmap and turns it into
+an image; everywhere else reports that there is no picture, so the
+command says so rather than failing in a way that reads like a fault.
+
+A pane on another machine is refused: the file would be written here and
+the path would mean nothing there.
+
 **Damage tracking is load-bearing.** `ebiten.SetScreenClearedEveryFrame(false)`
 means a row the renderer skips shows the *previous* frame, not a blank.
 A row wrongly considered clean is a visible bug, so `grid.Set` compares

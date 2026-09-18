@@ -4,6 +4,10 @@ version: "2"
 #
 #	golangci-lint run ./...
 #
+# This is the gate rather than "go vet ./...", because vet has no way to
+# say that one finding has been looked at and is right. It runs vet
+# among the others and honours the exclusions written down below.
+#
 # The defaults cap each linter at fifty findings and hide the rest, which
 # reads as "fifty problems" whatever the real number is. The caps are off
 # here: a number that is wrong is worse than a number that is large.
@@ -51,7 +55,22 @@ linters:
       - linters: [errcheck]
         source: fmt\.Fprint(f|ln)?\(os\.(Stdout|Stderr)
 
+      # A test taking away a file it wrote itself. The test fails on what
+      # it came to check, and a file left behind in the temporary
+      # directory says nothing about that.
+      - path: _test\.go
+        linters: [errcheck]
+        source: os\.Remove\(
+
       # Test scaffolding says what went wrong by failing the test, and
       # has no caller to return an error to.
       - path: internal/sshtest/
         linters: [errcheck]
+
+      # Reading a picture off the Windows clipboard. GlobalLock hands
+      # back an address in memory the operating system owns, which the
+      # collector never moves, and the lock is held until the bytes have
+      # been copied out. vet cannot see either of those.
+      - path: clipboard_image_windows\.go
+        linters: [govet]
+        text: possible misuse of unsafe.Pointer

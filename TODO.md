@@ -217,15 +217,21 @@ browser, which needs an icon of its own.
 Asked for on 2026-09-17, after seeing Claude Code take a pasted image in
 a terminal.
 
-- **Nothing can read an image off the clipboard today.** gridterm uses
-  atotto/clipboard, which carries text only, and `clipboardWriter` in
-  clipboard.go only writes. Reading an image needs another library or
-  the platform call.
+Pasting a picture is done on Windows: `edit.pasteImage`, on the Edit
+menu and on Ctrl+Alt+V, writes the clipboard's picture to a PNG under
+the system's temporary directory and types the path. What is left:
 
-- **A program reading stdin cannot be handed a picture.** Claude Code's
-  answer is a file: the image is written somewhere the program can open
-  it, and the path is typed in its place. For a pane on another machine
-  the file has to go over the connection first.
+- **Only Windows reads a picture off the clipboard.** Everywhere else
+  the command says there is none. Linux and macOS each need their own
+  reader.
+
+- **A pane on another machine is refused.** The file is written here and
+  the path would mean nothing there. Sending it over the connection
+  first is the answer, and the file transfer already exists for the
+  browser.
+
+- **Nothing takes the files away again.** They pile up in the temporary
+  directory under `gridterm-pasted` until the system clears it.
 
 - **Dropping a file on the window is the same question** with the path
   already on disk. `ebiten.DroppedFiles` reports it.

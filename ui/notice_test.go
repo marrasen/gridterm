@@ -699,3 +699,50 @@ func TestNoticeAnActionDoesNotReplaceCopy(t *testing.T) {
 		t.Errorf("the buttons are %v, want the action then Copy and OK", got)
 	}
 }
+
+// A notice's buttons cast the same shadow, and what a click lands on
+// follows the row they moved to.
+func TestANoticesButtonsCastAShadowAndStillTakeAClick(t *testing.T) {
+	n := NewNotice("Could not connect", "The server said no.", nil)
+	n.Style = noticeStyled()
+	n.Style.ButtonShadowBG = color.RGBA{R: 1, G: 2, B: 3, A: 0xff}
+	n.Layout(Size{Cols: 60, Rows: 24})
+
+	g := grid.New(60, 24, color.RGBA{}, color.RGBA{})
+	n.Draw(g.View())
+
+	// A row taller than the same notice casting none, so the shadow has
+	// somewhere to fall that is not the rule along the bottom.
+	plain := NewNotice("Could not connect", "The server said no.", nil)
+	plain.Style = noticeStyled()
+	plain.Layout(Size{Cols: 60, Rows: 24})
+	box := n.box()
+	if got, want := box.Rows, plain.box().Rows+1; got != want {
+		t.Errorf("a notice casting shadows is %d rows, want %d", got, want)
+	}
+	row := n.buttonRow(box)
+	if row != box.Rows-3 {
+		t.Fatalf("the buttons are on row %d of %d, want a row kept under them", row, box.Rows)
+	}
+	if got := plain.buttonRow(plain.box()); row != got {
+		t.Errorf("the buttons moved to row %d, want the %d they were on", row, got)
+	}
+	at := ButtonColsIn(n.buttons(), box.Cols, noticePad)
+	width := ButtonWidth(n.buttons()[0])
+	if got := g.At(box.X+at[0]+width, box.Y+row).BG; got != n.Style.ButtonShadowBG {
+		t.Errorf("beside the button is %v, want the shadow", got)
+	}
+	// A click on the row the buttons moved to still presses one.
+	pressed := 0
+	n.Action = NoticeAction{Title: "Retry", Do: func() { pressed++ }}
+	n.Layout(Size{Cols: 60, Rows: 24})
+	box = n.box()
+	row = n.buttonRow(box)
+	at = ButtonColsIn(n.buttons(), box.Cols, noticePad)
+	if _, err := n.HandleMouse(pressAt(box.X+at[0], box.Y+row)); err != nil {
+		t.Fatalf("click: %v", err)
+	}
+	if pressed != 1 {
+		t.Errorf("a click on the row the buttons moved to pressed %d buttons, want the one", pressed)
+	}
+}

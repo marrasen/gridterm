@@ -95,6 +95,11 @@ type NoticeStyle struct {
 
 	// Rule picks the characters the rule is drawn with.
 	Rule Border
+
+	// ButtonShadowBG darkens the cells below and to the right of each
+	// button, the way a DOS program drew one. A zero alpha leaves it
+	// out, and the dialog is a row shorter for it.
+	ButtonShadowBG color.RGBA
 }
 
 // noticeAt is a place in the wrapped message: which line, and how many
@@ -370,7 +375,7 @@ func (n *Notice) HandleMouse(ev input.MouseEvent) (bool, error) {
 			n.dismiss()
 			return true, nil
 		}
-		if y == box.Rows-2 {
+		if y == n.buttonRow(box) {
 			if at, ok := ButtonAtCol(n.buttons(), box.Cols, noticePad, x); ok {
 				n.at = at
 				n.press(at)
@@ -431,7 +436,7 @@ func (n *Notice) paint(v grid.View) {
 // selected part marked out.
 func (n *Notice) paintText(in grid.View, box Rect) {
 	lines := n.wrap()
-	for y := 0; y < max(box.Rows-noticeChrome, 0); y++ {
+	for y := 0; y < max(box.Rows-noticeChrome-n.shadowRows(), 0); y++ {
 		li := n.top + y
 		if li < 0 || li >= len(lines) {
 			continue
@@ -465,6 +470,22 @@ func (n *Notice) paintText(in grid.View, box Rect) {
 	}
 }
 
+// buttonRow is the row the buttons sit on: above the rule, and above
+// the row a shadow under them takes when the style casts one.
+//
+// One place decides it, so what is drawn and what a click lands on
+// cannot disagree.
+func (n *Notice) buttonRow(box Rect) int { return box.Rows - 2 - n.shadowRows() }
+
+// shadowRows is the row a shadow under the buttons needs, and none when
+// the style casts no shadow.
+func (n *Notice) shadowRows() int {
+	if n.Style.ButtonShadowBG.A == 0 {
+		return 0
+	}
+	return 1
+}
+
 // paintButtons draws the buttons along the bottom, right aligned.
 func (n *Notice) paintButtons(in grid.View, box Rect) {
 	for i, at := range ButtonColsIn(n.buttons(), box.Cols, noticePad) {
@@ -477,7 +498,9 @@ func (n *Notice) paintButtons(in grid.View, box Rect) {
 		if i == n.at {
 			fg, bg = n.Style.ActiveFG, n.Style.ActiveBG
 		}
-		DrawButton(in, at, box.Rows-2, n.buttons()[i], fg, bg)
+		row := n.buttonRow(box)
+		DrawButtonShadow(in, at, row, ButtonWidth(n.buttons()[i]), n.Style.ButtonShadowBG)
+		DrawButton(in, at, row, n.buttons()[i], fg, bg)
 	}
 }
 
@@ -532,7 +555,9 @@ func (n *Notice) clampTop() {
 }
 
 // textRows is how many rows of the message are on screen.
-func (n *Notice) textRows() int { return max(n.box().Rows-noticeChrome, 0) }
+func (n *Notice) textRows() int {
+	return max(n.box().Rows-noticeChrome-n.shadowRows(), 0)
+}
 
 // span returns the selection's ends in reading order.
 func (n *Notice) span() (from, to noticeAt) {
@@ -618,11 +643,12 @@ func (n *Notice) box() Rect {
 	if cols < 12 {
 		return Rect{}
 	}
-	rows := min(noticeChrome+len(n.linesAt(cols-noticePad*2)), n.size.Rows-noticeMargin*2)
+	chrome := noticeChrome + n.shadowRows()
+	rows := min(chrome+len(n.linesAt(cols-noticePad*2)), n.size.Rows-noticeMargin*2)
 	// The ceiling never pushes the box below what it needs: a short
 	// window still gets a dialog, with one row of the message showing.
-	rows = min(rows, max(n.size.Rows*noticeCeilingOf/noticeCeilingIn, noticeChrome+1))
-	if rows < noticeChrome+1 {
+	rows = min(rows, max(n.size.Rows*noticeCeilingOf/noticeCeilingIn, chrome+1))
+	if rows < chrome+1 {
 		return Rect{}
 	}
 	return Rect{

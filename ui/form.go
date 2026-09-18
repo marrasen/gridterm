@@ -55,6 +55,11 @@ type FormStyle struct {
 
 	// Rule picks the characters the rule is drawn with.
 	Rule Border
+
+	// ButtonShadowBG darkens the cells below and to the right of each
+	// button, the way a DOS program drew one. A zero alpha leaves it
+	// out, and the dialog is a row shorter for it.
+	ButtonShadowBG color.RGBA
 }
 
 // Button is something to press at the bottom of a form.
@@ -543,9 +548,10 @@ func (f *Form) layout() formLayout {
 	if box.Empty() {
 		return l
 	}
-	// From the bottom: a blank row, the buttons, then the error, which
-	// is one line unless it needs more and the box has room for more.
-	l.buttonRow = box.Rows - 2
+	// From the bottom: the rule, the buttons, then the error, which is
+	// one line unless it needs more and the box has room for more. A
+	// shadow under the buttons wants the row between them and the rule.
+	l.buttonRow = box.Rows - 2 - f.shadowRows()
 	// A blank row, the title, a blank row, then the fields: what is
 	// between that and the buttons is what the error may have.
 	above := 3
@@ -603,6 +609,7 @@ func (f *Form) paintButtons(in grid.View, y int) {
 		if focused, isButton := f.Focused(); isButton && focused == i {
 			fg, bg = f.Style.ActiveFG, f.Style.ActiveBG
 		}
+		DrawButtonShadow(in, at, y, ButtonWidth(f.buttons[i].Title), f.Style.ButtonShadowBG)
 		DrawButton(in, at, y, f.buttons[i].Title, fg, bg)
 	}
 }
@@ -849,7 +856,16 @@ func (f *Form) needRows() int {
 	}
 	// One error line is always there, so the buttons do not jump down
 	// the moment something goes wrong. Then the buttons and a blank row.
-	return rows + 3
+	return rows + 3 + f.shadowRows()
+}
+
+// shadowRows is the row a shadow under the buttons needs, and none when
+// the style casts no shadow.
+func (f *Form) shadowRows() int {
+	if f.Style.ButtonShadowBG.A == 0 {
+		return 0
+	}
+	return 1
 }
 
 // errExtra is how many rows beyond the one the dialog always keeps this
@@ -927,4 +943,25 @@ func DrawButton(v grid.View, x, y int, title string, fg, bg color.RGBA) {
 	line := v.Sub(x, y, grid.StringWidth(label), 1)
 	line.Fill(grid.Cell{Rune: ' ', FG: fg, BG: bg, Width: 1})
 	line.SetString(0, 0, label, fg, bg, 0)
+}
+
+// DrawButtonShadow darkens the cell to the right of a button and the row
+// under it, a column further right, which is the shadow a DOS program
+// cast. A colour with no alpha draws nothing.
+func DrawButtonShadow(v grid.View, x, y, width int, bg color.RGBA) {
+	if bg.A == 0 || width <= 0 {
+		return
+	}
+	cols, rows := v.Size()
+	cell := grid.Cell{Rune: ' ', FG: bg, BG: bg, Width: 1}
+	set := func(x, y int) {
+		if x < 0 || y < 0 || x >= cols || y >= rows {
+			return
+		}
+		v.Set(x, y, cell)
+	}
+	set(x+width, y)
+	for i := 1; i <= width; i++ {
+		set(x+i, y+1)
+	}
 }

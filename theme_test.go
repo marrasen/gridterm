@@ -777,3 +777,27 @@ func TestAColourLiftedOntoTheFrameIsStillToldFromTheText(t *testing.T) {
 		}
 	}
 }
+
+// A theme that wrote its frame down casts a boxy shadow under each
+// button, the way a DOS program drew one. Every other theme casts none.
+func TestOnlyAFrameThemeCastsButtonShadows(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+
+	if err := a.useTheme(themeNamed(t, a, "Turbo")); err != nil {
+		t.Fatalf("take Turbo: %v", err)
+	}
+	if got := a.formStyle().ButtonShadowBG; got.A != 0xff {
+		t.Errorf("a button on a frame theme casts %v, and it has to cast a solid one", got)
+	}
+	if got := a.noticeStyle().ButtonShadowBG; got.A != 0xff {
+		t.Errorf("a notice's button on a frame theme casts %v", got)
+	}
+
+	if err := a.useTheme(themeNamed(t, a, "Dark")); err != nil {
+		t.Fatalf("take Dark: %v", err)
+	}
+	if got := a.formStyle().ButtonShadowBG; got.A != 0 {
+		t.Errorf("a button on a theme with no frame casts %v, and it casts none", got)
+	}
+}

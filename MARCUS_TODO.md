@@ -13,3 +13,6 @@ It would be cool if I could copy the contents of a pane and keep the colors. If 
 and also have an option to "copy as image", if I want to paste into a chat or something. I don't know if "rich text" 
 is the best to use though.
 
+# Duplicate pane
+
+I conected a client to a host and the same pane appeared twice in the side bar. They contained the exact same content

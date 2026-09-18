@@ -1260,3 +1260,82 @@ func TestClickingATickBoxTurnsItOver(t *testing.T) {
 		t.Error("a second click did not untick it")
 	}
 }
+
+// A shadow under a button is drawn to the right of it and along the row
+// under it, a column further right, which is how a DOS program cast one.
+func TestAButtonCastsABoxyShadow(t *testing.T) {
+	shadowBG := color.RGBA{R: 1, G: 2, B: 3, A: 0xff}
+	tf := newTestForm(t)
+	tf.form.Style.ButtonShadowBG = shadowBG
+
+	g := drawForm(tf.form, 60, 24)
+
+	row := tf.form.buttonsRow()
+	box := tf.form.box()
+	at := ButtonColsIn(tf.form.buttonTitles(), box.Cols, formPad)
+	if len(at) == 0 || at[0] < 0 {
+		t.Fatal("no button fitted")
+	}
+	width := ButtonWidth(tf.form.buttonTitles()[0])
+	// One cell to the right of the button, on its own row.
+	if got := g.At(box.X+at[0]+width, box.Y+row).BG; got != shadowBG {
+		t.Errorf("beside the button is %v, want the shadow %v", got, shadowBG)
+	}
+	// And the row under it, a column further right.
+	for i := 1; i <= width; i++ {
+		if got := g.At(box.X+at[0]+i, box.Y+row+1).BG; got != shadowBG {
+			t.Errorf("under the button at %d is %v, want the shadow %v", i, got, shadowBG)
+		}
+	}
+	// The cell straight under the button's first column is not in the
+	// shadow: it is offset, not a box drawn round the button.
+	if got := g.At(box.X+at[0], box.Y+row+1).BG; got == shadowBG {
+		t.Error("the shadow reaches under the button's own left edge, so it is not offset")
+	}
+}
+
+// A dialog that casts button shadows keeps a row for them, so the shadow
+// does not land on the rule along the bottom.
+func TestAButtonShadowGetsARowOfItsOwn(t *testing.T) {
+	plain := newTestForm(t)
+	plain.form.Layout(Size{Cols: 60, Rows: 24})
+	wasRow, wasRows := plain.form.buttonsRow(), plain.form.box().Rows
+
+	shadowed := newTestForm(t)
+	shadowed.form.Style.ButtonShadowBG = color.RGBA{A: 0xff}
+	shadowed.form.Layout(Size{Cols: 60, Rows: 24})
+
+	if got := shadowed.form.box().Rows; got != wasRows+1 {
+		t.Errorf("a dialog casting shadows is %d rows, want one more than the %d without", got, wasRows)
+	}
+	if got := shadowed.form.buttonsRow(); got != wasRow {
+		t.Errorf("the buttons moved to row %d, want the %d they were on", got, wasRow)
+	}
+	// The row under the buttons is inside the box, not the rule.
+	if got, rows := shadowed.form.buttonsRow()+1, shadowed.form.box().Rows; got >= rows-1 {
+		t.Errorf("the shadow lands on row %d of %d, which is the rule along the bottom", got, rows)
+	}
+}
+
+// A dialog that casts no shadow is the size it always was.
+func TestNoButtonShadowCostsNoRow(t *testing.T) {
+	tf := newTestForm(t)
+	tf.form.Layout(Size{Cols: 60, Rows: 24})
+
+	g := drawForm(tf.form, 60, 24)
+
+	box := tf.form.box()
+	if got := tf.form.buttonsRow(); got != box.Rows-2 {
+		t.Errorf("the buttons are on row %d of %d, want the row above the rule", got, box.Rows)
+	}
+	// The cell beside a button is the dialog's own ground, not a shadow
+	// and not a hole punched through it.
+	at := ButtonColsIn(tf.form.buttonTitles(), box.Cols, formPad)
+	width := ButtonWidth(tf.form.buttonTitles()[0])
+	if got, want := g.At(box.X+at[0]+width, box.Y+tf.form.buttonsRow()).BG, tf.form.Style.BG; got != want {
+		t.Errorf("beside the button is %v, want the dialog's own %v", got, want)
+	}
+	if got, want := g.At(box.X+at[0]+1, box.Y+tf.form.buttonsRow()+1).BG, tf.form.Style.BG; got != want {
+		t.Errorf("under the button is %v, want the dialog's own %v", got, want)
+	}
+}

@@ -168,3 +168,13 @@ func (a *app) disabledFG() color.RGBA {
 	}
 	return a.colours.Selection
 }
+
+// buttonShadowBG darkens the cells below and to the right of a button.
+// A theme that wrote its frame down casts one, which is how a DOS
+// program drew a button; every other theme draws none.
+func (a *app) buttonShadowBG() color.RGBA {
+	if a.look.Set {
+		return color.RGBA{A: 0xff}
+	}
+	return color.RGBA{}
+}

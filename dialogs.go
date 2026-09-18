@@ -34,9 +34,10 @@ func (a *app) formStyle() ui.FormStyle {
 		// A rule around it, and a shadow under it. A dialog over a
 		// terminal is otherwise two lots of text with nothing between
 		// them.
-		BorderFG: a.panelBorderFG(),
-		ShadowBG: a.panelShadow(),
-		Rule:     a.panelRule(),
+		BorderFG:       a.panelBorderFG(),
+		ShadowBG:       a.panelShadow(),
+		Rule:           a.panelRule(),
+		ButtonShadowBG: a.buttonShadowBG(),
 	}
 }
 
@@ -91,16 +92,17 @@ func (a *app) noticeStyle() ui.NoticeStyle {
 		TitleFG: a.frameFG(),
 		// Red, because a title saying something failed has to read as a
 		// failure before it is read as words.
-		FailureFG:   a.onFrame(a.colours.ANSI[1]),
-		SelectionFG: a.frameFG(),
-		SelectionBG: a.colours.Selection,
-		ButtonFG:    a.buttonFG(),
-		ButtonBG:    a.buttonBG(),
-		ActiveFG:    a.activeFG(),
-		ActiveBG:    a.activeBG(),
-		BorderFG:    a.panelBorderFG(),
-		ShadowBG:    a.panelShadow(),
-		Rule:        a.panelRule(),
+		FailureFG:      a.onFrame(a.colours.ANSI[1]),
+		SelectionFG:    a.frameFG(),
+		SelectionBG:    a.colours.Selection,
+		ButtonFG:       a.buttonFG(),
+		ButtonBG:       a.buttonBG(),
+		ActiveFG:       a.activeFG(),
+		ActiveBG:       a.activeBG(),
+		BorderFG:       a.panelBorderFG(),
+		ShadowBG:       a.panelShadow(),
+		Rule:           a.panelRule(),
+		ButtonShadowBG: a.buttonShadowBG(),
 	}
 }
 

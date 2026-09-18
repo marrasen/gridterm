@@ -341,23 +341,25 @@ there is one key for position and one for recency.
 - **A flaky test makes a mutation sweep lie.** Two of the cuts above
   were reported as caught, and the only test that caught them was
   `TestKickingAWindowThatHasAlreadyGoneSaysNothing`, which fails on its
-  own about one run in six. A sweep that counts a flake as a kill says
+  own four runs in thirty. A sweep that counts a flake as a kill says
   the code is pinned when nothing pins it. The three flaky tests below
   are worth fixing for that as much as for the noise.
 
 - **`TestAFinishedJobLetsGoOfItsContext` fails now and then.** It says
   `the job finished still holding its context` at jobs/stat_test.go:179.
-  Seen once while the whole suite was running; ten runs of it alone
-  passed.
+  Seen once while the whole suite was running. Thirty runs of it alone
+  and five whole suites passed on 2026-09-18, so there is no rate to
+  quote.
 
 - **`TestClosingAPaneLeavesDetachedWorkRunning` fails now and then under
   load.** It says `the wait ended with 0x0 inside 500ms` at
   session/job_windows_test.go:42. Seen once while the whole suite was
-  running; fifteen runs of it alone passed, so it is the half-second
-  budget rather than the job object.
+  running. Measured on 2026-09-18: thirty runs of it alone passed and
+  one of five whole suites failed, so it is the half-second budget
+  rather than the job object.
 
 - **`TestAMachineWithTooManyParkedFileSessionsIsRefusedTheNext` fails
-  about one run in twelve.** It says `the plus opened <nil>, want a
+  three runs in thirty.** It says `the plus opened <nil>, want a
   menu` at serving_test.go:1095, so the menu is not up yet when the test
   looks. It was already failing this way before the shortcuts file went
   in, so it is the test that is wrong rather than the window.
@@ -466,10 +468,12 @@ there is one key for position and one for recency.
   working directory field under "Run a command" wants the same thing.
 
 - `TestKickingAWindowThatHasAlreadyGoneSaysNothing` in status_test.go
-  fails about one run in four, with "focus never reached the Kick
+  fails four runs in thirty, with "focus never reached the Kick
   marcus@laptop out button". It predates the shell work.
-  `TestAMachineWithTooManyParkedFileSessionsIsRefusedTheNext` has been
-  seen to fail the same way. Both are relay tests over loopback SSH.
+  `TestAMachineWithTooManyParkedFileSessionsIsRefusedTheNext` fails the
+  same way, three runs in thirty. Both are relay tests over loopback
+  SSH, and both fail on their own rather than only under the load of a
+  whole suite, so a sweep running one package is not safe from them.
 
 - The single-window tests still read `testApp.shells` off the lock the
   harness appends under. Safe today, because every append in those tests

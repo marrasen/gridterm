@@ -348,3 +348,165 @@ func sixteenColours() []string {
 	}
 	return out
 }
+
+// A theme with no frame block leaves the window to work its furniture
+// out, which is what every theme did before there was a block.
+func TestAThemeWithNoFrameBlockSaysNothingAboutTheFurniture(t *testing.T) {
+	theme := Theme{Name: "Bare", FG: "#ffffff", BG: "#000000", ANSI: sixteenColours()}
+
+	got, err := theme.Look()
+
+	if err != nil {
+		t.Fatalf("its look: %v", err)
+	}
+	if got.Set {
+		t.Errorf("a theme with no frame block gave %+v, want nothing said", got)
+	}
+}
+
+// A frame block says what the furniture is written in and sits on.
+func TestAFrameBlockIsRead(t *testing.T) {
+	theme := Theme{Name: "Boxy", FG: "#ffff55", BG: "#0000aa", ANSI: sixteenColours(),
+		Frame: &Frame{FG: "#000000", BG: "#aaaaaa", Border: "double"}}
+
+	got, err := theme.Look()
+
+	if err != nil {
+		t.Fatalf("its look: %v", err)
+	}
+	if !got.Set {
+		t.Fatal("a theme with a frame block says nothing about the furniture")
+	}
+	if want := (color.RGBA{0, 0, 0, 0xff}); got.FG != want {
+		t.Errorf("the furniture is written in %v, want %v", got.FG, want)
+	}
+	if want := (color.RGBA{0xaa, 0xaa, 0xaa, 0xff}); got.BG != want {
+		t.Errorf("the furniture sits on %v, want %v", got.BG, want)
+	}
+	if !got.Double {
+		t.Error("a double border was asked for and the look says single")
+	}
+}
+
+// A button falls back to the frame turned round, which is what marks one
+// out from the dialog it sits on.
+func TestAButtonFallsBackToTheFrameTurnedRound(t *testing.T) {
+	theme := Theme{Name: "Boxy", FG: "#ffff55", BG: "#0000aa", ANSI: sixteenColours(),
+		Frame: &Frame{FG: "#000000", BG: "#aaaaaa"}}
+
+	got, err := theme.Look()
+
+	if err != nil {
+		t.Fatalf("its look: %v", err)
+	}
+	if got.ButtonFG != got.BG || got.ButtonBG != got.FG {
+		t.Errorf("a button is %v on %v, want the frame's %v on %v turned round",
+			got.ButtonFG, got.ButtonBG, got.FG, got.BG)
+	}
+	if got.ActiveFG != got.BG || got.ActiveBG != got.FG {
+		t.Errorf("the button Enter presses is %v on %v, want the frame turned round",
+			got.ActiveFG, got.ActiveBG)
+	}
+}
+
+// A border nobody can draw is turned away when the file is read, rather
+// than leaving the window to guess at it later.
+func TestABorderThatIsNeitherSingleNorDoubleIsRefused(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, `{"version":1,"themes":[{"name":"Odd","fg":"#fff","bg":"#000",`+
+		`"frame":{"fg":"#000","bg":"#aaa","border":"wobbly"},`+sixteen+`}]}`)
+
+	got, err := Load(Path(dir))
+
+	if err == nil {
+		t.Fatal("a border called \"wobbly\" was read")
+	}
+	if !strings.Contains(err.Error(), "wobbly") {
+		t.Errorf("it says %q", err)
+	}
+	if !slices.Equal(Names(got), Names(Built())) {
+		t.Errorf("it offers %v, want only the ones built in", Names(got))
+	}
+}
+
+// A frame block with no colours in it is turned away, and says which
+// two it wants. The block is what a window draws its own furniture in,
+// so a theme that writes one has to say what those colours are.
+func TestAFrameBlockWithNoColoursSaysWhichItWants(t *testing.T) {
+	for what, f := range map[string]*Frame{
+		"nothing at all":       {},
+		"only a border":        {Border: "double"},
+		"a ground and no text": {BG: "#aaaaaa"},
+	} {
+		theme := Theme{Name: "Half", FG: "#fff", BG: "#000", ANSI: sixteenColours(), Frame: f}
+
+		_, err := theme.Look()
+
+		if err == nil {
+			t.Errorf("a frame block with %s was read", what)
+			continue
+		}
+		if !strings.Contains(err.Error(), "fg and bg") {
+			t.Errorf("a frame block with %s says %q, and it has to say which two it wants", what, err)
+		}
+	}
+}
+
+// A theme that wrote its frame down gets a flat dialog: an opaque box
+// with no glass behind it. Glass behind an opaque box is paid for and
+// never seen.
+func TestAStatedFrameIsAFlatOne(t *testing.T) {
+	theme := Theme{Name: "Boxy", FG: "#ffff55", BG: "#0000aa", ANSI: sixteenColours(),
+		Frame: &Frame{FG: "#000000", BG: "#aaaaaa"}}
+
+	got, err := theme.Look()
+
+	if err != nil {
+		t.Fatalf("its look: %v", err)
+	}
+	if !got.Set {
+		t.Error("a theme that named its frame says nothing about it")
+	}
+	if got.BG.A != 0xff {
+		t.Errorf("the frame's ground is %v, and a flat dialog needs an opaque one", got.BG)
+	}
+}
+
+// A start file written from a theme that named its frame carries the
+// frame too, so the file the user edits shows what a frame block looks
+// like rather than leaving them to guess.
+func TestAStartFileCarriesTheFrameBlock(t *testing.T) {
+	path := filepath.Join(t.TempDir(), File)
+	turbo, ok := Named(Built(), "Turbo")
+	if !ok {
+		t.Fatal("there is no Turbo to write from")
+	}
+
+	if err := WriteStart(path, turbo); err != nil {
+		t.Fatalf("write it: %v", err)
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read it back: %v", err)
+	}
+	if !strings.Contains(string(raw), `"frame"`) {
+		t.Errorf("the file it wrote holds no frame block:\n%s", raw)
+	}
+	all, err := Load(path)
+	if err != nil {
+		t.Fatalf("load what it wrote: %v", err)
+	}
+	mine, ok := Named(all, turbo.Name+" of my own")
+	if !ok {
+		t.Fatalf("it wrote %v, want a copy of Turbo", Names(all))
+	}
+	got, err := mine.Look()
+	if err != nil {
+		t.Fatalf("its look: %v", err)
+	}
+	want, _ := turbo.Look()
+	if got != want {
+		t.Errorf("the copy's frame is %+v, want Turbo's %+v", got, want)
+	}
+}

@@ -587,7 +587,7 @@ func TestMenuSeparatorDrawsARule(t *testing.T) {
 	g := drawMenu(m, 40, 20)
 
 	row := rowOf(g, menuLines(m).Y+1)
-	if !strings.Contains(row, string(separatorRune)) {
+	if !strings.Contains(row, string(BorderSingle.runes().across)) {
 		t.Errorf("row = %q, want a rule", row)
 	}
 }
@@ -639,4 +639,23 @@ func TestMenuWithNoRoomDrawsNothing(t *testing.T) {
 		t.Errorf("box = %+v, want nothing in a window of no size", m.box())
 	}
 	m.Draw(grid.New(0, 0, color.RGBA{}, color.RGBA{}).View())
+}
+
+// The rule between groups of items is drawn with the same characters as
+// the rule round the menu, or a thin line stops short of the thick sides
+// either end of it.
+func TestASeparatorIsDrawnWithTheMenusOwnRule(t *testing.T) {
+	cmds := testCommands("Copy", "Paste")
+	m, _ := newTestMenu(t, cmds, []MenuItem{{Command: "copy"}, MenuSeparator(), {Command: "paste"}})
+	m.Style.Rule = BorderDouble
+
+	g := drawMenu(m, 40, 20)
+
+	row := rowOf(g, menuLines(m).Y+1)
+	if !strings.Contains(row, string(BorderDouble.runes().across)) {
+		t.Errorf("row = %q, want the double rule the menu is drawn with", row)
+	}
+	if strings.Contains(row, string(BorderSingle.runes().across)) {
+		t.Errorf("row = %q, want no single-line rule in a menu drawn with the double one", row)
+	}
 }

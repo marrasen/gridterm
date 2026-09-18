@@ -101,7 +101,11 @@ func (a *app) useTheme(t themes.Theme) error {
 	if err != nil {
 		return err
 	}
-	a.colours = pal
+	look, err := t.Look()
+	if err != nil {
+		return err
+	}
+	a.colours, a.look = pal, look
 	a.theme.showing = t.Name
 	a.restyle()
 	return nil
@@ -135,7 +139,7 @@ func (a *app) restyle() {
 		a.updateStatus()
 	}
 	if a.side != nil {
-		a.side.FG = a.colours.ANSI[6]
+		a.side.FG = a.headingFG()
 		a.side.BG = a.panelStyle().BGEnd
 	}
 	if a.dock != nil {

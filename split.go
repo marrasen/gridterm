@@ -4,7 +4,6 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
-	"image/color"
 	"slices"
 
 	"github.com/marrasen/gridterm/conns"
@@ -264,17 +263,19 @@ func hostNote(on hostFacts) string {
 // chooserStyle colours a chooser in the window's own colours.
 func (a *app) chooserStyle() ui.ChooserStyle {
 	return ui.ChooserStyle{
-		FG: a.colours.FG,
-		// No background of its own: the frosted panel behind it is the
-		// background, and an opaque fill would hide it.
-		BG:         color.RGBA{},
-		TitleFG:    a.colours.FG,
-		SelectedFG: a.colours.BG,
-		SelectedBG: a.colours.FG,
+		FG: a.frameFG(),
+		// No background of its own unless the theme asked for a flat
+		// one: the frosted panel behind it is the background, and an
+		// opaque fill would hide it.
+		BG:         a.panelBG(),
+		TitleFG:    a.frameFG(),
+		SelectedFG: a.activeFG(),
+		SelectedBG: a.activeBG(),
 		// Dimmer than the line: where something is, is a note beside it
 		// rather than part of its name.
-		NoteFG:   a.colours.ANSI[8],
-		BorderFG: a.colours.ANSI[8],
-		ShadowBG: shadow,
+		NoteFG:   a.panelDimFG(),
+		BorderFG: a.panelBorderFG(),
+		ShadowBG: a.panelShadow(),
+		Rule:     a.panelRule(),
 	}
 }

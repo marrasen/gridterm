@@ -329,11 +329,16 @@ func TestEveryThemeReads(t *testing.T) {
 			t.Errorf("%s: %v", theme.Name, err)
 			continue
 		}
+		look, err := theme.Look()
+		if err != nil {
+			t.Errorf("%s: %v", theme.Name, err)
+			continue
+		}
 		a := newTestApp(t, 80, 24)
 		withDialogs(t, a)
 		withPanel(t, a)
 		withMenubar(t, a)
-		a.colours = pal
+		a.colours, a.look = pal, look
 		a.restyle()
 
 		// Text on a ground has to be readable. 4.5 is what WCAG asks of
@@ -390,11 +395,44 @@ func TestEveryThemeReads(t *testing.T) {
 					theme.Name, pal.ANSI[8], on.what, on.bg, got, on.least)
 			}
 		}
+		// A dialog with a ground of its own has to be readable on it. One
+		// with no ground of its own takes the frosted panel behind it,
+		// which is the window's own and checked above.
+		if bg := a.formStyle().BG; bg.A == 0xff {
+			for what, fg := range map[string]color.RGBA{
+				"a dialog":               a.formStyle().FG,
+				"a dialog label":         a.formStyle().LabelFG,
+				"a menu":                 a.menuStyle().FG,
+				"a dialog's rule":        a.formStyle().BorderFG,
+				"why a dialog failed":    a.formStyle().ErrorFG,
+				"why a notice failed":    a.noticeStyle().FailureFG,
+				"the letters found":      a.paletteStyle().MatchFG,
+				"a key beside an item":   a.menuStyle().ChordFG,
+				"a machine's name":       a.headingFG(),
+				"what a connection does": a.frameDimFG(),
+			} {
+				if got := grid.Contrast(fg, bg); got < least {
+					t.Errorf("%s: %s is %v on the dialog's %v, %.2f:1, want at least %.1f",
+						theme.Name, what, fg, bg, got, least)
+				}
+			}
+			// A button is marked by its ground alone, so that ground has
+			// to be told from the dialog it sits on.
+			for what, on := range map[string]color.RGBA{
+				"a button":                 a.buttonBG(),
+				"the button Enter presses": a.activeBG(),
+			} {
+				if got := grid.Contrast(on, bg); got < 1.5 {
+					t.Errorf("%s: %s sits on %v and the dialog on %v, %.2f:1, want at least 1.5",
+						theme.Name, what, on, bg, got)
+				}
+			}
+		}
 		// The sidebar and the menu bar are shaded towards colour 4, so a
 		// theme whose ground is already that colour has no frame at all.
-		if got := grid.Contrast(sidebarFoot(pal), pal.BG); got < 1.1 {
+		if got := grid.Contrast(a.sidebarFoot(), pal.BG); got < 1.1 {
 			t.Errorf("%s: the window's frame is %v on a ground of %v, %.2f:1, and it has to read as a frame",
-				theme.Name, sidebarFoot(pal), pal.BG, got)
+				theme.Name, a.sidebarFoot(), pal.BG, got)
 		}
 		// A chip on the menu bar picks its own ground, so what it says
 		// has to read on that rather than on the bar.
@@ -403,9 +441,9 @@ func TestEveryThemeReads(t *testing.T) {
 			"a window being driven":   taken,
 			"an agent in this window": statusAgentFG(pal),
 		} {
-			if got := grid.Contrast(fg, chipBG(pal)); got < 4.5 {
+			if got := grid.Contrast(fg, a.chipBG()); got < 4.5 {
 				t.Errorf("%s: %s is %v on the chip's %v, %.2f:1, want at least 4.5",
-					theme.Name, what, fg, chipBG(pal), got)
+					theme.Name, what, fg, a.chipBG(), got)
 			}
 		}
 	}
@@ -432,7 +470,7 @@ func TestTheMenuBarChipsTakeTheTheme(t *testing.T) {
 	if got, want := a.bar.Chips[0].FG, statusIdleFG(a.colours); got != want {
 		t.Errorf("the chip is written in %v, want %v", got, want)
 	}
-	if got, want := a.bar.Chips[0].BG, chipBG(a.colours); got != want {
+	if got, want := a.bar.Chips[0].BG, a.chipBG(); got != want {
 		t.Errorf("the chip sits on %v, want %v", got, want)
 	}
 }
@@ -605,5 +643,137 @@ func writeThemes(t *testing.T, dir, name, fg string) {
 		`"#800","#900","#a00","#b00","#c00","#d00","#e00","#f00"]}]}`
 	if err := os.WriteFile(themes.Path(dir), []byte(body), 0o600); err != nil {
 		t.Fatalf("write the themes: %v", err)
+	}
+}
+
+// A theme that says nothing about its frame gets the window's own
+// derived furniture, which is what every theme had before a theme could
+// write one down.
+func TestAThemeWithNoFrameBlockLeavesTheFurnitureDerived(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+
+	if err := a.useTheme(themeNamed(t, a, "Dark")); err != nil {
+		t.Fatalf("take it: %v", err)
+	}
+
+	if a.look.Set {
+		t.Fatalf("Dark says %+v about its frame, and it names none", a.look)
+	}
+	// No ground of its own, so the frosted glass behind it shows through.
+	if got := a.formStyle().BG; got.A != 0 {
+		t.Errorf("a dialog paints itself on %v, want nothing so the glass shows", got)
+	}
+	if got := a.formStyle().Rule; got != ui.BorderSingle {
+		t.Errorf("a dialog's rule is %v, want the single-line one", got)
+	}
+	if a.frost() == nil {
+		t.Error("there is no glass behind a dialog")
+	}
+	if got, want := a.formStyle().BorderFG, a.colours.ANSI[8]; got != want {
+		t.Errorf("the rule is %v, want the dim colour %v it always was", got, want)
+	}
+}
+
+// A theme that wrote its frame down gets that frame: its own colours on
+// the furniture, a double rule, and an opaque box with no glass behind
+// it.
+func TestAThemeWithAFrameBlockGetsTheFrameItAskedFor(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	withMenubar(t, a)
+
+	if err := a.useTheme(themeNamed(t, a, "Turbo")); err != nil {
+		t.Fatalf("take it: %v", err)
+	}
+
+	if !a.look.Set {
+		t.Fatal("Turbo names a frame and the window read none")
+	}
+	// An opaque box, so there is nothing for glass to show through.
+	if got := a.formStyle().BG; got != a.look.BG {
+		t.Errorf("a dialog paints itself on %v, want the frame's own %v", got, a.look.BG)
+	}
+	if a.frost() != nil {
+		t.Error("there is glass behind a flat dialog, and nothing could see through it")
+	}
+	if got := a.formStyle().Rule; got != ui.BorderDouble {
+		t.Errorf("a dialog's rule is %v, want the double-line one", got)
+	}
+	// The furniture, not the window's ground: a dialog, a menu, the bar
+	// and the sidebar are one frame and take one set of colours.
+	for what, got := range map[string]color.RGBA{
+		"a dialog":     a.formStyle().FG,
+		"a notice":     a.noticeStyle().FG,
+		"a menu":       a.menuStyle().FG,
+		"the menu bar": a.menubarStyle().FG,
+		"the sidebar":  a.panelStyle().FG,
+	} {
+		if got != a.look.FG {
+			t.Errorf("%s is written in %v, want the frame's own %v", what, got, a.look.FG)
+		}
+	}
+	if got := a.menubarStyle().BG; got != a.look.BG {
+		t.Errorf("the menu bar sits on %v, want the frame's own %v", got, a.look.BG)
+	}
+	// And a solid shadow, because a box with no glass in it has no light
+	// to let through either.
+	if got := a.formStyle().ShadowBG; got.A != 0xff {
+		t.Errorf("a flat dialog casts %v, want a solid shadow", got)
+	}
+}
+
+// Going back to a theme with no frame block takes the frame away again,
+// so a window is not left with the last theme's furniture on it.
+func TestLeavingAFrameThemeGivesTheDerivedFurnitureBack(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+
+	if err := a.useTheme(themeNamed(t, a, "Turbo")); err != nil {
+		t.Fatalf("take Turbo: %v", err)
+	}
+	if err := a.useTheme(themeNamed(t, a, "Dark")); err != nil {
+		t.Fatalf("take Dark: %v", err)
+	}
+
+	if a.look.Set {
+		t.Errorf("the window kept %+v from the theme before", a.look)
+	}
+	if got := a.formStyle().Rule; got != ui.BorderSingle {
+		t.Errorf("a dialog's rule is %v, want the single-line one back", got)
+	}
+	if a.frost() == nil {
+		t.Error("the glass did not come back behind a dialog")
+	}
+}
+
+// A colour lifted onto the frame keeps its hue. It is moved towards the
+// frame's own text only as far as it has to go to be read, so a cyan
+// heading still reads as cyan rather than as one more line of text.
+func TestAColourLiftedOntoTheFrameIsStillToldFromTheText(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	if err := a.useTheme(themeNamed(t, a, "Turbo")); err != nil {
+		t.Fatalf("take it: %v", err)
+	}
+
+	for what, raw := range map[string]color.RGBA{
+		"a machine's name":     a.colours.ANSI[6],
+		"why something failed": a.colours.ANSI[1],
+		"the letters found":    a.colours.ANSI[3],
+		"a remote window":      a.colours.ANSI[5],
+	} {
+		got := a.onFrame(raw)
+		if on := grid.Contrast(got, a.look.BG); on < 3.0 {
+			t.Errorf("%s is %v on the frame's %v, %.2f:1, want at least 3.0",
+				what, got, a.look.BG, on)
+		}
+		// Lifted all the way would land on the frame's own text, and the
+		// colour would stop saying anything.
+		if apart := grid.Contrast(got, a.look.FG); apart < 1.5 {
+			t.Errorf("%s came out %v, %.2f:1 from the frame's own %v, so it says nothing",
+				what, got, apart, a.look.FG)
+		}
 	}
 }

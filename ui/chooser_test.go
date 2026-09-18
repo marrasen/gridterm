@@ -293,7 +293,7 @@ func TestChooserDrawsItsLines(t *testing.T) {
 	g := drawChooser(c, 60, 20)
 
 	box := c.box()
-	if got := g.At(box.X, box.Y).Rune; got != frameTopLeft {
+	if got := g.At(box.X, box.Y).Rune; got != single.topLeft {
 		t.Errorf("the top left is %q, want the rule", got)
 	}
 	whole := ""

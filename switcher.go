@@ -332,6 +332,7 @@ func (a *app) tilesStyle() ui.TilesStyle {
 		Marked:   a.colours.ANSI[6],
 		MarkedFG: a.colours.BG,
 		MarkedBG: a.colours.ANSI[6],
+		Rule:     a.panelRule(),
 	}
 }
 

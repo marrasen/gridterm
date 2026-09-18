@@ -188,7 +188,7 @@ func (a *app) remoteRows(on hostFacts, mine []conns.Row,
 		ours[key.host] = append(ours[key.host], row)
 	}
 
-	dim := grid.Blend(a.colours.FG, a.colours.BG, 1, 2)
+	dim := grid.Blend(a.frameFG(), a.sidebarTop(), 1, 2)
 	screens := func(host string) []ui.ListRow {
 		var rows []ui.ListRow
 		for _, open := range under[host] {
@@ -239,7 +239,7 @@ func (a *app) remoteRows(on hostFacts, mine []conns.Row,
 				// A window that window took over, in the colour a window
 				// has. It has panes of its own and no files to serve
 				// this one, so there is nothing to open on it.
-				head.FG = a.colours.ANSI[5]
+				head.FG = a.onFrame(a.colours.ANSI[5])
 			} else {
 				// What can be opened on it, which is a pane reading its
 				// files through the window.

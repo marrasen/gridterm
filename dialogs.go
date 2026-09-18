@@ -13,29 +13,30 @@ import (
 // the background, and an opaque fill would hide it.
 func (a *app) formStyle() ui.FormStyle {
 	return ui.FormStyle{
-		FG:      a.colours.FG,
-		BG:      color.RGBA{},
-		TitleFG: a.colours.FG,
-		LabelFG: a.colours.ANSI[8],
-		HintFG:  a.colours.ANSI[8],
+		FG:      a.frameFG(),
+		BG:      a.panelBG(),
+		TitleFG: a.frameFG(),
+		LabelFG: a.panelDimFG(),
+		HintFG:  a.panelDimFG(),
 		// A field is marked by its background rather than a border, so a
 		// one-line box does not cost three rows of frame.
-		FieldFG:  a.colours.FG,
-		FieldBG:  a.colours.Surface(),
-		FocusFG:  a.colours.FG,
+		FieldFG:  a.frameFG(),
+		FieldBG:  a.panelFieldBG(),
+		FocusFG:  a.frameFG(),
 		FocusBG:  a.colours.Selection,
-		ButtonFG: a.colours.FG,
-		ButtonBG: a.colours.Surface(),
-		ActiveFG: a.colours.BG,
-		ActiveBG: a.colours.FG,
+		ButtonFG: a.buttonFG(),
+		ButtonBG: a.buttonBG(),
+		ActiveFG: a.activeFG(),
+		ActiveBG: a.activeBG(),
 		// Red, because a line saying why something failed has to read as
 		// a failure before it is read as words.
-		ErrorFG: a.colours.ANSI[1],
+		ErrorFG: a.onFrame(a.colours.ANSI[1]),
 		// A rule around it, and a shadow under it. A dialog over a
 		// terminal is otherwise two lots of text with nothing between
 		// them.
-		BorderFG: a.colours.ANSI[8],
-		ShadowBG: shadow,
+		BorderFG: a.panelBorderFG(),
+		ShadowBG: a.panelShadow(),
+		Rule:     a.panelRule(),
 	}
 }
 
@@ -85,20 +86,21 @@ func (a *app) showForm(f *ui.Form, onHidden func()) func() {
 // frosted panel behind the dialog is the background.
 func (a *app) noticeStyle() ui.NoticeStyle {
 	return ui.NoticeStyle{
-		FG:      a.colours.FG,
-		BG:      color.RGBA{},
-		TitleFG: a.colours.FG,
+		FG:      a.frameFG(),
+		BG:      a.panelBG(),
+		TitleFG: a.frameFG(),
 		// Red, because a title saying something failed has to read as a
 		// failure before it is read as words.
-		FailureFG:   a.colours.ANSI[1],
-		SelectionFG: a.colours.FG,
+		FailureFG:   a.onFrame(a.colours.ANSI[1]),
+		SelectionFG: a.frameFG(),
 		SelectionBG: a.colours.Selection,
-		ButtonFG:    a.colours.FG,
-		ButtonBG:    a.colours.Surface(),
-		ActiveFG:    a.colours.BG,
-		ActiveBG:    a.colours.FG,
-		BorderFG:    a.colours.ANSI[8],
-		ShadowBG:    shadow,
+		ButtonFG:    a.buttonFG(),
+		ButtonBG:    a.buttonBG(),
+		ActiveFG:    a.activeFG(),
+		ActiveBG:    a.activeBG(),
+		BorderFG:    a.panelBorderFG(),
+		ShadowBG:    a.panelShadow(),
+		Rule:        a.panelRule(),
 	}
 }
 

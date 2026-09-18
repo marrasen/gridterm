@@ -8,6 +8,10 @@ import (
 	"github.com/marrasen/gridterm/grid"
 )
 
+// single is the light box-drawing set, which is what a style that says
+// nothing about its rule gets.
+var single = BorderSingle.runes()
+
 // framed is a colour a test can tell from the rest.
 var (
 	rule   = color.RGBA{R: 200, G: 200, B: 200, A: 255}
@@ -19,13 +23,13 @@ var (
 func TestFrameDrawsARuleRoundTheBox(t *testing.T) {
 	g := grid.New(20, 10, color.RGBA{}, color.RGBA{})
 	box := Rect{X: 3, Y: 2, Cols: 8, Rows: 5}
-	drawFrame(g.View(), box, rule, ground)
+	drawFrame(g.View(), box, rule, ground, BorderSingle)
 
 	corners := map[[2]int]rune{
-		{box.X, box.Y}:                               frameTopLeft,
-		{box.X + box.Cols - 1, box.Y}:                frameTopRight,
-		{box.X, box.Y + box.Rows - 1}:                frameBottomLeft,
-		{box.X + box.Cols - 1, box.Y + box.Rows - 1}: frameBottomRight,
+		{box.X, box.Y}:                               single.topLeft,
+		{box.X + box.Cols - 1, box.Y}:                single.topRight,
+		{box.X, box.Y + box.Rows - 1}:                single.bottomLeft,
+		{box.X + box.Cols - 1, box.Y + box.Rows - 1}: single.bottomRight,
 	}
 	for at, want := range corners {
 		if got := g.At(at[0], at[1]).Rune; got != want {
@@ -34,14 +38,14 @@ func TestFrameDrawsARuleRoundTheBox(t *testing.T) {
 	}
 	for x := box.X + 1; x < box.X+box.Cols-1; x++ {
 		for _, y := range []int{box.Y, box.Y + box.Rows - 1} {
-			if got := g.At(x, y).Rune; got != frameAcross {
+			if got := g.At(x, y).Rune; got != single.across {
 				t.Fatalf("%d,%d = %q, want the rule across", x, y, got)
 			}
 		}
 	}
 	for y := box.Y + 1; y < box.Y+box.Rows-1; y++ {
 		for _, x := range []int{box.X, box.X + box.Cols - 1} {
-			if got := g.At(x, y).Rune; got != frameDown {
+			if got := g.At(x, y).Rune; got != single.down {
 				t.Fatalf("%d,%d = %q, want the rule down", x, y, got)
 			}
 		}
@@ -55,8 +59,8 @@ func TestFrameDrawsARuleRoundTheBox(t *testing.T) {
 // isFrame reports whether a rune is part of the rule.
 func isFrame(r rune) bool {
 	switch r {
-	case frameTopLeft, frameTopRight, frameBottomLeft, frameBottomRight,
-		frameAcross, frameDown:
+	case single.topLeft, single.topRight, single.bottomLeft, single.bottomRight,
+		single.across, single.down:
 		return true
 	}
 	return false
@@ -71,7 +75,7 @@ func TestFrameNeedsRoomForItself(t *testing.T) {
 		{},
 	} {
 		g := grid.New(20, 10, color.RGBA{}, color.RGBA{})
-		drawFrame(g.View(), box, rule, ground)
+		drawFrame(g.View(), box, rule, ground, BorderSingle)
 		for y := range 10 {
 			for x := range 20 {
 				if got := g.At(x, y).Rune; isFrame(got) {
@@ -85,7 +89,7 @@ func TestFrameNeedsRoomForItself(t *testing.T) {
 // A rule with no colour is left out, for a caller that wants none.
 func TestFrameWithNoColourDrawsNothing(t *testing.T) {
 	g := grid.New(20, 10, color.RGBA{}, color.RGBA{})
-	drawFrame(g.View(), Rect{X: 3, Y: 2, Cols: 8, Rows: 5}, color.RGBA{}, ground)
+	drawFrame(g.View(), Rect{X: 3, Y: 2, Cols: 8, Rows: 5}, color.RGBA{}, ground, BorderSingle)
 	if got := g.At(3, 2).Rune; isFrame(got) {
 		t.Fatalf("it drew %q with no colour to draw in", got)
 	}
@@ -151,7 +155,7 @@ func TestMenuDrawsItsRuleAndKeepsItsLinesStraight(t *testing.T) {
 	g := drawMenu(m, 40, 20)
 
 	box := m.box()
-	if got := g.At(box.X, box.Y).Rune; got != frameTopLeft {
+	if got := g.At(box.X, box.Y).Rune; got != single.topLeft {
 		t.Fatalf("the menu's top left is %q, want the rule", got)
 	}
 	// The lines start inside it.
@@ -188,5 +192,41 @@ func TestAnIdleMenuDirtiesNothing(t *testing.T) {
 	}
 	if g.AnyDirty() {
 		t.Fatal("an idle menu dirtied its layer")
+	}
+}
+
+// A double rule is drawn in the double-line characters, all the way
+// round, which is how a DOS program drew a window.
+func TestADoubleRuleUsesTheDoubleLineCharacters(t *testing.T) {
+	g := grid.New(20, 10, color.RGBA{}, color.RGBA{})
+	box := Rect{X: 3, Y: 2, Cols: 8, Rows: 5}
+
+	drawFrame(g.View(), box, rule, ground, BorderDouble)
+
+	want := map[[2]int]rune{
+		{box.X, box.Y}:                               '╔',
+		{box.X + box.Cols - 1, box.Y}:                '╗',
+		{box.X, box.Y + box.Rows - 1}:                '╚',
+		{box.X + box.Cols - 1, box.Y + box.Rows - 1}: '╝',
+		{box.X + 1, box.Y}:                           '═',
+		{box.X, box.Y + 1}:                           '║',
+	}
+	for at, r := range want {
+		if got := g.At(at[0], at[1]).Rune; got != r {
+			t.Errorf("%d,%d = %q, want %q", at[0], at[1], got, r)
+		}
+	}
+}
+
+// A border nobody named is the single-line one, so a style that says
+// nothing about its rule draws the rule it always drew.
+func TestABorderNobodyNamedIsTheSingleOne(t *testing.T) {
+	var said Border
+
+	if got := said.runes(); got != BorderSingle.runes() {
+		t.Errorf("a style saying nothing draws %+v, want the single-line set", got)
+	}
+	if got := Border(200).runes(); got != BorderSingle.runes() {
+		t.Errorf("a border nobody can draw gives %+v, want the single-line set", got)
 	}
 }

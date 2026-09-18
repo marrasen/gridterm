@@ -16,7 +16,6 @@ import (
 	"github.com/marrasen/gridterm/serve"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/term"
-	"github.com/marrasen/gridterm/vt"
 )
 
 // panelWidth is how wide the connections panel starts.
@@ -69,9 +68,9 @@ func (a *app) stateFG(state meter.State, now time.Time) color.RGBA {
 	green := a.colours.ANSI[2]
 	switch state {
 	case meter.Closed:
-		return a.colours.ANSI[8]
+		return a.frameDimFG()
 	case meter.Active:
-		return pulse(green, a.colours.ANSI[10], now)
+		return pulse(green, a.onFrame(a.colours.ANSI[10]), now)
 	}
 	return green
 }
@@ -96,8 +95,22 @@ func pulse(from, to color.RGBA, now time.Time) color.RGBA {
 // sidebarTop and sidebarFoot are the two ends of the ground the window's
 // frame is drawn on: the sidebar shades between them down its length,
 // and the menu bar across its width.
-func sidebarTop(p vt.Palette) color.RGBA  { return grid.Blend(p.BG, p.ANSI[4], 1, 20) }
-func sidebarFoot(p vt.Palette) color.RGBA { return grid.Blend(p.BG, p.ANSI[4], 1, 8) }
+//
+// A theme that wrote its frame down gets one flat colour instead, so the
+// frame can be a ground of its own rather than a shade of the window's.
+func (a *app) sidebarTop() color.RGBA {
+	if a.look.Set {
+		return a.look.BG
+	}
+	return grid.Blend(a.colours.BG, a.colours.ANSI[4], 1, 20)
+}
+
+func (a *app) sidebarFoot() color.RGBA {
+	if a.look.Set {
+		return a.look.BG
+	}
+	return grid.Blend(a.colours.BG, a.colours.ANSI[4], 1, 8)
+}
 
 // newSidebar puts the list in the panel, with the way to reach a machine
 // that is not open yet pinned under it.
@@ -108,7 +121,7 @@ func (a *app) newSidebar() *sidebar {
 		// and the keys: those go through a wrapper that shows it.
 		return a.root.Commands.Run("server.connect")
 	})
-	s.FG = a.colours.ANSI[6]
+	s.FG = a.headingFG()
 	// The foot of the shading the list draws, so the pinned row looks
 	// like the bottom of the sidebar rather than something sitting on
 	// it.
@@ -348,7 +361,7 @@ func (a *app) hostRow(on hostFacts, now time.Time) ui.ListRow {
 		// machine -- another gridterm, with panes rather than a shell --
 		// and the sidebar should not make the user read the name to
 		// tell which is which.
-		row.FG = a.colours.ANSI[5]
+		row.FG = a.onFrame(a.colours.ANSI[5])
 	}
 	e := on.headingRow()
 	if e == nil {
@@ -456,7 +469,7 @@ func (a *app) panelRow(row conns.Row, now time.Time) ui.ListRow {
 	if row.State == meter.Closed {
 		// A finished connection reads as finished rather than as one
 		// more thing running.
-		out.FG = a.colours.ANSI[8]
+		out.FG = a.frameDimFG()
 		if row.Entry.Clear != nil {
 			// Clearing the row is the one thing left to do with it, so
 			// it is offered on the row itself rather than through a
@@ -685,35 +698,35 @@ func (a *app) selectedConnection() (*conns.Entry, bool) {
 // changes theme.
 func (a *app) panelStyle() ui.ListStyle {
 	st := ui.ListStyle{
-		FG: a.colours.FG,
+		FG: a.frameFG(),
 		BG: a.colours.BG,
 		// The selected row is marked the way a selected tab is, so the
 		// two read as the same thing.
-		SelectedFG: a.colours.BG,
-		SelectedBG: a.colours.FG,
+		SelectedFG: a.activeFG(),
+		SelectedBG: a.activeBG(),
 		// A machine's name is a heading, not one of its connections.
-		HeaderFG: a.colours.ANSI[6],
+		HeaderFG: a.headingFG(),
 		// Dimmer than the row: what a connection is doing is a note
 		// beside it, not part of its name.
-		NoteFG: a.colours.ANSI[8],
+		NoteFG: a.frameDimFG(),
 		// How far a copy has got, further along the line the sidebar's
 		// own ground is shaded on: a row filling up reads as part of the
 		// frame rather than as a colour from somewhere else.
-		FillBG: grid.Blend(a.colours.BG, a.colours.ANSI[4], 1, 3),
+		FillBG: a.fillBG(),
 		// A ground of its own, shading down the list, so the sidebar
 		// reads as part of the window's frame rather than as one more
 		// thing running in it.
-		BGEnd: sidebarFoot(a.colours),
+		BGEnd: a.sidebarFoot(),
 	}
-	st.BG = sidebarTop(a.colours)
+	st.BG = a.sidebarTop()
 	// The row for whatever is in front, marked even while the keys are
 	// somewhere else: the sidebar is the list of what is open, so it has
 	// to say which one is being looked at.
-	st.CurrentFG = a.colours.FG
+	st.CurrentFG = a.frameFG()
 	// Lifted off the list's own ground rather than the window's
 	// selection colour, so it stays darker than the mark drawn on it:
 	// the mark is what says whether the connection is open.
-	st.CurrentBG = grid.Blend(a.colours.BG, a.colours.FG, 1, 6)
+	st.CurrentBG = a.currentBG()
 	// A little air around each machine's name, so it reads as a heading
 	// for the rows under it rather than as another row. A quarter of a
 	// character each way: enough to see, and far less than the blank

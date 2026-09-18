@@ -4,7 +4,6 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
-	"image/color"
 	"os"
 	"slices"
 	"strings"
@@ -166,6 +165,31 @@ func (a *app) namesItself(t *term.Terminal, title string) bool {
 }
 
 // openPalette shows the command dialog, or closes it when it is already
+// paletteStyle colours the command palette in the window's own colours.
+func (a *app) paletteStyle() ui.PaletteStyle {
+	return ui.PaletteStyle{
+		FG: a.frameFG(),
+		// No background of its own unless the theme wrote its frame
+		// down: the frosted panel behind the dialog is the background,
+		// and an opaque fill would hide it.
+		BG: a.panelBG(),
+		// Yellow, because the letters the query found have to read as
+		// found. The window's own foreground would only differ from the
+		// rest of the title by weight.
+		MatchFG:    a.onFrame(a.colours.ANSI[3]),
+		SelectedFG: a.activeFG(),
+		SelectedBG: a.activeBG(),
+		// Dimmer than the title: a key binding is a note beside the
+		// command, not part of its name.
+		ChordFG: a.panelDimFG(),
+		// A rule around it, and a shadow under it, the way a menu and a
+		// dialog have.
+		BorderFG: a.panelBorderFG(),
+		ShadowBG: a.panelShadow(),
+		Rule:     a.panelRule(),
+	}
+}
+
 // open: a key that opens something is expected to close it again.
 func (a *app) openPalette() error {
 	if a.palette != nil {
@@ -173,25 +197,7 @@ func (a *app) openPalette() error {
 		return nil
 	}
 	p := ui.NewPalette(a.root.Commands, a.root.Accelerators, a.closePalette)
-	p.Style = ui.PaletteStyle{
-		FG: a.colours.FG,
-		// No background of its own: the frosted panel behind the dialog
-		// is the background, and an opaque fill would hide it.
-		BG: color.RGBA{},
-		// Yellow, because the letters the query found have to read as
-		// found. The window's own foreground would only differ from the
-		// rest of the title by weight.
-		MatchFG:    a.colours.ANSI[3],
-		SelectedFG: a.colours.BG,
-		SelectedBG: a.colours.FG,
-		// Dimmer than the title: a key binding is a note beside the
-		// command, not part of its name.
-		ChordFG: a.colours.ANSI[8],
-		// A rule around it, and a shadow under it, the way a menu and a
-		// dialog have.
-		BorderFG: a.colours.ANSI[8],
-		ShadowBG: shadow,
-	}
+	p.Style = a.paletteStyle()
 	p.SetClipboard(a.pasteText)
 	a.palette = p
 	a.dismissPalette = a.showModal(p, func() { a.palette, a.dismissPalette = nil, nil })

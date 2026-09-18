@@ -34,6 +34,11 @@ type Theme struct {
 	// ANSI are the sixteen named colours, black first and bright white
 	// last.
 	ANSI []string `json:"ansi"`
+
+	// Frame is the window's own furniture written down rather than
+	// worked out from the two ends above. Nil for a theme that leaves it
+	// to the window.
+	Frame *Frame `json:"frame,omitempty"`
 }
 
 // stored is the shape of the file.
@@ -147,6 +152,15 @@ func Built() []Theme {
 			// window writes its own labels and notes in those colours.
 			Name: "Turbo", FG: "#ffff55", BG: "#0000aa",
 			Selection: "#007b7b",
+			// The furniture written down rather than shaded off the blue:
+			// black on the light grey a DOS dialog sat on, a double rule
+			// round it, and green buttons the way Turbo Pascal drew them.
+			// The one Enter presses is the one written in yellow.
+			Frame: &Frame{
+				FG: "#000000", BG: "#aaaaaa", Border: "double",
+				ButtonFG: "#000000", ButtonBG: "#007000",
+				ActiveFG: "#ffff55", ActiveBG: "#007000",
+			},
 			ANSI: []string{
 				"#000000", "#ec6464", "#55cc55", "#e0a030",
 				"#6f8fff", "#d070d0", "#40c8c8", "#aaaaaa",
@@ -210,6 +224,9 @@ func Load(path string) ([]Theme, error) {
 		// read is said when the file is, and not at the moment the user
 		// chooses the theme.
 		if _, err := t.Palette(); err != nil {
+			return all, fmt.Errorf("themes: %s: %w", path, err)
+		}
+		if _, err := t.Look(); err != nil {
 			return all, fmt.Errorf("themes: %s: %w", path, err)
 		}
 		taken := slices.ContainsFunc(all, func(have Theme) bool {

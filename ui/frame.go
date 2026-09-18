@@ -6,15 +6,34 @@ import (
 	"github.com/marrasen/gridterm/grid"
 )
 
-// The rule around a box drawn over the rest of the window.
+// Border picks the characters the rule around a box is drawn with.
+type Border uint8
+
 const (
-	frameTopLeft     = '┌'
-	frameTopRight    = '┐'
-	frameBottomLeft  = '└'
-	frameBottomRight = '┘'
-	frameAcross      = '─'
-	frameDown        = '│'
+	// BorderSingle is the light box-drawing characters. It is the zero
+	// value, so a style that says nothing gets them.
+	BorderSingle Border = iota
+
+	// BorderDouble is the double-line ones, which is how a DOS program
+	// drew a window.
+	BorderDouble
 )
+
+// corners are the six characters one kind of rule is made of.
+type corners struct {
+	topLeft, topRight       rune
+	bottomLeft, bottomRight rune
+	across, down            rune
+}
+
+// runes are the characters a border is drawn with. An unknown border
+// gets the single-line ones, which every font has.
+func (b Border) runes() corners {
+	if b == BorderDouble {
+		return corners{'╔', '╗', '╚', '╝', '═', '║'}
+	}
+	return corners{'┌', '┐', '└', '┘', '─', '│'}
+}
 
 // How far the shadow falls. Two columns for one row, because a cell is
 // about twice as tall as it is wide: the shadow then falls at the same
@@ -63,8 +82,8 @@ func drawShadow(v grid.View, box Rect, shadow color.RGBA) {
 // A dialog over a terminal is otherwise two lots of text with nothing
 // between them. The rule is what says where one stops and the other
 // starts.
-func drawFrame(v grid.View, box Rect, border, bg color.RGBA) {
-	if border.A == 0 || box.Cols < 2 || box.Rows < 2 {
+func drawFrame(v grid.View, box Rect, fg, bg color.RGBA, b Border) {
+	if fg.A == 0 || box.Cols < 2 || box.Rows < 2 {
 		return
 	}
 	in := box.In(v)
@@ -72,19 +91,20 @@ func drawFrame(v grid.View, box Rect, border, bg color.RGBA) {
 	if cols < 2 || rows < 2 {
 		return
 	}
-	put := func(x, y int, r rune) {
-		in.Set(x, y, grid.Cell{Rune: r, FG: border, BG: bg, Width: 1})
+	r := b.runes()
+	put := func(x, y int, c rune) {
+		in.Set(x, y, grid.Cell{Rune: c, FG: fg, BG: bg, Width: 1})
 	}
 	for x := 1; x < cols-1; x++ {
-		put(x, 0, frameAcross)
-		put(x, rows-1, frameAcross)
+		put(x, 0, r.across)
+		put(x, rows-1, r.across)
 	}
 	for y := 1; y < rows-1; y++ {
-		put(0, y, frameDown)
-		put(cols-1, y, frameDown)
+		put(0, y, r.down)
+		put(cols-1, y, r.down)
 	}
-	put(0, 0, frameTopLeft)
-	put(cols-1, 0, frameTopRight)
-	put(0, rows-1, frameBottomLeft)
-	put(cols-1, rows-1, frameBottomRight)
+	put(0, 0, r.topLeft)
+	put(cols-1, 0, r.topRight)
+	put(0, rows-1, r.bottomLeft)
+	put(cols-1, rows-1, r.bottomRight)
 }

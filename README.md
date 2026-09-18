@@ -399,6 +399,27 @@ The rule of thumb: if you are about to ask which *character* draws
 something, or how many *cells* thick it is, it is a shape and it wants
 pixels.
 
+**A blend can only land between its two ends.** The window works its own
+furniture out from the theme: the menu bar, the sidebar and a dialog are
+the theme's background shaded a little towards its foreground. That is
+right for a theme whose two ends are a step apart, and it cannot express
+a dark ground under light furniture, which is what a DOS program looked
+like.
+
+So a theme may write its frame down instead. `themes.Frame` names the
+two colours the furniture is drawn in, a single or double rule, and the
+buttons. `themes.Look` is that block with its colours read, and the
+helpers in `look.go` are the one place each furniture colour is decided:
+each reads the look when the theme set one and derives exactly what it
+derived before when the theme did not.
+
+Two things follow from a stated frame. Dialogs go flat -- an opaque box,
+square corners, no frosted glass -- because glass behind an opaque box
+is paid for and never seen. And a colour the window takes from the
+numbered sixteen is now drawn on a second ground, so `app.onFrame` moves
+it towards the frame's own text until it can be read there, which keeps
+what it can of the hue.
+
 **Damage tracking is load-bearing.** `ebiten.SetScreenClearedEveryFrame(false)`
 means a row the renderer skips shows the *previous* frame, not a blank.
 A row wrongly considered clean is a visible bug, so `grid.Set` compares

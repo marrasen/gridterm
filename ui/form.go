@@ -52,6 +52,9 @@ type FormStyle struct {
 	// either one out.
 	BorderFG color.RGBA
 	ShadowBG color.RGBA
+
+	// Rule picks the characters the rule is drawn with.
+	Rule Border
 }
 
 // Button is something to press at the bottom of a form.
@@ -465,7 +468,7 @@ func (f *Form) paint(v grid.View) {
 	in.Fill(grid.Cell{Rune: ' ', FG: f.Style.FG, BG: f.Style.BG, Width: 1})
 	// The rule goes on the blank ring the layout already leaves: a row
 	// above the title, a row under the buttons, and the pad each side.
-	drawFrame(v, box, f.Style.BorderFG, f.Style.BG)
+	drawFrame(v, box, f.Style.BorderFG, f.Style.BG, f.Style.Rule)
 	cols, _ := in.Size()
 	room := cols - formPad*2
 

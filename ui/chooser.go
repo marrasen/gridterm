@@ -35,6 +35,9 @@ type ChooserStyle struct {
 	// cells it falls on below and to the right.
 	BorderFG color.RGBA
 	ShadowBG color.RGBA
+
+	// Rule picks the characters the rule is drawn with.
+	Rule Border
 }
 
 // A menu names commands, so that a menu, a key binding and the palette
@@ -252,7 +255,7 @@ func (c *Chooser) paint(v grid.View) {
 	drawShadow(v, box, c.Style.ShadowBG)
 	in := box.In(v)
 	in.Fill(grid.Cell{Rune: ' ', FG: c.Style.FG, BG: c.Style.BG, Width: 1})
-	drawFrame(v, box, c.Style.BorderFG, c.Style.BG)
+	drawFrame(v, box, c.Style.BorderFG, c.Style.BG, c.Style.Rule)
 
 	cols, _ := in.Size()
 	room := max(cols-(chooserFrame+chooserPad)*2, 0)

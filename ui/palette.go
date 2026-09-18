@@ -41,6 +41,9 @@ type PaletteStyle struct {
 	// either one out.
 	BorderFG color.RGBA
 	ShadowBG color.RGBA
+
+	// Rule picks the characters the rule is drawn with.
+	Rule Border
 }
 
 // Palette is a dialog that finds a command by typing part of its name.
@@ -213,7 +216,7 @@ func (p *Palette) paint(v grid.View) {
 	drawShadow(v, box, p.Style.ShadowBG)
 	full := box.In(v)
 	full.Fill(grid.Cell{Rune: ' ', FG: p.Style.FG, BG: p.Style.BG, Width: 1})
-	drawFrame(v, box, p.Style.BorderFG, p.Style.BG)
+	drawFrame(v, box, p.Style.BorderFG, p.Style.BG, p.Style.Rule)
 
 	in := p.lines().In(v)
 	cols, _ := in.Size()

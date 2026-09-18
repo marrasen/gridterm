@@ -19,6 +19,7 @@ import (
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/render"
 	"github.com/marrasen/gridterm/session"
+	"github.com/marrasen/gridterm/themes"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/term"
 	"github.com/marrasen/gridterm/vt"
@@ -288,7 +289,12 @@ type app struct {
 	// What a new pane is started with, kept from the flags.
 	scrollback int
 	colours    vt.Palette
-	clip       clipboardWriter
+
+	// look is the window's furniture as the theme wrote it down. The
+	// zero Look is a theme that said nothing, and every colour is
+	// derived from the two ends of the theme as it always was.
+	look themes.Look
+	clip clipboardWriter
 
 	// readClip reads the clipboard. A nil one reads the system's own,
 	// and a test sets its own: a test run must not reach into the

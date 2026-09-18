@@ -139,7 +139,7 @@ func TestTheStatusColoursAreReadableOnTheBar(t *testing.T) {
 	grounds = append(grounds, struct {
 		where string
 		bg    color.RGBA
-	}{"a chip's own ground", chipBG(p)})
+	}{"a chip's own ground", a.chipBG()})
 
 	for _, c := range colours {
 		for _, g := range grounds {
@@ -176,7 +176,7 @@ func TestTheStatusColoursAreReadableOnTheBar(t *testing.T) {
 func TestTheChipGroundIsToldFromTheBar(t *testing.T) {
 	const wantGround = 1.2
 	a := aBarWindow(t)
-	ground := chipBG(a.colours)
+	ground := a.chipBG()
 
 	for _, end := range []struct {
 		where string
@@ -201,9 +201,8 @@ func TestTheChipGroundIsToldFromTheBar(t *testing.T) {
 	if ground != chipBlack {
 		t.Errorf("a chip on this window sits on %+v, want black", ground)
 	}
-	light := a.colours
-	light.BG = color.RGBA{0xfa, 0xfa, 0xfa, 0xff}
-	if got := chipBG(light); got != chipWhite {
+	a.colours.BG = color.RGBA{0xfa, 0xfa, 0xfa, 0xff}
+	if got := a.chipBG(); got != chipWhite {
 		t.Errorf("a chip on a light window sits on %+v, want white", got)
 	}
 }
@@ -241,7 +240,7 @@ func TestServingWithNobodyConnectedSaysSoOnTheMenuBar(t *testing.T) {
 	if got, red := a.bar.Chips[0].FG, statusIdleFG(a.colours); got != red {
 		t.Errorf("the chip is %+v, want the dimmer red %+v", got, red)
 	}
-	if got, ground := a.bar.Chips[0].BG, chipBG(a.colours); got != ground {
+	if got, ground := a.bar.Chips[0].BG, a.chipBG(); got != ground {
 		t.Errorf("the chip sits on %+v, want a ground of its own %+v", got, ground)
 	}
 	before, _, ok := strings.Cut(row, want)

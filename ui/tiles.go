@@ -32,6 +32,9 @@ type TilesStyle struct {
 	// one that is chosen.
 	Border, Marked color.RGBA
 
+	// Rule picks the characters a tile's rule is drawn with.
+	Rule Border
+
 	// MarkedFG and MarkedBG are the name of the one that is chosen.
 	MarkedFG, MarkedBG color.RGBA
 }
@@ -150,7 +153,7 @@ func (t *Tiles) Draw(v grid.View) {
 		if i == t.at {
 			border = t.Style.Marked
 		}
-		drawFrame(v, box, border, t.Style.BG)
+		drawFrame(v, box, border, t.Style.BG, t.Style.Rule)
 		t.name(v, i, box)
 	}
 }

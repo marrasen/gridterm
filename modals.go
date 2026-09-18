@@ -155,6 +155,9 @@ func (a *app) drawModals() {
 // the pane behind shows through it blurred. Without the tint the text
 // would sit straight on a blurred picture of a shell and be unreadable.
 func (a *app) frost() *render.Frost {
+	if a.look.Set {
+		return nil
+	}
 	cw, ch := a.renderer.CellSize()
 	tint := a.colours.BG
 	tint.A = frostTint

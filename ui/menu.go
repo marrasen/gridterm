@@ -20,9 +20,6 @@ const (
 	menuFrame = 1
 )
 
-// separatorRune draws the rule between groups of items.
-const separatorRune = '─'
-
 // MenuItem is one line of a menu.
 //
 // An item names a command rather than carrying an action of its own, so
@@ -56,6 +53,9 @@ type MenuStyle struct {
 	// either one out.
 	BorderFG color.RGBA
 	ShadowBG color.RGBA
+
+	// Rule picks the characters the rule is drawn with.
+	Rule Border
 
 	// DisabledFG is an item naming a command that is not registered.
 	// Panes register commands as they open, so a menu written
@@ -203,7 +203,7 @@ func (m *Menu) paint(v grid.View) {
 	in := box.In(v)
 	cols, rows := in.Size()
 	in.Fill(grid.Cell{Rune: ' ', FG: m.Style.FG, BG: m.Style.BG, Width: 1})
-	drawFrame(v, box, m.Style.BorderFG, m.Style.BG)
+	drawFrame(v, box, m.Style.BorderFG, m.Style.BG, m.Style.Rule)
 
 	lines := in.Sub(menuFrame, menuFrame,
 		max(cols-menuFrame*2, 0), max(rows-menuFrame*2, 0))
@@ -222,7 +222,7 @@ func (m *Menu) paint(v grid.View) {
 func (m *Menu) paintItem(line grid.View, i, cols int) {
 	item := m.items[i]
 	if m.isSeparator(i) {
-		line.Fill(grid.Cell{Rune: separatorRune, FG: m.Style.ChordFG, BG: m.Style.BG, Width: 1})
+		line.Fill(grid.Cell{Rune: m.Style.Rule.runes().across, FG: m.Style.ChordFG, BG: m.Style.BG, Width: 1})
 		return
 	}
 

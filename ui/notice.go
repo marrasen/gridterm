@@ -92,6 +92,9 @@ type NoticeStyle struct {
 	// either one out.
 	BorderFG color.RGBA
 	ShadowBG color.RGBA
+
+	// Rule picks the characters the rule is drawn with.
+	Rule Border
 }
 
 // noticeAt is a place in the wrapped message: which line, and how many
@@ -411,7 +414,7 @@ func (n *Notice) paint(v grid.View) {
 	drawShadow(v, box, n.Style.ShadowBG)
 	in := box.In(v)
 	in.Fill(grid.Cell{Rune: ' ', FG: n.Style.FG, BG: n.Style.BG, Width: 1})
-	drawFrame(v, box, n.Style.BorderFG, n.Style.BG)
+	drawFrame(v, box, n.Style.BorderFG, n.Style.BG, n.Style.Rule)
 
 	title := n.Style.TitleFG
 	if n.Failure {

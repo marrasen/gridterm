@@ -182,7 +182,7 @@ func (a *app) statusChips() []ui.Chip {
 	var chips []ui.Chip
 	if a.agents.sharing() {
 		chips = append(chips, ui.Chip{
-			Text: shareTitle, FG: statusAgentFG(a.colours), BG: chipBG(a.colours),
+			Text: shareTitle, FG: statusAgentFG(a.colours), BG: a.chipBG(),
 			Do: a.showShare,
 		})
 	}
@@ -192,7 +192,7 @@ func (a *app) statusChips() []ui.Chip {
 			text, fg = "Remote controlled", statusTakenFG(a.colours)
 		}
 		chips = append(chips, ui.Chip{
-			Text: text, FG: fg, BG: chipBG(a.colours), Do: a.showServing,
+			Text: text, FG: fg, BG: a.chipBG(), Do: a.showServing,
 		})
 	}
 	return chips
@@ -202,12 +202,16 @@ func (a *app) statusChips() []ui.Chip {
 // dark window, white under a light one, which is away from the bar in
 // the direction the text on a chip leaves room for.
 //
+// It is picked against the window's ground rather than the bar's,
+// because the colours written on a chip are lifted away from the
+// window's ground too, and the two have to agree.
+//
 // A chip cannot meet grid.Contrast's 1.5:1 for a change of ground here.
 // The bar is already as far from the window's background as the dimmer
 // red on a chip can be read against, so the chip goes the other way, and
 // this is as far as it goes.
-func chipBG(p vt.Palette) color.RGBA {
-	if grid.Contrast(chipWhite, p.BG) >= grid.Contrast(chipBlack, p.BG) {
+func (a *app) chipBG() color.RGBA {
+	if grid.Contrast(chipWhite, a.colours.BG) >= grid.Contrast(chipBlack, a.colours.BG) {
 		return chipBlack
 	}
 	return chipWhite
@@ -275,19 +279,21 @@ func (a *app) addMenu(def ui.MenuDef) {
 // menuStyle colours a drop-down menu, wherever it was opened from.
 func (a *app) menuStyle() ui.MenuStyle {
 	return ui.MenuStyle{
-		FG: a.colours.FG,
-		// No background of its own: the frosted panel behind the menu is
-		// the background, and an opaque fill would hide it.
-		BG:         color.RGBA{},
-		SelectedFG: a.colours.BG,
-		SelectedBG: a.colours.FG,
-		ChordFG:    a.colours.ANSI[8],
-		DisabledFG: a.colours.Selection,
+		FG: a.frameFG(),
+		// No background of its own unless the theme asked for a flat
+		// one: the frosted panel behind the menu is the background, and
+		// an opaque fill would hide it.
+		BG:         a.panelBG(),
+		SelectedFG: a.activeFG(),
+		SelectedBG: a.activeBG(),
+		ChordFG:    a.panelDimFG(),
+		DisabledFG: a.disabledFG(),
 		// A rule around it, and a shadow under it. A menu over a
 		// terminal is otherwise two lots of text with nothing between
 		// them.
-		BorderFG: a.colours.ANSI[8],
-		ShadowBG: shadow,
+		BorderFG: a.panelBorderFG(),
+		ShadowBG: a.panelShadow(),
+		Rule:     a.panelRule(),
 	}
 }
 
@@ -308,13 +314,13 @@ func (a *app) openMenu() error {
 // window changes theme.
 func (a *app) menubarStyle() ui.MenubarStyle {
 	return ui.MenubarStyle{
-		FG: a.colours.FG,
+		FG: a.frameFG(),
 		// The sidebar's own ground, running across the bar rather than
 		// down it. The two are one frame around the window, so they are
 		// drawn in one colour.
-		BG:     sidebarTop(a.colours),
-		BGEnd:  sidebarFoot(a.colours),
-		OpenFG: a.colours.BG,
-		OpenBG: a.colours.FG,
+		BG:     a.sidebarTop(),
+		BGEnd:  a.sidebarFoot(),
+		OpenFG: a.activeFG(),
+		OpenBG: a.activeBG(),
 	}
 }

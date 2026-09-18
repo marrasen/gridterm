@@ -261,7 +261,7 @@ so does taking the last pane out.
 
 Serving this window and taking over another are on the menu rather than
 on a key: "Serve this window…" asks for the port and says the
-fingerprint to check, and "Work in another window…" asks for the address and
+fingerprint to check, and "Connect to another window…" asks for the address and
 the key to offer. Nothing listens until you ask it to, and the keys
 allowed in are the ones you list in an `authorized_keys` file in
 gridterm's own directory, not the one in `~/.ssh`.

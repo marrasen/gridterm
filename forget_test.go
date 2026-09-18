@@ -325,7 +325,7 @@ func TestForgettingAWindowTakenOverLetsGoOfIt(t *testing.T) {
 
 	f := openTheForgetDialog(t, client, "office")
 	dialogSays(t, f,
-		"This window is working in office.",
+		"This window is connected to office.",
 		"Forgetting it lets go of office and closes its panes.")
 	pressButton(t, client, f, "Remove")
 

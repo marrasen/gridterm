@@ -106,7 +106,7 @@ func filesSay(f where) string {
 		{"Colour schemes", themes.File},
 		{"Keyboard shortcuts", keys.File},
 		{"Keys allowed to take this window over", serve.AuthFile},
-		{"Windows this one has worked in", knownWindowsFile},
+		{"Windows this one has connected to", knownWindowsFile},
 	} {
 		fmt.Fprintf(&b, "%-39s%s\n", line.what+":", filepath.Join(f.dir, line.name))
 	}

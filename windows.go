@@ -391,7 +391,7 @@ func (a *app) watchingPane(what remoteKey) *term.Terminal {
 
 // openTakeOver asks which window to take over.
 func (a *app) openTakeOver() error {
-	f := a.newForm("Work in another window")
+	f := a.newForm("Connect to another window")
 	// Broken into short lines by hand. A dialog is as wide as its
 	// longest line and stops there, so a sentence written as one line
 	// is a sentence with its end cut off.
@@ -405,7 +405,7 @@ func (a *app) openTakeOver() error {
 		fmt.Sprintf("host[:port], port %d unless given", servePort), 0))
 	key := f.AddField("Key file", a.newField("optional, or the agent's keys", 0))
 
-	f.AddButton(ui.Button{Title: "Work in it", Do: func() error {
+	f.AddButton(ui.Button{Title: "Connect", Do: func() error {
 		// Through workOnWindow, so typing the address of a window this
 		// one already holds gives a terminal on it rather than the
 		// complaint that it has been taken over.

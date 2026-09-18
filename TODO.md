@@ -297,13 +297,13 @@ From Marcus's inbox, after working in a shared window.
   does not appear to redraw on its own, so what it shows is the screen
   as it was when it was last looked at. Not diagnosed.
 
-- **The words a user reads say "work in" now; the code still says "take
-  over".** The menu line, the dialog, its button, the server-list line
-  and the prose around them were changed on 2026-09-19. Marcus suggested
-  "Share host panes"; what went in was "Work in another window…",
-  because the dialog's own first line already reads "Work in a gridterm
-  running on another machine" and that is the sentence the title should
-  match. Worth his eye, since he asked for the other one.
+- **The words a user reads say "connect to" now; the code still says
+  "take over".** Settled with Marcus on 2026-09-19: the client's side
+  reads "Connect to another window…", mirroring the host's "Serve this
+  window…". "Work in" was wrong because nothing moves: the panes stay on
+  the window serving them and are drawn here at the same time. "Share"
+  was wrong because a share is already the set of panes handed to an
+  agent, and "session" because a session is already a running shell.
 
   `serve.takeOver` keeps its name, and so do `takeOver`, `workOnWindow`
   and `taken` in windows.go. A command id is what a saved shortcut

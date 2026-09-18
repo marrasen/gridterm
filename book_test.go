@@ -1221,7 +1221,7 @@ func TestChangingAMachineIntoAWindowTakesEffectAtOnce(t *testing.T) {
 	if !ok {
 		t.Fatal("there is no command for it")
 	}
-	if !strings.Contains(cmd.Title, "Work in") {
+	if !strings.Contains(cmd.Title, "Connect to") {
 		t.Fatalf("the command is %q, want it to offer taking it over", cmd.Title)
 	}
 }
@@ -1406,7 +1406,7 @@ func TestTakingAWindowOverChangesWhatThePaletteOffers(t *testing.T) {
 	saveWindowFromTheDialog(t, client, "statio", addr, keyFile)
 
 	id := termPrefix + remote.CommandName("statio")
-	if got := commandTitle(t, client, id); got != "Work in statio" {
+	if got := commandTitle(t, client, id); got != "Connect to statio" {
 		t.Fatalf("before it is taken over the palette offers %q", got)
 	}
 

@@ -66,7 +66,7 @@ func TestTheNoticeNamesEveryFileAgainstWhatItIsFor(t *testing.T) {
 		{"Colour schemes", "themes.json"},
 		{"Keyboard shortcuts", "keys.json"},
 		{"Keys allowed to take this window over", "authorized_keys"},
-		{"Windows this one has worked in", "known_windows"},
+		{"Windows this one has connected to", "known_windows"},
 		{"The key this window serves with", "serve_host_key"},
 	} {
 		want := line.what + ":"

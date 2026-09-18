@@ -7,6 +7,7 @@ import (
 
 	"github.com/marrasen/gridterm/glyph"
 	"github.com/marrasen/gridterm/grid"
+	"github.com/marrasen/gridterm/input"
 	"github.com/marrasen/gridterm/render"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/term"
@@ -139,6 +140,12 @@ func (a *app) openSwitcher() error {
 	}
 	tiles := ui.NewTiles(names)
 	tiles.Style = a.tilesStyle()
+	// The shortcut that shows them hides them again. Looked up rather
+	// than written down, so a shortcut the user moved still closes it.
+	tiles.CloseOn = func(ev input.Event) bool {
+		id, on := a.root.Accelerators.Lookup(ui.Chord{Key: ev.Key, Mods: ev.Mods})
+		return on && id == switcherCommand
+	}
 	tiles.Mark(indexOf(panes, ui.FocusedLeaf(a.root.Widget())))
 
 	// The frame's own clock, not the wall's: a key is handled after the
@@ -238,9 +245,7 @@ func (a *app) placeSwitcher() {
 		// The name the pane goes by now.
 		s.tiles.Rename(i, a.paneName(what))
 		size, ok := a.paneScreen(what)
-		// A held screen is sized by somebody on another machine, so it is
-		// bounded rather than trusted: one past a texture is left out.
-		if !ok || !fitsATexture(size, cellW, cellH) {
+		if !ok || !fitsThePicture(what, size, cellW, cellH) {
 			continue
 		}
 		inside := s.tiles.Inside(i)
@@ -258,6 +263,16 @@ func (a *app) placeSwitcher() {
 			t.draw()
 		}
 	}
+}
+
+// fitsThePicture reports whether a picture of a pane can be drawn on a
+// texture, held to how far a watcher's size is trusted when a watcher
+// chose it and to what the GPU will make when this window did.
+func fitsThePicture(what ui.Widget, size ui.Size, cellW, cellH int) bool {
+	if t, is := what.(*term.Terminal); is && t.Held() {
+		return fitsATexture(size, cellW, cellH)
+	}
+	return fitsAPaneTexture(size, cellW, cellH)
 }
 
 // paneRoom is the room a pane is in, which is where its picture zooms

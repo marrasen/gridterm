@@ -76,11 +76,12 @@ func (a *app) askWhatNext(t *term.Terminal) {
 	question, start := whatHappened(e, s.argv, a.howItEnded(t))
 	t.Ask(question,
 		term.Choice{Label: start, Do: func() error { return a.startAgain(t) }},
-		// Close by default on a command: Enter at a terminal that has
-		// stopped answering is a reflex, and running a deploy is not.
+		// Close by default. Enter at a terminal that has stopped
+		// answering is a reflex, and the reflex must not start a shell
+		// the user has finished with or run a deploy a second time.
 		term.Choice{
 			Label:   "Close",
-			Default: e != nil && e.Kind == conns.Command,
+			Default: true,
 			Do:      func() error { return a.closePane(t) },
 		})
 }
@@ -180,9 +181,11 @@ func whatHappened(e *conns.Entry, argv []string, end outcome) (question, start s
 		said = " Exit " + strconv.Itoa(end.status) + "."
 	}
 	// The words ssh itself prints after a shell is exited, and the same
-	// words fit a transport that went: either way the pane's connection
-	// has closed and reconnecting is what brings it back.
-	return "Connection closed." + said + " Reconnect?", "Yes"
+	// words fit a transport that went. What to do about it is on the
+	// buttons rather than in the sentence: "Yes" only means something
+	// to somebody who read the question, and a pane that has just
+	// stopped answering is read at a glance.
+	return "Connection closed." + said, "Reconnect"
 }
 
 // commandQuestion words the question on a pane that ran one command,

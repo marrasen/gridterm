@@ -648,3 +648,133 @@ func TestTheSwitcherStaysWhileThereIsRoom(t *testing.T) {
 		}
 	}
 }
+
+// Asking for the switcher again while it is up takes it away.
+//
+// The shortcut that shows something is the one that hides it. Escape
+// was the only way out, and pressing the shortcut again did nothing.
+func TestTheSwitcherShortcutClosesItAgain(t *testing.T) {
+	a := aWindowOfPanes(t, 4)
+	openTiles(t, a)
+	frame(t, a)
+	if a.switcher == nil {
+		t.Fatal("the switcher did not open")
+	}
+
+	// The chord itself, through the window. The tiles take every key
+	// while they are up, so a test that called openSwitcher would pass
+	// with the shortcut going nowhere.
+	chord, on := a.root.Accelerators.ChordFor(switcherCommand)
+	if !on {
+		t.Fatal("the switcher has no shortcut")
+	}
+	sendKey(t, a, press(chord.Key, chord.Mods))
+	frame(t, a)
+
+	if a.switcher != nil {
+		t.Error("the switcher is still up after being asked for again")
+	}
+	if _, is := a.root.Modal().(*ui.Tiles); is {
+		t.Error("the tiles are still the dialog on top")
+	}
+}
+
+// A window wide enough to pass the bound a watcher's screen is held to
+// still shows its panes.
+//
+// Marcus maximised a window and every tile came up empty. The bound is
+// there because a watcher on another machine chooses the size it asks
+// for, and it was being applied to this window's own panes as well. A
+// pane is about as wide as the window, so a maximised window on a
+// display with any scaling went past 4096 and every picture was skipped.
+func TestTheSwitcherShowsItsPanesInAMaximisedWindow(t *testing.T) {
+	a := aWindowOfPanes(t, 4)
+	cellW, cellH := a.renderer.CellSize()
+	// Wider than a watcher's screen may be, the way a maximised window
+	// on a scaled display is.
+	cols := mostScaledPixels/cellW + 40
+	rows := 60
+	a.setGridSize(cols, rows)
+	frame(t, a)
+
+	openTiles(t, a)
+	frame(t, a)
+
+	if a.switcher == nil {
+		t.Fatal("the switcher did not open in a big window")
+	}
+	for i, pane := range a.switcher.panes {
+		size, ok := a.paneScreen(pane)
+		if !ok {
+			t.Fatalf("pane %d has no screen", i)
+		}
+		if fitsATexture(size, cellW, cellH) {
+			t.Fatalf("pane %d is %v, which is inside the watcher's bound: "+
+				"the window is not big enough to be the case this is about", i, size)
+		}
+	}
+	shown := 0
+	for _, tile := range a.switcher.shown {
+		if !tile.layer.Hidden {
+			shown++
+		}
+	}
+	if shown != 4 {
+		t.Errorf("%d pictures are shown in a maximised window, want 4", shown)
+	}
+}
+
+// A screen a watcher sized keeps the tighter bound, even in a window
+// big enough for its own panes to pass it.
+//
+// The two bounds mean different things. One is what the GPU will make,
+// for a pane this window sized. The other is how far a size chosen on
+// another machine is trusted, and a big window is no reason to trust it
+// further.
+func TestAWatchersScreenKeepsTheTighterBoundInABigWindow(t *testing.T) {
+	a := aWindowOfPanes(t, 4)
+	cellW, cellH := a.renderer.CellSize()
+	a.setGridSize(mostScaledPixels/cellW+40, 60)
+	frame(t, a)
+
+	// Held at a size past what a watcher is trusted with, and inside
+	// what this window's own panes are allowed.
+	huge := a.panesInSidebarOrder()[0].(*term.Terminal)
+	huge.Hold(mostScaledPixels/cellW+10, mostScaledPixels/cellH+10)
+	if fitsATexture(huge.Size(), cellW, cellH) {
+		t.Fatalf("a %v screen is inside the watcher's bound, so this proves nothing", huge.Size())
+	}
+	if !fitsAPaneTexture(huge.Size(), cellW, cellH) {
+		t.Fatalf("a %v screen is outside the pane bound too, so this proves nothing", huge.Size())
+	}
+
+	openTiles(t, a)
+	frame(t, a)
+
+	if _, drawn := a.switcher.shown[ui.Widget(huge)]; drawn {
+		t.Error("a screen a watcher sized was drawn past the bound it is trusted to")
+	}
+	if got := len(a.switcher.shown); got != 3 {
+		t.Errorf("%d panes have a picture, want the 3 this window sized", got)
+	}
+}
+
+// A picture exactly as wide as the bound is left out.
+//
+// ebiten pads an image by a pixel before it goes on an atlas, so one
+// exactly at the limit is a pixel past what the GPU will make. That is
+// a panic in the draw path and no recover anywhere, so the window dies
+// rather than leaving a tile empty.
+func TestAPictureExactlyAtTheBoundIsLeftOut(t *testing.T) {
+	const cell = 8
+
+	if fitsAPaneTexture(ui.Size{Cols: mostPanePixels / cell, Rows: 1}, cell, cell) {
+		t.Error("a picture exactly as wide as the bound fits, want it left out")
+	}
+	if fitsAPaneTexture(ui.Size{Cols: 1, Rows: mostPanePixels / cell}, cell, cell) {
+		t.Error("a picture exactly as tall as the bound fits, want it left out")
+	}
+	if !fitsAPaneTexture(ui.Size{Cols: mostPanePixels/cell - 1, Rows: 1}, cell, cell) {
+		t.Error("a picture a cell narrower is left out, want it drawn")
+	}
+}

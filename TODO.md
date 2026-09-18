@@ -314,6 +314,13 @@ From Marcus's inbox, after working in a shared window.
   kinder. Worth doing with the animation work, which is the other thing
   that wants this dialog opened and closed smoothly.
 
+- **Closing the switcher takes any dialog stacked over it.** Hiding a
+  modal pops everything above it, and the switcher is now closed from
+  the frame when the window is too small. So nudging an edge one column
+  too far also dismisses, say, a secret an agent asked for that arrived
+  over the tiles. The asker is told, so nothing is left waiting, but the
+  user loses a prompt they never answered. Goes with the wording above.
+
 ## Panes and the sidebar
 
 - **A pane on a taken-over window cannot be reconnected.** Marcus typed

@@ -50,6 +50,11 @@ type Tiles struct {
 	// Close runs when the user gives up.
 	Close func()
 
+	// CloseOn reports whether a key is the shortcut that opened this,
+	// which then closes it again. A nil one leaves that key swallowed
+	// like any other: this package cannot see a keymap.
+	CloseOn func(input.Event) bool
+
 	names []string
 	at    int
 	size  Size
@@ -200,6 +205,12 @@ func crop(s string, room int) string {
 func (t *Tiles) HandleKey(ev input.Event) (bool, error) {
 	if ev.Kind != input.KeyPress && ev.Kind != input.KeyRepeat {
 		return false, nil
+	}
+	if t.CloseOn != nil && t.CloseOn(ev) {
+		if t.Close != nil {
+			t.Close()
+		}
+		return true, nil
 	}
 	cols, _ := TileShape(len(t.names), t.size)
 	switch ev.Key {

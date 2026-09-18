@@ -702,7 +702,7 @@ func TestAHandoverSurvivesThePaneReconnecting(t *testing.T) {
 		a.reapExited()
 		return a.machines.named(host) == nil && endedAndSaid(a, pane)
 	})
-	pressTheAnswer(t, a, pane)
+	clickTheAnswer(t, a, pane, "Reconnect")
 	cameBack(t, a, host, pane)
 
 	if a.agents.of(pane) == nil {

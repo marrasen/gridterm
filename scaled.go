@@ -9,13 +9,19 @@ import (
 	"github.com/marrasen/gridterm/ui/term"
 )
 
-// mostScaledPixels is the biggest texture a screen may be drawn on, each
-// way.
+// mostScaledPixels is the biggest texture a screen sized by a watcher
+// may be drawn on, each way.
 //
 // The size is a watcher's to choose, so it is bounded rather than
 // trusted: 4096 is a texture every GPU this runs on can make, and a
 // screen past it is left to the tree and clipped, as it was before.
 const mostScaledPixels = 4096
+
+// mostPanePixels is the biggest texture a picture of one of this
+// window's own panes may be drawn on, which is what the GPU will make
+// rather than how far a size is trusted: 8192 is what Direct3D
+// guarantees from feature level 10.
+const mostPanePixels = 8192
 
 // scaledPane is a pane whose screen is bigger than the room the layout
 // has for it, drawn on a grid of its own and blitted to fit.
@@ -193,6 +199,14 @@ func overflows(pane *term.Terminal) bool {
 	// under it has to be drawn on a layer of its own.
 	size, box := pane.Size(), pane.ScreenRoom()
 	return pane.Held() && (size.Cols > box.Cols || size.Rows > box.Rows)
+}
+
+// fitsAPaneTexture reports whether a picture of one of this window's own
+// panes can be drawn on a texture.
+func fitsAPaneTexture(size ui.Size, cellW, cellH int) bool {
+	// Under rather than up to: ebiten pads an image by a pixel before
+	// it goes on an atlas, and one exactly this wide would not fit.
+	return size.Cols*cellW < mostPanePixels && size.Rows*cellH < mostPanePixels
 }
 
 // fitsATexture reports whether a screen that size can be drawn on a

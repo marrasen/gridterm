@@ -154,15 +154,15 @@ func TestAShellThatExitsAsksWhatToDoNext(t *testing.T) {
 	if !strings.Contains(asked, "connection closed") {
 		t.Errorf("the pane asks %q, want it to say the connection closed", asked)
 	}
-	if !strings.Contains(asked, "reconnect") {
-		t.Errorf("the pane asks %q, want it to offer to reconnect", asked)
+	if !paneOffers(pane, "Reconnect") {
+		t.Errorf("the pane offers %v, want one of them to reconnect", choiceLabels(pane))
 	}
 }
 
 // A command that finished names itself in the question and its choice
 // says it will run, because picking it runs that command a second time
 // with whatever it does to the machine.
-func TestACommandThatFinishedNamesWhatYesWouldRun(t *testing.T) {
+func TestACommandThatFinishedNamesWhatRunAgainWouldRun(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withDialogs(t, a)
 	withPanel(t, a)
@@ -187,7 +187,7 @@ func TestACommandThatFinishedNamesWhatYesWouldRun(t *testing.T) {
 	if !strings.Contains(asked, "run it again") {
 		t.Errorf("the pane asks %q, want it to say the command would run again", asked)
 	}
-	if strings.Contains(asked, "reconnect") {
+	if paneOffers(pane, "Reconnect") {
 		t.Errorf("the pane asks %q, which reads as reconnecting rather than running", asked)
 	}
 	// And the choice itself says so, because that is what the user reads
@@ -248,7 +248,7 @@ func TestACommandRunsAgainOnTheConnectionItHas(t *testing.T) {
 	if !strings.Contains(asked, "make deploy") {
 		t.Errorf("the pane asks %q without naming what it would run", asked)
 	}
-	if strings.Contains(asked, "reconnect") || strings.Contains(asked, "connection") {
+	if paneOffers(pane, "Reconnect") || strings.Contains(asked, "connection") {
 		t.Errorf("the pane asks %q, but nothing is being connected: the machine is up", asked)
 	}
 	if got := pane.Choices()[0]; got != "Run again" {
@@ -357,8 +357,8 @@ func TestAShellThatDiedSaysItsStatus(t *testing.T) {
 	if !strings.Contains(asked, "exit 7") {
 		t.Errorf("the pane asks %q, want it to say the status the shell died with", asked)
 	}
-	if !strings.Contains(asked, "reconnect") {
-		t.Errorf("the pane asks %q, want it still to offer to reconnect", asked)
+	if !paneOffers(pane, "Reconnect") {
+		t.Errorf("the pane offers %v, want one of them still to reconnect", choiceLabels(pane))
 	}
 }
 
@@ -406,8 +406,8 @@ func TestAConnectionThatDropsAsksAboutReconnecting(t *testing.T) {
 	if !strings.Contains(asked, "connection") {
 		t.Errorf("the pane asks %q, want it worded for a connection that closed", asked)
 	}
-	if !strings.Contains(asked, "reconnect") {
-		t.Errorf("the pane asks %q, want it to offer to reconnect", asked)
+	if !paneOffers(pane, "Reconnect") {
+		t.Errorf("the pane offers %v, want one of them to reconnect", choiceLabels(pane))
 	}
 }
 
@@ -439,9 +439,9 @@ func TestPickingCloseClosesThePane(t *testing.T) {
 	checkTree(t, a)
 }
 
-// Picking Yes on a pane here starts the same shell again in the same
+// Picking Reconnect on a pane here starts the same shell again in the same
 // pane, with everything the last one printed still above it.
-func TestPickingYesHereStartsTheShellAgainInThePane(t *testing.T) {
+func TestPickingReconnectHereStartsTheShellAgainInThePane(t *testing.T) {
 	a := newTestApp(t, 80, 24, startedWith(startup{command: []string{"a-shell"}}))
 	withDialogs(t, a)
 	withPanel(t, a)
@@ -449,7 +449,7 @@ func TestPickingYesHereStartsTheShellAgainInThePane(t *testing.T) {
 	sayOnPane(t, a, 0, pane, "before it went")
 	endTheShell(t, a, 0, pane)
 
-	pressTheAnswer(t, a, pane)
+	clickTheAnswer(t, a, pane, "Reconnect")
 
 	if a.Ended(pane) {
 		t.Fatal("the pane is still one the window has finished with")
@@ -475,9 +475,9 @@ func TestPickingYesHereStartsTheShellAgainInThePane(t *testing.T) {
 	checkTree(t, a)
 }
 
-// Picking Yes on a pane whose machine is still connected opens another
+// Picking Reconnect on a pane whose machine is still connected opens another
 // shell on that connection rather than logging in again.
-func TestPickingYesOnAConnectedMachineOpensAShellOnIt(t *testing.T) {
+func TestPickingReconnectOnAConnectedMachineOpensAShellOnIt(t *testing.T) {
 	a, s, host := aConnectedWindow(t, 80, 24)
 	pane := paneFor(a, host)
 	if pane == nil {
@@ -487,11 +487,12 @@ func TestPickingYesOnAConnectedMachineOpensAShellOnIt(t *testing.T) {
 	opened := s.SessionsOpened()
 
 	endTheRemoteShell(t, a, pane)
-	if asked := theQuestion(t, pane); !strings.Contains(asked, "reconnect") {
-		t.Errorf("the pane asks %q, want it to offer to reconnect", asked)
+	theQuestion(t, pane)
+	if !paneOffers(pane, "Reconnect") {
+		t.Errorf("the pane offers %v, want one of them to reconnect", choiceLabels(pane))
 	}
 
-	pressTheAnswer(t, a, pane)
+	clickTheAnswer(t, a, pane, "Reconnect")
 
 	waitFor(t, a, "the pane to be running again", func() bool { return !a.Ended(pane) })
 	if got := s.SessionsOpened(); got <= opened {
@@ -507,13 +508,13 @@ func TestPickingYesOnAConnectedMachineOpensAShellOnIt(t *testing.T) {
 	checkTree(t, a)
 }
 
-// Picking Yes on a pane whose machine has gone dials it again and brings
+// Picking Reconnect on a pane whose machine has gone dials it again and brings
 // it back in the same pane. This is what the question is for: a server
 // that was rebooted.
-func TestPickingYesOnAMachineThatHasGoneDialsItAgain(t *testing.T) {
+func TestPickingReconnectOnAMachineThatHasGoneDialsItAgain(t *testing.T) {
 	a, _, host, pane := aDroppedConnection(t)
 
-	pressTheAnswer(t, a, pane)
+	clickTheAnswer(t, a, pane, "Reconnect")
 	cameBack(t, a, host, pane)
 
 	if a.machines.runningOn(pane) == nil {
@@ -557,7 +558,7 @@ func TestAPaneThatCameBackReadsAsLive(t *testing.T) {
 	speed(at)
 	speed(at.Add(meter.RateWindow + meter.RateWindow/2))
 
-	pressTheAnswer(t, a, pane)
+	clickTheAnswer(t, a, pane, "Reconnect")
 	cameBack(t, a, host, pane)
 
 	if got := e.State(time.Now()); got == meter.Closed {
@@ -577,9 +578,9 @@ func TestAPaneThatCameBackReadsAsLive(t *testing.T) {
 	}
 }
 
-// Yes on a pane whose program cannot be started leaves the question up,
+// Reconnect on a pane whose program cannot be started leaves the question up,
 // so the user can answer it again.
-func TestYesThatCannotStartLeavesTheQuestionUp(t *testing.T) {
+func TestAnAnswerThatCannotStartLeavesTheQuestionUp(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withDialogs(t, a)
 	withPanel(t, a)
@@ -590,6 +591,10 @@ func TestYesThatCannotStartLeavesTheQuestionUp(t *testing.T) {
 	boom := errors.New("no shell to start")
 	a.newShell = func([]string, string, int, int) (session.Session, error) { return nil, boom }
 	a.focus(pane)
+	// Left onto Reconnect and then Enter, which is the path that hands
+	// back what answering reported. Enter on its own takes Close, which
+	// is the second of the two.
+	sendKey(t, a, press(input.KeyLeft, 0))
 	took, err := a.root.HandleKey(press(input.KeyEnter, 0))
 	if !took {
 		t.Fatal("nothing took Enter on the question")
@@ -608,7 +613,7 @@ func TestYesThatCannotStartLeavesTheQuestionUp(t *testing.T) {
 
 // Yes on a machine that still cannot be reached leaves the user with the
 // question again, so they can wait and try once more.
-func TestYesOnAMachineStillOutOfReachAsksAgain(t *testing.T) {
+func TestReconnectOnAMachineStillOutOfReachAsksAgain(t *testing.T) {
 	a, _, _, pane := aDroppedConnection(t)
 
 	// The machine answers on nothing, which is what one still coming up
@@ -617,15 +622,15 @@ func TestYesOnAMachineStillOutOfReachAsksAgain(t *testing.T) {
 		cfg.Port = aPortNothingAnswersOn(t)
 		return cfg
 	}
-	pressTheAnswer(t, a, pane)
+	clickTheAnswer(t, a, pane, "Reconnect")
 
 	waitFor(t, a, "the window to give up on the machine again", func() bool {
 		a.reapExited()
 		return a.machines.beingMade() == 0 && a.Ended(pane) && pane.Asking() != ""
 	})
 	asked := theQuestion(t, pane)
-	if !strings.Contains(asked, "reconnect") {
-		t.Errorf("the pane asks %q, want it to offer to reconnect again", asked)
+	if !paneOffers(pane, "Reconnect") {
+		t.Errorf("the pane offers %v, want one of them to reconnect again", choiceLabels(pane))
 	}
 	// And no status: there was no program to have one.
 	if strings.Contains(asked, "exit") {
@@ -642,7 +647,7 @@ func TestYesOnAMachineStillOutOfReachAsksAgain(t *testing.T) {
 func TestAPaneThatCameBackCanEndAndAskAgain(t *testing.T) {
 	a, s, host, pane := aDroppedConnection(t)
 
-	pressTheAnswer(t, a, pane)
+	clickTheAnswer(t, a, pane, "Reconnect")
 	cameBack(t, a, host, pane)
 
 	// And it goes a second time.
@@ -652,13 +657,15 @@ func TestAPaneThatCameBackCanEndAndAskAgain(t *testing.T) {
 		return a.machines.named(host) == nil && endedAndSaid(a, pane)
 	})
 
-	if asked := theQuestion(t, pane); !strings.Contains(asked, "reconnect") {
-		t.Errorf("the pane asks %q the second time, want it to offer to reconnect", asked)
+	theQuestion(t, pane)
+	if !paneOffers(pane, "Reconnect") {
+		t.Errorf("the pane offers %v the second time, want one of them to reconnect",
+			choiceLabels(pane))
 	}
 
 	// And the second answer works, which is the first one to run against
 	// what the first restart wrote down about the pane.
-	pressTheAnswer(t, a, pane)
+	clickTheAnswer(t, a, pane, "Reconnect")
 	cameBack(t, a, host, pane)
 
 	if a.machines.runningOn(pane) == nil {
@@ -722,7 +729,7 @@ func TestAPaneThatCameBackKeepsItsTranscript(t *testing.T) {
 		t.Fatalf("the pane never said the program went:\n%s", before)
 	}
 
-	pressTheAnswer(t, a, pane)
+	clickTheAnswer(t, a, pane, "Reconnect")
 	cameBack(t, a, host, pane)
 	// The account of the new connection folds away as the shell on it
 	// opens, and that fold is what would clear the pane. So the wait is
@@ -834,7 +841,7 @@ func TestAPaneThatEndedInAnotherTabIsFoundAsking(t *testing.T) {
 	if err := a.revealRow(paneRow(t, a, a.panes[first])); err != nil {
 		t.Fatalf("choosing the row: %v", err)
 	}
-	if asked := theQuestion(t, first); !strings.Contains(asked, "reconnect") {
+	if asked := theQuestion(t, first); !paneOffers(first, "Reconnect") {
 		t.Errorf("the pane asks %q, want the question still up on the user's return", asked)
 	}
 	if read := first.ReadLines(60).Text; !strings.Contains(read, "before it went") {
@@ -1098,7 +1105,7 @@ func TestAShellStartedAgainHereGetsThePanesSize(t *testing.T) {
 		started = [2]int{cols, rows}
 		return shell(argv, dir, cols, rows)
 	}
-	pressTheAnswer(t, a, pane)
+	clickTheAnswer(t, a, pane, "Reconnect")
 
 	if started != [2]int{want.Cols, want.Rows} {
 		t.Errorf("the new shell was started at %dx%d, want the pane's %dx%d",
@@ -1122,7 +1129,7 @@ func TestReconnectingToATargetThatMovedSaysSo(t *testing.T) {
 		t.Fatalf("saving the machine at its new address: %v", err)
 	}
 
-	pressTheAnswer(t, a, pane)
+	clickTheAnswer(t, a, pane, "Reconnect")
 
 	waitFor(t, a, "the pane to say where it is dialling instead", func() bool {
 		a.reapExited()
@@ -1140,5 +1147,39 @@ func TestTheZeroWayToEndIsHavingRunAndStopped(t *testing.T) {
 
 	if how != ranAndStopped {
 		t.Errorf("the zero endedHow is %d, want the one for a program that ran and stopped", how)
+	}
+}
+
+// offers reports whether one of a pane's choices is labelled this.
+func paneOffers(pane *term.Terminal, label string) bool {
+	return slices.Contains(choiceLabels(pane), label)
+}
+
+// labels are what a pane's choices say, for a failure that has to name
+// what was there instead.
+func choiceLabels(pane *term.Terminal) []string { return pane.Choices() }
+
+// Enter closes the pane rather than starting it again.
+//
+// Enter at a terminal that has stopped answering is a reflex, and the
+// reflex must not start a shell the user has finished with, or run a
+// deploy a second time.
+func TestEnterClosesThePaneRatherThanStartingItAgain(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pane := firstPane(t, a)
+	endTheShell(t, a, 0, pane)
+	theQuestion(t, pane)
+	panes := len(a.panes)
+
+	sendKey(t, a, press(input.KeyEnter, 0))
+	a.pump.run()
+
+	if a.panes[pane] != nil {
+		t.Error("Enter left the pane open, so it did not close it")
+	}
+	if got := len(a.panes); got >= panes {
+		t.Errorf("the window holds %d panes, want fewer than the %d it had", got, panes)
 	}
 }

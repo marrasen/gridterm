@@ -17,11 +17,6 @@ import (
 // the system's temporary directory.
 const pastedDir = "gridterm-pasted"
 
-// pastedTries is how many names are tried before giving up. A name holds
-// the millisecond, so reaching this means something else is writing into
-// the same directory as fast as it can.
-const pastedTries = 100
-
 // pasteImage writes the picture on the clipboard to a file and types its
 // path into the pane in front.
 //
@@ -62,27 +57,15 @@ func writePastedImage(img image.Image, now func() time.Time) (string, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", fmt.Errorf("make somewhere to put the picture: %w", err)
 	}
-	// Named for the moment it was pasted, and numbered when that name is
-	// taken: two pastes in one millisecond, or a second window pasting,
-	// must not have one quietly stand in for the other.
-	stamp := at().Format("20060102-150405.000")
-	var path string
-	var f *os.File
-	for n := 1; ; n++ {
-		name := stamp + ".png"
-		if n > 1 {
-			name = fmt.Sprintf("%s-%d.png", stamp, n)
-		}
-		path = filepath.Join(dir, name)
-		var err error
-		f, err = os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-		if err == nil {
-			break
-		}
-		if !os.IsExist(err) || n >= pastedTries {
-			return "", fmt.Errorf("write the picture: %w", err)
-		}
+	// Named for the moment it was pasted, with the rest left to
+	// os.CreateTemp: it settles two pastes in one millisecond, and a
+	// second window pasting into the same directory, without this having
+	// to think about either.
+	f, err := os.CreateTemp(dir, at().Format("20060102-150405")+"-*.png")
+	if err != nil {
+		return "", fmt.Errorf("write the picture: %w", err)
 	}
+	path := f.Name()
 	if err := png.Encode(f, img); err != nil {
 		// Closed on the way out, and the half-written file taken away:
 		// a path typed into a shell has to name a picture that opens.

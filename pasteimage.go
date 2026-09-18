@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"image"
 	"image/png"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -16,8 +14,8 @@ import (
 	"github.com/marrasen/gridterm/vfs"
 )
 
-// pastedDir is where a picture taken off the clipboard is written, under
-// the system's temporary directory.
+// pastedDir is where a picture is written on a machine that has no
+// clipboard this window can reach, under the home directory there.
 const pastedDir = "gridterm-pasted"
 
 // pasteImage writes the picture on the clipboard to a file and types its
@@ -41,11 +39,10 @@ func (a *app) pasteImage(pane *term.Terminal) error {
 	on := a.about(host)
 	switch {
 	case on.kind == hostHere:
-		path, err := writePastedImage(img, a.now)
-		if err != nil {
-			return err
-		}
-		pane.Paste(path)
+		// The picture is already on this machine's clipboard and the
+		// program is running on this machine, so there is nothing to
+		// move. Pressing paste is the whole of it.
+		pane.PressPaste()
 		return nil
 	case on.window != nil:
 		// A gridterm over there, so the picture goes on that machine's
@@ -164,39 +161,6 @@ func (a *app) sendPictureTo(on hostFacts, pane *term.Terminal, img image.Image) 
 		})
 	}()
 	return nil
-}
-
-// writePastedImage puts a picture in a file of its own and returns the
-// path. now is the window's clock, so a test does not depend on the
-// wall clock.
-func writePastedImage(img image.Image, now func() time.Time) (string, error) {
-	at := time.Now
-	if now != nil {
-		at = now
-	}
-	dir := filepath.Join(os.TempDir(), pastedDir)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return "", fmt.Errorf("make somewhere to put the picture: %w", err)
-	}
-	// Named for the moment it was pasted, with the rest left to
-	// os.CreateTemp: it settles two pastes in one millisecond, and a
-	// second window pasting into the same directory, without this having
-	// to think about either.
-	f, err := os.CreateTemp(dir, at().Format("20060102-150405")+"-*.png")
-	if err != nil {
-		return "", fmt.Errorf("write the picture: %w", err)
-	}
-	path := f.Name()
-	if err := png.Encode(f, img); err != nil {
-		// Closed on the way out, and the half-written file taken away:
-		// a path typed into a shell has to name a picture that opens.
-		return "", fmt.Errorf("write the picture: %w",
-			errors.Join(err, f.Close(), os.Remove(path)))
-	}
-	if err := f.Close(); err != nil {
-		return "", fmt.Errorf("write the picture: %w", errors.Join(err, os.Remove(path)))
-	}
-	return path, nil
 }
 
 // takeSentPicture puts a picture a client pasted on this machine's

@@ -3,85 +3,12 @@ package main
 import (
 	"errors"
 	"image"
-	"image/color"
-	"image/png"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/ui"
 )
-
-// A picture is written to a file of its own and reads back as the one
-// that went in.
-func TestAPastedPictureIsWrittenAndReadsBack(t *testing.T) {
-	want := image.NewRGBA(image.Rect(0, 0, 2, 1))
-	want.SetRGBA(0, 0, color.RGBA{0x10, 0x20, 0x30, 0xff})
-	want.SetRGBA(1, 0, color.RGBA{0x40, 0x50, 0x60, 0xff})
-	at := time.Date(2026, 9, 18, 22, 15, 30, 0, time.UTC)
-
-	path, err := writePastedImage(want, func() time.Time { return at })
-
-	if err != nil {
-		t.Fatalf("write it: %v", err)
-	}
-	t.Cleanup(func() { os.Remove(path) })
-	if dir := filepath.Dir(path); filepath.Base(dir) != pastedDir {
-		t.Errorf("it wrote to %s, want a directory of its own", dir)
-	}
-	if !strings.HasSuffix(path, ".png") {
-		t.Errorf("it wrote %s, want a name a program can tell is a picture", path)
-	}
-	f, err := os.Open(path)
-	if err != nil {
-		t.Fatalf("open what it wrote: %v", err)
-	}
-	defer f.Close()
-	got, err := png.Decode(f)
-	if err != nil {
-		t.Fatalf("read what it wrote: %v", err)
-	}
-	if got.Bounds() != want.Bounds() {
-		t.Fatalf("it wrote a %v picture, want %v", got.Bounds(), want.Bounds())
-	}
-	for x := range 2 {
-		if got, want := got.At(x, 0), want.At(x, 0); got != want {
-			t.Errorf("pixel %d is %v, want %v", x, got, want)
-		}
-	}
-}
-
-// Two pictures pasted in the same millisecond get a file each. The name
-// holds the moment, so without numbering the second would be refused and
-// the first would quietly stand in for it.
-func TestTwoPicturesPastedTogetherGetTheirOwnFiles(t *testing.T) {
-	img := image.NewRGBA(image.Rect(0, 0, 1, 1))
-	at := time.Date(2026, 9, 18, 22, 15, 30, 0, time.UTC)
-	clock := func() time.Time { return at }
-
-	first, err := writePastedImage(img, clock)
-	if err != nil {
-		t.Fatalf("the first: %v", err)
-	}
-	t.Cleanup(func() { os.Remove(first) })
-	second, err := writePastedImage(img, clock)
-	if err != nil {
-		t.Fatalf("the second: %v", err)
-	}
-	t.Cleanup(func() { os.Remove(second) })
-
-	if first == second {
-		t.Errorf("both pictures went to %s", first)
-	}
-	for _, path := range []string{first, second} {
-		if _, err := os.Stat(path); err != nil {
-			t.Errorf("%s: %v", path, err)
-		}
-	}
-}
 
 // A pane on a machine reached by SSH is told so rather than handed a
 // path to a file on this machine.
@@ -141,32 +68,25 @@ func TestAClipboardThatWillNotBeReadIsSaid(t *testing.T) {
 	}
 }
 
-// The picture on the clipboard is written out and its path typed into
-// the pane, which is how a program that reads a terminal is handed one.
-func TestPastingAPictureTypesThePathItWroteTo(t *testing.T) {
+// A pane on this machine is handed the picture by pressing paste: it is
+// already on the clipboard the program reads, so there is nothing to
+// move and no file to write.
+func TestPastingAPictureIntoALocalPanePressesPaste(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	pane := firstPane(t, a)
 	a.panes[pane] = &conns.Entry{Host: conns.Local, Kind: conns.Terminal}
-	img := image.NewRGBA(image.Rect(0, 0, 3, 2))
-	a.readClipImage = func() (image.Image, bool, error) { return img, true, nil }
+	a.readClipImage = func() (image.Image, bool, error) {
+		return image.NewRGBA(image.Rect(0, 0, 2, 2)), true, nil
+	}
 
 	if err := a.pasteImage(pane); err != nil {
 		t.Fatalf("paste it: %v", err)
 	}
 
-	// The pane queues what it sends and a goroutine of its own writes
-	// it, so the shell sees it a moment later.
-	waitFor(t, a, "the path to reach the shell", func() bool {
-		return strings.Contains(a.shells[0].sentText(), ".png")
+	// Ctrl+V, which is what a program reads as paste.
+	waitFor(t, a, "the paste key to reach the shell", func() bool {
+		return strings.Contains(a.shells[0].sentText(), "\x16")
 	})
-	typed := strings.TrimSpace(a.shells[0].sentText())
-	if !strings.HasSuffix(typed, ".png") {
-		t.Fatalf("it typed %q, want the path of a picture", typed)
-	}
-	t.Cleanup(func() { os.Remove(typed) })
-	if _, err := os.Stat(typed); err != nil {
-		t.Errorf("it typed a path to nothing: %v", err)
-	}
 }
 
 // A clipboard holding a picture and no text says so, rather than passing
@@ -220,14 +140,11 @@ func TestPastingIntoAPaneTakesThePictureWhenThereIsNoText(t *testing.T) {
 		t.Fatalf("paste: %v", err)
 	}
 
-	waitFor(t, a, "the path to reach the shell", func() bool {
-		return strings.Contains(a.shells[0].sentText(), ".png")
+	// The picture is already on the clipboard this pane's program
+	// reads, so pressing paste is the whole of it.
+	waitFor(t, a, "the paste key to reach the shell", func() bool {
+		return strings.Contains(a.shells[0].sentText(), "\x16")
 	})
-	typed := strings.TrimSpace(a.shells[0].sentText())
-	t.Cleanup(func() { os.Remove(typed) })
-	if _, err := os.Stat(typed); err != nil {
-		t.Errorf("it typed a path to nothing: %v", err)
-	}
 }
 
 // A clipboard holding both is text. That is what copying from a browser

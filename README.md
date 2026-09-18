@@ -451,35 +451,35 @@ and the picture when there is none. A clipboard holding both is text:
 that is what copying from a browser leaves, and the words are what was
 meant far more often. `edit.pasteImage` asks for the other one.
 
-**A picture is handed over as a path, not as bytes.** A program reading
-a terminal cannot be given an image: the pipe carries text. So what is
-typed is a PNG's path, which is what the programs that take pasted
-images already expect to read.
+**A picture goes by the clipboard where there is one to reach, and by a
+file where there is not.** A program reading a terminal cannot be handed
+an image: the pipe carries text. But most of the programs that take a
+pasted picture read the clipboard of the machine they run on, so the
+question is whether this window can put one there.
+
+- A pane on this machine: the picture is already on the clipboard that
+  program reads, so the paste key is pressed and that is all of it.
+- A pane on a gridterm this window has taken over: the picture is sent
+  over a channel of its own on the connection that is already open, put
+  on that machine's clipboard, and then the paste key is pressed. Only
+  once it has landed, or it would paste whatever was there before.
+- A pane on a machine reached by SSH: there is no clipboard over there
+  to reach, so the picture is written on that machine and the path typed
+  names a file it can open.
 
 Reading the clipboard is per-platform. `clipboard_image_windows.go` asks
 the operating system for a device independent bitmap and turns it into
 an image; everywhere else reports that there is no picture, so the
 command says so rather than failing in a way that reads like a fault.
 
-Where the picture goes depends on what the pane is connected through. A
-pane on this machine gets a file here. A pane on a gridterm this window
-has taken over gets the picture put on *that* machine's clipboard, over
-a channel of its own on the connection that is already open, and then
-the paste key is pressed for it -- so the program reads the picture the
-way it reads one pasted by somebody sitting at that machine. The paste
-is pressed only once the picture has landed, or it would paste whatever
-was on that clipboard before.
-
 There is no standard for this. OSC 52 is the standard for a clipboard
 over a terminal and it carries text only; Sixel and the rest draw a
 picture rather than putting one anywhere. So this is gridterm's own
 channel between two gridterms.
 
-A pane on a machine reached by SSH has no gridterm over there to hand a
-clipboard to, so the picture is written on that machine instead and the
-path typed names a file it can open. Under the home directory of
-whoever the connection logs in as, because where a temporary directory
-is depends on the machine and this has only a path separator to go on.
+The file an SSH pane gets goes under the home directory of whoever the
+connection logs in as, because where a temporary directory is depends on
+the machine and this has only a path separator to go on.
 
 **Damage tracking is load-bearing.** `ebiten.SetScreenClearedEveryFrame(false)`
 means a row the renderer skips shows the *previous* frame, not a blank.

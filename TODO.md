@@ -3,6 +3,43 @@
 Things Marcus has asked for that are not done yet. Newest first within
 each group. A line goes when the work is in and reviewed.
 
+## The modifier keys are dead on the mouse
+
+Found by staticcheck on 2026-09-19, and it bears on the context menu
+questions below.
+
+- **`currentMods()` always returns nothing on Windows.** It reads
+  `ebiten.IsKeyPressed`, which in the fork this builds against says of
+  itself: "On GLFW desktop platforms, key state is no longer polled per
+  frame. IsKeyPressed always returns false on those platforms." The
+  implementation reads `inputState.KeyPressed`, and the only backends
+  that ever write that map are the browser's and mobile's. There is no
+  desktop writer, so on Windows it is always empty.
+
+- **What reads it.** Two things, both in the program rather than in a
+  test:
+  - `input/ebitenin/mouse.go:46` puts `currentMods()` on every mouse
+    event, so a click carries no modifier. Shift to reach past a
+    program that has grabbed the mouse, and Alt to drag a block
+    selection, are both read from that mask.
+  - `walk.go:132` ends the Ctrl+Tab walk on the first frame Ctrl is not
+    held. It never reads as held, so the walk should end on the frame
+    after it opens.
+
+- **Why the tests do not see it.** They set `a.modsNow`, and the fake
+  input layer builds its own events. Nothing in the suite goes through
+  `currentMods`.
+
+- **The fix the fork points at** is `AppendKeyEvents`, or the
+  `AppendInputEvents` this window already reads for the keyboard: each
+  event carries `ev.Mods`, which is where the keyboard gets modifiers
+  that do work. The mouse needs the same mask, either carried on the
+  event or kept from the last key event seen.
+
+- **It has to be settled before the context menu.** The first question
+  below asks whether Shift+right-click should bypass a program that owns
+  the mouse. That cannot work at all until this does.
+
 ## Waiting on an answer from Marcus
 
 These are all about the context menu, which is planned below.

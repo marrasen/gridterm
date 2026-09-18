@@ -498,18 +498,24 @@ on 2026-09-19. There are two savings worth making and one that is not:
   screen is something the user is looking at, and it should move at the
   rate the screen refreshes.
 
-The third one is a rule this window has broken twice, and both places
-say so in their own comments. `pulseStep` is 200ms "so the pulse moves
-in steps slow enough to see and few enough to cost nothing", and
-`glowStep` is 250ms across six steps for the same reason. Between steps
-the frame is skipped, which is the saving; the price is that the two
-things the window animates for its own sake are visibly steppy.
+The way to have both is to animate in bursts. The border round a shared
+pane and the mark on a busy row each pulse for 250ms once a second:
+every frame while a pulse is running, and perfectly still for the other
+750ms, which the compositor reads as nothing to do. Smooth where it is
+looked at, and three frames in four skipped anyway.
 
-The way out is not to smooth them and pay 60fps for as long as a pane is
-shared. It is to ask what has to animate at all. A border that says a
-pane is shared has to be noticed once, not forever, and a glow that
-never stops is a glow nobody sees after a minute. `zoomTime` is the
-shape to copy: 140ms, eased, per-frame, and then nothing.
+Both of those used to be stepped instead -- 200ms and 250ms a step --
+and both said in their own comments that it was to cost nothing. It is
+the wrong worry. Marcus runs termflix in a full-screen gridterm on an
+ultrawide monitor, which animates every character on it at 24fps, and
+the fans stay off. A few borders and icons are not what makes a computer
+warm. If they ever look expensive, that is a thing to measure and fix
+rather than a reason to animate less.
+
+One trap, which the old stepped pulse had a comment about and the fade
+had to learn again: a mark that pulses must not rest *on* the colour it
+pulses from, or a busy row at rest cannot be told from a settled one.
+`pulseRest` is what keeps it off the end.
 
 **Damage tracking is load-bearing.** `ebiten.SetScreenClearedEveryFrame(false)`
 means a row the renderer skips shows the *previous* frame, not a blank.

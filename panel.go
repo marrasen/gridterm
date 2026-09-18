@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"image/color"
 	"io"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -42,11 +43,13 @@ func icon(k conns.Kind) grid.Art {
 	return grid.Icon(grid.IconTerminal)
 }
 
-// pulseStep is how long one step of the pulse lasts. A row that changes
-// colour every frame is a row that dirties itself every frame, so the
-// pulse moves in steps slow enough to see and few enough to cost
-// nothing.
-const pulseStep = 200 * time.Millisecond
+// pulseEvery is how often a busy row pulses, and pulseFor how long one
+// pulse takes. Between pulses the row sits still, which is what lets the
+// window skip three frames in four while something is busy.
+const (
+	pulseEvery = time.Second
+	pulseFor   = 250 * time.Millisecond
+)
 
 // newPanel builds the list of connections, in the window's colours.
 //
@@ -83,14 +86,28 @@ func (a *app) stateFG(state meter.State, now time.Time) color.RGBA {
 // mark resting on the steady colour could not be told from a row that is
 // only sitting there.
 func pulse(from, to color.RGBA, now time.Time) color.RGBA {
-	// A triangle: up the steps and back down them.
-	const steps = 4
-	at := int(now.UnixMilli()/int64(pulseStep/time.Millisecond)) % (steps * 2)
-	if at >= steps {
-		at = steps*2 - at
-	}
-	return grid.Blend(from, to, at+1, steps+2)
+	const of = 1 << 10
+	return grid.Blend(from, to, int(pulseAt(now)*of)+1, of+2)
 }
+
+// pulseAt is how far into a pulse a moment is: pulseRest between
+// pulses, 1 at the top of one, and back again.
+//
+// It holds exactly still between pulses, so the row is drawn the same as
+// the frame before and the window can skip that frame.
+func pulseAt(now time.Time) float64 {
+	into := now.UnixMilli() % int64(pulseEvery/time.Millisecond)
+	fade := int64(pulseFor / time.Millisecond)
+	if into >= fade {
+		return pulseRest
+	}
+	return pulseRest + (1-pulseRest)*math.Sin(float64(into)/float64(fade)*math.Pi)
+}
+
+// pulseRest is how far towards the busy colour a mark sits between
+// pulses. Never nothing: a mark resting on the steady colour could not
+// be told from a row that is only sitting there.
+const pulseRest = 1.0 / 6.0
 
 // sidebarTop and sidebarFoot are the two ends of the ground the window's
 // frame is drawn on: the sidebar shades between them down its length,

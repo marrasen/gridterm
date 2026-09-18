@@ -195,7 +195,7 @@ func TestPanelShowsTheFourStates(t *testing.T) {
 	}
 	var moved bool
 	for step := range 8 {
-		at := panelNow.Add(time.Duration(step) * pulseStep)
+		at := panelNow.Add(time.Duration(step) * pulseFor / 8)
 		if panelMarks(a, at)[0] != busy {
 			moved = true
 		}
@@ -378,7 +378,7 @@ func TestThePulseMovesOnlyTheActiveRowsIcon(t *testing.T) {
 	}
 
 	before := snap(panelNow)
-	after := snap(panelNow.Add(pulseStep))
+	after := snap(panelNow.Add(pulseFor / 2))
 
 	area, _ := sideArea(a)
 	want := [2]int{area.X + 2, area.Y + row}
@@ -853,13 +853,13 @@ func TestPanelDoesNotDirtyAnIdleFrame(t *testing.T) {
 	// kept pulsing after a connection settled would redraw for as long
 	// as the window was open.
 	for step := 1; step <= 8; step++ {
-		at := panelNow.Add(meter.Settle + time.Duration(step)*pulseStep)
+		at := panelNow.Add(meter.Settle + time.Duration(step)*pulseEvery)
 		a.refreshPanel(at)
 		paint(a)
 		a.sideRegion.g.ClearDirty()
 	}
 	for step := 1; step <= 8; step++ {
-		at := panelNow.Add(2*meter.Settle + time.Duration(step)*pulseStep)
+		at := panelNow.Add(2*meter.Settle + time.Duration(step)*pulseEvery)
 		a.refreshPanel(at)
 		paint(a)
 		if a.sideRegion.g.AnyDirty() {

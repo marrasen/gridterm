@@ -3,6 +3,7 @@ package main
 import (
 	"image"
 	"image/color"
+	"math"
 	"time"
 
 	"github.com/marrasen/gridterm/glyph"
@@ -11,12 +12,17 @@ import (
 	"github.com/marrasen/gridterm/ui/term"
 )
 
-// glowStep is how long one step of a border's glow lasts, slow so an
-// idle window still skips most of its frames.
-const glowStep = 250 * time.Millisecond
-
-// glowSteps is how many steps the glow takes from dim to bright.
-const glowSteps = 6
+// glowEvery is how often a border pulses, and glowFor how long one pulse
+// takes. Between pulses the border sits still, which is what lets the
+// window skip three frames in four while a pane is shared.
+//
+// A pulse rather than a glow that never stops: something moving on
+// screen is something being looked at, and a border that breathes for
+// ever is one nobody sees after a minute.
+const (
+	glowEvery = time.Second
+	glowFor   = 250 * time.Millisecond
+)
 
 // sharing is who has a pane besides the user.
 type sharing struct {
@@ -79,7 +85,7 @@ type sharedMark struct {
 // sharedHues are the colours a shared pane is marked in, outermost
 // first. It is the one place the order is decided, so the border's rings
 // and the row's stripe cannot drift apart.
-func (a *app) sharedHues(in sharing, step int) [2]color.RGBA {
+func (a *app) sharedHues(in sharing, step float64) [2]color.RGBA {
 	colours := a.borderColours()
 	var out [2]color.RGBA
 	at := 0
@@ -132,14 +138,22 @@ func (m *sharedMark) place(area ui.Rect, src *render.Geometry, met glyph.Metrics
 	m.layer.Hidden = false
 }
 
-// glowAt is how far through the glow a moment is, taken from the clock
-// so every border on screen glows in step.
-func glowAt(now time.Time) int {
-	at := int(now.UnixMilli()/int64(glowStep/time.Millisecond)) % (glowSteps * 2)
-	if at >= glowSteps {
-		at = glowSteps*2 - at
+// glowAt is how far into a pulse a moment is: 0 at rest, 1 at the top,
+// and back to 0. Taken from the clock so every border on screen pulses
+// together.
+//
+// It is exactly 0 for most of each period, and the border drawn from it
+// is then the same as the frame before, which is what the compositor
+// reads as nothing to do.
+func glowAt(now time.Time) float64 {
+	into := now.UnixMilli() % int64(glowEvery/time.Millisecond)
+	fade := int64(glowFor / time.Millisecond)
+	if into >= fade {
+		return 0
 	}
-	return at
+	// Up and back down over the pulse, on a curve rather than a corner:
+	// a border that snapped to bright would read as a flicker.
+	return math.Sin(float64(into) / float64(fade) * math.Pi)
 }
 
 // draw gives the rules their colours, outermost first.
@@ -158,12 +172,12 @@ func (m *sharedMark) draw(hues [2]color.RGBA) {
 	}
 }
 
-// glow sets a border colour's alpha for one step of the glow, stopping
+// glow sets a border colour's alpha for a moment in the pulse, stopping
 // short of both ends so the border never goes out and never turns into
 // a solid block.
-func glow(c color.RGBA, step int) color.RGBA {
+func glow(c color.RGBA, at float64) color.RGBA {
 	const dim, bright = 0x50, 0xd0
-	c.A = uint8(dim + (bright-dim)*(step+1)/(glowSteps+2))
+	c.A = uint8(dim + int(float64(bright-dim)*at+0.5))
 	return c
 }
 

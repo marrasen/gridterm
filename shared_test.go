@@ -195,31 +195,45 @@ func TestTheBorderRepaintsOnlyWhenTheGlowMoves(t *testing.T) {
 	if m == nil {
 		t.Fatal("no border")
 	}
-	// On a step boundary rather than time.Now(), or a run that started a
-	// fraction before one would step the glow mid-test.
+	// On a period boundary rather than time.Now(), which is where a
+	// pulse begins.
 	now := time.UnixMilli(0)
-	a.drawShared(now)
-	was := append([]render.Stroke(nil), rules(m)...)
 
-	a.drawShared(now.Add(glowStep / 10))
-	if !sameRules(rules(m), was) {
-		t.Error("the border repainted within one step of the glow")
+	// Between pulses the border sits still, which is what lets the
+	// window skip the frame.
+	a.drawShared(now.Add(glowFor))
+	rested := append([]render.Stroke(nil), rules(m)...)
+	a.drawShared(now.Add(glowEvery - time.Millisecond))
+	if !sameRules(rules(m), rested) {
+		t.Error("the border moved between pulses, so no frame can be skipped")
 	}
 
-	a.drawShared(now.Add(glowStep))
+	// And within one it moves every frame it is asked for.
+	a.drawShared(now.Add(glowFor / 4))
+	was := append([]render.Stroke(nil), rules(m)...)
+	a.drawShared(now.Add(glowFor / 4).Add(frameAt60))
 	if sameRules(rules(m), was) {
-		t.Error("the border did not repaint when the glow moved on")
+		t.Error("the border stood still for a frame in the middle of a pulse")
 	}
 }
+
+// frameAt60 is one frame of a sixty-a-second screen, which is the rate
+// an animation has to move at to look smooth.
+const frameAt60 = 16 * time.Millisecond
+
+// glowSamples is how many moments of a pulse a test looks at, enough to
+// see it rise and fall.
+const glowSamples = 16
 
 // The glow is a tint that rises and falls. It never goes out and never
 // reaches full, so the border is always there and never a flat block.
 func TestTheGlowRisesAndFalls(t *testing.T) {
 	var dim, bright uint8 = 0xff, 0
-	steps := make([]int, 0, glowSteps*2)
+	const samples = 16
+	steps := make([]float64, 0, samples)
 	start := time.UnixMilli(0)
-	for i := range glowSteps * 2 {
-		step := glowAt(start.Add(time.Duration(i) * glowStep))
+	for i := 0; i < samples; i++ {
+		step := glowAt(start.Add(time.Duration(i) * glowFor / (samples / 2)))
 		steps = append(steps, step)
 		at := glow(color.RGBA{R: 0x40, G: 0x80, B: 0xc0, A: 0xff}, step).A
 		dim, bright = min(dim, at), max(bright, at)
@@ -236,8 +250,8 @@ func TestTheGlowRisesAndFalls(t *testing.T) {
 	if !up || !down {
 		t.Errorf("the glow went %v over a lap, want it to rise and fall", steps)
 	}
-	if got := glowAt(start.Add(time.Duration(len(steps)) * glowStep)); got != steps[0] {
-		t.Errorf("a lap ended on step %d and began on %d, so the glow jumps", got, steps[0])
+	if got := glowAt(start.Add(glowEvery)); got != steps[0] {
+		t.Errorf("a lap ended on %v and began on %v, so the glow jumps", got, steps[0])
 	}
 	if dim >= bright {
 		t.Errorf("the glow ran from %#x to %#x, want it to rise and fall", dim, bright)
@@ -294,11 +308,11 @@ func TestTheBorderGlowsAtTheMomentTheFrameBegan(t *testing.T) {
 	a.frameAt = began
 	// The clock moves on between the update and the draw, the way it
 	// does in a window that took a while over its frame.
-	a.now = func() time.Time { return began.Add(glowStep) }
+	a.now = func() time.Time { return began.Add(glowFor / 2) }
 	a.Draw(a.screen)
 
 	want := a.sharedHues(a.sharedIn(pane), glowAt(began))[0]
-	late := a.sharedHues(a.sharedIn(pane), glowAt(began.Add(glowStep)))[0]
+	late := a.sharedHues(a.sharedIn(pane), glowAt(began.Add(glowFor/2)))[0]
 	if want == late {
 		t.Fatal("the glow did not move over the step, so this proves nothing")
 	}
@@ -320,8 +334,8 @@ func TestTheBorderItselfBrightensAndDims(t *testing.T) {
 
 	start := time.UnixMilli(0)
 	var dim, bright uint8 = 0xff, 0
-	for i := range glowSteps * 2 {
-		a.drawShared(start.Add(time.Duration(i) * glowStep))
+	for i := 0; i < glowSamples; i++ {
+		a.drawShared(start.Add(time.Duration(i) * glowFor / (glowSamples / 2)))
 		at := rules(m)[0].Colour.A
 		dim, bright = min(dim, at), max(bright, at)
 	}
@@ -496,8 +510,8 @@ func TestTheRowsMarkGlowsWithTheBorder(t *testing.T) {
 
 	start := time.UnixMilli(0)
 	var dim, bright uint8 = 0xff, 0
-	for i := range glowSteps * 2 {
-		at := a.sharedEdge(pane, start.Add(time.Duration(i)*glowStep))[0].A
+	for i := 0; i < glowSamples; i++ {
+		at := a.sharedEdge(pane, start.Add(time.Duration(i)*glowFor/(glowSamples/2)))[0].A
 		dim, bright = min(dim, at), max(bright, at)
 	}
 	if dim >= bright {
@@ -518,8 +532,8 @@ func TestTheRowAndTheBorderGlowTogether(t *testing.T) {
 
 	start := time.UnixMilli(0)
 	var dim, bright uint8 = 0xff, 0
-	for i := range glowSteps * 2 {
-		now := start.Add(time.Duration(i) * glowStep)
+	for i := 0; i < glowSamples; i++ {
+		now := start.Add(time.Duration(i) * glowFor / (glowSamples / 2))
 		a.drawShared(now)
 		border := rules(m)[0].Colour
 		row := rowOf(t, a, pane, now).Edge[0]
@@ -621,7 +635,7 @@ func TestASharedPaneCostsNothingBetweenGlowSteps(t *testing.T) {
 		t.Errorf("a second frame in the same step of the glow = %+v, want it skipped entirely", got)
 	}
 
-	at = at.Add(glowStep)
+	at = at.Add(frameAt60)
 	frame(t, a)
 	got := a.comp.Stats()
 	if got.Skipped {
@@ -723,5 +737,62 @@ func TestATinyPaneGetsOnlyTheRingsItCanHold(t *testing.T) {
 		if !rule.Rect.In(pane) {
 			t.Errorf("rule %d is at %v and the pane at %v", i, rule.Rect, pane)
 		}
+	}
+}
+
+// A pulse moves every frame while it is running, and holds still
+// between pulses.
+//
+// Smooth while it moves, because something moving on screen is
+// something being looked at. Still between, because that is what lets
+// the window skip three frames in four.
+func TestTheGlowMovesEveryFrameAndThenHoldsStill(t *testing.T) {
+	start := time.UnixMilli(0)
+
+	// Every frame of the pulse differs from the one before it.
+	was := glowAt(start)
+	for at := frameAt60; at < glowFor-frameAt60; at += frameAt60 {
+		now := glowAt(start.Add(at))
+		if now == was {
+			t.Errorf("the glow stood still at %v, and a pulse has to move every frame", at)
+		}
+		was = now
+	}
+
+	// And then nothing moves until the next one.
+	rest := glowAt(start.Add(glowFor))
+	for at := glowFor; at < glowEvery; at += frameAt60 {
+		if got := glowAt(start.Add(at)); got != rest {
+			t.Fatalf("the glow moved to %v at %v, and between pulses it holds still", got, at)
+		}
+	}
+	if got := glowAt(start.Add(glowEvery)); got != glowAt(start) {
+		t.Errorf("a period ended on %v and began on %v, so the glow jumps", got, glowAt(start))
+	}
+}
+
+// A window with a shared pane draws while the border is pulsing and
+// skips the frames between pulses, which is three in four.
+func TestASharedPaneLetsTheWindowRestBetweenPulses(t *testing.T) {
+	a, pane := aSharedWindow(t)
+	handOver(t, a, pane)
+	at := time.UnixMilli(0)
+	a.now = func() time.Time { return at }
+	frame(t, a)
+
+	// A frame in the middle of a pulse draws.
+	at = at.Add(glowFor / 2)
+	frame(t, a)
+	if got := a.comp.Stats(); got.Skipped {
+		t.Error("the window skipped a frame in the middle of a pulse")
+	}
+
+	// And one between pulses does not.
+	at = at.Add(glowFor)
+	frame(t, a)
+	at = at.Add(frameAt60)
+	frame(t, a)
+	if got := a.comp.Stats(); !got.Skipped {
+		t.Errorf("a frame between pulses = %+v, want it skipped entirely", got)
 	}
 }

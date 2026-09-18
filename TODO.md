@@ -331,6 +331,20 @@ there is one key for position and one for recency.
   test compare byte for byte instead of looking for the images inside.
   About 120 lines of COFF writing.
 
+- **Nothing past openWindow can be tested.** `sizeTheWindow` tells the
+  window system how big to open and which icon to use, and cutting
+  `ebiten.SetWindowIcon` out of it goes unnoticed. Everything in there
+  is an ebiten call that needs a real window, so pinning it would mean
+  a seam per call for no gain: a window with no icon is seen the moment
+  it opens.
+
+- **A flaky test makes a mutation sweep lie.** Two of the cuts above
+  were reported as caught, and the only test that caught them was
+  `TestKickingAWindowThatHasAlreadyGoneSaysNothing`, which fails on its
+  own about one run in six. A sweep that counts a flake as a kill says
+  the code is pinned when nothing pins it. The three flaky tests below
+  are worth fixing for that as much as for the noise.
+
 - **`TestAFinishedJobLetsGoOfItsContext` fails now and then.** It says
   `the job finished still holding its context` at jobs/stat_test.go:179.
   Seen once while the whole suite was running; ten runs of it alone

@@ -146,7 +146,7 @@ func TestEachTileGetsAScaledLayer(t *testing.T) {
 	a := aWindowOfPanes(t, 4)
 	tiles := openTiles(t, a)
 
-	a.placeSwitcher()
+	frame(t, a)
 
 	if got := len(a.switcher.shown); got != 4 {
 		t.Fatalf("%d panes have a picture, want 4", got)
@@ -190,11 +190,11 @@ func TestEachTileGetsAScaledLayer(t *testing.T) {
 func TestATileWithNoRoomHidesItsPicture(t *testing.T) {
 	a := aWindowOfPanes(t, 4)
 	openTiles(t, a)
-	a.placeSwitcher()
+	frame(t, a)
 
 	// One row, which leaves the tiles in the first row no height at all.
 	a.root.Layout(ui.Rect{Cols: 140, Rows: 1})
-	a.placeSwitcher()
+	frame(t, a)
 
 	for what, tile := range a.switcher.shown {
 		if tile.layer.Hidden {
@@ -211,7 +211,7 @@ func TestATileWithNoRoomHidesItsPicture(t *testing.T) {
 func TestThePictureIsWhatThePaneIsShowingNow(t *testing.T) {
 	a := aWindowOfPanes(t, 4)
 	openTiles(t, a)
-	a.placeSwitcher()
+	frame(t, a)
 
 	const said = "printed while the switcher was open"
 	a.shells[0].out <- []byte(said)
@@ -225,7 +225,7 @@ func TestThePictureIsWhatThePaneIsShowingNow(t *testing.T) {
 		}
 		return false
 	})
-	a.placeSwitcher()
+	frame(t, a)
 
 	tile := a.switcher.shown[ui.Widget(pane)]
 	if tile == nil {
@@ -261,7 +261,7 @@ func TestClosingTheSwitcherTakesThePicturesOff(t *testing.T) {
 	// than just one of them.
 	was := len(a.comp.Layers())
 	openTiles(t, a)
-	a.placeSwitcher()
+	frame(t, a)
 	// Its own layer and one picture per pane.
 	if got := len(a.comp.Layers()) - was; got != 5 {
 		t.Fatalf("the switcher put %d layers on, want 5", got)
@@ -284,13 +284,13 @@ func TestClosingTheSwitcherTakesThePicturesOff(t *testing.T) {
 func TestAPaneThatClosesLosesItsPicture(t *testing.T) {
 	a := aWindowOfPanes(t, 4)
 	openTiles(t, a)
-	a.placeSwitcher()
+	frame(t, a)
 	going := a.panesInSidebarOrder()[3].(*term.Terminal)
 
 	if err := a.closePane(going); err != nil {
 		t.Fatalf("close it: %v", err)
 	}
-	a.placeSwitcher()
+	frame(t, a)
 
 	if _, still := a.switcher.shown[ui.Widget(going)]; still {
 		t.Error("the pane that closed still has a picture")
@@ -341,11 +341,11 @@ func TestAWindowTooSmallSaysSo(t *testing.T) {
 func TestAWindowWithNoRoomAtAllHidesEveryPicture(t *testing.T) {
 	a := aWindowOfPanes(t, 4)
 	tiles := openTiles(t, a)
-	a.placeSwitcher()
+	frame(t, a)
 
 	// No room, so the tiles have no boxes to place the pictures in.
 	tiles.Layout(ui.Size{})
-	a.placeSwitcher()
+	frame(t, a)
 
 	if got := len(tiles.Areas()); got != 0 {
 		t.Fatalf("the tiles laid out %d boxes in no room", got)
@@ -384,7 +384,7 @@ func TestAScreenTooBigForATextureIsLeftOut(t *testing.T) {
 	}
 	openTiles(t, a)
 
-	a.placeSwitcher()
+	frame(t, a)
 
 	if _, drawn := a.switcher.shown[ui.Widget(huge)]; drawn {
 		t.Error("a screen too big for a texture was drawn anyway")
@@ -400,12 +400,12 @@ func TestAScreenTooBigForATextureIsLeftOut(t *testing.T) {
 func TestATileSaysWhatThePaneIsCalledNow(t *testing.T) {
 	a := aWindowOfPanes(t, 4)
 	tiles := openTiles(t, a)
-	a.placeSwitcher()
+	frame(t, a)
 	pane := a.switcher.panes[0]
 	was := tiles.Name(0)
 
 	renamePane(t, a, pane, "a new title")
-	a.placeSwitcher()
+	frame(t, a)
 
 	got := tiles.Name(0)
 	if got == was {
@@ -561,7 +561,7 @@ func TestTheZoomIsTimedFromTheFrameItOpenedOn(t *testing.T) {
 func TestTheZoomDoesNotRepaintTheWindow(t *testing.T) {
 	a := aWindowOfPanes(t, 4)
 	openTilesZooming(t, a)
-	a.placeSwitcher()
+	frame(t, a)
 
 	a.g.ClearDirty()
 	a.placeSwitcher()

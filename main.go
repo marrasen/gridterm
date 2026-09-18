@@ -21,16 +21,9 @@ import (
 	"golang.org/x/image/font/gofont/gomonobolditalic"
 	"golang.org/x/image/font/gofont/gomonoitalic"
 
-	"github.com/marrasen/gridterm/appicon"
-	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/glyph"
-	"github.com/marrasen/gridterm/grid"
-	"github.com/marrasen/gridterm/jobs"
 	"github.com/marrasen/gridterm/mcp"
-	"github.com/marrasen/gridterm/meter"
 	"github.com/marrasen/gridterm/remote"
-	"github.com/marrasen/gridterm/render"
-	"github.com/marrasen/gridterm/session"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/term"
 	"github.com/marrasen/gridterm/vt"
@@ -136,139 +129,26 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-
 	atlas, err := glyph.NewAtlas(fonts, *fontSize, 96)
 	if err != nil {
 		log.Fatalf("build glyph atlas: %v", err)
 	}
-	m := atlas.Metrics()
 
-	a := &app{atlas: atlas, renderer: render.New(atlas), fontSize: *fontSize}
-	// What -font-family chose, so the font menu treats it as the one in
-	// use rather than offering to switch to it again.
-	a.fontFamily = family
-	a.comp = render.NewCompositor(a.renderer)
-	// The compositor is called by the game loop and has nowhere to hand
-	// a failure back to.
-	a.comp.OnError = a.logError
-
-	const initCols, initRows = 100, 32
-	pal := vt.DefaultPalette()
-	a.g = grid.New(initCols, initRows, pal.FG, pal.BG)
-	a.layer = &render.Layer{Grid: a.g}
-	a.comp.Add(a.layer)
-	a.lastSize = [2]int{initCols, initRows}
-
-	// What every pane is started with, so a split can open another.
-	a.command = strings.Fields(*cmdline)
-	a.keys = remote.NewRing()
-	a.ctx, a.stop = context.WithCancel(context.Background())
-	a.book = loadBook()
-	a.newShell = func(argv []string, dir string, cols, rows int) (session.Session, error) {
-		return session.StartLocal(session.LocalConfig{
-			Command: argv,
-			Dir:     dir,
-			Cols:    cols,
-			Rows:    rows,
-		})
-	}
-	if *showStats {
-		a.stats = newWatchStats(os.Stderr)
-	}
-	a.registry = conns.New()
-	// A copy that could not be made is said. Something the user was
-	// told is on the clipboard and is not is worth knowing about.
-	a.clip.failed = func(err error) {
-		a.pump.post(func() { a.reportError("Could not copy to the clipboard", err) })
-	}
-	a.rates = make(map[*conns.Entry]*meter.Rate)
-	a.machines = newMachines()
-	a.windows = newWindows(a.book)
-	a.serving = newServing()
-	a.agents = newAgents()
-	a.shellPick = newShellPick()
-	a.saved = newSavedCommands()
-	a.paneTitles = newPaneTitles()
-	a.keyFiles = newKeyIndex()
-	a.theme = newThemePick()
-	a.useSettings(openSettings())
-	a.tunnels = make(map[*conns.Entry]*tunnel)
-	a.queue = jobs.New(0)
-	a.jobs = make(map[*conns.Entry]*jobs.Job)
-	a.asking = make(map[chan jobs.Choice]func())
-	a.scrollback = *scroll
-	a.colours = pal
-	a.loadThemes()
-	a.offerToServeAgain()
-	if err := a.useTheme(a.startTheme()); err != nil {
-		// The scheme the window opens on comes from the list, which was
-		// checked as it was read, so this is not reachable from a file.
-		a.logError(err)
-	}
-	a.panes = make(map[*term.Terminal]*conns.Entry)
-	a.scaled = make(map[*term.Terminal]*scaledPane)
-	a.shared = make(map[*term.Terminal]*sharedMark)
-	a.ended = make(map[*term.Terminal]bool)
-	a.started = make(map[*term.Terminal]*startedAs)
-	a.exits = make(chan struct{}, exitQueue)
-
-	first, err := a.openFirst(startup{target: *sshTarget, command: a.command})
+	a, err := openWindow(wanted{
+		atlas:      atlas,
+		fontSize:   *fontSize,
+		fontFamily: family,
+		command:    strings.Fields(*cmdline),
+		scrollback: *scroll,
+		ssh:        *sshTarget,
+		stats:      *showStats,
+		shot:       *shotScript,
+		scan:       true,
+	})
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	a.commands()
-	if err := a.loadShortcuts(); err != nil {
-		log.Fatal(err)
-	}
-	shot, err := parseShotScript(*shotScript)
-	if err != nil {
-		log.Fatalf("-shot: %v", err)
-	}
-	a.shot = shot
-	// Off the drawing goroutine: reading every font file the system has
-	// takes long enough to be seen as the window failing to open, and
-	// wsl.exe is slow to say which distributions it has.
-	a.startFontScan()
-	a.startShellScan()
-
-	// The tree: the menu bar over the sidebar and the stage beside it.
-	// Everything the window opens goes on the stage, which shows one at
-	// a time; the sidebar is what chooses.
-	a.panel = a.newPanel()
-	a.side = a.newSidebar()
-	a.stage = a.newDeck(startingPanes(first)...)
-	a.dock = a.newDock(a.stage)
-	// The sidebar is painted onto a grid of its own, over the window's,
-	// so that its rows can have room around them while the terminal
-	// beside it keeps every line the same height.
-	a.sideRegion = newRegion(a.side, grid.New(0, 0, a.colours.FG, a.colours.BG), &a.sideGeo)
-	a.dock.PanelElsewhere = true
-	a.comp.Add(a.sideRegion.layer)
-	// Open to begin with: it is how everything in the window is reached,
-	// so a window that hid it would open with no way in.
-	a.dock.Collapsed = false
-	a.bar = a.newMenubar(a.dock)
-	a.refreshServers()
-	// Told once there is a window to tell them in: this runs before one
-	// exists, so the message waits for the first frame.
-	a.reportBookError()
-	a.root.SetWidget(a.bar)
-	a.root.Layout(ui.Rect{Cols: initCols, Rows: initRows})
-
-	// What the window frame and the taskbar show while gridterm runs.
-	ebiten.SetWindowIcon(appicon.Images())
-	ebiten.SetWindowTitle("gridterm")
-	// Room for the padding on top of the cells, or the window opens a
-	// column and a row short of the size it was asked for.
-	padX, padY := a.padsWanted()
-	ebiten.SetWindowSize(
-		m.CellW*initCols+padX*m.CellW/grid.PadUnit,
-		m.CellH*initRows+padY*m.CellH/grid.PadUnit)
-	ebiten.SetWindowResizingMode(ebiten.WindowResizingModeEnabled)
-	// Damage tracking only pays off if ebiten keeps the previous frame.
-	ebiten.SetScreenClearedEveryFrame(false)
-	ebiten.SetVsyncEnabled(true)
+	a.sizeTheWindow(atlas.Metrics())
 
 	// A clean quit is ebiten.Termination rather than nil, so the shells
 	// have to be closed into a separate error or every failure to shut

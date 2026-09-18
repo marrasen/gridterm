@@ -85,22 +85,17 @@ func withScreen(t *testing.T, a *testApp) {
 	}
 }
 
-// frame runs one of the window's frames: the placing an update does, and
-// the draw.
+// frame runs one of the window's frames: the window's own Update, and
+// then the draw.
+//
+// Update itself rather than the same calls written out again. A list
+// written out here drifts from the one the window runs, and a step
+// added to the window and not to the list is a step no test takes.
 func frame(t *testing.T, a *testApp) {
 	t.Helper()
-	a.pump.run()
-	// The window's own clock, so a test that moves it moves everything
-	// the frame measures against it.
-	a.frameAt = a.clock()
-	a.stepWalk()
-	a.noteFocus()
-	a.refreshCaptions()
-	a.refreshPanel(a.frameAt)
-	a.placeRegions()
-	a.placeScaled()
-	a.placeShared()
-	a.placeWalk()
+	if err := a.Update(); err != nil {
+		t.Fatalf("the frame: %v", err)
+	}
 	if a.screen == nil {
 		cw, ch := a.renderer.CellSize()
 		cols, rows := a.g.Size()

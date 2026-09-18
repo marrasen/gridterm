@@ -1281,10 +1281,20 @@ func TestAButtonCastsABoxyShadow(t *testing.T) {
 	if got := g.At(box.X+at[0]+width, box.Y+row).BG; got != shadowBG {
 		t.Errorf("beside the button is %v, want the shadow %v", got, shadowBG)
 	}
-	// And the row under it, a column further right.
+	// And the row under it, a column further right, as the top half of
+	// the cell only: a whole row is twice the thickness of the single
+	// column beside the button.
 	for i := 1; i <= width; i++ {
-		if got := g.At(box.X+at[0]+i, box.Y+row+1).BG; got != shadowBG {
-			t.Errorf("under the button at %d is %v, want the shadow %v", i, got, shadowBG)
+		cell := g.At(box.X+at[0]+i, box.Y+row+1)
+		if cell.Rune != shadowHalf {
+			t.Errorf("under the button at %d is %q, want the top half of the cell", i, cell.Rune)
+		}
+		if cell.FG != shadowBG {
+			t.Errorf("under the button at %d is drawn in %v, want the shadow %v", i, cell.FG, shadowBG)
+		}
+		if cell.BG != tf.form.Style.BG {
+			t.Errorf("under the button at %d sits on %v, want the dialog's %v",
+				i, cell.BG, tf.form.Style.BG)
 		}
 	}
 	// The cell straight under the button's first column is not in the

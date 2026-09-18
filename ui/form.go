@@ -609,7 +609,7 @@ func (f *Form) paintButtons(in grid.View, y int) {
 		if focused, isButton := f.Focused(); isButton && focused == i {
 			fg, bg = f.Style.ActiveFG, f.Style.ActiveBG
 		}
-		DrawButtonShadow(in, at, y, ButtonWidth(f.buttons[i].Title), f.Style.ButtonShadowBG)
+		DrawButtonShadow(in, at, y, ButtonWidth(f.buttons[i].Title), f.Style.ButtonShadowBG, f.Style.BG)
 		DrawButton(in, at, y, f.buttons[i].Title, fg, bg)
 	}
 }
@@ -945,23 +945,36 @@ func DrawButton(v grid.View, x, y int, title string, fg, bg color.RGBA) {
 	line.SetString(0, 0, label, fg, bg, 0)
 }
 
+// shadowHalf is the top half of a cell, which is how the shadow under a
+// button is drawn. A cell is about twice as tall as it is wide, so a
+// whole row under the button would be twice the thickness of the single
+// column beside it.
+const shadowHalf = '▀'
+
 // DrawButtonShadow darkens the cell to the right of a button and the row
 // under it, a column further right, which is the shadow a DOS program
 // cast. A colour with no alpha draws nothing.
-func DrawButtonShadow(v grid.View, x, y, width int, bg color.RGBA) {
-	if bg.A == 0 || width <= 0 {
+//
+// ground is what the shadow is laid on, which the half-height part under
+// the button shows the rest of.
+func DrawButtonShadow(v grid.View, x, y, width int, shadow, ground color.RGBA) {
+	if shadow.A == 0 || width <= 0 {
 		return
 	}
 	cols, rows := v.Size()
-	cell := grid.Cell{Rune: ' ', FG: bg, BG: bg, Width: 1}
-	set := func(x, y int) {
+	set := func(x, y int, cell grid.Cell) {
 		if x < 0 || y < 0 || x >= cols || y >= rows {
 			return
 		}
 		v.Set(x, y, cell)
 	}
-	set(x+width, y)
+	// Beside the button, a whole cell: one column is already as thin as
+	// a shadow can be that way.
+	set(x+width, y, grid.Cell{Rune: ' ', FG: shadow, BG: shadow, Width: 1})
+	// And under it, the top half of the row only, so the shadow is the
+	// same thickness whichever way it is measured.
+	under := grid.Cell{Rune: shadowHalf, FG: shadow, BG: ground, Width: 1}
 	for i := 1; i <= width; i++ {
-		set(x+i, y+1)
+		set(x+i, y+1, under)
 	}
 }

@@ -499,7 +499,7 @@ func (n *Notice) paintButtons(in grid.View, box Rect) {
 			fg, bg = n.Style.ActiveFG, n.Style.ActiveBG
 		}
 		row := n.buttonRow(box)
-		DrawButtonShadow(in, at, row, ButtonWidth(n.buttons()[i]), n.Style.ButtonShadowBG)
+		DrawButtonShadow(in, at, row, ButtonWidth(n.buttons()[i]), n.Style.ButtonShadowBG, n.Style.BG)
 		DrawButton(in, at, row, n.buttons()[i], fg, bg)
 	}
 }

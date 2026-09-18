@@ -512,16 +512,6 @@ properly and either written up above or done.
   drawing it the way the frosted rim is drawn rather than as a row of
   cells.
 
-- **The pane switcher wants a zoom, a margin and a mark that fits.**
-  Three things, from Marcus after using it:
-  - It should zoom out smoothly and quickly as it opens, rather than
-    appearing.
-  - The tiles should have a little room between them. They tile the
-    window exactly today, so the pictures touch.
-  - The mark round the chosen tile goes below the tile. The frame is
-    drawn in the tile's own box, so this is the box and the picture
-    disagreeing about where the bottom is.
-
 - **"Connection closed. Reconnect?" should have two buttons.** Make it
   "Connection closed." with "Reconnect" and "Close", and let Close be
   the one Enter takes. The question is worded in `closedQuestion` in

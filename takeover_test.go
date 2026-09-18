@@ -104,10 +104,10 @@ func TestTakingOverAWindowOpensAPaneOnIt(t *testing.T) {
 	panes := len(client.panes)
 
 	runFromPalette(t, client, "serve.takeOver")
-	f := awaitModal(t, client, "the Take over a window dialog", byTitle[*ui.Form]("Take over a window"))
+	f := awaitModal(t, client, "the Work in another window dialog", byTitle[*ui.Form]("Work in another window"))
 	typeIntoField(t, client, f, "Machine", host.serving.addr())
 	typeIntoField(t, client, f, "Key file", keyFile)
-	pressButton(t, client, f, "Take over")
+	pressButton(t, client, f, "Work in it")
 	// The window has never been reached before, so its key is offered
 	// and has to be accepted, the same as any other machine's.
 	answer(t, client, "Connect")
@@ -149,10 +149,10 @@ func TestLettingGoOfATakenWindowTakesItsPanes(t *testing.T) {
 	// From the palette rather than the menu bar, because a bar would take
 	// a row off a window whose size is the point of this fixture.
 	runFromPalette(t, client, "serve.takeOver")
-	f := awaitModal(t, client, "the Take over a window dialog", byTitle[*ui.Form]("Take over a window"))
+	f := awaitModal(t, client, "the Work in another window dialog", byTitle[*ui.Form]("Work in another window"))
 	typeIntoField(t, client, f, "Machine", addr)
 	typeIntoField(t, client, f, "Key file", keyFile)
-	pressButton(t, client, f, "Take over")
+	pressButton(t, client, f, "Work in it")
 	answer(t, client, "Connect")
 	waitFor(t, client, "the window to be taken over", func() bool {
 		return client.windows.named(addr) != nil && len(client.panes) > panes
@@ -755,7 +755,7 @@ func TestAConnectionThatWentIsOfferedAWayBack(t *testing.T) {
 	if f == nil {
 		t.Fatal("nothing was offered")
 	}
-	pressButton(t, client, f, "Take over again")
+	pressButton(t, client, f, "Reconnect")
 
 	waitFor(t, client, "the window to be taken over again", func() bool {
 		return client.windows.named(addr) != nil
@@ -811,10 +811,10 @@ func TestAWindowThatQuitsKeepsARowThatCanBeCleared(t *testing.T) {
 	takeOver := func(at, name string) {
 		t.Helper()
 		chooseMenuItem(t, openBarMenu(t, client, "Servers"), "serve.takeOver")
-		f := awaitModal(t, client, "the Take over a window dialog", byTitle[*ui.Form]("Take over a window"))
+		f := awaitModal(t, client, "the Work in another window dialog", byTitle[*ui.Form]("Work in another window"))
 		typeIntoField(t, client, f, "Machine", at)
 		typeIntoField(t, client, f, "Key file", keyFile)
-		pressButton(t, client, f, "Take over")
+		pressButton(t, client, f, "Work in it")
 		answer(t, client, "Connect")
 		waitFor(t, client, "a pane on the window taken over", func() bool {
 			return client.windows.named(name) != nil && client.windows.drawn() > 0
@@ -913,7 +913,7 @@ func TestTakingOverAnAddressAMachineIsUnderIsRefused(t *testing.T) {
 	}
 	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
 	typeIntoField(t, a, f, "Machine", addr)
-	pressButton(t, a, f, "Take over")
+	pressButton(t, a, f, "Work in it")
 
 	if a.root.Modal() != f {
 		t.Fatal("the dialog closed on an address it cannot take over")
@@ -2215,7 +2215,7 @@ func TestAskingAboutTheWindowOnItsWayOpensFromTheButton(t *testing.T) {
 	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
 	typeIntoField(t, a, f, "Machine", "127.0.0.1:1")
 	typeIntoField(t, a, f, "Key file", keyFile)
-	pressButton(t, a, f, "Take over")
+	pressButton(t, a, f, "Work in it")
 
 	ask := awaitModal(t, a, "the Already connecting to 127.0.0.1:1 dialog", byTitle[*ui.Form]("Already connecting to 127.0.0.1:1"))
 	pressButton(t, a, ask, "Leave it")
@@ -2392,10 +2392,10 @@ func takeOverFromTheDialog(t *testing.T, a *testApp, addr, keyFile string) *term
 	t.Helper()
 	m := openBarMenu(t, a, "Servers")
 	chooseMenuItem(t, m, "serve.takeOver")
-	f := awaitModal(t, a, "the Take over a window dialog", byTitle[*ui.Form]("Take over a window"))
+	f := awaitModal(t, a, "the Work in another window dialog", byTitle[*ui.Form]("Work in another window"))
 	typeIntoField(t, a, f, "Machine", addr)
 	typeIntoField(t, a, f, "Key file", keyFile)
-	pressButton(t, a, f, "Take over")
+	pressButton(t, a, f, "Work in it")
 	return paneOnTheWindow(t, a)
 }
 
@@ -2684,10 +2684,10 @@ func TestAWindowSavedDuringTheDialLandsUnderItsNewName(t *testing.T) {
 	// posts back.
 	m := openBarMenu(t, client, "Servers")
 	chooseMenuItem(t, m, "serve.takeOver")
-	f := awaitModal(t, client, "the Take over a window dialog", byTitle[*ui.Form]("Take over a window"))
+	f := awaitModal(t, client, "the Work in another window dialog", byTitle[*ui.Form]("Work in another window"))
 	typeIntoField(t, client, f, "Machine", addr)
 	typeIntoField(t, client, f, "Key file", keyFile)
-	pressButton(t, client, f, "Take over")
+	pressButton(t, client, f, "Work in it")
 	waitUntil(t, "work to be queued for the window", func() bool { return client.pump.pending() > 0 })
 
 	// Saved under a name while the dial waits to land. Written straight

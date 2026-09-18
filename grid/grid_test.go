@@ -875,3 +875,67 @@ func TestIconRoundTrips(t *testing.T) {
 		}
 	}
 }
+
+// An edge remembers which sides it runs along and how thick it is.
+func TestEdgesRememberTheirSidesAndThickness(t *testing.T) {
+	a := Edges(EdgeTop|EdgeLeft, 3)
+
+	if a.Kind != ArtEdge {
+		t.Errorf("the art is kind %v, want an edge", a.Kind)
+	}
+	if got := a.Sides(); got != EdgeTop|EdgeLeft {
+		t.Errorf("it runs along %b, want the top and the left", got)
+	}
+	if got := a.Thick(); got != 3 {
+		t.Errorf("it is %d pixels thick, want 3", got)
+	}
+	if a.Sides()&EdgeBottom != 0 || a.Sides()&EdgeRight != 0 {
+		t.Error("it claims sides it was not given")
+	}
+}
+
+// A rule is at least a pixel thick, because one that was not would not
+// be drawn at all.
+func TestAnEdgeIsAtLeastAPixelThick(t *testing.T) {
+	for _, thick := range []int{0, -1} {
+		if got := Edges(EdgeTop, thick).Thick(); got != 1 {
+			t.Errorf("asking for %d pixels gives %d, want 1", thick, got)
+		}
+	}
+}
+
+// Art of another kind says it runs along no side and has no thickness.
+//
+// Art is one struct for every kind, so a graph read as an edge would
+// otherwise give its bars back as side flags and a vast thickness.
+func TestArtOfAnotherKindIsNoEdge(t *testing.T) {
+	// Data with bits where an edge keeps its sides and its thickness, so
+	// art read as one without checking its kind gives both back.
+	for _, a := range []Art{
+		{Kind: ArtGraph, Data: 0xff0f},
+		{Kind: ArtIcon, Data: 0xff0f},
+		{},
+	} {
+		if got := a.Sides(); got != 0 {
+			t.Errorf("%v art runs along %b, want no side", a.Kind, got)
+		}
+		if got := a.Thick(); got != 0 {
+			t.Errorf("%v art is %d pixels thick, want none", a.Kind, got)
+		}
+	}
+}
+
+// A side flag out of range does not become thickness.
+//
+// Sides are a bare word, so a caller can hand over anything. Left
+// unmasked it would land on top of the thickness and change it.
+func TestEdgesIgnoresBitsThatAreNotSides(t *testing.T) {
+	a := Edges(EdgeTop|1<<8|1<<20, 3)
+
+	if got := a.Thick(); got != 3 {
+		t.Errorf("it is %d pixels thick, want the 3 asked for", got)
+	}
+	if got := a.Sides(); got != EdgeTop {
+		t.Errorf("it runs along %b, want the top alone", got)
+	}
+}

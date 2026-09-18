@@ -389,10 +389,10 @@ func TestTheTakeOverDialogOnAHeldWindowOpensATerminal(t *testing.T) {
 
 	m := openBarMenu(t, client, "Servers")
 	chooseMenuItem(t, m, "serve.takeOver")
-	f := awaitModal(t, client, "the Take over a window dialog", byTitle[*ui.Form]("Take over a window"))
+	f := awaitModal(t, client, "the Work in another window dialog", byTitle[*ui.Form]("Work in another window"))
 	typeIntoField(t, client, f, "Machine", addr)
 	typeIntoField(t, client, f, "Key file", keyFile)
-	pressButton(t, client, f, "Take over")
+	pressButton(t, client, f, "Work in it")
 
 	waitFor(t, client, "another pane on the window", func() bool {
 		return len(client.panes) > panes
@@ -678,10 +678,10 @@ func TestEveryWayInTakesOverASavedWindow(t *testing.T) {
 		func(t *testing.T, a *testApp, host, addr, keyFile string) {
 			m := openBarMenu(t, a, "Servers")
 			chooseMenuItem(t, m, "serve.takeOver")
-			f := awaitModal(t, a, "the Take over a window dialog", byTitle[*ui.Form]("Take over a window"))
+			f := awaitModal(t, a, "the Work in another window dialog", byTitle[*ui.Form]("Work in another window"))
 			typeIntoField(t, a, f, "Machine", addr)
 			typeIntoField(t, a, f, "Key file", keyFile)
-			pressButton(t, a, f, "Take over")
+			pressButton(t, a, f, "Work in it")
 		},
 	})
 
@@ -779,7 +779,7 @@ func TestEveryWayInOpensAPaneHere(t *testing.T) {
 					t.Fatalf("this machine is offered twice: %v", choiceTexts(c))
 				}
 			}
-			takeChoice(t, c, "New terminal")
+			takeChoice(t, c, "New pane")
 		}},
 	} {
 		t.Run(way.name, func(t *testing.T) {

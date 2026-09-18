@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/marrasen/gridterm/conns"
+	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/term"
 )
@@ -53,11 +54,14 @@ func TestAPaneHandedToAnAgentGetsABorder(t *testing.T) {
 	if cols != area.Cols || rows != area.Rows {
 		t.Errorf("the border is %dx%d, want the pane's %dx%d", cols, rows, area.Cols, area.Rows)
 	}
-	if got := m.g.At(0, 0).BG; !sameHue(got, statusAgentFG(a.colours)) {
+	if got := ruleColour(m.g.At(0, 0)); !sameHue(got, statusAgentFG(a.colours)) {
 		t.Errorf("the corner of the border is %v, want the cyan an agent is said in", got)
 	}
+	if got := ruleColour(m.g.At(cols/2, rows/2)); got.A != 0 {
+		t.Errorf("the middle of the pane has a rule on it %v, and a border is the edge only", got)
+	}
 	if got := m.g.At(cols/2, rows/2).BG; got.A != 0 {
-		t.Errorf("the middle of the pane is painted %v, and a border is the edge only", got)
+		t.Errorf("the middle of the pane is filled %v, and a border is the edge only", got)
 	}
 }
 
@@ -134,10 +138,10 @@ func TestAPaneWithAnAgentAndAWatcherGetsTwoBorders(t *testing.T) {
 	if m == nil {
 		t.Fatal("no border")
 	}
-	if got := m.g.At(0, 0).BG; !sameHue(got, statusAgentFG(a.colours)) {
+	if got := ruleColour(m.g.At(0, 0)); !sameHue(got, statusAgentFG(a.colours)) {
 		t.Errorf("the outer border is %v, want the cyan an agent is said in", got)
 	}
-	if got := m.g.At(1, 1).BG; !sameHue(got, statusTakenFG(a.colours)) {
+	if got := ruleColour(m.g.At(1, 1)); !sameHue(got, statusTakenFG(a.colours)) {
 		t.Errorf("the inner border is %v, want the red a watcher is said in", got)
 	}
 }
@@ -153,10 +157,13 @@ func TestAWatchedPaneGetsTheWatcherColourOnTheOutside(t *testing.T) {
 	if m == nil {
 		t.Fatal("the pane somebody is reading was given no border")
 	}
-	if got := m.g.At(0, 0).BG; !sameHue(got, statusTakenFG(a.colours)) {
+	if got := ruleColour(m.g.At(0, 0)); !sameHue(got, statusTakenFG(a.colours)) {
 		t.Errorf("the border is %v, want the red a watcher is said in", got)
 	}
 	if got := m.g.At(1, 1).BG; got.A != 0 {
+		t.Errorf("the second ring is filled %v, and a border is a rule", got)
+	}
+	if got := ruleColour(m.g.At(1, 1)); got.A != 0 {
 		t.Errorf("there is a second border at %v, and only one window is reading the pane", got)
 	}
 }
@@ -253,7 +260,7 @@ func TestABorderFollowsThePaneItIsRound(t *testing.T) {
 	}
 	// The ring itself, not just the room for it: the cell on the new
 	// right edge was inside the old border and had nothing drawn on it.
-	if got := m.g.At(cols-1, rows/2).BG; got.A == 0 {
+	if got := ruleColour(m.g.At(cols-1, rows/2)); got.A == 0 {
 		t.Error("the border kept its old edges, so the ring is no longer round the pane")
 	}
 }
@@ -282,7 +289,7 @@ func TestTheBorderGlowsAtTheMomentTheFrameBegan(t *testing.T) {
 	if want == late {
 		t.Fatal("the glow did not move over the step, so this proves nothing")
 	}
-	if got := m.g.At(0, 0).BG; got != want {
+	if got := ruleColour(m.g.At(0, 0)); got != want {
 		t.Errorf("the border is %v, want the %v the frame began on", got, want)
 	}
 }
@@ -302,13 +309,13 @@ func TestTheBorderItselfBrightensAndDims(t *testing.T) {
 	var dim, bright uint8 = 0xff, 0
 	for i := range glowSteps * 2 {
 		a.drawShared(start.Add(time.Duration(i) * glowStep))
-		at := m.g.At(0, 0).BG.A
+		at := ruleColour(m.g.At(0, 0)).A
 		dim, bright = min(dim, at), max(bright, at)
 	}
 	if dim >= bright {
 		t.Errorf("the border's corner ran from %#x to %#x over a lap, and the border is meant to glow", dim, bright)
 	}
-	if got := m.g.At(0, 0).BG; !sameHue(got, statusAgentFG(a.colours)) {
+	if got := ruleColour(m.g.At(0, 0)); !sameHue(got, statusAgentFG(a.colours)) {
 		t.Errorf("the glow changed the colour to %v, and only the alpha is meant to move", got)
 	}
 }
@@ -509,7 +516,7 @@ func TestTheRowAndTheBorderGlowTogether(t *testing.T) {
 	for i := range glowSteps * 2 {
 		now := start.Add(time.Duration(i) * glowStep)
 		a.drawShared(now)
-		border := m.g.At(0, 0).BG
+		border := ruleColour(m.g.At(0, 0))
 		row := rowOf(t, a, pane, now).Edge[0]
 		if border != row {
 			t.Fatalf("at step %d the border is %v and the row %v", i, border, row)
@@ -617,5 +624,76 @@ func TestASharedPaneCostsNothingBetweenGlowSteps(t *testing.T) {
 	}
 	if got.Repainted != 2 {
 		t.Errorf("a step of the glow repainted %d layers, want the border and the sidebar row", got.Repainted)
+	}
+}
+
+// ruleColour is what a cell of a border is drawn in, and nothing when
+// there is no rule on it.
+//
+// The border is a rule a few pixels thick along the sides of a cell,
+// not the cell filled: the colour is the foreground and the art says
+// which sides it runs along.
+func ruleColour(c grid.Cell) color.RGBA {
+	if c.Art.Kind != grid.ArtEdge || c.Art.Sides() == 0 {
+		return color.RGBA{}
+	}
+	return c.FG
+}
+
+// A pane too narrow for a ring to have two sides keeps both of them.
+//
+// One cell wide, the left rule and the right rule are the same cell. The
+// second used to replace the first, so the border lost a side.
+func TestANarrowPaneKeepsBothSidesOfItsBorder(t *testing.T) {
+	m := newSharedMark()
+	m.g.Resize(1, 4)
+
+	m.ring(0, color.RGBA{0x40, 0xa0, 0xc0, 0xff})
+
+	art := m.g.At(0, 1).Art
+	if art.Sides()&grid.EdgeLeft == 0 {
+		t.Error("the one column has no rule down its left")
+	}
+	if art.Sides()&grid.EdgeRight == 0 {
+		t.Error("the one column has no rule down its right")
+	}
+}
+
+// And a pane one row tall keeps its top and its bottom.
+func TestAShortPaneKeepsBothSidesOfItsBorder(t *testing.T) {
+	m := newSharedMark()
+	m.g.Resize(4, 1)
+
+	m.ring(0, color.RGBA{0x40, 0xa0, 0xc0, 0xff})
+
+	art := m.g.At(1, 0).Art
+	if art.Sides()&grid.EdgeTop == 0 {
+		t.Error("the one row has no rule along its top")
+	}
+	if art.Sides()&grid.EdgeBottom == 0 {
+		t.Error("the one row has no rule along its bottom")
+	}
+}
+
+// A corner turns: the cell where two sides meet carries both.
+func TestTheCornerOfABorderTurns(t *testing.T) {
+	m := newSharedMark()
+	m.g.Resize(8, 6)
+
+	m.ring(0, color.RGBA{0x40, 0xa0, 0xc0, 0xff})
+
+	for _, tc := range []struct {
+		x, y  int
+		sides uint64
+		where string
+	}{
+		{0, 0, grid.EdgeTop | grid.EdgeLeft, "top left"},
+		{7, 0, grid.EdgeTop | grid.EdgeRight, "top right"},
+		{0, 5, grid.EdgeBottom | grid.EdgeLeft, "bottom left"},
+		{7, 5, grid.EdgeBottom | grid.EdgeRight, "bottom right"},
+	} {
+		if got := m.g.At(tc.x, tc.y).Art.Sides(); got&tc.sides != tc.sides {
+			t.Errorf("the %s corner runs along %b, want both of %b", tc.where, got, tc.sides)
+		}
 	}
 }

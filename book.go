@@ -43,14 +43,14 @@ func (a *app) refreshServers() {
 	// in their way.
 	//
 	// So the comparison carries whatever a title depends on, not only
-	// the names. A saved window reads "take over" until it is taken
+	// the names. A saved window reads "work in" until it is worked in
 	// over and "open a terminal on" after, and taking one over changes
 	// no name at all.
 	every, saved := a.everyHost(), a.savedHosts()
 	want := make([]string, 0, len(every)+len(saved))
 	for _, host := range every {
 		if a.about(host).toTakeOver() {
-			host += " (take over)"
+			host += " (work in)"
 		}
 		want = append(want, host)
 	}
@@ -88,15 +88,18 @@ func (a *app) refreshServers() {
 	for _, name := range every {
 		host := name
 		title := "Open a terminal on " + groupName(host)
+		var also []string
 		if a.about(host).toTakeOver() {
-			// Nothing runs on a window until it is taken over, and
-			// taking it over is what asking for a terminal on it means.
-			title = "Take over " + groupName(host)
+			// Nothing runs on a window until this one is working in it,
+			// and that is what asking for a terminal on it means.
+			title = "Work in " + groupName(host)
+			also = []string{"take over", "share", "remote"}
 		}
 		term := ui.Command{
-			ID:    termPrefix + remote.CommandName(host),
-			Title: title,
-			Run:   func() error { return a.openTerminalOn(host, nil) },
+			ID:       termPrefix + remote.CommandName(host),
+			Title:    title,
+			AlsoFind: also,
+			Run:      func() error { return a.openTerminalOn(host, nil) },
 		}
 		a.registerServerCommands(a.reporting(term))
 		browse := ui.Command{
@@ -371,7 +374,7 @@ func (a *app) openServerForm(under string) error {
 	via.Options = append([]string{""}, a.serverNames(under)...)
 	f.Lines = append(f.Lines,
 		"Kind steps with ctrl+down and ctrl+up. A gridterm window is one",
-		"serving on another machine, taken over rather than logged in to.",
+		"serving on another machine, worked in rather than logged in to.",
 		viaHint(via.Options),
 		"Folders are where the file browser opens on this server. One and",
 		"it opens there; several and the plus offers a line for each.",
@@ -468,7 +471,7 @@ func (a *app) openServerForm(under string) error {
 		if t := a.about(under).window; t != nil && (!window || t.addr != h.ServeAddr()) {
 			// The connection is to the machine it was made to, and
 			// saying it is somewhere else does not move it.
-			return fmt.Errorf("%s is taken over at %s; let go of it before changing where it is",
+			return fmt.Errorf("%s is being worked in at %s; let go of it before changing where it is",
 				under, t.addr)
 		}
 		if err := a.book.Put(h, under); err != nil {
@@ -541,7 +544,7 @@ func (a *app) removeLines(on hostFacts) []string {
 	switch {
 	case on.window != nil:
 		return []string{
-			"This window has taken over " + name + ".",
+			"This window is working in " + name + ".",
 			"Forgetting it lets go of " + name + " and closes its panes.",
 			nothing,
 		}

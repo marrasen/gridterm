@@ -215,7 +215,7 @@ func TestASplitUnderSshOpensOnTheTarget(t *testing.T) {
 	if !ok {
 		t.Fatalf("the split key showed %T, want the chooser", a.root.Modal())
 	}
-	takeChoice(t, c, "New terminal")
+	takeChoice(t, c, "New pane")
 
 	waitForPanes(t, a, 2)
 	pane := newestPane(t, a)

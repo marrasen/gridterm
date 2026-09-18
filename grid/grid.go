@@ -78,7 +78,54 @@ const (
 	// ArtIcon is a small picture standing for a kind of thing. Data says
 	// which one.
 	ArtIcon
+
+	// ArtEdge is a rule along one or more of a cell's four sides, a few
+	// pixels thick. It is how a border thinner than a cell is drawn.
+	ArtEdge
 )
+
+// The sides a rule may run along, packed into an Art's data with the
+// thickness above them.
+const (
+	EdgeTop uint64 = 1 << iota
+	EdgeRight
+	EdgeBottom
+	EdgeLeft
+)
+
+const (
+	// edgeSides is every side a rule may run along.
+	edgeSides = EdgeTop | EdgeRight | EdgeBottom | EdgeLeft
+
+	// edgeThickShift is where the thickness sits in an edge's data, and
+	// edgeThickMost the most it can say.
+	edgeThickShift = 8
+	edgeThickMost  = 1<<16 - 1
+)
+
+// Edges is a rule along the sides given, thick pixels wide.
+func Edges(sides uint64, thick int) Art {
+	thick = min(max(thick, 1), edgeThickMost)
+	return Art{Kind: ArtEdge, Data: sides&edgeSides | uint64(thick)<<edgeThickShift}
+}
+
+// Sides are the sides an edge's rule runs along, and none for art that
+// is not an edge.
+func (a Art) Sides() uint64 {
+	if a.Kind != ArtEdge {
+		return 0
+	}
+	return a.Data & edgeSides
+}
+
+// Thick is how many pixels thick an edge's rule is, and none for art
+// that is not an edge.
+func (a Art) Thick() int {
+	if a.Kind != ArtEdge {
+		return 0
+	}
+	return int(a.Data >> edgeThickShift)
+}
 
 // IconKind names a small picture drawn in code.
 //

@@ -72,7 +72,7 @@ func (a *app) openRoute(name string, route []step, open opening, at *spot) {
 			// Taking a window over draws its panes as panes of its own,
 			// so there is nothing to put in the pane that asked.
 			a.reportError("Could not start it again in this pane", fmt.Errorf(
-				"%s is a gridterm window now, which is taken over rather than logged in to", name))
+				"%s is a gridterm window now, which is worked in rather than logged in to", name))
 			return
 		}
 		a.workOnWindowOrSay(h.ServeAddr(), h.KeyFile(), at)

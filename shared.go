@@ -150,20 +150,35 @@ func (m *sharedMark) draw(hues [2]color.RGBA) {
 	}
 }
 
+// markThick is how many pixels thick the rule round a shared pane is.
+const markThick = 2
+
 // ring paints one border, at cells in from the edge.
 func (m *sharedMark) ring(in int, c color.RGBA) {
 	cols, rows := m.g.Size()
 	if cols <= in*2 || rows <= in*2 {
 		return
 	}
-	cell := grid.Cell{Rune: ' ', FG: c, BG: c, Width: 1}
+	// A rule inside the cell rather than the whole cell filled: a border
+	// a character wide and a character tall reads as a bar around the
+	// pane.
+	// Added to whatever the cell already carries: a ring one cell wide
+	// or one cell tall is the same cell on both sides, and replacing
+	// would leave it with only the last one.
+	edge := func(x, y int, sides uint64) {
+		was := m.g.At(x, y)
+		if was.Art.Kind == grid.ArtEdge {
+			sides |= was.Art.Sides()
+		}
+		m.g.Set(x, y, grid.Cell{Rune: ' ', FG: c, Width: 1, Art: grid.Edges(sides, markThick)})
+	}
 	for x := in; x < cols-in; x++ {
-		m.g.Set(x, in, cell)
-		m.g.Set(x, rows-1-in, cell)
+		edge(x, in, grid.EdgeTop)
+		edge(x, rows-1-in, grid.EdgeBottom)
 	}
 	for y := in; y < rows-in; y++ {
-		m.g.Set(in, y, cell)
-		m.g.Set(cols-1-in, y, cell)
+		edge(in, y, grid.EdgeLeft)
+		edge(cols-1-in, y, grid.EdgeRight)
 	}
 }
 

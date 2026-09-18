@@ -297,13 +297,19 @@ From Marcus's inbox, after working in a shared window.
   does not appear to redraw on its own, so what it shows is the screen
   as it was when it was last looked at. Not diagnosed.
 
-- **"Take over" is the wrong name now.** It is from the first version,
-  where the client took a pane away from the host. Panes are shared now:
-  they stay on the host and on the client at once. The host's side says
-  "Serve this window…", so the client's side should match it. Marcus
-  suggests "Share host panes" and is open to better. It is the title of
-  the menu line, the dialog and `serve.takeOver`, and `takeOver`,
-  `workOnWindow` and `taken` in windows.go all carry the old word.
+- **The words a user reads say "work in" now; the code still says "take
+  over".** The menu line, the dialog, its button, the server-list line
+  and the prose around them were changed on 2026-09-19. Marcus suggested
+  "Share host panes"; what went in was "Work in another window…",
+  because the dialog's own first line already reads "Work in a gridterm
+  running on another machine" and that is the sentence the title should
+  match. Worth his eye, since he asked for the other one.
+
+  `serve.takeOver` keeps its name, and so do `takeOver`, `workOnWindow`
+  and `taken` in windows.go. A command id is what a saved shortcut
+  points at, so renaming one breaks a shortcuts file that names it.
+  Worth doing with the keyboard config, which is the other thing that
+  has to be able to move an id.
 
 - **A window too small for the switcher closes it rather than saying
   so.** Shrinking past the size it would open at now takes it away,
@@ -340,11 +346,16 @@ From Marcus's inbox, after working in a shared window.
   - **Getting rid of it is answered** by the cross on hover. See the
     answers at the top.
 
-- **A file browser's pane gets no line naming it.** The line above a
-  pane is a terminal's, and the file manager's panes are not terminals:
-  `refreshCaptions` walks `a.panes`, and `ui/files.Pane` has no caption
-  at all. A split holding a shell and a browser names the shell and not
-  the browser, which is half of what the line is for.
+- **A file browser's pane is named differently from a terminal's.** Not
+  unnamed: `Pane.Draw` in ui/files/pane.go already writes the machine in
+  bold on its first row, with the directory under it. What it does not
+  have is the window's own caption line, because `refreshCaptions` walks
+  `a.panes` and a browser pane is not a terminal.
+
+  So the information is there and the shape is not: a split holding a
+  shell and a browser has the shell's caption row above it and the
+  browser's own header inside it, which read as two different things.
+  Worth settling as one or the other rather than adding a second header.
 
 - **A pane drawn on a layer of its own shows no line.** A held screen
   too big for its room is painted by the window rather than by the tree,
@@ -618,18 +629,6 @@ properly and either written up above or done.
   of item the menus cannot draw yet. The same gap stopped the plus
   offering a submenu, further up this file.
 
-- **"New terminal" and "New pane" are the same thing under two names.**
-  The split chooser's first line is "New terminal" (split.go:52); the
-  File menu and the palette call it "New pane". Marcus asked what the
-  first one does, which is the question a name earns when it is the only
-  one of its kind.
-
-- **The glow on a shared pane is a whole cell thick.** It is drawn as
-  cells, so the border round a pane somebody else is in is a character
-  wide and a character tall. It should be a couple of pixels. That means
-  drawing it the way the frosted rim is drawn rather than as a row of
-  cells.
-
 - **"Connection closed. Reconnect?" should have two buttons.** Make it
   "Connection closed." with "Reconnect" and "Close", and let Close be
   the one Enter takes. The question is worded in `closedQuestion` in
@@ -637,9 +636,18 @@ properly and either written up above or done.
   settled question above about which panes get asked and in what words;
   it is about the answer, not the question.
 
-- **Shadows under a dialog break at the rounded corners.** `drawShadow`
-  in ui/frame.go paints whole cells, and the corner of a frosted panel
-  is round, so the shadow shows through the curve.
+- **Shadows under a dialog break at the rounded corners, and the fix is
+  in the shader.** `drawShadow` in ui/frame.go paints whole cells. The
+  panel's corner is not a cell at all: `frostSource` in render/frost.go
+  rounds it with a signed distance field, in pixels, on the GPU. The two
+  can never line up, so squaring the shadow's corners off in cells is
+  not the answer.
+
+  A drop shadow is the same distance function offset and softened, so it
+  belongs in that shader beside the panel it falls from. Two things make
+  it more than a few lines: the shader returns nothing outside the panel
+  today, and the pass only rasterises the panel's own rectangle, which
+  would have to grow to cover where the shadow falls. Not a small item.
 
 - **Context menu.** Make use of one. On the sidebar it opens the menu
   that is already there.

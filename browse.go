@@ -48,7 +48,7 @@ func (a *app) openFilesOn(host string) error { return a.openFilesAt(host, a.oneF
 func (a *app) openFilesAt(host, at string) error {
 	on := a.about(host)
 	if on.toTakeOver() {
-		return fmt.Errorf("take over %s first: it is a gridterm window, "+
+		return fmt.Errorf("work in %s first: it is a gridterm window, "+
 			"and its files come over that connection", on.name)
 	}
 	// Nothing to read files over yet, so the connection is made first and
@@ -1080,7 +1080,7 @@ func (a *app) stopJobsOn(on ...vfs.FS) []*jobs.Job {
 func (a *app) windowFiles(addr string) (vfs.FS, error) {
 	t := a.about(addr).window
 	if t == nil {
-		return nil, fmt.Errorf("this window has not taken over %s", addr)
+		return nil, fmt.Errorf("this window is not working in %s", addr)
 	}
 	if err := a.roomForFilesOver(t); err != nil {
 		return nil, err

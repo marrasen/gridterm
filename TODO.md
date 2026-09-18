@@ -229,11 +229,6 @@ the system's temporary directory and types the path. What is left:
   under `gridterm-pasted` in the home directory of whoever the
   connection logs in as, and stay there.
 
-- **A pane on this machine cannot be handed a picture as a file.** It
-  gets the paste key pressed, which is right for a program that reads
-  the clipboard and nothing at all for one that does not. Worth a way to
-  ask for a file here if a program that wants a path turns up.
-
 - **Nothing takes the files away again.** They pile up in the temporary
   directory under `gridterm-pasted` until the system clears it.
 

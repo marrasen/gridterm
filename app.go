@@ -703,8 +703,8 @@ func (a *app) commands() {
 		ui.Command{ID: copyCommand, Title: "Copy", Run: a.onFocused(
 			func(t *term.Terminal) error { t.Copy(); return nil })},
 		ui.Command{ID: "edit.paste", Title: "Paste", Run: a.onFocused(a.paste)},
-		ui.Command{ID: "edit.pasteImage", Title: "Paste the picture on the clipboard",
-			AlsoFind: []string{"image", "screenshot"}, Run: a.onFocused(a.pasteImage)},
+		ui.Command{ID: "edit.pasteImage", Title: "Paste the picture as a file…",
+			AlsoFind: []string{"image", "screenshot", "path"}, Run: a.onFocused(a.pasteImage)},
 		ui.Command{ID: "view.scrollUp", Title: "Scroll back", Run: a.onFocused(
 			func(t *term.Terminal) error { t.ScrollPages(1); return nil })},
 		ui.Command{ID: "view.scrollDown", Title: "Scroll forward", Run: a.onFocused(
@@ -790,8 +790,8 @@ func (a *app) commands() {
 	keys.MustBind(map[ui.Chord]string{
 		{Key: input.KeyC, Mods: input.ModCtrl | input.ModShift}: copyCommand,
 		{Key: input.KeyV, Mods: input.ModCtrl | input.ModShift}: "edit.paste",
-		// Paste, for a clipboard holding both text and a picture, where
-		// the text wins and this is how to ask for the other one.
+		// The picture written to a file and its path typed, for when a
+		// name to hand to a program is what is wanted.
 		{Key: input.KeyV, Mods: input.ModCtrl | input.ModAlt}: "edit.pasteImage",
 		// The X11 spelling of paste, which plenty of people have in
 		// their fingers and no terminal has a meaning for.

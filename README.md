@@ -467,6 +467,12 @@ question is whether this window can put one there.
   to reach, so the picture is written on that machine and the path typed
   names a file it can open.
 
+`edit.pasteImage` asks for the other thing: the picture written to a
+file on whatever machine the pane is on, and the path typed. That is
+what a name at a prompt wants -- `magick <paste>` -- rather than a
+picture for something that reads the clipboard itself. It is also what
+the ordinary paste falls back to where there is no clipboard to reach.
+
 Reading the clipboard is per-platform. `clipboard_image_windows.go` asks
 the operating system for a device independent bitmap and turns it into
 an image; everywhere else reports that there is no picture, so the

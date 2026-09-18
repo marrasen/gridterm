@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"image"
 	"image/png"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -24,19 +26,17 @@ const pastedDir = "gridterm-pasted"
 // A program reading a terminal cannot be handed a picture, so what it is
 // handed is somewhere to find one. Claude Code and the rest read the
 // path and open the file.
-func (a *app) pasteImage(pane *term.Terminal) error {
-	img, have, err := a.clipboardPicture()
+// pastePicture hands the picture on the clipboard to the pane, by
+// whichever route reaches the program running in it.
+//
+// The clipboard wherever there is one this window can reach, because a
+// program that takes a pasted picture reads the clipboard of the machine
+// it runs on. A file only where there is not.
+func (a *app) pastePicture(pane *term.Terminal) error {
+	img, on, err := a.pictureFor(pane)
 	if err != nil {
 		return err
 	}
-	if !have {
-		return fmt.Errorf("there is no picture on the clipboard")
-	}
-	host := conns.Local
-	if e, ok := a.panes[pane]; ok && e != nil {
-		host = e.Host
-	}
-	on := a.about(host)
 	switch {
 	case on.kind == hostHere:
 		// The picture is already on this machine's clipboard and the
@@ -49,13 +49,51 @@ func (a *app) pasteImage(pane *term.Terminal) error {
 		// own clipboard and the program reads it the way it reads one
 		// pasted by somebody sitting at it.
 		return a.sendPictureTo(on, pane, img)
-	case on.machine != nil:
-		// A machine reached by SSH. There is no gridterm over there to
-		// hand a clipboard to, so the picture is written on it and the
-		// path typed names a file that machine can open.
-		return a.writePictureOn(on, pane, img)
 	}
-	return fmt.Errorf("nothing is connected to %s", on.name)
+	// Nothing over there to hand a clipboard to, so it goes as a file.
+	return a.pasteImage(pane)
+}
+
+// pasteImage writes the picture on the clipboard to a file on whatever
+// machine the pane is running on, and types the path.
+//
+// It is a command of its own, for when a name is what is wanted: one to
+// hand to a program at a prompt, rather than a picture for something
+// that reads the clipboard itself.
+func (a *app) pasteImage(pane *term.Terminal) error {
+	img, on, err := a.pictureFor(pane)
+	if err != nil {
+		return err
+	}
+	if on.kind == hostHere {
+		path, err := writePastedImage(img, a.now)
+		if err != nil {
+			return err
+		}
+		pane.Paste(path)
+		return nil
+	}
+	if on.window == nil && on.machine == nil {
+		return fmt.Errorf("nothing is connected to %s", on.name)
+	}
+	return a.writePictureOn(on, pane, img)
+}
+
+// pictureFor is the picture on the clipboard and what the pane is
+// connected through, which is what says how to hand it over.
+func (a *app) pictureFor(pane *term.Terminal) (image.Image, hostFacts, error) {
+	img, have, err := a.clipboardPicture()
+	if err != nil {
+		return nil, hostFacts{}, err
+	}
+	if !have {
+		return nil, hostFacts{}, fmt.Errorf("there is no picture on the clipboard")
+	}
+	host := conns.Local
+	if e, ok := a.panes[pane]; ok && e != nil {
+		host = e.Host
+	}
+	return img, a.about(host), nil
 }
 
 // writePictureOn writes a picture on a machine reached by SSH and types
@@ -163,6 +201,39 @@ func (a *app) sendPictureTo(on hostFacts, pane *term.Terminal, img image.Image) 
 	return nil
 }
 
+// writePastedImage puts a picture in a file of its own and returns the
+// path. now is the window's clock, so a test does not depend on the
+// wall clock.
+func writePastedImage(img image.Image, now func() time.Time) (string, error) {
+	at := time.Now
+	if now != nil {
+		at = now
+	}
+	dir := filepath.Join(os.TempDir(), pastedDir)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", fmt.Errorf("make somewhere to put the picture: %w", err)
+	}
+	// Named for the moment it was pasted, with the rest left to
+	// os.CreateTemp: it settles two pastes in one millisecond, and a
+	// second window pasting into the same directory, without this having
+	// to think about either.
+	f, err := os.CreateTemp(dir, at().Format("20060102-150405")+"-*.png")
+	if err != nil {
+		return "", fmt.Errorf("write the picture: %w", err)
+	}
+	path := f.Name()
+	if err := png.Encode(f, img); err != nil {
+		// Closed on the way out, and the half-written file taken away:
+		// a path typed into a shell has to name a picture that opens.
+		return "", fmt.Errorf("write the picture: %w",
+			errors.Join(err, f.Close(), os.Remove(path)))
+	}
+	if err := f.Close(); err != nil {
+		return "", fmt.Errorf("write the picture: %w", errors.Join(err, os.Remove(path)))
+	}
+	return path, nil
+}
+
 // takeSentPicture puts a picture a client pasted on this machine's
 // clipboard, so a program running here can be handed it.
 //
@@ -197,5 +268,5 @@ func (a *app) paste(pane *term.Terminal) error {
 		}
 		return nil
 	}
-	return a.pasteImage(pane)
+	return a.pastePicture(pane)
 }

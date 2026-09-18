@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"image"
+	"os"
 	"strings"
 	"testing"
 
@@ -20,7 +21,7 @@ func TestPastingAPictureIntoAnSSHPaneSaysItCannotYet(t *testing.T) {
 		return image.NewRGBA(image.Rect(0, 0, 1, 1)), true, nil
 	}
 
-	err := a.pasteImage(pane)
+	err := a.pastePicture(pane)
 
 	if err == nil {
 		t.Fatal("a picture was pasted into a pane on another machine")
@@ -38,7 +39,7 @@ func TestPastingAPictureWithNoneOnTheClipboardSaysSo(t *testing.T) {
 	a.panes[pane] = &conns.Entry{Host: conns.Local, Kind: conns.Terminal}
 	a.readClipImage = func() (image.Image, bool, error) { return nil, false, nil }
 
-	err := a.pasteImage(pane)
+	err := a.pastePicture(pane)
 
 	if err == nil {
 		t.Fatal("a picture was pasted with none on the clipboard")
@@ -58,7 +59,7 @@ func TestAClipboardThatWillNotBeReadIsSaid(t *testing.T) {
 		return nil, true, errors.New("the clipboard is held by something else")
 	}
 
-	err := a.pasteImage(pane)
+	err := a.pastePicture(pane)
 
 	if err == nil {
 		t.Fatal("a clipboard that could not be read was passed over in silence")
@@ -79,7 +80,7 @@ func TestPastingAPictureIntoALocalPanePressesPaste(t *testing.T) {
 		return image.NewRGBA(image.Rect(0, 0, 2, 2)), true, nil
 	}
 
-	if err := a.pasteImage(pane); err != nil {
+	if err := a.pastePicture(pane); err != nil {
 		t.Fatalf("paste it: %v", err)
 	}
 
@@ -200,5 +201,29 @@ func TestPastingTextWithAnEmptyClipboardSaysNothing(t *testing.T) {
 
 	if len(a.modals) != 0 {
 		t.Errorf("an empty clipboard put %d dialogs up", len(a.modals))
+	}
+}
+
+// Asking for the picture as a file writes one on this machine and types
+// the path, which is a name to hand to a program at a prompt.
+func TestAskingForThePictureAsAFileTypesAPath(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	pane := firstPane(t, a)
+	a.panes[pane] = &conns.Entry{Host: conns.Local, Kind: conns.Terminal}
+	a.readClipImage = func() (image.Image, bool, error) {
+		return image.NewRGBA(image.Rect(0, 0, 2, 2)), true, nil
+	}
+
+	if err := a.pasteImage(pane); err != nil {
+		t.Fatalf("paste it as a file: %v", err)
+	}
+
+	waitFor(t, a, "the path to reach the shell", func() bool {
+		return strings.Contains(a.shells[0].sentText(), ".png")
+	})
+	typed := strings.TrimSpace(a.shells[0].sentText())
+	t.Cleanup(func() { os.Remove(typed) })
+	if _, err := os.Stat(typed); err != nil {
+		t.Errorf("it typed a path to nothing: %v", err)
 	}
 }

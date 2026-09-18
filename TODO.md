@@ -3,6 +3,73 @@
 Things Marcus has asked for that are not done yet. Newest first within
 each group. A line goes when the work is in and reviewed.
 
+## What Marcus is looking forward to
+
+In his own order, from 2026-09-19. Bugs and small items come first, and
+then these.
+
+1. **The pictures in "Show every pane" should be cheaper to animate.**
+   Written up further down: every pane is drawn twice while it is open,
+   once into the window's own grid and again into its tile.
+2. **The file viewer.** Its own section below.
+3. **Pasting an image into a terminal.** Its own section below.
+
+## The context menu is deferred
+
+Marcus asked on 2026-09-19 to leave it until the bugs and the small
+items are done. The questions it waits on are at the bottom of this
+file, under "Waiting on an answer from Marcus". Nothing blocks them any
+more: the modifier keys reach the mouse now, so Shift+right-click can
+work whichever way he answers.
+
+## Asked for on 2026-09-19, second set
+
+From Marcus's inbox.
+
+- **The default shortcuts assume a US keyboard, and one of them does
+  the opposite on a Swedish one.** Ctrl+= makes the font bigger and
+  Ctrl+- makes it smaller, bound to the physical keys `=` and `-`
+  (app.go, "font.increase" and "font.decrease"). A Swedish layout puts
+  `+` where a US one has `-`, so the key a Swedish user reads as plus
+  is the one that makes the font *smaller*. The `=` they would need is
+  Shift+0, which does not reach KeyEquals at all.
+
+  Marcus asked why it changed from Ctrl+plus. It never did: there has
+  never been a KeyPlus in this repo, and the binding has been KeyEquals
+  since the font size was first wired up in 69eace9.
+
+  Binding by the character a key produces rather than by where the key
+  sits is the real answer, and `ebiten.KeyName` knows the layout. Worth
+  settling alongside the keyboard config under "Asked for, not yet
+  worked out", so the shortcuts file does not have to change shape
+  twice.
+
+- **Ctrl and the mouse wheel should change the font size.** The mouse
+  now carries modifier keys, so this is a binding rather than an
+  obstacle. `MouseWheelUp` and `MouseWheelDown` already arrive with
+  their mask.
+
+- **The colour schemes cannot be found in the palette.** There is a
+  command, `view.theme`, but its title is "Colour scheme…" and
+  `MatchCommands` matches the title and nothing else, so typing "theme"
+  finds nothing. A command needs other words it can be found by.
+
+- **Ctrl+Tab only reaches two panes.** Probably fixed on 2026-09-19 by
+  the modifier keys reaching the mouse. The walk ended on the frame
+  after it opened, because it ends when Ctrl is not held and Ctrl never
+  read as held, so each press was its own "go to the last pane" and two
+  panes took turns. The freeze Marcus asks for is already there:
+  `usedNow` in walk.go leaves the order alone while a walk is open.
+  Worth confirming in a real window before this line goes.
+
+- **A release flow, and version numbers.** Binaries for Windows and
+  Linux, and macOS if it is easy. Two versions are wanted, not one:
+  what the program calls itself, and what the wire between two windows
+  calls itself, so a window can tell a build it cannot talk to. Nothing
+  in the protocol carries a version today, and `openSession` is
+  positional, so a build that disagrees is refused by a parse failure
+  rather than by a number.
+
 ## Waiting on an answer from Marcus
 
 These are all about the context menu, which is planned below.

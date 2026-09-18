@@ -7,13 +7,12 @@ import (
 	"github.com/marrasen/gridterm/grid"
 )
 
-// paper is a light scheme with nothing in common with the dark one, so a
+// paper is a light theme with nothing in common with the dark one, so a
 // colour that moved and a colour that did not are easy to tell apart.
 func paper() Palette {
 	p := Palette{
 		FG:        color.RGBA{0x20, 0x22, 0x24, 0xff},
 		BG:        color.RGBA{0xf5, 0xf2, 0xe8, 0xff},
-		Cursor:    color.RGBA{0x20, 0x22, 0x24, 0xff},
 		Selection: color.RGBA{0xcf, 0xd8, 0xe8, 0xff},
 	}
 	for i := range 16 {
@@ -30,9 +29,9 @@ func (h *harness) at(x, y int) grid.Cell {
 	return h.g.At(x, y)
 }
 
-// A new colour scheme reaches what the program has already printed. The
-// window was drawn in one scheme and the pane in another before this.
-func TestANewSchemeReachesWhatIsAlreadyOnTheScreen(t *testing.T) {
+// A new colour theme reaches what the program has already printed. The
+// window was drawn in one theme and the pane in another before this.
+func TestANewThemeReachesWhatIsAlreadyOnTheScreen(t *testing.T) {
 	h := newHarness(t, 10, 4)
 	h.write("hi")
 	was := DefaultPalette()
@@ -49,9 +48,9 @@ func TestANewSchemeReachesWhatIsAlreadyOnTheScreen(t *testing.T) {
 	}
 }
 
-// Rows the program never wrote take the new scheme too, so the empty
+// Rows the program never wrote take the new theme too, so the empty
 // half of a pane matches the half with text in it.
-func TestABlankRowTakesTheNewScheme(t *testing.T) {
+func TestABlankRowTakesTheNewTheme(t *testing.T) {
 	h := newHarness(t, 10, 4)
 	h.write("hi")
 
@@ -63,8 +62,8 @@ func TestABlankRowTakesTheNewScheme(t *testing.T) {
 }
 
 // What has scrolled off the top moves as well, so scrolling back does
-// not walk into the old scheme.
-func TestTheNewSchemeReachesTheScrollback(t *testing.T) {
+// not walk into the old theme.
+func TestTheNewThemeReachesTheScrollback(t *testing.T) {
 	h := newHarness(t, 10, 2)
 	h.write("one\r\ntwo\r\nthree\r\nfour")
 	if h.term.Screen().History() == 0 {
@@ -84,9 +83,9 @@ func TestTheNewSchemeReachesTheScrollback(t *testing.T) {
 	}
 }
 
-// A colour from the scheme's own 256 moves to the same entry of the new
-// scheme, rather than staying the old scheme's red.
-func TestASchemeColourMovesToTheSameEntry(t *testing.T) {
+// A colour from the theme's own 256 moves to the same entry of the new
+// theme, rather than staying the old theme's red.
+func TestAThemeColourMovesToTheSameEntry(t *testing.T) {
 	h := newHarness(t, 10, 2)
 	h.write("\x1b[31mr")
 
@@ -97,12 +96,12 @@ func TestASchemeColourMovesToTheSameEntry(t *testing.T) {
 		t.Fatalf("the top left is %q, not the text that was printed", c.Rune)
 	}
 	if c.FG != paper().ANSI[1] {
-		t.Errorf("the red is %v, want the new scheme's red %v", c.FG, paper().ANSI[1])
+		t.Errorf("the red is %v, want the new theme's red %v", c.FG, paper().ANSI[1])
 	}
 }
 
 // A colour the program named outright is left alone: it asked for that
-// colour and not for an entry of a scheme.
+// colour and not for an entry of a theme.
 func TestAColourTheProgramNamedIsLeftAlone(t *testing.T) {
 	h := newHarness(t, 10, 2)
 	h.write("\x1b[38;2;1;2;3mx")
@@ -120,7 +119,7 @@ func TestAColourTheProgramNamedIsLeftAlone(t *testing.T) {
 }
 
 // The screen a full-screen program is drawing on moves with the
-// ordinary one, so quitting it does not put the old scheme back.
+// ordinary one, so quitting it does not put the old theme back.
 func TestBothScreensMove(t *testing.T) {
 	h := newHarness(t, 10, 2)
 	h.write("under")
@@ -148,12 +147,12 @@ func TestBothScreensMove(t *testing.T) {
 	}
 }
 
-// A scheme whose default foreground is also one of its 256 entries moves
+// A theme whose default foreground is also one of its 256 entries moves
 // to the new default, which is the one nearly every cell came from.
 //
 // The red comes first so that the default is looked up after another
 // colour, which is where it used to go wrong.
-func TestTheDefaultWinsWhenASchemeUsesOneColourForBoth(t *testing.T) {
+func TestTheDefaultWinsWhenAThemeUsesOneColourForBoth(t *testing.T) {
 	was := DefaultPalette()
 	was.ANSI[7] = was.FG
 	h := newHarness(t, 10, 2)
@@ -171,7 +170,7 @@ func TestTheDefaultWinsWhenASchemeUsesOneColourForBoth(t *testing.T) {
 	}
 }
 
-// The pen moves, so what the program prints next is in the new scheme
+// The pen moves, so what the program prints next is in the new theme
 // without it saying anything.
 func TestThePenMoves(t *testing.T) {
 	h := newHarness(t, 10, 2)
@@ -190,7 +189,7 @@ func TestThePenMoves(t *testing.T) {
 }
 
 // A cursor the program put away before the change comes back in the new
-// scheme, so restoring it does not print in the old one.
+// theme, so restoring it does not print in the old one.
 func TestASavedCursorMoves(t *testing.T) {
 	h := newHarness(t, 10, 2)
 	h.write("\x1b[31m\x1b7") // red, then save the cursor with DECSC
@@ -204,9 +203,9 @@ func TestASavedCursorMoves(t *testing.T) {
 	}
 }
 
-// A colour with a name of its own moves to that name in the new scheme,
+// A colour with a name of its own moves to that name in the new theme,
 // and not to the cube entry that happens to hold the same colour. Nearly
-// every scheme repeats one or two of its named colours in the 240 above
+// every theme repeats one or two of its named colours in the 240 above
 // them, and bright white is the common one.
 func TestANamedColourBeatsTheCubeEntryHoldingTheSameColour(t *testing.T) {
 	was := DefaultPalette()
@@ -222,17 +221,17 @@ func TestANamedColourBeatsTheCubeEntryHoldingTheSameColour(t *testing.T) {
 		t.Fatalf("the top left is %q, not the text that was printed", c.Rune)
 	}
 	if c.FG != paper().ANSI[15] {
-		t.Errorf("bright white is %v, want the new scheme's bright white %v",
+		t.Errorf("bright white is %v, want the new theme's bright white %v",
 			c.FG, paper().ANSI[15])
 	}
 }
 
-// Text the program coloured with the scheme's own ground colour stays
-// text. The two ends of a scheme are told apart by which of a cell's two
+// Text the program coloured with the theme's own ground colour stays
+// text. The two ends of a theme are told apart by which of a cell's two
 // colours they sit in, not by the colour itself.
 func TestAForegroundIsNotMovedToTheNewGround(t *testing.T) {
 	was := DefaultPalette()
-	was.ANSI[0] = was.BG // as a dark scheme usually has it
+	was.ANSI[0] = was.BG // as a dark theme usually has it
 	h := newHarness(t, 10, 2)
 	h.term.Screen().SetPalette(was)
 	h.write("\x1b[30mk") // black text
@@ -244,20 +243,20 @@ func TestAForegroundIsNotMovedToTheNewGround(t *testing.T) {
 		t.Fatalf("the top left is %q, not the text that was printed", c.Rune)
 	}
 	if c.FG != paper().ANSI[0] {
-		t.Errorf("the black text is %v, want the new scheme's black %v",
+		t.Errorf("the black text is %v, want the new theme's black %v",
 			c.FG, paper().ANSI[0])
 	}
 }
 
-// A background from the scheme moves too, not only a foreground.
-func TestABackgroundFromTheSchemeMoves(t *testing.T) {
+// A background from the theme moves too, not only a foreground.
+func TestABackgroundFromTheThemeMoves(t *testing.T) {
 	h := newHarness(t, 10, 2)
 	h.write("\x1b[41mr") // on red
 
 	h.term.Screen().SetPalette(paper())
 
 	if c := h.at(0, 0); c.BG != paper().ANSI[1] {
-		t.Errorf("the red ground is %v, want the new scheme's red %v",
+		t.Errorf("the red ground is %v, want the new theme's red %v",
 			c.BG, paper().ANSI[1])
 	}
 }
@@ -276,9 +275,9 @@ func TestTheChangeShowsWithoutNewOutput(t *testing.T) {
 	}
 }
 
-// A row the screen blanks after the change is in the new scheme, which
+// A row the screen blanks after the change is in the new theme, which
 // is what the cell blank lines are made of has to follow.
-func TestARowBlankedAfterTheChangeIsInTheNewScheme(t *testing.T) {
+func TestARowBlankedAfterTheChangeIsInTheNewTheme(t *testing.T) {
 	h := newHarness(t, 10, 2)
 	h.write("one\rrtwo")
 
@@ -290,8 +289,8 @@ func TestARowBlankedAfterTheChangeIsInTheNewScheme(t *testing.T) {
 	}
 }
 
-// Setting the scheme it is already in changes nothing.
-func TestTheSameSchemeAgainIsHarmless(t *testing.T) {
+// Setting the theme it is already in changes nothing.
+func TestTheSameThemeAgainIsHarmless(t *testing.T) {
 	h := newHarness(t, 10, 2)
 	h.write("\x1b[31mr")
 	h.term.Screen().SetPalette(paper())

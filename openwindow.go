@@ -113,7 +113,7 @@ func openWindow(w wanted) (*app, error) {
 	a.loadThemes()
 	a.offerToServeAgain()
 	if err := a.useTheme(a.startTheme()); err != nil {
-		// The scheme the window opens on comes from the list, which was
+		// The theme the window opens on comes from the list, which was
 		// checked as it was read, so this is not reachable from a file.
 		a.logError(err)
 	}

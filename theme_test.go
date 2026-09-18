@@ -30,19 +30,19 @@ func aThemedWindow(t *testing.T) (*testApp, string) {
 	return a, path
 }
 
-// themeNamed is one of the schemes on offer.
+// themeNamed is one of the themes on offer.
 func themeNamed(t *testing.T, a *testApp, name string) themes.Theme {
 	t.Helper()
 	got, ok := themes.Named(a.theme.all(), name)
 	if !ok {
-		t.Fatalf("there is no scheme called %q among %v", name, themes.Names(a.theme.all()))
+		t.Fatalf("there is no theme called %q among %v", name, themes.Names(a.theme.all()))
 	}
 	return got
 }
 
-// Taking a scheme draws the window in it: the window's own ground, the
+// Taking a theme draws the window in it: the window's own ground, the
 // sidebar and the menu bar all change together.
-func TestTakingASchemeRedrawsTheWindow(t *testing.T) {
+func TestTakingAThemeRedrawsTheWindow(t *testing.T) {
 	a, _ := aThemedWindow(t)
 	paper := themeNamed(t, a, "Paper")
 	want, err := paper.Palette()
@@ -56,7 +56,7 @@ func TestTakingASchemeRedrawsTheWindow(t *testing.T) {
 	}
 
 	if a.colours != want {
-		t.Error("the window is not drawn in the scheme that was taken")
+		t.Error("the window is not drawn in the theme that was taken")
 	}
 	if a.g.DefaultBG != want.BG {
 		t.Errorf("the window's ground is %v, want %v", a.g.DefaultBG, want.BG)
@@ -69,8 +69,8 @@ func TestTakingASchemeRedrawsTheWindow(t *testing.T) {
 	}
 }
 
-// A pane takes the scheme too, so what the shell prints next is in it.
-func TestAPaneTakesTheScheme(t *testing.T) {
+// A pane takes the theme too, so what the shell prints next is in it.
+func TestAPaneTakesTheTheme(t *testing.T) {
 	a, _ := aThemedWindow(t)
 	pane := onlyPaneWidget(t, a).(*term.Terminal)
 	paper := themeNamed(t, a, "Paper")
@@ -79,12 +79,12 @@ func TestAPaneTakesTheScheme(t *testing.T) {
 	if err := a.takeTheme(paper); err != nil {
 		t.Fatalf("take it: %v", err)
 	}
-	a.shells[0].out <- []byte("printed after the scheme changed")
+	a.shells[0].out <- []byte("printed after the theme changed")
 	waitFor(t, a, "the shell to print", func() bool {
 		return strings.Contains(paneText(pane), "printed after")
 	})
 
-	// The cell the text landed on is drawn in the new scheme.
+	// The cell the text landed on is drawn in the new theme.
 	g := gridOfPane(t, pane)
 	if got := g.At(0, 0).FG; got != want.FG {
 		t.Errorf("what the shell printed is in %v, want %v", got, want.FG)
@@ -94,15 +94,15 @@ func TestAPaneTakesTheScheme(t *testing.T) {
 	}
 }
 
-// What the shell printed before the change moves into the new scheme,
-// so a light scheme does not leave the pane on a black ground.
-func TestWhatWasPrintedBeforeMovesToTheNewScheme(t *testing.T) {
+// What the shell printed before the change moves into the new theme,
+// so a light theme does not leave the pane on a black ground.
+func TestWhatWasPrintedBeforeMovesToTheNewTheme(t *testing.T) {
 	a, _ := aThemedWindow(t)
 	pane := onlyPaneWidget(t, a).(*term.Terminal)
 	was := a.colours
 	paper := themeNamed(t, a, "Paper")
 	want, _ := paper.Palette()
-	a.shells[0].out <- []byte("printed before the scheme changed")
+	a.shells[0].out <- []byte("printed before the theme changed")
 	waitFor(t, a, "the shell to print", func() bool {
 		return strings.Contains(paneText(pane), "printed before")
 	})
@@ -119,7 +119,7 @@ func TestWhatWasPrintedBeforeMovesToTheNewScheme(t *testing.T) {
 }
 
 // A named colour a pane printed moves to the same name in the new
-// scheme. Two things used to break this with the real schemes: a scheme
+// theme. Two things used to break this with the real themes: a theme
 // repeats some of its named colours further up the 256, and its ground
 // colour is usually one of them.
 func TestANamedColourInAPaneMovesToTheSameName(t *testing.T) {
@@ -151,7 +151,7 @@ func TestANamedColourInAPaneMovesToTheSameName(t *testing.T) {
 }
 
 // The choice is written down, so the next run opens on it.
-func TestTheSchemeIsRememberedBetweenRuns(t *testing.T) {
+func TestTheThemeIsRememberedBetweenRuns(t *testing.T) {
 	a, path := aThemedWindow(t)
 
 	if err := a.takeTheme(themeNamed(t, a, "Paper")); err != nil {
@@ -167,8 +167,8 @@ func TestTheSchemeIsRememberedBetweenRuns(t *testing.T) {
 	}
 }
 
-// A window opens on the scheme it was left in.
-func TestAWindowOpensOnTheSchemeItWasLeftIn(t *testing.T) {
+// A window opens on the theme it was left in.
+func TestAWindowOpensOnTheThemeItWasLeftIn(t *testing.T) {
 	a, _ := aThemedWindow(t)
 	if err := a.theme.choose("Contrast"); err != nil {
 		t.Fatalf("choose: %v", err)
@@ -181,9 +181,9 @@ func TestAWindowOpensOnTheSchemeItWasLeftIn(t *testing.T) {
 	}
 }
 
-// One left in a scheme that has since gone from the file opens on the
+// One left in a theme that has since gone from the file opens on the
 // first, and says so rather than changing colour with no word about it.
-func TestASchemeThatHasGoneIsSaidSo(t *testing.T) {
+func TestAThemeThatHasGoneIsSaidSo(t *testing.T) {
 	a, _ := aThemedWindow(t)
 	if err := a.theme.choose("Written by hand"); err != nil {
 		t.Fatalf("choose: %v", err)
@@ -195,13 +195,13 @@ func TestASchemeThatHasGoneIsSaidSo(t *testing.T) {
 		t.Errorf("it opens on %q, want %q", got.Name, want)
 	}
 	if !a.logged.holds("Written by hand") {
-		t.Error("nothing said which scheme had gone")
+		t.Error("nothing said which theme had gone")
 	}
 }
 
-// The schemes in the user's own file are offered after the built-in
+// The themes in the user's own file are offered after the built-in
 // ones.
-func TestTheFilesSchemesAreOffered(t *testing.T) {
+func TestTheFilesThemesAreOffered(t *testing.T) {
 	a, _ := aThemedWindow(t)
 	dir := t.TempDir()
 	body := `{"version":1,"themes":[{"name":"Mine","fg":"#fff","bg":"#000",` +
@@ -219,19 +219,19 @@ func TestTheFilesSchemesAreOffered(t *testing.T) {
 	if err := a.openThemePick(); err != nil {
 		t.Fatalf("open the picker: %v", err)
 	}
-	c := awaitModal(t, a, "the scheme picker", byTitle[*ui.Chooser](themeTitle))
+	c := awaitModal(t, a, "the theme picker", byTitle[*ui.Chooser](themeTitle))
 
 	var offered []string
 	for _, row := range c.Rows() {
 		offered = append(offered, strings.TrimSpace(row.Text))
 	}
 	if !slices.Contains(offered, "Mine") {
-		t.Errorf("it offers %v, want the scheme from the file", offered)
+		t.Errorf("it offers %v, want the theme from the file", offered)
 	}
 }
 
 // Picking one from the list draws the window in it.
-func TestPickingASchemeFromTheListTakesIt(t *testing.T) {
+func TestPickingAThemeFromTheListTakesIt(t *testing.T) {
 	a, _ := aThemedWindow(t)
 	want, err := themeNamed(t, a, "Paper").Palette()
 	if err != nil {
@@ -241,17 +241,17 @@ func TestPickingASchemeFromTheListTakesIt(t *testing.T) {
 	if err := a.openThemePick(); err != nil {
 		t.Fatalf("open the picker: %v", err)
 	}
-	c := awaitModal(t, a, "the scheme picker", byTitle[*ui.Chooser](themeTitle))
+	c := awaitModal(t, a, "the theme picker", byTitle[*ui.Chooser](themeTitle))
 	takeChoice(t, c, "Paper")
 
 	if a.colours != want {
-		t.Error("the window is not drawn in the scheme that was picked")
+		t.Error("the window is not drawn in the theme that was picked")
 	}
 }
 
-// A scheme that could not be written down is still drawn: the window is
+// A theme that could not be written down is still drawn: the window is
 // in it, and the reason is what the user needs.
-func TestASchemeThatCannotBeRememberedIsStillDrawn(t *testing.T) {
+func TestAThemeThatCannotBeRememberedIsStillDrawn(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withDialogs(t, a)
 	a.theme.remember(settings.Unusable(errors.New("the settings file is unreadable")))
@@ -264,7 +264,7 @@ func TestASchemeThatCannotBeRememberedIsStillDrawn(t *testing.T) {
 		t.Fatal("it said nothing about a choice it could not write")
 	}
 	if a.colours != want {
-		t.Error("the window is not drawn in the scheme that was taken")
+		t.Error("the window is not drawn in the theme that was taken")
 	}
 }
 
@@ -277,9 +277,9 @@ func gridOfPane(t *testing.T, pane *term.Terminal) *grid.Grid {
 	return g
 }
 
-// Clearing the screen after a change paints the new scheme's ground,
-// because what a cleared cell is made of comes from the scheme too.
-func TestClearingAfterASchemeChangePaintsTheNewGround(t *testing.T) {
+// Clearing the screen after a change paints the new theme's ground,
+// because what a cleared cell is made of comes from the theme too.
+func TestClearingAfterAThemeChangePaintsTheNewGround(t *testing.T) {
 	a, _ := aThemedWindow(t)
 	pane := onlyPaneWidget(t, a).(*term.Terminal)
 	paper := themeNamed(t, a, "Paper")
@@ -300,8 +300,8 @@ func TestClearingAfterASchemeChangePaintsTheNewGround(t *testing.T) {
 }
 
 // A pane made taller after a change fills the new rows with the new
-// scheme's ground, rather than the one it was opened in.
-func TestRowsAddedAfterASchemeChangeAreInIt(t *testing.T) {
+// theme's ground, rather than the one it was opened in.
+func TestRowsAddedAfterAThemeChangeAreInIt(t *testing.T) {
 	a, _ := aThemedWindow(t)
 	pane := onlyPaneWidget(t, a).(*term.Terminal)
 	was := pane.Size()
@@ -319,10 +319,10 @@ func TestRowsAddedAfterASchemeChangeAreInIt(t *testing.T) {
 	}
 }
 
-// Every scheme reads. The window is written in colours derived from the
-// scheme's own two ends, and a scheme with a light ground broke widgets
+// Every theme reads. The window is written in colours derived from the
+// theme's own two ends, and a theme with a light ground broke widgets
 // that took a numbered colour for "just off the background".
-func TestEverySchemeReads(t *testing.T) {
+func TestEveryThemeReads(t *testing.T) {
 	for _, theme := range themes.Built() {
 		pal, err := theme.Palette()
 		if err != nil {
@@ -391,7 +391,7 @@ func TestEverySchemeReads(t *testing.T) {
 			}
 		}
 		// The sidebar and the menu bar are shaded towards colour 4, so a
-		// scheme whose ground is already that colour has no frame at all.
+		// theme whose ground is already that colour has no frame at all.
 		if got := grid.Contrast(sidebarFoot(pal), pal.BG); got < 1.1 {
 			t.Errorf("%s: the window's frame is %v on a ground of %v, %.2f:1, and it has to read as a frame",
 				theme.Name, sidebarFoot(pal), pal.BG, got)
@@ -411,10 +411,10 @@ func TestEverySchemeReads(t *testing.T) {
 	}
 }
 
-// The chips on the menu bar take the scheme. They are built only when
-// what they say changes, and a scheme is not part of that, so a window
-// left them in the colours of the scheme before.
-func TestTheMenuBarChipsTakeTheScheme(t *testing.T) {
+// The chips on the menu bar take the theme. They are built only when
+// what they say changes, and a theme is not part of that, so a window
+// left them in the colours of the theme before.
+func TestTheMenuBarChipsTakeTheTheme(t *testing.T) {
 	a := aBarWindow(t)
 	withServing(t, a, aPublicKey(t, "marcus@laptop"))
 	if err := a.startServing("0", whereHere); err != nil {
@@ -438,9 +438,9 @@ func TestTheMenuBarChipsTakeTheScheme(t *testing.T) {
 }
 
 // The pinned row above the sidebar and every divider already drawn take
-// the scheme, so a window does not end up with two kinds of divider in
+// the theme, so a window does not end up with two kinds of divider in
 // it.
-func TestThePinnedRowAndTheDividersTakeTheScheme(t *testing.T) {
+func TestThePinnedRowAndTheDividersTakeTheTheme(t *testing.T) {
 	a, _ := aThemedWindow(t)
 	if err := a.openPane(); err != nil {
 		t.Fatalf("open a second pane: %v", err)
@@ -481,7 +481,7 @@ func TestThePinnedRowAndTheDividersTakeTheScheme(t *testing.T) {
 	}
 }
 
-// Reloading reads the file again, so a scheme can be written with the
+// Reloading reads the file again, so a theme can be written with the
 // window open.
 func TestReloadingReadsTheFileAgain(t *testing.T) {
 	a, _ := aThemedWindow(t)
@@ -494,14 +494,14 @@ func TestReloadingReadsTheFileAgain(t *testing.T) {
 	}
 
 	if _, ok := themes.Named(a.theme.all(), "Mine"); !ok {
-		t.Errorf("it offers %v, want the scheme written while the window was open",
+		t.Errorf("it offers %v, want the theme written while the window was open",
 			themes.Names(a.theme.all()))
 	}
 }
 
-// And a window drawn in a scheme that has just been edited is redrawn in
+// And a window drawn in a theme that has just been edited is redrawn in
 // it, rather than keeping the colours it read the first time.
-func TestReloadingRedrawsTheWindowInTheSchemeAsItIsNow(t *testing.T) {
+func TestReloadingRedrawsTheWindowInTheThemeAsItIsNow(t *testing.T) {
 	a, _ := aThemedWindow(t)
 	dir := t.TempDir()
 	a.theme.at(dir)
@@ -523,9 +523,9 @@ func TestReloadingRedrawsTheWindowInTheSchemeAsItIsNow(t *testing.T) {
 	}
 }
 
-// A window drawn in a scheme the file no longer holds falls back to the
+// A window drawn in a theme the file no longer holds falls back to the
 // one it would open on, rather than keeping colours nothing describes.
-func TestReloadingAfterASchemeIsDeletedFallsBack(t *testing.T) {
+func TestReloadingAfterAThemeIsDeletedFallsBack(t *testing.T) {
 	a, _ := aThemedWindow(t)
 	dir := t.TempDir()
 	a.theme.at(dir)
@@ -549,7 +549,7 @@ func TestReloadingAfterASchemeIsDeletedFallsBack(t *testing.T) {
 	}
 }
 
-// A start file holds the scheme the window is in, and the window says
+// A start file holds the theme the window is in, and the window says
 // where it went.
 func TestWritingAStartFileSaysWhereItWent(t *testing.T) {
 	a, _ := aThemedWindow(t)
@@ -597,7 +597,7 @@ func TestWritingAStartFileDoesNotWriteOverOne(t *testing.T) {
 	}
 }
 
-// writeThemes puts a themes file holding one scheme in a directory.
+// writeThemes puts a themes file holding one theme in a directory.
 func writeThemes(t *testing.T, dir, name, fg string) {
 	t.Helper()
 	body := `{"version":1,"themes":[{"name":"` + name + `","fg":"` + fg + `","bg":"#000",` +

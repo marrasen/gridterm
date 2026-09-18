@@ -6,32 +6,30 @@ import (
 	"github.com/marrasen/gridterm/grid"
 )
 
-// Palette is the colour scheme a terminal resolves SGR colours against.
+// Palette is the colour theme a terminal resolves SGR colours against.
 //
 // Colours are resolved to RGBA as cells are written rather than stored
 // as indices, which keeps the grid a pure display structure. Changing
-// the scheme moves what is already on a screen by matching each colour
-// against the old scheme.
+// the theme moves what is already on a screen by matching each colour
+// against the old theme.
 type Palette struct {
 	// ANSI holds the 256-colour palette: 0-7 normal, 8-15 bright,
 	// 16-231 the 6x6x6 cube, 232-255 greyscale.
 	ANSI [256]color.RGBA
 
-	FG     color.RGBA // default foreground
-	BG     color.RGBA // default background
-	Cursor color.RGBA
+	FG color.RGBA // default foreground
+	BG color.RGBA // default background
 
 	// Selection is painted behind selected text.
 	Selection color.RGBA
 }
 
-// DefaultPalette returns a dark scheme with the usual xterm 256-colour
+// DefaultPalette returns a dark theme with the usual xterm 256-colour
 // layout for everything above index 15.
 func DefaultPalette() Palette {
 	p := Palette{
 		FG:        color.RGBA{0xc8, 0xd0, 0xda, 0xff},
 		BG:        color.RGBA{0x14, 0x17, 0x1c, 0xff},
-		Cursor:    color.RGBA{0xc8, 0xd0, 0xda, 0xff},
 		Selection: color.RGBA{0x33, 0x3f, 0x52, 0xff},
 	}
 
@@ -73,9 +71,9 @@ func (p *Palette) index(n int) color.RGBA {
 // or a panel that has to read as sitting on the window rather than in
 // it.
 //
-// Derived from the two ends of the scheme rather than taken from a
+// Derived from the two ends of the theme rather than taken from a
 // numbered colour: ANSI[0] is black, which is a shade off the ground in
-// a dark scheme and the same as the text in a light one.
+// a dark theme and the same as the text in a light one.
 func (p *Palette) Surface() color.RGBA { return grid.Blend(p.BG, p.FG, 1, 6) }
 
 // FillUpper fills palette entries 16 to 255 with the xterm layout: a

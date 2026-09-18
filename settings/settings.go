@@ -80,7 +80,7 @@ type stored struct {
 	// pick from when making a connection.
 	Keys []string `json:"keys,omitempty"`
 
-	// Theme is the colour scheme the window is drawn in, by name.
+	// Theme is the colour theme the window is drawn in, by name.
 	Theme *string `json:"theme,omitempty"`
 }
 
@@ -367,7 +367,7 @@ func dropLine(have []SavedCommand, line string) []SavedCommand {
 	return slices.DeleteFunc(have, func(cmd SavedCommand) bool { return cmd.Line == line })
 }
 
-// Theme is the colour scheme the window is drawn in, and whether one
+// Theme is the colour theme the window is drawn in, and whether one
 // was picked.
 func (s *Settings) Theme() (string, bool) {
 	s.mu.Lock()
@@ -378,7 +378,7 @@ func (s *Settings) Theme() (string, bool) {
 	return *s.have.Theme, true
 }
 
-// PutTheme remembers the colour scheme, and saves.
+// PutTheme remembers the colour theme, and saves.
 func (s *Settings) PutTheme(name string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

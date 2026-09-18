@@ -323,7 +323,7 @@ func (a *app) paneScreen(w ui.Widget) (ui.Size, bool) {
 	return area.Size(), ok
 }
 
-// tilesStyle colours the grid of tiles in the window's own scheme.
+// tilesStyle colours the grid of tiles in the window's own theme.
 func (a *app) tilesStyle() ui.TilesStyle {
 	return ui.TilesStyle{
 		FG:       a.colours.FG,

@@ -1028,10 +1028,10 @@ func (s *Screen) Wrap() bool { return s.mode.Wrap }
 func (s *Screen) WrapNext() bool { return s.cursor.WrapNext }
 
 // SetPalette gives the screen the colours it draws in, and moves what is
-// already on it to the same places in the new scheme, matching colour
+// already on it to the same places in the new theme, matching colour
 // against colour since a cell holds no entry number.
 //
-// A colour an escape named outright is left alone, unless the old scheme
+// A colour an escape named outright is left alone, unless the old theme
 // held the same one.
 func (s *Screen) SetPalette(pal Palette) {
 	if pal == s.palette {

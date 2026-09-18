@@ -38,7 +38,7 @@ func TestWhatGridtermRemembersIsUnderTheNameItAlwaysWas(t *testing.T) {
 	for _, at := range []struct{ what, got, want string }{
 		{"the settings", set, filepath.Join(want, "settings.json")},
 		{"the saved servers", book, filepath.Join(want, "servers.json")},
-		{"the colour schemes", themes.Path(dir), filepath.Join(want, "themes.json")},
+		{"the colour themes", themes.Path(dir), filepath.Join(want, "themes.json")},
 	} {
 		if at.got != at.want {
 			t.Errorf("%s are at %s, want %s", at.what, at.got, at.want)
@@ -63,7 +63,7 @@ func TestTheNoticeNamesEveryFileAgainstWhatItIsFor(t *testing.T) {
 	for _, line := range []struct{ what, name string }{
 		{"Settings", "settings.json"},
 		{"Saved servers", "servers.json"},
-		{"Colour schemes", "themes.json"},
+		{"Colour themes", "themes.json"},
 		{"Keyboard shortcuts", "keys.json"},
 		{"Keys allowed to take this window over", "authorized_keys"},
 		{"Windows this one has connected to", "known_windows"},

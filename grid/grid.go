@@ -238,7 +238,7 @@ func New(cols, rows int, fg, bg color.RGBA) *Grid {
 		DefaultFG: fg,
 		DefaultBG: bg,
 		// A mid grey reads as a selection against both a dark and a
-		// light scheme; callers with a theme should override it.
+		// light theme; callers with a theme of their own should override it.
 		SelectionBG: color.RGBA{0x3a, 0x44, 0x55, 0xff},
 	}
 	g.Resize(cols, rows)

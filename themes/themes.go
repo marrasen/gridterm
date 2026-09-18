@@ -1,4 +1,4 @@
-// Package themes holds the colour schemes a window can be drawn in, the
+// Package themes holds the colour themes a window can be drawn in, the
 // ones built in and the ones the user has written down.
 package themes
 
@@ -20,16 +20,15 @@ import (
 // FileVersion is the version this package writes and reads.
 const FileVersion = 1
 
-// Theme is a colour scheme under a name.
+// Theme is a colour theme under a name.
 //
-// The first sixteen colours are the scheme's own. The rest of the 256
+// The first sixteen colours are the theme's own. The rest of the 256
 // are the layout every terminal agrees on, filled in from those.
 type Theme struct {
 	Name string `json:"name"`
 
 	FG        string `json:"fg"`
 	BG        string `json:"bg"`
-	Cursor    string `json:"cursor,omitempty"`
 	Selection string `json:"selection,omitempty"`
 
 	// ANSI are the sixteen named colours, black first and bright white
@@ -62,15 +61,10 @@ func (t Theme) Palette() (vt.Palette, error) {
 	if err := errors.Join(read("fg", t.FG, &p.FG), read("bg", t.BG, &p.BG)); err != nil {
 		return vt.Palette{}, err
 	}
-	// The cursor falls back to the text colour, which is what it is.
-	// The selection cannot: selected text keeps its own colour and is
-	// drawn on this, so the two would be one.
-	p.Cursor, p.Selection = p.FG, p.Surface()
-	if t.Cursor != "" {
-		if err := read("cursor", t.Cursor, &p.Cursor); err != nil {
-			return vt.Palette{}, err
-		}
-	}
+	// A selection falls back to a ground just off the window's own.
+	// It cannot fall back to the foreground: selected text keeps its own
+	// colour and is drawn on this, so the two would be one.
+	p.Selection = p.Surface()
 	if t.Selection != "" {
 		if err := read("selection", t.Selection, &p.Selection); err != nil {
 			return vt.Palette{}, err
@@ -125,7 +119,7 @@ func Built() []Theme {
 	return []Theme{
 		{
 			Name: "Dark", FG: "#c8d0da", BG: "#14171c",
-			Cursor: "#c8d0da", Selection: "#333f52",
+			Selection: "#333f52",
 			ANSI: []string{
 				"#1c2026", "#e06c75", "#8fd46a", "#e6b450",
 				"#61afef", "#c678dd", "#56b6c2", "#abb2bf",
@@ -135,7 +129,7 @@ func Built() []Theme {
 		},
 		{
 			Name: "Paper", FG: "#26292e", BG: "#fbfbf7",
-			Cursor: "#26292e", Selection: "#cdd8e8",
+			Selection: "#cdd8e8",
 			ANSI: []string{
 				"#2b3038", "#b2273a", "#3f7d20", "#9a6700",
 				"#1f5fbf", "#8b3ec4", "#0f7686", "#57606a",
@@ -152,7 +146,7 @@ func Built() []Theme {
 			// dark half of that palette cannot be read on it, and the
 			// window writes its own labels and notes in those colours.
 			Name: "Turbo", FG: "#ffff55", BG: "#0000aa",
-			Cursor: "#ffff55", Selection: "#007b7b",
+			Selection: "#007b7b",
 			ANSI: []string{
 				"#000000", "#ec6464", "#55cc55", "#e0a030",
 				"#6f8fff", "#d070d0", "#40c8c8", "#aaaaaa",
@@ -162,7 +156,7 @@ func Built() []Theme {
 		},
 		{
 			Name: "Contrast", FG: "#ffffff", BG: "#000000",
-			Cursor: "#ffffff", Selection: "#0000c0",
+			Selection: "#0000c0",
 			ANSI: []string{
 				"#000000", "#ff5f5f", "#5fff5f", "#ffff5f",
 				"#5f9fff", "#ff5fff", "#5fffff", "#e0e0e0",
@@ -186,7 +180,7 @@ func Path(dir string) string { return filepath.Join(dir, File) }
 //
 // A file that is not there is not a failure: it is what the first run
 // looks like. Anything else is, because a theme file half read would
-// offer a scheme with colours nobody chose.
+// offer a theme with colours nobody chose.
 func Load(path string) ([]Theme, error) {
 	all := Built()
 	raw, err := os.ReadFile(path)
@@ -214,7 +208,7 @@ func Load(path string) ([]Theme, error) {
 		}
 		// Read now rather than when it is picked, so a colour nobody can
 		// read is said when the file is, and not at the moment the user
-		// chooses the scheme.
+		// chooses the theme.
 		if _, err := t.Palette(); err != nil {
 			return all, fmt.Errorf("themes: %s: %w", path, err)
 		}
@@ -251,7 +245,7 @@ func Names(all []Theme) []string {
 	return out
 }
 
-// WriteStart writes a themes file holding a copy of one scheme, for a
+// WriteStart writes a themes file holding a copy of one theme, for a
 // user with nowhere to start from.
 //
 // It refuses a file that is already there: what is in one is the user's,

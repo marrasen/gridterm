@@ -1240,7 +1240,7 @@ func (t *Terminal) fail(err error) {
 }
 
 // SetPalette gives the terminal the colours it draws in, and moves what
-// the program has already printed into the new scheme.
+// the program has already printed into the new theme.
 func (t *Terminal) SetPalette(pal vt.Palette) {
 	t.mu.Lock()
 	t.term.Screen().SetPalette(pal)

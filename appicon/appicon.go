@@ -23,7 +23,7 @@ var Sizes = []int{16, 24, 32, 48, 64, 128, 256}
 // would cost two frames for nothing.
 var windowSizes = []int{16, 24, 32, 48}
 
-// The colours. Three are the Dark scheme's own, and the rim is its own
+// The colours. Three are the Dark theme's own, and the rim is its own
 // colour: the ground is nearly black, and an icon with no edge is a hole
 // on a dark taskbar.
 var (

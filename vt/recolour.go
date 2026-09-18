@@ -6,15 +6,15 @@ import (
 	"github.com/marrasen/gridterm/grid"
 )
 
-// recolours moves the colours of one scheme to the same places in
-// another. It holds a table per channel, because a scheme's default
+// recolours moves the colours of one theme to the same places in
+// another. It holds a table per channel, because a theme's default
 // ground is often also one of its named colours and the two have to go
 // different ways.
 type recolours struct {
 	fg, bg *channel
 }
 
-// recolour works out how each of the old scheme's colours moves to the
+// recolour works out how each of the old theme's colours moves to the
 // new one.
 func recolour(was, now Palette) recolours {
 	return recolours{
@@ -50,7 +50,7 @@ type channel struct {
 }
 
 // newChannel builds one channel's table. The 256 named colours go in
-// lowest first, so a colour a scheme holds twice moves as the lower of
+// lowest first, so a colour a theme holds twice moves as the lower of
 // the two, which is the one output names. The channel's own default goes
 // in last and beats them all.
 func newChannel(was, now Palette, from, onto color.RGBA) *channel {
@@ -64,7 +64,7 @@ func newChannel(was, now Palette, from, onto color.RGBA) *channel {
 	return &channel{to: to, was: from, now: onto}
 }
 
-// of is the colour c moves to. A colour the old scheme did not hold is
+// of is the colour c moves to. A colour the old theme did not hold is
 // left alone.
 func (ch *channel) of(c color.RGBA) color.RGBA {
 	if c == ch.was {

@@ -103,7 +103,7 @@ func filesSay(f where) string {
 	for _, line := range []struct{ what, name string }{
 		{"Settings", settings.File},
 		{"Saved servers", remote.BookFile},
-		{"Colour schemes", themes.File},
+		{"Colour themes", themes.File},
 		{"Keyboard shortcuts", keys.File},
 		{"Keys allowed to take this window over", serve.AuthFile},
 		{"Windows this one has connected to", knownWindowsFile},

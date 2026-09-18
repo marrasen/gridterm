@@ -46,21 +46,14 @@ From Marcus's inbox.
   about changing a keyboard shortcut, and that is the example Marcus
   gave: where the file is, that it holds changes rather than the whole
   map, that a moved shortcut takes two lines, and how to write a chord.
-  The same goes for the colour schemes, the server list, and what a
+  The same goes for the colour themes, the server list, and what a
   copy that carries its own files is for. Some of it is already written
   inside the window, in "Keys and commands" and "Where gridterm keeps
   its files", and the README can say the same things once.
 
 ## Waiting on an answer from Marcus
 
-The first is about the border round a shared pane. The rest are about
-the context menu, which is planned below.
-
-- **How thick should the border round a shared pane be?** It is two
-  pixels now, and that is two pixels whatever the font size. The old
-  border was a cell thick, so it grew with the font. Two pixels reads
-  well at the sizes tried so far, and it stays a hairline on a large
-  font. Should it scale with the cell instead?
+These are all about the context menu, which is planned below.
 
 - **Right click in a pane where a program owns the mouse.** vim, mc and
   htop ask for the mouse, and then the right button is theirs. The
@@ -380,12 +373,6 @@ From Marcus's inbox, after working in a shared window.
   glow. `TestASharedPaneCostsNothingBetweenGlowSteps` pins the cost at
   two layers a step, so it cannot grow unnoticed.
 
-- **A scheme's cursor colour does nothing.** `Palette.Cursor` is read
-  out of the file and parsed, and then nothing looks at it. The renderer
-  draws the cursor in the cell's own foreground and redraws the glyph in
-  the cell's background, so the character under it is always inverted.
-  Either wire the setting up or take it out of the file format.
-
 - **A folder holding a comma cannot be typed in the server dialog.** The
   folders are one field and a comma parts them, so a path with one in it
   can only be written in the server list file by hand. The dialog does
@@ -429,7 +416,7 @@ From Marcus's inbox, after working in a shared window.
   from the modal layer's own geometry too.
 
 - **The keyboard shortcuts file is read once, at startup.** Colour
-  schemes have a "Reload", and this does not. Applying the changes again
+  themes have a "Reload", and this does not. Applying the changes again
   on top of a keymap they have already changed would not give a deleted
   line's built-in chord back, so a real reload has to build the default
   keymap from scratch first. That means pulling the `MustBind` block out
@@ -559,10 +546,10 @@ From Marcus's inbox, after working in a shared window.
   of what gridterm does about it. Same class as the key line above.
 
 - **A pane watched over the wire keeps the host's named colours.** The
-  window the pane belongs to sends its screen again when the scheme
+  window the pane belongs to sends its screen again when the theme
   changes, so a watcher sees the change at once. What it sees is a mix.
   The wire leaves the default ground and text out, so those take the
-  watcher's own scheme. Everything the program named is carried as a
+  watcher's own theme. Everything the program named is carried as a
   resolved colour, so the reds and blues stay the host's. Carrying the
   entry a colour came from over the wire would close it.
 

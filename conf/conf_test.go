@@ -43,7 +43,7 @@ func asACopyAt(t *testing.T, exe string) {
 }
 
 // The name gridterm's directory is under does not change: an existing
-// user's settings, servers and colour schemes are already under it.
+// user's settings, servers and colour themes are already under it.
 func TestTheDirectoryKeepsTheNameItHasAlwaysHad(t *testing.T) {
 	if Name != "gridterm" {
 		t.Errorf("the directory is called %q, and everybody's files are under \"gridterm\"", Name)

@@ -124,9 +124,9 @@ func TestAWatcherIsSentTheLiveScreenNotTheScrolledView(t *testing.T) {
 	}
 }
 
-// A scheme change on the machine being watched is sent on, so the
-// watcher does not sit on the old scheme until the program next redraws.
-func TestAWatcherIsSentTheScreenWhenTheSchemeChanges(t *testing.T) {
+// A theme change on the machine being watched is sent on, so the
+// watcher does not sit on the old theme until the program next redraws.
+func TestAWatcherIsSentTheScreenWhenTheThemeChanges(t *testing.T) {
 	pane, shell, w := watchedPane(t, 40, 8)
 	readUntil(t, w, "\x1b[H\x1b[2J")
 	shell.out <- []byte("printed before")
@@ -134,7 +134,7 @@ func TestAWatcherIsSentTheScreenWhenTheSchemeChanges(t *testing.T) {
 
 	paper, have := themes.Named(themes.Built(), "Paper")
 	if !have {
-		t.Fatal("there is no Paper scheme to change to")
+		t.Fatal("there is no Paper theme to change to")
 	}
 	pal, err := paper.Palette()
 	if err != nil {

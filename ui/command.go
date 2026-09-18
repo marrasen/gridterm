@@ -23,8 +23,8 @@ type Command struct {
 
 	// AlsoFind are other words this command answers to in the palette.
 	// The title is what a person reads, and it is not always the word
-	// they would look for: the colour schemes are found under "theme"
-	// as well, which the title never says.
+	// they would look for: connecting to another window is found under
+	// "take over" as well, which the title never says.
 	//
 	// Matching one of these never beats matching the title, so the
 	// order the palette shows is the order the titles give.

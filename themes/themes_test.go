@@ -128,6 +128,26 @@ func TestNoFileLeavesTheBuiltInThemes(t *testing.T) {
 	}
 }
 
+// A file written before the cursor colour went is still read.
+//
+// The window never used it: the cursor is drawn in the cell's own
+// foreground and the glyph under it in the cell's background, so the
+// character is always inverted whatever a theme said.
+func TestAThemeStillCarryingACursorColourIsRead(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, `{"version":1,"themes":[{"name":"Old","fg":"#fff","bg":"#000",`+
+		`"cursor":"#ff0000",`+sixteen+`}]}`)
+
+	got, err := Load(Path(dir))
+
+	if err != nil {
+		t.Fatalf("a file with a cursor colour in it: %v", err)
+	}
+	if _, ok := Named(got, "Old"); !ok {
+		t.Errorf("it offers %v, want the theme the file holds", Names(got))
+	}
+}
+
 // The user's own themes come after the ones built in.
 func TestThemesFromTheFileComeAfterTheBuiltInOnes(t *testing.T) {
 	dir := t.TempDir()
@@ -220,7 +240,7 @@ func write(t *testing.T, dir, body string) {
 	}
 }
 
-// A file that fails half way offers none of itself: a scheme the user
+// A file that fails half way offers none of itself: a theme the user
 // never wrote would otherwise appear beside the ones they did.
 func TestAFileThatFailsHalfWayOffersNoneOfItself(t *testing.T) {
 	dir := t.TempDir()
@@ -238,9 +258,9 @@ func TestAFileThatFailsHalfWayOffersNoneOfItself(t *testing.T) {
 	}
 }
 
-// A scheme naming no selection gets one off its own ground: selected
+// A theme naming no selection gets one off its own ground: selected
 // text keeps its colour and is drawn on this, so the two cannot be one.
-func TestASchemeWithNoSelectionGetsOneOffItsGround(t *testing.T) {
+func TestAThemeWithNoSelectionGetsOneOffItsGround(t *testing.T) {
 	theme := Theme{Name: "Bare", FG: "#ffffff", BG: "#000000", ANSI: sixteenColours()}
 
 	p, err := theme.Palette()
@@ -251,14 +271,11 @@ func TestASchemeWithNoSelectionGetsOneOffItsGround(t *testing.T) {
 	if p.Selection == p.FG {
 		t.Error("selected text is drawn on its own colour")
 	}
-	if p.Cursor != p.FG {
-		t.Errorf("the cursor is %v, want the text colour %v", p.Cursor, p.FG)
-	}
 }
 
-// The Dark scheme is the palette a window falls back to with no theme at
-// all, so the two cannot drift apart.
-func TestTheDarkSchemeIsTheFallbackPalette(t *testing.T) {
+// The Dark theme is the palette a window falls back to with none chosen
+// at all, so the two cannot drift apart.
+func TestTheDarkThemeIsTheFallbackPalette(t *testing.T) {
 	dark, ok := Named(Built(), "Dark")
 	if !ok {
 		t.Fatal("there is no Dark")
@@ -274,7 +291,7 @@ func TestTheDarkSchemeIsTheFallbackPalette(t *testing.T) {
 	}
 }
 
-// A starting file holds the scheme it was made from, under a name of its
+// A starting file holds the theme it was made from, under a name of its
 // own, and reads back.
 func TestAStartingFileReadsBack(t *testing.T) {
 	dir := t.TempDir()
@@ -293,7 +310,7 @@ func TestAStartingFileReadsBack(t *testing.T) {
 	}
 	mine := all[len(all)-1]
 	if mine.Name == from.Name {
-		t.Errorf("it wrote the scheme under the name it came with, %q", mine.Name)
+		t.Errorf("it wrote the theme under the name it came with, %q", mine.Name)
 	}
 	got, err := mine.Palette()
 	if err != nil {
@@ -301,7 +318,7 @@ func TestAStartingFileReadsBack(t *testing.T) {
 	}
 	want, _ := from.Palette()
 	if got != want {
-		t.Error("what it wrote is not the scheme it was made from")
+		t.Error("what it wrote is not the theme it was made from")
 	}
 }
 

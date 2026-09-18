@@ -305,7 +305,7 @@ func (a *app) openMenu() error {
 }
 
 // menubarStyle is the menu bar's colours, built afresh whenever the
-// window changes scheme.
+// window changes theme.
 func (a *app) menubarStyle() ui.MenubarStyle {
 	return ui.MenubarStyle{
 		FG: a.colours.FG,

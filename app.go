@@ -152,7 +152,7 @@ type app struct {
 	// showing.
 	switcher *switcher
 
-	// theme is the colour scheme the window is drawn in.
+	// theme is the colour theme the window is drawn in.
 	theme *themePick
 
 	// keysDir is the directory the keyboard shortcuts file lives in.
@@ -703,12 +703,12 @@ func (a *app) commands() {
 			Run: a.takeBackHere},
 		ui.Command{ID: "agent.share", Title: "Show the share…", Run: a.showShare},
 		ui.Command{ID: typedCommand, Title: typedTitle + "…", Run: a.showTyped},
-		ui.Command{ID: "view.theme", Title: "Colour scheme…", Run: a.openThemePick,
-			AlsoFind: []string{"theme", "colors"}},
-		ui.Command{ID: "view.themesReload", Title: "Reload colour schemes",
-			Run: a.reloadThemes, AlsoFind: []string{"theme", "colors"}},
-		ui.Command{ID: "view.themesStart", Title: "Write a colour scheme to edit…",
-			Run: a.writeThemeStart},
+		ui.Command{ID: "view.theme", Title: "Colour theme…", Run: a.openThemePick,
+			AlsoFind: []string{"colors"}},
+		ui.Command{ID: "view.themesReload", Title: "Reload colour themes",
+			Run: a.reloadThemes, AlsoFind: []string{"colors"}},
+		ui.Command{ID: "view.themesStart", Title: "Write a colour theme to edit…",
+			Run: a.writeThemeStart, AlsoFind: []string{"colors"}},
 		ui.Command{ID: "pane.titles", Title: "Show or hide the line naming each pane",
 			Run: a.togglePaneTitles},
 		ui.Command{ID: "key.make", Title: "Make an SSH key…", Run: a.openMakeKey},

@@ -32,9 +32,9 @@ func aRealWindow(t *testing.T) *app {
 //
 // Each of these was a line in main that no test walked, and cutting any
 // of them left the whole feature gone with the suite still green.
-func TestOpeningAWindowReadsTheColourSchemes(t *testing.T) {
+func TestOpeningAWindowReadsTheColourThemes(t *testing.T) {
 	withHome(t)
-	// A scheme of the user's own, which is the only way to tell the file
+	// A theme of the user's own, which is the only way to tell the file
 	// was read: the built-in ones are there before it is opened.
 	dir, err := settings.Dir()
 	if err != nil {
@@ -47,17 +47,17 @@ func TestOpeningAWindowReadsTheColourSchemes(t *testing.T) {
 		`"ansi":["#000","#100","#200","#300","#400","#500","#600","#700",` +
 		`"#800","#900","#a00","#b00","#c00","#d00","#e00","#f00"]}]}`
 	if err := os.WriteFile(themes.Path(dir), []byte(body), 0o600); err != nil {
-		t.Fatalf("write the schemes: %v", err)
+		t.Fatalf("write the themes: %v", err)
 	}
 
 	a := openWindowIn(t)
 
 	if _, have := themes.Named(a.theme.all(), "Mine"); !have {
-		t.Errorf("the window offers %v, want the scheme the file holds",
+		t.Errorf("the window offers %v, want the theme the file holds",
 			themes.Names(a.theme.all()))
 	}
 	if a.theme.showing == "" {
-		t.Error("the window is drawn in no scheme at all")
+		t.Error("the window is drawn in no theme at all")
 	}
 }
 

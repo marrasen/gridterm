@@ -682,7 +682,7 @@ func (a *app) selectedConnection() (*conns.Entry, bool) {
 }
 
 // panelStyle is the sidebar's colours, built afresh whenever the window
-// changes scheme.
+// changes theme.
 func (a *app) panelStyle() ui.ListStyle {
 	st := ui.ListStyle{
 		FG: a.colours.FG,

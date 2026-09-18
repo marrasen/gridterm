@@ -331,6 +331,11 @@ there is one key for position and one for recency.
   test compare byte for byte instead of looking for the images inside.
   About 120 lines of COFF writing.
 
+- **`TestAFinishedJobLetsGoOfItsContext` fails now and then.** It says
+  `the job finished still holding its context` at jobs/stat_test.go:179.
+  Seen once while the whole suite was running; ten runs of it alone
+  passed.
+
 - **`TestClosingAPaneLeavesDetachedWorkRunning` fails now and then under
   load.** It says `the wait ended with 0x0 inside 500ms` at
   session/job_windows_test.go:42. Seen once while the whole suite was
@@ -474,6 +479,46 @@ there is one key for position and one for recency.
 
 Marcus's own list, in his words, kept until each has been looked at
 properly and either written up above or done.
+
+- **An Open menu of its own.** A menu listing the saved servers without
+  the "Connect to" in front of each one, and the local ways in beside
+  them, under a "Server" heading and a "Local" heading. `ui.MenuItem`
+  holds a command and a title and nothing else, so a heading is a kind
+  of item the menus cannot draw yet. The same gap stopped the plus
+  offering a submenu, further up this file.
+
+- **"New terminal" and "New pane" are the same thing under two names.**
+  The split chooser's first line is "New terminal" (split.go:52); the
+  File menu and the palette call it "New pane". Marcus asked what the
+  first one does, which is the question a name earns when it is the only
+  one of its kind.
+
+- **The glow on a shared pane is a whole cell thick.** It is drawn as
+  cells, so the border round a pane somebody else is in is a character
+  wide and a character tall. It should be a couple of pixels. That means
+  drawing it the way the frosted rim is drawn rather than as a row of
+  cells.
+
+- **The pane switcher wants a zoom, a margin and a mark that fits.**
+  Three things, from Marcus after using it:
+  - It should zoom out smoothly and quickly as it opens, rather than
+    appearing.
+  - The tiles should have a little room between them. They tile the
+    window exactly today, so the pictures touch.
+  - The mark round the chosen tile goes below the tile. The frame is
+    drawn in the tile's own box, so this is the box and the picture
+    disagreeing about where the bottom is.
+
+- **"Connection closed. Reconnect?" should have two buttons.** Make it
+  "Connection closed." with "Reconnect" and "Close", and let Close be
+  the one Enter takes. The question is worded in `closedQuestion` in
+  restart.go and the buttons are the caller's. This does not re-open the
+  settled question above about which panes get asked and in what words;
+  it is about the answer, not the question.
+
+- **Shadows under a dialog break at the rounded corners.** `drawShadow`
+  in ui/frame.go paints whole cells, and the corner of a frosted panel
+  is round, so the shadow shows through the curve.
 
 - **Context menu.** Make use of one. On the sidebar it opens the menu
   that is already there.

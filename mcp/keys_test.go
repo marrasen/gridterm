@@ -271,16 +271,29 @@ func TestTheToolsSayWhatIsKnownAboutTheCommand(t *testing.T) {
 	}
 }
 
-// The workflow says a command needs a carriage return at the end, which
-// no agent can guess and nothing else it reads says.
+// The workflow says how to run a command, which no agent can guess and
+// nothing else it reads says.
+//
+// It names the key rather than the character: an agent writing JSON
+// escapes a return twice as often as not, and then types a backslash and
+// has to undo it.
 //
 // The hand-over prompt used to say it as well. It stopped, so this is
 // the only telling left.
 func TestTheWorkflowSaysWhatSendsACommand(t *testing.T) {
-	for _, want := range []string{`\r`, "Enter"} {
+	for _, want := range []string{`keys ["Enter"]`, "escape twice"} {
 		if !strings.Contains(Workflow, want) {
 			t.Errorf("the workflow does not say %q: %q", want, Workflow)
 		}
+	}
+}
+
+// And it says not to bother clearing the screen. An agent that clears
+// before every command fills the record the user reads with noise, and
+// read_output already gives it the last command on its own.
+func TestTheWorkflowSaysNotToBotherClearing(t *testing.T) {
+	if !strings.Contains(Workflow, "Avoid clear") {
+		t.Errorf("the workflow does not say to avoid clear: %q", Workflow)
 	}
 }
 

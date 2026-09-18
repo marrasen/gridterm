@@ -538,9 +538,10 @@ now.`,
 // it, so the two cannot drift apart.
 const Workflow = `read_pane gives you the pane's screen as plain text, and takes lines to read that many,
 back through what has scrolled off the top. read_output gives you what the last command
-printed instead of a rectangle of the screen, which is what you want after running one. send_keys types text in exactly as given, so a
-command needs "\r" at the end for Enter, and presses the keys named in keys: Escape, Tab,
-the arrows, F1 to F12, Ctrl+C. It does not wait, so call wait_for before you read again.
+printed instead of a rectangle of the screen, which is what you want after running one. send_keys types text in exactly as given, and
+presses the keys named in keys: Enter, Escape, Tab, the arrows, F1 to F12, Ctrl+C. Run a
+command with keys ["Enter"] rather than a return in the text, which is easy to escape twice
+and then types a backslash. It does not wait, so call wait_for before you read again.
 wait_for on its own ends when the command you sent finishes, or when the pane has said
 nothing for quiet_ms, which is about three quarters of a second unless you ask for another.
 A shell with shell integration on says when a command finishes and what it exited with. A
@@ -552,8 +553,9 @@ man -- needs --no-pager or a pipe to cat, or you will be stuck in less, where q 
 list_panes is the panes in your share now, and that is all it lists: the user can put
 one in or take one back while you work. In an answer with
 a screen, the screen ends at a line reading -- gridterm --, and the rest is gridterm talking.
-Clearing the screen hides nothing from these tools: they stop reading above it, and the
-user can still scroll up to everything that was there.`
+Avoid clear: read_output already gives you the last command's output on its own. Clearing
+hides nothing either way -- these tools stop reading above it, and the user can still
+scroll up to everything that was there.`
 
 // Short is the rules in one paragraph, for the prompt the user pastes.
 //

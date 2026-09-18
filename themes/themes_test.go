@@ -40,6 +40,14 @@ func TestTheBuiltInThemesAreGood(t *testing.T) {
 	if _, ok := Named(built, "dark"); !ok {
 		t.Error("there is no Dark to open on")
 	}
+	// The Borland IDE, which is the look the menus already have.
+	turbo, ok := Named(built, "turbo")
+	if !ok {
+		t.Fatal("there is no Turbo")
+	}
+	if turbo.BG != "#0000aa" || turbo.FG != "#ffff55" {
+		t.Errorf("Turbo is %s on %s, want yellow on the Borland blue", turbo.FG, turbo.BG)
+	}
 }
 
 // A colour is written the way a stylesheet writes one, long or short,

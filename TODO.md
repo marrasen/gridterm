@@ -3,15 +3,6 @@
 Things Marcus has asked for that are not done yet. Newest first within
 each group. A line goes when the work is in and reviewed.
 
-## A Turbo Pascal theme
-
-Asked for on 2026-09-19. The menus read as an 80s DOS IDE and Marcus
-likes it, so there should be a colour scheme that leans into it: the
-Borland blue ground, yellow on it, and the cyan and grey of that era.
-
-A built-in scheme is an entry in `themes.Built()`: a name, a foreground,
-a ground and the sixteen named colours. Nothing else has to change.
-
 ## What Marcus is looking forward to
 
 In his own order, from 2026-09-19. Bugs and small items come first, and
@@ -388,6 +379,12 @@ From Marcus's inbox, after working in a shared window.
   the last byte and this does not, because a glow that stops is not a
   glow. `TestASharedPaneCostsNothingBetweenGlowSteps` pins the cost at
   two layers a step, so it cannot grow unnoticed.
+
+- **A scheme's cursor colour does nothing.** `Palette.Cursor` is read
+  out of the file and parsed, and then nothing looks at it. The renderer
+  draws the cursor in the cell's own foreground and redraws the glyph in
+  the cell's background, so the character under it is always inverted.
+  Either wire the setting up or take it out of the file format.
 
 - **A folder holding a comma cannot be typed in the server dialog.** The
   folders are one field and a comma parts them, so a path with one in it

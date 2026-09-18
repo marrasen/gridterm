@@ -144,6 +144,23 @@ func Built() []Theme {
 			},
 		},
 		{
+			// The Borland IDE: bright yellow on the blue that DOS wrote
+			// it on, with the grey and cyan of that era round it.
+			//
+			// The lower eight are the era's hues lifted off the PC's own
+			// levels. A blue ground carries almost no brightness, so the
+			// dark half of that palette cannot be read on it, and the
+			// window writes its own labels and notes in those colours.
+			Name: "Turbo", FG: "#ffff55", BG: "#0000aa",
+			Cursor: "#ffff55", Selection: "#007b7b",
+			ANSI: []string{
+				"#000000", "#ec6464", "#55cc55", "#e0a030",
+				"#6f8fff", "#d070d0", "#40c8c8", "#aaaaaa",
+				"#8a8a8a", "#ff5555", "#55ff55", "#ffff55",
+				"#5555ff", "#ff55ff", "#55ffff", "#ffffff",
+			},
+		},
+		{
 			Name: "Contrast", FG: "#ffffff", BG: "#000000",
 			Cursor: "#ffffff", Selection: "#0000c0",
 			ANSI: []string{

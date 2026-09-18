@@ -365,6 +365,49 @@ func TestEverySchemeReads(t *testing.T) {
 			t.Errorf("%s: a window being driven is %v and one only listening is %v, %.2f:1",
 				theme.Name, taken, idle, got)
 		}
+		// The window writes its own labels in numbered colours, so those
+		// have to read on the window's ground and not only in a pane.
+		for _, at := range []int{1, 3, 4, 5, 6} {
+			if got := grid.Contrast(pal.ANSI[at], pal.BG); got < least {
+				t.Errorf("%s: colour %d is %v on the ground %v, %.2f:1, want at least %.1f",
+					theme.Name, at, pal.ANSI[at], pal.BG, got, least)
+			}
+		}
+		// Colour 8 is the dim one: notes, hints, field labels and the
+		// keys beside a menu item. Dimmer than the rest on purpose, and
+		// still above whatever it is read on. A surface is already a
+		// step off the ground, so the bar there is lower.
+		for _, on := range []struct {
+			what  string
+			bg    color.RGBA
+			least float64
+		}{
+			{"the ground", pal.BG, 2.5},
+			{"a surface", pal.Surface(), 2.0},
+		} {
+			if got := grid.Contrast(pal.ANSI[8], on.bg); got < on.least {
+				t.Errorf("%s: the dim colour is %v on %s %v, %.2f:1, want at least %.1f",
+					theme.Name, pal.ANSI[8], on.what, on.bg, got, on.least)
+			}
+		}
+		// The sidebar and the menu bar are shaded towards colour 4, so a
+		// scheme whose ground is already that colour has no frame at all.
+		if got := grid.Contrast(sidebarFoot(pal), pal.BG); got < 1.1 {
+			t.Errorf("%s: the window's frame is %v on a ground of %v, %.2f:1, and it has to read as a frame",
+				theme.Name, sidebarFoot(pal), pal.BG, got)
+		}
+		// A chip on the menu bar picks its own ground, so what it says
+		// has to read on that rather than on the bar.
+		for what, fg := range map[string]color.RGBA{
+			"a window only listening": idle,
+			"a window being driven":   taken,
+			"an agent in this window": statusAgentFG(pal),
+		} {
+			if got := grid.Contrast(fg, chipBG(pal)); got < 4.5 {
+				t.Errorf("%s: %s is %v on the chip's %v, %.2f:1, want at least 4.5",
+					theme.Name, what, fg, chipBG(pal), got)
+			}
+		}
 	}
 }
 

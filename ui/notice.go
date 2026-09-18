@@ -48,6 +48,26 @@ const (
 
 var noticeButtons = []string{"Copy", "OK"}
 
+// NoticeAction is the button a notice offers besides Copy and OK: the
+// thing the message describes, done rather than read.
+type NoticeAction struct {
+	// Title is what the button says.
+	Title string
+
+	// Do is the work. It reports its own trouble: a notice has nowhere
+	// to put a failure, and what went wrong belongs in front of
+	// whoever pressed the button.
+	Do func()
+}
+
+// buttons are the ones this notice draws, left to right.
+func (n *Notice) buttons() []string {
+	if n.Action.Title == "" {
+		return noticeButtons
+	}
+	return append([]string{n.Action.Title}, noticeButtons...)
+}
+
 // NoticeStyle colours a notice.
 type NoticeStyle struct {
 	// FG and BG are the message and the box behind it. A background with
@@ -111,6 +131,11 @@ type Notice struct {
 	// columns, which wrapping at spaces would collapse.
 	Preformatted bool
 
+	// Action is an extra button, before Copy and OK, for a notice that
+	// offers to do the thing it describes. An empty Title leaves it
+	// off, which is every notice that only reports something.
+	Action NoticeAction
+
 	// Copy puts text on the clipboard. A nil one leaves the Copy button
 	// with nothing to do: this package cannot reach a clipboard.
 	Copy func(string)
@@ -152,6 +177,18 @@ type Notice struct {
 // dialog is finished with, which is what takes it off the modal stack.
 func NewNotice(title, message string, close func()) *Notice {
 	return &Notice{Title: title, message: cleanText(message), at: noticeOK, close: close}
+}
+
+// FocusOK puts the focus back on OK, for a notice given an action after
+// it was made: the action goes in front of the other buttons and moves
+// them along.
+func (n *Notice) FocusOK() {
+	for i, name := range n.buttons() {
+		if name == "OK" {
+			n.at = i
+			return
+		}
+	}
 }
 
 // SetClose says what takes the dialog away, for a caller that only has
@@ -331,7 +368,7 @@ func (n *Notice) HandleMouse(ev input.MouseEvent) (bool, error) {
 			return true, nil
 		}
 		if y == box.Rows-2 {
-			if at, ok := ButtonAtCol(noticeButtons, box.Cols, noticePad, x); ok {
+			if at, ok := ButtonAtCol(n.buttons(), box.Cols, noticePad, x); ok {
 				n.at = at
 				n.press(at)
 				return true, nil
@@ -427,7 +464,7 @@ func (n *Notice) paintText(in grid.View, box Rect) {
 
 // paintButtons draws the buttons along the bottom, right aligned.
 func (n *Notice) paintButtons(in grid.View, box Rect) {
-	for i, at := range ButtonColsIn(noticeButtons, box.Cols, noticePad) {
+	for i, at := range ButtonColsIn(n.buttons(), box.Cols, noticePad) {
 		if at < 0 {
 			// No room for this one. Drawing it would land it on top of
 			// the buttons that did fit.
@@ -437,15 +474,24 @@ func (n *Notice) paintButtons(in grid.View, box Rect) {
 		if i == n.at {
 			fg, bg = n.Style.ActiveFG, n.Style.ActiveBG
 		}
-		DrawButton(in, at, box.Rows-2, noticeButtons[i], fg, bg)
+		DrawButton(in, at, box.Rows-2, n.buttons()[i], fg, bg)
 	}
 }
 
 // press runs one of the buttons, leaving the dialog open for Copy so the
 // user can go on reading it.
 func (n *Notice) press(at int) {
-	switch at {
-	case noticeCopy:
+	names := n.buttons()
+	if at < 0 || at >= len(names) {
+		return
+	}
+	switch names[at] {
+	case n.Action.Title:
+		// Named first, so an action called Copy is still the action.
+		if n.Action.Do != nil {
+			n.Action.Do()
+		}
+	case "Copy":
 		n.CopyNow()
 	default:
 		n.dismiss()
@@ -454,7 +500,7 @@ func (n *Notice) press(at int) {
 
 // move steps the focus through the buttons.
 func (n *Notice) move(by int) {
-	count := len(noticeButtons)
+	count := len(n.buttons())
 	n.at = ((n.at+by)%count + count) % count
 }
 
@@ -595,7 +641,7 @@ func (n *Notice) wantCols() int {
 	for para := range strings.SplitSeq(n.message, "\n") {
 		width = max(width, grid.StringWidth(para))
 	}
-	buttons := buttonsWidth(noticeButtons)
+	buttons := buttonsWidth(n.buttons())
 	n.wanted = max(min(max(width, buttons)+noticePad*2, noticeMaxCols), buttons+noticePad*2)
 	n.wantedFor = n.Title
 	return n.wanted

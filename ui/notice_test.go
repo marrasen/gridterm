@@ -654,3 +654,48 @@ func TestAPreformattedLineTooWideIsBrokenWhereItRunsOut(t *testing.T) {
 		t.Errorf("the spacing was lost: %v", lines)
 	}
 }
+
+// A notice given an action draws it beside the other buttons, and
+// pressing it does the work.
+func TestNoticeAnActionButtonDoesTheWork(t *testing.T) {
+	done := 0
+	n := NewNotice("Where the files are", "They are over there.", func() {})
+	n.Action = NoticeAction{Title: "Do it", Do: func() { done++ }}
+	n.FocusOK()
+	n.Layout(Size{Cols: 60, Rows: 12})
+
+	// Tab back onto the action, which sits before Copy and OK.
+	keyTo(t, n, press(input.KeyTab, input.ModShift))
+	keyTo(t, n, press(input.KeyTab, input.ModShift))
+	keyTo(t, n, press(input.KeyEnter, 0))
+
+	if done != 1 {
+		t.Errorf("the action ran %d times, want once", done)
+	}
+}
+
+// Without one it draws the two it always had, and Enter closes it.
+func TestNoticeWithNoActionClosesOnEnter(t *testing.T) {
+	closed := 0
+	n := NewNotice("Something", "happened.", func() { closed++ })
+	n.Layout(Size{Cols: 60, Rows: 12})
+
+	keyTo(t, n, press(input.KeyEnter, 0))
+
+	if closed != 1 {
+		t.Errorf("it closed %d times, want once", closed)
+	}
+}
+
+// The action never swallows Copy: a notice whose action is called Copy
+// still has a Copy button of its own.
+func TestNoticeAnActionDoesNotReplaceCopy(t *testing.T) {
+	n := NewNotice("Something", "happened.", func() {})
+	n.Action = NoticeAction{Title: "Do it", Do: func() {}}
+
+	got := n.buttons()
+
+	if len(got) != 3 || got[0] != "Do it" || got[1] != "Copy" || got[2] != "OK" {
+		t.Errorf("the buttons are %v, want the action then Copy and OK", got)
+	}
+}

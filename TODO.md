@@ -34,13 +34,22 @@ From Marcus's inbox.
   somewhere awkward on a layout. Worth settling with the keyboard config
   under "Asked for, not yet worked out".
 
-- **A release flow, and version numbers.** Binaries for Windows and
-  Linux, and macOS if it is easy. Two versions are wanted, not one:
-  what the program calls itself, and what the wire between two windows
-  calls itself, so a window can tell a build it cannot talk to. Nothing
-  in the protocol carries a version today, and `openSession` is
+- **A release flow, version numbers, and documentation.** Binaries for
+  Windows and Linux, and macOS if it is easy. Two versions are wanted,
+  not one: what the program calls itself, and what the wire between two
+  windows calls itself, so a window can tell a build it cannot talk to.
+  Nothing in the protocol carries a version today, and `openSession` is
   positional, so a build that disagrees is refused by a parse failure
   rather than by a number.
+
+  A release needs something to read with it. The README says nothing
+  about changing a keyboard shortcut, and that is the example Marcus
+  gave: where the file is, that it holds changes rather than the whole
+  map, that a moved shortcut takes two lines, and how to write a chord.
+  The same goes for the colour schemes, the server list, and what a
+  copy that carries its own files is for. Some of it is already written
+  inside the window, in "Keys and commands" and "Where gridterm keeps
+  its files", and the README can say the same things once.
 
 ## Waiting on an answer from Marcus
 
@@ -505,13 +514,6 @@ From Marcus's inbox, after working in a shared window.
   another machine therefore has saved servers naming key files that are
   not there, and every machine prompts as new. The notice says so; there
   is nothing that moves them.
-
-- **Nothing helps a user set up a copy that carries its own files.** They
-  make the directory and copy six files into it by hand, and a copy done
-  wrong looks like a window that was freshly installed. A "Make this copy
-  carry its own files" button on the notice would do the whole thing, and
-  would still not have gridterm making the directory on its own, because
-  the user would have asked.
 
 - **The key a carried copy serves with is only as private as its
   directory.** Windows ignores the mode on the file, and `os.MkdirAll`

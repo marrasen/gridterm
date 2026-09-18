@@ -11,6 +11,7 @@ import (
 	"github.com/marrasen/gridterm/serve"
 	"github.com/marrasen/gridterm/settings"
 	"github.com/marrasen/gridterm/themes"
+	"github.com/marrasen/gridterm/ui"
 )
 
 // filesCommand is the command that says where gridterm keeps its files,
@@ -30,8 +31,38 @@ func (a *app) showWhereFiles() error {
 	n := a.newNotice(filesTitle, body)
 	// A path is not prose, and the dialog would re-wrap one at a space.
 	n.Preformatted = true
+
+	// And a button that does what the message describes, for a copy
+	// that is not carrying its own files yet.
+	own, beside, err := conf.CarriesItsOwn()
+	if err != nil {
+		return err
+	}
+	// And not once the directory is there. Where this window reads from
+	// was decided when it opened and does not move, so it goes on saying
+	// it is not carrying its own files until it is started again --
+	// which is no reason to offer to make a directory that now exists.
+	made, err := isDir(beside)
+	if err != nil {
+		return err
+	}
+	if !own && !made {
+		n.Action = ui.NoticeAction{Title: carryOwnTitle, Do: a.startCarryingOwnFiles}
+		n.FocusOK()
+	}
 	a.presentNotice(n)
 	return nil
+}
+
+// startCarryingOwnFiles does what the notice describes and says how it
+// went, which is the button's whole job.
+func (a *app) startCarryingOwnFiles() {
+	said, err := a.carryOwnFiles()
+	if err != nil {
+		a.reportError("This copy could not be given files of its own", err)
+		return
+	}
+	a.showNotice(carryOwnTitle, said, false)
 }
 
 // whereFilesText is what the notice says, for this copy of gridterm.

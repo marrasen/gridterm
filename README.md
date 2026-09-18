@@ -487,6 +487,30 @@ The file an SSH pane gets goes under the home directory of whoever the
 connection logs in as, because where a temporary directory is depends on
 the machine and this has only a path separator to go on.
 
+**Idle costs nothing; moving costs a whole frame.** Marcus settled this
+on 2026-09-19. There are two savings worth making and one that is not:
+
+- Do not draw when nothing changed. That is what the skipped frame is
+  for, and it is the whole of why damage tracking exists.
+- Do not draw what nobody is shown. A pane behind the switcher is drawn
+  into the window's grid that nothing blits.
+- Do *not* make an animation coarse to save frames. Something moving on
+  screen is something the user is looking at, and it should move at the
+  rate the screen refreshes.
+
+The third one is a rule this window has broken twice, and both places
+say so in their own comments. `pulseStep` is 200ms "so the pulse moves
+in steps slow enough to see and few enough to cost nothing", and
+`glowStep` is 250ms across six steps for the same reason. Between steps
+the frame is skipped, which is the saving; the price is that the two
+things the window animates for its own sake are visibly steppy.
+
+The way out is not to smooth them and pay 60fps for as long as a pane is
+shared. It is to ask what has to animate at all. A border that says a
+pane is shared has to be noticed once, not forever, and a glow that
+never stops is a glow nobody sees after a minute. `zoomTime` is the
+shape to copy: 140ms, eased, per-frame, and then nothing.
+
 **Damage tracking is load-bearing.** `ebiten.SetScreenClearedEveryFrame(false)`
 means a row the renderer skips shows the *previous* frame, not a blank.
 A row wrongly considered clean is a visible bug, so `grid.Set` compares

@@ -8,31 +8,21 @@ each group. A line goes when the work is in and reviewed.
 In his own order, from 2026-09-19. Bugs and small items come first, and
 then these.
 
-1. **"Show every pane" pins the window at full speed and wastes most of
-   it.** Measured on 2026-09-19, a 140x44 window with eight panes and
-   the switcher settled: shut it skips every frame, open it draws every
-   frame for ever -- `repainted=1 blits=10 rows=38 cells=6160`, the same
-   numbers on frame 5 as on frame 1.
-
-   Two things to fix, and the first is not the one this line used to
-   name:
-
-   - **The tiles modal dirties itself every frame.** It is a full-window
-     grid, and after a settled frame the window grid and all eight tile
-     grids are clean while it is not. That is the 38 rows. What in
-     `Tiles.Draw` changes has not been found yet.
-   - **The tree behind the switcher is still drawn.** Every pane draws
-     into the window's own grid as well as into its tile, and nothing
-     blits that grid while the tiles are up. About 40,000 cell compares
-     a frame with eight panes. It costs no GPU work, because the tile
-     grids come out clean, but it is work for a picture nobody sees.
-
-   Each tile's grid is the pane's whole screen -- 113x44 for a pane in
-   that window -- rather than the size it is drawn at. Eight panes is
-   eight nearly-window-sized textures.
-2. **The file viewer.** Its own section below.
-3. **Pasting an image into a terminal.** Done on Windows. What is left
+1. **The file viewer.** Its own section below.
+2. **Pasting an image into a terminal.** Done on Windows. What is left
    is in its own section below.
+
+"Show every pane" was the first of these and is done. It held the window
+at full speed for a picture that was not moving: the tiles painted a
+ground and drew their frames over it, and writing a cell twice dirties
+its row whatever it ends up holding. Drawn through a `ui.buffer` like
+every other widget, a settled switcher skips the frame entirely.
+
+What is left there is not worth doing without a reason to. Each tile's
+grid is the pane's whole screen rather than the size it is drawn at, and
+the panes behind the switcher are still drawn into a grid nothing blits
+-- but that pass costs 120 microseconds on a 140x44 window with eight
+panes, which is under one per cent of a frame.
 
 ## The context menu is deferred
 

@@ -62,6 +62,11 @@ type Tiles struct {
 	at    int
 	size  Size
 	areas []Rect
+
+	// buf is what the tiles are drawn through, because this paints the
+	// ground and then the frames over it and every cell it writes twice
+	// would dirty its row for good. See buffer.
+	buf buffer
 }
 
 // NewTiles returns a grid of tiles, one per name, with the first marked.
@@ -138,7 +143,9 @@ func (t *Tiles) Layout(size Size) {
 
 // Draw paints the ground, a frame and a name per tile, and the mark on
 // the one that is chosen.
-func (t *Tiles) Draw(v grid.View) {
+func (t *Tiles) Draw(v grid.View) { t.buf.draw(v, t.paint) }
+
+func (t *Tiles) paint(v grid.View) {
 	cols, rows := v.Size()
 	if cols <= 0 || rows <= 0 {
 		return

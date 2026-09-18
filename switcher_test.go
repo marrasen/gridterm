@@ -778,3 +778,37 @@ func TestAPictureExactlyAtTheBoundIsLeftOut(t *testing.T) {
 		t.Error("a picture a cell narrower is left out, want it drawn")
 	}
 }
+
+// A settled switcher lets the window idle.
+//
+// The tiles paint a ground and then draw frames over it, which writes
+// the same cells twice. Straight onto the layer that dirtied every row
+// it touched for good, and the window redrew every frame for a picture
+// that was not moving.
+func TestASettledSwitcherSkipsTheFrame(t *testing.T) {
+	a := aWindowOfPanes(t, 8)
+	openTiles(t, a)
+	// The first frame after the zoom draws, and so does the one that
+	// puts the pictures where they settle.
+	frame(t, a)
+	frame(t, a)
+
+	frame(t, a)
+
+	if got := a.comp.Stats(); !got.Skipped {
+		t.Errorf("a settled switcher drew %+v, want the frame skipped entirely", got)
+	}
+}
+
+// And a switcher whose picture moved does not skip, or the zoom would
+// not be drawn at all.
+func TestAMovingSwitcherDrawsTheFrame(t *testing.T) {
+	a := aWindowOfPanes(t, 8)
+	openTilesZooming(t, a)
+
+	frame(t, a)
+
+	if got := a.comp.Stats(); got.Skipped {
+		t.Error("the switcher skipped a frame of its zoom")
+	}
+}

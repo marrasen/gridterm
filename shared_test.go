@@ -1,13 +1,17 @@
 package main
 
 import (
+	"image"
 	"image/color"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/marrasen/gridterm/conns"
+	"github.com/marrasen/gridterm/glyph"
 	"github.com/marrasen/gridterm/grid"
+	"github.com/marrasen/gridterm/render"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/term"
 )
@@ -50,19 +54,15 @@ func TestAPaneHandedToAnAgentGetsABorder(t *testing.T) {
 	if !shown {
 		t.Fatal("the pane is not in the layout")
 	}
-	cols, rows := m.g.Size()
-	if cols != area.Cols || rows != area.Rows {
-		t.Errorf("the border is %dx%d, want the pane's %dx%d", cols, rows, area.Cols, area.Rows)
+	if got := len(rules(m)); got != 1 {
+		t.Fatalf("the pane has %d rules round it, want the one", got)
 	}
-	if got := ruleColour(m.g.At(0, 0)); !sameHue(got, statusAgentFG(a.colours)) {
-		t.Errorf("the corner of the border is %v, want the cyan an agent is said in", got)
+	if got := rules(m)[0].Colour; !sameHue(got, statusAgentFG(a.colours)) {
+		t.Errorf("the border is %v, want the cyan an agent is said in", got)
 	}
-	if got := ruleColour(m.g.At(cols/2, rows/2)); got.A != 0 {
-		t.Errorf("the middle of the pane has a rule on it %v, and a border is the edge only", got)
-	}
-	if got := m.g.At(cols/2, rows/2).BG; got.A != 0 {
-		t.Errorf("the middle of the pane is filled %v, and a border is the edge only", got)
-	}
+	// Round the pane's own box, so it marks the pane and takes nothing
+	// from it.
+	wantsRuleOn(t, ruleBox(t, m), paneBox(t, a, area))
 }
 
 // The border is over the pane, not in it: the program keeps every row
@@ -82,8 +82,13 @@ func TestABorderTakesNoRoomFromTheProgram(t *testing.T) {
 	if m == nil {
 		t.Fatal("no border")
 	}
-	if !m.layer.Transparent {
-		t.Error("the border's layer is not transparent, so it hides what the program printed")
+	// Rules and nothing else. A layer with a grid would paint every cell
+	// it covers, which is the whole pane.
+	if m.layer.Grid != nil {
+		t.Error("the border's layer has a grid, so it paints over what the program printed")
+	}
+	if len(m.layer.Strokes) == 0 {
+		t.Error("the border's layer draws no rule")
 	}
 	if m.layer.Hidden {
 		t.Error("the border was placed and is still hidden")
@@ -138,11 +143,25 @@ func TestAPaneWithAnAgentAndAWatcherGetsTwoBorders(t *testing.T) {
 	if m == nil {
 		t.Fatal("no border")
 	}
-	if got := ruleColour(m.g.At(0, 0)); !sameHue(got, statusAgentFG(a.colours)) {
+	if got := len(rules(m)); got != 2 {
+		t.Fatalf("the pane has %d rules round it, want two", got)
+	}
+	if got := rules(m)[0].Colour; !sameHue(got, statusAgentFG(a.colours)) {
 		t.Errorf("the outer border is %v, want the cyan an agent is said in", got)
 	}
-	if got := ruleColour(m.g.At(1, 1)); !sameHue(got, statusTakenFG(a.colours)) {
+	if got := rules(m)[1].Colour; !sameHue(got, statusTakenFG(a.colours)) {
 		t.Errorf("the inner border is %v, want the red a watcher is said in", got)
+	}
+	// One inside the other, or the second would be hidden under the first.
+	outer, inner := rules(m)[0].Rect, rules(m)[1].Rect
+	if inner.Empty() {
+		t.Fatalf("the inner border is an empty box at %v", inner)
+	}
+	if !inner.In(outer) || inner == outer {
+		t.Errorf("the inner border is at %v and the outer at %v, want it inside", inner, outer)
+	}
+	if got := inner.Min.X - outer.Min.X; got != markWidth+markGap {
+		t.Errorf("the borders are %d pixels apart, want %d", got, markWidth+markGap)
 	}
 }
 
@@ -157,14 +176,11 @@ func TestAWatchedPaneGetsTheWatcherColourOnTheOutside(t *testing.T) {
 	if m == nil {
 		t.Fatal("the pane somebody is reading was given no border")
 	}
-	if got := ruleColour(m.g.At(0, 0)); !sameHue(got, statusTakenFG(a.colours)) {
+	if got := len(rules(m)); got != 1 {
+		t.Fatalf("the pane has %d rules round it, and only one window is reading it", got)
+	}
+	if got := rules(m)[0].Colour; !sameHue(got, statusTakenFG(a.colours)) {
 		t.Errorf("the border is %v, want the red a watcher is said in", got)
-	}
-	if got := m.g.At(1, 1).BG; got.A != 0 {
-		t.Errorf("the second ring is filled %v, and a border is a rule", got)
-	}
-	if got := ruleColour(m.g.At(1, 1)); got.A != 0 {
-		t.Errorf("there is a second border at %v, and only one window is reading the pane", got)
 	}
 }
 
@@ -183,15 +199,15 @@ func TestTheBorderRepaintsOnlyWhenTheGlowMoves(t *testing.T) {
 	// fraction before one would step the glow mid-test.
 	now := time.UnixMilli(0)
 	a.drawShared(now)
-	m.g.ClearDirty()
+	was := append([]render.Stroke(nil), rules(m)...)
 
 	a.drawShared(now.Add(glowStep / 10))
-	if m.g.AnyDirty() {
+	if !sameRules(rules(m), was) {
 		t.Error("the border repainted within one step of the glow")
 	}
 
 	a.drawShared(now.Add(glowStep))
-	if !m.g.AnyDirty() {
+	if sameRules(rules(m), was) {
 		t.Error("the border did not repaint when the glow moved on")
 	}
 }
@@ -244,24 +260,21 @@ func TestABorderFollowsThePaneItIsRound(t *testing.T) {
 	if m == nil {
 		t.Fatal("no border")
 	}
-	wasCols, wasRows := m.g.Size()
+	was := ruleBox(t, m)
 
 	cellW, cellH := a.renderer.CellSize()
 	a.resizeTo(cellW*60, cellH*18)
 	frame(t, a)
 
-	cols, rows := m.g.Size()
-	if cols >= wasCols || rows >= wasRows {
-		t.Errorf("the border is %dx%d in a window shrunk from %dx%d", cols, rows, wasCols, wasRows)
+	now := ruleBox(t, m)
+	if now.Dx() >= was.Dx() || now.Dy() >= was.Dy() {
+		t.Errorf("the rule is %v in a window shrunk from %v", now, was)
 	}
+	// Round the pane as it is now, not as it was.
 	area, _ := a.paneArea(pane)
-	if cols != area.Cols || rows != area.Rows {
-		t.Errorf("the border is %dx%d and the pane is %dx%d", cols, rows, area.Cols, area.Rows)
-	}
-	// The ring itself, not just the room for it: the cell on the new
-	// right edge was inside the old border and had nothing drawn on it.
-	if got := ruleColour(m.g.At(cols-1, rows/2)); got.A == 0 {
-		t.Error("the border kept its old edges, so the ring is no longer round the pane")
+	wantsRuleOn(t, now, paneBox(t, a, area))
+	if got := rules(m)[0].Colour; got.A == 0 {
+		t.Error("the border lost its colour")
 	}
 }
 
@@ -289,7 +302,7 @@ func TestTheBorderGlowsAtTheMomentTheFrameBegan(t *testing.T) {
 	if want == late {
 		t.Fatal("the glow did not move over the step, so this proves nothing")
 	}
-	if got := ruleColour(m.g.At(0, 0)); got != want {
+	if got := rules(m)[0].Colour; got != want {
 		t.Errorf("the border is %v, want the %v the frame began on", got, want)
 	}
 }
@@ -309,13 +322,13 @@ func TestTheBorderItselfBrightensAndDims(t *testing.T) {
 	var dim, bright uint8 = 0xff, 0
 	for i := range glowSteps * 2 {
 		a.drawShared(start.Add(time.Duration(i) * glowStep))
-		at := ruleColour(m.g.At(0, 0)).A
+		at := rules(m)[0].Colour.A
 		dim, bright = min(dim, at), max(bright, at)
 	}
 	if dim >= bright {
 		t.Errorf("the border's corner ran from %#x to %#x over a lap, and the border is meant to glow", dim, bright)
 	}
-	if got := ruleColour(m.g.At(0, 0)); !sameHue(got, statusAgentFG(a.colours)) {
+	if got := rules(m)[0].Colour; !sameHue(got, statusAgentFG(a.colours)) {
 		t.Errorf("the glow changed the colour to %v, and only the alpha is meant to move", got)
 	}
 }
@@ -338,18 +351,10 @@ func TestTheBorderSitsOnThePanesPixels(t *testing.T) {
 		t.Fatal("no border")
 	}
 
+	// On the pane's own pixels, padding and all, rather than a fraction
+	// of a cell inside them.
 	area, _ := a.paneArea(pane)
-	left, width := a.geo.ColBox(area.X, area.X+area.Cols)
-	top, height := a.geo.RowBox(area.Y, area.Y+area.Rows)
-	if m.layer.X != left || m.layer.Y != top {
-		t.Errorf("the border is at %d,%d and the pane at %d,%d", m.layer.X, m.layer.Y, left, top)
-	}
-	if got := m.geo.Width(); got != width {
-		t.Errorf("the border is %d pixels wide and the pane %d", got, width)
-	}
-	if got := m.geo.Height(); got != height {
-		t.Errorf("the border is %d pixels tall and the pane %d", got, height)
-	}
+	wantsRuleOn(t, ruleBox(t, m), paneBox(t, a, area))
 }
 
 // The agent's border is the colour the menu bar's own chip says an
@@ -516,7 +521,7 @@ func TestTheRowAndTheBorderGlowTogether(t *testing.T) {
 	for i := range glowSteps * 2 {
 		now := start.Add(time.Duration(i) * glowStep)
 		a.drawShared(now)
-		border := ruleColour(m.g.At(0, 0))
+		border := rules(m)[0].Colour
 		row := rowOf(t, a, pane, now).Edge[0]
 		if border != row {
 			t.Fatalf("at step %d the border is %v and the row %v", i, border, row)
@@ -622,78 +627,101 @@ func TestASharedPaneCostsNothingBetweenGlowSteps(t *testing.T) {
 	if got.Skipped {
 		t.Fatal("the glow moved on and the window drew nothing")
 	}
-	if got.Repainted != 2 {
-		t.Errorf("a step of the glow repainted %d layers, want the border and the sidebar row", got.Repainted)
+	// One: the sidebar row. The border itself is a rule drawn straight
+	// to the screen, so a step of its glow repaints no grid at all.
+	if got.Repainted != 1 {
+		t.Errorf("a step of the glow repainted %d layers, want the sidebar row alone", got.Repainted)
+	}
+	if got.Strokes != 1 {
+		t.Errorf("it drew %d rules, want the border's", got.Strokes)
 	}
 }
 
-// ruleColour is what a cell of a border is drawn in, and nothing when
-// there is no rule on it.
-//
-// The border is a rule a few pixels thick along the sides of a cell,
-// not the cell filled: the colour is the foreground and the art says
-// which sides it runs along.
-func ruleColour(c grid.Cell) color.RGBA {
-	if c.Art.Kind != grid.ArtEdge || c.Art.Sides() == 0 {
-		return color.RGBA{}
-	}
-	return c.FG
+// rules are the border's rules, outermost first.
+func rules(m *sharedMark) []render.Stroke { return m.layer.Strokes }
+
+// sameRules reports whether two sets of rules would draw the same thing.
+func sameRules(a, b []render.Stroke) bool {
+	return slices.Equal(a, b)
 }
 
-// A pane too narrow for a ring to have two sides keeps both of them.
-//
-// One cell wide, the left rule and the right rule are the same cell. The
-// second used to replace the first, so the border lost a side.
-func TestANarrowPaneKeepsBothSidesOfItsBorder(t *testing.T) {
-	m := newSharedMark()
-	m.g.Resize(1, 4)
-
-	m.ring(0, color.RGBA{0x40, 0xa0, 0xc0, 0xff})
-
-	art := m.g.At(0, 1).Art
-	if art.Sides()&grid.EdgeLeft == 0 {
-		t.Error("the one column has no rule down its left")
+// ruleBox is where the outermost rule runs, in the window's pixels.
+func ruleBox(t *testing.T, m *sharedMark) image.Rectangle {
+	t.Helper()
+	got := rules(m)
+	if len(got) == 0 {
+		t.Fatal("the pane has no rule round it")
 	}
-	if art.Sides()&grid.EdgeRight == 0 {
-		t.Error("the one column has no rule down its right")
+	box := got[0].Rect.Add(image.Pt(m.layer.X, m.layer.Y))
+	if box.Empty() {
+		t.Fatalf("the rule round the pane is an empty box at %v", box)
 	}
+	return box
 }
 
-// And a pane one row tall keeps its top and its bottom.
-func TestAShortPaneKeepsBothSidesOfItsBorder(t *testing.T) {
-	m := newSharedMark()
-	m.g.Resize(4, 1)
-
-	m.ring(0, color.RGBA{0x40, 0xa0, 0xc0, 0xff})
-
-	art := m.g.At(1, 0).Art
-	if art.Sides()&grid.EdgeTop == 0 {
-		t.Error("the one row has no rule along its top")
+// wantsRuleOn checks that a rule runs round the pane on all four sides,
+// no further in than half its own width. Rectangle.In is true for an
+// empty box, so it cannot be the only check.
+func wantsRuleOn(t *testing.T, rule, pane image.Rectangle) {
+	t.Helper()
+	if !rule.In(pane) {
+		t.Errorf("the rule is at %v, which is outside the pane at %v", rule, pane)
+		return
 	}
-	if art.Sides()&grid.EdgeBottom == 0 {
-		t.Error("the one row has no rule along its bottom")
-	}
-}
-
-// A corner turns: the cell where two sides meet carries both.
-func TestTheCornerOfABorderTurns(t *testing.T) {
-	m := newSharedMark()
-	m.g.Resize(8, 6)
-
-	m.ring(0, color.RGBA{0x40, 0xa0, 0xc0, 0xff})
-
-	for _, tc := range []struct {
-		x, y  int
-		sides uint64
-		where string
+	for _, side := range []struct {
+		what  string
+		slack int
 	}{
-		{0, 0, grid.EdgeTop | grid.EdgeLeft, "top left"},
-		{7, 0, grid.EdgeTop | grid.EdgeRight, "top right"},
-		{0, 5, grid.EdgeBottom | grid.EdgeLeft, "bottom left"},
-		{7, 5, grid.EdgeBottom | grid.EdgeRight, "bottom right"},
+		{"left", rule.Min.X - pane.Min.X},
+		{"top", rule.Min.Y - pane.Min.Y},
+		{"right", pane.Max.X - rule.Max.X},
+		{"bottom", pane.Max.Y - rule.Max.Y},
 	} {
-		if got := m.g.At(tc.x, tc.y).Art.Sides(); got&tc.sides != tc.sides {
-			t.Errorf("the %s corner runs along %b, want both of %b", tc.where, got, tc.sides)
+		if side.slack > markWidth {
+			t.Errorf("the rule stops %d pixels inside the pane's %s edge, want no more than %d",
+				side.slack, side.what, markWidth)
+		}
+	}
+}
+
+// paneBox is the pixels a pane covers, which is what its border marks.
+func paneBox(t *testing.T, a *testApp, area ui.Rect) image.Rectangle {
+	t.Helper()
+	a.renderer.Measure(a.g, &a.geo)
+	left, width := a.geo.ColBox(area.X, area.X+area.Cols)
+	top, height := a.geo.RowBox(area.Y, area.Y+area.Rows)
+	return image.Rect(left, top, left+width, top+height)
+}
+
+// A pane too small for the second ring gets the outer one only.
+//
+// image.Rect turns an inside-out box the right way round rather than
+// refusing it, so a ring that does not fit would come back as a small
+// box in the middle of the pane and be drawn as a blob on the program's
+// own text.
+func TestATinyPaneGetsOnlyTheRingsItCanHold(t *testing.T) {
+	// A cell small enough that the second ring, five pixels in from the
+	// first, has nowhere to go. A real font is larger, so this is a
+	// window zoomed right out.
+	met := glyph.Metrics{CellW: 5, CellH: 5, Ascent: 4}
+	var geo render.Geometry
+	geo.Layout(grid.New(4, 4, color.RGBA{}, color.RGBA{}), met)
+
+	m := newSharedMark()
+	m.place(ui.Rect{Cols: 1, Rows: 1}, &geo, met)
+	m.draw([2]color.RGBA{{A: 0xff}, {A: 0xff}})
+
+	if got := len(rules(m)); got != 1 {
+		t.Errorf("a one-cell pane has %d rules round it, want the outer one alone", got)
+	}
+	pane := image.Rect(0, 0, geo.Width(), geo.Height())
+	for i, rule := range rules(m) {
+		if rule.Rect.Empty() {
+			t.Errorf("rule %d is an empty box at %v", i, rule.Rect)
+			continue
+		}
+		if !rule.Rect.In(pane) {
+			t.Errorf("rule %d is at %v and the pane at %v", i, rule.Rect, pane)
 		}
 	}
 }

@@ -296,3 +296,147 @@ func TestStatsAdd(t *testing.T) {
 		t.Errorf("summed stats = %+v, want %+v", got, want)
 	}
 }
+
+// A rule that changed is a frame to draw.
+//
+// A rule goes straight to the screen rather than into a grid, so nothing
+// else marks the layer stale. Without that the border round a shared
+// pane would be skipped whenever its colour was the only thing to move,
+// and its glow would stop.
+func TestARuleThatChangedIsNotSkipped(t *testing.T) {
+	c := NewCompositor(nil)
+	l := &Layer{Strokes: []Stroke{{
+		Rect: image.Rect(0, 0, 40, 20), Width: 2, Colour: color.RGBA{0, 0, 0xff, 0x50},
+	}}}
+	c.Add(l)
+
+	if !c.anyStrokeChanged() {
+		t.Fatal("a rule never drawn reads as unchanged")
+	}
+	l.drawnStrokes = append(l.drawnStrokes[:0], l.Strokes...)
+	if c.anyStrokeChanged() {
+		t.Fatal("a rule just drawn reads as changed")
+	}
+
+	// Only the colour moves, which is what a step of the glow is.
+	l.Strokes[0].Colour.A = 0x90
+
+	if !c.anyStrokeChanged() {
+		t.Error("a rule whose colour moved reads as unchanged, so the frame would be skipped")
+	}
+}
+
+// A hidden layer's rule is not a reason to draw.
+func TestAHiddenRuleIsNotAReasonToDraw(t *testing.T) {
+	c := NewCompositor(nil)
+	l := &Layer{Hidden: true, Strokes: []Stroke{{
+		Rect: image.Rect(0, 0, 40, 20), Width: 2, Colour: color.RGBA{A: 0xff},
+	}}}
+	c.Add(l)
+
+	if c.anyStrokeChanged() {
+		t.Error("a hidden layer's rule asks for a frame")
+	}
+}
+
+// A frame whose only change is a rule's colour is drawn, not skipped.
+//
+// Nothing else notices a rule: it goes straight to the screen rather
+// than into a grid, so no layer goes stale for it. Without the check the
+// border round a shared pane would stop glowing.
+func TestAFrameIsNotSkippedForAChangedRule(t *testing.T) {
+	c := NewCompositor(newTestRenderer(t))
+	l := &Layer{Strokes: []Stroke{{
+		Rect: image.Rect(0, 0, 40, 20), Width: 2, Colour: color.RGBA{0, 0, 0xff, 0x50},
+	}}}
+	c.Add(l)
+	screen := ebiten.NewImage(320, 240)
+
+	c.Draw(screen)
+	c.Draw(screen)
+	if got := c.Stats(); !got.Skipped {
+		t.Fatalf("a frame with nothing moving = %+v, want it skipped", got)
+	}
+
+	l.Strokes[0].Colour.A = 0x90
+	c.Draw(screen)
+
+	if got := c.Stats(); got.Skipped {
+		t.Errorf("the frame the rule's colour moved on = %+v, want it drawn", got)
+	}
+}
+
+// A rule with nothing to draw is not drawn.
+func TestAnEmptyRuleIsNotDrawn(t *testing.T) {
+	c := NewCompositor(newTestRenderer(t))
+	l := &Layer{Strokes: []Stroke{
+		{Rect: image.Rect(0, 0, 40, 20), Width: 2, Colour: color.RGBA{A: 0xff}},
+		{}, // no box at all
+		{Rect: image.Rect(0, 0, 40, 20), Width: 0, Colour: color.RGBA{A: 0xff}},
+		{Rect: image.Rect(0, 0, 40, 20), Width: 2},
+	}}
+	c.Add(l)
+
+	c.Draw(ebiten.NewImage(320, 240))
+
+	if got := c.Stats().Strokes; got != 1 {
+		t.Errorf("it drew %d rules, want the one that has something to draw", got)
+	}
+}
+
+// A frame that draws a rule wipes the screen first.
+//
+// A rule is blended onto the screen rather than painted into a layer's
+// texture, so drawing over the one from the frame before would brighten
+// it a step at a time.
+func TestAFrameWithARuleWipesTheScreen(t *testing.T) {
+	c := NewCompositor(newTestRenderer(t))
+	l := &Layer{Strokes: []Stroke{{
+		Rect: image.Rect(0, 0, 40, 20), Width: 2, Colour: color.RGBA{0, 0, 0xff, 0x50},
+	}}}
+	c.Add(l)
+	screen := ebiten.NewImage(320, 240)
+
+	c.Draw(screen)
+	l.Strokes[0].Colour.A = 0x90
+	c.Draw(screen)
+
+	if got := c.Stats(); !got.Cleared {
+		t.Errorf("the frame the rule moved on = %+v, want the screen wiped first", got)
+	}
+}
+
+// A hidden layer's rule is not a reason to wipe the screen.
+func TestAHiddenRuleDoesNotWipeTheScreen(t *testing.T) {
+	c := NewCompositor(newTestRenderer(t))
+	g := grid.New(4, 2, fg, bg)
+	c.Add(&Layer{Grid: g})
+	c.Add(&Layer{Hidden: true, Strokes: []Stroke{{
+		Rect: image.Rect(0, 0, 40, 20), Width: 2, Colour: color.RGBA{A: 0xff},
+	}}})
+	screen := ebiten.NewImage(320, 240)
+
+	c.Draw(screen)
+	g.Set(0, 0, grid.Cell{Rune: 'a', FG: fg, BG: bg})
+	c.Draw(screen)
+
+	if got := c.Stats(); got.Cleared {
+		t.Errorf("a frame whose only rule is on a hidden layer = %+v, want no wipe", got)
+	}
+}
+
+// A rule with nothing to draw is not a reason to wipe the screen.
+func TestAnEmptyRuleDoesNotWipeTheScreen(t *testing.T) {
+	c := NewCompositor(newTestRenderer(t))
+	g := grid.New(4, 2, fg, bg)
+	c.Add(&Layer{Grid: g, Strokes: []Stroke{{}}})
+	screen := ebiten.NewImage(320, 240)
+
+	c.Draw(screen)
+	g.Set(0, 0, grid.Cell{Rune: 'a', FG: fg, BG: bg})
+	c.Draw(screen)
+
+	if got := c.Stats(); got.Cleared {
+		t.Errorf("a frame whose only rule draws nothing = %+v, want no wipe", got)
+	}
+}

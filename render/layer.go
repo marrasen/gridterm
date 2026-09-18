@@ -44,12 +44,27 @@ type Layer struct {
 	// already on screen as its backdrop. Nil for an ordinary layer.
 	Frost *Frost
 
+	// Strokes are rules drawn over the layer, each round a box, in
+	// pixels. None for a layer that draws no border.
+	//
+	// A layer may carry them with no grid at all, which is how a border
+	// is drawn without a cell to hang it on.
+	//
+	// A rule is blended onto the screen rather than painted into the
+	// layer's texture, so the screen is wiped on any frame that draws
+	// one, or the rule under it would show through and brighten.
+	Strokes []Stroke
+
+	// drawnStrokes are the rules as they were last drawn, so a frame
+	// that would draw the same ones is skipped.
+	drawnStrokes []Stroke
+
 	// Scale shrinks or blows up the texture as it is blitted, for a grid
 	// drawn at a size the room it goes in cannot hold. 0 and 1 both mean
 	// none, and the texture keeps the grid's own pixel size either way.
 	//
-	// It does not carry to Frost, whose rectangle is in screen pixels, so
-	// a scaled layer takes no glass.
+	// It does not carry to Frost or Strokes, whose rectangles are in
+	// screen pixels, so a scaled layer takes no glass and no rules.
 	Scale float64
 
 	// Geom is where the layer's grid lands in pixels, for a layer whose
@@ -258,6 +273,7 @@ type CompositorStats struct {
 	Repainted int  // layers whose texture was repainted
 	Blits     int  // textures drawn to the screen
 	Frosted   int  // frosted panels drawn behind a layer
+	Strokes   int  // rules drawn over a layer
 	Cleared   bool // the screen was wiped before blitting
 	Skipped   bool // nothing changed, so the frame was left alone
 }
@@ -436,7 +452,7 @@ func (c *Compositor) Draw(screen *ebiten.Image) {
 	rescreened := screen != c.lastScreen || screen.Bounds() != c.lastScreenRect
 	// resized is in its own right: a layer that lost its grid has no
 	// texture left to be stale, but the pixels it held are still there.
-	if !c.anyVisibleStale() && !moved && !rescreened && !resized {
+	if !c.anyVisibleStale() && !c.anyStrokeChanged() && !moved && !rescreened && !resized {
 		c.stats.Skipped = true
 		return
 	}
@@ -479,25 +495,33 @@ func (c *Compositor) Draw(screen *ebiten.Image) {
 	// its backdrop, so drawing over a screen that still held the last
 	// frame's panel would blur the panel into itself, a little more on
 	// every frame.
-	if moved || resized || rescreened || c.anyFrosted() {
+	if moved || resized || rescreened || c.anyFrosted() || c.anyStroke() {
 		screen.Clear()
 		c.stats.Cleared = true
 	}
 	// Every visible layer is blitted, not just the repainted ones: a
 	// layer below changing shows through the ones above it.
 	for _, l := range c.layers {
-		if l.Hidden || l.Grid == nil || l.tex == nil {
+		if l.Hidden {
 			continue
 		}
-		// The glass first: it reads the layers already blitted under it,
-		// and this layer's own text then goes on top of it.
-		if l.Frost != nil && !l.Frost.Rect.Empty() {
-			c.drawFrost(screen, l)
+		if l.Grid != nil && l.tex != nil {
+			// The glass first: it reads the layers already blitted under
+			// it, and this layer's own text then goes on top of it.
+			if l.Frost != nil && !l.Frost.Rect.Empty() {
+				c.drawFrost(screen, l)
+			}
+			screen.DrawImage(l.tex, blitOp(l))
+			c.stats.Blits++
 		}
-		screen.DrawImage(l.tex, blitOp(l))
-		c.stats.Blits++
+		// And the rules last, because a border goes over what it marks.
+		for i := range l.Strokes {
+			if !l.Strokes[i].Empty() {
+				c.drawStroke(screen, l, &l.Strokes[i])
+			}
+		}
+		l.drawnStrokes = append(l.drawnStrokes[:0], l.Strokes...)
 	}
-
 }
 
 // blitOp is how a layer's texture goes on screen: scaled if it asked to
@@ -549,6 +573,39 @@ func (c *Compositor) onError(err error) {
 	if c.OnError != nil {
 		c.OnError(err)
 	}
+}
+
+// anyStroke reports whether a layer the viewer can see draws a rule.
+func (c *Compositor) anyStroke() bool {
+	for _, l := range c.layers {
+		if l.Hidden {
+			continue
+		}
+		for i := range l.Strokes {
+			if !l.Strokes[i].Empty() {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// anyStrokeChanged reports whether a rule a layer draws is not the one
+// it drew last time.
+//
+// A rule is drawn straight to the screen rather than into a grid, so
+// nothing else marks it stale: without this a border whose only change
+// is its colour would be skipped and its glow would stop.
+func (c *Compositor) anyStrokeChanged() bool {
+	for _, l := range c.layers {
+		if l.Hidden {
+			continue
+		}
+		if !slices.Equal(l.Strokes, l.drawnStrokes) {
+			return true
+		}
+	}
+	return false
 }
 
 // anyVisibleStale reports whether a layer the viewer can see needs

@@ -295,62 +295,8 @@ func artBars(art grid.Art, x, y, cols int, geo *Geometry) []bar {
 		return graphBars(art, x, y, geo)
 	case grid.ArtIcon:
 		return iconBars(art, x, y, cols, geo)
-	case grid.ArtEdge:
-		return edgeBars(art, x, y, geo)
 	}
 	return nil
-}
-
-// edgeBars is a thin rule along each side an edge names, inside the
-// cell's own box so two cells side by side make one unbroken line.
-func edgeBars(art grid.Art, x, y int, geo *Geometry) []bar {
-	sides := art.Sides()
-	if sides == 0 {
-		return nil
-	}
-	// The outer box along the way a rule runs, so a rule meets its
-	// neighbour's across whatever padding is between them. The inner box
-	// across it, so the thickness is measured from the glyph.
-	runX, runW := geo.ColBox(x, x+1)
-	runY, runH := geo.RowBox(y, y+1)
-	inX, inY := geo.CellX(x), geo.CellY(y)
-	w, h := geo.CellW(), geo.CellH()
-	if runW <= 0 || runH <= 0 || w <= 0 || h <= 0 {
-		return nil
-	}
-	up := min(art.Thick(), h)
-	along := min(art.Thick(), w)
-	if up < 1 || along < 1 {
-		return nil
-	}
-
-	// A horizontal rule stops where a vertical one starts. Drawn over
-	// each other they would paint the corner twice, and the border is
-	// never opaque, so the corners would read as brighter dots.
-	x0, x1 := runX, runX+runW
-	if sides&grid.EdgeLeft != 0 {
-		x0 = inX + along
-	}
-	if sides&grid.EdgeRight != 0 {
-		x1 = inX + w - along
-	}
-	out := make([]bar, 0, 4)
-	if sides&grid.EdgeTop != 0 && x1 > x0 {
-		out = append(out, bar{X: float32(x0), Y: float32(inY), W: float32(x1 - x0), H: float32(up)})
-	}
-	if sides&grid.EdgeBottom != 0 && x1 > x0 {
-		out = append(out, bar{X: float32(x0), Y: float32(inY + h - up),
-			W: float32(x1 - x0), H: float32(up)})
-	}
-	if sides&grid.EdgeLeft != 0 {
-		out = append(out, bar{X: float32(inX), Y: float32(runY),
-			W: float32(along), H: float32(runH)})
-	}
-	if sides&grid.EdgeRight != 0 {
-		out = append(out, bar{X: float32(inX + w - along), Y: float32(runY),
-			W: float32(along), H: float32(runH)})
-	}
-	return out
 }
 
 // artCols is how many cells a piece of art may draw across: its own, and

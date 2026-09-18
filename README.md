@@ -374,6 +374,31 @@ on.
 
 ## Design notes worth knowing
 
+**The grid is for text. Nothing else has to be cells.** A terminal is a
+grid of characters, so the grid is what the emulator writes into and
+what the renderer rasterises. That is where the name comes from and it
+is right for text.
+
+It is not a limit on what can be drawn. A layer is pixels. The renderer
+draws quads, and a layer can carry a shader pass of its own: the frosted
+panel behind a dialog is a signed distance field with a rounded corner
+and a lit rim, computed per pixel, and it knows nothing about cells.
+Anything that is a shape rather than a character belongs there.
+
+Reaching for cells because the thing in front of you is already a grid
+is how that gets forgotten. Two places have paid for it:
+
+- The rules around a menu are box-drawing characters, so they are a cell
+  thick, they break where a font draws those characters differently, and
+  a corner can only be the shapes a font has. `glyph.Arms` and the
+  stretching in the renderer exist to paper over that.
+- The border round a shared pane was cells filled with colour, which
+  made it a character wide and a character tall.
+
+The rule of thumb: if you are about to ask which *character* draws
+something, or how many *cells* thick it is, it is a shape and it wants
+pixels.
+
 **Damage tracking is load-bearing.** `ebiten.SetScreenClearedEveryFrame(false)`
 means a row the renderer skips shows the *previous* frame, not a blank.
 A row wrongly considered clean is a visible bug, so `grid.Set` compares

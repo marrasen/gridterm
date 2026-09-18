@@ -3,6 +3,15 @@
 Things Marcus has asked for that are not done yet. Newest first within
 each group. A line goes when the work is in and reviewed.
 
+## A Turbo Pascal theme
+
+Asked for on 2026-09-19. The menus read as an 80s DOS IDE and Marcus
+likes it, so there should be a colour scheme that leans into it: the
+Borland blue ground, yellow on it, and the cyan and grey of that era.
+
+A built-in scheme is an entry in `themes.Built()`: a name, a foreground,
+a ground and the sixteen named colours. Nothing else has to change.
+
 ## What Marcus is looking forward to
 
 In his own order, from 2026-09-19. Bugs and small items come first, and
@@ -53,7 +62,14 @@ From Marcus's inbox.
 
 ## Waiting on an answer from Marcus
 
-These are all about the context menu, which is planned below.
+The first is about the border round a shared pane. The rest are about
+the context menu, which is planned below.
+
+- **How thick should the border round a shared pane be?** It is two
+  pixels now, and that is two pixels whatever the font size. The old
+  border was a cell thick, so it grew with the font. Two pixels reads
+  well at the sizes tried so far, and it stays a hairline on a large
+  font. Should it scale with the cell instead?
 
 - **Right click in a pane where a program owns the mouse.** vim, mc and
   htop ask for the mouse, and then the right button is theirs. The

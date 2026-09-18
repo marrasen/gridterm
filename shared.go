@@ -1,11 +1,11 @@
 package main
 
 import (
+	"image"
 	"image/color"
 	"time"
 
 	"github.com/marrasen/gridterm/glyph"
-	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/render"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/term"
@@ -64,23 +64,16 @@ func (a *app) frameTime() time.Time {
 
 // sharedMark is the glowing border round one shared pane, on a layer of
 // its own over the pane so the program keeps every row and column.
+//
+// It has no grid. A border is a shape rather than a character, so it is
+// a rule drawn per pixel with rounded corners, and the layer carries
+// nothing else.
 type sharedMark struct {
-	g     *grid.Grid
-	geo   render.Geometry
 	layer *render.Layer
 
-	// area is where the pane was when the border was last placed.
-	area ui.Rect
-
-	// was is what the border last drew, so a frame that would draw the
-	// same thing draws nothing.
-	was drawnMark
-}
-
-// drawnMark is everything a border's picture depends on.
-type drawnMark struct {
-	area ui.Rect
-	hues [2]color.RGBA
+	// rings are the rules, outermost first, one per thing sharing the
+	// pane. A ring the pane is too small to hold is left empty.
+	rings [2]render.Stroke
 }
 
 // sharedHues are the colours a shared pane is marked in, outermost
@@ -100,26 +93,42 @@ func (a *app) sharedHues(in sharing, step int) [2]color.RGBA {
 	return out
 }
 
-// newSharedMark puts a border on a grid and a layer of its own, hidden
-// until it has been placed.
+// markWidth is how thick a rule round a shared pane is, and markGap how
+// far the next one in sits from it, both in pixels.
+const (
+	markWidth = 2
+	markGap   = 3
+)
+
+// newSharedMark puts a border on a layer of its own, hidden until it has
+// been placed.
 func newSharedMark() *sharedMark {
-	m := &sharedMark{g: grid.New(1, 1, color.RGBA{}, color.RGBA{})}
-	m.layer = &render.Layer{Grid: m.g, Hidden: true, Transparent: true, Geom: &m.geo}
+	m := &sharedMark{}
+	m.layer = &render.Layer{Hidden: true}
 	return m
 }
 
-// place sizes the grid to the pane's room and puts the layer over it,
-// taking the columns from the window so the ring lands on the pane's
-// own edge rather than a fraction of a cell inside it.
+// place puts the rules round the pane's own box, in the window's pixels.
 func (m *sharedMark) place(area ui.Rect, src *render.Geometry, met glyph.Metrics) {
-	m.area = area
-	m.g.Resize(max(area.Cols, 1), max(area.Rows, 1))
-	m.geo.Layout(m.g, met)
-	m.geo.TakeCols(src, area.X, area.X+area.Cols)
-	left, _ := src.ColBox(area.X, area.X+area.Cols)
+	left, width := src.ColBox(area.X, area.X+area.Cols)
 	top, height := src.RowBox(area.Y, area.Y+area.Rows)
-	m.geo.FitRows(height)
-	m.layer.X, m.layer.Y = left, top
+	m.layer.X, m.layer.Y = 0, 0
+	corner := float32(min(met.CellW, met.CellH))
+	for i := range m.rings {
+		// Each ring inside the last, and half a width in from the pane's
+		// edge so the outermost sits on it rather than over it.
+		in := int(float32(i)*(markWidth+markGap) + float32(markWidth)/2)
+		if width <= in*2 || height <= in*2 {
+			// image.Rect turns a box inside out rather than refusing it,
+			// so a ring the pane cannot hold would land in the middle of
+			// the pane as a blob. Drop it instead.
+			m.rings[i] = render.Stroke{}
+			continue
+		}
+		m.rings[i].Rect = image.Rect(left+in, top+in, left+width-in, top+height-in)
+		m.rings[i].Corner = max(corner-float32(in), 0)
+		m.rings[i].Width = markWidth
+	}
 	m.layer.Hidden = false
 }
 
@@ -133,52 +142,19 @@ func glowAt(now time.Time) int {
 	return at
 }
 
-// draw paints the border, and leaves the grid alone when the picture
-// has not changed.
+// draw gives the rules their colours, outermost first.
+//
+// A ring with no colour is dropped, which is what a pane with one thing
+// sharing it has, and so is one the pane was too small to hold.
 func (m *sharedMark) draw(hues [2]color.RGBA) {
-	want := drawnMark{area: m.area, hues: hues}
-	if want == m.was {
-		return
-	}
-	m.was = want
-	m.g.Clear()
+	m.layer.Strokes = m.layer.Strokes[:0]
 	for at, c := range hues {
-		if c.A == 0 {
+		ring := m.rings[at]
+		ring.Colour = c
+		if ring.Empty() {
 			continue
 		}
-		m.ring(at, c)
-	}
-}
-
-// markThick is how many pixels thick the rule round a shared pane is.
-const markThick = 2
-
-// ring paints one border, at cells in from the edge.
-func (m *sharedMark) ring(in int, c color.RGBA) {
-	cols, rows := m.g.Size()
-	if cols <= in*2 || rows <= in*2 {
-		return
-	}
-	// A rule inside the cell rather than the whole cell filled: a border
-	// a character wide and a character tall reads as a bar around the
-	// pane.
-	// Added to whatever the cell already carries: a ring one cell wide
-	// or one cell tall is the same cell on both sides, and replacing
-	// would leave it with only the last one.
-	edge := func(x, y int, sides uint64) {
-		was := m.g.At(x, y)
-		if was.Art.Kind == grid.ArtEdge {
-			sides |= was.Art.Sides()
-		}
-		m.g.Set(x, y, grid.Cell{Rune: ' ', FG: c, Width: 1, Art: grid.Edges(sides, markThick)})
-	}
-	for x := in; x < cols-in; x++ {
-		edge(x, in, grid.EdgeTop)
-		edge(x, rows-1-in, grid.EdgeBottom)
-	}
-	for y := in; y < rows-in; y++ {
-		edge(in, y, grid.EdgeLeft)
-		edge(cols-1-in, y, grid.EdgeRight)
+		m.layer.Strokes = append(m.layer.Strokes, ring)
 	}
 }
 

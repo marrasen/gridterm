@@ -148,16 +148,17 @@ func Fragment(dstPos vec4, srcPos vec2, color vec4) vec4 {
 `
 
 // shaders holds the compiled programs, built on first use because a
-// compositor with nothing frosted should not pay for them.
+// compositor with no glass and no rules should not pay for them.
 type shaders struct {
-	blur  *ebiten.Shader
-	frost *ebiten.Shader
+	blur   *ebiten.Shader
+	frost  *ebiten.Shader
+	stroke *ebiten.Shader
 }
 
-// compile builds both programs. It reports the first failure rather than
+// compile builds the programs. It reports the first failure rather than
 // leaving a nil shader for the draw path to find.
 func (s *shaders) compile() error {
-	if s.blur != nil && s.frost != nil {
+	if s.blur != nil && s.frost != nil && s.stroke != nil {
 		return nil
 	}
 	blur, err := ebiten.NewShader([]byte(blurSource))
@@ -169,7 +170,13 @@ func (s *shaders) compile() error {
 		blur.Deallocate()
 		return fmt.Errorf("compile the frost shader: %w", err)
 	}
-	s.blur, s.frost = blur, frost
+	stroke, err := ebiten.NewShader([]byte(strokeSource))
+	if err != nil {
+		blur.Deallocate()
+		frost.Deallocate()
+		return fmt.Errorf("compile the stroke shader: %w", err)
+	}
+	s.blur, s.frost, s.stroke = blur, frost, stroke
 	return nil
 }
 
@@ -204,6 +211,9 @@ func (s *scratch) ensure(w, h int) {
 // reading a screen that still held the last frame's panel would blur the
 // panel into itself, a little more on every frame.
 func (c *Compositor) drawFrost(screen *ebiten.Image, l *Layer) {
+	if c.shaderFailed {
+		return
+	}
 	f := l.Frost
 	panel := f.Rect.Add(image.Pt(l.X, l.Y)).Intersect(screen.Bounds())
 	if panel.Empty() {
@@ -213,10 +223,8 @@ func (c *Compositor) drawFrost(screen *ebiten.Image, l *Layer) {
 		// Once, not once a frame: a shader that will not compile will not
 		// compile on the next frame either. The dialog still draws, just
 		// without the glass behind it.
-		if !c.shaderFailed {
-			c.shaderFailed = true
-			c.onError(err)
-		}
+		c.shaderFailed = true
+		c.onError(err)
 		return
 	}
 
@@ -285,11 +293,12 @@ func frostRegion(panel image.Rectangle, radius float32, screen image.Rectangle) 
 	return src, panel.Sub(src.Min), step
 }
 
-// frostCorner holds a corner radius to what the panel can take. The
-// rounded-box distance field is only a distance while the radius fits
-// inside the box; past that the panel draws as a lens.
-func frostCorner(corner float32, panel image.Rectangle) float32 {
-	limit := float32(min(panel.Dx(), panel.Dy())) / 2
+// frostCorner holds a corner radius to what a box can take, for the
+// glass and for a rule alike. The rounded-box distance field is only a
+// distance while the radius fits inside the box; past that it draws as
+// a lens.
+func frostCorner(corner float32, box image.Rectangle) float32 {
+	limit := float32(min(box.Dx(), box.Dy())) / 2
 	return min(max(corner, 0), limit)
 }
 

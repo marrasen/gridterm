@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/marrasen/gridterm/conns"
+	"github.com/marrasen/gridterm/ui"
 )
 
 // A picture is written to a file of its own and reads back as the one
@@ -162,5 +163,61 @@ func TestPastingAPictureTypesThePathItWroteTo(t *testing.T) {
 	t.Cleanup(func() { os.Remove(typed) })
 	if _, err := os.Stat(typed); err != nil {
 		t.Errorf("it typed a path to nothing: %v", err)
+	}
+}
+
+// A clipboard holding a picture and no text says so, rather than passing
+// on what the library that reads text makes of it.
+//
+// That library reports the last error when there is no text, and no
+// error is what happened, so it says "the operation completed
+// successfully" and the user is told a success went wrong.
+func TestPastingTextWithAPictureOnTheClipboardSaysWhatIsThere(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	a.hasClipText = func() bool { return false }
+	a.readClipImage = func() (image.Image, bool, error) {
+		return image.NewRGBA(image.Rect(0, 0, 1, 1)), true, nil
+	}
+	a.readClip = func() (string, error) {
+		t.Error("it went to the clipboard for text that is not there")
+		return "", nil
+	}
+
+	if got := a.pasteText(); got != "" {
+		t.Errorf("it pasted %q", got)
+	}
+
+	n, up := a.root.Modal().(*ui.Notice)
+	if !up {
+		t.Fatalf("top modal = %T, want a notice saying what the clipboard holds", a.root.Modal())
+	}
+	said := n.Message()
+	if !strings.Contains(said, "picture") {
+		t.Errorf("it said %q, want it to say the clipboard holds a picture", said)
+	}
+	if strings.Contains(said, "completed successfully") {
+		t.Errorf("it said %q, which is what a success looks like", said)
+	}
+	// And it names the way to paste it.
+	if !strings.Contains(said, a.chordFor("edit.pasteImage")) {
+		t.Errorf("it said %q, want the chord that pastes a picture", said)
+	}
+}
+
+// An empty clipboard says nothing. Pasting nothing from an empty
+// clipboard is what the user asked for.
+func TestPastingTextWithAnEmptyClipboardSaysNothing(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	a.hasClipText = func() bool { return false }
+	a.readClipImage = func() (image.Image, bool, error) { return nil, false, nil }
+
+	if got := a.pasteText(); got != "" {
+		t.Errorf("it pasted %q", got)
+	}
+
+	if len(a.modals) != 0 {
+		t.Errorf("an empty clipboard put %d dialogs up", len(a.modals))
 	}
 }

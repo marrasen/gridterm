@@ -35,11 +35,7 @@ func (a *app) pasteImage(pane *term.Terminal) error {
 		return fmt.Errorf(
 			"this pane is running on %s, and a picture pasted here would be written on this machine", e.Host)
 	}
-	read := a.readClipImage
-	if read == nil {
-		read = clipboardImage
-	}
-	img, have, err := read()
+	img, have, err := a.clipboardPicture()
 	if err != nil {
 		return err
 	}

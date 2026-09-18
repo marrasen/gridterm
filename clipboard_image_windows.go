@@ -16,8 +16,10 @@ import (
 // independent bitmap; CF_DIBV5 is the same with a header that can carry
 // an alpha channel, which is what a screenshot tool puts there.
 const (
-	cfDIB   = 8
-	cfDIBV5 = 17
+	cfText        = 1
+	cfDIB         = 8
+	cfUnicodeText = 13
+	cfDIBV5       = 17
 )
 
 // Compressions a BITMAPINFOHEADER may name. Only these two hold pixels
@@ -39,6 +41,20 @@ var (
 	globalUnlock = kernel32.NewProc("GlobalUnlock")
 	globalSize   = kernel32.NewProc("GlobalSize")
 )
+
+// clipboardHasText reports whether there is any text on the clipboard.
+//
+// It is asked before reading, because the library that reads text says
+// "the operation completed successfully" when there is none: it hands
+// back whatever the last error was, and no error is what happened.
+func clipboardHasText() bool {
+	for _, want := range []uintptr{cfUnicodeText, cfText} {
+		if ok, _, _ := isFormatAvail.Call(want); ok != 0 {
+			return true
+		}
+	}
+	return false
+}
 
 // clipboardImage returns the picture on the clipboard.
 //

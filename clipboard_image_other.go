@@ -7,6 +7,12 @@ import (
 	"runtime"
 )
 
+// clipboardHasText reports whether there is any text on the clipboard.
+//
+// Only Windows can say. Everywhere else the answer is yes, so the
+// library that reads text is left to speak for itself.
+func clipboardHasText() bool { return true }
+
 // clipboardImage returns the picture on the clipboard.
 //
 // Only Windows is wired up. Everywhere else it reports that there is

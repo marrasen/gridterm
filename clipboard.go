@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"image"
 	"log"
 	"sync"
 
@@ -67,6 +68,21 @@ func (c *clipboardWriter) set(text string) {
 // where it is reported, on the goroutine that draws, which is the only
 // one that calls it.
 func (a *app) pasteText() string {
+	if !a.clipboardText() {
+		// An empty clipboard is an ordinary thing to meet and says
+		// nothing. A clipboard holding a picture is worth a word,
+		// because the user meant to paste something and there is a way
+		// to paste it.
+		if img, have, err := a.clipboardPicture(); err == nil && have && img != nil {
+			how := `"Paste a picture as a file" on the Edit menu pastes it`
+			if chord := a.chordFor("edit.pasteImage"); chord != "" {
+				how = chord + " pastes it as a file"
+			}
+			a.reportError("Could not paste", fmt.Errorf(
+				"the clipboard holds a picture rather than text. %s", how))
+		}
+		return ""
+	}
 	read := a.readClip
 	if read == nil {
 		read = clipboardRead
@@ -77,6 +93,24 @@ func (a *app) pasteText() string {
 		return ""
 	}
 	return s
+}
+
+// clipboardText reports whether there is text to paste. A test sets its
+// own, so a run does not depend on the clipboard of whoever started it.
+func (a *app) clipboardText() bool {
+	if a.hasClipText != nil {
+		return a.hasClipText()
+	}
+	return clipboardHasText()
+}
+
+// clipboardPicture is the picture on the clipboard, through whatever the
+// window was given to read it with.
+func (a *app) clipboardPicture() (image.Image, bool, error) {
+	if a.readClipImage != nil {
+		return a.readClipImage()
+	}
+	return clipboardImage()
 }
 
 // clipboardRead returns what is on the clipboard.

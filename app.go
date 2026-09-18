@@ -297,6 +297,10 @@ type app struct {
 	look themes.Look
 	clip clipboardWriter
 
+	// hasClipText says whether there is text to paste. A nil one asks
+	// the system, and a test sets its own.
+	hasClipText func() bool
+
 	// readClipImage reads a picture off the clipboard. A nil one reads
 	// the system's own, and a test sets its own so a run does not depend
 	// on what happens to be on the clipboard of whoever started it.

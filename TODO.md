@@ -12,7 +12,8 @@ then these.
    Written up further down: every pane is drawn twice while it is open,
    once into the window's own grid and again into its tile.
 2. **The file viewer.** Its own section below.
-3. **Pasting an image into a terminal.** Its own section below.
+3. **Pasting an image into a terminal.** Done on Windows. What is left
+   is in its own section below.
 
 ## The context menu is deferred
 
@@ -217,9 +218,11 @@ browser, which needs an icon of its own.
 Asked for on 2026-09-17, after seeing Claude Code take a pasted image in
 a terminal.
 
-Pasting a picture is done on Windows: `edit.pasteImage`, on the Edit
-menu and on Ctrl+Alt+V, writes the clipboard's picture to a PNG under
-the system's temporary directory and types the path. What is left:
+Pasting a picture is done on Windows. Paste hands it over by whichever
+route reaches the program: the paste key for a pane on this machine, the
+picture sent to the clipboard of a gridterm taken over, and a file
+written on a machine reached by SSH. `edit.pasteImage` on Ctrl+Alt+V
+asks for a file wherever the pane is and types the path. What is left:
 
 - **Only Windows reads a picture off the clipboard.** Everywhere else
   the command says there is none. Linux and macOS each need their own

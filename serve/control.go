@@ -164,7 +164,7 @@ func (s *Server) dropWatcher(w *watcher) {
 // letGoOf closes a control channel and says so if it would not go. A
 // connection that has already gone is not a failure to report.
 func (s *Server) letGoOf(ch ssh.Channel) {
-	if err := ch.Close(); err != nil && !ended(err) {
+	if err := ch.Close(); err != nil && !Ended(err) {
 		s.onError(fmt.Errorf("serve: close a control channel: %w", err))
 	}
 }

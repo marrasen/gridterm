@@ -7,12 +7,14 @@ import (
 	"crypto/rand"
 	"encoding/pem"
 	"errors"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -1349,4 +1351,54 @@ func servingRows(a *testApp) int {
 		}
 	}
 	return n
+}
+
+// letGo is one way a socket says the other end went.
+type letGo struct {
+	what string
+	err  error
+}
+
+// A window that let go is not reported, however the socket put it. A
+// deliberate let-go arrives as an end of file, as a closed socket, or as
+// a reset, which is what Windows gives often enough to see: the host
+// opened "The window serving marcus@laptop was lost" over its own
+// dialog, naming a window that had done nothing wrong.
+func TestAWindowThatLetGoIsNotReportedWhateverTheSocketSaid(t *testing.T) {
+	for _, why := range append([]letGo{
+		{"an end of file", io.EOF},
+		{"a closed socket", net.ErrClosed},
+		{"a reset", &net.OpError{Op: "read", Net: "tcp", Err: syscall.ECONNRESET}},
+		{"an abort", &net.OpError{Op: "read", Net: "tcp", Err: syscall.ECONNABORTED}},
+	}, platformLetGos()...) {
+		t.Run(why.what, func(t *testing.T) {
+			// A window that can put a notice up, so the test says the
+			// notice was filtered and not that it was impossible.
+			a := aBarWindow(t)
+
+			a.clientWent(&serve.Client{Name: "marcus@laptop"}, why.err)
+			a.pump.run()
+
+			if n, up := a.root.Modal().(*ui.Notice); up {
+				t.Errorf("letting go reported %q: %s", n.Title, n.Message())
+			}
+		})
+	}
+}
+
+// Something that really went wrong is still reported, so the filter does
+// not swallow a connection that failed.
+func TestAServingConnectionThatFailedIsStillReported(t *testing.T) {
+	a := aBarWindow(t)
+
+	a.clientWent(&serve.Client{Name: "marcus@laptop"}, errors.New("the roof fell in"))
+	a.pump.run()
+
+	n, up := a.root.Modal().(*ui.Notice)
+	if !up {
+		t.Fatalf("a connection that failed opened %T, want a notice", a.root.Modal())
+	}
+	if !strings.Contains(n.Message(), "the roof fell in") {
+		t.Errorf("it said %q, want it to name what went wrong", n.Message())
+	}
 }

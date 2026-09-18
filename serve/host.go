@@ -346,12 +346,12 @@ func (s *Server) endSession(ch ssh.Channel, why error) {
 	// connection that has already gone is not one of those, and the
 	// second close reports nothing when the first said so: they are one
 	// failure, not two.
-	if err := ch.CloseWrite(); err != nil && !ended(err) {
+	if err := ch.CloseWrite(); err != nil && !Ended(err) {
 		s.onError(fmt.Errorf("serve: end a session: %w", err))
 		_ = ch.Close()
 		return
 	}
-	if err := ch.Close(); err != nil && !ended(err) {
+	if err := ch.Close(); err != nil && !Ended(err) {
 		s.onError(fmt.Errorf("serve: close a session: %w", err))
 	}
 }

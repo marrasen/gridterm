@@ -22,7 +22,7 @@ func TestEndedKnowsAConnectionThatHasGone(t *testing.T) {
 		// Wrapped, which is how they arrive.
 		errors.Join(errors.New("close a session"), io.EOF),
 	} {
-		if !ended(err) {
+		if !Ended(err) {
 			t.Errorf("%v is read as something going wrong", err)
 		}
 	}
@@ -30,7 +30,7 @@ func TestEndedKnowsAConnectionThatHasGone(t *testing.T) {
 		errors.New("the pipe would not close"),
 		syscall.EACCES,
 	} {
-		if ended(err) {
+		if Ended(err) {
 			t.Errorf("%v is read as a connection that had already gone", err)
 		}
 	}

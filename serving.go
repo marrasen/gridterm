@@ -596,7 +596,7 @@ func (a *app) clientWent(c *serve.Client, why error) {
 		a.registry.Drop(e)
 	}
 	a.markDirty()
-	if why != nil && !errors.Is(why, io.EOF) && !errors.Is(why, net.ErrClosed) {
+	if why != nil && !serve.Ended(why) {
 		a.reportError("The window serving "+c.Name+" was lost", why)
 	}
 }
@@ -688,9 +688,7 @@ func (a *app) kickOut(clients []*serve.Client) error {
 		if live[c] {
 			kicked++
 		}
-		// An end of file is a window that has already gone too, which
-		// some transports say that way rather than with net.ErrClosed.
-		if err := c.Close(); err != nil && !errors.Is(err, net.ErrClosed) && !errors.Is(err, io.EOF) {
+		if err := c.Close(); err != nil && !serve.Ended(err) {
 			errs = append(errs, err)
 		}
 	}

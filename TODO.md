@@ -340,10 +340,11 @@ there is one key for position and one for recency.
 
 - **A flaky test makes a mutation sweep lie.** Two of the cuts above
   were reported as caught, and the only test that caught them was
-  `TestKickingAWindowThatHasAlreadyGoneSaysNothing`, which fails on its
-  own four runs in thirty. A sweep that counts a flake as a kill says
-  the code is pinned when nothing pins it. The three flaky tests below
-  are worth fixing for that as much as for the noise.
+  `TestKickingAWindowThatHasAlreadyGoneSaysNothing`, which was failing
+  on its own. A sweep that counts a flake as a kill says the code is
+  pinned when nothing pins it. That one was the window's fault and is
+  fixed: it now passes sixty runs in sixty. The ones below are still
+  worth fixing for the same reason as much as for the noise.
 
 - **`TestAFinishedJobLetsGoOfItsContext` fails now and then.** It says
   `the job finished still holding its context` at jobs/stat_test.go:179.
@@ -359,10 +360,13 @@ there is one key for position and one for recency.
   rather than the job object.
 
 - **`TestAMachineWithTooManyParkedFileSessionsIsRefusedTheNext` fails
-  three runs in thirty.** It says `the plus opened <nil>, want a
-  menu` at serving_test.go:1095, so the menu is not up yet when the test
-  looks. It was already failing this way before the shortcuts file went
-  in, so it is the test that is wrong rather than the window.
+  about one run in sixty.** It says `the plus opened <nil>, want a
+  menu` at serving_test.go:1095: the press on the plus is taken and
+  nothing opens. It was failing nineteen runs in sixty until the reset
+  a window that let go arrives as stopped being reported as a fault,
+  which was putting a notice over the press. What is left is something
+  else, and the modal is nil rather than a notice, so it is not the
+  same cause. Not diagnosed.
 
 - **A row for a shell a client started does not say which client.**
   Every one reads "started from another window", so a host with two
@@ -468,12 +472,15 @@ there is one key for position and one for recency.
   working directory field under "Run a command" wants the same thing.
 
 - `TestKickingAWindowThatHasAlreadyGoneSaysNothing` in status_test.go
-  fails four runs in thirty, with "focus never reached the Kick
-  marcus@laptop out button". It predates the shell work.
-  `TestAMachineWithTooManyParkedFileSessionsIsRefusedTheNext` fails the
-  same way, three runs in thirty. Both are relay tests over loopback
-  SSH, and both fail on their own rather than only under the load of a
-  whole suite, so a sweep running one package is not safe from them.
+  was failing with "focus never reached the Kick marcus@laptop out
+  button", and the window was at fault rather than the test: a window
+  that let go arrives on Windows as a Winsock reset often enough to
+  see, that was reported as the connection being lost, and the notice
+  sat over the dialog the test was tabbing through. Fixed, and it now
+  passes sixty runs in sixty. Both these tests are relay tests over
+  loopback SSH, and both failed on their own rather than only under the
+  load of a whole suite, so a sweep running one package was not safe
+  from them.
 
 - The single-window tests still read `testApp.shells` off the lock the
   harness appends under. Safe today, because every append in those tests

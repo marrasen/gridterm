@@ -471,10 +471,16 @@ there is one key for position and one for recency.
   `TestAMachineWithTooManyParkedFileSessionsIsRefusedTheNext` has been
   seen to fail the same way. Both are relay tests over loopback SSH.
 
-- The package does not pass `go test -race`.
-  `TestAKeyAfterAClickOnAScaledScreenReachesTheShell` reads
-  `testApp.shells` off the mutex the harness appends under. It is the
-  test harness, not the window.
+- The single-window tests still read `testApp.shells` off the lock the
+  harness appends under. Safe today, because every append in those tests
+  is on the test's own goroutine. It stops being safe the moment one of
+  them opens a second window, and nothing says so at the call site.
+  `go test -race` was failing at five places for this reason, all of
+  them in tests where a client attaching made the server's goroutine
+  append. Those now read through `testApp.shell` and
+  `testApp.shellCount`, which take `shellsMu`, and the suite passes
+  under `-race`. The remaining direct reads are in panes_test.go,
+  agents_test.go and agentkeys_test.go.
 
 - The cursor keeps blinking while the window is in the background. Most
   terminals either stop the blink or draw the cursor hollow once the

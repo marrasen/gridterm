@@ -1035,7 +1035,7 @@ func TestAttachingShowsWhatIsAlreadyOnTheScreen(t *testing.T) {
 	// Something already on the serving window's screen, put there by
 	// the shell running in it.
 	hostPane := onlyPaneOn(t, host)
-	host.shells[0].out <- []byte("already-here\r\n")
+	host.shell(0).out <- []byte("already-here\r\n")
 	waitFor(t, host, "the shell there to say it", func() bool {
 		return strings.Contains(paneText(hostPane), "already-here")
 	}, client)
@@ -1084,7 +1084,7 @@ func TestAttachingShowsWhatIsAlreadyOnTheScreen(t *testing.T) {
 
 	// What the shell says from now on, which is the whole point: a
 	// screen sent once is a photograph, not a window into it.
-	host.shells[0].out <- []byte("live-after-attach\r\n")
+	host.shell(0).out <- []byte("live-after-attach\r\n")
 	waitFor(t, host, "what it said after the attach", func() bool {
 		return strings.Contains(paneText(here), "live-after-attach")
 	}, client)
@@ -1137,7 +1137,7 @@ func TestAttachingShowsWhatIsAlreadyOnTheScreen(t *testing.T) {
 	// And typing here reaches the shell there.
 	here.Send([]byte("typed-from-here\r"))
 	waitFor(t, host, "what was typed here to reach there", func() bool {
-		return strings.Contains(host.shells[0].sentText(), "typed-from-here")
+		return strings.Contains(host.shell(0).sentText(), "typed-from-here")
 	}, client)
 
 	// Letting go leaves it running over there.
@@ -1147,7 +1147,7 @@ func TestAttachingShowsWhatIsAlreadyOnTheScreen(t *testing.T) {
 	waitFor(t, host, "the shell there to be let go of", func() bool {
 		return hostPane.Watched() == 0
 	}, client)
-	host.shells[0].out <- []byte("still-running\r\n")
+	host.shell(0).out <- []byte("still-running\r\n")
 	waitFor(t, host, "the shell there to carry on", func() bool {
 		return strings.Contains(paneText(hostPane), "still-running")
 	}, client)
@@ -1228,15 +1228,15 @@ func TestTheRowChosenIsTheOneAttachedTo(t *testing.T) {
 	// A second pane over there, and a name for each so the rows can be
 	// told apart. The shells this window opened over there are in the
 	// same list, so the new one is counted from where the list stood.
-	second := len(host.shells)
+	second := host.shellCount()
 	if err := host.openPane(); err != nil {
 		t.Fatalf("a second shell there: %v", err)
 	}
 	newest := newestPane(t, host)
 	host.setTitle(t, 0, first, "first-shell")
 	host.setTitle(t, second, newest, "second-shell")
-	host.shells[0].out <- []byte("this-is-the-first\r\n")
-	host.shells[second].out <- []byte("this-is-the-second\r\n")
+	host.shell(0).out <- []byte("this-is-the-first\r\n")
+	host.shell(second).out <- []byte("this-is-the-second\r\n")
 
 	// The row for the second one, as this window was told about it.
 	held := windowAt(t, client, addr)
@@ -1314,13 +1314,13 @@ func TestARowKeepsItsNameWhenSomethingElseCloses(t *testing.T) {
 	host, client, addr := twoWindows(t)
 	first := onlyPaneOn(t, host)
 
-	second := len(host.shells)
+	second := host.shellCount()
 	if err := host.openPane(); err != nil {
 		t.Fatalf("a second shell there: %v", err)
 	}
 	newest := newestPane(t, host)
 	host.setTitle(t, second, newest, "the-one-i-want")
-	host.shells[second].out <- []byte("this-is-the-second\r\n")
+	host.shell(second).out <- []byte("this-is-the-second\r\n")
 
 	held := windowAt(t, client, addr)
 	var row remoteKey

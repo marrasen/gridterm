@@ -49,7 +49,7 @@ func aHeldScreen(t *testing.T, cols, rows int) (host, client *testApp, hostPane 
 	// The shell says something and this window draws it where its own
 	// layout put it, so that what the window does once the size is taken
 	// is a change rather than a first frame.
-	host.shells[0].out <- []byte("before anybody was watching")
+	host.shell(0).out <- []byte("before anybody was watching")
 	waitFor(t, host, "the shell to say something", func() bool {
 		return strings.Contains(screenText(hostPane), "before anybody was watching")
 	}, client)
@@ -119,7 +119,7 @@ func fillScreen(t *testing.T, a *testApp, which int, pane *term.Terminal) {
 			b.WriteRune(cellRune(x, y))
 		}
 	}
-	a.shells[which].out <- []byte(b.String())
+	a.shell(which).out <- []byte(b.String())
 	waitFor(t, a, "the shell's screen to hold the pattern", func() bool {
 		g := screenOf(pane)
 		return g.At(size.Cols-1, size.Rows-1).Rune == cellRune(size.Cols-1, size.Rows-1)

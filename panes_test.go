@@ -141,8 +141,9 @@ type testApp struct {
 	// shells are the fake sessions, in the order they were started, and
 	// argvs the argv each was started on. A shell served to another
 	// window is started on a goroutine of the server's, so shellsMu
-	// guards the appends; a test reads the lists once it has waited for
-	// the pane that uses the shell.
+	// guards them. Read them through shell and shellCount: waiting for
+	// the pane that uses a shell does not order the read against the
+	// append.
 	shells   []*pipeSession
 	argvs    [][]string
 	dirs     []string
@@ -318,10 +319,24 @@ func newTestApp(t *testing.T, cols, rows int, opts ...testOption) *testApp {
 	return ta
 }
 
+// shell is the fake session started nth.
+func (ta *testApp) shell(n int) *pipeSession {
+	ta.shellsMu.Lock()
+	defer ta.shellsMu.Unlock()
+	return ta.shells[n]
+}
+
+// shellCount is how many fake sessions have been started.
+func (ta *testApp) shellCount() int {
+	ta.shellsMu.Lock()
+	defer ta.shellsMu.Unlock()
+	return len(ta.shells)
+}
+
 // setTitle makes one pane's program name the window.
 func (ta *testApp) setTitle(t *testing.T, which int, pane *term.Terminal, title string) {
 	t.Helper()
-	ta.shells[which].out <- []byte("\x1b]0;" + title + "\x07")
+	ta.shell(which).out <- []byte("\x1b]0;" + title + "\x07")
 	waitFor(t, ta, "the pane to take the title its program set", func() bool { return pane.Title() == title })
 }
 

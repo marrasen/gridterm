@@ -217,6 +217,17 @@ there is one key for position and one for recency.
 
 ## Panes and the sidebar
 
+- **A window whose connection dropped is not offered a way back.** The
+  other window now says why it is going, so a client tells a window that
+  stopped sharing from one that was thrown out from one that just went.
+  A window that just went is the case worth offering "Reconnect" on, and
+  nothing offers it. What stops it is that `taken` does not keep the key
+  file the window was taken over with, so there is nothing to reach it
+  again with: `takeOver` wants an address and a key file, and only the
+  address survives. Either keep the key file on `taken`, or look it up
+  in the server list by address, which only works for a window that was
+  saved.
+
 - **A pane on a taken-over window cannot be reconnected.** Marcus typed
   `exit` in a pane opened through a remote gridterm window. The shell
   ended and the pane said "-- gridterm: the program has finished.

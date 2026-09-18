@@ -40,7 +40,7 @@ const mostFileSessions = 16
 //
 // ctx ends when the connection has finished. It returns once every
 // session it started has been hung up on.
-func (s *Server) serveChannels(ctx context.Context, chans <-chan ssh.NewChannel) {
+func (s *Server) serveChannels(ctx context.Context, c *Client, chans <-chan ssh.NewChannel) {
 	var running sync.WaitGroup
 	// Counted rather than held in a list: nothing needs to name them,
 	// only to know how many there are. Written by the goroutines that
@@ -56,7 +56,7 @@ func (s *Server) serveChannels(ctx context.Context, chans <-chan ssh.NewChannel)
 			running.Add(1)
 			go func() {
 				defer running.Done()
-				s.runControl(ctx, ch, reqs)
+				s.runControl(ctx, c, ch, reqs)
 			}()
 			continue
 		}

@@ -625,9 +625,20 @@ func (a *app) windowDied(t *taken, why error) {
 	}
 	// The row stays, the way greyRow says a dropped connection's row
 	// does. It says what became of the window, under the name it was
-	// held by.
-	t.entry.Label = "no longer serving"
-	a.greyRow(t.entry, why)
+	// held by, and says which of the two things happened: a window that
+	// stopped sharing is not a connection that dropped, and showing the
+	// socket error for it named a fault where there was none.
+	switch t.win.Going() {
+	case serve.GoingStopped:
+		t.entry.Label = "the window stopped sharing"
+		a.greyRow(t.entry, nil)
+	case serve.GoingKicked:
+		t.entry.Label = "the window closed this connection"
+		a.greyRow(t.entry, nil)
+	default:
+		t.entry.Label = "no longer serving"
+		a.greyRow(t.entry, why)
+	}
 	a.refreshServers()
 	a.markDirty()
 }
@@ -731,10 +742,26 @@ func (a *app) letGoOfWindow(t *taken) error {
 	// Hanging up ends every close left behind on that window, so the
 	// count goes with it.
 	a.windows.closesEnded(t.win)
+	errs = alreadyGone(errs)
 	// A goodbye the window never answered is logged rather than shown:
 	// the bound on it is one round trip on the goroutine that draws, and
 	// a slow link runs it out with nothing wrong.
 	return a.graceLogged(errors.Join(errs...))
+}
+
+// alreadyGone drops the errors that only say the connection had gone
+// before this window let go of it, which is what letting go of a window
+// that quit is: hanging up on a socket that is already closed says so,
+// and reporting it put a network error in front of the user for
+// something the other end did on purpose.
+func alreadyGone(errs []error) []error {
+	kept := make([]error, 0, len(errs))
+	for _, err := range errs {
+		if err != nil && !serve.Ended(err) {
+			kept = append(kept, err)
+		}
+	}
+	return kept
 }
 
 // closeWindows hangs up on every window this one took over, for a

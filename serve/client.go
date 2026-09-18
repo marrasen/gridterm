@@ -53,6 +53,15 @@ type Window struct {
 	// drawing, so the lock is what keeps a half-written list off the
 	// screen.
 	open []Open
+
+	// going is why the other window closed the connection, when it said
+	// so before closing it.
+	going string
+
+	// watched is closed when the control channel has ended, which is
+	// how Wait knows the last thing the other window said has been
+	// read.
+	watched chan struct{}
 }
 
 // DialConfig is what reaching another window takes.
@@ -205,7 +214,8 @@ func Dial(ctx context.Context, cfg DialConfig) (*Window, error) {
 		_ = cc.Close()
 		return nil, fmt.Errorf("serve: reach %s: %w", cfg.Addr, err)
 	}
-	w := &Window{client: ssh.NewClient(cc, chans, reqs), addr: cfg.Addr}
+	w := &Window{client: ssh.NewClient(cc, chans, reqs), addr: cfg.Addr,
+		watched: make(chan struct{})}
 	w.watch()
 	return w, nil
 }
@@ -230,10 +240,13 @@ func (w *Window) Opens() []Open {
 func (w *Window) watch() {
 	ch, reqs, err := w.client.OpenChannel(chanControl, nil)
 	if err != nil {
+		// Nothing will be read, so nothing waits for it.
+		close(w.watched)
 		return
 	}
 	go ssh.DiscardRequests(reqs)
 	go func() {
+		defer close(w.watched)
 		defer ch.Close()
 		// A snapshot a line at a time. The buffer is generous because a
 		// window with a great many things open sends a long line, and a
@@ -248,7 +261,13 @@ func (w *Window) watch() {
 				continue
 			}
 			w.mu.Lock()
-			w.open = snap.Open
+			if snap.Going != "" {
+				// The window is going on purpose. It carries no list,
+				// so what is open is left as it was.
+				w.going = snap.Going
+			} else {
+				w.open = snap.Open
+			}
 			w.mu.Unlock()
 		}
 	}()
@@ -393,7 +412,33 @@ func (e errWriter) Write(p []byte) (int, error) {
 //
 // A window that quit at the far end is still held here, saying it is
 // taken over, until something notices. Nothing else would.
-func (w *Window) Wait() error { return w.client.Wait() }
+func (w *Window) Wait() error {
+	err := w.client.Wait()
+	// The other window says why it is going down the control channel,
+	// immediately before closing. Waiting for that channel to end gives
+	// the line the moment it needs to be read, so a window that stopped
+	// sharing is not reported as a connection that dropped. The wait is
+	// bounded because a control channel that never opened, or a link
+	// that is wedged, must not hold a window open here.
+	select {
+	case <-w.watched:
+	case <-time.After(saidWhyIn):
+	}
+	return err
+}
+
+// saidWhyIn is how long Wait gives the other window's last word to
+// arrive after the connection has ended.
+const saidWhyIn = 500 * time.Millisecond
+
+// Going is why the other window closed the connection on purpose, and
+// empty when it did not say. It is worth reading once Wait has
+// returned.
+func (w *Window) Going() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.going
+}
 
 // Close lets go of the other window. Everything opened on it goes too.
 func (w *Window) Close() error {

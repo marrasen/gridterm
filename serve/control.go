@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -16,7 +17,16 @@ import (
 // on a slow link is behind by one picture of the window rather than by
 // a queue of them, and the window it is watching never waits for it.
 type watcher struct {
+	// client is whose connection this control channel is on, so a
+	// window can tell one client it is going without telling the rest.
+	client *Client
+
 	ch ssh.Channel
+
+	// writeMu orders the writes to ch. The goroutine writing snapshots
+	// and a window on its way out both write, and two writes at once
+	// would interleave halves of two lines.
+	writeMu sync.Mutex
 
 	mu sync.Mutex
 	// next is the snapshot not yet written, or nil when there is none.
@@ -31,8 +41,8 @@ type watcher struct {
 	wake chan struct{}
 }
 
-func newWatcher(ch ssh.Channel) *watcher {
-	return &watcher{ch: ch, wake: make(chan struct{}, 1)}
+func newWatcher(c *Client, ch ssh.Channel) *watcher {
+	return &watcher{client: c, ch: ch, wake: make(chan struct{}, 1)}
 }
 
 // Publish tells every client what this window has open.
@@ -115,12 +125,75 @@ func (s *Server) send(w *watcher) {
 			}
 			continue
 		}
-		if _, err := w.ch.Write(line); err != nil {
+		if err := w.write(line); err != nil {
 			s.dropWatcher(w)
 			return
 		}
 	}
 }
+
+// write puts one line on the control channel, one writer at a time.
+func (w *watcher) write(line []byte) error {
+	w.writeMu.Lock()
+	defer w.writeMu.Unlock()
+	_, err := w.ch.Write(line)
+	return err
+}
+
+// Going tells everyone watching that this window is about to close the
+// connection, and why.
+//
+// Written here rather than left for each watcher's own goroutine: the
+// close that follows would overtake a line still waiting its turn, and
+// the client would be left with the socket error this is there to
+// replace. A client that has already gone is not written to and is not
+// reported.
+func (s *Server) Going(why string) { s.going(nil, why) }
+
+// GoingTo tells one client that this window is closing its connection,
+// and why, for a window being thrown out rather than everybody.
+func (s *Server) GoingTo(c *Client, why string) { s.going(c, why) }
+
+// going writes the reason to every watcher, or to one client's when it
+// is named.
+//
+// Each write goes on a goroutine of its own and the wait is bounded, so
+// a client that has stopped reading cannot hold up a window that is
+// closing. That is the same rule the snapshots follow, and the reason
+// they are never written by the window's own goroutine.
+func (s *Server) going(only *Client, why string) {
+	line, err := json.Marshal(Snapshot{Going: why})
+	if err != nil {
+		s.onError(fmt.Errorf("serve: say why this window is going: %w", err))
+		return
+	}
+	line = append(line, '\n')
+
+	var wrote sync.WaitGroup
+	for _, w := range s.watchers() {
+		if only != nil && w.client != only {
+			continue
+		}
+		wrote.Add(1)
+		go func(w *watcher) {
+			defer wrote.Done()
+			_ = w.write(line)
+		}(w)
+	}
+	done := make(chan struct{})
+	go func() {
+		wrote.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(sayGoingIn):
+	}
+}
+
+// sayGoingIn is how long a window that is closing gives its last word to
+// reach the clients that are still reading.
+const sayGoingIn = 250 * time.Millisecond
 
 // watchers returns who is listening right now.
 func (s *Server) watchers() []*watcher {
@@ -172,12 +245,12 @@ func (s *Server) letGoOf(ch ssh.Channel) {
 // runControl carries one client's view of what this window has open.
 //
 // ctx ends when the client's connection has finished.
-func (s *Server) runControl(ctx context.Context, ch ssh.Channel, reqs <-chan *ssh.Request) {
+func (s *Server) runControl(ctx context.Context, c *Client, ch ssh.Channel, reqs <-chan *ssh.Request) {
 	// Drained rather than answered: nothing is asked down this channel,
 	// and sixteen unread requests stop the connection's read loop.
 	go ssh.DiscardRequests(reqs)
 
-	w := newWatcher(ch)
+	w := newWatcher(c, ch)
 	if !s.addWatcher(w) {
 		s.letGoOf(ch)
 		return

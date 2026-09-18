@@ -684,9 +684,15 @@ func (a *app) kickOut(clients []*serve.Client) error {
 	}
 	var errs []error
 	kicked := 0
+	srv := a.serving.server
 	for _, c := range clients {
 		if live[c] {
 			kicked++
+		}
+		// Told before the socket goes, so the window thrown out says it
+		// was thrown out rather than showing a network error.
+		if srv != nil {
+			srv.GoingTo(c, serve.GoingKicked)
 		}
 		if err := c.Close(); err != nil && !serve.Ended(err) {
 			errs = append(errs, err)

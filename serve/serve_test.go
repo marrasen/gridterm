@@ -849,7 +849,7 @@ func (s *Server) turnedAwaySoFar() int {
 // What it wants is a picture of the window now. A queue of pictures it
 // is already too late for would put it further behind with every one.
 func TestAClientBehindIsSentTheLatestSnapshot(t *testing.T) {
-	w := newWatcher(nil)
+	w := newWatcher(nil, nil)
 
 	w.put([]byte("first\n"))
 	w.put([]byte("second\n"))

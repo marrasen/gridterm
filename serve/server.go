@@ -222,6 +222,11 @@ func (s *Server) Clients() []*Client {
 // Close stops listening and hangs up on everyone, including on anyone
 // part way through connecting.
 func (s *Server) Close() error {
+	// Before the lock and before anything is closed, so a client is
+	// told this was deliberate while there is still a connection to
+	// tell it on.
+	s.Going(GoingStopped)
+
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
@@ -379,7 +384,7 @@ func (s *Server) handshake(nc net.Conn) {
 	served := make(chan struct{})
 	go func() {
 		defer close(served)
-		s.serveChannels(live, chans)
+		s.serveChannels(live, c, chans)
 	}()
 
 	why := conn.Wait()

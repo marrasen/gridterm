@@ -653,6 +653,86 @@ func TestAWindowThatQuitsIsLetGoOf(t *testing.T) {
 	}
 }
 
+// A window that stopped sharing says so, rather than showing the socket
+// error that a deliberate stop makes.
+//
+// The user pressed Stop serving over there. What arrived here was "close
+// tcp ...: use of closed network connection" in a dialog, which names a
+// fault where there was none and gives the user nothing to do.
+func TestAWindowThatStoppedSharingSaysSoRatherThanAnError(t *testing.T) {
+	host, client, addr := twoWindows(t)
+	row := client.windows.named(addr).entry
+
+	if err := host.stopServing(); err != nil {
+		t.Fatalf("stop serving: %v", err)
+	}
+	waitFor(t, client, "the window to be let go of", func() bool {
+		return client.windows.named(addr) == nil
+	})
+	client.pump.run()
+
+	if n, up := client.root.Modal().(*ui.Notice); up {
+		t.Errorf("stopping sharing reported %q: %s", n.Title, n.Message())
+	}
+	if got := row.Label; got != "the window stopped sharing" {
+		t.Errorf("the row says %q, want it to say the window stopped sharing", got)
+	}
+	if row.Note != "" {
+		t.Errorf("the row also carries %q, want nothing: there was no fault", row.Note)
+	}
+}
+
+// A window thrown out says that, and not that the network went.
+func TestAWindowThatWasThrownOutSaysSo(t *testing.T) {
+	host, client, addr := twoWindows(t)
+	row := client.windows.named(addr).entry
+
+	if err := host.kickOut(host.serving.clients()); err != nil {
+		t.Fatalf("kick: %v", err)
+	}
+	waitFor(t, client, "the window to be let go of", func() bool {
+		return client.windows.named(addr) == nil
+	}, host)
+	client.pump.run()
+
+	if n, up := client.root.Modal().(*ui.Notice); up {
+		t.Errorf("being thrown out reported %q: %s", n.Title, n.Message())
+	}
+	if got := row.Label; got != "the window closed this connection" {
+		t.Errorf("the row says %q, want it to say the window closed the connection", got)
+	}
+}
+
+// A window that went without saying why is not reported as one that
+// stopped sharing, so the wording follows what the other end said and
+// not merely the fact that the connection ended.
+//
+// Nothing is added about what went wrong here, because a socket closed
+// cleanly reaches this end as an end of file and greyRow says nothing
+// for that. A link that breaks rather than closes is what carries a
+// fault to show, and that cannot be made to happen in a test.
+func TestAWindowThatWentWithoutSayingWhyIsNotCalledAStop(t *testing.T) {
+	host, client, addr := twoWindows(t)
+	row := client.windows.named(addr).entry
+
+	// The socket goes with nothing said, which is what a network that
+	// drops looks like: the serving window never gets to speak.
+	for _, c := range host.serving.clients() {
+		if err := c.Close(); err != nil {
+			t.Fatalf("drop the connection: %v", err)
+		}
+	}
+
+	waitFor(t, client, "the window to be let go of", func() bool {
+		return client.windows.named(addr) == nil
+	})
+	client.pump.run()
+
+	if got := row.Label; got != "no longer serving" {
+		t.Errorf("the row says %q, want the wording for a window that just went", got)
+	}
+}
+
 // A window that quits at the far end keeps a row too, greyed, and the
 // user can clear it. The address is free to take over again once it has
 // gone.
@@ -715,7 +795,7 @@ func TestAWindowThatQuitsKeepsARowThatCanBeCleared(t *testing.T) {
 		t.Errorf("the row is drawn in %v, want the grey a finished connection is drawn in", drawn.FG)
 	}
 	// Saying what became of it. Where it was is the heading above it.
-	if drawn.Text != "no longer serving" {
+	if drawn.Text != "the window stopped sharing" {
 		t.Errorf("the row says %q, want what became of the window", drawn.Text)
 	}
 	// And offering the cross that clears it, the way a dropped machine's
@@ -724,12 +804,12 @@ func TestAWindowThatQuitsKeepsARowThatCanBeCleared(t *testing.T) {
 		t.Errorf("the greyed row offers %q, want the ×", drawn.Button)
 	}
 
-	// Hanging up on a window that has already gone reports the socket it
-	// could not close politely. Dismissed, the way the user would.
-	if n := awaitModal(t, client, "a notice whose title starts with Trouble letting go of", byTitlePrefix[*ui.Notice]("Trouble letting go of")); n != nil {
-		if _, err := client.root.HandleKey(press(input.KeyEscape, 0)); err != nil {
-			t.Fatalf("dismissing the notice: %v", err)
-		}
+	// And nothing else to dismiss. This used to open "Trouble letting go
+	// of ...", because hanging up on a window that had already gone
+	// closed a socket that was already closed and reported it.
+	client.pump.run()
+	if n, up := client.root.Modal().(*ui.Notice); up {
+		t.Errorf("letting go of a window that quit reported %q: %s", n.Title, n.Message())
 	}
 
 	// Cleared by pressing the cross at the end of the row. The other way

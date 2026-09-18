@@ -159,7 +159,28 @@ type Snapshot struct {
 
 	// Open is what it has open, in the order it opened them.
 	Open []Open `json:"open"`
+
+	// Going says the window is about to close the connection on
+	// purpose, and why. Empty in an ordinary snapshot, and the only
+	// field set when it is not: a client that reads one of these leaves
+	// its list of what is open alone.
+	//
+	// Without it a window that stopped sharing and a network that
+	// dropped look the same at the other end, and the client shows a
+	// socket error for something the user did on purpose.
+	Going string `json:"going,omitempty"`
 }
+
+// Why a window closes a connection on purpose. A client that is told
+// one of these says what happened instead of showing a network error.
+const (
+	// GoingStopped says the window stopped sharing.
+	GoingStopped = "stopped"
+
+	// GoingKicked says this client in particular was thrown out, while
+	// the window goes on serving anybody else.
+	GoingKicked = "kicked"
+)
 
 // openFiles is what a client asks for when it opens a file session: the
 // machine whose files it wants.

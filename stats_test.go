@@ -17,11 +17,11 @@ func TestTheWindowSaysHowLongItIsTaking(t *testing.T) {
 	s.started = at
 
 	// A second of frames, all drawn.
-	for i := 0; i < 60; i++ {
+	for i := range 60 {
 		if i == 59 {
 			at = at.Add(time.Second)
 		}
-		s.frame(2*time.Millisecond, render.CompositorStats{Stats: render.Stats{RowsDrawn: 24, Quads: 1920}}, uint64(i+1)*100*1024)
+		s.frame(2*time.Millisecond, render.CompositorStats{RowsDrawn: 24, Quads: 1920}, uint64(i+1)*100*1024)
 	}
 
 	got := said.String()
@@ -44,7 +44,7 @@ func TestAPaneClosingDoesNotMakeTheCountAbsurd(t *testing.T) {
 	s.bytes = 10 << 20
 
 	at = at.Add(time.Second)
-	s.frame(time.Millisecond, render.CompositorStats{Stats: render.Stats{RowsDrawn: 1, Quads: 10}}, 0)
+	s.frame(time.Millisecond, render.CompositorStats{RowsDrawn: 1, Quads: 10}, 0)
 
 	if got := said.String(); !strings.Contains(got, "0 B read") {
 		t.Errorf("it said %q", got)

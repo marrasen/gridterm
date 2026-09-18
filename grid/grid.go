@@ -269,7 +269,7 @@ func (g *Grid) Resize(cols, rows int) {
 	// Copy the overlapping region so a resize does not blank the screen.
 	copyCols := min(cols, g.cols)
 	copyRows := min(rows, g.rows)
-	for y := 0; y < copyRows; y++ {
+	for y := range copyRows {
 		copy(next[y*cols:y*cols+copyCols], g.cells[y*g.cols:y*g.cols+copyCols])
 	}
 	g.cells = next
@@ -286,7 +286,7 @@ func (g *Grid) Resize(cols, rows int) {
 	// whole row rather than just its edges: blanking one broken pair can
 	// expose another, and a lead cell with no continuation makes
 	// clearWideAt blank an innocent neighbour later on.
-	for y := 0; y < copyRows; y++ {
+	for y := range copyRows {
 		RepairWidths(g.cells[y*cols:(y+1)*cols], blank)
 	}
 }

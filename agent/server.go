@@ -129,11 +129,9 @@ func Listen(cfg Config) (*Server, error) {
 		return nil, fmt.Errorf("agent: listen: %w", err)
 	}
 	s := &Server{cfg: cfg, ln: ln, talking: map[net.Conn]struct{}{}}
-	s.accepting.Add(1)
-	go func() {
-		defer s.accepting.Done()
+	s.accepting.Go(func() {
 		s.accept()
-	}()
+	})
 	return s, nil
 }
 

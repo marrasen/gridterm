@@ -26,12 +26,12 @@ func drawDeck(d *Deck, cols, rows int) *grid.Grid {
 // A deck draws nothing of its own: the pane in front gets every row and
 // every column. A strip of labels used to take the top row.
 func TestDeckDrawsNothingOfItsOwn(t *testing.T) {
-	one, two := &named{filler: filler{ch: '1'}, title: "one"}, &named{title: "two"}
+	one, two := &named{ch: '1', title: "one"}, &named{title: "two"}
 	d := NewDeck(one, two)
 
 	g := drawDeck(d, 12, 4)
 
-	for y := 0; y < 4; y++ {
+	for y := range 4 {
 		if got := rowOf(g, y); got != "111111111111" {
 			t.Errorf("row %d = %q, want the pane in front", y, got)
 		}
@@ -74,7 +74,7 @@ func TestDeckShowsOneChildAtATime(t *testing.T) {
 
 	g := drawDeck(tb, 8, 3)
 
-	for y := 0; y < 3; y++ {
+	for y := range 3 {
 		if got := rowOf(g, y); got != "11111111" {
 			t.Errorf("row %d = %q, want the pane in front", y, got)
 		}

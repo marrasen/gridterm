@@ -207,7 +207,7 @@ func (h Host) FoldersJoined() string { return strings.Join(h.Folders, folderSepa
 // separator is not a folder with no path.
 func FoldersFrom(line string) []string {
 	var out []string
-	for _, path := range strings.Split(line, folderSeparator) {
+	for path := range strings.SplitSeq(line, folderSeparator) {
 		if path = strings.TrimSpace(path); path != "" {
 			out = append(out, path)
 		}

@@ -289,7 +289,7 @@ func TileAreas(n int, in Size) []Rect {
 		return nil
 	}
 	out := make([]Rect, 0, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		x, y := i%cols, i/cols
 		// Measured from the edges each time, so the rounding is shared
 		// out and the tiles reach the far edge exactly.

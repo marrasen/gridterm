@@ -464,7 +464,7 @@ func promptGetsTheAgentConnected(t *testing.T, host agentHost) {
 
 	// A dialog is narrow and a prompt nobody reads is a prompt nobody
 	// pastes.
-	for _, line := range strings.Split(prompt, "\n") {
+	for line := range strings.SplitSeq(prompt, "\n") {
 		if len(line) > 100 {
 			t.Errorf("a line is %d characters long: %q", len(line), line)
 		}
@@ -2406,7 +2406,7 @@ func TestAClearHidesWhatCameBeforeItFromTheAgent(t *testing.T) {
 	// Enough output to push it off the top, so it is in the history that
 	// a clear would otherwise throw away.
 	var filling strings.Builder
-	for i := 0; i < 40; i++ {
+	for i := range 40 {
 		fmt.Fprintf(&filling, "line %d\r\n", i)
 	}
 	a.shells[0].out <- []byte(filling.String() + "$ ")
@@ -2478,7 +2478,7 @@ func TestAClearCutsThePaneOffAtExactlyTheClear(t *testing.T) {
 	// Enough to fill the screen and push lines into history, then the
 	// one line that must not be readable, then the clear.
 	var filling strings.Builder
-	for i := 0; i < 40; i++ {
+	for i := range 40 {
 		fmt.Fprintf(&filling, "line %d\r\n", i)
 	}
 	a.shells[0].out <- []byte(filling.String() + "last before the clear\r\n")
@@ -2631,7 +2631,7 @@ func TestReadingAboveAClearIsABoxTheUserTicks(t *testing.T) {
 	})
 
 	var filling strings.Builder
-	for i := 0; i < 40; i++ {
+	for i := range 40 {
 		fmt.Fprintf(&filling, "line %d\r\n", i)
 	}
 	a.shells[0].out <- []byte("$ cat secrets\r\nhunter2\r\n" + filling.String())
@@ -3021,7 +3021,7 @@ func TestAnAgentCannotOpenPanesWithoutEnd(t *testing.T) {
 
 	opened := 0
 	var failed error
-	for i := 0; i < mostOpened+2; i++ {
+	for range mostOpened + 2 {
 		offWindow(t, a, "the window to answer the agent", func() error {
 			if _, err := c.Open(got.ID); err != nil {
 				failed = err

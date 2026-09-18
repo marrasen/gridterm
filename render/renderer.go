@@ -185,7 +185,7 @@ func (r *Renderer) draw(dst *ebiten.Image, g *grid.Grid, geo *Geometry, showCurs
 
 	r.reset()
 	r.stats = Stats{CellsTotal: cols * rows}
-	for y := 0; y < rows; y++ {
+	for y := range rows {
 		if g.RowDirty(y) {
 			r.stats.RowsDrawn++
 		}
@@ -195,7 +195,7 @@ func (r *Renderer) draw(dst *ebiten.Image, g *grid.Grid, geo *Geometry, showCurs
 	// before any glyph does, and a batch that fills up mid-pass is
 	// flushed immediately — so interleaving would let a later row's
 	// background paint over an earlier row's descenders.
-	for y := 0; y < rows; y++ {
+	for y := range rows {
 		if !g.RowDirty(y) {
 			continue
 		}
@@ -214,11 +214,11 @@ func (r *Renderer) draw(dst *ebiten.Image, g *grid.Grid, geo *Geometry, showCurs
 	}
 	r.flush(dst, &r.bg)
 
-	for y := 0; y < rows; y++ {
+	for y := range rows {
 		if !g.RowDirty(y) {
 			continue
 		}
-		for x := 0; x < cols; x++ {
+		for x := range cols {
 			c := g.At(x, y)
 			// Width 0 is the column a double-width character spills
 			// into; its glyph was already drawn by the lead cell. A
@@ -272,7 +272,7 @@ func (r *Renderer) draw(dst *ebiten.Image, g *grid.Grid, geo *Geometry, showCurs
 // over it rather than under it.
 func (r *Renderer) pushArt(dst *ebiten.Image, g *grid.Grid, y int, geo *Geometry) {
 	cols, _ := g.Size()
-	for x := 0; x < cols; x++ {
+	for x := range cols {
 		c := g.At(x, y)
 		if c.Art.Kind == grid.ArtNone {
 			continue
@@ -370,7 +370,7 @@ func graphBars(art grid.Art, x, y int, geo *Geometry) []bar {
 	first := grid.ArtGraphBars - bars
 	left := geo.CellX(x)
 	out := make([]bar, 0, bars)
-	for i := 0; i < bars; i++ {
+	for i := range bars {
 		x0 := left + i*cellW/bars
 		x1 := left + (i+1)*cellW/bars
 		h := tall * float32(art.Bar(first+i)) / grid.ArtGraphMax
@@ -476,7 +476,7 @@ func (r *Renderer) pushRules(dst *ebiten.Image, g *grid.Grid, y int, geo *Geomet
 			r.push(dst, &r.bg, b.X, b.Y, b.W, b.H, 0, 0, 1, 1, runColor)
 			runStart = -1
 		}
-		for x := 0; x < cols; x++ {
+		for x := range cols {
 			c := g.At(x, y)
 			col := g.FGOf(x, y)
 			if c.Attr&grid.AttrDim != 0 {

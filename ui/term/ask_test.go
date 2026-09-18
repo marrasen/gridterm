@@ -47,7 +47,7 @@ func askTerm(t *testing.T, cols, rows int) (*Terminal, *fakeSession, *picker, *p
 func fullRow(g *grid.Grid, y int) string {
 	cols, _ := g.Size()
 	var b strings.Builder
-	for x := 0; x < cols; x++ {
+	for x := range cols {
 		c := g.At(x, y)
 		if c.Rune == 0 {
 			b.WriteByte(' ')

@@ -8,7 +8,7 @@ import (
 func TestPumpRunsInTheOrderPosted(t *testing.T) {
 	var p pump
 	var got []int
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		p.post(func() { got = append(got, i) })
 	}
 	p.run()
@@ -56,18 +56,16 @@ func TestPumpKeepsEverythingFromEveryGoroutine(t *testing.T) {
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	ran := 0
-	for i := 0; i < goroutines; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for j := 0; j < each; j++ {
+	for range goroutines {
+		wg.Go(func() {
+			for range each {
 				p.post(func() {
 					mu.Lock()
 					ran++
 					mu.Unlock()
 				})
 			}
-		}()
+		})
 	}
 	wg.Wait()
 
@@ -98,16 +96,14 @@ func TestPumpTakesWorkPostedWhileItRuns(t *testing.T) {
 	var wg sync.WaitGroup
 	p.post(func() {
 		// Posted from other goroutines while this one holds the queue.
-		for i := 0; i < late; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+		for range late {
+			wg.Go(func() {
 				p.post(func() {
 					mu.Lock()
 					ran++
 					mu.Unlock()
 				})
-			}()
+			})
 		}
 		wg.Wait()
 	})

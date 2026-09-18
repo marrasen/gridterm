@@ -406,8 +406,8 @@ func TestDockDragIgnoresAnotherButtonComingUp(t *testing.T) {
 // there.
 func TestDockMovesTheKeysToThePaneUnderThePointer(t *testing.T) {
 	panel := &fake{name: "panel"}
-	left, right := &picky{fake: fake{name: "left"}, first: true},
-		&picky{fake: fake{name: "right"}, first: true}
+	left, right := &picky{name: "left", first: true},
+		&picky{name: "right", first: true}
 	d := NewDock(10, panel, NewSplit(Columns, left, right))
 	r := rootOver(d, 41, 4)
 	d.Focus(panel)
@@ -443,7 +443,7 @@ func TestDockMovesTheKeysToThePaneUnderThePointer(t *testing.T) {
 // container between the keys and it.
 func TestDockKeepsThePressThatMovesTheKeysToItsOtherHalf(t *testing.T) {
 	panel := &fake{name: "panel"}
-	rest := &picky{fake: fake{name: "rest"}, first: true}
+	rest := &picky{name: "rest", first: true}
 	d := NewDock(10, panel, rest)
 	r := rootOver(d, 41, 4)
 	d.Focus(panel)
@@ -471,7 +471,7 @@ func TestDockKeepsThePressThatMovesTheKeysToItsOtherHalf(t *testing.T) {
 // the keys to it, the same as a widget that does not answer at all.
 func TestDockDeliversThePressToAPaneThatDoesNotAskToBeSpared(t *testing.T) {
 	panel := &fake{name: "panel"}
-	rest := &picky{fake: fake{name: "rest"}}
+	rest := &picky{name: "rest"}
 	d := NewDock(10, panel, rest)
 	r := rootOver(d, 41, 4)
 	d.Focus(panel)

@@ -498,8 +498,7 @@ func readIdentity(path string) (signer ssh.Signer, needsPass, read bool, err err
 	if err == nil {
 		return signer, false, true, nil
 	}
-	var missing *ssh.PassphraseMissingError
-	if errors.As(err, &missing) {
+	if _, ok := errors.AsType[*ssh.PassphraseMissingError](err); ok {
 		return nil, true, true, err
 	}
 	return nil, false, true, err

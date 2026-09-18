@@ -135,7 +135,7 @@ func TestASidebarWithNoRoomGivesItsGapToTheMargin(t *testing.T) {
 // strip of the window with no cell to paint it.
 func TestThePadTableHoldsWhateverItIsGiven(t *testing.T) {
 	var table padTable
-	for i := 0; i < 9; i++ {
+	for i := range 9 {
 		table.add(i, grid.Pad{Before: 1})
 	}
 	table.add(3, grid.Pad{After: 2})
@@ -184,7 +184,7 @@ func TestADialogIsPaddedLikeTheWindow(t *testing.T) {
 	a.resizeTo(40*cw, 15*ch)
 
 	cols, _ := a.g.Size()
-	for x := 0; x < cols; x++ {
+	for x := range cols {
 		if got, want := a.modals[0].g.ColPad(x), a.g.ColPad(x); got != want {
 			t.Fatalf("after a resize, column %d has %+v on the dialog and %+v on the window",
 				x, got, want)
@@ -204,7 +204,7 @@ func TestPaddingTheSameWayTwiceRedrawsNothing(t *testing.T) {
 	a.padGrid(a.g)
 	a.g.ClearDirty()
 
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		a.padGrid(a.g)
 	}
 

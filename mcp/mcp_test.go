@@ -278,7 +278,7 @@ func atOnce(t *testing.T, panes Panes, messages ...string) []response {
 		t.Fatalf("serve: %v", err)
 	}
 	var answers []response
-	for _, line := range strings.Split(strings.TrimSpace(out.String()), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(out.String()), "\n") {
 		if line == "" {
 			continue
 		}

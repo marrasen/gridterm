@@ -578,7 +578,7 @@ func TestASessionThatCannotStartDoesNotWedgeTheConnection(t *testing.T) {
 		t.Fatalf("open: %v", err)
 	}
 	go ssh.DiscardRequests(reqs)
-	for i := 0; i < 64; i++ {
+	for i := range 64 {
 		if _, err := ch.SendRequest(reqWindowChange, false,
 			ssh.Marshal(windowChange{Cols: 80, Rows: uint32(24 + i)})); err != nil {
 			break
@@ -1081,9 +1081,9 @@ func TestAWindowWorksInSomethingAlreadyRunning(t *testing.T) {
 // A window that is not offering what it has running says so, rather
 // than starting something new for a client that asked to watch.
 func TestAWindowThatCannotBeWorkedInSaysSo(t *testing.T) {
-	var opened int32
+	var opened atomic.Int32
 	_, w := takenOverWith(t, func(cols, rows int) (session.Session, error) {
-		atomic.AddInt32(&opened, 1)
+		opened.Add(1)
 		return newEchoSession(cols, rows), nil
 	}, nil)
 
@@ -1099,7 +1099,7 @@ func TestAWindowThatCannotBeWorkedInSaysSo(t *testing.T) {
 	if strings.Contains(got, "started at") {
 		t.Errorf("it started something new instead: %q", got)
 	}
-	if n := atomic.LoadInt32(&opened); n != 0 {
+	if n := opened.Load(); n != 0 {
 		t.Errorf("it opened %d new sessions", n)
 	}
 }
@@ -1200,7 +1200,7 @@ func TestSayingWhatIsOpenDoesNotWaitForAClient(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		for i := 0; i < 64; i++ {
+		for range 64 {
 			s.Publish(big)
 		}
 	}()
@@ -1215,7 +1215,7 @@ func TestSayingWhatIsOpenDoesNotWaitForAClient(t *testing.T) {
 // any window a client is not emptying.
 func serve1MB() Snapshot {
 	snap := Snapshot{Window: "big"}
-	for i := 0; i < 200; i++ {
+	for range 200 {
 		snap.Open = append(snap.Open, Open{
 			ID:    "x" + strings.Repeat("y", 100),
 			Host:  "host",
@@ -1430,7 +1430,7 @@ func TestOnlySoManyFileSessionsAtOnce(t *testing.T) {
 			_ = f.Close()
 		}
 	}()
-	for i := 0; i < mostFileSessions; i++ {
+	for i := range mostFileSessions {
 		f, err := filesWithin(t, w)
 		if err != nil {
 			t.Fatalf("file session %d: %v", i, err)

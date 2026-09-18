@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -16,12 +17,7 @@ import (
 
 // inTheTree reports whether a pane is still one of the window's leaves.
 func inTheTree(a *testApp, pane ui.Widget) bool {
-	for _, leaf := range ui.Leaves(a.root.Widget()) {
-		if leaf == pane {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(ui.Leaves(a.root.Widget()), pane)
 }
 
 // endTheShell ends one of the fake shells and waits for the window to

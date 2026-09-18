@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"slices"
 	"strings"
 
 	"github.com/marrasen/gridterm/meter"
@@ -256,8 +257,8 @@ func (j *Job) copy(ctx context.Context, items []item) (err error) {
 // kept the wrong mode rather than only the first.
 func (j *Job) narrow() error {
 	var errs []error
-	for i := len(j.made) - 1; i >= 0; i-- {
-		made := j.made[i]
+	for _, made := range slices.Backward(j.made) {
+
 		if made.e.Mode.Perm() == made.e.Mode.Perm()|0o700 {
 			continue
 		}
@@ -633,8 +634,8 @@ func (j *Job) countDone(of item) {
 // remove takes everything away, deepest first: a directory cannot go
 // until what is in it has.
 func (j *Job) remove(ctx context.Context, items []item) error {
-	for i := len(items) - 1; i >= 0; i-- {
-		it := items[i]
+	for _, it := range slices.Backward(items) {
+
 		if err := ctx.Err(); err != nil {
 			return err
 		}

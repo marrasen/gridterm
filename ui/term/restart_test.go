@@ -336,7 +336,7 @@ func TestRestartLeavesNothingRunning(t *testing.T) {
 		t.Errorf("the old session was written to after the swap: %q", got)
 	}
 
-	for i := 0; i < 4; i++ {
+	for range 4 {
 		endProgram(t, term, next)
 		next = restart(t, term)
 	}
@@ -386,7 +386,7 @@ func TestRestartWithOutputArriving(t *testing.T) {
 
 	next := newFakeSession()
 	const chunks = 8
-	for i := 0; i < chunks; i++ {
+	for range chunks {
 		next.out <- []byte("after\r\n")
 	}
 

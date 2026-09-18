@@ -155,7 +155,7 @@ func draw(term *Terminal, cols, rows int) *grid.Grid {
 func rowText(g *grid.Grid, y int) string {
 	cols, _ := g.Size()
 	var b strings.Builder
-	for x := 0; x < cols; x++ {
+	for x := range cols {
 		c := g.At(x, y)
 		if c.Width == 0 {
 			continue
@@ -800,7 +800,7 @@ func TestExitIsReportedOnceAcrossBothGoroutines(t *testing.T) {
 // report can be produced by the reader at any moment, including while
 // the window is closing.
 func TestSendAfterCloseDoesNotPanic(t *testing.T) {
-	for i := 0; i < 200; i++ {
+	for range 200 {
 		f := newFakeSession()
 		term, err := New(Config{Session: f})
 		if err != nil {

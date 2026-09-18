@@ -34,7 +34,7 @@ func TestSettingTheSamePaddingChangesNothing(t *testing.T) {
 	g.SetRowPad(0, Pad{After: 1})
 	g.ClearDirty()
 
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		g.SetColPad(3, Pad{Before: 1, After: 2})
 		g.SetRowPad(0, Pad{After: 1})
 	}

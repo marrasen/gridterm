@@ -276,17 +276,17 @@ func (s *server) runTool(name string, args json.RawMessage) (result, *rpcError) 
 				" the gridterm window has closed." +
 				" Ask them for a code and use it with use_session_code.")
 		}
-		var out string
+		var out strings.Builder
 		for _, p := range panes {
-			out += fmt.Sprintf("%s: %s, %dx%d. %s%s\n",
-				p.ID, p.Label, p.Cols, p.Rows, whatItTakes(p), alsoAllowed(p.May))
+			out.WriteString(fmt.Sprintf("%s: %s, %dx%d. %s%s\n",
+				p.ID, p.Label, p.Cols, p.Rows, whatItTakes(p), alsoAllowed(p.May)))
 		}
 		if err != nil {
 			// The panes that did answer, and then what went wrong.
-			out += "\nA window could not be asked, so this may not be all" +
-				" of it: " + err.Error()
+			out.WriteString("\nA window could not be asked, so this may not be all" +
+				" of it: " + err.Error())
 		}
-		return say(out)
+		return say(out.String())
 
 	case "read_pane":
 		if in.Pane == "" {
@@ -410,12 +410,13 @@ func sharedWithYou(panes []Pane) string {
 		return "That code names a share with no panes in it yet." +
 			" Ask the user to add one, and call list_panes to see it."
 	}
-	out := fmt.Sprintf("The user has shared %s with you:\n", howManyPanes(len(panes)))
+	var out strings.Builder
+	out.WriteString(fmt.Sprintf("The user has shared %s with you:\n", howManyPanes(len(panes))))
 	for _, p := range panes {
-		out += fmt.Sprintf("\n%s: %s, a %dx%d screen. %s%s",
-			p.ID, p.Label, p.Cols, p.Rows, whatItTakes(p), alsoAllowed(p.May))
+		out.WriteString(fmt.Sprintf("\n%s: %s, a %dx%d screen. %s%s",
+			p.ID, p.Label, p.Cols, p.Rows, whatItTakes(p), alsoAllowed(p.May)))
 	}
-	return out + "\n\nThe user adds panes and takes them out while you work," +
+	return out.String() + "\n\nThe user adds panes and takes them out while you work," +
 		" so call list_panes again when you want to know what you have." +
 		" They are watching all of it and can take any of it back at any moment."
 }

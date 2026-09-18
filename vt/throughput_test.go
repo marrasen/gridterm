@@ -11,7 +11,7 @@ import (
 // paths, one per line, and nothing else.
 func findOutput(lines int) []byte {
 	var b strings.Builder
-	for i := 0; i < lines; i++ {
+	for range lines {
 		b.WriteString("/usr/lib/x86_64-linux-gnu/perl-base/unicore/lib/Gc/")
 		b.WriteString("Cntrl.pl\r\n")
 	}

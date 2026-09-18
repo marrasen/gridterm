@@ -6,6 +6,7 @@ import (
 	"image/color"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -94,9 +95,9 @@ func drawn(p *Pane, cols, rows int) []string {
 	p.Layout(ui.Size{Cols: cols, Rows: rows})
 	p.Draw(g.View())
 	out := make([]string, rows)
-	for y := 0; y < rows; y++ {
+	for y := range rows {
 		var b strings.Builder
-		for x := 0; x < cols; x++ {
+		for x := range cols {
 			c := g.At(x, y)
 			if c.Rune == 0 {
 				b.WriteByte(' ')
@@ -724,7 +725,7 @@ func TestPaneColoursItsRows(t *testing.T) {
 
 	// The row under the bar, which is the one every key acts on.
 	var painted bool
-	for y := 0; y < 6; y++ {
+	for y := range 6 {
 		if strings.Contains(rowText(g, y, 30), "one.txt") {
 			c := g.At(1, y)
 			if c.FG.A == 0 && c.BG.A == 0 {
@@ -741,7 +742,7 @@ func TestPaneColoursItsRows(t *testing.T) {
 // rowText reads one row of a grid back as a string.
 func rowText(g *grid.Grid, y, cols int) string {
 	var b strings.Builder
-	for x := 0; x < cols; x++ {
+	for x := range cols {
 		c := g.At(x, y)
 		if c.Rune == 0 {
 			b.WriteByte(' ')
@@ -768,12 +769,12 @@ func TestAnIdlePaneDirtiesNothing(t *testing.T) {
 
 	p.Draw(g.View())
 	g.ClearDirty()
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		p.Draw(g.View())
 	}
 	if g.AnyDirty() {
 		var rows []int
-		for y := 0; y < 8; y++ {
+		for y := range 8 {
 			if g.RowDirty(y) {
 				rows = append(rows, y)
 			}
@@ -787,7 +788,7 @@ func TestAnIdlePaneDirtiesNothing(t *testing.T) {
 // what is on screen.
 func TestTheErrorLineDoesNotPushTheBarOffScreen(t *testing.T) {
 	dir := t.TempDir()
-	for i := 0; i < 12; i++ {
+	for i := range 12 {
 		write(t, dir, string(rune('a'+i))+".txt", "x")
 	}
 
@@ -919,7 +920,7 @@ func drawBrowser(b *Browser, cols, rows int) []string {
 	b.Layout(ui.Size{Cols: cols, Rows: rows})
 	b.Draw(g.View())
 	out := make([]string, rows)
-	for y := 0; y < rows; y++ {
+	for y := range rows {
 		out[y] = rowText(g, y, cols)
 	}
 	return out
@@ -1053,7 +1054,7 @@ func TestEveryColumnOfTheBarIsTheKeyItShows(t *testing.T) {
 		bar := rows[11]
 		var swapped int
 		b.OnCopy = func(Work) {}
-		for col := 0; col < cols; col++ {
+		for col := range cols {
 			i, ok := keyAt(col, cols, len(b.keys))
 			if !ok {
 				t.Fatalf("column %d of %d belongs to no key", col, cols)
@@ -1111,12 +1112,12 @@ func TestAnIdleBrowserDirtiesNothing(t *testing.T) {
 		b.Layout(ui.Size{Cols: cols, Rows: 12})
 		b.Draw(g.View())
 		g.ClearDirty()
-		for i := 0; i < 5; i++ {
+		for range 5 {
 			b.Draw(g.View())
 		}
 		if g.AnyDirty() {
 			var dirty []int
-			for y := 0; y < 12; y++ {
+			for y := range 12 {
 				if g.RowDirty(y) {
 					dirty = append(dirty, y)
 				}
@@ -1132,7 +1133,7 @@ func TestAnIdleBrowserDirtiesNothing(t *testing.T) {
 func TestTheBarDoesNotHideTheNameTheKeysAreOn(t *testing.T) {
 	b, left, _ := two(t)
 	b.Style = styled()
-	for i := 0; i < 30; i++ {
+	for i := range 30 {
 		write(t, left, fmt.Sprintf("file%02d.txt", i), "x")
 	}
 	b.Here().Reload()
@@ -1207,7 +1208,7 @@ func many(t *testing.T, n int) (*Browser, []string) {
 	t.Helper()
 	var dirs []string
 	var panes []*Pane
-	for i := 0; i < n; i++ {
+	for range n {
 		at := t.TempDir()
 		dirs = append(dirs, at)
 		panes = append(panes, here(t, at))
@@ -1319,7 +1320,7 @@ func TestEveryColumnBelongsToAPane(t *testing.T) {
 			// Row 1 is the first name in each listing, which is "..".
 			// Row 0 is the path, and the divider runs down both.
 			var dividers int
-			for x := 0; x < cols; x++ {
+			for x := range cols {
 				if g.At(x, 0).Rune == divider {
 					dividers++
 					if got := g.At(x, 1).Rune; got != divider {
@@ -1334,7 +1335,7 @@ func TestEveryColumnBelongsToAPane(t *testing.T) {
 			}
 			// And nothing is left blank: every other column was written
 			// by the pane it belongs to.
-			for x := 0; x < cols; x++ {
+			for x := range cols {
 				if g.At(x, 0).Rune == 0 {
 					t.Fatalf("%d panes in %d columns: column %d of the top row was never written",
 						n, cols, x)
@@ -1353,7 +1354,7 @@ func TestTheDividersStandBetweenThePanes(t *testing.T) {
 	b.Draw(g.View())
 
 	var at []int
-	for x := 0; x < 90; x++ {
+	for x := range 90 {
 		if g.At(x, 0).Rune == divider {
 			at = append(at, x)
 		}
@@ -1435,12 +1436,12 @@ func TestAnIdleBrowserOfManyPanesDirtiesNothing(t *testing.T) {
 	b.Layout(ui.Size{Cols: 90, Rows: 12})
 	b.Draw(g.View())
 	g.ClearDirty()
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		b.Draw(g.View())
 	}
 	if g.AnyDirty() {
 		var dirty []int
-		for y := 0; y < 12; y++ {
+		for y := range 12 {
 			if g.RowDirty(y) {
 				dirty = append(dirty, y)
 			}
@@ -1725,7 +1726,7 @@ func TestTheClipboardIsShownInThePaneItCameFrom(t *testing.T) {
 	b.Layout(ui.Size{Cols: 90, Rows: 12})
 	b.Draw(g.View())
 	var found bool
-	for y := 0; y < 11; y++ {
+	for y := range 11 {
 		if strings.Contains(rowText(g, y, 40), "·one.txt") {
 			found = true
 		}
@@ -1797,7 +1798,7 @@ func TestClosingThePaneAClipCameFromEmptiesIt(t *testing.T) {
 // them is one the user can get back through.
 func TestShiftTabGoesBackAPane(t *testing.T) {
 	b, dirs := many(t, 4)
-	for i := len(dirs) - 1; i >= 0; i-- {
+	for i := range slices.Backward(dirs) {
 		if got := b.Here().At(); got != dirs[(i+1)%len(dirs)] {
 			t.Fatalf("step %d is in %q", i, got)
 		}
@@ -1887,7 +1888,7 @@ func TestCopyingTakesTheMarksOff(t *testing.T) {
 	b.Layout(ui.Size{Cols: 90, Rows: 12})
 	b.Draw(g.View())
 	var clipped int
-	for y := 0; y < 11; y++ {
+	for y := range 11 {
 		row := rowText(g, y, 44)
 		if strings.Contains(row, "·one.txt") || strings.Contains(row, "·two.txt") {
 			clipped++
@@ -2335,7 +2336,7 @@ func dividerCol(t *testing.T, b *Browser, cols, rows, which int) int {
 	g := grid.New(cols, rows, color.RGBA{}, color.RGBA{})
 	b.Draw(g.View())
 	var at []int
-	for x := 0; x < cols; x++ {
+	for x := range cols {
 		if g.At(x, 0).Rune == divider {
 			at = append(at, x)
 		}
@@ -2626,7 +2627,7 @@ func TestBrowserDragRedrawsAndThenSettles(t *testing.T) {
 	b.Draw(g.View())
 	if g.AnyDirty() {
 		var dirty []int
-		for y := 0; y < 12; y++ {
+		for y := range 12 {
 			if g.RowDirty(y) {
 				dirty = append(dirty, y)
 			}

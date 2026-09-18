@@ -339,7 +339,7 @@ func TestAnIdleChooserDirtiesNothing(t *testing.T) {
 	c.Layout(Size{Cols: 60, Rows: 20})
 	c.Draw(g.View())
 	g.ClearDirty()
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		c.Draw(g.View())
 	}
 	if g.AnyDirty() {

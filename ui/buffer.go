@@ -40,8 +40,8 @@ func (b *buffer) draw(v grid.View, paint func(grid.View)) {
 	b.g.View().Fill(grid.Cell{Rune: ' ', Width: 1})
 	paint(b.g.View())
 
-	for y := 0; y < rows; y++ {
-		for x := 0; x < cols; x++ {
+	for y := range rows {
+		for x := range cols {
 			v.Set(x, y, b.g.At(x, y))
 		}
 	}

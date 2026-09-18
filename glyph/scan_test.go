@@ -76,14 +76,14 @@ func TestScanGroupsAFamilysFourStyles(t *testing.T) {
 	if f.Name != "Go Mono" {
 		t.Errorf("family = %q, want %q", f.Name, "Go Mono")
 	}
-	for s := Style(0); s < numStyles; s++ {
+	for s := range numStyles {
 		if !f.Has(s) {
 			t.Errorf("style %d is missing, want all four in one family", s)
 		}
 	}
 	// Each style must come from its own file, not all from one.
 	seen := map[string]bool{}
-	for s := Style(0); s < numStyles; s++ {
+	for s := range numStyles {
 		if seen[f.Src[s].Path] {
 			t.Errorf("style %d shares a file with another style", s)
 		}

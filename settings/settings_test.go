@@ -340,7 +340,7 @@ func TestSavingFromTwoGoroutines(t *testing.T) {
 	for _, port := range []int{2300, 9000} {
 		go func() { done <- s.PutServe(port, ReachHere) }()
 	}
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		if err := <-done; err != nil {
 			t.Fatalf("save: %v", err)
 		}
@@ -666,7 +666,7 @@ func TestSavingDifferentThingsAtOnce(t *testing.T) {
 	done := make(chan error, 2)
 	go func() { done <- s.PutShell("pwsh") }()
 	go func() { done <- s.PutAgentHost("Codex") }()
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		if err := <-done; err != nil {
 			t.Fatalf("save: %v", err)
 		}
@@ -798,7 +798,7 @@ func TestKeepCommandPutsItAtTheFront(t *testing.T) {
 // The list is capped, and it is the one kept longest ago that goes.
 func TestKeepCommandDropsTheOldest(t *testing.T) {
 	set := settingsAt(t)
-	for i := 0; i < 6; i++ {
+	for i := range 6 {
 		if err := set.KeepCommand(SavedCommand{Line: "echo " + strconv.Itoa(i)}, 4); err != nil {
 			t.Fatalf("keep %d: %v", i, err)
 		}

@@ -502,7 +502,7 @@ func buildFaces(fonts Fonts, sizePt, dpi float64) ([numStyles]font.Face, error) 
 		BoldItalic: fonts.BoldItalic,
 	}
 	// Ascending order, so the face a style borrows is already built.
-	for s := Style(0); s < numStyles; s++ {
+	for s := range numStyles {
 		if srcs[s] == nil {
 			faces[s] = faces[substitute(s, srcs)]
 			continue

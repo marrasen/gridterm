@@ -72,7 +72,7 @@ func TestRefusedSFTPLeavesNoSessionBehind(t *testing.T) {
 	c := connectTest(t, s)
 
 	const tries = 8
-	for i := 0; i < tries; i++ {
+	for range tries {
 		if f, err := c.Files(t.Context()); err == nil {
 			_ = f.Close()
 			t.Fatal("SFTP started on a machine that refuses it")

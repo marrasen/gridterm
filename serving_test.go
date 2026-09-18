@@ -849,7 +849,7 @@ func aWedgedRelay(t *testing.T, panes int) (
 	cfg.Host, cfg.Port = relay.host, relay.port
 	connectToMargit(t, host, client, addr, cfg)
 
-	for i := 0; i < panes; i++ {
+	for range panes {
 		openFilesFromTheFarPlus(t, client, host, addr, "margit")
 	}
 	waitFor(t, host, "margit to be serving every relayed file session", func() bool {
@@ -948,8 +948,7 @@ func TestARelayWhoseClientGoesWhileTheMachineAnswersIsNotCounted(t *testing.T) {
 func TestARelayParkedPastTheGraceIsUncountedWhenTheMachineAnswers(t *testing.T) {
 	a, relay := aRelayedMachine(t)
 
-	gone, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	gone := t.Context()
 	ours, done := relayToMargit(t, a, gone)
 	waitFor(t, a, "margit to be serving the relay", func() bool {
 		return relay.server.SFTPs() == 1
@@ -990,8 +989,7 @@ func TestARelayParkedPastTheGraceIsUncountedWhenTheMachineAnswers(t *testing.T) 
 func TestAMachineThatConnectsAgainStartsFromNothing(t *testing.T) {
 	a, relay := aRelayedMachine(t)
 
-	gone, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	gone := t.Context()
 	ours, _ := relayToMargit(t, a, gone)
 	waitFor(t, a, "margit to be serving the relay", func() bool {
 		return relay.server.SFTPs() == 1
@@ -1172,8 +1170,7 @@ func TestAParkedRelayFromAnOldConnectionLeavesTheNewCountAlone(t *testing.T) {
 
 	// One parked on the connection this window has now: margit stops
 	// answering and the client's end closes, so the grace runs out.
-	gone, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	gone := t.Context()
 	ours, _ := relayToMargit(t, a, gone)
 	waitFor(t, a, "margit to be serving the relay", func() bool {
 		return first.server.SFTPs() == 1

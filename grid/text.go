@@ -1,5 +1,7 @@
 package grid
 
+import "slices"
+
 // Ellipsis marks where a string was cut.
 const Ellipsis = "…"
 
@@ -67,13 +69,13 @@ func TrimHead(s string, cols int) string {
 	room := cols - StringWidth(Ellipsis)
 	clusters := Clusters(s)
 	at, n := 0, len(s)
-	for i := len(clusters) - 1; i >= 0; i-- {
-		w := StringWidth(clusters[i])
+	for _, cluster := range slices.Backward(clusters) {
+		w := StringWidth(cluster)
 		if at+w > room {
 			break
 		}
 		at += w
-		n -= len(clusters[i])
+		n -= len(cluster)
 	}
 	return Ellipsis + s[n:]
 }

@@ -78,7 +78,7 @@ func viewOffset(term *Terminal) int {
 func rows(g *grid.Grid) string {
 	_, height := g.Size()
 	var out []string
-	for y := 0; y < height; y++ {
+	for y := range height {
 		out = append(out, rowText(g, y))
 	}
 	return strings.Join(out, "\n")

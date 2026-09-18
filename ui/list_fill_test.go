@@ -23,7 +23,7 @@ func TestListFillsPartOfARowsGround(t *testing.T) {
 	l.SetFocus(false)
 	g := drawList(l, 40, 4)
 
-	for x := 0; x < 20; x++ {
+	for x := range 20 {
 		if got := g.At(x, 0).BG; got != filled {
 			t.Fatalf("column %d is on %v, want the fill %v", x, got, filled)
 		}
@@ -48,7 +48,7 @@ func TestListFillsPartOfARowsGround(t *testing.T) {
 	// A row that asks for no fill is left as it was.
 	l.SetRows([]ListRow{{Text: "one.txt to halfway", Depth: 1, Note: "done", Key: 1}})
 	g = drawList(l, 40, 4)
-	for x := 0; x < 40; x++ {
+	for x := range 40 {
 		if got := g.At(x, 0).BG; got != l.Style.BG {
 			t.Fatalf("a row with no fill is on %v at column %d", got, x)
 		}
@@ -166,7 +166,7 @@ func TestListClampsWhatARowAsksToFill(t *testing.T) {
 	for _, fill := range whole {
 		l.SetRows([]ListRow{{Text: "one.txt", Depth: 1, Fill: fill, Key: 1}})
 		g := drawList(l, 40, 4)
-		for x := 0; x < 40; x++ {
+		for x := range 40 {
 			if got := g.At(x, 0).BG; got != filled {
 				t.Fatalf("a row asking for %v is on %v at column %d, want the whole row filled", fill, got, x)
 			}
@@ -177,7 +177,7 @@ func TestListClampsWhatARowAsksToFill(t *testing.T) {
 	for _, fill := range nothing {
 		l.SetRows([]ListRow{{Text: "one.txt", Depth: 1, Fill: fill, Key: 1}})
 		g := drawList(l, 40, 4)
-		for x := 0; x < 40; x++ {
+		for x := range 40 {
 			if got := g.At(x, 0).BG; got != l.Style.BG {
 				t.Fatalf("a row asking for %v is on %v at column %d, want nothing filled", fill, got, x)
 			}
@@ -200,7 +200,7 @@ func TestListFillLeavesAWideGlyphWhole(t *testing.T) {
 	if got := g.At(19, 0); got.Width != 2 {
 		t.Fatalf("column 19 is %q %d wide, so the test is not measuring a wide glyph", got.Rune, got.Width)
 	}
-	for x := 0; x < 19; x++ {
+	for x := range 19 {
 		if got := g.At(x, 0).BG; got != filled {
 			t.Fatalf("column %d is on %v, want the fill", x, got)
 		}
@@ -225,7 +225,7 @@ func TestListFillKeepsARowsArt(t *testing.T) {
 	g := drawList(l, 40, 4)
 
 	var found bool
-	for x := 0; x < 40; x++ {
+	for x := range 40 {
 		c := g.At(x, 0)
 		if c.Art != art {
 			continue

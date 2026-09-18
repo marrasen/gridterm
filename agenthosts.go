@@ -91,7 +91,7 @@ func (h agentHost) setupLines(exe string) []string {
 			"It only writes the config, so start "+h.called+" again first.")
 	}
 	lines := []string{"First add gridterm's MCP server to " + h.configIn() + ":", ""}
-	for _, line := range strings.Split(mcpConfig(exe), "\n") {
+	for line := range strings.SplitSeq(mcpConfig(exe), "\n") {
 		lines = append(lines, wrapped(line, dialogCols)...)
 	}
 	return append(lines, "",

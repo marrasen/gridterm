@@ -273,14 +273,12 @@ func TestConnCloseIsIdempotentAndConcurrent(t *testing.T) {
 		t.Fatalf("first Close: %v", err)
 	}
 	var wg sync.WaitGroup
-	for i := 0; i < 8; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 8 {
+		wg.Go(func() {
 			if err := c.Close(); err != nil {
 				t.Errorf("concurrent Close: %v", err)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 }
@@ -486,7 +484,7 @@ func TestAClosedConnectionSaysSoToEveryWaiter(t *testing.T) {
 	}
 	// Both callers get an answer: the window watches Wait for a machine
 	// that dropped, and a test or a second watcher may wait as well.
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		done := make(chan error, 1)
 		go func() { done <- c.Wait() }()
 		select {

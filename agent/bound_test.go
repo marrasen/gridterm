@@ -121,7 +121,7 @@ func TestABigAnswerReachesTheAgent(t *testing.T) {
 	w, _, code := listening(t)
 
 	var wide strings.Builder
-	for i := 0; i < MostLines; i++ {
+	for i := range MostLines {
 		if i > 0 {
 			wide.WriteByte('\n')
 		}

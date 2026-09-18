@@ -303,7 +303,7 @@ func TestTheInstructionsNameThePublicHalfOnly(t *testing.T) {
 	}
 	// The private half's own path must not be in it: a user following
 	// the instructions would paste the wrong file.
-	for _, line := range strings.Split(got, "\n") {
+	for line := range strings.SplitSeq(got, "\n") {
 		if strings.Contains(line, key.Path) && !strings.Contains(line, key.Pub) {
 			t.Errorf("a line names the private half: %q", line)
 		}
@@ -316,7 +316,7 @@ func TestTheInstructionsNameThePublicHalfOnly(t *testing.T) {
 // The list is capped, and it is the one kept longest ago that goes.
 func TestTheKeptKeysAreCapped(t *testing.T) {
 	a := aKeyWindow(t)
-	for i := 0; i < mostKeptKeys+3; i++ {
+	for i := range mostKeptKeys + 3 {
 		if err := a.keyFiles.keep("/key" + strconv.Itoa(i)); err != nil {
 			t.Fatalf("keep %d: %v", i, err)
 		}

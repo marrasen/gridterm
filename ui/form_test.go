@@ -69,7 +69,7 @@ func drawForm(f *Form, cols, rows int) *grid.Grid {
 func gridText(g *grid.Grid) string {
 	_, rows := g.Size()
 	var b strings.Builder
-	for y := 0; y < rows; y++ {
+	for y := range rows {
 		b.WriteString(rowOf(g, y))
 		b.WriteByte('\n')
 	}
@@ -661,7 +661,7 @@ func TestFormClickLandsOnTheFieldThatWasDrawn(t *testing.T) {
 		// Find the row the second field's label was actually drawn on.
 		want := -1
 		_, rows := g.Size()
-		for y := 0; y < rows; y++ {
+		for y := range rows {
 			if strings.Contains(rowOf(g, y), "User") {
 				want = y
 				break
@@ -693,7 +693,7 @@ func TestFormClickLandsOnTheButtonThatWasDrawn(t *testing.T) {
 
 	want := -1
 	_, rows := g.Size()
-	for y := 0; y < rows; y++ {
+	for y := range rows {
 		if strings.Contains(rowOf(g, y), "Cancel") {
 			want = y
 			break
@@ -737,7 +737,7 @@ func TestFormClickLandsWhenHintLinesAreElided(t *testing.T) {
 
 	want := -1
 	_, rows := g.Size()
-	for y := 0; y < rows; y++ {
+	for y := range rows {
 		if strings.Contains(rowOf(g, y), "Password") {
 			want = y
 			break
@@ -928,7 +928,7 @@ func TestAFormShowsALongErrorWhole(t *testing.T) {
 
 	l := f.layout()
 	joined := strings.Join(l.errLines, " ")
-	for _, word := range strings.Fields(long) {
+	for word := range strings.FieldsSeq(long) {
 		if !strings.Contains(joined, word) {
 			t.Fatalf("the error is missing %q:\n%s", word, joined)
 		}

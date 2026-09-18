@@ -62,7 +62,7 @@ func said(err error) string {
 // parseDistros reads the distribution names out of what wsl.exe wrote.
 func parseDistros(out []byte) []string {
 	var names []string
-	for _, line := range strings.Split(decodeUTF16(out), "\n") {
+	for line := range strings.SplitSeq(decodeUTF16(out), "\n") {
 		if name := strings.TrimSpace(line); name != "" {
 			names = append(names, name)
 		}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"image/color"
+	"slices"
 	"strings"
 	"testing"
 
@@ -41,9 +42,9 @@ func drawnLines(a *testApp, w ui.Widget) []string {
 	w.Draw(g.View())
 
 	out := make([]string, 0, rows)
-	for y := 0; y < rows; y++ {
+	for y := range rows {
 		var b strings.Builder
-		for x := 0; x < cols; x++ {
+		for x := range cols {
 			c := g.At(x, y)
 			if c.Width == 0 {
 				continue
@@ -217,10 +218,5 @@ func barTitles(a *testApp) []string {
 }
 
 func hasTitle(titles []string, want string) bool {
-	for _, got := range titles {
-		if got == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(titles, want)
 }

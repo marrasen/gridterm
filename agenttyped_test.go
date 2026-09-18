@@ -209,7 +209,7 @@ func TestAPaneNoAgentHasTypedInSaysSo(t *testing.T) {
 // many went rather than quietly showing less than there was.
 func TestTheOldestSendsGoAndTheDialogSaysSo(t *testing.T) {
 	log := &typedLog{}
-	for i := 0; i < mostTyped+5; i++ {
+	for range mostTyped + 5 {
 		log.add(agentSend{Text: "x"})
 	}
 
@@ -229,7 +229,7 @@ func TestTheOldestSendsGoAndTheDialogSaysSo(t *testing.T) {
 func TestALotOfTextIsCappedToo(t *testing.T) {
 	log := &typedLog{}
 	big := strings.Repeat("x", 64<<10)
-	for i := 0; i < 8; i++ {
+	for range 8 {
 		log.add(agentSend{Text: big})
 	}
 

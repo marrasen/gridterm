@@ -456,11 +456,9 @@ func (c *Conn) closeRider() error {
 		}
 	)
 	for _, r := range riders {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			collect(r.closeRider())
-		}()
+		})
 	}
 	wg.Wait()
 

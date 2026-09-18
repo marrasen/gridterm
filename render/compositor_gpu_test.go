@@ -583,7 +583,7 @@ func TestCompositorAddedLayerRepaintsInFullWhileTheGridIsBusy(t *testing.T) {
 	c := NewCompositor(r)
 	screen := ebiten.NewImage(320, 240)
 	g := grid.New(10, 4, fg, bg)
-	for y := 0; y < 4; y++ {
+	for y := range 4 {
 		g.SetString(0, y, "filled", fg, bg, 0)
 	}
 	c.Add(&Layer{Grid: g})
@@ -667,7 +667,7 @@ func BenchmarkCompositorIdleFrame(b *testing.B) {
 	}
 	c := NewCompositor(New(a))
 	screen := ebiten.NewImage(320, 240)
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		c.Add(&Layer{Grid: grid.New(10, 4, fg, bg), X: i * 50})
 	}
 	c.Draw(screen)

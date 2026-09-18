@@ -456,7 +456,7 @@ func TestMenubarChipsSetToTheSameValueLeavesTheLayerClean(t *testing.T) {
 	g := drawBarOn(b, 40, 20)
 
 	g.ClearDirty()
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		b.Chips = []Chip{{Text: "ready", FG: chipFG, BG: chipGround}}
 		b.Draw(g.View())
 		if g.RowDirty(0) {

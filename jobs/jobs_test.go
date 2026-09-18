@@ -425,8 +425,7 @@ func TestNobodyToAskStopsTheJob(t *testing.T) {
 	}, Options{})
 
 	err := ends(t, j)
-	var conflict *ConflictError
-	if !errors.As(err, &conflict) {
+	if _, ok := errors.AsType[*ConflictError](err); !ok {
 		t.Fatalf("error = %v, want it to say what was in the way", err)
 	}
 	if got := read(t, to.real, "one.txt"); got != "old" {

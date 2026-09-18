@@ -3,6 +3,7 @@ package ui
 import (
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/input"
@@ -152,10 +153,8 @@ func (r *Root) PushModal(w Widget) bool {
 	if w == nil {
 		return false
 	}
-	for _, have := range r.modals {
-		if have == w {
-			return false
-		}
+	if slices.Contains(r.modals, w) {
+		return false
 	}
 	SetFocus(r.top(), false)
 	// Same on the way in: whatever was mid-drag is not getting its

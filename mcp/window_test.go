@@ -524,7 +524,7 @@ func TestOneWindowGoingLeavesTheOthersPanesListed(t *testing.T) {
 		t.Fatalf("the second window is still there: %v", err)
 	}
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		listed, err := panes.List()
 		if err != nil {
 			t.Fatalf("list %d: %v", i, err)

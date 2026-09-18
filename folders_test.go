@@ -294,7 +294,7 @@ func TestAFolderThatWillNotOpenIsSaidSo(t *testing.T) {
 	// Watched for long enough that a read of this machine's own home
 	// would have landed, which is what a fallback would have asked for.
 	// A second pane reads one in a fraction of this.
-	for i := 0; i < 60; i++ {
+	for range 60 {
 		a.pump.run()
 		time.Sleep(5 * time.Millisecond)
 		if samePath(p.At(), home) {

@@ -69,7 +69,7 @@ func putFile(t *testing.T, at, name, body string) {
 // pointed at directories the test owns.
 func onlyBrowser(t *testing.T, a *testApp) (*browser, string, string) {
 	t.Helper()
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		if err := a.openFilesHere(); err != nil {
 			t.Fatalf("openFilesHere: %v", err)
 		}
@@ -491,7 +491,7 @@ func TestClosingOneFilePaneLeavesTheOthers(t *testing.T) {
 	withDialogs(t, a)
 	withPanel(t, a)
 
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		openFilesFromThePlus(t, a, conns.Local)
 	}
 	panes := a.files.view.Panes()
@@ -726,9 +726,9 @@ func paneDrawn(p *files.Pane, cols, rows int) []string {
 	p.Layout(ui.Size{Cols: cols, Rows: rows})
 	p.Draw(g.View())
 	out := make([]string, 0, rows)
-	for y := 0; y < rows; y++ {
+	for y := range rows {
 		var b strings.Builder
-		for x := 0; x < cols; x++ {
+		for x := range cols {
 			if c := g.At(x, y); c.Width != 0 {
 				b.WriteRune(c.Rune)
 			}
@@ -742,7 +742,7 @@ func paneDrawn(p *files.Pane, cols, rows int) []string {
 // up while it does.
 func noNoticeOpens(t *testing.T, a *testApp, what string) {
 	t.Helper()
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		a.pump.run()
 		if got := a.root.Modal(); got != nil {
 			t.Fatalf("%s opened %T", what, got)
@@ -856,7 +856,7 @@ func TestAFilePaneWithoutTheKeysWaitsToSayWhyAReadFailed(t *testing.T) {
 	dismissNotice(t, a)
 
 	// Leaving and coming back is not another failure.
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		if _, err := a.root.HandleKey(press(input.KeyTab, 0)); err != nil {
 			t.Fatalf("Tab: %v", err)
 		}

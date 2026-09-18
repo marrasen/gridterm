@@ -234,7 +234,7 @@ func TestConnectRunsSeveralAtOnce(t *testing.T) {
 		return a.machines.beingMade() <= 2
 	})
 	// Long enough that a cancel-all would have landed too.
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		a.pump.run()
 		time.Sleep(5 * time.Millisecond)
 	}
@@ -539,7 +539,7 @@ func TestThePaneThatSaysWhyIsNotReapedAway(t *testing.T) {
 	}
 
 	// The window tidies up after shells that have gone, every frame.
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		a.pump.run()
 		a.reapExited()
 	}

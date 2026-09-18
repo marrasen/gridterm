@@ -72,8 +72,8 @@ func TestFrameNeedsRoomForItself(t *testing.T) {
 	} {
 		g := grid.New(20, 10, color.RGBA{}, color.RGBA{})
 		drawFrame(g.View(), box, rule, ground)
-		for y := 0; y < 10; y++ {
-			for x := 0; x < 20; x++ {
+		for y := range 10 {
+			for x := range 20 {
 				if got := g.At(x, y).Rune; isFrame(got) {
 					t.Fatalf("box %+v drew %q at %d,%d", box, got, x, y)
 				}
@@ -99,8 +99,8 @@ func TestShadowFallsBesideTheBox(t *testing.T) {
 	box := Rect{X: 3, Y: 2, Cols: 8, Rows: 5}
 	drawShadow(g.View(), box, shade)
 
-	for y := 0; y < 10; y++ {
-		for x := 0; x < 20; x++ {
+	for y := range 10 {
+		for x := range 20 {
 			dark := g.At(x, y).BG == shade
 			right := x >= box.X+box.Cols && x < box.X+box.Cols+shadowRight &&
 				y >= box.Y+shadowDown && y < box.Y+box.Rows+shadowDown
@@ -121,7 +121,7 @@ func TestShadowFallsBesideTheBox(t *testing.T) {
 func TestShadowStopsAtTheEdge(t *testing.T) {
 	g := grid.New(10, 6, color.RGBA{}, color.RGBA{})
 	drawShadow(g.View(), Rect{X: 6, Y: 3, Cols: 4, Rows: 3}, shade)
-	for y := 0; y < 6; y++ {
+	for y := range 6 {
 		if got := g.At(0, y).BG; got == shade {
 			t.Fatalf("the shadow wrapped round to column 0 on row %d", y)
 		}
@@ -132,8 +132,8 @@ func TestShadowStopsAtTheEdge(t *testing.T) {
 func TestShadowWithNoColourDrawsNothing(t *testing.T) {
 	g := grid.New(20, 10, color.RGBA{}, color.RGBA{})
 	drawShadow(g.View(), Rect{X: 3, Y: 2, Cols: 8, Rows: 5}, color.RGBA{})
-	for y := 0; y < 10; y++ {
-		for x := 0; x < 20; x++ {
+	for y := range 10 {
+		for x := range 20 {
 			if g.At(x, y).BG.A != 0 {
 				t.Fatalf("it shadowed %d,%d with no colour to shadow in", x, y)
 			}
@@ -183,7 +183,7 @@ func TestAnIdleMenuDirtiesNothing(t *testing.T) {
 	m.Layout(Size{Cols: 40, Rows: 20})
 	m.Draw(g.View())
 	g.ClearDirty()
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		m.Draw(g.View())
 	}
 	if g.AnyDirty() {

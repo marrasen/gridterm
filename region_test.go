@@ -168,7 +168,7 @@ func TestAClosedSidebarHasNoRegion(t *testing.T) {
 // under it.
 func machineRows(a *testApp, n int) {
 	var rows []ui.ListRow
-	for i := 0; i < n; i++ {
+	for i := range n {
 		rows = append(rows,
 			ui.ListRow{Text: fmt.Sprintf("host%02d", i), Header: true, Key: [2]int{i, 0}},
 			ui.ListRow{Text: "a shell", Key: [2]int{i, 1}})
@@ -181,7 +181,7 @@ func machineRows(a *testApp, n int) {
 func roomSpent(a *testApp) int {
 	_, rows := a.sideRegion.g.Size()
 	spent := 0
-	for y := 0; y < rows; y++ {
+	for y := range rows {
 		p := a.sideRegion.g.RowPad(y)
 		spent += int(p.Before) + int(p.After)
 	}
@@ -230,7 +230,7 @@ func TestEveryHeadingOnScreenGetsItsRoom(t *testing.T) {
 
 	_, rows := a.sideRegion.g.Size()
 	headings := 0
-	for y := 0; y < rows; y++ {
+	for y := range rows {
 		if !a.sideRegion.g.RowPad(y).Empty() {
 			headings++
 		}
@@ -266,7 +266,7 @@ func TestRelayingOutTheTreeDoesNotMoveTheSidebar(t *testing.T) {
 	a := newTestApp(t, 90, 30)
 	withRegion(t, a)
 	machineRows(a, 40)
-	for i := 0; i < 60; i++ {
+	for range 60 {
 		if _, err := a.panel.HandleKey(input.Event{Kind: input.KeyPress, Key: input.KeyDown}); err != nil {
 			t.Fatalf("down: %v", err)
 		}
@@ -315,7 +315,7 @@ func TestTheRegionSpendsTheRoomItSetAside(t *testing.T) {
 
 	rows := a.sideRegion.rect.Rows
 	spent := 0
-	for y := 0; y < rows; y++ {
+	for y := range rows {
 		p := a.sideRegion.g.RowPad(y)
 		spent += int(p.Before) + int(p.After)
 	}
@@ -524,7 +524,7 @@ func TestThePinnedRowNeverGetsAHeadingsRoom(t *testing.T) {
 	// Nothing but headings, so whatever row the pinned one lands on
 	// would be one if the sidebar did not stop short.
 	var rows []ui.ListRow
-	for i := 0; i < 60; i++ {
+	for i := range 60 {
 		rows = append(rows, ui.ListRow{Text: "host", Header: true, Key: i})
 	}
 	a.panel.SetRows(rows)

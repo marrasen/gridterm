@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"slices"
 
 	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/render"
@@ -109,9 +110,9 @@ func (a *app) hideModal(m *modal) {
 	// Told once the stack has settled, topmost first, so an owner that
 	// opens something else in reply is not building on a stack still
 	// being taken apart.
-	for i := len(doomed) - 1; i >= 0; i-- {
-		if doomed[i].onHidden != nil {
-			doomed[i].onHidden()
+	for _, d := range slices.Backward(doomed) {
+		if d.onHidden != nil {
+			d.onHidden()
 		}
 	}
 }

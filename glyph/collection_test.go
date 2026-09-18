@@ -55,7 +55,7 @@ func shiftTables(t *testing.T, font []byte, base uint32) []byte {
 		t.Fatalf("font is %d bytes, too short to hold a table directory", len(b))
 	}
 	tables := int(binary.BigEndian.Uint16(b[4:]))
-	for i := 0; i < tables; i++ {
+	for i := range tables {
 		at := 12 + 16*i + 8 // past the tag and the checksum
 		if at+4 > len(b) {
 			t.Fatalf("table %d runs past the end of the font", i)

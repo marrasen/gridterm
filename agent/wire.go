@@ -40,7 +40,7 @@ type ask struct {
 	Lines int `json:"lines,omitempty"`
 
 	// Until is what "wait" is waiting for.
-	Until wait `json:"until,omitempty"`
+	Until wait `json:"until"`
 }
 
 // wait says what a "wait" is waiting for.

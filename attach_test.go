@@ -46,7 +46,7 @@ func watchedPane(t *testing.T, cols, rows int) (*term.Terminal, *pipeSession, *w
 func readUntil(t *testing.T, w *watched, want string) string {
 	t.Helper()
 	var got strings.Builder
-	for i := 0; i < 200; i++ {
+	for range 200 {
 		b, err := readOnce(t, w)
 		got.Write(b)
 		if err != nil {
@@ -156,7 +156,7 @@ func TestAWatcherThatFellBehindIsGivenTheScreen(t *testing.T) {
 	pane, shell, w := watchedPane(t, 40, 8)
 
 	// Nothing is read while far more than the queue holds goes past.
-	for i := 0; i < watchQueue*2; i++ {
+	for range watchQueue * 2 {
 		shell.out <- []byte("filling\r\n")
 	}
 	shell.out <- []byte("the-last-thing-said")

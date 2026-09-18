@@ -103,9 +103,7 @@ func BenchmarkPaneSwallowsAFloodWhileDrawn(b *testing.B) {
 		g := grid.New(80, 24, color.RGBA{}, color.RGBA{})
 		stop := make(chan struct{})
 		var drawing sync.WaitGroup
-		drawing.Add(1)
-		go func() {
-			defer drawing.Done()
+		drawing.Go(func() {
 			tick := time.NewTicker(16 * time.Millisecond)
 			defer tick.Stop()
 			for {
@@ -116,7 +114,7 @@ func BenchmarkPaneSwallowsAFloodWhileDrawn(b *testing.B) {
 					t.Draw(g.View())
 				}
 			}
-		}()
+		})
 		b.StartTimer()
 
 		waited := time.Now()

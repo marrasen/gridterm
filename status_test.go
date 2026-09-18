@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"image/color"
+	"slices"
 	"strings"
 	"testing"
 
@@ -79,8 +80,8 @@ func chipColumn(t *testing.T, a *testApp) (int, int) {
 	// than one byte to a column.
 	at := -1
 	columns := []rune(row)
-	for x := len(columns) - 1; x >= 0; x-- {
-		if columns[x] != ' ' {
+	for x, column := range slices.Backward(columns) {
+		if column != ' ' {
 			at = x
 			break
 		}
@@ -243,11 +244,11 @@ func TestServingWithNobodyConnectedSaysSoOnTheMenuBar(t *testing.T) {
 	if got, ground := a.bar.Chips[0].BG, chipBG(a.colours); got != ground {
 		t.Errorf("the chip sits on %+v, want a ground of its own %+v", got, ground)
 	}
-	at := strings.Index(row, want)
-	if at < 0 {
+	before, _, ok := strings.Cut(row, want)
+	if !ok {
 		t.Fatalf("the bar row is %q, want %q on it", row, want)
 	}
-	col := area.X + len([]rune(row[:at]))
+	col := area.X + len([]rune(before))
 	if got, red := a.g.At(col, area.Y).FG, statusIdleFG(a.colours); got != red {
 		t.Errorf("the status is drawn in %+v, want the dimmer red %+v", got, red)
 	}

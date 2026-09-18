@@ -500,7 +500,7 @@ func TestWaitingComesBackWhenThePaneGoesQuiet(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		for i := 0; i < 5; i++ {
+		for i := range 5 {
 			w.say("line " + string(rune('a'+i)))
 			time.Sleep(20 * time.Millisecond)
 		}
@@ -585,7 +585,7 @@ func TestCodesAreNotGuessable(t *testing.T) {
 	const tries = 100
 	seen := map[string]bool{}
 	var codes []string
-	for i := 0; i < tries; i++ {
+	for range tries {
 		code, err := NewCode(2222)
 		if err != nil {
 			t.Fatalf("code: %v", err)
@@ -607,7 +607,7 @@ func TestCodesAreNotGuessable(t *testing.T) {
 	// itself the same from one to the next; one made from randomness
 	// leaves none of it. The chance of a position holding still across
 	// a hundred draws by luck is one in thirty-two to the ninety-ninth.
-	for at := 0; at < 32; at++ {
+	for at := range 32 {
 		first := codes[0][at]
 		same := true
 		for _, code := range codes {
@@ -732,7 +732,7 @@ func TestOnlySoManyAgentsAtOnce(t *testing.T) {
 			_ = c.Close()
 		}
 	}()
-	for i := 0; i < mostAgents; i++ {
+	for i := range mostAgents {
 		c, err := Dial(code)
 		if err != nil {
 			t.Fatalf("agent %d: %v", i, err)
@@ -947,7 +947,7 @@ func TestAWindowThatWentSaysSoEveryTime(t *testing.T) {
 		t.Fatalf("close: %v", err)
 	}
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		_, err := c.Read(pane.ID, 0)
 		if !errors.Is(err, ErrGone) {
 			t.Errorf("ask %d gave %v", i, err)
@@ -982,7 +982,7 @@ func TestAWaitWatchesTheScreenAndReadsTheLinesOnce(t *testing.T) {
 	// Something to wait through: the pane says several things and then
 	// goes quiet.
 	go func() {
-		for i := 0; i < 5; i++ {
+		for i := range 5 {
 			w.say(fmt.Sprintf("line %d", i))
 			time.Sleep(60 * time.Millisecond)
 		}
@@ -1376,7 +1376,7 @@ func TestAWaitDoesNotTakeAPromptSeenMidOutputForTheRealOne(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		for i := 0; i < 8; i++ {
+		for range 8 {
 			w.promptBack(true)
 			time.Sleep(20 * time.Millisecond)
 		}

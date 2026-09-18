@@ -195,7 +195,7 @@ func TestTheGlowRisesAndFalls(t *testing.T) {
 	var dim, bright uint8 = 0xff, 0
 	steps := make([]int, 0, glowSteps*2)
 	start := time.UnixMilli(0)
-	for i := 0; i < glowSteps*2; i++ {
+	for i := range glowSteps * 2 {
 		step := glowAt(start.Add(time.Duration(i) * glowStep))
 		steps = append(steps, step)
 		at := glow(color.RGBA{R: 0x40, G: 0x80, B: 0xc0, A: 0xff}, step).A
@@ -300,7 +300,7 @@ func TestTheBorderItselfBrightensAndDims(t *testing.T) {
 
 	start := time.UnixMilli(0)
 	var dim, bright uint8 = 0xff, 0
-	for i := 0; i < glowSteps*2; i++ {
+	for i := range glowSteps * 2 {
 		a.drawShared(start.Add(time.Duration(i) * glowStep))
 		at := m.g.At(0, 0).BG.A
 		dim, bright = min(dim, at), max(bright, at)
@@ -484,7 +484,7 @@ func TestTheRowsMarkGlowsWithTheBorder(t *testing.T) {
 
 	start := time.UnixMilli(0)
 	var dim, bright uint8 = 0xff, 0
-	for i := 0; i < glowSteps*2; i++ {
+	for i := range glowSteps * 2 {
 		at := a.sharedEdge(pane, start.Add(time.Duration(i)*glowStep))[0].A
 		dim, bright = min(dim, at), max(bright, at)
 	}
@@ -506,7 +506,7 @@ func TestTheRowAndTheBorderGlowTogether(t *testing.T) {
 
 	start := time.UnixMilli(0)
 	var dim, bright uint8 = 0xff, 0
-	for i := 0; i < glowSteps*2; i++ {
+	for i := range glowSteps * 2 {
 		now := start.Add(time.Duration(i) * glowStep)
 		a.drawShared(now)
 		border := m.g.At(0, 0).BG

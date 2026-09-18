@@ -17,7 +17,7 @@ func TestMenubarDrawnTwiceLeavesTheLayerClean(t *testing.T) {
 	b.Draw(g.View())
 
 	g.ClearDirty()
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		b.Draw(g.View())
 		if g.RowDirty(0) {
 			t.Fatalf("draw %d of an unchanged bar dirtied its row", i)

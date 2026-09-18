@@ -317,7 +317,7 @@ func (m *mask) dashed(x0, y0, x1, y1, n int, vertical bool) {
 	// how the dashed characters look in a typical font.
 	if vertical {
 		span := y1 - y0
-		for i := 0; i < n; i++ {
+		for i := range n {
 			a := y0 + span*i/n
 			b := y0 + (span*i/n + (span/n)*2/3)
 			m.fill(x0, a, x1, max(b, a+1), 255)
@@ -325,7 +325,7 @@ func (m *mask) dashed(x0, y0, x1, y1, n int, vertical bool) {
 		return
 	}
 	span := x1 - x0
-	for i := 0; i < n; i++ {
+	for i := range n {
 		a := x0 + span*i/n
 		b := x0 + (span*i/n + (span/n)*2/3)
 		m.fill(max(a, x0), y0, max(b, a+1), y1, 255)

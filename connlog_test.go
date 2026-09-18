@@ -100,7 +100,7 @@ func TestWhatTheFarEndSaysIsWrittenInFull(t *testing.T) {
 		t.Errorf("it dropped what came before the link: %q", got)
 	}
 	// Whole, on one line, with nothing cut off it.
-	for _, line := range strings.Split(got, "\r\n") {
+	for line := range strings.SplitSeq(got, "\r\n") {
 		if !strings.Contains(line, link) {
 			continue
 		}

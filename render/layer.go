@@ -4,6 +4,7 @@ import (
 	"image"
 	"image/color"
 	"math"
+	"slices"
 	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
@@ -211,7 +212,7 @@ func (l *Layer) repaint(r *Renderer, geo *Geometry) {
 	}
 	_, rows := l.Grid.Size()
 	width := geo.Width()
-	for y := 0; y < rows; y++ {
+	for y := range rows {
 		if !l.Grid.RowDirty(y) || !l.clears(y) {
 			continue
 		}
@@ -341,10 +342,8 @@ func NewCompositor(r *Renderer) *Compositor { return &Compositor{r: r} }
 // The compositor then owns the damage flags on that layer's grid, which
 // is why a layer belongs to one compositor and one only.
 func (c *Compositor) Add(l *Layer) {
-	for _, have := range c.layers {
-		if have == l {
-			return
-		}
+	if slices.Contains(c.layers, l) {
+		return
 	}
 	c.layers = append(c.layers, l)
 }

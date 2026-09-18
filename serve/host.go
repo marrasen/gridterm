@@ -53,11 +53,9 @@ func (s *Server) serveChannels(ctx context.Context, c *Client, chans <-chan ssh.
 				s.onError(fmt.Errorf("serve: take a watcher: %w", err))
 				continue
 			}
-			running.Add(1)
-			go func() {
-				defer running.Done()
+			running.Go(func() {
 				s.runControl(ctx, c, ch, reqs)
-			}()
+			})
 			continue
 		}
 		if nch.ChannelType() == chanFiles {
@@ -82,12 +80,10 @@ func (s *Server) serveChannels(ctx context.Context, c *Client, chans <-chan ssh.
 				continue
 			}
 			files.Add(1)
-			running.Add(1)
-			go func() {
-				defer running.Done()
+			running.Go(func() {
 				defer files.Add(-1)
 				s.runFiles(ctx, nch, want.Host)
-			}()
+			})
 			continue
 		}
 		if nch.ChannelType() != SessionChannel {
@@ -112,11 +108,9 @@ func (s *Server) serveChannels(ctx context.Context, c *Client, chans <-chan ssh.
 			s.onError(fmt.Errorf("serve: take a session: %w", err))
 			continue
 		}
-		running.Add(1)
-		go func() {
-			defer running.Done()
+		running.Go(func() {
 			s.runSession(ctx, ch, reqs, want)
-		}()
+		})
 	}
 	// The connection is finished. Waiting here is what keeps the window
 	// from saying the client has gone while a shell it started is still

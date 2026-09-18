@@ -2,6 +2,7 @@ package ui
 
 import (
 	"image/color"
+	"slices"
 	"strings"
 	"testing"
 
@@ -54,7 +55,7 @@ func sizeOf(v grid.View) Size {
 func rowOf(g *grid.Grid, y int) string {
 	cols, _ := g.Size()
 	var b strings.Builder
-	for x := 0; x < cols; x++ {
+	for x := range cols {
 		c := g.At(x, y)
 		if c.Width == 0 {
 			continue
@@ -657,10 +658,8 @@ func TestFocusedLeafAndLeavesAgree(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			leaf := FocusedLeaf(tc.root)
 
-			for _, l := range Leaves(tc.root) {
-				if l == leaf {
-					return
-				}
+			if slices.Contains(Leaves(tc.root), leaf) {
+				return
 			}
 			t.Errorf("FocusedLeaf gave %v, which Leaves does not list", leaf)
 		})
@@ -1468,7 +1467,7 @@ func TestSplitDragIgnoresAnotherButtonComingUp(t *testing.T) {
 // A press on the half without the keys moves them and goes no further,
 // for a child that asks for that. The press after it is the child's.
 func TestSplitKeepsThePressThatMovesTheKeys(t *testing.T) {
-	a, b := &picky{fake: fake{name: "a"}, first: true}, &picky{fake: fake{name: "b"}, first: true}
+	a, b := &picky{name: "a", first: true}, &picky{name: "b", first: true}
 	s := NewSplit(Columns, a, b)
 	r := rootOver(s, 21, 4)
 	s.SetFocus(true)

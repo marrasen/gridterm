@@ -16,7 +16,7 @@ func paper() Palette {
 		Cursor:    color.RGBA{0x20, 0x22, 0x24, 0xff},
 		Selection: color.RGBA{0xcf, 0xd8, 0xe8, 0xff},
 	}
-	for i := 0; i < 16; i++ {
+	for i := range 16 {
 		p.ANSI[i] = color.RGBA{uint8(i), 0x11, 0x22, 0xff}
 	}
 	p.FillUpper()

@@ -138,7 +138,7 @@ func words(s string) string { return strings.Join(strings.Fields(s), " ") }
 // different, so a missing line cannot hide behind an identical one.
 func longMessage() string {
 	var b strings.Builder
-	for i := 0; i < 40; i++ {
+	for i := range 40 {
 		fmt.Fprintf(&b, "reason%d the directory named in it could not be opened. ", i)
 	}
 	return strings.TrimSpace(b.String())
@@ -182,7 +182,7 @@ func TestNoticeScrollingClampsAtBothEnds(t *testing.T) {
 	n := tn.notice
 	drawNotice(n, 60, 18)
 
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		tapNotice(t, n, press(input.KeyPageDown, 0))
 	}
 	bottom := noticeLines(n, drawNotice(n, 60, 18))
@@ -197,7 +197,7 @@ func TestNoticeScrollingClampsAtBothEnds(t *testing.T) {
 		t.Error("scrolling past the end of the message moved the text")
 	}
 
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		tapNotice(t, n, press(input.KeyPageUp, 0))
 	}
 	top := noticeLines(n, drawNotice(n, 60, 18))
@@ -297,7 +297,7 @@ func TestNoticeCopiesTheWholeOfAScrolledMessage(t *testing.T) {
 	tn := newTestNotice("It failed", longMessage())
 	n := tn.notice
 	drawNotice(n, 60, 18)
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		tapNotice(t, n, press(input.KeyPageDown, 0))
 	}
 
@@ -448,7 +448,7 @@ func TestAnIdleNoticeDirtiesNothing(t *testing.T) {
 		t.Fatal("the first draw put nothing on the layer, so there is nothing to leave alone")
 	}
 	g.ClearDirty()
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		n.Draw(g.View())
 	}
 
@@ -501,7 +501,7 @@ func TestNoticeBreaksAWordTooWideForTheBox(t *testing.T) {
 	// and each starts with a cluster of two runes, so a cut counting
 	// bytes as columns would come apart in the middle of one.
 	var b strings.Builder
-	for i := 0; i < 60; i++ {
+	for i := range 60 {
 		fmt.Fprintf(&b, "é%03dfghij", i)
 	}
 	word := b.String()

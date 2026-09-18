@@ -283,7 +283,7 @@ func (b *Menubar) paintBar(row grid.View) {
 	// Column by column, because the ground can be a blend across the bar
 	// rather than one colour.
 	cols, _ := row.Size()
-	for x := 0; x < cols; x++ {
+	for x := range cols {
 		row.Set(x, 0, grid.Cell{
 			Rune: ' ', FG: b.Style.FG, BG: b.Style.colAt(x, cols), Width: 1,
 		})
@@ -543,8 +543,8 @@ func (b *Menubar) chipsAt() []placedChip {
 
 	show := make([]placedChip, 0, len(b.Chips))
 	wide := 0
-	for i := len(b.Chips) - 1; i >= 0; i-- {
-		chip := b.Chips[i]
+	for _, chip := range slices.Backward(b.Chips) {
+
 		width := grid.StringWidth(chip.Text)
 		if width <= 0 {
 			// A chip with nothing on it is a ground with no word on it.

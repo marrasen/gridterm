@@ -484,7 +484,7 @@ func (v vanishing) Remove(path string) error {
 // is the one thing this package exists to allow.
 func TestProgressCanBeReadWhileTheJobRuns(t *testing.T) {
 	from, to := local(t), local(t)
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		write(t, from.real, "tree/"+string(rune('a'+i))+".txt", strings.Repeat("x", 512))
 	}
 

@@ -59,7 +59,7 @@ func TestTheTilesCoverTheRoomWithoutOverlapping(t *testing.T) {
 		cols, rows := TileShape(n, size)
 		full := (n / cols) * cols
 		want := 0
-		for i := 0; i < n; i++ {
+		for i := range n {
 			want += areas[i].Cols * areas[i].Rows
 		}
 		covered := 0

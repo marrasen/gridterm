@@ -368,7 +368,7 @@ func TestATunnelCarriesOnlySoManyAtOnce(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = f.Close() })
 
-	for i := 0; i < maxStreams+8; i++ {
+	for range maxStreams + 8 {
 		conn, err := net.Dial("tcp", f.Addr())
 		if err != nil {
 			// The listener refusing is an answer too.

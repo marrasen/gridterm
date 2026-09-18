@@ -85,13 +85,13 @@ func TestMenuArrowsStopAtTheEnds(t *testing.T) {
 	cmds := testCommands("Copy", "Paste")
 	m, _ := newTestMenu(t, cmds, items("copy", "paste"))
 
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		m.HandleKey(press(input.KeyDown, 0))
 	}
 	if got := m.SelectedIndex(); got != 1 {
 		t.Errorf("selected %d after running off the bottom, want 1", got)
 	}
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		m.HandleKey(press(input.KeyUp, 0))
 	}
 	if got := m.SelectedIndex(); got != 0 {
@@ -154,7 +154,7 @@ func TestMenuDropsALineItCannotName(t *testing.T) {
 		t.Fatalf("%d items, want the unnamed one dropped: %+v", got, m.Items())
 	}
 	g := drawMenu(m, 40, 20)
-	for y := 0; y < 20; y++ {
+	for y := range 20 {
 		if strings.Contains(rowOf(g, y), "gone") {
 			t.Errorf("row %d = %q, want no command id on screen", y, rowOf(g, y))
 		}
@@ -300,7 +300,7 @@ func TestMenuSlidesOntoTheWindowFromTheRight(t *testing.T) {
 // Enter runs a line nobody can see.
 func TestMenuTallerThanTheWindowScrolls(t *testing.T) {
 	titles := make([]string, 0, 20)
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		titles = append(titles, "Command "+string(rune('a'+i)))
 	}
 	cmds := testCommands(titles...)
@@ -330,7 +330,7 @@ func TestMenuTallerThanTheWindowScrolls(t *testing.T) {
 // is scrolled, the way the palette had to be fixed.
 func TestMenuScrollFollowsTheWindow(t *testing.T) {
 	titles := make([]string, 0, 20)
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		titles = append(titles, "Command "+string(rune('a'+i)))
 	}
 	cmds := testCommands(titles...)
@@ -526,8 +526,8 @@ func TestMenuLeavesTheRestOfItsLayerClear(t *testing.T) {
 	g := drawMenu(m, 40, 20)
 
 	box := m.box()
-	for y := 0; y < 20; y++ {
-		for x := 0; x < 40; x++ {
+	for y := range 20 {
+		for x := range 40 {
 			if box.Contains(x, y) {
 				continue
 			}
@@ -547,7 +547,7 @@ func TestMenuDrawnTwiceLeavesTheLayerClean(t *testing.T) {
 	g := drawMenu(m, 40, 20)
 
 	g.ClearDirty()
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		m.Draw(g.View())
 		if g.AnyDirty() {
 			t.Fatalf("draw %d of an unchanged menu dirtied the layer", i)

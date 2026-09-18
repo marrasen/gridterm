@@ -194,7 +194,7 @@ func TestPanelShowsTheFourStates(t *testing.T) {
 		t.Fatal("a busy row is grey")
 	}
 	var moved bool
-	for step := 0; step < 8; step++ {
+	for step := range 8 {
 		at := panelNow.Add(time.Duration(step) * pulseStep)
 		if panelMarks(a, at)[0] != busy {
 			moved = true
@@ -1334,7 +1334,7 @@ func TestTheWheelWorksOverThePinnedRow(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withPanel(t, a)
 	var rows []ui.ListRow
-	for i := 0; i < 60; i++ {
+	for i := range 60 {
 		rows = append(rows, ui.ListRow{Text: "row", Key: i})
 	}
 	a.panel.SetRows(rows)
@@ -1626,7 +1626,7 @@ func TestABusyRowShowsItsRun(t *testing.T) {
 	// Nothing has moved, so there is no shape to show. A run of nothing
 	// but zeroes would draw a flat line under every quiet row.
 	at := panelNow
-	for i := 0; i < meter.Samples+2; i++ {
+	for range meter.Samples + 2 {
 		at = at.Add(meter.RateWindow)
 		a.refreshPanel(at)
 	}
@@ -1648,7 +1648,7 @@ func TestABusyRowShowsItsRun(t *testing.T) {
 	}
 	// The run got faster, so the bars do too, and the last is full.
 	var last, full int
-	for i := 0; i < grid.ArtGraphBars; i++ {
+	for i := range grid.ArtGraphBars {
 		if h := art.Bar(i); h > 0 {
 			if h < last {
 				t.Fatalf("the bars go %v, want them rising", barsOf(art))
@@ -1694,7 +1694,7 @@ func TestTheGraphAndTheSpeedBothFit(t *testing.T) {
 	l.Draw(g.View())
 
 	var at = -1
-	for x := 0; x < 40; x++ {
+	for x := range 40 {
 		if g.At(x, 0).Art.Kind == grid.ArtGraph {
 			at = x
 		}
@@ -1703,7 +1703,7 @@ func TestTheGraphAndTheSpeedBothFit(t *testing.T) {
 		t.Fatal("the graph is not drawn at all")
 	}
 	var note string
-	for x := 0; x < 40; x++ {
+	for x := range 40 {
 		c := g.At(x, 0)
 		if c.Rune == 0 {
 			note += " "

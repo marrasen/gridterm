@@ -72,7 +72,7 @@ func keyAt(col, cols, n int) (int, bool) {
 	if n <= 0 || cols <= 0 || col < 0 || col >= cols {
 		return 0, false
 	}
-	for i := 0; i < n; i++ {
+	for i := range n {
 		if start, end := keyCell(i, cols, n); col >= start && col < end {
 			return i, true
 		}

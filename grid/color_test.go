@@ -60,8 +60,8 @@ func TestABlendTowardsADarkerColourRoundsDown(t *testing.T) {
 // replaced rounded down at every step.
 func TestABlendMatchesTheFloatMixerItReplaced(t *testing.T) {
 	const t55 = 0.55
-	for x := 0; x < 256; x++ {
-		for y := 0; y < 256; y++ {
+	for x := range 256 {
+		for y := range 256 {
 			from := color.RGBA{R: uint8(x), A: 255}
 			to := color.RGBA{R: uint8(y), A: 255}
 			want := uint8(float64(x)*(1-t55) + float64(y)*t55)

@@ -16,7 +16,7 @@ func TestSetMarksOnlyItsOwnRowDirty(t *testing.T) {
 
 	g.Set(3, 2, Cell{Rune: 'x', FG: fg, BG: bg})
 
-	for y := 0; y < 4; y++ {
+	for y := range 4 {
 		if got, want := g.RowDirty(y), y == 2; got != want {
 			t.Errorf("RowDirty(%d) = %v, want %v", y, got, want)
 		}
@@ -84,7 +84,7 @@ func TestSetStringHandlesMultibyteRunes(t *testing.T) {
 
 func TestScrollUp(t *testing.T) {
 	g := New(2, 4, fg, bg)
-	for y := 0; y < 4; y++ {
+	for y := range 4 {
 		g.SetString(0, y, string(rune('0'+y)), fg, bg, 0)
 	}
 
@@ -424,8 +424,8 @@ func TestHidingTheCursorDirtiesItsRow(t *testing.T) {
 func wantWidthInvariant(t *testing.T, g *Grid) {
 	t.Helper()
 	cols, rows := g.Size()
-	for y := 0; y < rows; y++ {
-		for x := 0; x < cols; x++ {
+	for y := range rows {
+		for x := range cols {
 			switch g.At(x, y).Width {
 			case 2:
 				if x+1 >= cols || g.At(x+1, y).Width != 0 {
@@ -591,8 +591,8 @@ func TestSelectionContainsFlowingRange(t *testing.T) {
 func TestSelectionIsDirectionIndependent(t *testing.T) {
 	fwd := Selection{Anchor: Point{2, 1}, Cursor: Point{3, 3}, Active: true}
 	back := Selection{Anchor: Point{3, 3}, Cursor: Point{2, 1}, Active: true}
-	for y := 0; y < 5; y++ {
-		for x := 0; x < 10; x++ {
+	for y := range 5 {
+		for x := range 10 {
 			if fwd.Contains(x, y) != back.Contains(x, y) {
 				t.Fatalf("at %d,%d: forwards %v, backwards %v",
 					x, y, fwd.Contains(x, y), back.Contains(x, y))
@@ -627,7 +627,7 @@ func TestSetSelectionDirtiesTheRowsItCovers(t *testing.T) {
 
 	g.SetSelection(Selection{Anchor: Point{0, 1}, Cursor: Point{9, 2}, Active: true})
 
-	for y := 0; y < 5; y++ {
+	for y := range 5 {
 		want := y == 1 || y == 2
 		if got := g.RowDirty(y); got != want {
 			t.Errorf("row %d dirty = %v, want %v", y, got, want)
@@ -733,7 +733,7 @@ func TestStringWidthMatchesWhatSetStringSpends(t *testing.T) {
 // second is always in the same place as the graph lengthens.
 func TestGraphFillsFromTheRight(t *testing.T) {
 	art := Graph([]int{3, 7})
-	for i := 0; i < ArtGraphBars-2; i++ {
+	for i := range ArtGraphBars - 2 {
 		if got := art.Bar(i); got != 0 {
 			t.Fatalf("bar %d of a two-second run is %d, want nothing", i, got)
 		}
@@ -785,7 +785,7 @@ func TestGraphClampsWhatItIsGiven(t *testing.T) {
 		long[i] = ArtGraphMax
 	}
 	full := Graph(long)
-	for i := 0; i < ArtGraphBars; i++ {
+	for i := range ArtGraphBars {
 		if got := full.Bar(i); got != ArtGraphMax {
 			t.Fatalf("bar %d = %d", i, got)
 		}
@@ -847,8 +847,8 @@ func TestGraphSaysHowManyBarsAreReal(t *testing.T) {
 func TestFillDoesNotSpreadArt(t *testing.T) {
 	g := New(4, 2, fg, bg)
 	g.View().Fill(Cell{Rune: ' ', Width: 1, Art: Graph([]int{1, 2})})
-	for y := 0; y < 2; y++ {
-		for x := 0; x < 4; x++ {
+	for y := range 2 {
+		for x := range 4 {
 			if got := g.At(x, y).Art.Kind; got != ArtNone {
 				t.Fatalf("cell %d,%d carries %v", x, y, got)
 			}

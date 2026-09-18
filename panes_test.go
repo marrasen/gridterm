@@ -508,7 +508,7 @@ func TestCloseAPaneWhoseSiblingIsASplit(t *testing.T) {
 
 func TestFocusCyclesThroughEveryPane(t *testing.T) {
 	a := newTestApp(t, 60, 20)
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		if err := a.splitHere(ui.Columns); err != nil {
 			t.Fatalf("split: %v", err)
 		}
@@ -520,7 +520,7 @@ func TestFocusCyclesThroughEveryPane(t *testing.T) {
 	a.focus(panes[0])
 
 	seen := map[ui.Widget]bool{}
-	for i := 0; i < len(panes); i++ {
+	for range panes {
 		seen[ui.FocusedLeaf(a.root.Widget())] = true
 		if err := a.focusPane(1); err != nil {
 			t.Fatalf("focus next: %v", err)
@@ -564,9 +564,9 @@ func TestSplitRefusedWithNoRoom(t *testing.T) {
 // its own, with two going at once because map order is random. Every
 // pane stays; only the mark that it has finished is new.
 func TestReapKeepsExitedPanes(t *testing.T) {
-	for run := 0; run < 30; run++ {
+	for run := range 30 {
 		a := newTestApp(t, 60, 20)
-		for i := 0; i < 2; i++ {
+		for range 2 {
 			if err := a.splitHere(ui.Columns); err != nil {
 				t.Fatalf("split: %v", err)
 			}
@@ -609,7 +609,7 @@ func TestSplitCloseFuzz(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	rng := rand.New(rand.NewSource(1))
 
-	for step := 0; step < 200; step++ {
+	for step := range 200 {
 		switch rng.Intn(4) {
 		case 0:
 			dir := ui.Columns
@@ -951,7 +951,7 @@ func TestPaneExitedNeverBlocks(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		for i := 0; i < exitQueue*3; i++ {
+		for range exitQueue * 3 {
 			a.paneExited()
 		}
 	}()
@@ -1014,7 +1014,7 @@ func TestOpenPaneJoinsTheDeck(t *testing.T) {
 // deck rather than nesting another one inside it.
 func TestOpenPaneAddsToTheDeck(t *testing.T) {
 	a := newTestApp(t, 40, 10)
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		if err := a.openPane(); err != nil {
 			t.Fatalf("open pane: %v", err)
 		}
@@ -1034,7 +1034,7 @@ func TestOpenPaneAddsToTheDeck(t *testing.T) {
 // it is on.
 func TestTheStageGivesThePaneEveryRow(t *testing.T) {
 	a := newTestApp(t, 40, 10)
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		if err := a.openPane(); err != nil {
 			t.Fatalf("open pane: %v", err)
 		}
@@ -1086,7 +1086,7 @@ func TestDecksAndSplitsNest(t *testing.T) {
 // The keys reach every pane and come back round.
 func TestTheKeysCycleThroughEveryPane(t *testing.T) {
 	a := newTestApp(t, 40, 10)
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		if err := a.openPane(); err != nil {
 			t.Fatalf("open pane: %v", err)
 		}
@@ -1098,7 +1098,7 @@ func TestTheKeysCycleThroughEveryPane(t *testing.T) {
 	a.focus(panes[0])
 
 	seen := map[ui.Widget]bool{}
-	for i := 0; i < len(panes); i++ {
+	for range panes {
 		seen[ui.FocusedLeaf(a.root.Widget())] = true
 		if err := a.focusInSidebarOrder(1); err != nil {
 			t.Fatalf("next pane: %v", err)
@@ -1144,7 +1144,7 @@ func TestTheKeysDoNothingWithOnePane(t *testing.T) {
 // terminal is a window with nowhere to put the next one.
 func TestTheStageOutlivesItsPanes(t *testing.T) {
 	a := newTestApp(t, 40, 10)
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		if err := a.openPane(); err != nil {
 			t.Fatalf("open pane: %v", err)
 		}
@@ -1178,7 +1178,7 @@ func TestDecksAndSplitsFuzz(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	rng := rand.New(rand.NewSource(7))
 
-	for step := 0; step < 200; step++ {
+	for step := range 200 {
 		switch rng.Intn(6) {
 		case 0:
 			dir := ui.Columns
@@ -1619,8 +1619,8 @@ func TestPaletteLayerIsSeeThrough(t *testing.T) {
 	if !a.modals[0].layer.Transparent {
 		t.Error("the dialog's layer is not marked see-through")
 	}
-	for y := 0; y < 10; y++ {
-		for x := 0; x < 40; x++ {
+	for y := range 10 {
+		for x := range 40 {
 			if got := a.modals[0].g.At(x, y); got.BG.A != 0 {
 				t.Fatalf("cell %d,%d = %+v, want the layer clear before anything is drawn",
 					x, y, got)
@@ -1644,7 +1644,7 @@ func TestPaletteIsDrawnOntoItsLayer(t *testing.T) {
 
 	found := false
 	for y := 0; y < 10 && !found; y++ {
-		for x := 0; x < 40; x++ {
+		for x := range 40 {
 			if a.modals[0].g.At(x, y).Rune == '>' {
 				found = true
 				break
@@ -1749,7 +1749,7 @@ func TestAppDrawPutsTheDialogOnItsLayer(t *testing.T) {
 
 	found := false
 	for y := 0; y < 10 && !found; y++ {
-		for x := 0; x < 40; x++ {
+		for x := range 40 {
 			if a.modals[0].g.At(x, y).Rune == '>' {
 				found = true
 				break

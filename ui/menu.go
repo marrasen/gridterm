@@ -208,7 +208,7 @@ func (m *Menu) paint(v grid.View) {
 	lines := in.Sub(menuFrame, menuFrame,
 		max(cols-menuFrame*2, 0), max(rows-menuFrame*2, 0))
 	inner, shown := lines.Size()
-	for row := 0; row < shown; row++ {
+	for row := range shown {
 		i := m.place.top + row
 		if i >= len(m.items) {
 			break

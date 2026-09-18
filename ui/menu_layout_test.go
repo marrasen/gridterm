@@ -29,7 +29,7 @@ func longMenu(t *testing.T, n int) *Menu {
 	t.Helper()
 	cmds := NewCommands()
 	lines := make([]MenuItem, 0, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		id := string(rune('a' + i))
 		cmds.MustRegister(Command{ID: id, Title: id + " command", Run: nop})
 		lines = append(lines, MenuItem{Command: id})
@@ -107,7 +107,7 @@ func TestMenuTooNarrowDropsTheBinding(t *testing.T) {
 func TestMenuDrawsTheScrolledItems(t *testing.T) {
 	m := longMenu(t, 20)
 	m.Layout(Size{Cols: 40, Rows: 6})
-	for i := 0; i < 19; i++ {
+	for range 19 {
 		m.HandleKey(press(input.KeyDown, 0))
 	}
 	if m.place.top == 0 {
@@ -131,7 +131,7 @@ func TestMenuClickIsScrollAware(t *testing.T) {
 	ran := ""
 	cmds := NewCommands()
 	lines := make([]MenuItem, 0, 20)
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		id := string(rune('a' + i))
 		cmds.MustRegister(Command{ID: id, Title: id + " command", Run: func() error {
 			ran = id
@@ -143,7 +143,7 @@ func TestMenuClickIsScrollAware(t *testing.T) {
 	m.Style = menuStyled()
 	m.Anchor = func() Rect { return Rect{X: 0, Y: 2, Cols: 4, Rows: 1} }
 	m.Layout(Size{Cols: 40, Rows: 9})
-	for i := 0; i < 19; i++ {
+	for range 19 {
 		m.HandleKey(press(input.KeyDown, 0))
 	}
 	box := menuLines(m)
@@ -380,7 +380,7 @@ func TestPressingTheMenuRuleRunsNothing(t *testing.T) {
 	ran := ""
 	cmds := NewCommands()
 	var lines []MenuItem
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		id := string(rune('a' + i))
 		cmds.MustRegister(Command{ID: id, Title: id + " command", Run: func() error {
 			ran = id
@@ -406,7 +406,7 @@ func TestPressingTheMenuRuleRunsNothing(t *testing.T) {
 
 	// And scrolled to the end, where the top rule would name a real line
 	// as well.
-	for i := 0; i < 19; i++ {
+	for range 19 {
 		m.HandleKey(press(input.KeyDown, 0))
 	}
 	if m.place.top == 0 {
@@ -447,7 +447,7 @@ func TestAMenuWithNoRoomForALine(t *testing.T) {
 			t.Fatalf("in %d rows the box is %+v, want none", rows, got)
 		}
 		g := drawMenu(m, 40, rows)
-		for y := 0; y < rows; y++ {
+		for y := range rows {
 			if got := strings.TrimSpace(rowOf(g, y)); got != "" {
 				t.Fatalf("in %d rows it drew %q", rows, got)
 			}

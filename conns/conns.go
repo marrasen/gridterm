@@ -8,6 +8,7 @@
 package conns
 
 import (
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -164,10 +165,8 @@ func (r *Registry) Add(e *Entry) {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	for _, have := range r.entries {
-		if have == e {
-			return
-		}
+	if slices.Contains(r.entries, e) {
+		return
 	}
 	// Named once. An entry dropped and added again -- which is what a
 	// connection that died and was dismissed looks like -- keeps the

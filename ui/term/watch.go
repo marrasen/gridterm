@@ -380,7 +380,7 @@ func (t *Terminal) linesLocked(n, row, col int) (text, before string) {
 	for back := n - rows; ; back -= rows {
 		back = max(back, 0)
 		t.term.RenderBack(g, back)
-		for y := 0; y < rows; y++ {
+		for y := range rows {
 			if i := history - back + y - first; i >= 0 && i < n {
 				out[i] = plainRow(g, y, cols)
 			}
@@ -417,7 +417,7 @@ func (t *Terminal) Cursor() (row, col int, alt bool) {
 // plainRow is one row of a grid as plain text, trailing spaces cut.
 func plainRow(g *grid.Grid, y, cols int) string {
 	var line strings.Builder
-	for x := 0; x < cols; x++ {
+	for x := range cols {
 		c := g.At(x, y)
 		if c.Width == 0 {
 			// The second half of a double-width character, already

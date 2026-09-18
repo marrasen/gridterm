@@ -181,7 +181,7 @@ func TestFinishedConnectionsStayUntilTheyAreCleared(t *testing.T) {
 // slice it kept.
 func TestClearingLetsGoOfWhatItDropped(t *testing.T) {
 	r := New()
-	for i := 0; i < 4; i++ {
+	for range 4 {
 		e := entry("margit", Command, "done")
 		e.Meter.Close()
 		r.Add(e)
@@ -252,7 +252,7 @@ func TestRegistryFromSeveralGoroutines(t *testing.T) {
 		}
 	}()
 
-	for i := 0; i < 200; i++ {
+	for range 200 {
 		e := entry("margit", Terminal, "one")
 		r.Add(e)
 		r.Drop(e)

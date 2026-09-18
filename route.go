@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -66,15 +67,15 @@ func (a *app) plan(route []step) (through *machine, missing []step, err error) {
 	if len(route) == 0 {
 		return nil, nil, errors.New("there is no route to that machine")
 	}
-	for at := len(route) - 1; at >= 0; at-- {
-		m := a.about(route[at].name).machine
+	for at, r := range slices.Backward(route) {
+		m := a.about(r.name).machine
 		if m == nil {
 			continue
 		}
-		if !m.at.cfg.SameMachine(route[at].cfg) {
+		if !m.at.cfg.SameMachine(r.cfg) {
 			return nil, nil, fmt.Errorf(
 				"%q is already connected to %s, which is not %s; close it first",
-				m.at.name, m.at.cfg.Target(), route[at].cfg.Target())
+				m.at.name, m.at.cfg.Target(), r.cfg.Target())
 		}
 		return m, route[at+1:], nil
 	}

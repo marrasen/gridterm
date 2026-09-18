@@ -147,7 +147,7 @@ func TestRateRemembersTheRun(t *testing.T) {
 	}
 
 	// Past the length it holds, the oldest falls off the front.
-	for i := 0; i < Samples*2; i++ {
+	for range Samples * 2 {
 		at = at.Add(RateWindow)
 		r.Sample(m, at)
 	}

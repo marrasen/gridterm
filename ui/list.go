@@ -382,7 +382,7 @@ func (l *List) RowPads(rows int) []grid.Pad {
 	}
 	top := min(max(l.place.top, 0), max(len(l.rows)-rows, 0))
 	l.pads = l.pads[:0]
-	for y := 0; y < rows; y++ {
+	for y := range rows {
 		i := top + y
 		if i < 0 || i >= len(l.rows) || !l.rows[i].Header {
 			l.pads = append(l.pads, grid.Pad{})
@@ -480,14 +480,14 @@ func (l *List) paint(v grid.View) {
 	}
 	// Row by row, because the ground can be a blend down the list rather
 	// than one colour.
-	for y := 0; y < rows; y++ {
+	for y := range rows {
 		line := v.Sub(0, y, cols, 1)
 		line.Fill(grid.Cell{
 			Rune: ' ', FG: l.Style.FG, BG: l.Style.rowBG(y, rows), Width: 1,
 		})
 	}
 
-	for y := 0; y < rows; y++ {
+	for y := range rows {
 		i := l.place.top + y
 		if i >= len(l.rows) {
 			break

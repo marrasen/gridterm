@@ -668,11 +668,9 @@ func TestAFilesystemTakesSeveralGoroutinesAtOnce(t *testing.T) {
 
 		var wg sync.WaitGroup
 		fail := make(chan error, 64)
-		for i := 0; i < 8; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				for j := 0; j < 8; j++ {
+		for range 8 {
+			wg.Go(func() {
+				for range 8 {
 					if _, err := tr.fs.ReadDir(tr.at); err != nil {
 						fail <- err
 						return
@@ -697,7 +695,7 @@ func TestAFilesystemTakesSeveralGoroutinesAtOnce(t *testing.T) {
 						return
 					}
 				}
-			}()
+			})
 		}
 		wg.Wait()
 		close(fail)

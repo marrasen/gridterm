@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"reflect"
 	"runtime"
+	"slices"
 	"testing"
 	"unicode/utf16"
 )
@@ -23,12 +24,7 @@ const systemDir = `C:\Windows\System32\`
 func windowsMachine(t *testing.T, distros []string, distroErr error, missing ...string) probe {
 	t.Helper()
 	gone := func(file string) bool {
-		for _, m := range missing {
-			if m == file {
-				return true
-			}
-		}
-		return false
+		return slices.Contains(missing, file)
 	}
 	return probe{
 		goos: "windows",
@@ -68,10 +64,8 @@ func unixMachine(t *testing.T, goos, shell string, have []string) probe {
 			return ""
 		},
 		lookPath: func(file string) (string, error) {
-			for _, h := range have {
-				if h == file {
-					return file, nil
-				}
+			if slices.Contains(have, file) {
+				return file, nil
 			}
 			return "", exec.ErrNotFound
 		},

@@ -578,8 +578,8 @@ func TestAFinishedJobsDialogSettles(t *testing.T) {
 func gridRows(g *grid.Grid) string {
 	cols, rows := g.Size()
 	var b strings.Builder
-	for y := 0; y < rows; y++ {
-		for x := 0; x < cols; x++ {
+	for y := range rows {
+		for x := range cols {
 			r := g.At(x, y).Rune
 			if r == 0 {
 				r = ' '

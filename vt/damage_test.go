@@ -11,7 +11,7 @@ import (
 func rowText(g *grid.Grid, y int) string {
 	cols, _ := g.Size()
 	var sb strings.Builder
-	for x := 0; x < cols; x++ {
+	for x := range cols {
 		c := g.At(x, y)
 		if c.Width == 0 {
 			continue
@@ -25,8 +25,8 @@ func rowText(g *grid.Grid, y int) string {
 // next render skips can be told from one it wrote.
 func mark(g *grid.Grid, word string) {
 	cols, rows := g.Size()
-	for y := 0; y < rows; y++ {
-		for x := 0; x < cols; x++ {
+	for y := range rows {
+		for x := range cols {
 			c := g.At(x, y)
 			if x < len(word) {
 				c.Rune = rune(word[x])

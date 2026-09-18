@@ -23,13 +23,11 @@ type closer struct {
 func (c *closer) inBackground(letGo func() error) {
 	// Counted before the goroutine starts, so a window closing in the
 	// same frame still waits for it.
-	c.running.Add(1)
-	go func() {
-		defer c.running.Done()
+	c.running.Go(func() {
 		if err := letGo(); err != nil {
 			c.failed(err)
 		}
-	}()
+	})
 }
 
 // failed records a failure from a goroutine letting go of a filesystem.

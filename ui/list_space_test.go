@@ -11,7 +11,7 @@ func spacedList(machines int) *List {
 	l := NewList()
 	l.Style.HeaderPad = grid.Pad{Before: 1, After: 1}
 	var rows []ListRow
-	for i := 0; i < machines; i++ {
+	for i := range machines {
 		rows = append(rows,
 			ListRow{Text: "machine", Header: true, Key: [2]int{i, 0}},
 			ListRow{Text: "a shell", Key: [2]int{i, 1}})

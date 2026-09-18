@@ -115,14 +115,12 @@ func TestMeterFromSeveralGoroutines(t *testing.T) {
 			}
 		}
 	}()
-	for i := 0; i < writers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for j := 0; j < each; j++ {
+	for range writers {
+		wg.Go(func() {
+			for range each {
 				m.Moved(1, 1, at)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	close(stop)

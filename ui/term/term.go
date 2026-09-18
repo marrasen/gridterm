@@ -750,8 +750,8 @@ func (t *Terminal) draw(v grid.View) {
 	// grid being drawn into belongs to the layout, which knows nothing
 	// about either.
 	cols, rows := v.Size()
-	for y := 0; y < rows; y++ {
-		for x := 0; x < cols; x++ {
+	for y := range rows {
+		for x := range cols {
 			c := t.g.At(x, y)
 			c.FG, c.BG = t.g.FGOf(x, y), t.g.BGOf(x, y)
 			c.Attr &^= grid.AttrReverse

@@ -24,7 +24,7 @@ func TestStyleFaces(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildFaces: %v", err)
 	}
-	for s := Style(0); s < numStyles; s++ {
+	for s := range numStyles {
 		for o := s + 1; o < numStyles; o++ {
 			if faces[s] == faces[o] {
 				t.Errorf("styles %d and %d share a face", s, o)

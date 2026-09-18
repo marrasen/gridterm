@@ -86,16 +86,16 @@ func (p *Palette) FillUpper() {
 	// 95 then 40 apart.
 	levels := [6]uint8{0, 0x5f, 0x87, 0xaf, 0xd7, 0xff}
 	i := 16
-	for r := 0; r < 6; r++ {
-		for g := 0; g < 6; g++ {
-			for b := 0; b < 6; b++ {
+	for r := range 6 {
+		for g := range 6 {
+			for b := range 6 {
 				p.ANSI[i] = color.RGBA{levels[r], levels[g], levels[b], 0xff}
 				i++
 			}
 		}
 	}
 	// 232-255: 24 greys from 0x08 to 0xee in steps of 10.
-	for j := 0; j < 24; j++ {
+	for j := range 24 {
 		v := uint8(8 + j*10)
 		p.ANSI[232+j] = color.RGBA{v, v, v, 0xff}
 	}

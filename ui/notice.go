@@ -592,7 +592,7 @@ func (n *Notice) wantCols() int {
 		return n.wanted
 	}
 	width := grid.StringWidth(n.Title)
-	for _, para := range strings.Split(n.message, "\n") {
+	for para := range strings.SplitSeq(n.message, "\n") {
 		width = max(width, grid.StringWidth(para))
 	}
 	buttons := buttonsWidth(noticeButtons)
@@ -643,7 +643,7 @@ func cutOne(s string, width int) []noticeLine {
 func wrapOne(s string, width int) []noticeLine {
 	var out []noticeLine
 	line := ""
-	for _, word := range strings.Fields(s) {
+	for word := range strings.FieldsSeq(s) {
 		switch {
 		case line == "":
 			line = word

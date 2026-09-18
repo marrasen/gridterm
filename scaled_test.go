@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image/color"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -136,8 +137,8 @@ func screenText(pane *term.Terminal) string {
 	g := screenOf(pane)
 	cols, rows := g.Size()
 	var b strings.Builder
-	for y := 0; y < rows; y++ {
-		for x := 0; x < cols; x++ {
+	for y := range rows {
+		for x := range cols {
 			if r := g.At(x, y).Rune; r != 0 {
 				b.WriteRune(r)
 			}
@@ -209,8 +210,8 @@ func TestAHeldScreenTooBigForItsRoomIsDrawnWhole(t *testing.T) {
 	if cols != size.Cols || rows != size.Rows {
 		t.Fatalf("the layer's grid is %dx%d, want the screen's %dx%d", cols, rows, size.Cols, size.Rows)
 	}
-	for y := 0; y < rows; y++ {
-		for x := 0; x < cols; x++ {
+	for y := range rows {
+		for x := range cols {
 			if got := s.g.At(x, y).Rune; got != cellRune(x, y) {
 				t.Fatalf("the layer holds %q at %d,%d, want %q", got, x, y, cellRune(x, y))
 			}
@@ -411,12 +412,7 @@ func TestAScaledScreenThatIsIdleCostsNothing(t *testing.T) {
 
 // inStack reports whether a compositor is drawing a layer.
 func inStack(c *render.Compositor, l *render.Layer) bool {
-	for _, have := range c.Layers() {
-		if have == l {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(c.Layers(), l)
 }
 
 // hasLineWith reports whether any line contains the text.

@@ -159,7 +159,7 @@ func TestConnectAsksForAPassphraseOnceAcrossConnections(t *testing.T) {
 	cfg.Ask = ask
 	cfg.Ring = NewRing()
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		c, err := Connect(t.Context(), cfg)
 		if err != nil {
 			t.Fatalf("connection %d: %v", i+1, err)
@@ -184,7 +184,7 @@ func TestConnectWithoutARingAsksEveryTime(t *testing.T) {
 	cfg := keyConfig(t, s, path)
 	cfg.Ask = ask
 
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		c, err := Connect(t.Context(), cfg)
 		if err != nil {
 			t.Fatalf("connection %d: %v", i+1, err)
@@ -474,7 +474,7 @@ func TestRingAsksOnceWhenTwoConnectionsWantTheSameKey(t *testing.T) {
 		err    error
 	}
 	got := make(chan result, 2)
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		go func() {
 			s, err := ring.Unlock(context.Background(), path, ask)
 			got <- result{s, err}
@@ -486,7 +486,7 @@ func TestRingAsksOnceWhenTwoConnectionsWantTheSameKey(t *testing.T) {
 	close(ask.held)
 
 	var signers []ssh.Signer
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		select {
 		case r := <-got:
 			if r.err != nil {

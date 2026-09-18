@@ -493,7 +493,7 @@ func TestWindowsStartingTogetherAgreeOnTheHostKey(t *testing.T) {
 	const at = 8
 	start := make(chan struct{})
 	got := make(chan string, at)
-	for i := 0; i < at; i++ {
+	for range at {
 		go func() {
 			<-start
 			signer, err := HostKey(path)
@@ -507,7 +507,7 @@ func TestWindowsStartingTogetherAgreeOnTheHostKey(t *testing.T) {
 	close(start)
 
 	seen := map[string]int{}
-	for i := 0; i < at; i++ {
+	for range at {
 		seen[<-got]++
 	}
 	if len(seen) != 1 {
@@ -555,7 +555,7 @@ func TestOnlySoManyMayBeConnectingAtOnce(t *testing.T) {
 			_ = c.Close()
 		}
 	})
-	for i := 0; i < handshakesAtOnce; i++ {
+	for i := range handshakesAtOnce {
 		c, err := net.Dial("tcp", s.Addr())
 		if err != nil {
 			t.Fatalf("dial %d: %v", i, err)
@@ -728,7 +728,7 @@ func TestRefusalsAreCountedRatherThanToldOneAtATime(t *testing.T) {
 	t.Cleanup(func() { _ = s.Close() })
 
 	const tries = 20
-	for i := 0; i < tries; i++ {
+	for range tries {
 		if c, err := connect(t, s, other); err == nil {
 			c.Close()
 			t.Fatal("a key nobody listed was let in")

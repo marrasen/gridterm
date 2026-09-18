@@ -181,7 +181,7 @@ func TestCommandsAllIsStable(t *testing.T) {
 	)
 
 	want := []string{"a", "m", "z"} // by title, then id
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		got := c.All()
 		if len(got) != len(want) {
 			t.Fatalf("got %d commands, want %d", len(got), len(want))
@@ -254,7 +254,7 @@ func TestKeymapChordForIsStable(t *testing.T) {
 	if !ok {
 		t.Fatal("no chord found for a bound command")
 	}
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		if got, _ := k.ChordFor("same"); got != first {
 			t.Fatalf("ChordFor returned %s then %s", first, got)
 		}
@@ -1013,7 +1013,7 @@ func TestKeymapBindingsAreSortedAndCopied(t *testing.T) {
 			t.Fatalf("order = %v, want %v", bindingIDs(first), want)
 		}
 	}
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		if got := k.Bindings(); !sameBindings(got, first) {
 			t.Fatalf("order changed between calls: %v then %v",
 				bindingIDs(first), bindingIDs(got))
@@ -1120,14 +1120,12 @@ func TestParseChordFromSeveralGoroutines(t *testing.T) {
 	keysByName, keysByNameOnce = nil, sync.Once{}
 
 	var wg sync.WaitGroup
-	for i := 0; i < 8; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 8 {
+		wg.Go(func() {
 			if _, err := ParseChord("ctrl+K"); err != nil {
 				t.Errorf("ParseChord: %v", err)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 }
@@ -1459,7 +1457,7 @@ func TestRootDrawIdleFrameDirtiesNothing(t *testing.T) {
 	r.Draw(g.View())
 	g.ClearDirty()
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		r.Draw(g.View())
 		if g.AnyDirty() {
 			t.Fatalf("idle frame %d dirtied the grid", i)

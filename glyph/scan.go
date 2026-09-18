@@ -50,7 +50,7 @@ func (f Family) Has(s Style) bool {
 // Styles returns the styles the family has files for, regular first.
 func (f Family) Styles() []Style {
 	var out []Style
-	for s := Style(0); s < numStyles; s++ {
+	for s := range numStyles {
 		if f.Has(s) {
 			out = append(out, s)
 		}
@@ -67,7 +67,7 @@ func (f Family) Load() (Fonts, error) {
 	// in one collection is the ordinary case on macOS, and a collection
 	// runs to tens of megabytes.
 	read := make(map[string][]byte, numStyles)
-	for s := Style(0); s < numStyles; s++ {
+	for s := range numStyles {
 		if !f.Has(s) {
 			continue
 		}

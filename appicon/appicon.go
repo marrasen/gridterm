@@ -72,8 +72,8 @@ func Draw(size int) *image.NRGBA {
 	}
 	img := image.NewNRGBA(image.Rect(0, 0, size, size))
 	side := float64(size)
-	for y := 0; y < size; y++ {
-		for x := 0; x < size; x++ {
+	for y := range size {
+		for x := range size {
 			img.SetNRGBA(x, y, pixel(float64(x), float64(y), side))
 		}
 	}
@@ -88,8 +88,8 @@ func pixel(px, py, side float64) color.NRGBA {
 	// The bar takes the same floor, so it does not vanish either.
 	bar := max(cursorY1-cursorY0, leastStroke/side)
 	barY0 := cursorY0 + (cursorY1-cursorY0-bar)/2
-	for sy := 0; sy < samples; sy++ {
-		for sx := 0; sx < samples; sx++ {
+	for sy := range samples {
+		for sx := range samples {
 			// The middle of each sample, in fractions of the side.
 			u := (px + (float64(sx)+0.5)*step) / side
 			v := (py + (float64(sy)+0.5)*step) / side

@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -316,12 +317,7 @@ func TestAddServerRefusesANameTooLikeAnother(t *testing.T) {
 type menuTitles []string
 
 func (m menuTitles) has(title string) bool {
-	for _, have := range m {
-		if have == title {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(m, title)
 }
 
 // serverMenuLines returns the ids of the saved-server lines on the
@@ -644,12 +640,7 @@ func commandTitles(a *testApp) []string {
 
 // titled reports whether a command with this title is registered.
 func titled(a *testApp, title string) bool {
-	for _, got := range commandTitles(a) {
-		if got == title {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(commandTitles(a), title)
 }
 
 // A rebuild that would change nothing is skipped, so a connection the

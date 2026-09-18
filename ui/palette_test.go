@@ -120,7 +120,7 @@ func TestMatchCommandsIsStable(t *testing.T) {
 	cmds := testCommands("Alpha", "Beta", "Gamma", "Delta").All()
 
 	first := matchIDs(MatchCommands(cmds, "a"))
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		got := matchIDs(MatchCommands(cmds, "a"))
 		if len(got) != len(first) {
 			t.Fatalf("match count changed: %v then %v", first, got)
@@ -209,7 +209,7 @@ func TestPaletteMoveStopsAtTheEnds(t *testing.T) {
 		t.Error("moving up from the first line went somewhere")
 	}
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		p.HandleKey(press(input.KeyDown, 0))
 	}
 	last := p.Matches()[len(p.Matches())-1].Command.ID
@@ -384,8 +384,8 @@ func TestPaletteTooSmallDrawsNothing(t *testing.T) {
 		p.Draw(g.View())
 
 		// The layer is still cleared, but nothing opaque is put on it.
-		for y := 0; y < 12; y++ {
-			for x := 0; x < 40; x++ {
+		for y := range 12 {
+			for x := range 40 {
 				if got := g.At(x, y); got.BG.A != 0 || got.Rune != ' ' {
 					t.Fatalf("size %+v: cell %d,%d = %+v, want the layer left clear",
 						size, x, y, got)
@@ -522,8 +522,8 @@ func TestPaletteLeavesTheRestOfItsLayerClear(t *testing.T) {
 	p.Draw(g.View())
 
 	box := p.box()
-	for y := 0; y < 12; y++ {
-		for x := 0; x < 40; x++ {
+	for y := range 12 {
+		for x := range 40 {
 			if box.Contains(x, y) {
 				continue
 			}
@@ -547,7 +547,7 @@ func TestPaletteClearsWhatItDrewLastTime(t *testing.T) {
 	p.Draw(g.View())
 
 	box := p.lines()
-	for y := 0; y < 12; y++ {
+	for y := range 12 {
 		if box.Contains(box.X, y) {
 			continue
 		}
@@ -593,7 +593,7 @@ func TestPaletteClearsAfterTheWindowResizes(t *testing.T) {
 // Enter runs a command nobody can see.
 func TestPaletteScrollsToKeepTheSelectionInView(t *testing.T) {
 	titles := make([]string, 0, 30)
-	for i := 0; i < 30; i++ {
+	for i := range 30 {
 		titles = append(titles, "Command "+string(rune('a'+i)))
 	}
 	p, _ := newTestPalette(t, testCommands(titles...))
@@ -801,7 +801,7 @@ func TestPaletteIdleDrawDirtiesNothing(t *testing.T) {
 	p.Draw(g.View())
 	g.ClearDirty()
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		p.Draw(g.View())
 		if g.AnyDirty() {
 			t.Fatalf("draw %d of an unchanged dialog dirtied the layer", i)
@@ -821,7 +821,7 @@ func TestPaletteIdleDrawDirtiesNothing(t *testing.T) {
 // would be left below it.
 func TestPaletteScrollFollowsTheWindow(t *testing.T) {
 	titles := make([]string, 0, 30)
-	for i := 0; i < 30; i++ {
+	for i := range 30 {
 		titles = append(titles, "Command "+string(rune('a'+i)))
 	}
 	p, _ := newTestPalette(t, testCommands(titles...))
@@ -856,7 +856,7 @@ func TestPaletteScrollFollowsTheWindow(t *testing.T) {
 func TestPaletteClickWhileScrolledRunsTheRightLine(t *testing.T) {
 	ran := ""
 	cmds := NewCommands()
-	for i := 0; i < 30; i++ {
+	for i := range 30 {
 		title := "Command " + string(rune('a'+i))
 		id := title
 		cmds.MustRegister(Command{ID: id, Title: title, Run: func() error {
@@ -892,7 +892,7 @@ func TestPaletteClickWhileScrolledRunsTheRightLine(t *testing.T) {
 // starts a new list rather than one scrolled where the old one was.
 func TestPaletteTypingWhileScrolledGoesBackToTheTop(t *testing.T) {
 	titles := make([]string, 0, 30)
-	for i := 0; i < 30; i++ {
+	for i := range 30 {
 		titles = append(titles, "Command "+string(rune('a'+i)))
 	}
 	p, _ := newTestPalette(t, testCommands(titles...))

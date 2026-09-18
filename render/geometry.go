@@ -50,7 +50,7 @@ func (geo *Geometry) Layout(g *grid.Grid, m glyph.Metrics) {
 // whatever padding its table asks for.
 func layoutSpans(dst []span, n, size int, pads []grid.Pad) []span {
 	quarters, at := 0, 0
-	for i := 0; i < n; i++ {
+	for i := range n {
 		p := padAt(pads, i)
 		in := padPixels(i, quarters+int(p.Before), size)
 		quarters += int(p.Before) + int(p.After)

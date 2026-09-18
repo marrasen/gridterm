@@ -224,7 +224,7 @@ func TestShellCloseRacingWriteIsSafe(t *testing.T) {
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		for i := 0; i < 200; i++ {
+		for range 200 {
 			if _, err := sess.Write([]byte("x")); err != nil {
 				return
 			}
@@ -303,14 +303,12 @@ func TestShellCloseIsIdempotentAndConcurrent(t *testing.T) {
 
 	first := sh.Close()
 	var wg sync.WaitGroup
-	for i := 0; i < 8; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 8 {
+		wg.Go(func() {
 			if err := sh.Close(); !sameErr(err, first) {
 				t.Errorf("concurrent Close = %v, first = %v", err, first)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 }

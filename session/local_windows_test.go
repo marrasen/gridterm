@@ -160,12 +160,10 @@ func TestCloseIsIdempotentOnWindows(t *testing.T) {
 func TestCloseIsSafeConcurrentlyOnWindows(t *testing.T) {
 	s := shell(t, "cmd.exe")
 	var wg sync.WaitGroup
-	for i := 0; i < 8; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 8 {
+		wg.Go(func() {
 			_ = s.Close()
-		}()
+		})
 	}
 	wg.Wait()
 }
@@ -237,7 +235,7 @@ func TestOutputSurvivesAChildThatExitsImmediatelyOnWindows(t *testing.T) {
 
 	// The line was lost on a race, so one child is not enough to show it
 	// stays. Ten cost about half a second between them.
-	for run := 0; run < 10; run++ {
+	for run := range 10 {
 		s := shell(t, "cmd.exe", "/c", "echo "+want)
 
 		got := readUntil(t, s, want, budget)

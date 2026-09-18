@@ -344,9 +344,9 @@ func TestAskPasswordDrawsNothingReadable(t *testing.T) {
 	f.Draw(g.View())
 	var drawn strings.Builder
 	_, rows := g.Size()
-	for y := 0; y < rows; y++ {
+	for y := range rows {
 		cols, _ := g.Size()
-		for x := 0; x < cols; x++ {
+		for x := range cols {
 			if c := g.At(x, y); c.Width != 0 {
 				drawn.WriteRune(c.Rune)
 			}

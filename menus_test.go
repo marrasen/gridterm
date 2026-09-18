@@ -265,7 +265,7 @@ func TestOpeningADialogDoesNotRepaintTheTree(t *testing.T) {
 func dirtyRows(a *testApp) int {
 	_, rows := a.g.Size()
 	n := 0
-	for y := 0; y < rows; y++ {
+	for y := range rows {
 		if a.g.RowDirty(y) {
 			n++
 		}

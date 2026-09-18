@@ -740,12 +740,7 @@ func TestCurrentHostFollowsThePanelThenTheFocus(t *testing.T) {
 
 // has reports whether a list holds a string.
 func has(list []string, want string) bool {
-	for _, s := range list {
-		if s == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(list, want)
 }
 
 // A command that has finished keeps its pane. What it printed is what it

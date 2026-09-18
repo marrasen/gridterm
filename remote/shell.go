@@ -546,12 +546,10 @@ func sessionEnd(err error) error {
 	if err == nil {
 		return io.EOF
 	}
-	var exit *ssh.ExitError
-	if errors.As(err, &exit) {
+	if _, ok := errors.AsType[*ssh.ExitError](err); ok {
 		return io.EOF
 	}
-	var missing *ssh.ExitMissingError
-	if errors.As(err, &missing) {
+	if _, ok := errors.AsType[*ssh.ExitMissingError](err); ok {
 		return errors.New("remote: the host closed the connection")
 	}
 	return err

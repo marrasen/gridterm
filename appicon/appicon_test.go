@@ -138,7 +138,7 @@ func TestTheIcoFileHoldsOnePNGPerSize(t *testing.T) {
 		t.Fatalf("it holds %d images, want %d", count, len(Sizes))
 	}
 
-	for i := 0; i < count; i++ {
+	for i := range count {
 		e := raw[6+16*i:]
 		side := int(e[0])
 		if side == 0 {
@@ -187,7 +187,7 @@ func TestTheWindowsResourceHoldsTheIconAsItIsDrawnNow(t *testing.T) {
 	// and every compressed byte had changed, which failed this test for
 	// a toolchain bump rather than for a drawing that had drifted.
 	count := int(binary.LittleEndian.Uint16(raw[4:]))
-	for i := 0; i < count; i++ {
+	for i := range count {
 		e := raw[6+16*i:]
 		size := int(binary.LittleEndian.Uint32(e[8:]))
 		from := int(binary.LittleEndian.Uint32(e[12:]))

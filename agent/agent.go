@@ -181,7 +181,7 @@ type Pane struct {
 
 	// May is what the user allowed for this pane beyond reading and
 	// typing.
-	May May `json:"may,omitempty"`
+	May May `json:"may"`
 }
 
 // MostLines caps how many lines one read may ask for.

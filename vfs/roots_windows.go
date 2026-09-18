@@ -25,7 +25,7 @@ func localRoots() []string {
 		return nil
 	}
 	var out []string
-	for letter := 0; letter < 26; letter++ {
+	for letter := range 26 {
 		if mask&(1<<uint(letter)) != 0 {
 			out = append(out, string(rune('A'+letter))+`:`+string(filepath.Separator))
 		}

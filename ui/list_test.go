@@ -185,13 +185,13 @@ func TestListArrowsSkipHeaders(t *testing.T) {
 // A list you can run off the end of is hard to aim at.
 func TestListStopsAtTheEnds(t *testing.T) {
 	l := newTestList(t, panelRows(), 40, 10)
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		l.HandleKey(press(input.KeyDown, 0))
 	}
 	if got, _ := l.Selected(); got.Key != "margit-tunnel" {
 		t.Fatalf("selected %v after running down, want the last row", got.Key)
 	}
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		l.HandleKey(press(input.KeyUp, 0))
 	}
 	if got, _ := l.Selected(); got.Key != "local-files" {
@@ -333,7 +333,7 @@ func TestListClickOnAHeaderOrPastTheEndRunsNothing(t *testing.T) {
 // through.
 func TestListScrollsOnTheWheel(t *testing.T) {
 	var rows []ListRow
-	for i := 0; i < 40; i++ {
+	for i := range 40 {
 		rows = append(rows, ListRow{Text: "row", Key: i})
 	}
 	l := newTestList(t, rows, 20, 5)
@@ -346,13 +346,13 @@ func TestListScrollsOnTheWheel(t *testing.T) {
 	if got, _ := l.Selected(); got.Key != 0 {
 		t.Fatalf("the wheel moved the selection to %v", got.Key)
 	}
-	for i := 0; i < 40; i++ {
+	for range 40 {
 		l.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseWheelDown})
 	}
 	if l.place.top > len(rows)-5 {
 		t.Fatalf("scrolled to %d, past the end of %d rows", l.place.top, len(rows))
 	}
-	for i := 0; i < 60; i++ {
+	for range 60 {
 		l.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseWheelUp})
 	}
 	if l.place.top != 0 {
@@ -364,7 +364,7 @@ func TestListScrollsOnTheWheel(t *testing.T) {
 // acts on something nobody can see.
 func TestListScrollsToKeepTheSelectionInView(t *testing.T) {
 	var rows []ListRow
-	for i := 0; i < 40; i++ {
+	for i := range 40 {
 		rows = append(rows, ListRow{Text: "row", Key: i})
 	}
 	l := newTestList(t, rows, 20, 5)
@@ -383,7 +383,7 @@ func TestListScrollsToKeepTheSelectionInView(t *testing.T) {
 // A window that shrank must not leave the list scrolled past its end.
 func TestListDoesNotStayScrolledPastItsEnd(t *testing.T) {
 	var rows []ListRow
-	for i := 0; i < 40; i++ {
+	for i := range 40 {
 		rows = append(rows, ListRow{Text: "row", Key: i})
 	}
 	l := newTestList(t, rows, 20, 5)
@@ -484,7 +484,7 @@ func TestListWithNothingInIt(t *testing.T) {
 	}
 
 	g := drawList(l, 20, 5)
-	for y := 0; y < 5; y++ {
+	for y := range 5 {
 		if got := strings.TrimSpace(rowOf(g, y)); got != "" {
 			t.Errorf("an empty list drew %q on row %d", got, y)
 		}
@@ -560,12 +560,12 @@ func TestListSelectByKey(t *testing.T) {
 // must not undo the wheel: the user would turn it and see nothing move.
 func TestListWheelSurvivesARebuild(t *testing.T) {
 	var rows []ListRow
-	for i := 0; i < 40; i++ {
+	for i := range 40 {
 		rows = append(rows, ListRow{Text: "row", Key: i})
 	}
 	l := newTestList(t, rows, 20, 5)
 
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		l.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseWheelDown})
 	}
 	scrolled := l.place.top
@@ -733,7 +733,7 @@ func TestListTooNarrowForAButton(t *testing.T) {
 
 	var ran int
 	l.OnButton = func(ListRow) error { ran++; return nil }
-	for col := 0; col < 5; col++ {
+	for col := range 5 {
 		l.HandleMouse(input.MouseEvent{
 			Kind: input.MousePress, Button: input.MouseLeft, Row: 0, Col: col,
 		})
@@ -758,7 +758,7 @@ func TestListRowTopFindsARowOnScreen(t *testing.T) {
 // A row scrolled out of sight has no place to hang anything off.
 func TestListRowTopSaysNothingForARowOutOfSight(t *testing.T) {
 	var rows []ListRow
-	for i := 0; i < 40; i++ {
+	for i := range 40 {
 		rows = append(rows, ListRow{Text: "row", Key: i})
 	}
 	l := newTestList(t, rows, 20, 5)
@@ -831,7 +831,7 @@ func TestListMarksTheCurrentRowWithoutTheKeys(t *testing.T) {
 		t.Fatalf("the current row is drawn on %v, want %v", got, current)
 	}
 	// And every other row is the ordinary ground.
-	for y := 0; y < 10; y++ {
+	for y := range 10 {
 		if y == at {
 			continue
 		}
@@ -891,11 +891,11 @@ func TestListDrawsAnIconInFrontOfTheText(t *testing.T) {
 
 // columnOf is where a word starts in a drawn row, counted in columns.
 func columnOf(row, want string) int {
-	at := strings.Index(row, want)
-	if at < 0 {
+	before, _, ok := strings.Cut(row, want)
+	if !ok {
 		return -1
 	}
-	return len([]rune(row[:at]))
+	return len([]rune(before))
 }
 
 // An icon is drawn in its own colour, which is how one mark says what a
@@ -1012,7 +1012,7 @@ func TestListFallsBackToTheMarkWithNoRoomForAnIcon(t *testing.T) {
 	l = newTestList(t, rows, 7, 4)
 	l.SetFocus(false)
 	narrow := drawList(l, 7, 4)
-	for x := 0; x < 7; x++ {
+	for x := range 7 {
 		if got := narrow.At(x, 0).Art.Kind; got == grid.ArtIcon {
 			t.Fatalf("column %d carries the icon in a list this narrow", x)
 		}
@@ -1056,7 +1056,7 @@ func TestListWithNoRoomForAnIcon(t *testing.T) {
 		{Text: "vim", Depth: 1, Icon: grid.Icon(grid.IconTerminal), Key: 1},
 	}, 4, 4)
 	g := drawList(l, 4, 4)
-	for x := 0; x < 4; x++ {
+	for x := range 4 {
 		if got := g.At(x, 0).Art.Kind; got != grid.ArtNone {
 			t.Fatalf("column %d carries %v in a list this narrow", x, got)
 		}
@@ -1140,7 +1140,7 @@ func TestARowsEdgeLeavesWhatIsDrawnOnIt(t *testing.T) {
 
 	g := drawList(newTestList(t, striped, 40, 10), 40, 10)
 	want := drawList(newTestList(t, rows, 40, 10), 40, 10)
-	for x := 0; x < 2; x++ {
+	for x := range 2 {
 		if got := g.At(x, 1).Rune; got != want.At(x, 1).Rune {
 			t.Errorf("column %d says %q under the stripe and %q without it",
 				x, got, want.At(x, 1).Rune)

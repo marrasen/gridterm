@@ -62,7 +62,7 @@ type shotStep struct {
 // script is empty, which is what an ordinary run passes.
 func parseShotScript(script string) (*shooter, error) {
 	var s shooter
-	for _, word := range strings.Fields(script) {
+	for word := range strings.FieldsSeq(script) {
 		kind, arg, ok := strings.Cut(word, ":")
 		if !ok {
 			return nil, fmt.Errorf("step %q has no colon; want wait:, key:, type: or shot:", word)

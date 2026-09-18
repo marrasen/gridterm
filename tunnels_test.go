@@ -338,7 +338,7 @@ func TestOneFailedStreamIsShown_TheRestAreCounted(t *testing.T) {
 	addr := a.tunnels[row].f.Addr()
 
 	const tries = 6
-	for i := 0; i < tries; i++ {
+	for range tries {
 		c, err := net.Dial("tcp", addr)
 		if err != nil {
 			t.Fatalf("dial: %v", err)
@@ -538,7 +538,7 @@ func TestATunnelRowSaysHowManyStreamsItHas(t *testing.T) {
 
 	addr := a.tunnels[row].f.Addr()
 	var open []net.Conn
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		c, err := net.Dial("tcp", addr)
 		if err != nil {
 			t.Fatalf("dial: %v", err)

@@ -134,7 +134,7 @@ type Pane struct {
 
 	// May is what the user allowed for this pane beyond reading it and
 	// typing into it.
-	May May `json:"may,omitempty"`
+	May May `json:"may"`
 }
 
 // May is what a hand-over allows beyond reading a pane and typing into
@@ -317,12 +317,10 @@ func Serve(ctx context.Context, in io.Reader, out io.Writer, panes Panes) (err e
 
 		select {
 		case atOnce <- struct{}{}:
-			running.Add(1)
-			go func() {
-				defer running.Done()
+			running.Go(func() {
 				defer func() { <-atOnce }()
 				s.answerOne(line)
-			}()
+			})
 		default:
 			// As many are being answered as this will answer at once.
 			// Done here instead, which stops reading until it is over.

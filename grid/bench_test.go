@@ -20,8 +20,8 @@ func BenchmarkSetFullScreen(b *testing.B) {
 	}
 	b.ReportAllocs()
 	for i := 0; b.Loop(); i++ {
-		for y := 0; y < benchRows; y++ {
-			for x := 0; x < benchCols; x++ {
+		for y := range benchRows {
+			for x := range benchCols {
 				g.Set(x, y, Cell{Rune: line[(x+i)%benchCols], FG: fg, BG: bg})
 			}
 		}
@@ -34,8 +34,8 @@ func BenchmarkSetFullScreen(b *testing.B) {
 func BenchmarkSetUnchanged(b *testing.B) {
 	g := benchGrid()
 	c := Cell{Rune: 'x', FG: fg, BG: bg}
-	for y := 0; y < benchRows; y++ {
-		for x := 0; x < benchCols; x++ {
+	for y := range benchRows {
+		for x := range benchCols {
 			g.Set(x, y, c)
 		}
 	}
@@ -43,8 +43,8 @@ func BenchmarkSetUnchanged(b *testing.B) {
 
 	b.ReportAllocs()
 	for b.Loop() {
-		for y := 0; y < benchRows; y++ {
-			for x := 0; x < benchCols; x++ {
+		for y := range benchRows {
+			for x := range benchCols {
 				g.Set(x, y, c)
 			}
 		}
@@ -66,7 +66,7 @@ func BenchmarkBGRunsUniform(b *testing.B) {
 	g := benchGrid()
 	b.ReportAllocs()
 	for b.Loop() {
-		for y := 0; y < benchRows; y++ {
+		for y := range benchRows {
 			g.BGRuns(y, func(int, int, color.RGBA) {})
 		}
 	}

@@ -1355,8 +1355,8 @@ func paneText(pane *term.Terminal) string {
 	pane.Draw(g.View())
 	var b strings.Builder
 	cols, rows := g.Size()
-	for y := 0; y < rows; y++ {
-		for x := 0; x < cols; x++ {
+	for y := range rows {
+		for x := range cols {
 			if r := g.At(x, y).Rune; r != 0 {
 				b.WriteRune(r)
 			}
@@ -2203,7 +2203,7 @@ func TestThePaneThatSaysWhyAWindowFailedStays(t *testing.T) {
 		return strings.Contains(paneText(pane), "The connection was not made")
 	})
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		a.pump.run()
 		a.reapExited()
 	}

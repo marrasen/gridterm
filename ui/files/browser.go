@@ -528,7 +528,7 @@ func (b *Browser) Draw(v grid.View) {
 		start, end := b.paneCell(i, cols)
 		if at, ok := b.dividerCol(i, cols); ok {
 			// The divider goes in the column the sharing left for it.
-			for y := 0; y < body; y++ {
+			for y := range body {
 				v.Set(at, y, grid.Cell{
 					Rune: divider, FG: b.Style.NoteFG, BG: b.Style.BG, Width: 1,
 				})

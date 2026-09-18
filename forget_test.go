@@ -120,8 +120,7 @@ func TestAServerMessageIsShownWithoutWaiting(t *testing.T) {
 	withDialogs(t, a)
 	ask := &askUser{app: a.app}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	done := make(chan struct{})
 	go func() {
 		ask.Notice(ctx, remote.Notice{
@@ -179,8 +178,7 @@ func TestGivingUpOnAServerMessageGivesUp(t *testing.T) {
 	gave := false
 	ask := &askUser{app: a.app, stop: func() { gave = true }}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	ask.Notice(ctx, remote.Notice{
 		User: "rdp", Host: "10.0.0.5:22",
 		Instruction: "To authenticate, visit: https://login.example/a/1234",

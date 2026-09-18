@@ -89,7 +89,7 @@ func TestBoxesTileTheGrid(t *testing.T) {
 	if at != 0 || size != geo.Width() {
 		t.Errorf("every column together is %d..%d, want 0..%d", at, at+size, geo.Width())
 	}
-	for x := 0; x < 6; x++ {
+	for x := range 6 {
 		a, w := geo.ColBox(x, x+1)
 		b, _ := geo.ColBox(x+1, x+2)
 		if a+w != b {
@@ -142,7 +142,7 @@ func TestEveryPixelReportsTheColumnItIsIn(t *testing.T) {
 	g.SetRowPad(0, grid.Pad{Before: 1, After: 1})
 	geo := measured(g)
 
-	for x := 0; x < 5; x++ {
+	for x := range 5 {
 		at, size := geo.ColBox(x, x+1)
 		for px := at; px < at+size; px++ {
 			if got := geo.ColAt(px); got != x {
@@ -150,7 +150,7 @@ func TestEveryPixelReportsTheColumnItIsIn(t *testing.T) {
 			}
 		}
 	}
-	for y := 0; y < 4; y++ {
+	for y := range 4 {
 		at, size := geo.RowBox(y, y+1)
 		for py := at; py < at+size; py++ {
 			if got := geo.RowAt(py); got != y {
@@ -372,7 +372,7 @@ func TestBorrowedColumnsLandWhereTheyDidBefore(t *testing.T) {
 	if got, want := geo.Width(), mustBox(src, 0, 6); got != want {
 		t.Errorf("the borrowed columns are %d wide, want the %d they came from", got, want)
 	}
-	for x := 0; x < 6; x++ {
+	for x := range 6 {
 		if got, want := geo.CellX(x), src.CellX(x); got != want {
 			t.Errorf("column %d is at %d, want the %d it came from", x, got, want)
 		}

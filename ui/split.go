@@ -2,6 +2,7 @@ package ui
 
 import (
 	"image/color"
+	"slices"
 
 	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/input"
@@ -216,8 +217,8 @@ func (s *Split) Draw(v grid.View) {
 		cell.Rune = ' '
 	}
 	cols, rows := line.Size()
-	for y := 0; y < rows; y++ {
-		for x := 0; x < cols; x++ {
+	for y := range rows {
+		for x := range cols {
 			line.Set(x, y, cell)
 		}
 	}
@@ -442,12 +443,7 @@ func contains(widgets []Widget, w Widget) bool {
 	if w == nil {
 		return false
 	}
-	for _, have := range widgets {
-		if have == w {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(widgets, w)
 }
 
 // AreaOf returns where target is drawn inside root, given the area root

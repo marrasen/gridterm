@@ -58,9 +58,9 @@ func (h *harness) lines() []string {
 	h.term.Render(h.g)
 	cols, rows := h.g.Size()
 	out := make([]string, rows)
-	for y := 0; y < rows; y++ {
+	for y := range rows {
 		var sb strings.Builder
-		for x := 0; x < cols; x++ {
+		for x := range cols {
 			c := h.g.At(x, y)
 			if c.Width == 0 {
 				continue // the continuation half of a wide character
@@ -753,7 +753,7 @@ func TestALineKeepsItsNumberAsTheScreenScrolls(t *testing.T) {
 	// written down long ago is still a number the cursor has passed.
 	small := New(20, 2, DefaultPalette(), 1, Callbacks{})
 	const wrote = 500
-	for i := 0; i < wrote; i++ {
+	for range wrote {
 		if _, err := small.Write([]byte("x\r\n")); err != nil {
 			t.Fatalf("write: %v", err)
 		}
@@ -804,7 +804,7 @@ func TestTheAlternateScreenDoesNotMoveLineNumbers(t *testing.T) {
 	was := scr.LineNumber(0)
 
 	h.write("\x1b[?1049h")
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		h.write("filling\r\n")
 	}
 	h.write("\x1b[?1049l")
@@ -848,7 +848,7 @@ func TestLineNumbersFollowAResizeTakenOnTheAlternateScreen(t *testing.T) {
 // because a line that nothing kept still happened.
 func TestLinesAreCountedWithNoScrollbackToKeepThem(t *testing.T) {
 	term := New(20, 2, DefaultPalette(), 0, Callbacks{})
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		if _, err := term.Write([]byte("x\r\n")); err != nil {
 			t.Fatalf("write: %v", err)
 		}
@@ -872,7 +872,7 @@ func TestAScrollRegionDoesNotMoveLineNumbers(t *testing.T) {
 
 	// A region holding the top row still, and output scrolling inside it.
 	h.write("\x1b[2;4r")
-	for i := 0; i < 6; i++ {
+	for range 6 {
 		h.write("\x1b[4;1Hfilling\n")
 	}
 	h.write("\x1b[r")
@@ -983,7 +983,7 @@ func TestAClearOnTheAlternateScreenLeavesNoFloor(t *testing.T) {
 func rowOf(g *grid.Grid, y int) string {
 	cols, _ := g.Size()
 	var b strings.Builder
-	for x := 0; x < cols; x++ {
+	for x := range cols {
 		if c := g.At(x, y); c.Rune != 0 {
 			b.WriteRune(c.Rune)
 		}

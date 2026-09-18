@@ -342,7 +342,7 @@ func TestBookPutFromTwoGoroutines(t *testing.T) {
 			done <- b.Put(Host{Name: name, Address: name + ".example"}, "")
 		}()
 	}
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		if err := <-done; err != nil {
 			t.Fatalf("Put: %v", err)
 		}

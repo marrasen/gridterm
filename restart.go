@@ -220,12 +220,10 @@ func exitStatus(why error, over bool) (int, bool) {
 	case why == nil:
 		return 0, true
 	}
-	var far *ssh.ExitError
-	if errors.As(why, &far) {
+	if far, ok := errors.AsType[*ssh.ExitError](why); ok {
 		return far.ExitStatus(), true
 	}
-	var here *exec.ExitError
-	if errors.As(why, &here) {
+	if here, ok := errors.AsType[*exec.ExitError](why); ok {
 		return localStatus(here.ExitCode(), here.Sys())
 	}
 	return 0, false

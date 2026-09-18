@@ -121,8 +121,7 @@ func (r *Ring) Unlock(ctx context.Context, path string, ask Ask) (ssh.Signer, er
 	}
 	signer, err := ssh.ParsePrivateKey(b)
 	if err != nil {
-		var needsPass *ssh.PassphraseMissingError
-		if !errors.As(err, &needsPass) {
+		if _, ok := errors.AsType[*ssh.PassphraseMissingError](err); !ok {
 			return nil, err
 		}
 		if ask == nil {

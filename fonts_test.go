@@ -238,7 +238,7 @@ func TestFontScanIsPickedUpOnce(t *testing.T) {
 	after := a.root.Commands.Len()
 
 	// Every frame from now on finds nothing waiting.
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		a.reapFontScan()
 	}
 

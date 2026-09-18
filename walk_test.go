@@ -20,7 +20,7 @@ func aWalkingWindow(t *testing.T) (*testApp, []ui.Widget) {
 	withPanel(t, a)
 	withScreen(t, a)
 	holdCtrl(a, true)
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		if err := a.openPane(); err != nil {
 			t.Fatalf("open a pane: %v", err)
 		}
@@ -95,7 +95,7 @@ func TestTheOrderDoesNotMoveWhileCtrlIsHeld(t *testing.T) {
 	a, panes := aWalkingWindow(t)
 	visit(t, a, panes[2], panes[0], panes[1])
 
-	for i := 0; i < 4; i++ {
+	for range 4 {
 		if err := a.walkRecent(1); err != nil {
 			t.Fatalf("walk: %v", err)
 		}
@@ -189,7 +189,7 @@ func TestClosingTheLastOfTheWalkComesRound(t *testing.T) {
 	a, panes := aWalkingWindow(t)
 	visit(t, a, panes[2], panes[0], panes[1])
 	// On to the last of the three.
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		if err := a.walkRecent(1); err != nil {
 			t.Fatalf("walk: %v", err)
 		}

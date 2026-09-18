@@ -165,7 +165,7 @@ func (c *connLog) Quote(who, what string) {
 		return
 	}
 	c.Say(who + " says:")
-	for _, line := range strings.Split(what, "\n") {
+	for line := range strings.SplitSeq(what, "\n") {
 		c.write("    " + line)
 	}
 }
@@ -178,7 +178,7 @@ func (c *connLog) Failed(err error) {
 	}
 	// Split first, because Say writes one line and a reason that came on
 	// several is meant to be read on several.
-	for _, line := range strings.Split(err.Error(), "\n") {
+	for line := range strings.SplitSeq(err.Error(), "\n") {
 		c.sayBadly(line)
 	}
 	c.write("")
@@ -197,7 +197,7 @@ func (c *connLog) Refused(name, what string, err error) {
 		return
 	}
 	// Split first, for the reason Failed gives.
-	for _, line := range strings.Split(err.Error(), "\n") {
+	for line := range strings.SplitSeq(err.Error(), "\n") {
 		c.sayBadly(line)
 	}
 	c.write("")

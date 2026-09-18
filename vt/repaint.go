@@ -75,7 +75,7 @@ func writeCells(b *strings.Builder, g *grid.Grid) {
 
 	var last grid.Cell
 	first := true
-	for y := 0; y < rows; y++ {
+	for y := range rows {
 		if y > 0 {
 			b.WriteString("\r\n")
 		}

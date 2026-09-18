@@ -100,8 +100,8 @@ func TestARunOfOneStyleIsSaidOnce(t *testing.T) {
 func gridDiff(a, b *grid.Grid) string {
 	cols, rows := a.Size()
 	var out strings.Builder
-	for y := 0; y < rows; y++ {
-		for x := 0; x < cols; x++ {
+	for y := range rows {
+		for x := range cols {
 			ca, cb := a.At(x, y), b.At(x, y)
 			if sameToLookAt(ca, cb) {
 				continue
@@ -310,8 +310,8 @@ func TestAWrapThatIsOwedTravels(t *testing.T) {
 func textOf(g *grid.Grid) string {
 	cols, rows := g.Size()
 	var b strings.Builder
-	for y := 0; y < rows; y++ {
-		for x := 0; x < cols; x++ {
+	for y := range rows {
+		for x := range cols {
 			if r := g.At(x, y).Rune; r != 0 {
 				b.WriteRune(r)
 			}

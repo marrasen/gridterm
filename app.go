@@ -763,6 +763,7 @@ func (a *app) commands() {
 		{Key: input.KeyInsert, Mods: input.ModShift}: "edit.paste",
 		{Key: input.KeyInsert, Mods: input.ModCtrl}:  copyCommand,
 		{Key: input.KeyEquals, Mods: input.ModCtrl}:  "font.increase",
+		{Key: input.KeyPlus, Mods: input.ModCtrl}:    "font.increase",
 		// Ctrl+plus is Ctrl+Shift+= on a US layout, and the shift shows
 		// up in the modifiers, so the obvious way to ask for a bigger
 		// font needs its own binding.

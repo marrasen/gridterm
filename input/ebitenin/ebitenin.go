@@ -97,10 +97,45 @@ func fromKey(k ebiten.Key) input.Key {
 	if k >= ebiten.KeyA && k <= ebiten.KeyZ {
 		return input.KeyA + input.Key(k-ebiten.KeyA)
 	}
+	if v, ok := punctuationOf(k); ok {
+		return v
+	}
 	if v, ok := keys[k]; ok {
 		return v
 	}
 	return input.KeyNone
+}
+
+// keyName is the character a key produces on the layout in use. A
+// variable so a test can say what the layout is; the window answers
+// nothing until its main loop is running.
+var keyName = ebiten.KeyName
+
+// punctuationOf is the key a punctuation key stands for, taken from the
+// character it produces rather than from where it sits.
+//
+// A Swedish keyboard puts + where a US one has -, and - where a US one
+// has /. Binding the place made ctrl and the key marked plus shrink the
+// font, and the key marked minus do nothing at all.
+//
+// False for anything that is not punctuation this cares about, and for
+// a window that cannot say yet, which falls back to where the key sits.
+func punctuationOf(k ebiten.Key) (input.Key, bool) {
+	name := []rune(keyName(k))
+	if len(name) != 1 {
+		return input.KeyNone, false
+	}
+	v, ok := punctuation[name[0]]
+	return v, ok
+}
+
+var punctuation = map[rune]input.Key{
+	'=':  input.KeyEquals,
+	'+':  input.KeyPlus,
+	'-':  input.KeyMinus,
+	'[':  input.KeyBracketLeft,
+	']':  input.KeyBracketRight,
+	'\\': input.KeyBackslash,
 }
 
 var keys = map[ebiten.Key]input.Key{

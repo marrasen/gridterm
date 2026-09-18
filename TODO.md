@@ -26,31 +26,13 @@ work whichever way he answers.
 
 From Marcus's inbox.
 
-- **The default shortcuts assume a US keyboard, and one of them does
-  the opposite on a Swedish one.** Ctrl+= makes the font bigger and
-  Ctrl+- makes it smaller, bound to the physical keys `=` and `-`
-  (app.go, "font.increase" and "font.decrease"). A Swedish layout puts
-  `+` where a US one has `-`, so the key a Swedish user reads as plus
-  is the one that makes the font *smaller*. The `=` they would need is
-  Shift+0, which does not reach KeyEquals at all.
-
-  Marcus asked why it changed from Ctrl+plus. It never did: there has
-  never been a KeyPlus in this repo, and the binding has been KeyEquals
-  since the font size was first wired up in 69eace9.
-
-  Binding by the character a key produces rather than by where the key
-  sits is the real answer, and `ebiten.KeyName` knows the layout. Worth
-  settling alongside the keyboard config under "Asked for, not yet
-  worked out", so the shortcuts file does not have to change shape
-  twice.
-
-- **Ctrl+Tab only reaches two panes.** Probably fixed on 2026-09-19 by
-  the modifier keys reaching the mouse. The walk ended on the frame
-  after it opened, because it ends when Ctrl is not held and Ctrl never
-  read as held, so each press was its own "go to the last pane" and two
-  panes took turns. The freeze Marcus asks for is already there:
-  `usedNow` in walk.go leaves the order alone while a walk is open.
-  Worth confirming in a real window before this line goes.
+- **Only the font size goes by the character a key produces.** The
+  punctuation keys this window binds are read from what the layout says
+  they print, so plus is plus wherever it sits. Everything else is still
+  read from where a key sits, which is right for a letter and a function
+  key and worth revisiting if a shortcut on a letter ever lands
+  somewhere awkward on a layout. Worth settling with the keyboard config
+  under "Asked for, not yet worked out".
 
 - **A release flow, and version numbers.** Binaries for Windows and
   Linux, and macOS if it is easy. Two versions are wanted, not one:

@@ -83,6 +83,7 @@ const (
 	// Keys that carry no sequence of their own but that the terminal
 	// binds shortcuts to.
 	KeyEquals
+	KeyPlus
 	KeyMinus
 	Key0
 
@@ -354,7 +355,7 @@ func (k Key) String() string {
 
 var keyNames = map[Key]string{
 	KeyNone: "-", KeyEnter: "Enter", KeyTab: "Tab", KeyBackspace: "Backspace",
-	KeyEquals: "=", KeyMinus: "-", Key0: "0",
+	KeyEquals: "=", KeyPlus: "Plus", KeyMinus: "-", Key0: "0",
 	KeyEscape: "Escape", KeySpace: "Space", KeyBracketLeft: "[",
 	KeyBracketRight: "]", KeyBackslash: "\\", KeyUp: "Up", KeyDown: "Down",
 	KeyRight: "Right", KeyLeft: "Left", KeyHome: "Home", KeyEnd: "End",

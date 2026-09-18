@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/marrasen/gridterm/input"
+	"github.com/marrasen/gridterm/ui"
 )
 
 // wheel is a turn of the wheel over the middle of the window.
@@ -102,5 +103,29 @@ func TestAFramesClickStillReachesTheTree(t *testing.T) {
 
 	if a.fontSize != was {
 		t.Errorf("a plain wheel changed the font to %v", a.fontSize)
+	}
+}
+
+// The font size is reachable on a keyboard with a plus key of its own,
+// as well as on one where plus is shift and equals.
+//
+// A Swedish keyboard has plus where a US one has minus, so without the
+// plus binding the only way to a bigger font was a key that layout does
+// not have.
+func TestTheFontSizeIsBoundForEveryShapeOfKeyboard(t *testing.T) {
+	a := aRealWindow(t)
+
+	for _, tc := range []struct {
+		chord ui.Chord
+		want  string
+	}{
+		{ui.Chord{Key: input.KeyPlus, Mods: input.ModCtrl}, "font.increase"},
+		{ui.Chord{Key: input.KeyEquals, Mods: input.ModCtrl}, "font.increase"},
+		{ui.Chord{Key: input.KeyMinus, Mods: input.ModCtrl}, "font.decrease"},
+	} {
+		got, on := a.root.Accelerators.Lookup(tc.chord)
+		if !on || got != tc.want {
+			t.Errorf("%s runs %q (%v), want %q", tc.chord, got, on, tc.want)
+		}
 	}
 }

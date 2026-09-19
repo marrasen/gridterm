@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/marrasen/gridterm/conns"
+	"github.com/marrasen/gridterm/internal/sshtest"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/vfs"
 )
@@ -108,7 +109,7 @@ func TestAFileDroppedOnAPaneElsewhereIsCopiedThere(t *testing.T) {
 	at := aDroppedFile(t, "notes.txt", 4096)
 	into := t.TempDir()
 
-	a.uploadOne(vfs.NewLocal(), a.about(conns.Local), pane, at, into, nil)
+	a.uploadOne(vfs.NewLocal(), jobEnd{host: conns.Local}, pane, at, into, nil)
 
 	row := theJobRow(t, a)
 	if row.Close == nil {
@@ -140,7 +141,7 @@ func TestAStoppedCopyTypesNoPath(t *testing.T) {
 	into := t.TempDir()
 	held := &stalledFS{FS: vfs.NewLocal(), hold: make(chan struct{})}
 
-	a.uploadOne(held, a.about(conns.Local), pane, at, into, nil)
+	a.uploadOne(held, jobEnd{host: conns.Local}, pane, at, into, nil)
 	row := theJobRow(t, a)
 	if err := row.Close(); err != nil {
 		t.Fatalf("stop it: %v", err)
@@ -220,7 +221,7 @@ func TestThePathLandsInThePaneItWasDroppedOn(t *testing.T) {
 	at := aDroppedFile(t, "notes.txt", 4096)
 	into := t.TempDir()
 
-	a.uploadOne(vfs.NewLocal(), a.about(conns.Local), dropped, at, into, nil)
+	a.uploadOne(vfs.NewLocal(), jobEnd{host: conns.Local}, dropped, at, into, nil)
 	// And the user goes to work somewhere else while it copies.
 	a.focus(elsewhere)
 
@@ -258,7 +259,7 @@ func TestAFileThatArrivesAfterItsPaneClosedSaysWhere(t *testing.T) {
 	into := t.TempDir()
 	held := &stalledFS{FS: vfs.NewLocal(), hold: make(chan struct{})}
 
-	a.uploadOne(held, a.about(conns.Local), dropped, at, into, nil)
+	a.uploadOne(held, jobEnd{host: conns.Local}, dropped, at, into, nil)
 	if err := a.closePane(dropped); err != nil {
 		t.Fatalf("close the pane: %v", err)
 	}
@@ -267,5 +268,70 @@ func TestAFileThatArrivesAfterItsPaneClosedSaysWhere(t *testing.T) {
 	n := awaitModal[*ui.Notice](t, a, "where the file went", nil)
 	if !strings.Contains(n.Message(), "notes.txt") {
 		t.Errorf("it says %q, want it to name the file", n.Message())
+	}
+}
+
+// A file dropped on a pane running on a machine behind another window
+// goes to that machine, not to the window.
+//
+// Marcus dropped a file on a pane served from one gridterm (Nyli) that
+// was itself a shell on a Linux machine that gridterm had reached over
+// SSH (Picard). The file went onto Nyli's disk and Nyli's path was typed
+// into Picard, where there was no such file.
+func TestAFileGoesToTheMachineBehindAWindow(t *testing.T) {
+	host, client, addr := twoWindows(t)
+	held := windowAt(t, client, addr)
+
+	// The window over there connects to a machine of its own, and opens
+	// a shell on it.
+	s := sshtest.New(t)
+	pinServers(t, host, s)
+	saveHost(t, host, "picard", s, "")
+	host.refreshServers()
+	clickTerminalLine(t, host, "picard")
+	waitFor(t, host, "the machine to answer", func() bool {
+		return host.machines.named("picard") != nil
+	}, client)
+
+	// This window sees it under that machine's name, and works in it.
+	var row remoteKey
+	waitFor(t, client, "the shell on picard to be published", func() bool {
+		host.refreshPanel(panelNow)
+		client.refreshPanel(panelNow)
+		for _, open := range held.win.Opens() {
+			if open.Host == "picard" && open.HasScreen() {
+				row = remoteKey{window: held, id: open.ID}
+				return true
+			}
+		}
+		return false
+	}, host)
+	attachFromTheSidebar(t, client, row)
+	pane := newestPane(t, client)
+
+	end := client.paneEnd(pane)
+
+	if end.far.window != held {
+		t.Errorf("the file would go to %v, want it through the window it is drawn from", end.far.window)
+	}
+	if end.far.host != "picard" {
+		t.Errorf("the file would go to %q, want picard: the shell runs there", end.far.host)
+	}
+}
+
+// A pane on the window's own machine still goes to that window.
+func TestAFileGoesToTheWindowWhenTheShellIsOnIt(t *testing.T) {
+	host, client, addr := twoWindows(t)
+	held := windowAt(t, client, addr)
+	pane, _ := thePaneDrawnFrom(t, client, host, held)
+
+	end := client.paneEnd(pane)
+
+	if end.far.window != nil {
+		t.Errorf("the file would go through %v to %q, want the window's own files",
+			end.far.window, end.far.host)
+	}
+	if end.host != held.name {
+		t.Errorf("the file would go to %q, want %q", end.host, held.name)
 	}
 }

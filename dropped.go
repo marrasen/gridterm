@@ -69,18 +69,40 @@ func (a *app) paneAt(px, py int) *term.Terminal {
 
 // dropOnPane hands files to the machine a pane is running on.
 func (a *app) dropOnPane(pane *term.Terminal, paths []string) error {
-	host := conns.Local
-	if e := a.panes[pane]; e != nil {
-		host = e.Host
-	}
-	on := a.about(host)
-	if on.kind == hostHere {
+	end := a.paneEnd(pane)
+	if end.far.window == nil && a.about(end.host).kind == hostHere {
 		// Already on the machine the program runs on, so there is
 		// nothing to copy and the path is the whole of it.
 		pane.Paste(typedPaths(paths))
 		return nil
 	}
-	return a.uploadDropped(on, pane, paths)
+	return a.uploadDropped(end, pane, paths)
+}
+
+// paneEnd is the machine a pane's program is running on, as a piece of
+// file work names one.
+//
+// Not the machine the pane's row is filed under. A pane drawn from a
+// window taken over may be running on a machine that window reached
+// rather than on the window's own, and then the files that matter are
+// that machine's. A file put on the window instead is a file the program
+// cannot open, and the path typed after it names nothing.
+func (a *app) paneEnd(pane *term.Terminal) jobEnd {
+	end := jobEnd{host: conns.Local}
+	if e := a.panes[pane]; e != nil {
+		end.host = e.Host
+	}
+	what, drawn := a.windows.watching(pane)
+	if !drawn || what.window == nil {
+		return end
+	}
+	open, still := a.openOver(what)
+	if !still || isTheirOwn(open.Host) {
+		// On that window's own machine, which its own files are.
+		return end
+	}
+	end.far = remoteHostKey{window: what.window, host: open.Host}
+	return end
 }
 
 // uploadDropped copies files onto the machine a pane is running on and
@@ -90,8 +112,8 @@ func (a *app) dropOnPane(pane *term.Terminal, paths []string) error {
 // saying how far it has got, and a cross that stops that one rather than
 // all of them. A file dropped in a batch is usually a file the user
 // wants named on its own line anyway.
-func (a *app) uploadDropped(on hostFacts, pane *term.Terminal, paths []string) error {
-	fs, err := a.filesystem(on.name)
+func (a *app) uploadDropped(end jobEnd, pane *term.Terminal, paths []string) error {
+	fs, err := a.openEnd(end)
 	if err != nil {
 		return err
 	}
@@ -107,13 +129,13 @@ func (a *app) uploadDropped(on hostFacts, pane *term.Terminal, paths []string) e
 		if i == len(paths)-1 {
 			owned = []vfs.FS{fs}
 		}
-		a.uploadOne(fs, on, pane, path, dir, owned)
+		a.uploadOne(fs, end, pane, path, dir, owned)
 	}
 	return nil
 }
 
 // uploadOne copies one file and types its path when it is there.
-func (a *app) uploadOne(fs vfs.FS, on hostFacts, pane *term.Terminal,
+func (a *app) uploadOne(fs vfs.FS, end jobEnd, pane *term.Terminal,
 	path, dir string, owned []vfs.FS) {
 
 	name := filepath.Base(path)
@@ -122,7 +144,7 @@ func (a *app) uploadOne(fs vfs.FS, on hostFacts, pane *term.Terminal,
 		From: vfs.NewLocal(), At: filepath.Dir(path), Names: []string{name},
 		To: fs, Into: dir,
 	}
-	j := a.runJob(op, jobEnd{host: conns.Local}, jobEnd{host: on.name}, owned)
+	j := a.runJob(op, jobEnd{host: conns.Local}, end, owned)
 	if j == nil {
 		return
 	}
@@ -142,7 +164,7 @@ func (a *app) uploadOne(fs vfs.FS, on hostFacts, pane *term.Terminal,
 				// file was on its way. Typing into it would put the path
 				// where nobody can read it, and the file is there.
 				a.showNotice("The file arrived after its pane closed",
-					at+" is on "+groupName(on.name), false)
+					at+" is on "+groupName(endName(end)), false)
 				return
 			}
 			// The pane it was dropped on, whatever the user has moved on

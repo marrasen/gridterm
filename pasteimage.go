@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/ui/term"
 	"github.com/marrasen/gridterm/vfs"
 )
@@ -32,21 +31,26 @@ const pastedDir = "gridterm-pasted"
 // program that takes a pasted picture reads the clipboard of the machine
 // it runs on. A file only where there is not.
 func (a *app) pastePicture(pane *term.Terminal) error {
-	img, on, err := a.pictureFor(pane)
+	img, end, err := a.pictureFor(pane)
 	if err != nil {
 		return err
 	}
+	on := a.about(end.host)
 	switch {
-	case on.kind == hostHere:
+	case end.far.window == nil && on.kind == hostHere:
 		// The picture is already on this machine's clipboard and the
 		// program is running on this machine, so there is nothing to
 		// move. Pressing paste is the whole of it.
 		pane.PressPaste()
 		return nil
-	case on.window != nil:
+	case end.far.window == nil && on.window != nil:
 		// A gridterm over there, so the picture goes on that machine's
 		// own clipboard and the program reads it the way it reads one
 		// pasted by somebody sitting at it.
+		//
+		// Only for a program running on that window's own machine. One
+		// running on a machine that window reached would read that
+		// machine's clipboard, which this picture never went near.
 		return a.sendPictureTo(on, pane, img)
 	}
 	// Nothing over there to hand a clipboard to, so it goes as a file.
@@ -60,39 +64,38 @@ func (a *app) pastePicture(pane *term.Terminal) error {
 // hand to a program at a prompt, rather than a picture for something
 // that reads the clipboard itself.
 func (a *app) pasteImage(pane *term.Terminal) error {
-	img, on, err := a.pictureFor(pane)
+	img, end, err := a.pictureFor(pane)
 	if err != nil {
 		return err
 	}
-	if on.kind == hostHere {
-		path, err := writePastedImage(img, a.now)
-		if err != nil {
-			return err
+	if end.far.window == nil {
+		on := a.about(end.host)
+		if on.kind == hostHere {
+			path, err := writePastedImage(img, a.now)
+			if err != nil {
+				return err
+			}
+			pane.Paste(path)
+			return nil
 		}
-		pane.Paste(path)
-		return nil
+		if on.window == nil && on.machine == nil {
+			return fmt.Errorf("nothing is connected to %s", on.name)
+		}
 	}
-	if on.window == nil && on.machine == nil {
-		return fmt.Errorf("nothing is connected to %s", on.name)
-	}
-	return a.writePictureOn(on, pane, img)
+	return a.writePictureOn(end, pane, img)
 }
 
-// pictureFor is the picture on the clipboard and what the pane is
-// connected through, which is what says how to hand it over.
-func (a *app) pictureFor(pane *term.Terminal) (image.Image, hostFacts, error) {
+// pictureFor is the picture on the clipboard and the machine the pane's
+// program is running on, which is what says how to hand it over.
+func (a *app) pictureFor(pane *term.Terminal) (image.Image, jobEnd, error) {
 	img, have, err := a.clipboardPicture()
 	if err != nil {
-		return nil, hostFacts{}, err
+		return nil, jobEnd{}, err
 	}
 	if !have {
-		return nil, hostFacts{}, fmt.Errorf("there is no picture on the clipboard")
+		return nil, jobEnd{}, fmt.Errorf("there is no picture on the clipboard")
 	}
-	host := conns.Local
-	if e, ok := a.panes[pane]; ok && e != nil {
-		host = e.Host
-	}
-	return img, a.about(host), nil
+	return img, a.paneEnd(pane), nil
 }
 
 // writePictureOn writes a picture on a machine reached by SSH and types
@@ -102,16 +105,16 @@ func (a *app) pictureFor(pane *term.Terminal) (image.Image, hostFacts, error) {
 // opening a file manager on that machine already does: it is a moment
 // after a key was pressed, which is when the user expects one. The
 // writing is the part that can take a while, and that goes elsewhere.
-func (a *app) writePictureOn(on hostFacts, pane *term.Terminal, img image.Image) error {
+func (a *app) writePictureOn(end jobEnd, pane *term.Terminal, img image.Image) error {
 	raw, err := asPNG(img)
 	if err != nil {
 		return err
 	}
-	fs, err := a.filesystem(on.name)
+	fs, err := a.openEnd(end)
 	if err != nil {
 		return err
 	}
-	at, host := a.clock(), on.name
+	at, host := a.clock(), endName(end)
 	sent := a.sendingPicture(host)
 	go func() {
 		defer func() {
@@ -176,6 +179,18 @@ func putPictureOn(fs vfs.FS, raw []byte, at time.Time) (string, error) {
 		return "", fmt.Errorf("write the picture: %w", err)
 	}
 	return path, nil
+}
+
+// endName is what to call the machine a piece of file work is going to.
+//
+// The machine over there when the work is on one a window reached, and
+// the window's own name otherwise: a path on a machine that window is
+// connected to is nothing to do with the window's own disk.
+func endName(end jobEnd) string {
+	if end.far.window != nil {
+		return end.far.host
+	}
+	return end.host
 }
 
 // asPNG is a picture as the bytes that go over a connection.

@@ -495,6 +495,7 @@ func (a *app) Update() error {
 	// After the layout, so the pointer is the one for the frame about to
 	// be drawn rather than the one before it.
 	a.updatePointer()
+	a.takeDroppedFiles()
 	a.updateTitle()
 	a.updateStatus()
 	return nil

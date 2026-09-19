@@ -410,7 +410,7 @@ func (a *app) openEnd(end jobEnd) (vfs.FS, error) {
 // known now: a repeat opens the filesystems again from them, and by then
 // there may be nothing to read them off. owned are the filesystems the
 // job opened for itself, closed once it has stopped.
-func (a *app) runJob(op jobs.Op, from, to jobEnd, owned []vfs.FS) {
+func (a *app) runJob(op jobs.Op, from, to jobEnd, owned []vfs.FS) *jobs.Job {
 	count := meter.New()
 	e := &conns.Entry{
 		Host:  from.host,
@@ -432,6 +432,7 @@ func (a *app) runJob(op jobs.Op, from, to jobEnd, owned []vfs.FS) {
 	a.registry.Add(e)
 	a.letGoWhenDone(j, owned)
 	a.markDirty()
+	return j
 }
 
 // dropJobRow takes a job off the queue and its row off the panel.

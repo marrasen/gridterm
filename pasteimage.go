@@ -8,7 +8,6 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/marrasen/gridterm/conns"
@@ -161,18 +160,11 @@ func (a *app) sendingPicture(to string) func() {
 // A directory of its own so the files are together and can be cleared
 // out in one go.
 func putPictureOn(fs vfs.FS, raw []byte, at time.Time) (string, error) {
-	home, err := fs.Home()
+	dir, err := pastedDirOn(fs)
 	if err != nil {
-		return "", fmt.Errorf("find somewhere to put the picture: %w", err)
+		return "", err
 	}
-	sep := string(fs.Sep())
-	dir := strings.TrimSuffix(home, sep) + sep + pastedDir
-	if _, err := fs.Stat(dir); err != nil {
-		if err := fs.Mkdir(dir, 0o700); err != nil {
-			return "", fmt.Errorf("make somewhere to put the picture: %w", err)
-		}
-	}
-	path := dir + sep + at.Format("20060102-150405.000") + ".png"
+	path := dir + string(fs.Sep()) + at.Format("20060102-150405.000") + ".png"
 	w, err := fs.Create(path, 0o600)
 	if err != nil {
 		return "", fmt.Errorf("write the picture: %w", err)

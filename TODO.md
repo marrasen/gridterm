@@ -220,8 +220,17 @@ asks for a file wherever the pane is and types the path. What is left:
 - **Nothing takes the files away again.** They pile up in the temporary
   directory under `gridterm-pasted` until the system clears it.
 
-- **Dropping a file on the window is the same question** with the path
-  already on disk. `ebiten.DroppedFiles` reports it.
+- **A dropped file always goes under home, and nothing clears it out.**
+  Dropped files land in `gridterm-pasted` under the home directory of
+  whoever the connection logs in as, the same place a pasted picture
+  goes, and they stay there. Marcus may want to choose where instead: the
+  directory a browser pane is showing on that machine would be an
+  obvious second answer.
+
+- **A dropped file is copied even when the pane is on a window this one
+  is connected to.** It goes through that window's files, which is
+  right, but a gridterm at the far end could take it down the clipboard
+  channel instead. Worth nothing until somebody wants it.
 
 ## Switching between panes
 

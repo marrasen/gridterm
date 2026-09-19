@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
-	"image"
 	"image/color"
 	"io"
 	"strings"
@@ -52,7 +51,7 @@ type Reader struct {
 	// ReadPic is the same for a file the reader shows as a picture. The
 	// two are separate because a picture is decoded rather than split
 	// into lines.
-	ReadPic func(then func(img image.Image, kind string, err error))
+	ReadPic func(then func(pic Pic, err error))
 
 	name string
 	at   string
@@ -63,11 +62,10 @@ type Reader struct {
 	cut   bool
 	err   error
 
-	// isPic says the file is shown as a picture, pic is the picture once
-	// it has been read, and kind what sort of file it came from.
+	// isPic says the file is shown as a picture, and pic is the picture
+	// once it has been read.
 	isPic bool
-	pic   image.Image
-	kind  string
+	pic   Pic
 
 	// shown is what is drawn: the lines themselves, or the bytes laid
 	// out when hex is on. Built from lines rather than read again, so

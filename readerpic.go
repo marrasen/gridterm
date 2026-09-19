@@ -10,6 +10,14 @@ import (
 	"github.com/marrasen/gridterm/ui/files"
 )
 
+// mostPictureSide is the biggest a picture may be, each way, before the
+// reader shrinks it.
+//
+// A few pixels under what a texture can be, because ebiten pads an image
+// before it goes on one. Asking for a texture past the limit is not an
+// error the window can catch: it brings the window down.
+const mostPictureSide = mostPanePixels - 8
+
 // readerPic is the picture a reader shows, on a layer of its own over
 // the pane.
 //

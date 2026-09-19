@@ -3,7 +3,6 @@ package main
 import (
 	"errors"
 	"fmt"
-	"image"
 	"time"
 
 	"github.com/marrasen/gridterm/conns"
@@ -65,13 +64,13 @@ func (a *app) openReader(f vfs.FS, host, path, name string, follow bool) error {
 		}()
 	}
 	if files.IsPicture(name) {
-		r.ReadPic = func(then func(image.Image, string, error)) {
+		r.ReadPic = func(then func(files.Pic, error)) {
 			a.holdFS(f)
 			go func() {
-				img, kind, err := files.ReadPicture(f, path)
+				pic, err := files.ReadPicture(f, path, mostPictureSide)
 				a.pump.post(func() {
 					a.doneWithFS(f)
-					then(img, kind, err)
+					then(pic, err)
 				})
 			}()
 		}

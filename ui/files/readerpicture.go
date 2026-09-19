@@ -16,7 +16,7 @@ import (
 func (r *Reader) ShowsAPicture() bool { return r.isPic }
 
 // Picture is the picture the file holds, and nil until it has been read.
-func (r *Reader) Picture() image.Image { return r.pic }
+func (r *Reader) Picture() image.Image { return r.pic.Img }
 
 // PictureRoom is the part of the pane a picture is drawn in, in the
 // reader's own cells: everything but the name at the top and the bar of
@@ -32,16 +32,16 @@ func (r *Reader) PictureRoom() ui.Rect {
 // openPicture reads the picture again.
 func (r *Reader) openPicture() {
 	r.busy = true
-	r.ReadPic(func(img image.Image, kind string, err error) {
+	r.ReadPic(func(pic Pic, err error) {
 		r.busy = false
 		r.err = err
 		if err != nil {
 			// The picture that was there is dropped: a pane showing an
 			// old picture under a fresh error says the file is fine.
-			r.pic, r.kind = nil, ""
+			r.pic = Pic{}
 			return
 		}
-		r.pic, r.kind = img, kind
+		r.pic = pic
 	})
 }
 
@@ -73,14 +73,14 @@ func (r *Reader) pictureKey(ev input.Event) (bool, error) {
 }
 
 // pictureNote is what the top line says about a picture: how big it is
-// and what kind of file it came from.
+// in the file, and what kind of file it came from.
 func (r *Reader) pictureNote() string {
-	if r.pic == nil {
+	if r.pic.Img == nil {
 		return ""
 	}
-	b := r.pic.Bounds()
-	if r.kind == "" {
-		return fmt.Sprintf("%d×%d", b.Dx(), b.Dy())
+	was := r.pic.Was
+	if r.pic.Kind == "" {
+		return fmt.Sprintf("%d×%d", was.X, was.Y)
 	}
-	return fmt.Sprintf("%d×%d %s", b.Dx(), b.Dy(), r.kind)
+	return fmt.Sprintf("%d×%d %s", was.X, was.Y, r.pic.Kind)
 }

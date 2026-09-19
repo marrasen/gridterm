@@ -15,8 +15,12 @@ func aPictureFile(t *testing.T, w, h int, cols, rows int) *Reader {
 	t.Helper()
 	r := NewReader("shot.png", "/tmp/shot.png")
 	r.Style = readerStyle()
-	r.ReadPic = func(then func(image.Image, string, error)) {
-		then(image.NewRGBA(image.Rect(0, 0, w, h)), "png", nil)
+	r.ReadPic = func(then func(Pic, error)) {
+		then(Pic{
+			Img:  image.NewRGBA(image.Rect(0, 0, w, h)),
+			Kind: "png",
+			Was:  image.Pt(w, h),
+		}, nil)
 	}
 	r.Layout(ui.Size{Cols: cols, Rows: rows})
 	r.Open()
@@ -71,8 +75,8 @@ func TestThePictureRoomLeavesTheNameAndTheBar(t *testing.T) {
 // under a fresh error says the file is fine when it is not.
 func TestAFailedReadDropsThePicture(t *testing.T) {
 	r := aPictureFile(t, 64, 64, 40, 10)
-	r.ReadPic = func(then func(image.Image, string, error)) {
-		then(nil, "", errors.New("the file has gone"))
+	r.ReadPic = func(then func(Pic, error)) {
+		then(Pic{}, errors.New("the file has gone"))
 	}
 
 	r.Open()
@@ -111,7 +115,7 @@ func TestThePictureBarOffersWhatThereIsToDo(t *testing.T) {
 func TestAPictureSwallowsTheKeysItHasNoUseFor(t *testing.T) {
 	r := aPictureFile(t, 64, 64, 40, 10)
 	reads := 0
-	r.ReadPic = func(then func(image.Image, string, error)) { reads++ }
+	r.ReadPic = func(then func(Pic, error)) { reads++ }
 
 	typed(t, r, "/n:")
 	press(t, r, input.KeyDown)

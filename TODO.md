@@ -32,6 +32,43 @@ file, under "Waiting on an answer from Marcus". Nothing blocks them any
 more: the modifier keys reach the mouse now, so Shift+right-click can
 work whichever way he answers.
 
+## Picking text out, what is left
+
+Four things a review of the selection work on 2026-09-19 turned up and
+the work did not answer.
+
+- **Shift and a page key scrolls rather than picking text out.** The
+  reader takes shift with Left, Right, Up, Down, Home and End as "carry
+  the loose end of the selection along". Shift+PageUp and Shift+PageDown
+  are window accelerators, so they scroll a page and leave the selection
+  where it was. A user who has just learned Shift+Down will try
+  Shift+PageDown next. Making it extend means the accelerator has to
+  know whether a reader has the keys, which is a change to how a command
+  is run rather than a case to add.
+
+- **A form field cannot be dragged over.** `Field` has no HandleMouse at
+  all, and `Form.HandleMouse` swallows every move and release. So the
+  terminal selects with the mouse, the file viewer does, a notice does,
+  and a text box -- the one place everybody expects to drag -- does not.
+  The keyboard is the only way in.
+
+- **The reader has no caret, so shift and a key that moves has nowhere
+  obvious to start.** With nothing picked out it starts at the top left
+  of the view. In a file scrolled halfway down, one Shift+Right puts a
+  one-character selection in the corner rather than where the user was
+  looking. Defensible, and still a surprise.
+
+- **Ctrl+X in the file viewer does nothing and says nothing.** There is
+  nothing to cut from a file being read, so this is right, but the
+  silence is not obviously the answer to anything.
+
+Two older keys of the same shape as the Shift+PageUp one, found on the
+way past: Ctrl+Shift+D splits the pane rather than closing the reader,
+and Ctrl+Shift+H opens the help rather than turning hex on. Both are
+window accelerators, and the reader's own cases match any Ctrl chord.
+`ui/files/browser.go` shows the pattern that avoids it: decline anything
+that is not a plain Ctrl.
+
 ## Asked for on 2026-09-19, second set
 
 From Marcus's inbox.

@@ -150,25 +150,38 @@ func (f *Field) Caret() int { return f.at }
 // SetCaret moves the caret to the cluster boundary at or before a byte
 // offset, so a caller cannot put it inside a character.
 func (f *Field) SetCaret(at int) {
-	f.at = min(max(at, 0), len(f.text))
 	f.picked = false
-	f.snapCaret()
+	f.at = f.onBoundary(at)
 	f.scroll()
 }
 
-// snapCaret pulls the caret back to the cluster boundary at or before
-// where it is.
-func (f *Field) snapCaret() {
-	marks := f.bounds()
-	at := marks[0]
-	for _, m := range marks {
-		if m > f.at {
+// onBoundary is the cluster boundary at or before a byte offset.
+func (f *Field) onBoundary(at int) int {
+	at = min(max(at, 0), len(f.text))
+	out := 0
+	for _, m := range f.bounds() {
+		if m > at {
 			break
 		}
-		at = m
+		out = m
 	}
-	f.at = at
+	return out
 }
+
+// pastBoundary is the cluster boundary at or after a byte offset.
+func (f *Field) pastBoundary(at int) int {
+	at = min(max(at, 0), len(f.text))
+	for _, m := range f.bounds() {
+		if m >= at {
+			return m
+		}
+	}
+	return len(f.text)
+}
+
+// snapLeft pulls the first byte drawn back onto a boundary, which is
+// where text taken out from under it can leave it.
+func (f *Field) snapLeft() { f.left = f.onBoundary(f.left) }
 
 // Layout notes how wide the field is.
 func (f *Field) Layout(size Size) {
@@ -248,8 +261,9 @@ func (f *Field) HandleKey(ev input.Event) (bool, error) {
 	if ev.Ctrl() && ev.Key == input.KeyX {
 		return f.Cut(), nil
 	}
-	// Ctrl alone: the window binds Ctrl+Shift+A to the pane switcher, and
-	// a field that swallowed it would take that away.
+	// Ctrl alone, unlike copy and paste: the palette hands on whatever
+	// its query line declines, so a field taking Ctrl+Shift+A would take
+	// the window's pane switcher away there.
 	if ev.Mods == input.ModCtrl && ev.Key == input.KeyA {
 		return f.SelectAll(), nil
 	}
@@ -332,7 +346,8 @@ func (f *Field) HandleKey(ev input.Event) (bool, error) {
 		return true, nil
 	case input.KeyU:
 		// Ctrl+U clears back to the start, the way a shell line does.
-		if !ev.Ctrl() {
+		// Ctrl alone: the window binds Ctrl+Shift+U to unsplitting.
+		if ev.Mods != input.ModCtrl {
 			return false, nil
 		}
 		f.cut(0, f.at)
@@ -340,6 +355,7 @@ func (f *Field) HandleKey(ev input.Event) (bool, error) {
 	default:
 		return false, nil
 	}
+	f.settle()
 	f.scroll()
 	return true, nil
 }
@@ -445,8 +461,10 @@ func (f *Field) insert(s string) {
 		return
 	}
 	f.text = f.text[:from] + s + f.text[to:]
-	f.at = from + len(s)
-	f.snapCaret()
+	// Past what was put in, on a boundary: text that joined with what
+	// follows it makes one cluster of the two.
+	f.at = f.pastBoundary(from + len(s))
+	f.snapLeft()
 	f.scroll()
 	f.changed()
 }
@@ -463,6 +481,7 @@ func (f *Field) cut(from, to int) {
 	}
 	f.text = f.text[:from] + f.text[to:]
 	f.at = from
+	f.snapLeft()
 	f.scroll()
 	f.changed()
 }
@@ -480,6 +499,11 @@ func (f *Field) paste() bool {
 	s := f.ReadClipboard()
 	if i := strings.IndexAny(s, "\r\n"); i >= 0 {
 		s = s[:i]
+	}
+	if s == "" {
+		// Nothing to paste, so the selection stays: replacing it with
+		// nothing is text the user cannot get back.
+		return true
 	}
 	f.insert(s)
 	return true

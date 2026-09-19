@@ -44,6 +44,10 @@ func (a *app) helpText() string {
 		lines: browserHelp(),
 	})
 	sections = append(sections, helpSection{
+		title: "The file viewer's keys, which the shortcuts file does not change",
+		lines: readerHelp(),
+	})
+	sections = append(sections, helpSection{
 		title: "What the keyboard shortcuts file calls each command",
 		lines: a.commandNames(),
 		tight: true,
@@ -187,6 +191,24 @@ func browserHelp() []helpLine {
 		out = append(out, helpLine{k.Title, k.Shown})
 	}
 	return out
+}
+
+// readerHelp is the file viewer's keys, in the order its bar offers
+// them, with the ones that pick text out after them.
+//
+// The bar cannot say these: it has room for what a file of lines
+// offers, and the copy only appears once there is something to copy.
+func readerHelp() []helpLine {
+	out := make([]helpLine, 0, len(files.ReaderKeys())+5)
+	for _, k := range files.ReaderKeys() {
+		out = append(out, helpLine{k.Title, k.Shown})
+	}
+	return append(out,
+		helpLine{"Pick text out", "drag, or shift and a key that moves"},
+		helpLine{"Pick out the whole file", "ctrl+A"},
+		helpLine{"Copy what is picked out", files.CopyKey().Shown},
+		helpLine{"Drop what is picked out", "esc"},
+	)
 }
 
 // chordFor is the chord bound to a command in either keymap, or "" when

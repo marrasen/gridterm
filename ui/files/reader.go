@@ -429,7 +429,7 @@ func (r *Reader) keys() []Key {
 		return PictureKeys()
 	}
 	keys := ReaderKeys()
-	if r.sel.on && r.err == nil {
+	if r.Selected() {
 		keys = append(keys, CopyKey())
 	}
 	return keys
@@ -566,7 +566,7 @@ func (r *Reader) HandleMouse(ev input.MouseEvent) (bool, error) {
 		// else to go.
 		return true, nil
 	case input.MouseRelease:
-		if r.selecting {
+		if r.selecting && ev.Button == input.MouseLeft {
 			r.selecting = false
 			// A click that never moved is a click, not one column left
 			// highlighted.
@@ -599,7 +599,7 @@ func (r *Reader) HandleMouse(ev input.MouseEvent) (bool, error) {
 		}
 		return true, nil
 	}
-	if !r.inBody(ev.Row) {
+	if !r.picking() || !r.inBody(ev.Row) {
 		return true, nil
 	}
 	// A press in the file starts picking text out, and one with shift

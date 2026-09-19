@@ -103,8 +103,9 @@ func (a *app) writeShortcutStart() error {
 		"to put a command on another chord. To move it, set the old chord to \""+
 		keys.Nothing+"\"\nas well, or the command runs on both. Delete a line and "+
 		"that chord goes back\nto what gridterm comes with.\n\n"+
-		"Every chord in the file runs before the pane sees it, so a chord a program\n"+
-		"in the pane needs stops reaching it.\n\n"+
+		"Every chord in the file runs before a pane sees it, so a chord a program\n"+
+		"in the pane needs stops reaching it. A dialog that is open sees a chord\n"+
+		"before either of them.\n\n"+
 		"Start gridterm again to use the file.", false)
 	return nil
 }

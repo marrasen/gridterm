@@ -586,3 +586,76 @@ func TestAFailedReadDropsTheSelection(t *testing.T) {
 		t.Errorf("the bar offers a copy of a file that could not be read: %v", keys)
 	}
 }
+
+// A file that could not be read copies nothing, whatever was picked out
+// of the lines it used to show. The pane shows the reason instead of
+// those lines, and copying them would hand over what is not on screen.
+func TestAFailedReadCopiesNothing(t *testing.T) {
+	r := aReaderOf(t, 40, 10, "secret one", "secret two")
+	var copied string
+	r.OnCopy = func(text string) { copied = text }
+	r.Failed(errors.New("permission denied"))
+
+	r.SelectAll()
+	ctrlKey(r, input.KeyC)
+	shiftKey(r, input.KeyDown)
+	drag(t, r, 0, 1, 9, 2)
+
+	if r.Selected() {
+		t.Errorf("it picked out %q from a file it could not read", r.SelectedText())
+	}
+	if copied != "" {
+		t.Errorf("it copied %q from a file it could not read", copied)
+	}
+	if has, keys := offersCopy(r); has {
+		t.Errorf("the bar offers a copy of a file that could not be read: %v", keys)
+	}
+}
+
+// Picking out a file with nothing in it picks nothing out, so the bar
+// offers no copy that would copy nothing.
+func TestSelectAllOnAFileOfBlankLinesPicksNothing(t *testing.T) {
+	r := aReaderOf(t, 40, 10, "", "")
+
+	r.SelectAll()
+
+	if r.Selected() || r.sel.on {
+		t.Errorf("it picked out %q from a file of blank lines", r.SelectedText())
+	}
+	if has, keys := offersCopy(r); has {
+		t.Errorf("the bar offers a copy of nothing: %v", keys)
+	}
+}
+
+// Picking text out of a file that could not be read picks nothing out,
+// down to the selection itself rather than only what it hands over.
+func TestAFailedReadPicksNothingOut(t *testing.T) {
+	r := aReaderOf(t, 40, 10, "secret one", "secret two")
+	r.Failed(errors.New("permission denied"))
+
+	r.SelectAll()
+
+	if r.sel.on {
+		t.Error("it picked out lines the pane is not showing")
+	}
+}
+
+// Letting go of another button does not end a drag. The button that
+// started it is the one that ends it.
+func TestAnotherButtonDoesNotEndTheDrag(t *testing.T) {
+	r := aReaderOf(t, 40, 10, "hello there", "second line")
+
+	mouse(t, r, input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft, Col: 0, Row: 1,
+	})
+	mouse(t, r, input.MouseEvent{
+		Kind: input.MouseRelease, Button: input.MouseRight, Col: 4, Row: 1,
+	})
+	mouse(t, r, input.MouseEvent{
+		Kind: input.MouseMove, Button: input.MouseLeft, Col: 9, Row: 1,
+	})
+
+	if got, want := r.SelectedText(), "hello ther"; got != want {
+		t.Errorf("it picked out %q, want %q: the drag was still going", got, want)
+	}
+}

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"image/color"
+	"strings"
 	"testing"
 
 	"github.com/marrasen/gridterm/grid"
@@ -307,8 +308,9 @@ func TestAWordMoveAndAJumpDropTheSelection(t *testing.T) {
 	}
 }
 
-// Ctrl+Shift+A is the window's, not the field's. A field that swallowed
-// it would take the pane switcher away while a dialog is open.
+// Ctrl+Shift+A is the window's, not the field's, unlike Ctrl+Shift+C.
+// The palette hands on whatever its query line declines, so a field
+// taking it would take the pane switcher away there.
 func TestCtrlShiftAIsNotTheFields(t *testing.T) {
 	f, _ := aTypedField(t, 20, "hello there")
 
@@ -317,6 +319,28 @@ func TestCtrlShiftAIsNotTheFields(t *testing.T) {
 	}
 	if got := f.Selected(); got != "" {
 		t.Errorf("ctrl+shift+A picked out %q", got)
+	}
+}
+
+// Ctrl+Shift+U is the window's too: it unsplits a pane, and a field
+// that cleared itself on it would take that away.
+func TestCtrlShiftUIsNotTheFields(t *testing.T) {
+	f, _ := aTypedField(t, 20, "hello there")
+	f.SetCaret(len("hello there"))
+
+	if pressField(t, f, input.KeyU, input.ModCtrl|input.ModShift) {
+		t.Error("the field took ctrl+shift+U")
+	}
+	if got, want := f.Text(), "hello there"; got != want {
+		t.Errorf("it left %q, want the text untouched as %q", got, want)
+	}
+
+	// Ctrl alone still clears back to the start.
+	if !pressField(t, f, input.KeyU, input.ModCtrl) {
+		t.Error("the field let ctrl+U past")
+	}
+	if got := f.Text(); got != "" {
+		t.Errorf("ctrl+U left %q, want the field cleared", got)
 	}
 }
 
@@ -612,4 +636,101 @@ func TestTypingLeavesTheCaretOnABoundary(t *testing.T) {
 		}
 	}
 	t.Errorf("the caret is at %d, which is not one of the boundaries %v", at, f.bounds())
+}
+
+// Pasting nothing over a selection leaves the field alone. A clipboard
+// holding a picture rather than text reads as empty, and replacing the
+// selection with nothing is text the user cannot get back.
+func TestPastingNothingLeavesTheSelectionAlone(t *testing.T) {
+	for what, ev := range map[string]input.Event{
+		"ctrl+V":       {Kind: input.KeyPress, Key: input.KeyV, Mods: input.ModCtrl},
+		"shift+insert": {Kind: input.KeyPress, Key: input.KeyInsert, Mods: input.ModShift},
+	} {
+		f, clip := aTypedField(t, 20, "margit.skalarit.net")
+		*clip = ""
+		f.SelectAll()
+
+		keyTo(t, f, ev)
+
+		if got, want := f.Text(), "margit.skalarit.net"; got != want {
+			t.Errorf("%s left %q, want the text untouched as %q", what, got, want)
+		}
+	}
+}
+
+// Shift and a key that cannot move picks nothing out, so the next plain
+// key still does what it does.
+//
+// Left alone, shift at the end of the text leaves the two ends of the
+// selection together, and a plain Left then lands where the caret
+// already is and reads as a dead key.
+func TestShiftThatCannotMovePicksNothing(t *testing.T) {
+	f, _ := aTypedField(t, 20, "hello")
+	f.SetCaret(len("hello"))
+
+	pressField(t, f, input.KeyRight, input.ModShift)
+
+	if f.picked {
+		t.Error("shift at the end of the text left a selection with nothing in it")
+	}
+
+	pressField(t, f, input.KeyLeft, 0)
+
+	if got, want := f.Caret(), len("hell"); got != want {
+		t.Errorf("the plain left landed at %d, want %d", got, want)
+	}
+}
+
+// The completion is still taken after a shift that could not move. It
+// is exactly what somebody does while looking at one.
+func TestTheGhostIsTakenAfterAShiftThatCannotMove(t *testing.T) {
+	f, _ := aTypedField(t, 30, "hel")
+	f.Ghost = "lo there"
+	drawField(f, 30)
+
+	pressField(t, f, input.KeyRight, input.ModShift)
+	pressField(t, f, input.KeyRight, 0)
+
+	if got, want := f.Text(), "hello there"; got != want {
+		t.Errorf("it left %q, want the completion taken as %q", got, want)
+	}
+}
+
+// The caret lands past what was typed, even where what was typed joins
+// with the text after it into one character.
+func TestTypingLeavesTheCaretPastWhatWentIn(t *testing.T) {
+	for what, tc := range map[string]struct {
+		have, typed, want string
+	}{
+		"a combining mark": {"\u0301x", "e", "e\u0301"},
+		"a flag":           {"\U0001f1ea", "\U0001f1f8", "\U0001f1f8\U0001f1ea"},
+	} {
+		f, _ := aTypedField(t, 20, "")
+		f.SetText(tc.have)
+		f.SetCaret(0)
+
+		typeField(t, f, tc.typed)
+
+		if got, want := f.Caret(), len(tc.want); got != want {
+			t.Errorf("%s: the caret is at %d, want %d, past %q", what, got, want, tc.want)
+		}
+	}
+}
+
+// The first byte drawn stays on a character boundary when text is taken
+// out from under it, so the field never draws half a character.
+func TestTakingTextOutKeepsTheDrawingOnABoundary(t *testing.T) {
+	f, clip := aTypedField(t, 16, "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJ")
+	*clip = "caf\u00e9"
+	f.SetCaret(0)
+	for range 19 {
+		pressField(t, f, input.KeyRight, input.ModShift)
+	}
+
+	pressField(t, f, input.KeyV, input.ModCtrl)
+
+	text, _ := drawField(f, 16)
+	if strings.ContainsRune(text, '\ufffd') {
+		t.Errorf("the field draws %q, which holds half a character", text)
+	}
 }

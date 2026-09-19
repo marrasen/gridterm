@@ -60,6 +60,14 @@ func (f *Field) pick() {
 	}
 }
 
+// settle turns the selection off once its two ends have met, which is
+// what shift and a key that could not move leaves.
+func (f *Field) settle() {
+	if f.mark == f.at {
+		f.picked = false
+	}
+}
+
 // cutPicked takes the selection out and reports whether there was one.
 func (f *Field) cutPicked() bool {
 	if !f.picked {

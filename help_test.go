@@ -220,3 +220,20 @@ func barTitles(a *testApp) []string {
 func hasTitle(titles []string, want string) bool {
 	return slices.Contains(titles, want)
 }
+
+// The key list holds the file viewer's keys, including the ones that
+// pick text out. Its own bar cannot say them: it has room for what a
+// file of lines offers, and the copy only appears once there is
+// something to copy.
+func TestTheKeyListHoldsTheFileViewersKeys(t *testing.T) {
+	a := aWindowWithMenus(t)
+
+	got := a.helpText()
+
+	for _, want := range []string{"Follow", "Hex", "Pick text out", "Pick out the whole file",
+		"Copy what is picked out", "Drop what is picked out"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the list leaves out %q: %q", want, got)
+		}
+	}
+}

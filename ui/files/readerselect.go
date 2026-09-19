@@ -68,6 +68,9 @@ func (r *Reader) colsOf(s span, line int) (from, to int, ok bool) {
 // snapCols widens a stretch of columns to whole characters, so a
 // double-width one is picked out or left out and never halved.
 func snapCols(line string, from, to int) (int, int) {
+	if !hasHighByte(line) {
+		return from, to
+	}
 	at := 0
 	for _, cluster := range grid.Clusters(line) {
 		w := grid.StringWidth(cluster)
@@ -85,7 +88,13 @@ func snapCols(line string, from, to int) (int, int) {
 }
 
 // Selected reports whether any of the file is picked out.
-func (r *Reader) Selected() bool { return r.sel.on }
+func (r *Reader) Selected() bool { return r.sel.on && r.picking() }
+
+// picking reports whether there is text on screen to pick out: lines,
+// rather than a picture or the reason the file could not be read.
+func (r *Reader) picking() bool {
+	return !r.isPic && r.err == nil && len(r.shown) > 0
+}
 
 // settle turns the selection off when it has no text of the file under
 // it, which is what a drag that ended past the end of a line leaves.
@@ -107,7 +116,7 @@ func (r *Reader) covers(s span) bool {
 // SelectedText is the text the selection covers, with a newline between
 // lines. Empty when nothing is picked out.
 func (r *Reader) SelectedText() string {
-	if !r.sel.on || len(r.shown) == 0 {
+	if !r.Selected() {
 		return ""
 	}
 	from, to := r.sel.ordered()
@@ -134,7 +143,7 @@ func (r *Reader) selectedOn(line int) string {
 
 // SelectAll picks out the whole file.
 func (r *Reader) SelectAll() {
-	if len(r.shown) == 0 {
+	if !r.picking() {
 		return
 	}
 	last := len(r.shown) - 1
@@ -142,6 +151,7 @@ func (r *Reader) SelectAll() {
 		to: spot{line: last, col: max(grid.StringWidth(r.shown[last])-1, 0)},
 		on: true,
 	}
+	r.settle()
 }
 
 // ClearSelection takes the highlight off.
@@ -161,6 +171,9 @@ func (r *Reader) Copy() bool {
 // extend moves the loose end of the selection by lines and columns, and
 // starts one at the top left of the view when there is none.
 func (r *Reader) extend(lines, cols int) {
+	if !r.picking() {
+		return
+	}
 	if !r.sel.on {
 		at := spot{line: r.top, col: r.left}
 		r.sel = span{from: at, to: at, on: true}
@@ -180,6 +193,9 @@ func (r *Reader) onLine(line, col int) int {
 // extendTo moves the loose end of the selection to a column of the line
 // it is already on: the start of that line, or its end.
 func (r *Reader) extendTo(col int) {
+	if !r.picking() {
+		return
+	}
 	if !r.sel.on {
 		at := spot{line: r.top, col: r.left}
 		r.sel = span{from: at, to: at, on: true}

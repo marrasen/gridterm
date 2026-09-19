@@ -400,12 +400,22 @@ From Marcus's inbox, after working in a shared window.
   It waits on SSH relays parking themselves, so the race detector's
   slowdown is the likely cause, but nobody has looked.
 
-- **Nobody has seen the dialog shadow the shader draws.** These tests
-  run outside ebiten's game loop, so a draw only queues a command that
-  is never flushed and reading pixels panics. The geometry and the
-  wiring are tested; what it looks like is not. `frostSpread`,
-  `frostDropCols` and `frostDropRows` in modals.go are the numbers to
-  nudge.
+- **The dialog shadow only reads where something light sits behind
+  it.** Looked at on 2026-09-19 through `-shot`, over a screenful of
+  text. It draws: the row under the panel keeps 89% of its brightness
+  at the far edge of the fade, more nearer the panel. Over the window's
+  own black background it is invisible, because a black shadow on black
+  is nothing. Whether that is subtle enough or too subtle is Marcus's
+  call. `frostSpread`, `frostDropCols` and `frostDropRows` in modals.go
+  are the numbers.
+
+- **A frame that draws the glass costs 51 allocations, all inside
+  ebiten.** Measured on 2026-09-19 with `BenchmarkRenderingFrame`. A
+  busy frame with no dialog costs 7, and a settled frame none at all,
+  because the compositor skips it. The glass is five draw calls -- a
+  clear, a copy, two blur passes, the panel, the shadow -- and ebiten
+  allocates vertex buffers and a `SubImage` wrapper for each. Nothing of
+  gridterm's own is left in that path.
 
 - **The pane switcher is the last thing that allocates on a settled
   frame.** Nine allocations and 384 bytes, measured on 2026-09-19 with

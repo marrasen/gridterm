@@ -18,7 +18,7 @@ func TestFrostShadersCompile(t *testing.T) {
 		t.Fatalf("compile: %v", err)
 	}
 
-	if s.blur == nil || s.frost == nil {
+	if s.blur == nil || s.frost == nil || s.stroke == nil || s.shadow == nil {
 		t.Fatal("compile reported success and left a shader nil")
 	}
 	// Asking again must not build them twice.

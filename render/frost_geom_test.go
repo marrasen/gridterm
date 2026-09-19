@@ -202,3 +202,62 @@ func TestAPanelWithNoShadowDrawsNone(t *testing.T) {
 		t.Errorf("it drew %d shadows for a panel that casts none", c.stats.Shadowed)
 	}
 }
+
+// A shader's uniforms are built once and written through, so a frame
+// that draws the glass allocates none of them.
+//
+// Ebiten takes them as a map of any and copies them out while the draw
+// call runs, so the same map goes over every frame. Built afresh each
+// time, the map and the boxing of each value in it would cost an
+// allocation a frame for as long as a dialog is open.
+func TestAShadersUniformsAreKept(t *testing.T) {
+	c := &Compositor{}
+
+	first := c.shadowArgs()
+	again := c.shadowArgs()
+
+	if first.op != again.op {
+		t.Error("the options were built again")
+	}
+	if len(first.at) != 6 {
+		t.Fatalf("the shadow has %d uniforms, want six", len(first.at))
+	}
+
+	got := testing.AllocsPerRun(20, func() {
+		a := c.shadowArgs()
+		a.placeAt(10, 20)
+		a.set("Origin", 1, 2)
+		a.set("Size", 3, 4)
+		a.set("Corner", 5)
+		a.set("Drop", 6, 7)
+		a.set("Spread", 8)
+		a.set("Colour", 0, 0, 0, 0.44)
+	})
+
+	if got > 0 {
+		t.Errorf("filling the uniforms allocates %v times, want none", got)
+	}
+	// And the values really landed, or this proves nothing.
+	if want := []float32{6, 7}; first.at["Drop"][0] != want[0] || first.at["Drop"][1] != want[1] {
+		t.Errorf("Drop holds %v, want %v", first.at["Drop"], want)
+	}
+}
+
+// Every uniform the shadow shader declares is one the compositor fills,
+// and no others. Ebiten ignores a name it does not know, so a typo
+// would draw a shadow with a uniform left at zero.
+func TestTheShadowFillsEveryUniformItDeclares(t *testing.T) {
+	want := map[string]bool{}
+	for _, name := range []string{"Origin", "Size", "Corner", "Drop", "Spread", "Colour"} {
+		want[name] = true
+	}
+	for name := range (&Compositor{}).shadowArgs().at {
+		if !want[name] {
+			t.Errorf("the compositor fills %q, which the shader does not declare", name)
+		}
+		delete(want, name)
+	}
+	for name := range want {
+		t.Errorf("the shader declares %q, which the compositor does not fill", name)
+	}
+}

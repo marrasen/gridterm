@@ -103,3 +103,41 @@ func TestAFrameThatChangedNothingAllocatesNothing(t *testing.T) {
 		}
 	}
 }
+
+// And a frame that really renders: something changed, so the compositor
+// repaints and blits rather than skipping the frame.
+func BenchmarkRenderingFrame(b *testing.B) {
+	t := &testing.T{}
+	a := aWindowOfPanes(t, 8)
+	frame(t, a)
+	a.showNotice("Could not reach margit", "The connection was refused.", false)
+	frame(t, a)
+	frame(t, a)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		a.markDirty()
+		if err := a.Update(); err != nil {
+			b.Fatal(err)
+		}
+		a.Draw(a.screen)
+	}
+}
+
+// A busy frame with no dialog, which is what a shell printing output
+// looks like: the glass and its shadow never run.
+func BenchmarkRenderingFrameNoDialog(b *testing.B) {
+	t := &testing.T{}
+	a := aWindowOfPanes(t, 8)
+	frame(t, a)
+	frame(t, a)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		a.markDirty()
+		if err := a.Update(); err != nil {
+			b.Fatal(err)
+		}
+		a.Draw(a.screen)
+	}
+}

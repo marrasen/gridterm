@@ -337,9 +337,13 @@ type Compositor struct {
 
 	// shaders and scratch are the frosted-glass machinery, built on
 	// first use so a window with nothing frosted never pays for them.
-	shaders      shaders
-	scratch      scratch
-	shaderFailed bool
+	shaders shaders
+	scratch scratch
+
+	// blur, frost and shadow are each shader's uniforms, kept between
+	// frames so a frame that draws the glass allocates none of them.
+	blur, frost, shadow shaderArgs
+	shaderFailed        bool
 }
 
 // placement is the part of a layer's state that changes what the screen

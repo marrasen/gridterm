@@ -206,6 +206,48 @@ func Fragment(dstPos vec4, srcPos vec2, color vec4) vec4 {
 }
 `
 
+// shaderArgs is one shader's uniforms and the options they are handed
+// over in, kept between frames and written through.
+//
+// Ebiten takes uniforms as a map of any and copies them out while the
+// draw call runs, so the same map can be handed over every frame. Built
+// afresh each time, the map and the boxing of each value in it cost an
+// allocation a frame for as long as a dialog is open.
+type shaderArgs struct {
+	op *ebiten.DrawRectShaderOptions
+
+	// at is each uniform's own slice, which is what the map holds. A
+	// scalar is a slice of one: ebiten takes a slice wherever the count
+	// matches.
+	at map[string][]float32
+}
+
+// newShaderArgs builds the options and one slice per uniform, of the
+// widths given.
+func newShaderArgs(widths map[string]int) shaderArgs {
+	a := shaderArgs{
+		op: &ebiten.DrawRectShaderOptions{Uniforms: map[string]any{}},
+		at: make(map[string][]float32, len(widths)),
+	}
+	for name, w := range widths {
+		v := make([]float32, w)
+		a.at[name] = v
+		a.op.Uniforms[name] = v
+	}
+	return a
+}
+
+// set writes a uniform's values.
+func (a shaderArgs) set(name string, v ...float32) { copy(a.at[name], v) }
+
+// at is where the shader draws, which is the one option that is not a
+// uniform. The geometry is reset first, because it is kept between
+// frames along with everything else.
+func (a shaderArgs) placeAt(x, y int) {
+	a.op.GeoM.Reset()
+	a.op.GeoM.Translate(float64(x), float64(y))
+}
+
 // shaders holds the compiled programs, built on first use because a
 // compositor with no glass and no rules should not pay for them.
 type shaders struct {
@@ -312,9 +354,9 @@ func (c *Compositor) drawFrost(screen *ebiten.Image, l *Layer) {
 	into := c.scratch.a.SubImage(image.Rect(0, 0, src.Dx(), src.Dy())).(*ebiten.Image)
 
 	if step > 0 {
-		c.blurPass(c.scratch.b, into, [2]float32{1, 0}, step, src)
+		c.blurPass(c.scratch.b, into, 1, 0, step, src)
 		blurred := c.scratch.b.SubImage(image.Rect(0, 0, src.Dx(), src.Dy())).(*ebiten.Image)
-		c.blurPass(c.scratch.a, blurred, [2]float32{0, 1}, step, src)
+		c.blurPass(c.scratch.a, blurred, 0, 1, step, src)
 	}
 
 	// After the backdrop was taken off the screen and before the panel
@@ -325,19 +367,17 @@ func (c *Compositor) drawFrost(screen *ebiten.Image, l *Layer) {
 	// The part of the scratch that lines up with the panel.
 	backdrop := c.scratch.a.SubImage(inner).(*ebiten.Image)
 
-	sop := &ebiten.DrawRectShaderOptions{}
-	sop.GeoM.Translate(float64(panel.Min.X), float64(panel.Min.Y))
-	sop.Images[0] = backdrop
-	sop.Uniforms = map[string]any{
-		"Origin":     []float32{float32(panel.Min.X), float32(panel.Min.Y)},
-		"Size":       []float32{float32(panel.Dx()), float32(panel.Dy())},
-		"Corner":     frostCorner(f.Corner, panel),
-		"Tint":       rgbaToFloats(f.Tint),
-		"Saturation": f.Saturation,
-		"Grain":      f.Grain,
-		"Edge":       f.Edge,
-	}
-	screen.DrawRectShader(panel.Dx(), panel.Dy(), c.shaders.frost, sop)
+	a := c.frostArgs()
+	a.placeAt(panel.Min.X, panel.Min.Y)
+	a.op.Images[0] = backdrop
+	a.set("Origin", float32(panel.Min.X), float32(panel.Min.Y))
+	a.set("Size", float32(panel.Dx()), float32(panel.Dy()))
+	a.set("Corner", frostCorner(f.Corner, panel))
+	a.set("Tint", rgbaToFloats(f.Tint)...)
+	a.set("Saturation", f.Saturation)
+	a.set("Grain", f.Grain)
+	a.set("Edge", f.Edge)
+	screen.DrawRectShader(panel.Dx(), panel.Dy(), c.shaders.frost, a.op)
 	c.stats.Frosted++
 }
 
@@ -351,17 +391,15 @@ func (c *Compositor) drawPanelShadow(screen *ebiten.Image, f *Frost, panel image
 	if box.Empty() {
 		return
 	}
-	op := &ebiten.DrawRectShaderOptions{}
-	op.GeoM.Translate(float64(box.Min.X), float64(box.Min.Y))
-	op.Uniforms = map[string]any{
-		"Origin": []float32{float32(panel.Min.X), float32(panel.Min.Y)},
-		"Size":   []float32{float32(panel.Dx()), float32(panel.Dy())},
-		"Corner": frostCorner(f.Corner, panel),
-		"Drop":   []float32{f.Drop[0], f.Drop[1]},
-		"Spread": f.Spread,
-		"Colour": rgbaToFloats(f.Shadow),
-	}
-	screen.DrawRectShader(box.Dx(), box.Dy(), c.shaders.shadow, op)
+	a := c.shadowArgs()
+	a.placeAt(box.Min.X, box.Min.Y)
+	a.set("Origin", float32(panel.Min.X), float32(panel.Min.Y))
+	a.set("Size", float32(panel.Dx()), float32(panel.Dy()))
+	a.set("Corner", frostCorner(f.Corner, panel))
+	a.set("Drop", f.Drop[0], f.Drop[1])
+	a.set("Spread", f.Spread)
+	a.set("Colour", rgbaToFloats(f.Shadow)...)
+	screen.DrawRectShader(box.Dx(), box.Dy(), c.shaders.shadow, a.op)
 	c.stats.Shadowed++
 }
 
@@ -409,16 +447,43 @@ func frostCorner(corner float32, box image.Rectangle) float32 {
 
 // blurPass runs one direction of the blur from src into dst, both in the
 // scratch pair's coordinates.
-func (c *Compositor) blurPass(dst, src *ebiten.Image, dir [2]float32, step float64, area image.Rectangle) {
+func (c *Compositor) blurPass(dst, src *ebiten.Image, dx, dy float32, step float64, area image.Rectangle) {
 	into := dst.SubImage(image.Rect(0, 0, area.Dx(), area.Dy())).(*ebiten.Image)
 	into.Clear()
-	op := &ebiten.DrawRectShaderOptions{}
-	op.Images[0] = src
-	op.Uniforms = map[string]any{
-		"Direction": []float32{dir[0], dir[1]},
-		"Step":      float32(step),
+	a := c.blurArgs()
+	a.placeAt(0, 0)
+	a.op.Images[0] = src
+	a.set("Direction", dx, dy)
+	a.set("Step", float32(step))
+	into.DrawRectShader(area.Dx(), area.Dy(), c.shaders.blur, a.op)
+}
+
+// blurArgs, frostArgs and shadowArgs are each shader's uniforms, built
+// on first use and written through after that.
+func (c *Compositor) blurArgs() shaderArgs {
+	if c.blur.op == nil {
+		c.blur = newShaderArgs(map[string]int{"Direction": 2, "Step": 1})
 	}
-	into.DrawRectShader(area.Dx(), area.Dy(), c.shaders.blur, op)
+	return c.blur
+}
+
+func (c *Compositor) frostArgs() shaderArgs {
+	if c.frost.op == nil {
+		c.frost = newShaderArgs(map[string]int{
+			"Origin": 2, "Size": 2, "Corner": 1, "Tint": 4,
+			"Saturation": 1, "Grain": 1, "Edge": 1,
+		})
+	}
+	return c.frost
+}
+
+func (c *Compositor) shadowArgs() shaderArgs {
+	if c.shadow.op == nil {
+		c.shadow = newShaderArgs(map[string]int{
+			"Origin": 2, "Size": 2, "Corner": 1, "Drop": 2, "Spread": 1, "Colour": 4,
+		})
+	}
+	return c.shadow
 }
 
 // rgbaToFloats turns a colour into the 0-to-1 vector a shader wants.

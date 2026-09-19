@@ -24,11 +24,6 @@ is the best to use though.
 - Fields using dropdown should have an icon making it obvious, clicking it opens a picker
 - Select text using shift, copy, cut
 
-# All commands
-When filtering, if I type a word that matches exactly, that match should appear on top and be marked as a hit
-If I type WSL, I get lot's of hits, for instance "Write a starting keyboard shortcuts file", because it contains W, S and L
-The result I wanted is number 8 in the list, "New pane on Ubuntu (WSL)", and only S and L in WSL are marked as a search hit because "New" contains the W
-
 # Show all panes
 File browser don't always render when zooming out
 
@@ -37,3 +32,15 @@ File browser don't always render when zooming out
 - View file should have it's on icon, and maybe Follow
 - Copy and Move could use own icons as well
 
+# Tunnel and SOCKS proxy over remote connection
+- Add support for tunnels and SOCKS proxy over a remote connection
+
+# Serve over Teilen Relay
+
+Look at the "teilen" project (G:\Workspace\teilen). It's our in-house relay service. Serving gridterm using this should mean:
+- User configures a relay server (no default) and an optional proxy server in gridterm on both machines
+- A relay share is a one time share, it can't be automatically started again
+- When user clicks share in the host, a "stream key" and an encryption key is shown and copied to the clipboard
+- In the "Connect to another window", the user switches to "Teilen relay" and pastes the two keys
+- Both gridterms connects to the relay server and encrypts the data the same way teilen does, end-to-end
+- We re-use our wire format, but don't require any authorized keys to serve

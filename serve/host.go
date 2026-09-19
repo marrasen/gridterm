@@ -229,6 +229,10 @@ func (s *Server) runSession(ctx context.Context, ch ssh.Channel,
 	// drawing from the row this window publishes for the same thing.
 	// Before anything else goes down the channel, and not waited on: a
 	// client that does not care drops it.
+	//
+	// A failure is said and the session carries on. The shell is running
+	// and its pane is open here; ending it over a name that did not
+	// arrive would cost the user their work to save them a second row.
 	if named.ID != "" {
 		_, err := ch.SendRequest(reqOpened, false, ssh.Marshal(opened(named)))
 		if err != nil && !errors.Is(err, io.EOF) {

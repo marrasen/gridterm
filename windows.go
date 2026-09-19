@@ -708,22 +708,27 @@ func (a *app) openOnWindow(addr string, at *spot) error {
 	// asked about, so the sidebar keeps one heading for it.
 	pane, err = a.openSessionPane(sess, t.name, conns.Terminal, "terminal", at)
 	if err != nil {
-		// The session is ours and nothing else knows about it.
-		_ = sess.Close()
-		return err
+		// The session is ours and nothing else knows about it. One that
+		// will not close leaves a shell over there nobody is reading, so
+		// it is said along with why this failed.
+		return errors.Join(err, sess.Close())
 	}
 	a.windows.draws(pane, t)
 	return nil
 }
 
 // bindWatched records that a pane is drawing what the other window calls
-// named.
+// named, so the sidebar draws one row for it rather than one here and
+// one for what that window publishes.
 //
-// One thing open should be one row. Without this the pane has a row here
-// and the thing it is drawing has another, published by the window that
-// opened it, and the two read as two shells.
+// A pane that has been closed is left off the record. The name can
+// arrive after the user has closed the pane, and a closed pane on the
+// record hides the row for a shell still running over there.
 func (a *app) bindWatched(pane *term.Terminal, t *taken, named serve.Attached) {
 	if pane == nil || named.ID == "" || !a.windows.holds(t) {
+		return
+	}
+	if _, live := a.panes[pane]; !live {
 		return
 	}
 	a.windows.watch(pane, remoteKey{window: t, id: named.ID})

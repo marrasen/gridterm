@@ -610,6 +610,10 @@ func (s *remoteSession) readRequests(reqs <-chan *ssh.Request) {
 	defer close(s.done)
 	for req := range reqs {
 		if req.Type == reqOpened && s.named != nil {
+			// A name that cannot be read is no name at all, and this
+			// window then draws its own row for the pane and leaves the
+			// other window's row beside it: two rows for one shell,
+			// which is what it did before there was a name to send.
 			var got opened
 			if err := ssh.Unmarshal(req.Payload, &got); err == nil && got.ID != "" {
 				s.named(Attached(got))

@@ -32,12 +32,8 @@ const (
 
 	// reqOpened says what the served window calls what it just opened.
 	// Its payload is opened, and it is sent once, before any of the
-	// program's own bytes.
-	//
-	// A client that opens something new is drawing a pane of its own for
-	// it, and the served window publishes the same thing on its control
-	// channel. Without this the client cannot tell that the two are one
-	// thing, and shows a row for each.
+	// program's own bytes, so a client drawing a pane for it can tell
+	// that pane from the row the served window publishes for it.
 	reqOpened = "opened@gridterm"
 )
 
@@ -45,8 +41,7 @@ const (
 // client would use to ask for it again.
 //
 // The same fields as Attached, in the same order, so the two convert
-// into each other. They are separate types all the same: this one is a
-// shape on the wire, and the compiler refuses the conversion the moment
+// into each other and the compiler refuses the conversion the moment
 // they stop matching.
 type opened struct {
 	ID   string

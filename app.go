@@ -22,6 +22,7 @@ import (
 	"github.com/marrasen/gridterm/session"
 	"github.com/marrasen/gridterm/themes"
 	"github.com/marrasen/gridterm/ui"
+	"github.com/marrasen/gridterm/ui/files"
 	"github.com/marrasen/gridterm/ui/term"
 	"github.com/marrasen/gridterm/vt"
 )
@@ -190,6 +191,10 @@ type app struct {
 	farBy    map[*conns.Entry]remoteHostKey
 	rowBuf   []ui.ListRow
 	liveRows map[*conns.Entry]bool
+
+	// readers are the file readers open in the window, each with the row
+	// it has on the sidebar.
+	readers map[*files.Reader]*conns.Entry
 
 	// paneRows are the rows that stand for a pane of this window, worked
 	// out once a frame.

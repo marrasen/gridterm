@@ -39,6 +39,9 @@ const (
 	// Server is the connection to a machine itself, which everything
 	// else on that machine rides inside.
 	Server
+
+	// Reader is one file being read.
+	Reader
 )
 
 // String names a kind the way the panel shows it.

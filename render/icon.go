@@ -58,10 +58,22 @@ var icons = [numIconKinds][]unit{
 		{X: 2, Y: 4, W: 1, H: 1},
 		{X: 2, Y: 6, W: 1, H: 1},
 	},
+	grid.IconReader: {
+		// A sheet with lines of text on it: the two edges that say it is
+		// a page, and three lines that say it is being read. The right
+		// edge is left off, so it reads as a page rather than as the box
+		// a terminal is.
+		{X: 1, Y: 0, W: 6, H: 1},
+		{X: 1, Y: 7, W: 6, H: 1},
+		{X: 1, Y: 1, W: 1, H: 6},
+		{X: 3, Y: 2, W: 4, H: 1},
+		{X: 3, Y: 4, W: 4, H: 1},
+		{X: 3, Y: 6, W: 2, H: 1},
+	},
 }
 
 // numIconKinds is how many icons there are to draw.
-const numIconKinds = 4
+const numIconKinds = 5
 
 // iconBars is where an icon's rectangles go inside the cols cells from
 // x on.

@@ -234,6 +234,15 @@ func (a *app) newPane(f vfs.FS, b *browser) *files.Pane {
 		}()
 	}
 	p.OnChange = func() { a.browserMoved(b, p) }
+	// Posted rather than run here: opening a pane rearranges the tree,
+	// and this is called from inside the key handling of a pane in it.
+	p.OnOpen = func(e vfs.Entry) {
+		a.pump.post(func() {
+			if err := a.readFileFrom(p, e); err != nil {
+				a.reportError("Could not read "+e.Name, err)
+			}
+		})
+	}
 	// Not from the pane's own key handling: a dialog opened from inside
 	// one is torn down with whatever the key was delivered through.
 	p.OnGoTo = func() {

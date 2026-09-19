@@ -217,6 +217,10 @@ func (a *app) paneName(w ui.Widget) string {
 				return e.Kind.String() + " " + e.Label
 			}
 		}
+	case *files.Reader:
+		if e := a.readers[pane]; e != nil {
+			return e.Kind.String() + " " + e.Label
+		}
 	}
 	return fmt.Sprintf("%T", w)
 }
@@ -240,6 +244,10 @@ func (a *app) paneWhere(w ui.Widget) string {
 			return pane.FS().Name()
 		}
 		return groupName(a.hostOf(pane.FS()))
+	case *files.Reader:
+		if e := a.readers[pane]; e != nil {
+			return groupName(e.Host)
+		}
 	}
 	return ""
 }

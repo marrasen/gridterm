@@ -379,6 +379,8 @@ func (a *app) entryOf(w ui.Widget) *conns.Entry {
 			return nil
 		}
 		return a.files.rows[p]
+	case *files.Reader:
+		return a.readers[p]
 	}
 	return nil
 }
@@ -441,7 +443,7 @@ func (a *app) isPane(w ui.Widget) bool {
 	}
 	for _, leaf := range ui.Leaves(w) {
 		switch leaf.(type) {
-		case *term.Terminal, *files.Pane:
+		case *term.Terminal, *files.Pane, *files.Reader:
 		default:
 			return false
 		}
@@ -504,6 +506,13 @@ func (a *app) closePane(w ui.Widget) error {
 			errs = append(errs, a.filesPaneGone(p))
 			continue
 		}
+		// A reader holds no connection of its own: it reads through the
+		// browser's, and the browser lets that go. So there is only the
+		// row to take off.
+		if r, isReader := leaf.(*files.Reader); isReader {
+			a.dropReader(r)
+			continue
+		}
 		t, isTerm := leaf.(*term.Terminal)
 		if !isTerm {
 			continue
@@ -523,7 +532,7 @@ func (a *app) closePane(w ui.Widget) error {
 	// The window goes with the last pane. Counted rather than read off
 	// an empty tree: the connections panel is a leaf too, so the dock
 	// stands in for the pane that went and the tree is never empty.
-	if len(a.panes) == 0 && a.files == nil {
+	if len(a.panes) == 0 && a.files == nil && len(a.readers) == 0 {
 		a.quit.Store(true)
 	}
 	if !detached {

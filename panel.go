@@ -39,6 +39,8 @@ func icon(k conns.Kind) grid.Art {
 		return grid.Icon(grid.IconFiles)
 	case conns.Tunnel:
 		return grid.Icon(grid.IconTunnel)
+	case conns.Reader:
+		return grid.Icon(grid.IconReader)
 	}
 	return grid.Icon(grid.IconTerminal)
 }
@@ -221,6 +223,11 @@ func (a *app) refreshPanel(now time.Time) {
 	// the meter cannot say.
 	for e, open := range a.tunnels {
 		e.Note = open.note()
+	}
+
+	// And a reader says how much of the file it has, or why it has none.
+	for r, e := range a.readers {
+		e.Note = a.readerNote(r)
 	}
 
 	// And a pane says when somebody elsewhere is reading it. Two people

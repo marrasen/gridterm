@@ -100,6 +100,9 @@ const (
 	// IconTunnel is traffic going both ways.
 	IconTunnel
 
+	// IconReader is a page being read: lines of text on a sheet.
+	IconReader
+
 	// numIcons is how many there are, for a caller checking one.
 	numIcons
 )

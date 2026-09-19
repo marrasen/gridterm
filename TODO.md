@@ -99,6 +99,18 @@ These are all about the context menu, which is planned below.
 
 ## Settled, do not re-open
 
+- **A new pane opens on the shell that was picked last.** Answered on
+  2026-09-19, from the code. Three things are asked in order: a command
+  named with `-e` on the command line, then the shell written down in
+  the settings file, then this machine's own default. The settings file
+  is written by `rememberShell` when a shell is opened by name from the
+  File menu or the palette, so the last one picked is what the next pane
+  and the next run open on. "Default shell" on that menu opens on the
+  machine's default and forgets the pick. With nothing written down,
+  `session.DefaultShell` answers `%COMSPEC%` on Windows, which is
+  cmd.exe, and `$SHELL` then `/bin/bash` then `/bin/sh` elsewhere. So a
+  first launch on a fresh settings file opens cmd.exe, not PowerShell.
+
 - **A pane that cannot be put in a job object opens no pane, and the
   window says why.** Answered on 2026-09-17: open the window and show
   the failure in it. Opening the pane anyway was the wrong trade,

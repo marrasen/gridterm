@@ -13,9 +13,6 @@ It would be cool if I could copy the contents of a pane and keep the colors. If 
 and also have an option to "copy as image", if I want to paste into a chat or something. I don't know if "rich text" 
 is the best to use though.
 
-# Notes
-- What decides what to open on first launch? CMD/PS/WSL? Is it the last picked?
-
 # File viewer
 - Select and copy text
 - Color code JSON

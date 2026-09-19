@@ -429,11 +429,32 @@ func TestEveryThemeReads(t *testing.T) {
 				}
 			}
 		}
-		// The sidebar and the menu bar are shaded towards colour 4, so a
-		// theme whose ground is already that colour has no frame at all.
+		// The sidebar and the menu bar are a step from the window's own
+		// ground, or there is no frame to see.
 		if got := grid.Contrast(a.sidebarFoot(), pal.BG); got < 1.1 {
 			t.Errorf("%s: the window's frame is %v on a ground of %v, %.2f:1, and it has to read as a frame",
 				theme.Name, a.sidebarFoot(), pal.BG, got)
+		}
+		// And it is grey, unless the theme wrote its own frame down.
+		// Furniture with no colour of its own stays out of the way of
+		// the text beside it.
+		if !a.look.Set {
+			for what, c := range map[string]color.RGBA{
+				"the top of the sidebar": a.sidebarTop(),
+				"its foot":               a.sidebarFoot(),
+			} {
+				if c != grid.Grey(c) {
+					t.Errorf("%s: %s is %v, want a grey", theme.Name, what, c)
+				}
+			}
+			// The foot is the further of the two from the window, so the
+			// sidebar shades down its length rather than sitting flat.
+			near := grid.Contrast(a.sidebarTop(), pal.BG)
+			far := grid.Contrast(a.sidebarFoot(), pal.BG)
+			if far <= near {
+				t.Errorf("%s: the sidebar is %.2f:1 against the window at the top and %.2f:1 at the foot, "+
+					"want it to shade down its length", theme.Name, near, far)
+			}
 		}
 		// A chip on the menu bar picks its own ground, so what it says
 		// has to read on that rather than on the bar.

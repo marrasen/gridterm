@@ -11,6 +11,7 @@ import (
 
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/render"
+	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/vfs"
 )
 
@@ -158,5 +159,37 @@ func TestARereadOfTheSamePictureKeepsItsTexture(t *testing.T) {
 
 	if p.pic.Img != was {
 		t.Error("a second frame built the texture again")
+	}
+}
+
+// A picture behind a tab is hidden rather than given up: building the
+// texture again on every switch would cost a whole picture each time.
+func TestAPictureBehindATabKeepsItsTexture(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	withCompositor(t, a)
+	p := openedPicture(t, a, 64, 32)
+	r := onlyReader(t, a)
+	was := p.pic.Img
+
+	// A pane the tree has nowhere for, which is what a tab behind is.
+	r.Layout(ui.Size{})
+	a.placeReaderPics()
+
+	if !p.layer.Hidden {
+		t.Error("the picture is still drawn although the pane has no room")
+	}
+	if p.pic.Img != was {
+		t.Error("the texture was given up")
+	}
+
+	// And it comes back without building another.
+	a.relayout()
+	a.placeReaderPics()
+	if p.layer.Hidden {
+		t.Error("the picture did not come back")
+	}
+	if p.pic.Img != was {
+		t.Error("coming back built the texture again")
 	}
 }

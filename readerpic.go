@@ -76,12 +76,21 @@ func (a *app) placeReaderPics() {
 	}
 	for r := range a.readers {
 		img := r.Picture()
-		area, shown := a.paneArea(r)
-		room := r.PictureRoom()
 		p := a.readerPics[r]
-		if img == nil || !shown || room.Empty() {
+		if img == nil {
 			if p != nil {
 				a.dropReaderPic(r, p)
+			}
+			continue
+		}
+		area, shown := a.paneArea(r)
+		room := r.PictureRoom()
+		if !shown || room.Empty() {
+			// A pane behind a tab, or one with no room for a picture,
+			// keeps its texture and hides it: building one again on
+			// every switch between tabs would cost a whole picture.
+			if p != nil {
+				p.layer.Hidden = true
 			}
 			continue
 		}

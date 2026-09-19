@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/marrasen/gridterm/conns"
+	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/vfs"
 )
 
@@ -194,5 +195,77 @@ func TestAPaneIsFoundUnderThePointer(t *testing.T) {
 	sideLeft, sideWidth := a.geo.ColBox(side.X, side.X+side.Cols)
 	if got := a.paneAt(sideLeft+sideWidth/2, top+height/2); got != nil {
 		t.Errorf("a drop on the sidebar gave %v, want no pane", got)
+	}
+}
+
+// The path lands in the pane the file was dropped on, whatever the user
+// has moved on to while it was copying.
+//
+// A copy of a large file takes a while, and working in another pane
+// meanwhile is the ordinary thing to do. A path typed into whatever
+// happens to have the keys when it finishes would land in the wrong
+// place.
+func TestThePathLandsInThePaneItWasDroppedOn(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	dropped := onlyPaneOn(t, a)
+	if err := a.openPane(); err != nil {
+		t.Fatalf("a second pane: %v", err)
+	}
+	elsewhere := newestPane(t, a)
+	if dropped == elsewhere {
+		t.Fatal("the second pane is the first")
+	}
+	at := aDroppedFile(t, "notes.txt", 4096)
+	into := t.TempDir()
+
+	a.uploadOne(vfs.NewLocal(), a.about(conns.Local), dropped, at, into, nil)
+	// And the user goes to work somewhere else while it copies.
+	a.focus(elsewhere)
+
+	waitFor(t, a, "the path to reach a shell", func() bool {
+		for _, sh := range a.shells {
+			if strings.Contains(sh.sentText(), "notes.txt") {
+				return true
+			}
+		}
+		return false
+	})
+
+	// The shells are made in the order the panes were, so the first is
+	// the pane the file was dropped on and the second is the one the
+	// user moved to.
+	if got := a.shells[0].sentText(); !strings.Contains(got, "notes.txt") {
+		t.Errorf("the pane it was dropped on was sent %q", got)
+	}
+	if got := a.shells[1].sentText(); strings.Contains(got, "notes.txt") {
+		t.Errorf("the pane the user moved to was sent %q", got)
+	}
+}
+
+// A file that arrives after its pane has closed says where it went.
+// Typing the path into a pane nobody can see would lose it.
+func TestAFileThatArrivesAfterItsPaneClosedSaysWhere(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	if err := a.openPane(); err != nil {
+		t.Fatalf("a second pane: %v", err)
+	}
+	dropped := newestPane(t, a)
+	at := aDroppedFile(t, "notes.txt", 4096)
+	into := t.TempDir()
+	held := &stalledFS{FS: vfs.NewLocal(), hold: make(chan struct{})}
+
+	a.uploadOne(held, a.about(conns.Local), dropped, at, into, nil)
+	if err := a.closePane(dropped); err != nil {
+		t.Fatalf("close the pane: %v", err)
+	}
+	close(held.hold)
+
+	n := awaitModal[*ui.Notice](t, a, "where the file went", nil)
+	if !strings.Contains(n.Message(), "notes.txt") {
+		t.Errorf("it says %q, want it to name the file", n.Message())
 	}
 }

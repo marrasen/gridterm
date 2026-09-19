@@ -137,6 +137,17 @@ func (a *app) uploadOne(fs vfs.FS, on hostFacts, pane *term.Terminal,
 				// user stopped is not a failure to report.
 				return
 			}
+			if _, live := a.panes[pane]; !live {
+				// The pane it was dropped on has been closed while the
+				// file was on its way. Typing into it would put the path
+				// where nobody can read it, and the file is there.
+				a.showNotice("The file arrived after its pane closed",
+					at+" is on "+groupName(on.name), false)
+				return
+			}
+			// The pane it was dropped on, whatever the user has moved on
+			// to: a path typed into whatever happens to have the keys
+			// when a copy finishes would land in the wrong place.
 			pane.Paste(typedPaths([]string{at}))
 		})
 		return nil

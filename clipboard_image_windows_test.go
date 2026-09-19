@@ -3,213 +3,150 @@
 package main
 
 import (
-	"encoding/binary"
-	"image"
-	"image/color"
+	"errors"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
+
+	win "golang.org/x/sys/windows"
 )
 
-// dib builds a device independent bitmap the way Windows lays one out,
-// for a test that does not depend on what is on the real clipboard.
+// heldClipboard stands in for the operating system's clipboard,
+// recording which thread took it and which gave it back.
 //
-// A negative height means the rows are given top row first, which is
-// what a top-down bitmap says.
-func dib(width, height, bits, compression int, rows [][]byte) []byte {
-	const headerSize = 40
-	head := make([]byte, headerSize)
-	binary.LittleEndian.PutUint32(head[0:4], headerSize)
-	binary.LittleEndian.PutUint32(head[4:8], uint32(int32(width)))
-	binary.LittleEndian.PutUint32(head[8:12], uint32(int32(height)))
-	binary.LittleEndian.PutUint16(head[12:14], 1)
-	binary.LittleEndian.PutUint16(head[14:16], uint16(bits))
-	binary.LittleEndian.PutUint32(head[16:20], uint32(compression))
-	out := head
-	if compression == biBitfields {
-		out = append(out, make([]byte, 12)...)
-	}
-	stride := (width*bits/8 + 3) &^ 3
-	for _, row := range rows {
-		padded := make([]byte, stride)
-		copy(padded, row)
-		out = append(out, padded...)
-	}
-	return out
-}
+// Stood in for rather than used: everything else here needs the real
+// clipboard, and a test that took it would take it from whoever is using
+// the machine.
+func heldClipboard(t *testing.T, open func() error) (opened, closed *uint32) {
+	t.Helper()
+	wasOpen, wasClose := clipOpen, clipClose
+	t.Cleanup(func() { clipOpen, clipClose = wasOpen, wasClose })
 
-// Windows writes a bitmap's rows bottom first, so the last row given is
-// the top of the picture.
-func TestABottomUpBitmapIsTurnedTheRightWayUp(t *testing.T) {
-	// Two rows of one pixel: red written first, so red is the bottom.
-	raw := dib(1, 2, 24, biRGB, [][]byte{
-		{0x00, 0x00, 0xff}, // blue, green, red
-		{0x00, 0xff, 0x00},
-	})
-
-	got, err := imageFromDIB(raw)
-
-	if err != nil {
-		t.Fatalf("read it: %v", err)
-	}
-	if want := (color.RGBA{0, 0xff, 0, 0xff}); got.At(0, 0) != want {
-		t.Errorf("the top pixel is %v, want the green one written last", got.At(0, 0))
-	}
-	if want := (color.RGBA{0xff, 0, 0, 0xff}); got.At(0, 1) != want {
-		t.Errorf("the bottom pixel is %v, want the red one written first", got.At(0, 1))
-	}
-}
-
-// A negative height says the rows are already the right way up.
-func TestATopDownBitmapIsLeftAlone(t *testing.T) {
-	raw := dib(1, -2, 24, biRGB, [][]byte{
-		{0x00, 0x00, 0xff},
-		{0x00, 0xff, 0x00},
-	})
-
-	got, err := imageFromDIB(raw)
-
-	if err != nil {
-		t.Fatalf("read it: %v", err)
-	}
-	if want := (color.RGBA{0xff, 0, 0, 0xff}); got.At(0, 0) != want {
-		t.Errorf("the top pixel is %v, want the red one written first", got.At(0, 0))
-	}
-}
-
-// A 32-bit bitmap carries its alpha, and rows are padded out to four
-// bytes, which a 24-bit one of an odd width needs.
-func TestTheColoursAndThePaddingAreRead(t *testing.T) {
-	// Three pixels of 24 bits is nine bytes, padded to twelve.
-	raw := dib(3, 1, 24, biRGB, [][]byte{{
-		0x01, 0x02, 0x03,
-		0x04, 0x05, 0x06,
-		0x07, 0x08, 0x09,
-	}})
-
-	got, err := imageFromDIB(raw)
-
-	if err != nil {
-		t.Fatalf("read it: %v", err)
-	}
-	for x, want := range []color.RGBA{
-		{0x03, 0x02, 0x01, 0xff},
-		{0x06, 0x05, 0x04, 0xff},
-		{0x09, 0x08, 0x07, 0xff},
-	} {
-		if got := got.At(x, 0); got != want {
-			t.Errorf("pixel %d is %v, want %v: Windows writes blue, green, red", x, got, want)
+	opened, closed = new(uint32), new(uint32)
+	clipOpen = func() error {
+		if err := open(); err != nil {
+			return err
 		}
+		*opened = win.GetCurrentThreadId()
+		return nil
 	}
+	clipClose = func() error {
+		*closed = win.GetCurrentThreadId()
+		return nil
+	}
+	return opened, closed
 }
 
-// A 32-bit bitmap whose alpha is set is taken at its word.
-func TestAnAlphaChannelThatWasWrittenIsKept(t *testing.T) {
-	raw := dib(2, 1, 32, biBitfields, [][]byte{{
-		0x10, 0x20, 0x30, 0x80,
-		0x40, 0x50, 0x60, 0xff,
-	}})
-
-	got, err := imageFromDIB(raw)
-
-	if err != nil {
-		t.Fatalf("read it: %v", err)
-	}
-	if want := (color.RGBA{0x30, 0x20, 0x10, 0x80}); got.At(0, 0) != want {
-		t.Errorf("the first pixel is %v, want %v", got.At(0, 0), want)
-	}
-}
-
-// A 32-bit bitmap whose alpha is zero everywhere has none at all.
+// The clipboard is taken and given back on one thread.
 //
-// Plenty of programs leave that byte unwritten, and taking it at its
-// word would make the whole picture see-through.
-func TestAnAlphaChannelNobodyWroteIsIgnored(t *testing.T) {
-	raw := dib(2, 1, 32, biRGB, [][]byte{{
-		0x10, 0x20, 0x30, 0x00,
-		0x40, 0x50, 0x60, 0x00,
-	}})
+// Windows gives the clipboard to the thread that opened it rather than
+// to the process, and Go moves a goroutine from one thread to another
+// whenever it likes. A close that lands on another thread fails, and a
+// picture put on the clipboard is then never committed. That is what
+// happened to a picture sent from another window: it arrives on a
+// goroutine of the server's, where nothing holds the thread still.
+func TestTheClipboardIsHeldOnOneThread(t *testing.T) {
+	opened, closed := heldClipboard(t, func() error { return nil })
 
-	got, err := imageFromDIB(raw)
-
-	if err != nil {
-		t.Fatalf("read it: %v", err)
-	}
-	if want := (color.RGBA{0x30, 0x20, 0x10, 0xff}); got.At(0, 0) != want {
-		t.Errorf("the first pixel is %v, want %v: an alpha nobody wrote is not an alpha", got.At(0, 0), want)
-	}
-}
-
-// A bitmap this cannot read is refused by name rather than drawn wrongly
-// or read past its end.
-func TestABitmapThisCannotReadIsRefused(t *testing.T) {
-	for what, raw := range map[string][]byte{
-		"too short for a header": make([]byte, 8),
-		"eight bits a pixel":     dib(1, 1, 8, biRGB, [][]byte{{0x01}}),
-		"compressed":             dib(1, 1, 24, 4, [][]byte{{0x01, 0x02, 0x03}}),
-		"no pixels at all":       dib(0, 0, 24, biRGB, nil),
-		"fewer rows than it says": append(
-			dib(1, 4, 24, biRGB, [][]byte{{0x01, 0x02, 0x03}})[:40],
-			make([]byte, 4)...),
-	} {
-		if _, err := imageFromDIB(raw); err == nil {
-			t.Errorf("a bitmap %s was read", what)
-		} else if !strings.Contains(err.Error(), "clipboard") {
-			t.Errorf("a bitmap %s says %q, which does not say where it came from", what, err)
-		}
-	}
-}
-
-// A picture laid out for the clipboard reads back as the one that went
-// in, which is the check that the two halves agree.
-func TestAPictureLaidOutForTheClipboardReadsBack(t *testing.T) {
-	want := image.NewRGBA(image.Rect(0, 0, 2, 3))
-	want.SetRGBA(0, 0, color.RGBA{0x11, 0x22, 0x33, 0xff})
-	want.SetRGBA(1, 0, color.RGBA{0x44, 0x55, 0x66, 0xff})
-	want.SetRGBA(0, 2, color.RGBA{0x77, 0x88, 0x99, 0xff})
-
-	got, err := imageFromDIB(dibFrom(want))
-
-	if err != nil {
-		t.Fatalf("read it back: %v", err)
-	}
-	if got.Bounds() != want.Bounds() {
-		t.Fatalf("it came back %v, want %v", got.Bounds(), want.Bounds())
-	}
-	for y := range 3 {
-		for x := range 2 {
-			if got, want := got.At(x, y), want.At(x, y); got != want {
-				t.Errorf("pixel %d,%d is %v, want %v", x, y, got, want)
+	// On a goroutine of its own, the way a picture from another window
+	// arrives, and with every chance in the middle to be moved.
+	done := make(chan error, 1)
+	go func() {
+		done <- withClipboard(func() error {
+			for range 4 {
+				runtime.Gosched()
+				time.Sleep(time.Millisecond)
 			}
+			return nil
+		})
+	}()
+
+	if err := <-done; err != nil {
+		t.Fatalf("hold the clipboard: %v", err)
+	}
+	if *opened == 0 || *closed == 0 {
+		t.Fatalf("it opened on thread %d and closed on %d, want both recorded", *opened, *closed)
+	}
+	if *opened != *closed {
+		t.Errorf("the clipboard was taken on thread %d and given back on %d", *opened, *closed)
+	}
+}
+
+// A close that fails is said rather than dropped: whatever was put on
+// the clipboard is not there for anyone else.
+func TestAClipboardCloseThatFailsIsSaid(t *testing.T) {
+	wasOpen, wasClose := clipOpen, clipClose
+	t.Cleanup(func() { clipOpen, clipClose = wasOpen, wasClose })
+	clipOpen = func() error { return nil }
+	clipClose = func() error { return errors.New("it belongs to another thread") }
+
+	err := withClipboard(func() error { return nil })
+
+	if err == nil {
+		t.Fatal("a close that failed was dropped")
+	}
+	if !strings.Contains(err.Error(), "another thread") {
+		t.Errorf("it said %q, want the reason the close gave", err)
+	}
+}
+
+// What went wrong inside is said along with a close that also failed:
+// they are two failures, not one.
+func TestBothTheWorkAndTheCloseAreSaid(t *testing.T) {
+	wasOpen, wasClose := clipOpen, clipClose
+	t.Cleanup(func() { clipOpen, clipClose = wasOpen, wasClose })
+	clipOpen = func() error { return nil }
+	clipClose = func() error { return errors.New("the close went") }
+
+	err := withClipboard(func() error { return errors.New("the picture went") })
+
+	if err == nil {
+		t.Fatal("neither failure was said")
+	}
+	for _, want := range []string{"the picture went", "the close went"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("it said %q, want it to say %q as well", err, want)
 		}
 	}
 }
 
-// A picture Go holds multiplied by its alpha is written out as the
-// colours themselves, which is what Windows expects to be handed.
-func TestAlphaIsTakenBackOutOfTheColours(t *testing.T) {
-	// Half-transparent red, as Go holds it: the red is already halved.
-	img := image.NewRGBA(image.Rect(0, 0, 1, 1))
-	img.SetRGBA(0, 0, color.RGBA{R: 0x80, A: 0x80})
+// The clipboard is one object shared by every program on the machine, so
+// another holding it for a moment is waited for rather than taken as a
+// failure.
+func TestAClipboardHeldByAnotherProgramIsWaitedFor(t *testing.T) {
+	tries := 0
+	_, _ = heldClipboard(t, func() error {
+		tries++
+		if tries < 3 {
+			return errors.New("another program has it")
+		}
+		return nil
+	})
 
-	dib := dibFrom(img)
-
-	px := dib[headerSize : headerSize+4]
-	if px[3] != 0x80 {
-		t.Errorf("the alpha is %#x, want %#x", px[3], 0x80)
+	if err := withClipboard(func() error { return nil }); err != nil {
+		t.Fatalf("it gave up on a clipboard that was busy for a moment: %v", err)
 	}
-	// Red at full strength, because the alpha says how see-through it
-	// is rather than how red it is.
-	if px[2] < 0xf0 {
-		t.Errorf("the red is %#x, want it taken back out of the alpha", px[2])
+	if tries != 3 {
+		t.Errorf("it asked %d times, want it to have waited for the third", tries)
 	}
 }
 
-// A picture with no pixels at all is laid out as a header and nothing,
-// rather than reaching past the end of the buffer.
-func TestAnEmptyPictureIsLaidOutAsAHeaderAlone(t *testing.T) {
-	got := dibFrom(image.NewRGBA(image.Rect(0, 0, 0, 0)))
+// And one held for good is given up on, with the reason, and the work is
+// not done without it.
+func TestAClipboardHeldForGoodIsGivenUpOn(t *testing.T) {
+	_, _ = heldClipboard(t, func() error { return errors.New("another program has it") })
+	ran := false
 
-	if len(got) != headerSize {
-		t.Errorf("it laid out %d bytes, want the %d of a header", len(got), headerSize)
+	err := withClipboard(func() error { ran = true; return nil })
+
+	if err == nil {
+		t.Fatal("it took a clipboard nothing would give up")
+	}
+	if ran {
+		t.Error("it did the work without the clipboard")
+	}
+	if !strings.Contains(err.Error(), "another program has it") {
+		t.Errorf("it said %q, want the reason the last try gave", err)
 	}
 }

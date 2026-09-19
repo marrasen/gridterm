@@ -227,3 +227,76 @@ func TestAskingForThePictureAsAFileTypesAPath(t *testing.T) {
 		t.Errorf("it typed a path to nothing: %v", err)
 	}
 }
+
+// The bar says a picture is on its way while it is, and names where it
+// is going.
+//
+// Marcus pasted a screenshot into a pane on another machine and nothing
+// on screen said anything was happening until the path appeared. A
+// picture is megabytes and the machine may be a long way off.
+func TestTheBarSaysAPictureIsOnItsWay(t *testing.T) {
+	a := newTestApp(t, 120, 30)
+	withPanel(t, a)
+	withMenubar(t, a)
+
+	if got := a.sendingText(); got != "" {
+		t.Fatalf("the bar says %q with nothing on its way", got)
+	}
+
+	sent := a.sendingPicture("margit")
+
+	if got := a.sendingText(); !strings.Contains(got, "margit") {
+		t.Errorf("the bar says %q, want it to name where the picture is going", got)
+	}
+	if !hasChip(a, "margit") {
+		t.Errorf("no chip on the bar names it: %v", chipTexts(a))
+	}
+
+	sent()
+
+	if got := a.sendingText(); got != "" {
+		t.Errorf("the bar still says %q once the picture has landed", got)
+	}
+	if hasChip(a, "margit") {
+		t.Errorf("the chip is still on the bar: %v", chipTexts(a))
+	}
+}
+
+// Two on their way at once are counted rather than named, because there
+// is only room on the bar for one line.
+func TestTwoPicturesOnTheirWayAreCounted(t *testing.T) {
+	a := newTestApp(t, 120, 30)
+	withPanel(t, a)
+	withMenubar(t, a)
+
+	first := a.sendingPicture("margit")
+	second := a.sendingPicture("statio")
+
+	if got := a.sendingText(); !strings.Contains(got, "2 pictures") {
+		t.Errorf("the bar says %q, want it to count them", got)
+	}
+	first()
+	second()
+	if got := a.sendingText(); got != "" {
+		t.Errorf("the bar still says %q once both have landed", got)
+	}
+}
+
+// chipTexts is what the chips on the bar say.
+func chipTexts(a *testApp) []string {
+	var out []string
+	for _, c := range a.statusChips() {
+		out = append(out, c.Text)
+	}
+	return out
+}
+
+// hasChip reports whether a chip on the bar says something.
+func hasChip(a *testApp, want string) bool {
+	for _, got := range chipTexts(a) {
+		if strings.Contains(got, want) {
+			return true
+		}
+	}
+	return false
+}

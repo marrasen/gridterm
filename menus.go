@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"image/color"
 	"slices"
 
@@ -181,6 +182,14 @@ type statusKey struct {
 // bar drops last when the window is too narrow for both.
 func (a *app) statusChips() []ui.Chip {
 	var chips []ui.Chip
+	// A picture on its way goes first. It is the only one of these that
+	// is about something happening now rather than about how the window
+	// stands, and it is gone in a moment.
+	if text := a.sendingText(); text != "" {
+		chips = append(chips, ui.Chip{
+			Text: text, FG: statusIdleFG(a.colours), BG: a.chipBG(),
+		})
+	}
 	if a.agents.sharing() {
 		chips = append(chips, ui.Chip{
 			Text: shareTitle, FG: statusAgentFG(a.colours), BG: a.chipBG(),
@@ -197,6 +206,23 @@ func (a *app) statusChips() []ui.Chip {
 		})
 	}
 	return chips
+}
+
+// sendingText is what the bar says while a picture is on its way, and
+// nothing when none is.
+//
+// A picture is megabytes and the machine it is going to may be a long
+// way off, so there is a moment with nothing else to show for the paste.
+func (a *app) sendingText() string {
+	switch {
+	case a.sending <= 0:
+		return ""
+	case a.sending == 1 && a.sendingTo != "":
+		return "Sending a picture to " + groupName(a.sendingTo)
+	case a.sending == 1:
+		return "Sending a picture"
+	}
+	return fmt.Sprintf("Sending %d pictures", a.sending)
 }
 
 // chipBG is the ground a chip on the menu bar sits on: black under a

@@ -113,6 +113,7 @@ func (a *app) writePictureOn(on hostFacts, pane *term.Terminal, img image.Image)
 		return err
 	}
 	at, host := a.clock(), on.name
+	sent := a.sendingPicture(host)
 	go func() {
 		defer func() {
 			if err := fs.Close(); err != nil {
@@ -123,6 +124,7 @@ func (a *app) writePictureOn(on hostFacts, pane *term.Terminal, img image.Image)
 		}()
 		path, err := putPictureOn(fs, raw, at)
 		a.pump.post(func() {
+			sent()
 			if err != nil {
 				a.reportError("Could not paste a picture onto "+host, err)
 				return
@@ -131,6 +133,24 @@ func (a *app) writePictureOn(on hostFacts, pane *term.Terminal, img image.Image)
 		})
 	}()
 	return nil
+}
+
+// sendingPicture says a picture is on its way to a machine, and gives
+// back what to call once it has arrived or failed.
+//
+// Both on the goroutine that draws: the count is read there, to build
+// the bar.
+func (a *app) sendingPicture(to string) func() {
+	a.sending++
+	a.sendingTo = to
+	a.markDirty()
+	return func() {
+		a.sending--
+		if a.sending <= 0 {
+			a.sending, a.sendingTo = 0, ""
+		}
+		a.markDirty()
+	}
 }
 
 // putPictureOn writes a picture into a directory of its own under the
@@ -188,9 +208,11 @@ func (a *app) sendPictureTo(on hostFacts, pane *term.Terminal, img image.Image) 
 		return err
 	}
 	win, name := on.window.win, on.name
+	sent := a.sendingPicture(name)
 	go func() {
 		err := win.SendPicture(raw)
 		a.pump.post(func() {
+			sent()
 			if err != nil {
 				a.reportError("Could not paste a picture into "+name, err)
 				return

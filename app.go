@@ -195,6 +195,12 @@ type app struct {
 
 	// readers are the file readers open in the window, each with the row
 	// it has on the sidebar.
+	// sending counts the pictures on their way to another machine, and
+	// sendingTo is where the one of them is going. Both belong to the
+	// goroutine that draws, which is where the bar is built.
+	sending   int
+	sendingTo string
+
 	readers map[*files.Reader]*reader
 
 	// readerPics is the picture each reader showing one has on screen,

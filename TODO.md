@@ -209,20 +209,6 @@ picture sent to the clipboard of a gridterm taken over, and a file
 written on a machine reached by SSH. `edit.pasteImage` on Ctrl+Alt+V
 asks for a file wherever the pane is and types the path. What is left:
 
-- **Pasting a picture from a client did nothing.** Marcus pasted a
-  screenshot into a pane he was working in from another window on
-  2026-09-19, and nothing happened at all: no picture, no file, no word
-  about why. Pasting it as a file worked. Not diagnosed. The picture
-  goes to the clipboard of the window being served, down the
-  `clipboard@gridterm` channel, and something on that path is silent.
-
-- **Nothing says a pasted picture is on its way.** A screenshot is
-  megabytes and the write takes a moment, and until it lands there is
-  nothing on screen to say anything is happening. Marcus asked for an
-  indication. It wants to say which of the two routes it took as well:
-  a picture sent to a window's clipboard, or a file written on a machine
-  reached by SSH.
-
 - **Only Windows reads a picture off the clipboard.** Everywhere else
   the command says there is none. Linux and macOS each need their own
   reader.

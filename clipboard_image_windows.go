@@ -4,9 +4,12 @@ package main
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
+	"runtime"
+	"time"
 	"unsafe"
 
 	win "golang.org/x/sys/windows"
@@ -29,6 +32,16 @@ const (
 	biBitfields = 3
 )
 
+// How long the clipboard is waited for, and how often it is asked.
+//
+// The clipboard is one object shared by every program on the machine.
+// Another holding it for a few milliseconds is ordinary rather than a
+// failure, so opening it is tried for a moment rather than once.
+const (
+	clipboardTry  = 10 * time.Millisecond
+	clipboardWait = 300 * time.Millisecond
+)
+
 var (
 	user32           = win.NewLazySystemDLL("user32.dll")
 	openClipboard    = user32.NewProc("OpenClipboard")
@@ -41,6 +54,71 @@ var (
 	globalUnlock = kernel32.NewProc("GlobalUnlock")
 	globalSize   = kernel32.NewProc("GlobalSize")
 )
+
+// clipOpen takes the clipboard and clipClose gives it back. Variables
+// so a test can stand in for the operating system: everything else here
+// needs the real clipboard, and a test that took it would take it from
+// whoever is using the machine.
+var (
+	clipOpen = func() error {
+		// A window handle of zero asks for the clipboard without owning
+		// a window, which is what a program that only pastes needs.
+		if ok, _, err := openClipboard.Call(0); ok == 0 {
+			return err
+		}
+		return nil
+	}
+	clipClose = func() error {
+		if ok, _, err := closeClipboard.Call(); ok == 0 {
+			return err
+		}
+		return nil
+	}
+)
+
+// withClipboard runs f with the clipboard open and gives it back
+// afterwards.
+//
+// The thread is locked for the whole of it. Windows gives the clipboard
+// to the thread that opened it rather than to the process, and Go moves
+// a goroutine from one thread to another whenever it likes. A close that
+// landed on another thread fails, and a picture put on the clipboard is
+// then never committed.
+//
+// That is what happened to a picture sent from another window: it
+// arrives on a goroutine of the server's, where nothing holds the
+// thread still. A picture pasted at this machine went through the
+// goroutine that draws, which ebiten keeps on one thread, so it worked.
+func withClipboard(f func() error) (err error) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
+	if err := waitForClipboard(); err != nil {
+		return err
+	}
+	defer func() {
+		// Said rather than dropped: a close that failed means whatever
+		// was put on the clipboard is not there for anyone else.
+		if cerr := clipClose(); cerr != nil {
+			err = errors.Join(err, fmt.Errorf("give the clipboard back: %w", cerr))
+		}
+	}()
+	return f()
+}
+
+// waitForClipboard opens the clipboard, waiting a moment for another
+// program that is holding it.
+func waitForClipboard() error {
+	var last error
+	for waited := time.Duration(0); waited < clipboardWait; waited += clipboardTry {
+		last = clipOpen()
+		if last == nil {
+			return nil
+		}
+		time.Sleep(clipboardTry)
+	}
+	return fmt.Errorf("open the clipboard: %w", last)
+}
 
 // clipboardHasText reports whether there is any text on the clipboard.
 //
@@ -72,32 +150,32 @@ func clipboardImage() (image.Image, bool, error) {
 	if format == 0 {
 		return nil, false, nil
 	}
-	// A window handle of zero asks for the clipboard without owning a
-	// window, which is what a program that only reads needs.
-	if ok, _, err := openClipboard.Call(0); ok == 0 {
-		return nil, true, fmt.Errorf("open the clipboard: %w", err)
-	}
-	defer func() { _, _, _ = closeClipboard.Call() }()
+	var dib []byte
+	err := withClipboard(func() error {
+		handle, _, err := getClipboardData.Call(format)
+		if handle == 0 {
+			return fmt.Errorf("read the clipboard: %w", err)
+		}
+		ptr, _, err := globalLock.Call(handle)
+		if ptr == 0 {
+			return fmt.Errorf("lock the clipboard: %w", err)
+		}
+		defer func() { _, _, _ = globalUnlock.Call(handle) }()
 
-	handle, _, err := getClipboardData.Call(format)
-	if handle == 0 {
-		return nil, true, fmt.Errorf("read the clipboard: %w", err)
+		size, _, _ := globalSize.Call(handle)
+		if size == 0 {
+			return errors.New("the picture on the clipboard is empty")
+		}
+		raw := unsafe.Slice((*byte)(unsafe.Pointer(ptr)), int(size))
+		// Copied out from under the lock, because everything past this
+		// point works on it after the clipboard has been given back.
+		dib = make([]byte, len(raw))
+		copy(dib, raw)
+		return nil
+	})
+	if err != nil {
+		return nil, true, err
 	}
-	ptr, _, err := globalLock.Call(handle)
-	if ptr == 0 {
-		return nil, true, fmt.Errorf("lock the clipboard: %w", err)
-	}
-	defer func() { _, _, _ = globalUnlock.Call(handle) }()
-
-	size, _, _ := globalSize.Call(handle)
-	if size == 0 {
-		return nil, true, fmt.Errorf("the picture on the clipboard is empty")
-	}
-	raw := unsafe.Slice((*byte)(unsafe.Pointer(ptr)), int(size))
-	// Copied out from under the lock, because everything past this point
-	// works on it after the clipboard has been given back.
-	dib := make([]byte, len(raw))
-	copy(dib, raw)
 
 	img, err := imageFromDIB(dib)
 	if err != nil {
@@ -231,20 +309,18 @@ func setClipboardImage(img image.Image) error {
 	copy(unsafe.Slice((*byte)(unsafe.Pointer(ptr)), len(dib)), dib)
 	_, _, _ = globalUnlock.Call(mem)
 
-	if ok, _, err := openClipboard.Call(0); ok == 0 {
-		return fmt.Errorf("open the clipboard: %w", err)
-	}
-	defer func() { _, _, _ = closeClipboard.Call() }()
-	if ok, _, err := emptyClipboard.Call(); ok == 0 {
-		return fmt.Errorf("empty the clipboard: %w", err)
-	}
-	if got, _, err := setClipboardData.Call(cfDIB, mem); got == 0 {
-		return fmt.Errorf("put the picture on the clipboard: %w", err)
-	}
-	// The clipboard owns it now, and freeing it would take the picture
-	// out from under whoever pastes it.
-	handed = true
-	return nil
+	return withClipboard(func() error {
+		if ok, _, err := emptyClipboard.Call(); ok == 0 {
+			return fmt.Errorf("empty the clipboard: %w", err)
+		}
+		if got, _, err := setClipboardData.Call(cfDIB, mem); got == 0 {
+			return fmt.Errorf("put the picture on the clipboard: %w", err)
+		}
+		// The clipboard owns it now, and freeing it would take the
+		// picture out from under whoever pastes it.
+		handed = true
+		return nil
+	})
 }
 
 // dibFrom lays a picture out as a device independent bitmap: a header

@@ -226,8 +226,8 @@ func (a *app) refreshPanel(now time.Time) {
 	}
 
 	// And a reader says how much of the file it has, or why it has none.
-	for r, e := range a.readers {
-		e.Note = a.readerNote(r)
+	for r, held := range a.readers {
+		held.row.Note = a.readerNote(r)
 	}
 
 	// And a pane says when somebody elsewhere is reading it. Two people

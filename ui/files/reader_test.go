@@ -15,13 +15,15 @@ import (
 // readerStyle is colours a test can tell apart.
 func readerStyle() Style {
 	return Style{
-		FG:       color.RGBA{R: 0xc0, G: 0xc0, B: 0xc0, A: 0xff},
-		BG:       color.RGBA{R: 0x10, G: 0x10, B: 0x10, A: 0xff},
-		HeaderFG: color.RGBA{G: 0xff, A: 0xff},
-		NoteFG:   color.RGBA{R: 0x80, G: 0x80, B: 0x80, A: 0xff},
-		ErrorFG:  color.RGBA{R: 0xff, A: 0xff},
-		KeyFG:    color.RGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff},
-		OffBG:    color.RGBA{R: 0x30, G: 0x30, B: 0x30, A: 0xff},
+		FG:         color.RGBA{R: 0xc0, G: 0xc0, B: 0xc0, A: 0xff},
+		BG:         color.RGBA{R: 0x10, G: 0x10, B: 0x10, A: 0xff},
+		SelectedFG: color.RGBA{A: 0xff},
+		SelectedBG: color.RGBA{R: 0xc0, G: 0xc0, B: 0xc0, A: 0xff},
+		HeaderFG:   color.RGBA{G: 0xff, A: 0xff},
+		NoteFG:     color.RGBA{R: 0x80, G: 0x80, B: 0x80, A: 0xff},
+		ErrorFG:    color.RGBA{R: 0xff, A: 0xff},
+		KeyFG:      color.RGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff},
+		OffBG:      color.RGBA{R: 0x30, G: 0x30, B: 0x30, A: 0xff},
 	}
 }
 
@@ -282,4 +284,245 @@ func TestALineWiderThanThePaneScrollsSideways(t *testing.T) {
 	if got := readerRow(g, 1); !strings.HasPrefix(got, "abcd") {
 		t.Errorf("the line reads %q, want it back at the start", got)
 	}
+}
+
+// A reader following a file stays at its end as it grows.
+func TestAFollowingReaderStaysAtTheEnd(t *testing.T) {
+	r := aReader(t, 100, 40, 10)
+	r.Follow(true)
+	if !r.AtEnd() {
+		t.Fatal("following did not go to the end")
+	}
+	lines := make([]string, 120)
+	for i := range lines {
+		lines[i] = "line " + strconv.Itoa(i+1)
+	}
+	r.Read = func(then func([]string, bool, error)) { then(lines, false, nil) }
+
+	r.Open()
+
+	if !r.AtEnd() {
+		t.Error("the file grew and the reader did not follow it")
+	}
+	if got, want := r.Top(), 120-8; got != want {
+		t.Errorf("it is on line %d, want %d: the last screenful of the longer file", got, want)
+	}
+}
+
+// A reader the user scrolled back through stays where they put it, even
+// while it is following: they scrolled back to read something.
+func TestScrollingBackOffTheEndStaysThere(t *testing.T) {
+	r := aReader(t, 100, 40, 10)
+	r.Follow(true)
+	r.Scroll(-20)
+	was := r.Top()
+	lines := make([]string, 200)
+	for i := range lines {
+		lines[i] = "line " + strconv.Itoa(i+1)
+	}
+	r.Read = func(then func([]string, bool, error)) { then(lines, false, nil) }
+
+	r.Open()
+
+	if got := r.Top(); got != was {
+		t.Errorf("it moved to line %d, want the %d the user scrolled to", got, was)
+	}
+}
+
+// Scrolling back to the end while following picks the following up
+// again, so a reader is not stuck once it has been scrolled.
+func TestScrollingBackToTheEndFollowsAgain(t *testing.T) {
+	r := aReader(t, 100, 40, 10)
+	r.Follow(true)
+	r.Scroll(-20)
+	r.End()
+	lines := make([]string, 200)
+	for i := range lines {
+		lines[i] = "line " + strconv.Itoa(i+1)
+	}
+	r.Read = func(then func([]string, bool, error)) { then(lines, false, nil) }
+
+	r.Open()
+
+	if !r.AtEnd() {
+		t.Error("the reader went back to the end and then did not follow")
+	}
+}
+
+// The top line says a reader is following, which is the one thing about
+// a tail that the lines themselves cannot say.
+func TestTheTopLineSaysAReaderIsFollowing(t *testing.T) {
+	r := aReader(t, 100, 40, 10)
+
+	r.Follow(true)
+	g := drawReader(r, 40, 10)
+
+	if got := readerRow(g, 0); !strings.Contains(got, "following") {
+		t.Errorf("the top row is %q, want it to say the file is being followed", got)
+	}
+}
+
+// Ctrl+F turns following on and off.
+func TestCtrlFTurnsFollowingOnAndOff(t *testing.T) {
+	r := aReader(t, 100, 40, 10)
+
+	follow := input.Event{Kind: input.KeyPress, Key: input.KeyF, Mods: input.ModCtrl}
+	if _, err := r.HandleKey(follow); err != nil {
+		t.Fatalf("follow: %v", err)
+	}
+	if !r.Following() {
+		t.Error("Ctrl+F did not start following")
+	}
+	if _, err := r.HandleKey(follow); err != nil {
+		t.Fatalf("unfollow: %v", err)
+	}
+	if r.Following() {
+		t.Error("Ctrl+F again did not stop following")
+	}
+}
+
+// End picks the following up again and Home puts it down, the same as
+// scrolling does. Without that, following silently stops after End or
+// silently drags the user back after Home.
+func TestEndAndHomeSettleTheFollowing(t *testing.T) {
+	longer := make([]string, 200)
+	for i := range longer {
+		longer[i] = "line " + strconv.Itoa(i+1)
+	}
+
+	// Scrolled back, then End: the next answer sticks to the end.
+	r := aReader(t, 100, 40, 10)
+	r.Follow(true)
+	r.Scroll(-20)
+	r.End()
+	r.Read = func(then func([]string, bool, error)) { then(longer, false, nil) }
+	r.Open()
+	if !r.AtEnd() {
+		t.Error("End did not pick the following up again")
+	}
+
+	// And Home puts it down, so the next answer leaves the user there.
+	r = aReader(t, 100, 40, 10)
+	r.Follow(true)
+	r.Home()
+	r.Read = func(then func([]string, bool, error)) { then(longer, false, nil) }
+	r.Open()
+	if got := r.Top(); got != 0 {
+		t.Errorf("the reader moved to line %d after Home, want the first", got)
+	}
+}
+
+// A pane too short for a line says how many lines there are rather than
+// a range that counts backwards.
+func TestAPaneTooShortForALineSaysHowManyThereAre(t *testing.T) {
+	r := aReader(t, 100, 40, 10)
+
+	g := drawReader(r, 40, 2)
+
+	got := readerRow(g, 0)
+	if strings.Contains(got, "1-0") {
+		t.Errorf("the top row is %q, and the range counts backwards", got)
+	}
+	if !strings.Contains(got, "100") {
+		t.Errorf("the top row is %q, want the number of lines", got)
+	}
+}
+
+// Scrolling sideways stops where the longest line ends, or holding the
+// key leaves the pane blank with nothing saying how far across it went.
+func TestScrollingSidewaysStopsAtTheLongestLine(t *testing.T) {
+	r := NewReader("wide.txt", "/tmp/wide.txt")
+	r.Style = readerStyle()
+	r.Read = func(then func([]string, bool, error)) {
+		then([]string{strings.Repeat("abcdefghij", 5), "abc"}, false, nil)
+	}
+	r.Layout(ui.Size{Cols: 10, Rows: 5})
+	r.Open()
+
+	r.Sideways(500)
+	g := drawReader(r, 10, 5)
+
+	if got := readerRow(g, 1); got == "" {
+		t.Error("scrolling right left the pane blank")
+	}
+	// And the end of the longest line is at the right edge: no further,
+	// or there would be blank columns past the end of the file.
+	if got, want := readerRow(g, 1), "abcdefghij"; got != want {
+		t.Errorf("the line reads %q, want the last %d columns of the longest one", got, len(want))
+	}
+}
+
+// The wheel scrolls, which is the first thing anybody tries in a pager.
+func TestTheWheelScrollsAReader(t *testing.T) {
+	r := aReader(t, 100, 40, 10)
+
+	took, err := r.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseWheelDown, Col: 1, Row: 1,
+	})
+
+	if err != nil {
+		t.Fatalf("the wheel: %v", err)
+	}
+	if !took {
+		t.Error("the wheel went past the reader")
+	}
+	if got := r.Top(); got == 0 {
+		t.Error("the wheel did not scroll")
+	}
+	if _, err := r.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseWheelUp, Col: 1, Row: 1,
+	}); err != nil {
+		t.Fatalf("the wheel back: %v", err)
+	}
+	if got := r.Top(); got != 0 {
+		t.Errorf("the wheel back landed on line %d, want the first", got)
+	}
+}
+
+// A click on the bar runs the key it is on.
+func TestAClickOnTheBarRunsItsKey(t *testing.T) {
+	r := aReader(t, 100, 40, 10)
+	keys := ReaderKeys()
+	// The second key is End, which goes to the bottom.
+	start, _ := keyCell(1, 40, len(keys))
+
+	if _, err := r.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft, Col: start, Row: 9,
+	}); err != nil {
+		t.Fatalf("the click: %v", err)
+	}
+
+	if !r.AtEnd() {
+		t.Error("clicking End on the bar did not go to the end")
+	}
+}
+
+// A reader without the keys says so, rather than drawing a bar that
+// looks as live as one that has them.
+func TestAReaderWithoutTheKeysSaysSo(t *testing.T) {
+	r := aReader(t, 100, 40, 10)
+
+	// The names on the bar are marked out when the keys are here and
+	// dimmer when they are not, which is a colour rather than a word.
+	r.SetFocus(true)
+	withKeys := barGround(drawReader(r, 40, 10))
+	r.SetFocus(false)
+	without := barGround(drawReader(r, 40, 10))
+
+	if r.Focused() {
+		t.Error("the reader still says it has the keys")
+	}
+	if withKeys == without {
+		t.Errorf("the bar sits on %v either way, so nothing says where the keys are", withKeys)
+	}
+}
+
+// barGround is what the names on a reader's bar are drawn on, which is
+// how the bar says whether the keys are here.
+//
+// The last cell of the bar: a key's name fills its cell out to the end,
+// so the last column is always part of one.
+func barGround(g *grid.Grid) color.RGBA {
+	cols, rows := g.Size()
+	return g.At(cols-1, rows-1).BG
 }

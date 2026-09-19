@@ -932,11 +932,14 @@ func drawBrowser(b *Browser, cols, rows int) []string {
 func TestBrowserSaysWhatTheKeysDo(t *testing.T) {
 	b, _, _ := two(t)
 	b.Style = styled()
-	rows := drawBrowser(b, 80, 12)
+	// Wide enough for every name. The bar divides what it has between
+	// the keys, so a narrow one cuts the names -- see the test below.
+	rows := drawBrowser(b, 120, 12)
 
 	bar := rows[len(rows)-1]
 	for _, want := range []string{
-		"Tab", "Next", "F2", "Rename", "^C", "Copy", "^X", "Cut",
+		"Tab", "Next", "F2", "Rename", "F3", "View", "F4", "Tail",
+		"^C", "Copy", "^X", "Cut",
 		"^V", "Paste", "F8", "Delete", "F9", "Mkdir", "^D", "Close",
 	} {
 		if !strings.Contains(bar, want) {
@@ -2748,5 +2751,24 @@ func TestABrowserIsNotDraggingUntilAPressSaysSo(t *testing.T) {
 
 	if got := widths(b); !equalInts(got, was) {
 		t.Fatalf("the panes are %v wide, want the %v they had: nobody has pressed a divider", got, was)
+	}
+}
+
+// A bar too narrow for the names still names every key.
+//
+// The names are what a bar is cut down to, and the chord is what the
+// user has to know: a bar reading "F3 Vie" still says which key views a
+// file, and one missing F3 altogether does not.
+func TestANarrowBarStillNamesEveryKey(t *testing.T) {
+	b, _, _ := two(t)
+	b.Style = styled()
+
+	rows := drawBrowser(b, 80, 12)
+
+	bar := rows[len(rows)-1]
+	for _, k := range BrowserKeys() {
+		if !strings.Contains(bar, k.Shown) {
+			t.Errorf("the bar reads %q, missing the key %q", bar, k.Shown)
+		}
 	}
 }

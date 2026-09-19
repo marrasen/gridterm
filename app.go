@@ -24,6 +24,7 @@ import (
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/files"
 	"github.com/marrasen/gridterm/ui/term"
+	"github.com/marrasen/gridterm/vfs"
 	"github.com/marrasen/gridterm/vt"
 )
 
@@ -194,7 +195,14 @@ type app struct {
 
 	// readers are the file readers open in the window, each with the row
 	// it has on the sidebar.
-	readers map[*files.Reader]*conns.Entry
+	readers map[*files.Reader]*reader
+
+	// fsHeld counts the readers using each filesystem, and fsGone marks
+	// the ones the browser has finished with. A filesystem is closed
+	// when both say nobody is left: the browser opens them, and a reader
+	// opened from one of its panes goes on reading through it.
+	fsHeld map[vfs.FS]int
+	fsGone map[vfs.FS]bool
 
 	// paneRows are the rows that stand for a pane of this window, worked
 	// out once a frame.
@@ -439,6 +447,9 @@ func (a *app) Update() error {
 	a.refreshJobs()
 	a.reportClosed()
 	a.frameAt = a.clock()
+	// Before the panel, so a file that grew this frame has its row say
+	// how long it is now rather than how long it was.
+	a.followReaders(a.frameAt)
 	a.refreshPanel(a.frameAt)
 	if a.shot != nil {
 		a.shot.update(a)

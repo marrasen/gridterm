@@ -57,6 +57,8 @@ func (k Kind) String() string {
 		return "Tunnel"
 	case Server:
 		return "Server"
+	case Reader:
+		return "Reader"
 	}
 	return "Unknown"
 }

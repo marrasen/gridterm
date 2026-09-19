@@ -37,6 +37,10 @@ func BrowserKeys() []Key {
 		{Chord: chord(input.KeyTab, 0), Shown: "Tab", Title: "Next"},
 		{Chord: chord(input.KeyG, input.ModCtrl), Shown: "^G", Title: "Go to"},
 		{Chord: chord(input.KeyF2, 0), Shown: "F2", Title: "Rename"},
+		// F3 and F4 are what a two-pane browser has meant since Norton
+		// Commander: read this file, and follow it as it grows.
+		{Chord: chord(input.KeyF3, 0), Shown: "F3", Title: "View"},
+		{Chord: chord(input.KeyF4, 0), Shown: "F4", Title: "Tail"},
 		// Copy, cut and paste are the chords they are everywhere else. A
 		// file pane is not a terminal, so nothing else wants them here.
 		{Chord: chord(input.KeyC, input.ModCtrl), Shown: "^C", Title: "Copy"},

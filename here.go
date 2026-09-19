@@ -43,8 +43,15 @@ func (a *app) currentHost() string {
 	}
 	// A file pane is not a terminal, and the one with the keys is on a
 	// machine like anything else.
-	if p, ok := ui.FocusedLeaf(a.root.Widget()).(*files.Pane); ok {
-		return a.hostOf(p.FS())
+	switch pane := ui.FocusedLeaf(a.root.Widget()).(type) {
+	case *files.Pane:
+		return a.hostOf(pane.FS())
+	case *files.Reader:
+		// The machine the file is on, which is the one its row was
+		// filed under when it was opened.
+		if held := a.readers[pane]; held != nil {
+			return held.row.Host
+		}
 	}
 	// Nothing in front to read it off, so it is wherever a new pane
 	// would open: the machine -ssh named, or this one.

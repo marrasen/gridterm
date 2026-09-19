@@ -380,7 +380,10 @@ func (a *app) entryOf(w ui.Widget) *conns.Entry {
 		}
 		return a.files.rows[p]
 	case *files.Reader:
-		return a.readers[p]
+		if held := a.readers[p]; held != nil {
+			return held.row
+		}
+		return nil
 	}
 	return nil
 }

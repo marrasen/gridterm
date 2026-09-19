@@ -76,6 +76,12 @@ type Browser struct {
 	// the rest to whatever built it.
 	OnClose func(*Pane)
 
+	// OnRead is asked to open a file for reading, and follow says to
+	// keep up with it as it grows. A browser cannot put a pane in the
+	// tree it sits in either, so it says which file and leaves the rest
+	// to whatever built it.
+	OnRead func(p *Pane, e vfs.Entry, follow bool)
+
 	// Style colours the dividers between the panes and the bar of keys
 	// along the bottom. It is the panes' own style, so both belong to
 	// what is around them.
@@ -782,8 +788,30 @@ func (b *Browser) press(ev input.Event) (bool, error) {
 		// One name: renaming asks what to call it, and there is one
 		// answer to that question.
 		return b.ask(b.OnRename, true)
+	case input.KeyF3:
+		return b.read(false)
+	case input.KeyF4:
+		return b.read(true)
 	}
 	return false, nil
+}
+
+// read hands on the file the keys are on, for a reader to be opened on
+// it. A directory is left alone: Enter is what goes into one.
+func (b *Browser) read(follow bool) (bool, error) {
+	here := b.Here()
+	if b.OnRead == nil || here == nil {
+		return false, nil
+	}
+	e, ok := here.Selected()
+	if !ok || (e.IsDir() && !e.IsLink()) {
+		// Nothing picked out, or a directory. Neither is a file to read,
+		// and the key is swallowed all the same: it is on the bar, so it
+		// is this browser's whether or not it does anything here.
+		return true, nil
+	}
+	b.OnRead(here, e, follow)
+	return true, nil
 }
 
 // ask hands on what the user picked out, if anything and if there is

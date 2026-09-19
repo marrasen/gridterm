@@ -238,7 +238,7 @@ func (a *app) newPane(f vfs.FS, b *browser) *files.Pane {
 	// and this is called from inside the key handling of a pane in it.
 	p.OnOpen = func(e vfs.Entry) {
 		a.pump.post(func() {
-			if err := a.readFileFrom(p, e); err != nil {
+			if err := a.readFileFrom(p, e, false); err != nil {
 				a.reportError("Could not read "+e.Name, err)
 			}
 		})
@@ -302,6 +302,15 @@ func (a *app) wireBrowser(b *browser) {
 	b.view.OnMove = func(w files.Work) { a.startJob(jobs.Move, w) }
 	b.view.OnDelete = func(w files.Work) { a.confirmDelete(w) }
 	b.view.OnMkdir = func(w files.Work) { a.askForDirectory(w) }
+	// Posted for the same reason the open is: putting a pane in the
+	// tree from inside the key handling of a pane in it.
+	b.view.OnRead = func(p *files.Pane, e vfs.Entry, follow bool) {
+		a.pump.post(func() {
+			if err := a.readFileFrom(p, e, follow); err != nil {
+				a.reportError("Could not read "+e.Name, err)
+			}
+		})
+	}
 	b.view.OnRename = func(w files.Work) { a.askToRename(w) }
 	// A browser cannot take its own pane out of the tree it sits in, so
 	// it says which one and the window does the rest.
@@ -1003,7 +1012,7 @@ func (a *app) filesPaneGone(p *files.Pane) error {
 	// The filesystem first, and whatever the sidebar knows about the
 	// pane after: a pane with no manager to belong to still holds a
 	// session that has to be let go of.
-	err := a.releaseFS(p.FS())
+	err := a.browserLetGoFS(p.FS())
 	b := a.files
 	if b == nil {
 		return errors.Join(err, fmt.Errorf("the pane on %s belonged to no file manager", p.FS().Name()))
@@ -1018,6 +1027,27 @@ func (a *app) filesPaneGone(p *files.Pane) error {
 		a.files = nil
 	}
 	return err
+}
+
+// browserLetGoFS closes a filesystem the browser has finished with,
+// unless a reader is still using it.
+//
+// A reader opened from a browser pane reads through that pane's
+// filesystem. Closing it under one leaves the reader with a stale file
+// and a reread that fails down a session somebody else closed, so the
+// close waits for the last reader to go.
+func (a *app) browserLetGoFS(f vfs.FS) error {
+	if f == nil {
+		return nil
+	}
+	if a.fsHeld[f] > 0 {
+		if a.fsGone == nil {
+			a.fsGone = map[vfs.FS]bool{}
+		}
+		a.fsGone[f] = true
+		return nil
+	}
+	return a.releaseFS(f)
 }
 
 // releaseFS lets go of a filesystem, once no job is still using it.

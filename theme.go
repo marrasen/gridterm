@@ -168,6 +168,9 @@ func (a *app) restyle() {
 	for _, s := range a.scaled {
 		s.g.DefaultFG, s.g.DefaultBG = a.colours.FG, a.colours.BG
 	}
+	for r := range a.readers {
+		r.Style = a.paneStyle()
+	}
 	if a.files != nil {
 		a.files.view.Style = a.paneStyle()
 		for _, p := range a.files.view.Panes() {

@@ -61,8 +61,21 @@ type Reader struct {
 	top  int
 	left int
 
-	// busy says a read is out and has not come back.
-	busy bool
+	// wide is the longest line in columns, and wideOf how many lines it
+	// was worked out over, so it is worked out again when they change.
+	wide   int
+	wideOf int
+
+	// busy says a read is out and has not come back, and focused whether
+	// the keys are here.
+	busy    bool
+	focused bool
+
+	// follow says the reader keeps up with a file that is being written
+	// to, the way tail -f does, and stuck says it was at the end when
+	// the last read went out so the next answer should stay there.
+	follow bool
+	stuck  bool
 
 	size ui.Size
 }
@@ -99,6 +112,10 @@ func (r *Reader) Open() {
 		return
 	}
 	r.busy = true
+	// Asked before the read goes out rather than after it comes back: a
+	// file that grew in between would have moved the end out from under
+	// the question.
+	r.stuck = r.follow && r.AtEnd()
 	r.Read(func(lines []string, cut bool, err error) {
 		r.busy = false
 		r.err = err
@@ -106,15 +123,25 @@ func (r *Reader) Open() {
 			return
 		}
 		r.lines, r.cut = lines, cut
+		if r.stuck {
+			// Following, and the end is where it was left, so the new
+			// lines are what the user is looking at.
+			r.End()
+			return
+		}
 		r.clampTop()
 	})
 }
 
 // ReadFile reads a file into lines, stopping at MostReadBytes.
 //
-// It reports whether there was more of the file than it took. The
-// caller runs it somewhere that is not the goroutine that draws: a file
-// on another machine comes down a connection.
+// It reports whether any of the file was left out: because there was
+// more of it than MostReadBytes, or because a line was longer than
+// MostReadLine and the rest of that line was dropped. Either way the
+// reader says so rather than showing what it got as the whole file.
+//
+// The caller runs it somewhere that is not the goroutine that draws: a
+// file on another machine comes down a connection.
 func ReadFile(f vfs.FS, path string) (lines []string, cut bool, err error) {
 	rc, err := f.Open(path)
 	if err != nil {
@@ -126,43 +153,66 @@ func ReadFile(f vfs.FS, path string) (lines []string, cut bool, err error) {
 		err = errors.Join(err, rc.Close())
 	}()
 
-	// One byte past the limit is read on purpose: a read that stopped
-	// exactly at it cannot tell a file that fits from one that does not.
-	in := bufio.NewReaderSize(io.LimitReader(rc, MostReadBytes+1), 64<<10)
-	read := 0
+	// One byte past the limit is allowed on purpose: reading exactly the
+	// limit cannot tell a file that fits from one that does not. What
+	// arrives is counted rather than what is kept, because what is kept
+	// is already cut down to the lines that fitted.
+	counted := &counter{from: io.LimitReader(rc, MostReadBytes+1)}
+	in := bufio.NewReaderSize(counted, 64<<10)
 	for {
-		line, err := readLine(in)
-		if line != "" || err == nil {
-			read += len(line) + 1
-			if read > MostReadBytes {
-				return lines, true, nil
-			}
-			lines = append(lines, line)
+		line, clipped, err := readLine(in)
+		if clipped {
+			cut = true
 		}
 		if err != nil {
-			if errors.Is(err, io.EOF) {
-				return lines, false, nil
+			if !errors.Is(err, io.EOF) {
+				return nil, false, err
 			}
-			return lines, false, err
+			// The last line of a file that does not end in a newline.
+			// A file that ends in one gives an empty string here, and
+			// that is not a line: it is what is after the last one.
+			if line != "" {
+				lines = append(lines, line)
+			}
+			return lines, cut || counted.read > MostReadBytes, nil
 		}
+		lines = append(lines, line)
 	}
 }
 
-// readLine reads one line without its ending, cutting one longer than
-// MostReadLine rather than holding a file with no newlines in memory
-// twice over.
-func readLine(in *bufio.Reader) (string, error) {
+// counter counts what it has passed on, so ReadFile can tell a file that
+// fits from one that was stopped at the limit.
+type counter struct {
+	from io.Reader
+	read int64
+}
+
+func (c *counter) Read(p []byte) (int, error) {
+	n, err := c.from.Read(p)
+	c.read += int64(n)
+	return n, err
+}
+
+// readLine reads one line without its ending, and reports whether the
+// line was longer than MostReadLine and had its tail dropped.
+//
+// A file with no newlines in it is one line as long as the file, and
+// keeping that would hold the whole thing in memory twice over.
+func readLine(in *bufio.Reader) (line string, clipped bool, err error) {
 	var b strings.Builder
 	for {
 		chunk, more, err := in.ReadLine()
-		if len(chunk) > 0 && b.Len() < MostReadLine {
-			b.Write(chunk[:min(len(chunk), MostReadLine-b.Len())])
+		if room := MostReadLine - b.Len(); len(chunk) > 0 {
+			if len(chunk) > room {
+				chunk, clipped = chunk[:max(room, 0)], true
+			}
+			b.Write(chunk)
 		}
 		if err != nil {
-			return b.String(), err
+			return b.String(), clipped, err
 		}
 		if !more {
-			return b.String(), nil
+			return b.String(), clipped, nil
 		}
 	}
 }
@@ -191,38 +241,82 @@ func (r *Reader) clampTop() {
 // end of a file sits at the bottom of the pane rather than at the top
 // with nothing under it.
 func (r *Reader) lastTop() int {
-	rows := r.rows()
-	if rows <= 0 {
-		// Not laid out yet, so there is no screenful to end on.
-		return max(len(r.lines)-1, 0)
-	}
-	return max(len(r.lines)-rows, 0)
+	// A pane with no room for a line has nowhere to scroll to: there is
+	// no screenful, so the first line is the only place to be.
+	return max(len(r.lines)-max(r.rows(), 1), 0)
 }
 
 // Scroll moves n lines down the file, negative for up.
+//
+// Scrolling back off the end of a file being followed leaves the reader
+// where the user put it. The next answer does not drag them to the
+// bottom again: they scrolled back to read something.
 func (r *Reader) Scroll(n int) {
 	r.top += n
 	r.clampTop()
+	r.stuck = r.follow && r.AtEnd()
 }
 
 // ScrollPages moves n screenfuls down the file, negative for up.
 func (r *Reader) ScrollPages(n int) { r.Scroll(n * max(r.rows(), 1)) }
 
-// Home goes to the first line, and End to the last screenful.
-func (r *Reader) Home() { r.top, r.left = 0, 0 }
+// Home goes to the first line, and End to the last screenful. Both
+// settle whether the reader is at the end, the same as scrolling does:
+// a file being followed sticks to the end only while the user is there.
+func (r *Reader) Home() {
+	r.top, r.left = 0, 0
+	r.stuck = false
+}
 
 func (r *Reader) End() {
 	r.top = r.lastTop()
 	r.clampTop()
+	r.stuck = r.follow
 }
 
 // AtEnd reports that the last line of the file is on screen, which is
 // what a reader following a file has to stay at.
 func (r *Reader) AtEnd() bool { return r.top >= r.lastTop() }
 
+// Follow sets whether the reader keeps up with a file being written to.
+//
+// A reader that is following and is at the end of the file stays there
+// as the file grows. One the user has scrolled back through stays where
+// they put it: following is about the end moving, not about taking the
+// pane away from whoever is reading it.
+func (r *Reader) Follow(on bool) {
+	r.follow = on
+	if on {
+		r.End()
+		return
+	}
+	r.stuck = false
+}
+
+// Following reports whether the reader is keeping up with the file.
+func (r *Reader) Following() bool { return r.follow }
+
 // Sideways moves n columns across, for a line wider than the pane.
+//
+// It stops with the end of the longest line at the right edge. Without
+// that, holding the key walks past every line and leaves the pane blank,
+// with nothing on screen saying how far across it went.
 func (r *Reader) Sideways(n int) {
-	r.left = max(r.left+n, 0)
+	r.left = max(min(r.left+n, max(r.widest()-r.size.Cols, 0)), 0)
+}
+
+// widest is the longest line the reader holds, in columns, and is worked
+// out once per set of lines rather than once per key.
+func (r *Reader) widest() int {
+	if r.wideOf == len(r.lines) {
+		return r.wide
+	}
+	n := 0
+	for _, line := range r.lines {
+		n = max(n, grid.StringWidth(line))
+	}
+	r.wide, r.wideOf = n, len(r.lines)
+	return n
 }
 
 // ReaderKeys is what the bar offers.
@@ -231,6 +325,7 @@ func ReaderKeys() []Key {
 		{Chord: chord(input.KeyHome, 0), Shown: "Home", Title: "Top"},
 		{Chord: chord(input.KeyEnd, 0), Shown: "End", Title: "Bottom"},
 		{Chord: chord(input.KeyR, input.ModCtrl), Shown: "^R", Title: "Reread"},
+		{Chord: chord(input.KeyF, input.ModCtrl), Shown: "^F", Title: "Follow"},
 		{Chord: chord(input.KeyD, input.ModCtrl), Shown: "^D", Title: "Close"},
 	}
 }
@@ -259,6 +354,8 @@ func (r *Reader) HandleKey(ev input.Event) (bool, error) {
 		r.End()
 	case ev.Key == input.KeyR && ev.Ctrl():
 		r.Open()
+	case ev.Key == input.KeyF && ev.Ctrl():
+		r.Follow(!r.follow)
 	case ev.Key == input.KeyD && ev.Ctrl(), ev.Key == input.KeyQ:
 		if r.OnClose != nil {
 			r.OnClose()
@@ -272,6 +369,50 @@ func (r *Reader) HandleKey(ev input.Event) (bool, error) {
 	return true, nil
 }
 
+// readerWheel is how many lines one turn of the wheel moves, which is
+// what a list moves by: the two are read the same way.
+const readerWheel = 3
+
+// HandleMouse scrolls with the wheel and runs a key from the bar.
+//
+// The wheel is the first thing anybody tries in a pager, and a widget
+// that takes no mouse gets none of it.
+func (r *Reader) HandleMouse(ev input.MouseEvent) (bool, error) {
+	if ev.Kind != input.MousePress {
+		// A move or a release over a reader is still the reader's: it
+		// covers its pane, and a drag that started here has nowhere
+		// else to go.
+		return true, nil
+	}
+	switch ev.Button {
+	case input.MouseWheelUp:
+		r.Scroll(-readerWheel)
+		return true, nil
+	case input.MouseWheelDown:
+		r.Scroll(readerWheel)
+		return true, nil
+	case input.MouseLeft:
+	default:
+		return true, nil
+	}
+	// The bar along the bottom: a click on a key does what the key does.
+	if rows := r.size.Rows; rows > 1 && ev.Row == rows-1 {
+		keys := ReaderKeys()
+		if i, ok := keyAt(ev.Col, r.size.Cols, len(keys)); ok {
+			return r.HandleKey(keys[i].press())
+		}
+	}
+	return true, nil
+}
+
+// SetFocus takes or gives up the keys, and Focused says which it is. A
+// reader draws its bar differently without them, so the pane says
+// whether the keys are here rather than looking the same either way.
+func (r *Reader) SetFocus(on bool) { r.focused = on }
+
+// Focused reports whether the keys are here.
+func (r *Reader) Focused() bool { return r.focused }
+
 // Draw paints the name, the lines and the bar.
 func (r *Reader) Draw(v grid.View) {
 	cols, rows := v.Size()
@@ -283,6 +424,9 @@ func (r *Reader) Draw(v grid.View) {
 	// The name at the top, with where in the file this is at the end of
 	// it, so a reader says both without a second row.
 	head := r.name
+	if r.follow {
+		head += " (following)"
+	}
 	if r.busy {
 		head += " …"
 	}
@@ -297,7 +441,7 @@ func (r *Reader) Draw(v grid.View) {
 		r.paintLines(v, cols, rows)
 	}
 	if rows > 1 {
-		drawKeys(v, rows-1, cols, ReaderKeys(), r.Style, func(Key) bool { return true })
+		drawKeys(v, rows-1, cols, ReaderKeys(), r.Style, func(Key) bool { return r.focused })
 	}
 }
 
@@ -340,10 +484,20 @@ func (r *Reader) place() string {
 	if len(r.lines) == 0 {
 		return "empty"
 	}
-	last := min(r.top+r.rows(), len(r.lines))
-	of := fmt.Sprintf("%d", len(r.lines))
-	if r.cut {
-		of += "+"
+	if r.rows() <= 0 {
+		// No room for a line, so there is no range to give. The count
+		// is still worth saying: it is all that fits.
+		return r.howMany()
 	}
-	return fmt.Sprintf("%d-%d of %s", r.top+1, last, of)
+	last := min(r.top+r.rows(), len(r.lines))
+	return fmt.Sprintf("%d-%d of %s", r.top+1, last, r.howMany())
+}
+
+// howMany is the number of lines the reader holds, with a mark when
+// there is more of the file than that.
+func (r *Reader) howMany() string {
+	if r.cut {
+		return fmt.Sprintf("%d+", len(r.lines))
+	}
+	return fmt.Sprintf("%d", len(r.lines))
 }

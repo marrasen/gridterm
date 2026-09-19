@@ -2,6 +2,7 @@ package ui
 
 import (
 	"image/color"
+	"slices"
 
 	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/input"
@@ -58,6 +59,12 @@ type chooserLine struct {
 type Chooser struct {
 	Style ChooserStyle
 
+	// Button is a character drawn at the end of every line but a
+	// heading, and OnPress is what clicking it does with the line it was
+	// on. A chooser with no OnPress draws none.
+	Button  rune
+	OnPress func(i int) error
+
 	title string
 	list  *List
 	lns   []chooserLine
@@ -79,6 +86,7 @@ type Chooser struct {
 func NewChooser(title string, close func()) *Chooser {
 	c := &Chooser{title: title, close: close, list: NewList()}
 	c.list.OnActivate = func(row ListRow) error { return c.take(row) }
+	c.list.OnButton = func(row ListRow) error { return c.press(row) }
 	// The keys arrive with the chooser: a modal is pushed and focused in
 	// one go, and a list that had to wait to be told would open with no
 	// line marked.
@@ -124,10 +132,21 @@ func (c *Chooser) fill() {
 		if ln.under != "" {
 			depth = 1
 		}
-		rows = append(rows, ListRow{Text: ln.text, Note: ln.note, Depth: depth, Key: i})
+		row := ListRow{Text: ln.text, Note: ln.note, Depth: depth, Key: i}
+		if c.OnPress != nil {
+			row.Button = c.Button
+		}
+		rows = append(rows, row)
 	}
 	c.list.SetRows(rows)
 }
+
+// Selected is the line the bar is on, and whether it is on one.
+func (c *Chooser) Selected() (ListRow, bool) { return c.list.Selected() }
+
+// Select puts the bar on the line at i, and reports whether there is
+// one to put it on.
+func (c *Chooser) Select(i int) bool { return c.list.Select(i) }
 
 // Len is how many lines there are to pick from.
 func (c *Chooser) Len() int { return len(c.dos) }
@@ -142,6 +161,51 @@ func (c *Chooser) Take(i int) error {
 		return nil
 	}
 	return c.run(c.dos[i])
+}
+
+// Press does to the line at i what its button does.
+func (c *Chooser) Press(i int) error {
+	if c.OnPress == nil || i < 0 || i >= len(c.dos) {
+		return nil
+	}
+	return c.OnPress(i)
+}
+
+// press does what a line's button means, leaving the chooser up so the
+// user can press another.
+func (c *Chooser) press(row ListRow) error {
+	i, ok := row.Key.(int)
+	if !ok {
+		return nil
+	}
+	return c.Press(i)
+}
+
+// Forget takes the line at i off the list, leaving the bar on the line
+// it was on.
+//
+// A line's key is where it sits, so taking one out moves every key after
+// it down one and the bar would otherwise land on the next line.
+func (c *Chooser) Forget(i int) {
+	if i < 0 || i >= len(c.lns) {
+		return
+	}
+	on := -1
+	if row, ok := c.list.Selected(); ok {
+		if key, isLine := row.Key.(int); isLine {
+			on = key
+		}
+	}
+	c.lns = slices.Delete(c.lns, i, i+1)
+	c.dos = slices.Delete(c.dos, i, i+1)
+	c.fill()
+	switch {
+	case on < 0 || on == i:
+	case on > i:
+		c.list.Select(on - 1)
+	default:
+		c.list.Select(on)
+	}
 }
 
 // take runs what a line means.
@@ -219,6 +283,11 @@ func (c *Chooser) width() int {
 			w += 2 + grid.StringWidth(row.Note)
 		}
 		want = max(want, w)
+	}
+	if c.OnPress != nil {
+		// The button is drawn over the last two columns, so a line as
+		// wide as the box would lose its end to it.
+		want += 2
 	}
 	return min(max(want+(chooserFrame+chooserPad)*2, chooserMinCol), chooserMaxCol)
 }

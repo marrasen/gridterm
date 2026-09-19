@@ -435,3 +435,65 @@ func TestAnInvisibleDialogClosesOnPlainEscapeOnly(t *testing.T) {
 		t.Errorf("Escape closed an invisible chooser %d times, want 1", *closed)
 	}
 }
+
+// aForgettableChooser is a chooser whose lines can be taken off it, the
+// way a list of things the user keeps can.
+func aForgettableChooser(t *testing.T, lines ...string) *Chooser {
+	t.Helper()
+	c := NewChooser("Kept", func() {})
+	c.Style = chooserStyled()
+	c.Button = '\u00d7'
+	c.OnPress = func(i int) error {
+		c.Forget(i)
+		return nil
+	}
+	for _, line := range lines {
+		c.Add(line, "", func() error { return nil })
+	}
+	return c
+}
+
+// Taking a line off leaves the bar on the line it was on. A line's key
+// is where it sits, so without this the bar lands on the next one and
+// Enter runs something the user did not pick.
+func TestForgettingALineLeavesTheBarWhereItWas(t *testing.T) {
+	for what, tc := range map[string]struct {
+		forget int
+		want   string
+	}{
+		"above the bar":  {0, "three"},
+		"below the bar":  {3, "three"},
+		"the bar itself": {2, "four"},
+	} {
+		c := aForgettableChooser(t, "one", "two", "three", "four")
+		if !c.Select(2) {
+			t.Fatalf("%s: the bar could not be put on the third line", what)
+		}
+
+		if err := c.Press(tc.forget); err != nil {
+			t.Fatalf("%s: the button: %v", what, err)
+		}
+
+		on, ok := c.Selected()
+		if !ok {
+			t.Errorf("%s: the bar is on nothing, want %q", what, tc.want)
+			continue
+		}
+		if on.Text != tc.want {
+			t.Errorf("%s: the bar is on %q, want %q", what, on.Text, tc.want)
+		}
+	}
+}
+
+// A chooser with a button on its lines is wide enough for it, so the
+// longest line keeps its end.
+func TestAChooserLeavesRoomForItsButton(t *testing.T) {
+	const long = "deployment-manifest.yaml"
+	c := aForgettableChooser(t, long)
+
+	g := drawChooser(c, 60, 12)
+
+	if !strings.Contains(gridText(g), long) {
+		t.Errorf("the chooser shows %q cut short:\n%s", long, gridText(g))
+	}
+}

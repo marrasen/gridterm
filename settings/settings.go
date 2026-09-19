@@ -76,6 +76,9 @@ type stored struct {
 	// PaneTitles turns on the line above each pane naming it.
 	PaneTitles *bool `json:"paneTitles,omitempty"`
 
+	// Copies are the file copies the user asked to keep, newest first.
+	Copies []SavedCopy `json:"copies,omitempty"`
+
 	// Keys are the private key files the user keeps, newest first, to
 	// pick from when making a connection.
 	Keys []string `json:"keys,omitempty"`
@@ -97,6 +100,46 @@ type SavedCommand struct {
 	Line string `json:"line"`
 	Dir  string `json:"dir,omitempty"`
 	Host string `json:"host,omitempty"`
+}
+
+// SavedCopy is a file copy the user asked to keep, so the same one can
+// be run again without opening a browser to find the files.
+//
+// The ends are named rather than held: a machine that dropped and came
+// back is a different connection under the same name, and a window is
+// not there at all until this one connects to it again.
+type SavedCopy struct {
+	// From and To name the machines the copy is between, as the sidebar
+	// names them. An empty one is the machine gridterm runs on.
+	From string `json:"from,omitempty"`
+	To   string `json:"to,omitempty"`
+
+	// FromWindow and ToWindow name the window an end is reached
+	// through, and are empty for a machine this window reaches itself.
+	FromWindow string `json:"fromWindow,omitempty"`
+	ToWindow   string `json:"toWindow,omitempty"`
+
+	// At is the directory the files are copied from, Into is where they
+	// go, and Names is what is copied.
+	At    string   `json:"at"`
+	Into  string   `json:"into"`
+	Names []string `json:"names"`
+}
+
+// Same reports whether two saved copies do the same work, which is what
+// keeping one twice and forgetting one go by.
+func (c SavedCopy) Same(o SavedCopy) bool {
+	return c.From == o.From && c.To == o.To &&
+		c.FromWindow == o.FromWindow && c.ToWindow == o.ToWindow &&
+		c.At == o.At && c.Into == o.Into && slices.Equal(sorted(c.Names), sorted(o.Names))
+}
+
+// sorted is the names in order, so which way round they were picked out
+// does not make one copy two.
+func sorted(names []string) []string {
+	out := slices.Clone(names)
+	slices.Sort(out)
+	return out
 }
 
 // AgentMay is what a hand-over allows an agent beyond reading a pane and
@@ -363,6 +406,53 @@ func (s *Settings) putCommands(edit func([]SavedCommand) []SavedCommand) error {
 		return err
 	}
 	return nil
+}
+
+// Copies are the copies the user keeps, newest first.
+func (s *Settings) Copies() []SavedCopy {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.have.Copies)
+}
+
+// KeepCopy puts a copy at the front of the list and saves, keeping at
+// most most of them. One already in the list moves to the front.
+func (s *Settings) KeepCopy(saved SavedCopy, most int) error {
+	return s.putCopies(func(have []SavedCopy) []SavedCopy {
+		want := append([]SavedCopy{saved}, dropCopy(have, saved)...)
+		if most > 0 && len(want) > most {
+			want = want[:most]
+		}
+		return want
+	})
+}
+
+// DropCopy takes a copy out of the list and saves.
+func (s *Settings) DropCopy(saved SavedCopy) error {
+	return s.putCopies(func(have []SavedCopy) []SavedCopy {
+		return dropCopy(have, saved)
+	})
+}
+
+// putCopies rereads the file, edits the list it holds and saves.
+func (s *Settings) putCopies(edit func([]SavedCopy) []SavedCopy) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.rereadLocked(); err != nil {
+		return fmt.Errorf("%w: %w", ErrUnsaveable, err)
+	}
+	before := s.have
+	s.have.Copies = edit(slices.Clone(s.have.Copies))
+	if err := s.saveLocked(); err != nil {
+		s.have = before
+		return err
+	}
+	return nil
+}
+
+// dropCopy is the copies with one of them left out.
+func dropCopy(have []SavedCopy, want SavedCopy) []SavedCopy {
+	return slices.DeleteFunc(have, func(c SavedCopy) bool { return c.Same(want) })
 }
 
 // dropLine is the commands with one line left out.
@@ -668,6 +758,20 @@ func check(file stored) error {
 			return fmt.Errorf("saved command %d, %q, is in the list twice", i+1, cmd.Line)
 		}
 		seen[cmd.Line] = true
+	}
+	for i, saved := range file.Copies {
+		// Which files there are is the window's business, so only a copy
+		// with nothing to copy is turned away: it names nothing and
+		// could not be run.
+		if len(saved.Names) == 0 {
+			return fmt.Errorf("saved copy %d has nothing to copy", i+1)
+		}
+		// One twice over is a dead cross in the dialog that offers them:
+		// forgetting either takes both out of the file and leaves a row
+		// nothing answers.
+		if slices.ContainsFunc(file.Copies[:i], saved.Same) {
+			return fmt.Errorf("saved copy %d, %q, is in the list twice", i+1, saved.Names[0])
+		}
 	}
 	return nil
 }

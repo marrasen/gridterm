@@ -262,6 +262,7 @@ func newTestApp(t *testing.T, cols, rows int, opts ...testOption) *testApp {
 		t.Fatalf("settings: %v", err)
 	}
 	ta.saved = newSavedCommands()
+	ta.copies = newSavedCopies()
 	ta.saved.remember(set)
 	ta.paneTitles = newPaneTitles()
 	ta.paneTitles.remember(set)

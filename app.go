@@ -130,6 +130,9 @@ type app struct {
 	// dialog that runs one.
 	saved *savedCommands
 
+	// copies are the file copies the user asked to keep.
+	copies *savedCopies
+
 	// paneTitles is whether each pane shows a line naming it.
 	paneTitles *paneTitles
 
@@ -770,6 +773,8 @@ func (a *app) commands() {
 		ui.Command{ID: "server.connect", Title: "Connect to a server", Run: a.openServer},
 		ui.Command{ID: "server.add", Title: "Add a server", Run: a.openAddServer},
 		ui.Command{ID: "server.reload", Title: "Reread the server list", Run: a.reloadBook},
+		ui.Command{ID: copiesCommand, Title: copiesTitle + "…",
+			AlsoFind: []string{"file", "again", "repeat"}, Run: a.openCopies},
 		ui.Command{ID: "serve.window", Title: "Serve this window…", Run: a.openServing},
 		ui.Command{ID: "serve.takeOver", Title: "Connect to another window…", Run: a.openTakeOver,
 			AlsoFind: []string{"take over", "remote", "share panes"}},

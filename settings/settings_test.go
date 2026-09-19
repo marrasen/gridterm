@@ -982,3 +982,35 @@ func TestItIsNotSavedOverUnreadableSettings(t *testing.T) {
 		t.Errorf("the file is now %q, want the %q it was", now, broken)
 	}
 }
+
+// A settings file holding a copy with nothing to copy is refused, the
+// way one holding a command with nothing to run is.
+func TestACopyWithNothingToCopyIsRefused(t *testing.T) {
+	path := at(t)
+	const body = `{"version": 1, "copies": [{"at": "/a", "into": "/b", "names": []}]}`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatalf("write the file: %v", err)
+	}
+
+	_, err := Load(path)
+
+	if err == nil {
+		t.Fatal("a copy with nothing to copy loaded")
+	}
+}
+
+// The same copy twice over is refused: forgetting either would take both
+// out of the file and leave a row nothing answers.
+func TestTheSameCopyTwiceIsRefused(t *testing.T) {
+	path := at(t)
+	const one = `{"at": "/a", "into": "/b", "names": ["x"]}`
+	if err := os.WriteFile(path, []byte(`{"version": 1, "copies": [`+one+`, `+one+`]}`), 0o600); err != nil {
+		t.Fatalf("write the file: %v", err)
+	}
+
+	_, err := Load(path)
+
+	if err == nil {
+		t.Fatal("the same copy twice loaded")
+	}
+}

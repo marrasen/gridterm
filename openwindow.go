@@ -111,6 +111,7 @@ func openWindow(w wanted) (*app, error) {
 	a.paneTitles = newPaneTitles()
 	a.keyFiles = newKeyIndex()
 	a.theme = newThemePick()
+	a.copies = newSavedCopies()
 	a.font = newFontPick(w.sizeFixed)
 	a.useSettings(openSettings())
 	a.useStartFontSize()

@@ -525,6 +525,7 @@ func (a *app) useSettings(set *settings.Settings) {
 	a.agents.remember(set)
 	a.shellPick.remember(set)
 	a.saved.remember(set)
+	a.copies.remember(set)
 	a.paneTitles.remember(set)
 	a.keyFiles.remember(set)
 	a.theme.remember(set)

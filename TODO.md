@@ -148,6 +148,13 @@ These are all about the context menu, which is planned below.
   cmd.exe, and `$SHELL` then `/bin/bash` then `/bin/sh` elsewhere. So a
   first launch on a fresh settings file opens cmd.exe, not PowerShell.
 
+- **"Connection closed." already has two buttons.** Checked on
+  2026-09-19 against `d79f629`, which landed on 2026-09-17. The pane
+  says "Connection closed.", with the exit status after it when there is
+  one, and offers Reconnect and Close. Close is the default, so Enter
+  takes it, which `TestEnterClosesThePaneRatherThanStartingItAgain`
+  pins.
+
 - **A pane that cannot be put in a job object opens no pane, and the
   window says why.** Answered on 2026-09-17: open the window and show
   the failure in it. Opening the pane anyway was the wrong trade,
@@ -317,18 +324,6 @@ there is one key for position and one for recency.
 ## Asked for on 2026-09-19
 
 From Marcus's inbox, after working in a shared window.
-
-- **A file copy cannot be repeated without opening a browser.** Copying
-  a log, and copying the same log again later, is a thing worth doing
-  twice. Marcus wants a "Remember" button on a file copy that outlives a
-  restart, so the same copy can be run again from wherever remembered
-  copies are listed, without opening a file browser pane to find the
-  file. Needs somewhere to keep them, which is a settings file question,
-  and somewhere to show them.
-
-- **A pane drawn from another window is grey until it is clicked.** It
-  does not appear to redraw on its own, so what it shows is the screen
-  as it was when it was last looked at. Not diagnosed.
 
 - **The words a user reads say "connect to" now; the code still says
   "take over".** Settled with Marcus on 2026-09-19: the client's side
@@ -664,13 +659,6 @@ properly and either written up above or done.
   holds a command and a title and nothing else, so a heading is a kind
   of item the menus cannot draw yet. The same gap stopped the plus
   offering a submenu, further up this file.
-
-- **"Connection closed. Reconnect?" should have two buttons.** Make it
-  "Connection closed." with "Reconnect" and "Close", and let Close be
-  the one Enter takes. The question is worded in `closedQuestion` in
-  restart.go and the buttons are the caller's. This does not re-open the
-  settled question above about which panes get asked and in what words;
-  it is about the answer, not the question.
 
 - **Shadows under a dialog break at the rounded corners, and the fix is
   in the shader.** `drawShadow` in ui/frame.go paints whole cells. The

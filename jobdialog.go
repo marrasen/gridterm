@@ -11,6 +11,7 @@ import (
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/jobs"
 	"github.com/marrasen/gridterm/meter"
+	"github.com/marrasen/gridterm/settings"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/vfs"
 )
@@ -37,8 +38,10 @@ type jobDialog struct {
 	said []string
 
 	// done is whether the buttons on screen are the ones a finished job
-	// offers.
+	// offers, and kept whether the copy was remembered when they were
+	// last built.
 	done bool
+	kept bool
 
 	// laidOut counts how often the lines have been handed to the form.
 	// It is a field so a test can see that an unchanged frame does no
@@ -89,10 +92,17 @@ func (d *jobDialog) refresh(now time.Time) {
 		d.laidOut++
 		d.SetLines(said)
 	}
-	if p.Done != d.done {
+	if p.Done != d.done || (p.Done && d.keptNow() != d.kept) {
 		d.done = p.Done
 		d.setButtons()
 	}
+}
+
+// keptNow reports whether this copy is remembered, which another dialog
+// for the same copy can have changed since the buttons were built.
+func (d *jobDialog) keptNow() bool {
+	saved, can := asSavedCopy(d.job.Op(), d.from, d.to)
+	return can && d.app.copies.has(saved)
 }
 
 // setButtons offers what can be done with the job as it stands: stopping
@@ -129,8 +139,34 @@ func (d *jobDialog) setButtons() {
 			d.app.pump.post(func() { d.app.repeatJob(op, from, to) })
 			return nil
 		}})
+		if saved, can := asSavedCopy(d.job.Op(), d.from, d.to); can {
+			buttons = append(buttons, d.rememberButton(saved))
+		}
 	}
 	d.SetButtons(append(buttons, ui.Button{Title: "Close"}))
+}
+
+// rememberButton keeps this copy, or takes it off the list when it is
+// already kept, so the one button says both what it will do and what is
+// already so.
+func (d *jobDialog) rememberButton(saved settings.SavedCopy) ui.Button {
+	d.kept = d.app.copies.has(saved)
+	if d.kept {
+		return ui.Button{Title: "Forget", Keep: true, Do: func() error {
+			if err := d.app.copies.forget(saved); err != nil {
+				return err
+			}
+			d.setButtons()
+			return nil
+		}}
+	}
+	return ui.Button{Title: "Remember", Keep: true, Do: func() error {
+		if err := d.app.copies.keep(saved); err != nil {
+			return err
+		}
+		d.setButtons()
+		return nil
+	}}
 }
 
 // report is what the dialog says about a job at one moment.

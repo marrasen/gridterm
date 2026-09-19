@@ -574,7 +574,7 @@ func (a *app) clientArrived(c *serve.Client) {
 	// screen owns it, however far away the person using it is.
 	e := &conns.Entry{
 		Host:  conns.Local,
-		Kind:  conns.Terminal,
+		Kind:  conns.Served,
 		Label: "serving " + c.Name,
 		Note:  "from " + c.Addr,
 		Close: func() error { return c.Close() },

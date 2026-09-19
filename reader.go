@@ -87,7 +87,7 @@ func (a *app) openReader(f vfs.FS, host, path, name string, follow bool) error {
 	}
 	row := &conns.Entry{
 		Host:   host,
-		Kind:   conns.Reader,
+		Kind:   readerRowKind(follow),
 		Label:  name,
 		Reveal: func() { a.focus(r) },
 		Close:  func() error { return a.closePane(r) },
@@ -103,6 +103,15 @@ func (a *app) openReader(f vfs.FS, host, path, name string, follow bool) error {
 	r.Follow(follow)
 	r.Open()
 	return nil
+}
+
+// readerRowKind is the sidebar kind for a reader, Follow while it is
+// keeping up with the file.
+func readerRowKind(follow bool) conns.Kind {
+	if follow {
+		return conns.Follow
+	}
+	return conns.Reader
 }
 
 // readFileFrom opens a reader on whatever the browser has picked out.
@@ -194,6 +203,8 @@ func (a *app) letGoFS(f vfs.FS) error {
 // that draws, the same as the reading.
 func (a *app) followReaders(now time.Time) {
 	for r, held := range a.readers {
+		// Following goes on and off from the pane, so keep the row in step.
+		held.row.Kind = readerRowKind(r.Following())
 		if !r.Following() || held.checking || r.Busy() {
 			continue
 		}

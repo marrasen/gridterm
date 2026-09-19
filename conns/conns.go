@@ -42,6 +42,24 @@ const (
 
 	// Reader is one file being read.
 	Reader
+
+	// Follow is one file being read and kept up with as it grows.
+	Follow
+
+	// Served is another window working in this one.
+	Served
+
+	// Copy is a file being copied from one machine to another.
+	Copy
+
+	// Move is a file being moved.
+	Move
+
+	// Delete is a file being deleted.
+	Delete
+
+	// NumKinds is how many there are, for a caller walking them.
+	NumKinds
 )
 
 // String names a kind the way the panel shows it.
@@ -59,14 +77,24 @@ func (k Kind) String() string {
 		return "Server"
 	case Reader:
 		return "Reader"
+	case Follow:
+		return "Follow"
+	case Served:
+		return "Served"
+	case Copy:
+		return "Copy"
+	case Move:
+		return "Move"
+	case Delete:
+		return "Delete"
 	}
 	return "Unknown"
 }
 
 // Entry is one thing open on one machine.
 //
-// Label and Note are read on every frame from the goroutine that draws,
-// and may be written by it. Meter is written by whichever goroutine is
+// Kind, Label and Note are read on every frame from the goroutine that
+// draws, and may be written by it. Meter is written by whichever goroutine is
 // moving bytes, which is why it is the only part that has to be safe on
 // its own.
 type Entry struct {

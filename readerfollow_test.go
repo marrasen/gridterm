@@ -162,3 +162,41 @@ func TestAChangeIsNotForgottenWhileAReadIsOut(t *testing.T) {
 		t.Errorf("the file grew while a read was out and was read %d times, want it read again", reads)
 	}
 }
+
+// A reader's row says whether the file is being followed, so the two
+// read differently on the sidebar.
+func TestTheRowSaysWhetherAFileIsFollowed(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withPanel(t, a)
+	name, path := aReadableFile(t, "one", "two")
+	r := aFollowedReader(t, a, path, name)
+
+	at := time.Now()
+	a.followReaders(at)
+	if got := a.readers[r].row.Kind; got != conns.Follow {
+		t.Errorf("a followed file's row is a %v, want a %v", got, conns.Follow)
+	}
+
+	r.Follow(false)
+	a.followReaders(at.Add(followEvery))
+	if got := a.readers[r].row.Kind; got != conns.Reader {
+		t.Errorf("a file that is no longer followed is a %v, want a %v", got, conns.Reader)
+	}
+}
+
+// A reader opened to follow a file says so from the start, rather than
+// changing its row on the next tick.
+func TestAReaderOpenedToFollowSaysSoAtOnce(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withPanel(t, a)
+	name, path := aReadableFile(t, "one", "two")
+
+	if err := a.openReader(vfs.NewLocal(), conns.Local, path, name, true); err != nil {
+		t.Fatalf("open a reader: %v", err)
+	}
+
+	r := onlyReader(t, a)
+	if got := a.readers[r].row.Kind; got != conns.Follow {
+		t.Errorf("it opened as a %v, want a %v", got, conns.Follow)
+	}
+}

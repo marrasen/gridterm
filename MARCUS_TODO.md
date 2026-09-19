@@ -24,11 +24,6 @@ is the best to use though.
 # Show all panes
 File browser don't always render when zooming out
 
-# Icons
-- Remotes: The "serving marcusj@" row in the sidebar has the terminal icon, it should have a remote icon instead, it's not a terminal
-- View file should have it's on icon, and maybe Follow
-- Copy and Move could use own icons as well
-
 # Tunnel and SOCKS proxy over remote connection
 - Add support for tunnels and SOCKS proxy over a remote connection
 

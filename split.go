@@ -219,7 +219,9 @@ func (a *app) paneName(w ui.Widget) string {
 		}
 	case *files.Reader:
 		if held := a.readers[pane]; held != nil {
-			return held.row.Kind.String() + " " + held.row.Label
+			// A reader, whether or not it is following: the chooser says
+			// which pane, and following is something the pane is doing.
+			return conns.Reader.String() + " " + held.row.Label
 		}
 	}
 	return fmt.Sprintf("%T", w)

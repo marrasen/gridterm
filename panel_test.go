@@ -1730,17 +1730,51 @@ func a4Style() ui.ListStyle {
 	return ui.ListStyle{FG: white, BG: color.RGBA{A: 255}, NoteFG: white}
 }
 
-// Each kind of connection gets its own picture, so a row says what it is
-// without spending words on it.
-func TestEachKindHasItsOwnIcon(t *testing.T) {
+// Each kind of connection carries its own picture, so a row says what it
+// is without spending words on it. A link to another machine is the same
+// picture whichever way it was made, and the row's words say which.
+func TestEachKindCarriesItsPicture(t *testing.T) {
+	seen := 0
 	for kind, want := range map[conns.Kind]grid.Art{
 		conns.Terminal: grid.Icon(grid.IconTerminal),
 		conns.Command:  grid.Icon(grid.IconCommand),
 		conns.Files:    grid.Icon(grid.IconFiles),
 		conns.Tunnel:   grid.Icon(grid.IconTunnel),
+		conns.Reader:   grid.Icon(grid.IconReader),
+		conns.Follow:   grid.Icon(grid.IconFollow),
+		conns.Served:   grid.Icon(grid.IconRemote),
+		conns.Server:   grid.Icon(grid.IconRemote),
+		conns.Copy:     grid.Icon(grid.IconCopy),
+		conns.Move:     grid.Icon(grid.IconMove),
+		conns.Delete:   grid.Icon(grid.IconDelete),
 	} {
 		if got := icon(kind); got != want {
 			t.Errorf("%v carries %v, want %v", kind, got, want)
+		}
+		seen++
+	}
+	if seen != int(conns.NumKinds) {
+		t.Errorf("%d kinds were checked, want all %d", seen, conns.NumKinds)
+	}
+}
+
+// Only a terminal carries the terminal's picture. A kind added without
+// one of its own falls back to it, and then a row says it is a shell
+// when it is not.
+func TestOnlyATerminalCarriesTheTerminalIcon(t *testing.T) {
+	for kind := conns.Terminal + 1; kind < conns.NumKinds; kind++ {
+		if got := icon(kind); got == grid.Icon(grid.IconTerminal) {
+			t.Errorf("%v carries the terminal's picture, want one of its own", kind)
+		}
+	}
+}
+
+// Every kind has a name. One without is called "Unknown", and that is
+// what a client is told a row is and what a chooser calls a pane.
+func TestEveryKindHasAName(t *testing.T) {
+	for kind := conns.Terminal; kind < conns.NumKinds; kind++ {
+		if got := kind.String(); got == "Unknown" {
+			t.Errorf("kind %d is called %q", kind, got)
 		}
 	}
 }

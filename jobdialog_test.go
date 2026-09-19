@@ -886,3 +886,48 @@ func TestRepeatingACopyAfterTheWindowIsRenamedFilesItUnderTheNewName(t *testing.
 			window, mine, panelText(client, panelNow))
 	}
 }
+
+// A piece of file work is filed on the sidebar by what it does, so a
+// copy, a move and a delete each carry their own picture.
+func TestAJobRowIsFiledByWhatItDoes(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	into := t.TempDir()
+	here := jobEnd{host: conns.Local}
+
+	for kind, want := range map[jobs.Kind]conns.Kind{
+		jobs.Copy:   conns.Copy,
+		jobs.Move:   conns.Move,
+		jobs.Delete: conns.Delete,
+	} {
+		at := aDroppedFile(t, kind.String()+".txt", 64)
+		op := jobs.Op{
+			Kind: kind,
+			From: vfs.NewLocal(), At: filepath.Dir(at), Names: []string{filepath.Base(at)},
+			To: vfs.NewLocal(), Into: into,
+		}
+		j := a.runJob(op, here, here, nil)
+		if j == nil {
+			t.Fatalf("a %v did not start", kind)
+		}
+		row := theRowFor(t, a, j)
+		if row.Kind != want {
+			t.Errorf("a %v has a %v row, want a %v", kind, row.Kind, want)
+		}
+		if got := icon(row.Kind); got != icon(want) {
+			t.Errorf("a %v carries %v, want %v", kind, got, icon(want))
+		}
+	}
+}
+
+// theRowFor is the sidebar row a job has.
+func theRowFor(t *testing.T, a *testApp, j *jobs.Job) *conns.Entry {
+	t.Helper()
+	for e, held := range a.jobs {
+		if held == j {
+			return e
+		}
+	}
+	t.Fatal("the job has no row on the sidebar")
+	return nil
+}

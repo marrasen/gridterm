@@ -96,7 +96,9 @@ func (a *app) watchOpenPane(pane *term.Terminal, cols, rows int) (session.Sessio
 // it stood for.
 //
 // The label is not checked: a shell sets its own title, so it changes at
-// every prompt and a legitimate client would be refused at random.
+// every prompt and a legitimate client would be refused at random. The
+// kind is checked, and the one kind that changes is a reader's, which no
+// client is ever told about: a reader has no screen to hand over.
 //
 // This is integrity rather than a way in -- the key the client signed
 // with is what decides that. An id names a place in a list the registry

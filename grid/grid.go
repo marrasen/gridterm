@@ -103,8 +103,25 @@ const (
 	// IconReader is a page being read: lines of text on a sheet.
 	IconReader
 
-	// numIcons is how many there are, for a caller checking one.
-	numIcons
+	// IconFollow is a reader keeping up with a file: chevrons running
+	// down to the end of it.
+	IconFollow
+
+	// IconRemote is a link to another machine, either way: a mast with
+	// signal either side of it.
+	IconRemote
+
+	// IconCopy is two sheets, one behind the other.
+	IconCopy
+
+	// IconMove is a sheet with an arrow taking it away.
+	IconMove
+
+	// IconDelete is a bin.
+	IconDelete
+
+	// NumIcons is how many there are, for a caller checking one.
+	NumIcons
 )
 
 // Icon is a piece of art standing for a kind of thing.
@@ -112,7 +129,7 @@ func Icon(k IconKind) Art { return Art{Kind: ArtIcon, Data: uint64(k)} }
 
 // Icon returns which picture a piece of art is, and whether it is one.
 func (a Art) Icon() (IconKind, bool) {
-	if a.Kind != ArtIcon || a.Data >= uint64(numIcons) {
+	if a.Kind != ArtIcon || a.Data >= uint64(NumIcons) {
 		return 0, false
 	}
 	return IconKind(a.Data), true

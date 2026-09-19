@@ -18,6 +18,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/marrasen/gridterm/conns"
+	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/input"
 	"github.com/marrasen/gridterm/internal/sshtest"
 	"github.com/marrasen/gridterm/remote"
@@ -1397,5 +1399,33 @@ func TestAServingConnectionThatFailedIsStillReported(t *testing.T) {
 	}
 	if !strings.Contains(n.Message(), "the roof fell in") {
 		t.Errorf("it said %q, want it to name what went wrong", n.Message())
+	}
+}
+
+// The row for a client working in this window carries the remote
+// picture, not the terminal's. Nothing on that row is a shell.
+func TestTheRowForAClientIsARemote(t *testing.T) {
+	host, client, _ := twoWindows(t)
+	waitFor(t, host, "a row for the client working in this window", func() bool {
+		return servingRows(host) == 1
+	}, client)
+
+	found := false
+	for _, group := range host.registry.Groups(time.Now()) {
+		for _, row := range group.Rows {
+			if !strings.HasPrefix(row.Label, "serving ") {
+				continue
+			}
+			found = true
+			if row.Kind != conns.Served {
+				t.Errorf("the row is a %v, want a %v", row.Kind, conns.Served)
+			}
+			if got := icon(row.Kind); got != grid.Icon(grid.IconRemote) {
+				t.Errorf("the row carries %v, want the remote picture", got)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("the window has no row for the client working in it")
 	}
 }

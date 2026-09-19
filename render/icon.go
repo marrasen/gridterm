@@ -18,7 +18,7 @@ type unit struct{ X, Y, W, H int }
 // about eight pixels to say what it is with, so each is the plainest
 // thing that still reads: a screen with a prompt in it, a triangle for
 // something that ran, a root with things under it, arrows both ways.
-var icons = [numIconKinds][]unit{
+var icons = [grid.NumIcons][]unit{
 	grid.IconTerminal: {
 		// The screen: four edges of a box.
 		{X: 0, Y: 0, W: 8, H: 1},
@@ -70,10 +70,68 @@ var icons = [numIconKinds][]unit{
 		{X: 3, Y: 4, W: 4, H: 1},
 		{X: 3, Y: 6, W: 2, H: 1},
 	},
+	grid.IconFollow: {
+		// Two chevrons pointing down: a reader running to the end of a
+		// file.
+		{X: 0, Y: 0, W: 1, H: 1},
+		{X: 1, Y: 1, W: 1, H: 1},
+		{X: 2, Y: 2, W: 1, H: 1},
+		{X: 3, Y: 3, W: 2, H: 1},
+		{X: 5, Y: 2, W: 1, H: 1},
+		{X: 6, Y: 1, W: 1, H: 1},
+		{X: 7, Y: 0, W: 1, H: 1},
+		{X: 0, Y: 4, W: 1, H: 1},
+		{X: 1, Y: 5, W: 1, H: 1},
+		{X: 2, Y: 6, W: 1, H: 1},
+		{X: 3, Y: 7, W: 2, H: 1},
+		{X: 5, Y: 6, W: 1, H: 1},
+		{X: 6, Y: 5, W: 1, H: 1},
+		{X: 7, Y: 4, W: 1, H: 1},
+	},
+	grid.IconRemote: {
+		// A mast with signal either side of it: somewhere else, reached
+		// over the air.
+		{X: 3, Y: 0, W: 2, H: 6},
+		{X: 2, Y: 6, W: 4, H: 1},
+		{X: 1, Y: 7, W: 6, H: 1},
+		{X: 1, Y: 1, W: 1, H: 1},
+		{X: 0, Y: 2, W: 1, H: 2},
+		{X: 1, Y: 4, W: 1, H: 1},
+		{X: 6, Y: 1, W: 1, H: 1},
+		{X: 7, Y: 2, W: 1, H: 2},
+		{X: 6, Y: 4, W: 1, H: 1},
+	},
+	grid.IconCopy: {
+		// Two sheets, one behind the other, the one behind drawn as the
+		// corner that shows past the front one.
+		{X: 2, Y: 0, W: 6, H: 1},
+		{X: 7, Y: 0, W: 1, H: 5},
+		{X: 0, Y: 2, W: 5, H: 1},
+		{X: 0, Y: 7, W: 5, H: 1},
+		{X: 0, Y: 2, W: 1, H: 6},
+		{X: 4, Y: 2, W: 1, H: 6},
+	},
+	grid.IconMove: {
+		// One sheet and an arrow taking it away, with a unit of room
+		// between them so the two do not run together.
+		{X: 0, Y: 1, W: 4, H: 1},
+		{X: 0, Y: 6, W: 4, H: 1},
+		{X: 0, Y: 1, W: 1, H: 6},
+		{X: 3, Y: 1, W: 1, H: 6},
+		{X: 5, Y: 4, W: 3, H: 1},
+		{X: 6, Y: 3, W: 1, H: 1},
+		{X: 6, Y: 5, W: 1, H: 1},
+	},
+	grid.IconDelete: {
+		// A bin: a lid with a handle on it and a body under it, with no
+		// slots down the body.
+		{X: 3, Y: 0, W: 2, H: 1},
+		{X: 1, Y: 1, W: 6, H: 1},
+		{X: 1, Y: 3, W: 1, H: 4},
+		{X: 6, Y: 3, W: 1, H: 4},
+		{X: 1, Y: 7, W: 6, H: 1},
+	},
 }
-
-// numIconKinds is how many icons there are to draw.
-const numIconKinds = 5
 
 // iconBars is where an icon's rectangles go inside the cols cells from
 // x on.

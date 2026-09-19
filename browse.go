@@ -403,6 +403,18 @@ func (a *app) openEnd(end jobEnd) (vfs.FS, error) {
 	return a.windowFilesOn(t, end.far.host)
 }
 
+// jobRowKind is the sidebar kind for a piece of file work, so its row
+// carries the picture for what it does.
+func jobRowKind(k jobs.Kind) conns.Kind {
+	switch k {
+	case jobs.Move:
+		return conns.Move
+	case jobs.Delete:
+		return conns.Delete
+	}
+	return conns.Copy
+}
+
 // runJob puts one piece of file work on the queue and a row on the panel
 // for it.
 //
@@ -414,7 +426,7 @@ func (a *app) runJob(op jobs.Op, from, to jobEnd, owned []vfs.FS) *jobs.Job {
 	count := meter.New()
 	e := &conns.Entry{
 		Host:  from.host,
-		Kind:  conns.Files,
+		Kind:  jobRowKind(op.Kind),
 		Meter: count,
 	}
 	j := a.queue.Start(a.ctx, op, jobs.Options{

@@ -40,6 +40,16 @@ func icon(k conns.Kind) grid.Art {
 		return grid.Icon(grid.IconTunnel)
 	case conns.Reader:
 		return grid.Icon(grid.IconReader)
+	case conns.Follow:
+		return grid.Icon(grid.IconFollow)
+	case conns.Served, conns.Server:
+		return grid.Icon(grid.IconRemote)
+	case conns.Copy:
+		return grid.Icon(grid.IconCopy)
+	case conns.Move:
+		return grid.Icon(grid.IconMove)
+	case conns.Delete:
+		return grid.Icon(grid.IconDelete)
 	}
 	return grid.Icon(grid.IconTerminal)
 }

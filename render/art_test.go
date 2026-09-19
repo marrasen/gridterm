@@ -146,11 +146,8 @@ func TestArtColourFollowsTheCell(t *testing.T) {
 // drawn only when a pixel centre falls inside it: half an icon would go
 // missing at the sizes where an icon is doing the most work.
 func TestEveryIconDrawsInsideTheCellsItIsGiven(t *testing.T) {
-	kinds := []grid.IconKind{
-		grid.IconTerminal, grid.IconCommand, grid.IconFiles, grid.IconTunnel,
-	}
 	for _, cols := range []int{1, 2} {
-		for _, kind := range kinds {
+		for kind := range grid.IconKind(grid.NumIcons) {
 			for _, m := range cellSizes {
 				iconInside(t, kind, cols, m)
 			}
@@ -189,9 +186,7 @@ func iconInside(t *testing.T, kind grid.IconKind, cols int, m glyph.Metrics) {
 func TestTheIconsAreToldApart(t *testing.T) {
 	m := glyph.Metrics{CellW: 24, CellH: 48, Ascent: 38}
 	seen := map[string]grid.IconKind{}
-	for _, kind := range []grid.IconKind{
-		grid.IconTerminal, grid.IconCommand, grid.IconFiles, grid.IconTunnel,
-	} {
+	for kind := range grid.IconKind(grid.NumIcons) {
 		var shape string
 		for _, b := range iconBars(grid.Icon(kind), 0, 0, 2, plainGeo(m)) {
 			shape += string(rune('0'+int(b.X))) + string(rune('0'+int(b.Y))) +

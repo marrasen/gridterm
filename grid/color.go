@@ -34,17 +34,6 @@ func floorDiv(n, d int) int {
 	return q
 }
 
-// Grey is the neutral grey of the same brightness as c, for furniture
-// that wants no colour of its own.
-//
-// The weights are the ordinary perceived-brightness ones rather than the
-// WCAG luminance below: this is picking a grey that looks as bright as
-// the colour, not judging whether text on it can be read.
-func Grey(c color.RGBA) color.RGBA {
-	n := uint8((299*int(c.R) + 587*int(c.G) + 114*int(c.B)) / 1000)
-	return color.RGBA{R: n, G: n, B: n, A: c.A}
-}
-
 // Contrast is the WCAG contrast ratio between two colours: 1 for a
 // colour against itself, and 21 for black against white.
 //

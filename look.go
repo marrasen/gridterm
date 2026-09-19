@@ -20,6 +20,46 @@ func (a *app) frameFG() color.RGBA {
 	return a.colours.FG
 }
 
+// barTop and barFoot are the two ends of the menu bar's ground, across
+// its width.
+//
+// The sidebar's shading unless the theme wrote its frame down: the two
+// are one frame around the window. A theme that named the sidebar apart
+// from the bar gets the frame's own colour here and the sidebar's there.
+func (a *app) barTop() color.RGBA {
+	if a.look.Set {
+		return a.look.BG
+	}
+	return a.sidebarTop()
+}
+
+func (a *app) barFoot() color.RGBA {
+	if a.look.Set {
+		return a.look.BG
+	}
+	return a.sidebarFoot()
+}
+
+// sidebarBG is the ground the sidebar sits on, and sidebarFG what its
+// rows are written in.
+//
+// The menu bar's unless the theme asked for the sidebar to be told
+// apart from it. Every other theme draws one frame in one colour all the
+// way round the window.
+func (a *app) sidebarBG() color.RGBA {
+	if a.look.Set {
+		return a.look.SidebarBG
+	}
+	return a.colours.BG
+}
+
+func (a *app) sidebarFG() color.RGBA {
+	if a.look.Set {
+		return a.look.SidebarFG
+	}
+	return a.colours.FG
+}
+
 // panelBG is the ground a dialog or a menu paints itself on. Nothing at
 // all unless the theme asked for a flat one, so the frosted glass behind
 // it shows through.
@@ -104,33 +144,43 @@ func (a *app) activeBG() color.RGBA {
 	return a.colours.FG
 }
 
-// frameDimFG is a note beside a row on the window's frame: the frame's
-// own text faded towards its ground.
+// frameDimFG is a note beside a row on the sidebar: the sidebar's own
+// text faded towards its ground.
 func (a *app) frameDimFG() color.RGBA {
 	if a.look.Set {
-		return grid.Blend(a.look.FG, a.look.BG, 1, 3)
+		return grid.Blend(a.look.SidebarFG, a.look.SidebarBG, 1, 3)
 	}
 	return a.colours.ANSI[8]
 }
 
 // onFrame lifts a colour from the window's palette until it can be read
-// on the frame's ground, by moving it towards the frame's own text.
+// on the frame's ground, and onSidebar until it can be read on the
+// sidebar's, which a theme can name apart from the rest of the frame.
 //
 // The numbered colours are picked to read on the window's ground. A
-// theme that wrote its frame down has a second ground the window draws
-// on, and a colour that stood out on the first can be lost on it.
+// theme that wrote its frame down has other grounds the window draws on,
+// and a colour that stood out on the window's can be lost on those.
 func (a *app) onFrame(c color.RGBA) color.RGBA {
+	return a.liftOnto(c, a.look.FG, a.look.BG)
+}
+
+func (a *app) onSidebar(c color.RGBA) color.RGBA {
+	return a.liftOnto(c, a.look.SidebarFG, a.look.SidebarBG)
+}
+
+// liftOnto moves a colour towards fg until it can be read on bg.
+func (a *app) liftOnto(c, fg, bg color.RGBA) color.RGBA {
 	if !a.look.Set {
 		return c
 	}
 	const least = 3.0
 	for at := range onFrameSteps {
-		got := grid.Blend(c, a.look.FG, at, onFrameSteps)
-		if grid.Contrast(got, a.look.BG) >= least {
+		got := grid.Blend(c, fg, at, onFrameSteps)
+		if grid.Contrast(got, bg) >= least {
 			return got
 		}
 	}
-	return a.look.FG
+	return fg
 }
 
 // onFrameSteps is how finely a colour is moved towards the frame's text:
@@ -139,13 +189,13 @@ const onFrameSteps = 8
 
 // headingFG names a machine on the sidebar, in the cyan a machine is
 // said in elsewhere.
-func (a *app) headingFG() color.RGBA { return a.onFrame(a.colours.ANSI[6]) }
+func (a *app) headingFG() color.RGBA { return a.onSidebar(a.colours.ANSI[6]) }
 
 // fillBG is how far a copy has got, drawn on the sidebar's own ground
 // and a step further along the line that ground is shaded on.
 func (a *app) fillBG() color.RGBA {
 	if a.look.Set {
-		return grid.Blend(a.look.BG, a.look.FG, 1, 4)
+		return grid.Blend(a.look.SidebarBG, a.look.SidebarFG, 1, 4)
 	}
 	return grid.Blend(a.colours.BG, a.colours.ANSI[4], 1, 3)
 }
@@ -154,7 +204,7 @@ func (a *app) fillBG() color.RGBA {
 // sidebar's own ground rather than the window's selection colour.
 func (a *app) currentBG() color.RGBA {
 	if a.look.Set {
-		return grid.Blend(a.look.BG, a.look.FG, 1, 6)
+		return grid.Blend(a.look.SidebarBG, a.look.SidebarFG, 1, 6)
 	}
 	return grid.Blend(a.colours.BG, a.colours.FG, 1, 6)
 }

@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/marrasen/gridterm/grid"
+	"github.com/marrasen/gridterm/meter"
 	"github.com/marrasen/gridterm/settings"
 	"github.com/marrasen/gridterm/themes"
 	"github.com/marrasen/gridterm/ui"
@@ -429,32 +430,11 @@ func TestEveryThemeReads(t *testing.T) {
 				}
 			}
 		}
-		// The sidebar and the menu bar are a step from the window's own
-		// ground, or there is no frame to see.
+		// The sidebar and the menu bar are shaded towards colour 4, so a
+		// theme whose ground is already that colour has no frame at all.
 		if got := grid.Contrast(a.sidebarFoot(), pal.BG); got < 1.1 {
 			t.Errorf("%s: the window's frame is %v on a ground of %v, %.2f:1, and it has to read as a frame",
 				theme.Name, a.sidebarFoot(), pal.BG, got)
-		}
-		// And it is grey, unless the theme wrote its own frame down.
-		// Furniture with no colour of its own stays out of the way of
-		// the text beside it.
-		if !a.look.Set {
-			for what, c := range map[string]color.RGBA{
-				"the top of the sidebar": a.sidebarTop(),
-				"its foot":               a.sidebarFoot(),
-			} {
-				if c != grid.Grey(c) {
-					t.Errorf("%s: %s is %v, want a grey", theme.Name, what, c)
-				}
-			}
-			// The foot is the further of the two from the window, so the
-			// sidebar shades down its length rather than sitting flat.
-			near := grid.Contrast(a.sidebarTop(), pal.BG)
-			far := grid.Contrast(a.sidebarFoot(), pal.BG)
-			if far <= near {
-				t.Errorf("%s: the sidebar is %.2f:1 against the window at the top and %.2f:1 at the foot, "+
-					"want it to shade down its length", theme.Name, near, far)
-			}
 		}
 		// A chip on the menu bar picks its own ground, so what it says
 		// has to read on that rather than on the bar.
@@ -1024,5 +1004,98 @@ func TestADifferentThemeOverrulesAPickedTypeface(t *testing.T) {
 
 	if got := a.fontFamily; got != dosFamily {
 		t.Errorf("the window is drawn in %q, want the %q Turbo names", got, dosFamily)
+	}
+}
+
+// A theme can name the sidebar apart from the rest of its frame, and
+// then the menu bar keeps the frame's own colour.
+//
+// Marcus wanted the list of what is open to read as a panel beside the
+// window rather than as more of the bar above it.
+func TestAThemeCanNameTheSidebarApartFromTheBar(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	withMenubar(t, a)
+	if err := a.useTheme(themeNamed(t, a, "Turbo")); err != nil {
+		t.Fatalf("take Turbo: %v", err)
+	}
+
+	bar, side := a.menubarStyle().BG, a.panelStyle().BG
+	if bar != a.look.BG {
+		t.Errorf("the menu bar sits on %v, want the frame's own %v", bar, a.look.BG)
+	}
+	if side != a.look.SidebarBG {
+		t.Errorf("the sidebar sits on %v, want the sidebar's own %v", side, a.look.SidebarBG)
+	}
+	if got := grid.Contrast(bar, side); got < 1.3 {
+		t.Errorf("the bar sits on %v and the sidebar on %v, %.2f:1, and they have to be told apart",
+			bar, side, got)
+	}
+	// Both ends of the sidebar, because it is one flat colour under a
+	// theme that wrote its frame down.
+	if got := a.panelStyle().BGEnd; got != a.look.SidebarBG {
+		t.Errorf("the foot of the sidebar is %v, want the sidebar's own %v", got, a.look.SidebarBG)
+	}
+}
+
+// A theme that names no sidebar colour draws one frame in one colour all
+// the way round the window, which is what every theme did before there
+// was a sidebar colour to name.
+func TestAFrameWithNoSidebarColourIsOneColourAllRound(t *testing.T) {
+	for _, raw := range []themes.Theme{
+		{Name: "Flat", FG: "#ffffff", BG: "#101010",
+			Frame: &themes.Frame{FG: "#000000", BG: "#c0c0c0"}},
+	} {
+		look, err := raw.Look()
+		if err != nil {
+			t.Fatalf("read the frame: %v", err)
+		}
+		if look.SidebarBG != look.BG || look.SidebarFG != look.FG {
+			t.Errorf("the sidebar came out %v on %v, want the frame's own %v on %v",
+				look.SidebarFG, look.SidebarBG, look.FG, look.BG)
+		}
+	}
+}
+
+// What the sidebar says reads on the sidebar's own ground, which is not
+// the ground the rest of the frame is drawn on.
+func TestWhatTheSidebarSaysReadsOnTheSidebar(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	if err := a.useTheme(themeNamed(t, a, "Turbo")); err != nil {
+		t.Fatalf("take Turbo: %v", err)
+	}
+	on := a.sidebarBG()
+
+	// A row's own text, which is the sidebar's own and has to be read.
+	if got := grid.Contrast(a.panelStyle().FG, on); got < 4.5 {
+		t.Errorf("a row is %v on the sidebar's %v, %.2f:1, want at least 4.5",
+			a.panelStyle().FG, on, got)
+	}
+	// And what is lifted out of the palette onto it, which is held to
+	// the three the lift itself aims for.
+	for what, fg := range map[string]color.RGBA{
+		"a machine's name":     a.headingFG(),
+		"a note beside a row":  a.frameDimFG(),
+		"a busy connection":    a.stateFG(meter.Active, panelNow),
+		"a settled connection": a.stateFG(meter.Settled, panelNow),
+		"a window over there":  a.onSidebar(a.colours.ANSI[5]),
+	} {
+		if got := grid.Contrast(fg, on); got < 3.0 {
+			t.Errorf("%s is %v on the sidebar's %v, %.2f:1, want at least 3.0", what, fg, on, got)
+		}
+		// Lifted all the way would land on the sidebar's own text.
+		if got := grid.Contrast(fg, a.sidebarFG()); got < 1.4 {
+			t.Errorf("%s came out %v, %.2f:1 from the sidebar's own %v, so it says nothing",
+				what, fg, got, a.sidebarFG())
+		}
+	}
+	// The row in front is marked by its ground alone, so that ground has
+	// to be told from the sidebar.
+	if got := grid.Contrast(a.currentBG(), on); got < 1.2 {
+		t.Errorf("the row in front sits on %v and the sidebar on %v, %.2f:1",
+			a.currentBG(), on, got)
 	}
 }

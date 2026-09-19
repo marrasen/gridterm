@@ -172,6 +172,10 @@ func Built() []Theme {
 				FG: "#000000", BG: "#aaaaaa", Border: "double",
 				ButtonFG: "#000000", ButtonBG: "#007000",
 				ActiveFG: "#ffff55", ActiveBG: "#007000",
+				// The sidebar a darker grey than the menu bar, so the
+				// list of what is open reads as a panel beside the
+				// window rather than as more of the bar above it.
+				SidebarBG: "#808080",
 			},
 			ANSI: []string{
 				"#000000", "#ec6464", "#55cc55", "#e0a030",

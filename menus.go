@@ -318,9 +318,9 @@ func (a *app) menubarStyle() ui.MenubarStyle {
 		FG: a.frameFG(),
 		// The sidebar's own ground, running across the bar rather than
 		// down it. The two are one frame around the window, so they are
-		// drawn in one colour.
-		BG:     a.sidebarTop(),
-		BGEnd:  a.sidebarFoot(),
+		// drawn in one colour unless the theme asked for two.
+		BG:     a.barTop(),
+		BGEnd:  a.barFoot(),
 		OpenFG: a.activeFG(),
 		OpenBG: a.activeBG(),
 	}

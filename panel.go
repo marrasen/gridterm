@@ -64,13 +64,17 @@ func (a *app) newPanel() *ui.List {
 //
 // Green for something that is there, brightening and dimming while bytes
 // are going past, and grey once it has finished.
+//
+// Lifted onto the sidebar's ground, both ends of it. The numbered green
+// is picked to read on the window's own ground, and on a theme that gave
+// the sidebar a ground of its own it can be lost there.
 func (a *app) stateFG(state meter.State, now time.Time) color.RGBA {
-	green := a.colours.ANSI[2]
+	green := a.onSidebar(a.colours.ANSI[2])
 	switch state {
 	case meter.Closed:
 		return a.frameDimFG()
 	case meter.Active:
-		return pulse(green, a.onFrame(a.colours.ANSI[10]), now)
+		return pulse(green, a.onSidebar(a.colours.ANSI[10]), now)
 	}
 	return green
 }
@@ -103,48 +107,25 @@ const (
 	pulseHigh = 1.0 / 4.0
 )
 
-// How far the sidebar's ground sits from the window's own background, in
-// levels of grey: at the top of the sidebar, and at its foot. The
-// shading runs between the two down its length.
-//
-// Further under a light window than under a dark one. A dark window has
-// little room below its background, and what room there is belongs to
-// the status chips: they are drawn on black on this same ground, and
-// black stops being told from it below about forty levels of grey.
-const (
-	sidebarLift     = 6
-	sidebarLiftFoot = 17
-	sidebarSink     = 14
-	sidebarSinkFoot = 30
-)
-
 // sidebarTop and sidebarFoot are the two ends of the ground the window's
 // frame is drawn on: the sidebar shades between them down its length,
 // and the menu bar across its width.
 //
 // A theme that wrote its frame down gets one flat colour instead, so the
 // frame can be a ground of its own rather than a shade of the window's.
-func (a *app) sidebarTop() color.RGBA  { return a.sidebarGrey(sidebarLift, sidebarSink) }
-func (a *app) sidebarFoot() color.RGBA { return a.sidebarGrey(sidebarLiftFoot, sidebarSinkFoot) }
-
-// sidebarGrey is the sidebar's ground: lift levels of grey above the
-// window's background under a dark window, and sink levels below it
-// under a light one.
-//
-// Grey rather than a tint of a colour in the palette: the sidebar is
-// furniture, and furniture with no colour of its own stays out of the
-// way of the text beside it.
-func (a *app) sidebarGrey(lift, sink int) color.RGBA {
+// Its sidebar is that colour too unless the theme named another.
+func (a *app) sidebarTop() color.RGBA {
 	if a.look.Set {
-		return a.look.BG
+		return a.look.SidebarBG
 	}
-	base := int(grid.Grey(a.colours.BG).R)
-	at := base - sink
-	if base < 0x80 {
-		at = base + lift
+	return grid.Blend(a.colours.BG, a.colours.ANSI[4], 1, 20)
+}
+
+func (a *app) sidebarFoot() color.RGBA {
+	if a.look.Set {
+		return a.look.SidebarBG
 	}
-	n := uint8(min(max(at, 0), 0xff))
-	return color.RGBA{R: n, G: n, B: n, A: 0xff}
+	return grid.Blend(a.colours.BG, a.colours.ANSI[4], 1, 8)
 }
 
 // newSidebar puts the list in the panel, with the way to reach a machine
@@ -447,7 +428,7 @@ func (a *app) hostRow(on hostFacts, now time.Time) ui.ListRow {
 		// machine -- another gridterm, with panes rather than a shell --
 		// and the sidebar should not make the user read the name to
 		// tell which is which.
-		row.FG = a.onFrame(a.colours.ANSI[5])
+		row.FG = a.onSidebar(a.colours.ANSI[5])
 	}
 	e := on.headingRow()
 	if e == nil {

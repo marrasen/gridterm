@@ -239,7 +239,7 @@ func (a *app) remoteRows(on hostFacts, mine []conns.Row,
 				// A window that window took over, in the colour a window
 				// has. It has panes of its own and no files to serve
 				// this one, so there is nothing to open on it.
-				head.FG = a.onFrame(a.colours.ANSI[5])
+				head.FG = a.onSidebar(a.colours.ANSI[5])
 			} else {
 				// What can be opened on it, which is a pane reading its
 				// files through the window.

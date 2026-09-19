@@ -59,6 +59,18 @@ type Layer struct {
 	// that would draw the same ones is skipped.
 	drawnStrokes []Stroke
 
+	// Picture is an image drawn over the layer. Nil for a layer that
+	// shows none.
+	//
+	// It is blitted onto the screen rather than painted into the layer's
+	// texture, the same as a rule, so the screen is wiped on any frame
+	// that draws one.
+	Picture *Picture
+
+	// shownPic is the picture as it was last drawn, so a frame that
+	// would draw the same one is skipped.
+	shownPic shownPicture
+
 	// Scale shrinks or blows up the texture as it is blitted, for a grid
 	// drawn at a size the room it goes in cannot hold. 0 and 1 both mean
 	// none, and the texture keeps the grid's own pixel size either way.
@@ -446,13 +458,17 @@ func (c *Compositor) Draw(screen *ebiten.Image) {
 		}
 	}
 
+	// Worked out before anything is drawn, because it is read twice and
+	// the answer changes once the pictures have been noted as drawn.
+	picChanged := c.anyPictureChanged()
+
 	moved := !placementsMatch(c.last, c.layers)
 	// A resized window arrives as a fresh, blank offscreen image, so the
 	// stack has to be put back even though nothing else changed.
 	rescreened := screen != c.lastScreen || screen.Bounds() != c.lastScreenRect
 	// resized is in its own right: a layer that lost its grid has no
 	// texture left to be stale, but the pixels it held are still there.
-	if !c.anyVisibleStale() && !c.anyStrokeChanged() && !moved && !rescreened && !resized {
+	if !c.anyVisibleStale() && !c.anyStrokeChanged() && !picChanged && !moved && !rescreened && !resized {
 		c.stats.Skipped = true
 		return
 	}
@@ -495,7 +511,7 @@ func (c *Compositor) Draw(screen *ebiten.Image) {
 	// its backdrop, so drawing over a screen that still held the last
 	// frame's panel would blur the panel into itself, a little more on
 	// every frame.
-	if moved || resized || rescreened || c.anyFrosted() || c.anyStroke() {
+	if moved || resized || rescreened || picChanged || c.anyFrosted() || c.anyStroke() || c.anyPicture() {
 		screen.Clear()
 		c.stats.Cleared = true
 	}
@@ -514,6 +530,11 @@ func (c *Compositor) Draw(screen *ebiten.Image) {
 			screen.DrawImage(l.tex, blitOp(l))
 			c.stats.Blits++
 		}
+		// Then the picture, over the layer's own text.
+		if !l.Picture.Empty() {
+			c.drawPicture(screen, l)
+			c.stats.Blits++
+		}
 		// And the rules last, because a border goes over what it marks.
 		for i := range l.Strokes {
 			if !l.Strokes[i].Empty() {
@@ -521,6 +542,11 @@ func (c *Compositor) Draw(screen *ebiten.Image) {
 			}
 		}
 		l.drawnStrokes = append(l.drawnStrokes[:0], l.Strokes...)
+	}
+	// Every layer, not only the visible ones: a layer that has just been
+	// hidden has to stop counting as holding a picture.
+	for _, l := range c.layers {
+		l.notePictureDrawn()
 	}
 }
 

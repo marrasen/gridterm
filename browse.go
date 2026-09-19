@@ -1035,7 +1035,8 @@ func (a *app) filesPaneGone(p *files.Pane) error {
 // A reader opened from a browser pane reads through that pane's
 // filesystem. Closing it under one leaves the reader with a stale file
 // and a reread that fails down a session somebody else closed, so the
-// close waits for the last reader to go.
+// close waits for the last reader to go and for the last read it has out
+// to come back.
 func (a *app) browserLetGoFS(f vfs.FS) error {
 	if f == nil {
 		return nil

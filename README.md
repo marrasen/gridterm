@@ -82,6 +82,17 @@ emulator, and draws the resulting character grid as batched triangles.
   key. A directory is never read on the goroutine that draws, so a slow
   machine cannot stop the window, and a read that fails leaves the
   listing that worked on screen with the reason beside it.
+- **A reader for a file, without a shell.** F3 opens a file from the
+  browser and F4 tails one, on this machine or on a server. It works the
+  way `less` does: a page at a time, "/" to search, "n" and "N" for the
+  next match and the one before, ":" to go to a line, and Ctrl+H for a
+  hex dump. A file being tailed is asked about three times a second and
+  stays at its end as it grows; scroll back and it leaves you where you
+  put yourself. Code is coloured by what the file is called, and a
+  markdown file gets its headings, bullets and quotes. A picture file
+  shows the picture, on a layer of its own over the pane: the grid is for
+  text. Nothing is read on the goroutine that draws, and a file that will
+  not read says why rather than showing an empty pane.
 - **File work in the background.** Copying, moving and deleting, on one
   machine or between two, with how far along it is and a way to stop it.
   A name that is already there is asked about — replace, skip, rename, or
@@ -398,6 +409,10 @@ is how that gets forgotten. Two places have paid for it:
 The rule of thumb: if you are about to ask which *character* draws
 something, or how many *cells* thick it is, it is a shape and it wants
 pixels.
+
+A picture is the plainest case of it. The reader draws a picture file on
+a layer with no grid at all, over the rows the pane gave it, shrunk to
+fit and centred. Nothing about it is measured in cells.
 
 **A blend can only land between its two ends.** The window works its own
 furniture out from the theme: the menu bar, the sidebar and a dialog are

@@ -197,6 +197,10 @@ type app struct {
 	// it has on the sidebar.
 	readers map[*files.Reader]*reader
 
+	// readerPics is the picture each reader showing one has on screen,
+	// on a layer of its own over the pane.
+	readerPics map[*files.Reader]*readerPic
+
 	// fsHeld counts the readers using each filesystem, and fsGone marks
 	// the ones the browser has finished with. A filesystem is closed
 	// when both say nobody is left: the browser opens them, and a reader
@@ -478,6 +482,7 @@ func (a *app) Update() error {
 	a.placeRegions()
 	a.placeScaled()
 	a.placeShared()
+	a.placeReaderPics()
 	a.placeWalk()
 	a.placeSwitcher()
 
@@ -591,6 +596,7 @@ func (a *app) resizeTo(pxW, pxH int) {
 	a.placeRegions()
 	a.placeScaled()
 	a.placeShared()
+	a.placeReaderPics()
 }
 
 // setGridSize tells the grids and the widget tree about a new size in

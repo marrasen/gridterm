@@ -678,6 +678,50 @@ func StringWidth(s string) int {
 	return total
 }
 
+// CutLeft drops the first n columns of s and reports how many columns it
+// dropped, which is more than n when a double-width character straddles
+// the cut: a character goes whole or stays whole.
+//
+// Columns are counted the way SetString spends them, so text cut here
+// lines up with the same text written whole.
+func CutLeft(s string, n int) (rest string, cut int) {
+	at, state := 0, -1
+	for at < n && len(s) > 0 {
+		var w int
+		_, s, w, state = uniseg.FirstGraphemeClusterInString(s, state)
+		if w >= 2 {
+			at += 2
+			continue
+		}
+		at++
+	}
+	return s, at
+}
+
+// SnapToClusters moves each offset in ends forward to the end of the
+// grapheme cluster it falls inside, and clamps one past the end of s.
+//
+// It is for a caller colouring parts of a string: a boundary in the
+// middle of a cluster gives a combining mark a cell of its own. The
+// offsets have to be in order, which is what a run of stretches is.
+func SnapToClusters(s string, ends []int) {
+	i, at, state := 0, 0, -1
+	for i < len(ends) && at < len(s) {
+		var cluster string
+		cluster, _, _, state = uniseg.FirstGraphemeClusterInString(s[at:], state)
+		next := at + len(cluster)
+		for ; i < len(ends) && ends[i] < next; i++ {
+			if ends[i] > at {
+				ends[i] = next
+			}
+		}
+		at = next
+	}
+	for ; i < len(ends); i++ {
+		ends[i] = min(ends[i], len(s))
+	}
+}
+
 // Point is a cell coordinate.
 type Point struct{ X, Y int }
 

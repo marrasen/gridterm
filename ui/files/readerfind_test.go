@@ -91,10 +91,13 @@ func TestSearchingIgnoresCase(t *testing.T) {
 	}
 }
 
-// n goes to the next match and N to the one before.
+// n goes to the next match and N to the one before, over a file long
+// enough that each match is its own screenful away.
 func TestNAndShiftNStepThroughTheMatches(t *testing.T) {
-	lines := []string{"needle", "one", "needle", "two", "needle"}
-	r := aFileOf(t, 40, 4, lines...)
+	lines := append(numbered(40), "needle")
+	lines = append(lines, numbered(40)...)
+	lines = append(lines, "needle")
+	r := aFileOf(t, 40, 10, lines...)
 
 	typed(t, r, "/needle")
 	press(t, r, input.KeyEnter)
@@ -108,6 +111,45 @@ func TestNAndShiftNStepThroughTheMatches(t *testing.T) {
 	typed(t, r, "N")
 	if got := r.Top(); got != first {
 		t.Errorf("N went to line %d, want back to %d", got+1, first+1)
+	}
+}
+
+// n steps between two matches on one screenful, where the page does not
+// move at all: the match is what the reader is on, not the top row.
+func TestNStepsBetweenMatchesOnOneScreenful(t *testing.T) {
+	r := aFileOf(t, 40, 12, "one", "two", "needle", "four", "needle", "six")
+
+	typed(t, r, "/needle")
+	press(t, r, input.KeyEnter)
+	typed(t, r, "n")
+
+	// Nothing more to say means it found the second one. It says so
+	// when it did not.
+	g := drawReader(r, 40, 12)
+	if got := readerRow(g, 11); strings.Contains(got, "needle") {
+		t.Fatalf("the bar reads %q, want n to have found the second match", got)
+	}
+	// And going on wraps back to the first rather than stopping.
+	typed(t, r, "n")
+	g = drawReader(r, 40, 12)
+	if got := readerRow(g, 11); strings.Contains(got, "nothing else") {
+		t.Errorf("the bar reads %q, want n to have wrapped round", got)
+	}
+}
+
+// A search does not slice the line at an offset taken from a lowercased
+// copy of it: lowercasing can make a character longer, and the offset
+// then runs past the end of the line.
+func TestSearchingALineThatGrowsWhenLowercased(t *testing.T) {
+	// U+023A lowercases to a three-byte character from a two-byte one.
+	r := aFileOf(t, 40, 10, "ab\u023acd")
+
+	typed(t, r, "/cd")
+	press(t, r, input.KeyEnter)
+	g := drawReader(r, 40, 10)
+
+	if got, want := g.At(3, 1).BG, r.Style.SelectedBG; got != want {
+		t.Errorf("the match sits on %v, want the marked-out ground %v", got, want)
 	}
 }
 

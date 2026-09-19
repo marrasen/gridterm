@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"image"
 	"time"
 
 	"github.com/marrasen/gridterm/conns"
@@ -50,11 +51,30 @@ func (a *app) openReader(f vfs.FS, host, path, name string, follow bool) error {
 	// Off the drawing goroutine, and back onto it with the answer: a
 	// file on a machine with a long way to go would otherwise stop the
 	// window while it was read.
+	// Held for the length of the read as well as for the life of the
+	// pane: a reader closed while its read is out would otherwise let go
+	// of the last hold and close the session under it.
 	r.Read = func(then func([]string, bool, error)) {
+		a.holdFS(f)
 		go func() {
 			lines, cut, err := files.ReadFile(f, path)
-			a.pump.post(func() { then(lines, cut, err) })
+			a.pump.post(func() {
+				a.doneWithFS(f)
+				then(lines, cut, err)
+			})
 		}()
+	}
+	if files.IsPicture(name) {
+		r.ReadPic = func(then func(image.Image, string, error)) {
+			a.holdFS(f)
+			go func() {
+				img, kind, err := files.ReadPicture(f, path)
+				a.pump.post(func() {
+					a.doneWithFS(f)
+					then(img, kind, err)
+				})
+			}()
+		}
 	}
 	r.OnClose = func() {
 		a.pump.post(func() {
@@ -114,16 +134,23 @@ func (a *app) hostOfPane(p *files.Pane) string {
 }
 
 // dropReader takes a reader's row off the sidebar, for a pane that has
-// been closed.
-func (a *app) dropReader(r *files.Reader) {
+// been closed, and lets go of the filesystem it was reading through.
+func (a *app) dropReader(r *files.Reader) error {
 	held := a.readers[r]
 	if held == nil {
-		return
+		return nil
 	}
 	a.registry.Drop(held.row)
 	delete(a.readers, r)
-	if err := a.letGoFS(held.on); err != nil {
-		a.logError(err)
+	return a.letGoFS(held.on)
+}
+
+// doneWithFS lets go of a hold taken for one read, and says so when the
+// close fails: it is a session on a connection, and one that will not
+// close is worth hearing about.
+func (a *app) doneWithFS(f vfs.FS) {
+	if err := a.letGoFS(f); err != nil {
+		a.reportError("Could not close the connection the file was read through", err)
 	}
 }
 
@@ -177,18 +204,23 @@ func (a *app) followReaders(now time.Time) {
 		held.asked = now
 		held.checking = true
 		on, at, pane := held.on, held.at, r
+		a.holdFS(on)
 		go func() {
 			e, err := on.Stat(at)
-			a.pump.post(func() { a.fileChanged(pane, e, err) })
+			a.pump.post(func() {
+				a.doneWithFS(on)
+				a.fileChanged(pane, e, err)
+			})
 		}()
 	}
 }
 
 // fileChanged takes the answer to that question.
 //
-// A file that would not be asked about is left to the read to report: a
-// reader whose file has been taken away says so when it next reads it,
-// and saying it twice from two places would say it in two wordings.
+// A file that cannot be asked about is one the reader can no longer
+// trust, so the reason goes on the pane. Nothing else would ever say it:
+// a reader that keeps failing this question never issues another read,
+// and would go on showing a file that has been taken away.
 func (a *app) fileChanged(r *files.Reader, e vfs.Entry, err error) {
 	held := a.readers[r]
 	if held == nil {
@@ -197,13 +229,22 @@ func (a *app) fileChanged(r *files.Reader, e vfs.Entry, err error) {
 	}
 	held.checking = false
 	if err != nil {
+		r.Failed(err)
 		return
 	}
-	if held.knowIt && e.Size == held.was.Size && e.Mod.Equal(held.was.Mod) {
+	// A file that has not changed is read again all the same when the
+	// last read failed, or one blip would leave the error on the pane
+	// until somebody wrote to the file.
+	if held.knowIt && e.Size == held.was.Size && e.Mod.Equal(held.was.Mod) && r.Err() == nil {
+		return
+	}
+	// Written down only once a read has gone out. A read dropped
+	// because another was still running would otherwise leave the window
+	// thinking it had already read this version.
+	if !r.Open() {
 		return
 	}
 	held.was, held.knowIt = e, true
-	r.Open()
 }
 
 // readerNote is what a reader's row says beside its name: where in the

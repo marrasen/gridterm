@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -148,23 +149,33 @@ func inTree(a *testApp, w ui.Widget) bool {
 	return false
 }
 
-// A reader following a file picks up what is written to it.
+// A reader following a file picks up what is written to it, and stays at
+// the end as it grows.
+//
+// The file is longer than the pane on purpose. A file that fits has
+// nowhere to scroll, so its reader is at the end whatever following did.
 func TestAFollowingReaderPicksUpWhatIsWritten(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withPanel(t, a)
-	name, path := aReadableFile(t, "one", "two")
+	was := logOf(60)
+	name, path := aReadableFile(t, was...)
 	if err := a.openReader(vfs.NewLocal(), conns.Local, path, name, false); err != nil {
 		t.Fatalf("open a reader: %v", err)
 	}
 	r := onlyReader(t, a)
 	waitUntil(t, "the first read", func() bool {
 		a.pump.run()
-		return r.Lines() == 2
+		return r.Lines() == len(was)
 	})
 	r.Follow(true)
+	wasTop := r.Top()
+	if wasTop == 0 {
+		t.Fatal("the file is not longer than the pane, so this proves nothing")
+	}
 
 	// The file grows, the way a log does.
-	if err := os.WriteFile(path, []byte("one\ntwo\nthree\nfour"), 0o600); err != nil {
+	grown := logOf(90)
+	if err := os.WriteFile(path, []byte(strings.Join(grown, "\n")), 0o600); err != nil {
 		t.Fatalf("write the file: %v", err)
 	}
 	at := time.Now()
@@ -172,12 +183,24 @@ func TestAFollowingReaderPicksUpWhatIsWritten(t *testing.T) {
 		at = at.Add(followEvery)
 		a.followReaders(at)
 		a.pump.run()
-		return r.Lines() == 4
+		return r.Lines() == len(grown)
 	})
 
+	if got := r.Top(); got <= wasTop {
+		t.Errorf("the reader is on line %d, where it was before the file grew", got+1)
+	}
 	if !r.AtEnd() {
 		t.Error("the reader followed the file and did not stay at its end")
 	}
+}
+
+// logOf is a file of n lines, each saying which it is.
+func logOf(n int) []string {
+	out := make([]string, n)
+	for i := range out {
+		out[i] = "line " + strconv.Itoa(i+1)
+	}
+	return out
 }
 
 // A file that has not changed is not read again, or a reader following a

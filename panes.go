@@ -509,11 +509,11 @@ func (a *app) closePane(w ui.Widget) error {
 			errs = append(errs, a.filesPaneGone(p))
 			continue
 		}
-		// A reader holds no connection of its own: it reads through the
-		// browser's, and the browser lets that go. So there is only the
-		// row to take off.
+		// A reader reads through the browser's filesystem and holds it
+		// while it does, so letting go of it can be what closes the
+		// session, and that close can fail.
 		if r, isReader := leaf.(*files.Reader); isReader {
-			a.dropReader(r)
+			errs = append(errs, a.dropReader(r))
 			continue
 		}
 		t, isTerm := leaf.(*term.Terminal)

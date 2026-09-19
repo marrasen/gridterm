@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"image"
+	"image/color"
 	"io"
 	"strings"
 
@@ -47,6 +49,11 @@ type Reader struct {
 	// for it.
 	Read func(then func(lines []string, cut bool, err error))
 
+	// ReadPic is the same for a file the reader shows as a picture. The
+	// two are separate because a picture is decoded rather than split
+	// into lines.
+	ReadPic func(then func(img image.Image, kind string, err error))
+
 	name string
 	at   string
 
@@ -56,11 +63,26 @@ type Reader struct {
 	cut   bool
 	err   error
 
+	// isPic says the file is shown as a picture, pic is the picture once
+	// it has been read, and kind what sort of file it came from.
+	isPic bool
+	pic   image.Image
+	kind  string
+
 	// shown is what is drawn: the lines themselves, or the bytes laid
 	// out when hex is on. Built from lines rather than read again, so
 	// turning hex on costs one pass over what is already held.
 	shown []string
 	hex   bool
+
+	// colour turns a line into the stretches it is drawn in, picked from
+	// what the file is called. A nil one leaves the file plain.
+	colour colourer
+
+	// runs and ends are where a line's stretches are worked out: once a
+	// line a frame, into the same slices each time.
+	runs []run
+	ends []int
 
 	// top is the first line drawn and left the first column, both in
 	// what is shown rather than in the file.
@@ -87,6 +109,12 @@ type Reader struct {
 	finding string
 	said    string
 
+	// found is the line the last match was on, and -1 when nothing has
+	// been found. Stepping from the match rather than from the top of
+	// the pane is what makes "n" move between two matches on one
+	// screenful.
+	found int
+
 	// follow says the reader keeps up with a file that is being written
 	// to, the way tail -f does, and stuck says it was at the end when
 	// the last read went out so the next answer should stay there.
@@ -98,7 +126,9 @@ type Reader struct {
 
 // NewReader returns a reader for one file, showing nothing until Open is
 // called.
-func NewReader(name, at string) *Reader { return &Reader{name: name, at: at} }
+func NewReader(name, at string) *Reader {
+	return &Reader{name: name, at: at, isPic: IsPicture(name), colour: colourerFor(name), found: -1}
+}
 
 // Name is what the file is called, for a row that has to name it.
 func (r *Reader) Name() string { return r.name }
@@ -109,8 +139,10 @@ func (r *Reader) Path() string { return r.at }
 // Lines is how many lines the reader holds.
 func (r *Reader) Lines() int { return len(r.shown) }
 
-// Top is the first line shown, counting from zero.
-func (r *Reader) Top() int { return r.top }
+// Top is the first line shown and Left the first column, both counting
+// from zero.
+func (r *Reader) Top() int  { return r.top }
+func (r *Reader) Left() int { return r.left }
 
 // Busy reports that a read is out.
 func (r *Reader) Busy() bool { return r.busy }
@@ -121,11 +153,25 @@ func (r *Reader) Err() error { return r.err }
 // Cut reports that the file is longer than the reader holds.
 func (r *Reader) Cut() bool { return r.cut }
 
-// Open reads the file again, keeping what is shown until the answer
-// arrives so the pane does not blink empty on a reread.
-func (r *Reader) Open() {
-	if r.Read == nil || r.busy {
-		return
+// Open reads the file again and reports whether a read went out.
+//
+// What is shown is kept until the answer arrives, so the pane does not
+// blink empty on a reread. A read while one is already out is dropped,
+// and says so: a caller that had written down what it was about to read
+// has to know it did not.
+func (r *Reader) Open() bool {
+	if r.busy {
+		return false
+	}
+	if r.isPic {
+		if r.ReadPic == nil {
+			return false
+		}
+		r.openPicture()
+		return true
+	}
+	if r.Read == nil {
+		return false
 	}
 	r.busy = true
 	// Asked before the read goes out rather than after it comes back: a
@@ -148,7 +194,13 @@ func (r *Reader) Open() {
 		}
 		r.clampTop()
 	})
+	return true
 }
+
+// Failed says something went wrong with the file away from a read: the
+// question of whether it has changed, for one. The reader shows it in
+// place of the file.
+func (r *Reader) Failed(err error) { r.err = err }
 
 // ReadFile reads a file into lines, stopping at MostReadBytes.
 //
@@ -235,9 +287,16 @@ func readLine(in *bufio.Reader) (line string, clipped bool, err error) {
 }
 
 // Layout takes the room the reader has.
+//
+// A shorter pane moves the end of the file away from where the reader is
+// sitting, so a file being followed is put back on its end.
 func (r *Reader) Layout(size ui.Size) {
+	stuck := r.stuck
 	r.size = size
 	r.clampTop()
+	if stuck {
+		r.End()
+	}
 }
 
 // rows is how many lines of the file are shown, which is the room less
@@ -248,11 +307,17 @@ func (r *Reader) rows() int { return max(r.size.Rows-readerChrome, 0) }
 // the top and the bar of keys at the bottom.
 const readerChrome = 2
 
-// clampTop holds the first line shown inside the file.
+// clampTop holds the first line and the first column shown inside the
+// file. A file that is read again shorter would otherwise leave the pane
+// scrolled past the end of every line it now has, showing nothing.
 func (r *Reader) clampTop() {
 	r.top = max(min(r.top, r.lastTop()), 0)
-	r.left = max(r.left, 0)
+	r.left = max(min(r.left, r.lastLeft()), 0)
 }
+
+// lastLeft is the furthest the file scrolls across: the end of the
+// longest line at the right edge.
+func (r *Reader) lastLeft() int { return max(r.widest()-r.size.Cols, 0) }
 
 // lastTop is the furthest the file scrolls: the last screenful, so the
 // end of a file sits at the bottom of the pane rather than at the top
@@ -319,7 +384,7 @@ func (r *Reader) Following() bool { return r.follow }
 // that, holding the key walks past every line and leaves the pane blank,
 // with nothing on screen saying how far across it went.
 func (r *Reader) Sideways(n int) {
-	r.left = max(min(r.left+n, max(r.widest()-r.size.Cols, 0)), 0)
+	r.left = max(min(r.left+n, r.lastLeft()), 0)
 }
 
 // widest is the longest line the reader holds, in columns, and is worked
@@ -336,7 +401,15 @@ func (r *Reader) widest() int {
 	return n
 }
 
-// ReaderKeys is what the bar offers.
+// keys is what the bar offers for this file.
+func (r *Reader) keys() []Key {
+	if r.isPic {
+		return PictureKeys()
+	}
+	return ReaderKeys()
+}
+
+// ReaderKeys is what the bar offers for a file of lines.
 func ReaderKeys() []Key {
 	return []Key{
 		{Chord: chord(input.KeyHome, 0), Shown: "Home", Title: "Top"},
@@ -352,6 +425,9 @@ func ReaderKeys() []Key {
 
 // HandleKey moves through the file.
 func (r *Reader) HandleKey(ev input.Event) (bool, error) {
+	if r.isPic {
+		return r.pictureKey(ev)
+	}
 	if r.asking != askingNothing {
 		return r.askKey(ev)
 	}
@@ -444,7 +520,7 @@ func (r *Reader) HandleMouse(ev input.MouseEvent) (bool, error) {
 	}
 	// The bar along the bottom: a click on a key does what the key does.
 	if rows := r.size.Rows; rows > 1 && ev.Row == rows-1 {
-		keys := ReaderKeys()
+		keys := r.keys()
 		if i, ok := keyAt(ev.Col, r.size.Cols, len(keys)); ok {
 			return r.HandleKey(keys[i].press())
 		}
@@ -471,7 +547,7 @@ func (r *Reader) Draw(v grid.View) {
 	// The name at the top, with where in the file this is at the end of
 	// it, so a reader says both without a second row.
 	head := r.name
-	if r.hex {
+	if r.hex && !r.isPic {
 		head += " (hex)"
 	}
 	if r.follow {
@@ -485,9 +561,13 @@ func (r *Reader) Draw(v grid.View) {
 		v.SetString(cols-grid.StringWidth(note), 0, note, r.Style.NoteFG, r.Style.BG, 0)
 	}
 
-	if r.err != nil {
+	switch {
+	case r.err != nil:
 		v.SetString(0, 1, grid.TrimTail(r.err.Error(), cols), r.Style.ErrorFG, r.Style.BG, 0)
-	} else {
+	case r.isPic:
+		// The picture goes on a layer over the pane, so the body is left
+		// as it is: a picture is pixels, and the grid is for text.
+	default:
 		r.paintLines(v, cols, rows)
 	}
 	switch {
@@ -497,7 +577,7 @@ func (r *Reader) Draw(v grid.View) {
 	case r.said != "":
 		v.SetString(0, rows-1, grid.TrimTail(r.said, cols), r.Style.ErrorFG, r.Style.BG, 0)
 	default:
-		drawKeys(v, rows-1, cols, ReaderKeys(), r.Style, func(Key) bool { return r.focused })
+		drawKeys(v, rows-1, cols, r.keys(), r.Style, func(Key) bool { return r.focused })
 	}
 }
 
@@ -510,11 +590,10 @@ func (r *Reader) paintLines(v grid.View, cols, rows int) {
 		}
 		line := r.shown[i]
 		at, wide, found := r.findsOn(line)
+		r.paintLine(v, y+1, line, cols)
 		if r.left > 0 {
-			line = cutLeft(line, r.left)
 			at -= r.left
 		}
-		v.SetString(0, y+1, grid.TrimTail(line, cols), r.Style.FG, r.Style.BG, 0)
 		if !found {
 			continue
 		}
@@ -529,18 +608,110 @@ func (r *Reader) paintLines(v grid.View, cols, rows int) {
 	}
 }
 
-// cutLeft drops the first n columns of a line, for one scrolled
-// sideways. Columns rather than bytes, so a line of double-width
-// characters moves by what is on screen.
-func cutLeft(line string, n int) string {
-	at := 0
-	for i, c := range line {
-		if at >= n {
-			return line[i:]
-		}
-		at += grid.RuneWidth(c)
+// paintLine writes one line, in the stretches the file's own colouring
+// gives it. A hex dump is bytes rather than a language, so it is drawn
+// plain.
+func (r *Reader) paintLine(v grid.View, y int, line string, cols int) {
+	if r.colour == nil || r.hex {
+		r.paintPlain(v, y, line, cols)
+		return
 	}
-	return ""
+	r.runs = r.snap(line, r.colour(line, r.runs))
+	if len(r.runs) == 0 {
+		r.paintPlain(v, y, line, cols)
+		return
+	}
+	// Stretch by stretch, each at the column it has in the whole line,
+	// so the colours land where the plain line's characters would.
+	at, x := 0, -r.left
+	for _, piece := range r.runs {
+		end := min(piece.end, len(line))
+		text := line[at:end]
+		at = end
+		width := grid.StringWidth(text)
+		if x+width > 0 && x < cols {
+			r.paintPiece(v, y, x, cols, text, piece)
+		}
+		x += width
+		if x >= cols {
+			return
+		}
+	}
+}
+
+// snap moves the colouring's boundaries onto grapheme clusters, so a
+// combining mark keeps the cell of the character it belongs to.
+//
+// Only for a line with a character outside ASCII in it, because that is
+// the only kind that has a cluster longer than one byte.
+func (r *Reader) snap(line string, runs []run) []run {
+	if len(runs) < 2 || !hasHighByte(line) {
+		return runs
+	}
+	r.ends = r.ends[:0]
+	for _, piece := range runs {
+		r.ends = append(r.ends, piece.end)
+	}
+	grid.SnapToClusters(line, r.ends)
+
+	// A stretch whose end moved onto the same cluster as the one before
+	// it now covers nothing, and is dropped.
+	out, last := runs[:0], 0
+	for i, piece := range runs {
+		if r.ends[i] <= last {
+			continue
+		}
+		piece.end, last = r.ends[i], r.ends[i]
+		out = append(out, piece)
+	}
+	return out
+}
+
+// hasHighByte reports whether a line holds a byte outside ASCII.
+func hasHighByte(line string) bool {
+	for i := 0; i < len(line); i++ {
+		if line[i] >= 0x80 {
+			return true
+		}
+	}
+	return false
+}
+
+// paintPlain writes a line in the reader's own colour.
+func (r *Reader) paintPlain(v grid.View, y int, line string, cols int) {
+	x := 0
+	if r.left > 0 {
+		var cut int
+		line, cut = grid.CutLeft(line, r.left)
+		// A double-width character straddling the left edge goes whole,
+		// and the column it half filled is left blank.
+		x = cut - r.left
+	}
+	v.SetString(x, y, grid.TrimTail(line, cols-x), r.Style.FG, r.Style.BG, 0)
+}
+
+// paintPiece writes one stretch, cutting what is off either edge.
+func (r *Reader) paintPiece(v grid.View, y, x, cols int, text string, piece run) {
+	if x < 0 {
+		var cut int
+		text, cut = grid.CutLeft(text, -x)
+		x += cut
+	}
+	v.SetString(x, y, grid.TrimTail(text, cols-x), r.colourOf(piece.col), r.Style.BG, piece.attr)
+}
+
+// colourOf turns a colouring's name for a stretch into a colour from the
+// reader's own style.
+func (r *Reader) colourOf(c colour) color.RGBA {
+	switch c {
+	case colourNote:
+		return r.Style.NoteFG
+	case colourText:
+		return r.Style.LinkFG
+	case colourMark:
+		return r.Style.MarkedFG
+	}
+	return r.Style.FG
 }
 
 // place is what the top line says about where in the file this is: the
@@ -549,6 +720,9 @@ func cutLeft(line string, n int) string {
 func (r *Reader) place() string {
 	if r.err != nil {
 		return ""
+	}
+	if r.isPic {
+		return r.pictureNote()
 	}
 	if len(r.shown) == 0 {
 		return "empty"

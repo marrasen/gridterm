@@ -28,6 +28,9 @@ func (r *Reader) Hexed() bool { return r.hex }
 
 // remake builds what is shown from what was read.
 func (r *Reader) remake() {
+	// The lines are not the lines they were, so the match is not on the
+	// line it was on either.
+	r.found = -1
 	if !r.hex {
 		r.shown = r.lines
 		r.wideOf = -1

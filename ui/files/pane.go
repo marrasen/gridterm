@@ -74,7 +74,8 @@ type Style struct {
 	PathFG   color.RGBA
 
 	// DirFG is a directory, LinkFG a symbolic link, and MarkedFG a name
-	// the user has picked out.
+	// the user has picked out. A reader borrows the last two: LinkFG for
+	// a string, and MarkedFG for a heading, a bullet and a search match.
 	DirFG, LinkFG, MarkedFG color.RGBA
 
 	// ClipFG is a name waiting to be pasted somewhere.

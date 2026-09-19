@@ -3,6 +3,8 @@ package files
 import (
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/input"
@@ -81,16 +83,30 @@ func (r *Reader) GoToLine(n int) {
 
 // FindNext moves to the next line holding what was searched for, or the
 // one before it when back is true.
+//
+// It steps from the last match while that is still on screen, so two
+// matches on one screenful are stepped between. The match is what the
+// user is reading; the top of the pane is only where it happens to sit.
 func (r *Reader) FindNext(back bool) {
 	if r.finding == "" {
 		r.said = "there is nothing to look for yet"
 		return
 	}
-	from := r.top + 1
+	at := r.top
+	if r.onScreen(r.found) {
+		at = r.found
+	}
+	from := at + 1
 	if back {
-		from = r.top - 1
+		from = at - 1
 	}
 	r.findFrom(from, back, false)
+}
+
+// onScreen reports whether a line is one of those drawn.
+func (r *Reader) onScreen(at int) bool {
+	rows := r.rows()
+	return rows > 0 && at >= r.top && at < r.top+rows
 }
 
 // findFrom looks from a line on, wrapping once, and says so when there
@@ -105,7 +121,7 @@ func (r *Reader) findFrom(from int, back, here bool) {
 	if here {
 		from = r.top
 	}
-	want := strings.ToLower(r.finding)
+	want := r.finding
 	step := 1
 	if back {
 		step = -1
@@ -116,7 +132,8 @@ func (r *Reader) findFrom(from int, back, here bool) {
 	at := from
 	for range len(r.shown) {
 		at = (at%len(r.shown) + len(r.shown)) % len(r.shown)
-		if strings.Contains(strings.ToLower(r.shown[at]), want) {
+		if i, _ := foldIndex(r.shown[at], want); i >= 0 {
+			r.found = at
 			r.showLine(at)
 			r.said = ""
 			return
@@ -185,12 +202,47 @@ func (r *Reader) paintAsking(v grid.View, y, cols int) {
 // findsOn returns where the pattern sits in a line, in columns, for
 // marking the match out. It returns nothing when the line has none.
 func (r *Reader) findsOn(line string) (at, width int, ok bool) {
-	if r.finding == "" {
-		return 0, 0, false
-	}
-	i := strings.Index(strings.ToLower(line), strings.ToLower(r.finding))
+	i, n := foldIndex(line, r.finding)
 	if i < 0 {
 		return 0, 0, false
 	}
-	return grid.StringWidth(line[:i]), grid.StringWidth(line[i : i+len(r.finding)]), true
+	return grid.StringWidth(line[:i]), grid.StringWidth(line[i : i+n]), true
+}
+
+// foldIndex returns where want appears in line ignoring case, in bytes
+// of line, along with how many bytes of line the match takes. It returns
+// -1 when there is no match.
+//
+// Measured in the line itself rather than in a lowercased copy of it,
+// because lowercasing can change how many bytes a character takes: "Ⱥ"
+// grows from two to three, and an offset into the copy then runs past
+// the end of the line it is used to cut.
+func foldIndex(line, want string) (at, n int) {
+	if want == "" {
+		return -1, 0
+	}
+	for i := range line {
+		if n := foldPrefix(line[i:], want); n > 0 {
+			return i, n
+		}
+	}
+	return -1, 0
+}
+
+// foldPrefix returns how many bytes of s match want ignoring case, and
+// zero when it does not match.
+func foldPrefix(s, want string) int {
+	i, j := 0, 0
+	for j < len(want) {
+		if i >= len(s) {
+			return 0
+		}
+		a, na := utf8.DecodeRuneInString(s[i:])
+		b, nb := utf8.DecodeRuneInString(want[j:])
+		if unicode.ToLower(a) != unicode.ToLower(b) {
+			return 0
+		}
+		i, j = i+na, j+nb
+	}
+	return i
 }

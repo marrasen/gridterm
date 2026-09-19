@@ -198,30 +198,6 @@ Raised after a debugging session in a handed-over pane.
    which is worth having for a failed build. Nothing to do here: it is
    written down because it looked like a gap and is not one.
 
-## Reading a file without a shell
-
-Asked for on 2026-09-17. A new kind of pane, opened from the file
-browser, which needs an icon of its own.
-
-- **View a file, and tail a file.** Two commands in the browser. Both
-  open a reader pane; tailing follows the file as it grows and stays at
-  the bottom, the way `tail -f` does.
-
-- **The reader works like less.** It reads a page at a time rather than
-  the whole file, "/" searches, ":" goes to a line number, and a hex
-  mode shows the bytes.
-
-- **Colour and markdown.** Syntax colouring, and a rendered view for a
-  markdown file.
-
-- **Images too.** Viewing a picture shows the picture. The window
-  already draws pane-sized layers of its own, so there is somewhere to
-  put one.
-
-- **Tailing on Windows may be refused.** A file another program has open
-  for writing can fail to open at all. That has to be reported, not
-  assumed away.
-
 ## Pasting and dropping an image
 
 Asked for on 2026-09-17, after seeing Claude Code take a pasted image in

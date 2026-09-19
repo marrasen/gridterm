@@ -358,6 +358,13 @@ From Marcus's inbox, after working in a shared window.
 
 ## Known gaps worth revisiting
 
+- **`TestAMachineWithTooManyParkedFileSessionsIsRefusedTheNext` is flaky
+  under `-race`.** It fails about one run in five with "the plus opened
+  <nil>, want a menu", and passes every time without `-race`. Checked on
+  2026-09-19 against `cae1b4c`, before the file viewer, so it is not new.
+  It waits on SSH relays parking themselves, so the race detector's
+  slowdown is the likely cause, but nobody has looked.
+
 - **A shared pane never lets the window idle.** The border and the
   sidebar stripe glow for as long as an agent or another window has the
   pane, so two layers repaint four times a second and the compositor

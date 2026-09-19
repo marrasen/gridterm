@@ -714,6 +714,11 @@ func (r *Reader) colourOf(c colour) color.RGBA {
 	return r.Style.FG
 }
 
+// Where is what the top line says about where in the file the reader is,
+// or how big the picture is, for a row elsewhere that has to say the
+// same thing.
+func (r *Reader) Where() string { return r.place() }
+
 // place is what the top line says about where in the file this is: the
 // lines on screen out of the whole, and whether there is more of the
 // file than was read.

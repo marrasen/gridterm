@@ -7,6 +7,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/marrasen/gridterm/conns"
@@ -191,5 +192,20 @@ func TestAPictureBehindATabKeepsItsTexture(t *testing.T) {
 	}
 	if p.pic.Img != was {
 		t.Error("coming back built the texture again")
+	}
+}
+
+// A picture's row on the sidebar says how big the picture is, because a
+// picture has no lines to count.
+func TestAPictureRowSaysHowBigItIs(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	withCompositor(t, a)
+	openedPicture(t, a, 64, 32)
+
+	got := a.readerNote(onlyReader(t, a))
+
+	if !strings.Contains(got, "64×32") {
+		t.Errorf("the row says %q, want it to say how big the picture is", got)
 	}
 }

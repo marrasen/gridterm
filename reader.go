@@ -256,6 +256,10 @@ func (a *app) readerNote(r *files.Reader) string {
 	if r.Busy() {
 		return "reading"
 	}
+	if r.ShowsAPicture() {
+		// A picture has no lines to count, so the row says how big it is.
+		return r.Where()
+	}
 	if n := r.Lines(); n > 0 {
 		of := fmt.Sprintf("%d lines", n)
 		if r.Cut() {

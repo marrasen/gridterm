@@ -50,11 +50,17 @@ type Reader struct {
 	name string
 	at   string
 
-	// lines is the file split at its newlines, cut is whether there was
-	// more of it than MostReadBytes, and err is why the read failed.
+	// lines is the file split at its newlines, cut is whether any of it
+	// was left out, and err is why the read failed.
 	lines []string
 	cut   bool
 	err   error
+
+	// shown is what is drawn: the lines themselves, or the bytes laid
+	// out when hex is on. Built from lines rather than read again, so
+	// turning hex on costs one pass over what is already held.
+	shown []string
+	hex   bool
 
 	// top is the first line drawn and left the first column, both in
 	// what is shown rather than in the file.
@@ -101,7 +107,7 @@ func (r *Reader) Name() string { return r.name }
 func (r *Reader) Path() string { return r.at }
 
 // Lines is how many lines the reader holds.
-func (r *Reader) Lines() int { return len(r.lines) }
+func (r *Reader) Lines() int { return len(r.shown) }
 
 // Top is the first line shown, counting from zero.
 func (r *Reader) Top() int { return r.top }
@@ -133,6 +139,7 @@ func (r *Reader) Open() {
 			return
 		}
 		r.lines, r.cut = lines, cut
+		r.remake()
 		if r.stuck {
 			// Following, and the end is where it was left, so the new
 			// lines are what the user is looking at.
@@ -253,7 +260,7 @@ func (r *Reader) clampTop() {
 func (r *Reader) lastTop() int {
 	// A pane with no room for a line has nowhere to scroll to: there is
 	// no screenful, so the first line is the only place to be.
-	return max(len(r.lines)-max(r.rows(), 1), 0)
+	return max(len(r.shown)-max(r.rows(), 1), 0)
 }
 
 // Scroll moves n lines down the file, negative for up.
@@ -318,14 +325,14 @@ func (r *Reader) Sideways(n int) {
 // widest is the longest line the reader holds, in columns, and is worked
 // out once per set of lines rather than once per key.
 func (r *Reader) widest() int {
-	if r.wideOf == len(r.lines) {
+	if r.wideOf == len(r.shown) {
 		return r.wide
 	}
 	n := 0
-	for _, line := range r.lines {
+	for _, line := range r.shown {
 		n = max(n, grid.StringWidth(line))
 	}
-	r.wide, r.wideOf = n, len(r.lines)
+	r.wide, r.wideOf = n, len(r.shown)
 	return n
 }
 
@@ -337,6 +344,7 @@ func ReaderKeys() []Key {
 		{Chord: chord(input.KeyR, input.ModCtrl), Shown: "^R", Title: "Reread"},
 		{Chord: chord(input.KeyF, input.ModCtrl), Shown: "^F", Title: "Follow"},
 		{Typed: '/', Shown: "/", Title: "Find"},
+		{Chord: chord(input.KeyH, input.ModCtrl), Shown: "^H", Title: "Hex"},
 		{Typed: ':', Shown: ":", Title: "Line"},
 		{Chord: chord(input.KeyD, input.ModCtrl), Shown: "^D", Title: "Close"},
 	}
@@ -393,6 +401,8 @@ func (r *Reader) HandleKey(ev input.Event) (bool, error) {
 		r.Open()
 	case ev.Key == input.KeyF && ev.Ctrl():
 		r.Follow(!r.follow)
+	case ev.Key == input.KeyH && ev.Ctrl():
+		r.Hex(!r.hex)
 	case ev.Key == input.KeyD && ev.Ctrl(), ev.Key == input.KeyQ:
 		if r.OnClose != nil {
 			r.OnClose()
@@ -461,6 +471,9 @@ func (r *Reader) Draw(v grid.View) {
 	// The name at the top, with where in the file this is at the end of
 	// it, so a reader says both without a second row.
 	head := r.name
+	if r.hex {
+		head += " (hex)"
+	}
 	if r.follow {
 		head += " (following)"
 	}
@@ -492,10 +505,10 @@ func (r *Reader) Draw(v grid.View) {
 func (r *Reader) paintLines(v grid.View, cols, rows int) {
 	for y := 0; y < rows-readerChrome; y++ {
 		i := r.top + y
-		if i >= len(r.lines) {
+		if i >= len(r.shown) {
 			break
 		}
-		line := r.lines[i]
+		line := r.shown[i]
 		at, wide, found := r.findsOn(line)
 		if r.left > 0 {
 			line = cutLeft(line, r.left)
@@ -537,7 +550,7 @@ func (r *Reader) place() string {
 	if r.err != nil {
 		return ""
 	}
-	if len(r.lines) == 0 {
+	if len(r.shown) == 0 {
 		return "empty"
 	}
 	if r.rows() <= 0 {
@@ -545,7 +558,7 @@ func (r *Reader) place() string {
 		// is still worth saying: it is all that fits.
 		return r.howMany()
 	}
-	last := min(r.top+r.rows(), len(r.lines))
+	last := min(r.top+r.rows(), len(r.shown))
 	return fmt.Sprintf("%d-%d of %s", r.top+1, last, r.howMany())
 }
 
@@ -553,7 +566,7 @@ func (r *Reader) place() string {
 // there is more of the file than that.
 func (r *Reader) howMany() string {
 	if r.cut {
-		return fmt.Sprintf("%d+", len(r.lines))
+		return fmt.Sprintf("%d+", len(r.shown))
 	}
-	return fmt.Sprintf("%d", len(r.lines))
+	return fmt.Sprintf("%d", len(r.shown))
 }

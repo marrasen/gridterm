@@ -71,10 +71,10 @@ func (r *Reader) answer() {
 // GoToLine puts a line at the top of the pane, counting from one the way
 // every other program that numbers lines does.
 func (r *Reader) GoToLine(n int) {
-	if len(r.lines) == 0 {
+	if len(r.shown) == 0 {
 		return
 	}
-	r.top = max(min(n, len(r.lines))-1, 0)
+	r.top = max(min(n, len(r.shown))-1, 0)
 	r.clampTop()
 	r.stuck = r.follow && r.AtEnd()
 }
@@ -99,7 +99,7 @@ func (r *Reader) FindNext(back bool) {
 // here says the line the reader is already on counts as a match, which
 // is what a fresh search wants and a repeat does not.
 func (r *Reader) findFrom(from int, back, here bool) {
-	if r.finding == "" || len(r.lines) == 0 {
+	if r.finding == "" || len(r.shown) == 0 {
 		return
 	}
 	if here {
@@ -114,9 +114,9 @@ func (r *Reader) findFrom(from int, back, here bool) {
 	// round to it, so a pattern on the line above is found rather than
 	// reported missing.
 	at := from
-	for range len(r.lines) {
-		at = (at%len(r.lines) + len(r.lines)) % len(r.lines)
-		if strings.Contains(strings.ToLower(r.lines[at]), want) {
+	for range len(r.shown) {
+		at = (at%len(r.shown) + len(r.shown)) % len(r.shown)
+		if strings.Contains(strings.ToLower(r.shown[at]), want) {
 			r.showLine(at)
 			r.said = ""
 			return

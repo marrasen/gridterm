@@ -20,6 +20,9 @@ func (r *Reader) Hex(on bool) {
 	r.hex = on
 	r.top, r.left = 0, 0
 	r.stuck = false
+	// The lines are not the lines they were, so what was picked out of
+	// them is not there any more.
+	r.sel = span{}
 	r.remake()
 }
 
@@ -31,6 +34,7 @@ func (r *Reader) remake() {
 	// The lines are not the lines they were, so the match is not on the
 	// line it was on either.
 	r.found = -1
+	defer r.clampSel()
 	if !r.hex {
 		r.shown = r.lines
 		r.wideOf = -1

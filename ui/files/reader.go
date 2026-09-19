@@ -41,6 +41,11 @@ type Reader struct {
 	// business, not this package's.
 	OnClose func()
 
+	// OnCopy is called with the selected text when the user copies. A
+	// nil one leaves the key doing nothing: the clipboard is the
+	// window's, not this package's.
+	OnCopy func(text string)
+
 	// Read is how the file is fetched. It runs the work somewhere else
 	// and calls back with what it found, on the goroutine that draws.
 	//
@@ -119,6 +124,12 @@ type Reader struct {
 	follow bool
 	stuck  bool
 
+	// sel is what is picked out, in the file's own lines and columns so
+	// it stays where it is while the view scrolls. selecting is true
+	// between a press and its release.
+	sel       span
+	selecting bool
+
 	size ui.Size
 }
 
@@ -180,6 +191,9 @@ func (r *Reader) Open() bool {
 		r.busy = false
 		r.err = err
 		if err != nil {
+			// The lines on screen are not the file any more, so what was
+			// picked out of them is not either.
+			r.sel = span{}
 			return
 		}
 		r.lines, r.cut = lines, cut
@@ -198,7 +212,10 @@ func (r *Reader) Open() bool {
 // Failed says something went wrong with the file away from a read: the
 // question of whether it has changed, for one. The reader shows it in
 // place of the file.
-func (r *Reader) Failed(err error) { r.err = err }
+func (r *Reader) Failed(err error) {
+	r.err = err
+	r.sel = span{}
+}
 
 // ReadFile reads a file into lines, stopping at MostReadBytes.
 //
@@ -411,7 +428,17 @@ func (r *Reader) keys() []Key {
 	if r.isPic {
 		return PictureKeys()
 	}
-	return ReaderKeys()
+	keys := ReaderKeys()
+	if r.sel.on && r.err == nil {
+		keys = append(keys, CopyKey())
+	}
+	return keys
+}
+
+// CopyKey is the key that copies the selection. It is on the bar only
+// while there is something to copy.
+func CopyKey() Key {
+	return Key{Chord: chord(input.KeyC, input.ModCtrl), Shown: "^C", Title: "Copy"}
 }
 
 // ReaderKeys is what the bar offers for a file of lines.
@@ -462,6 +489,26 @@ func (r *Reader) HandleKey(ev input.Event) (bool, error) {
 	// having read it.
 	r.said = ""
 	switch {
+	// Shift and a key that moves takes the loose end of the selection
+	// with it, which is how text is picked out without a mouse.
+	case ev.Shift() && ev.Key == input.KeyUp:
+		r.extend(-1, 0)
+	case ev.Shift() && ev.Key == input.KeyDown:
+		r.extend(1, 0)
+	case ev.Shift() && ev.Key == input.KeyLeft:
+		r.extend(0, -1)
+	case ev.Shift() && ev.Key == input.KeyRight:
+		r.extend(0, 1)
+	case ev.Shift() && ev.Key == input.KeyHome:
+		r.extendTo(0)
+	case ev.Shift() && ev.Key == input.KeyEnd:
+		r.extendTo(-1)
+	case ev.Key == input.KeyA && ev.Ctrl():
+		r.SelectAll()
+	case ev.Key == input.KeyC && ev.Ctrl():
+		r.Copy()
+	case ev.Key == input.KeyEscape:
+		r.ClearSelection()
 	case ev.Key == input.KeyUp:
 		r.Scroll(-1)
 	case ev.Key == input.KeyDown:
@@ -501,15 +548,36 @@ func (r *Reader) HandleKey(ev input.Event) (bool, error) {
 // what a list moves by: the two are read the same way.
 const readerWheel = 3
 
-// HandleMouse scrolls with the wheel and runs a key from the bar.
+// HandleMouse picks text out, scrolls with the wheel and runs a key from
+// the bar.
 //
 // The wheel is the first thing anybody tries in a pager, and a widget
 // that takes no mouse gets none of it.
 func (r *Reader) HandleMouse(ev input.MouseEvent) (bool, error) {
-	if ev.Kind != input.MousePress {
+	switch ev.Kind {
+	case input.MouseMove:
+		if r.selecting {
+			r.sel.to = r.spotAt(ev.Col, ev.Row)
+			r.sel.on = true
+			r.settle()
+		}
 		// A move or a release over a reader is still the reader's: it
 		// covers its pane, and a drag that started here has nowhere
 		// else to go.
+		return true, nil
+	case input.MouseRelease:
+		if r.selecting {
+			r.selecting = false
+			// A click that never moved is a click, not one column left
+			// highlighted.
+			if r.sel.from == r.sel.to {
+				r.sel = span{}
+			}
+			r.settle()
+		}
+		return true, nil
+	case input.MousePress:
+	default:
 		return true, nil
 	}
 	switch ev.Button {
@@ -529,9 +597,32 @@ func (r *Reader) HandleMouse(ev input.MouseEvent) (bool, error) {
 		if i, ok := keyAt(ev.Col, r.size.Cols, len(keys)); ok {
 			return r.HandleKey(keys[i].press())
 		}
+		return true, nil
 	}
+	if !r.inBody(ev.Row) {
+		return true, nil
+	}
+	// A press in the file starts picking text out, and one with shift
+	// held carries on from what is already picked.
+	at := r.spotAt(ev.Col, ev.Row)
+	if ev.Mods.Has(input.ModShift) && r.sel.on {
+		r.sel.to = at
+		r.settle()
+	} else {
+		r.sel = span{from: at, to: at}
+	}
+	r.selecting = true
 	return true, nil
 }
+
+// FocusesFirst says a press that moves the keys to this reader does
+// nothing else, so the press that starts a selection is the next one.
+func (r *Reader) FocusesFirst() bool { return true }
+
+// CancelGesture says the release that would end a drag is never coming.
+// Left alone, the next time the pointer crossed the reader with no
+// button down it would carry on picking text out.
+func (r *Reader) CancelGesture() { r.selecting = false }
 
 // SetFocus takes or gives up the keys, and Focused says which it is. A
 // reader draws its bar differently without them, so the pane says
@@ -596,6 +687,9 @@ func (r *Reader) paintLines(v grid.View, cols, rows int) {
 		line := r.shown[i]
 		at, wide, found := r.findsOn(line)
 		r.paintLine(v, y+1, line, cols)
+		if r.sel.on {
+			r.markSelected(v, y+1, i, cols)
+		}
 		if r.left > 0 {
 			at -= r.left
 		}

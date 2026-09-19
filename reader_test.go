@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/marrasen/gridterm/conns"
+	"github.com/marrasen/gridterm/input"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/files"
 	"github.com/marrasen/gridterm/vfs"
@@ -330,5 +331,93 @@ func TestClosingTheBrowserLeavesAReaderAbleToRead(t *testing.T) {
 	}
 	if a.fsHeld[f] != 0 || a.fsGone[f] {
 		t.Error("the filesystem was not let go of when the last reader closed")
+	}
+}
+
+// Dragging over a reader picks text out, and the window's copy puts it
+// on the clipboard.
+func TestDraggingOverAReaderCopiesWhatWasPickedOut(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	name, path := aReadableFile(t, "hello there", "second line")
+	if err := a.openReader(vfs.NewLocal(), conns.Local, path, name, false); err != nil {
+		t.Fatalf("open a reader: %v", err)
+	}
+	r := onlyReader(t, a)
+	waitUntil(t, "the file to be read", func() bool {
+		a.pump.run()
+		return r.Lines() > 0
+	})
+	a.focus(r)
+	a.relayout()
+
+	area, on := a.paneArea(r)
+	if !on {
+		t.Fatal("the reader has no room in the window")
+	}
+	// The first line of the file, which is the row under the name.
+	row := area.Y + 1
+	for _, ev := range []input.MouseEvent{
+		{Kind: input.MousePress, Button: input.MouseLeft, Col: area.X, Row: row},
+		{Kind: input.MouseMove, Button: input.MouseLeft, Col: area.X + 4, Row: row},
+		{Kind: input.MouseRelease, Button: input.MouseLeft, Col: area.X + 4, Row: row},
+	} {
+		if _, err := a.root.HandleMouse(ev); err != nil {
+			t.Fatalf("the drag failed: %v", err)
+		}
+	}
+
+	if got, want := r.SelectedText(), "hello"; got != want {
+		t.Fatalf("the drag picked out %q, want %q", got, want)
+	}
+	a.commands()
+	if err := a.root.Commands.Run(copyCommand); err != nil {
+		t.Fatalf("the copy: %v", err)
+	}
+	waitFor(t, a, "the text to reach the clipboard", func() bool {
+		return a.copiedText() == "hello"
+	})
+}
+
+// The window's scroll commands move a reader as well as a terminal.
+//
+// They are bound to Shift+PageUp and Shift+PageDown, and an accelerator
+// runs before any widget sees the key, so without this those two chords
+// do nothing at all in a reader.
+func TestTheScrollCommandsMoveAReader(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	a.commands()
+	lines := make([]string, 200)
+	for i := range lines {
+		lines[i] = "line"
+	}
+	name, path := aReadableFile(t, lines...)
+	if err := a.openReader(vfs.NewLocal(), conns.Local, path, name, false); err != nil {
+		t.Fatalf("open a reader: %v", err)
+	}
+	r := onlyReader(t, a)
+	waitUntil(t, "the file to be read", func() bool {
+		a.pump.run()
+		return r.Lines() > 0
+	})
+	a.focus(r)
+	a.relayout()
+
+	if err := a.root.Commands.Run("view.scrollDown"); err != nil {
+		t.Fatalf("scroll forward: %v", err)
+	}
+
+	was := r.Top()
+	if was == 0 {
+		t.Fatal("scrolling forward did not move the reader down the file")
+	}
+
+	if err := a.root.Commands.Run("view.scrollUp"); err != nil {
+		t.Fatalf("scroll back: %v", err)
+	}
+
+	if got := r.Top(); got >= was {
+		t.Errorf("scrolling back left the reader on line %d, want above %d", got, was)
 	}
 }

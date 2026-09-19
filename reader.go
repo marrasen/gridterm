@@ -75,6 +75,7 @@ func (a *app) openReader(f vfs.FS, host, path, name string, follow bool) error {
 			}()
 		}
 	}
+	r.OnCopy = a.clip.set
 	r.OnClose = func() {
 		a.pump.post(func() {
 			if err := a.closePane(r); err != nil {

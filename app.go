@@ -747,15 +747,14 @@ func (a *app) commands() {
 		ui.Command{ID: "font.reset", Title: "Reset font size", Run: func() error {
 			return a.setFontSize(defaultFontSize)
 		}},
-		ui.Command{ID: copyCommand, Title: "Copy", Run: a.onFocused(
-			func(t *term.Terminal) error { t.Copy(); return nil })},
+		ui.Command{ID: copyCommand, Title: "Copy", Run: a.copySelection},
 		ui.Command{ID: "edit.paste", Title: "Paste", Run: a.onFocused(a.paste)},
 		ui.Command{ID: "edit.pasteImage", Title: "Paste the picture as a file…",
 			AlsoFind: []string{"image", "screenshot", "path"}, Run: a.onFocused(a.pasteImage)},
-		ui.Command{ID: "view.scrollUp", Title: "Scroll back", Run: a.onFocused(
-			func(t *term.Terminal) error { t.ScrollPages(1); return nil })},
-		ui.Command{ID: "view.scrollDown", Title: "Scroll forward", Run: a.onFocused(
-			func(t *term.Terminal) error { t.ScrollPages(-1); return nil })},
+		ui.Command{ID: "view.scrollUp", Title: "Scroll back",
+			Run: func() error { return a.scrollFocused(1) }},
+		ui.Command{ID: "view.scrollDown", Title: "Scroll forward",
+			Run: func() error { return a.scrollFocused(-1) }},
 		ui.Command{ID: "pane.splitRight", Title: "Split right", Run: func() error {
 			return a.splitFocused(ui.Columns)
 		}},

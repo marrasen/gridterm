@@ -22,6 +22,42 @@ func (a *app) focusedTerminal() *term.Terminal {
 	return t
 }
 
+// focusedReader is the reader the keys are in, and nil when they are
+// somewhere else.
+func (a *app) focusedReader() *files.Reader {
+	r, _ := ui.FocusedLeaf(a.root.Widget()).(*files.Reader)
+	return r
+}
+
+// scrollFocused moves the focused pane a page: back through a terminal's
+// scrollback, or up the file a reader is showing.
+//
+// A reader counts the other way, because a terminal's pages run back
+// from the prompt while a file's first line is its top.
+func (a *app) scrollFocused(pages int) error {
+	if t := a.focusedTerminal(); t != nil {
+		t.ScrollPages(pages)
+		return nil
+	}
+	if r := a.focusedReader(); r != nil {
+		r.ScrollPages(-pages)
+	}
+	return nil
+}
+
+// copySelection puts what the focused pane has picked out on the
+// clipboard, and leaves it alone when there is nothing picked out.
+func (a *app) copySelection() error {
+	if t := a.focusedTerminal(); t != nil {
+		t.Copy()
+		return nil
+	}
+	if r := a.focusedReader(); r != nil {
+		r.Copy()
+	}
+	return nil
+}
+
 // newPaneHost names the machine a new pane opens on, for a line that has
 // to say where it will go.
 func (a *app) newPaneHost() string {

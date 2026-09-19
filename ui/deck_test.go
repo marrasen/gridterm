@@ -479,17 +479,26 @@ func TestDeckReplaceRefusesADuplicate(t *testing.T) {
 	}
 }
 
-// TestDeckChildrenIsACopy checks that a caller cannot swap a pane out
-// from under the strip.
-func TestDeckChildrenIsACopy(t *testing.T) {
-	one, two := &filler{ch: '1'}, &filler{ch: '2'}
-	tb := NewDeck(one, two)
+// Asking a container for its children asks the heap for nothing.
+//
+// The tree is walked once a frame for the cursor and again for whatever
+// is being looked for, so a container that built a slice each time built
+// one sixty times a second for nothing. They hand back their own now,
+// which is what Container says they may do.
+func TestAskingForChildrenAsksTheHeapForNothing(t *testing.T) {
+	for what, c := range map[string]Container{
+		"a deck":     NewDeck(&filler{ch: '1'}, &filler{ch: '2'}),
+		"a split":    NewSplit(Columns, &filler{ch: '1'}, &filler{ch: '2'}),
+		"a dock":     NewDock(20, &filler{ch: '1'}, &filler{ch: '2'}),
+		"a menu bar": NewMenubar(NewCommands(), NewKeymap(), &filler{ch: '1'}),
+	} {
+		c.Children()
 
-	got := tb.Children()
-	got[0] = &filler{ch: 'x'}
+		got := testing.AllocsPerRun(20, func() { c.Children() })
 
-	if again := tb.Children(); again[0] != Widget(one) {
-		t.Error("changing the returned slice changed the strip")
+		if got != 0 {
+			t.Errorf("%s allocated %v times for its children, want none", what, got)
+		}
 	}
 }
 

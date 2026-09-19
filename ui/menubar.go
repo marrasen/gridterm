@@ -117,7 +117,11 @@ type Menubar struct {
 	cmds *Commands
 	keys *Keymap
 
-	child    Widget
+	child Widget
+
+	// kids is what Children hands back, filled in there rather than
+	// made each time. See Container.
+	kids     [1]Widget
 	size     Size
 	hasFocus bool
 
@@ -190,12 +194,14 @@ func (b *Menubar) Close() {
 // OpenIndex returns which title's menu is showing, or -1 when none is.
 func (b *Menubar) OpenIndex() int { return b.openAt }
 
-// Children returns the one widget under the bar.
+// Children returns the one widget under the bar. It is the bar's own
+// slice: read it, do not write to it. See Container.
 func (b *Menubar) Children() []Widget {
 	if b.child == nil {
 		return nil
 	}
-	return []Widget{b.child}
+	b.kids[0] = b.child
+	return b.kids[:]
 }
 
 // Focused returns the widget under the bar, which is the only thing that

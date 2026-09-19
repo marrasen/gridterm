@@ -57,6 +57,10 @@ type Dock struct {
 	panel Widget
 	rest  Widget
 
+	// kids is what Children hands back, filled in there rather than
+	// made each time. See Container.
+	kids [2]Widget
+
 	// onPanel records that the panel has focus rather than the rest.
 	onPanel  bool
 	hasFocus bool
@@ -98,15 +102,17 @@ func (d *Dock) ShowPanel(on bool) {
 }
 
 // Children returns the panel and the rest, in the order they are drawn.
+// It is the dock's own slice: read it, do not write to it. See
+// Container.
 func (d *Dock) Children() []Widget {
-	var out []Widget
-	if d.panel != nil {
-		out = append(out, d.panel)
+	n := 0
+	for _, w := range []Widget{d.panel, d.rest} {
+		if w != nil {
+			d.kids[n] = w
+			n++
+		}
 	}
-	if d.rest != nil {
-		out = append(out, d.rest)
-	}
-	return out
+	return d.kids[:n]
 }
 
 // Focused returns the one receiving keys.

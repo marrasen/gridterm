@@ -48,13 +48,9 @@ func (d *Deck) Add(w Widget) {
 	d.Layout(d.size)
 }
 
-// Children returns the panes, in the order they were put in. The slice is a copy, so a
-// caller cannot swap a pane out from under it.
-func (d *Deck) Children() []Widget {
-	out := make([]Widget, len(d.kids))
-	copy(out, d.kids)
-	return out
-}
+// Children returns the panes, in the order they were put in. It is the
+// deck's own slice: read it, do not write to it. See Container.
+func (d *Deck) Children() []Widget { return d.kids }
 
 // Focused returns the pane being shown.
 func (d *Deck) Focused() Widget { return d.active }

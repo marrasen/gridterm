@@ -56,8 +56,12 @@ type Split struct {
 	DividerFG color.RGBA
 	DividerBG color.RGBA
 
-	dir      Dir
-	a, b     Widget
+	dir  Dir
+	a, b Widget
+
+	// kids is what Children hands back, filled in there rather than
+	// made each time. See Container.
+	kids     [2]Widget
 	focused  Widget
 	size     Size
 	hasFocus bool
@@ -79,7 +83,10 @@ func NewSplit(dir Dir, a, b Widget) *Split {
 func (s *Split) Dir() Dir { return s.dir }
 
 // Children returns the two halves, first then second.
-func (s *Split) Children() []Widget { return []Widget{s.a, s.b} }
+func (s *Split) Children() []Widget {
+	s.kids[0], s.kids[1] = s.a, s.b
+	return s.kids[:]
+}
 
 // Focused returns the child that receives events.
 func (s *Split) Focused() Widget { return s.focused }

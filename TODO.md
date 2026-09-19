@@ -390,6 +390,20 @@ From Marcus's inbox, after working in a shared window.
   glow. `TestASharedPaneCostsNothingBetweenGlowSteps` pins the cost at
   two layers a step, so it cannot grow unnoticed.
 
+- **The sidebar is built again from nothing every frame.** It is what
+  an idle frame still allocates for, after the easy ones were taken out:
+  `conns.Registry.Groups` makes a slice of groups, a map and a slice of
+  rows a frame, and `refreshPanel` walks every pane and writes every row
+  whether or not anything moved. Seventeen allocations a frame and about
+  5.8KB, measured on 2026-09-19 with `BenchmarkIdleFrame`.
+
+  Not worth a local tweak. Reusing the slices inside `Groups` means
+  handing back a buffer the next call overwrites, which is the contract
+  `ui.Container` took on for its children, and here the caller holds the
+  groups while it builds rows from them. The real answer is for the
+  sidebar to be built when something changes rather than every frame,
+  and that is a design decision rather than a patch.
+
 - **A folder holding a comma cannot be typed in the server dialog.** The
   folders are one field and a comma parts them, so a path with one in it
   can only be written in the server list file by hand. The dialog does

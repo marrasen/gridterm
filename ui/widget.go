@@ -231,6 +231,13 @@ type Container interface {
 
 	// Children returns the children, in layout order. A container with
 	// children must report one of them as Focused.
+	//
+	// The slice belongs to the container. A caller may read it and pass
+	// it on, and must not write to it or keep it past the next call: an
+	// implementation is free to hand back the same backing array every
+	// time, and every one here does. The tree is walked once a frame
+	// per pane, so a slice made each time is a slice made sixty times a
+	// second for nothing.
 	Children() []Widget
 
 	// Focused returns the child that receives events, or nil when there

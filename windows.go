@@ -903,13 +903,8 @@ func (a *app) attachHere(what remoteKey, at *spot) error {
 // has open, and whether it still has it.
 func (a *app) openOver(what remoteKey) (serve.Open, bool) {
 	t := what.window
-	if t == nil || what.id == "" || !a.windows.holds(t) {
+	if t == nil || !a.windows.holds(t) {
 		return serve.Open{}, false
 	}
-	for _, open := range t.win.Opens() {
-		if open.ID == what.id {
-			return open, true
-		}
-	}
-	return serve.Open{}, false
+	return t.win.OpenNamed(what.id)
 }

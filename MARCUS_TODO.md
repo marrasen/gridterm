@@ -13,18 +13,14 @@ It would be cool if I could copy the contents of a pane and keep the colors. If 
 and also have an option to "copy as image", if I want to paste into a chat or something. I don't know if "rich text" 
 is the best to use though.
 
-# Panes behave strange when remote connecting
+# Notes
+- What decides what to open on first launch? CMD/PS/WSL? Is it the last picked?
 
-1. I start a new gridterm instance, it has one pane, "Command Prompt"
-2. I start serving
-3. Connect from a client
-4. The host now have 3 panes in the sidebar, 2 x "Command Prompt" and on 
-   "serving marcusj@m-station". Clicking the "serving" one does nothing
-5. The client now has 3 panes that belongs to the host. One has a green 
-   icon and is active, it says "C:\WINDOWS\system32\cmd.exe" (not the same
-   title as on the host), and two called "Command Prompt" that are gray that
-   become green when I click them. The last one is a duplicate of the first one
-6. Closing them on the client does nothing
+# Turbo layout
+Screenshot the buttons and look at the shadows, make them look like the original
+https://winworldpc.com/res/img/screenshots/967c1c190fa98b954e706b532193194d0bac135b24e577a11cf12325aeba31cb.png
 
-Also, I really don't like the new pulsating animation, it pulses irregularly
-and is too loud, it actually makes me get a headache, it needs to be much more subtle.
+Also look at the shadow, the text behind it shows through, we could use some transparency on the shadow
+
+
+

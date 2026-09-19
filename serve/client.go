@@ -231,6 +231,24 @@ func (w *Window) Opens() []Open {
 	return append([]Open(nil), w.open...)
 }
 
+// OpenNamed is what this window says about one thing it has open, and
+// whether it still has it.
+//
+// It copies nothing, for a caller that asks on every frame.
+func (w *Window) OpenNamed(id string) (Open, bool) {
+	if id == "" {
+		return Open{}, false
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	for _, open := range w.open {
+		if open.ID == id {
+			return open, true
+		}
+	}
+	return Open{}, false
+}
+
 // watch listens for what the other window has open.
 //
 // A window that refuses the channel is one of an older build, or one

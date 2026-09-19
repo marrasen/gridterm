@@ -3164,3 +3164,41 @@ func TestClosingAPaneDrawnFromAnotherWindowClosesItHere(t *testing.T) {
 		t.Errorf("the host holds %d panes, want the %d it had", got, hostPanes)
 	}
 }
+
+// A pane drawn from another window is named the way that window names
+// it, so one shell reads the same on both screens.
+//
+// Marcus saw "C:\WINDOWS\system32\cmd.exe" here and "Command Prompt"
+// there. The shell names its own window by the path of the program, and
+// only the machine running it knows that says nothing new.
+func TestAPaneDrawnFromAnotherWindowTakesItsName(t *testing.T) {
+	host, client, addr := twoWindows(t)
+	held := windowAt(t, client, addr)
+	pane := client.windows.drawnFrom(held)[0]
+
+	// What the machine running the shell calls it.
+	const called = "Command Prompt"
+	there := host.panes[paneFromAnotherWindow(t, host)]
+	if there == nil {
+		t.Fatal("the pane the client opened has no row over there")
+	}
+	// The pane here says something else, the way a shell that names its
+	// window by its own path does.
+	client.panes[pane].Label = `C:\WINDOWS\system32\cmd.exe`
+
+	waitFor(t, client, "the other window to say what it calls it", func() bool {
+		there.Label = called
+		host.refreshPanel(panelNow)
+		what, ok := client.windows.watching(pane)
+		if !ok {
+			return false
+		}
+		open, still := client.openOver(what)
+		return still && open.Label == called
+	}, host)
+	client.refreshPanel(panelNow)
+
+	if got := client.panes[pane].Label; got != called {
+		t.Errorf("the row here reads %q and the row there reads %q", got, called)
+	}
+}

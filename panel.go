@@ -192,6 +192,17 @@ func (a *app) refreshPanel(now time.Time) {
 		if a.ended[t] {
 			continue
 		}
+		// A pane watching something on a window taken over is named the
+		// way that window names it, so one shell reads the same on both
+		// screens. This window cannot tell a useful title from a shell
+		// naming itself by its own path: the program is over there, and
+		// so is the only end that knows what it was started as.
+		if what, over := a.windows.watching(t); over {
+			if open, still := a.openOver(what); still && open.Label != "" {
+				e.Label = open.Label
+				continue
+			}
+		}
 		// A shell that calls its window by the path of the program it is
 		// running says nothing the row does not already say, so the row
 		// keeps the name this machine has for that shell.

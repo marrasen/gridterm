@@ -13,10 +13,13 @@ import (
 // mostPictureSide is the biggest a picture may be, each way, before the
 // reader shrinks it.
 //
-// A few pixels under what a texture can be, because ebiten pads an image
-// before it goes on one. Asking for a texture past the limit is not an
-// error the window can catch: it brings the window down.
-const mostPictureSide = mostPanePixels - 8
+// Measured against the size every GPU this runs on can make rather than
+// against what this machine happens to allow, because the picture is a
+// file the user picked and this is the one limit that gets reached. A
+// few pixels under it, because ebiten pads an image before it goes on a
+// texture. Asking for one past the limit is not an error the window can
+// catch: it brings the window down.
+const mostPictureSide = mostScaledPixels - 8
 
 // readerPic is the picture a reader shows, on a layer of its own over
 // the pane.
@@ -27,8 +30,9 @@ type readerPic struct {
 	layer *render.Layer
 	pic   render.Picture
 
-	// from is the picture the texture was made from, so a reread that
-	// gives the same picture back does not build another texture.
+	// from is the picture the texture was made from, so the frames
+	// between one read and the next build no second texture. A reread
+	// always decodes afresh, so it always builds one.
 	from image.Image
 }
 
@@ -42,8 +46,13 @@ func newReaderPic() *readerPic {
 
 // place puts the picture over the reader's pane, in the window's pixels.
 func (p *readerPic) place(area, room ui.Rect, geo *render.Geometry) {
-	left, width := geo.ColBox(area.X+room.X, area.X+room.X+room.Cols)
-	top, height := geo.RowBox(area.Y+room.Y, area.Y+room.Y+room.Rows)
+	// Held inside the pane the tree gave it. The room comes from the
+	// widget's own size, and a picture drawn past the pane would paint
+	// over the one beside it.
+	cols := min(room.Cols, area.Cols-room.X)
+	rows := min(room.Rows, area.Rows-room.Y)
+	left, width := geo.ColBox(area.X+room.X, area.X+room.X+cols)
+	top, height := geo.RowBox(area.Y+room.Y, area.Y+room.Y+rows)
 	p.layer.X, p.layer.Y = 0, 0
 	p.pic.Rect = image.Rect(left, top, left+width, top+height)
 	p.layer.Hidden = false

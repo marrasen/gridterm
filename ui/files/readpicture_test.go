@@ -2,6 +2,8 @@ package files
 
 import (
 	"bytes"
+	"encoding/binary"
+	"hash/crc32"
 	"image"
 	"image/color"
 	"image/png"
@@ -89,8 +91,8 @@ func TestAPictureTooWideForATextureIsShrunk(t *testing.T) {
 	}
 }
 
-// A picture that fits is handed on as it is, rather than copied.
-func TestAPictureThatFitsIsNotTouched(t *testing.T) {
+// A picture that fits comes back at its own size.
+func TestAPictureThatFitsKeepsItsSize(t *testing.T) {
 	pic, err := ReadPicture(vfs.NewLocal(), pngOf(t, "small.png", 64, 64), 4096)
 
 	if err != nil {
@@ -127,22 +129,75 @@ func TestAFileThatIsNotAPictureSaysSo(t *testing.T) {
 	}
 }
 
-// A picture with more pixels than the reader shows is refused, before
-// the pixels are asked for: the file itself is small.
+// A picture with more pixels than the reader shows is refused by its
+// header, before any pixel is asked for.
+//
+// The test writes the header and nothing else, which is how it can name
+// a picture of forty thousand square without building one.
 func TestAPictureOfTooManyPixelsIsRefused(t *testing.T) {
-	// A blank PNG compresses to almost nothing, so this is a small file
-	// holding a very large picture.
-	side := 1
-	for side*side <= MostPicturePixels {
-		side *= 2
+	at := filepath.Join(t.TempDir(), "huge.png")
+	if err := os.WriteFile(at, pngHeader(40000, 40000), 0o600); err != nil {
+		t.Fatalf("write it: %v", err)
 	}
 
-	_, err := ReadPicture(vfs.NewLocal(), pngOf(t, "big.png", side, side), 4096)
+	_, err := ReadPicture(vfs.NewLocal(), at, 4096)
 
 	if err == nil {
-		t.Fatalf("a picture of %d by %d was decoded", side, side)
+		t.Fatal("a picture of 40000 by 40000 was decoded")
 	}
 	if !strings.Contains(err.Error(), "more than this shows") {
 		t.Errorf("it said %q, want it to say the picture is too big", err)
 	}
+}
+
+// A picture of nought by nought is refused. A BMP that size decodes
+// without complaint, and asking for a texture that size brings the
+// window down.
+func TestAPictureWithNoPixelsIsRefused(t *testing.T) {
+	at := filepath.Join(t.TempDir(), "empty.bmp")
+	if err := os.WriteFile(at, emptyBMP(), 0o600); err != nil {
+		t.Fatalf("write it: %v", err)
+	}
+
+	pic, err := ReadPicture(vfs.NewLocal(), at, 4096)
+
+	if err == nil {
+		t.Fatalf("a picture of nought by nought came back as %v", pic.Img.Bounds())
+	}
+	if !strings.Contains(err.Error(), "nothing to show") {
+		t.Errorf("it said %q, want it to say there is nothing there", err)
+	}
+}
+
+// pngHeader is a PNG signature and an IHDR chunk saying the picture is
+// this big, and nothing after it. DecodeConfig reads no further.
+func pngHeader(w, h uint32) []byte {
+	var ihdr bytes.Buffer
+	ihdr.WriteString("IHDR")
+	_ = binary.Write(&ihdr, binary.BigEndian, w)
+	_ = binary.Write(&ihdr, binary.BigEndian, h)
+	// Eight bits a channel, colour with alpha, and none of the optional
+	// coding.
+	ihdr.Write([]byte{8, 6, 0, 0, 0})
+
+	var out bytes.Buffer
+	out.Write([]byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'})
+	_ = binary.Write(&out, binary.BigEndian, uint32(ihdr.Len()-4))
+	out.Write(ihdr.Bytes())
+	_ = binary.Write(&out, binary.BigEndian, crc32.ChecksumIEEE(ihdr.Bytes()))
+	return out.Bytes()
+}
+
+// emptyBMP is a BMP header saying the picture is nought by nought, which
+// the decoder takes without complaint.
+func emptyBMP() []byte {
+	out := make([]byte, 54)
+	out[0], out[1] = 'B', 'M'
+	binary.LittleEndian.PutUint32(out[2:], 54)
+	binary.LittleEndian.PutUint32(out[10:], 54)
+	binary.LittleEndian.PutUint32(out[14:], 40)
+	// Width and height are left at nought, which is what this is for.
+	binary.LittleEndian.PutUint16(out[26:], 1)
+	binary.LittleEndian.PutUint16(out[28:], 24)
+	return out
 }

@@ -45,11 +45,25 @@ func (r *Reader) openPicture() {
 	})
 }
 
+// AsBytes shows a picture file as a file of lines instead, and does
+// nothing to a file that was never a picture.
+//
+// It is the way out of a file named .png that is not one: the read
+// fails, and a pane offering only Reread and Close would be a dead end.
+func (r *Reader) AsBytes() {
+	if !r.isPic {
+		return
+	}
+	r.isPic, r.pic, r.err = false, Pic{}, nil
+	r.Open()
+}
+
 // PictureKeys is what the bar offers for a picture. Fewer than a file of
 // lines has: there is nothing to search and nowhere to scroll.
 func PictureKeys() []Key {
 	return []Key{
 		{Chord: chord(input.KeyR, input.ModCtrl), Shown: "^R", Title: "Reread"},
+		{Chord: chord(input.KeyH, input.ModCtrl), Shown: "^H", Title: "Bytes"},
 		{Chord: chord(input.KeyD, input.ModCtrl), Shown: "^D", Title: "Close"},
 	}
 }
@@ -64,6 +78,8 @@ func (r *Reader) pictureKey(ev input.Event) (bool, error) {
 	switch {
 	case ev.Key == input.KeyR && ev.Ctrl():
 		r.Open()
+	case ev.Key == input.KeyH && ev.Ctrl():
+		r.AsBytes()
 	case ev.Key == input.KeyD && ev.Ctrl(), ev.Key == input.KeyQ:
 		if r.OnClose != nil {
 			r.OnClose()

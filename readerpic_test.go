@@ -148,8 +148,8 @@ func TestClosingAPictureTakesItsLayerAway(t *testing.T) {
 	}
 }
 
-// A reread that gives the same picture back keeps the texture it has.
-func TestARereadOfTheSamePictureKeepsItsTexture(t *testing.T) {
+// The frames between one read and the next build no second texture.
+func TestASecondFrameBuildsNoSecondTexture(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withPanel(t, a)
 	withCompositor(t, a)
@@ -157,9 +157,71 @@ func TestARereadOfTheSamePictureKeepsItsTexture(t *testing.T) {
 	was := p.pic.Img
 
 	a.placeReaderPics()
+	a.placeReaderPics()
 
 	if p.pic.Img != was {
-		t.Error("a second frame built the texture again")
+		t.Error("a frame that changed nothing built the texture again")
+	}
+}
+
+// A reread builds a new texture and gives the old one back, because a
+// read decodes the file afresh every time.
+func TestARereadBuildsAFreshTexture(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	withCompositor(t, a)
+	p := openedPicture(t, a, 64, 32)
+	r := onlyReader(t, a)
+	was := p.pic.Img
+
+	r.Open()
+	waitUntil(t, "the reread", func() bool {
+		a.pump.run()
+		return !r.Busy()
+	})
+	a.placeReaderPics()
+
+	if p.pic.Img == was {
+		t.Error("the reread kept a texture built from a picture it no longer holds")
+	}
+	if p.pic.Img == nil {
+		t.Error("the reread left no texture at all")
+	}
+}
+
+// A picture file that is not a picture can still be read as one of
+// lines, so a badly named file is not a dead end.
+func TestAPictureThatIsNotOneCanBeReadAsBytes(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	withCompositor(t, a)
+	at := filepath.Join(t.TempDir(), "shot.png")
+	if err := os.WriteFile(at, []byte("one\ntwo\nthree"), 0o600); err != nil {
+		t.Fatalf("write it: %v", err)
+	}
+	if err := a.openReader(vfs.NewLocal(), conns.Local, at, "shot.png", false); err != nil {
+		t.Fatalf("open a reader: %v", err)
+	}
+	r := onlyReader(t, a)
+	waitUntil(t, "the read to fail", func() bool {
+		a.pump.run()
+		return r.Err() != nil
+	})
+
+	r.AsBytes()
+	waitUntil(t, "the read as lines", func() bool {
+		a.pump.run()
+		return r.Lines() > 0
+	})
+
+	if r.ShowsAPicture() {
+		t.Error("it is still showing the file as a picture")
+	}
+	if got := r.Lines(); got != 3 {
+		t.Errorf("it read %d lines, want the three in the file", got)
+	}
+	if r.Err() != nil {
+		t.Errorf("it still says %v", r.Err())
 	}
 }
 

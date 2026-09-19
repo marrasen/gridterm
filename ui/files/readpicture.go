@@ -81,6 +81,11 @@ func ReadPicture(f vfs.FS, at string, side int) (pic Pic, err error) {
 	if err != nil {
 		return Pic{}, fmt.Errorf("work out what kind of picture this is: %w", err)
 	}
+	if cfg.Width <= 0 || cfg.Height <= 0 {
+		// A BMP of nought by nought decodes without complaint, and asking
+		// for a texture that size brings the window down.
+		return Pic{}, fmt.Errorf("the picture is %d by %d, so there is nothing to show", cfg.Width, cfg.Height)
+	}
 	if n := int64(cfg.Width) * int64(cfg.Height); n > MostPicturePixels {
 		return Pic{}, fmt.Errorf("the picture is %d by %d, which is more than this shows", cfg.Width, cfg.Height)
 	}
@@ -90,6 +95,10 @@ func ReadPicture(f vfs.FS, at string, side int) (pic Pic, err error) {
 		return Pic{}, fmt.Errorf("decode the picture: %w", err)
 	}
 	b := img.Bounds()
+	if b.Empty() {
+		// The header said one thing and the pixels another.
+		return Pic{}, errors.New("the picture has no pixels in it")
+	}
 	return Pic{Img: fitPicture(img, side), Kind: kind, Was: image.Pt(b.Dx(), b.Dy())}, nil
 }
 

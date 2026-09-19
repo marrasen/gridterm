@@ -150,3 +150,48 @@ func TestAPictureCloses(t *testing.T) {
 		t.Errorf("q closed it %d times, want once", closed)
 	}
 }
+
+// Ctrl+H on a picture shows the file as lines instead, which is the way
+// out of a file named .png that is not one.
+func TestCtrlHOnAPictureShowsItAsLines(t *testing.T) {
+	r := aPictureFile(t, 64, 64, 60, 10)
+	r.Read = func(then func([]string, bool, error)) { then([]string{"one", "two"}, false, nil) }
+
+	if _, err := r.HandleKey(input.Event{
+		Kind: input.KeyPress, Key: input.KeyH, Mods: input.ModCtrl,
+	}); err != nil {
+		t.Fatalf("Ctrl+H: %v", err)
+	}
+
+	if r.ShowsAPicture() {
+		t.Fatal("it is still showing the file as a picture")
+	}
+	if r.Picture() != nil {
+		t.Error("it kept the picture")
+	}
+	if got := r.Lines(); got != 2 {
+		t.Errorf("it holds %d lines, want the two the file has", got)
+	}
+	// And the bar is a file's bar now.
+	g := drawReader(r, 60, 10)
+	if got := readerRow(g, 9); !strings.Contains(got, "Find") {
+		t.Errorf("the bar reads %q, want a file's keys", got)
+	}
+}
+
+// Tailing a picture does nothing: a picture is not appended to, and a
+// pane stuck saying "(following)" would ask a machine at the far end
+// about the file for ever.
+func TestAPictureIsNotFollowed(t *testing.T) {
+	r := aPictureFile(t, 64, 64, 60, 10)
+
+	r.Follow(true)
+
+	if r.Following() {
+		t.Error("a picture is being followed")
+	}
+	g := drawReader(r, 60, 10)
+	if got := readerRow(g, 0); strings.Contains(got, "following") {
+		t.Errorf("the top row reads %q", got)
+	}
+}

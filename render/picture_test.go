@@ -107,8 +107,12 @@ func TestHidingALayerTakesItsPictureAway(t *testing.T) {
 
 	l.Hidden = true
 	c.Draw(screen)
-	if got := c.Stats(); got.Skipped || got.Blits != 0 {
+	got := c.Stats()
+	if got.Skipped || got.Blits != 0 {
 		t.Errorf("hiding the layer gave %+v, want the screen put back with nothing on it", got)
+	}
+	if !got.Cleared {
+		t.Error("the picture was hidden and the screen was not wiped, so its pixels stay")
 	}
 
 	// And it comes back with it.
@@ -154,6 +158,66 @@ func TestAnEmptyPictureDrawsNothing(t *testing.T) {
 
 		if got := c.Stats(); got.Blits != 1 {
 			t.Errorf("%s: blitted %d, want only the layer itself", what, got.Blits)
+		}
+	}
+}
+
+// A picture is shrunk to fit its box, never blown up, and centred in it
+// on whole pixels.
+func TestFitInto(t *testing.T) {
+	for what, tc := range map[string]struct {
+		src, box  image.Rectangle
+		wantScale float64
+		wantAt    image.Point
+	}{
+		"smaller than the box": {
+			src: image.Rect(0, 0, 40, 20), box: image.Rect(0, 0, 100, 100),
+			wantScale: 1, wantAt: image.Pt(30, 40),
+		},
+		"wider than the box": {
+			src: image.Rect(0, 0, 200, 100), box: image.Rect(0, 0, 100, 100),
+			wantScale: 0.5, wantAt: image.Pt(0, 25),
+		},
+		"taller than the box": {
+			src: image.Rect(0, 0, 100, 200), box: image.Rect(0, 0, 100, 100),
+			wantScale: 0.5, wantAt: image.Pt(25, 0),
+		},
+		"the box moved": {
+			src: image.Rect(0, 0, 40, 20), box: image.Rect(10, 10, 110, 110),
+			wantScale: 1, wantAt: image.Pt(40, 50),
+		},
+		"an odd leftover lands on a whole pixel": {
+			src: image.Rect(0, 0, 40, 20), box: image.Rect(0, 0, 41, 21),
+			wantScale: 1, wantAt: image.Pt(0, 0),
+		},
+		"a picture measured from its own corner": {
+			src: image.Rect(7, 7, 47, 27), box: image.Rect(0, 0, 100, 100),
+			wantScale: 1, wantAt: image.Pt(30, 40),
+		},
+	} {
+		scale, at := fitInto(tc.src, tc.box)
+		if scale != tc.wantScale || at != tc.wantAt {
+			t.Errorf("%s: fitInto(%v, %v) = %v at %v, want %v at %v",
+				what, tc.src, tc.box, scale, at, tc.wantScale, tc.wantAt)
+		}
+	}
+}
+
+// Whatever the box, the picture lands inside it.
+func TestAPictureLandsInsideItsBox(t *testing.T) {
+	box := image.Rect(5, 9, 105, 69)
+	for _, src := range []image.Rectangle{
+		image.Rect(0, 0, 1, 1),
+		image.Rect(0, 0, 4000, 10),
+		image.Rect(0, 0, 10, 4000),
+		image.Rect(0, 0, 99, 59),
+		image.Rect(0, 0, 101, 61),
+	} {
+		scale, at := fitInto(src, box)
+		w := int(float64(src.Dx())*scale + 0.5)
+		h := int(float64(src.Dy())*scale + 0.5)
+		if at.X < box.Min.X || at.Y < box.Min.Y || at.X+w > box.Max.X || at.Y+h > box.Max.Y {
+			t.Errorf("a picture of %v landed at %v and is %d by %d, outside %v", src, at, w, h, box)
 		}
 	}
 }

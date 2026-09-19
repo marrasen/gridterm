@@ -2,6 +2,7 @@ package render
 
 import (
 	"image"
+	"math"
 
 	"github.com/hajimehoshi/ebiten/v2"
 )
@@ -51,25 +52,33 @@ func pictureOf(l *Layer) shownPicture {
 func (c *Compositor) drawPicture(screen *ebiten.Image, l *Layer) {
 	p := l.Picture
 	box := p.Rect.Add(image.Pt(l.X, l.Y))
-	src := p.Img.Bounds()
-
-	scale := min(
-		float64(box.Dx())/float64(src.Dx()),
-		float64(box.Dy())/float64(src.Dy()),
-		1,
-	)
-	w, h := float64(src.Dx())*scale, float64(src.Dy())*scale
+	scale, at := fitInto(p.Img.Bounds(), box)
 
 	op := &ebiten.DrawImageOptions{}
 	if scale != 1 {
 		op.GeoM.Scale(scale, scale)
 		op.Filter = ebiten.FilterLinear
 	}
-	op.GeoM.Translate(
-		float64(box.Min.X)+(float64(box.Dx())-w)/2,
-		float64(box.Min.Y)+(float64(box.Dy())-h)/2,
-	)
+	op.GeoM.Translate(float64(at.X), float64(at.Y))
 	screen.DrawImage(p.Img, op)
+}
+
+// fitInto is how much a picture is shrunk to sit inside a box, and where
+// its top-left corner goes.
+//
+// Whole pixels, so a picture drawn at its own size lands on the grid of
+// pixels rather than half way between two of them.
+func fitInto(src, box image.Rectangle) (scale float64, at image.Point) {
+	scale = min(
+		float64(box.Dx())/float64(src.Dx()),
+		float64(box.Dy())/float64(src.Dy()),
+		1,
+	)
+	w, h := float64(src.Dx())*scale, float64(src.Dy())*scale
+	return scale, image.Pt(
+		int(math.Floor(float64(box.Min.X)+(float64(box.Dx())-w)/2)),
+		int(math.Floor(float64(box.Min.Y)+(float64(box.Dy())-h)/2)),
+	)
 }
 
 // anyPicture reports whether a layer the viewer can see draws a picture.

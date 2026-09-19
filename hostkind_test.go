@@ -681,9 +681,12 @@ func waysIn() []wayIn {
 // The table is the user-facing net rather than a test of one guard. Two
 // guards stand behind it -- openTerminalOn, and openRoute for the ways
 // in that build a route -- and a row passes when either holds.
-// connectOnly is the one way in that asks only to connect. It opens
-// nothing on the window, which is what connecting means.
-const connectOnly = "take over a window, by address"
+// connectsOnly are the ways in that ask only to connect. They open
+// nothing on the window, which is what connecting means. Every other way
+// asks for a terminal on it, and gets one.
+func connectsOnly(way string) bool {
+	return way == "take over a window, by address" || way == "the Servers menu"
+}
 
 func TestEveryWayInTakesOverASavedWindow(t *testing.T) {
 	ways := append(waysIn(), wayIn{
@@ -721,9 +724,7 @@ func TestEveryWayInTakesOverASavedWindow(t *testing.T) {
 			if n := client.machines.count(); n != 0 {
 				t.Errorf("it is holding %v as machines", client.machines.names())
 			}
-			if way.name != connectOnly {
-				// Every way in but the Connect dialog asks for a
-				// terminal on the window, and gets one.
+			if !connectsOnly(way.name) {
 				waitFor(t, client, "a pane drawn from the window", func() bool {
 					return client.windows.drawn() > 0
 				})

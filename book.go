@@ -90,9 +90,9 @@ func (a *app) refreshServers() {
 		title := "Open a terminal on " + groupName(host)
 		var also []string
 		if a.about(host).toTakeOver() {
-			// Nothing runs on a window until this one connects to it,
-			// and that is what asking for a terminal on it means.
-			title = "Connect to " + groupName(host)
+			// A window is connected to before a terminal can be opened
+			// on it, so the words somebody looks for lead here as well
+			// as to the line that only connects.
 			also = []string{"take over", "remote", "share panes"}
 		}
 		term := ui.Command{
@@ -306,16 +306,23 @@ func whichKind(text string) (window bool, err error) {
 	return false, fmt.Errorf("the kind has to be %q or %q", kindMachine, kindWindow)
 }
 
-// connectSaved opens a terminal on a saved machine, reaching it through
-// whatever it is saved as being behind.
+// connectSaved connects to a saved machine.
 //
-// A saved window is taken over instead, which is the only way to reach
-// one: it serves gridterm's own protocol and has no shell to log in to.
-// Which of those it is, is openTerminalOn's to say.
+// A server is connected to by opening a shell on it, because a shell is
+// all there is to connect to. A gridterm window is connected to and
+// nothing is opened on it: what it has open lands on the sidebar, and
+// the plus on its heading opens a pane there.
 func (a *app) connectSaved(name string) error {
 	f := a.about(name)
 	if !f.saved {
 		return fmt.Errorf("there is no saved server called %q", name)
+	}
+	if f.kind == hostWindow {
+		return fmt.Errorf("this window is already connected to %s", groupName(f.name))
+	}
+	if f.toTakeOver() {
+		h := f.record()
+		return a.takeOver(h.ServeAddr(), h.KeyFile(), nil, false)
 	}
 	return a.openTerminalOn(f.name, nil)
 }

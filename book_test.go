@@ -1215,14 +1215,15 @@ func TestChangingAMachineIntoAWindowTakesEffectAtOnce(t *testing.T) {
 	if !a.about("statio").serves {
 		t.Fatal("it is still known as a machine")
 	}
-	// And the command says what it now does, rather than offering a
-	// terminal on something with no shell.
+	// And the command says what it now is: a window, which is connected
+	// to rather than logged in to.
 	cmd, ok := a.root.Commands.Lookup(termPrefix + remote.CommandName("statio"))
 	if !ok {
 		t.Fatal("there is no command for it")
 	}
-	if !strings.Contains(cmd.Title, "Connect to") {
-		t.Fatalf("the command is %q, want it to offer taking it over", cmd.Title)
+	if !slices.Contains(cmd.AlsoFind, "take over") {
+		t.Fatalf("the command is %q, found by %v, want the words a window is looked for by",
+			cmd.Title, cmd.AlsoFind)
 	}
 }
 
@@ -1398,26 +1399,54 @@ func wrapped() {
 // frame it is taken over.
 //
 // The rebuild is skipped when nothing the commands are built from has
-// changed, and taking a window over changes no name. So the palette
-// went on offering to take over a window this one was already holding,
+// changed, and connecting to a window changes no name. So the palette
+// went on offering to connect to a window this one was already holding,
 // for the rest of the session.
-func TestTakingAWindowOverChangesWhatThePaletteOffers(t *testing.T) {
+func TestConnectingToAWindowChangesWhatThePaletteOffers(t *testing.T) {
 	_, client, addr, keyFile := aServingWindow(t)
 	saveWindowFromTheDialog(t, client, "statio", addr, keyFile)
 
-	id := termPrefix + remote.CommandName("statio")
-	if got := commandTitle(t, client, id); got != "Connect to statio" {
-		t.Fatalf("before it is taken over the palette offers %q", got)
-	}
-
-	// The plus on its row, and the line that takes it over.
+	// The plus on its row, and the line that opens a terminal on it,
+	// which connects first.
 	clickTerminalLine(t, client, "statio")
-	waitFor(t, client, "the window to be taken over", func() bool {
+	waitFor(t, client, "the window to be connected to", func() bool {
 		return client.windows.count() == 1
 	})
 
-	if got := commandTitle(t, client, id); got != "Open a terminal on statio" {
-		t.Errorf("the palette still offers %q on a window this one is holding", got)
+	// Asking to connect again says it is connected rather than
+	// connecting a second time.
+	err := client.connectSaved("statio")
+
+	if err == nil {
+		t.Fatal("it connected to a window this one is already holding")
+	}
+	if !strings.Contains(err.Error(), "already connected") {
+		t.Errorf("it said %q, want it to say the window is already connected to", err)
+	}
+	if got := client.windows.count(); got != 1 {
+		t.Errorf("this window is holding %d others, want the one", got)
+	}
+}
+
+// Connecting to a saved window opens nothing on it, and connecting to a
+// saved server opens the shell that is all there is to connect to.
+func TestConnectingToASavedWindowOpensNothingOnIt(t *testing.T) {
+	host, client, addr, keyFile := aServingWindow(t)
+	saveWindowFromTheDialog(t, client, "statio", addr, keyFile)
+	hostPanes := len(host.panes)
+
+	if err := client.connectSaved("statio"); err != nil {
+		t.Fatalf("connect to it: %v", err)
+	}
+	waitFor(t, client, "the window to be connected to", func() bool {
+		return client.windows.count() == 1
+	}, host)
+
+	if got := client.windows.drawn(); got != 0 {
+		t.Errorf("%d panes here are drawn from it, want none", got)
+	}
+	if got := len(host.panes); got != hostPanes {
+		t.Errorf("the window connected to holds %d panes, want the %d it had", got, hostPanes)
 	}
 }
 
@@ -1430,4 +1459,28 @@ func commandTitle(t *testing.T, a *testApp, id string) string {
 		t.Fatalf("there is no command %q", id)
 	}
 	return cmd.Title
+}
+
+// A saved window has two lines in the palette and they say different
+// things: one connects to it, and one opens a terminal on it.
+//
+// They used to both read "Connect to statio" and both open a terminal,
+// which is how Marcus connected to a window and found a shell running on
+// the machine at the other end.
+func TestAWindowOffersConnectingAndATerminalApart(t *testing.T) {
+	_, client, addr, keyFile := aServingWindow(t)
+	saveWindowFromTheDialog(t, client, "statio", addr, keyFile)
+
+	connect := commandTitle(t, client, openPrefix+remote.CommandName("statio"))
+	terminal := commandTitle(t, client, termPrefix+remote.CommandName("statio"))
+
+	if !strings.Contains(connect, "Connect to") {
+		t.Errorf("the line that connects reads %q", connect)
+	}
+	if !strings.Contains(terminal, "Open a terminal on") {
+		t.Errorf("the line that opens a terminal reads %q", terminal)
+	}
+	if connect == terminal {
+		t.Errorf("both lines read %q, and they do different things", connect)
+	}
 }

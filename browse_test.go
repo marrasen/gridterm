@@ -619,7 +619,10 @@ func TestGoToSendsAFilePaneAnywhere(t *testing.T) {
 		t.Fatalf("go to: %v", err)
 	}
 	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
-	typeIntoField(t, a, f, "Path", where)
+	// Retyped rather than typed: the dialog opens with the directory the
+	// pane is on already in the field, and whether that read has landed
+	// yet is a race.
+	retypeField(t, a, f, "Path", where)
 	pressButton(t, a, f, "Go")
 	a.pump.run()
 

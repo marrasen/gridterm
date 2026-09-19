@@ -161,5 +161,6 @@ func (a *app) newField(placeholder string, mask rune) *ui.Field {
 	fld.Placeholder = placeholder
 	fld.Mask = mask
 	fld.ReadClipboard = a.pasteText
+	fld.WriteClipboard = a.clip.set
 	return fld
 }

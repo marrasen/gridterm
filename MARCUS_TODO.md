@@ -13,12 +13,8 @@ It would be cool if I could copy the contents of a pane and keep the colors. If 
 and also have an option to "copy as image", if I want to paste into a chat or something. I don't know if "rich text" 
 is the best to use though.
 
-# File viewer
-- Select and copy text
-
 # Forms
 - Fields using dropdown should have an icon making it obvious, clicking it opens a picker
-- Select text using shift, copy, cut
 
 # Show all panes
 File browser don't always render when zooming out

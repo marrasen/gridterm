@@ -1358,3 +1358,41 @@ func TestNoButtonShadowCostsNoRow(t *testing.T) {
 		t.Errorf("under the button is %v, want the dialog's own %v", got, want)
 	}
 }
+
+// The copy chord copies what the focused field has picked out, and the
+// dialog's own text only when the field has picked out nothing.
+func TestTheCopyChordCopiesAFieldSelectionFirst(t *testing.T) {
+	tf := newTestForm(t)
+	f := tf.form
+	var copied string
+	f.Copy = func(s string) { copied = s }
+	f.CopyChord = func(ev input.Event) bool {
+		return ev.Key == input.KeyC && ev.Mods == input.ModCtrl|input.ModShift
+	}
+	f.Copyable = "the dialog's own line"
+	fld := f.focusedField()
+	if fld == nil {
+		t.Fatal("the form has no focused field")
+	}
+	fld.WriteClipboard = func(s string) { copied = s }
+	fld.SetText("margit.skalarit.net")
+	fld.SelectAll()
+
+	if _, err := f.HandleKey(press(input.KeyC, input.ModCtrl|input.ModShift)); err != nil {
+		t.Fatalf("the copy chord: %v", err)
+	}
+
+	if got, want := copied, "margit.skalarit.net"; got != want {
+		t.Errorf("it copied %q, want the field's selection %q", got, want)
+	}
+
+	// And with nothing picked out, the dialog's own line again.
+	copied = ""
+	fld.SetCaret(0)
+	if _, err := f.HandleKey(press(input.KeyC, input.ModCtrl|input.ModShift)); err != nil {
+		t.Fatalf("the copy chord again: %v", err)
+	}
+	if got, want := copied, "the dialog's own line"; got != want {
+		t.Errorf("it copied %q, want %q", got, want)
+	}
+}

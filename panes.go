@@ -240,7 +240,7 @@ func (a *app) openPalette() error {
 	}
 	p := ui.NewPalette(a.root.Commands, a.root.Accelerators, a.closePalette)
 	p.Style = a.paletteStyle()
-	p.SetClipboard(a.pasteText)
+	p.SetClipboard(a.pasteText, a.clip.set)
 	a.palette = p
 	a.dismissPalette = a.showModal(p, func() { a.palette, a.dismissPalette = nil, nil })
 	return nil

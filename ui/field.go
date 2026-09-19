@@ -50,6 +50,9 @@ type Field struct {
 	// ReadClipboard backs the paste shortcut. A nil one disables it.
 	ReadClipboard func() string
 
+	// WriteClipboard backs copy and cut. A nil one disables them.
+	WriteClipboard func(string)
+
 	// Options are the answers worth offering, for a field whose value is
 	// usually one of a known few. Ctrl+Down and Ctrl+Up step through
 	// them, and an empty one is included so an optional field can be
@@ -81,6 +84,11 @@ type Field struct {
 
 	at   int // the caret, a byte offset into text at a cluster boundary
 	left int // the first byte drawn, for text wider than the field
+
+	// picked says a stretch of the text is selected, and mark is the end
+	// of it the caret is not on.
+	picked bool
+	mark   int
 
 	cols    int
 	focused bool
@@ -126,6 +134,7 @@ func (f *Field) SetText(s string) {
 	changed := f.text != s
 	f.text = s
 	f.at = len(s)
+	f.picked = false
 	// The old offset was a position in the old text, and can land inside
 	// a character of the new one.
 	f.left = 0
@@ -141,16 +150,24 @@ func (f *Field) Caret() int { return f.at }
 // SetCaret moves the caret to the cluster boundary at or before a byte
 // offset, so a caller cannot put it inside a character.
 func (f *Field) SetCaret(at int) {
-	at = min(max(at, 0), len(f.text))
+	f.at = min(max(at, 0), len(f.text))
+	f.picked = false
+	f.snapCaret()
+	f.scroll()
+}
+
+// snapCaret pulls the caret back to the cluster boundary at or before
+// where it is.
+func (f *Field) snapCaret() {
 	marks := f.bounds()
-	f.at = marks[0]
+	at := marks[0]
 	for _, m := range marks {
-		if m > at {
+		if m > f.at {
 			break
 		}
-		f.at = m
+		at = m
 	}
-	f.scroll()
+	f.at = at
 }
 
 // Layout notes how wide the field is.
@@ -160,7 +177,12 @@ func (f *Field) Layout(size Size) {
 }
 
 // SetFocus takes and gives up the caret.
-func (f *Field) SetFocus(on bool) { f.focused = on }
+func (f *Field) SetFocus(on bool) {
+	f.focused = on
+	if !on {
+		f.picked = false
+	}
+}
 
 // Focused reports whether the field is the one being typed into.
 func (f *Field) Focused() bool { return f.focused }
@@ -217,12 +239,50 @@ func (f *Field) HandleKey(ev input.Event) (bool, error) {
 		return f.paste(), nil
 	}
 
+	// Ctrl and Ctrl+Shift both copy, for the same reason both paste, and
+	// Ctrl+Insert is the other half of the pair with Shift+Insert.
+	if ev.Ctrl() && ev.Key == input.KeyC ||
+		ev.Mods == input.ModCtrl && ev.Key == input.KeyInsert {
+		return f.Copy(), nil
+	}
+	if ev.Ctrl() && ev.Key == input.KeyX {
+		return f.Cut(), nil
+	}
+	// Ctrl alone: the window binds Ctrl+Shift+A to the pane switcher, and
+	// a field that swallowed it would take that away.
+	if ev.Mods == input.ModCtrl && ev.Key == input.KeyA {
+		return f.SelectAll(), nil
+	}
+
 	if ev.Ctrl() && (ev.Key == input.KeyDown || ev.Key == input.KeyUp) {
 		step := 1
 		if ev.Key == input.KeyUp {
 			step = -1
 		}
 		return f.cycle(step), nil
+	}
+
+	switch ev.Key {
+	case input.KeyLeft, input.KeyRight, input.KeyHome, input.KeyEnd:
+		from, to := f.span()
+		switch {
+		case ev.Shift():
+			f.pick()
+		case !f.picked, ev.Ctrl():
+			f.picked = false
+		case ev.Key == input.KeyLeft:
+			// A plain move off a selection lands on the edge it moves
+			// toward.
+			f.at, f.picked = from, false
+			f.scroll()
+			return true, nil
+		case ev.Key == input.KeyRight:
+			f.at, f.picked = to, false
+			f.scroll()
+			return true, nil
+		default:
+			f.picked = false
+		}
 	}
 
 	switch ev.Key {
@@ -233,8 +293,9 @@ func (f *Field) HandleKey(ev input.Event) (bool, error) {
 			f.at = f.prev(f.at)
 		}
 	case input.KeyRight:
-		// Right at the end of the text takes the rest of the answer.
-		if !ev.Ctrl() && f.TakeGhost() {
+		// Right at the end of the text takes the rest of the answer, and
+		// shift picks text out instead.
+		if !ev.Ctrl() && !ev.Shift() && f.TakeGhost() {
 			return true, nil
 		}
 		if ev.Ctrl() {
@@ -245,11 +306,14 @@ func (f *Field) HandleKey(ev input.Event) (bool, error) {
 	case input.KeyHome:
 		f.at = 0
 	case input.KeyEnd:
-		if !ev.Ctrl() && f.TakeGhost() {
+		if !ev.Ctrl() && !ev.Shift() && f.TakeGhost() {
 			return true, nil
 		}
 		f.at = len(f.text)
 	case input.KeyBackspace:
+		if f.cutPicked() {
+			return true, nil
+		}
 		to := f.prev(f.at)
 		if ev.Ctrl() {
 			to = f.wordLeft(f.at)
@@ -257,6 +321,9 @@ func (f *Field) HandleKey(ev input.Event) (bool, error) {
 		f.cut(to, f.at)
 		return true, nil
 	case input.KeyDelete:
+		if f.cutPicked() {
+			return true, nil
+		}
 		to := f.next(f.at)
 		if ev.Ctrl() {
 			to = f.wordRight(f.at)
@@ -311,7 +378,7 @@ func (f *Field) Draw(v grid.View) {
 		return
 	}
 
-	at := 0
+	at, off := 0, f.left
 	for _, c := range f.clustersFrom(f.left) {
 		shown, width := c, grid.StringWidth(c)
 		if f.Mask != 0 {
@@ -320,7 +387,14 @@ func (f *Field) Draw(v grid.View) {
 		if at+width > cols {
 			break
 		}
-		at = v.SetString(at, 0, shown, f.Style.FG, f.Style.BG, 0)
+		fg, bg := f.Style.FG, f.Style.BG
+		if f.inPick(off) {
+			// The field's own colours swapped, which contrasts whatever
+			// the two of them are.
+			fg, bg = f.Style.BG, f.Style.FG
+		}
+		at = v.SetString(at, 0, shown, fg, bg, 0)
+		off += len(c)
 	}
 	// After the text, so the caret sits on the first character of it.
 	if f.ghostShows() && at < cols {
@@ -359,13 +433,20 @@ func (f *Field) TakeGhost() bool {
 	return true
 }
 
-// insert puts text at the caret and moves it past.
+// insert puts text in at the caret, in place of what is picked out, and
+// moves the caret past it.
 func (f *Field) insert(s string) {
-	if s == "" {
+	from, to := f.at, f.at
+	if f.picked {
+		from, to = f.span()
+	}
+	f.picked = false
+	if from == to && s == "" {
 		return
 	}
-	f.text = f.text[:f.at] + s + f.text[f.at:]
-	f.at += len(s)
+	f.text = f.text[:from] + s + f.text[to:]
+	f.at = from + len(s)
+	f.snapCaret()
 	f.scroll()
 	f.changed()
 }
@@ -373,6 +454,7 @@ func (f *Field) insert(s string) {
 // cut removes the text between two byte offsets and leaves the caret at
 // the start of the gap.
 func (f *Field) cut(from, to int) {
+	f.picked = false
 	if from > to {
 		from, to = to, from
 	}

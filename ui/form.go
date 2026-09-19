@@ -351,6 +351,12 @@ func (f *Form) SetFocus(on bool) {
 // is not one, because the field takes that chord before this sees it.
 func (f *Form) HandleKey(ev input.Event) (bool, error) {
 	if f.CopyChord != nil && f.CopyChord(ev) {
+		// A field with something picked out copies that: the chord means
+		// copy what is selected, and the dialog's own text is what there
+		// is to copy when nothing is.
+		if fld := f.focusedField(); fld != nil && fld.Copy() {
+			return true, nil
+		}
 		f.CopyNow()
 		return true, nil
 	}

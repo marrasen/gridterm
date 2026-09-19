@@ -89,8 +89,10 @@ func NewPalette(cmds *Commands, keys *Keymap, close func()) *Palette {
 func (p *Palette) matchCount() int { return len(p.matches) }
 func (p *Palette) rowsShown() int  { return max(p.lines().Rows-1, 0) }
 
-// SetClipboard backs the paste shortcut in the query line.
-func (p *Palette) SetClipboard(read func() string) { p.q.ReadClipboard = read }
+// SetClipboard backs paste, copy and cut in the query line.
+func (p *Palette) SetClipboard(read func() string, write func(string)) {
+	p.q.ReadClipboard, p.q.WriteClipboard = read, write
+}
 
 // SetFocus passes focus on to the query line, so the caret appears and
 // disappears with the dialog.

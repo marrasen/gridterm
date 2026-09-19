@@ -1,6 +1,7 @@
 package main
 
 import (
+	"image/color"
 	"testing"
 
 	"github.com/marrasen/gridterm/grid"
@@ -135,17 +136,19 @@ func TestThePadTableHoldsWhateverItIsGiven(t *testing.T) {
 	}
 	table.add(3, grid.Pad{After: 2})
 
-	got := map[int]grid.Pad{}
-	table.apply(9, nil, func(i int, p grid.Pad) { got[i] = p })
+	g := grid.New(9, 1, color.RGBA{}, color.RGBA{})
+	table.applyCols(g, 9)
 
-	if len(got) != 9 {
-		t.Fatalf("%d of 9 pads were written", len(got))
+	if got := g.ColPad(8); got != (grid.Pad{Before: 1}) {
+		t.Errorf("the ninth pad is %+v, want it kept", got)
 	}
-	if got[8] != (grid.Pad{Before: 1}) {
-		t.Errorf("the ninth pad is %+v, want it kept", got[8])
+	if got := g.ColPad(3); got != (grid.Pad{Before: 1, After: 2}) {
+		t.Errorf("two pads on one column came to %+v", got)
 	}
-	if got[3] != (grid.Pad{Before: 1, After: 2}) {
-		t.Errorf("two pads on one column came to %+v", got[3])
+	for i := range 9 {
+		if g.ColPad(i).Before != 1 {
+			t.Errorf("column %d has %+v, want the pad it was given", i, g.ColPad(i))
+		}
 	}
 }
 

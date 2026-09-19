@@ -400,6 +400,12 @@ From Marcus's inbox, after working in a shared window.
   It waits on SSH relays parking themselves, so the race detector's
   slowdown is the likely cause, but nobody has looked.
 
+- **The pane switcher is the last thing that allocates on a settled
+  frame.** Nine allocations and 384 bytes, measured on 2026-09-19 with
+  `BenchmarkSwitcherFrame`. An idle frame and one with a dialog up are
+  both at none, and `TestAFrameThatChangedNothingAllocatesNothing` keeps
+  them there. Nobody has looked at the switcher's nine.
+
 - **A shared pane never lets the window idle.** The border and the
   sidebar stripe glow for as long as an agent or another window has the
   pane, so two layers repaint four times a second and the compositor
@@ -407,18 +413,6 @@ From Marcus's inbox, after working in a shared window.
   the last byte and this does not, because a glow that stops is not a
   glow. `TestASharedPaneCostsNothingBetweenGlowSteps` pins the cost at
   two layers a step, so it cannot grow unnoticed.
-
-- **The padding machinery is what an idle frame still allocates for.**
-  Five allocations and 400 bytes a frame, measured on 2026-09-19 with
-  `BenchmarkIdleFrame` after the sidebar stopped making any. They are
-  `padGrid` in pad.go, which builds a `padTable` per grid per frame, and
-  `region.place` through `fit`, which asks `RowPads` for a fresh slice
-  for every row count it tries.
-
-  Both take the same fix the sidebar had: build into something kept
-  rather than something new. Nobody is asking for it. Five allocations a
-  frame is about 24KB a second, and it is written down here so the next
-  person to read a profile knows it has been looked at and left.
 
 - **A folder holding a comma cannot be typed in the server dialog.** The
   folders are one field and a comma parts them, so a path with one in it

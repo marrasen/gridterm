@@ -60,15 +60,18 @@ func (a *app) padGrid(g *grid.Grid) {
 	if cols <= 0 {
 		return
 	}
-	var want padTable
-	want.add(0, grid.Pad{Before: edgePad})
-	want.add(cols-1, grid.Pad{After: edgePad})
-	want.apply(cols, g.ColPads(), g.SetColPad)
+	// The window's own tables rather than two of its own, because a
+	// table holds a slice into itself and one built here would go on the
+	// heap every frame.
+	a.sidePads.reset()
+	a.sidePads.add(0, grid.Pad{Before: edgePad})
+	a.sidePads.add(cols-1, grid.Pad{After: edgePad})
+	a.sidePads.applyCols(g, cols)
 
 	if rows > 0 {
-		var barRow padTable
-		barRow.add(0, grid.Pad{Before: barPad, After: barPad})
-		barRow.apply(rows, g.RowPads(), g.SetRowPad)
+		a.barPads.reset()
+		a.barPads.add(0, grid.Pad{Before: barPad, After: barPad})
+		a.barPads.applyRows(g, rows)
 	}
 }
 
@@ -91,6 +94,9 @@ type padTable struct {
 	room [4]padEntry
 	list []padEntry
 }
+
+// reset empties the table, keeping the room it has.
+func (t *padTable) reset() { t.list = t.room[:0] }
 
 // add asks for padding on a column or row, adding to whatever is
 // already asked for there.
@@ -118,18 +124,33 @@ func (t *padTable) has(i int) bool {
 	return false
 }
 
-// apply writes the table, clearing whatever is padded now and is not in
-// it.
+// applyCols writes the table onto a grid's columns, clearing whatever is
+// padded now and is not in it.
 //
-// have is the table as the grid holds it, which may stop short of n.
-// Its length is read once, because set may grow it.
-func (t *padTable) apply(n int, have []grid.Pad, set func(int, grid.Pad)) {
-	for i := 0; i < len(have) && i < n; i++ {
+// The padding the grid holds may stop short of n, and its length is read
+// once because setting one can grow it.
+func (t *padTable) applyCols(g *grid.Grid, n int) {
+	for i, have := 0, len(g.ColPads()); i < have && i < n; i++ {
 		if !t.has(i) {
-			set(i, grid.Pad{})
+			g.SetColPad(i, grid.Pad{})
 		}
 	}
 	for _, e := range t.list {
-		set(e.at, e.pad)
+		g.SetColPad(e.at, e.pad)
+	}
+}
+
+// applyRows is applyCols for a grid's rows.
+//
+// Written out rather than shared, because the two setters are methods
+// and passing one as a function value costs an allocation a frame.
+func (t *padTable) applyRows(g *grid.Grid, n int) {
+	for i, have := 0, len(g.RowPads()); i < have && i < n; i++ {
+		if !t.has(i) {
+			g.SetRowPad(i, grid.Pad{})
+		}
+	}
+	for _, e := range t.list {
+		g.SetRowPad(e.at, e.pad)
 	}
 }

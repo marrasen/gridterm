@@ -3,6 +3,7 @@ package ui
 import (
 	"errors"
 	"image/color"
+	"slices"
 
 	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/input"
@@ -125,6 +126,10 @@ type Form struct {
 	// titles are the buttons' titles, kept alongside them because the
 	// layout asks for them several times a frame.
 	titles []string
+
+	// cols is where each button starts, worked out again on every frame
+	// and kept so that working it out costs no allocation.
+	cols []int
 
 	// at is what has focus: a row while it is below len(rows), and a
 	// button after that.
@@ -627,7 +632,8 @@ func (f *Form) buttonTitles() []string { return f.titles }
 // buttonCols returns the column each button starts at, or -1 for one
 // there was no room for.
 func (f *Form) buttonCols() []int {
-	return ButtonColsIn(f.buttonTitles(), f.box().Cols, formPad)
+	f.cols = ButtonColsInto(f.cols[:0], f.buttonTitles(), f.box().Cols, formPad)
+	return f.cols
 }
 
 // buttonAt returns which button covers a column.
@@ -912,10 +918,16 @@ func buttonsWidth(titles []string) int {
 // marked with -1 rather than a column off the left edge, because
 // grid.View.Sub shifts a negative origin to zero instead of clipping it.
 func ButtonColsIn(titles []string, cols, pad int) []int {
+	return ButtonColsInto(nil, titles, cols, pad)
+}
+
+// ButtonColsInto is ButtonColsIn writing into a slice the caller keeps,
+// for a painter that runs on every frame. Pass into[:0].
+func ButtonColsInto(into []int, titles []string, cols, pad int) []int {
 	if len(titles) == 0 {
 		return nil
 	}
-	at := make([]int, len(titles))
+	at := slices.Grow(into, len(titles))[:len(titles)]
 	x := cols - pad
 	for i := len(titles) - 1; i >= 0; i-- {
 		w := ButtonWidth(titles[i])

@@ -178,7 +178,11 @@ type Notice struct {
 	at    int // which button has the focus
 	size  Size
 	close func()
-	buf   buffer
+	// cols is where the buttons start, worked out again on every frame
+	// and kept so that working it out costs no allocation.
+	cols []int
+
+	buf buffer
 }
 
 // NewNotice returns a dialog showing a message. close is called when the
@@ -442,32 +446,42 @@ func (n *Notice) paintText(in grid.View, box Rect) {
 			continue
 		}
 		row, x := noticeTextTop+y, noticePad
-		// One call per run of the same colour
-		run, on := "", false
-		flush := func() {
-			if run == "" {
-				return
+		text := lines[li].text
+		// One call per run of the same colour, each run a stretch of the
+		// line rather than a string built up cluster by cluster.
+		from, at, i, on := 0, 0, 0, false
+		state := -1
+		for at < len(text) {
+			size, next := grid.NextCluster(text[at:], state)
+			if size == 0 {
+				break
 			}
-			fg, bg := n.Style.FG, n.Style.BG
-			if on {
-				fg, bg = n.Style.SelectionFG, n.Style.SelectionBG
-			}
-			x = in.SetString(x, row, run, fg, bg, 0)
-			run = ""
-		}
-		for i, c := range grid.Clusters(lines[li].text) {
+			state = next
 			sel := n.selects(li, i)
 			if i == 0 {
 				on = sel
 			}
 			if sel != on {
-				flush()
-				on = sel
+				x = n.paintRun(in, x, row, text[from:at], on)
+				from, on = at, sel
 			}
-			run += c
+			at, i = at+size, i+1
 		}
-		flush()
+		n.paintRun(in, x, row, text[from:], on)
 	}
+}
+
+// paintRun writes one stretch of a line in one colour and returns the
+// column after it.
+func (n *Notice) paintRun(in grid.View, x, row int, text string, on bool) int {
+	if text == "" {
+		return x
+	}
+	fg, bg := n.Style.FG, n.Style.BG
+	if on {
+		fg, bg = n.Style.SelectionFG, n.Style.SelectionBG
+	}
+	return in.SetString(x, row, text, fg, bg, 0)
 }
 
 // buttonRow is the row the buttons sit on: above the rule, and above
@@ -488,7 +502,8 @@ func (n *Notice) shadowRows() int {
 
 // paintButtons draws the buttons along the bottom, right aligned.
 func (n *Notice) paintButtons(in grid.View, box Rect) {
-	for i, at := range ButtonColsIn(n.buttons(), box.Cols, noticePad) {
+	n.cols = ButtonColsInto(n.cols[:0], n.buttons(), box.Cols, noticePad)
+	for i, at := range n.cols {
 		if at < 0 {
 			// No room for this one. Drawing it would land it on top of
 			// the buttons that did fit.

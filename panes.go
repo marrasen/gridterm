@@ -480,14 +480,13 @@ func (a *app) isPane(w ui.Widget) bool {
 	if w == nil || w == ui.Widget(a.side) || w == ui.Widget(a.panel) {
 		return false
 	}
-	for _, leaf := range ui.Leaves(w) {
+	return ui.EachLeaf(w, func(leaf ui.Widget) bool {
 		switch leaf.(type) {
 		case *term.Terminal, *files.Pane, *files.Reader:
-		default:
-			return false
+			return true
 		}
-	}
-	return true
+		return false
+	})
 }
 
 // closePane takes a pane out of the tree, ends every shell under it and

@@ -420,29 +420,39 @@ func FocusedLeaf(w Widget) Widget {
 // layout order.
 func Leaves(root Widget) []Widget {
 	var out []Widget
-	var walk func(Widget)
-	walk = func(w Widget) {
-		if w == nil {
-			return
-		}
-		c, ok := w.(Container)
-		if !ok {
-			out = append(out, w)
-			return
-		}
-		children := c.Children()
-		if len(children) == 0 {
-			// An empty container is a leaf itself, so FocusedLeaf
-			// landing on one still finds it here.
-			out = append(out, w)
-			return
-		}
-		for _, child := range children {
-			walk(child)
+	EachLeaf(root, func(w Widget) bool {
+		out = append(out, w)
+		return true
+	})
+	return out
+}
+
+// EachLeaf calls do for every widget under root that is not a
+// container, in layout order. It stops as soon as do answers false, and
+// reports whether it reached the end.
+//
+// For a caller that only reads the leaves: Leaves builds a slice, and
+// one built on every frame is an allocation on every frame.
+func EachLeaf(root Widget, do func(Widget) bool) bool {
+	if root == nil {
+		return true
+	}
+	c, ok := root.(Container)
+	if !ok {
+		return do(root)
+	}
+	children := c.Children()
+	if len(children) == 0 {
+		// An empty container is a leaf itself, so FocusedLeaf landing on
+		// one still finds it here.
+		return do(root)
+	}
+	for _, child := range children {
+		if !EachLeaf(child, do) {
+			return false
 		}
 	}
-	walk(root)
-	return out
+	return true
 }
 
 // contains reports whether w is one of the widgets.

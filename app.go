@@ -133,6 +133,10 @@ type app struct {
 	// copies are the file copies the user asked to keep.
 	copies *savedCopies
 
+	// sidePads and barPads are where a grid's padding is gathered before
+	// it is written.
+	sidePads, barPads padTable
+
 	// paneTitles is whether each pane shows a line naming it.
 	paneTitles *paneTitles
 

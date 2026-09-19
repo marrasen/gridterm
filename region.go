@@ -30,6 +30,11 @@ type region struct {
 
 	// left, top, width and height are the same in pixels.
 	left, top, width, height int
+
+	// colPads and rowPads are where the padding is gathered before it is
+	// written. Kept rather than built each time: a table holds a slice
+	// into itself, so one built on the way past goes on the heap.
+	colPads, rowPads padTable
 }
 
 // newRegion puts a widget on a grid of its own, over whatever the
@@ -69,13 +74,13 @@ func (r *region) place(rect ui.Rect, geo *render.Geometry, pads []grid.Pad) {
 	r.rect = rect
 
 	r.g.Resize(rect.Cols, rows)
-	var want padTable
+	r.colPads.reset()
 	for x := 0; x < rect.Cols; x++ {
 		if p := padOf(pads, rect.X+x); !p.Empty() {
-			want.add(x, p)
+			r.colPads.add(x, p)
 		}
 	}
-	want.apply(rect.Cols, r.g.ColPads(), r.g.SetColPad)
+	r.colPads.applyCols(r.g, rect.Cols)
 
 	if r.w != nil {
 		r.w.Layout(ui.Size{Cols: rect.Cols, Rows: rows})
@@ -130,19 +135,19 @@ func quarters(pads []grid.Pad) int {
 // widget would cost more room than the row is worth, and it is under a
 // cell and a half when it happens at all.
 func (r *region) padRows(full, rows int, pads []grid.Pad) {
-	var want padTable
+	r.rowPads.reset()
 	for y, p := range pads {
 		if y >= rows {
 			break
 		}
 		if !p.Empty() {
-			want.add(y, p)
+			r.rowPads.add(y, p)
 		}
 	}
 	if left := (full-rows)*grid.PadUnit - quarters(pads); left > 0 {
-		want.add(max(rows-2, 0), grid.Pad{After: int8(min(left, grid.PadMax))})
+		r.rowPads.add(max(rows-2, 0), grid.Pad{After: int8(min(left, grid.PadMax))})
 	}
-	want.apply(rows, r.g.RowPads(), r.g.SetRowPad)
+	r.rowPads.applyRows(r.g, rows)
 }
 
 // measure works out where the region's own grid lands in pixels.

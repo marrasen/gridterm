@@ -664,13 +664,31 @@ func RuneWidth(r rune) int {
 // one at a time gives a combining mark a cell of its own and a flag two.
 func Clusters(s string) []string {
 	var out []string
-	state := -1
-	for len(s) > 0 {
-		var cluster string
-		cluster, s, _, state = uniseg.FirstGraphemeClusterInString(s, state)
-		out = append(out, cluster)
+	state, at := -1, 0
+	for at < len(s) {
+		size, next := NextCluster(s[at:], state)
+		if size == 0 {
+			break
+		}
+		out = append(out, s[at:at+size])
+		at, state = at+size, next
 	}
 	return out
+}
+
+// NextCluster is how many bytes the first grapheme cluster of s takes,
+// and the state to hand the next call. Start with a state of -1. A size
+// of zero means there is nothing left.
+//
+// It is Clusters for a caller that only walks the string: the slice
+// Clusters builds is an allocation, and one per line per frame is one
+// the window pays for while nothing moves.
+func NextCluster(s string, state int) (size, next int) {
+	if s == "" {
+		return 0, state
+	}
+	cluster, _, _, next := uniseg.FirstGraphemeClusterInString(s, state)
+	return len(cluster), next
 }
 
 // StringWidth returns how many columns a string takes when written into

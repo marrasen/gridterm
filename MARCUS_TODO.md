@@ -15,7 +15,6 @@ is the best to use though.
 
 # File viewer
 - Select and copy text
-- Color code JSON
 
 # Forms
 - Fields using dropdown should have an icon making it obvious, clicking it opens a picker

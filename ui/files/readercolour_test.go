@@ -355,3 +355,66 @@ func TestASearchMatchLandsRightOnAColouredLine(t *testing.T) {
 		t.Error("the column after the match is marked out too")
 	}
 }
+
+// A name in JSON is bold and its value is not, so the shape of a record
+// reads at a glance.
+func TestAJSONNameIsBold(t *testing.T) {
+	r := aColouredFile(t, "conf.json", 40, 6, `  "host": "margit",`)
+	g := drawReader(r, 40, 6)
+
+	if got := g.At(2, 1); got.Attr&grid.AttrBold == 0 {
+		t.Errorf("the name is drawn %v, want it bold", got.Attr)
+	}
+	if got := g.At(10, 1); got.Attr&grid.AttrBold != 0 {
+		t.Errorf("the value is drawn %v, want it not bold", got.Attr)
+	}
+	if got, want := g.At(10, 1).FG, r.Style.LinkFG; got != want {
+		t.Errorf("the value is %v, want a string's %v", got, want)
+	}
+}
+
+// A number, true, false and null are marked in JSON, and the same words
+// inside a string are not.
+func TestJSONNumbersAndKeywordsAreMarked(t *testing.T) {
+	for what, tc := range map[string]struct {
+		line string
+		at   int
+	}{
+		"a number":   {`{"n": 42}`, 6},
+		"a negative": {`{"n": -1.5e-3}`, 6},
+		"true":       {`{"n": true}`, 6},
+		"false":      {`{"n": false}`, 6},
+		"null":       {`{"n": null}`, 6},
+	} {
+		r := aColouredFile(t, "conf.json", 40, 6, tc.line)
+		g := drawReader(r, 40, 6)
+
+		if got, want := g.At(tc.at, 1).FG, r.Style.MarkedFG; got != want {
+			t.Errorf("%s: it is %v, want a mark's %v", what, got, want)
+		}
+	}
+}
+
+// A word that only looks like a keyword is not marked: "nullable" is a
+// name, and digits inside one are part of it.
+func TestAJSONKeywordIsAWholeWord(t *testing.T) {
+	r := aColouredFile(t, "conf.json", 40, 6, `{nullable: x1}`)
+	g := drawReader(r, 40, 6)
+
+	for _, at := range []int{1, 12} {
+		if got, want := g.At(at, 1).FG, r.Style.MarkedFG; got == want {
+			t.Errorf("column %d is marked, want it ordinary", at)
+		}
+	}
+}
+
+// A string with a colon inside it is still a value, not a name. What
+// makes a name is a colon after the closing quote.
+func TestAColonInsideAJSONStringDoesNotMakeAName(t *testing.T) {
+	r := aColouredFile(t, "conf.json", 40, 6, `["a: b", "c"]`)
+	g := drawReader(r, 40, 6)
+
+	if got := g.At(1, 1); got.Attr&grid.AttrBold != 0 {
+		t.Errorf("the string is drawn %v, want it not bold", got.Attr)
+	}
+}

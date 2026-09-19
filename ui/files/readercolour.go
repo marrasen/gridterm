@@ -44,6 +44,8 @@ func colourerFor(name string) colourer {
 	switch strings.ToLower(path.Ext(name)) {
 	case ".md", ".markdown", ".mdown":
 		return markdownRuns
+	case ".json", ".jsonl", ".ndjson", ".geojson":
+		return jsonRuns
 	case ".go", ".c", ".h", ".cc", ".cpp", ".hpp", ".java", ".js", ".ts",
 		".jsx", ".tsx", ".rs", ".swift", ".kt", ".cs", ".php", ".scala":
 		return runsWith(slashComments)
@@ -150,6 +152,103 @@ func inRune(b byte) bool { return b >= 0x80 }
 func wordish(b byte) bool {
 	return isDigit(b) || b == '.' || b == '_' ||
 		(b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
+}
+
+// jsonRuns colours a line of JSON: a name in bold, a value's string in
+// the colour a string takes, and a number or a keyword marked.
+//
+// One line at a time, the way the language colourers work, so a string
+// that runs over the end of a line is coloured to the end of that line
+// and no further.
+func jsonRuns(line string, into []run) []run {
+	out := into[:0]
+	at := 0
+	for i := 0; i < len(line); {
+		if line[i] == '"' {
+			end, closed := closes(line, i, '"')
+			attr := grid.Attr(0)
+			if closed && namesAValue(line, end) {
+				attr = grid.AttrBold
+			}
+			out = add(out, at, i, colourPlain, 0)
+			out = add(out, i, end, colourText, attr)
+			i, at = end, end
+			continue
+		}
+		if end := literal(line, i); end > i {
+			out = add(out, at, i, colourPlain, 0)
+			out = add(out, i, end, colourMark, 0)
+			i, at = end, end
+			continue
+		}
+		i++
+	}
+	return add(out, at, len(line), colourPlain, 0)
+}
+
+// namesAValue reports whether a colon follows the string that ended at
+// end, which is what makes that string a name rather than a value.
+func namesAValue(line string, end int) bool {
+	for i := end; i < len(line); i++ {
+		if line[i] == ':' {
+			return true
+		}
+		if line[i] != ' ' && line[i] != '\t' {
+			return false
+		}
+	}
+	return false
+}
+
+// literal is how far a number, true, false or null runs from i, and i
+// when none of them starts there.
+func literal(line string, i int) int {
+	if i > 0 && (wordish(line[i-1]) || inRune(line[i-1])) {
+		return i
+	}
+	if end := number(line, i); end > i {
+		return end
+	}
+	return keyword(line, i)
+}
+
+// number is how far a JSON number runs from i, and i when one does not
+// start there.
+func number(line string, i int) int {
+	end := i
+	if end < len(line) && line[end] == '-' {
+		end++
+	}
+	if end >= len(line) || !isDigit(line[end]) {
+		return i
+	}
+	for end < len(line) && (isDigit(line[end]) || line[end] == '.') {
+		end++
+	}
+	if end < len(line) && (line[end] == 'e' || line[end] == 'E') {
+		end++
+		if end < len(line) && (line[end] == '+' || line[end] == '-') {
+			end++
+		}
+		for end < len(line) && isDigit(line[end]) {
+			end++
+		}
+	}
+	return end
+}
+
+// keyword is how far true, false or null runs from i, and i when none of
+// them starts there.
+func keyword(line string, i int) int {
+	for _, word := range []string{"true", "false", "null"} {
+		if !strings.HasPrefix(line[i:], word) {
+			continue
+		}
+		if end := i + len(word); end == len(line) || !wordish(line[end]) {
+			return end
+		}
+	}
+	return i
 }
 
 // markdownRuns colours a line of markdown.

@@ -301,7 +301,14 @@ func readLine(in *bufio.Reader) (line string, clipped bool, err error) {
 	}
 }
 
-// Layout takes the room the reader has.
+// Size is the room the reader was last given.
+func (r *Reader) Size() ui.Size { return r.size }
+
+// The switcher draws a picture of a reader at the size it says it has,
+// so a method here with the wrong shape would leave its tile empty.
+var _ ui.Sized = (*Reader)(nil)
+
+// Layout tells the reader how much room it has.
 //
 // A shorter pane moves the end of the file away from where the reader is
 // sitting, so a file being followed is put back on its end.

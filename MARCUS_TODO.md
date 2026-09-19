@@ -16,9 +16,6 @@ is the best to use though.
 # Forms
 - Fields using dropdown should have an icon making it obvious, clicking it opens a picker
 
-# Show all panes
-File browser don't always render when zooming out
-
 # Tunnel and SOCKS proxy over remote connection
 - Add support for tunnels and SOCKS proxy over a remote connection
 

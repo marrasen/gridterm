@@ -152,6 +152,16 @@ type RowSpacer interface {
 	RowPads(rows int) []grid.Pad
 }
 
+// Sized is a widget that reports the size it draws at.
+//
+// For a widget a container laid out, that is the size it was given. A
+// Deck lays out every pane it holds, hidden ones as well, so a pane
+// behind another answers with the size it has now.
+type Sized interface {
+	Widget
+	Size() Size
+}
+
 // Boxed is a widget that fills only part of the view it is given and
 // says which part, in that view's own coordinates.
 //

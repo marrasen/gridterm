@@ -5,12 +5,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/input"
 	"github.com/marrasen/gridterm/render"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/files"
 	"github.com/marrasen/gridterm/ui/term"
+	"github.com/marrasen/gridterm/vfs"
 )
 
 // aWindowOfPanes is a window with n panes open in it, wide enough to
@@ -357,14 +359,14 @@ func TestAWindowWithNoRoomAtAllHidesEveryPicture(t *testing.T) {
 	}
 }
 
-// A pane the tree has let go of has no size to draw, and is left out
+// A pane that was never laid out has no size to draw, and is left out
 // rather than drawn at a size made up for it.
-func TestAPaneTheTreeHasLetGoOfHasNoSize(t *testing.T) {
+func TestAPaneThatWasNeverLaidOutHasNoSize(t *testing.T) {
 	a := aWindowOfPanes(t, 2)
 	loose := files.New(nil)
 
 	if _, ok := a.paneScreen(loose); ok {
-		t.Error("a pane that is not in the tree was given a size")
+		t.Error("a pane that was never laid out was given a size")
 	}
 	// And one that is in the tree has one.
 	if _, ok := a.paneScreen(a.panesInSidebarOrder()[0]); !ok {
@@ -810,5 +812,161 @@ func TestAMovingSwitcherDrawsTheFrame(t *testing.T) {
 
 	if got := a.comp.Stats(); got.Skipped {
 		t.Error("the switcher skipped a frame of its zoom")
+	}
+}
+
+// A pane behind another still gets a picture when every pane is shown.
+//
+// A terminal knows its own screen, so it always had one. Everything else
+// is measured by the room it has in the window, and a pane in a deck
+// behind another has none: its tile came out empty.
+func TestAPaneBehindAnotherStillGetsAPicture(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	a.comp = render.NewCompositor(a.renderer)
+	a.layer = &render.Layer{Grid: a.g}
+	a.comp.Add(a.layer)
+
+	browser := openFilesFromThePlus(t, a, conns.Local)
+	// A pane on top of it, which puts the browser behind in the deck.
+	if err := a.openPane(); err != nil {
+		t.Fatalf("a pane over it: %v", err)
+	}
+	a.relayout()
+	if _, on := a.paneArea(browser); on {
+		t.Fatal("the browser is still on screen, so this proves nothing")
+	}
+
+	if err := a.openSwitcher(); err != nil {
+		t.Fatalf("show every pane: %v", err)
+	}
+	a.relayout()
+	a.placeSwitcher()
+
+	if a.switcher.shown[browser] == nil {
+		t.Errorf("the browser's tile has no picture; %d of %d panes have one",
+			len(a.switcher.shown), len(a.switcher.panes))
+	}
+}
+
+// And the picture is of the browser, not of an empty grid: the size it
+// was last laid out at is what it is drawn from.
+func TestTheHiddenPanesPictureHoldsItsText(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	a.comp = render.NewCompositor(a.renderer)
+	a.layer = &render.Layer{Grid: a.g}
+	a.comp.Add(a.layer)
+
+	browser := openFilesFromThePlus(t, a, conns.Local)
+	if err := a.openPane(); err != nil {
+		t.Fatalf("a pane over it: %v", err)
+	}
+	a.relayout()
+	if err := a.openSwitcher(); err != nil {
+		t.Fatalf("show every pane: %v", err)
+	}
+	a.relayout()
+	a.placeSwitcher()
+
+	tile := a.switcher.shown[browser]
+	if tile == nil {
+		t.Fatal("the browser's tile has no picture")
+	}
+	cols, rows := tile.g.Size()
+	if cols <= 1 || rows <= 1 {
+		t.Fatalf("the picture is %dx%d, want the room the browser last had", cols, rows)
+	}
+	var text strings.Builder
+	for y := range rows {
+		for x := range cols {
+			if r := tile.g.At(x, y).Rune; r != 0 {
+				text.WriteRune(r)
+			}
+		}
+	}
+	if !strings.Contains(text.String(), "Local") {
+		t.Errorf("the picture holds %q, want the browser's own heading in it",
+			strings.TrimSpace(text.String()))
+	}
+}
+
+// A file being read is measured the same way, so one behind another pane
+// gets a picture too.
+func TestAReaderBehindAnotherStillGetsAPicture(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	a.comp = render.NewCompositor(a.renderer)
+	a.layer = &render.Layer{Grid: a.g}
+	a.comp.Add(a.layer)
+
+	name, path := aReadableFile(t, "one", "two", "three")
+	if err := a.openReader(vfs.NewLocal(), conns.Local, path, name, false); err != nil {
+		t.Fatalf("open a reader: %v", err)
+	}
+	reader := onlyReader(t, a)
+	waitUntil(t, "the file to be read", func() bool {
+		a.pump.run()
+		return reader.Lines() > 0
+	})
+	if err := a.openPane(); err != nil {
+		t.Fatalf("a pane over it: %v", err)
+	}
+	a.relayout()
+	if _, on := a.paneArea(reader); on {
+		t.Fatal("the reader is still on screen, so this proves nothing")
+	}
+
+	if err := a.openSwitcher(); err != nil {
+		t.Fatalf("show every pane: %v", err)
+	}
+	a.relayout()
+	a.placeSwitcher()
+
+	if a.switcher.shown[reader] == nil {
+		t.Errorf("the reader's tile has no picture; %d of %d panes have one",
+			len(a.switcher.shown), len(a.switcher.panes))
+	}
+}
+
+// A file pane that closes while the switcher is open loses its picture,
+// the way a terminal does.
+//
+// Which panes the window has is what says so, not what kind of thing a
+// widget is: every file pane is a file pane, closed or not. A machine
+// that drops closes its file panes without the user touching anything.
+func TestAFilePaneThatClosesLosesItsPicture(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	a.comp = render.NewCompositor(a.renderer)
+	a.layer = &render.Layer{Grid: a.g}
+	a.comp.Add(a.layer)
+
+	browser := openFilesFromThePlus(t, a, conns.Local)
+	if err := a.openPane(); err != nil {
+		t.Fatalf("a second pane: %v", err)
+	}
+	a.relayout()
+	if err := a.openSwitcher(); err != nil {
+		t.Fatalf("show every pane: %v", err)
+	}
+	a.relayout()
+	a.placeSwitcher()
+	if a.switcher.shown[browser] == nil {
+		t.Fatal("the browser has no picture to lose")
+	}
+
+	if err := a.closePane(browser); err != nil {
+		t.Fatalf("close the browser: %v", err)
+	}
+	a.relayout()
+	a.placeSwitcher()
+
+	if _, still := a.switcher.shown[ui.Widget(browser)]; still {
+		t.Error("the browser that closed still has a picture")
 	}
 }

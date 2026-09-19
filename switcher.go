@@ -295,12 +295,11 @@ func (a *app) paneRoom(w ui.Widget) ui.Rect {
 
 // paneIsOpen reports whether a widget is still one of the window's
 // panes, for a switcher left open while one closed.
+//
+// By the row the window keeps for it rather than by what it is: every
+// file pane is a file pane, closed or not.
 func (a *app) paneIsOpen(w ui.Widget) bool {
-	if t, is := w.(*term.Terminal); is {
-		_, live := a.panes[t]
-		return live
-	}
-	return a.isPane(w)
+	return a.entryOf(w) != nil
 }
 
 // paneInside is what a tile draws. A terminal draws its whole screen
@@ -319,8 +318,17 @@ func (a *app) paneScreen(w ui.Widget) (ui.Size, bool) {
 	if t, is := w.(*term.Terminal); is {
 		return t.Size(), true
 	}
-	area, ok := a.paneArea(w)
-	return area.Size(), ok
+	if area, ok := a.paneArea(w); ok {
+		return area.Size(), true
+	}
+	// A pane a split squeezed out has no room in the window. The room it
+	// last had is what its picture is drawn from.
+	s, is := w.(ui.Sized)
+	if !is {
+		return ui.Size{}, false
+	}
+	size := s.Size()
+	return size, !size.Empty()
 }
 
 // tilesStyle colours the grid of tiles in the window's own theme.

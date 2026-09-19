@@ -1369,7 +1369,7 @@ func TestTheDividersStandBetweenThePanes(t *testing.T) {
 	// out for: the widths and the rules have to add up to the box.
 	widths := []int{at[0], at[1] - at[0] - 1, 90 - at[1] - 1}
 	for i, p := range b.Panes() {
-		if got := p.laidOut().Cols; got != widths[i] {
+		if got := p.Size().Cols; got != widths[i] {
 			t.Fatalf("pane %d was laid out %d columns wide, and %d are drawn for it",
 				i, got, widths[i])
 		}
@@ -1468,7 +1468,7 @@ func TestBrowserChildArea(t *testing.T) {
 		// The size Layout gave the pane, asked of the pane: a container
 		// that works its answer out twice has two chances to disagree
 		// with itself.
-		if got := p.laidOut(); area.Size() != got {
+		if got := p.Size(); area.Size() != got {
 			t.Fatalf("pane %d is laid out %+v and reported at %+v", i, got, area)
 		}
 		if area.X != at {
@@ -2287,7 +2287,7 @@ func widths(b *Browser) []int {
 	panes := b.Panes()
 	out := make([]int, len(panes))
 	for i, p := range panes {
-		out[i] = p.laidOut().Cols
+		out[i] = p.Size().Cols
 	}
 	return out
 }

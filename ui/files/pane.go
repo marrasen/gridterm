@@ -582,6 +582,13 @@ func (p *Pane) Up() {
 	p.openAt(vfs.Dir(p.fs, p.at), was, nil)
 }
 
+// Size is the room the pane was last given.
+func (p *Pane) Size() ui.Size { return p.size }
+
+// The switcher draws a picture of a pane at the size it says it has, so
+// a method here with the wrong shape would leave its tile empty.
+var _ ui.Sized = (*Pane)(nil)
+
 // Layout tells the pane how much room it has.
 func (p *Pane) Layout(size ui.Size) {
 	p.size = size
@@ -797,8 +804,3 @@ func (p *Pane) HandleMouse(ev input.MouseEvent) (bool, error) {
 // FocusesFirst says a press that moves the keys to this pane does
 // nothing else, so the press that opens a name is the next one.
 func (p *Pane) FocusesFirst() bool { return true }
-
-// laidOut is the size the pane was last given. It is for the tests in
-// this package that check a container put its children where it says it
-// did.
-func (p *Pane) laidOut() ui.Size { return p.size }

@@ -167,15 +167,18 @@ func Built() []Theme {
 			// The furniture written down rather than shaded off the blue:
 			// black on the light grey a DOS dialog sat on, a double rule
 			// round it, and green buttons the way Turbo Pascal drew them.
-			// The one Enter presses is the one written in yellow.
+			// The one Enter presses is the one written in white, which is
+			// how the original marked the button it would press.
 			Frame: &Frame{
 				FG: "#000000", BG: "#aaaaaa", Border: "double",
-				ButtonFG: "#000000", ButtonBG: "#007000",
-				ActiveFG: "#ffff55", ActiveBG: "#007000",
+				ButtonFG: "#000000", ButtonBG: "#00aa00",
+				ActiveFG: "#ffffff", ActiveBG: "#00aa00",
 				// The sidebar a darker grey than the menu bar, so the
 				// list of what is open reads as a panel beside the
-				// window rather than as more of the bar above it.
-				SidebarBG: "#808080",
+				// window rather than as more of the bar above it. The
+				// row in front is written in white: the ground that
+				// marks it moves towards the black the rest is in.
+				SidebarBG: "#808080", CurrentFG: "#ffffff",
 			},
 			ANSI: []string{
 				"#000000", "#ec6464", "#55cc55", "#e0a030",

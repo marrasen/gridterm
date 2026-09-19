@@ -87,14 +87,9 @@ func (a *app) panelBorderFG() color.RGBA {
 }
 
 // panelShadow is what a dialog or a menu lays over the cells below and
-// to the right of it. A flat theme casts a solid one, because a box with
-// no glass in it has no light to let through either.
-func (a *app) panelShadow() color.RGBA {
-	if a.look.Set {
-		return color.RGBA{A: 0xff}
-	}
-	return shadow
-}
+// to the right of it: dark and mostly see-through, so what is behind is
+// darkened rather than covered.
+func (a *app) panelShadow() color.RGBA { return shadow }
 
 // panelDimFG is a label, a hint or a note on a dialog: the furniture's
 // own text faded towards its ground.
@@ -198,6 +193,16 @@ func (a *app) fillBG() color.RGBA {
 		return grid.Blend(a.look.SidebarBG, a.look.SidebarFG, 1, 4)
 	}
 	return grid.Blend(a.colours.BG, a.colours.ANSI[4], 1, 3)
+}
+
+// currentFG is what the row for whatever is in front is written in. The
+// sidebar's own text unless the theme named another, because the ground
+// that marks the row moves towards that text and can take it with it.
+func (a *app) currentFG() color.RGBA {
+	if a.look.Set {
+		return a.look.CurrentFG
+	}
+	return a.colours.FG
 }
 
 // currentBG marks the row for whatever is in front, lifted off the

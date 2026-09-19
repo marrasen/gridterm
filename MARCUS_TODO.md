@@ -16,11 +16,24 @@ is the best to use though.
 # Notes
 - What decides what to open on first launch? CMD/PS/WSL? Is it the last picked?
 
-# Turbo layout
-Screenshot the buttons and look at the shadows, make them look like the original
-https://winworldpc.com/res/img/screenshots/967c1c190fa98b954e706b532193194d0bac135b24e577a11cf12325aeba31cb.png
+# File viewer
+- Select and copy text
+- Color code JSON
 
-Also look at the shadow, the text behind it shows through, we could use some transparency on the shadow
+# Forms
+- Fields using dropdown should have an icon making it obvious, clicking it opens a picker
+- Select text using shift, copy, cut
 
+# All commands
+When filtering, if I type a word that matches exactly, that match should appear on top and be marked as a hit
+If I type WSL, I get lot's of hits, for instance "Write a starting keyboard shortcuts file", because it contains W, S and L
+The result I wanted is number 8 in the list, "New pane on Ubuntu (WSL)", and only S and L in WSL are marked as a search hit because "New" contains the W
 
+# Show all panes
+File browser don't always render when zooming out
+
+# Icons
+- Remotes: The "serving marcusj@" row in the sidebar has the terminal icon, it should have a remote icon instead, it's not a terminal
+- View file should have it's on icon, and maybe Follow
+- Copy and Move could use own icons as well
 

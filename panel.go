@@ -789,7 +789,7 @@ func (a *app) panelStyle() ui.ListStyle {
 	// The row for whatever is in front, marked even while the keys are
 	// somewhere else: the sidebar is the list of what is open, so it has
 	// to say which one is being looked at.
-	st.CurrentFG = a.frameFG()
+	st.CurrentFG = a.currentFG()
 	// Lifted off the list's own ground rather than the window's
 	// selection colour, so it stays darker than the mark drawn on it:
 	// the mark is what says whether the connection is open.

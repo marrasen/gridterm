@@ -35,6 +35,10 @@ type Frame struct {
 	// which is one frame in one colour all the way round the window.
 	SidebarFG string `json:"sidebarFG,omitempty"`
 	SidebarBG string `json:"sidebarBG,omitempty"`
+
+	// CurrentFG is the row on the sidebar for whatever is in front.
+	// Empty means the sidebar's own text.
+	CurrentFG string `json:"currentFG,omitempty"`
 }
 
 // Look is a Frame with its colours read, and what a window draws its
@@ -57,8 +61,10 @@ type Look struct {
 	ActiveFG, ActiveBG color.RGBA
 
 	// SidebarFG and SidebarBG are the sidebar's own colours, which are
-	// FG and BG for a theme that did not ask for others.
+	// FG and BG for a theme that did not ask for others, and CurrentFG
+	// the row for whatever is in front.
 	SidebarFG, SidebarBG color.RGBA
+	CurrentFG            color.RGBA
 }
 
 // Look reads the theme's frame block. A theme with no block gets the
@@ -104,6 +110,7 @@ func (t Theme) Look() (Look, error) {
 	// round the window unless the theme asked for the sidebar to be told
 	// apart from the menu bar.
 	l.SidebarFG, l.SidebarBG = l.FG, l.BG
+	l.CurrentFG = l.FG
 	for _, c := range []struct {
 		name string
 		raw  string
@@ -115,6 +122,7 @@ func (t Theme) Look() (Look, error) {
 		{"activeBG", f.ActiveBG, &l.ActiveBG},
 		{"sidebarFG", f.SidebarFG, &l.SidebarFG},
 		{"sidebarBG", f.SidebarBG, &l.SidebarBG},
+		{"currentFG", f.CurrentFG, &l.CurrentFG},
 	} {
 		if c.raw == "" {
 			continue

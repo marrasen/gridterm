@@ -418,15 +418,22 @@ func TestEveryThemeReads(t *testing.T) {
 						theme.Name, what, fg, bg, got, least)
 				}
 			}
-			// A button is marked by its ground alone, so that ground has
-			// to be told from the dialog it sits on.
+			// A button has to be told from the dialog it sits on, by its
+			// ground or by the shadow it casts. A theme that casts one
+			// is drawing the button the way a DOS program did, where the
+			// shadow is what marks it out and the green it sits on is
+			// close to the grey behind it.
+			least := 1.5
+			if a.buttonShadowBG().A != 0 {
+				least = 1.2
+			}
 			for what, on := range map[string]color.RGBA{
 				"a button":                 a.buttonBG(),
 				"the button Enter presses": a.activeBG(),
 			} {
-				if got := grid.Contrast(on, bg); got < 1.5 {
-					t.Errorf("%s: %s sits on %v and the dialog on %v, %.2f:1, want at least 1.5",
-						theme.Name, what, on, bg, got)
+				if got := grid.Contrast(on, bg); got < least {
+					t.Errorf("%s: %s sits on %v and the dialog on %v, %.2f:1, want at least %.1f",
+						theme.Name, what, on, bg, got, least)
 				}
 			}
 		}
@@ -719,10 +726,15 @@ func TestAThemeWithAFrameBlockGetsTheFrameItAskedFor(t *testing.T) {
 	if got := a.menubarStyle().BG; got != a.look.BG {
 		t.Errorf("the menu bar sits on %v, want the frame's own %v", got, a.look.BG)
 	}
-	// And a solid shadow, because a box with no glass in it has no light
-	// to let through either.
-	if got := a.formStyle().ShadowBG; got.A != 0xff {
-		t.Errorf("a flat dialog casts %v, want a solid shadow", got)
+	// And a shadow that darkens what is behind rather than covering it,
+	// whatever the theme.
+	if got := a.formStyle().ShadowBG; got.A == 0 || got.A == 0xff {
+		t.Errorf("a flat dialog casts %v, want a shadow that is mostly see-through", got)
+	}
+	// The shadow under a button is the other kind: it falls on the
+	// dialog itself, so it covers rather than darkens.
+	if got := a.formStyle().ButtonShadowBG; got.A != 0xff {
+		t.Errorf("a button casts %v, want a solid shadow: it falls on the dialog", got)
 	}
 }
 

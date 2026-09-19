@@ -945,18 +945,24 @@ func DrawButton(v grid.View, x, y int, title string, fg, bg color.RGBA) {
 	line.SetString(0, 0, label, fg, bg, 0)
 }
 
-// shadowHalf is the top half of a cell, which is how the shadow under a
-// button is drawn. A cell is about twice as tall as it is wide, so a
-// whole row under the button would be twice the thickness of the single
-// column beside it.
-const shadowHalf = '▀'
+// shadowUnder is the top half of a cell and shadowBeside the bottom
+// half, which is how the shadow round a button is drawn.
+//
+// A cell is about twice as tall as it is wide, so a whole cell either way
+// would be twice the thickness of the shadow measured across. Half a cell
+// each way is what Turbo Pascal drew, and it reads as one thickness all
+// the way round the corner.
+const (
+	shadowUnder  = '▀'
+	shadowBeside = '▄'
+)
 
 // DrawButtonShadow darkens the cell to the right of a button and the row
 // under it, a column further right, which is the shadow a DOS program
 // cast. A colour with no alpha draws nothing.
 //
-// ground is what the shadow is laid on, which the half-height part under
-// the button shows the rest of.
+// ground is what the shadow is laid on, which the half-height parts show
+// the rest of.
 func DrawButtonShadow(v grid.View, x, y, width int, shadow, ground color.RGBA) {
 	if shadow.A == 0 || width <= 0 {
 		return
@@ -968,12 +974,13 @@ func DrawButtonShadow(v grid.View, x, y, width int, shadow, ground color.RGBA) {
 		}
 		v.Set(x, y, cell)
 	}
-	// Beside the button, a whole cell: one column is already as thin as
-	// a shadow can be that way.
-	set(x+width, y, grid.Cell{Rune: ' ', FG: shadow, BG: shadow, Width: 1})
+	// Beside the button, the bottom half of the row, so the shadow meets
+	// the one under it at the corner rather than standing half a cell
+	// taller than it.
+	set(x+width, y, grid.Cell{Rune: shadowBeside, FG: shadow, BG: ground, Width: 1})
 	// And under it, the top half of the row only, so the shadow is the
 	// same thickness whichever way it is measured.
-	under := grid.Cell{Rune: shadowHalf, FG: shadow, BG: ground, Width: 1}
+	under := grid.Cell{Rune: shadowUnder, FG: shadow, BG: ground, Width: 1}
 	for i := 1; i <= width; i++ {
 		set(x+i, y+1, under)
 	}

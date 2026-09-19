@@ -1277,16 +1277,25 @@ func TestAButtonCastsABoxyShadow(t *testing.T) {
 		t.Fatal("no button fitted")
 	}
 	width := ButtonWidth(tf.form.buttonTitles()[0])
-	// One cell to the right of the button, on its own row.
-	if got := g.At(box.X+at[0]+width, box.Y+row).BG; got != shadowBG {
-		t.Errorf("beside the button is %v, want the shadow %v", got, shadowBG)
+	// One cell to the right of the button, on its own row, as the bottom
+	// half of the cell only: a whole cell stands half a cell taller than
+	// the shadow under the button and does not meet it at the corner.
+	beside := g.At(box.X+at[0]+width, box.Y+row)
+	if beside.Rune != shadowBeside {
+		t.Errorf("beside the button is %q, want the bottom half of the cell", beside.Rune)
+	}
+	if beside.FG != shadowBG {
+		t.Errorf("beside the button is drawn in %v, want the shadow %v", beside.FG, shadowBG)
+	}
+	if beside.BG != tf.form.Style.BG {
+		t.Errorf("beside the button sits on %v, want the dialog's own %v",
+			beside.BG, tf.form.Style.BG)
 	}
 	// And the row under it, a column further right, as the top half of
-	// the cell only: a whole row is twice the thickness of the single
-	// column beside the button.
+	// the cell only, so the two are one thickness all round the corner.
 	for i := 1; i <= width; i++ {
 		cell := g.At(box.X+at[0]+i, box.Y+row+1)
-		if cell.Rune != shadowHalf {
+		if cell.Rune != shadowUnder {
 			t.Errorf("under the button at %d is %q, want the top half of the cell", i, cell.Rune)
 		}
 		if cell.FG != shadowBG {

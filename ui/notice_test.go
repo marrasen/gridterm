@@ -729,8 +729,12 @@ func TestANoticesButtonsCastAShadowAndStillTakeAClick(t *testing.T) {
 	}
 	at := ButtonColsIn(n.buttons(), box.Cols, noticePad)
 	width := ButtonWidth(n.buttons()[0])
-	if got := g.At(box.X+at[0]+width, box.Y+row).BG; got != n.Style.ButtonShadowBG {
-		t.Errorf("beside the button is %v, want the shadow", got)
+	// The bottom half of the cell, drawn on the notice's own ground: the
+	// shadow beside a button is the same thickness as the one under it.
+	beside := g.At(box.X+at[0]+width, box.Y+row)
+	if beside.Rune != shadowBeside || beside.FG != n.Style.ButtonShadowBG {
+		t.Errorf("beside the button is %q in %v, want the bottom half of the cell in the shadow %v",
+			beside.Rune, beside.FG, n.Style.ButtonShadowBG)
 	}
 	// A click on the row the buttons moved to still presses one.
 	pressed := 0

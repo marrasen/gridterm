@@ -260,24 +260,6 @@ there is one key for position and one for recency.
 
 From Marcus's inbox, after working in a shared window.
 
-- **Closing the client kills a pane it started on the host.** Marcus
-  opened a pane on the host from the client, left the client, and the
-  pane on the host went with it. That is what the code does today:
-  `serveSession` in serve/host.go closes the session when the client's
-  channel closes, once where the client's keystrokes stop arriving
-  (:275) and again after the output copy ends (:287). For a pane the
-  client is only watching that is right, because the pane belongs to the
-  host and stays. For a pane the client started it is wrong: the shell
-  is running on the host and the user expects it to still be there.
-  Letting it live means the host keeping the session rather than the
-  channel owning it, and offering it back through `Attach` the way it
-  offers the panes it opened itself.
-
-  Marcus thought the row for such a shell was also missing. That part is
-  done: `servedshell.go` gives it a sidebar row reading "started from
-  another window". What is still open about that row is further up this
-  file: every one reads the same, so two clients cannot be told apart.
-
 - **A file copy cannot be repeated without opening a browser.** Copying
   a log, and copying the same log again later, is a thing worth doing
   twice. Marcus wants a "Remember" button on a file copy that outlives a

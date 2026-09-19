@@ -2959,3 +2959,63 @@ func openOverTheWire(t *testing.T, a *testApp, w *serve.Window, cols, rows int) 
 	t.Fatal("the window never opened anything to work in")
 	return nil
 }
+
+// Leaving a window leaves the pane it opened there running, and on offer.
+//
+// Marcus opened a pane on the host from a client, left the client, and
+// the pane on the host went with it. The shell runs on the host, so the
+// client leaving is the end of a watch and not the end of the shell, and
+// the host goes on offering it the way it offers its own panes.
+func TestLeavingAWindowLeavesThePaneItOpenedRunningThere(t *testing.T) {
+	host := newTestApp(t, 90, 30)
+	withDialogs(t, host)
+	keyFile, line := aKeyFile(t)
+	withServing(t, host, line)
+	if err := host.startServing("0", whereHere); err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+	addr := host.serving.addr()
+	hostPanes := len(host.panes)
+
+	client := newTestApp(t, 90, 30)
+	withDialogs(t, client)
+	withPanel(t, client)
+	panes := len(client.panes)
+	runFromPalette(t, client, "serve.takeOver")
+	f := awaitModal(t, client, "the Connect to another window dialog", byTitle[*ui.Form]("Connect to another window"))
+	typeIntoField(t, client, f, "Machine", addr)
+	typeIntoField(t, client, f, "Key file", keyFile)
+	pressButton(t, client, f, "Connect")
+	answer(t, client, "Connect")
+	waitFor(t, client, "the window to be taken over", func() bool {
+		return client.windows.named(addr) != nil && len(client.panes) > panes
+	}, host)
+	waitFor(t, host, "the pane the client opened here", func() bool {
+		return len(host.panes) > hostPanes
+	}, client)
+
+	if err := client.dropWindow(addr); err != nil {
+		t.Fatalf("drop: %v", err)
+	}
+	waitFor(t, host, "the serving window to see the client go", func() bool {
+		return len(host.serving.clients()) == 0
+	}, client)
+
+	if got := len(host.panes); got != hostPanes+1 {
+		t.Errorf("the host holds %d panes, want the %d it had plus the one the client opened",
+			got, hostPanes)
+	}
+	pane := paneFromAnotherWindow(t, host)
+	// Still running: a pane whose program has gone refuses a watch.
+	w, err := newWatched(pane)
+	if err != nil {
+		t.Fatalf("the shell ended when the window that opened it left: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Errorf("stop watching: %v", err)
+	}
+	// And it is on offer, so coming again picks it up.
+	if open := offeredFromAnotherWindow(t, host); open.ID == "" {
+		t.Error("the pane is not offered to a client that comes again")
+	}
+}

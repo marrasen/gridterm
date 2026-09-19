@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/marrasen/gridterm/serve"
 	"github.com/marrasen/gridterm/session"
 	"github.com/marrasen/gridterm/ui/term"
 )
@@ -173,4 +174,85 @@ func paneFromAnotherWindow(t *testing.T, a *testApp) *term.Terminal {
 		t.Fatalf("no pane says it came from another window: %v", panelText(a, time.Now()))
 	}
 	return found
+}
+
+// attachedFromAnotherWindow asks to work in something already open here,
+// the way a client does, and runs the window until the answer comes.
+func attachedFromAnotherWindow(t *testing.T, a *testApp, want serve.Attached,
+	cols, rows int) (session.Session, error) {
+	t.Helper()
+	type found struct {
+		sess session.Session
+		err  error
+	}
+	back := make(chan found, 1)
+	go func() {
+		sess, err := a.attachTo(want, cols, rows)
+		back <- found{sess: sess, err: err}
+	}()
+	deadline := time.Now().Add(waitBudget)
+	for time.Now().Before(deadline) {
+		a.pump.run()
+		select {
+		case got := <-back:
+			return got.sess, got.err
+		default:
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("the window never answered a client asking to work in something")
+	return nil, nil
+}
+
+// offeredFromAnotherWindow is the one thing on offer that says it was
+// opened from another window.
+func offeredFromAnotherWindow(t *testing.T, a *testApp) serve.Open {
+	t.Helper()
+	var found serve.Open
+	seen := 0
+	for _, open := range a.snapshot(time.Now()).Open {
+		if open.Note == servedLabel {
+			found, seen = open, seen+1
+		}
+	}
+	if seen != 1 {
+		t.Fatalf("%d things on offer say they came from another window, want the one", seen)
+	}
+	return found
+}
+
+// A pane the client opened is offered back after the client goes, so
+// coming again picks up the shell that was left running.
+//
+// This is the other half of the pane staying: a shell nobody can reach
+// again is no better than one that ended.
+func TestAPaneOpenedFromAnotherWindowIsOfferedBack(t *testing.T) {
+	a, _ := aWindowThatCanServe(t)
+	sess, err := openedFromAnotherWindow(t, a, 80, 24)
+	if err != nil {
+		t.Fatalf("open it: %v", err)
+	}
+	pane := paneFromAnotherWindow(t, a)
+
+	// The client goes, which is the server closing what it was given.
+	if err := sess.Close(); err != nil {
+		t.Fatalf("the client leaving: %v", err)
+	}
+	a.pump.run()
+	if got := pane.Watched(); got != 0 {
+		t.Fatalf("%d watchers are left on the pane after the client went", got)
+	}
+
+	// It is still on offer, and a client can work in it again.
+	open := offeredFromAnotherWindow(t, a)
+	again, err := attachedFromAnotherWindow(t, a,
+		serve.Attached{ID: open.ID, Host: open.Host, Kind: open.Kind}, 100, 40)
+	if err != nil {
+		t.Fatalf("work in it again: %v", err)
+	}
+	defer func() { _ = again.Close() }()
+
+	if got := pane.Watched(); got != 1 {
+		t.Errorf("%d watchers are on the pane, want the one that came back", got)
+	}
 }

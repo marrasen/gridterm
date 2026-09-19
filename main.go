@@ -150,6 +150,7 @@ func main() {
 	a, err := openWindow(wanted{
 		atlas:      atlas,
 		fontSize:   *fontSize,
+		sizeFixed:  named("font-size"),
 		fontFamily: family,
 		fontFixed:  *fontFiles != "" || *fontFamily != "",
 		command:    strings.Fields(*cmdline),
@@ -390,4 +391,19 @@ func startingPanes(first *term.Terminal) []ui.Widget {
 		return nil
 	}
 	return []ui.Widget{first}
+}
+
+// named reports whether a flag was given on the command line.
+//
+// Asked rather than compared against the default, because the default is
+// a real value somebody may ask for: "-font-size 14" means the size is
+// the command line's even when fourteen is what it would have been.
+func named(flagName string) bool {
+	given := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == flagName {
+			given = true
+		}
+	})
+	return given
 }

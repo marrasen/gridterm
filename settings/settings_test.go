@@ -112,7 +112,7 @@ func TestUnreadableSettingsAreNotWrittenOver(t *testing.T) {
 		{"not JSON at all", "{"},
 		{"no version", `{"servePort": 2300}`},
 		{"a newer version", `{"version": 99, "servePort": 2300}`},
-		{"a field this build does not know", `{"version": 1, "fontSize": 14}`},
+		{"a field this build does not know", `{"version": 1, "whatIsThis": 14}`},
 		{"a port that is not one", `{"version": 1, "servePort": 70000}`},
 		{"a reach that means nothing", `{"version": 1, "serveReach": "everywhere"}`},
 		{"an agent host with no name", `{"version": 1, "agentHost": ""}`},
@@ -275,7 +275,7 @@ func TestAKeyWrittenTwiceIsNamed(t *testing.T) {
 // later version.
 func TestNewerSettingsSaySoRatherThanNamingTheirNewField(t *testing.T) {
 	path := at(t)
-	const newer = `{"version": 2, "servePort": 2300, "fontSize": 14}`
+	const newer = `{"version": 2, "servePort": 2300, "whatIsThis": 14}`
 	if err := os.WriteFile(path, []byte(newer), 0o600); err != nil {
 		t.Fatalf("write the file: %v", err)
 	}

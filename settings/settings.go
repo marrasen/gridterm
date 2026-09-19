@@ -82,6 +82,9 @@ type stored struct {
 
 	// Theme is the colour theme the window is drawn in, by name.
 	Theme *string `json:"theme,omitempty"`
+
+	// FontSize is the size the text is drawn at, in points.
+	FontSize *float64 `json:"fontSize,omitempty"`
 }
 
 // SavedCommand is a command line the user asked to keep, the directory
@@ -388,6 +391,34 @@ func (s *Settings) PutTheme(name string) error {
 	}
 	before := s.have
 	s.have.Theme = &name
+	if err := s.saveLocked(); err != nil {
+		s.have = before
+		return err
+	}
+	return nil
+}
+
+// FontSize is the size the text is drawn at, in points, and whether one
+// was ever written down.
+func (s *Settings) FontSize() (float64, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.have.FontSize == nil {
+		return 0, false
+	}
+	return *s.have.FontSize, true
+}
+
+// PutFontSize remembers the size the text is drawn at, and saves.
+func (s *Settings) PutFontSize(pt float64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// The file first, for the same reason PutServe reads it first.
+	if err := s.rereadLocked(); err != nil {
+		return fmt.Errorf("%w: %w", ErrUnsaveable, err)
+	}
+	before := s.have
+	s.have.FontSize = &pt
 	if err := s.saveLocked(); err != nil {
 		s.have = before
 		return err

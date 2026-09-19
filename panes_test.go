@@ -215,6 +215,9 @@ func newTestApp(t *testing.T, cols, rows int, opts ...testOption) *testApp {
 		queue:    jobs.New(1),
 		jobs:     make(map[*conns.Entry]*jobs.Job),
 		asking:   make(map[chan jobs.Choice]func()),
+		// Nowhere to keep the font size, so a test never writes one
+		// into whoever is running it's own settings.
+		font: newFontPick(false),
 		// A clipboard of its own, holding nothing. Without this a test
 		// reads the machine's, and whatever somebody happened to copy
 		// decides whether it passes.

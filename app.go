@@ -348,8 +348,10 @@ type app struct {
 	// clipboard of whoever is running it.
 	readClip func() (string, error)
 
-	// fontSize is the current size in points.
+	// fontSize is the current size in points, and font is where that is
+	// kept between runs.
 	fontSize float64
+	font     *fontPick
 
 	// wantFont is the family the theme asked for, kept because the theme
 	// is taken before the scan of the system's fonts has finished.
@@ -674,7 +676,9 @@ func (a *app) setFontSize(pt float64) error {
 	a.lastSize = [2]int{0, 0}
 	a.resizeTo(a.lastPixels[0], a.lastPixels[1])
 	a.g.MarkAllDirty()
-	return nil
+	// Written down after the window is drawn at it, so a size that the
+	// atlas would not take is never the one remembered.
+	return a.font.choose(pt)
 }
 
 // logError reports a failure that could not be returned: the goroutines

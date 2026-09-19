@@ -28,6 +28,10 @@ type wanted struct {
 	fontSize   float64
 	fontFamily string
 
+	// sizeFixed says a size was named on the command line, which the size
+	// remembered from the last run does not override.
+	sizeFixed bool
+
 	// fontFixed says a typeface was named on the command line, which a
 	// theme does not overrule.
 	fontFixed  bool
@@ -107,7 +111,9 @@ func openWindow(w wanted) (*app, error) {
 	a.paneTitles = newPaneTitles()
 	a.keyFiles = newKeyIndex()
 	a.theme = newThemePick()
+	a.font = newFontPick(w.sizeFixed)
 	a.useSettings(openSettings())
+	a.useStartFontSize()
 	a.tunnels = make(map[*conns.Entry]*tunnel)
 	a.queue = jobs.New(0)
 	a.jobs = make(map[*conns.Entry]*jobs.Job)

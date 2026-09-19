@@ -12,17 +12,17 @@ import (
 	"github.com/marrasen/gridterm/ui/term"
 )
 
-// glowEvery is how often a border pulses, and glowFor how long one pulse
-// takes. Between pulses the border sits still, which is what lets the
-// window skip three frames in four while a pane is shared.
+// glowEvery is how long one breath of a border takes.
 //
-// A pulse rather than a glow that never stops: something moving on
-// screen is something being looked at, and a border that breathes for
-// ever is one nobody sees after a minute.
-const (
-	glowEvery = time.Second
-	glowFor   = 250 * time.Millisecond
-)
+// Slow, and the swing in glow is small. A quick bright flash once a
+// second reads as a warning rather than as a pane somebody else is in,
+// and it is hard to sit next to for an afternoon.
+//
+// Nothing rests any more, and the window still skips most frames: the
+// swing is small enough that the colour it works out lands on the same
+// byte for several frames together, and a cell that did not change is
+// not drawn.
+const glowEvery = 3 * time.Second
 
 // sharing is who has a pane besides the user.
 type sharing struct {
@@ -138,22 +138,16 @@ func (m *sharedMark) place(area ui.Rect, src *render.Geometry, met glyph.Metrics
 	m.layer.Hidden = false
 }
 
-// glowAt is how far into a pulse a moment is: 0 at rest, 1 at the top,
-// and back to 0. Taken from the clock so every border on screen pulses
-// together.
+// glowAt is how far into a breath a moment is: 0 at the bottom, 1 at the
+// top, and back to 0. Taken from the clock so every border on screen
+// breathes together.
 //
-// It is exactly 0 for most of each period, and the border drawn from it
-// is then the same as the frame before, which is what the compositor
-// reads as nothing to do.
+// A cosine over the whole period, so it starts and ends at the bottom
+// with no corner anywhere: a border that snapped would read as a flash.
 func glowAt(now time.Time) float64 {
-	into := now.UnixMilli() % int64(glowEvery/time.Millisecond)
-	fade := int64(glowFor / time.Millisecond)
-	if into >= fade {
-		return 0
-	}
-	// Up and back down over the pulse, on a curve rather than a corner:
-	// a border that snapped to bright would read as a flicker.
-	return math.Sin(float64(into) / float64(fade) * math.Pi)
+	period := float64(glowEvery / time.Millisecond)
+	turn := float64(now.UnixMilli()%int64(period)) / period
+	return (1 - math.Cos(turn*2*math.Pi)) / 2
 }
 
 // draw gives the rules their colours, outermost first.
@@ -172,11 +166,14 @@ func (m *sharedMark) draw(hues [2]color.RGBA) {
 	}
 }
 
-// glow sets a border colour's alpha for a moment in the pulse, stopping
-// short of both ends so the border never goes out and never turns into
-// a solid block.
+// glow sets a border colour's alpha for a moment in the breath.
+//
+// The two ends are close together and both well short of solid. The
+// border is there to say somebody else is in this pane, and it says that
+// by being there: the breath is only what stops it reading as part of
+// the furniture.
 func glow(c color.RGBA, at float64) color.RGBA {
-	const dim, bright = 0x50, 0xd0
+	const dim, bright = 0x70, 0x90
 	c.A = uint8(dim + int(float64(bright-dim)*at+0.5))
 	return c
 }

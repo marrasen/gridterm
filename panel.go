@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"image/color"
 	"io"
-	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -45,13 +44,9 @@ func icon(k conns.Kind) grid.Art {
 	return grid.Icon(grid.IconTerminal)
 }
 
-// pulseEvery is how often a busy row pulses, and pulseFor how long one
-// pulse takes. Between pulses the row sits still, which is what lets the
-// window skip three frames in four while something is busy.
-const (
-	pulseEvery = time.Second
-	pulseFor   = 250 * time.Millisecond
-)
+// pulseEvery is how long one breath of a busy row takes. The same as a
+// border's, so the two things moving on screen move together.
+const pulseEvery = glowEvery
 
 // newPanel builds the list of connections, in the window's colours.
 //
@@ -80,36 +75,33 @@ func (a *app) stateFG(state meter.State, now time.Time) color.RGBA {
 	return green
 }
 
-// pulse moves between two colours in steps, resting on neither.
+// pulse moves a mark a little way towards the busy colour and back.
 //
-// The step comes from the time passed in rather than from a count, so
-// every row pulsing at once is in time with the rest and a row that
-// stops being busy simply stops moving. It never reaches either end: a
-// mark resting on the steady colour could not be told from a row that is
-// only sitting there.
+// Where in the breath it is comes from the time passed in rather than
+// from a count, so every row breathing at once is in time with the rest
+// and a row that stops being busy simply stops moving.
 func pulse(from, to color.RGBA, now time.Time) color.RGBA {
 	const of = 1 << 10
-	return grid.Blend(from, to, int(pulseAt(now)*of)+1, of+2)
+	return grid.Blend(from, to, int(pulseAt(now)*of), of)
 }
 
-// pulseAt is how far into a pulse a moment is: pulseRest between
-// pulses, 1 at the top of one, and back again.
-//
-// It holds exactly still between pulses, so the row is drawn the same as
-// the frame before and the window can skip that frame.
+// pulseAt is how far towards the busy colour a mark sits at a moment:
+// pulseLow at the bottom of a breath, pulseHigh at the top.
 func pulseAt(now time.Time) float64 {
-	into := now.UnixMilli() % int64(pulseEvery/time.Millisecond)
-	fade := int64(pulseFor / time.Millisecond)
-	if into >= fade {
-		return pulseRest
-	}
-	return pulseRest + (1-pulseRest)*math.Sin(float64(into)/float64(fade)*math.Pi)
+	return pulseLow + (pulseHigh-pulseLow)*glowAt(now)
 }
 
-// pulseRest is how far towards the busy colour a mark sits between
-// pulses. Never nothing: a mark resting on the steady colour could not
-// be told from a row that is only sitting there.
-const pulseRest = 1.0 / 6.0
+// pulseLow and pulseHigh are the two ends of that breath.
+//
+// Both a long way short of the busy colour, and close together. A mark
+// that reached the bright colour once a second was a blink, and a blink
+// beside the text somebody is reading is the sort of thing that gives
+// people headaches. It never reaches the steady colour either: a mark
+// resting on that could not be told from a row only sitting there.
+const (
+	pulseLow  = 1.0 / 16.0
+	pulseHigh = 1.0 / 4.0
+)
 
 // sidebarTop and sidebarFoot are the two ends of the ground the window's
 // frame is drawn on: the sidebar shades between them down its length,

@@ -156,6 +156,10 @@ func onlyPane(t *testing.T, a *testApp) *conns.Entry {
 }
 
 // A pane that opens gets a row, under the machine it is running on.
+// pulseRise is how long a busy row's mark takes to go from the bottom of
+// a breath to the top.
+const pulseRise = pulseEvery / 2
+
 func TestPanelShowsTheShellThatIsOpen(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withPanel(t, a)
@@ -195,7 +199,7 @@ func TestPanelShowsTheFourStates(t *testing.T) {
 	}
 	var moved bool
 	for step := range 8 {
-		at := panelNow.Add(time.Duration(step) * pulseFor / 8)
+		at := panelNow.Add(time.Duration(step) * pulseRise / 8)
 		if panelMarks(a, at)[0] != busy {
 			moved = true
 		}
@@ -378,7 +382,7 @@ func TestThePulseMovesOnlyTheActiveRowsIcon(t *testing.T) {
 	}
 
 	before := snap(panelNow)
-	after := snap(panelNow.Add(pulseFor / 2))
+	after := snap(panelNow.Add(pulseRise / 2))
 
 	area, _ := sideArea(a)
 	want := [2]int{area.X + 2, area.Y + row}

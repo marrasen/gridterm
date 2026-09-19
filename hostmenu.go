@@ -320,10 +320,9 @@ func (a *app) rowAnchor(key any) func() ui.Rect {
 			// itself is still the right thing to point at.
 			return area
 		}
-		// Past the sidebar rather than at the plus, so the menu reaches out
-		// over whatever is beside it and clears the gap the window leaves
-		// after the sidebar's last column. A menu that started before that
-		// gap would have it running down the inside of its own border.
+		// Past the sidebar rather than at the plus, so the menu reaches
+		// out over whatever is beside it rather than down the sidebar's
+		// own width.
 		return ui.Rect{X: area.X + area.Cols, Y: a.windowRow(y), Cols: 1, Rows: 1}
 	}
 }

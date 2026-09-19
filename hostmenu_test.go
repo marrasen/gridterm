@@ -646,25 +646,20 @@ func refuseFromThePalette(t *testing.T, a *testApp, menu *ui.Menu, id, want stri
 	}
 }
 
-// A menu from a sidebar row opens past the gap the window leaves after
-// the sidebar. A menu that started before the gap would have it running
-// down the inside of its own border, breaking every line of text and
-// every rule across it.
-func TestAMenuFromASidebarRowClearsTheGapBesideIt(t *testing.T) {
+// A menu from a sidebar row opens past the sidebar, so it reaches out
+// over whatever is beside it rather than down the sidebar's own width.
+func TestAMenuFromASidebarRowOpensPastTheSidebar(t *testing.T) {
 	a, _ := aConnectedMachine(t)
 	a.applyPads()
-	edge, ok := a.sidebarEdge()
+	area, ok := a.dock.ChildArea(a.side)
 	if !ok {
-		t.Fatal("the window leaves no gap after the sidebar, so this proves nothing")
-	}
-	if a.g.ColPad(edge).After == 0 {
-		t.Fatalf("column %d has no padding after it, so this proves nothing", edge)
+		t.Fatal("the sidebar has no room, so this proves nothing")
 	}
 
 	box := clickPlus(t, a, "margit").Box()
 
-	if box.X <= edge {
-		t.Errorf("the menu covers columns %d..%d, and the gap after column %d falls inside it",
-			box.X, box.X+box.Cols-1, edge)
+	if box.X < area.X+area.Cols {
+		t.Errorf("the menu covers columns %d..%d, and the sidebar ends at column %d",
+			box.X, box.X+box.Cols-1, area.X+area.Cols-1)
 	}
 }

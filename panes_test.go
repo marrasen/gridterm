@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"image"
 	"io"
 	"math/rand"
 	"path/filepath"
@@ -214,6 +215,11 @@ func newTestApp(t *testing.T, cols, rows int, opts ...testOption) *testApp {
 		queue:    jobs.New(1),
 		jobs:     make(map[*conns.Entry]*jobs.Job),
 		asking:   make(map[chan jobs.Choice]func()),
+		// A clipboard of its own, holding nothing. Without this a test
+		// reads the machine's, and whatever somebody happened to copy
+		// decides whether it passes.
+		hasClipText:   func() bool { return false },
+		readClipImage: func() (image.Image, bool, error) { return nil, false, nil },
 	}}
 	// Set before anything runs, because a window logs from the goroutines
 	// it starts and a test that pointed onError at its own collector
@@ -1868,6 +1874,7 @@ func TestAClipboardThatCannotBeReadSaysSo(t *testing.T) {
 	a.commands()
 
 	boom := errors.New("xclip is not installed")
+	a.hasClipText = func() bool { return true }
 	a.readClip = func() (string, error) { return "", boom }
 
 	if _, err := a.root.HandleKey(press(input.KeyV, input.ModCtrl|input.ModShift)); err != nil {
@@ -1892,6 +1899,7 @@ func TestAClipboardThatCanBeReadIsPasted(t *testing.T) {
 	a := newTestApp(t, 60, 20)
 	withDialogs(t, a)
 	a.commands()
+	a.hasClipText = func() bool { return true }
 	a.readClip = func() (string, error) { return "uptime", nil }
 
 	if _, err := a.root.HandleKey(press(input.KeyV, input.ModCtrl|input.ModShift)); err != nil {

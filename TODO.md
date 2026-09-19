@@ -209,6 +209,20 @@ picture sent to the clipboard of a gridterm taken over, and a file
 written on a machine reached by SSH. `edit.pasteImage` on Ctrl+Alt+V
 asks for a file wherever the pane is and types the path. What is left:
 
+- **Pasting a picture from a client did nothing.** Marcus pasted a
+  screenshot into a pane he was working in from another window on
+  2026-09-19, and nothing happened at all: no picture, no file, no word
+  about why. Pasting it as a file worked. Not diagnosed. The picture
+  goes to the clipboard of the window being served, down the
+  `clipboard@gridterm` channel, and something on that path is silent.
+
+- **Nothing says a pasted picture is on its way.** A screenshot is
+  megabytes and the write takes a moment, and until it lands there is
+  nothing on screen to say anything is happening. Marcus asked for an
+  indication. It wants to say which of the two routes it took as well:
+  a picture sent to a window's clipboard, or a file written on a machine
+  reached by SSH.
+
 - **Only Windows reads a picture off the clipboard.** Everywhere else
   the command says there is none. Linux and macOS each need their own
   reader.
@@ -392,22 +406,6 @@ From Marcus's inbox, after working in a shared window.
   full path, which stops a key landing wherever gridterm was started,
   and that is the whole of what it can do. Refusing a path outside the
   user's own profile would be the next step.
-
-- **The gap beside the sidebar still runs through any dialog wide enough
-  to cross it.** The window leaves half a cell after the sidebar's last
-  column, and every modal grid is given the same padding so the two
-  agree about where a column sits. A dialog whose box spans that column
-  therefore has the gap running down the inside of it, breaking every
-  line of text across it. The menu from a sidebar row now opens past the
-  gap, which was the case in the report, but the File menu, the palette,
-  the chooser and any wide form still cross it. Selected rows and rules
-  hide it, because a background covers the padding and a line reaches
-  across it; plain text does not.
-  The fix is for modal grids not to carry that gap at all. What stops it
-  being a one-liner is the mouse: a pixel becomes a column through one
-  geometry, the window's, so a dialog whose columns sat elsewhere would
-  take a click on the wrong one. The frost would have to be measured
-  from the modal layer's own geometry too.
 
 - **The keyboard shortcuts file is read once, at startup.** Colour
   themes have a "Reload", and this does not. Applying the changes again

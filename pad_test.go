@@ -29,8 +29,8 @@ func padded(g *grid.Grid) []int {
 	return out
 }
 
-// The window has a margin down each side, the menu bar has room above
-// and below it, and the sidebar has a gap before the divider.
+// The window has a margin down each side and the menu bar has room
+// above and below it, and nothing in the middle of a row is padded.
 func TestTheWindowPadsItsOwnFurniture(t *testing.T) {
 	a := newTestApp(t, 60, 20)
 	withPanel(t, a)
@@ -45,39 +45,37 @@ func TestTheWindowPadsItsOwnFurniture(t *testing.T) {
 	if got := a.g.RowPad(0); got != (grid.Pad{Before: barPad, After: barPad}) {
 		t.Errorf("the menu bar's row has %+v", got)
 	}
-	area, ok := a.dock.ChildArea(a.side)
-	if !ok {
-		t.Fatal("the sidebar has no room, so there is nothing to pad")
-	}
-	edge := area.X + area.Cols - 1
-	if got := a.g.ColPad(edge); got.After != sidePad {
-		t.Errorf("the sidebar's last column %d has %+v, want a gap of %d",
-			edge, got, sidePad)
-	}
-}
-
-// Closing the sidebar takes its gap away and leaves the window's own
-// margins where they were.
-func TestClosingTheSidebarTakesItsGapAway(t *testing.T) {
-	a := newTestApp(t, 60, 20)
-	withPanel(t, a)
-	a.padGrid(a.g)
-	area, _ := a.dock.ChildArea(a.side)
-	edge := area.X + area.Cols - 1
-
-	a.dock.ShowPanel(false)
-	a.padGrid(a.g)
-
-	if got := a.g.ColPad(edge); !got.Empty() {
-		t.Errorf("column %d still has %+v with the sidebar closed", edge, got)
-	}
 	if got := padded(a.g); len(got) != 2 || got[0] != 0 || got[1] != 59 {
 		t.Errorf("padded columns are %v, want only the two edges", got)
 	}
 }
 
-// The room the padding needs follows nothing but whether the sidebar is
-// meant to be open.
+// No column in the middle of a row is padded, whether the sidebar is
+// open or shut.
+//
+// A column with room after it splits every line of text that crosses it,
+// and the menu bar, a menu, a dialog and the palette all cross the width
+// of the window. The window used to leave half a cell after the
+// sidebar's last column, and the gap ran down the inside of anything
+// wide enough to reach it.
+func TestNothingInTheMiddleOfARowIsPadded(t *testing.T) {
+	a := newTestApp(t, 60, 20)
+	withPanel(t, a)
+
+	for _, open := range []bool{true, false} {
+		a.dock.ShowPanel(open)
+		a.padGrid(a.g)
+
+		for _, at := range padded(a.g) {
+			if at != 0 && at != 59 {
+				t.Errorf("with the sidebar open=%v, column %d has %+v and is not an edge",
+					open, at, a.g.ColPad(at))
+			}
+		}
+	}
+}
+
+// The room the padding needs is the same whatever the layout does.
 //
 // The grid size is worked out from it, and the sidebar is dropped when
 // the window is too narrow for one. A total that followed the layout
@@ -103,16 +101,16 @@ func TestTheRoomPaddingNeedsDoesNotFollowTheLayout(t *testing.T) {
 }
 
 // Room set aside and then left unused would leave a strip of the window
-// with no cell to paint it, so a sidebar with nowhere to go hands its
-// gap to the window's right margin.
-func TestASidebarWithNoRoomGivesItsGapToTheMargin(t *testing.T) {
+// with no cell to paint it, so every quarter the padding asks for is
+// placed, whatever the layout did with the sidebar.
+func TestEveryQuarterSetAsideIsPlaced(t *testing.T) {
 	a := newTestApp(t, 60, 20)
 	withPanel(t, a)
 	a.root.Layout(ui.Rect{Cols: 14, Rows: 20})
 	a.g.Resize(14, 20)
 	a.padGrid(a.g)
 
-	want := 2*edgePad + sidePad
+	want, _ := a.padsWanted()
 	got := 0
 	for _, p := range colPads(a.g) {
 		got += int(p.Before) + int(p.After)
@@ -120,13 +118,10 @@ func TestASidebarWithNoRoomGivesItsGapToTheMargin(t *testing.T) {
 	if got != want {
 		t.Errorf("the grid was padded by %d quarters, want the %d set aside", got, want)
 	}
-	// Split between the two margins rather than given to the right,
-	// which would leave the window lopsided at the width where the
-	// sidebar drops out.
+	// Both margins the same, so the window is not lopsided.
 	left, right := a.g.ColPad(0).Before, a.g.ColPad(13).After
-	if int(left) <= edgePad || int(right) <= edgePad {
-		t.Errorf("the margins are %d and %d quarters, want the gap shared between them",
-			left, right)
+	if left != right {
+		t.Errorf("the margins are %d and %d quarters, want them even", left, right)
 	}
 }
 

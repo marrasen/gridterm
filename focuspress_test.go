@@ -412,6 +412,7 @@ func TestAMiddlePressOnAPaneWithoutTheKeysPastes(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withPanel(t, a)
 	pane := onlyPaneOn(t, a)
+	a.hasClipText = func() bool { return true }
 	a.readClip = func() (string, error) { return "uptime", nil }
 	if err := a.focusPanel(); err != nil {
 		t.Fatalf("focus the sidebar: %v", err)

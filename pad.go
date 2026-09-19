@@ -15,26 +15,12 @@ const (
 
 	// barPad is the room above and below the menu bar's titles.
 	barPad = 1
-
-	// sidePad is the gap between the sidebar and the divider beside it.
-	sidePad = 2
 )
 
 // padsWanted is how much room the window's padding needs, in quarters
 // of a cell each way.
-//
-// It follows nothing but whether the sidebar is meant to be open. The
-// grid size is worked out from it, and the sidebar is dropped when the
-// window is too narrow for one, so a total that followed the layout
-// could take away the column that made the sidebar fit, put it back the
-// next frame, and flicker between the two for as long as the window
-// stayed that width.
 func (a *app) padsWanted() (padX, padY int) {
-	padX = 2 * edgePad
-	if a.sidebarWanted() {
-		padX += sidePad
-	}
-	return padX, 2 * barPad
+	return 2 * edgePad, 2 * barPad
 }
 
 // applyPads places the window's padding, and works the grid size out
@@ -63,14 +49,12 @@ func (a *app) padGrids() {
 }
 
 // padGrid gives one grid the window's padding: a margin down each side,
-// room above and below the menu bar, and a gap between the sidebar and
-// the divider.
+// and room above and below the menu bar.
 //
-// The sidebar's gap goes on the last of its columns when the sidebar is
-// drawn, and on the window's right margin when it is not. It is counted
-// into the grid size either way, so it is placed either way: room set
-// aside and then left unused would leave a strip of the window with no
-// cell to paint it.
+// Both margins are at the very edge of the grid. Nothing is padded in
+// the middle of a row: a column with room after it splits every line of
+// text that crosses it, and the menu bar, a menu, a dialog and the
+// palette all cross the width of the window.
 func (a *app) padGrid(g *grid.Grid) {
 	cols, rows := g.Size()
 	if cols <= 0 {
@@ -79,17 +63,6 @@ func (a *app) padGrid(g *grid.Grid) {
 	var want padTable
 	want.add(0, grid.Pad{Before: edgePad})
 	want.add(cols-1, grid.Pad{After: edgePad})
-	switch at, ok := a.sidebarEdge(); {
-	case ok:
-		want.add(at, grid.Pad{After: sidePad})
-	case a.sidebarWanted():
-		// There is no sidebar to sit beside, so the gap set aside for
-		// one widens both margins. Split between them rather than given
-		// to the right, which would leave the window lopsided at the
-		// width where the sidebar drops out.
-		want.add(0, grid.Pad{Before: sidePad / 2})
-		want.add(cols-1, grid.Pad{After: sidePad - sidePad/2})
-	}
 	want.apply(cols, g.ColPads(), g.SetColPad)
 
 	if rows > 0 {
@@ -97,25 +70,6 @@ func (a *app) padGrid(g *grid.Grid) {
 		barRow.add(0, grid.Pad{Before: barPad, After: barPad})
 		barRow.apply(rows, g.RowPads(), g.SetRowPad)
 	}
-}
-
-// sidebarWanted reports whether the sidebar is meant to be open, which
-// is what the room for its gap is set aside by.
-func (a *app) sidebarWanted() bool {
-	return a.dock != nil && !a.dock.Collapsed && a.side != nil
-}
-
-// sidebarEdge is the last of the sidebar's columns, and whether the
-// sidebar is drawn at all. A window too narrow for one has none.
-func (a *app) sidebarEdge() (int, bool) {
-	if !a.sidebarWanted() {
-		return 0, false
-	}
-	area, ok := a.dock.ChildArea(a.side)
-	if !ok || area.Cols <= 0 {
-		return 0, false
-	}
-	return area.X + area.Cols - 1, true
 }
 
 // padEntry is padding asked for on one column or row.

@@ -1766,3 +1766,30 @@ func TestTheIconIsDrawnOnTheRow(t *testing.T) {
 		t.Fatal("no cell of the sidebar carries the terminal picture")
 	}
 }
+
+// Building the sidebar again asks the heap for nothing.
+//
+// It is built again every frame, because most of what a row says moves
+// on its own: a rate, how far a job has got, how long ago something
+// settled, the glow on a shared pane. So the work stays and the garbage
+// goes -- the slices and maps it is built in are the ones last frame
+// used.
+func TestBuildingTheSidebarAsksTheHeapForNothing(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	for i := 0; i < 4; i++ {
+		if err := a.openPane(); err != nil {
+			t.Fatalf("open a pane: %v", err)
+		}
+	}
+	// A few times first, so every buffer has grown to the size it needs.
+	for i := 0; i < 4; i++ {
+		a.refreshPanel(panelNow)
+	}
+
+	got := testing.AllocsPerRun(20, func() { a.refreshPanel(panelNow) })
+
+	if got != 0 {
+		t.Errorf("building the sidebar allocated %v times, want none", got)
+	}
+}

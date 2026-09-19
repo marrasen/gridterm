@@ -254,18 +254,44 @@ func (a *app) refreshPanel(now time.Time) {
 
 	// What is still open, so a rate belonging to something that has gone
 	// is not kept for the life of the window.
-	live := make(map[*conns.Entry]bool, len(a.rates))
+	live := a.liveRows
+	if live == nil {
+		live = make(map[*conns.Entry]bool, len(a.rates))
+		a.liveRows = live
+	}
+	clear(live)
 
-	open := map[string][]conns.Row{}
-	for _, group := range a.registry.Groups(now) {
-		open[group.Host] = group.Rows
+	open := a.openRows
+	if open == nil {
+		open = map[string][]conns.Row{}
+		a.openRows = open
+	}
+	// Emptied rather than thrown away, so each machine's rows go back
+	// into the slice they were in last frame.
+	for host := range open {
+		open[host] = open[host][:0]
+	}
+	a.registry.Each(func(e *conns.Entry) bool {
+		open[e.Host] = append(open[e.Host], conns.Row{Entry: e, State: e.State(now)})
+		return true
+	})
+	// A machine with nothing left open keeps an empty slice, which
+	// hosts() would list as a machine. Taken out by name here rather
+	// than there: hosts() is asked from elsewhere too.
+	for host, rows := range open {
+		if len(rows) == 0 && host != conns.Local {
+			delete(open, host)
+		}
 	}
 
 	// Which of this window's rows are on a machine of a window taken
 	// over, worked out once for the whole sidebar.
-	far := a.farRows()
+	if a.farBy == nil {
+		a.farBy = map[*conns.Entry]remoteHostKey{}
+	}
+	far := a.farRows(a.farBy)
 
-	var rows []ui.ListRow
+	rows := a.rowBuf[:0]
 	for _, host := range a.hosts(open) {
 		// Once per heading, and handed down: every row of the heading
 		// asks the same questions about the same name.
@@ -301,6 +327,7 @@ func (a *app) refreshPanel(now time.Time) {
 			delete(a.rates, e)
 		}
 	}
+	a.rowBuf = rows
 	a.panel.SetRows(rows)
 	// Which row is in front, told to the list rather than left to the
 	// bar: the bar is the user's and moves where they put it.
@@ -315,8 +342,13 @@ func (a *app) refreshPanel(now time.Time) {
 // A saved server is listed before anything is connected to it. That is
 // how it is reached: the plus beside its name opens the connection.
 func (a *app) hosts(open map[string][]conns.Row) []string {
-	out := []string{conns.Local}
-	seen := map[string]bool{conns.Local: true}
+	if a.hostSeen == nil {
+		a.hostSeen = map[string]bool{}
+	}
+	clear(a.hostSeen)
+	seen := a.hostSeen
+	out := append(a.hostList[:0], conns.Local)
+	seen[conns.Local] = true
 	// Names rather than Hosts: this runs every frame, and cloning every
 	// saved machine and its key files to read the names off them is work
 	// for nothing.
@@ -330,7 +362,7 @@ func (a *app) hosts(open map[string][]conns.Row) []string {
 	// Then whatever is open that the book does not name. Sorted, because
 	// they come out of a map and an order that changed every frame would
 	// shuffle the sidebar under the user.
-	var rest []string
+	rest := a.restList[:0]
 	for host := range open {
 		if seen[host] {
 			continue
@@ -339,7 +371,10 @@ func (a *app) hosts(open map[string][]conns.Row) []string {
 		rest = append(rest, host)
 	}
 	sort.Strings(rest)
-	return append(out, rest...)
+	a.restList = rest
+	out = append(out, rest...)
+	a.hostList = out
+	return out
 }
 
 // allHosts is every machine the window knows about, in the order the

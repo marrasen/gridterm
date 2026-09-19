@@ -487,6 +487,21 @@ The file an SSH pane gets goes under the home directory of whoever the
 connection logs in as, because where a temporary directory is depends on
 the machine and this has only a path separator to go on.
 
+**The sidebar is built again every frame, and costs nothing to build.**
+Marcus asked for it to be built only when something changes. Most of
+what a row says changes on its own -- a rate, how far a job has got, how
+long ago something settled, the glow on a shared pane -- so a test for
+"has anything changed" would have to work out nearly everything the
+rebuild works out. What was worth taking away was the garbage, not the
+work: `refreshPanel` builds into slices and maps the last frame used,
+`Registry.Each` walks the list without building a group and a slice of
+rows per machine, and `TestBuildingTheSidebarAsksTheHeapForNothing`
+holds it at nothing.
+
+Redrawing was never the problem. The list draws through a `ui.buffer`,
+so a rebuild that comes out the same dirties no row and the frame is
+skipped anyway.
+
 **Idle costs nothing; moving costs a whole frame.** Marcus settled this
 on 2026-09-19. There are two savings worth making and one that is not:
 

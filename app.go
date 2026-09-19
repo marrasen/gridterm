@@ -177,6 +177,20 @@ type app struct {
 	// under it.
 	pointerGone bool
 
+	// The sidebar is built again every frame, because most of what a row
+	// says moves on its own: a rate, a job's progress, how long ago
+	// something settled. So it is built in these rather than in
+	// something new each time. They hold last frame's answer until the
+	// next one overwrites it, and nothing outside refreshPanel reads
+	// them.
+	openRows map[string][]conns.Row
+	hostList []string
+	hostSeen map[string]bool
+	restList []string
+	farBy    map[*conns.Entry]remoteHostKey
+	rowBuf   []ui.ListRow
+	liveRows map[*conns.Entry]bool
+
 	// paneRows are the rows that stand for a pane of this window, worked
 	// out once a frame.
 	paneRows map[*conns.Entry]*term.Terminal

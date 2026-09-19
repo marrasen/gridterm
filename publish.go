@@ -283,8 +283,11 @@ func stateNamed(said string) meter.State {
 // Worked out once a frame and handed down. The sidebar asks about every
 // row it draws, and asking a window what it has open takes a copy under
 // a lock.
-func (a *app) farRows() map[*conns.Entry]remoteHostKey {
-	out := map[*conns.Entry]remoteHostKey{}
+//
+// It fills a map the caller keeps rather than making one: the sidebar
+// asks once a frame, and a map a frame is a map a frame for nothing.
+func (a *app) farRows(out map[*conns.Entry]remoteHostKey) map[*conns.Entry]remoteHostKey {
+	clear(out)
 	if b := a.files; b != nil {
 		for p, key := range b.far {
 			if row := b.rows[p]; row != nil && !isTheirOwn(key.host) {

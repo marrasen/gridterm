@@ -270,12 +270,14 @@ skills from, and says where it went; `gridterm -mcp-skill` prints the
 same file. "Stop sharing" ends the share and the code stops working, and
 so does taking the last pane out.
 
-Serving this window and taking over another are on the menu rather than
-on a key: "Serve this window…" asks for the port and says the
-fingerprint to check, and "Connect to another window…" asks for the address and
-the key to offer. Nothing listens until you ask it to, and the keys
-allowed in are the ones you list in an `authorized_keys` file in
-gridterm's own directory, not the one in `~/.ssh`.
+Serving this window and connecting to another are on the menu rather
+than on a key: "Serve this window…" asks for the port and says the
+fingerprint to check, and "Connect to another window…" asks for the
+address and the key to offer. Connecting opens nothing over there: what
+that window has open lands on the sidebar under its name, and the plus
+on that heading opens a pane on it. Nothing listens until you ask it to,
+and the keys allowed in are the ones you list in an `authorized_keys`
+file in gridterm's own directory, not the one in `~/.ssh`.
 
 gridterm keeps its files where the operating system puts a program's.
 Make a directory called `gridterm-files` beside `gridterm.exe` and it

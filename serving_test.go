@@ -815,7 +815,7 @@ func aRelayedWindow(t *testing.T) (client *testApp, addr string, relay *blackHol
 	withDialogs(t, client)
 	withPanel(t, client)
 	panes := len(client.panes)
-	if err := client.takeOver(addr, keyFile, nil); err != nil {
+	if err := client.takeOver(addr, keyFile, nil, true); err != nil {
 		t.Fatalf("take over: %v", err)
 	}
 	answer(t, client, "Connect")

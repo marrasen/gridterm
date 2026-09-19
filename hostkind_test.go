@@ -377,12 +377,12 @@ func TestLettingGoOfAWindowSavedAfterTakeOverClosesIt(t *testing.T) {
 // The dialog went straight to the code that takes a window over, which
 // refuses one it already holds, so the answer to "work on that window"
 // was a complaint.
-func TestTheTakeOverDialogOnAHeldWindowOpensATerminal(t *testing.T) {
+func TestTheConnectDialogOnAWindowAlreadyConnectedSaysSo(t *testing.T) {
 	_, client, addr, keyFile := aServingWindow(t)
 	if err := client.workOnWindow(addr, keyFile, nil); err != nil {
 		t.Fatalf("take it over: %v", err)
 	}
-	waitFor(t, client, "the window to be taken over", func() bool {
+	waitFor(t, client, "the window to be connected to", func() bool {
 		return client.windows.named(addr) != nil
 	})
 	panes := len(client.panes)
@@ -394,9 +394,18 @@ func TestTheTakeOverDialogOnAHeldWindowOpensATerminal(t *testing.T) {
 	typeIntoField(t, client, f, "Key file", keyFile)
 	pressButton(t, client, f, "Connect")
 
-	waitFor(t, client, "another pane on the window", func() bool {
-		return len(client.panes) > panes
-	})
+	// It says so rather than connecting again or opening anything. What
+	// that window has open is on the sidebar to open from.
+	err := f.Error()
+	if err == nil {
+		t.Fatal("the dialog said nothing about a window it is already connected to")
+	}
+	if !strings.Contains(err.Error(), "already connected") {
+		t.Errorf("it said %q, want it to say the window is already connected to", err)
+	}
+	if got := len(client.panes); got != panes {
+		t.Errorf("it opened %d panes, want none", got-panes)
+	}
 	if n := client.windows.count(); n != 1 {
 		t.Errorf("it is holding %v, want the one window", client.windows.names())
 	}
@@ -672,6 +681,10 @@ func waysIn() []wayIn {
 // The table is the user-facing net rather than a test of one guard. Two
 // guards stand behind it -- openTerminalOn, and openRoute for the ways
 // in that build a route -- and a row passes when either holds.
+// connectOnly is the one way in that asks only to connect. It opens
+// nothing on the window, which is what connecting means.
+const connectOnly = "take over a window, by address"
+
 func TestEveryWayInTakesOverASavedWindow(t *testing.T) {
 	ways := append(waysIn(), wayIn{
 		"take over a window, by address",
@@ -708,9 +721,13 @@ func TestEveryWayInTakesOverASavedWindow(t *testing.T) {
 			if n := client.machines.count(); n != 0 {
 				t.Errorf("it is holding %v as machines", client.machines.names())
 			}
-			waitFor(t, client, "a pane drawn from the window", func() bool {
-				return client.windows.drawn() > 0
-			})
+			if way.name != connectOnly {
+				// Every way in but the Connect dialog asks for a
+				// terminal on the window, and gets one.
+				waitFor(t, client, "a pane drawn from the window", func() bool {
+					return client.windows.drawn() > 0
+				})
+			}
 			if n := client.windows.count(); n != 1 {
 				t.Errorf("it is holding %v, want the one window", client.windows.names())
 			}

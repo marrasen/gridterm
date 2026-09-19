@@ -218,6 +218,20 @@ func (c *connLog) Connected() {
 	c.end()
 }
 
+// Reached says the window was connected to and nothing was opened on it.
+//
+// Nothing more will be written, and closing the pane lets go of the
+// account rather than giving up on the connection under it.
+func (c *connLog) Reached(name string) {
+	c.write("")
+	c.note(name + " is connected. Nothing was opened on it: what it has")
+	c.note("open is on the sidebar, and the plus on its heading opens a")
+	c.note("pane there.")
+	c.write("")
+	c.note("Close this pane when you have read the account.")
+	c.Connected()
+}
+
 // GaveUp says the user gave up on the connection.
 func (c *connLog) GaveUp() {
 	c.sayBadly("given up on")

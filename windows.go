@@ -406,10 +406,10 @@ func (a *app) openTakeOver() error {
 	key := f.AddField("Key file", a.newField("optional, or the agent's keys", 0))
 
 	f.AddButton(ui.Button{Title: "Connect", Do: func() error {
-		// Through workOnWindow, so typing the address of a window this
-		// one already holds gives a terminal on it rather than the
-		// complaint that it has been taken over.
-		return a.workOnWindow(strings.TrimSpace(addr.Text()), strings.TrimSpace(key.Text()), nil)
+		// Connecting, and nothing more. What that window has open lands
+		// on the sidebar, and a pane on it is asked for from the plus on
+		// its heading.
+		return a.takeOver(strings.TrimSpace(addr.Text()), strings.TrimSpace(key.Text()), nil, false)
 	}})
 	f.AddButton(ui.Button{Title: "Cancel"})
 	a.showForm(f, nil)
@@ -421,9 +421,11 @@ func (a *app) openTakeOver() error {
 // The work happens on a goroutine of its own: reaching a machine can
 // stop to ask for a passphrase, or to ask whether its key is the one
 // expected, and neither can be answered by the goroutine that draws.
-func (a *app) takeOver(addr, keyFile string, at *spot) error {
+// open says to open a pane on the window once it answers, which is what
+// asking to work on one means. Connecting on its own opens nothing.
+func (a *app) takeOver(addr, keyFile string, at *spot, open bool) error {
 	if addr == "" {
-		return errors.New("no machine to take over")
+		return errors.New("no machine to connect to")
 	}
 	addr = serveAddr(addr)
 	// Already held, whatever it is called. By address rather than by
@@ -431,7 +433,7 @@ func (a *app) takeOver(addr, keyFile string, at *spot) error {
 	// and changes nothing about the connection, and a guard that went
 	// by name would let a second one be made to the same far window.
 	if held := a.windows.at(addr); held != nil {
-		return fmt.Errorf("this window has already taken over %s", held.name)
+		return fmt.Errorf("this window is already connected to %s", held.name)
 	}
 	// What this window is called here. A saved one goes under the name
 	// the user gave it, so the sidebar has one heading for it rather
@@ -440,7 +442,14 @@ func (a *app) takeOver(addr, keyFile string, at *spot) error {
 	// Already on its way. Asked about rather than refused: waiting for
 	// it is usually what the user wants.
 	if d := a.about(name).dialling; d != nil {
-		a.askAboutTheOneOnItsWay(d, name, func() { a.workOnWindowOrSay(addr, keyFile, at) })
+		a.askAboutTheOneOnItsWay(d, name, func() {
+			if !open {
+				a.reportError("Could not connect to "+name,
+					errors.New("this window is already connected to it"))
+				return
+			}
+			a.workOnWindowOrSay(addr, keyFile, at)
+		})
 		return nil
 	}
 
@@ -515,7 +524,12 @@ func (a *app) takeOver(addr, keyFile string, at *spot) error {
 				}
 				return
 			}
-			a.becomeWindowPane(a.holdWindow(name, addr, keyFile, win), pane, log)
+			t := a.holdWindow(name, addr, keyFile, win)
+			if open {
+				a.becomeWindowPane(t, pane, log)
+			} else {
+				a.connectedToWindow(t, log)
+			}
 			a.machines.settle(held, true)
 		})
 	}()
@@ -523,11 +537,11 @@ func (a *app) takeOver(addr, keyFile string, at *spot) error {
 }
 
 // workOnWindow opens a terminal on the window serving at an address,
-// taking it over first when this one has not already.
+// connecting to it first when this one has not already.
 //
 // The one way in for every request to work on a window, however it was
-// named: taking over one already taken over would only report that it
-// has been, which is not what the user asked for.
+// named: connecting to one already connected to would only report that
+// it is, which is not what the user asked for.
 func (a *app) workOnWindow(addr, keyFile string, at *spot) error {
 	addr = serveAddr(addr)
 	// By address rather than by name: a window taken over before it was
@@ -536,7 +550,7 @@ func (a *app) workOnWindow(addr, keyFile string, at *spot) error {
 	if held := a.windows.at(addr); held != nil {
 		return a.openOnWindow(held.name, at)
 	}
-	return a.takeOver(addr, keyFile, at)
+	return a.takeOver(addr, keyFile, at, true)
 }
 
 // workOnWindowOrSay is workOnWindow for a caller with nowhere to return
@@ -566,8 +580,8 @@ func serveAddr(addr string) string {
 	return addr
 }
 
-// becomeWindowPane hands the pane that was watching a window being taken
-// over to a shell on that window.
+// becomeWindowPane hands the pane that dialled a window to a shell on
+// that window, for somebody who asked to work on it.
 //
 // The window itself rather than its name, which the server list can
 // have changed while the connection was being made.
@@ -587,6 +601,18 @@ func (a *app) becomeWindowPane(t *taken, pane *term.Terminal, log *connLog) {
 	log.Say("connected")
 	a.windows.draws(pane, t)
 	log.Became(t.name, sess)
+}
+
+// connectedToWindow finishes the account in the pane that dialled a
+// window, and leaves it at that.
+//
+// Nothing is opened over there. Connecting is connecting: what that
+// window has open goes on the sidebar, and a pane on it is asked for
+// from the plus on its heading.
+func (a *app) connectedToWindow(t *taken, log *connLog) {
+	t.log = log
+	log.Say("connected")
+	log.Reached(t.name)
 }
 
 // holdWindow remembers a window and puts a row on the panel for it.

@@ -531,7 +531,7 @@ func TestAWindowTakenOverOverThereIsDrawnAsAWindow(t *testing.T) {
 	withDialogs(t, client)
 	withPanel(t, client)
 	writeKnownWindows(t, client, host)
-	if err := client.takeOver(addr, keyFile, nil); err != nil {
+	if err := client.takeOver(addr, keyFile, nil, true); err != nil {
 		t.Fatalf("take over the middle window: %v", err)
 	}
 	waitFor(t, client, "a pane on the middle window", func() bool {
@@ -539,7 +539,7 @@ func TestAWindowTakenOverOverThereIsDrawnAsAWindow(t *testing.T) {
 	}, host)
 
 	writeKnownWindows(t, host, far)
-	if err := host.takeOver(farAddr, keyFile, nil); err != nil {
+	if err := host.takeOver(farAddr, keyFile, nil, true); err != nil {
 		t.Fatalf("take over the far window: %v", err)
 	}
 	waitFor(t, host, "the middle window to hold the far one", func() bool {

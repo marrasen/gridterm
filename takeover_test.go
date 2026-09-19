@@ -89,19 +89,20 @@ func TestOneWindowWorksInAnotherMachinesShell(t *testing.T) {
 
 // The whole path a user takes: one window serves, another takes it
 // over from its own dialog, and a pane here draws a shell there.
-func TestTakingOverAWindowOpensAPaneOnIt(t *testing.T) {
+func TestConnectingToAWindowOpensNothingOnIt(t *testing.T) {
 	host := newTestApp(t, 90, 30)
 	withDialogs(t, host)
+	withPanel(t, host)
 	keyFile, line := aKeyFile(t)
 	withServing(t, host, line)
 	if err := host.startServing("0", whereHere); err != nil {
 		t.Fatalf("serve: %v", err)
 	}
+	hostPanes := len(host.panes)
 
 	client := newTestApp(t, 90, 30)
 	withDialogs(t, client)
 	withPanel(t, client)
-	panes := len(client.panes)
 
 	runFromPalette(t, client, "serve.takeOver")
 	f := awaitModal(t, client, "the Connect to another window dialog", byTitle[*ui.Form]("Connect to another window"))
@@ -112,11 +113,27 @@ func TestTakingOverAWindowOpensAPaneOnIt(t *testing.T) {
 	// and has to be accepted, the same as any other machine's.
 	answer(t, client, "Connect")
 
-	waitFor(t, client, "the window to be taken over", func() bool {
-		return client.windows.named(host.serving.addr()) != nil && len(client.panes) > panes
-	})
+	waitFor(t, client, "the window to be connected to", func() bool {
+		return client.windows.named(host.serving.addr()) != nil
+	}, host)
 	if got := len(host.serving.clients()); got != 1 {
 		t.Errorf("%d clients on the serving window, want one", got)
+	}
+	// Nothing was opened over there, and nothing here draws from it.
+	if got := len(host.panes); got != hostPanes {
+		t.Errorf("the window connected to holds %d panes, want the %d it had: "+
+			"connecting opens nothing", got, hostPanes)
+	}
+	if got := client.windows.drawn(); got != 0 {
+		t.Errorf("%d panes here are drawn from it, want none", got)
+	}
+	// The pane that dialled says so, and is finished with.
+	dialled := newestPane(t, client)
+	waitFor(t, client, "the pane that dialled to say it is connected", func() bool {
+		return strings.Contains(screenText(dialled), "is connected")
+	}, host)
+	if got := screenText(dialled); !strings.Contains(got, "on the sidebar") {
+		t.Errorf("the pane that dialled reads %q, want it to say where its panes are", got)
 	}
 
 	// And the panel says so, under the address it was reached at.
@@ -154,9 +171,15 @@ func TestLettingGoOfATakenWindowTakesItsPanes(t *testing.T) {
 	typeIntoField(t, client, f, "Key file", keyFile)
 	pressButton(t, client, f, "Connect")
 	answer(t, client, "Connect")
-	waitFor(t, client, "the window to be taken over", func() bool {
+	waitFor(t, client, "the window to be connected to", func() bool {
 		return client.windows.named(addr) != nil && len(client.panes) > panes
 	})
+	// Connecting opens nothing over there, and this test is about a pane
+	// drawn from it going when the window does. The account of the
+	// connection stays either way: it is a record, not a pane drawn from
+	// that window.
+	panes = len(client.panes)
+	paneOnTheWindow(t, client)
 
 	if err := client.dropWindow(addr); err != nil {
 		t.Fatalf("drop: %v", err)
@@ -182,7 +205,7 @@ func TestTakingOverAWindowThatIsNotThereFails(t *testing.T) {
 	keyFile, _ := aKeyFile(t)
 
 	// A port nothing is listening on.
-	if err := client.takeOver("127.0.0.1:1", keyFile, nil); err != nil {
+	if err := client.takeOver("127.0.0.1:1", keyFile, nil, true); err != nil {
 		t.Fatalf("take over: %v", err)
 	}
 	pane := newestPane(t, client)
@@ -217,7 +240,7 @@ func TestTheServedWindowSaysItIsBeingServed(t *testing.T) {
 	client := newTestApp(t, 90, 30)
 	withDialogs(t, client)
 	withPanel(t, client)
-	if err := client.takeOver(addr, keyFile, nil); err != nil {
+	if err := client.takeOver(addr, keyFile, nil, true); err != nil {
 		t.Fatalf("take over: %v", err)
 	}
 	answer(t, client, "Connect")
@@ -524,10 +547,10 @@ func TestTakingOverTheSameWindowTwiceAsks(t *testing.T) {
 	keyFile, _ := aKeyFile(t)
 
 	// A port nothing answers on, so the first is still on its way.
-	if err := a.takeOver("127.0.0.1:1", keyFile, nil); err != nil {
+	if err := a.takeOver("127.0.0.1:1", keyFile, nil, true); err != nil {
 		t.Fatalf("first: %v", err)
 	}
-	if err := a.takeOver("127.0.0.1:1", keyFile, nil); err != nil {
+	if err := a.takeOver("127.0.0.1:1", keyFile, nil, true); err != nil {
 		t.Fatalf("second: %v", err)
 	}
 
@@ -548,12 +571,12 @@ func TestTakingOverAWindowAlreadyHeldIsRefused(t *testing.T) {
 	host, client, addr := twoWindows(t)
 	_ = host
 
-	err := client.takeOver(addr, "", nil)
+	err := client.takeOver(addr, "", nil, true)
 
 	if err == nil {
 		t.Fatal("it took over the same window twice")
 	}
-	if !strings.Contains(err.Error(), "already taken over") {
+	if !strings.Contains(err.Error(), "already connected") {
 		t.Errorf("it refused with %v", err)
 	}
 }
@@ -566,7 +589,7 @@ func TestAMachineWithNoPortGetsTheServingOne(t *testing.T) {
 	withPanel(t, a)
 	keyFile, _ := aKeyFile(t)
 
-	if err := a.takeOver("127.0.0.1", keyFile, nil); err != nil {
+	if err := a.takeOver("127.0.0.1", keyFile, nil, true); err != nil {
 		t.Fatalf("take over: %v", err)
 	}
 
@@ -583,7 +606,7 @@ func TestGivingUpOnAWindowLeavesNothing(t *testing.T) {
 	withDialogs(t, a)
 	withPanel(t, a)
 	keyFile, _ := aKeyFile(t)
-	if err := a.takeOver("127.0.0.1:1", keyFile, nil); err != nil {
+	if err := a.takeOver("127.0.0.1:1", keyFile, nil, true); err != nil {
 		t.Fatalf("take over: %v", err)
 	}
 	if a.machines.beingMade() != 1 {
@@ -816,8 +839,8 @@ func TestAWindowThatQuitsKeepsARowThatCanBeCleared(t *testing.T) {
 		typeIntoField(t, client, f, "Key file", keyFile)
 		pressButton(t, client, f, "Connect")
 		answer(t, client, "Connect")
-		waitFor(t, client, "a pane on the window taken over", func() bool {
-			return client.windows.named(name) != nil && client.windows.drawn() > 0
+		waitFor(t, client, "the window to be connected to", func() bool {
+			return client.windows.named(name) != nil
 		})
 	}
 	takeOver(addr, "statio")
@@ -1084,16 +1107,16 @@ func twoWindowsSized(t *testing.T, cols, rows int) (host, client *testApp, addr 
 	client = newTestApp(t, cols, rows)
 	withDialogs(t, client)
 	withPanel(t, client)
-	panes := len(client.panes)
-	if err := client.takeOver(addr, keyFile, nil); err != nil {
+	if err := client.takeOver(addr, keyFile, nil, true); err != nil {
 		t.Fatalf("take over: %v", err)
 	}
 	answer(t, client, "Connect")
-	// Both: the window over there opens the pane on its own goroutine
-	// that draws, so a test that pumped only this one would wait for a
-	// pane the other window was never going to open.
+	// Asked to work on it rather than only to connect, so a pane is
+	// drawn from it. Both windows are pumped: the one over there opens
+	// the pane on its own goroutine that draws.
 	waitFor(t, client, "a pane on the other window", func() bool {
-		return client.windows.named(addr) != nil && len(client.panes) > panes
+		held := client.windows.named(addr)
+		return held != nil && len(client.windows.drawnFrom(held)) == 1
 	}, host)
 	return host, client, addr
 }
@@ -2177,7 +2200,7 @@ func TestGivingUpOnAWindowThatIsNotAnsweringLetsItGo(t *testing.T) {
 	keyFile, _ := aKeyFile(t)
 	addr := sshtest.SilentMachine(t)
 
-	if err := a.takeOver(addr, keyFile, nil); err != nil {
+	if err := a.takeOver(addr, keyFile, nil, true); err != nil {
 		t.Fatalf("take over: %v", err)
 	}
 	pane := newestPane(t, a)
@@ -2194,7 +2217,7 @@ func TestGivingUpOnAWindowThatIsNotAnsweringLetsItGo(t *testing.T) {
 	})
 
 	// And it will try again rather than saying it already is.
-	if err := a.takeOver(addr, keyFile, nil); err != nil {
+	if err := a.takeOver(addr, keyFile, nil, true); err != nil {
 		t.Fatalf("it would not try again: %v", err)
 	}
 	if err := a.dropWindow(addr); err != nil {
@@ -2212,7 +2235,7 @@ func TestAWindowThatSaysNothingIsGivenUpOnByItself(t *testing.T) {
 	keyFile, _ := aKeyFile(t)
 	addr := sshtest.SilentMachine(t)
 
-	if err := a.takeOver(addr, keyFile, nil); err != nil {
+	if err := a.takeOver(addr, keyFile, nil, true); err != nil {
 		t.Fatalf("take over: %v", err)
 	}
 	pane := newestPane(t, a)
@@ -2234,7 +2257,7 @@ func TestThePaneSaysWhatItIsDoing(t *testing.T) {
 	keyFile, _ := aKeyFile(t)
 	addr := sshtest.SilentMachine(t)
 
-	if err := a.takeOver(addr, keyFile, nil); err != nil {
+	if err := a.takeOver(addr, keyFile, nil, true); err != nil {
 		t.Fatalf("take over: %v", err)
 	}
 	pane := newestPane(t, a)
@@ -2256,7 +2279,7 @@ func TestThePaneThatSaysWhyAWindowFailedStays(t *testing.T) {
 	before := len(a.panes)
 
 	// A port nothing is listening on.
-	if err := a.takeOver("127.0.0.1:1", keyFile, nil); err != nil {
+	if err := a.takeOver("127.0.0.1:1", keyFile, nil, true); err != nil {
 		t.Fatalf("take over: %v", err)
 	}
 	pane := newestPane(t, a)
@@ -2290,7 +2313,7 @@ func TestAskingAboutTheWindowOnItsWayOpensFromTheButton(t *testing.T) {
 	keyFile, _ := aKeyFile(t)
 
 	// A port nothing answers on, so the first is still on its way.
-	if err := a.takeOver("127.0.0.1:1", keyFile, nil); err != nil {
+	if err := a.takeOver("127.0.0.1:1", keyFile, nil, true); err != nil {
 		t.Fatalf("first: %v", err)
 	}
 
@@ -2486,13 +2509,24 @@ func takeOverFromTheDialog(t *testing.T, a *testApp, addr, keyFile string) *term
 }
 
 // paneOnTheWindow is the one pane drawn from the one window this test's
-// app has taken over.
+// app is connected to, opening one when nothing is drawn from it yet.
+//
+// Connecting opens nothing over there, so a test that wants a pane on
+// the other window asks for one the way the plus on its heading does.
 func paneOnTheWindow(t *testing.T, a *testApp) *term.Terminal {
 	t.Helper()
-	waitFor(t, a, "a pane on the window taken over", func() bool {
-		return a.windows.count() == 1 && a.windows.drawn() == 1
+	waitFor(t, a, "the window to be connected to", func() bool {
+		return a.windows.count() == 1
 	})
 	held := a.windows.named(a.windows.names()[0])
+	if a.windows.drawn() == 0 {
+		if err := a.openOnWindow(held.name, nil); err != nil {
+			t.Fatalf("open a pane on %s: %v", held.name, err)
+		}
+	}
+	waitFor(t, a, "a pane on the window connected to", func() bool {
+		return len(a.windows.drawnFrom(held)) > 0
+	})
 	panes := a.windows.drawnFrom(held)
 	if len(panes) != 1 {
 		t.Fatalf("%d panes are drawn from the window, want the one", len(panes))
@@ -3073,9 +3107,14 @@ func TestLeavingAWindowLeavesThePaneItOpenedRunningThere(t *testing.T) {
 	typeIntoField(t, client, f, "Key file", keyFile)
 	pressButton(t, client, f, "Connect")
 	answer(t, client, "Connect")
-	waitFor(t, client, "the window to be taken over", func() bool {
+	waitFor(t, client, "the window to be connected to", func() bool {
 		return client.windows.named(addr) != nil && len(client.panes) > panes
 	}, host)
+	// Connecting opens nothing, so the pane this test is about is asked
+	// for the way the plus on the window's heading asks for one.
+	if err := client.openOnWindow(client.windows.named(addr).name, nil); err != nil {
+		t.Fatalf("open a pane on it: %v", err)
+	}
 	waitFor(t, host, "the pane the client opened here", func() bool {
 		return len(host.panes) > hostPanes
 	}, client)

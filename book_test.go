@@ -1013,7 +1013,7 @@ func TestAWindowAlreadyTakenOverIsNotTakenOverTwice(t *testing.T) {
 	client := newTestApp(t, 90, 30)
 	withDialogs(t, client)
 	withPanel(t, client)
-	if err := client.takeOver(addr, keyFile, nil); err != nil {
+	if err := client.takeOver(addr, keyFile, nil, true); err != nil {
 		t.Fatalf("take over: %v", err)
 	}
 	answer(t, client, "Connect")
@@ -1031,7 +1031,7 @@ func TestAWindowAlreadyTakenOverIsNotTakenOverTwice(t *testing.T) {
 	}
 	client.refreshServers()
 
-	if err := client.takeOver(addr, keyFile, nil); err == nil {
+	if err := client.takeOver(addr, keyFile, nil, true); err == nil {
 		t.Fatal("it took over the same window twice")
 	}
 	if n := client.windows.count(); n != 1 {

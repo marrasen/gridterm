@@ -71,6 +71,16 @@ type Reader struct {
 	busy    bool
 	focused bool
 
+	// asking is what the reader is waiting to be told along the bottom
+	// row, and typed what has been typed so far. finding is the last
+	// thing searched for, and said is a word to the user in place of the
+	// bar: that there is nothing more to find, or that what was typed
+	// was not a line number.
+	asking  asking
+	typed   string
+	finding string
+	said    string
+
 	// follow says the reader keeps up with a file that is being written
 	// to, the way tail -f does, and stuck says it was at the end when
 	// the last read went out so the next answer should stay there.
@@ -326,15 +336,42 @@ func ReaderKeys() []Key {
 		{Chord: chord(input.KeyEnd, 0), Shown: "End", Title: "Bottom"},
 		{Chord: chord(input.KeyR, input.ModCtrl), Shown: "^R", Title: "Reread"},
 		{Chord: chord(input.KeyF, input.ModCtrl), Shown: "^F", Title: "Follow"},
+		{Typed: '/', Shown: "/", Title: "Find"},
+		{Typed: ':', Shown: ":", Title: "Line"},
 		{Chord: chord(input.KeyD, input.ModCtrl), Shown: "^D", Title: "Close"},
 	}
 }
 
 // HandleKey moves through the file.
 func (r *Reader) HandleKey(ev input.Event) (bool, error) {
+	if r.asking != askingNothing {
+		return r.askKey(ev)
+	}
+	// The keys that start a question, which arrive as text rather than
+	// as a key: the character is what names them, not where it sits on
+	// the keyboard.
+	if ev.Kind == input.Text && ev.NormalText {
+		switch ev.Rune {
+		case '/':
+			r.ask(askingFind)
+			return true, nil
+		case ':':
+			r.ask(askingGoTo)
+			return true, nil
+		case 'n':
+			r.FindNext(false)
+			return true, nil
+		case 'N':
+			r.FindNext(true)
+			return true, nil
+		}
+	}
 	if ev.Kind != input.KeyPress && ev.Kind != input.KeyRepeat {
 		return false, nil
 	}
+	// Whatever was said last is said once: the next key is the user
+	// having read it.
+	r.said = ""
 	switch {
 	case ev.Key == input.KeyUp:
 		r.Scroll(-1)
@@ -440,7 +477,13 @@ func (r *Reader) Draw(v grid.View) {
 	} else {
 		r.paintLines(v, cols, rows)
 	}
-	if rows > 1 {
+	switch {
+	case rows <= 1:
+	case r.asking != askingNothing:
+		r.paintAsking(v, rows-1, cols)
+	case r.said != "":
+		v.SetString(0, rows-1, grid.TrimTail(r.said, cols), r.Style.ErrorFG, r.Style.BG, 0)
+	default:
 		drawKeys(v, rows-1, cols, ReaderKeys(), r.Style, func(Key) bool { return r.focused })
 	}
 }
@@ -453,10 +496,23 @@ func (r *Reader) paintLines(v grid.View, cols, rows int) {
 			break
 		}
 		line := r.lines[i]
+		at, wide, found := r.findsOn(line)
 		if r.left > 0 {
 			line = cutLeft(line, r.left)
+			at -= r.left
 		}
 		v.SetString(0, y+1, grid.TrimTail(line, cols), r.Style.FG, r.Style.BG, 0)
+		if !found {
+			continue
+		}
+		// What was searched for, marked out where it falls. Written over
+		// the line rather than in place of it, so a match part way off
+		// the left edge still marks the part that is on screen.
+		for x := max(at, 0); x < min(at+wide, cols); x++ {
+			c := v.At(x, y+1)
+			c.FG, c.BG = r.Style.MarkedFG, r.Style.SelectedBG
+			v.Set(x, y+1, c)
+		}
 	}
 }
 

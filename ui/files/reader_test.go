@@ -72,7 +72,10 @@ func TestAReaderShowsTheFirstScreenful(t *testing.T) {
 	if got := readerRow(g, 8); !strings.HasPrefix(got, "line ") {
 		t.Errorf("the last row above the bar is %q, want a line of the file", got)
 	}
-	if got := readerRow(g, 9); !strings.Contains(got, "Close") {
+	// Named in full where there is room for the names. A bar cut down
+	// still names every key -- see the test below.
+	wide := drawReader(r, 100, 10)
+	if got := readerRow(wide, 9); !strings.Contains(got, "Close") {
 		t.Errorf("the bottom row is %q, want the bar of keys", got)
 	}
 }
@@ -525,4 +528,18 @@ func TestAReaderWithoutTheKeysSaysSo(t *testing.T) {
 func barGround(g *grid.Grid) color.RGBA {
 	cols, rows := g.Size()
 	return g.At(cols-1, rows-1).BG
+}
+
+// A reader's bar names every key, however narrow it is.
+func TestAReadersNarrowBarStillNamesEveryKey(t *testing.T) {
+	r := aReader(t, 100, 40, 10)
+
+	g := drawReader(r, 40, 10)
+
+	bar := readerRow(g, 9)
+	for _, k := range ReaderKeys() {
+		if !strings.Contains(bar, k.Shown) {
+			t.Errorf("the bar reads %q, missing the key %q", bar, k.Shown)
+		}
+	}
 }

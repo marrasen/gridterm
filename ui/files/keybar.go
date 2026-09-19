@@ -11,6 +11,12 @@ import (
 type Key struct {
 	Chord ui.Chord
 
+	// Typed is the character this key is, for one that is a character
+	// rather than a place on the keyboard: "/" is "/" wherever a layout
+	// puts it, and binding the key beside the right shift would find it
+	// on one layout and not on another.
+	Typed rune
+
 	// Shown is how the bar spells the chord, which is its own spelling
 	// rather than Chord.String(): "^G" fits a bar of ten keys where
 	// "ctrl+G" does not.
@@ -21,6 +27,9 @@ type Key struct {
 // press is the key press this chord is, for asking whether a key on the
 // bar is this one and for running it from a click.
 func (k Key) press() input.Event {
+	if k.Typed != 0 {
+		return input.Event{Kind: input.Text, Rune: k.Typed, NormalText: true}
+	}
 	return input.Event{Kind: input.KeyPress, Key: k.Chord.Key, Mods: k.Chord.Mods}
 }
 

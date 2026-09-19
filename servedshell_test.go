@@ -16,27 +16,36 @@ import (
 // until the answer comes back.
 func openedFromAnotherWindow(t *testing.T, a *testApp, cols, rows int) (session.Session, error) {
 	t.Helper()
+	sess, _, err := namedFromAnotherWindow(t, a, cols, rows)
+	return sess, err
+}
+
+// namedFromAnotherWindow is the same, and also gives what the window
+// called what it opened.
+func namedFromAnotherWindow(t *testing.T, a *testApp, cols, rows int) (session.Session, serve.Attached, error) {
+	t.Helper()
 	type made struct {
-		sess session.Session
-		err  error
+		sess  session.Session
+		named serve.Attached
+		err   error
 	}
 	back := make(chan made, 1)
 	go func() {
-		sess, err := a.newSession(cols, rows)
-		back <- made{sess: sess, err: err}
+		sess, named, err := a.newSession(cols, rows)
+		back <- made{sess: sess, named: named, err: err}
 	}()
 	deadline := time.Now().Add(waitBudget)
 	for time.Now().Before(deadline) {
 		a.pump.run()
 		select {
 		case got := <-back:
-			return got.sess, got.err
+			return got.sess, got.named, got.err
 		default:
 		}
 		time.Sleep(time.Millisecond)
 	}
 	t.Fatal("the window never answered a client asking for something to work in")
-	return nil, nil
+	return nil, serve.Attached{}, nil
 }
 
 // A window a client opens something in opens a pane of its own, with a

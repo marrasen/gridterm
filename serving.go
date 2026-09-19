@@ -577,6 +577,14 @@ func (a *app) clientArrived(c *serve.Client) {
 		Label: "serving " + c.Name,
 		Note:  "from " + c.Addr,
 		Close: func() error { return c.Close() },
+		// There is no pane to put in front, so the row says what this
+		// window is serving and to whom. A row that did nothing at all
+		// when it was clicked read as a row that was broken.
+		Reveal: func() {
+			if err := a.showServing(); err != nil {
+				a.reportError("Could not show what this window is serving", err)
+			}
+		},
 	}
 	a.serving.arrived(c, e)
 	a.registry.Add(e)

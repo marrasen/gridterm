@@ -288,11 +288,12 @@ func (w *Window) Addr() string { return w.addr }
 // that machine either way: this is a second pair of eyes on it, not a
 // hand-over.
 func (w *Window) Attach(open Open, cols, rows int) (session.Session, error) {
+	// Nothing to be told: this window already knows what it asked for.
 	return w.session(openSession{
 		Cols: uint32(cols), Rows: uint32(rows),
 		Attach:     open.ID,
 		AttachHost: open.Host, AttachKind: open.Kind,
-	})
+	}, nil)
 }
 
 // Files opens a file session on the machine the other window is on.
@@ -359,18 +360,24 @@ func (f *FileSession) Said() string {
 
 // Open starts something to work in on the other machine, sized for the
 // pane it will be drawn in.
-func (w *Window) Open(cols, rows int) (session.Session, error) {
+//
+// named is called with what the other window calls what it opened, which
+// it says at once. It runs on a goroutine of this session's, so a caller
+// that touches a window has to hand the work to whatever draws. A nil
+// one asks not to be told, and an older window at the far end never
+// says.
+func (w *Window) Open(cols, rows int, named func(Attached)) (session.Session, error) {
 	if w.isClosed() {
 		return nil, errors.New("serve: that window has been let go of")
 	}
 	// Sent as asked. The machine that has to make a terminal this size
 	// is the one that clamps it, and a second clamp here would only
 	// hide what this window actually asked for.
-	return w.session(openSession{Cols: uint32(cols), Rows: uint32(rows)})
+	return w.session(openSession{Cols: uint32(cols), Rows: uint32(rows)}, named)
 }
 
 // open asks the other window for a session and wraps what comes back.
-func (w *Window) session(want openSession) (session.Session, error) {
+func (w *Window) session(want openSession, named func(Attached)) (session.Session, error) {
 	if w.isClosed() {
 		return nil, errors.New("serve: that window has been let go of")
 	}
@@ -378,7 +385,8 @@ func (w *Window) session(want openSession) (session.Session, error) {
 	if err != nil {
 		return nil, fmt.Errorf("serve: open a session on %s: %w", w.addr, err)
 	}
-	s := &remoteSession{ch: ch, done: make(chan struct{}), saidDone: make(chan struct{})}
+	s := &remoteSession{ch: ch, named: named,
+		done: make(chan struct{}), saidDone: make(chan struct{})}
 	go s.readRequests(reqs)
 	// What the other end says went wrong, into the same stream as the
 	// program's own output. It is the only place a pane can show it,
@@ -476,6 +484,11 @@ type remoteSession struct {
 	// that has run out of program output knows there is no more of it
 	// coming.
 	saidDone chan struct{}
+
+	// named is told what the other window calls what it opened. Read and
+	// cleared only by readRequests, which is the one goroutine that
+	// touches it.
+	named func(Attached)
 
 	// done is closed when the other end has said how the program ended,
 	// or the channel has gone without it saying. status and gotOne are
@@ -578,6 +591,15 @@ func (s *remoteSession) Close() error {
 func (s *remoteSession) readRequests(reqs <-chan *ssh.Request) {
 	defer close(s.done)
 	for req := range reqs {
+		if req.Type == reqOpened && s.named != nil {
+			var got opened
+			if err := ssh.Unmarshal(req.Payload, &got); err == nil && got.ID != "" {
+				s.named(Attached(got))
+				// Once. A second one would name the pane something else
+				// while it is still drawing the first.
+				s.named = nil
+			}
+		}
 		if req.Type == reqExitStatus {
 			var got exitStatus
 			// A status that cannot be read is no status at all, which

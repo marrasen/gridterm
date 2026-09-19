@@ -1116,23 +1116,108 @@ func TestTheSidebarShowsWhatTheOtherWindowHasOpen(t *testing.T) {
 		return len(client.windows.named(addr).win.Opens()) == 4
 	}, host)
 
-	// And this window shows a row for each, under the window itself.
-	client.refreshPanel(panelNow)
+	// And this window shows one row for each, under the window itself:
+	// a dim row for the ones nobody here is watching, and its own pane's
+	// row for the one it opened over there.
 	held := windowAt(t, client, addr)
+	waitFor(t, client, "the other window to say what it called the pane opened here", func() bool {
+		for _, pane := range client.windows.drawnFrom(held) {
+			if _, ok := client.windows.watching(pane); ok {
+				return true
+			}
+		}
+		return false
+	}, host)
+	client.refreshPanel(panelNow)
+
 	want := 0
 	for _, open := range held.win.Opens() {
 		if open.HasScreen() {
 			want++
 		}
 	}
-	var shown int
+	shown := 0
 	for _, row := range client.panel.Rows() {
 		if key, ok := row.Key.(remoteKey); ok && key.window == held {
 			shown++
 		}
 	}
-	if shown != want {
-		t.Errorf("%d rows are shown for the %d screens it said it had open", shown, want)
+	drawn := len(client.windows.drawnFrom(held))
+	if drawn == 0 {
+		t.Error("no pane here is drawn from that window")
+	}
+	if shown+drawn != want {
+		t.Errorf("%d dim rows and %d panes drawn here for the %d screens it said it had open",
+			shown, drawn, want)
+	}
+}
+
+// A shell this window opened on another one is one row here, not two.
+//
+// Marcus opened a pane on the host from a client and saw it twice: once
+// as the pane this window draws it in, and once as a row for what the
+// other window publishes. They are one shell, so they are one row.
+func TestAPaneOpenedOnAnotherWindowIsOneRow(t *testing.T) {
+	host, client, addr := twoWindows(t)
+	held := windowAt(t, client, addr)
+
+	panes := client.windows.drawnFrom(held)
+	if len(panes) != 1 {
+		t.Fatalf("%d panes are drawn from that window, want the one the take-over opened",
+			len(panes))
+	}
+	pane := panes[0]
+
+	// The other window says what it called it, and this one writes it
+	// down against the pane drawing it.
+	waitFor(t, client, "the other window to say what it called it", func() bool {
+		_, ok := client.windows.watching(pane)
+		return ok
+	}, host)
+
+	what, _ := client.windows.watching(pane)
+	if what.window != held {
+		t.Errorf("the pane is watching something on %v, want the window it was opened on", what.window)
+	}
+	client.refreshPanel(panelNow)
+	for _, row := range client.panel.Rows() {
+		if key, ok := row.Key.(remoteKey); ok && key == what {
+			t.Error("the shell this window opened over there also has a dim row of its own")
+		}
+	}
+}
+
+// The name the other window gives is the row it publishes for the same
+// shell, so what the pane is watching can be looked up over there.
+func TestThePaneOpenedOnAnotherWindowNamesSomethingItHasOpen(t *testing.T) {
+	host, client, addr := twoWindows(t)
+	held := windowAt(t, client, addr)
+	pane := client.windows.drawnFrom(held)[0]
+	waitFor(t, client, "the other window to say what it called it", func() bool {
+		_, ok := client.windows.watching(pane)
+		return ok
+	}, host)
+
+	what, _ := client.windows.watching(pane)
+	// The name comes down the session channel, which can beat the next
+	// snapshot down the control channel.
+	waitFor(t, client, "that window to publish what it called it", func() bool {
+		// The publishing happens as the other window builds its panel,
+		// which a test has to ask for.
+		host.refreshPanel(panelNow)
+		_, ok := client.openOver(what)
+		return ok
+	}, host)
+	open, ok := client.openOver(what)
+
+	if !ok {
+		t.Fatalf("%q is not something that window says it has open", what.id)
+	}
+	if !open.HasScreen() {
+		t.Errorf("%q has no screen, and it is a shell", what.id)
+	}
+	if open.Note != servedLabel {
+		t.Errorf("it says %q about it, want %q", open.Note, servedLabel)
 	}
 }
 
@@ -2940,7 +3025,7 @@ func openOverTheWire(t *testing.T, a *testApp, w *serve.Window, cols, rows int) 
 	}
 	back := make(chan made, 1)
 	go func() {
-		sess, err := w.Open(cols, rows)
+		sess, err := w.Open(cols, rows, nil)
 		back <- made{sess: sess, err: err}
 	}()
 	deadline := time.Now().Add(waitBudget)
@@ -3017,5 +3102,65 @@ func TestLeavingAWindowLeavesThePaneItOpenedRunningThere(t *testing.T) {
 	// And it is on offer, so coming again picks it up.
 	if open := offeredFromAnotherWindow(t, host); open.ID == "" {
 		t.Error("the pane is not offered to a client that comes again")
+	}
+}
+
+// Clicking the row for a client says what this window is serving.
+//
+// It has no pane to put in front, and a row that did nothing at all when
+// it was clicked read as a row that was broken.
+func TestClickingTheClientRowSaysWhatIsBeingServed(t *testing.T) {
+	host, _, _ := twoWindows(t)
+	host.refreshPanel(panelNow)
+
+	var row ui.ListRow
+	for _, have := range host.panel.Rows() {
+		if strings.HasPrefix(have.Text, "serving ") {
+			row = have
+		}
+	}
+	if row.Text == "" {
+		t.Fatalf("no row on the serving window names the client: %v", panelText(host, panelNow))
+	}
+
+	if err := host.revealRow(row); err != nil {
+		t.Fatalf("click it: %v", err)
+	}
+	host.pump.run()
+
+	f := awaitModal(t, host, "what this window is serving",
+		byTitle[*ui.Form]("Serving this window"))
+	said := strings.Join(f.Lines, " ")
+	if !strings.Contains(said, host.serving.addr()) {
+		t.Errorf("it says %q, want it to name the address it is serving on", said)
+	}
+}
+
+// A pane drawn from another window closes here, and the shell over there
+// keeps running: it is that window's pane, and this one was watching it.
+func TestClosingAPaneDrawnFromAnotherWindowClosesItHere(t *testing.T) {
+	host, client, addr := twoWindows(t)
+	held := windowAt(t, client, addr)
+	pane := client.windows.drawnFrom(held)[0]
+	panes := len(client.panes)
+	hostPanes := len(host.panes)
+
+	if err := client.closePane(pane); err != nil {
+		t.Fatalf("close it: %v", err)
+	}
+
+	if got := len(client.panes); got != panes-1 {
+		t.Errorf("the client holds %d panes, want one fewer than the %d it had", got, panes)
+	}
+	if client.windows.watcher(remoteKey{window: held}) != nil {
+		t.Error("the client still says a pane is watching something over there")
+	}
+	// The shell is the other window's, and closing a pane here is not a
+	// reason to end it.
+	waitFor(t, host, "the serving window to notice", func() bool {
+		return len(host.serving.clients()) == 1
+	}, client)
+	if got := len(host.panes); got != hostPanes {
+		t.Errorf("the host holds %d panes, want the %d it had", got, hostPanes)
 	}
 }

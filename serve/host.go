@@ -198,8 +198,9 @@ func (s *Server) runSession(ctx context.Context, ch ssh.Channel,
 	rows := min(max(int(want.Rows), 1), mostCells)
 
 	var (
-		sess session.Session
-		err  error
+		sess  session.Session
+		named Attached
+		err   error
 	)
 	switch {
 	case want.Attach != "":
@@ -217,11 +218,22 @@ func (s *Server) runSession(ctx context.Context, ch ssh.Channel,
 		s.refuseSession(ch, reqs, errors.New("this gridterm has nothing to open"))
 		return
 	default:
-		sess, err = s.cfg.Open(cols, rows)
+		sess, named, err = s.cfg.Open(cols, rows)
 	}
 	if err != nil {
 		s.refuseSession(ch, reqs, err)
 		return
+	}
+
+	// What this window calls it, so the client can tell the pane it is
+	// drawing from the row this window publishes for the same thing.
+	// Before anything else goes down the channel, and not waited on: a
+	// client that does not care drops it.
+	if named.ID != "" {
+		_, err := ch.SendRequest(reqOpened, false, ssh.Marshal(opened(named)))
+		if err != nil && !errors.Is(err, io.EOF) {
+			s.onError(fmt.Errorf("serve: say what was opened: %w", err))
+		}
 	}
 
 	// The session goes when the connection does, whether or not either
@@ -389,9 +401,16 @@ type Attached struct {
 // a screen of another size; either way the watcher has said.
 type Attacher func(want Attached, cols, rows int) (session.Session, error)
 
-// Opener starts something for a client to work in.
+// Opener starts something for a client to work in, and says what this
+// window calls it.
+//
+// The name is what a client would use to ask for the same thing again,
+// and is what lets the client tell the pane it is drawing from the row
+// this window publishes for it. An implementation with nothing to call
+// it gives the zero Attached, and the client then draws a row of its own
+// and one for the published thing.
 //
 // It is called from a goroutine of the server's, one per session a
 // client opens, so an implementation that touches the window has to
 // hand the work to whatever draws.
-type Opener func(cols, rows int) (session.Session, error)
+type Opener func(cols, rows int) (session.Session, Attached, error)

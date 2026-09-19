@@ -574,7 +574,11 @@ func serveAddr(addr string) string {
 func (a *app) becomeWindowPane(t *taken, pane *term.Terminal, log *connLog) {
 	t.log = log
 	size := pane.Size()
-	sess, err := t.win.Open(size.Cols, size.Rows)
+	sess, err := t.win.Open(size.Cols, size.Rows, func(named serve.Attached) {
+		// Said on a goroutine of the session's, and the record of what a
+		// pane is watching belongs to the one that draws.
+		a.pump.post(func() { a.bindWatched(pane, t, named) })
+	})
 	if err != nil {
 		a.endedAs(pane, "no terminal")
 		log.Failed(err)
@@ -690,13 +694,19 @@ func (a *app) openOnWindow(addr string, at *spot) error {
 	if t == nil {
 		return fmt.Errorf("this window has not taken over %s", addr)
 	}
-	sess, err := t.win.Open(a.lastSize[0], a.lastSize[1])
+	// The pane does not exist yet, and the other window says what it
+	// opened as soon as it has. The answer is posted, so it lands after
+	// this has finished and the pane is there to bind.
+	var pane *term.Terminal
+	sess, err := t.win.Open(a.lastSize[0], a.lastSize[1], func(named serve.Attached) {
+		a.pump.post(func() { a.bindWatched(pane, t, named) })
+	})
 	if err != nil {
 		return err
 	}
 	// Under the name holding the window, which is not always the name
 	// asked about, so the sidebar keeps one heading for it.
-	pane, err := a.openSessionPane(sess, t.name, conns.Terminal, "terminal", at)
+	pane, err = a.openSessionPane(sess, t.name, conns.Terminal, "terminal", at)
 	if err != nil {
 		// The session is ours and nothing else knows about it.
 		_ = sess.Close()
@@ -704,6 +714,20 @@ func (a *app) openOnWindow(addr string, at *spot) error {
 	}
 	a.windows.draws(pane, t)
 	return nil
+}
+
+// bindWatched records that a pane is drawing what the other window calls
+// named.
+//
+// One thing open should be one row. Without this the pane has a row here
+// and the thing it is drawing has another, published by the window that
+// opened it, and the two read as two shells.
+func (a *app) bindWatched(pane *term.Terminal, t *taken, named serve.Attached) {
+	if pane == nil || named.ID == "" || !a.windows.holds(t) {
+		return
+	}
+	a.windows.watch(pane, remoteKey{window: t, id: named.ID})
+	a.markDirty()
 }
 
 // farSize is how big the screen a pane is watching is now, or zero when

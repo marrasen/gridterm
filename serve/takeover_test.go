@@ -175,12 +175,12 @@ func read(t *testing.T, s session.Session, want string) string {
 // its own: bytes both ways, and a size.
 func TestOneWindowWorksInAnothers(t *testing.T) {
 	var started *echoSession
-	_, w := takenOver(t, func(cols, rows int) (session.Session, error) {
+	_, w := takenOver(t, func(cols, rows int) (session.Session, Attached, error) {
 		started = newEchoSession(cols, rows)
-		return started, nil
+		return started, Attached{}, nil
 	})
 
-	sess, err := w.Open(100, 40)
+	sess, err := w.Open(100, 40, nil)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
@@ -212,10 +212,10 @@ func TestOneWindowWorksInAnothers(t *testing.T) {
 // a client that only saw the channel close could not tell a program
 // that finished from a connection that dropped.
 func TestHowAProgramEndedCrossesTheWire(t *testing.T) {
-	_, w := takenOver(t, func(cols, rows int) (session.Session, error) {
-		return newEchoSession(cols, rows), nil
+	_, w := takenOver(t, func(cols, rows int) (session.Session, Attached, error) {
+		return newEchoSession(cols, rows), Attached{}, nil
 	})
-	sess, err := w.Open(80, 24)
+	sess, err := w.Open(80, 24, nil)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
@@ -251,7 +251,7 @@ func TestAnOrdinarySSHClientIsToldWhatThisIs(t *testing.T) {
 	}
 	s, err := Listen(Config{
 		Addr: "127.0.0.1:0", HostKey: host, Allowed: keys,
-		Open:    func(c, r int) (session.Session, error) { return newEchoSession(c, r), nil },
+		Open:    func(c, r int) (session.Session, Attached, error) { return newEchoSession(c, r), Attached{}, nil },
 		OnError: func(error) {},
 	})
 	if err != nil {
@@ -310,7 +310,9 @@ func TestAWindowReachedWithBothWaysOfSigningInUsesTheLadder(t *testing.T) {
 	}
 	s, err := Listen(Config{
 		Addr: "127.0.0.1:0", HostKey: host, Allowed: keys,
-		Open:    func(int, int) (session.Session, error) { return nil, errors.New("nothing to open") },
+		Open: func(int, int) (session.Session, Attached, error) {
+			return nil, Attached{}, errors.New("nothing to open")
+		},
 		OnError: func(error) {},
 	})
 	if err != nil {
@@ -370,12 +372,12 @@ func TestAWindowWithTheWrongKeyIsRefused(t *testing.T) {
 // finish returns nothing, which is also what you get when nothing
 // crosses the wire at all: the feature could be deleted and it passed.
 func TestABadEndingCrossesTheWire(t *testing.T) {
-	_, w := takenOver(t, func(cols, rows int) (session.Session, error) {
+	_, w := takenOver(t, func(cols, rows int) (session.Session, Attached, error) {
 		s := newEchoSession(cols, rows)
 		s.endWith = errors.New("it fell over")
-		return s, nil
+		return s, Attached{}, nil
 	})
-	sess, err := w.Open(80, 24)
+	sess, err := w.Open(80, 24, nil)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
@@ -399,10 +401,10 @@ func TestABadEndingCrossesTheWire(t *testing.T) {
 // Both used to come back as nothing at all, which made the whole
 // exchange pointless: it exists so those two can be told apart.
 func TestADroppedConnectionIsNotACleanFinish(t *testing.T) {
-	s, w := takenOver(t, func(cols, rows int) (session.Session, error) {
-		return newEchoSession(cols, rows), nil
+	s, w := takenOver(t, func(cols, rows int) (session.Session, Attached, error) {
+		return newEchoSession(cols, rows), Attached{}, nil
 	})
-	sess, err := w.Open(80, 24)
+	sess, err := w.Open(80, 24, nil)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
@@ -428,11 +430,11 @@ func TestADroppedConnectionIsNotACleanFinish(t *testing.T) {
 // Close made Close wait for a Write that only a Close could unblock.
 // On the goroutine that draws, that is the whole window frozen.
 func TestASessionCanBeClosedWhileItsInputIsStuck(t *testing.T) {
-	_, w := takenOver(t, func(cols, rows int) (session.Session, error) {
+	_, w := takenOver(t, func(cols, rows int) (session.Session, Attached, error) {
 		// A program that never reads what it is sent.
-		return newDeafSession(), nil
+		return newDeafSession(), Attached{}, nil
 	})
-	sess, err := w.Open(80, 24)
+	sess, err := w.Open(80, 24, nil)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
@@ -479,7 +481,7 @@ func TestAWindowServingNothingSaysSoAndFails(t *testing.T) {
 	s, w := takenOverReporting(t, nil, told)
 	_ = s
 
-	sess, err := w.Open(80, 24)
+	sess, err := w.Open(80, 24, nil)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
@@ -506,8 +508,8 @@ func TestAWindowServingNothingSaysSoAndFails(t *testing.T) {
 // apart -- to say "gridterm could not do that" rather than draw it as
 // output -- can only do so if they arrived separately.
 func TestTheReasonTravelsOnItsOwnStream(t *testing.T) {
-	_, w := takenOver(t, func(int, int) (session.Session, error) {
-		return nil, errors.New("there is no shell here")
+	_, w := takenOver(t, func(int, int) (session.Session, Attached, error) {
+		return nil, Attached{}, errors.New("there is no shell here")
 	})
 
 	// Straight down a channel, so what each stream carried can be seen.
@@ -544,10 +546,10 @@ func TestTheReasonTravelsOnItsOwnStream(t *testing.T) {
 // A pane that opened and closed with nothing in it would leave the user
 // with no idea why.
 func TestAPaneIsShownTheReason(t *testing.T) {
-	_, w := takenOver(t, func(int, int) (session.Session, error) {
-		return nil, errors.New("there is no shell here")
+	_, w := takenOver(t, func(int, int) (session.Session, Attached, error) {
+		return nil, Attached{}, errors.New("there is no shell here")
 	})
-	sess, err := w.Open(80, 24)
+	sess, err := w.Open(80, 24, nil)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
@@ -568,9 +570,9 @@ func TestAPaneIsShownTheReason(t *testing.T) {
 // then wait for ever, and the window would never hear the client leave.
 func TestASessionThatCannotStartDoesNotWedgeTheConnection(t *testing.T) {
 	slow := make(chan struct{})
-	_, w := takenOver(t, func(int, int) (session.Session, error) {
+	_, w := takenOver(t, func(int, int) (session.Session, Attached, error) {
 		<-slow
-		return nil, errors.New("not today")
+		return nil, Attached{}, errors.New("not today")
 	})
 
 	ch, reqs, err := w.client.OpenChannel(SessionChannel, ssh.Marshal(openSession{Cols: 80, Rows: 24}))
@@ -589,7 +591,7 @@ func TestASessionThatCannotStartDoesNotWedgeTheConnection(t *testing.T) {
 	// The connection still answers.
 	done := make(chan error, 1)
 	go func() {
-		_, err := w.Open(80, 24)
+		_, err := w.Open(80, 24, nil)
 		done <- err
 	}()
 	select {
@@ -607,9 +609,9 @@ func TestASessionThatCannotStartDoesNotWedgeTheConnection(t *testing.T) {
 // make a terminal that size.
 func TestTheSizeIsClampedWhereItIsUsed(t *testing.T) {
 	sizes := make(chan [2]int, 4)
-	_, w := takenOver(t, func(cols, rows int) (session.Session, error) {
+	_, w := takenOver(t, func(cols, rows int) (session.Session, Attached, error) {
 		sizes <- [2]int{cols, rows}
-		return newEchoSession(cols, rows), nil
+		return newEchoSession(cols, rows), Attached{}, nil
 	})
 
 	// Straight down the channel, so the client's own clamp is not in
@@ -636,10 +638,10 @@ func TestTheSizeIsClampedWhereItIsUsed(t *testing.T) {
 // Letting go of the other window really takes what was opened on it,
 // rather than only refusing to open more.
 func TestLettingGoOfAWindowEndsItsSessions(t *testing.T) {
-	_, w := takenOver(t, func(cols, rows int) (session.Session, error) {
-		return newEchoSession(cols, rows), nil
+	_, w := takenOver(t, func(cols, rows int) (session.Session, Attached, error) {
+		return newEchoSession(cols, rows), Attached{}, nil
 	})
-	sess, err := w.Open(80, 24)
+	sess, err := w.Open(80, 24, nil)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
@@ -660,7 +662,7 @@ func TestLettingGoOfAWindowEndsItsSessions(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("a session outlived the window it was opened on")
 	}
-	if _, err := w.Open(80, 24); err == nil {
+	if _, err := w.Open(80, 24, nil); err == nil {
 		t.Error("a window that was let go of opened another session")
 	}
 }
@@ -820,12 +822,12 @@ func park(t *testing.T, sess session.Session, prog *stubbornSession) {
 // went away.
 func TestAProgramIsHungUpOnWhenItsSessionGoes(t *testing.T) {
 	made := make(chan *stubbornSession, 1)
-	_, w := takenOver(t, func(int, int) (session.Session, error) {
+	_, w := takenOver(t, func(int, int) (session.Session, Attached, error) {
 		b := newStubbornSession(true, 0)
 		made <- b
-		return b, nil
+		return b, Attached{}, nil
 	})
-	sess, err := w.Open(80, 24)
+	sess, err := w.Open(80, 24, nil)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
@@ -852,12 +854,12 @@ func TestAProgramIsHungUpOnWhenItsSessionGoes(t *testing.T) {
 // its pseudo-terminal are left behind for good.
 func TestAProgramIsHungUpOnWhenTheConnectionGoes(t *testing.T) {
 	made := make(chan *stubbornSession, 1)
-	_, w := takenOver(t, func(int, int) (session.Session, error) {
+	_, w := takenOver(t, func(int, int) (session.Session, Attached, error) {
 		b := newStubbornSession(false, 0)
 		made <- b
-		return b, nil
+		return b, Attached{}, nil
 	})
-	sess, err := w.Open(80, 24)
+	sess, err := w.Open(80, 24, nil)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
@@ -895,13 +897,13 @@ func TestAClientIsSaidToHaveGoneOnlyOnceItsShellsAre(t *testing.T) {
 	running := make(chan bool, 1)
 	s, err := Listen(Config{
 		Addr: "127.0.0.1:0", HostKey: host, Allowed: keys,
-		Open: func(int, int) (session.Session, error) {
+		Open: func(int, int) (session.Session, Attached, error) {
 			// Slow to close, so a window that said the client had gone
 			// before its shells were hung up on says so while this one
 			// is still closing.
 			b := newStubbornSession(false, 300*time.Millisecond)
 			made <- b
-			return b, nil
+			return b, Attached{}, nil
 		},
 		OnGone: func(c *Client, why error) {
 			select {
@@ -924,7 +926,7 @@ func TestAClientIsSaidToHaveGoneOnlyOnceItsShellsAre(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}
-	sess, err := w.Open(80, 24)
+	sess, err := w.Open(80, 24, nil)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
@@ -1007,14 +1009,14 @@ func TestAClientSeesWhatTheOtherWindowHasOpen(t *testing.T) {
 // A window that says nothing about itself is still worked in. Not every
 // window on the far end is of this build.
 func TestAWindowThatSaysNothingIsStillWorkedIn(t *testing.T) {
-	_, w := takenOver(t, func(cols, rows int) (session.Session, error) {
-		return newEchoSession(cols, rows), nil
+	_, w := takenOver(t, func(cols, rows int) (session.Session, Attached, error) {
+		return newEchoSession(cols, rows), Attached{}, nil
 	})
 
 	if got := w.Opens(); len(got) != 0 {
 		t.Errorf("it said it had %v open", got)
 	}
-	sess, err := w.Open(80, 24)
+	sess, err := w.Open(80, 24, nil)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
@@ -1082,9 +1084,9 @@ func TestAWindowWorksInSomethingAlreadyRunning(t *testing.T) {
 // than starting something new for a client that asked to watch.
 func TestAWindowThatCannotBeWorkedInSaysSo(t *testing.T) {
 	var opened atomic.Int32
-	_, w := takenOverWith(t, func(cols, rows int) (session.Session, error) {
+	_, w := takenOverWith(t, func(cols, rows int) (session.Session, Attached, error) {
 		opened.Add(1)
-		return newEchoSession(cols, rows), nil
+		return newEchoSession(cols, rows), Attached{}, nil
 	}, nil)
 
 	sess, err := w.Attach(Open{ID: "1", Kind: "Terminal", Label: "bash"}, 80, 24)
@@ -1155,14 +1157,14 @@ func (s *failingSession) Close() error {
 // The program itself thinks it ended cleanly. The client is holding
 // half a screen, and this is the only end that knows.
 func TestASessionThatFailedPartWayDidNotEndCleanly(t *testing.T) {
-	_, w := takenOverReporting(t, func(cols, rows int) (session.Session, error) {
+	_, w := takenOverReporting(t, func(cols, rows int) (session.Session, Attached, error) {
 		return &failingSession{
 			done: make(chan struct{}),
 			err:  errors.New("the pipe broke"),
-		}, nil
+		}, Attached{}, nil
 	}, make(chan error, 8))
 
-	sess, err := w.Open(80, 24)
+	sess, err := w.Open(80, 24, nil)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
@@ -1182,8 +1184,8 @@ func TestASessionThatFailedPartWayDidNotEndCleanly(t *testing.T) {
 // client took to read, and a client that has stopped reading would
 // stop it for good.
 func TestSayingWhatIsOpenDoesNotWaitForAClient(t *testing.T) {
-	s, w := takenOver(t, func(cols, rows int) (session.Session, error) {
-		return newEchoSession(cols, rows), nil
+	s, w := takenOver(t, func(cols, rows int) (session.Session, Attached, error) {
+		return newEchoSession(cols, rows), Attached{}, nil
 	})
 
 	// A client that opens the channel and never reads a byte of it.
@@ -1229,8 +1231,8 @@ func serve1MB() Snapshot {
 // A window that does not serve its files says so by name, rather than
 // leaving the client waiting on a channel nobody answers.
 func TestAWindowThatDoesNotServeItsFilesSaysSo(t *testing.T) {
-	_, w := takenOver(t, func(cols, rows int) (session.Session, error) {
-		return newEchoSession(cols, rows), nil
+	_, w := takenOver(t, func(cols, rows int) (session.Session, Attached, error) {
+		return newEchoSession(cols, rows), Attached{}, nil
 	})
 
 	ch, err := filesWithin(t, w)
@@ -1553,14 +1555,14 @@ func TestGivingUpOnASilentMachineComesBackAtOnce(t *testing.T) {
 // A connection that was made is not held to the handshake's deadline. A
 // window somebody is working in sits idle for as long as they like.
 func TestAConnectionThatWasMadeHasNoDeadline(t *testing.T) {
-	_, w := takenOver(t, func(cols, rows int) (session.Session, error) {
-		return newEchoSession(cols, rows), nil
+	_, w := takenOver(t, func(cols, rows int) (session.Session, Attached, error) {
+		return newEchoSession(cols, rows), Attached{}, nil
 	})
 
 	// Longer than the handshake was given, with nothing said on it.
 	time.Sleep(200 * time.Millisecond)
 
-	sess, err := w.Open(80, 24)
+	sess, err := w.Open(80, 24, nil)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
@@ -1586,7 +1588,9 @@ func TestDialSaysEachStep(t *testing.T) {
 	}
 	s, err := Listen(Config{
 		Addr: "127.0.0.1:0", HostKey: host, Allowed: keys,
-		Open:    func(cols, rows int) (session.Session, error) { return newEchoSession(cols, rows), nil },
+		Open: func(cols, rows int) (session.Session, Attached, error) {
+			return newEchoSession(cols, rows), Attached{}, nil
+		},
 		OnError: func(error) {},
 	})
 	if err != nil {

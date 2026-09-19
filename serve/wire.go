@@ -29,7 +29,30 @@ const (
 	// reqExitStatus says how the program ended. Its payload is
 	// exitStatus.
 	reqExitStatus = "exit-status"
+
+	// reqOpened says what the served window calls what it just opened.
+	// Its payload is opened, and it is sent once, before any of the
+	// program's own bytes.
+	//
+	// A client that opens something new is drawing a pane of its own for
+	// it, and the served window publishes the same thing on its control
+	// channel. Without this the client cannot tell that the two are one
+	// thing, and shows a row for each.
+	reqOpened = "opened@gridterm"
 )
+
+// opened names what the served window opened, in the same three parts a
+// client would use to ask for it again.
+//
+// The same fields as Attached, in the same order, so the two convert
+// into each other. They are separate types all the same: this one is a
+// shape on the wire, and the compiler refuses the conversion the moment
+// they stop matching.
+type opened struct {
+	ID   string
+	Host string
+	Kind string
+}
 
 // openSession is what a client asks for when it opens a session
 // channel: the size of the pane it will be drawn in.

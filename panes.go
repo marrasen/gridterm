@@ -4,12 +4,12 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
-	"os"
 	"slices"
 	"strings"
 
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/remote"
+	"github.com/marrasen/gridterm/session"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/files"
 	"github.com/marrasen/gridterm/ui/term"
@@ -124,8 +124,12 @@ func (a *app) terminalOnHome(m *machine) (*term.Terminal, error) {
 }
 
 // localArgv is the argv a pane on this machine runs, with the default
-// shell filled in: session.StartLocal picks COMSPEC when it is handed
-// nothing, and a row has to be able to name what that is.
+// shell filled in: a pane started with no command runs whatever
+// session.DefaultShell picked, and a row has to be able to name that.
+//
+// Asked once a pane once a frame, so the default is asked for rather
+// than worked out again here. Working it out here is also how this came
+// to answer cmd.exe on a machine that has no cmd.exe.
 func (a *app) localArgv(t *term.Terminal) []string {
 	if e := a.panes[t]; e == nil || e.Host != conns.Local {
 		return nil
@@ -133,10 +137,12 @@ func (a *app) localArgv(t *term.Terminal) []string {
 	if s := a.started[t]; s != nil && len(s.argv) > 0 {
 		return s.argv
 	}
-	if comspec := os.Getenv("COMSPEC"); comspec != "" {
-		return []string{comspec}
+	argv, err := session.DefaultShell()
+	if err != nil {
+		// Nothing to name it by. The row says what it can without one.
+		return nil
 	}
-	return []string{"cmd.exe"}
+	return argv
 }
 
 // shellName is what a pane's row calls the shell it runs, and empty when

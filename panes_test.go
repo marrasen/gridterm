@@ -6,6 +6,7 @@ import (
 	"io"
 	"math/rand"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -1900,4 +1901,43 @@ func TestAClipboardThatCanBeReadIsPasted(t *testing.T) {
 		t.Fatalf("a paste that worked showed %T", a.root.Modal())
 	}
 	waitFor(t, a, "the shell to be sent what was typed", func() bool { return a.shells[0].sentText() == "uptime" })
+}
+
+// Naming a pane by the shell it runs asks the heap for nothing.
+//
+// It is asked once a pane once a frame, and it used to read COMSPEC out
+// of the environment each time, which on Windows builds a string from
+// UTF-16 and was most of what an idle frame allocated.
+func TestNamingAPaneByItsShellAsksTheHeapForNothing(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	pane := firstPane(t, a)
+	a.panes[pane] = &conns.Entry{Host: conns.Local, Kind: conns.Terminal}
+	// Once first, so the default shell has been looked up.
+	a.localArgv(pane)
+
+	got := testing.AllocsPerRun(20, func() { a.localArgv(pane) })
+
+	if got != 0 {
+		t.Errorf("naming a pane allocated %v times, want none", got)
+	}
+}
+
+// A pane started with no command is named by the shell this machine
+// actually runs, which is the one session picked rather than a second
+// guess at it.
+func TestAPaneWithNoCommandIsNamedByTheShellSessionPicked(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	pane := firstPane(t, a)
+	a.panes[pane] = &conns.Entry{Host: conns.Local, Kind: conns.Terminal}
+	delete(a.started, pane)
+
+	got := a.localArgv(pane)
+
+	want, err := session.DefaultShell()
+	if err != nil {
+		t.Skipf("this machine has no shell to name: %v", err)
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("the pane is named %v, want the %v a pane with no command runs", got, want)
+	}
 }

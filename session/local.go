@@ -270,6 +270,15 @@ func hasEnv(env []string, key string) bool {
 	return false
 }
 
+// DefaultShell returns what a pane on this machine runs when it is
+// handed no command: the user's login shell, falling back to something
+// the platform is known to have.
+//
+// Asked once and remembered. The environment does not change under a
+// running program, and a caller naming a pane asks once a pane once a
+// frame.
+var DefaultShell = sync.OnceValues(defaultShell)
+
 // defaultShell returns the user's login shell, falling back to something
 // that exists on the platform.
 func defaultShell() ([]string, error) {

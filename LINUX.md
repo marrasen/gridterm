@@ -99,11 +99,13 @@ the user.
 shell and nothing else when the machine is not Windows. WSL is asked
 about only on Windows.
 
-Worth checking once there is a window to try it in: `session/local.go`
-picks `COMSPEC` when it is handed nothing, and `localArgv` in `panes.go`
-falls back to `cmd.exe`. Both are behind a `runtime.GOOS == "windows"`
-check. Read them again on the machine rather than trusting this
-paragraph.
+`localArgv` in `panes.go` used to work the default out for itself and
+answered `cmd.exe` on every platform, so a Linux sidebar would have
+named every pane after a program that is not there. It asks
+`session.DefaultShell` now, which is the one place that knows, and a
+test pins the two together. Found by accident while reading an
+allocation profile, which is worth remembering: the rest of this file is
+a survey, and a survey finds what it is looking for.
 
 ## 4. Fonts
 

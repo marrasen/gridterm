@@ -390,6 +390,18 @@ From Marcus's inbox, after working in a shared window.
   glow. `TestASharedPaneCostsNothingBetweenGlowSteps` pins the cost at
   two layers a step, so it cannot grow unnoticed.
 
+- **The padding machinery is what an idle frame still allocates for.**
+  Five allocations and 400 bytes a frame, measured on 2026-09-19 with
+  `BenchmarkIdleFrame` after the sidebar stopped making any. They are
+  `padGrid` in pad.go, which builds a `padTable` per grid per frame, and
+  `region.place` through `fit`, which asks `RowPads` for a fresh slice
+  for every row count it tries.
+
+  Both take the same fix the sidebar had: build into something kept
+  rather than something new. Nobody is asking for it. Five allocations a
+  frame is about 24KB a second, and it is written down here so the next
+  person to read a profile knows it has been looked at and left.
+
 - **A folder holding a comma cannot be typed in the server dialog.** The
   folders are one field and a comma parts them, so a path with one in it
   can only be written in the server list file by hand. The dialog does

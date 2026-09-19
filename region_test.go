@@ -535,3 +535,51 @@ func TestThePinnedRowNeverGetsAHeadingsRoom(t *testing.T) {
 		t.Errorf("the pinned row has %+v", got)
 	}
 }
+
+// manySpacer is a widget that wants room around most of its rows, which
+// is what a sidebar showing several machine headings at once asks for.
+type manySpacer struct {
+	ui.Widget
+	pads []grid.Pad
+}
+
+func (s *manySpacer) Layout(ui.Size) {}
+
+func (s *manySpacer) RowPads(rows int) []grid.Pad {
+	s.pads = s.pads[:0]
+	for y := range rows {
+		if y%2 == 0 {
+			s.pads = append(s.pads, grid.Pad{Before: 1})
+			continue
+		}
+		s.pads = append(s.pads, grid.Pad{})
+	}
+	return s.pads
+}
+
+// Placing a region again allocates nothing, however many rows want room
+// around them.
+//
+// The table a region gathers the padding in holds a slice into itself,
+// so one built on the way past would go on the heap every frame, and one
+// that threw its growth away would allocate again past four rows.
+func TestPlacingARegionAgainAllocatesNothing(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	w := &manySpacer{Widget: a.newPanel()}
+	r := newRegion(w, grid.New(0, 0, a.colours.FG, a.colours.BG), &a.sideGeo)
+	rect := ui.Rect{X: 0, Y: 0, Cols: 20, Rows: 24}
+	a.renderer.Measure(a.g, &a.geo)
+	r.place(rect, &a.geo, nil)
+
+	got := testing.AllocsPerRun(20, func() { r.place(rect, &a.geo, nil) })
+
+	if got > 0 {
+		t.Errorf("placing a region allocates %v times, want none", got)
+	}
+	// And it really did ask for more room than the table comes with, or
+	// this proves nothing.
+	if len(r.rowPads.list) <= 4 {
+		t.Errorf("the table holds %d pads, want more than the four it has room for",
+			len(r.rowPads.list))
+	}
+}

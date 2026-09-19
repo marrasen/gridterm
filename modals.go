@@ -21,6 +21,15 @@ const (
 	frostSaturation = 1.4
 	frostGrain      = 0.04
 	frostEdge       = 0.07
+
+	// frostSpread is how far the shadow's edge is softened over, in
+	// pixels.
+	frostSpread = 6.0
+
+	// frostDropCols and frostDropRows are how far the shadow falls, in
+	// cells.
+	frostDropCols = 0.5
+	frostDropRows = 0.35
 )
 
 // modal is one dialog on the stack together with the layer it draws on.
@@ -142,9 +151,11 @@ func (a *app) drawModals() {
 			left, width := a.geo.CellsX(box.X, box.X+box.Cols)
 			top, height := a.geo.CellsY(box.Y, box.Y+box.Rows)
 			m.layer.Frost.Rect = image.Rect(left, top, left+width, top+height)
-			// The corner is measured in cells too, so changing the font
-			// size with a dialog open keeps it in proportion.
+			// The corner and the drop are measured in cells too, so
+			// changing the font size with a dialog open keeps them in
+			// proportion.
 			m.layer.Frost.Corner = float32(min(cw, ch))
+			m.layer.Frost.Drop = frostDrop(cw, ch)
 		}
 	}
 }
@@ -168,7 +179,16 @@ func (a *app) frost() *render.Frost {
 		Saturation: frostSaturation,
 		Grain:      frostGrain,
 		Edge:       frostEdge,
+		Shadow:     shadow,
+		Drop:       frostDrop(cw, ch),
+		Spread:     frostSpread,
 	}
+}
+
+// frostDrop is how far a dialog's shadow falls, in pixels for a cell of
+// this size.
+func frostDrop(cw, ch int) [2]float32 {
+	return [2]float32{float32(cw) * frostDropCols, float32(ch) * frostDropRows}
 }
 
 // resizeModals follows the window. A dialog places itself within the

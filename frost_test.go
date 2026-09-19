@@ -181,3 +181,79 @@ func TestTheGlassLandsOnTheCellsTheDialogDrawsIn(t *testing.T) {
 			got.Max.Y, want)
 	}
 }
+
+// The glass casts the dialog's shadow, so the widgets draw none in
+// cells. A dialog's corner is rounded in pixels by the shader, and a
+// shadow in whole cells can never follow it.
+func TestTheGlassCastsTheShadowAndTheCellsDoNot(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+
+	glass := a.frost()
+
+	if glass == nil {
+		t.Fatal("a window with no theme frame has no glass")
+	}
+	if glass.Shadow.A == 0 {
+		t.Error("the glass casts no shadow")
+	}
+	if glass.Drop == [2]float32{0, 0} {
+		t.Error("the shadow falls nowhere, so it sits behind the panel")
+	}
+	if got := a.panelShadow(); got.A != 0 {
+		t.Errorf("the widgets draw a shadow of %v in cells as well", got)
+	}
+}
+
+// A theme that draws its own frame gets no glass, so the cells draw the
+// shadow the way they always did.
+func TestAThemeWithItsOwnFrameKeepsTheCellShadow(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	a.look.Set = true
+
+	if a.frost() != nil {
+		t.Error("a theme with its own frame was given glass")
+	}
+	if got := a.panelShadow(); got.A == 0 {
+		t.Error("a theme with its own frame draws no shadow at all")
+	}
+}
+
+// The shadow falls further when the text is drawn bigger, the way the
+// corner is already rounded further.
+//
+// Both are measured in cells, so a dialog open while the font size
+// changes keeps its shape rather than tucking the shadow under itself.
+func TestTheShadowFollowsTheFontSize(t *testing.T) {
+	a := newTestApp(t, 60, 20)
+	a.comp = render.NewCompositor(a.renderer)
+	a.commands()
+	// Room in pixels, so the dialog still has cells to sit in once the
+	// text is twice the size.
+	cw, ch := a.renderer.CellSize()
+	a.resizeTo(120*cw, 60*ch)
+	if err := a.openPalette(); err != nil {
+		t.Fatalf("open the palette: %v", err)
+	}
+	a.drawModals()
+
+	small := a.modals[0].layer.Frost.Drop
+	if small == [2]float32{0, 0} {
+		t.Fatalf("the shadow falls nowhere at %v", small)
+	}
+
+	if err := a.setFontSize(a.fontSize * 2); err != nil {
+		t.Fatalf("make the text bigger: %v", err)
+	}
+	a.drawModals()
+
+	big := a.modals[0].layer.Frost.Drop
+	if big[0] <= small[0] || big[1] <= small[1] {
+		t.Errorf("the shadow falls %v at twice the font size, want further than %v", big, small)
+	}
+	// And it is the drop for the cell the text is drawn in now, not a
+	// bigger one that happens to have grown.
+	grew, _ := a.renderer.CellSize()
+	if want := frostDrop(a.renderer.CellSize()); big != want {
+		t.Errorf("the shadow falls %v for a cell %d wide, want %v", big, grew, want)
+	}
+}

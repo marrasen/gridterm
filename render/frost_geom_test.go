@@ -154,3 +154,51 @@ func TestFrostCornerFitsInThePanel(t *testing.T) {
 		}
 	}
 }
+
+// The shadow's box covers where the shadow falls, grown by the spread
+// each way. A box that stopped short would cut the shadow off.
+func TestTheShadowBoxCoversWhereItFalls(t *testing.T) {
+	panel := image.Rect(100, 100, 200, 160)
+
+	got := shadowBox(panel, [2]float32{6, 4}, 8)
+
+	// Moved by the drop, then grown by the spread.
+	want := image.Rect(106-8, 104-8, 206+8, 164+8)
+	if !got.Eq(want.Union(panel)) {
+		t.Errorf("the shadow is drawn in %v, want %v", got, want.Union(panel))
+	}
+}
+
+// The box takes in the panel as well, so a shadow that falls up or left
+// is still drawn where it starts behind the panel.
+func TestTheShadowBoxTakesInThePanel(t *testing.T) {
+	panel := image.Rect(100, 100, 200, 160)
+
+	got := shadowBox(panel, [2]float32{-20, -20}, 1)
+
+	if !panel.In(got) {
+		t.Errorf("the shadow is drawn in %v, which does not cover the panel %v", got, panel)
+	}
+}
+
+// A spread of nothing still leaves a pixel to soften over, or the
+// corners come out as stairs.
+func TestTheShadowBoxLeavesRoomToSoften(t *testing.T) {
+	panel := image.Rect(0, 0, 10, 10)
+
+	got := shadowBox(panel, [2]float32{0, 0}, 0)
+
+	if want := image.Rect(-1, -1, 11, 11); !got.Eq(want) {
+		t.Errorf("the shadow is drawn in %v, want %v", got, want)
+	}
+}
+
+// A panel that casts no shadow draws none, so nothing is queued for it.
+func TestAPanelWithNoShadowDrawsNone(t *testing.T) {
+	c := &Compositor{}
+	c.drawPanelShadow(nil, &Frost{}, image.Rect(0, 0, 10, 10))
+
+	if c.stats.Shadowed != 0 {
+		t.Errorf("it drew %d shadows for a panel that casts none", c.stats.Shadowed)
+	}
+}

@@ -53,6 +53,20 @@ type Frost struct {
 	// Edge lights the rim, 0 to 1. It is what reads as an edge without a
 	// drawn border.
 	Edge float32
+
+	// Shadow is what the panel casts on what is behind it, its alpha
+	// saying how dark. One with no alpha casts none.
+	//
+	// Read as it is written rather than alpha-premultiplied, the way
+	// Tint is.
+	Shadow color.RGBA
+
+	// Drop is how far the shadow falls, in pixels, right and down.
+	Drop [2]float32
+
+	// Spread is how far its edge is softened over, in pixels. Zero
+	// leaves a hard edge, which still follows the rounded corners.
+	Spread float32
 }
 
 // blurSource is one pass of a separable Gaussian blur.
@@ -147,18 +161,64 @@ func Fragment(dstPos vec4, srcPos vec2, color vec4) vec4 {
 }
 `
 
+// shadowSource draws the shadow a panel casts: the same rounded box,
+// moved and softened. It is a pass of its own, where the frost has no
+// backdrop to sample.
+const shadowSource = `//kage:unit pixels
+
+package main
+
+// Origin and Size are the panel in destination pixels, the same two the
+// frost is given.
+var Origin vec2
+var Size vec2
+
+var Corner float
+
+// Drop is how far the shadow falls and Spread how far its edge is
+// softened over.
+var Drop vec2
+var Spread float
+
+// Colour is what it is drawn in, its alpha saying how dark.
+var Colour vec4
+
+// roundedBox returns the signed distance from p to a box of the given
+// half-size with rounded corners, negative inside it.
+func roundedBox(p vec2, half vec2, r float) float {
+	d := abs(p) - half + vec2(r)
+	return length(max(d, vec2(0))) + min(max(d.x, d.y), 0.0) - r
+}
+
+func Fragment(dstPos vec4, srcPos vec2, color vec4) vec4 {
+	half := Size * 0.5
+	dist := roundedBox(dstPos.xy-Origin-Drop-half, half, Corner)
+
+	// Softened over the spread, and over the last pixel at the least, or
+	// the corners come out as stairs.
+	soft := max(Spread, 1.0)
+	alpha := Colour.a * (1.0 - smoothstep(-soft, soft, dist))
+	if alpha <= 0.0 {
+		return vec4(0)
+	}
+	// Premultiplied, which is what ebiten blends.
+	return vec4(Colour.rgb*alpha, alpha)
+}
+`
+
 // shaders holds the compiled programs, built on first use because a
 // compositor with no glass and no rules should not pay for them.
 type shaders struct {
 	blur   *ebiten.Shader
 	frost  *ebiten.Shader
 	stroke *ebiten.Shader
+	shadow *ebiten.Shader
 }
 
 // compile builds the programs. It reports the first failure rather than
 // leaving a nil shader for the draw path to find.
 func (s *shaders) compile() error {
-	if s.blur != nil && s.frost != nil && s.stroke != nil {
+	if s.blur != nil && s.frost != nil && s.stroke != nil && s.shadow != nil {
 		return nil
 	}
 	blur, err := ebiten.NewShader([]byte(blurSource))
@@ -176,7 +236,14 @@ func (s *shaders) compile() error {
 		frost.Deallocate()
 		return fmt.Errorf("compile the stroke shader: %w", err)
 	}
-	s.blur, s.frost, s.stroke = blur, frost, stroke
+	drop, err := ebiten.NewShader([]byte(shadowSource))
+	if err != nil {
+		blur.Deallocate()
+		frost.Deallocate()
+		stroke.Deallocate()
+		return fmt.Errorf("compile the shadow shader: %w", err)
+	}
+	s.blur, s.frost, s.stroke, s.shadow = blur, frost, stroke, drop
 	return nil
 }
 
@@ -250,6 +317,11 @@ func (c *Compositor) drawFrost(screen *ebiten.Image, l *Layer) {
 		c.blurPass(c.scratch.a, blurred, [2]float32{0, 1}, step, src)
 	}
 
+	// After the backdrop was taken off the screen and before the panel
+	// goes on, so the glass neither picks up its own shadow nor covers
+	// it.
+	c.drawPanelShadow(screen, f, panel)
+
 	// The part of the scratch that lines up with the panel.
 	backdrop := c.scratch.a.SubImage(inner).(*ebiten.Image)
 
@@ -267,6 +339,39 @@ func (c *Compositor) drawFrost(screen *ebiten.Image, l *Layer) {
 	}
 	screen.DrawRectShader(panel.Dx(), panel.Dy(), c.shaders.frost, sop)
 	c.stats.Frosted++
+}
+
+// drawPanelShadow lays the panel's shadow on the screen, rounded in
+// pixels the same way the panel's own corners are.
+func (c *Compositor) drawPanelShadow(screen *ebiten.Image, f *Frost, panel image.Rectangle) {
+	if f.Shadow.A == 0 {
+		return
+	}
+	box := shadowBox(panel, f.Drop, f.Spread).Intersect(screen.Bounds())
+	if box.Empty() {
+		return
+	}
+	op := &ebiten.DrawRectShaderOptions{}
+	op.GeoM.Translate(float64(box.Min.X), float64(box.Min.Y))
+	op.Uniforms = map[string]any{
+		"Origin": []float32{float32(panel.Min.X), float32(panel.Min.Y)},
+		"Size":   []float32{float32(panel.Dx()), float32(panel.Dy())},
+		"Corner": frostCorner(f.Corner, panel),
+		"Drop":   []float32{f.Drop[0], f.Drop[1]},
+		"Spread": f.Spread,
+		"Colour": rgbaToFloats(f.Shadow),
+	}
+	screen.DrawRectShader(box.Dx(), box.Dy(), c.shaders.shadow, op)
+	c.stats.Shadowed++
+}
+
+// shadowBox is where a panel's shadow can reach: the panel moved by the
+// drop and grown by the spread, and the panel itself, because a shadow
+// that falls up or left still starts behind it.
+func shadowBox(panel image.Rectangle, drop [2]float32, spread float32) image.Rectangle {
+	reach := int(math.Ceil(float64(max(spread, 1))))
+	moved := panel.Add(image.Pt(int(math.Round(float64(drop[0]))), int(math.Round(float64(drop[1])))))
+	return moved.Inset(-reach).Union(panel)
 }
 
 // frostRegion works out the three rectangles a panel needs: src is the

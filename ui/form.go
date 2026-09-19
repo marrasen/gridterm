@@ -925,7 +925,7 @@ func ButtonColsIn(titles []string, cols, pad int) []int {
 // for a painter that runs on every frame. Pass into[:0].
 func ButtonColsInto(into []int, titles []string, cols, pad int) []int {
 	if len(titles) == 0 {
-		return nil
+		return into[:0]
 	}
 	at := slices.Grow(into, len(titles))[:len(titles)]
 	x := cols - pad

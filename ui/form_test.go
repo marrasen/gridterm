@@ -1396,3 +1396,19 @@ func TestTheCopyChordCopiesAFieldSelectionFirst(t *testing.T) {
 		t.Errorf("it copied %q, want %q", got, want)
 	}
 }
+
+// A form with no buttons keeps the room its list of columns grew into,
+// so the first frame after a button comes back does not ask for it
+// again.
+func TestButtonColsKeepsItsRoomWithNoButtons(t *testing.T) {
+	kept := ButtonColsInto(nil, []string{"Connect", "Cancel"}, 40, 2)
+	if cap(kept) == 0 {
+		t.Fatal("two buttons needed no room, so there is nothing to keep")
+	}
+
+	got := ButtonColsInto(kept[:0], nil, 40, 2)
+
+	if cap(got) != cap(kept) {
+		t.Errorf("it came back with room for %d, want the %d it had", cap(got), cap(kept))
+	}
+}

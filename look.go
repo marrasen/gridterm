@@ -88,8 +88,14 @@ func (a *app) panelBorderFG() color.RGBA {
 
 // panelShadow is what a dialog or a menu lays over the cells below and
 // to the right of it: dark and mostly see-through, so what is behind is
-// darkened rather than covered.
-func (a *app) panelShadow() color.RGBA { return shadow }
+// darkened rather than covered. Nothing where the glass is on, which
+// casts its own.
+func (a *app) panelShadow() color.RGBA {
+	if !a.look.Set {
+		return color.RGBA{}
+	}
+	return shadow
+}
 
 // panelDimFG is a label, a hint or a note on a dialog: the furniture's
 // own text faded towards its ground.

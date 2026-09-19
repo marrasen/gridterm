@@ -95,8 +95,8 @@ type padTable struct {
 	list []padEntry
 }
 
-// reset empties the table, keeping the room it has.
-func (t *padTable) reset() { t.list = t.room[:0] }
+// reset empties the table, keeping whatever room it has grown into.
+func (t *padTable) reset() { t.list = t.list[:0] }
 
 // add asks for padding on a column or row, adding to whatever is
 // already asked for there.

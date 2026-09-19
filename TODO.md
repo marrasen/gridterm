@@ -400,6 +400,13 @@ From Marcus's inbox, after working in a shared window.
   It waits on SSH relays parking themselves, so the race detector's
   slowdown is the likely cause, but nobody has looked.
 
+- **Nobody has seen the dialog shadow the shader draws.** These tests
+  run outside ebiten's game loop, so a draw only queues a command that
+  is never flushed and reading pixels panics. The geometry and the
+  wiring are tested; what it looks like is not. `frostSpread`,
+  `frostDropCols` and `frostDropRows` in modals.go are the numbers to
+  nudge.
+
 - **The pane switcher is the last thing that allocates on a settled
   frame.** Nine allocations and 384 bytes, measured on 2026-09-19 with
   `BenchmarkSwitcherFrame`. An idle frame and one with a dialog up are
@@ -653,19 +660,6 @@ properly and either written up above or done.
   holds a command and a title and nothing else, so a heading is a kind
   of item the menus cannot draw yet. The same gap stopped the plus
   offering a submenu, further up this file.
-
-- **Shadows under a dialog break at the rounded corners, and the fix is
-  in the shader.** `drawShadow` in ui/frame.go paints whole cells. The
-  panel's corner is not a cell at all: `frostSource` in render/frost.go
-  rounds it with a signed distance field, in pixels, on the GPU. The two
-  can never line up, so squaring the shadow's corners off in cells is
-  not the answer.
-
-  A drop shadow is the same distance function offset and softened, so it
-  belongs in that shader beside the panel it falls from. Two things make
-  it more than a few lines: the shader returns nothing outside the panel
-  today, and the pass only rasterises the panel's own rectangle, which
-  would have to grow to cover where the shadow falls. Not a small item.
 
 - **Context menu.** Make use of one. On the sidebar it opens the menu
   that is already there.

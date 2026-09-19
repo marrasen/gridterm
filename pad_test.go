@@ -227,3 +227,47 @@ func TestTheGridIsMeasuredInWhatThePaddingLeaves(t *testing.T) {
 		t.Errorf("the grid is %dx%d cells, want %dx%d", cols, rows, wantCols, wantRows)
 	}
 }
+
+// A table that grew past the room it comes with keeps that room, so the
+// next frame does not allocate it again.
+func TestAGrownPadTableKeepsItsRoom(t *testing.T) {
+	var table padTable
+	for i := range 9 {
+		table.add(i, grid.Pad{Before: 1})
+	}
+	grown := cap(table.list)
+	if grown <= 4 {
+		t.Fatalf("nine entries fitted in a table of %d, so there is nothing to keep", grown)
+	}
+
+	table.reset()
+	table.add(0, grid.Pad{Before: 1})
+
+	if got := cap(table.list); got != grown {
+		t.Errorf("the table came back with room for %d, want the %d it had grown to", got, grown)
+	}
+}
+
+// The sidebar's own region pads its grid without allocating, the way
+// the window's grid does. A sidebar showing several headings at once is
+// what makes its table grow.
+func TestPlacingTheSidebarRegionAllocatesNothing(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withPanel(t, a)
+	for _, host := range []string{"margit", "picard", "nyli", "office", "laptop"} {
+		saveHostNamed(t, a, host, host+".example")
+	}
+	a.refreshServers()
+	a.refreshPanel(panelNow)
+	a.relayout()
+	paint(a)
+
+	got := testing.AllocsPerRun(20, func() {
+		a.relayout()
+		paint(a)
+	})
+
+	if got > 0 {
+		t.Errorf("placing the sidebar allocates %v times a frame, want none", got)
+	}
+}

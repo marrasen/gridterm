@@ -285,6 +285,7 @@ type CompositorStats struct {
 	Repainted int  // layers whose texture was repainted
 	Blits     int  // textures drawn to the screen
 	Frosted   int  // frosted panels drawn behind a layer
+	Shadowed  int  // shadows drawn under a frosted panel
 	Strokes   int  // rules drawn over a layer
 	Cleared   bool // the screen was wiped before blitting
 	Skipped   bool // nothing changed, so the frame was left alone

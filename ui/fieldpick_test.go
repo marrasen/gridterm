@@ -2,6 +2,7 @@ package ui
 
 import (
 	"image/color"
+	"slices"
 	"strings"
 	"testing"
 
@@ -630,12 +631,9 @@ func TestTypingLeavesTheCaretOnABoundary(t *testing.T) {
 	typeField(t, f, "Z")
 
 	at := f.Caret()
-	for _, m := range f.bounds() {
-		if m == at {
-			return
-		}
+	if !slices.Contains(f.bounds(), at) {
+		t.Errorf("the caret is at %d, which is not one of the boundaries %v", at, f.bounds())
 	}
-	t.Errorf("the caret is at %d, which is not one of the boundaries %v", at, f.bounds())
 }
 
 // Pasting nothing over a selection leaves the field alone. A clipboard

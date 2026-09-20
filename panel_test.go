@@ -1773,7 +1773,7 @@ func TestOnlyATerminalCarriesTheTerminalIcon(t *testing.T) {
 // Every kind has a name. One without is called "Unknown", and that is
 // what a client is told a row is and what a chooser calls a pane.
 func TestEveryKindHasAName(t *testing.T) {
-	for kind := conns.Terminal; kind < conns.NumKinds; kind++ {
+	for kind := range conns.NumKinds {
 		if got := kind.String(); got == "Unknown" {
 			t.Errorf("kind %d is called %q", kind, got)
 		}
@@ -1816,13 +1816,13 @@ func TestTheIconIsDrawnOnTheRow(t *testing.T) {
 func TestBuildingTheSidebarAsksTheHeapForNothing(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withPanel(t, a)
-	for i := 0; i < 4; i++ {
+	for range 4 {
 		if err := a.openPane(); err != nil {
 			t.Fatalf("open a pane: %v", err)
 		}
 	}
 	// A few times first, so every buffer has grown to the size it needs.
-	for i := 0; i < 4; i++ {
+	for range 4 {
 		a.refreshPanel(panelNow)
 	}
 

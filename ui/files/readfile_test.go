@@ -64,7 +64,7 @@ func TestAFileLongerThanTheLimitSaysSo(t *testing.T) {
 	// count, and enough of them to go past the limit.
 	line := strings.Repeat("x", 200<<10)
 	var b strings.Builder
-	for i := 0; i < 60; i++ {
+	for range 60 {
 		b.WriteString(line)
 		b.WriteByte('\n')
 	}
@@ -119,7 +119,7 @@ func TestAFileExactlyTheLimitFits(t *testing.T) {
 	const line = 64<<10 - 1
 	const lines = MostReadBytes / (line + 1)
 	var b strings.Builder
-	for i := 0; i < lines; i++ {
+	for range lines {
 		b.WriteString(strings.Repeat("z", line))
 		b.WriteByte('\n')
 	}
@@ -145,7 +145,7 @@ func TestAFileOneByteOverTheLimitIsCut(t *testing.T) {
 	const line = 64<<10 - 1
 	const lines = MostReadBytes / (line + 1)
 	var b strings.Builder
-	for i := 0; i < lines; i++ {
+	for range lines {
 		b.WriteString(strings.Repeat("z", line))
 		b.WriteByte('\n')
 	}

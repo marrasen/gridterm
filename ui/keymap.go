@@ -3,6 +3,7 @@ package ui
 import (
 	"cmp"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -136,9 +137,7 @@ func (k *Keymap) Become(other *Keymap) {
 	if other == nil {
 		return
 	}
-	for c, id := range other.bound {
-		k.bound[c] = id
-	}
+	maps.Copy(k.bound, other.bound)
 }
 
 // Len returns how many chords are bound.

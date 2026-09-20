@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -142,12 +143,7 @@ func onlyReader(t *testing.T, a *testApp) *files.Reader {
 
 // inTree reports whether a widget is still in the window's tree.
 func inTree(a *testApp, w ui.Widget) bool {
-	for _, leaf := range ui.Leaves(a.root.Widget()) {
-		if leaf == w {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(ui.Leaves(a.root.Widget()), w)
 }
 
 // A reader following a file picks up what is written to it, and stays at
@@ -224,7 +220,7 @@ func TestAFileThatHasNotChangedIsNotReadAgain(t *testing.T) {
 	// first rather than with nothing.
 	at := time.Now()
 	reads := 0
-	for i := 0; i < 4; i++ {
+	for range 4 {
 		at = at.Add(followEvery)
 		a.followReaders(at)
 		waitUntil(t, "the question to come back", func() bool {

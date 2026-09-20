@@ -217,7 +217,7 @@ func TestAHexDumpIsDrawnPlain(t *testing.T) {
 	r.Hex(true)
 	g := drawReader(r, 80, 6)
 
-	for x := 0; x < 40; x++ {
+	for x := range 40 {
 		if got := g.At(x, 1); got.FG != r.Style.FG {
 			t.Fatalf("the dump is coloured at column %d: %v on %q", x, got.FG, got.Rune)
 		}
@@ -234,7 +234,7 @@ func TestAColouredLineScrollsSideways(t *testing.T) {
 
 	// Column 0 is now the start of the comment, and it runs on from
 	// there rather than leaving a gap where the code used to be.
-	for x := 0; x < 5; x++ {
+	for x := range 5 {
 		if got, want := g.At(x, 1).FG, r.Style.NoteFG; got != want {
 			t.Errorf("column %d of the scrolled comment is %v, want a note's %v", x, got, want)
 		}

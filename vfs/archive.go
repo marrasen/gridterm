@@ -228,10 +228,10 @@ func listIn(got *zip.Reader, inner string) []Entry {
 		if !under || rest == "" {
 			continue
 		}
-		if cut := strings.IndexByte(rest, '/'); cut >= 0 {
+		if dir, _, deeper := strings.Cut(rest, "/"); deeper {
 			// Something further down: what this listing shows is the
 			// directory it is in.
-			if dir := rest[:cut]; !seen[dir] {
+			if !seen[dir] {
 				seen[dir] = true
 				out = append(out, Entry{Name: dir, Mode: fs.ModeDir | 0o555, Mod: f.Modified})
 			}

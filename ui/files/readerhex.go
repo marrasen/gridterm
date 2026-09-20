@@ -86,7 +86,7 @@ func hexDump(lines []string) []string {
 func hexLine(at int, chunk string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%08x  ", at)
-	for i := 0; i < hexRow; i++ {
+	for i := range hexRow {
 		if i == hexRow/2 {
 			// A gap down the middle, so a byte can be counted to by
 			// eye rather than one at a time.

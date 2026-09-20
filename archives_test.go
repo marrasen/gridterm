@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -98,7 +99,7 @@ func TestTheBrowserWalksIntoAnArchive(t *testing.T) {
 		return strings.EqualFold(pane.At(), at)
 	})
 	got := namesOn(pane)
-	if !contains(got, "readme.md") || !contains(got, "src") {
+	if !slices.Contains(got, "readme.md") || !slices.Contains(got, "src") {
 		t.Errorf("the archive shows %v", got)
 	}
 }
@@ -113,7 +114,7 @@ func TestTheBrowserWalksBackOutOfAnArchive(t *testing.T) {
 	pane := browserAt(t, a, dir)
 	pane.Open(vfs.Join(pane.FS(), at, "src"))
 	waitFor(t, a, "the browser to reach the directory in the archive", func() bool {
-		return contains(namesOn(pane), "main.go")
+		return slices.Contains(namesOn(pane), "main.go")
 	})
 
 	pane.Up()
@@ -125,7 +126,7 @@ func TestTheBrowserWalksBackOutOfAnArchive(t *testing.T) {
 	waitFor(t, a, "the browser to reach the directory the archive is in", func() bool {
 		return strings.EqualFold(pane.At(), dir)
 	})
-	if got := namesOn(pane); !contains(got, "bundle.zip") {
+	if got := namesOn(pane); !slices.Contains(got, "bundle.zip") {
 		t.Errorf("coming out of the archive showed %v", got)
 	}
 }
@@ -141,7 +142,7 @@ func TestAFileInsideAnArchiveOpensInTheViewer(t *testing.T) {
 	pane := browserAt(t, a, dir)
 	pane.Open(at)
 	waitFor(t, a, "the browser to reach the archive", func() bool {
-		return contains(namesOn(pane), "readme.md")
+		return slices.Contains(namesOn(pane), "readme.md")
 	})
 
 	inside := vfs.Join(pane.FS(), at, "readme.md")
@@ -180,14 +181,4 @@ func TestWritingIntoAnArchiveIsRefused(t *testing.T) {
 	if !strings.Contains(err.Error(), "read only") {
 		t.Errorf("it said %q, which does not say why", err)
 	}
-}
-
-// contains reports whether a list holds a name.
-func contains(got []string, want string) bool {
-	for _, at := range got {
-		if at == want {
-			return true
-		}
-	}
-	return false
 }

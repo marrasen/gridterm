@@ -244,7 +244,7 @@ func TestTheGlowRisesAndFalls(t *testing.T) {
 	const samples = 16
 	steps := make([]float64, 0, samples)
 	start := time.UnixMilli(0)
-	for i := 0; i < samples; i++ {
+	for i := range samples {
 		step := glowAt(start.Add(time.Duration(i) * glowRise / (samples / 2)))
 		steps = append(steps, step)
 		at := glow(color.RGBA{R: 0x40, G: 0x80, B: 0xc0, A: 0xff}, step).A
@@ -346,7 +346,7 @@ func TestTheBorderItselfBrightensAndDims(t *testing.T) {
 
 	start := time.UnixMilli(0)
 	var dim, bright uint8 = 0xff, 0
-	for i := 0; i < glowSamples; i++ {
+	for i := range glowSamples {
 		a.drawShared(start.Add(time.Duration(i) * glowRise / (glowSamples / 2)))
 		at := rules(m)[0].Colour.A
 		dim, bright = min(dim, at), max(bright, at)
@@ -522,7 +522,7 @@ func TestTheRowsMarkGlowsWithTheBorder(t *testing.T) {
 
 	start := time.UnixMilli(0)
 	var dim, bright uint8 = 0xff, 0
-	for i := 0; i < glowSamples; i++ {
+	for i := range glowSamples {
 		at := a.sharedEdge(pane, start.Add(time.Duration(i)*glowRise/(glowSamples/2)))[0].A
 		dim, bright = min(dim, at), max(bright, at)
 	}
@@ -544,7 +544,7 @@ func TestTheRowAndTheBorderGlowTogether(t *testing.T) {
 
 	start := time.UnixMilli(0)
 	var dim, bright uint8 = 0xff, 0
-	for i := 0; i < glowSamples; i++ {
+	for i := range glowSamples {
 		now := start.Add(time.Duration(i) * glowRise / (glowSamples / 2))
 		a.drawShared(now)
 		border := rules(m)[0].Colour
@@ -644,7 +644,7 @@ func TestAGlowStepCostsOneRepaint(t *testing.T) {
 	// On to the next frame the glow actually moves on. The breath is
 	// slow, so that is not the very next one.
 	drew := false
-	for i := 0; i < int(glowEvery/frameAt60); i++ {
+	for range int(glowEvery / frameAt60) {
 		at = at.Add(frameAt60)
 		frame(t, a)
 		if !a.comp.Stats().Skipped {
@@ -823,7 +823,7 @@ func TestASharedPaneSkipsMostFramesOfABreath(t *testing.T) {
 
 	frames := int(glowEvery / frameAt60)
 	drew := 0
-	for i := 0; i < frames; i++ {
+	for range frames {
 		at = at.Add(frameAt60)
 		frame(t, a)
 		if !a.comp.Stats().Skipped {

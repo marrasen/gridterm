@@ -51,10 +51,7 @@ func slant(src *image.RGBA, baseline int) (*image.RGBA, int) {
 	grewLeft := max(-left, 0)
 	out := image.NewRGBA(image.Rect(0, 0, w+grewLeft+max(right, 0), h))
 	for y := range h {
-		at := shiftAt(y, baseline) + grewLeft
-		if at < 0 {
-			at = 0
-		}
+		at := max(shiftAt(y, baseline)+grewLeft, 0)
 		from := src.Pix[y*src.Stride : y*src.Stride+w*4]
 		copyOver(out.Pix[y*out.Stride+at*4:], from)
 	}

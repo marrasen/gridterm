@@ -100,7 +100,7 @@ func imageArgs(head string) map[string]string {
 		return out
 	}
 	out["__name"] = strings.TrimSpace(name)
-	for _, pair := range strings.Split(rest, ";") {
+	for pair := range strings.SplitSeq(rest, ";") {
 		k, v, ok := strings.Cut(pair, "=")
 		if !ok {
 			continue

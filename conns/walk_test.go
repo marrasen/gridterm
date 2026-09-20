@@ -45,7 +45,7 @@ func TestEachStopsWhenTheCallerSaysSo(t *testing.T) {
 // here rather than Groups.
 func TestWalkingAsksTheHeapForNothing(t *testing.T) {
 	r := New()
-	for i := 0; i < 8; i++ {
+	for range 8 {
 		r.Add(&Entry{Host: Local, Label: "one", Kind: Terminal})
 	}
 	now := time.Now()

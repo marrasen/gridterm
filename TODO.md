@@ -422,10 +422,17 @@ From Marcus's inbox, after working in a shared window.
   Still open from the same note: a scrollbar minimap, and a JSON log
   viewer like the one in particleview5-bugreport-viewer.
 
-- **A picture says how big it is but not how far it has got.**
-  `ReadPicture` decodes in one go rather than reading in chunks, so
-  there is nothing to count. A picture is capped at a size a pane can
-  draw, so the wait is shorter than a log file's, and nobody has asked.
+- **A picture counts up too**, through `ReadPictureWatched`. Marcus
+  asked on 2026-09-20: a picture is allowed to be sixty-four megabytes,
+  and over a tunnelled link at fifty kilobytes a second that is hours.
+  It counts the reading, not the decoding: the reading is what takes
+  the time, and the decode is this machine's own work and is over in
+  moments beside it.
+
+  What that leaves: the count sits at the full size while the picture
+  is decoded and shrunk. For a very large one that is a second or two
+  of a number that has stopped moving. Saying "decoding" there would
+  need the reader to be told which half it is in.
 
 ## The log pane
 

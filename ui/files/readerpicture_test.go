@@ -1,13 +1,19 @@
 package files
 
 import (
+	"bytes"
 	"errors"
 	"image"
+	"image/color"
+	"image/png"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/marrasen/gridterm/input"
 	"github.com/marrasen/gridterm/ui"
+	"github.com/marrasen/gridterm/vfs"
 )
 
 // aPictureFile is a reader on a picture, laid out and read.
@@ -193,5 +199,96 @@ func TestAPictureIsNotFollowed(t *testing.T) {
 	g := drawReader(r, 60, 10)
 	if got := readerRow(g, 0); strings.Contains(got, "following") {
 		t.Errorf("the top row reads %q", got)
+	}
+}
+
+// aNoisyPNG writes a PNG that does not compress away, so a read of it
+// comes back in more than one piece.
+func aNoisyPNG(t *testing.T, w, h int) string {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, w, h))
+	seed := uint32(1)
+	for y := range h {
+		for x := range w {
+			// A cheap spread of colours. Anything regular enough to
+			// compress would leave a file too small to read twice.
+			seed = seed*1664525 + 1013904223
+			img.Set(x, y, color.RGBA{
+				R: uint8(seed >> 24), G: uint8(seed >> 16), B: uint8(seed >> 8), A: 0xff,
+			})
+		}
+	}
+	var b bytes.Buffer
+	if err := png.Encode(&b, img); err != nil {
+		t.Fatalf("encode it: %v", err)
+	}
+	at := filepath.Join(t.TempDir(), "noisy.png")
+	if err := os.WriteFile(at, b.Bytes(), 0o600); err != nil {
+		t.Fatalf("write it: %v", err)
+	}
+	return at
+}
+
+// A picture counts up as it arrives, the same as a file of lines. A
+// picture may be tens of megabytes, and over a tunnelled link at fifty
+// kilobytes a second that is a wait worth measuring.
+func TestAPictureCountsUpAsItArrives(t *testing.T) {
+	at := aNoisyPNG(t, 400, 400)
+	listed, err := os.Stat(at)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+
+	var seen []int64
+	pic, err := ReadPictureWatched(vfs.NewLocal(), at, 4096, func(read int64) {
+		seen = append(seen, read)
+	})
+
+	if err != nil {
+		t.Fatalf("read the picture: %v", err)
+	}
+	if pic.Img == nil {
+		t.Fatal("no picture came back")
+	}
+	if len(seen) < 2 {
+		t.Fatalf("the watcher was told %d times for a %d byte file,"+
+			" want it told as the read went", len(seen), listed.Size())
+	}
+	for i := 1; i < len(seen); i++ {
+		if seen[i] <= seen[i-1] {
+			t.Fatalf("the count went %d then %d, want it only to grow", seen[i-1], seen[i])
+		}
+	}
+	if got, want := seen[len(seen)-1], listed.Size(); got != want {
+		t.Errorf("the last count was %d, want the whole file at %d", got, want)
+	}
+}
+
+// A picture nobody is watching still reads, which is what ReadPicture
+// is.
+func TestAPictureNobodyIsWatchingStillReads(t *testing.T) {
+	pic, err := ReadPicture(vfs.NewLocal(), pngOf(t, "small.png", 8, 8), 4096)
+
+	if err != nil {
+		t.Fatalf("read the picture: %v", err)
+	}
+	if pic.Img == nil {
+		t.Error("no picture came back")
+	}
+}
+
+// What the pane says while a picture is arriving.
+func TestAPictureSaysHowFarOfHowMuchHasArrived(t *testing.T) {
+	r := NewReader("shot.png", "/tmp/shot.png")
+	r.Style = readerStyle()
+	r.ReadPic = func(then func(Pic, error)) {}
+	r.Expect = 4_400_000
+	r.Layout(ui.Size{Cols: 44, Rows: 8})
+	r.Open()
+
+	r.ReadSoFar(2_000_000)
+
+	if got := readerRow(drawReader(r, 44, 8), 0); !strings.Contains(got, "1.9 of 4.2 MB") {
+		t.Errorf("the top row is %q, want it to say how far of how much", got)
 	}
 }

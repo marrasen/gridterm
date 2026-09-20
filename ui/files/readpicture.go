@@ -58,6 +58,21 @@ func IsPicture(name string) bool {
 // The caller runs it somewhere that is not the goroutine that draws, so
 // the shrinking happens there too.
 func ReadPicture(f vfs.FS, at string, side int) (pic Pic, err error) {
+	return ReadPictureWatched(f, at, side, nil)
+}
+
+// ReadPictureWatched is ReadPicture with somebody counting the bytes as
+// they arrive.
+//
+// It counts the reading, not the decoding. The reading is what takes
+// the time: a picture is allowed to be sixty-four megabytes, and over a
+// tunnelled link at fifty kilobytes a second that is hours. The decode
+// that follows is work this machine does and is over in moments beside
+// it, so the count sits at the full size while it happens.
+//
+// watch is called from the goroutine doing the reading, the same as
+// ReadFileWatched's.
+func ReadPictureWatched(f vfs.FS, at string, side int, watch func(read int64)) (pic Pic, err error) {
 	rc, err := f.Open(at)
 	if err != nil {
 		return Pic{}, err
@@ -69,7 +84,7 @@ func ReadPicture(f vfs.FS, at string, side int) (pic Pic, err error) {
 	// The whole file, because a decoder reads it twice: once for its
 	// size and once for its pixels, and a file on another machine cannot
 	// be wound back.
-	raw, err := io.ReadAll(io.LimitReader(rc, MostPictureBytes+1))
+	raw, err := io.ReadAll(&counter{from: io.LimitReader(rc, MostPictureBytes+1), watch: watch})
 	if err != nil {
 		return Pic{}, err
 	}

@@ -72,7 +72,7 @@ func (a *app) openReader(f vfs.FS, host, path, name string, follow bool, expect 
 		r.ReadPic = func(then func(files.Pic, error)) {
 			a.holdFS(f)
 			go func() {
-				pic, err := files.ReadPicture(f, path, mostPictureSide)
+				pic, err := files.ReadPictureWatched(f, path, mostPictureSide, a.watchRead(r))
 				a.pump.post(func() {
 					a.doneWithFS(f)
 					then(pic, err)

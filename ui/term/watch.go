@@ -395,7 +395,6 @@ func dropLast(text string, n int) string {
 	return text
 }
 
-// readingLocked is ReadLines with the emulator's lock already held.
 // Picture is one picture on the screen, as something reading the pane
 // as text is told about it.
 //

@@ -9,7 +9,7 @@ import (
 func TestAProgramAsksForAMessage(t *testing.T) {
 	term := New(40, 10, DefaultPalette(), 100, Callbacks{})
 
-	term.Write([]byte("\x1b]9;the build finished\x07"))
+	feed(t, term, "\x1b]9;the build finished\x07")
 
 	text, num := term.Notice()
 	if text != "the build finished" {
@@ -25,8 +25,8 @@ func TestAProgramAsksForAMessage(t *testing.T) {
 func TestTheSameMessageTwiceIsTwoMessages(t *testing.T) {
 	term := New(40, 10, DefaultPalette(), 100, Callbacks{})
 
-	term.Write([]byte("\x1b]9;done\x07"))
-	term.Write([]byte("\x1b]9;done\x07"))
+	feed(t, term, "\x1b]9;done\x07")
+	feed(t, term, "\x1b]9;done\x07")
 
 	if _, num := term.Notice(); num != 2 {
 		t.Errorf("two messages came out as number %d", num)
@@ -38,7 +38,7 @@ func TestTheSameMessageTwiceIsTwoMessages(t *testing.T) {
 func TestAMessageWithASemicolonArrivesWhole(t *testing.T) {
 	term := New(40, 10, DefaultPalette(), 100, Callbacks{})
 
-	term.Write([]byte("\x1b]9;built; 3 warnings\x07"))
+	feed(t, term, "\x1b]9;built; 3 warnings\x07")
 
 	if text, _ := term.Notice(); text != "built; 3 warnings" {
 		t.Errorf("the message came out as %q", text)
@@ -52,18 +52,18 @@ func TestAMessageIsTrimmedToSomethingShowable(t *testing.T) {
 
 	// An escape inside the message ends the sequence, so what follows
 	// it never reaches the message at all.
-	term.Write([]byte("\x1b]9;clean\x1b[2Jnow\x07"))
+	feed(t, term, "\x1b]9;clean\x1b[2Jnow\x07")
 	if text, _ := term.Notice(); text != "clean" {
 		t.Errorf("the escape survived, as %q", text)
 	}
 
 	// A control character that does not end the sequence is dropped.
-	term.Write([]byte("\x1b]9;one\x01two\x08\x07"))
+	feed(t, term, "\x1b]9;one\x01two\x08\x07")
 	if text, _ := term.Notice(); text != "onetwo" {
 		t.Errorf("a control character survived, as %q", text)
 	}
 
-	term.Write([]byte("\x1b]9;" + strings.Repeat("x", MostNoticeRunes+50) + "\x07"))
+	feed(t, term, "\x1b]9;"+strings.Repeat("x", MostNoticeRunes+50)+"\x07")
 	if text, _ := term.Notice(); len([]rune(text)) != MostNoticeRunes {
 		t.Errorf("a long message came out %d runes long", len([]rune(text)))
 	}
@@ -73,9 +73,9 @@ func TestAMessageIsTrimmedToSomethingShowable(t *testing.T) {
 // about the one before it.
 func TestTheNextCommandTakesTheMessageOff(t *testing.T) {
 	term := New(40, 10, DefaultPalette(), 100, Callbacks{})
-	term.Write([]byte("\x1b]9;the build finished\x07"))
+	feed(t, term, "\x1b]9;the build finished\x07")
 
-	term.Write([]byte("\x1b]133;C\x07"))
+	feed(t, term, "\x1b]133;C\x07")
 
 	if text, _ := term.Notice(); text != "" {
 		t.Errorf("%q is still on the pane while the next command runs", text)
@@ -99,7 +99,7 @@ func TestAProgramSaysHowFarAlongItIs(t *testing.T) {
 	} {
 		term := New(40, 10, DefaultPalette(), 100, Callbacks{})
 
-		term.Write([]byte(tc.sent))
+		feed(t, term, tc.sent)
 
 		if got := term.Progress(); got != tc.want {
 			t.Errorf("%q gave %+v, want %+v", tc.sent, got, tc.want)
@@ -115,9 +115,9 @@ func TestNonsenseInsteadOfProgressIsRefused(t *testing.T) {
 		"\x1b]9;4;x;50\x07",
 	} {
 		term := New(40, 10, DefaultPalette(), 100, Callbacks{})
-		term.Write([]byte("\x1b]9;4;1;30\x07"))
+		feed(t, term, "\x1b]9;4;1;30\x07")
 
-		term.Write([]byte(sent))
+		feed(t, term, sent)
 
 		if got := term.Progress(); got.Percent != 30 {
 			t.Errorf("%q changed it to %+v", sent, got)
@@ -128,9 +128,9 @@ func TestNonsenseInsteadOfProgressIsRefused(t *testing.T) {
 // Saying it has finished takes the number away with it.
 func TestFinishingTakesTheNumberAway(t *testing.T) {
 	term := New(40, 10, DefaultPalette(), 100, Callbacks{})
-	term.Write([]byte("\x1b]9;4;1;80\x07"))
+	feed(t, term, "\x1b]9;4;1;80\x07")
 
-	term.Write([]byte("\x1b]9;4;0\x07"))
+	feed(t, term, "\x1b]9;4;0\x07")
 
 	if got := term.Progress(); got != (Progress{}) {
 		t.Errorf("it came out as %+v, want nothing at all", got)
@@ -152,7 +152,7 @@ func TestAProgramAsksWhatColourTheThemeIs(t *testing.T) {
 			Reply: func(b []byte) { said = append(said, b...) },
 		})
 
-		term.Write([]byte(tc.sent))
+		feed(t, term, tc.sent)
 
 		if string(said) != tc.want {
 			t.Errorf("%q was answered %q, want %q", tc.sent, said, tc.want)
@@ -169,7 +169,7 @@ func TestAProgramCannotSetTheColours(t *testing.T) {
 		Reply: func(b []byte) { said = append(said, b...) },
 	})
 
-	term.Write([]byte("\x1b]11;rgb:ffff/0000/0000\x07"))
+	feed(t, term, "\x1b]11;rgb:ffff/0000/0000\x07")
 
 	if len(said) != 0 {
 		t.Errorf("it was answered %q", said)
@@ -182,9 +182,9 @@ func TestAProgramCannotSetTheColours(t *testing.T) {
 // A reset forgets what the program said about itself.
 func TestAResetForgetsTheMessageAndTheProgress(t *testing.T) {
 	term := New(40, 10, DefaultPalette(), 100, Callbacks{})
-	term.Write([]byte("\x1b]9;working\x07\x1b]9;4;1;50\x07"))
+	feed(t, term, "\x1b]9;working\x07\x1b]9;4;1;50\x07")
 
-	term.Write([]byte("\x1bc"))
+	feed(t, term, "\x1bc")
 
 	if text, _ := term.Notice(); text != "" {
 		t.Errorf("%q survived a reset", text)
@@ -216,7 +216,7 @@ func TestAProgramAsksWhatAPaletteColourIs(t *testing.T) {
 			Reply: func(b []byte) { said = append(said, b...) },
 		})
 
-		term.Write([]byte(tc.sent))
+		feed(t, term, tc.sent)
 
 		if string(said) != tc.want {
 			t.Errorf("%q was answered %q, want %q", tc.sent, said, tc.want)
@@ -239,7 +239,7 @@ func TestAPaletteQuestionThatMakesNoSenseIsNotAnswered(t *testing.T) {
 			Reply: func(b []byte) { said = append(said, b...) },
 		})
 
-		term.Write([]byte(sent))
+		feed(t, term, sent)
 
 		if len(said) != 0 {
 			t.Errorf("%q was answered %q", sent, said)
@@ -252,7 +252,7 @@ func TestAPaletteQuestionThatMakesNoSenseIsNotAnswered(t *testing.T) {
 func TestAProgramCannotSetAPaletteColour(t *testing.T) {
 	term := New(40, 10, DefaultPalette(), 100, Callbacks{})
 
-	term.Write([]byte("\x1b]4;1;rgb:ffff/ffff/ffff\x07"))
+	feed(t, term, "\x1b]4;1;rgb:ffff/ffff/ffff\x07")
 
 	if got := term.Screen().palette.ANSI[1]; got != DefaultPalette().ANSI[1] {
 		t.Errorf("colour 1 became %v", got)

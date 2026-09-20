@@ -32,7 +32,7 @@ func TestAPictureWrittenInPiecesArrives(t *testing.T) {
 	whole := []byte("before\x1b]1337;File=inline=1;width=4;height=2:" + aPNG(t, 64, 64) + "\x07after")
 
 	for at := 0; at < len(whole); at += 3 {
-		term.Write(whole[at:min(at+3, len(whole))])
+		feed(t, term, string(whole[at:min(at+3, len(whole))]))
 	}
 
 	if got := term.Images(); len(got) != 1 {
@@ -51,7 +51,7 @@ func TestAPictureWrittenInPiecesArrives(t *testing.T) {
 func TestAPictureEndedWithAStringTerminatorArrives(t *testing.T) {
 	term := New(40, 10, DefaultPalette(), 100, Callbacks{})
 
-	term.Write([]byte("\x1b]1337;File=inline=1;width=4;height=2:" + aPNG(t, 64, 64) + "\x1b\\next"))
+	feed(t, term, "\x1b]1337;File=inline=1;width=4;height=2:"+aPNG(t, 64, 64)+"\x1b\\next")
 
 	if got := term.Images(); len(got) != 1 {
 		t.Fatalf("%d pictures, want one", len(got))
@@ -66,7 +66,7 @@ func TestAPictureEndedWithAStringTerminatorArrives(t *testing.T) {
 func TestAnAbandonedPictureDoesNotSwallowTheRest(t *testing.T) {
 	term := New(40, 10, DefaultPalette(), 100, Callbacks{})
 
-	term.Write([]byte("\x1b]1337;File=inline=1:abc\x1b[31mred"))
+	feed(t, term, "\x1b]1337;File=inline=1:abc\x1b[31mred")
 
 	if got := term.Images(); len(got) != 0 {
 		t.Errorf("%d pictures from a sequence that never ended", len(got))
@@ -81,11 +81,11 @@ func TestAnAbandonedPictureDoesNotSwallowTheRest(t *testing.T) {
 func TestAPayloadTooBigIsThrownAway(t *testing.T) {
 	term := New(40, 10, DefaultPalette(), 100, Callbacks{})
 
-	term.Write([]byte("\x1b]1337;File=inline=1:"))
+	feed(t, term, "\x1b]1337;File=inline=1:")
 	for range (mostLongOSC / 4096) + 2 {
-		term.Write([]byte(strings.Repeat("A", 4096)))
+		feed(t, term, strings.Repeat("A", 4096))
 	}
-	term.Write([]byte("\x07done"))
+	feed(t, term, "\x07done")
 
 	if got := term.Images(); len(got) != 0 {
 		t.Errorf("%d pictures from a payload nobody could hold", len(got))
@@ -100,10 +100,10 @@ func TestAPayloadTooBigIsThrownAway(t *testing.T) {
 func TestEverythingElseStillReachesTheParser(t *testing.T) {
 	term := New(40, 10, DefaultPalette(), 100, Callbacks{})
 
-	term.Write([]byte("\x1b]7;file://here/tmp\x07"))
-	term.Write([]byte("\x1b]1339;not a picture\x07"))
-	term.Write([]byte("\x1b]2;a title\x07"))
-	term.Write([]byte("\x1b\x1b]133;A\x07plain"))
+	feed(t, term, "\x1b]7;file://here/tmp\x07")
+	feed(t, term, "\x1b]1339;not a picture\x07")
+	feed(t, term, "\x1b]2;a title\x07")
+	feed(t, term, "\x1b\x1b]133;A\x07plain")
 
 	if dir, host := term.Dir(); dir != "/tmp" || host != "here" {
 		t.Errorf("the working directory came out as %q on %q", dir, host)

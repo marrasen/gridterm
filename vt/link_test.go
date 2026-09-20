@@ -27,7 +27,7 @@ func linkUnder(t *testing.T, term *Terminal, col, row int) string {
 func TestOSC8PutsALinkUnderTheText(t *testing.T) {
 	term := New(40, 5, DefaultPalette(), 10, Callbacks{})
 
-	term.Write([]byte("\x1b]8;;https://example.com/a\x07click\x1b]8;;\x07 plain"))
+	feed(t, term, "\x1b]8;;https://example.com/a\x07click\x1b]8;;\x07 plain")
 
 	if got := linkUnder(t, term, 0, 0); got != "https://example.com/a" {
 		t.Errorf("the first cell has %q, want the address", got)
@@ -41,7 +41,7 @@ func TestOSC8PutsALinkUnderTheText(t *testing.T) {
 func TestOSC8EndsWhereItIsClosed(t *testing.T) {
 	term := New(40, 5, DefaultPalette(), 10, Callbacks{})
 
-	term.Write([]byte("\x1b]8;;https://example.com/a\x07click\x1b]8;;\x07plain"))
+	feed(t, term, "\x1b]8;;https://example.com/a\x07click\x1b]8;;\x07plain")
 
 	if got := linkUnder(t, term, 5, 0); got != "" {
 		t.Errorf("the text after the link has %q, want no link", got)
@@ -53,8 +53,8 @@ func TestOSC8EndsWhereItIsClosed(t *testing.T) {
 func TestTheSameAddressTwiceIsOneEntry(t *testing.T) {
 	term := New(40, 5, DefaultPalette(), 10, Callbacks{})
 
-	term.Write([]byte("\x1b]8;;https://example.com/a\x07one\x1b]8;;\x07 "))
-	term.Write([]byte("\x1b]8;;https://example.com/a\x07two\x1b]8;;\x07"))
+	feed(t, term, "\x1b]8;;https://example.com/a\x07one\x1b]8;;\x07 ")
+	feed(t, term, "\x1b]8;;https://example.com/a\x07two\x1b]8;;\x07")
 
 	first := renderOf(t, term).At(0, 0).Link
 	second := renderOf(t, term).At(4, 0).Link
@@ -69,7 +69,7 @@ func TestTheSameAddressTwiceIsOneEntry(t *testing.T) {
 func TestOSC8IgnoresTheParametersBeforeTheAddress(t *testing.T) {
 	term := New(40, 5, DefaultPalette(), 10, Callbacks{})
 
-	term.Write([]byte("\x1b]8;id=42;https://example.com/a\x07click"))
+	feed(t, term, "\x1b]8;id=42;https://example.com/a\x07click")
 
 	if got := linkUnder(t, term, 0, 0); got != "https://example.com/a" {
 		t.Errorf("it read %q, want the address after the parameters", got)
@@ -80,7 +80,7 @@ func TestOSC8IgnoresTheParametersBeforeTheAddress(t *testing.T) {
 func TestOSC8KeepsASemicolonInTheAddress(t *testing.T) {
 	term := New(40, 5, DefaultPalette(), 10, Callbacks{})
 
-	term.Write([]byte("\x1b]8;;https://example.com/a;b\x07click"))
+	feed(t, term, "\x1b]8;;https://example.com/a;b\x07click")
 
 	if got := linkUnder(t, term, 0, 0); got != "https://example.com/a;b" {
 		t.Errorf("it read %q, want the semicolon kept", got)
@@ -106,7 +106,7 @@ func TestOSC8TakesOnlyTheSchemesWorthOpening(t *testing.T) {
 		{"no-scheme-at-all", false},
 	} {
 		term := New(40, 5, DefaultPalette(), 10, Callbacks{})
-		term.Write([]byte("\x1b]8;;" + tc.uri + "\x07x"))
+		feed(t, term, "\x1b]8;;"+tc.uri+"\x07x")
 
 		got := linkUnder(t, term, 0, 0)
 		if tc.take && got != tc.uri {
@@ -122,7 +122,7 @@ func TestOSC8TakesOnlyTheSchemesWorthOpening(t *testing.T) {
 // from somewhere else cannot point at one of these.
 func TestAnUnknownLinkNumberNamesNothing(t *testing.T) {
 	term := New(40, 5, DefaultPalette(), 10, Callbacks{})
-	term.Write([]byte("\x1b]8;;https://example.com\x07x"))
+	feed(t, term, "\x1b]8;;https://example.com\x07x")
 
 	if got := term.LinkURL(9999); got != "" {
 		t.Errorf("a number nothing set names %q", got)
@@ -137,10 +137,10 @@ func TestAnUnknownLinkNumberNamesNothing(t *testing.T) {
 func TestPastTheCapTheTextIsStillPrinted(t *testing.T) {
 	term := New(40, 5, DefaultPalette(), 10, Callbacks{})
 	for i := range MostLinks + 5 {
-		term.Write([]byte("\x1b]8;;https://example.com/" + strconv.Itoa(i) + "\x07"))
+		feed(t, term, "\x1b]8;;https://example.com/"+strconv.Itoa(i)+"\x07")
 	}
 
-	term.Write([]byte("past"))
+	feed(t, term, "past")
 
 	if got := linkUnder(t, term, 0, 0); got != "" {
 		t.Errorf("past the cap a cell has %q, want no link", got)
@@ -153,9 +153,9 @@ func TestPastTheCapTheTextIsStillPrinted(t *testing.T) {
 // A reset forgets the links, the same as it forgets the title.
 func TestAResetForgetsTheLinks(t *testing.T) {
 	term := New(40, 5, DefaultPalette(), 10, Callbacks{})
-	term.Write([]byte("\x1b]8;;https://example.com\x07x"))
+	feed(t, term, "\x1b]8;;https://example.com\x07x")
 
-	term.Write([]byte("\x1bc"))
+	feed(t, term, "\x1bc")
 
 	if got := term.LinkURL(1); got != "" {
 		t.Errorf("after a reset the first link is still %q", got)
@@ -166,9 +166,9 @@ func TestAResetForgetsTheLinks(t *testing.T) {
 // space a clear leaves behind.
 func TestErasedSpaceCarriesNoLink(t *testing.T) {
 	term := New(40, 5, DefaultPalette(), 10, Callbacks{})
-	term.Write([]byte("\x1b]8;;https://example.com\x07link"))
+	feed(t, term, "\x1b]8;;https://example.com\x07link")
 
-	term.Write([]byte("\x1b[2J"))
+	feed(t, term, "\x1b[2J")
 
 	if got := linkUnder(t, term, 0, 0); got != "" {
 		t.Errorf("the cleared screen has %q under it", got)

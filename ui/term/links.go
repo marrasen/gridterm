@@ -169,7 +169,7 @@ func findPathText(row []rune, at int) (text string, line, from, to int, ok bool)
 	if at < 0 || at >= len(row) || !inPath(row[at]) {
 		return "", 0, 0, 0, false
 	}
-	from, to = at, at+1
+	from = at
 	for from > 0 && inPath(row[from-1]) {
 		from--
 	}

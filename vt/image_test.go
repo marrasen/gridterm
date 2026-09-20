@@ -43,7 +43,7 @@ func aBigPNG(t *testing.T) string {
 // sendImage writes an inline picture the way iTerm2's sequence does.
 func sendImage(t *testing.T, term *Terminal, args, body string) {
 	t.Helper()
-	term.Write([]byte("\x1b]1337;File=" + args + ":" + body + "\x07"))
+	feed(t, term, "\x1b]1337;File="+args+":"+body+"\x07")
 }
 
 // A program puts a picture in the output and the pane holds it, on
@@ -71,7 +71,7 @@ func TestTheCursorMovesPastAPicture(t *testing.T) {
 	term := New(40, 10, DefaultPalette(), 100, Callbacks{})
 
 	sendImage(t, term, "inline=1;width=10;height=4", aPNG(t, 80, 64))
-	term.Write([]byte("after"))
+	feed(t, term, "after")
 
 	g := renderOf(t, term)
 	var row strings.Builder
@@ -102,7 +102,7 @@ func TestAPictureKeepsItsPlaceAsTheScreenScrolls(t *testing.T) {
 	// Filled past the bottom, so the screen scrolls rather than the
 	// lines landing in the room that is left.
 	for range 10 {
-		term.Write([]byte("filler\r\n"))
+		feed(t, term, "filler\r\n")
 	}
 
 	placed = term.Placed()
@@ -121,7 +121,7 @@ func TestAPictureScrolledOffIsNotPlaced(t *testing.T) {
 	term := New(40, 5, DefaultPalette(), 100, Callbacks{})
 	sendImage(t, term, "inline=1;width=4;height=2", aPNG(t, 32, 32))
 	for range 20 {
-		term.Write([]byte("a line\r\n"))
+		feed(t, term, "a line\r\n")
 	}
 
 	if got := term.Placed(); len(got) != 0 {
@@ -147,7 +147,7 @@ func TestAPictureThatFellOutOfHistoryIsForgotten(t *testing.T) {
 	// limit it trims to: until then the lines are still there and
 	// the picture is still reachable.
 	for range 400 {
-		term.Write([]byte("a line\r\n"))
+		feed(t, term, "a line\r\n")
 	}
 	term.Placed()
 
@@ -245,7 +245,7 @@ func TestTheAlternateScreenPlacesNoPictures(t *testing.T) {
 	term := New(40, 10, DefaultPalette(), 100, Callbacks{})
 	sendImage(t, term, "inline=1;width=4;height=2", aPNG(t, 32, 32))
 
-	term.Write([]byte("\x1b[?1049h"))
+	feed(t, term, "\x1b[?1049h")
 
 	if got := term.Placed(); len(got) != 0 {
 		t.Errorf("%d placed on the alternate screen, want none", len(got))
@@ -257,7 +257,7 @@ func TestAResetForgetsThePictures(t *testing.T) {
 	term := New(40, 10, DefaultPalette(), 100, Callbacks{})
 	sendImage(t, term, "inline=1;width=4;height=2", aPNG(t, 32, 32))
 
-	term.Write([]byte("\x1bc"))
+	feed(t, term, "\x1bc")
 
 	if got := term.Images(); len(got) != 0 {
 		t.Errorf("%d pictures survived a reset", len(got))

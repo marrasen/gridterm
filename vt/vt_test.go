@@ -43,6 +43,14 @@ func newHarness(t *testing.T, cols, rows int) *harness {
 	return h
 }
 
+// feed writes to a terminal the way a program does, and stops the test if the write fails.
+func feed(t *testing.T, term *Terminal, text string) {
+	t.Helper()
+	if _, err := term.Write([]byte(text)); err != nil {
+		t.Fatalf("write to the terminal: %v", err)
+	}
+}
+
 func (h *harness) write(s string) *harness {
 	h.t.Helper()
 	if _, err := h.term.Write([]byte(s)); err != nil {

@@ -8,18 +8,6 @@ import (
 	"strings"
 )
 
-// followLink opens a hyperlink a program put under its text.
-//
-// The address comes from whatever is running in the pane, which may be
-// anything at all, so it is checked here as well as where it was read:
-// only the schemes a browser is the right answer for, and never
-// something that could hand a local program a command line.
-func (a *app) followLink(at string) {
-	if err := openInBrowser(at); err != nil {
-		a.reportError("Could not open the link", err)
-	}
-}
-
 // openInBrowser hands an address to whatever the machine opens links
 // with.
 //

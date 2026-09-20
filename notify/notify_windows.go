@@ -60,7 +60,7 @@ type notifyIconData struct {
 	UVersion         uint32
 	SzInfoTitle      [64]uint16
 	DwInfoFlags      uint32
-	GuidItem         win.GUID
+	GUIDItem         win.GUID
 	HBalloonIcon     win.Handle
 }
 
@@ -139,7 +139,7 @@ func addIcon(name string) (notifyIconData, bool) {
 	data.CbSize = uint32(unsafe.Sizeof(data))
 	copy(data.SzTip[:len(data.SzTip)-1], win.StringToUTF16(name))
 	if r, _, _ := shellNotifyIcon.Call(nimAdd, uintptr(unsafe.Pointer(&data))); r == 0 {
-		destroyWindow.Call(hwnd)
+		_, _, _ = destroyWindow.Call(hwnd)
 		return notifyIconData{}, false
 	}
 	return data, true
@@ -176,13 +176,13 @@ func show(data *notifyIconData, title, body string) error {
 	return nil
 }
 
-// remove takes the icon away again.
+// remove takes the icon away again. Nothing is left to report a failure to, so the results are dropped.
 func remove(data *notifyIconData) {
-	shellNotifyIcon.Call(nimDelete, uintptr(unsafe.Pointer(data)))
+	_, _, _ = shellNotifyIcon.Call(nimDelete, uintptr(unsafe.Pointer(data)))
 	if data.HIcon != 0 {
-		destroyIcon.Call(uintptr(data.HIcon))
+		_, _, _ = destroyIcon.Call(uintptr(data.HIcon))
 	}
-	destroyWindow.Call(uintptr(data.HWnd))
+	_, _, _ = destroyWindow.Call(uintptr(data.HWnd))
 }
 
 // Show puts one message up and waits only for the shell to take it.

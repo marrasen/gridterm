@@ -28,7 +28,7 @@ func screenOf(t *testing.T, term *Terminal, cols, rows int) string {
 // the row it is on and at the size it was given.
 func TestAPictureReachesAWatchingWindow(t *testing.T) {
 	here := New(40, 10, DefaultPalette(), 100, Callbacks{})
-	here.Write([]byte("before\r\n"))
+	feed(t, here, "before\r\n")
 	sendImage(t, here, "inline=1;width=10;height=4", aPNG(t, 80, 64))
 	want := here.LivePlaced()
 	if len(want) != 1 {
@@ -36,7 +36,7 @@ func TestAPictureReachesAWatchingWindow(t *testing.T) {
 	}
 
 	there := New(40, 10, DefaultPalette(), 100, Callbacks{})
-	there.Write([]byte(screenOf(t, here, 40, 10)))
+	feed(t, there, screenOf(t, here, 40, 10))
 
 	got := there.Placed()
 	if len(got) != 1 {
@@ -61,10 +61,10 @@ func TestAPictureReachesAWatchingWindow(t *testing.T) {
 func TestAPictureOnTheWireDoesNotMoveTheText(t *testing.T) {
 	here := New(40, 10, DefaultPalette(), 100, Callbacks{})
 	sendImage(t, here, "inline=1;width=10;height=4", aPNG(t, 80, 64))
-	here.Write([]byte("under the picture"))
+	feed(t, here, "under the picture")
 
 	there := New(40, 10, DefaultPalette(), 100, Callbacks{})
-	there.Write([]byte(screenOf(t, here, 40, 10)))
+	feed(t, there, screenOf(t, here, 40, 10))
 
 	theirs, ours := liveGrid(t, there, 40, 10), liveGrid(t, here, 40, 10)
 	if got, want := rowText(theirs, 4), rowText(ours, 4); got != want {
@@ -91,15 +91,15 @@ func TestANewScreenForgetsTheOldPictures(t *testing.T) {
 	sendImage(t, here, "inline=1;width=10;height=4", aPNG(t, 80, 64))
 
 	there := New(40, 10, DefaultPalette(), 100, Callbacks{})
-	there.Write([]byte(screenOf(t, here, 40, 10)))
+	feed(t, there, screenOf(t, here, 40, 10))
 	if len(there.Placed()) != 1 {
 		t.Fatal("the picture did not arrive in the first place")
 	}
 
 	// The same pane, with the picture gone and only text on it.
 	plain := New(40, 10, DefaultPalette(), 100, Callbacks{})
-	plain.Write([]byte("just text\r\n"))
-	there.Write([]byte(screenOf(t, plain, 40, 10)))
+	feed(t, plain, "just text\r\n")
+	feed(t, there, screenOf(t, plain, 40, 10))
 
 	if got := there.Images(); len(got) != 0 {
 		t.Errorf("%d pictures from the screen before are still held", len(got))
@@ -111,15 +111,15 @@ func TestANewScreenForgetsTheOldPictures(t *testing.T) {
 func TestAPictureTravelsUnderAFullScreenProgram(t *testing.T) {
 	here := New(40, 10, DefaultPalette(), 100, Callbacks{})
 	sendImage(t, here, "inline=1;width=10;height=4", aPNG(t, 80, 64))
-	here.Write([]byte("\x1b[?1049h"))
+	feed(t, here, "\x1b[?1049h")
 
 	there := New(40, 10, DefaultPalette(), 100, Callbacks{})
-	there.Write([]byte(screenOf(t, here, 40, 10)))
+	feed(t, there, screenOf(t, here, 40, 10))
 
 	if got := there.Placed(); len(got) != 0 {
 		t.Errorf("%d pictures placed on the alternate screen", len(got))
 	}
-	there.Write([]byte("\x1b[?1049l"))
+	feed(t, there, "\x1b[?1049l")
 	if got := there.Placed(); len(got) != 1 {
 		t.Errorf("%d pictures once the full-screen program quit, want one", len(got))
 	}
@@ -144,7 +144,7 @@ func TestPicturesPastTheBudgetAreLeftOut(t *testing.T) {
 
 	there := New(40, 10, DefaultPalette(), 100, Callbacks{})
 	screen := screenOf(t, here, 40, 10)
-	there.Write([]byte(screen))
+	feed(t, there, screen)
 
 	got := len(there.Placed())
 	if got == 0 {
@@ -169,7 +169,7 @@ func TestAPlacementThatMakesNoSenseIsDropped(t *testing.T) {
 		"nonsense",
 	} {
 		term := New(40, 10, DefaultPalette(), 100, Callbacks{})
-		term.Write([]byte("\x1b]1338;" + args + "\x07"))
+		feed(t, term, "\x1b]1338;"+args+"\x07")
 		if got := term.Images(); len(got) != 0 {
 			t.Errorf("%q was taken as %d pictures", args, len(got))
 		}

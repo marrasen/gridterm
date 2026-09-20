@@ -17,7 +17,7 @@ func TestAShellSaysWhereItIsAsAPath(t *testing.T) {
 	} {
 		term := New(40, 10, DefaultPalette(), 100, Callbacks{})
 
-		term.Write([]byte(tc.sent))
+		feed(t, term, tc.sent)
 
 		dir, host := term.Dir()
 		if dir != tc.want {
@@ -38,9 +38,9 @@ func TestNonsenseInsteadOfAPathIsRefused(t *testing.T) {
 		"\x1b]9;a message\x07",
 	} {
 		term := New(40, 10, DefaultPalette(), 100, Callbacks{})
-		term.Write([]byte("\x1b]7;file://here/tmp\x07"))
+		feed(t, term, "\x1b]7;file://here/tmp\x07")
 
-		term.Write([]byte(sent))
+		feed(t, term, sent)
 
 		if dir, _ := term.Dir(); dir != "/tmp" {
 			t.Errorf("%q changed the directory to %q", sent, dir)

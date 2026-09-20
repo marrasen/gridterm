@@ -5,7 +5,7 @@ import "testing"
 // feedOSC writes an OSC sequence to a terminal, the way a shell does.
 func feedOSC(t *testing.T, term *Terminal, body string) {
 	t.Helper()
-	term.Write([]byte("\x1b]" + body + "\x07"))
+	feed(t, term, "\x1b]"+body+"\x07")
 }
 
 // A shell says where it is with OSC 7, and the pane remembers.
@@ -115,7 +115,7 @@ func TestAResetForgetsWhereTheShellWas(t *testing.T) {
 	term := New(20, 5, DefaultPalette(), 10, Callbacks{})
 	feedOSC(t, term, "7;file:///home/marcus")
 
-	term.Write([]byte("\x1bc"))
+	feed(t, term, "\x1bc")
 
 	if dir, _ := term.Dir(); dir != "" {
 		t.Errorf("it still says %q after a reset", dir)
@@ -127,7 +127,7 @@ func TestAResetForgetsWhereTheShellWas(t *testing.T) {
 func TestAShellThatSaysNothingLeavesNoDirectory(t *testing.T) {
 	term := New(20, 5, DefaultPalette(), 10, Callbacks{})
 
-	term.Write([]byte("hello\r\n"))
+	feed(t, term, "hello\r\n")
 
 	if dir, host := term.Dir(); dir != "" || host != "" {
 		t.Errorf("it says %q on %q, want nothing", dir, host)

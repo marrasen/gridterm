@@ -90,6 +90,10 @@ type Field struct {
 	picked bool
 	mark   int
 
+	// dragging says the pointer is down in the field, so a move carries
+	// the loose end of the selection with it.
+	dragging bool
+
 	cols    int
 	focused bool
 }
@@ -193,7 +197,7 @@ func (f *Field) Layout(size Size) {
 func (f *Field) SetFocus(on bool) {
 	f.focused = on
 	if !on {
-		f.picked = false
+		f.picked, f.dragging = false, false
 	}
 }
 

@@ -46,24 +46,34 @@ the work did not answer.
   know whether a reader has the keys, which is a change to how a command
   is run rather than a case to add.
 
-- **A form field cannot be dragged over.** `Field` has no HandleMouse at
-  all, and `Form.HandleMouse` swallows every move and release. So the
-  terminal selects with the mouse, the file viewer does, a notice does,
-  and a text box -- the one place everybody expects to drag -- does not.
-  The keyboard is the only way in.
-
 - **The reader has no caret, so shift and a key that moves has nowhere
   obvious to start.** With nothing picked out it starts at the top left
   of the view. In a file scrolled halfway down, one Shift+Right puts a
   one-character selection in the corner rather than where the user was
   looking. Defensible, and still a surprise.
 
-Done from the same review: Ctrl+X now says there is nothing to cut from
-a file being read, and the reader declines a chord its bar never
-offered. It used to match any Ctrl chord, so Ctrl+Shift+R reread the
-file and Ctrl+Shift+F followed it, and Ctrl+Shift+H and Ctrl+Shift+D
-only reached the window's help and split because an accelerator runs
-first.
+Done from the same review:
+
+- **A text box can be dragged over.** `Field` picks text out with the
+  pointer now, and the form and the palette carry the drag to it. A
+  press puts the caret where it landed and starts a selection, a move
+  carries the loose end, and a release that never moved leaves a click.
+  Shift and a press carry the selection to where it landed. A drag off
+  either end of a field runs to the end of the text, so a value wider
+  than its box is picked out whole. A click on the first column of a
+  scrolled field used to jump the caret to the start of the text and
+  now lands on the first character shown.
+
+- **Ctrl+X in the file viewer says why it did nothing**, and the reader
+  declines a chord its bar never offered. It used to match any Ctrl
+  chord, so Ctrl+Shift+R reread the file and Ctrl+Shift+F followed it,
+  and Ctrl+Shift+H and Ctrl+Shift+D only reached the window's help and
+  split because an accelerator runs first.
+
+What is left of the drag: a drag held still past the edge of a field
+does not keep scrolling. It picks out as far as the text that is shown
+and waits for the pointer to move again, because the field only hears
+about a move.
 
 ## Asked for on 2026-09-19, second set
 

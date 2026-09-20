@@ -67,6 +67,10 @@ type Palette struct {
 	place listState
 	size  Size
 
+	// dragging says a press landed in the query line and has not been
+	// let go of, so a move carries its selection along.
+	dragging bool
+
 	// buf keeps the dialog off the layer until it is finished, so an
 	// unchanged dialog leaves the layer clean.
 	buf buffer
@@ -176,15 +180,32 @@ func (p *Palette) HandleKey(ev input.Event) (bool, error) {
 	return p.q.HandleKey(ev)
 }
 
-// HandleMouse runs the line that was clicked, and dismisses the dialog
-// when the click landed outside it.
+// HandleMouse runs the line that was clicked, picks text out of the
+// query line, and dismisses the dialog when the click landed outside it.
 func (p *Palette) HandleMouse(ev input.MouseEvent) (bool, error) {
-	if ev.Kind != input.MousePress || ev.Button.IsWheel() {
+	switch ev.Kind {
+	case input.MousePress:
+	case input.MouseMove:
+		p.dragTo(ev)
+		return true, nil
+	case input.MouseRelease:
+		if p.dragging && ev.Button == input.MouseLeft {
+			p.dragTo(ev)
+			p.q.EndDrag()
+			p.dragging = false
+		}
+		return true, nil
+	default:
 		// Everything else is swallowed: the dialog is over the whole
-		// area, and letting a drag through to what is behind it would
-		// select text nobody can see.
+		// area, and letting an event through to what is behind it
+		// would reach something nobody can see.
 		return true, nil
 	}
+	if ev.Button.IsWheel() {
+		return true, nil
+	}
+	// A press ends whatever the last one started, wherever it lands.
+	p.CancelGesture()
 	box := p.box()
 	if box.Empty() || !box.Contains(ev.Col, ev.Row) {
 		p.dismiss()
@@ -198,13 +219,37 @@ func (p *Palette) HandleMouse(ev input.MouseEvent) (bool, error) {
 		p.place.moveTo(p.place.top + row)
 		return true, p.run()
 	}
+	if row == -1 {
+		p.q.PressAt(p.queryCol(ev.Col), ev.Mods.Has(input.ModShift))
+		p.dragging = true
+	}
 	return true, nil
 }
 
-// CancelGesture is here because the dialog swallows drags: without it a
-// press with no release would be remembered by nothing, which is fine,
-// but saying so keeps the rule visible.
-func (p *Palette) CancelGesture() {}
+// queryCol turns a column of the area into one of the query field,
+// which starts past the prompt character and the space after it.
+func (p *Palette) queryCol(col int) int { return col - p.lines().X - 2 }
+
+// dragTo carries a drag in progress to where the pointer is now. The
+// column is handed on as it comes, outside the field as well as in: a
+// drag off either end carries on to the end of the text there.
+func (p *Palette) dragTo(ev input.MouseEvent) {
+	if !p.dragging {
+		return
+	}
+	p.q.DragTo(p.queryCol(ev.Col))
+}
+
+// CancelGesture says the release that would end a drag is never coming.
+// Left alone, the next time the pointer crossed the query line with no
+// button down it would carry on picking text out.
+func (p *Palette) CancelGesture() {
+	if !p.dragging {
+		return
+	}
+	p.q.EndDrag()
+	p.dragging = false
+}
 
 // Draw paints the box over whatever is behind it.
 func (p *Palette) Draw(v grid.View) { p.buf.draw(v, p.paint) }

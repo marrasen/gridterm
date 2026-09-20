@@ -144,6 +144,10 @@ type Form struct {
 	wrapped   []string
 	wrappedAt int
 
+	// drag is the field a press landed in and has not been let go of,
+	// so a move carries its selection along.
+	drag *Field
+
 	size  Size
 	close func()
 	buf   buffer
@@ -427,14 +431,32 @@ func (f *Form) HandleKey(ev input.Event) (bool, error) {
 	return true, nil
 }
 
-// HandleMouse moves focus to what was clicked and presses a button.
+// HandleMouse moves focus to what was clicked, presses a button, and
+// carries a drag across a field's text.
 func (f *Form) HandleMouse(ev input.MouseEvent) (bool, error) {
-	if ev.Kind != input.MousePress || ev.Button.IsWheel() {
+	switch ev.Kind {
+	case input.MousePress:
+	case input.MouseMove:
+		f.dragTo(ev)
+		return true, nil
+	case input.MouseRelease:
+		if f.drag != nil && ev.Button == input.MouseLeft {
+			f.dragTo(ev)
+			f.drag.EndDrag()
+			f.drag = nil
+		}
+		return true, nil
+	default:
 		// Everything else is swallowed: the dialog covers the whole
-		// area, and letting a drag through would select text behind it
-		// that nobody can see.
+		// area, and letting an event through would reach something
+		// behind it that nobody can see.
 		return true, nil
 	}
+	if ev.Button.IsWheel() {
+		return true, nil
+	}
+	// A press ends whatever the last one started, wherever it lands.
+	f.CancelGesture()
 	box := f.box()
 	if box.Empty() || !box.Contains(ev.Col, ev.Row) {
 		f.dismiss()
@@ -452,8 +474,10 @@ func (f *Form) HandleMouse(ev input.MouseEvent) (bool, error) {
 			return true, nil
 		}
 		// The caret goes where it was clicked, so a long value can be
-		// corrected in the middle rather than only at the end.
-		fld.SetCaret(f.caretFor(fld, x-f.fieldX()))
+		// corrected in the middle rather than only at the end, and the
+		// press starts picking text out in case the pointer moves.
+		fld.PressAt(x-f.fieldX(), ev.Mods.Has(input.ModShift))
+		f.drag = fld
 		return true, nil
 	}
 	if y == f.buttonsRow() {
@@ -465,10 +489,33 @@ func (f *Form) HandleMouse(ev input.MouseEvent) (bool, error) {
 	return true, nil
 }
 
-// CancelGesture is here because the dialog swallows drags: nothing is
-// held between a press and a release, and saying so keeps the rule
-// visible.
-func (f *Form) CancelGesture() {}
+// CancelGesture says the release that would end a drag is never coming.
+// Left alone, the next time the pointer crossed a field with no button
+// down it would carry on picking text out.
+func (f *Form) CancelGesture() {
+	if f.drag == nil {
+		return
+	}
+	f.drag.EndDrag()
+	f.drag = nil
+}
+
+// dragTo carries a drag in progress to where the pointer is now.
+//
+// The column is handed on as it comes, outside the field as well as in:
+// a drag off either end carries on to the end of the text there, which
+// is how a value wider than its box is picked out whole.
+func (f *Form) dragTo(ev input.MouseEvent) {
+	if f.drag == nil {
+		return
+	}
+	box := f.box()
+	if box.Empty() {
+		return
+	}
+	x, _ := box.Local(ev.Col, ev.Row)
+	f.drag.DragTo(x - f.fieldX())
+}
 
 // Draw paints the box over whatever is behind it.
 func (f *Form) Draw(v grid.View) { f.buf.draw(v, f.paint) }
@@ -754,26 +801,6 @@ func (f *Form) layoutFields() {
 	for _, r := range f.rows {
 		r.field.Layout(Size{Cols: width, Rows: 1})
 	}
-}
-
-// caretFor turns a column inside a field into a byte offset in its text.
-func (f *Form) caretFor(fld *Field, col int) int {
-	if col <= 0 {
-		return 0
-	}
-	at, width := fld.left, 0
-	for _, c := range fld.clustersFrom(fld.left) {
-		w := grid.StringWidth(c)
-		if fld.Mask != 0 {
-			w = max(grid.RuneWidth(fld.Mask), 1)
-		}
-		if width+w > col {
-			break
-		}
-		width += w
-		at += len(c)
-	}
-	return at
 }
 
 // fieldX returns the column the fields start at, past the widest label.

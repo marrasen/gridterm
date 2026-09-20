@@ -238,6 +238,22 @@ func (s Shell) Command(dir string) []string {
 	return argv
 }
 
+// WSLRoot is where Windows reaches a WSL distribution's files. Every Windows program can read a path
+// under it, so a file browser needs nothing of its own to show one.
+func WSLRoot(distro string) string { return wslShare + distro }
+
+// WindowsPath translates a path inside a WSL distribution into the one Windows reaches it by. An
+// empty distribution, or a path that is not absolute, gives "".
+func WindowsPath(distro, unix string) string {
+	if distro == "" || !strings.HasPrefix(unix, "/") {
+		return ""
+	}
+	return WSLRoot(distro) + strings.ReplaceAll(unix, "/", `\`)
+}
+
+// wslShare is the share Windows serves every WSL distribution's files on.
+const wslShare = `\\wsl.localhost\`
+
 // UnixPath translates a Windows path for WSL, turning a drive letter into a mount under /mnt, so
 // C:\Workspace is /mnt/c/Workspace. Anything else, a UNC path and a relative path included, gives "".
 func UnixPath(win string) string {

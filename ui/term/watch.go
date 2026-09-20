@@ -245,6 +245,22 @@ func (t *Terminal) Dir() (dir, host string) {
 	return t.term.Dir()
 }
 
+// Notice is the last message a program in this pane asked to have
+// shown, from OSC 9, and a count that rises with each new one.
+func (t *Terminal) Notice() (string, uint64) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.term.Notice()
+}
+
+// Progress is how far along the program in this pane says it is, from
+// OSC 9;4.
+func (t *Terminal) Progress() vt.Progress {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.term.Progress()
+}
+
 // AllText is the screen and the whole scrollback behind it, as plain
 // text, from one moment.
 //

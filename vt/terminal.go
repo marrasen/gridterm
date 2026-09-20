@@ -113,6 +113,14 @@ type Terminal struct {
 	// cmd is what the shell's prompt marks have said so far.
 	cmd Command
 
+	// notice is the last message a program asked to have shown, and
+	// noticeNum counts them so the same words twice are two messages.
+	notice    string
+	noticeNum uint64
+
+	// progress is how far along the program says it is.
+	progress Progress
+
 	// lastRune is the most recent printable character, which REP repeats.
 	lastRune rune
 
@@ -242,6 +250,7 @@ func (t *Terminal) EscDispatch(intermediates []byte, _ bool, b byte) {
 		t.dir, t.dirHost = "", ""
 		t.links, t.byURL = nil, nil
 		t.images = nil
+		t.notice, t.progress = "", Progress{}
 	case '=': // DECKPAM
 		t.scr.mode.AppKeypad = true
 	case '>': // DECKPNM
@@ -493,7 +502,7 @@ func (t *Terminal) reply(s string) {
 	}
 }
 
-func (t *Terminal) OscDispatch(params [][]byte, _ bool) {
+func (t *Terminal) OscDispatch(params [][]byte, bell bool) {
 	if len(params) == 0 {
 		return
 	}
@@ -513,7 +522,9 @@ func (t *Terminal) OscDispatch(params [][]byte, _ bool) {
 	case "7":
 		t.setDir(params)
 	case "9":
-		t.setDirPath(params)
+		t.setNotify(params)
+	case "10", "11":
+		t.answerColour(params, string(params[0]), bell)
 	case "8":
 		t.setLink(params)
 	case "1338":
@@ -705,6 +716,9 @@ func (t *Terminal) semanticPrompt(params [][]byte) {
 	case "C":
 		t.cmd.Integrated = true
 		t.cmd.Running = true
+		// A message belongs to the command that sent it, so the next
+		// one starting takes it off the row.
+		t.notice = ""
 		// Where the output starts, which is where the cursor is when the
 		// shell says the command is about to run.
 		_, row := t.scr.CursorPos()

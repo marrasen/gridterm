@@ -145,6 +145,14 @@ type app struct {
 	// panes printed.
 	far *pathsFar
 
+	// noticed is the last message read off each pane, so one message is
+	// logged once rather than on every frame.
+	noticed map[*term.Terminal]uint64
+
+	// wrote is the note the panel last put on each row, so the next
+	// frame can tell its own note from one something else put there.
+	wrote map[*conns.Entry]string
+
 	// keyFiles are the key files the user keeps, offered when a
 	// connection is made or edited.
 	keyFiles *keyIndex

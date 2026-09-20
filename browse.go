@@ -16,6 +16,7 @@ import (
 	"github.com/marrasen/gridterm/jobs"
 	"github.com/marrasen/gridterm/meter"
 	"github.com/marrasen/gridterm/remote"
+	"github.com/marrasen/gridterm/shells"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/files"
 	"github.com/marrasen/gridterm/vfs"
@@ -213,6 +214,37 @@ func (a *app) foldersOn(host string) []string {
 		return nil
 	}
 	return h.Folders
+}
+
+// browseFoldersOn are the folders the menu and the palette offer for a
+// machine: the ones saved for it, and on this machine the WSL
+// distributions as well.
+//
+// A distribution is not saved anywhere. It is installed or it is not,
+// and Windows serves its files on a share every program can read, so
+// offering one costs nothing but the line.
+func (a *app) browseFoldersOn(host string) []string {
+	folders := a.foldersOn(host)
+	if host != conns.Local {
+		return folders
+	}
+	return append(folders, a.wslFolders()...)
+}
+
+// wslFolders are the WSL distributions on this machine, as the paths
+// Windows reaches their files by.
+//
+// From the shells that were found, which are looked for once and kept:
+// this is asked on the goroutine that draws, and listing them runs
+// wsl.exe.
+func (a *app) wslFolders() []string {
+	var out []string
+	for _, s := range a.shellPick.list() {
+		if s.Distro != "" {
+			out = append(out, shells.WSLRoot(s.Distro))
+		}
+	}
+	return out
 }
 
 // oneFolderOn is where "Files" opens on a machine: the one folder saved

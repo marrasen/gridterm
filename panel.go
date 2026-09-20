@@ -257,10 +257,16 @@ func (a *app) refreshPanel(now time.Time) {
 		// Only over a note of our own. The one other note a pane can
 		// carry says its channel could not be let go of, and that is
 		// the only place the user can read it.
-		if e.Note == "" || isOurNote(e.Note) || isAgentNote(e.Note) {
+		if e.Note == "" || e.Note == a.wrote[e] || isOurNote(e.Note) || isAgentNote(e.Note) {
 			e.Note = a.paneNote(pane)
+			if a.wrote == nil {
+				a.wrote = map[*conns.Entry]string{}
+			}
+			a.wrote[e] = e.Note
 		}
 	}
+	a.forgetNotes()
+	a.forgetNotices()
 
 	// Whoever is working in this window from elsewhere is told what it
 	// has open, once the rows say what they are going to say. Told
@@ -570,7 +576,9 @@ func (a *app) panelRow(row conns.Row, now time.Time) ui.ListRow {
 // paneNote is what a pane's row says about who else is in it: an agent,
 // somebody reading it from another window, or both at once.
 func (a *app) paneNote(pane *term.Terminal) string {
-	var say []string
+	// The program's own first: it is the one thing on the row that this
+	// window did not work out for itself.
+	say := a.programNote(pane)
 	// Ahead of the far end's size: the user can see a size, and cannot
 	// otherwise see that something else is typing here. Nothing is
 	// worked in once the program has gone, whether or not the hand-over

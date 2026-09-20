@@ -65,7 +65,7 @@ func (a *app) refreshServers() {
 	// name: a bare list of paths reads the same when two machines swap
 	// one, and the commands would not be built again.
 	for _, host := range every {
-		if folders := a.foldersOn(host); len(folders) > 0 {
+		if folders := a.browseFoldersOn(host); len(folders) > 0 {
 			want = append(want, host+" folders "+strconv.Itoa(len(folders)))
 			want = append(want, folders...)
 		}
@@ -110,7 +110,7 @@ func (a *app) refreshServers() {
 		a.registerServerCommands(a.reporting(browse))
 		// And one per folder saved on it, so the palette can be searched
 		// by the folder rather than only by the machine.
-		for i, folder := range a.foldersOn(host) {
+		for i, folder := range a.browseFoldersOn(host) {
 			at := folder
 			a.registerServerCommands(a.reporting(ui.Command{
 				ID:    folderCommandID(host, i),
@@ -753,12 +753,14 @@ func folderCommandID(host string, at int) string {
 	return filesPrefix + remote.CommandName(host) + "." + strconv.Itoa(at+1)
 }
 
-// folderItems are the plus menu's lines for a machine with more than one
-// folder saved, and none for a machine with one or none: one folder is
-// where "Files" already opens.
+// folderItems are the plus menu's lines for the folders a machine
+// offers, and none where "Files" already opens at the only one.
 func (a *app) folderItems(host string) []ui.MenuItem {
-	folders := a.foldersOn(host)
-	if len(folders) < 2 {
+	folders := a.browseFoldersOn(host)
+	if len(folders) == 0 || (len(folders) == 1 && a.oneFolderOn(host) != "") {
+		// The one folder saved for a machine is where "Files" already
+		// opens, so a line for it would say the same thing twice. A WSL
+		// distribution is not where "Files" opens, so it gets its line.
 		return nil
 	}
 	items := make([]ui.MenuItem, 0, len(folders))

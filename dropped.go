@@ -18,11 +18,14 @@ import (
 // takeDroppedFiles puts files dropped on the window into the pane they
 // were dropped on, and types their paths.
 //
-// A program reading a terminal cannot be handed a file, so what it is
-// handed is somewhere to find one. A file already on the machine the
-// program runs on is typed straight away; one that has to get there
-// first is copied, with a row on the sidebar saying how far it has got
-// and a cross that stops it.
+// A program reading a terminal cannot be handed a file, so the file is
+// put where that program is already looking: the directory the shell
+// said it was in. A shell that has not said leaves nowhere to put it,
+// and then the path is typed instead.
+//
+// Either way a file that has to reach another machine is copied first,
+// with a row on the sidebar saying how far it has got and a cross that
+// stops it.
 func (a *app) takeDroppedFiles() {
 	paths := ebiten.DroppedFilePaths()
 	if len(paths) == 0 {
@@ -68,8 +71,16 @@ func (a *app) paneAt(px, py int) *term.Terminal {
 }
 
 // dropOnPane hands files to the machine a pane is running on.
+//
+// Into the directory the shell said it was in, when it has said: the
+// file lands where the program is already looking and nothing is
+// typed. Failing that the path is typed, and a file that is on the
+// wrong machine is copied first.
 func (a *app) dropOnPane(pane *term.Terminal, paths []string) error {
 	end := a.paneEnd(pane)
+	if dir, ok := a.droppedInto(pane, end); ok {
+		return a.copyDropped(end, paths, dir)
+	}
 	if end.far.window == nil && a.about(end.host).kind == hostHere {
 		// Already on the machine the program runs on, so there is
 		// nothing to copy and the path is the whole of it.

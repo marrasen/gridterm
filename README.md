@@ -106,6 +106,11 @@ emulator, and draws the resulting character grid as batched triangles.
   so a path lights up a moment after the pointer reaches it. A relative
   name needs the shell to say where it is, which gridterm sets up
   itself; see **Shell integration** below.
+- **The files inside WSL.** Every distribution installed is a line on
+  the plus for this machine, and the browser reads it like any other
+  directory: Windows serves them on a share, so nothing of gridterm's
+  own is needed. A file dropped on a WSL pane lands in the directory
+  that shell is in, on the same share.
 - **A picture a program put in its output.** OSC 1337, the sequence
   iTerm2 made and the terminals after it copied. The pane holds the
   picture on the line it landed on and it scrolls with the text, on a
@@ -114,6 +119,12 @@ emulator, and draws the resulting character grid as batched triangles.
   same way. Only an inline picture is taken -- the same sequence asks a
   terminal to save a file, which a pane should not be able to make this
   window do.
+- **Files dragged into a pane.** They land in the directory the shell
+  said it was in, and nothing is typed: the file is already where the
+  program is looking. The window says when it has arrived. A pane on a
+  server has the file copied there first, with a row saying how far it
+  has got. A shell that has not said where it is leaves nowhere to put
+  the file, and then the path is typed instead.
 - **File work in the background.** Copying, moving and deleting, on one
   machine or between two, with how far along it is and a way to stop it.
   A name that is already there is asked about — replace, skip, rename, or
@@ -360,6 +371,19 @@ install and no profile to edit.
   device CLI or a menu would answer with an error.
 - **Another gridterm is never set up from here.** The window over there
   starts the shell and applies its own answer.
+
+A program can say things of its own through the same channel. A
+message (OSC 9) and how far along it is (OSC 9;4) go on the pane's row
+in the sidebar, and a message goes into the window's log as well. On
+the row rather than in a dialog: a dialog takes the keyboard, and
+anything that can write to a pane could send one of these one after
+another.
+
+A program may also ask what colour the text and the background are
+drawn in (OSC 10 and OSC 11), which is how it works out whether it is
+on a dark theme. It is answered. Setting them is not: the colours are
+the window's theme, and a pane left unlike every other one would have
+nothing to put it back.
 
 What each shell is told:
 

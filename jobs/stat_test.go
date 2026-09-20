@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/marrasen/gridterm/vfs"
 )
@@ -179,6 +180,44 @@ func TestAFinishedJobLetsGoOfItsContext(t *testing.T) {
 		t.Fatal("the job finished still holding its context")
 	}
 }
+
+// Done means the whole job is over, the context with it. Cancelling
+// after closing the channel left a gap: a waiter woken by Done could
+// look at the context before the job had let go, which it did about
+// once in a thousand.
+func TestDoneMeansTheContextHasGoneAsWell(t *testing.T) {
+	from, to := local(t), local(t)
+	write(t, from.real, "one.txt", "body")
+
+	held := 0
+	for range manyJobs {
+		q := New(1)
+		j := q.Start(t.Context(), Op{
+			Kind: Copy, From: from.fs, At: from.at, Names: []string{"one.txt"},
+			To: to.fs, Into: to.at,
+		}, Options{})
+		// How the copy ended does not matter here, and only the first
+		// of them can succeed: every ending goes through the same
+		// finish, which is where the ordering being pinned lives.
+		select {
+		case <-j.Done():
+		case <-time.After(budget):
+			t.Fatalf("a job never finished: %+v", j.Progress())
+		}
+		select {
+		case <-j.ctx.Done():
+		default:
+			held++
+		}
+	}
+	if held > 0 {
+		t.Errorf("%d of %d finished jobs still held their context", held, manyJobs)
+	}
+}
+
+// manyJobs is enough runs to catch a gap of a few instructions. At one
+// in a thousand, a handful of runs would say nothing.
+const manyJobs = 3000
 
 // A job that never ran because it was refused lets go too.
 func TestAJobThatWasNeverGoingToRunLetsGoOfItsContext(t *testing.T) {

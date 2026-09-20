@@ -203,10 +203,12 @@ func (j *Job) finish(err error) {
 			p.Current = ""
 			p.Ended = time.Now()
 		})
-		close(j.done)
-		// The job has stopped, so its context is only a registration on
-		// the window's, held for as long as the window lives.
+		// Before the channel, so anything woken by Done finds the job
+		// wholly finished. The job has stopped, so its context is only
+		// a registration on the window's, held as long as the window
+		// lives.
 		j.cancel()
+		close(j.done)
 	})
 }
 

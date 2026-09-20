@@ -259,6 +259,20 @@ func (a *app) oneFolderOn(host string) string {
 // filesystem opens a filesystem for a machine: this one, or one reached
 // over a connection that is already open.
 func (a *app) filesystem(host string) (vfs.FS, error) {
+	f, err := a.machineFiles(host)
+	if err != nil {
+		return nil, err
+	}
+	// With the archives on it opened as directories. One wrapper per
+	// pane rather than one for the window: it holds the archive it is
+	// reading, and two panes in two archives would take turns throwing
+	// each other's out.
+	return vfs.WithArchives(f), nil
+}
+
+// machineFiles opens a filesystem for a machine, as the machine has
+// it.
+func (a *app) machineFiles(host string) (vfs.FS, error) {
 	on := a.about(host)
 	switch {
 	case on.kind == hostHere:

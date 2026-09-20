@@ -131,6 +131,19 @@ var icons = [grid.NumIcons][]unit{
 		{X: 6, Y: 3, W: 1, H: 4},
 		{X: 1, Y: 7, W: 6, H: 1},
 	},
+	grid.IconLog: {
+		// A run of entries: the time at the left of each, and beside it
+		// a line of its own length. Ragged rather than even, so it
+		// reads as things that happened rather than as a page.
+		{X: 0, Y: 1, W: 1, H: 1},
+		{X: 2, Y: 1, W: 6, H: 1},
+		{X: 0, Y: 3, W: 1, H: 1},
+		{X: 2, Y: 3, W: 4, H: 1},
+		{X: 0, Y: 5, W: 1, H: 1},
+		{X: 2, Y: 5, W: 5, H: 1},
+		{X: 0, Y: 7, W: 1, H: 1},
+		{X: 2, Y: 7, W: 3, H: 1},
+	},
 }
 
 // iconBars is where an icon's rectangles go inside the cols cells from

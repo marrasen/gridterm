@@ -113,6 +113,11 @@ func main() {
 	)
 	flag.Parse()
 
+	// Kept as well as written to stderr, from here on: a window started
+	// from Explorer has no console for stderr to reach, and "Show what
+	// the window has logged" is the only way to read these.
+	keepLog()
+
 	if *asMCP {
 		// No window, and nothing on standard output but the protocol:
 		// whatever started this is reading it.

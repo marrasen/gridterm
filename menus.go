@@ -68,6 +68,8 @@ func (a *app) newMenubar(child ui.Widget) *ui.Menubar {
 			{Command: helpCommand},
 			{Command: keysCommand},
 			{Command: filesCommand},
+			ui.MenuSeparator(),
+			{Command: logCommand},
 		}},
 	}
 	bar.Style = a.menubarStyle()

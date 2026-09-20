@@ -813,6 +813,8 @@ func (a *app) commands() {
 			Run: a.showConnLogHere},
 		ui.Command{ID: helpCommand, Title: helpTitle, Run: a.showHelp},
 		ui.Command{ID: filesCommand, Title: filesTitle, Run: a.showWhereFiles},
+		ui.Command{ID: logCommand, Title: logTitle, Run: a.showLog,
+			AlsoFind: []string{"debug", "errors", "what went wrong"}},
 		ui.Command{ID: keysCommand, Title: keysTitle, Run: a.writeShortcutStart},
 		ui.Command{ID: "server.editThis", Title: "Edit this server…",
 			Run: a.editThisServer},

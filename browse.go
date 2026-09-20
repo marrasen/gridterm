@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -162,7 +163,7 @@ func (a *app) startAt(p *files.Pane, at string) {
 		// somewhere it was not asked for.
 		p.OpenThen(at, func(err error) {
 			if err != nil {
-				a.reportError("Could not open "+at+" on "+p.FS().Name(), err)
+				a.reportForPane(p, "Could not open "+at+" on "+p.FS().Name(), err)
 			}
 		})
 		return
@@ -172,12 +173,36 @@ func (a *app) startAt(p *files.Pane, at string) {
 		home, err := f.Home()
 		a.pump.post(func() {
 			if err != nil {
-				a.reportError("Could not open "+f.Name(), err)
+				a.reportForPane(p, "Could not open "+f.Name(), err)
 				return
 			}
 			p.Open(home)
 		})
 	}()
+}
+
+// reportForPane says why something a file pane asked for failed, and
+// writes it to the log instead when that pane has been closed.
+//
+// The answer to a request outlives the pane that made it: a listing on
+// a machine that has stopped answering fails long after the user shut
+// the pane and stopped waiting for it. A dialog then lands over
+// whatever they are doing next and takes their next click.
+//
+// The error is not dropped. It goes to the log, which the user can
+// open, because nobody is waiting for this one on screen.
+func (a *app) reportForPane(p *files.Pane, title string, err error) {
+	if a.holdsFilePane(p) {
+		a.reportError(title, err)
+		return
+	}
+	log.Printf("%s: %v (the pane asking had already been closed)", title, err)
+}
+
+// holdsFilePane reports whether a file pane is still open in this
+// window.
+func (a *app) holdsFilePane(p *files.Pane) bool {
+	return a.files != nil && a.files.rows[p] != nil
 }
 
 // foldersOn are the folders saved for a machine, and none for one that

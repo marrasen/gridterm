@@ -120,6 +120,9 @@ const (
 	// IconDelete is a bin.
 	IconDelete
 
+	// IconLog is a run of entries, each with its time beside it.
+	IconLog
+
 	// NumIcons is how many there are, for a caller checking one.
 	NumIcons
 )

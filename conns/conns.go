@@ -58,6 +58,9 @@ const (
 	// Delete is a file being deleted.
 	Delete
 
+	// Log is what the window itself has logged.
+	Log
+
 	// NumKinds is how many there are, for a caller walking them.
 	NumKinds
 )
@@ -87,6 +90,8 @@ func (k Kind) String() string {
 		return "Move"
 	case Delete:
 		return "Delete"
+	case Log:
+		return "Log"
 	}
 	return "Unknown"
 }

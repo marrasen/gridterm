@@ -1747,6 +1747,7 @@ func TestEachKindCarriesItsPicture(t *testing.T) {
 		conns.Copy:     grid.Icon(grid.IconCopy),
 		conns.Move:     grid.Icon(grid.IconMove),
 		conns.Delete:   grid.Icon(grid.IconDelete),
+		conns.Log:      grid.Icon(grid.IconLog),
 	} {
 		if got := icon(kind); got != want {
 			t.Errorf("%v carries %v, want %v", kind, got, want)

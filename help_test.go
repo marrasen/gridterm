@@ -66,7 +66,8 @@ func aWindowWithMenus(t *testing.T) *testApp {
 	t.Helper()
 	// Tall, so the whole list is drawn: the dialog scrolls what does not
 	// fit, and a test that reads the screen can only read what is on it.
-	a := newTestApp(t, 100, 90)
+	// Raise it when a command is added and the last section falls off.
+	a := newTestApp(t, 100, 110)
 	withDialogs(t, a)
 	withPanel(t, a)
 	withMenubar(t, a)

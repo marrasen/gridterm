@@ -96,25 +96,7 @@ From Marcus's inbox.
 
 ## Waiting on an answer from Marcus
 
-- **A pane the user has closed still raises a notice when its last
-  request fails.** Found on 2026-09-20 while diagnosing a flaky test.
-  Closing a file pane on a machine that has stopped answering can
-  leave a listing in flight. When it fails, the window puts up
-  "margit through 127.0.0.1:...: find the home directory on margit
-  through 127.0.0.1:...: connection lost", over whatever the user is
-  doing next.
-
-  The user closed that pane. They are not waiting for the answer any
-  more, and the dialog lands on top of the sidebar and takes the next
-  click. Should a request belonging to a pane that has gone still
-  reach the user, or should it go to the log?
-
-  Not decided here, because the rule is never to swallow an I/O error
-  without asking. The test that found it now clears the notice rather
-  than pressing through it, so this is a wart the user sees and not a
-  test that fails.
-
-The rest are about the context menu, which is planned below.
+These are all about the context menu, which is planned below.
 
 - **Right click in a pane where a program owns the mouse.** vim, mc and
   htop ask for the mouse, and then the right button is theirs. The
@@ -149,6 +131,15 @@ The rest are about the context menu, which is planned below.
   windows use. Worth binding, or is the palette enough?
 
 ## Settled, do not re-open
+
+- **A failure belonging to a pane the user has closed goes to the log,
+  not to a dialog.** Answered on 2026-09-20. Closing a file pane on a
+  machine that has stopped answering can leave a listing in flight,
+  and it fails long after the user stopped waiting for it. The dialog
+  landed over whatever they were doing next and took their next click.
+  `reportForPane` in browse.go shows the dialog only while the pane is
+  still open and logs it otherwise. The error is not dropped: "Show
+  what the window has logged" is where it goes.
 
 - **The file viewer stays a viewer, with no caret.** Answered on
   2026-09-20. A keyboard selection goes on starting at the top left of
@@ -412,7 +403,45 @@ From Marcus's inbox, after working in a shared window.
   the screen instead, so nothing is cut; there is simply nothing to read
   on it.
 
+## The log pane
+
+Asked for on 2026-09-20, after deciding a closed pane's failure should
+go to the log. "Show what the window has logged" on the Help menu opens
+a pane on it, or goes to the one already open. It is an ordinary
+terminal, so the scrollback, the selection and the copy key are the
+ones the user already knows, and nothing typed into it reaches
+anything.
+
+The lines still go to stderr as well. What is new is that they are
+kept, which is the only way to read them in a window started from
+Explorer, where there is no console for stderr to reach.
+
+What is left:
+
+- **It holds the last two thousand lines and nothing older.** A reader
+  that falls behind is told how many it missed rather than being handed
+  a gap, but they are gone. Writing to a file as well is the answer if
+  anybody wants one, and that is a file holding whatever the window
+  logged, which is worth deciding on before writing one.
+
+- **Nothing can be searched.** Marcus's own note asks for searching a
+  pane's scrollback through the file viewer, and the log is the first
+  pane anybody will want to search. The two go together.
+
+- **The log goes when the window does.** It is in memory, like the
+  record of what an agent typed, and for the same reason.
+
+- **Only lines the window logs are in it.** What a connection printed
+  while it was being made goes to its own log, which "Show how this
+  was reached" already shows. The two are not joined up.
+
 ## Known gaps worth revisiting
+
+- **The help dialog outgrew a 90-row window.** Adding one command
+  pushed the file browser's keys past the bottom. The dialog scrolls,
+  so nothing is lost to a user, but a test reading the screen needs a
+  taller window every time a command is added. The list is long enough
+  now to want sections that fold.
 
 - **The dialog shadow only reads where something light sits behind
   it.** Looked at on 2026-09-19 through `-shot`, over a screenful of

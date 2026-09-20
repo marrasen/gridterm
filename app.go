@@ -17,6 +17,7 @@ import (
 	"github.com/marrasen/gridterm/input/ebitenin"
 	"github.com/marrasen/gridterm/jobs"
 	"github.com/marrasen/gridterm/meter"
+	"github.com/marrasen/gridterm/notify"
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/render"
 	"github.com/marrasen/gridterm/session"
@@ -148,6 +149,12 @@ type app struct {
 	// noticed is the last message read off each pane, so one message is
 	// logged once rather than on every frame.
 	noticed map[*term.Terminal]uint64
+
+	// toasts shows a message outside the window, and lastToast is when
+	// it last did: a program sending them one after another gets one
+	// pop-up rather than a screenful.
+	toasts    notify.Toaster
+	lastToast time.Time
 
 	// wrote is the note the panel last put on each row, so the next
 	// frame can tell its own note from one something else put there.
@@ -567,10 +574,10 @@ func (a *app) updateTitle() {
 	}
 	a.title = title
 	if title == "" {
-		ebiten.SetWindowTitle("gridterm")
+		ebiten.SetWindowTitle(programName)
 		return
 	}
-	ebiten.SetWindowTitle("gridterm — " + title)
+	ebiten.SetWindowTitle(programName + " — " + title)
 }
 
 func (a *app) Draw(screen *ebiten.Image) {
@@ -940,3 +947,7 @@ func defaultShortcuts() *ui.Keymap {
 	})
 	return keys
 }
+
+// programName is what the title bar and the notification area call
+// this program.
+const programName = "gridterm"

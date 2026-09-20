@@ -90,31 +90,37 @@ server until its row says otherwise.
 
 ## What a program can say about itself
 
-Read: OSC 0/1/2 (the title), OSC 7 and OSC 9;9 (where the shell is),
-OSC 8 (a hyperlink), OSC 9 (a message), OSC 9;4 (how far along it is),
-OSC 10 and OSC 11 (what colour the theme is, the question only),
-OSC 52 (the clipboard), OSC 133 and OSC 633 (the prompt marks),
-OSC 1337 (a picture) and OSC 1338 (gridterm's own, a picture on the
-wire).
+Read: OSC 0/1/2 (the title), OSC 4, OSC 10 and OSC 11 (what colour
+something is drawn in, the question only), OSC 7 and OSC 9;9 (where
+the shell is), OSC 8 (a hyperlink), OSC 9 (a message), OSC 9;4 (how
+far along it is), OSC 52 (the clipboard), OSC 133 and OSC 633 (the
+prompt marks), OSC 1337 (a picture) and OSC 1338 (gridterm's own, a
+picture on the wire).
 
-- **A message is on the row, not in front of the user.** A dialog
-  takes the keyboard, and anything that can write to a pane could send
-  one of these one after another. The row is quiet enough to miss.
-  An operating system notification would be the answer, and is a
-  Windows API away.
+A message goes on the pane's row, into the log, and up as a Windows
+notification. Not a dialog: a dialog takes the keyboard, and anything
+that can write to a pane could send one of these one after another.
+
+- **Only Windows gets a pop-up.** `notify` has the interface and a
+  Windows implementation, and everywhere else shows nothing. The
+  message is on the row either way.
+
+- **The pop-up is a notification-area balloon**, not a toast built
+  through WinRT. Windows 10 and 11 turn one into a toast and an
+  action-centre line, and it needs no registered application id and
+  no dependency. What it cannot do is buttons or a click that comes
+  back to the window.
 
 - **How far along a program is has no bar.** It is words on the row:
   "42%", "working", "failed at 70%". The taskbar button is where
-  Windows Terminal puts it.
+  Windows Terminal puts it, through ITaskbarList3.
 
-- **OSC 4 and OSC 12 are not answered.** A program asking what one of
-  the 256 colours is, or what colour the cursor is, gets nothing. The
-  palette is there to answer with; the cursor has no colour of its
-  own to give.
+- **OSC 12 is not answered.** The cursor has no colour of its own to
+  give: it is drawn in the text colour.
 
-- **Setting a colour is ignored.** OSC 10, 11 and 12 can set as well
-  as ask. The colours are the window's theme, and a pane left unlike
-  every other one would have nothing to put it back.
+- **Setting a colour is ignored.** OSC 4, 10, 11 and 12 can set as
+  well as ask. The colours are the window's theme, and a pane left
+  unlike every other one would have nothing to put it back.
 
 - **A path with a space in it is two words.** Quoted paths are how
   output usually writes one, and reading the quotes would fix most of

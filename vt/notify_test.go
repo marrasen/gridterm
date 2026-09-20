@@ -193,3 +193,68 @@ func TestAResetForgetsTheMessageAndTheProgress(t *testing.T) {
 		t.Errorf("%+v survived a reset", got)
 	}
 }
+
+// A program may ask what one of the 256 colours is, which is how it
+// picks something that will show against the theme.
+func TestAProgramAsksWhatAPaletteColourIs(t *testing.T) {
+	pal := DefaultPalette()
+	red, green := pal.ANSI[1], pal.ANSI[2]
+	for _, tc := range []struct{ sent, want string }{
+		{
+			"\x1b]4;1;?\x07",
+			"\x1b]4;1;rgb:" + hex4(red.R) + "/" + hex4(red.G) + "/" + hex4(red.B) + "\x07",
+		},
+		// Pairs, and one answer each.
+		{
+			"\x1b]4;1;?;2;?\x1b\\",
+			"\x1b]4;1;rgb:" + hex4(red.R) + "/" + hex4(red.G) + "/" + hex4(red.B) + "\x1b\\" +
+				"\x1b]4;2;rgb:" + hex4(green.R) + "/" + hex4(green.G) + "/" + hex4(green.B) + "\x1b\\",
+		},
+	} {
+		var said []byte
+		term := New(40, 10, pal, 100, Callbacks{
+			Reply: func(b []byte) { said = append(said, b...) },
+		})
+
+		term.Write([]byte(tc.sent))
+
+		if string(said) != tc.want {
+			t.Errorf("%q was answered %q, want %q", tc.sent, said, tc.want)
+		}
+	}
+}
+
+// A palette colour nobody could mean is not answered, and setting one
+// is ignored the way setting the background is.
+func TestAPaletteQuestionThatMakesNoSenseIsNotAnswered(t *testing.T) {
+	for _, sent := range []string{
+		"\x1b]4;300;?\x07",
+		"\x1b]4;x;?\x07",
+		"\x1b]4;1\x07",
+		"\x1b]4\x07",
+		"\x1b]4;1;rgb:ffff/0000/0000\x07",
+	} {
+		var said []byte
+		term := New(40, 10, DefaultPalette(), 100, Callbacks{
+			Reply: func(b []byte) { said = append(said, b...) },
+		})
+
+		term.Write([]byte(sent))
+
+		if len(said) != 0 {
+			t.Errorf("%q was answered %q", sent, said)
+		}
+	}
+}
+
+// Setting a palette colour changes nothing: the colours are the
+// window's theme.
+func TestAProgramCannotSetAPaletteColour(t *testing.T) {
+	term := New(40, 10, DefaultPalette(), 100, Callbacks{})
+
+	term.Write([]byte("\x1b]4;1;rgb:ffff/ffff/ffff\x07"))
+
+	if got := term.Screen().palette.ANSI[1]; got != DefaultPalette().ANSI[1] {
+		t.Errorf("colour 1 became %v", got)
+	}
+}

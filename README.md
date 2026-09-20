@@ -373,17 +373,25 @@ install and no profile to edit.
   starts the shell and applies its own answer.
 
 A program can say things of its own through the same channel. A
-message (OSC 9) and how far along it is (OSC 9;4) go on the pane's row
-in the sidebar, and a message goes into the window's log as well. On
-the row rather than in a dialog: a dialog takes the keyboard, and
-anything that can write to a pane could send one of these one after
-another.
+message (OSC 9) goes on the pane's row in the sidebar, into the
+window's log, and up as a Windows notification, so one that arrives
+while you are looking elsewhere is still seen. How far along it is
+(OSC 9;4) goes on the row.
 
-A program may also ask what colour the text and the background are
-drawn in (OSC 10 and OSC 11), which is how it works out whether it is
-on a dark theme. It is answered. Setting them is not: the colours are
-the window's theme, and a pane left unlike every other one would have
-nothing to put it back.
+Not a dialog: a dialog takes the keyboard, and anything that can write
+to a pane could send one of these one after another. For the same
+reason there is one pop-up every two seconds at most, and the ones
+left out are still on the row and in the log. The notification is a
+balloon in the notification area, which Windows 10 and 11 turn into a
+toast and a line in the action centre. The icon appears the first time
+a program asks for one and goes when the window closes.
+
+A program may also ask what colour something is drawn in: the text
+(OSC 10), the background (OSC 11) or one of the 256 palette entries
+(OSC 4). All are answered, which is how a program works out whether it
+is on a dark theme and picks a colour that will show against it.
+Setting a colour is not: the colours are the window's theme, and a
+pane left unlike every other one would have nothing to put it back.
 
 What each shell is told:
 

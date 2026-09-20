@@ -523,6 +523,8 @@ func (t *Terminal) OscDispatch(params [][]byte, bell bool) {
 		t.setDir(params)
 	case "9":
 		t.setNotify(params)
+	case "4":
+		t.answerPalette(params, bell)
 	case "10", "11":
 		t.answerColour(params, string(params[0]), bell)
 	case "8":

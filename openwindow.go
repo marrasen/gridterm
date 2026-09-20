@@ -13,6 +13,7 @@ import (
 	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/jobs"
 	"github.com/marrasen/gridterm/meter"
+	"github.com/marrasen/gridterm/notify"
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/render"
 	"github.com/marrasen/gridterm/session"
@@ -111,6 +112,7 @@ func openWindow(w wanted) (*app, error) {
 	a.paneTitles = newPaneTitles()
 	a.shellSetup = newShellSetup()
 	a.far = newPathsFar()
+	a.toasts = notify.New(programName)
 	a.keyFiles = newKeyIndex()
 	a.theme = newThemePick()
 	a.copies = newSavedCopies()
@@ -193,7 +195,7 @@ func openWindow(w wanted) (*app, error) {
 func (a *app) sizeTheWindow(m glyph.Metrics) {
 	// What the window frame and the taskbar show while gridterm runs.
 	ebiten.SetWindowIcon(appicon.Images())
-	ebiten.SetWindowTitle("gridterm")
+	ebiten.SetWindowTitle(programName)
 	// Room for the padding on top of the cells, or the window opens a
 	// column and a row short of the size it was asked for.
 	padX, padY := a.padsWanted()

@@ -219,6 +219,11 @@ func (a *app) shutDown(ran error) error {
 	// agents reach this window on goes with them: there is nothing left
 	// to hand over.
 	closed = append(closed, a.closeWindows(), a.agents.stop())
+	// And the notification area, so no icon is left behind sitting
+	// there until something hovers over it.
+	if a.toasts != nil {
+		closed = append(closed, a.toasts.Close())
+	}
 	return a.graceLogged(errors.Join(closed...))
 }
 

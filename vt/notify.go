@@ -154,6 +154,31 @@ func (t *Terminal) answerColour(params [][]byte, which string, bell bool) {
 		hex4(c.R) + "/" + hex4(c.G) + "/" + hex4(c.B) + end)
 }
 
+// answerPalette takes OSC 4, which asks what one of the 256 colours
+// is. It comes as pairs: "4;1;?;2;?" asks about two of them.
+//
+// One answer per question, each its own sequence, which is what xterm
+// sends and what everything reading one expects. Setting a colour is
+// ignored, for the reason answerColour gives.
+func (t *Terminal) answerPalette(params [][]byte, bell bool) {
+	end := "\x1b\\"
+	if bell {
+		end = "\x07"
+	}
+	for i := 1; i+1 < len(params); i += 2 {
+		if strings.TrimSpace(string(params[i+1])) != "?" {
+			continue
+		}
+		n, err := strconv.Atoi(strings.TrimSpace(string(params[i])))
+		if err != nil || n < 0 || n > 255 {
+			continue
+		}
+		c := t.scr.palette.ANSI[n]
+		t.reply("\x1b]4;" + strconv.Itoa(n) + ";rgb:" +
+			hex4(c.R) + "/" + hex4(c.G) + "/" + hex4(c.B) + end)
+	}
+}
+
 // hex4 writes one channel the way an X colour name does: the byte
 // twice, which spreads 8 bits across the 16 the name has room for.
 func hex4(v uint8) string {

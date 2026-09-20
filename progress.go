@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"strconv"
+	"time"
 
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/ui/term"
@@ -50,9 +51,16 @@ func progressNote(p vt.Progress) string {
 	return ""
 }
 
+// toastGap is the shortest time between two pop-ups.
+//
+// Anything that can write to a pane can ask for one, so a program
+// sending them one after another would otherwise bury the screen. The
+// ones left out are still on the row and in the log.
+const toastGap = 2 * time.Second
+
 // logNewNotice writes a message to the window's log the first time it
-// arrives, so one that goes by while the user is looking elsewhere is
-// still there to read.
+// arrives, and puts it up outside the window, so one that goes by
+// while the user is looking elsewhere is still seen.
 func (a *app) logNewNotice(pane *term.Terminal, text string, num uint64) {
 	if num == 0 || a.noticed[pane] == num {
 		return
@@ -64,11 +72,42 @@ func (a *app) logNewNotice(pane *term.Terminal, text string, num uint64) {
 	if text == "" {
 		return
 	}
-	where := conns.Local
-	if e := a.panes[pane]; e != nil {
-		where = e.Host
+	name := a.noticeFrom(pane)
+	log.Printf("%s: %s", name, text)
+	a.toast(name, text)
+}
+
+// noticeFrom names the pane a message came from, for the log line and
+// the pop-up: what the row calls it, or the machine it runs on.
+func (a *app) noticeFrom(pane *term.Terminal) string {
+	e := a.panes[pane]
+	if e == nil {
+		return groupName(conns.Local)
 	}
-	log.Printf("%s: %s", groupName(where), text)
+	if e.Label != "" {
+		return groupName(e.Host) + ": " + e.Label
+	}
+	return groupName(e.Host)
+}
+
+// toast puts a message up outside the window, and gives up on one that
+// came too soon after the last.
+func (a *app) toast(title, body string) {
+	if a.toasts == nil {
+		return
+	}
+	now := time.Now()
+	if now.Sub(a.lastToast) < toastGap {
+		return
+	}
+	a.lastToast = now
+	if err := a.toasts.Show(title, body); err != nil {
+		// Logged and carried on. The message is on the row and in the
+		// log already, so a pop-up that would not show has lost
+		// nothing, and a window that stopped working over one would be
+		// worse than the notification is worth.
+		a.logError(err)
+	}
 }
 
 // forgetNotes drops the notes remembered for rows that have gone.

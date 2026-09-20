@@ -281,6 +281,7 @@ func newTestApp(t *testing.T, cols, rows int, opts ...testOption) *testApp {
 	}
 	ta.shellPick.remember(set)
 	ta.far = newPathsFar()
+	ta.toasts = &testToaster{}
 	ta.shellSetup = newShellSetup()
 	ta.shellSetup.remember(set)
 	// Off here, although a real window has it on: it types a line into

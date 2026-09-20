@@ -1,0 +1,420 @@
+package vfs
+
+import (
+	"archive/zip"
+	"bytes"
+	"errors"
+	"io"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+	"testing"
+)
+
+// aZip writes an archive holding these names, with the name as its own
+// contents so a read can be checked.
+func aZip(t *testing.T, at string, names ...string) {
+	t.Helper()
+	var b bytes.Buffer
+	w := zip.NewWriter(&b)
+	for _, name := range names {
+		f, err := w.Create(name)
+		if err != nil {
+			t.Fatalf("put %s in the archive: %v", name, err)
+		}
+		if strings.HasSuffix(name, "/") {
+			continue
+		}
+		if _, err := io.WriteString(f, "in "+name); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("close the archive: %v", err)
+	}
+	if err := os.WriteFile(at, b.Bytes(), 0o600); err != nil {
+		t.Fatalf("write the archive: %v", err)
+	}
+}
+
+// withAZip is a filesystem holding one archive, and where it is.
+func withAZip(t *testing.T, names ...string) (FS, string) {
+	t.Helper()
+	dir := t.TempDir()
+	at := filepath.Join(dir, "bundle.zip")
+	aZip(t, at, names...)
+	f := WithArchives(NewLocal())
+	t.Cleanup(func() { _ = f.Close() })
+	return f, at
+}
+
+// named is the names of a listing, sorted, so a test reads what is
+// there rather than what order it came in.
+func named(got []Entry) []string {
+	out := make([]string, 0, len(got))
+	for _, e := range got {
+		out = append(out, e.Name)
+	}
+	slices.Sort(out)
+	return out
+}
+
+// An archive is listed as a directory, and its top holds what is at
+// the top of it.
+func TestAnArchiveIsListedLikeADirectory(t *testing.T) {
+	f, at := withAZip(t, "readme.md", "src/main.go", "src/deep/x.txt")
+
+	got, err := f.ReadDir(at)
+	if err != nil {
+		t.Fatalf("list the archive: %v", err)
+	}
+
+	if want := []string{"readme.md", "src"}; !slices.Equal(named(got), want) {
+		t.Errorf("the top of the archive holds %v, want %v", named(got), want)
+	}
+	for _, e := range got {
+		if e.Name == "src" && !e.IsDir() {
+			t.Error("a directory inside the archive is not one")
+		}
+	}
+}
+
+// A directory nothing in the archive wrote down is still a directory.
+// Most zips only name the files.
+func TestADirectoryTheArchiveOnlyImpliesIsOne(t *testing.T) {
+	f, at := withAZip(t, "src/deep/x.txt")
+
+	e, err := f.Stat(Join(f, at, "src"))
+	if err != nil {
+		t.Fatalf("stat it: %v", err)
+	}
+
+	if !e.IsDir() {
+		t.Error("a directory the archive only implies came back as a file")
+	}
+}
+
+// A directory deeper in lists what is under it and nothing else.
+func TestADirectoryInsideAnArchiveListsItsOwn(t *testing.T) {
+	f, at := withAZip(t, "readme.md", "src/main.go", "src/util.go", "src/deep/x.txt")
+
+	got, err := f.ReadDir(Join(f, at, "src"))
+	if err != nil {
+		t.Fatalf("list it: %v", err)
+	}
+
+	if want := []string{"deep", "main.go", "util.go"}; !slices.Equal(named(got), want) {
+		t.Errorf("src holds %v, want %v", named(got), want)
+	}
+}
+
+// A file inside an archive is read, which is what makes the viewer
+// work inside one.
+func TestAFileInsideAnArchiveIsRead(t *testing.T) {
+	f, at := withAZip(t, "src/main.go")
+
+	r, err := f.Open(Join(f, at, "src", "main.go"))
+	if err != nil {
+		t.Fatalf("open it: %v", err)
+	}
+	defer r.Close()
+	got, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatalf("read it: %v", err)
+	}
+
+	if string(got) != "in src/main.go" {
+		t.Errorf("it read %q", got)
+	}
+}
+
+// The archive itself is still a file to read, so a copy of it copies
+// the archive rather than walking into it.
+func TestTheArchiveItselfIsStillAFileToRead(t *testing.T) {
+	f, at := withAZip(t, "readme.md")
+
+	r, err := f.Open(at)
+	if err != nil {
+		t.Fatalf("open it: %v", err)
+	}
+	defer r.Close()
+	got, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatalf("read it: %v", err)
+	}
+
+	if len(got) < 4 || string(got[:2]) != "PK" {
+		t.Errorf("reading the archive gave %d bytes starting %q", len(got), got[:min(len(got), 4)])
+	}
+}
+
+// A listing outside an archive marks the archives in it, so a pane
+// offers to walk into one.
+func TestAListingMarksTheArchivesInIt(t *testing.T) {
+	f, at := withAZip(t, "readme.md")
+	dir := filepath.Dir(at)
+	if err := os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("x"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	got, err := f.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("list the directory: %v", err)
+	}
+
+	for _, e := range got {
+		switch e.Name {
+		case "bundle.zip":
+			if !e.IsDir() {
+				t.Error("the archive is not offered as a directory")
+			}
+		case "notes.txt":
+			if e.IsDir() {
+				t.Error("an ordinary file was marked as a directory")
+			}
+		}
+	}
+}
+
+// Walking out of an archive is walking up a path, which is what the
+// pane already does.
+func TestWalkingOutOfAnArchiveIsWalkingUp(t *testing.T) {
+	f, at := withAZip(t, "src/deep/x.txt")
+	deep := Join(f, at, "src", "deep")
+
+	up := Dir(f, deep)
+	out := Dir(f, Dir(f, up))
+
+	if want := Join(f, at, "src"); up != want {
+		t.Errorf("above %s is %s, want %s", deep, up, want)
+	}
+	if want := filepath.Dir(at); out != want {
+		t.Errorf("two above the archive is %s, want %s", out, want)
+	}
+	if _, err := f.ReadDir(out); err != nil {
+		t.Errorf("the directory the archive is in would not list: %v", err)
+	}
+}
+
+// Every way of writing is refused inside an archive, and says so.
+func TestWritingInsideAnArchiveIsRefused(t *testing.T) {
+	f, at := withAZip(t, "readme.md")
+	inner := Join(f, at, "readme.md")
+
+	_, err := f.Create(Join(f, at, "new.txt"), 0o600)
+	tried := map[string]error{
+		"create":  err,
+		"mkdir":   f.Mkdir(Join(f, at, "d"), 0o700),
+		"symlink": f.Symlink("x", Join(f, at, "l")),
+		"remove":  f.Remove(inner),
+		"rename":  f.Rename(inner, Join(f, at, "other.md")),
+		"chmod":   f.Chmod(inner, 0o600),
+	}
+
+	for what, err := range tried {
+		if err == nil {
+			t.Errorf("%s inside an archive was allowed", what)
+			continue
+		}
+		if !errors.Is(err, ErrInArchive) {
+			t.Errorf("%s said %q, which does not say why", what, err)
+		}
+	}
+}
+
+// Writing outside one is handed on, so wrapping a filesystem does not
+// make it read only.
+func TestWritingOutsideAnArchiveStillWorks(t *testing.T) {
+	f, at := withAZip(t, "readme.md")
+	beside := filepath.Join(filepath.Dir(at), "beside.txt")
+
+	w, err := f.Create(beside, 0o600)
+	if err != nil {
+		t.Fatalf("create it: %v", err)
+	}
+	if _, err := io.WriteString(w, "hello"); err != nil {
+		t.Fatalf("write it: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("close it: %v", err)
+	}
+
+	if got, err := os.ReadFile(beside); err != nil || string(got) != "hello" {
+		t.Errorf("it read %q, %v", got, err)
+	}
+}
+
+// The archive is removed and renamed as the file it is: taking one
+// away is not taking something out of it.
+func TestTheArchiveItselfIsStillAFileToMove(t *testing.T) {
+	f, at := withAZip(t, "readme.md")
+	to := filepath.Join(filepath.Dir(at), "moved.zip")
+
+	if err := f.Rename(at, to); err != nil {
+		t.Fatalf("rename the archive: %v", err)
+	}
+	if _, err := os.Stat(to); err != nil {
+		t.Fatalf("it did not move: %v", err)
+	}
+
+	if err := f.Remove(to); err != nil {
+		t.Errorf("remove the archive: %v", err)
+	}
+}
+
+// A name that is not in the archive says so rather than reading empty.
+func TestANameThatIsNotInTheArchiveSaysSo(t *testing.T) {
+	f, at := withAZip(t, "readme.md")
+
+	if _, err := f.Open(Join(f, at, "nothing.txt")); err == nil {
+		t.Error("a name that is not there opened")
+	}
+	if _, err := f.Stat(Join(f, at, "nothing.txt")); err == nil {
+		t.Error("a name that is not there was answered about")
+	}
+}
+
+// An archive too big to hold is refused with a message rather than
+// pulled across a connection.
+func TestAnArchiveTooBigIsRefused(t *testing.T) {
+	dir := t.TempDir()
+	at := filepath.Join(dir, "huge.zip")
+	if err := os.WriteFile(at, make([]byte, 16), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	f := &archives{FS: &bigly{FS: NewLocal(), size: MostArchiveBytes + 1}}
+
+	_, err := f.ReadDir(Join(f, at, "x"))
+
+	if err == nil {
+		t.Fatal("an archive past the cap was opened")
+	}
+	if !strings.Contains(err.Error(), "most an archive may be") {
+		t.Errorf("it said %q", err)
+	}
+}
+
+// bigly is a filesystem that says every file is one size, for the test
+// about an archive too big to hold.
+type bigly struct {
+	FS
+	size int64
+}
+
+func (b *bigly) Stat(at string) (Entry, error) {
+	e, err := b.FS.Stat(at)
+	e.Size = b.size
+	return e, err
+}
+
+// Something that is not an archive is not opened as one, whatever it
+// is called.
+func TestSomethingThatIsNotAnArchiveIsNotOne(t *testing.T) {
+	dir := t.TempDir()
+	at := filepath.Join(dir, "not-really.zip")
+	if err := os.WriteFile(at, []byte("this is not a zip"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	f := WithArchives(NewLocal())
+	defer f.Close()
+
+	_, err := f.ReadDir(at)
+
+	if err == nil {
+		t.Fatal("a file that is not an archive listed as one")
+	}
+	if !strings.Contains(err.Error(), "not-really.zip") {
+		t.Errorf("it said %q, which does not name the file", err)
+	}
+}
+
+// Which names open as a directory.
+func TestWhichNamesOpenAsADirectory(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		want bool
+	}{
+		{"bundle.zip", true},
+		{"BUNDLE.ZIP", true},
+		{"app.jar", true},
+		{"thing.vsix", true},
+		{"notes.txt", false},
+		{"zip", false},
+		{"archive.tar.gz", false},
+	} {
+		if got := IsArchive(tc.name); got != tc.want {
+			t.Errorf("%q came out as %v", tc.name, got)
+		}
+	}
+}
+
+// The archive is read once however many questions are asked of it: a
+// pane in one asks about it a row at a time.
+func TestTheArchiveIsReadOnce(t *testing.T) {
+	f, at := withAZip(t, "readme.md", "src/main.go")
+	counted := &counting{FS: NewLocal()}
+	wrapped := &archives{FS: counted}
+
+	for range 5 {
+		if _, err := wrapped.ReadDir(at); err != nil {
+			t.Fatalf("list it: %v", err)
+		}
+	}
+
+	if counted.opens != 1 {
+		t.Errorf("the archive was read %d times", counted.opens)
+	}
+	_ = f
+}
+
+// counting is a filesystem that says how many times a file was opened.
+type counting struct {
+	FS
+	opens int
+}
+
+func (c *counting) Open(at string) (io.ReadCloser, error) {
+	c.opens++
+	return c.FS.Open(at)
+}
+
+// A wrapper carries the methods that are not on the interface. The
+// window tells a filesystem its machine has been renamed by asking for
+// the method by type, and one it could not ask would leave a pane
+// under the name its machine had when the pane opened.
+func TestTheWrapperCarriesARename(t *testing.T) {
+	under := &renameable{FS: NewLocal()}
+	f := WithArchives(under)
+
+	got, ok := f.(interface{ Renamed(string) })
+	if !ok {
+		t.Fatal("the wrapper cannot be told its machine was renamed")
+	}
+	got.Renamed("office")
+
+	if under.now != "office" {
+		t.Errorf("the filesystem under it was told %q", under.now)
+	}
+}
+
+// And a filesystem with no such method is not a failure: this machine
+// is never renamed.
+func TestAWrapperOverSomethingThatCannotBeRenamed(t *testing.T) {
+	f := WithArchives(NewLocal())
+
+	got, ok := f.(interface{ Renamed(string) })
+	if !ok {
+		t.Fatal("the wrapper lost the method")
+	}
+	got.Renamed("office")
+}
+
+// renameable is a filesystem that can be told its machine is called
+// something else.
+type renameable struct {
+	FS
+	now string
+}
+
+func (r *renameable) Renamed(now string) { r.now = now }

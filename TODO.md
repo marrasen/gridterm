@@ -205,6 +205,37 @@ stops when the pane closes.
   reads a log this window keeps, and a window that took this one over
   sees the row but not the pane.
 
+## Archives
+
+A zip is browsed as if it were a directory, on the branch `archives`.
+A wrapper over `vfs.FS` splits a path at the archive in it, so nothing
+above had to change: the pane walks in and out with the keys it has,
+the viewer opens a file inside one, and a copy out of one is an
+ordinary copy.
+
+- **Only zip**, and the names that are one: jar, whl, xpi, crx, vsix.
+  tar is a stream with no index, so listing one means reading all of
+  it and opening a file in a .tar.gz means reading it again from the
+  start. 7z and rar need a library, and this repo has no dependency
+  that is not permissive and cgo-free.
+
+- **The whole archive is held while it is read**, capped at sixty-four
+  megabytes. A zip is read from its end and `vfs.FS.Open` hands out a
+  stream, so there is nothing to seek in. A ranged read on the
+  interface would fix it -- `pkg/sftp` supports `ReadAt` -- and is the
+  next thing to do here.
+
+- **One archive at a time per pane.** The wrapper holds the last one
+  it read. Two panes are two wrappers, so they do not throw each
+  other's out, but walking between two archives in one pane reads each
+  again.
+
+- **Writing into one is refused**, with a message. Building the
+  container again is a different job from reading it.
+
+- **Nothing shows that a directory is an archive.** Its row reads like
+  any other directory once the extension is past.
+
 ## The file viewer
 
 - **The scrollback viewer shows no colours.** Marcus asked for the

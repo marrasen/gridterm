@@ -27,7 +27,22 @@ plan is under "Asked for, not yet worked out".
 
 ## Waiting on an answer from Marcus
 
-All six are about the context menu.
+Six are about the context menu. Two came out of Marcus's notes of
+2026-09-20.
+
+- **What should dragging and dropping do in the file browser?**
+  Dropping a file onto the window already works: it lands in the
+  directory the pane's shell is in. Marcus asked for "drag and drop
+  support" in the browser, which could mean dragging a file out of a
+  browser pane to another one, moving a file within a listing, or
+  dragging out to Explorer. The three are different pieces of work.
+
+- **Should an SSH agent be carried over a connection?** Marcus asked
+  whether we support it. We do not: nothing in the repo forwards an
+  agent, so a second hop asks for its own key. Whether to add it is
+  his call.
+
+The six about the context menu:
 
 - **Right click in a pane where a program owns the mouse.** vim, mc and
   htop ask for the mouse, and then the right button is theirs. The
@@ -61,6 +76,60 @@ All six are about the context menu.
   windows use. Worth binding, or is the palette enough?
 
 # Open work
+
+## Bugs Marcus has hit
+
+From his notes of 2026-09-20, using the file viewer and the browser.
+
+- **The minimap draws characters.** It is a strip beside the file, so
+  it does not have to be made of text: it can be drawn.
+
+- **The minimap's scrollbar cannot be dragged.**
+
+- **A zip cannot be browsed over a connection to another gridterm.**
+  It works on this machine and over SSH.
+
+- **Nothing marks which search hit is the current one.** "/" finds and
+  Next moves between them, and every hit looks the same.
+
+- **A single click in the browser opens.** It should mark the row, and
+  a double click should open a file or go into a directory.
+
+- **The browser says nothing while it is listing.** The viewer counts a
+  file up as it reads it; `ui/files/pane.go` has no such state, so a
+  slow listing looks like an empty directory.
+
+- **Ctrl+D on an open file does not always go back to the browser.**
+  The file closes and the focus lands somewhere else.
+
+- **The cross on a file's row in the sidebar does not close it.**
+
+- **A file copy appears under the machine it came from.** Marcus
+  dropped a file onto an SSH pane and the row showed under Local,
+  because that is where it was read. It should be under the target.
+
+- **A finished drop puts up a dialog.** Marcus wants a chip in the
+  bottom right corner instead, the way a message from a program is
+  shown.
+
+- **Going above the top of a remote listing fails.** ".." at `/C:` on a
+  gridterm connection answered:
+
+      Gridterm On Nyli: read the directory /: sftp: "CreateFile e:\:
+      The device is not ready." (SSH_FX_FAILURE)
+
+  Listing `/` on Windows means listing the drive letters, and one of
+  them answered that it is not ready. One drive with nothing in it
+  stops the whole listing.
+
+- **A split on cmd cannot be opened from a WSL pane.**
+
+      start C:\WINDOWS\system32\cmd.exe: failed to create process:
+      The directory name is invalid.
+
+  `openTerminalHere` starts the new pane in the directory the old one
+  said it was in, through `dirOfThePaneHere` (here.go:134). A WSL pane
+  says a Linux path, and cmd cannot start in one.
 
 ## Hyperlinks
 
@@ -204,6 +273,10 @@ stops when the pane closes.
 - **A tunnel is not watched from a machine at the far end.** The pane
   reads a log this window keeps, and a window that took this one over
   sees the row but not the pane.
+
+- **Tunnels and a SOCKS proxy over a connection to another gridterm.**
+  Both work over SSH. A window connected to another gridterm cannot
+  open either.
 
 ## Archives
 
@@ -379,6 +452,11 @@ types the path.
   nothing waits for ever, but the user loses a prompt they never
   answered. Goes with the line above.
 
+- **A file copy could have a pane rather than a dialog.** The sidebar
+  row would open it, the way a tunnel's row opens one. It would name
+  the file and the full path at each end, how fast it is going and
+  which machines are involved, and could draw the rate as a chart.
+
 ## Showing which panes are shared
 
 Asked for on 2026-09-17. A pane handed to an agent or driven from
@@ -436,6 +514,15 @@ while the menu is open.
 
 ## Keyboard and shortcuts
 
+- **Ctrl+Shift+T should open another terminal like the one in front.**
+  `openTerminalHere` already does it: same machine, same shell, same
+  directory. What is missing is the shortcut, and Marcus wants it to
+  replace "Open a terminal here" rather than sit beside it.
+
+- **"Terminal" and "pane" are used for the same thing.** The window,
+  the menus and the code all mix them. Which word means what wants
+  settling once, and then the user-facing words follow it.
+
 - **The code still says "take over" where the user reads "attach".**
   The command id is `serve.attach` now, and the menus say Attach. What
   is left is inside: `takeOver`, `workOnWindow` and `taken` in
@@ -477,6 +564,75 @@ Asked for on 2026-09-19.
   colour themes, the server list, and what a copy carrying its own
   files is for. Some of it is already written inside the window, in
   "Keys and commands" and "Where gridterm keeps its files".
+
+## Copying a pane out
+
+Asked for on 2026-09-20. Copying a pane's text keeps none of its
+colours.
+
+- **Copy it as rich text**, so the colours survive a paste into
+  something that can show them. Marcus is not sure rich text is the
+  right format, so what to put on the clipboard is part of the job.
+
+- **Copy it as a picture**, for pasting into a chat. The window already
+  draws the pane, and `clipboard_image_windows.go` already puts a
+  picture on the clipboard.
+
+## Serving over the Teilen relay
+
+Asked for on 2026-09-20. Teilen is our own relay service, in
+`G:\Workspace\teilen`. Two gridterms that cannot reach each other
+would meet on it.
+
+How Marcus wants it to work:
+
+- **Each machine is told which relay to use**, and optionally a proxy.
+  There is no default relay.
+- **A relay share is one use only.** It cannot be started again by
+  itself.
+- **Sharing shows a stream key and an encryption key**, and copies them
+  to the clipboard.
+- **"Connect to another window" gains a "Teilen relay" way in**, where
+  the two keys are pasted.
+- **Both ends encrypt end to end, the way teilen does.** The relay
+  carries the traffic and cannot read it.
+- **The wire format is the one we already have**, and no authorized key
+  is needed to serve, because the encryption key is what grants access.
+
+Not yet looked at: how teilen frames and encrypts what it carries.
+That decides how much of this is new code and how much is reused.
+
+## Running with no window
+
+Asked for on 2026-09-20. gridterm would run as a host and nothing else,
+so it can live on a server. A client connects, the user closes it, and
+the work carries on for the next client on another machine.
+
+The pieces are there: a window already serves, and a pane already
+outlives the client driving it. What is missing is a way to start
+without opening a window at all, which today means starting ebiten.
+
+## What an agent can do
+
+- **Open a tunnel over SSH**, with a tick box saying it may. The
+  per-pane tick boxes are the pattern to follow.
+
+## Android
+
+Asked for on 2026-09-20, after Linux. ebiten builds for mobile, so the
+drawing is not the problem. Keyboard input on a phone is, and Marcus
+says to start with Android alone.
+
+## Smaller things asked for
+
+- **Full screen.** One view fills the screen, with no sidebar and no
+  menu bar.
+
+- **A clipboard history to paste from.** A second kind of paste opens a
+  dialog listing what was copied before.
+
+- **A field with a list behind it should show it has one.** An icon on
+  the field, and clicking the icon opens the picker.
 
 # Known gaps
 

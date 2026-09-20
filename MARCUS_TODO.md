@@ -7,24 +7,6 @@ A note is read, and then it goes. What is still to do moves to TODO.md
 in the words the work needs, what is done goes with the commit that did
 it, and what needs an answer from Marcus goes to the top of TODO.md.
 
-# Copy with colors
+# File Browser
 
-It would be cool if I could copy the contents of a pane and keep the colors. If we could copy it as "rich text",
-and also have an option to "copy as image", if I want to paste into a chat or something. I don't know if "rich text" 
-is the best to use though.
-
-# Forms
-- Fields using dropdown should have an icon making it obvious, clicking it opens a picker
-
-# Tunnel and SOCKS proxy over remote connection
-- Add support for tunnels and SOCKS proxy over a remote connection
-
-# Serve over Teilen Relay
-
-Look at the "teilen" project (G:\Workspace\teilen). It's our in-house relay service. Serving gridterm using this should mean:
-- User configures a relay server (no default) and an optional proxy server in gridterm on both machines
-- A relay share is a one time share, it can't be automatically started again
-- When user clicks share in the host, a "stream key" and an encryption key is shown and copied to the clipboard
-- In the "Connect to another window", the user switches to "Teilen relay" and pastes the two keys
-- Both gridterms connects to the relay server and encrypts the data the same way teilen does, end-to-end
-- We re-use our wire format, but don't require any authorized keys to serve
+- Drag and drop support

@@ -54,6 +54,14 @@ func clickPlusOn(t *testing.T, a *testApp, key any, what string) *ui.Menu {
 	if col < 0 {
 		t.Fatalf("the sidebar is %d columns wide, too narrow to draw a button", area.Cols)
 	}
+	// A dialog covers the sidebar and takes the press, and a notice
+	// takes itself away as it does, so looking afterwards finds no
+	// dialog and no menu and cannot say why. Saying so here names the
+	// dialog that was in the way.
+	if over := a.root.Modal(); over != nil {
+		t.Fatalf("%T is over the sidebar, so the press cannot reach the plus: %s",
+			over, modalWords(over))
+	}
 	took, err := a.root.HandleMouse(input.MouseEvent{
 		Kind: input.MousePress, Button: input.MouseLeft,
 		Col: area.X + col, Row: area.Y + y,
@@ -69,6 +77,14 @@ func clickPlusOn(t *testing.T, a *testApp, key any, what string) *ui.Menu {
 		t.Fatalf("the plus opened %T, want a menu", a.root.Modal())
 	}
 	return menu
+}
+
+// modalWords is what a dialog says, for a failure that has to name one.
+func modalWords(w ui.Widget) string {
+	if n, ok := w.(*ui.Notice); ok {
+		return n.Message()
+	}
+	return "(it says nothing a test can read)"
 }
 
 // commands returns the ids a menu is offering, with "" for a rule.

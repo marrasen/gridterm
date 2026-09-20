@@ -4,6 +4,7 @@ package session
 
 import (
 	"errors"
+	"fmt"
 	"os/exec"
 	"strings"
 	"testing"
@@ -201,6 +202,10 @@ func awaitExit(t *testing.T, h windows.Handle, why string) {
 
 // awaitStillRunning fails with why if a handle from watchExit is
 // signalled, which means the process went.
+//
+// It reports the exit code on the way out, because that is what says
+// whether the process was killed or reached its own end, and this test
+// has failed a few times on a machine nobody was watching.
 func awaitStillRunning(t *testing.T, h windows.Handle, why string) {
 	t.Helper()
 	got, err := windows.WaitForSingleObject(h, uint32(stillThere/time.Millisecond))
@@ -208,8 +213,23 @@ func awaitStillRunning(t *testing.T, h windows.Handle, why string) {
 		t.Fatalf("wait on the process: %v", err)
 	}
 	if got != uint32(windows.WAIT_TIMEOUT) {
-		t.Fatalf("%s: the wait ended with 0x%x inside %v", why, got, stillThere)
+		t.Fatalf("%s: the wait ended with 0x%x inside %v, %s",
+			why, got, stillThere, howItWent(h))
 	}
+}
+
+// howItWent describes how a process ended, for a failure message. ping
+// answers 0 when it has said its piece and 1 when it was killed, so the
+// code is what tells a kill from a natural end.
+func howItWent(h windows.Handle) string {
+	var code uint32
+	if err := windows.GetExitCodeProcess(h, &code); err != nil {
+		return fmt.Sprintf("and its exit code could not be read: %v", err)
+	}
+	if code == stillActive {
+		return "though it reports itself still running"
+	}
+	return fmt.Sprintf("having exited with %d", code)
 }
 
 // endProcess kills a process a test left running.

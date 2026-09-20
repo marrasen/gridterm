@@ -1090,6 +1090,11 @@ func TestAMachineWithTooManyParkedFileSessionsIsRefusedTheNext(t *testing.T) {
 	waitFor(t, host, "every relay to be parked on margit", func() bool {
 		return parkedOn(host, "margit") == mostAbandonedRelays
 	}, client)
+	// Closing a pane on a machine that has stopped answering can leave
+	// a listing in flight, and the window tells the user it was lost.
+	// That notice is this test's own doing, and it would sit over the
+	// press below and take it.
+	settleAndClearNotices(t, client)
 
 	// The next one is turned away before anything is opened, and what
 	// this window said travels back to the client on the file session's

@@ -135,3 +135,71 @@ func TestAClaimUnderADialogIsNotAsked(t *testing.T) {
 		t.Errorf("the claimer behind the dialog saw %v, want nothing", c.seen)
 	}
 }
+
+// A press of a button that is already down proves its release was lost:
+// no mouse sends two presses without a release between them. The window
+// lets go and works out afresh what is under the pointer.
+//
+// Without this a lost release -- what a window losing focus mid-drag
+// leaves behind -- sends every later click to the widget that took the
+// first one, wherever the pointer has since gone.
+func TestAPressOfAButtonAlreadyDownStartsAfresh(t *testing.T) {
+	left, right := &fake{name: "left", takes: input.KeyA}, &fake{name: "right", takes: input.KeyA}
+	split := NewSplit(Columns, left, right)
+	r := &Root{}
+	r.Layout(Rect{Cols: 40, Rows: 10})
+	r.SetWidget(split)
+
+	// A press in the left pane, and no release: the window never heard
+	// one, so it still thinks the button is down.
+	press := input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 2, Row: 2}
+	if _, err := r.HandleMouse(press); err != nil {
+		t.Fatalf("the first press: %v", err)
+	}
+	if !r.Held() {
+		t.Fatal("the first press did not take the pointer, so this proves nothing")
+	}
+	before := len(right.clicks)
+
+	// The same button again, in the other pane.
+	again := input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 30, Row: 2}
+	if _, err := r.HandleMouse(again); err != nil {
+		t.Fatalf("the second press: %v", err)
+	}
+
+	if len(right.clicks) == before {
+		t.Error("the second press never reached the pane it landed in")
+	}
+	if len(left.clicks) != 1 {
+		t.Errorf("the left pane saw %d presses, want only the first", len(left.clicks))
+	}
+}
+
+// A different button during a drag proves nothing: the first one may
+// well still be down, so the drag keeps the pointer.
+func TestAnotherButtonMidDragDoesNotEndTheDrag(t *testing.T) {
+	left, right := &fake{name: "left"}, &fake{name: "right"}
+	split := NewSplit(Columns, left, right)
+	r := &Root{}
+	r.Layout(Rect{Cols: 40, Rows: 10})
+	r.SetWidget(split)
+	if _, err := r.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft, Col: 2, Row: 2,
+	}); err != nil {
+		t.Fatalf("the first press: %v", err)
+	}
+	before := len(right.clicks)
+
+	if _, err := r.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseRight, Col: 30, Row: 2,
+	}); err != nil {
+		t.Fatalf("the right press: %v", err)
+	}
+
+	if len(right.clicks) != before {
+		t.Error("a second button mid-drag reached the other pane, want the drag to keep the pointer")
+	}
+	if len(left.clicks) != 2 {
+		t.Errorf("the pane being dragged in saw %d events, want both", len(left.clicks))
+	}
+}

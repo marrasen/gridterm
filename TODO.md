@@ -34,25 +34,8 @@ work whichever way he answers.
 
 ## Picking text out, what is left
 
-One thing a review of the selection work on 2026-09-19 turned up is
-left, and it needs an answer from Marcus.
-
-- **The reader has no caret, so shift and a key that moves has nowhere
-  obvious to start.** With nothing picked out it starts at the top left
-  of the view. In a file scrolled halfway down, one Shift+Right puts a
-  one-character selection in the corner rather than where the user was
-  looking. Defensible, and still a surprise.
-
-  **The question.** Giving the reader a caret changes what the plain
-  arrow keys do. Today Up and Down scroll the view, the way `less`
-  does. A caret the user can see has to be a caret they can move, so
-  Up and Down would move it and the view would follow, the way an
-  editor works. That is a different feel for a pager, and it is
-  Marcus's call which one he wants. A smaller answer is to leave the
-  arrows alone and start a keyboard selection at the top left of the
-  view as now, saying so in the help rather than changing the keys.
-
-Done from the same review:
+Everything the review of the selection work on 2026-09-19 turned up is
+answered. What was done:
 
 - **Shift and a page key picks text out rather than scrolling.** A
   widget can now claim a chord and get it before the window's
@@ -113,7 +96,25 @@ From Marcus's inbox.
 
 ## Waiting on an answer from Marcus
 
-These are all about the context menu, which is planned below.
+- **A pane the user has closed still raises a notice when its last
+  request fails.** Found on 2026-09-20 while diagnosing a flaky test.
+  Closing a file pane on a machine that has stopped answering can
+  leave a listing in flight. When it fails, the window puts up
+  "margit through 127.0.0.1:...: find the home directory on margit
+  through 127.0.0.1:...: connection lost", over whatever the user is
+  doing next.
+
+  The user closed that pane. They are not waiting for the answer any
+  more, and the dialog lands on top of the sidebar and takes the next
+  click. Should a request belonging to a pane that has gone still
+  reach the user, or should it go to the log?
+
+  Not decided here, because the rule is never to swallow an I/O error
+  without asking. The test that found it now clears the notice rather
+  than pressing through it, so this is a wart the user sees and not a
+  test that fails.
+
+The rest are about the context menu, which is planned below.
 
 - **Right click in a pane where a program owns the mouse.** vim, mc and
   htop ask for the mouse, and then the right button is theirs. The
@@ -148,6 +149,13 @@ These are all about the context menu, which is planned below.
   windows use. Worth binding, or is the palette enough?
 
 ## Settled, do not re-open
+
+- **The file viewer stays a viewer, with no caret.** Answered on
+  2026-09-20. A keyboard selection goes on starting at the top left of
+  the view, which is a surprise in a file scrolled halfway down and is
+  the price of the arrows still scrolling. Giving the reader a caret
+  would mean Up and Down moved it and the view followed, which is an
+  editor rather than a pager, and the reader is a pager.
 
 - **A new pane opens on the shell that was picked last.** Answered on
   2026-09-19, from the code. Three things are asked in order: a command
@@ -406,13 +414,6 @@ From Marcus's inbox, after working in a shared window.
 
 ## Known gaps worth revisiting
 
-- **`TestAMachineWithTooManyParkedFileSessionsIsRefusedTheNext` is flaky
-  under `-race`.** It fails about one run in five with "the plus opened
-  <nil>, want a menu", and passes every time without `-race`. Checked on
-  2026-09-19 against `cae1b4c`, before the file viewer, so it is not new.
-  It waits on SSH relays parking themselves, so the race detector's
-  slowdown is the likely cause, but nobody has looked.
-
 - **The dialog shadow only reads where something light sits behind
   it.** Looked at on 2026-09-19 through `-shot`, over a screenful of
   text. It draws: the row under the panel keeps 89% of its brightness
@@ -518,27 +519,18 @@ From Marcus's inbox, after working in a shared window.
   fixed: it now passes sixty runs in sixty. The ones below are still
   worth fixing for the same reason as much as for the noise.
 
-- **`TestAFinishedJobLetsGoOfItsContext` fails now and then.** It says
-  `the job finished still holding its context` at jobs/stat_test.go:179.
-  Seen once while the whole suite was running. Thirty runs of it alone
-  and five whole suites passed on 2026-09-18, so there is no rate to
-  quote.
-
 - **`TestClosingAPaneLeavesDetachedWorkRunning` fails now and then under
   load.** It says `the wait ended with 0x0 inside 500ms` at
-  session/job_windows_test.go:42. Seen once while the whole suite was
-  running. Measured on 2026-09-18: thirty runs of it alone passed and
-  one of five whole suites failed, so it is the half-second budget
-  rather than the job object.
+  session/job_windows_test.go. Not reproduced on 2026-09-20 in forty
+  runs of it alone and eighteen of the whole package, both under load
+  from other packages, so there is still no rate to quote.
 
-- **`TestAMachineWithTooManyParkedFileSessionsIsRefusedTheNext` fails
-  about one run in sixty.** It says `the plus opened <nil>, want a
-  menu` at serving_test.go:1095: the press on the plus is taken and
-  nothing opens. It was failing nineteen runs in sixty until the reset
-  a window that let go arrives as stopped being reported as a fault,
-  which was putting a notice over the press. What is left is something
-  else, and the modal is nil rather than a notice, so it is not the
-  same cause. Not diagnosed.
+  The earlier note said the half-second budget was to blame. It is
+  not: 0x0 is WAIT_OBJECT_0, which means the ping this test leaves
+  running had already gone, and a shorter budget would only hide a
+  real kill. The failure now prints the ping's exit code as well,
+  because that is what tells a kill from an end of its own, and that
+  is the next thing to read when it happens again.
 
 - **A row for a shell a client started does not say which client.**
   Every one reads "started from another window", so a host with two

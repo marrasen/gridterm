@@ -783,6 +783,37 @@ func waitFor(t *testing.T, a *testApp, what any, cond func() bool, also ...*test
 	waitLoop(t, what, cond, append([]*testApp{a}, also...))
 }
 
+// settleAndClearNotices runs the window's pump until it has nothing left
+// to do and puts away any notice that arrived, the way the user does.
+//
+// It is for a test whose own setup breaks a connection: the window is
+// right to say the work on it was lost, and that notice would otherwise
+// sit over the next press and take it.
+func settleAndClearNotices(t *testing.T, a *testApp) {
+	t.Helper()
+	deadline := time.Now().Add(waitBudget)
+	for quiet := 0; quiet < settledRuns && time.Now().Before(deadline); {
+		if a.pump.pending() > 0 {
+			a.pump.run()
+			quiet = 0
+			continue
+		}
+		a.pump.run()
+		if n, up := a.root.Modal().(*ui.Notice); up {
+			t.Logf("clearing the notice this test's own setup caused: %q", n.Message())
+			dismissNotice(t, a)
+			quiet = 0
+			continue
+		}
+		quiet++
+	}
+}
+
+// settledRuns is how many pumps in a row have to do nothing before the
+// window counts as settled. One is not enough: a callback often posts
+// the next one.
+const settledRuns = 3
+
 // waitUntil waits for something to become true where there is no window
 // to pump, which is a test driving one part of the program on its own.
 func waitUntil(t *testing.T, what any, cond func() bool) {

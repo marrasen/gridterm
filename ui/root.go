@@ -297,22 +297,25 @@ func (r *Root) toClaimer(ev input.Event) (bool, error) {
 // there is nothing for a keymap to say about it.
 func (r *Root) HandleMouse(ev input.MouseEvent) (bool, error) {
 	if r.held.Held() {
-		if held := r.held.Holder(); held != nil {
-			return r.deliverHeld(held, ev)
-		}
+		switch {
+		// Pressing a button that is already down proves its release was
+		// lost: the window never heard it, which is what a window
+		// losing focus mid-drag leaves behind. Letting go here is what
+		// stops the pointer being stuck for good, and it has to happen
+		// whether or not the widget that took the press is still there.
+		// A press that reached a widget that is no longer under the
+		// pointer is worse than a gesture cut short.
+		case ev.Kind == input.MousePress && r.held.Waiting(ev.Button):
+			r.held.Release()
+		case r.held.Holder() != nil:
+			return r.deliverHeld(r.held.Holder(), ev)
 		// The widget that took the press has gone. Nothing else may have
 		// its release, so the rest of the drag is swallowed.
 		//
 		// A wheel notch is let through: it has no release to confuse,
 		// and scrolling should not stop working because a button is
 		// down somewhere.
-		switch {
 		case ev.Button.IsWheel():
-		case ev.Kind == input.MousePress && r.held.Waiting(ev.Button):
-			// Pressing a button that is supposedly already down proves
-			// its release was lost -- the window never heard it. Letting
-			// go here is what stops the pointer being stuck for good.
-			r.held.Release()
 		default:
 			r.held.Take(nil, ev)
 			return false, nil

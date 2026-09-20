@@ -111,9 +111,9 @@ func fileItems(shells []ui.MenuItem) []ui.MenuItem {
 }
 
 // fileMenuShells are the shell lines the File menu offers. A window
-// whose panes open on the machine -ssh named gets none: "New pane" goes
-// there and a shell line comes back here, and no row behind the line
-// says which machine it means.
+// whose panes open on the machine -ssh named gets none: "New terminal"
+// goes there and a shell line comes back here, and no row behind the
+// line says which machine it means.
 func (a *app) fileMenuShells() []ui.MenuItem {
 	if a.homeMachine() != nil {
 		return nil

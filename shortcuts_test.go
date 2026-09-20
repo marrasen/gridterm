@@ -88,7 +88,7 @@ func TestTheShortcutsTheFileLeavesOutStillWork(t *testing.T) {
 		want  string
 	}{
 		{ui.Chord{Key: input.KeyC, Mods: input.ModCtrl | input.ModShift}, copyCommand},
-		{ui.Chord{Key: input.KeyT, Mods: input.ModCtrl | input.ModShift}, "pane.open"},
+		{ui.Chord{Key: input.KeyT, Mods: input.ModCtrl | input.ModShift}, "conn.terminal"},
 		{ui.Chord{Key: input.KeyTab, Mods: input.ModCtrl}, "pane.next"},
 	} {
 		if got, on := runsOn(a, c.chord); !on || got != c.want {

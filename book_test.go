@@ -594,7 +594,7 @@ func TestEveryMachineHasItsOwnCommands(t *testing.T) {
 		}
 	}
 	// And the ones that act on whatever is in front are still there.
-	for _, want := range []string{"Open a terminal here", "Browse files here"} {
+	for _, want := range []string{"New terminal like this one", "Browse files here"} {
 		if !titled(a, want) {
 			t.Errorf("the palette has no %q", want)
 		}

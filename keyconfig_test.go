@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/input"
 	"github.com/marrasen/gridterm/keys"
 	"github.com/marrasen/gridterm/ui"
@@ -233,5 +234,103 @@ func TestTheStartingFileCanBeReadBack(t *testing.T) {
 	}
 	if err := a.applyShortcuts(changes); err != nil {
 		t.Errorf("the file the window wrote is not one it will take: %v", err)
+	}
+}
+
+// Ctrl+Shift+T opens another terminal like the one the user is in:
+// the same shell, on the same machine. A window whose last pick was
+// another shell would otherwise answer with that one.
+func TestAnotherTerminalLikeThisOneUsesTheSameShell(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	a.commands()
+	first := onlyPaneOn(t, a)
+	a.started[first].argv = []string{"cmd.exe", "/k", "echo the one I am in"}
+	a.focus(first)
+
+	if _, on := a.root.Accelerators.Lookup(
+		ui.Chord{Key: input.KeyT, Mods: input.ModCtrl | input.ModShift}); !on {
+		t.Fatal("ctrl+shift+T is not bound")
+	}
+	if err := a.root.Commands.Run("conn.terminal"); err != nil {
+		t.Fatalf("running it: %v", err)
+	}
+
+	if got := a.shellCount(); got != 2 {
+		t.Fatalf("%d shells were started, want a second", got)
+	}
+	a.shellsMu.Lock()
+	started := strings.Join(a.argvs[len(a.argvs)-1], " ")
+	a.shellsMu.Unlock()
+	if want := "cmd.exe /k echo the one I am in"; started != want {
+		t.Errorf("the second shell is %q, want the same as the first at %q", started, want)
+	}
+}
+
+// With the sidebar focused the user named a machine rather than
+// pointing at a pane, so the shell is that machine's business.
+func TestNamingAMachineDoesNotCopyThePanesShell(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	a.commands()
+	first := onlyPaneOn(t, a)
+	a.started[first].argv = []string{"cmd.exe", "/k", "echo the one I am in"}
+	if err := a.focusPanel(); err != nil {
+		t.Fatalf("focus the sidebar: %v", err)
+	}
+
+	if got := a.shellLikeThePaneHere(a.current()); got != nil {
+		t.Errorf("it would copy %v, want the machine's own shell", got)
+	}
+}
+
+// A command pane is not a terminal to make another of: another one of
+// those is a rerun, which "Run it again" is for.
+func TestACommandPaneIsNotCopied(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	a.commands()
+	pane := onlyPaneOn(t, a)
+	a.panes[pane].Kind = conns.Command
+	a.started[pane].argv = []string{"make", "deploy"}
+	a.focus(pane)
+
+	if got := a.shellLikeThePaneHere(a.current()); got != nil {
+		t.Errorf("it would run %v again, want a terminal instead", got)
+	}
+}
+
+// A pane that never said what it was started on is not copied either.
+func TestAPaneWithNoShellRecordedIsNotCopied(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	a.commands()
+	pane := onlyPaneOn(t, a)
+	a.started[pane].argv = nil
+	a.focus(pane)
+
+	if got := a.shellLikeThePaneHere(a.current()); got != nil {
+		t.Errorf("it would copy %v from a pane that recorded nothing", got)
+	}
+}
+
+// The shell copied is a copy: changing what comes back must not reach
+// into what the first pane remembers it was started on.
+func TestTheShellCopiedIsACopy(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	a.commands()
+	pane := onlyPaneOn(t, a)
+	a.started[pane].argv = []string{"cmd.exe", "/k", "echo hello"}
+	a.focus(pane)
+
+	got := a.shellLikeThePaneHere(a.current())
+	if len(got) == 0 {
+		t.Fatal("nothing was copied")
+	}
+	got[0] = "OVERWRITTEN"
+
+	if a.started[pane].argv[0] != "cmd.exe" {
+		t.Error("changing the copy changed what the pane remembers")
 	}
 }

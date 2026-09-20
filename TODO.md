@@ -64,6 +64,13 @@ All six are about the context menu.
 
 ## The file viewer
 
+- **The scrollback viewer shows no colours.** Marcus asked for the
+  terminal buffer "keeping its colors", and a reader draws a file in
+  one style. Carrying the colours means the reader taking styled cells
+  rather than lines, which is a change to how it draws rather than to
+  what it is given. Finding a line is what the viewer is for, and that
+  works.
+
 - **A scrollbar minimap.** Marcus's own note, 2026-09-20.
 
 - **A JSON log viewer**, inspired by the one in
@@ -217,24 +224,11 @@ another window looks like every other pane.
 
 ## Keyboard and shortcuts
 
-The first three want designing together, because each would change the
-shortcuts file's shape and it should not change twice.
-
-- **The shortcuts file is read once, at startup.** Colour themes have a
-  "Reload" and this does not. Applying the changes again on top of a
-  keymap they have already changed would not give a deleted line's
-  built-in chord back, so a real reload has to build the default keymap
-  from scratch first. That means pulling the `MustBind` block out of
-  `commands()` in app.go into a function of its own.
-
-- **The file cannot say "hold a modifier".** Ctrl+Tab walking the panes
-  is not a plain chord, and the file has no way to write one.
-
-- **The file cannot move a command id.** A saved shortcut names an id,
-  so renaming one breaks a file that names it. `serve.takeOver`,
-  `takeOver`, `workOnWindow` and `taken` in windows.go still say "take
-  over" where the user now reads "connect to", and they stay that way
-  until the file can follow a rename.
+- **The code still says "take over" where the user reads "connect
+  to".** `serve.takeOver`, `takeOver`, `workOnWindow` and `taken` in
+  windows.go. Nothing blocks the rename now: `keys.Renamed` follows a
+  command id that has moved, so a saved shortcut naming the old one
+  goes on working. It is a rename nobody has done yet.
 
 - **Only the font size goes by the character a key produces.** The
   punctuation keys are read from what the layout says they print, so

@@ -48,7 +48,7 @@ func (a *app) splitFocused(dir ui.Dir) error {
 func (a *app) addSplitChoices(c *ui.Chooser, dir ui.Dir, current ui.Widget) {
 	// First, and so the line the chooser opens on: Enter straight after
 	// the split key is the shell a split used to give without asking.
-	c.Add("New pane", groupName(a.newPaneHost()), func() error {
+	c.Add("New terminal", groupName(a.newPaneHost()), func() error {
 		return a.splitNewTerminal(dir, current)
 	})
 

@@ -89,7 +89,7 @@ func TestSplittingAsksWhatGoesBesideIt(t *testing.T) {
 	if len(got) < 2 {
 		t.Fatalf("it offers %v, too few for the order to mean anything", got)
 	}
-	if !strings.Contains(got[0], "New pane") {
+	if !strings.Contains(got[0], "New terminal") {
 		t.Fatalf("it offers %v, want a new terminal first", got)
 	}
 	// Nothing has happened yet: the question is the whole of it.
@@ -97,7 +97,7 @@ func TestSplittingAsksWhatGoesBesideIt(t *testing.T) {
 		t.Fatalf("%d panes while the question is still up", len(a.panes))
 	}
 
-	takeChoice(t, c, "New pane")
+	takeChoice(t, c, "New terminal")
 	if len(a.panes) != 3 {
 		t.Fatalf("%d panes after taking the first line", len(a.panes))
 	}
@@ -240,7 +240,7 @@ func TestSplittingOffersEveryShell(t *testing.T) {
 	}
 	// Under the line that opens a terminal here, the way the plus
 	// arranges them.
-	if got[0] != "New pane" {
+	if got[0] != "New terminal" {
 		t.Fatalf("the chooser opens on %q, want the terminal line", got[0])
 	}
 	if got[1] != "Command Prompt" {

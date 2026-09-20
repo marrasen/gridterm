@@ -441,7 +441,7 @@ func TestMenuRunsACommand(t *testing.T) {
 		t.Fatalf("top modal = %T, want a menu", a.root.Modal())
 	}
 
-	// The File menu starts on "New pane".
+	// The File menu starts on "New terminal".
 	cmd, ok := menu.Selected()
 	if !ok {
 		t.Fatal("nothing is selected")

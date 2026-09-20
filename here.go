@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/marrasen/gridterm/conns"
@@ -10,6 +11,7 @@ import (
 	"github.com/marrasen/gridterm/settings"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/files"
+	"github.com/marrasen/gridterm/ui/term"
 )
 
 // currentHost returns the machine the user is looking at: the one the
@@ -123,7 +125,48 @@ func (a *app) openTerminalHere() error {
 	if err != nil {
 		return err
 	}
+	// The same shell as the pane the user is in, when that is what
+	// "here" means. A window whose last pick was PowerShell would
+	// otherwise answer a cmd.exe pane with PowerShell, which is not
+	// what "another one of these" means.
+	if argv := a.shellLikeThePaneHere(h); argv != nil {
+		return a.openPaneWith(func() (*term.Terminal, error) {
+			return a.localTerminalOn(argv)
+		})
+	}
 	return a.openTerminalOn(h.name, nil)
+}
+
+// shellLikeThePaneHere is the shell the focused pane is running, when
+// it is a terminal on this machine and the user is in it.
+//
+// Nil for everything else: for a pane on another machine, where the
+// shell is that machine's business; for a command pane, because
+// another one of those is a rerun rather than a new terminal; and
+// while the sidebar has the keys, because then the user named a
+// machine rather than pointing at a pane.
+func (a *app) shellLikeThePaneHere(h hostFacts) []string {
+	if h.kind != hostHere {
+		return nil
+	}
+	if a.panel != nil && a.panel.Focused() {
+		return nil
+	}
+	if _, up := a.hostMenus.machine(); up {
+		return nil
+	}
+	t := a.focusedTerminal()
+	if t == nil {
+		return nil
+	}
+	if e := a.panes[t]; e == nil || e.Kind != conns.Terminal || e.Host != conns.Local {
+		return nil
+	}
+	was := a.started[t]
+	if was == nil || len(was.argv) == 0 {
+		return nil
+	}
+	return slices.Clone(was.argv)
 }
 
 // openCommandHere asks for a command to run on the machine the user is

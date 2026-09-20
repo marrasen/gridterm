@@ -797,7 +797,7 @@ func TestEveryWayInOpensAPaneHere(t *testing.T) {
 					t.Fatalf("this machine is offered twice: %v", choiceTexts(c))
 				}
 			}
-			takeChoice(t, c, "New pane")
+			takeChoice(t, c, "New terminal")
 		}},
 	} {
 		t.Run(way.name, func(t *testing.T) {

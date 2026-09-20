@@ -10,11 +10,45 @@ import (
 )
 
 // keysCommand writes a starting shortcuts file, and keysTitle names the
-// line that does it.
+// line that does it. keysReloadCommand reads the file again.
 const (
-	keysCommand = "keys.start"
-	keysTitle   = "Write a starting keyboard shortcuts file"
+	keysCommand       = "keys.start"
+	keysTitle         = "Write a starting keyboard shortcuts file"
+	keysReloadCommand = "keys.reload"
+	keysReloadTitle   = "Reread the keyboard shortcuts"
 )
+
+// reloadShortcuts reads the shortcuts file again and applies it.
+//
+// It starts from the keymap gridterm comes with rather than from the
+// one on screen. Laying the changes on top of a keymap they have
+// already changed would not give back the built-in chord of a line the
+// user has since deleted.
+//
+// A file that cannot be used leaves the window on the shortcuts it had,
+// not on the built-in ones: a reload that went wrong should take
+// nothing away.
+func (a *app) reloadShortcuts() error {
+	if a.root.Accelerators == nil || a.root.Commands == nil {
+		return errors.New("this window has no keys to change")
+	}
+	dir, err := a.shortcutDir()
+	if err != nil {
+		return err
+	}
+	changes, err := keys.Load(keys.Path(dir))
+	if err != nil {
+		return err
+	}
+	was := a.root.Accelerators
+	a.root.Accelerators = defaultShortcuts()
+	if err := a.applyShortcuts(changes); err != nil {
+		a.root.Accelerators = was
+		return err
+	}
+	a.markDirty()
+	return nil
+}
 
 // loadShortcuts applies the shortcuts file to the keys the window starts
 // with.
@@ -54,7 +88,14 @@ func (a *app) applyShortcuts(changes []keys.Change) error {
 	// Checked before any of it is applied, so a file naming a command
 	// this gridterm does not have changes nothing.
 	var unknown []string
-	for _, c := range changes {
+	for i, c := range changes {
+		// An id that has been renamed is followed to its new name, so a
+		// file written before the rename goes on working. Done before
+		// the check below, so a renamed id is not reported as unknown.
+		if to, moved := keys.Renamed[c.Command]; moved {
+			changes[i].Command = to
+			c.Command = to
+		}
 		// A command built from the server list, the font scan or the shell
 		// scan is registered after this runs, so its name is taken as
 		// written rather than checked.

@@ -23,6 +23,12 @@ type paneWalk struct {
 	// at is the pane the walk is on, counted from the one that had focus
 	// when it started.
 	at int
+
+	// hold is the modifiers that keep the walk alive: the ones the
+	// shortcut that started it holds. Read from the keymap rather than
+	// fixed, so a user who moves the walk to another chord keeps the
+	// holding as well as the key.
+	hold input.Mods
 }
 
 // on is the pane the walk is on, and nil when there is nothing left.
@@ -101,7 +107,7 @@ func (a *app) walkRecent(step int) error {
 		return nil
 	}
 	if a.walk == nil {
-		a.walk = &paneWalk{order: a.recentPanes()}
+		a.walk = &paneWalk{order: a.recentPanes(), hold: a.walkHeld()}
 		if on := ui.FocusedLeaf(a.root.Widget()); on == nil || !a.isPane(on) {
 			// The keys are on the sidebar, so the first press steps in
 			// rather than past: it lands on the pane used last.
@@ -129,11 +135,31 @@ func (a *app) stepWalk() {
 		return
 	}
 	a.prune()
-	if a.mods()&input.ModCtrl != 0 && len(a.walk.order) > 0 {
+	if a.walk.hold != 0 && a.mods()&a.walk.hold != 0 && len(a.walk.order) > 0 {
 		return
 	}
 	a.walk = nil
 	a.markDirty()
+}
+
+// walkHeld is the modifiers a walk waits to be let go of: the ones the
+// chords bound to walking hold.
+//
+// Shift is left out because it picks the direction rather than holding
+// the walk open, and the two chords differ by it. Nothing bound leaves
+// no modifier to hold, and the walk then ends on the next frame, which
+// is what running it from the palette should do.
+func (a *app) walkHeld() input.Mods {
+	if a.root.Accelerators == nil {
+		return 0
+	}
+	var held input.Mods
+	for _, id := range []string{"pane.next", "pane.previous"} {
+		if c, bound := a.root.Accelerators.ChordFor(id); bound {
+			held |= c.Mods
+		}
+	}
+	return held &^ input.ModShift
 }
 
 // prune takes panes that have closed off the walk, leaving the mark on

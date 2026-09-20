@@ -68,6 +68,7 @@ func (a *app) newMenubar(child ui.Widget) *ui.Menubar {
 		{Title: helpMenu, Items: []ui.MenuItem{
 			{Command: helpCommand},
 			{Command: keysCommand},
+			{Command: keysReloadCommand},
 			{Command: filesCommand},
 			ui.MenuSeparator(),
 			{Command: logCommand},

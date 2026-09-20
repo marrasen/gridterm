@@ -819,6 +819,9 @@ func (a *app) commands() {
 		ui.Command{ID: logCommand, Title: logTitle, Run: a.showLog,
 			AlsoFind: []string{"debug", "errors", "what went wrong"}},
 		ui.Command{ID: keysCommand, Title: keysTitle, Run: a.writeShortcutStart},
+		ui.Command{ID: keysReloadCommand, Title: keysReloadTitle,
+			AlsoFind: []string{"keyboard", "shortcuts", "reread"},
+			Run:      a.reloadShortcuts},
 		ui.Command{ID: "server.editThis", Title: "Edit this server…",
 			Run: a.editThisServer},
 		ui.Command{ID: "server.forget", Title: "Forget this server…",
@@ -844,6 +847,18 @@ func (a *app) commands() {
 			Run: func() error { return a.walkRecent(-1) }},
 	})...)
 
+	a.root.Commands = cmds
+	// These are accelerators rather than ordinary bindings because the
+	// terminal has a meaning for every key and would swallow them.
+	a.root.Accelerators = defaultShortcuts()
+}
+
+// defaultShortcuts is the keymap gridterm comes with, built fresh.
+//
+// Its own function because a reload has to start from it: applying the
+// file's changes again on top of a keymap they have already changed
+// would not give a deleted line's built-in chord back.
+func defaultShortcuts() *ui.Keymap {
 	// Ctrl+Shift is the usual escape hatch: Ctrl+C has to stay available
 	// to the program, so copy cannot live there.
 	keys := ui.NewKeymap()
@@ -890,9 +905,5 @@ func (a *app) commands() {
 		// and every chord this window takes is Ctrl+Shift and a letter.
 		{Key: input.KeyH, Mods: input.ModCtrl | input.ModShift}: helpCommand,
 	})
-
-	a.root.Commands = cmds
-	// These are accelerators rather than ordinary bindings because the
-	// terminal has a meaning for every key and would swallow them.
-	a.root.Accelerators = keys
+	return keys
 }

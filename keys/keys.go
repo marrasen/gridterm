@@ -28,6 +28,17 @@ const File = "keys.json"
 // built in taken away.
 const Nothing = "nothing"
 
+// Renamed maps a command id that has moved to the one it moved to.
+//
+// A saved shortcut names an id, so renaming one would break a file
+// that names it. A line here keeps that file working: it is read when
+// the file is applied, and the old name goes on meaning what the user
+// meant by it.
+//
+// Lines stay for good. Taking one out breaks the files this was added
+// for, which is the whole point of having it.
+var Renamed = map[string]string{}
+
 // ErrDisk marks a failure to read the file itself, as against a file
 // read whole and found wrong. A window opens without a file it cannot
 // read and cannot be trusted to open with the keys the user asked for.

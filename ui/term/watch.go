@@ -209,6 +209,19 @@ func (t *Terminal) revive() {
 	t.watchMu.Unlock()
 }
 
+// Dir is where the program in the pane last said it was, and the
+// machine it said it about, from OSC 7. Both are empty until a shell
+// sends one.
+//
+// The host is the shell's own machine. A shell on a machine at the
+// far end reports that machine's path, so a caller meaning to use the
+// path here has to decide whether it believes the name.
+func (t *Terminal) Dir() (dir, host string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.term.Dir()
+}
+
 // AllText is the screen and the whole scrollback behind it, as plain
 // text, from one moment.
 //

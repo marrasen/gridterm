@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"os"
 	"slices"
 	"strings"
 
@@ -130,11 +131,54 @@ func (a *app) openTerminalHere() error {
 	// otherwise answer a cmd.exe pane with PowerShell, which is not
 	// what "another one of these" means.
 	if argv := a.shellLikeThePaneHere(h); argv != nil {
+		dir := a.dirOfThePaneHere()
 		return a.openPaneWith(func() (*term.Terminal, error) {
-			return a.localTerminalOn(argv)
+			return a.localTerminalIn(argv, dir)
 		})
 	}
 	return a.openTerminalOn(h.name, nil)
+}
+
+// dirOfThePaneHere is where the focused pane says it is, for a new
+// terminal opened beside it. Empty when nothing said.
+//
+// A shell only says through OSC 7, which most send once they are set
+// up for it and none send by default on Windows. Empty means the new
+// pane starts where a new pane starts, which is what it did before
+// any of this.
+//
+// The name in the URL has to be this machine. A shell that has been
+// ssh'd somewhere from inside the pane goes on sending OSC 7, and the
+// path it sends is a path over there.
+func (a *app) dirOfThePaneHere() string {
+	t := a.focusedTerminal()
+	if t == nil {
+		return ""
+	}
+	dir, host := t.Dir()
+	if dir == "" || !isThisMachine(host) {
+		return ""
+	}
+	return dir
+}
+
+// isThisMachine reports whether the name in an OSC 7 URL is the
+// machine gridterm is running on. An empty name means the sender did
+// not say, which every shell on the local machine does.
+func isThisMachine(host string) bool {
+	switch strings.ToLower(host) {
+	case "", "localhost", "127.0.0.1", "::1":
+		return true
+	}
+	name, err := os.Hostname()
+	if err != nil {
+		return false
+	}
+	// The short name as well: a shell sends what hostname gives it,
+	// which may or may not carry the domain.
+	short, _, _ := strings.Cut(strings.ToLower(name), ".")
+	asked, _, _ := strings.Cut(strings.ToLower(host), ".")
+	return asked == short
 }
 
 // shellLikeThePaneHere is the shell the focused pane is running, when

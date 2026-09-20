@@ -247,9 +247,10 @@ func (a *app) localShell() []string {
 		a.sayShellHasGone(id)
 		return nil
 	}
-	// No directory: nothing in the window tracks a pane's yet, and
-	// Command leaves --cd off for an empty one.
-	return sh.Command("")
+	// Where the pane the user is in says it is, so a WSL shell opens
+	// there. Empty when no shell has said, and Command leaves --cd off
+	// for an empty one.
+	return sh.Command(a.dirOfThePaneHere())
 }
 
 // sayShellHasGone tells the user the shell they chose is no longer on
@@ -271,8 +272,11 @@ func (a *app) sayShellHasGone(id string) {
 // openPaneOn opens a pane here on a shell, and writes the pick down once
 // it has started: a shell that would not start is not worth keeping.
 func (a *app) openPaneOn(sh shells.Shell) error {
+	// Read before the pane opens, while the one the user is in is
+	// still the focused one.
+	at := a.dirOfThePaneHere()
 	err := a.openPaneWith(func() (*term.Terminal, error) {
-		return a.localTerminalOn(sh.Command(""))
+		return a.localTerminalIn(sh.Command(at), at)
 	})
 	if err != nil {
 		return err
@@ -316,8 +320,9 @@ func (a *app) openPaneOnDefault() error {
 
 // splitOnShell divides a pane with a new one running a named shell.
 func (a *app) splitOnShell(dir ui.Dir, current ui.Widget, sh shells.Shell) error {
+	at := a.dirOfThePaneHere()
 	err := a.splitWithNew(dir, current, func() (*term.Terminal, error) {
-		return a.localTerminalOn(sh.Command(""))
+		return a.localTerminalIn(sh.Command(at), at)
 	})
 	if err != nil {
 		return err

@@ -94,7 +94,13 @@ func (a *app) localTerminal() (*term.Terminal, error) {
 // localTerminalOn starts a pane here on argv. A nil argv leaves the
 // shell to session.StartLocal.
 func (a *app) localTerminalOn(argv []string) (*term.Terminal, error) {
-	sess, err := a.newShell(argv, "", a.lastSize[0], a.lastSize[1])
+	return a.localTerminalIn(argv, "")
+}
+
+// localTerminalIn is localTerminalOn started in a directory. An empty
+// one leaves the shell to start where it would.
+func (a *app) localTerminalIn(argv []string, dir string) (*term.Terminal, error) {
+	sess, err := a.newShell(argv, dir, a.lastSize[0], a.lastSize[1])
 	if err != nil {
 		// Unwrapped: what failed already says so, and the user reads this
 		// in a dialog.
@@ -106,7 +112,7 @@ func (a *app) localTerminalOn(argv []string) (*term.Terminal, error) {
 		_ = sess.Close()
 		return nil, err
 	}
-	a.startsAgain(t, argv, "", nil)
+	a.startsAgain(t, argv, dir, nil)
 	return t, nil
 }
 

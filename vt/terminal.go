@@ -8,7 +8,9 @@
 package vt
 
 import (
+	"bytes"
 	"encoding/base64"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -91,6 +93,13 @@ type Terminal struct {
 
 	title string
 
+	// dir is where the shell last said it was, from OSC 7, and empty
+	// until one says. Its host is kept beside it: a shell on a machine
+	// at the far end reports that machine's path, which means nothing
+	// here.
+	dir     string
+	dirHost string
+
 	// cmd is what the shell's prompt marks have said so far.
 	cmd Command
 
@@ -114,6 +123,14 @@ func (t *Terminal) Screen() *Screen { return t.scr }
 
 // Title returns the last title set by the program.
 func (t *Terminal) Title() string { return t.title }
+
+// Dir is where the program last said it was, and the machine it said
+// it about. Both are empty until a shell sends OSC 7.
+//
+// The host is what the shell put in the URL, which is its own machine
+// rather than this one. A caller that means to use the path locally
+// has to decide whether it believes that name.
+func (t *Terminal) Dir() (dir, host string) { return t.dir, t.dirHost }
 
 // Command returns what the shell's prompt marks say about the command
 // line, all from one moment so the parts cannot disagree.
@@ -210,6 +227,7 @@ func (t *Terminal) EscDispatch(intermediates []byte, _ bool, b byte) {
 		t.scr.Reset()
 		t.lastRune = 0
 		t.title = ""
+		t.dir, t.dirHost = "", ""
 	case '=': // DECKPAM
 		t.scr.mode.AppKeypad = true
 	case '>': // DECKPNM
@@ -478,11 +496,69 @@ func (t *Terminal) OscDispatch(params [][]byte, _ bool) {
 				t.cb.Title(title)
 			}
 		}
+	case "7":
+		t.setDir(params)
 	case "52":
 		t.clipboard(params)
 	case "133", "633":
 		t.semanticPrompt(params)
 	}
+}
+
+// setDir takes OSC 7, which is how a shell says where it is.
+//
+// The payload is a file URL: "file://host/path", with the path
+// percent-encoded. An empty payload means the shell no longer knows,
+// which is what one sends before handing over to something else.
+func (t *Terminal) setDir(params [][]byte) {
+	if len(params) < 2 {
+		return
+	}
+	// The path may hold a semicolon, and the parser cuts on those, so
+	// what was sent is the rest of the parameters joined back up.
+	raw := string(bytes.Join(params[1:], []byte(";")))
+	if strings.TrimSpace(raw) == "" {
+		t.dir, t.dirHost = "", ""
+		return
+	}
+	dir, host, ok := parseFileURL(raw)
+	if !ok {
+		// A shell that sends something else is not one to believe. The
+		// last directory stays rather than being replaced by nonsense.
+		return
+	}
+	t.dir, t.dirHost = dir, host
+}
+
+// parseFileURL reads the "file://host/path" a shell sends for OSC 7
+// and returns the path and the host it named.
+//
+// A path with no scheme is taken as a path, because some shells send
+// one, and a Windows path is unwound from the leading slash a URL
+// puts in front of the drive letter.
+func parseFileURL(raw string) (dir, host string, ok bool) {
+	rest := raw
+	if after, cut := strings.CutPrefix(raw, "file://"); cut {
+		host, rest, _ = strings.Cut(after, "/")
+		rest = "/" + rest
+	} else if strings.Contains(raw, "://") {
+		// Some other scheme. Not a directory on any machine.
+		return "", "", false
+	}
+	unescaped, err := url.PathUnescape(rest)
+	if err != nil {
+		return "", "", false
+	}
+	unescaped = strings.TrimRight(unescaped, "\r\n")
+	if unescaped == "" {
+		return "", "", false
+	}
+	// "/C:/Users/x" is how a URL spells a Windows path. The slash in
+	// front of the drive letter is the URL's, not the path's.
+	if len(unescaped) > 2 && unescaped[0] == '/' && unescaped[2] == ':' {
+		unescaped = unescaped[1:]
+	}
+	return unescaped, host, true
 }
 
 // semanticPrompt handles OSC 133 and VS Code's OSC 633: A is a prompt

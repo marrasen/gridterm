@@ -266,23 +266,6 @@ Asked for on 2026-09-19.
 Nobody has asked for these. They are written down so they are not
 rediscovered.
 
-## Left by the review of 2026-09-20
-
-Four adversarial reviewers went over the morning's work. One thing
-they found is still open, and it is a feature rather than a fix:
-
-- **"New terminal like this one" copies the shell but not the
-  directory.** Ctrl+Shift+T is the duplicate-tab key elsewhere and the
-  working directory comes with it there. Nothing in the window knows a
-  shell's directory: `vt` parses OSC 133 for prompts and OSC 52 for
-  the clipboard, and does not parse OSC 7, which is how a shell says
-  where it is. Adding it means new state in the emulator, a way to
-  read it off a `term.Terminal`, and a shell configured to send it --
-  most do on Linux, PowerShell has to be told. The same gap stops a
-  WSL pane starting where the window is looking, and stops the working
-  directory field under "Run a command" being filled in, so the three
-  are one piece of work.
-
 ## Tests
 
 - **`TestClosingAPaneLeavesDetachedWorkRunning` fails now and then
@@ -342,14 +325,19 @@ they found is still open, and it is a feature rather than a fix:
   closes the thread handle, so there is no way to resume it without
   patching go-pty.
 
-- **A WSL pane does not start in the directory the window is looking
-  at.** `shells.Shell.Command` translates a Windows directory into a
-  `/mnt` path and passes it as `--cd`, and `shells.UnixPath` is tested,
-  but the window passes an empty directory at all three call sites in
-  shellpick.go. Nothing tracks a pane's working directory yet. The file
-  browser knows one through `files.Pane.At()`, and no command opens a
-  terminal from it. The working directory field under "Run a command"
-  wants the same thing.
+- **A shell that sends no OSC 7 starts a new pane nowhere
+  particular.** The window knows where a pane is only because the
+  shell says so, and nothing says so by default on Windows: PowerShell
+  needs a prompt function that writes OSC 7, and cmd.exe cannot send
+  one at all. bash, zsh and fish on Linux mostly do it out of the box.
+  A pane that says nothing opens the next one wherever a shell starts,
+  which is what happened before. Worth a line in the README when the
+  documentation is written.
+
+- **Opening a terminal from a file browser pane does not use the
+  directory it is showing.** `files.Pane.At()` knows one and no
+  command opens a terminal from it. The working directory field under
+  "Run a command" wants the same thing.
 
 ## Keys, files and privacy
 

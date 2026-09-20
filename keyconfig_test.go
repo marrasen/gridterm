@@ -10,6 +10,7 @@ import (
 	"github.com/marrasen/gridterm/input"
 	"github.com/marrasen/gridterm/keys"
 	"github.com/marrasen/gridterm/ui"
+	"github.com/marrasen/gridterm/ui/term"
 )
 
 // withShortcutFile points the window's shortcuts at a directory of the
@@ -426,5 +427,112 @@ func TestAWalkStaysOpenWhileItsOwnModifierIsHeld(t *testing.T) {
 	a.stepWalk()
 	if a.walk != nil {
 		t.Error("the walk stayed open after its modifier was let go")
+	}
+}
+
+// sayWhereItIs makes a pane report a working directory the way a
+// shell with OSC 7 turned on does.
+func sayWhereItIs(t *testing.T, a *testApp, pane *term.Terminal, dir string) {
+	t.Helper()
+	a.shells[0].out <- []byte("\x1b]7;file://" + dir + "\x07")
+	waitFor(t, a, "the pane to say where it is", func() bool {
+		at, _ := pane.Dir()
+		return at != ""
+	})
+}
+
+// A new terminal like this one starts where this one is. Ctrl+Shift+T
+// is the duplicate-tab key elsewhere and the directory comes with it
+// there.
+func TestAnotherTerminalLikeThisOneStartsInTheSamePlace(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	a.commands()
+	pane := onlyPaneOn(t, a)
+	a.started[pane].argv = []string{"cmd.exe"}
+	a.focus(pane)
+	sayWhereItIs(t, a, pane, "/home/marcus/deep/in/a/build")
+
+	if err := a.root.Commands.Run("conn.terminal"); err != nil {
+		t.Fatalf("running it: %v", err)
+	}
+
+	a.shellsMu.Lock()
+	started := a.dirs[len(a.dirs)-1]
+	a.shellsMu.Unlock()
+	if want := "/home/marcus/deep/in/a/build"; started != want {
+		t.Errorf("the second shell started in %q, want %q", started, want)
+	}
+}
+
+// A pane that has said nothing leaves the new one to start where it
+// would, which is what happened before any of this.
+func TestAPaneThatSaidNothingStartsTheNewOneNowhereParticular(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	a.commands()
+	pane := onlyPaneOn(t, a)
+	a.started[pane].argv = []string{"cmd.exe"}
+	a.focus(pane)
+
+	if err := a.root.Commands.Run("conn.terminal"); err != nil {
+		t.Fatalf("running it: %v", err)
+	}
+
+	a.shellsMu.Lock()
+	started := a.dirs[len(a.dirs)-1]
+	a.shellsMu.Unlock()
+	if started != "" {
+		t.Errorf("the second shell started in %q, want wherever a shell starts", started)
+	}
+}
+
+// A path a shell reported for another machine is not a path here. A
+// shell ssh'd somewhere from inside the pane goes on sending OSC 7,
+// and what it sends is a path over there.
+func TestADirectoryOnAnotherMachineIsNotUsedHere(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	a.commands()
+	pane := onlyPaneOn(t, a)
+	a.started[pane].argv = []string{"cmd.exe"}
+	a.focus(pane)
+	sayWhereItIs(t, a, pane, "margit/var/log")
+
+	if got := a.dirOfThePaneHere(); got != "" {
+		t.Errorf("it would start a pane here in %q, which is a path on margit", got)
+	}
+}
+
+// A shell on this machine leaves the name out, and that is believed.
+func TestADirectoryWithNoMachineNamedIsUsed(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	a.commands()
+	pane := onlyPaneOn(t, a)
+	a.focus(pane)
+	sayWhereItIs(t, a, pane, "/home/marcus")
+
+	if got := a.dirOfThePaneHere(); got != "/home/marcus" {
+		t.Errorf("it would start a pane in %q, want /home/marcus", got)
+	}
+}
+
+// This machine's own name is believed too, which is what a shell set
+// up with the hostname sends.
+func TestThisMachinesOwnNameIsBelieved(t *testing.T) {
+	name, err := os.Hostname()
+	if err != nil {
+		t.Skipf("this machine has no name to test with: %v", err)
+	}
+
+	if !isThisMachine(name) {
+		t.Errorf("%q is not taken as this machine", name)
+	}
+	if !isThisMachine("localhost") {
+		t.Error("localhost is not taken as this machine")
+	}
+	if isThisMachine("some-other-box") {
+		t.Error("another machine's name is taken as this one")
 	}
 }

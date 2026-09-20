@@ -214,6 +214,10 @@ type app struct {
 	// on a layer of its own over the pane.
 	readerPics map[*files.Reader]*readerPic
 
+	// termPics are the layers for the inline pictures in each pane's
+	// output, one per picture on screen.
+	termPics map[*term.Terminal][]*termPic
+
 	// fsHeld counts the readers using each filesystem, and fsGone marks
 	// the ones the browser has finished with. A filesystem is closed
 	// when both say nobody is left: the browser opens them, and a reader
@@ -498,6 +502,7 @@ func (a *app) Update() error {
 	a.placeScaled()
 	a.placeShared()
 	a.placeReaderPics()
+	a.placeTermPics()
 	a.placeWalk()
 	a.placeSwitcher()
 
@@ -613,6 +618,7 @@ func (a *app) resizeTo(pxW, pxH int) {
 	a.placeScaled()
 	a.placeShared()
 	a.placeReaderPics()
+	a.placeTermPics()
 }
 
 // setGridSize tells the grids and the widget tree about a new size in

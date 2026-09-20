@@ -209,6 +209,25 @@ func (t *Terminal) revive() {
 	t.watchMu.Unlock()
 }
 
+// Pictures are the inline pictures on the screen as it stands, with
+// where each one sits in the pane's own rows.
+//
+// The top may be negative and the bottom may run past the screen: a
+// picture half scrolled off is drawn in part, and whoever draws it
+// clips. The line above the screen is counted in, so the rows are the
+// pane's rather than the program's.
+func (t *Terminal) Pictures() []vt.Placement {
+	t.mu.Lock()
+	placed := t.term.Placed()
+	t.mu.Unlock()
+	if above := t.capRows(); above > 0 {
+		for i := range placed {
+			placed[i].Top += above
+		}
+	}
+	return placed
+}
+
 // Dir is where the program in the pane last said it was, and the
 // machine it said it about, from OSC 7. Both are empty until a shell
 // sends one.

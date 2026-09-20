@@ -89,6 +89,33 @@ What is left:
   42, and the 8 is read off and thrown away because the viewer moves
   to a line rather than into one.
 
+## Inline pictures
+
+OSC 1337 is in: a program puts a picture in its output, the pane
+holds it on the line it landed on, and it scrolls with the text on a
+layer of its own. Only an inline picture is taken -- the same
+sequence asks a terminal to save a file, which a pane should not be
+able to make this window do.
+
+- **A picture is not copied, selected or sent over the wire.** A
+  watcher on another window sees the text and a gap where the picture
+  is. Carrying it means a new message on the wire and a decision
+  about how much of a pane's pictures to send.
+
+- **Nothing shows a picture that failed to decode.** A program that
+  sends something that is not a picture gets no picture and no word
+  about why, which is right for a stray escape sequence and unhelpful
+  when a real one was meant.
+
+- **The size in pixels is guessed.** A program asking for "200px"
+  gets cells worked out at eight by sixteen, because the emulator
+  does not know how big a cell is drawn. A program that cares should
+  ask in cells. Telling the emulator the cell size would close it.
+
+- **Kitty and sixel are not read.** OSC 1337 is the one this does.
+  The kitty protocol is an APC sequence and sixel is a DCS one, so
+  neither goes past the OSC dispatch.
+
 ## The file viewer
 
 - **The scrollback viewer shows no colours.** Marcus asked for the

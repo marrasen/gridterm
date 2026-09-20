@@ -106,6 +106,10 @@ type Terminal struct {
 	links []string
 	byURL map[string]uint32
 
+	// images are the pictures a program put in the output, oldest
+	// first, each one holding the line it sits on.
+	images []Image
+
 	// cmd is what the shell's prompt marks have said so far.
 	cmd Command
 
@@ -235,6 +239,7 @@ func (t *Terminal) EscDispatch(intermediates []byte, _ bool, b byte) {
 		t.title = ""
 		t.dir, t.dirHost = "", ""
 		t.links, t.byURL = nil, nil
+		t.images = nil
 	case '=': // DECKPAM
 		t.scr.mode.AppKeypad = true
 	case '>': // DECKPNM
@@ -507,6 +512,8 @@ func (t *Terminal) OscDispatch(params [][]byte, _ bool) {
 		t.setDir(params)
 	case "8":
 		t.setLink(params)
+	case "1337":
+		t.setImage(params)
 	case "52":
 		t.clipboard(params)
 	case "133", "633":

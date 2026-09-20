@@ -154,3 +154,121 @@ func inLink(r rune) bool {
 	}
 	return true
 }
+
+// findPathText is the run of characters under a column that could
+// name a file or a directory, with a line reference after it read off
+// and given back separately.
+//
+// Deliberately generous: whether it names anything is settled by
+// looking on the disk, not by guessing here, so a run that is not a
+// path simply is not one. That is what makes this safer than finding
+// an address, where nothing can check.
+func findPathText(row []rune, at int) (text string, line, from, to int, ok bool) {
+	if at < 0 || at >= len(row) || !inPath(row[at]) {
+		return "", 0, 0, 0, false
+	}
+	from, to = at, at+1
+	for from > 0 && inPath(row[from-1]) {
+		from--
+	}
+	// A bracket a sentence opened in front of the path is not part of
+	// it. The end is trimmed by endOfLink, and this is the same job
+	// at the other end: an address does not need it, because the scan
+	// for one starts at its scheme.
+	for from < at && startsNothing(row[from]) {
+		from++
+	}
+	to = endOfLink(row, from)
+	if to <= from {
+		return "", 0, 0, 0, false
+	}
+	text = string(row[from:to])
+	text, line = splitLineRef(text)
+	if text == "" {
+		return "", 0, 0, 0, false
+	}
+	return text, line, from, from + len([]rune(text)), true
+}
+
+// splitLineRef takes a "file:42" or "file:42:8" apart, which is how
+// every compiler and linter names a place in a file.
+//
+// The column is read off and thrown away: a viewer goes to a line.
+func splitLineRef(text string) (path string, line int) {
+	path = text
+	for range 2 {
+		head, tail, found := cutLast(path, ':')
+		if !found || tail == "" || !allDigits(tail) {
+			break
+		}
+		// A Windows drive letter is not a line number: "C:" has one
+		// character in front of the colon and nothing useful after.
+		if len(head) <= 1 {
+			break
+		}
+		// The last one taken off is the line: "file:42:8" is a line
+		// and a column, and the column comes off first.
+		line = atoi(tail)
+		path = head
+	}
+	return path, line
+}
+
+// cutLast splits a string at the last instance of a character.
+func cutLast(s string, sep rune) (head, tail string, found bool) {
+	for i := len(s) - 1; i >= 0; i-- {
+		if rune(s[i]) == sep {
+			return s[:i], s[i+1:], true
+		}
+	}
+	return s, "", false
+}
+
+// allDigits reports whether a string is one or more digits.
+func allDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// atoi reads a small count, and answers zero for anything it will not
+// take: a line number past this is not one worth going to.
+func atoi(s string) int {
+	n := 0
+	for _, r := range s {
+		n = n*10 + int(r-'0')
+		if n > 1<<24 {
+			return 0
+		}
+	}
+	return n
+}
+
+// startsNothing reports whether a character is one a path never
+// starts with, whatever a sentence put it there for.
+func startsNothing(r rune) bool {
+	return strings.ContainsRune(`([{)]},;:!?`, r)
+}
+
+// inPath reports whether a character can be part of a path.
+//
+// Not a space, because a path with one in it cannot be told from two
+// words, and not the quotes and brackets that surround one in prose.
+// Everything else is allowed and the disk decides.
+func inPath(r rune) bool {
+	switch {
+	case r <= ' ', r == 0x7f:
+		return false
+	case r == '"', r == '\'', r == '`':
+		return false
+	case r == '<', r == '>', r == '|', r == '*', r == '?':
+		return false
+	}
+	return true
+}

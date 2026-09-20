@@ -64,23 +64,30 @@ All six are about the context menu.
 
 ## Hyperlinks
 
-Done: OSC 8, a bare address found in ordinary output, the link under
-the pointer underlined, and where it goes written along a row while
-ctrl is held. What is left:
+Done: OSC 8, a bare address found in ordinary output, an address the
+terminal wrapped across rows read as one, a file path opened in the
+browser or the viewer, the link under the pointer underlined, and
+where it goes written along a row while ctrl is held.
 
-- **A link is only found on one row.** An address the shell wrapped
-  across two is two halves, and neither is followed. Joining them
-  means knowing a row was wrapped rather than ended, which the
-  emulator knows and the grid does not carry.
+The note about the scrollback was wrong: `Render` draws from the
+scrolled-back view, so a link is followable wherever it can be seen.
+`TestALinkScrolledBackToIsStillFollowable` pins it.
 
-- **The scrollback is not searched for links, only the screen.** A
-  link scrolled off is gone even though the text is still there.
-  `linkSpanAt` reads the rendered grid, which is the screen.
+What is left:
 
-- **Nothing opens a file path.** A build error naming
-  `src/main.go:42` is the thing a user most wants to click, and it is
-  not an address: it needs a rule for what a path looks like, and an
-  answer to what clicking one should do.
+- **A path is only found for a pane on this machine.** A pane on a
+  machine at the far end prints that machine's paths, and the window
+  could reach them through the same connection its file browser uses.
+  It does not, because a path found over a connection that has since
+  closed would open the wrong thing or nothing.
+
+- **A path with a space in it is two words.** Quoted paths are how
+  output usually writes one, and reading the quotes would fix most of
+  it.
+
+- **Only the line is used, not the column.** `file:42:8` goes to line
+  42, and the 8 is read off and thrown away because the viewer moves
+  to a line rather than into one.
 
 ## The file viewer
 

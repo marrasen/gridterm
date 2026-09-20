@@ -194,6 +194,8 @@ func (a *app) newTerminalOn(sess session.Session, host string, kind conns.Kind,
 		OnExit:         a.paneExited,
 		OnError:        a.logError,
 		OnLink:         a.followLink,
+		FindPath:       a.pathFinder(host),
+		OnPath:         a.pathOpener(host),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("start terminal: %w", err)

@@ -250,6 +250,7 @@ func (s *Screen) print(r rune, w int) {
 	}
 
 	if s.cursor.WrapNext && s.mode.Wrap {
+		s.markWrapped()
 		s.cursor.X = 0
 		s.lineFeed()
 		s.cursor.WrapNext = false
@@ -263,6 +264,7 @@ func (s *Screen) print(r rune, w int) {
 		if !s.mode.Wrap {
 			return
 		}
+		s.markWrapped()
 		s.cursor.X = 0
 		s.lineFeed()
 	}
@@ -310,6 +312,20 @@ func (s *Screen) print(r rune, w int) {
 	} else {
 		s.cursor.X += w
 	}
+}
+
+// markWrapped says the row the cursor is leaving runs on to the next
+// rather than ending there.
+//
+// Set as the wrap happens rather than worked out afterwards: a line
+// that fills the last column and then ends with a newline looks the
+// same on screen and is two lines.
+func (s *Screen) markWrapped() {
+	l := s.line(s.cursor.Y)
+	if len(l) == 0 {
+		return
+	}
+	l[len(l)-1].Wrapped = true
 }
 
 // attachCombining adds a zero-width mark to the cell the cursor last

@@ -79,6 +79,22 @@ type Config struct {
 	// is the window's business, not this package's.
 	OnLink func(string)
 
+	// FindPath asks whether text under the pointer names something on
+	// the machine this pane is on, with dir the directory the shell
+	// last said it was in. It answers the path as it would be opened
+	// and whether it is a directory.
+	//
+	// The window's, because only the window can reach a filesystem.
+	// It is what makes finding a path safe where finding an address
+	// is a guess: a run of characters that names nothing is not a
+	// link, and the disk is what says so.
+	FindPath func(text, dir string) (at string, isDir, ok bool)
+
+	// OnPath is called to open what FindPath found: a directory in
+	// the file browser and a file in the viewer, at the line the
+	// output named when it named one.
+	OnPath func(at string, isDir bool, line int)
+
 	// ReadClipboard and WriteClipboard back the paste and copy
 	// shortcuts. A nil one disables that half.
 	ReadClipboard  func() string
@@ -735,6 +751,19 @@ func (t *Terminal) paintCaption(v grid.View) {
 	v.SetString(0, 0, grid.TrimTail(t.caption, cols), t.pal.FG, bg, 0)
 }
 
+// underlined reports whether a cell is part of the link under the
+// pointer.
+//
+// The run is counted along the joined line, so a link that the
+// terminal wrapped is underlined across both rows.
+func (t *Terminal) underlined(x, y, cols int) bool {
+	if t.hoverLink == "" || cols <= 0 || y < t.hoverRow {
+		return false
+	}
+	at := (y-t.hoverRow)*cols + x
+	return at >= t.hoverFrom && at < t.hoverTo
+}
+
 // paintLinkTarget writes the address under the pointer along a row of
 // the screen, the way a browser writes it along the bottom.
 //
@@ -754,7 +783,8 @@ func (t *Terminal) paintLinkTarget(v grid.View) {
 		return
 	}
 	y := rows - 1
-	if t.hoverRow == y {
+	if cols > 0 && t.hoverRow+(t.hoverTo-1)/cols >= y {
+		// The link reaches the bottom row, which it can across a wrap.
 		y = 0
 	}
 	// Trimmed from the front, so the machine it goes to stays readable
@@ -805,7 +835,7 @@ func (t *Terminal) draw(v grid.View) {
 			// The link under the pointer is underlined, so the user
 			// can see what a click would follow. Only while ctrl is
 			// held, which is the only time a click would follow it.
-			if t.hoverLink != "" && y == t.hoverRow && x >= t.hoverFrom && x < t.hoverTo {
+			if t.underlined(x, y, cols) {
 				c.Attr |= grid.AttrUnderline
 			}
 			v.Set(x, y, c)
@@ -1062,11 +1092,67 @@ func (t *Terminal) linkSpanAt(col, row int) (at string, from, to int) {
 			return said, a, b
 		}
 	}
-	found, a, b, ok := findLink(t.rowRunes(row), col)
-	if !ok {
-		return "", 0, 0
+	// Rows the terminal wrapped are one line, so an address split
+	// across two is looked at whole. The answer comes back in
+	// positions along the joined line, counted from the first row.
+	joined, first := t.joinedRow(row)
+	pos := (row-first)*cols + col
+	if found, a, b, ok := findLink(joined, pos); ok {
+		return found, a, b
 	}
-	return found, a, b
+	// Then something on the disk. After an address, because an
+	// address is also a run of characters with no spaces in it.
+	if found, _, a, b, ok := t.pathUnder(joined, pos); ok {
+		return found, a, b
+	}
+	return "", 0, 0
+}
+
+// pathUnder is the file or directory named under a position along a
+// joined line, as the window would open it.
+func (t *Terminal) pathUnder(joined []rune, at int) (open string, line, from, to int, ok bool) {
+	if t.cfg.FindPath == nil {
+		return "", 0, 0, 0, false
+	}
+	text, line, from, to, found := findPathText(joined, at)
+	if !found {
+		return "", 0, 0, 0, false
+	}
+	t.mu.Lock()
+	dir, _ := t.term.Dir()
+	t.mu.Unlock()
+	open, isDir, real := t.cfg.FindPath(text, dir)
+	_ = isDir
+	if !real {
+		return "", 0, 0, 0, false
+	}
+	return open, line, from, to, true
+}
+
+// joinedRow is the whole logical line a row belongs to, one rune per
+// column, and the screen row it starts on.
+//
+// A row the terminal wrapped is exactly as wide as the screen, so a
+// position along the joined line divides by the width into a row and
+// a column with nothing left over.
+func (t *Terminal) joinedRow(row int) (joined []rune, first int) {
+	cols, rows := t.g.Size()
+	if cols <= 0 {
+		return nil, row
+	}
+	first = row
+	for first > 0 && t.g.At(cols-1, first-1).Wrapped {
+		first--
+	}
+	last := row
+	for last < rows-1 && t.g.At(cols-1, last).Wrapped {
+		last++
+	}
+	joined = make([]rune, 0, (last-first+1)*cols)
+	for y := first; y <= last; y++ {
+		joined = append(joined, t.rowRunes(y)...)
+	}
+	return joined, first
 }
 
 // runOfLink is the stretch of one row carrying the same link number,
@@ -1110,13 +1196,19 @@ func (t *Terminal) rowRunes(row int) []rune {
 // somewhere else, which takes the marking off.
 func (t *Terminal) SetHover(col, row int, mods input.Mods) {
 	at, from, to := "", 0, 0
-	if row >= 0 && mods&input.ModCtrl != 0 && t.cfg.OnLink != nil {
+	if row >= 0 && mods&input.ModCtrl != 0 && (t.cfg.OnLink != nil || t.cfg.OnPath != nil) {
 		at, from, to = t.linkSpanAt(col, row)
 	}
-	if at == t.hoverLink && row == t.hoverRow && from == t.hoverFrom && to == t.hoverTo {
+	// The row the run is counted from is the first of the wrapped line
+	// it is on, which is where linkSpanAt counted it from too.
+	on := row
+	if at != "" {
+		_, on = t.joinedRow(row)
+	}
+	if at == t.hoverLink && on == t.hoverRow && from == t.hoverFrom && to == t.hoverTo {
 		return
 	}
-	t.hoverLink, t.hoverRow, t.hoverFrom, t.hoverTo = at, row, from, to
+	t.hoverLink, t.hoverRow, t.hoverFrom, t.hoverTo = at, on, from, to
 	t.pending.Store(true)
 }
 
@@ -1155,15 +1247,45 @@ func (t *Terminal) CursorAt(col, row int, mods input.Mods) (ui.Cursor, bool) {
 // was one. The press is taken either way: a ctrl press over a pane is
 // not the start of a selection.
 func (t *Terminal) followLink(col, row int) bool {
-	if t.cfg.OnLink == nil {
+	cols, rows := t.g.Size()
+	if col < 0 || row < 0 || col >= cols || row >= rows {
 		return false
 	}
-	at, _, _ := t.linkSpanAt(col, row)
-	if at == "" {
+	joined, first := t.joinedRow(row)
+	pos := (row-first)*cols + col
+	if t.cfg.OnLink != nil {
+		if found, _, _, ok := findLinkOrDeclared(t, joined, pos, col, row); ok {
+			t.cfg.OnLink(found)
+			return true
+		}
+	}
+	if t.cfg.OnPath == nil {
 		return false
 	}
-	t.cfg.OnLink(at)
+	open, line, _, _, ok := t.pathUnder(joined, pos)
+	if !ok {
+		return false
+	}
+	_, isDir, _ := t.cfg.FindPath(open, "")
+	t.cfg.OnPath(open, isDir, line)
 	return true
+}
+
+// findLinkOrDeclared is the address under a position: the one the
+// program declared with OSC 8, or failing that one written out in the
+// text.
+func findLinkOrDeclared(t *Terminal, joined []rune, at, col, row int) (string, int, int, bool) {
+	if id := t.g.At(col, row).Link; id != 0 {
+		t.mu.Lock()
+		said := t.term.LinkURL(id)
+		t.mu.Unlock()
+		if said != "" {
+			from, to := t.runOfLink(id, col, row)
+			return said, from, to, true
+		}
+	}
+	found, a, b, ok := findLink(joined, at)
+	return found, a, b, ok
 }
 
 // reportable reports whether ev belongs to a gesture the program was

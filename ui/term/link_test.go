@@ -257,3 +257,94 @@ func TestThePointerLeavingTakesTheMarkingAway(t *testing.T) {
 		t.Error("the link is still underlined after the pointer left")
 	}
 }
+
+// An address the terminal wrapped across two rows is one address.
+// The rows are one line, so it is read as one.
+func TestAnAddressWrappedAcrossRowsIsOneLink(t *testing.T) {
+	var followed []string
+	// Narrow, so the address has to wrap.
+	term, f := newTestTerm(t, 20, 4, Config{
+		OnLink: func(at string) { followed = append(followed, at) },
+	})
+	f.feed(t, term, "https://example.com/a/very/long/path")
+	draw(term, 20, 4)
+
+	// A column in the second half of the address.
+	mousePress(t, term, input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft,
+		Col: 3, Row: 1, Mods: input.ModCtrl,
+	})
+
+	if len(followed) != 1 || followed[0] != "https://example.com/a/very/long/path" {
+		t.Errorf("it followed %v, want the whole wrapped address", followed)
+	}
+}
+
+// And it is underlined across both rows.
+func TestAWrappedLinkIsUnderlinedAcrossBothRows(t *testing.T) {
+	term, f := newTestTerm(t, 20, 4, Config{
+		OnLink: func(string) {},
+	})
+	f.feed(t, term, "https://example.com/a/very/long/path")
+	draw(term, 20, 4)
+
+	term.SetHover(3, 0, input.ModCtrl)
+
+	g := draw(term, 20, 4)
+	if g.At(0, 0).Attr&grid.AttrUnderline == 0 {
+		t.Error("the first row of the link is not underlined")
+	}
+	if g.At(0, 1).Attr&grid.AttrUnderline == 0 {
+		t.Error("the second row of the link is not underlined")
+	}
+}
+
+// Two lines that merely sit next to each other are not joined. A line
+// that fills the last column and then ends is two lines, not one.
+func TestTwoSeparateLinesAreNotJoined(t *testing.T) {
+	var followed []string
+	term, f := newTestTerm(t, 20, 4, Config{
+		OnLink: func(at string) { followed = append(followed, at) },
+	})
+	// Exactly the width, ended with a newline rather than wrapped.
+	f.feed(t, term, "https://a.example/xx\r\nyyy\r\n")
+	draw(term, 20, 4)
+
+	mousePress(t, term, input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft,
+		Col: 3, Row: 0, Mods: input.ModCtrl,
+	})
+
+	if len(followed) != 1 {
+		t.Fatalf("it followed %v, want the one address", followed)
+	}
+	if followed[0] != "https://a.example/xx" {
+		t.Errorf("it followed %q, want the line that ended where it ended", followed[0])
+	}
+}
+
+// A link in the scrollback is followable once it is scrolled back to,
+// because what a click asks about is what is on screen.
+func TestALinkScrolledBackToIsStillFollowable(t *testing.T) {
+	var followed []string
+	term, f := newTestTerm(t, 40, 3, Config{
+		OnLink: func(at string) { followed = append(followed, at) },
+	})
+	f.feed(t, term, "https://example.com/old\r\n")
+	f.feed(t, term, "one\r\ntwo\r\nthree\r\nfour\r\n")
+	draw(term, 40, 3)
+
+	term.ScrollView(10)
+	draw(term, 40, 3)
+
+	if got := term.LinkAt(0, 0); got != "https://example.com/old" {
+		t.Errorf("the scrolled-back row has %q, want the address", got)
+	}
+	mousePress(t, term, input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft,
+		Col: 3, Row: 0, Mods: input.ModCtrl,
+	})
+	if len(followed) != 1 || followed[0] != "https://example.com/old" {
+		t.Errorf("it followed %v from the scrollback", followed)
+	}
+}

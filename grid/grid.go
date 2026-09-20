@@ -53,6 +53,16 @@ type Cell struct {
 	// copied about a great deal -- every scroll moves a screenful --
 	// and a string in each one is a string per cell on screen.
 	Link uint32
+
+	// Wrapped marks the last cell of a row the terminal ran on to the
+	// next rather than ending there.
+	//
+	// Nothing draws it. It says the two rows are one line, which is
+	// what joins an address split across them. It lives in the cell
+	// because a line is moved about as a whole -- every scroll, every
+	// push into history -- and a flag inside it travels along for
+	// nothing.
+	Wrapped bool
 }
 
 // Art is something drawn in code inside one cell: a small graph, a mark,
@@ -208,6 +218,7 @@ func (c Cell) Equal(o Cell) bool {
 		c.Width == o.Width &&
 		c.Art == o.Art &&
 		c.Link == o.Link &&
+		c.Wrapped == o.Wrapped &&
 		slices.Equal(c.Comb, o.Comb)
 }
 

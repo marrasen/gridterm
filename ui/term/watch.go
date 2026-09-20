@@ -209,6 +209,16 @@ func (t *Terminal) revive() {
 	t.watchMu.Unlock()
 }
 
+// LinesHeld is how many lines the pane has: the screen and the
+// scrollback behind it. It is what to ask TextLines for to get all of
+// them.
+func (t *Terminal) LinesHeld() int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	_, rows := t.g.Size()
+	return rows + t.term.History()
+}
+
 // Text is the live screen as plain text: one line per row, trailing
 // spaces cut, nothing else.
 //

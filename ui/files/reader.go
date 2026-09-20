@@ -23,6 +23,10 @@ import (
 // the file ends there.
 const MostReadBytes = 8 << 20
 
+// cannotSave is what Ctrl+S says in a reader with nowhere to write.
+// A file on screen is already a file, so there is nothing to save.
+const cannotSave = "this is a file already, so there is nothing to save"
+
 // cannotCut is what Ctrl+X says. There is nothing to cut from a file
 // being read, and a key that goes quiet reads as a broken one.
 const cannotCut = "there is nothing to cut from a file you are reading"
@@ -61,6 +65,18 @@ type Reader struct {
 	// two are separate because a picture is decoded rather than split
 	// into lines.
 	ReadPic func(then func(pic Pic, err error))
+
+	// OnSave writes what the reader is showing somewhere the user
+	// named. A nil one leaves the key off the bar, which is what a
+	// reader on a file that is already saved wants.
+	//
+	// It is the caller's because a reader reaches no filesystem: it is
+	// given lines and shows them.
+	OnSave func(at string, lines []string) error
+
+	// SaveAs is what the save question starts filled in with, so the
+	// user edits a path rather than typing one.
+	SaveAs string
 
 	// Expect is how many bytes the file was listed as, for the line
 	// shown while it is being read. Zero means nobody said, and the
@@ -492,6 +508,9 @@ func (r *Reader) keys() []Key {
 	if r.Selected() {
 		keys = append(keys, CopyKey())
 	}
+	if r.OnSave != nil {
+		keys = append(keys, SaveKey())
+	}
 	return keys
 }
 
@@ -499,6 +518,12 @@ func (r *Reader) keys() []Key {
 // while there is something to copy.
 func CopyKey() Key {
 	return Key{Chord: chord(input.KeyC, input.ModCtrl), Shown: "^C", Title: "Copy"}
+}
+
+// SaveKey is the key that writes what the reader is showing to a file.
+// It is on the bar only for a reader that has somewhere to write.
+func SaveKey() Key {
+	return Key{Chord: chord(input.KeyS, input.ModCtrl), Shown: "^S", Title: "Save"}
 }
 
 // ReaderKeys is what the bar offers for a file of lines.
@@ -625,6 +650,12 @@ func (r *Reader) HandleKey(ev input.Event) (bool, error) {
 		if r.OnClose != nil {
 			r.OnClose()
 		}
+	case ev.Key == input.KeyS && ev.Ctrl():
+		if r.OnSave == nil {
+			r.said = cannotSave
+			break
+		}
+		r.ask(askingSave)
 	case ev.Key == input.KeyX && ev.Ctrl():
 		// Ctrl+C copies here, so Ctrl+X is the next thing a hand tries.
 		// Saying why beats a key that looks broken.

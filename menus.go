@@ -41,6 +41,7 @@ func (a *app) newMenubar(child ui.Widget) *ui.Menubar {
 			ui.MenuSeparator(),
 			{Command: "view.scrollUp"},
 			{Command: "view.scrollDown"},
+			{Command: scrollbackCommand},
 		}},
 		{Title: "Connection", Items: []ui.MenuItem{
 			{Command: "conn.terminal"},

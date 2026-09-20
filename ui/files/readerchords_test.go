@@ -1,6 +1,7 @@
 package files
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -448,5 +449,111 @@ func TestARereadStartsTheCountAgain(t *testing.T) {
 
 	if got := r.SoFar(); got != 0 {
 		t.Errorf("a reread started at %d bytes, want it to start again", got)
+	}
+}
+
+// Ctrl+S asks where to put it, filled in with the suggestion, so the
+// user edits a path rather than typing one.
+func TestCtrlSAsksWhereToSaveIt(t *testing.T) {
+	r := aReaderOf(t, 44, 8, "one", "two")
+	r.OnSave = func(string, []string) error { return nil }
+	r.SaveAs = "/home/marcus/kept.txt"
+
+	chordKey(t, r, input.KeyS, input.ModCtrl)
+
+	what, typed, on := r.Asking()
+	if !on {
+		t.Fatal("Ctrl+S asked nothing")
+	}
+	if !strings.Contains(what, "save") {
+		t.Errorf("it asked %q, want it to say what it wants", what)
+	}
+	if typed != "/home/marcus/kept.txt" {
+		t.Errorf("it started with %q, want the suggestion filled in", typed)
+	}
+}
+
+// Answering writes the lines the reader holds, to the path typed.
+func TestAnsweringTheSaveQuestionWritesTheLines(t *testing.T) {
+	r := aReaderOf(t, 44, 8, "one", "two", "three")
+	var at string
+	var got []string
+	r.OnSave = func(path string, lines []string) error {
+		at, got = path, lines
+		return nil
+	}
+	r.SaveAs = "/tmp/kept.txt"
+	chordKey(t, r, input.KeyS, input.ModCtrl)
+
+	chordKey(t, r, input.KeyEnter, 0)
+
+	if at != "/tmp/kept.txt" {
+		t.Errorf("it saved to %q", at)
+	}
+	if strings.Join(got, ",") != "one,two,three" {
+		t.Errorf("it saved %v, want the lines the reader holds", got)
+	}
+	if line := readerRow(drawReader(r, 44, 8), 7); !strings.Contains(line, "saved 3 lines") {
+		t.Errorf("the bottom row is %q, want it to say what it did", line)
+	}
+}
+
+// A save that fails says why, on the row the bar was on.
+func TestASaveThatFailsSaysWhy(t *testing.T) {
+	r := aReaderOf(t, 44, 8, "one")
+	r.OnSave = func(string, []string) error { return errors.New("the disk is full") }
+	r.SaveAs = "/tmp/kept.txt"
+	chordKey(t, r, input.KeyS, input.ModCtrl)
+
+	chordKey(t, r, input.KeyEnter, 0)
+
+	if line := readerRow(drawReader(r, 44, 8), 7); !strings.Contains(line, "the disk is full") {
+		t.Errorf("the bottom row is %q, want it to say why", line)
+	}
+}
+
+// A reader with nowhere to write says so rather than going quiet, and
+// its bar does not offer a key that does nothing.
+func TestAReaderWithNowhereToWriteSaysSo(t *testing.T) {
+	r := aReaderOf(t, 60, 8, "one")
+
+	chordKey(t, r, input.KeyS, input.ModCtrl)
+
+	if _, _, on := r.Asking(); on {
+		t.Error("it asked where to save a file that is already a file")
+	}
+	line := readerRow(drawReader(r, 60, 8), 7)
+	if !strings.Contains(line, "nothing to save") {
+		t.Errorf("the bottom row is %q, want it to say why", line)
+	}
+	if strings.Contains(readerRow(drawReader(r, 60, 8), 7), "^S") {
+		t.Error("the bar offers Save on a reader with nowhere to write")
+	}
+}
+
+// The bar offers Save on a reader that has somewhere to write.
+func TestTheBarOffersSaveWhenThereIsSomewhereToWrite(t *testing.T) {
+	r := aReaderOf(t, 80, 8, "one")
+	r.OnSave = func(string, []string) error { return nil }
+
+	if line := readerRow(drawReader(r, 80, 8), 7); !strings.Contains(line, "Save") {
+		t.Errorf("the bar is %q, want Save on it", line)
+	}
+}
+
+// Escape takes the question away without writing anything.
+func TestEscapeLeavesTheSaveQuestion(t *testing.T) {
+	r := aReaderOf(t, 44, 8, "one")
+	saved := false
+	r.OnSave = func(string, []string) error { saved = true; return nil }
+	chordKey(t, r, input.KeyS, input.ModCtrl)
+
+	chordKey(t, r, input.KeyEscape, 0)
+
+	if _, _, on := r.Asking(); on {
+		t.Error("Escape left the question up")
+	}
+	if saved {
+		t.Error("Escape saved the file anyway")
 	}
 }

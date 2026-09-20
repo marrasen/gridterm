@@ -7,6 +7,7 @@ import (
 
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/ui/files"
+	"github.com/marrasen/gridterm/ui/term"
 	"github.com/marrasen/gridterm/vfs"
 )
 
@@ -24,6 +25,15 @@ type reader struct {
 	// the browser pane the reader was opened from.
 	on vfs.FS
 	at string
+
+	// pane is the terminal a scrollback viewer was opened on, and nil
+	// for a viewer on a file. Such a viewer has no filesystem and no
+	// path: its lines come from the pane each time it is read.
+	pane *term.Terminal
+
+	// said is how much the pane had said when it was last read, for
+	// deciding whether a followed scrollback has anything new.
+	said uint64
 
 	// asked is when the file was last asked whether it had changed, and
 	// was is what it said then. checking says a question is out.
@@ -248,6 +258,21 @@ func (a *app) followReaders(now time.Time) {
 			continue
 		}
 		held.asked = now
+		if held.pane != nil {
+			// A scrollback viewer has no file to ask about. What it
+			// follows is the pane, and the pane says how much it has
+			// said without being rendered to find out.
+			if said := held.pane.Said(); said != held.said {
+				held.said = said
+				r.Open()
+			}
+			continue
+		}
+		if held.on == nil {
+			// Neither a file nor a pane behind it, so there is nothing
+			// to keep up with.
+			continue
+		}
 		held.checking = true
 		on, at, pane := held.on, held.at, r
 		a.holdFS(on)

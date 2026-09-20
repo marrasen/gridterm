@@ -22,6 +22,11 @@ const (
 	// number, started with ":". Both are what less asks with.
 	askingFind
 	askingGoTo
+
+	// askingSave is where to write what the reader is showing. It
+	// starts filled in, because a path is long and the suggestion is
+	// usually right.
+	askingSave
 )
 
 // Asking reports what the reader is waiting to be told, for a test and
@@ -32,6 +37,8 @@ func (r *Reader) Asking() (what string, typed string, on bool) {
 		return "/", r.typed, true
 	case askingGoTo:
 		return ":", r.typed, true
+	case askingSave:
+		return "save to: ", r.typed, true
 	}
 	return "", "", false
 }
@@ -43,6 +50,9 @@ func (r *Reader) Find() string { return r.finding }
 // ask starts a question along the bottom row.
 func (r *Reader) ask(what asking) {
 	r.asking, r.typed = what, ""
+	if what == askingSave {
+		r.typed = r.SaveAs
+	}
 }
 
 // answer takes what was typed and does it, and reports what went wrong
@@ -67,6 +77,8 @@ func (r *Reader) answer() {
 			return
 		}
 		r.GoToLine(n)
+	case askingSave:
+		r.save(strings.TrimSpace(typed))
 	}
 }
 
@@ -186,6 +198,36 @@ func (r *Reader) askKey(ev input.Event) (bool, error) {
 	}
 	return true, nil
 }
+
+// save writes what the reader is showing to a file, and says how it
+// went along the bottom row.
+//
+// The lines are what is on the reader, not what is in the file it came
+// from: a reader on a pane's scrollback has no file behind it, and one
+// on a file long enough to be cut saves what it kept and says so.
+func (r *Reader) save(at string) {
+	switch {
+	case r.OnSave == nil:
+		r.said = cannotSave
+		return
+	case at == "":
+		r.said = "nowhere to save it: no path was typed"
+		return
+	}
+	if err := r.OnSave(at, r.shown); err != nil {
+		r.said = err.Error()
+		return
+	}
+	// The path it went to, because the question started filled in and
+	// the user may have changed it.
+	r.said = "saved " + itoa(len(r.shown)) + " lines to " + at
+	if r.cut {
+		r.said += " (the file was longer than this reader keeps)"
+	}
+}
+
+// itoa spells a count for a line the user reads.
+func itoa(n int) string { return strconv.Itoa(n) }
 
 // paintAsking writes the question along the bottom row, in place of the
 // bar of keys.

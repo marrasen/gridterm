@@ -34,7 +34,7 @@ func TestOpeningAFileFromTheBrowserPutsAReaderInTheWindow(t *testing.T) {
 	withPanel(t, a)
 	name, path := aReadableFile(t, "one", "two", "three")
 
-	if err := a.openReader(vfs.NewLocal(), conns.Local, path, name, false); err != nil {
+	if err := a.openReader(vfs.NewLocal(), conns.Local, path, name, false, 0); err != nil {
 		t.Fatalf("open a reader: %v", err)
 	}
 
@@ -64,7 +64,7 @@ func TestClosingAReaderTakesItsRowAway(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withPanel(t, a)
 	name, path := aReadableFile(t, "one")
-	if err := a.openReader(vfs.NewLocal(), conns.Local, path, name, false); err != nil {
+	if err := a.openReader(vfs.NewLocal(), conns.Local, path, name, false, 0); err != nil {
 		t.Fatalf("open a reader: %v", err)
 	}
 	r := onlyReader(t, a)
@@ -91,7 +91,7 @@ func TestAReaderIsAPane(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withPanel(t, a)
 	name, path := aReadableFile(t, "one")
-	if err := a.openReader(vfs.NewLocal(), "kettle", path, name, false); err != nil {
+	if err := a.openReader(vfs.NewLocal(), "kettle", path, name, false, 0); err != nil {
 		t.Fatalf("open a reader: %v", err)
 	}
 	r := onlyReader(t, a)
@@ -114,7 +114,7 @@ func TestAFileThatWillNotReadSaysWhyOnItsRow(t *testing.T) {
 	withPanel(t, a)
 	gone := filepath.Join(t.TempDir(), "gone.txt")
 
-	if err := a.openReader(vfs.NewLocal(), conns.Local, gone, "gone.txt", false); err != nil {
+	if err := a.openReader(vfs.NewLocal(), conns.Local, gone, "gone.txt", false, 0); err != nil {
 		t.Fatalf("open a reader: %v", err)
 	}
 
@@ -160,7 +160,7 @@ func TestAFollowingReaderPicksUpWhatIsWritten(t *testing.T) {
 	withPanel(t, a)
 	was := logOf(60)
 	name, path := aReadableFile(t, was...)
-	if err := a.openReader(vfs.NewLocal(), conns.Local, path, name, false); err != nil {
+	if err := a.openReader(vfs.NewLocal(), conns.Local, path, name, false, 0); err != nil {
 		t.Fatalf("open a reader: %v", err)
 	}
 	r := onlyReader(t, a)
@@ -210,7 +210,7 @@ func TestAFileThatHasNotChangedIsNotReadAgain(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withPanel(t, a)
 	name, path := aReadableFile(t, "one", "two")
-	if err := a.openReader(vfs.NewLocal(), conns.Local, path, name, false); err != nil {
+	if err := a.openReader(vfs.NewLocal(), conns.Local, path, name, false, 0); err != nil {
 		t.Fatalf("open a reader: %v", err)
 	}
 	r := onlyReader(t, a)
@@ -250,7 +250,7 @@ func TestAReaderTakesTheKeys(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withPanel(t, a)
 	name, path := aReadableFile(t, "one", "two")
-	if err := a.openReader(vfs.NewLocal(), conns.Local, path, name, false); err != nil {
+	if err := a.openReader(vfs.NewLocal(), conns.Local, path, name, false, 0); err != nil {
 		t.Fatalf("open a reader: %v", err)
 	}
 	r := onlyReader(t, a)
@@ -270,7 +270,7 @@ func TestAReaderInFrontIsOnItsOwnMachine(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withPanel(t, a)
 	name, path := aReadableFile(t, "one")
-	if err := a.openReader(vfs.NewLocal(), "kettle", path, name, false); err != nil {
+	if err := a.openReader(vfs.NewLocal(), "kettle", path, name, false, 0); err != nil {
 		t.Fatalf("open a reader: %v", err)
 	}
 	a.focus(onlyReader(t, a))
@@ -295,7 +295,7 @@ func TestClosingTheBrowserLeavesAReaderAbleToRead(t *testing.T) {
 	withPanel(t, a)
 	name, path := aReadableFile(t, "one", "two")
 	f := vfs.NewLocal()
-	if err := a.openReader(f, conns.Local, path, name, false); err != nil {
+	if err := a.openReader(f, conns.Local, path, name, false, 0); err != nil {
 		t.Fatalf("open a reader: %v", err)
 	}
 	r := onlyReader(t, a)
@@ -340,7 +340,7 @@ func TestDraggingOverAReaderCopiesWhatWasPickedOut(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withPanel(t, a)
 	name, path := aReadableFile(t, "hello there", "second line")
-	if err := a.openReader(vfs.NewLocal(), conns.Local, path, name, false); err != nil {
+	if err := a.openReader(vfs.NewLocal(), conns.Local, path, name, false, 0); err != nil {
 		t.Fatalf("open a reader: %v", err)
 	}
 	r := onlyReader(t, a)
@@ -379,6 +379,50 @@ func TestDraggingOverAReaderCopiesWhatWasPickedOut(t *testing.T) {
 	})
 }
 
+// The size the browser listed reaches the reader, so a file being read
+// says how much is coming rather than looking empty.
+//
+// The browser has the size already, from the listing it drew. Reading
+// the file to find out how big it is would be the wrong way round.
+func TestTheSizeTheBrowserListedReachesTheReader(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	withDialogs(t, a)
+	a.commands()
+	lines := make([]string, 400)
+	for i := range lines {
+		lines[i] = "a line of text"
+	}
+	name, path := aReadableFile(t, lines...)
+	e, err := vfs.NewLocal().Stat(path)
+	if err != nil {
+		t.Fatalf("stat the file: %v", err)
+	}
+	if e.Size == 0 {
+		t.Fatal("the file is empty, so this proves nothing")
+	}
+	if err := a.openFilesOn(conns.Local); err != nil {
+		t.Fatalf("open the browser: %v", err)
+	}
+	pane := a.files.view.Here()
+	if pane == nil {
+		t.Fatal("the browser has no pane")
+	}
+	pane.Open(filepath.Dir(path))
+	waitFor(t, a, "the directory to be listed", func() bool {
+		return len(pane.Entries()) > 0
+	})
+
+	if err := a.readFileFrom(pane, e, false); err != nil {
+		t.Fatalf("read %s: %v", name, err)
+	}
+
+	if got := onlyReader(t, a).Expect; got != e.Size {
+		t.Errorf("the reader was told the file is %d bytes, want the %d the listing said",
+			got, e.Size)
+	}
+}
+
 // Shift and a page key picks text out of a reader rather than scrolling
 // it. Both chords are window accelerators, and an accelerator runs
 // before any widget sees the key, so the reader has to claim them.
@@ -391,7 +435,7 @@ func TestShiftAndAPageKeyPicksTextOutOfAReader(t *testing.T) {
 		lines[i] = "a line of text"
 	}
 	name, path := aReadableFile(t, lines...)
-	if err := a.openReader(vfs.NewLocal(), conns.Local, path, name, false); err != nil {
+	if err := a.openReader(vfs.NewLocal(), conns.Local, path, name, false, 0); err != nil {
 		t.Fatalf("open a reader: %v", err)
 	}
 	r := onlyReader(t, a)
@@ -465,7 +509,7 @@ func TestTheScrollCommandsMoveAReader(t *testing.T) {
 		lines[i] = "line"
 	}
 	name, path := aReadableFile(t, lines...)
-	if err := a.openReader(vfs.NewLocal(), conns.Local, path, name, false); err != nil {
+	if err := a.openReader(vfs.NewLocal(), conns.Local, path, name, false, 0); err != nil {
 		t.Fatalf("open a reader: %v", err)
 	}
 	r := onlyReader(t, a)

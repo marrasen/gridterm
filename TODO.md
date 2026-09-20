@@ -403,6 +403,26 @@ From Marcus's inbox, after working in a shared window.
   the screen instead, so nothing is cut; there is simply nothing to read
   on it.
 
+## The file viewer
+
+- **A file being read says so.** Done on 2026-09-20, from Marcus's
+  inbox: a large file showed "empty" in the corner with nothing to say
+  a read was out, and the only sign was an ellipsis after the name. It
+  now says "reading 4.2 MB…", or "reading…" when whoever opened it did
+  not know the size. The browser knows the size already from the
+  listing it drew, so `readFileFrom` passes it on rather than the
+  reader asking.
+
+  Still open from the same note: a scrollbar minimap, and a JSON log
+  viewer like the one in particleview5-bugreport-viewer.
+
+- **Nothing shows how far a read has got.** The size is what the
+  listing said, not what has arrived: `files.ReadFile` answers once
+  with every line, so there is no progress to draw. A file of eight
+  megabytes says "reading 8 MB…" for the whole wait. Reading in
+  chunks and saying how many have landed is the next step, and it
+  changes the shape of `Reader.Read`.
+
 ## The log pane
 
 Asked for on 2026-09-20, after deciding a closed pane's failure should

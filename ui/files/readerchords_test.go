@@ -208,3 +208,112 @@ func TestAnEmptyReaderClaimsNothing(t *testing.T) {
 		t.Error("an empty reader claimed shift and PageDown")
 	}
 }
+
+// aSlowReader is a reader whose file has not come back yet, so it is
+// showing what it shows while a read is out.
+func aSlowReader(t *testing.T, cols, rows int) (*Reader, func(lines ...string)) {
+	t.Helper()
+	r := NewReader("notes.log", "/tmp/notes.log")
+	r.Style = readerStyle()
+	var answer func([]string, bool, error)
+	r.Read = func(then func([]string, bool, error)) { answer = then }
+	r.Layout(ui.Size{Cols: cols, Rows: rows})
+	r.Open()
+	if !r.Busy() {
+		t.Fatal("the reader is not waiting for a read, so this proves nothing")
+	}
+	return r, func(lines ...string) { answer(lines, false, nil) }
+}
+
+// A file still being read says so rather than saying it is empty. A
+// few megabytes down an SSH connection takes long enough that "empty"
+// reads as the answer rather than as the question still being asked.
+func TestAFileStillBeingReadSaysSoRatherThanEmpty(t *testing.T) {
+	r, _ := aSlowReader(t, 40, 8)
+
+	g := drawReader(r, 40, 8)
+
+	top := readerRow(g, 0)
+	if strings.Contains(top, "empty") {
+		t.Errorf("the top row is %q, want it not to call a file it has not read empty", top)
+	}
+	if !strings.Contains(top, "reading") {
+		t.Errorf("the top row is %q, want it to say the file is being read", top)
+	}
+}
+
+// It says how big the file is when whoever opened it knew, so the user
+// can tell a wait of a second from a wait of a minute.
+func TestItSaysHowBigTheFileBeingReadIs(t *testing.T) {
+	r, _ := aSlowReader(t, 40, 8)
+	r.Expect = 4_400_000
+
+	g := drawReader(r, 40, 8)
+
+	if top := readerRow(g, 0); !strings.Contains(top, "4.2 MB") {
+		t.Errorf("the top row is %q, want it to say how big the file is", top)
+	}
+}
+
+// With no size to quote it still says it is reading. Not every way in
+// knows how big the file is.
+func TestWithNoSizeItStillSaysItIsReading(t *testing.T) {
+	r, _ := aSlowReader(t, 40, 8)
+
+	g := drawReader(r, 40, 8)
+
+	top := readerRow(g, 0)
+	if !strings.Contains(top, "reading") {
+		t.Errorf("the top row is %q, want it to say the file is being read", top)
+	}
+	if strings.Contains(top, "0 B") {
+		t.Errorf("the top row is %q, want no size rather than a made-up one", top)
+	}
+}
+
+// A file that really is empty still says so, once it has been read.
+func TestAFileThatIsReallyEmptyStillSaysEmpty(t *testing.T) {
+	r, answer := aSlowReader(t, 40, 8)
+	r.Expect = 0
+
+	answer()
+
+	g := drawReader(r, 40, 8)
+	if top := readerRow(g, 0); !strings.Contains(top, "empty") {
+		t.Errorf("the top row is %q, want it to say the file is empty", top)
+	}
+}
+
+// Once the lines arrive the top row goes back to saying where in the
+// file the reader is.
+func TestOnceTheFileArrivesTheTopRowSaysWhereItIs(t *testing.T) {
+	r, answer := aSlowReader(t, 40, 8)
+	r.Expect = 4_400_000
+
+	answer("one", "two", "three")
+
+	top := readerRow(drawReader(r, 40, 8), 0)
+	if strings.Contains(top, "reading") {
+		t.Errorf("the top row is %q, want it to have stopped saying it is reading", top)
+	}
+	if !strings.Contains(top, "1-3 of 3") {
+		t.Errorf("the top row is %q, want it to say where in the file it is", top)
+	}
+}
+
+// A picture that has not come back says it is being read too, rather
+// than leaving the corner blank.
+func TestAPictureStillBeingReadSaysSo(t *testing.T) {
+	r := NewReader("shot.png", "/tmp/shot.png")
+	r.Style = readerStyle()
+	r.ReadPic = func(then func(Pic, error)) {}
+	r.Expect = 2_200_000
+	r.Layout(ui.Size{Cols: 40, Rows: 8})
+	r.Open()
+
+	top := readerRow(drawReader(r, 40, 8), 0)
+
+	if !strings.Contains(top, "reading") {
+		t.Errorf("the top row is %q, want it to say the picture is being read", top)
+	}
+}

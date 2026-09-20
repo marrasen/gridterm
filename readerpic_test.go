@@ -48,7 +48,7 @@ func withCompositor(t *testing.T, a *testApp) {
 func openedPicture(t *testing.T, a *testApp, w, h int) *readerPic {
 	t.Helper()
 	name, path := aPictureOnDisk(t, w, h)
-	if err := a.openReader(vfs.NewLocal(), conns.Local, path, name, false); err != nil {
+	if err := a.openReader(vfs.NewLocal(), conns.Local, path, name, false, 0); err != nil {
 		t.Fatalf("open a reader: %v", err)
 	}
 	r := onlyReader(t, a)
@@ -199,7 +199,7 @@ func TestAPictureThatIsNotOneCanBeReadAsBytes(t *testing.T) {
 	if err := os.WriteFile(at, []byte("one\ntwo\nthree"), 0o600); err != nil {
 		t.Fatalf("write it: %v", err)
 	}
-	if err := a.openReader(vfs.NewLocal(), conns.Local, at, "shot.png", false); err != nil {
+	if err := a.openReader(vfs.NewLocal(), conns.Local, at, "shot.png", false, 0); err != nil {
 		t.Fatalf("open a reader: %v", err)
 	}
 	r := onlyReader(t, a)

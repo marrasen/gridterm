@@ -16,7 +16,7 @@ import (
 // turns following on.
 func aFollowedReader(t *testing.T, a *testApp, path, name string) *files.Reader {
 	t.Helper()
-	if err := a.openReader(vfs.NewLocal(), conns.Local, path, name, false); err != nil {
+	if err := a.openReader(vfs.NewLocal(), conns.Local, path, name, false, 0); err != nil {
 		t.Fatalf("open a reader: %v", err)
 	}
 	r := onlyReader(t, a)
@@ -191,7 +191,7 @@ func TestAReaderOpenedToFollowSaysSoAtOnce(t *testing.T) {
 	withPanel(t, a)
 	name, path := aReadableFile(t, "one", "two")
 
-	if err := a.openReader(vfs.NewLocal(), conns.Local, path, name, true); err != nil {
+	if err := a.openReader(vfs.NewLocal(), conns.Local, path, name, true, 0); err != nil {
 		t.Fatalf("open a reader: %v", err)
 	}
 

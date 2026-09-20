@@ -62,6 +62,11 @@ type Reader struct {
 	// into lines.
 	ReadPic func(then func(pic Pic, err error))
 
+	// Expect is how many bytes the file was listed as, for the line
+	// shown while it is being read. Zero means nobody said, and the
+	// reader then says it is reading without saying how much.
+	Expect int64
+
 	name string
 	at   string
 
@@ -871,9 +876,19 @@ func (r *Reader) place() string {
 		return ""
 	}
 	if r.isPic {
-		return r.pictureNote()
+		if note := r.pictureNote(); note != "" {
+			return note
+		}
+		return r.reading()
 	}
 	if len(r.shown) == 0 {
+		// Nothing to show yet is not the same as nothing to show. A
+		// file of a few megabytes down an SSH connection takes long
+		// enough that "empty" reads as the answer rather than as the
+		// question still being asked.
+		if r.busy {
+			return r.reading()
+		}
 		return "empty"
 	}
 	if r.rows() <= 0 {
@@ -883,6 +898,19 @@ func (r *Reader) place() string {
 	}
 	last := min(r.top+r.rows(), len(r.shown))
 	return fmt.Sprintf("%d-%d of %s", r.top+1, last, r.howMany())
+}
+
+// reading is what the top line says while the file is being read and
+// there is nothing to show yet, with how big it is when the caller
+// said.
+func (r *Reader) reading() string {
+	if !r.busy {
+		return ""
+	}
+	if r.Expect <= 0 {
+		return "reading…"
+	}
+	return "reading " + size(r.Expect) + "…"
 }
 
 // howMany is the number of lines the reader holds, with a mark when

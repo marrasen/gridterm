@@ -33,7 +33,8 @@ type reader struct {
 	checking bool
 }
 
-// openReader puts a pane in the window showing one file.
+// openReader puts a pane in the window showing one file. expect is how
+// big it was listed as, or zero when nobody knows.
 //
 // The filesystem is the one the browser pane it was opened from is
 // reading, and the reader takes a hold on it. A browser pane closed
@@ -41,12 +42,16 @@ type reader struct {
 // with it: the reader is still using it, and rereading down a session
 // somebody else closed is how a pane ends up showing a stale file and
 // an error nobody can act on.
-func (a *app) openReader(f vfs.FS, host, path, name string, follow bool) error {
+func (a *app) openReader(f vfs.FS, host, path, name string, follow bool, expect int64) error {
 	if f == nil {
 		return errors.New("there is no filesystem to read that file through")
 	}
 	r := files.NewReader(name, path)
 	r.Style = a.paneStyle()
+	// How big the listing said it is, so the pane says what it is
+	// waiting for rather than looking empty while a file on a machine
+	// far away comes down the wire.
+	r.Expect = expect
 	// Off the drawing goroutine, and back onto it with the answer: a
 	// file on a machine with a long way to go would otherwise stop the
 	// window while it was read.
@@ -128,7 +133,7 @@ func (a *app) readFileFrom(p *files.Pane, e vfs.Entry, follow bool) error {
 		return fmt.Errorf("%s is a directory", e.Name)
 	}
 	at := vfs.Join(f, p.At(), e.Name)
-	return a.openReader(f, a.hostOfPane(p), at, e.Name, follow)
+	return a.openReader(f, a.hostOfPane(p), at, e.Name, follow, e.Size)
 }
 
 // hostOfPane is the machine a browser pane is reading, as the sidebar

@@ -904,7 +904,7 @@ func TestAReaderBehindAnotherStillGetsAPicture(t *testing.T) {
 	a.comp.Add(a.layer)
 
 	name, path := aReadableFile(t, "one", "two", "three")
-	if err := a.openReader(vfs.NewLocal(), conns.Local, path, name, false); err != nil {
+	if err := a.openReader(vfs.NewLocal(), conns.Local, path, name, false, 0); err != nil {
 		t.Fatalf("open a reader: %v", err)
 	}
 	reader := onlyReader(t, a)

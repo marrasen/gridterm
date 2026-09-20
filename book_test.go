@@ -1484,3 +1484,158 @@ func TestAWindowOffersConnectingAndATerminalApart(t *testing.T) {
 		t.Errorf("both lines read %q, and they do different things", connect)
 	}
 }
+
+// The SSH agent tick on the dialog is saved, and a connection to that
+// machine is made with it. Off is the answer a new server starts with,
+// because the tick lets the far end sign with these keys.
+func TestTheServerDialogSavesTheAgentTick(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	a.refreshServers()
+
+	if err := a.openAddServer(); err != nil {
+		t.Fatalf("openAddServer: %v", err)
+	}
+	f := awaitModal(t, a, "the Add a server dialog", byTitle[*ui.Form]("Add a server"))
+	typeIntoField(t, a, f, "Name", "jump")
+	typeIntoField(t, a, f, "Server", "me@jump.example")
+	if got := f.Field("SSH agent").Text(); got != setupNo {
+		t.Errorf("a new server starts with the SSH agent %q, want %q", got, setupNo)
+	}
+	retypeField(t, a, f, "SSH agent", setupYes)
+	pressButton(t, a, f, "Save")
+
+	if f.Error() != nil {
+		t.Fatalf("Save: %v", f.Error())
+	}
+	got, ok := a.book.Lookup("jump")
+	if !ok {
+		t.Fatal("the server was not saved")
+	}
+	if !got.ForwardAgent {
+		t.Errorf("the SSH agent was ticked and the saved server has it off")
+	}
+	if !got.Config().ForwardAgent {
+		t.Errorf("the saved server does not carry the tick into what Connect is given")
+	}
+}
+
+// Editing a machine shows the tick as it was saved, so a server that
+// carries the agent does not quietly stop when something else is changed.
+func TestEditServerShowsTheAgentTickAsSaved(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	a.refreshServers()
+
+	saved := remote.Host{Name: "jump", Address: "jump.example", ForwardAgent: true}
+	if err := a.book.Put(saved, ""); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	a.refreshServers()
+
+	if err := a.openEditServer("jump"); err != nil {
+		t.Fatalf("openEditServer: %v", err)
+	}
+	f := awaitModal(t, a, "the Edit jump dialog", byTitle[*ui.Form]("Edit jump"))
+	if got := f.Field("SSH agent").Text(); got != setupYes {
+		t.Fatalf("the SSH agent field shows %q, want %q", got, setupYes)
+	}
+	// Change something else entirely.
+	retypeField(t, a, f, "Server", "jump.example:2222")
+	pressButton(t, a, f, "Save")
+
+	got, ok := a.book.Lookup("jump")
+	if !ok {
+		t.Fatal("the server went")
+	}
+	if !got.ForwardAgent {
+		t.Errorf("editing the port turned the SSH agent off")
+	}
+}
+
+// A gridterm window is not logged in to, so there is no session to
+// carry an agent over. The tick is left as it was rather than taken
+// from a field that means nothing there.
+func TestAWindowDoesNotGainTheAgentTick(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	a.refreshServers()
+
+	saved := remote.Host{Name: "far", Address: "far.example", Window: true}
+	if err := a.book.Put(saved, ""); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	a.refreshServers()
+
+	if err := a.openEditServer("far"); err != nil {
+		t.Fatalf("openEditServer: %v", err)
+	}
+	f := awaitModal(t, a, "the Edit far dialog", byTitle[*ui.Form]("Edit far"))
+	retypeField(t, a, f, "SSH agent", setupYes)
+	pressButton(t, a, f, "Save")
+
+	got, ok := a.book.Lookup("far")
+	if !ok {
+		t.Fatal("the window went")
+	}
+	if got.ForwardAgent {
+		t.Errorf("a window took the SSH agent tick, which means nothing to one")
+	}
+	if !saidAbout(f, "carry the SSH agent") {
+		t.Errorf("the field was dropped and the dialog said nothing about it: %v", f.Lines)
+	}
+}
+
+// A machine that carried the agent and was turned into a window keeps
+// the answer, so turning it back into a machine gives back what it had.
+// Dropping it instead would read the same in every other test.
+func TestAWindowKeepsTheAgentTickItCameWith(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	a.refreshServers()
+
+	saved := remote.Host{Name: "far", Address: "far.example", Window: true, ForwardAgent: true}
+	if err := a.book.Put(saved, ""); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	a.refreshServers()
+
+	if err := a.openEditServer("far"); err != nil {
+		t.Fatalf("openEditServer: %v", err)
+	}
+	f := awaitModal(t, a, "the Edit far dialog", byTitle[*ui.Form]("Edit far"))
+	retypeField(t, a, f, "SSH agent", setupNo)
+	pressButton(t, a, f, "Save")
+
+	got, ok := a.book.Lookup("far")
+	if !ok {
+		t.Fatal("the window went")
+	}
+	if !got.ForwardAgent {
+		t.Errorf("the answer the window came with was dropped rather than kept")
+	}
+}
+
+// saidAbout reports whether a form says something holding some text.
+func saidAbout(f *ui.Form, want string) bool {
+	for _, line := range f.Lines {
+		if strings.Contains(line, want) {
+			return true
+		}
+	}
+	return false
+}
+
+// The field takes Yes and No and nothing else, so a typed answer that
+// means neither is refused rather than read as No.
+func TestTheAgentTickRefusesAnythingElse(t *testing.T) {
+	for _, text := range []string{"", "maybe", "y", "true"} {
+		if _, err := whichForward(text); err == nil {
+			t.Errorf("%q was taken as an answer for the SSH agent", text)
+		}
+	}
+	on, err := whichForward(" " + setupYes + " ")
+	if err != nil || !on {
+		t.Errorf("a padded %q gave (%v, %v), want it read as on", setupYes, on, err)
+	}
+}

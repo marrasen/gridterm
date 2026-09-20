@@ -357,6 +357,17 @@ func whichSetup(text string) (on bool, err error) {
 	return false, fmt.Errorf("the shell setup has to be %q or %q", setupNo, setupYes)
 }
 
+// whichForward reads the SSH agent field.
+func whichForward(text string) (on bool, err error) {
+	switch strings.TrimSpace(text) {
+	case setupNo:
+		return false, nil
+	case setupYes:
+		return true, nil
+	}
+	return false, fmt.Errorf("the SSH agent has to be %q or %q", setupNo, setupYes)
+}
+
 func whichKind(text string) (window bool, err error) {
 	switch strings.TrimSpace(text) {
 	case kindMachine:
@@ -438,6 +449,8 @@ func (a *app) openServerForm(under string) error {
 	folders := f.AddField("Folders", a.newField("where to open files, separated by commas", 0))
 	setup := f.AddField("Shell setup", a.newField("", 0))
 	setup.Options = []string{setupNo, setupYes}
+	forward := f.AddField("SSH agent", a.newField("", 0))
+	forward.Options = []string{setupNo, setupYes}
 	// The machines already saved, so the field can be cycled rather than
 	// typed from memory. Blank first: leaving it empty is the usual
 	// answer, and it is what cycling comes back round to.
@@ -450,7 +463,10 @@ func (a *app) openServerForm(under string) error {
 		"it opens there; several and the plus offers a line for each.",
 		"Key file steps through the keys this window keeps.",
 		"Shell setup types one line into the shell as it starts, so the pane",
-		"knows where it is and where each command ends. bash and zsh only.")
+		"knows where it is and where each command ends. bash and zsh only.",
+		"SSH agent carries this machine's agent to the server, so a jump from",
+		"there uses the keys held here. While it is on, anyone who is root on",
+		"that server can sign with those keys.")
 
 	name.SetText(was.Name)
 	kind.SetText(kindMachine)
@@ -466,6 +482,10 @@ func (a *app) openServerForm(under string) error {
 	setup.SetText(setupNo)
 	if was.Setup {
 		setup.SetText(setupYes)
+	}
+	forward.SetText(setupNo)
+	if was.ForwardAgent {
+		forward.SetText(setupYes)
 	}
 
 	f.AddButton(ui.Button{Title: "Save", Do: func() error {
@@ -499,6 +519,18 @@ func (a *app) openServerForm(under string) error {
 		}
 		if h.Setup, err = whichSetup(setup.Text()); err != nil {
 			return err
+		}
+		if h.ForwardAgent, err = whichForward(forward.Text()); err != nil {
+			return err
+		}
+		if window {
+			// Kept as it was: a window has no session to carry an agent over
+			if h.ForwardAgent != was.ForwardAgent {
+				f.Lines = append(f.Lines,
+					"A window is not logged in to, so there is no session to carry the SSH agent over."+
+						" That field is left as it was.")
+			}
+			h.ForwardAgent = was.ForwardAgent
 		}
 		// Kept whichever this is. A machine turned into a window and
 		// back should come out the way it went in, and neither field is

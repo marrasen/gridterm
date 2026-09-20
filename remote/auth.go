@@ -41,6 +41,9 @@ type auth struct {
 	agentGone bool
 	watch     *time.Timer
 
+	// agentClient talks to the agent over the socket above.
+	agentClient agent.Agent
+
 	// watching counts the watches set on the agent, so one that fires
 	// just as it is replaced knows it is talking about something that
 	// has already happened. Stopping a timer does not stop a run of it
@@ -213,13 +216,19 @@ func (a *auth) holdTheAgentTo(patience time.Duration, waitingFor, hint string, b
 	}
 	a.watch = time.AfterFunc(patience, func() {
 		a.mu.Lock()
-		stale := mine != a.watching
-		a.mu.Unlock()
-		if stale {
+		if mine != a.watching || a.agent == nil || a.agentGone {
 			// Replaced or stopped while this was starting. Whatever it
 			// was waiting for has happened.
+			a.mu.Unlock()
 			return
 		}
+		// Marked gone under the same lock as the check above, so a
+		// connection taking the agent over sees one answer or the other
+		// and never a socket that is about to close.
+		a.agentGone = true
+		sock := a.agent
+		a.mu.Unlock()
+
 		why := fmt.Errorf("the SSH agent had %v %s and did not", patience, waitingFor)
 		saySo(a.saying, why.Error()+", so this is letting go of it."+hint)
 		if blame {
@@ -227,7 +236,9 @@ func (a *auth) holdTheAgentTo(patience time.Duration, waitingFor, hint string, b
 			// out the same thing again.
 			a.ring.AgentGaveUp(why)
 		}
-		_ = a.closeAgent()
+		// Outside the lock: closing a pipe somebody is reading can wait
+		// for that read to be torn down.
+		_ = sock.Close()
 	})
 }
 
@@ -237,16 +248,47 @@ type closerFunc func() error
 func (f closerFunc) Close() error { return f() }
 
 // agentSource opens the SSH agent: the socket to hold until signing is
-// done, and a way to list the keys it holds.
-type agentSource func() (io.Closer, func() ([]ssh.Signer, error), error)
+// done, and the agent speaking over it.
+type agentSource func() (io.Closer, agent.Agent, error)
 
 // localAgent opens the SSH agent running on this machine.
-func localAgent() (io.Closer, func() ([]ssh.Signer, error), error) {
+func localAgent() (io.Closer, agent.Agent, error) {
 	conn, err := dialAgent()
 	if err != nil {
 		return nil, nil, err
 	}
-	return conn, agent.NewClient(conn).Signers, nil
+	return conn, agent.NewClient(conn), nil
+}
+
+// forwardingAgent is the agent to carry to the far end, and nil when
+// there is none to carry: no agent was opened, or the socket was let go
+// of because it would not answer.
+func (a *auth) forwardingAgent() agent.Agent {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.agentGone {
+		return nil
+	}
+	return a.agentClient
+}
+
+// noAgentToCarry says why there is no SSH agent to carry to the far end.
+func (a *auth) noAgentToCarry(cfg Config) error {
+	a.mu.Lock()
+	gone := a.agentGone
+	a.mu.Unlock()
+	switch {
+	case cfg.NoAgent:
+		return errors.New("the SSH agent is turned off for this connection")
+	case a.agentBroke:
+		return fmt.Errorf("the SSH agent was given up on earlier: %w."+
+			" Forget unlocked keys to have it asked again", a.noAgent)
+	case a.noAgent != nil:
+		return fmt.Errorf("there is no SSH agent running here: %w", a.noAgent)
+	case gone:
+		return errors.New("the SSH agent stopped answering while this connection was being made")
+	}
+	return errors.New("there is no SSH agent to carry")
 }
 
 // authMethods assembles what to try, in the order a user expects.
@@ -274,7 +316,7 @@ func authMethods(ctx context.Context, cfg Config) (*auth, error) {
 		if open == nil {
 			open = localAgent
 		}
-		conn, signers, err := open()
+		conn, ag, err := open()
 		if err != nil {
 			// Not remembered: finding out there is no agent is opening a
 			// socket that is not there, which costs nothing. One started
@@ -282,8 +324,8 @@ func authMethods(ctx context.Context, cfg Config) (*auth, error) {
 			a.noAgent = err
 			saySo(cfg.Saying, "there is no SSH agent here: "+err.Error())
 		} else {
-			a.agent = conn
-			agentSigners = signers
+			a.agent, a.agentClient = conn, ag
+			agentSigners = ag.Signers
 			saySo(cfg.Saying, "an SSH agent is running")
 		}
 	}

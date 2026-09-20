@@ -77,9 +77,25 @@ func (a *app) plan(route []step) (through *machine, missing []step, err error) {
 				"%q is already connected to %s, which is not %s; close it first",
 				m.at.name, m.at.cfg.Target(), r.cfg.Target())
 		}
+		if m.at.cfg.ForwardAgent != r.cfg.ForwardAgent {
+			// Closing is the only way to act on the change, since the far end
+			// keeps its way to the agent while the connection is up
+			return nil, nil, fmt.Errorf(
+				"%q is connected with the SSH agent %s and the saved server now says %s;"+
+					" close that connection first, because the agent stays reachable from there until it closes",
+				m.at.name, agentOnOff(m.at.cfg.ForwardAgent), agentOnOff(r.cfg.ForwardAgent))
+		}
 		return m, route[at+1:], nil
 	}
 	return nil, route, nil
+}
+
+// agentOnOff is how a message says whether the SSH agent is carried.
+func agentOnOff(on bool) string {
+	if on {
+		return "on"
+	}
+	return "off"
 }
 
 // savedWindowInRoute is the saved window a request names, by the name

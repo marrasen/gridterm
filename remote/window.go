@@ -6,7 +6,7 @@ import (
 	"io"
 	"time"
 
-	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/agent"
 
 	"github.com/marrasen/gridterm/serve"
 )
@@ -22,12 +22,12 @@ type Reach struct {
 	Known func() (string, error)
 
 	// Agent is where the keys an SSH agent holds come from: the socket to
-	// hold until signing is done, and a way to list what it holds. A nil
+	// hold until signing is done, and the agent speaking over it. A nil
 	// one asks the agent running on this machine.
 	//
 	// Listing is left to the ladder to call, so the same bound and the
 	// same "it did not answer" applies here as anywhere else.
-	Agent func() (io.Closer, func() ([]ssh.Signer, error), error)
+	Agent func() (io.Closer, agent.Agent, error)
 
 	// Saying is told what is being done now, for the row to show. It is
 	// called from the goroutine doing it, so it hands the work to

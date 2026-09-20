@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/agent"
 
 	"github.com/marrasen/gridterm/serve"
 )
@@ -147,10 +148,10 @@ func (c *Conn) Shell(ctx context.Context, cfg ShellConfig) (*Shell, error) {
 	if c.isClosing() {
 		return nil, fmt.Errorf("remote: %s: %w", c, ErrClosed)
 	}
-	// One deadline for the whole open. The session, the pty and the
-	// program are three round trips, and a deadline each would let a
-	// machine that stalls on every one of them hold the window for three
-	// times as long.
+	// One deadline for the whole open. The session, the agent, the pty
+	// and the program are four round trips, and a deadline each would
+	// let a machine that stalls on every one of them hold the window for
+	// four times as long.
 	ctx, cancel := context.WithTimeout(ctx, channelTimeout)
 	defer cancel()
 
@@ -194,6 +195,17 @@ func (s *Shell) start(ctx context.Context, cfg ShellConfig) error {
 	var err error
 	if s.stdin, err = s.sess.StdinPipe(); err != nil {
 		return fmt.Errorf("remote: open the stdin pipe: %w", err)
+	}
+
+	// Before the pty, so a refusal stops the session with nothing started on it
+	if s.conn.forwardAgent {
+		if err := doWithin(ctx, "ask "+s.conn.String()+" to carry the SSH agent", func() error {
+			return agent.RequestAgentForwarding(s.sess)
+		}); err != nil {
+			return fmt.Errorf("the SSH agent could not be carried to %s, so no pane was opened."+
+				" Turn the SSH agent off for this server to open one without it: %w",
+				s.conn.String(), err)
+		}
 	}
 
 	term := cfg.Term

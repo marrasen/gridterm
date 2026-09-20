@@ -14,12 +14,14 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
 
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/agent"
 	"golang.org/x/crypto/ssh/knownhosts"
 )
 
@@ -50,6 +52,21 @@ type Server struct {
 	forwards  int
 	forwarded []string
 	asked     []string
+
+	// agentAsked counts the sessions that asked for the SSH agent to be
+	// carried here, and refuseAgent answers no the way an sshd with
+	// AllowAgentForwarding off does.
+	agentAsked  int
+	refuseAgent bool
+
+	// agentKeys is what the carried agent said it holds, read once the
+	// request was granted, and agentErr is why it could not be read.
+	agentKeys []string
+	agentErr  error
+
+	// carrying is the connection the agent was carried over, kept so a
+	// test can go back to that agent and sign with it.
+	carrying *ssh.ServerConn
 
 	// sftps counts the SFTP sessions started, and noSFTP turns the
 	// subsystem off the way an sshd without it does.
@@ -306,6 +323,61 @@ func (s *Server) Size() (cols, rows int) {
 	return s.lastSize[0], s.lastSize[1]
 }
 
+// SignWithCarriedAgent signs with the first key the carried agent holds,
+// which is what a second hop out of this machine does.
+func (s *Server) SignWithCarriedAgent(data []byte) (*ssh.Signature, ssh.PublicKey, error) {
+	s.mu.Lock()
+	sc := s.carrying
+	s.mu.Unlock()
+	if sc == nil {
+		return nil, nil, errors.New("no SSH agent has been carried here")
+	}
+	ch, reqs, err := sc.OpenChannel("auth-agent@openssh.com", nil)
+	if err != nil {
+		return nil, nil, fmt.Errorf("open the agent channel: %w", err)
+	}
+	defer ch.Close()
+	go ssh.DiscardRequests(reqs)
+
+	ag := agent.NewClient(ch)
+	keys, err := ag.List()
+	if err != nil {
+		return nil, nil, fmt.Errorf("list what the agent holds: %w", err)
+	}
+	if len(keys) == 0 {
+		return nil, nil, errors.New("the carried agent holds no keys")
+	}
+	sig, err := ag.Sign(keys[0], data)
+	if err != nil {
+		return nil, nil, fmt.Errorf("sign with the carried agent: %w", err)
+	}
+	return sig, keys[0], nil
+}
+
+// RefuseAgent makes the server turn down a request to carry the SSH
+// agent here, the way an sshd with AllowAgentForwarding off does.
+func (s *Server) RefuseAgent(on bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.refuseAgent = on
+}
+
+// AgentAsked returns how many sessions asked for the SSH agent to be
+// carried here.
+func (s *Server) AgentAsked() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.agentAsked
+}
+
+// AgentKeys is what the carried agent said it holds, by comment, and why
+// it could not be read.
+func (s *Server) AgentKeys() ([]string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.agentKeys), s.agentErr
+}
+
 // WindowChanges returns how many window-change requests the server has
 // been sent, so a test can tell a size that was sent once from one sent
 // for every drag.
@@ -416,7 +488,7 @@ func (s *Server) handle(nc net.Conn) {
 			if err != nil {
 				return
 			}
-			go s.session(ch, chReqs)
+			go s.session(sc, ch, chReqs)
 		case "direct-tcpip":
 			// A client reaching somewhere else through this machine.
 			go s.forward(nch)
@@ -426,7 +498,34 @@ func (s *Server) handle(nc net.Conn) {
 	}
 }
 
-func (s *Server) session(ch ssh.Channel, reqs <-chan *ssh.Request) {
+// readCarriedAgent opens the channel back to the client's SSH agent and
+// writes down what it holds, which is what proves the agent arrived.
+func (s *Server) readCarriedAgent(sc *ssh.ServerConn) {
+	ch, reqs, err := sc.OpenChannel("auth-agent@openssh.com", nil)
+	if err != nil {
+		s.mu.Lock()
+		s.agentErr = fmt.Errorf("open the agent channel: %w", err)
+		s.mu.Unlock()
+		return
+	}
+	defer ch.Close()
+	go ssh.DiscardRequests(reqs)
+
+	keys, err := agent.NewClient(ch).List()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.carrying = sc
+	if err != nil {
+		s.agentErr = fmt.Errorf("list what the agent holds: %w", err)
+		return
+	}
+	s.agentKeys, s.agentErr = nil, nil
+	for _, k := range keys {
+		s.agentKeys = append(s.agentKeys, k.Comment)
+	}
+}
+
+func (s *Server) session(sc *ssh.ServerConn, ch ssh.Channel, reqs <-chan *ssh.Request) {
 	s.mu.Lock()
 	s.sessions++
 	s.opened++
@@ -451,6 +550,20 @@ func (s *Server) session(ch ssh.Channel, reqs <-chan *ssh.Request) {
 				continue
 			}
 			_ = req.Reply(true, nil)
+
+		case "auth-agent-req@openssh.com":
+			s.mu.Lock()
+			s.agentAsked++
+			refuse := s.refuseAgent
+			s.mu.Unlock()
+			if refuse {
+				_ = req.Reply(false, nil)
+				continue
+			}
+			_ = req.Reply(true, nil)
+			// Read here rather than on a goroutine of its own, so a test
+			// that opened a shell knows the answer is in.
+			s.readCarriedAgent(sc)
 
 		case "window-change":
 			cols, rows := parseWinch(req.Payload)

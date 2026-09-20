@@ -27,7 +27,7 @@ plan is under "Asked for, not yet worked out".
 
 ## Waiting on an answer from Marcus
 
-Six are about the context menu. Two came out of Marcus's notes of
+Six are about the context menu. One came out of Marcus's notes of
 2026-09-20.
 
 - **What should dragging and dropping do in the file browser?**
@@ -36,11 +36,6 @@ Six are about the context menu. Two came out of Marcus's notes of
   support" in the browser, which could mean dragging a file out of a
   browser pane to another one, moving a file within a listing, or
   dragging out to Explorer. The three are different pieces of work.
-
-- **Should an SSH agent be carried over a connection?** Marcus asked
-  whether we support it. We do not: nothing in the repo forwards an
-  agent, so a second hop asks for its own key. Whether to add it is
-  his call.
 
 The six about the context menu:
 
@@ -616,6 +611,26 @@ without opening a window at all, which today means starting ebiten.
 
 - **Open a tunnel over SSH**, with a tick box saying it may. The
   per-pane tick boxes are the pattern to follow.
+
+## Carrying the SSH agent
+
+The **SSH agent** field in the server dialog carries this machine's
+agent to a server, so a jump onward from it signs with the keys held
+here. Off until asked for, per machine.
+
+- **Every forwarded channel shares one socket.** `agent.ForwardToAgent`
+  serves them all from the one client, and its answers come back in the
+  order they were asked for. So a signature waiting on a hardware token
+  being touched holds up every other request behind it. Real OpenSSH
+  opens a socket to the agent for each channel, which does not have
+  this problem. Closing it means answering the channel by hand instead
+  of calling `ForwardToAgent`.
+
+- **Changing the tick on a machine that is connected is refused.** The
+  far end keeps its way to the agent while the connection is up, so
+  closing that connection is the only thing that acts on the change,
+  and the message says so. A window that closed it for the user would
+  take their panes with it.
 
 ## Android
 

@@ -52,6 +52,13 @@ type Host struct {
 	// with an error rather than doing it.
 	Setup bool `json:"shellSetup,omitempty"`
 
+	// ForwardAgent carries this machine's SSH agent to the server, so a
+	// second hop from there signs with the keys held here.
+	//
+	// Off unless the user asks for it: while it is on, anyone who is
+	// root on that server can sign with these keys.
+	ForwardAgent bool `json:"forwardAgent,omitempty"`
+
 	// Window says this is another gridterm serving, taken over rather
 	// than logged in to.
 	//
@@ -107,10 +114,11 @@ func (h Host) Target() string {
 // fill in.
 func (h Host) Config() Config {
 	return Config{
-		Host:       h.Address,
-		Port:       h.Port,
-		User:       h.User,
-		Identities: h.Identities,
+		Host:         h.Address,
+		Port:         h.Port,
+		User:         h.User,
+		Identities:   h.Identities,
+		ForwardAgent: h.ForwardAgent,
 	}
 }
 

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/agent"
 
 	"github.com/marrasen/gridterm/internal/sshtest"
 )
@@ -46,19 +47,29 @@ func rungs(a *auth) []string {
 }
 
 // agentMissing stands in for an agent that is not running.
-func agentMissing() (io.Closer, func() ([]ssh.Signer, error), error) {
+func agentMissing() (io.Closer, agent.Agent, error) {
 	return nil, nil, errors.New("remote: no SSH agent here")
 }
+
+// listingAgent is an agent that only lists keys. The embedded interface
+// is nil, so anything else panics, and nothing here asks for anything
+// else.
+type listingAgent struct {
+	agent.Agent
+	signers func() ([]ssh.Signer, error)
+}
+
+func (l listingAgent) Signers() ([]ssh.Signer, error) { return l.signers() }
 
 // agentHolding stands in for an agent that is running and holds keys.
 // It counts the times it was asked to list them.
 func agentHolding(listed *int, keys ...ssh.Signer) agentSource {
-	return func() (io.Closer, func() ([]ssh.Signer, error), error) {
+	return func() (io.Closer, agent.Agent, error) {
 		return closerFunc(func() error { return nil }),
-			func() ([]ssh.Signer, error) {
+			listingAgent{signers: func() ([]ssh.Signer, error) {
 				*listed++
 				return keys, nil
-			}, nil
+			}}, nil
 	}
 }
 
@@ -119,7 +130,7 @@ func TestTakingOverAWindowLeavesASilentAgentAlone(t *testing.T) {
 	ring.AgentGaveUp(errors.New("it had 10s to say what keys it holds and did not"))
 
 	asked := false
-	a, err := takeOver(t, ring, nil, func() (io.Closer, func() ([]ssh.Signer, error), error) {
+	a, err := takeOver(t, ring, nil, func() (io.Closer, agent.Agent, error) {
 		asked = true
 		return nil, nil, nil
 	}, nil)
@@ -142,7 +153,7 @@ func TestTakingOverAWindowDoesNotHoldAMissingAgentAgainstIt(t *testing.T) {
 	homeWith(t, "", "")
 	ring := NewRing()
 
-	a, err := takeOver(t, ring, nil, func() (io.Closer, func() ([]ssh.Signer, error), error) {
+	a, err := takeOver(t, ring, nil, func() (io.Closer, agent.Agent, error) {
 		return nil, nil, errors.New("remote: no SSH agent: open the pipe: not found")
 	}, nil)
 	if err != nil {
@@ -421,12 +432,12 @@ func TestTakingOverLetsGoOfAnAgentThatWillNotList(t *testing.T) {
 	// A listing that comes back only when the socket is closed, which is
 	// what a real one does.
 	closed := make(chan struct{})
-	a, err := takeOver(t, ring, nil, func() (io.Closer, func() ([]ssh.Signer, error), error) {
+	a, err := takeOver(t, ring, nil, func() (io.Closer, agent.Agent, error) {
 		return closerFunc(func() error { close(closed); return nil }),
-			func() ([]ssh.Signer, error) {
+			listingAgent{signers: func() ([]ssh.Signer, error) {
 				<-closed
 				return nil, errors.New("the socket went")
-			}, nil
+			}}, nil
 	}, nil)
 	if err != nil {
 		t.Fatalf("build the ladder: %v", err)

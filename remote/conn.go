@@ -21,6 +21,7 @@ import (
 	"sync"
 
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/agent"
 )
 
 // ErrClosed is returned when something is opened on a connection that
@@ -60,6 +61,13 @@ type Config struct {
 	// should only ever offer a password.
 	NoAgent      bool
 	NoIdentities bool
+
+	// ForwardAgent carries this machine's SSH agent to the far end, so a
+	// second hop from there signs with the keys held here.
+	//
+	// It is for the whole connection, not one pane: while it is on,
+	// anyone who is root on that machine can sign with these keys.
+	ForwardAgent bool
 
 	// KeysOnly offers keys and nothing else, which is what taking over
 	// another gridterm window does: that end accepts no password and no
@@ -153,6 +161,10 @@ func (c Config) SameMachine(other Config) bool {
 type Conn struct {
 	client *ssh.Client
 	agent  io.Closer // the agent socket, if one was opened
+
+	// forwardAgent says the far end may reach this machine's SSH agent,
+	// so each session asks for it as it opens.
+	forwardAgent bool
 
 	user, addr string
 
@@ -296,6 +308,13 @@ func connect(ctx context.Context, to reach, via *Conn, cfg Config) (*Conn, error
 	// socket from here.
 	a.done()
 	c := newConn(client, a.agentCloser(), cfg.User, addr)
+	if cfg.ForwardAgent {
+		// Refused rather than connected without it, since the user asked for the agent
+		if err := c.carryTheAgent(a.forwardingAgent(), a.noAgentToCarry(cfg)); err != nil {
+			return nil, errors.Join(err, c.Close())
+		}
+		saySo(cfg.Saying, "the SSH agent will be carried to this machine")
+	}
 	if via != nil {
 		c.via = via
 		if err := via.register(c); err != nil {
@@ -347,6 +366,21 @@ func newConn(client *ssh.Client, agentConn io.Closer, user, addr string) *Conn {
 		close(c.gone)
 	}()
 	return c
+}
+
+// carryTheAgent lets the far end open a channel back to this machine's
+// SSH agent, and marks the connection so each session asks for it. why
+// is what to say when there is no agent to carry.
+func (c *Conn) carryTheAgent(ag agent.Agent, why error) error {
+	if ag == nil {
+		return fmt.Errorf("the SSH agent cannot be carried to %s: %w."+
+			" Turn the SSH agent off for this server to connect without it", c.String(), why)
+	}
+	if err := agent.ForwardToAgent(c.client, ag); err != nil {
+		return fmt.Errorf("remote: carry the SSH agent to %s: %w", c.String(), err)
+	}
+	c.forwardAgent = true
+	return nil
 }
 
 // String names the connection the way a user would: user@host:port.

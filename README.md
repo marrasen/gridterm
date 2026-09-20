@@ -187,6 +187,14 @@ emulator, and draws the resulting character grid as batched triangles.
   `known_hosts` gets a dialog with its fingerprint, and only an explicit
   yes records it. A key that does not match one already recorded is
   refused with no button to press.
+- **The SSH agent is carried only where you say.** The **SSH agent**
+  field in the server dialog lets that machine reach the agent running
+  here, so a jump onward from it signs with the keys held here and no
+  key is copied over. It is off until you turn it on, per machine, and
+  while it is on anyone who is root on that machine can sign with those
+  keys for as long as the connection is up. A machine that will not
+  carry the agent opens no pane, rather than opening one that quietly
+  has no keys.
 - **Batched rendering.** A full screen of text is one `DrawTriangles`
   call for the backgrounds plus one per atlas page for the glyphs,
   typically two in total however much text is on screen.

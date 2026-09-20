@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/agent"
 	"golang.org/x/crypto/ssh/knownhosts"
 
 	"github.com/marrasen/gridterm/conns"
@@ -311,8 +312,8 @@ func TestAKeyFromTheAgentCanStillSign(t *testing.T) {
 	w, err := remote.ReachWindow(context.Background(), remote.Reach{
 		Addr: a.serving.addr(), Ring: a.keys,
 		Known: func() (string, error) { return known, nil },
-		Agent: func() (io.Closer, func() ([]ssh.Signer, error), error) {
-			return shut, func() ([]ssh.Signer, error) { return []ssh.Signer{shut}, nil }, nil
+		Agent: func() (io.Closer, agent.Agent, error) {
+			return shut, oneKeyAgent{key: shut}, nil
 		},
 	})
 
@@ -447,7 +448,7 @@ func reachFor(t *testing.T, a *testApp, keyFile string, ask remote.Ask) remote.R
 	return remote.Reach{
 		Addr: a.serving.addr(), KeyFile: keyFile, Ring: remote.NewRing(), Ask: ask,
 		Known: func() (string, error) { return known, nil },
-		Agent: func() (io.Closer, func() ([]ssh.Signer, error), error) {
+		Agent: func() (io.Closer, agent.Agent, error) {
 			return nil, nil, errors.New("no SSH agent for this test")
 		},
 	}
@@ -3280,3 +3281,12 @@ func TestAPaneDrawnFromAnotherWindowTakesItsName(t *testing.T) {
 		t.Errorf("the row here reads %q and the row there reads %q", got, called)
 	}
 }
+
+// oneKeyAgent is an agent holding a single key. The embedded interface
+// is nil, so anything but listing panics, and nothing here asks.
+type oneKeyAgent struct {
+	agent.Agent
+	key ssh.Signer
+}
+
+func (o oneKeyAgent) Signers() ([]ssh.Signer, error) { return []ssh.Signer{o.key}, nil }

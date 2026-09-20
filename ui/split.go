@@ -317,7 +317,7 @@ func (s *Split) CancelGesture() { s.dragging = false }
 
 // CursorAt returns the resize arrow over the divider, and over
 // everything else while the divider is being dragged.
-func (s *Split) CursorAt(col, row int) (Cursor, bool) {
+func (s *Split) CursorAt(col, row int, mods input.Mods) (Cursor, bool) {
 	if s.dragging {
 		return s.dir.cursor(), true
 	}
@@ -327,10 +327,10 @@ func (s *Split) CursorAt(col, row int) (Cursor, bool) {
 		return s.dir.cursor(), true
 	case s.a != nil && ra.Contains(col, row):
 		x, y := ra.Local(col, row)
-		return CursorAt(s.a, x, y)
+		return CursorAt(s.a, x, y, mods)
 	case s.b != nil && rb.Contains(col, row):
 		x, y := rb.Local(col, row)
-		return CursorAt(s.b, x, y)
+		return CursorAt(s.b, x, y, mods)
 	}
 	return CursorDefault, false
 }

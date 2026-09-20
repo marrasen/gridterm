@@ -847,6 +847,13 @@ func (s *Screen) Pen() grid.Cell { return s.cursor.Pen }
 // SetPen replaces the current graphic rendition.
 func (s *Screen) SetPen(c grid.Cell) { s.cursor.Pen = c }
 
+// SetPenLink puts a hyperlink under everything printed from now on,
+// and zero takes it off again.
+func (s *Screen) SetPenLink(id uint32) { s.cursor.Pen.Link = id }
+
+// PenLink is the hyperlink everything printed now carries.
+func (s *Screen) PenLink() uint32 { return s.cursor.Pen.Link }
+
 // CursorPos returns the cursor's column and row.
 func (s *Screen) CursorPos() (x, y int) { return s.cursor.X, s.cursor.Y }
 

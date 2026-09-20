@@ -37,11 +37,11 @@ func TestCursorOverTheDockDivider(t *testing.T) {
 	r := rootOver(d, 100, 30)
 	divider := dockDividerAt(t, d, panel)
 
-	if got := r.CursorAt(divider, 10); got != CursorEWResize {
+	if got := r.CursorAt(divider, 10, 0); got != CursorEWResize {
 		t.Errorf("over the divider the pointer is %s, want the east-west arrow", cursorName(got))
 	}
 	panelAt, _ := d.ChildArea(panel)
-	if got := r.CursorAt(panelAt.X+panelAt.Cols-1, 10); got != CursorDefault {
+	if got := r.CursorAt(panelAt.X+panelAt.Cols-1, 10, 0); got != CursorDefault {
 		t.Errorf("over the panel's last column the pointer is %s, want the ordinary one",
 			cursorName(got))
 	}
@@ -51,7 +51,7 @@ func TestCursorOverTheDockDivider(t *testing.T) {
 	if !ok {
 		t.Fatal("the dock gave the rest no room")
 	}
-	if got := r.CursorAt(restAt.X, 10); got != CursorDefault {
+	if got := r.CursorAt(restAt.X, 10, 0); got != CursorDefault {
 		t.Errorf("over the rest's first column the pointer is %s, want the ordinary one",
 			cursorName(got))
 	}
@@ -63,14 +63,14 @@ func TestCursorOverAHiddenDockDividerIsTheOrdinaryPointer(t *testing.T) {
 	d, panel, _ := newTestDock(t, 24, 100, 30)
 	r := rootOver(d, 100, 30)
 	divider := dockDividerAt(t, d, panel)
-	if got := r.CursorAt(divider, 10); got != CursorEWResize {
+	if got := r.CursorAt(divider, 10, 0); got != CursorEWResize {
 		t.Fatalf("over the divider the pointer is %s, so this fixture is wrong", cursorName(got))
 	}
 
 	d.Collapsed = true
 	r.Layout(Rect{Cols: 100, Rows: 30})
 
-	if got := r.CursorAt(divider, 10); got != CursorDefault {
+	if got := r.CursorAt(divider, 10, 0); got != CursorDefault {
 		t.Errorf("with the panel hidden the pointer at the divider's column is %s,"+
 			" want the ordinary one", cursorName(got))
 	}
@@ -93,7 +93,7 @@ func TestCursorOverASplitDividerFollowsTheWayItDivides(t *testing.T) {
 			r := rootOver(s, 20, 20)
 			col, row := splitDividerAt(t, s, a)
 
-			if got := r.CursorAt(col, row); got != c.want {
+			if got := r.CursorAt(col, row, 0); got != c.want {
 				t.Errorf("over the divider the pointer is %s, want %s",
 					cursorName(got), cursorName(c.want))
 			}
@@ -104,7 +104,7 @@ func TestCursorOverASplitDividerFollowsTheWayItDivides(t *testing.T) {
 			if !ok {
 				t.Fatal("the split gave the first pane no room")
 			}
-			if got := r.CursorAt(ra.X+ra.Cols-1, ra.Y+ra.Rows-1); got != CursorDefault {
+			if got := r.CursorAt(ra.X+ra.Cols-1, ra.Y+ra.Rows-1, 0); got != CursorDefault {
 				t.Errorf("over the first pane the pointer is %s, want the ordinary one",
 					cursorName(got))
 			}
@@ -112,7 +112,7 @@ func TestCursorOverASplitDividerFollowsTheWayItDivides(t *testing.T) {
 			if !ok {
 				t.Fatal("the split gave the second pane no room")
 			}
-			if got := r.CursorAt(rb.X, rb.Y); got != CursorDefault {
+			if got := r.CursorAt(rb.X, rb.Y, 0); got != CursorDefault {
 				t.Errorf("over the second pane the pointer is %s, want the ordinary one",
 					cursorName(got))
 			}
@@ -156,14 +156,14 @@ func TestCursorKeepsTheArrowWhileTheDockDividerIsDragged(t *testing.T) {
 	if _, _, moved := d.rects(); moved.Contains(95, 10) {
 		t.Fatal("the pointer is still on the divider, so this proves nothing")
 	}
-	if got := r.CursorAt(95, 10); got != CursorEWResize {
+	if got := r.CursorAt(95, 10, 0); got != CursorEWResize {
 		t.Errorf("mid-drag the pointer is %s, want the east-west arrow", cursorName(got))
 	}
 
 	if _, err := r.HandleMouse(releaseAt(95, 10)); err != nil {
 		t.Fatalf("release: %v", err)
 	}
-	if got := r.CursorAt(95, 10); got != CursorDefault {
+	if got := r.CursorAt(95, 10, 0); got != CursorDefault {
 		t.Errorf("after the release the pointer is %s, want the ordinary one", cursorName(got))
 	}
 }
@@ -185,14 +185,14 @@ func TestCursorKeepsTheArrowWhileASplitDividerIsDragged(t *testing.T) {
 	if _, _, moved := s.rects(); moved.Contains(3, 9) {
 		t.Fatal("the pointer is still on the divider, so this proves nothing")
 	}
-	if got := r.CursorAt(3, 9); got != CursorNSResize {
+	if got := r.CursorAt(3, 9, 0); got != CursorNSResize {
 		t.Errorf("mid-drag the pointer is %s, want the north-south arrow", cursorName(got))
 	}
 
 	if _, err := r.HandleMouse(releaseAt(3, 9)); err != nil {
 		t.Fatalf("release: %v", err)
 	}
-	if got := r.CursorAt(3, 9); got != CursorDefault {
+	if got := r.CursorAt(3, 9, 0); got != CursorDefault {
 		t.Errorf("after the release the pointer is %s, want the ordinary one", cursorName(got))
 	}
 }
@@ -203,17 +203,17 @@ func TestCursorUnderADialogIsTheOrdinaryPointer(t *testing.T) {
 	d, panel, _ := newTestDock(t, 24, 100, 30)
 	r := rootOver(d, 100, 30)
 	dividerX := dockDividerAt(t, d, panel)
-	if got := r.CursorAt(dividerX, 10); got != CursorEWResize {
+	if got := r.CursorAt(dividerX, 10, 0); got != CursorEWResize {
 		t.Fatalf("over the divider the pointer is %s, so this fixture is wrong", cursorName(got))
 	}
 
 	r.PushModal(&fake{name: "dialog"})
-	if got := r.CursorAt(dividerX, 10); got != CursorDefault {
+	if got := r.CursorAt(dividerX, 10, 0); got != CursorDefault {
 		t.Errorf("under a dialog the pointer is %s, want the ordinary one", cursorName(got))
 	}
 
 	r.PopModal()
-	if got := r.CursorAt(dividerX, 10); got != CursorEWResize {
+	if got := r.CursorAt(dividerX, 10, 0); got != CursorEWResize {
 		t.Errorf("once the dialog has gone the pointer is %s, want the east-west arrow",
 			cursorName(got))
 	}
@@ -235,7 +235,7 @@ func TestCursorFindsADividerUnderPlainContainers(t *testing.T) {
 		t.Fatal("the dock is not in the tree")
 	}
 	dockDiv := dockDividerAt(t, d, panel)
-	if got := r.CursorAt(dockAt.X+dockDiv, dockAt.Y); got != CursorEWResize {
+	if got := r.CursorAt(dockAt.X+dockDiv, dockAt.Y, 0); got != CursorEWResize {
 		t.Errorf("over the dock divider the pointer is %s, want the east-west arrow",
 			cursorName(got))
 	}
@@ -245,11 +245,11 @@ func TestCursorFindsADividerUnderPlainContainers(t *testing.T) {
 		t.Fatal("the split is not in the tree")
 	}
 	divCol, divRow := splitDividerAt(t, s, a)
-	if got := r.CursorAt(splitAt.X+divCol, splitAt.Y+divRow); got != CursorEWResize {
+	if got := r.CursorAt(splitAt.X+divCol, splitAt.Y+divRow, 0); got != CursorEWResize {
 		t.Errorf("over the split divider the pointer is %s, want the east-west arrow",
 			cursorName(got))
 	}
-	if got := r.CursorAt(splitAt.X, splitAt.Y); got != CursorDefault {
+	if got := r.CursorAt(splitAt.X, splitAt.Y, 0); got != CursorDefault {
 		t.Errorf("over a pane the pointer is %s, want the ordinary one", cursorName(got))
 	}
 }
@@ -274,7 +274,7 @@ func TestCursorKeepsTheArrowWhileASplitUnderADockIsDragged(t *testing.T) {
 	}
 	divCol, divRow := splitDividerAt(t, s, a)
 	col, row := at.X+divCol+2, at.Y+divRow
-	if got := r.CursorAt(col, row); got != CursorNSResize {
+	if got := r.CursorAt(col, row, 0); got != CursorNSResize {
 		t.Fatalf("over the divider the pointer is %s, so this fixture is wrong", cursorName(got))
 	}
 
@@ -290,14 +290,14 @@ func TestCursorKeepsTheArrowWhileASplitUnderADockIsDragged(t *testing.T) {
 	if _, _, moved := s.rects(); moved.Contains(col-at.X, bottom-at.Y) {
 		t.Fatal("the pointer is still on the divider, so this proves nothing")
 	}
-	if got := r.CursorAt(col, bottom); got != CursorNSResize {
+	if got := r.CursorAt(col, bottom, 0); got != CursorNSResize {
 		t.Errorf("mid-drag the pointer is %s, want the north-south arrow", cursorName(got))
 	}
 
 	if _, err := r.HandleMouse(releaseAt(col, bottom)); err != nil {
 		t.Fatalf("release: %v", err)
 	}
-	if got := r.CursorAt(col, bottom); got != CursorDefault {
+	if got := r.CursorAt(col, bottom, 0); got != CursorDefault {
 		t.Errorf("after the release the pointer is %s, want the ordinary one", cursorName(got))
 	}
 }

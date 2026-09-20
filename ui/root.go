@@ -420,14 +420,14 @@ func (r *Root) clampInto(area Rect, x, y int) (int, int) {
 // keeps whatever shape that widget asks for however far it has wandered,
 // which is what stops the resize arrow flickering back to an arrow as
 // the divider is pulled across the pane beside it.
-func (r *Root) CursorAt(col, row int) Cursor {
+func (r *Root) CursorAt(col, row int, mods input.Mods) Cursor {
 	if len(r.modals) > 0 || r.widget == nil {
 		return CursorDefault
 	}
 	col, row = r.area.Local(col, row)
 	held := r.held.Holder()
 	if held == nil {
-		c, _ := CursorAt(r.widget, col, row)
+		c, _ := CursorAt(r.widget, col, row, mods)
 		return c
 	}
 	area, shown := AreaOf(r.widget, r.area.Size().rect(), held)
@@ -435,7 +435,7 @@ func (r *Root) CursorAt(col, row int) Cursor {
 		return CursorDefault
 	}
 	col, row = area.Local(col, row)
-	c, _ := CursorAt(held, col, row)
+	c, _ := CursorAt(held, col, row, mods)
 	return c
 }
 

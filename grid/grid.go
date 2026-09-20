@@ -44,6 +44,15 @@ type Cell struct {
 	// things no character stands for. It is drawn over the background
 	// and instead of the glyph.
 	Art Art
+
+	// Link names a hyperlink the program put under this cell, and zero
+	// is no link. What the number means belongs to whoever made the
+	// cell: the grid carries it and does not read it.
+	//
+	// A number rather than the address itself, because a cell is
+	// copied about a great deal -- every scroll moves a screenful --
+	// and a string in each one is a string per cell on screen.
+	Link uint32
 }
 
 // Art is something drawn in code inside one cell: a small graph, a mark,
@@ -198,6 +207,7 @@ func (c Cell) Equal(o Cell) bool {
 		c.Attr == o.Attr &&
 		c.Width == o.Width &&
 		c.Art == o.Art &&
+		c.Link == o.Link &&
 		slices.Equal(c.Comb, o.Comb)
 }
 

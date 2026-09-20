@@ -62,6 +62,29 @@ All six are about the context menu.
 
 # Open work
 
+## Hyperlinks
+
+OSC 8 is in: a program says "this text is a link" and ctrl and a click
+follows it. What is left of Marcus's note, which asked for links to be
+detected as well as declared:
+
+- **A bare address in the output is not a link.** Most output does not
+  use OSC 8: a URL printed by `curl`, a build error naming a file, a
+  git remote. Finding them means scanning the rows for something that
+  looks like an address, which is a guess rather than a program saying
+  so, and a guess that is wrong is a click that goes somewhere the
+  user did not mean. Worth doing, and worth being careful with.
+
+- **A link is not marked on screen.** The pointer becomes a hand over
+  one while ctrl is held, and that is all: text with a link under it
+  looks like text without. Underlining it on hover is what other
+  terminals do, and needs the pane to know where the pointer is.
+
+- **Nothing says where a link goes before it is followed.** A program
+  can put any address under any words, so "click here" can go
+  anywhere. Showing the address, in the corner or as a hover, is the
+  usual answer.
+
 ## The file viewer
 
 - **The scrollback viewer shows no colours.** Marcus asked for the

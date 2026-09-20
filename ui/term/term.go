@@ -74,6 +74,11 @@ type Config struct {
 	// one drops the error, which is the caller's choice to make.
 	OnError func(error)
 
+	// OnLink is called with the address of a hyperlink the user asked
+	// to follow. A nil one leaves the link unfollowable: opening one
+	// is the window's business, not this package's.
+	OnLink func(string)
+
 	// ReadClipboard and WriteClipboard back the paste and copy
 	// shortcuts. A nil one disables that half.
 	ReadClipboard  func() string
@@ -945,6 +950,11 @@ func (t *Terminal) HandleMouse(ev input.MouseEvent) (bool, error) {
 	}
 	switch ev.Kind {
 	case input.MousePress:
+		// Ctrl and a press follows a link rather than starting a
+		// selection, which is what every other terminal does.
+		if ev.Mods.Has(input.ModCtrl) && t.followLink(ev.Col, ev.Row) {
+			return true, nil
+		}
 		t.selecting = true
 		t.g.SetSelection(grid.Selection{
 			Anchor: grid.Point{X: ev.Col, Y: ev.Row},
@@ -970,6 +980,63 @@ func (t *Terminal) HandleMouse(ev input.MouseEvent) (bool, error) {
 	}
 	t.pending.Store(true)
 	return true, nil
+}
+
+// LinkAt is the address of the hyperlink under a cell of the screen,
+// and empty where there is none.
+//
+// The row is the screen's own, counted from the top of the program's
+// output rather than from the top of the pane.
+func (t *Terminal) LinkAt(col, row int) string {
+	cols, rows := t.g.Size()
+	if col < 0 || row < 0 || col >= cols || row >= rows {
+		return ""
+	}
+	id := t.g.At(col, row).Link
+	if id == 0 {
+		return ""
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.term.LinkURL(id)
+}
+
+// CursorAt is the pointer to draw over a cell: the hand where holding
+// ctrl and clicking would follow a link, and the ordinary one
+// otherwise.
+//
+// Ctrl, because a plain press picks text out and a link the user
+// cannot select around would be worse than one they have to hold a
+// key for. The same rule VS Code and Windows Terminal use.
+func (t *Terminal) CursorAt(col, row int, mods input.Mods) (ui.Cursor, bool) {
+	if mods&input.ModCtrl == 0 || t.cfg.OnLink == nil {
+		return ui.CursorDefault, false
+	}
+	if n := t.capRows(); n > 0 {
+		if row < n {
+			return ui.CursorDefault, false
+		}
+		row -= n
+	}
+	if t.LinkAt(col, row) == "" {
+		return ui.CursorDefault, false
+	}
+	return ui.CursorPointing, true
+}
+
+// followLink opens the link under a cell, and reports whether there
+// was one. The press is taken either way: a ctrl press over a pane is
+// not the start of a selection.
+func (t *Terminal) followLink(col, row int) bool {
+	if t.cfg.OnLink == nil {
+		return false
+	}
+	at := t.LinkAt(col, row)
+	if at == "" {
+		return false
+	}
+	t.cfg.OnLink(at)
+	return true
 }
 
 // reportable reports whether ev belongs to a gesture the program was

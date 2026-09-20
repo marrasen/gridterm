@@ -100,6 +100,12 @@ type Terminal struct {
 	dir     string
 	dirHost string
 
+	// links are the hyperlinks OSC 8 has named, by the number cells
+	// carry. byURL finds the number one already has, so a listing of
+	// fifty links to the same page costs one entry.
+	links []string
+	byURL map[string]uint32
+
 	// cmd is what the shell's prompt marks have said so far.
 	cmd Command
 
@@ -228,6 +234,7 @@ func (t *Terminal) EscDispatch(intermediates []byte, _ bool, b byte) {
 		t.lastRune = 0
 		t.title = ""
 		t.dir, t.dirHost = "", ""
+		t.links, t.byURL = nil, nil
 	case '=': // DECKPAM
 		t.scr.mode.AppKeypad = true
 	case '>': // DECKPNM
@@ -498,11 +505,90 @@ func (t *Terminal) OscDispatch(params [][]byte, _ bool) {
 		}
 	case "7":
 		t.setDir(params)
+	case "8":
+		t.setLink(params)
 	case "52":
 		t.clipboard(params)
 	case "133", "633":
 		t.semanticPrompt(params)
 	}
+}
+
+// MostLinks is how many hyperlinks a pane remembers.
+//
+// A page of output can name a great many, and each one is a string
+// held for as long as the pane is. Past this, a new one is not taken
+// and the text is drawn without a link: the words are still there to
+// read and to copy.
+const MostLinks = 4096
+
+// setLink takes OSC 8, which is how a program puts a hyperlink under
+// the text it is about to print.
+//
+// It is "OSC 8 ; params ; URI", and a URI of nothing ends the link.
+// The parameters carry an id the program uses to join two runs of one
+// link, which nothing here needs: what is under the cells is the
+// address.
+func (t *Terminal) setLink(params [][]byte) {
+	if len(params) < 3 {
+		// Not enough to be a link at all. The safe reading is the end
+		// of one, which is what a program that sends a short one on
+		// the way out means.
+		t.scr.SetPenLink(0)
+		return
+	}
+	// The address may hold a semicolon, and the parser cuts on those.
+	uri := string(bytes.Join(params[2:], []byte(";")))
+	t.scr.SetPenLink(t.linkID(uri))
+}
+
+// linkID is the number cells carry for an address, taking a new one
+// the first time an address is seen.
+func (t *Terminal) linkID(uri string) uint32 {
+	uri = strings.TrimSpace(uri)
+	if uri == "" || !safeLink(uri) {
+		return 0
+	}
+	if id, had := t.byURL[uri]; had {
+		return id
+	}
+	if len(t.links) >= MostLinks {
+		return 0
+	}
+	if t.byURL == nil {
+		t.byURL = map[string]uint32{}
+	}
+	t.links = append(t.links, uri)
+	id := uint32(len(t.links))
+	t.byURL[uri] = id
+	return id
+}
+
+// LinkURL is the address a cell's link number names, and empty for a
+// cell with no link or a number this terminal does not know.
+func (t *Terminal) LinkURL(id uint32) string {
+	if id == 0 || int(id) > len(t.links) {
+		return ""
+	}
+	return t.links[id-1]
+}
+
+// safeLink reports whether an address is one worth offering to open.
+//
+// The program at the far end of a pane may be anything, and a link is
+// a thing the user clicks. Only the schemes a browser is the right
+// answer for, and nothing that could hand a local program a command
+// line: no file, no javascript, no data.
+func safeLink(uri string) bool {
+	scheme, _, found := strings.Cut(uri, ":")
+	if !found {
+		return false
+	}
+	switch strings.ToLower(scheme) {
+	case "http", "https", "mailto", "ftp", "ftps":
+		return true
+	}
+	return false
 }
 
 // setDir takes OSC 7, which is how a shell says where it is.

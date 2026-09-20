@@ -345,7 +345,7 @@ func (d *Dock) CancelGesture() { d.dragging = false }
 
 // CursorAt returns the sideways arrow over the divider, and over
 // everything else while the divider is being dragged.
-func (d *Dock) CursorAt(col, row int) (Cursor, bool) {
+func (d *Dock) CursorAt(col, row int, mods input.Mods) (Cursor, bool) {
 	if d.dragging {
 		return CursorEWResize, true
 	}
@@ -355,10 +355,10 @@ func (d *Dock) CursorAt(col, row int) (Cursor, bool) {
 		return CursorEWResize, true
 	case !panel.Empty() && panel.Contains(col, row):
 		x, y := panel.Local(col, row)
-		return CursorAt(d.panel, x, y)
+		return CursorAt(d.panel, x, y, mods)
 	case !rest.Empty() && rest.Contains(col, row):
 		x, y := rest.Local(col, row)
-		return CursorAt(d.rest, x, y)
+		return CursorAt(d.rest, x, y, mods)
 	}
 	return CursorDefault, false
 }

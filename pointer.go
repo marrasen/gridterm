@@ -46,7 +46,7 @@ func (a *app) pointerCursor(px, py int) ui.Cursor {
 		// the button comes up, so the pointer is still ours to draw.
 		return ui.CursorDefault
 	}
-	return a.root.CursorAt(col, row)
+	return a.root.CursorAt(col, row, a.mods())
 }
 
 // setCursorShape tells the window which pointer to draw.
@@ -59,6 +59,8 @@ func shapeOf(c ui.Cursor) ebiten.CursorShapeType {
 		return ebiten.CursorShapeEWResize
 	case ui.CursorNSResize:
 		return ebiten.CursorShapeNSResize
+	case ui.CursorPointing:
+		return ebiten.CursorShapePointer
 	}
 	return ebiten.CursorShapeDefault
 }

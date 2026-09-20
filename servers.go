@@ -193,6 +193,7 @@ func (a *app) newTerminalOn(sess session.Session, host string, kind conns.Kind,
 		WriteClipboard: a.clip.set,
 		OnExit:         a.paneExited,
 		OnError:        a.logError,
+		OnLink:         a.followLink,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("start terminal: %w", err)

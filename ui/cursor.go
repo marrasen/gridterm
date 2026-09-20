@@ -1,5 +1,7 @@
 package ui
 
+import "github.com/marrasen/gridterm/input"
+
 // Cursor is a shape the mouse pointer takes.
 //
 // The toolkit names the shape rather than setting it: nothing here
@@ -18,6 +20,10 @@ const (
 	// CursorNSResize is the north-south arrow, over something dragged up
 	// and down.
 	CursorNSResize
+
+	// CursorPointing is the hand, over something that leads somewhere:
+	// a hyperlink a program put under its text.
+	CursorPointing
 )
 
 // CursorSource is a widget that says which pointer belongs over a point
@@ -30,9 +36,12 @@ const (
 //
 // Returning false leaves the answer to whoever asked, which means the
 // ordinary pointer.
+// Mods are the modifier keys held, because what a pointer means can
+// depend on them: ctrl over a hyperlink is a hand, and over the same
+// cell without it is the ordinary pointer.
 type CursorSource interface {
 	Widget
-	CursorAt(col, row int) (Cursor, bool)
+	CursorAt(col, row int, mods input.Mods) (Cursor, bool)
 }
 
 // CursorAt is the pointer over a point of a widget, in that widget's own
@@ -40,10 +49,10 @@ type CursorSource interface {
 //
 // A container with nothing to say is walked through, so a divider under
 // a stack of plain containers is still found.
-func CursorAt(w Widget, col, row int) (Cursor, bool) {
+func CursorAt(w Widget, col, row int, mods input.Mods) (Cursor, bool) {
 	switch v := w.(type) {
 	case CursorSource:
-		return v.CursorAt(col, row)
+		return v.CursorAt(col, row, mods)
 	case Container:
 		for _, child := range v.Children() {
 			area, ok := v.ChildArea(child)
@@ -51,7 +60,7 @@ func CursorAt(w Widget, col, row int) (Cursor, bool) {
 				continue
 			}
 			x, y := area.Local(col, row)
-			return CursorAt(child, x, y)
+			return CursorAt(child, x, y, mods)
 		}
 	}
 	return CursorDefault, false

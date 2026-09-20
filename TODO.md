@@ -34,7 +34,7 @@ work whichever way he answers.
 
 ## Picking text out, what is left
 
-Four things a review of the selection work on 2026-09-19 turned up and
+Two things a review of the selection work on 2026-09-19 turned up and
 the work did not answer.
 
 - **Shift and a page key scrolls rather than picking text out.** The
@@ -58,16 +58,12 @@ the work did not answer.
   one-character selection in the corner rather than where the user was
   looking. Defensible, and still a surprise.
 
-- **Ctrl+X in the file viewer does nothing and says nothing.** There is
-  nothing to cut from a file being read, so this is right, but the
-  silence is not obviously the answer to anything.
-
-Two older keys of the same shape as the Shift+PageUp one, found on the
-way past: Ctrl+Shift+D splits the pane rather than closing the reader,
-and Ctrl+Shift+H opens the help rather than turning hex on. Both are
-window accelerators, and the reader's own cases match any Ctrl chord.
-`ui/files/browser.go` shows the pattern that avoids it: decline anything
-that is not a plain Ctrl.
+Done from the same review: Ctrl+X now says there is nothing to cut from
+a file being read, and the reader declines a chord its bar never
+offered. It used to match any Ctrl chord, so Ctrl+Shift+R reread the
+file and Ctrl+Shift+F followed it, and Ctrl+Shift+H and Ctrl+Shift+D
+only reached the window's help and split because an accelerator runs
+first.
 
 ## Asked for on 2026-09-19, second set
 

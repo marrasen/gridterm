@@ -23,6 +23,10 @@ import (
 // the file ends there.
 const MostReadBytes = 8 << 20
 
+// cannotCut is what Ctrl+X says. There is nothing to cut from a file
+// being read, and a key that goes quiet reads as a broken one.
+const cannotCut = "there is nothing to cut from a file you are reading"
+
 // MostReadLine is the longest line a reader keeps whole. Past it the
 // line is cut and the rest dropped, because a file with no newlines in
 // it is one line as long as the file.
@@ -495,6 +499,15 @@ func (r *Reader) HandleKey(ev input.Event) (bool, error) {
 	// Whatever was said last is said once: the next key is the user
 	// having read it.
 	r.said = ""
+	// A chord the bar never offered is not the bar's key. Ctrl+Shift+H is
+	// not Ctrl+H: the window opens its help on that one, and a reader that
+	// turned hex on underneath would be acting on a key pressed for
+	// something else.
+	switch ev.Mods {
+	case 0, input.ModCtrl, input.ModShift:
+	default:
+		return true, nil
+	}
 	switch {
 	// Shift and a key that moves takes the loose end of the selection
 	// with it, which is how text is picked out without a mouse.
@@ -542,6 +555,10 @@ func (r *Reader) HandleKey(ev input.Event) (bool, error) {
 		if r.OnClose != nil {
 			r.OnClose()
 		}
+	case ev.Key == input.KeyX && ev.Ctrl():
+		// Ctrl+C copies here, so Ctrl+X is the next thing a hand tries.
+		// Saying why beats a key that looks broken.
+		r.said = cannotCut
 	default:
 		// Every other key is swallowed all the same: a reader is not a
 		// terminal, and a letter typed into one must not reach the shell

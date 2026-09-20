@@ -75,6 +75,11 @@ func (r *Reader) pictureKey(ev input.Event) (bool, error) {
 	if ev.Kind != input.KeyPress && ev.Kind != input.KeyRepeat {
 		return ev.Kind == input.Text, nil
 	}
+	// Only a plain Ctrl, for the reason the file of lines gives: the
+	// window has its own meaning for Ctrl+Shift and a letter.
+	if ev.Mods != 0 && ev.Mods != input.ModCtrl {
+		return true, nil
+	}
 	switch {
 	case ev.Key == input.KeyR && ev.Ctrl():
 		r.Open()

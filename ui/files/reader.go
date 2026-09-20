@@ -119,6 +119,25 @@ type Reader struct {
 	shown []string
 	hex   bool
 
+	// log is the file laid out as a log, and nil when it is shown as
+	// it was written.
+	log *logView
+
+	// isLog says the file looks like one, so the key is on the bar
+	// whether or not the view is on, and logOn whether the user wants
+	// the view. A file that looks like a log gets it without being
+	// asked, and the key turns it off.
+	isLog bool
+	logOn bool
+
+	// showMap turns on the strip beside the file, and mapBands is what
+	// it draws: worked out for mapLines lines at mapFor rows, and
+	// again when either changes.
+	showMap  bool
+	mapBands []band
+	mapFor   int
+	mapLines int
+
 	// colour turns a line into the stretches it is drawn in, picked from
 	// what the file is called. A nil one leaves the file plain.
 	colour colourer
@@ -181,7 +200,17 @@ type Reader struct {
 // NewReader returns a reader for one file, showing nothing until Open is
 // called.
 func NewReader(name, at string) *Reader {
-	return &Reader{name: name, at: at, isPic: IsPicture(name), colour: colourerFor(name), found: -1}
+	return &Reader{
+		name: name, at: at,
+		isPic:  IsPicture(name),
+		colour: colourerFor(name),
+		found:  -1,
+		// The strip is on to begin with. It costs one column of a pane
+		// wide enough to spare it, and a file long enough to need it
+		// is the case a reader is opened for.
+		showMap: true,
+		mapFor:  -1,
+	}
 }
 
 // Name is what the file is called, for a row that has to name it.
@@ -261,6 +290,14 @@ func (r *Reader) Open() bool {
 			return
 		}
 		r.lines, r.cut = lines, cut
+		// Whether this is a log is decided on what arrived, and the
+		// view goes on by itself: a file that reads as columns is
+		// easier to read than one that reads as JSON, and the key
+		// turns it off for anyone who wants the JSON.
+		if was := r.isLog; !was {
+			r.isLog = LooksLikeALog(r.name, lines)
+			r.logOn = r.logOn || r.isLog
+		}
 		r.remake()
 		if r.stuck {
 			// Following, and the end is where it was left, so the new
@@ -414,6 +451,10 @@ func (r *Reader) rows() int { return max(r.size.Rows-readerChrome, 0) }
 // the top and the bar of keys at the bottom.
 const readerChrome = 2
 
+// keyBarRoom is the narrowest pane whose bar has room for a ninth key,
+// at ten columns each: enough for the longest title the bar carries.
+const keyBarRoom = 90
+
 // clampTop holds the first line and the first column shown inside the
 // file. A file that is read again shorter would otherwise leave the pane
 // scrolled past the end of every line it now has, showing nothing.
@@ -424,7 +465,7 @@ func (r *Reader) clampTop() {
 
 // lastLeft is the furthest the file scrolls across: the end of the
 // longest line at the right edge.
-func (r *Reader) lastLeft() int { return max(r.widest()-r.size.Cols, 0) }
+func (r *Reader) lastLeft() int { return max(r.widest()-r.bodyCols(), 0) }
 
 // lastTop is the furthest the file scrolls: the last screenful, so the
 // end of a file sits at the bottom of the pane rather than at the top
@@ -521,6 +562,26 @@ func (r *Reader) keys() []Key {
 		return PictureKeys()
 	}
 	keys := ReaderKeys()
+	// One of the two, never both: the bar divides the room it has
+	// between the keys on it, and a tenth key makes every label too
+	// short to read.
+	//
+	// The log view wins where there is one, because a file that reads
+	// as columns rather than as JSON is a surprise worth a key. The
+	// strip is on by default and turning it off is the rarer wish.
+	//
+	// And only on a pane with the room for a ninth. The bar divides
+	// what it has between the keys on it, so a key added to a narrow
+	// one takes a character off the title of every other key. The
+	// chord works whether or not the bar has room to say so.
+	if r.size.Cols >= keyBarRoom {
+		switch {
+		case r.isLog:
+			keys = append(keys, LogKey(r.Logged()))
+		case len(r.shown) > 0:
+			keys = append(keys, MapKey())
+		}
+	}
 	if r.Selected() {
 		keys = append(keys, CopyKey())
 	}
@@ -581,6 +642,18 @@ func (r *Reader) ClaimsChord(ev input.Event, bound string) bool {
 
 // HandleKey moves through the file.
 func (r *Reader) HandleKey(ev input.Event) (bool, error) {
+	if ev.Kind == input.KeyPress && ev.Mods == input.ModCtrl {
+		switch ev.Key {
+		case input.KeyJ:
+			if r.isLog {
+				r.Log(!r.logOn)
+				return true, nil
+			}
+		case input.KeyM:
+			r.ShowMap(!r.showMap)
+			return true, nil
+		}
+	}
 	if r.isPic {
 		return r.pictureKey(ev)
 	}
@@ -751,6 +824,12 @@ func (r *Reader) HandleMouse(ev input.MouseEvent) (bool, error) {
 		}
 		return true, nil
 	}
+	// The strip beside the file: a press on it goes to that part of
+	// the file rather than picking text out of a column that holds
+	// none.
+	if r.mapPress(ev.Col, ev.Row, r.size.Rows) {
+		return true, nil
+	}
 	if !r.picking() || !r.inBody(ev.Row) {
 		return true, nil
 	}
@@ -798,6 +877,9 @@ func (r *Reader) Draw(v grid.View) {
 	if r.hex && !r.isPic {
 		head += " (hex)"
 	}
+	if r.Logged() {
+		head += " (log)"
+	}
 	if r.follow {
 		head += " (following)"
 	}
@@ -816,7 +898,8 @@ func (r *Reader) Draw(v grid.View) {
 		// The picture goes on a layer over the pane, so the body is left
 		// as it is: a picture is pixels, and the grid is for text.
 	default:
-		r.paintLines(v, cols, rows)
+		r.paintLines(v, r.bodyCols(), rows)
+		r.paintMap(v, cols, rows)
 	}
 	switch {
 	case rows <= 1:
@@ -838,7 +921,11 @@ func (r *Reader) paintLines(v grid.View, cols, rows int) {
 		}
 		line := r.shown[i]
 		at, wide, found := r.findsOn(line)
-		r.paintLine(v, y+1, line, cols)
+		if r.log != nil && i < len(r.log.marks) {
+			r.paintLogLine(v, y+1, line, r.log.marks[i], cols)
+		} else {
+			r.paintLine(v, y+1, line, cols)
+		}
 		if r.sel.on {
 			r.markSelected(v, y+1, i, cols)
 		}
@@ -961,6 +1048,8 @@ func (r *Reader) colourOf(c colour) color.RGBA {
 		return r.Style.LinkFG
 	case colourMark:
 		return r.Style.MarkedFG
+	case colourBad:
+		return r.Style.ErrorFG
 	}
 	return r.Style.FG
 }

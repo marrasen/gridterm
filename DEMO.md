@@ -187,6 +187,14 @@ The bits to say out loud if anyone in the room owns the servers.
       to a line, `Ctrl+H` for a hex dump.
 - [ ] **A tailed file** is asked about three times a second and stays
       at its end; scroll back and it leaves you where you put yourself.
+- [ ] **A strip beside the file**, where a code editor puts its
+      minimap: the shape of the whole file at once, the pane's place in
+      it as a box, and a click to go there. `Ctrl+M` turns it off.
+- [ ] **A JSON log read as a log.** A file of JSON lines lays itself
+      out in columns — time, level, message, then the rest of the
+      fields — with the level coloured for what it means, and a second
+      strip column marking which parts of the file went wrong. `Ctrl+J`
+      puts the raw JSON back. Good with a real log from a server.
 - [ ] **Code is coloured** by what the file is called, markdown gets
       its headings, and a picture file shows the picture.
 - [ ] **File work in the background.** Copying, moving and deleting, on
@@ -265,9 +273,10 @@ is, so a question in the room gets a straight answer.
 
 ## Next, in order
 
-1. **The file viewer**, which means: a scrollbar minimap, a JSON log
-   viewer like the one in particleview5-bugreport-viewer, and the
-   scrollback viewer keeping the terminal's colours.
+1. **The file viewer.** The minimap and the JSON log viewer are in.
+   What is left of it: the scrollback viewer keeping the terminal's
+   colours, and filtering a log by level and by field, which is most
+   of what makes the bugreport viewer useful.
 2. **Pasting a picture into a terminal** — done on Windows, the rest of
    the platforms to go.
 

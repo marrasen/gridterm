@@ -93,6 +93,18 @@ emulator, and draws the resulting character grid as batched triangles.
   shows the picture, on a layer of its own over the pane: the grid is for
   text. Nothing is read on the goroutine that draws, and a file that will
   not read says why rather than showing an empty pane.
+- **A strip beside the file**, where a code editor puts its minimap and
+  doing the same job: the shape of the whole file at once, the pane's
+  place in it as a box, and a click to go there. A log gets a second
+  column for how bad it got, so one error in a thousand quiet lines is
+  found by looking rather than by scrolling. `Ctrl+M` turns it off.
+- **A log of JSON lines read as a log.** A file whose lines are JSON
+  objects is laid out in columns -- the time, the level, the message,
+  and the rest of the fields after it -- with the level coloured for
+  what it means. It turns itself on for a file that looks like one, and
+  `Ctrl+J` puts the JSON back. Every logger spells the fields
+  differently, so `time`, `ts`, `@timestamp`, `level`, `severity`,
+  `msg` and `message` are all read.
 - **Links and file paths in the output.** Ctrl and a click follows a
   link a program declared with OSC 8, an address written out in the
   text, or a file the output named. Holding ctrl marks what is under

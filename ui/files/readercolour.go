@@ -31,8 +31,14 @@ const (
 	colourText
 
 	// colourMark is punctuation that carries meaning: a heading's
-	// hashes, a bullet, a number.
+	// hashes, a bullet, a number. The log view uses it for a warning.
 	colourMark
+
+	// colourBad is a failure: the level of a log line that went wrong.
+	//
+	// Last, because the order is how loud each one is and the strip
+	// beside the file takes the highest of a band.
+	colourBad
 )
 
 // colourer turns a line into runs. A nil one leaves the file plain.

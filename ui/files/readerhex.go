@@ -35,12 +35,22 @@ func (r *Reader) remake() {
 	// line it was on either.
 	r.found = -1
 	defer r.clampSel()
-	if !r.hex {
-		r.shown = r.lines
+	// The bands the strip draws stand for the lines that are shown, so
+	// they are worked out again when those change.
+	r.mapFor = -1
+	if r.hex {
+		r.shown, r.log = hexDump(r.lines), nil
 		r.wideOf = -1
 		return
 	}
-	r.shown = hexDump(r.lines)
+	if r.logOn && r.isLog {
+		if shown, view, ok := asLog(r.lines); ok {
+			r.shown, r.log = shown, view
+			r.wideOf = -1
+			return
+		}
+	}
+	r.shown, r.log = r.lines, nil
 	r.wideOf = -1
 }
 

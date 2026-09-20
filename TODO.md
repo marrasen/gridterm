@@ -214,11 +214,26 @@ stops when the pane closes.
   what it is given. Finding a line is what the viewer is for, and that
   works.
 
-- **A scrollbar minimap.** Marcus's own note, 2026-09-20.
+- **The strip beside the file has one shade per band.** How full the
+  lines are, from their length rather than from what is on them, so a
+  band of long comments reads the same as a band of long code. A code
+  editor's minimap draws the characters; this draws the shape.
 
-- **A JSON log viewer**, inspired by the one in
-  `G:\Workspace\particleview5-bugreport-viewer`. Marcus's own note,
-  2026-09-20.
+- **A band is measured from eight of its lines.** A band of a large
+  file is thousands, and what the strip shows is the shape of the file
+  rather than a measurement of it.
+
+- **The log view lays out one level of fields.** An object inside a
+  line comes back as the JSON it was, on one line. Opening it out
+  would want the pane the row inspector in the bugreport viewer has.
+
+- **A log past two hundred thousand lines is left as JSON.** Every
+  line is laid out on the goroutine that draws, and a file past that
+  would stop the window for a second.
+
+- **Nothing filters the log.** The bugreport viewer filters by level
+  and by field, which is most of what makes it useful. "/" searches
+  the laid-out text, which is not the same thing.
 
 - **A picture's count stops while it is decoded.** The read is counted
   and the decode is not, so a very large picture sits at its full size

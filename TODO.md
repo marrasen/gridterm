@@ -64,26 +64,23 @@ All six are about the context menu.
 
 ## Hyperlinks
 
-OSC 8 is in: a program says "this text is a link" and ctrl and a click
-follows it. What is left of Marcus's note, which asked for links to be
-detected as well as declared:
+Done: OSC 8, a bare address found in ordinary output, the link under
+the pointer underlined, and where it goes written along a row while
+ctrl is held. What is left:
 
-- **A bare address in the output is not a link.** Most output does not
-  use OSC 8: a URL printed by `curl`, a build error naming a file, a
-  git remote. Finding them means scanning the rows for something that
-  looks like an address, which is a guess rather than a program saying
-  so, and a guess that is wrong is a click that goes somewhere the
-  user did not mean. Worth doing, and worth being careful with.
+- **A link is only found on one row.** An address the shell wrapped
+  across two is two halves, and neither is followed. Joining them
+  means knowing a row was wrapped rather than ended, which the
+  emulator knows and the grid does not carry.
 
-- **A link is not marked on screen.** The pointer becomes a hand over
-  one while ctrl is held, and that is all: text with a link under it
-  looks like text without. Underlining it on hover is what other
-  terminals do, and needs the pane to know where the pointer is.
+- **The scrollback is not searched for links, only the screen.** A
+  link scrolled off is gone even though the text is still there.
+  `linkSpanAt` reads the rendered grid, which is the screen.
 
-- **Nothing says where a link goes before it is followed.** A program
-  can put any address under any words, so "click here" can go
-  anywhere. Showing the address, in the corner or as a hover, is the
-  usual answer.
+- **Nothing opens a file path.** A build error naming
+  `src/main.go:42` is the thing a user most wants to click, and it is
+  not an address: it needs a rule for what a path looks like, and an
+  answer to what clicking one should do.
 
 ## The file viewer
 

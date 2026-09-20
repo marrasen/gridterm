@@ -187,6 +187,14 @@ type Terminal struct {
 	// only a drag when a drag started here.
 	selecting bool
 
+	// hoverLink is the address the pointer is over while ctrl is held,
+	// and hoverRow with hoverFrom and hoverTo are the stretch of the
+	// screen it runs across, so it can be underlined. All of it is the
+	// drawing goroutine's.
+	hoverLink          string
+	hoverRow           int
+	hoverFrom, hoverTo int
+
 	// reported is a bit per button the program was told went down, so a
 	// drag or a release from a gesture it never saw the press for is
 	// held back.
@@ -727,6 +735,40 @@ func (t *Terminal) paintCaption(v grid.View) {
 	v.SetString(0, 0, grid.TrimTail(t.caption, cols), t.pal.FG, bg, 0)
 }
 
+// paintLinkTarget writes the address under the pointer along a row of
+// the screen, the way a browser writes it along the bottom.
+//
+// A program can put any address under any words, so "click here" can
+// go anywhere. Nothing else in the pane says where a link leads, and
+// the user is about to click it.
+//
+// Along the bottom, unless the link itself is down there, in which
+// case along the top: covering the thing being pointed at would be
+// worse than moving.
+func (t *Terminal) paintLinkTarget(v grid.View) {
+	if t.hoverLink == "" {
+		return
+	}
+	cols, rows := v.Size()
+	if cols <= 0 || rows <= 0 {
+		return
+	}
+	y := rows - 1
+	if t.hoverRow == y {
+		y = 0
+	}
+	// Trimmed from the front, so the machine it goes to stays readable
+	// when the path is long: that is the half that says where it goes.
+	shown := t.hoverLink
+	if grid.StringWidth(shown) > cols {
+		shown = grid.Trim(shown, cols)
+	}
+	bg := askBG(t.pal)
+	line := v.Sub(0, y, cols, 1)
+	line.Fill(grid.Cell{Rune: ' ', FG: t.pal.FG, BG: bg, Width: 1})
+	line.SetString(0, 0, shown, t.pal.FG, bg, grid.AttrUnderline)
+}
+
 // DrawScreen paints the whole screen onto a view of its own, for a host
 // drawing this terminal somewhere other than where the layout put it.
 func (t *Terminal) DrawScreen(v grid.View) { t.draw(v) }
@@ -760,9 +802,16 @@ func (t *Terminal) draw(v grid.View) {
 			c := t.g.At(x, y)
 			c.FG, c.BG = t.g.FGOf(x, y), t.g.BGOf(x, y)
 			c.Attr &^= grid.AttrReverse
+			// The link under the pointer is underlined, so the user
+			// can see what a click would follow. Only while ctrl is
+			// held, which is the only time a click would follow it.
+			if t.hoverLink != "" && y == t.hoverRow && x >= t.hoverFrom && x < t.hoverTo {
+				c.Attr |= grid.AttrUnderline
+			}
 			v.Set(x, y, c)
 		}
 	}
+	t.paintLinkTarget(v)
 	// Only the focused terminal touches the cursor. A grid has one and no
 	// idea who owns it, so an unfocused widget writing even a hidden
 	// cursor would take it from whoever has it. Clearing it once a frame
@@ -988,37 +1037,115 @@ func (t *Terminal) HandleMouse(ev input.MouseEvent) (bool, error) {
 // The row is the screen's own, counted from the top of the program's
 // output rather than from the top of the pane.
 func (t *Terminal) LinkAt(col, row int) string {
+	at, _, _ := t.linkSpanAt(col, row)
+	return at
+}
+
+// linkSpanAt is the hyperlink under a cell and the columns it runs
+// between, the second one past the end.
+//
+// A program that means a link says so with OSC 8, and that is looked
+// at first. Failing that the row is read for something that looks
+// like an address, which is a guess and is treated as one: only a
+// written-out scheme counts.
+func (t *Terminal) linkSpanAt(col, row int) (at string, from, to int) {
 	cols, rows := t.g.Size()
 	if col < 0 || row < 0 || col >= cols || row >= rows {
-		return ""
+		return "", 0, 0
 	}
-	id := t.g.At(col, row).Link
-	if id == 0 {
-		return ""
+	if id := t.g.At(col, row).Link; id != 0 {
+		t.mu.Lock()
+		said := t.term.LinkURL(id)
+		t.mu.Unlock()
+		if said != "" {
+			a, b := t.runOfLink(id, col, row)
+			return said, a, b
+		}
 	}
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	return t.term.LinkURL(id)
+	found, a, b, ok := findLink(t.rowRunes(row), col)
+	if !ok {
+		return "", 0, 0
+	}
+	return found, a, b
 }
+
+// runOfLink is the stretch of one row carrying the same link number,
+// which is the text the program put the address under.
+func (t *Terminal) runOfLink(id uint32, col, row int) (from, to int) {
+	cols, _ := t.g.Size()
+	from, to = col, col+1
+	for from > 0 && t.g.At(from-1, row).Link == id {
+		from--
+	}
+	for to < cols && t.g.At(to, row).Link == id {
+		to++
+	}
+	return from, to
+}
+
+// rowRunes is one row of the screen, one rune per column, so a column
+// and an index into it are the same thing.
+//
+// The second half of a double-width character has no rune of its own
+// and comes back as a space, which no address holds: a link is not
+// found across one, which is right.
+func (t *Terminal) rowRunes(row int) []rune {
+	cols, _ := t.g.Size()
+	out := make([]rune, cols)
+	for x := range cols {
+		c := t.g.At(x, row)
+		if c.Rune == 0 || c.Width == 0 {
+			out[x] = ' '
+			continue
+		}
+		out[x] = c.Rune
+	}
+	return out
+}
+
+// SetHover says where the pointer is over the screen and what is
+// held with it, so a link under it can be marked and named.
+//
+// The row is the screen's own. A row below zero is the pointer being
+// somewhere else, which takes the marking off.
+func (t *Terminal) SetHover(col, row int, mods input.Mods) {
+	at, from, to := "", 0, 0
+	if row >= 0 && mods&input.ModCtrl != 0 && t.cfg.OnLink != nil {
+		at, from, to = t.linkSpanAt(col, row)
+	}
+	if at == t.hoverLink && row == t.hoverRow && from == t.hoverFrom && to == t.hoverTo {
+		return
+	}
+	t.hoverLink, t.hoverRow, t.hoverFrom, t.hoverTo = at, row, from, to
+	t.pending.Store(true)
+}
+
+// HoveredLink is the address the pointer is over, and empty when it
+// is over none. It is what a window shows so the user can see where
+// a link goes before following it.
+func (t *Terminal) HoveredLink() string { return t.hoverLink }
 
 // CursorAt is the pointer to draw over a cell: the hand where holding
 // ctrl and clicking would follow a link, and the ordinary one
 // otherwise.
 //
+// It is also where the pane learns where the pointer is, because the
+// window asks this once a frame: a link under it is marked and named
+// from what this records.
+//
 // Ctrl, because a plain press picks text out and a link the user
 // cannot select around would be worse than one they have to hold a
 // key for. The same rule VS Code and Windows Terminal use.
 func (t *Terminal) CursorAt(col, row int, mods input.Mods) (ui.Cursor, bool) {
-	if mods&input.ModCtrl == 0 || t.cfg.OnLink == nil {
-		return ui.CursorDefault, false
-	}
 	if n := t.capRows(); n > 0 {
 		if row < n {
+			t.SetHover(col, -1, mods)
 			return ui.CursorDefault, false
 		}
 		row -= n
 	}
-	if t.LinkAt(col, row) == "" {
+	t.SetHover(col, row, mods)
+	if t.hoverLink == "" {
 		return ui.CursorDefault, false
 	}
 	return ui.CursorPointing, true
@@ -1031,7 +1158,7 @@ func (t *Terminal) followLink(col, row int) bool {
 	if t.cfg.OnLink == nil {
 		return false
 	}
-	at := t.LinkAt(col, row)
+	at, _, _ := t.linkSpanAt(col, row)
 	if at == "" {
 		return false
 	}

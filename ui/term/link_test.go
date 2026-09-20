@@ -1,8 +1,10 @@
 package term
 
 import (
+	"strings"
 	"testing"
 
+	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/input"
 	"github.com/marrasen/gridterm/ui"
 )
@@ -128,5 +130,130 @@ func TestTheAddressUnderACellIsReadable(t *testing.T) {
 		if got := term.LinkAt(at[0], at[1]); got != "" {
 			t.Errorf("the cell at %v has %q, want nothing", at, got)
 		}
+	}
+}
+
+// A bare address printed by a program is followable, even though
+// nothing said it was a link. Most output does not use OSC 8.
+func TestABareAddressInOutputIsFollowable(t *testing.T) {
+	var followed []string
+	term, f := newTestTerm(t, 60, 5, Config{
+		OnLink: func(at string) { followed = append(followed, at) },
+	})
+	f.feed(t, term, "see https://example.com/page for more\r\n")
+	draw(term, 60, 5)
+
+	mousePress(t, term, input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft,
+		Col: 10, Row: 0, Mods: input.ModCtrl,
+	})
+
+	if len(followed) != 1 || followed[0] != "https://example.com/page" {
+		t.Errorf("it followed %v, want the address in the line", followed)
+	}
+}
+
+// What a program said beats what the text looks like: an OSC 8 link
+// whose words happen to be an address follows the one it declared.
+func TestWhatTheProgramSaidBeatsTheGuess(t *testing.T) {
+	var followed []string
+	term, f := newTestTerm(t, 60, 5, Config{
+		OnLink: func(at string) { followed = append(followed, at) },
+	})
+	f.feed(t, term, "\x1b]8;;https://declared.example\x07https://printed.example\x1b]8;;\x07")
+	draw(term, 60, 5)
+
+	mousePress(t, term, input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft,
+		Col: 5, Row: 0, Mods: input.ModCtrl,
+	})
+
+	if len(followed) != 1 || followed[0] != "https://declared.example" {
+		t.Errorf("it followed %v, want the address the program declared", followed)
+	}
+}
+
+// The link under the pointer is underlined, so the user can see what
+// a click would follow.
+func TestTheLinkUnderThePointerIsUnderlined(t *testing.T) {
+	term, _ := aLinkedPane(t, 40, 5)
+
+	term.SetHover(2, 0, input.ModCtrl)
+
+	g := draw(term, 40, 5)
+	for x := range 5 {
+		if g.At(x, 0).Attr&grid.AttrUnderline == 0 {
+			t.Errorf("column %d of the link is not underlined", x)
+		}
+	}
+	if g.At(6, 0).Attr&grid.AttrUnderline != 0 {
+		t.Error("the text after the link is underlined too")
+	}
+}
+
+// Nothing is underlined without ctrl, because without it a press
+// means something else.
+func TestNothingIsUnderlinedWithoutCtrl(t *testing.T) {
+	term, _ := aLinkedPane(t, 40, 5)
+
+	term.SetHover(2, 0, 0)
+
+	g := draw(term, 40, 5)
+	if g.At(0, 0).Attr&grid.AttrUnderline != 0 {
+		t.Error("the link is underlined with no ctrl held")
+	}
+}
+
+// Where the link goes is written along the bottom, the way a browser
+// writes it: a program can put any address under any words.
+func TestWhereTheLinkGoesIsShown(t *testing.T) {
+	term, _ := aLinkedPane(t, 40, 6)
+
+	term.SetHover(2, 0, input.ModCtrl)
+
+	if got := term.HoveredLink(); got != "https://example.com/a" {
+		t.Errorf("it says the link goes to %q", got)
+	}
+	if got := rowText(draw(term, 40, 6), 5); !strings.Contains(got, "https://example.com/a") {
+		t.Errorf("the bottom row says %q, want the address", got)
+	}
+}
+
+// And along the top when the link itself is along the bottom, rather
+// than covering the thing being pointed at.
+func TestTheAddressMovesOffTheLinkItNames(t *testing.T) {
+	var followed []string
+	term, f := newTestTerm(t, 40, 3, Config{
+		OnLink: func(at string) { followed = append(followed, at) },
+	})
+	f.feed(t, term, "\r\n\r\nhttps://example.com/down")
+	draw(term, 40, 3)
+
+	term.SetHover(2, 2, input.ModCtrl)
+
+	g := draw(term, 40, 3)
+	if got := rowText(g, 0); !strings.Contains(got, "https://example.com/down") {
+		t.Errorf("the top row says %q, want the address moved off the link", got)
+	}
+	if got := rowText(g, 2); !strings.Contains(got, "https://example.com/down") {
+		t.Errorf("the link's own row says %q, want the link still there", got)
+	}
+}
+
+// The pointer leaving takes the marking with it.
+func TestThePointerLeavingTakesTheMarkingAway(t *testing.T) {
+	term, _ := aLinkedPane(t, 40, 5)
+	term.SetHover(2, 0, input.ModCtrl)
+	if term.HoveredLink() == "" {
+		t.Fatal("nothing is hovered, so this proves nothing")
+	}
+
+	term.SetHover(2, -1, input.ModCtrl)
+
+	if got := term.HoveredLink(); got != "" {
+		t.Errorf("it still says %q after the pointer left", got)
+	}
+	if draw(term, 40, 5).At(0, 0).Attr&grid.AttrUnderline != 0 {
+		t.Error("the link is still underlined after the pointer left")
 	}
 }

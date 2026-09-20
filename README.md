@@ -133,6 +133,12 @@ emulator, and draws the resulting character grid as batched triangles.
   that was there or the whole of the new one, never half of either. Every
   failure stops the job and says why: half a directory that says it
   worked is worse than one that stopped.
+- **Tunnels you can find again and look inside.** Clicking a tunnel's
+  row opens a pane for it: what it has been doing, a way to watch what
+  goes through it, and the button that closes it. Watching is off
+  until asked for, because a tunnel carries whatever it carries. A
+  tunnel can be kept the way a command can, and each one kept is a
+  line on the palette.
 - **Tunnels.** A port here that stands for a service over there, a port
   over there that stands for one here, or a SOCKS5 proxy that reaches
   whatever it is asked for as the far machine sees it. A tunnel with no

@@ -61,9 +61,21 @@ func (a *app) showLog() error {
 // is at most one: a second would show the same lines twice.
 func (a *app) logPane() *term.Terminal {
 	for t, e := range a.panes {
-		if e != nil && e.Kind == conns.Log {
-			return t
+		if e == nil || e.Kind != conns.Log || a.showsATunnel(t) {
+			continue
 		}
+		return t
 	}
 	return nil
+}
+
+// showsATunnel reports whether a pane is one a tunnel opened. Those
+// read a log too, and the window's own is not one of them.
+func (a *app) showsATunnel(t *term.Terminal) bool {
+	for _, pane := range a.tunnelPanes {
+		if pane == t {
+			return true
+		}
+	}
+	return false
 }

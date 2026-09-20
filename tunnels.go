@@ -3,11 +3,11 @@ package main
 import (
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"strconv"
 
 	"github.com/marrasen/gridterm/conns"
+	"github.com/marrasen/gridterm/logs"
 	"github.com/marrasen/gridterm/meter"
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/ui"
@@ -34,14 +34,22 @@ type tunnel struct {
 	// the rest are counted on the row.
 	trouble int
 	told    bool
+
+	// seen is what this tunnel has been doing, for its pane to show:
+	// when it opened, every stream that failed, and the traffic itself
+	// while somebody is watching.
+	seen *logs.Lines
+
+	// watching is what copies the traffic into seen, and is off until
+	// the pane asks for it.
+	watching *trafficTap
 }
 
-// counted is how a tunnel tells the panel what has moved through it.
-type counted struct{ m *meter.Meter }
-
-// Wrap returns a writer that counts what goes through it.
-func (c counted) Wrap(w io.Writer, out bool) io.Writer {
-	return meter.Writer{W: w, M: c.m, Out: out}
+// counted is how a tunnel tells the panel what has moved through it,
+// and how the pane watching it reads what goes past.
+type counted struct {
+	m *meter.Meter
+	t *trafficTap
 }
 
 // confirmTunnel asks again when the tunnel would be open to the rest of
@@ -116,7 +124,8 @@ func (a *app) startTunnel(host string, t remote.Tunnel) (*remote.Forwarder, erro
 		return nil, fmt.Errorf("nothing is connected to %s any more", host)
 	}
 
-	count := counted{m: meter.New()}
+	seen := logs.New(mostTunnelLines, nil)
+	count := counted{m: meter.New(), t: &trafficTap{}}
 	e := &conns.Entry{
 		Host:  host,
 		Kind:  conns.Tunnel,
@@ -142,7 +151,10 @@ func (a *app) startTunnel(host string, t remote.Tunnel) (*remote.Forwarder, erro
 	// when the tunnel asked for any free one.
 	e.Label = tunnelLabel(f)
 	e.Close = func() error { return a.closeTunnel(e) }
-	a.tunnels[e] = &tunnel{f: f, on: m, count: count}
+	e.Reveal = func() { a.showTunnel(e) }
+	open := &tunnel{f: f, on: m, count: count, seen: seen, watching: count.t}
+	a.tunnels[e] = open
+	open.say("opened " + e.Label + " over " + groupName(host))
 	a.registry.Add(e)
 	a.markDirty()
 	return f, nil
@@ -161,7 +173,10 @@ func (a *app) closeTunnel(e *conns.Entry) error {
 	}
 	delete(a.tunnels, e)
 	err := open.f.Close()
+	open.watching.stop()
+	open.say("closed")
 	open.count.m.Close()
+	a.tunnelPaneToldItStopped(e)
 	a.registry.Drop(e)
 	a.markDirty()
 	return err
@@ -269,6 +284,7 @@ func (a *app) tunnelFailed(e *conns.Entry, err error) {
 		return
 	}
 	open.trouble++
+	open.say("a stream failed: " + err.Error())
 	a.markDirty()
 	if open.told {
 		return
@@ -288,7 +304,10 @@ func (a *app) tunnelStopped(e *conns.Entry, err error) {
 		return
 	}
 	delete(a.tunnels, e)
+	open.watching.stop()
+	open.say("stopped: " + err.Error())
 	open.count.m.Close()
+	a.tunnelPaneToldItStopped(e)
 	e.Note = ""
 	drop := func() error {
 		a.registry.Drop(e)

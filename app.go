@@ -149,6 +149,10 @@ type app struct {
 	// panes printed.
 	far *pathsFar
 
+	// tunnelPanes are the panes showing what a tunnel is doing, by the
+	// row of the tunnel each one is on.
+	tunnelPanes map[*conns.Entry]*term.Terminal
+
 	// noticed is the last message read off each pane, so one message is
 	// logged once rather than on every frame.
 	noticed map[*term.Terminal]uint64

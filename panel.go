@@ -267,6 +267,7 @@ func (a *app) refreshPanel(now time.Time) {
 	}
 	a.forgetNotes()
 	a.forgetNotices()
+	a.forgetTunnelPanes()
 
 	// Whoever is working in this window from elsewhere is told what it
 	// has open, once the rows say what they are going to say. Told

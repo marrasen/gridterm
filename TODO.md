@@ -185,6 +185,26 @@ serves that distribution's files on.
   path**, which is what every drop did before. Turning the shell setup
   off for a machine puts that machine back to it.
 
+## Tunnels
+
+Clicking a tunnel opens a pane for it. It says when the tunnel opened,
+every stream that failed and how it ended, and offers to watch what
+goes through it and to close it. Watching is off until asked for, and
+stops when the pane closes.
+
+- **Watching writes the bytes down as text.** Printable characters,
+  tabs and line breaks come through and everything else is a dot,
+  which is right for a web server and useless for a binary protocol.
+  A hex view is what that wants, and the file viewer already has one.
+
+- **One chunk is four kilobytes and a tunnel keeps five hundred of
+  them.** A busy tunnel watched for a while loses its oldest traffic,
+  the way the window's own log does.
+
+- **A tunnel is not watched from a machine at the far end.** The pane
+  reads a log this window keeps, and a window that took this one over
+  sees the row but not the pane.
+
 ## The file viewer
 
 - **The scrollback viewer shows no colours.** Marcus asked for the

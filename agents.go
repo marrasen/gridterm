@@ -758,6 +758,20 @@ func lastLines(text string, n int) string {
 	return text[from+1:]
 }
 
+// picturesIn is the pictures a block of output covers, of the ones on the screen. The block ends on the
+// cursor's row and is as many rows tall as it has lines.
+func picturesIn(on []term.Picture, lastRow, lines int) []agent.Picture {
+	first := lastRow - lines + 1
+	keep := make([]term.Picture, 0, len(on))
+	for _, p := range on {
+		if p.Top > lastRow || p.Top+p.Rows-1 < first {
+			continue
+		}
+		keep = append(keep, p)
+	}
+	return picturesSeen(keep)
+}
+
 // picturesSeen is what is on the screen in pixels, as the wire says
 // it.
 func picturesSeen(on []term.Picture) []agent.Picture {
@@ -885,6 +899,8 @@ func (w agentWindow) Output(id string, most int) (agent.Look, error) {
 			Row:     read.Row,
 			Col:     read.Col,
 			Alt:     read.Alt,
+			// Only the pictures this output covers, since one printed above where it began is not in it
+			Pictures: picturesIn(read.Pictures, read.Row, countLines(text)),
 			// Not All: this read ends at a boundary the agent asked for,
 			// so how much the pane has kept above it says nothing.
 			Cols:      size.Cols,

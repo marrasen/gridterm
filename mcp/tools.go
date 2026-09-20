@@ -742,7 +742,7 @@ func pictureNotes(on []Picture) []string {
 			which = "OSC 1338"
 		}
 		out = append(out, fmt.Sprintf(
-			"Rows %d to %d hold a picture, %d by %d, sent as %s."+
+			"Rows %d to %d of the screen hold a picture, %d by %d, sent as %s."+
 				" Those cells read as blank here.",
 			p.Top, p.Top+p.Rows-1, p.Width, p.Height, which))
 	}

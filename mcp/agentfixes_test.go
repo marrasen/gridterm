@@ -85,7 +85,7 @@ func TestAPictureIsNamedInTheTrailer(t *testing.T) {
 		Pictures: []Picture{{Top: 2, Rows: 13, Cols: 40, Width: 400, Height: 200}},
 	}, Ending{}, false)
 
-	if !strings.Contains(got, "Rows 2 to 14 hold a picture, 400 by 200, sent as OSC 1337") {
+	if !strings.Contains(got, "Rows 2 to 14 of the screen hold a picture, 400 by 200, sent as OSC 1337") {
 		t.Errorf("the trailer says:\n%s", got)
 	}
 	if !strings.Contains(got, "read as blank") {

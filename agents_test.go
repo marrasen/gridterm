@@ -4158,3 +4158,73 @@ func TestARefusedCallDoesNotSayAnAgentIsWorkingThere(t *testing.T) {
 		t.Errorf("the row for a pane the agent was refused says %q", got)
 	}
 }
+
+// What a command printed says a picture is in it, the way reading the
+// pane does.
+//
+// wait_for hands back the finished command's output rather than the
+// screen, so this is the read an agent gets after running something.
+// Without the note it sees a block of blank rows and has to guess from
+// where the cursor ended up whether the picture arrived.
+func TestTheOutputOfACommandNamesAPictureInIt(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	_, code, c := handedOver(t, a)
+
+	var got agent.Pane
+	offWindow(t, a, "the window to answer the agent", func() error {
+		var err error
+		got, err = firstOf(c.Use(code))
+		return err
+	})
+
+	// A command that prints a picture and a line under it.
+	a.shells[0].out <- []byte("\x1b]133;C\a")
+	a.shells[0].out <- []byte(anInlinePNG(t, 40, 13))
+	a.shells[0].out <- []byte("caption-below-image\r\n")
+	a.shells[0].out <- []byte("\x1b]133;D;0\a")
+	waitFor(t, a, "the caption to arrive", func() bool {
+		return strings.Contains(paneText(onlyPaneOn(t, a)), "caption-below-image")
+	})
+
+	look, err := outputOf(t, a, c, got.ID)
+
+	if err != nil {
+		t.Fatalf("read the output: %v", err)
+	}
+	if len(look.Pictures) != 1 {
+		t.Fatalf("the output names %d pictures, want the one in it: %+v", len(look.Pictures), look)
+	}
+	if got := look.Pictures[0].Rows; got != 13 {
+		t.Errorf("the picture covers %d rows, want 13", got)
+	}
+	if !strings.Contains(look.Screen, "caption-below-image") {
+		t.Errorf("the output is missing the line under the picture:\n%s", look.Screen)
+	}
+}
+
+// A picture above where the output began is not in it. Saying its rows
+// read as blank would send the agent looking in a block those rows are
+// not in.
+func TestAPictureAboveTheOutputIsNotNamed(t *testing.T) {
+	for what, tc := range map[string]struct {
+		top, rows int
+		want      int
+	}{
+		"above the block": {0, 3, 0},
+		"below the block": {20, 3, 0},
+		"in the block":    {8, 4, 1},
+		"across the top":  {2, 8, 1},
+	} {
+		on := []term.Picture{{Top: tc.top, Rows: tc.rows, Cols: 40, Width: 400, Height: 200}}
+
+		// A block of ten lines ending on row 14, so rows 5 to 14.
+		got := picturesIn(on, 14, 10)
+
+		if len(got) != tc.want {
+			t.Errorf("%s: a picture on rows %d to %d gave %d notes, want %d",
+				what, tc.top, tc.top+tc.rows-1, len(got), tc.want)
+		}
+	}
+}

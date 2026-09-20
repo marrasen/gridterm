@@ -88,6 +88,7 @@ func openWindow(w wanted) (*app, error) {
 			return session.StartLocal(session.LocalConfig{
 				Command: argv,
 				Dir:     dir,
+				Env:     paneEnv(argv, a.called.name()),
 				Cols:    cols,
 				Rows:    rows,
 			})
@@ -112,6 +113,7 @@ func openWindow(w wanted) (*app, error) {
 	a.savedTuns = newSavedTunnels()
 	a.paneTitles = newPaneTitles()
 	a.shellSetup = newShellSetup()
+	a.called = &termProgram{}
 	a.far = newPathsFar()
 	a.toasts = notify.New(programName)
 	a.keyFiles = newKeyIndex()

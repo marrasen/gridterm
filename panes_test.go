@@ -211,6 +211,7 @@ func newTestApp(t *testing.T, cols, rows int, opts ...testOption) *testApp {
 		machines: newMachines(),
 		serving:  newServing(),
 		agents:   newAgents(),
+		called:   &termProgram{},
 		tunnels:  make(map[*conns.Entry]*tunnel),
 		queue:    jobs.New(1),
 		jobs:     make(map[*conns.Entry]*jobs.Job),

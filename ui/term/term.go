@@ -49,6 +49,10 @@ type Config struct {
 	// Scrollback is how many lines of history to keep.
 	Scrollback int
 
+	// Program is what the terminal calls itself when a program asks with
+	// XTVERSION, as a name and a version. Empty answers nothing.
+	Program string
+
 	// Palette sets the default colours.
 	Palette *vt.Palette
 
@@ -304,6 +308,7 @@ func New(cfg Config) (*Terminal, error) {
 		// against every other user of the lock.
 		Reply: t.send,
 	})
+	t.term.SetProgram(cfg.Program)
 
 	t.begin(r)
 	return t, nil

@@ -377,6 +377,28 @@ Most of the code needs neither. `make test` runs everything that does
 not touch a GPU, which is the grid, the emulator, the key and mouse
 encoders and both session types.
 
+## Telling a program which terminal this is
+
+`TERM` names a kind of terminal and every terminal borrows the same few
+names, so a program reading it learns nothing about this one. gridterm
+says which it is in two ways:
+
+- **`TERM_PROGRAM` and `TERM_PROGRAM_VERSION`** in every pane it starts.
+  A pane in a WSL distribution gets them too: a Windows variable does
+  not cross unless `WSLENV` names it, and gridterm adds the two names to
+  whatever is already carried.
+- **XTVERSION**, `CSI > q`, answered with the same name and version.
+  That is the way of asking that survives ssh and tmux, where an
+  environment variable does not.
+
+Both say `gridterm`, which is true and which no program has heard of
+yet. "What this window calls itself…" in the command palette changes the
+name to a terminal a program does know, which is how to make one show
+pictures before it has heard of this one. It may then send the rest of
+that terminal's sequences, and whatever gridterm does not read lands on
+the screen as text. That is the trade, and it is why the honest name is
+the default.
+
 ## Shell integration
 
 A shell is a separate program, and gridterm only sees the bytes it

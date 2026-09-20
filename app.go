@@ -145,6 +145,9 @@ type app struct {
 	paneTitles *paneTitles
 	shellSetup *shellSetup
 
+	// called is what the window calls itself to the programs it runs.
+	called *termProgram
+
 	// far is what a machine at the far end said about the paths its
 	// panes printed.
 	far *pathsFar
@@ -871,6 +874,9 @@ func (a *app) commands() {
 		ui.Command{ID: "shell.setup", Title: "Shell setup on this machine, on or off",
 			AlsoFind: []string{"shell integration", "working directory", "osc 7"},
 			On:       a.shellSetup.on, Run: a.toggleShellSetup},
+		ui.Command{ID: "shell.termProgram", Title: "What this window calls itself…",
+			AlsoFind: []string{"term_program", "compatibility", "pictures", "images"},
+			Run:      a.openTermProgram},
 		ui.Command{ID: "sshkey.make", Title: "Make an SSH key…", Run: a.openMakeKey},
 		ui.Command{ID: "sidebar.toggle", Title: "Show or hide the connections",
 			On: a.panelShowing, Run: a.togglePanel},

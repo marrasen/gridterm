@@ -91,6 +91,10 @@ type Terminal struct {
 	scr    *Screen
 	cb     Callbacks
 
+	// program is what this terminal calls itself to a program that asks
+	// with XTVERSION, as a name and a version.
+	program string
+
 	title string
 
 	// dir is where the shell last said it was, from OSC 7, and empty
@@ -291,11 +295,14 @@ func (t *Terminal) CsiDispatch(params [][]uint16, intermediates []byte, ignore b
 		}
 		return
 	}
-	// Other intermediates change the meaning of the final byte; the only
-	// one handled is the space that makes 'q' DECSCUSR.
+	// Other intermediates change the meaning of the final byte. The space
+	// makes 'q' DECSCUSR, and the greater-than makes it XTVERSION.
 	if len(intermediates) > 0 {
-		if intermediates[0] == ' ' && r == 'q' {
+		switch {
+		case intermediates[0] == ' ' && r == 'q':
 			t.setCursorStyle(argRaw(0, 0))
+		case intermediates[0] == '>' && r == 'q':
+			t.answerVersion()
 		}
 		return
 	}
@@ -372,6 +379,23 @@ func (t *Terminal) CsiDispatch(params [][]uint16, intermediates []byte, ignore b
 		t.reply("\x1b[?6c") // a VT102, which is what most programs expect
 	}
 }
+
+// answerVersion answers XTVERSION with what this terminal calls itself.
+//
+// It is the one way to ask a terminal which one it is that survives ssh
+// and tmux, where an environment variable does not. A terminal with no
+// name answers nothing, which is what a terminal that does not know the
+// sequence does.
+func (t *Terminal) answerVersion() {
+	if t.program == "" {
+		return
+	}
+	t.reply("\x1bP>|" + t.program + "\x1b\\")
+}
+
+// SetProgram is what this terminal calls itself when a program asks with
+// XTVERSION, as a name and a version. An empty name answers nothing.
+func (t *Terminal) SetProgram(name string) { t.program = name }
 
 // repeat implements REP, which repeats the previous printable character.
 func (t *Terminal) repeat(n int) {

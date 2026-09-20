@@ -18,12 +18,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/marrasen/gridterm/agent"
+	"github.com/marrasen/gridterm/internal/build"
 )
 
 // protocolVersion is the one version this speaks. An agent that asks
@@ -479,7 +479,7 @@ func (s *server) call(req request) (any, *rpcError) {
 			"serverInfo": map[string]any{
 				"name":    "gridterm",
 				"title":   "gridterm panes",
-				"version": version(),
+				"version": build.Version(),
 			},
 			"instructions": instructions,
 		}, nil
@@ -516,15 +516,6 @@ func (s *server) call(req request) (any, *rpcError) {
 // fail is an answer that says what was wrong with the message.
 func fail(id json.RawMessage, code int, why string) response {
 	return response{JSONRPC: "2.0", ID: id, Error: &rpcError{Code: code, Message: why}}
-}
-
-// version is what this server calls itself: the version of the module
-// it was built from, or "dev" for a build that has none.
-func version() string {
-	if built, ok := debug.ReadBuildInfo(); ok && built.Main.Version != "" {
-		return built.Main.Version
-	}
-	return "dev"
 }
 
 // instructions is what an agent is told about this server when it

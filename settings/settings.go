@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 
 	"github.com/marrasen/gridterm/conf"
@@ -81,6 +82,10 @@ type stored struct {
 	// costs a cleared pane and it is what makes a path in the output
 	// clickable.
 	ShellSetup *bool `json:"shellSetup,omitempty"`
+
+	// TermProgram is what the window calls itself in TERM_PROGRAM. A
+	// field left out is gridterm's own name, which is the true one.
+	TermProgram *string `json:"termProgram,omitempty"`
 
 	// Tunnels are the tunnels the user asked to keep, newest first.
 	Tunnels []SavedTunnel `json:"tunnels,omitempty"`
@@ -670,6 +675,39 @@ func (s *Settings) ShellSetup() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.have.ShellSetup == nil || *s.have.ShellSetup
+}
+
+// TermProgram is what the window calls itself in TERM_PROGRAM, and is
+// empty for gridterm's own name.
+func (s *Settings) TermProgram() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.have.TermProgram == nil {
+		return ""
+	}
+	return *s.have.TermProgram
+}
+
+// PutTermProgram writes what the window calls itself, and saves. An
+// empty name goes back to gridterm's own.
+func (s *Settings) PutTermProgram(called string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// The file first, for the same reason PutServe reads it first.
+	if err := s.rereadLocked(); err != nil {
+		return fmt.Errorf("%w: %w", ErrUnsaveable, err)
+	}
+	before := s.have
+	if called = strings.TrimSpace(called); called == "" {
+		s.have.TermProgram = nil
+	} else {
+		s.have.TermProgram = &called
+	}
+	if err := s.saveLocked(); err != nil {
+		s.have = before
+		return err
+	}
+	return nil
 }
 
 // PutShellSetup turns that on or off, and saves.

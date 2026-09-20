@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/aymanbagabas/go-pty"
+
+	"github.com/marrasen/gridterm/internal/build"
 )
 
 // hangupGrace is how long Close waits for a child to act on the hangup
@@ -107,6 +109,15 @@ func StartLocal(cfg LocalConfig) (Session, error) {
 	c.Env = append(os.Environ(), cfg.Env...)
 	if !hasEnv(cfg.Env, "TERM") {
 		c.Env = append(c.Env, "TERM=xterm-256color")
+	}
+	// TERM names a kind of terminal and every terminal borrows the same
+	// few names, so this is the only way a program can tell which one it
+	// is talking to.
+	if !hasEnv(cfg.Env, "TERM_PROGRAM") {
+		c.Env = append(c.Env, "TERM_PROGRAM="+build.Name)
+	}
+	if !hasEnv(cfg.Env, "TERM_PROGRAM_VERSION") {
+		c.Env = append(c.Env, "TERM_PROGRAM_VERSION="+build.Version())
 	}
 
 	if err := c.Start(); err != nil {

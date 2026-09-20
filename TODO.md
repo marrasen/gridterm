@@ -225,9 +225,16 @@ per picture saying which row it is on. Nothing new on the wire.
   does not know how big a cell is drawn. A program that cares should
   ask in cells. Telling the emulator the cell size would close it.
 
-- **Kitty and sixel are not read.** OSC 1337 is the one this does.
-  The kitty protocol is an APC sequence and sixel is a DCS one, so
-  neither goes past the OSC dispatch.
+- **Kitty and sixel cannot be read in a pane on this machine.** OSC
+  1337 is the one this does. The kitty protocol is an APC sequence
+  and sixel is a DCS one, and ConPTY throws both away rather than
+  passing them on, so neither ever reaches gridterm. Measured on
+  2026-09-20; the table is under "What ConPTY passes on" below.
+
+  Writing either would only serve panes with no ConPTY in the way:
+  one on a machine over SSH, and one watched from another gridterm.
+  Worth deciding on as a thing of its own, because the case that
+  raised it -- a picture viewer in a WSL pane -- is not one of them.
 
 - **An OSC payload other than a picture is still capped at a
   kilobyte.** `danielgatis/go-vte` keeps that much and throws the rest
@@ -235,6 +242,47 @@ per picture saying which row it is on. Nothing new on the wire.
   stream before the parser sees them, in `vt/longosc.go`, so they are
   whole. Everything else takes the cap, and a clipboard write longer
   than a kilobyte is cut short.
+
+## What ConPTY passes on
+
+Every pane on this machine runs through ConPTY, which is not a pipe. It
+reads what the program writes, keeps a console buffer, and writes that
+out again. So it answers some sequences itself and passes on the ones it
+has no opinion about.
+
+Measured on 2026-09-20 on this machine, twice: once from PowerShell and
+once with raw bytes through `cmd /c type`, which agreed.
+
+| Passed on | Kept by ConPTY |
+|---|---|
+| XTVERSION (`CSI > q`) | DA1 (`CSI c`) |
+| OSC 4, the palette question | OSC 11, the background question |
+| OSC 7, where the shell is | APC, which is the kitty protocol |
+| OSC 9, a message | DCS, which is sixel |
+| OSC 133, the prompt marks | |
+| OSC 1337 and OSC 1338, the pictures | |
+
+What follows from it:
+
+- **Everything gridterm reads today is passed on.** The pictures and
+  the prompt marks are in the left column, which is why they work.
+
+- **DA1 is answered by ConPTY from its own model.** It asks this
+  window once as it starts and keeps the answer. So adding a
+  capability to gridterm's own DA1 reply changes what conhost thinks
+  and not what a program is told. Sixel is discovered through DA1, so
+  that is the second thing blocking it.
+
+- **XTVERSION reaches gridterm.** That settles the open question: the
+  CSI sequences ConPTY has no opinion about are passed on.
+
+- **There is no passthrough flag.** microsoft/terminal#1985 asked for
+  one and was closed as a duplicate. The real flags are in
+  `src/inc/conpty-static.h`, and they are about glyph width.
+
+- **A passed-on sequence can arrive out of order** against the text
+  around it -- microsoft/terminal#17314 and #11220. If a picture ever
+  lands a line off, that is where it comes from.
 
 ## Files dragged in
 

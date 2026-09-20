@@ -115,6 +115,25 @@ type KeyHandler interface {
 	HandleKey(ev input.Event) (bool, error)
 }
 
+// ChordClaimer is a widget that takes some chords before the window's
+// accelerators do.
+//
+// An accelerator runs before any widget sees the key, which is what
+// stops a terminal swallowing the window's own shortcuts. A widget with
+// a meaning of its own for one of those chords says so here, and while
+// it has the focus the key reaches it instead.
+//
+// Claim as little as possible. Every chord claimed is one the window's
+// shortcut stops working on, and the user is given no sign of it.
+type ChordClaimer interface {
+	Widget
+
+	// ClaimsChord reports whether this widget wants the key itself. It
+	// is asked only while the widget has the focus, and a widget that
+	// claims a chord must then handle it.
+	ClaimsChord(ev input.Event) bool
+}
+
 // isPlainKey reports whether an event is a key a dialog offers: no
 // modifier, or the one chord that is spelled with one, Shift+Tab.
 func isPlainKey(ev input.Event) bool {

@@ -252,6 +252,12 @@ func (r *Root) HandleKey(ev input.Event) (handled bool, err error) {
 			return true, failed
 		}
 	} else {
+		// Before the accelerators, because an accelerator runs before
+		// any widget sees the key and a widget that claimed a chord
+		// would never get it.
+		if took(r.toClaimer(ev)) {
+			return true, failed
+		}
 		if took(r.run(r.Accelerators, chord)) {
 			return true, failed
 		}
@@ -263,6 +269,20 @@ func (r *Root) HandleKey(ev input.Event) (handled bool, err error) {
 		return true, failed
 	}
 	return false, failed
+}
+
+// toClaimer offers a key to the focused widget when that widget has
+// claimed the chord, and reports whether it took it.
+func (r *Root) toClaimer(ev input.Event) (bool, error) {
+	if r.widget == nil {
+		return false, nil
+	}
+	w := FocusedLeaf(r.widget)
+	c, ok := w.(ChordClaimer)
+	if !ok || !c.ClaimsChord(ev) {
+		return false, nil
+	}
+	return HandleKey(w, ev)
 }
 
 // HandleMouse offers a mouse event to the topmost modal or else the

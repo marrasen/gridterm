@@ -34,17 +34,8 @@ work whichever way he answers.
 
 ## Picking text out, what is left
 
-Two things a review of the selection work on 2026-09-19 turned up and
-the work did not answer.
-
-- **Shift and a page key scrolls rather than picking text out.** The
-  reader takes shift with Left, Right, Up, Down, Home and End as "carry
-  the loose end of the selection along". Shift+PageUp and Shift+PageDown
-  are window accelerators, so they scroll a page and leave the selection
-  where it was. A user who has just learned Shift+Down will try
-  Shift+PageDown next. Making it extend means the accelerator has to
-  know whether a reader has the keys, which is a change to how a command
-  is run rather than a case to add.
+One thing a review of the selection work on 2026-09-19 turned up is
+left, and it needs an answer from Marcus.
 
 - **The reader has no caret, so shift and a key that moves has nowhere
   obvious to start.** With nothing picked out it starts at the top left
@@ -52,7 +43,23 @@ the work did not answer.
   one-character selection in the corner rather than where the user was
   looking. Defensible, and still a surprise.
 
+  **The question.** Giving the reader a caret changes what the plain
+  arrow keys do. Today Up and Down scroll the view, the way `less`
+  does. A caret the user can see has to be a caret they can move, so
+  Up and Down would move it and the view would follow, the way an
+  editor works. That is a different feel for a pager, and it is
+  Marcus's call which one he wants. A smaller answer is to leave the
+  arrows alone and start a keyboard selection at the top left of the
+  view as now, saying so in the help rather than changing the keys.
+
 Done from the same review:
+
+- **Shift and a page key picks text out rather than scrolling.** A
+  widget can now claim a chord and get it before the window's
+  accelerators, through `ui.ChordClaimer`, and the reader claims
+  Shift+PageUp and Shift+PageDown. A terminal claims nothing, so those
+  two still scroll its scrollback. The reader claims nothing while it
+  has no text either, so an empty one still scrolls.
 
 - **A text box can be dragged over.** `Field` picks text out with the
   pointer now, and the form and the palette carry the drag to it. A

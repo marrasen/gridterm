@@ -138,3 +138,73 @@ func TestThePlainCtrlKeysStillWork(t *testing.T) {
 		t.Error("Ctrl+D did not close the reader")
 	}
 }
+
+// Shift and a page key carry the loose end of the selection a screenful
+// at a time, the way shift and Down carries it a line.
+func TestShiftAndPageDownPicksOutAScreenful(t *testing.T) {
+	lines := make([]string, 100)
+	for i := range lines {
+		lines[i] = "a line of text"
+	}
+	r := aReaderOf(t, 40, 12, lines...)
+
+	chordKey(t, r, input.KeyPageDown, input.ModShift)
+
+	// Ten rows of the file: twelve less the name and the bar.
+	if got, want := len(strings.Split(r.SelectedText(), "\n")), 11; got != want {
+		t.Errorf("it picked out %d lines, want %d", got, want)
+	}
+}
+
+// Shift and PageUp carries it back again, so a page taken by mistake
+// can be given back without starting over.
+func TestShiftAndPageUpCarriesTheSelectionBack(t *testing.T) {
+	lines := make([]string, 100)
+	for i := range lines {
+		lines[i] = "a line of text"
+	}
+	r := aReaderOf(t, 40, 12, lines...)
+	chordKey(t, r, input.KeyPageDown, input.ModShift)
+	chordKey(t, r, input.KeyPageDown, input.ModShift)
+	was := len(r.SelectedText())
+
+	chordKey(t, r, input.KeyPageUp, input.ModShift)
+
+	if got := len(r.SelectedText()); got >= was {
+		t.Errorf("the selection is %d characters after going back, was %d", got, was)
+	}
+}
+
+// The reader claims shift and a page key so the window's scroll
+// shortcut does not run instead. It claims nothing else.
+func TestTheReaderClaimsOnlyShiftAndAPageKey(t *testing.T) {
+	r := aReaderOf(t, 40, 12, "hello there", "second line")
+	claims := func(key input.Key, mods input.Mods) bool {
+		return r.ClaimsChord(input.Event{Kind: input.KeyPress, Key: key, Mods: mods})
+	}
+
+	for _, key := range []input.Key{input.KeyPageUp, input.KeyPageDown} {
+		if !claims(key, input.ModShift) {
+			t.Errorf("the reader does not claim shift and %v", key)
+		}
+		if claims(key, 0) {
+			t.Errorf("the reader claims a plain %v, which the window scrolls with", key)
+		}
+		if claims(key, input.ModCtrl) {
+			t.Errorf("the reader claims ctrl and %v, which walks the sidebar", key)
+		}
+	}
+	if claims(input.KeyDown, input.ModShift) {
+		t.Error("the reader claims shift and Down, which no accelerator has")
+	}
+}
+
+// A reader with nothing in it claims nothing, so the window still
+// scrolls the pane rather than the key doing nothing at all.
+func TestAnEmptyReaderClaimsNothing(t *testing.T) {
+	r := aReaderOf(t, 40, 12)
+
+	if r.ClaimsChord(input.Event{Kind: input.KeyPress, Key: input.KeyPageDown, Mods: input.ModShift}) {
+		t.Error("an empty reader claimed shift and PageDown")
+	}
+}

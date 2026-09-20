@@ -466,6 +466,23 @@ func ReaderKeys() []Key {
 	}
 }
 
+// ClaimsChord takes shift and a page key, so a screenful can be picked
+// out with the keyboard the way a line is.
+//
+// The window scrolls the pane in front on those two, and an accelerator
+// runs before any widget sees the key. A user who has just learned
+// Shift+Down tries Shift+PageDown next, and the pane scrolling under a
+// selection that stayed where it was is not what they asked for.
+func (r *Reader) ClaimsChord(ev input.Event) bool {
+	if r.isPic || r.asking != askingNothing || !r.picking() {
+		return false
+	}
+	if ev.Mods != input.ModShift {
+		return false
+	}
+	return ev.Key == input.KeyPageUp || ev.Key == input.KeyPageDown
+}
+
 // HandleKey moves through the file.
 func (r *Reader) HandleKey(ev input.Event) (bool, error) {
 	if r.isPic {
@@ -519,6 +536,10 @@ func (r *Reader) HandleKey(ev input.Event) (bool, error) {
 		r.extend(0, -1)
 	case ev.Shift() && ev.Key == input.KeyRight:
 		r.extend(0, 1)
+	case ev.Shift() && ev.Key == input.KeyPageUp:
+		r.extendPages(-1)
+	case ev.Shift() && ev.Key == input.KeyPageDown:
+		r.extendPages(1)
 	case ev.Shift() && ev.Key == input.KeyHome:
 		r.extendTo(0)
 	case ev.Shift() && ev.Key == input.KeyEnd:

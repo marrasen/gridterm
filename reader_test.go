@@ -379,6 +379,78 @@ func TestDraggingOverAReaderCopiesWhatWasPickedOut(t *testing.T) {
 	})
 }
 
+// Shift and a page key picks text out of a reader rather than scrolling
+// it. Both chords are window accelerators, and an accelerator runs
+// before any widget sees the key, so the reader has to claim them.
+func TestShiftAndAPageKeyPicksTextOutOfAReader(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	a.commands()
+	lines := make([]string, 200)
+	for i := range lines {
+		lines[i] = "a line of text"
+	}
+	name, path := aReadableFile(t, lines...)
+	if err := a.openReader(vfs.NewLocal(), conns.Local, path, name, false); err != nil {
+		t.Fatalf("open a reader: %v", err)
+	}
+	r := onlyReader(t, a)
+	waitUntil(t, "the file to be read", func() bool {
+		a.pump.run()
+		return r.Lines() > 0
+	})
+	a.focus(r)
+	a.relayout()
+	page := r.Top()
+	if err := a.root.Commands.Run("view.scrollDown"); err != nil {
+		t.Fatalf("scroll forward: %v", err)
+	}
+	page = r.Top() - page
+	if page <= 1 {
+		t.Fatalf("a page is %d lines here, too few to tell a page from a line", page)
+	}
+	r.Home()
+
+	if _, err := a.root.HandleKey(press(input.KeyPageDown, input.ModShift)); err != nil {
+		t.Fatalf("shift and PageDown: %v", err)
+	}
+
+	if r.SelectedText() == "" {
+		t.Fatal("shift and PageDown picked nothing out, so it scrolled instead")
+	}
+	// The view follows the loose end of the selection, so it moves by
+	// the one row that end went past the bottom, not by a whole page.
+	if got := r.Top(); got >= page {
+		t.Errorf("the reader moved %d lines, want it to have followed the selection", got)
+	}
+}
+
+// A terminal does not claim those chords, so the window still scrolls
+// the one in front. The reader's claim must not cost the terminal its
+// scrollback keys.
+func TestShiftAndAPageKeyStillScrollsATerminal(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	a.commands()
+	pane := onlyPaneOn(t, a)
+	a.shells[0].out <- []byte(strings.Repeat("a line of text\r\n", 40))
+	waitFor(t, a, "the shell to fill the scrollback", func() bool {
+		return screenOf(pane).At(0, 0).Rune == 'a'
+	})
+	a.relayout()
+	if pane.ViewOffset() != 0 {
+		t.Fatalf("the terminal starts scrolled back %d", pane.ViewOffset())
+	}
+
+	if _, err := a.root.HandleKey(press(input.KeyPageUp, input.ModShift)); err != nil {
+		t.Fatalf("shift and PageUp: %v", err)
+	}
+
+	if pane.ViewOffset() <= 0 {
+		t.Error("shift and PageUp did not scroll the terminal back")
+	}
+}
+
 // The window's scroll commands move a reader as well as a terminal.
 //
 // They are bound to Shift+PageUp and Shift+PageDown, and an accelerator

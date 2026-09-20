@@ -168,6 +168,12 @@ func (r *Reader) Copy() bool {
 	return true
 }
 
+// extendPages carries the loose end of the selection a screenful at a
+// time, which is the page keys' share of the same move.
+func (r *Reader) extendPages(pages int) {
+	r.extend(pages*max(r.rows(), 1), 0)
+}
+
 // extend moves the loose end of the selection by lines and columns, and
 // starts one at the top left of the view when there is none.
 func (r *Reader) extend(lines, cols int) {

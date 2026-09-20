@@ -103,11 +103,17 @@ func listenName(t remote.Tunnel) string {
 
 // openTunnel starts a forward and puts it on the panel.
 func (a *app) openTunnel(host string, t remote.Tunnel) {
+	if _, err := a.startTunnel(host, t); err != nil {
+		a.reportError("Could not open the tunnel", err)
+	}
+}
+
+// startTunnel is openTunnel with the forward handed back, for a caller
+// that needs the port it ended up on.
+func (a *app) startTunnel(host string, t remote.Tunnel) (*remote.Forwarder, error) {
 	m := a.about(host).machine
 	if m == nil {
-		a.reportError("Could not open the tunnel",
-			fmt.Errorf("nothing is connected to %s any more", host))
-		return
+		return nil, fmt.Errorf("nothing is connected to %s any more", host)
 	}
 
 	count := counted{m: meter.New()}
@@ -130,8 +136,7 @@ func (a *app) openTunnel(host string, t remote.Tunnel) {
 		},
 	})
 	if err != nil {
-		a.reportError("Could not open the tunnel", err)
-		return
+		return nil, err
 	}
 	// The address it ended up on, which is the only way to learn the port
 	// when the tunnel asked for any free one.
@@ -140,6 +145,7 @@ func (a *app) openTunnel(host string, t remote.Tunnel) {
 	a.tunnels[e] = &tunnel{f: f, on: m, count: count}
 	a.registry.Add(e)
 	a.markDirty()
+	return f, nil
 }
 
 // closeTunnel stops a forward and takes its row off the panel.

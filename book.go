@@ -18,6 +18,8 @@ const (
 	editPrefix  = "server.edit."
 	termPrefix  = "conn.terminal."
 	filesPrefix = "conn.files."
+	savedPrefix = "conn.saved."
+	tunPrefix   = "conn.savedtunnel."
 )
 
 // refreshServers registers a command per saved machine and puts them on
@@ -60,6 +62,14 @@ func (a *app) refreshServers() {
 	// the menu at all.
 	if a.agents.sharing() {
 		want = append(want, "(sharing)")
+	}
+	// And the commands the user has kept, so one saved since the last
+	// build gets its line.
+	for _, cmd := range a.saved.all() {
+		want = append(want, "run "+cmd.Line+" on "+cmd.Host)
+	}
+	for _, t := range a.savedTuns.all() {
+		want = append(want, "tunnel "+t.Kind+" "+t.Listen+" "+t.Target+" on "+t.Host)
 	}
 	// And the folders saved on each machine, under the machine's own
 	// name: a bare list of paths reads the same when two machines swap
@@ -118,6 +128,30 @@ func (a *app) refreshServers() {
 				Run:   func() error { return a.openFilesAt(host, at) },
 			}))
 		}
+	}
+
+	// And one per command the user has kept, so a saved command is
+	// something to run by name rather than something to find by
+	// reopening the dialog that saved it.
+	for i, cmd := range a.saved.all() {
+		saved := cmd
+		a.registerServerCommands(a.reporting(ui.Command{
+			ID:       savedCommandID(i),
+			Title:    "Run " + saved.Line + " on " + groupName(saved.Host),
+			AlsoFind: []string{"saved command", "remembered"},
+			Run:      func() error { return a.runSaved(saved) },
+		}))
+	}
+
+	// And one per tunnel kept, for the same reason.
+	for i, t := range a.savedTuns.all() {
+		saved := t
+		a.registerServerCommands(a.reporting(ui.Command{
+			ID:       savedTunnelID(i),
+			Title:    savedTunnelTitle(saved),
+			AlsoFind: []string{"saved tunnel", "remembered", "forward", "port"},
+			Run:      func() error { return a.openSavedTunnel(saved) },
+		}))
 	}
 
 	var items []ui.MenuItem
@@ -749,6 +783,18 @@ func (a *app) forgetThisServer() error {
 // folderCommandID names the command that opens a file browser at one of
 // a machine's saved folders. By place in the list rather than by path: a
 // path is not a command name and two of them may reduce to one.
+// savedCommandID names the palette line that runs one saved command.
+// By where it sits in the list rather than by what it runs: a command
+// line holds spaces and whatever else the user typed.
+func savedCommandID(at int) string {
+	return savedPrefix + strconv.Itoa(at+1)
+}
+
+// savedTunnelID names the palette line that opens one saved tunnel.
+func savedTunnelID(at int) string {
+	return tunPrefix + strconv.Itoa(at+1)
+}
+
 func folderCommandID(host string, at int) string {
 	return filesPrefix + remote.CommandName(host) + "." + strconv.Itoa(at+1)
 }

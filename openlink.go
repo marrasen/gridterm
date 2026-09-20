@@ -22,7 +22,14 @@ func (a *app) followLink(at string) {
 
 // openInBrowser hands an address to whatever the machine opens links
 // with.
-func openInBrowser(at string) error {
+//
+// A variable so a test can read what would have been opened. Every
+// other way of testing this starts a browser on the machine running
+// the tests.
+var openInBrowser = openInRealBrowser
+
+// openInRealBrowser is openInBrowser as the window does it.
+func openInRealBrowser(at string) error {
 	if err := linkIsOpenable(at); err != nil {
 		return err
 	}

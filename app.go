@@ -131,6 +131,9 @@ type app struct {
 	// dialog that runs one.
 	saved *savedCommands
 
+	// savedTuns are the tunnels the user asked to keep.
+	savedTuns *savedTunnels
+
 	// copies are the file copies the user asked to keep.
 	copies *savedCopies
 

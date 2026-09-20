@@ -82,6 +82,9 @@ type stored struct {
 	// clickable.
 	ShellSetup *bool `json:"shellSetup,omitempty"`
 
+	// Tunnels are the tunnels the user asked to keep, newest first.
+	Tunnels []SavedTunnel `json:"tunnels,omitempty"`
+
 	// Copies are the file copies the user asked to keep, newest first.
 	Copies []SavedCopy `json:"copies,omitempty"`
 
@@ -106,6 +109,34 @@ type SavedCommand struct {
 	Line string `json:"line"`
 	Dir  string `json:"dir,omitempty"`
 	Host string `json:"host,omitempty"`
+}
+
+// SavedTunnel is a tunnel the user asked to keep, so the same one can
+// be opened again without typing the ports out.
+//
+// The machine is named rather than held: one that dropped and came
+// back is a different connection under the same name, and the tunnel
+// is opened over whatever is connected when it is asked for.
+type SavedTunnel struct {
+	// Host is the machine it runs over, as the sidebar names it.
+	Host string `json:"host"`
+
+	// Kind is which way it goes, written as remote.TunnelKind spells
+	// it: "local", "remote" or "socks".
+	Kind string `json:"kind"`
+
+	// Listen is the address it listens on, and Target what it reaches.
+	// A dynamic one has no target: whoever connects says where it is
+	// going.
+	Listen string `json:"listen"`
+	Target string `json:"target,omitempty"`
+}
+
+// Same reports whether two saved tunnels are the same tunnel, which is
+// what stops one being kept twice.
+func (t SavedTunnel) Same(other SavedTunnel) bool {
+	return t.Host == other.Host && t.Kind == other.Kind &&
+		t.Listen == other.Listen && t.Target == other.Target
 }
 
 // SavedCopy is a file copy the user asked to keep, so the same one can
@@ -396,6 +427,53 @@ func (s *Settings) DropCommand(line string) error {
 	return s.putCommands(func(have []SavedCommand) []SavedCommand {
 		return dropLine(have, line)
 	})
+}
+
+// Tunnels are the tunnels the user asked to keep, newest first.
+func (s *Settings) Tunnels() []SavedTunnel {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.have.Tunnels)
+}
+
+// KeepTunnel puts a tunnel at the front of the list and saves, keeping
+// at most most of them. One already in the list moves to the front.
+func (s *Settings) KeepTunnel(t SavedTunnel, most int) error {
+	return s.putTunnels(func(have []SavedTunnel) []SavedTunnel {
+		want := append([]SavedTunnel{t}, dropTunnel(have, t)...)
+		if most > 0 && len(want) > most {
+			want = want[:most]
+		}
+		return want
+	})
+}
+
+// DropTunnel takes a tunnel out of the list and saves.
+func (s *Settings) DropTunnel(t SavedTunnel) error {
+	return s.putTunnels(func(have []SavedTunnel) []SavedTunnel {
+		return dropTunnel(have, t)
+	})
+}
+
+// dropTunnel is the list without one tunnel.
+func dropTunnel(have []SavedTunnel, t SavedTunnel) []SavedTunnel {
+	return slices.DeleteFunc(have, func(at SavedTunnel) bool { return at.Same(t) })
+}
+
+// putTunnels rereads the file, edits the list it holds and saves.
+func (s *Settings) putTunnels(edit func([]SavedTunnel) []SavedTunnel) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.rereadLocked(); err != nil {
+		return fmt.Errorf("%w: %w", ErrUnsaveable, err)
+	}
+	before := s.have
+	s.have.Tunnels = edit(slices.Clone(s.have.Tunnels))
+	if err := s.saveLocked(); err != nil {
+		s.have = before
+		return err
+	}
+	return nil
 }
 
 // putCommands rereads the file, edits the list it holds and saves.

@@ -564,10 +564,14 @@ func (a *app) panelRow(row conns.Row, now time.Time) ui.ListRow {
 			out.Button = clearButton
 		}
 	}
-	_, isPane := a.paneRows[row.Entry]
-	if out.Button == 0 && isPane && row.Entry.Close != nil {
-		// A pane's row closes the pane and the row together, so its
-		// cross is offered only while the pointer is on the row.
+	if out.Button == 0 && row.Entry.Close != nil && row.Entry.Kind != conns.Server {
+		// A pane, a tunnel, a piece of file work: closing it is the one
+		// thing the row can do, and a cross on hover is where anyone
+		// would look for it.
+		//
+		// Not the machine itself. Closing that takes every pane, tunnel
+		// and browser riding on it, which is too much to lose to a
+		// cross under the pointer. It is on the machine's menu.
 		out.HoverButton = clearButton
 	}
 	return out

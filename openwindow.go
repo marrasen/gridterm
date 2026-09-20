@@ -109,6 +109,7 @@ func openWindow(w wanted) (*app, error) {
 	a.agents = newAgents()
 	a.shellPick = newShellPick()
 	a.saved = newSavedCommands()
+	a.savedTuns = newSavedTunnels()
 	a.paneTitles = newPaneTitles()
 	a.shellSetup = newShellSetup()
 	a.far = newPathsFar()

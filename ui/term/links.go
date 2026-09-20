@@ -38,7 +38,9 @@ func findLink(row []rune, at int) (link string, from, to int, ok bool) {
 			start = i + 1
 		}
 	}
-	return "", 0, 0, false
+	// Then a listening address written without one, which is what a
+	// development server prints.
+	return findService(row, at)
 }
 
 // indexFrom is where a string next appears in a row of runes, from a
@@ -271,4 +273,68 @@ func inPath(r rune) bool {
 		return false
 	}
 	return true
+}
+
+// loopbackNames are the hosts a program prints when it is listening
+// on the machine it runs on.
+//
+// 0.0.0.0 and :: mean every address rather than the loopback one, and
+// a program that prints one is still saying "reach me on this
+// machine, on this port", which is what the link is for.
+var loopbackNames = []string{"localhost", "127.0.0.1", "0.0.0.0", "[::1]", "[::]"}
+
+// findService finds a listening address written without a scheme,
+// such as the "localhost:5173" a development server prints.
+//
+// Narrow on purpose. Only a host that means the machine the program is
+// running on, only with a port after it, and the address a browser
+// would use comes back with a scheme in front so that everything
+// downstream sees an ordinary link.
+func findService(row []rune, at int) (link string, from, to int, ok bool) {
+	if at < 0 || at >= len(row) {
+		return "", 0, 0, false
+	}
+	for _, name := range loopbackNames {
+		start := 0
+		for {
+			i := indexFrom(row, name, start)
+			if i < 0 {
+				break
+			}
+			start = i + 1
+			// A host is a word of its own: "mylocalhost:80" is not one.
+			if i > 0 && inPath(row[i-1]) {
+				continue
+			}
+			end, good := endOfService(row, i+len([]rune(name)))
+			if !good || at < i || at >= end {
+				continue
+			}
+			return "http://" + string(row[i:end]), i, end, true
+		}
+	}
+	return "", 0, 0, false
+}
+
+// endOfService is where a listening address ends, given where its host
+// ends, and whether what follows the host is a port at all.
+//
+// The port, and then whatever path follows it: a server prints
+// "localhost:5173/app" as readily as "localhost:5173".
+func endOfService(row []rune, after int) (int, bool) {
+	if after >= len(row) || row[after] != ':' {
+		return 0, false
+	}
+	end := after + 1
+	for end < len(row) && row[end] >= '0' && row[end] <= '9' {
+		end++
+	}
+	if end == after+1 || end-after > 6 {
+		// No port, or more digits than a port has.
+		return 0, false
+	}
+	if end < len(row) && row[end] == '/' {
+		return endOfLink(row, end), true
+	}
+	return end, true
 }

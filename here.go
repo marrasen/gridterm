@@ -309,6 +309,20 @@ func (a *app) runCommandOn(host string, command []string, dir string, at *spot) 
 	return a.openOn(host, command, dir, at)
 }
 
+// runSaved runs a command the user kept, on the machine it was kept
+// on and in the directory it was kept with.
+//
+// On that machine rather than the one in front of the user: the
+// command was saved with a machine, and a directory belongs to the
+// machine it was typed on.
+func (a *app) runSaved(cmd settings.SavedCommand) error {
+	command := strings.Fields(cmd.Line)
+	if len(command) == 0 {
+		return fmt.Errorf("the command kept as %q has nothing to run", cmd.Line)
+	}
+	return a.runCommandOn(cmd.Host, command, cmd.Dir, nil)
+}
+
 // showConnLogHere opens the account of how the machine the user is
 // looking at was reached, or is being reached.
 func (a *app) showConnLogHere() error {
@@ -376,6 +390,21 @@ func (a *app) openTunnelHere() error {
 		host+", or there to give "+host+" one of ours.", errorLineWidth)
 	listen := f.AddField("Listen on", a.newField("[address:]port", 0))
 	target := f.AddField("Reach", a.newField("host:port", 0))
+	keep := f.AddTick("Remember this tunnel", false)
+	// The ones kept for this machine, so one is a key away rather than
+	// two ports to remember.
+	listen.Options = a.savedTuns.listenOn(host)
+	listen.OnPick = func(text string) {
+		saved, have := a.savedTuns.findListen(host, text)
+		if !have {
+			return
+		}
+		target.SetText(saved.Target)
+		keep.SetOn(true)
+	}
+	f.Lines = append(f.Lines,
+		"Ctrl+down and Ctrl+up step through the tunnels you have kept.",
+		"Clearing the box on one of those forgets it.")
 
 	// The direction is on the buttons rather than in a field: which
 	// machine listens is the whole of what a tunnel is, and a word for it
@@ -390,6 +419,9 @@ func (a *app) openTunnelHere() error {
 			if err := t.Validate(); err != nil {
 				// Returned rather than shown here, so the dialog stays
 				// open with what was typed still there to correct.
+				return err
+			}
+			if err := a.keepOrForgetTunnel(keep.On(), host, t); err != nil {
 				return err
 			}
 			// Not from here: this dialog closes as soon as this returns,

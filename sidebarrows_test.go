@@ -132,15 +132,14 @@ func TestAJobsRowFillsAsTheBytesGo(t *testing.T) {
 	if e.Note != "0 of 1" {
 		t.Errorf("the row says %q, want the count of files", e.Note)
 	}
-	// And a copy that is still going offers nothing to clear, with the
-	// pointer on it or away: the cross on hover is a pane's, and a copy
-	// is stopped from the menu.
+	// And a copy that is still going offers nothing to clear until the
+	// pointer is on it, and a cross to stop it once it is.
 	if row, _ := panelRow(a, e); row.Button != 0 {
 		t.Errorf("a running copy's row offers %q", row.Button)
 	}
 	pointAtRow(t, a, e)
-	if row, _ := panelRow(a, e); row.Button != 0 || row.HoverButton != 0 {
-		t.Errorf("a running copy's row offers %q with the pointer on it", row.HoverButton)
+	if row, _ := panelRow(a, e); row.HoverButton != clearButton {
+		t.Errorf("a running copy offers %q under the pointer, want a cross", row.HoverButton)
 	}
 
 	held.let()

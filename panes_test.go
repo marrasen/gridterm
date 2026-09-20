@@ -262,8 +262,10 @@ func newTestApp(t *testing.T, cols, rows int, opts ...testOption) *testApp {
 		t.Fatalf("settings: %v", err)
 	}
 	ta.saved = newSavedCommands()
+	ta.savedTuns = newSavedTunnels()
 	ta.copies = newSavedCopies()
 	ta.saved.remember(set)
+	ta.savedTuns.remember(set)
 	ta.paneTitles = newPaneTitles()
 	ta.paneTitles.remember(set)
 	ta.keyFiles = newKeyIndex()

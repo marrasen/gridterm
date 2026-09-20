@@ -18,9 +18,14 @@ func menuStyled() MenuStyle {
 		SelectedFG: bg,
 		SelectedBG: fg,
 		ChordFG:    fg,
+		HeaderFG:   headerFG,
 		DisabledFG: fg,
 	}
 }
+
+// headerFG is the colour a menu's captions are drawn in, apart from
+// every other colour the test style uses.
+var headerFG = color.RGBA{0x00, 0xff, 0xff, 0xff}
 
 // items turns command ids into ordinary menu lines. An empty id gives a
 // separator, so a test can write the shape of a menu in one line.
@@ -657,5 +662,188 @@ func TestASeparatorIsDrawnWithTheMenusOwnRule(t *testing.T) {
 	}
 	if strings.Contains(row, string(BorderSingle.runes().across)) {
 		t.Errorf("row = %q, want no single-line rule in a menu drawn with the double one", row)
+	}
+}
+
+// drawnRows is what a menu drew, one string per row.
+func drawnRows(g *grid.Grid) []string {
+	_, rows := g.Size()
+	out := make([]string, 0, rows)
+	for y := range rows {
+		out = append(out, rowOf(g, y))
+	}
+	return out
+}
+
+// lineWith is the row a menu drew some text on, and -1 when it drew
+// none.
+func lineWith(g *grid.Grid, want string) int {
+	for y, line := range drawnRows(g) {
+		if strings.Contains(line, want) {
+			return y
+		}
+	}
+	return -1
+}
+
+// A caption over a group is drawn bold and in its own colour, so it
+// reads as a heading rather than as a line that cannot be chosen.
+func TestAMenuHeaderIsBoldAndNotDim(t *testing.T) {
+	cmds := testCommands("Copy", "Paste")
+	m, _ := newTestMenu(t, cmds, []MenuItem{
+		MenuHeader("Clipboard"), {Command: "copy"}, {Command: "paste"},
+	})
+
+	g := drawMenu(m, 40, 20)
+
+	y := lineWith(g, "Clipboard")
+	if y < 0 {
+		t.Fatalf("the menu drew no caption:\n%s", strings.Join(drawnRows(g), "\n"))
+	}
+	x := strings.Index(rowOf(g, y), "C")
+	cell := g.At(x, y)
+	if cell.FG != headerFG {
+		t.Errorf("the caption is %v, want the header colour %v", cell.FG, headerFG)
+	}
+	if cell.Attr&grid.AttrBold == 0 {
+		t.Errorf("the caption is drawn %v, want it bold", cell.Attr)
+	}
+}
+
+// The lines under a caption are set in, so the caption reads as the name
+// of the group rather than as one of it.
+func TestTheLinesUnderAMenuHeaderAreSetIn(t *testing.T) {
+	cmds := testCommands("Copy", "Paste", "Quit")
+	m, _ := newTestMenu(t, cmds, []MenuItem{
+		{Command: "quit"},
+		MenuHeader("Clipboard"), {Command: "copy"}, {Command: "paste"},
+	})
+
+	g := drawMenu(m, 40, 20)
+
+	loose := indentOfLine(t, g, "Quit")
+	under := indentOfLine(t, g, "Copy")
+	caption := indentOfLine(t, g, "Clipboard")
+	if under != loose+menuIndent {
+		t.Errorf("a line under a caption starts at %d and one outside at %d, want %d apart",
+			under, loose, menuIndent)
+	}
+	if caption != loose {
+		t.Errorf("the caption starts at %d and a line outside at %d, want them level",
+			caption, loose)
+	}
+}
+
+// A rule ends the group, so a line after one is back at the margin.
+func TestARuleEndsTheGroupACaptionNames(t *testing.T) {
+	cmds := testCommands("Copy", "Paste", "Quit")
+	m, _ := newTestMenu(t, cmds, []MenuItem{
+		MenuHeader("Clipboard"), {Command: "copy"},
+		MenuSeparator(), {Command: "quit"},
+	})
+
+	g := drawMenu(m, 40, 20)
+
+	if under, after := indentOfLine(t, g, "Copy"), indentOfLine(t, g, "Quit"); after >= under {
+		t.Errorf("a line after the rule starts at %d and one under the caption at %d,"+
+			" want the one after the rule further left", after, under)
+	}
+}
+
+// indentOfLine is how far in the text on a menu's line starts.
+func indentOfLine(t *testing.T, g *grid.Grid, want string) int {
+	t.Helper()
+	y := lineWith(g, want)
+	if y < 0 {
+		t.Fatalf("the menu drew no %q:\n%s", want, strings.Join(drawnRows(g), "\n"))
+	}
+	line := rowOf(g, y)
+	return strings.Index(line, strings.TrimLeft(want, " "))
+}
+
+// A caption longer than every line under it still fits: it is measured
+// along with them rather than counted as nothing.
+func TestAMenuIsWideEnoughForItsCaption(t *testing.T) {
+	cmds := testCommands("Copy")
+	const caption = "Everything the clipboard can do"
+	m, _ := newTestMenu(t, cmds, []MenuItem{MenuHeader(caption), {Command: "copy"}})
+
+	g := drawMenu(m, 60, 20)
+
+	if lineWith(g, caption) < 0 {
+		t.Errorf("the caption was cut short:\n%s", strings.Join(drawnRows(g), "\n"))
+	}
+}
+
+// A caption at the top of a menu is kept. It names no command, and a
+// menu that dropped every line naming none would lose it along with the
+// rules.
+func TestACaptionAtTheTopOfAMenuIsKept(t *testing.T) {
+	cmds := testCommands("Copy", "Paste")
+	m, _ := newTestMenu(t, cmds, []MenuItem{
+		MenuHeader("Clipboard"), {Command: "copy"}, {Command: "paste"},
+	})
+
+	g := drawMenu(m, 40, 20)
+
+	if lineWith(g, "Clipboard") < 0 {
+		t.Errorf("the menu dropped its first caption: %v", drawnRows(g))
+	}
+}
+
+// A caption whose lines all went is dropped with them. A menu names the
+// commands a pane registers, so a group can empty out.
+func TestACaptionWithNothingLeftUnderItGoes(t *testing.T) {
+	cmds := testCommands("Quit")
+	m, _ := newTestMenu(t, cmds, []MenuItem{
+		{Command: "quit"},
+		MenuHeader("Clipboard"), {Command: "copy"}, {Command: "paste"},
+	})
+
+	g := drawMenu(m, 40, 20)
+
+	if lineWith(g, "Clipboard") >= 0 {
+		t.Errorf("the menu kept a caption naming nothing: %v", drawnRows(g))
+	}
+	if lineWith(g, "Quit") < 0 {
+		t.Errorf("the menu lost the line that was left: %v", drawnRows(g))
+	}
+}
+
+// The box is wide enough for a line that is set in, so the longest one
+// under a caption is not cut short by the room the indent takes.
+//
+// Long enough to pass the width a menu takes whatever is on it, or the
+// indent would fit in the room that minimum leaves.
+func TestAMenuIsWideEnoughForTheLinesItSetsIn(t *testing.T) {
+	const longest = "Paste from the clipboard"
+	cmds := testCommands(longest)
+	m, _ := newTestMenu(t, cmds, []MenuItem{
+		MenuHeader("Bits"), {Command: "paste from the clipboard"},
+	})
+
+	g := drawMenu(m, 60, 20)
+
+	if lineWith(g, longest) < 0 {
+		t.Errorf("the longest line under the caption was cut short: %v", drawnRows(g))
+	}
+}
+
+// A caption with another caption straight after it names nothing, so it
+// goes. A menu loses the lines whose commands a pane has not registered.
+func TestACaptionFollowedByAnotherCaptionGoes(t *testing.T) {
+	cmds := testCommands("Quit")
+	m, _ := newTestMenu(t, cmds, []MenuItem{
+		MenuHeader("Clipboard"), {Command: "copy"},
+		MenuHeader("Window"), {Command: "quit"},
+	})
+
+	g := drawMenu(m, 40, 20)
+
+	if lineWith(g, "Clipboard") >= 0 {
+		t.Errorf("the menu kept a caption with nothing under it: %v", drawnRows(g))
+	}
+	if lineWith(g, "Window") < 0 {
+		t.Errorf("the menu dropped the caption that still names a line: %v", drawnRows(g))
 	}
 }

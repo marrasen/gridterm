@@ -11,6 +11,10 @@ import (
 // between a title and its key binding, and a floor so a menu of short
 // titles is still a box rather than a sliver.
 const (
+	// menuIndent is how far a line under a header sits in from one that
+	// is not under any.
+	menuIndent = 2
+
 	menuPad     = 1
 	menuGap     = 3
 	menuMinCols = 12
@@ -44,7 +48,8 @@ type MenuItem struct {
 	Title string
 
 	// Header makes this line a caption over the group under it, drawn
-	// dim and never chosen. An item with a Header names no command.
+	// bold and never chosen, with the lines under it set in. An item
+	// with a Header names no command.
 	Header string
 }
 
@@ -77,6 +82,10 @@ type MenuStyle struct {
 
 	// Rule picks the characters the rule is drawn with.
 	Rule Border
+
+	// HeaderFG is a caption over the group of lines under it. An empty
+	// one leaves a header in the menu's own colour.
+	HeaderFG color.RGBA
 
 	// DisabledFG is an item naming a command that is not registered.
 	// Panes register commands as they open, so a menu written
@@ -158,8 +167,13 @@ func usableItems(cmds *Commands, in []MenuItem) []MenuItem {
 	out := make([]MenuItem, 0, len(in))
 	for _, item := range in {
 		switch {
+		case item.Header != "":
+			// Kept for now, and dropped below if the lines it names all
+			// went.
+			out = append(out, item)
 		case item.Command == "":
-			// A rule that separates nothing is not a rule.
+			// A rule that separates nothing is not a rule, and one under
+			// a caption separates it from the group it names.
 			if len(out) > 0 && out[len(out)-1].Command != "" {
 				out = append(out, item)
 			}
@@ -174,10 +188,34 @@ func usableItems(cmds *Commands, in []MenuItem) []MenuItem {
 			}
 		}
 	}
+	out = namedGroups(out)
 	if n := len(out); n > 0 && out[n-1].Command == "" {
 		out = out[:n-1]
 	}
 	return out
+}
+
+// namedGroups drops a caption with no line left under it, which is what
+// a menu loses its commands to.
+func namedGroups(in []MenuItem) []MenuItem {
+	out := in[:0]
+	for i, item := range in {
+		if item.Header != "" && !lineUnder(in, i) {
+			continue
+		}
+		out = append(out, item)
+	}
+	return out
+}
+
+// lineUnder reports whether the caption at i has a line under it, which
+// is any line before the next caption or rule.
+func lineUnder(in []MenuItem, i int) bool {
+	if i+1 >= len(in) {
+		return false
+	}
+	next := in[i+1]
+	return next.Header == "" && next.Command != ""
 }
 
 // Items returns the lines of the menu. The slice is a copy.
@@ -247,9 +285,13 @@ func (m *Menu) paintItem(line grid.View, i, cols int) {
 		return
 	}
 	if m.isHeader(i) {
-		line.Fill(grid.Cell{Rune: ' ', FG: m.Style.DisabledFG, BG: m.Style.BG, Width: 1})
+		fg := m.Style.HeaderFG
+		if fg.A == 0 {
+			fg = m.Style.FG
+		}
+		line.Fill(grid.Cell{Rune: ' ', FG: fg, BG: m.Style.BG, Width: 1})
 		line.SetString(menuPad, 0, grid.Trim(item.Header, max(cols-menuPad*2, 0)),
-			m.Style.DisabledFG, m.Style.BG, 0)
+			fg, m.Style.BG, grid.AttrBold)
 		return
 	}
 
@@ -291,6 +333,7 @@ func (m *Menu) paintTitle(line grid.View, i int, fg, bg color.RGBA, room int) {
 		}
 		at += tick
 	}
+	at += m.indentOf(i)
 	line.SetString(at, 0, grid.Trim(m.titleOf(i), max(room-at, 0)), fg, bg, 0)
 }
 
@@ -450,10 +493,16 @@ func (m *Menu) anchor() Rect {
 func (m *Menu) width() int {
 	titles, chords := 0, 0
 	for i, item := range m.items {
-		if m.isSeparator(i) {
+		switch {
+		case m.isSeparator(i):
+			continue
+		case m.isHeader(i):
+			// A header names no command, so its own words are what it
+			// has to fit.
+			titles = max(titles, grid.StringWidth(item.Header))
 			continue
 		}
-		titles = max(titles, grid.StringWidth(m.titleOf(i)))
+		titles = max(titles, grid.StringWidth(m.titleOf(i))+m.indentOf(i))
 		if chord, ok := m.chordFor(item.Command); ok {
 			chords = max(chords, grid.StringWidth(chord))
 		}
@@ -495,6 +544,29 @@ func (m *Menu) titleOf(i int) string {
 	}
 	cmd, _ := m.lookup(item.Command)
 	return cmd.Title
+}
+
+// indentOf is how far a line is set in: a line under a header, so the
+// header reads as the name of the group rather than as one of it.
+func (m *Menu) indentOf(i int) int {
+	if m.underAHeader(i) {
+		return menuIndent
+	}
+	return 0
+}
+
+// underAHeader reports whether a line belongs to the group a header
+// names. A separator ends the group.
+func (m *Menu) underAHeader(i int) bool {
+	for k := i - 1; k >= 0; k-- {
+		switch {
+		case m.isHeader(k):
+			return true
+		case m.isSeparator(k):
+			return false
+		}
+	}
+	return false
 }
 
 // chordFor returns the key binding to show beside a command.

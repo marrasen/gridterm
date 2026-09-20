@@ -410,6 +410,7 @@ func TestEveryThemeReads(t *testing.T) {
 				"why a notice failed":    a.noticeStyle().FailureFG,
 				"the letters found":      a.paletteStyle().MatchFG,
 				"a key beside an item":   a.menuStyle().ChordFG,
+				"a menu's caption":       a.menuStyle().HeaderFG,
 				"a machine's name":       a.headingFG(),
 				"what a connection does": a.frameDimFG(),
 			} {

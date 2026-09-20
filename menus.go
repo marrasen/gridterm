@@ -395,6 +395,7 @@ func (a *app) menuStyle() ui.MenuStyle {
 		SelectedFG: a.activeFG(),
 		SelectedBG: a.activeBG(),
 		ChordFG:    a.panelDimFG(),
+		HeaderFG:   a.headingFG(),
 		DisabledFG: a.disabledFG(),
 		// A rule around it, and a shadow under it. A menu over a
 		// terminal is otherwise two lots of text with nothing between

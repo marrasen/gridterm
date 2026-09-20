@@ -521,3 +521,21 @@ func TestANoticeSurvivesTheServerMenuBeingRebuilt(t *testing.T) {
 		t.Error("the menu was not rebuilt, so nothing was tested")
 	}
 }
+
+// A menu's caption is drawn in a colour of its own, not the one a line
+// that cannot be chosen takes.
+//
+// Drawn in that one it read as a greyed-out option rather than as the
+// name of the group under it, which is what Marcus reported.
+func TestAMenusCaptionIsNotTheDisabledColour(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+
+	style := a.menuStyle()
+
+	if style.HeaderFG.A == 0 {
+		t.Fatal("a menu's caption has no colour of its own")
+	}
+	if style.HeaderFG == style.DisabledFG {
+		t.Errorf("a caption and a line that cannot be chosen are both %v", style.HeaderFG)
+	}
+}

@@ -244,7 +244,7 @@ func TestThePlusOnAServerOffersWhatAConnectionCanCarry(t *testing.T) {
 	// Nor the one that closes whatever the list has selected. Clicking
 	// the plus does not move the selection, so that line would close
 	// some other machine's connection without saying so.
-	if offers(menu, "conn.close") {
+	if offers(menu, "sidebar.closeRow") {
 		t.Errorf("the menu offers the line that closes the selected row: %v", menuCommands(menu))
 	}
 }

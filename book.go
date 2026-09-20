@@ -318,8 +318,8 @@ func serverItems(saved []ui.MenuItem) []ui.MenuItem {
 		// kind is "shortcuts" throughout the menus, which is what the
 		// header settles.
 		ui.MenuHeader("SSH Keys"),
-		ui.MenuItem{Command: "key.make", Title: "New Key…"},
-		ui.MenuItem{Command: "keys.lock", Title: "Lock Keys"})
+		ui.MenuItem{Command: "sshkey.make", Title: "New Key…"},
+		ui.MenuItem{Command: "sshkey.lock", Title: "Lock Keys"})
 }
 
 // serversMenu is the menu bar title the saved machines hang under.

@@ -369,7 +369,7 @@ func TestTheShellCopiedIsACopy(t *testing.T) {
 // leave every menu printing chords nothing runs.
 func TestARereadReachesTheMenuBar(t *testing.T) {
 	a := aWindowWithMenus(t)
-	withShortcutFile(t, a, `{"version":1,"keys":{"ctrl+shift+H":"nothing","F7":"help.keys"}}`)
+	withShortcutFile(t, a, `{"version":1,"keys":{"ctrl+shift+H":"nothing","F7":"help.shortcuts"}}`)
 
 	if err := a.reloadShortcuts(); err != nil {
 		t.Fatalf("reread: %v", err)

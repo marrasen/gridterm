@@ -104,7 +104,7 @@ func TestConnectingToAWindowOpensNothingOnIt(t *testing.T) {
 	withDialogs(t, client)
 	withPanel(t, client)
 
-	runFromPalette(t, client, "serve.takeOver")
+	runFromPalette(t, client, "serve.attach")
 	f := awaitModal(t, client, "the Connect to another window dialog", byTitle[*ui.Form]("Connect to another window"))
 	typeIntoField(t, client, f, "Machine", host.serving.addr())
 	typeIntoField(t, client, f, "Key file", keyFile)
@@ -165,7 +165,7 @@ func TestLettingGoOfATakenWindowTakesItsPanes(t *testing.T) {
 	panes := len(client.panes)
 	// From the palette rather than the menu bar, because a bar would take
 	// a row off a window whose size is the point of this fixture.
-	runFromPalette(t, client, "serve.takeOver")
+	runFromPalette(t, client, "serve.attach")
 	f := awaitModal(t, client, "the Connect to another window dialog", byTitle[*ui.Form]("Connect to another window"))
 	typeIntoField(t, client, f, "Machine", addr)
 	typeIntoField(t, client, f, "Key file", keyFile)
@@ -833,7 +833,7 @@ func TestAWindowThatQuitsKeepsARowThatCanBeCleared(t *testing.T) {
 	// not seen before.
 	takeOver := func(at, name string) {
 		t.Helper()
-		chooseMenuItem(t, openMenuWith(t, client, "serve.takeOver"), "serve.takeOver")
+		chooseMenuItem(t, openMenuWith(t, client, "serve.attach"), "serve.attach")
 		f := awaitModal(t, client, "the Connect to another window dialog", byTitle[*ui.Form]("Connect to another window"))
 		typeIntoField(t, client, f, "Machine", at)
 		typeIntoField(t, client, f, "Key file", keyFile)
@@ -2499,8 +2499,8 @@ func TestTheScreensOfAWindowAreGroupedByMachine(t *testing.T) {
 // Servers menu, the take-over line, and the address typed into it.
 func takeOverFromTheDialog(t *testing.T, a *testApp, addr, keyFile string) *term.Terminal {
 	t.Helper()
-	m := openMenuWith(t, a, "serve.takeOver")
-	chooseMenuItem(t, m, "serve.takeOver")
+	m := openMenuWith(t, a, "serve.attach")
+	chooseMenuItem(t, m, "serve.attach")
 	f := awaitModal(t, a, "the Connect to another window dialog", byTitle[*ui.Form]("Connect to another window"))
 	typeIntoField(t, a, f, "Machine", addr)
 	typeIntoField(t, a, f, "Key file", keyFile)
@@ -2802,8 +2802,8 @@ func TestAWindowSavedDuringTheDialLandsUnderItsNewName(t *testing.T) {
 
 	// The take-over, left in flight: nothing here runs what the dial
 	// posts back.
-	m := openMenuWith(t, client, "serve.takeOver")
-	chooseMenuItem(t, m, "serve.takeOver")
+	m := openMenuWith(t, client, "serve.attach")
+	chooseMenuItem(t, m, "serve.attach")
 	f := awaitModal(t, client, "the Connect to another window dialog", byTitle[*ui.Form]("Connect to another window"))
 	typeIntoField(t, client, f, "Machine", addr)
 	typeIntoField(t, client, f, "Key file", keyFile)
@@ -3101,7 +3101,7 @@ func TestLeavingAWindowLeavesThePaneItOpenedRunningThere(t *testing.T) {
 	withDialogs(t, client)
 	withPanel(t, client)
 	panes := len(client.panes)
-	runFromPalette(t, client, "serve.takeOver")
+	runFromPalette(t, client, "serve.attach")
 	f := awaitModal(t, client, "the Connect to another window dialog", byTitle[*ui.Form]("Connect to another window"))
 	typeIntoField(t, client, f, "Machine", addr)
 	typeIntoField(t, client, f, "Key file", keyFile)

@@ -10,11 +10,14 @@ import (
 	"github.com/marrasen/gridterm/ui/files"
 )
 
-// helpCommand is the command that lists the keys, and helpTitle names
-// both the dialog and the line that opens it.
+// helpCommand is the command that lists the shortcuts, and helpTitle
+// names both the dialog and the line that opens it.
+//
+// Shortcuts rather than keys: a key here is an SSH key, throughout the
+// menus and throughout the command ids.
 const (
-	helpCommand = "help.keys"
-	helpTitle   = "Keys and commands"
+	helpCommand = "help.shortcuts"
+	helpTitle   = "Shortcuts and commands"
 )
 
 // helpGap is the blank between a line's words and its chord.

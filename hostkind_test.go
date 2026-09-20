@@ -387,8 +387,8 @@ func TestTheConnectDialogOnAWindowAlreadyConnectedSaysSo(t *testing.T) {
 	})
 	panes := len(client.panes)
 
-	m := openMenuWith(t, client, "serve.takeOver")
-	chooseMenuItem(t, m, "serve.takeOver")
+	m := openMenuWith(t, client, "serve.attach")
+	chooseMenuItem(t, m, "serve.attach")
 	f := awaitModal(t, client, "the Connect to another window dialog", byTitle[*ui.Form]("Connect to another window"))
 	typeIntoField(t, client, f, "Machine", addr)
 	typeIntoField(t, client, f, "Key file", keyFile)
@@ -692,8 +692,8 @@ func TestEveryWayInTakesOverASavedWindow(t *testing.T) {
 	ways := append(waysIn(), wayIn{
 		"take over a window, by address",
 		func(t *testing.T, a *testApp, host, addr, keyFile string) {
-			m := openMenuWith(t, a, "serve.takeOver")
-			chooseMenuItem(t, m, "serve.takeOver")
+			m := openMenuWith(t, a, "serve.attach")
+			chooseMenuItem(t, m, "serve.attach")
 			f := awaitModal(t, a, "the Connect to another window dialog", byTitle[*ui.Form]("Connect to another window"))
 			typeIntoField(t, a, f, "Machine", addr)
 			typeIntoField(t, a, f, "Key file", keyFile)

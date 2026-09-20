@@ -9,7 +9,7 @@ import "testing"
 // nothing at all.
 func TestACommandIsFoundByAWordItAnswersTo(t *testing.T) {
 	cmds := []Command{
-		{ID: "serve.takeOver", Title: "Connect to another window…", AlsoFind: []string{"take over"}},
+		{ID: "serve.attach", Title: "Connect to another window…", AlsoFind: []string{"take over"}},
 		{ID: "pane.open", Title: "New pane"},
 	}
 
@@ -18,7 +18,7 @@ func TestACommandIsFoundByAWordItAnswersTo(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("looking for taking over found %d commands, want the one", len(got))
 	}
-	if got[0].Command.ID != "serve.takeOver" {
+	if got[0].Command.ID != "serve.attach" {
 		t.Errorf("it found %q", got[0].Command.ID)
 	}
 	// Nothing marked on the title, because the match is not in it.

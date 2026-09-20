@@ -10,12 +10,15 @@ import (
 	"github.com/marrasen/gridterm/ui"
 )
 
-// keysCommand writes a starting shortcuts file, and keysTitle names the
-// line that does it. keysReloadCommand reads the file again.
+// keysCommand writes a starting shortcuts file, and keysTitle names
+// the line that does it. keysReloadCommand reads the file again.
+//
+// Named shortcuts rather than keys for the same reason the ids are: a
+// key is an SSH key here.
 const (
-	keysCommand       = "keys.start"
+	keysCommand       = "shortcuts.write"
 	keysTitle         = "Write a starting keyboard shortcuts file"
-	keysReloadCommand = "keys.reload"
+	keysReloadCommand = "shortcuts.reload"
 	keysReloadTitle   = "Reread the keyboard shortcuts"
 )
 

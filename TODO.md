@@ -436,11 +436,16 @@ while the menu is open.
 
 ## Keyboard and shortcuts
 
-- **The code still says "take over" where the user reads "connect
-  to".** `serve.takeOver`, `takeOver`, `workOnWindow` and `taken` in
-  windows.go. Nothing blocks the rename now: `keys.Renamed` follows a
-  command id that has moved, so a saved shortcut naming the old one
-  goes on working. It is a rename nobody has done yet.
+- **The code still says "take over" where the user reads "attach".**
+  The command id is `serve.attach` now, and the menus say Attach. What
+  is left is inside: `takeOver`, `workOnWindow` and `taken` in
+  windows.go, and `hostSavedWindow`. A mechanical rename, and a large
+  diff for no user-visible gain, which is why it is still here.
+
+- **The sidebar is the panel in the code.** The ids say sidebar now
+  and the user has always read sidebar. `panel.go`, `a.panel`,
+  `panelText` and the rest are the same rename as above and the same
+  size.
 
 - **Only the font size goes by the character a key produces.** The
   punctuation keys are read from what the layout says they print, so

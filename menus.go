@@ -32,7 +32,7 @@ func (a *app) newMenubar(child ui.Widget) *ui.Menubar {
 			{Command: scrollbackCommand, Title: "Find in Scrollback…"},
 		}},
 		{Title: "View", Items: []ui.MenuItem{
-			{Command: "panel.toggle", Title: "Sidebar"},
+			{Command: "sidebar.toggle", Title: "Sidebar"},
 			{Command: "pane.titles", Title: "Pane Titles"},
 			{Command: fullScreenCommand, Title: "Full Screen"},
 			ui.MenuHeader("Font"),
@@ -50,7 +50,7 @@ func (a *app) newMenubar(child ui.Widget) *ui.Menubar {
 			// Pop Out rather than Unsplit: the pane leaves the split
 			// and lands on the stage, which is somewhere rather than
 			// nowhere.
-			{Command: "pane.unsplit", Title: "Pop Out"},
+			{Command: "pane.popOut", Title: "Pop Out"},
 			ui.MenuHeader("Go To"),
 			// The sidebar pair gets the plain names, because that
 			// order is the one on screen to be seen.
@@ -59,7 +59,7 @@ func (a *app) newMenubar(child ui.Widget) *ui.Menubar {
 			{Command: "pane.next", Title: "Last Used"},
 			{Command: "pane.previous", Title: "Last Used, Reversed"},
 			{Command: switcherCommand, Title: "All Panes…"},
-			{Command: "panel.focus", Title: "Sidebar"},
+			{Command: "sidebar.focus", Title: "Sidebar"},
 		}},
 		{Title: machineMenu, Items: []ui.MenuItem{
 			// The same list in the same order as the plus on a
@@ -100,7 +100,7 @@ func (a *app) newMenubar(child ui.Widget) *ui.Menubar {
 		}},
 		{Title: helpMenu, Items: []ui.MenuItem{
 			{Command: "palette.open", Title: "All Commands…"},
-			{Command: helpCommand, Title: "Keys and Commands"},
+			{Command: helpCommand, Title: "Shortcuts and Commands"},
 			ui.MenuSeparator(),
 			{Command: logCommand, Title: "Window Log"},
 			ui.MenuSeparator(),
@@ -138,7 +138,7 @@ func fileItems(shells []ui.MenuItem) []ui.MenuItem {
 	return append(items,
 		ui.MenuHeader("Close"),
 		ui.MenuItem{Command: "pane.close", Title: "Pane"},
-		ui.MenuItem{Command: "conn.close", Title: "Selected Row"},
+		ui.MenuItem{Command: "sidebar.closeRow", Title: "Selected Row"},
 		ui.MenuItem{Command: "conn.disconnect", Title: "Machine"},
 		ui.MenuItem{Command: "conn.clearFinished", Title: "All Finished"},
 		ui.MenuSeparator(),
@@ -152,7 +152,7 @@ func shareItems(hand string, sharing bool) []ui.MenuItem {
 	items := []ui.MenuItem{
 		ui.MenuHeader("Windows"),
 		{Command: "serve.window", Title: "Serve This One…"},
-		{Command: "serve.takeOver", Title: "Attach to Another…"},
+		{Command: "serve.attach", Title: "Attach to Another…"},
 		ui.MenuHeader("Agent"),
 		{Command: "agent.hand", Title: hand},
 		{Command: "agent.take", Title: "Remove Pane"},

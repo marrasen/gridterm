@@ -41,7 +41,7 @@ windows and agents, and the program.
 - ⟨built at run time⟩ the shells this machine has
 - ⟨header: Close⟩
 - `[id: pane.close]` Pane — `Ctrl+Shift+W`
-- `[id: conn.close]` Selected Row
+- `[id: sidebar.closeRow]` Selected Row
 - `[id: conn.disconnect]` Machine
 - `[id: conn.clearFinished]` All Finished
 - ⟨separator⟩
@@ -64,7 +64,7 @@ pane of its own. A bare "Find" would not lead anyone to expect that.
 
 ## `[menu: view]` View
 
-- `[id: panel.toggle]` Sidebar ✓ — `Ctrl+Shift+B`
+- `[id: sidebar.toggle]` Sidebar ✓ — `Ctrl+Shift+B`
 - `[id: pane.titles]` Pane Titles ✓
 - `[id: view.fullScreen]` Full Screen ✓ — `F11`
 - ⟨header: Font⟩
@@ -80,14 +80,14 @@ pane of its own. A bare "Find" would not lead anyone to expect that.
 - ⟨header: Split⟩
 - `[id: pane.splitRight]` Right — `Ctrl+Shift+D`
 - `[id: pane.splitDown]` Down — `Ctrl+Shift+E`
-- `[id: pane.unsplit]` Pop Out — `Ctrl+Shift+U`
+- `[id: pane.popOut]` Pop Out — `Ctrl+Shift+U`
 - ⟨header: Go To⟩
 - `[id: pane.nextInSidebar]` Next — `Ctrl+PageDown`
 - `[id: pane.previousInSidebar]` Previous — `Ctrl+PageUp`
 - `[id: pane.next]` Last Used — `Ctrl+Tab`
 - `[id: pane.previous]` Last Used, Reversed — `Ctrl+Shift+Tab`
 - `[id: view.switcher]` All Panes… — `Ctrl+Shift+A`
-- `[id: panel.focus]` Sidebar — `Ctrl+Shift+L`
+- `[id: sidebar.focus]` Sidebar — `Ctrl+Shift+L`
 
 "Pop Out" because the pane leaves the split and lands on the stage,
 which is somewhere rather than nowhere.
@@ -121,8 +121,8 @@ machine's row in the sidebar.
 - `[id: server.editThis]` Edit This Server…
 - `[id: server.forget]` Forget This Server…
 - ⟨header: SSH Keys⟩
-- `[id: key.make]` New Key…
-- `[id: keys.lock]` Lock Keys
+- `[id: sshkey.make]` New Key…
+- `[id: sshkey.lock]` Lock Keys
 
 "Keys" means SSH keys here and nowhere else. The keyboard kind is
 "shortcuts" throughout.
@@ -131,7 +131,7 @@ machine's row in the sidebar.
 
 - ⟨header: Windows⟩
 - `[id: serve.window]` Serve This One…
-- `[id: serve.takeOver]` Attach to Another…
+- `[id: serve.attach]` Attach to Another…
 - ⟨header: Agent⟩
 - `[id: agent.hand]` Share This Pane with an Agent… *(reads "Add This
   Pane to the Share…" once a share is open)*
@@ -144,10 +144,10 @@ machine's row in the sidebar.
 - `[id: view.theme]` Theme…
 - ⟨header: Starter Files⟩
 - `[id: view.themesStart]` New Theme File…
-- `[id: keys.start]` New Shortcuts File
+- `[id: shortcuts.write]` New Shortcuts File
 - ⟨header: Reload⟩
 - `[id: view.themesReload]` Themes
-- `[id: keys.reload]` Shortcuts
+- `[id: shortcuts.reload]` Shortcuts
 - `[id: server.reload]` Server List
 - ⟨separator⟩
 - `[id: help.files]` File Locations
@@ -155,7 +155,7 @@ machine's row in the sidebar.
 ## `[menu: help]` Help
 
 - `[id: palette.open]` All Commands… — `Ctrl+Shift+K`
-- `[id: help.keys]` Keys and Commands
+- `[id: help.shortcuts]` Shortcuts and Commands
 - ⟨separator⟩
 - `[id: view.log]` Window Log
 - ⟨separator⟩
@@ -173,6 +173,25 @@ machine's row in the sidebar.
   is on the plus menu where the shells are.
 
 ---
+
+# The ids
+
+The ids changed with the menus, while nothing outside this repo has a
+shortcuts file naming them. What the user reads and what the code
+calls it now agree:
+
+| was | is | why |
+|---|---|---|
+| `keys.start` | `shortcuts.write` | a key is an SSH key here |
+| `keys.reload` | `shortcuts.reload` | the same |
+| `help.keys` | `help.shortcuts` | the same, and the dialog is retitled |
+| `keys.lock` | `sshkey.lock` | this one really is an SSH key |
+| `key.make` | `sshkey.make` | and it agrees with the line above it |
+| `serve.takeOver` | `serve.attach` | the term is gone from the window |
+| `conn.close` | `sidebar.closeRow` | it closes a row, not a connection |
+| `panel.toggle` | `sidebar.toggle` | the user has always read sidebar |
+| `panel.focus` | `sidebar.focus` | the same |
+| `pane.unsplit` | `pane.popOut` | the line says Pop Out |
 
 # Still to decide
 

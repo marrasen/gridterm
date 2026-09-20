@@ -282,7 +282,7 @@ func hostItems(about hostFacts, shells, folders []ui.MenuItem) []ui.MenuItem {
 		ui.MenuItem{Command: "conn.tunnel", Title: "Tunnel…"},
 		ui.MenuItem{Command: "conn.socks", Title: "SOCKS proxy…"},
 		ui.MenuSeparator(),
-		// Not conn.close: that one closes whatever the list has
+		// Not sidebar.closeRow: that one closes whatever the list has
 		// selected, which is not the machine whose row was clicked.
 		ui.MenuItem{Command: "conn.disconnect", Title: "Close the connection"})
 	items = withTheLog(items, about)

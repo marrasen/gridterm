@@ -379,6 +379,79 @@ func TestDraggingOverAReaderCopiesWhatWasPickedOut(t *testing.T) {
 	})
 }
 
+// A read posts how far it has got no more often than a frame. A read
+// off a local disk comes back in sixty-four kilobyte chunks, and one
+// post per chunk would be thousands a second for a number nobody can
+// read that fast.
+func TestHowFarAReadHasGotIsPostedNoFasterThanAFrame(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	watch := a.watchRead(files.NewReader("x", "/tmp/x"))
+
+	for range 1000 {
+		watch(1)
+	}
+
+	if got := a.pump.pending(); got > 1 {
+		t.Errorf("a thousand counts posted %d times, want at most one inside a frame", got)
+	}
+}
+
+// The counts do get through, once a frame has passed.
+func TestHowFarAReadHasGotDoesGetThrough(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	r := files.NewReader("x", "/tmp/x")
+	watch := a.watchRead(r)
+
+	watch(1)
+	if got := a.pump.pending(); got != 1 {
+		t.Fatalf("the first count posted %d times, want one", got)
+	}
+	time.Sleep(progressEvery + 20*time.Millisecond)
+	watch(2)
+
+	if got := a.pump.pending(); got != 2 {
+		t.Errorf("a count after a frame posted %d times in all, want two", got)
+	}
+}
+
+// The count reaches the pane, which is the whole point: a file coming
+// down a slow connection says how much of it has arrived.
+func TestHowFarAReadHasGotReachesThePane(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	a.commands()
+	lines := make([]string, 400)
+	for i := range lines {
+		lines[i] = "a line of text"
+	}
+	name, path := aReadableFile(t, lines...)
+	e, err := vfs.NewLocal().Stat(path)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if err := a.openReader(vfs.NewLocal(), conns.Local, path, name, false, e.Size); err != nil {
+		t.Fatalf("open a reader: %v", err)
+	}
+	r := onlyReader(t, a)
+	waitUntil(t, "the file to be read", func() bool {
+		a.pump.run()
+		return r.Lines() > 0
+	})
+
+	// Every count posted during the read ran through the pump above.
+	// What it must not have done is leave one behind that puts the
+	// pane back to reading after it has finished.
+	if r.Busy() {
+		t.Fatal("the read is still out")
+	}
+	if got := r.SoFar(); got != 0 {
+		t.Errorf("the reader still holds a count of %d after the read finished", got)
+	}
+	if got := r.Where(); strings.Contains(got, "reading") {
+		t.Errorf("the top line says %q after the read finished", got)
+	}
+}
+
 // The size the browser listed reaches the reader, so a file being read
 // says how much is coming rather than looking empty.
 //

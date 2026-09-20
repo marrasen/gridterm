@@ -61,7 +61,7 @@ func (a *app) openReader(f vfs.FS, host, path, name string, follow bool, expect 
 	r.Read = func(then func([]string, bool, error)) {
 		a.holdFS(f)
 		go func() {
-			lines, cut, err := files.ReadFile(f, path)
+			lines, cut, err := files.ReadFileWatched(f, path, a.watchRead(r))
 			a.pump.post(func() {
 				a.doneWithFS(f)
 				then(lines, cut, err)
@@ -109,6 +109,36 @@ func (a *app) openReader(f vfs.FS, host, path, name string, follow bool, expect 
 	r.Follow(follow)
 	r.Open()
 	return nil
+}
+
+// progressEvery is how often a read says how far it has got. About a
+// frame: the number is there to be looked at, and one posted per chunk
+// off a fast disk would be thousands a second for nothing.
+const progressEvery = 100 * time.Millisecond
+
+// watchRead returns what a read tells how far it has got.
+//
+// It is called from the goroutine doing the reading, so it hands the
+// number to the drawing goroutine through the pump rather than writing
+// it anywhere. Throttled, because a read off a local disk comes back in
+// sixty-four kilobyte chunks and the pane is redrawn sixty times a
+// second at most.
+func (a *app) watchRead(r *files.Reader) func(int64) {
+	var last time.Time
+	return func(read int64) {
+		now := time.Now()
+		if now.Sub(last) < progressEvery {
+			return
+		}
+		last = now
+		a.pump.post(func() {
+			// A read that has already come back, or a pane that has
+			// been closed since, wants nothing. ReadSoFar checks the
+			// first and the second is a field nobody reads.
+			r.ReadSoFar(read)
+			a.markDirty()
+		})
+	}
 }
 
 // readerRowKind is the sidebar kind for a reader, Follow while it is

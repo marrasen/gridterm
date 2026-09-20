@@ -1,11 +1,14 @@
 package files
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/marrasen/gridterm/input"
 	"github.com/marrasen/gridterm/ui"
+	"github.com/marrasen/gridterm/vfs"
 )
 
 // chordKey presses a key with whatever modifiers are named.
@@ -315,5 +318,135 @@ func TestAPictureStillBeingReadSaysSo(t *testing.T) {
 
 	if !strings.Contains(top, "reading") {
 		t.Errorf("the top row is %q, want it to say the picture is being read", top)
+	}
+}
+
+// A read says how far it has got as it goes, so a file coming down a
+// slow connection shows it is arriving rather than only that it
+// started.
+func TestAWatchedReadSaysHowFarItHasGot(t *testing.T) {
+	dir := t.TempDir()
+	at := filepath.Join(dir, "big.log")
+	body := strings.Repeat("a line of text\n", 20000)
+	if err := os.WriteFile(at, []byte(body), 0o600); err != nil {
+		t.Fatalf("write the file: %v", err)
+	}
+
+	var seen []int64
+	lines, cut, err := ReadFileWatched(vfs.NewLocal(), at, func(read int64) {
+		seen = append(seen, read)
+	})
+
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if cut {
+		t.Fatal("the file was cut, so the counts are not the whole of it")
+	}
+	if len(lines) != 20000 {
+		t.Fatalf("it read %d lines, want 20000", len(lines))
+	}
+	if len(seen) < 2 {
+		t.Fatalf("the watcher was told %d times, want it told as the read went", len(seen))
+	}
+	for i := 1; i < len(seen); i++ {
+		if seen[i] <= seen[i-1] {
+			t.Fatalf("the count went %d then %d, want it only to grow", seen[i-1], seen[i])
+		}
+	}
+	if got, want := seen[len(seen)-1], int64(len(body)); got != want {
+		t.Errorf("the last count was %d, want the whole file at %d", got, want)
+	}
+}
+
+// A read nobody is watching still works, which is what ReadFile is.
+func TestAReadNobodyIsWatchingStillWorks(t *testing.T) {
+	dir := t.TempDir()
+	at := filepath.Join(dir, "small.txt")
+	if err := os.WriteFile(at, []byte("one\ntwo\n"), 0o600); err != nil {
+		t.Fatalf("write the file: %v", err)
+	}
+
+	lines, _, err := ReadFile(vfs.NewLocal(), at)
+
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if len(lines) != 2 {
+		t.Errorf("it read %d lines, want 2", len(lines))
+	}
+}
+
+// What the pane says while a read is arriving: how far of how much.
+func TestItSaysHowFarOfHowMuchHasArrived(t *testing.T) {
+	r, _ := aSlowReader(t, 44, 8)
+	r.Expect = 4_400_000
+
+	r.ReadSoFar(2_000_000)
+
+	if got := readerRow(drawReader(r, 44, 8), 0); !strings.Contains(got, "1.9 of 4.2 MB") {
+		t.Errorf("the top row is %q, want it to say how far of how much", got)
+	}
+}
+
+// Both halves are written in the same unit, so the two numbers can be
+// read against each other at a glance.
+func TestBothHalvesOfTheProgressAreInOneUnit(t *testing.T) {
+	r, _ := aSlowReader(t, 60, 8)
+	r.Expect = 900_000_000
+
+	r.ReadSoFar(120_000_000)
+
+	got := readerRow(drawReader(r, 60, 8), 0)
+	if !strings.Contains(got, "114 of 858 MB") {
+		t.Errorf("the top row is %q, want both numbers in megabytes", got)
+	}
+}
+
+// A file that grew since it was listed reads past its own size. The
+// total is dropped rather than shown as less than what has arrived.
+func TestAFileThatGrewDropsTheTotalRatherThanLying(t *testing.T) {
+	r, _ := aSlowReader(t, 44, 8)
+	r.Expect = 1000
+
+	r.ReadSoFar(5000)
+
+	got := readerRow(drawReader(r, 44, 8), 0)
+	if strings.Contains(got, "of 1000 B") {
+		t.Errorf("the top row is %q, want it not to claim a total it has passed", got)
+	}
+	if !strings.Contains(got, "4.9 kB") {
+		t.Errorf("the top row is %q, want it to say what has arrived", got)
+	}
+}
+
+// A count arriving after the read came back is ignored, so a late one
+// cannot put the pane back to reading.
+func TestACountAfterTheReadCameBackIsIgnored(t *testing.T) {
+	r, answer := aSlowReader(t, 44, 8)
+	r.Expect = 4_400_000
+	answer("one", "two")
+
+	r.ReadSoFar(2_000_000)
+
+	if got := r.SoFar(); got != 0 {
+		t.Errorf("the reader took a count of %d after the read came back", got)
+	}
+	if got := readerRow(drawReader(r, 44, 8), 0); strings.Contains(got, "reading") {
+		t.Errorf("the top row is %q, want the read to have finished", got)
+	}
+}
+
+// Rereading starts the count again rather than carrying the last
+// read's total into this one.
+func TestARereadStartsTheCountAgain(t *testing.T) {
+	r, answer := aSlowReader(t, 44, 8)
+	r.ReadSoFar(2_000_000)
+	answer("one")
+
+	r.Open()
+
+	if got := r.SoFar(); got != 0 {
+		t.Errorf("a reread started at %d bytes, want it to start again", got)
 	}
 }

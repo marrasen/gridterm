@@ -469,6 +469,25 @@ func size(n int64) string {
 	return fmt.Sprintf("%.0f %s", value, suffix)
 }
 
+// sizeIn writes a byte count in the unit another one would be written
+// in, and with the same decimals, so a pair reads as "1.9 of 4.2 MB"
+// rather than as two counts the reader has to line up.
+func sizeIn(n, of int64) string {
+	const unit = 1024
+	if of < unit {
+		return fmt.Sprintf("%d", n)
+	}
+	div, exp := int64(unit), 0
+	for of/div >= unit && exp < 4 {
+		div *= unit
+		exp++
+	}
+	if float64(of)/float64(div) < 10 {
+		return fmt.Sprintf("%.1f", float64(n)/float64(div))
+	}
+	return fmt.Sprintf("%.0f", float64(n)/float64(div))
+}
+
 // Selected is the name the keys would act on, and whether there is one.
 func (p *Pane) Selected() (vfs.Entry, bool) {
 	row, ok := p.list.Selected()

@@ -405,23 +405,27 @@ From Marcus's inbox, after working in a shared window.
 
 ## The file viewer
 
-- **A file being read says so.** Done on 2026-09-20, from Marcus's
-  inbox: a large file showed "empty" in the corner with nothing to say
-  a read was out, and the only sign was an ellipsis after the name. It
-  now says "reading 4.2 MB…", or "reading…" when whoever opened it did
-  not know the size. The browser knows the size already from the
-  listing it drew, so `readFileFrom` passes it on rather than the
-  reader asking.
+- **A file being read says how far it has got.** Done on 2026-09-20,
+  from Marcus's inbox: a large file showed "empty" in the corner with
+  nothing to say a read was out. It now counts up, "reading 1.9 of
+  4.2 MB…", falling back to what has arrived when the file grew past
+  the size it was listed at, to the size alone before the first bytes
+  land, and to "reading…" when nobody knew either.
+
+  How it hangs together: `ReadFileWatched` tells a watcher the running
+  total from the goroutine doing the reading, `app.watchRead` hands
+  that to the drawing goroutine through the pump no more often than
+  every 100ms, and `Reader.ReadSoFar` takes it. The total comes from
+  the listing the browser already drew, so nothing asks the machine how
+  big the file is before reading it.
 
   Still open from the same note: a scrollbar minimap, and a JSON log
   viewer like the one in particleview5-bugreport-viewer.
 
-- **Nothing shows how far a read has got.** The size is what the
-  listing said, not what has arrived: `files.ReadFile` answers once
-  with every line, so there is no progress to draw. A file of eight
-  megabytes says "reading 8 MB…" for the whole wait. Reading in
-  chunks and saying how many have landed is the next step, and it
-  changes the shape of `Reader.Read`.
+- **A picture says how big it is but not how far it has got.**
+  `ReadPicture` decodes in one go rather than reading in chunks, so
+  there is nothing to count. A picture is capped at a size a pane can
+  draw, so the wait is shorter than a log file's, and nobody has asked.
 
 ## The log pane
 

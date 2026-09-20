@@ -106,6 +106,10 @@ type Reader struct {
 	wide   int
 	wideOf int
 
+	// sofar is how many bytes of the file have arrived, while a read is
+	// out. It goes back to nothing when one starts.
+	sofar int64
+
 	// busy says a read is out and has not come back, and focused whether
 	// the keys are here.
 	busy    bool
@@ -165,6 +169,23 @@ func (r *Reader) Left() int { return r.left }
 // Busy reports that a read is out.
 func (r *Reader) Busy() bool { return r.busy }
 
+// ReadSoFar says how many bytes of the file have arrived, for the line
+// shown while a read is out.
+//
+// It is called on the goroutine that draws, by whoever is running the
+// read, and no more often than a frame: the number is only there to be
+// looked at. A read that has finished takes no more of them.
+func (r *Reader) ReadSoFar(n int64) {
+	if !r.busy {
+		return
+	}
+	r.sofar = max(n, 0)
+}
+
+// SoFar is how many bytes of the file have arrived, and zero when no
+// read is out or nobody is counting.
+func (r *Reader) SoFar() int64 { return r.sofar }
+
 // Err is why the last read failed, and nil when it did not.
 func (r *Reader) Err() error { return r.err }
 
@@ -191,13 +212,15 @@ func (r *Reader) Open() bool {
 	if r.Read == nil {
 		return false
 	}
-	r.busy = true
+	r.busy, r.sofar = true, 0
 	// Asked before the read goes out rather than after it comes back: a
 	// file that grew in between would have moved the end out from under
 	// the question.
 	r.stuck = r.follow && r.AtEnd()
 	r.Read(func(lines []string, cut bool, err error) {
-		r.busy = false
+		// The count goes with the read it belonged to, so nothing is
+		// left holding how far a read that has finished got.
+		r.busy, r.sofar = false, 0
 		r.err = err
 		if err != nil {
 			// The lines on screen are not the file any more, so what was
@@ -236,6 +259,20 @@ func (r *Reader) Failed(err error) {
 // The caller runs it somewhere that is not the goroutine that draws: a
 // file on another machine comes down a connection.
 func ReadFile(f vfs.FS, path string) (lines []string, cut bool, err error) {
+	return ReadFileWatched(f, path, nil)
+}
+
+// ReadFileWatched is ReadFile with somebody counting.
+//
+// watch is called with the bytes that have arrived so far, from the
+// goroutine doing the reading, as often as the reads come back. A file
+// on a machine at the far end takes long enough that a pane saying
+// nothing looks stuck, and this is what it says instead.
+//
+// It is called from the reading goroutine, so it must not touch
+// anything the drawing goroutine owns. Whoever passes it is expected to
+// hand the number on and to do that no more often than a frame.
+func ReadFileWatched(f vfs.FS, path string, watch func(read int64)) (lines []string, cut bool, err error) {
 	rc, err := f.Open(path)
 	if err != nil {
 		return nil, false, err
@@ -250,7 +287,7 @@ func ReadFile(f vfs.FS, path string) (lines []string, cut bool, err error) {
 	// limit cannot tell a file that fits from one that does not. What
 	// arrives is counted rather than what is kept, because what is kept
 	// is already cut down to the lines that fitted.
-	counted := &counter{from: io.LimitReader(rc, MostReadBytes+1)}
+	counted := &counter{from: io.LimitReader(rc, MostReadBytes+1), watch: watch}
 	in := bufio.NewReaderSize(counted, 64<<10)
 	for {
 		line, clipped, err := readLine(in)
@@ -278,11 +315,18 @@ func ReadFile(f vfs.FS, path string) (lines []string, cut bool, err error) {
 type counter struct {
 	from io.Reader
 	read int64
+
+	// watch is told the running total, for a pane saying how far a read
+	// has got. A nil one is nobody counting.
+	watch func(read int64)
 }
 
 func (c *counter) Read(p []byte) (int, error) {
 	n, err := c.from.Read(p)
 	c.read += int64(n)
+	if c.watch != nil && n > 0 {
+		c.watch(c.read)
+	}
 	return n, err
 }
 
@@ -904,13 +948,21 @@ func (r *Reader) place() string {
 // there is nothing to show yet, with how big it is when the caller
 // said.
 func (r *Reader) reading() string {
-	if !r.busy {
+	switch {
+	case !r.busy:
 		return ""
+	// How far of how much, which is the one that says how long is left.
+	// A file that grew since it was listed reads past its own size, so
+	// the total is dropped rather than shown as less than what has
+	// already arrived.
+	case r.sofar > 0 && r.Expect >= r.sofar:
+		return "reading " + sizeIn(r.sofar, r.Expect) + " of " + size(r.Expect) + "…"
+	case r.sofar > 0:
+		return "reading " + size(r.sofar) + "…"
+	case r.Expect > 0:
+		return "reading " + size(r.Expect) + "…"
 	}
-	if r.Expect <= 0 {
-		return "reading…"
-	}
-	return "reading " + size(r.Expect) + "…"
+	return "reading…"
 }
 
 // howMany is the number of lines the reader holds, with a mark when

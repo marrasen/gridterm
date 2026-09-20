@@ -33,7 +33,9 @@ func (r *Reader) PictureRoom() ui.Rect {
 func (r *Reader) openPicture() {
 	r.busy = true
 	r.ReadPic(func(pic Pic, err error) {
-		r.busy = false
+		// The count goes with the read it belonged to, so nothing is
+		// left holding how far a read that has finished got.
+		r.busy, r.sofar = false, 0
 		r.err = err
 		if err != nil {
 			// The picture that was there is dropped: a pane showing an

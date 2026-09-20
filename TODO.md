@@ -75,6 +75,14 @@ scrolled-back view, so a link is followable wherever it can be seen.
 
 What is left:
 
+- **gridterm does not install shell integration.** A relative path
+  needs OSC 7 to resolve, and no shell sends it unasked, so
+  `vt/image.go:42` in a compiler's output is not clickable until the
+  user edits their profile. The README now says how, under "Shell
+  integration", but every other terminal ships the script and offers
+  to install it. The same script would turn on OSC 133, which is what
+  lets an agent read the last command's output.
+
 - **A path is only found for a pane on this machine.** A pane on a
   machine at the far end prints that machine's paths, and the window
   could reach them through the same connection its file browser uses.

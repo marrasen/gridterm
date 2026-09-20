@@ -774,13 +774,16 @@ func (t *Terminal) underlined(x, y, cols int) bool {
 // Along the bottom, unless the link itself is down there, in which
 // case along the top: covering the thing being pointed at would be
 // worse than moving.
-func (t *Terminal) paintLinkTarget(v grid.View) {
+//
+// It answers the row it wrote on, or -1, so the cursor can keep off
+// it.
+func (t *Terminal) paintLinkTarget(v grid.View) int {
 	if t.hoverLink == "" {
-		return
+		return -1
 	}
 	cols, rows := v.Size()
 	if cols <= 0 || rows <= 0 {
-		return
+		return -1
 	}
 	y := rows - 1
 	if cols > 0 && t.hoverRow+(t.hoverTo-1)/cols >= y {
@@ -797,6 +800,7 @@ func (t *Terminal) paintLinkTarget(v grid.View) {
 	line := v.Sub(0, y, cols, 1)
 	line.Fill(grid.Cell{Rune: ' ', FG: t.pal.FG, BG: bg, Width: 1})
 	line.SetString(0, 0, shown, t.pal.FG, bg, grid.AttrUnderline)
+	return y
 }
 
 // DrawScreen paints the whole screen onto a view of its own, for a host
@@ -841,7 +845,7 @@ func (t *Terminal) draw(v grid.View) {
 			v.Set(x, y, c)
 		}
 	}
-	t.paintLinkTarget(v)
+	named := t.paintLinkTarget(v)
 	// Only the focused terminal touches the cursor. A grid has one and no
 	// idea who owns it, so an unfocused widget writing even a hidden
 	// cursor would take it from whoever has it. Clearing it once a frame
@@ -850,7 +854,13 @@ func (t *Terminal) draw(v grid.View) {
 	// And none at all once the program has gone, or a pane that swallows
 	// every keystroke would look like a shell sitting at a prompt.
 	if t.focused && !t.exited.Load() {
-		v.SetCursor(t.g.Cursor())
+		cur := t.g.Cursor()
+		if cur.Y == named {
+			// The address is written over the row the cursor is on, so
+			// the cursor would sit in the middle of it.
+			cur.Visible = false
+		}
+		v.SetCursor(cur)
 	}
 	// Last, over the screen: the question is the window talking, not a
 	// line the program printed.

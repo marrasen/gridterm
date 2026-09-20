@@ -93,6 +93,16 @@ emulator, and draws the resulting character grid as batched triangles.
   shows the picture, on a layer of its own over the pane: the grid is for
   text. Nothing is read on the goroutine that draws, and a file that will
   not read says why rather than showing an empty pane.
+- **Links and file paths in the output.** Ctrl and a click follows a
+  link a program declared with OSC 8, an address written out in the
+  text, or a file the output named. Holding ctrl marks what is under
+  the pointer and writes where it goes along the bottom row, because a
+  program can put any address under any words. A file opens in the
+  viewer and a directory in the browser, at the line a compiler named
+  when it named one. A path is checked against the disk before it
+  counts as a link, so a run of characters naming nothing is just
+  text. A relative name needs the shell to say where it is; see
+  **Shell integration** below.
 - **A picture a program put in its output.** OSC 1337, the sequence
   iTerm2 made and the terminals after it copied. The pane holds the
   picture on the line it landed on and it scrolls with the text, on a
@@ -325,6 +335,40 @@ sudo apt-get install -y libxcursor-dev libxinerama-dev libxi-dev \
 Most of the code needs neither. `make test` runs everything that does
 not touch a GPU, which is the grid, the emulator, the key and mouse
 encoders and both session types.
+
+## Shell integration
+
+Two things work better when the shell says what it is doing, and no
+shell does either without being asked.
+
+**OSC 7, where the shell is.** Without it a relative path in the output
+resolves against nothing, so `vt/image.go:42` in a compiler's output is
+not clickable. Absolute paths work either way.
+
+PowerShell, in `$PROFILE`:
+
+```powershell
+function prompt {
+    $here = (Get-Location).Path -replace '\\', '/'
+    $e = [char]27
+    Write-Host -NoNewline "$e]7;file://localhost/$([uri]::EscapeUriString($here))$([char]7)"
+    "PS $((Get-Location).Path)> "
+}
+```
+
+bash or zsh, in `~/.bashrc` or `~/.zshrc`:
+
+```sh
+osc7() { printf '\033]7;file://%s%s\a' "$HOSTNAME" "$PWD"; }
+PROMPT_COMMAND=osc7          # bash
+precmd_functions+=(osc7)     # zsh
+```
+
+**OSC 133, where a command starts and ends.** This is what lets an agent
+read the output of the last command rather than a rectangle of the
+screen, and what tells it the exit code. `\033]133;A\a` before the
+prompt, `\033]133;B\a` after it, `\033]133;C\a` before the command
+runs and `\033]133;D;<code>\a` when it finishes.
 
 ## Layout
 

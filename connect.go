@@ -416,6 +416,11 @@ func (a *app) becomeShellPane(m *machine, name string, command []string,
 	// Which connection the pane rides on rather than which machine it is
 	// named after, for the reason the on field of machines gives.
 	a.machines.runs(pane, m)
+	if len(command) == 0 {
+		if err := a.teachPaneShell(sh, name, conns.Terminal, nil); err != nil {
+			log.Refused(name, "the shell setup", err)
+		}
+	}
 	a.startsAgain(pane, command, "", m)
 	if label := labelFor(command); label != "" {
 		if e := a.panes[pane]; e != nil {
@@ -462,6 +467,11 @@ func (a *app) startOn(name string, open opening, at *spot) error {
 		// The shell is ours and nothing else knows about it.
 		_ = sh.Close()
 		return err
+	}
+	if len(open.command) == 0 {
+		if err := a.teachPaneShell(sh, name, conns.Terminal, nil); err != nil {
+			return err
+		}
 	}
 	// Which connection the pane rides on rather than which machine it is
 	// named after, for the reason the on field of machines gives.

@@ -101,8 +101,11 @@ emulator, and draws the resulting character grid as batched triangles.
   viewer and a directory in the browser, at the line a compiler named
   when it named one. A path is checked against the disk before it
   counts as a link, so a run of characters naming nothing is just
-  text. A relative name needs the shell to say where it is; see
-  **Shell integration** below.
+  text. It works on a server too: the machine at the far end is asked
+  over the connection the window already has, and what it says is kept,
+  so a path lights up a moment after the pointer reaches it. A relative
+  name needs the shell to say where it is, which gridterm sets up
+  itself; see **Shell integration** below.
 - **A picture a program put in its output.** OSC 1337, the sequence
   iTerm2 made and the terminals after it copied. The pane holds the
   picture on the line it landed on and it scrolls with the text, on a
@@ -338,37 +341,37 @@ encoders and both session types.
 
 ## Shell integration
 
-Two things work better when the shell says what it is doing, and no
-shell does either without being asked.
+A shell is a separate program, and gridterm only sees the bytes it
+prints. So it cannot know which directory the shell is in, or where one
+command's output ends and the next begins, unless the shell says so. The
+shell says so by printing escape sequences nobody sees: OSC 7 or OSC 9;9
+for the directory, OSC 133 around each command.
 
-**OSC 7, where the shell is.** Without it a relative path in the output
-resolves against nothing, so `vt/image.go:42` in a compiler's output is
-not clickable. Absolute paths work either way.
+gridterm sets this up itself. As a shell starts it types one line in,
+the way you would type it, and then clears the pane. There is nothing to
+install and no profile to edit.
 
-PowerShell, in `$PROFILE`:
+- **On this machine it is on**, and `Shell setup on this machine, on or
+  off` in the command palette turns it off. It is invisible: gridterm
+  builds the line for whichever shell the pane runs.
+- **On a server it is off**, and the **Shell setup** field in the server
+  dialog turns it on. It is off because the line goes into whatever
+  login shell that account has. bash and zsh understand it; fish, a
+  device CLI or a menu would answer with an error.
+- **Another gridterm is never set up from here.** The window over there
+  starts the shell and applies its own answer.
 
-```powershell
-function prompt {
-    $here = (Get-Location).Path -replace '\\', '/'
-    $e = [char]27
-    Write-Host -NoNewline "$e]7;file://localhost/$([uri]::EscapeUriString($here))$([char]7)"
-    "PS $((Get-Location).Path)> "
-}
-```
+What each shell is told:
 
-bash or zsh, in `~/.bashrc` or `~/.zshrc`:
+| Shell | Directory | Command marks |
+|---|---|---|
+| PowerShell, pwsh | OSC 7, wrapping the prompt already there | yes, with PSReadLine |
+| bash, zsh, WSL, a server's login shell | OSC 7 | yes |
+| Command Prompt | OSC 9;9 | no |
 
-```sh
-osc7() { printf '\033]7;file://%s%s\a' "$HOSTNAME" "$PWD"; }
-PROMPT_COMMAND=osc7          # bash
-precmd_functions+=(osc7)     # zsh
-```
-
-**OSC 133, where a command starts and ends.** This is what lets an agent
-read the output of the last command rather than a rectangle of the
-screen, and what tells it the exit code. `\033]133;A\a` before the
-prompt, `\033]133;B\a` after it, `\033]133;C\a` before the command
-runs and `\033]133;D;<code>\a` when it finishes.
+The Command Prompt builds its prompt out of what `cmd.exe` substitutes,
+and none of those pieces makes a URL, so it sends the plain path that
+Windows Terminal uses. It has no hook for a command starting or ending.
 
 ## Layout
 
@@ -724,6 +727,9 @@ emulator under `internal/` where they cannot be imported.
   budget are left out, and the watcher sees the text with a gap. A
   picture sent while somebody is already watching is not affected: the
   sequence carrying it is part of what the program said.
+- **A path on a server is found one round trip late.** The machine is
+  asked when the pointer first reaches the text, and the answer is what
+  underlines it. Hold still for a moment and it lights up.
 - **An OSC payload other than a picture is capped at a kilobyte.** The
   parser keeps that much and throws the rest away. The two sequences
   that carry a picture are read before it sees them, so they are whole;

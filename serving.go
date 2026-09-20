@@ -527,6 +527,7 @@ func (a *app) useSettings(set *settings.Settings) {
 	a.saved.remember(set)
 	a.copies.remember(set)
 	a.paneTitles.remember(set)
+	a.shellSetup.remember(set)
 	a.keyFiles.remember(set)
 	a.theme.remember(set)
 	a.font.remember(set)

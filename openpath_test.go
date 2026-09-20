@@ -100,19 +100,88 @@ func TestAPathWithALineBreakIsRefused(t *testing.T) {
 	}
 }
 
-// A pane on another machine prints that machine's paths, and looking
-// for them here would find the wrong file.
-func TestAPaneOnAnotherMachineLooksForNoPaths(t *testing.T) {
+// A pane on another machine is never answered from this disk. It
+// prints that machine's paths, and a name that happens to be on this
+// one would open the wrong file.
+func TestAPaneOnAnotherMachineIsNeverAnsweredFromThisDisk(t *testing.T) {
 	a := newTestApp(t, 80, 24)
-
-	if a.pathFinder("margit") != nil {
-		t.Error("a pane on margit would look for paths on this disk")
+	dir := t.TempDir()
+	at := filepath.Join(dir, "notes.txt")
+	if err := os.WriteFile(at, []byte("x\n"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
 	}
-	if a.pathOpener("margit") != nil {
-		t.Error("a pane on margit would open paths on this machine")
+
+	find := a.pathFinder("margit")
+	if find == nil {
+		t.Fatal("a pane on margit looks for no paths at all")
+	}
+	if got, _, ok := find(at, dir); ok {
+		t.Errorf("a pane on margit was told about %q, which is a file on this machine", got)
 	}
 	if a.pathFinder(conns.Local) == nil {
 		t.Error("a pane on this machine looks for no paths")
+	}
+	if a.pathOpener("margit") == nil {
+		t.Error("a pane on margit opens nothing")
+	}
+}
+
+// What a machine at the far end already said is what the pointer is
+// answered with, because asking again is a round trip.
+func TestWhatAMachineAlreadySaidIsUsed(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	a.far.known["margit\x00/srv/app/main.go"] = farPath{
+		at: "/srv/app/main.go", size: 120, found: true,
+	}
+
+	at, isDir, ok := a.findFar("margit", "main.go", "/srv/app")
+
+	if !ok || isDir || at != "/srv/app/main.go" {
+		t.Errorf("it came back as %q dir=%v ok=%v", at, isDir, ok)
+	}
+}
+
+// A run of text is resolved against the directory the shell named, in
+// the way that directory is written: the machine at the far end may
+// not use this one's separator.
+func TestAPathAtTheFarEndIsJoinedTheWayItIsWritten(t *testing.T) {
+	for _, tc := range []struct {
+		text, dir, want string
+		ok              bool
+	}{
+		{"main.go", "/srv/app", "/srv/app/main.go", true},
+		{"src/main.go", "/srv/app/", "/srv/app/src/main.go", true},
+		{"/etc/hosts", "", "/etc/hosts", true},
+		{`main.go`, `C:\app`, `C:\app\main.go`, true},
+		{`C:\app\main.go`, "", `C:\app\main.go`, true},
+		{`\\server\share\f`, "", `\\server\share\f`, true},
+		// Nowhere to resolve it against.
+		{"main.go", "", "", false},
+		{"", "/srv", "", false},
+		{"a\nb", "/srv", "", false},
+	} {
+		got, ok := farPathToTry(tc.text, tc.dir)
+		if ok != tc.ok || got != tc.want {
+			t.Errorf("%q in %q gave %q ok=%v, want %q ok=%v",
+				tc.text, tc.dir, got, ok, tc.want, tc.ok)
+		}
+	}
+}
+
+// A machine nothing is connected to is not asked, and the question is
+// not left to go out again on every frame.
+func TestAMachineNothingIsConnectedToIsNotAsked(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+
+	if _, _, ok := a.findFar("margit", "/etc/hosts", ""); ok {
+		t.Error("a machine nothing is connected to answered")
+	}
+
+	if _, written := a.far.known["margit\x00/etc/hosts"]; !written {
+		t.Error("the question was not written off, so it goes out again every frame")
+	}
+	if len(a.far.asking) != 0 {
+		t.Error("a question went out to a machine nothing is connected to")
 	}
 }
 

@@ -139,6 +139,11 @@ type app struct {
 
 	// paneTitles is whether each pane shows a line naming it.
 	paneTitles *paneTitles
+	shellSetup *shellSetup
+
+	// far is what a machine at the far end said about the paths its
+	// panes printed.
+	far *pathsFar
 
 	// keyFiles are the key files the user keeps, offered when a
 	// connection is made or edited.
@@ -815,6 +820,9 @@ func (a *app) commands() {
 			Run: a.writeThemeStart, AlsoFind: []string{"colors"}},
 		ui.Command{ID: "pane.titles", Title: "Show or hide the line naming each pane",
 			Run: a.togglePaneTitles},
+		ui.Command{ID: "shell.setup", Title: "Shell setup on this machine, on or off",
+			AlsoFind: []string{"shell integration", "working directory", "osc 7"},
+			Run:      a.toggleShellSetup},
 		ui.Command{ID: "key.make", Title: "Make an SSH key…", Run: a.openMakeKey},
 		ui.Command{ID: "panel.toggle", Title: "Show or hide the connections",
 			Run: a.togglePanel},

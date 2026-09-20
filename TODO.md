@@ -75,19 +75,18 @@ scrolled-back view, so a link is followable wherever it can be seen.
 
 What is left:
 
-- **gridterm does not install shell integration.** A relative path
-  needs OSC 7 to resolve, and no shell sends it unasked, so
-  `vt/image.go:42` in a compiler's output is not clickable until the
-  user edits their profile. The README now says how, under "Shell
-  integration", but every other terminal ships the script and offers
-  to install it. The same script would turn on OSC 133, which is what
-  lets an agent read the last command's output.
+Shell setup is in, and a path on a server is found over the connection
+the window already has. gridterm types one line into a shell as it
+starts, so nothing has to be installed: on for this machine, off for a
+server until its row says otherwise.
 
-- **A path is only found for a pane on this machine.** A pane on a
-  machine at the far end prints that machine's paths, and the window
-  could reach them through the same connection its file browser uses.
-  It does not, because a path found over a connection that has since
-  closed would open the wrong thing or nothing.
+- **A server's shell setup is for bash and zsh.** The line goes into
+  whatever login shell the account has. fish, a device CLI or a menu
+  would answer with an error, which is why it is off until asked for.
+
+- **A path on a server is found one round trip late.** The machine is
+  asked when the pointer first reaches the text, so the underline
+  arrives a moment after the pointer does. Nothing is asked twice.
 
 - **A path with a space in it is two words.** Quoted paths are how
   output usually writes one, and reading the quotes would fix most of

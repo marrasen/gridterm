@@ -280,6 +280,16 @@ func newTestApp(t *testing.T, cols, rows int, opts ...testOption) *testApp {
 		return shells.Lookup(testShells(), id)
 	}
 	ta.shellPick.remember(set)
+	ta.far = newPathsFar()
+	ta.shellSetup = newShellSetup()
+	ta.shellSetup.remember(set)
+	// Off here, although a real window has it on: it types a line into
+	// every shell, and the tests about what reaches a shell are about
+	// what the user typed. The tests that are about the setup turn it
+	// back on.
+	if err := set.PutShellSetup(false); err != nil {
+		t.Fatalf("turn the shell setup off: %v", err)
+	}
 	ta.windows = newWindows(book)
 	// Long enough to be a handshake and short enough that a test which
 	// waits one out is not a test that waits twenty seconds.

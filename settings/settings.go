@@ -76,6 +76,12 @@ type stored struct {
 	// PaneTitles turns on the line above each pane naming it.
 	PaneTitles *bool `json:"paneTitles,omitempty"`
 
+	// ShellSetup turns on teaching a shell on this machine to say where
+	// it is and where each command starts. A field left out is on: it
+	// costs a cleared pane and it is what makes a path in the output
+	// clickable.
+	ShellSetup *bool `json:"shellSetup,omitempty"`
+
 	// Copies are the file copies the user asked to keep, newest first.
 	Copies []SavedCopy `json:"copies,omitempty"`
 
@@ -573,6 +579,31 @@ func (s *Settings) PutPaneTitles(on bool) error {
 	}
 	before := s.have
 	s.have.PaneTitles = &on
+	if err := s.saveLocked(); err != nil {
+		s.have = before
+		return err
+	}
+	return nil
+}
+
+// ShellSetup reports whether a shell on this machine is taught to say
+// what it is doing. Nothing saved means it is.
+func (s *Settings) ShellSetup() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.have.ShellSetup == nil || *s.have.ShellSetup
+}
+
+// PutShellSetup turns that on or off, and saves.
+func (s *Settings) PutShellSetup(on bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// The file first, for the same reason PutServe reads it first.
+	if err := s.rereadLocked(); err != nil {
+		return fmt.Errorf("%w: %w", ErrUnsaveable, err)
+	}
+	before := s.have
+	s.have.ShellSetup = &on
 	if err := s.saveLocked(); err != nil {
 		s.have = before
 		return err

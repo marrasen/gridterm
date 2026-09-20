@@ -12,17 +12,21 @@ import (
 )
 
 // pathFinder answers whether text a pane printed names something on
-// this machine, for a pane running here.
+// the machine that pane is on.
 //
-// Only for a pane on this machine. A pane on a machine at the far end
-// prints that machine's paths, and looking for them on this disk
-// would find the wrong file or, worse, the right-looking one.
+// On the machine the pane is on, never on this one. A pane at the far
+// end prints that machine's paths, and looking for them on this disk
+// would find the wrong file or, worse, the right-looking one. A
+// machine at the far end is asked over the connection the window
+// already has, which takes a round trip, so those answers are kept.
 func (a *app) pathFinder(host string) func(text, dir string) (string, bool, bool) {
-	if host != conns.Local {
-		return nil
+	if host == conns.Local {
+		return func(text, dir string) (string, bool, bool) {
+			return findOnDisk(text, dir)
+		}
 	}
 	return func(text, dir string) (string, bool, bool) {
-		return findOnDisk(text, dir)
+		return a.findFar(host, text, dir)
 	}
 }
 
@@ -83,13 +87,15 @@ func looksAbsolute(text string) bool {
 }
 
 // pathOpener opens what pathFinder found: a directory in the file
-// browser and a file in the viewer, at the line the output named.
+// browser and a file in the viewer, at the line the output named. Both
+// open on the machine the pane is on.
 func (a *app) pathOpener(host string) func(at string, isDir bool, line int) {
-	if host != conns.Local {
-		return nil
-	}
 	return func(at string, isDir bool, line int) {
-		if err := a.openOnDisk(at, isDir, line); err != nil {
+		open := func() error { return a.openPathFar(host, at, isDir, line) }
+		if host == conns.Local {
+			open = func() error { return a.openOnDisk(at, isDir, line) }
+		}
+		if err := open(); err != nil {
 			a.reportError("Could not open "+at, err)
 		}
 	}

@@ -354,6 +354,9 @@ func (a *app) restartPane(t *term.Terminal, sess session.Session, label string) 
 	// The rate remembers the totals of the meter that has gone, so a
 	// sample against a fresh one would wrap and read as an absurd speed.
 	delete(a.rates, e)
+	if err := a.teachPaneShell(sess, e.Host, e.Kind, s.argv); err != nil {
+		return err
+	}
 	// The row said what became of the program. It is running again, so
 	// the row says what it is rather than how it ended.
 	e.Label, e.Note = label, ""

@@ -112,6 +112,9 @@ func (a *app) localTerminalIn(argv []string, dir string) (*term.Terminal, error)
 		_ = sess.Close()
 		return nil, err
 	}
+	if err := a.teachPaneShell(sess, conns.Local, conns.Terminal, argv); err != nil {
+		return nil, err
+	}
 	a.startsAgain(t, argv, dir, nil)
 	return t, nil
 }
@@ -154,6 +157,9 @@ func (a *app) terminalOnHome(m *machine) (*term.Terminal, error) {
 	if err != nil {
 		// The shell is ours now and nothing else will close it.
 		_ = sh.Close()
+		return nil, err
+	}
+	if err := a.teachPaneShell(sh, m.at.name, conns.Terminal, nil); err != nil {
 		return nil, err
 	}
 	// Which connection the pane rides on rather than which machine it is

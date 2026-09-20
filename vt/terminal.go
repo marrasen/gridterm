@@ -512,6 +512,8 @@ func (t *Terminal) OscDispatch(params [][]byte, _ bool) {
 		}
 	case "7":
 		t.setDir(params)
+	case "9":
+		t.setDirPath(params)
 	case "8":
 		t.setLink(params)
 	case "1338":
@@ -625,6 +627,28 @@ func (t *Terminal) setDir(params [][]byte) {
 		return
 	}
 	t.dir, t.dirHost = dir, host
+}
+
+// setDirPath takes OSC 9;9, which says where the shell is as a plain
+// path rather than as a URL.
+//
+// It is what the Command Prompt can send: its prompt is built from the
+// pieces cmd.exe substitutes, and none of them makes a URL. The path
+// is the machine's own, so no host comes with it.
+func (t *Terminal) setDirPath(params [][]byte) {
+	if len(params) < 3 || string(params[1]) != "9" {
+		return
+	}
+	// A path may hold a semicolon and the parser cuts on those, so what
+	// was sent is the rest of the parameters joined back up.
+	raw := string(bytes.Join(params[2:], []byte(";")))
+	raw = strings.TrimRight(raw, "\r\n")
+	// Windows Terminal quotes the path, and some shells copy that.
+	raw = strings.Trim(raw, `"`)
+	if strings.TrimSpace(raw) == "" {
+		return
+	}
+	t.dir, t.dirHost = raw, ""
 }
 
 // parseFileURL reads the "file://host/path" a shell sends for OSC 7

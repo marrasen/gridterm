@@ -109,6 +109,8 @@ func openWindow(w wanted) (*app, error) {
 	a.shellPick = newShellPick()
 	a.saved = newSavedCommands()
 	a.paneTitles = newPaneTitles()
+	a.shellSetup = newShellSetup()
+	a.far = newPathsFar()
 	a.keyFiles = newKeyIndex()
 	a.theme = newThemePick()
 	a.copies = newSavedCopies()

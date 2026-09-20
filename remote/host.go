@@ -43,6 +43,15 @@ type Host struct {
 	// whatever the machine calls home.
 	Folders []string `json:"folders,omitempty"`
 
+	// Setup says the shell on this machine is taught to say where it
+	// is and where each command starts, by gridterm typing one line in
+	// as the shell starts.
+	//
+	// Off unless the user asks for it: the line goes into whatever
+	// login shell the account has, and an unusual one would answer
+	// with an error rather than doing it.
+	Setup bool `json:"shellSetup,omitempty"`
+
 	// Window says this is another gridterm serving, taken over rather
 	// than logged in to.
 	//

@@ -296,6 +296,23 @@ const (
 // takes whatever is typed into it, and a typo quietly turning a window
 // into a machine would leave the user with a saved entry that tries to
 // log in to a port with no shell behind it.
+// setupYes and setupNo are what the shell setup field offers.
+const (
+	setupNo  = "No"
+	setupYes = "Yes"
+)
+
+// whichSetup reads the shell setup field.
+func whichSetup(text string) (on bool, err error) {
+	switch strings.TrimSpace(text) {
+	case setupNo:
+		return false, nil
+	case setupYes:
+		return true, nil
+	}
+	return false, fmt.Errorf("the shell setup has to be %q or %q", setupNo, setupYes)
+}
+
 func whichKind(text string) (window bool, err error) {
 	switch strings.TrimSpace(text) {
 	case kindMachine:
@@ -375,6 +392,8 @@ func (a *app) openServerForm(under string) error {
 	key.Options = append([]string{""}, a.keyFiles.all()...)
 	via := f.AddField("Through", a.newField("another saved server, optional", 0))
 	folders := f.AddField("Folders", a.newField("where to open files, separated by commas", 0))
+	setup := f.AddField("Shell setup", a.newField("", 0))
+	setup.Options = []string{setupNo, setupYes}
 	// The machines already saved, so the field can be cycled rather than
 	// typed from memory. Blank first: leaving it empty is the usual
 	// answer, and it is what cycling comes back round to.
@@ -385,7 +404,9 @@ func (a *app) openServerForm(under string) error {
 		viaHint(via.Options),
 		"Folders are where the file browser opens on this server. One and",
 		"it opens there; several and the plus offers a line for each.",
-		"Key file steps through the keys this window keeps.")
+		"Key file steps through the keys this window keeps.",
+		"Shell setup types one line into the shell as it starts, so the pane",
+		"knows where it is and where each command ends. bash and zsh only.")
 
 	name.SetText(was.Name)
 	kind.SetText(kindMachine)
@@ -398,6 +419,10 @@ func (a *app) openServerForm(under string) error {
 	}
 	via.SetText(was.Via)
 	folders.SetText(was.FoldersJoined())
+	setup.SetText(setupNo)
+	if was.Setup {
+		setup.SetText(setupYes)
+	}
 
 	f.AddButton(ui.Button{Title: "Save", Do: func() error {
 		window, err := whichKind(kind.Text())
@@ -427,6 +452,9 @@ func (a *app) openServerForm(under string) error {
 			}
 		} else {
 			h.Via = strings.TrimSpace(via.Text())
+		}
+		if h.Setup, err = whichSetup(setup.Text()); err != nil {
+			return err
 		}
 		// Kept whichever this is. A machine turned into a window and
 		// back should come out the way it went in, and neither field is

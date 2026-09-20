@@ -1,6 +1,7 @@
 package files
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -192,6 +193,12 @@ func (r *Reader) askKey(ev input.Event) (bool, error) {
 			r.typed = string(runes[:len(runes)-1])
 			return true, nil
 		}
+		if r.asking == askingSave {
+			// This one started filled in, so backspacing to the end of
+			// it is clearing the suggestion rather than taking the
+			// question back. Escape is how it is taken back.
+			break
+		}
 		// Taking back the last of it takes back the question, which is
 		// what backspacing out of a prompt does everywhere else.
 		r.asking = askingNothing
@@ -214,16 +221,25 @@ func (r *Reader) save(at string) {
 		r.said = "nowhere to save it: no path was typed"
 		return
 	}
-	if err := r.OnSave(at, r.shown); err != nil {
-		r.said = err.Error()
-		return
-	}
-	// The path it went to, because the question started filled in and
-	// the user may have changed it.
-	r.said = "saved " + itoa(len(r.shown)) + " lines to " + at
-	if r.cut {
-		r.said += " (the file was longer than this reader keeps)"
-	}
+	// What is being saved now, in case the lines change under it while
+	// the write is out.
+	lines, hex, cut := slices.Clone(r.shown), r.hex, r.cut
+	r.said = "saving " + itoa(len(lines)) + " lines to " + at + "…"
+	r.OnSave(at, lines, func(err error) {
+		if err != nil {
+			r.said = err.Error()
+			return
+		}
+		// The path it went to, because the question started filled in
+		// and the user may have changed it.
+		r.said = "saved " + itoa(len(lines)) + " lines to " + at
+		switch {
+		case hex:
+			r.said += " (as the hex it is showing, not as the file)"
+		case cut:
+			r.said += " (the file was longer than this reader keeps)"
+		}
+	})
 }
 
 // itoa spells a count for a line the user reads.

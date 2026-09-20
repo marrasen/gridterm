@@ -77,17 +77,16 @@ func (r *Reader) pictureKey(ev input.Event) (bool, error) {
 	if ev.Kind != input.KeyPress && ev.Kind != input.KeyRepeat {
 		return ev.Kind == input.Text, nil
 	}
-	// Only a plain Ctrl, for the reason the file of lines gives: the
-	// window has its own meaning for Ctrl+Shift and a letter.
-	if ev.Mods != 0 && ev.Mods != input.ModCtrl {
-		return true, nil
-	}
+	// The bar's letters want a plain Ctrl, for the reason the file of
+	// lines gives: the window has its own meaning for Ctrl+Shift and a
+	// letter. Q takes shift the same way it does there, so the two
+	// readers close on the same keys.
 	switch {
-	case ev.Key == input.KeyR && ev.Ctrl():
+	case ev.Key == input.KeyR && plainCtrl(ev):
 		r.Open()
-	case ev.Key == input.KeyH && ev.Ctrl():
+	case ev.Key == input.KeyH && plainCtrl(ev):
 		r.AsBytes()
-	case ev.Key == input.KeyD && ev.Ctrl(), ev.Key == input.KeyQ:
+	case ev.Key == input.KeyD && plainCtrl(ev), ev.Key == input.KeyQ:
 		if r.OnClose != nil {
 			r.OnClose()
 		}

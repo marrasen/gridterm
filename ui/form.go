@@ -476,8 +476,13 @@ func (f *Form) HandleMouse(ev input.MouseEvent) (bool, error) {
 		// The caret goes where it was clicked, so a long value can be
 		// corrected in the middle rather than only at the end, and the
 		// press starts picking text out in case the pointer moves.
-		fld.PressAt(x-f.fieldX(), ev.Mods.Has(input.ModShift))
-		f.drag = fld
+		// Only the left button, because only its release ends a drag.
+		// Armed on a right press, the drag would outlive the button
+		// and follow the pointer with nothing held down.
+		if ev.Button == input.MouseLeft {
+			fld.PressAt(x-f.fieldX(), ev.Mods.Has(input.ModShift))
+			f.drag = fld
+		}
 		return true, nil
 	}
 	if y == f.buttonsRow() {

@@ -219,11 +219,22 @@ func (p *Palette) HandleMouse(ev input.MouseEvent) (bool, error) {
 		p.place.moveTo(p.place.top + row)
 		return true, p.run()
 	}
-	if row == -1 {
+	// The query line, and only inside the field itself: the rule each
+	// side of it is not somewhere text can be picked out. Only the
+	// left button, because only its release ends a drag.
+	if row == -1 && ev.Button == input.MouseLeft && p.onQuery(ev.Col) {
 		p.q.PressAt(p.queryCol(ev.Col), ev.Mods.Has(input.ModShift))
 		p.dragging = true
 	}
 	return true, nil
+}
+
+// onQuery reports whether a column is inside the query field rather
+// than on the rule each side of it.
+func (p *Palette) onQuery(col int) bool {
+	in := p.lines()
+	at := p.queryCol(col)
+	return at >= 0 && at < p.queryCols(in.Cols)
 }
 
 // queryCol turns a column of the area into one of the query field,

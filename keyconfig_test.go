@@ -46,6 +46,9 @@ func TestTheDefaultShortcutsAreBuiltFresh(t *testing.T) {
 // Rereading the file picks up a chord added since the window opened.
 func TestRereadingTheShortcutsPicksUpAChange(t *testing.T) {
 	a := newTestApp(t, 80, 24)
+	// The reread says so in a notice, and a notice needs somewhere to
+	// be drawn.
+	withDialogs(t, a)
 	a.commands()
 	moved := ui.Chord{Key: input.KeyF7}
 	if _, bound := a.root.Accelerators.Lookup(moved); bound {
@@ -67,6 +70,9 @@ func TestRereadingTheShortcutsPicksUpAChange(t *testing.T) {
 // not, which is why a reload starts from the defaults.
 func TestRereadingGivesABuiltInChordBack(t *testing.T) {
 	a := newTestApp(t, 80, 24)
+	// The reread says so in a notice, and a notice needs somewhere to
+	// be drawn.
+	withDialogs(t, a)
 	a.commands()
 	newPane := ui.Chord{Key: input.KeyT, Mods: input.ModCtrl | input.ModShift}
 	if _, bound := a.root.Accelerators.Lookup(newPane); !bound {
@@ -97,6 +103,9 @@ func TestRereadingGivesABuiltInChordBack(t *testing.T) {
 // it had. A reload that went wrong should take nothing away.
 func TestARereadThatFailsChangesNothing(t *testing.T) {
 	a := newTestApp(t, 80, 24)
+	// The reread says so in a notice, and a notice needs somewhere to
+	// be drawn.
+	withDialogs(t, a)
 	a.commands()
 	at := withShortcutFile(t, a, `{"version":1,"keys":{"F7":"palette.open"}}`)
 	if err := a.reloadShortcuts(); err != nil {
@@ -120,6 +129,9 @@ func TestARereadThatFailsChangesNothing(t *testing.T) {
 // saved shortcut names an id, so a rename would otherwise break it.
 func TestAFileNamingAMovedCommandStillWorks(t *testing.T) {
 	a := newTestApp(t, 80, 24)
+	// The reread says so in a notice, and a notice needs somewhere to
+	// be drawn.
+	withDialogs(t, a)
 	a.commands()
 	keys.Renamed["old.name.for.the.palette"] = "palette.open"
 	t.Cleanup(func() { delete(keys.Renamed, "old.name.for.the.palette") })
@@ -142,6 +154,9 @@ func TestAFileNamingAMovedCommandStillWorks(t *testing.T) {
 // the rename table cannot hide a typo.
 func TestAnUnknownCommandIsStillRefused(t *testing.T) {
 	a := newTestApp(t, 80, 24)
+	// The reread says so in a notice, and a notice needs somewhere to
+	// be drawn.
+	withDialogs(t, a)
 	a.commands()
 	withShortcutFile(t, a, `{"version":1,"keys":{"F7":"palete.open"}}`)
 
@@ -160,6 +175,9 @@ func TestAnUnknownCommandIsStillRefused(t *testing.T) {
 // another chord keeps the holding as well as the key.
 func TestTheWalkHoldsWhateverItsShortcutHolds(t *testing.T) {
 	a := newTestApp(t, 80, 24)
+	// The reread says so in a notice, and a notice needs somewhere to
+	// be drawn.
+	withDialogs(t, a)
 	a.commands()
 
 	if got, want := a.walkHeld(), input.ModCtrl; got != want {
@@ -186,6 +204,9 @@ func TestTheWalkHoldsWhateverItsShortcutHolds(t *testing.T) {
 // the two chords differ by it.
 func TestShiftIsNotWhatHoldsTheWalkOpen(t *testing.T) {
 	a := newTestApp(t, 80, 24)
+	// The reread says so in a notice, and a notice needs somewhere to
+	// be drawn.
+	withDialogs(t, a)
 	a.commands()
 
 	if a.walkHeld()&input.ModShift != 0 {
@@ -198,6 +219,9 @@ func TestShiftIsNotWhatHoldsTheWalkOpen(t *testing.T) {
 // hanging about.
 func TestAWalkWithNothingBoundWaitsOnNothing(t *testing.T) {
 	a := newTestApp(t, 80, 24)
+	// The reread says so in a notice, and a notice needs somewhere to
+	// be drawn.
+	withDialogs(t, a)
 	a.commands()
 	for _, b := range a.root.Accelerators.Bindings() {
 		if b.ID == "pane.next" || b.ID == "pane.previous" {
@@ -248,12 +272,16 @@ func TestAnotherTerminalLikeThisOneUsesTheSameShell(t *testing.T) {
 	a.started[first].argv = []string{"cmd.exe", "/k", "echo the one I am in"}
 	a.focus(first)
 
-	if _, on := a.root.Accelerators.Lookup(
-		ui.Chord{Key: input.KeyT, Mods: input.ModCtrl | input.ModShift}); !on {
-		t.Fatal("ctrl+shift+T is not bound")
+	// What the chord runs, not just that it runs something: the whole
+	// change is which command it points at.
+	got, on := a.root.Accelerators.Lookup(
+		ui.Chord{Key: input.KeyT, Mods: input.ModCtrl | input.ModShift})
+	if !on || got != "conn.terminal" {
+		t.Fatalf("ctrl+shift+T runs %q (bound %v), want conn.terminal", got, on)
 	}
-	if err := a.root.Commands.Run("conn.terminal"); err != nil {
-		t.Fatalf("running it: %v", err)
+	if _, err := a.root.HandleKey(
+		press(input.KeyT, input.ModCtrl|input.ModShift)); err != nil {
+		t.Fatalf("pressing it: %v", err)
 	}
 
 	if got := a.shellCount(); got != 2 {
@@ -332,5 +360,71 @@ func TestTheShellCopiedIsACopy(t *testing.T) {
 
 	if a.started[pane].argv[0] != "cmd.exe" {
 		t.Error("changing the copy changed what the pane remembers")
+	}
+}
+
+// A reread reaches the menu bar. The bar is built once and keeps the
+// keymap it was given, so a reload that swapped it for a new one would
+// leave every menu printing chords nothing runs.
+func TestARereadReachesTheMenuBar(t *testing.T) {
+	a := aWindowWithMenus(t)
+	withShortcutFile(t, a, `{"version":1,"keys":{"ctrl+shift+H":"nothing","F7":"help.keys"}}`)
+
+	if err := a.reloadShortcuts(); err != nil {
+		t.Fatalf("reread: %v", err)
+	}
+	// It says so in a notice, which is over the bar until it is read.
+	dismissNotice(t, a)
+
+	m := openBarMenu(t, a, helpMenu)
+	drawn := strings.Join(drawnLines(a, m), " | ")
+
+	if strings.Contains(drawn, "ctrl+shift+H") {
+		t.Errorf("the Help menu still shows ctrl+shift+H, which the reread took away: %s", drawn)
+	}
+	if !strings.Contains(drawn, "F7") {
+		t.Errorf("the Help menu does not show the F7 the file moved it to: %s", drawn)
+	}
+}
+
+// A walk started on a chord that holds alt stays open while alt is
+// held. Without the walk remembering what to wait on, a window with
+// the walk moved off ctrl would take one step and stop.
+func TestAWalkStaysOpenWhileItsOwnModifierIsHeld(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	a.commands()
+	if err := a.openPane(); err != nil {
+		t.Fatalf("open a second pane: %v", err)
+	}
+	for _, b := range a.root.Accelerators.Bindings() {
+		if b.ID == "pane.next" || b.ID == "pane.previous" {
+			a.root.Accelerators.Unbind(b.Chord)
+		}
+	}
+	if err := a.root.Accelerators.Bind(
+		ui.Chord{Key: input.KeyTab, Mods: input.ModAlt}, "pane.next"); err != nil {
+		t.Fatalf("bind: %v", err)
+	}
+	held := input.ModAlt
+	a.modsNow = func() input.Mods { return held }
+
+	if err := a.root.Commands.Run("pane.next"); err != nil {
+		t.Fatalf("walk: %v", err)
+	}
+	if a.walk == nil {
+		t.Fatal("the walk did not start")
+	}
+	a.stepWalk()
+
+	if a.walk == nil {
+		t.Error("the walk ended while the modifier it was started on was still held")
+	}
+
+	// And it ends once that modifier goes.
+	held = 0
+	a.stepWalk()
+	if a.walk != nil {
+		t.Error("the walk stayed open after its modifier was let go")
 	}
 }

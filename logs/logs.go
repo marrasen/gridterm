@@ -7,7 +7,7 @@ package logs
 
 import (
 	"bytes"
-	"errors"
+	"fmt"
 	"io"
 	"sync"
 )
@@ -25,8 +25,19 @@ const DefaultKeep = 2000
 //
 // A Lines is safe to use from several goroutines.
 type Lines struct {
+	// writing orders the whole of Write. It is taken before mu and
+	// never inside it, so a line reaches the writer below and the ring
+	// in one order rather than two: a console and a pane that disagree
+	// about which of two lines came first are worse than either alone.
+	//
+	// Its own lock rather than mu, because the writer below can be a
+	// pipe nobody is draining, and holding mu through that would stop
+	// every reader.
+	writing sync.Mutex
+
 	// also is where the lines go as well, which is the stderr they
-	// always went to. A nil one writes nowhere else.
+	// always went to. A nil one writes nowhere else. Read and written
+	// under mu; called under writing.
 	also io.Writer
 
 	mu   sync.Mutex
@@ -64,9 +75,11 @@ func New(keep int, also io.Writer) *Lines {
 // the slice would leave every kept line holding whatever was logged
 // last.
 func (l *Lines) Write(p []byte) (int, error) {
-	// Read under the lock and written outside it: stderr can be a pipe
-	// nobody is draining, and holding the lock through that would stop
-	// the window.
+	// One writer at a time, for the whole of it. Whoever gets here
+	// second writes second below and lands second in the ring.
+	l.writing.Lock()
+	defer l.writing.Unlock()
+
 	l.mu.Lock()
 	also := l.also
 	l.mu.Unlock()
@@ -137,7 +150,12 @@ type Reader struct {
 }
 
 // ErrLogClosed is what a reader answers once it has been closed.
-var ErrLogClosed = errors.New("logs: the reader is closed")
+//
+// It wraps io.EOF, because that is what whoever is reading a session
+// takes as the end of it. Without that, closing the pane showing the
+// log would be reported as a session that failed, and the report would
+// be written to the log the pane was showing.
+var ErrLogClosed = fmt.Errorf("logs: the reader is closed: %w", io.EOF)
 
 // Read fills p with log lines, waiting for one when there are none.
 //
@@ -237,11 +255,11 @@ func forTerminal(line []byte) []byte {
 
 // missedLine says how many lines a reader was too slow to see.
 func missedLine(lost int64) string {
-	what := "lines"
+	what := " older log lines are "
 	if lost == 1 {
-		what = "line"
+		what = " older log line is "
 	}
-	return "-- gridterm: " + itoa(lost) + " older log " + what + " are no longer kept --\r\n"
+	return "-- gridterm: " + itoa(lost) + what + "no longer kept --\r\n"
 }
 
 // itoa spells a count, so this package needs no formatting import for

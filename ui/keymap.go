@@ -122,6 +122,25 @@ func (k *Keymap) Bindings() []Binding {
 	return out
 }
 
+// Become makes this keymap hold what other holds, and nothing else.
+//
+// In place rather than by swapping the pointer, because a menu bar, a
+// menu and anything else built with a keymap keeps the one it was
+// given. Replacing the pointer would leave them printing the chords of
+// a keymap nothing runs any more.
+func (k *Keymap) Become(other *Keymap) {
+	if k.bound == nil {
+		k.bound = map[Chord]string{}
+	}
+	clear(k.bound)
+	if other == nil {
+		return
+	}
+	for c, id := range other.bound {
+		k.bound[c] = id
+	}
+}
+
 // Len returns how many chords are bound.
 func (k *Keymap) Len() int { return len(k.bound) }
 

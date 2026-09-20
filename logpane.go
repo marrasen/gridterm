@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"log"
 	"os"
 
@@ -45,7 +46,12 @@ func (a *app) showLog() error {
 		return err
 	}
 	if err := a.placePane(t); err != nil {
-		return err
+		// The terminal is reading the log on a goroutine of its own
+		// already. Left here it would read it for ever, into a pane
+		// nowhere on the screen.
+		delete(a.panes, t)
+		delete(a.started, t)
+		return errors.Join(err, t.Close())
 	}
 	a.showPane(t)
 	return nil

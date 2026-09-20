@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -53,7 +54,7 @@ func (a *app) showScrollback() error {
 	// Saved on this machine, because this is where the user is looking.
 	// A pane on a machine far away still writes its scrollback here.
 	r.SaveAs = suggestedSavePath(r.Name())
-	r.OnSave = saveLines
+	r.OnSave = a.saveInBackground
 	r.OnClose = func() {
 		a.pump.post(func() {
 			if err := a.closePane(r); err != nil {
@@ -120,10 +121,11 @@ func scrollbackName(pane string) string {
 // pane, with the characters a filesystem will not take swapped out.
 func suggestedSavePath(name string) string {
 	home, err := os.UserHomeDir()
-	if err != nil {
-		// Nowhere better to suggest. The user types a path instead,
-		// which is what the question is for.
-		home = ""
+	if err != nil || home == "" {
+		// Nothing to suggest. An empty question is better than a bare
+		// file name, which would land in whatever directory gridterm
+		// was started in and be reported by a name that says nowhere.
+		return ""
 	}
 	return filepath.Join(home, safeFileName(name)+".txt")
 }
@@ -137,10 +139,44 @@ func safeFileName(name string) string {
 		return r
 	}, name)
 	clean = strings.Trim(clean, " .-")
+	// Windows reads these as devices wherever they sit, so a pane
+	// called "con" would write to the console and fail with nothing a
+	// user can act on.
+	switch strings.ToLower(clean) {
+	case "con", "prn", "aux", "nul", "com1", "com2", "com3", "com4",
+		"com5", "com6", "com7", "com8", "com9",
+		"lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9":
+		clean += "-pane"
+	}
+	if clean == "" {
+		return "scrollback"
+	}
+	// A pane's name is whatever the program put in its title, and a
+	// long command line makes a path no filesystem will take.
+	if len(clean) > mostNameBytes {
+		clean = strings.TrimRight(clean[:mostNameBytes], " .-")
+	}
 	if clean == "" {
 		return "scrollback"
 	}
 	return clean
+}
+
+// mostNameBytes is the longest file name suggested, well inside what
+// every filesystem here takes.
+const mostNameBytes = 80
+
+// saveInBackground writes the lines somewhere off the drawing
+// goroutine and says how it went once it is done.
+//
+// A path on a share over a VPN takes as long as it takes, and the
+// window going still for that long with nothing on screen to say why
+// is worse than the wait.
+func (a *app) saveInBackground(at string, lines []string, then func(error)) {
+	go func() {
+		err := saveLines(at, lines)
+		a.pump.post(func() { then(err) })
+	}()
 }
 
 // saveLines writes lines to a file on this machine, one per line, with
@@ -151,6 +187,14 @@ func safeFileName(name string) string {
 func saveLines(at string, lines []string) error {
 	if at == "" {
 		return errors.New("no path to save to")
+	}
+	// Refused rather than replaced. The question comes up filled in, so
+	// Enter is the easy keystroke, and a file the user meant to keep is
+	// gone with no way back.
+	if _, err := os.Lstat(at); err == nil {
+		return fmt.Errorf("%s is already there. Give it another name", at)
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("could not look at %s: %w", at, err)
 	}
 	dir := filepath.Dir(at)
 	f, err := os.CreateTemp(dir, filepath.Base(at)+"-*")

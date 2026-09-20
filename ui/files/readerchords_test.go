@@ -456,7 +456,7 @@ func TestARereadStartsTheCountAgain(t *testing.T) {
 // user edits a path rather than typing one.
 func TestCtrlSAsksWhereToSaveIt(t *testing.T) {
 	r := aReaderOf(t, 44, 8, "one", "two")
-	r.OnSave = func(string, []string) error { return nil }
+	r.OnSave = func(_ string, _ []string, then func(error)) { then(nil) }
 	r.SaveAs = "/home/marcus/kept.txt"
 
 	chordKey(t, r, input.KeyS, input.ModCtrl)
@@ -478,9 +478,9 @@ func TestAnsweringTheSaveQuestionWritesTheLines(t *testing.T) {
 	r := aReaderOf(t, 44, 8, "one", "two", "three")
 	var at string
 	var got []string
-	r.OnSave = func(path string, lines []string) error {
+	r.OnSave = func(path string, lines []string, then func(error)) {
 		at, got = path, lines
-		return nil
+		then(nil)
 	}
 	r.SaveAs = "/tmp/kept.txt"
 	chordKey(t, r, input.KeyS, input.ModCtrl)
@@ -501,7 +501,9 @@ func TestAnsweringTheSaveQuestionWritesTheLines(t *testing.T) {
 // A save that fails says why, on the row the bar was on.
 func TestASaveThatFailsSaysWhy(t *testing.T) {
 	r := aReaderOf(t, 44, 8, "one")
-	r.OnSave = func(string, []string) error { return errors.New("the disk is full") }
+	r.OnSave = func(_ string, _ []string, then func(error)) {
+		then(errors.New("the disk is full"))
+	}
 	r.SaveAs = "/tmp/kept.txt"
 	chordKey(t, r, input.KeyS, input.ModCtrl)
 
@@ -534,7 +536,7 @@ func TestAReaderWithNowhereToWriteSaysSo(t *testing.T) {
 // The bar offers Save on a reader that has somewhere to write.
 func TestTheBarOffersSaveWhenThereIsSomewhereToWrite(t *testing.T) {
 	r := aReaderOf(t, 80, 8, "one")
-	r.OnSave = func(string, []string) error { return nil }
+	r.OnSave = func(_ string, _ []string, then func(error)) { then(nil) }
 
 	if line := readerRow(drawReader(r, 80, 8), 7); !strings.Contains(line, "Save") {
 		t.Errorf("the bar is %q, want Save on it", line)
@@ -545,7 +547,7 @@ func TestTheBarOffersSaveWhenThereIsSomewhereToWrite(t *testing.T) {
 func TestEscapeLeavesTheSaveQuestion(t *testing.T) {
 	r := aReaderOf(t, 44, 8, "one")
 	saved := false
-	r.OnSave = func(string, []string) error { saved = true; return nil }
+	r.OnSave = func(_ string, _ []string, then func(error)) { saved = true; then(nil) }
 	chordKey(t, r, input.KeyS, input.ModCtrl)
 
 	chordKey(t, r, input.KeyEscape, 0)

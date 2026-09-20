@@ -7,6 +7,7 @@ import (
 
 	"github.com/marrasen/gridterm/conf"
 	"github.com/marrasen/gridterm/keys"
+	"github.com/marrasen/gridterm/ui"
 )
 
 // keysCommand writes a starting shortcuts file, and keysTitle names the
@@ -40,13 +41,19 @@ func (a *app) reloadShortcuts() error {
 	if err != nil {
 		return err
 	}
-	was := a.root.Accelerators
-	a.root.Accelerators = defaultShortcuts()
-	if err := a.applyShortcuts(changes); err != nil {
-		a.root.Accelerators = was
+	// Built to one side and only then taken on, so a file that cannot
+	// be used leaves the window on the keys it had. Taken on rather
+	// than swapped in, because the menu bar was handed this keymap when
+	// it was built and keeps it: a new one would leave every menu
+	// printing the chords of a keymap nothing runs.
+	next := defaultShortcuts()
+	if err := a.applyShortcutsTo(next, changes); err != nil {
 		return err
 	}
+	a.root.Accelerators.Become(next)
 	a.markDirty()
+	a.showNotice(keysReloadTitle,
+		"The keyboard shortcuts file was read again, and this window is using it.", false)
 	return nil
 }
 
@@ -82,7 +89,16 @@ func (a *app) loadShortcuts() error {
 // applyShortcuts binds what the file says, and changes nothing when any
 // line names a command the window does not have.
 func (a *app) applyShortcuts(changes []keys.Change) error {
-	if a.root.Accelerators == nil || a.root.Commands == nil {
+	if a.root.Accelerators == nil {
+		return errors.New("this window has no keys to change")
+	}
+	return a.applyShortcutsTo(a.root.Accelerators, changes)
+}
+
+// applyShortcutsTo is applyShortcuts onto a keymap named, for a reload
+// that builds one to one side before taking it on.
+func (a *app) applyShortcutsTo(km *ui.Keymap, changes []keys.Change) error {
+	if km == nil || a.root.Commands == nil {
 		return errors.New("this window has no keys to change")
 	}
 	// Checked before any of it is applied, so a file naming a command
@@ -115,10 +131,10 @@ func (a *app) applyShortcuts(changes []keys.Change) error {
 	}
 	for _, c := range changes {
 		if c.Command == "" {
-			a.root.Accelerators.Unbind(c.Chord)
+			km.Unbind(c.Chord)
 			continue
 		}
-		if err := a.root.Accelerators.Bind(c.Chord, c.Command); err != nil {
+		if err := km.Bind(c.Chord, c.Command); err != nil {
 			return err
 		}
 	}
@@ -147,7 +163,7 @@ func (a *app) writeShortcutStart() error {
 		"Every chord in the file runs before a pane sees it, so a chord a program\n"+
 		"in the pane needs stops reaching it. A dialog that is open sees a chord\n"+
 		"before either of them.\n\n"+
-		"Start gridterm again to use the file.", false)
+		"Edit it, then take \""+keysReloadTitle+"\" to use it.", false)
 	return nil
 }
 

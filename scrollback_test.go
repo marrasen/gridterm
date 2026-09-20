@@ -149,8 +149,9 @@ func TestTheScrollbackHasARowOfItsOwn(t *testing.T) {
 	if held == nil || held.row == nil {
 		t.Fatal("the viewer has no row on the sidebar")
 	}
-	if !strings.Contains(held.row.Label, "scrollback") {
-		t.Errorf("the row says %q, want it to say what it is", held.row.Label)
+	// Named for the pane it came from, which scrollbackName("") is not.
+	if got, want := held.row.Label, scrollbackName(a.paneName(onlyPaneOn(t, a))); got != want {
+		t.Errorf("the row says %q, want %q", got, want)
 	}
 }
 
@@ -200,12 +201,18 @@ func TestASaveThatFailsLeavesTheOldFileAlone(t *testing.T) {
 		t.Fatalf("write the first one: %v", err)
 	}
 
-	// A directory that is not there, so the temporary file cannot be
-	// made and nothing is written.
-	err := saveLines(filepath.Join(dir, "gone", "kept.txt"), []string{"new"})
+	// The rename is what fails: the target is a directory, which is
+	// reached only after the temporary file has been written. A test
+	// that failed at CreateTemp would never touch the path this is
+	// about.
+	onADir := filepath.Join(dir, "a-directory")
+	if err := os.Mkdir(onADir, 0o700); err != nil {
+		t.Fatalf("make the directory: %v", err)
+	}
+	err := saveLines(onADir, []string{"new"})
 
 	if err == nil {
-		t.Fatal("saving into a directory that is not there did not fail")
+		t.Fatal("saving onto a directory did not fail")
 	}
 	body, readErr := os.ReadFile(at)
 	if readErr != nil {
@@ -216,35 +223,115 @@ func TestASaveThatFailsLeavesTheOldFileAlone(t *testing.T) {
 	}
 }
 
-// The save leaves no temporary file behind when it fails.
+// A save that fails after writing leaves no temporary file behind.
+//
+// The failure is the rename, which happens after the temporary file
+// exists: a test that failed earlier would prove nothing about
+// clearing up.
 func TestAFailedSaveClearsUpAfterItself(t *testing.T) {
 	dir := t.TempDir()
-	at := filepath.Join(dir, "sub", "kept.txt")
+	onADir := filepath.Join(dir, "a-directory")
+	if err := os.Mkdir(onADir, 0o700); err != nil {
+		t.Fatalf("make the directory: %v", err)
+	}
 
-	if err := saveLines(at, []string{"new"}); err == nil {
-		t.Fatal("saving into a directory that is not there did not fail")
+	if err := saveLines(onADir, []string{"new"}); err == nil {
+		t.Fatal("saving onto a directory did not fail")
 	}
 
 	left, err := os.ReadDir(dir)
 	if err != nil {
 		t.Fatalf("list the directory: %v", err)
 	}
-	if len(left) != 0 {
-		t.Errorf("%d files were left behind, want none", len(left))
+	// The directory it tried to write onto, and nothing else.
+	if len(left) != 1 || left[0].Name() != "a-directory" {
+		var names []string
+		for _, e := range left {
+			names = append(names, e.Name())
+		}
+		t.Errorf("the directory holds %v, want the temporary file cleared up", names)
+	}
+}
+
+// Saving onto a file that is already there is refused rather than
+// replacing it. The question comes up filled in, so Enter is the easy
+// keystroke and a file the user meant to keep has no way back.
+func TestSavingOntoAFileThatExistsIsRefused(t *testing.T) {
+	at := filepath.Join(t.TempDir(), "kept.txt")
+	if err := os.WriteFile(at, []byte("what was there\n"), 0o600); err != nil {
+		t.Fatalf("write the first one: %v", err)
+	}
+
+	err := saveLines(at, []string{"new"})
+
+	if err == nil {
+		t.Fatal("it wrote over a file that was already there")
+	}
+	if !strings.Contains(err.Error(), "already there") {
+		t.Errorf("it said %q, want it to say the file is already there", err)
+	}
+	body, readErr := os.ReadFile(at)
+	if readErr != nil {
+		t.Fatalf("read it back: %v", readErr)
+	}
+	if got, want := string(body), "what was there\n"; got != want {
+		t.Errorf("the file now holds %q, want %q", got, want)
+	}
+}
+
+// With nowhere to suggest, nothing is suggested. A bare file name
+// would land in whatever directory gridterm was started in, and the
+// message afterwards would name a place the user cannot find.
+func TestWithNoHomeNothingIsSuggested(t *testing.T) {
+	t.Setenv("HOME", "")
+	t.Setenv("USERPROFILE", "")
+
+	if got := suggestedSavePath("a pane"); got != "" && !filepath.IsAbs(got) {
+		t.Errorf("it suggested %q, which is not a place the user can find", got)
+	}
+}
+
+// The wiring: a scrollback viewer really is given somewhere to save to
+// and something to save with. Without this the widget tests pass
+// against a stub while Ctrl+S in the window says there is nothing to
+// save.
+func TestAScrollbackViewerIsWiredForSaving(t *testing.T) {
+	a := aPaneThatSaid(t, "needle here\r\n")
+	if err := a.root.Commands.Run(scrollbackCommand); err != nil {
+		t.Fatalf("running %s: %v", scrollbackCommand, err)
+	}
+
+	r := onlyReader(t, a)
+
+	if r.OnSave == nil {
+		t.Error("the viewer has nothing to save with, so Ctrl+S says there is nothing to save")
+	}
+	if r.SaveAs == "" {
+		t.Error("the viewer suggests nowhere to save to")
+	}
+	if !strings.Contains(r.SaveAs, "scrollback") {
+		t.Errorf("it suggests %q, want a name taken from the pane", r.SaveAs)
 	}
 }
 
 // The suggested path is somewhere a file can go, with the characters a
 // filesystem will not take swapped out.
 func TestTheSuggestedSavePathIsUsable(t *testing.T) {
-	got := suggestedSavePath(`Terminal PowerShell: C:\Users\x scrollback`)
+	// Asked of the naming itself. Going through suggestedSavePath and
+	// taking filepath.Base would cut an unmapped name at the backslash
+	// it should never have kept, and pass against the very bug this is
+	// here for.
+	name := safeFileName(`Terminal PowerShell: C:\Users\x scrollback`)
 
-	base := filepath.Base(got)
-	if strings.ContainsAny(base, `<>:"/\|?*`) {
-		t.Errorf("the suggested name is %q, want nothing a filesystem refuses", base)
+	if strings.ContainsAny(name, `<>:"/\|?*`) {
+		t.Errorf("the suggested name is %q, want nothing a filesystem refuses", name)
 	}
-	if !strings.HasSuffix(base, ".txt") {
-		t.Errorf("the suggested name is %q, want it to end in .txt", base)
+	at := suggestedSavePath(`Terminal PowerShell: C:\Users\x scrollback`)
+	if !strings.HasSuffix(at, ".txt") {
+		t.Errorf("the suggested path is %q, want it to end in .txt", at)
+	}
+	if got := filepath.Base(at); got != name+".txt" {
+		t.Errorf("the path ends in %q, want the mapped name %q", got, name+".txt")
 	}
 }
 

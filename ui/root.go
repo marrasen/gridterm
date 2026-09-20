@@ -277,6 +277,12 @@ func (r *Root) toClaimer(ev input.Event) (bool, error) {
 	if r.widget == nil {
 		return false, nil
 	}
+	// A claim is about a chord, and a key coming up is not one. Asking
+	// anyway would hand the widget an event it said it would handle
+	// and then did not.
+	if ChordOf(ev).Key == input.KeyNone {
+		return false, nil
+	}
 	w := FocusedLeaf(r.widget)
 	c, ok := w.(ChordClaimer)
 	if !ok || !c.ClaimsChord(ev) {

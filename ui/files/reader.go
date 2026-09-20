@@ -23,6 +23,10 @@ import (
 // the file ends there.
 const MostReadBytes = 8 << 20
 
+// plainCtrl reports whether ctrl and nothing else is held, which is
+// what the keys on the bar are spelled with.
+func plainCtrl(ev input.Event) bool { return ev.Mods == input.ModCtrl }
+
 // cannotSave is what Ctrl+S says in a reader with nowhere to write.
 // A file on screen is already a file, so there is nothing to save.
 const cannotSave = "this is a file already, so there is nothing to save"
@@ -71,8 +75,11 @@ type Reader struct {
 	// reader on a file that is already saved wants.
 	//
 	// It is the caller's because a reader reaches no filesystem: it is
-	// given lines and shows them.
-	OnSave func(at string, lines []string) error
+	// given lines and shows them. It runs the write somewhere that is
+	// not the goroutine that draws -- a path on a share can take
+	// seconds -- and calls then with how it went, back on the drawing
+	// goroutine.
+	OnSave func(at string, lines []string, then func(error))
 
 	// SaveAs is what the save question starts filled in with, so the
 	// user edits a path rather than typing one.
@@ -590,12 +597,17 @@ func (r *Reader) HandleKey(ev input.Event) (bool, error) {
 	// Whatever was said last is said once: the next key is the user
 	// having read it.
 	r.said = ""
-	// A chord the bar never offered is not the bar's key. Ctrl+Shift+H is
-	// not Ctrl+H: the window opens its help on that one, and a reader that
-	// turned hex on underneath would be acting on a key pressed for
-	// something else.
+	// A chord the bar never offered is not the bar's key. Ctrl+Shift+H
+	// is not Ctrl+H: the window opens its help on that one, and a
+	// reader that turned hex on underneath would be acting on a key
+	// pressed for something else.
+	//
+	// Ctrl and shift together is allowed, because that is how a
+	// selection is carried by word and to the ends of a file
+	// everywhere else. Only the keys that move take it, below: the
+	// bar's own letters still want a plain Ctrl.
 	switch ev.Mods {
-	case 0, input.ModCtrl, input.ModShift:
+	case 0, input.ModCtrl, input.ModShift, input.ModCtrl | input.ModShift:
 	default:
 		return true, nil
 	}
@@ -618,9 +630,9 @@ func (r *Reader) HandleKey(ev input.Event) (bool, error) {
 		r.extendTo(0)
 	case ev.Shift() && ev.Key == input.KeyEnd:
 		r.extendTo(-1)
-	case ev.Key == input.KeyA && ev.Ctrl():
+	case ev.Key == input.KeyA && plainCtrl(ev):
 		r.SelectAll()
-	case ev.Key == input.KeyC && ev.Ctrl():
+	case ev.Key == input.KeyC && plainCtrl(ev):
 		r.Copy()
 	case ev.Key == input.KeyEscape:
 		r.ClearSelection()
@@ -640,23 +652,23 @@ func (r *Reader) HandleKey(ev input.Event) (bool, error) {
 		r.Home()
 	case ev.Key == input.KeyEnd:
 		r.End()
-	case ev.Key == input.KeyR && ev.Ctrl():
+	case ev.Key == input.KeyR && plainCtrl(ev):
 		r.Open()
-	case ev.Key == input.KeyF && ev.Ctrl():
+	case ev.Key == input.KeyF && plainCtrl(ev):
 		r.Follow(!r.follow)
-	case ev.Key == input.KeyH && ev.Ctrl():
+	case ev.Key == input.KeyH && plainCtrl(ev):
 		r.Hex(!r.hex)
-	case ev.Key == input.KeyD && ev.Ctrl(), ev.Key == input.KeyQ:
+	case ev.Key == input.KeyD && plainCtrl(ev), ev.Key == input.KeyQ:
 		if r.OnClose != nil {
 			r.OnClose()
 		}
-	case ev.Key == input.KeyS && ev.Ctrl():
+	case ev.Key == input.KeyS && plainCtrl(ev):
 		if r.OnSave == nil {
 			r.said = cannotSave
 			break
 		}
 		r.ask(askingSave)
-	case ev.Key == input.KeyX && ev.Ctrl():
+	case ev.Key == input.KeyX && plainCtrl(ev):
 		// Ctrl+C copies here, so Ctrl+X is the next thing a hand tries.
 		// Saying why beats a key that looks broken.
 		r.said = cannotCut

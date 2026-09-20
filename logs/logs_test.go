@@ -367,3 +367,84 @@ func TestWritingFromEverywhereAtOnceIsSafe(t *testing.T) {
 		t.Errorf("it kept %d lines, want the last 50", got)
 	}
 }
+
+// One line missed reads as one line, not "1 lines are". The singular
+// branch is the only reason that code exists.
+func TestOneMissedLineReadsAsOne(t *testing.T) {
+	l := New(1, nil)
+	r := l.Open()
+	defer func() { _ = r.Close() }()
+	for _, line := range []string{"one\n", "two\n"} {
+		if _, err := l.Write([]byte(line)); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+	}
+
+	got := readLine(t, r)
+
+	if !strings.Contains(got, "1 older log line is no longer kept") {
+		t.Errorf("it said %q, want one line said in the singular", got)
+	}
+}
+
+// A buffer smaller than a line gets the line in pieces, with nothing
+// dropped in between. Every line in the pane would otherwise be cut
+// at whatever the reader happened to ask for.
+func TestALineLongerThanTheBufferArrivesWhole(t *testing.T) {
+	l := New(0, nil)
+	if _, err := l.Write([]byte("a line long enough to need more than one read\n")); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	r := l.Open()
+	defer func() { _ = r.Close() }()
+
+	var got strings.Builder
+	b := make([]byte, 8)
+	for got.Len() < len("a line long enough to need more than one read\r\n") {
+		n, err := r.Read(b)
+		if err != nil {
+			t.Fatalf("read: %v", err)
+		}
+		if n == 0 {
+			t.Fatal("a read came back with nothing")
+		}
+		got.Write(b[:n])
+	}
+
+	if want := "a line long enough to need more than one read\r\n"; got.String() != want {
+		t.Errorf("it read back %q, want %q", got.String(), want)
+	}
+}
+
+// Asking for no particular number of lines keeps the default.
+func TestNoNumberAskedForKeepsTheDefault(t *testing.T) {
+	l := New(0, nil)
+	for range DefaultKeep + 10 {
+		if _, err := l.Write([]byte("a line\n")); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+	}
+
+	if got := l.Held(); got != DefaultKeep {
+		t.Errorf("it kept %d lines, want the default of %d", got, DefaultKeep)
+	}
+}
+
+// Also points the copy somewhere else, which is what keeps a test's
+// own log lines out of the test output.
+func TestAlsoMovesWhereTheCopyGoes(t *testing.T) {
+	var first, second bytes.Buffer
+	l := New(0, &first)
+
+	l.Also(&second)
+	if _, err := l.Write([]byte("after the change\n")); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	if first.Len() != 0 {
+		t.Errorf("the first writer got %q after being replaced", first.String())
+	}
+	if got, want := second.String(), "after the change\n"; got != want {
+		t.Errorf("the second writer got %q, want %q", got, want)
+	}
+}

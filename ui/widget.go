@@ -128,10 +128,17 @@ type KeyHandler interface {
 type ChordClaimer interface {
 	Widget
 
-	// ClaimsChord reports whether this widget wants the key itself. It
-	// is asked only while the widget has the focus, and a widget that
-	// claims a chord must then handle it.
-	ClaimsChord(ev input.Event) bool
+	// ClaimsChord reports whether this widget wants the key itself.
+	//
+	// bound is the command the window's accelerators would run for this
+	// chord, and empty when they would run nothing. A widget claims a
+	// chord because of what it would otherwise do: taking one the user
+	// has since pointed at something else would make that shortcut
+	// dead here and nowhere else, with nothing on screen to say so.
+	//
+	// It is asked only while the widget has the focus, and a widget
+	// that claims a chord must then handle it.
+	ClaimsChord(ev input.Event, bound string) bool
 }
 
 // isPlainKey reports whether an event is a key a dialog offers: no

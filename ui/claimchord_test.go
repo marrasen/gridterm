@@ -13,7 +13,7 @@ type claimer struct {
 	chord Chord
 }
 
-func (c *claimer) ClaimsChord(ev input.Event) bool { return ChordOf(ev) == c.chord }
+func (c *claimer) ClaimsChord(ev input.Event, _ string) bool { return ChordOf(ev) == c.chord }
 
 func (c *claimer) HandleKey(ev input.Event) (bool, error) {
 	c.seen = append(c.seen, ev.Key)

@@ -341,3 +341,60 @@ func TestASuggestedNameIsNeverEmpty(t *testing.T) {
 		t.Error("a name of nothing but separators suggested an empty file name")
 	}
 }
+
+// Closing the pane lets its viewer go of it: the text stays, because
+// the user opened it to read, but the viewer stops following a
+// terminal that is not there and stops holding it alive.
+func TestClosingThePaneLetsTheViewerGoOfIt(t *testing.T) {
+	a := aPaneThatSaid(t, "needle here\r\n")
+	if err := a.root.Commands.Run(scrollbackCommand); err != nil {
+		t.Fatalf("running %s: %v", scrollbackCommand, err)
+	}
+	r := onlyReader(t, a)
+	r.Follow(true)
+	pane := onlyPaneOn(t, a)
+	was := readerText(t, r)
+
+	if err := a.closePane(pane); err != nil {
+		t.Fatalf("close the pane: %v", err)
+	}
+
+	held := a.readers[r]
+	if held == nil {
+		t.Fatal("closing the pane took the viewer with it")
+	}
+	if held.pane != nil {
+		t.Error("the viewer is still holding the terminal that closed")
+	}
+	if r.Following() {
+		t.Error("the viewer is still following a pane that has gone")
+	}
+	if got := readerText(t, r); got != was {
+		t.Error("closing the pane took away the text the viewer was showing")
+	}
+	if !strings.Contains(r.Name(), "closed") {
+		t.Errorf("the viewer is called %q, want it to say the pane has gone", r.Name())
+	}
+}
+
+// And a reread of a viewer whose pane has gone finds nothing to ask,
+// rather than asking a terminal that is not there.
+func TestRereadingAViewerWhosePaneWentDoesNothing(t *testing.T) {
+	a := aPaneThatSaid(t, "needle here\r\n")
+	if err := a.root.Commands.Run(scrollbackCommand); err != nil {
+		t.Fatalf("running %s: %v", scrollbackCommand, err)
+	}
+	r := onlyReader(t, a)
+	if err := a.closePane(onlyPaneOn(t, a)); err != nil {
+		t.Fatalf("close the pane: %v", err)
+	}
+	was := readerText(t, r)
+
+	if r.Open() {
+		t.Error("a reread went out for a pane that has closed")
+	}
+
+	if got := readerText(t, r); got != was {
+		t.Error("the reread took away what the viewer was showing")
+	}
+}

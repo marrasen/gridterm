@@ -285,7 +285,16 @@ func (r *Root) toClaimer(ev input.Event) (bool, error) {
 	}
 	w := FocusedLeaf(r.widget)
 	c, ok := w.(ChordClaimer)
-	if !ok || !c.ClaimsChord(ev) {
+	if !ok {
+		return false, nil
+	}
+	// What the chord would run if the widget did not take it, so the
+	// widget can decide by that rather than by the chord alone.
+	var bound string
+	if r.Accelerators != nil {
+		bound, _ = r.Accelerators.Lookup(ChordOf(ev))
+	}
+	if !c.ClaimsChord(ev, bound) {
 		return false, nil
 	}
 	return HandleKey(w, ev)

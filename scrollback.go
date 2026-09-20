@@ -47,6 +47,7 @@ func (a *app) showScrollback() error {
 
 	r := files.NewReader(scrollbackName(a.paneName(t)), "")
 	r.Style = a.paneStyle()
+	r.Scrolls = scrollCommands
 	r.Read = func(then func([]string, bool, error)) {
 		then(scrollbackLines(t), false, nil)
 	}
@@ -99,7 +100,7 @@ func (a *app) scrollbackOf(t *term.Terminal) *files.Reader {
 // Plain text, not the colours: the viewer draws a file in one style,
 // and what this is for is finding a line rather than admiring it.
 func scrollbackLines(t *term.Terminal) []string {
-	text := t.TextLines(t.LinesHeld())
+	text := t.AllText()
 	if text == "" {
 		return nil
 	}

@@ -562,6 +562,7 @@ func (a *app) closePane(w ui.Widget) error {
 		delete(a.ended, t)
 		delete(a.started, t)
 		a.forgetPane(t)
+		a.letGoOfPane(t)
 		errs = append(errs, t.Close())
 	}
 	// Whatever was in front has gone or moved, so the sidebar works it
@@ -729,6 +730,42 @@ func (a *app) markDirty() {
 	// tree that changed shape has changed theirs as well.
 	if a.sideRegion != nil {
 		a.sideRegion.g.MarkAllDirty()
+	}
+}
+
+// letGoOfPane tells any scrollback viewer that the pane it was taken
+// from has closed.
+//
+// The text it already holds stays: the user opened it to read, and a
+// pane closing is no reason to take it away. What stops is following,
+// and holding the closed terminal, whose grid and scrollback would
+// otherwise be kept for as long as the viewer was open.
+func (a *app) letGoOfPane(t *term.Terminal) {
+	for r, held := range a.readers {
+		if held.pane != t {
+			continue
+		}
+		held.pane = nil
+		r.Follow(false)
+		r.Gone("the pane this came from has closed")
+	}
+}
+
+// markPaneDirty marks the rows one widget is drawn on, for a change
+// inside it that moved nothing else.
+//
+// A read saying how far it has got lands ten times a second, and
+// marking the whole window would make every frame a full repaint for
+// as long as the read takes. A widget that is not on screen marks
+// nothing.
+func (a *app) markPaneDirty(w ui.Widget) {
+	area, on := a.root.AreaOf(w)
+	if !on || a.g == nil {
+		return
+	}
+	_, rows := a.g.Size()
+	for y := max(area.Y, 0); y < min(area.Y+area.Rows, rows); y++ {
+		a.g.MarkRowDirty(y)
 	}
 }
 

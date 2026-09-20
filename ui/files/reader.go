@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"image/color"
 	"io"
+	"slices"
 	"strings"
 
 	"github.com/marrasen/gridterm/grid"
@@ -84,6 +85,14 @@ type Reader struct {
 	// SaveAs is what the save question starts filled in with, so the
 	// user edits a path rather than typing one.
 	SaveAs string
+
+	// Scrolls are the commands the window scrolls a pane with. A chord
+	// bound to one of them is one this reader takes for itself, so
+	// shift and a page key picks text out here rather than scrolling.
+	//
+	// The ids are the window's, not this package's: a widget should
+	// not have to know what its window calls things.
+	Scrolls []string
 
 	// Expect is how many bytes the file was listed as, for the line
 	// shown while it is being read. Zero means nobody said, and the
@@ -554,14 +563,20 @@ func ReaderKeys() []Key {
 // runs before any widget sees the key. A user who has just learned
 // Shift+Down tries Shift+PageDown next, and the pane scrolling under a
 // selection that stayed where it was is not what they asked for.
-func (r *Reader) ClaimsChord(ev input.Event) bool {
+func (r *Reader) ClaimsChord(ev input.Event, bound string) bool {
 	if r.isPic || r.asking != askingNothing || !r.picking() {
 		return false
 	}
 	if ev.Mods != input.ModShift {
 		return false
 	}
-	return ev.Key == input.KeyPageUp || ev.Key == input.KeyPageDown
+	if ev.Key != input.KeyPageUp && ev.Key != input.KeyPageDown {
+		return false
+	}
+	// Only from the commands that scroll. A user who has pointed this
+	// chord at something else meant that, and a shortcut that worked
+	// everywhere but in a file viewer would be a puzzle.
+	return bound == "" || slices.Contains(r.Scrolls, bound)
 }
 
 // HandleKey moves through the file.
@@ -948,6 +963,19 @@ func (r *Reader) colourOf(c colour) color.RGBA {
 		return r.Style.MarkedFG
 	}
 	return r.Style.FG
+}
+
+// Gone says what the reader was reading is no longer there, without
+// taking away what it has.
+//
+// A scrollback viewer whose pane has closed still holds text worth
+// reading, and rereading it is what would find nothing. The name says
+// so and Ctrl+R stops asking.
+func (r *Reader) Gone(why string) {
+	r.Read, r.ReadPic = nil, nil
+	if why != "" && !strings.HasSuffix(r.name, ")") {
+		r.name += " (" + why + ")"
+	}
 }
 
 // Where is what the top line says about where in the file the reader is,

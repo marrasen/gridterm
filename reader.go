@@ -16,6 +16,15 @@ import (
 // machine at the far end is not asked about on every frame.
 const followEvery = 300 * time.Millisecond
 
+// followPaneEvery is how often a viewer following a pane takes its
+// text again.
+//
+// Slower than a file, because taking it renders every line of the
+// scrollback with the pane's lock held, and the goroutine reading that
+// pane waits on it. Often enough to read as keeping up, seldom enough
+// that a busy pane does not stutter.
+const followPaneEvery = time.Second
+
 // reader is one file open in the window: the pane, the row it has on the
 // sidebar, and what is known about the file it is following.
 type reader struct {
@@ -58,6 +67,7 @@ func (a *app) openReader(f vfs.FS, host, path, name string, follow bool, expect 
 	}
 	r := files.NewReader(name, path)
 	r.Style = a.paneStyle()
+	r.Scrolls = scrollCommands
 	// How big the listing said it is, so the pane says what it is
 	// waiting for rather than looking empty while a file on a machine
 	// far away comes down the wire.
@@ -146,7 +156,7 @@ func (a *app) watchRead(r *files.Reader) func(int64) {
 			// been closed since, wants nothing. ReadSoFar checks the
 			// first and the second is a field nobody reads.
 			r.ReadSoFar(read)
-			a.markDirty()
+			a.markPaneDirty(r)
 		})
 	}
 }
@@ -254,7 +264,11 @@ func (a *app) followReaders(now time.Time) {
 		if !r.Following() || held.checking || r.Busy() {
 			continue
 		}
-		if now.Sub(held.asked) < followEvery {
+		every := followEvery
+		if held.pane != nil {
+			every = followPaneEvery
+		}
+		if now.Sub(held.asked) < every {
 			continue
 		}
 		held.asked = now

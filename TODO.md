@@ -268,48 +268,20 @@ rediscovered.
 
 ## Left by the review of 2026-09-20
 
-Four adversarial reviewers went over the morning's work. What they
-found and I did not fix:
-
-- **A claim on a chord does not know what that chord is bound to.** The
-  reader claims Shift+PageUp and Shift+PageDown whatever the shortcuts
-  file says they run, so a user who binds Shift+PageDown to something
-  else gets that everywhere but in a file viewer. The starting file's
-  notice says "Every chord in the file runs before a pane sees it",
-  which is now not quite true. Either the claim should be checked
-  against what the chord is bound to, or the notice should say so.
+Four adversarial reviewers went over the morning's work. One thing
+they found is still open, and it is a feature rather than a fix:
 
 - **"New terminal like this one" copies the shell but not the
   directory.** Ctrl+Shift+T is the duplicate-tab key elsewhere and the
-  working directory comes with it there. Nothing in the window tracks
-  a pane's working directory yet, which is the same gap that stops a
-  WSL pane starting where the window is looking.
-
-- **A scrollback viewer that is following renders the whole scrollback
-  under the terminal's lock, every 300ms.** `TextLines` walks back a
-  screenful at a time and builds every line, all inside `t.mu`, so the
-  pane's own reader waits on it. Following a busy pane makes that pane
-  stutter. One snapshot under one lock, and a slower tick for a viewer
-  following a pane rather than a file, would fix it.
-
-- **Closing a pane leaves the scrollback viewer holding it.**
-  `closePane` does not clear `reader.pane`, so the viewer keeps a
-  closed terminal, its grid and its scrollback alive, and goes on
-  asking it for changes. Not a crash, and the text stays readable,
-  which is arguably what the user wants, but it should be deliberate
-  rather than an oversight.
-
-- **Progress marks the whole window dirty.** `watchRead` calls
-  `markDirty` ten times a second per read in flight, so a slow read
-  makes every frame a full repaint. Marking the reader's own area
-  would be enough.
-
-- **`TestDoneMeansTheContextHasGoneAsWell` is a smoke test, not a
-  proof.** It catches the old ordering about three times in three
-  thousand on this machine, and at `GOMAXPROCS=1` it would never catch
-  it: closing a channel readies the waiter on the same P without
-  preempting. The fix it guards is right; the test is evidence rather
-  than a guarantee.
+  working directory comes with it there. Nothing in the window knows a
+  shell's directory: `vt` parses OSC 133 for prompts and OSC 52 for
+  the clipboard, and does not parse OSC 7, which is how a shell says
+  where it is. Adding it means new state in the emulator, a way to
+  read it off a `term.Terminal`, and a shell configured to send it --
+  most do on Linux, PowerShell has to be told. The same gap stops a
+  WSL pane starting where the window is looking, and stops the working
+  directory field under "Run a command" being filled in, so the three
+  are one piece of work.
 
 ## Tests
 

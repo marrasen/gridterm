@@ -12,6 +12,10 @@ import (
 	"github.com/marrasen/gridterm/vfs"
 )
 
+// scrollsWith is a command id standing for the window's own scroll,
+// which is what a reader takes a page chord away from.
+const scrollsWith = "view.scrollDown"
+
 // chordKey presses a key with whatever modifiers are named.
 func chordKey(t *testing.T, r *Reader, key input.Key, mods input.Mods) {
 	t.Helper()
@@ -183,8 +187,9 @@ func TestShiftAndPageUpCarriesTheSelectionBack(t *testing.T) {
 // shortcut does not run instead. It claims nothing else.
 func TestTheReaderClaimsOnlyShiftAndAPageKey(t *testing.T) {
 	r := aReaderOf(t, 40, 12, "hello there", "second line")
+	r.Scrolls = []string{scrollsWith}
 	claims := func(key input.Key, mods input.Mods) bool {
-		return r.ClaimsChord(input.Event{Kind: input.KeyPress, Key: key, Mods: mods})
+		return r.ClaimsChord(input.Event{Kind: input.KeyPress, Key: key, Mods: mods}, scrollsWith)
 	}
 
 	for _, key := range []input.Key{input.KeyPageUp, input.KeyPageDown} {
@@ -207,8 +212,9 @@ func TestTheReaderClaimsOnlyShiftAndAPageKey(t *testing.T) {
 // scrolls the pane rather than the key doing nothing at all.
 func TestAnEmptyReaderClaimsNothing(t *testing.T) {
 	r := aReaderOf(t, 40, 12)
+	r.Scrolls = []string{scrollsWith}
 
-	if r.ClaimsChord(input.Event{Kind: input.KeyPress, Key: input.KeyPageDown, Mods: input.ModShift}) {
+	if r.ClaimsChord(input.Event{Kind: input.KeyPress, Key: input.KeyPageDown, Mods: input.ModShift}, scrollsWith) {
 		t.Error("an empty reader claimed shift and PageDown")
 	}
 }
@@ -557,5 +563,34 @@ func TestEscapeLeavesTheSaveQuestion(t *testing.T) {
 	}
 	if saved {
 		t.Error("Escape saved the file anyway")
+	}
+}
+
+// A chord the user has pointed at something else is not the reader's
+// to take. A shortcut that worked everywhere but in a file viewer,
+// with nothing on screen to say so, would be a puzzle.
+func TestAChordBoundElsewhereIsNotClaimed(t *testing.T) {
+	r := aReaderOf(t, 40, 12, "hello there", "second line")
+	r.Scrolls = []string{scrollsWith}
+	page := input.Event{Kind: input.KeyPress, Key: input.KeyPageDown, Mods: input.ModShift}
+
+	if !r.ClaimsChord(page, scrollsWith) {
+		t.Fatal("it does not claim the chord that scrolls, so this proves nothing")
+	}
+
+	if r.ClaimsChord(page, "palette.open") {
+		t.Error("it claimed a chord the user pointed at the palette")
+	}
+}
+
+// A chord bound to nothing at all is still the reader's: there is no
+// shortcut to take away.
+func TestAnUnboundChordIsStillClaimed(t *testing.T) {
+	r := aReaderOf(t, 40, 12, "hello there", "second line")
+	r.Scrolls = []string{scrollsWith}
+
+	if !r.ClaimsChord(input.Event{
+		Kind: input.KeyPress, Key: input.KeyPageUp, Mods: input.ModShift}, "") {
+		t.Error("it did not claim a chord nothing else wanted")
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"io"
 	"io/fs"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -186,6 +187,14 @@ func TestAFinishedJobLetsGoOfItsContext(t *testing.T) {
 // look at the context before the job had let go, which it did about
 // once in a thousand.
 func TestDoneMeansTheContextHasGoneAsWell(t *testing.T) {
+	// On one processor the old order could never be caught: closing a
+	// channel readies the waiter on the same processor without
+	// preempting, so the gap between the close and the cancel was
+	// never observable. This asks for more than one whatever the
+	// machine defaults to, so the test means the same everywhere.
+	if was := runtime.GOMAXPROCS(4); was != 4 {
+		t.Cleanup(func() { runtime.GOMAXPROCS(was) })
+	}
 	from, to := local(t), local(t)
 	write(t, from.real, "one.txt", "body")
 

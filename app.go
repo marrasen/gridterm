@@ -740,6 +740,16 @@ func (a *app) reportingAll(cmds []ui.Command) []ui.Command {
 	return cmds
 }
 
+// scrollUpCommand and scrollDownCommand move a pane through what it
+// holds, and scrollCommands is the pair, for a widget that takes those
+// chords for itself.
+const (
+	scrollUpCommand   = "view.scrollUp"
+	scrollDownCommand = "view.scrollDown"
+)
+
+var scrollCommands = []string{scrollUpCommand, scrollDownCommand}
+
 // commands registers everything the window can do and binds the default
 // keys to it. Accelerators are the ones the terminal must not swallow.
 func (a *app) commands() {
@@ -761,9 +771,9 @@ func (a *app) commands() {
 		ui.Command{ID: scrollbackCommand, Title: scrollbackTitle,
 			AlsoFind: []string{"find", "history", "buffer", "save"},
 			Run:      a.showScrollback},
-		ui.Command{ID: "view.scrollUp", Title: "Scroll back",
+		ui.Command{ID: scrollUpCommand, Title: "Scroll back",
 			Run: func() error { return a.scrollFocused(1) }},
-		ui.Command{ID: "view.scrollDown", Title: "Scroll forward",
+		ui.Command{ID: scrollDownCommand, Title: "Scroll forward",
 			Run: func() error { return a.scrollFocused(-1) }},
 		ui.Command{ID: "pane.splitRight", Title: "Split right", Run: func() error {
 			return a.splitFocused(ui.Columns)

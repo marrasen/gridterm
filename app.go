@@ -463,6 +463,16 @@ type app struct {
 	// on the next frame.
 	quit atomic.Bool
 
+	// full says the window is filling the screen with nothing around
+	// the panes, and sideWas whether the sidebar was open before it
+	// did, so coming out puts back what was there.
+	full    bool
+	sideWas bool
+
+	// leaving says the question about closing is up, so the close
+	// button held down does not stack a dialog a frame.
+	leaving bool
+
 	// drewFinal records that the frame after quit was set has been
 	// drawn. ebiten returns from Update before Draw, so terminating the
 	// moment the last pane goes would discard its last output.
@@ -470,6 +480,10 @@ type app struct {
 }
 
 func (a *app) Update() error {
+	// Before anything: the operating system asking the window to close
+	// is a question here rather than an order, so a window holding a
+	// half-finished copy says so.
+	a.watchForClosing()
 	if a.quit.Load() {
 		// Drained once on the way out: a connection that finished in
 		// this very frame is holding a shell that only this queue knows
@@ -590,6 +604,9 @@ func (a *app) updateTitle() {
 func (a *app) Draw(screen *ebiten.Image) {
 	started := time.Now()
 	a.root.Draw(a.g.View())
+	// Over the bottom row, while a menu is open and has a line picked
+	// out. After the tree so it covers what the tree drew there.
+	a.drawHint()
 	// After the tree, because the tree is what gave the region its size
 	// this frame. Its own grid, so the window's rows are not its rows.
 	if a.sideRegion != nil {
@@ -817,6 +834,15 @@ func (a *app) commands() {
 		ui.Command{ID: "pane.unsplit", Title: "Take this pane out of its split",
 			Run: a.unsplitFocused},
 		ui.Command{ID: "pane.close", Title: "Close pane", Run: a.closeFocused},
+		ui.Command{ID: fullScreenCommand, Title: "Fill the screen with the panes",
+			AlsoFind: []string{"full screen", "maximise", "hide the sidebar"},
+			On:       a.FullScreen, Run: a.toggleFullScreen},
+		ui.Command{ID: "app.exit", Title: "Close this window",
+			AlsoFind: []string{"quit", "exit"}, Run: func() error {
+				a.askToQuit()
+				return nil
+			}},
+		ui.Command{ID: "app.about", Title: "About gridterm", Run: a.showAbout},
 		ui.Command{ID: "pane.open", Title: "New terminal", Run: a.openPane},
 		ui.Command{ID: defaultShellCommand, Title: "New terminal on the default shell",
 			Run: a.openPaneOnDefault},
@@ -841,13 +867,13 @@ func (a *app) commands() {
 		ui.Command{ID: "view.themesStart", Title: "Write a colour theme to edit…",
 			Run: a.writeThemeStart, AlsoFind: []string{"colors"}},
 		ui.Command{ID: "pane.titles", Title: "Show or hide the line naming each pane",
-			Run: a.togglePaneTitles},
+			On: a.paneTitles.on, Run: a.togglePaneTitles},
 		ui.Command{ID: "shell.setup", Title: "Shell setup on this machine, on or off",
 			AlsoFind: []string{"shell integration", "working directory", "osc 7"},
-			Run:      a.toggleShellSetup},
+			On:       a.shellSetup.on, Run: a.toggleShellSetup},
 		ui.Command{ID: "key.make", Title: "Make an SSH key…", Run: a.openMakeKey},
 		ui.Command{ID: "panel.toggle", Title: "Show or hide the connections",
-			Run: a.togglePanel},
+			On: a.panelShowing, Run: a.togglePanel},
 		ui.Command{ID: "panel.focus", Title: "Go to the connections", Run: a.focusPanel},
 		ui.Command{ID: "conn.terminal", Title: "New terminal like this one",
 			AlsoFind: []string{"open a terminal here", "same shell", "same server"},
@@ -873,8 +899,9 @@ func (a *app) commands() {
 			Run: a.editThisServer},
 		ui.Command{ID: "server.forget", Title: "Forget this server…",
 			Run: a.forgetThisServer},
-		ui.Command{ID: "conn.close", Title: "Close this connection",
-			Run: a.closeSelectedConnection},
+		ui.Command{ID: "conn.close", Title: "Close the row selected in the sidebar",
+			AlsoFind: []string{"close this connection"},
+			Run:      a.closeSelectedConnection},
 		ui.Command{ID: "conn.clearFinished", Title: "Clear finished connections",
 			Run: a.clearFinished},
 		ui.Command{ID: "keys.lock", Title: "Forget unlocked keys and try the agent again",
@@ -948,6 +975,7 @@ func defaultShortcuts() *ui.Keymap {
 		// so the shell would never get it.
 		{Key: input.KeyK, Mods: input.ModCtrl | input.ModShift}: "palette.open",
 		{Key: input.KeyF10}: "menu.open",
+		{Key: input.KeyF11}: fullScreenCommand,
 		// Not F1: that one belongs to whatever is running in the shell,
 		// and every chord this window takes is Ctrl+Shift and a letter.
 		{Key: input.KeyH, Mods: input.ModCtrl | input.ModShift}: helpCommand,

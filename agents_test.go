@@ -1058,15 +1058,15 @@ func TestTheDialogNamesSomewhereTheCommandsReallyAre(t *testing.T) {
 
 	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
 	lines := strings.Join(f.Lines, " ")
-	if !strings.Contains(lines, "Servers menu") {
+	if !strings.Contains(lines, shareMenu+" menu") {
 		t.Errorf("the dialog says %q", lines)
 	}
 
-	// And the Servers menu really offers it.
+	// And that menu really offers it.
 	a.refreshServers()
 	var offered bool
 	for _, menu := range a.bar.Menus {
-		if menu.Title != "Servers" {
+		if menu.Title != shareMenu {
 			continue
 		}
 		for _, item := range menu.Items {
@@ -1076,7 +1076,7 @@ func TestTheDialogNamesSomewhereTheCommandsReallyAre(t *testing.T) {
 		}
 	}
 	if !offered {
-		t.Error("the Servers menu does not offer taking the pane back")
+		t.Errorf("the %s menu does not offer taking the pane back", shareMenu)
 	}
 }
 
@@ -3897,48 +3897,47 @@ func TestTheMenuLineSaysWhetherAShareIsOpen(t *testing.T) {
 	pane := onlyPaneOn(t, a)
 
 	a.refreshServers()
-	if got := serverMenuLine(t, a, "agent.hand"); got != "Share this pane with an agent…" {
+	if got := barMenuLine(t, a, "agent.hand"); got != "Share this pane with an agent…" {
 		t.Errorf("with nothing shared the line reads %q", got)
 	}
-	if serverMenuHas(t, a, "agent.share") {
+	if barMenuHas(t, a, "agent.share") {
 		t.Error("the line that shows the share is there with no share")
 	}
 
 	f := handoverDialog(t, a, pane)
 	pressButton(t, a, f, "Done")
 
-	if got := serverMenuLine(t, a, "agent.hand"); got != "Add this pane to the share…" {
+	if got := barMenuLine(t, a, "agent.hand"); got != "Add this pane to the share…" {
 		t.Errorf("with a share open the line reads %q", got)
 	}
-	if !serverMenuHas(t, a, "agent.share") {
+	if !barMenuHas(t, a, "agent.share") {
 		t.Error("there is no line that shows the share")
 	}
 }
 
-// serverMenuLine is what the Servers menu says for a command, and
-// serverMenuHas whether it offers one at all.
-func serverMenuLine(t *testing.T, a *testApp, command string) string {
+// barMenuLine is what the menu bar says for a command, and barMenuHas
+// whether any menu offers it at all.
+//
+// The whole bar rather than one menu: what these tests are about is
+// that a command is on a menu and says the right thing, and which
+// menu it hangs under is a decision that has moved before and will
+// again.
+func barMenuLine(t *testing.T, a *testApp, command string) string {
 	t.Helper()
 	for _, menu := range a.bar.Menus {
-		if menu.Title != serversMenu {
-			continue
-		}
 		for _, item := range menu.Items {
 			if item.Command == command {
 				return item.Title
 			}
 		}
 	}
-	t.Fatalf("the Servers menu does not offer %q", command)
+	t.Fatalf("no menu on the bar offers %q", command)
 	return ""
 }
 
-func serverMenuHas(t *testing.T, a *testApp, command string) bool {
+func barMenuHas(t *testing.T, a *testApp, command string) bool {
 	t.Helper()
 	for _, menu := range a.bar.Menus {
-		if menu.Title != serversMenu {
-			continue
-		}
 		for _, item := range menu.Items {
 			if item.Command == command {
 				return true

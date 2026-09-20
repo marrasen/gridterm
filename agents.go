@@ -1345,7 +1345,7 @@ func (a *app) showPaneBoxes(h *handover) {
 		"This pane is in the share. An agent reads it and types into it,",
 		"and each box below adds one thing, the moment you tick it.",
 		"",
-		"The code is the share's, and \"Show the share\" on the Servers",
+		"The code is the share's, and \"Show Share\" on the " + shareMenu,
 		"menu has it, along with every pane in it.",
 	}
 	a.addAgentBoxes(f, h)

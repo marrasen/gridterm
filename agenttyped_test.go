@@ -301,7 +301,7 @@ func TestTheRecordUsesAClockAWindowReallyHas(t *testing.T) {
 
 // The line that opens the record is on the Servers menu, whether or not
 // an agent has typed yet: the menu is not rebuilt when one does.
-func TestTheServersMenuOffersTheRecord(t *testing.T) {
+func TestAMenuOffersTheRecord(t *testing.T) {
 	a := newTestApp(t, 90, 30)
 	withDialogs(t, a)
 	withPanel(t, a)
@@ -309,10 +309,11 @@ func TestTheServersMenuOffersTheRecord(t *testing.T) {
 	a.commands()
 	a.refreshServers()
 
-	// It fails the test when the line is not there, and the line takes
-	// the command's own title rather than one of its own.
-	if got := serverMenuLine(t, a, typedCommand); got != "" {
-		t.Errorf("the line is titled %q, want the command's own title", got)
+	// It fails the test when the line is not there. The line says the
+	// short half under its header; the whole of it is the command's
+	// own title, which the palette and the hint use.
+	if got := barMenuLine(t, a, typedCommand); got == "" {
+		t.Error("the line has no title of its own")
 	}
 	cmd, ok := a.root.Commands.Lookup(typedCommand)
 	if !ok {

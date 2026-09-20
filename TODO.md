@@ -411,6 +411,29 @@ another window looks like every other pane.
   the window being driven marks everything. Worth deciding whether the
   driving window should mark it too.
 
+## Menus
+
+The bar is nine menus, ordered from the smallest thing a command acts
+on to the largest. A menu under a header says the short half of a
+title and the whole of it goes along the bottom row of the window
+while the menu is open.
+
+- **Nine menus is a wide bar.** Nothing was dropped and two were
+  added. A narrow window has not been looked at.
+
+- **Mnemonics are not drawn.** `&File &Edit &View &Pane &Machine
+  &Servers Sh&are &Options &Help` has no clashes if they are wanted.
+
+- **A row that means nothing here is not greyed out.** "Edit This
+  Server" is live whatever the focused pane is on. The menu already
+  greys a line whose command is not registered; this wants a command
+  that says whether it applies.
+
+- **The hint takes the bottom row of whatever is there.** A pane's
+  last row is covered while a menu is open. It comes back the moment
+  the menu closes, and a menu long enough to reach the bottom covers
+  the hint instead.
+
 ## Keyboard and shortcuts
 
 - **The code still says "take over" where the user reads "connect

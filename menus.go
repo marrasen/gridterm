@@ -24,54 +24,87 @@ func (a *app) newMenubar(child ui.Widget) *ui.Menubar {
 		{Title: "Edit", Items: []ui.MenuItem{
 			{Command: "edit.copy"},
 			{Command: "edit.paste"},
-			{Command: "edit.pasteImage"},
+			{Command: "edit.pasteImage", Title: "Paste Image as File…"},
+			ui.MenuSeparator(),
+			// Named for what a hand reaches for, and for where it
+			// lands: the text goes to the file viewer in a pane of its
+			// own, which "Find" alone would not lead anyone to expect.
+			{Command: scrollbackCommand, Title: "Find in Scrollback…"},
 		}},
 		{Title: "View", Items: []ui.MenuItem{
-			{Command: "panel.toggle"},
-			{Command: "panel.focus"},
-			ui.MenuSeparator(),
-			{Command: "font.increase"},
-			{Command: "font.decrease"},
-			{Command: "font.reset"},
-			ui.MenuSeparator(),
-			{Command: "view.theme"},
-			{Command: "view.themesReload"},
-			{Command: "view.themesStart"},
-			{Command: "pane.titles"},
-			ui.MenuSeparator(),
-			{Command: "view.scrollUp"},
-			{Command: "view.scrollDown"},
-			{Command: scrollbackCommand},
+			{Command: "panel.toggle", Title: "Sidebar"},
+			{Command: "pane.titles", Title: "Pane Titles"},
+			{Command: fullScreenCommand, Title: "Full Screen"},
+			ui.MenuHeader("Font"),
+			{Command: "font.increase", Title: "Larger"},
+			{Command: "font.decrease", Title: "Smaller"},
+			{Command: "font.reset", Title: "Reset"},
+			ui.MenuHeader("Scrollback"),
+			{Command: "view.scrollUp", Title: "Page Up"},
+			{Command: "view.scrollDown", Title: "Page Down"},
 		}},
-		{Title: "Connection", Items: []ui.MenuItem{
-			{Command: "conn.terminal"},
-			{Command: "conn.command"},
-			{Command: "conn.tunnel"},
-			{Command: "conn.socks"},
-			{Command: "conn.files"},
-			{Command: copiesCommand},
-			ui.MenuSeparator(),
-			{Command: "conn.close"},
-			{Command: "conn.clearFinished"},
+		{Title: paneMenu, Items: []ui.MenuItem{
+			ui.MenuHeader("Split"),
+			{Command: "pane.splitRight", Title: "Right"},
+			{Command: "pane.splitDown", Title: "Down"},
+			// Pop Out rather than Unsplit: the pane leaves the split
+			// and lands on the stage, which is somewhere rather than
+			// nowhere.
+			{Command: "pane.unsplit", Title: "Pop Out"},
+			ui.MenuHeader("Go To"),
+			// The sidebar pair gets the plain names, because that
+			// order is the one on screen to be seen.
+			{Command: "pane.nextInSidebar", Title: "Next"},
+			{Command: "pane.previousInSidebar", Title: "Previous"},
+			{Command: "pane.next", Title: "Last Used"},
+			{Command: "pane.previous", Title: "Last Used, Reversed"},
+			{Command: switcherCommand, Title: "All Panes…"},
+			{Command: "panel.focus", Title: "Sidebar"},
 		}},
-		{Title: "Go", Items: []ui.MenuItem{
-			{Command: "pane.next"},
-			{Command: "pane.previous"},
+		{Title: machineMenu, Items: []ui.MenuItem{
+			// The same list in the same order as the plus on a
+			// machine's row in the sidebar: learn one, know the other.
+			ui.MenuHeader("Open Here"),
+			{Command: "conn.terminal", Title: "Terminal"},
+			{Command: "conn.command", Title: "Command…"},
+			{Command: "conn.files", Title: "Files"},
+			{Command: "conn.tunnel", Title: "Tunnel…"},
+			{Command: "conn.socks", Title: "SOCKS Proxy…"},
+			ui.MenuHeader("Files"),
+			{Command: "files.goTo", Title: "Go to Directory…"},
+			{Command: copiesCommand, Title: "Remembered Copies…"},
+			ui.MenuHeader("This Machine"),
+			{Command: "conn.log", Title: "Connection Log"},
+			{Command: "shell.setup", Title: "Shell Setup"},
+		}},
+		// Filled in by refreshServerMenu. Written down here so the bar
+		// keeps its order: a menu added at run time would land
+		// wherever addMenu put it.
+		{Title: serversMenu, Items: serverItems(nil)},
+		{Title: shareMenu, Items: shareItems("", false)},
+		{Title: optionsMenu, Items: []ui.MenuItem{
+			{Command: "view.theme", Title: "Theme…"},
+			// gridterm is configured by three files and all three
+			// follow one routine: write a starter, edit it, reload it.
+			// Grouped by the step rather than by the file, so the
+			// routine is what the menu shows.
+			ui.MenuHeader("Starter Files"),
+			{Command: "view.themesStart", Title: "New Theme File…"},
+			{Command: keysCommand, Title: "New Shortcuts File"},
+			ui.MenuHeader("Reload"),
+			{Command: "view.themesReload", Title: "Themes"},
+			{Command: keysReloadCommand, Title: "Shortcuts"},
+			{Command: "server.reload", Title: "Server List"},
 			ui.MenuSeparator(),
-			{Command: switcherCommand},
-			ui.MenuSeparator(),
-			{Command: "pane.nextInSidebar"},
-			{Command: "pane.previousInSidebar"},
-			ui.MenuSeparator(),
-			{Command: "palette.open"},
+			{Command: filesCommand, Title: "File Locations"},
 		}},
 		{Title: helpMenu, Items: []ui.MenuItem{
-			{Command: helpCommand},
-			{Command: keysCommand},
-			{Command: keysReloadCommand},
-			{Command: filesCommand},
+			{Command: "palette.open", Title: "All Commands…"},
+			{Command: helpCommand, Title: "Keys and Commands"},
 			ui.MenuSeparator(),
-			{Command: logCommand},
+			{Command: logCommand, Title: "Window Log"},
+			ui.MenuSeparator(),
+			{Command: "app.about", Title: "About gridterm"},
 		}},
 	}
 	bar.Style = a.menubarStyle()
@@ -94,20 +127,63 @@ const fileMenu = "File"
 // fileItems is what the File menu offers: the panes, and a line per
 // shell a new pane here can open on.
 func fileItems(shells []ui.MenuItem) []ui.MenuItem {
-	items := []ui.MenuItem{{Command: "pane.open"}}
+	items := []ui.MenuItem{{Command: "pane.open", Title: "New Terminal"}}
 	if len(shells) > 0 {
-		items = append(items, ui.MenuSeparator())
+		items = append(items, ui.MenuHeader("New Terminal In"))
 		items = append(items, shells...)
-		items = append(items, ui.MenuSeparator())
 	}
+	// A ladder, smallest first. These four are easy to confuse by
+	// title alone; under one header what each takes is the difference
+	// between one line and the next.
 	return append(items,
-		ui.MenuItem{Command: "pane.splitRight"},
-		ui.MenuItem{Command: "pane.splitDown"},
-		ui.MenuItem{Command: "pane.unsplit"},
+		ui.MenuHeader("Close"),
+		ui.MenuItem{Command: "pane.close", Title: "Pane"},
+		ui.MenuItem{Command: "conn.close", Title: "Selected Row"},
+		ui.MenuItem{Command: "conn.disconnect", Title: "Machine"},
+		ui.MenuItem{Command: "conn.clearFinished", Title: "All Finished"},
 		ui.MenuSeparator(),
-		ui.MenuItem{Command: "keys.lock"},
-		ui.MenuSeparator(),
-		ui.MenuItem{Command: "pane.close"})
+		ui.MenuItem{Command: "app.exit", Title: "Exit"})
+}
+
+// shareItems are the Share menu's lines. The one that shows the share
+// is only there while there is one: a line that opens nothing is a
+// line the user reads and tries.
+func shareItems(hand string, sharing bool) []ui.MenuItem {
+	items := []ui.MenuItem{
+		ui.MenuHeader("Windows"),
+		{Command: "serve.window", Title: "Serve This One…"},
+		{Command: "serve.takeOver", Title: "Attach to Another…"},
+		ui.MenuHeader("Agent"),
+		{Command: "agent.hand", Title: hand},
+		{Command: "agent.take", Title: "Remove Pane"},
+	}
+	if sharing {
+		items = append(items, ui.MenuItem{Command: "agent.share", Title: "Show Share…"})
+	}
+	return append(items, ui.MenuItem{Command: typedCommand, Title: "Typing History…"})
+}
+
+// refreshShareMenu rebuilds the Share menu, whose agent lines change
+// with whether a share is open.
+func (a *app) refreshShareMenu() {
+	if a.bar == nil {
+		return
+	}
+	want := shareItems(a.shareItem(), a.agents.sharing())
+	for i, have := range a.bar.Menus {
+		if have.Title != shareMenu {
+			continue
+		}
+		if slices.Equal(have.Items, want) {
+			// Nothing has changed, and rebuilding takes an open menu
+			// down with it: a menu that vanished while the user was
+			// reading it is the window getting in their way.
+			return
+		}
+		a.bar.Close()
+		a.bar.Menus[i].Items = want
+		return
+	}
 }
 
 // fileMenuShells are the shell lines the File menu offers. A window
@@ -356,3 +432,17 @@ func (a *app) menubarStyle() ui.MenubarStyle {
 		OpenBG: a.activeBG(),
 	}
 }
+
+// paneMenu, machineMenu, shareMenu and optionsMenu are the rest of the
+// bar's titles.
+//
+// The order of the bar runs from the smallest thing a command acts on
+// to the largest: the text, what is drawn, the pane, the machine the
+// pane is on, the address book, other windows and agents, and the
+// program itself.
+const (
+	paneMenu    = "Pane"
+	machineMenu = "Machine"
+	shareMenu   = "Share"
+	optionsMenu = "Options"
+)

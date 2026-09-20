@@ -87,6 +87,11 @@ type Menubar struct {
 	Style     MenubarStyle
 	MenuStyle MenuStyle
 
+	// Hidden takes the row of titles away and gives its row to the
+	// widget under it. The menus are still there: a window that hides
+	// the bar keeps whatever key opens one.
+	Hidden bool
+
 	// Menus are the titles, left to right. Leave them alone while a menu
 	// is open: the open menu holds the index of the title it hangs under,
 	// and changing the list moves that title out from under it.
@@ -194,6 +199,24 @@ func (b *Menubar) Close() {
 // OpenIndex returns which title's menu is showing, or -1 when none is.
 func (b *Menubar) OpenIndex() int { return b.openAt }
 
+// Hint is the whole of what the line under the pointer does, for a
+// window that shows it somewhere while a menu is open. It is empty
+// when no menu is showing or nothing on it is picked out.
+//
+// The command's own title rather than the menu's: a menu under a
+// header says the short half, and the sentence is what the palette
+// and this are for.
+func (b *Menubar) Hint() string {
+	if b.open == nil {
+		return ""
+	}
+	cmd, ok := b.open.Selected()
+	if !ok {
+		return ""
+	}
+	return cmd.Title
+}
+
 // Children returns the one widget under the bar. It is the bar's own
 // slice: read it, do not write to it. See Container.
 func (b *Menubar) Children() []Widget {
@@ -271,7 +294,9 @@ func (b *Menubar) Layout(size Size) {
 // own, so that closing it costs a blit rather than a repaint of the
 // pane underneath.
 func (b *Menubar) Draw(v grid.View) {
-	b.drawBar(v)
+	if !b.Hidden {
+		b.drawBar(v)
+	}
 	if body := b.body(); !body.Empty() && b.child != nil {
 		b.child.Draw(body.In(v))
 	}
@@ -475,7 +500,7 @@ func (b *Menubar) origin() Rect {
 // bar returns the title row, which is empty when there is no room for
 // both it and something under it.
 func (b *Menubar) bar() Rect {
-	if b.size.Cols <= 0 || b.size.Rows <= barRows {
+	if b.Hidden || b.size.Cols <= 0 || b.size.Rows <= barRows {
 		return Rect{}
 	}
 	return Rect{Cols: b.size.Cols, Rows: barRows}

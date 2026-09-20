@@ -250,6 +250,7 @@ gridterm comes with:
 | `Ctrl+Shift+L` | go to the sidebar |
 | `Ctrl+Shift+N` | connect to a server |
 | `Ctrl+Shift+A` | show every pane at once |
+| `F11` | fill the screen with the panes |
 
 "Keys and commands" on the Help menu lists every command, the key that
 runs it, and the name the shortcuts file calls it by.

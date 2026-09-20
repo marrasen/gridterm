@@ -110,7 +110,7 @@ func chooseRow(t *testing.T, a *testApp, want *conns.Entry) {
 // menu line that does it.
 func clearTheRow(t *testing.T, a *testApp) {
 	t.Helper()
-	chooseMenuItem(t, openBarMenu(t, a, "Connection"), "conn.close")
+	chooseMenuItem(t, openMenuWith(t, a, "conn.close"), "conn.close")
 }
 
 // panelText returns what the panel is showing, one line per row, with

@@ -180,10 +180,13 @@ func (a *app) refreshServers() {
 		// command that is not there is drawn greyed out and cannot be
 		// chosen, which reads as a fault.
 		if _, ok := a.root.Commands.Lookup(open.ID); ok {
-			items = append(items, ui.MenuItem{Command: open.ID})
+			// The bare name: the header over the block says what
+			// choosing one does, so the line need not repeat it.
+			items = append(items, ui.MenuItem{Command: open.ID, Title: host})
 		}
 	}
 	a.refreshServerMenu(items)
+	a.refreshShareMenu()
 }
 
 // savedHosts is what the book calls its machines.
@@ -279,27 +282,7 @@ func (a *app) refreshServerMenu(items []ui.MenuItem) {
 	if a.bar == nil {
 		return
 	}
-	if len(items) > 0 {
-		items = append(items, ui.MenuSeparator())
-	}
-	items = append(items,
-		ui.MenuItem{Command: "server.connect"},
-		ui.MenuItem{Command: "server.add"},
-		ui.MenuItem{Command: "server.reload"},
-		ui.MenuSeparator(),
-		ui.MenuItem{Command: "serve.window"},
-		ui.MenuItem{Command: "serve.takeOver"},
-		ui.MenuSeparator(),
-		ui.MenuItem{Command: "agent.hand", Title: a.shareItem()},
-		ui.MenuItem{Command: "agent.take"},
-		ui.MenuItem{Command: typedCommand})
-	if a.agents.sharing() {
-		// Only while there is one: a line that opens nothing is a line
-		// the user reads and tries.
-		items = append(items, ui.MenuItem{Command: "agent.share"})
-	}
-
-	def := ui.MenuDef{Title: serversMenu, Items: items}
+	def := ui.MenuDef{Title: serversMenu, Items: serverItems(items)}
 	for i, have := range a.bar.Menus {
 		if have.Title == def.Title {
 			// Whatever is open holds the index of the title it hangs
@@ -310,6 +293,33 @@ func (a *app) refreshServerMenu(items []ui.MenuItem) {
 		}
 	}
 	a.addMenu(def)
+}
+
+// serverItems are the Servers menu's lines: the machines saved, then
+// the ones that are always there.
+//
+// The fixed half is written down rather than added when the list is
+// read, so the menu has its lines from the moment the bar is built. A
+// title on the bar that opens an empty box is worse than no title.
+func serverItems(saved []ui.MenuItem) []ui.MenuItem {
+	var items []ui.MenuItem
+	if len(saved) > 0 {
+		items = append(items, ui.MenuHeader("Connect To"))
+		items = append(items, saved...)
+		items = append(items, ui.MenuSeparator())
+	}
+	return append(items,
+		ui.MenuItem{Command: "server.connect", Title: "Connect…"},
+		ui.MenuSeparator(),
+		ui.MenuItem{Command: "server.add", Title: "Add Server…"},
+		ui.MenuItem{Command: "server.editThis", Title: "Edit This Server…"},
+		ui.MenuItem{Command: "server.forget", Title: "Forget This Server…"},
+		// "Keys" here means SSH keys and nowhere else. The keyboard
+		// kind is "shortcuts" throughout the menus, which is what the
+		// header settles.
+		ui.MenuHeader("SSH Keys"),
+		ui.MenuItem{Command: "key.make", Title: "New Key…"},
+		ui.MenuItem{Command: "keys.lock", Title: "Lock Keys"})
 }
 
 // serversMenu is the menu bar title the saved machines hang under.

@@ -387,7 +387,7 @@ func TestTheConnectDialogOnAWindowAlreadyConnectedSaysSo(t *testing.T) {
 	})
 	panes := len(client.panes)
 
-	m := openBarMenu(t, client, "Servers")
+	m := openMenuWith(t, client, "serve.takeOver")
 	chooseMenuItem(t, m, "serve.takeOver")
 	f := awaitModal(t, client, "the Connect to another window dialog", byTitle[*ui.Form]("Connect to another window"))
 	typeIntoField(t, client, f, "Machine", addr)
@@ -657,7 +657,7 @@ func waysIn() []wayIn {
 			takeChoice(t, splitFromTheChord(t, a), "Terminal on "+host)
 		}},
 		{"the Servers menu", func(t *testing.T, a *testApp, host, addr, keyFile string) {
-			m := openBarMenu(t, a, "Servers")
+			m := openMenuWith(t, a, openPrefix+remote.CommandName(host))
 			chooseMenuItem(t, m, openPrefix+remote.CommandName(host))
 		}},
 		{"connect to a server, by address", func(t *testing.T, a *testApp, host, addr, keyFile string) {
@@ -692,7 +692,7 @@ func TestEveryWayInTakesOverASavedWindow(t *testing.T) {
 	ways := append(waysIn(), wayIn{
 		"take over a window, by address",
 		func(t *testing.T, a *testApp, host, addr, keyFile string) {
-			m := openBarMenu(t, a, "Servers")
+			m := openMenuWith(t, a, "serve.takeOver")
 			chooseMenuItem(t, m, "serve.takeOver")
 			f := awaitModal(t, a, "the Connect to another window dialog", byTitle[*ui.Form]("Connect to another window"))
 			typeIntoField(t, a, f, "Machine", addr)
@@ -937,4 +937,22 @@ func TestTheSplitChooserSaysAWindowIsTakenOver(t *testing.T) {
 		}
 	}
 	t.Fatalf("the chooser does not offer the window: %v", choiceTexts(c))
+}
+
+// openMenuWith opens whichever menu on the bar offers a command.
+//
+// By the command rather than by the menu's name: what a test about
+// reaching a command cares about is that it is on the bar, and which
+// menu holds it is an arrangement that has moved before.
+func openMenuWith(t *testing.T, a *testApp, id string) *ui.Menu {
+	t.Helper()
+	for _, menu := range a.bar.Menus {
+		for _, item := range menu.Items {
+			if item.Command == id {
+				return openBarMenu(t, a, menu.Title)
+			}
+		}
+	}
+	t.Fatalf("no menu on the bar offers %q", id)
+	return nil
 }

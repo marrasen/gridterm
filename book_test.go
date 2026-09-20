@@ -308,7 +308,7 @@ func TestAddServerRefusesANameTooLikeAnother(t *testing.T) {
 		t.Fatalf("the book holds %d servers, want the one that was saved", len(got))
 	}
 	// And the menu offers exactly one line for a saved server.
-	if lines := len(serverMenuLines(a)); lines != 1 {
+	if lines := len(barMenuLines(a)); lines != 1 {
 		t.Fatalf("%d lines connect to a saved server, want 1", lines)
 	}
 }
@@ -320,9 +320,9 @@ func (m menuTitles) has(title string) bool {
 	return slices.Contains(m, title)
 }
 
-// serverMenuLines returns the ids of the saved-server lines on the
+// barMenuLines returns the ids of the saved-server lines on the
 // Servers menu, which is not the same as every line on it.
-func serverMenuLines(a *testApp) []string {
+func barMenuLines(a *testApp) []string {
 	var out []string
 	for _, def := range a.bar.Menus {
 		if def.Title != "Servers" {
@@ -454,7 +454,7 @@ func TestReloadBookPicksUpTheRepairedFile(t *testing.T) {
 	}
 	a.book, _ = remote.LoadBook(path)
 	a.refreshServers()
-	if len(serverMenuLines(a)) != 0 {
+	if len(barMenuLines(a)) != 0 {
 		t.Fatal("a broken list put servers on the menu")
 	}
 
@@ -465,7 +465,7 @@ func TestReloadBookPicksUpTheRepairedFile(t *testing.T) {
 	if err := a.reloadBook(); err != nil {
 		t.Fatalf("reloadBook: %v", err)
 	}
-	if got := serverMenuLines(a); len(got) != 1 || got[0] != "server.open.margit" {
+	if got := barMenuLines(a); len(got) != 1 || got[0] != "server.open.margit" {
 		t.Fatalf("the menu offers %v after a repair", got)
 	}
 }
@@ -483,7 +483,7 @@ func TestServerMenuWithNothingSaved(t *testing.T) {
 			continue
 		}
 		found = true
-		if len(serverMenuLines(a)) != 0 {
+		if len(barMenuLines(a)) != 0 {
 			t.Error("a server is on the menu with none saved")
 		}
 		// No stray separator above the first line.

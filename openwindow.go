@@ -204,6 +204,10 @@ func (a *app) sizeTheWindow(m glyph.Metrics) {
 		m.CellW*openWindowCols+padX*m.CellW/grid.PadUnit,
 		m.CellH*openWindowRows+padY*m.CellH/grid.PadUnit)
 	ebiten.SetWindowResizingMode(ebiten.WindowResizingModeEnabled)
+	// The close button is a question rather than an order: a window
+	// holding a half-finished copy and three shells is not one to lose
+	// to a mis-click. Update asks and only then quits.
+	ebiten.SetWindowClosingHandled(true)
 	// Damage tracking only pays off if ebiten keeps the previous frame.
 	ebiten.SetScreenClearedEveryFrame(false)
 	ebiten.SetVsyncEnabled(true)

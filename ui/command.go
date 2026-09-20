@@ -30,6 +30,11 @@ type Command struct {
 	// order the palette shows is the order the titles give.
 	AlsoFind []string
 
+	// On reports whether what this command turns on is on now, for a
+	// row a menu draws with a tick. A nil one is a command that does
+	// something rather than a switch.
+	On func() bool
+
 	// Run does the work.
 	Run func() error
 }

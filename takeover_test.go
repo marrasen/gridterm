@@ -833,7 +833,7 @@ func TestAWindowThatQuitsKeepsARowThatCanBeCleared(t *testing.T) {
 	// not seen before.
 	takeOver := func(at, name string) {
 		t.Helper()
-		chooseMenuItem(t, openBarMenu(t, client, "Servers"), "serve.takeOver")
+		chooseMenuItem(t, openMenuWith(t, client, "serve.takeOver"), "serve.takeOver")
 		f := awaitModal(t, client, "the Connect to another window dialog", byTitle[*ui.Form]("Connect to another window"))
 		typeIntoField(t, client, f, "Machine", at)
 		typeIntoField(t, client, f, "Key file", keyFile)
@@ -2499,7 +2499,7 @@ func TestTheScreensOfAWindowAreGroupedByMachine(t *testing.T) {
 // Servers menu, the take-over line, and the address typed into it.
 func takeOverFromTheDialog(t *testing.T, a *testApp, addr, keyFile string) *term.Terminal {
 	t.Helper()
-	m := openBarMenu(t, a, "Servers")
+	m := openMenuWith(t, a, "serve.takeOver")
 	chooseMenuItem(t, m, "serve.takeOver")
 	f := awaitModal(t, a, "the Connect to another window dialog", byTitle[*ui.Form]("Connect to another window"))
 	typeIntoField(t, a, f, "Machine", addr)
@@ -2548,7 +2548,7 @@ func saveWindowFromTheDialog(t *testing.T, a *testApp, name, addr, keyFile strin
 // gridterm window, without pressing anything.
 func addServerFromTheDialog(t *testing.T, a *testApp, name, addr, keyFile string) *ui.Form {
 	t.Helper()
-	m := openBarMenu(t, a, "Servers")
+	m := openMenuWith(t, a, "server.add")
 	chooseMenuItem(t, m, "server.add")
 	f := awaitModal(t, a, "the Add a server dialog", byTitle[*ui.Form]("Add a server"))
 	typeIntoField(t, a, f, "Name", name)
@@ -2684,7 +2684,7 @@ func TestAWindowIsHeldUnderTheNameTheListGivesIt(t *testing.T) {
 		// The file edited by hand, and the menu line that reads it
 		// again.
 		writeTheList(t, client, `{"version":1,"servers":[]}`)
-		chooseMenuItem(t, openBarMenu(t, client, "Servers"), "server.reload")
+		chooseMenuItem(t, openMenuWith(t, client, "server.reload"), "server.reload")
 		client.pump.run()
 
 		// The list stops naming it and the connection goes back to
@@ -2802,7 +2802,7 @@ func TestAWindowSavedDuringTheDialLandsUnderItsNewName(t *testing.T) {
 
 	// The take-over, left in flight: nothing here runs what the dial
 	// posts back.
-	m := openBarMenu(t, client, "Servers")
+	m := openMenuWith(t, client, "serve.takeOver")
 	chooseMenuItem(t, m, "serve.takeOver")
 	f := awaitModal(t, client, "the Connect to another window dialog", byTitle[*ui.Form]("Connect to another window"))
 	typeIntoField(t, client, f, "Machine", addr)

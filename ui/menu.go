@@ -15,6 +15,11 @@ const (
 	menuGap     = 3
 	menuMinCols = 12
 
+	// tickCols is the column a tick sits in, plus the blank after it.
+	// Every line in a menu that has one keeps the room, so the titles
+	// line up whether or not the row beside them is a switch.
+	tickCols = 2
+
 	// menuFrame is the rule around the outside, which costs a row and a
 	// column at each edge.
 	menuFrame = 1
@@ -31,12 +36,28 @@ type MenuItem struct {
 
 	// Title overrides the command's own title. Normally empty, so the
 	// menu and the palette name the same thing the same way.
+	//
+	// A menu under a header says the short half of a title and leaves
+	// the whole of it to the palette: "Right" under "Split" is what a
+	// person reads down a column, and "Split right" is what somebody
+	// searching for it types.
 	Title string
+
+	// Header makes this line a caption over the group under it, drawn
+	// dim and never chosen. An item with a Header names no command.
+	Header string
 }
 
 // MenuSeparator returns an item that draws a rule instead of a line that
 // can be chosen.
 func MenuSeparator() MenuItem { return MenuItem{} }
+
+// MenuHeader returns a caption over the group of lines under it.
+//
+// A header rather than a separator where the lines below share a word:
+// the caption carries it and each line says only what makes it
+// different, which is how a column of one-word titles reads.
+func MenuHeader(title string) MenuItem { return MenuItem{Header: title} }
 
 // MenuStyle colours a menu.
 type MenuStyle struct {
@@ -225,6 +246,12 @@ func (m *Menu) paintItem(line grid.View, i, cols int) {
 		line.Fill(grid.Cell{Rune: m.Style.Rule.runes().across, FG: m.Style.ChordFG, BG: m.Style.BG, Width: 1})
 		return
 	}
+	if m.isHeader(i) {
+		line.Fill(grid.Cell{Rune: ' ', FG: m.Style.DisabledFG, BG: m.Style.BG, Width: 1})
+		line.SetString(menuPad, 0, grid.Trim(item.Header, max(cols-menuPad*2, 0)),
+			m.Style.DisabledFG, m.Style.BG, 0)
+		return
+	}
 
 	fg, bg := m.Style.FG, m.Style.BG
 	if !m.enabled(i) {
@@ -257,7 +284,14 @@ func (m *Menu) paintItem(line grid.View, i, cols int) {
 
 // paintTitle writes a title, stopping where the key binding starts.
 func (m *Menu) paintTitle(line grid.View, i int, fg, bg color.RGBA, room int) {
-	line.SetString(menuPad, 0, grid.Trim(m.titleOf(i), max(room-menuPad, 0)), fg, bg, 0)
+	at := menuPad
+	if tick := m.tickRoom(); tick > 0 {
+		if m.ticked(i) {
+			line.SetString(at, 0, "✓", fg, bg, 0)
+		}
+		at += tick
+	}
+	line.SetString(at, 0, grid.Trim(m.titleOf(i), max(room-at, 0)), fg, bg, 0)
 }
 
 // HandleKey drives the menu. Keys it has no use for travel on, so the
@@ -424,11 +458,28 @@ func (m *Menu) width() int {
 			chords = max(chords, grid.StringWidth(chord))
 		}
 	}
-	want := titles + menuPad*2
+	want := titles + menuPad*2 + m.tickRoom()
 	if chords > 0 {
 		want += menuGap + chords
 	}
 	return max(want, menuMinCols) + menuFrame*2
+}
+
+// tickRoom is the columns kept at the left for the ticks, and none
+// for a menu with no switch on it.
+func (m *Menu) tickRoom() int {
+	for _, item := range m.items {
+		if cmd, ok := m.lookup(item.Command); ok && cmd.On != nil {
+			return tickCols
+		}
+	}
+	return 0
+}
+
+// ticked reports whether a line is a switch that is on.
+func (m *Menu) ticked(i int) bool {
+	cmd, ok := m.lookup(m.items[i].Command)
+	return ok && cmd.On != nil && cmd.On()
 }
 
 // titleOf names one line, preferring what the item says over what the
@@ -468,7 +519,14 @@ func (m *Menu) lookup(id string) (Command, bool) {
 
 // isSeparator reports whether a line is a rule rather than a command.
 func (m *Menu) isSeparator(i int) bool {
-	return i >= 0 && i < len(m.items) && m.items[i].Command == ""
+	return i >= 0 && i < len(m.items) &&
+		m.items[i].Command == "" && m.items[i].Header == ""
+}
+
+// isHeader reports whether a line is a caption over the group under
+// it.
+func (m *Menu) isHeader(i int) bool {
+	return i >= 0 && i < len(m.items) && m.items[i].Header != ""
 }
 
 // enabled reports whether a line names a command that is registered.
@@ -482,7 +540,9 @@ func (m *Menu) enabled(i int) bool {
 
 // selectable reports whether a line can be picked out: a separator
 // cannot, and neither can a command that is not registered.
-func (m *Menu) selectable(i int) bool { return !m.isSeparator(i) && m.enabled(i) }
+func (m *Menu) selectable(i int) bool {
+	return !m.isSeparator(i) && !m.isHeader(i) && m.enabled(i)
+}
 
 // edge moves to the menu beside this one, when there is a bar to move
 // along.

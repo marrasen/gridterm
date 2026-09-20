@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -1452,8 +1453,14 @@ func TestTwoReadsOfAlmostTheSameLengthRenderOnce(t *testing.T) {
 	if screen.All {
 		t.Error("a read of the screen was called everything the pane has kept")
 	}
-	if got := countLines(screen.Screen); got != pane.Size().Rows {
-		t.Errorf("the screen is %d lines, want %d", got, pane.Size().Rows)
+	// The blank rows under the last line with anything on them are
+	// left out, so the screen is what is on it rather than its height.
+	if got := countLines(screen.Screen); got > pane.Size().Rows {
+		t.Errorf("the screen is %d lines, more than the pane's %d",
+			got, pane.Size().Rows)
+	}
+	if !screen.Trimmed && countLines(screen.Screen) != pane.Size().Rows {
+		t.Error("it is shorter than the pane and does not say the blank rows went")
 	}
 }
 
@@ -1779,7 +1786,9 @@ func TestALooksScreenAndCursorComeFromTheSameMoment(t *testing.T) {
 		again, err = c.Read(got.ID, 0)
 		return err
 	})
-	if first != again {
+	// reflect rather than ==: a Look carries the pictures on the
+	// screen now, and a slice cannot be compared.
+	if !reflect.DeepEqual(first, again) {
 		t.Errorf("two looks at a quiet pane say %+v and %+v", first, again)
 	}
 }
@@ -2503,10 +2512,13 @@ func TestAClearCutsThePaneOffAtExactlyTheClear(t *testing.T) {
 	if !strings.Contains(look.Screen, "first after the clear") {
 		t.Errorf("the line printed after the clear is not readable:\n%s", look.Screen)
 	}
-	// The pane is thirty rows and the clear left it blank, so what may be
-	// read is exactly those thirty rows.
-	if got := countLines(look.Screen); got != 30 {
-		t.Errorf("it read %d lines, want the 30 rows below the clear:\n%s", got, look.Screen)
+	// The clear left thirty rows, and the blank ones under the last
+	// line with anything on it are left out of the answer. What
+	// matters is the boundary: nothing above the clear, and no more
+	// than the rows below it.
+	if got := countLines(look.Screen); got > 30 {
+		t.Errorf("it read %d lines, more than the 30 rows below the clear:\n%s",
+			got, look.Screen)
 	}
 }
 

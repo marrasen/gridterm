@@ -171,6 +171,14 @@ type Screen struct {
 	// this is everything there is.
 	All bool `json:"that_is_everything"`
 
+	// Trimmed says the blank rows under the last line with anything on
+	// it were left out of the answer.
+	Trimmed bool `json:"blank_rows_left_out,omitempty"`
+
+	// Pictures are the pictures on the screen, which read back as
+	// blank cells and would otherwise be invisible here.
+	Pictures []Picture `json:"pictures,omitempty"`
+
 	// Note is what the window had to say about this answer beyond the
 	// screen itself, and is empty when it had nothing.
 	Note string `json:"note,omitempty"`
@@ -203,6 +211,13 @@ type Screen struct {
 	// Yours says the last command to finish did so after the agent last
 	// typed here.
 	Yours bool `json:"the_last_finish_is_yours,omitempty"`
+}
+
+// Picture is one picture on a pane's screen.
+type Picture struct {
+	Top, Rows, Cols int
+	Width, Height   int
+	Wire            bool
 }
 
 // Ending says how a wait ended.
@@ -539,8 +554,10 @@ back through what has scrolled off the top. read_output gives you what the last 
 printed instead of a rectangle of the screen, which is what you want after running one. send_keys types text in exactly as given, and
 presses the keys named in keys: Enter, Escape, Tab, the arrows, F1 to F12, Ctrl+C. Run a
 command with keys ["Enter"] rather than a return in the text, which is easy to escape twice
-and then types a backslash. It does not wait, so call wait_for before you read again.
-wait_for on its own ends when the command you sent finishes, or when the pane has said
+and then types a backslash; text ending in one is refused rather than typed. It does not
+wait, so call wait_for before you read again.
+wait_for on its own ends when the command you sent finishes, and then gives you what that
+command printed rather than the screen. Failing that it ends when the pane has said
 nothing for quiet_ms, which is about three quarters of a second unless you ask for another.
 A shell with shell integration on says when a command finishes and what it exited with. A
 shell without it says nothing, and then the prompt coming back is all there is to go on,

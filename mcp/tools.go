@@ -117,16 +117,19 @@ func toolList() []tool {
 		{
 			Name:  "send_keys",
 			Title: "Type into a pane",
-			Description: "Put characters into the pane exactly as given. Nothing is added:" +
-				" a command needs \\r at the end, or it sits on the line unrun. keys presses" +
-				" named keys instead, encoded the way the program running now asks for -- a" +
-				" program this same call starts gets its keys in a later call." +
-				" It does not wait: call wait_for next.",
+			Description: "Put characters into the pane exactly as given. text goes in" +
+				" letter for letter, with nothing added and nothing read as an escape:" +
+				" a backslash and an r are a backslash and an r. Then the named keys" +
+				" are pressed, in the order given, encoded the way the program running" +
+				" now asks for -- a program this same call starts gets its keys in a" +
+				" later call. So a command is text plus keys [\"Enter\"], and text alone" +
+				" sits on the line unrun. It does not wait: call wait_for next.",
 			InputSchema: schema{
 				Type: "object",
 				Properties: map[string]field{
 					"pane": {Type: "string", Description: "which pane, from use_session_code or list_panes"},
-					"text": {Type: "string", Description: `what to type, with "\r" for Enter`},
+					"text": {Type: "string", Description: "what to type, letter for letter." +
+						" No escape is read here: to press Enter put it in keys, not in this"},
 					"keys": {Type: "array", Items: &items{Type: "string"},
 						Description: keysArg},
 				},
@@ -195,7 +198,12 @@ func toolList() []tool {
 		{
 			Name:  "wait_for",
 			Title: "Wait for a pane",
-			Description: "Watch a pane and give back its screen once the waiting is over." +
+			Description: "Watch a pane until the waiting is over, then give back what" +
+				" it was waiting for: a shell that marks its commands ends the wait when" +
+				" one finishes, and then the answer is what that command printed rather" +
+				" than a rectangle of screen with everything above it still in. Ask for" +
+				" screen to have the screen anyway. Every other ending gives the screen," +
+				" because nobody has said where an output would begin." +
 				" Use it after send_keys. With no contains it ends when the command you" +
 				" sent finishes, or when the pane has said nothing for quiet_ms, which is" +
 				" about three quarters of a second unless you give another. With contains" +
@@ -218,6 +226,9 @@ func toolList() []tool {
 						Description: "how long the pane must say nothing for, in milliseconds"},
 					"timeout_ms": {Type: "integer",
 						Description: "how long to wait before giving up, in milliseconds"},
+					"screen": {Type: "boolean",
+						Description: "give back the screen even when the shell said a command" +
+							" finished, instead of what that command printed"},
 				},
 				Required: []string{"pane"},
 			},
@@ -244,6 +255,7 @@ func (s *server) runTool(name string, args json.RawMessage) (result, *rpcError) 
 		TimeoutMS int      `json:"timeout_ms"`
 		What      string   `json:"what"`
 		WaitMS    int      `json:"wait_ms"`
+		Screen    bool     `json:"screen"`
 	}
 	if len(args) > 0 {
 		if err := json.Unmarshal(args, &in); err != nil {
@@ -325,12 +337,16 @@ func (s *server) runTool(name string, args json.RawMessage) (result, *rpcError) 
 		if err := agent.CheckKeys(in.Keys); err != nil {
 			return wrong(err.Error())
 		}
+		if why := escapedEnding(in.Text); why != "" {
+			return wrong(why)
+		}
 		if err := s.panes.Send(in.Pane, in.Text, in.Keys); err != nil {
 			return wrong(err.Error())
 		}
 		return say("Sent. Use wait_for to see what happens: the screen has not" +
-			" caught up yet, and wait_for ends when what you sent finishes. Then" +
-			" read_output for what it printed.")
+			" caught up yet, and wait_for ends when what you sent finishes. On a" +
+			" shell that marks its commands wait_for gives you what this one" +
+			" printed, so there is nothing to call after it.")
 
 	case "ask_for_secret":
 		if in.Pane == "" {
@@ -390,6 +406,35 @@ func (s *server) runTool(name string, args json.RawMessage) (result, *rpcError) 
 		})
 		if err != nil {
 			return wrong(err.Error())
+		}
+		// The shell said the command finished, so what was waited for
+		// is what it printed. A rectangle of screen here is what sends
+		// a caller looking for read_output, or clearing the screen
+		// first so that the rectangle means something.
+		//
+		// Every other ending leaves the screen the right answer: on
+		// quiet, on text, or on the time running out, nobody has said
+		// where an output begins.
+		if !in.Screen && ended.Because == agent.EndedOnMarks {
+			most := lines
+			if most == 0 {
+				most = mostLines
+			}
+			out, err := s.panes.Output(in.Pane, most)
+			switch {
+			case err == nil:
+				return say(showScreen(out, ended, clamped))
+			default:
+				// A shell can say a command finished without ever
+				// having said where its output began: the prompt
+				// coming back counts as finished too. The screen is
+				// still the answer then, and the reason goes with it
+				// rather than the call failing over a better answer
+				// that was not available.
+				screen.Note = withNote(screen.Note,
+					"What that command printed could not be picked out: "+
+						err.Error()+". This is the screen instead.")
+			}
 		}
 		return say(showScreen(screen, ended, clamped))
 	}
@@ -489,8 +534,8 @@ var linesArg = fmt.Sprintf("how many lines to give back, ending at the bottom of
 	" ask for more and you get the last %d, and the answer says so.", mostLines, mostLines)
 
 // keysArg says what the keys argument takes, and how many names.
-var keysArg = fmt.Sprintf("keys to press after the text, by name, at most %d of them."+
-	" The keys are: %s", agent.MostKeys, agent.KeyNames())
+var keysArg = fmt.Sprintf("keys to press once the text has gone in, by name, in the"+
+	" order given. At most %d of them. The keys are: %s", agent.MostKeys, agent.KeyNames())
 
 // missing says a call left out something it had to carry.
 func missing(what string) (result, *rpcError) {
@@ -526,6 +571,11 @@ func showScreen(s Screen, ended Ending, clamped bool) string {
 	if s.All && !s.Alt {
 		notes = append(notes, allThereIsNote)
 	}
+	if s.Trimmed {
+		notes = append(notes, "The blank rows under the last line with anything on"+
+			" them are left out, so this is shorter than the lines you asked for.")
+	}
+	notes = append(notes, pictureNotes(s.Pictures)...)
 	if s.Note != "" {
 		notes = append(notes, s.Note)
 	}
@@ -647,4 +697,62 @@ func say(text string) (result, *rpcError) {
 // was asked.
 func wrong(why string) (result, *rpcError) {
 	return result{Content: []content{{Type: "text", Text: why}}, IsError: true}, nil
+}
+
+// escapedEnding is why text that ends in an escape nobody meant is
+// refused, and empty for text that is fine.
+//
+// A caller writing a command with a return at the end has to escape
+// the backslash for JSON, and escaping it twice is easy: what arrives
+// is the two characters rather than the control code, and they go
+// into a live shell as a backslash and a letter on the end of the
+// command. Nothing in the pane would say so; the command would simply
+// run wrong.
+//
+// So it is refused rather than typed, which costs the caller one
+// retry. Only at the end, because that is where a line ending was
+// meant and anywhere else it is as likely to be a path on Windows.
+func escapedEnding(text string) string {
+	for _, end := range []string{`\r`, `\n`} {
+		if !strings.HasSuffix(text, end) {
+			continue
+		}
+		return "the text ends with " + end + ", which is a backslash and a letter" +
+			" rather than a line ending: escaped twice on the way here. Nothing was" +
+			" typed. Press Enter with keys [\"Enter\"] and leave it off the text." +
+			" If those two characters really are what you want typed, put something" +
+			" after them."
+	}
+	return ""
+}
+
+// pictureNotes say what is on the screen in pixels.
+//
+// The cells a picture covers read back as spaces, so without this a
+// picture that arrived and one that never did look the same. A
+// program that meant to draw one is usually being debugged by whoever
+// is reading, and the size is what says whether the right one came.
+func pictureNotes(on []Picture) []string {
+	out := make([]string, 0, len(on))
+	for _, p := range on {
+		which := "OSC 1337"
+		if p.Wire {
+			// From another window's screen rather than from a program
+			// in this pane.
+			which = "OSC 1338"
+		}
+		out = append(out, fmt.Sprintf(
+			"Rows %d to %d hold a picture, %d by %d, sent as %s."+
+				" Those cells read as blank here.",
+			p.Top, p.Top+p.Rows-1, p.Width, p.Height, which))
+	}
+	return out
+}
+
+// withNote adds a line to whatever the window already had to say.
+func withNote(had, add string) string {
+	if had == "" {
+		return add
+	}
+	return had + "\n" + add
 }

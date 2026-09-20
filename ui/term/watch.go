@@ -312,6 +312,11 @@ type Reading struct {
 	// shell that sends none leaves it zero.
 	Cmd vt.Command
 
+	// Pictures are the pictures on the screen, by the rows they cover.
+	// A reader outside this window sees text and would otherwise read
+	// the cells under a picture as blank.
+	Pictures []Picture
+
 	// Line names the line the cursor was on, counted from the first line
 	// the screen ever had. It does not change as the screen scrolls, so
 	// a caller that wrote one down can tell the cursor has moved past
@@ -391,22 +396,57 @@ func dropLast(text string, n int) string {
 }
 
 // readingLocked is ReadLines with the emulator's lock already held.
+// Picture is one picture on the screen, as something reading the pane
+// as text is told about it.
+//
+// The rows are the screen's own, counted from zero at the top, the
+// way the cursor is. Width and Height are the pixels the picture
+// holds, which is what says whether the one that arrived is the one
+// that was sent.
+type Picture struct {
+	Top, Rows, Cols int
+	Width, Height   int
+
+	// Wire says it came from another window's screen rather than from
+	// a program in this pane.
+	Wire bool
+}
+
+// picturesLocked is what is on the screen in pixels. The emulator's
+// lock is already held.
+func (t *Terminal) picturesLocked() []Picture {
+	placed := t.term.Placed()
+	if len(placed) == 0 {
+		return nil
+	}
+	out := make([]Picture, 0, len(placed))
+	for _, at := range placed {
+		b := at.Img.Bounds()
+		out = append(out, Picture{
+			Top: at.Top, Rows: at.Rows, Cols: at.Cols,
+			Width: b.Dx(), Height: b.Dy(), Wire: at.Wire,
+		})
+	}
+	return out
+}
+
 func (t *Terminal) readingLocked(n int) Reading {
 	scr := t.term.Screen()
 	col, row := scr.CursorPos()
 	text, before := t.linesLocked(n, row, col)
 	_, rows := t.g.Size()
 	return Reading{
-		Text:   text,
-		Row:    row,
-		Col:    col,
-		Alt:    scr.OnAltBuffer(),
-		Said:   t.said.Load(),
-		Cmd:    t.term.Command(),
-		Line:   scr.LineNumber(row),
-		Before: before,
-		Floor:  scr.Floor(),
-		Bottom: scr.LineNumber(max(rows-1, 0)),
+		Text:     text,
+		Row:      row,
+		Col:      col,
+		Alt:      scr.OnAltBuffer(),
+		Said:     t.said.Load(),
+		Cmd:      t.term.Command(),
+		Pictures: t.picturesLocked(),
+		Line:     scr.LineNumber(row),
+		Before:   before,
+		Floor:    scr.Floor(),
+		Bottom:   scr.LineNumber(max(rows-1, 0)),
 	}
 }
 

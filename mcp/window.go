@@ -183,6 +183,8 @@ func asScreen(look agent.Look) Screen {
 		Col:       look.Col,
 		Alt:       look.Alt,
 		All:       look.All,
+		Trimmed:   look.Trimmed,
+		Pictures:  picturesOf(look.Pictures),
 		Note:      look.Note,
 		Marks:     look.Marks,
 		Running:   look.Running,
@@ -310,4 +312,19 @@ func asPane(port int, p agent.Pane) Pane {
 			ReadBack: p.May.ReadBack,
 		},
 	}
+}
+
+// picturesOf is what the wire said about the pictures on a screen.
+func picturesOf(on []agent.Picture) []Picture {
+	if len(on) == 0 {
+		return nil
+	}
+	out := make([]Picture, 0, len(on))
+	for _, p := range on {
+		out = append(out, Picture{
+			Top: p.Top, Rows: p.Rows, Cols: p.Cols,
+			Width: p.Width, Height: p.Height, Wire: p.Wire,
+		})
+	}
+	return out
 }

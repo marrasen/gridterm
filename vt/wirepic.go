@@ -67,6 +67,7 @@ func (t *Terminal) placeWirePic(params [][]byte) {
 		return
 	}
 	t.holdImage(Image{
+		Wire: true,
 		Line: uint64(line),
 		Col:  min(col, max(t.scr.cols-1, 0)),
 		Cols: min(cols, t.scr.cols),

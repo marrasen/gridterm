@@ -45,6 +45,12 @@ type Image struct {
 	// window watching this pane can be handed the same bytes rather
 	// than the pixels encoded all over again.
 	Raw []byte
+
+	// Wire says the picture came from another window's screen, as
+	// OSC 1338, rather than from a program in this pane as OSC 1337.
+	// Anything reading the pane says which, because a program that
+	// meant to draw one wants to know its own sequence arrived.
+	Wire bool
 }
 
 // Images are the pictures the pane is holding, oldest first.

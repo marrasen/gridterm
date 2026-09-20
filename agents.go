@@ -654,18 +654,39 @@ func (w agentWindow) Look(id string, lines int) (agent.Look, error) {
 		// would have it rendered afresh each time for the same answer. A
 		// resize says nothing, and the reading kept here is of a screen
 		// that no longer exists.
-		if h.read == nil || h.read.Said != h.pane.Said() || want > h.lines || size != h.size {
-			read := h.pane.ReadLines(want)
-			h.read, h.lines, h.size = &read, want, size
+		// At least the screen, however few lines were asked for. A pane
+		// with its content near the top has a screenful of nothing
+		// under it, and the last few rows of that are nothing: the
+		// blank rows are dropped below, and dropping them out of a
+		// short read would leave nothing at all.
+		need := max(want, size.Rows)
+		if h.read == nil || h.read.Said != h.pane.Said() || need > h.lines || size != h.size {
+			read := h.pane.ReadLines(need)
+			h.read, h.lines, h.size = &read, need, size
 			h.rendered++
 		}
+		// The floor first, and on the text as the screen has it: the
+		// cut counts rows up from the bottom row, so dropping the
+		// blank ones before it would reach further up than the clear
+		// and offer the lines above it.
+		text, atFloor, note := h.read.Text, false, ""
+		if !w.a.agents.allowed(h).ReadBack {
+			text, atFloor, note = stopAtTheFloor(text, *h.read)
+		}
+		// Then the rows under the last one with anything on them: a
+		// read of fifteen lines from a pane whose cursor is at row
+		// fifteen of forty-seven should be the fifteen lines with the
+		// work in them, not fifteen blank rows off the bottom.
+		// How much there is to read is asked before the blank rows go:
+		// they are dropped from the bottom, and "that is everything"
+		// is about what is above.
+		enough := countLines(text) < want
+		cut := trimBlankTail(text)
+		trimmed := len(cut) < len(text)
+		text = cut
 		// The cursor comes from the reading, so it says where it was on
 		// the screen that came with it.
-		screen := lastLines(h.read.Text, want)
-		screen, atFloor, note := screen, false, ""
-		if !w.a.agents.allowed(h).ReadBack {
-			screen, atFloor, note = stopAtTheFloor(screen, *h.read)
-		}
+		screen := lastLines(text, want)
 		status, hasStatus := h.read.Cmd.Exit()
 		return agent.Look{
 			Screen:    screen,
@@ -675,7 +696,9 @@ func (w agentWindow) Look(id string, lines int) (agent.Look, error) {
 			Row:       h.read.Row,
 			Col:       h.read.Col,
 			Alt:       h.read.Alt,
-			All:       atFloor || countLines(screen) < want,
+			All:       atFloor || enough,
+			Trimmed:   trimmed,
+			Pictures:  picturesSeen(h.read.Pictures),
 			Cols:      size.Cols,
 			Rows:      size.Rows,
 			Marks:     h.read.Cmd.Integrated,
@@ -733,6 +756,48 @@ func lastLines(text string, n int) string {
 		from = cut
 	}
 	return text[from+1:]
+}
+
+// picturesSeen is what is on the screen in pixels, as the wire says
+// it.
+func picturesSeen(on []term.Picture) []agent.Picture {
+	if len(on) == 0 {
+		return nil
+	}
+	out := make([]agent.Picture, 0, len(on))
+	for _, p := range on {
+		out = append(out, agent.Picture{
+			Top: p.Top, Rows: p.Rows, Cols: p.Cols,
+			Width: p.Width, Height: p.Height, Wire: p.Wire,
+		})
+	}
+	return out
+}
+
+// trimBlankTail is text without the blank lines at the end of it.
+//
+// A terminal screen is always as tall as the pane, so a pane doing
+// nothing much is mostly rows of spaces. Counting a read back from
+// the last of those gives blank rows and nothing else, which is the
+// commonest way a read here comes back saying nothing.
+//
+// A screen with nothing on it anywhere is left alone.
+func trimBlankTail(text string) string {
+	if strings.TrimSpace(text) == "" {
+		// Nothing anywhere on it. The blank rows are the answer here,
+		// and handing back none of them reads as a failure rather
+		// than as an empty pane.
+		return text
+	}
+	end := len(text)
+	for end > 0 {
+		cut := strings.LastIndexByte(text[:end], '\n')
+		if strings.TrimSpace(text[cut+1:end]) != "" {
+			break
+		}
+		end = cut
+	}
+	return text[:end]
 }
 
 // countLines is how many lines some text has, counting an empty one at

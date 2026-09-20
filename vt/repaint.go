@@ -57,6 +57,12 @@ func Repaint(g *grid.Grid, m Screenful) string {
 	}
 	writeCells(&b, g)
 
+	// The pictures after the text, because the text is what they sit
+	// over. They are placed by row rather than at the cursor, so it
+	// does not matter that the cursor is still wherever the last cell
+	// left it.
+	writeImages(&b, m.Images)
+
 	// The cursor last, so it is left where the program had it rather
 	// than after whatever was written last. Put where it belongs even
 	// when it is hidden: the moment the program shows it again without
@@ -171,6 +177,12 @@ type Screenful struct {
 	// arrives, so a screen sent without it is a column out from there
 	// on.
 	WrapNext bool
+
+	// Images are the pictures on the ordinary screen, with Top counted
+	// from its top row. They travel even when Alt is set, for the same
+	// reason Under does: the full-screen program quitting leaves them
+	// behind.
+	Images []Placement
 }
 
 // lastShowing is the rightmost cell of a row that would show anything,

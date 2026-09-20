@@ -40,6 +40,11 @@ type Image struct {
 	Cols int
 	Rows int
 	Img  image.Image
+
+	// Raw is the picture file as the program sent it, kept so that a
+	// window watching this pane can be handed the same bytes rather
+	// than the pixels encoded all over again.
+	Raw []byte
 }
 
 // Images are the pictures the pane is holding, oldest first.
@@ -72,11 +77,11 @@ func (t *Terminal) setImage(params [][]byte) {
 		// terminal to save a file, which this does not do.
 		return
 	}
-	img, ok := decodeImage(encoded)
+	img, raw, ok := decodeImage(encoded)
 	if !ok {
 		return
 	}
-	t.placeImage(img, args)
+	t.placeImage(img, raw, args)
 }
 
 // imageArgs reads "File=inline=1;width=20;height=10" into its parts,
@@ -101,30 +106,30 @@ func imageArgs(head string) map[string]string {
 
 // decodeImage reads the base64 a program sent and decodes the picture
 // in it.
-func decodeImage(encoded string) (image.Image, bool) {
+func decodeImage(encoded string) (image.Image, []byte, bool) {
 	encoded = strings.TrimSpace(encoded)
 	if encoded == "" || len(encoded) > base64.StdEncoding.EncodedLen(MostImageBytes) {
-		return nil, false
+		return nil, nil, false
 	}
 	raw, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {
-		return nil, false
+		return nil, nil, false
 	}
 	if len(raw) > MostImageBytes {
-		return nil, false
+		return nil, nil, false
 	}
 	cfg, _, err := image.DecodeConfig(bytes.NewReader(raw))
 	if err != nil || cfg.Width <= 0 || cfg.Height <= 0 {
-		return nil, false
+		return nil, nil, false
 	}
 	if int64(cfg.Width)*int64(cfg.Height) > mostImagePixels {
-		return nil, false
+		return nil, nil, false
 	}
 	img, _, err := image.Decode(bytes.NewReader(raw))
 	if err != nil || img.Bounds().Empty() {
-		return nil, false
+		return nil, nil, false
 	}
-	return img, true
+	return img, raw, true
 }
 
 // mostImagePixels is the largest picture decoded, which is what stops
@@ -134,25 +139,19 @@ const mostImagePixels = 16 << 20
 // placeImage puts a picture where the cursor is and moves the cursor
 // past it, so what the program prints next lands below rather than
 // on top.
-func (t *Terminal) placeImage(img image.Image, args map[string]string) {
+func (t *Terminal) placeImage(img image.Image, raw []byte, args map[string]string) {
 	cols, rows := t.imageCells(img, args)
 	if cols <= 0 || rows <= 0 {
 		return
 	}
-	at := Image{
+	t.holdImage(Image{
 		Line: t.scr.LineNumber(t.scr.cursor.Y),
 		Col:  t.scr.cursor.X,
 		Cols: cols,
 		Rows: rows,
 		Img:  img,
-	}
-	t.images = append(t.images, at)
-	if len(t.images) > MostImages {
-		// The oldest goes: it is furthest up the history and the least
-		// likely to be looked at again.
-		clear(t.images[:len(t.images)-MostImages])
-		t.images = append(t.images[:0], t.images[len(t.images)-MostImages:]...)
-	}
+		Raw:  raw,
+	})
 	// The rows the picture sits on are left blank and stepped over, so
 	// the program's next line lands under it. Written as line feeds so
 	// the screen scrolls and the picture's line number stays right.
@@ -160,6 +159,18 @@ func (t *Terminal) placeImage(img image.Image, args map[string]string) {
 		t.scr.LineFeed()
 	}
 	t.scr.CarriageReturn()
+}
+
+// holdImage adds a picture to the ones the pane is holding, dropping
+// the oldest once it is holding too many.
+func (t *Terminal) holdImage(at Image) {
+	t.images = append(t.images, at)
+	if len(t.images) > MostImages {
+		// The oldest goes: it is furthest up the history and the least
+		// likely to be looked at again.
+		clear(t.images[:len(t.images)-MostImages])
+		t.images = append(t.images[:0], t.images[len(t.images)-MostImages:]...)
+	}
 }
 
 // imageCells is how many cells a picture was given.
@@ -250,12 +261,32 @@ func (t *Terminal) Placed() []Placement {
 		return nil
 	}
 	t.dropOldImages()
+	return t.placedAt(t.scr.scrollOff)
+}
+
+// LivePlaced is where the pictures sit on the ordinary screen as the
+// program left it, whatever the view has scrolled back to and whatever
+// a full-screen program is covering it with.
+//
+// It is what a watching window is sent, along with the ordinary screen
+// itself, so that the full-screen program quitting leaves the pictures
+// behind rather than a gap nothing will fill.
+func (t *Terminal) LivePlaced() []Placement {
+	if !t.scr.OnAltBuffer() {
+		t.dropOldImages()
+	}
+	return t.placedAt(0)
+}
+
+// placedAt is where the pictures sit with the view scrolled back the
+// given number of lines, leaving out the ones entirely out of sight.
+func (t *Terminal) placedAt(off int) []Placement {
 	var out []Placement
 	for _, at := range t.images {
 		// The row a line is on now: lines that have gone off the top
 		// are what LineNumber counts from, and the view may be
 		// scrolled back into them.
-		top := int(int64(at.Line)-int64(t.scr.gone)) + t.scr.scrollOff
+		top := int(int64(at.Line)-int64(t.scr.gone)) + off
 		if top >= t.scr.rows || top+at.Rows <= 0 {
 			continue
 		}

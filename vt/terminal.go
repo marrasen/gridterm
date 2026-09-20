@@ -115,6 +115,10 @@ type Terminal struct {
 
 	// lastRune is the most recent printable character, which REP repeats.
 	lastRune rune
+
+	// long reads the sequences carrying a picture, which are longer
+	// than the parser will hold.
+	long longOSC
 }
 
 // New returns a terminal of the given size.
@@ -149,9 +153,7 @@ func (t *Terminal) Command() Command { return t.cmd }
 // Write feeds bytes to the emulator. It never returns an error: a
 // terminal has no way to reject what a program sends it.
 func (t *Terminal) Write(p []byte) (int, error) {
-	for _, b := range p {
-		t.parser.Advance(b)
-	}
+	t.long.feed(p, t.parser.Advance, t.longOSCDone)
 	return len(p), nil
 }
 
@@ -512,6 +514,8 @@ func (t *Terminal) OscDispatch(params [][]byte, _ bool) {
 		t.setDir(params)
 	case "8":
 		t.setLink(params)
+	case "1338":
+		t.setWirePic(params)
 	case "1337":
 		t.setImage(params)
 	case "52":

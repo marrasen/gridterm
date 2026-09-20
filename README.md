@@ -93,6 +93,14 @@ emulator, and draws the resulting character grid as batched triangles.
   shows the picture, on a layer of its own over the pane: the grid is for
   text. Nothing is read on the goroutine that draws, and a file that will
   not read says why rather than showing an empty pane.
+- **A picture a program put in its output.** OSC 1337, the sequence
+  iTerm2 made and the terminals after it copied. The pane holds the
+  picture on the line it landed on and it scrolls with the text, on a
+  layer of its own. It travels to a window watching the pane: a screen
+  is sent as the escape sequences that draw it, so the pictures go the
+  same way. Only an inline picture is taken -- the same sequence asks a
+  terminal to save a file, which a pane should not be able to make this
+  window do.
 - **File work in the background.** Copying, moving and deleting, on one
   machine or between two, with how far along it is and a way to stop it.
   A name that is already there is asked about — replace, skip, rename, or
@@ -664,7 +672,18 @@ emulator under `internal/` where they cannot be imported.
   code, which is not guessable and which you give out yourself, and
   anything that does not say what it is at once is hung up on. But it is
   a port, and it is open while a share has a pane in it.
-- **Sixel and the Kitty graphics protocol** are not implemented.
+- **Sixel and the Kitty graphics protocol** are not implemented. OSC
+  1337 is the one this reads.
+- **Only four megabytes of picture travel with a screen.** A pane may
+  hold sixty-four pictures of sixteen megabytes each, and a whole screen
+  is sent every time a window starts watching. The pictures past the
+  budget are left out, and the watcher sees the text with a gap. A
+  picture sent while somebody is already watching is not affected: the
+  sequence carrying it is part of what the program said.
+- **An OSC payload other than a picture is capped at a kilobyte.** The
+  parser keeps that much and throws the rest away. The two sequences
+  that carry a picture are read before it sees them, so they are whole;
+  a clipboard write longer than a kilobyte is cut short.
 - **An APC, PM or SOS string with no terminator grows without bound.**
   The parser buffers it before the emulator sees anything, so it cannot
   be capped from here; it needs a fix in `danielgatis/go-vte`, which

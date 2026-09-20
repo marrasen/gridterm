@@ -97,10 +97,18 @@ layer of its own. Only an inline picture is taken -- the same
 sequence asks a terminal to save a file, which a pane should not be
 able to make this window do.
 
-- **A picture is not copied, selected or sent over the wire.** A
-  watcher on another window sees the text and a gap where the picture
-  is. Carrying it means a new message on the wire and a decision
-  about how much of a pane's pictures to send.
+Pictures travel to a window watching the pane. A screen is sent as
+the escape sequences that draw it, so the pictures go the same way,
+as OSC 1338: one sequence saying to forget the old pictures and one
+per picture saying which row it is on. Nothing new on the wire.
+
+- **A picture is not copied or selected.** Ctrl+C over a picture
+  copies the blank cells it sits on.
+
+- **Only four megabytes of picture travel with a screen.** A pane may
+  hold sixty-four pictures of sixteen megabytes each, and a whole
+  screen is sent every time a window starts watching. The pictures
+  past the budget are left out and the watcher sees a gap.
 
 - **Nothing shows a picture that failed to decode.** A program that
   sends something that is not a picture gets no picture and no word
@@ -115,6 +123,13 @@ able to make this window do.
 - **Kitty and sixel are not read.** OSC 1337 is the one this does.
   The kitty protocol is an APC sequence and sixel is a DCS one, so
   neither goes past the OSC dispatch.
+
+- **An OSC payload other than a picture is still capped at a
+  kilobyte.** `danielgatis/go-vte` keeps that much and throws the rest
+  away. The two sequences carrying a picture are pulled out of the
+  stream before the parser sees them, in `vt/longosc.go`, so they are
+  whole. Everything else takes the cap, and a clipboard write longer
+  than a kilobyte is cut short.
 
 ## The file viewer
 

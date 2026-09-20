@@ -23,6 +23,23 @@ func aPNG(t *testing.T, w, h int) string {
 	return base64.StdEncoding.EncodeToString(b.Bytes())
 }
 
+// aBigPNG is a picture that does not compress, so it is megabytes of
+// PNG rather than bytes of it.
+func aBigPNG(t *testing.T) string {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, 700, 700))
+	seed := uint32(12345)
+	for i := range img.Pix {
+		seed = seed*1664525 + 1013904223
+		img.Pix[i] = byte(seed >> 24)
+	}
+	var b bytes.Buffer
+	if err := png.Encode(&b, img); err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	return base64.StdEncoding.EncodeToString(b.Bytes())
+}
+
 // sendImage writes an inline picture the way iTerm2's sequence does.
 func sendImage(t *testing.T, term *Terminal, args, body string) {
 	t.Helper()

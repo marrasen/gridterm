@@ -112,6 +112,10 @@ func (t *Terminal) liveScreen() string {
 			full.Under = under
 		}
 	}
+	// The pictures of the ordinary screen, which travel as the escape
+	// sequence that draws one: the watcher's emulator reads it, so
+	// nothing new is needed on the wire.
+	full.Images = t.term.LivePlaced()
 	return vt.Repaint(g, full)
 }
 

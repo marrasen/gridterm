@@ -37,11 +37,12 @@ type file struct {
 // Challenge is what the key signs; Salt separates the slot key from the
 // signature; Wrapped is the data key under that slot key. Fingerprint
 // is there so the vault can say which key it wants without trying every
-// key it is offered.
+// key it is offered, and KeyFile is where that key was, so the window
+// can offer to unlock the right one rather than asking which.
 type slot struct {
 	Kind        string `json:"kind"`
 	Fingerprint string `json:"fingerprint"`
-	Comment     string `json:"comment,omitempty"`
+	KeyFile     string `json:"keyfile,omitempty"`
 	Challenge   []byte `json:"challenge"`
 	Salt        []byte `json:"salt"`
 	Nonce       []byte `json:"nonce"`

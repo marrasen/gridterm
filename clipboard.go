@@ -28,10 +28,21 @@ type clipboardWriter struct {
 	ch   chan string
 }
 
+// clear empties the clipboard, which set will not do: a copy of
+// nothing is a mistake, and wiping what somebody copied earlier is not
+// what they asked for. Taking a secret back off it afterwards is.
+func (c *clipboardWriter) clear() { c.put("") }
+
 func (c *clipboardWriter) set(text string) {
 	if text == "" {
 		return
 	}
+	c.put(text)
+}
+
+// put hands text to the goroutine that owns the clipboard, starting it
+// on the first call.
+func (c *clipboardWriter) put(text string) {
 	c.once.Do(func() {
 		put := c.write
 		if put == nil {

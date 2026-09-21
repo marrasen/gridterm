@@ -20,6 +20,7 @@ import (
 	"github.com/marrasen/gridterm/notify"
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/render"
+	"github.com/marrasen/gridterm/secrets"
 	"github.com/marrasen/gridterm/session"
 	"github.com/marrasen/gridterm/themes"
 	"github.com/marrasen/gridterm/ui"
@@ -313,6 +314,12 @@ type app struct {
 	// keys holds private keys the user has unlocked, so a passphrase is
 	// asked for once rather than once per connection.
 	keys *remote.Ring
+
+	// secrets is the vault one of those keys opens, read off disk the
+	// first time anything asks for it. Locking the keys locks it.
+	// secretsAt overrides where it is kept, for a test.
+	secrets   *secrets.Vault
+	secretsAt string
 
 	// book is the saved list of machines, and serverCommands are the ids
 	// registered for what is in it, so one list can be taken away when
@@ -821,6 +828,18 @@ func (a *app) commands() {
 		ui.Command{ID: "edit.paste", Title: "Paste", Run: a.onFocused(a.paste)},
 		ui.Command{ID: "edit.pasteImage", Title: "Paste the picture as a file…",
 			AlsoFind: []string{"image", "screenshot", "path"}, Run: a.onFocused(a.pasteImage)},
+		ui.Command{ID: "secrets.open", Title: "Secrets…",
+			AlsoFind: []string{"password", "vault", "note", "credential"},
+			Run:      a.openSecrets},
+		ui.Command{ID: "secrets.add", Title: "Add a secret…",
+			AlsoFind: []string{"password", "vault", "keep"},
+			Run:      a.addSecret},
+		ui.Command{ID: "secrets.addNote", Title: "Add a note…",
+			AlsoFind: []string{"secret", "vault", "recovery", "licence", "keep"},
+			Run:      a.addNote},
+		ui.Command{ID: "secrets.forget", Title: "Forget a secret…",
+			AlsoFind: []string{"password", "vault", "note", "delete"},
+			Run:      a.forgetSecret},
 		ui.Command{ID: scrollbackCommand, Title: scrollbackTitle,
 			AlsoFind: []string{"find", "history", "buffer", "save"},
 			Run:      a.showScrollback},

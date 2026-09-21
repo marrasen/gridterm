@@ -167,8 +167,13 @@ func splitWords(s string) []string {
 
 // lockKeys forgets every unlocked private key, so the next connection
 // asks for the passphrase again.
+//
+// The secrets go with them: the vault is opened by one of these keys,
+// so leaving it open would leave a locked window holding the thing the
+// lock was for.
 func (a *app) lockKeys() error {
 	a.keys.Lock()
+	a.lockSecrets()
 	return nil
 }
 

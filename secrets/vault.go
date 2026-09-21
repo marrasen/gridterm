@@ -118,7 +118,7 @@ func (v *Vault) Path() string { return v.path }
 //
 // It refuses to write over one that is already there: the file holds
 // the only copy of what is in it.
-func Create(path string, signer ssh.Signer, comment string) (*Vault, error) {
+func Create(path string, signer ssh.Signer, keyFile string) (*Vault, error) {
 	if err := usable(signer.PublicKey()); err != nil {
 		return nil, err
 	}
@@ -132,7 +132,7 @@ func Create(path string, signer ssh.Signer, comment string) (*Vault, error) {
 	if err != nil {
 		return nil, err
 	}
-	s, err := wrapFor(signer, data, comment)
+	s, err := wrapFor(signer, data, keyFile)
 	if err != nil {
 		wipe(data)
 		return nil, err
@@ -149,7 +149,7 @@ func Create(path string, signer ssh.Signer, comment string) (*Vault, error) {
 }
 
 // wrapFor builds a slot that signer opens, holding the data key.
-func wrapFor(signer ssh.Signer, data []byte, comment string) (slot, error) {
+func wrapFor(signer ssh.Signer, data []byte, keyFile string) (slot, error) {
 	challenge := make([]byte, 32)
 	if _, err := rand.Read(challenge); err != nil {
 		return slot{}, fmt.Errorf("secrets: take a challenge: %w", err)
@@ -170,7 +170,7 @@ func wrapFor(signer ssh.Signer, data []byte, comment string) (slot, error) {
 	return slot{
 		Kind:        slotKindSSH,
 		Fingerprint: Fingerprint(signer.PublicKey()),
-		Comment:     comment,
+		KeyFile:     keyFile,
 		Challenge:   challenge,
 		Salt:        salt,
 		Nonce:       nonce,
@@ -383,7 +383,7 @@ func (v *Vault) Remove(id string) error {
 //
 // The vault has to be open already: what is added is another wrapping
 // of the data key, and the data key comes from having opened it.
-func (v *Vault) AddKey(signer ssh.Signer, comment string) error {
+func (v *Vault) AddKey(signer ssh.Signer, keyFile string) error {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	if v.data == nil {
@@ -396,7 +396,7 @@ func (v *Vault) AddKey(signer ssh.Signer, comment string) error {
 	if slices.ContainsFunc(v.file.Slots, func(s slot) bool { return s.Fingerprint == want }) {
 		return fmt.Errorf("secrets: %s already opens this vault", want)
 	}
-	s, err := wrapFor(signer, v.data, comment)
+	s, err := wrapFor(signer, v.data, keyFile)
 	if err != nil {
 		return err
 	}
@@ -442,7 +442,7 @@ func (v *Vault) Keys() []KeySlot {
 	}
 	out := make([]KeySlot, 0, len(v.file.Slots))
 	for _, s := range v.file.Slots {
-		out = append(out, KeySlot{Fingerprint: s.Fingerprint, Comment: s.Comment})
+		out = append(out, KeySlot{Fingerprint: s.Fingerprint, KeyFile: s.KeyFile})
 	}
 	return out
 }
@@ -450,7 +450,7 @@ func (v *Vault) Keys() []KeySlot {
 // KeySlot is one key that opens the vault, as a dialog shows it.
 type KeySlot struct {
 	Fingerprint string
-	Comment     string
+	KeyFile     string
 }
 
 // save seals the items and writes the file. The caller holds the lock.

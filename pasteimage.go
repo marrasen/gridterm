@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/marrasen/gridterm/shellsetup"
 	"github.com/marrasen/gridterm/ui/term"
 	"github.com/marrasen/gridterm/vfs"
 )
@@ -38,9 +39,14 @@ func (a *app) pastePicture(pane *term.Terminal) error {
 	on := a.about(end.host)
 	switch {
 	case end.far.window == nil && on.kind == hostHere:
+		if a.shellWouldQuoteIt(pane) {
+			return a.pasteImage(pane)
+		}
 		// The picture is already on this machine's clipboard and the
 		// program is running on this machine, so there is nothing to
-		// move. Pressing paste is the whole of it.
+		// move. Pressing paste is the whole of it: a program that wants
+		// a picture goes and reads the clipboard itself, which is how
+		// Claude Code and the rest take one.
 		pane.PressPaste()
 		return nil
 	case end.far.window == nil && on.window != nil:
@@ -83,6 +89,34 @@ func (a *app) pasteImage(pane *term.Terminal) error {
 		}
 	}
 	return a.writePictureOn(end, pane, img)
+}
+
+// shellWouldQuoteIt reports whether pressing ctrl+V at this pane would
+// land in a POSIX shell's line editor rather than in a program.
+//
+// readline reads ctrl+V as quoted-insert: it takes the next character
+// literally. So pressing it at a bash or zsh prompt leaves the shell
+// quoting the beginning of whatever is pasted next, and that paste shows
+// its bracketed-paste markers as text rather than being obeyed. The
+// shell stays that way until something clears it, and nothing on screen
+// says why.
+//
+// A program the shell started is a different matter, and is the case
+// PressPaste is for: it reads the clipboard itself and takes the picture
+// properly. So the shell is asked whether it is the one reading -- the
+// OSC 133 marks shell setup already puts there, which is on by default.
+//
+// So ctrl+V is kept for the case it is good for -- a program is running
+// and the shell says so -- and the picture goes as a file otherwise.
+// A shell that sends no marks lands on the file too: not knowing is not
+// a reason to send a key that breaks a shell silently, and a path is
+// something every program here can already use, which is what a pane on
+// a machine at the far end is handed anyway.
+//
+// The shell decides this and not the machine: a WSL pane on Windows is a
+// POSIX shell too, and reads ctrl+V the same way.
+func (a *app) shellWouldQuoteIt(pane *term.Terminal) bool {
+	return shellsetup.RouteFor(a.localArgv(pane)) == shellsetup.Posix && !pane.RunningAProgram()
 }
 
 // pictureFor is the picture on the clipboard and the machine the pane's

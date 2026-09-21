@@ -1408,6 +1408,29 @@ func (t *Terminal) mouseMode() (input.MouseMode, bool) {
 		scr.OnAltBuffer()
 }
 
+// RunningAProgram reports whether a program the shell started is what
+// reads the next keystroke, rather than the shell's own line editor.
+//
+// It is what the shell said, through the OSC 133 marks shell setup puts
+// there: a C mark means a command is running, and the next prompt ends
+// it. The alternate screen counts too, and on its own: marks are not
+// read there, so a full-screen program is known by the screen it asked
+// for rather than by anything it said.
+//
+// A shell that was never taught to send marks says nothing, and the
+// answer is then false. So this is "a program is reading, and the shell
+// says so", never a guess -- which is what a caller weighing whether a
+// keystroke is safe to send needs it to be.
+func (t *Terminal) RunningAProgram() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.term.Screen().OnAltBuffer() {
+		return true
+	}
+	cmd := t.term.Command()
+	return cmd.Integrated && cmd.Running
+}
+
 // sendArrows sends n arrow keys, up for positive.
 func (t *Terminal) sendArrows(n int) {
 	key := input.KeyUp

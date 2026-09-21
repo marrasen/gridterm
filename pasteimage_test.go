@@ -9,6 +9,7 @@ import (
 
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/ui"
+	"github.com/marrasen/gridterm/ui/term"
 )
 
 // A pane on a machine reached by SSH is told so rather than handed a
@@ -76,6 +77,11 @@ func TestPastingAPictureIntoALocalPanePressesPaste(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	pane := firstPane(t, a)
 	a.panes[pane] = &conns.Entry{Host: conns.Local, Kind: conns.Terminal}
+	// The Command Prompt, where ctrl+V really is paste. The shell is
+	// named rather than left to the machine, because which shell a pane
+	// runs is what decides this and a test that took the machine's own
+	// would be asking a different question on Linux than on Windows.
+	a.started[pane].argv = []string{`C:\Windows\system32\cmd.exe`}
 	a.readClipImage = func() (image.Image, bool, error) {
 		return image.NewRGBA(image.Rect(0, 0, 2, 2)), true, nil
 	}
@@ -88,6 +94,134 @@ func TestPastingAPictureIntoALocalPanePressesPaste(t *testing.T) {
 	waitFor(t, a, "the paste key to reach the shell", func() bool {
 		return strings.Contains(a.shells[0].sentText(), "\x16")
 	})
+}
+
+// A picture pasted at a POSIX shell's own prompt goes as a file,
+// because ctrl+V means something else there and something damaging.
+//
+// readline reads ctrl+V as quoted-insert: it takes the next character
+// literally. So pressing it leaves the shell quoting the beginning of
+// whatever is pasted next, which then shows its bracketed-paste markers
+// as text rather than obeying them, and goes on doing that.
+//
+// This is about the shell and not about the machine. A WSL pane on
+// Windows is a POSIX shell and reads ctrl+V the same way.
+func TestAPictureAtAPosixPromptGoesAsAFile(t *testing.T) {
+	for what, argv := range map[string][]string{
+		"a login shell":      {"/bin/bash"},
+		"zsh":                {"/usr/bin/zsh"},
+		"a WSL distribution": {`C:\WINDOWS\system32\wsl.exe`, "-d", "Ubuntu"},
+	} {
+		t.Run(what, func(t *testing.T) {
+			a, pane := aPaneToPasteInto(t, argv)
+			// At a prompt, with the marks a shell with setup sends.
+			atPrompt(t, a, pane)
+
+			if err := a.pastePicture(pane); err != nil {
+				t.Fatalf("paste it: %v", err)
+			}
+
+			waitFor(t, a, "the path to reach the shell", func() bool {
+				return strings.Contains(a.shells[0].sentText(), ".png")
+			})
+			typed := lastWord(a.shells[0].sentText())
+			t.Cleanup(func() { os.Remove(typed) })
+			if _, err := os.Stat(typed); err != nil {
+				t.Errorf("it typed a path to nothing: %v", err)
+			}
+			if strings.Contains(a.shells[0].sentText(), "\x16") {
+				t.Error("it pressed ctrl+V at a shell that reads it as quoted-insert")
+			}
+		})
+	}
+}
+
+// A picture pasted into a program the shell started still presses
+// ctrl+V, which is the thing that works: the program is on this machine
+// and reads the clipboard itself, and that is how Claude Code and the
+// rest take a picture as a picture rather than as a path to one.
+//
+// The shell says which it is. A command is running from its C mark
+// until the next prompt, and a full-screen program is known by the
+// screen it asked for.
+func TestAPictureInARunningProgramStillPressesPaste(t *testing.T) {
+	for what, says := range map[string]string{
+		"a command running":     "\x1b]133;A\a$ \x1b]133;B\aclaude\r\n\x1b]133;C\a",
+		"a full-screen program": "\x1b[?1049h",
+	} {
+		t.Run(what, func(t *testing.T) {
+			a, pane := aPaneToPasteInto(t, []string{"/bin/bash"})
+			a.shells[0].out <- []byte(says)
+			waitFor(t, a, "the pane to be running a program", pane.RunningAProgram)
+
+			if err := a.pastePicture(pane); err != nil {
+				t.Fatalf("paste it: %v", err)
+			}
+
+			// Ctrl+V, which is what the program reads as paste.
+			waitFor(t, a, "the paste key to reach the program", func() bool {
+				return strings.Contains(a.shells[0].sentText(), "\x16")
+			})
+		})
+	}
+}
+
+// A shell that was never taught to send marks is handed the file.
+//
+// Nothing says whether the shell or a program is reading, and a ctrl+V
+// that lands in a shell breaks the next paste with nothing on screen to
+// say why. A path is the answer that is wrong in a way the user can see,
+// and every program that takes a picture here reads one already.
+func TestAPictureAtAShellWithNoMarksGoesAsAFile(t *testing.T) {
+	a, pane := aPaneToPasteInto(t, []string{"/bin/bash"})
+	// No marks: the pane has said nothing about prompts at all.
+	if pane.RunningAProgram() {
+		t.Fatal("a pane that has said nothing claims to be running a program")
+	}
+
+	if err := a.pastePicture(pane); err != nil {
+		t.Fatalf("paste it: %v", err)
+	}
+
+	waitFor(t, a, "the path to reach the shell", func() bool {
+		return strings.Contains(a.shells[0].sentText(), ".png")
+	})
+	t.Cleanup(func() { os.Remove(lastWord(a.shells[0].sentText())) })
+	if strings.Contains(a.shells[0].sentText(), "\x16") {
+		t.Error("it pressed ctrl+V without knowing what was reading")
+	}
+}
+
+// aPaneToPasteInto is a local pane running argv, with a picture on the
+// clipboard ready to paste.
+func aPaneToPasteInto(t *testing.T, argv []string) (*testApp, *term.Terminal) {
+	t.Helper()
+	a := newTestApp(t, 80, 24)
+	pane := firstPane(t, a)
+	a.panes[pane] = &conns.Entry{Host: conns.Local, Kind: conns.Terminal}
+	a.started[pane].argv = argv
+	a.readClipImage = func() (image.Image, bool, error) {
+		return image.NewRGBA(image.Rect(0, 0, 2, 2)), true, nil
+	}
+	return a, pane
+}
+
+// atPrompt makes a pane say it is sitting at a shell prompt, in the
+// marks a shell with setup sends.
+func atPrompt(t *testing.T, a *testApp, pane *term.Terminal) {
+	t.Helper()
+	a.shells[0].out <- []byte("\x1b]133;A\a$ \x1b]133;B\a")
+	waitFor(t, a, "the pane to be at a prompt", func() bool {
+		return !pane.RunningAProgram()
+	})
+}
+
+// lastWord is the path a pane was told, which is the last thing typed
+// into it once the bracketed-paste markers are off.
+func lastWord(sent string) string {
+	sent = strings.ReplaceAll(sent, "\x1b[200~", "")
+	sent = strings.ReplaceAll(sent, "\x1b[201~", "")
+	return strings.TrimSpace(sent)
 }
 
 // A clipboard holding a picture and no text says so, rather than passing
@@ -132,6 +266,11 @@ func TestPastingIntoAPaneTakesThePictureWhenThereIsNoText(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	pane := firstPane(t, a)
 	a.panes[pane] = &conns.Entry{Host: conns.Local, Kind: conns.Terminal}
+	// The Command Prompt, so the picture goes by the shortest route and
+	// this is left asking what it means to ask: that paste with no text
+	// on the clipboard takes the picture. Which route a shell gets is
+	// TestPastingAPictureIntoAPosixShellTypesAPathInstead's question.
+	a.started[pane].argv = []string{`C:\Windows\system32\cmd.exe`}
 	a.hasClipText = func() bool { return false }
 	a.readClipImage = func() (image.Image, bool, error) {
 		return image.NewRGBA(image.Rect(0, 0, 2, 2)), true, nil

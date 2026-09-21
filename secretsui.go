@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -373,6 +374,120 @@ func (a *app) addVaultKeyOn(v *secrets.Vault, keyFile string) {
 			"%s opens the secrets as well now, and %d keys open them in all.",
 			keyFile, len(v.Keys())), false)
 	})
+}
+
+// removeVaultKey stops a key opening the secrets, for a machine that
+// is gone or a key being replaced.
+func (a *app) removeVaultKey() error {
+	return a.withOpenSecrets("Could not take the key away", a.chooseAKeyToRemove)
+}
+
+// chooseAKeyToRemove lists the keys that open the vault and takes the
+// one picked away.
+func (a *app) chooseAKeyToRemove(v *secrets.Vault) error {
+	keys := v.Keys()
+	if len(keys) < 2 {
+		a.showNotice(secretsTitle, "Only one key opens the secrets, and it cannot go: "+
+			`nothing would open them again. "Let another key open the secrets" adds one first.`,
+			false)
+		return nil
+	}
+	var hide func()
+	c := ui.NewChooser("Which key should stop opening the secrets?", func() {
+		if hide != nil {
+			hide()
+		}
+	})
+	c.Style = a.chooserStyle()
+	for _, s := range keys {
+		c.Add(keyRowName(s), keyRowNote(s), func() error {
+			if hide != nil {
+				hide()
+			}
+			a.confirmRemoveKey(v, s)
+			return nil
+		})
+	}
+	hide = a.showModal(c, nil)
+	if a.root.Modal() != ui.Widget(c) {
+		return errors.New("there is no room to show them")
+	}
+	a.markDirty()
+	return nil
+}
+
+// keyRowName is what a key's row says it is: where it was, or its
+// fingerprint when the vault was never told where.
+func keyRowName(s secrets.KeySlot) string {
+	if s.KeyFile != "" {
+		return s.KeyFile
+	}
+	return s.Fingerprint
+}
+
+// keyRowNote is the right-hand side of a key's row: whether the key is
+// on this machine, and its fingerprint when the row does not already
+// say it.
+func keyRowNote(s secrets.KeySlot) string {
+	var parts []string
+	if onThisMachine(s) {
+		parts = append(parts, "on this machine")
+	}
+	if s.KeyFile != "" {
+		parts = append(parts, s.Fingerprint)
+	}
+	return strings.Join(parts, " · ")
+}
+
+// onThisMachine reports whether a slot's key file is here.
+func onThisMachine(s secrets.KeySlot) bool {
+	if s.KeyFile == "" {
+		return false
+	}
+	_, err := os.Stat(s.KeyFile)
+	return err == nil
+}
+
+// confirmRemoveKey asks before taking a key away, because a key that is
+// gone cannot be put back without the key itself.
+func (a *app) confirmRemoveKey(v *secrets.Vault, s secrets.KeySlot) {
+	n := a.newNotice(secretsTitle, whatRemovingCosts(v, s))
+	n.Action = ui.NoticeAction{Title: "Take it away", Do: func() {
+		if err := v.RemoveKey(s.Fingerprint); err != nil {
+			a.reportError("Could not take the key away", err)
+			return
+		}
+		a.showNotice(secretsTitle, fmt.Sprintf(
+			"%s no longer opens the secrets, and %d keys still do.",
+			keyRowName(s), len(v.Keys())), false)
+	}}
+	a.presentNotice(n)
+}
+
+// whatRemovingCosts says what taking this key away means, which is a
+// different thing when it is the only one here.
+//
+// The secrets stay open until the window locks them, so somebody who
+// has just shut themselves out has a moment to put the key back.
+func whatRemovingCosts(v *secrets.Vault, s secrets.KeySlot) string {
+	said := keyRowName(s) + " would stop opening the secrets."
+	if !lastKeyHere(v, s) {
+		return said + " Another key on this machine still opens them."
+	}
+	return said + " It is the only key here that opens them, so this machine" +
+		" would not open them again until one of the others is on it." +
+		" They stay open until the keys are locked."
+}
+
+// lastKeyHere reports whether this is the only key of the vault's that
+// is on this machine.
+func lastKeyHere(v *secrets.Vault, s secrets.KeySlot) bool {
+	for _, other := range v.Keys() {
+		if other.Fingerprint != s.Fingerprint && onThisMachine(other) {
+			return false
+		}
+	}
+	return true
 }
 
 // forgetSecret takes one out of the vault.

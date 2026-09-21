@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/pem"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -338,6 +339,92 @@ func signerFromFile(t *testing.T, path string) ssh.Signer {
 		t.Fatalf("parse the key: %v", err)
 	}
 	return signer
+}
+
+// A key is taken away and stops opening the vault.
+func TestAKeyTakenAwayStopsOpeningTheVault(t *testing.T) {
+	a, keyFile := aWindowWithSecrets(t)
+	v := startTheVault(t, a, keyFile)
+	second := anEd25519KeyFile(t, filepath.Join(t.TempDir(), "id_ed25519_other"))
+	a.addVaultKeyOn(v, second)
+	waitFor(t, a, "the key to be added", func() bool { return len(v.Keys()) == 2 })
+
+	if err := v.RemoveKey(secrets.Fingerprint(signerFromFile(t, second).PublicKey())); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+
+	shut, err := secrets.Open(a.secretsAt)
+	if err != nil {
+		t.Fatalf("open the file again: %v", err)
+	}
+	if err := shut.Unlock([]ssh.Signer{signerFromFile(t, second)}); !errors.Is(err, secrets.ErrWrongKey) {
+		t.Errorf("the key that was taken away gave %v, want ErrWrongKey", err)
+	}
+	if err := shut.Unlock([]ssh.Signer{signerFromFile(t, keyFile)}); err != nil {
+		t.Errorf("the key that was kept no longer opens it: %v", err)
+	}
+}
+
+// The only key cannot be taken away, and the window says why rather
+// than putting up a list of one.
+func TestTheOnlyKeyCannotBeTakenAway(t *testing.T) {
+	a, keyFile := aWindowWithSecrets(t)
+	v := startTheVault(t, a, keyFile)
+
+	if err := a.chooseAKeyToRemove(v); err != nil {
+		t.Fatalf("choose: %v", err)
+	}
+	if said := noticeUp(t, a); !strings.Contains(said, "cannot go") {
+		t.Errorf("it said %q", said)
+	}
+	if len(v.Keys()) != 1 {
+		t.Error("the key went anyway")
+	}
+}
+
+// Taking away the last key on this machine is said plainly, because it
+// shuts the vault here.
+func TestTakingTheLastKeyHereAwayIsSaidPlainly(t *testing.T) {
+	a, keyFile := aWindowWithSecrets(t)
+	v := startTheVault(t, a, keyFile)
+	// A second key the vault knows about but that is not on this
+	// machine, which is what a retired laptop looks like.
+	gone := anEd25519KeyFile(t, filepath.Join(t.TempDir(), "id_ed25519_gone"))
+	a.addVaultKeyOn(v, gone)
+	waitFor(t, a, "the key to be added", func() bool { return len(v.Keys()) == 2 })
+	if err := os.Remove(gone); err != nil {
+		t.Fatalf("take the other key off this machine: %v", err)
+	}
+
+	here, away := slotFor(t, v, keyFile), slotFor(t, v, gone)
+	if !lastKeyHere(v, here) {
+		t.Error("the key on this machine is not seen as the last one here")
+	}
+	if !strings.Contains(whatRemovingCosts(v, here), "only key here") {
+		t.Errorf("it does not say what removing it costs: %q", whatRemovingCosts(v, here))
+	}
+	// And taking away the one that is not here costs nothing to say.
+	if strings.Contains(whatRemovingCosts(v, away), "only key here") {
+		t.Errorf("it warns about a key that is not on this machine: %q", whatRemovingCosts(v, away))
+	}
+	if !strings.Contains(keyRowNote(here), "on this machine") {
+		t.Errorf("the row does not say the key is here: %q", keyRowNote(here))
+	}
+	if strings.Contains(keyRowNote(away), "on this machine") {
+		t.Errorf("the row says a missing key is here: %q", keyRowNote(away))
+	}
+}
+
+// slotFor is the vault's slot for a key file.
+func slotFor(t *testing.T, v *secrets.Vault, keyFile string) secrets.KeySlot {
+	t.Helper()
+	for _, s := range v.Keys() {
+		if s.KeyFile == keyFile {
+			return s
+		}
+	}
+	t.Fatalf("the vault has no slot for %s", keyFile)
+	return secrets.KeySlot{}
 }
 
 // Asking for the secrets when there are none offers to start them.

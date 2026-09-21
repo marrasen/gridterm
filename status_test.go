@@ -327,8 +327,8 @@ func TestPressingTheStatusKicksTheOtherWindowOut(t *testing.T) {
 	if !took {
 		t.Fatal("the press on the chip travelled on")
 	}
-	f := awaitModal(t, host, "the serving dialog", byTitle[*ui.Form]("Serving this window"))
-	kick := "Kick " + host.serving.clients()[0].Name + " out"
+	f := awaitModal(t, host, "the serving dialog", byTitle[*ui.Form](dlgServingWindow))
+	kick := "Disconnect " + host.serving.clients()[0].Name
 	pressButton(t, host, f, kick)
 
 	waitFor(t, client, "the window over there to see the connection go", func() bool {
@@ -364,8 +364,8 @@ func TestKickingAWindowThatHasAlreadyGoneSaysNothing(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("pressing the chip: %v", err)
 	}
-	f := awaitModal(t, host, "the serving dialog", byTitle[*ui.Form]("Serving this window"))
-	kick := buttonNamed(t, f, "Kick "+host.serving.clients()[0].Name+" out")
+	f := awaitModal(t, host, "the serving dialog", byTitle[*ui.Form](dlgServingWindow))
+	kick := buttonNamed(t, f, "Disconnect "+host.serving.clients()[0].Name)
 
 	// The window connected lets go while the dialog is up, so the button
 	// names a window that is no longer there.
@@ -449,8 +449,8 @@ func TestKickingAWindowOutIsNotReportedAsALoss(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("pressing the chip: %v", err)
 	}
-	f := awaitModal(t, host, "the serving dialog", byTitle[*ui.Form]("Serving this window"))
-	pressButton(t, host, f, "Kick "+host.serving.clients()[0].Name+" out")
+	f := awaitModal(t, host, "the serving dialog", byTitle[*ui.Form](dlgServingWindow))
+	pressButton(t, host, f, "Disconnect "+host.serving.clients()[0].Name)
 
 	waitFor(t, host, "the window serving to let the client go", func() bool {
 		return servingRows(host) == 0
@@ -497,13 +497,13 @@ func TestTheServingDialogOffersNoKickWithNobodyConnected(t *testing.T) {
 		t.Fatalf("pressing the chip: %v", err)
 	}
 
-	f := awaitModal(t, a, "the serving dialog", byTitle[*ui.Form]("Serving this window"))
+	f := awaitModal(t, a, "the serving dialog", byTitle[*ui.Form](dlgServingWindow))
 	for _, b := range f.Buttons() {
 		if strings.HasPrefix(b.Title, "Kick") {
 			t.Errorf("the dialog offers %q with nobody connected", b.Title)
 		}
 	}
-	pressButton(t, a, f, "Stop serving")
+	pressButton(t, a, f, btnStopServing)
 	if a.serving.on() {
 		t.Error("the port is still open")
 	}
@@ -541,8 +541,8 @@ func TestKickingEveryoneOutClosesEveryConnection(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("pressing the chip: %v", err)
 	}
-	f := awaitModal(t, host, "the serving dialog", byTitle[*ui.Form]("Serving this window"))
-	pressButton(t, host, f, "Kick everyone out")
+	f := awaitModal(t, host, "the serving dialog", byTitle[*ui.Form](dlgServingWindow))
+	pressButton(t, host, f, "Disconnect all")
 
 	waitFor(t, host, "both windows to go", func() bool {
 		return len(host.serving.clients()) == 0

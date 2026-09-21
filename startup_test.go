@@ -78,8 +78,8 @@ func TestSshConnectsInAPaneAndAsksInADialog(t *testing.T) {
 	})
 
 	// In a dialog, which is the whole reason the window opens first.
-	f := awaitModal(t, a, "the host key question", byTitle[*ui.Form]("Unknown host key"))
-	pressButton(t, a, f, "Connect")
+	f := awaitModal(t, a, "the host key question", byTitle[*ui.Form](dlgUnknownHostKey))
+	pressButton(t, a, f, btnConnect)
 
 	waitForPanes(t, a, 1)
 	if got := a.about(target).kind; got != hostMachine {
@@ -116,7 +116,7 @@ func TestSshTargetIsAMachineOnTheSidebar(t *testing.T) {
 
 	chooseMenuItem(t, menu, "conn.log")
 	n := awaitModal(t, a, "the account of how it was reached",
-		byTitlePrefix[*ui.Notice]("How "))
+		byTitlePrefix[*ui.Notice]("Connection Log"))
 	if !strings.Contains(n.Message(), "connected to "+target) {
 		t.Errorf("the account says %q", n.Message())
 	}

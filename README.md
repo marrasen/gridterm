@@ -113,6 +113,9 @@ gridterm comes with:
 | [GAPS.md](GAPS.md) | what is not there yet |
 | [LINUX.md](LINUX.md) | the state of the Linux build |
 | [MENUS.md](MENUS.md) | every menu, written down |
+| [WORDING.md](WORDING.md) | how dialogs, buttons and commands are worded |
+| [DIALOGS.md](DIALOGS.md) | every dialog, written down |
+| [COMMANDS.md](COMMANDS.md) | every command in the palette |
 | [CHANGELOG.md](CHANGELOG.md) | what changed in each release |
 | [RELEASING.md](RELEASING.md) | how a release is cut |
 | [REMOTE-APPS.md](REMOTE-APPS.md) | an idea: remote windows inside gridterm |

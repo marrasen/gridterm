@@ -16,8 +16,10 @@ import (
 // typingAsk answers with the next passphrase it was given, and records
 // what it was asked each time.
 //
-// It runs out rather than repeating the last one: a test that expects
-// three tries must fail when it gets four, not loop.
+// Once the answers run out it refuses, which is what a person does when
+// they have watched every passphrase they know be rejected. It counts
+// the askings past that point, so a test can still tell a fake that was
+// leant on too hard from one that was not.
 type typingAsk struct {
 	Ask
 	mu   sync.Mutex
@@ -32,7 +34,7 @@ func (a *typingAsk) Passphrase(_ context.Context, key LockedKey) (string, error)
 	a.got = append(a.got, key)
 	if len(a.got) > len(a.say) {
 		a.over++
-		return "", errors.New("it asked more times than the test had answers")
+		return "", ErrWrongPassphrase
 	}
 	return a.say[len(a.got)-1], nil
 }
@@ -61,8 +63,8 @@ func TestAWrongPassphraseIsAskedForAgain(t *testing.T) {
 	}
 }
 
-// Each asking says which try it is, so the dialog can say the answer
-// before it was wrong and how many tries are left.
+// Each asking says which try it is, so the dialog can say that the
+// answer before it was wrong.
 func TestAskingAgainSaysHowTheLastTryWent(t *testing.T) {
 	path := sshtest.WriteEncryptedKey(t, testPassphrase)
 	ask := &typingAsk{say: []string{"not it", "still not it", testPassphrase}}
@@ -71,9 +73,9 @@ func TestAskingAgainSaysHowTheLastTryWent(t *testing.T) {
 		t.Fatalf("Unlock: %v", err)
 	}
 	want := []LockedKey{
-		{Path: path, Wrong: 0, Left: 2},
-		{Path: path, Wrong: 1, Left: 1},
-		{Path: path, Wrong: 2, Left: 0},
+		{Path: path, Wrong: 0},
+		{Path: path, Wrong: 1},
+		{Path: path, Wrong: 2},
 	}
 	got := ask.asked()
 	if len(got) != len(want) {
@@ -86,21 +88,39 @@ func TestAskingAgainSaysHowTheLastTryWent(t *testing.T) {
 	}
 }
 
-// The tries do run out, and what comes back says the passphrase was
-// wrong rather than anything about the key file itself.
-func TestPassphraseTriesRunOut(t *testing.T) {
+// The asking does not run out. A key file is on this machine and this
+// user can already read it, so nothing is protected by giving up after
+// three: cancelling is how the user says they cannot open it.
+func TestTheAskingDoesNotRunOut(t *testing.T) {
 	path := sshtest.WriteEncryptedKey(t, testPassphrase)
-	ask := &typingAsk{say: []string{"one", "two", "three"}}
+	// Six wrong ones and then the right one: twice what the old limit
+	// was, so a limit anywhere would show up here.
+	ask := &typingAsk{say: []string{"one", "two", "three", "four", "five", "six", testPassphrase}}
 
-	_, err := NewRing().Unlock(t.Context(), path, ask)
-	if !errors.Is(err, ErrWrongPassphrase) {
-		t.Fatalf("error = %v, want it to be %v", err, ErrWrongPassphrase)
+	if _, err := NewRing().Unlock(t.Context(), path, ask); err != nil {
+		t.Fatalf("Unlock: %v", err)
 	}
-	if got := ask.asked(); len(got) != PassphraseTries {
-		t.Fatalf("it asked %d times, want %d", len(got), PassphraseTries)
+	if got := ask.asked(); len(got) != 7 {
+		t.Fatalf("it asked %d times, want 7", len(got))
 	}
 	if ask.over != 0 {
-		t.Errorf("it asked %d times after the tries ran out", ask.over)
+		t.Errorf("it asked %d times more than the test had answers", ask.over)
+	}
+}
+
+// Cancelling stops the asking, and what comes back is what the dialog
+// said rather than anything about the key file.
+func TestCancellingStopsTheAsking(t *testing.T) {
+	path := sshtest.WriteEncryptedKey(t, testPassphrase)
+	// No answers at all, so the first asking is refused.
+	ask := &typingAsk{}
+
+	_, err := NewRing().Unlock(t.Context(), path, ask)
+	if err == nil {
+		t.Fatal("a refused passphrase unlocked the key")
+	}
+	if got := ask.asked(); len(got) != 1 {
+		t.Fatalf("it asked %d times after being refused, want 1", len(got))
 	}
 }
 
@@ -185,55 +205,21 @@ func unreadableEncryptedKey(t *testing.T) string {
 	return at
 }
 
-// A connection whose key was never unlocked says so, in the account and
-// in what it failed with.
+// A wrong passphrase is asked about again, and the key is what signs in
+// once the right one is typed.
 //
 // x/crypto counts a key that could not be offered as one more thing that
 // did not work: it moves on, keeps only the last failure, and a user who
 // mistyped a passphrase was left reading "no supported methods remain".
-func TestAConnectionSaysAWrongPassphraseWentWrong(t *testing.T) {
+// Nothing moves on now until the user says to, by cancelling.
+func TestAWrongPassphraseIsAskedAboutAgain(t *testing.T) {
 	s := sshtest.New(t)
 	path := sshtest.WriteEncryptedKey(t, testPassphrase)
 
-	var said, wrong []string
+	ask := &typingAsk{Ask: newTestAsk(), say: []string{"one", "two", testPassphrase}}
 	cfg := keyConfig(t, s, path)
-	cfg.Ask = &typingAsk{Ask: newTestAsk(), say: []string{"one", "two", "three"}}
+	cfg.Ask = ask
 	cfg.KeysOnly = true
-	cfg.Saying = func(what string) { said = append(said, what) }
-	cfg.Wrong = func(what string) { wrong = append(wrong, what) }
-
-	_, err := Connect(t.Context(), cfg)
-	if err == nil {
-		t.Fatal("it connected with a key it never unlocked")
-	}
-	if !errors.Is(err, ErrWrongPassphrase) {
-		t.Fatalf("it failed with %v, want the passphrase named", err)
-	}
-	if !saidSomethingWith(wrong, "passphrase") {
-		t.Fatalf("what went wrong was %v, want the passphrase among it", wrong)
-	}
-	// And not among the steps that went well, which are drawn as though
-	// nothing had happened.
-	if saidSomethingWith(said, "passphrase did not unlock") {
-		t.Errorf("the passphrase failure was said as a step that went well: %v", said)
-	}
-}
-
-// A connection that signs in some other way afterwards still says the
-// key was not unlocked.
-//
-// This is the case with nothing else to show for it: the connection is
-// made, so no failure is ever reported, and a user watching the account
-// would never learn that the key they typed a passphrase for was not the
-// thing that let them in.
-func TestAWrongPassphraseIsSaidEvenWhenTheConnectionIsMade(t *testing.T) {
-	s := sshtest.New(t)
-	path := sshtest.WriteEncryptedKey(t, testPassphrase)
-
-	var wrong []string
-	cfg := keyConfig(t, s, path)
-	cfg.Ask = &typingAsk{Ask: newTestAsk(), say: []string{"one", "two", "three"}}
-	cfg.Wrong = func(what string) { wrong = append(wrong, what) }
 
 	c, err := Connect(t.Context(), cfg)
 	if err != nil {
@@ -241,11 +227,39 @@ func TestAWrongPassphraseIsSaidEvenWhenTheConnectionIsMade(t *testing.T) {
 	}
 	defer c.Close()
 
-	if !saidSomethingWith(wrong, "passphrase") {
-		t.Fatalf("what went wrong was %v, want the passphrase among it", wrong)
+	if got := ask.asked(); len(got) != 3 {
+		t.Fatalf("it asked %d times, want the two wrong ones and the right one", len(got))
 	}
-	if !saidSomethingWith(wrong, path) {
-		t.Errorf("what went wrong was %v, want the key file named", wrong)
+}
+
+// A key whose passphrase was mistyped never falls through to another way
+// of signing in.
+//
+// This is the case with nothing else to show for it: the connection
+// would be made, no failure would ever be reported, and a user watching
+// the account would never learn that the key they typed a passphrase for
+// was not the thing that let them in. So the asking does not give up,
+// and the password is never reached.
+func TestAMistypedPassphraseDoesNotFallBackToThePassword(t *testing.T) {
+	s := sshtest.New(t)
+	path := sshtest.WriteEncryptedKey(t, testPassphrase)
+
+	inner := newTestAsk()
+	ask := &typingAsk{Ask: inner, say: []string{"one", "two", testPassphrase}}
+	cfg := keyConfig(t, s, path)
+	cfg.Ask = ask
+
+	c, err := Connect(t.Context(), cfg)
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	defer c.Close()
+
+	inner.mu.Lock()
+	asked := inner.passwords
+	inner.mu.Unlock()
+	if asked != 0 {
+		t.Errorf("the password was asked for %d times after a mistyped passphrase", asked)
 	}
 }
 

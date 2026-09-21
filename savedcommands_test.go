@@ -28,7 +28,7 @@ func aCommandWindow(t *testing.T) (*testApp, string) {
 func commandDialog(t *testing.T, a *testApp) *ui.Form {
 	t.Helper()
 	a.askCommandOn(conns.Local, nil)
-	return awaitModal(t, a, "the command dialog", byTitle[*ui.Form]("Run a command on Local"))
+	return awaitModal(t, a, "the command dialog", byTitle[*ui.Form]("Run Command on Local"))
 }
 
 // savedLines is what the window has kept, newest first.
@@ -40,10 +40,10 @@ func TestACommandAskedToBeKeptIsKept(t *testing.T) {
 	a, _ := aCommandWindow(t)
 
 	f := commandDialog(t, a)
-	typeIntoField(t, a, f, "Command", "make deploy")
-	typeIntoField(t, a, f, "Directory", "/home/marcus/src")
-	tickBox(t, a, f, "Remember this command")
-	pressButton(t, a, f, "Run")
+	typeIntoField(t, a, f, fldCommand, "make deploy")
+	typeIntoField(t, a, f, fldDirectory, "/home/marcus/src")
+	tickBox(t, a, f, fldSaveCommand)
+	pressButton(t, a, f, btnRun)
 
 	got, have := a.saved.find("make deploy")
 	if !have {
@@ -70,8 +70,8 @@ func TestACommandRunWithoutAskingIsNotKept(t *testing.T) {
 	}
 
 	f := commandDialog(t, a)
-	typeIntoField(t, a, f, "Command", "ls -la")
-	pressButton(t, a, f, "Run")
+	typeIntoField(t, a, f, fldCommand, "ls -la")
+	pressButton(t, a, f, btnRun)
 
 	if got := savedLines(a); !slices.Equal(got, []string{"make deploy"}) {
 		t.Errorf("the window keeps %v, want only what it was asked to keep", got)
@@ -90,15 +90,15 @@ func TestTypingPastASavedCommandKeepsNothing(t *testing.T) {
 	}
 
 	f := commandDialog(t, a)
-	typeIntoField(t, a, f, "Command", "make deploy all")
+	typeIntoField(t, a, f, fldCommand, "make deploy all")
 
-	if f.Field("Remember this command").On() {
+	if f.Field(fldSaveCommand).On() {
 		t.Error("typing past a saved command ticked the box")
 	}
-	if got := f.Field("Directory").Text(); got != "" {
+	if got := f.Field(fldDirectory).Text(); got != "" {
 		t.Errorf("typing past a saved command put %q in the directory", got)
 	}
-	pressButton(t, a, f, "Run")
+	pressButton(t, a, f, btnRun)
 	if got := savedLines(a); !slices.Equal(got, []string{"make deploy"}) {
 		t.Errorf("the window keeps %v", got)
 	}
@@ -116,7 +116,7 @@ func TestTheDialogOffersTheKeptCommandsNewestFirst(t *testing.T) {
 
 	f := commandDialog(t, a)
 
-	what := f.Field("Command")
+	what := f.Field(fldCommand)
 	if what == nil {
 		t.Fatal("the dialog has no Command field")
 	}
@@ -138,13 +138,13 @@ func TestPickingASavedCommandBringsBackItsDirectory(t *testing.T) {
 	f := commandDialog(t, a)
 	stepOptions(t, a, f, "Command")
 
-	if got := f.Field("Command").Text(); got != "make deploy" {
+	if got := f.Field(fldCommand).Text(); got != "make deploy" {
 		t.Fatalf("the field says %q, so nothing was picked", got)
 	}
-	if got := f.Field("Directory").Text(); got != "/home/marcus/src" {
+	if got := f.Field(fldDirectory).Text(); got != "/home/marcus/src" {
 		t.Errorf("the directory says %q, want the one the command was kept with", got)
 	}
-	if !f.Field("Remember this command").On() {
+	if !f.Field(fldSaveCommand).On() {
 		t.Error("the box does not say the command is one that is kept")
 	}
 }
@@ -160,10 +160,10 @@ func TestPickingACommandLeavesADirectoryAlreadyTyped(t *testing.T) {
 	}
 
 	f := commandDialog(t, a)
-	typeIntoField(t, a, f, "Directory", "/typed")
+	typeIntoField(t, a, f, fldDirectory, "/typed")
 	stepOptions(t, a, f, "Command")
 
-	if got := f.Field("Directory").Text(); got != "/typed" {
+	if got := f.Field(fldDirectory).Text(); got != "/typed" {
 		t.Errorf("the directory says %q, want what the user typed", got)
 	}
 }
@@ -181,10 +181,10 @@ func TestADirectorySavedElsewhereIsNotOffered(t *testing.T) {
 	f := commandDialog(t, a)
 	stepOptions(t, a, f, "Command")
 
-	if got := f.Field("Directory").Text(); got != "" {
+	if got := f.Field(fldDirectory).Text(); got != "" {
 		t.Errorf("the directory says %q, and that path is on another machine", got)
 	}
-	if !f.Field("Remember this command").On() {
+	if !f.Field(fldSaveCommand).On() {
 		t.Error("the command is one that is kept, whatever machine its directory is on")
 	}
 }
@@ -199,11 +199,11 @@ func TestClearingTheBoxOnAPickedCommandForgetsIt(t *testing.T) {
 
 	f := commandDialog(t, a)
 	stepOptions(t, a, f, "Command")
-	if !f.Field("Remember this command").On() {
+	if !f.Field(fldSaveCommand).On() {
 		t.Fatal("the box does not say the command is kept, so clearing it proves nothing")
 	}
-	tickBox(t, a, f, "Remember this command")
-	pressButton(t, a, f, "Run")
+	tickBox(t, a, f, fldSaveCommand)
+	pressButton(t, a, f, btnRun)
 
 	if got := savedLines(a); len(got) != 0 {
 		t.Errorf("the window still keeps %v", got)
@@ -219,8 +219,8 @@ func TestTypingASavedCommandDoesNotForgetIt(t *testing.T) {
 	}
 
 	f := commandDialog(t, a)
-	typeIntoField(t, a, f, "Command", "make deploy")
-	pressButton(t, a, f, "Run")
+	typeIntoField(t, a, f, fldCommand, "make deploy")
+	pressButton(t, a, f, btnRun)
 
 	if got := savedLines(a); !slices.Equal(got, []string{"make deploy"}) {
 		t.Errorf("the window keeps %v, want the command it was keeping", got)
@@ -233,9 +233,9 @@ func TestSpacingDoesNotMakeADifferentCommand(t *testing.T) {
 	a, _ := aCommandWindow(t)
 
 	f := commandDialog(t, a)
-	typeIntoField(t, a, f, "Command", "  make   deploy  ")
-	tickBox(t, a, f, "Remember this command")
-	pressButton(t, a, f, "Run")
+	typeIntoField(t, a, f, fldCommand, "  make   deploy  ")
+	tickBox(t, a, f, fldSaveCommand)
+	pressButton(t, a, f, btnRun)
 
 	if got := savedLines(a); !slices.Equal(got, []string{"make deploy"}) {
 		t.Errorf("the window keeps %v, want the command with its spacing tidied", got)
@@ -250,13 +250,13 @@ func TestACommandThatCannotBeKeptIsNotRun(t *testing.T) {
 	a.useSettings(settings.Unusable(errors.New("the settings file is unreadable")))
 	// The window says so as it starts, which is not what this is about.
 	awaitModal(t, a, "the notice about the settings",
-		byTitle[*ui.Notice]("The settings could not be read"))
+		byTitle[*ui.Notice]("Could not read the settings"))
 	dismissNotice(t, a)
 
 	f := commandDialog(t, a)
-	typeIntoField(t, a, f, "Command", "make deploy")
-	tickBox(t, a, f, "Remember this command")
-	pressButton(t, a, f, "Run")
+	typeIntoField(t, a, f, fldCommand, "make deploy")
+	tickBox(t, a, f, fldSaveCommand)
+	pressButton(t, a, f, btnRun)
 
 	if a.root.Modal() != f {
 		t.Fatal("the dialog closed although the command could not be kept")
@@ -274,10 +274,10 @@ func TestACommandThatCannotBeKeptIsNotRun(t *testing.T) {
 func TestKeptCommandsSurviveARestart(t *testing.T) {
 	a, path := aCommandWindow(t)
 	f := commandDialog(t, a)
-	typeIntoField(t, a, f, "Command", "make deploy")
-	typeIntoField(t, a, f, "Directory", "/home/marcus/src")
-	tickBox(t, a, f, "Remember this command")
-	pressButton(t, a, f, "Run")
+	typeIntoField(t, a, f, fldCommand, "make deploy")
+	typeIntoField(t, a, f, fldDirectory, "/home/marcus/src")
+	tickBox(t, a, f, fldSaveCommand)
+	pressButton(t, a, f, btnRun)
 
 	again := newTestApp(t, 80, 24)
 	withDialogs(t, again)
@@ -301,12 +301,12 @@ func TestACommandIsKeptAgainstItsMachine(t *testing.T) {
 	a, _ := aCommandWindow(t)
 	a.askCommandOn("margit", nil)
 	f := awaitModal(t, a, "the command dialog on margit",
-		byTitle[*ui.Form]("Run a command on margit"))
+		byTitle[*ui.Form]("Run Command on margit"))
 
-	typeIntoField(t, a, f, "Command", "systemctl status nginx")
-	typeIntoField(t, a, f, "Directory", "/etc/nginx")
-	tickBox(t, a, f, "Remember this command")
-	pressButton(t, a, f, "Run")
+	typeIntoField(t, a, f, fldCommand, "systemctl status nginx")
+	typeIntoField(t, a, f, fldDirectory, "/etc/nginx")
+	tickBox(t, a, f, fldSaveCommand)
+	pressButton(t, a, f, btnRun)
 
 	got, have := a.saved.find("systemctl status nginx")
 	if !have {

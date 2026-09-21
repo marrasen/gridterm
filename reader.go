@@ -104,7 +104,7 @@ func (a *app) openReader(f vfs.FS, host, path, name string, follow bool, expect 
 	r.OnClose = func() {
 		a.pump.post(func() {
 			if err := a.closePane(r); err != nil {
-				a.reportError("Could not close the reader", err)
+				a.reportError("Could not close the file", err)
 			}
 		})
 	}
@@ -214,7 +214,7 @@ func (a *app) dropReader(r *files.Reader) error {
 // close is worth hearing about.
 func (a *app) doneWithFS(f vfs.FS) {
 	if err := a.letGoFS(f); err != nil {
-		a.reportError("Could not close the connection the file was read through", err)
+		a.reportError("Could not close the file's connection", err)
 	}
 }
 

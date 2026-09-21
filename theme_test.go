@@ -618,9 +618,10 @@ func TestWritingAStartFileSaysWhereItWent(t *testing.T) {
 	if len(all) != len(themes.Built())+1 {
 		t.Errorf("the file gave %v", themes.Names(all))
 	}
-	n := awaitModal(t, a, "the notice", byTitlePrefix[*ui.Notice]("Wrote "))
-	if !strings.Contains(n.Title, themes.Path(dir)) {
-		t.Errorf("it says %q, want the path it wrote", n.Title)
+	n := awaitModal(t, a, "the notice", byTitle[*ui.Notice]("Theme file created"))
+	// The title says what happened and the body says where.
+	if !strings.Contains(n.Message(), themes.Path(dir)) {
+		t.Errorf("it says %q, want the path it wrote", n.Message())
 	}
 }
 

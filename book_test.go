@@ -26,10 +26,10 @@ func saveServer(t *testing.T, a *testApp, name, target string) *ui.Form {
 	if err := a.openAddServer(); err != nil {
 		t.Fatalf("openAddServer: %v", err)
 	}
-	f := awaitModal(t, a, "the Add a server dialog", byTitle[*ui.Form]("Add a server"))
-	typeIntoField(t, a, f, "Name", name)
-	typeIntoField(t, a, f, "Server", target)
-	pressButton(t, a, f, "Save")
+	f := awaitModal(t, a, "the Add a server dialog", byTitle[*ui.Form]("Add Server"))
+	typeIntoField(t, a, f, fldName, name)
+	typeIntoField(t, a, f, fldServer, target)
+	pressButton(t, a, f, btnSave)
 	return f
 }
 
@@ -133,11 +133,11 @@ func TestEditServerReplacesItsCommands(t *testing.T) {
 	}
 	f := awaitModal(t, a, "the Edit margit dialog", byTitle[*ui.Form]("Edit margit"))
 	// The dialog opens filled in with what was saved.
-	if got := f.Field("Server").Text(); got != "marcus@margit.skalarit.net" {
+	if got := f.Field(fldServer).Text(); got != "marcus@margit.skalarit.net" {
 		t.Fatalf("the Server field holds %q, want what was saved", got)
 	}
-	retypeField(t, a, f, "Name", "bastion")
-	pressButton(t, a, f, "Save")
+	retypeField(t, a, f, fldName, "bastion")
+	pressButton(t, a, f, btnSave)
 
 	if _, ok := a.root.Commands.Lookup(openPrefix + "margit"); ok {
 		t.Error("the old name is still a command")
@@ -163,17 +163,17 @@ func TestRemoveServerAsksFirst(t *testing.T) {
 		t.Fatalf("openEditServer: %v", err)
 	}
 	f := awaitModal(t, a, "the Edit margit dialog", byTitle[*ui.Form]("Edit margit"))
-	pressButton(t, a, f, "Remove")
+	pressButton(t, a, f, btnRemove)
 
 	ask := awaitModal(t, a, "the Remove margit? dialog", byTitle[*ui.Form]("Remove margit?"))
-	if at, isButton := ask.Focused(); !isButton || ask.Buttons()[at].Title != "Keep it" {
+	if at, isButton := ask.Focused(); !isButton || ask.Buttons()[at].Title != "Cancel" {
 		t.Error("the question does not open on the answer that changes nothing")
 	}
 	if len(a.book.Hosts()) != 1 {
 		t.Fatal("the server went before the question was answered")
 	}
 
-	pressButton(t, a, ask, "Remove")
+	pressButton(t, a, ask, btnRemove)
 	if got := a.book.Hosts(); len(got) != 0 {
 		t.Fatalf("the book still holds %v", got)
 	}
@@ -219,7 +219,7 @@ func TestBookErrorIsReportedInTheWindow(t *testing.T) {
 	a.book, _ = remote.LoadBook(path)
 
 	a.reportBookError()
-	n := awaitModal(t, a, "the The server list could not be read notice", byTitle[*ui.Notice]("The server list could not be read"))
+	n := awaitModal(t, a, "the The server list could not be read notice", byTitle[*ui.Notice]("Could not read the server list"))
 	if !strings.Contains(n.Message(), "repaired") {
 		t.Errorf("the dialog does not say what happens next: %q", n.Message())
 	}
@@ -239,7 +239,7 @@ func TestAddServerKeepsTheDialogOpenOnABadTarget(t *testing.T) {
 	if f.Error() == nil {
 		t.Fatal("nothing said why")
 	}
-	if got := f.Field("Server").Text(); got != "host:nope" {
+	if got := f.Field(fldServer).Text(); got != "host:nope" {
 		t.Errorf("the dialog lost what was typed: %q", got)
 	}
 	if len(a.book.Hosts()) != 0 {
@@ -369,12 +369,12 @@ func TestAddServerSavesEveryFieldInTheDialog(t *testing.T) {
 	if err := a.openAddServer(); err != nil {
 		t.Fatalf("openAddServer: %v", err)
 	}
-	f := awaitModal(t, a, "the Add a server dialog", byTitle[*ui.Form]("Add a server"))
-	typeIntoField(t, a, f, "Name", "db")
-	typeIntoField(t, a, f, "Server", "postgres@db.internal:5433")
-	typeIntoField(t, a, f, "Key file", "/keys/db")
-	typeIntoField(t, a, f, "Through", "bastion")
-	pressButton(t, a, f, "Save")
+	f := awaitModal(t, a, "the Add a server dialog", byTitle[*ui.Form]("Add Server"))
+	typeIntoField(t, a, f, fldName, "db")
+	typeIntoField(t, a, f, fldServer, "postgres@db.internal:5433")
+	typeIntoField(t, a, f, fldKeyFile, "/keys/db")
+	typeIntoField(t, a, f, fldJumpHost, "bastion")
+	pressButton(t, a, f, btnSave)
 
 	if f.Error() != nil {
 		t.Fatalf("Save: %v", f.Error())
@@ -420,12 +420,12 @@ func TestEditServerKeepsWhatTheDialogCannotShow(t *testing.T) {
 		t.Fatalf("openEditServer: %v", err)
 	}
 	f := awaitModal(t, a, "the Edit web1 dialog", byTitle[*ui.Form]("Edit web1"))
-	if got := f.Field("Key file").Text(); got != "/keys/one" {
+	if got := f.Field(fldKeyFile).Text(); got != "/keys/one" {
 		t.Fatalf("the Key file field shows %q, want the first one", got)
 	}
 	// Change nothing but the port.
-	retypeField(t, a, f, "Server", "web1.internal:2222")
-	pressButton(t, a, f, "Save")
+	retypeField(t, a, f, fldServer, "web1.internal:2222")
+	pressButton(t, a, f, btnSave)
 
 	got, ok := a.book.Lookup("web1")
 	if !ok {
@@ -520,7 +520,7 @@ func TestTheThroughFieldOffersTheSavedServers(t *testing.T) {
 	if !ok {
 		t.Fatalf("it showed %T", a.root.Modal())
 	}
-	via := f.Field("Through")
+	via := f.Field(fldJumpHost)
 	if len(via.Options) != 3 {
 		t.Fatalf("the field offers %v, want the blank and both machines", via.Options)
 	}
@@ -540,10 +540,14 @@ func TestTheThroughFieldOffersTheSavedServers(t *testing.T) {
 			t.Fatalf("the field offers %v, missing %q", via.Options, want)
 		}
 	}
-	// And the dialog says how to reach them.
-	hint := strings.Join(f.Lines, " ")
-	if !strings.Contains(hint, "ctrl+down") || !strings.Contains(hint, "edge") {
-		t.Fatalf("the dialog says %q", hint)
+	// And the field says what it is for, on its own line rather than in
+	// a paragraph under the title: the form draws a hint while the field
+	// has the focus, and draws the stepping keys beside it.
+	if via.Hint == "" {
+		t.Error("the jump host field says nothing about what it is for")
+	}
+	if len(f.Lines) != 0 {
+		t.Errorf("the dialog still explains its fields under the title: %q", f.Lines)
 	}
 }
 
@@ -560,7 +564,7 @@ func TestAServerIsNotOfferedAsItsOwnRoute(t *testing.T) {
 		t.Fatalf("openEditServer: %v", err)
 	}
 	f := a.root.Modal().(*ui.Form)
-	via := f.Field("Through")
+	via := f.Field(fldJumpHost)
 	for _, option := range via.Options {
 		if option == "db" {
 			t.Fatalf("the dialog offers db as its own route: %v", via.Options)
@@ -586,15 +590,15 @@ func TestEveryMachineHasItsOwnCommands(t *testing.T) {
 	a.refreshServers()
 
 	for _, want := range []string{
-		"Open a terminal on Local", "Browse files on Local",
-		"Open a terminal on margit", "Browse files on margit",
+		"New Terminal on Local", "Browse Files on Local",
+		"New Terminal on margit", "Browse Files on margit",
 	} {
 		if !titled(a, want) {
 			t.Errorf("the palette has no %q: %v", want, commandTitles(a))
 		}
 	}
 	// And the ones that act on whatever is in front are still there.
-	for _, want := range []string{"New terminal like this one", "Browse files here"} {
+	for _, want := range []string{"New Terminal Here", "Browse Files Here"} {
 		if !titled(a, want) {
 			t.Errorf("the palette has no %q", want)
 		}
@@ -617,14 +621,14 @@ func TestAConnectedMachineGetsItsOwnCommands(t *testing.T) {
 	a.connectAs("live", serverConfig(t, s))
 	waitForPanes(t, a, 2)
 
-	if !titled(a, "Browse files on live") {
+	if !titled(a, "Browse Files on live") {
 		t.Fatalf("the palette has no browse command for it: %v", commandTitles(a))
 	}
 	// And they go when it does.
 	if err := a.dropMachine("live"); err != nil {
 		t.Fatalf("dropMachine: %v", err)
 	}
-	if titled(a, "Browse files on live") {
+	if titled(a, "Browse Files on live") {
 		t.Fatalf("the commands outlived the connection: %v", commandTitles(a))
 	}
 }
@@ -672,7 +676,7 @@ func TestTheServerCommandsAreNotRebuiltForNothing(t *testing.T) {
 	// the list it hangs under has changed shape.
 	a.connectAs("live", serverConfig(t, s))
 	waitForPanes(t, a, 2)
-	if !titled(a, "Browse files on live") {
+	if !titled(a, "Browse Files on live") {
 		t.Fatalf("the new machine has no commands: %v", commandTitles(a))
 	}
 }
@@ -700,8 +704,8 @@ func TestRenamingAMachineTakesWhatIsOpenWithIt(t *testing.T) {
 		t.Fatalf("edit: %v", err)
 	}
 	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
-	retypeField(t, a, f, "Name", "picard via skylake")
-	pressButton(t, a, f, "Save")
+	retypeField(t, a, f, fldName, "picard via skylake")
+	pressButton(t, a, f, btnSave)
 	a.pump.run()
 
 	if a.machines.named("picard") != nil {
@@ -750,8 +754,8 @@ func TestRenamingOnlyTheCapitalsStillMovesWhatIsOpen(t *testing.T) {
 		t.Fatalf("edit: %v", err)
 	}
 	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
-	retypeField(t, a, f, "Name", "Picard")
-	pressButton(t, a, f, "Save")
+	retypeField(t, a, f, fldName, "Picard")
+	pressButton(t, a, f, btnSave)
 	a.pump.run()
 
 	if a.machines.named("picard") != nil {
@@ -784,8 +788,8 @@ func TestRenamingOntoAConnectedNameIsRefused(t *testing.T) {
 		t.Fatalf("edit: %v", err)
 	}
 	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
-	retypeField(t, a, f, "Name", "enterprise")
-	pressButton(t, a, f, "Save")
+	retypeField(t, a, f, fldName, "enterprise")
+	pressButton(t, a, f, btnSave)
 	a.pump.run()
 
 	if a.machines.named("enterprise") != was {
@@ -821,8 +825,8 @@ func TestRenamingOntoAConnectingNameIsRefused(t *testing.T) {
 		t.Fatalf("edit: %v", err)
 	}
 	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
-	retypeField(t, a, f, "Name", "slow")
-	pressButton(t, a, f, "Save")
+	retypeField(t, a, f, fldName, "slow")
+	pressButton(t, a, f, btnSave)
 	a.pump.run()
 
 	if _, ok := a.book.Lookup("slow"); ok {
@@ -855,9 +859,9 @@ func TestRenamingAndRetargetingLeavesTheOldConnection(t *testing.T) {
 		t.Fatalf("edit: %v", err)
 	}
 	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
-	retypeField(t, a, f, "Name", "enterprise")
-	retypeField(t, a, f, "Server", fmt.Sprintf("tester@%s:%d", host, port))
-	pressButton(t, a, f, "Save")
+	retypeField(t, a, f, fldName, "enterprise")
+	retypeField(t, a, f, fldServer, fmt.Sprintf("tester@%s:%d", host, port))
+	pressButton(t, a, f, btnSave)
 	a.pump.run()
 
 	if a.machines.named("enterprise") != nil {
@@ -1073,7 +1077,7 @@ func TestRenamingATakenOverWindowMovesItsConnection(t *testing.T) {
 	}
 	f := awaitModal[*ui.Form](t, client, "a dialog", nil)
 	retypeField(t, client, f, "Name", "m-statio")
-	pressButton(t, client, f, "Save")
+	pressButton(t, client, f, btnSave)
 	client.pump.run()
 
 	if client.windows.named("statio") != nil {
@@ -1110,8 +1114,8 @@ func TestAKindThatIsNeitherIsRefused(t *testing.T) {
 		t.Fatalf("edit: %v", err)
 	}
 	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
-	retypeField(t, a, f, "Kind", "windwo")
-	pressButton(t, a, f, "Save")
+	retypeField(t, a, f, fldType, "windwo")
+	pressButton(t, a, f, btnSave)
 	a.pump.run()
 
 	h, ok := a.book.Lookup("statio")
@@ -1136,13 +1140,13 @@ func TestTheKindChosenInTheDialogIsSaved(t *testing.T) {
 		t.Fatalf("add: %v", err)
 	}
 	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
-	typeIntoField(t, a, f, "Name", "statio")
-	typeIntoField(t, a, f, "Server", "10.0.0.5:2222")
+	typeIntoField(t, a, f, fldName, "statio")
+	typeIntoField(t, a, f, fldServer, "10.0.0.5:2222")
 
 	// The way the dialog says to: the keys the hint names.
-	kind := f.Field("Kind")
+	kind := f.Field(fldType)
 	if kind == nil {
-		t.Fatal("the dialog has no Kind")
+		t.Fatal("the dialog has no Type")
 	}
 	was := kind.Text()
 	if _, err := kind.HandleKey(press(input.KeyDown, input.ModCtrl)); err != nil {
@@ -1154,7 +1158,7 @@ func TestTheKindChosenInTheDialogIsSaved(t *testing.T) {
 	if kind.Text() != kindWindow {
 		t.Fatalf("it stepped to %q, want %q", kind.Text(), kindWindow)
 	}
-	pressButton(t, a, f, "Save")
+	pressButton(t, a, f, btnSave)
 	a.pump.run()
 
 	h, ok := a.book.Lookup("statio")
@@ -1166,8 +1170,13 @@ func TestTheKindChosenInTheDialogIsSaved(t *testing.T) {
 	}
 }
 
-// And the hint names keys that really step the field.
-func TestTheKindHintNamesKeysThatWork(t *testing.T) {
+// The field that steps through a list says so itself, and says what it
+// is for.
+//
+// The dialog used to carry a paragraph naming the keys for every field
+// at once. The form draws the stepping keys beside whichever field has
+// the focus, so the paragraph went.
+func TestTheKindFieldSaysWhatItIsFor(t *testing.T) {
 	a := newTestApp(t, 90, 30)
 	withDialogs(t, a)
 	if err := a.openAddServer(); err != nil {
@@ -1175,9 +1184,15 @@ func TestTheKindHintNamesKeysThatWork(t *testing.T) {
 	}
 	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
 
-	said := strings.Join(f.Lines, " ")
-	if !strings.Contains(said, "ctrl+down") {
-		t.Fatalf("the dialog says %q, which does not name the keys that step Kind", said)
+	kind := f.Field(fldType)
+	if len(kind.Options) == 0 {
+		t.Fatal("the type field steps through nothing")
+	}
+	if kind.Hint == "" {
+		t.Error("the type field says nothing about what it is for")
+	}
+	if len(f.Lines) != 0 {
+		t.Errorf("the dialog still explains its fields under the title: %q", f.Lines)
 	}
 }
 
@@ -1208,8 +1223,8 @@ func TestChangingAMachineIntoAWindowTakesEffectAtOnce(t *testing.T) {
 		t.Fatalf("edit: %v", err)
 	}
 	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
-	retypeField(t, a, f, "Kind", kindWindow)
-	pressButton(t, a, f, "Save")
+	retypeField(t, a, f, fldType, kindWindow)
+	pressButton(t, a, f, btnSave)
 	a.pump.run()
 
 	if !a.about("statio").serves {
@@ -1259,7 +1274,7 @@ func TestAWindowCannotBeMadeIntoARoute(t *testing.T) {
 // was believing some other function was the one place everything went
 // through, and only the callers can settle that.
 func TestOnlyOpenRouteDials(t *testing.T) {
-	dialers := callersOf(t, "remote.Connect", "Through")
+	dialers := callersOf(t, "remote.Connect", "Jump host")
 	if len(dialers) == 0 {
 		t.Fatal("nothing dials at all, so this proves nothing")
 	}
@@ -1477,7 +1492,7 @@ func TestAWindowOffersConnectingAndATerminalApart(t *testing.T) {
 	if !strings.Contains(connect, "Connect to") {
 		t.Errorf("the line that connects reads %q", connect)
 	}
-	if !strings.Contains(terminal, "Open a terminal on") {
+	if !strings.Contains(terminal, "New Terminal on") {
 		t.Errorf("the line that opens a terminal reads %q", terminal)
 	}
 	if connect == terminal {
@@ -1496,14 +1511,14 @@ func TestTheServerDialogSavesTheAgentTick(t *testing.T) {
 	if err := a.openAddServer(); err != nil {
 		t.Fatalf("openAddServer: %v", err)
 	}
-	f := awaitModal(t, a, "the Add a server dialog", byTitle[*ui.Form]("Add a server"))
-	typeIntoField(t, a, f, "Name", "jump")
-	typeIntoField(t, a, f, "Server", "me@jump.example")
-	if got := f.Field("SSH agent").Text(); got != setupNo {
+	f := awaitModal(t, a, "the Add a server dialog", byTitle[*ui.Form]("Add Server"))
+	typeIntoField(t, a, f, fldName, "jump")
+	typeIntoField(t, a, f, fldServer, "me@jump.example")
+	if got := f.Field(fldForwardAgent).Text(); got != setupNo {
 		t.Errorf("a new server starts with the SSH agent %q, want %q", got, setupNo)
 	}
-	retypeField(t, a, f, "SSH agent", setupYes)
-	pressButton(t, a, f, "Save")
+	retypeField(t, a, f, fldForwardAgent, setupYes)
+	pressButton(t, a, f, btnSave)
 
 	if f.Error() != nil {
 		t.Fatalf("Save: %v", f.Error())
@@ -1537,12 +1552,12 @@ func TestEditServerShowsTheAgentTickAsSaved(t *testing.T) {
 		t.Fatalf("openEditServer: %v", err)
 	}
 	f := awaitModal(t, a, "the Edit jump dialog", byTitle[*ui.Form]("Edit jump"))
-	if got := f.Field("SSH agent").Text(); got != setupYes {
+	if got := f.Field(fldForwardAgent).Text(); got != setupYes {
 		t.Fatalf("the SSH agent field shows %q, want %q", got, setupYes)
 	}
 	// Change something else entirely.
-	retypeField(t, a, f, "Server", "jump.example:2222")
-	pressButton(t, a, f, "Save")
+	retypeField(t, a, f, fldServer, "jump.example:2222")
+	pressButton(t, a, f, btnSave)
 
 	got, ok := a.book.Lookup("jump")
 	if !ok {
@@ -1554,9 +1569,10 @@ func TestEditServerShowsTheAgentTickAsSaved(t *testing.T) {
 }
 
 // A gridterm window is not logged in to, so there is no session to
-// carry an agent over. The tick is left as it was rather than taken
-// from a field that means nothing there.
-func TestAWindowDoesNotGainTheAgentTick(t *testing.T) {
+// carry an agent over. The field is turned off rather than taken and
+// dropped: a value that is accepted and then ignored is one the user
+// believes they set.
+func TestAWindowDisablesTheFieldsThatMeanNothingToIt(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withDialogs(t, a)
 	a.refreshServers()
@@ -1571,18 +1587,29 @@ func TestAWindowDoesNotGainTheAgentTick(t *testing.T) {
 		t.Fatalf("openEditServer: %v", err)
 	}
 	f := awaitModal(t, a, "the Edit far dialog", byTitle[*ui.Form]("Edit far"))
-	retypeField(t, a, f, "SSH agent", setupYes)
-	pressButton(t, a, f, "Save")
 
-	got, ok := a.book.Lookup("far")
-	if !ok {
-		t.Fatal("the window went")
+	for _, label := range []string{"Forward SSH agent", "Jump host"} {
+		if fld := f.Field(label); fld == nil || !fld.Disabled {
+			t.Errorf("%q is not turned off on a window", label)
+		}
 	}
-	if got.ForwardAgent {
-		t.Errorf("a window took the SSH agent tick, which means nothing to one")
+	// And nothing is said about it: the field being off is what says so,
+	// and a sentence as well would be the dialog reading itself out.
+	if len(f.Lines) != 0 {
+		t.Errorf("the dialog explains the fields it turned off: %v", f.Lines)
 	}
-	if !saidAbout(f, "carry the SSH agent") {
-		t.Errorf("the field was dropped and the dialog said nothing about it: %v", f.Lines)
+
+	// Turned back into a machine, they come back.
+	retypeField(t, a, f, fldType, kindMachine)
+	for _, label := range []string{"Forward SSH agent", "Jump host"} {
+		if fld := f.Field(label); fld == nil || fld.Disabled {
+			// Jump host stays off when there is nothing to go through,
+			// which is the case here: no other server is saved.
+			if label == "Jump host" {
+				continue
+			}
+			t.Errorf("%q is still off once the type is a machine", label)
+		}
 	}
 }
 
@@ -1604,8 +1631,9 @@ func TestAWindowKeepsTheAgentTickItCameWith(t *testing.T) {
 		t.Fatalf("openEditServer: %v", err)
 	}
 	f := awaitModal(t, a, "the Edit far dialog", byTitle[*ui.Form]("Edit far"))
-	retypeField(t, a, f, "SSH agent", setupNo)
-	pressButton(t, a, f, "Save")
+	// The field is off, so there is no typing into it. Saving keeps what
+	// the window came with.
+	pressButton(t, a, f, btnSave)
 
 	got, ok := a.book.Lookup("far")
 	if !ok {
@@ -1614,16 +1642,6 @@ func TestAWindowKeepsTheAgentTickItCameWith(t *testing.T) {
 	if !got.ForwardAgent {
 		t.Errorf("the answer the window came with was dropped rather than kept")
 	}
-}
-
-// saidAbout reports whether a form says something holding some text.
-func saidAbout(f *ui.Form, want string) bool {
-	for _, line := range f.Lines {
-		if strings.Contains(line, want) {
-			return true
-		}
-	}
-	return false
 }
 
 // The field takes Yes and No and nothing else, so a typed answer that

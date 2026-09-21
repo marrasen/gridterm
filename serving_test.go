@@ -63,7 +63,7 @@ func openServeDialog(t *testing.T, a *testApp) *ui.Form {
 	t.Helper()
 	runFromPalette(t, a, "serve.window")
 	return awaitModal[*ui.Form](t, a, "the serve dialog",
-		byTitle[*ui.Form]("Serve this window"))
+		byTitle[*ui.Form](dlgServeWindow))
 }
 
 // aFreePort is a port nothing is listening on, for a test that has to
@@ -226,7 +226,7 @@ func TestPressingServeOnTheDialogAsItOpensWorks(t *testing.T) {
 	}
 	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
 
-	pressButton(t, a, f, "Serve")
+	pressButton(t, a, f, btnServe)
 
 	if !a.serving.on() {
 		t.Fatal("pressing Serve did not open a port")
@@ -428,8 +428,8 @@ func TestTheServeDialogOpensOnWhatWasLastServedWith(t *testing.T) {
 	want := aFreePort(t)
 
 	f := openServeDialog(t, a)
-	retypeField(t, a, f, "Port", want)
-	pressButton(t, a, f, "Serve")
+	retypeField(t, a, f, fldPort, want)
+	pressButton(t, a, f, btnServe)
 	pressButton(t, a, awaitModal[*ui.Form](t, a, "the serving dialog", nil), "Stop serving")
 
 	if port, saved := set.ServePort(); !saved || strconv.Itoa(port) != want {
@@ -441,7 +441,7 @@ func TestTheServeDialogOpensOnWhatWasLastServedWith(t *testing.T) {
 	}
 	again := openServeDialog(t, a)
 	fieldSays(t, again, "Port", want)
-	fieldSays(t, again, "Reachable from", whereHere)
+	fieldSays(t, again, "Listen on", whereHere)
 }
 
 // And the next window opens on it too: the settings are a file, not a
@@ -468,7 +468,7 @@ func TestAnotherWindowOpensOnTheSameSettings(t *testing.T) {
 	f := openServeDialog(t, a)
 
 	fieldSays(t, f, "Port", "2300")
-	fieldSays(t, f, "Reachable from", whereAnywhere)
+	fieldSays(t, f, "Listen on", whereAnywhere)
 }
 
 // A port of 0 means whichever one is free, and it is remembered as that
@@ -483,8 +483,8 @@ func TestNoPortAskedForIsRememberedAsNoPortAskedFor(t *testing.T) {
 	}
 
 	f := openServeDialog(t, a)
-	retypeField(t, a, f, "Port", "0")
-	pressButton(t, a, f, "Serve")
+	retypeField(t, a, f, fldPort, "0")
+	pressButton(t, a, f, btnServe)
 
 	if port, saved := set.ServePort(); !saved || port != 0 {
 		t.Errorf("the settings hold port %d, %v; want 0 saved", port, saved)
@@ -510,12 +510,12 @@ func TestASettingsFileThatWillNotTakeAWriteIsSaid(t *testing.T) {
 	}
 
 	f := openServeDialog(t, a)
-	pressButton(t, a, f, "Serve")
+	pressButton(t, a, f, btnServe)
 
 	// On top of the dialog that says what is being served, not under it:
 	// a notice nobody sees is a failure that was swallowed.
 	n := awaitModal[*ui.Notice](t, a, "the settings notice", nil)
-	if !strings.Contains(n.Title, "remember") {
+	if n.Title != "Could not save the settings" {
 		t.Errorf("the user was told %q, which does not say the settings were not kept", n.Title)
 	}
 	if !a.serving.on() {
@@ -549,8 +549,8 @@ func TestUnreadableSettingsAreSaidAndNotWrittenOver(t *testing.T) {
 
 	f := openServeDialog(t, a)
 	fieldSays(t, f, "Port", strconv.Itoa(servePort))
-	fieldSays(t, f, "Reachable from", whereHere)
-	pressButton(t, a, f, "Serve")
+	fieldSays(t, f, "Listen on", whereHere)
+	pressButton(t, a, f, btnServe)
 
 	if !a.serving.on() {
 		t.Fatal("settings that could not be read stopped the window serving")
@@ -573,9 +573,15 @@ func TestTheDialogSaysWhatPortZeroMeans(t *testing.T) {
 
 	f := openServeDialog(t, a)
 
-	text := strings.Join(f.Lines, "\n")
-	if !strings.Contains(text, "0 asks for whichever port is free") {
-		t.Errorf("the dialog does not say what a port of 0 means:\n%s", text)
+	// On the field rather than in a paragraph under the title: the form
+	// draws a field's hint while that field has the focus, which is when
+	// what port 0 means is worth knowing.
+	port := f.Field(fldPort)
+	if port == nil {
+		t.Fatal("the dialog has no Port field")
+	}
+	if !strings.Contains(port.Hint, "0") {
+		t.Errorf("the Port field says %q, which does not say what 0 means", port.Hint)
 	}
 }
 

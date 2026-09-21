@@ -59,7 +59,7 @@ func TestACopyAskedToBeKeptIsKept(t *testing.T) {
 	a, _ := aCopyWindow(t)
 	d, at, into := aFinishedCopy(t, a)
 
-	pressButton(t, a, d.Form, "Remember")
+	tickBox(t, a, d.Form, fldSaveCopy)
 
 	kept := a.copies.all()
 	if len(kept) != 1 {
@@ -74,25 +74,35 @@ func TestACopyAskedToBeKeptIsKept(t *testing.T) {
 	}
 }
 
-// The button says Forget once the copy is kept, so one button says both
-// what it will do and what is already so.
-func TestTheRememberButtonTurnsIntoForget(t *testing.T) {
+// The box says whether the copy is saved, and turning it back off drops
+// it again.
+//
+// A box rather than a button that renamed itself between Remember and
+// Forget: ticked says it is saved and unticked says it is not, which one
+// button could only say by being read twice.
+func TestTheSaveBoxSaysWhetherTheCopyIsKept(t *testing.T) {
 	a, _ := aCopyWindow(t)
 	d, _, _ := aFinishedCopy(t, a)
 
-	pressButton(t, a, d.Form, "Remember")
-
-	if !offersButton(d, "Forget") {
-		t.Fatalf("the dialog offers %v, want a Forget once the copy is kept", buttonTitles(d))
+	box := d.Field(fldSaveCopy)
+	if box == nil {
+		t.Fatal("the finished dialog has no box that saves the copy")
+	}
+	if box.On() {
+		t.Error("the box starts ticked for a copy that is not saved")
 	}
 
-	pressButton(t, a, d.Form, "Forget")
+	tickBox(t, a, d.Form, fldSaveCopy)
+	if !box.On() || len(a.copies.all()) != 1 {
+		t.Fatalf("the box is %v and the window keeps %v", box.On(), a.copies.all())
+	}
 
+	tickBox(t, a, d.Form, fldSaveCopy)
+	if box.On() {
+		t.Error("the box is still ticked for a copy that was dropped")
+	}
 	if got := a.copies.all(); len(got) != 0 {
 		t.Errorf("the window still keeps %v", got)
-	}
-	if !offersButton(d, "Remember") {
-		t.Errorf("the dialog offers %v, want a Remember once the copy is forgotten", buttonTitles(d))
 	}
 }
 
@@ -102,7 +112,7 @@ func TestAKeptCopyIsInTheSettingsFile(t *testing.T) {
 	a, path := aCopyWindow(t)
 	d, _, _ := aFinishedCopy(t, a)
 
-	pressButton(t, a, d.Form, "Remember")
+	tickBox(t, a, d.Form, fldSaveCopy)
 
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -136,7 +146,7 @@ func TestOnlyACopyCanBeKept(t *testing.T) {
 func TestRunningARememberedCopyCopiesAgain(t *testing.T) {
 	a, _ := aCopyWindow(t)
 	d, at, into := aFinishedCopy(t, a)
-	pressButton(t, a, d.Form, "Remember")
+	tickBox(t, a, d.Form, fldSaveCopy)
 	// Taken away, so the copy has to put it back.
 	landed := filepath.Join(into, "deploy.log")
 	if err := os.Remove(landed); err != nil {
@@ -208,7 +218,7 @@ func TestTheListSaysWhatACopyDoes(t *testing.T) {
 func TestTheDialogListsAndForgets(t *testing.T) {
 	a, _ := aCopyWindow(t)
 	d, _, _ := aFinishedCopy(t, a)
-	pressButton(t, a, d.Form, "Remember")
+	tickBox(t, a, d.Form, fldSaveCopy)
 
 	if err := a.openCopies(); err != nil {
 		t.Fatalf("open the list: %v", err)
@@ -250,8 +260,8 @@ func TestTheDialogWithNothingKeptSaysWhereToKeepOne(t *testing.T) {
 	}
 
 	n := awaitModal[*ui.Notice](t, a, "a word about keeping one", nil)
-	if !strings.Contains(n.Message(), "Remember") {
-		t.Errorf("it says %q, want it to name the button that keeps one", n.Message())
+	if !strings.Contains(n.Message(), "Save this copy") {
+		t.Errorf("it says %q, want it to name the box that keeps one", n.Message())
 	}
 }
 
@@ -340,13 +350,17 @@ func TestTheOrderOfTheNamesDoesNotMakeACopyTwice(t *testing.T) {
 }
 
 // A second dialog for the same copy catches up with what the first one
-// did, so one does not go on offering Remember for a copy already kept.
+// did, so one does not go on saying a copy is unsaved once it is saved.
 func TestASecondDialogCatchesUpWithWhatWasKept(t *testing.T) {
 	a, _ := aCopyWindow(t)
 	d, _, _ := aFinishedCopy(t, a)
 	saved, can := asSavedCopy(d.job.Op(), d.from, d.to)
 	if !can {
 		t.Fatal("the copy cannot be kept")
+	}
+	box := d.Field(fldSaveCopy)
+	if box == nil {
+		t.Fatal("the finished dialog has no box that saves the copy")
 	}
 
 	// Kept behind the dialog's back, the way another dialog for the same
@@ -356,7 +370,17 @@ func TestASecondDialogCatchesUpWithWhatWasKept(t *testing.T) {
 	}
 	d.refresh(time.Now())
 
-	if !offersButton(d, "Forget") {
-		t.Errorf("the dialog offers %v, want a Forget once the copy is kept", buttonTitles(d))
+	if !box.On() {
+		t.Error("the box still says the copy is not saved")
+	}
+
+	// And dropped again, the same way.
+	if err := a.copies.forget(saved); err != nil {
+		t.Fatalf("forget it: %v", err)
+	}
+	d.refresh(time.Now())
+
+	if box.On() {
+		t.Error("the box still says the copy is saved")
 	}
 }

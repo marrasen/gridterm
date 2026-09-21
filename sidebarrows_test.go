@@ -717,7 +717,7 @@ func TestAClearThatFailsSaysWhatWasPressed(t *testing.T) {
 		t.Fatalf("the finished row offers %q, want the ×", drawn.Button)
 	}
 	clickClear(t, a, e)
-	awaitModal(t, a, "a notice about the clear", byTitle[*ui.Notice]("Could not clear that row"))
+	awaitModal(t, a, "a notice about the clear", byTitle[*ui.Notice]("Could not clear the row"))
 }
 
 // jobFill is the share of a job that has gone: in bytes where they are

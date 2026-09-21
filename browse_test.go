@@ -225,7 +225,7 @@ func TestCopyingAsksBeforeReplacing(t *testing.T) {
 	if !strings.Contains(strings.Join(f.Lines, " "), "file") {
 		t.Errorf("the question says %q, want what is there", f.Lines)
 	}
-	pressButton(t, a, f, "Skip")
+	pressButton(t, a, f, btnSkip)
 
 	waitFor(t, a, "the copy to finish", func() bool {
 		a.refreshJobs()
@@ -299,7 +299,7 @@ func TestDeletingAsksFirst(t *testing.T) {
 	if len(a.jobs) != 0 {
 		t.Fatal("it started deleting before the question was answered")
 	}
-	pressButton(t, a, f, "Keep them")
+	pressButton(t, a, f, btnCancel)
 	a.pump.run()
 	if len(a.jobs) != 0 {
 		t.Fatalf("%d jobs after saying no", len(a.jobs))
@@ -392,10 +392,10 @@ func TestMakingADirectory(t *testing.T) {
 
 	b, left, _ := onlyBrowser(t, a)
 	tap(t, b.view, input.KeyF9)
-	f := awaitModal(t, a, "a dialog whose title starts with New directory", byTitlePrefix[*ui.Form]("New directory"))
+	f := awaitModal(t, a, "a dialog whose title starts with New Directory", byTitlePrefix[*ui.Form]("New Directory"))
 
-	typeIntoField(t, a, f, "Name", "in/out")
-	pressButton(t, a, f, "Make it")
+	typeIntoField(t, a, f, fldName, "in/out")
+	pressButton(t, a, f, btnCreate)
 	if a.root.Modal() != f {
 		t.Fatal("the dialog closed on a name that is a path")
 	}
@@ -403,8 +403,8 @@ func TestMakingADirectory(t *testing.T) {
 		t.Fatal("nothing said why it was refused")
 	}
 
-	retypeField(t, a, f, "Name", "made")
-	pressButton(t, a, f, "Make it")
+	retypeField(t, a, f, fldName, "made")
+	pressButton(t, a, f, btnCreate)
 	waitFor(t, a, "the directory to be made", func() bool {
 		_, err := os.Stat(filepath.Join(left, "made"))
 		return err == nil
@@ -622,8 +622,8 @@ func TestGoToSendsAFilePaneAnywhere(t *testing.T) {
 	// Retyped rather than typed: the dialog opens with the directory the
 	// pane is on already in the field, and whether that read has landed
 	// yet is a race.
-	retypeField(t, a, f, "Path", where)
-	pressButton(t, a, f, "Go")
+	retypeField(t, a, f, fldPath, where)
+	pressButton(t, a, f, btnGo)
 	a.pump.run()
 
 	waitFor(t, a, "the pane to go there", func() bool { return p.At() == where })
@@ -634,8 +634,8 @@ func TestGoToSendsAFilePaneAnywhere(t *testing.T) {
 		t.Fatalf("go to again: %v", err)
 	}
 	f = awaitModal[*ui.Form](t, a, "a dialog", nil)
-	if len(f.Field("Path").Options) < 2 {
-		t.Errorf("it offers %v, want where it is now and the roots", f.Field("Path").Options)
+	if len(f.Field(fldPath).Options) < 2 {
+		t.Errorf("it offers %v, want where it is now and the roots", f.Field(fldPath).Options)
 	}
 }
 
@@ -658,10 +658,10 @@ func TestGoToStaysOpenWhenThePathIsNotThere(t *testing.T) {
 	if err := a.openGoTo(); err != nil {
 		t.Fatalf("go to: %v", err)
 	}
-	f := awaitModal(t, a, "the go-to dialog", byTitle[*ui.Form]("Go to"))
+	f := awaitModal(t, a, "the go-to dialog", byTitle[*ui.Form](dlgGoTo))
 	nowhere := filepath.Join(t.TempDir(), "nowhere-at-all")
-	retypeField(t, a, f, "Path", nowhere)
-	pressButton(t, a, f, "Go")
+	retypeField(t, a, f, fldPath, nowhere)
+	pressButton(t, a, f, btnGo)
 
 	waitFor(t, a, "the dialog to say why", func() bool { return f.ErrorText() != "" })
 	// The same dialog, and the only one: a second dialog on top is what
@@ -673,7 +673,7 @@ func TestGoToStaysOpenWhenThePathIsNotThere(t *testing.T) {
 		t.Errorf("%d dialogs are open, want only the go-to dialog", n)
 	}
 	// With what was typed still in it.
-	if got := f.Field("Path").Text(); got != nowhere {
+	if got := f.Field(fldPath).Text(); got != nowhere {
 		t.Errorf("the field holds %q, want what was typed", got)
 	}
 	if p.At() != was {
@@ -681,8 +681,8 @@ func TestGoToStaysOpenWhenThePathIsNotThere(t *testing.T) {
 	}
 
 	// And a path that is there closes it.
-	retypeField(t, a, f, "Path", was)
-	pressButton(t, a, f, "Go")
+	retypeField(t, a, f, fldPath, was)
+	pressButton(t, a, f, btnGo)
 	waitFor(t, a, "the dialog to go", func() bool { return a.root.Modal() == nil })
 }
 
@@ -706,16 +706,16 @@ func TestGoToCancelledWhileTheReadIsOutStillSaysWhy(t *testing.T) {
 	if err := a.openGoTo(); err != nil {
 		t.Fatalf("go to: %v", err)
 	}
-	f := awaitModal(t, a, "the go-to dialog", byTitle[*ui.Form]("Go to"))
-	retypeField(t, a, f, "Path", filepath.Join(t.TempDir(), "nowhere-at-all"))
-	pressButton(t, a, f, "Go")
-	pressButton(t, a, f, "Cancel")
+	f := awaitModal(t, a, "the go-to dialog", byTitle[*ui.Form](dlgGoTo))
+	retypeField(t, a, f, fldPath, filepath.Join(t.TempDir(), "nowhere-at-all"))
+	pressButton(t, a, f, btnGo)
+	pressButton(t, a, f, btnCancel)
 
 	want := errors.New("the machine went away")
 	held(nil, want)
 
 	n := awaitModal[*ui.Notice](t, a, "a notice", nil)
-	if n.Title != "Could not read a directory" {
+	if n.Title != "Could not read the directory" {
 		t.Errorf("the dialog is titled %q", n.Title)
 	}
 	if !strings.Contains(n.Message(), want.Error()) {
@@ -805,7 +805,7 @@ func TestAFilePaneWithTheKeysShowsWhyAReadFailed(t *testing.T) {
 	// The user asked for that directory, so the reason arrives without
 	// their having to ask for it again.
 	n := awaitModal[*ui.Notice](t, a, "a notice", nil)
-	if n.Title != "Could not read a directory" {
+	if n.Title != "Could not read the directory" {
 		t.Errorf("the dialog is titled %q", n.Title)
 	}
 	if !strings.HasPrefix(n.Message(), bad+"\n") {
@@ -1050,7 +1050,7 @@ func TestFilesOnASavedMachineConnectsFirst(t *testing.T) {
 
 	// The account of the connection is where every other one is.
 	chooseMenuItem(t, clickPlus(t, a, "margit"), "conn.log")
-	n := awaitModal(t, a, "the account", byTitle[*ui.Notice]("How margit was reached"))
+	n := awaitModal(t, a, "the account", byTitle[*ui.Notice]("Connection Log — margit"))
 	if !strings.Contains(n.Message(), "connected to margit") {
 		t.Errorf("the account is %q", n.Message())
 	}
@@ -1095,7 +1095,7 @@ func TestFilesWaitsForAMachineOnItsWay(t *testing.T) {
 
 	f := awaitModal(t, a, "the question about the one on its way",
 		byTitlePrefix[*ui.Form]("Already connecting to"))
-	pressButton(t, a, f, "Wait for it")
+	pressButton(t, a, f, btnWait)
 
 	waitFor(t, a, "a file pane on margit", func() bool { return filePaneOn(a, "margit") != nil })
 	if n := s.Conns(); n != 1 {
@@ -1234,7 +1234,7 @@ func TestFilesOnAMachineThatRefusesThemKeepsTheConnection(t *testing.T) {
 	}
 	// And the whole account is where every other one is.
 	chooseMenuItem(t, clickPlus(t, a, "margit"), "conn.log")
-	n := awaitModal(t, a, "the account", byTitle[*ui.Notice]("How margit was reached"))
+	n := awaitModal(t, a, "the account", byTitle[*ui.Notice]("Connection Log — margit"))
 	if !strings.Contains(n.Message(), "connected to margit") {
 		t.Errorf("the account is %q", n.Message())
 	}
@@ -1254,7 +1254,7 @@ func TestATerminalWaitsForAConnectionAskedForByFiles(t *testing.T) {
 
 	f := awaitModal(t, a, "the question about the one on its way",
 		byTitlePrefix[*ui.Form]("Already connecting to"))
-	pressButton(t, a, f, "Wait for it")
+	pressButton(t, a, f, btnWait)
 
 	waitFor(t, a, "a shell on margit", func() bool {
 		m := a.machines.named("margit")
@@ -1876,7 +1876,7 @@ func TestDeletingOnAMachineOverThereNamesThatMachine(t *testing.T) {
 	if !strings.Contains(said, "margit") {
 		t.Errorf("it asks %q, want the machine the files are on", said)
 	}
-	pressButton(t, client, f, "Keep them")
+	pressButton(t, client, f, btnCancel)
 }
 
 // A window renamed while a pane on one of its machines is open leaves
@@ -1957,26 +1957,30 @@ func TestFilesOnAMachineTheWindowHasLetGoOfSaysSo(t *testing.T) {
 	}
 }
 
-// The go-to dialog on a pane over there names the machine the pane reads,
-// through the window it reads it through.
+// The go-to dialog on a pane over there opens on that pane's own
+// directory.
 //
-// The hint is the pane's own name, which is the name every question about
-// the pane is written with. One saying the window would be asking for a
-// directory on the wrong machine.
-func TestTheGoToHintOnAMachineOverThereNamesThatMachine(t *testing.T) {
+// The value is the pane's own, which is what every question about the
+// pane is written with. One filled in from the window would be asking
+// about the wrong machine.
+func TestTheGoToDialogOnAMachineOverThereOpensOnThatPane(t *testing.T) {
 	host, client, addr := aWindowConnectedToMargit(t)
-	held := windowAt(t, client, addr)
 
 	pane := openFilesFromTheFarPlus(t, client, host, addr, "margit")
 	client.focus(pane)
 
 	// The chord, so the command is reached the way the user reaches it.
 	sendKey(t, client, press(input.KeyG, input.ModCtrl|input.ModShift))
-	f := awaitModal(t, client, "the go-to dialog", byTitle[*ui.Form]("Go to"))
+	f := awaitModal(t, client, "the go-to dialog", byTitle[*ui.Form](dlgGoTo))
 
-	want := "a directory on margit through " + held.name
-	if got := f.Field("Path").Placeholder; got != want {
-		t.Errorf("the dialog asks for %q, want %q", got, want)
+	// No placeholder any more: the field opens filled in with where the
+	// pane is, which is a real path on that machine rather than a
+	// sentence describing one.
+	if got := f.Field(fldPath).Placeholder; got != "" {
+		t.Errorf("the field has a placeholder %q as well as a value", got)
 	}
-	pressButton(t, client, f, "Cancel")
+	if got := f.Field(fldPath).Text(); got != pane.At() {
+		t.Errorf("the dialog opens on %q, want the pane's own directory %q", got, pane.At())
+	}
+	pressButton(t, client, f, btnCancel)
 }

@@ -1307,7 +1307,7 @@ func TestThePinnedRowGoesThroughTheCommands(t *testing.T) {
 		t.Fatal("server.connect is not a command")
 	}
 	a.root.Commands.MustRegister(a.reporting(ui.Command{
-		ID: "server.connect", Title: "Connect to a server",
+		ID: "server.connect", Title: "Connect to Server",
 		Run: func() error { ran++; return errors.New("nothing to connect to") },
 	}))
 

@@ -40,12 +40,12 @@ func TestTheBottomRowSaysWhatTheMenuLineDoes(t *testing.T) {
 	a.root.Draw(a.g.View())
 	a.drawHint()
 
-	// The menu says "Right" under a "Split" header; the row says the
+	// The menu says "Right…" under a "Split" header; the row says the
 	// whole of it.
-	if got := barMenuLine(t, a, "pane.splitRight"); got != "Right" {
+	if got := barMenuLine(t, a, "pane.splitRight"); got != "Right…" {
 		t.Errorf("the menu line reads %q", got)
 	}
-	if got := bottomRow(t, a); !strings.Contains(got, "Split right") {
+	if got := bottomRow(t, a); !strings.Contains(got, "Split Right") {
 		t.Errorf("the bottom row reads %q, want what the line does", got)
 	}
 }

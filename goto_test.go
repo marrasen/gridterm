@@ -96,9 +96,9 @@ func TestGoToOffersTheRestOfADirectory(t *testing.T) {
 	if err := a.openGoTo(); err != nil {
 		t.Fatalf("go to: %v", err)
 	}
-	f := awaitModal(t, a, "the Go to dialog", byTitle[*ui.Form]("Go to"))
-	where := f.Field("Path")
-	retypeField(t, a, f, "Path", filepath.Join(dir, "works"))
+	f := awaitModal(t, a, "the Go to dialog", byTitle[*ui.Form](dlgGoTo))
+	where := f.Field(fldPath)
+	retypeField(t, a, f, fldPath, filepath.Join(dir, "works"))
 
 	waitFor(t, a, "the rest of the name to be offered", func() bool {
 		return where.Ghost != ""
@@ -127,7 +127,7 @@ func TestAnAnswerForTextThatHasMovedOnIsDropped(t *testing.T) {
 	p := aFilePaneAt(t, a, dir)
 	a.focus(p)
 
-	f := a.newForm("Go to")
+	f := a.newForm("Go to Directory")
 	where := f.AddField("Path", a.newField("", 0))
 	a.completePath(where, held)
 
@@ -190,7 +190,7 @@ func TestTypingOnInOneDirectoryReadsItOnce(t *testing.T) {
 	}
 	counted := &heldReads{let: closed(), FS: vfs.NewLocal()}
 
-	f := a.newForm("Go to")
+	f := a.newForm("Go to Directory")
 	where := f.AddField("Path", a.newField("", 0))
 	a.completePath(where, counted)
 

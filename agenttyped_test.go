@@ -23,7 +23,7 @@ func anAgentTyping(t *testing.T, a *testApp) (*term.Terminal, string, *agent.Cli
 		return err
 	})
 	f := awaitModal[*ui.Form](t, a, "the hand-over dialog", byTitle[*ui.Form](paneBoxesTitle))
-	pressButton(t, a, f, "Done")
+	pressButton(t, a, f, btnClose)
 	return pane, got.ID, c
 }
 
@@ -174,7 +174,7 @@ func TestTheDialogSaysWhatWasSent(t *testing.T) {
 	for _, want := range []string{
 		`grep -r "a b"\t.\r`,
 		"<Ctrl+C>",
-		"not what the shell ran",
+		"Input as the agent sent it",
 		// The time it was sent, which is what makes the record an
 		// account rather than a list.
 		when + "  ",
@@ -309,17 +309,18 @@ func TestAMenuOffersTheRecord(t *testing.T) {
 	a.commands()
 	a.refreshServers()
 
-	// It fails the test when the line is not there. The line says the
-	// short half under its header; the whole of it is the command's
-	// own title, which the palette and the hint use.
-	if got := barMenuLine(t, a, typedCommand); got == "" {
-		t.Error("the line has no title of its own")
+	// It fails the test when the line is not there. This row carries no
+	// title of its own: it is not under a header that says any part of
+	// the command's name, so the row is the command's whole title.
+	if got := barMenuLine(t, a, typedCommand); got != "" {
+		t.Errorf("the line overrides the command's title with %q", got)
 	}
 	cmd, ok := a.root.Commands.Lookup(typedCommand)
 	if !ok {
 		t.Fatal("the command the line runs is not registered")
 	}
-	if cmd.Title != typedTitle+"…" {
+	// No ellipsis: the command shows the record and asks nothing.
+	if cmd.Title != typedTitle {
 		t.Errorf("the line reads %q", cmd.Title)
 	}
 }

@@ -86,7 +86,7 @@ func TestAskPassphraseReturnsWhatWasTyped(t *testing.T) {
 
 	got := make(chan string, 1)
 	go func() {
-		s, err := ask.Passphrase(a.ctx, "/home/marcus/.ssh/id_ed25519")
+		s, err := ask.Passphrase(a.ctx, remote.LockedKey{Path: "/home/marcus/.ssh/id_ed25519"})
 		if err != nil {
 			t.Errorf("Passphrase: %v", err)
 		}
@@ -104,6 +104,63 @@ func TestAskPassphraseReturnsWhatWasTyped(t *testing.T) {
 	}
 }
 
+// Asking again says the last passphrase did not work.
+//
+// The dialog is where the user finds out. Without it the same question
+// comes back with no word of why, which reads as a dialog that did not
+// take the answer rather than one that took it and was refused.
+func TestAskPassphraseAgainSaysTheLastOneWasWrong(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	ask := withDialogs(t, a)
+
+	go func() {
+		_, _ = ask.Passphrase(a.ctx, remote.LockedKey{
+			Path: "/home/marcus/.ssh/id_ed25519", Wrong: 1, Left: 1,
+		})
+	}()
+	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
+
+	if got := f.ErrorText(); !strings.Contains(got, "did not unlock") {
+		t.Fatalf("the dialog says %q, want it to say the passphrase did not unlock the key", got)
+	}
+	// How many tries are left, because the dialog is the only place that
+	// number could come from.
+	if got := f.ErrorText(); !strings.Contains(got, "One more try") {
+		t.Errorf("the dialog says %q, want it to say how many tries are left", got)
+	}
+}
+
+// The first asking says nothing went wrong, because nothing has.
+func TestAskPassphraseFirstTimeSaysNothingWentWrong(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	ask := withDialogs(t, a)
+
+	go func() {
+		_, _ = ask.Passphrase(a.ctx, remote.LockedKey{Path: "/key", Left: 2})
+	}()
+	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
+
+	if got := f.ErrorText(); got != "" {
+		t.Fatalf("the dialog says %q before anything was typed", got)
+	}
+}
+
+// The last try says so, so a user with one left knows to look the
+// passphrase up rather than spend it on another guess.
+func TestAskPassphraseSaysWhenItIsTheLastTry(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	ask := withDialogs(t, a)
+
+	go func() {
+		_, _ = ask.Passphrase(a.ctx, remote.LockedKey{Path: "/key", Wrong: 2, Left: 0})
+	}()
+	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
+
+	if got := f.ErrorText(); !strings.Contains(got, "last try") {
+		t.Fatalf("the dialog says %q, want it to say this is the last try", got)
+	}
+}
+
 // A passphrase must not be readable over the user's shoulder.
 func TestAskPassphraseIsMasked(t *testing.T) {
 	a := newTestApp(t, 80, 24)
@@ -111,7 +168,7 @@ func TestAskPassphraseIsMasked(t *testing.T) {
 
 	// Nobody answers this one: the test is about how the field draws, and
 	// the dialog goes when the test's own context is cancelled.
-	go func() { _, _ = ask.Passphrase(a.ctx, "/home/marcus/.ssh/id_ed25519") }()
+	go func() { _, _ = ask.Passphrase(a.ctx, remote.LockedKey{Path: "/home/marcus/.ssh/id_ed25519"}) }()
 	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
 	typeIntoField(t, a, f, "Passphrase", "hunter2")
 
@@ -132,7 +189,7 @@ func TestAskDismissedDialogIsARefusal(t *testing.T) {
 
 	got := make(chan error, 1)
 	go func() {
-		_, err := ask.Passphrase(a.ctx, "/key")
+		_, err := ask.Passphrase(a.ctx, remote.LockedKey{Path: "/key"})
 		got <- err
 	}()
 
@@ -158,7 +215,7 @@ func TestAskCancelledContextClosesTheDialog(t *testing.T) {
 
 	got := make(chan error, 1)
 	go func() {
-		_, err := ask.Passphrase(a.ctx, "/key")
+		_, err := ask.Passphrase(a.ctx, remote.LockedKey{Path: "/key"})
 		got <- err
 	}()
 

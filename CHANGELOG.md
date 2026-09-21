@@ -9,21 +9,17 @@ change how something behaves.
 
 ## Unreleased
 
-### Changed
+### Fixed
 
-- **Every build is pure Go.** gridterm moved from a fork of ebitengine
-  v2.7.5 to one of v2.10.2, which rewrote ebitengine's GLFW layer from C
-  into Go. Building for Linux needed a C toolchain and the X11
-  development headers; it needs neither now, `CGO_ENABLED=0` is the
-  whole build, and a Linux release cross-compiles from Windows and the
-  other way round. arm64 builds for both platforms, though nobody has
-  run one.
-- The Linux binary asks for no versioned glibc symbol at all, where the
-  cgo build wanted GLIBC_2.34. It runs on far older distributions.
-- The whole test suite runs with no display. Four tests used to need one.
-- The fork itself went from 3,189 lines across 61 files to 404 across
-  six, all additive. See **The ebiten fork** in
-  [BUILDING.md](BUILDING.md).
+**A wrong passphrase is asked about again, and said out loud.** Typing
+the wrong passphrase for a private key used to be silent: the dialog
+closed, the key was never offered, the connection went on to whatever
+else it could try, and every line in the account stayed green. A
+passphrase that does not open the key is now asked for again -- three
+tries, the way ssh does it -- and the dialog says the last one did not
+work and how many tries are left. When the tries run out the account
+says so in red, and the key is named in what the connection failed with,
+even when the connection was made some other way in the end.
 
 ## v0.1.0
 
@@ -112,7 +108,28 @@ when you turn it on for that machine.
 X11. On a Wayland desktop it runs through XWayland. See
 [LINUX.md](LINUX.md).
 
+**Nothing to install to build it.** Every build is pure Go:
+`CGO_ENABLED=0`, no C toolchain, no development headers, and each
+platform cross-compiles from the other. The Linux binary asks for no
+versioned glibc symbol at all, so it runs on far older distributions
+than a cgo build would. arm64 builds for both platforms, though nobody
+has run one. gridterm carries a fork of ebitengine for the key-event
+pipeline; it is 404 lines on top of upstream v2.10.2, and **The ebiten
+fork** in [BUILDING.md](BUILDING.md) says why.
+
+**WSL panes are given paths their distribution can open.** A file
+dropped on one, and a picture pasted into one, are named the way that
+distribution names them -- `/mnt/c/...` rather than a Windows path the
+program in the pane cannot open.
+
 ### Known gaps
 
 No release for macOS. [GAPS.md](GAPS.md) says what else is not there
 yet.
+
+The cursor in a pane on another machine is held on for a fifth of a
+second after a program hides it, so that the hide and show a repaint
+makes never reaches the screen. It fixed a flicker that neither of the
+two people who looked at it could reproduce directly, and it rests on
+tests of the mechanism rather than on having watched the symptom go. If
+a cursor lingers where it should not, that is the thing to suspect.

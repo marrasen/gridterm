@@ -72,6 +72,25 @@ drawing pure black, because a `SubImage` of the render target silently
 draws nothing when used as a source on the Direct3D backend. Nothing
 errored. It simply looked wrong, and nothing was looking.
 
+**`-shot` cannot test the input pipeline.** Its `key:` and `type:` steps
+build `input.Event` values and hand them to `a.root.HandleKey`, which is
+below GLFW and below `ebitenin` -- so a script that types into a window
+is exercising the widget tree, not the path a keystroke really takes.
+That path is the one gridterm carries a fork of ebitengine for, so it is
+the last part anybody should assume is covered.
+
+Drive real keys instead. `xdotool` on X11 sends them through XTEST, and
+`SendInput` does the same on Windows; both arrive at GLFW as ordinary
+key events:
+
+```
+xdotool search --name gridterm | head -1 | xargs -I{} xdotool windowactivate --sync {}
+xdotool type 'sleep 60'; xdotool key Return; xdotool key ctrl+c
+```
+
+The check worth making is that ctrl+C interrupts rather than typing the
+letter c. That one keystroke is the whole reason the fork exists.
+
 ### The icon
 
 The drawing is the source: `appicon` gives the icon in fractions of its

@@ -180,6 +180,10 @@ func (a *app) openRoute(name string, route []step, open opening, at *spot) {
 		// says where it stopped, which is the whole of what anybody has
 		// to go on.
 		missing[i].cfg.Saying = log.Say
+		// And the steps that went wrong, stamped in red. An account
+		// where every row reads the same says a connection went well
+		// when it did not.
+		missing[i].cfg.Wrong = log.sayBadly
 	}
 	go func() {
 		var handed []*remote.Conn

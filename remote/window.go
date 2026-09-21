@@ -34,6 +34,11 @@ type Reach struct {
 	// whatever draws. A nil one is not called.
 	Saying func(what string)
 
+	// Wrong is told the steps that did not go well, which a window draws
+	// differently from the ones that did. A nil one sends them to
+	// Saying instead.
+	Wrong func(what string)
+
 	// Patience is how long the other end has to get through the
 	// handshake. Zero asks the serve package for its own.
 	Patience time.Duration
@@ -137,6 +142,13 @@ func (r Reach) reach(ctx context.Context) (win *serve.Window, err error) {
 		if why := ask.reason(); why != nil {
 			return nil, why
 		}
+		// A key that could not be offered, joined onto what the other
+		// end said. Taking a window over offers keys and nothing else,
+		// so a passphrase that did not unlock one is most of the reason
+		// there was nothing left to try.
+		if why := a.keyTrouble(); why != nil {
+			return nil, errors.Join(why, err)
+		}
 		return nil, err
 	}
 	r.say(stepConnected)
@@ -149,7 +161,8 @@ func (r Reach) reach(ctx context.Context) (win *serve.Window, err error) {
 // A key file named is the only key offered, and the SSH agent is left
 // shut: naming one is the user saying which key this address may see.
 func (r Reach) ladder(ctx context.Context) (*auth, error) {
-	cfg := Config{Ring: r.Ring, Ask: r.Ask, Saying: r.Saying, KeysOnly: true, agent: r.Agent}
+	cfg := Config{Ring: r.Ring, Ask: r.Ask, Saying: r.Saying, Wrong: r.Wrong,
+		KeysOnly: true, agent: r.Agent}
 	if r.KeyFile != "" {
 		cfg.Identities = []string{r.KeyFile}
 		cfg.NoAgent, cfg.NoRing = true, true

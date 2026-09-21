@@ -39,9 +39,9 @@ type testAsk struct {
 
 func newTestAsk() *testAsk { return &testAsk{password: sshtest.Password, trust: true} }
 
-func (a *testAsk) Passphrase(ctx context.Context, keyfile string) (string, error) {
+func (a *testAsk) Passphrase(ctx context.Context, key LockedKey) (string, error) {
 	a.mu.Lock()
-	a.keyfiles = append(a.keyfiles, keyfile)
+	a.keyfiles = append(a.keyfiles, key.Path)
 	held, err := a.held, a.passphraseErr
 	pass := a.passphrase
 	a.mu.Unlock()

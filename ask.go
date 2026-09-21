@@ -40,14 +40,41 @@ type askUser struct {
 }
 
 // Passphrase asks for the passphrase of a private key file.
-func (u *askUser) Passphrase(ctx context.Context, keyfile string) (string, error) {
+//
+// A passphrase that did not unlock the key comes back here rather than
+// being let through, and the dialog says so. Without that the user typed
+// a passphrase, watched the dialog go, and was left to work out from a
+// connection that failed some other way -- or did not fail at all --
+// that the key had never been offered.
+func (u *askUser) Passphrase(ctx context.Context, key remote.LockedKey) (string, error) {
 	return u.secret(ctx, secret{
-		title:  "Unlock a private key",
-		lines:  []string{keyfile},
-		labels: []string{"Passphrase"},
-		masked: []bool{true},
-		accept: "Unlock",
+		title:   "Unlock a private key",
+		lines:   []string{key.Path},
+		labels:  []string{"Passphrase"},
+		masked:  []bool{true},
+		accept:  "Unlock",
+		trouble: wrongPassphrase(key),
 	})
+}
+
+// wrongPassphrase is what the dialog says about the answer before it,
+// and nil the first time a key is asked about.
+//
+// How many tries are left is said because the number is small and the
+// dialog is the only place it could come from: a user on their last try
+// is one who would rather look the passphrase up than spend it.
+func wrongPassphrase(key remote.LockedKey) error {
+	if key.Wrong == 0 {
+		return nil
+	}
+	switch key.Left {
+	case 0:
+		return errors.New("that passphrase did not unlock it. This is the last try")
+	case 1:
+		return errors.New("that passphrase did not unlock it. One more try after this one")
+	default:
+		return fmt.Errorf("that passphrase did not unlock it. %d more tries after this one", key.Left)
+	}
 }
 
 // Password asks for the account password.
@@ -145,6 +172,11 @@ type secret struct {
 	labels []string
 	masked []bool
 	accept string
+
+	// trouble is what went wrong with the answer before, shown the way a
+	// dialog shows a failed attempt. Nil when this is the first time of
+	// asking.
+	trouble error
 }
 
 // secret shows a form asking for secrets and returns what was typed.
@@ -184,6 +216,11 @@ func (u *askUser) form(s secret) func(reply func([]string, error)) ui.Widget {
 			reply(nil, errDismissed)
 			return nil
 		}})
+		// After the buttons, because setting it lays the form out again
+		// and a box whose buttons are not on it yet is not the shape it
+		// will be. A press clears it: the next attempt is not the one
+		// that failed.
+		f.SetError(s.trouble)
 		return f
 	}
 }

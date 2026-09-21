@@ -55,6 +55,21 @@ type auth struct {
 	// one is not called.
 	saying func(string)
 
+	// wrong is told the steps that did not go well, which a window shows
+	// differently from the ones that did. A nil one falls back to
+	// saying: the line is worth more than the colour it is drawn in.
+	wrong func(string)
+
+	// keyErr is the first key that could not be offered -- a passphrase
+	// that did not unlock it, most often.
+	//
+	// Kept because x/crypto keeps only the last thing that did not work.
+	// A wrong passphrase followed by a server refusing everything else
+	// is reported as "no supported methods remain", which says nothing
+	// about the passphrase, and a wrong passphrase followed by a
+	// password that works is reported as nothing at all.
+	keyErr error
+
 	// ring is where an agent that did not answer is remembered, so the
 	// next connection does not wait to find out again.
 	ring *Ring
@@ -117,7 +132,7 @@ func (a *auth) next(ctx *ssh.ClientAuthContext) (ssh.AuthMethod, error) {
 		saySo(a.saying, "trying "+r.what)
 		return r.build(), nil
 	}
-	saySo(a.saying, "there is nothing left to sign in with")
+	sayWrong(a.wrong, a.saying, "there is nothing left to sign in with")
 	return nil, nil
 }
 
@@ -129,6 +144,29 @@ func (a *auth) agentTrouble() error {
 		return nil
 	}
 	return a.noAgent
+}
+
+// keyFailed records a key that could not be offered and says so out
+// loud, because nothing downstream will: x/crypto treats it as one more
+// thing that did not work and moves on to the next.
+func (a *auth) keyFailed(err error) {
+	a.mu.Lock()
+	if a.keyErr == nil {
+		a.keyErr = err
+	}
+	a.mu.Unlock()
+	sayWrong(a.wrong, a.saying, err.Error())
+}
+
+// keyTrouble returns the first key that could not be offered, or nil
+// when every key that was tried was at least offered.
+func (a *auth) keyTrouble() error {
+	if a == nil {
+		return nil
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.keyErr
 }
 
 // close lets go of the agent socket, for a connection that never
@@ -230,7 +268,7 @@ func (a *auth) holdTheAgentTo(patience time.Duration, waitingFor, hint string, b
 		a.mu.Unlock()
 
 		why := fmt.Errorf("the SSH agent had %v %s and did not", patience, waitingFor)
-		saySo(a.saying, why.Error()+", so this is letting go of it."+hint)
+		sayWrong(a.wrong, a.saying, why.Error()+", so this is letting go of it."+hint)
 		if blame {
 			// Remembered, so the next connection is not held up finding
 			// out the same thing again.
@@ -299,7 +337,7 @@ func (a *auth) noAgentToCarry(cfg Config) error {
 // at a time, so a machine with three keys does not ask three times for a
 // connection the first one would have made.
 func authMethods(ctx context.Context, cfg Config) (*auth, error) {
-	a := &auth{saying: cfg.Saying, ring: cfg.Ring}
+	a := &auth{saying: cfg.Saying, wrong: cfg.Wrong, ring: cfg.Ring}
 
 	var agentSigners func() ([]ssh.Signer, error)
 	switch why := cfg.Ring.AgentTrouble(); {
@@ -377,7 +415,7 @@ func authMethods(ctx context.Context, cfg Config) (*auth, error) {
 						// the last attempt's error, so this one would be
 						// lost behind whatever the server says at the
 						// end.
-						saySo(cfg.Saying, "the SSH agent: "+err.Error())
+						sayWrong(cfg.Wrong, cfg.Saying, "the SSH agent: "+err.Error())
 						if !a.weLetGoOfTheAgent() {
 							// Only when the agent is what went wrong.
 							// The read also fails when this end closes
@@ -410,7 +448,21 @@ func authMethods(ctx context.Context, cfg Config) (*auth, error) {
 			return ssh.PublicKeysCallback(func() ([]ssh.Signer, error) {
 				signer, err := cfg.Ring.Unlock(ctx, path, cfg.Ask)
 				if err != nil {
-					return nil, fmt.Errorf("remote: private key %s: %w", path, err)
+					err = fmt.Errorf("remote: private key %s: %w", path, err)
+					// Said and kept here. Returning it only would lose
+					// it: x/crypto counts a key that could not be
+					// offered as one more thing that did not work, and
+					// carries on to the next way of signing in without
+					// a word about it.
+					//
+					// Unless the connection was given up on, which is
+					// what a dismissed dialog does. That is the user's
+					// own decision, and the account of it is "given up
+					// on" rather than a key that went wrong.
+					if ctx.Err() == nil {
+						a.keyFailed(err)
+					}
+					return nil, err
 				}
 				return []ssh.Signer{signer}, nil
 			})

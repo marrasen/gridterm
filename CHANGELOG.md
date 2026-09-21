@@ -9,7 +9,17 @@ change how something behaves.
 
 ## Unreleased
 
-Nothing yet.
+### Fixed
+
+**A wrong passphrase is asked about again, and said out loud.** Typing
+the wrong passphrase for a private key used to be silent: the dialog
+closed, the key was never offered, the connection went on to whatever
+else it could try, and every line in the account stayed green. A
+passphrase that does not open the key is now asked for again -- three
+tries, the way ssh does it -- and the dialog says the last one did not
+work and how many tries are left. When the tries run out the account
+says so in red, and the key is named in what the connection failed with,
+even when the connection was made some other way in the end.
 
 ## v0.1.0
 

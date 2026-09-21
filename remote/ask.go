@@ -17,8 +17,11 @@ import (
 // caller is told. That is what cancelling a dialog means: the user said
 // no, so nothing else is tried and no second question is asked.
 type Ask interface {
-	// Passphrase unlocks a private key file.
-	Passphrase(ctx context.Context, keyfile string) (string, error)
+	// Passphrase unlocks a private key file. A passphrase that does not
+	// open the key is asked for again, up to PassphraseTries times, so a
+	// typo is a second try rather than a connection that quietly signs
+	// in some other way -- or does not sign in at all.
+	Passphrase(ctx context.Context, key LockedKey) (string, error)
 
 	// Password is the account password, asked only after key
 	// authentication has been tried.
@@ -46,6 +49,24 @@ type Ask interface {
 	// when the connection has been made, has failed, or was given up
 	// on.
 	Notice(ctx context.Context, n Notice)
+}
+
+// LockedKey is a private key file that will not open without a
+// passphrase.
+type LockedKey struct {
+	// Path is the key file being unlocked.
+	Path string
+
+	// Wrong counts the passphrases already refused for this file, and is
+	// zero the first time it is asked. Anything above zero means the
+	// last answer did not open the key, which the dialog has to say: a
+	// question asked twice with no word of why reads as a question that
+	// was not heard.
+	Wrong int
+
+	// Left is how many more times it will be asked after this one, so
+	// the dialog can say when this is the last try.
+	Left int
 }
 
 // Notice is something a server told the user during authentication.

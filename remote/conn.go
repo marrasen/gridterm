@@ -97,6 +97,13 @@ type Config struct {
 	// to hand the work to whatever does.
 	Saying func(what string)
 
+	// Wrong is told the steps that did not go well: a passphrase that
+	// did not unlock a key, an SSH agent that stopped answering. A
+	// window draws these differently from the steps that went well, so
+	// an account of a connection that had trouble does not read like one
+	// that had none. A nil one sends them to Saying instead.
+	Wrong func(what string)
+
 	// Ring holds keys already unlocked, so a passphrase is asked for
 	// once and then used for every connection. A nil one holds nothing
 	// and keeps nothing.
@@ -287,6 +294,14 @@ func connect(ctx context.Context, to reach, via *Conn, cfg Config) (*Conn, error
 		// cancelled" beats x/crypto reporting that no method remained.
 		if why := ask.reason(); why != nil {
 			return nil, why
+		}
+		// A key that could not be offered, joined onto what x/crypto
+		// says rather than replacing it. The server's refusal is still
+		// the reason the connection failed; a passphrase that did not
+		// unlock a key is why it had less to offer, and x/crypto no
+		// longer holds it by the time this is reached.
+		if why := a.keyTrouble(); why != nil {
+			return nil, errors.Join(why, dialErr)
 		}
 		return nil, dialErr
 	}

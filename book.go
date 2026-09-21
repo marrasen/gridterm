@@ -784,18 +784,6 @@ func (a *app) serverNames(except string) []string {
 	return out
 }
 
-// viaHint says how to fill the Through field in, and with what.
-func viaHint(options []string) string {
-	named := options
-	if len(named) > 0 && named[0] == "" {
-		named = named[1:]
-	}
-	if len(named) == 0 {
-		return "Through: nothing else is saved yet, so there is nothing to go through."
-	}
-	return "Through: ctrl+down and ctrl+up step through " + strings.Join(named, ", ") + "."
-}
-
 // editThisServer opens the dialog for the machine whose row was
 // clicked, rather than for one picked from a list.
 func (a *app) editThisServer() error {

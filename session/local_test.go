@@ -177,7 +177,7 @@ func TestWaitReportsTheExitStatus(t *testing.T) {
 	defer s.Close()
 
 	// Drain, or the child can block writing and never exit.
-	go io.Copy(io.Discard, s)
+	go func() { _, _ = io.Copy(io.Discard, s) }()
 
 	err = s.Wait()
 	var exit *exec.ExitError
@@ -271,7 +271,7 @@ func TestCloseKillsAChildThatIgnoresHangup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StartLocal: %v", err)
 	}
-	go io.Copy(io.Discard, s)
+	go func() { _, _ = io.Copy(io.Discard, s) }()
 
 	start := time.Now()
 	if err := s.Close(); err != nil {
@@ -300,7 +300,7 @@ func TestWaitIsIdempotent(t *testing.T) {
 		t.Fatalf("StartLocal: %v", err)
 	}
 	defer s.Close()
-	go io.Copy(io.Discard, s)
+	go func() { _, _ = io.Copy(io.Discard, s) }()
 
 	first := s.Wait()
 	if second := s.Wait(); second != first {

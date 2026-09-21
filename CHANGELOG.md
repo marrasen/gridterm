@@ -9,49 +9,7 @@ change how something behaves.
 
 ## Unreleased
 
-### Changed
-
-- **Every build is pure Go.** gridterm moved from a fork of ebitengine
-  v2.7.5 to one of v2.10.2, which rewrote ebitengine's GLFW layer from C
-  into Go. Building for Linux needed a C toolchain and the X11
-  development headers; it needs neither now, `CGO_ENABLED=0` is the
-  whole build, and a Linux release cross-compiles from Windows and the
-  other way round. arm64 builds for both platforms, though nobody has
-  run one.
-- The Linux binary asks for no versioned glibc symbol at all, where the
-  cgo build wanted GLIBC_2.34. It runs on far older distributions.
-- The whole test suite runs with no display. Four tests used to need one.
-- The fork itself went from 3,189 lines across 61 files to 404 across
-  six, all additive. See **The ebiten fork** in
-  [BUILDING.md](BUILDING.md).
-
-### Fixed
-
-- **Dropping a file on a WSL pane failed with "Access is denied".** The
-  pane says it is in `/mnt/c/...`, and that was turned into
-  `\\wsl.localhost\Ubuntu\mnt\c\...`, which Windows refuses: a drive
-  mounted into a distribution cannot be reached back through that
-  distribution's own share. A path under `/mnt` is one of this machine's
-  drives, and comes back as that drive now. The distribution's own files
-  still go through the share, which is the only way Windows reaches
-  them.
-- **A picture pasted into a WSL pane typed a path the program could not
-  open.** It was a Windows path: unquoted, bash ate the backslashes;
-  quoted, it named nothing. A WSL pane is now given the path as its
-  distribution spells it, so `C:\...\pasted.png` is typed as
-  `/mnt/c/.../pasted.png`. Dropped files take the same route when the
-  shell has not said where it is. Nothing else changes.
-- **The cursor flickered in a pane on another machine**, and the blink
-  lost its rhythm with it. A program hides the cursor, repaints, and
-  shows it again; off a pty that is one read and no frame sees the
-  hidden half, but off a connection the reads split wherever the network
-  put them. A hide now waits a fifth of a second and a show is
-  immediate, so a repaint's hide never reaches the screen while a
-  program that means it still gets its cursor hidden.
-
-  Neither of the two people who looked at this reproduced the flicker
-  directly -- it rests on tests of the mechanism, and wants a few
-  minutes in a real shared pane.
+Nothing yet.
 
 ## v0.1.0
 
@@ -140,7 +98,28 @@ when you turn it on for that machine.
 X11. On a Wayland desktop it runs through XWayland. See
 [LINUX.md](LINUX.md).
 
+**Nothing to install to build it.** Every build is pure Go:
+`CGO_ENABLED=0`, no C toolchain, no development headers, and each
+platform cross-compiles from the other. The Linux binary asks for no
+versioned glibc symbol at all, so it runs on far older distributions
+than a cgo build would. arm64 builds for both platforms, though nobody
+has run one. gridterm carries a fork of ebitengine for the key-event
+pipeline; it is 404 lines on top of upstream v2.10.2, and **The ebiten
+fork** in [BUILDING.md](BUILDING.md) says why.
+
+**WSL panes are given paths their distribution can open.** A file
+dropped on one, and a picture pasted into one, are named the way that
+distribution names them -- `/mnt/c/...` rather than a Windows path the
+program in the pane cannot open.
+
 ### Known gaps
 
 No release for macOS. [GAPS.md](GAPS.md) says what else is not there
 yet.
+
+The cursor in a pane on another machine is held on for a fifth of a
+second after a program hides it, so that the hide and show a repaint
+makes never reaches the screen. It fixed a flicker that neither of the
+two people who looked at it could reproduce directly, and it rests on
+tests of the mechanism rather than on having watched the symptom go. If
+a cursor lingers where it should not, that is the thing to suspect.

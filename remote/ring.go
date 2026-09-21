@@ -2,6 +2,7 @@ package remote
 
 import (
 	"context"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"os"
@@ -127,12 +128,8 @@ func (r *Ring) Unlock(ctx context.Context, path string, ask Ask) (ssh.Signer, er
 		if ask == nil {
 			return nil, errors.New("the key has a passphrase and there is nothing to ask for it")
 		}
-		pass, err := ask.Passphrase(ctx, path)
-		if err != nil {
+		if signer, err = askUntilItOpens(ctx, path, b, ask); err != nil {
 			return nil, err
-		}
-		if signer, err = ssh.ParsePrivateKeyWithPassphrase(b, []byte(pass)); err != nil {
-			return nil, fmt.Errorf("the passphrase did not unlock it: %w", err)
 		}
 	}
 
@@ -142,6 +139,58 @@ func (r *Ring) Unlock(ctx context.Context, path string, ask Ask) (ssh.Signer, er
 		r.mu.Unlock()
 	}
 	return signer, nil
+}
+
+// PassphraseTries is how many passphrases one key file is given before
+// the connection moves on to whatever else it has to offer.
+//
+// The same three ssh itself allows: enough for a typo, few enough that a
+// passphrase nobody remembers does not stand between the user and a
+// password the server would have taken.
+const PassphraseTries = 3
+
+// ErrWrongPassphrase is a passphrase that did not open the key.
+//
+// Its own error because it is the one failure here that is the user's to
+// put right, and the only one worth asking about again. x/crypto's own
+// wording for it is "x509: decryption password incorrect", which is
+// neither this window's vocabulary nor, for an OpenSSH key, true.
+var ErrWrongPassphrase = errors.New("the passphrase did not unlock it")
+
+// askUntilItOpens asks for a passphrase until one opens the key, the
+// tries run out, or the user says no.
+//
+// Asking again is the whole point. A wrong passphrase is a typo far more
+// often than it is a key the user cannot open, and one try is not enough
+// to tell the two apart. The failure that comes back when the tries do
+// run out is the caller's to show: x/crypto keeps only the last thing
+// that did not work, so nothing after this point would ever mention it.
+func askUntilItOpens(ctx context.Context, path string, b []byte, ask Ask) (ssh.Signer, error) {
+	var last error
+	for wrong := 0; wrong < PassphraseTries; wrong++ {
+		pass, err := ask.Passphrase(ctx, LockedKey{
+			Path:  path,
+			Wrong: wrong,
+			Left:  PassphraseTries - wrong - 1,
+		})
+		if err != nil {
+			// The user said no, or the connection was given up on.
+			// Neither is a reason to ask again.
+			return nil, err
+		}
+		signer, err := ssh.ParsePrivateKeyWithPassphrase(b, []byte(pass))
+		if err == nil {
+			return signer, nil
+		}
+		if !errors.Is(err, x509.IncorrectPasswordError) {
+			// Not the passphrase: the file is a key this cannot read, or
+			// one that is damaged. Asking for it again would be asking
+			// the user to fix something that is not theirs to fix.
+			return nil, err
+		}
+		last = ErrWrongPassphrase
+	}
+	return nil, fmt.Errorf("%w, after %d tries", last, PassphraseTries)
 }
 
 // claim reports the key if the ring already holds it. Otherwise it

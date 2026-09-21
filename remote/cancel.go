@@ -76,11 +76,11 @@ func (a *cancelAsk) fail(err error) error {
 	return err
 }
 
-func (a *cancelAsk) Passphrase(ctx context.Context, keyfile string) (string, error) {
+func (a *cancelAsk) Passphrase(ctx context.Context, key LockedKey) (string, error) {
 	if err := a.stopped(); err != nil {
 		return "", err
 	}
-	s, err := a.ask.Passphrase(ctx, keyfile)
+	s, err := a.ask.Passphrase(ctx, key)
 	if err != nil {
 		return "", a.fail(err)
 	}

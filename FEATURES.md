@@ -172,9 +172,11 @@ The whole list. The [README](README.md) has the short version.
   that cannot be read is reported and is never written over, because a
   file nobody could parse is still somebody's list of servers.
 - **Secrets are asked for in the window.** A key passphrase, an account
-  password and a one-time code all get a dialog. An unlocked key is kept
-  in memory for as long as the window is open and never written
-  anywhere, so the second connection to a machine asks nothing.
+  password and a one-time code all get a dialog. A passphrase that does
+  not open the key is asked for again -- three tries -- and the dialog
+  says the last one did not work. An unlocked key is kept in memory for
+  as long as the window is open and never written anywhere, so the second
+  connection to a machine asks nothing.
 - **Unknown host keys are shown, not assumed.** A host that is not in
   `known_hosts` gets a dialog with its fingerprint, and only an explicit
   yes records it. A key that does not match one already recorded is

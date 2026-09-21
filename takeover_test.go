@@ -488,7 +488,7 @@ type countingPassphrase struct {
 	after  time.Duration
 }
 
-func (c *countingPassphrase) Passphrase(context.Context, string) (string, error) {
+func (c *countingPassphrase) Passphrase(context.Context, remote.LockedKey) (string, error) {
 	*c.asked++
 	if c.after > 0 {
 		time.Sleep(c.after)

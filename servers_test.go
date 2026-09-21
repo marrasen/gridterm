@@ -347,7 +347,7 @@ func input1(r rune) input.Event {
 // needs the ring to open a key.
 type fixedAsk struct{ passphrase string }
 
-func (f *fixedAsk) Passphrase(context.Context, string) (string, error) {
+func (f *fixedAsk) Passphrase(context.Context, remote.LockedKey) (string, error) {
 	return f.passphrase, nil
 }
 func (f *fixedAsk) Password(context.Context, string, string) (string, error) { return "", nil }

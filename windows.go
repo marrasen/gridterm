@@ -492,6 +492,7 @@ func (a *app) takeOver(addr, keyFile string, at *spot, open bool) error {
 			Known:    func() (string, error) { return knownWindows(knownAt) },
 			Patience: patience,
 			Saying:   log.Say,
+			Wrong:    log.sayBadly,
 		})
 		a.pump.post(func() {
 			a.machines.dialEnded()

@@ -288,7 +288,7 @@ type countingAsk struct {
 	asked *int
 }
 
-func (c *countingAsk) Passphrase(context.Context, string) (string, error) {
+func (c *countingAsk) Passphrase(context.Context, LockedKey) (string, error) {
 	*c.asked++
 	return c.pass, nil
 }

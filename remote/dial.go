@@ -242,6 +242,21 @@ func saySo(saying func(string), what string) {
 	}
 }
 
+// sayWrong tells whoever is watching that a step did not go well, which
+// a window draws differently from one that did.
+//
+// It falls back to saying when there is no separate way to say it,
+// because the line itself matters more than the colour: an account where
+// every row reads the same is an account that says a connection went
+// well when it did not.
+func sayWrong(wrong, saying func(string), what string) {
+	if wrong != nil {
+		wrong(what)
+		return
+	}
+	saySo(saying, what)
+}
+
 // wantedKeyTypes lists the key algorithms known_hosts holds for a host,
 // most specific first and without duplicates.
 func wantedKeyTypes(want []knownhosts.KnownKey) []string {

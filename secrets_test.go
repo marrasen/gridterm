@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 
@@ -121,6 +122,75 @@ func TestASecretTypedIntoAPaneSkipsTheClipboard(t *testing.T) {
 	}
 	if got := a.copiedText(); got != "" {
 		t.Errorf("typing it put %q on the clipboard", got)
+	}
+}
+
+// A secret from the vault answers what an agent asked for.
+//
+// The agent is told a line was answered and never sees the line. The
+// return goes with it, because an ask wants a whole answer.
+func TestASecretFromTheVaultAnswersAnAgentsAsk(t *testing.T) {
+	a, keyFile := aWindowWithSecrets(t)
+	v := startTheVault(t, a, keyFile)
+	it, err := v.Put(secrets.Item{Name: "margit"}, "hunter2")
+	if err != nil {
+		t.Fatalf("put: %v", err)
+	}
+	pane := onlyPaneOn(t, a)
+
+	answered, stop, err := pane.WaitForSecret("-- gridterm: an agent wants something --")
+	if err != nil {
+		t.Fatalf("wait for a secret: %v", err)
+	}
+	defer stop()
+	if !pane.AskedForASecret() {
+		t.Fatal("the pane is not waiting for one")
+	}
+
+	if err := a.typeSecret(v, it); err != nil {
+		t.Fatalf("type: %v", err)
+	}
+
+	select {
+	case ok := <-answered:
+		if !ok {
+			t.Error("the ask ended without an answer")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the ask was never answered, so the return did not go with the secret")
+	}
+	if got := a.copiedText(); got != "" {
+		t.Errorf("answering the ask put %q on the clipboard", got)
+	}
+}
+
+// A secret typed at an ordinary prompt carries no return.
+//
+// Nothing is waiting for a whole line there, and a password sent with a
+// return cannot be taken back.
+func TestASecretAtAnOrdinaryPromptCarriesNoReturn(t *testing.T) {
+	a, keyFile := aWindowWithSecrets(t)
+	v := startTheVault(t, a, keyFile)
+	it, err := v.Put(secrets.Item{Name: "margit"}, "hunter2")
+	if err != nil {
+		t.Fatalf("put: %v", err)
+	}
+	pane := onlyPaneOn(t, a)
+	if pane.AskedForASecret() {
+		t.Fatal("the pane is waiting for a secret and should not be")
+	}
+	was := a.shells[0].sentText()
+
+	if err := a.typeSecret(v, it); err != nil {
+		t.Fatalf("type: %v", err)
+	}
+	waitFor(t, a, "the secret to reach the shell", func() bool {
+		return strings.Contains(a.shells[0].sentText(), "hunter2")
+	})
+
+	sent := strings.TrimPrefix(a.shells[0].sentText(), was)
+	if strings.ContainsAny(sent, "\r\n") {
+		t.Errorf("a return went with the secret at an ordinary prompt: %q", sent)
 	}
 }
 

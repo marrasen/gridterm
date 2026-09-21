@@ -134,8 +134,15 @@ func (a *app) showSecrets(v *secrets.Vault) error {
 			`Nothing is kept yet. "Add a secret" puts the first one in.`, false)
 		return nil
 	}
+	// The title says when picking one answers what the pane is waiting
+	// for, because then the row does something more than copy a
+	// password: it sends the line the program is sitting on.
+	title := secretsTitle
+	if pane := a.focusedTerminal(); pane != nil && pane.AskedForASecret() {
+		title = "Secrets — the pane is waiting for one"
+	}
 	var hide func()
-	c := ui.NewChooser(secretsTitle, func() {
+	c := ui.NewChooser(title, func() {
 		if hide != nil {
 			hide()
 		}
@@ -190,8 +197,13 @@ func (a *app) copySecret(v *secrets.Vault, it secrets.Item) error {
 // a prompt waiting for it.
 //
 // Typed rather than copied, so it never reaches the clipboard at all.
-// No newline: what the secret is for decides whether it is a whole
-// answer, and a password sent with a return cannot be taken back.
+// The agent that asked never sees it either: what is typed goes to the
+// program in the pane, and gridterm tells the agent only that a line
+// was answered.
+//
+// A return goes with it when something is waiting for one, and not
+// otherwise: an ask wants a whole answer, and a password sent into an
+// ordinary prompt with a return cannot be taken back.
 func (a *app) typeSecret(v *secrets.Vault, it secrets.Item) error {
 	pane := a.focusedTerminal()
 	if pane == nil {
@@ -200,6 +212,9 @@ func (a *app) typeSecret(v *secrets.Vault, it secrets.Item) error {
 	value, err := v.Secret(it.ID)
 	if err != nil {
 		return err
+	}
+	if pane.AskedForASecret() {
+		value += "\r"
 	}
 	pane.Paste(value)
 	return nil

@@ -139,6 +139,35 @@ handle is the constant, and rewording costs nothing.
 Rewording this whole window once cost about 700 lines of test churn. With
 the constants in place it costs none.
 
+A constant also splits two things a literal runs together: **what the
+button is** and **what it says**. The identity becomes a symbol; the text
+becomes data hanging off it. That gives two independent edits. Change the
+value and nothing else moves. Rename the symbol and an editor moves every
+use mechanically, because it is following a symbol rather than searching
+for a word that may also be a substring of three others.
+
+### What actually protects the wording
+
+Three layers, and only the first is total:
+
+| Catches | How | Gap |
+|---|---|---|
+| A constant renamed or deleted while still used | The compiler, at every use | None |
+| A constant nobody uses any more | `unused` in the linter | Not for an exported identifier in a library package: staticcheck assumes exported means API |
+| A button gone from a dialog that still needs it | The behaviour test that presses it | Only where such a test exists |
+
+The second layer is why the linter runs in CI. A word nothing uses is a
+button that has gone, and neither the compiler nor `go vet` says a word
+about an unused package-level constant — it is the linter's `unused`
+check and nothing else.
+
+It is also why `wording.go` keeps its constants unexported. The four in
+`agent` have to be exported, because the MCP server quotes them back to
+an agent, and they give up that second layer for it.
+
+None of these three layers is a test asserting that a button says a
+particular word. That layer was catching nothing the others missed.
+
 ## Tests
 
 The rules above are about what the program says. This one is about what
@@ -173,6 +202,14 @@ it is the work this rule exists to avoid. Instead:
 A test that is merely *coupled* to wording — one that presses a button by
 its title on the way to checking something real — is not restating
 anything. Do not delete it. Give it a constant to hold instead.
+
+The general form, which is not only about wording: **a test asserting
+that two things agree is usually a sign they should be one thing.** The
+test is a runtime check of an invariant that could be structural, and it
+only checks the pairings some test happens to reach. Making the two into
+one moves the check to the compiler, where it covers every use and costs
+no lines. The same applies to a default written in two places, a limit, a
+path, a format.
 
 One test from this codebase was worse than useless: it asserted that a
 dialog carried a sentence explaining that a field would be ignored. Rule

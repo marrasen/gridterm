@@ -18,9 +18,9 @@ import (
 // no, so nothing else is tried and no second question is asked.
 type Ask interface {
 	// Passphrase unlocks a private key file. A passphrase that does not
-	// open the key is asked for again, up to PassphraseTries times, so a
-	// typo is a second try rather than a connection that quietly signs
-	// in some other way -- or does not sign in at all.
+	// open the key is asked for again, so a typo is a second try rather
+	// than a connection that quietly signs in some other way -- or does
+	// not sign in at all. Cancelling is what stops the asking.
 	Passphrase(ctx context.Context, key LockedKey) (string, error)
 
 	// Password is the account password, asked only after key
@@ -63,10 +63,6 @@ type LockedKey struct {
 	// question asked twice with no word of why reads as a question that
 	// was not heard.
 	Wrong int
-
-	// Left is how many more times it will be asked after this one, so
-	// the dialog can say when this is the last try.
-	Left int
 }
 
 // Notice is something a server told the user during authentication.

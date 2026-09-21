@@ -391,27 +391,25 @@ func (a *app) watchingPane(what remoteKey) *term.Terminal {
 
 // openTakeOver asks which window to take over.
 func (a *app) openTakeOver() error {
-	f := a.newForm("Connect to another window")
+	f := a.newForm(dlgConnectWindow)
 	// Broken into short lines by hand. A dialog is as wide as its
 	// longest line and stops there, so a sentence written as one line
 	// is a sentence with its end cut off.
 	f.Lines = []string{
-		"Work in a gridterm running on another machine.",
-		"",
-		"That window has to be serving, and has to have",
-		"this machine's public key in its authorized_keys.",
+		"The other window must be serving, with this",
+		"machine's public key in its authorized_keys.",
 	}
-	addr := f.AddField("Machine", a.newField(
-		fmt.Sprintf("host[:port], port %d unless given", servePort), 0))
-	key := f.AddField("Key file", a.newField("optional, or the agent's keys", 0))
+	addr := f.AddField(fldHost, a.newField(
+		fmt.Sprintf("host[:%d]", servePort), 0))
+	key := f.AddField(fldKeyFile, a.newField("Optional", 0))
 
-	f.AddButton(ui.Button{Title: "Connect", Do: func() error {
+	f.AddButton(ui.Button{Title: btnConnect, Do: func() error {
 		// Connecting, and nothing more. What that window has open lands
 		// on the sidebar, and a pane on it is asked for from the plus on
 		// its heading.
 		return a.takeOver(strings.TrimSpace(addr.Text()), strings.TrimSpace(key.Text()), nil, false)
 	}})
-	f.AddButton(ui.Button{Title: "Cancel"})
+	f.AddButton(ui.Button{Title: btnCancel})
 	a.showForm(f, nil)
 	return nil
 }
@@ -521,7 +519,7 @@ func (a *app) takeOver(addr, keyFile string, at *spot, open bool) error {
 				a.endedAs(pane, "given up on")
 				log.GaveUp()
 				if err := win.Close(); err != nil {
-					a.reportError("Could not let go of "+addr, err)
+					a.reportError("Could not disconnect from "+addr, err)
 				}
 				return
 			}
@@ -689,17 +687,18 @@ func (a *app) windowDied(t *taken, why error) {
 // that threw this one out, said so on purpose, and offering to walk
 // back in would be answering a decision with a button.
 func (a *app) offerToTakeOverAgain(t *taken, why error) {
-	f := a.newForm("Connection lost")
-	said := "The connection to " + t.name + " went."
+	f := a.newForm(dlgConnectionLost)
+	// The title says what happened and the body says which: the name on
+	// its own, and under it the reason when there is one.
+	f.Lines = []string{t.name}
 	if why != nil && !errors.Is(why, io.EOF) {
-		said = "The connection to " + t.name + " went: " + serve.Plain(why.Error())
+		f.Lines = append(f.Lines, wrapLines(serve.Plain(why.Error()), errorLineWidth)...)
 	}
-	f.Lines = wrapLines(said, errorLineWidth)
 	addr, keyFile := t.addr, t.keyFile
-	f.AddButton(ui.Button{Title: "Reconnect", Do: func() error {
+	f.AddButton(ui.Button{Title: btnReconnect, Do: func() error {
 		return a.workOnWindow(addr, keyFile, nil)
 	}})
-	f.AddButton(ui.Button{Title: "Close"})
+	f.AddButton(ui.Button{Title: btnClose})
 	a.showForm(f, nil)
 }
 

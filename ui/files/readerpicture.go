@@ -64,7 +64,7 @@ func (r *Reader) AsBytes() {
 // lines has: there is nothing to search and nowhere to scroll.
 func PictureKeys() []Key {
 	return []Key{
-		{Chord: chord(input.KeyR, input.ModCtrl), Shown: "^R", Title: "Reread"},
+		{Chord: chord(input.KeyR, input.ModCtrl), Shown: "^R", Title: "Reload"},
 		{Chord: chord(input.KeyH, input.ModCtrl), Shown: "^H", Title: "Bytes"},
 		{Chord: chord(input.KeyD, input.ModCtrl), Shown: "^D", Title: "Close"},
 	}

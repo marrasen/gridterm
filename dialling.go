@@ -93,15 +93,15 @@ func (a *app) askAboutTheOneOnItsWay(d *dialling, name string, again func()) {
 }
 
 // showTheOneOnItsWay is the dialog itself, on the goroutine that draws.
+//
+// The title says the whole of it, so there is nothing under it. The
+// three buttons are the three things that can be done about a machine
+// already being dialled, and each says which.
 func (a *app) showTheOneOnItsWay(d *dialling, name string, again func()) {
-	f := a.newConfirm("Already connecting to "+name, []string{
-		"gridterm is still connecting to " + name + ".",
-		"",
-		"Two connections to one machine at once would leave one of them" +
-			" open with nothing holding it. So either this waits for that" +
-			" one, or that one goes.",
-	})
-	f.AddButton(ui.Button{Title: "Wait for it", Do: func() error {
+	f := a.newConfirm(dlgAlreadyConnecting+name, nil)
+	// Wait joins the attempt in progress: what was asked for runs once
+	// that one has come back, whichever way it does.
+	f.AddButton(ui.Button{Title: btnWait, Do: func() error {
 		if d.settled {
 			// It came back while the dialog was open, so there is
 			// nothing left to wait for.
@@ -111,13 +111,18 @@ func (a *app) showTheOneOnItsWay(d *dialling, name string, again func()) {
 		d.waiting = append(d.waiting, again)
 		return nil
 	}})
-	f.AddButton(ui.Button{Title: "Give up on that one", Do: func() error {
+	// Retry cancels the attempt in progress and dials again, for one
+	// stuck on a machine that is never going to answer.
+	f.AddButton(ui.Button{Title: btnRetry, Do: func() error {
 		a.machines.giveUp(d)
 		// Not from here: this dialog closes as soon as this returns, and
 		// closing one takes anything stacked on top of it.
 		a.pump.post(again)
 		return nil
 	}})
-	f.AddButton(ui.Button{Title: "Leave it"})
+	// Cancel drops this request and leaves the attempt in progress
+	// running: the user asked for something and has changed their mind
+	// about it, not about the connection.
+	f.AddButton(ui.Button{Title: btnCancel})
 	a.showForm(f, nil)
 }

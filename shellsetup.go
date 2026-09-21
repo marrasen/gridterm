@@ -57,9 +57,10 @@ func (a *app) toggleShellSetup() error {
 	if on {
 		what = "on"
 	}
-	a.showNotice("Shell setup is "+what+" on this machine",
-		"It takes effect in the next pane you open. A pane already "+
-			"running keeps whatever its shell was told when it started.", false)
+	// A line along the bottom: the switch is already over, and a dialog
+	// saying so would be one to dismiss before the next pane can be
+	// opened.
+	a.say("Shell setup " + what + " — applies to new panes")
 	return nil
 }
 

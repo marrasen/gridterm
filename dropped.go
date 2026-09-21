@@ -40,12 +40,12 @@ func (a *app) takeDroppedFiles() {
 		pane = a.focusedTerminal()
 	}
 	if pane == nil {
-		a.reportError("Could not take that file", errors.New(
+		a.reportError("Could not copy the file", errors.New(
 			"there is no pane open to put it in"))
 		return
 	}
 	if err := a.dropOnPane(pane, paths); err != nil {
-		a.reportError("Could not take that file", err)
+		a.reportError("Could not copy the file", err)
 	}
 }
 
@@ -174,8 +174,8 @@ func (a *app) uploadOne(fs vfs.FS, end jobEnd, pane *term.Terminal,
 				// The pane it was dropped on has been closed while the
 				// file was on its way. Typing into it would put the path
 				// where nobody can read it, and the file is there.
-				a.showNotice("The file arrived after its pane closed",
-					at+" is on "+groupName(endName(end)), false)
+				a.showNotice("File copied",
+					at+" on "+groupName(endName(end)), false)
 				return
 			}
 			// The pane it was dropped on, whatever the user has moved on

@@ -2,12 +2,9 @@ package main
 
 import (
 	"errors"
-	"fmt"
 	"image"
 	"log"
 	"sync"
-
-	"github.com/atotto/clipboard"
 )
 
 // Clipboard access goes through a goroutine.
@@ -38,7 +35,7 @@ func (c *clipboardWriter) set(text string) {
 	c.once.Do(func() {
 		put := c.write
 		if put == nil {
-			put = clipboard.WriteAll
+			put = writeClipboardText
 		}
 		c.ch = make(chan string, 8)
 		go func() {
@@ -82,7 +79,7 @@ func (a *app) pasteText() string {
 	}
 	read := a.readClip
 	if read == nil {
-		read = clipboardRead
+		read = readClipboardText
 	}
 	s, err := read()
 	if err != nil {
@@ -108,18 +105,4 @@ func (a *app) clipboardPicture() (image.Image, bool, error) {
 		return a.readClipImage()
 	}
 	return clipboardImage()
-}
-
-// clipboardRead returns what is on the clipboard.
-//
-// It blocks, so it is called from the paste path only, where the user is
-// already waiting. A failure is returned rather than pasted as nothing:
-// a paste that does nothing looks exactly like an empty clipboard, and
-// the user tries again instead of being told why.
-func clipboardRead() (string, error) {
-	s, err := clipboard.ReadAll()
-	if err != nil {
-		return "", fmt.Errorf("read the clipboard: %w", err)
-	}
-	return s, nil
 }

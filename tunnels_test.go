@@ -100,10 +100,10 @@ func TestOpenATunnelThroughTheDialog(t *testing.T) {
 	if err := a.openTunnelHere(); err != nil {
 		t.Fatalf("openTunnelHere: %v", err)
 	}
-	f := awaitModal(t, a, "the Tunnel over "+host+" dialog", byTitle[*ui.Form]("Tunnel over "+host))
-	typeIntoField(t, a, f, "Listen on", "127.0.0.1:0")
-	typeIntoField(t, a, f, "Reach", echo)
-	pressButton(t, a, f, "Listen here")
+	f := awaitModal(t, a, "the Tunnel over "+host+" dialog", byTitle[*ui.Form]("Tunnel via "+host))
+	typeIntoField(t, a, f, fldListenOn, "127.0.0.1:0")
+	typeIntoField(t, a, f, fldForwardTo, echo)
+	pressButton(t, a, f, btnOpen)
 	a.pump.run()
 
 	if m := a.root.Modal(); m != nil {
@@ -180,7 +180,7 @@ func TestATunnelOpenToTheNetworkAsksFirst(t *testing.T) {
 	}
 
 	// Saying no opens nothing.
-	pressButton(t, a, f, "Cancel")
+	pressButton(t, a, f, btnCancel)
 	a.pump.run()
 	if len(a.tunnels) != 0 {
 		t.Fatalf("%d tunnels after cancelling", len(a.tunnels))
@@ -386,7 +386,7 @@ func TestATunnelThatStopsOnItsOwnIsTakenAway(t *testing.T) {
 	if got := row.State(time.Now()); got != meter.Closed {
 		t.Fatalf("the row is %v after the tunnel stopped, want closed", got)
 	}
-	n := awaitModal(t, a, "a notice whose title starts with The tunnel", byTitlePrefix[*ui.Notice]("The tunnel"))
+	n := awaitModal(t, a, "a notice whose title starts with Tunnel", byTitlePrefix[*ui.Notice]("Tunnel "))
 	if !strings.Contains(n.Message(), "out of handles") {
 		t.Fatalf("the dialog says %q, want the reason in it", n.Message())
 	}
@@ -414,7 +414,7 @@ func TestEveryExposedTunnelAsksFirst(t *testing.T) {
 		{"a remote one", remote.Tunnel{
 			Kind: remote.RemoteForward, Listen: "0.0.0.0:0", Target: "db:5432"}, host},
 		{"a proxy", remote.Tunnel{
-			Kind: remote.DynamicForward, Listen: "0.0.0.0:0"}, "wherever"},
+			Kind: remote.DynamicForward, Listen: "0.0.0.0:0"}, "can connect to anything"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			a.confirmTunnel(host, tc.t)
@@ -428,7 +428,7 @@ func TestEveryExposedTunnelAsksFirst(t *testing.T) {
 			}
 			// The clause the question turns on is the last one, so none of
 			// it may be lost to the edge of the box.
-			if !strings.Contains(said, "with nothing asked") {
+			if !strings.Contains(said, "with no authentication") {
 				t.Errorf("the question says %q, and leaves out what it costs", said)
 			}
 			for _, line := range f.Lines {
@@ -436,7 +436,7 @@ func TestEveryExposedTunnelAsksFirst(t *testing.T) {
 					t.Errorf("a line is %d wide, which a dialog trims: %q", len(line), line)
 				}
 			}
-			pressButton(t, a, f, "Cancel")
+			pressButton(t, a, f, btnCancel)
 			a.pump.run()
 			if len(a.tunnels) != 0 {
 				t.Fatalf("%d tunnels after cancelling", len(a.tunnels))
@@ -470,10 +470,10 @@ func TestATunnelThatMakesNoSenseIsRefusedInTheDialog(t *testing.T) {
 	if err := a.openTunnelHere(); err != nil {
 		t.Fatalf("openTunnelHere: %v", err)
 	}
-	f := awaitModal(t, a, "the Tunnel over "+host+" dialog", byTitle[*ui.Form]("Tunnel over "+host))
-	typeIntoField(t, a, f, "Listen on", "127.0.0.1:0")
-	typeIntoField(t, a, f, "Reach", "nowhere")
-	pressButton(t, a, f, "Listen here")
+	f := awaitModal(t, a, "the Tunnel over "+host+" dialog", byTitle[*ui.Form]("Tunnel via "+host))
+	typeIntoField(t, a, f, fldListenOn, "127.0.0.1:0")
+	typeIntoField(t, a, f, fldForwardTo, "nowhere")
+	pressButton(t, a, f, btnOpen)
 
 	if a.root.Modal() != f {
 		t.Fatal("the dialog closed on a tunnel it could not make")
@@ -579,9 +579,9 @@ func TestOpenASocksProxyThroughTheDialog(t *testing.T) {
 	if err := a.openSocksHere(); err != nil {
 		t.Fatalf("openSocksHere: %v", err)
 	}
-	f := awaitModal(t, a, "the SOCKS proxy over "+host+" dialog", byTitle[*ui.Form]("SOCKS proxy over "+host))
-	typeIntoField(t, a, f, "Listen on", "127.0.0.1:0")
-	pressButton(t, a, f, "Open")
+	f := awaitModal(t, a, "the SOCKS proxy over "+host+" dialog", byTitle[*ui.Form]("SOCKS proxy via "+host))
+	typeIntoField(t, a, f, fldListenOn, "127.0.0.1:0")
+	pressButton(t, a, f, btnOpen)
 	a.pump.run()
 
 	if len(a.tunnels) != 1 {
@@ -607,7 +607,7 @@ func TestTheSocksDialogAsksForOneThingOnly(t *testing.T) {
 	if err := a.openSocksHere(); err != nil {
 		t.Fatalf("openSocksHere: %v", err)
 	}
-	f := awaitModal(t, a, "the SOCKS proxy over "+host+" dialog", byTitle[*ui.Form]("SOCKS proxy over "+host))
+	f := awaitModal(t, a, "the SOCKS proxy over "+host+" dialog", byTitle[*ui.Form]("SOCKS proxy via "+host))
 	if len(f.Fields()) != 1 {
 		t.Fatalf("the dialog has %d fields, want the one it needs", len(f.Fields()))
 	}
@@ -631,7 +631,7 @@ func TestARemoteForwardAlwaysAsks(t *testing.T) {
 		t.Fatalf("a remote forward opened with nothing asked: %T", a.root.Modal())
 	}
 	said := strings.Join(f.Lines, " ")
-	if !strings.Contains(said, "its own choice") {
+	if !strings.Contains(said, "chooses where it listens") {
 		t.Fatalf("the question says %q, and does not say the server decides", said)
 	}
 	if len(a.tunnels) != 0 {

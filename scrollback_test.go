@@ -63,7 +63,11 @@ func findInReader(t *testing.T, r *files.Reader, what string) {
 			t.Fatalf("typing the search: %v", err)
 		}
 	}
-	press(input1('/'))
+	// The command opens the viewer with the prompt already up, so "/"
+	// is only pressed when something else opened it.
+	if _, _, asking := r.Asking(); !asking {
+		press(input1('/'))
+	}
 	for _, c := range what {
 		press(input1(c))
 	}

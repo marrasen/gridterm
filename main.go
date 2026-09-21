@@ -373,7 +373,7 @@ func (a *app) openFirst(s startup) (*term.Terminal, error) {
 		// leaves the window empty, and says so above.
 		if len(a.panes) == 0 {
 			if err := a.openPaneHere(); err != nil {
-				a.reportError("Could not open a terminal here", err)
+				a.reportError("Could not open a terminal", err)
 			}
 		}
 	})

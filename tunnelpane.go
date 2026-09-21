@@ -163,13 +163,13 @@ func (a *app) showTunnel(e *conns.Entry) {
 	}
 	open := a.tunnels[e]
 	if open == nil {
-		a.reportError("Could not open that tunnel's pane",
+		a.reportError("Could not open the tunnel's pane",
 			errors.New("the tunnel has already closed"))
 		return
 	}
 	pane, err := a.newTerminalOn(open.seen.Open(), e.Host, conns.Log, "tunnel "+e.Label)
 	if err != nil {
-		a.reportError("Could not open that tunnel's pane", err)
+		a.reportError("Could not open the tunnel's pane", err)
 		return
 	}
 	if err := a.placePane(pane); err != nil {
@@ -178,7 +178,7 @@ func (a *app) showTunnel(e *conns.Entry) {
 		// nowhere on the screen.
 		delete(a.panes, pane)
 		delete(a.started, pane)
-		a.reportError("Could not open that tunnel's pane", errors.Join(err, pane.Close()))
+		a.reportError("Could not open the tunnel's pane", errors.Join(err, pane.Close()))
 		return
 	}
 	if a.tunnelPanes == nil {

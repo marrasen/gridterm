@@ -49,8 +49,8 @@ func TestACommandThatFailsSaysSo(t *testing.T) {
 	if !ok {
 		t.Fatalf("nothing was shown: %T", a.root.Modal())
 	}
-	if n.Title != "Run a command…" {
-		t.Errorf("the dialog is titled %q, want the command's own name", n.Title)
+	if n.Title != "Run Command failed" {
+		t.Errorf("the dialog is titled %q, want the command that failed", n.Title)
 	}
 	if strings.TrimSpace(n.Message()) == "" {
 		t.Fatal("the dialog says nothing about what went wrong")

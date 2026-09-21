@@ -526,19 +526,15 @@ func TestTheFontDialogSaysWhatTheListIsAndWhatIsLeft(t *testing.T) {
 			if !ok {
 				t.Fatalf("top dialog = %T, want a notice about the fonts", a.root.Modal())
 			}
-			if n.Title != "Some fonts could not be read" {
+			if n.Title != "Could not read some fonts" {
 				t.Errorf("the notice is titled %q", n.Title)
 			}
-			if !strings.Contains(n.Message(), "These font files and directories could not be read:") {
-				t.Errorf("the notice does not say what the list is:\n%s", n.Message())
-			}
-			if !strings.Contains(n.Message(), reason) {
-				t.Errorf("the notice does not hold the reason:\n%s", n.Message())
-			}
-			said := "The fonts that were found are on the Font menu."
-			if got := strings.Contains(n.Message(), said); got != tc.menu {
-				t.Errorf("the notice points at the Font menu: %v, want %v\n%s",
-					got, tc.menu, n.Message())
+			// The reason and nothing around it. The title says what
+			// happened, so a line repeating it in longer words and a
+			// line pointing at the Font menu were both the dialog
+			// filling itself out.
+			if got := strings.TrimSpace(n.Message()); got != reason {
+				t.Errorf("the notice says %q, want the reason alone", got)
 			}
 		})
 	}

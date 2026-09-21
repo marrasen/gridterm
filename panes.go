@@ -810,7 +810,7 @@ func (a *app) reapExited() {
 				// Shown rather than logged: a window opened from an icon
 				// has no console, and a channel that would not close is
 				// worth knowing about.
-				a.reportError("A command could not be closed", err)
+				a.reportError("Could not close the command", err)
 			}
 		}
 	}

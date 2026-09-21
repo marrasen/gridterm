@@ -166,7 +166,7 @@ func toolList() []tool {
 				" that ended, or the command that ran. The same pane, so its name does not" +
 				" change and what it printed before is still above what runs now. On a pane" +
 				" that ran one command this runs that command again." +
-				" It works only if the user ticked \"Restart a closed connection\", which" +
+				" It works only if the user ticked \"" + agent.BoxRestart + "\", which" +
 				" use_session_code and list_panes both report.",
 			InputSchema: schema{
 				Type: "object",
@@ -178,12 +178,12 @@ func toolList() []tool {
 		},
 		{
 			Name:  "open_pane",
-			Title: "Open another pane there",
+			Title: agent.BoxOpenMore,
 			Description: "Open a second pane where a pane you have is: another shell on the" +
 				" same machine, handed to you as it opens. The answer names it. It runs" +
 				" nothing, and it opens no connection: gridterm must already be connected" +
 				" to that machine. A pane opened to run one command is refused." +
-				" It works only if the user ticked \"Open another pane there\", which" +
+				" It works only if the user ticked \"" + agent.BoxOpenMore + "\", which" +
 				" use_session_code and list_panes both report.",
 			InputSchema: schema{
 				Type: "object",

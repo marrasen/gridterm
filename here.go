@@ -234,15 +234,11 @@ func (a *app) openCommandHere() error {
 // it opens at a spot, or on the stage when at is nil.
 func (a *app) askCommandOn(host string, at *spot) {
 	where := groupName(host)
-	f := a.newForm("Run a command on " + where)
-	what := f.AddField("Command", a.newField("the program and its arguments", 0))
+	f := a.newForm(dlgRunCommandOn + where)
+	what := f.AddField(fldCommand, a.newField("", 0))
 	what.Options = a.saved.lines()
-	in := f.AddField("Directory", a.newField("where to run it, or leave it empty", 0))
-	keep := f.AddTick("Remember this command", false)
-	f.Lines = []string{
-		"Ctrl+down and Ctrl+up step through the commands you have kept.",
-		"Clearing the box on one of those forgets it.",
-	}
+	in := f.AddField(fldDirectory, a.newField("Optional", 0))
+	keep := f.AddTick(fldSaveCommand, false)
 	// picked is the saved command taken off the list, and "" until one
 	// is. Only that one can be forgotten here, so a command typed out by
 	// hand is never thrown away by a box the user did not tick.
@@ -264,12 +260,12 @@ func (a *app) askCommandOn(host string, at *spot) {
 			in.SetText(saved.Dir)
 		}
 	}
-	f.AddButton(ui.Button{Title: "Run", Do: func() error {
+	f.AddButton(ui.Button{Title: btnRun, Do: func() error {
 		command := strings.Fields(what.Text())
 		if len(command) == 0 {
 			// Returned rather than shown here, so the dialog stays open
 			// with what was typed still there to correct.
-			return errors.New("there is nothing to run")
+			return errors.New("Enter a command")
 		}
 		dir := strings.TrimSpace(in.Text())
 		line := commandLine(what.Text())
@@ -290,12 +286,12 @@ func (a *app) askCommandOn(host string, at *spot) {
 		// closing one takes anything stacked on top of it.
 		a.pump.post(func() {
 			if err := a.runCommandOn(host, command, dir, at); err != nil {
-				a.reportError("Could not run it on "+where, err)
+				a.reportError("Could not run the command on "+where, err)
 			}
 		})
 		return nil
 	}})
-	f.AddButton(ui.Button{Title: "Cancel"})
+	f.AddButton(ui.Button{Title: btnCancel})
 	a.showForm(f, nil)
 }
 
@@ -339,13 +335,25 @@ func (a *app) showConnLogHere() error {
 	return nil
 }
 
-// connLogTitle names the account dialog, in the tense the connection is
-// in.
-func connLogTitle(name string, kind hostKind) string {
-	if kind == hostConnecting {
-		return "How " + name + " is being reached"
-	}
-	return "How " + name + " was reached"
+// connLogCommand is the command that opens the account of how a machine
+// was reached, and connLogName is what every line offering it says.
+//
+// One string, because three said it: the command, the row's menu, and
+// the summary the pane writes telling the user where the account went.
+// A copy in the prose is the one that goes stale without anything
+// failing, and then points at a line that is not there any more.
+const (
+	connLogCommand = "conn.log"
+	connLogName    = "Connection Log"
+)
+
+// connLogTitle names the account dialog.
+//
+// One title whichever state the connection is in: the log itself says
+// whether it is still connecting, and a heading in two tenses was two
+// things to read before the log had been started on.
+func connLogTitle(name string, _ hostKind) string {
+	return connLogName + " — " + name
 }
 
 // openFilesHere puts another pane in the file manager, on the machine
@@ -384,13 +392,19 @@ func (a *app) openTunnelHere() error {
 		return err
 	}
 
-	f := a.newForm("Tunnel over " + host)
-	f.Lines = wrapLines("A port on one machine that stands for a service "+
-		"the other one can reach. Listen here to reach a service on "+
-		host+", or there to give "+host+" one of ours.", errorLineWidth)
-	listen := f.AddField("Listen on", a.newField("[address:]port", 0))
-	target := f.AddField("Reach", a.newField("host:port", 0))
-	keep := f.AddTick("Remember this tunnel", false)
+	f := a.newForm(dlgTunnelVia + host)
+	// The direction is a field rather than a pair of buttons. Local and
+	// Remote are the words every SSH client uses, the two answers say
+	// which machine listens, and the paragraph that had to explain two
+	// buttons is not needed. It also leaves this dialog ending the same
+	// way as the SOCKS one: Open, then Cancel.
+	local, remoteWay := tunnelWays(host)
+	way := f.AddField(fldDirection, a.newField("", 0))
+	way.Options = []string{local, remoteWay}
+	way.SetText(local)
+	listen := f.AddField(fldListenOn, a.newField("[address:]port", 0))
+	target := f.AddField(fldForwardTo, a.newField("host:port", 0))
+	keep := f.AddTick(fldSaveTunnel, false)
 	// The ones kept for this machine, so one is a key away rather than
 	// two ports to remember.
 	listen.Options = a.savedTuns.listenOn(host)
@@ -400,44 +414,49 @@ func (a *app) openTunnelHere() error {
 			return
 		}
 		target.SetText(saved.Target)
+		// The direction it was saved with too: a saved tunnel is the
+		// whole tunnel, and one that came back pointing the other way
+		// would be a different tunnel under the same name.
+		if t, err := asTunnel(saved); err == nil && t.Kind == remote.RemoteForward {
+			way.SetText(remoteWay)
+		} else {
+			way.SetText(local)
+		}
 		keep.SetOn(true)
 	}
-	f.Lines = append(f.Lines,
-		"Ctrl+down and Ctrl+up step through the tunnels you have kept.",
-		"Clearing the box on one of those forgets it.")
 
-	// The direction is on the buttons rather than in a field: which
-	// machine listens is the whole of what a tunnel is, and a word for it
-	// in a box would be one more thing to get wrong.
-	open := func(kind remote.TunnelKind) func() error {
-		return func() error {
-			t := remote.Tunnel{
-				Kind:   kind,
-				Listen: strings.TrimSpace(listen.Text()),
-				Target: strings.TrimSpace(target.Text()),
-			}
-			if err := t.Validate(); err != nil {
-				// Returned rather than shown here, so the dialog stays
-				// open with what was typed still there to correct.
-				return err
-			}
-			if err := a.keepOrForgetTunnel(keep.On(), host, t); err != nil {
-				return err
-			}
-			// Not from here: this dialog closes as soon as this returns,
-			// and closing one takes anything stacked on top of it.
-			a.pump.post(func() { a.confirmTunnel(host, t) })
-			return nil
+	f.AddButton(ui.Button{Title: btnOpen, Do: func() error {
+		kind := remote.LocalForward
+		if way.Text() == remoteWay {
+			kind = remote.RemoteForward
 		}
-	}
-	// The names stay short whatever the machine is called: a button whose
-	// title carried the host name would be too wide to draw on a dialog
-	// this size, and a button that is not drawn cannot be pressed.
-	f.AddButton(ui.Button{Title: "Listen here", Do: open(remote.LocalForward)})
-	f.AddButton(ui.Button{Title: "Listen there", Do: open(remote.RemoteForward)})
-	f.AddButton(ui.Button{Title: "Cancel"})
+		t := remote.Tunnel{
+			Kind:   kind,
+			Listen: strings.TrimSpace(listen.Text()),
+			Target: strings.TrimSpace(target.Text()),
+		}
+		if err := t.Validate(); err != nil {
+			// Returned rather than shown here, so the dialog stays
+			// open with what was typed still there to correct.
+			return err
+		}
+		if err := a.keepOrForgetTunnel(keep.On(), host, t); err != nil {
+			return err
+		}
+		// Not from here: this dialog closes as soon as this returns,
+		// and closing one takes anything stacked on top of it.
+		a.pump.post(func() { a.confirmTunnel(host, t) })
+		return nil
+	}})
+	f.AddButton(ui.Button{Title: btnCancel})
 	a.showForm(f, nil)
 	return nil
+}
+
+// tunnelWays are the two directions as the Direction field offers them:
+// which end listens, in the words every SSH client uses for it.
+func tunnelWays(host string) (local, remote string) {
+	return "Local — listen here", "Remote — listen on " + host
 }
 
 // openSocksHere asks for a SOCKS5 proxy over the connection to the
@@ -452,11 +471,11 @@ func (a *app) openSocksHere() error {
 		return err
 	}
 
-	f := a.newForm("SOCKS proxy over " + host)
-	f.Lines = wrapLines("A proxy on this machine that reaches whatever it is "+
-		"asked for, as "+host+" sees it.", errorLineWidth)
-	listen := f.AddField("Listen on", a.newField("[address:]port", 0))
-	f.AddButton(ui.Button{Title: "Open", Do: func() error {
+	f := a.newForm(dlgSocksVia + host)
+	f.Lines = wrapLines("A local SOCKS port. Connections go out from "+host+".",
+		errorLineWidth)
+	listen := f.AddField(fldListenOn, a.newField("[address:]port", 0))
+	f.AddButton(ui.Button{Title: btnOpen, Do: func() error {
 		t := remote.Tunnel{
 			Kind:   remote.DynamicForward,
 			Listen: strings.TrimSpace(listen.Text()),
@@ -471,7 +490,7 @@ func (a *app) openSocksHere() error {
 		a.pump.post(func() { a.confirmTunnel(host, t) })
 		return nil
 	}})
-	f.AddButton(ui.Button{Title: "Cancel"})
+	f.AddButton(ui.Button{Title: btnCancel})
 	a.showForm(f, nil)
 	return nil
 }

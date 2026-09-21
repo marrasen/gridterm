@@ -319,7 +319,7 @@ func (a *app) newPane(f vfs.FS, b *browser) *files.Pane {
 	p.OnGoTo = func() {
 		a.pump.post(func() {
 			if err := a.openGoTo(); err != nil {
-				a.reportError("Go to", err)
+				a.reportError("Could not go to a directory", err)
 			}
 		})
 	}
@@ -327,7 +327,7 @@ func (a *app) newPane(f vfs.FS, b *browser) *files.Pane {
 	// pane is still handling.
 	p.OnError = func(at string, err error) {
 		a.pump.post(func() {
-			a.reportError("Could not read a directory", fmt.Errorf("%s\n\n%w", at, err))
+			a.reportError("Could not read the directory", fmt.Errorf("%s\n\n%w", at, err))
 		})
 	}
 	return p
@@ -724,18 +724,20 @@ func trouble(err error) error {
 func (a *app) confirmDelete(w files.Work) {
 	what := w.Names[0]
 	if len(w.Names) > 1 {
-		what = fmt.Sprintf("%d things", len(w.Names))
+		what = fmt.Sprintf("%d items", len(w.Names))
 	}
-	f := a.newConfirm("Delete "+what+"?", wrapLines(
-		"They go from "+w.From.FS().Name()+", at "+w.At+
-			". There is nothing that puts them back.", errorLineWidth))
-	f.AddButton(ui.Button{Title: "Delete", Do: func() error {
+	f := a.newConfirm(dlgDelete+what+"?", []string{
+		w.From.FS().Name() + ": " + w.At,
+		"",
+		"This cannot be undone.",
+	})
+	f.AddButton(ui.Button{Title: btnDelete, Do: func() error {
 		// Not from here: this dialog closes as soon as this returns, and
 		// closing one takes anything stacked on top of it.
 		a.pump.post(func() { a.startJob(jobs.Delete, w) })
 		return nil
 	}})
-	f.AddButton(ui.Button{Title: "Keep them"})
+	f.AddButton(ui.Button{Title: btnCancel})
 	// Opens on the button that changes nothing.
 	f.FocusButton(1)
 	a.showForm(f, nil)
@@ -743,10 +745,10 @@ func (a *app) confirmDelete(w files.Work) {
 
 // askForDirectory asks what to call a new directory and makes it.
 func (a *app) askForDirectory(w files.Work) {
-	f := a.newForm("New directory in " + w.From.FS().Name())
-	f.Lines = wrapLines("It is made in "+w.At+".", errorLineWidth)
-	name := f.AddField("Name", a.newField("what to call it", 0))
-	f.AddButton(ui.Button{Title: "Make it", Do: func() error {
+	f := a.newForm(dlgNewDirectory)
+	f.Lines = []string{w.From.FS().Name() + ": " + w.At}
+	name := f.AddField(fldName, a.newField("", 0))
+	f.AddButton(ui.Button{Title: btnCreate, Do: func() error {
 		at := strings.TrimSpace(name.Text())
 		if err := plainName(w.From.FS(), at); err != nil {
 			// Returned rather than shown here, so the dialog stays open
@@ -756,7 +758,7 @@ func (a *app) askForDirectory(w files.Work) {
 		a.pump.post(func() { a.makeDirectory(w.From, at) })
 		return nil
 	}})
-	f.AddButton(ui.Button{Title: "Cancel"})
+	f.AddButton(ui.Button{Title: btnCancel})
 	a.showForm(f, nil)
 }
 
@@ -768,7 +770,7 @@ func (a *app) makeDirectory(p *files.Pane, name string) {
 		err := f.Mkdir(at, 0o755)
 		a.pump.post(func() {
 			if err != nil {
-				a.reportError("Could not make the directory", err)
+				a.reportError("Could not create the directory", err)
 				return
 			}
 			p.Reload()
@@ -779,21 +781,24 @@ func (a *app) makeDirectory(p *files.Pane, name string) {
 // askToRename asks what to call something and renames it.
 func (a *app) askToRename(w files.Work) {
 	was := w.Names[0]
-	f := a.newForm("Rename " + was)
-	name := f.AddField("Name", a.newField("what to call it", 0))
+	f := a.newForm(dlgRename + was)
+	name := f.AddField(fldName, a.newField("", 0))
 	name.SetText(was)
-	f.AddButton(ui.Button{Title: "Rename", Do: func() error {
+	f.AddButton(ui.Button{Title: btnRename, Do: func() error {
 		to := strings.TrimSpace(name.Text())
 		if err := plainName(w.From.FS(), to); err != nil {
 			return err
 		}
 		if to == was {
-			return errors.New("that is what it is called already")
+			// The name it already has. Nothing to do and nothing worth
+			// saying: the dialog closes, which is what pressing Rename
+			// on an unchanged name means.
+			return nil
 		}
 		a.pump.post(func() { a.renameTo(w.From, was, to) })
 		return nil
 	}})
-	f.AddButton(ui.Button{Title: "Cancel"})
+	f.AddButton(ui.Button{Title: btnCancel})
 	a.showForm(f, nil)
 }
 
@@ -812,7 +817,7 @@ func (a *app) renameTo(p *files.Pane, was, to string) {
 		switch {
 		case err == nil && !strings.EqualFold(was, to):
 			a.pump.post(func() {
-				a.reportError("Could not rename it",
+				a.reportError("Could not rename "+was,
 					fmt.Errorf("%s is already there", to))
 			})
 			return
@@ -820,13 +825,13 @@ func (a *app) renameTo(p *files.Pane, was, to string) {
 			// Something else went wrong looking. Renaming replaces what
 			// is there, so going ahead without knowing is how a file is
 			// lost.
-			a.pump.post(func() { a.reportError("Could not rename it", err) })
+			a.pump.post(func() { a.reportError("Could not rename "+was, err) })
 			return
 		}
 		err = f.Rename(from, at)
 		a.pump.post(func() {
 			if err != nil {
-				a.reportError("Could not rename it", err)
+				a.reportError("Could not rename "+was, err)
 				return
 			}
 			p.Reload()
@@ -873,9 +878,9 @@ func (a *askOverwrite) Overwrite(ctx context.Context, c jobs.Conflict) (jobs.Cho
 // showOverwrite puts the question on the screen. It runs on the drawing
 // goroutine.
 func (a *app) showOverwrite(c jobs.Conflict, answers chan jobs.Choice) {
-	f := a.newConfirm("Replace "+vfs.Base(c.To, c.Path)+"?", wrapLines(
-		fmt.Sprintf("On %s there is already a %s of %s, changed %s.",
-			c.To.Name(), what(c.Have), size(c.Have.Size), when(c.Have)), errorLineWidth))
+	f := a.newConfirm(dlgReplaceFile+vfs.Base(c.To, c.Path)+"?", wrapLines(
+		fmt.Sprintf("Existing %s on %s: %s, modified %s.",
+			what(c.Have), c.To.Name(), size(c.Have.Size), when(c.Have)), errorLineWidth))
 
 	answered := false
 	answer := func(choice jobs.Choice) {
@@ -885,20 +890,27 @@ func (a *app) showOverwrite(c jobs.Conflict, answers chan jobs.Choice) {
 		answered = true
 		answers <- choice
 	}
-	f.AddButton(ui.Button{Title: "Replace", Do: func() error {
+	f.AddButton(ui.Button{Title: btnReplace, Do: func() error {
 		answer(jobs.Choice{What: jobs.Replace})
 		return nil
 	}})
-	f.AddButton(ui.Button{Title: "Replace all", Do: func() error {
+	f.AddButton(ui.Button{Title: btnReplaceAll, Do: func() error {
 		answer(jobs.Choice{What: jobs.Replace, All: true})
 		return nil
 	}})
-	f.AddButton(ui.Button{Title: "Skip", Do: func() error {
+	f.AddButton(ui.Button{Title: btnSkip, Do: func() error {
 		answer(jobs.Choice{What: jobs.Skip})
 		return nil
 	}})
-	f.AddButton(ui.Button{Title: "Skip all", Do: func() error {
+	f.AddButton(ui.Button{Title: btnSkipAll, Do: func() error {
 		answer(jobs.Choice{What: jobs.Skip, All: true})
+		return nil
+	}})
+	// Stopping the whole job was only ever reachable by dismissing the
+	// dialog, which no button said. Now it is one, and Escape is the
+	// same answer rather than a different one.
+	f.AddButton(ui.Button{Title: btnCancel, Do: func() error {
+		answer(jobs.Choice{What: jobs.Stop})
 		return nil
 	}})
 	// Opens on the answer that changes nothing, the way the question
@@ -1018,8 +1030,8 @@ func (a *app) openGoTo() error {
 	if !ok {
 		return errors.New("the keys are not on a file pane")
 	}
-	f := a.newForm("Go to")
-	where := f.AddField("Path", a.newField("a directory on "+p.FS().Name(), 0))
+	f := a.newForm(dlgGoTo)
+	where := f.AddField(fldPath, a.newField("", 0))
 	// The places this filesystem starts from, so a drive is one key
 	// away rather than something to remember the letter of.
 	where.Options = append([]string{p.At()}, p.FS().Roots()...)
@@ -1032,19 +1044,19 @@ func (a *app) openGoTo() error {
 		gone    bool
 	)
 	// Kept open until the read answers.
-	f.AddButton(ui.Button{Title: "Go", Keep: true, Do: func() error {
+	f.AddButton(ui.Button{Title: btnGo, Keep: true, Do: func() error {
 		path := strings.TrimSpace(where.Text())
 		if path == "" {
 			// Returned rather than shown here, so the dialog stays open
 			// with what was typed still there to correct.
-			return errors.New("there is nowhere to go")
+			return errors.New("Enter a path")
 		}
 		p.OpenThen(path, func(err error) {
 			if gone {
 				// Cancelled while the read was out, so the reason goes
 				// where every other one goes.
 				if err != nil {
-					a.reportError("Could not read a directory",
+					a.reportError("Could not read the directory",
 						fmt.Errorf("%s\n\n%w", path, err))
 				}
 				return
@@ -1057,7 +1069,7 @@ func (a *app) openGoTo() error {
 		})
 		return nil
 	}})
-	f.AddButton(ui.Button{Title: "Cancel"})
+	f.AddButton(ui.Button{Title: btnCancel})
 	dismiss = a.showForm(f, func() { gone = true })
 	return nil
 }
@@ -1169,7 +1181,7 @@ func (a *app) releaseFS(f vfs.FS) error {
 func (a *app) reportClosed() {
 	for _, err := range a.closes.reported() {
 		if err := a.graceLogged(err); err != nil {
-			a.reportError("Could not let go of a filesystem", err)
+			a.reportError("Could not disconnect the filesystem", err)
 		}
 	}
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/x509"
 	"errors"
-	"fmt"
 	"os"
 	"sort"
 	"sync"
@@ -141,14 +140,6 @@ func (r *Ring) Unlock(ctx context.Context, path string, ask Ask) (ssh.Signer, er
 	return signer, nil
 }
 
-// PassphraseTries is how many passphrases one key file is given before
-// the connection moves on to whatever else it has to offer.
-//
-// The same three ssh itself allows: enough for a typo, few enough that a
-// passphrase nobody remembers does not stand between the user and a
-// password the server would have taken.
-const PassphraseTries = 3
-
 // ErrWrongPassphrase is a passphrase that did not open the key.
 //
 // Its own error because it is the one failure here that is the user's to
@@ -157,22 +148,17 @@ const PassphraseTries = 3
 // neither this window's vocabulary nor, for an OpenSSH key, true.
 var ErrWrongPassphrase = errors.New("the passphrase did not unlock it")
 
-// askUntilItOpens asks for a passphrase until one opens the key, the
-// tries run out, or the user says no.
+// askUntilItOpens asks for a passphrase until one opens the key or the
+// user says no.
 //
-// Asking again is the whole point. A wrong passphrase is a typo far more
-// often than it is a key the user cannot open, and one try is not enough
-// to tell the two apart. The failure that comes back when the tries do
-// run out is the caller's to show: x/crypto keeps only the last thing
-// that did not work, so nothing after this point would ever mention it.
+// There is no limit on the asking. The key file is on this machine and
+// this user can already read it, so a count that gave up after three
+// guards nothing: it only takes the user who mistyped a long passphrase
+// twice and hands the connection on to whatever else it has to offer.
+// Cancel is how the user says they cannot open it.
 func askUntilItOpens(ctx context.Context, path string, b []byte, ask Ask) (ssh.Signer, error) {
-	var last error
-	for wrong := 0; wrong < PassphraseTries; wrong++ {
-		pass, err := ask.Passphrase(ctx, LockedKey{
-			Path:  path,
-			Wrong: wrong,
-			Left:  PassphraseTries - wrong - 1,
-		})
+	for wrong := 0; ; wrong++ {
+		pass, err := ask.Passphrase(ctx, LockedKey{Path: path, Wrong: wrong})
 		if err != nil {
 			// The user said no, or the connection was given up on.
 			// Neither is a reason to ask again.
@@ -188,9 +174,7 @@ func askUntilItOpens(ctx context.Context, path string, b []byte, ask Ask) (ssh.S
 			// the user to fix something that is not theirs to fix.
 			return nil, err
 		}
-		last = ErrWrongPassphrase
 	}
-	return nil, fmt.Errorf("%w, after %d tries", last, PassphraseTries)
 }
 
 // claim reports the key if the ring already holds it. Otherwise it

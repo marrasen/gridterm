@@ -131,20 +131,14 @@ func (h agentHost) setupToCopy(exe string) string {
 	return mcpConfig(exe)
 }
 
-// copyTitle is what the button that copies the setup says, naming what it copies.
+// copyTitle is what the button that copies the setup says, naming what
+// it copies. Two words: it is the button, so it needs no sentence under
+// the dialog explaining itself.
 func (h agentHost) copyTitle() string {
 	if h.cmd != "" {
-		return "Copy the command"
+		return "Copy command"
 	}
-	return "Copy the config"
-}
-
-// copyWhat is what that button puts on the clipboard, for a sentence about it.
-func (h agentHost) copyWhat() string {
-	if h.cmd != "" {
-		return "the command line"
-	}
-	return "the config"
+	return "Copy config"
 }
 
 // setupForAgent says the same to an agent that cannot see gridterm's tools: what to ask the user

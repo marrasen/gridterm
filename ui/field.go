@@ -76,6 +76,23 @@ type Field struct {
 	// into it.
 	Tick bool
 
+	// Hint is one line saying what this field is for, drawn along the
+	// bottom of the dialog while the field has focus.
+	//
+	// A line per field rather than a paragraph over all of them: the
+	// dialog stays the same height however many fields explain
+	// themselves, and what is on screen is about the field being filled
+	// in rather than about all of them at once.
+	Hint string
+
+	// Disabled says this field does not apply. It is drawn dim, takes
+	// no keys, and the focus steps over it.
+	//
+	// A field that cannot apply is disabled rather than accepted and
+	// then ignored: a value that is taken and quietly dropped is one
+	// the user believes they set.
+	Disabled bool
+
 	text string
 
 	// ghostDrawn is the Ghost the field last drew, so only one the user
@@ -207,6 +224,12 @@ func (f *Field) Focused() bool { return f.focused }
 // HandleKey edits the text. Keys it has no use for travel on, so Enter,
 // Escape and Tab still reach whatever is showing the field.
 func (f *Field) HandleKey(ev input.Event) (bool, error) {
+	// A disabled field does not apply, so nothing is typed into it and
+	// nothing is stepped through. Handing the key back rather than
+	// swallowing it leaves Tab and Enter working on the dialog.
+	if f.Disabled {
+		return false, nil
+	}
 	// A tick box takes space and the keys that step through options, and
 	// nothing else: there is nothing to type into it, and every other
 	// key belongs to whatever is showing it.

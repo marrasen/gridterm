@@ -76,7 +76,7 @@ func (p *themePick) choose(name string) error {
 var errNoSettingsForTheme = errors.New("this window has no settings to keep a theme in")
 
 // themeTitle names the dialog that picks a theme.
-const themeTitle = "Colour theme"
+const themeTitle = "Choose Theme"
 
 // startTheme is the theme the window opens on: the one remembered, and
 // the first built in when nothing was picked or what was picked has
@@ -197,7 +197,7 @@ func (a *app) openThemePick() error {
 	for _, t := range a.theme.all() {
 		note := ""
 		if t.Name == was {
-			note = "showing"
+			note = "current"
 		}
 		c.Add(t.Name, note, func() error { return a.takeTheme(t) })
 	}
@@ -228,13 +228,13 @@ func (a *app) takeTheme(t themes.Theme) error {
 func (a *app) loadThemes() {
 	dir, err := a.theme.where()
 	if err != nil {
-		a.pump.post(func() { a.reportError("The colour themes could not be found", err) })
+		a.pump.post(func() { a.reportError("Could not find the themes", err) })
 		return
 	}
 	all, err := themes.Load(themes.Path(dir))
 	a.theme.take(all)
 	if err != nil {
-		a.pump.post(func() { a.reportError("The colour themes could not be read", err) })
+		a.pump.post(func() { a.reportError("Could not read the themes", err) })
 	}
 }
 
@@ -267,7 +267,11 @@ func (a *app) writeThemeStart() error {
 	if err := themes.WriteStart(at, showing); err != nil {
 		return err
 	}
-	a.showNotice("Wrote "+at, "It holds a copy of "+showing.Name+" under another name.\n\n"+
-		"Edit the colours in it and take \"Reload colour themes\" to see them.", false)
+	n := a.newNotice("Theme file created", at+"\n\n"+
+		"A copy of "+showing.Name+". Edit it, then choose\n"+
+		"Options › Reload › Themes.")
+	// A path is not prose, and the dialog would re-wrap one at a space.
+	n.Preformatted = true
+	a.presentNotice(n)
 	return nil
 }

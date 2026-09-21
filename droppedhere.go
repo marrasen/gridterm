@@ -96,7 +96,7 @@ func (a *app) copyDropped(end jobEnd, paths []string, dir string) error {
 		}
 	}
 	if len(already) > 0 {
-		a.showNotice(arrived(already, dir, endName(end)), "It was already there.", false)
+		a.showNotice(arrived(already, dir, endName(end)), "Already exists.", false)
 	}
 	if len(started) == 0 {
 		return fs.Close()
@@ -135,9 +135,9 @@ func (a *app) sayWhenArrived(started []*jobs.Job, fs vfs.FS, paths []string,
 			for _, path := range paths {
 				names = append(names, filepath.Base(path))
 			}
-			body := "Nothing was typed into the pane: the file is where the program is looking."
+			body := ""
 			if failed > 0 {
-				body = strconv.Itoa(failed) + " of them did not arrive, and the rows say why."
+				body = strconv.Itoa(failed) + " failed. Details are on their rows."
 			}
 			a.showNotice(arrived(names, dir, where), body, false)
 		})
@@ -147,9 +147,9 @@ func (a *app) sayWhenArrived(started []*jobs.Job, fs vfs.FS, paths []string,
 
 // arrived is the line at the top of the message: what landed and where.
 func arrived(names []string, dir, where string) string {
-	what := strconv.Itoa(len(names)) + " files are"
+	what := "Copied " + strconv.Itoa(len(names)) + " files"
 	if len(names) == 1 {
-		what = names[0] + " is"
+		what = "Copied " + names[0]
 	}
-	return fmt.Sprintf("%s in %s on %s", what, dir, groupName(where))
+	return fmt.Sprintf("%s to %s on %s", what, dir, groupName(where))
 }

@@ -26,7 +26,7 @@ func keepLog() { log.SetOutput(windowLog) }
 // the sidebar and the menu call it.
 const (
 	logCommand = "view.log"
-	logTitle   = "Show what the window has logged"
+	logTitle   = "Window Log"
 	logLabel   = "Log"
 )
 

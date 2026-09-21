@@ -262,10 +262,13 @@ func (a *app) sayShellHasGone(id string) {
 	}
 	name := a.shellPick.titleOf(id)
 	a.pump.post(func() {
-		a.showNotice("The shell you chose is not on this machine",
-			"This machine no longer has "+name+", so the pane opened on "+
-				"the default shell. Pick another shell from the plus on "+
-				"this machine's row.", true)
+		n := a.newNotice("Shell not found",
+			name+" is no longer installed. The default shell was opened."+
+				" Choose another under File › New Terminal In.")
+		n.Failure = true
+		// Nothing to copy: it is a sentence about a shell that has gone.
+		n.SetNoCopy()
+		a.presentNotice(n)
 	})
 }
 
@@ -310,7 +313,7 @@ func (a *app) openPaneOnDefault() error {
 	// rather than returned, so a settings file that cannot be written
 	// does not cost the user the pane they asked for.
 	if err := a.shellPick.forget(); err != nil {
-		a.reportError("Could not forget which shell to open", err)
+		a.reportError("Could not save the settings", err)
 	}
 	// The File menu holds a copy of its lines, so the way back has to be
 	// taken off it here rather than at the next scan.
@@ -335,7 +338,7 @@ func (a *app) splitOnShell(dir ui.Dir, current ui.Widget, sh shells.Shell) error
 // next one opens on it too.
 func (a *app) rememberShell(sh shells.Shell) {
 	if err := a.shellPick.choose(sh.ID); err != nil {
-		a.reportError("Could not remember which shell to open", err)
+		a.reportError("Could not save the settings", err)
 	}
 	a.refreshFileMenu(a.fileMenuShells())
 }
@@ -384,7 +387,7 @@ func (a *app) registerShells(list []shells.Shell) {
 	for i, sh := range list {
 		cmd := ui.Command{
 			ID:    ids[i],
-			Title: "New pane on " + sh.Title,
+			Title: "New Terminal: " + sh.Title,
 			Run:   func() error { return a.openPaneOn(sh) },
 		}
 		if err := a.root.Commands.Register(a.reporting(cmd)); err != nil {
@@ -407,9 +410,8 @@ func (a *app) reportShellScan(err error) {
 		return
 	}
 	a.logError(fmt.Errorf("listing the WSL distributions: %w", err))
-	a.showNotice("Some shells could not be found",
-		"The WSL distributions could not be listed, so none of them are offered:\n\n"+
-			err.Error(), true)
+	a.showNotice("WSL shells unavailable",
+		"Could not list the WSL distributions:\n\n"+err.Error(), true)
 }
 
 // shellCommandIDs names the command that opens a pane on each shell in

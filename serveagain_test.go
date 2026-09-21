@@ -48,8 +48,8 @@ func TestStoppingFromTheDialogIsWrittenDown(t *testing.T) {
 	if err := a.showServing(); err != nil {
 		t.Fatalf("open the dialog: %v", err)
 	}
-	f := awaitModal(t, a, "the serving dialog", byTitle[*ui.Form]("Serving this window"))
-	pressButton(t, a, f, "Stop serving")
+	f := awaitModal(t, a, "the serving dialog", byTitle[*ui.Form](dlgServingWindow))
+	pressButton(t, a, f, btnStopServing)
 
 	if a.serving.on() {
 		t.Fatal("the port is still open")
@@ -99,8 +99,10 @@ func TestAWindowThatWasServingOffersToServeAgain(t *testing.T) {
 	if !strings.Contains(said, "4242") {
 		t.Errorf("it does not say which port:\n%s", said)
 	}
-	if !strings.Contains(said, "Nothing is listening until you say so") {
-		t.Errorf("it does not say the port is still shut:\n%s", said)
+	// Nothing says the port is still shut: the dialog is a question, and
+	// a question that has not been answered has not done anything.
+	if a.serving.on() {
+		t.Error("the port is open before the question was answered")
 	}
 }
 
@@ -114,7 +116,7 @@ func TestTakingTheOfferOpensThePort(t *testing.T) {
 	a.pump.run()
 	f := awaitModal(t, a, "the offer", byTitle[*ui.Form](serveAgainTitle))
 
-	pressButton(t, a, f, "Serve")
+	pressButton(t, a, f, btnServe)
 
 	if !a.serving.on() {
 		t.Fatal("taking the offer did not open a port")
@@ -132,7 +134,7 @@ func TestNotNowLeavesTheOfferStanding(t *testing.T) {
 	a.pump.run()
 	f := awaitModal(t, a, "the offer", byTitle[*ui.Form](serveAgainTitle))
 
-	pressButton(t, a, f, "Not now")
+	pressButton(t, a, f, btnNotNow)
 
 	if a.serving.on() {
 		t.Error("declining opened a port")
@@ -142,7 +144,7 @@ func TestNotNowLeavesTheOfferStanding(t *testing.T) {
 	}
 }
 
-// "Forget that it served" leaves the port shut and stops the offer.
+// "Don't ask again" leaves the port shut and stops the offer.
 func TestForgettingStopsTheOffer(t *testing.T) {
 	a, set := aWindowThatCanServe(t)
 	if err := set.PutServeOn(true); err != nil {
@@ -152,7 +154,7 @@ func TestForgettingStopsTheOffer(t *testing.T) {
 	a.pump.run()
 	f := awaitModal(t, a, "the offer", byTitle[*ui.Form](serveAgainTitle))
 
-	pressButton(t, a, f, "Forget that it served")
+	pressButton(t, a, f, btnDontAskAgain)
 
 	if a.serving.on() {
 		t.Error("it opened a port")

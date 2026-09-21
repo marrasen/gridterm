@@ -1,0 +1,65 @@
+# What every change is checked against, before it lands.
+#
+# The release workflow runs on a tag, which is too late to learn that a
+# branch does not build: by then the version number is already spent.
+# This one runs on the branch and on every pull request into main.
+#
+# The linter is the gate rather than "go vet", for the reason .golangci.yml
+# gives: vet has no way to say that one finding has been looked at and is
+# right. golangci-lint runs vet among the others and honours the
+# exclusions written down there.
+#
+# It matters more since the window's wording moved into constants. A word
+# nothing uses any more is a button that has gone from a dialog, and the
+# unused check is the only thing that notices.
+name: Checks
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Format, lint and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          # The one place the version is written down is go.mod.
+          go-version-file: go.mod
+
+      # Before the linter, because a file that is not formatted makes
+      # every other finding harder to read.
+      - name: Format
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "These files are not gofmt'd:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          # Pinned, not floating: a linter that moved on its own could
+          # turn a green branch red with nothing in the branch having
+          # changed. It needs bumping when the Go version in go.mod does
+          # -- a golangci-lint built against an older toolchain cannot
+          # read the newer one's export data, and reports the whole tree
+          # as a type error.
+          version: v2.13.2
+
+      # On Linux only. The release workflow runs the suite on Windows as
+      # well, which is where the interesting differences are; running
+      # both here would double the wait on every push for a difference
+      # that a tag will catch.
+      - name: Test
+        run: go test ./...

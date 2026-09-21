@@ -608,7 +608,7 @@ func ReaderKeys() []Key {
 	return []Key{
 		{Chord: chord(input.KeyHome, 0), Shown: "Home", Title: "Top"},
 		{Chord: chord(input.KeyEnd, 0), Shown: "End", Title: "Bottom"},
-		{Chord: chord(input.KeyR, input.ModCtrl), Shown: "^R", Title: "Reread"},
+		{Chord: chord(input.KeyR, input.ModCtrl), Shown: "^R", Title: "Reload"},
 		{Chord: chord(input.KeyF, input.ModCtrl), Shown: "^F", Title: "Follow"},
 		{Typed: '/', Shown: "/", Title: "Find"},
 		{Chord: chord(input.KeyH, input.ModCtrl), Shown: "^H", Title: "Hex"},

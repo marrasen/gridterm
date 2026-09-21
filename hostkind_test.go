@@ -240,9 +240,9 @@ func connectByName(t *testing.T, a *testApp, target string) {
 	if _, err := a.root.HandleKey(press(input.KeyN, input.ModCtrl|input.ModShift)); err != nil {
 		t.Fatalf("the connect chord: %v", err)
 	}
-	f := awaitModal(t, a, "the Connect to a server dialog", byTitle[*ui.Form]("Connect to a server"))
-	typeIntoField(t, a, f, "Server", target)
-	pressButton(t, a, f, "Connect")
+	f := awaitModal(t, a, "the Connect to Server dialog", byTitle[*ui.Form](dlgConnectServer))
+	typeIntoField(t, a, f, fldServer, target)
+	pressButton(t, a, f, btnConnect)
 }
 
 // A window taken over by address and saved afterwards gives a terminal
@@ -389,10 +389,10 @@ func TestTheConnectDialogOnAWindowAlreadyConnectedSaysSo(t *testing.T) {
 
 	m := openMenuWith(t, client, "serve.attach")
 	chooseMenuItem(t, m, "serve.attach")
-	f := awaitModal(t, client, "the Connect to another window dialog", byTitle[*ui.Form]("Connect to another window"))
-	typeIntoField(t, client, f, "Machine", addr)
-	typeIntoField(t, client, f, "Key file", keyFile)
-	pressButton(t, client, f, "Connect")
+	f := awaitModal(t, client, "the Connect to Window dialog", byTitle[*ui.Form](dlgConnectWindow))
+	typeIntoField(t, client, f, fldHost, addr)
+	typeIntoField(t, client, f, fldKeyFile, keyFile)
+	pressButton(t, client, f, btnConnect)
 
 	// It says so rather than connecting again or opening anything. What
 	// that window has open is on the sidebar to open from.
@@ -549,7 +549,7 @@ func clickTerminalLine(t *testing.T, a *testApp, host string) {
 	m := clickPlus(t, a, host)
 	for _, item := range m.Items() {
 		switch item.Title {
-		case "Terminal", "Take it over":
+		case "Terminal", "Connect":
 			chooseMenuItem(t, m, item.Command)
 			return
 		}
@@ -664,9 +664,9 @@ func waysIn() []wayIn {
 			if _, err := a.root.HandleKey(press(input.KeyN, input.ModCtrl|input.ModShift)); err != nil {
 				t.Fatalf("the connect chord: %v", err)
 			}
-			f := awaitModal(t, a, "the Connect to a server dialog", byTitle[*ui.Form]("Connect to a server"))
-			typeIntoField(t, a, f, "Server", addr)
-			pressButton(t, a, f, "Connect")
+			f := awaitModal(t, a, "the Connect to Server dialog", byTitle[*ui.Form](dlgConnectServer))
+			typeIntoField(t, a, f, fldServer, addr)
+			pressButton(t, a, f, btnConnect)
 		}},
 	}
 }
@@ -694,10 +694,10 @@ func TestEveryWayInTakesOverASavedWindow(t *testing.T) {
 		func(t *testing.T, a *testApp, host, addr, keyFile string) {
 			m := openMenuWith(t, a, "serve.attach")
 			chooseMenuItem(t, m, "serve.attach")
-			f := awaitModal(t, a, "the Connect to another window dialog", byTitle[*ui.Form]("Connect to another window"))
-			typeIntoField(t, a, f, "Machine", addr)
-			typeIntoField(t, a, f, "Key file", keyFile)
-			pressButton(t, a, f, "Connect")
+			f := awaitModal(t, a, "the Connect to Window dialog", byTitle[*ui.Form](dlgConnectWindow))
+			typeIntoField(t, a, f, fldHost, addr)
+			typeIntoField(t, a, f, fldKeyFile, keyFile)
+			pressButton(t, a, f, btnConnect)
 		},
 	})
 

@@ -71,7 +71,7 @@ func (a *app) openRoute(name string, route []step, open opening, at *spot) {
 		if open.into != nil {
 			// Taking a window over draws its panes as panes of its own,
 			// so there is nothing to put in the pane that asked.
-			a.reportError("Could not start it again in this pane", fmt.Errorf(
+			a.reportError("Could not restart the command", fmt.Errorf(
 				"%s is a gridterm window now, which is connected to rather than logged in to", name))
 			return
 		}
@@ -85,7 +85,7 @@ func (a *app) openRoute(name string, route []step, open opening, at *spot) {
 	}
 	if len(missing) == 0 {
 		if err := a.startOn(name, open, at); err != nil {
-			a.reportError("Could not open it on "+name, err)
+			a.reportError("Could not open on "+name, err)
 		}
 		return
 	}
@@ -311,7 +311,7 @@ func (a *app) letGoOfConn(name string, conn *remote.Conn) {
 		err := conn.Close()
 		a.pump.post(func() {
 			if err != nil {
-				a.reportError("Could not let go of "+name, err)
+				a.reportError("Could not disconnect from "+name, err)
 			}
 		})
 	}()
@@ -392,7 +392,7 @@ func (a *app) becomeFilesPane(name string, pane *term.Terminal, log *connLog, at
 	// Closed after the file pane is open, because the window quits with
 	// its last pane.
 	if err := a.closePane(pane); err != nil {
-		a.reportError("Could not close the pane that was connecting", err)
+		a.reportError("Could not close the pane", err)
 	}
 }
 

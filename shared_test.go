@@ -395,7 +395,8 @@ func TestTheAgentBorderIsTheColourTheChipSays(t *testing.T) {
 
 	var chip *ui.Chip
 	for i := range a.bar.Chips {
-		if a.bar.Chips[i].Do != nil && strings.Contains(a.bar.Chips[i].Text, "agent") {
+		if a.bar.Chips[i].Do != nil &&
+			strings.Contains(strings.ToLower(a.bar.Chips[i].Text), "agent") {
 			chip = &a.bar.Chips[i]
 		}
 	}

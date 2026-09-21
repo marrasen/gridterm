@@ -356,3 +356,18 @@ func ReadCode(code string) (port int, err error) {
 // codePrefix begins every code, so something pasted by mistake is
 // turned away by name rather than tried against the window.
 const codePrefix = "gt1"
+
+// What the boxes on the hand-over dialog are called.
+//
+// One string each, here rather than in the window that draws them,
+// because the MCP server quotes these names back to an agent when it
+// refuses something: "ask the user to tick X" has to name the box the
+// user is actually looking at. Two copies of a name drift the first time
+// one is reworded, and the agent is then telling the user to look for
+// something that is not there.
+const (
+	BoxRestart  = "Restart the connection"
+	BoxOpenMore = "Open more panes"
+	BoxReadOnly = "Read only"
+	BoxReadBack = "Read cleared scrollback"
+)

@@ -35,7 +35,7 @@ func makeKeyDialog(t *testing.T, a *testApp, at string) *ui.Form {
 		t.Fatalf("open it: %v", err)
 	}
 	f := awaitModal(t, a, "the make a key dialog", byTitle[*ui.Form](makeKeyTitle))
-	retypeField(t, a, f, "File", at)
+	retypeField(t, a, f, fldFile, at)
 	return f
 }
 
@@ -45,8 +45,8 @@ func TestMakingAKeyWritesItAndKeepsIt(t *testing.T) {
 	at := filepath.Join(t.TempDir(), "id_ed25519")
 
 	f := makeKeyDialog(t, a, at)
-	typeIntoField(t, a, f, "Comment", "marcus@laptop")
-	pressButton(t, a, f, "Make it")
+	typeIntoField(t, a, f, fldComment, "marcus@laptop")
+	pressButton(t, a, f, btnCreate)
 
 	if _, err := os.Stat(at); err != nil {
 		t.Fatalf("the key is not there: %v", err)
@@ -65,10 +65,10 @@ func TestMakingAKeySaysHowToInstallIt(t *testing.T) {
 	at := filepath.Join(t.TempDir(), "id_ed25519")
 
 	f := makeKeyDialog(t, a, at)
-	pressButton(t, a, f, "Make it")
+	pressButton(t, a, f, btnCreate)
 
 	n := awaitModal(t, a, "what to do with the key", func(got *ui.Notice) bool {
-		return strings.Contains(got.Title, "id_ed25519")
+		return got.Title == "Key created"
 	})
 	body := n.Message()
 	line, err := os.ReadFile(at + ".pub")
@@ -95,7 +95,7 @@ func TestAKeyThatCannotBeWrittenKeepsTheDialogOpen(t *testing.T) {
 	}
 
 	f := makeKeyDialog(t, a, at)
-	pressButton(t, a, f, "Make it")
+	pressButton(t, a, f, btnCreate)
 
 	if a.root.Modal() != f {
 		t.Fatal("the dialog closed on a key it could not write")
@@ -119,9 +119,9 @@ func TestTheServerDialogOffersTheKeptKeys(t *testing.T) {
 	if err := a.openAddServer(); err != nil {
 		t.Fatalf("add a server: %v", err)
 	}
-	f := awaitModal(t, a, "the add dialog", byTitle[*ui.Form]("Add a server"))
+	f := awaitModal(t, a, "the add dialog", byTitle[*ui.Form]("Add Server"))
 
-	got := f.Field("Key file").Options
+	got := f.Field(fldKeyFile).Options
 	if !slices.Contains(got, "/home/marcus/.ssh/id_work") {
 		t.Errorf("the field offers %v, want the key the window keeps", got)
 	}
@@ -138,11 +138,11 @@ func TestAKeyNamedOnAServerIsKept(t *testing.T) {
 	if err := a.openAddServer(); err != nil {
 		t.Fatalf("add a server: %v", err)
 	}
-	f := awaitModal(t, a, "the add dialog", byTitle[*ui.Form]("Add a server"))
-	typeIntoField(t, a, f, "Name", "margit")
-	typeIntoField(t, a, f, "Server", "margit.example")
-	typeIntoField(t, a, f, "Key file", "/home/marcus/.ssh/id_work")
-	pressButton(t, a, f, "Save")
+	f := awaitModal(t, a, "the add dialog", byTitle[*ui.Form]("Add Server"))
+	typeIntoField(t, a, f, fldName, "margit")
+	typeIntoField(t, a, f, fldServer, "margit.example")
+	typeIntoField(t, a, f, fldKeyFile, "/home/marcus/.ssh/id_work")
+	pressButton(t, a, f, btnSave)
 
 	if got := a.keyFiles.all(); !slices.Contains(got, "/home/marcus/.ssh/id_work") {
 		t.Errorf("the window keeps %v, want the key the server was given", got)
@@ -201,9 +201,9 @@ func TestThePassphraseIsMasked(t *testing.T) {
 	a := aKeyWindow(t)
 
 	f := makeKeyDialog(t, a, filepath.Join(t.TempDir(), "id_ed25519"))
-	typeIntoField(t, a, f, "Passphrase", "let me in")
+	typeIntoField(t, a, f, fldPassphrase, "let me in")
 
-	for _, label := range []string{"Passphrase", "Passphrase again"} {
+	for _, label := range []string{"Passphrase", "Confirm passphrase"} {
 		if f.Field(label).Mask == 0 {
 			t.Errorf("the %q field shows what is typed into it", label)
 		}
@@ -217,14 +217,14 @@ func TestTwoDifferentPassphrasesAreRefused(t *testing.T) {
 	at := filepath.Join(t.TempDir(), "id_ed25519")
 
 	f := makeKeyDialog(t, a, at)
-	typeIntoField(t, a, f, "Passphrase", "let me in")
-	typeIntoField(t, a, f, "Passphrase again", "let me nn")
-	pressButton(t, a, f, "Make it")
+	typeIntoField(t, a, f, fldPassphrase, "let me in")
+	typeIntoField(t, a, f, fldConfirmPass, "let me nn")
+	pressButton(t, a, f, btnCreate)
 
 	if a.root.Modal() != f {
 		t.Fatal("the dialog closed on two passphrases that differ")
 	}
-	if f.Error() == nil || !strings.Contains(f.Error().Error(), "not the same") {
+	if f.Error() == nil || !strings.Contains(f.Error().Error(), "do not match") {
 		t.Errorf("it said %v", f.Error())
 	}
 	if _, err := os.Stat(at); err == nil {
@@ -239,9 +239,9 @@ func TestThePassphraseReachesTheKey(t *testing.T) {
 	at := filepath.Join(t.TempDir(), "id_ed25519")
 
 	f := makeKeyDialog(t, a, at)
-	typeIntoField(t, a, f, "Passphrase", "let me in")
-	typeIntoField(t, a, f, "Passphrase again", "let me in")
-	pressButton(t, a, f, "Make it")
+	typeIntoField(t, a, f, fldPassphrase, "let me in")
+	typeIntoField(t, a, f, fldConfirmPass, "let me in")
+	pressButton(t, a, f, btnCreate)
 
 	raw, err := os.ReadFile(at)
 	if err != nil {
@@ -265,7 +265,7 @@ func TestAKeyThatCannotBeKeptIsStillReported(t *testing.T) {
 	a.keyFiles.remember(settings.Unusable(errors.New("the settings file is unreadable")))
 
 	f := makeKeyDialog(t, a, at)
-	pressButton(t, a, f, "Make it")
+	pressButton(t, a, f, btnCreate)
 
 	if _, err := os.Stat(at); err != nil {
 		t.Fatalf("the key is not there: %v", err)
@@ -273,14 +273,14 @@ func TestAKeyThatCannotBeKeptIsStillReported(t *testing.T) {
 	// The reason it was not remembered is on top, and what to do with
 	// the key is under it.
 	awaitModal(t, a, "the reason it was not remembered",
-		byTitle[*ui.Notice]("The key was made and not added to the list"))
+		byTitle[*ui.Notice]("Key created, but not added to the list"))
 	// Put away, rather than dismissNotice: what to do with the key is
 	// under it and stays.
 	if _, err := a.root.HandleKey(press(input.KeyEscape, 0)); err != nil {
 		t.Fatalf("Escape: %v", err)
 	}
 	awaitModal(t, a, "what to do with the key", func(got *ui.Notice) bool {
-		return strings.Contains(got.Title, "id_ed25519")
+		return got.Title == "Key created"
 	})
 }
 
@@ -301,11 +301,15 @@ func TestTheInstructionsNameThePublicHalfOnly(t *testing.T) {
 	if !strings.Contains(got, "ssh-copy-id -i "+key.Pub+" ") {
 		t.Errorf("it says %q, want the public half as the -i argument", got)
 	}
-	// The private half's own path must not be in it: a user following
-	// the instructions would paste the wrong file.
+	// The private half is named once, as a label saying where it went.
+	// Every other line is an instruction to follow, and one naming the
+	// private half would have the user paste the wrong file.
 	for line := range strings.SplitSeq(got, "\n") {
+		if strings.HasPrefix(line, "Private key:") {
+			continue
+		}
 		if strings.Contains(line, key.Path) && !strings.Contains(line, key.Pub) {
-			t.Errorf("a line names the private half: %q", line)
+			t.Errorf("an instruction names the private half: %q", line)
 		}
 	}
 	if !strings.Contains(got, "readable by its owner alone") {
@@ -345,7 +349,7 @@ func TestSavingAServerWithoutTouchingItsKeyKeepsNothing(t *testing.T) {
 		t.Fatalf("edit: %v", err)
 	}
 	f := awaitModal(t, a, "the edit dialog", byTitle[*ui.Form]("Edit margit"))
-	pressButton(t, a, f, "Save")
+	pressButton(t, a, f, btnSave)
 
 	if got := a.keyFiles.all(); len(got) != 0 {
 		t.Errorf("the window keeps %v, and the key field was not touched", got)

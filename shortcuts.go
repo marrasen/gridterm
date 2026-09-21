@@ -17,9 +17,9 @@ import (
 // key is an SSH key here.
 const (
 	keysCommand       = "shortcuts.write"
-	keysTitle         = "Write a starting keyboard shortcuts file"
+	keysTitle         = "New Shortcuts File"
 	keysReloadCommand = "shortcuts.reload"
-	keysReloadTitle   = "Reread the keyboard shortcuts"
+	keysReloadTitle   = "Reload Shortcuts"
 )
 
 // reloadShortcuts reads the shortcuts file again and applies it.
@@ -55,8 +55,10 @@ func (a *app) reloadShortcuts() error {
 	}
 	a.root.Accelerators.Become(next)
 	a.markDirty()
-	a.showNotice(keysReloadTitle,
-		"The keyboard shortcuts file was read again, and this window is using it.", false)
+	// A line along the bottom rather than a dialog. It worked and there
+	// is nothing to read: a dialog for it would cost a keypress to
+	// dismiss, and the keypress is the whole of what it offers.
+	a.say("Shortcuts reloaded")
 	return nil
 }
 
@@ -158,15 +160,15 @@ func (a *app) writeShortcutStart() error {
 	if err := keys.WriteStart(at, a.root.Accelerators.Bindings()); err != nil {
 		return err
 	}
-	a.showNotice("Wrote "+at, "It holds every shortcut this window has now.\n\n"+
-		"The file says what to change, not what the whole window does. Add a line\n"+
-		"to put a command on another chord. To move it, set the old chord to \""+
-		keys.Nothing+"\"\nas well, or the command runs on both. Delete a line and "+
-		"that chord goes back\nto what gridterm comes with.\n\n"+
-		"Every chord in the file runs before a pane sees it, so a chord a program\n"+
-		"in the pane needs stops reaching it. A dialog that is open sees a chord\n"+
-		"before either of them.\n\n"+
-		"Edit it, then take \""+keysReloadTitle+"\" to use it.", false)
+	// How overrides work is in the file itself, as a comment block at the
+	// top: that is where somebody editing it is looking when they need
+	// it, and a dialog they dismissed is a paragraph they cannot get back.
+	n := a.newNotice("Shortcuts file created", at+"\n\n"+
+		"Contains every current shortcut. Edit it, then\n"+
+		"choose Options › Reload › Shortcuts.")
+	// A path is not prose, and the dialog would re-wrap one at a space.
+	n.Preformatted = true
+	a.presentNotice(n)
 	return nil
 }
 

@@ -17,10 +17,9 @@ import (
 
 // openServer asks which machine to connect to.
 func (a *app) openServer() error {
-	f := a.newForm("Connect to a server")
-	f.Lines = []string{"A machine to open a terminal on."}
-	target := f.AddField("Server", a.newField("[user@]host[:port]", 0))
-	f.AddButton(ui.Button{Title: "Connect", Do: func() error {
+	f := a.newForm(dlgConnectServer)
+	target := f.AddField(fldServer, a.newField("[user@]host[:port]", 0))
+	f.AddButton(ui.Button{Title: btnConnect, Do: func() error {
 		cfg, err := remote.ParseTarget(target.Text())
 		if err != nil {
 			// Returning it keeps the dialog open with what was typed
@@ -34,7 +33,7 @@ func (a *app) openServer() error {
 		a.pump.post(func() { a.connect(cfg) })
 		return nil
 	}})
-	f.AddButton(ui.Button{Title: "Cancel"})
+	f.AddButton(ui.Button{Title: btnCancel})
 	a.showForm(f, nil)
 	return nil
 }

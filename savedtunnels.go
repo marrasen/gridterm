@@ -94,9 +94,9 @@ func asTunnel(saved settings.SavedTunnel) (remote.Tunnel, error) {
 func savedTunnelTitle(saved settings.SavedTunnel) string {
 	t, err := asTunnel(saved)
 	if err != nil {
-		return "Open the tunnel kept as " + saved.Kind + " on " + groupName(saved.Host)
+		return "Open " + saved.Kind + " Tunnel via " + groupName(saved.Host)
 	}
-	return "Open " + t.String() + " over " + groupName(saved.Host)
+	return "Open Tunnel " + t.String() + " via " + groupName(saved.Host)
 }
 
 // openSavedTunnel opens a tunnel the user kept, over the machine it

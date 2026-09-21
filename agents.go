@@ -1037,7 +1037,7 @@ func (w agentWindow) Restart(id string) (agent.Pane, error) {
 		if !w.a.agents.allowed(h).Restart {
 			return agent.Pane{}, errors.New(
 				"this hand-over does not let you restart the pane." +
-					` Ask the user to tick "Restart a closed connection"`)
+					` Ask the user to tick "` + agent.BoxRestart + `"`)
 		}
 		w.a.gave(h)
 		if !h.pane.Exited() {
@@ -1088,7 +1088,7 @@ func (w agentWindow) Open(id string) (agent.Pane, error) {
 		if !w.a.agents.allowed(h).OpenMore {
 			return agent.Pane{}, errors.New(
 				"this hand-over does not let you open another pane." +
-					` Ask the user to tick "Open another pane there"`)
+					` Ask the user to tick "` + agent.BoxOpenMore + `"`)
 		}
 		w.a.gave(h)
 		e := w.a.panes[h.pane]
@@ -1400,15 +1400,6 @@ func onDrawing[T any](a *app, f func() (T, error)) (T, error) {
 	}
 }
 
-// shareItem is what the menu line that shares a pane says: a share is
-// started once, and after that panes join the one that is open.
-func (a *app) shareItem() string {
-	if a.agents.sharing() {
-		return "Add this pane to the share…"
-	}
-	return "Share this pane with an agent…"
-}
-
 // handHere hands the pane the user is looking at to an agent.
 func (a *app) handHere() error { return a.handPane(a.focusedTerminal()) }
 
@@ -1422,17 +1413,14 @@ func (a *app) takeBackHere() error { return a.takeBackPane(a.focusedTerminal()) 
 // all of it. What is here is the four boxes, which are this pane's own.
 func (a *app) showPaneBoxes(h *handover) {
 	f := a.newForm(paneBoxesTitle)
-	f.Lines = []string{
-		"This pane is in the share. An agent reads it and types into it,",
-		"and each box below adds one thing, the moment you tick it.",
-		"",
-		"The code is the share's, and \"Show Share\" on the " + shareMenu,
-		"menu has it, along with every pane in it.",
-	}
+	f.Lines = wrapLines(
+		"The agent can read this pane and type into it. Changes apply immediately.",
+		errorLineWidth)
 	a.addAgentBoxes(f, h)
-	f.Lines = append(f.Lines, "", "Space ticks a box.")
-	f.AddButton(ui.Button{Title: "Done"})
-	f.AddButton(ui.Button{Title: "Take it out", Do: func() error {
+	// Close, not Done: every box has already taken effect, so there is
+	// nothing here waiting to be agreed to.
+	f.AddButton(ui.Button{Title: btnClose})
+	f.AddButton(ui.Button{Title: btnRemovePane, Do: func() error {
 		return a.takeBackPane(h.pane)
 	}})
 	a.showForm(f, func() { a.rememberAgentMay(h.may) })
@@ -1440,7 +1428,7 @@ func (a *app) showPaneBoxes(h *handover) {
 
 // paneBoxesTitle names the dialog that says what an agent may do in one
 // pane.
-const paneBoxesTitle = "What an agent may do in this pane"
+const paneBoxesTitle = "Agent Permissions"
 
 // showShare is the share: the code, the panes in it, and what to paste
 // to an agent.
@@ -1455,25 +1443,23 @@ func (a *app) showShare() error {
 	code := a.agents.code()
 	f := a.newForm(shareTitle)
 	f.Lines = []string{
-		"An agent with this code reads the panes below and types into",
-		"them, and nothing else of yours. The code is:",
+		"An agent with this code can read and type in the panes below.",
+		"",
 		"  " + code,
 	}
 	// The code on its own, for an agent that has had the prompt already.
 	f.Copyable = code
 
-	pick := f.AddField("Agent", a.newField("", 0))
+	pick := f.AddField(fldAgent, a.newField("", 0))
 	pick.Options = agentHostNames()
 	pick.SetText(a.agents.startHost().name)
 	a.addShareRows(f)
 
-	f.Lines = append(f.Lines, "",
-		"Ctrl+down picks the agent, space takes a pane out or puts it",
-		"back. "+a.copiesTheCode())
+	f.Lines = append(f.Lines, "", a.copiesTheCode())
 
 	// The three leave the form open, so the user can copy the prompt,
 	// read the setup and write the skill in one visit.
-	f.AddButton(ui.Button{Title: "Copy the prompt", Keep: true, Do: func() error {
+	f.AddButton(ui.Button{Title: btnCopyPrompt, Keep: true, Do: func() error {
 		host := hostNamed(pick.Text())
 		exe, err := exePath()
 		if err != nil {
@@ -1487,16 +1473,20 @@ func (a *app) showShare() error {
 				// The prompt on the clipboard says just "gridterm", which
 				// works only where gridterm is on the PATH. Said here
 				// because the user may never open the instructions.
-				a.showNotice("The prompt says gridterm, not a path",
-					"gridterm could not read its own path, so the line the prompt asks"+
-						" the user to run says just gridterm. That works where gridterm"+
-						" is on the PATH, and nowhere else.", true)
+				n := a.newNotice("gridterm path not found",
+					"The prompt uses \"gridterm\" as the command."+
+						" It works when gridterm is on the PATH.")
+				n.Failure = true
+				// Nothing here is worth copying: it is a sentence about
+				// what the prompt on the clipboard already says.
+				n.SetNoCopy()
+				a.presentNotice(n)
 			}
 			a.rememberAgentHost(host)
 		})
 		return nil
 	}})
-	f.AddButton(ui.Button{Title: "Instructions", Keep: true, Do: func() error {
+	f.AddButton(ui.Button{Title: btnSetup, Keep: true, Do: func() error {
 		host := hostNamed(pick.Text())
 		exe, err := exePath()
 		if err != nil {
@@ -1512,7 +1502,7 @@ func (a *app) showShare() error {
 		})
 		return nil
 	}})
-	f.AddButton(ui.Button{Title: "Write the skill", Keep: true, Do: func() error {
+	f.AddButton(ui.Button{Title: btnWriteSkill, Keep: true, Do: func() error {
 		host := hostNamed(pick.Text())
 		a.pump.post(func() {
 			a.writeSkillFor(host, false)
@@ -1520,14 +1510,14 @@ func (a *app) showShare() error {
 		})
 		return nil
 	}})
-	f.AddButton(ui.Button{Title: "Done"})
-	f.AddButton(ui.Button{Title: "Stop sharing", Do: a.stopSharing})
+	f.AddButton(ui.Button{Title: btnClose})
+	f.AddButton(ui.Button{Title: btnStopSharing, Do: a.stopSharing})
 	a.showForm(f, nil)
 	return nil
 }
 
 // shareTitle names the dialog that shows the share.
-const shareTitle = "Sharing with an agent"
+const shareTitle = "Agent Share"
 
 // addShareRows puts a row on the share dialog for every pane in it: a
 // tick box that takes the pane out and puts it back.
@@ -1604,10 +1594,10 @@ func (a *app) addAgentBoxes(f *ui.Form, h *handover) {
 		label string
 		on    func(*settings.AgentMay) *bool
 	}{
-		{"Restart a closed connection", func(m *settings.AgentMay) *bool { return &m.Restart }},
-		{"Open another pane there", func(m *settings.AgentMay) *bool { return &m.OpenMore }},
-		{"Read only", func(m *settings.AgentMay) *bool { return &m.ReadOnly }},
-		{"Read above a clear", func(m *settings.AgentMay) *bool { return &m.ReadBack }},
+		{agent.BoxRestart, func(m *settings.AgentMay) *bool { return &m.Restart }},
+		{agent.BoxOpenMore, func(m *settings.AgentMay) *bool { return &m.OpenMore }},
+		{agent.BoxReadOnly, func(m *settings.AgentMay) *bool { return &m.ReadOnly }},
+		{agent.BoxReadBack, func(m *settings.AgentMay) *bool { return &m.ReadBack }},
 	} {
 		at := box.on
 		tick := f.AddTick(box.label, *at(&h.may))
@@ -1622,7 +1612,7 @@ func (a *app) addAgentBoxes(f *ui.Form, h *handover) {
 // when it could not be written.
 func (a *app) rememberAgentMay(may settings.AgentMay) {
 	if err := a.agents.rememberMay(may); err != nil {
-		a.reportError("Could not remember what this hand-over allows", err)
+		a.reportError("Could not save the settings", err)
 	}
 }
 
@@ -1639,7 +1629,7 @@ func (a *app) copiesTheCode() string {
 // it could not be written.
 func (a *app) rememberAgentHost(host agentHost) {
 	if err := a.agents.rememberHost(host.name); err != nil {
-		a.reportError("Could not remember which agent this was for", err)
+		a.reportError("Could not save the settings", err)
 	}
 }
 
@@ -1664,39 +1654,40 @@ func (a *app) writeSkillFor(host agentHost, over bool) {
 		a.askToReplaceSkill(host, path)
 		return
 	}
-	a.showNotice("The skill for "+host.name+" is written", skillWritten(host, path), false)
+	n := a.newNotice("Skill written", skillWritten(host, path))
+	// A path is not prose, and the dialog would re-wrap one at a space.
+	n.Preformatted = true
+	a.presentNotice(n)
 }
 
 // skillWritten says where a skill went, and says to move it when it went
 // somewhere the host will not look.
 func skillWritten(host agentHost, path string) string {
 	if len(host.skillIn) > 0 {
-		return "The skill is at\n\n  " + path + "\n\n" +
-			"Start " + host.name + " again and it will read it."
+		return path + "\n\nRestart " + host.name + " to load it."
 	}
-	return "gridterm does not know where " + host.name + " reads skills from," +
-		" so the skill went under gridterm's own settings:\n\n  " + path + "\n\n" +
-		"Copy it to wherever that host reads skills from."
+	return path + "\n\nCopy it to where " + host.name + " reads skills from."
 }
 
 // askToReplaceSkill asks before writing over a skill that says something
 // else, which is a skill the user may have edited.
 func (a *app) askToReplaceSkill(host agentHost, path string) {
-	f := a.newConfirm("Replace the skill that is there?", []string{
-		"There is already a skill at",
+	f := a.newConfirm(dlgReplaceSkill, []string{
+		path,
 		"",
-		"  " + path,
-		"",
-		"and it says something else. Replacing it loses whatever was",
-		"changed in it.",
+		"The existing skill has been edited.",
+		"Replacing it discards those edits.",
 	})
-	f.AddButton(ui.Button{Title: "Replace", Do: func() error {
+	f.AddButton(ui.Button{Title: btnReplace, Do: func() error {
 		// Not from here: this form closes as soon as this returns, and
 		// closing a dialog takes anything stacked on top of it.
 		a.pump.post(func() { a.writeSkillFor(host, true) })
 		return nil
 	}})
-	f.AddButton(ui.Button{Title: "Keep"})
+	f.AddButton(ui.Button{Title: btnCancel})
+	// Opens on the button that changes nothing, the way every other
+	// question that writes over something does.
+	f.FocusButton(1)
 	a.showForm(f, nil)
 }
 
@@ -1706,20 +1697,11 @@ func (a *app) askToReplaceSkill(host agentHost, path string) {
 // Short on purpose. A dialog draws the lines that fit and drops the
 // rest, and this one has to read whole in eighty columns by twenty four.
 func (a *app) showSetup(host agentHost, exe string, exeErr error) {
+	// The setup lines and nothing after them: the button below says what
+	// it copies, so a sentence describing the button is the dialog
+	// reading itself out.
 	lines := host.setupLines(exe)
-	if exeErr != nil {
-		lines = append(lines, "",
-			"gridterm could not read its own path, so that says just",
-			"gridterm, which works where gridterm is on the PATH.")
-	}
-	// Two lines, because one runs wider than a dialog draws and a line
-	// too wide is trimmed at the edge without a word.
-	lines = append(lines, "",
-		`"`+host.copyTitle()+`" puts `+host.copyWhat()+" on the clipboard.")
-	if chord := a.chordFor(copyCommand); chord != "" {
-		lines = append(lines, chord+" does the same.")
-	}
-	f := a.newConfirm("Adding gridterm to "+host.called, lines)
+	f := a.newConfirm(dlgSetUp+host.called, lines)
 	// The line itself, not the dialog: what the user does with this is
 	// paste it into a shell or a config file.
 	f.Copyable = host.setupToCopy(exe)
@@ -1727,7 +1709,7 @@ func (a *app) showSetup(host agentHost, exe string, exeErr error) {
 		a.clip.set(f.Copyable)
 		return nil
 	}})
-	f.AddButton(ui.Button{Title: "Done"})
+	f.AddButton(ui.Button{Title: btnClose})
 	a.showForm(f, nil)
 }
 

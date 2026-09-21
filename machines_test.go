@@ -256,7 +256,7 @@ func TestWaitingForTheOneOnItsWayRunsTheRequestAgain(t *testing.T) {
 	a.connectAs("box", cfg)
 	a.connectAs("box", cfg)
 	f := awaitModal(t, a, "the Already connecting to box dialog", byTitle[*ui.Form]("Already connecting to box"))
-	pressButton(t, a, f, "Wait for it")
+	pressButton(t, a, f, btnWait)
 
 	// The first connection lands, and then the second request runs on
 	// the machine it made rather than logging in again.
@@ -399,9 +399,9 @@ func TestRunACommandThroughTheDialog(t *testing.T) {
 	if err := a.openCommandHere(); err != nil {
 		t.Fatalf("openCommandHere: %v", err)
 	}
-	f := awaitModal(t, a, "the Run a command on "+host+" dialog", byTitle[*ui.Form]("Run a command on "+host))
-	typeIntoField(t, a, f, "Command", "uname -a")
-	pressButton(t, a, f, "Run")
+	f := awaitModal(t, a, "the Run a command on "+host+" dialog", byTitle[*ui.Form]("Run Command on "+host))
+	typeIntoField(t, a, f, fldCommand, "uname -a")
+	pressButton(t, a, f, btnRun)
 	waitForPanes(t, a, 3)
 
 	if m := a.root.Modal(); m != nil {
@@ -433,8 +433,8 @@ func TestRunACommandRefusesAnEmptyOne(t *testing.T) {
 	if err := a.openCommandHere(); err != nil {
 		t.Fatalf("openCommandHere: %v", err)
 	}
-	f := awaitModal(t, a, "the Run a command on "+host+" dialog", byTitle[*ui.Form]("Run a command on "+host))
-	pressButton(t, a, f, "Run")
+	f := awaitModal(t, a, "the Run a command on "+host+" dialog", byTitle[*ui.Form]("Run Command on "+host))
+	pressButton(t, a, f, btnRun)
 
 	if a.root.Modal() != f {
 		t.Fatal("the dialog closed on a command with nothing in it")
@@ -458,8 +458,8 @@ func TestRunACommandOnThisMachine(t *testing.T) {
 		t.Fatalf("a command on this machine: %v", err)
 	}
 	f := awaitModal[*ui.Form](t, a, "the command dialog", nil)
-	typeIntoField(t, a, f, "Command", "make deploy")
-	pressButton(t, a, f, "Run")
+	typeIntoField(t, a, f, fldCommand, "make deploy")
+	pressButton(t, a, f, btnRun)
 	waitForPanes(t, a, 2)
 
 	pane := a.focusedTerminal()
@@ -504,9 +504,9 @@ func TestACommandHereLandsInTheSplit(t *testing.T) {
 
 	c := splitChoices(t, a, ui.Columns)
 	takeChoice(t, c, "Command on Local…")
-	f := awaitModal(t, a, "the command dialog", byTitle[*ui.Form]("Run a command on Local"))
-	typeIntoField(t, a, f, "Command", "make deploy")
-	pressButton(t, a, f, "Run")
+	f := awaitModal(t, a, "the command dialog", byTitle[*ui.Form]("Run Command on Local"))
+	typeIntoField(t, a, f, fldCommand, "make deploy")
+	pressButton(t, a, f, btnRun)
 	waitForPanes(t, a, 2)
 
 	if got := len(a.stage.Children()); got != 1 {
@@ -530,11 +530,11 @@ func TestACommandHereThatWillNotStartSaysSo(t *testing.T) {
 		t.Fatalf("a command on this machine: %v", err)
 	}
 	f := awaitModal[*ui.Form](t, a, "the command dialog", nil)
-	typeIntoField(t, a, f, "Command", "nowhere")
-	pressButton(t, a, f, "Run")
+	typeIntoField(t, a, f, fldCommand, "nowhere")
+	pressButton(t, a, f, btnRun)
 
 	n := awaitModal[*ui.Notice](t, a, "a notice", nil)
-	if n.Title != "Could not run it on Local" {
+	if n.Title != "Could not run the command on Local" {
 		t.Errorf("the dialog is titled %q, want the machine named", n.Title)
 	}
 	if !strings.Contains(n.Message(), boom.Error()) {
@@ -556,8 +556,8 @@ func TestACommandHereKeepsItsNameOnTheRowAfterItEnds(t *testing.T) {
 		t.Fatalf("a command on this machine: %v", err)
 	}
 	f := awaitModal[*ui.Form](t, a, "the command dialog", nil)
-	typeIntoField(t, a, f, "Command", "make deploy")
-	pressButton(t, a, f, "Run")
+	typeIntoField(t, a, f, fldCommand, "make deploy")
+	pressButton(t, a, f, btnRun)
 	waitForPanes(t, a, 2)
 
 	pane := a.focusedTerminal()
@@ -583,9 +583,9 @@ func TestACommandHereRunsInTheDirectoryAsked(t *testing.T) {
 		t.Fatalf("a command on this machine: %v", err)
 	}
 	f := awaitModal[*ui.Form](t, a, "the command dialog", nil)
-	typeIntoField(t, a, f, "Command", "make deploy")
-	typeIntoField(t, a, f, "Directory", `C:\Workspace\gridterm`)
-	pressButton(t, a, f, "Run")
+	typeIntoField(t, a, f, fldCommand, "make deploy")
+	typeIntoField(t, a, f, fldDirectory, `C:\Workspace\gridterm`)
+	pressButton(t, a, f, btnRun)
 	waitForPanes(t, a, 2)
 
 	if got := a.lastDir(t); got != `C:\Workspace\gridterm` {
@@ -603,8 +603,8 @@ func TestACommandHereWithNoDirectoryRunsWhereverTheShellLands(t *testing.T) {
 		t.Fatalf("a command on this machine: %v", err)
 	}
 	f := awaitModal[*ui.Form](t, a, "the command dialog", nil)
-	typeIntoField(t, a, f, "Command", "make deploy")
-	pressButton(t, a, f, "Run")
+	typeIntoField(t, a, f, fldCommand, "make deploy")
+	pressButton(t, a, f, btnRun)
 	waitForPanes(t, a, 2)
 
 	if got := a.lastDir(t); got != "" {
@@ -623,9 +623,9 @@ func TestACommandRunAgainRunsInTheSameDirectory(t *testing.T) {
 		t.Fatalf("a command on this machine: %v", err)
 	}
 	f := awaitModal[*ui.Form](t, a, "the command dialog", nil)
-	typeIntoField(t, a, f, "Command", "make deploy")
-	typeIntoField(t, a, f, "Directory", `C:\Workspace\gridterm`)
-	pressButton(t, a, f, "Run")
+	typeIntoField(t, a, f, fldCommand, "make deploy")
+	typeIntoField(t, a, f, fldDirectory, `C:\Workspace\gridterm`)
+	pressButton(t, a, f, btnRun)
 	waitForPanes(t, a, 2)
 
 	pane := a.focusedTerminal()
@@ -663,8 +663,8 @@ func TestAShellRunAsACommandHereKeepsTheCommandName(t *testing.T) {
 	f := awaitModal[*ui.Form](t, a, "the command dialog", nil)
 	// The path of a shell this machine has, so the row could be renamed
 	// after it if a command row were named the way a terminal row is.
-	typeIntoField(t, a, f, "Command", cmdPath)
-	pressButton(t, a, f, "Run")
+	typeIntoField(t, a, f, fldCommand, cmdPath)
+	pressButton(t, a, f, btnRun)
 	waitForPanes(t, a, 2)
 
 	pane := a.focusedTerminal()
@@ -1200,7 +1200,7 @@ func TestWhatWaitedForAConnectionThatFailedIsDropped(t *testing.T) {
 	a.connectAs("box", cfg)
 	a.connectAs("box", cfg)
 	f := awaitModal(t, a, "the Already connecting to box dialog", byTitle[*ui.Form]("Already connecting to box"))
-	pressButton(t, a, f, "Wait for it")
+	pressButton(t, a, f, btnWait)
 	a.pump.run()
 
 	// Given up on, so what was waiting for it has nothing to wait for.
@@ -1438,19 +1438,19 @@ func TestASecondAttemptOnASavedMachineAsks(t *testing.T) {
 		button string
 		then   func(t *testing.T, a *testApp, first *dialling)
 	}{
-		{button: "Leave it", then: func(t *testing.T, a *testApp, first *dialling) {
+		{button: "Cancel", then: func(t *testing.T, a *testApp, first *dialling) {
 			if a.machines.connecting("slow") != first {
-				t.Error("leaving it alone did not leave the first attempt holding the name")
+				t.Error("cancelling dropped the attempt that was already on its way")
 			}
 			if len(first.waiting) != 0 {
-				t.Errorf("%d requests are queued behind it, and leaving it queues none",
+				t.Errorf("%d requests are queued behind it, and cancelling queues none",
 					len(first.waiting))
 			}
 			if n := a.machines.beingMade(); n != 1 {
 				t.Errorf("%d connections are being made, want the first one only", n)
 			}
 		}},
-		{button: "Wait for it", then: func(t *testing.T, a *testApp, first *dialling) {
+		{button: "Wait", then: func(t *testing.T, a *testApp, first *dialling) {
 			if a.machines.connecting("slow") != first {
 				t.Error("waiting for it did not leave the first attempt holding the name")
 			}
@@ -1461,7 +1461,7 @@ func TestASecondAttemptOnASavedMachineAsks(t *testing.T) {
 				t.Errorf("%d requests are waiting for it, want the second one", len(first.waiting))
 			}
 		}},
-		{button: "Give up on that one", then: func(t *testing.T, a *testApp, first *dialling) {
+		{button: "Retry", then: func(t *testing.T, a *testApp, first *dialling) {
 			waitFor(t, a, "the second attempt to take the name", func() bool {
 				d := a.machines.connecting("slow")
 				return d != nil && d != first

@@ -59,8 +59,28 @@ type Change struct {
 type stored struct {
 	Version int `json:"version"`
 
+	// Help is how the file works, written into the file itself.
+	//
+	// JSON has no comments, so it goes in a field instead. It is read
+	// back like any other and then ignored: what matters is that it is
+	// in front of whoever opens the file to edit it, which is where the
+	// rules are needed and where a dialog cannot reach.
+	Help []string `json:"_help,omitempty"`
+
 	// Keys maps a chord to the command it runs, or to "nothing".
 	Keys map[string]string `json:"keys"`
+}
+
+// startHelp is what a freshly written file says about itself.
+var startHelp = []string{
+	"This file says what to change, not what the whole window does.",
+	"Add a line to put a command on another chord.",
+	"To move a command, set its old chord to \"" + Nothing + "\" as well," +
+		" or it runs on both.",
+	"Delete a line and that chord goes back to what gridterm comes with.",
+	"Every chord here runs before a pane sees it, so a chord a program in" +
+		" the pane needs stops reaching it.",
+	"A dialog that is open sees a chord before either of them.",
 }
 
 // Path returns where the file of shortcuts lives, in a directory.
@@ -161,7 +181,11 @@ func typedInAPane(k input.Key) bool {
 //
 // It refuses a file that is already there: what is in one is the user's.
 func WriteStart(path string, have []ui.Binding) error {
-	file := stored{Version: FileVersion, Keys: make(map[string]string, len(have))}
+	file := stored{
+		Version: FileVersion,
+		Help:    startHelp,
+		Keys:    make(map[string]string, len(have)),
+	}
 	for _, b := range have {
 		file.Keys[b.Chord.String()] = b.ID
 	}

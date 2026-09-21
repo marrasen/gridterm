@@ -711,3 +711,71 @@ func TestNoKeyToLockTheSecretsWithSaysSo(t *testing.T) {
 		t.Errorf("it said %q, want it to name the command that writes one", said)
 	}
 }
+
+// A secret goes off the clipboard when the window closes, rather than
+// waiting for a timer that will never fire.
+//
+// Taking it off after half a minute is done by a timer that posts work
+// to the queue the drawing goroutine drains, and by the goroutine that
+// owns the clipboard. Neither outlives the window. Closing gridterm
+// inside that half minute left the password on the clipboard for good,
+// which is the one thing the timer is there to prevent.
+func TestClosingTheWindowTakesASecretOffTheClipboard(t *testing.T) {
+	a, keyFile := aWindowWithSecrets(t)
+	v := startTheVault(t, a, keyFile)
+
+	it, err := v.Put(secrets.Item{Name: "margit"}, "hunter2")
+	if err != nil {
+		t.Fatalf("put: %v", err)
+	}
+	if err := a.copySecret(v, it); err != nil {
+		t.Fatalf("copy: %v", err)
+	}
+	waitFor(t, a, "the secret to reach the clipboard", func() bool {
+		return a.copiedText() == "hunter2"
+	})
+
+	// The window closing, the way it really closes: the frame that sees
+	// quit set is the last chance anything has to run.
+	a.quit.Store(true)
+	if _, err := a.Update(), error(nil); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+
+	if got := a.copiedText(); got != "" {
+		t.Errorf("the clipboard still holds %q after the window closed", got)
+	}
+}
+
+// And what the user copied since is theirs, on the way out as much as
+// on the timer.
+func TestClosingTheWindowLeavesWhatWasCopiedSince(t *testing.T) {
+	a, keyFile := aWindowWithSecrets(t)
+	v := startTheVault(t, a, keyFile)
+
+	it, err := v.Put(secrets.Item{Name: "margit"}, "hunter2")
+	if err != nil {
+		t.Fatalf("put: %v", err)
+	}
+	if err := a.copySecret(v, it); err != nil {
+		t.Fatalf("copy: %v", err)
+	}
+	waitFor(t, a, "the secret to reach the clipboard", func() bool {
+		return a.copiedText() == "hunter2"
+	})
+
+	// Something of their own, copied after the secret.
+	a.clip.set("a line they copied themselves")
+	waitFor(t, a, "their own copy to land", func() bool {
+		return a.copiedText() == "a line they copied themselves"
+	})
+
+	a.quit.Store(true)
+	if _, err := a.Update(), error(nil); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+
+	if got := a.copiedText(); got != "a line they copied themselves" {
+		t.Errorf("the clipboard holds %q, and what they copied was theirs", got)
+	}
+}

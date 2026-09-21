@@ -50,6 +50,24 @@ type entry struct {
 
 // contents is everything under the data key.
 type contents struct {
+	// Saves counts the times this vault has been written, and goes up
+	// by one each time.
+	//
+	// Inside the sealed half so it cannot be edited without the key.
+	// Every copy of the file this window ever wrote is validly sealed,
+	// so the crypto says "somebody with the key wrote this" and not
+	// "this is the newest one". Without a count, putting yesterday's
+	// file back restores a key slot the user revoked, or a password
+	// they changed, and nothing can tell.
+	//
+	// Whoever opens the vault remembers the highest count they have
+	// seen, somewhere other than this file, and says so when a file
+	// opens with a lower one. That does not make an old copy impossible
+	// to force -- two files can be put back as easily as one -- but it
+	// turns a silent swap into one that has to defeat two places and can
+	// be seen.
+	Saves uint64 `json:"saves,omitempty"`
+
 	Entries []entry `json:"entries"`
 }
 
@@ -73,6 +91,10 @@ type Vault struct {
 	// vault is locked. Its presence is what "unlocked" means.
 	data  []byte
 	items []entry
+
+	// saves is the count in the file as it was opened, and what the next
+	// write puts one above.
+	saves uint64
 
 	// now is the clock, for a test that wants times it chose.
 	now func() time.Time
@@ -122,20 +144,39 @@ func Create(path string, signer ssh.Signer, keyFile string) (*Vault, error) {
 	if err := usable(signer.PublicKey()); err != nil {
 		return nil, err
 	}
-	if _, err := os.Stat(path); err == nil {
-		return nil, fmt.Errorf("secrets: there is already a vault at %s", path)
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return nil, fmt.Errorf("secrets: look for a vault at %s: %w", path, err)
+	// The name is taken before anything else, and by the one call that
+	// cannot say yes to two callers. Looking first and writing after
+	// left a gap: the write goes through a rename, which replaces
+	// whatever is there, so a second window creating a vault in that gap
+	// wrote over the first one's -- and the file holds the only copy of
+	// what is in it.
+	//
+	// The file left here is empty. It is replaced by the real one below,
+	// and taken away again if that never happens: an empty file reads as
+	// a vault that cannot be opened, which is worse than no vault.
+	took, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return nil, fmt.Errorf("secrets: there is already a vault at %s", path)
+		}
+		return nil, fmt.Errorf("secrets: make a vault at %s: %w", path, err)
+	}
+	if err := took.Close(); err != nil {
+		return nil, fmt.Errorf("secrets: make a vault at %s: %w",
+			path, errors.Join(err, os.Remove(path)))
+	}
+	give := func(err error) (*Vault, error) {
+		return nil, errors.Join(err, os.Remove(path))
 	}
 
 	data, err := newDataKey()
 	if err != nil {
-		return nil, err
+		return give(err)
 	}
 	s, err := wrapFor(signer, data, keyFile)
 	if err != nil {
 		wipe(data)
-		return nil, err
+		return give(err)
 	}
 	v := &Vault{path: path, now: time.Now, data: data, file: &file{
 		Version: fileVersion,
@@ -143,7 +184,7 @@ func Create(path string, signer ssh.Signer, keyFile string) (*Vault, error) {
 	}}
 	if err := v.save(); err != nil {
 		wipe(data)
-		return nil, err
+		return give(err)
 	}
 	return v, nil
 }
@@ -208,6 +249,17 @@ func (v *Vault) Unlock(signers []ssh.Signer) error {
 	if v.data != nil {
 		return nil
 	}
+	// A slot that does not open is remembered and the next key is still
+	// tried. The whole point of more than one slot is that losing one
+	// does not lose the vault, and giving up on the first bad slot took
+	// that away: a damaged slot for the key offered first shut out a key
+	// offered second whose own slot was untouched.
+	var trouble error
+	keep := func(err error) {
+		if trouble == nil {
+			trouble = err
+		}
+	}
 	for _, signer := range signers {
 		if usable(signer.PublicKey()) != nil {
 			continue
@@ -219,24 +271,33 @@ func (v *Vault) Unlock(signers []ssh.Signer) error {
 			}
 			key, err := slotKeyFrom(signer, s.Challenge, s.Salt)
 			if err != nil {
-				return err
+				keep(err)
+				continue
 			}
 			data, err := unseal(key, s.Nonce, s.Wrapped, nil)
 			wipe(key)
 			if err != nil {
 				// The slot names this key and the key did not open it,
 				// so the file has been tampered with or the key has
-				// been replaced under the same name.
-				return fmt.Errorf("secrets: the key %s is named by a slot it does not open: %w",
-					want, err)
+				// been replaced under the same name. Worth reporting if
+				// nothing else opens it, and not worth stopping for.
+				keep(fmt.Errorf("secrets: the key %s is named by a slot it does not open: %w",
+					want, err))
+				continue
 			}
 			if err := v.readContents(data); err != nil {
 				wipe(data)
+				// The contents are one sealed blob shared by every
+				// slot, so another key will not read them either. This
+				// one is the answer.
 				return err
 			}
 			v.data = data
 			return nil
 		}
+	}
+	if trouble != nil {
+		return trouble
 	}
 	return ErrWrongKey
 }
@@ -258,7 +319,20 @@ func (v *Vault) readContents(data []byte) error {
 	}
 	wipe(plain)
 	v.items = c.Entries
+	v.saves = c.Saves
 	return nil
+}
+
+// Saves is how many times this vault has been written, as the file just
+// opened says.
+//
+// Worth reading once the vault is unlocked, against the highest already
+// seen: a file that opens with a lower count than one opened before is
+// an older copy of it. See the note on contents.Saves.
+func (v *Vault) Saves() uint64 {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.saves
 }
 
 // Lock drops the key and everything it opened. What is on disk stays.
@@ -488,18 +562,28 @@ type KeySlot struct {
 
 // save seals the items and writes the file. The caller holds the lock.
 func (v *Vault) save() error {
-	raw, err := json.Marshal(contents{Entries: v.items})
+	// Up by one before it is sealed, so the file on disk always says a
+	// higher number than the one it replaced.
+	v.saves++
+	raw, err := json.Marshal(contents{Saves: v.saves, Entries: v.items})
 	if err != nil {
 		return fmt.Errorf("secrets: write the vault %s: %w", v.path, err)
 	}
 	nonce, box, err := seal(v.data, raw, nil)
 	wipe(raw)
 	if err != nil {
+		v.saves--
 		return err
 	}
 	v.file.Version = fileVersion
 	v.file.Nonce, v.file.Sealed = nonce, box
-	return writeFile(v.path, v.file)
+	if err := writeFile(v.path, v.file); err != nil {
+		// Nothing reached the disk, so the count this vault would write
+		// next has not been spent.
+		v.saves--
+		return err
+	}
+	return nil
 }
 
 // newID is an item's identifier, which only has to be unlike the

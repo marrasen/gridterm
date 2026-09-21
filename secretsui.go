@@ -276,10 +276,14 @@ func (a *app) typeSecret(v *secrets.Vault, it secrets.Item) error {
 // time is up, and leaves alone a clipboard that holds something else by
 // then.
 func (a *app) forgetClipboardLater(value string) {
+	a.secretCopied = value
 	time.AfterFunc(clipboardHolds, func() {
 		// Through the pump, because reading the clipboard and taking a
 		// secret off it belong to the goroutine that draws.
 		a.pump.post(func() {
+			if a.secretCopied == value {
+				a.secretCopied = ""
+			}
 			if a.pasteText() != value {
 				// They have copied something since. It is theirs.
 				return
@@ -287,6 +291,24 @@ func (a *app) forgetClipboardLater(value string) {
 			a.clip.clear()
 		})
 	})
+}
+
+// takeAnySecretOffTheClipboard is the same thing on the way out, done
+// where the window is closing rather than half a minute later.
+//
+// The timer that would have done it posts work to a queue that stops
+// being drained, and the goroutine that writes the clipboard stops with
+// the window, so both have to be gone around. Whatever the user copied
+// since is left alone, the way the timer leaves it.
+func (a *app) takeAnySecretOffTheClipboard() {
+	value := a.secretCopied
+	a.secretCopied = ""
+	if value == "" || a.pasteText() != value {
+		return
+	}
+	if err := a.clip.clearNow(); err != nil {
+		a.logError(fmt.Errorf("taking a secret off the clipboard on the way out: %w", err))
+	}
 }
 
 // addSecret asks for a password and keeps it.

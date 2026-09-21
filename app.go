@@ -209,6 +209,11 @@ type app struct {
 	// now is the clock this window runs on, so a test can hold it still.
 	now func() time.Time
 
+	// secretCopied is the secret put on the clipboard and not yet taken
+	// off it, so the window can take it off on the way out. Empty when
+	// there is none.
+	secretCopied string
+
 	// status is the line along the bottom saying that something worked,
 	// and nothing while there is nothing to say.
 	status status
@@ -500,6 +505,10 @@ func (a *app) Update() error {
 	// half-finished copy says so.
 	a.watchForClosing()
 	if a.quit.Load() {
+		// Before the drain and on this goroutine: the timer that would
+		// have taken it off posts work nothing will run now, and the
+		// clipboard's own goroutine goes with the window.
+		a.takeAnySecretOffTheClipboard()
 		// Drained once on the way out: a connection that finished in
 		// this very frame is holding a shell that only this queue knows
 		// how to close.

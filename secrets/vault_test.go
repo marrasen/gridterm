@@ -413,3 +413,200 @@ func TestTheVaultSaysWhichKeysOpenIt(t *testing.T) {
 		t.Errorf("it wants %v, want just %s", got, want)
 	}
 }
+
+// A slot that will not open does not shut out a key whose own slot is
+// untouched.
+//
+// More than one key is the whole point of the slots: a second machine
+// gets its own, and losing one is not losing the vault. Giving up on the
+// first slot that failed took that away, because the keys are offered in
+// whatever order the window has them.
+func TestADamagedSlotDoesNotShutOutAGoodKey(t *testing.T) {
+	path := filepath.Join(t.TempDir(), Name)
+	a, b := aKey(t), aKey(t)
+
+	v, err := Create(path, a, "a")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := v.Put(Item{Name: "margit"}, "hunter2"); err != nil {
+		t.Fatalf("put: %v", err)
+	}
+	if err := v.AddKey(b, "b"); err != nil {
+		t.Fatalf("add the second key: %v", err)
+	}
+
+	// A's slot no longer opens: the wrapped data key in it is damaged.
+	f, err := readFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	for i := range f.Slots {
+		if f.Slots[i].Fingerprint == Fingerprint(a.PublicKey()) {
+			f.Slots[i].Wrapped[0] ^= 0xff
+		}
+	}
+	if err := writeFile(path, f); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	// A is offered first, so the damaged slot is met first.
+	again, err := Open(path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	if err := again.Unlock([]ssh.Signer{a, b}); err != nil {
+		t.Fatalf("the good key did not open the vault: %v", err)
+	}
+	if got, err := again.Secret(itemNamed(t, again, "margit").ID); err != nil || got != "hunter2" {
+		t.Fatalf("the secret came back as %q, %v", got, err)
+	}
+}
+
+// And with nothing that opens it, what comes back says which key was
+// named by a slot it could not open, rather than only that no key fits.
+func TestADamagedSlotIsStillReportedWhenNothingOpensIt(t *testing.T) {
+	path := filepath.Join(t.TempDir(), Name)
+	a := aKey(t)
+
+	if _, err := Create(path, a, "a"); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	f, err := readFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	f.Slots[0].Wrapped[0] ^= 0xff
+	if err := writeFile(path, f); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	again, err := Open(path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	err = again.Unlock([]ssh.Signer{a})
+	if err == nil {
+		t.Fatal("a damaged slot opened the vault")
+	}
+	if !strings.Contains(err.Error(), "named by a slot it does not open") {
+		t.Errorf("it said %v, want it to name the slot that failed", err)
+	}
+}
+
+// Every write says it is later than the one before it.
+//
+// Every copy of the file is validly sealed, so the crypto cannot tell
+// yesterday's from today's. The count can: a file that opens with a
+// lower one than a file opened before is an older copy of it.
+func TestEveryWriteCountsUp(t *testing.T) {
+	path := filepath.Join(t.TempDir(), Name)
+	v, err := Create(path, aKey(t), "a")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	was := v.Saves()
+	if was == 0 {
+		t.Fatal("a vault that has been written says it has been written no times")
+	}
+	if _, err := v.Put(Item{Name: "one"}, "a"); err != nil {
+		t.Fatalf("put: %v", err)
+	}
+	if got := v.Saves(); got <= was {
+		t.Fatalf("the count went from %d to %d, and should have gone up", was, got)
+	}
+}
+
+// An older copy of the file put back in place says so, by opening with
+// a count below the one already seen.
+func TestAnOlderFilePutBackSaysSo(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, Name)
+	key := aKey(t)
+
+	v, err := Create(path, key, "a")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := v.AddKey(aKey(t), "b"); err != nil {
+		t.Fatalf("add a key: %v", err)
+	}
+	old, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("keep a copy: %v", err)
+	}
+	seen := v.Saves()
+
+	// The second key is revoked, which is a write and a higher count.
+	if err := v.RemoveKey(v.Keys()[1].Fingerprint); err != nil {
+		t.Fatalf("remove the key: %v", err)
+	}
+	if v.Saves() <= seen {
+		t.Fatal("revoking a key did not count as a write")
+	}
+	seen = v.Saves()
+
+	// And the copy from before it goes back, bringing the slot with it.
+	if err := os.WriteFile(path, old, 0o600); err != nil {
+		t.Fatalf("put the old file back: %v", err)
+	}
+	back, err := Open(path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	if err := back.Unlock([]ssh.Signer{key}); err != nil {
+		t.Fatalf("unlock: %v", err)
+	}
+	if len(back.Keys()) != 2 {
+		t.Fatal("the old file did not bring the revoked key back, so this proves nothing")
+	}
+	if got := back.Saves(); got >= seen {
+		t.Errorf("the old file says it was written %d times against %d already seen,"+
+			" so putting it back cannot be told from a new write", got, seen)
+	}
+}
+
+// Two windows creating a vault at once: one wins and the other is told,
+// rather than one quietly writing over the other.
+func TestCreatingAVaultTwiceRefusesTheSecond(t *testing.T) {
+	path := filepath.Join(t.TempDir(), Name)
+	if _, err := Create(path, aKey(t), "a"); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := Create(path, aKey(t), "b"); err == nil {
+		t.Fatal("the second create wrote over the first vault")
+	}
+}
+
+// A create that fails leaves no file behind. An empty one would read as
+// a vault that cannot be opened, which is worse than no vault.
+func TestAFailedCreateLeavesNothingBehind(t *testing.T) {
+	path := filepath.Join(t.TempDir(), Name)
+	was := rename
+	rename = func(string, string) error { return errors.New("the disk went away") }
+	t.Cleanup(func() { rename = was })
+
+	if _, err := Create(path, aKey(t), "a"); err == nil {
+		t.Fatal("a create whose write failed said it worked")
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("something was left at %s: %v", path, err)
+	}
+}
+
+// itemNamed is the one item with this name, for a test that put it
+// there and wants its id back.
+func itemNamed(t *testing.T, v *Vault, name string) Item {
+	t.Helper()
+	items, err := v.Items()
+	if err != nil {
+		t.Fatalf("items: %v", err)
+	}
+	for _, it := range items {
+		if it.Name == name {
+			return it
+		}
+	}
+	t.Fatalf("nothing in the vault is called %q", name)
+	return Item{}
+}

@@ -699,7 +699,7 @@ func TestAWindowThatStoppedSharingSaysSoRatherThanAnError(t *testing.T) {
 	if n, up := client.root.Modal().(*ui.Notice); up {
 		t.Errorf("stopping sharing reported %q: %s", n.Title, n.Message())
 	}
-	if got := row.Label; got != "the window stopped sharing" {
+	if got := row.Label; got != stateStoppedSharing {
 		t.Errorf("the row says %q, want it to say the window stopped sharing", got)
 	}
 	if row.Note != "" {
@@ -723,7 +723,7 @@ func TestAWindowThatWasThrownOutSaysSo(t *testing.T) {
 	if n, up := client.root.Modal().(*ui.Notice); up {
 		t.Errorf("being thrown out reported %q: %s", n.Title, n.Message())
 	}
-	if got := row.Label; got != "the window closed this connection" {
+	if got := row.Label; got != stateClosedByWindow {
 		t.Errorf("the row says %q, want it to say the window closed the connection", got)
 	}
 }
@@ -753,7 +753,7 @@ func TestAWindowThatWentWithoutSayingWhyIsNotCalledAStop(t *testing.T) {
 	})
 	client.pump.run()
 
-	if got := row.Label; got != "no longer serving" {
+	if got := row.Label; got != transportLost {
 		t.Errorf("the row says %q, want the wording for a window that just went", got)
 	}
 }
@@ -870,7 +870,7 @@ func TestAWindowThatQuitsKeepsARowThatCanBeCleared(t *testing.T) {
 		t.Errorf("the row is drawn in %v, want the grey a finished connection is drawn in", drawn.FG)
 	}
 	// Saying what became of it. Where it was is the heading above it.
-	if drawn.Text != "the window stopped sharing" {
+	if drawn.Text != stateStoppedSharing {
 		t.Errorf("the row says %q, want what became of the window", drawn.Text)
 	}
 	// And offering the cross that clears it, the way a dropped machine's

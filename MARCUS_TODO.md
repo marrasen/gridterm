@@ -10,3 +10,11 @@ it, and what needs an answer from Marcus goes to the top of TODO.md.
 # File Browser
 
 - Drag and drop support
+
+# Remote
+
+- Connecting to a remote still opens a new terminal on the host
+
+# UI
+
+The items under "New terminal in" does not need to prefix with "New pane on"

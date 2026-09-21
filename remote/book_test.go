@@ -300,9 +300,14 @@ func TestBookSaveThatCannotLandChangesNothing(t *testing.T) {
 	}
 	path := filepath.Join(blocker, "sub", "servers.json")
 
-	b, err := LoadBook(path)
-	if err != nil {
-		t.Fatalf("LoadBook: %v", err)
+	// What the machine says about a path under a file differs, and the
+	// book is left holding nothing either way: Windows reports that
+	// there is nothing there, which loads as an empty list, and Linux
+	// reports "not a directory", which the book keeps as the reason it
+	// cannot save. The save below must not land in either case.
+	b, _ := LoadBook(path)
+	if n := len(b.Hosts()); n != 0 {
+		t.Fatalf("%d servers after a load that found nothing, want none", n)
 	}
 	if err := b.Put(margit(), ""); err == nil {
 		t.Fatal("a save that could not land reported success")
@@ -310,8 +315,10 @@ func TestBookSaveThatCannotLandChangesNothing(t *testing.T) {
 	if n := len(b.Hosts()); n != 0 {
 		t.Fatalf("%d servers in memory after a failed save, want none", n)
 	}
-	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("something was written anyway: %v", err)
+	// Nothing was written. Only a stat that succeeds would mean a file
+	// is there: why it fails is the machine's business, and differs.
+	if _, err := os.Stat(path); err == nil {
+		t.Fatal("something was written anyway")
 	}
 }
 

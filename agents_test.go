@@ -316,10 +316,14 @@ func TestTheHandoverPromptFollowsTheHostItIsFor(t *testing.T) {
 	// command line falls apart.
 	const exe = `C:\Program Files\gridterm\gridterm.exe`
 	// The line that sets each host up, and so the line no other host's
-	// prompt may carry. The path is in quotes on a command line.
+	// prompt may carry. The path is in quotes on a command line, and
+	// which quotes is the shell's business: the user runs this line on
+	// the machine the window is running on, so it is quoted the way
+	// that machine's shell reads it.
+	quoted := quotedPath(exe)
 	setup := map[string]string{
-		hostClaudeCode: `claude mcp add gridterm -- "` + exe + `" -mcp`,
-		hostCodex:      `codex mcp add gridterm -- "` + exe + `" -mcp`,
+		hostClaudeCode: "claude mcp add gridterm -- " + quoted + " -mcp",
+		hostCodex:      "codex mcp add gridterm -- " + quoted + " -mcp",
 		hostCursor:     "put this in ~/.cursor/mcp.json",
 		hostOther:      "put this in its MCP config",
 	}
@@ -1312,10 +1316,14 @@ func TestTheInstallInstructionsReadWholeForEveryHost(t *testing.T) {
 			}
 
 			// What the button says, and what it copies, for this host.
-			// Spelled out rather than asked of the code being tested.
+			// Spelled out rather than asked of the code being tested,
+			// except for the quotes around the path: the user runs this
+			// line in their own shell, so which quotes those are is the
+			// platform's business and not this test's.
+			quoted := quotedPath(exe)
 			copies := map[string][2]string{
-				hostClaudeCode: {"Copy the command", `claude mcp add gridterm -- "` + exe + `" -mcp`},
-				hostCodex:      {"Copy the command", `codex mcp add gridterm -- "` + exe + `" -mcp`},
+				hostClaudeCode: {"Copy the command", "claude mcp add gridterm -- " + quoted + " -mcp"},
+				hostCodex:      {"Copy the command", "codex mcp add gridterm -- " + quoted + " -mcp"},
 				hostCursor:     {"Copy the config", `{"mcpServers": {"gridterm": {`},
 				hostOther:      {"Copy the config", `{"mcpServers": {"gridterm": {`},
 			}

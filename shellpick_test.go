@@ -212,12 +212,27 @@ func TestAShellPaneRowSaysTheShellsName(t *testing.T) {
 }
 
 // A pane on the shell nobody picked says the same. Nothing was handed to
-// the session, so what it runs is COMSPEC.
-func TestThePaneOnTheDefaultShellSaysWhatComspecNames(t *testing.T) {
-	t.Setenv("COMSPEC", cmdPath)
+// the session, so what it runs is whatever this machine opens by
+// default: COMSPEC on Windows, and the login shell everywhere else.
+//
+// The machine is asked which that is rather than being told. Setting the
+// variable here would not work anyway: the default is worked out once
+// and remembered, so a test that arrives second gets the first one's
+// answer.
+func TestThePaneOnTheDefaultShellSaysItsName(t *testing.T) {
+	argv, err := session.DefaultShell()
+	if err != nil {
+		t.Skipf("this machine opens no shell by default: %v", err)
+	}
+	defaultPath := argv[0]
+
 	a := newTestApp(t, 80, 24)
 	withDialogs(t, a)
 	withPanel(t, a)
+	// A machine whose shell list holds the default one, so the row has a
+	// name to find for it. Which shell that is differs by platform, and
+	// what is being tested is that the default is named at all.
+	onMachine(a, []shells.Shell{{ID: "default", Title: "The Default Shell", Path: defaultPath}})
 	scanShells(t, a)
 
 	pane, ok := onlyPaneWidget(t, a).(*term.Terminal)
@@ -227,15 +242,15 @@ func TestThePaneOnTheDefaultShellSaysWhatComspecNames(t *testing.T) {
 	if got := a.lastArgv(t); len(got) != 0 {
 		t.Fatalf("the first pane was started on %v, want the default shell", got)
 	}
-	a.setTitle(t, 0, pane, cmdPath)
+	a.setTitle(t, 0, pane, defaultPath)
 
 	a.refreshPanel(time.Now())
 	row, ok := panelRow(a, a.panes[pane])
 	if !ok {
 		t.Fatalf("the pane has no row: %v", panelText(a, time.Now()))
 	}
-	if row.Text != "Command Prompt" {
-		t.Errorf("the row says %q, want the name of the shell COMSPEC names", row.Text)
+	if row.Text != "The Default Shell" {
+		t.Errorf("the row says %q, want the name of the shell this machine opens by default", row.Text)
 	}
 }
 

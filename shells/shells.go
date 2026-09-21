@@ -244,11 +244,42 @@ func WSLRoot(distro string) string { return wslShare + distro }
 
 // WindowsPath translates a path inside a WSL distribution into the one Windows reaches it by. An
 // empty distribution, or a path that is not absolute, gives "".
+//
+// A path on a drive the distribution mounts comes back as that drive, because Windows denies access
+// to one reached through the share.
 func WindowsPath(distro, unix string) string {
 	if distro == "" || !strings.HasPrefix(unix, "/") {
 		return ""
 	}
+	if drive := DrivePath(unix); drive != "" {
+		return drive
+	}
 	return WSLRoot(distro) + strings.ReplaceAll(unix, "/", `\`)
+}
+
+// DrivePath translates a path on a drive WSL has mounted into the Windows one, so /mnt/c/Workspace
+// is C:\Workspace. Any other path, the distribution's own files included, gives "".
+func DrivePath(unix string) string {
+	rest, ok := strings.CutPrefix(unix, "/mnt/")
+	if !ok {
+		return ""
+	}
+	letter, tail, sub := strings.Cut(rest, "/")
+	if len(letter) != 1 {
+		return ""
+	}
+	drive := letter[0]
+	switch {
+	case drive >= 'a' && drive <= 'z':
+		drive -= 'a' - 'A'
+	case drive >= 'A' && drive <= 'Z':
+	default:
+		return ""
+	}
+	if !sub {
+		return string(drive) + `:\`
+	}
+	return string(drive) + `:\` + strings.ReplaceAll(tail, "/", `\`)
 }
 
 // wslShare is the share Windows serves every WSL distribution's files on.

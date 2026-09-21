@@ -1278,9 +1278,50 @@ func aRelayedMachine(t *testing.T) (*testApp, *blackHole) {
 func relayToMargit(t *testing.T, a *testApp, gone context.Context) (net.Conn, chan error) {
 	t.Helper()
 	ours, theirs := net.Pipe()
+	carrying := &noticedReads{conn: theirs}
 	done := make(chan error, 1)
-	go func() { done <- a.relayFiles(gone, "margit", theirs) }()
+	go func() { done <- a.relayFiles(gone, "margit", carrying) }()
+	// The window reads its end of the pipe only once the file session is
+	// open, so the first read is what says the relay is really carrying.
+	//
+	// The machine's own count of sessions is not enough to go on: it is
+	// raised when the request to open one arrives, while the answer to
+	// that request is still on its way back. A test that cut the
+	// connection on the strength of that count left the window waiting
+	// for an answer that was never going to come, and so never reaching
+	// the part being tested.
+	waitFor(t, a, "the window to start carrying the file session", carrying.began)
 	return ours, done
+}
+
+// noticedReads is one end of a pipe that remembers whether it has been
+// read from, which is how a test tells that the window got as far as
+// carrying bytes.
+//
+// It is not a net.Conn and holds one rather than embedding it, so that
+// io.Copy cannot find some other way through and leave Read unused.
+type noticedReads struct {
+	conn net.Conn
+
+	mu  sync.Mutex
+	did bool
+}
+
+func (n *noticedReads) Read(p []byte) (int, error) {
+	n.mu.Lock()
+	n.did = true
+	n.mu.Unlock()
+	return n.conn.Read(p)
+}
+
+func (n *noticedReads) Write(p []byte) (int, error) { return n.conn.Write(p) }
+func (n *noticedReads) Close() error                { return n.conn.Close() }
+
+// began reports whether the window has read from its end yet.
+func (n *noticedReads) began() bool {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return n.did
 }
 
 // A relayed file session that ended blames the connection only when the

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"image/color"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -547,22 +548,25 @@ func TestTakingOverTheSameWindowTwiceAsks(t *testing.T) {
 	withPanel(t, a)
 	keyFile, _ := aKeyFile(t)
 
-	// A port nothing answers on, so the first is still on its way.
-	if err := a.takeOver("127.0.0.1:1", keyFile, nil, true); err != nil {
+	// A machine that answers and then says nothing, so the first is
+	// still on its way when the second is made.
+	addr := aSilentAddress(t)
+	if err := a.takeOver(addr, keyFile, nil, true); err != nil {
 		t.Fatalf("first: %v", err)
 	}
-	if err := a.takeOver("127.0.0.1:1", keyFile, nil, true); err != nil {
+	if err := a.takeOver(addr, keyFile, nil, true); err != nil {
 		t.Fatalf("second: %v", err)
 	}
 
 	// Asked about rather than refused: the user says whether to wait for
 	// the one on its way or to throw it away and start again.
-	f := awaitModal(t, a, "the Already connecting to 127.0.0.1:1 dialog", byTitle[*ui.Form]("Already connecting to 127.0.0.1:1"))
+	title := "Already connecting to " + addr
+	f := awaitModal(t, a, "the "+title+" dialog", byTitle[*ui.Form](title))
 	pressButton(t, a, f, "Leave it")
 	if a.machines.beingMade() != 1 {
 		t.Fatalf("%d windows are being taken over, want the first one only", a.machines.beingMade())
 	}
-	if a.machines.connecting("127.0.0.1:1") == nil {
+	if a.machines.connecting(addr) == nil {
 		t.Fatal("the first attempt was let go of")
 	}
 }
@@ -2302,6 +2306,50 @@ func TestThePaneThatSaysWhyAWindowFailedStays(t *testing.T) {
 	}
 }
 
+// aSilentAddress is a machine that takes a connection and then says
+// nothing, so an attempt to take a window over there stays on its way
+// for as long as the test needs it to.
+//
+// A port nothing listens on is not enough. Linux answers a connection to
+// a closed port with a refusal straight away, so the attempt would be
+// over before the test had looked at it; Windows leaves it hanging,
+// which is why a made-up port number used to be enough here. Taking the
+// connection and never speaking SSH hangs the handshake on both.
+func aSilentAddress(t *testing.T) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	var mu sync.Mutex
+	var held []net.Conn
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			// Held rather than closed: closing would let the attempt
+			// finish, which is the thing being avoided.
+			mu.Lock()
+			held = append(held, c)
+			mu.Unlock()
+		}
+	}()
+	t.Cleanup(func() {
+		_ = ln.Close()
+		<-done
+		mu.Lock()
+		defer mu.Unlock()
+		for _, c := range held {
+			_ = c.Close()
+		}
+	})
+	return ln.Addr().String()
+}
+
 // The dialog about a window already being taken over really opens.
 //
 // It is reached from the Take over button, and a dialog opened from
@@ -2313,8 +2361,10 @@ func TestAskingAboutTheWindowOnItsWayOpensFromTheButton(t *testing.T) {
 	withPanel(t, a)
 	keyFile, _ := aKeyFile(t)
 
-	// A port nothing answers on, so the first is still on its way.
-	if err := a.takeOver("127.0.0.1:1", keyFile, nil, true); err != nil {
+	// A machine that answers and then says nothing, so the first
+	// attempt is still on its way while the user makes the second.
+	addr := aSilentAddress(t)
+	if err := a.takeOver(addr, keyFile, nil, true); err != nil {
 		t.Fatalf("first: %v", err)
 	}
 
@@ -2323,13 +2373,14 @@ func TestAskingAboutTheWindowOnItsWayOpensFromTheButton(t *testing.T) {
 		t.Fatalf("open the form: %v", err)
 	}
 	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
-	typeIntoField(t, a, f, "Machine", "127.0.0.1:1")
+	typeIntoField(t, a, f, "Machine", addr)
 	typeIntoField(t, a, f, "Key file", keyFile)
 	pressButton(t, a, f, "Connect")
 
-	ask := awaitModal(t, a, "the Already connecting to 127.0.0.1:1 dialog", byTitle[*ui.Form]("Already connecting to 127.0.0.1:1"))
+	title := "Already connecting to " + addr
+	ask := awaitModal(t, a, "the "+title+" dialog", byTitle[*ui.Form](title))
 	pressButton(t, a, ask, "Leave it")
-	if a.machines.connecting("127.0.0.1:1") == nil {
+	if a.machines.connecting(addr) == nil {
 		t.Fatal("the first attempt was let go of")
 	}
 }

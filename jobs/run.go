@@ -374,9 +374,15 @@ func beside(f vfs.FS, to, name string) (string, error) {
 	switch {
 	case name == "" || name == "." || name == "..":
 		return "", fmt.Errorf("jobs: %q is not a name to use", name)
-	case strings.ContainsRune(name, rune(f.Sep())), strings.ContainsRune(name, '/'):
+	case strings.ContainsAny(name, `/\`), strings.ContainsRune(name, rune(f.Sep())):
 		// A name, not a path: it goes beside what is there, and nowhere
 		// else on the machine.
+		//
+		// Both separators are refused wherever this runs, rather than
+		// only the one this filesystem uses. A name typed here can be
+		// carried to a machine that reads the other one as a path, and
+		// a rule that changes with the machine is one the user cannot
+		// learn.
 		return "", fmt.Errorf("jobs: %q is a path, and a name is wanted", name)
 	}
 	at := vfs.Join(f, vfs.Dir(f, to), name)

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/input"
@@ -103,6 +104,10 @@ type Config struct {
 	// shortcuts. A nil one disables that half.
 	ReadClipboard  func() string
 	WriteClipboard func(string)
+
+	// Now is the clock the cursor's hide is measured against. Nil means
+	// time.Now.
+	Now func() time.Time
 }
 
 // Terminal is a shell drawn as a widget.
@@ -202,6 +207,12 @@ type Terminal struct {
 
 	focused bool
 	encBuf  []byte
+
+	// shownCursor is the cursor the pane last drew visible, and hidAt
+	// when the program hid it. Together they hold a cursor on screen
+	// across the hide and show a repaint makes.
+	shownCursor grid.Cursor
+	hidAt       time.Time
 
 	// selecting is true between a press and its release, so motion is
 	// only a drag when a drag started here.
@@ -859,7 +870,7 @@ func (t *Terminal) draw(v grid.View) {
 	// And none at all once the program has gone, or a pane that swallows
 	// every keystroke would look like a shell sitting at a prompt.
 	if t.focused && !t.exited.Load() {
-		cur := t.g.Cursor()
+		cur := t.acrossARepaint(t.g.Cursor())
 		if cur.Y == named {
 			// The address is written over the row the cursor is on, so
 			// the cursor would sit in the middle of it.
@@ -870,6 +881,49 @@ func (t *Terminal) draw(v grid.View) {
 	// Last, over the screen: the question is the window talking, not a
 	// line the program printed.
 	t.paintAsk(v)
+}
+
+// CursorHideGrace is how long a cursor stays on screen after the
+// program hides it.
+//
+// Long enough to cover a repaint, short enough that a program which
+// means it looks immediate.
+const CursorHideGrace = 150 * time.Millisecond
+
+// acrossARepaint holds the cursor on screen through the hide and show a
+// program makes when it repaints.
+//
+// A program hides the cursor, paints, and shows it again. Off a pty the
+// whole repaint is one read, so the frame never sees the hidden half.
+// Off a connection the reads split wherever the network put them, and
+// the cursor winks out for the frames in between: it flickers while
+// somebody types, and each spell hidden restarts the blink as well,
+// which is what makes the rhythm ragged.
+//
+// So a hide waits, and a show is immediate. A program that means it
+// still gets its cursor hidden, a repaint's hide never reaches the
+// screen, and nothing has to know which kind of pane this is.
+func (t *Terminal) acrossARepaint(cur grid.Cursor) grid.Cursor {
+	if cur.Visible {
+		t.shownCursor, t.hidAt = cur, time.Time{}
+		return cur
+	}
+	if !t.shownCursor.Visible {
+		return cur
+	}
+	now := time.Now
+	if t.cfg.Now != nil {
+		now = t.cfg.Now
+	}
+	if t.hidAt.IsZero() {
+		t.hidAt = now()
+	}
+	if now().Sub(t.hidAt) < CursorHideGrace {
+		return t.shownCursor
+	}
+	// It stayed hidden, so the program meant it.
+	t.shownCursor = grid.Cursor{}
+	return cur
 }
 
 // Hold gives the size to somebody watching from another machine.
@@ -1406,6 +1460,29 @@ func (t *Terminal) mouseMode() (input.MouseMode, bool) {
 	click, drag, motion, sgr := scr.MouseModes()
 	return input.MouseMode{Click: click, Drag: drag, Motion: motion, SGR: sgr},
 		scr.OnAltBuffer()
+}
+
+// RunningAProgram reports whether a program the shell started is what
+// reads the next keystroke, rather than the shell's own line editor.
+//
+// It is what the shell said, through the OSC 133 marks shell setup puts
+// there: a C mark means a command is running, and the next prompt ends
+// it. The alternate screen counts too, and on its own: marks are not
+// read there, so a full-screen program is known by the screen it asked
+// for rather than by anything it said.
+//
+// A shell that was never taught to send marks says nothing, and the
+// answer is then false. So this is "a program is reading, and the shell
+// says so", never a guess -- which is what a caller weighing whether a
+// keystroke is safe to send needs it to be.
+func (t *Terminal) RunningAProgram() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.term.Screen().OnAltBuffer() {
+		return true
+	}
+	cmd := t.term.Command()
+	return cmd.Integrated && cmd.Running
 }
 
 // sendArrows sends n arrow keys, up for positive.

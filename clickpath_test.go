@@ -28,6 +28,16 @@ func ctrlPressOn(t *testing.T, a *testApp, w ui.Widget, col, row int) bool {
 	return took
 }
 
+// withoutRowBreaks is pane text with the breaks between rows taken out.
+//
+// A line longer than the pane wraps, and where it breaks is wherever the
+// pane's width falls. The path below is longer than the pane is wide, so
+// the break lands inside it, and which characters it comes between
+// depends on the length of the name the machine gave a temporary
+// directory. Looking for the text with the breaks taken out is the same
+// question without that in it.
+func withoutRowBreaks(s string) string { return strings.ReplaceAll(s, "\n", "") }
+
 // A whole path a pane printed opens when it is clicked.
 func TestClickingAWholePathOpensIt(t *testing.T) {
 	a := newTestApp(t, 80, 24)
@@ -42,7 +52,7 @@ func TestClickingAWholePathOpensIt(t *testing.T) {
 
 	a.shells[0].out <- []byte("see " + at + " for it")
 	waitFor(t, a, "the pane to say it", func() bool {
-		return strings.Contains(paneText(pane), "notes.txt for it")
+		return strings.Contains(withoutRowBreaks(paneText(pane)), "notes.txt for it")
 	})
 	a.relayout()
 	if got := pane.LinkAt(4, 0); got != at {

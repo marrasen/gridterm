@@ -84,7 +84,7 @@ func (a *app) dropOnPane(pane *term.Terminal, paths []string) error {
 	if end.far.window == nil && a.about(end.host).kind == hostHere {
 		// Already on the machine the program runs on, so there is
 		// nothing to copy and the path is the whole of it.
-		pane.Paste(typedPaths(paths))
+		pane.Paste(typedPaths(a.pathsForPane(pane, paths)))
 		return nil
 	}
 	return a.uploadDropped(end, pane, paths)

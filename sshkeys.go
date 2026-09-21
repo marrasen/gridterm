@@ -51,25 +51,24 @@ const mostKeptKeys = 20
 var errNoSettingsForKeys = errors.New("this window has no settings to keep a key file in")
 
 // makeKeyTitle names the dialog that writes a new key pair.
-const makeKeyTitle = "Make an SSH key"
+const makeKeyTitle = "New SSH Key"
 
 // openMakeKey asks where to write a new key pair and what to call it.
 func (a *app) openMakeKey() error {
 	f := a.newForm(makeKeyTitle)
-	where := f.AddField("File", a.newField("where to write the private half", 0))
-	who := f.AddField("Comment", a.newField("what to call it, optional", 0))
-	pass := a.newField("optional, asked for when the key is used", 0)
+	where := f.AddField(fldFile, a.newField("Private key path", 0))
+	who := f.AddField(fldComment, a.newField("Optional", 0))
+	pass := a.newField("Optional", 0)
 	pass.Mask = '*'
-	f.AddField("Passphrase", pass)
+	f.AddField(fldPassphrase, pass)
 	// Twice, because it is masked and the key cannot be written again at
 	// the same path: a typo makes a key nobody can open.
-	again := a.newField("the same again", 0)
+	again := a.newField("", 0)
 	again.Mask = '*'
-	f.AddField("Passphrase again", again)
+	f.AddField(fldConfirmPass, again)
 	f.Lines = []string{
-		"A new ed25519 key pair. The public half goes beside it with",
-		".pub on the end, and the key is added to the list this window",
-		"offers when you make a connection.",
+		"Creates an ed25519 key pair.",
+		"The public key is saved as <file>.pub.",
 	}
 	if at, err := remote.DefaultKeyPath(); err == nil {
 		where.SetText(at)
@@ -80,11 +79,11 @@ func (a *app) openMakeKey() error {
 	}
 	a.completePath(where, vfs.NewLocal())
 
-	f.AddButton(ui.Button{Title: "Make it", Do: func() error {
+	f.AddButton(ui.Button{Title: btnCreate, Do: func() error {
 		if pass.Text() != again.Text() {
 			// Returned rather than shown here, so the dialog stays open
 			// with what was typed still there to correct.
-			return errors.New("the two passphrases are not the same")
+			return errors.New("Passphrases do not match")
 		}
 		at, err := fromHome(where.Text())
 		if err != nil {
@@ -102,33 +101,45 @@ func (a *app) openMakeKey() error {
 			a.refreshServers()
 			lines, err := installKeyLines(key)
 			if err != nil {
-				a.reportError("The key was made and this window cannot say where to install it", err)
+				a.reportError("Key created, but install steps are unavailable", err)
 				return
 			}
-			a.showNotice(madeKeyTitle(key), lines, false)
+			n := a.newNotice(madeKeyTitle(key), lines)
+			// Paths and a key line, which the dialog would otherwise
+			// re-wrap at the spaces.
+			n.Preformatted = true
+			// The public key on its own: it is the one thing anybody
+			// takes away from this dialog, and Copy would hand over the
+			// whole page of instructions around it.
+			line := key.Line
+			n.Action = ui.NoticeAction{Title: btnCopyPublicKey, Do: func() {
+				a.clip.set(line)
+			}}
+			n.FocusOK()
+			a.presentNotice(n)
 			if kept != nil {
-				a.reportError("The key was made and not added to the list", kept)
+				a.reportError("Key created, but not added to the list", kept)
 			}
 		})
 		return nil
 	}})
-	f.AddButton(ui.Button{Title: "Cancel"})
+	f.AddButton(ui.Button{Title: btnCancel})
 	a.showForm(f, nil)
 	return nil
 }
 
 // madeKeyTitle names the notice that says where a new key went.
-func madeKeyTitle(key remote.NewKey) string { return "Made " + key.Path }
+func madeKeyTitle(remote.NewKey) string { return "Key created" }
 
 // installKeyLines says how to put the public half where it is needed.
 func installKeyLines(key remote.NewKey) (string, error) {
 	var b strings.Builder
-	b.WriteString("The public half is at " + key.Pub + ":\n\n")
+	b.WriteString("Private key:  " + key.Path + "\n")
+	b.WriteString("Public key:   " + key.Pub + "\n\n")
 	b.WriteString(key.Line + "\n\n")
-	b.WriteString("Add that line to ~/.ssh/authorized_keys on the machine you\n")
-	b.WriteString("want to reach. From a shell that has ssh-copy-id, which runs\n")
-	b.WriteString("here rather than there, this does it for you:\n\n")
-	b.WriteString("  ssh-copy-id -i " + key.Pub + " user@machine\n\n")
+	b.WriteString("To install it on a server:\n\n")
+	b.WriteString("  ssh-copy-id -i " + key.Pub + " user@host\n\n")
+	b.WriteString("Or add the line above to ~/.ssh/authorized_keys there.\n\n")
 	b.WriteString("For OpenSSH on Windows, add it to\n")
 	b.WriteString(`  %USERPROFILE%\.ssh\authorized_keys` + "\n")
 	b.WriteString("unless that account is an administrator, and then only to\n")

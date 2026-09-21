@@ -139,11 +139,7 @@ func (a *app) reportFontScan(err error) {
 	if a.atlas != nil {
 		a.atlas.Told(sayings(err)...)
 	}
-	said := "These font files and directories could not be read:\n\n" + err.Error()
-	if len(a.installed) > 0 {
-		said += "\n\nThe fonts that were found are on the Font menu."
-	}
-	a.showNotice("Some fonts could not be read", said, true)
+	a.showNotice("Could not read some fonts", err.Error(), true)
 }
 
 // reapFontTrouble shows what the search for a fallback font could not
@@ -162,9 +158,8 @@ func (a *app) reapFontTrouble() {
 	}
 	err := errors.Join(failed...)
 	a.logError(fmt.Errorf("looking for a font to fall back on: %w", err))
-	a.showNotice("Some fonts could not be read while looking for a character",
-		"A character was not in the font in use, and these could not be read "+
-			"while looking for one that has it:\n\n"+err.Error(),
+	a.showNotice("Could not read some fonts",
+		"While looking for a fallback for a missing character:\n\n"+err.Error(),
 		true)
 }
 
@@ -292,7 +287,7 @@ func (a *app) useWantedFont() {
 	}
 	if err := a.setFontFamily(a.wantFont); err != nil {
 		a.logError(err)
-		a.reportError("The theme's typeface could not be read", err)
+		a.reportError("Could not read the theme's font", err)
 	}
 }
 

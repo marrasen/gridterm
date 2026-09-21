@@ -162,7 +162,7 @@ func (a *app) closePaneRow(e *conns.Entry) error {
 	if err := e.Close(); err != nil {
 		// Shown here rather than returned, so the notice says which
 		// button was pressed instead of "that could not be done".
-		a.reportError("Could not close that pane", err)
+		a.reportError("Could not close the pane", err)
 	}
 	a.markDirty()
 	return nil
@@ -208,7 +208,7 @@ func (a *app) clearRow(e *conns.Entry) error {
 	if err != nil {
 		// Shown here rather than returned, so the notice says which
 		// button was pressed instead of "that could not be done".
-		a.reportError("Could not clear that row", err)
+		a.reportError("Could not clear the row", err)
 	}
 	return nil
 }
@@ -254,12 +254,12 @@ func hostItems(about hostFacts, shells, folders []ui.MenuItem) []ui.MenuItem {
 		items = append(items, filesLines(folders)...)
 		items = append(items,
 			ui.MenuSeparator(),
-			ui.MenuItem{Command: "conn.disconnect", Title: "Let go of this window"})
+			ui.MenuItem{Command: "conn.disconnect"})
 		items = withTheLog(items, about)
 		if about.serves {
 			items = append(items, ui.MenuSeparator(),
-				ui.MenuItem{Command: "server.editThis", Title: "Edit this window…"},
-				ui.MenuItem{Command: "server.forget", Title: "Forget this window…"})
+				ui.MenuItem{Command: "server.editThis", Title: "Edit This Window…"},
+				ui.MenuItem{Command: "server.forget", Title: "Remove This Window…"})
 		}
 		return items
 	}
@@ -268,10 +268,10 @@ func hostItems(about hostFacts, shells, folders []ui.MenuItem) []ui.MenuItem {
 		// a shell applies: it serves gridterm's own protocol and has no
 		// shell to log in to.
 		return withTheLog([]ui.MenuItem{
-			{Command: "conn.terminal", Title: "Take it over"},
+			{Command: "conn.terminal", Title: "Connect"},
 			ui.MenuSeparator(),
-			{Command: "server.editThis", Title: "Edit this window…"},
-			{Command: "server.forget", Title: "Forget this window…"},
+			{Command: "server.editThis", Title: "Edit This Window…"},
+			{Command: "server.forget", Title: "Remove This Window…"},
 		}, about)
 	}
 	items := []ui.MenuItem{{Command: "conn.terminal", Title: "Terminal"}}
@@ -280,16 +280,16 @@ func hostItems(about hostFacts, shells, folders []ui.MenuItem) []ui.MenuItem {
 		ui.MenuItem{Command: "conn.command", Title: "Command…"},
 		ui.MenuSeparator(),
 		ui.MenuItem{Command: "conn.tunnel", Title: "Tunnel…"},
-		ui.MenuItem{Command: "conn.socks", Title: "SOCKS proxy…"},
+		ui.MenuItem{Command: "conn.socks", Title: "SOCKS Proxy…"},
 		ui.MenuSeparator(),
 		// Not sidebar.closeRow: that one closes whatever the list has
 		// selected, which is not the machine whose row was clicked.
-		ui.MenuItem{Command: "conn.disconnect", Title: "Close the connection"})
+		ui.MenuItem{Command: "conn.disconnect"})
 	items = withTheLog(items, about)
 	if about.saved {
 		items = append(items, ui.MenuSeparator(),
-			ui.MenuItem{Command: "server.editThis", Title: "Edit this server…"},
-			ui.MenuItem{Command: "server.forget", Title: "Forget this server…"})
+			ui.MenuItem{Command: "server.editThis"},
+			ui.MenuItem{Command: "server.forget"})
 	}
 	return items
 }
@@ -301,7 +301,7 @@ func withTheLog(items []ui.MenuItem, about hostFacts) []ui.MenuItem {
 		return items
 	}
 	return append(items, ui.MenuSeparator(),
-		ui.MenuItem{Command: "conn.log", Title: "How it was reached"})
+		ui.MenuItem{Command: connLogCommand})
 }
 
 // rowAnchor is where a menu opened from a panel row points.

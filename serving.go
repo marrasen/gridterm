@@ -319,38 +319,30 @@ func (a *app) openServing() error {
 				" Put the public key of the machine you will connect from in %s", at)
 	}
 
+	// Said plainly. A shell on this machine already reaches every file
+	// this user can reach, so the files are no more than the shell was;
+	// but somebody deciding whether to open a port has to be told what
+	// goes through it.
 	lines := []string{
-		"Another gridterm can take this window over and work in it.",
+		"A connected window can open shells, use the ones",
+		"running, and read and write files as you.",
 		"",
-		// Said plainly. A shell on this machine already reaches every
-		// file this user can reach, so the files are no more than the
-		// shell was; but somebody deciding whether to open a port has
-		// to be told what goes through it.
-		"It can open shells here, work in the ones already running,",
-		"and read and write this machine's files as you.",
-		"",
-		"These keys may connect:",
+		"Allowed keys, from " + at + ":",
 	}
 	for _, name := range allowed.Names() {
 		lines = append(lines, "  "+name)
 	}
-	lines = append(lines, "", "They are read from "+at+".")
 
-	f := a.newForm("Serve this window")
+	f := a.newForm(dlgServeWindow)
 	f.Lines = lines
-	port := f.AddField("Port", a.newField("", 0))
+	port := f.AddField(fldPort, a.newField("", 0))
 	port.SetText(strconv.Itoa(a.serving.startPort()))
-	reach := f.AddField("Reachable from", a.newField("", 0))
+	port.Hint = "0 picks a free port"
+	reach := f.AddField(fldListenOn, a.newField("", 0))
 	reach.Options = []string{whereHere, whereAnywhere}
 	reach.SetText(a.serving.startReach())
-	f.Lines = append(f.Lines, "",
-		"Port: 0 asks for whichever port is free.",
-		"",
-		"Reachable from: ctrl+down and ctrl+up choose. \""+whereAnywhere+"\" is"+
-			" what a Tailscale address needs, and is also what every other"+
-			" network can reach.")
 
-	f.AddButton(ui.Button{Title: "Serve", Do: func() error {
+	f.AddButton(ui.Button{Title: btnServe, Do: func() error {
 		asked, where := port.Text(), reach.Text()
 		if err := a.startServing(asked, where); err != nil {
 			return err
@@ -359,18 +351,18 @@ func (a *app) openServing() error {
 		// closing a dialog takes anything stacked on top of it.
 		a.pump.post(func() {
 			if err := a.showServing(); err != nil {
-				a.reportError("Could not say what is being served", err)
+				a.reportError("Could not show the serving status", err)
 			}
 			// After that dialog, so a failure to write the settings
 			// down lands on top of it rather than underneath. The window
 			// goes on serving either way.
 			if err := a.rememberServing(asked, where); err != nil {
-				a.reportError("Could not remember what the serve dialog was set to", err)
+				a.reportError("Could not save the settings", err)
 			}
 		})
 		return nil
 	}})
-	f.AddButton(ui.Button{Title: "Cancel"})
+	f.AddButton(ui.Button{Title: btnCancel})
 	a.showForm(f, nil)
 	return nil
 }
@@ -378,7 +370,7 @@ func (a *app) openServing() error {
 // Where a window may be reached from, in the words the dialog uses.
 const (
 	whereHere     = "This machine only"
-	whereAnywhere = "Anywhere this machine can be reached"
+	whereAnywhere = "All networks"
 )
 
 // reachWords is the dialog's wording for a reach that was written down.
@@ -538,7 +530,7 @@ func (a *app) useSettings(set *settings.Settings) {
 		return
 	}
 	a.pump.post(func() {
-		a.reportError("The settings could not be read", errors.Join(err,
+		a.reportError("Could not read the settings", errors.Join(err,
 			errors.New("gridterm will not write over them until they are repaired")))
 	})
 }
@@ -586,7 +578,7 @@ func (a *app) clientArrived(c *serve.Client) {
 		// window is serving and to whom.
 		Reveal: func() {
 			if err := a.showServing(); err != nil {
-				a.reportError("Could not show what this window is serving", err)
+				a.reportError("Could not show the serving status", err)
 			}
 		},
 	}
@@ -610,7 +602,7 @@ func (a *app) clientWent(c *serve.Client, why error) {
 	}
 	a.markDirty()
 	if why != nil && !serve.Ended(why) {
-		a.reportError("The window serving "+c.Name+" was lost", why)
+		a.reportError("Connection to "+c.Name+" lost", why)
 	}
 }
 
@@ -644,16 +636,16 @@ func (a *app) showServing() error {
 	// easier.
 	clients := a.serving.clients()
 	if len(clients) > 0 {
-		lines = append(lines, "", "Connected now:")
+		lines = append(lines, "", "Connected:")
 		for _, c := range clients {
 			lines = append(lines, "  "+c.Name+" from "+c.Addr)
 		}
 	} else {
-		lines = append(lines, "", "Nobody is connected.")
+		lines = append(lines, "", "No one is connected.")
 	}
 
-	f := a.newConfirm("Serving this window", lines)
-	f.AddButton(ui.Button{Title: "Keep serving"})
+	f := a.newConfirm(dlgServingWindow, lines)
+	f.AddButton(ui.Button{Title: btnClose})
 	if len(clients) > 0 {
 		f.AddButton(ui.Button{
 			Title: kickTitle(clients),
@@ -663,7 +655,7 @@ func (a *app) showServing() error {
 			Do: func() error { return a.kickOut(clients) },
 		})
 	}
-	f.AddButton(ui.Button{Title: "Stop serving", Do: func() error {
+	f.AddButton(ui.Button{Title: btnStopServing, Do: func() error {
 		// Forgotten here rather than in stopServing, which a window
 		// closing also calls: quitting is not the user saying they are
 		// done serving.
@@ -677,9 +669,9 @@ func (a *app) showServing() error {
 // says, naming the one client there is.
 func kickTitle(clients []*serve.Client) string {
 	if len(clients) == 1 {
-		return "Kick " + clients[0].Name + " out"
+		return "Disconnect " + clients[0].Name
 	}
-	return "Kick everyone out"
+	return "Disconnect all"
 }
 
 // kickOut hangs up on the windows given. The port stays open, so the
@@ -1015,7 +1007,7 @@ type keptOpen struct{ io.ReadWriteCloser }
 func (keptOpen) Close() error { return nil }
 
 // serveAgainTitle heads the dialog a window that was serving opens with.
-const serveAgainTitle = "Serve this window again?"
+const serveAgainTitle = "Resume serving?"
 
 // offerToServeAgain asks whether to open the port again, for a window
 // that was serving when it last closed. It asks rather than opening one.
@@ -1027,18 +1019,14 @@ func (a *app) offerToServeAgain() {
 		port := a.serving.startPort()
 		where := a.serving.startReach()
 		f := a.newConfirm(serveAgainTitle, []string{
-			"This window was serving when it was last closed.",
-			"",
-			"Port:            " + servePortWords(port),
-			"Reachable from:  " + where,
-			"",
-			"Nothing is listening until you say so.",
+			"Port:       " + servePortWords(port),
+			"Listen on:  " + where,
 		})
-		f.AddButton(ui.Button{Title: "Serve", Do: func() error {
+		f.AddButton(ui.Button{Title: btnServe, Do: func() error {
 			return a.startServing(strconv.Itoa(port), where)
 		}})
-		f.AddButton(ui.Button{Title: "Not now"})
-		f.AddButton(ui.Button{Title: "Forget that it served", Do: func() error {
+		f.AddButton(ui.Button{Title: btnNotNow})
+		f.AddButton(ui.Button{Title: btnDontAskAgain, Do: func() error {
 			return a.serving.rememberOn(false)
 		}})
 		a.showForm(f, nil)

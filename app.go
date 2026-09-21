@@ -5,6 +5,7 @@ import (
 	"image"
 	"log"
 	"slices"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -206,6 +207,10 @@ type app struct {
 
 	// now is the clock this window runs on, so a test can hold it still.
 	now func() time.Time
+
+	// status is the line along the bottom saying that something worked,
+	// and nothing while there is nothing to say.
+	status status
 
 	// frameAt is when the frame being built began. Everything that glows
 	// reads it rather than the clock, so the border and the sidebar row
@@ -538,6 +543,7 @@ func (a *app) Update() error {
 	// the frame would be laid out for padding the window no longer has.
 	a.stepWalk()
 	a.stepSwitcher()
+	a.stepStatus()
 	a.noteFocus()
 	// Before the layout, which is what takes the row off the pane.
 	a.refreshCaptions()
@@ -694,14 +700,14 @@ func (a *app) handleMouse(evs []input.MouseEvent) {
 	for _, ev := range evs {
 		took, err := a.zoomedFont(ev)
 		if err != nil {
-			a.reportError("The font size could not be changed", err)
+			a.reportError("Could not change the font size", err)
 			continue
 		}
 		if took {
 			continue
 		}
 		if _, err := a.routeMouse(ev); err != nil {
-			a.reportError("That could not be done", err)
+			a.reportError("Operation failed", err)
 		}
 	}
 }
@@ -776,13 +782,24 @@ func (a *app) onFocused(fn func(*term.Terminal) error) func() error {
 // the stack to take it away again.
 func (a *app) reporting(cmd ui.Command) ui.Command {
 	run := cmd.Run
+	title := commandFailed(cmd.Title)
 	cmd.Run = func() error {
 		if err := run(); err != nil {
-			a.reportError(cmd.Title, err)
+			a.reportError(title, err)
 		}
 		return nil
 	}
 	return cmd
+}
+
+// commandFailed heads the notice a command's failure is shown in.
+//
+// The command's own title and nothing else, so the heading says which
+// of the things on the palette did not work. The ellipsis goes: it says
+// the command is about to ask something, which is no longer true by the
+// time it has failed.
+func commandFailed(title string) string {
+	return strings.TrimSuffix(title, "…") + " failed"
 }
 
 // reportingAll wraps every command in a list.
@@ -808,123 +825,174 @@ var scrollCommands = []string{scrollUpCommand, scrollDownCommand}
 func (a *app) commands() {
 	cmds := ui.NewCommands()
 	cmds.MustRegister(a.reportingAll([]ui.Command{
-		ui.Command{ID: "font.increase", Title: "Increase font size", Run: func() error {
-			return a.setFontSize(a.fontSize + fontStep)
-		}},
-		ui.Command{ID: "font.decrease", Title: "Decrease font size", Run: func() error {
-			return a.setFontSize(a.fontSize - fontStep)
-		}},
-		ui.Command{ID: "font.reset", Title: "Reset font size", Run: func() error {
-			return a.setFontSize(defaultFontSize)
-		}},
+		ui.Command{ID: "font.increase", Title: "Increase Font Size",
+			AlsoFind: []string{"zoom in", "bigger", "larger"}, Run: func() error {
+				return a.setFontSize(a.fontSize + fontStep)
+			}},
+		ui.Command{ID: "font.decrease", Title: "Decrease Font Size",
+			AlsoFind: []string{"zoom out", "smaller"}, Run: func() error {
+				return a.setFontSize(a.fontSize - fontStep)
+			}},
+		ui.Command{ID: "font.reset", Title: "Reset Font Size",
+			AlsoFind: []string{"zoom", "default", "actual size"}, Run: func() error {
+				return a.setFontSize(defaultFontSize)
+			}},
 		ui.Command{ID: copyCommand, Title: "Copy", Run: a.copySelection},
 		ui.Command{ID: "edit.paste", Title: "Paste", Run: a.onFocused(a.paste)},
-		ui.Command{ID: "edit.pasteImage", Title: "Paste the picture as a file…",
-			AlsoFind: []string{"image", "screenshot", "path"}, Run: a.onFocused(a.pasteImage)},
+		ui.Command{ID: "edit.pasteImage", Title: "Paste Image as File",
+			AlsoFind: []string{"picture", "screenshot", "path"}, Run: a.onFocused(a.pasteImage)},
 		ui.Command{ID: scrollbackCommand, Title: scrollbackTitle,
-			AlsoFind: []string{"find", "history", "buffer", "save"},
+			AlsoFind: []string{"search", "history", "buffer", "save", "view", "open"},
 			Run:      a.showScrollback},
-		ui.Command{ID: scrollUpCommand, Title: "Scroll back",
-			Run: func() error { return a.scrollFocused(1) }},
-		ui.Command{ID: scrollDownCommand, Title: "Scroll forward",
-			Run: func() error { return a.scrollFocused(-1) }},
-		ui.Command{ID: "pane.splitRight", Title: "Split right", Run: func() error {
-			return a.splitFocused(ui.Columns)
-		}},
-		ui.Command{ID: "pane.splitDown", Title: "Split down", Run: func() error {
-			return a.splitFocused(ui.Rows)
-		}},
-		ui.Command{ID: "pane.popOut", Title: "Take this pane out of its split",
-			Run: a.unsplitFocused},
-		ui.Command{ID: "pane.close", Title: "Close pane", Run: a.closeFocused},
-		ui.Command{ID: fullScreenCommand, Title: "Fill the screen with the panes",
-			AlsoFind: []string{"full screen", "maximise", "hide the sidebar"},
+		ui.Command{ID: scrollUpCommand, Title: "Scroll Page Up",
+			AlsoFind: []string{"back", "scrollback"},
+			Run:      func() error { return a.scrollFocused(1) }},
+		ui.Command{ID: scrollDownCommand, Title: "Scroll Page Down",
+			AlsoFind: []string{"forward", "scrollback"},
+			Run:      func() error { return a.scrollFocused(-1) }},
+		ui.Command{ID: "pane.splitRight", Title: "Split Right…",
+			AlsoFind: []string{"vertical"}, Run: func() error {
+				return a.splitFocused(ui.Columns)
+			}},
+		ui.Command{ID: "pane.splitDown", Title: "Split Down…",
+			AlsoFind: []string{"horizontal"}, Run: func() error {
+				return a.splitFocused(ui.Rows)
+			}},
+		ui.Command{ID: "pane.popOut", Title: "Pop Out Pane",
+			AlsoFind: []string{"unsplit", "detach", "take out of its split"},
+			Run:      a.unsplitFocused},
+		ui.Command{ID: "pane.close", Title: "Close Pane", Run: a.closeFocused},
+		ui.Command{ID: fullScreenCommand, Title: "Full Screen",
+			AlsoFind: []string{"fill", "maximise", "maximize", "hide the sidebar"},
 			On:       a.FullScreen, Run: a.toggleFullScreen},
-		ui.Command{ID: "app.exit", Title: "Close this window",
-			AlsoFind: []string{"quit", "exit"}, Run: func() error {
+		ui.Command{ID: "app.exit", Title: "Exit",
+			AlsoFind: []string{"quit", "close this window"}, Run: func() error {
 				a.askToQuit()
 				return nil
 			}},
-		ui.Command{ID: "app.about", Title: "About gridterm", Run: a.showAbout},
-		ui.Command{ID: "pane.open", Title: "New terminal", Run: a.openPane},
-		ui.Command{ID: defaultShellCommand, Title: "New terminal on the default shell",
-			Run: a.openPaneOnDefault},
-		ui.Command{ID: "server.connect", Title: "Connect to a server", Run: a.openServer},
-		ui.Command{ID: "server.add", Title: "Add a server", Run: a.openAddServer},
-		ui.Command{ID: "server.reload", Title: "Reread the server list", Run: a.reloadBook},
+		ui.Command{ID: "app.about", Title: "About gridterm",
+			AlsoFind: []string{"version"}, Run: a.showAbout},
+		ui.Command{ID: "pane.open", Title: "New Terminal",
+			AlsoFind: []string{"pane", "shell"}, Run: a.openPane},
+		ui.Command{ID: defaultShellCommand, Title: "New Terminal, Default Shell",
+			AlsoFind: []string{"pane"},
+			Run:      a.openPaneOnDefault},
+		ui.Command{ID: "server.connect", Title: "Connect to Server…",
+			AlsoFind: []string{"ssh", "host", "machine"}, Run: a.openServer},
+		ui.Command{ID: "server.add", Title: "Add Server…",
+			AlsoFind: []string{"new", "save"}, Run: a.openAddServer},
+		ui.Command{ID: "server.reload", Title: "Reload Server List",
+			AlsoFind: []string{"reread"}, Run: a.reloadBook},
 		ui.Command{ID: copiesCommand, Title: copiesTitle + "…",
-			AlsoFind: []string{"file", "again", "repeat"}, Run: a.openCopies},
-		ui.Command{ID: "serve.window", Title: "Serve this window…", Run: a.openServing},
-		ui.Command{ID: "serve.attach", Title: "Connect to another window…", Run: a.openTakeOver,
-			AlsoFind: []string{"take over", "remote", "share panes"}},
-		ui.Command{ID: "agent.hand", Title: "Share this pane with an agent…",
-			Run: a.handHere},
-		ui.Command{ID: "agent.take", Title: "Take this pane out of the share",
-			Run: a.takeBackHere},
-		ui.Command{ID: "agent.share", Title: "Show the share…", Run: a.showShare},
-		ui.Command{ID: typedCommand, Title: typedTitle + "…", Run: a.showTyped},
-		ui.Command{ID: "view.theme", Title: "Colour theme…", Run: a.openThemePick,
-			AlsoFind: []string{"colors"}},
-		ui.Command{ID: "view.themesReload", Title: "Reload colour themes",
-			Run: a.reloadThemes, AlsoFind: []string{"colors"}},
-		ui.Command{ID: "view.themesStart", Title: "Write a colour theme to edit…",
-			Run: a.writeThemeStart, AlsoFind: []string{"colors"}},
-		ui.Command{ID: "pane.titles", Title: "Show or hide the line naming each pane",
-			On: a.paneTitles.on, Run: a.togglePaneTitles},
-		ui.Command{ID: "shell.setup", Title: "Shell setup on this machine, on or off",
-			AlsoFind: []string{"shell integration", "working directory", "osc 7"},
+			AlsoFind: []string{"remembered", "file", "again", "repeat"}, Run: a.openCopies},
+		ui.Command{ID: "serve.window", Title: "Serve This Window…",
+			AlsoFind: []string{"share", "listen", "remote"}, Run: a.openServing},
+		ui.Command{ID: "serve.attach", Title: "Connect to Window…", Run: a.openTakeOver,
+			AlsoFind: []string{"another", "attach", "take over", "remote", "share panes"}},
+		ui.Command{ID: "agent.hand", Title: "Share Pane with Agent…",
+			AlsoFind: []string{"hand over", "add this pane to the share"},
+			Run:      a.handHere},
+		ui.Command{ID: "agent.take", Title: "Stop Sharing Pane",
+			AlsoFind: []string{"take this pane out of the share", "remove", "unshare"},
+			Run:      a.takeBackHere},
+		ui.Command{ID: "agent.share", Title: shareTitle,
+			AlsoFind: []string{"show the share", "code", "prompt", "skill", "setup"},
+			Run:      a.showShare},
+		ui.Command{ID: typedCommand, Title: typedTitle,
+			AlsoFind: []string{"what the agent typed", "input", "sent"},
+			Run:      a.showTyped},
+		ui.Command{ID: "view.theme", Title: themeTitle + "…", Run: a.openThemePick,
+			AlsoFind: []string{"colour", "color", "colors", "scheme"}},
+		ui.Command{ID: "view.themesReload", Title: "Reload Themes",
+			Run:      a.reloadThemes,
+			AlsoFind: []string{"colour", "color", "colors", "reread"}},
+		ui.Command{ID: "view.themesStart", Title: "New Theme File",
+			Run:      a.writeThemeStart,
+			AlsoFind: []string{"colour", "color", "colors", "write", "create", "edit"}},
+		ui.Command{ID: "pane.titles", Title: "Show Pane Titles",
+			AlsoFind: []string{"hide", "toggle", "names", "line"},
+			On:       a.paneTitles.on, Run: a.togglePaneTitles},
+		ui.Command{ID: "shell.setup", Title: "Shell Setup",
+			AlsoFind: []string{"shell integration", "working directory", "osc 7", "on", "off"},
 			On:       a.shellSetup.on, Run: a.toggleShellSetup},
-		ui.Command{ID: "shell.termProgram", Title: "What this window calls itself…",
-			AlsoFind: []string{"term_program", "compatibility", "pictures", "images"},
+		ui.Command{ID: "shell.termProgram", Title: "Terminal Identity…",
+			AlsoFind: []string{"term_program", "compatibility", "pictures", "images", "calls itself"},
 			Run:      a.openTermProgram},
-		ui.Command{ID: "sshkey.make", Title: "Make an SSH key…", Run: a.openMakeKey},
-		ui.Command{ID: "sidebar.toggle", Title: "Show or hide the connections",
-			On: a.panelShowing, Run: a.togglePanel},
-		ui.Command{ID: "sidebar.focus", Title: "Go to the connections", Run: a.focusPanel},
-		ui.Command{ID: "conn.terminal", Title: "New terminal like this one",
-			AlsoFind: []string{"open a terminal here", "same shell", "same server"},
+		ui.Command{ID: "sshkey.make", Title: makeKeyTitle + "…",
+			AlsoFind: []string{"make", "create", "generate", "keygen", "ed25519"},
+			Run:      a.openMakeKey},
+		ui.Command{ID: "sidebar.toggle", Title: "Show Sidebar",
+			AlsoFind: []string{"hide", "toggle", "connections", "panel"},
+			On:       a.panelShowing, Run: a.togglePanel},
+		ui.Command{ID: "sidebar.focus", Title: "Focus Sidebar",
+			AlsoFind: []string{"go to the connections", "panel"}, Run: a.focusPanel},
+		ui.Command{ID: "conn.terminal", Title: "New Terminal Here",
+			AlsoFind: []string{"like this one", "same shell", "same server", "duplicate", "clone"},
 			Run:      a.openTerminalHere},
-		ui.Command{ID: "conn.command", Title: "Run a command…", Run: a.openCommandHere},
-		ui.Command{ID: "conn.tunnel", Title: "Open a tunnel…", Run: a.openTunnelHere},
-		ui.Command{ID: "conn.socks", Title: "Open a SOCKS proxy…", Run: a.openSocksHere},
-		ui.Command{ID: "conn.files", Title: "Browse files here", Run: a.openFilesHere},
-		ui.Command{ID: "files.goTo", Title: "Go to a directory…", Run: a.openGoTo},
-		ui.Command{ID: "conn.disconnect", Title: "Close the connection to this machine",
-			Run: a.disconnectHere},
-		ui.Command{ID: "conn.log", Title: "Show how this was reached",
-			Run: a.showConnLogHere},
-		ui.Command{ID: helpCommand, Title: helpTitle, Run: a.showHelp},
-		ui.Command{ID: filesCommand, Title: filesTitle, Run: a.showWhereFiles},
+		ui.Command{ID: "conn.command", Title: "Run Command…",
+			AlsoFind: []string{"here", "program", "execute"}, Run: a.openCommandHere},
+		ui.Command{ID: "conn.tunnel", Title: "Open Tunnel…",
+			AlsoFind: []string{"forward", "port", "local", "remote"}, Run: a.openTunnelHere},
+		ui.Command{ID: "conn.socks", Title: "Open SOCKS Proxy…",
+			AlsoFind: []string{"tunnel", "dynamic"}, Run: a.openSocksHere},
+		ui.Command{ID: "conn.files", Title: "Browse Files Here",
+			AlsoFind: []string{"file browser", "sftp", "folder", "directory"}, Run: a.openFilesHere},
+		ui.Command{ID: "files.goTo", Title: "Go to Directory…",
+			AlsoFind: []string{"folder", "path", "cd", "drive"}, Run: a.openGoTo},
+		ui.Command{ID: "conn.disconnect", Title: "Disconnect",
+			AlsoFind: []string{"close the connection", "machine", "server", "log out"},
+			Run:      a.disconnectHere},
+		ui.Command{ID: connLogCommand, Title: connLogName,
+			AlsoFind: []string{"how this was reached", "route", "hops"},
+			Run:      a.showConnLogHere},
+		ui.Command{ID: helpCommand, Title: helpTitle,
+			AlsoFind: []string{"keys", "keyboard", "help"}, Run: a.showHelp},
+		ui.Command{ID: filesCommand, Title: filesTitle,
+			AlsoFind: []string{"where gridterm keeps its files", "settings", "config",
+				"folder", "portable"}, Run: a.showWhereFiles},
 		ui.Command{ID: logCommand, Title: logTitle, Run: a.showLog,
-			AlsoFind: []string{"debug", "errors", "what went wrong"}},
-		ui.Command{ID: keysCommand, Title: keysTitle, Run: a.writeShortcutStart},
+			AlsoFind: []string{"show what the window has logged", "debug", "errors",
+				"what went wrong"}},
+		ui.Command{ID: keysCommand, Title: keysTitle,
+			AlsoFind: []string{"write", "starting", "keyboard", "create"},
+			Run:      a.writeShortcutStart},
 		ui.Command{ID: keysReloadCommand, Title: keysReloadTitle,
-			AlsoFind: []string{"keyboard", "shortcuts", "reread"},
+			AlsoFind: []string{"keyboard", "reread"},
 			Run:      a.reloadShortcuts},
-		ui.Command{ID: "server.editThis", Title: "Edit this server…",
+		ui.Command{ID: "server.editThis", Title: "Edit This Server…",
 			Run: a.editThisServer},
-		ui.Command{ID: "server.forget", Title: "Forget this server…",
-			Run: a.forgetThisServer},
-		ui.Command{ID: "sidebar.closeRow", Title: "Close the row selected in the sidebar",
-			AlsoFind: []string{"close this connection"},
+		ui.Command{ID: "server.forget", Title: "Remove This Server…",
+			AlsoFind: []string{"forget", "delete"},
+			Run:      a.forgetThisServer},
+		ui.Command{ID: "sidebar.closeRow", Title: "Close Selected Row",
+			AlsoFind: []string{"close this connection", "sidebar"},
 			Run:      a.closeSelectedConnection},
-		ui.Command{ID: "conn.clearFinished", Title: "Clear finished connections",
-			Run: a.clearFinished},
-		ui.Command{ID: "sshkey.lock", Title: "Forget unlocked keys and try the agent again",
-			Run: a.lockKeys},
-		ui.Command{ID: "palette.open", Title: "Show all commands", Run: a.openPalette},
-		ui.Command{ID: "menu.open", Title: "Show the menu bar", Run: a.openMenu},
-		ui.Command{ID: switcherCommand, Title: switcherTitle + "…", Run: a.openSwitcher},
-		ui.Command{ID: "pane.nextInSidebar", Title: "Next pane, down the sidebar", Run: func() error {
-			return a.focusInSidebarOrder(1)
-		}},
-		ui.Command{ID: "pane.previousInSidebar", Title: "Previous pane, up the sidebar", Run: func() error {
-			return a.focusInSidebarOrder(-1)
-		}},
-		ui.Command{ID: "pane.next", Title: "Next pane, the one used before this",
-			Run: func() error { return a.walkRecent(1) }},
-		ui.Command{ID: "pane.previous", Title: "Previous pane, back the other way",
-			Run: func() error { return a.walkRecent(-1) }},
+		ui.Command{ID: "conn.clearFinished", Title: "Clear Finished",
+			AlsoFind: []string{"connections", "rows", "sidebar", "ended"},
+			Run:      a.clearFinished},
+		ui.Command{ID: "sshkey.lock", Title: "Lock SSH Keys",
+			AlsoFind: []string{"forget unlocked keys", "passphrase", "agent", "try again"},
+			Run:      a.lockKeys},
+		ui.Command{ID: "palette.open", Title: "All Commands…",
+			AlsoFind: []string{"show", "palette", "search"}, Run: a.openPalette},
+		ui.Command{ID: "menu.open", Title: "Focus Menu Bar",
+			AlsoFind: []string{"show"}, Run: a.openMenu},
+		ui.Command{ID: switcherCommand, Title: switcherTitle + "…", Run: a.openSwitcher,
+			AlsoFind: []string{"show every pane", "switcher", "overview", "grid"}},
+		ui.Command{ID: "pane.nextInSidebar", Title: "Next Pane",
+			AlsoFind: []string{"down the sidebar"}, Run: func() error {
+				return a.focusInSidebarOrder(1)
+			}},
+		ui.Command{ID: "pane.previousInSidebar", Title: "Previous Pane",
+			AlsoFind: []string{"up the sidebar"}, Run: func() error {
+				return a.focusInSidebarOrder(-1)
+			}},
+		ui.Command{ID: "pane.next", Title: "Next Recent Pane",
+			AlsoFind: []string{"last used", "used before", "mru", "switch"},
+			Run:      func() error { return a.walkRecent(1) }},
+		ui.Command{ID: "pane.previous", Title: "Previous Recent Pane",
+			AlsoFind: []string{"last used", "back the other way", "mru", "switch"},
+			Run:      func() error { return a.walkRecent(-1) }},
 	})...)
 
 	a.root.Commands = cmds

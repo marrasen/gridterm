@@ -56,7 +56,7 @@ func (a *app) withOpenSecrets(what string, then func(*secrets.Vault) error) erro
 		return a.offerAVault()
 	}
 	if a.openWithKeysInHand(v) {
-		return then(v)
+		return a.thenIfItIsTheNewestFile(v, then)
 	}
 	a.unlockVault(v, func(err error) {
 		switch {
@@ -65,12 +65,94 @@ func (a *app) withOpenSecrets(what string, then func(*secrets.Vault) error) erro
 		case err != nil:
 			a.reportError(what, err)
 		default:
-			if err := then(v); err != nil {
+			if err := a.thenIfItIsTheNewestFile(v, then); err != nil {
 				a.reportError(what, err)
 			}
 		}
 	})
 	return nil
+}
+
+// thenIfItIsTheNewestFile runs the work, asking first when the file
+// looks like an older copy of itself.
+//
+// Every vault file this window ever wrote is validly sealed, so opening
+// one proves somebody had the key and not that this is the newest one.
+// Putting yesterday's file back brings a key slot back that was revoked
+// since, and a secret back that was changed. The count inside says which
+// write it is, and the highest count seen is kept in the settings --
+// somewhere else, so an old vault has to be put back along with an old
+// settings file to pass unremarked.
+//
+// It asks rather than refusing. A count that went backwards is either
+// somebody putting an old file there or the user restoring their own
+// backup, and the vault cannot tell those apart: refusing would lock
+// somebody out of their own passwords for doing something reasonable.
+func (a *app) thenIfItIsTheNewestFile(v *secrets.Vault, then func(*secrets.Vault) error) error {
+	saves, seen := v.Saves(), a.secretsSavesSeen(v.Path())
+	if saves >= seen {
+		a.rememberSecretsSaves(v.Path(), saves)
+		return then(v)
+	}
+	// Not from here: this runs from a button of another dialog often
+	// enough, and that dialog closes as soon as the button returns,
+	// taking anything stacked on top of it.
+	a.pump.post(func() { a.askAboutAnOlderVault(v, saves, seen, then) })
+	return nil
+}
+
+// askAboutAnOlderVault is the question itself, on the goroutine that
+// draws.
+func (a *app) askAboutAnOlderVault(v *secrets.Vault, saves, seen uint64,
+	then func(*secrets.Vault) error) {
+
+	f := a.newConfirm("Older secrets file", wrapLines(fmt.Sprintf(
+		"This file has been saved %d times, and %d were seen before."+
+			" A key removed since may open it again.", saves, seen), errorLineWidth))
+	f.AddButton(ui.Button{Title: btnOpen, Do: func() error {
+		// The mark stays where it is. Opening an older file on purpose
+		// does not make it the newest one, so the next older copy is
+		// still caught.
+		a.pump.post(func() {
+			if err := then(v); err != nil {
+				a.reportError("Could not open the secrets", err)
+			}
+		})
+		return nil
+	}})
+	f.AddButton(ui.Button{Title: btnCancel, Do: func() error {
+		// Locked again, so the next thing to ask for a secret asks this
+		// question again rather than working from a file already opened.
+		v.Lock()
+		return nil
+	}})
+	// Opens on the button that changes nothing.
+	f.FocusButton(1)
+	a.showForm(f, nil)
+}
+
+// secretsSavesSeen is the highest number of writes this vault file has
+// been seen with.
+func (a *app) secretsSavesSeen(path string) uint64 {
+	if a.remembered == nil {
+		return 0
+	}
+	return a.remembered.SecretsSaves(path)
+}
+
+// rememberSecretsSaves writes the mark down, and says so when it could
+// not be written.
+//
+// A failure here is worth saying: the mark not moving means the next
+// file that is genuinely newer is taken for an older one, and the
+// question is asked about a file that is fine.
+func (a *app) rememberSecretsSaves(path string, saves uint64) {
+	if a.remembered == nil {
+		return
+	}
+	if err := a.remembered.PutSecretsSaves(path, saves); err != nil {
+		a.logError(fmt.Errorf("remember how many times the secrets have been written: %w", err))
+	}
 }
 
 // openSecrets shows what is in the vault.

@@ -525,6 +525,11 @@ func (a *app) useSettings(set *settings.Settings) {
 	a.keyFiles.remember(set)
 	a.theme.remember(set)
 	a.font.remember(set)
+	// The vault's own high-water mark is read straight off the settings
+	// rather than through a type of its own: it is one number, and the
+	// thing that reads it is the one dialog that asks about an older
+	// file.
+	a.remembered = set
 	err := set.Err()
 	if err == nil {
 		return

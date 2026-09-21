@@ -779,3 +779,122 @@ func TestClosingTheWindowLeavesWhatWasCopiedSince(t *testing.T) {
 		t.Errorf("the clipboard holds %q, and what they copied was theirs", got)
 	}
 }
+
+// aWindowThatRemembers gives the window settings of its own, so what it
+// writes down between runs can be read back.
+func aWindowThatRemembers(t *testing.T, a *testApp) *settings.Settings {
+	t.Helper()
+	set, err := settings.Load(filepath.Join(t.TempDir(), "settings.json"))
+	if err != nil {
+		t.Fatalf("read the settings: %v", err)
+	}
+	a.useSettings(set)
+	return set
+}
+
+// An older copy of the vault file put back in place is asked about.
+//
+// Every vault file is validly sealed however old it is, so opening one
+// says somebody had the key and not that this is the newest. The count
+// inside says which write it is, and the highest seen is kept in the
+// settings: somewhere else, so an old vault has to arrive with an old
+// settings file to pass unremarked.
+func TestAnOlderVaultFileIsAskedAbout(t *testing.T) {
+	a, keyFile := aWindowWithSecrets(t)
+	set := aWindowThatRemembers(t, a)
+	v := startTheVault(t, a, keyFile)
+
+	// A write, and the mark moved on by opening it.
+	if _, err := v.Put(secrets.Item{Name: "margit"}, "hunter2"); err != nil {
+		t.Fatalf("put: %v", err)
+	}
+	if err := set.PutSecretsSaves(v.Path(), v.Saves()+5); err != nil {
+		t.Fatalf("remember a higher mark: %v", err)
+	}
+
+	if err := a.openSecrets(); err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	a.pump.run()
+
+	f, up := a.root.Modal().(*ui.Form)
+	if !up {
+		t.Fatalf("nothing asked about the older file: %T", a.root.Modal())
+	}
+	if f.Title != "Older secrets file" {
+		t.Errorf("it is titled %q", f.Title)
+	}
+	if said := strings.Join(f.Lines, " "); !strings.Contains(said, "removed since may open it again") {
+		t.Errorf("it says %q, want it to say what an older file costs", said)
+	}
+}
+
+// Saying no locks the vault again, so the next thing to ask is asked
+// afresh rather than working from a file already opened.
+func TestSayingNoToAnOlderVaultLocksItAgain(t *testing.T) {
+	a, keyFile := aWindowWithSecrets(t)
+	set := aWindowThatRemembers(t, a)
+	v := startTheVault(t, a, keyFile)
+	if err := set.PutSecretsSaves(v.Path(), v.Saves()+5); err != nil {
+		t.Fatalf("remember a higher mark: %v", err)
+	}
+
+	if err := a.openSecrets(); err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	a.pump.run()
+	f := a.root.Modal().(*ui.Form)
+	pressButton(t, a, f, btnCancel)
+	a.pump.run()
+
+	if !v.Locked() {
+		t.Error("the vault is still open after the question was answered no")
+	}
+}
+
+// And a file that is the newest one is not asked about at all, and
+// moves the mark on.
+func TestTheNewestVaultFileIsNotAskedAbout(t *testing.T) {
+	a, keyFile := aWindowWithSecrets(t)
+	set := aWindowThatRemembers(t, a)
+	v := startTheVault(t, a, keyFile)
+	if _, err := v.Put(secrets.Item{Name: "margit"}, "hunter2"); err != nil {
+		t.Fatalf("put: %v", err)
+	}
+
+	if err := a.openSecrets(); err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	a.pump.run()
+
+	if f, up := a.root.Modal().(*ui.Form); up && f.Title == "Older secrets file" {
+		t.Fatal("a file that is the newest one was called an older copy")
+	}
+	if got := set.SecretsSaves(v.Path()); got != v.Saves() {
+		t.Errorf("the mark is %d and the file says %d", got, v.Saves())
+	}
+}
+
+// Opening an older file on purpose leaves the mark where it was, so the
+// next older copy is caught too.
+func TestOpeningAnOlderVaultDoesNotLowerTheMark(t *testing.T) {
+	a, keyFile := aWindowWithSecrets(t)
+	set := aWindowThatRemembers(t, a)
+	v := startTheVault(t, a, keyFile)
+	high := v.Saves() + 5
+	if err := set.PutSecretsSaves(v.Path(), high); err != nil {
+		t.Fatalf("remember a higher mark: %v", err)
+	}
+
+	if err := a.openSecrets(); err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	a.pump.run()
+	pressButton(t, a, a.root.Modal().(*ui.Form), btnOpen)
+	a.pump.run()
+
+	if got := set.SecretsSaves(v.Path()); got != high {
+		t.Errorf("the mark moved to %d, and opening an older file on purpose"+
+			" does not make it the newest one", got)
+	}
+}

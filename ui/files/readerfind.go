@@ -48,6 +48,13 @@ func (r *Reader) Asking() (what string, typed string, on bool) {
 // looking for nothing.
 func (r *Reader) Find() string { return r.finding }
 
+// AskFind opens the find prompt, for a viewer opened by something that
+// has already said it is a search.
+//
+// The prompt rather than a search: what to look for is the one thing
+// the caller cannot know.
+func (r *Reader) AskFind() { r.ask(askingFind) }
+
 // ask starts a question along the bottom row.
 func (r *Reader) ask(what asking) {
 	r.asking, r.typed = what, ""

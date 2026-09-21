@@ -25,6 +25,14 @@ const (
 	formLabelGap = 1
 )
 
+// formCycleHint is drawn at the end of a field that has Options, so a
+// field the user can step through says so rather than needing a
+// sentence about it under the title.
+const formCycleHint = "Ctrl+↑↓"
+
+// formCycleGap is the blank between a field and the hint after it.
+const formCycleGap = 1
+
 // FormStyle colours a form.
 type FormStyle struct {
 	// FG and BG are the body text and the box behind it. A background
@@ -238,6 +246,19 @@ func (f *Form) SetButtons(buttons []Button) {
 	// The buttons are part of what the box is wide enough for, so the
 	// fields have to be told what they have left.
 	f.layoutFields()
+}
+
+// EnsureFocusable moves the focus on when what has it can no longer take
+// keys, which is what turning a field off under the caret does.
+//
+// Whoever disables a field calls this: the form is not told that a field
+// changed, and a caret left on one would be a caret nothing can type
+// into.
+func (f *Form) EnsureFocusable() {
+	if !f.hidden(f.at) {
+		return
+	}
+	f.move(1)
 }
 
 // FocusButton puts the focus on one of the buttons, for a question whose
@@ -549,18 +570,40 @@ func (f *Form) paint(v grid.View) {
 	for i := 0; i < l.fields; i++ {
 		r := f.rows[i]
 		y := l.fieldsTop + i
-		in.SetString(formPad, y, grid.Trim(r.label, room), f.Style.LabelFG, f.Style.BG, 0)
+		labelFG := f.Style.LabelFG
+		if r.field.Disabled {
+			// Dim, because the row is still there to read: a field that
+			// has gone would move every field under it as the dialog is
+			// filled in.
+			labelFG = f.Style.HintFG
+		}
+		in.SetString(formPad, y, grid.Trim(r.label, room), labelFG, f.Style.BG, 0)
 		fg, bg := f.Style.FieldFG, f.Style.FieldBG
-		if i == f.at {
+		switch {
+		case r.field.Disabled:
+			fg, bg = f.Style.HintFG, f.Style.BG
+		case i == f.at:
 			fg, bg = f.Style.FocusFG, f.Style.FocusBG
 		}
 		r.field.Style = FieldStyle{FG: fg, BG: bg, PlaceholderFG: f.Style.HintFG}
-		width := max(room-f.fieldX()+formPad, 1)
+		width := f.fieldWidth(room, i)
 		r.field.Draw(in.Sub(f.fieldX(), y, width, 1))
+		// Only under the caret: the marker says which keys this field
+		// takes, and a column of them down every row would read as part
+		// of the values.
+		if i == f.at && f.cycles(i) {
+			at := f.fieldX() + width + formCycleGap
+			if at+grid.StringWidth(formCycleHint) <= room+formPad {
+				in.SetString(at, y, formCycleHint, f.Style.HintFG, f.Style.BG, 0)
+			}
+		}
 	}
 
 	for i, line := range l.errLines {
 		in.SetString(formPad, l.errRow+i, line, f.Style.ErrorFG, f.Style.BG, 0)
+	}
+	if l.hint != "" {
+		in.SetString(formPad, l.errRow, grid.Trim(l.hint, room), f.Style.HintFG, f.Style.BG, 0)
 	}
 	f.paintButtons(in, l.buttonRow)
 }
@@ -578,6 +621,7 @@ type formLayout struct {
 	fields    int // how many fields fit
 	errRow    int
 	errLines  []string // the error, wrapped
+	hint      string   // the focused field's hint, when no error is showing
 	buttonRow int
 }
 
@@ -623,6 +667,14 @@ func (f *Form) layout() formLayout {
 	}
 	l.errLines = f.errLines(box.Cols-formPad*2, max(l.buttonRow-above, 1))
 	l.errRow = l.buttonRow - max(len(l.errLines), 1)
+	// The row the error would use, when there is no error to put in it.
+	// One row is always reserved, so a hint that comes and goes with the
+	// focus does not change the height of the box.
+	if len(l.errLines) == 0 {
+		if fld := f.focusedField(); fld != nil {
+			l.hint = fld.Hint
+		}
+	}
 
 	// From the top: a blank row, the title, a blank row.
 	l.title = 1
@@ -765,7 +817,9 @@ func (f *Form) move(by int) {
 func (f *Form) hidden(at int) bool {
 	i := at - len(f.rows)
 	if i < 0 {
-		return false
+		// A field that does not apply. Landing on it would put the caret
+		// somewhere nothing can be typed.
+		return at >= 0 && at < len(f.rows) && f.rows[at].field.Disabled
 	}
 	cols := f.buttonCols()
 	return i < len(cols) && cols[i] < 0
@@ -802,10 +856,46 @@ func (f *Form) layoutFields() {
 	if box.Empty() {
 		return
 	}
-	width := max(box.Cols-formPad-f.fieldX(), 1)
-	for _, r := range f.rows {
-		r.field.Layout(Size{Cols: width, Rows: 1})
+	room := box.Cols - formPad*2
+	for i, r := range f.rows {
+		r.field.Layout(Size{Cols: f.fieldWidth(room, i), Rows: 1})
 	}
+}
+
+// cycles reports whether a row's field steps through a list, which is
+// what the marker after it says.
+func (f *Form) cycles(at int) bool {
+	return at >= 0 && at < len(f.rows) && len(f.rows[at].field.Options) > 0 &&
+		!f.rows[at].field.Disabled
+}
+
+// cycleRoom is the room the marker after a cycling field takes, on every
+// row that has one.
+//
+// Taken from every such row rather than only the focused one, so a field
+// does not change width as the focus arrives: the caret scrolls to stay
+// in view, and a field that grew under it would jump.
+func (f *Form) cycleRoom() int {
+	for _, r := range f.rows {
+		if len(r.field.Options) > 0 {
+			return formCycleGap + grid.StringWidth(formCycleHint)
+		}
+	}
+	return 0
+}
+
+// fieldWidth is how wide a row's field is drawn, in the room the box has
+// inside its padding.
+//
+// A row whose field has options always gives up the marker's room,
+// whether or not it is the focused one: a field that grew as the focus
+// arrived would scroll its text under the caret just as it was reached.
+func (f *Form) fieldWidth(room, at int) int {
+	width := room - f.fieldX() + formPad
+	if at >= 0 && at < len(f.rows) && len(f.rows[at].field.Options) > 0 {
+		width -= f.cycleRoom()
+	}
+	return max(width, 1)
 }
 
 // fieldX returns the column the fields start at, past the widest label.
@@ -868,7 +958,10 @@ func (f *Form) wantCols() int {
 		// Room for a label and something worth typing beside it. A path
 		// or an address is what these fields usually hold, and neither
 		// fits in a handful of columns.
-		width = max(width, labels+formLabelGap+formFieldCols)
+		width = max(width, labels+formLabelGap+formFieldCols+f.cycleRoom())
+	}
+	for _, r := range f.rows {
+		width = max(width, grid.StringWidth(r.field.Hint))
 	}
 	buttons := buttonsWidth(f.buttonTitles())
 	width = max(width, buttons)

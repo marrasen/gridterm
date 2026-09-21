@@ -338,6 +338,14 @@ func (p *Palette) drawMatch(in grid.View, row, cols int) {
 	line := in.Sub(0, y, cols, 1)
 	line.Fill(grid.Cell{Rune: ' ', FG: fg, BG: bg, Width: 1})
 
+	// A switch draws a tick while what it turns on is on, the way a menu
+	// row does. Without it a line saying "Show Sidebar" cannot say which
+	// way pressing it will go. It sits in the blank the title already
+	// leaves at the left, so nothing moves to make room for it.
+	if m.Command.On != nil && m.Command.On() {
+		line.SetString(0, 0, "✓", fg, bg, 0)
+	}
+
 	// The binding first, right-aligned, so the title can use whatever is
 	// left without measuring around it.
 	room := cols - 2

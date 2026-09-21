@@ -14,8 +14,23 @@ import (
 	"github.com/marrasen/gridterm/ui"
 )
 
-// secretsTitle is what the list of secrets calls itself.
-const secretsTitle = "Secrets"
+// secretsTitle is what the vault calls itself, and the rest are what its
+// commands are called.
+//
+// Constants because the dialogs quote them: a notice telling the user to
+// take "Add Secret" has to name the line they will actually find, and a
+// copy of that name in prose drifts the first time the command is
+// reworded. See WORDING.md.
+const (
+	secretsTitle          = "Secrets"
+	showSecretsTitle      = "Show Secrets"
+	addSecretTitle        = "Add Secret"
+	addNoteTitle          = "Add Note"
+	changeSecretTitle     = "Change Secret"
+	addSecretsKeyTitle    = "Add Secrets Key"
+	removeSecretsKeyTitle = "Remove Secrets Key"
+	removeSecretTitle     = "Remove Secret"
+)
 
 // clipboardHolds is how long a secret stays on the clipboard before the
 // window takes it back off.
@@ -24,10 +39,6 @@ const secretsTitle = "Secrets"
 // there at the end of the afternoon. Only the secret is taken back: a
 // clipboard somebody has used since is left alone.
 const clipboardHolds = 30 * time.Second
-
-// typeButton is the mark at the end of each row, which types the secret
-// into the pane instead of putting it on the clipboard.
-const typeButton = '↵'
 
 // withOpenSecrets hands the vault to then, opening it first.
 //
@@ -76,20 +87,21 @@ func (a *app) openSecrets() error {
 func (a *app) offerAVault() error {
 	keys := a.vaultKeys()
 	if len(keys) == 0 {
-		a.showNotice(secretsTitle, "There are no secrets yet, and no ed25519 key to lock them "+
-			`with. "Make an SSH key" writes one, and that key then opens both a server and these.`,
-			false)
+		n := a.newNotice("No key to lock the secrets with",
+			`An ed25519 key is needed. Take "`+makeKeyTitle+`" to create one.`)
+		n.SetNoCopy()
+		a.presentNotice(n)
 		return nil
 	}
 	if len(keys) == 1 {
-		n := a.newNotice(secretsTitle, "There are no secrets yet. "+keys[0]+
-			" would open them, and it is a key you already unlock to reach a server.")
-		n.Action = ui.NoticeAction{Title: "Start one", Do: func() { a.startVaultOn(keys[0]) }}
+		n := a.newNotice("No secrets yet", keys[0]+" will open them.")
+		n.Action = ui.NoticeAction{Title: btnCreate, Do: func() { a.startVaultOn(keys[0]) }}
+		n.FocusOK()
 		a.presentNotice(n)
 		return nil
 	}
 	var hide func()
-	c := ui.NewChooser("Which key opens the secrets?", func() {
+	c := ui.NewChooser("Choose a key", func() {
 		if hide != nil {
 			hide()
 		}
@@ -103,7 +115,7 @@ func (a *app) offerAVault() error {
 	}
 	hide = a.showModal(c, nil)
 	if a.root.Modal() != ui.Widget(c) {
-		return errors.New("there is no room to show them")
+		return errors.New("Window too small")
 	}
 	a.markDirty()
 	return nil
@@ -117,10 +129,9 @@ func (a *app) startVaultOn(keyFile string) {
 		case errors.Is(err, errDismissed):
 			// The user closed the passphrase dialog. They know.
 		case err != nil:
-			a.reportError("Could not start the secrets", err)
+			a.reportError("Could not create the secrets", err)
 		default:
-			a.showNotice(secretsTitle, `The secrets are started, and `+keyFile+
-				` opens them. "Add a secret" puts the first one in.`, false)
+			a.say("Secrets created — " + keyFile + " opens them")
 		}
 	})
 }
@@ -132,8 +143,9 @@ func (a *app) showSecrets(v *secrets.Vault) error {
 		return err
 	}
 	if len(items) == 0 {
-		a.showNotice(secretsTitle,
-			`Nothing is kept yet. "Add a secret" puts the first one in.`, false)
+		n := a.newNotice("No secrets yet", `Take "`+addSecretTitle+`" to add one.`)
+		n.SetNoCopy()
+		a.presentNotice(n)
 		return nil
 	}
 	// The title says when picking one answers what the pane is waiting
@@ -141,7 +153,7 @@ func (a *app) showSecrets(v *secrets.Vault) error {
 	// password: it sends the line the program is sitting on.
 	title := secretsTitle
 	if pane := a.focusedTerminal(); pane != nil && pane.AskedForASecret() {
-		title = "Secrets — the pane is waiting for one"
+		title = secretsTitle + " — the pane is waiting for one"
 	}
 	var hide func()
 	c := ui.NewChooser(title, func() {
@@ -164,7 +176,7 @@ func (a *app) showSecrets(v *secrets.Vault) error {
 	}
 	hide = a.showModal(c, nil)
 	if a.root.Modal() != ui.Widget(c) {
-		return errors.New("there is no room to show them")
+		return errors.New("Window too small")
 	}
 	a.markDirty()
 	return nil
@@ -194,7 +206,9 @@ func (a *app) showSecret(v *secrets.Vault, it secrets.Item) error {
 		return err
 	}
 	if value == "" {
-		a.showNotice(it.Name, "There is nothing kept under that name.", false)
+		n := a.newNotice(it.Name, "Nothing is saved under this name.")
+		n.SetNoCopy()
+		a.presentNotice(n)
 		return nil
 	}
 	n := a.newNotice(it.Name, value)
@@ -226,9 +240,8 @@ func (a *app) copySecret(v *secrets.Vault, it secrets.Item) error {
 	}
 	a.clip.set(value)
 	a.forgetClipboardLater(value)
-	a.showNotice(secretsTitle, fmt.Sprintf(
-		"%s is on the clipboard, and comes off it in %d seconds.",
-		it.Name, int(clipboardHolds.Seconds())), false)
+	a.say(fmt.Sprintf("%s copied — the clipboard clears in %d seconds",
+		it.Name, int(clipboardHolds.Seconds())))
 	return nil
 }
 
@@ -288,26 +301,27 @@ func (a *app) addNote() error { return a.addOfKind(secrets.Note) }
 
 // addOfKind opens the vault if it has to and then asks.
 func (a *app) addOfKind(kind secrets.Kind) error {
-	return a.withOpenSecrets("Could not keep it", func(v *secrets.Vault) error {
+	return a.withOpenSecrets("Could not save the secret", func(v *secrets.Vault) error {
 		return a.askForSecret(v, kind)
 	})
 }
 
 // askForSecret is the form a new one is typed into.
 func (a *app) askForSecret(v *secrets.Vault, kind secrets.Kind) error {
-	title, label, mask := "Add a secret", "Secret", '*'
+	title, label, mask := addSecretTitle, "Secret", '*'
 	if kind == secrets.Note {
-		title, label, mask = "Add a note", "Note", rune(0)
+		title, label, mask = addNoteTitle, "Note", rune(0)
 	}
 	f := a.newForm(title)
 	f.Lines = []string{keptSealed}
-	name := f.AddField("Name", a.newField("what to call it", 0))
-	user := f.AddField("For", a.newField("optional", 0))
+	name := f.AddField(fldName, a.newField("", 0))
+	user := f.AddField(fldFor, a.newField("Optional", 0))
+	user.Hint = "Who or what the secret is for"
 	value := f.AddField(label, a.newField("", mask))
 	// Said once the form has gone, so the message is not pushed over a
 	// dialog that is about to be taken away underneath it.
 	kept := ""
-	f.AddButton(ui.Button{Title: "Keep", Do: func() error {
+	f.AddButton(ui.Button{Title: btnSave, Do: func() error {
 		it := secrets.Item{Name: name.Text(), User: user.Text(), Kind: kind}
 		if _, err := v.Put(it, value.Text()); err != nil {
 			return err
@@ -316,14 +330,14 @@ func (a *app) askForSecret(v *secrets.Vault, kind secrets.Kind) error {
 		return nil
 	}})
 	a.addShowButton(f, value, mask)
-	f.AddButton(ui.Button{Title: "Cancel", Do: func() error { return nil }})
+	f.AddButton(ui.Button{Title: btnCancel})
 	a.showForm(f, func() {
 		if kept != "" {
-			a.showNotice(secretsTitle, kept+" is kept.", false)
+			a.say(kept + " saved")
 		}
 	})
 	if a.root.Modal() != ui.Widget(f) {
-		return errors.New("there is no room for the form")
+		return errors.New("Window too small")
 	}
 	a.markDirty()
 	return nil
@@ -334,7 +348,7 @@ func (a *app) askForSecret(v *secrets.Vault, kind secrets.Kind) error {
 // Somebody typing a password into a window is owed a word about where
 // it goes, and a note is as worth sealing as a password. It says the
 // two things that matter: it is sealed, and one key opens it.
-const keptSealed = "Kept sealed in the vault, which only your key opens."
+const keptSealed = "Sealed in the vault. Only your key opens it."
 
 // showTitle and hideTitle are what the button that turns the stars off
 // says, and what finds it again to rename.
@@ -413,11 +427,13 @@ func (a *app) chooseAKeyToAdd(v *secrets.Vault) error {
 		}
 	}
 	if len(spare) == 0 {
-		a.showNotice(secretsTitle, whyNoKeyToAdd(len(have)), false)
+		n := a.newNotice("No key to add", whyNoKeyToAdd(len(have)))
+		n.SetNoCopy()
+		a.presentNotice(n)
 		return nil
 	}
 	var hide func()
-	c := ui.NewChooser("Which key should also open the secrets?", func() {
+	c := ui.NewChooser("Choose a key", func() {
 		if hide != nil {
 			hide()
 		}
@@ -431,7 +447,7 @@ func (a *app) chooseAKeyToAdd(v *secrets.Vault) error {
 	}
 	hide = a.showModal(c, nil)
 	if a.root.Modal() != ui.Widget(c) {
-		return errors.New("there is no room to show them")
+		return errors.New("Window too small")
 	}
 	a.markDirty()
 	return nil
@@ -441,11 +457,11 @@ func (a *app) chooseAKeyToAdd(v *secrets.Vault) error {
 // different thing depending on how many already open it.
 func whyNoKeyToAdd(opening int) string {
 	if opening == 0 {
-		return "There is no other ed25519 key on this machine to add. " +
-			`"Make an SSH key" writes one.`
+		return `No other ed25519 key is on this machine. Take "` + makeKeyTitle +
+			`" to create one.`
 	}
-	return "Every ed25519 key this window knows about already opens the secrets. " +
-		"A key from another machine has to be on this one before it can be added."
+	return "Every ed25519 key this window knows of already opens the secrets." +
+		" A key from another machine has to be on this one first."
 }
 
 // addVaultKeyOn unlocks a key and gives it a slot of its own.
@@ -461,15 +477,14 @@ func (a *app) addVaultKeyOn(v *secrets.Vault, keyFile string) {
 			a.reportError("Could not add the key", err)
 			return
 		}
-		a.showNotice(secretsTitle, fmt.Sprintf(
-			"%s opens the secrets as well now, and %d keys open them in all.",
-			keyFile, len(v.Keys())), false)
+		a.say(fmt.Sprintf("%s opens the secrets — %d keys do now",
+			keyFile, len(v.Keys())))
 	})
 }
 
 // changeSecret puts a better name on one, or a new value in it.
 func (a *app) changeSecret() error {
-	return a.withOpenSecrets("Could not change it", a.chooseToChange)
+	return a.withOpenSecrets("Could not change the secret", a.chooseToChange)
 }
 
 // chooseToChange is the list a secret is picked from to change.
@@ -483,7 +498,7 @@ func (a *app) chooseToChange(v *secrets.Vault) error {
 		return nil
 	}
 	var hide func()
-	c := ui.NewChooser("Change a secret", func() {
+	c := ui.NewChooser(changeSecretTitle, func() {
 		if hide != nil {
 			hide()
 		}
@@ -499,7 +514,7 @@ func (a *app) chooseToChange(v *secrets.Vault) error {
 	}
 	hide = a.showModal(c, nil)
 	if a.root.Modal() != ui.Widget(c) {
-		return errors.New("there is no room to show them")
+		return errors.New("Window too small")
 	}
 	a.markDirty()
 	return nil
@@ -516,15 +531,17 @@ func (a *app) askToChange(v *secrets.Vault, it secrets.Item) error {
 	if it.Kind == secrets.Note {
 		label, mask = "New note", rune(0)
 	}
-	f := a.newForm("Change " + it.Name)
-	name := f.AddField("Name", a.newField(it.Name, 0))
+	f := a.newForm(changeSecretTitle + " — " + it.Name)
+	name := f.AddField(fldName, a.newField(it.Name, 0))
 	name.SetText(it.Name)
-	user := f.AddField("For", a.newField("optional", 0))
+	user := f.AddField(fldFor, a.newField("Optional", 0))
 	user.SetText(it.User)
-	value := f.AddField(label, a.newField("leave empty to keep the one kept", mask))
+	value := f.AddField(label, a.newField("Optional", 0))
+	value.Mask = mask
+	value.Hint = "Leave empty to keep the saved one"
 
 	changedTo := ""
-	f.AddButton(ui.Button{Title: "Keep", Do: func() error {
+	f.AddButton(ui.Button{Title: btnSave, Do: func() error {
 		changed := it
 		changed.Name, changed.User = name.Text(), user.Text()
 		var err error
@@ -540,14 +557,14 @@ func (a *app) askToChange(v *secrets.Vault, it secrets.Item) error {
 		return nil
 	}})
 	a.addShowButton(f, value, mask)
-	f.AddButton(ui.Button{Title: "Cancel", Do: func() error { return nil }})
+	f.AddButton(ui.Button{Title: btnCancel})
 	a.showForm(f, func() {
 		if changedTo != "" {
-			a.showNotice(secretsTitle, changedTo+" is changed.", false)
+			a.say(changedTo + " changed")
 		}
 	})
 	if a.root.Modal() != ui.Widget(f) {
-		return errors.New("there is no room for the form")
+		return errors.New("Window too small")
 	}
 	a.markDirty()
 	return nil
@@ -556,7 +573,7 @@ func (a *app) askToChange(v *secrets.Vault, it secrets.Item) error {
 // removeVaultKey stops a key opening the secrets, for a machine that
 // is gone or a key being replaced.
 func (a *app) removeVaultKey() error {
-	return a.withOpenSecrets("Could not take the key away", a.chooseAKeyToRemove)
+	return a.withOpenSecrets("Could not remove the key", a.chooseAKeyToRemove)
 }
 
 // chooseAKeyToRemove lists the keys that open the vault and takes the
@@ -564,13 +581,15 @@ func (a *app) removeVaultKey() error {
 func (a *app) chooseAKeyToRemove(v *secrets.Vault) error {
 	keys := v.Keys()
 	if len(keys) < 2 {
-		a.showNotice(secretsTitle, "Only one key opens the secrets, and it cannot go: "+
-			`nothing would open them again. "Let another key open the secrets" adds one first.`,
-			false)
+		n := a.newNotice("Only one key opens the secrets",
+			`Removing it would leave nothing that can. Take "`+addSecretsKeyTitle+
+				`" to add another first.`)
+		n.SetNoCopy()
+		a.presentNotice(n)
 		return nil
 	}
 	var hide func()
-	c := ui.NewChooser("Which key should stop opening the secrets?", func() {
+	c := ui.NewChooser("Choose a key", func() {
 		if hide != nil {
 			hide()
 		}
@@ -587,7 +606,7 @@ func (a *app) chooseAKeyToRemove(v *secrets.Vault) error {
 	}
 	hide = a.showModal(c, nil)
 	if a.root.Modal() != ui.Widget(c) {
-		return errors.New("there is no room to show them")
+		return errors.New("Window too small")
 	}
 	a.markDirty()
 	return nil
@@ -628,16 +647,18 @@ func onThisMachine(s secrets.KeySlot) bool {
 // confirmRemoveKey asks before taking a key away, because a key that is
 // gone cannot be put back without the key itself.
 func (a *app) confirmRemoveKey(v *secrets.Vault, s secrets.KeySlot) {
-	n := a.newNotice(secretsTitle, whatRemovingCosts(v, s))
-	n.Action = ui.NoticeAction{Title: "Take it away", Do: func() {
+	n := a.newNotice("Remove "+keyRowName(s)+"?", whatRemovingCosts(v, s))
+	n.Action = ui.NoticeAction{Title: btnRemove, Do: func() {
 		if err := v.RemoveKey(s.Fingerprint); err != nil {
-			a.reportError("Could not take the key away", err)
+			a.reportError("Could not remove the key", err)
 			return
 		}
-		a.showNotice(secretsTitle, fmt.Sprintf(
-			"%s no longer opens the secrets, and %d keys still do.",
-			keyRowName(s), len(v.Keys())), false)
+		a.say(fmt.Sprintf("%s removed — %d keys still open the secrets",
+			keyRowName(s), len(v.Keys())))
 	}}
+	// Opens on OK, which changes nothing: a key that is gone cannot be
+	// put back without the key itself.
+	n.FocusOK()
 	a.presentNotice(n)
 }
 
@@ -647,13 +668,11 @@ func (a *app) confirmRemoveKey(v *secrets.Vault, s secrets.KeySlot) {
 // The secrets stay open until the window locks them, so somebody who
 // has just shut themselves out has a moment to put the key back.
 func whatRemovingCosts(v *secrets.Vault, s secrets.KeySlot) string {
-	said := keyRowName(s) + " would stop opening the secrets."
 	if !lastKeyHere(v, s) {
-		return said + " Another key on this machine still opens them."
+		return "Another key on this machine still opens the secrets."
 	}
-	return said + " It is the only key here that opens them, so this machine" +
-		" would not open them again until one of the others is on it." +
-		" They stay open until the keys are locked."
+	return "This is the only key here that opens them. This machine cannot" +
+		" open them again until one of the others is on it."
 }
 
 // lastKeyHere reports whether this is the only key of the vault's that
@@ -669,7 +688,7 @@ func lastKeyHere(v *secrets.Vault, s secrets.KeySlot) bool {
 
 // forgetSecret takes one out of the vault.
 func (a *app) forgetSecret() error {
-	return a.withOpenSecrets("Could not forget it", a.chooseToForget)
+	return a.withOpenSecrets("Could not remove the secret", a.chooseToForget)
 }
 
 // chooseToForget is the list a secret is taken out from.
@@ -679,11 +698,13 @@ func (a *app) chooseToForget(v *secrets.Vault) error {
 		return err
 	}
 	if len(items) == 0 {
-		a.showNotice(secretsTitle, "There is nothing to forget.", false)
+		n := a.newNotice("No secrets yet", `Take "`+addSecretTitle+`" to add one.`)
+		n.SetNoCopy()
+		a.presentNotice(n)
 		return nil
 	}
 	var hide func()
-	c := ui.NewChooser("Forget a secret", func() {
+	c := ui.NewChooser(removeSecretTitle, func() {
 		if hide != nil {
 			hide()
 		}
@@ -694,13 +715,13 @@ func (a *app) chooseToForget(v *secrets.Vault) error {
 			if err := v.Remove(it.ID); err != nil {
 				return err
 			}
-			a.showNotice(secretsTitle, it.Name+" is forgotten.", false)
+			a.say(it.Name + " removed")
 			return nil
 		})
 	}
 	hide = a.showModal(c, nil)
 	if a.root.Modal() != ui.Widget(c) {
-		return errors.New("there is no room to show them")
+		return errors.New("Window too small")
 	}
 	a.markDirty()
 	return nil

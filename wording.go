@@ -74,6 +74,7 @@ const (
 	fldDirectory    = "Directory"
 	fldFile         = "File"
 	fldFolders      = "Folders"
+	fldFor          = "For"
 	fldForwardAgent = "Forward SSH agent"
 	fldForwardTo    = "Forward to"
 	fldHost         = "Host"

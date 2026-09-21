@@ -89,6 +89,18 @@ func noticeUp(t *testing.T, a *testApp) string {
 	return n.Message()
 }
 
+// noticeTitleUp is the heading of the notice on top. The title is the
+// message under WORDING.md, so most of what these tests check is there
+// rather than in the body.
+func noticeTitleUp(t *testing.T, a *testApp) string {
+	t.Helper()
+	n, up := a.root.Modal().(*ui.Notice)
+	if !up {
+		t.Fatalf("there is no notice up, but %T", a.root.Modal())
+	}
+	return n.Title
+}
+
 // A secret goes on the clipboard, and what the window says about it
 // names the item and not the secret.
 func TestASecretGoesOnTheClipboard(t *testing.T) {
@@ -103,15 +115,20 @@ func TestASecretGoesOnTheClipboard(t *testing.T) {
 		t.Fatalf("copy: %v", err)
 	}
 
-	if got := a.copiedText(); got != "hunter2" {
-		t.Errorf("the clipboard got %q, want the password", got)
-	}
-	said := noticeUp(t, a)
+	// The clipboard is written on a goroutine of its own, so this waits
+	// for it the way every other test that reads the clipboard does.
+	waitFor(t, a, "the secret to reach the clipboard", func() bool {
+		return a.copiedText() == "hunter2"
+	})
+
+	// A line along the bottom rather than a dialog: it worked, and the
+	// only thing to read is which secret and for how long.
+	said := a.saying()
 	if !strings.Contains(said, "margit") {
-		t.Errorf("the notice %q does not name the item", said)
+		t.Errorf("the line %q does not name the item", said)
 	}
 	if strings.Contains(said, "hunter2") {
-		t.Error("the notice shows the secret")
+		t.Error("the line shows the secret")
 	}
 }
 
@@ -389,7 +406,7 @@ func TestChangingTheNameKeepsTheSecret(t *testing.T) {
 	}
 	f := a.root.Modal().(*ui.Form)
 	f.Field("Name").SetText("margit.skalarit.net")
-	pressButton(t, a, f, "Keep")
+	pressButton(t, a, f, btnSave)
 
 	items, err := v.Items()
 	if err != nil {
@@ -421,7 +438,7 @@ func TestFillingTheSecretFieldChangesIt(t *testing.T) {
 	}
 	f := a.root.Modal().(*ui.Form)
 	f.Field("New secret").SetText("hunter3")
-	pressButton(t, a, f, "Keep")
+	pressButton(t, a, f, btnSave)
 
 	got, err := v.Secret(it.ID)
 	if err != nil {
@@ -531,7 +548,8 @@ func TestTheFormsSayItIsSealed(t *testing.T) {
 		}
 		f := a.root.Modal().(*ui.Form)
 		said := strings.Join(f.Lines, " ")
-		if !strings.Contains(said, "sealed") || !strings.Contains(said, "key") {
+		if !strings.Contains(strings.ToLower(said), "sealed") ||
+			!strings.Contains(strings.ToLower(said), "key") {
 			t.Errorf("the %s form says %q, which does not say it is sealed and keyed", kind, said)
 		}
 		sendKey(t, a, press(input.KeyEscape, 0))
@@ -593,7 +611,7 @@ func TestTheOnlyKeyCannotBeTakenAway(t *testing.T) {
 	if err := a.chooseAKeyToRemove(v); err != nil {
 		t.Fatalf("choose: %v", err)
 	}
-	if said := noticeUp(t, a); !strings.Contains(said, "cannot go") {
+	if said := noticeTitleUp(t, a); !strings.Contains(said, "Only one key") {
 		t.Errorf("it said %q", said)
 	}
 	if len(v.Keys()) != 1 {
@@ -646,13 +664,50 @@ func slotFor(t *testing.T, v *secrets.Vault, keyFile string) secrets.KeySlot {
 	return secrets.KeySlot{}
 }
 
-// Asking for the secrets when there are none offers to start them.
-func TestNoSecretsYetOffersToStartThem(t *testing.T) {
+// Asking for the secrets with a key to lock them with offers to create
+// them, on that key.
+//
+// The key has to be one the window knows about. Without that this took
+// the branch for a machine with no key at all, and passed on a phrase
+// the two messages happened to share.
+func TestNoSecretsYetOffersToCreateThem(t *testing.T) {
+	a, keyFile := aWindowWithSecrets(t)
+	set, err := settings.Load(filepath.Join(t.TempDir(), "settings.json"))
+	if err != nil {
+		t.Fatalf("read the settings: %v", err)
+	}
+	a.keyFiles = newKeyIndex()
+	a.keyFiles.remember(set)
+	if err := a.keyFiles.keep(keyFile); err != nil {
+		t.Fatalf("keep the key: %v", err)
+	}
+
+	if err := a.openSecrets(); err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	if got := noticeTitleUp(t, a); got != "No secrets yet" {
+		t.Errorf("it is titled %q", got)
+	}
+	if said := noticeUp(t, a); !strings.Contains(said, keyFile) {
+		t.Errorf("it said %q, want it to name the key that would open them", said)
+	}
+	n := a.root.Modal().(*ui.Notice)
+	if n.Action.Title != btnCreate {
+		t.Errorf("the button says %q, want it to offer to create them", n.Action.Title)
+	}
+}
+
+// And with no key at all it says so, rather than offering to create
+// secrets nothing could open.
+func TestNoKeyToLockTheSecretsWithSaysSo(t *testing.T) {
 	a, _ := aWindowWithSecrets(t)
 	if err := a.openSecrets(); err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	if said := noticeUp(t, a); !strings.Contains(said, "no secrets yet") {
-		t.Errorf("it said %q", said)
+	if got := noticeTitleUp(t, a); got != "No key to lock the secrets with" {
+		t.Errorf("it is titled %q", got)
+	}
+	if said := noticeUp(t, a); !strings.Contains(said, makeKeyTitle) {
+		t.Errorf("it said %q, want it to name the command that writes one", said)
 	}
 }

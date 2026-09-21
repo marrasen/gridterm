@@ -341,6 +341,91 @@ func signerFromFile(t *testing.T, path string) ssh.Signer {
 	return signer
 }
 
+// The form for changing one starts on what is there, and with the
+// secret field empty: a password is not put on screen to be edited.
+func TestTheChangeFormStartsOnWhatIsThere(t *testing.T) {
+	a, keyFile := aWindowWithSecrets(t)
+	v := startTheVault(t, a, keyFile)
+	it, err := v.Put(secrets.Item{Name: "margit", User: "marcus"}, "hunter2")
+	if err != nil {
+		t.Fatalf("put: %v", err)
+	}
+
+	if err := a.askToChange(v, it); err != nil {
+		t.Fatalf("ask: %v", err)
+	}
+	f, ok := a.root.Modal().(*ui.Form)
+	if !ok {
+		t.Fatalf("it showed %T", a.root.Modal())
+	}
+	if got := f.Field("Name").Text(); got != "margit" {
+		t.Errorf("the name field holds %q", got)
+	}
+	if got := f.Field("For").Text(); got != "marcus" {
+		t.Errorf("the for field holds %q", got)
+	}
+	if got := f.Field("New secret").Text(); got != "" {
+		t.Errorf("the secret is in the form to be edited: %q", got)
+	}
+}
+
+// Changing the name leaves the secret where it is.
+func TestChangingTheNameKeepsTheSecret(t *testing.T) {
+	a, keyFile := aWindowWithSecrets(t)
+	v := startTheVault(t, a, keyFile)
+	it, err := v.Put(secrets.Item{Name: "margit", User: "marcus"}, "hunter2")
+	if err != nil {
+		t.Fatalf("put: %v", err)
+	}
+
+	if err := a.askToChange(v, it); err != nil {
+		t.Fatalf("ask: %v", err)
+	}
+	f := a.root.Modal().(*ui.Form)
+	f.Field("Name").SetText("margit.skalarit.net")
+	pressButton(t, a, f, "Keep")
+
+	items, err := v.Items()
+	if err != nil {
+		t.Fatalf("items: %v", err)
+	}
+	if len(items) != 1 || items[0].Name != "margit.skalarit.net" {
+		t.Fatalf("the vault holds %v", items)
+	}
+	if items[0].ID != it.ID {
+		t.Error("changing the name gave it a new id")
+	}
+	got, err := v.Secret(it.ID)
+	if err != nil || got != "hunter2" {
+		t.Errorf("the secret came back %q (%v), want it untouched", got, err)
+	}
+}
+
+// Filling the secret field puts a new one in.
+func TestFillingTheSecretFieldChangesIt(t *testing.T) {
+	a, keyFile := aWindowWithSecrets(t)
+	v := startTheVault(t, a, keyFile)
+	it, err := v.Put(secrets.Item{Name: "margit"}, "hunter2")
+	if err != nil {
+		t.Fatalf("put: %v", err)
+	}
+
+	if err := a.askToChange(v, it); err != nil {
+		t.Fatalf("ask: %v", err)
+	}
+	f := a.root.Modal().(*ui.Form)
+	f.Field("New secret").SetText("hunter3")
+	pressButton(t, a, f, "Keep")
+
+	got, err := v.Secret(it.ID)
+	if err != nil {
+		t.Fatalf("secret: %v", err)
+	}
+	if got != "hunter3" {
+		t.Errorf("the secret came back %q, want the new one", got)
+	}
+}
+
 // A key is taken away and stops opening the vault.
 func TestAKeyTakenAwayStopsOpeningTheVault(t *testing.T) {
 	a, keyFile := aWindowWithSecrets(t)

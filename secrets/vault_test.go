@@ -306,6 +306,70 @@ func TestChangingAnItemKeepsItsId(t *testing.T) {
 	}
 }
 
+// Putting a better name on something leaves the secret where it is.
+func TestPutDetailsLeavesTheSecretAlone(t *testing.T) {
+	v, key, path := aVault(t)
+	first, err := v.Put(Item{Name: "margit", Kind: Password, User: "marcus"}, "hunter2")
+	if err != nil {
+		t.Fatalf("put: %v", err)
+	}
+
+	first.Name, first.User = "margit.skalarit.net", "marcusj"
+	changed, err := v.PutDetails(first)
+	if err != nil {
+		t.Fatalf("put the details: %v", err)
+	}
+	if changed.Kind != Password {
+		t.Errorf("the kind became %q", changed.Kind)
+	}
+	if !changed.Made.Equal(first.Made) {
+		t.Error("the day it was made changed")
+	}
+
+	// Off disk, so this is the file and not just what is in memory.
+	again, err := Open(path)
+	if err != nil {
+		t.Fatalf("open again: %v", err)
+	}
+	if err := again.Unlock([]ssh.Signer{key}); err != nil {
+		t.Fatalf("unlock: %v", err)
+	}
+	got, err := again.Secret(first.ID)
+	if err != nil {
+		t.Fatalf("secret: %v", err)
+	}
+	if got != "hunter2" {
+		t.Errorf("the secret came back %q, want it untouched", got)
+	}
+	items, err := again.Items()
+	if err != nil || len(items) != 1 {
+		t.Fatalf("the vault holds %d items (%v)", len(items), err)
+	}
+	if items[0].Name != "margit.skalarit.net" || items[0].User != "marcusj" {
+		t.Errorf("the details did not change: %+v", items[0])
+	}
+}
+
+// Details of something that is not there, and of a locked vault, are
+// refused.
+func TestPutDetailsRefusesWhatItCannotDo(t *testing.T) {
+	v, _, _ := aVault(t)
+	saved, err := v.Put(Item{Name: "margit"}, "hunter2")
+	if err != nil {
+		t.Fatalf("put: %v", err)
+	}
+	if _, err := v.PutDetails(Item{ID: "nothing", Name: "x"}); !errors.Is(err, ErrNoSuchItem) {
+		t.Errorf("an unknown id gave %v, want ErrNoSuchItem", err)
+	}
+	if _, err := v.PutDetails(Item{ID: saved.ID, Name: "  "}); err == nil {
+		t.Error("an item was left with no name")
+	}
+	v.Lock()
+	if _, err := v.PutDetails(Item{ID: saved.ID, Name: "x"}); !errors.Is(err, ErrLocked) {
+		t.Errorf("a locked vault gave %v, want ErrLocked", err)
+	}
+}
+
 // An item needs a name, or the list has a blank row nobody can pick.
 func TestAnItemNeedsAName(t *testing.T) {
 	v, _, _ := aVault(t)

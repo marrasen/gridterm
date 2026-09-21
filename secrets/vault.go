@@ -359,6 +359,39 @@ func (v *Vault) Put(it Item, value string) (Item, error) {
 	return it, nil
 }
 
+// PutDetails changes what an item is called and who it is for, and
+// leaves the secret alone.
+//
+// The value is never read, so putting a better name on something does
+// not bring it out of the vault at all.
+func (v *Vault) PutDetails(it Item) (Item, error) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if v.data == nil {
+		return Item{}, ErrLocked
+	}
+	if strings.TrimSpace(it.Name) == "" {
+		return Item{}, errors.New("secrets: an item needs a name")
+	}
+	at := slices.IndexFunc(v.items, func(e entry) bool { return e.ID == it.ID })
+	if at < 0 {
+		return Item{}, ErrNoSuchItem
+	}
+	if it.Kind == "" {
+		it.Kind = v.items[at].Kind
+	}
+	it.Made = v.items[at].Made
+	it.Changed = v.now()
+
+	was := slices.Clone(v.items)
+	v.items[at].Item = it
+	if err := v.save(); err != nil {
+		v.items = was
+		return Item{}, err
+	}
+	return it, nil
+}
+
 // Remove takes an item out and saves.
 func (v *Vault) Remove(id string) error {
 	v.mu.Lock()

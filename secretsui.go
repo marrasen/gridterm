@@ -376,6 +376,95 @@ func (a *app) addVaultKeyOn(v *secrets.Vault, keyFile string) {
 	})
 }
 
+// changeSecret puts a better name on one, or a new value in it.
+func (a *app) changeSecret() error {
+	return a.withOpenSecrets("Could not change it", a.chooseToChange)
+}
+
+// chooseToChange is the list a secret is picked from to change.
+func (a *app) chooseToChange(v *secrets.Vault) error {
+	items, err := v.Items()
+	if err != nil {
+		return err
+	}
+	if len(items) == 0 {
+		a.showNotice(secretsTitle, "There is nothing to change yet.", false)
+		return nil
+	}
+	var hide func()
+	c := ui.NewChooser("Change a secret", func() {
+		if hide != nil {
+			hide()
+		}
+	})
+	c.Style = a.chooserStyle()
+	for _, it := range items {
+		c.Add(it.Name, secretNote(it), func() error {
+			if hide != nil {
+				hide()
+			}
+			return a.askToChange(v, it)
+		})
+	}
+	hide = a.showModal(c, nil)
+	if a.root.Modal() != ui.Widget(c) {
+		return errors.New("there is no room to show them")
+	}
+	a.markDirty()
+	return nil
+}
+
+// askToChange is the form an existing one is changed in.
+//
+// The value starts empty and empty means keep it. The secret is not
+// put in the field to be edited: it would be a password sitting on
+// screen behind a row of stars, and nothing here needs it. Leaving it
+// empty means changing a name never reads the secret at all.
+func (a *app) askToChange(v *secrets.Vault, it secrets.Item) error {
+	label, mask := "New secret", '*'
+	if it.Kind == secrets.Note {
+		label, mask = "New note", rune(0)
+	}
+	f := a.newForm("Change " + it.Name)
+	name := f.AddField("Name", a.newField(it.Name, 0))
+	name.SetText(it.Name)
+	user := f.AddField("For", a.newField("optional", 0))
+	user.SetText(it.User)
+	value := f.AddField(label, a.newField("leave empty to keep the one kept", mask))
+
+	var hide func()
+	f.AddButton(ui.Button{Title: "Keep", Do: func() error {
+		changed := it
+		changed.Name, changed.User = name.Text(), user.Text()
+		var err error
+		if value.Text() == "" {
+			_, err = v.PutDetails(changed)
+		} else {
+			_, err = v.Put(changed, value.Text())
+		}
+		if err != nil {
+			return err
+		}
+		if hide != nil {
+			hide()
+		}
+		a.showNotice(secretsTitle, changed.Name+" is changed.", false)
+		return nil
+	}})
+	f.AddButton(ui.Button{Title: "Cancel", Do: func() error {
+		if hide != nil {
+			hide()
+		}
+		return nil
+	}})
+	hide = a.showModal(f, nil)
+	if a.root.Modal() != ui.Widget(f) {
+		return errors.New("there is no room for the form")
+	}
+	a.markDirty()
+	return nil
+}
+
 // removeVaultKey stops a key opening the secrets, for a machine that
 // is gone or a key being replaced.
 func (a *app) removeVaultKey() error {

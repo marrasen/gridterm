@@ -205,11 +205,11 @@ func (a *app) openRoute(name string, route []step, open opening, at *spot) {
 				a.sayStillConnected(log, held)
 				a.machines.settle(held, false)
 				if gaveUp != nil {
-					a.endedAs(pane, "given up on")
+					a.endedAs(pane, stateCancelled)
 					log.GaveUp()
 					return
 				}
-				a.endedAs(pane, "not connected")
+				a.endedAs(pane, stateNotConnected)
 				log.Failed(err)
 				return
 			}
@@ -218,7 +218,7 @@ func (a *app) openRoute(name string, route []step, open opening, at *spot) {
 			if why := a.stillWanted(gaveUp, through); why != nil {
 				a.sayStillConnected(log, held)
 				a.machines.settle(held, false)
-				a.endedAs(pane, "not connected")
+				a.endedAs(pane, stateNotConnected)
 				log.Failed(why)
 				return
 			}
@@ -253,7 +253,7 @@ func (a *app) reached(d *dialling, log *connLog, pane *term.Terminal, route []st
 		// Said in the pane the user is watching this connection in,
 		// which is the only place they would look for it.
 		log.Say(err.Error())
-		a.endedAs(pane, "not connected")
+		a.endedAs(pane, stateNotConnected)
 		a.letGoOfConn(s.name, conn)
 		return
 	}
@@ -277,12 +277,44 @@ func (a *app) endedAs(pane *term.Terminal, what string) {
 	}
 }
 
-// transportLost is what the row of a pane says when the connection
-// carrying it went, rather than the program in it finishing.
+// What a row says about a connection that is not running any more.
 //
-// Both leave a grey row, and the reason lives on the machine's row,
-// which the user can clear. This is what is left on the pane's own.
-const transportLost = "connection lost"
+// A state each, in the register a row is read in: a short phrase, lower
+// case and no full stop, because a row is scanned in a narrow column
+// beside a dozen others rather than read. See WORDING.md.
+//
+// Constants because more than one surface says them. A connection that
+// dropped reads the same whether it was carrying a pane or a whole
+// window, and two copies of a state drift the first time one is
+// reworded.
+const (
+	// transportLost is the connection carrying it going, rather than the
+	// program in it finishing. Both leave a grey row, and the reason
+	// lives on the machine's row, which the user can clear. This is what
+	// is left on the pane's own.
+	transportLost = "connection lost"
+
+	// stateCancelled is the user walking away from it while it was being
+	// made.
+	stateCancelled = "cancelled"
+
+	// stateNotConnected is a connection that was never made, and
+	// stateNotTakenOver the same for a window.
+	stateNotConnected = "not connected"
+	stateNotTakenOver = "not taken over"
+
+	// stateNoTerminal is a window reached with nothing on it to show.
+	stateNoTerminal = "no terminal"
+
+	// stateTakenOver is a window this one is working in.
+	stateTakenOver = "taken over"
+
+	// stateStoppedSharing is that window saying it has stopped, and
+	// stateClosedByWindow is it closing this connection in particular.
+	// Neither names the window: the row is already under its name.
+	stateStoppedSharing = "stopped sharing"
+	stateClosedByWindow = "closed by that window"
+)
 
 // closeOnTheWayOut closes connections the window is never going to
 // take, because it has already stopped.
@@ -358,7 +390,7 @@ func (a *app) stillWanted(gaveUp error, through *machine) error {
 func (a *app) becamePane(name string, open opening, pane *term.Terminal, log *connLog) {
 	m := a.about(name).machine
 	if m == nil {
-		a.endedAs(pane, "not connected")
+		a.endedAs(pane, stateNotConnected)
 		log.Failed(fmt.Errorf("nothing is connected to %s", name))
 		return
 	}

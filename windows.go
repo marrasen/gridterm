@@ -502,11 +502,11 @@ func (a *app) takeOver(addr, keyFile string, at *spot, open bool) error {
 			if err != nil {
 				a.machines.settle(held, false)
 				if gaveUp != nil {
-					a.endedAs(pane, "given up on")
+					a.endedAs(pane, stateCancelled)
 					log.GaveUp()
 					return
 				}
-				a.endedAs(pane, "not taken over")
+				a.endedAs(pane, stateNotTakenOver)
 				log.Failed(err)
 				return
 			}
@@ -516,7 +516,7 @@ func (a *app) takeOver(addr, keyFile string, at *spot, open bool) error {
 				// to hang up is the user's to see: it is a socket to a
 				// machine that thinks somebody is working in it.
 				a.machines.settle(held, false)
-				a.endedAs(pane, "given up on")
+				a.endedAs(pane, stateCancelled)
 				log.GaveUp()
 				if err := win.Close(); err != nil {
 					a.reportError("Could not disconnect from "+addr, err)
@@ -593,7 +593,7 @@ func (a *app) becomeWindowPane(t *taken, pane *term.Terminal, log *connLog) {
 		a.pump.post(func() { a.bindWatched(pane, t, named) })
 	})
 	if err != nil {
-		a.endedAs(pane, "no terminal")
+		a.endedAs(pane, stateNoTerminal)
 		log.Failed(err)
 		return
 	}
@@ -623,7 +623,7 @@ func (a *app) holdWindow(name, addr, keyFile string, win *serve.Window) *taken {
 		// which the heading stands for, and the panel leaves those out
 		// from under their own name rather than saying it twice.
 		Kind:   conns.Server,
-		Label:  "taken over",
+		Label:  stateTakenOver,
 		Meter:  &meter.Meter{},
 		Reveal: func() { a.revealWindow(t) },
 		// Closed by the window itself rather than by the name it is
@@ -663,16 +663,17 @@ func (a *app) windowDied(t *taken, why error) {
 	// socket error for it named a fault where there was none.
 	switch t.win.Going() {
 	case serve.GoingStopped:
-		t.entry.Label = "the window stopped sharing"
+		t.entry.Label = stateStoppedSharing
 		a.greyRow(t.entry, nil)
 	case serve.GoingKicked:
-		t.entry.Label = "the window closed this connection"
+		t.entry.Label = stateClosedByWindow
 		a.greyRow(t.entry, nil)
 	default:
 		// It went without saying why, so it is the connection that went
 		// rather than a window that meant to close it. That is the one
-		// worth offering a way back on.
-		t.entry.Label = "no longer serving"
+		// worth offering a way back on, and it reads the same here as it
+		// does on the row of a pane whose connection dropped.
+		t.entry.Label = transportLost
 		a.greyRow(t.entry, why)
 		a.offerToTakeOverAgain(t, why)
 	}

@@ -177,7 +177,10 @@ func (s *Server) going(only *Client, why string) {
 		wrote.Add(1)
 		go func(w *watcher) {
 			defer wrote.Done()
-			_ = w.write(line)
+			if err := w.write(line); err != nil {
+				return
+			}
+			w.waitForTheLineToLand()
 		}(w)
 	}
 	done := make(chan struct{})
@@ -191,8 +194,39 @@ func (s *Server) going(only *Client, why string) {
 	}
 }
 
+// waitForTheLineToLand waits until the client has read what was just
+// written to it, or gives up.
+//
+// A write returns once the channel has taken the bytes, which says
+// nothing about whether they have been read. The connection is torn down
+// as soon as this returns, and a line still in flight when that happens
+// is a line the client never sees: its read fails with the socket error
+// this is here to replace, and a window that stopped sharing is reported
+// as one whose connection dropped.
+//
+// So the write half is closed, which puts an end-of-file after the line
+// and in order with it, and then the channel is read. The client closes
+// its end once its own reader has seen the line and the end-of-file, so
+// the read returning is the client saying it has it.
+func (w *watcher) waitForTheLineToLand() {
+	// Under the same lock the writes take, so this cannot land between
+	// two halves of a line somebody else is writing.
+	w.writeMu.Lock()
+	err := w.ch.CloseWrite()
+	w.writeMu.Unlock()
+	if err != nil {
+		return
+	}
+	// Whatever the client sends before it lets go, which is nothing
+	// today. Reading it is how the end is waited for.
+	_, _ = io.Copy(io.Discard, w.ch)
+}
+
 // sayGoingIn is how long a window that is closing gives its last word to
 // reach the clients that are still reading.
+//
+// It bounds the whole of it, the reading back included: a client that
+// has stopped reading must not hold up a window that is closing.
 const sayGoingIn = 250 * time.Millisecond
 
 // watchers returns who is listening right now.

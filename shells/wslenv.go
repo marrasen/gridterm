@@ -1,13 +1,12 @@
 package shells
 
 import (
-	"path/filepath"
 	"strings"
 )
 
 // IsWSL reports whether a command line starts a WSL distribution.
 func IsWSL(argv []string) bool {
-	return len(argv) > 0 && strings.EqualFold(filepath.Base(argv[0]), "wsl.exe")
+	return len(argv) > 0 && strings.EqualFold(CommandBase(argv[0]), "wsl.exe")
 }
 
 // CarryIntoWSL is a WSLENV value that adds names to the ones already

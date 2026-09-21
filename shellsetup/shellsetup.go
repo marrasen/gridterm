@@ -14,8 +14,9 @@
 package shellsetup
 
 import (
-	"path/filepath"
 	"strings"
+
+	"github.com/marrasen/gridterm/shells"
 )
 
 // Route is the kind of shell the lines are written for.
@@ -45,7 +46,7 @@ func RouteFor(argv []string) Route {
 	if len(argv) == 0 {
 		return Posix
 	}
-	switch strings.ToLower(filepath.Base(argv[0])) {
+	switch strings.ToLower(shells.CommandBase(argv[0])) {
 	case "cmd", "cmd.exe":
 		return Cmd
 	case "powershell", "powershell.exe", "pwsh", "pwsh.exe":

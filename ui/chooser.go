@@ -3,6 +3,7 @@ package ui
 import (
 	"image/color"
 	"slices"
+	"strings"
 
 	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/input"
@@ -55,6 +56,15 @@ type chooserLine struct {
 	do         func() error
 }
 
+// ChooserAction is a button along the bottom of a chooser.
+//
+// Left and right move between them, and Enter runs the one that is
+// highlighted on the line that is picked. Do is given the line's index.
+type ChooserAction struct {
+	Label string
+	Do    func(i int) error
+}
+
 // Chooser is a modal list of things to pick one of.
 type Chooser struct {
 	Style ChooserStyle
@@ -65,11 +75,24 @@ type Chooser struct {
 	Button  rune
 	OnPress func(i int) error
 
+	// Actions are the buttons along the bottom. With none, Enter takes
+	// the line and the chooser is the plain list it has always been.
+	Actions []ChooserAction
+
+	// Filter draws what has been typed on a row of its own, for a list
+	// long enough that narrowing it is the way in rather than an aside.
+	// Without it the letters go beside the title, which is enough for a
+	// list of three.
+	Filter bool
+
 	title string
 	list  *List
 	lns   []chooserLine
 	dos   []func() error
 	close func()
+
+	// act is the action the arrows have landed on, and what Enter runs.
+	act int
 
 	// query is what has been typed to narrow the list, and under is the
 	// heading the next line added goes under.
@@ -259,11 +282,12 @@ func (c *Chooser) box() Rect {
 	}
 	showing := max(len(c.list.Rows()), 1)
 	cols := min(c.size.Cols-chooserMargin*2, c.width())
-	// The title, a blank row, the lines, and the rule at each end.
+	// The title, a blank row, the lines, and the rule at each end, plus
+	// whatever the filter row and the action bar ask for.
 	rows := min(c.size.Rows-chooserMargin*2,
-		min(showing, chooserMaxRow)+2+chooserFrame*2)
+		min(showing, chooserMaxRow)+2+c.aboveLines()+c.belowLines()+chooserFrame*2)
 	// Room for the rule, the title, its blank row and a line to pick.
-	if cols < chooserMinCol || rows < 3+chooserFrame*2 {
+	if cols < chooserMinCol || rows < 3+c.aboveLines()+c.belowLines()+chooserFrame*2 {
 		return Rect{}
 	}
 	return Rect{
@@ -274,9 +298,40 @@ func (c *Chooser) box() Rect {
 	}
 }
 
+// aboveLines is how many rows the filter takes between the title's
+// blank row and the list.
+func (c *Chooser) aboveLines() int {
+	if !c.Filter {
+		return 0
+	}
+	return 1
+}
+
+// belowLines is how many rows the action bar takes under the list: a
+// blank row and the buttons.
+func (c *Chooser) belowLines() int {
+	if len(c.Actions) == 0 {
+		return 0
+	}
+	return 2
+}
+
+// actionBar is the buttons as one line, each in brackets so the one
+// highlighted is still a shape when colour is not enough.
+func (c *Chooser) actionBar() string {
+	var out []string
+	for _, a := range c.Actions {
+		out = append(out, "[ "+a.Label+" ]")
+	}
+	return strings.Join(out, " ")
+}
+
 // width is how wide the chooser would like to be.
 func (c *Chooser) width() int {
 	want := grid.StringWidth(c.title)
+	if len(c.Actions) > 0 {
+		want = max(want, grid.StringWidth(c.actionBar()))
+	}
 	for _, row := range c.list.Rows() {
 		w := grid.StringWidth(row.Text)
 		if row.Note != "" {
@@ -298,12 +353,13 @@ func (c *Chooser) lines() Rect {
 	if box.Empty() {
 		return box
 	}
-	// The rule, the title, and the blank row under it.
-	top := chooserFrame + 2
+	// The rule, the title, the blank row under it, and the filter row
+	// when there is one.
+	top := chooserFrame + 2 + c.aboveLines()
 	return Rect{
 		X: box.X + chooserFrame + chooserPad, Y: box.Y + top,
 		Cols: max(box.Cols-(chooserFrame+chooserPad)*2, 0),
-		Rows: max(box.Rows-top-chooserFrame, 0),
+		Rows: max(box.Rows-top-chooserFrame-c.belowLines(), 0),
 	}
 }
 
@@ -328,12 +384,20 @@ func (c *Chooser) paint(v grid.View) {
 
 	cols, _ := in.Size()
 	room := max(cols-(chooserFrame+chooserPad)*2, 0)
+	left := chooserFrame + chooserPad
 	title := c.title
-	if c.query != "" {
+	if c.query != "" && !c.Filter {
 		title += "  " + c.query
 	}
-	in.SetString(chooserFrame+chooserPad, chooserFrame,
+	in.SetString(left, chooserFrame,
 		grid.Trim(title, room), c.Style.TitleFG, c.Style.BG, grid.AttrBold)
+	if c.Filter {
+		c.paintFilter(in, left, chooserFrame+2, room)
+	}
+	if len(c.Actions) > 0 {
+		_, rows := in.Size()
+		c.paintActions(in, left, rows-chooserFrame-1, room)
+	}
 
 	c.list.Style = ListStyle{
 		FG: c.Style.FG, BG: c.Style.BG,
@@ -343,6 +407,68 @@ func (c *Chooser) paint(v grid.View) {
 	if lines := c.lines(); !lines.Empty() {
 		c.list.Draw(lines.In(v))
 	}
+}
+
+// paintFilter draws the row the typing narrows the list from.
+//
+// A prompt mark and what has been typed, with a hint in its place while
+// nothing has been: a blank row says nothing about what typing would do.
+func (c *Chooser) paintFilter(in grid.View, x, y, room int) {
+	in.SetString(x, y, grid.Trim("> ", room), c.Style.NoteFG, c.Style.BG, 0)
+	rest := max(room-2, 0)
+	if c.query == "" {
+		in.SetString(x+2, y, grid.Trim("type to narrow the list", rest),
+			c.Style.NoteFG, c.Style.BG, 0)
+		return
+	}
+	in.SetString(x+2, y, grid.Trim(c.query, rest), c.Style.FG, c.Style.BG, 0)
+}
+
+// paintActions draws the buttons along the bottom, the one the arrows
+// have landed on picked out.
+func (c *Chooser) paintActions(in grid.View, x, y, room int) {
+	at := x
+	for i, a := range c.Actions {
+		label := "[ " + a.Label + " ]"
+		fg, bg, attr := c.Style.FG, c.Style.BG, grid.Attr(0)
+		if i == c.action() {
+			fg, bg, attr = c.Style.SelectedFG, c.Style.SelectedBG, grid.AttrBold
+		}
+		left := max(room-(at-x), 0)
+		if left <= 0 {
+			return
+		}
+		in.SetString(at, y, grid.Trim(label, left), fg, bg, attr)
+		at += grid.StringWidth(label) + 1
+	}
+}
+
+// action is which button the arrows have landed on, kept inside the
+// list however the actions have changed since.
+func (c *Chooser) action() int {
+	if len(c.Actions) == 0 {
+		return 0
+	}
+	return min(max(c.act, 0), len(c.Actions)-1)
+}
+
+// runAction runs the highlighted button on the line that is picked.
+func (c *Chooser) runAction() error {
+	row, ok := c.list.Selected()
+	if !ok || len(c.Actions) == 0 {
+		return nil
+	}
+	at, ok := row.Key.(int)
+	if !ok {
+		return nil
+	}
+	do := c.Actions[c.action()].Do
+	if do == nil {
+		return nil
+	}
+	// Through run, so the chooser goes before the action shows anything
+	// of its own, the way taking a line has always worked.
+	return c.run(func() error { return do(at) })
 }
 
 // SetFocus passes the keys on to the list, which is what they are for.
@@ -379,6 +505,23 @@ func (c *Chooser) HandleKey(ev input.Event) (bool, error) {
 			c.narrow(string(r[:len(r)-1]))
 		}
 		return true, nil
+	}
+	// The buttons before the list: left and right are the list's to
+	// decline, but Enter is not, and with a bar on screen Enter means
+	// the button that is highlighted.
+	if len(c.Actions) > 0 && ev.Kind != input.Text && isPlainKey(ev) &&
+		(ev.Kind == input.KeyPress || ev.Kind == input.KeyRepeat) {
+
+		switch ev.Key {
+		case input.KeyLeft:
+			c.act = (c.action() + len(c.Actions) - 1) % len(c.Actions)
+			return true, nil
+		case input.KeyRight:
+			c.act = (c.action() + 1) % len(c.Actions)
+			return true, nil
+		case input.KeyEnter:
+			return true, c.runAction()
+		}
 	}
 	// The list declines every chord it was not offered, so Ctrl+Down
 	// moves nothing here.

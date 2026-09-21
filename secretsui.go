@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -149,12 +150,14 @@ func (a *app) showSecrets(v *secrets.Vault) error {
 		}
 	})
 	c.Style = a.chooserStyle()
-	c.Button = typeButton
-	c.OnPress = func(i int) error {
-		if i < 0 || i >= len(items) {
-			return nil
-		}
-		return a.typeSecret(v, items[i])
+	// A filter row and a bar of buttons: up and down pick the secret,
+	// left and right pick what to do with it, and Enter does it.
+	c.Filter = true
+	c.Actions = []ui.ChooserAction{
+		{Label: "Type", Do: a.onPicked(v, items, a.typeSecret)},
+		{Label: "Copy", Do: a.onPicked(v, items, a.copySecret)},
+		{Label: "Show", Do: a.onPicked(v, items, a.showSecret)},
+		{Label: "Cancel", Do: func(int) error { return nil }},
 	}
 	for _, it := range items {
 		c.Add(it.Name, secretNote(it), func() error { return a.copySecret(v, it) })
@@ -164,6 +167,41 @@ func (a *app) showSecrets(v *secrets.Vault) error {
 		return errors.New("there is no room to show them")
 	}
 	a.markDirty()
+	return nil
+}
+
+// onPicked turns a thing done to one secret into a button's Do, which
+// is handed the line the bar was on.
+func (a *app) onPicked(v *secrets.Vault, items []secrets.Item,
+	do func(*secrets.Vault, secrets.Item) error) func(int) error {
+
+	return func(i int) error {
+		if i < 0 || i >= len(items) {
+			return nil
+		}
+		return do(v, items[i])
+	}
+}
+
+// showSecret puts one on screen, for reading off rather than pasting.
+//
+// Behind a dialog the user asked for, because the one thing this vault
+// is for is not showing them by accident. It is theirs to ask for and
+// theirs to dismiss.
+func (a *app) showSecret(v *secrets.Vault, it secrets.Item) error {
+	value, err := v.Secret(it.ID)
+	if err != nil {
+		return err
+	}
+	if value == "" {
+		a.showNotice(it.Name, "There is nothing kept under that name.", false)
+		return nil
+	}
+	n := a.newNotice(it.Name, value)
+	// Kept as it was written: a recovery code in columns is read wrong
+	// if the words are rewrapped to fit.
+	n.Preformatted = true
+	a.presentNotice(n)
 	return nil
 }
 
@@ -262,33 +300,86 @@ func (a *app) askForSecret(v *secrets.Vault, kind secrets.Kind) error {
 		title, label, mask = "Add a note", "Note", rune(0)
 	}
 	f := a.newForm(title)
+	f.Lines = []string{keptSealed}
 	name := f.AddField("Name", a.newField("what to call it", 0))
 	user := f.AddField("For", a.newField("optional", 0))
 	value := f.AddField(label, a.newField("", mask))
-	var hide func()
+	// Said once the form has gone, so the message is not pushed over a
+	// dialog that is about to be taken away underneath it.
+	kept := ""
 	f.AddButton(ui.Button{Title: "Keep", Do: func() error {
 		it := secrets.Item{Name: name.Text(), User: user.Text(), Kind: kind}
 		if _, err := v.Put(it, value.Text()); err != nil {
 			return err
 		}
-		if hide != nil {
-			hide()
-		}
-		a.showNotice(secretsTitle, name.Text()+" is kept.", false)
+		kept = it.Name
 		return nil
 	}})
-	f.AddButton(ui.Button{Title: "Cancel", Do: func() error {
-		if hide != nil {
-			hide()
+	a.addShowButton(f, value, mask)
+	f.AddButton(ui.Button{Title: "Cancel", Do: func() error { return nil }})
+	a.showForm(f, func() {
+		if kept != "" {
+			a.showNotice(secretsTitle, kept+" is kept.", false)
 		}
-		return nil
-	}})
-	hide = a.showModal(f, nil)
+	})
 	if a.root.Modal() != ui.Widget(f) {
 		return errors.New("there is no room for the form")
 	}
 	a.markDirty()
 	return nil
+}
+
+// keptSealed is the line at the top of a form that takes a secret.
+//
+// Somebody typing a password into a window is owed a word about where
+// it goes, and a note is as worth sealing as a password. It says the
+// two things that matter: it is sealed, and one key opens it.
+const keptSealed = "Kept sealed in the vault, which only your key opens."
+
+// showTitle and hideTitle are what the button that turns the stars off
+// says, and what finds it again to rename.
+const (
+	showTitle = "Show"
+	hideTitle = "Hide"
+)
+
+// addShowButton puts a button on a form that turns the stars off, for
+// checking what was typed before keeping it.
+//
+// Only on a field that is masked to begin with: a note is shown as it
+// is typed and has nothing to turn off.
+func (a *app) addShowButton(f *ui.Form, value *ui.Field, mask rune) {
+	if mask == 0 {
+		return
+	}
+	f.AddButton(ui.Button{Title: showTitle, Keep: true, Do: func() error {
+		if value.Mask == 0 {
+			value.Mask = mask
+		} else {
+			value.Mask = 0
+		}
+		retitleShow(f, value.Mask != 0)
+		a.markDirty()
+		return nil
+	}})
+}
+
+// retitleShow renames the button in place, so it says what the next
+// press does rather than what the last one did.
+func retitleShow(f *ui.Form, masked bool) {
+	title := hideTitle
+	if masked {
+		title = showTitle
+	}
+	buttons := slices.Clone(f.Buttons())
+	for i, b := range buttons {
+		if b.Title == showTitle || b.Title == hideTitle {
+			buttons[i].Title = title
+			// The same number of buttons, so the focus stays on this one.
+			f.SetButtons(buttons)
+			return
+		}
+	}
 }
 
 // addVaultKey lets another key open the secrets, for a second machine.
@@ -432,7 +523,7 @@ func (a *app) askToChange(v *secrets.Vault, it secrets.Item) error {
 	user.SetText(it.User)
 	value := f.AddField(label, a.newField("leave empty to keep the one kept", mask))
 
-	var hide func()
+	changedTo := ""
 	f.AddButton(ui.Button{Title: "Keep", Do: func() error {
 		changed := it
 		changed.Name, changed.User = name.Text(), user.Text()
@@ -445,19 +536,16 @@ func (a *app) askToChange(v *secrets.Vault, it secrets.Item) error {
 		if err != nil {
 			return err
 		}
-		if hide != nil {
-			hide()
-		}
-		a.showNotice(secretsTitle, changed.Name+" is changed.", false)
+		changedTo = changed.Name
 		return nil
 	}})
-	f.AddButton(ui.Button{Title: "Cancel", Do: func() error {
-		if hide != nil {
-			hide()
+	a.addShowButton(f, value, mask)
+	f.AddButton(ui.Button{Title: "Cancel", Do: func() error { return nil }})
+	a.showForm(f, func() {
+		if changedTo != "" {
+			a.showNotice(secretsTitle, changedTo+" is changed.", false)
 		}
-		return nil
-	}})
-	hide = a.showModal(f, nil)
+	})
 	if a.root.Modal() != ui.Widget(f) {
 		return errors.New("there is no room for the form")
 	}

@@ -15,6 +15,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
+	"github.com/marrasen/gridterm/input"
 	"github.com/marrasen/gridterm/secrets"
 	"github.com/marrasen/gridterm/settings"
 	"github.com/marrasen/gridterm/ui"
@@ -49,6 +50,11 @@ func anEd25519KeyFile(t *testing.T, path string) string {
 // owns, and a key with no passphrase that opens it.
 func aWindowWithSecrets(t *testing.T) (*testApp, string) {
 	t.Helper()
+	// A home of its own before anything else: vaultKeys offers the
+	// gridterm key beside the user's own, and a test that read the real
+	// one would pass or fail on whether whoever ran it happens to have
+	// made it.
+	withHome(t)
 	a := newTestApp(t, 80, 24)
 	withDialogs(t, a)
 	withScreen(t, a)
@@ -423,6 +429,134 @@ func TestFillingTheSecretFieldChangesIt(t *testing.T) {
 	}
 	if got != "hunter3" {
 		t.Errorf("the secret came back %q, want the new one", got)
+	}
+}
+
+// Escape closes the form that takes a secret.
+//
+// It showed with no way to close it but the Cancel button, because the
+// form was pushed without being told what takes it away.
+func TestEscapeClosesTheAddForm(t *testing.T) {
+	a, keyFile := aWindowWithSecrets(t)
+	v := startTheVault(t, a, keyFile)
+
+	if err := a.askForSecret(v, secrets.Password); err != nil {
+		t.Fatalf("ask: %v", err)
+	}
+	if _, up := a.root.Modal().(*ui.Form); !up {
+		t.Fatalf("the form did not open, %T is up", a.root.Modal())
+	}
+
+	sendKey(t, a, press(input.KeyEscape, 0))
+	a.pump.run()
+
+	if a.root.Modal() != nil {
+		t.Errorf("Escape left %T up", a.root.Modal())
+	}
+}
+
+// Escape closes the form that changes one as well.
+func TestEscapeClosesTheChangeForm(t *testing.T) {
+	a, keyFile := aWindowWithSecrets(t)
+	v := startTheVault(t, a, keyFile)
+	it, err := v.Put(secrets.Item{Name: "margit"}, "hunter2")
+	if err != nil {
+		t.Fatalf("put: %v", err)
+	}
+
+	if err := a.askToChange(v, it); err != nil {
+		t.Fatalf("ask: %v", err)
+	}
+	sendKey(t, a, press(input.KeyEscape, 0))
+	a.pump.run()
+
+	if a.root.Modal() != nil {
+		t.Errorf("Escape left %T up", a.root.Modal())
+	}
+}
+
+// The Show button turns the stars off and back on, so what was typed
+// can be checked before it is kept.
+func TestShowTurnsTheStarsOff(t *testing.T) {
+	a, keyFile := aWindowWithSecrets(t)
+	v := startTheVault(t, a, keyFile)
+
+	if err := a.askForSecret(v, secrets.Password); err != nil {
+		t.Fatalf("ask: %v", err)
+	}
+	f := a.root.Modal().(*ui.Form)
+	value := f.Field("Secret")
+	if value.Mask == 0 {
+		t.Fatal("a password field starts unmasked")
+	}
+
+	pressButton(t, a, f, "Show")
+	if value.Mask != 0 {
+		t.Error("Show left the stars on")
+	}
+	if a.root.Modal() != ui.Widget(f) {
+		t.Fatal("Show closed the form")
+	}
+	// And the button now offers to put them back.
+	pressButton(t, a, f, "Hide")
+	if value.Mask == 0 {
+		t.Error("Hide left the secret on screen")
+	}
+}
+
+// A note has nothing to show: it is not starred to begin with.
+func TestANoteHasNoShowButton(t *testing.T) {
+	a, keyFile := aWindowWithSecrets(t)
+	v := startTheVault(t, a, keyFile)
+
+	if err := a.askForSecret(v, secrets.Note); err != nil {
+		t.Fatalf("ask: %v", err)
+	}
+	f := a.root.Modal().(*ui.Form)
+	for _, b := range f.Buttons() {
+		if b.Title == "Show" || b.Title == "Hide" {
+			t.Errorf("a note's form offers %q", b.Title)
+		}
+	}
+}
+
+// Both forms say what happens to what is typed into them.
+func TestTheFormsSayItIsSealed(t *testing.T) {
+	a, keyFile := aWindowWithSecrets(t)
+	v := startTheVault(t, a, keyFile)
+
+	for _, kind := range []secrets.Kind{secrets.Password, secrets.Note} {
+		if err := a.askForSecret(v, kind); err != nil {
+			t.Fatalf("ask for %s: %v", kind, err)
+		}
+		f := a.root.Modal().(*ui.Form)
+		said := strings.Join(f.Lines, " ")
+		if !strings.Contains(said, "sealed") || !strings.Contains(said, "key") {
+			t.Errorf("the %s form says %q, which does not say it is sealed and keyed", kind, said)
+		}
+		sendKey(t, a, press(input.KeyEscape, 0))
+		a.pump.run()
+	}
+}
+
+// Showing one puts it on screen as it was written.
+func TestShowingASecretPutsItOnScreen(t *testing.T) {
+	a, keyFile := aWindowWithSecrets(t)
+	v := startTheVault(t, a, keyFile)
+	it, err := v.Put(secrets.Item{Name: "codes", Kind: secrets.Note}, "1234 5678")
+	if err != nil {
+		t.Fatalf("put: %v", err)
+	}
+
+	if err := a.showSecret(v, it); err != nil {
+		t.Fatalf("show: %v", err)
+	}
+	if said := noticeUp(t, a); !strings.Contains(said, "1234 5678") {
+		t.Errorf("the dialog says %q, and not the secret", said)
+	}
+	// Nothing went near the clipboard: showing is not copying.
+	if got := a.copiedText(); got != "" {
+		t.Errorf("showing it copied %q", got)
 	}
 }
 

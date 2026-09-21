@@ -87,16 +87,24 @@ func (a *app) unlockVault(v *secrets.Vault, then func(error)) {
 		then(err)
 		return
 	}
+	a.unlockKeyFile(keyFile, func(signer ssh.Signer, err error) {
+		if err != nil {
+			then(err)
+			return
+		}
+		then(v.Unlock([]ssh.Signer{signer}))
+	})
+}
+
+// unlockKeyFile reads a key and keeps it in the ring, asking for its
+// passphrase if it has one.
+//
+// It blocks on a dialog, so it runs on a goroutine of its own. then is
+// posted back to the drawing goroutine.
+func (a *app) unlockKeyFile(keyFile string, then func(ssh.Signer, error)) {
 	a.closes.inBackground(func() error {
-		ctx := context.Background()
-		signer, err := a.keys.Unlock(ctx, keyFile, &askUser{app: a})
-		a.pump.post(func() {
-			if err != nil {
-				then(err)
-				return
-			}
-			then(v.Unlock([]ssh.Signer{signer}))
-		})
+		signer, err := a.keys.Unlock(context.Background(), keyFile, &askUser{app: a})
+		a.pump.post(func() { then(signer, err) })
 		return nil
 	})
 }

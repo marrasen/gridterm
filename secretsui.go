@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/crypto/ssh"
+
 	"github.com/marrasen/gridterm/secrets"
 	"github.com/marrasen/gridterm/ui"
 )
@@ -25,11 +27,14 @@ const clipboardHolds = 30 * time.Second
 // into the pane instead of putting it on the clipboard.
 const typeButton = '↵'
 
-// openSecrets shows what is in the vault.
+// withOpenSecrets hands the vault to then, opening it first.
 //
-// The vault opens on a key the window has already unlocked, and asks
-// for a passphrase only when it has none that fits.
-func (a *app) openSecrets() error {
+// It opens on a key the window has already unlocked, and asks for a
+// passphrase only when it has none that fits. Asking means a dialog,
+// so then may run on this frame or several frames later, and whatever
+// it reports is shown rather than returned: by then there is nobody
+// left to return it to.
+func (a *app) withOpenSecrets(what string, then func(*secrets.Vault) error) error {
 	v, err := a.vault()
 	if err != nil {
 		return err
@@ -38,21 +43,26 @@ func (a *app) openSecrets() error {
 		return a.offerAVault()
 	}
 	if a.openWithKeysInHand(v) {
-		return a.showSecrets(v)
+		return then(v)
 	}
 	a.unlockVault(v, func(err error) {
 		switch {
 		case errors.Is(err, errDismissed):
 			// The user closed the passphrase dialog. They know.
 		case err != nil:
-			a.reportError("Could not open the secrets", err)
+			a.reportError(what, err)
 		default:
-			if err := a.showSecrets(v); err != nil {
-				a.reportError("Could not open the secrets", err)
+			if err := then(v); err != nil {
+				a.reportError(what, err)
 			}
 		}
 	})
 	return nil
+}
+
+// openSecrets shows what is in the vault.
+func (a *app) openSecrets() error {
+	return a.withOpenSecrets("Could not open the secrets", a.showSecrets)
 }
 
 // offerAVault asks whether to start one, since there is none.
@@ -224,28 +234,9 @@ func (a *app) addNote() error { return a.addOfKind(secrets.Note) }
 
 // addOfKind opens the vault if it has to and then asks.
 func (a *app) addOfKind(kind secrets.Kind) error {
-	v, err := a.vault()
-	if err != nil {
-		return err
-	}
-	if !v.Exists() {
-		return a.offerAVault()
-	}
-	if !a.openWithKeysInHand(v) {
-		a.unlockVault(v, func(err error) {
-			switch {
-			case errors.Is(err, errDismissed):
-			case err != nil:
-				a.reportError("Could not open the secrets", err)
-			default:
-				if err := a.askForSecret(v, kind); err != nil {
-					a.reportError("Could not keep it", err)
-				}
-			}
-		})
-		return nil
-	}
-	return a.askForSecret(v, kind)
+	return a.withOpenSecrets("Could not keep it", func(v *secrets.Vault) error {
+		return a.askForSecret(v, kind)
+	})
 }
 
 // askForSecret is the form a new one is typed into.
@@ -284,15 +275,98 @@ func (a *app) askForSecret(v *secrets.Vault, kind secrets.Kind) error {
 	return nil
 }
 
+// addVaultKey lets another key open the secrets, for a second machine.
+//
+// The key has to be on this machine: a slot is made by having the key
+// sign, so the private half has to be here. Adding the key of a machine
+// you are not sitting at means bringing that key here first.
+func (a *app) addVaultKey() error {
+	return a.withOpenSecrets("Could not add the key", a.chooseAKeyToAdd)
+}
+
+// alreadyOpens reports which key files already open the vault.
+func alreadyOpens(v *secrets.Vault) map[string]bool {
+	have := map[string]bool{}
+	for _, s := range v.Keys() {
+		if s.KeyFile != "" {
+			have[s.KeyFile] = true
+		}
+	}
+	return have
+}
+
+// chooseAKeyToAdd lists the keys that could be added and adds the one
+// picked.
+func (a *app) chooseAKeyToAdd(v *secrets.Vault) error {
+	have := alreadyOpens(v)
+	var spare []string
+	for _, keyFile := range a.vaultKeys() {
+		if !have[keyFile] {
+			spare = append(spare, keyFile)
+		}
+	}
+	if len(spare) == 0 {
+		a.showNotice(secretsTitle, whyNoKeyToAdd(len(have)), false)
+		return nil
+	}
+	var hide func()
+	c := ui.NewChooser("Which key should also open the secrets?", func() {
+		if hide != nil {
+			hide()
+		}
+	})
+	c.Style = a.chooserStyle()
+	for _, keyFile := range spare {
+		c.Add(keyFile, "", func() error {
+			a.addVaultKeyOn(v, keyFile)
+			return nil
+		})
+	}
+	hide = a.showModal(c, nil)
+	if a.root.Modal() != ui.Widget(c) {
+		return errors.New("there is no room to show them")
+	}
+	a.markDirty()
+	return nil
+}
+
+// whyNoKeyToAdd says why there is nothing to offer, which is a
+// different thing depending on how many already open it.
+func whyNoKeyToAdd(opening int) string {
+	if opening == 0 {
+		return "There is no other ed25519 key on this machine to add. " +
+			`"Make an SSH key" writes one.`
+	}
+	return "Every ed25519 key this window knows about already opens the secrets. " +
+		"A key from another machine has to be on this one before it can be added."
+}
+
+// addVaultKeyOn unlocks a key and gives it a slot of its own.
+func (a *app) addVaultKeyOn(v *secrets.Vault, keyFile string) {
+	a.unlockKeyFile(keyFile, func(signer ssh.Signer, err error) {
+		if errors.Is(err, errDismissed) {
+			return
+		}
+		if err == nil {
+			err = v.AddKey(signer, keyFile)
+		}
+		if err != nil {
+			a.reportError("Could not add the key", err)
+			return
+		}
+		a.showNotice(secretsTitle, fmt.Sprintf(
+			"%s opens the secrets as well now, and %d keys open them in all.",
+			keyFile, len(v.Keys())), false)
+	})
+}
+
 // forgetSecret takes one out of the vault.
 func (a *app) forgetSecret() error {
-	v, err := a.vault()
-	if err != nil {
-		return err
-	}
-	if !v.Exists() || !a.openWithKeysInHand(v) {
-		return a.openSecrets()
-	}
+	return a.withOpenSecrets("Could not forget it", a.chooseToForget)
+}
+
+// chooseToForget is the list a secret is taken out from.
+func (a *app) chooseToForget(v *secrets.Vault) error {
 	items, err := v.Items()
 	if err != nil {
 		return err

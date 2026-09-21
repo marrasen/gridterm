@@ -210,6 +210,66 @@ func TestOnlyAnEd25519KeyIsOfferedToLockAVault(t *testing.T) {
 	}
 }
 
+// A second key is added and opens the vault on its own, which is what
+// a second machine needs.
+func TestASecondKeyIsAddedAndOpensTheVault(t *testing.T) {
+	a, keyFile := aWindowWithSecrets(t)
+	v := startTheVault(t, a, keyFile)
+	if _, err := v.Put(secrets.Item{Name: "margit"}, "hunter2"); err != nil {
+		t.Fatalf("put: %v", err)
+	}
+	second := anEd25519KeyFile(t, filepath.Join(t.TempDir(), "id_ed25519_other"))
+
+	a.addVaultKeyOn(v, second)
+	waitFor(t, a, "the key to be added", func() bool { return len(v.Keys()) == 2 })
+
+	// The vault on disk now opens on the second key alone.
+	shut, err := secrets.Open(a.secretsAt)
+	if err != nil {
+		t.Fatalf("open the file again: %v", err)
+	}
+	signer := signerFromFile(t, second)
+	if err := shut.Unlock([]ssh.Signer{signer}); err != nil {
+		t.Fatalf("the second key did not open it: %v", err)
+	}
+	items, err := shut.Items()
+	if err != nil || len(items) != 1 {
+		t.Fatalf("it opened onto %d items (%v)", len(items), err)
+	}
+}
+
+// A key that already opens the vault is not offered again.
+func TestAKeyThatAlreadyOpensItIsNotOfferedAgain(t *testing.T) {
+	a, keyFile := aWindowWithSecrets(t)
+	v := startTheVault(t, a, keyFile)
+
+	if have := alreadyOpens(v); !have[keyFile] {
+		t.Fatalf("the vault does not say %s opens it: %v", keyFile, have)
+	}
+	// Nothing else to offer, so the window says why rather than putting
+	// up an empty list.
+	if err := a.chooseAKeyToAdd(v); err != nil {
+		t.Fatalf("choose: %v", err)
+	}
+	if said := noticeUp(t, a); !strings.Contains(said, "already open") {
+		t.Errorf("it said %q", said)
+	}
+}
+
+// signerFromFile reads a key file a test wrote.
+func signerFromFile(t *testing.T, path string) ssh.Signer {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read the key: %v", err)
+	}
+	signer, err := ssh.ParsePrivateKey(raw)
+	if err != nil {
+		t.Fatalf("parse the key: %v", err)
+	}
+	return signer
+}
+
 // Asking for the secrets when there are none offers to start them.
 func TestNoSecretsYetOffersToStartThem(t *testing.T) {
 	a, _ := aWindowWithSecrets(t)

@@ -1,0 +1,86 @@
+# Publishing is driven by a tag.
+#
+# Pushing v0.1.0 runs the suite on both platforms, and only if both pass
+# does it build the binaries and put them on a GitHub release. A release
+# that does not compile on the other platform is the thing this is here
+# to stop: the machine this is usually built on is a Windows one.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  # So the build can be exercised without publishing anything.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    name: Test on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # Both answers are wanted. Stopping the Windows run because Linux
+      # failed hides half of what went wrong.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          # The one place the version is written down is go.mod.
+          go-version-file: go.mod
+
+      # No packages to install and no display to arrange: every build is
+      # pure Go, and the whole suite runs headless.
+      - name: Test
+        run: go test ./...
+
+  release:
+    name: Build and publish
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The whole history, so `git describe` can see the tag.
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # One target builds both, so what CI ships and what `make release`
+      # gives you by hand are the same thing. Both cross-compile, so this
+      # runs on one runner.
+      - name: Build the release
+        run: make release VERSION=${{ github.ref_name }}
+
+      # Only a tag publishes. A manual run builds, so the build can be
+      # checked without a release appearing named after a branch.
+      - name: Take the notes for this version out of the changelog
+        if: startsWith(github.ref, 'refs/tags/')
+        id: notes
+        run: |
+          # The section from this version's heading to the next one.
+          awk -v want="## ${{ github.ref_name }}" '
+            $0 == want { inside = 1; next }
+            inside && /^## / { exit }
+            inside { print }
+          ' CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "CHANGELOG.md has no section for ${{ github.ref_name }}" >&2
+            exit 1
+          fi
+
+      - name: Publish
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --title "${{ github.ref_name }}" \
+            --notes-file release-notes.md \
+            dist/*

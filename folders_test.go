@@ -156,11 +156,11 @@ func TestTheServerDialogKeepsTheFolders(t *testing.T) {
 		t.Fatalf("edit: %v", err)
 	}
 	f := awaitModal(t, a, "the edit dialog", byTitle[*ui.Form]("Edit margit"))
-	if got := f.Field("Folders").Text(); got != "/var/log,/srv/app" {
+	if got := f.Field(fldFolders).Text(); got != "/var/log,/srv/app" {
 		t.Fatalf("the field says %q", got)
 	}
-	retypeField(t, a, f, "Folders", " /srv/app , /etc/nginx ")
-	pressButton(t, a, f, "Save")
+	retypeField(t, a, f, fldFolders, " /srv/app , /etc/nginx ")
+	pressButton(t, a, f, btnSave)
 
 	h, ok := a.book.Lookup("margit")
 	if !ok {
@@ -181,8 +181,8 @@ func TestClearingTheFieldTakesTheFoldersAway(t *testing.T) {
 		t.Fatalf("edit: %v", err)
 	}
 	f := awaitModal(t, a, "the edit dialog", byTitle[*ui.Form]("Edit margit"))
-	retypeField(t, a, f, "Folders", "")
-	pressButton(t, a, f, "Save")
+	retypeField(t, a, f, fldFolders, "")
+	pressButton(t, a, f, btnSave)
 
 	h, ok := a.book.Lookup("margit")
 	if !ok {
@@ -407,8 +407,8 @@ func TestTheDialogRefusesTheSameFolderTwice(t *testing.T) {
 		t.Fatalf("edit: %v", err)
 	}
 	f := awaitModal(t, a, "the edit dialog", byTitle[*ui.Form]("Edit margit"))
-	retypeField(t, a, f, "Folders", "/srv/app,/srv/app")
-	pressButton(t, a, f, "Save")
+	retypeField(t, a, f, fldFolders, "/srv/app,/srv/app")
+	pressButton(t, a, f, btnSave)
 
 	if a.root.Modal() != f {
 		t.Fatal("the dialog closed on a folder named twice")
@@ -532,7 +532,7 @@ func TestAFolderWithACommaSurvivesAnUntouchedSave(t *testing.T) {
 		t.Fatalf("edit: %v", err)
 	}
 	f := awaitModal(t, a, "the edit dialog", byTitle[*ui.Form]("Edit margit"))
-	pressButton(t, a, f, "Save")
+	pressButton(t, a, f, btnSave)
 
 	if a.root.Modal() == f {
 		t.Fatalf("the save was refused although the field was not touched: %v", f.Error())
@@ -557,8 +557,8 @@ func TestEditingAFolderWithACommaIsRefused(t *testing.T) {
 		t.Fatalf("edit: %v", err)
 	}
 	f := awaitModal(t, a, "the edit dialog", byTitle[*ui.Form]("Edit margit"))
-	retypeField(t, a, f, "Folders", "/var/log")
-	pressButton(t, a, f, "Save")
+	retypeField(t, a, f, fldFolders, "/var/log")
+	pressButton(t, a, f, btnSave)
 
 	if a.root.Modal() != f {
 		t.Fatal("the dialog closed on folders it cannot show")

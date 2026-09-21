@@ -162,7 +162,7 @@ func (a *app) writePictureOn(end jobEnd, pane *term.Terminal, img image.Image) e
 		a.pump.post(func() {
 			sent()
 			if err != nil {
-				a.reportError("Could not paste a picture onto "+host, err)
+				a.reportError("Could not paste the image to "+host, err)
 				return
 			}
 			pane.Paste(path)
@@ -255,7 +255,7 @@ func (a *app) sendPictureTo(on hostFacts, pane *term.Terminal, img image.Image) 
 		a.pump.post(func() {
 			sent()
 			if err != nil {
-				a.reportError("Could not paste a picture into "+name, err)
+				a.reportError("Could not paste the image into "+name, err)
 				return
 			}
 			pane.PressPaste()

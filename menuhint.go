@@ -15,10 +15,19 @@ import "github.com/marrasen/gridterm/grid"
 // layers above it: one long enough to reach the bottom covers the
 // hint, which is right, because then the line is on screen anyway.
 func (a *app) drawHint() {
-	if a.bar == nil || a.g == nil {
+	if a.g == nil {
 		return
 	}
-	hint := a.bar.Hint()
+	// The menu's own line first: a menu is open in front of the user and
+	// is what they are reading, and a line saying something worked a
+	// moment ago is not worth covering it with.
+	hint := ""
+	if a.bar != nil {
+		hint = a.bar.Hint()
+	}
+	if hint == "" {
+		hint = a.saying()
+	}
 	if hint == "" {
 		return
 	}

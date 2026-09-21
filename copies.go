@@ -15,7 +15,7 @@ import (
 const copiesCommand = "files.copies"
 
 // copiesTitle names that dialog.
-const copiesTitle = "Remembered copies"
+const copiesTitle = "Saved Copies"
 
 // forgetButton is the mark at the end of a remembered copy's row, which
 // takes it off the list. The same cross a finished connection carries.
@@ -121,8 +121,11 @@ func (a *app) repeatSavedCopy(op jobs.Op, from, to jobEnd) {
 func (a *app) openCopies() error {
 	kept := a.copies.all()
 	if len(kept) == 0 {
-		a.showNotice(copiesTitle, "Nothing is remembered yet. A copy that has "+
-			"finished offers a Remember button on the dialog its row opens.", false)
+		n := a.newNotice(copiesTitle,
+			"None saved. A finished copy has a \"Save this copy\" box.")
+		// Nothing in it worth copying: it says there is nothing here.
+		n.SetNoCopy()
+		a.presentNotice(n)
 		return nil
 	}
 	var hide func()

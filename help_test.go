@@ -67,7 +67,7 @@ func aWindowWithMenus(t *testing.T) *testApp {
 	// Tall, so the whole list is drawn: the dialog scrolls what does not
 	// fit, and a test that reads the screen can only read what is on it.
 	// Raise it when a command is added and the last section falls off.
-	a := newTestApp(t, 100, 110)
+	a := newTestApp(t, 100, 120)
 	withDialogs(t, a)
 	withPanel(t, a)
 	withMenubar(t, a)
@@ -123,7 +123,7 @@ func TestTheHelpMenuListsTheKeys(t *testing.T) {
 	chooseMenuItem(t, m, helpCommand)
 
 	n := awaitModal(t, a, "the key list", byTitle[*ui.Notice](helpTitle))
-	if !strings.Contains(n.Message(), "New terminal") {
+	if !strings.Contains(n.Message(), "New Terminal") {
 		t.Errorf("the list leaves out a command the menus offer: %q", n.Message())
 	}
 }
@@ -143,7 +143,7 @@ func TestTheKeyListLeavesOutTheGeneratedCommands(t *testing.T) {
 		}
 	}
 	// And it still holds the fixed lines of the menus that generate them.
-	if !strings.Contains(got, "Add a server") {
+	if !strings.Contains(got, "Add Server") {
 		t.Errorf("the Servers menu's own lines went with them: %q", got)
 	}
 }

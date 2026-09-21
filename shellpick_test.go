@@ -418,7 +418,7 @@ func TestARememberedShellThatHasGoneFallsBackAndSaysSo(t *testing.T) {
 	if !strings.Contains(n.Message(), "wsl:Ubuntu") {
 		t.Errorf("the notice does not name the shell:\n%s", n.Message())
 	}
-	if !strings.Contains(n.Message(), "plus") {
+	if !strings.Contains(n.Message(), "New Terminal In") {
 		t.Errorf("the notice does not say how to pick another shell:\n%s", n.Message())
 	}
 	// Said once a run: another pane opens on the default in silence.
@@ -576,7 +576,7 @@ func TestTheLinesAndThePaletteSayWhichShell(t *testing.T) {
 	if !ok {
 		t.Fatal("no command opens a pane on pwsh")
 	}
-	if want := "New pane on PowerShell"; cmd.Title != want {
+	if want := "New Terminal: PowerShell"; cmd.Title != want {
 		t.Errorf("the command is called %q, want %q", cmd.Title, want)
 	}
 	runFromPalette(t, a, shellCommandID("pwsh"))
@@ -1037,7 +1037,7 @@ func TestAPickThatCannotBeForgottenStillOpensThePane(t *testing.T) {
 		t.Errorf("the window has %d panes, want the one it opened", got)
 	}
 	awaitModal(t, a, "the reason the pick could not be forgotten",
-		byTitle[*ui.Notice]("Could not forget which shell to open"))
+		byTitle[*ui.Notice]("Could not save the settings"))
 }
 
 // A window whose panes open on another machine has no local pick to

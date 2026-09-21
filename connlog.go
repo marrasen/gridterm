@@ -23,7 +23,7 @@ import (
 // takes its place -- and the same pane carries the shell.
 //
 // The whole account is kept in lines, which Lines hands back and the
-// "How it was reached" dialog shows.
+// account dialog shows.
 //
 // The pane cannot tell. It reads a session, and this is one: first its
 // own words, then the shell's.
@@ -100,7 +100,7 @@ const (
 //
 // The lines it takes off the screen stay in the pane's history, the way
 // any cleared screen does now, so the account is a scroll away as well
-// as being on the "How it was reached" dialog. What the fold is for is a
+// as being on the account dialog. What the fold is for is a
 // pane that reads as one line, and that is what this leaves.
 const clearPane = "\x1b[2J\x1b[3J\x1b[H"
 
@@ -284,7 +284,7 @@ func (c *connLog) Became(name string, live session.Session) {
 // lines: it says where to read them.
 func (c *connLog) foldLocked(name string) {
 	line := "Connected to " + name + " " + howLong(c.clock().Sub(c.started)) +
-		`. "How it was reached", on the plus menu of its row, shows the account.`
+		`. "` + connLogName + `", on the plus menu of its row, shows the account.`
 	if !c.keep {
 		c.said = append(c.said, clearPane...)
 	}

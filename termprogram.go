@@ -69,22 +69,23 @@ var knownTerminals = []string{"", "iTerm.app", "WezTerm", "vscode", "Apple_Termi
 // openTermProgram asks what this window should call itself to the
 // programs it runs.
 func (a *app) openTermProgram() error {
-	f := a.newForm("What this window calls itself")
-	called := f.AddField("TERM_PROGRAM", a.newField(build.Name, 0))
+	f := a.newForm(dlgTermProgram)
+	called := f.AddField(fldTermProgram, a.newField(build.Name, 0))
 	called.Options = knownTerminals
 	called.SetText(a.called.name())
 	f.Lines = append(f.Lines,
-		"A program reads TERM_PROGRAM to find out which terminal it is talking to.",
-		"Blank is "+build.Name+", which is the true answer.",
-		"A program that has never heard of "+build.Name+" may show pictures if it is",
-		"told a terminal it knows. It may then send the rest of that terminal's",
-		"sequences, and whatever this one does not read lands on screen as text.",
-		"It takes effect in the next pane you open.")
+		"Programs read TERM_PROGRAM to identify the terminal.",
+		"Blank reports "+build.Name+".",
+		"",
+		"Another name can enable features such as inline images.",
+		"It can also produce sequences that "+build.Name+" shows as text.",
+		"",
+		"Applies to new panes.")
 
-	f.AddButton(ui.Button{Title: "Save", Do: func() error {
+	f.AddButton(ui.Button{Title: btnSave, Do: func() error {
 		return a.called.set(called.Text())
 	}})
-	f.AddButton(ui.Button{Title: "Cancel"})
+	f.AddButton(ui.Button{Title: btnCancel})
 
 	a.showForm(f, nil)
 	return nil

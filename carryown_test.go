@@ -50,8 +50,8 @@ func TestCarryingOwnFilesCopiesWhatTheWindowIsReading(t *testing.T) {
 	if !strings.Contains(said, beside) {
 		t.Errorf("it said %q, want it to name where the files went", said)
 	}
-	if !strings.Contains(said, "again") {
-		t.Errorf("it said %q, want it to say the window has to be started again", said)
+	if !strings.Contains(said, "Restart") {
+		t.Errorf("it said %q, want it to say gridterm has to be restarted", said)
 	}
 }
 

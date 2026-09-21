@@ -17,7 +17,7 @@ import (
 // menus and throughout the command ids.
 const (
 	helpCommand = "help.shortcuts"
-	helpTitle   = "Shortcuts and commands"
+	helpTitle   = "Shortcuts and Commands"
 )
 
 // helpGap is the blank between a line's words and its chord.

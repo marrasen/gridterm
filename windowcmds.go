@@ -73,13 +73,13 @@ func (a *app) askToQuit() {
 		return
 	}
 	a.leaving = true
-	f := a.newConfirm("Close gridterm?",
-		wrapLines("This window is holding "+listOf(open)+".", errorLineWidth))
-	f.AddButton(ui.Button{Title: "Close it", Do: func() error {
+	f := a.newConfirm(dlgExit,
+		wrapLines("Still open: "+listOf(open)+".", errorLineWidth))
+	f.AddButton(ui.Button{Title: btnExit, Do: func() error {
 		a.quit.Store(true)
 		return nil
 	}})
-	f.AddButton(ui.Button{Title: "Cancel"})
+	f.AddButton(ui.Button{Title: btnCancel})
 	// Opens on the button that changes nothing.
 	f.FocusButton(1)
 	a.showForm(f, func() { a.leaving = false })
@@ -104,7 +104,7 @@ func (a *app) whatIsOpen() []string {
 		out = append(out, count(n, "connection", "connections"))
 	}
 	if a.agents.sharing() {
-		out = append(out, "a share open to an agent")
+		out = append(out, "an agent share")
 	}
 	return out
 }
@@ -134,15 +134,15 @@ func listOf(what []string) string {
 // Short on purpose. It is where a version number goes when there is
 // one, and where checking for a newer one would be offered.
 func (a *app) showAbout() error {
-	a.showNotice("gridterm", strings.Join([]string{
-		"A GPU-rendered terminal emulator, built for Windows first.",
+	n := a.newNotice("About gridterm", strings.Join([]string{
+		"A GPU-rendered terminal emulator for Windows.",
 		"",
-		"It runs a shell here or on another machine, draws the screen as",
-		"batched triangles, and keeps everything it has open on one",
-		"sidebar rather than a row of tabs.",
-		"",
-		"This build carries no version number yet.",
-	}, "\n"), false)
+		"Version: development build",
+	}, "\n"))
+	// Nothing worth putting on the clipboard until there is a version
+	// number to quote in a bug report.
+	n.SetNoCopy()
+	a.presentNotice(n)
 	return nil
 }
 

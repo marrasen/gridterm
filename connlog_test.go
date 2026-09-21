@@ -422,19 +422,19 @@ func TestTheAccountIsFoldedWhenTheConnectionIsMade(t *testing.T) {
 	readLog(t, c, "connecting to margit:22")
 	c.Became("margit", newPipeSession())
 
-	said := plainly(readLog(t, c, "How it was reached"))
+	said := plainly(readLog(t, c, "Connection Log"))
 	if !strings.HasPrefix(said, clearPane) {
 		t.Errorf("the pane was not cleared before the summary: %q", said)
 	}
 	want := "Connected to margit in under a second. " +
-		`"How it was reached", on the plus menu of its row, shows the account.`
+		`"Connection Log", on the plus menu of its row, shows the account.`
 	if !strings.Contains(said, want) {
 		t.Errorf("the summary is %q, want %q in it", said, want)
 	}
 	// The summary belongs to the pane, not to the account: it says where
 	// the account is.
 	for _, line := range c.Lines() {
-		if strings.Contains(line, "How it was reached") {
+		if strings.Contains(line, "Connection Log") {
 			t.Errorf("the summary went into the account: %q", line)
 		}
 	}
@@ -449,7 +449,7 @@ func TestASlowerConnectionIsSummedUpInSeconds(t *testing.T) {
 
 	c.Became("margit", newPipeSession())
 
-	said := plainly(readLog(t, c, "How it was reached"))
+	said := plainly(readLog(t, c, "Connection Log"))
 	if !strings.Contains(said, "Connected to margit in 1.5 s.") {
 		t.Errorf("the summary is %q", said)
 	}
@@ -481,7 +481,7 @@ func TestTheFoldDoesNotWaitOnTheConnection(t *testing.T) {
 	close(slow.resizing)
 
 	// And what it was woken for is the fold.
-	said := plainly(readLog(t, c, "How it was reached"))
+	said := plainly(readLog(t, c, "Connection Log"))
 	if !strings.HasPrefix(said, clearPane) {
 		t.Errorf("the pane was not cleared: %q", said)
 	}

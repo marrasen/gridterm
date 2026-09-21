@@ -73,28 +73,27 @@ func (a *app) confirmTunnel(host string, t remote.Tunnel) {
 	if t.Kind == remote.RemoteForward {
 		where = host
 	}
-	through := "to " + t.Target
+	said := "Anyone who can reach " + where + " on that port is connected to " +
+		t.Target + ", with no authentication."
 	if t.Kind == remote.DynamicForward {
 		// It has no one address: whoever connects chooses, which is what
 		// makes an open one worth asking about twice.
-		through = "to wherever it asks for, as " + host + " sees it, " +
-			"including what only " + host + " itself can reach"
+		said = "Anyone who can reach " + where + " on that port can connect to " +
+			"anything " + host + " can reach, with no authentication."
 	}
-	said := "Anything that can reach " + where + " on that port will be let through " +
-		through + ", with nothing asked."
 	if t.Kind == remote.RemoteForward {
-		said += " Where " + host + " listens is its own choice: a server set to" +
-			" share forwarded ports opens them to its whole network."
+		said += " " + host + " chooses where it listens. With GatewayPorts on," +
+			" that is its whole network."
 	}
 	// Wrapped to what a dialog shows without trimming: the clause this
 	// question turns on is the last one, and a line cut off at the edge
 	// of the box would lose it.
-	f := a.newConfirm("Open "+listenName(t)+"?", wrapLines(said, errorLineWidth))
-	f.AddButton(ui.Button{Title: "Open it", Do: func() error {
+	f := a.newConfirm(dlgOpenToNetwork+listenName(t)+"?", wrapLines(said, errorLineWidth))
+	f.AddButton(ui.Button{Title: btnOpen, Do: func() error {
 		a.pump.post(func() { a.openTunnel(host, t) })
 		return nil
 	}})
-	f.AddButton(ui.Button{Title: "Cancel"})
+	f.AddButton(ui.Button{Title: btnCancel})
 	// Opens on the button that changes nothing.
 	f.FocusButton(1)
 	a.showForm(f, nil)
@@ -315,7 +314,7 @@ func (a *app) tunnelStopped(e *conns.Entry, err error) {
 	}
 	e.Close, e.Clear = drop, drop
 	a.markDirty()
-	a.reportError("The tunnel "+e.Label+" stopped", err)
+	a.reportError("Tunnel "+e.Label+" stopped", err)
 }
 
 // closeTunnels ends every tunnel the window is holding, for a window

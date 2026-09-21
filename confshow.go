@@ -18,7 +18,7 @@ import (
 // and filesTitle names both the notice and the line that opens it.
 const (
 	filesCommand = "help.files"
-	filesTitle   = "Where gridterm keeps its files"
+	filesTitle   = "File Locations"
 )
 
 // showWhereFiles says which directory gridterm is reading and writing,
@@ -59,10 +59,14 @@ func (a *app) showWhereFiles() error {
 func (a *app) startCarryingOwnFiles() {
 	said, err := a.carryOwnFiles()
 	if err != nil {
-		a.reportError("This copy could not be given files of its own", err)
+		a.reportError("Could not make portable", err)
 		return
 	}
-	a.showNotice(carryOwnTitle, said, false)
+	n := a.newNotice(carriedOwnTitle, said)
+	// A line per thing done, which the dialog would otherwise run
+	// together into a paragraph.
+	n.Preformatted = true
+	a.presentNotice(n)
 }
 
 // whereFilesText is what the notice says, for this copy of gridterm.
@@ -103,35 +107,22 @@ func filesSay(f where) string {
 	for _, line := range []struct{ what, name string }{
 		{"Settings", settings.File},
 		{"Saved servers", remote.BookFile},
-		{"Colour themes", themes.File},
-		{"Keyboard shortcuts", keys.File},
-		{"Keys allowed to take this window over", serve.AuthFile},
-		{"Windows this one has connected to", knownWindowsFile},
+		{"Themes", themes.File},
+		{"Shortcuts", keys.File},
+		{"Authorized keys", serve.AuthFile},
+		{"Known windows", knownWindowsFile},
 	} {
-		fmt.Fprintf(&b, "%-39s%s\n", line.what+":", filepath.Join(f.dir, line.name))
+		fmt.Fprintf(&b, "%-18s%s\n", line.what+":", filepath.Join(f.dir, line.name))
 	}
-	fmt.Fprintf(&b, "%-39s%s\n", "The key this window serves with:", f.hostKey)
-	b.WriteString("\nYour SSH keys and known_hosts stay in ~/.ssh, so gridterm and ssh\n" +
-		"agree on them. They are not part of what a copy carries.\n\n")
+	fmt.Fprintf(&b, "%-18s%s\n", "Serving key:", f.hostKey)
+	b.WriteString("\nSSH keys and known_hosts stay in ~/.ssh.\n")
 
 	if f.own {
-		fmt.Fprintf(&b,
-			"This copy of gridterm carries its own files, in\n\n"+
-				"    %s\n\n"+
-				"The key this window serves with is in there too, and is only as\n"+
-				"private as that directory. Keep the directory somewhere only you\n"+
-				"can read.\n", f.beside)
-		return b.String()
+		// The three steps are the button's job now, so what is left is
+		// the one thing a portable copy has to know: where its files are.
+		fmt.Fprintf(&b, "\nPortable: files are kept beside gridterm, in\n\n    %s\n\n"+
+			"The serving key is in there too, and is only as private as\n"+
+			"that directory.\n", f.beside)
 	}
-	fmt.Fprintf(&b,
-		"Every copy of gridterm on this machine that does not carry its own\n"+
-			"files uses these. To give this copy files of its own:\n\n"+
-			"    1. Make the directory\n\n"+
-			"           %s\n\n"+
-			"    2. Copy the files above into it, so the copy starts with what\n"+
-			"       you have now. Leave the key out and this window gets a new\n"+
-			"       one, and anything that has taken it over before will refuse\n"+
-			"       to connect.\n\n"+
-			"    3. Start gridterm again.\n", f.beside)
 	return b.String()
 }

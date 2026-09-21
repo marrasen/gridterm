@@ -17,7 +17,7 @@ import (
 // line that opens it.
 const (
 	switcherCommand = "view.switcher"
-	switcherTitle   = "Show every pane"
+	switcherTitle   = "All Panes"
 )
 
 // switcher is every pane drawn small at once, so one can be picked by
@@ -173,7 +173,7 @@ func (a *app) openSwitcher() error {
 	}
 	hide = a.showModal(tiles, func() { a.closeSwitcher() })
 	if a.root.Modal() != ui.Widget(tiles) {
-		return errors.New("the window would not show the panes")
+		return errors.New("Window too small")
 	}
 	s.hide = hide
 	a.switcher = s

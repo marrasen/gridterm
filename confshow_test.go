@@ -63,11 +63,11 @@ func TestTheNoticeNamesEveryFileAgainstWhatItIsFor(t *testing.T) {
 	for _, line := range []struct{ what, name string }{
 		{"Settings", "settings.json"},
 		{"Saved servers", "servers.json"},
-		{"Colour themes", "themes.json"},
-		{"Keyboard shortcuts", "keys.json"},
-		{"Keys allowed to take this window over", "authorized_keys"},
-		{"Windows this one has connected to", "known_windows"},
-		{"The key this window serves with", "serve_host_key"},
+		{"Themes", "themes.json"},
+		{"Shortcuts", "keys.json"},
+		{"Authorized keys", "authorized_keys"},
+		{"Known windows", "known_windows"},
+		{"Serving key", "serve_host_key"},
 	} {
 		want := line.what + ":"
 		at := strings.Index(got, want)
@@ -82,34 +82,26 @@ func TestTheNoticeNamesEveryFileAgainstWhatItIsFor(t *testing.T) {
 	}
 }
 
-// It tells the user to copy the files before starting gridterm again,
-// in that order: the other way round opens a window that looks freshly
-// installed.
-func TestTheNoticePutsTheStepsInTheOrderTheyHappen(t *testing.T) {
+// A copy not carrying its own files is given the button and no steps.
+//
+// The three steps used to be written out. The button does them, so a
+// list of instructions beside it was the dialog describing its own
+// button rather than saying anything the button could not.
+func TestTheNoticeLeavesTheStepsToTheButton(t *testing.T) {
 	got := aNotice()
 
-	make := strings.Index(got, "Make the directory")
-	copy := strings.Index(got, "Copy the files above")
-	again := strings.Index(got, "Start gridterm again")
-	if make < 0 || copy < 0 || again < 0 {
-		t.Fatalf("the notice does not give the three steps:\n%s", got)
-	}
-	if !(make < copy && copy < again) {
-		t.Errorf("it gives them at %d, %d and %d:\n%s", make, copy, again, got)
-	}
-	if !strings.Contains(got, `D:\tools\gridterm-files`) {
-		t.Errorf("it does not say which directory to make:\n%s", got)
+	for _, step := range []string{"Make the directory", "Copy the files above", "Start gridterm again"} {
+		if strings.Contains(got, step) {
+			t.Errorf("the notice still spells out %q:\n%s", step, got)
+		}
 	}
 }
 
-// It says what happens to a window whose key is left behind, and that
-// the keys under ~/.ssh do not move.
+// It says the keys under ~/.ssh do not move, which is the one thing the
+// list of paths does not itself answer.
 func TestTheNoticeSaysWhatIsNotCarried(t *testing.T) {
 	got := aNotice()
 
-	if !strings.Contains(got, "refuse") {
-		t.Errorf("it does not say a window left without its key is refused:\n%s", got)
-	}
 	if !strings.Contains(got, "~/.ssh") {
 		t.Errorf("it does not say the SSH keys stay where they are:\n%s", got)
 	}
@@ -125,7 +117,7 @@ func TestACopyCarryingItsOwnIsToldAboutItsKey(t *testing.T) {
 		beside:  `D:\tools\gridterm-files`,
 	})
 
-	if !strings.Contains(got, "carries its own files") {
+	if !strings.Contains(got, "Portable") {
 		t.Errorf("the notice says:\n%s", got)
 	}
 	if strings.Contains(got, "Make the directory") {

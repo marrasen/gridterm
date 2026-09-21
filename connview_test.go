@@ -94,7 +94,7 @@ func TestTheAccountIsFoldedAwayOnceTheShellIsThere(t *testing.T) {
 	}
 	// The summary wraps in a pane this wide, so only the words that stay
 	// on one line are looked for.
-	if !strings.Contains(got, `"How it was reached"`) {
+	if !strings.Contains(got, `"Connection Log"`) {
 		t.Errorf("the summary does not say where the account went: %q", got)
 	}
 }
@@ -138,7 +138,7 @@ func TestThePlusOnAConnectedRowShowsHowItWasReached(t *testing.T) {
 	}
 	chooseMenuItem(t, menu, "conn.log")
 
-	n := awaitModal(t, a, "the account", byTitle[*ui.Notice]("How margit was reached"))
+	n := awaitModal(t, a, "the account", byTitle[*ui.Notice]("Connection Log — margit"))
 	for _, want := range []string{"connecting to", "connected to margit"} {
 		if !strings.Contains(n.Message(), want) {
 			t.Errorf("the account does not say %q: %q", want, n.Message())
@@ -153,7 +153,7 @@ func TestThePaletteShowsHowAMachineWasReached(t *testing.T) {
 
 	runFromPalette(t, a, "conn.log")
 
-	n := awaitModal(t, a, "the account", byTitle[*ui.Notice]("How margit was reached"))
+	n := awaitModal(t, a, "the account", byTitle[*ui.Notice]("Connection Log — margit"))
 	if !strings.Contains(n.Message(), "connected to margit") {
 		t.Errorf("the account is %q", n.Message())
 	}
@@ -185,8 +185,10 @@ func TestAMachineStillBeingReachedShowsItsAccountSoFar(t *testing.T) {
 	menu := clickPlus(t, a, "margit")
 	chooseMenuItem(t, menu, "conn.log")
 
+	// One title whichever state the connection is in: the log itself
+	// says whether it is still connecting.
 	n := awaitModal(t, a, "the account so far",
-		byTitle[*ui.Notice]("How margit is being reached"))
+		byTitle[*ui.Notice]("Connection Log — margit"))
 	if !strings.Contains(n.Message(), "connecting to") {
 		t.Errorf("the account so far is %q", n.Message())
 	}
@@ -221,7 +223,7 @@ func TestThePlusOnATakenOverWindowShowsHowItWasReached(t *testing.T) {
 	}
 	chooseMenuItem(t, menu, "conn.log")
 
-	n := awaitModal(t, client, "the account", byTitle[*ui.Notice]("How statio was reached"))
+	n := awaitModal(t, client, "the account", byTitle[*ui.Notice]("Connection Log — statio"))
 	if !strings.Contains(n.Message(), "taking over") {
 		t.Errorf("the account does not say what was done: %q", n.Message())
 	}

@@ -104,7 +104,7 @@ func TestThePictureBarOffersWhatThereIsToDo(t *testing.T) {
 	g := drawReader(r, 60, 10)
 
 	bar := readerRow(g, 9)
-	for _, want := range []string{"Reread", "Close"} {
+	for _, want := range []string{"Reload", "Close"} {
 		if !strings.Contains(bar, want) {
 			t.Errorf("the bar reads %q, want it to offer %q", bar, want)
 		}

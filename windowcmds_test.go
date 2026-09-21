@@ -20,7 +20,7 @@ func TestClosingTheWindowAsksFirst(t *testing.T) {
 	if !ok {
 		t.Fatalf("nothing asked: %T", a.root.Modal())
 	}
-	if !strings.Contains(f.Title, "Close") {
+	if !strings.Contains(f.Title, "Exit") {
 		t.Errorf("the question is %q", f.Title)
 	}
 	if got := strings.Join(f.Lines, " "); !strings.Contains(got, "pane") {
@@ -40,7 +40,7 @@ func TestSayingNoLeavesTheWindow(t *testing.T) {
 	a.askToQuit()
 	f := a.root.Modal().(*ui.Form)
 
-	pressButton(t, a, f, "Cancel")
+	pressButton(t, a, f, btnCancel)
 	a.pump.run()
 
 	if a.quit.Load() {
@@ -62,7 +62,7 @@ func TestSayingYesClosesTheWindow(t *testing.T) {
 	a.askToQuit()
 	f := a.root.Modal().(*ui.Form)
 
-	pressButton(t, a, f, "Close it")
+	pressButton(t, a, f, btnExit)
 	a.pump.run()
 
 	if !a.quit.Load() {
@@ -216,7 +216,7 @@ func TestAboutSaysWhatThisIs(t *testing.T) {
 	if !ok {
 		t.Fatalf("nothing came up: %T", a.root.Modal())
 	}
-	if n.Title != "gridterm" {
+	if n.Title != "About gridterm" {
 		t.Errorf("it is titled %q", n.Title)
 	}
 	if !strings.Contains(n.Message(), "terminal") {

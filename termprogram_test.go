@@ -127,9 +127,9 @@ func TestTheWindowCanBeToldWhatToCallItself(t *testing.T) {
 	if err := a.openTermProgram(); err != nil {
 		t.Fatalf("openTermProgram: %v", err)
 	}
-	f := awaitModal(t, a, "the name dialog", byTitle[*ui.Form]("What this window calls itself"))
-	typeIntoField(t, a, f, "TERM_PROGRAM", "iTerm.app")
-	pressButton(t, a, f, "Save")
+	f := awaitModal(t, a, "the name dialog", byTitle[*ui.Form](dlgTermProgram))
+	typeIntoField(t, a, f, fldTermProgram, "iTerm.app")
+	pressButton(t, a, f, btnSave)
 
 	if f.Error() != nil {
 		t.Fatalf("Save: %v", f.Error())
@@ -156,9 +156,9 @@ func TestClearingTheNameGoesBackToGridterm(t *testing.T) {
 	if err := a.openTermProgram(); err != nil {
 		t.Fatalf("openTermProgram: %v", err)
 	}
-	f := awaitModal(t, a, "the name dialog", byTitle[*ui.Form]("What this window calls itself"))
-	retypeField(t, a, f, "TERM_PROGRAM", "")
-	pressButton(t, a, f, "Save")
+	f := awaitModal(t, a, "the name dialog", byTitle[*ui.Form](dlgTermProgram))
+	retypeField(t, a, f, fldTermProgram, "")
+	pressButton(t, a, f, btnSave)
 
 	if got := a.called.name(); got != "" {
 		t.Errorf("the window calls itself %q, want gridterm's own", got)

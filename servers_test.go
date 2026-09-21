@@ -54,9 +54,9 @@ func TestOpenServerRejectsABadTarget(t *testing.T) {
 	if err := a.openServer(); err != nil {
 		t.Fatalf("openServer: %v", err)
 	}
-	f := awaitModal(t, a, "the Connect to a server dialog", byTitle[*ui.Form]("Connect to a server"))
-	typeIntoField(t, a, f, "Server", "host:nope")
-	pressButton(t, a, f, "Connect")
+	f := awaitModal(t, a, "the Connect to Server dialog", byTitle[*ui.Form](dlgConnectServer))
+	typeIntoField(t, a, f, fldServer, "host:nope")
+	pressButton(t, a, f, btnConnect)
 
 	if a.root.Modal() != f {
 		t.Fatal("the dialog closed on a target it could not parse")
@@ -64,7 +64,7 @@ func TestOpenServerRejectsABadTarget(t *testing.T) {
 	if f.Error() == nil {
 		t.Fatal("nothing said why the target was refused")
 	}
-	if got := f.Field("Server").Text(); got != "host:nope" {
+	if got := f.Field(fldServer).Text(); got != "host:nope" {
 		t.Errorf("the dialog lost what was typed: %q", got)
 	}
 }
@@ -383,9 +383,9 @@ func TestOpenServerConnectsThroughTheForm(t *testing.T) {
 	if err := a.openServer(); err != nil {
 		t.Fatalf("openServer: %v", err)
 	}
-	f := awaitModal(t, a, "the Connect to a server dialog", byTitle[*ui.Form]("Connect to a server"))
-	typeIntoField(t, a, f, "Server", fmt.Sprintf("tester@%s:%d", host, port))
-	pressButton(t, a, f, "Connect")
+	f := awaitModal(t, a, "the Connect to Server dialog", byTitle[*ui.Form](dlgConnectServer))
+	typeIntoField(t, a, f, fldServer, fmt.Sprintf("tester@%s:%d", host, port))
+	pressButton(t, a, f, btnConnect)
 
 	// A row holds the place while the connection is made.
 	waitForConnecting(t, a)

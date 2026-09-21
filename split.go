@@ -27,7 +27,7 @@ func (a *app) splitFocused(dir ui.Dir) error {
 	}
 
 	var hide func()
-	c := ui.NewChooser("Split with…", func() {
+	c := ui.NewChooser("Split with", func() {
 		if hide != nil {
 			hide()
 		}
@@ -36,7 +36,7 @@ func (a *app) splitFocused(dir ui.Dir) error {
 	a.addSplitChoices(c, dir, current)
 	hide = a.showModal(c, nil)
 	if a.root.Modal() != ui.Widget(c) {
-		return errors.New("there is no room to ask")
+		return errors.New("Window too small")
 	}
 	a.markDirty()
 	return nil

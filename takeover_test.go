@@ -107,10 +107,10 @@ func TestConnectingToAWindowOpensNothingOnIt(t *testing.T) {
 	withPanel(t, client)
 
 	runFromPalette(t, client, "serve.attach")
-	f := awaitModal(t, client, "the Connect to another window dialog", byTitle[*ui.Form]("Connect to another window"))
-	typeIntoField(t, client, f, "Machine", host.serving.addr())
-	typeIntoField(t, client, f, "Key file", keyFile)
-	pressButton(t, client, f, "Connect")
+	f := awaitModal(t, client, "the Connect to Window dialog", byTitle[*ui.Form](dlgConnectWindow))
+	typeIntoField(t, client, f, fldHost, host.serving.addr())
+	typeIntoField(t, client, f, fldKeyFile, keyFile)
+	pressButton(t, client, f, btnConnect)
 	// The window has never been reached before, so its key is offered
 	// and has to be accepted, the same as any other machine's.
 	answer(t, client, "Connect")
@@ -168,10 +168,10 @@ func TestLettingGoOfATakenWindowTakesItsPanes(t *testing.T) {
 	// From the palette rather than the menu bar, because a bar would take
 	// a row off a window whose size is the point of this fixture.
 	runFromPalette(t, client, "serve.attach")
-	f := awaitModal(t, client, "the Connect to another window dialog", byTitle[*ui.Form]("Connect to another window"))
-	typeIntoField(t, client, f, "Machine", addr)
-	typeIntoField(t, client, f, "Key file", keyFile)
-	pressButton(t, client, f, "Connect")
+	f := awaitModal(t, client, "the Connect to Window dialog", byTitle[*ui.Form](dlgConnectWindow))
+	typeIntoField(t, client, f, fldHost, addr)
+	typeIntoField(t, client, f, fldKeyFile, keyFile)
+	pressButton(t, client, f, btnConnect)
 	answer(t, client, "Connect")
 	waitFor(t, client, "the window to be connected to", func() bool {
 		return client.windows.named(addr) != nil && len(client.panes) > panes
@@ -562,7 +562,7 @@ func TestTakingOverTheSameWindowTwiceAsks(t *testing.T) {
 	// the one on its way or to throw it away and start again.
 	title := "Already connecting to " + addr
 	f := awaitModal(t, a, "the "+title+" dialog", byTitle[*ui.Form](title))
-	pressButton(t, a, f, "Leave it")
+	pressButton(t, a, f, btnCancel)
 	if a.machines.beingMade() != 1 {
 		t.Fatalf("%d windows are being taken over, want the first one only", a.machines.beingMade())
 	}
@@ -779,11 +779,11 @@ func TestAConnectionThatWentIsOfferedAWayBack(t *testing.T) {
 	})
 
 	f := awaitModal(t, client, "the offer to take over again",
-		byTitle[*ui.Form]("Connection lost"))
+		byTitle[*ui.Form](dlgConnectionLost))
 	if f == nil {
 		t.Fatal("nothing was offered")
 	}
-	pressButton(t, client, f, "Reconnect")
+	pressButton(t, client, f, btnReconnect)
 
 	waitFor(t, client, "the window to be taken over again", func() bool {
 		return client.windows.named(addr) != nil
@@ -839,10 +839,10 @@ func TestAWindowThatQuitsKeepsARowThatCanBeCleared(t *testing.T) {
 	takeOver := func(at, name string) {
 		t.Helper()
 		chooseMenuItem(t, openMenuWith(t, client, "serve.attach"), "serve.attach")
-		f := awaitModal(t, client, "the Connect to another window dialog", byTitle[*ui.Form]("Connect to another window"))
-		typeIntoField(t, client, f, "Machine", at)
-		typeIntoField(t, client, f, "Key file", keyFile)
-		pressButton(t, client, f, "Connect")
+		f := awaitModal(t, client, "the Connect to Window dialog", byTitle[*ui.Form](dlgConnectWindow))
+		typeIntoField(t, client, f, fldHost, at)
+		typeIntoField(t, client, f, fldKeyFile, keyFile)
+		pressButton(t, client, f, btnConnect)
 		answer(t, client, "Connect")
 		waitFor(t, client, "the window to be connected to", func() bool {
 			return client.windows.named(name) != nil
@@ -940,8 +940,8 @@ func TestTakingOverAnAddressAMachineIsUnderIsRefused(t *testing.T) {
 		t.Fatalf("the take-over dialog: %v", err)
 	}
 	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
-	typeIntoField(t, a, f, "Machine", addr)
-	pressButton(t, a, f, "Connect")
+	typeIntoField(t, a, f, fldHost, addr)
+	pressButton(t, a, f, btnConnect)
 
 	if a.root.Modal() != f {
 		t.Fatal("the dialog closed on an address it cannot take over")
@@ -1004,10 +1004,10 @@ func TestAWindowIsOfferedATerminalAndABrowser(t *testing.T) {
 
 	var terminal, files bool
 	for _, title := range commandTitles(client) {
-		if strings.Contains(title, "Open a terminal on "+addr) {
+		if strings.Contains(title, "New Terminal on "+addr) {
 			terminal = true
 		}
-		if strings.Contains(title, "Browse files on "+addr) {
+		if strings.Contains(title, "Browse Files on "+addr) {
 			files = true
 		}
 	}
@@ -2373,13 +2373,13 @@ func TestAskingAboutTheWindowOnItsWayOpensFromTheButton(t *testing.T) {
 		t.Fatalf("open the form: %v", err)
 	}
 	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
-	typeIntoField(t, a, f, "Machine", addr)
-	typeIntoField(t, a, f, "Key file", keyFile)
-	pressButton(t, a, f, "Connect")
+	typeIntoField(t, a, f, fldHost, addr)
+	typeIntoField(t, a, f, fldKeyFile, keyFile)
+	pressButton(t, a, f, btnConnect)
 
 	title := "Already connecting to " + addr
 	ask := awaitModal(t, a, "the "+title+" dialog", byTitle[*ui.Form](title))
-	pressButton(t, a, ask, "Leave it")
+	pressButton(t, a, ask, btnCancel)
 	if a.machines.connecting(addr) == nil {
 		t.Fatal("the first attempt was let go of")
 	}
@@ -2553,10 +2553,10 @@ func takeOverFromTheDialog(t *testing.T, a *testApp, addr, keyFile string) *term
 	t.Helper()
 	m := openMenuWith(t, a, "serve.attach")
 	chooseMenuItem(t, m, "serve.attach")
-	f := awaitModal(t, a, "the Connect to another window dialog", byTitle[*ui.Form]("Connect to another window"))
-	typeIntoField(t, a, f, "Machine", addr)
-	typeIntoField(t, a, f, "Key file", keyFile)
-	pressButton(t, a, f, "Connect")
+	f := awaitModal(t, a, "the Connect to Window dialog", byTitle[*ui.Form](dlgConnectWindow))
+	typeIntoField(t, a, f, fldHost, addr)
+	typeIntoField(t, a, f, fldKeyFile, keyFile)
+	pressButton(t, a, f, btnConnect)
 	return paneOnTheWindow(t, a)
 }
 
@@ -2592,7 +2592,7 @@ func paneOnTheWindow(t *testing.T, a *testApp) *term.Terminal {
 func saveWindowFromTheDialog(t *testing.T, a *testApp, name, addr, keyFile string) {
 	t.Helper()
 	f := addServerFromTheDialog(t, a, name, addr, keyFile)
-	pressButton(t, a, f, "Save")
+	pressButton(t, a, f, btnSave)
 	a.pump.run()
 }
 
@@ -2602,12 +2602,12 @@ func addServerFromTheDialog(t *testing.T, a *testApp, name, addr, keyFile string
 	t.Helper()
 	m := openMenuWith(t, a, "server.add")
 	chooseMenuItem(t, m, "server.add")
-	f := awaitModal(t, a, "the Add a server dialog", byTitle[*ui.Form]("Add a server"))
-	typeIntoField(t, a, f, "Name", name)
-	typeIntoField(t, a, f, "Server", addr)
-	typeIntoField(t, a, f, "Key file", keyFile)
-	stepOptions(t, a, f, "Kind")
-	if got := f.Field("Kind").Text(); got != kindWindow {
+	f := awaitModal(t, a, "the Add a server dialog", byTitle[*ui.Form]("Add Server"))
+	typeIntoField(t, a, f, fldName, name)
+	typeIntoField(t, a, f, fldServer, addr)
+	typeIntoField(t, a, f, fldKeyFile, keyFile)
+	stepOptions(t, a, f, "Type")
+	if got := f.Field(fldType).Text(); got != kindWindow {
 		t.Fatalf("the kind stepped to %q, want %q", got, kindWindow)
 	}
 	return f
@@ -2815,7 +2815,7 @@ func TestASecondNameForOneWindowIsRefused(t *testing.T) {
 	pane := paneOnTheWindow(t, client)
 
 	f := addServerFromTheDialog(t, client, "spare", addr, keyFile)
-	pressButton(t, client, f, "Save")
+	pressButton(t, client, f, btnSave)
 
 	if client.root.Modal() != ui.Widget(f) {
 		t.Fatal("the dialog closed, so what was typed is gone")
@@ -2856,10 +2856,10 @@ func TestAWindowSavedDuringTheDialLandsUnderItsNewName(t *testing.T) {
 	// posts back.
 	m := openMenuWith(t, client, "serve.attach")
 	chooseMenuItem(t, m, "serve.attach")
-	f := awaitModal(t, client, "the Connect to another window dialog", byTitle[*ui.Form]("Connect to another window"))
-	typeIntoField(t, client, f, "Machine", addr)
-	typeIntoField(t, client, f, "Key file", keyFile)
-	pressButton(t, client, f, "Connect")
+	f := awaitModal(t, client, "the Connect to Window dialog", byTitle[*ui.Form](dlgConnectWindow))
+	typeIntoField(t, client, f, fldHost, addr)
+	typeIntoField(t, client, f, fldKeyFile, keyFile)
+	pressButton(t, client, f, btnConnect)
 	waitUntil(t, "work to be queued for the window", func() bool { return client.pump.pending() > 0 })
 
 	// Saved under a name while the dial waits to land. Written straight
@@ -3154,10 +3154,10 @@ func TestLeavingAWindowLeavesThePaneItOpenedRunningThere(t *testing.T) {
 	withPanel(t, client)
 	panes := len(client.panes)
 	runFromPalette(t, client, "serve.attach")
-	f := awaitModal(t, client, "the Connect to another window dialog", byTitle[*ui.Form]("Connect to another window"))
-	typeIntoField(t, client, f, "Machine", addr)
-	typeIntoField(t, client, f, "Key file", keyFile)
-	pressButton(t, client, f, "Connect")
+	f := awaitModal(t, client, "the Connect to Window dialog", byTitle[*ui.Form](dlgConnectWindow))
+	typeIntoField(t, client, f, fldHost, addr)
+	typeIntoField(t, client, f, fldKeyFile, keyFile)
+	pressButton(t, client, f, btnConnect)
 	answer(t, client, "Connect")
 	waitFor(t, client, "the window to be connected to", func() bool {
 		return client.windows.named(addr) != nil && len(client.panes) > panes
@@ -3221,7 +3221,7 @@ func TestClickingTheClientRowSaysWhatIsBeingServed(t *testing.T) {
 	host.pump.run()
 
 	f := awaitModal(t, host, "what this window is serving",
-		byTitle[*ui.Form]("Serving this window"))
+		byTitle[*ui.Form](dlgServingWindow))
 	said := strings.Join(f.Lines, " ")
 	if !strings.Contains(said, host.serving.addr()) {
 		t.Errorf("it says %q, want it to name the address it is serving on", said)

@@ -10,7 +10,7 @@ the command, so a line can be followed wherever it moves next.
 
 **The whole of what a line does is written along the bottom row of the
 window while a menu is open.** The menus say the short half -- "Right"
-under a "Split" header -- and the row says "Split right". It is a row
+under a "Split" header -- and the row says "Split Right…". It is a row
 borrowed for the moment a menu is up, not a bar that costs a row of
 every pane. The palette uses the whole title too.
 
@@ -43,7 +43,7 @@ windows and agents, and the program.
 - `[id: pane.close]` Pane — `Ctrl+Shift+W`
 - `[id: sidebar.closeRow]` Selected Row
 - `[id: conn.disconnect]` Machine
-- `[id: conn.clearFinished]` All Finished
+- `[id: conn.clearFinished]` Clear Finished
 - ⟨separator⟩
 - `[id: app.exit]` Exit
 
@@ -55,9 +55,9 @@ that looked like one ladder would have acted on two different things.
 
 - `[id: edit.copy]` Copy — `Ctrl+Shift+C`, `Ctrl+Insert`
 - `[id: edit.paste]` Paste — `Ctrl+Shift+V`, `Shift+Insert`
-- `[id: edit.pasteImage]` Paste Image as File… — `Ctrl+Alt+V`
+- `[id: edit.pasteImage]` Paste Image as File — `Ctrl+Alt+V`
 - ⟨separator⟩
-- `[id: pane.scrollback]` Find in Scrollback…
+- `[id: pane.scrollback]` Find in Scrollback
 
 "in Scrollback" because it opens the text in the file viewer, in a
 pane of its own. A bare "Find" would not lead anyone to expect that.
@@ -78,14 +78,14 @@ pane of its own. A bare "Find" would not lead anyone to expect that.
 ## `[menu: pane]` Pane
 
 - ⟨header: Split⟩
-- `[id: pane.splitRight]` Right — `Ctrl+Shift+D`
-- `[id: pane.splitDown]` Down — `Ctrl+Shift+E`
+- `[id: pane.splitRight]` Right… — `Ctrl+Shift+D`
+- `[id: pane.splitDown]` Down… — `Ctrl+Shift+E`
 - `[id: pane.popOut]` Pop Out — `Ctrl+Shift+U`
 - ⟨header: Go To⟩
 - `[id: pane.nextInSidebar]` Next — `Ctrl+PageDown`
 - `[id: pane.previousInSidebar]` Previous — `Ctrl+PageUp`
-- `[id: pane.next]` Last Used — `Ctrl+Tab`
-- `[id: pane.previous]` Last Used, Reversed — `Ctrl+Shift+Tab`
+- `[id: pane.next]` Next Recent — `Ctrl+Tab`
+- `[id: pane.previous]` Previous Recent — `Ctrl+Shift+Tab`
 - `[id: view.switcher]` All Panes… — `Ctrl+Shift+A`
 - `[id: sidebar.focus]` Sidebar — `Ctrl+Shift+L`
 
@@ -102,7 +102,7 @@ which is somewhere rather than nowhere.
 - `[id: conn.socks]` SOCKS Proxy…
 - ⟨header: Files⟩
 - `[id: files.goTo]` Go to Directory… — `Ctrl+Shift+G`
-- `[id: files.copies]` Remembered Copies…
+- `[id: files.copies]` Saved Copies…
 - ⟨header: This Machine⟩
 - `[id: conn.log]` Connection Log
 - `[id: shell.setup]` Shell Setup ✓
@@ -115,11 +115,11 @@ machine's row in the sidebar.
 - ⟨header: Connect To⟩ *(only when there is a saved server)*
 - ⟨built at run time⟩ the saved servers, under their bare names
 - ⟨separator⟩
-- `[id: server.connect]` Connect… — `Ctrl+Shift+N`
+- `[id: server.connect]` Connect to Server… — `Ctrl+Shift+N`
 - ⟨separator⟩
 - `[id: server.add]` Add Server…
 - `[id: server.editThis]` Edit This Server…
-- `[id: server.forget]` Forget This Server…
+- `[id: server.forget]` Remove This Server…
 - ⟨header: SSH Keys⟩
 - `[id: sshkey.make]` New Key…
 - `[id: sshkey.lock]` Lock Keys
@@ -131,19 +131,19 @@ machine's row in the sidebar.
 
 - ⟨header: Windows⟩
 - `[id: serve.window]` Serve This One…
-- `[id: serve.attach]` Attach to Another…
+- `[id: serve.attach]` Connect to Another…
 - ⟨header: Agent⟩
-- `[id: agent.hand]` Share This Pane with an Agent… *(reads "Add This
-  Pane to the Share…" once a share is open)*
-- `[id: agent.take]` Remove Pane
-- `[id: agent.share]` Show Share… *(only while a share is open)*
-- `[id: agent.typed]` Typing History…
+- `[id: agent.hand]` Share Pane…
+- `[id: agent.take]` Stop Sharing Pane
+- `[id: agent.share]` Show Share *(only while a share is open)*
+- `[id: agent.typed]` Typing History
 
 ## `[menu: options]` Options
 
 - `[id: view.theme]` Theme…
+- `[id: shell.termProgram]` Terminal Identity…
 - ⟨header: Starter Files⟩
-- `[id: view.themesStart]` New Theme File…
+- `[id: view.themesStart]` New Theme File
 - `[id: shortcuts.write]` New Shortcuts File
 - ⟨header: Reload⟩
 - `[id: view.themesReload]` Themes
@@ -200,5 +200,5 @@ calls it now agree:
 - **Mnemonics are not drawn.** `&File &Edit &View &Pane &Machine
   &Servers Sh&are &Options &Help` has no clashes if they are wanted.
 - **The rows that only make sense sometimes are not greyed out.** Edit
-  This Server and Forget This Server are live whatever the focused
+  This Server and Remove This Server are live whatever the focused
   pane is on.

@@ -38,10 +38,10 @@ func TestThePlusOnASavedServerOffersToForgetIt(t *testing.T) {
 	edit := awaitModal(t, a, "the Edit edge dialog", byTitle[*ui.Form]("Edit edge"))
 	// The default port is left off, so the field says the target as the
 	// list holds it rather than as it was typed.
-	if got := edit.Field("Server").Text(); got != "user@edge.example" {
+	if got := edit.Field(fldServer).Text(); got != "user@edge.example" {
 		t.Errorf("the edit dialog holds %q, want the machine that was saved", got)
 	}
-	pressButton(t, a, edit, "Cancel")
+	pressButton(t, a, edit, btnCancel)
 
 	chooseMenuItem(t, clickPlus(t, a, "edge"), "server.forget")
 	gone := awaitModal(t, a, "the Remove edge? dialog", byTitle[*ui.Form]("Remove edge?"))
@@ -164,7 +164,7 @@ func TestAServerMessageGoesWhenTheConnectionIsSettled(t *testing.T) {
 	})
 }
 
-// The "Give up" button on a server's message gives up.
+// The "Cancel" button on a server's message stops the connection.
 //
 // It used to look the machine up by what the server calls itself, which
 // is an address, while the window holds the name the user gave it. The
@@ -185,7 +185,7 @@ func TestGivingUpOnAServerMessageGivesUp(t *testing.T) {
 	})
 
 	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
-	pressButton(t, a, f, "Give up")
+	pressButton(t, a, f, btnCancel)
 	a.pump.run()
 	if !gave {
 		t.Error("the button gave up on nothing")
@@ -252,8 +252,8 @@ func TestForgettingAConnectedMachineClosesIt(t *testing.T) {
 	a := aSavedMachineConnectedTo(t, s, "edge")
 
 	f := openTheForgetDialog(t, a, "edge")
-	dialogSays(t, f, "edge is connected.", "Forgetting it closes that connection.")
-	pressButton(t, a, f, "Remove")
+	dialogSays(t, f, "edge is connected.", "Removing it closes the")
+	pressButton(t, a, f, btnRemove)
 
 	if a.machines.named("edge") != nil {
 		t.Error("the connection is still held")
@@ -298,13 +298,13 @@ func TestForgettingAJumpHostSaysWhatElseGoesWithIt(t *testing.T) {
 	// machine db is still reached through.
 	chooseMenuItem(t, clickPlus(t, a, "db"), "server.editThis")
 	edit := awaitModal(t, a, "the Edit db dialog", byTitle[*ui.Form]("Edit db"))
-	retypeField(t, a, edit, "Through", "")
-	pressButton(t, a, edit, "Save")
+	retypeField(t, a, edit, fldJumpHost, "")
+	pressButton(t, a, edit, btnSave)
 
 	f := openTheForgetDialog(t, a, "edge")
 	dialogSays(t, f,
-		"Forgetting it closes that connection, and everything reached through it: 2 machines, 1 pane.")
-	pressButton(t, a, f, "Remove")
+		"and everything through it: 2 machines, 1 pane.")
+	pressButton(t, a, f, btnRemove)
 
 	if n := a.machines.count(); n != 0 {
 		t.Errorf("it is still holding %v, want none of them", a.machines.names())
@@ -324,10 +324,8 @@ func TestForgettingAWindowTakenOverLetsGoOfIt(t *testing.T) {
 	}, host)
 
 	f := openTheForgetDialog(t, client, "office")
-	dialogSays(t, f,
-		"This window is connected to office.",
-		"Forgetting it lets go of office and closes its panes.")
-	pressButton(t, client, f, "Remove")
+	dialogSays(t, f, "office is connected. Removing it closes the")
+	pressButton(t, client, f, btnRemove)
 
 	if n := client.windows.count(); n != 0 {
 		t.Errorf("it is still holding %v", client.windows.names())
@@ -359,10 +357,8 @@ func TestForgettingAMachineStillOnItsWayGivesUp(t *testing.T) {
 	pane := theConnectingPane(t, a, "edge")
 
 	f := openTheForgetDialog(t, a, "edge")
-	dialogSays(t, f,
-		"The window is still connecting to edge.",
-		"Forgetting it gives up on that connection.")
-	pressButton(t, a, f, "Remove")
+	dialogSays(t, f, "Removing it cancels the connection in progress.")
+	pressButton(t, a, f, btnRemove)
 
 	if a.machines.connecting("edge") != nil {
 		t.Error("the window is still holding the name, so nothing can try again")
@@ -392,7 +388,7 @@ func TestForgettingReportsTroubleClosingOnItsOwn(t *testing.T) {
 
 	pressButton(t, a, openTheForgetDialog(t, a, "edge"), "Remove")
 
-	awaitModal(t, a, "the notice about the close", byTitle[*ui.Notice]("Trouble closing edge"))
+	awaitModal(t, a, "the notice about the close", byTitle[*ui.Notice]("Could not close edge"))
 	if _, ok := a.book.Lookup("edge"); ok {
 		t.Error("edge is still in the server list")
 	}
@@ -406,7 +402,7 @@ func TestKeepingAServerClosesNothing(t *testing.T) {
 	s := sshtest.New(t)
 	a := aSavedMachineConnectedTo(t, s, "edge")
 
-	pressButton(t, a, openTheForgetDialog(t, a, "edge"), "Keep it")
+	pressButton(t, a, openTheForgetDialog(t, a, "edge"), "Cancel")
 
 	if a.machines.named("edge") == nil {
 		t.Error("the connection was closed by the button that keeps the machine")
@@ -431,7 +427,7 @@ func TestAServerThatCannotBeForgottenKeepsItsConnection(t *testing.T) {
 	a.refreshServers()
 
 	f := openTheForgetDialog(t, a, "edge")
-	pressButton(t, a, f, "Remove")
+	pressButton(t, a, f, btnRemove)
 
 	if f.Error() == nil {
 		t.Fatal("nothing said why edge could not be forgotten")
@@ -461,12 +457,10 @@ func TestForgettingAnUnconnectedServerSaysOnlyThatItIsForgotten(t *testing.T) {
 
 	f := openTheForgetDialog(t, a, "edge")
 
-	body := strings.Join(f.Lines, "\n")
-	if !strings.Contains(body, "It is only forgotten here.") {
-		t.Errorf("the dialog says %q", body)
-	}
-	if strings.Contains(body, "connect") || strings.Contains(body, "closes") {
-		t.Errorf("the dialog talks about a connection there is none of: %q", body)
+	// Nothing at all: the title says which machine and that it is being
+	// removed, and there is nothing open for the removal to close.
+	if len(f.Lines) != 0 {
+		t.Errorf("the dialog says %q about a machine nothing is open on", f.Lines)
 	}
 }
 
@@ -528,5 +522,137 @@ func dialogSays(t *testing.T, f *ui.Form, want ...string) {
 		if !strings.Contains(body, line) {
 			t.Errorf("the dialog does not say %q:\n%s", line, body)
 		}
+	}
+}
+
+// A sign-in message with one link offers to open it.
+//
+// The link is the whole point of the message: a server that holds the
+// handshake open while the user signs in elsewhere has told them where
+// to go, and copying an address out of a dialog to paste it into a
+// browser is the long way round.
+func TestAServerMessageWithOneLinkOffersToOpenIt(t *testing.T) {
+	a := newTestApp(t, 100, 30)
+	withPanel(t, a)
+	withDialogs(t, a)
+	opened := opensInstead(t)
+	ask := &askUser{app: a.app}
+
+	ask.Notice(t.Context(), remote.Notice{
+		User: "rdp", Host: "10.0.0.5:22",
+		Instruction: "To authenticate, visit: https://login.example/a/1234",
+	})
+	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
+
+	pressButton(t, a, f, btnOpenLink)
+	a.pump.run()
+	if len(*opened) != 1 || (*opened)[0] != "https://login.example/a/1234" {
+		t.Fatalf("it opened %v, want the one link the server sent", *opened)
+	}
+	// The dialog stays: the server is still waiting, and it goes when
+	// the connection settles.
+	if a.root.Modal() == nil {
+		t.Error("the dialog closed, and the server is still waiting")
+	}
+}
+
+// The button opens nothing by itself. A browser must not be launched at
+// an address a server chose without the user pressing anything.
+func TestAServerMessageOpensNoLinkUntilItIsPressed(t *testing.T) {
+	a := newTestApp(t, 100, 30)
+	withPanel(t, a)
+	withDialogs(t, a)
+	opened := opensInstead(t)
+	ask := &askUser{app: a.app}
+
+	ask.Notice(t.Context(), remote.Notice{
+		User: "rdp", Host: "here",
+		Instruction: "visit https://login.example/a/1234",
+	})
+	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
+
+	if len(*opened) != 0 {
+		t.Fatalf("it opened %v without being asked", *opened)
+	}
+	// And Enter does not do it either: this dialog arrives unasked for,
+	// in the middle of a handshake.
+	at, isButton := f.Focused()
+	if !isButton || f.Buttons()[at].Title != "Close" {
+		t.Errorf("the dialog opens on %v, want Close", f.Buttons()[at].Title)
+	}
+}
+
+// Several links, or none, leave the button off: there is nothing to
+// guess between, and Copy still hands over what the server said.
+func TestAServerMessageOffersNoLinkButtonWhenThereIsNoOneLink(t *testing.T) {
+	for _, c := range []struct{ what, said string }{
+		{"none", "your code is 1234"},
+		{"two", "visit https://one.example/a or https://two.example/b"},
+		{"a scheme that is not the web", "run file:///etc/passwd"},
+	} {
+		t.Run(c.what, func(t *testing.T) {
+			a := newTestApp(t, 100, 30)
+			withPanel(t, a)
+			withDialogs(t, a)
+			ask := &askUser{app: a.app}
+
+			ask.Notice(t.Context(), remote.Notice{
+				User: "rdp", Host: "here", Instruction: c.said,
+			})
+			f := awaitModal[*ui.Form](t, a, "a dialog", nil)
+
+			for _, b := range f.Buttons() {
+				if b.Title == "Open link" {
+					t.Fatalf("it offers to open a link for %q", c.said)
+				}
+			}
+		})
+	}
+}
+
+// The same address twice is still one address, so the button stays.
+func TestAServerMessageWithOneLinkWrittenTwiceStillOffersIt(t *testing.T) {
+	a := newTestApp(t, 100, 30)
+	withPanel(t, a)
+	withDialogs(t, a)
+	ask := &askUser{app: a.app}
+
+	ask.Notice(t.Context(), remote.Notice{
+		User: "rdp", Host: "here",
+		Name:        "visit https://login.example/a",
+		Instruction: "again: https://login.example/a",
+	})
+	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
+
+	var offers bool
+	for _, b := range f.Buttons() {
+		if b.Title == "Open link" {
+			offers = true
+		}
+	}
+	if !offers {
+		t.Error("one address written twice was read as two")
+	}
+}
+
+// The punctuation a link is written beside is not part of it.
+func TestALinkIsTrimmedOfWhatItWasWrittenBeside(t *testing.T) {
+	for _, c := range []struct{ said, want string }{
+		{"go to https://a.example/x.", "https://a.example/x"},
+		{"go to https://a.example/x,", "https://a.example/x"},
+		{"(https://a.example/x)", "https://a.example/x"},
+		{"<https://a.example/x>", "https://a.example/x"},
+		{`"https://a.example/x"`, "https://a.example/x"},
+		{"HTTPS://A.example/x", "HTTPS://A.example/x"},
+	} {
+		t.Run(c.said, func(t *testing.T) {
+			got, ok := onlyLink([]string{c.said})
+			if !ok {
+				t.Fatalf("no link was found in %q", c.said)
+			}
+			if got != c.want {
+				t.Errorf("it found %q, want %q", got, c.want)
+			}
+		})
 	}
 }

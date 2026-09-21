@@ -11,7 +11,6 @@ import (
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/jobs"
 	"github.com/marrasen/gridterm/meter"
-	"github.com/marrasen/gridterm/settings"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/vfs"
 )
@@ -38,10 +37,13 @@ type jobDialog struct {
 	said []string
 
 	// done is whether the buttons on screen are the ones a finished job
-	// offers, and kept whether the copy was remembered when they were
-	// last built.
+	// offers, and kept whether the copy is on the saved list.
 	done bool
 	kept bool
+
+	// saveBox is the tick that keeps this copy, put on the dialog when
+	// the job finished and nil until then.
+	saveBox *ui.Field
 
 	// laidOut counts how often the lines have been handed to the form.
 	// It is a field so a test can see that an unchanged frame does no
@@ -92,9 +94,19 @@ func (d *jobDialog) refresh(now time.Time) {
 		d.laidOut++
 		d.SetLines(said)
 	}
-	if p.Done != d.done || (p.Done && d.keptNow() != d.kept) {
+	if p.Done != d.done {
 		d.done = p.Done
 		d.setButtons()
+		return
+	}
+	// The same copy can be saved or dropped from another dialog while
+	// this one is open, so the box follows the list rather than only
+	// what it was set to.
+	if p.Done && d.saveBox != nil {
+		if now := d.keptNow(); now != d.kept {
+			d.kept = now
+			d.saveBox.SetOn(now)
+		}
 	}
 }
 
@@ -114,14 +126,14 @@ func (d *jobDialog) setButtons() {
 	defer func() { d.FocusButton(len(d.Buttons()) - 1) }()
 	if !d.done {
 		d.SetButtons([]ui.Button{
-			{Title: "Cancel", Do: func() error {
+			{Title: btnCancel, Do: func() error {
 				// Not Queue.Drop: the user asked for the work to stop,
 				// not for the row to go, and the row is where the
 				// outcome is read.
 				d.job.Cancel()
 				return nil
 			}},
-			{Title: "Close"},
+			{Title: btnClose},
 		})
 		return
 	}
@@ -130,7 +142,7 @@ func (d *jobDialog) setButtons() {
 	// without asking, and a move has already taken the original away, so
 	// there is nothing at that end to move a second time.
 	if d.job.Kind() == jobs.Copy {
-		buttons = append(buttons, ui.Button{Title: "Repeat", Do: func() error {
+		buttons = append(buttons, ui.Button{Title: btnRepeat, Do: func() error {
 			// Posted for the reason AddButton gives: this dialog closes
 			// as soon as this returns, and closing one takes anything
 			// stacked on top of it -- which is where a failure to start
@@ -139,34 +151,46 @@ func (d *jobDialog) setButtons() {
 			d.app.pump.post(func() { d.app.repeatJob(op, from, to) })
 			return nil
 		}})
-		if saved, can := asSavedCopy(d.job.Op(), d.from, d.to); can {
-			buttons = append(buttons, d.rememberButton(saved))
-		}
+		d.addSaveBox()
 	}
-	d.SetButtons(append(buttons, ui.Button{Title: "Close"}))
+	d.SetButtons(append(buttons, ui.Button{Title: btnClose}))
 }
 
-// rememberButton keeps this copy, or takes it off the list when it is
-// already kept, so the one button says both what it will do and what is
-// already so.
-func (d *jobDialog) rememberButton(saved settings.SavedCopy) ui.Button {
-	d.kept = d.app.copies.has(saved)
-	if d.kept {
-		return ui.Button{Title: "Forget", Keep: true, Do: func() error {
-			if err := d.app.copies.forget(saved); err != nil {
-				return err
-			}
-			d.setButtons()
-			return nil
-		}}
+// addSaveBox puts the box that keeps this copy on the finished dialog,
+// once.
+//
+// A box rather than a button that renamed itself between Remember and
+// Forget: ticked says it is saved and unticked says it is not, which one
+// button could only say by being read twice. It matches the boxes that
+// save a tunnel and a command.
+func (d *jobDialog) addSaveBox() {
+	saved, can := asSavedCopy(d.job.Op(), d.from, d.to)
+	if !can || d.saveBox != nil {
+		return
 	}
-	return ui.Button{Title: "Remember", Keep: true, Do: func() error {
-		if err := d.app.copies.keep(saved); err != nil {
-			return err
+	d.kept = d.app.copies.has(saved)
+	d.saveBox = d.AddTick(fldSaveCopy, d.kept)
+	d.saveBox.OnChange = func(string) {
+		on := d.saveBox.On()
+		if on == d.kept {
+			return
 		}
-		d.setButtons()
-		return nil
-	}}
+		var err error
+		if on {
+			err = d.app.copies.keep(saved)
+		} else {
+			err = d.app.copies.forget(saved)
+		}
+		if err != nil {
+			// Put back, so the box goes on saying what the list holds
+			// rather than what the user asked for and did not get.
+			d.saveBox.SetOn(d.kept)
+			d.SetError(err)
+			return
+		}
+		d.kept = on
+		d.app.markDirty()
+	}
 }
 
 // report is what the dialog says about a job at one moment.

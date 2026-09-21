@@ -407,11 +407,11 @@ func TestThePlusOnAWindowOffersPanesAndFiles(t *testing.T) {
 			t.Errorf("it offers %s, which cannot work on a window", not)
 		}
 	}
-	// And the wording says what letting go of a window means, rather
-	// than talking about a connection to a machine.
+	// The row carries no wording of its own: it is the command's title,
+	// said once, so a window's row and a machine's cannot drift apart.
 	for _, it := range items {
-		if it.Command == "conn.disconnect" && it.Title != "Let go of this window" {
-			t.Errorf("it says %q", it.Title)
+		if it.Command == "conn.disconnect" && it.Title != "" {
+			t.Errorf("the row overrides the command's title with %q", it.Title)
 		}
 	}
 }

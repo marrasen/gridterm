@@ -39,11 +39,18 @@ type testAsk struct {
 
 func newTestAsk() *testAsk { return &testAsk{password: sshtest.Password, trust: true} }
 
+// Passphrase answers once with whatever the test set, and refuses after
+// that.
+//
+// Refusing is what a person does: the asking has no limit any more, so a
+// fake that handed back the same wrong passphrase for ever would never
+// come back. Someone who has watched one passphrase be refused either
+// types a different one or closes the dialog, and this is the second.
 func (a *testAsk) Passphrase(ctx context.Context, key LockedKey) (string, error) {
 	a.mu.Lock()
 	a.keyfiles = append(a.keyfiles, key.Path)
 	held, err := a.held, a.passphraseErr
-	pass := a.passphrase
+	pass, again := a.passphrase, key.Wrong > 0
 	a.mu.Unlock()
 
 	if held != nil {
@@ -52,6 +59,9 @@ func (a *testAsk) Passphrase(ctx context.Context, key LockedKey) (string, error)
 		case <-ctx.Done():
 			return "", ctx.Err()
 		}
+	}
+	if again && err == nil {
+		return "", ErrWrongPassphrase
 	}
 	return pass, err
 }

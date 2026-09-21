@@ -17,7 +17,7 @@ import (
 // scrollbackTitle is what the menu and the palette call it.
 const (
 	scrollbackCommand = "pane.scrollback"
-	scrollbackTitle   = "Search this pane's scrollback"
+	scrollbackTitle   = "Find in Scrollback"
 )
 
 // showScrollback opens the focused pane's screen and the scrollback
@@ -40,8 +40,11 @@ func (a *app) showScrollback() error {
 	}
 	if r := a.scrollbackOf(t); r != nil {
 		// One viewer per pane. A second would show the same text, and
-		// the first is already where the user left it.
+		// the first is already where the user left it. The prompt opens
+		// again, because the command was asked for a second time and it
+		// is a search.
 		a.focus(r)
+		r.AskFind()
 		return nil
 	}
 
@@ -80,6 +83,11 @@ func (a *app) showScrollback() error {
 	a.readers[r] = &reader{row: row, pane: t}
 	a.registry.Add(row)
 	r.Open()
+	// With the find prompt already up, because the command that opened
+	// this is called Find in Scrollback: the caret lands where the user
+	// was going to put it anyway. Escape leaves the text on screen to
+	// read instead.
+	r.AskFind()
 	return nil
 }
 

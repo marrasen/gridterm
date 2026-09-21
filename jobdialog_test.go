@@ -181,7 +181,7 @@ func TestAJobsRowShowsHowFarItHasGot(t *testing.T) {
 		}
 	}
 	// And it offers to stop the copy while it is running.
-	if !offersButton(d, "Cancel") {
+	if !offersButton(d, btnCancel) {
 		t.Errorf("the dialog offers %v while the copy runs", buttonTitles(d))
 	}
 	// The row opens the one dialog it already has rather than a twin.
@@ -264,7 +264,7 @@ func TestACancelThatCouldNotClearUpSaysSo(t *testing.T) {
 	openTheRow(t, a, e)
 	d := awaitModal[*jobDialog](t, a, "the job's dialog", nil)
 
-	pressButton(t, a, d.Form, "Cancel")
+	pressButton(t, a, d.Form, btnCancel)
 	held.let()
 	waitFor(t, a, "the job to stop", func() bool {
 		a.refreshJobs()
@@ -309,7 +309,7 @@ func TestAFinishedDeleteIsNotRepeated(t *testing.T) {
 	tap(t, b, input.KeyDown)
 	tap(t, b, input.KeyF8)
 	ask := awaitModal(t, a, "the delete question", byTitlePrefix[*ui.Form]("Delete"))
-	pressButton(t, a, ask, "Delete")
+	pressButton(t, a, ask, btnDelete)
 
 	var e *conns.Entry
 	waitFor(t, a, "the delete to start", func() bool {
@@ -327,7 +327,7 @@ func TestAFinishedDeleteIsNotRepeated(t *testing.T) {
 	openTheRow(t, a, e)
 	d := awaitModal[*jobDialog](t, a, "the job's dialog", nil)
 	a.refreshJobs()
-	if offersButton(d, "Repeat") {
+	if offersButton(d, btnRepeat) {
 		t.Fatalf("a finished delete offers %v", buttonTitles(d))
 	}
 	if !strings.Contains(dialogText(d), "It finished.") {
@@ -380,10 +380,10 @@ func TestAFinishedJobIsRepeatedFromItsDialog(t *testing.T) {
 	if err := os.Remove(copied); err != nil {
 		t.Fatalf("clearing the copy: %v", err)
 	}
-	if !offersButton(d, "Repeat") {
+	if !offersButton(d, btnRepeat) {
 		t.Fatalf("the finished dialog offers %v", buttonTitles(d))
 	}
-	pressButton(t, a, d.Form, "Repeat")
+	pressButton(t, a, d.Form, btnRepeat)
 
 	waitFor(t, a, "the copy to be done again", func() bool {
 		a.refreshJobs()
@@ -426,7 +426,7 @@ func TestCancellingAJobFromItsDialog(t *testing.T) {
 	openTheRow(t, a, e)
 	d := awaitModal[*jobDialog](t, a, "the job's dialog", nil)
 
-	pressButton(t, a, d.Form, "Cancel")
+	pressButton(t, a, d.Form, btnCancel)
 	// The write it was held in answers, and the job gives up on the next
 	// thing it was going to do.
 	held.let()
@@ -486,7 +486,7 @@ func TestRepeatingAJobWhoseMachineHasGone(t *testing.T) {
 	if err := a.dropMachine(host); err != nil {
 		t.Fatalf("dropMachine: %v", err)
 	}
-	pressButton(t, a, d.Form, "Repeat")
+	pressButton(t, a, d.Form, btnRepeat)
 
 	n := awaitModal(t, a, "a dialog saying it could not be done again",
 		byTitle[*ui.Notice]("Could not copy it again"))
@@ -667,7 +667,7 @@ func TestARepeatThatCannotReachTheFarEndStartsNothing(t *testing.T) {
 		t.Fatalf("dropMachine: %v", err)
 	}
 	rows := len(a.registry.Groups(time.Now()))
-	pressButton(t, a, d.Form, "Repeat")
+	pressButton(t, a, d.Form, btnRepeat)
 
 	n := awaitModal(t, a, "a dialog saying it could not be done again",
 		byTitle[*ui.Notice]("Could not copy it again"))

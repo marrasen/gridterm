@@ -97,7 +97,7 @@ func (a *app) refreshServers() {
 	// there is nothing to connect to on the machine already running.
 	for _, name := range every {
 		host := name
-		title := "Open a terminal on " + groupName(host)
+		title := "New Terminal on " + groupName(host)
 		var also []string
 		if a.about(host).toTakeOver() {
 			// A window is connected to before a terminal can be opened
@@ -114,7 +114,7 @@ func (a *app) refreshServers() {
 		a.registerServerCommands(a.reporting(term))
 		browse := ui.Command{
 			ID:    filesPrefix + remote.CommandName(host),
-			Title: "Browse files on " + groupName(host),
+			Title: "Browse Files on " + groupName(host),
 			Run:   func() error { return a.openFilesOn(host) },
 		}
 		a.registerServerCommands(a.reporting(browse))
@@ -138,7 +138,7 @@ func (a *app) refreshServers() {
 		a.registerServerCommands(a.reporting(ui.Command{
 			ID:       savedCommandID(i),
 			Title:    "Run " + saved.Line + " on " + groupName(saved.Host),
-			AlsoFind: []string{"saved command", "remembered"},
+			AlsoFind: []string{"saved command", "remembered", "saved"},
 			Run:      func() error { return a.runSaved(saved) },
 		}))
 	}
@@ -149,7 +149,7 @@ func (a *app) refreshServers() {
 		a.registerServerCommands(a.reporting(ui.Command{
 			ID:       savedTunnelID(i),
 			Title:    savedTunnelTitle(saved),
-			AlsoFind: []string{"saved tunnel", "remembered", "forward", "port"},
+			AlsoFind: []string{"saved tunnel", "remembered", "saved", "forward", "port"},
 			Run:      func() error { return a.openSavedTunnel(saved) },
 		}))
 	}
@@ -309,11 +309,11 @@ func serverItems(saved []ui.MenuItem) []ui.MenuItem {
 		items = append(items, ui.MenuSeparator())
 	}
 	return append(items,
-		ui.MenuItem{Command: "server.connect", Title: "Connect…"},
+		ui.MenuItem{Command: "server.connect"},
 		ui.MenuSeparator(),
-		ui.MenuItem{Command: "server.add", Title: "Add Server…"},
-		ui.MenuItem{Command: "server.editThis", Title: "Edit This Server…"},
-		ui.MenuItem{Command: "server.forget", Title: "Forget This Server…"},
+		ui.MenuItem{Command: "server.add"},
+		ui.MenuItem{Command: "server.editThis"},
+		ui.MenuItem{Command: "server.forget"},
 		// "Keys" here means SSH keys and nowhere else. The keyboard
 		// kind is "shortcuts" throughout the menus, which is what the
 		// header settles.
@@ -431,42 +431,43 @@ func (a *app) openServerForm(under string) error {
 		}
 	}
 
-	title := "Add a server"
+	title := "Add Server"
 	if under != "" {
 		title = "Edit " + was.Name
 	}
 	f := a.newForm(title)
-	name := f.AddField("Name", a.newField("what to call it", 0))
-	kind := f.AddField("Kind", a.newField("", 0))
+	// No lines under the title. Every field that needs explaining
+	// carries its own hint, drawn along the bottom while that field has
+	// the focus, and a field that steps through a list says so itself.
+	name := f.AddField(fldName, a.newField("", 0))
+	kind := f.AddField(fldType, a.newField("", 0))
 	kind.Options = []string{kindMachine, kindWindow}
-	target := f.AddField("Server", a.newField("[user@]host[:port]", 0))
-	key := f.AddField("Key file", a.newField("optional", 0))
+	kind.Hint = "A gridterm window is connected to, not logged in to"
+	target := f.AddField(fldServer, a.newField("[user@]host[:port]", 0))
+	key := f.AddField(fldKeyFile, a.newField("Optional", 0))
 	// The keys this window keeps, so one is a key away rather than a
 	// path to remember. Blank first: leaving it empty is the usual
 	// answer, and it is what cycling comes back round to.
 	key.Options = append([]string{""}, a.keyFiles.all()...)
-	via := f.AddField("Through", a.newField("another saved server, optional", 0))
-	folders := f.AddField("Folders", a.newField("where to open files, separated by commas", 0))
-	setup := f.AddField("Shell setup", a.newField("", 0))
+	via := f.AddField(fldJumpHost, a.newField("Optional", 0))
+	via.Hint = "Connect through another saved server"
+	folders := f.AddField(fldFolders, a.newField("Comma-separated paths", 0))
+	folders.Hint = "Where the file browser opens on this server"
+	setup := f.AddField(fldShellSetup, a.newField("", 0))
 	setup.Options = []string{setupNo, setupYes}
-	forward := f.AddField("SSH agent", a.newField("", 0))
+	setup.Hint = "Tracks the directory and where each command ends. bash and zsh only."
+	forward := f.AddField(fldForwardAgent, a.newField("", 0))
 	forward.Options = []string{setupNo, setupYes}
+	forward.Hint = "The server can use your keys for onward connections. So can root on the server."
 	// The machines already saved, so the field can be cycled rather than
 	// typed from memory. Blank first: leaving it empty is the usual
 	// answer, and it is what cycling comes back round to.
 	via.Options = append([]string{""}, a.serverNames(under)...)
-	f.Lines = append(f.Lines,
-		"Kind steps with ctrl+down and ctrl+up. A gridterm window is one",
-		"serving on another machine, connected to rather than logged in to.",
-		viaHint(via.Options),
-		"Folders are where the file browser opens on this server. One and",
-		"it opens there; several and the plus offers a line for each.",
-		"Key file steps through the keys this window keeps.",
-		"Shell setup types one line into the shell as it starts, so the pane",
-		"knows where it is and where each command ends. bash and zsh only.",
-		"SSH agent carries this machine's agent to the server, so a jump from",
-		"there uses the keys held here. While it is on, anyone who is root on",
-		"that server can sign with those keys.")
+	// Nothing to go through, so there is nothing to fill in: the field
+	// is disabled rather than left empty beside a sentence saying why.
+	if len(via.Options) <= 1 {
+		via.Disabled = true
+	}
 
 	name.SetText(was.Name)
 	kind.SetText(kindMachine)
@@ -488,7 +489,22 @@ func (a *app) openServerForm(under string) error {
 		forward.SetText(setupYes)
 	}
 
-	f.AddButton(ui.Button{Title: "Save", Do: func() error {
+	// A window has no account to log in to, nothing to go through, and
+	// no session to carry an agent over. Those fields are turned off
+	// while the type says window, and on again when it does not: a field
+	// that cannot apply is better greyed out than taken and dropped.
+	applies := func() {
+		window := kind.Text() == kindWindow
+		via.Disabled = window || len(via.Options) <= 1
+		forward.Disabled = window
+		// The caret may be sitting on one that just went off.
+		f.EnsureFocusable()
+		a.markDirty()
+	}
+	kind.OnChange = func(string) { applies() }
+	applies()
+
+	f.AddButton(ui.Button{Title: btnSave, Do: func() error {
 		window, err := whichKind(kind.Text())
 		if err != nil {
 			return err
@@ -505,15 +521,12 @@ func (a *app) openServerForm(under string) error {
 			// log in to and no machine to go through. They are kept
 			// rather than dropped, so turning it back into a machine
 			// gives back what it had.
+			//
+			// Nothing is said about it: the fields they come from are
+			// disabled while the type is a window, so there is nothing
+			// on screen for the user to believe they set.
 			h.User, h.Via = was.User, was.Via
 			h.Window = true
-			if h.User != "" || strings.TrimSpace(via.Text()) != was.Via {
-				// Said plainly, because the fields are still on screen
-				// and doing nothing would read as them having been
-				// saved.
-				f.Lines = append(f.Lines,
-					"A window has no account and nothing to go through, so those are left as they were.")
-			}
 		} else {
 			h.Via = strings.TrimSpace(via.Text())
 		}
@@ -524,12 +537,8 @@ func (a *app) openServerForm(under string) error {
 			return err
 		}
 		if window {
-			// Kept as it was: a window has no session to carry an agent over
-			if h.ForwardAgent != was.ForwardAgent {
-				f.Lines = append(f.Lines,
-					"A window is not logged in to, so there is no session to carry the SSH agent over."+
-						" That field is left as it was.")
-			}
+			// Kept as it was: a window has no session to carry an agent
+			// over, and the field that says so is disabled.
 			h.ForwardAgent = was.ForwardAgent
 		}
 		// Kept whichever this is. A machine turned into a window and
@@ -596,7 +605,7 @@ func (a *app) openServerForm(under string) error {
 			// is saved, and failing to remember the key is not a reason
 			// to report that it was not.
 			if err := a.keyFiles.keep(path); err != nil {
-				a.reportError("The server was saved and its key was not added to the list", err)
+				a.reportError("Server saved, but its key was not added", err)
 			}
 		}
 		if under != "" && under != h.Name {
@@ -605,14 +614,14 @@ func (a *app) openServerForm(under string) error {
 		return nil
 	}})
 	if under != "" {
-		f.AddButton(ui.Button{Title: "Remove", Do: func() error {
+		f.AddButton(ui.Button{Title: btnRemove, Do: func() error {
 			// Not from here: this dialog closes as soon as this returns,
 			// and closing a dialog takes anything stacked on top of it.
 			a.pump.post(func() { a.confirmRemoveServer(was.Name) })
 			return nil
 		}})
 	}
-	f.AddButton(ui.Button{Title: "Cancel"})
+	f.AddButton(ui.Button{Title: btnCancel})
 
 	a.showForm(f, a.refreshServers)
 	return nil
@@ -621,8 +630,8 @@ func (a *app) openServerForm(under string) error {
 // confirmRemoveServer asks before forgetting a machine, and says what
 // forgetting it closes.
 func (a *app) confirmRemoveServer(name string) {
-	f := a.newConfirm("Remove "+name+"?", a.removeLines(a.about(name)))
-	f.AddButton(ui.Button{Title: "Remove", Do: func() error {
+	f := a.newConfirm(dlgRemove+name+"?", a.removeLines(a.about(name)))
+	f.AddButton(ui.Button{Title: btnRemove, Do: func() error {
 		// Read again: the body above was written when the dialog
 		// opened, and the dial may have landed or the far end gone
 		// since.
@@ -637,42 +646,37 @@ func (a *app) confirmRemoveServer(name string) {
 			// nothing left to do: the machine has gone from the list,
 			// so pressing Remove again would only say there is no such
 			// server. Posted, because a dialog cannot open another.
-			a.pump.post(func() { a.reportError("Trouble closing "+groupName(name), err) })
+			a.pump.post(func() { a.reportError("Could not close "+groupName(name), err) })
 		}
 		return nil
 	}})
-	f.AddButton(ui.Button{Title: "Keep it"})
+	f.AddButton(ui.Button{Title: btnCancel})
 	// Opens on the button that changes nothing.
 	f.FocusButton(1)
 	a.showForm(f, a.refreshServers)
 }
 
-// removeLines is the body of the forget dialog: what forgetting the
-// machine does, and what goes with it when the window is holding it.
+// removeLines is the body of the remove dialog: what removing the
+// machine closes, and nothing at all when it closes nothing.
+//
+// Only what this window is holding. That the machine itself is untouched
+// goes without saying, and saying it took a line on every one of these.
 func (a *app) removeLines(on hostFacts) []string {
-	nothing := "Nothing on the machine changes."
 	name := groupName(on.name)
 	switch {
 	case on.window != nil:
-		return []string{
-			"This window is connected to " + name + ".",
-			"Forgetting it lets go of " + name + " and closes its panes.",
-			nothing,
-		}
+		return wrapLines(name+" is connected. Removing it closes the connection and its panes.",
+			errorLineWidth)
 	case on.machine != nil:
-		closes := "Forgetting it closes that connection"
+		said := name + " is connected. Removing it closes the connection"
 		if with := a.whatRidesOn(on.machine); with != "" {
-			closes += ", and everything reached through it: " + with
+			said += " and everything through it: " + with
 		}
-		return []string{name + " is connected.", closes + ".", nothing}
+		return wrapLines(said+".", errorLineWidth)
 	case on.dialling != nil:
-		return []string{
-			"The window is still connecting to " + name + ".",
-			"Forgetting it gives up on that connection.",
-			nothing,
-		}
+		return wrapLines("Removing it cancels the connection in progress.", errorLineWidth)
 	}
-	return []string{"It is only forgotten here.", nothing}
+	return nil
 }
 
 // whatRidesOn counts what else a machine's connection carries -- the
@@ -757,7 +761,7 @@ func (a *app) reportBookError() {
 		return
 	}
 	a.pump.post(func() {
-		a.reportError("The server list could not be read", errors.Join(err,
+		a.reportError("Could not read the server list", errors.Join(err,
 			errors.New("gridterm will not write over it until it is repaired")))
 	})
 }
@@ -778,18 +782,6 @@ func (a *app) serverNames(except string) []string {
 		out = append(out, h.Name)
 	}
 	return out
-}
-
-// viaHint says how to fill the Through field in, and with what.
-func viaHint(options []string) string {
-	named := options
-	if len(named) > 0 && named[0] == "" {
-		named = named[1:]
-	}
-	if len(named) == 0 {
-		return "Through: nothing else is saved yet, so there is nothing to go through."
-	}
-	return "Through: ctrl+down and ctrl+up step through " + strings.Join(named, ", ") + "."
 }
 
 // editThisServer opens the dialog for the machine whose row was

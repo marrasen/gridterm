@@ -48,6 +48,10 @@ const (
 
 var noticeButtons = []string{"Copy", "OK"}
 
+// noticeJustOK is what a notice offers when there is nothing in it worth
+// putting on the clipboard.
+var noticeJustOK = []string{"OK"}
+
 // NoticeAction is the button a notice offers besides Copy and OK: the
 // thing the message describes, done rather than read.
 type NoticeAction struct {
@@ -62,10 +66,14 @@ type NoticeAction struct {
 
 // buttons are the ones this notice draws, left to right.
 func (n *Notice) buttons() []string {
-	if n.Action.Title == "" {
-		return noticeButtons
+	rest := noticeButtons
+	if n.NoCopy {
+		rest = noticeJustOK
 	}
-	return append([]string{n.Action.Title}, noticeButtons...)
+	if n.Action.Title == "" {
+		return rest
+	}
+	return append([]string{n.Action.Title}, rest...)
 }
 
 // NoticeStyle colours a notice.
@@ -139,6 +147,11 @@ type Notice struct {
 	// columns, which wrapping at spaces would collapse.
 	Preformatted bool
 
+	// NoCopy leaves the Copy button out, for a notice with nothing worth
+	// copying: an acknowledgement that something is done, rather than a
+	// path, an error, a key or a log.
+	NoCopy bool
+
 	// Action is an extra button, before Copy and OK, for a notice that
 	// offers to do the thing it describes. An empty Title leaves it
 	// off, which is every notice that only reports something.
@@ -189,6 +202,13 @@ type Notice struct {
 // dialog is finished with, which is what takes it off the modal stack.
 func NewNotice(title, message string, close func()) *Notice {
 	return &Notice{Title: title, message: cleanText(message), at: noticeOK, close: close}
+}
+
+// SetNoCopy leaves the Copy button out and puts the focus back on OK,
+// which has moved now that nothing is in front of it.
+func (n *Notice) SetNoCopy() {
+	n.NoCopy = true
+	n.FocusOK()
 }
 
 // FocusOK puts the focus back on OK, for a notice given an action after

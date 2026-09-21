@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/marrasen/gridterm/conf"
 	"github.com/marrasen/gridterm/keys"
@@ -15,8 +16,15 @@ import (
 	"github.com/marrasen/gridterm/themes"
 )
 
-// carryOwnTitle is what the button on the files notice says.
-const carryOwnTitle = "Make this copy carry its own files"
+// carryOwnTitle is what the button on the files notice says, and
+// carriedOwnTitle heads the notice that says it is done.
+//
+// Two strings rather than one: a button says what pressing it will do
+// and a title says what has happened, and one word cannot be both.
+const (
+	carryOwnTitle   = "Make Portable"
+	carriedOwnTitle = "Made Portable"
+)
 
 // carryOwnFiles makes the directory beside this copy of gridterm and
 // copies into it everything the window is reading now, so the copy
@@ -39,7 +47,9 @@ func (a *app) carryOwnFiles() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	copied := 0
+	// A line per thing done, so the notice is a list of what happened
+	// rather than a count to take on trust.
+	done := []string{"Created " + beside}
 	for _, name := range []string{
 		settings.File, remote.BookFile, themes.File, keys.File,
 		serve.AuthFile, knownWindowsFile,
@@ -49,7 +59,7 @@ func (a *app) carryOwnFiles() (string, error) {
 			return "", err
 		}
 		if did {
-			copied++
+			done = append(done, "Copied "+name)
 		}
 	}
 
@@ -64,14 +74,10 @@ func (a *app) carryOwnFiles() (string, error) {
 		return "", err
 	}
 	if did {
-		copied++
+		done = append(done, "Copied "+filepath.Base(key))
 	}
-	return fmt.Sprintf("%d files are now in\n\n    %s\n\n"+
-		"Start gridterm again to use them. Until then this window is "+
-		"still reading the ones it opened with.\n\n"+
-		"The key this window serves with is in there, and is only as "+
-		"private as that directory. Keep the directory somewhere only "+
-		"you can read.", copied, beside), nil
+	done = append(done, "", "Restart gridterm to use them.")
+	return strings.Join(done, "\n"), nil
 }
 
 // copyIfThere copies one file, and reports whether there was one. A

@@ -16,7 +16,7 @@ import (
 // heads both the line and the dialog.
 const (
 	typedCommand = "agent.typed"
-	typedTitle   = "What the agent typed"
+	typedTitle   = "Typing History"
 )
 
 // mostTyped is how many sends one pane keeps, and mostTypedBytes how
@@ -120,8 +120,7 @@ func (a *app) showTyped() error {
 // time it was sent and what was sent.
 func typedText(log *typedLog) string {
 	var b strings.Builder
-	b.WriteString("What the agent sent, not what the shell ran: a line it\n" +
-		"edited before pressing Enter is here as it was typed.\n\n")
+	b.WriteString("Input as the agent sent it, edits included.\n\n")
 	if log.dropped > 0 {
 		fmt.Fprintf(&b, "The first %d are no longer kept.\n\n", log.dropped)
 	}

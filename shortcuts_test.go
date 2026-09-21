@@ -154,9 +154,11 @@ func TestWritingAStartingShortcutsFileSaysWhereItWent(t *testing.T) {
 	if len(got) != was {
 		t.Errorf("it holds %d shortcuts, want the %d the window has", len(got), was)
 	}
-	n := awaitModal(t, a, "the notice", byTitlePrefix[*ui.Notice]("Wrote "))
-	if !strings.Contains(n.Title, keys.Path(dir)) {
-		t.Errorf("it says %q, want the path it wrote", n.Title)
+	// The title says what happened and the body says where: a path in a
+	// heading is a heading nobody can read at a glance.
+	n := awaitModal(t, a, "the notice", byTitle[*ui.Notice]("Shortcuts file created"))
+	if !strings.Contains(n.Message(), keys.Path(dir)) {
+		t.Errorf("it says %q, want the path it wrote", n.Message())
 	}
 }
 

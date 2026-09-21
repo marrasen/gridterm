@@ -37,6 +37,10 @@ type askUser struct {
 	// the user gave it. Looking one up by the other gave up on nothing
 	// at all.
 	stop func()
+
+	// askedPassword says the account password has been asked for once
+	// already, so a second time is one the server refused.
+	askedPassword bool
 }
 
 // Passphrase asks for the passphrase of a private key file.
@@ -46,9 +50,13 @@ type askUser struct {
 // a passphrase, watched the dialog go, and was left to work out from a
 // connection that failed some other way -- or did not fail at all --
 // that the key had never been offered.
+//
+// It is asked as often as it takes. Nothing is counted down: the key is
+// a file on this machine that this user can already read, so a limit
+// protects nothing and only strands whoever mistyped a long passphrase.
 func (u *askUser) Passphrase(ctx context.Context, key remote.LockedKey) (string, error) {
 	return u.secret(ctx, secret{
-		title:   "Unlock a private key",
+		title:   "Unlock Private Key",
 		lines:   []string{key.Path},
 		labels:  []string{"Passphrase"},
 		masked:  []bool{true},
@@ -59,33 +67,40 @@ func (u *askUser) Passphrase(ctx context.Context, key remote.LockedKey) (string,
 
 // wrongPassphrase is what the dialog says about the answer before it,
 // and nil the first time a key is asked about.
-//
-// How many tries are left is said because the number is small and the
-// dialog is the only place it could come from: a user on their last try
-// is one who would rather look the passphrase up than spend it.
 func wrongPassphrase(key remote.LockedKey) error {
 	if key.Wrong == 0 {
 		return nil
 	}
-	switch key.Left {
-	case 0:
-		return errors.New("that passphrase did not unlock it. This is the last try")
-	case 1:
-		return errors.New("that passphrase did not unlock it. One more try after this one")
-	default:
-		return fmt.Errorf("that passphrase did not unlock it. %d more tries after this one", key.Left)
-	}
+	return errWrongPassphrase
 }
 
+// errWrongPassphrase is what the dialog says when the last passphrase
+// did not open the key.
+var errWrongPassphrase = errors.New("Invalid passphrase")
+
+// errWrongPassword is the same for an account password the server
+// refused.
+var errWrongPassword = errors.New("Invalid password")
+
 // Password asks for the account password.
+//
+// A password the server refused comes back here the way a passphrase
+// does, and the dialog says so rather than opening again with no word of
+// why. Nothing is counted: the server decides when it has had enough,
+// and that arrives as a connection that failed.
 func (u *askUser) Password(ctx context.Context, user, host string) (string, error) {
-	return u.secret(ctx, secret{
+	s := secret{
 		title:  "Password",
 		lines:  []string{user + "@" + host},
 		labels: []string{"Password"},
 		masked: []bool{true},
 		accept: "Sign in",
-	})
+	}
+	if u.askedPassword {
+		s.trouble = errWrongPassword
+	}
+	u.askedPassword = true
+	return u.secret(ctx, s)
 }
 
 // Question asks whatever the server decided to ask, which is usually a
@@ -98,14 +113,14 @@ func (u *askUser) Question(ctx context.Context, q remote.Question) ([]string, er
 	// their private key.
 	// And through serve.Plain, because a dialog draws what it is given:
 	// the server's wording must not carry escape sequences into it.
-	lines := []string{q.User + "@" + q.Host + " is asking:"}
+	lines := []string{q.User + "@" + q.Host + " asks:"}
 	if q.Name != "" {
 		lines = append(lines, "", serve.Plain(q.Name))
 	}
 	if q.Instruction != "" {
 		lines = append(lines, "", serve.Plain(q.Instruction))
 	}
-	const title = "The server is asking"
+	const title = "Authentication"
 	masked := make([]bool, len(q.Prompts))
 	for i := range q.Prompts {
 		// Echo says the answer may be shown as it is typed. Anything the
@@ -121,7 +136,7 @@ func (u *askUser) Question(ctx context.Context, q remote.Question) ([]string, er
 		lines:  lines,
 		labels: labels,
 		masked: masked,
-		accept: "Answer",
+		accept: "OK",
 	}))
 }
 
@@ -137,15 +152,15 @@ func (u *askUser) TrustHostKey(ctx context.Context, key remote.HostKey) (bool, e
 		"",
 		key.Type() + "  " + key.Fingerprint(),
 		"",
-		"Connect only if that is the fingerprint you expect.",
+		"Verify the fingerprint before connecting.",
 	}
 	_, err := u.ask(ctx, func(reply func([]string, error)) ui.Widget {
-		f := u.app.newConfirm("Unknown host key", lines)
-		f.AddButton(ui.Button{Title: "Connect", Do: func() error {
+		f := u.app.newConfirm(dlgUnknownHostKey, lines)
+		f.AddButton(ui.Button{Title: btnConnect, Do: func() error {
 			reply(nil, nil)
 			return nil
 		}})
-		f.AddButton(ui.Button{Title: "Cancel", Do: func() error {
+		f.AddButton(ui.Button{Title: btnCancel, Do: func() error {
 			reply(nil, errDismissed)
 			return nil
 		}})
@@ -212,7 +227,7 @@ func (u *askUser) form(s secret) func(reply func([]string, error)) ui.Widget {
 			reply(values, nil)
 			return nil
 		}})
-		f.AddButton(ui.Button{Title: "Cancel", Do: func() error {
+		f.AddButton(ui.Button{Title: btnCancel, Do: func() error {
 			reply(nil, errDismissed)
 			return nil
 		}})
@@ -314,29 +329,66 @@ func (u *askUser) Notice(ctx context.Context, n remote.Notice) {
 	// Ours first and always. Everything under it is the server's own
 	// wording, and a message the user cannot tell from the window's own
 	// could send them somewhere of the server's choosing.
-	lines := []string{n.User + "@" + n.Host + " says:"}
+	lines := []string{n.User + "@" + n.Host + ":"}
+	// The server's own wording, kept on its own so Copy hands over what
+	// the server said and not the line naming it.
+	//
+	// Through serve.Plain, the same as what is drawn. Copy then puts on
+	// the clipboard exactly what the user read, and the link the button
+	// offers is one found in text an escape sequence cannot have shaped.
+	var said []string
 	for _, line := range []string{n.Name, n.Instruction, n.Text} {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		lines = append(lines, "", serve.Plain(line))
+		plain := serve.Plain(line)
+		lines = append(lines, "", plain)
+		said = append(said, plain)
 	}
-	lines = append(lines, "", "gridterm is waiting for the server. It carries on by itself once you are done.")
-	if u.log != nil {
-		lines = append(lines,
-			"", "It is in the pane as well, in full and there to copy.")
-	}
+	lines = append(lines, "", "Continues automatically when you are done.")
 
 	var dismiss func()
 	u.app.pump.post(func() {
-		f := u.app.newConfirm("The server is waiting", lines)
-		f.AddButton(ui.Button{Title: "Leave it waiting"})
+		f := u.app.newConfirm(dlgWaitingForServer, lines)
+		// This message usually carries a sign-in link, and a link that
+		// cannot be copied is a link nobody can follow.
+		f.Copyable = strings.Join(said, "\n")
+		// The one link, when there is exactly one. A sign-in message is
+		// usually a link and a code, and Copy still covers the code;
+		// several links give nothing to guess between.
+		closeAt := 1
+		if link, one := onlyLink(said); one {
+			closeAt = 2
+			f.AddButton(ui.Button{Title: btnOpenLink, Keep: true, Do: func() error {
+				if err := openInBrowser(link); err != nil {
+					// Not returned: this button keeps the dialog open,
+					// and the reason belongs in front of whoever pressed
+					// it rather than under a message from the server.
+					u.app.pump.post(func() {
+						u.app.reportError("Could not open the link", err)
+					})
+				}
+				return nil
+			}})
+		}
+		f.AddButton(ui.Button{Title: btnCopy, Keep: true, Do: func() error {
+			u.app.clip.set(f.Copyable)
+			return nil
+		}})
+		// Close leaves the handshake open: the server is still waiting,
+		// and the dialog is only what said so.
+		f.AddButton(ui.Button{Title: btnClose})
 		if u.stop != nil {
-			f.AddButton(ui.Button{Title: "Give up", Do: func() error {
+			f.AddButton(ui.Button{Title: btnCancel, Do: func() error {
 				u.stop()
 				return nil
 			}})
 		}
+		// Opens on Close, which is the one that changes nothing. This
+		// dialog arrives unasked for, in the middle of a handshake and
+		// possibly while the user is typing somewhere else: a stray
+		// Enter must not open a browser at an address a server chose.
+		f.FocusButton(closeAt)
 		dismiss = u.app.showForm(f, nil)
 	})
 
@@ -351,4 +403,72 @@ func (u *askUser) Notice(ctx context.Context, n remote.Notice) {
 			}
 		})
 	}()
+}
+
+// linkSchemes are the only two a server's message may offer a button
+// for.
+//
+// Not the rest of what openInBrowser would take. This text came from a
+// server, and mailto, ftp or a scheme some local handler is registered
+// for must not be one press away from whatever it decided to send.
+var linkSchemes = []string{"http://", "https://"}
+
+// linkLeading and linkTrailing are punctuation a link is written next to
+// rather than part of it: a sentence that ends in one, or a link inside
+// brackets or quotes, which has an opening character as well as a
+// closing one.
+const (
+	linkLeading  = `(<"'`
+	linkTrailing = `.,)>"'`
+)
+
+// onlyLink is the one web address in the server's lines.
+//
+// It reports false when there is none and when there is more than one:
+// a message with two links gives nothing to choose between, and a button
+// that guessed would send the user to an address they did not pick. The
+// same address written twice is still one address.
+func onlyLink(lines []string) (string, bool) {
+	var found string
+	for _, line := range lines {
+		for _, word := range strings.Fields(line) {
+			at, ok := linkIn(word)
+			if !ok {
+				continue
+			}
+			if found != "" && found != at {
+				return "", false
+			}
+			found = at
+		}
+	}
+	return found, found != ""
+}
+
+// linkIn is the web address a word holds, trimmed of the punctuation it
+// was written beside.
+func linkIn(word string) (string, bool) {
+	word = strings.TrimLeft(word, linkLeading)
+	lower := strings.ToLower(word)
+	var is bool
+	for _, scheme := range linkSchemes {
+		is = is || strings.HasPrefix(lower, scheme)
+	}
+	if !is {
+		return "", false
+	}
+	at := strings.TrimRight(word, linkTrailing)
+	// Everything after the scheme was trimmed away, so there is no
+	// address here to open.
+	for _, scheme := range linkSchemes {
+		if strings.EqualFold(at, scheme) {
+			return "", false
+		}
+	}
+	// The same check the window makes of a link in a pane: a line break
+	// would end one command line and start another.
+	if linkIsOpenable(at) != nil {
+		return "", false
+	}
+	return at, true
 }

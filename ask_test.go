@@ -115,18 +115,13 @@ func TestAskPassphraseAgainSaysTheLastOneWasWrong(t *testing.T) {
 
 	go func() {
 		_, _ = ask.Passphrase(a.ctx, remote.LockedKey{
-			Path: "/home/marcus/.ssh/id_ed25519", Wrong: 1, Left: 1,
+			Path: "/home/marcus/.ssh/id_ed25519", Wrong: 1,
 		})
 	}()
 	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
 
-	if got := f.ErrorText(); !strings.Contains(got, "did not unlock") {
-		t.Fatalf("the dialog says %q, want it to say the passphrase did not unlock the key", got)
-	}
-	// How many tries are left, because the dialog is the only place that
-	// number could come from.
-	if got := f.ErrorText(); !strings.Contains(got, "One more try") {
-		t.Errorf("the dialog says %q, want it to say how many tries are left", got)
+	if got := f.ErrorText(); got != "Invalid passphrase" {
+		t.Fatalf("the dialog says %q, want it to say the passphrase was refused", got)
 	}
 }
 
@@ -136,7 +131,7 @@ func TestAskPassphraseFirstTimeSaysNothingWentWrong(t *testing.T) {
 	ask := withDialogs(t, a)
 
 	go func() {
-		_, _ = ask.Passphrase(a.ctx, remote.LockedKey{Path: "/key", Left: 2})
+		_, _ = ask.Passphrase(a.ctx, remote.LockedKey{Path: "/key"})
 	}()
 	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
 
@@ -145,19 +140,28 @@ func TestAskPassphraseFirstTimeSaysNothingWentWrong(t *testing.T) {
 	}
 }
 
-// The last try says so, so a user with one left knows to look the
-// passphrase up rather than spend it on another guess.
-func TestAskPassphraseSaysWhenItIsTheLastTry(t *testing.T) {
+// However often it has been refused, the dialog says the same thing and
+// counts nothing down.
+//
+// The key file is on this machine and the user can already read it, so
+// there is no limit to spend: a number counting towards one would only
+// tell them they were running out of something that does not run out.
+func TestAskPassphraseCountsNothingDown(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	ask := withDialogs(t, a)
 
 	go func() {
-		_, _ = ask.Passphrase(a.ctx, remote.LockedKey{Path: "/key", Wrong: 2, Left: 0})
+		_, _ = ask.Passphrase(a.ctx, remote.LockedKey{Path: "/key", Wrong: 9})
 	}()
 	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
 
-	if got := f.ErrorText(); !strings.Contains(got, "last try") {
-		t.Fatalf("the dialog says %q, want it to say this is the last try", got)
+	if got := f.ErrorText(); got != "Invalid passphrase" {
+		t.Fatalf("the dialog says %q on the tenth try, want the same as on the second", got)
+	}
+	for _, not := range []string{"try", "tries", "last", "more"} {
+		if strings.Contains(f.ErrorText(), not) {
+			t.Errorf("the dialog says %q, which counts", f.ErrorText())
+		}
 	}
 }
 
@@ -170,9 +174,9 @@ func TestAskPassphraseIsMasked(t *testing.T) {
 	// the dialog goes when the test's own context is cancelled.
 	go func() { _, _ = ask.Passphrase(a.ctx, remote.LockedKey{Path: "/home/marcus/.ssh/id_ed25519"}) }()
 	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
-	typeIntoField(t, a, f, "Passphrase", "hunter2")
+	typeIntoField(t, a, f, fldPassphrase, "hunter2")
 
-	fld := f.Field("Passphrase")
+	fld := f.Field(fldPassphrase)
 	if fld.Text() != "hunter2" {
 		t.Fatalf("the field holds %q", fld.Text())
 	}
@@ -262,7 +266,7 @@ func TestAskHostKeyShowsTheFingerprint(t *testing.T) {
 	if !strings.Contains(joined, key.Addr) {
 		t.Errorf("the dialog does not say which host: %q", joined)
 	}
-	pressButton(t, a, f, "Connect")
+	pressButton(t, a, f, btnConnect)
 
 	select {
 	case ok := <-got:
@@ -291,7 +295,7 @@ func TestAskHostKeyCancelMeansNo(t *testing.T) {
 	}()
 
 	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
-	pressButton(t, a, f, "Cancel")
+	pressButton(t, a, f, btnCancel)
 
 	select {
 	case r := <-got:
@@ -328,7 +332,7 @@ func TestAskQuestionAnswersInOrder(t *testing.T) {
 	}()
 
 	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
-	// The title is ours. A server that chose "Unlock a private key" and
+	// The title is ours. A server that chose "Unlock Private Key" and
 	// a plausible key path would otherwise produce a dialog the user
 	// cannot tell from the local one, and be handed the passphrase to
 	// their private key.
@@ -350,7 +354,7 @@ func TestAskQuestionAnswersInOrder(t *testing.T) {
 	if f.Field("Account").Mask != 0 {
 		t.Error("an answer the server marked as echoed was masked")
 	}
-	answer(t, a, "Answer", "Code", "123456", "Account", "marcus")
+	answer(t, a, "OK", "Code", "123456", "Account", "marcus")
 
 	select {
 	case answers := <-got:
@@ -394,7 +398,7 @@ func TestAskPasswordDrawsNothingReadable(t *testing.T) {
 
 	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
 	const secret = "hunter2"
-	typeIntoField(t, a, f, "Password", secret)
+	typeIntoField(t, a, f, fldPassword, secret)
 
 	// Draw the dialog the way its own layer is drawn, and read it back.
 	g := grid.New(80, 24, color.RGBA{}, color.RGBA{})
@@ -420,7 +424,7 @@ func TestAskPasswordDrawsNothingReadable(t *testing.T) {
 		t.Errorf("the dialog does not say whose password: %q", joined)
 	}
 
-	pressButton(t, a, f, "Sign in")
+	pressButton(t, a, f, btnSignIn)
 	select {
 	case s := <-got:
 		if s != secret {

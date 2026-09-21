@@ -81,7 +81,7 @@ func (a *app) pasteImage(pane *term.Terminal) error {
 			if err != nil {
 				return err
 			}
-			pane.Paste(path)
+			pane.Paste(a.pathForPane(pane, path))
 			return nil
 		}
 		if on.window == nil && on.machine == nil {

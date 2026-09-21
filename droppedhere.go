@@ -39,6 +39,33 @@ func (a *app) droppedInto(pane *term.Terminal, end jobEnd) (string, bool) {
 	return dir, true
 }
 
+// pathForPane is the path the program in a pane opens a file of this
+// machine's at.
+//
+// A pane in WSL reads the distribution's filesystem, where this
+// machine's drives are mounted under /mnt, so a Windows path typed into
+// one names nothing. Anything else takes the path as it stands.
+func (a *app) pathForPane(pane *term.Terminal, win string) string {
+	sh, ok := a.shellPick.running(a.localArgv(pane))
+	if !ok || sh.Distro == "" {
+		return win
+	}
+	if unix := shells.UnixPath(win); unix != "" {
+		return unix
+	}
+	return win
+}
+
+// pathsForPane is pathForPane over a list, leaving the one it was given
+// alone.
+func (a *app) pathsForPane(pane *term.Terminal, wins []string) []string {
+	out := make([]string, 0, len(wins))
+	for _, win := range wins {
+		out = append(out, a.pathForPane(pane, win))
+	}
+	return out
+}
+
 // copyDropped copies dropped files into the directory the shell in a
 // pane said it was in, and says so once they are there.
 //

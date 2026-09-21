@@ -91,6 +91,13 @@ Worth a minute with an engineering audience. The numbers are the point.
       Enter goes, Escape leaves you where you were.
 - [ ] **Splits.** Split right, split down, and take a pane back out of
       its split.
+- [ ] **A menu bar of nine menus**, ordered from the smallest thing a
+      command acts on to the largest: the text, what is drawn, the
+      pane, the machine it is on, the address book, other windows,
+      agents, and the program. A caption names each group in bold with
+      its lines set in under it, a tick shows what is on, and the whole
+      of the highlighted line is written along the bottom of the
+      window.
 - [ ] **A command palette** that finds every command by name, and says
       the key that runs it.
 - [ ] **Shortcuts you can change.** "Write a starting keyboard
@@ -133,6 +140,15 @@ The bits to say out loud if anyone in the room owns the servers.
 - [ ] **A tunnel open to the network asks first**, as does every remote
       forward, because where the far machine binds it is its own
       decision.
+- [ ] **The SSH agent is carried only where you say.** A tick per
+      server lets that machine reach the agent running here, so a jump
+      onward from it signs with the keys held here and no key is
+      copied over. Say the cost out loud: while it is on, anyone who
+      is root on that machine can sign with those keys until the
+      connection closes. A server that will not carry it opens no
+      pane, and turning the tick off on a machine you are connected to
+      says to close that connection, because that is the only thing
+      that stops it.
 
 ## One gridterm working inside another
 
@@ -169,6 +185,18 @@ The bits to say out loud if anyone in the room owns the servers.
 - [ ] **"Copy the prompt"** puts one prompt on the clipboard that
       carries the code and says how that host adds this window's MCP
       server. Claude Code, Codex, Cursor, or any host that takes JSON.
+- [ ] **What a command printed, not a rectangle of the screen.** When
+      the shell says a command finished, the wait hands back that
+      command's output. Without it an agent reaches for `clear;` to
+      make a screenshot mean something.
+- [ ] **A picture in the output is named**, with the rows it covers and
+      how it was sent, so an agent reads "rows 2 to 14 hold a picture"
+      rather than fourteen blank rows it has to guess about.
+- [ ] **Typing is letter for letter.** Nothing in the text is read as
+      an escape, Enter is a named key, and text ending in a backslash
+      is refused rather than typed. A command that runs wrong with
+      nothing on the screen to say why is the worst thing this can
+      produce.
 
 ## Files
 
@@ -197,6 +225,12 @@ The bits to say out loud if anyone in the room owns the servers.
       puts the raw JSON back. Good with a real log from a server.
 - [ ] **Code is coloured** by what the file is called, markdown gets
       its headings, and a picture file shows the picture.
+- [ ] **A zip browsed as a directory.** Enter walks into
+      `dist.zip/assets`, Backspace walks out, and a file inside opens
+      in the viewer with the colouring, the hex dump, the search and
+      the minimap it would have anywhere else. Copying one out is an
+      ordinary copy. Zip and the names that are one -- jar, whl, vsix
+      -- and writing into one is refused rather than half done.
 - [ ] **File work in the background.** Copying, moving and deleting, on
       one machine or between two, with progress and a way to stop it. A
       name already there is asked about and never decided alone.
@@ -249,6 +283,21 @@ This is the group with the most "oh, nice" in it.
       already have; the Command Prompt says where it is as a plain path
       because it cannot build a URL.
 
+## Telling a program which terminal this is
+
+- [ ] **`TERM_PROGRAM` in every pane**, and in a pane inside WSL too,
+      which takes a second step: a Windows name does not cross into a
+      distribution unless `WSLENV` lists it.
+- [ ] **XTVERSION**, `CSI > q`, answered with the same name and
+      version. That is the way of asking that survives ssh and tmux,
+      where an environment variable does not.
+- [ ] **"What this window calls itself…"** changes the name to a
+      terminal a program has heard of. That is how to make a picture
+      viewer show pictures before it has heard of gridterm. Try it
+      with yazi before demoing it: yazi falls back to block art, and
+      the name is what should stop it, but nobody has watched it work
+      yet.
+
 ## Tunnels
 
 - [ ] **Three kinds.** A port here for a service over there, a port
@@ -300,12 +349,12 @@ The big ones from Marcus's own list.
   close the client on one machine and carry on from another.
 - **Copy with colours**, and "copy as an image" for pasting into a
   chat.
-- **Archives in the file browser**, browsed as if they were folders.
 - **Full screen** — the app with no sidebar and no menu bar.
 - **A clipboard history** to paste from.
 - **Agents opening tunnels** over SSH, behind a tick box.
 - **An Open menu of its own**, listing saved servers without "Connect
-  to" in front of each one.
+  to" in front of each one. What stopped it is gone: the menus draw
+  headings now.
 - **Dropdown fields that look like dropdowns**, with an icon that opens
   a picker.
 - **A mobile app.** Ebiten supports it; getting the keyboard right is
@@ -358,3 +407,14 @@ Honest limits, in case they come up.
   dragged.
 - **A watched pane is not resized to suit the watcher.**
 - **`-e` splits its argument on spaces**, with no quoting.
+- **Kitty graphics and sixel cannot work in a pane on this machine.**
+  ConPTY throws away the sequences that carry them, so neither ever
+  reaches gridterm. OSC 1337 is the one it passes on, which is why
+  pictures work at all. Measured on 2026-09-20; the table is in
+  `TODO.md`.
+- **Thirteen small faults are written down** under "Bugs Marcus has
+  hit" in `TODO.md`, mostly in the file browser and the viewer: a
+  single click opens instead of marking, the minimap scrollbar cannot
+  be dragged, a zip is not browsable over a connection to another
+  gridterm, and a copy shows under the machine it came from rather
+  than the one it is going to.

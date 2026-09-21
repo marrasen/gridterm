@@ -557,11 +557,6 @@ while the menu is open.
 
 ## Keyboard and shortcuts
 
-- **Ctrl+Shift+T should open another terminal like the one in front.**
-  `openTerminalHere` already does it: same machine, same shell, same
-  directory. What is missing is the shortcut, and Marcus wants it to
-  replace "Open a terminal here" rather than sit beside it.
-
 - **"Terminal" and "pane" are used for the same thing.** The window,
   the menus and the code all mix them. Which word means what wants
   settling once, and then the user-facing words follow it.

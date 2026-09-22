@@ -195,6 +195,7 @@ func newTestApp(t *testing.T, cols, rows int, opts ...testOption) *testApp {
 		colours:    vt.DefaultPalette(),
 		scrollback: 64,
 		panes:      make(map[*term.Terminal]*conns.Entry),
+		accounts:   make(map[*term.Terminal]*connLog),
 		scaled:     make(map[*term.Terminal]*scaledPane),
 		shared:     make(map[*term.Terminal]*sharedMark),
 		// A clock that stands still, so no test's frame is the one the

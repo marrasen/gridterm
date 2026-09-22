@@ -115,11 +115,7 @@ func TestSshTargetIsAMachineOnTheSidebar(t *testing.T) {
 	}
 
 	chooseMenuItem(t, menu, "conn.log")
-	n := awaitModal(t, a, "the account of how it was reached",
-		byTitlePrefix[*ui.Notice]("Connection Log"))
-	if !strings.Contains(n.Message(), "connected to "+target) {
-		t.Errorf("the account says %q", n.Message())
-	}
+	accountPane(t, a, "connected to "+target)
 }
 
 // -ssh with a command runs the command on the far end rather than

@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/marrasen/gridterm/agent"
 )
 
 // steps runs a list of steps in the fake pane and gives back what the
@@ -216,5 +218,106 @@ func TestAWaitThatEndedWithoutItsTextStopsTheList(t *testing.T) {
 	panes.mu.Unlock()
 	if strings.Contains(typed, "line one") {
 		t.Errorf("it typed the editor's lines into the shell: %q", typed)
+	}
+}
+
+// A guard stops the list when the pane is not where the list thinks it
+// is, before anything is typed into it.
+func TestAGuardStopsAListInTheWrongPlace(t *testing.T) {
+	for _, one := range []struct {
+		name string
+		step string
+		// screen is what the pane says when the guard runs.
+		screen string
+		stops  bool
+	}{
+		{name: "require, and it is there", step: "require:/home/u/work",
+			screen: "$ cd ~/work && pwd\n/home/u/work\n$ "},
+		{name: "require, and it is not", step: "require:/home/u/work",
+			screen: "$ cd ~/work\nbash: cd: no such directory\n$ ", stops: true},
+		{name: "fail, and it is there", step: "fail:No such file",
+			screen: "$ cd ~/work\nbash: cd: No such file or directory\n$ ", stops: true},
+		{name: "fail, and it is not", step: "fail:No such file",
+			screen: "$ cd ~/work\n$ "},
+	} {
+		t.Run(one.name, func(t *testing.T) {
+			panes := &fakePanes{code: "gt1-2222-abc", screen: one.screen,
+				because: "the shell said the command had finished"}
+
+			text, failed := runList(t, panes,
+				"type:cd ~/work", "key:Enter", "until", one.step, "type:vim notes.md")
+
+			if failed != one.stops {
+				t.Fatalf("the list failed = %v, want %v: %q", failed, one.stops, text)
+			}
+			panes.mu.Lock()
+			typed := panes.typed
+			panes.mu.Unlock()
+			if one.stops && strings.Contains(typed, "vim") {
+				t.Errorf("it went on typing after the guard: %q", typed)
+			}
+			if !one.stops && !strings.Contains(typed, "vim") {
+				t.Errorf("the guard stopped a list it should have let through: %q", typed)
+			}
+			if one.stops && !strings.Contains(text, "step 4") {
+				t.Errorf("the answer does not say which step stopped it: %q", text)
+			}
+		})
+	}
+}
+
+// A list that ends where the shell says a command finished answers with
+// what that command printed, not with a rectangle of screen.
+//
+// A rectangle is what teaches an agent to clear the screen before every
+// command so that the rectangle means something, and clearing throws
+// away what the user had in front of them.
+func TestAListAnswersWithWhatTheCommandPrinted(t *testing.T) {
+	panes := &fakePanes{
+		code:    "gt1-2222-abc",
+		screen:  "$ ls\nnotes.md\n$ ",
+		output:  "notes.md",
+		because: agent.EndedOnMarks,
+	}
+
+	text, failed := runList(t, panes, "type:ls", "key:Enter", "until")
+
+	if failed {
+		t.Fatalf("the list failed: %q", text)
+	}
+	if !strings.Contains(text, "notes.md") {
+		t.Errorf("the answer does not carry what the command printed: %q", text)
+	}
+	if strings.Contains(text, "$ ls") {
+		t.Errorf("the answer is the screen rather than the output: %q", text)
+	}
+}
+
+// A list that waits more than once answers with every wait, headed by
+// the step and what that command exited with.
+//
+// Three checks in one call is the cheap thing to want, and the only
+// other way to have it is chaining them with semicolons -- where the
+// outputs run together and one exit status covers all three, which is
+// what sends an agent back to clearing the screen between commands.
+func TestAListSaysWhatEachWaitSaw(t *testing.T) {
+	panes := &fakePanes{code: "gt1-2222-abc", screen: "$ ", because: agent.EndedOnMarks,
+		marks: true, hasStatus: true, status: 0, output: "first answer"}
+
+	text, failed := runList(t, panes,
+		"type:uname -r", "key:Enter", "until",
+		"type:systemctl is-enabled foo", "key:Enter", "until")
+
+	if failed {
+		t.Fatalf("the list failed: %q", text)
+	}
+	for _, want := range []string{`step 3, "until"`, `step 6, "until"`, "exit status 0"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("the answer does not carry %q: %q", want, text)
+		}
+	}
+	// Both commands' output, not only the last one's.
+	if got := strings.Count(text, "first answer"); got != 2 {
+		t.Errorf("it carried %d of the 2 waits' output: %q", got, text)
 	}
 }

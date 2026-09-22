@@ -25,7 +25,18 @@ steps after it never go to the wrong program. A wait for text has to
 have seen that text: one that ended because the command finished
 instead -- `cd somewhere && vim notes.md` with the directory wrong --
 stops the list rather than typing an editor's keystrokes at a shell
-prompt.
+prompt. `require:<text>` and `fail:<text>` are the same check asked for
+directly: go on only if the pane says this, or stop if it does.
+
+**A list of steps answers with what each of its waits saw.** A list can
+run several commands -- type, Enter, until, then the next one -- and the
+answer carries each one's output, headed by the step and what that
+command exited with. The alternative is what agents do without it: chain
+three commands on one line with semicolons, where the outputs run
+together and a single exit status covers all three. That is also what
+leads an agent to clear the screen before every command so that what
+comes back is only its own, which throws away what the user had in front
+of them.
 
 **A wait can watch for text to arrive rather than text being there.**
 `wait_for` matches the screen as it already is, which is right for it:

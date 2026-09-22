@@ -13,6 +13,8 @@
 //	wait:250         wait that many milliseconds, whatever happens
 //	until:$          wait until that text arrives
 //	until            wait until whatever is running finishes
+//	require:$        go on only if the pane says this now
+//	fail:E325        stop if the pane says this now
 //	shot:out.png     write what is on screen to a file
 //
 // Everything after the first colon is the argument, whole: a colon in
@@ -48,15 +50,22 @@ const (
 	// Shot writes what is on screen to a file. Only a screenshot script
 	// has anywhere to put one.
 	Shot
+
+	// Require stops the list unless the pane says this now.
+	Require
+
+	// Fail stops the list if the pane says this now.
+	Fail
 )
 
 // Step is one thing to do.
 type Step struct {
 	Kind Kind
 
-	// Text is what Type types, what Until waits for, and where Shot
-	// writes. It is empty for a bare Until, which waits on the pane
-	// rather than on any particular words.
+	// Text is what Type types, what Until waits for, what Require and
+	// Fail look for, and where Shot writes. It is empty for a bare
+	// Until, which waits on the pane rather than on any particular
+	// words.
 	Text string
 
 	// Chord is what Key presses, as it was written. It is not checked
@@ -117,6 +126,15 @@ func Parse(step string) (Step, error) {
 				step, LongestWait)
 		}
 		return Step{Kind: Wait, Wait: got}, nil
+	case "require", "fail":
+		if arg == "" {
+			return Step{}, fmt.Errorf("%q looks for nothing: put the text after the colon", step)
+		}
+		kind := Require
+		if word == "fail" {
+			kind = Fail
+		}
+		return Step{Kind: kind, Text: arg}, nil
 	case "until":
 		// A bare "until" waits on the pane rather than on words, so it
 		// is the one step that needs no colon. "until:" with nothing
@@ -125,7 +143,8 @@ func Parse(step string) (Step, error) {
 		_ = hasArg
 		return Step{Kind: Until, Text: arg}, nil
 	}
-	return Step{}, fmt.Errorf("%q is not a step; they are type:, key:, wait:, until and shot:", step)
+	return Step{}, fmt.Errorf("%q is not a step; they are type:, key:, wait:, until,"+
+		" require:, fail: and shot:", step)
 }
 
 // ParseAll reads a list of steps, one per string, and refuses a list
@@ -184,6 +203,10 @@ func (s Step) String() string {
 		return "until:" + s.Text
 	case Shot:
 		return "shot:" + s.Text
+	case Require:
+		return "require:" + s.Text
+	case Fail:
+		return "fail:" + s.Text
 	}
 	return "an unknown step"
 }

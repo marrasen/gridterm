@@ -23,9 +23,13 @@ import (
 // would type the rest into whatever is there instead, which is the one
 // thing this is for avoiding.
 func (s *server) runSteps(pane string, list []steps.Step, lines, timeoutMS int) (result, *rpcError) {
+	// Every wait, not only the last: a list that runs three checks is
+	// asking three questions, and an answer carrying one of them sends
+	// the next list back to chaining them with semicolons -- where the
+	// outputs run together and one exit status covers them all.
 	var (
+		waits   []waited
 		last    Screen
-		ending  Ending
 		read    bool
 		clamped bool
 	)
@@ -62,7 +66,8 @@ func (s *server) runSteps(pane string, list []steps.Step, lines, timeoutMS int) 
 			if err != nil {
 				return stoppedAt(i, step, err.Error(), last, read)
 			}
-			last, ending, read = screen, ended, true
+			last, read = screen, true
+			waits = append(waits, waited{at: i, step: step, screen: screen, ended: ended})
 			if ended.GaveUp {
 				return stoppedAt(i, step, "the time ran out", last, read)
 			}
@@ -82,6 +87,24 @@ func (s *server) runSteps(pane string, list []steps.Step, lines, timeoutMS int) 
 				return stoppedAt(i, step, why+", and "+
 					strconv.Quote(step.Text)+" is not on the screen", last, read)
 			}
+		case steps.Require, steps.Fail:
+			// The screen as it stands, which is what a guard asks
+			// about. Not a wait: a guard says what must be true now,
+			// and a list that wanted to wait for it has until.
+			screen, err := s.panes.Read(pane, lines)
+			if err != nil {
+				return stoppedAt(i, step, err.Error(), last, read)
+			}
+			last, read = screen, true
+			holds := strings.Contains(screen.Screen, step.Text)
+			if step.Kind == steps.Require && !holds {
+				return stoppedAt(i, step,
+					strconv.Quote(step.Text)+" is not on the screen", last, read)
+			}
+			if step.Kind == steps.Fail && holds {
+				return stoppedAt(i, step,
+					strconv.Quote(step.Text)+" is on the screen", last, read)
+			}
 		case steps.Shot:
 			// A screenshot has nowhere to go from here: the file would
 			// be written on the user's machine and the agent could not
@@ -96,7 +119,55 @@ func (s *server) runSteps(pane string, list []steps.Step, lines, timeoutMS int) 
 		return say(allStepsSent(list) + " Nothing was waited for, so the screen" +
 			" has not caught up: end a list with until, or call wait_for.")
 	}
-	return say(allStepsSent(list) + "\n\n" + showScreen(last, ending, clamped))
+	return say(s.sayWaits(pane, list, waits, lines, clamped))
+}
+
+// waited is what one until step saw, kept for the answer.
+type waited struct {
+	at     int
+	step   steps.Step
+	screen Screen
+	ended  Ending
+}
+
+// sayWaits writes a list's answer: what each wait in it saw, in order,
+// and the whole of the last one.
+//
+// Each wait is headed by the step it was and what the shell said that
+// command exited with, which is the thing a semicolon-chained command
+// line cannot give back: one status for three commands says nothing
+// about which of them failed.
+func (s *server) sayWaits(pane string, list []steps.Step, waits []waited,
+	lines int, clamped bool) string {
+
+	var b strings.Builder
+	b.WriteString(allStepsSent(list))
+	for i, w := range waits {
+		b.WriteString("\n\n" + waitHead(w) + "\n")
+		if i == len(waits)-1 {
+			// The last one whole, with what gridterm has to say about
+			// the pane as it now stands.
+			b.WriteString(s.afterWaiting(pane, w.screen, w.ended, lines, clamped, false))
+			continue
+		}
+		b.WriteString(s.printedOrScreen(pane, w.screen, w.ended, lines, false).Screen)
+	}
+	return b.String()
+}
+
+// waitHead names one wait in a list's answer: which step it was, and
+// how that command ended.
+func waitHead(w waited) string {
+	said := "it ended"
+	switch {
+	case w.ended.GaveUp:
+		said = "the time ran out"
+	case w.screen.Marks && !w.screen.Running && w.screen.HasStatus:
+		said = "exit status " + strconv.Itoa(w.screen.Status)
+	case w.ended.Because != "":
+		said = w.ended.Because
+	}
+	return fmt.Sprintf("step %d, %q -- %s:", w.at+1, w.step.String(), said)
 }
 
 // allStepsSent is the line that says a whole list went in.

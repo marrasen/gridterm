@@ -123,7 +123,8 @@ func toolList() []tool {
 				" give. Put the whole of a piece of work in steps and it runs here" +
 				" without a gap, so a command, the program it starts, and what you type" +
 				" into that program are one call:" +
-				" [\"type:vim notes.md\", \"key:Enter\", \"until:[New\", \"type:ihello\"," +
+				" [\"type:cd ~/work\", \"key:Enter\", \"until\", \"fail:No such file\"," +
+				" \"type:vim notes.md\", \"key:Enter\", \"until:[New\", \"type:ihello\"," +
 				" \"key:Escape\", \"type::wq\", \"key:Enter\", \"until\"]." +
 				stepsArg +
 				" A step that does not do what it says stops the list there, and the" +
@@ -133,6 +134,11 @@ func toolList() []tool {
 				" End a list with until and the answer is the pane once the waiting is" +
 				" over, how the waiting ended, and what is known about its command line" +
 				" the way read_pane's is, so there is nothing to call after it." +
+				" A list may run several commands -- type, Enter, until, then the next" +
+				" one -- and the answer carries what each wait saw, headed by the step" +
+				" and what that command exited with. That is the way to ask three" +
+				" questions at once: chaining them on one line with semicolons runs" +
+				" their output together and leaves one exit status covering all three." +
 				" text and keys are the older way of asking and still work: text goes" +
 				" in letter for letter, then the named keys are pressed, and nothing" +
 				" waits, so call wait_for next.",
@@ -456,36 +462,7 @@ func (s *server) runTool(name string, args json.RawMessage) (result, *rpcError) 
 		if err != nil {
 			return wrong(err.Error())
 		}
-		// The shell said the command finished, so what was waited for
-		// is what it printed. A rectangle of screen here is what sends
-		// a caller looking for read_output, or clearing the screen
-		// first so that the rectangle means something.
-		//
-		// Every other ending leaves the screen the right answer: on
-		// quiet, on text, or on the time running out, nobody has said
-		// where an output begins.
-		if !in.Screen && ended.Because == agent.EndedOnMarks {
-			most := lines
-			if most == 0 {
-				most = mostLines
-			}
-			out, err := s.panes.Output(in.Pane, most)
-			switch {
-			case err == nil:
-				return say(showScreen(out, ended, clamped))
-			default:
-				// A shell can say a command finished without ever
-				// having said where its output began: the prompt
-				// coming back counts as finished too. The screen is
-				// still the answer then, and the reason goes with it
-				// rather than the call failing over a better answer
-				// that was not available.
-				screen.Note = withNote(screen.Note,
-					"What that command printed could not be picked out: "+
-						err.Error()+". This is the screen instead.")
-			}
-		}
-		return say(showScreen(screen, ended, clamped))
+		return say(s.afterWaiting(in.Pane, screen, ended, lines, clamped, in.Screen))
 	}
 	return result{}, &rpcError{
 		Code:    codeInvalidParams,
@@ -598,7 +575,12 @@ var stepsArg = fmt.Sprintf(" Each step is a word, a colon and the rest of it, wh
 	" other way -- the command finished, the pane went quiet -- without that text"+
 	" on the screen stops the list, because a step that says \"until the editor is"+
 	" up\" has not done what it says;"+
-	" and \"until\" on its own waits for whatever is running to finish."+
+	" \"until\" on its own waits for whatever is running to finish;"+
+	" \"require:<text>\" goes on only if the pane says that now, and"+
+	" \"fail:<text>\" stops if it does. The two guards are how a list checks that"+
+	" it is where it thinks it is before it types into it: put a require or a fail"+
+	" after a wait, and a command that failed stops the list there instead of the"+
+	" rest of it going to a shell prompt."+
 	" At most %d steps, typing %d characters in all."+
 	" The keys are the ones keys takes.", steps.MostSteps, steps.MostText)
 
@@ -623,6 +605,56 @@ func missing(what string) (result, *rpcError) {
 		Code:    codeInvalidParams,
 		Message: "that call carried no " + what,
 	}
+}
+
+// afterWaiting is what a wait answers with: what the command printed
+// where the shell said one finished, and the screen everywhere else.
+//
+// The shell said the command finished, so what was waited for is what it
+// printed. A rectangle of screen here is what sends a caller looking for
+// read_output, or clearing the screen before each command so that the
+// rectangle means something -- and clearing throws away what the user
+// had in front of them.
+//
+// Every other ending leaves the screen the right answer: on quiet, on
+// text, or on the time running out, nobody has said where an output
+// begins.
+//
+// One path for both ways of waiting. A list of steps that answered with
+// a rectangle while wait_for answered with the output would teach an
+// agent to clear the screen in exactly the half of the cases that did
+// not need it.
+func (s *server) afterWaiting(pane string, screen Screen, ended Ending,
+	lines int, clamped, wantScreen bool) string {
+
+	return showScreen(s.printedOrScreen(pane, screen, ended, lines, wantScreen), ended, clamped)
+}
+
+// printedOrScreen is what a wait's answer should carry: what the command
+// printed where the shell said one finished, and the screen otherwise.
+func (s *server) printedOrScreen(pane string, screen Screen, ended Ending,
+	lines int, wantScreen bool) Screen {
+
+	if wantScreen || ended.Because != agent.EndedOnMarks {
+		return screen
+	}
+	most := lines
+	if most == 0 {
+		most = mostLines
+	}
+	out, err := s.panes.Output(pane, most)
+	if err == nil {
+		return out
+	}
+	// A shell can say a command finished without ever having said where
+	// its output began: the prompt coming back counts as finished too.
+	// The screen is still the answer then, and the reason goes with it
+	// rather than the call failing over a better answer that was not
+	// available.
+	screen.Note = withNote(screen.Note,
+		"What that command printed could not be picked out: "+
+			err.Error()+". This is the screen instead.")
+	return screen
 }
 
 // showScreen is a screen as an agent reads it, with what the screen

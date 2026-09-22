@@ -53,19 +53,31 @@ type contents struct {
 	// Saves counts the times this vault has been written, and goes up
 	// by one each time.
 	//
-	// Inside the sealed half so it cannot be edited without the key.
-	// Every copy of the file this window ever wrote is validly sealed,
-	// so the crypto says "somebody with the key wrote this" and not
-	// "this is the newest one". Without a count, putting yesterday's
-	// file back restores a key slot the user revoked, or a password
-	// they changed, and nothing can tell.
+	// Inside the sealed half, so it cannot be edited without the key.
+	// Every copy of this file that was ever written is validly sealed,
+	// so opening one proves somebody had the key and not that this is
+	// the newest one. The count is the only thing in the file that says
+	// which write it is.
 	//
-	// Whoever opens the vault remembers the highest count they have
-	// seen, somewhere other than this file, and says so when a file
-	// opens with a lower one. That does not make an old copy impossible
-	// to force -- two files can be put back as easily as one -- but it
-	// turns a silent swap into one that has to defeat two places and can
-	// be seen.
+	// Nothing compares it, and why not is worth keeping. An older copy
+	// put back would restore a key slot revoked since, and that is all
+	// it costs: the secrets in that copy were already readable by the
+	// key it restores, so what the rollback buys is the ones added
+	// afterwards. But anybody who can write this file is running as the
+	// user, and somebody running as the user can read the passphrase as
+	// it is typed, have the SSH agent sign for them, or replace gridterm
+	// itself. Guarding this file against them while all of that is open
+	// is guarding the smallest door in the house.
+	//
+	// Comparing it would also need the highest count seen kept somewhere
+	// else, and whatever kept it would come back along with this file in
+	// the one case worth catching: a home directory restored from a
+	// backup, where the vault has quietly gone back three weeks. So the
+	// check missed the accident it was most useful for and caught only a
+	// narrow attack.
+	//
+	// The count stays because it costs nothing and puts the field in the
+	// format, so a later version can use it without a migration.
 	Saves uint64 `json:"saves,omitempty"`
 
 	Entries []entry `json:"entries"`
@@ -326,9 +338,10 @@ func (v *Vault) readContents(data []byte) error {
 // Saves is how many times this vault has been written, as the file just
 // opened says.
 //
-// Worth reading once the vault is unlocked, against the highest already
-// seen: a file that opens with a lower count than one opened before is
-// an older copy of it. See the note on contents.Saves.
+// Nothing in the window reads it yet. It is here because the count is
+// worth having in the file, and reading it back is how anything that
+// wanted to compare two files would start. See the note on
+// contents.Saves for why nothing compares them now.
 func (v *Vault) Saves() uint64 {
 	v.mu.Lock()
 	defer v.mu.Unlock()

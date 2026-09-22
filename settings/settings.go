@@ -97,16 +97,6 @@ type stored struct {
 	// pick from when making a connection.
 	Keys []string `json:"keys,omitempty"`
 
-	// SecretsSaves is the highest number of writes a vault file has said
-	// it has had, by where that file is.
-	//
-	// Kept here rather than in the vault, which is the whole point: a
-	// vault file is validly sealed however old it is, so the file cannot
-	// say whether it is the newest one. A count kept somewhere else can,
-	// and putting an old vault back then has to put an old settings file
-	// back with it to go unseen.
-	SecretsSaves map[string]uint64 `json:"secretsSaves,omitempty"`
-
 	// Theme is the colour theme the window is drawn in, by name.
 	Theme *string `json:"theme,omitempty"`
 
@@ -289,45 +279,6 @@ func (s *Settings) ServeOn() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.have.ServeOn != nil && *s.have.ServeOn
-}
-
-// SecretsSaves is the highest number of writes the vault at this path
-// has been seen to have, and zero for one never opened.
-func (s *Settings) SecretsSaves(path string) uint64 {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.have.SecretsSaves[path]
-}
-
-// PutSecretsSaves writes down that the vault at this path has been seen
-// with this many writes.
-//
-// It only ever goes up. A vault opened from an older copy on purpose
-// still leaves the higher mark behind, so the next older copy is caught
-// as well.
-func (s *Settings) PutSecretsSaves(path string, saves uint64) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.rereadLocked(); err != nil {
-		return fmt.Errorf("%w: %w", ErrUnsaveable, err)
-	}
-	if s.have.SecretsSaves[path] >= saves {
-		return nil
-	}
-	before := s.have
-	// A map of its own, or the copy kept to put back on a failure would
-	// be changed along with this one.
-	next := make(map[string]uint64, len(s.have.SecretsSaves)+1)
-	for at, n := range s.have.SecretsSaves {
-		next[at] = n
-	}
-	next[path] = saves
-	s.have.SecretsSaves = next
-	if err := s.saveLocked(); err != nil {
-		s.have = before
-		return err
-	}
-	return nil
 }
 
 // PutServeOn writes down whether the window is serving, for the next run

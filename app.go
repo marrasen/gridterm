@@ -23,7 +23,6 @@ import (
 	"github.com/marrasen/gridterm/render"
 	"github.com/marrasen/gridterm/secrets"
 	"github.com/marrasen/gridterm/session"
-	"github.com/marrasen/gridterm/settings"
 	"github.com/marrasen/gridterm/themes"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/files"
@@ -209,11 +208,6 @@ type app struct {
 
 	// now is the clock this window runs on, so a test can hold it still.
 	now func() time.Time
-
-	// remembered is what the window keeps between runs, for the few
-	// things that read it directly rather than through a type of their
-	// own. Nil until the settings have been read.
-	remembered *settings.Settings
 
 	// secretCopied is the secret put on the clipboard and not yet taken
 	// off it, so the window can take it off on the way out. Empty when

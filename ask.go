@@ -55,6 +55,15 @@ type askUser struct {
 // a file on this machine that this user can already read, so a limit
 // protects nothing and only strands whoever mistyped a long passphrase.
 func (u *askUser) Passphrase(ctx context.Context, key remote.LockedKey) (string, error) {
+	// The one the vault holds, when it holds one and a key already
+	// unlocked opens it. Only on the first go round: a passphrase the
+	// key has just refused is not worth offering twice, and the user is
+	// owed the dialog instead.
+	if key.Wrong == 0 {
+		if pass, saved := u.app.savedPassphrase(ctx, key.Path); saved {
+			return pass, nil
+		}
+	}
 	return u.secret(ctx, secret{
 		title:   "Unlock Private Key",
 		lines:   []string{key.Path},

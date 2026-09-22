@@ -227,6 +227,11 @@ func secretNote(it secrets.Item) string {
 	if it.User != "" {
 		parts = append(parts, it.User)
 	}
+	// The key a passphrase opens, which is the one thing that says
+	// which of two keys with the same file name this one is for.
+	if it.File != "" {
+		parts = append(parts, it.File)
+	}
 	if it.Kind != "" && it.Kind != secrets.Password {
 		parts = append(parts, string(it.Kind))
 	}
@@ -507,8 +512,8 @@ func (a *app) chooseAKeyToAdd(v *secrets.Vault) error {
 	})
 	c.Style = a.chooserStyle()
 	for _, keyFile := range spare {
-		c.Add(keyFile, "", func() error {
-			a.addVaultKeyOn(v, keyFile)
+		c.Add(keyFile, spareKeyNote(v, keyFile), func() error {
+			a.confirmAddKey(v, keyFile)
 			return nil
 		})
 	}
@@ -519,6 +524,50 @@ func (a *app) chooseAKeyToAdd(v *secrets.Vault) error {
 	a.markDirty()
 	return nil
 }
+
+// spareKeyNote marks a key whose passphrase is in this vault, and says
+// nothing about any other.
+//
+// A second key is added so that losing the first does not lose the
+// vault. A key whose passphrase is only in here cannot do that job: with
+// the first key gone, opening the vault needs this key, unlocking this
+// key needs the passphrase, and the passphrase is inside the vault.
+func spareKeyNote(v *secrets.Vault, keyFile string) string {
+	if _, err := v.PassphraseFor(keyFile); err != nil {
+		return ""
+	}
+	return "passphrase in here"
+}
+
+// confirmAddKey asks before adding a key whose passphrase is in the
+// vault, and adds any other key without a word.
+//
+// Said rather than refused. The key still opens the vault while the
+// vault is open, and the passphrase can be copied out and kept
+// elsewhere, which makes it a spare like any other. That is the user's
+// to decide, and the dialog says what it turns on.
+func (a *app) confirmAddKey(v *secrets.Vault, keyFile string) {
+	if _, err := v.PassphraseFor(keyFile); err != nil {
+		a.addVaultKeyOn(v, keyFile)
+		return
+	}
+	lines := append([]string{keyFile, ""},
+		wrapLines("The key cannot open them on its own. Copy the passphrase"+
+			" somewhere else to use this key as a spare.", errorLineWidth)...)
+	f := a.newConfirm(passphraseInTheSecrets, lines)
+	f.AddButton(ui.Button{Title: btnAdd, Do: func() error {
+		// Not from here: this dialog closes as soon as this returns,
+		// and closing one takes anything stacked on top of it.
+		a.pump.post(func() { a.addVaultKeyOn(v, keyFile) })
+		return nil
+	}})
+	f.AddButton(ui.Button{Title: btnCancel})
+	a.showForm(f, nil)
+}
+
+// passphraseInTheSecrets heads the question asked before a key whose
+// passphrase is in the vault is given a slot of its own.
+const passphraseInTheSecrets = "This key's passphrase is in the secrets"
 
 // whyNoKeyToAdd says why there is nothing to offer, which is a
 // different thing depending on how many already open it.

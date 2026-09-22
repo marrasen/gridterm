@@ -22,6 +22,7 @@ package main
 // The buttons. Rule 5 in WORDING.md fixes most of these to one verb from
 // a small set, so most dialogs draw from the first group.
 const (
+	btnAdd     = "Add"
 	btnOK      = "OK"
 	btnCancel  = "Cancel"
 	btnClose   = "Close"
@@ -104,6 +105,13 @@ const (
 	fldSaveCopy    = "Save this copy"
 	fldSaveTunnel  = "Save this tunnel"
 )
+
+// The tick box on the new key dialog, which is not one of those three:
+// it does not save what was typed, it says not to type one at all.
+//
+// The label is the short name and the field's hint says the rest, so
+// the row beside it stays a row rather than a sentence.
+const fldGeneratePass = "Generate passphrase"
 
 // The dialog titles that are a fixed phrase. A title built from a name
 // is made where it is used, out of the parts below.

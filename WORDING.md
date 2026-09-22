@@ -22,10 +22,10 @@ there too.
    it all, there is no body.
 4. **Never explain the program's reasoning.** The user needs the choice,
    not why gridterm has to offer it.
-5. **Buttons are one verb**, from a small fixed set: `OK` `Cancel`
+5. **Buttons are one verb**, from a small fixed set: `OK` `Add` `Cancel`
    `Close` `Retry` `Wait` `Save` `Create` `Delete` `Remove` `Replace`
-   `Skip` `Open` `Run` `Connect`. No pronouns: never `Make it`, `Close
-   it`, `Keep them`, `Leave it`.
+   `Skip` `Open` `Run` `Connect` `Generate`. No pronouns: never `Make
+   it`, `Close it`, `Keep them`, `Leave it`.
 6. **`Cancel` cancels what the dialog is about. `Close` dismisses a
    dialog and leaves things running.** The same meaning everywhere.
 7. **Errors are two or three words, sentence case, no full stop:**

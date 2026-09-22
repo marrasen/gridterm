@@ -610,3 +610,82 @@ func itemNamed(t *testing.T, v *Vault, name string) Item {
 	t.Fatalf("nothing in the vault is called %q", name)
 	return Item{}
 }
+
+// A key's passphrase is found by the file it opens, whatever the item
+// has since been renamed to.
+func TestAPassphraseIsFoundByItsKeyFile(t *testing.T) {
+	v, _, _ := aVault(t)
+	keyFile := "/home/marcus/.ssh/id_ed25519_gridterm"
+
+	saved, err := v.Put(Item{Name: "id_ed25519_gridterm", Kind: Passphrase, File: keyFile},
+		"a long generated one")
+	if err != nil {
+		t.Fatalf("put: %v", err)
+	}
+	got, err := v.PassphraseFor(keyFile)
+	if err != nil {
+		t.Fatalf("PassphraseFor: %v", err)
+	}
+	if got != "a long generated one" {
+		t.Errorf("PassphraseFor = %q, want what was saved", got)
+	}
+
+	saved.Name = "the laptop key"
+	if _, err := v.PutDetails(saved); err != nil {
+		t.Fatalf("rename it: %v", err)
+	}
+	if got, err := v.PassphraseFor(keyFile); err != nil || got != "a long generated one" {
+		t.Errorf("PassphraseFor after a rename = %q, %v", got, err)
+	}
+}
+
+// A key the vault holds nothing for says so, and so does a password
+// that happens to be named after one.
+func TestNoPassphraseForAKeyIsNotAFailure(t *testing.T) {
+	v, _, _ := aVault(t)
+	if _, err := v.Put(Item{Name: "/home/marcus/.ssh/id_ed25519"}, "hunter2"); err != nil {
+		t.Fatalf("put: %v", err)
+	}
+
+	for _, keyFile := range []string{"/home/marcus/.ssh/id_ed25519", "", "/nothing/here"} {
+		if _, err := v.PassphraseFor(keyFile); !errors.Is(err, ErrNoSuchItem) {
+			t.Errorf("PassphraseFor(%q) = %v, want ErrNoSuchItem", keyFile, err)
+		}
+	}
+}
+
+// A second passphrase for the same key file is refused: the first is
+// the one PassphraseFor would answer with, and the second would sit
+// there unused with nothing saying which locks the key.
+func TestOnlyOnePassphrasePerKeyFile(t *testing.T) {
+	v, _, _ := aVault(t)
+	keyFile := "/home/marcus/.ssh/id_ed25519_gridterm"
+	first, err := v.Put(Item{Name: "the first", Kind: Passphrase, File: keyFile}, "one")
+	if err != nil {
+		t.Fatalf("put the first: %v", err)
+	}
+
+	if _, err := v.Put(Item{Name: "the second", Kind: Passphrase, File: keyFile}, "two"); err == nil {
+		t.Fatal("a second passphrase for the same key file was taken")
+	}
+
+	// Changing the one that is there is not a clash with itself.
+	if _, err := v.Put(first, "one again"); err != nil {
+		t.Fatalf("change the first: %v", err)
+	}
+	if got, err := v.PassphraseFor(keyFile); err != nil || got != "one again" {
+		t.Errorf("PassphraseFor = %q, %v, want the changed one", got, err)
+	}
+}
+
+// A locked vault hands over no passphrase either.
+func TestALockedVaultHandsOverNoPassphrase(t *testing.T) {
+	v, _, _ := aVault(t)
+	if _, err := v.Put(Item{Name: "key", Kind: Passphrase, File: "/key"}, "shh"); err != nil {
+		t.Fatalf("put: %v", err)
+	}
+	v.Lock()
+	if _, err := v.PassphraseFor("/key"); !errors.Is(err, ErrLocked) {
+		t.Errorf("PassphraseFor on a locked vault = %v, want ErrLocked", err)
+	}
+}

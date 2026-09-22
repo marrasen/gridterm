@@ -25,6 +25,9 @@ const (
 	// Note is text the user keeps: a recovery code, a licence, an
 	// answer to a security question.
 	Note Kind = "note"
+	// Passphrase is what opens a private key file, kept so the window
+	// unlocks that key without asking. File says which key it is.
+	Passphrase Kind = "passphrase"
 )
 
 // Item is one thing in the vault, without the secret in it.
@@ -33,10 +36,16 @@ const (
 // vault without holding any of it. Secret fetches the value for the one
 // item a user asked for.
 type Item struct {
-	ID      string    `json:"id"`
-	Name    string    `json:"name"`
-	Kind    Kind      `json:"kind"`
-	User    string    `json:"user,omitempty"`
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Kind Kind   `json:"kind"`
+	User string `json:"user,omitempty"`
+
+	// File is the private key file a Passphrase opens, and empty for
+	// every other kind. It is what PassphraseFor matches on, so
+	// renaming the item leaves the key still unlocking.
+	File string `json:"file,omitempty"`
+
 	Made    time.Time `json:"made"`
 	Changed time.Time `json:"changed"`
 }
@@ -398,6 +407,29 @@ func (v *Vault) Secret(id string) (string, error) {
 	return "", ErrNoSuchItem
 }
 
+// PassphraseFor is the saved passphrase of a private key file.
+//
+// Matched on the file rather than on the item's name, so a passphrase
+// the user has renamed goes on opening the key it was saved for.
+// ErrNoSuchItem means the vault holds none for that file, which is the
+// ordinary answer for every key the user never saved one for.
+func (v *Vault) PassphraseFor(keyFile string) (string, error) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if v.data == nil {
+		return "", ErrLocked
+	}
+	if keyFile == "" {
+		return "", ErrNoSuchItem
+	}
+	for _, e := range v.items {
+		if e.Kind == Passphrase && e.File == keyFile {
+			return e.Value, nil
+		}
+	}
+	return "", ErrNoSuchItem
+}
+
 // Put adds an item or replaces the one with the same id, and saves.
 //
 // An item with no id is new and is given one.
@@ -412,6 +444,9 @@ func (v *Vault) Put(it Item, value string) (Item, error) {
 	}
 	if it.Kind == "" {
 		it.Kind = Password
+	}
+	if err := v.onlyPassphraseFor(it); err != nil {
+		return Item{}, err
 	}
 	now := v.now()
 	it.Changed = now
@@ -467,6 +502,9 @@ func (v *Vault) PutDetails(it Item) (Item, error) {
 	if it.Kind == "" {
 		it.Kind = v.items[at].Kind
 	}
+	if err := v.onlyPassphraseFor(it); err != nil {
+		return Item{}, err
+	}
 	it.Made = v.items[at].Made
 	it.Changed = v.now()
 
@@ -477,6 +515,25 @@ func (v *Vault) PutDetails(it Item) (Item, error) {
 		return Item{}, err
 	}
 	return it, nil
+}
+
+// onlyPassphraseFor refuses a second passphrase for a key file the
+// vault already has one for. The caller holds the lock.
+//
+// PassphraseFor answers with the first it finds, so a second one would
+// sit in the vault unused and the user would have no way to tell which
+// of the two the key is actually locked with.
+func (v *Vault) onlyPassphraseFor(it Item) error {
+	if it.Kind != Passphrase || it.File == "" {
+		return nil
+	}
+	for _, e := range v.items {
+		if e.Kind == Passphrase && e.File == it.File && e.ID != it.ID {
+			return fmt.Errorf("secrets: %s already holds the passphrase for %s",
+				e.Name, it.File)
+		}
+	}
+	return nil
 }
 
 // Remove takes an item out and saves.

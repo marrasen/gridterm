@@ -49,6 +49,17 @@ func (a *app) vault() (*secrets.Vault, error) {
 	return v, nil
 }
 
+// haveSecrets reports whether there is a vault to keep something in.
+//
+// Whether it is open does not matter: a dialog that offers to save
+// something opens the vault when the user presses the button, the way
+// every secrets command does. What it cannot do is offer to save into
+// a vault that does not exist yet.
+func (a *app) haveSecrets() bool {
+	v, err := a.vault()
+	return err == nil && v.Exists()
+}
+
 // openWithKeysInHand unlocks the vault with the keys the window has
 // already unlocked, and says whether that was enough.
 //
@@ -59,6 +70,49 @@ func (a *app) openWithKeysInHand(v *secrets.Vault) bool {
 		return true
 	}
 	return v.Unlock(a.keys.Signers()) == nil
+}
+
+// savedPassphrase is the passphrase the vault holds for a key file, and
+// false when it holds none.
+//
+// Called from a goroutine that is connecting, so the lookup itself is
+// posted to the goroutine that draws: the vault is one of that
+// goroutine's, and it is the one that reads the file the first time
+// anything asks.
+func (a *app) savedPassphrase(ctx context.Context, keyFile string) (string, bool) {
+	answer := make(chan string, 1)
+	a.pump.post(func() { answer <- a.passphraseInHand(keyFile) })
+	select {
+	case pass := <-answer:
+		return pass, pass != ""
+	case <-ctx.Done():
+		return "", false
+	}
+}
+
+// passphraseInHand is the same lookup on the drawing goroutine.
+//
+// Only out of a vault a key already unlocked opens. Asking for a
+// passphrase to read a passphrase would be a dialog to spare a dialog,
+// and the key being unlocked may be the vault's own: that one has to be
+// typed, or nothing here would ever open.
+//
+// Empty for every reason there is -- no vault, a locked one, no
+// passphrase saved for this key. None of them is something to report:
+// what happens next either way is the dialog that asks.
+func (a *app) passphraseInHand(keyFile string) string {
+	v, err := a.vault()
+	if err != nil || !v.Exists() {
+		return ""
+	}
+	if !a.openWithKeysInHand(v) {
+		return ""
+	}
+	pass, err := v.PassphraseFor(keyFile)
+	if err != nil {
+		return ""
+	}
+	return pass
 }
 
 // keyFileForVault is the key file to unlock to open this vault.

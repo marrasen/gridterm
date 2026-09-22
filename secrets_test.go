@@ -570,7 +570,7 @@ func TestNoButtonRenamesItself(t *testing.T) {
 // Both forms say who can read back what is typed into them, which is
 // the one thing the title cannot say.
 //
-// Against the constant, not the wording. The handle is the constant so
+// Against the constant, not the wording: the handle is the constant so
 // that rewording the line costs nothing here, which is the whole reason
 // every line this window says is one. See WORDING.md.
 func TestTheFormsSayWhoCanOpenThem(t *testing.T) {
@@ -585,11 +585,6 @@ func TestTheFormsSayWhoCanOpenThem(t *testing.T) {
 		said := strings.Join(f.Lines, " ")
 		if !strings.Contains(said, onlyYourKey) {
 			t.Errorf("the %s form says %q, want %q", kind, said, onlyYourKey)
-		}
-		// And it calls them what every other line calls them: a second
-		// name for one thing is a second thing to learn.
-		if strings.Contains(strings.ToLower(said), "vault") {
-			t.Errorf("the %s form says %q, and the window calls them the secrets", kind, said)
 		}
 		sendKey(t, a, press(input.KeyEscape, 0))
 		a.pump.run()

@@ -97,7 +97,7 @@ type contents struct {
 }
 
 // ErrLocked says the vault has not been opened yet.
-var ErrLocked = errors.New("secrets: the vault is locked")
+var ErrLocked = errors.New("secrets: locked")
 
 // ErrNoSuchItem says nothing in the vault has that id.
 var ErrNoSuchItem = errors.New("secrets: there is no such item")
@@ -182,12 +182,12 @@ func Create(path string, signer ssh.Signer, keyFile string) (*Vault, error) {
 	took, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
 		if errors.Is(err, os.ErrExist) {
-			return nil, fmt.Errorf("secrets: there is already a vault at %s", path)
+			return nil, fmt.Errorf("secrets: %s is already there", path)
 		}
-		return nil, fmt.Errorf("secrets: make a vault at %s: %w", path, err)
+		return nil, fmt.Errorf("secrets: create %s: %w", path, err)
 	}
 	if err := took.Close(); err != nil {
-		return nil, fmt.Errorf("secrets: make a vault at %s: %w",
+		return nil, fmt.Errorf("secrets: create %s: %w",
 			path, errors.Join(err, os.Remove(path)))
 	}
 	give := func(err error) (*Vault, error) {
@@ -218,11 +218,11 @@ func Create(path string, signer ssh.Signer, keyFile string) (*Vault, error) {
 func wrapFor(signer ssh.Signer, data []byte, keyFile string) (slot, error) {
 	challenge := make([]byte, 32)
 	if _, err := rand.Read(challenge); err != nil {
-		return slot{}, fmt.Errorf("secrets: take a challenge: %w", err)
+		return slot{}, fmt.Errorf("secrets: create a challenge: %w", err)
 	}
 	salt := make([]byte, 16)
 	if _, err := rand.Read(salt); err != nil {
-		return slot{}, fmt.Errorf("secrets: take a salt: %w", err)
+		return slot{}, fmt.Errorf("secrets: create a salt: %w", err)
 	}
 	key, err := slotKeyFrom(signer, challenge, salt)
 	if err != nil {
@@ -279,7 +279,7 @@ func (v *Vault) Unlock(signers []ssh.Signer) error {
 	case err == nil:
 		v.file = f
 	case v.file == nil:
-		return fmt.Errorf("secrets: there is no vault at %s yet", v.path)
+		return fmt.Errorf("secrets: there is nothing at %s yet", v.path)
 	default:
 		// There was a vault and now it will not be read. Opening the
 		// copy in memory would hand over secrets out of a file nobody
@@ -361,12 +361,12 @@ func (v *Vault) contentsOf(f *file, data []byte) (contents, error) {
 	}
 	plain, err := unseal(data, f.Nonce, f.Sealed, nil)
 	if err != nil {
-		return contents{}, fmt.Errorf("secrets: open the vault %s: %w", v.path, err)
+		return contents{}, fmt.Errorf("secrets: open %s: %w", v.path, err)
 	}
 	var c contents
 	if err := json.Unmarshal(plain, &c); err != nil {
 		wipe(plain)
-		return contents{}, fmt.Errorf("secrets: read what is in the vault %s: %w", v.path, err)
+		return contents{}, fmt.Errorf("secrets: read what is in %s: %w", v.path, err)
 	}
 	wipe(plain)
 	return c, nil
@@ -600,7 +600,7 @@ func (v *Vault) onlyPassphraseFor(it Item) error {
 	}
 	for _, e := range v.items {
 		if e.Kind == Passphrase && e.File == it.File && e.ID != it.ID {
-			return fmt.Errorf("secrets: %s already holds the passphrase for %s",
+			return fmt.Errorf("secrets: %s is already the passphrase for %s",
 				e.Name, it.File)
 		}
 	}
@@ -646,7 +646,7 @@ func (v *Vault) AddKey(signer ssh.Signer, keyFile string) error {
 	}
 	want := Fingerprint(signer.PublicKey())
 	if slices.ContainsFunc(v.file.Slots, func(s slot) bool { return s.Fingerprint == want }) {
-		return fmt.Errorf("secrets: %s already opens this vault", want)
+		return fmt.Errorf("secrets: %s already opens the secrets", want)
 	}
 	s, err := wrapFor(signer, v.data, keyFile)
 	if err != nil {
@@ -673,10 +673,10 @@ func (v *Vault) RemoveKey(fingerprint string) error {
 	v.refresh()
 	at := slices.IndexFunc(v.file.Slots, func(s slot) bool { return s.Fingerprint == fingerprint })
 	if at < 0 {
-		return fmt.Errorf("secrets: %s does not open this vault", fingerprint)
+		return fmt.Errorf("secrets: %s does not open the secrets", fingerprint)
 	}
 	if len(v.file.Slots) == 1 {
-		return errors.New("secrets: that is the only key that opens this vault")
+		return errors.New("secrets: that is the only key that opens the secrets")
 	}
 	was := slices.Clone(v.file.Slots)
 	v.file.Slots = slices.Delete(v.file.Slots, at, at+1)
@@ -714,7 +714,7 @@ func (v *Vault) save() error {
 	v.saves++
 	raw, err := json.Marshal(contents{Saves: v.saves, Entries: v.items})
 	if err != nil {
-		return fmt.Errorf("secrets: write the vault %s: %w", v.path, err)
+		return fmt.Errorf("secrets: write %s: %w", v.path, err)
 	}
 	nonce, box, err := seal(v.data, raw, nil)
 	wipe(raw)

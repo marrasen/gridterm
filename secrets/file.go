@@ -62,19 +62,19 @@ func readFile(path string) (*file, error) {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, err
 		}
-		return nil, fmt.Errorf("secrets: read the vault %s: %w", path, err)
+		return nil, fmt.Errorf("secrets: read %s: %w", path, err)
 	}
 	var f file
 	if err := json.Unmarshal(raw, &f); err != nil {
-		return nil, fmt.Errorf("secrets: read the vault %s: %w", path, err)
+		return nil, fmt.Errorf("secrets: read %s: %w", path, err)
 	}
 	if f.Version > fileVersion {
 		return nil, fmt.Errorf(
-			"secrets: the vault %s was written by a newer gridterm (version %d, this one reads %d)",
+			"secrets: %s was written by a newer gridterm (version %d, this one reads %d)",
 			path, f.Version, fileVersion)
 	}
 	if len(f.Slots) == 0 {
-		return nil, fmt.Errorf("secrets: the vault %s has no key that opens it", path)
+		return nil, fmt.Errorf("secrets: %s has no key that opens it", path)
 	}
 	return &f, nil
 }
@@ -88,37 +88,37 @@ func readFile(path string) (*file, error) {
 func writeFile(path string, f *file) error {
 	raw, err := json.MarshalIndent(f, "", "  ")
 	if err != nil {
-		return fmt.Errorf("secrets: write the vault %s: %w", path, err)
+		return fmt.Errorf("secrets: write %s: %w", path, err)
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return fmt.Errorf("secrets: make somewhere for the vault %s: %w", path, err)
+		return fmt.Errorf("secrets: create somewhere for %s: %w", path, err)
 	}
 	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.new")
 	if err != nil {
-		return fmt.Errorf("secrets: write the vault %s: %w", path, err)
+		return fmt.Errorf("secrets: write %s: %w", path, err)
 	}
 	name := tmp.Name()
 	// Only the user, before anything is in it.
 	if err := tmp.Chmod(0o600); err != nil && !errors.Is(err, os.ErrInvalid) {
-		return fmt.Errorf("secrets: write the vault %s: %w",
+		return fmt.Errorf("secrets: write %s: %w",
 			path, errors.Join(err, tmp.Close(), os.Remove(name)))
 	}
 	if _, err := tmp.Write(raw); err != nil {
-		return fmt.Errorf("secrets: write the vault %s: %w",
+		return fmt.Errorf("secrets: write %s: %w",
 			path, errors.Join(err, tmp.Close(), os.Remove(name)))
 	}
 	// Flushed before the rename, or a crash can leave the new name
 	// pointing at an empty file.
 	if err := tmp.Sync(); err != nil {
-		return fmt.Errorf("secrets: write the vault %s: %w",
+		return fmt.Errorf("secrets: write %s: %w",
 			path, errors.Join(err, tmp.Close(), os.Remove(name)))
 	}
 	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("secrets: write the vault %s: %w",
+		return fmt.Errorf("secrets: write %s: %w",
 			path, errors.Join(err, os.Remove(name)))
 	}
 	if err := rename(name, path); err != nil {
-		return fmt.Errorf("secrets: write the vault %s: %w",
+		return fmt.Errorf("secrets: write %s: %w",
 			path, errors.Join(err, os.Remove(name)))
 	}
 	return nil

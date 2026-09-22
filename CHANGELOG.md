@@ -106,7 +106,10 @@ ran to two sentences are one each. And the line over the add and change
 forms said `Sealed in the vault`, which was the only place on screen
 that called the secrets anything but the secrets; it now says `Only
 your key opens the secrets.`, which is the one thing the title cannot
-say.
+say. Every error the `secrets` package reports went the same way: they
+said `the vault`, and they are read under a heading that has just said
+`the secrets`. The ones that also said make, take or holds now say
+create, create and is, which is what the vocabulary table has.
 
 **A list's buttons look and answer like every other dialog's.** The row
 along the bottom of a chooser drew its actions as names in square

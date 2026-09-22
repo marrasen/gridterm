@@ -39,7 +39,7 @@ const (
 const keyLen = chacha20poly1305.KeySize
 
 // ErrWrongKey says the key offered does not open the vault.
-var ErrWrongKey = errors.New("secrets: that key does not open this vault")
+var ErrWrongKey = errors.New("secrets: that key does not open the secrets")
 
 // ErrNotDeterministic says a key cannot hold a vault open.
 //
@@ -48,7 +48,7 @@ var ErrWrongKey = errors.New("secrets: that key does not open this vault")
 // ECDSA picks a random nonce per signature and would seal a vault that
 // never opened again.
 var ErrNotDeterministic = errors.New(
-	"secrets: only an ed25519 key can open a vault, because only its signature is the same every time")
+	"secrets: only an ed25519 key can open the secrets, because only its signature is the same every time")
 
 // usable reports whether a key signs the same way every time, which is
 // what a vault needs.
@@ -77,10 +77,10 @@ func slotKeyFrom(signer ssh.Signer, challenge, salt []byte) ([]byte, error) {
 	// for.
 	sig, err := signer.Sign(rand.Reader, msg)
 	if err != nil {
-		return nil, fmt.Errorf("secrets: sign the vault challenge: %w", err)
+		return nil, fmt.Errorf("secrets: sign the challenge: %w", err)
 	}
 	if len(sig.Blob) == 0 {
-		return nil, errors.New("secrets: the key signed the vault challenge with nothing")
+		return nil, errors.New("secrets: the key signed the challenge with nothing")
 	}
 	// The format goes in as well, so two signature kinds over one
 	// challenge cannot land on the same key.
@@ -107,7 +107,7 @@ func seal(key, plain, extra []byte) (nonce, box []byte, err error) {
 	}
 	nonce = make([]byte, aead.NonceSize())
 	if _, err := rand.Read(nonce); err != nil {
-		return nil, nil, fmt.Errorf("secrets: take a nonce: %w", err)
+		return nil, nil, fmt.Errorf("secrets: create a nonce: %w", err)
 	}
 	return nonce, aead.Seal(nil, nonce, plain, extra), nil
 }
@@ -133,7 +133,7 @@ func unseal(key, nonce, box, extra []byte) ([]byte, error) {
 func newDataKey() ([]byte, error) {
 	key := make([]byte, keyLen)
 	if _, err := rand.Read(key); err != nil {
-		return nil, fmt.Errorf("secrets: take a key: %w", err)
+		return nil, fmt.Errorf("secrets: create a key: %w", err)
 	}
 	return key, nil
 }

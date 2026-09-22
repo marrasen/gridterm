@@ -45,7 +45,7 @@ func NewPassword(n int) (string, error) {
 	buf := make([]byte, n)
 	for len(out) < n {
 		if _, err := rand.Read(buf); err != nil {
-			return "", fmt.Errorf("secrets: make a password: %w", err)
+			return "", fmt.Errorf("secrets: create a password: %w", err)
 		}
 		for _, b := range buf {
 			if int(b) >= limit {

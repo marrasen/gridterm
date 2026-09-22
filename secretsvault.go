@@ -147,7 +147,7 @@ func keyFileForVault(v *secrets.Vault) (string, error) {
 		return first, nil
 	}
 	return "", errors.New(
-		"the vault does not say which key file opens it, so the key has to be unlocked by opening a server first")
+		"the secrets do not say which key file opens them, so the key has to be unlocked by opening a server first")
 }
 
 // unlockVault unlocks the vault, asking for a passphrase if it has to.

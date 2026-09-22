@@ -775,6 +775,15 @@ A passphrase dialog the user closed is not one of these. It reports
 nothing: they shut it, so they know, and a notice saying so is a second
 dialog to dismiss for a thing they just did.
 
+The bodies under these headings come from the `secrets` package, and
+they say `the secrets` too. They used to say `the vault`, which put a
+second name for one thing in front of whoever had just read the first.
+The package keeps the word for its own types and comments; it is the
+file on disk and the thing in memory, and neither is what the window
+calls them on screen. Where the path already says which file, the noun
+goes altogether -- `secrets: read %s` -- the way `settings: read %s`
+does.
+
 ---
 
 # 11. Secrets

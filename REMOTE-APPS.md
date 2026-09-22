@@ -477,6 +477,21 @@ pane keeps its size and letterboxes**, filling the strip the window will
 not. A tiling grid usually wants the first and looks wrong doing the
 second, which is worth deciding before step 7 rather than after.
 
+## Window icons
+
+The one thing that needed no fix. Icons arrive, decode correctly, and
+carry proper transparency: `xterm` and `mousepad` both sent one, both
+48x48, both right. The spike writes each out beside the frames.
+
+Two things worth keeping. The hello advertises `window-icon: ["png"]`,
+which makes the server scale and normalise whatever the application
+had, so gridterm gets one predictable size rather than whatever the
+far machine's theme provides -- convenient for a pane title. And the
+pixels really are alpha-premultiplied as `ui.Icon` promises, which the
+spike now checks on every icon rather than trusting: no colour channel
+may exceed the alpha. A break there would show only as a pale fringe,
+which is the kind of thing that gets blamed on the artwork.
+
 ## Is a remote window a pane, or a floating thing?
 
 Both, split by what the window is for. The protocol settles it.

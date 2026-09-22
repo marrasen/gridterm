@@ -241,6 +241,27 @@ not enough and both decoders were dead. The fork sends
 Use an image viewer rather than a terminal to watch it: `ristretto` on
 a photo-like picture is what these encodings are for.
 
+## Window icons
+
+They arrive and they are correct, which is the first thing here that
+needed no fix. Each window's icon is written out beside the frames as
+`windowN-icon-M.png`.
+
+Both `xterm` and `mousepad` sent one 48x48 icon: the hello advertises
+`window-icon: ["png"]`, so the server scales and normalises whatever the
+application had. One predictable size is convenient for a pane title.
+
+The spike also checks the promise `ui.Icon` makes -- alpha-premultiplied
+BGRA -- on every icon that arrives, and says so in the log:
+
+```
+window 1: icon 48x48, 1188 translucent pixels, all premultiplied
+```
+
+In premultiplied pixels no colour channel can exceed the alpha. If that
+were ever broken the only sign on screen would be a pale fringe round
+every icon, which is easy to miss and easy to blame on the artwork.
+
 ## Flags
 
 - `-serve` run the fake server on this address instead of connecting.

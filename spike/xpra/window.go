@@ -36,8 +36,9 @@ type window struct {
 	title  string
 	pixels []byte
 
-	// frame numbers the PNGs.
+	// frame and icons number the PNGs.
 	frame int
+	icons int
 
 	// limits are what the application said about its own size. A
 	// terminal resizes in whole character cells, so a pane's exact
@@ -76,7 +77,39 @@ func (w *window) SetIcon(icon *ui.Icon) error {
 	if err := icon.Validate(); err != nil {
 		return err
 	}
-	log.Printf("window %d: icon %dx%d", w.id, icon.Width, icon.Height)
+	log.Printf("window %d: icon %dx%d%s", w.id, icon.Width, icon.Height, premultiplied(icon.Pixels))
+	return w.writeIcon(icon)
+}
+
+// writeIcon dumps an icon beside the frames, so that what arrived can
+// be looked at rather than counted.
+//
+// The pixels are alpha-premultiplied BGRA, which is what Go's own
+// image.RGBA holds once the blue and red ends are swapped -- so the PNG
+// encoder needs no un-premultiplying and a wrong assumption about that
+// would show up as a dark halo round the edges.
+func (w *window) writeIcon(icon *ui.Icon) error {
+	w.mu.Lock()
+	n := w.icons
+	w.icons++
+	w.mu.Unlock()
+
+	img := image.NewRGBA(image.Rect(0, 0, icon.Width, icon.Height))
+	for i := 0; i+3 < len(icon.Pixels); i += 4 {
+		b, g, r, a := icon.Pixels[i], icon.Pixels[i+1], icon.Pixels[i+2], icon.Pixels[i+3]
+		img.Pix[i], img.Pix[i+1], img.Pix[i+2], img.Pix[i+3] = r, g, b, a
+	}
+
+	path := filepath.Join(w.display.dir, fmt.Sprintf("window%d-icon-%d.png", w.id, n))
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if err := png.Encode(f, img); err != nil {
+		return err
+	}
+	log.Printf("window %d: wrote %s", w.id, path)
 	return nil
 }
 
@@ -392,4 +425,34 @@ func (w *window) fit(width, height int) (int, int) {
 	limits := w.limits
 	w.mu.Unlock()
 	return limits.Fit(width, height)
+}
+
+// premultiplied describes whether pixels keep the promise ui.Icon makes
+// about them, for the log line.
+//
+// In alpha-premultiplied pixels no colour channel can exceed the alpha:
+// a pixel half transparent has had its colour halved already. A decoder
+// that handed over straight alpha instead would break that, and the
+// only sign on screen would be a pale fringe round the icon -- easy to
+// miss and easy to blame on the artwork.
+func premultiplied(pixels []byte) string {
+	var translucent, broken int
+	for i := 0; i+3 < len(pixels); i += 4 {
+		a := pixels[i+3]
+		if a == 0xff {
+			continue
+		}
+		translucent++
+		if pixels[i] > a || pixels[i+1] > a || pixels[i+2] > a {
+			broken++
+		}
+	}
+	switch {
+	case translucent == 0:
+		return ", fully opaque"
+	case broken > 0:
+		return fmt.Sprintf(", %d of %d translucent pixels are NOT premultiplied", broken, translucent)
+	default:
+		return fmt.Sprintf(", %d translucent pixels, all premultiplied", translucent)
+	}
 }

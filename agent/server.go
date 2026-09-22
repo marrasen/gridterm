@@ -48,6 +48,9 @@ type Server struct {
 	accepting sync.WaitGroup
 }
 
+// GiveUpAfter is how long a wait runs when it was given no timeout.
+const GiveUpAfter = 30 * time.Second
+
 // The defaults a wait uses when the agent asks for none.
 const (
 	// quietFor is how long a pane has to say nothing before a wait
@@ -56,7 +59,12 @@ const (
 
 	// giveUpAfter is how long a wait goes on before saying what is on
 	// the screen anyway.
-	giveUpAfter = 30 * time.Second
+	//
+	// Exported as GiveUpAfter as well, because the MCP tools tell an
+	// agent what it is: a number said in two places is one that goes
+	// stale in the telling, and an agent that is not told a default
+	// sets one on every call to be sure.
+	giveUpAfter = GiveUpAfter
 
 	// longestWait caps what an agent may ask for, so one cannot park a
 	// goroutine of this window for an afternoon.
@@ -524,8 +532,12 @@ func (s *Server) waitFor(want ask) said {
 	// What the pane already held, for a wait that will search the lines
 	// it reads at the end. Text that was there before the waiting began
 	// is not what the wait was waiting for.
+	//
+	// A wait asked to watch for the text arriving needs this whether or
+	// not it was asked for lines: it is what "arriving" is measured
+	// against.
 	var was witness
-	if want.Until.Contains != "" && want.Lines > 0 {
+	if want.Until.Contains != "" && (want.Lines > 0 || want.Until.SinceKeys) {
 		// A reading that failed is no reading at all, and the waiting goes
 		// on without one: an empty screen makes every line at the end look
 		// new, which is worse than narrowing nothing.
@@ -563,7 +575,7 @@ func (s *Server) waitFor(want ask) said {
 		case look.Marks && !look.Running && look.Yours:
 			return s.ending(want, look, was, false, EndedOnMarks)
 		case want.Until.Contains != "":
-			if strings.Contains(look.Screen, want.Until.Contains) {
+			if s.holds(want, look, was) {
 				return s.ending(want, look, was, false, EndedOnText)
 			}
 		// A shell that marks nothing, where the prompt coming back is
@@ -600,6 +612,31 @@ func (s *Server) waitFor(want ask) said {
 		}
 		time.Sleep(lookEvery)
 	}
+}
+
+// holds reports whether what the wait is watching for is on the screen.
+//
+// Plainly, unless the wait was asked to watch for the text arriving:
+// then only what came after the reading taken before the wait began
+// counts, so the echo of a command an agent has just typed is not
+// mistaken for the answer to it.
+//
+// A reading that could not be taken narrows nothing, and a pane resized
+// since is read at another size and no longer lines up. Both fall back
+// to matching the screen whole: a wait that stopped answering because
+// the window could not be read twice is worse than one that answers
+// early.
+func (s *Server) holds(want ask, look Look, was witness) bool {
+	if !strings.Contains(look.Screen, want.Until.Contains) {
+		return false
+	}
+	if !want.Until.SinceKeys {
+		return true
+	}
+	if !was.read || was.cols != look.Cols || was.rows != look.Rows {
+		return true
+	}
+	return strings.Contains(addedSince(was.screen, look.Screen), want.Until.Contains)
 }
 
 // witness is the reading a wait takes before it starts, so that what it

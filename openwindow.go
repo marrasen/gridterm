@@ -138,6 +138,7 @@ func openWindow(w wanted) (*app, error) {
 		a.logError(err)
 	}
 	a.panes = make(map[*term.Terminal]*conns.Entry)
+	a.accounts = make(map[*term.Terminal]*connLog)
 	a.scaled = make(map[*term.Terminal]*scaledPane)
 	a.shared = make(map[*term.Terminal]*sharedMark)
 	a.ended = make(map[*term.Terminal]bool)

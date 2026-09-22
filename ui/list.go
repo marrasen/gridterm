@@ -69,6 +69,16 @@ type ListRow struct {
 	Text string
 	Note string
 
+	// NoteQuiet keeps the note off the row until the pointer or the
+	// selection is on it.
+	//
+	// A note is the second thing on a row and the first thing to crowd
+	// it: it takes room from the name, which is what the row is for. A
+	// caller that sets this shows a note while it is worth reading --
+	// as it changes -- and lets the row go back to being a name
+	// afterwards, with the note a look away.
+	NoteQuiet bool
+
 	// Fill washes the ground of the row from the left, in the style's
 	// FillBG: 0 covers nothing and 1 covers the whole width. It is how a
 	// row says how far something has got without spending a column on a
@@ -494,13 +504,15 @@ func (l *List) paint(v grid.View) {
 		}
 		row := l.rows[i]
 		row.Button = l.buttonOf(i)
-		l.paintRow(v.Sub(0, y, cols, 1), row, i == l.place.at, y, rows)
+		// y is the row counted from the top of what is drawn, which is
+		// how the pointer's row is counted.
+		l.paintRow(v.Sub(0, y, cols, 1), row, i == l.place.at, y == l.hovered, y, rows)
 	}
 }
 
 // paintRow draws one line: the mark in the indent, the text, and the
 // note at the end.
-func (l *List) paintRow(v grid.View, row ListRow, selected bool, y, rows int) {
+func (l *List) paintRow(v grid.View, row ListRow, selected, hovered bool, y, rows int) {
 	cols, _ := v.Size()
 	fg, bg := l.Style.FG, l.Style.rowBG(y, rows)
 	noteFG := l.Style.NoteFG
@@ -549,7 +561,13 @@ func (l *List) paintRow(v grid.View, row ListRow, selected bool, y, rows int) {
 			room = at - 1
 		}
 	}
-	if row.Note != "" {
+	// A quiet note is drawn only for the row being looked at: the one
+	// under the pointer, or the selected one while the list has the
+	// focus. The selection as well as the pointer, because a note only
+	// a mouse can reach is a note half the users cannot read; and only
+	// while the list is focused, because a selection left behind in a
+	// list nobody is using is not a row anybody is looking at.
+	if row.Note != "" && (!row.NoteQuiet || hovered || (selected && l.focused)) {
 		w := grid.StringWidth(row.Note)
 		// A blank before it as well as after, so a note and a button do
 		// not run into one another.

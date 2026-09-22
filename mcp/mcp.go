@@ -233,7 +233,13 @@ type Ending struct {
 
 // Until says what a wait is waiting for.
 type Until struct {
-	Contains  string
+	Contains string
+
+	// SinceKeys waits for Contains to arrive rather than matching what
+	// the pane already holds, so the echo of a command just typed is
+	// not mistaken for the answer to it.
+	SinceKeys bool
+
 	QuietMS   int
 	TimeoutMS int
 }
@@ -259,7 +265,8 @@ type Until struct {
 // down.
 func Serve(ctx context.Context, in io.Reader, out io.Writer, panes Panes) (err error) {
 	r := bufio.NewReaderSize(in, 4096)
-	s := &server{panes: panes, out: json.NewEncoder(out), broke: make(chan struct{})}
+	s := &server{panes: panes, out: json.NewEncoder(out),
+		broke: make(chan struct{}), stop: ctx.Done()}
 
 	// Whatever is still being answered is waited for. The panes are not
 	// closed here: they were handed in and whoever handed them in lets
@@ -418,6 +425,11 @@ func readLine(r *bufio.Reader) ([]byte, error) {
 // server answers one agent.
 type server struct {
 	panes Panes
+
+	// stop is closed when the window is going, so work part way through
+	// a list of steps stops waiting rather than holding the shutdown
+	// for as long as the list had left.
+	stop <-chan struct{}
 
 	writing sync.Mutex
 	out     *json.Encoder

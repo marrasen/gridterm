@@ -306,10 +306,9 @@ Fallback for a tunnel that will not parse:
 
 Dialog titles from the dialog sheet that P3 moves to Title Case, and
 that no constant above already covers: D01 `Connect to Server`, D02
-`Connect to Window`, D05 `Unlock Private Key`, D10 `Connection Log —
-<name>`, D11 `Add Server`, D19 `Serve This Window`, D30 `New
-Directory`, D33 `Go to Directory`, D39 `Choose Theme`, D45 `Terminal
-Identity`, D52 `About gridterm`.
+`Connect to Window`, D05 `Unlock Private Key`, D11 `Add Server`, D19
+`Serve This Window`, D30 `New Directory`, D33 `Go to Directory`, D39
+`Choose Theme`, D45 `Terminal Identity`, D52 `About gridterm`.
 
 ---
 

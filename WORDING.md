@@ -110,6 +110,18 @@ taken in at a glance and not to be read as a sentence.
    that dropped reads `connection lost` whether it carried a pane or a
    window. Where a state is shown in two places it is one constant, the
    way `transportLost` is.
+5. **A note is shown while it is changing and then goes quiet.** It
+   holds for as long as the status line holds a line, and then comes off
+   the row; the pointer on the row brings it back, and so does the
+   selection while the sidebar has the focus. A note takes its room from
+   the name, which is what the row is for, so it earns that room while
+   it is saying something new and gives it back afterwards. A copy says
+   `3 of 7` and then `4 of 7`, so its note is up the whole time it runs.
+   `ui.ListRow.NoteQuiet` is what asks for this.
+6. **Nothing lives only in a note.** A note can be dropped by a narrow
+   sidebar and is gone four seconds after it settles, so anything that
+   has to be read later belongs where it can be read later. The reason a
+   connection was lost goes in the account, not on the row.
 
 A row also carries what can be done with it, drawn as something to
 press: `Watch the traffic`, `Close the tunnel`. Those are actions, not

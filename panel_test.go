@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"image/color"
 	"strings"
 	"testing"
@@ -1858,5 +1859,81 @@ func TestBuildingTheSidebarAsksTheHeapForNothing(t *testing.T) {
 
 	if got != 0 {
 		t.Errorf("building the sidebar allocated %v times, want none", got)
+	}
+}
+
+// A note is shown while it is changing and goes quiet once it has
+// settled, so a sidebar with nothing happening on it is names alone.
+func TestANoteGoesQuietOnceItHasSettled(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	e := &conns.Entry{Host: "margit", Kind: conns.Server, Note: "via skylake", Meter: meter.New()}
+	a.registry.Add(e)
+
+	now := time.Now()
+	if a.noteQuiet(e, e.Note, now) {
+		t.Error("a note is quiet the moment it is first said")
+	}
+	// Still worth reading a moment later.
+	if a.noteQuiet(e, e.Note, now.Add(statusFor-time.Millisecond)) {
+		t.Error("the note went quiet before its time was up")
+	}
+	if !a.noteQuiet(e, e.Note, now.Add(statusFor)) {
+		t.Error("the note is still on the row after it settled")
+	}
+
+	// And a note that says something new is worth reading again.
+	later := now.Add(time.Minute)
+	if a.noteQuiet(e, "3 of 7", later) {
+		t.Error("a note that changed is quiet")
+	}
+	if !a.noteQuiet(e, "3 of 7", later.Add(statusFor)) {
+		t.Error("the new note never settles")
+	}
+}
+
+// A copy says something new every second, so its note is up the whole
+// time the copy is running.
+func TestANoteThatKeepsChangingStaysUp(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	e := &conns.Entry{Host: "margit", Kind: conns.Copy, Meter: meter.New()}
+	a.registry.Add(e)
+
+	now := time.Now()
+	for i := range 20 {
+		said := fmt.Sprintf("%d of 20", i)
+		now = now.Add(time.Second)
+		if a.noteQuiet(e, said, now) {
+			t.Fatalf("the note went quiet at %q, while the copy was running", said)
+		}
+	}
+}
+
+// The row of a connection that has settled draws its name and nothing
+// else, and the pointer on it brings the note back.
+func TestTheSidebarDrawsASettledNoteOnlyUnderThePointer(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	e := &conns.Entry{
+		Host: "margit", Kind: conns.Server, Label: "tester@margit",
+		Note: "via skylake", Meter: meter.New(),
+	}
+	a.registry.Add(e)
+
+	// Long enough after the note was first seen for it to have settled.
+	a.refreshPanel(time.Now())
+	settled := time.Now().Add(statusFor)
+	a.refreshPanel(settled)
+	row, ok := panelRow(a, e)
+	if !ok {
+		t.Fatalf("the panel has no row for the connection: %v", panelText(a, settled))
+	}
+	if !row.NoteQuiet {
+		t.Error("the row still shows a note that has been sitting there")
+	}
+	// The note itself is kept, for whatever looks at the row.
+	if row.Note != "via skylake" {
+		t.Errorf("the row's note is %q, want it kept for the pointer", row.Note)
 	}
 }

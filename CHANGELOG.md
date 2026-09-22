@@ -11,6 +11,43 @@ change how something behaves.
 
 ### Added
 
+**An agent can type, press and wait in one call.** `send_keys` takes a
+list of steps -- `type:`, `key:`, `wait:<ms>`, `until:<text>` and a bare
+`until` -- and works them in order. What it is for is what does not
+happen between them: a command, the program it starts, and what is typed
+into that program used to be three calls with a gap in each, and in
+every gap the pane could be something other than what the agent thought.
+Driving vim to write a three-line file took an agent nineteen calls, and
+takes six now, with the whole editing session in one of them. A step
+that does not do what it says stops the list there and the answer says
+which one, how the waiting ended, and what the pane looked like, so the
+steps after it never go to the wrong program. A wait for text has to
+have seen that text: one that ended because the command finished
+instead -- `cd somewhere && vim notes.md` with the directory wrong --
+stops the list rather than typing an editor's keystrokes at a shell
+prompt. `require:<text>` and `fail:<text>` are the same check asked for
+directly: go on only if the pane says this, or stop if it does.
+
+**A list of steps answers with what each of its waits saw.** A list can
+run several commands -- type, Enter, until, then the next one -- and the
+answer carries each one's output, headed by the step and what that
+command exited with. The alternative is what agents do without it: chain
+three commands on one line with semicolons, where the outputs run
+together and a single exit status covers all three. That is also what
+leads an agent to clear the screen before every command so that what
+comes back is only its own, which throws away what the user had in front
+of them.
+
+**A wait can watch for text to arrive rather than text being there.**
+`wait_for` matches the screen as it already is, which is right for it:
+sending keys and waiting are two calls, and anything short has finished
+before the second one lands. But the text an agent waits for is usually
+a word it just typed, and a terminal echoes what is typed -- so "wait
+until it says done" after `echo done` ended before the command had run.
+`since_keys` waits for the text to arrive instead. Inside a list of
+steps it is always on, because a list has no gap in which the text could
+arrive unseen.
+
 **A vault for passwords and notes, opened by a key you already
 unlock.** `Show Secrets` lists what is in it; `Add Secret` and `Add
 Note` put things in; `Change Secret` and `Remove Secret` deal with what
@@ -90,6 +127,27 @@ the agent a minute later. The key `New SSH Key` offers by default,
 agent forwarding is off unless a saved server turns it on.
 
 ### Changed
+
+**The sidebar's notes go quiet.** A note is the second thing on a row
+and the first thing to crowd it: it takes its room from the name, which
+is what the row is for. A note is now shown while it is changing -- for
+as long as the status line holds a line -- and then comes off the row,
+leaving the name the width back. The pointer on the row brings it back,
+and so does the selection while the sidebar has the focus. A copy says
+`3 of 7` and then `4 of 7`, so its note is up the whole time it runs,
+and a connection that has settled goes back to being a name.
+
+**A connection's account opens in a pane, and the row of a connection
+that dropped opens it.** `Connection Log` showed the account in a dialog
+that had to be dismissed; it is a pane now, the way the window log is,
+so it scrolls and copies like anything else on screen. The row of a
+machine with nothing open on it used to answer a click with nothing at
+all, and the row of one that dropped did the same -- so the moment there
+was most to explain was the moment the window had least to say. Both
+open the account now, and it outlives the connection it is about: the
+reason a connection was lost is written into the account, where there is
+room for it, rather than onto the row, where a sentence either pushed
+the name off the end or did not fit and was dropped without a mark.
 
 **The secrets went through the wording rules a second time.** Five
 dialogs said `Take "Add Secret"` where the vocabulary table has

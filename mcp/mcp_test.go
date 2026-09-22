@@ -41,6 +41,13 @@ type fakePanes struct {
 	output     string
 	mostOutput int
 
+	// outputs is one answer per command, for a test about a list that
+	// runs several. Each wait takes the next as the output of the
+	// command that has just finished, the way a pane only ever has the
+	// last command's: a caller that reads them all at the end of the
+	// list gets that last one every time.
+	outputs []string
+
 	// askedFor is what the last ask_for_secret asked for, waitedFor is
 	// how long it was given, and typesSecret says the user typed it.
 	askedFor    string
@@ -197,6 +204,12 @@ func (f *fakePanes) Wait(id string, lines int, until Until) (Screen, Ending, err
 	}
 	f.lines = lines
 	f.waited = until
+	// The command this wait was for has finished, so what the pane
+	// calls "the last command's output" is now its output.
+	if len(f.outputs) > 0 {
+		f.output = f.outputs[0]
+		f.outputs = f.outputs[1:]
+	}
 	waiting, letGo := f.waiting, f.letGo
 	screen, ended := f.look(), Ending{GaveUp: f.gaveUp, Because: f.because}
 	f.mu.Unlock()

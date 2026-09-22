@@ -75,6 +75,11 @@ type app struct {
 	// everything underneath.
 	modals []*modal
 
+	// accounts are the panes showing how a machine was reached, and the
+	// account each one is reading. A pane is in here as well as in
+	// panes, which is what tells it apart from the window's own log.
+	accounts map[*term.Terminal]*connLog
+
 	// palette is the command dialog while it is open, and dismissPalette
 	// is what takes it away.
 	palette        *ui.Palette
@@ -313,6 +318,11 @@ type app struct {
 	// home is the machine -ssh named, which new panes open on while it
 	// is connected. Empty when the window opens them on this machine.
 	home string
+
+	// noteWas is what each row's note last said, and when it stops being
+	// drawn: a note is shown while it is changing and goes quiet once it
+	// has settled.
+	noteWas map[*conns.Entry]noteHold
 
 	// rates turn a connection's running totals into a speed. One per
 	// connection, because a speed is a difference between two moments

@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/marrasen/gridterm/logs"
 	"github.com/marrasen/gridterm/serve"
 	"github.com/marrasen/gridterm/session"
 )
@@ -44,6 +45,12 @@ type connLog struct {
 	// keep, so the account is folded away without clearing it.
 	keep bool
 
+	// kept is the account as it was shown, for a pane opened on it
+	// afterwards. It takes every line, including the ones written once
+	// this pane has become the shell and once the connection has gone,
+	// and it hands each reader the whole of it from the start.
+	kept *logs.Lines
+
 	mu sync.Mutex
 	// said is what has been written and not yet read.
 	said []byte
@@ -72,6 +79,13 @@ type connLog struct {
 	closed    chan struct{}
 }
 
+// accountKeep is how many lines of one connection's account are kept.
+//
+// An account runs to tens of lines, and a connection that keeps being
+// asked for a passphrase runs to more. Far below the window log's, which
+// holds everything the whole process has said.
+const accountKeep = 500
+
 // newConnLog opens a log for a connection being made. stop is called if
 // the pane is closed before the connection is, and may be nil.
 func newConnLog(stop func()) *connLog {
@@ -79,6 +93,9 @@ func newConnLog(stop func()) *connLog {
 		clock:   time.Now,
 		started: time.Now(),
 		stop:    stop,
+		// Nowhere else: the window's own log is for what the window
+		// logs, and an account of one connection is not that.
+		kept:    logs.New(accountKeep, nil),
 		wake:    make(chan struct{}, 1),
 		settled: make(chan struct{}),
 		closed:  make(chan struct{}),
@@ -319,11 +336,59 @@ func (c *connLog) write(line string) {
 func (c *connLog) emit(plain, shown string) {
 	c.mu.Lock()
 	if !c.over {
-		c.lines = append(c.lines, plain)
+		c.keepLocked(plain, shown)
 		c.said = append(c.said, []byte(shown+"\r\n")...)
 	}
 	c.mu.Unlock()
 	c.signal()
+}
+
+// record adds one line to the account without putting it in front of
+// the pane that watched the connection being made, and whether or not
+// the account has ended.
+//
+// That pane is the shell by now, or has been closed. A line written
+// after the connection was made -- why it was lost, above all -- belongs
+// in the account and must not be typed over whatever the shell has
+// drawn.
+func (c *connLog) record(plain, shown string) {
+	c.mu.Lock()
+	c.keepLocked(plain, shown)
+	c.mu.Unlock()
+}
+
+// keepLocked puts one line in the account, with the mutex already held.
+//
+// Both copies under the one lock, so a pane opened on the account reads
+// the lines in the order Lines gives them: two goroutines saying
+// something at once must not land one way in the record and the other
+// way in the list.
+func (c *connLog) keepLocked(plain, shown string) {
+	c.lines = append(c.lines, plain)
+	// A newline, not a carriage return and a newline: the record's own
+	// reader writes the pair, the way the window log's does.
+	_, _ = c.kept.Write([]byte(shown + "\n"))
+}
+
+// Account opens the whole account for a pane to show, from the first
+// line, following whatever is written after.
+//
+// Any number may be open at once, and one outlives the connection it is
+// about: it is read from the record rather than from the connection.
+func (c *connLog) Account() session.Session { return c.kept.Open() }
+
+// Lost writes the end of the account: the connection went, and why.
+//
+// To the record alone, for the reason record gives. why is nil or an
+// end-of-file for a connection that was closed politely at the far end,
+// which is an ending with nothing to add.
+func (c *connLog) Lost(why error) {
+	if why == nil || errors.Is(why, io.EOF) {
+		c.record(transportLost, sgrWrong+transportLost+sgrOff)
+		return
+	}
+	said := transportLost + ": " + oneLine(why.Error())
+	c.record(said, sgrWrong+said+sgrOff)
 }
 
 // end says nothing more will be written.

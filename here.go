@@ -326,13 +326,7 @@ func (a *app) showConnLogHere() error {
 	if err != nil {
 		return err
 	}
-	name := groupName(h.name)
-	log := h.log()
-	if log == nil {
-		return fmt.Errorf("there is no account of how %s was reached", name)
-	}
-	a.showNotice(connLogTitle(name, h.kind), strings.Join(log.Lines(), "\n"), false)
-	return nil
+	return a.showAccount(h.name, h.log())
 }
 
 // connLogCommand is the command that opens the account of how a machine
@@ -346,15 +340,6 @@ const (
 	connLogCommand = "conn.log"
 	connLogName    = "Connection Log"
 )
-
-// connLogTitle names the account dialog.
-//
-// One title whichever state the connection is in: the log itself says
-// whether it is still connecting, and a heading in two tenses was two
-// things to read before the log had been started on.
-func connLogTitle(name string, _ hostKind) string {
-	return connLogName + " — " + name
-}
 
 // openFilesHere puts another pane in the file manager, on the machine
 // the user is looking at.

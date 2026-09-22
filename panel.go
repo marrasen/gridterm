@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"image/color"
-	"io"
 	"sort"
 	"strconv"
 	"strings"
@@ -13,7 +12,6 @@ import (
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/meter"
-	"github.com/marrasen/gridterm/serve"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/term"
 )
@@ -361,6 +359,11 @@ func (a *app) refreshPanel(now time.Time) {
 			delete(a.rates, e)
 		}
 	}
+	for e := range a.noteWas {
+		if !live[e] {
+			delete(a.noteWas, e)
+		}
+	}
 	a.rowBuf = rows
 	a.panel.SetRows(rows)
 	// Which row is in front, told to the list rather than left to the
@@ -467,22 +470,15 @@ func (a *app) hostRow(on hostFacts, now time.Time) ui.ListRow {
 // because what a connection did before it went is worth reading. What
 // the row says it was is the caller's to set.
 //
-// why is what the connection ended with, and goes on the row's note: a
-// user told only that a machine went has nothing to act on, while "the
-// host closed the connection" and "connection reset by peer" send them
-// to different places.
+// The reason it ended goes into the connection's own account, not onto
+// the row. A row is a name and a state read in a narrow column, and a
+// reason is a sentence: it used to push the name off the end of the row,
+// or not fit at all and be dropped without a mark. The account has room
+// for it and is a click away.
 //
-// A clean end says nothing the greying does not, so it is left off: a
-// nil reason, and an end of file, which is what a far end hanging up
-// politely looks like.
-func (a *app) greyRow(e *conns.Entry, why error) {
-	if why != nil && !errors.Is(why, io.EOF) {
-		said := serve.Plain(why.Error())
-		if e.Note != "" {
-			said = e.Note + ": " + said
-		}
-		e.Note = said
-	}
+// Reveal is taken off here rather than left pointing at a pane that has
+// gone. A caller with something left to show puts its own back.
+func (a *app) greyRow(e *conns.Entry) {
 	dead := meter.New()
 	dead.Close()
 	e.Meter = dead
@@ -533,14 +529,45 @@ func (a *app) showing() *conns.Entry {
 	return a.entryOf(ui.FocusedLeaf(a.stage))
 }
 
+// noteHold is a row's note and how long it stays on screen.
+//
+// A note is worth reading while it is changing and is in the way once
+// it has settled, so it is shown for as long as the status line holds a
+// line and then goes quiet. A copy is running the whole time it says
+// "3 of 7", because that line changes every second.
+type noteHold struct {
+	said  string
+	until time.Time
+}
+
+// noteQuiet says whether a row's note has been sitting there unchanged
+// long enough to be in the way.
+//
+// It is what makes the sidebar go quiet on its own: the note of a
+// connection that has settled comes off the row, the name has the width
+// back, and the pointer or the selection brings the note out again.
+func (a *app) noteQuiet(e *conns.Entry, said string, now time.Time) bool {
+	if a.noteWas == nil {
+		a.noteWas = map[*conns.Entry]noteHold{}
+	}
+	was, seen := a.noteWas[e]
+	if !seen || was.said != said {
+		was = noteHold{said: said, until: now.Add(statusFor)}
+		a.noteWas[e] = was
+	}
+	return !now.Before(was.until)
+}
+
 // panelRow turns one connection into a line.
 func (a *app) panelRow(row conns.Row, now time.Time) ui.ListRow {
 	// The kind icon in the state colour, with the dot behind it for a
 	// sidebar too narrow to draw the icon.
 	state := a.stateFG(row.State, now)
+	said := a.note(row, now)
 	out := ui.ListRow{
 		Text: row.Label, Depth: 1, Key: row.Entry,
-		Note: a.note(row, now), Icon: icon(row.Kind), IconFG: state,
+		Note: said, NoteQuiet: a.noteQuiet(row.Entry, said, now),
+		Icon: icon(row.Kind), IconFG: state,
 		Mark: dot, MarkFG: state,
 	}
 	out.Art = a.graph(row.Entry)

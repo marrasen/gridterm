@@ -364,14 +364,34 @@ func (a *app) hold(m *machine, via string) {
 	}()
 }
 
-// revealMachine puts one of a machine's panes in front of the user.
+// revealMachine puts one of a machine's panes in front of the user, or
+// the account of how it was reached when it has no pane.
 //
-// A connection with nothing open on it has nothing to show, so nothing
-// happens: there is no window for a connection itself.
+// A connection itself has no window, so a row that had nothing open on
+// it used to answer a click with nothing at all. The account is what
+// there is to show: which route was taken, what each step said, and how
+// long it took.
 func (a *app) revealMachine(m *machine) {
 	for _, pane := range a.machines.panesOn(m) {
 		a.focus(pane)
 		return
+	}
+	a.revealAccount(m.at.name, m.log)
+}
+
+// revealAccount opens the account of how a machine was reached, and
+// says so when it could not.
+//
+// Nothing happens when there is no account. A connection made before
+// this window started holding one has nothing to show, and a row that
+// reported that as a failure would be answering a click with an error
+// the user can do nothing about.
+func (a *app) revealAccount(host string, log *connLog) {
+	if log == nil {
+		return
+	}
+	if err := a.showAccount(host, log); err != nil {
+		a.reportError("Could not show the connection log", err)
 	}
 }
 
@@ -410,9 +430,21 @@ func (a *app) machineDied(m *machine, why error) {
 	if err := a.tunnelsDiedOn(m); err != nil {
 		a.reportError("Trouble closing the tunnels on "+m.at.name, err)
 	}
-	// The note said what carried it, and now it says why it went.
+	// Why it went goes into the account, where there is room for it and
+	// where it is still there tomorrow. The row is left saying what it
+	// is -- a connection that is over -- which the greying already says
+	// and which the note used to say twice.
+	// A machine on the way to another was reached without a pane
+	// watching it, so it has no account to write this into.
+	if m.log != nil {
+		m.log.Lost(why)
+	}
 	m.entry.Note = ""
-	a.greyRow(m.entry, why)
+	a.greyRow(m.entry)
+	// And the row goes on answering a click, with the account: it is
+	// the one thing left to look at, and the row is the only way to it
+	// once the machine is no longer held under its name.
+	m.entry.Reveal = func() { a.revealAccount(m.at.name, m.log) }
 	// What the window is holding has changed, so the commands and their
 	// titles are worked out again.
 	a.refreshServers()
@@ -476,6 +508,10 @@ func (a *app) dropMachine(name string) error {
 // that has been closed.
 func (a *app) forgetPane(t *term.Terminal) {
 	a.machines.forget(t)
+	// And the account it was showing, if it was showing one. The
+	// account itself stays with the row it belongs to; this is only the
+	// record of which pane had it open.
+	delete(a.accounts, t)
 	// And the window it was drawn from, if it was drawn from one. Left
 	// behind, the record keeps a terminal that has gone, and letting go
 	// of that window later reports a failure to close a pane that was

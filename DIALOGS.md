@@ -210,13 +210,17 @@ With none or several, the button is absent and `Copy` does the job.
 The same address written twice counts as one: the button still means one
 thing. `onlyLink` in `ask.go` is where this lives.
 
-## D10
-- **Title:** `Connection log — <name>`
-- **Body:** the log
-- **Buttons:** `Copy` · `OK`
+## D10 — gone
 
-**Instructions:** One title. The log itself shows whether it is still
-connecting.
+The account of how a machine was reached is a pane now, not a dialog:
+`Connection Log` opens it, and so does clicking the machine's row. An
+account is read, scrolled and copied into a bug report, and a box that
+has to be dismissed is the wrong shape for all three. The pane is the
+window log's — a terminal like any other, with nothing to type into it.
+
+The row of a connection that dropped opens the same pane, which is where
+the reason it went is written: it used to be squeezed onto the row as a
+note.
 
 ---
 

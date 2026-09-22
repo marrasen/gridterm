@@ -1221,3 +1221,86 @@ func TestARowsEdgeLeavesASeeThroughGroundAlone(t *testing.T) {
 		t.Errorf("the first cell is %v, want it left see-through", got)
 	}
 }
+
+// quietRows is a list whose second row keeps its note off the row until
+// the row is looked at.
+func quietRows() []ListRow {
+	rows := panelRows()
+	rows[1].NoteQuiet = true
+	return rows
+}
+
+// A quiet note is off the row until the pointer or the selection is on
+// it.
+//
+// It is what lets the sidebar be narrow: a note takes room from the
+// name, which is what the row is for.
+func TestAQuietNoteIsDrawnOnlyForTheRowBeingLookedAt(t *testing.T) {
+	l := newTestList(t, quietRows(), 30, 6)
+	// The selection opens on the first row that is not a header, which
+	// is this one, so it is moved off before anything is read.
+	l.Move(1)
+	if got, _ := l.Selected(); got.Key == "local-files" {
+		t.Fatal("the selection would not move off the quiet row")
+	}
+
+	if got := rowOf(drawList(l, 30, 6), 1); strings.Contains(got, "settled") {
+		t.Errorf("the row draws its quiet note with nothing looking at it: %q", got)
+	}
+	// The name is what the row keeps.
+	if got := rowOf(drawList(l, 30, 6), 1); !strings.Contains(got, "Files ~/Workspace") {
+		t.Errorf("the row says %q", got)
+	}
+
+	l.SetHover(1)
+	if got := rowOf(drawList(l, 30, 6), 1); !strings.Contains(got, "settled") {
+		t.Errorf("the row under the pointer says %q, want the note with it", got)
+	}
+	l.SetHover(-1)
+
+	// And the keyboard reaches it the same way: hover is the pointer's
+	// version of the selection.
+	l.Move(-1)
+	if got, _ := l.Selected(); got.Key != "local-files" {
+		t.Fatalf("the selection is on %v", got.Key)
+	}
+	if got := rowOf(drawList(l, 30, 6), 1); !strings.Contains(got, "settled") {
+		t.Errorf("the selected row says %q, want the note with it", got)
+	}
+}
+
+// A note that is not quiet is drawn whatever is being looked at.
+func TestAnOrdinaryNoteIsAlwaysDrawn(t *testing.T) {
+	l := newTestList(t, panelRows(), 30, 6)
+	l.SetHover(-1)
+	l.Move(1)
+
+	if got := rowOf(drawList(l, 30, 6), 1); !strings.Contains(got, "settled") {
+		t.Errorf("the row says %q, want its note", got)
+	}
+}
+
+// The selection speaks for the note only while the list has the focus.
+//
+// A selection left behind in a list nobody is using is not a row anybody
+// is looking at, and its note would sit there for the life of the
+// window.
+func TestASelectedQuietNoteNeedsTheFocus(t *testing.T) {
+	l := newTestList(t, quietRows(), 30, 6)
+	if got, _ := l.Selected(); got.Key != "local-files" {
+		t.Fatalf("the selection opened on %v", got.Key)
+	}
+
+	if got := rowOf(drawList(l, 30, 6), 1); !strings.Contains(got, "settled") {
+		t.Errorf("the selected row in a focused list says %q, want its note", got)
+	}
+	l.SetFocus(false)
+	if got := rowOf(drawList(l, 30, 6), 1); strings.Contains(got, "settled") {
+		t.Errorf("the note stayed on a list that lost the focus: %q", got)
+	}
+	// The pointer still reaches it: it does not care where the focus is.
+	l.SetHover(1)
+	if got := rowOf(drawList(l, 30, 6), 1); !strings.Contains(got, "settled") {
+		t.Errorf("the row under the pointer says %q, want its note", got)
+	}
+}

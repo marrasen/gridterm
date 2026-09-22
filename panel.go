@@ -359,6 +359,11 @@ func (a *app) refreshPanel(now time.Time) {
 			delete(a.rates, e)
 		}
 	}
+	for e := range a.noteWas {
+		if !live[e] {
+			delete(a.noteWas, e)
+		}
+	}
 	a.rowBuf = rows
 	a.panel.SetRows(rows)
 	// Which row is in front, told to the list rather than left to the
@@ -524,14 +529,45 @@ func (a *app) showing() *conns.Entry {
 	return a.entryOf(ui.FocusedLeaf(a.stage))
 }
 
+// noteHold is a row's note and how long it stays on screen.
+//
+// A note is worth reading while it is changing and is in the way once
+// it has settled, so it is shown for as long as the status line holds a
+// line and then goes quiet. A copy is running the whole time it says
+// "3 of 7", because that line changes every second.
+type noteHold struct {
+	said  string
+	until time.Time
+}
+
+// noteQuiet says whether a row's note has been sitting there unchanged
+// long enough to be in the way.
+//
+// It is what makes the sidebar go quiet on its own: the note of a
+// connection that has settled comes off the row, the name has the width
+// back, and the pointer or the selection brings the note out again.
+func (a *app) noteQuiet(e *conns.Entry, said string, now time.Time) bool {
+	if a.noteWas == nil {
+		a.noteWas = map[*conns.Entry]noteHold{}
+	}
+	was, seen := a.noteWas[e]
+	if !seen || was.said != said {
+		was = noteHold{said: said, until: now.Add(statusFor)}
+		a.noteWas[e] = was
+	}
+	return !now.Before(was.until)
+}
+
 // panelRow turns one connection into a line.
 func (a *app) panelRow(row conns.Row, now time.Time) ui.ListRow {
 	// The kind icon in the state colour, with the dot behind it for a
 	// sidebar too narrow to draw the icon.
 	state := a.stateFG(row.State, now)
+	said := a.note(row, now)
 	out := ui.ListRow{
 		Text: row.Label, Depth: 1, Key: row.Entry,
-		Note: a.note(row, now), Icon: icon(row.Kind), IconFG: state,
+		Note: said, NoteQuiet: a.noteQuiet(row.Entry, said, now),
+		Icon: icon(row.Kind), IconFG: state,
 		Mark: dot, MarkFG: state,
 	}
 	out.Art = a.graph(row.Entry)

@@ -306,6 +306,11 @@ type app struct {
 	// is connected. Empty when the window opens them on this machine.
 	home string
 
+	// noteWas is what each row's note last said, and when it stops being
+	// drawn: a note is shown while it is changing and goes quiet once it
+	// has settled.
+	noteWas map[*conns.Entry]noteHold
+
 	// rates turn a connection's running totals into a speed. One per
 	// connection, because a speed is a difference between two moments
 	// and each has its own.

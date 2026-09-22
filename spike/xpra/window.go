@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -327,9 +328,12 @@ func typedAs(r rune, source input.Source) []input.Event {
 	case r == '0':
 		key = input.Key0
 	}
-	if _, shifted := expShifted[r]; shifted {
+	if shiftedOnAUSKeyboard(r) {
 		// A shifted symbol: the user held shift to type it, and
-		// gridterm would report that.
+		// gridterm would report that. Which symbols need shift depends
+		// on the layout in front of the user, and this stand-in assumes
+		// the usual one -- it is the scripted typist guessing, not the
+		// translation.
 		mods = input.ModShift
 	}
 	return []input.Event{
@@ -337,4 +341,14 @@ func typedAs(r rune, source input.Source) []input.Event {
 		{Kind: input.Text, Rune: r, Mods: mods, Source: source, NormalText: true},
 		{Kind: input.KeyRelease, Key: key, Mods: mods, Source: source},
 	}
+}
+
+// shiftedOnAUSKeyboard reports whether a character is typed with shift
+// on the layout most people have. Only the scripted typist needs this:
+// the real gridterm is told which modifiers were held.
+func shiftedOnAUSKeyboard(r rune) bool {
+	if r >= 'A' && r <= 'Z' {
+		return true
+	}
+	return strings.ContainsRune(`~!@#$%^&*()_+{}|:"<>?`, r)
 }

@@ -21,30 +21,27 @@ import (
 // headers by keys_test.go, so none of it is from memory.
 //
 // It takes three things together, and each was tried alone first and
-// looked broken:
+// looked like a broken protocol:
 //
 //  1. The resolved keysym, not the base key. "A", never "a" with shift
 //     held. gridterm reports each keystroke twice -- as a key and as the
-//     text it produced -- and the text is the one that knows. So a key
-//     that types waits for its text, and the table below is only for
-//     keys that type nothing.
+//     text it produced -- and only the text knows what the layout made.
+//     So a key that types waits for its text, and the table below is
+//     only for keys that type nothing.
 //  2. Real modifier key presses. gridterm names no modifier key; there
-//     is no input.KeyShift. They have to be made up from the bitmask,
-//     and each one describes the state *before* itself, the way X does.
-//  3. A keycode. Without one the server picks a keycode by name and
-//     types it at the wrong level, whatever the modifiers say.
+//     is no input.KeyShift, only a bitmask riding along with other
+//     events. They have to be made up, and each one describes the state
+//     *before* itself, the way X does.
+//  3. A keycode, from a keymap this client declares itself. See
+//     layout.go. Without one the server resolves the name to some
+//     keycode of its own and types it at the wrong level.
 //
-// With all three, typing "Hello, World! 42" into mousepad over Xpra
-// 6.5.3 arrives exactly. With any one missing it comes out as
-// "hello, world1 42" or worse.
+// With all three, typing
 //
-// The keycodes below are the catch. They were read off the test server
-// with xmodmap, so they are a US layout and a stand-in for the real
-// thing: gridterm has no X keymap of its own to take them from. A real
-// implementation uploads a keymap and then uses its own keycodes, which
-// is what every other xpra client does and what go-xpra does not do yet.
-// Until then this table is why the demo works and why it would not work
-// against a server with a different layout.
+//	The QUICK brown Fox; #1 @ 50% (x*y) [a] {b} "c" <d> ~e|f/g?
+//
+// into mousepad over Xpra 6.5.3 arrives character for character. With
+// any one missing it comes out as "hello, world1 42" or worse.
 
 // keysym is one X11 key as xpra names it.
 type keysym struct {
@@ -190,18 +187,10 @@ func (k *keyboard) syncModifiers(want input.Mods, window ui.WindowID) []ui.Key {
 	for _, m := range modifierKeys {
 		switch {
 		case want&m.bit != 0 && k.held&m.bit == 0:
-			down := k.press(window, m.sym, "", k.held, true)
-			if m.bit == input.ModShift {
-				down.Keycode = 50
-			}
-			out = append(out, down)
+			out = append(out, k.press(window, m.sym, "", k.held, true))
 			k.held |= m.bit
 		case want&m.bit == 0 && k.held&m.bit != 0:
-			up := k.press(window, m.sym, "", k.held, false)
-			if m.bit == input.ModShift {
-				up.Keycode = 50
-			}
-			out = append(out, up)
+			out = append(out, k.press(window, m.sym, "", k.held, false))
 			k.held &^= m.bit
 		}
 	}
@@ -273,7 +262,7 @@ func (k *keyboard) text(e input.Event, window ui.WindowID) []ui.Key {
 	sym := keysym{Name: name, Value: int(e.Rune)}
 	down := k.press(window, sym, string(e.Rune), e.Mods, true)
 	up := k.press(window, sym, string(e.Rune), e.Mods, false)
-	down.Keycode, up.Keycode = expKeycodeFor(e.Rune), expKeycodeFor(e.Rune)
+	down.Keycode, up.Keycode = keycodeFor(sym.Name), keycodeFor(sym.Name)
 	return []ui.Key{down, up}
 }
 
@@ -315,6 +304,7 @@ func (k *keyboard) press(window ui.WindowID, sym keysym, text string, mods input
 		Pressed:   down,
 		Name:      sym.Name,
 		Keysym:    sym.Value,
+		Keycode:   keycodeFor(sym.Name),
 		Text:      text,
 		Modifiers: modifierNames(mods),
 	}
@@ -333,33 +323,4 @@ func textual(k input.Key) bool {
 		return true
 	}
 	return false
-}
-
-// A US-layout keycode table, read off the test server with xmodmap.
-//
-// This is the stand-in described at the top of the file. It is enough to
-// prove the chain works end to end and it is not a design: the real
-// answer is uploading a keymap, which go-xpra cannot do yet.
-var expKeycodes = map[rune]int{
-	'1': 10, '2': 11, '3': 12, '4': 13, '5': 14, '6': 15, '7': 16, '8': 17, '9': 18, '0': 19,
-	'q': 24, 'w': 25, 'e': 26, 'r': 27, 't': 28, 'y': 29, 'u': 30, 'i': 31, 'o': 32, 'p': 33,
-	'a': 38, 's': 39, 'd': 40, 'f': 41, 'g': 42, 'h': 43, 'j': 44, 'k': 45, 'l': 46,
-	'z': 52, 'x': 53, 'c': 54, 'v': 55, 'b': 56, 'n': 57, 'm': 58,
-	',': 59, '.': 60, '/': 61, ' ': 65,
-}
-
-var expShifted = map[rune]rune{'!': '1', '@': '2', '#': '3', '$': '4', '%': '5',
-	'^': '6', '&': '7', '*': '8', '(': '9', ')': '0', '<': ',', '>': '.', '?': '/'}
-
-func expKeycodeFor(r rune) int {
-	if c, ok := expKeycodes[r]; ok {
-		return c
-	}
-	if r >= 'A' && r <= 'Z' {
-		return expKeycodes[r+32]
-	}
-	if base, ok := expShifted[r]; ok {
-		return expKeycodes[base]
-	}
-	return 0
 }

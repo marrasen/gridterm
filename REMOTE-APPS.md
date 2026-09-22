@@ -49,6 +49,11 @@ server waits on -- is not gridterm's to write.
 go-xpra's SSH either: that one shells out to the system `ssh`, and
 gridterm already holds a connection it can run `xpra _proxy` over.
 
+Two things it does not do yet, both now written on a fork
+(`marrasen/go-xpra`): telling the server when the desktop changes size,
+and letting a backend declare its own keyboard layout. Neither is
+gridterm-specific and neither has been offered upstream.
+
 **The catch: xpra 6.5 or newer has to be installed on the far machine.**
 That is the main argument against, and running the spike against a real
 server made it worse than it looked. go-xpra declares a minimum protocol
@@ -289,23 +294,39 @@ With any one of the three missing, `Hello, World! 42` arrives as
 partial answer looks like the protocol failing rather than like a
 missing ingredient.
 
-### What is left, and it is real
+### The keycodes, and where they come from
 
-The keycodes in the spike are a US-layout table read off the test server
-with `xmodmap`. **gridterm has no X keymap to take keycodes from** -- it
-is ebiten, not an X client -- so that table is a stand-in that would not
-survive a server with a different layout.
+gridterm has no X keyboard underneath it. It is handed finished
+characters and a modifier bitmask and nothing else, so it has no
+keycodes to borrow -- which is the whole reason the third ingredient was
+hard to find.
 
-The real answer is to upload a keymap and use our own keycodes, which is
-what every other xpra client does. go-xpra cannot: its hello carries
-`keyboard: true` and nothing else. So step 6 is the table, which is
-done, plus keymap upload in go-xpra, which is not started.
+Xpra's answer is for a client to define its own layout and send it.
+`spike/xpra/layout.go` does: every keysym the translator can produce
+gets a key of its own, unshifted, and the whole thing goes out as the
+`keymap` capability. It is deliberately unlike a real keyboard, and that
+is the honest shape -- gridterm never learns that "A" is the shifted
+form of anything, only that the user typed "A" with shift down. Both
+facts go out and the far application sees exactly that.
 
-That is a missing capability rather than a bug. go-xpra's own X11 client
-types perfectly -- confirmed by building it, running it on a scratch
-Xvfb against the same session, and typing into it with XTEST. It works
-because X hands it real keycodes for free. A backend without an X
-keyboard underneath it has nowhere to get them.
+Released go-xpra cannot send a keymap: its hello carries
+`keyboard: true` and nothing else. So this needed a second change on the
+fork, `keymap-upload`, adding `ui.KeymapProvider`. It is optional, so
+the backends riding on a platform keyboard are untouched.
+
+With that in place, typing
+
+```
+The QUICK brown Fox; #1 @ 50% (x*y) [a] {b} "c" <d> ~e|f/g?
+```
+
+into `mousepad` over Xpra 6.5.3 arrives character for character.
+
+**This was never a bug in go-xpra.** Its own X11 client types perfectly
+-- confirmed by building it, running it on a scratch Xvfb against the
+same session, and typing into it with XTEST. It works because X hands it
+real keycodes for free. What was missing is a way for a backend with no
+keyboard underneath to supply its own, and that is now written.
 
 ## Is a remote window a pane, or a floating thing?
 
@@ -422,10 +443,10 @@ Then the spine, which shows nothing on screen:
 
 Then the parts that can be seen:
 
-6. **The keyboard.** The table is done and typing works against a real
-   server -- see "The keyboard" above. What is left is uploading a
-   keymap, in go-xpra, so that the keycodes are ours rather than a
-   guess at the far machine's layout. The ebiten fork's press-and-release
+6. **The keyboard.** Done -- see "The keyboard" above. The table, the
+   modifier synthesis and a declared keymap, with typing verified
+   character for character against a real server. It needed a second
+   change on the go-xpra fork. The ebiten fork's press-and-release
    pipeline is the only reason any of it is possible; see the note in
    `go.mod`.
 7. **The pane.** The application's main window as a `ui.Widget`:
@@ -440,10 +461,10 @@ Then the parts that can be seen:
 
 ### Where it would go wrong
 
-**Step 6 was the sleeper and it went off, then turned out to be
-survivable.** Typing works; what is left is the keymap upload. The
-lesson worth keeping is that every partial answer looked like a broken
-protocol.
+**Step 6 was the sleeper, it went off, and it is now done.** The lesson
+worth keeping is that every partial answer looked like a broken
+protocol rather than a missing ingredient, which cost far more than the
+work itself.
 
 **Step 8 is where the design might still be wrong.** The mapping is
 tested, but only against a fake server written to agree with it. A real

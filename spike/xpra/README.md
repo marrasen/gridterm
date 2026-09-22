@@ -138,16 +138,23 @@ so the named key wins and the text of the same `Source` is dropped.
 `-type` sends a string through that mapping, so a run against a real
 server tests what gridterm would rely on rather than a stand-in.
 
-It works: `-type 'Hello, World! 42'` against Xpra 6.5.3 arrives exactly.
+It works. Against Xpra 6.5.3, typing
+
+    The QUICK brown Fox; #1 @ 50% (x*y) [a] {b} "c" <d> ~e|f/g?
+
+arrives character for character.
+
 Getting there needed three things at once -- the resolved keysym rather
 than the base key, modifier keys synthesised as real presses, and a
-keycode -- and each one alone looks broken. See the note at the top of
-`keys.go`.
+keycode -- and each alone looks like a broken protocol. See the note at
+the top of `keys.go`.
 
-The keycodes are a US-layout table read off the test server with
-`xmodmap`. That is a stand-in, not a design: gridterm has no X keymap to
-take keycodes from, so a real implementation uploads one. go-xpra cannot
-do that yet.
+The keycodes come from `layout.go`, a keyboard this client makes up and
+declares to the server. Every keysym gets a key of its own, unshifted,
+because gridterm never learns which physical key produced a character --
+only which character, and which modifiers were down. Both facts go out
+and the far application sees exactly that. It needs the `keymap-upload`
+branch of the go-xpra fork; released go-xpra sends no keymap at all.
 
 ## Flags
 

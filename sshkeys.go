@@ -242,7 +242,10 @@ func (a *app) keyWritten(key remote.NewKey, savedPassphrase bool) {
 }
 
 // madeKeyTitle names the notice that says where a new key went.
-func madeKeyTitle(remote.NewKey) string { return "Key created" }
+//
+// The constant rather than the words: every title this window draws is
+// one, so rewording costs one edit and not a search.
+func madeKeyTitle(remote.NewKey) string { return dlgKeyCreated }
 
 // installKeyLines says how to put the public half where it is needed,
 // and where the passphrase went when the window kept one.

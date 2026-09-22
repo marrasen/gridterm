@@ -24,6 +24,8 @@ package main
 const (
 	btnAdd     = "Add"
 	btnOK      = "OK"
+	btnShow    = "Show"
+	btnType    = "Type"
 	btnCancel  = "Cancel"
 	btnClose   = "Close"
 	btnRetry   = "Retry"
@@ -105,6 +107,7 @@ const (
 	fldSaveCommand = "Save this command"
 	fldSaveCopy    = "Save this copy"
 	fldSaveTunnel  = "Save this tunnel"
+	fldShowSecret  = "Show the secret"
 )
 
 // The tick box on the new key dialog, which is not one of those three:

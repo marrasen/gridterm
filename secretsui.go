@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"slices"
 	"strings"
 	"time"
 
@@ -20,7 +19,7 @@ import (
 // commands are called.
 //
 // Constants because the dialogs quote them: a notice telling the user to
-// take "Add Secret" has to name the line they will actually find, and a
+// choose "Add Secret" has to name the line they will actually find, and a
 // copy of that name in prose drifts the first time the command is
 // reworded. See WORDING.md.
 const (
@@ -90,7 +89,7 @@ func (a *app) offerAVault() error {
 	keys := a.vaultKeys()
 	if len(keys) == 0 {
 		n := a.newNotice("No key to lock the secrets with",
-			`An ed25519 key is needed. Take "`+makeKeyTitle+`" to create one.`)
+			`An ed25519 key is needed. Choose "`+makeKeyTitle+`" to create one.`)
 		n.SetNoCopy()
 		a.presentNotice(n)
 		return nil
@@ -155,17 +154,15 @@ func (a *app) showSecrets(v *secrets.Vault) error {
 		return err
 	}
 	if len(items) == 0 {
-		n := a.newNotice("No secrets yet", `Take "`+addSecretTitle+`" to add one.`)
-		n.SetNoCopy()
-		a.presentNotice(n)
+		a.noSecretsYet()
 		return nil
 	}
 	// The title says when picking one answers what the pane is waiting
 	// for, because then the row does something more than copy a
 	// password: it sends the line the program is sitting on.
-	title := secretsTitle
+	title := showSecretsTitle
 	if pane := a.focusedTerminal(); pane != nil && pane.AskedForASecret() {
-		title = secretsTitle + " — the pane is waiting for one"
+		title = showSecretsTitle + " — the pane is waiting for one"
 	}
 	var hide func()
 	c := ui.NewChooser(title, func() {
@@ -178,10 +175,10 @@ func (a *app) showSecrets(v *secrets.Vault) error {
 	// left and right pick what to do with it, and Enter does it.
 	c.Filter = true
 	c.Actions = []ui.ChooserAction{
-		{Label: "Type", Do: a.onPicked(v, items, a.typeSecret)},
-		{Label: "Copy", Do: a.onPicked(v, items, a.copySecret)},
-		{Label: "Show", Do: a.onPicked(v, items, a.showSecret)},
-		{Label: "Cancel", Do: func(int) error { return nil }},
+		{Label: btnType, Do: a.onPicked(v, items, a.typeSecret)},
+		{Label: btnCopy, Do: a.onPicked(v, items, a.copySecret)},
+		{Label: btnShow, Do: a.onPicked(v, items, a.showSecret)},
+		{Label: btnCancel, Do: func(int) error { return nil }},
 	}
 	for _, it := range items {
 		c.Add(it.Name, secretNote(it), func() error { return a.copySecret(v, it) })
@@ -205,6 +202,14 @@ func (a *app) onPicked(v *secrets.Vault, items []secrets.Item,
 		}
 		return do(v, items[i])
 	}
+}
+
+// noSecretsYet says the vault is empty and where to start, which is one
+// answer to three commands: showing, changing and removing all meet it.
+func (a *app) noSecretsYet() {
+	n := a.newNotice("No secrets yet", `Choose "`+addSecretTitle+`" to add one.`)
+	n.SetNoCopy()
+	a.presentNotice(n)
 }
 
 // showSecret puts one on screen, for reading off rather than pasting.
@@ -400,6 +405,7 @@ func (a *app) askForSecret(v *secrets.Vault, kind secrets.Kind) error {
 	// they can clear, not a decision.
 	user.SetText(a.currentHost())
 	value := f.AddField(label, a.newField("", mask))
+	a.addShowBox(f, value, mask)
 	// Said once the form has gone, so the message is not pushed over a
 	// dialog that is about to be taken away underneath it.
 	kept := ""
@@ -412,7 +418,6 @@ func (a *app) askForSecret(v *secrets.Vault, kind secrets.Kind) error {
 		return nil
 	}})
 	a.addGenerateButton(f, value, kind)
-	a.addShowButton(f, value, mask)
 	f.AddButton(ui.Button{Title: btnCancel})
 	a.showForm(f, func() {
 		if kept != "" {
@@ -431,14 +436,7 @@ func (a *app) askForSecret(v *secrets.Vault, kind secrets.Kind) error {
 // Somebody typing a password into a window is owed a word about where
 // it goes, and a note is as worth sealing as a password. It says the
 // two things that matter: it is sealed, and one key opens it.
-const keptSealed = "Sealed in the vault. Only your key opens it."
-
-// showTitle and hideTitle are what the button that turns the stars off
-// says, and what finds it again to rename.
-const (
-	showTitle = "Show"
-	hideTitle = "Hide"
-)
+const keptSealed = "Sealed in the vault, which only your key opens."
 
 // offerServers puts the machines the window knows of on a For field, so
 // the one a secret belongs to is a keystroke away rather than typed out.
@@ -478,42 +476,30 @@ func (a *app) addGenerateButton(f *ui.Form, value *ui.Field, kind secrets.Kind) 
 	}})
 }
 
-// addShowButton puts a button on a form that turns the stars off, for
-// checking what was typed before keeping it.
+// addShowBox puts a tick on a form that turns the stars off, for
+// checking what was typed before saving it.
+//
+// A tick rather than the button this was, which said Show and then
+// renamed itself to Hide. Rule 9: a button that renames itself is a bug
+// wearing an explanation, and the explanation was a comment saying it
+// had to say what the next press did rather than what the last one did.
+// A tick says which way it is without being read twice, and it sits
+// beside the field it is about rather than down among the verbs.
 //
 // Only on a field that is masked to begin with: a note is shown as it
 // is typed and has nothing to turn off.
-func (a *app) addShowButton(f *ui.Form, value *ui.Field, mask rune) {
+func (a *app) addShowBox(f *ui.Form, value *ui.Field, mask rune) {
 	if mask == 0 {
 		return
 	}
-	f.AddButton(ui.Button{Title: showTitle, Keep: true, Do: func() error {
-		if value.Mask == 0 {
-			value.Mask = mask
-		} else {
+	show := f.AddTick(fldShowSecret, false)
+	show.OnChange = func(string) {
+		if show.On() {
 			value.Mask = 0
+		} else {
+			value.Mask = mask
 		}
-		retitleShow(f, value.Mask != 0)
 		a.markDirty()
-		return nil
-	}})
-}
-
-// retitleShow renames the button in place, so it says what the next
-// press does rather than what the last one did.
-func retitleShow(f *ui.Form, masked bool) {
-	title := hideTitle
-	if masked {
-		title = showTitle
-	}
-	buttons := slices.Clone(f.Buttons())
-	for i, b := range buttons {
-		if b.Title == showTitle || b.Title == hideTitle {
-			buttons[i].Title = title
-			// The same number of buttons, so the focus stays on this one.
-			f.SetButtons(buttons)
-			return
-		}
 	}
 }
 
@@ -540,6 +526,9 @@ func alreadyOpens(v *secrets.Vault) map[string]bool {
 // chooseAKeyToAdd lists the keys that could be added and adds the one
 // picked.
 func (a *app) chooseAKeyToAdd(v *secrets.Vault) error {
+	// Titled for the command, because this list and the one under
+	// Remove Secrets Key were both "Choose a key" and the user had only
+	// their memory to say which they were in.
 	have := alreadyOpens(v)
 	var spare []string
 	for _, keyFile := range a.vaultKeys() {
@@ -554,7 +543,7 @@ func (a *app) chooseAKeyToAdd(v *secrets.Vault) error {
 		return nil
 	}
 	var hide func()
-	c := ui.NewChooser("Choose a key", func() {
+	c := ui.NewChooser(addSecretsKeyTitle, func() {
 		if hide != nil {
 			hide()
 		}
@@ -585,7 +574,7 @@ func spareKeyNote(v *secrets.Vault, keyFile string) string {
 	if _, err := v.PassphraseFor(keyFile); err != nil {
 		return ""
 	}
-	return "passphrase in here"
+	return "passphrase in the secrets"
 }
 
 // The consequences worth saying before a key is trusted with the
@@ -691,7 +680,7 @@ func (a *app) confirmAddKey(v *secrets.Vault, keyFile string) {
 // different thing depending on how many already open it.
 func whyNoKeyToAdd(opening int) string {
 	if opening == 0 {
-		return `No other ed25519 key is on this machine. Take "` + makeKeyTitle +
+		return `No other ed25519 key is on this machine. Choose "` + makeKeyTitle +
 			`" to create one.`
 	}
 	return "Every ed25519 key this window knows of already opens the secrets." +
@@ -728,7 +717,7 @@ func (a *app) chooseToChange(v *secrets.Vault) error {
 		return err
 	}
 	if len(items) == 0 {
-		a.showNotice(secretsTitle, "There is nothing to change yet.", false)
+		a.noSecretsYet()
 		return nil
 	}
 	var hide func()
@@ -775,6 +764,7 @@ func (a *app) askToChange(v *secrets.Vault, it secrets.Item) error {
 	value := f.AddField(label, a.newField("Optional", 0))
 	value.Mask = mask
 	value.Hint = "Leave empty to keep the saved one"
+	a.addShowBox(f, value, mask)
 
 	changedTo := ""
 	f.AddButton(ui.Button{Title: btnSave, Do: func() error {
@@ -793,7 +783,6 @@ func (a *app) askToChange(v *secrets.Vault, it secrets.Item) error {
 		return nil
 	}})
 	a.addGenerateButton(f, value, it.Kind)
-	a.addShowButton(f, value, mask)
 	f.AddButton(ui.Button{Title: btnCancel})
 	a.showForm(f, func() {
 		if changedTo != "" {
@@ -819,14 +808,13 @@ func (a *app) chooseAKeyToRemove(v *secrets.Vault) error {
 	keys := v.Keys()
 	if len(keys) < 2 {
 		n := a.newNotice("Only one key opens the secrets",
-			`Removing it would leave nothing that can. Take "`+addSecretsKeyTitle+
-				`" to add another first.`)
+			`Choose "`+addSecretsKeyTitle+`" to add another first.`)
 		n.SetNoCopy()
 		a.presentNotice(n)
 		return nil
 	}
 	var hide func()
-	c := ui.NewChooser("Choose a key", func() {
+	c := ui.NewChooser(removeSecretsKeyTitle, func() {
 		if hide != nil {
 			hide()
 		}
@@ -884,19 +872,25 @@ func onThisMachine(s secrets.KeySlot) bool {
 // confirmRemoveKey asks before taking a key away, because a key that is
 // gone cannot be put back without the key itself.
 func (a *app) confirmRemoveKey(v *secrets.Vault, s secrets.KeySlot) {
-	n := a.newNotice("Remove "+keyRowName(s)+"?", whatRemovingCosts(v, s))
-	n.Action = ui.NoticeAction{Title: btnRemove, Do: func() {
+	// A question rather than a notice with an action on it, so the way
+	// out says Cancel. On a notice it said OK, which reads as agreeing
+	// to the removal rather than declining it, and carried a Copy
+	// button over a body with nothing in it to copy.
+	f := a.newConfirm(dlgRemove+keyRowName(s)+"?",
+		wrapLines(whatRemovingCosts(v, s), errorLineWidth))
+	f.AddButton(ui.Button{Title: btnRemove, Do: func() error {
 		if err := v.RemoveKey(s.Fingerprint); err != nil {
-			a.reportError("Could not remove the key", err)
-			return
+			return err
 		}
 		a.say(fmt.Sprintf("%s removed — %d keys still open the secrets",
 			keyRowName(s), len(v.Keys())))
-	}}
-	// Opens on OK, which changes nothing: a key that is gone cannot be
-	// put back without the key itself.
-	n.FocusOK()
-	a.presentNotice(n)
+		return nil
+	}})
+	f.AddButton(ui.Button{Title: btnCancel})
+	// Opens on the button that changes nothing: a key that is gone
+	// cannot be put back without the key itself.
+	f.FocusButton(1)
+	a.showForm(f, nil)
 }
 
 // whatRemovingCosts says what taking this key away means, which is a
@@ -908,8 +902,7 @@ func whatRemovingCosts(v *secrets.Vault, s secrets.KeySlot) string {
 	if !lastKeyHere(v, s) {
 		return "Another key on this machine still opens the secrets."
 	}
-	return "This is the only key here that opens them. This machine cannot" +
-		" open them again until one of the others is on it."
+	return "Opening them here again needs a key from another machine."
 }
 
 // lastKeyHere reports whether this is the only key of the vault's that
@@ -935,9 +928,7 @@ func (a *app) chooseToForget(v *secrets.Vault) error {
 		return err
 	}
 	if len(items) == 0 {
-		n := a.newNotice("No secrets yet", `Take "`+addSecretTitle+`" to add one.`)
-		n.SetNoCopy()
-		a.presentNotice(n)
+		a.noSecretsYet()
 		return nil
 	}
 	var hide func()

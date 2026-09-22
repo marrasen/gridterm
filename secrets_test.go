@@ -510,27 +510,28 @@ func TestShowTurnsTheStarsOff(t *testing.T) {
 		t.Fatalf("ask: %v", err)
 	}
 	f := a.root.Modal().(*ui.Form)
-	value := f.Field("Secret")
+	value := f.Field(fldSecret)
 	if value.Mask == 0 {
 		t.Fatal("a password field starts unmasked")
 	}
 
-	pressButton(t, a, f, "Show")
+	tickBox(t, a, f, fldShowSecret)
 	if value.Mask != 0 {
-		t.Error("Show left the stars on")
+		t.Error("ticking the box left the stars on")
 	}
 	if a.root.Modal() != ui.Widget(f) {
-		t.Fatal("Show closed the form")
+		t.Fatal("ticking the box closed the form")
 	}
-	// And the button now offers to put them back.
-	pressButton(t, a, f, "Hide")
+	// And clearing it puts them back. A box says which way it is; the
+	// button this was had to rename itself to say the same thing.
+	tickBox(t, a, f, fldShowSecret)
 	if value.Mask == 0 {
-		t.Error("Hide left the secret on screen")
+		t.Error("clearing the box left the secret on screen")
 	}
 }
 
 // A note has nothing to show: it is not starred to begin with.
-func TestANoteHasNoShowButton(t *testing.T) {
+func TestANoteHasNoShowBox(t *testing.T) {
 	a, keyFile := aWindowWithSecrets(t)
 	v := startTheVault(t, a, keyFile)
 
@@ -538,9 +539,30 @@ func TestANoteHasNoShowButton(t *testing.T) {
 		t.Fatalf("ask: %v", err)
 	}
 	f := a.root.Modal().(*ui.Form)
-	for _, b := range f.Buttons() {
-		if b.Title == "Show" || b.Title == "Hide" {
-			t.Errorf("a note's form offers %q", b.Title)
+	if f.Field(fldShowSecret) != nil {
+		t.Errorf("a note's form offers %q", fldShowSecret)
+	}
+}
+
+// No dialog in the feature has a button that renames itself, which
+// rule 9 calls a bug wearing an explanation.
+func TestNoButtonRenamesItself(t *testing.T) {
+	a, keyFile := aWindowWithSecrets(t)
+	v := startTheVault(t, a, keyFile)
+
+	if err := a.askForSecret(v, secrets.Password); err != nil {
+		t.Fatalf("ask: %v", err)
+	}
+	f := a.root.Modal().(*ui.Form)
+	was := f.Buttons()
+	tickBox(t, a, f, fldShowSecret)
+	now := f.Buttons()
+	if len(was) != len(now) {
+		t.Fatalf("the buttons went from %d to %d", len(was), len(now))
+	}
+	for i := range was {
+		if was[i].Title != now[i].Title {
+			t.Errorf("button %d renamed itself from %q to %q", i, was[i].Title, now[i].Title)
 		}
 	}
 }
@@ -645,11 +667,11 @@ func TestTakingTheLastKeyHereAwayIsSaidPlainly(t *testing.T) {
 	if !lastKeyHere(v, here) {
 		t.Error("the key on this machine is not seen as the last one here")
 	}
-	if !strings.Contains(whatRemovingCosts(v, here), "only key here") {
+	if !strings.Contains(whatRemovingCosts(v, here), "from another machine") {
 		t.Errorf("it does not say what removing it costs: %q", whatRemovingCosts(v, here))
 	}
 	// And taking away the one that is not here costs nothing to say.
-	if strings.Contains(whatRemovingCosts(v, away), "only key here") {
+	if strings.Contains(whatRemovingCosts(v, away), "from another machine") {
 		t.Errorf("it warns about a key that is not on this machine: %q", whatRemovingCosts(v, away))
 	}
 	if !strings.Contains(keyRowNote(here), "on this machine") {

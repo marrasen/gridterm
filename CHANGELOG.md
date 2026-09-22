@@ -91,6 +91,19 @@ agent forwarding is off unless a saved server turns it on.
 
 ### Changed
 
+**The secrets went through the wording rules a second time.** Five
+dialogs said `Take "Add Secret"` where the vocabulary table has
+`choose` for a menu line. The `Show` button on the add and change forms
+renamed itself to `Hide`, which rule 9 calls a bug wearing an
+explanation; it is a `Show the secret` tick now, beside the field it is
+about. The list `Show Secrets` opens was titled `Secrets` and the two
+key lists both said `Choose a key`, so two different jobs shared a
+heading; each is titled with the command that opens it. The question
+before a key is revoked offered `Remove` and `OK`, where `OK` reads as
+agreeing to the removal, and carried a `Copy` button over a body with
+nothing in it to copy; it is `Remove` and `Cancel`. Two warnings that
+ran to two sentences are one each.
+
 **A list's buttons look and answer like every other dialog's.** The row
 along the bottom of a chooser drew its actions as names in square
 brackets, so `Show Secrets` offered `[ Type ] [ Copy ] [ Show ]

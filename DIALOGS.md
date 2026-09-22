@@ -793,7 +793,7 @@ one is on screen the question has been answered.
 
 ## D60
 - **Title:** `No key to lock the secrets with`
-- **Body:** `An ed25519 key is needed. Take "New SSH Key" to create one.`
+- **Body:** `An ed25519 key is needed. Choose "New SSH Key" to create one.`
 - **Buttons:** `OK`
 - **Opened from:** any secrets command, when there is no vault and no
   ed25519 key to start one on.
@@ -818,14 +818,22 @@ another is added.
 `Create` goes through D70 when there is anything to say about the key.
 
 ## D62
-- **Title:** `Choose a key`
-- **Rows:** one per ed25519 key file on this machine
+- **Title:** `Choose a key` — or `Add Secrets Key` / `Remove Secrets Key`
+  when one of those commands opened it
+- **Rows:** one per ed25519 key file this list is offering
 - **Opened from:** any secrets command, when there is no vault and
-  several keys could start one. Also `Add Secrets Key` (D69) and
-  `Remove Secrets Key` (D71), over their own sets of keys.
+  several keys could start one; and `Add Secrets Key` and `Remove
+  Secrets Key`, over their own sets of keys.
+
+**Instructions:** Titled for the command under G6 and P4. Both key
+lists said `Choose a key`, so two different jobs shared one heading and
+nothing on screen said which of them the user was in. Only the list
+that starts a vault keeps the plain name, because no command is called
+that.
 
 ## D63
-- **Title:** `Secrets`, or `Secrets — the pane is waiting for one`
+- **Title:** `Show Secrets`, or
+  `Show Secrets — the pane is waiting for one`
 - **Rows:** the name of each secret, noted with who it is for, the key
   file a passphrase opens, and the kind when it is not a password
 - **Filter:** a row of its own, `type to narrow the list`
@@ -845,6 +853,9 @@ back.
 `Copy` puts it on the clipboard and says so on the bottom row without
 showing it. `Show` is D64. No secret is ever drawn on a row.
 
+The four are `Type` `Copy` `Show` `Cancel`, and all four are constants
+in `wording.go` like every other button this window draws.
+
 ## D64
 - **Title:** `<name>`
 - **Body:** the secret, as it was saved
@@ -861,22 +872,27 @@ this name.` and `OK` alone.
 
 ## D65
 - **Title:** `No secrets yet`
-- **Body:** `Take "Add Secret" to add one.`
+- **Body:** `Choose "Add Secret" to add one.`
 - **Buttons:** `OK`
-- **Opened from:** `Show Secrets` and `Remove Secret`, with an empty
-  vault. `Change Secret` gets the title `Secrets` and the body `There is
-  nothing to change yet.`
+- **Opened from:** `Show Secrets`, `Change Secret` and `Remove Secret`,
+  with an empty vault.
+
+**Instructions:** One answer for all three. `Change Secret` had a
+heading and a sentence of its own, `Secrets` over `There is nothing to
+change yet.`, which said the same thing in different words and carried
+a `Copy` button over a body with nothing in it to copy (G1).
 
 ## D66
 - **Title:** `Add Secret`
-- **Body:** `Sealed in the vault. Only your key opens it.`
+- **Body:** `Sealed in the vault, which only your key opens.`
 - **Fields:**
   - `Name`
   - `For` — placeholder `Optional`, pre-filled with the machine in
     front of the user, offering the machines the window knows of; hint
     `Who or what the secret is for`
   - `Secret` — masked
-- **Buttons:** `Save` · `Generate` · `Show` · `Cancel`
+  - `Show the secret` — a tick box, which turns the stars off
+- **Buttons:** `Save` · `Generate` · `Cancel`
 - **Opened from:** `Add Secret`
 
 **Instructions:** The body earns its place by rule 10: somebody typing a
@@ -884,9 +900,15 @@ password into a window is owed a word about where it goes, and it says
 the two things that matter.
 
 `Generate` fills the field with twenty characters and leaves the dialog
-open. What it writes stays masked; `Show` is what reads it back, so the
-two buttons are one job each. `Show` becomes `Hide` in place, so it says
-what the next press does rather than what the last one did.
+open. What it writes stays masked; the tick is what reads it back, so
+the two are one job each.
+
+The tick was a button that said `Show` and renamed itself to `Hide`,
+which rule 9 calls a bug wearing an explanation — and the explanation
+was a comment saying it had to say what the next press did rather than
+what the last one did. A box says which way it is without being read
+twice, and it sits beside the field it is about rather than down among
+the verbs.
 
 `For` is a suggestion in a field the user can clear, not a decision. It
 starts empty on a local pane, because there is no machine to name.
@@ -895,15 +917,15 @@ Saving says `<name> saved` on the bottom row (G2).
 
 ## D67
 - **Title:** `Add Note`
-- **Body:** `Sealed in the vault. Only your key opens it.`
+- **Body:** `Sealed in the vault, which only your key opens.`
 - **Fields:** `Name`, `For`, `Note` — not masked
 - **Buttons:** `Save` · `Cancel`
 - **Opened from:** `Add Note`
 
 **Instructions:** A note is a licence or a recovery code, read off the
 screen as often as it is pasted, so it is shown as it is typed and there
-is no `Show` to turn off. It came from somewhere else, so there is
-nothing to `Generate` either.
+is no tick to turn the stars off. It came from somewhere else, so there
+is nothing to `Generate` either.
 
 ## D68
 - **Title:** `Change Secret — <name>`
@@ -912,7 +934,8 @@ nothing to `Generate` either.
   - `For` — filled in, offering the machines the window knows of
   - `New secret` — placeholder `Optional`, masked; hint `Leave empty to
     keep the saved one`
-- **Buttons:** `Save` · `Generate` · `Show` · `Cancel`
+  - `Show the secret` — a tick box
+- **Buttons:** `Save` · `Generate` · `Cancel`
 - **Opened from:** a row of `Change Secret`, which is a list titled
   `Change Secret`.
 
@@ -922,13 +945,13 @@ sitting on screen behind a row of stars, and changing a name would have
 to read it. As it is, renaming one never reads it at all.
 
 `Generate` is how a password is rolled over on a machine. For a note the
-field is `New note`, unmasked, with neither `Generate` nor `Show`.
+field is `New note`, unmasked, with neither `Generate` nor the tick.
 
 Saving says `<name> changed` on the bottom row.
 
 ## D69
 - **Title:** `No key to add`
-- **Body:** `No other ed25519 key is on this machine. Take "New SSH Key"
+- **Body:** `No other ed25519 key is on this machine. Choose "New SSH Key"
   to create one.` — or, when every key the window knows of already opens
   the vault, `Every ed25519 key this window knows of already opens the
   secrets. A key from another machine has to be on this one first.`
@@ -937,7 +960,8 @@ Saving says `<name> changed` on the bottom row.
 
 **Instructions:** Two bodies because there are two reasons, and what the
 user does next differs. With keys to offer this is D62, whose rows note
-`passphrase in here` for a key the vault holds the passphrase of.
+`passphrase in the secrets` for a key the vault holds the passphrase
+of.
 
 Adding says `<key file> opens the secrets — <n> keys do now` on the
 bottom row.
@@ -983,8 +1007,8 @@ added to the agent a minute later.
 
 ## D71
 - **Title:** `Only one key opens the secrets`
-- **Body:** `Removing it would leave nothing that can. Take "Add Secrets
-  Key" to add another first.`
+- **Body:** `Choose "Add Secrets Key" to add another
+  first.`
 - **Buttons:** `OK`
 - **Opened from:** `Remove Secrets Key`, with one key in the vault.
 
@@ -995,20 +1019,25 @@ was — noted `on this machine` and with the fingerprint.
 ## D72
 - **Title:** `Remove <key file>?`
 - **Body:** `Another key on this machine still opens the secrets.` — or,
-  when it is the last one here, `This is the only key here that opens
-  them. This machine cannot open them again until one of the others is
-  on it.`
-- **Buttons:** `Remove` · `Copy` · `OK`
-- **Focus:** `OK`
+  when it is the last one here, `Opening them here again needs a key
+  from another machine.`
+- **Buttons:** `Remove` · `Cancel`
+- **Focus:** `Cancel`
 - **Opened from:** a row of D62 under `Remove Secrets Key`.
 
 **Instructions:** Rule 10: a key that is gone cannot be put back without
-the key itself. Opens on `OK`, which changes nothing.
+the key itself. Opens on the button that changes nothing.
 
-The secrets stay open until the window locks them, so somebody who has
-just shut themselves out has a moment to put the key back. That is why
-the body says what this machine can do rather than what the vault has
-lost.
+`Cancel` rather than `OK`, which is what a notice with an action on it
+draws: on a question about removing something, `OK` reads as agreeing
+to it. That also drops a `Copy` button over a body with nothing in it
+to copy (G1). D70 is the same shape, so the two questions about a key
+answer alike.
+
+One sentence either way. The secrets stay open until the window locks
+them, so somebody who has just shut themselves out has a moment to put
+the key back; that is why the body says what opens them here again
+rather than what has been lost.
 
 Removing says `<key file> removed — <n> keys still open the secrets` on
 the bottom row.

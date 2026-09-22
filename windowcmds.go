@@ -129,19 +129,28 @@ func listOf(what []string) string {
 	return strings.Join(what[:len(what)-1], ", ") + " and " + what[len(what)-1]
 }
 
-// showAbout says what this is.
+// aboutCommand says what this is, and aboutTitle names both the dialog
+// and the line that opens it.
+const (
+	aboutCommand = "app.about"
+	aboutTitle   = "About gridterm"
+)
+
+// showAbout says what this is and which build it is.
 //
-// Short on purpose. It is where a version number goes when there is
-// one, and where checking for a newer one would be offered.
+// The version is here because it is the first thing a bug report needs
+// and nothing else in the window says it. Beside OK is the button that
+// asks GitHub whether there is a newer one.
 func (a *app) showAbout() error {
-	n := a.newNotice("About gridterm", strings.Join([]string{
+	n := a.newNotice(aboutTitle, strings.Join([]string{
 		"A GPU-rendered terminal emulator for Windows.",
 		"",
-		"Version: development build",
+		"Version: " + thisVersion(),
 	}, "\n"))
-	// Nothing worth putting on the clipboard until there is a version
-	// number to quote in a bug report.
-	n.SetNoCopy()
+	n.Action = ui.NoticeAction{Title: btnCheckUpdates, Do: a.checkForUpdates}
+	// Enter dismisses the dialog. Reaching the network is a thing to
+	// choose, not a thing to land on.
+	n.FocusOK()
 	a.presentNotice(n)
 	return nil
 }

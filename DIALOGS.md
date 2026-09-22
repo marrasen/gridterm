@@ -649,9 +649,15 @@ stay: title `Shell setup <on|off>`, body `Applies to new panes.`, `OK`.
   ```
   A GPU-rendered terminal emulator for Windows.
 
-  Version: development build
+  Version: v0.2.0
   ```
-- **Buttons:** `OK`
+  The version is what the build calls itself: a tag for a release, and
+  `dev-<commit>` for a build from a working tree.
+- **Buttons:** `Check for updates` · `Copy` · `OK`
+- **Focus:** `OK`
+- **Notes:** `Copy`, because the version is the first thing a bug report
+  needs. `Check for updates` opens D58 or D59, or says the answer on the
+  bottom row when there is nothing to fetch.
 
 ## D53
 - **Title:** `Keys and commands`
@@ -732,6 +738,46 @@ The window serving <name> was lost                 → Connection to <name> lost
 This copy could not be given files of its own      → Could not make portable
 Trouble closing <name>                             → Could not close <name>
 ```
+
+---
+
+# The two the update check opens
+
+## D58
+- **Title:** `Update available`
+- **Body:**
+  ```
+  v0.2.0 is the newest release; this build is v0.1.0.
+  https://github.com/marrasen/gridterm/releases/tag/v0.2.0
+  ```
+- **Buttons:** `Open` · `Copy` · `OK`
+- **Focus:** `OK`
+- **Opened from:** `Check for updates` on D52, when the newest release
+  is later than this build.
+
+## D59
+- **Title:** `Newest release`
+- **Body:**
+  ```
+  v0.2.0 is the newest release; this build is dev-3e62f4547e66.
+  https://github.com/marrasen/gridterm/releases/tag/v0.2.0
+  ```
+- **Buttons:** `Open` · `Copy` · `OK`
+- **Focus:** `OK`
+- **Opened from:** `Check for updates` on D52, when this build is not a
+  release and so has no order against one.
+
+---
+
+# Answers that are a line, not a dialog
+
+`Check for updates` on D52 puts these on the bottom row through
+`(*app).say`, because there is nothing to fetch and nothing to answer:
+
+- `v0.2.0 is the newest release` — this build is that release.
+- `This build is later than the newest release, v0.2.0` — what building
+  from `main` gives.
+- `Checking for updates…` — while the question is out.
 
 ---
 

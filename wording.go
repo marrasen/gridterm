@@ -41,6 +41,7 @@ const (
 // The buttons that say something a single verb cannot: an action with an
 // object, or a second answer to the same question.
 const (
+	btnCheckUpdates  = "Check for updates"
 	btnCopy          = "Copy"
 	btnCopyPrompt    = "Copy prompt"
 	btnCopyPublicKey = "Copy public key"
@@ -110,6 +111,7 @@ const (
 	dlgGoTo             = "Go to Directory"
 	dlgKeyCreated       = "Key created"
 	dlgNewDirectory     = "New Directory"
+	dlgNewestRelease    = "Newest release"
 	dlgPassword         = "Password"
 	dlgReplaceSkill     = "Replace existing skill?"
 	dlgServeWindow      = "Serve This Window"
@@ -117,6 +119,7 @@ const (
 	dlgSkillWritten     = "Skill written"
 	dlgTermProgram      = "Terminal Identity"
 	dlgUnknownHostKey   = "Unknown host key"
+	dlgUpdateAvailable  = "Update available"
 	dlgUnlockKey        = "Unlock Private Key"
 	dlgWaitingForServer = "Waiting for server"
 )

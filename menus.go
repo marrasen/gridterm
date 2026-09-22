@@ -107,7 +107,7 @@ func (a *app) newMenubar(child ui.Widget) *ui.Menubar {
 			ui.MenuSeparator(),
 			{Command: logCommand, Title: "Window Log"},
 			ui.MenuSeparator(),
-			{Command: "app.about"},
+			{Command: aboutCommand},
 		}},
 	}
 	bar.Style = a.menubarStyle()

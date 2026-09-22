@@ -1,0 +1,4 @@
+frames/
+
+# The spike builds to a binary named after its directory.
+xpra

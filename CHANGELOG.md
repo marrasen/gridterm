@@ -9,6 +9,10 @@ change how something behaves.
 
 ## Unreleased
 
+Nothing yet.
+
+## v0.2.1
+
 ### Fixed
 
 **The line along the bottom row is no longer hidden behind the
@@ -16,9 +20,9 @@ sidebar.** The sidebar is drawn on a layer of its own over its columns,
 and the line started at the first of them: `Shortcuts reloaded` is
 shorter than the sidebar is wide, so it was invisible altogether, and so
 was the sentence a menu puts there for the row under the cursor. It now
-starts beside the sidebar. This is what `Check for updates` says when
-this build is already the newest release, so that answer could not be
-read either.
+starts beside the sidebar. This is also what `Check for updates` says
+when this build is already the newest release, so in v0.2.0 that answer
+could not be read at all.
 
 ## v0.2.0
 

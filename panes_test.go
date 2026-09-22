@@ -262,6 +262,22 @@ func newTestApp(t *testing.T, cols, rows int, opts ...testOption) *testApp {
 		t.Fatalf("server list: %v", err)
 	}
 	ta.book = book
+	// Stop the file work before the directory it is writing into goes.
+	//
+	// Registered after the first t.TempDir above and before anything a
+	// test registers, so cleanups run in the order this needs: a test
+	// frees whatever it was holding, then the jobs stop here, and only
+	// then does the temp directory get removed. Without this a copy let
+	// through on the way out went on writing into a directory RemoveAll
+	// was already walking, and the test failed on the cleanup with
+	// "directory not empty" -- rarely, and only under a full suite.
+	t.Cleanup(func() {
+		ta.queue.CancelAll()
+		// Bounded, and the answer is not checked: a job wedged inside a
+		// read that cannot be interrupted is not this test's failure,
+		// and the window itself gives up on one the same way.
+		ta.queue.WaitFor(jobsGrace)
+	})
 	// Settings of its own too, so no test reads or writes the ones
 	// belonging to whoever is running it.
 	set, err := settings.Load(filepath.Join(t.TempDir(), "settings.json"))

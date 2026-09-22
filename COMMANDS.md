@@ -276,6 +276,12 @@ Identity`, D52 `About gridterm`.
 Only where the header above the row already says the missing word.
 Every other menu row is the registered title.
 
+The shells are not in the table. One command is registered per shell
+found, so their ids are made at run time and there is nothing fixed to
+list. Their rows follow the same rule: `New Terminal: Command Prompt` in
+the palette, `Command Prompt` under `New Terminal In` on the File menu
+and under `Terminal` on a machine's plus menu.
+
 | ID | Title | Header | Row |
 |---|---|---|---|
 | `pane.splitRight` | Split Right… | Split | Right… |
@@ -303,6 +309,7 @@ Every other menu row is the registered title.
 | `view.themesReload` | Reload Themes | Reload | Themes |
 | `shortcuts.reload` | Reload Shortcuts | Reload | Shortcuts |
 | `server.reload` | Reload Server List | Reload | Server List |
+| `shell.default` | New Terminal, Default Shell | New Terminal In | Default shell |
 | `sshkey.make` | New SSH Key… | SSH Keys | New Key… |
 | `sshkey.lock` | Lock SSH Keys | SSH Keys | Lock Keys |
 | `view.theme` | Choose Theme… | — *(Options menu)* | Theme… |

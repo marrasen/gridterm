@@ -136,6 +136,23 @@ func fileMenuLines(t *testing.T, a *testApp, bar *ui.Menubar) []string {
 	return ids
 }
 
+// headerAbove is the nearest heading over a menu's line for a command,
+// and the empty string when nothing heads it.
+func headerAbove(t *testing.T, m *ui.Menu, id string) string {
+	t.Helper()
+	header := ""
+	for _, item := range m.Items() {
+		if item.Header != "" {
+			header = item.Header
+		}
+		if item.Command == id {
+			return header
+		}
+	}
+	t.Fatalf("the menu has no line for %s", id)
+	return ""
+}
+
 // lineTitle is what a menu's line for a command says, which is the empty
 // string when the line leaves the naming to the command.
 func lineTitle(t *testing.T, m *ui.Menu, id string) string {
@@ -532,7 +549,7 @@ func TestTheShellScanReportsAFailureAndKeepsWhatItFound(t *testing.T) {
 }
 
 // TestChoosingAShellFromTheFileMenuOpensAPaneOnIt drives the other way
-// in. Those lines carry no title of their own, so nothing else runs one.
+// in.
 func TestChoosingAShellFromTheFileMenuOpensAPaneOnIt(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withDialogs(t, a)
@@ -552,8 +569,9 @@ func TestChoosingAShellFromTheFileMenuOpensAPaneOnIt(t *testing.T) {
 }
 
 // TestTheLinesAndThePaletteSayWhichShell checks the words the user
-// reads: the plus names the shell, the File menu leaves the naming to
-// the command, and the palette finds that command by its own name.
+// reads: both menus name the shell and nothing else, because the header
+// over each already says a terminal is what opens, and the palette
+// finds the command by its own full name.
 func TestTheLinesAndThePaletteSayWhichShell(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withDialogs(t, a)
@@ -567,8 +585,13 @@ func TestTheLinesAndThePaletteSayWhichShell(t *testing.T) {
 	}
 	dismiss(t, plus)
 	file := openFileMenu(t, a, bar)
-	if got := lineTitle(t, file, shellCommandID("pwsh")); got != "" {
-		t.Errorf("the line on the File menu says %q, want the command's own title", got)
+	if got := lineTitle(t, file, shellCommandID("pwsh")); got != "PowerShell" {
+		t.Errorf("the line on the File menu says %q, want the shell's own name", got)
+	}
+	// And the header that earns the shorter line. A row says less than
+	// its command only where the header above it says the rest.
+	if got := headerAbove(t, file, shellCommandID("pwsh")); got != newTerminalInHeader {
+		t.Errorf("the shells sit under %q, want %q", got, newTerminalInHeader)
 	}
 	bar.Close()
 

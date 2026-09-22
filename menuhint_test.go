@@ -158,3 +158,60 @@ func menuDrawn(t *testing.T, a *testApp, id string) string {
 	}
 	return b.String()
 }
+
+// The line goes beside the sidebar, not under it.
+//
+// The sidebar is drawn on a layer over its own columns, so a line
+// written under it is one nobody sees. "Shortcuts reloaded" is shorter
+// than the sidebar is wide, and used to be invisible altogether.
+func TestTheBottomRowStartsBesideTheSidebar(t *testing.T) {
+	a := newTestApp(t, 90, 24)
+	withPanel(t, a)
+	withDialogs(t, a)
+	a.commands()
+
+	left := a.hintLeft()
+	if left <= 0 {
+		t.Fatalf("the sidebar covers %d columns of the bottom row", left)
+	}
+	a.say("Shortcuts reloaded")
+	a.root.Draw(a.g.View())
+	under := rowUpTo(t, a, left)
+	a.drawHint()
+
+	row := bottomRow(t, a)
+	if got := strings.TrimRight(row[:left], " "); got != strings.TrimRight(under, " ") {
+		t.Errorf("the line wrote %q under the sidebar", got)
+	}
+	if got := strings.TrimSpace(row[left:]); got != "Shortcuts reloaded" {
+		t.Errorf("beside the sidebar the row reads %q", got)
+	}
+}
+
+// With no sidebar showing the line has the whole row.
+func TestWithNoSidebarTheLineHasTheWholeRow(t *testing.T) {
+	a := newTestApp(t, 90, 24)
+	withDialogs(t, a)
+	a.commands()
+
+	if got := a.hintLeft(); got != 0 {
+		t.Fatalf("it starts at column %d with no sidebar", got)
+	}
+	a.say("Shortcuts reloaded")
+	a.root.Draw(a.g.View())
+	a.drawHint()
+
+	if got := strings.TrimSpace(bottomRow(t, a)); got != "Shortcuts reloaded" {
+		t.Errorf("the row reads %q", got)
+	}
+}
+
+// rowUpTo is what the bottom row says in its first cols columns.
+func rowUpTo(t *testing.T, a *testApp, cols int) string {
+	t.Helper()
+	row := bottomRow(t, a)
+	for len(row) < cols {
+		row += " "
+	}
+	return row[:cols]
+}

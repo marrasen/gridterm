@@ -35,10 +35,10 @@ true.
 - `SHA256SUMS`
 
 The version is stamped into the binary at link time, so a build can
-always say which one it is: it goes to a program in a pane as
-`TERM_PROGRAM_VERSION` and to an agent over MCP. A build from a working
-tree calls itself `dev-<commit>`, and `dev-<commit>-dirty` when the tree
-had changes that are in no commit.
+always say which one it is: it is on the about dialog, it goes to a
+program in a pane as `TERM_PROGRAM_VERSION`, and it goes to an agent
+over MCP. A build from a working tree calls itself `dev-<commit>`, and
+`dev-<commit>-dirty` when the tree had changes that are in no commit.
 
 `make release` does the same thing by hand -- see
 [BUILDING.md](BUILDING.md).

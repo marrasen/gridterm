@@ -9,7 +9,77 @@ change how something behaves.
 
 ## Unreleased
 
+### Added
+
+**A vault for passwords and notes, opened by a key you already
+unlock.** `Show Secrets` lists what is in it; `Add Secret` and `Add
+Note` put things in; `Change Secret` and `Remove Secret` deal with what
+is there. It is a file called `secrets.json` beside everything else the
+window saves, sealed with a key of its own, and that key is wrapped once
+for each SSH key allowed to open it. So `Add Secrets Key` lets a second
+machine's key in without re-encrypting anything, and `Remove Secrets
+Key` takes one away with only its own wrapping.
+
+The key has to be ed25519, because a slot is opened by having the key
+sign a fixed challenge and only ed25519 signs the same way every time.
+It is one of the keys already unlocked to reach a server, so the vault
+usually opens for nothing: the passphrase typed at the first connection
+is the whole of it. `Lock SSH Keys` locks the vault with them.
+
+No secret is ever drawn on a row. `Copy` puts one on the clipboard and
+says so without showing it, and takes it back off thirty seconds later
+unless something else has been copied since. A window closing does the
+same thing there and then, because the timer that would have done it
+posts work nobody is left to run. `Type` sends it to the program in the
+pane in front, so it never reaches the clipboard at all; a return goes
+with it only when something is waiting for a whole answer. `Show` is the
+only thing that puts a secret on screen, and it has to be asked for.
+
+**A password gridterm makes, and the machine in front of you
+suggested.** `Generate` on the add and change dialogs writes twenty
+characters and leaves the dialog open so they can be read back with
+`Show`. They are letters and digits with the lookalike pairs left out --
+no `l` or `1` or `I`, no `O` or `0` -- because a password kept in a
+vault is still read aloud now and again. No symbols: a symbol buys about
+as much as one more character does, and it is the thing a server's own
+rules refuse.
+
+The `For` field starts on the machine the user is looking at and offers
+the rest of the machines the window knows of. It is a suggestion in a
+field that can be cleared.
+
+**A new SSH key can have its passphrase generated and kept in the
+vault.** `New SSH Key` has a `Generate passphrase` tick. With it on,
+gridterm makes the passphrase, locks the key with it and puts it in the
+vault, and nobody is shown it -- there is nothing to write down and
+nothing to lose. Unlocking that key from then on takes the passphrase
+out of the vault instead of asking. One that the key refuses falls
+through to the dialog, and a key the vault knows nothing about is asked
+about the way it always was.
+
+It only reads a vault that a key already unlocked opens: asking for a
+passphrase to read a passphrase would be a dialog to spare a dialog, and
+the key being unlocked may be the vault's own. The tick is only offered
+where there is a vault to put one in.
+
+A key whose passphrase is in the vault is no use as a spare for it: with
+the other key gone, opening the vault needs this key and unlocking this
+key needs the vault. `Add Secrets Key` marks that key in the list and
+says so before adding it, and adds it anyway when told to -- the
+passphrase can be copied out and kept elsewhere, and then it is a spare
+like any other.
+
 ### Changed
+
+**A list's buttons look and answer like every other dialog's.** The row
+along the bottom of a chooser drew its actions as names in square
+brackets, so `Show Secrets` offered `[ Type ] [ Copy ] [ Show ]
+[ Cancel ]` while every dialog beside it drew real buttons. They are now
+the same buttons, right aligned from the corner the eye lands on, and
+clicking one works. A form also takes left and right along its button
+row, which a notice and a chooser already did -- so every dialog in the
+window is answered the same way. In a field the arrows are still the
+caret's.
 
 **The File menu's shells say only which shell they open.** Under the
 `New Terminal In` heading each line read `New Terminal: Command Prompt`,

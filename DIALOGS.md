@@ -272,10 +272,20 @@ that says so.
 - **Fields:**
   - `File` — pre-filled; placeholder `Private key path`
   - `Comment` — placeholder `Optional`
+  - `Generate passphrase` — a tick box, drawn only where there is a
+    vault to keep one in; hint `Generated passphrase is stored in
+    secrets and used automatically`
   - `Passphrase` — placeholder `Optional`, masked
   - `Confirm passphrase` — masked, no placeholder
 - **Buttons:** `Create` · `Cancel`
 - **Error:** `Passphrases do not match`
+
+**Instructions:** The tick sits above the two fields it turns off, so
+it is read before a passphrase has been typed into one of them. Ticked,
+both are disabled and cleared (G5): gridterm makes the passphrase, locks
+the key with it, and puts it in the vault, and nobody is shown it. The
+tick is absent, not disabled, where there is no vault, because a
+disabled field never gets the focus its hint is drawn for.
 
 ## D14
 - **Title:** `Key created`
@@ -283,6 +293,8 @@ that says so.
   ```
   Private key:  <path>
   Public key:   <path>.pub
+
+  The passphrase is saved in the secrets.
 
   <the public key line>
 
@@ -294,6 +306,12 @@ that says so.
 **Instructions:** No sentence about where the command runs. The action
 button copies the public key line alone, which is the one thing anyone
 wants from this dialog.
+
+The passphrase line is drawn only when D13's tick was on, and it earns
+its place by rule 10: the passphrase was never on screen and cannot be
+typed, so this is the one place the user learns the window is what opens
+this key from now on. The passphrase itself is not shown here or
+anywhere else; it is an item in the vault like any other.
 
 ---
 
@@ -739,6 +757,244 @@ This copy could not be given files of its own      → Could not make portable
 Trouble closing <name>                             → Could not close <name>
 ```
 
+The secrets headings were written to this shape rather than reworded
+into it:
+
+```
+Could not open the secrets
+Could not create the secrets
+Could not save the secret
+Could not change the secret
+Could not remove the secret
+Could not create the key
+Could not add the key
+Could not remove the key
+```
+
+A passphrase dialog the user closed is not one of these. It reports
+nothing: they shut it, so they know, and a notice saying so is a second
+dialog to dismiss for a thing they just did.
+
+---
+
+# 11. Secrets
+
+The vault of passwords and notes. It lives in `secrets.json` beside
+everything else the window saves, and an ed25519 key the user already
+unlocks to reach a server is what opens it. Locking the SSH keys locks
+it too.
+
+The commands that open these are in the palette and on no menu.
+
+D60 to D62 are what a window with no vault gets. The rest are drawn only
+once the vault is open, so a passphrase dialog for its key (D05) may
+come first; none of them says anything about that, because by the time
+one is on screen the question has been answered.
+
+## D60
+- **Title:** `No key to lock the secrets with`
+- **Body:** `An ed25519 key is needed. Take "New SSH Key" to create one.`
+- **Buttons:** `OK`
+- **Opened from:** any secrets command, when there is no vault and no
+  ed25519 key to start one on.
+
+**Instructions:** No `Copy` (G1): there is nothing here to paste. The
+command is quoted by the name the palette lists it under, and both come
+from one constant so the two cannot drift.
+
+## D61
+- **Title:** `No secrets yet`
+- **Body:** `<key file> will open them.`
+- **Buttons:** `Create` · `Copy` · `OK`
+- **Focus:** `OK`
+- **Opened from:** any secrets command, when there is no vault and
+  exactly one ed25519 key could start one.
+
+**Instructions:** `Copy` stays because the body is a path. With more
+than one key to choose from this is D62 instead: which key opens the
+vault is the user's to decide, since it is the only one that will until
+another is added.
+
+## D62
+- **Title:** `Choose a key`
+- **Rows:** one per ed25519 key file on this machine
+- **Opened from:** any secrets command, when there is no vault and
+  several keys could start one. Also `Add Secrets Key` (D69) and
+  `Remove Secrets Key` (D71), over their own sets of keys.
+
+## D63
+- **Title:** `Secrets`, or `Secrets — the pane is waiting for one`
+- **Rows:** the name of each secret, noted with who it is for, the key
+  file a passphrase opens, and the kind when it is not a password
+- **Filter:** a row of its own, `type to narrow the list`
+- **Buttons:** `Type` · `Copy` · `Show` · `Cancel`
+- **Opened from:** `Show Secrets`
+
+**Instructions:** Up and down pick the secret, left and right pick what
+to do with it, Enter does it — the same keys as the buttons on any
+other dialog.
+
+`Type` sends the secret to the program in the pane in front, so it never
+reaches the clipboard. A return goes with it only when something is
+waiting for a whole answer, which is also when the title says so: a
+password sent into an ordinary prompt with a return cannot be taken
+back.
+
+`Copy` puts it on the clipboard and says so on the bottom row without
+showing it. `Show` is D64. No secret is ever drawn on a row.
+
+## D64
+- **Title:** `<name>`
+- **Body:** the secret, as it was saved
+- **Buttons:** `Copy` · `OK`
+- **Opened from:** `Show` on D63.
+
+**Instructions:** Preformatted, because a recovery code in columns is
+read wrong if the words are rewrapped to fit. This is the only dialog
+that puts a secret on screen, and it takes two presses to reach: the
+one thing the vault is for is not showing them by accident.
+
+An item saved with nothing in it gets the body `Nothing is saved under
+this name.` and `OK` alone.
+
+## D65
+- **Title:** `No secrets yet`
+- **Body:** `Take "Add Secret" to add one.`
+- **Buttons:** `OK`
+- **Opened from:** `Show Secrets` and `Remove Secret`, with an empty
+  vault. `Change Secret` gets the title `Secrets` and the body `There is
+  nothing to change yet.`
+
+## D66
+- **Title:** `Add Secret`
+- **Body:** `Sealed in the vault. Only your key opens it.`
+- **Fields:**
+  - `Name`
+  - `For` — placeholder `Optional`, pre-filled with the machine in
+    front of the user, offering the machines the window knows of; hint
+    `Who or what the secret is for`
+  - `Secret` — masked
+- **Buttons:** `Save` · `Generate` · `Show` · `Cancel`
+- **Opened from:** `Add Secret`
+
+**Instructions:** The body earns its place by rule 10: somebody typing a
+password into a window is owed a word about where it goes, and it says
+the two things that matter.
+
+`Generate` fills the field with twenty characters and leaves the dialog
+open. What it writes stays masked; `Show` is what reads it back, so the
+two buttons are one job each. `Show` becomes `Hide` in place, so it says
+what the next press does rather than what the last one did.
+
+`For` is a suggestion in a field the user can clear, not a decision. It
+starts empty on a local pane, because there is no machine to name.
+
+Saving says `<name> saved` on the bottom row (G2).
+
+## D67
+- **Title:** `Add Note`
+- **Body:** `Sealed in the vault. Only your key opens it.`
+- **Fields:** `Name`, `For`, `Note` — not masked
+- **Buttons:** `Save` · `Cancel`
+- **Opened from:** `Add Note`
+
+**Instructions:** A note is a licence or a recovery code, read off the
+screen as often as it is pasted, so it is shown as it is typed and there
+is no `Show` to turn off. It came from somewhere else, so there is
+nothing to `Generate` either.
+
+## D68
+- **Title:** `Change Secret — <name>`
+- **Fields:**
+  - `Name` — filled in
+  - `For` — filled in, offering the machines the window knows of
+  - `New secret` — placeholder `Optional`, masked; hint `Leave empty to
+    keep the saved one`
+- **Buttons:** `Save` · `Generate` · `Show` · `Cancel`
+- **Opened from:** a row of `Change Secret`, which is a list titled
+  `Change Secret`.
+
+**Instructions:** The value field starts empty and empty means keep it.
+The saved secret is not put there to be edited: that would be a password
+sitting on screen behind a row of stars, and changing a name would have
+to read it. As it is, renaming one never reads it at all.
+
+`Generate` is how a password is rolled over on a machine. For a note the
+field is `New note`, unmasked, with neither `Generate` nor `Show`.
+
+Saving says `<name> changed` on the bottom row.
+
+## D69
+- **Title:** `No key to add`
+- **Body:** `No other ed25519 key is on this machine. Take "New SSH Key"
+  to create one.` — or, when every key the window knows of already opens
+  the vault, `Every ed25519 key this window knows of already opens the
+  secrets. A key from another machine has to be on this one first.`
+- **Buttons:** `OK`
+- **Opened from:** `Add Secrets Key`, with nothing to offer.
+
+**Instructions:** Two bodies because there are two reasons, and what the
+user does next differs. With keys to offer this is D62, whose rows note
+`passphrase in here` for a key the vault holds the passphrase of.
+
+Adding says `<key file> opens the secrets — <n> keys do now` on the
+bottom row.
+
+## D70
+- **Title:** `This key's passphrase is in the secrets`
+- **Body:**
+  ```
+  <key file>
+
+  The key cannot open them on its own. Copy the
+  passphrase somewhere else to use this key as a spare.
+  ```
+- **Buttons:** `Add` · `Cancel`
+- **Focus:** `Add`
+- **Opened from:** a row of D62 under `Add Secrets Key`, for a key whose
+  passphrase is in this vault.
+
+**Instructions:** A second key is added so that losing the first does
+not lose the vault, and this one cannot do that job: with the first key
+gone, opening the vault needs this key and unlocking this key needs the
+vault. Rule 10 — the user believes they have a spare and they have not.
+
+Said, not refused. The passphrase can be copied out and kept elsewhere,
+and then it is a spare like any other, so the choice is theirs. `Add`
+keeps the focus because nothing here is destroyed.
+
+## D71
+- **Title:** `Only one key opens the secrets`
+- **Body:** `Removing it would leave nothing that can. Take "Add Secrets
+  Key" to add another first.`
+- **Buttons:** `OK`
+- **Opened from:** `Remove Secrets Key`, with one key in the vault.
+
+**Instructions:** With two or more this is D62, whose rows are the key
+file — or the fingerprint, where the vault was never told where the key
+was — noted `on this machine` and with the fingerprint.
+
+## D72
+- **Title:** `Remove <key file>?`
+- **Body:** `Another key on this machine still opens the secrets.` — or,
+  when it is the last one here, `This is the only key here that opens
+  them. This machine cannot open them again until one of the others is
+  on it.`
+- **Buttons:** `Remove` · `Copy` · `OK`
+- **Focus:** `OK`
+- **Opened from:** a row of D62 under `Remove Secrets Key`.
+
+**Instructions:** Rule 10: a key that is gone cannot be put back without
+the key itself. Opens on `OK`, which changes nothing.
+
+The secrets stay open until the window locks them, so somebody who has
+just shut themselves out has a moment to put the key back. That is why
+the body says what this machine can do rather than what the vault has
+lost.
+
+Removing says `<key file> removed — <n> keys still open the secrets` on
+the bottom row.
+
 ---
 
 # The two the update check opens
@@ -778,6 +1034,19 @@ Trouble closing <name>                             → Could not close <name>
 - `This build is later than the newest release, v0.2.0` — what building
   from `main` gives.
 - `Checking for updates…` — while the question is out.
+
+The secrets commands answer the same way (G2), because each worked and
+there is nothing to read:
+
+- `Secrets created — <key file> opens them`
+- `<name> saved`, `<name> changed`, `<name> removed`
+- `<name> copied — the clipboard clears in 30 seconds`
+- `<key file> opens the secrets — <n> keys do now`
+- `<key file> removed — <n> keys still open the secrets`
+
+The copy line says the number because the clipboard is emptied again
+half a minute later, and a user who does not know that pastes nothing
+and has no idea why. A clipboard they have used since is left alone.
 
 ---
 

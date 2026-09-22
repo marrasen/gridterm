@@ -35,8 +35,30 @@ func (a *app) drawHint() {
 	if cols <= 0 || rows <= 0 {
 		return
 	}
+	// Beside the sidebar rather than under it. The sidebar is drawn on
+	// a layer of its own over this row, so a line written under it is
+	// one nobody sees: "Shortcuts reloaded" is shorter than the sidebar
+	// is wide and was invisible altogether.
+	left := a.hintLeft()
+	width := cols - left
+	if width <= 0 {
+		return
+	}
 	fg, bg := a.frameFG(), a.barFoot()
-	row := a.g.View().Sub(0, rows-1, cols, 1)
+	row := a.g.View().Sub(left, rows-1, width, 1)
 	row.Fill(grid.Cell{Rune: ' ', FG: fg, BG: bg, Width: 1})
-	row.SetString(1, 0, grid.TrimTail(hint, max(cols-2, 0)), fg, bg, 0)
+	row.SetString(1, 0, grid.TrimTail(hint, max(width-2, 0)), fg, bg, 0)
+}
+
+// hintLeft is the first column of the bottom row the line may use.
+//
+// Zero unless the sidebar is showing. The sidebar's layer covers its
+// own columns all the way down whenever it is showing, so how tall it
+// is does not come into it -- only how wide.
+func (a *app) hintLeft() int {
+	r := a.sideRegion
+	if r == nil || r.layer.Hidden || r.rect.Cols <= 0 {
+		return 0
+	}
+	return r.rect.X + r.rect.Cols
 }

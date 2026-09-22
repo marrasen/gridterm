@@ -216,7 +216,7 @@ func TestAboutSaysWhatThisIs(t *testing.T) {
 	if !ok {
 		t.Fatalf("nothing came up: %T", a.root.Modal())
 	}
-	if n.Title != "About gridterm" {
+	if n.Title != aboutTitle {
 		t.Errorf("it is titled %q", n.Title)
 	}
 	if !strings.Contains(n.Message(), "terminal") {

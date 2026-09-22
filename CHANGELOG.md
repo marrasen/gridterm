@@ -9,6 +9,22 @@ change how something behaves.
 
 ## Unreleased
 
+### Added
+
+**The about dialog says which build this is, and checks for a newer
+one.** It said `Version: development build` whatever it was. It now says
+what the build calls itself -- the tag for a release, `dev-<commit>` for
+a build from a working tree -- and it can be copied, because that is the
+first thing a bug report needs. Beside `OK` is `Check for updates`,
+which asks GitHub for the newest release. A newer release opens a dialog
+naming both versions and the page it is on, with `Open`. A build that is
+already the newest release, or later than it, gets a line along the
+bottom row instead of a dialog to dismiss. A build from a working tree
+is not put in that order at all, because it may hold work no release
+has: both versions are named and the choice is left to whoever is
+reading. The check is manual, and nothing asks GitHub until the button
+is pressed.
+
 ### Fixed
 
 **A wrong passphrase is asked about again, and said out loud.** Typing

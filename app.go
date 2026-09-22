@@ -481,6 +481,11 @@ type app struct {
 	// button held down does not stack a dialog a frame.
 	leaving bool
 
+	// checking says a question to GitHub about the newest release is
+	// out, so pressing the button again while it is on its way does not
+	// stack a second dialog behind the first.
+	checking bool
+
 	// drewFinal records that the frame after quit was set has been
 	// drawn. ebiten returns from Update before Draw, so terminating the
 	// moment the last pane goes would discard its last output.
@@ -870,7 +875,7 @@ func (a *app) commands() {
 				a.askToQuit()
 				return nil
 			}},
-		ui.Command{ID: "app.about", Title: "About gridterm",
+		ui.Command{ID: aboutCommand, Title: aboutTitle,
 			AlsoFind: []string{"version"}, Run: a.showAbout},
 		ui.Command{ID: "pane.open", Title: "New Terminal",
 			AlsoFind: []string{"pane", "shell"}, Run: a.openPane},

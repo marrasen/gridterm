@@ -189,10 +189,18 @@ func (d *display) resizeDesktop(width, height int) {
 	log.Printf("the window is now %dx%d; %d window(s) follow it", width, height, len(moved))
 	d.send(ui.DesktopResized{Width: width, Height: height})
 	for _, w := range moved {
+		box := w.Box
+		// Ask for a size the application will actually take. The server
+		// rounds it down either way; doing the sum here is the
+		// difference between a pane that fits its window and one that
+		// draws a strip the window never paints.
+		if win := d.windowFor(w.ID); win != nil {
+			box.W, box.H = win.fit(box.W, box.H)
+		}
 		d.send(ui.Configure{
 			Window: w.ID,
-			X:      w.Box.X, Y: w.Box.Y,
-			Width: w.Box.W, Height: w.Box.H,
+			X:      box.X, Y: box.Y,
+			Width: box.W, Height: box.H,
 		})
 	}
 }
@@ -326,4 +334,11 @@ func (d *display) takeTheWheel() bool {
 	}
 	d.driven = true
 	return true
+}
+
+// windowFor finds a window by id, and nil when it has gone.
+func (d *display) windowFor(id ui.WindowID) *window {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.windows[id]
 }

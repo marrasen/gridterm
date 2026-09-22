@@ -199,6 +199,28 @@ Ctrl, Alt or Super held no ordinary text is coming, so a key that waited
 sent its modifier and then nothing. Every shortcut was silent. See
 `waitsForText` in `keys.go`.
 
+## Size limits
+
+A terminal resizes in whole character cells, which is exactly the
+awkward case for a grid. A real `xterm` advertises a 4x4 base size and
+steps of 6x13, so most pane sizes are not ones it will take.
+
+Ask for 728x536 and the window silently becomes 724x524: four pixels
+down one side and twelve along the bottom that it will never paint. The
+correction is not reliably announced either -- of two resizes measured
+against the same xterm, one came back as a geometry change and the other
+only showed up in the size of the next damage rectangle.
+
+The spike now reads the limits and does the rounding before it asks, so
+it asks for 724x524 and gets exactly that. Watch it with:
+
+```shell
+xpra start :100 --bind-tcp=127.0.0.1:14500 --start=xterm
+go run . tcp://127.0.0.1:14500/
+```
+
+and look for the `size limits` line.
+
 ## Flags
 
 - `-serve` run the fake server on this address instead of connecting.

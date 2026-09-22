@@ -431,6 +431,37 @@ It is fixed and tested, and it is the second time a partial answer here
 looked like working code. The first was the keyboard as a whole. Both
 were found by driving a real application rather than by reading.
 
+## A terminal does not fit a pane
+
+The most likely thing for gridterm to host is a terminal, and a terminal
+resizes in whole character cells. A real `xterm` advertises a 4x4 base
+size and steps of 6x13, so **most pane sizes are not ones it will
+take**.
+
+Measured over Xpra 6.5.3: ask for 728x536 and the window becomes
+724x524. Four pixels down one side and twelve along the bottom that the
+application will never paint, and whatever was on the layer underneath
+shows through them.
+
+Two things made that worse than it sounds. go-xpra asked for
+`size-constraints` in its hello and never read it, so the limits arrived
+and were thrown away. And the server's correction is not reliably
+announced: of two resizes against the same xterm, one came back as a
+geometry change and the other only showed up in the size of the next
+damage rectangle. A backend trusting the size it asked for is wrong with
+nothing telling it so.
+
+Both are fixed on the fork -- `ui.SizeConstraints`, delivered at window
+creation and on every update, with a `Fit` that does the server's own
+rounding. The spike now asks for 724x524 and gets exactly that.
+
+For the pane design it leaves a choice, and it is a real one. Either
+**the pane snaps to the application's grid**, so a terminal pane is
+always a whole number of cells and the split moves in jumps; or **the
+pane keeps its size and letterboxes**, filling the strip the window will
+not. A tiling grid usually wants the first and looks wrong doing the
+second, which is worth deciding before step 7 rather than after.
+
 ## Is a remote window a pane, or a floating thing?
 
 Both, split by what the window is for. The protocol settles it.

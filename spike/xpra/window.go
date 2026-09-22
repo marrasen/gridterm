@@ -38,6 +38,11 @@ type window struct {
 
 	// frame numbers the PNGs.
 	frame int
+
+	// limits are what the application said about its own size. A
+	// terminal resizes in whole character cells, so a pane's exact
+	// pixel size is usually not one it will take.
+	limits ui.SizeConstraints
 }
 
 func (w *window) ID() ui.WindowID { return w.id }
@@ -251,7 +256,8 @@ func (w *window) script() {
 	// Half the width rather than a fixed number of pixels, so it means
 	// the same thing against a 64-pixel fake window and a real one.
 	time.Sleep(200 * time.Millisecond)
-	w.display.send(ui.Configure{Window: w.id, X: x, Y: y, Width: max(width/2, 16), Height: height})
+	half, tall := w.fit(max(width/2, 16), height)
+	w.display.send(ui.Configure{Window: w.id, X: x, Y: y, Width: half, Height: tall})
 
 	// And the window everything is drawn in being dragged narrower.
 	// Two things go out: the desktop size, so the server resizes its
@@ -360,4 +366,30 @@ func shiftedOnAUSKeyboard(r rune) bool {
 		return true
 	}
 	return strings.ContainsRune(`~!@#$%^&*()_+{}|:"<>?`, r)
+}
+
+// SetSizeConstraints takes the limits the application put on its size.
+//
+// This is the optional half of ui.Window. Without it the server applies
+// them anyway and does not reliably say so -- one correction arrives as
+// a geometry change, the next only shows up in the size of the next
+// damage rectangle -- and the pane ends up drawing a rectangle the
+// window does not fill.
+func (w *window) SetSizeConstraints(c ui.SizeConstraints) {
+	w.mu.Lock()
+	w.limits = c
+	w.mu.Unlock()
+	if c.Empty() {
+		return
+	}
+	log.Printf("window %d: size limits, min %dx%d, base %dx%d, steps of %dx%d",
+		w.id, c.MinWidth, c.MinHeight, c.BaseWidth, c.BaseHeight, c.IncWidth, c.IncHeight)
+}
+
+// fit rounds a size to one this window will accept.
+func (w *window) fit(width, height int) (int, int) {
+	w.mu.Lock()
+	limits := w.limits
+	w.mu.Unlock()
+	return limits.Fit(width, height)
 }

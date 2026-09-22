@@ -9,6 +9,13 @@ change how something behaves.
 
 ## Unreleased
 
+Nothing yet.
+
+## v0.2.0
+
+Every dialog and every command title reworded, and the about dialog can
+now say which build it is.
+
 ### Added
 
 **The about dialog says which build this is, and checks for a newer
@@ -25,17 +32,80 @@ has: both versions are named and the choice is left to whoever is
 reading. The check is manual, and nothing asks GitHub until the button
 is pressed.
 
+**What a dialog needs, instead of a paragraph explaining itself.** A
+field carries one hint line, drawn along the bottom while that field has
+focus. A field that does not apply is disabled -- dim, taking no keys,
+with the focus stepping over it -- rather than taken and quietly
+dropped. A field with a list of values draws `Ctrl+↑↓` beside itself. A
+notice leaves `Copy` out when there is nothing worth copying, and the
+palette draws a tick for a switch the way a menu does. And there is a
+status line: one line along the bottom row for four seconds, for an
+action that worked and has nothing to read.
+
+### Changed
+
+**Every dialog is reworded, and eight behaviours changed rather than
+being excused.** Titles say what happened, bodies add only what the
+title cannot, buttons are one verb from a small set, errors are two or
+three words, and placeholders are a format or the word `Optional`. Where
+a sentence existed to excuse a behaviour, the behaviour changed instead:
+the passphrase dialog asks until the key opens or you cancel, rather
+than counting down from three tries on a file you can already read; the
+tunnel's direction is a field rather than two buttons explained in the
+body; the overwrite question has a `Cancel`, which is what dismissing it
+already did; the copy dialog's button that renamed itself between
+`Remember` and `Forget` is a tick box; the server dialog's jump host and
+agent tick are disabled where a window cannot use them, rather than
+taken and then explained away; two dialogs that only said something
+worked are status lines; and the shortcuts file's rules are in the file,
+where somebody editing it is looking. `Find in Scrollback` opens with
+the find prompt up, so its name is true when it arrives. A server's
+mid-handshake message can open the one link it carries, when it carries
+exactly one and that link is http or https -- never on its own, and with
+the focus staying on `Close`.
+
+**Every command has a new title.** Title Case, verb first, two to four
+words: `Close Pane`, `Reload Themes`, `Open Tunnel…`. An ellipsis means
+the command asks something before it acts. Every word a title dropped is
+still typed into the palette to find it, so whoever learned the old
+wording still gets there. Command ids do not change, so a saved shortcut
+still points at the same thing. A command that fails is headed by its
+own title -- `Open Tunnel failed` -- and every error heading has one
+shape: `Could not <verb> <object>`.
+
+**The sidebar's rows say what a connection is, in the same words
+everywhere.** Three were sentences that also named the window the row
+sits under: `the window stopped sharing` is `stopped sharing`, `the
+window closed this connection` is `closed by that window`, and `no
+longer serving` is `connection lost` -- which is what a dropped
+connection says whether it was carrying one pane or a whole window.
+`given up on` is `cancelled`.
+
+**The wording rules are written down.** WORDING.md is how a dialog,
+button, menu row, command title and error are worded; DIALOGS.md and
+COMMANDS.md record what those rules were applied to. Every button title,
+field label and dialog title is a constant in one file, so no word can
+drift from a second copy of itself.
+
 ### Fixed
 
 **A wrong passphrase is asked about again, and said out loud.** Typing
 the wrong passphrase for a private key used to be silent: the dialog
 closed, the key was never offered, the connection went on to whatever
-else it could try, and every line in the account stayed green. A
-passphrase that does not open the key is now asked for again -- three
-tries, the way ssh does it -- and the dialog says the last one did not
-work and how many tries are left. When the tries run out the account
-says so in red, and the key is named in what the connection failed with,
-even when the connection was made some other way in the end.
+else it could try, and every line in the account stayed green. It is now
+asked for again, with the dialog saying that the last one did not open
+the key, until the key opens or you cancel. A wrong passphrase no longer
+falls through to another way of signing in, and the key is named in what
+the connection failed with -- even when the connection was made some
+other way in the end.
+
+**A window that stopped sharing is no longer reported as a connection
+that dropped.** A window says so down the control channel before it
+goes, so the other end can tell a deliberate stop from a connection that
+broke. That line could be thrown away before it was read: the row then
+said the connection was lost, with a reset beside it, and the window
+offered to reconnect -- for something the user had done on purpose. The
+window now waits for the other end to say it has the line.
 
 ## v0.1.0
 

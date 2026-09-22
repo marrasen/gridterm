@@ -492,38 +492,36 @@ func onlyLocalPane(t *testing.T, a *testApp) ui.Widget {
 	return nil
 }
 
-// The greyed row says why the connection went, not only that it did.
+// The account says why the connection went, not only that it did.
 //
 // "the host closed the connection" and "connection reset by peer" send
-// the user to different places, and the row is all they have to work
-// from once the panes on it have gone.
-func TestAGreyedRowSaysWhyTheConnectionWent(t *testing.T) {
+// the user to different places. It goes in the account rather than on
+// the row, because a row is a name and a state read in a narrow column
+// and a reason is a sentence.
+func TestTheAccountSaysWhyTheConnectionWent(t *testing.T) {
 	for _, tc := range []struct {
 		name string
-		was  string
 		why  error
 		want string
 	}{
 		{name: "a reason", why: errors.New("connection reset by peer"),
-			want: "connection reset by peer"},
-		{name: "a clean end", why: io.EOF, want: ""},
-		{name: "no reason at all", want: ""},
-		{name: "beside what the row already said", was: "10.0.0.5:22",
-			why:  errors.New("connection reset by peer"),
-			want: "10.0.0.5:22: connection reset by peer"},
+			want: "connection lost: connection reset by peer"},
+		{name: "a clean end", why: io.EOF, want: "connection lost"},
+		{name: "no reason at all", want: "connection lost"},
+		// A far end's wording reaches the account through this, so what
+		// it sends must not be able to drive the terminal showing it.
 		{name: "a far end that dressed its reason up",
 			why:  errors.New("\x1b[2Jreset"),
-			want: "[2Jreset"},
+			want: "connection lost: [2Jreset"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			a := newTestApp(t, 80, 24)
-			e := &conns.Entry{Host: "margit", Kind: conns.Server, Note: tc.was, Meter: meter.New()}
-			a.registry.Add(e)
+			c := newConnLog(nil)
 
-			a.greyRow(e, tc.why)
+			c.Lost(tc.why)
 
-			if e.Note != tc.want {
-				t.Errorf("the row notes %q, want %q", e.Note, tc.want)
+			said := c.Lines()
+			if len(said) != 1 || said[0] != tc.want {
+				t.Errorf("the account says %q, want %q", said, tc.want)
 			}
 		})
 	}

@@ -11,6 +11,18 @@ change how something behaves.
 
 ### Changed
 
+**A connection's account opens in a pane, and the row of a connection
+that dropped opens it.** `Connection Log` showed the account in a dialog
+that had to be dismissed; it is a pane now, the way the window log is,
+so it scrolls and copies like anything else on screen. The row of a
+machine with nothing open on it used to answer a click with nothing at
+all, and the row of one that dropped did the same -- so the moment there
+was most to explain was the moment the window had least to say. Both
+open the account now, and it outlives the connection it is about: the
+reason a connection was lost is written into the account, where there is
+room for it, rather than onto the row, where a sentence either pushed
+the name off the end or did not fit and was dropped without a mark.
+
 **The File menu's shells say only which shell they open.** Under the
 `New Terminal In` heading each line read `New Terminal: Command Prompt`,
 so the heading and the line said the same three words before either got

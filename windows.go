@@ -664,19 +664,26 @@ func (a *app) windowDied(t *taken, why error) {
 	switch t.win.Going() {
 	case serve.GoingStopped:
 		t.entry.Label = stateStoppedSharing
-		a.greyRow(t.entry, nil)
+		a.greyRow(t.entry)
 	case serve.GoingKicked:
 		t.entry.Label = stateClosedByWindow
-		a.greyRow(t.entry, nil)
+		a.greyRow(t.entry)
 	default:
 		// It went without saying why, so it is the connection that went
 		// rather than a window that meant to close it. That is the one
 		// worth offering a way back on, and it reads the same here as it
 		// does on the row of a pane whose connection dropped.
 		t.entry.Label = transportLost
-		a.greyRow(t.entry, why)
+		// The reason goes into the account, which the row still opens.
+		if t.log != nil {
+			t.log.Lost(why)
+		}
+		a.greyRow(t.entry)
 		a.offerToTakeOverAgain(t, why)
 	}
+	// However it went, the row goes on answering a click with the
+	// account of how the window was reached.
+	t.entry.Reveal = func() { a.revealAccount(t.name, t.log) }
 	a.refreshServers()
 	a.markDirty()
 }
@@ -712,6 +719,9 @@ func (a *app) revealWindow(t *taken) {
 		a.focus(pane)
 		return
 	}
+	// Nothing drawn from it, so the account of how it was reached is
+	// what there is to show.
+	a.revealAccount(t.name, t.log)
 }
 
 // openOnWindow opens a terminal in the other window, drawn in a pane

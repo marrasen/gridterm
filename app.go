@@ -74,6 +74,11 @@ type app struct {
 	// everything underneath.
 	modals []*modal
 
+	// accounts are the panes showing how a machine was reached, and the
+	// account each one is reading. A pane is in here as well as in
+	// panes, which is what tells it apart from the window's own log.
+	accounts map[*term.Terminal]*connLog
+
 	// palette is the command dialog while it is open, and dismissPalette
 	// is what takes it away.
 	palette        *ui.Palette

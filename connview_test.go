@@ -58,6 +58,26 @@ func paneWithScrollback(pane *term.Terminal) string {
 	return back + paneText(pane)
 }
 
+// accountPane waits for a pane showing an account to hold what it should
+// say, and hands the pane back.
+//
+// A pane rather than a dialog: the account is read through a terminal
+// like the window's own log, so it arrives a read at a time.
+func accountPane(t *testing.T, a *testApp, want string, also ...*testApp) *term.Terminal {
+	t.Helper()
+	var found *term.Terminal
+	waitFor(t, a, "the account pane to say "+want, func() bool {
+		for pane := range a.accounts {
+			if strings.Contains(paneWithScrollback(pane), want) {
+				found = pane
+				return true
+			}
+		}
+		return false
+	}, also...)
+	return found
+}
+
 // aConnectedMachine connects to a test server from the plus on its row
 // and hands back the window and the pane the shell is in.
 func aConnectedMachine(t *testing.T) (*testApp, *term.Terminal) {
@@ -128,7 +148,7 @@ func TestAFailedConnectionKeepsItsAccountInThePane(t *testing.T) {
 }
 
 // The plus on a connected machine's row opens the whole account, in a
-// dialog that scrolls and copies.
+// pane that scrolls and copies.
 func TestThePlusOnAConnectedRowShowsHowItWasReached(t *testing.T) {
 	a, _ := aConnectedMachine(t)
 
@@ -138,11 +158,13 @@ func TestThePlusOnAConnectedRowShowsHowItWasReached(t *testing.T) {
 	}
 	chooseMenuItem(t, menu, "conn.log")
 
-	n := awaitModal(t, a, "the account", byTitle[*ui.Notice]("Connection Log — margit"))
-	for _, want := range []string{"connecting to", "connected to margit"} {
-		if !strings.Contains(n.Message(), want) {
-			t.Errorf("the account does not say %q: %q", want, n.Message())
-		}
+	pane := accountPane(t, a, "connected to margit")
+	if got := paneWithScrollback(pane); !strings.Contains(got, "connecting to") {
+		t.Errorf("the account does not say how it started: %q", got)
+	}
+	// Nothing to type into: there is no program at the far end.
+	if a.root.Modal() != nil {
+		t.Errorf("it opened %T as well", a.root.Modal())
 	}
 }
 
@@ -153,10 +175,7 @@ func TestThePaletteShowsHowAMachineWasReached(t *testing.T) {
 
 	runFromPalette(t, a, "conn.log")
 
-	n := awaitModal(t, a, "the account", byTitle[*ui.Notice]("Connection Log — margit"))
-	if !strings.Contains(n.Message(), "connected to margit") {
-		t.Errorf("the account is %q", n.Message())
-	}
+	accountPane(t, a, "connected to margit")
 }
 
 // A machine still being reached has an account too, and the dialog says
@@ -185,13 +204,9 @@ func TestAMachineStillBeingReachedShowsItsAccountSoFar(t *testing.T) {
 	menu := clickPlus(t, a, "margit")
 	chooseMenuItem(t, menu, "conn.log")
 
-	// One title whichever state the connection is in: the log itself
-	// says whether it is still connecting.
-	n := awaitModal(t, a, "the account so far",
-		byTitle[*ui.Notice]("Connection Log — margit"))
-	if !strings.Contains(n.Message(), "connecting to") {
-		t.Errorf("the account so far is %q", n.Message())
-	}
+	// Whatever state the connection is in: the account itself says
+	// whether it is still connecting.
+	accountPane(t, a, "connecting to")
 }
 
 // A machine nothing was connected to has no account, and the line that
@@ -223,8 +238,81 @@ func TestThePlusOnATakenOverWindowShowsHowItWasReached(t *testing.T) {
 	}
 	chooseMenuItem(t, menu, "conn.log")
 
-	n := awaitModal(t, client, "the account", byTitle[*ui.Notice]("Connection Log — statio"))
-	if !strings.Contains(n.Message(), "taking over") {
-		t.Errorf("the account does not say what was done: %q", n.Message())
+	accountPane(t, client, "taking over")
+}
+
+// The row of a connection that dropped opens the account of it.
+//
+// This is the whole of what the window has to say afterwards: the
+// machine is no longer held under its name, so the menu line that opens
+// an account is not offered and the row is the only way to it. It used
+// to answer a click with nothing at all.
+func TestTheRowOfADroppedConnectionOpensItsAccount(t *testing.T) {
+	s := sshtest.New(t)
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+
+	a.connect(serverConfig(t, s))
+	waitForPanes(t, a, 2)
+	host := serverConfig(t, s).Target()
+	row := serverRow(t, a, host)
+
+	// The network goes away.
+	s.CloseClients()
+	waitFor(t, a, "the connection to be given up on", func() bool {
+		return a.machines.named(host) == nil
+	})
+
+	if row.Reveal == nil {
+		t.Fatal("the row of a dropped connection does nothing when it is clicked")
+	}
+	row.Reveal()
+
+	pane := accountPane(t, a, "connection lost")
+	if got := paneWithScrollback(pane); !strings.Contains(got, "connecting to") {
+		t.Errorf("the account does not say how the connection was made: %q", got)
+	}
+}
+
+// The account is the same one however it is opened, and a second ask
+// goes to the pane that is already showing it.
+func TestOneAccountOpensOnePane(t *testing.T) {
+	a, _ := aConnectedMachine(t)
+
+	runFromPalette(t, a, "conn.log")
+	first := accountPane(t, a, "connected to margit")
+	panes := len(a.panes)
+
+	runFromPalette(t, a, "conn.log")
+
+	if len(a.accounts) != 1 {
+		t.Errorf("%d panes are showing accounts, want the one", len(a.accounts))
+	}
+	if len(a.panes) != panes {
+		t.Errorf("the window holds %d panes, want the %d it had", len(a.panes), panes)
+	}
+	if got := ui.FocusedLeaf(a.root.Widget()); got != ui.Widget(first) {
+		t.Errorf("the second ask focused %T, want the pane already showing it", got)
+	}
+}
+
+// The window's own log is a different pane from a connection's account,
+// although both are read the same way.
+func TestTheWindowLogIsNotAConnectionsAccount(t *testing.T) {
+	a, _ := aConnectedMachine(t)
+
+	runFromPalette(t, a, "conn.log")
+	account := accountPane(t, a, "connected to margit")
+	if err := a.showLog(); err != nil {
+		t.Fatalf("open the window log: %v", err)
+	}
+
+	log := a.logPane()
+	if log == nil {
+		t.Fatal("the window log did not open")
+	}
+	if log == account {
+		t.Error("the window log opened the account pane instead of one of its own")
 	}
 }

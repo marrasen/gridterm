@@ -1050,10 +1050,7 @@ func TestFilesOnASavedMachineConnectsFirst(t *testing.T) {
 
 	// The account of the connection is where every other one is.
 	chooseMenuItem(t, clickPlus(t, a, "margit"), "conn.log")
-	n := awaitModal(t, a, "the account", byTitle[*ui.Notice]("Connection Log — margit"))
-	if !strings.Contains(n.Message(), "connected to margit") {
-		t.Errorf("the account is %q", n.Message())
-	}
+	accountPane(t, a, "connected to margit")
 }
 
 // A terminal on a machine connected for files alone rides on the
@@ -1234,10 +1231,7 @@ func TestFilesOnAMachineThatRefusesThemKeepsTheConnection(t *testing.T) {
 	}
 	// And the whole account is where every other one is.
 	chooseMenuItem(t, clickPlus(t, a, "margit"), "conn.log")
-	n := awaitModal(t, a, "the account", byTitle[*ui.Notice]("Connection Log — margit"))
-	if !strings.Contains(n.Message(), "connected to margit") {
-		t.Errorf("the account is %q", n.Message())
-	}
+	accountPane(t, a, "connected to margit")
 }
 
 // "Files" first and "Terminal" while it is still on its way: the shell

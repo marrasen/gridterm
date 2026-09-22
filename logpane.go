@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"os"
 
@@ -57,11 +58,61 @@ func (a *app) showLog() error {
 	return nil
 }
 
+// showAccount opens a pane on the account of how a machine was reached,
+// or goes to the one already open.
+//
+// A pane rather than a dialog, for the reason the window log is one: an
+// account is read, scrolled and copied into a bug report, and a box that
+// has to be dismissed is the wrong shape for all three. Nothing can be
+// typed into it -- there is no program at the far end.
+func (a *app) showAccount(host string, log *connLog) error {
+	if log == nil {
+		return fmt.Errorf("there is no account of how %s was reached", groupName(host))
+	}
+	if t := a.accountPane(log); t != nil {
+		a.focus(t)
+		return nil
+	}
+	t, err := a.newTerminalOn(log.Account(), host, conns.Log, logLabel)
+	if err != nil {
+		return err
+	}
+	// Recorded before the pane is placed, so a pane that could not be
+	// placed is forgotten by the same path that forgets any other.
+	a.accounts[t] = log
+	if err := a.placePane(t); err != nil {
+		// The terminal is reading the account on a goroutine of its own
+		// already. Left here it would read it for ever, into a pane
+		// nowhere on the screen.
+		delete(a.panes, t)
+		delete(a.started, t)
+		delete(a.accounts, t)
+		return errors.Join(err, t.Close())
+	}
+	a.showPane(t)
+	return nil
+}
+
+// accountPane is the pane already showing an account, or nil.
+func (a *app) accountPane(log *connLog) *term.Terminal {
+	for t, on := range a.accounts {
+		if on == log {
+			return t
+		}
+	}
+	return nil
+}
+
 // logPane is the pane showing the log, or nil when none is open. There
 // is at most one: a second would show the same lines twice.
 func (a *app) logPane() *term.Terminal {
 	for t, e := range a.panes {
 		if e == nil || e.Kind != conns.Log || a.showsATunnel(t) {
+			continue
+		}
+		if _, account := a.accounts[t]; account {
+			// One connection's account. It reads a log too, and the
+			// window's own is not one of them.
 			continue
 		}
 		return t

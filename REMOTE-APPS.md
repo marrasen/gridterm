@@ -49,13 +49,14 @@ server waits on -- is not gridterm's to write.
 go-xpra's SSH either: that one shells out to the system `ssh`, and
 gridterm already holds a connection it can run `xpra _proxy` over.
 
-Three things it does not do yet, all now written on a fork
-(`marrasen/go-xpra`, branch `gridterm`): telling the server when the
+Four things it does not do yet, all now written on a fork
+(`marrasen/go-xpra`, branch `integration`): telling the server when the
 desktop changes size, letting a backend declare its own keyboard layout,
-and naming the characters outside ASCII so they are not silently
-dropped. None is gridterm-specific -- the last one is why Windows and
-macOS users cannot type an accented character -- and none has been
-offered upstream. The plan is to keep working on the fork, and split the
+naming the characters outside ASCII so they are not silently dropped,
+and handing a window the size limits its application asked for. None is
+gridterm-specific -- the third is why Windows and macOS users cannot
+type an accented character -- and none has been offered upstream. The
+plan is to keep working on the fork, and split the
 changes into pull requests once the shape has stopped moving.
 
 **The catch: xpra 6.5 or newer has to be installed on the far machine.**
@@ -315,7 +316,7 @@ facts go out and the far application sees exactly that.
 
 Released go-xpra cannot send a keymap: its hello carries
 `keyboard: true` and nothing else. So this needed a second change on the
-fork, `keymap-upload`, adding `ui.KeymapProvider`. It is optional, so
+fork, adding `ui.KeymapProvider`. It is optional, so
 the backends riding on a platform keyboard are untouched.
 
 With that in place, typing
@@ -523,7 +524,7 @@ survivable here, because gridterm's whole desktop is one window somebody
 drags about: the server would go on placing windows, and letting remote
 toolkits place their menus, against a screen that is no longer there.
 
-`marrasen/go-xpra`, branch `desktop-resize`, is that half written --
+`marrasen/go-xpra` is that half written --
 `ui.DesktopResized`, and the `display-configure` packet it sends, which
 is what makes a server call `_apply_desktop_size`. The spike points at
 it and checks the size arrives both at connection time and after a
@@ -552,9 +553,9 @@ agreed to do them.
 Two go first, because they are cheap and either one can invalidate what
 follows:
 
-1. **Keep the server's idea of the desktop up to date.** Written, on a
-   fork: `marrasen/go-xpra`, branch `desktop-resize`, and confirmed
-   against a real 6.5.3 server -- the far display resizes to match. It
+1. **Keep the server's idea of the desktop up to date.** Written, on the
+   `marrasen/go-xpra` fork, and confirmed against a real 6.5.3 server --
+   the far display resizes to match. It
    is not upstreamed, and no desktop backend emits the new event yet:
    each needs its own source for it, RandR or `WM_DISPLAYCHANGE` or
    `wl_output`.

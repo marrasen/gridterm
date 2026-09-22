@@ -171,8 +171,8 @@ The keycodes come from `layout.go`, a keyboard this client makes up and
 declares to the server. Every keysym gets a key of its own, unshifted,
 because gridterm never learns which physical key produced a character --
 only which character, and which modifiers were down. Both facts go out
-and the far application sees exactly that. It needs the `keymap-upload`
-branch of the go-xpra fork; released go-xpra sends no keymap at all.
+and the far application sees exactly that. Released go-xpra sends no
+keymap at all, so this needs the fork.
 
 ## The clipboard
 
@@ -240,10 +240,19 @@ and look for the `size limits` line.
   leave the session running, which is the whole point of xpra.
 - `-v` log every packet go-xpra did not handle.
 
-## The desktop size
+## The fork it needs
 
 This module points at a fork of go-xpra: `marrasen/go-xpra`, branch
-`desktop-resize`. The `replace` in `go.mod` is what does it.
+`integration`, pinned by commit in the `replace` in `go.mod`. That
+branch carries everything the spike needs, and the sections below say
+what each piece is for.
+
+`desktop-resize` and `keymap-upload` are the same work split into topic
+branches, kept so the changes can become separate pull requests later.
+They are behind `integration`, not ahead of it -- do not point the
+module at one of them.
+
+## The desktop size
 
 Released go-xpra tells the server how big the client's desktop is once,
 in the hello, and never again. A server sizes its virtual display from

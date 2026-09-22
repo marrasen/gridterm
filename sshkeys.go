@@ -158,25 +158,47 @@ func (a *app) makeKeyWithSavedPassphrase(at, comment string) {
 		// called after the passphrase is saved: without this the user
 		// would be told about a passphrase when what is in the way is a
 		// file.
-		if _, err := os.Stat(at); err == nil {
+		//
+		// Lstat and only ErrNotExist, both to match the look MakeKey
+		// itself takes. Stat follows a symlink, so a key linked to a
+		// volume that is not mounted read as a free path here and as a
+		// taken one there; and any other trouble reading the path --
+		// a directory this user cannot look in, a home that has hung --
+		// is not a free path either.
+		switch _, err := os.Lstat(at); {
+		case err == nil:
 			return fmt.Errorf("there is already a key at %s", at)
+		case !errors.Is(err, os.ErrNotExist):
+			return fmt.Errorf("look at %s: %w", at, err)
 		}
 		pass, err := secrets.NewPassword(secrets.PassphraseLength)
 		if err != nil {
 			return err
 		}
-		put := secrets.Item{Name: filepath.Base(at), Kind: secrets.Passphrase, File: at}
-		// A passphrase left behind by an attempt that got this far and
-		// no further -- the window stopped between the two steps, or
-		// the key was deleted afterwards. Nothing is at the path, so it
-		// opens nothing, and the vault takes one passphrase per key
-		// file: without this the second attempt at a path is refused by
-		// the first attempt's leavings, in a message about a passphrase
-		// the user has no way to find.
-		if stale, found := passphraseFor(v, at); found {
-			put.ID = stale.ID
+		// A passphrase already filed under this path, left by an
+		// attempt that got as far as saving one and no further, or by a
+		// key that has been moved or deleted since.
+		//
+		// It is taken off the path and kept, not written over. The path
+		// is free, but the key that passphrase was made for may be
+		// alive somewhere else -- moved, or copied to the second
+		// machine this vault has a slot for -- and this item is the
+		// only record of it. Nothing on screen ever showed it.
+		//
+		// Left detached if the key below is never written: the path is
+		// empty either way, so an item claiming it was wrong to begin
+		// with.
+		if old, found := passphraseFor(v, at); found {
+			old.File = ""
+			if _, err := v.PutDetails(old); err != nil {
+				return err
+			}
 		}
-		it, err := v.Put(put, pass)
+		it, err := v.Put(secrets.Item{
+			Name: filepath.Base(at),
+			Kind: secrets.Passphrase,
+			File: at,
+		}, pass)
 		if err != nil {
 			return err
 		}

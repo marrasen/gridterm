@@ -2,9 +2,23 @@ package remote
 
 import (
 	"fmt"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 )
+
+// agentPatience is how long AgentHolds waits for the agent to say what
+// it holds.
+//
+// Shorter than the listing a connection waits on, because this is asked
+// from the goroutine that draws, in the moment between picking a key
+// and being asked about it. An agent that will not answer a read from
+// its own memory in this long is wedged, and the answer here is only a
+// warning: going without it is far better than a window that has
+// stopped.
+//
+// A variable so a test can shorten it. Nothing in the program writes it.
+var agentPatience = 2 * time.Second
 
 // AgentHolds reports whether the running SSH agent holds a key with
 // this fingerprint, in the form ssh.FingerprintSHA256 gives.
@@ -24,7 +38,15 @@ func AgentHolds(fingerprint string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	defer func() { _ = conn.Close() }()
+	// Closing the socket is what unblocks an agent that has taken the
+	// connection and then said nothing; nothing else will, which is why
+	// the connection path holds its own listing to a clock the same way.
+	// Closing twice is safe: the second answers an error nobody reads.
+	late := time.AfterFunc(agentPatience, func() { _ = conn.Close() })
+	defer func() {
+		late.Stop()
+		_ = conn.Close()
+	}()
 	keys, err := ag.List()
 	if err != nil {
 		return false, fmt.Errorf("ask the SSH agent what it holds: %w", err)

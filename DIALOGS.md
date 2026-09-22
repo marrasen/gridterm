@@ -1023,6 +1023,12 @@ that will not answer, gets no warning: one this window cannot stand
 behind is worse than none. It is a snapshot either way — the key may be
 added to the agent a minute later.
 
+The asking is held to a clock, and skipped when the window has already
+given up on the agent once. This runs on the goroutine that draws, in
+the moment between picking a key and being warned about it, so an agent
+that takes the connection and then says nothing would be a window that
+has stopped with no way out.
+
 ## D71
 - **Title:** `Only one key opens the secrets`
 - **Body:** `Choose "Add Secrets Key" to add another

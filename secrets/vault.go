@@ -144,9 +144,19 @@ func Open(path string) (*Vault, error) {
 }
 
 // Exists reports whether there is a vault to open.
+//
+// Off the disk when this one has never seen a file there, because
+// another window may have created it since. A window that had looked
+// at the secrets before they existed answered "no" for the rest of its
+// life, and offered to create a vault that then refused the name.
 func (v *Vault) Exists() bool {
 	v.mu.Lock()
 	defer v.mu.Unlock()
+	if v.file == nil {
+		if f, err := readFile(v.path); err == nil {
+			v.file = f
+		}
+	}
 	return v.file != nil
 }
 
@@ -278,12 +288,18 @@ func (v *Vault) Unlock(signers []ssh.Signer) error {
 	switch f, err := readFile(v.path); {
 	case err == nil:
 		v.file = f
-	case v.file == nil:
+	case errors.Is(err, os.ErrNotExist):
+		// Nothing there, whether or not this vault once read one. The
+		// copy in memory is of a file that has gone, and what the
+		// caller needs to hear is the same thing a window that never
+		// had one hears -- not an open() error after a passphrase
+		// dialog it should never have put up.
+		v.file = nil
 		return fmt.Errorf("secrets: there is nothing at %s yet", v.path)
 	default:
-		// There was a vault and now it will not be read. Opening the
+		// There is something there and it will not be read. Opening the
 		// copy in memory would hand over secrets out of a file nobody
-		// can say is still there.
+		// can say is still the same one.
 		return err
 	}
 	// A slot that does not open is remembered and the next key is still

@@ -833,3 +833,55 @@ func TestUnlockingReadsTheFileAgain(t *testing.T) {
 		t.Errorf("the vault holds %v, want what the other window added", items)
 	}
 }
+
+// A vault whose file has been taken away says so, rather than handing
+// over the copy it read when it opened.
+func TestAVaultWhoseFileWentSaysSo(t *testing.T) {
+	v, key, path := aVault(t)
+	if _, err := v.Put(Item{Name: "one"}, "a"); err != nil {
+		t.Fatalf("put: %v", err)
+	}
+	v.Lock()
+	if err := os.Remove(path); err != nil {
+		t.Fatalf("take the file away: %v", err)
+	}
+
+	err := v.Unlock([]ssh.Signer{key})
+	if err == nil {
+		t.Fatal("it opened a vault whose file is not there")
+	}
+	if !strings.Contains(err.Error(), "nothing at") {
+		t.Errorf("it says %q, want the answer a window with no vault gets", err)
+	}
+	// And it agrees with the disk afterwards, so nothing offers to
+	// unlock what is not there.
+	if v.Exists() {
+		t.Error("Exists says there is a vault, and the file has gone")
+	}
+}
+
+// A vault created by another window after this one looked is found,
+// rather than answered out of what this one saw.
+func TestAVaultCreatedElsewhereIsFound(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, Name)
+	early, err := Open(path)
+	if err != nil {
+		t.Fatalf("open before it exists: %v", err)
+	}
+	if early.Exists() {
+		t.Fatal("it says there is a vault before one is made")
+	}
+
+	key := aKey(t)
+	if _, err := Create(path, key, "the other window's key"); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	if !early.Exists() {
+		t.Fatal("the window that looked first cannot see the vault the other made")
+	}
+	if err := early.Unlock([]ssh.Signer{key}); err != nil {
+		t.Fatalf("unlock the one that looked first: %v", err)
+	}
+}

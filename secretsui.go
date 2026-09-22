@@ -620,6 +620,12 @@ func (a *app) warningsAboutKey(v *secrets.Vault, keyFile string) []string {
 // question that cannot be put: false, and no warning, because a warning
 // this window cannot stand behind is worse than none.
 func (a *app) agentHoldsKey(keyFile string) bool {
+	if a.keys.AgentTrouble() != nil {
+		// The window has given up on the agent once already. Asking
+		// again would buy the same silence, and this runs on the
+		// goroutine that draws.
+		return false
+	}
 	pub, err := os.ReadFile(keyFile + ".pub")
 	if err != nil {
 		return false

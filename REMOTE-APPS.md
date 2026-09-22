@@ -49,11 +49,13 @@ server waits on -- is not gridterm's to write.
 go-xpra's SSH either: that one shells out to the system `ssh`, and
 gridterm already holds a connection it can run `xpra _proxy` over.
 
-Four things it does not do yet, all now written on a fork
+Five things it does not do yet, all now written on a fork
 (`marrasen/go-xpra`, branch `integration`): telling the server when the
 desktop changes size, letting a backend declare its own keyboard layout,
 naming the characters outside ASCII so they are not silently dropped,
-and handing a window the size limits its application asked for. None is
+handing a window the size limits its application asked for, and sending
+the colour-space modes without which its own jpeg and webp decoders
+never receive a frame. None is
 gridterm-specific -- the third is why Windows and macOS users cannot
 type an accented character -- and none has been offered upstream. The
 plan is to keep working on the fork, and split the
@@ -237,12 +239,24 @@ icons.
 
 ### What is still untested
 
-**Every frame arrived as raw B,G,R,X.** Over a loopback socket xpra
-never bothers to compress, so JPEG, PNG and WebP decoding has still only
-been exercised against the spike's own fake server. Forcing the issue
-does not work either: a server restricted to `--encodings=jpeg` refuses
-the connection outright, because its own video subsystem then excludes
-jpeg and finds no encoding in common.
+**Every frame arrived as raw B,G,R,X** -- and chasing that turned into
+the sharpest find yet. Over a loopback socket a server never bothers to
+compress, so the only way to see the other decoders is to stop the
+client claiming it can take raw pixels, which is a knob the fork now
+has (`XPRA_ENCODINGS`).
+
+With it, PNG worked and **jpeg and webp painted nothing at all**. A
+modern server routes those two through its video subsystem along with
+h264 and vp8, and drops any encoding there that the client has not given
+colour-space modes for
+(`xpra/server/window/video_compress.py:458`). go-xpra advertised them
+in `core` and sent no `full_csc_modes`, so the server excluded them from
+every session -- **two of the four decoders in `image.go` had never
+decoded a frame against a real server.** Restricting the client to only
+those encodings does not connect at all; leaving it alone gets raw RGB
+for ever. Either way they never ran.
+
+Fixed on the fork, and both now paint correctly against Xpra 6.5.3.
 
 **A backend cannot see the wire encoding anyway.** `ui.Window.Paint` is
 handed decoded pixels and a pixel format, never the coding they arrived

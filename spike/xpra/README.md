@@ -221,6 +221,26 @@ go run . tcp://127.0.0.1:14500/
 
 and look for the `size limits` line.
 
+## The compressed encodings
+
+On a loopback socket a server sends raw BGRX for everything, because
+compressing it costs more than it saves. `XPRA_ENCODINGS` narrows what
+the client says it can decode and leaves the server no choice:
+
+```shell
+XPRA_ENCODINGS=jpeg go run . tcp://127.0.0.1:14500/
+```
+
+Doing that turned up why jpeg and webp had never appeared in any
+session. A modern server routes them through its video subsystem along
+with the real video codecs, and drops any such encoding the client has
+not given colour-space modes for -- so advertising them in `core` was
+not enough and both decoders were dead. The fork sends
+`encoding.full_csc_modes`, and both now paint.
+
+Use an image viewer rather than a terminal to watch it: `ristretto` on
+a photo-like picture is what these encodings are for.
+
 ## Flags
 
 - `-serve` run the fake server on this address instead of connecting.
@@ -231,6 +251,10 @@ and look for the `size limits` line.
 - `-layout` the XKB layout to ask the server for. `us` by default.
 - `-copy` announce this as the local clipboard once connected.
 - `-chord` press these after typing, as in `ctrl+a,ctrl+c`.
+
+`XPRA_ENCODINGS` is an environment variable rather than a flag, because
+it belongs to the library: it narrows the encodings the client says it
+can decode.
 - `-drive` send a scripted click, keystroke and resize once the first
   frame arrives, so the outbound half of the protocol is exercised too.
   On by default.

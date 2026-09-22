@@ -397,3 +397,103 @@ func TestAKeyAlreadyAtThePathIsSaidToBeAFile(t *testing.T) {
 		t.Errorf("the saved passphrase is now %q, %v", got, err)
 	}
 }
+
+// withAgentHolding makes the window answer that the SSH agent holds
+// these key files, without an agent being anywhere near the test.
+func withAgentHolding(t *testing.T, a *testApp, keyFiles ...string) {
+	t.Helper()
+	held := map[string]bool{}
+	for _, keyFile := range keyFiles {
+		pub, err := os.ReadFile(keyFile + ".pub")
+		if err != nil {
+			t.Fatalf("read the public half of %s: %v", keyFile, err)
+		}
+		key, _, _, _, err := ssh.ParseAuthorizedKey(pub)
+		if err != nil {
+			t.Fatalf("parse the public half of %s: %v", keyFile, err)
+		}
+		held[secrets.Fingerprint(key)] = true
+	}
+	a.agentHolds = func(fingerprint string) (bool, error) { return held[fingerprint], nil }
+}
+
+// A key the SSH agent holds is said so before the vault is made on it.
+//
+// A slot key is a signature over a challenge kept in the clear in the
+// file, and an agent signs whatever it is handed. So one forwarded
+// session to a machine that has been taken over opens the vault, to
+// anybody who also has a copy of it.
+func TestMakingTheVaultOnAKeyInTheAgentAsksFirst(t *testing.T) {
+	withHome(t)
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withScreen(t, a)
+	a.secretsAt = filepath.Join(t.TempDir(), secrets.Name)
+	keyFile := anEd25519KeyFile(t, filepath.Join(t.TempDir(), "id_ed25519_test"))
+	withAgentHolding(t, a, keyFile)
+
+	a.startVaultOn(keyFile)
+	f := awaitModal(t, a, "the question about the key",
+		byTitle[*ui.Form](keyIsInTheAgent))
+
+	said := strings.Join(f.Lines, " ")
+	if !strings.Contains(said, keyFile) {
+		t.Errorf("the question says %q without naming the key", said)
+	}
+	if !strings.Contains(said, "forward the agent") {
+		t.Errorf("the question says %q without saying how the key gets out", said)
+	}
+	// Asked, not refused.
+	var titles []string
+	for _, b := range f.Buttons() {
+		titles = append(titles, b.Title)
+	}
+	if !slices.Contains(titles, btnCreate) || !slices.Contains(titles, btnCancel) {
+		t.Errorf("the question offers %v, want a way on and a way out", titles)
+	}
+
+	// Going on makes the vault.
+	pressButton(t, a, f, btnCreate)
+	waitFor(t, a, "the vault to be made", func() bool {
+		return a.secrets != nil && a.secrets.Exists()
+	})
+}
+
+// And a key the agent does not hold is used without a word.
+func TestMakingTheVaultOnAKeyTheAgentDoesNotHoldAsksNothing(t *testing.T) {
+	a, keyFile := aWindowWithSecrets(t)
+
+	a.startVaultOn(keyFile)
+	waitFor(t, a, "the vault to be made", func() bool {
+		return a.secrets != nil && a.secrets.Exists()
+	})
+	if up := a.root.Modal(); up != nil {
+		if _, isNotice := up.(*ui.Notice); !isNotice {
+			t.Errorf("a %T dialog went up for a key the agent does not hold", up)
+		}
+	}
+}
+
+// Both things worth saying about a key are said at once, with the
+// heading of the one that matters more.
+func TestBothWarningsAboutAKeyAreSaidTogether(t *testing.T) {
+	a, v := aKeyWindowWithSecrets(t)
+	spare := anEd25519KeyFile(t, filepath.Join(t.TempDir(), "id_ed25519_spare"))
+	if _, err := v.Put(secrets.Item{
+		Name: "id_ed25519_spare", Kind: secrets.Passphrase, File: spare,
+	}, "generated"); err != nil {
+		t.Fatalf("put: %v", err)
+	}
+	withAgentHolding(t, a, spare)
+
+	a.confirmAddKey(v, spare)
+	f := awaitModal(t, a, "the question about the key",
+		byTitle[*ui.Form](keyIsInTheAgent))
+	said := strings.Join(f.Lines, " ")
+	if !strings.Contains(said, "forward the agent") {
+		t.Errorf("the question says %q without the agent", said)
+	}
+	if !strings.Contains(said, "Copy the passphrase") {
+		t.Errorf("the question says %q without the passphrase", said)
+	}
+}

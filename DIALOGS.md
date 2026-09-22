@@ -815,6 +815,8 @@ than one key to choose from this is D62 instead: which key opens the
 vault is the user's to decide, since it is the only one that will until
 another is added.
 
+`Create` goes through D73 when there is anything to say about the key.
+
 ## D62
 - **Title:** `Choose a key`
 - **Rows:** one per ed25519 key file on this machine
@@ -963,6 +965,8 @@ Said, not refused. The passphrase can be copied out and kept elsewhere,
 and then it is a spare like any other, so the choice is theirs. `Add`
 keeps the focus because nothing here is destroyed.
 
+This and D73 are one dialog with two headings: see D73.
+
 ## D71
 - **Title:** `Only one key opens the secrets`
 - **Body:** `Removing it would leave nothing that can. Take "Add Secrets
@@ -994,6 +998,44 @@ lost.
 
 Removing says `<key file> removed — <n> keys still open the secrets` on
 the bottom row.
+
+## D73
+- **Title:** `This key is in the SSH agent`
+- **Body:**
+  ```
+  <key file>
+
+  A machine you forward the agent to can have this key
+  sign anything, and a signature over the vault's own
+  challenge is what opens the secrets. Use a key the
+  agent does not hold.
+  ```
+- **Buttons:** `Create` · `Cancel` — or `Add` · `Cancel` when the key is
+  being added to a vault that already exists
+- **Focus:** the first button
+- **Opened from:** D61 and D62 when starting a vault, and a row of D62
+  under `Add Secrets Key`, for a key the SSH agent is holding right now.
+
+**Instructions:** Rule 10. A slot is opened by a key signing a challenge
+the file keeps in the clear, ed25519 signs the same way every time, and
+an agent signs whatever blob it is handed without looking at it. So one
+forwarded session to a machine that has been taken over hands over the
+vault, to anybody who also has a copy of the file.
+
+Said, not refused, for the same reason as D70: it is only a way in for
+somebody who has the file as well, and whether that is worth it is the
+user's to weigh.
+
+Asked by fingerprint, off the `.pub` file beside the key, so nothing has
+to be unlocked to ask. A key with no `.pub`, or an agent that will not
+answer, gets no warning: one this window cannot stand behind is worse
+than none. It is a snapshot either way — the key may be added to the
+agent a minute later.
+
+D70 and this are one dialog. Where both apply the body carries both
+sentences, one under the other, and the heading is this one: a key that
+is no use as a spare is a disappointment, and a key that can be signed
+for elsewhere is a way in.
 
 ---
 

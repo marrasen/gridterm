@@ -11,6 +11,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/marrasen/gridterm/conns"
+	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/secrets"
 	"github.com/marrasen/gridterm/ui"
 )
@@ -124,7 +125,16 @@ func (a *app) offerAVault() error {
 
 // startVaultOn makes the vault on a key and shows what is in it, which
 // is nothing yet.
+//
+// The same question as adding one, because this key matters more than
+// any added later: it is the only one the vault will have until another
+// is.
 func (a *app) startVaultOn(keyFile string) {
+	a.askBeforeTrusting(nil, keyFile, btnCreate, func() { a.makeVaultOn(keyFile) })
+}
+
+// makeVaultOn writes the vault, once the key has been asked about.
+func (a *app) makeVaultOn(keyFile string) {
 	a.makeVault(keyFile, func(v *secrets.Vault, err error) {
 		switch {
 		case errors.Is(err, errDismissed):
@@ -577,35 +587,109 @@ func spareKeyNote(v *secrets.Vault, keyFile string) string {
 	return "passphrase in here"
 }
 
-// confirmAddKey asks before adding a key whose passphrase is in the
-// vault, and adds any other key without a word.
+// keyWarning is something worth saying before a key is trusted with the
+// secrets: the heading, which is the message, and the sentence under it
+// saying what it costs and what to do about it.
+type keyWarning struct {
+	title string
+	says  string
+}
+
+// The headings. Constants because the tests and the dialog sheet quote
+// them, and a wording that lived only where it is used would drift.
+const (
+	keyIsInTheAgent        = "This key is in the SSH agent"
+	passphraseInTheSecrets = "This key's passphrase is in the secrets"
+)
+
+// warningsAboutKey is what is worth saying before this key is given a
+// slot, worst first, and nothing for a key with nothing against it.
 //
-// Said rather than refused. The key still opens the vault while the
-// vault is open, and the passphrase can be copied out and kept
-// elsewhere, which makes it a spare like any other. That is the user's
-// to decide, and the dialog says what it turns on.
-func (a *app) confirmAddKey(v *secrets.Vault, keyFile string) {
-	if _, err := v.PassphraseFor(keyFile); err != nil {
-		a.addVaultKeyOn(v, keyFile)
+// v is the vault the key would open, and nil while there is none yet:
+// the passphrase warning cannot apply to a vault that does not exist.
+func (a *app) warningsAboutKey(v *secrets.Vault, keyFile string) []keyWarning {
+	var out []keyWarning
+	if a.agentHoldsKey(keyFile) {
+		out = append(out, keyWarning{
+			title: keyIsInTheAgent,
+			says: "A machine you forward the agent to can have this key" +
+				" sign anything, and a signature over the vault's own" +
+				" challenge is what opens the secrets. Use a key the agent" +
+				" does not hold.",
+		})
+	}
+	if v != nil {
+		if _, err := v.PassphraseFor(keyFile); err == nil {
+			out = append(out, keyWarning{
+				title: passphraseInTheSecrets,
+				says: "The key cannot open them on its own. Copy the" +
+					" passphrase somewhere else to use this key as a spare.",
+			})
+		}
+	}
+	return out
+}
+
+// agentHoldsKey reports whether the running SSH agent holds this key.
+//
+// By the public half beside it, so nothing has to be unlocked to ask.
+// A key with no public half, or an agent that will not answer, is a
+// question that cannot be put: false, and no warning, because a warning
+// this window cannot stand behind is worse than none.
+func (a *app) agentHoldsKey(keyFile string) bool {
+	pub, err := os.ReadFile(keyFile + ".pub")
+	if err != nil {
+		return false
+	}
+	key, _, _, _, err := ssh.ParseAuthorizedKey(pub)
+	if err != nil {
+		return false
+	}
+	ask := a.agentHolds
+	if ask == nil {
+		ask = remote.AgentHolds
+	}
+	held, err := ask(secrets.Fingerprint(key))
+	return err == nil && held
+}
+
+// askBeforeTrusting puts the warnings about a key in front of the user
+// and does the thing when they say to go on. With nothing to say it
+// goes ahead without a dialog.
+//
+// Said rather than refused, in both cases. A key in the agent is only a
+// way in for somebody who also has the file, and a passphrase kept in
+// the vault can be copied out and held elsewhere. Which of those is
+// worth it is the user's to weigh, and the dialog gives them what to
+// weigh it with.
+func (a *app) askBeforeTrusting(v *secrets.Vault, keyFile, accept string, then func()) {
+	warn := a.warningsAboutKey(v, keyFile)
+	if len(warn) == 0 {
+		then()
 		return
 	}
-	lines := append([]string{keyFile, ""},
-		wrapLines("The key cannot open them on its own. Copy the passphrase"+
-			" somewhere else to use this key as a spare.", errorLineWidth)...)
-	f := a.newConfirm(passphraseInTheSecrets, lines)
-	f.AddButton(ui.Button{Title: btnAdd, Do: func() error {
+	lines := []string{keyFile}
+	for _, w := range warn {
+		lines = append(lines, "")
+		lines = append(lines, wrapLines(w.says, errorLineWidth)...)
+	}
+	// The first heading, because they are in the order they matter and
+	// the rest are read in the body under it.
+	f := a.newConfirm(warn[0].title, lines)
+	f.AddButton(ui.Button{Title: accept, Do: func() error {
 		// Not from here: this dialog closes as soon as this returns,
 		// and closing one takes anything stacked on top of it.
-		a.pump.post(func() { a.addVaultKeyOn(v, keyFile) })
+		a.pump.post(then)
 		return nil
 	}})
 	f.AddButton(ui.Button{Title: btnCancel})
 	a.showForm(f, nil)
 }
 
-// passphraseInTheSecrets heads the question asked before a key whose
-// passphrase is in the vault is given a slot of its own.
-const passphraseInTheSecrets = "This key's passphrase is in the secrets"
+// confirmAddKey asks about a key before giving it a slot of its own.
+func (a *app) confirmAddKey(v *secrets.Vault, keyFile string) {
+	a.askBeforeTrusting(v, keyFile, btnAdd, func() { a.addVaultKeyOn(v, keyFile) })
+}
 
 // whyNoKeyToAdd says why there is nothing to offer, which is a
 // different thing depending on how many already open it.

@@ -69,6 +69,24 @@ says so before adding it, and adds it anyway when told to -- the
 passphrase can be copied out and kept elsewhere, and then it is a spare
 like any other.
 
+**A word before the secrets are trusted to a key the SSH agent is
+holding.** A slot is opened by the key signing a challenge the file
+keeps in the clear, ed25519 signs the same way every time, and an agent
+signs whatever it is handed without looking at it. So one forwarded
+session to a machine that has been taken over hands the vault to
+anybody who also has a copy of the file. Starting a vault on such a
+key, or adding one to an existing vault, now says so first and goes
+ahead when told to: it is only a way in for somebody who has the file
+as well, and whether that is worth it is the user's to weigh.
+
+It is asked by fingerprint, off the `.pub` file beside the key, so
+nothing has to be unlocked to ask, and a key with no public half or an
+agent that will not answer gets no warning rather than one the window
+cannot stand behind. It is a snapshot: the key may be added to the
+agent a minute later. The key `New SSH Key` offers by default,
+`id_ed25519_gridterm`, is not one most people load into an agent, and
+agent forwarding is off unless a saved server turns it on.
+
 ### Changed
 
 **A list's buttons look and answer like every other dialog's.** The row

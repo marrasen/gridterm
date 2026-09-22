@@ -61,6 +61,12 @@ func aWindowWithSecrets(t *testing.T) (*testApp, string) {
 	withDialogs(t, a)
 	withScreen(t, a)
 	a.secretsAt = filepath.Join(t.TempDir(), secrets.Name)
+	// No agent, unless the test says otherwise. Reaching for the real
+	// socket would answer out of whatever keys the person running the
+	// tests happens to have loaded.
+	a.agentHolds = func(string) (bool, error) {
+		return false, errors.New("no SSH agent in a test")
+	}
 	return a, anEd25519KeyFile(t, filepath.Join(t.TempDir(), "id_ed25519_test"))
 }
 

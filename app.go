@@ -338,6 +338,13 @@ type app struct {
 	secrets   *secrets.Vault
 	secretsAt string
 
+	// agentHolds asks the SSH agent whether it holds a key, by
+	// fingerprint. Nil means ask the agent this machine is running,
+	// which is what everything but a test does: a test that reached for
+	// the real socket would answer out of whatever the person running
+	// it happens to have loaded.
+	agentHolds func(fingerprint string) (bool, error)
+
 	// book is the saved list of machines, and serverCommands are the ids
 	// registered for what is in it, so one list can be taken away when
 	// the next is put up.

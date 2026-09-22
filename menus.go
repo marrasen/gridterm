@@ -132,7 +132,7 @@ const fileMenu = "File"
 func fileItems(shells []ui.MenuItem) []ui.MenuItem {
 	items := []ui.MenuItem{{Command: "pane.open"}}
 	if len(shells) > 0 {
-		items = append(items, ui.MenuHeader("New Terminal In"))
+		items = append(items, ui.MenuHeader(newTerminalInHeader))
 		items = append(items, shells...)
 	}
 	// A ladder, smallest first. These four are easy to confuse by
@@ -198,11 +198,16 @@ func (a *app) refreshShareMenu() {
 // whose panes open on the machine -ssh named gets none: "New terminal"
 // goes there and a shell line comes back here, and no row behind the
 // line says which machine it means.
+//
+// Named lines, because the header above them already says a terminal is
+// what opens: the row says only which shell it opens on, the way the
+// same list reads on a machine's plus menu. The command keeps its own
+// title for the palette, where it is read with no header around it.
 func (a *app) fileMenuShells() []ui.MenuItem {
 	if a.homeMachine() != nil {
 		return nil
 	}
-	return a.shellPick.lines(false)
+	return a.shellPick.lines(true)
 }
 
 // refreshFileMenu rebuilds the File menu for the shells a scan has since

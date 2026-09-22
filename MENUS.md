@@ -38,7 +38,9 @@ windows and agents, and the program.
 
 - `[id: pane.open]` New Terminal
 - ⟨header: New Terminal In⟩ *(only when there is more than one shell)*
-- ⟨built at run time⟩ the shells this machine has
+- ⟨built at run time⟩ the shells this machine has, each row the shell's
+  own name — the header says the rest, the way the plus menu's do
+- `[id: shell.default]` Default shell *(only while a shell is picked)*
 - ⟨header: Close⟩
 - `[id: pane.close]` Pane — `Ctrl+Shift+W`
 - `[id: sidebar.closeRow]` Selected Row

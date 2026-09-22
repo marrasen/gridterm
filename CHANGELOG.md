@@ -9,7 +9,15 @@ change how something behaves.
 
 ## Unreleased
 
-Nothing yet.
+### Changed
+
+**The File menu's shells say only which shell they open.** Under the
+`New Terminal In` heading each line read `New Terminal: Command Prompt`,
+so the heading and the line said the same three words before either got
+to the shell. The lines are now `Command Prompt`, `Windows PowerShell`
+and the rest, which is what the same list already said on a machine's
+plus menu. The commands keep their full titles for the palette, where
+they are read with no heading around them.
 
 ## v0.2.1
 

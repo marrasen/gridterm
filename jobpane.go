@@ -35,10 +35,14 @@ type jobPane struct {
 
 	size ui.Size
 
-	// at is the button the keyboard is on, and cols where each button
-	// was last drawn, for a click.
-	at   int
-	cols []int
+	// at is the button the keyboard is on, cols where each was last
+	// drawn, and drawn what they were, for a click. A job that finished
+	// between the drawing and the click changes what is offered, and a
+	// click measured against the old row would press the new thing in
+	// that place -- Repeat sits where Cancel was.
+	at    int
+	cols  []int
+	drawn []choice
 
 	// row is the row the buttons were last drawn on, for the same
 	// reason. Below zero when none have been.
@@ -89,6 +93,9 @@ func (p *jobPane) draw(v grid.View, prog jobs.Progress, now time.Time) {
 	st := p.app.formStyle()
 	at := jobPaneMargin
 	width := max(cols-2*jobPaneMargin, 1)
+	// Nothing above the heading clears this row, and a pane draws over
+	// whatever the widget before it left in its place.
+	p.blank(v, 0)
 	line := 1
 
 	// The heading: what this is, and how much of it there is.
@@ -101,10 +108,7 @@ func (p *jobPane) draw(v grid.View, prog jobs.Progress, now time.Time) {
 	line += 2
 
 	// The bar, with the share it has done written at the end of it.
-	done := jobFill(prog)
-	if prog.Done {
-		done = 1
-	}
+	done := shareOf(prog)
 	share := fmt.Sprintf("%3d%%", int(done*100))
 	barWidth := max(width-len(share)-1, 1)
 	bar := p.pen(v, line)
@@ -161,6 +165,24 @@ func (p *jobPane) draw(v grid.View, prog jobs.Progress, now time.Time) {
 	// And what can be done about it, along the bottom.
 	p.settle(prog)
 	p.drawButtons(v, prog, rows)
+}
+
+// shareOf is how much of the work is done, as a share of one.
+//
+// A job that stopped part way keeps the share it reached: a copy
+// cancelled at a fifth drawing a full bar over "It was cancelled" would
+// be the pane contradicting itself.
+func shareOf(prog jobs.Progress) float64 {
+	if prog.Done && prog.Err == nil {
+		return 1
+	}
+	switch {
+	case prog.Bytes > 0:
+		return min(float64(prog.BytesDone)/float64(prog.Bytes), 1)
+	case prog.Files > 0:
+		return min(float64(prog.FilesDone)/float64(prog.Files), 1)
+	}
+	return 0
 }
 
 // heading says what the work is and where it is going.
@@ -359,7 +381,9 @@ func (p *jobPane) drawNames(v grid.View, at, line, width, rows int,
 		return line
 	}
 	for i, name := range names {
-		if i >= room {
+		// The last row the names have goes to saying how many are not
+		// drawn, rather than to one more name.
+		if i >= room-1 && len(names)-i > 1 {
 			p.say(v, at, line, width,
 				fmt.Sprintf("and %d more", len(names)-i), st.HintFG)
 			line++
@@ -577,7 +601,7 @@ func (p *jobPane) settle(prog jobs.Progress) {
 		return
 	}
 	p.wasDone = prog.Done
-	p.at = len(p.choices()) - 1
+	p.at = len(p.choicesFor(prog)) - 1
 }
 
 // choice is one thing along the bottom of the pane: a button, or the
@@ -615,8 +639,16 @@ func (c choice) label() string {
 // be done again. Close takes the pane away and leaves the job alone --
 // a copy goes on if it is still going, the way closing any pane does
 // not end what is behind it.
-func (p *jobPane) choices() []choice {
-	if !p.job.Progress().Done {
+func (p *jobPane) choices() []choice { return p.choicesFor(p.job.Progress()) }
+
+// choicesFor is what a job offers at one reading of it.
+//
+// One reading for the whole frame: the buttons are part of what the
+// pane says, and a row drawn from a later reading than the bar above it
+// would offer Repeat over a copy the rest of the pane still shows
+// running.
+func (p *jobPane) choicesFor(prog jobs.Progress) []choice {
+	if !prog.Done {
 		return []choice{{title: btnCancel}, {title: btnClose}}
 	}
 	if p.job.Kind() != jobs.Copy {
@@ -639,7 +671,7 @@ func (p *jobPane) choices() []choice {
 // drawButtons paints the row along the bottom, centred.
 func (p *jobPane) drawButtons(v grid.View, prog jobs.Progress, rows int) {
 	cols, _ := v.Size()
-	choices := p.choices()
+	choices := p.choicesFor(prog)
 	p.at = min(max(p.at, 0), len(choices)-1)
 	st := p.app.formStyle()
 	row := rows - 2
@@ -649,6 +681,7 @@ func (p *jobPane) drawButtons(v grid.View, prog jobs.Progress, rows int) {
 	}
 	p.row = row
 	p.cols = placeChoices(p.cols[:0], choices, cols)
+	p.drawn = append(p.drawn[:0], choices...)
 	pen := p.pen(v, row)
 	for i, at := range p.cols {
 		if at < 0 {
@@ -730,6 +763,13 @@ func (p *jobPane) HandleMouse(ev input.MouseEvent) (bool, error) {
 		return false, nil
 	}
 	choices := p.choices()
+	if !sameChoices(choices, p.drawn) {
+		// What is offered has changed since this row was drawn, so
+		// where the pointer went is not what it went to. The next frame
+		// draws the new row, and a second click presses what it says.
+		p.app.markDirty()
+		return true, nil
+	}
 	for i, at := range p.cols {
 		if at < 0 || i >= len(choices) {
 			continue
@@ -740,6 +780,21 @@ func (p *jobPane) HandleMouse(ev input.MouseEvent) (bool, error) {
 		}
 	}
 	return false, nil
+}
+
+// sameChoices reports whether a row offers what it offered when it was
+// drawn. The tick's state is not part of it: a box that was ticked from
+// somewhere else is still the same box in the same place.
+func sameChoices(now, drawn []choice) bool {
+	if len(now) != len(drawn) {
+		return false
+	}
+	for i := range now {
+		if now[i].title != drawn[i].title || now[i].tick != drawn[i].tick {
+			return false
+		}
+	}
+	return true
 }
 
 // press does what the choice at i says.

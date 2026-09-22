@@ -494,7 +494,7 @@ func (a *app) isPane(w ui.Widget) bool {
 	}
 	return ui.EachLeaf(w, func(leaf ui.Widget) bool {
 		switch leaf.(type) {
-		case *term.Terminal, *files.Pane, *files.Reader:
+		case *term.Terminal, *files.Pane, *files.Reader, *jobPane:
 			return true
 		}
 		return false

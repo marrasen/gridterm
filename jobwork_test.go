@@ -1082,3 +1082,112 @@ func TestAJobsPaneLeavesNothingBehindWhenItShrinks(t *testing.T) {
 		t.Errorf("the pane still marks a name as the one being worked on:\n%s", drawn)
 	}
 }
+
+// Close takes the pane away and leaves the work alone.
+//
+// The window only counts something as a pane when it knows the widget,
+// so a kind it did not know was one it would not close, focus by
+// keyboard, or ever let go of.
+func TestClosingAJobsPaneTakesItAway(t *testing.T) {
+	a, _ := aCopyWindow(t)
+	d, _, _ := aFinishedCopy(t, a)
+	if !a.isPane(d) {
+		t.Fatal("the window does not count the pane as a pane")
+	}
+
+	pressChoice(t, d, btnClose)
+
+	if len(a.jobPanes) != 0 {
+		t.Errorf("the window still holds %d panes on the work", len(a.jobPanes))
+	}
+	if ui.ParentOf(a.root.Widget(), d) != nil {
+		t.Error("the pane is still in the tree")
+	}
+}
+
+// A job that stopped part way keeps the share it reached.
+//
+// A copy cancelled at a fifth that drew a full bar over "It was
+// cancelled" would be the pane contradicting itself in two rows.
+func TestAStoppedJobsBarIsNotFull(t *testing.T) {
+	for _, one := range []struct {
+		name string
+		err  error
+		want string
+	}{
+		{name: "it finished", want: "100%"},
+		{name: "it was cancelled", err: context.Canceled, want: " 20%"},
+		{name: "it failed", err: errors.New("no space left on device"), want: " 20%"},
+	} {
+		t.Run(one.name, func(t *testing.T) {
+			a, _ := aCopyWindow(t)
+			d, _, _ := aFinishedCopy(t, a)
+			started := time.Now()
+			prog := jobs.Progress{
+				Files: 5, FilesDone: 1, Bytes: 500, BytesDone: 100,
+				Done: true, Err: one.err, Started: started, Ended: started.Add(time.Second),
+			}
+			if one.err == nil {
+				prog.FilesDone, prog.BytesDone = 5, 500
+			}
+
+			drawn := jobPaneDrawn(d, prog, started.Add(time.Second))
+
+			if !strings.Contains(drawn, one.want) {
+				t.Errorf("the pane says no %q:\n%s", one.want, drawn)
+			}
+		})
+	}
+}
+
+// The pane writes its top row, which nothing above it clears.
+func TestAJobsPaneWritesItsTopRow(t *testing.T) {
+	a, _ := aCopyWindow(t)
+	d, _, _ := aFinishedCopy(t, a)
+	g := grid.New(80, 24, color.RGBA{}, color.RGBA{})
+	// Whatever the widget before it left there.
+	g.View().SetString(0, 0, "left over from something else", color.RGBA{}, color.RGBA{}, 0)
+
+	d.Layout(ui.Size{Cols: 80, Rows: 24})
+	d.draw(g.View(), d.job.Progress(), time.Now())
+
+	if strings.Contains(gridRows(g), "left over") {
+		t.Errorf("the pane drew over none of the top row:\n%s", gridRows(g))
+	}
+}
+
+// A click lands on what the row said when it was drawn, or on nothing.
+//
+// Repeat is drawn where Cancel was, so a job that finished between the
+// drawing and the click must not turn one into the other.
+func TestAClickOnAChangedRowPressesNothing(t *testing.T) {
+	a, _ := aCopyWindow(t)
+	d, _, _ := aFinishedCopy(t, a)
+	started := time.Now()
+	running := jobs.Progress{
+		Files: 5, FilesDone: 1, Bytes: 500, BytesDone: 100, Started: started,
+	}
+	// Drawn while it was still going, so the row says Cancel and Close.
+	jobPaneDrawn(d, running, started)
+	at := d.cols[0]
+	was := len(a.jobs)
+
+	// And clicked after it finished, when Repeat is in that place.
+	took, err := d.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft, Col: at, Row: d.row,
+	})
+	if err != nil {
+		t.Fatalf("click: %v", err)
+	}
+	if !took {
+		t.Error("the click went through to whatever is behind the pane")
+	}
+	if n := len(a.jobs); n != was {
+		t.Errorf("the click started %d jobs, want none", n-was)
+	}
+	// And the row it was drawn from says Cancel, which is what makes
+	// the click ambiguous in the first place.
+	if got := d.drawn[0].title; got != btnCancel {
+		t.Fatalf("the row was drawn offering %q, so this proves nothing", got)
+	}
+}

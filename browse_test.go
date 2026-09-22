@@ -1968,6 +1968,15 @@ func TestTheGoToDialogOnAMachineOverThereOpensOnThatPane(t *testing.T) {
 
 	pane := openFilesFromTheFarPlus(t, client, host, addr, "margit")
 	client.focus(pane)
+	// Where a pane on a machine over there is reading is asked for over
+	// the wire, so it arrives some frames after the pane does. The
+	// dialog opens on whatever the pane knows when it opens, and
+	// without this the race is won by whichever is quicker: an empty
+	// field here, and a filled-in one by the time it is read.
+	waitFor(t, client, "the pane to know where it is", func() bool {
+		return pane.At() != ""
+	}, host)
+	at := pane.At()
 
 	// The chord, so the command is reached the way the user reaches it.
 	sendKey(t, client, press(input.KeyG, input.ModCtrl|input.ModShift))
@@ -1979,8 +1988,8 @@ func TestTheGoToDialogOnAMachineOverThereOpensOnThatPane(t *testing.T) {
 	if got := f.Field(fldPath).Placeholder; got != "" {
 		t.Errorf("the field has a placeholder %q as well as a value", got)
 	}
-	if got := f.Field(fldPath).Text(); got != pane.At() {
-		t.Errorf("the dialog opens on %q, want the pane's own directory %q", got, pane.At())
+	if got := f.Field(fldPath).Text(); got != at {
+		t.Errorf("the dialog opens on %q, want the pane's own directory %q", got, at)
 	}
 	pressButton(t, client, f, btnCancel)
 }

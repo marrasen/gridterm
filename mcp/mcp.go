@@ -233,7 +233,13 @@ type Ending struct {
 
 // Until says what a wait is waiting for.
 type Until struct {
-	Contains  string
+	Contains string
+
+	// SinceKeys waits for Contains to arrive rather than matching what
+	// the pane already holds, so the echo of a command just typed is
+	// not mistaken for the answer to it.
+	SinceKeys bool
+
 	QuietMS   int
 	TimeoutMS int
 }

@@ -164,6 +164,7 @@ func (w *Window) Wait(id string, lines int, until Until) (Screen, Ending, error)
 	}
 	look, ended, err := conn.Wait(at, lines, agent.Until{
 		Contains:  until.Contains,
+		SinceKeys: until.SinceKeys,
 		QuietMS:   until.QuietMS,
 		TimeoutMS: until.TimeoutMS,
 	})

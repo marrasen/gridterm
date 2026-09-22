@@ -1625,3 +1625,94 @@ func TestAWindowThatCannotBeAskedIsNotAnEmptyShare(t *testing.T) {
 		t.Errorf("the agent was told it has %+v, want nothing", panes)
 	}
 }
+
+// A wait watching for text to arrive is not ended by the echo of the
+// command that was typed.
+//
+// The text an agent waits for is usually a word it just typed, and a
+// terminal echoes what is typed. Without this, "wait until it says
+// done" after "echo done" ends before the command has run at all.
+func TestAWaitForTextArrivingIgnoresWhatWasAlreadyThere(t *testing.T) {
+	w, _, code := listening(t)
+	// The command is on the screen, echoed, and has printed nothing.
+	w.say("$ echo done\n")
+
+	c, err := Dial(code)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer func() { _ = c.Close() }()
+	pane := opened(t, c, code)
+
+	// It answers a little later, which is what the wait is for.
+	go func() {
+		time.Sleep(60 * time.Millisecond)
+		w.say("$ echo done\ndone\n$ ")
+	}()
+
+	look, ended, err := c.Wait(pane.ID, 0, Until{
+		Contains: "done", SinceKeys: true, TimeoutMS: 2000, QuietMS: 60000,
+	})
+	if err != nil {
+		t.Fatalf("wait: %v", err)
+	}
+	if ended.GaveUp || ended.Because != EndedOnText {
+		t.Fatalf("the wait ended %+v, want %q", ended, EndedOnText)
+	}
+	// The line the command printed, not only the line it was typed on.
+	if !strings.Contains(look.Screen, "\ndone") {
+		t.Errorf("it ended on %q, which is the echo rather than the answer", look.Screen)
+	}
+}
+
+// And a wait that was not asked to watch for text arriving still takes
+// the screen as it already is.
+//
+// Sending keys and waiting are two calls, so anything short has
+// finished before the wait arrives: a wait that insisted on seeing the
+// text land would miss it and sit there until the time ran out.
+func TestAnOrdinaryWaitTakesTheScreenAsItIs(t *testing.T) {
+	w, _, code := listening(t)
+	w.say("$ echo done\ndone\n$ ")
+
+	c, err := Dial(code)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer func() { _ = c.Close() }()
+	pane := opened(t, c, code)
+
+	_, ended, err := c.Wait(pane.ID, 0, Until{
+		Contains: "done", TimeoutMS: 2000, QuietMS: 60000,
+	})
+	if err != nil {
+		t.Fatalf("wait: %v", err)
+	}
+	if ended.GaveUp || ended.Because != EndedOnText {
+		t.Errorf("the wait ended %+v, want %q", ended, EndedOnText)
+	}
+}
+
+// A wait watching for text that never arrives gives up rather than
+// answering with what was already there.
+func TestAWaitForTextArrivingGivesUpOnTextThatWasAlreadyThere(t *testing.T) {
+	w, _, code := listening(t)
+	w.say("$ echo done\n")
+
+	c, err := Dial(code)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer func() { _ = c.Close() }()
+	pane := opened(t, c, code)
+
+	_, ended, err := c.Wait(pane.ID, 0, Until{
+		Contains: "done", SinceKeys: true, TimeoutMS: 250, QuietMS: 60000,
+	})
+	if err != nil {
+		t.Fatalf("wait: %v", err)
+	}
+	if !ended.GaveUp || ended.Because != EndedOnTime {
+		t.Errorf("the wait ended %+v, want the time running out", ended)
+	}
+}

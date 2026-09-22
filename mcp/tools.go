@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/marrasen/gridterm/agent"
+	"github.com/marrasen/gridterm/steps"
 )
 
 // tool is one thing an agent can ask for.
@@ -81,7 +82,8 @@ func toolList() []tool {
 			Name:  "read_pane",
 			Title: "Read a pane",
 			Description: "What is on the pane's screen now, as plain text. After sending a" +
-				" command use wait_for instead: a read straight afterwards shows the screen" +
+				" command that nothing waited for, use wait_for instead -- a list of steps" +
+				" ending in until has already waited and answers with the screen: a read straight afterwards shows the screen" +
 				" before the command has done anything." +
 				status + marked,
 			InputSchema: schema{
@@ -117,21 +119,37 @@ func toolList() []tool {
 		{
 			Name:  "send_keys",
 			Title: "Type into a pane",
-			Description: "Put characters into the pane exactly as given. text goes in" +
-				" letter for letter, with nothing added and nothing read as an escape:" +
-				" a backslash and an r are a backslash and an r. Then the named keys" +
-				" are pressed, in the order given, encoded the way the program running" +
-				" now asks for -- a program this same call starts gets its keys in a" +
-				" later call. So a command is text plus keys [\"Enter\"], and text alone" +
-				" sits on the line unrun. It does not wait: call wait_for next.",
+			Description: "Work in a pane: type, press keys, and wait, in the order you" +
+				" give. Put the whole of a piece of work in steps and it runs here" +
+				" without a gap, so a command, the program it starts, and what you type" +
+				" into that program are one call:" +
+				" [\"type:vim notes.md\", \"key:Enter\", \"until:[New\", \"type:ihello\"," +
+				" \"key:Escape\", \"type::wq\", \"key:Enter\", \"until\"]." +
+				stepsArg +
+				" A step that does not do what it says stops the list there, and the" +
+				" answer says which one and what the pane looked like: the steps after" +
+				" it are not run, because they would go to whatever is in the pane now" +
+				" rather than to what you were waiting for." +
+				" End a list with until and the answer is the pane once the waiting is" +
+				" over, how the waiting ended, and what is known about its command line" +
+				" the way read_pane's is, so there is nothing to call after it." +
+				" text and keys are the older way of asking and still work: text goes" +
+				" in letter for letter, then the named keys are pressed, and nothing" +
+				" waits, so call wait_for next.",
 			InputSchema: schema{
 				Type: "object",
 				Properties: map[string]field{
 					"pane": {Type: "string", Description: "which pane, from use_session_code or list_panes"},
-					"text": {Type: "string", Description: "what to type, letter for letter." +
-						" No escape is read here: to press Enter put it in keys, not in this"},
+					"steps": {Type: "array", Items: &items{Type: "string"},
+						Description: stepsArg},
+					"text": {Type: "string", Description: "what to type, letter for letter," +
+						" for a call that sends no steps. No escape is read here: to press" +
+						" Enter put it in keys, not in this"},
 					"keys": {Type: "array", Items: &items{Type: "string"},
 						Description: keysArg},
+					"lines": {Type: "integer", Description: linesArg},
+					"timeout_ms": {Type: "integer", Description: timeoutArg +
+						" It is each until step's own, not the list's."},
 				},
 				Required: []string{"pane"},
 			},
@@ -219,13 +237,26 @@ func toolList() []tool {
 			InputSchema: schema{
 				Type: "object",
 				Properties: map[string]field{
-					"pane":     {Type: "string", Description: "which pane, from use_session_code or list_panes"},
-					"contains": {Type: "string", Description: "text to wait for on the screen"},
-					"lines":    {Type: "integer", Description: linesArg},
+					"pane": {Type: "string", Description: "which pane, from use_session_code or list_panes"},
+					"contains": {Type: "string", Description: "text to wait for on the screen." +
+						" This matches the screen as it already is, where an until step in" +
+						" send_keys waits for its text to arrive. The two differ because" +
+						" this is a call of its own, landing after the keys it is about: by" +
+						" then a short command has finished and its answer is already there," +
+						" and a wait that insisted on watching it land would miss it. Pass" +
+						" since_keys for a wait that has to see the text arrive"},
+					"since_keys": {Type: "boolean",
+						Description: "wait for contains to arrive rather than matching what" +
+							" is on the screen already, measured against the screen as this" +
+							" call began. Use it when the text you are waiting for is a word" +
+							" you typed: the pane echoes what you type, so \"done\" is on the" +
+							" screen the moment you send \"echo done\"." +
+							" Leave it off for a command that may already have finished by" +
+							" the time this call lands, which is most of them"},
+					"lines": {Type: "integer", Description: linesArg},
 					"quiet_ms": {Type: "integer",
 						Description: "how long the pane must say nothing for, in milliseconds"},
-					"timeout_ms": {Type: "integer",
-						Description: "how long to wait before giving up, in milliseconds"},
+					"timeout_ms": {Type: "integer", Description: timeoutArg},
 					"screen": {Type: "boolean",
 						Description: "give back the screen even when the shell said a command" +
 							" finished, instead of what that command printed"},
@@ -249,6 +280,8 @@ func (s *server) runTool(name string, args json.RawMessage) (result, *rpcError) 
 		Pane      string   `json:"pane"`
 		Text      string   `json:"text"`
 		Keys      []string `json:"keys"`
+		Steps     []string `json:"steps"`
+		SinceKeys bool     `json:"since_keys"`
 		Lines     int      `json:"lines"`
 		Contains  string   `json:"contains"`
 		QuietMS   int      `json:"quiet_ms"`
@@ -329,8 +362,23 @@ func (s *server) runTool(name string, args json.RawMessage) (result, *rpcError) 
 		if in.Pane == "" {
 			return missing("pane")
 		}
+		if len(in.Steps) > 0 {
+			if in.Text != "" || len(in.Keys) > 0 {
+				return wrong("that call carries steps and text or keys as well." +
+					" A list of steps says the whole of what to do, in order, so put" +
+					" the text and the keys in it as type: and key: steps.")
+			}
+			list, err := steps.ParseAll(in.Steps)
+			if err != nil {
+				// Refused before anything is typed: a list that stopped
+				// halfway is worse than one that never started.
+				return wrong(err.Error())
+			}
+			lines, _ := atMostLines(in.Lines)
+			return s.runSteps(in.Pane, list, lines, in.TimeoutMS)
+		}
 		if in.Text == "" && len(in.Keys) == 0 {
-			return missing("text and no keys")
+			return missing("text, keys and no steps")
 		}
 		// Refused before anything is typed, so an agent that spelled a
 		// key wrong is told which names there are and has sent nothing.
@@ -401,6 +449,7 @@ func (s *server) runTool(name string, args json.RawMessage) (result, *rpcError) 
 		lines, clamped := atMostLines(in.Lines)
 		screen, ended, err := s.panes.Wait(in.Pane, lines, Until{
 			Contains:  in.Contains,
+			SinceKeys: in.SinceKeys,
 			QuietMS:   in.QuietMS,
 			TimeoutMS: in.TimeoutMS,
 		})
@@ -532,6 +581,37 @@ func atMostLines(n int) (lines int, clamped bool) {
 var linesArg = fmt.Sprintf("how many lines to give back, ending at the bottom of the screen"+
 	" and reaching into what has scrolled off. Left out, it is the screen. At most %d:"+
 	" ask for more and you get the last %d, and the answer says so.", mostLines, mostLines)
+
+// stepsArg says what a list of steps may hold. It is on the tool and on
+// the argument: an agent reads one or the other, and a list is the
+// whole of what this tool does.
+var stepsArg = fmt.Sprintf(" Each step is a word, a colon and the rest of it, whole:"+
+	" \"type:<text>\" types letter for letter, with nothing read as an escape, so a"+
+	" colon or a backslash in what you type is what it looks like;"+
+	" \"key:<name>\" presses one key;"+
+	" \"wait:<ms>\" waits that long whatever happens, for the moments nothing on"+
+	" screen marks;"+
+	" \"until:<text>\" waits for that text to arrive, measured against the screen as"+
+	" that step began -- not as the list began. What you typed earlier in the list"+
+	" has come back by then, so waiting for a word you typed waits for the program"+
+	" to say it rather than for your own typing echoed. A wait that ended some"+
+	" other way -- the command finished, the pane went quiet -- without that text"+
+	" on the screen stops the list, because a step that says \"until the editor is"+
+	" up\" has not done what it says;"+
+	" and \"until\" on its own waits for whatever is running to finish."+
+	" At most %d steps, typing %d characters in all."+
+	" The keys are the ones keys takes.", steps.MostSteps, steps.MostText)
+
+// timeoutArg says what a timeout does and how long there is without
+// one, because an agent that is not told a default sets one on every
+// call to be sure.
+var timeoutArg = fmt.Sprintf("how long to wait before giving up, in milliseconds."+
+	" Without one it is %d.", giveUpAfterMS)
+
+// giveUpAfterMS is how long the window gives a wait that asked for no
+// timeout, in the milliseconds the tools take. Asked of the window's own
+// number rather than written again here.
+var giveUpAfterMS = agent.GiveUpAfter.Milliseconds()
 
 // keysArg says what the keys argument takes, and how many names.
 var keysArg = fmt.Sprintf("keys to press once the text has gone in, by name, in the"+

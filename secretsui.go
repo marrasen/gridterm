@@ -308,20 +308,33 @@ func (a *app) stillOnTheClipboard(value string) bool {
 // then.
 func (a *app) forgetClipboardLater(value string) {
 	a.secretCopied = value
+	a.secretCopies++
+	// Which copy this timer is for. A later one starts a timer of its
+	// own and owns the clipboard from then on.
+	mine := a.secretCopies
 	time.AfterFunc(clipboardHolds, func() {
 		// Through the pump, because reading the clipboard and taking a
 		// secret off it belong to the goroutine that draws.
-		a.pump.post(func() {
-			if a.secretCopied == value {
-				a.secretCopied = ""
-			}
-			if !a.stillOnTheClipboard(value) {
-				// They have copied something since. It is theirs.
-				return
-			}
-			a.clip.clear()
-		})
+		a.pump.post(func() { a.forgetClipboardCopy(value, mine) })
 	})
+}
+
+// forgetClipboardCopy is what one copy's timer does when it goes off.
+//
+// Its own method so a test can ring the timer rather than wait half a
+// minute for it.
+func (a *app) forgetClipboardCopy(value string, copied int) {
+	if a.secretCopies != copied {
+		// Something has been copied since, and that copy's own timer
+		// has its own half minute to run.
+		return
+	}
+	a.secretCopied = ""
+	if !a.stillOnTheClipboard(value) {
+		// They have copied something since. It is theirs.
+		return
+	}
+	a.clip.clear()
 }
 
 // takeAnySecretOffTheClipboard is the same thing on the way out, done

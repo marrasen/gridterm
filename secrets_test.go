@@ -965,3 +965,41 @@ func TestAClipboardThatWillNotBeReadIsLeftAlone(t *testing.T) {
 		t.Errorf("a %T dialog went up for a clipboard that would not be read", up)
 	}
 }
+
+// Copying the same secret again gives it a fresh half minute, rather
+// than the first copy's timer cutting the second one short.
+func TestCopyingASecretAgainGivesItAFreshHalfMinute(t *testing.T) {
+	a, keyFile := aWindowWithSecrets(t)
+	v := startTheVault(t, a, keyFile)
+	it, err := v.Put(secrets.Item{Name: "margit"}, "hunter2")
+	if err != nil {
+		t.Fatalf("put: %v", err)
+	}
+	for range 2 {
+		if err := a.copySecret(v, it); err != nil {
+			t.Fatalf("copy: %v", err)
+		}
+	}
+	waitFor(t, a, "the secret to reach the clipboard", func() bool {
+		return a.copiedText() == "hunter2"
+	})
+
+	// The first copy's timer goes off. Its half minute is up, but the
+	// second copy's is not, so the clipboard is not its to clear.
+	a.forgetClipboardCopy("hunter2", 1)
+	if got := a.copiedText(); got != "hunter2" {
+		t.Errorf("the clipboard holds %q, want the secret the second copy put there", got)
+	}
+	if a.secretCopied != "hunter2" {
+		t.Errorf("the window has forgotten it copied %q", "hunter2")
+	}
+
+	// And the second copy's timer does clear it.
+	a.forgetClipboardCopy("hunter2", 2)
+	waitFor(t, a, "the clipboard to be cleared", func() bool {
+		return a.copiedText() == ""
+	})
+	if a.secretCopied != "" {
+		t.Errorf("the window still thinks %q is on the clipboard", a.secretCopied)
+	}
+}

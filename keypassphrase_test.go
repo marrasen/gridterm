@@ -323,3 +323,77 @@ func readFileOrDie(t *testing.T, path string) []byte {
 	}
 	return raw
 }
+
+// A second key at a path a previous attempt left a passphrase at is
+// made, rather than refused by the leavings of the first.
+//
+// The passphrase is saved before the key is written, so a window that
+// stopped between the two leaves one for a key that is not there. The
+// vault takes one passphrase per key file, so that leftover used to
+// refuse every later attempt at the path.
+func TestAStalePassphraseDoesNotBlockThePath(t *testing.T) {
+	a, v := aKeyWindowWithSecrets(t)
+	at := filepath.Join(t.TempDir(), "id_ed25519")
+	if _, err := v.Put(secrets.Item{
+		Name: "id_ed25519", Kind: secrets.Passphrase, File: at,
+	}, "from an attempt that never wrote a key"); err != nil {
+		t.Fatalf("put: %v", err)
+	}
+
+	f := makeKeyDialog(t, a, at)
+	tickBox(t, a, f, fldGeneratePass)
+	pressButton(t, a, f, btnCreate)
+	awaitModal(t, a, "what to do with the key", byTitle[*ui.Notice](dlgKeyCreated))
+
+	pass, err := v.PassphraseFor(at)
+	if err != nil {
+		t.Fatalf("the vault holds no passphrase for %s: %v", at, err)
+	}
+	if pass == "from an attempt that never wrote a key" {
+		t.Fatal("the key was locked with the leftover passphrase")
+	}
+	raw, err := os.ReadFile(at)
+	if err != nil {
+		t.Fatalf("read the key: %v", err)
+	}
+	if _, err := ssh.ParsePrivateKeyWithPassphrase(raw, []byte(pass)); err != nil {
+		t.Fatalf("the saved passphrase does not open the key: %v", err)
+	}
+	// One passphrase for the file, not two.
+	items, err := v.Items()
+	if err != nil {
+		t.Fatalf("items: %v", err)
+	}
+	if len(items) != 1 {
+		t.Errorf("the vault holds %d items, want the one passphrase", len(items))
+	}
+}
+
+// A path that already has a key on it is refused by naming the file,
+// not by naming a passphrase.
+func TestAKeyAlreadyAtThePathIsSaidToBeAFile(t *testing.T) {
+	a, v := aKeyWindowWithSecrets(t)
+	at := anEd25519KeyFile(t, filepath.Join(t.TempDir(), "id_ed25519"))
+	if _, err := v.Put(secrets.Item{
+		Name: "id_ed25519", Kind: secrets.Passphrase, File: at,
+	}, "the one that opens it"); err != nil {
+		t.Fatalf("put: %v", err)
+	}
+
+	f := makeKeyDialog(t, a, at)
+	tickBox(t, a, f, fldGeneratePass)
+	pressButton(t, a, f, btnCreate)
+
+	n := awaitModal(t, a, "why the key was not made",
+		byTitle[*ui.Notice](couldNotCreateTheKey))
+	if !strings.Contains(n.Message(), at) {
+		t.Errorf("it says %q, want the file that is in the way", n.Message())
+	}
+	if strings.Contains(n.Message(), "passphrase") {
+		t.Errorf("it says %q, want the file rather than a passphrase", n.Message())
+	}
+	// And the passphrase of the key that is there is untouched.
+	if got, err := v.PassphraseFor(at); err != nil || got != "the one that opens it" {
+		t.Errorf("the saved passphrase is now %q, %v", got, err)
+	}
+}

@@ -2,6 +2,8 @@ package main
 
 import (
 	"errors"
+	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -151,15 +153,30 @@ const couldNotCreateTheKey = "Could not create the key"
 // again, and the path cannot be used twice.
 func (a *app) makeKeyWithSavedPassphrase(at, comment string) {
 	err := a.withOpenSecrets(couldNotCreateTheKey, func(v *secrets.Vault) error {
+		// What is at the path decides everything below, so it is asked
+		// first. MakeKey refuses a path that has a key on it, and it is
+		// called after the passphrase is saved: without this the user
+		// would be told about a passphrase when what is in the way is a
+		// file.
+		if _, err := os.Stat(at); err == nil {
+			return fmt.Errorf("there is already a key at %s", at)
+		}
 		pass, err := secrets.NewPassword(secrets.PassphraseLength)
 		if err != nil {
 			return err
 		}
-		it, err := v.Put(secrets.Item{
-			Name: filepath.Base(at),
-			Kind: secrets.Passphrase,
-			File: at,
-		}, pass)
+		put := secrets.Item{Name: filepath.Base(at), Kind: secrets.Passphrase, File: at}
+		// A passphrase left behind by an attempt that got this far and
+		// no further -- the window stopped between the two steps, or
+		// the key was deleted afterwards. Nothing is at the path, so it
+		// opens nothing, and the vault takes one passphrase per key
+		// file: without this the second attempt at a path is refused by
+		// the first attempt's leavings, in a message about a passphrase
+		// the user has no way to find.
+		if stale, found := passphraseFor(v, at); found {
+			put.ID = stale.ID
+		}
+		it, err := v.Put(put, pass)
 		if err != nil {
 			return err
 		}
@@ -174,6 +191,21 @@ func (a *app) makeKeyWithSavedPassphrase(at, comment string) {
 	if err != nil {
 		a.reportError(couldNotCreateTheKey, err)
 	}
+}
+
+// passphraseFor is the item holding a key file's passphrase, for a
+// caller that needs the item rather than the secret in it.
+func passphraseFor(v *secrets.Vault, keyFile string) (secrets.Item, bool) {
+	items, err := v.Items()
+	if err != nil {
+		return secrets.Item{}, false
+	}
+	for _, it := range items {
+		if it.Kind == secrets.Passphrase && it.File == keyFile {
+			return it, true
+		}
+	}
+	return secrets.Item{}, false
 }
 
 // keyWritten says where a new key went and how to install it, and adds

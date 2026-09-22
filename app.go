@@ -212,7 +212,14 @@ type app struct {
 	// secretCopied is the secret put on the clipboard and not yet taken
 	// off it, so the window can take it off on the way out. Empty when
 	// there is none.
+	//
+	// secretCopies counts the secrets that have been copied, so a timer
+	// can tell whether the copy it was started for is still the one on
+	// the clipboard. Copying the same secret twice otherwise had the
+	// first timer clear the second copy, which cut its half minute
+	// short by however long was left of the first.
 	secretCopied string
+	secretCopies int
 
 	// status is the line along the bottom saying that something worked,
 	// and nothing while there is nothing to say.

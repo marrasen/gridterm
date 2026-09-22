@@ -85,6 +85,13 @@ func slotKeyFrom(signer ssh.Signer, challenge, salt []byte) ([]byte, error) {
 	// The format goes in as well, so two signature kinds over one
 	// challenge cannot land on the same key.
 	ikm := append([]byte(sig.Format+"\x00"), sig.Blob...)
+	// The signature is the slot key in every sense that matters: the
+	// salt and the info beside it are in the file in the clear, so
+	// anything holding this signature can derive the key again whenever
+	// it likes. Callers wipe the key they are handed, and leaving the
+	// thing it was made from lying in memory made that worth nothing.
+	defer wipe(ikm)
+	defer wipe(sig.Blob)
 	key, err := hkdf.Key(sha256.New, ikm, salt, slotInfo, keyLen)
 	if err != nil {
 		return nil, fmt.Errorf("secrets: derive the slot key: %w", err)

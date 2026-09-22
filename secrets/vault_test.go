@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -724,5 +725,111 @@ func TestALockedVaultHandsOverNoPassphrase(t *testing.T) {
 	v.Lock()
 	if _, err := v.PassphraseFor("/key"); !errors.Is(err, ErrLocked) {
 		t.Errorf("PassphraseFor on a locked vault = %v, want ErrLocked", err)
+	}
+}
+
+// Two windows on one vault do not write each other's secrets away.
+//
+// Each reads the file when it opens it and each save writes the whole
+// of it back, so the one that saved second used to leave the other's
+// item nowhere at all, with nothing reported to either of them.
+func TestASecondWindowDoesNotWriteTheFirstsSecretsAway(t *testing.T) {
+	first, key, path := aVault(t)
+	second, err := Open(path)
+	if err != nil {
+		t.Fatalf("open it again: %v", err)
+	}
+	if err := second.Unlock([]ssh.Signer{key}); err != nil {
+		t.Fatalf("unlock the second: %v", err)
+	}
+
+	if _, err := first.Put(Item{Name: "from the first"}, "one"); err != nil {
+		t.Fatalf("put in the first: %v", err)
+	}
+	if _, err := second.Put(Item{Name: "from the second"}, "two"); err != nil {
+		t.Fatalf("put in the second: %v", err)
+	}
+
+	// Read back off the disk, which is the only copy either of them has.
+	third, err := Open(path)
+	if err != nil {
+		t.Fatalf("open it a third time: %v", err)
+	}
+	if err := third.Unlock([]ssh.Signer{key}); err != nil {
+		t.Fatalf("unlock the third: %v", err)
+	}
+	items, err := third.Items()
+	if err != nil {
+		t.Fatalf("items: %v", err)
+	}
+	var names []string
+	for _, it := range items {
+		names = append(names, it.Name)
+	}
+	if len(names) != 2 {
+		t.Fatalf("the vault holds %v, want both windows' items", names)
+	}
+	for _, want := range []string{"from the first", "from the second"} {
+		if !slices.Contains(names, want) {
+			t.Errorf("the vault holds %v, want %q among them", names, want)
+		}
+	}
+}
+
+// And a key one window adds is one the other can be opened by, without
+// the second window writing the slot away again.
+func TestASecondWindowKeepsAKeyTheFirstAdded(t *testing.T) {
+	first, key, path := aVault(t)
+	second, err := Open(path)
+	if err != nil {
+		t.Fatalf("open it again: %v", err)
+	}
+	if err := second.Unlock([]ssh.Signer{key}); err != nil {
+		t.Fatalf("unlock the second: %v", err)
+	}
+
+	spare := aKey(t)
+	if err := first.AddKey(spare, "the spare"); err != nil {
+		t.Fatalf("add the key: %v", err)
+	}
+	if _, err := second.Put(Item{Name: "from the second"}, "two"); err != nil {
+		t.Fatalf("put in the second: %v", err)
+	}
+
+	third, err := Open(path)
+	if err != nil {
+		t.Fatalf("open it a third time: %v", err)
+	}
+	if err := third.Unlock([]ssh.Signer{spare}); err != nil {
+		t.Fatalf("the key the first window added no longer opens it: %v", err)
+	}
+}
+
+// A vault that was locked reads the file again when it is unlocked, so
+// what another window wrote meanwhile is what it shows.
+func TestUnlockingReadsTheFileAgain(t *testing.T) {
+	v, key, path := aVault(t)
+	v.Lock()
+
+	other, err := Open(path)
+	if err != nil {
+		t.Fatalf("open it again: %v", err)
+	}
+	if err := other.Unlock([]ssh.Signer{key}); err != nil {
+		t.Fatalf("unlock the other: %v", err)
+	}
+	if _, err := other.Put(Item{Name: "added while locked"}, "one"); err != nil {
+		t.Fatalf("put: %v", err)
+	}
+
+	if err := v.Unlock([]ssh.Signer{key}); err != nil {
+		t.Fatalf("unlock: %v", err)
+	}
+	items, err := v.Items()
+	if err != nil {
+		t.Fatalf("items: %v", err)
+	}
+	if len(items) != 1 || items[0].Name != "added while locked" {
+		t.Errorf("the vault holds %v, want what the other window added", items)
 	}
 }

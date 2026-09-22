@@ -68,25 +68,29 @@ type contents struct {
 	// the newest one. The count is the only thing in the file that says
 	// which write it is.
 	//
-	// Nothing compares it, and why not is worth keeping. An older copy
-	// put back would restore a key slot revoked since, and that is all
-	// it costs: the secrets in that copy were already readable by the
-	// key it restores, so what the rollback buys is the ones added
-	// afterwards. But anybody who can write this file is running as the
-	// user, and somebody running as the user can read the passphrase as
-	// it is typed, have the SSH agent sign for them, or replace gridterm
-	// itself. Guarding this file against them while all of that is open
-	// is guarding the smallest door in the house.
+	// refresh compares it against the count this vault last wrote, to
+	// notice that another window has saved since and take that window's
+	// items in before this one's change goes on top. That comparison
+	// needs nothing kept outside the file: both numbers are the vault's
+	// own.
 	//
-	// Comparing it would also need the highest count seen kept somewhere
-	// else, and whatever kept it would come back along with this file in
-	// the one case worth catching: a home directory restored from a
-	// backup, where the vault has quietly gone back three weeks. So the
-	// check missed the accident it was most useful for and caught only a
-	// narrow attack.
+	// It is not a guard against an older copy of the file being put
+	// back, and is not meant as one. Such a copy would restore a key
+	// slot revoked since, and that is all it costs: the secrets in it
+	// were already readable by the key it restores, so what the
+	// rollback buys is the ones added afterwards. Anybody who can write
+	// this file is running as the user, and somebody running as the user
+	// can read the passphrase as it is typed, have the SSH agent sign
+	// for them, or replace gridterm itself. Guarding this file against
+	// them while all of that is open is guarding the smallest door in
+	// the house.
 	//
-	// The count stays because it costs nothing and puts the field in the
-	// format, so a later version can use it without a migration.
+	// Catching a rollback would need the highest count ever seen kept
+	// somewhere else, and whatever kept it would come back along with
+	// this file in the one case worth catching: a home directory
+	// restored from a backup, where the vault has quietly gone back
+	// three weeks. So that check would miss the accident it was most
+	// useful for and catch only a narrow attack.
 	Saves uint64 `json:"saves,omitempty"`
 
 	Entries []entry `json:"entries"`
@@ -264,11 +268,23 @@ func (v *Vault) Wants() []string {
 func (v *Vault) Unlock(signers []ssh.Signer) error {
 	v.mu.Lock()
 	defer v.mu.Unlock()
-	if v.file == nil {
-		return fmt.Errorf("secrets: there is no vault at %s yet", v.path)
-	}
 	if v.data != nil {
 		return nil
+	}
+	// Off the disk again rather than out of memory. This vault may have
+	// been locked for hours, and another window may have added a key or
+	// a secret since: the file is the vault, and what was read when it
+	// was opened is a copy of how it looked then.
+	switch f, err := readFile(v.path); {
+	case err == nil:
+		v.file = f
+	case v.file == nil:
+		return fmt.Errorf("secrets: there is no vault at %s yet", v.path)
+	default:
+		// There was a vault and now it will not be read. Opening the
+		// copy in memory would hand over secrets out of a file nobody
+		// can say is still there.
+		return err
 	}
 	// A slot that does not open is remembered and the next key is still
 	// tried. The whole point of more than one slot is that losing one
@@ -325,32 +341,74 @@ func (v *Vault) Unlock(signers []ssh.Signer) error {
 
 // readContents unseals the items with the data key.
 func (v *Vault) readContents(data []byte) error {
-	if len(v.file.Sealed) == 0 {
-		v.items = nil
-		return nil
-	}
-	plain, err := unseal(data, v.file.Nonce, v.file.Sealed, nil)
+	c, err := v.contentsOf(v.file, data)
 	if err != nil {
-		return fmt.Errorf("secrets: open the vault %s: %w", v.path, err)
+		return err
 	}
-	var c contents
-	if err := json.Unmarshal(plain, &c); err != nil {
-		wipe(plain)
-		return fmt.Errorf("secrets: read what is in the vault %s: %w", v.path, err)
-	}
-	wipe(plain)
 	v.items = c.Entries
 	v.saves = c.Saves
 	return nil
 }
 
-// Saves is how many times this vault has been written, as the file just
-// opened says.
+// contentsOf unseals one file's items with the data key, without
+// putting them on the vault.
 //
-// Nothing in the window reads it yet. It is here because the count is
-// worth having in the file, and reading it back is how anything that
-// wanted to compare two files would start. See the note on
-// contents.Saves for why nothing compares them now.
+// Its own step because refresh has to read a file and decide whether to
+// adopt it, and deciding after it has already been adopted is too late.
+func (v *Vault) contentsOf(f *file, data []byte) (contents, error) {
+	if len(f.Sealed) == 0 {
+		return contents{}, nil
+	}
+	plain, err := unseal(data, f.Nonce, f.Sealed, nil)
+	if err != nil {
+		return contents{}, fmt.Errorf("secrets: open the vault %s: %w", v.path, err)
+	}
+	var c contents
+	if err := json.Unmarshal(plain, &c); err != nil {
+		wipe(plain)
+		return contents{}, fmt.Errorf("secrets: read what is in the vault %s: %w", v.path, err)
+	}
+	wipe(plain)
+	return c, nil
+}
+
+// refresh takes in whatever another window has written, so this
+// window's change goes on top of it rather than over it.
+//
+// Both windows read the file once when they opened it and each save
+// writes the whole of it back, so without this the one that saved
+// second wrote the other's secrets away and said nothing at all. The
+// file holds the only copy of what is in it.
+//
+// Only a file that says it has been written more times than this vault
+// has. Everything else is left alone, because what is in memory is then
+// the better answer: a read that failed, a file this key does not open,
+// a count no higher than ours.
+//
+// This narrows the gap rather than closing it. Two windows that both
+// read and then both write inside the same moment still lose one of the
+// two, and catching that needs a lock on the file or a rename that
+// refuses to replace what it did not read. What it does fix is the case
+// anybody actually meets: two windows open, minutes apart.
+func (v *Vault) refresh() {
+	f, err := readFile(v.path)
+	if err != nil {
+		return
+	}
+	c, err := v.contentsOf(f, v.data)
+	if err != nil || c.Saves <= v.saves {
+		return
+	}
+	v.file = f
+	v.items = c.Entries
+	v.saves = c.Saves
+}
+
+// Saves is how many times this vault has been written, as the file this
+// one last read says.
+//
+// refresh is what the count is for: see the note on contents.Saves.
+// This reports it so a test can watch a save land.
 func (v *Vault) Saves() uint64 {
 	v.mu.Lock()
 	defer v.mu.Unlock()
@@ -376,6 +434,10 @@ func (v *Vault) Items() ([]Item, error) {
 	if v.data == nil {
 		return nil, ErrLocked
 	}
+	// The list is what the user picks from, so it is worth a look at
+	// the file first: a secret another window added is one this one
+	// would otherwise not offer until it wrote something itself.
+	v.refresh()
 	out := make([]Item, 0, len(v.items))
 	for _, e := range v.items {
 		out = append(out, e.Item)
@@ -422,6 +484,11 @@ func (v *Vault) PassphraseFor(keyFile string) (string, error) {
 	if keyFile == "" {
 		return "", ErrNoSuchItem
 	}
+	// A look at the file first, because the key this asks about may have
+	// been made in another window a moment ago: without it that window's
+	// passphrase is not here, and this one asks the user for one they
+	// were never shown.
+	v.refresh()
 	for _, e := range v.items {
 		if e.Kind == Passphrase && e.File == keyFile {
 			return e.Value, nil
@@ -439,6 +506,8 @@ func (v *Vault) Put(it Item, value string) (Item, error) {
 	if v.data == nil {
 		return Item{}, ErrLocked
 	}
+	// On top of what is on the disk now, not over it.
+	v.refresh()
 	if strings.TrimSpace(it.Name) == "" {
 		return Item{}, errors.New("secrets: an item needs a name")
 	}
@@ -492,6 +561,8 @@ func (v *Vault) PutDetails(it Item) (Item, error) {
 	if v.data == nil {
 		return Item{}, ErrLocked
 	}
+	// On top of what is on the disk now, not over it.
+	v.refresh()
 	if strings.TrimSpace(it.Name) == "" {
 		return Item{}, errors.New("secrets: an item needs a name")
 	}
@@ -543,6 +614,8 @@ func (v *Vault) Remove(id string) error {
 	if v.data == nil {
 		return ErrLocked
 	}
+	// On top of what is on the disk now, not over it.
+	v.refresh()
 	at := slices.IndexFunc(v.items, func(e entry) bool { return e.ID == id })
 	if at < 0 {
 		return ErrNoSuchItem
@@ -566,6 +639,8 @@ func (v *Vault) AddKey(signer ssh.Signer, keyFile string) error {
 	if v.data == nil {
 		return ErrLocked
 	}
+	// On top of what is on the disk now, not over it.
+	v.refresh()
 	if err := usable(signer.PublicKey()); err != nil {
 		return err
 	}
@@ -594,6 +669,8 @@ func (v *Vault) RemoveKey(fingerprint string) error {
 	if v.data == nil {
 		return ErrLocked
 	}
+	// On top of what is on the disk now, not over it.
+	v.refresh()
 	at := slices.IndexFunc(v.file.Slots, func(s slot) bool { return s.Fingerprint == fingerprint })
 	if at < 0 {
 		return fmt.Errorf("secrets: %s does not open this vault", fingerprint)

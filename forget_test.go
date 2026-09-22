@@ -370,7 +370,7 @@ func TestForgettingAMachineStillOnItsWayGivesUp(t *testing.T) {
 	// what became of the dial.
 	waitFor(t, a, "the pane to say the dial was given up on", func() bool {
 		return a.machines.beingMade() == 0 && a.panes[pane] != nil &&
-			a.panes[pane].Label == "given up on"
+			a.panes[pane].Label == stateCancelled
 	})
 }
 

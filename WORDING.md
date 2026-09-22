@@ -89,6 +89,30 @@ Renaming one breaks whatever pointed at it. Titles are free to edit.
 `<Title> failed`, with the ellipsis stripped: `Open Tunnel failed`. Every
 title has to read correctly in that frame.
 
+## Status text: a row on the sidebar
+
+A row says what a connection **is**, now. It is scanned in a narrow
+column beside a dozen others rather than read, so it is written to be
+taken in at a glance and not to be read as a sentence.
+
+1. **A state is a short phrase, lower case, no full stop:** `connecting`,
+   `taken over`, `connection lost`, `cancelled`. A sentence in a column
+   is the thing read last, if at all.
+2. **The row is already named, so the state does not name it again.** The
+   row carries the machine's or window's name beside the state. `the
+   window stopped sharing` says it twice; `stopped sharing` says it once.
+3. **The label is what the row is. The note is one fact about it** — who
+   it is for, where it came from, how fast it is going. Not a second
+   sentence.
+4. **The same thing gets the same words on every surface.** A connection
+   that dropped reads `connection lost` whether it carried a pane or a
+   window. Where a state is shown in two places it is one constant, the
+   way `transportLost` is.
+
+A row also carries what can be done with it, drawn as something to
+press: `Watch the traffic`, `Close the tunnel`. Those are actions, not
+states, and follow the button rules rather than these.
+
 ## Error headings
 
 One shape: `Could not <verb> <object>`. A partial success is `<What

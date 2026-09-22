@@ -252,6 +252,43 @@ func TestAFailedSaveTakesTheChangeBack(t *testing.T) {
 	}
 }
 
+// And it takes it back out of the sealed half as well, which is what a
+// later unlock reads.
+//
+// Taking v.items back was not enough on its own: Lock drops them and
+// Unlock builds them again out of the sealed blob, so a change that
+// never reached the disk came back as though it had.
+func TestAFailedSaveDoesNotSurviveALockAndUnlock(t *testing.T) {
+	v, key, _ := aVault(t)
+	if _, err := v.Put(Item{Name: "keep me"}, "one"); err != nil {
+		t.Fatalf("put: %v", err)
+	}
+	items, err := v.Items()
+	if err != nil {
+		t.Fatalf("items: %v", err)
+	}
+
+	was := rename
+	rename = func(from, to string) error { return errors.New("the disk said no") }
+	t.Cleanup(func() { rename = was })
+	if err := v.Remove(items[0].ID); err == nil {
+		t.Fatal("a removal that failed was reported as having worked")
+	}
+	rename = was
+
+	v.Lock()
+	if err := v.Unlock([]ssh.Signer{key}); err != nil {
+		t.Fatalf("unlock: %v", err)
+	}
+	got, err := v.Items()
+	if err != nil {
+		t.Fatalf("items: %v", err)
+	}
+	if len(got) != 1 || got[0].Name != "keep me" {
+		t.Errorf("the vault holds %v, want the item the removal failed to take", got)
+	}
+}
+
 // Taking an item out takes it out of the file too.
 func TestRemovingAnItemRemovesIt(t *testing.T) {
 	v, key, path := aVault(t)

@@ -645,14 +645,25 @@ func (v *Vault) save() error {
 		v.saves--
 		return err
 	}
-	v.file.Version = fileVersion
-	v.file.Nonce, v.file.Sealed = nonce, box
-	if err := writeFile(v.path, v.file); err != nil {
+	// Into a copy, so a write that fails leaves the vault holding the
+	// file it last wrote rather than the one it tried to.
+	//
+	// The callers take v.items back themselves, and that was not enough:
+	// what Lock and Unlock read is this sealed blob, not v.items. A
+	// removal that failed at the rename left the blob without the item,
+	// so the next unlock in the same window read it back missing, and
+	// the save after that wrote it out that way. The user was told the
+	// removal failed and lost the item anyway.
+	wrote := *v.file
+	wrote.Version = fileVersion
+	wrote.Nonce, wrote.Sealed = nonce, box
+	if err := writeFile(v.path, &wrote); err != nil {
 		// Nothing reached the disk, so the count this vault would write
 		// next has not been spent.
 		v.saves--
 		return err
 	}
+	*v.file = wrote
 	return nil
 }
 

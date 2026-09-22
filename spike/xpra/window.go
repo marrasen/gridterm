@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/Xpra-org/go-xpra/ui"
 
@@ -343,11 +344,14 @@ func typedAs(r rune, source input.Source) []input.Event {
 	}
 }
 
-// shiftedOnAUSKeyboard reports whether a character is typed with shift
-// on the layout most people have. Only the scripted typist needs this:
-// the real gridterm is told which modifiers were held.
+// shiftedOnAUSKeyboard reports whether a character is typed with shift.
+//
+// Only the scripted typist needs this, and it is a guess: the real
+// gridterm is told which modifiers were actually held. Capitals are
+// unicode's, not ASCII's, or the guess loses every accented capital --
+// which is how "Öland" first arrived as "öland".
 func shiftedOnAUSKeyboard(r rune) bool {
-	if r >= 'A' && r <= 'Z' {
+	if unicode.IsUpper(r) {
 		return true
 	}
 	return strings.ContainsRune(`~!@#$%^&*()_+{}|:"<>?`, r)

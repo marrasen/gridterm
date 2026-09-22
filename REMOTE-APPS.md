@@ -49,10 +49,14 @@ server waits on -- is not gridterm's to write.
 go-xpra's SSH either: that one shells out to the system `ssh`, and
 gridterm already holds a connection it can run `xpra _proxy` over.
 
-Two things it does not do yet, both now written on a fork
-(`marrasen/go-xpra`): telling the server when the desktop changes size,
-and letting a backend declare its own keyboard layout. Neither is
-gridterm-specific and neither has been offered upstream.
+Three things it does not do yet, all now written on a fork
+(`marrasen/go-xpra`, branch `gridterm`): telling the server when the
+desktop changes size, letting a backend declare its own keyboard layout,
+and naming the characters outside ASCII so they are not silently
+dropped. None is gridterm-specific -- the last one is why Windows and
+macOS users cannot type an accented character -- and none has been
+offered upstream. The plan is to keep working on the fork, and split the
+changes into pull requests once the shape has stopped moving.
 
 **The catch: xpra 6.5 or newer has to be installed on the far machine.**
 That is the main argument against, and running the spike against a real
@@ -327,6 +331,41 @@ into `mousepad` over Xpra 6.5.3 arrives character for character.
 same session, and typing into it with XTEST. It works because X hands it
 real keycodes for free. What was missing is a way for a backend with no
 keyboard underneath to supply its own, and that is now written.
+
+### Accented characters, and what a layout decides
+
+Going further turned up a second gap, and this one does affect go-xpra's
+own users. `ui.KeysymName` named printable ASCII and returned nothing
+else, and the client drops a key it cannot name -- as the Win32
+backend's own comment said. So **every accented character was silently
+lost on Windows and macOS**. A Swedish keyboard is unusable like that.
+
+Naming them is half of it. The other half is that a client sending
+keycodes but no full native keymap has its keys *translated* onto the
+server's keymap rather than replacing it, which is every client without
+an X keyboard underneath -- the HTML5 and Windows ones included. A
+keysym the server's layout does not contain cannot be typed however
+carefully it is named, and the server builds that layout from a name the
+client sends, defaulting to `us`.
+
+Both are fixed on the fork: X11's Latin-1 names generated from
+`keysymdef.h` with Xpra's `U%04X` spelling past them, and a `Layout`
+method on the keymap provider. With `-layout se`,
+
+```
+Räksmörgås på Öland. Ägg, Ål och Öl!
+```
+
+arrives character for character.
+
+Two limits worth writing down. Characters outside the server's layout
+cannot be typed by any means on this path, which is a constraint shared
+with every other keymap-less client rather than something to fix here.
+And **Xpra 6.5.3 as packaged for Ubuntu noble cannot act on the layout
+at all**: its `xkb` binding fails to load with `undefined symbol:
+XDefaultRootWindow`, so the server warns "XKB bindings not available"
+and never calls `do_set_keymap`. That is a packaging bug, and the way
+round it for testing is `setxkbmap` on the session's own display.
 
 ## Is a remote window a pane, or a floating thing?
 

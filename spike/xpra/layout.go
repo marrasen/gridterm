@@ -62,10 +62,18 @@ func buildLayout() ([]ui.KeyMapping, map[string]int) {
 	for _, sym := range keysyms {
 		syms[sym.Name] = sym.Value
 	}
-	// Everything printable, which is what arrives as text.
-	for r := rune(0x20); r <= 0x7e; r++ {
+	// Everything printable, which is what arrives as text. Latin-1 is
+	// included because X11 names all of it and because most of Europe
+	// needs it: a Swedish keyboard is unusable without å, ä and ö.
+	//
+	// It stops there. Past Latin-1 the keysyms are X11's Unicode range,
+	// which is far larger than the 247 keycodes a keyboard has, so a
+	// client that wanted them would have to hand out keycodes as
+	// characters turned up and tell the server the layout had changed.
+	// That is not written; text.go drops what it cannot place.
+	for r := rune(0x20); r <= 0xff; r++ {
 		if name := ui.KeysymName(r); name != "" {
-			syms[name] = int(r)
+			syms[name] = ui.KeysymValue(r)
 		}
 	}
 	// And the modifiers, which the server presses on our behalf.
@@ -95,7 +103,19 @@ func buildLayout() ([]ui.KeyMapping, map[string]int) {
 	return mappings, index
 }
 
-// Keymap and ModifierMeanings make the display a ui.KeymapProvider.
+// Keymap, ModifierMeanings and Layout make the display a
+// ui.KeymapProvider.
 func (d *display) Keymap() []ui.KeyMapping { return layout }
 
 func (d *display) ModifierMeanings() map[string]string { return modifierMeanings() }
+
+// Layout names the XKB layout the server should load.
+//
+// This is not cosmetic. A client without a full native keymap has its
+// keys translated onto the server's own, so a keysym that layout does
+// not contain cannot be typed: ask for "us" and every accented
+// character is silently lost, however carefully it was named.
+//
+// gridterm would take this from the platform. The spike takes it from a
+// flag, defaulting to the layout the machine it was written on uses.
+func (d *display) Layout() (string, string, string) { return d.layoutName, "", "" }

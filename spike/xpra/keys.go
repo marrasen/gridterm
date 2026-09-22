@@ -1,6 +1,8 @@
 package main
 
 import (
+	"log"
+
 	"github.com/Xpra-org/go-xpra/ui"
 
 	"github.com/marrasen/gridterm/input"
@@ -237,11 +239,10 @@ func (k *keyboard) handleKey(e input.Event, window ui.WindowID) []ui.Key {
 
 // text sends a code point the platform called ordinary typing.
 //
-// The modifiers are deliberately not passed on. A keysym name reached
-// this way is already the finished symbol -- "exclam", not "1" with
-// shift held -- so repeating the shift would ask the server to shift
-// something that is shifted, and Ctrl or AltGr here belong to the
-// layout that produced the character rather than to the character.
+// The keysym name is the finished symbol -- "A", "exclam", "adiaeresis"
+// -- and the modifiers say only what the user was holding. Both go out,
+// because the server wants the name to find the key and the modifiers
+// to know what state to type it in.
 func (k *keyboard) text(e input.Event, window ui.WindowID) []ui.Key {
 	if k.named[e.Source] {
 		// Already sent under its own name.
@@ -255,39 +256,20 @@ func (k *keyboard) text(e input.Event, window ui.WindowID) []ui.Key {
 	}
 	name := ui.KeysymName(e.Rune)
 	if name == "" {
-		// Outside printable ASCII. The text is still worth sending, and
-		// the server falls back on it when it cannot match a name.
-		return k.textFallback(e, window)
-	}
-	sym := keysym{Name: name, Value: int(e.Rune)}
-	down := k.press(window, sym, string(e.Rune), e.Mods, true)
-	up := k.press(window, sym, string(e.Rune), e.Mods, false)
-	down.Keycode, up.Keycode = keycodeFor(sym.Name), keycodeFor(sym.Name)
-	return []ui.Key{down, up}
-}
-
-// textFallback sends a character X11 has no ASCII name for.
-//
-// Unicode keysyms are the code point plus 0x01000000, which is the
-// convention every X client uses for anything outside Latin-1.
-//
-// These do not arrive anywhere today: go-xpra drops any key whose Name
-// is empty rather than let the server guess from the keycode
-// (client/input.go, handleKey). So every accented and non-Latin
-// character is silently lost. Naming them needs the same keymap upload
-// the modifiers need -- it is the same gap seen from another side.
-func (k *keyboard) textFallback(e input.Event, window ui.WindowID) []ui.Key {
-	if e.Rune <= 0 {
+		// A control character, or not a character at all.
 		return nil
 	}
-	sym := keysym{Value: int(e.Rune) | 0x01000000}
-	if e.Rune < 0x100 {
-		// Latin-1 is its own keysym range, unshifted.
-		sym.Value = int(e.Rune)
+	if keycodeFor(name) == 0 {
+		// Nothing in the declared layout produces it, so the server has
+		// no key to press. Past Latin-1 that is most of Unicode; see
+		// layout.go.
+		log.Printf("dropping %q (%s): it is not in the layout", e.Rune, name)
+		return nil
 	}
+	sym := keysym{Name: name, Value: ui.KeysymValue(e.Rune)}
 	return []ui.Key{
-		k.press(window, sym, string(e.Rune), 0, true),
-		k.press(window, sym, string(e.Rune), 0, false),
+		k.press(window, sym, string(e.Rune), e.Mods, true),
+		k.press(window, sym, string(e.Rune), e.Mods, false),
 	}
 }
 

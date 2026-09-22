@@ -347,72 +347,58 @@ func TestShortcutTextIsDropped(t *testing.T) {
 	}
 }
 
-// TestNonAsciiTextFallsBackToAUnicodeKeysym covers what ui.KeysymName
-// cannot name.
-func TestNonAsciiTextFallsBackToAUnicodeKeysym(t *testing.T) {
-	k := newKeyboard()
+// TestLatin1TextIsSent covers the characters most of Europe types.
+//
+// They used to be dropped: ui.KeysymName named printable ASCII and
+// nothing else, and go-xpra refuses to send a key it cannot name. The
+// fork names Latin-1 in full, and the layout gives each one a key.
+func TestLatin1TextIsSent(t *testing.T) {
 	for _, c := range []struct {
 		r    rune
-		want int
+		name string
 	}{
-		{'ä', 0x00e4},     // Latin-1 is its own keysym range, unshifted
-		{'€', 0x010020ac}, // everything else is the code point plus 0x01000000
-		{'日', 0x010065e5},
+		{'ä', "adiaeresis"}, {'ö', "odiaeresis"}, {'å', "aring"},
+		{'é', "eacute"}, {'ß', "ssharp"}, {'£', "sterling"},
 	} {
+		k := newKeyboard()
 		got := k.handle(input.Event{
-			Kind: input.Text, Rune: c.r, Source: 0, NormalText: true,
+			Kind: input.Text, Rune: c.r, Source: 1, NormalText: true,
 		}, 1)
 		if len(got) != 2 {
-			t.Fatalf("typing %q gave %d events, want two", c.r, len(got))
+			t.Errorf("typing %q gave %d events, want a press and a release", c.r, len(got))
+			continue
 		}
-		if got[0].Keysym != c.want {
-			t.Errorf("%q has keysym %#x, want %#x", c.r, got[0].Keysym, c.want)
+		if got[0].Name != c.name {
+			t.Errorf("%q is named %q, want %q", c.r, got[0].Name, c.name)
 		}
-		if got[0].Name != "" {
-			t.Errorf("%q was named %q; X11 has no ASCII name for it", c.r, got[0].Name)
+		// In this range the keysym is the code point.
+		if got[0].Keysym != int(c.r) {
+			t.Errorf("%q has keysym %#x, want %#x", c.r, got[0].Keysym, c.r)
 		}
-		if got[0].Text != string(c.r) {
-			t.Errorf("%q has text %q", c.r, got[0].Text)
-		}
-	}
-}
-
-// TestKeysymNameCoversOnlyAscii records where go-xpra's own helper
-// stops, which is why this file exists at all.
-func TestKeysymNameCoversOnlyAscii(t *testing.T) {
-	if got := ui.KeysymName('a'); got != "a" {
-		t.Errorf("KeysymName('a') = %q", got)
-	}
-	if got := ui.KeysymName('{'); got != "braceleft" {
-		t.Errorf("KeysymName('{') = %q, want braceleft", got)
-	}
-	for _, r := range []rune{'ä', '€', 0xff52} {
-		if got := ui.KeysymName(r); got != "" {
-			t.Errorf("KeysymName(%q) = %q, want the empty string", r, got)
+		if got[0].Keycode == 0 {
+			t.Errorf("%q went out with no keycode, so the server has no key to press", c.r)
 		}
 	}
 }
 
-// TestNamelessKeysAreDroppedByTheClient pins a gap rather than a
-// behaviour.
+// TestBeyondLatin1IsDropped records the limit, and that it is a quiet
+// one rather than a wrong character.
 //
-// go-xpra refuses to send a key whose Name is empty, rather than let the
-// server guess from the keycode (client/input.go, handleKey). Everything
-// outside printable ASCII reaches that path, so accented and non-Latin
-// characters are silently lost today. The test is here so that whoever
-// closes the gap finds out this was known.
-func TestNamelessKeysAreDroppedByTheClient(t *testing.T) {
-	k := newKeyboard()
-	got := k.handle(input.Event{
-		Kind: input.Text, Rune: 'ä', Source: 1, NormalText: true,
-	}, 1)
-	if len(got) != 2 {
-		t.Fatalf("got %d events, want a press and a release", len(got))
-	}
-	if got[0].Name != "" {
-		t.Fatalf("name is %q; this test is about the nameless case", got[0].Name)
-	}
-	if ui.KeysymName('ä') != "" {
-		t.Error("ui.KeysymName can name it after all, so the gap may have closed")
+// X11's Unicode keysyms are far more numerous than the 247 keycodes a
+// keyboard has, so a layout declared once at connection time cannot hold
+// them. Doing better means handing out keycodes as characters turn up
+// and telling the server the layout changed, which is not written.
+func TestBeyondLatin1IsDropped(t *testing.T) {
+	for _, r := range []rune{'€', '日', 'Ω', '😀'} {
+		k := newKeyboard()
+		if got := k.handle(input.Event{
+			Kind: input.Text, Rune: r, Source: 1, NormalText: true,
+		}, 1); len(got) != 0 {
+			t.Errorf("typing %q gave %+v, want nothing: it is not in the layout", r, got)
+		}
+		// It is nameable, though -- only unplaceable.
+		if ui.KeysymName(r) == "" {
+			t.Errorf("%q has no keysym name at all", r)
+		}
 	}
 }

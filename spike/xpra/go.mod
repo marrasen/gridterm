@@ -22,6 +22,6 @@ require (
 	golang.org/x/image v0.45.0 // indirect
 )
 
-replace github.com/Xpra-org/go-xpra => github.com/marrasen/go-xpra v0.2.3-0.20260922062853-a877331b6fb4
+replace github.com/Xpra-org/go-xpra => github.com/marrasen/go-xpra v0.2.3-0.20260922072102-f9e3f1be66b9
 
 replace github.com/marrasen/gridterm => ../..

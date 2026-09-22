@@ -149,6 +149,24 @@ than the base key, modifier keys synthesised as real presses, and a
 keycode -- and each alone looks like a broken protocol. See the note at
 the top of `keys.go`.
 
+`-layout` matters more than it looks. A client that sends keycodes but
+no full native keymap has its keys *translated* onto the server's own
+keymap rather than replacing it, so **only the keysyms in that layout
+can be typed at all**. Ask for `us` on a Swedish keyboard and every
+accented character is silently lost, however carefully it was named.
+With `-layout se`:
+
+    Räksmörgås på Öland. Ägg, Ål och Öl!
+
+arrives character for character.
+
+Two caveats. Xpra 6.5.3 on Ubuntu noble cannot act on the layout at all
+-- its `xkb` binding fails to load with `undefined symbol:
+XDefaultRootWindow`, so the server logs "XKB bindings not available" and
+never calls `do_set_keymap`. Running `setxkbmap se` on the session's own
+display is the way round it. And a character outside the server's layout
+cannot be typed by any means; the spike logs each one it drops.
+
 The keycodes come from `layout.go`, a keyboard this client makes up and
 declares to the server. Every keysym gets a key of its own, unshifted,
 because gridterm never learns which physical key produced a character --
@@ -163,6 +181,7 @@ branch of the go-xpra fork; released go-xpra sends no keymap at all.
 - `-click` aim the scripted click, as `x,y` in desktop pixels. The
   middle of the first window by default.
 - `-type` type this once the first window has focus.
+- `-layout` the XKB layout to ask the server for. `us` by default.
 - `-drive` send a scripted click, keystroke and resize once the first
   frame arrives, so the outbound half of the protocol is exercised too.
   On by default.

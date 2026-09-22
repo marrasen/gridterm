@@ -23,6 +23,9 @@ type display struct {
 	// text is what the scripted input types, and empty for none.
 	text string
 
+	// layoutName is the XKB layout the server is asked to load.
+	layoutName string
+
 	// click aims the scripted click, for a real application whose menus
 	// are not in the middle of its window. Nil clicks the middle.
 	click *image.Point

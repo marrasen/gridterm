@@ -44,6 +44,7 @@ func main() {
 
 	serve := flag.String("serve", "", "run the fake server on this address instead of connecting")
 	out := flag.String("out", "frames", "directory the PNGs are written to")
+	layoutName := flag.String("layout", "us", "ask the server to load this XKB layout; its keysyms are the only ones that can be typed")
 	typeText := flag.String("type", "Hello, World! 42", "type this into the first window once it is focused")
 	clickAt := flag.String("click", "", "click here instead of the middle of the first window, as x,y in desktop pixels")
 	drive := flag.Bool("drive", true, "send a scripted click, keystroke and resize once the first frame arrives")
@@ -68,7 +69,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
-	if err := run(flag.Arg(0), *out, point, *typeText, *drive, *quit, *verbose); err != nil {
+	if err := run(flag.Arg(0), *out, point, *typeText, *layoutName, *drive, *quit, *verbose); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -77,7 +78,7 @@ func main() {
 // before the spike stops waiting.
 const closeGrace = 3 * time.Second
 
-func run(target, out string, click *image.Point, typeText string, drive bool, quit time.Duration, verbose bool) error {
+func run(target, out string, click *image.Point, typeText, layoutName string, drive bool, quit time.Duration, verbose bool) error {
 	address, err := tcpAddress(target)
 	if err != nil {
 		return err
@@ -95,6 +96,7 @@ func run(target, out string, click *image.Point, typeText string, drive bool, qu
 	display := newDisplay(out, drive)
 	display.click = click
 	display.text = typeText
+	display.layoutName = layoutName
 	defer display.Close()
 
 	// hungUp records that the spike ended the session itself, so that

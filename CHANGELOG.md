@@ -11,6 +11,15 @@ change how something behaves.
 
 ### Changed
 
+**The sidebar's notes go quiet.** A note is the second thing on a row
+and the first thing to crowd it: it takes its room from the name, which
+is what the row is for. A note is now shown while it is changing -- for
+as long as the status line holds a line -- and then comes off the row,
+leaving the name the width back. The pointer on the row brings it back,
+and so does the selection while the sidebar has the focus. A copy says
+`3 of 7` and then `4 of 7`, so its note is up the whole time it runs,
+and a connection that has settled goes back to being a name.
+
 **A connection's account opens in a pane, and the row of a connection
 that dropped opens it.** `Connection Log` showed the account in a dialog
 that had to be dismissed; it is a pane now, the way the window log is,

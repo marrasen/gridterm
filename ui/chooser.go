@@ -3,7 +3,6 @@ package ui
 import (
 	"image/color"
 	"slices"
-	"strings"
 
 	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/input"
@@ -32,6 +31,17 @@ type ChooserStyle struct {
 
 	// NoteFG is the word at the end of a line, saying more about it.
 	NoteFG color.RGBA
+
+	// ButtonFG and ButtonBG are a button along the bottom, and ActiveFG
+	// and ActiveBG the one Enter would press. The same pair a form and
+	// a notice draw with, because they are the same button.
+	ButtonFG, ButtonBG color.RGBA
+	ActiveFG, ActiveBG color.RGBA
+
+	// ButtonShadowBG darkens the cells below and to the right of each
+	// button. A zero alpha leaves it out, and the chooser is a row
+	// shorter for it.
+	ButtonShadowBG color.RGBA
 
 	// BorderFG is the rule around the outside, and ShadowBG darkens the
 	// cells it falls on below and to the right.
@@ -308,29 +318,56 @@ func (c *Chooser) aboveLines() int {
 }
 
 // belowLines is how many rows the action bar takes under the list: a
-// blank row and the buttons.
+// blank row, the buttons, and the row their shadow falls on.
 func (c *Chooser) belowLines() int {
 	if len(c.Actions) == 0 {
 		return 0
 	}
-	return 2
+	return 2 + c.shadowRows()
 }
 
-// actionBar is the buttons as one line, each in brackets so the one
-// highlighted is still a shape when colour is not enough.
-func (c *Chooser) actionBar() string {
-	var out []string
-	for _, a := range c.Actions {
-		out = append(out, "[ "+a.Label+" ]")
+// shadowRows is the row a shadow under the buttons needs, and none when
+// the theme casts none.
+func (c *Chooser) shadowRows() int {
+	if c.Style.ButtonShadowBG.A == 0 {
+		return 0
 	}
-	return strings.Join(out, " ")
+	return 1
+}
+
+// actionTitles is what the buttons say, which is all the layout needs
+// to know about them.
+func (c *Chooser) actionTitles() []string {
+	out := make([]string, 0, len(c.Actions))
+	for _, a := range c.Actions {
+		out = append(out, a.Label)
+	}
+	return out
+}
+
+// actionPad is the blank column each side of the button row, which is
+// the rule and the padding the rest of the box is drawn inside.
+const actionPad = chooserFrame + chooserPad
+
+// actionCols is the column each button starts at, or -1 for one there
+// was no room for. Laid out from the right, so the last is nearest the
+// corner the eye lands on.
+func (c *Chooser) actionCols() []int {
+	return ButtonColsIn(c.actionTitles(), c.box().Cols, actionPad)
+}
+
+// actionRow is the row inside the box the buttons are drawn on.
+func (c *Chooser) actionRow(rows int) int {
+	return rows - chooserFrame - 1 - c.shadowRows()
 }
 
 // width is how wide the chooser would like to be.
 func (c *Chooser) width() int {
 	want := grid.StringWidth(c.title)
 	if len(c.Actions) > 0 {
-		want = max(want, grid.StringWidth(c.actionBar()))
+		// The whole row of them. The padding added below is what leaves
+		// the blank column each side that ButtonColsIn lays out within.
+		want = max(want, buttonsWidth(c.actionTitles()))
 	}
 	for _, row := range c.list.Rows() {
 		w := grid.StringWidth(row.Text)
@@ -396,7 +433,7 @@ func (c *Chooser) paint(v grid.View) {
 	}
 	if len(c.Actions) > 0 {
 		_, rows := in.Size()
-		c.paintActions(in, left, rows-chooserFrame-1, room)
+		c.paintActions(in, c.actionRow(rows))
 	}
 
 	c.list.Style = ListStyle{
@@ -424,22 +461,26 @@ func (c *Chooser) paintFilter(in grid.View, x, y, room int) {
 	in.SetString(x+2, y, grid.Trim(c.query, rest), c.Style.FG, c.Style.BG, 0)
 }
 
-// paintActions draws the buttons along the bottom, the one the arrows
-// have landed on picked out.
-func (c *Chooser) paintActions(in grid.View, x, y, room int) {
-	at := x
-	for i, a := range c.Actions {
-		label := "[ " + a.Label + " ]"
-		fg, bg, attr := c.Style.FG, c.Style.BG, grid.Attr(0)
+// paintActions draws the buttons along the bottom, right aligned, the
+// one the arrows have landed on picked out.
+//
+// The same buttons a form and a notice draw, through the same helpers:
+// a row of names in brackets was a different thing to learn in a dialog
+// that answers to the same keys.
+func (c *Chooser) paintActions(in grid.View, y int) {
+	titles := c.actionTitles()
+	for i, at := range c.actionCols() {
+		if at < 0 {
+			// No room for this one. Drawing it would land it on top of
+			// the buttons that did fit.
+			continue
+		}
+		fg, bg := c.Style.ButtonFG, c.Style.ButtonBG
 		if i == c.action() {
-			fg, bg, attr = c.Style.SelectedFG, c.Style.SelectedBG, grid.AttrBold
+			fg, bg = c.Style.ActiveFG, c.Style.ActiveBG
 		}
-		left := max(room-(at-x), 0)
-		if left <= 0 {
-			return
-		}
-		in.SetString(at, y, grid.Trim(label, left), fg, bg, attr)
-		at += grid.StringWidth(label) + 1
+		DrawButtonShadow(in, at, y, ButtonWidth(titles[i]), c.Style.ButtonShadowBG, c.Style.BG)
+		DrawButton(in, at, y, titles[i], fg, bg)
 	}
 }
 
@@ -550,6 +591,18 @@ func (c *Chooser) HandleMouse(ev input.MouseEvent) (bool, error) {
 	if box.Empty() || !box.Contains(ev.Col, ev.Row) {
 		c.dismiss()
 		return true, nil
+	}
+	// A button under the pointer, before the list: the buttons sit
+	// below it, and one drawn is one that can be pressed.
+	if len(c.Actions) > 0 {
+		x, y := box.Local(ev.Col, ev.Row)
+		if y == c.actionRow(box.Rows) {
+			if at, on := ButtonAtCol(c.actionTitles(), box.Cols, actionPad, x); on {
+				c.act = at
+				return true, c.runAction()
+			}
+			return true, nil
+		}
 	}
 	lines := c.lines()
 	if lines.Empty() || !lines.Contains(ev.Col, ev.Row) {

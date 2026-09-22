@@ -428,6 +428,19 @@ func (f *Form) HandleKey(ev input.Event) (bool, error) {
 	case input.KeyDown:
 		f.move(1)
 		return true, nil
+	case input.KeyLeft, input.KeyRight:
+		// Along the button row, the way a notice and a chooser move
+		// along theirs. Only from a button: in a field the arrows move
+		// the caret, and the field took them above.
+		if _, isButton := f.Focused(); !isButton {
+			return true, nil
+		}
+		if ev.Key == input.KeyLeft {
+			f.moveButton(-1)
+		} else {
+			f.moveButton(1)
+		}
+		return true, nil
 	case input.KeyEnter, input.KeySpace:
 		// Only a fresh press. A dialog opens from the pump and input is
 		// polled in the same frame, so the repeats of the key that
@@ -809,6 +822,35 @@ func (f *Form) move(by int) {
 		return
 	}
 	f.focus(at)
+}
+
+// moveButton walks the focus along the button row, wrapping at each end
+// and stepping over any button there was no room to draw.
+//
+// It stays on the row. Tab and the up and down arrows are how the focus
+// leaves it, and a left arrow that walked back into the fields would
+// put the caret in one the user was not asking to type into.
+func (f *Form) moveButton(by int) {
+	n := len(f.buttons)
+	if n == 0 {
+		return
+	}
+	step := 1
+	if by < 0 {
+		step = -1
+	}
+	// Go's % keeps the sign of the dividend, so a step back from the
+	// first needs the extra turn to land on the last.
+	at := ((f.at-len(f.rows)+by)%n + n) % n
+	// One turn at most: with every other button hidden the focus stays
+	// where it was.
+	for i := 0; i < n && f.hidden(len(f.rows)+at); i++ {
+		at = ((at+step)%n + n) % n
+	}
+	if f.hidden(len(f.rows) + at) {
+		return
+	}
+	f.focus(len(f.rows) + at)
 }
 
 // hidden reports whether a place in the focus order is a button there

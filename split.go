@@ -283,9 +283,16 @@ func (a *app) chooserStyle() ui.ChooserStyle {
 		SelectedBG: a.activeBG(),
 		// Dimmer than the line: where something is, is a note beside it
 		// rather than part of its name.
-		NoteFG:   a.panelDimFG(),
-		BorderFG: a.panelBorderFG(),
-		ShadowBG: a.panelShadow(),
-		Rule:     a.panelRule(),
+		NoteFG: a.panelDimFG(),
+		// The buttons along the bottom, in the colours a form and a
+		// notice draw theirs: the same button, wherever it is.
+		ButtonFG:       a.buttonFG(),
+		ButtonBG:       a.buttonBG(),
+		ActiveFG:       a.activeFG(),
+		ActiveBG:       a.activeBG(),
+		ButtonShadowBG: a.buttonShadowBG(),
+		BorderFG:       a.panelBorderFG(),
+		ShadowBG:       a.panelShadow(),
+		Rule:           a.panelRule(),
 	}
 }

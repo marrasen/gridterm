@@ -10,6 +10,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
+	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/secrets"
 	"github.com/marrasen/gridterm/ui"
 )
@@ -330,15 +331,20 @@ func (a *app) addOfKind(kind secrets.Kind) error {
 
 // askForSecret is the form a new one is typed into.
 func (a *app) askForSecret(v *secrets.Vault, kind secrets.Kind) error {
-	title, label, mask := addSecretTitle, "Secret", '*'
+	title, label, mask := addSecretTitle, fldSecret, '*'
 	if kind == secrets.Note {
-		title, label, mask = addNoteTitle, "Note", rune(0)
+		title, label, mask = addNoteTitle, fldNote, rune(0)
 	}
 	f := a.newForm(title)
 	f.Lines = []string{keptSealed}
 	name := f.AddField(fldName, a.newField("", 0))
 	user := f.AddField(fldFor, a.newField("Optional", 0))
 	user.Hint = "Who or what the secret is for"
+	a.offerServers(user)
+	// The machine in front of the user, which is the one a password
+	// typed now is nearly always for. It is a suggestion in a field
+	// they can clear, not a decision.
+	user.SetText(a.currentHost())
 	value := f.AddField(label, a.newField("", mask))
 	// Said once the form has gone, so the message is not pushed over a
 	// dialog that is about to be taken away underneath it.
@@ -351,6 +357,7 @@ func (a *app) askForSecret(v *secrets.Vault, kind secrets.Kind) error {
 		kept = it.Name
 		return nil
 	}})
+	a.addGenerateButton(f, value, kind)
 	a.addShowButton(f, value, mask)
 	f.AddButton(ui.Button{Title: btnCancel})
 	a.showForm(f, func() {
@@ -378,6 +385,44 @@ const (
 	showTitle = "Show"
 	hideTitle = "Hide"
 )
+
+// offerServers puts the machines the window knows of on a For field, so
+// the one a secret belongs to is a keystroke away rather than typed out.
+//
+// An empty one is on the end of the list already, which is how a secret
+// that belongs to no machine is cycled back to.
+func (a *app) offerServers(user *ui.Field) {
+	var hosts []string
+	for _, host := range a.everyHost() {
+		if host != conns.Local {
+			hosts = append(hosts, host)
+		}
+	}
+	user.Options = hosts
+}
+
+// addGenerateButton puts a button on a form that fills the field with a
+// password nobody has to think of.
+//
+// Only for a password. A note is a recovery code or a licence that came
+// from somewhere else, and there is nothing to generate.
+//
+// What it writes stays masked. Reading it back is what the Show button
+// beside this one is for, so the two are one job each.
+func (a *app) addGenerateButton(f *ui.Form, value *ui.Field, kind secrets.Kind) {
+	if kind == secrets.Note {
+		return
+	}
+	f.AddButton(ui.Button{Title: btnGenerate, Keep: true, Do: func() error {
+		made, err := secrets.NewPassword(secrets.PasswordLength)
+		if err != nil {
+			return err
+		}
+		value.SetText(made)
+		a.markDirty()
+		return nil
+	}})
+}
 
 // addShowButton puts a button on a form that turns the stars off, for
 // checking what was typed before keeping it.
@@ -549,14 +594,16 @@ func (a *app) chooseToChange(v *secrets.Vault) error {
 // screen behind a row of stars, and nothing here needs it. Leaving it
 // empty means changing a name never reads the secret at all.
 func (a *app) askToChange(v *secrets.Vault, it secrets.Item) error {
-	label, mask := "New secret", '*'
+	label, mask := fldNewSecret, '*'
 	if it.Kind == secrets.Note {
-		label, mask = "New note", rune(0)
+		label, mask = fldNewNote, rune(0)
 	}
 	f := a.newForm(changeSecretTitle + " — " + it.Name)
 	name := f.AddField(fldName, a.newField(it.Name, 0))
 	name.SetText(it.Name)
 	user := f.AddField(fldFor, a.newField("Optional", 0))
+	user.Hint = "Who or what the secret is for"
+	a.offerServers(user)
 	user.SetText(it.User)
 	value := f.AddField(label, a.newField("Optional", 0))
 	value.Mask = mask
@@ -578,6 +625,7 @@ func (a *app) askToChange(v *secrets.Vault, it secrets.Item) error {
 		changedTo = changed.Name
 		return nil
 	}})
+	a.addGenerateButton(f, value, it.Kind)
 	a.addShowButton(f, value, mask)
 	f.AddButton(ui.Button{Title: btnCancel})
 	a.showForm(f, func() {

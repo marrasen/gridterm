@@ -19,6 +19,7 @@ import (
 	"github.com/marrasen/gridterm/secrets"
 	"github.com/marrasen/gridterm/settings"
 	"github.com/marrasen/gridterm/ui"
+	"github.com/marrasen/gridterm/vfs"
 )
 
 // anEd25519KeyFile writes a private key with no passphrase and returns
@@ -777,5 +778,142 @@ func TestClosingTheWindowLeavesWhatWasCopiedSince(t *testing.T) {
 
 	if got := a.copiedText(); got != "a line they copied themselves" {
 		t.Errorf("the clipboard holds %q, and what they copied was theirs", got)
+	}
+}
+
+// Adding a secret suggests the machine the user is looking at, because
+// that is what a password being typed now is nearly always for.
+func TestAddingASecretSuggestsTheMachineInFront(t *testing.T) {
+	a, keyFile := aWindowWithSecrets(t)
+	withPanel(t, a)
+	startTheVault(t, a, keyFile)
+
+	name, path := aReadableFile(t, "one")
+	if err := a.openReader(vfs.NewLocal(), "kettle", path, name, false, 0); err != nil {
+		t.Fatalf("open a reader: %v", err)
+	}
+	a.focus(onlyReader(t, a))
+
+	if err := a.addSecret(); err != nil {
+		t.Fatalf("add a secret: %v", err)
+	}
+	f := awaitModal(t, a, "the add dialog", byTitle[*ui.Form](addSecretTitle))
+	if got := f.Field(fldFor).Text(); got != "kettle" {
+		t.Errorf("the %s field holds %q, want the machine in front", fldFor, got)
+	}
+	// And it is a suggestion: the machines the window knows of are on
+	// the list, so another one is a keystroke away.
+	if !slices.Contains(f.Field(fldFor).Options, "kettle") {
+		t.Errorf("the %s field offers %v, want the machines", fldFor, f.Field(fldFor).Options)
+	}
+}
+
+// With nothing but a local pane in front there is no machine to suggest,
+// and the field is left empty rather than filled in with this one.
+func TestAddingASecretOnTheLocalMachineSuggestsNothing(t *testing.T) {
+	a, keyFile := aWindowWithSecrets(t)
+	startTheVault(t, a, keyFile)
+
+	if err := a.addSecret(); err != nil {
+		t.Fatalf("add a secret: %v", err)
+	}
+	f := awaitModal(t, a, "the add dialog", byTitle[*ui.Form](addSecretTitle))
+	if got := f.Field(fldFor).Text(); got != "" {
+		t.Errorf("the %s field holds %q, want nothing", fldFor, got)
+	}
+}
+
+// Generate fills the secret in, leaves the dialog up so it can be
+// looked at, and Save keeps what it made.
+func TestGenerateFillsTheSecretAndLeavesTheDialogUp(t *testing.T) {
+	a, keyFile := aWindowWithSecrets(t)
+	v := startTheVault(t, a, keyFile)
+
+	if err := a.addSecret(); err != nil {
+		t.Fatalf("add a secret: %v", err)
+	}
+	f := awaitModal(t, a, "the add dialog", byTitle[*ui.Form](addSecretTitle))
+	typeIntoField(t, a, f, fldName, "margit")
+	pressButton(t, a, f, btnGenerate)
+
+	made := f.Field(fldSecret).Text()
+	if len(made) != secrets.PasswordLength {
+		t.Fatalf("it generated %d characters, want %d", len(made), secrets.PasswordLength)
+	}
+	if a.root.Modal() != ui.Widget(f) {
+		t.Fatalf("the dialog went away; the modal on top is %T", a.root.Modal())
+	}
+	// Still masked. Reading it back is what Show is for, and pressing
+	// Generate is not asking to have a password put on screen.
+	if f.Field(fldSecret).Mask == 0 {
+		t.Error("Generate took the stars off the field")
+	}
+
+	pressButton(t, a, f, btnSave)
+	items, err := v.Items()
+	if err != nil {
+		t.Fatalf("items: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("%d items in the vault, want the one that was saved", len(items))
+	}
+	got, err := v.Secret(items[0].ID)
+	if err != nil {
+		t.Fatalf("secret: %v", err)
+	}
+	if got != made {
+		t.Errorf("the vault holds %q, want the generated %q", got, made)
+	}
+}
+
+// A note has nothing to generate, so the button is not there.
+func TestANoteHasNoGenerateButton(t *testing.T) {
+	a, keyFile := aWindowWithSecrets(t)
+	startTheVault(t, a, keyFile)
+
+	if err := a.addNote(); err != nil {
+		t.Fatalf("add a note: %v", err)
+	}
+	f := awaitModal(t, a, "the add dialog", byTitle[*ui.Form](addNoteTitle))
+	for _, b := range f.Buttons() {
+		if b.Title == btnGenerate {
+			t.Fatalf("the %s dialog offers %s", addNoteTitle, btnGenerate)
+		}
+	}
+}
+
+// Changing a secret generates a new one too, which is how a password is
+// rolled over on a machine.
+func TestChangingASecretGeneratesANewOne(t *testing.T) {
+	a, keyFile := aWindowWithSecrets(t)
+	v := startTheVault(t, a, keyFile)
+
+	it, err := v.Put(secrets.Item{Name: "margit", User: "kettle"}, "hunter2")
+	if err != nil {
+		t.Fatalf("put: %v", err)
+	}
+	if err := a.askToChange(v, it); err != nil {
+		t.Fatalf("change it: %v", err)
+	}
+	f := awaitModal(t, a, "the change dialog",
+		byTitlePrefix[*ui.Form](changeSecretTitle))
+	pressButton(t, a, f, btnGenerate)
+	made := f.Field(fldNewSecret).Text()
+	pressButton(t, a, f, btnSave)
+
+	got, err := v.Secret(it.ID)
+	if err != nil {
+		t.Fatalf("secret: %v", err)
+	}
+	if got != made || got == "hunter2" {
+		t.Errorf("the vault holds %q, want the generated %q", got, made)
+	}
+	// The machine it belongs to is untouched by a new password.
+	items, err := v.Items()
+	if err != nil {
+		t.Fatalf("items: %v", err)
+	}
+	if items[0].User != "kettle" {
+		t.Errorf("it is now for %q, want the machine it was saved for", items[0].User)
 	}
 }

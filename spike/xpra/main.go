@@ -44,6 +44,7 @@ func main() {
 
 	serve := flag.String("serve", "", "run the fake server on this address instead of connecting")
 	out := flag.String("out", "frames", "directory the PNGs are written to")
+	closeWindows := flag.Bool("close", false, "ask the server to close its windows before hanging up, ending the session")
 	layoutName := flag.String("layout", "us", "ask the server to load this XKB layout; its keysyms are the only ones that can be typed")
 	typeText := flag.String("type", "Hello, World! 42", "type this into the first window once it is focused")
 	clickAt := flag.String("click", "", "click here instead of the middle of the first window, as x,y in desktop pixels")
@@ -69,7 +70,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
-	if err := run(flag.Arg(0), *out, point, *typeText, *layoutName, *drive, *quit, *verbose); err != nil {
+	if err := run(flag.Arg(0), *out, point, *typeText, *layoutName, *drive, *closeWindows, *quit, *verbose); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -78,7 +79,7 @@ func main() {
 // before the spike stops waiting.
 const closeGrace = 3 * time.Second
 
-func run(target, out string, click *image.Point, typeText, layoutName string, drive bool, quit time.Duration, verbose bool) error {
+func run(target, out string, click *image.Point, typeText, layoutName string, drive, closeWindows bool, quit time.Duration, verbose bool) error {
 	address, err := tcpAddress(target)
 	if err != nil {
 		return err
@@ -105,6 +106,17 @@ func run(target, out string, click *image.Point, typeText, layoutName string, dr
 
 	if quit > 0 {
 		time.AfterFunc(quit, func() {
+			if !closeWindows {
+				// Just go away. The session outlives us, which is the
+				// whole point of xpra and the thing "screen for X"
+				// means -- so detaching, not closing, is what a client
+				// normally does.
+				log.Printf("the %s clock ran out, detaching", quit)
+				hungUp.Store(true)
+				display.Close()
+				return
+			}
+
 			log.Printf("the %s clock ran out, closing every window", quit)
 			display.closeEverything()
 

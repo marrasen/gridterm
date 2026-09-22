@@ -186,6 +186,9 @@ branch of the go-xpra fork; released go-xpra sends no keymap at all.
   frame arrives, so the outbound half of the protocol is exercised too.
   On by default.
 - `-quit` disconnect after this long. 15 seconds by default, `0` waits.
+- `-close` ask the server to close its windows before hanging up, which
+  ends the session. Off by default: a client going away is meant to
+  leave the session running, which is the whole point of xpra.
 - `-v` log every packet go-xpra did not handle.
 
 ## The desktop size

@@ -367,6 +367,46 @@ XDefaultRootWindow`, so the server warns "XKB bindings not available"
 and never calls `do_set_keymap`. That is a packaging bug, and the way
 round it for testing is `setxkbmap` on the session's own display.
 
+## Detaching and coming back
+
+This is the property the top of this document opens with -- the session
+outliving the client -- so it is worth having tested rather than assumed.
+It works.
+
+A client typed into `mousepad`, detached, and reattached: the text was
+still there, the window came back with its title and a full repaint, and
+it came back **at the position the first client had moved it to** rather
+than where the application first put it. Typing after reattaching works
+too, accented characters included.
+
+A client killed outright with SIGKILL, rather than detaching politely,
+costs nothing either: the server notices, logs the disconnect and the
+session carries on.
+
+That did turn up one thing the spike had wrong. `-quit` used to close
+every window before hanging up, which ends the session -- the opposite
+of the point. Detaching is now what it does, and closing is `-close`.
+
+### Two windows cannot share one session
+
+Attach a second client and the first is dropped, with the server saying
+"new connection from the same uuid". `--sharing=yes` does not change it.
+
+That is deliberate, and not a go-xpra bug: `drop_older_client` in
+`xpra/server/subsystem/sharing.py` drops any existing connection whose
+uuid matches, which is how a server tells a client reconnecting from a
+dead link apart from a second client. Both clients had the same uuid
+because go-xpra derives it from `/etc/machine-id` -- and xpra's own
+client derives it from the user, which is just as stable, so it behaves
+the same way.
+
+For gridterm it is a design constraint rather than a defect. **Two
+gridterm windows on one machine cannot both attach to one xpra session**
+unless they vary the uuid between them, and if they do they are two
+clients rather than one reconnecting, which is a different thing to
+explain to the user. Worth settling before a second window is ever
+opened on a session.
+
 ## Is a remote window a pane, or a floating thing?
 
 Both, split by what the window is for. The protocol settles it.

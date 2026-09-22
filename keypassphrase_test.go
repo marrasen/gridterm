@@ -271,3 +271,55 @@ func TestAddingAnOrdinaryKeyAsksNothing(t *testing.T) {
 		t.Errorf("a %T dialog went up for an ordinary key", up)
 	}
 }
+
+// On a second machine the vault is unlocked with the key that is here,
+// not with the path the machine it was made on used.
+//
+// The slots are in the order they were added, so the first names a key
+// file on the other machine. Asking for its passphrase failed on
+// opening the file, which shut this machine out of a vault its own key
+// opens -- the one thing a second slot exists for.
+func TestTheVaultIsUnlockedWithTheKeyThatIsHere(t *testing.T) {
+	a, v := aKeyWindowWithSecrets(t)
+	here := anEd25519KeyFile(t, filepath.Join(t.TempDir(), "id_ed25519_here"))
+	signer, err := ssh.ParsePrivateKey(readFileOrDie(t, here))
+	if err != nil {
+		t.Fatalf("read the key: %v", err)
+	}
+	if err := v.AddKey(signer, here); err != nil {
+		t.Fatalf("add the key: %v", err)
+	}
+	// The key the vault was made on is not on this machine any more.
+	away := v.Keys()[0].KeyFile
+	if err := os.Remove(away); err != nil {
+		t.Fatalf("take the first key away: %v", err)
+	}
+
+	if got, err := keyFileForVault(v); err != nil || got != here {
+		t.Fatalf("keyFileForVault = %q, %v; want the key on this machine %q", got, err, here)
+	}
+
+	// And the whole path works: locked, it opens with no dialog because
+	// the key here has no passphrase.
+	v.Lock()
+	a.keys.Lock()
+	done := make(chan error, 1)
+	a.unlockVault(v, func(err error) { done <- err })
+	waitFor(t, a, "the vault to open on the key that is here", func() bool { return len(done) > 0 })
+	if err := <-done; err != nil {
+		t.Fatalf("unlock the vault: %v", err)
+	}
+	if v.Locked() {
+		t.Error("the vault is still locked")
+	}
+}
+
+// readFileOrDie reads a file a test has just written.
+func readFileOrDie(t *testing.T, path string) []byte {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	return raw
+}

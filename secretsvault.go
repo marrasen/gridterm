@@ -120,11 +120,31 @@ func (a *app) passphraseInHand(keyFile string) string {
 // The vault remembers where each of its keys was, so the window asks
 // for the passphrase of the right one rather than asking which key the
 // user meant.
+//
+// A key that is on this machine first, and only then one that is not.
+// The slots are in the order they were added, and the first was added
+// wherever the vault was made: on the second machine that is a path
+// belonging to the first, and asking for its passphrase failed on
+// opening the file. More than one slot is exactly the case that is for,
+// so taking the first was wrong in the one place it mattered.
 func keyFileForVault(v *secrets.Vault) (string, error) {
+	first := ""
 	for _, s := range v.Keys() {
-		if s.KeyFile != "" {
+		if s.KeyFile == "" {
+			continue
+		}
+		if onThisMachine(s) {
 			return s.KeyFile, nil
 		}
+		if first == "" {
+			first = s.KeyFile
+		}
+	}
+	if first != "" {
+		// None of them is here. The path is still worth trying: it is
+		// what the vault knows, and the error from reading it names the
+		// file the user has to bring over.
+		return first, nil
 	}
 	return "", errors.New(
 		"the vault does not say which key file opens it, so the key has to be unlocked by opening a server first")

@@ -102,7 +102,11 @@ heading; each is titled with the command that opens it. The question
 before a key is revoked offered `Remove` and `OK`, where `OK` reads as
 agreeing to the removal, and carried a `Copy` button over a body with
 nothing in it to copy; it is `Remove` and `Cancel`. Two warnings that
-ran to two sentences are one each.
+ran to two sentences are one each. And the line over the add and change
+forms said `Sealed in the vault`, which was the only place on screen
+that called the secrets anything but the secrets; it now says `Only
+your key opens the secrets.`, which is the one thing the title cannot
+say.
 
 **A list's buttons look and answer like every other dialog's.** The row
 along the bottom of a chooser drew its actions as names in square

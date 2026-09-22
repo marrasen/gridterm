@@ -395,7 +395,7 @@ func (a *app) askForSecret(v *secrets.Vault, kind secrets.Kind) error {
 		title, label, mask = addNoteTitle, fldNote, rune(0)
 	}
 	f := a.newForm(title)
-	f.Lines = []string{keptSealed}
+	f.Lines = []string{onlyYourKey}
 	name := f.AddField(fldName, a.newField("", 0))
 	user := f.AddField(fldFor, a.newField("Optional", 0))
 	user.Hint = "Who or what the secret is for"
@@ -431,12 +431,17 @@ func (a *app) askForSecret(v *secrets.Vault, kind secrets.Kind) error {
 	return nil
 }
 
-// keptSealed is the line at the top of a form that takes a secret.
+// onlyYourKey is the line at the top of a form that takes a secret.
 //
-// Somebody typing a password into a window is owed a word about where
-// it goes, and a note is as worth sealing as a password. It says the
-// two things that matter: it is sealed, and one key opens it.
-const keptSealed = "Sealed in the vault, which only your key opens."
+// Somebody typing a password into a window is owed the one thing the
+// title cannot say: who can read it back. That is nobody else, and
+// saying so is what this line is for.
+//
+// It says "the secrets" because that is what every title, command and
+// line along the bottom calls them. The word vault belongs to the
+// package and to the file on disk, and a second name for one thing is
+// a second thing to learn.
+const onlyYourKey = "Only your key opens the secrets."
 
 // offerServers puts the machines the window knows of on a For field, so
 // the one a secret belongs to is a keystroke away rather than typed out.

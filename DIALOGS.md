@@ -273,8 +273,8 @@ that says so.
   - `File` — pre-filled; placeholder `Private key path`
   - `Comment` — placeholder `Optional`
   - `Generate passphrase` — a tick box, drawn only where there is a
-    vault to keep one in; hint `Generated passphrase is stored in
-    secrets and used automatically`
+    vault to keep one in; hint `Saved in the secrets and used
+    automatically`
   - `Passphrase` — placeholder `Optional`, masked
   - `Confirm passphrase` — masked, no placeholder
 - **Buttons:** `Create` · `Cancel`
@@ -884,7 +884,7 @@ a `Copy` button over a body with nothing in it to copy (G1).
 
 ## D66
 - **Title:** `Add Secret`
-- **Body:** `Sealed in the vault, which only your key opens.`
+- **Body:** `Only your key opens the secrets.`
 - **Fields:**
   - `Name`
   - `For` — placeholder `Optional`, pre-filled with the machine in
@@ -895,9 +895,14 @@ a `Copy` button over a body with nothing in it to copy (G1).
 - **Buttons:** `Save` · `Generate` · `Cancel`
 - **Opened from:** `Add Secret`
 
-**Instructions:** The body earns its place by rule 10: somebody typing a
-password into a window is owed a word about where it goes, and it says
-the two things that matter.
+**Instructions:** The body says the one thing the title cannot: who can
+read it back. That is nobody else, and somebody typing a password into
+a window is owed it.
+
+It says `the secrets`, because that is what every title, command and
+line along the bottom calls them. The word `vault` belongs to the
+package and to the file on disk; on screen it was a second name for one
+thing, on the one dialog where a user meets it first.
 
 `Generate` fills the field with twenty characters and leaves the dialog
 open. What it writes stays masked; the tick is what reads it back, so
@@ -917,7 +922,7 @@ Saving says `<name> saved` on the bottom row (G2).
 
 ## D67
 - **Title:** `Add Note`
-- **Body:** `Sealed in the vault, which only your key opens.`
+- **Body:** `Only your key opens the secrets.`
 - **Fields:** `Name`, `For`, `Note` — not masked
 - **Buttons:** `Save` · `Cancel`
 - **Opened from:** `Add Note`

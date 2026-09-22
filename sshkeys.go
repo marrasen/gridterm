@@ -69,7 +69,7 @@ func (a *app) openMakeKey() error {
 	var generate *ui.Field
 	if a.haveSecrets() {
 		generate = f.AddTick(fldGeneratePass, false)
-		generate.Hint = "Generated passphrase is stored in secrets and used automatically"
+		generate.Hint = "Saved in the secrets and used automatically"
 	}
 	pass := a.newField("Optional", 0)
 	pass.Mask = '*'

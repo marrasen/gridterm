@@ -52,6 +52,10 @@ type wait struct {
 	// Contains ends the wait as soon as the screen holds this text.
 	Contains string `json:"contains,omitempty"`
 
+	// SinceKeys waits for Contains to arrive rather than matching what
+	// the pane already held. See Until.
+	SinceKeys bool `json:"since_keys,omitempty"`
+
 	// QuietMS ends it once the pane has said nothing for this long.
 	// Zero means the default.
 	QuietMS int `json:"quiet_ms,omitempty"`

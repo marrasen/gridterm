@@ -241,6 +241,22 @@ type Until struct {
 	// Contains ends the wait as soon as the screen holds this text.
 	Contains string
 
+	// SinceKeys waits for Contains to arrive rather than matching what
+	// the pane already held.
+	//
+	// The text an agent waits for is often a word it just typed, and a
+	// terminal echoes what is typed: "echo done" puts "done" on the
+	// screen before the command has run at all. A wait that matched
+	// that would end at once and prove nothing.
+	//
+	// Off by default, because sending keys and waiting are two calls
+	// and anything short has finished before the second one arrives:
+	// a wait that insisted on seeing the text land would miss it and
+	// sit there until the time ran out. A caller that does both in one
+	// go -- a list of steps -- asks for this, because for it there is
+	// no gap to miss.
+	SinceKeys bool
+
 	// QuietMS ends it once the pane has said nothing for this long.
 	// Zero asks the window for its own idea of long enough.
 	QuietMS int

@@ -6,6 +6,7 @@ import (
 	"crypto/rsa"
 	"encoding/pem"
 	"errors"
+	"image"
 	"os"
 	"path/filepath"
 	"slices"
@@ -915,5 +916,52 @@ func TestChangingASecretGeneratesANewOne(t *testing.T) {
 	}
 	if items[0].User != "kettle" {
 		t.Errorf("it is now for %q, want the machine it was saved for", items[0].User)
+	}
+}
+
+// Taking a secret back off the clipboard never puts a dialog up.
+//
+// It went through the paste path, which reports a clipboard holding a
+// picture: copy a secret, copy a screenshot, and half a minute later a
+// "Could not paste" dialog appeared that nobody asked for. The same on
+// the way out, over a window that is closing.
+func TestClearingTheClipboardNeverOpensADialog(t *testing.T) {
+	a, keyFile := aWindowWithSecrets(t)
+	v := startTheVault(t, a, keyFile)
+	it, err := v.Put(secrets.Item{Name: "margit"}, "hunter2")
+	if err != nil {
+		t.Fatalf("put: %v", err)
+	}
+	if err := a.copySecret(v, it); err != nil {
+		t.Fatalf("copy: %v", err)
+	}
+
+	// A picture has been copied since, which is what the paste path
+	// says something about.
+	a.hasClipText = func() bool { return false }
+	a.readClipImage = func() (image.Image, bool, error) {
+		return image.NewRGBA(image.Rect(0, 0, 1, 1)), true, nil
+	}
+
+	if a.stillOnTheClipboard("hunter2") {
+		t.Error("a clipboard holding a picture was taken for the secret")
+	}
+	a.takeAnySecretOffTheClipboard()
+	if up := a.root.Modal(); up != nil {
+		t.Errorf("a %T dialog went up on the way out", up)
+	}
+}
+
+// A clipboard that will not be read is left alone, and says nothing.
+func TestAClipboardThatWillNotBeReadIsLeftAlone(t *testing.T) {
+	a, keyFile := aWindowWithSecrets(t)
+	startTheVault(t, a, keyFile)
+	a.secretCopied = "hunter2"
+	a.hasClipText = func() bool { return true }
+	a.readClip = func() (string, error) { return "", errors.New("the clipboard said no") }
+
+	a.takeAnySecretOffTheClipboard()
+	if up := a.root.Modal(); up != nil {
+		t.Errorf("a %T dialog went up for a clipboard that would not be read", up)
 	}
 }

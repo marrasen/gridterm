@@ -278,6 +278,31 @@ func (a *app) typeSecret(v *secrets.Vault, it secrets.Item) error {
 	return nil
 }
 
+// stillOnTheClipboard reports whether the clipboard still holds a
+// secret this window put there.
+//
+// Not through pasteText, which is the paste path: that one puts a
+// dialog up when the clipboard holds a picture or will not be read, and
+// both of the callers here run on their own -- a timer half a minute
+// later, and the window closing. Neither is a paste, so neither has
+// anything to tell the user, and a "Could not paste" dialog nobody
+// asked for is the last thing a window on its way out should draw.
+//
+// Anything that is not the secret answers false, and the clipboard is
+// left as it is. That covers the picture, the read that failed and the
+// clipboard somebody has used since, which all want the same thing.
+func (a *app) stillOnTheClipboard(value string) bool {
+	if value == "" || !a.clipboardText() {
+		return false
+	}
+	read := a.readClip
+	if read == nil {
+		read = readClipboardText
+	}
+	got, err := read()
+	return err == nil && got == value
+}
+
 // forgetClipboardLater takes a secret back off the clipboard once its
 // time is up, and leaves alone a clipboard that holds something else by
 // then.
@@ -290,7 +315,7 @@ func (a *app) forgetClipboardLater(value string) {
 			if a.secretCopied == value {
 				a.secretCopied = ""
 			}
-			if a.pasteText() != value {
+			if !a.stillOnTheClipboard(value) {
 				// They have copied something since. It is theirs.
 				return
 			}
@@ -309,7 +334,7 @@ func (a *app) forgetClipboardLater(value string) {
 func (a *app) takeAnySecretOffTheClipboard() {
 	value := a.secretCopied
 	a.secretCopied = ""
-	if value == "" || a.pasteText() != value {
+	if !a.stillOnTheClipboard(value) {
 		return
 	}
 	if err := a.clip.clearNow(); err != nil {

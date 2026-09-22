@@ -174,6 +174,31 @@ only which character, and which modifiers were down. Both facts go out
 and the far application sees exactly that. It needs the `keymap-upload`
 branch of the go-xpra fork; released go-xpra sends no keymap at all.
 
+## The clipboard
+
+Both directions work against a real server. `-copy` announces text as
+this end's clipboard, and the far application can paste it; when the far
+application copies, the server calls `SetText` and the spike logs it.
+The round trip, in two runs:
+
+```shell
+go run . -copy 'pasted from gridterm' -chord ctrl+v ...
+go run . -type ' and typed here' -chord 'ctrl+a,ctrl+c' ...
+```
+
+The second prints `the far side copied "pasted from gridterm and typed
+here"`.
+
+It is two one-way announcements rather than a shared thing. Neither end
+can read the other's clipboard on demand -- whoever copied last said so
+-- which is worth knowing before a pane's selection is wired to it.
+
+Testing it needed `-chord`, and that turned up a bug worth keeping in
+mind for gridterm: a key that types has to wait for its text, but with
+Ctrl, Alt or Super held no ordinary text is coming, so a key that waited
+sent its modifier and then nothing. Every shortcut was silent. See
+`waitsForText` in `keys.go`.
+
 ## Flags
 
 - `-serve` run the fake server on this address instead of connecting.
@@ -182,6 +207,8 @@ branch of the go-xpra fork; released go-xpra sends no keymap at all.
   middle of the first window by default.
 - `-type` type this once the first window has focus.
 - `-layout` the XKB layout to ask the server for. `us` by default.
+- `-copy` announce this as the local clipboard once connected.
+- `-chord` press these after typing, as in `ctrl+a,ctrl+c`.
 - `-drive` send a scripted click, keystroke and resize once the first
   frame arrives, so the outbound half of the protocol is exercised too.
   On by default.

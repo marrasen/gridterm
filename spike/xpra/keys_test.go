@@ -402,3 +402,62 @@ func TestBeyondLatin1IsDropped(t *testing.T) {
 		}
 	}
 }
+
+// TestChordsAreSentUnderTheirOwnName is the case a typing key must not
+// wait for text, because none is coming.
+//
+// gridterm marks the code point a shortcut produces as not-normal text
+// and this drops it, so a key that waited would send its modifier and
+// then nothing. Ctrl+C is the obvious victim; so is every paste.
+func TestChordsAreSentUnderTheirOwnName(t *testing.T) {
+	for _, mods := range []input.Mods{input.ModCtrl, input.ModAlt, input.ModSuper,
+		input.ModCtrl | input.ModShift} {
+		k := newKeyboard()
+		got := k.handle(input.Event{
+			Kind: input.KeyPress, Key: input.KeyV, Mods: mods, Source: 1,
+		}, 1)
+
+		var pressed *ui.Key
+		for i := range got {
+			if got[i].Name == "v" {
+				pressed = &got[i]
+			}
+		}
+		if pressed == nil {
+			t.Errorf("%v+V sent %d events and none of them was the V: %+v", mods, len(got), got)
+			continue
+		}
+		if pressed.Keycode != keycodeFor("v") {
+			t.Errorf("%v+V went out with keycode %d, want %d", mods, pressed.Keycode, keycodeFor("v"))
+		}
+
+		release := k.handle(input.Event{
+			Kind: input.KeyRelease, Key: input.KeyV, Mods: mods, Source: 1,
+		}, 1)
+		var up bool
+		for _, r := range release {
+			if r.Name == "v" && !r.Pressed {
+				up = true
+			}
+		}
+		if !up {
+			t.Errorf("%v+V was never released: %+v", mods, release)
+		}
+	}
+}
+
+// TestPlainTypingStillWaits keeps the other half: with no Ctrl, Alt or
+// Super the text is coming and is the better name.
+func TestPlainTypingStillWaits(t *testing.T) {
+	for _, mods := range []input.Mods{0, input.ModShift} {
+		k := newKeyboard()
+		got := k.handle(input.Event{
+			Kind: input.KeyPress, Key: input.KeyV, Mods: mods, Source: 1,
+		}, 1)
+		for _, e := range got {
+			if e.Name == "v" || e.Name == "V" {
+				t.Errorf("%v+V was sent before its text arrived: %+v", mods, e)
+			}
+		}
+	}
+}

@@ -217,6 +217,10 @@ func (w *window) script() {
 	log.Printf("--- sending scripted input ---")
 	w.display.send(ui.Focus{Window: w.id})
 
+	// Announce the local clipboard, if there is one to announce. The
+	// far application can then paste it.
+	w.display.copyLocally(w.display.copy)
+
 	// A click in the middle of the window, or wherever -click aimed it.
 	// Against the fake server this opens a menu; against a real one it
 	// does whatever the program does there.
@@ -237,6 +241,7 @@ func (w *window) script() {
 	// and the space, and text for the digits and the punctuation, which
 	// gridterm does not name.
 	w.typeText(w.display.text)
+	w.sendChords(w.display.chords)
 
 	// A pane being split down the middle is this. Only the event goes
 	// out: the client calls Resized itself when it handles a Configure,

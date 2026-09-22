@@ -37,6 +37,8 @@ import (
 
 	"github.com/Xpra-org/go-xpra/client"
 	"github.com/Xpra-org/go-xpra/protocol"
+
+	"github.com/marrasen/gridterm/input"
 )
 
 func main() {
@@ -44,6 +46,8 @@ func main() {
 
 	serve := flag.String("serve", "", "run the fake server on this address instead of connecting")
 	out := flag.String("out", "frames", "directory the PNGs are written to")
+	chordSpec := flag.String("chord", "", "press these after typing, as in \"ctrl+a,ctrl+c\"")
+	copyText := flag.String("copy", "", "announce this as the local clipboard once connected")
 	closeWindows := flag.Bool("close", false, "ask the server to close its windows before hanging up, ending the session")
 	layoutName := flag.String("layout", "us", "ask the server to load this XKB layout; its keysyms are the only ones that can be typed")
 	typeText := flag.String("type", "Hello, World! 42", "type this into the first window once it is focused")
@@ -70,7 +74,12 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
-	if err := run(flag.Arg(0), *out, point, *typeText, *layoutName, *drive, *closeWindows, *quit, *verbose); err != nil {
+	chords, err := parseChords(*chordSpec)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
+	if err := run(flag.Arg(0), *out, point, *typeText, *layoutName, *copyText, chords, *drive, *closeWindows, *quit, *verbose); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -79,7 +88,7 @@ func main() {
 // before the spike stops waiting.
 const closeGrace = 3 * time.Second
 
-func run(target, out string, click *image.Point, typeText, layoutName string, drive, closeWindows bool, quit time.Duration, verbose bool) error {
+func run(target, out string, click *image.Point, typeText, layoutName, copyText string, chords []input.Event, drive, closeWindows bool, quit time.Duration, verbose bool) error {
 	address, err := tcpAddress(target)
 	if err != nil {
 		return err
@@ -98,6 +107,8 @@ func run(target, out string, click *image.Point, typeText, layoutName string, dr
 	display.click = click
 	display.text = typeText
 	display.layoutName = layoutName
+	display.copy = copyText
+	display.chords = chords
 	defer display.Close()
 
 	// hungUp records that the spike ended the session itself, so that

@@ -407,6 +407,30 @@ clients rather than one reconnecting, which is a different thing to
 explain to the user. Worth settling before a second window is ever
 opened on a session.
 
+## The clipboard, and a bug it uncovered
+
+Copy and paste work in both directions against a real server. The spike
+announces text as this end's clipboard and `mousepad` pastes it; the
+spike then presses Ctrl+A and Ctrl+C and the server hands the selection
+back. `go-xpra` needs one small interface for it, `ui.Clipboard`, with a
+`SetText` inbound and a `ui.ClipboardChange` event outbound.
+
+Two one-way announcements, not a shared thing: neither end can read the
+other's clipboard on demand, and whoever copied last said so. Worth
+knowing before a pane's selection is wired to it.
+
+**Testing it found a bug in the translator, and a bad one.** A key that
+types waits for the text event that names it properly -- but hold Ctrl,
+Alt or Super and no ordinary text is coming, because gridterm marks what
+a shortcut produces as not-normal text and the translator drops it. So a
+key that waited sent its modifier and then silence. **Every shortcut was
+dead**: no copy, no paste, no Ctrl+C to a remote shell, and nothing in
+any log to say so.
+
+It is fixed and tested, and it is the second time a partial answer here
+looked like working code. The first was the keyboard as a whole. Both
+were found by driving a real application rather than by reading.
+
 ## Is a remote window a pane, or a floating thing?
 
 Both, split by what the window is for. The protocol settles it.

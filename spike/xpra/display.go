@@ -6,6 +6,8 @@ import (
 	"sync"
 
 	"github.com/Xpra-org/go-xpra/ui"
+
+	"github.com/marrasen/gridterm/input"
 )
 
 // display is a desktop that draws nothing.
@@ -25,6 +27,12 @@ type display struct {
 
 	// layoutName is the XKB layout the server is asked to load.
 	layoutName string
+
+	// board is the shared text clipboard, and copy is what this side
+	// announces having copied once it is connected.
+	board  *clipboard
+	copy   string
+	chords []input.Event
 
 	// click aims the scripted click, for a real application whose menus
 	// are not in the middle of its window. Nil clicks the middle.
@@ -97,6 +105,7 @@ func paneFor(d Desk) Box {
 func newDisplay(dir string, drive bool) *display {
 	return &display{
 		desk:    startingDesk,
+		board:   &clipboard{},
 		dir:     dir,
 		drive:   drive,
 		events:  make(chan ui.Event, 64),
@@ -267,6 +276,9 @@ func (d *display) report() {
 		t.windows, t.popups, t.paints, t.pixels)
 	log.Printf("  %d moves, %d raises, %d destroys, %d titles, %d icons, %d cursors, %d bells",
 		t.moves, t.raises, t.destroys, t.titles, t.icons, t.cursors, t.bells)
+	if text, taken := d.board.Text(); taken > 0 {
+		log.Printf("  the far side copied %d time(s), last %q", taken, text)
+	}
 	for format, n := range t.formats {
 		log.Printf("  %d paints in %s", n, format)
 	}

@@ -202,9 +202,9 @@ func (k *keyboard) syncModifiers(want input.Mods, window ui.WindowID) []ui.Key {
 func (k *keyboard) handleKey(e input.Event, window ui.WindowID) []ui.Key {
 	switch e.Kind {
 	case input.KeyPress, input.KeyRepeat:
-		if textual(e.Key) {
-			// Wait for the text. It is the resolved symbol -- "A", not
-			// "a" with shift held -- which is what the server matches.
+		if waitsForText(e) {
+			// The text is the resolved symbol -- "A", not "a" with
+			// shift held -- which is what the server matches.
 			return nil
 		}
 		sym, ok := keysyms[e.Key]
@@ -219,7 +219,7 @@ func (k *keyboard) handleKey(e input.Event, window ui.WindowID) []ui.Key {
 		return []ui.Key{k.press(window, sym, "", e.Mods, true)}
 
 	case input.KeyRelease:
-		if textual(e.Key) {
+		if waitsForText(e) {
 			return nil
 		}
 		sym, ok := keysyms[e.Key]
@@ -290,6 +290,21 @@ func (k *keyboard) press(window ui.WindowID, sym keysym, text string, mods input
 		Text:      text,
 		Modifiers: modifierNames(mods),
 	}
+}
+
+// waitsForText reports whether a key event should hold its peace and
+// let the text event that follows name the key.
+//
+// Only when text is actually coming. Hold Ctrl, Alt or Super and the
+// platform produces no ordinary typing -- gridterm marks what it does
+// produce as not-normal text, and this drops it -- so a key waiting for
+// text that never arrives sends nothing at all. Ctrl+C would be a
+// Control_L press and silence.
+func waitsForText(e input.Event) bool {
+	if !textual(e.Key) {
+		return false
+	}
+	return e.Mods&(input.ModCtrl|input.ModAlt|input.ModSuper) == 0
 }
 
 // textual reports whether a key is one that types something, and so

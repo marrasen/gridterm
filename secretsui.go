@@ -130,7 +130,8 @@ func (a *app) offerAVault() error {
 // any added later: it is the only one the vault will have until another
 // is.
 func (a *app) startVaultOn(keyFile string) {
-	a.askBeforeTrusting(nil, keyFile, btnCreate, func() { a.makeVaultOn(keyFile) })
+	a.askBeforeTrusting(nil, keyFile, dlgSecretsOn+keyFile+"?", btnCreate,
+		func() { a.makeVaultOn(keyFile) })
 }
 
 // makeVaultOn writes the vault, once the key has been asked about.
@@ -587,19 +588,17 @@ func spareKeyNote(v *secrets.Vault, keyFile string) string {
 	return "passphrase in here"
 }
 
-// keyWarning is something worth saying before a key is trusted with the
-// secrets: the heading, which is the message, and the sentence under it
-// saying what it costs and what to do about it.
-type keyWarning struct {
-	title string
-	says  string
-}
-
-// The headings. Constants because the tests and the dialog sheet quote
-// them, and a wording that lived only where it is used would drift.
+// The consequences worth saying before a key is trusted with the
+// secrets. One sentence each, saying what it costs and not how any of
+// it works: see rule 10 and rule 4 in WORDING.md.
+//
+// Constants because the tests and the dialog sheet quote them, and a
+// wording that lived only where it is used would drift.
 const (
-	keyIsInTheAgent        = "This key is in the SSH agent"
-	passphraseInTheSecrets = "This key's passphrase is in the secrets"
+	agentCanOpenThem = "A server you forward the agent to can open" +
+		" any copy of the secrets it has."
+	anotherKeyIsNeeded = "Its passphrase is in the secrets, so another" +
+		" key is still needed to open them."
 )
 
 // warningsAboutKey is what is worth saying before this key is given a
@@ -607,24 +606,14 @@ const (
 //
 // v is the vault the key would open, and nil while there is none yet:
 // the passphrase warning cannot apply to a vault that does not exist.
-func (a *app) warningsAboutKey(v *secrets.Vault, keyFile string) []keyWarning {
-	var out []keyWarning
+func (a *app) warningsAboutKey(v *secrets.Vault, keyFile string) []string {
+	var out []string
 	if a.agentHoldsKey(keyFile) {
-		out = append(out, keyWarning{
-			title: keyIsInTheAgent,
-			says: "A machine you forward the agent to can have this key" +
-				" sign anything, and a signature over the vault's own" +
-				" challenge is what opens the secrets. Use a key the agent" +
-				" does not hold.",
-		})
+		out = append(out, agentCanOpenThem)
 	}
 	if v != nil {
 		if _, err := v.PassphraseFor(keyFile); err == nil {
-			out = append(out, keyWarning{
-				title: passphraseInTheSecrets,
-				says: "The key cannot open them on its own. Copy the" +
-					" passphrase somewhere else to use this key as a spare.",
-			})
+			out = append(out, anotherKeyIsNeeded)
 		}
 	}
 	return out
@@ -662,20 +651,23 @@ func (a *app) agentHoldsKey(keyFile string) bool {
 // the vault can be copied out and held elsewhere. Which of those is
 // worth it is the user's to weigh, and the dialog gives them what to
 // weigh it with.
-func (a *app) askBeforeTrusting(v *secrets.Vault, keyFile, accept string, then func()) {
+func (a *app) askBeforeTrusting(v *secrets.Vault, keyFile, title, accept string, then func()) {
 	warn := a.warningsAboutKey(v, keyFile)
 	if len(warn) == 0 {
 		then()
 		return
 	}
-	lines := []string{keyFile}
-	for _, w := range warn {
-		lines = append(lines, "")
-		lines = append(lines, wrapLines(w.says, errorLineWidth)...)
+	// The title names the action and the key, the way every other
+	// question about one does, so the body is the consequences and
+	// nothing else. Two of them are two sentences, one each.
+	var lines []string
+	for i, says := range warn {
+		if i > 0 {
+			lines = append(lines, "")
+		}
+		lines = append(lines, wrapLines(says, errorLineWidth)...)
 	}
-	// The first heading, because they are in the order they matter and
-	// the rest are read in the body under it.
-	f := a.newConfirm(warn[0].title, lines)
+	f := a.newConfirm(title, lines)
 	f.AddButton(ui.Button{Title: accept, Do: func() error {
 		// Not from here: this dialog closes as soon as this returns,
 		// and closing one takes anything stacked on top of it.
@@ -683,12 +675,16 @@ func (a *app) askBeforeTrusting(v *secrets.Vault, keyFile, accept string, then f
 		return nil
 	}})
 	f.AddButton(ui.Button{Title: btnCancel})
+	// Opens on the button that changes nothing, the way every question
+	// about exposing something does.
+	f.FocusButton(1)
 	a.showForm(f, nil)
 }
 
 // confirmAddKey asks about a key before giving it a slot of its own.
 func (a *app) confirmAddKey(v *secrets.Vault, keyFile string) {
-	a.askBeforeTrusting(v, keyFile, btnAdd, func() { a.addVaultKeyOn(v, keyFile) })
+	a.askBeforeTrusting(v, keyFile, dlgAddKey+keyFile+"?", btnAdd,
+		func() { a.addVaultKeyOn(v, keyFile) })
 }
 
 // whyNoKeyToAdd says why there is nothing to offer, which is a

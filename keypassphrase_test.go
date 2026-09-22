@@ -237,7 +237,7 @@ func TestAddingAKeyWhosePassphraseIsInTheVaultAsksFirst(t *testing.T) {
 
 	a.confirmAddKey(v, keyFile)
 	f := awaitModal(t, a, "the question about the key",
-		byTitle[*ui.Form](passphraseInTheSecrets))
+		byTitle[*ui.Form](dlgAddKey+keyFile+"?"))
 
 	// Asked, not refused: there is a button that goes ahead.
 	titles := []string{}
@@ -250,13 +250,11 @@ func TestAddingAKeyWhosePassphraseIsInTheVaultAsksFirst(t *testing.T) {
 	if !slices.Contains(titles, btnCancel) {
 		t.Errorf("the question offers %v, want a way out", titles)
 	}
-	// And it says what to do about it.
+	// One sentence saying what it costs, and nothing about how any of
+	// it works.
 	said := strings.Join(f.Lines, " ")
-	if !strings.Contains(said, keyFile) {
-		t.Errorf("the question says %q, want the key it is about", said)
-	}
-	if !strings.Contains(said, "Copy the passphrase") {
-		t.Errorf("the question says %q, want what to do about it", said)
+	if !strings.Contains(said, anotherKeyIsNeeded) {
+		t.Errorf("the question says %q, want what it costs", said)
 	}
 }
 
@@ -434,14 +432,15 @@ func TestMakingTheVaultOnAKeyInTheAgentAsksFirst(t *testing.T) {
 
 	a.startVaultOn(keyFile)
 	f := awaitModal(t, a, "the question about the key",
-		byTitle[*ui.Form](keyIsInTheAgent))
+		byTitle[*ui.Form](dlgSecretsOn+keyFile+"?"))
 
 	said := strings.Join(f.Lines, " ")
-	if !strings.Contains(said, keyFile) {
-		t.Errorf("the question says %q without naming the key", said)
+	if !strings.Contains(said, agentCanOpenThem) {
+		t.Errorf("the question says %q without what it costs", said)
 	}
-	if !strings.Contains(said, "forward the agent") {
-		t.Errorf("the question says %q without saying how the key gets out", said)
+	// The title names the key, so the body does not say it again.
+	if strings.Contains(said, keyFile) {
+		t.Errorf("the question says %q, and the title already names the key", said)
 	}
 	// Asked, not refused.
 	var titles []string
@@ -488,12 +487,16 @@ func TestBothWarningsAboutAKeyAreSaidTogether(t *testing.T) {
 
 	a.confirmAddKey(v, spare)
 	f := awaitModal(t, a, "the question about the key",
-		byTitle[*ui.Form](keyIsInTheAgent))
+		byTitle[*ui.Form](dlgAddKey+spare+"?"))
 	said := strings.Join(f.Lines, " ")
-	if !strings.Contains(said, "forward the agent") {
+	if !strings.Contains(said, agentCanOpenThem) {
 		t.Errorf("the question says %q without the agent", said)
 	}
-	if !strings.Contains(said, "Copy the passphrase") {
+	if !strings.Contains(said, anotherKeyIsNeeded) {
 		t.Errorf("the question says %q without the passphrase", said)
+	}
+	// It opens on the button that changes nothing.
+	if at, isButton := f.Focused(); !isButton || f.Buttons()[at].Title != btnCancel {
+		t.Errorf("the question opens on button %d (%v), want %s", at, isButton, btnCancel)
 	}
 }

@@ -141,8 +141,10 @@ const (
 // The halves a title built from a name is made of, so the wording is
 // still in one place when the name is not.
 const (
+	dlgAddKey            = "Add "
 	dlgAlreadyConnecting = "Already connecting to "
 	dlgDelete            = "Delete "
+	dlgSecretsOn         = "Create the secrets on "
 	dlgOpenToNetwork     = "Open "
 	dlgRemove            = "Remove "
 	dlgRename            = "Rename "

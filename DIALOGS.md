@@ -815,7 +815,7 @@ than one key to choose from this is D62 instead: which key opens the
 vault is the user's to decide, since it is the only one that will until
 another is added.
 
-`Create` goes through D73 when there is anything to say about the key.
+`Create` goes through D70 when there is anything to say about the key.
 
 ## D62
 - **Title:** `Choose a key`
@@ -943,29 +943,43 @@ Adding says `<key file> opens the secrets — <n> keys do now` on the
 bottom row.
 
 ## D70
-- **Title:** `This key's passphrase is in the secrets`
-- **Body:**
-  ```
-  <key file>
+- **Title:** `Add <key file>?` — or `Create the secrets on <key file>?`
+  when there is no vault yet
+- **Body:** one sentence per thing worth saying, and nothing else:
+  - the key's passphrase is in this vault: `Its passphrase is in the
+    secrets, so another key is still needed to open them.`
+  - the SSH agent is holding the key: `A server you forward the agent
+    to can open any copy of the secrets it has.`
+- **Buttons:** `Add` · `Cancel` — or `Create` · `Cancel`
+- **Focus:** `Cancel`
+- **Opened from:** a row of D62, under `Add Secrets Key` and when
+  starting a vault. A key with nothing against it gets no dialog.
 
-  The key cannot open them on its own. Copy the
-  passphrase somewhere else to use this key as a spare.
-  ```
-- **Buttons:** `Add` · `Cancel`
-- **Focus:** `Add`
-- **Opened from:** a row of D62 under `Add Secrets Key`, for a key whose
-  passphrase is in this vault.
+**Instructions:** One dialog for both, because a key can have both
+against it. The title names the action and the key the way D12, D17,
+D29 and D72 do, so the body is the consequences and nothing else: two
+of them are two sentences, one each, in that order.
 
-**Instructions:** A second key is added so that losing the first does
-not lose the vault, and this one cannot do that job: with the first key
-gone, opening the vault needs this key and unlocking this key needs the
-vault. Rule 10 — the user believes they have a spare and they have not.
+Rule 10 covers both. A second key is added so that losing the first
+does not lose the vault, and a key whose passphrase is in the vault
+cannot do that job. And a slot is opened by the key signing, so
+anywhere the agent can be reached is somewhere the secrets can be
+opened.
 
-Said, not refused. The passphrase can be copied out and kept elsewhere,
-and then it is a spare like any other, so the choice is theirs. `Add`
-keeps the focus because nothing here is destroyed.
+Neither is refused. Both are only a cost to somebody in a particular
+position — with the other key lost, or with a copy of the file — and
+which of those is worth it is the user's to weigh. `Cancel` keeps the
+focus, the way it does on every question about exposing something.
 
-This and D73 are one dialog with two headings: see D73.
+Rule 4 applies hardest here: the body says what it costs and never how
+a slot key is made. The first draft explained the challenge and the
+signature, which is gridterm's reasoning and not the user's choice.
+
+The agent is asked by fingerprint, off the `.pub` file beside the key,
+so nothing has to be unlocked to ask. A key with no `.pub`, or an agent
+that will not answer, gets no warning: one this window cannot stand
+behind is worse than none. It is a snapshot either way — the key may be
+added to the agent a minute later.
 
 ## D71
 - **Title:** `Only one key opens the secrets`
@@ -998,44 +1012,6 @@ lost.
 
 Removing says `<key file> removed — <n> keys still open the secrets` on
 the bottom row.
-
-## D73
-- **Title:** `This key is in the SSH agent`
-- **Body:**
-  ```
-  <key file>
-
-  A machine you forward the agent to can have this key
-  sign anything, and a signature over the vault's own
-  challenge is what opens the secrets. Use a key the
-  agent does not hold.
-  ```
-- **Buttons:** `Create` · `Cancel` — or `Add` · `Cancel` when the key is
-  being added to a vault that already exists
-- **Focus:** the first button
-- **Opened from:** D61 and D62 when starting a vault, and a row of D62
-  under `Add Secrets Key`, for a key the SSH agent is holding right now.
-
-**Instructions:** Rule 10. A slot is opened by a key signing a challenge
-the file keeps in the clear, ed25519 signs the same way every time, and
-an agent signs whatever blob it is handed without looking at it. So one
-forwarded session to a machine that has been taken over hands over the
-vault, to anybody who also has a copy of the file.
-
-Said, not refused, for the same reason as D70: it is only a way in for
-somebody who has the file as well, and whether that is worth it is the
-user's to weigh.
-
-Asked by fingerprint, off the `.pub` file beside the key, so nothing has
-to be unlocked to ask. A key with no `.pub`, or an agent that will not
-answer, gets no warning: one this window cannot stand behind is worse
-than none. It is a snapshot either way — the key may be added to the
-agent a minute later.
-
-D70 and this are one dialog. Where both apply the body carries both
-sentences, one under the other, and the heading is this one: a key that
-is no use as a spare is a disappointment, and a key that can be signed
-for elsewhere is a way in.
 
 ---
 

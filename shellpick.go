@@ -264,7 +264,7 @@ func (a *app) sayShellHasGone(id string) {
 	a.pump.post(func() {
 		n := a.newNotice("Shell not found",
 			name+" is no longer installed. The default shell was opened."+
-				" Choose another under File › New Terminal In.")
+				" Choose another under File › "+newTerminalInHeader+".")
 		n.Failure = true
 		// Nothing to copy: it is a sentence about a shell that has gone.
 		n.SetNoCopy()
@@ -295,6 +295,12 @@ const defaultShellCommand = "shell.default"
 // defaultShellTitle names that line on a menu whose heading already says
 // a terminal is what opens.
 const defaultShellTitle = "Default shell"
+
+// newTerminalInHeader is the File menu's heading over the shells.
+//
+// A constant because it is said twice: on the menu, and in the notice
+// that sends somebody there when the shell they picked has gone.
+const newTerminalInHeader = "New Terminal In"
 
 // openPaneOnDefault opens a pane on this machine's own default shell and
 // forgets the pick, so every pane after it opens on the default too.

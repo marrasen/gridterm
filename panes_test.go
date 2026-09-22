@@ -912,8 +912,6 @@ func byTitlePrefix[T ui.Widget](prefix string) func(T) bool {
 // modal that draws none.
 func titleOf(w ui.Widget) string {
 	switch m := w.(type) {
-	case *jobDialog:
-		return m.Title
 	case *ui.Form:
 		return m.Title
 	case *ui.Notice:

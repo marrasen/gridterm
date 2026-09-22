@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"image/color"
 	"io"
 	"io/fs"
 	"os"
@@ -18,6 +19,7 @@ import (
 	"github.com/marrasen/gridterm/input"
 	"github.com/marrasen/gridterm/internal/sshtest"
 	"github.com/marrasen/gridterm/jobs"
+	"github.com/marrasen/gridterm/meter"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/files"
 	"github.com/marrasen/gridterm/vfs"
@@ -147,7 +149,6 @@ func theJobRow(t *testing.T, a *testApp) *conns.Entry {
 }
 
 // dialogText is what the dialog says under its title, as one string.
-func dialogText(d *jobDialog) string { return strings.Join(d.Lines, "\n") }
 
 // A job's row opens a dialog saying what the copy is on now, how many
 // files it has done and how many bytes have gone.
@@ -168,35 +169,40 @@ func TestAJobsRowShowsHowFarItHasGot(t *testing.T) {
 	held.started(t)
 
 	openTheRow(t, a, theJobRow(t, a))
-	d := awaitModal[*jobDialog](t, a, "the job's dialog", nil)
+	d := theJobPane(t, a)
 	a.refreshJobs()
 
-	if !strings.Contains(d.Title, "one.txt") {
-		t.Errorf("the dialog is titled %q, want the job it is about", d.Title)
-	}
-	said := dialogText(d)
-	for _, want := range []string{"Copying one.txt", "0 of 1 file, 0 B of 8 B"} {
+	said := jobPaneText(d)
+	for _, want := range []string{"Copy", "one.txt", "0 of 1 file", "0 B of 8 B"} {
 		if !strings.Contains(said, want) {
-			t.Errorf("the dialog says\n%s\nwant a line with %q", said, want)
+			t.Errorf("the pane says\n%s\nwant %q somewhere in it", said, want)
 		}
 	}
 	// And it offers to stop the copy while it is running.
-	if !offersButton(d, btnCancel) {
-		t.Errorf("the dialog offers %v while the copy runs", buttonTitles(d))
+	if !offersChoice(d, btnCancel) {
+		t.Errorf("the pane offers %v while the copy runs", choiceTitles(d))
 	}
-	// The row opens the one dialog it already has rather than a twin.
+	// Nothing modal: the window can go on being used while a copy runs.
+	if got := a.root.Modal(); got != nil {
+		t.Errorf("it put %T over the window", got)
+	}
+	// The row goes to the pane it already opened rather than a twin.
 	openTheRow(t, a, theJobRow(t, a))
-	if got := a.root.Modal(); got != ui.Widget(d) {
-		t.Fatalf("choosing the row again put %T on top, want the dialog it opened", got)
+	if n := len(a.jobPanes); n != 1 {
+		t.Fatalf("the window holds %d panes for one job", n)
 	}
-	if n := len(a.modals); n != 1 {
-		t.Fatalf("the window holds %d dialogs for one job", n)
+	if got := ui.FocusedLeaf(a.root.Widget()); got != ui.Widget(d) {
+		t.Errorf("choosing the row again focused %T, want the pane it opened", got)
 	}
 }
 
-// The box keeps its width as the counts in it grow, so a copy does not
-// shuffle sideways while the user is reading it.
-func TestAJobsDialogDoesNotMoveAsItCounts(t *testing.T) {
+// The pane keeps its shape as the counts in it grow, so a copy does not
+// shuffle about while the user is reading it.
+//
+// A pane cannot re-centre itself the way a dialog box could, but the
+// rows it draws on can still move: a number that grew a digit must not
+// push the bar or the buttons anywhere.
+func TestAJobsPaneKeepsItsShapeAsItCounts(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withDialogs(t, a)
 	withPanel(t, a)
@@ -212,12 +218,11 @@ func TestAJobsDialogDoesNotMoveAsItCounts(t *testing.T) {
 	copyTheFirstFile(t, a, b)
 	held.started(t)
 	openTheRow(t, a, theJobRow(t, a))
-	d := awaitModal[*jobDialog](t, a, "the job's dialog", nil)
-	d.Layout(ui.Size{Cols: 80, Rows: 24})
+	d := theJobPane(t, a)
 
 	// Two readings of the same copy, one further along than the other.
-	// The numbers are the test's own: what a job does with a real file is
-	// not what this is about.
+	// The numbers are the test's own: what a job does with a real file
+	// is not what this is about.
 	started := time.Now()
 	early := jobs.Progress{
 		Files: 40, Bytes: 9_000_000, BytesDone: 8,
@@ -228,16 +233,26 @@ func TestAJobsDialogDoesNotMoveAsItCounts(t *testing.T) {
 		Current: "one.txt", Started: started,
 	}
 
-	d.SetLines(d.report(early, started))
-	was := d.Box()
-	d.SetLines(d.report(later, started))
-	if now := d.Box(); now != was {
-		t.Fatalf("the box moved from %+v to %+v as the numbers grew:\n%s",
-			was, now, dialogText(d))
+	was := rowsWithAnythingOn(jobPaneDrawn(d, early, started))
+	now := rowsWithAnythingOn(jobPaneDrawn(d, later, started))
+	if !slices.Equal(was, now) {
+		t.Errorf("the pane drew on rows %v and then %v as the numbers grew:\n%s",
+			was, now, jobPaneDrawn(d, later, started))
 	}
-	if !strings.Contains(dialogText(d), "12 of 40 files") {
-		t.Fatalf("the dialog says\n%s\nwant the larger numbers", dialogText(d))
+	if said := jobPaneDrawn(d, later, started); !strings.Contains(said, "12 of 40 files") {
+		t.Errorf("the pane says\n%s\nwant the larger numbers", said)
 	}
+}
+
+// rowsWithAnythingOn is which rows of a drawing have text on them.
+func rowsWithAnythingOn(drawn string) []int {
+	var out []int
+	for i, line := range strings.Split(drawn, "\n") {
+		if strings.TrimSpace(line) != "" {
+			out = append(out, i)
+		}
+	}
+	return out
 }
 
 // A copy the user cancelled that could not take away what it half wrote
@@ -262,9 +277,9 @@ func TestACancelThatCouldNotClearUpSaysSo(t *testing.T) {
 	e := theJobRow(t, a)
 	j := a.jobs[e]
 	openTheRow(t, a, e)
-	d := awaitModal[*jobDialog](t, a, "the job's dialog", nil)
+	d := theJobPane(t, a)
 
-	pressButton(t, a, d.Form, btnCancel)
+	pressChoice(t, d, btnCancel)
 	held.let()
 	waitFor(t, a, "the job to stop", func() bool {
 		a.refreshJobs()
@@ -325,13 +340,13 @@ func TestAFinishedDeleteIsNotRepeated(t *testing.T) {
 	})
 
 	openTheRow(t, a, e)
-	d := awaitModal[*jobDialog](t, a, "the job's dialog", nil)
+	d := theJobPane(t, a)
 	a.refreshJobs()
-	if offersButton(d, btnRepeat) {
-		t.Fatalf("a finished delete offers %v", buttonTitles(d))
+	if offersChoice(d, btnRepeat) {
+		t.Fatalf("a finished delete offers %v", choiceTitles(d))
 	}
-	if !strings.Contains(dialogText(d), "It finished.") {
-		t.Fatalf("the dialog says\n%s", dialogText(d))
+	if !strings.Contains(jobPaneText(d), "It finished.") {
+		t.Fatalf("the dialog says\n%s", jobPaneText(d))
 	}
 }
 
@@ -353,25 +368,25 @@ func TestAFinishedJobIsRepeatedFromItsDialog(t *testing.T) {
 	copyTheFirstFile(t, a, b)
 	held.started(t)
 	openTheRow(t, a, theJobRow(t, a))
-	d := awaitModal[*jobDialog](t, a, "the job's dialog", nil)
+	d := theJobPane(t, a)
 
 	// The finger was on Cancel when it finished.
-	sendKey(t, a, press(input.KeyTab, 0))
-	if at, isButton := d.Focused(); !isButton || at != 0 {
-		t.Fatalf("the focus is on %d (button %v), want Cancel", at, isButton)
+	jobPaneText(d)
+	if got := focusedChoice(d); got != btnCancel {
+		t.Fatalf("the focus is on %q, want Cancel", got)
 	}
 	held.let()
 	waitFor(t, a, "the copy to finish", func() bool {
 		a.refreshJobs()
-		return strings.Contains(dialogText(d), "It finished.")
+		return strings.Contains(jobPaneText(d), "It finished.")
 	})
-	if said := dialogText(d); !strings.Contains(said, "1 file") {
-		t.Errorf("the finished dialog says\n%s\nwant what it did", said)
+	if said := jobPaneText(d); !strings.Contains(said, "1 file") {
+		t.Errorf("the finished pane says\n%s\nwant what it did", said)
 	}
 	// And the focus moved off where Cancel was, so Enter cannot start a
-	// repeat the user never asked for.
-	if at, isButton := d.Focused(); !isButton || at != len(d.Buttons())-1 {
-		t.Fatalf("the focus is on %d (button %v), want Close", at, isButton)
+	// repeat the user never asked for: Repeat is drawn where Cancel was.
+	if got := focusedChoice(d); got != btnClose {
+		t.Fatalf("the focus is on %q, want Close", got)
 	}
 
 	// The file is copied again from the dialog, with nothing to find at
@@ -380,10 +395,10 @@ func TestAFinishedJobIsRepeatedFromItsDialog(t *testing.T) {
 	if err := os.Remove(copied); err != nil {
 		t.Fatalf("clearing the copy: %v", err)
 	}
-	if !offersButton(d, btnRepeat) {
-		t.Fatalf("the finished dialog offers %v", buttonTitles(d))
+	if !offersChoice(d, btnRepeat) {
+		t.Fatalf("the finished dialog offers %v", choiceTitles(d))
 	}
-	pressButton(t, a, d.Form, btnRepeat)
+	pressChoice(t, d, btnRepeat)
 
 	waitFor(t, a, "the copy to be done again", func() bool {
 		a.refreshJobs()
@@ -424,9 +439,9 @@ func TestCancellingAJobFromItsDialog(t *testing.T) {
 	e := theJobRow(t, a)
 	j := a.jobs[e]
 	openTheRow(t, a, e)
-	d := awaitModal[*jobDialog](t, a, "the job's dialog", nil)
+	d := theJobPane(t, a)
 
-	pressButton(t, a, d.Form, btnCancel)
+	pressChoice(t, d, btnCancel)
 	// The write it was held in answers, and the job gives up on the next
 	// thing it was going to do.
 	held.let()
@@ -481,12 +496,12 @@ func TestRepeatingAJobWhoseMachineHasGone(t *testing.T) {
 		return len(a.jobs) == 0
 	})
 	openTheRow(t, a, e)
-	d := awaitModal[*jobDialog](t, a, "the job's dialog", nil)
+	d := theJobPane(t, a)
 
 	if err := a.dropMachine(host); err != nil {
 		t.Fatalf("dropMachine: %v", err)
 	}
-	pressButton(t, a, d.Form, btnRepeat)
+	pressChoice(t, d, btnRepeat)
 
 	n := awaitModal(t, a, "a dialog saying it could not be done again",
 		byTitle[*ui.Notice]("Could not copy it again"))
@@ -495,23 +510,79 @@ func TestRepeatingAJobWhoseMachineHasGone(t *testing.T) {
 	}
 }
 
-// offersButton reports whether the dialog has a button with this title.
-func offersButton(d *jobDialog, title string) bool {
-	for _, b := range d.Buttons() {
-		if b.Title == title {
+// offersChoice reports whether the pane offers this along its bottom.
+func offersChoice(p *jobPane, title string) bool {
+	for _, c := range p.choices() {
+		if c.title == title {
 			return true
 		}
 	}
 	return false
 }
 
-// buttonTitles is what the dialog offers, for a failure worth reading.
-func buttonTitles(d *jobDialog) []string {
+// choiceTitles is what the pane offers, for a failure worth reading.
+func choiceTitles(p *jobPane) []string {
 	var out []string
-	for _, b := range d.Buttons() {
-		out = append(out, b.Title)
+	for _, c := range p.choices() {
+		out = append(out, c.title)
 	}
 	return out
+}
+
+// pressChoice presses one of the pane's buttons, or sets its box, by
+// the name it draws.
+func pressChoice(t *testing.T, p *jobPane, title string) {
+	t.Helper()
+	for i, c := range p.choices() {
+		if c.title != title {
+			continue
+		}
+		if err := p.press(i); err != nil {
+			t.Fatalf("press %q: %v", title, err)
+		}
+		return
+	}
+	t.Fatalf("the pane offers %v, with no %q", choiceTitles(p), title)
+}
+
+// theJobPane is the pane the window has open on a piece of file work.
+func theJobPane(t *testing.T, a *testApp) *jobPane {
+	t.Helper()
+	var found *jobPane
+	waitFor(t, a, "the pane on the file work", func() bool {
+		if len(a.jobPanes) == 0 {
+			return false
+		}
+		found = a.jobPanes[len(a.jobPanes)-1]
+		return true
+	})
+	return found
+}
+
+// jobPaneText is what the pane draws, one line per row.
+func jobPaneText(p *jobPane) string {
+	return jobPaneDrawn(p, p.job.Progress(), time.Now())
+}
+
+// jobPaneDrawn is what the pane draws for one reading of a job.
+func jobPaneDrawn(p *jobPane, prog jobs.Progress, now time.Time) string {
+	cols, rows := 80, 24
+	g := grid.New(cols, rows, color.RGBA{}, color.RGBA{})
+	p.Layout(ui.Size{Cols: cols, Rows: rows})
+	p.draw(g.View(), prog, now)
+	var b strings.Builder
+	for y := range rows {
+		line := ""
+		for x := range cols {
+			r := g.At(x, y).Rune
+			if r == 0 {
+				r = ' '
+			}
+			line += string(r)
+		}
+		b.WriteString(strings.TrimRight(line, " ") + "\n")
+	}
+	return b.String()
 }
 
 // A dialog left open on a finished job says the same thing on every
@@ -536,10 +607,10 @@ func TestAFinishedJobsDialogSettles(t *testing.T) {
 	})
 
 	openTheRow(t, a, e)
-	d := awaitModal[*jobDialog](t, a, "the job's dialog", nil)
+	d := theJobPane(t, a)
 	ended := j.Progress().Ended
 	a.refreshJobsAt(ended.Add(time.Second))
-	was := dialogText(d)
+	was := jobPaneText(d)
 	if !strings.Contains(was, "It finished.") {
 		t.Fatalf("the dialog says %q", was)
 	}
@@ -549,28 +620,25 @@ func TestAFinishedJobsDialogSettles(t *testing.T) {
 		t.Fatalf("the dialog says %q about how long it took", was)
 	}
 
-	// The frame the window really draws, onto the layer the dialog has.
-	m := a.modals[len(a.modals)-1]
-	a.root.DrawModal(m.w, m.g.View())
-	m.g.ClearDirty()
-	laidOut := d.laidOut
+	// The frame the window really draws, onto a grid of its own.
+	g := grid.New(80, 24, color.RGBA{}, color.RGBA{})
+	d.Layout(ui.Size{Cols: 80, Rows: 24})
+	d.draw(g.View(), j.Progress(), ended.Add(time.Second))
+	g.ClearDirty()
 
 	// A minute later. How long it took is settled, so nothing on the
-	// dialog has anything new to say.
+	// pane has anything new to say.
 	a.refreshJobsAt(ended.Add(time.Minute))
-	a.root.DrawModal(m.w, m.g.View())
-	if m.g.AnyDirty() {
-		t.Fatalf("a frame with nothing new to say dirtied the dialog's layer:\n%s", dialogText(d))
+	d.draw(g.View(), j.Progress(), ended.Add(time.Minute))
+	if g.AnyDirty() {
+		t.Fatalf("a frame with nothing new to say dirtied the pane:\n%s", jobPaneText(d))
 	}
-	if d.laidOut != laidOut {
-		t.Fatalf("the lines were laid out %d more times with nothing to say", d.laidOut-laidOut)
-	}
-	if now := dialogText(d); now != was {
-		t.Fatalf("the dialog says\n%s\nafter a minute, want\n%s", now, was)
+	if now := jobPaneText(d); now != was {
+		t.Fatalf("the pane says\n%s\nafter a minute, want\n%s", now, was)
 	}
 	// It is still drawn, rather than not drawn at all.
-	if !strings.Contains(gridRows(m.g), "It finished.") {
-		t.Fatalf("the dialog is not on its layer:\n%s", gridRows(m.g))
+	if !strings.Contains(gridRows(g), "It finished.") {
+		t.Fatalf("the pane drew nothing:\n%s", gridRows(g))
 	}
 }
 
@@ -660,14 +728,14 @@ func TestARepeatThatCannotReachTheFarEndStartsNothing(t *testing.T) {
 		return len(a.jobs) == 0
 	})
 	openTheRow(t, a, e)
-	d := awaitModal[*jobDialog](t, a, "the job's dialog", nil)
+	d := theJobPane(t, a)
 
 	// The machine the copy went to is gone, and this machine is not.
 	if err := a.dropMachine(host); err != nil {
 		t.Fatalf("dropMachine: %v", err)
 	}
 	rows := len(a.registry.Groups(time.Now()))
-	pressButton(t, a, d.Form, btnRepeat)
+	pressChoice(t, d, btnRepeat)
 
 	n := awaitModal(t, a, "a dialog saying it could not be done again",
 		byTitle[*ui.Notice]("Could not copy it again"))
@@ -702,7 +770,7 @@ func TestAJobsDialogDoesNotPlantARate(t *testing.T) {
 	held.started(t)
 	e := theJobRow(t, a)
 	openTheRow(t, a, e)
-	awaitModal[*jobDialog](t, a, "the job's dialog", nil)
+	theJobPane(t, a)
 
 	// The row is closed from the sidebar, and the panel throws its rate
 	// away with it. The dialog is still open on the job.
@@ -732,39 +800,37 @@ func TestAJobsDialogDoesNotPlantARate(t *testing.T) {
 // run its work on this goroutine while the button's work is running on
 // the other one, and two goroutines in one window is the race this is
 // built to avoid.
-func pressButtonOver(t *testing.T, a, other *testApp, f *ui.Form, title string) {
+func pressChoiceOver(t *testing.T, a, other *testApp, p *jobPane, title string) {
 	t.Helper()
 	at := -1
-	for i, b := range f.Buttons() {
-		if b.Title == title {
+	for i, c := range p.choices() {
+		if c.title == title {
 			at = i
 			break
 		}
 	}
 	if at < 0 {
-		t.Fatalf("the dialog has no %q button", title)
+		t.Fatalf("the pane offers %v, with no %q", choiceTitles(p), title)
 	}
-	for i := 0; i < len(f.Fields())+len(f.Buttons())+1; i++ {
-		if got, isButton := f.Focused(); isButton && got == at {
-			sendKey(t, a, press(input.KeyEnter, 0))
-			done := make(chan struct{})
-			go func() {
-				defer close(done)
-				a.pump.run()
-			}()
-			waitFor(t, other, "the window over there to answer "+title, func() bool {
-				select {
-				case <-done:
-					return true
-				default:
-					return false
-				}
-			})
-			return
+	// On a goroutine, because pressing this reaches the window over
+	// there and that window only answers while it is being pumped.
+	done := make(chan struct{})
+	var err error
+	go func() {
+		defer close(done)
+		err = p.press(at)
+	}()
+	waitFor(t, other, "the window over there to answer "+title, func() bool {
+		select {
+		case <-done:
+			return true
+		default:
+			return false
 		}
-		sendKey(t, a, press(input.KeyTab, 0))
+	}, a)
+	if err != nil {
+		t.Fatalf("press %q: %v", title, err)
 	}
-	t.Fatalf("the focus never reached the %q button", title)
 }
 
 // Repeat on a copy from a machine of a window taken over reads that
@@ -803,8 +869,8 @@ func TestRepeatingACopyFromAMachineOverThere(t *testing.T) {
 
 	sessions := margit.SFTPs()
 	openTheRow(t, client, e)
-	d := awaitModal[*jobDialog](t, client, "the job's dialog", nil)
-	pressButtonOver(t, client, host, d.Form, "Repeat")
+	d := theJobPane(t, client)
+	pressChoiceOver(t, client, host, d, btnRepeat)
 
 	waitFor(t, client, "the copy to be done again", func() bool {
 		client.refreshJobs()
@@ -867,8 +933,8 @@ func TestRepeatingACopyAfterTheWindowIsRenamedFilesItUnderTheNewName(t *testing.
 	}
 
 	openTheRow(t, client, e)
-	d := awaitModal[*jobDialog](t, client, "the job's dialog", nil)
-	pressButtonOver(t, client, host, d.Form, "Repeat")
+	d := theJobPane(t, client)
+	pressChoiceOver(t, client, host, d, btnRepeat)
 
 	again := theJobRow(t, client)
 	if again == e {
@@ -930,4 +996,89 @@ func theRowFor(t *testing.T, a *testApp, j *jobs.Job) *conns.Entry {
 	}
 	t.Fatal("the job has no row on the sidebar")
 	return nil
+}
+
+// focusedChoice is what the keyboard is on along the bottom of a pane.
+func focusedChoice(p *jobPane) string {
+	choices := p.choices()
+	if p.at < 0 || p.at >= len(choices) {
+		return ""
+	}
+	return choices[p.at].title
+}
+
+// ticked reports whether one of the pane's boxes is ticked now.
+//
+// Asked afresh rather than remembered: the box says what the saved list
+// holds, and the same copy can be taken off it from another pane.
+func ticked(p *jobPane, title string) bool {
+	for _, c := range p.choices() {
+		if c.title == title {
+			return c.tick && c.on
+		}
+	}
+	return false
+}
+
+// The pane leaves nothing of the old layout behind when it shrinks.
+//
+// The run goes when the job finishes and everything under it moves up,
+// so a row that is not written again is a row still carrying whatever
+// was there before -- a name from the list, drawn one row below the
+// list it belongs to.
+func TestAJobsPaneLeavesNothingBehindWhenItShrinks(t *testing.T) {
+	a, _ := aCopyWindow(t)
+	// Several names, so there is a list under the bar at all.
+	at, into := t.TempDir(), t.TempDir()
+	names := []string{"file3.bin", "file4.bin", "file5.bin"}
+	for _, name := range names {
+		if err := os.WriteFile(filepath.Join(at, name), []byte("x"), 0o600); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+	here := jobEnd{host: conns.Local}
+	j := a.runJob(jobs.Op{
+		Kind: jobs.Copy,
+		From: vfs.NewLocal(), At: at, Names: names,
+		To: vfs.NewLocal(), Into: into,
+	}, here, here, nil)
+	waitFor(t, a, "the copy to finish", func() bool { return j.Progress().Done })
+	a.showJobPane(j, theRowFor(t, a, j), here, here)
+	d := theJobPane(t, a)
+	started := time.Now()
+
+	// Part way through, with the list of names under the bar.
+	running := jobs.Progress{
+		Files: 3, FilesDone: 1, Bytes: 500, BytesDone: 300,
+		Current: "file4.bin", Started: started,
+	}
+	// A run to draw, which is what makes the pane taller while the copy
+	// is going and shorter when it stops.
+	rate := &meter.Rate{}
+	a.rates[d.entry] = rate
+	for i := range 5 {
+		d.entry.Meter.Moved(1_000_000, 0, started.Add(time.Duration(i)*time.Second))
+		rate.Sample(d.entry.Meter, started.Add(time.Duration(i)*time.Second))
+	}
+	g := grid.New(80, 24, color.RGBA{}, color.RGBA{})
+	d.Layout(ui.Size{Cols: 80, Rows: 24})
+	d.draw(g.View(), running, started.Add(4*time.Second))
+	if !strings.Contains(gridRows(g), string(barFull)) {
+		t.Fatalf("the running pane drew no run, so nothing will move:\n%s", gridRows(g))
+	}
+
+	// And then finished, which takes a line away and moves the rest up.
+	done := running
+	done.Done, done.FilesDone, done.BytesDone = true, 3, 500
+	done.Current, done.Ended = "", started.Add(5*time.Second)
+	d.draw(g.View(), done, started.Add(5*time.Second))
+
+	drawn := gridRows(g)
+	// Three names, and no fourth row left over from the taller layout.
+	if got := strings.Count(drawn, ".bin"); got != len(names) {
+		t.Errorf("the pane draws %d names, want %d:\n%s", got, len(names), drawn)
+	}
+	if strings.Contains(drawn, "> ") {
+		t.Errorf("the pane still marks a name as the one being worked on:\n%s", drawn)
+	}
 }

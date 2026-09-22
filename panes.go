@@ -563,6 +563,9 @@ func (a *app) closePane(w ui.Widget) error {
 			errs = append(errs, a.dropReader(r))
 			continue
 		}
+		// A pane watching a piece of file work holds nothing: the work
+		// runs on the queue and goes on running when the pane goes.
+		a.forgetJobPane(leaf)
 		t, isTerm := leaf.(*term.Terminal)
 		if !isTerm {
 			continue

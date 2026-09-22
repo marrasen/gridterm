@@ -507,17 +507,32 @@ to it.
 - **Buttons:** `Go` · `Cancel`
 - **Error:** `Enter a path`
 
-## D34
-- **Title:** as today
-- **Body:** as today
-- **Buttons while running:** `Cancel` · `Close`
-- **Buttons when finished:** `Repeat` *(copies only)* · `Close`
-- **Fields when finished:** `Save this copy` — tick box *(copies only)*
-- **Focus:** `Close`
+## D34 — a pane now, not a dialog
 
-**Instructions:** The `Remember` / `Forget` button that changes its
-name becomes a tick box, matching `Save this tunnel` and `Save this
-command`. Ticked means it is in Saved Copies.
+File work is watched in a pane, opened by its row on the sidebar. A copy
+takes as long as it takes, and a box that has to be dismissed before
+anything else can be done is the wrong shape for something to watch: it
+covers the window it was opened from, it takes the keys, and it cannot
+be left open beside the work that carries on.
+
+What the pane shows, from the top: what it is doing and how many files
+there are; a bar; how much has moved, how fast, how long it has been
+going and how long is left; the last seconds drawn as a run; the names
+it was given, ticked as it passes them; and, along the bottom, the same
+choices the dialog had.
+
+- **While running:** `Cancel` · `Close`
+- **When finished:** `Repeat` *(copies only)* · `Save this copy` — a tick
+  box *(copies only)* · `Close`
+- **Focus:** `Close`, and it moves there by itself when a job finishes,
+  because `Repeat` is drawn where `Cancel` was.
+
+The `Remember` / `Forget` button that changed its name is the tick box,
+matching `Save this tunnel` and `Save this command`. Ticked means it is
+in Saved Copies.
+
+`Close` takes the pane away and leaves the work running, the way closing
+any pane does not end what is behind it.
 
 ## D35
 - **Title:** `Copied <n> files to <dir> on <machine>`

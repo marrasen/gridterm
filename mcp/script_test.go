@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/marrasen/gridterm/agent"
 )
@@ -34,7 +35,7 @@ func TestAListIsWorkedInOrder(t *testing.T) {
 		code: "gt1-2222-abc",
 		// The editor is up, which is what the list waits for.
 		screen:  "\"notes.md\" [New] 0L, 0C",
-		because: "the shell said so",
+		because: agent.EndedOnText,
 	}
 
 	text, failed := runList(t, panes,
@@ -74,7 +75,7 @@ func TestAListIsWorkedInOrder(t *testing.T) {
 // pane echoes what is typed.
 func TestAWaitInsideAListWaitsForTheTextToArrive(t *testing.T) {
 	panes := &fakePanes{code: "gt1-2222-abc", screen: "$ echo done\ndone\n$ ",
-		because: "the shell said the command had finished"}
+		output: "done", because: agent.EndedOnMarks}
 
 	if text, failed := runList(t, panes, "type:echo done", "key:Enter", "until:done"); failed {
 		t.Fatalf("the list failed: %q", text)
@@ -195,7 +196,8 @@ func TestAWaitThatEndedWithoutItsTextStopsTheList(t *testing.T) {
 		// The cd failed, so the command is over and the editor never
 		// opened.
 		screen:  "$ cd ~/work && vim notes.md\nbash: cd: /home/u/work: No such file or directory\n$ ",
-		because: "the shell said the command had finished",
+		output:  "bash: cd: /home/u/work: No such file or directory",
+		because: agent.EndedOnMarks,
 	}
 
 	text, failed := runList(t, panes,
@@ -227,22 +229,27 @@ func TestAGuardStopsAListInTheWrongPlace(t *testing.T) {
 	for _, one := range []struct {
 		name string
 		step string
-		// screen is what the pane says when the guard runs.
-		screen string
-		stops  bool
+		// printed is what the pane has said since it was typed at,
+		// which is what a guard asks about.
+		printed string
+		stops   bool
 	}{
 		{name: "require, and it is there", step: "require:/home/u/work",
-			screen: "$ cd ~/work && pwd\n/home/u/work\n$ "},
+			printed: "/home/u/work"},
 		{name: "require, and it is not", step: "require:/home/u/work",
-			screen: "$ cd ~/work\nbash: cd: no such directory\n$ ", stops: true},
+			printed: "bash: cd: no such directory", stops: true},
 		{name: "fail, and it is there", step: "fail:No such file",
-			screen: "$ cd ~/work\nbash: cd: No such file or directory\n$ ", stops: true},
+			printed: "bash: cd: No such file or directory", stops: true},
 		{name: "fail, and it is not", step: "fail:No such file",
-			screen: "$ cd ~/work\n$ "},
+			printed: "/home/u/work"},
 	} {
 		t.Run(one.name, func(t *testing.T) {
-			panes := &fakePanes{code: "gt1-2222-abc", screen: one.screen,
-				because: "the shell said the command had finished"}
+			panes := &fakePanes{code: "gt1-2222-abc",
+				// The screen still carries an older run's error, which
+				// a guard must not be fooled by.
+				screen:  "$ cd ~/elsewhere\nbash: cd: No such file or directory\n$ ",
+				output:  one.printed,
+				because: agent.EndedOnMarks}
 
 			text, failed := runList(t, panes,
 				"type:cd ~/work", "key:Enter", "until", one.step, "type:vim notes.md")
@@ -302,7 +309,9 @@ func TestAListAnswersWithWhatTheCommandPrinted(t *testing.T) {
 // what sends an agent back to clearing the screen between commands.
 func TestAListSaysWhatEachWaitSaw(t *testing.T) {
 	panes := &fakePanes{code: "gt1-2222-abc", screen: "$ ", because: agent.EndedOnMarks,
-		marks: true, hasStatus: true, status: 0, output: "first answer"}
+		marks: true, hasStatus: true, status: 0,
+		// One answer per command, the way the pane gives them.
+		outputs: []string{"6.1.0-23-amd64", "masked"}}
 
 	text, failed := runList(t, panes,
 		"type:uname -r", "key:Enter", "until",
@@ -316,8 +325,146 @@ func TestAListSaysWhatEachWaitSaw(t *testing.T) {
 			t.Errorf("the answer does not carry %q: %q", want, text)
 		}
 	}
-	// Both commands' output, not only the last one's.
-	if got := strings.Count(text, "first answer"); got != 2 {
-		t.Errorf("it carried %d of the 2 waits' output: %q", got, text)
+	// Each wait's own output, taken when that wait ended. Read at the
+	// end of the list instead, every one of them would be the last
+	// command's -- which is the answer to a question nobody asked twice.
+	first := strings.Index(text, "6.1.0-23-amd64")
+	second := strings.Index(text, "masked")
+	if first < 0 || second < 0 {
+		t.Fatalf("the answer does not carry both commands' output: %q", text)
+	}
+	if first > second {
+		t.Errorf("the waits are answered out of order: %q", text)
+	}
+	if got := strings.Index(text, `step 6, "until"`); first > got || second < got {
+		t.Errorf("a wait's output is filed under the wrong step: %q", text)
+	}
+}
+
+// A list of guards alone answers with what it read, rather than with
+// nothing.
+func TestAListOfGuardsAnswersWithWhatItSaw(t *testing.T) {
+	panes := &fakePanes{code: "gt1-2222-abc", screen: "$ ",
+		output: "/home/u/work", because: agent.EndedOnMarks}
+
+	text, failed := runList(t, panes, "require:/home/u/work")
+
+	if failed {
+		t.Fatalf("the guard stopped a list it should have let through: %q", text)
+	}
+	if !strings.Contains(text, "/home/u/work") {
+		t.Errorf("the answer does not say what the guard saw: %q", text)
+	}
+}
+
+// A guard that could not be told which output was the last command's
+// says so, because then it is judging a screen that still carries
+// whatever was above it.
+func TestAGuardOnTheWholeScreenSaysSo(t *testing.T) {
+	panes := &fakePanes{code: "gt1-2222-abc",
+		// An error from an older command, and no way to tell where the
+		// last one's output began.
+		screen: "$ cd ~/elsewhere\nbash: cd: No such file or directory\n$ "}
+
+	text, failed := runList(t, panes, "type:cd ~/work", "key:Enter", "fail:No such file")
+
+	if !failed {
+		t.Fatalf("the guard passed: %q", text)
+	}
+	if !strings.Contains(text, "where the last command's output began") {
+		t.Errorf("the answer does not say it judged the whole screen: %q", text)
+	}
+}
+
+// A key nobody has a name for stops the list before anything is typed,
+// not half way through it.
+func TestAListWithABadKeyTypesNothing(t *testing.T) {
+	panes := &fakePanes{code: "gt1-2222-abc", screen: "$ "}
+
+	text, failed := runList(t, panes,
+		"type:rm -rf /tmp/x", "key:Enter", "type:y", "key:Confirm")
+
+	if !failed {
+		t.Fatalf("a key nobody names was pressed: %q", text)
+	}
+	if !strings.Contains(text, "Nothing was typed") {
+		t.Errorf("the answer does not say the pane was left alone: %q", text)
+	}
+	panes.mu.Lock()
+	typed := panes.typed
+	panes.mu.Unlock()
+	if typed != "" {
+		t.Errorf("it typed %q before refusing the list", typed)
+	}
+}
+
+// Text that arrived escaped twice stops the list before anything is
+// typed, so the message saying nothing was typed is true.
+func TestAListWithEscapedTextTypesNothing(t *testing.T) {
+	panes := &fakePanes{code: "gt1-2222-abc", screen: "$ "}
+
+	text, failed := runList(t, panes, "type:ls", "key:Enter", `type:echo hello\r`)
+
+	if !failed {
+		t.Fatalf("it typed text that was escaped twice: %q", text)
+	}
+	panes.mu.Lock()
+	typed := panes.typed
+	panes.mu.Unlock()
+	if typed != "" {
+		t.Errorf("it typed %q before refusing the list", typed)
+	}
+}
+
+// A wait for text that ended on the shell's mark is judged on what that
+// command printed, not on a screen still carrying an older run.
+func TestAWaitForTextIsNotFooledByAnOlderRun(t *testing.T) {
+	panes := &fakePanes{
+		code: "gt1-2222-abc",
+		// The word is on the screen from before, and this command
+		// printed something else.
+		screen:  "$ ./build\nPASS\n$ ./build\nFAIL: two tests\n$ ",
+		output:  "FAIL: two tests",
+		because: agent.EndedOnMarks,
+	}
+
+	text, failed := runList(t, panes,
+		"type:./build", "key:Enter", "until:PASS", "type:git commit -am done", "key:Enter", "until")
+
+	if !failed {
+		t.Fatalf("a wait for PASS passed on a run that failed: %q", text)
+	}
+	panes.mu.Lock()
+	typed := panes.typed
+	panes.mu.Unlock()
+	if strings.Contains(typed, "commit") {
+		t.Errorf("it went on to commit after the build failed: %q", typed)
+	}
+}
+
+// A list is held to a budget of its own, so sixty-four waits of five
+// minutes cannot park a window for an afternoon.
+func TestAWaitIsHeldToWhatTheListHasLeft(t *testing.T) {
+	for _, one := range []struct {
+		name    string
+		askedMS int
+		left    time.Duration
+		want    int
+	}{
+		{name: "what was asked for, and room for it",
+			askedMS: 5000, left: time.Minute, want: 5000},
+		{name: "more than the list has left",
+			askedMS: 60000, left: 10 * time.Second, want: 10000},
+		{name: "none asked for takes what is left",
+			askedMS: 0, left: 30 * time.Second, want: 30000},
+		// Not zero, which the window reads as "your own default" and
+		// would give the wait its full half minute back.
+		{name: "nothing left is a moment, not a default",
+			askedMS: 5000, left: 0, want: 1},
+	} {
+		if got := waitFor(one.askedMS, one.left); got != one.want {
+			t.Errorf("%s: waitFor(%d, %s) = %d, want %d",
+				one.name, one.askedMS, one.left, got, one.want)
+		}
 	}
 }

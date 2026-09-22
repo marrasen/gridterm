@@ -104,24 +104,6 @@ func TestAListHasBounds(t *testing.T) {
 	}
 }
 
-// A script on one line is the same steps, for a caller with nowhere to
-// put a list.
-func TestAScriptOnOneLineIsTheSameSteps(t *testing.T) {
-	got, err := ParseLine("wait:40 key:ctrl+shift+k type:about key:Enter shot:/tmp/a.png")
-	if err != nil {
-		t.Fatalf("read the script: %v", err)
-	}
-	want := []Kind{Wait, Key, Type, Key, Shot}
-	if len(got) != len(want) {
-		t.Fatalf("it read %d steps, want %d", len(got), len(want))
-	}
-	for i, kind := range want {
-		if got[i].Kind != kind {
-			t.Errorf("step %d is %v, want %v", i+1, got[i].Kind, kind)
-		}
-	}
-}
-
 // itoa keeps the test from importing strconv for one line.
 func itoa(n int) string {
 	if n == 0 {

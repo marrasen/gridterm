@@ -380,8 +380,8 @@ func (s *server) runTool(name string, args json.RawMessage) (result, *rpcError) 
 				// halfway is worse than one that never started.
 				return wrong(err.Error())
 			}
-			lines, _ := atMostLines(in.Lines)
-			return s.runSteps(in.Pane, list, lines, in.TimeoutMS)
+			lines, clamped := atMostLines(in.Lines)
+			return s.runSteps(in.Pane, list, lines, clamped, in.TimeoutMS)
 		}
 		if in.Text == "" && len(in.Keys) == 0 {
 			return missing("text, keys and no steps")
@@ -573,14 +573,19 @@ var stepsArg = fmt.Sprintf(" Each step is a word, a colon and the rest of it, wh
 	" has come back by then, so waiting for a word you typed waits for the program"+
 	" to say it rather than for your own typing echoed. A wait that ended some"+
 	" other way -- the command finished, the pane went quiet -- without that text"+
-	" on the screen stops the list, because a step that says \"until the editor is"+
-	" up\" has not done what it says;"+
+	" in what the command printed stops the list, because a step that says"+
+	" \"until the editor is up\" has not done what it says. What it printed, not"+
+	" what is on the screen: a screen still carrying PASS from the run before"+
+	" must not pass a wait for the run that has just failed;"+
 	" \"until\" on its own waits for whatever is running to finish;"+
-	" \"require:<text>\" goes on only if the pane says that now, and"+
-	" \"fail:<text>\" stops if it does. The two guards are how a list checks that"+
-	" it is where it thinks it is before it types into it: put a require or a fail"+
-	" after a wait, and a command that failed stops the list there instead of the"+
-	" rest of it going to a shell prompt."+
+	" \"require:<text>\" goes on only if the pane has said that since you typed,"+
+	" and \"fail:<text>\" stops if it has. The two guards are how a list checks"+
+	" that it is where it thinks it is before it types into it: put a require or"+
+	" a fail after a wait, and a command that failed stops the list there instead"+
+	" of the rest of it going to a shell prompt. They ask about what the pane has"+
+	" said since you last typed rather than about the whole screen, so an error"+
+	" from an hour ago does not stop a list; where nothing can say where that"+
+	" began, the answer says the whole screen was judged instead."+
 	" At most %d steps, typing %d characters in all."+
 	" The keys are the ones keys takes.", steps.MostSteps, steps.MostText)
 

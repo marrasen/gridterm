@@ -1073,10 +1073,18 @@ func TestClearingTheLastRowOnAMachineTakesItsCommands(t *testing.T) {
 	}
 
 	// The machine drops, which greys its row and ends the shell on it.
+	//
+	// Both are waited for, because clearing goes by the second and the
+	// two arrive from different goroutines. The machine is dropped by
+	// the window; the meter on the shell riding on it is closed by the
+	// goroutine reading that session. Clear Finished keeps every row
+	// whose meter has not closed yet, so waiting for the machine alone
+	// waited for the wrong thing: this test saw the row survive twice
+	// under a full suite, and neither run has been reproduced since.
 	s.CloseClients()
-	waitFor(t, a, "the window to see the machine go", func() bool {
+	waitFor(t, a, "the machine and the rows on it to close", func() bool {
 		a.reapExited()
-		return a.machines.named(host) == nil
+		return a.machines.named(host) == nil && allClosedOn(a, host)
 	})
 
 	if err := a.clearFinished(); err != nil {
@@ -1091,6 +1099,26 @@ func TestClearingTheLastRowOnAMachineTakesItsCommands(t *testing.T) {
 	if _, ok := a.root.Commands.Lookup(want); ok {
 		t.Errorf("%q is still registered for a machine the sidebar no longer holds", want)
 	}
+}
+
+// allClosedOn reports whether every row on a machine says closed, which
+// is what Clear Finished acts on.
+//
+// The real clock, not panelNow: a meter that has been closed says so
+// whatever the time is, and the rows here are waited on rather than
+// drawn.
+func allClosedOn(a *testApp, host string) bool {
+	for _, group := range a.registry.Groups(time.Now()) {
+		if group.Host != host {
+			continue
+		}
+		for _, row := range group.Rows {
+			if row.State != meter.Closed {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // The close-pane key with the panel focused used to detach the panel and

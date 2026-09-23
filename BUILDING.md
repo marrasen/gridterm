@@ -31,6 +31,18 @@ suite, which needs no display either.
 `make` has the rest: `make windows`, `make linux`, `make test`,
 `make vet`, `make fmt`.
 
+One test is off by default, because it wants vim and a shell and takes a
+real editor's time. It drives a real vim in a real pane over the MCP
+protocol and then reads the file vim wrote, which is the one end nothing
+in it can fake:
+
+```
+GRIDTERM_REAL_VIM=1 go test -run TestAnAgentEditsAFileWithVim .
+```
+
+Worth running after any change to the steps an agent sends to a pane.
+What is left to go wrong there is timing, and a fake pane has none.
+
 ## Building a release
 
 `make release` writes everything a release ships into `dist/`: a zip for
@@ -58,14 +70,48 @@ are exactly the parts where a test tells you nothing useful. `-shot`
 drives a real window through a short script and writes PNG files:
 
 ```
-gridterm -shot "wait:60 key:ctrl+shift+k wait:2 shot:palette.png"
+gridterm -shot "wait:1000 key:ctrl+shift+k wait:50 shot:palette.png"
 ```
 
-The steps are `wait:<frames>`, `key:<chord>`, `type:<text>` and
-`shot:<file>`, each taking one frame so that what a step did has been
-drawn before the next one looks at it. Several `shot:` steps in one
-script capture several states from one window launch. The window closes
-when the script ends.
+The script is the same vocabulary an agent sends to a pane over MCP, so
+a step learned in one is a step learned in both:
+
+| step | what it does |
+| --- | --- |
+| `wait:<ms>` | wait that many milliseconds |
+| `until:<text>` | wait until that text arrives on the focused pane |
+| `key:<chord>` | press a chord, spelled the way a keymap spells it |
+| `type:<text>` | type text, a character at a time |
+| `shot:<file>` | write the frame to a PNG file |
+
+Each step takes at least a frame, so what a step did has been drawn
+before the next one looks at it. Several `shot:` steps in one script
+capture several states from one window launch. The window closes when
+the script ends.
+
+**Prefer `until:` to `wait:`.** A wait is a guess about how long a shell
+takes to draw its prompt, and the guess is wrong on the machine that is
+busy:
+
+```
+gridterm -shot "until:$ type:./build.sh key:Enter until:FINISHED wait:200 shot:built.png"
+```
+
+`until:` waits for text that arrives after the step began, so it does
+not match the echo of what the script has just typed. The exception is a
+`until:` before anything has been typed -- "wait for the prompt, then
+type" -- which takes the pane as it already is, because there is nothing
+for the text to be an answer to. A step that waits 30 seconds without
+seeing its text logs an error and ends the script.
+
+Two things that cost a run each:
+
+- **The script splits on spaces**, so a `type:` with an argument in it
+  needs a script file: write `/tmp/x.sh`, `chmod +x`, then
+  `type:/tmp/x.sh key:Enter`. `key:space` types nothing.
+- **A bare `until`** -- the MCP one, which waits for the shell to say a
+  command has finished -- is refused. It reads the shell's own marks,
+  which a screenshot script has no way to ask about. Give it text.
 
 This found a bug that every test had passed over: the frosted panel was
 drawing pure black, because a `SubImage` of the render target silently

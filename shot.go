@@ -5,12 +5,13 @@ import (
 	"image"
 	"image/png"
 	"os"
-	"strconv"
 	"strings"
+	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
 
 	"github.com/marrasen/gridterm/input"
+	"github.com/marrasen/gridterm/steps"
 	"github.com/marrasen/gridterm/ui"
 )
 
@@ -27,21 +28,42 @@ import (
 // executes queued draw commands only inside its own game loop, so there
 // is no way to read a frame back without one.
 //
-// The script is a list of steps separated by spaces:
+// The script is the steps package's, written on one line:
 //
-//	wait:30          let thirty frames pass, for a shell to draw its prompt
+//	wait:250         wait a quarter of a second, for a shell to draw its prompt
+//	until:$          wait until that text is on the focused pane
 //	key:ctrl+k       press a chord, spelled the way a keymap spells it
 //	type:hello       type text, a character at a time
 //	shot:out.png     write the frame to a file
 //
-// Each step takes a frame, so what a step did has been drawn by the time
-// the next one runs. The window closes when the script ends.
+// The same steps an agent sends to work in a pane over MCP, so a step
+// learned in one is a step learned in both. A bare "until" is the one
+// an agent has and this does not: waiting for a command to finish takes
+// the shell's own marks, which a screenshot script has no way to ask
+// about.
+//
+// Each step takes at least a frame, so what a step did has been drawn by
+// the time the next one runs. The window closes when the script ends.
 type shooter struct {
-	steps []shotStep
+	steps []steps.Step
 	at    int
 
 	// wait counts down the frames a wait step asked for.
 	wait int
+
+	// want is the text an until step is watching for, empty when none
+	// is. was is what the pane held when that step began, so the step
+	// waits for the text to arrive rather than matching the echo of
+	// what the script has just typed. left is how many frames it has
+	// before it gives up.
+	want string
+	was  string
+	left int
+
+	// typed says something has been put into the window since the last
+	// wait, so what an until step is watching for could be an answer to
+	// it.
+	typed bool
 
 	// pending is the file this frame's Draw should write, set by a shot
 	// step and cleared once written.
@@ -50,49 +72,59 @@ type shooter struct {
 	done bool
 }
 
-// shotStep is one instruction of a screenshot script.
-type shotStep struct {
-	kind  string
-	n     int
-	chord ui.Chord
-	text  string
+// Ticks is the frames a second a script counts its waits in.
+//
+// Counted in frames rather than against the wall, so a script behaves
+// the same on a machine drawing slowly -- a software renderer under
+// Xvfb, which is where most of these run -- as on one that is not.
+const shotTicks = 60
+
+// longestUntil is how long an until step waits before the script gives
+// up, so a script that is watching for something that is never coming
+// says so rather than holding the window open for ever.
+const longestUntil = 30 * time.Second
+
+// framesFor is how many frames a length of time is, rounded up: a wait
+// of one millisecond is a frame, not none.
+func framesFor(d time.Duration) int {
+	if d <= 0 {
+		return 0
+	}
+	return int((d*shotTicks + time.Second - 1) / time.Second)
 }
 
 // parseShotScript reads a screenshot script. It returns nil when the
 // script is empty, which is what an ordinary run passes.
 func parseShotScript(script string) (*shooter, error) {
-	var s shooter
-	for word := range strings.FieldsSeq(script) {
-		kind, arg, ok := strings.Cut(word, ":")
-		if !ok {
-			return nil, fmt.Errorf("step %q has no colon; want wait:, key:, type: or shot:", word)
-		}
-		switch kind {
-		case "wait":
-			n, err := strconv.Atoi(arg)
-			if err != nil || n < 0 {
-				return nil, fmt.Errorf("wait:%s is not a number of frames", arg)
-			}
-			s.steps = append(s.steps, shotStep{kind: kind, n: n})
-		case "key":
-			chord, err := ui.ParseChord(arg)
-			if err != nil {
-				return nil, err
-			}
-			s.steps = append(s.steps, shotStep{kind: kind, chord: chord})
-		case "type", "shot":
-			if arg == "" {
-				return nil, fmt.Errorf("%s: needs something after the colon", kind)
-			}
-			s.steps = append(s.steps, shotStep{kind: kind, text: arg})
-		default:
-			return nil, fmt.Errorf("unknown step %q; want wait:, key:, type: or shot:", kind)
-		}
-	}
-	if len(s.steps) == 0 {
+	if strings.TrimSpace(script) == "" {
 		return nil, nil
 	}
-	return &s, nil
+	list, err := steps.ParseAll(strings.Fields(script))
+	if err != nil {
+		return nil, err
+	}
+	// Refused here rather than half way through a script that has
+	// already opened a window and taken pictures.
+	for i, step := range list {
+		switch step.Kind {
+		case steps.Key:
+			if _, err := ui.ParseChord(step.Chord); err != nil {
+				return nil, fmt.Errorf("step %d, %q: %w", i+1, step, err)
+			}
+		case steps.Until:
+			if step.Text == "" {
+				return nil, fmt.Errorf("step %d, %q: a bare until waits for the"+
+					" shell to say a command has finished, which a screenshot"+
+					" script has no way to ask about. Give it the text to wait for",
+					i+1, step)
+			}
+		case steps.Require, steps.Fail:
+			return nil, fmt.Errorf("step %d, %q: the guards are for a list of steps"+
+				" sent to a pane, where there is somebody to tell that it stopped",
+				i+1, step)
+		}
+	}
+	return &shooter{steps: list}, nil
 }
 
 // update runs one step of the script, at most one per frame, so that
@@ -105,6 +137,8 @@ func (s *shooter) update(a *app) {
 	case s.wait > 0:
 		s.wait--
 		return
+	case s.watching(a):
+		return
 	case s.at >= len(s.steps):
 		s.done = true
 		a.quit.Store(true)
@@ -113,24 +147,97 @@ func (s *shooter) update(a *app) {
 
 	step := s.steps[s.at]
 	s.at++
-	switch step.kind {
-	case "wait":
-		s.wait = step.n
-	case "key":
-		ev := input.Event{Kind: input.KeyPress, Key: step.chord.Key, Mods: step.chord.Mods}
-		if _, err := a.root.HandleKey(ev); err != nil {
-			a.logError(fmt.Errorf("screenshot key %s: %w", step.chord, err))
+	switch step.Kind {
+	case steps.Wait:
+		s.wait = framesFor(step.Wait)
+	case steps.Until:
+		// What the pane held as the step began, so the step waits for
+		// the text to arrive rather than matching the echo of what the
+		// script has just typed.
+		//
+		// Unless nothing has been typed since the last wait: then there
+		// is nothing for the text to be an answer to -- "until the
+		// prompt is up, then type" -- and the pane is taken as it
+		// already is, or the step waits out its whole patience for a
+		// prompt that was drawn before the script began.
+		s.was = ""
+		if s.typed {
+			s.was = paneNow(a)
 		}
-	case "type":
-		for _, r := range step.text {
+		s.want, s.left, s.typed = step.Text, framesFor(longestUntil), false
+	case steps.Key:
+		chord, err := ui.ParseChord(step.Chord)
+		if err != nil {
+			a.logError(fmt.Errorf("screenshot key %s: %w", step.Chord, err))
+			return
+		}
+		ev := input.Event{Kind: input.KeyPress, Key: chord.Key, Mods: chord.Mods}
+		if _, err := a.root.HandleKey(ev); err != nil {
+			a.logError(fmt.Errorf("screenshot key %s: %w", chord, err))
+		}
+		s.typed = true
+	case steps.Type:
+		for _, r := range step.Text {
 			ev := input.Event{Kind: input.Text, Rune: r, NormalText: true}
 			if _, err := a.root.HandleKey(ev); err != nil {
 				a.logError(fmt.Errorf("screenshot text %q: %w", r, err))
 			}
 		}
-	case "shot":
-		s.pending = step.text
+		s.typed = true
+	case steps.Shot:
+		s.pending = step.Text
 	}
+}
+
+// watching works an until step, and reports whether the script is still
+// waiting on it.
+//
+// The text has to arrive: what was on the pane when the step began does
+// not count, so "until:done" after typing "echo done" waits for the
+// command to say it rather than for the echo of the typing.
+func (s *shooter) watching(a *app) bool {
+	if s.want == "" {
+		return false
+	}
+	now := paneNow(a)
+	if strings.Contains(addedTo(s.was, now), s.want) {
+		s.want = ""
+		return false
+	}
+	if s.left--; s.left <= 0 {
+		a.logError(fmt.Errorf("screenshot until:%s: nothing said it in %s",
+			s.want, longestUntil))
+		s.want = ""
+		s.done = true
+		a.quit.Store(true)
+	}
+	return true
+}
+
+// paneNow is what the focused pane is showing, for an until step to
+// watch. Empty when the focus is not on a terminal.
+func paneNow(a *app) string {
+	t := a.focusedTerminal()
+	if t == nil {
+		return ""
+	}
+	return t.ReadLines(t.Size().Rows).Text
+}
+
+// addedTo is the part of a reading that was not in an earlier one.
+//
+// Both are the last lines of one pane, which only ever grows at the
+// bottom, so what the earlier reading ended with is where the new text
+// starts. A pane that has scrolled a whole screenful past has nothing
+// in common with it, and all of it is new.
+func addedTo(was, now string) string {
+	if was == "" {
+		return now
+	}
+	if at := strings.LastIndex(now, was); at >= 0 {
+		return now[at+len(was):]
+	}
+	return now
 }
 
 // captured writes the frame if one was asked for, and reports whether it

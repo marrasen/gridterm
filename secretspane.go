@@ -49,6 +49,14 @@ type secretsPane struct {
 	// id. Removing is the one thing that is tedious a row at a time.
 	picked map[string]bool
 
+	// top is the first line drawn, and shown how many were, so a click
+	// lands on what the user was looking at. Without them the list
+	// drew from the first line always and the bar walked off the
+	// bottom of what was on screen: Copy and Show then answered for a
+	// secret nobody could see.
+	top   int
+	shown int
+
 	// items and keys are the vault as it was last read, and read says
 	// whether they have been. Held rather than asked for on every
 	// frame, because Items goes to the disk to pick up what another
@@ -198,32 +206,74 @@ func (p *secretsPane) drawList(v grid.View) {
 	}
 
 	// The buttons have the bottom rows, so the list stops above them.
-	last := rows - secretsPaneButtons
-	y := secretsPaneTop
-	for i, it := range p.items {
-		if y >= last {
-			return
+	all := p.lines()
+	height := max(rows-secretsPaneButtons-secretsPaneTop, 0)
+	p.scrollTo(all, height)
+	p.shown = min(height, max(len(all)-p.top, 0))
+	for i := range p.shown {
+		ln := all[p.top+i]
+		y := secretsPaneTop + i
+		switch {
+		case ln.heading:
+			p.say(v, secretsPaneMargin, y, room, ln.text, p.app.panelDimFG(), 0)
+		case ln.at < 0:
+			// The blank over the heading.
+		default:
+			p.row(v, y, room, ln.at, ln.text, ln.note)
 		}
-		p.row(v, y, room, i, it.Name, secretNote(it))
-		y++
+	}
+}
+
+// paneLine is one line of the list as it is drawn.
+//
+// The list is not the rows: between the secrets and the keys are a
+// blank and a heading, which are drawn and never landed on. Building
+// the lines and then taking a window of them is what lets the bar and
+// the pointer agree about which line is which.
+type paneLine struct {
+	// at is which row this line is, counted the way the bar counts,
+	// and below zero for a line the bar never lands on.
+	at         int
+	text, note string
+	heading    bool
+}
+
+// lines is the list as it is drawn, top to bottom.
+func (p *secretsPane) lines() []paneLine {
+	out := make([]paneLine, 0, p.rows()+2)
+	for i, it := range p.items {
+		out = append(out, paneLine{at: i, text: it.Name, note: secretNote(it)})
 	}
 	if len(p.keys) == 0 {
-		return
+		return out
 	}
 	// A blank row and a heading, so the keys read as what opens the
 	// list above rather than as more of it.
-	y++
-	if y < last {
-		p.say(v, secretsPaneMargin, y, room, secretsPaneKeys, p.app.panelDimFG(), 0)
-		y++
-	}
+	out = append(out, paneLine{at: -1})
+	out = append(out, paneLine{at: -1, text: secretsPaneKeys, heading: true})
 	for i, s := range p.keys {
-		if y >= last {
-			return
-		}
-		p.row(v, y, room, len(p.items)+i, keyRowName(s), keyPaneNote(s))
-		y++
+		out = append(out, paneLine{
+			at: len(p.items) + i, text: keyRowName(s), note: keyPaneNote(s),
+		})
 	}
+	return out
+}
+
+// scrollTo moves the window so the row the bar is on is inside it.
+func (p *secretsPane) scrollTo(all []paneLine, height int) {
+	if height <= 0 {
+		p.top = 0
+		return
+	}
+	on := slices.IndexFunc(all, func(ln paneLine) bool { return ln.at == p.at })
+	switch {
+	case on < 0:
+	case on < p.top:
+		p.top = on
+	case on >= p.top+height:
+		p.top = on - height + 1
+	}
+	p.top = min(max(p.top, 0), max(len(all)-height, 0))
 }
 
 // secretsPanePicked marks a row ticked for removing. The same character
@@ -386,6 +436,12 @@ func (p *secretsPane) drawButtons(v grid.View) {
 	}
 	p.buttonRow = row
 	choices := p.choices()
+	if !slices.Equal(choices, p.drawnChoices) {
+		// A different row offers different things, and the place the
+		// bar was in among the old ones means nothing among the new:
+		// Show on a secret is Remove key on the key under it.
+		p.button = 0
+	}
 	p.button = min(max(p.button, 0), len(choices)-1)
 	p.buttonCols = ui.ButtonColsInto(p.buttonCols[:0], choices, cols, secretsPaneMargin)
 	p.drawnChoices = append(p.drawnChoices[:0], choices...)
@@ -625,9 +681,17 @@ func (p *secretsPane) HandleMouse(ev input.MouseEvent) (bool, error) {
 		}
 		return true, nil
 	}
-	if row := ev.Row - secretsPaneTop; row >= 0 && row < len(p.items) {
-		p.at = row
-		p.app.markDirty()
+	// Against the lines that were drawn, and only those. Mapping the
+	// row straight onto an index into everything put the bar on a
+	// secret that was never on screen -- a click on the blank under a
+	// short list chose one further down than the pane had ever shown.
+	if row := ev.Row - secretsPaneTop; row >= 0 && row < p.shown {
+		all := p.lines()
+		if at := p.top + row; at < len(all) && all[at].at >= 0 {
+			p.at = all[at].at
+			p.app.markDirty()
+			return true, nil
+		}
 		return true, nil
 	}
 	return false, nil

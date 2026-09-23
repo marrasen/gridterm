@@ -97,7 +97,7 @@ func readSecretsFrom(at string, v *secrets.Vault, dup secrets.Duplicates) (added
 		return 0, 0, fmt.Errorf("read %s: %w", at, err)
 	}
 	if len(in) == 0 {
-		return 0, 0, fmt.Errorf("%s holds no secrets this can read", at)
+		return 0, 0, fmt.Errorf("%s has no secrets this can read", at)
 	}
 	return v.Import(in, dup)
 }
@@ -131,5 +131,5 @@ func whatCameIn(at string, added, skipped int) string {
 		said += "\n" + wereAlreadyHere(skipped)
 	}
 	return said + "\n\n" + at + "\n" +
-		"Remove the file: it holds every secret in it in plain text."
+		"Remove the file: every secret in it is in plain text."
 }

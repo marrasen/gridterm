@@ -1021,7 +1021,12 @@ func wentAway(going []secrets.Item) string {
 }
 
 // cannotBePutBack is why removing one is worth a question.
-const cannotBePutBack = "The vault holds the only copy of what is in it."
+//
+// D29's own sentence, because it is the same fact. What it said before
+// -- that the vault holds the only copy of what is in it -- said vault
+// where every other line on screen says the secrets, and holds, which
+// rule 2's list has a program not doing.
+const cannotBePutBack = "This cannot be undone."
 
 // forgetSecret takes one out of the vault.
 func (a *app) forgetSecret() error {

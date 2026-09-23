@@ -267,3 +267,104 @@ func contains(in []string, want string) bool {
 	}
 	return false
 }
+
+// Reading this window's own export back in does not leave two
+// passphrases filed against one key.
+//
+// Keep both is right for a password and impossible for a key's
+// passphrase: the vault takes one per key file, and two would leave
+// nobody able to say which locks the key. The guard was on the branch
+// that adds a new secret and not on the one that keeps both, which is
+// the branch the ordinary answer takes.
+func TestReadingOurOwnExportBackKeepsOnePassphrasePerKey(t *testing.T) {
+	v, _, _ := aVault(t)
+	if _, err := v.Put(Item{Name: "id", Kind: Passphrase, File: "/keys/id"}, "the one"); err != nil {
+		t.Fatalf("put: %v", err)
+	}
+	out, err := v.Everything()
+	if err != nil {
+		t.Fatalf("everything: %v", err)
+	}
+
+	if _, skipped, err := v.Import(out, KeepBoth); err != nil {
+		t.Fatalf("import: %v", err)
+	} else if skipped != 1 {
+		t.Errorf("%d were passed over, want the passphrase", skipped)
+	}
+
+	filed := 0
+	items, err := v.Items()
+	if err != nil {
+		t.Fatalf("items: %v", err)
+	}
+	for _, it := range items {
+		if it.Kind == Passphrase && it.File == "/keys/id" {
+			filed++
+		}
+	}
+	if filed != 1 {
+		t.Errorf("%d passphrases are filed against the key, want one", filed)
+	}
+	// And the one that is there can still be renamed, which two would
+	// have made impossible.
+	for _, it := range items {
+		if it.Kind != Passphrase {
+			continue
+		}
+		it.Name = "a better name"
+		if _, err := v.PutDetails(it); err != nil {
+			t.Errorf("renaming it: %v", err)
+		}
+	}
+}
+
+// A file written by Excel starts with a byte order mark, which is not
+// whitespace and hid the first column.
+func TestAByteOrderMarkDoesNotHideTheFirstColumn(t *testing.T) {
+	// Written as an escape rather than as the character: Go refuses a
+	// source file with one at its head, and a literal one here reads
+	// as nothing at all.
+	in, err := ReadCSV(strings.NewReader(
+		"\ufeffname,url,username,password\nGitHub,https://x,marcus,hunter2\n"))
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if len(in) != 1 {
+		t.Fatalf("%d secrets, want the one", len(in))
+	}
+	if in[0].Name != "GitHub" {
+		t.Errorf("it came back named %q, want the name column", in[0].Name)
+	}
+}
+
+// A file says what a secret is, not what kind of thing this window
+// has. A word it does not use is not stored as one.
+func TestAKindThisWindowDoesNotUseIsNotKept(t *testing.T) {
+	in, err := ReadCSV(strings.NewReader(
+		"name,password,notes,kind\nodd,hunter2,,banana\n"))
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if len(in) != 1 {
+		t.Fatalf("%d secrets, want the one", len(in))
+	}
+	if in[0].Kind != Password {
+		t.Errorf("it came back a %q, want a password", in[0].Kind)
+	}
+}
+
+// And a file cannot file itself against a key on this machine unless
+// it says it is that key's passphrase.
+func TestAFileCannotClaimAKeyItIsNotThePassphraseFor(t *testing.T) {
+	in, err := ReadCSV(strings.NewReader(
+		"name,password,kind,file\nplanted,hunter2,password,/home/u/.ssh/id_ed25519\n"))
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if len(in) != 1 {
+		t.Fatalf("%d secrets, want the one", len(in))
+	}
+	if in[0].File != "" {
+		t.Errorf("it claims %q, and it is not a passphrase", in[0].File)
+	}
+}

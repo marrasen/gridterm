@@ -444,3 +444,113 @@ func TestTheSecretsPaneChangesThroughTheSameForm(t *testing.T) {
 	}
 	_ = v
 }
+
+// The bar never leaves what is on screen, and neither does a click.
+//
+// The list drew from the first secret always, so a bar walked to the
+// end sat on a row nobody could see -- and Copy and Show then answered
+// for a secret that was never drawn.
+func TestTheSecretsPaneKeepsTheBarOnScreen(t *testing.T) {
+	a, v, p := aWindowWithASecretsPane(t)
+	for i := range 12 {
+		name := "zz secret " + string(rune('a'+i))
+		if _, err := v.Put(secrets.Item{Name: name}, "value "+name); err != nil {
+			t.Fatalf("put: %v", err)
+		}
+	}
+	p.forget()
+
+	// A pane too short for the lot.
+	const cols, rows = 60, 9
+	secretsPaneText(t, p, cols, rows)
+	if p.rows() <= rows {
+		t.Fatalf("%d rows fit in %d, so this proves nothing", p.rows(), rows)
+	}
+
+	// Walked all the way down, a row at a time, and then back up.
+	// Against the window rather than against the text, because a long
+	// name is trimmed to fit and would not be found either way.
+	for range p.rows() + 2 {
+		if _, err := p.HandleKey(press(input.KeyDown, 0)); err != nil {
+			t.Fatalf("Down: %v", err)
+		}
+		secretsPaneText(t, p, cols, rows)
+		onScreen(t, p)
+	}
+	for range p.rows() + 2 {
+		if _, err := p.HandleKey(press(input.KeyUp, 0)); err != nil {
+			t.Fatalf("Up: %v", err)
+		}
+		secretsPaneText(t, p, cols, rows)
+		onScreen(t, p)
+	}
+	if _, err := p.HandleKey(press(input.KeyEnd, 0)); err != nil {
+		t.Fatalf("End: %v", err)
+	}
+	secretsPaneText(t, p, cols, rows)
+	onScreen(t, p)
+	_ = a
+}
+
+// onScreen fails unless the row the bar is on was one of the lines
+// last drawn.
+func onScreen(t *testing.T, p *secretsPane) {
+	t.Helper()
+	all := p.lines()
+	at := slices.IndexFunc(all, func(ln paneLine) bool { return ln.at == p.at })
+	if at < 0 {
+		t.Fatalf("the bar is on row %d, which is no line at all", p.at)
+	}
+	if at < p.top || at >= p.top+p.shown {
+		t.Fatalf("the bar is on line %d, and lines %d to %d were drawn",
+			at, p.top, p.top+p.shown-1)
+	}
+}
+
+// A click below the list does not choose a row that was never drawn.
+func TestTheSecretsPaneIgnoresAClickBelowWhatItDrew(t *testing.T) {
+	a, v, p := aWindowWithASecretsPane(t)
+	for i := range 12 {
+		if _, err := v.Put(secrets.Item{Name: "zz " + string(rune('a'+i))}, "v"); err != nil {
+			t.Fatalf("put: %v", err)
+		}
+	}
+	p.forget()
+	const cols, rows = 60, 24
+	secretsPaneText(t, p, cols, rows)
+	was := p.at
+
+	// The blank between the last line drawn and the buttons.
+	took, err := p.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft,
+		Col: 4, Row: secretsPaneTop + p.shown + 1,
+	})
+	if err != nil {
+		t.Fatalf("click: %v", err)
+	}
+	if took && p.at != was {
+		t.Errorf("a click under the list moved the bar to %d", p.at)
+	}
+	_ = a
+}
+
+// Moving onto a row that offers different things starts at its first
+// button rather than carrying a place over from the last row's.
+func TestTheSecretsPaneButtonsStartAgainOnADifferentRow(t *testing.T) {
+	_, _, p := aWindowWithASecretsPane(t)
+	secretsPaneText(t, p, 80, 24)
+
+	p.at = 0
+	if _, err := p.HandleKey(press(input.KeyRight, 0)); err != nil {
+		t.Fatalf("Right: %v", err)
+	}
+	if p.button == 0 {
+		t.Fatal("Right did not move the button")
+	}
+	// Onto the first key, which offers two of its own.
+	p.at = len(p.items)
+	secretsPaneText(t, p, 80, 24)
+	if p.button != 0 {
+		t.Errorf("the buttons start at %d on a key row, want the first", p.button)
+	}
+}

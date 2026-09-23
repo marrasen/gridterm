@@ -169,15 +169,20 @@ func (a *app) unlockVault(v *secrets.Vault, then func(error)) {
 		return
 	}
 	a.unlockKeyFile(keyFile, func(signer ssh.Signer, err error) {
-		switch {
-		case err == nil:
+		if err == nil {
 			err = v.Unlock([]ssh.Signer{signer})
-		case errors.Is(err, errDismissed), !v.TakesAPassphrase():
-			// The user shut the box, or there is nothing else to try.
-		default:
-			// The key would not open: it is not there any more, or it
-			// is not what the vault remembers. A passphrase is what
-			// that case is for.
+		}
+		// Anything but the user shutting the box is a reason to fall
+		// back, and there are two of them: the key file would not be
+		// read, or it was read and is not the key the vault remembers.
+		//
+		// The second is the one that matters and the one this used to
+		// miss. Losing a key and making another at the same path is
+		// what ssh-keygen does and what this window's own New SSH Key
+		// does, so the commonest way to be locked out arrives here
+		// with the file opening perfectly and Unlock saying no. That
+		// is exactly what a passphrase is for.
+		if err != nil && !errors.Is(err, errDismissed) && v.TakesAPassphrase() {
 			a.askForTheSecretsPassphrase(v, then)
 			return
 		}

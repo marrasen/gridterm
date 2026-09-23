@@ -83,6 +83,13 @@ func headerOf(head []string) map[string]int {
 		at[what] = -1
 	}
 	for i, name := range head {
+		if i == 0 {
+			// Excel writes one in front of the first header, and it is
+			// not whitespace, so trimming does not reach it. Left
+			// there, the first column matches nothing: a file whose
+			// first column is the password is refused outright.
+			name = strings.TrimPrefix(name, "\ufeff")
+		}
 		name = strings.ToLower(strings.TrimSpace(name))
 		for what, names := range columns {
 			if at[what] < 0 && slices.Contains(names, name) {
@@ -107,9 +114,15 @@ func rowOf(at map[string]int, row []string) (Export, bool) {
 		Name: get("name"),
 		User: get("username"),
 		URL:  get("url"),
-		File: get("file"),
-		Kind: Kind(strings.ToLower(get("kind"))),
+		Kind: kindOf(get("kind")),
 	}}
+	// Only where the file says this is a key's passphrase. A row of
+	// somebody else's export naming a key file on this machine would
+	// otherwise file itself against that key, and the real passphrase
+	// for it could not be saved afterwards.
+	if e.Kind == Passphrase {
+		e.File = get("file")
+	}
 	switch {
 	case e.Kind == Note:
 		e.Value = notes
@@ -137,6 +150,21 @@ func rowOf(at map[string]int, row []string) (Export, bool) {
 		e.Name = firstOf(e.URL, e.User, string(e.Kind))
 	}
 	return e, true
+}
+
+// kindOf is what a file's kind column means here, and nothing for a
+// word this window does not use.
+//
+// A file is somebody else's and says what it likes. An unknown word
+// stored as a kind comes back out of the list as itself and is read by
+// everything here as "not a password", which is a row nobody can
+// explain.
+func kindOf(said string) Kind {
+	switch k := Kind(strings.ToLower(strings.TrimSpace(said))); k {
+	case Password, Note, Passphrase:
+		return k
+	}
+	return ""
 }
 
 // firstOf is the first of these that says anything.
@@ -206,6 +234,16 @@ func (v *Vault) Import(in []Export, dup Duplicates) (added, skipped int, err err
 			it.ID, it.Made, it.Changed = id, now, now
 			if it.Kind == "" {
 				it.Kind = Password
+			}
+			// The same guard the branch above has. Keeping both is
+			// right for a password and impossible for a key's
+			// passphrase: the vault takes one per key file, and two
+			// would leave the user unable to say which locks the key.
+			// Reading this window's own export back in with the answer
+			// it offers first went straight through this branch.
+			if err := v.onlyPassphraseFor(it); err != nil {
+				skipped++
+				continue
 			}
 			v.items = append(v.items, entry{Item: it, Value: e.Value})
 			added++

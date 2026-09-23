@@ -191,3 +191,47 @@ func TestTheLastKeyGoingSaysThePassphraseRemains(t *testing.T) {
 	}
 	_ = a
 }
+
+// A key replaced at the same path is the commonest way to be locked
+// out, and the passphrase has to answer it.
+//
+// Losing a key and making another where it was is what ssh-keygen does
+// and what New SSH Key does. The file opens perfectly and is simply not
+// the key the vault remembers, so the fallback has to be on the answer
+// Unlock gives and not only on the file failing to be read.
+func TestAKeyReplacedAtTheSamePathFallsBackToThePassphrase(t *testing.T) {
+	a, keyFile := aWindowWithSecrets(t)
+	v := startTheVault(t, a, keyFile)
+	if _, err := v.Put(secrets.Item{Name: "margit"}, "hunter2"); err != nil {
+		t.Fatalf("put: %v", err)
+	}
+	if err := v.AddPassphrase("the way back in"); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+
+	// Another key, written where the old one was.
+	if err := os.Remove(keyFile); err != nil {
+		t.Fatalf("take the old key away: %v", err)
+	}
+	if err := os.Remove(keyFile + ".pub"); err != nil {
+		t.Fatalf("take its public half away: %v", err)
+	}
+	anEd25519KeyFile(t, keyFile)
+	v.Lock()
+	a.keys.Lock()
+
+	done := make(chan error, 1)
+	a.unlockVault(v, func(err error) { done <- err })
+	answer(t, a, btnUnlock, fldPassphrase, "the way back in")
+	waitFor(t, a, "the vault to open on the passphrase", func() bool { return len(done) > 0 })
+	if err := <-done; err != nil {
+		t.Fatalf("unlock: %v", err)
+	}
+	items, err := v.Items()
+	if err != nil {
+		t.Fatalf("items: %v", err)
+	}
+	if len(items) != 1 || items[0].Name != "margit" {
+		t.Errorf("it holds %v, want what was put in", items)
+	}
+}

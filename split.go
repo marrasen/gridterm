@@ -223,6 +223,10 @@ func (a *app) paneName(w ui.Widget) string {
 			// which pane, and following is something the pane is doing.
 			return conns.Reader.String() + " " + held.row.Label
 		}
+	case *jobPane:
+		if pane.entry != nil {
+			return pane.entry.Kind.String() + " " + pane.entry.Label
+		}
 	}
 	return fmt.Sprintf("%T", w)
 }
@@ -249,6 +253,12 @@ func (a *app) paneWhere(w ui.Widget) string {
 	case *files.Reader:
 		if held := a.readers[pane]; held != nil {
 			return groupName(held.row.Host)
+		}
+	case *jobPane:
+		if pane.entry != nil {
+			// The end the work is filed under, which is where its row
+			// is on the sidebar.
+			return groupName(pane.entry.Host)
 		}
 	}
 	return ""

@@ -9,6 +9,19 @@ change how something behaves.
 
 ## Unreleased
 
+### Changed
+
+**File work is watched in a pane, not a dialog.** Clicking a copy's row
+on the sidebar opened a box over the window, which took the keys and had
+to be dismissed before anything else could be done -- for work that
+takes as long as it takes. It opens a pane now, and the pane has room to
+say more than the box could: how far it has got, drawn as a bar that
+moves in eighths of a cell; how much has moved, how fast, and how long
+is left; the last seconds of it as a run; and the names it was given,
+ticked off as it passes them. `Cancel`, `Repeat` and the box that keeps
+a copy are along the bottom, and `Close` takes the pane away and leaves
+the work running.
+
 ### Added
 
 **An agent can type, press and wait in one call.** `send_keys` takes a

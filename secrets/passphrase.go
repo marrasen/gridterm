@@ -71,7 +71,7 @@ func (v *Vault) AddPassphrase(pass string) error {
 		return ErrLocked
 	}
 	if strings.TrimSpace(pass) == "" {
-		return errors.New("secrets: a passphrase that is nothing opens the secrets to everybody")
+		return errors.New("secrets: a passphrase needs something in it")
 	}
 	v.refresh()
 	s, err := wrapForPassphrase(pass, v.data)

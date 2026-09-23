@@ -21,7 +21,7 @@ const addSecretsPassphraseTitle = "Add Secrets Passphrase"
 func (a *app) addSecretsPassphrase() error {
 	return a.withOpenSecrets(couldNotAddThePassphrase, func(v *secrets.Vault) error {
 		f := a.newForm(addSecretsPassphraseTitle)
-		f.Lines = wrapLines(asStrongAsThis, errorLineWidth)
+		f.Lines = wrapLines(anyoneCanTryAtIt, errorLineWidth)
 		pass := a.newField("", '*')
 		f.AddField(fldPassphrase, pass)
 		// Twice, because it is masked and it is the thing that gets the
@@ -56,13 +56,18 @@ func (a *app) addSecretsPassphrase() error {
 // couldNotAddThePassphrase heads whatever went wrong.
 const couldNotAddThePassphrase = "Could not add the passphrase"
 
-// asStrongAsThis is what a passphrase slot costs, in one sentence.
+// anyoneCanTryAtIt is what a passphrase slot costs.
 //
-// Rule 10. Every other way into this vault is a key in a file; this one
-// is what somebody types, and anybody holding the file can guess at it
-// for as long as they like.
-const asStrongAsThis = "Anyone with the file can guess at it." +
-	" The secrets are then only as strong as what you type."
+// Rule 10, and one sentence for it: the shape D17 uses, which is who
+// can do what. Every other way into this vault is a key in a file and
+// nothing can be tried against one; this is what somebody typed.
+//
+// The first draft was two sentences, the second of which said the
+// secrets were then only as strong as what you type. That is the same
+// thing said twice, in words about the program's reasoning rather than
+// about what happens.
+const anyoneCanTryAtIt = "Anyone with a copy of the secrets can try" +
+	" passphrases against them until one opens."
 
 // addPassphraseInBackground derives the slot key off the drawing
 // goroutine and says how it went.

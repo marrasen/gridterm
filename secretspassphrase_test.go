@@ -32,7 +32,7 @@ func TestTheSecretsPassphraseFormSaysWhatItCosts(t *testing.T) {
 	f := awaitModal(t, a, "the passphrase form",
 		byTitle[*ui.Form](addSecretsPassphraseTitle))
 
-	if said := strings.Join(f.Lines, " "); !strings.Contains(said, asStrongAsThis) {
+	if said := strings.Join(f.Lines, " "); !strings.Contains(said, anyoneCanTryAtIt) {
 		t.Errorf("the form says %q without what it costs", said)
 	}
 	if f.Field(fldPassphrase) == nil || f.Field(fldConfirmPass) == nil {

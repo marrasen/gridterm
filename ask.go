@@ -81,10 +81,13 @@ func (u *askUser) Passphrase(ctx context.Context, key remote.LockedKey) (string,
 // what is being asked for here is the way back into the vault, and a
 // box headed with a key file would have the user typing the wrong
 // thing with nothing on screen to say so.
+//
+// No body. Unlock Secrets over a field called Passphrase says which
+// passphrase and which thing it opens, and a line under it repeating
+// that is the body rule 3 says to delete.
 func (u *askUser) secretsPassphrase(ctx context.Context, wrong int) (string, error) {
 	s := secret{
 		title:  dlgUnlockSecrets,
-		lines:  []string{secretsPassphraseAsks},
 		labels: []string{fldPassphrase},
 		masked: []bool{true},
 		accept: btnUnlock,
@@ -94,10 +97,6 @@ func (u *askUser) secretsPassphrase(ctx context.Context, wrong int) (string, err
 	}
 	return u.secret(ctx, s)
 }
-
-// secretsPassphraseAsks says which passphrase is wanted, because the
-// window asks for two kinds and only the wording tells them apart.
-const secretsPassphraseAsks = "The passphrase that opens the secrets."
 
 // wrongPassphrase is what the dialog says about the answer before it,
 // and nil the first time a key is asked about.

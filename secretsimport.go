@@ -35,13 +35,13 @@ const (
 func (a *app) importSecrets() error {
 	return a.withOpenSecrets(couldNotImport, func(v *secrets.Vault) error {
 		f := a.newForm(importSecretsTitle)
-		where := f.AddField(fldFile, a.newField("A file of secrets to read", 0))
+		where := f.AddField(fldFile, a.newField("CSV file path", 0))
 		where.Hint = "Comma-separated values, as another manager writes them"
 		a.completePath(where, vfs.NewLocal())
-		same := f.AddField(fldAlreadyHere, a.newField("", 0))
+		same := f.AddField(fldDuplicates, a.newField("", 0))
 		same.Options = []string{keepBothTitle, skipTitle, replaceTitle}
 		same.SetText(keepBothTitle)
-		same.Hint = "What to do with a secret this window already holds"
+		same.Hint = "What to do with a secret that is already here"
 
 		f.AddButton(ui.Button{Title: btnImport, Do: func() error {
 			// Returned rather than shown here, so the dialog stays open

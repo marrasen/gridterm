@@ -79,12 +79,12 @@ const (
 // The field labels.
 const (
 	fldAgent        = "Agent"
-	fldAlreadyHere  = "If it is already here"
 	fldCommand      = "Command"
 	fldComment      = "Comment"
 	fldConfirmPass  = "Confirm passphrase"
 	fldDirection    = "Direction"
 	fldDirectory    = "Directory"
+	fldDuplicates   = "Duplicates"
 	fldFile         = "File"
 	fldFolders      = "Folders"
 	fldFor          = "For"

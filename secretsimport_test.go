@@ -56,7 +56,7 @@ func TestTheImportFormOffersWhatToDoAboutDuplicates(t *testing.T) {
 	}
 	f := awaitModal(t, a, "the import form", byTitle[*ui.Form](importSecretsTitle))
 
-	same := f.Field(fldAlreadyHere)
+	same := f.Field(fldDuplicates)
 	if same == nil {
 		t.Fatal("the form does not ask what to do about a duplicate")
 	}

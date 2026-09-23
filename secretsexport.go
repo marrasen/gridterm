@@ -32,7 +32,7 @@ const exportPerm = 0o600
 func (a *app) exportSecrets() error {
 	return a.withOpenSecrets(couldNotExport, func(v *secrets.Vault) error {
 		f := a.newForm(exportSecretsTitle)
-		where := f.AddField(fldFile, a.newField("Where to write them", 0))
+		where := f.AddField(fldFile, a.newField("CSV file path", 0))
 		where.Hint = "Comma-separated values, which other managers read"
 		// Nothing filled in. What keeps this from happening by accident
 		// is that there is no path until one is typed, which is a

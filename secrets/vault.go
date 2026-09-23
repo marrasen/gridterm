@@ -306,21 +306,7 @@ func (v *Vault) Unlock(signers []ssh.Signer) error {
 	// been locked for hours, and another window may have added a key or
 	// a secret since: the file is the vault, and what was read when it
 	// was opened is a copy of how it looked then.
-	switch f, err := readFile(v.path); {
-	case err == nil:
-		v.file = f
-	case errors.Is(err, os.ErrNotExist):
-		// Nothing there, whether or not this vault once read one. The
-		// copy in memory is of a file that has gone, and what the
-		// caller needs to hear is the same thing a window that never
-		// had one hears -- not an open() error after a passphrase
-		// dialog it should never have put up.
-		v.file = nil
-		return fmt.Errorf("secrets: there is nothing at %s yet", v.path)
-	default:
-		// There is something there and it will not be read. Opening the
-		// copy in memory would hand over secrets out of a file nobody
-		// can say is still the same one.
+	if err := v.reopen(); err != nil {
 		return err
 	}
 	// A slot that does not open is remembered and the next key is still
@@ -374,6 +360,34 @@ func (v *Vault) Unlock(signers []ssh.Signer) error {
 		return trouble
 	}
 	return ErrWrongKey
+}
+
+// reopen reads the file again, for a way in that is about to try to
+// open it.
+//
+// Every way in does this. The copy in memory is of how the vault
+// looked when it was opened, which may be hours ago and may be before
+// another window wrote it, and opening the copy and then saving would
+// put that copy over the disk.
+//
+// A file that has gone answers the way a window that never had one is
+// answered, rather than with an open() error after a dialog that
+// should never have gone up. A file that is there and will not be read
+// is refused outright: handing over secrets out of a file nobody can
+// say is still the same one is the one thing this must not do.
+//
+// The caller holds the lock.
+func (v *Vault) reopen() error {
+	switch f, err := readFile(v.path); {
+	case err == nil:
+		v.file = f
+		return nil
+	case errors.Is(err, os.ErrNotExist):
+		v.file = nil
+		return fmt.Errorf("secrets: there is nothing at %s yet", v.path)
+	default:
+		return err
+	}
 }
 
 // readContents unseals the items with the data key.

@@ -225,7 +225,18 @@ func (v *Vault) Import(in []Export, dup Duplicates) (added, skipped int, err err
 			skipped++
 		case dup == ReplaceThem:
 			it := v.items[at].Item
-			it.User, it.URL, it.Notes, it.Changed = e.User, e.URL, e.Notes, now
+			it.User, it.Changed = e.User, now
+			// Only where the file says something. A file with no notes
+			// column is not a file saying the notes are empty, and
+			// nothing on screen shows these, so emptying them is a loss
+			// nobody would see: a Chrome export over a KeePassXC import
+			// would take the recovery codes with it.
+			if e.URL != "" {
+				it.URL = e.URL
+			}
+			if e.Notes != "" {
+				it.Notes = e.Notes
+			}
 			v.items[at] = entry{Item: it, Value: e.Value}
 			added++
 		default:
@@ -274,7 +285,19 @@ func sameSecret(held, coming Item) bool {
 	if kind == "" {
 		kind = Password
 	}
-	return strings.EqualFold(held.Name, coming.Name) &&
-		strings.EqualFold(held.User, coming.User) &&
-		held.Kind == kind
+	if !strings.EqualFold(held.Name, coming.Name) ||
+		!strings.EqualFold(held.User, coming.User) || held.Kind != kind {
+		return false
+	}
+	if kind == Passphrase {
+		// And the key it opens. A passphrase is named after the file it
+		// belongs to and carries no user, so two machines that each made
+		// the key this window offers by default hold items that match on
+		// everything else -- and Replace then put one machine's
+		// passphrase over the other's, for a key it does not open. That
+		// key is then locked with something that exists nowhere: the
+		// vault was the only record and nothing was ever on screen.
+		return held.File == coming.File
+	}
+	return true
 }

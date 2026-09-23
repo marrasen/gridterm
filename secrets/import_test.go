@@ -470,3 +470,82 @@ func TestARealExportSurvivesTheRoundTrip(t *testing.T) {
 		t.Errorf("%q went in and did not come out", name)
 	}
 }
+
+// Replace does not put one machine's key passphrase over another's.
+//
+// A passphrase is named after the key file and carries no user, so two
+// machines that each made the key this window offers by default hold
+// items alike in every other way. Replacing across them would lock one
+// machine's key with a passphrase that exists nowhere: the vault is
+// the only record and nothing is ever on screen.
+func TestReplaceWillNotCrossOneKeyPassphraseWithAnother(t *testing.T) {
+	v, _, _ := aVault(t)
+	if _, err := v.Put(Item{
+		Name: "id_ed25519_gridterm", Kind: Passphrase, File: "/home/b/.ssh/id_ed25519_gridterm",
+	}, "this machine's"); err != nil {
+		t.Fatalf("put: %v", err)
+	}
+
+	// The same name and kind, for the other machine's key.
+	in := []Export{{Item: Item{
+		Name: "id_ed25519_gridterm", Kind: Passphrase, File: "/home/a/.ssh/id_ed25519_gridterm",
+	}, Value: "the other machine's"}}
+	if _, _, err := v.Import(in, ReplaceThem); err != nil {
+		t.Fatalf("import: %v", err)
+	}
+
+	got, err := v.PassphraseFor("/home/b/.ssh/id_ed25519_gridterm")
+	if err != nil {
+		t.Fatalf("PassphraseFor: %v", err)
+	}
+	if got != "this machine's" {
+		t.Errorf("this machine's key is now locked with %q", got)
+	}
+}
+
+// And Replace does not empty what the file says nothing about.
+//
+// A file with no notes column is not a file saying the notes are
+// empty. Nothing on screen shows them, so losing them is a loss
+// nobody would see.
+func TestReplaceKeepsWhatTheFileDoesNotMention(t *testing.T) {
+	v, _, _ := aVault(t)
+	if _, err := v.Put(Item{
+		Name: "GitHub", User: "marcus",
+		URL: "https://github.com", Notes: "the recovery codes",
+	}, "hunter2"); err != nil {
+		t.Fatalf("put: %v", err)
+	}
+
+	// A Chrome export: a name, a user and a password, and no more.
+	in, err := ReadCSV(strings.NewReader(
+		"name,url,username,password\nGitHub,,marcus,newpassword\n"))
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if _, _, err := v.Import(in, ReplaceThem); err != nil {
+		t.Fatalf("import: %v", err)
+	}
+
+	items, err := v.Items()
+	if err != nil {
+		t.Fatalf("items: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("%d secrets, want the one replaced", len(items))
+	}
+	if items[0].Notes != "the recovery codes" {
+		t.Errorf("the notes are now %q", items[0].Notes)
+	}
+	if items[0].URL != "https://github.com" {
+		t.Errorf("the url is now %q", items[0].URL)
+	}
+	// And the password did change, which is what Replace is for.
+	got, err := v.Secret(items[0].ID)
+	if err != nil {
+		t.Fatalf("secret: %v", err)
+	}
+	if got != "newpassword" {
+		t.Errorf("the password is %q, want the one from the file", got)
+	}
+}

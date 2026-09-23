@@ -469,6 +469,12 @@ func (p *secretsPane) press(i int) error {
 	if v == nil || v.Locked() {
 		return nil
 	}
+	if p.shown == 0 {
+		// A pane too short to draw a single line still has room for the
+		// buttons, and a button pressed over a list nobody can see acts
+		// on a row nobody chose.
+		return nil
+	}
 	switch choices[i] {
 	case btnCopy:
 		return p.onTheRow(v, a.copySecret)
@@ -621,12 +627,10 @@ func (p *secretsPane) HandleKey(ev input.Event) (bool, error) {
 		p.move(1)
 		return true, nil
 	case input.KeyHome:
-		p.at = 0
-		p.app.markDirty()
+		p.goTo(0)
 		return true, nil
 	case input.KeyEnd:
-		p.at = max(p.rows()-1, 0)
-		p.app.markDirty()
+		p.goTo(max(p.rows()-1, 0))
 		return true, nil
 	case input.KeyLeft, input.KeyRight:
 		// The same keys as every list with things to do to it: up and
@@ -688,8 +692,7 @@ func (p *secretsPane) HandleMouse(ev input.MouseEvent) (bool, error) {
 	if row := ev.Row - secretsPaneTop; row >= 0 && row < p.shown {
 		all := p.lines()
 		if at := p.top + row; at < len(all) && all[at].at >= 0 {
-			p.at = all[at].at
-			p.app.markDirty()
+			p.goTo(all[at].at)
 			return true, nil
 		}
 		return true, nil
@@ -704,7 +707,23 @@ func (p *secretsPane) move(by int) {
 	if p.rows() == 0 {
 		return
 	}
-	p.at = min(max(p.at+by, 0), p.rows()-1)
+	p.goTo(min(max(p.at+by, 0), p.rows()-1))
+}
+
+// goTo puts the bar on a row, and starts the buttons again when that
+// row offers different ones.
+//
+// The drawing does this too, and the drawing is not soon enough: a
+// frame's keys are all handed over before any of it is drawn, so Right
+// onto Show, Down onto a key and Enter all land before the buttons
+// have been worked out again -- and Enter then presses the second of
+// the key's two rather than the second of the secret's four.
+func (p *secretsPane) goTo(at int) {
+	was := p.choices()
+	p.at = at
+	if !slices.Equal(was, p.choices()) {
+		p.button = 0
+	}
 	p.app.markDirty()
 }
 

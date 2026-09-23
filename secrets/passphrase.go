@@ -40,6 +40,20 @@ const (
 	argonThreads = 4
 )
 
+// What a slot that names no cost was sealed under.
+//
+// Pinned rather than read off the three above, which are what a new
+// slot is made with and are meant to be raised. Every slot this has
+// ever written names its own cost, so these are only ever reached by a
+// later version meeting a file from an earlier one -- and that is
+// exactly the moment where following the current defaults would derive
+// the wrong key and lock somebody out.
+const (
+	argonTimeV1    = 3
+	argonMemoryV1  = 64 * 1024
+	argonThreadsV1 = 4
+)
+
 // ErrWrongPassphrase says a passphrase opened no slot.
 var ErrWrongPassphrase = errors.New("secrets: that passphrase does not open the secrets")
 
@@ -53,7 +67,7 @@ var ErrNoPassphrase = errors.New("secrets: no passphrase opens the secrets")
 func passKeyFrom(pass string, s slot) []byte {
 	time, memory, threads := s.Time, s.Memory, s.Threads
 	if time == 0 || memory == 0 || threads == 0 {
-		time, memory, threads = argonTime, argonMemory, argonThreads
+		time, memory, threads = argonTimeV1, argonMemoryV1, argonThreadsV1
 	}
 	return argon2.IDKey([]byte(pass), s.Salt, time, memory, threads, keyLen)
 }
@@ -74,6 +88,13 @@ func (v *Vault) AddPassphrase(pass string) error {
 		return errors.New("secrets: a passphrase needs something in it")
 	}
 	v.refresh()
+	if slices.ContainsFunc(v.file.Slots, func(s slot) bool {
+		return s.Kind == slotKindPassphrase
+	}) {
+		// One is a way back in; two are two rows saying "Passphrase"
+		// with nothing to tell them apart when one is removed.
+		return errors.New("secrets: a passphrase already opens the secrets")
+	}
 	s, err := wrapForPassphrase(pass, v.data)
 	if err != nil {
 		return err
@@ -140,8 +161,14 @@ func (v *Vault) UnlockWith(pass string) error {
 	if v.data != nil {
 		return nil
 	}
-	if v.file == nil {
-		return fmt.Errorf("secrets: there is nothing at %s yet", v.path)
+	// The same look at the disk a key gets. Without it this opened the
+	// copy read when the window started -- and it is reached now
+	// wherever a key fails, including where the key failed because the
+	// file will not be read at all, so it opened a copy of a vault
+	// nobody could say was still there and the next save wrote that
+	// copy over the disk.
+	if err := v.reopen(); err != nil {
+		return err
 	}
 	took := false
 	for _, s := range v.file.Slots {

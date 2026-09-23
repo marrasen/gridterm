@@ -2,6 +2,7 @@ package secrets
 
 import (
 	"errors"
+	"os"
 	"testing"
 
 	"golang.org/x/crypto/ssh"
@@ -165,5 +166,55 @@ func TestTheCostOfAGuessIsWrittenDown(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("no passphrase slot was written")
+	}
+}
+
+// A file that will not be read is refused, not opened out of memory.
+//
+// The passphrase is reached wherever a key fails, and one of those is
+// the file being unreadable. Opening the copy read when the window
+// started would hand over secrets out of a file nobody can say is
+// still there, and the next save would put that copy over the disk.
+func TestAPassphraseWillNotOpenAFileThatCannotBeRead(t *testing.T) {
+	v, _, path := aVault(t)
+	if _, err := v.Put(Item{Name: "margit"}, "hunter2"); err != nil {
+		t.Fatalf("put: %v", err)
+	}
+	if err := v.AddPassphrase("one"); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	v.Lock()
+
+	// There and unreadable, which a restore with the wrong owner gives.
+	if err := os.Chmod(path, 0o000); err != nil {
+		t.Skipf("cannot make it unreadable here: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(path, 0o600) })
+	if _, err := os.ReadFile(path); err == nil {
+		t.Skip("this user reads it anyway, so this proves nothing")
+	}
+
+	if err := v.UnlockWith("one"); err == nil {
+		t.Fatal("it opened a vault whose file will not be read")
+	}
+	if !v.Locked() {
+		t.Error("it is open on a copy of a file nobody can read")
+	}
+}
+
+// One passphrase, not two: two rows both saying "Passphrase" have
+// nothing to tell them apart when one is being removed.
+func TestASecondPassphraseIsRefused(t *testing.T) {
+	v, _, _ := aVault(t)
+	if err := v.AddPassphrase("one"); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	if err := v.AddPassphrase("another"); err == nil {
+		t.Fatal("a second passphrase was added")
+	}
+	// And the first still opens it.
+	v.Lock()
+	if err := v.UnlockWith("one"); err != nil {
+		t.Errorf("the first no longer opens it: %v", err)
 	}
 }

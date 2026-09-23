@@ -432,6 +432,8 @@ func (a *app) entryOf(w ui.Widget) *conns.Entry {
 			return held.row
 		}
 		return nil
+	case *jobPane:
+		return p.entry
 	}
 	return nil
 }
@@ -494,7 +496,7 @@ func (a *app) isPane(w ui.Widget) bool {
 	}
 	return ui.EachLeaf(w, func(leaf ui.Widget) bool {
 		switch leaf.(type) {
-		case *term.Terminal, *files.Pane, *files.Reader:
+		case *term.Terminal, *files.Pane, *files.Reader, *jobPane:
 			return true
 		}
 		return false
@@ -563,6 +565,9 @@ func (a *app) closePane(w ui.Widget) error {
 			errs = append(errs, a.dropReader(r))
 			continue
 		}
+		// A pane watching a piece of file work holds nothing: the work
+		// runs on the queue and goes on running when the pane goes.
+		a.forgetJobPane(leaf)
 		t, isTerm := leaf.(*term.Terminal)
 		if !isTerm {
 			continue

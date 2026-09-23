@@ -509,7 +509,7 @@ func (a *app) runJob(op jobs.Op, from, to jobEnd, owned []vfs.FS) *jobs.Job {
 		Out:   op.To != nil && to.host != conns.Local,
 	})
 	e.Label = j.Name()
-	e.Reveal = func() { a.openJobDialog(j, e, from, to) }
+	e.Reveal = func() { a.showJobPane(j, e, from, to) }
 	e.Close = a.dropJobRow(e, j)
 	a.jobs[e] = j
 	a.registry.Add(e)
@@ -612,13 +612,6 @@ func (a *app) refreshJobs() { a.refreshJobsAt(time.Now()) }
 // refreshJobsAt is refreshJobs at one moment, so everything a frame says
 // about a job is worked out from the same clock.
 func (a *app) refreshJobsAt(now time.Time) {
-	// Before the sweep below, because a job that has just finished is
-	// taken off the list there and the dialog showing it stays open.
-	for _, m := range a.modals {
-		if d, ok := m.w.(*jobDialog); ok {
-			d.refresh(now)
-		}
-	}
 	for e, j := range a.jobs {
 		p := j.Progress()
 		e.Note = jobNote(p)

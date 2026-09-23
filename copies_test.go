@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/jobs"
@@ -28,7 +27,7 @@ func aCopyWindow(t *testing.T) (*testApp, string) {
 
 // aFinishedCopy runs a copy of one file between two directories the test
 // owns, waits for it to finish and opens its dialog.
-func aFinishedCopy(t *testing.T, a *testApp) (*jobDialog, string, string) {
+func aFinishedCopy(t *testing.T, a *testApp) (*jobPane, string, string) {
 	t.Helper()
 	at := t.TempDir()
 	into := t.TempDir()
@@ -48,8 +47,8 @@ func aFinishedCopy(t *testing.T, a *testApp) (*jobDialog, string, string) {
 	waitFor(t, a, "the copy to finish", func() bool { return j.Progress().Done })
 
 	row := theRowFor(t, a, j)
-	a.openJobDialog(j, row, here, here)
-	d := awaitModal[*jobDialog](t, a, "the copy's dialog", nil)
+	a.showJobPane(j, row, here, here)
+	d := theJobPane(t, a)
 	return d, at, into
 }
 
@@ -59,7 +58,7 @@ func TestACopyAskedToBeKeptIsKept(t *testing.T) {
 	a, _ := aCopyWindow(t)
 	d, at, into := aFinishedCopy(t, a)
 
-	tickBox(t, a, d.Form, fldSaveCopy)
+	pressChoice(t, d, fldSaveCopy)
 
 	kept := a.copies.all()
 	if len(kept) != 1 {
@@ -84,21 +83,22 @@ func TestTheSaveBoxSaysWhetherTheCopyIsKept(t *testing.T) {
 	a, _ := aCopyWindow(t)
 	d, _, _ := aFinishedCopy(t, a)
 
-	box := d.Field(fldSaveCopy)
-	if box == nil {
-		t.Fatal("the finished dialog has no box that saves the copy")
+	if !offersChoice(d, fldSaveCopy) {
+		t.Fatalf("the finished pane offers %v, with no box that saves the copy",
+			choiceTitles(d))
 	}
-	if box.On() {
+	if ticked(d, fldSaveCopy) {
 		t.Error("the box starts ticked for a copy that is not saved")
 	}
 
-	tickBox(t, a, d.Form, fldSaveCopy)
-	if !box.On() || len(a.copies.all()) != 1 {
-		t.Fatalf("the box is %v and the window keeps %v", box.On(), a.copies.all())
+	pressChoice(t, d, fldSaveCopy)
+	if !ticked(d, fldSaveCopy) || len(a.copies.all()) != 1 {
+		t.Fatalf("the box is %v and the window keeps %v",
+			ticked(d, fldSaveCopy), a.copies.all())
 	}
 
-	tickBox(t, a, d.Form, fldSaveCopy)
-	if box.On() {
+	pressChoice(t, d, fldSaveCopy)
+	if ticked(d, fldSaveCopy) {
 		t.Error("the box is still ticked for a copy that was dropped")
 	}
 	if got := a.copies.all(); len(got) != 0 {
@@ -112,7 +112,7 @@ func TestAKeptCopyIsInTheSettingsFile(t *testing.T) {
 	a, path := aCopyWindow(t)
 	d, _, _ := aFinishedCopy(t, a)
 
-	tickBox(t, a, d.Form, fldSaveCopy)
+	pressChoice(t, d, fldSaveCopy)
 
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -146,7 +146,7 @@ func TestOnlyACopyCanBeKept(t *testing.T) {
 func TestRunningARememberedCopyCopiesAgain(t *testing.T) {
 	a, _ := aCopyWindow(t)
 	d, at, into := aFinishedCopy(t, a)
-	tickBox(t, a, d.Form, fldSaveCopy)
+	pressChoice(t, d, fldSaveCopy)
 	// Taken away, so the copy has to put it back.
 	landed := filepath.Join(into, "deploy.log")
 	if err := os.Remove(landed); err != nil {
@@ -218,7 +218,7 @@ func TestTheListSaysWhatACopyDoes(t *testing.T) {
 func TestTheDialogListsAndForgets(t *testing.T) {
 	a, _ := aCopyWindow(t)
 	d, _, _ := aFinishedCopy(t, a)
-	tickBox(t, a, d.Form, fldSaveCopy)
+	pressChoice(t, d, fldSaveCopy)
 
 	if err := a.openCopies(); err != nil {
 		t.Fatalf("open the list: %v", err)
@@ -331,11 +331,12 @@ func TestACopyThatCannotBeKeptOffersNoButton(t *testing.T) {
 		t.Fatal("the copy did not start")
 	}
 	waitFor(t, a, "the copy to finish", func() bool { return j.Progress().Done })
-	a.openJobDialog(j, theRowFor(t, a, j), here, here)
-	d := awaitModal[*jobDialog](t, a, "the copy's dialog", nil)
+	a.showJobPane(j, theRowFor(t, a, j), here, here)
+	d := theJobPane(t, a)
 
-	if offersButton(d, "Remember") {
-		t.Errorf("the dialog offers %v, want no Remember on work that cannot be kept", buttonTitles(d))
+	if offersChoice(d, fldSaveCopy) {
+		t.Errorf("the pane offers %v, want no box on work that cannot be kept",
+			choiceTitles(d))
 	}
 }
 
@@ -349,28 +350,25 @@ func TestTheOrderOfTheNamesDoesNotMakeACopyTwice(t *testing.T) {
 	}
 }
 
-// A second dialog for the same copy catches up with what the first one
-// did, so one does not go on saying a copy is unsaved once it is saved.
-func TestASecondDialogCatchesUpWithWhatWasKept(t *testing.T) {
+// The box says what the saved list holds, not what it was last set to,
+// so one pane does not go on saying a copy is unsaved once it is saved.
+func TestTheSaveBoxFollowsTheList(t *testing.T) {
 	a, _ := aCopyWindow(t)
 	d, _, _ := aFinishedCopy(t, a)
 	saved, can := asSavedCopy(d.job.Op(), d.from, d.to)
 	if !can {
 		t.Fatal("the copy cannot be kept")
 	}
-	box := d.Field(fldSaveCopy)
-	if box == nil {
-		t.Fatal("the finished dialog has no box that saves the copy")
+	if !offersChoice(d, fldSaveCopy) {
+		t.Fatalf("the finished pane offers %v, with no box", choiceTitles(d))
 	}
 
-	// Kept behind the dialog's back, the way another dialog for the same
+	// Kept behind this pane's back, the way another pane on the same
 	// copy would.
 	if err := a.copies.keep(saved); err != nil {
 		t.Fatalf("keep it: %v", err)
 	}
-	d.refresh(time.Now())
-
-	if !box.On() {
+	if !ticked(d, fldSaveCopy) {
 		t.Error("the box still says the copy is not saved")
 	}
 
@@ -378,9 +376,7 @@ func TestASecondDialogCatchesUpWithWhatWasKept(t *testing.T) {
 	if err := a.copies.forget(saved); err != nil {
 		t.Fatalf("forget it: %v", err)
 	}
-	d.refresh(time.Now())
-
-	if box.On() {
+	if ticked(d, fldSaveCopy) {
 		t.Error("the box still says the copy is saved")
 	}
 }

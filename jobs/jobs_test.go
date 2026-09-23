@@ -3,6 +3,7 @@ package jobs
 import (
 	"context"
 	"errors"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -550,4 +551,55 @@ func TestAJobSaysWhenItEnded(t *testing.T) {
 	if again := j.Progress().Ended; !again.Equal(p.Ended) {
 		t.Fatalf("it says it ended at %v and then at %v", p.Ended, again)
 	}
+}
+
+// A job dropped while it is running is waited for all the same.
+//
+// Dropping cancels it, and cancelling is not stopping: it finishes the
+// write it is in and unwinds. A queue that stopped answering for it the
+// moment it left the list would let a window close, or a test take its
+// directory away, while it was still writing.
+func TestAQueueWaitsForAJobItDropped(t *testing.T) {
+	held := make(chan struct{})
+	from, to := local(t), local(t)
+	if err := os.WriteFile(filepath.Join(from.real, "one.txt"), []byte("the body"), 0o600); err != nil {
+		t.Fatalf("write it: %v", err)
+	}
+	q := New(1)
+
+	slow := &heldFS{FS: vfs.NewLocal(), held: held, writing: make(chan struct{})}
+	j := q.Start(t.Context(), Op{
+		Kind: Copy,
+		From: from.fs, At: from.at, Names: []string{"one.txt"},
+		To: slow, Into: to.at,
+	}, Options{})
+	<-slow.writing
+
+	q.Drop(j)
+	if got := q.Jobs(); len(got) != 0 {
+		t.Fatalf("the queue still lists %d jobs", len(got))
+	}
+
+	// Still going, so a wait must not come back yet.
+	if q.WaitFor(20 * time.Millisecond) {
+		t.Error("the queue said everything had stopped while the copy was still in a write")
+	}
+	close(held)
+	if !q.WaitFor(2 * time.Second) {
+		t.Error("the queue never saw the dropped job stop")
+	}
+}
+
+// heldFS is a filesystem whose writes wait for the test.
+type heldFS struct {
+	vfs.FS
+	held    chan struct{}
+	writing chan struct{}
+	once    sync.Once
+}
+
+func (f *heldFS) Create(path string, mode fs.FileMode) (io.WriteCloser, error) {
+	f.once.Do(func() { close(f.writing) })
+	<-f.held
+	return f.FS.Create(path, mode)
 }

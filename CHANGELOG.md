@@ -9,6 +9,15 @@ change how something behaves.
 
 ## Unreleased
 
+### Fixed
+
+**A window closing waits for file work the user dismissed.** Dropping a
+copy cancels it and takes its row away, and cancelling is not stopping:
+the write it is in finishes, and one waiting on a machine that has
+stopped answering waits however long that takes. The queue stopped
+answering for it the moment it left the list, so a window could close
+while it was still writing.
+
 ### Changed
 
 **What this window is serving is a pane too.** It was a dialog, which

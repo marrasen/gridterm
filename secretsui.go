@@ -819,11 +819,7 @@ func (a *app) removeVaultKey() error {
 // one picked away.
 func (a *app) chooseAKeyToRemove(v *secrets.Vault) error {
 	keys := v.Keys()
-	if len(keys) < 2 {
-		n := a.newNotice("Only one key opens the secrets",
-			`Choose "`+addSecretsKeyTitle+`" to add another first.`)
-		n.SetNoCopy()
-		a.presentNotice(n)
+	if a.onlyOneKeyOpensThem(v) {
 		return nil
 	}
 	var hide func()
@@ -848,6 +844,23 @@ func (a *app) chooseAKeyToRemove(v *secrets.Vault) error {
 	}
 	a.markDirty()
 	return nil
+}
+
+// onlyOneKeyOpensThem says so when there is one key and nothing to
+// remove, and reports whether that was the case.
+//
+// Shared by the chooser and the pane, which both have to stop before
+// taking the last one: removing it would leave nothing that opens the
+// vault, and nothing here could put it back.
+func (a *app) onlyOneKeyOpensThem(v *secrets.Vault) bool {
+	if len(v.Keys()) >= 2 {
+		return false
+	}
+	n := a.newNotice("Only one key opens the secrets",
+		`Choose "`+addSecretsKeyTitle+`" to add another first.`)
+	n.SetNoCopy()
+	a.presentNotice(n)
+	return true
 }
 
 // keyRowName is what a key's row says it is: where it was, or its

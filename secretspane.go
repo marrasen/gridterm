@@ -84,10 +84,13 @@ const (
 // secretsPaneSettles is how often the pane reads the vault again while
 // it is open.
 //
-// Its own changes are picked up at once. This is for the ones it cannot
-// be told about: another window, or another command in this one. Often
-// enough that the list is not stale to look at, rarely enough that a
-// pane drawing sixty times a second is not sixty reads.
+// One way of picking up a change rather than two. Everything that
+// changes the vault does it behind a dialog that closes when it likes,
+// and half of it happens in another window or another command
+// altogether, so a pane that was told about its own changes would still
+// need this for the rest. Often enough that the list is not stale to
+// look at, rarely enough that a pane drawing sixty times a second is
+// not sixty reads.
 const secretsPaneSettles = time.Second
 
 // newSecretsPane opens a pane on the vault.
@@ -122,13 +125,6 @@ func (p *secretsPane) Draw(v grid.View) {
 func (p *secretsPane) forget() {
 	p.items, p.keys, p.read, p.trouble = nil, nil, false, nil
 	p.picked = nil
-}
-
-// stale says to read the vault again on the next frame, for a change
-// this pane has just made.
-func (p *secretsPane) stale() {
-	p.read = false
-	p.app.markDirty()
 }
 
 // reload reads the vault again. Called when the pane has nothing and
@@ -335,6 +331,15 @@ func (p *secretsPane) onSecret() (secrets.Item, bool) {
 	return p.items[p.at], true
 }
 
+// onKey is the key slot the bar is on, and whether it is on one.
+func (p *secretsPane) onKey() (secrets.KeySlot, bool) {
+	at := p.at - len(p.items)
+	if at < 0 || at >= len(p.keys) {
+		return secrets.KeySlot{}, false
+	}
+	return p.keys[at], true
+}
+
 // choices are what the pane offers for the row the bar is on, left to
 // right.
 //
@@ -342,10 +347,13 @@ func (p *secretsPane) onSecret() (secrets.Item, bool) {
 // has its own two, which are not written yet: until they are, a key row
 // offers what any row does.
 func (p *secretsPane) choices() []string {
-	if _, on := p.onSecret(); !on {
-		return []string{btnAdd}
+	if _, on := p.onKey(); on {
+		return []string{btnAddKey, btnRemoveKey}
 	}
-	return []string{btnAdd, btnChange, p.removeTitle()}
+	if _, on := p.onSecret(); !on {
+		return []string{btnAddSecret, btnAddNote}
+	}
+	return []string{btnAddSecret, btnAddNote, btnChange, p.removeTitle()}
 }
 
 // removeTitle says how many the button would take, when it is more than
@@ -399,13 +407,41 @@ func (p *secretsPane) press(i int) error {
 		return nil
 	}
 	switch choices[i] {
-	case btnAdd:
+	case btnAddSecret:
 		return p.app.askForSecret(v, secrets.Password)
+	case btnAddNote:
+		// The same form, with the field unmasked and no Generate on it.
+		// A note typed into one line is what this gives; somewhere
+		// taller to write one is worth having and is not this step.
+		return p.app.askForSecret(v, secrets.Note)
+	case btnAddKey:
+		return p.app.chooseAKeyToAdd(v)
+	case btnRemoveKey:
+		return p.removeKey(v)
 	case btnChange:
 		return p.change(v)
 	default:
 		return p.remove(v)
 	}
+}
+
+// removeKey takes away the slot the bar is on, once the user has been
+// asked.
+//
+// Straight to the question rather than through the chooser, because the
+// pane already knows which key: the row the bar is on is the one on
+// screen. The guard before it is the chooser's own -- the last key
+// cannot go, and nothing here could put it back.
+func (p *secretsPane) removeKey(v *secrets.Vault) error {
+	s, on := p.onKey()
+	if !on {
+		return nil
+	}
+	if p.app.onlyOneKeyOpensThem(v) {
+		return nil
+	}
+	p.app.confirmRemoveKey(v, s)
+	return nil
 }
 
 // change opens the form the chooser opens, on the row the bar is on.

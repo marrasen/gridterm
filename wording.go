@@ -46,6 +46,9 @@ const (
 // object, or a second answer to the same question.
 const (
 	btnCheckUpdates  = "Check for updates"
+	btnAddKey        = "Add key"
+	btnAddNote       = "Add note"
+	btnAddSecret     = "Add secret"
 	btnCopy          = "Copy"
 	btnCopyPrompt    = "Copy prompt"
 	btnCopyPublicKey = "Copy public key"
@@ -56,6 +59,7 @@ const (
 	btnNotNow        = "Not now"
 	btnOpenLink      = "Open link"
 	btnReconnect     = "Reconnect"
+	btnRemoveKey     = "Remove key"
 	btnRemovePane    = "Remove pane"
 	btnRename        = "Rename"
 	btnRepeat        = "Repeat"

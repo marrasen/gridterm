@@ -92,6 +92,25 @@ reads like a bug.
   passphrase in here) are already written and already right: they are
   reused, not rebuilt.
 
+**Reading.** Removing goes straight to the question, not through a
+list: the row the bar is on is which key, and a chooser in between
+would ask again what the screen already says. The guard against taking
+the last one is the chooser's own, lifted out so both call it.
+
+## Somewhere taller to write a note
+
+Not a step of its own, and worth writing down before it is forgotten.
+`Add note` puts a note on one line, in the field a password uses with
+the stars turned off. A note is a licence, a recovery code, half a
+page of joining instructions -- the things people keep that are not one
+word. One line is the wrong shape for all of them.
+
+What it wants is a box several rows tall that wraps, in the form where
+the field is now. That is a toolkit change rather than a secrets one:
+`ui.Field` is one line by construction, and nothing else in the window
+has ever needed more. Worth doing on its own, for whatever else grows a
+paragraph later.
+
 ## Step 4 -- the way out
 
 This is the step the whole thing is for, so it is worth being exact

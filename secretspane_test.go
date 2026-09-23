@@ -1,6 +1,7 @@
 package main
 
 import (
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -195,13 +196,92 @@ func TestTheSecretsPaneOffersWhatTheRowCanDo(t *testing.T) {
 	secretsPaneText(t, p, 80, 24)
 
 	p.at = 0
-	if got := p.choices(); !slices.Contains(got, btnChange) || !slices.Contains(got, btnRemove) {
-		t.Errorf("a secret offers %v, want a way to change and remove it", got)
+	got := p.choices()
+	for _, want := range []string{btnAddSecret, btnAddNote, btnChange, btnRemove} {
+		if !slices.Contains(got, want) {
+			t.Errorf("a secret offers %v, want %q among them", got, want)
+		}
 	}
-	// Onto the first key.
+	// Onto the first key, which offers its own two and none of those.
 	p.at = len(p.items)
-	if got := p.choices(); slices.Contains(got, btnChange) {
-		t.Errorf("a key offers %v, which is what a secret offers", got)
+	got = p.choices()
+	for _, want := range []string{btnAddKey, btnRemoveKey} {
+		if !slices.Contains(got, want) {
+			t.Errorf("a key offers %v, want %q among them", got, want)
+		}
+	}
+	for _, never := range []string{btnChange, btnRemove, btnAddSecret} {
+		if slices.Contains(got, never) {
+			t.Errorf("a key offers %q, which is what a secret offers", never)
+		}
+	}
+}
+
+// Add note opens the note form, which is the one with no stars and
+// nothing to generate.
+func TestTheSecretsPaneAddsANote(t *testing.T) {
+	a, _, p := aWindowWithASecretsPane(t)
+	secretsPaneText(t, p, 80, 24)
+	p.at = 0
+
+	if err := p.press(slices.Index(p.choices(), btnAddNote)); err != nil {
+		t.Fatalf("press Add note: %v", err)
+	}
+	f := awaitModal(t, a, "the note form", byTitle[*ui.Form](addNoteTitle))
+	if f.Field(fldNote) == nil {
+		t.Error("the form has no note field")
+	}
+	if f.Field(fldShowSecret) != nil {
+		t.Error("a note's form offers the stars it does not have")
+	}
+}
+
+// Removing a key from the pane asks about the key the bar is on,
+// without a list in between: the row on screen is the answer.
+func TestTheSecretsPaneRemovesTheKeyTheBarIsOn(t *testing.T) {
+	a, v, p := aWindowWithASecretsPane(t)
+	spare := anEd25519KeyFile(t, filepath.Join(t.TempDir(), "id_ed25519_spare"))
+	a.addVaultKeyOn(v, spare)
+	waitFor(t, a, "the key to be added", func() bool { return len(v.Keys()) == 2 })
+	p.forget()
+	secretsPaneText(t, p, 100, 24)
+
+	// Onto the spare, which is the second key.
+	p.at = len(p.items) + 1
+	on, is := p.onKey()
+	if !is || on.KeyFile != spare {
+		t.Fatalf("the bar is on %+v, want the spare key", on)
+	}
+	if err := p.press(slices.Index(p.choices(), btnRemoveKey)); err != nil {
+		t.Fatalf("press Remove key: %v", err)
+	}
+	f := awaitModal(t, a, "the question about the key",
+		byTitle[*ui.Form](dlgRemove+spare+"?"))
+	pressButton(t, a, f, btnRemove)
+
+	if len(v.Keys()) != 1 {
+		t.Errorf("%d keys still open the vault, want the one", len(v.Keys()))
+	}
+}
+
+// The last key cannot go from the pane either. Removing it would leave
+// nothing that opens the vault.
+func TestTheSecretsPaneWillNotTakeTheLastKey(t *testing.T) {
+	a, v, p := aWindowWithASecretsPane(t)
+	secretsPaneText(t, p, 80, 24)
+	p.at = len(p.items)
+	if _, is := p.onKey(); !is {
+		t.Fatal("the bar is not on a key")
+	}
+
+	if err := p.press(slices.Index(p.choices(), btnRemoveKey)); err != nil {
+		t.Fatalf("press Remove key: %v", err)
+	}
+	if said := noticeTitleUp(t, a); !strings.Contains(said, "Only one key") {
+		t.Errorf("it said %q", said)
+	}
+	if len(v.Keys()) != 1 {
+		t.Error("the key went anyway")
 	}
 }
 

@@ -131,6 +131,10 @@ func rowOf(at map[string]int, row []string) (Export, bool) {
 		if e.Kind == "" {
 			e.Kind = Password
 		}
+		// Whatever was written beside it. Most managers let a login
+		// carry a note, and dropping it here threw away the part the
+		// user typed by hand rather than generated.
+		e.Notes = notes
 	case notes != "":
 		// No password, so what is kept is the note. Every manager has
 		// a row like this: a licence, a recovery code, an answer to a
@@ -221,7 +225,7 @@ func (v *Vault) Import(in []Export, dup Duplicates) (added, skipped int, err err
 			skipped++
 		case dup == ReplaceThem:
 			it := v.items[at].Item
-			it.User, it.URL, it.Changed = e.User, e.URL, now
+			it.User, it.URL, it.Notes, it.Changed = e.User, e.URL, e.Notes, now
 			v.items[at] = entry{Item: it, Value: e.Value}
 			added++
 		default:

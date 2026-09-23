@@ -85,7 +85,7 @@ func WriteCSV(w io.Writer, out []Export) error {
 // show it as. A password and a key's passphrase both go in the
 // password column, because that is what they are.
 func csvRow(e Export) []string {
-	password, notes := e.Value, ""
+	password, notes := e.Value, e.Notes
 	if e.Kind == Note {
 		password, notes = "", e.Value
 	}

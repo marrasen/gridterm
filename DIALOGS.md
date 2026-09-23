@@ -1157,6 +1157,12 @@ sealed.
 loses nothing. A file is not a reason for something somebody already
 has to disappear.
 
+What a row carries beside its password -- the note most managers let a
+login have -- is kept with it. `secrets/testdata/keepassxc.csv` is what
+found that: it came out of a real keepassxc-cli, and an entry with a
+password and three recovery codes in its notes was coming in as the
+password alone.
+
 ## D77
 - **Title:** `Secrets read in`
 - **Body:**

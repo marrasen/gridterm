@@ -2,6 +2,8 @@ package secrets
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -366,5 +368,105 @@ func TestAFileCannotClaimAKeyItIsNotThePassphraseFor(t *testing.T) {
 	}
 	if in[0].File != "" {
 		t.Errorf("it claims %q, and it is not a passphrase", in[0].File)
+	}
+}
+
+// A file a real KeePassXC wrote, read whole.
+//
+// testdata/keepassxc.csv came out of keepassxc-cli 2.7.6, not out of
+// anybody's memory of what one looks like. It carries what a real
+// export carries and a hand-written one does not: quoted fields,
+// escaped quotes inside them, a note running over three physical lines
+// inside one field, Japanese, and four columns this window has never
+// heard of.
+//
+// It is the file that found the bug below. An entry with a password
+// and three recovery codes in its notes came in as the password alone.
+func TestAFileARealKeePassXCWrote(t *testing.T) {
+	f, err := os.Open(filepath.Join("testdata", "keepassxc.csv"))
+	if err != nil {
+		t.Fatalf("open it: %v", err)
+	}
+	defer func() { _ = f.Close() }()
+
+	in, err := ReadCSV(f)
+	if err != nil {
+		t.Fatalf("read it: %v", err)
+	}
+	by := map[string]Export{}
+	for _, e := range in {
+		by[e.Name] = e
+	}
+	if len(by) != 4 {
+		t.Fatalf("read %d secrets, want the four in it", len(by))
+	}
+
+	// A comma and an escaped quote inside quoted fields.
+	if got := by["Comma, in the name"]; got.Value != `pa,ss"word` || got.User != "user,name" {
+		t.Errorf("the awkward one came back as %+v", got)
+	}
+	// Unicode, including a script that is not Latin at all.
+	if got := by["Unicode ünïcödé"]; got.Value != "påsswörd-日本語" || got.User != "mårcus" {
+		t.Errorf("the unicode one came back as %+v", got)
+	}
+	// A password and a note on one entry: both are kept. Most managers
+	// let a login carry a note, and this used to throw it away.
+	codes := by["Recovery codes"]
+	if codes.Value != "x" {
+		t.Errorf("its password came back as %q", codes.Value)
+	}
+	want := "line one\nline two, with a comma\nline \"three\" quoted"
+	if codes.Notes != want {
+		t.Errorf("its notes came back as %q, want %q", codes.Notes, want)
+	}
+}
+
+// And what goes in comes back out, notes and all.
+func TestARealExportSurvivesTheRoundTrip(t *testing.T) {
+	f, err := os.Open(filepath.Join("testdata", "keepassxc.csv"))
+	if err != nil {
+		t.Fatalf("open it: %v", err)
+	}
+	in, err := ReadCSV(f)
+	_ = f.Close()
+	if err != nil {
+		t.Fatalf("read it: %v", err)
+	}
+
+	v, _, _ := aVault(t)
+	if _, _, err := v.Import(in, KeepBoth); err != nil {
+		t.Fatalf("import: %v", err)
+	}
+	out, err := v.Everything()
+	if err != nil {
+		t.Fatalf("everything: %v", err)
+	}
+	var buf bytes.Buffer
+	if err := WriteCSV(&buf, out); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	back, err := ReadCSV(bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("read it back: %v", err)
+	}
+
+	was := map[string]Export{}
+	for _, e := range in {
+		was[e.Name] = e
+	}
+	for _, e := range back {
+		want, had := was[e.Name]
+		if !had {
+			t.Errorf("%q came out and never went in", e.Name)
+			continue
+		}
+		if e.Value != want.Value || e.User != want.User ||
+			e.URL != want.URL || e.Notes != want.Notes {
+			t.Errorf("%q came back as %+v, want %+v", e.Name, e, want)
+		}
+		delete(was, e.Name)
+	}
+	for name := range was {
+		t.Errorf("%q went in and did not come out", name)
 	}
 }

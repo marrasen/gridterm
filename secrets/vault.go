@@ -46,13 +46,21 @@ type Item struct {
 	// renaming the item leaves the key still unlocking.
 	File string `json:"file,omitempty"`
 
-	// URL is where the secret is used, and empty for most of them.
+	// URL is where the secret is used, and Notes is whatever was
+	// written beside it. Both are empty for most.
 	//
-	// Nothing in the window asks for one. It is here so that a secret
-	// imported from a manager that had one keeps it, and carries it
-	// back out again: a way out that quietly drops a column is a way
-	// out that loses the user's work.
-	URL string `json:"url,omitempty"`
+	// Nothing in the window asks for either. They are here so that a
+	// secret imported from a manager that had them keeps them, and
+	// carries them back out again: a way out that quietly drops a
+	// column is a way out that loses the user's work.
+	//
+	// Notes is not what a Note holds. A note's own text is its value,
+	// the way a password's is; this is what somebody wrote beside a
+	// login, which every manager has a field for and which used to go
+	// nowhere. A real export found that: an entry with a password and
+	// three recovery codes in its notes came in as the password alone.
+	URL   string `json:"url,omitempty"`
+	Notes string `json:"notes,omitempty"`
 
 	Made    time.Time `json:"made"`
 	Changed time.Time `json:"changed"`

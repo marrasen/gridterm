@@ -66,8 +66,11 @@ const couldNotAddThePassphrase = "Could not add the passphrase"
 // secrets were then only as strong as what you type. That is the same
 // thing said twice, in words about the program's reasoning rather than
 // about what happens.
+//
+// It ended "until one opens" for a while, which is what trying
+// passphrases is for and needs no saying.
 const anyoneCanTryAtIt = "Anyone with a copy of the secrets can try" +
-	" passphrases against them until one opens."
+	" passphrases against them."
 
 // addPassphraseInBackground derives the slot key off the drawing
 // goroutine and says how it went.

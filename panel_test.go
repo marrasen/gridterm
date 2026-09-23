@@ -1094,12 +1094,41 @@ func TestClearingTheLastRowOnAMachineTakesItsCommands(t *testing.T) {
 
 	for _, row := range panelText(a, panelNow) {
 		if strings.Contains(row, host) {
-			t.Fatalf("the sidebar still shows %q after clearing", row)
+			t.Fatalf("the sidebar still shows %q after clearing\n%s", row, whatIsHeld(a))
 		}
 	}
 	if _, ok := a.root.Commands.Lookup(want); ok {
 		t.Errorf("%q is still registered for a machine the sidebar no longer holds", want)
 	}
+}
+
+// whatIsHeld describes what the window is still holding, for the
+// message a failure here leaves behind.
+//
+// A heading on the sidebar means the registry still has a row under
+// that machine, and which row it is and what state it reports is the
+// whole of the answer. Without it a failure says only that the heading
+// is there, which is where this test was left the two times it failed:
+// seen twice, never reproduced, and nothing written down to work from.
+// The next one costs nothing to diagnose.
+func whatIsHeld(a *testApp) string {
+	var b strings.Builder
+	now := time.Now()
+	b.WriteString("  rows the registry still holds:\n")
+	rows := 0
+	for _, group := range a.registry.Groups(now) {
+		for _, row := range group.Rows {
+			rows++
+			fmt.Fprintf(&b, "    %s / %s / %v / %v\n",
+				groupName(group.Host), row.Label, row.Kind, row.State)
+		}
+	}
+	if rows == 0 {
+		b.WriteString("    none\n")
+	}
+	fmt.Fprintf(&b, "  panes: %d, machines: %v, connecting: %v\n",
+		len(a.panes), a.machines.names(), a.machines.reaching())
+	return b.String()
 }
 
 // allClosedOn reports whether every row on a machine says closed, which

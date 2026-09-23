@@ -47,11 +47,22 @@ type slot struct {
 	Salt        []byte `json:"salt"`
 	Nonce       []byte `json:"nonce"`
 	Wrapped     []byte `json:"wrapped"`
+
+	// Time, Memory and Threads are what a passphrase slot's key cost to
+	// derive, and nothing on a key's. They are written down rather than
+	// assumed so that raising them later does not shut anybody out of a
+	// vault sealed under the old ones.
+	Time    uint32 `json:"time,omitempty"`
+	Memory  uint32 `json:"memory,omitempty"`
+	Threads uint8  `json:"threads,omitempty"`
 }
 
-// slotKindSSH is a slot opened by an SSH key. It is the only kind so
-// far; a passphrase would be another, and would need no change to
-// anything already written.
+// slotKindSSH is a slot opened by an SSH key. The other is
+// slotKindPassphrase, which is opened by something the user knows.
+//
+// Fingerprint names the key on one of these. On a passphrase slot
+// there is nothing to fingerprint, so it holds a name drawn at random
+// instead: what it is for either way is saying which slot to remove.
 const slotKindSSH = "ssh"
 
 // readFile reads a vault file. A missing file is reported as

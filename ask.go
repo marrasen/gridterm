@@ -74,6 +74,31 @@ func (u *askUser) Passphrase(ctx context.Context, key remote.LockedKey) (string,
 	})
 }
 
+// secretsPassphrase asks for the passphrase that opens the secrets,
+// which is not a key's and says so.
+//
+// Its own dialog rather than the key one with a different path in it:
+// what is being asked for here is the way back into the vault, and a
+// box headed with a key file would have the user typing the wrong
+// thing with nothing on screen to say so.
+func (u *askUser) secretsPassphrase(ctx context.Context, wrong int) (string, error) {
+	s := secret{
+		title:  dlgUnlockSecrets,
+		lines:  []string{secretsPassphraseAsks},
+		labels: []string{fldPassphrase},
+		masked: []bool{true},
+		accept: btnUnlock,
+	}
+	if wrong > 0 {
+		s.trouble = errWrongPassphrase
+	}
+	return u.secret(ctx, s)
+}
+
+// secretsPassphraseAsks says which passphrase is wanted, because the
+// window asks for two kinds and only the wording tells them apart.
+const secretsPassphraseAsks = "The passphrase that opens the secrets."
+
 // wrongPassphrase is what the dialog says about the answer before it,
 // and nil the first time a key is asked about.
 func wrongPassphrase(key remote.LockedKey) error {

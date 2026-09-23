@@ -158,15 +158,30 @@ func keyFileForVault(v *secrets.Vault) (string, error) {
 func (a *app) unlockVault(v *secrets.Vault, then func(error)) {
 	keyFile, err := keyFileForVault(v)
 	if err != nil {
+		// No key of this vault's is on this machine. A passphrase is
+		// the way back in when that happens, and asking for it is
+		// better than telling the user to go and find a key.
+		if v.TakesAPassphrase() {
+			a.askForTheSecretsPassphrase(v, then)
+			return
+		}
 		then(err)
 		return
 	}
 	a.unlockKeyFile(keyFile, func(signer ssh.Signer, err error) {
-		if err != nil {
-			then(err)
+		switch {
+		case err == nil:
+			err = v.Unlock([]ssh.Signer{signer})
+		case errors.Is(err, errDismissed), !v.TakesAPassphrase():
+			// The user shut the box, or there is nothing else to try.
+		default:
+			// The key would not open: it is not there any more, or it
+			// is not what the vault remembers. A passphrase is what
+			// that case is for.
+			a.askForTheSecretsPassphrase(v, then)
 			return
 		}
-		then(v.Unlock([]ssh.Signer{signer}))
+		then(err)
 	})
 }
 

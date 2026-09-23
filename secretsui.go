@@ -866,16 +866,27 @@ func (a *app) onlyOneKeyOpensThem(v *secrets.Vault) bool {
 // keyRowName is what a key's row says it is: where it was, or its
 // fingerprint when the vault was never told where.
 func keyRowName(s secrets.KeySlot) string {
+	if s.ByPassphrase() {
+		// Not the name in the slot, which is drawn at random and says
+		// nothing: what this slot is, is a passphrase.
+		return passphraseRowName
+	}
 	if s.KeyFile != "" {
 		return s.KeyFile
 	}
 	return s.Fingerprint
 }
 
+// passphraseRowName is what a passphrase slot is called in a list.
+const passphraseRowName = "Passphrase"
+
 // keyRowNote is the right-hand side of a key's row: whether the key is
 // on this machine, and its fingerprint when the row does not already
 // say it.
 func keyRowNote(s secrets.KeySlot) string {
+	if s.ByPassphrase() {
+		return passphraseRowNote
+	}
 	var parts []string
 	if onThisMachine(s) {
 		parts = append(parts, "on this machine")
@@ -885,6 +896,11 @@ func keyRowNote(s secrets.KeySlot) string {
 	}
 	return strings.Join(parts, " · ")
 }
+
+// passphraseRowNote says what a passphrase slot is for, which is the
+// one thing about it worth a line: it is the way in when the keys are
+// not here.
+const passphraseRowNote = "a way in without a key"
 
 // onThisMachine reports whether a slot's key file is here.
 func onThisMachine(s secrets.KeySlot) bool {
@@ -927,6 +943,9 @@ func (a *app) confirmRemoveKey(v *secrets.Vault, s secrets.KeySlot) {
 func whatRemovingCosts(v *secrets.Vault, s secrets.KeySlot) string {
 	if !lastKeyHere(v, s) {
 		return "Another key on this machine still opens the secrets."
+	}
+	if v.TakesAPassphrase() && !s.ByPassphrase() {
+		return "The passphrase still opens them here."
 	}
 	return "Opening them here again needs a key from another machine."
 }

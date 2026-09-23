@@ -148,6 +148,7 @@ const (
 	dlgUnknownHostKey   = "Unknown host key"
 	dlgUpdateAvailable  = "Update available"
 	dlgUnlockKey        = "Unlock Private Key"
+	dlgUnlockSecrets    = "Unlock Secrets"
 	dlgWaitingForServer = "Waiting for server"
 )
 

@@ -252,12 +252,49 @@ sit first on the row, in the order the chooser has them, so the two
 lists are learned once.
 
 ## Still to settle
-1. **An encrypted export as well as the plaintext one?** It would make
-   export a backup too. Against it: the vault file already is one, and a
-   second encrypted format is a second thing to open in five years.
+1. ~~An encrypted export as well as the plaintext one?~~ Settled on
+   23 September, and the answer was that it is the wrong thing. See
+   below.
 2. **How much editing before this is worth landing?** Step 1 and 2 are
    a usable feature on their own; 4 and 5 are what make it safe to
    adopt.
+
+## The encrypted export, and why it became a passphrase instead
+
+Asked about on 23 September. Working out what it would be for answered
+it.
+
+Backup is the only thing it could be for: moving machines is already
+`Add Secrets Key` and a copy of the file, and the file itself is
+already an encrypted backup. So an encrypted export would be a second
+encrypted blob in a second format holding the same secrets, **opened by
+the same key** -- lose the key and both are gone. A format to keep, for
+nothing.
+
+What it was reaching for is real, though. Every slot in this vault is
+an ed25519 key, so there is no way in that does not depend on a key
+file surviving. Lose them all and the secrets are gone, and copying the
+file does not help because the copy wants the same keys.
+
+So the thing worth building is a **passphrase slot**, not a file. The
+format already expected one -- the note on `slotKindSSH` said a
+passphrase would be another kind and would need no change to anything
+already written -- and it is the same shape as a key slot with the
+derivation swapped: Argon2id over the passphrase and a random salt
+gives the slot key, which wraps the same data key. Then `cp
+secrets.json somewhere` **is** the encrypted backup, with no export
+step to remember and nothing to go stale.
+
+**It is the weaker door and it is opt-in.** An ed25519 key is a
+hundred and twenty-eight bits in a file; a passphrase is what somebody
+typed, and anybody holding the file can guess at it as long as they
+like. Nothing adds one. The dialog says what it costs before it is
+added, and opens on Cancel.
+
+**The cost of a guess is written into the slot.** Argon2id's time,
+memory and threads go in the file rather than being assumed, so they
+can be raised later without shutting anybody out of a vault sealed
+under the old ones.
 
 ## What this is likely to cost
 

@@ -243,6 +243,9 @@ const secretsPaneKeys = "Keys that open them"
 // that has to be read whole or not at all. Where a key has to be told
 // apart by its fingerprint, keyRowName already uses it as the name.
 func keyPaneNote(s secrets.KeySlot) string {
+	if s.ByPassphrase() {
+		return passphraseRowNote
+	}
 	if onThisMachine(s) {
 		return "on this machine"
 	}

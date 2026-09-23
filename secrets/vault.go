@@ -273,6 +273,11 @@ func (v *Vault) Wants() []string {
 	}
 	out := make([]string, 0, len(v.file.Slots))
 	for _, s := range v.file.Slots {
+		if s.Kind != slotKindSSH {
+			// A passphrase slot has no key to offer and nothing to
+			// match: what it wants is asked for, not held.
+			continue
+		}
 		out = append(out, s.Fingerprint)
 	}
 	return out
@@ -720,16 +725,23 @@ func (v *Vault) Keys() []KeySlot {
 	}
 	out := make([]KeySlot, 0, len(v.file.Slots))
 	for _, s := range v.file.Slots {
-		out = append(out, KeySlot{Fingerprint: s.Fingerprint, KeyFile: s.KeyFile})
+		out = append(out, KeySlot{
+			Kind: s.Kind, Fingerprint: s.Fingerprint, KeyFile: s.KeyFile,
+		})
 	}
 	return out
 }
 
-// KeySlot is one key that opens the vault, as a dialog shows it.
+// KeySlot is one way into the vault, as a dialog shows it.
 type KeySlot struct {
+	// Kind is what opens it: an SSH key, or a passphrase.
+	Kind        string
 	Fingerprint string
 	KeyFile     string
 }
+
+// ByPassphrase reports whether this slot is opened by one.
+func (s KeySlot) ByPassphrase() bool { return s.Kind == slotKindPassphrase }
 
 // save seals the items and writes the file. The caller holds the lock.
 func (v *Vault) save() error {

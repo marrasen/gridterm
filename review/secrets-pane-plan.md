@@ -128,14 +128,25 @@ it is the one action in the feature that takes every secret out of the
 thing built to hold them:
 
 ```
-Write every secret to <path>?
+Export every secret to <path>?
 Anyone who can read the file can read them all.
 ```
 
-`Write` and `Cancel`, opening on `Cancel`.
+`Export` and `Cancel`, opening on `Cancel`.
 
-No export to the clipboard. No default path, so it is never one press
-from happening. No writing over a file that is there.
+Two dialogs, not one: a form for the path and then the question, which
+is the shape a tunnel already uses. The first draft put the warning in
+the form's body and opened that form on `Cancel`, and the form was
+unusable -- everything typed went to a button and the field stayed
+empty. A question with nothing to fill in opens on the way out; a form
+whose first job is to be typed into opens in its field. What keeps the
+export from happening by accident is that there is no path until one is
+typed, which is a better guard than where the focus starts.
+
+No export to the clipboard. No default path. No writing over a file
+that is there: the file is made with `O_EXCL` and `0600` in one step,
+so a path typed over something else cannot take it away and there is no
+moment when the file exists and is readable by everyone.
 
 **The format is CSV, and there is no standard one.** Checked on 23
 September rather than assumed. Every manager defines its own columns:

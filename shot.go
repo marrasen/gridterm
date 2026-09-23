@@ -54,9 +54,9 @@ type shooter struct {
 
 	// want is the text an until step is watching for, empty when none
 	// is. was is what the pane held when that step began, so the step
-	// waits for the text to arrive rather than matching the echo of
-	// what the script has just typed. left is how many frames it has
-	// before it gives up.
+	// waits for the text to arrive rather than being answered by what
+	// was already there. left is how many frames it has before it
+	// gives up.
 	want string
 	was  string
 	left int
@@ -160,8 +160,8 @@ func (s *shooter) update(a *app) {
 		s.wait = framesFor(step.Wait)
 	case steps.Until:
 		// What the pane held as the step began, so the step waits for
-		// the text to arrive rather than matching the echo of what the
-		// script has just typed.
+		// the text to arrive rather than being answered by a row that
+		// was already there.
 		//
 		// Unless nothing has been typed at all yet: then there is
 		// nothing for the text to be an answer to -- "until the prompt
@@ -204,9 +204,10 @@ func (s *shooter) update(a *app) {
 // watching works an until step, and reports whether the script is still
 // waiting on it.
 //
-// The text has to arrive: what was on the pane when the step began does
-// not count, so "until:done" after typing "echo done" waits for the
-// command to say it rather than for the echo of the typing.
+// The text has to arrive: the rows the pane already had when the step
+// began do not count, so "until:$" after starting a command waits for
+// the shell's next prompt rather than being answered by the one the
+// command was typed at.
 func (s *shooter) watching(a *app) bool {
 	if s.want == "" {
 		return false

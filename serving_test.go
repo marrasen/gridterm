@@ -1502,7 +1502,7 @@ func servingPaneText(p *servingPane) string {
 	cols, rows := 90, 30
 	g := grid.New(cols, rows, color.RGBA{}, color.RGBA{})
 	p.Layout(ui.Size{Cols: cols, Rows: rows})
-	p.draw(g.View(), p.app.serving.clients(), time.Now())
+	p.draw(g.View(), p.app.serving.clients())
 	return gridRows(g)
 }
 
@@ -1553,7 +1553,7 @@ func TestTheServingPaneFollowsWhoIsConnected(t *testing.T) {
 	clients := []*serve.Client{{Name: "marcus@laptop", Addr: "10.0.0.9:51000"}}
 	g := grid.New(90, 30, color.RGBA{}, color.RGBA{})
 	pane.Layout(ui.Size{Cols: 90, Rows: 30})
-	pane.draw(g.View(), clients, time.Now())
+	pane.draw(g.View(), clients)
 
 	said := gridRows(g)
 	for _, want := range []string{"marcus@laptop", "10.0.0.9:51000", "1 connected"} {
@@ -1610,5 +1610,97 @@ func TestTheServingPaneHasARow(t *testing.T) {
 	// the same as stopping.
 	if !a.serving.on() {
 		t.Error("closing the pane stopped the port")
+	}
+}
+
+// The pane goes when the serving does.
+//
+// A listener that failed leaves nothing to show: an address nothing is
+// listening on, a fingerprint for nobody, and a button offering to stop
+// what has stopped.
+func TestTheServingPaneGoesWhenTheListenerDoes(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	withServing(t, a, aPublicKey(t, "marcus@laptop"))
+	if err := a.startServing("0", whereHere); err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+	pane := theServingPane(t, a)
+
+	a.servingStopped(errors.New("the port was taken away"))
+
+	if a.servingPane() != nil {
+		t.Error("the pane is still open on a window that is not serving")
+	}
+	if ui.ParentOf(a.root.Widget(), pane) != nil {
+		t.Error("the pane is still in the tree")
+	}
+	for _, group := range a.registry.Groups(panelNow) {
+		for _, row := range group.Rows {
+			if row.Label == servingPaneLabel {
+				t.Error("the sidebar still says this window is serving")
+			}
+		}
+	}
+}
+
+// A pane too short for a list draws none, rather than drawing one onto
+// the buttons and wiping it again on the same frame.
+func TestAShortServingPaneDoesNotRepaintForEver(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	withServing(t, a, aPublicKey(t, "marcus@laptop"))
+	if err := a.startServing("0", whereHere); err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+	pane := theServingPane(t, a)
+	clients := []*serve.Client{{Name: "marcus@laptop", Addr: "10.0.0.9:51000"}}
+
+	for rows := 1; rows <= 12; rows++ {
+		g := grid.New(60, rows, color.RGBA{}, color.RGBA{})
+		pane.Layout(ui.Size{Cols: 60, Rows: rows})
+		pane.draw(g.View(), clients)
+		g.ClearDirty()
+		pane.draw(g.View(), clients)
+		if g.AnyDirty() {
+			t.Errorf("a pane %d rows tall repaints a frame with nothing new:\n%s",
+				rows, gridRows(g))
+		}
+	}
+}
+
+// A window that connects between the frame and the key does not turn
+// Enter on Close into Stop serving.
+func TestAKeyOnAChangedServingRowPressesNothing(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	withServing(t, a, aPublicKey(t, "marcus@laptop"))
+	if err := a.startServing("0", whereHere); err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+	pane := theServingPane(t, a)
+	// Drawn with nobody connected, so the row is Stop serving and
+	// Close, and the focus is on Close.
+	servingPaneText(pane)
+	at := pane.at
+
+	// And a window connects, which puts Disconnect in front of them
+	// both and moves what the focus is on.
+	pane.drawn = pane.choicesFor([]*serve.Client{{Name: "marcus@laptop"}})
+	took, err := pane.HandleKey(press(input.KeyEnter, 0))
+	if err != nil {
+		t.Fatalf("Enter: %v", err)
+	}
+	if !took {
+		t.Error("the key went on to whatever is behind the pane")
+	}
+	if !a.serving.on() {
+		t.Error("Enter stopped the window serving")
+	}
+	if pane.at != at {
+		t.Errorf("the focus moved to %d", pane.at)
 	}
 }

@@ -32,10 +32,47 @@ type rowPen struct {
 	at, cols int
 }
 
-// pen starts a row.
-func (p *jobPane) pen(v grid.View, y int) *rowPen {
+// buttonRow is the row a pane's choices go on, and below zero when the
+// pane is too short to draw them without writing over what it has
+// already said.
+//
+// A pane that drew them anyway would write that row twice in one frame
+// -- once as a blank and once as a button -- which counts as changed
+// however it ends up, so the pane would repaint for ever.
+func buttonRow(rows, after int) int {
+	row := rows - 2
+	if row < 1 || row < after {
+		return -1
+	}
+	return row
+}
+
+// blankRest writes every row from after to the bottom, leaving the one
+// the buttons are on to them.
+func blankRest(v grid.View, bg color.RGBA, after, rows, buttons int) {
+	for y := after; y < rows; y++ {
+		if y == buttons {
+			continue
+		}
+		blankRow(v, bg, y)
+	}
+}
+
+// penOn starts a row on a ground.
+func penOn(v grid.View, bg color.RGBA, y int) *rowPen {
 	cols, _ := v.Size()
-	return &rowPen{v: v, bg: p.app.colours.BG, y: y, cols: cols}
+	return &rowPen{v: v, bg: bg, y: y, cols: cols}
+}
+
+// blankRow writes an empty row.
+func blankRow(v grid.View, bg color.RGBA, y int) { penOn(v, bg, y).rest() }
+
+// sayRow writes one line of a pane, margins and all.
+func sayRow(v grid.View, bg color.RGBA, x, y, width int, text string, fg color.RGBA) {
+	pen := penOn(v, bg, y)
+	pen.skip(x)
+	pen.write(text, fg)
+	pen.rest()
 }
 
 // skip leaves n blank columns.
@@ -89,9 +126,6 @@ func (r *rowPen) right(text string, fg color.RGBA, margin int) {
 
 // rest blanks the row to its end.
 func (r *rowPen) rest() { r.skip(r.cols - r.at) }
-
-// blank writes an empty row.
-func (p *jobPane) blank(v grid.View, y int) { p.pen(v, y).rest() }
 
 // The characters a bar and a run are drawn with.
 //

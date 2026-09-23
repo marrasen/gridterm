@@ -616,10 +616,15 @@ func (a *app) clientWent(c *serve.Client, why error) {
 func (a *app) servingStopped(err error) {
 	a.serving.lost()
 	a.dropServedRows()
+	// And the pane about it, which has nothing left to say: an address
+	// that is no longer listened on, a fingerprint for nobody, and a
+	// button offering to stop what has stopped.
+	a.closeServingPane()
 	a.markDirty()
 	a.reportError("This window is no longer being served", err)
 }
 
+// kickTitle is what the button that disconnects the windows connected
 // says, naming the one client there is.
 func kickTitle(clients []*serve.Client) string {
 	if len(clients) == 1 {

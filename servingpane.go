@@ -1,9 +1,7 @@
 package main
 
 import (
-	"image/color"
 	"strconv"
-	"time"
 
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/meter"
@@ -52,14 +50,12 @@ func newServingPane(a *app) *servingPane {
 func (p *servingPane) Layout(size ui.Size) { p.size = size }
 
 // Draw paints the pane.
-func (p *servingPane) Draw(v grid.View) {
-	p.draw(v, p.app.serving.clients(), time.Now())
-}
+func (p *servingPane) Draw(v grid.View) { p.draw(v, p.app.serving.clients()) }
 
 // draw paints one reading of what is being served, taken apart from
 // Draw so a test can hand it a list of windows rather than having to
 // arrange for them.
-func (p *servingPane) draw(v grid.View, clients []*serve.Client, now time.Time) {
+func (p *servingPane) draw(v grid.View, clients []*serve.Client) {
 	cols, rows := v.Size()
 	if cols <= 0 || rows <= 0 {
 		return
@@ -68,36 +64,32 @@ func (p *servingPane) draw(v grid.View, clients []*serve.Client, now time.Time) 
 	at := jobPaneMargin
 	width := max(cols-2*jobPaneMargin, 1)
 	// Nothing above a pane clears its rect.
-	p.blank(v, 0)
+	blankRow(v, p.app.colours.BG, 0)
 	line := 1
 
-	head := p.pen(v, line)
+	head := penOn(v, p.app.colours.BG, line)
 	head.skip(at)
 	head.write(dlgServingWindow, st.TitleFG)
 	head.right(connectedNote(clients), st.HintFG, jobPaneMargin)
 	head.rest()
-	p.blank(v, line+1)
+	blankRow(v, p.app.colours.BG, line+1)
 	line += 2
 
 	// Where it is served and what to check it by: the two things
 	// somebody at the other end needs, and the two this window cannot
 	// tell them itself.
-	p.say(v, at, line, width, "Address     "+p.app.serving.addr(), st.FG)
+	sayRow(v, p.app.colours.BG, at, line, width, "Address     "+p.app.serving.addr(), st.FG)
 	line++
-	p.say(v, at, line, width, "Fingerprint "+p.app.serving.fingerprint(), st.FG)
+	sayRow(v, p.app.colours.BG, at, line, width, "Fingerprint "+p.app.serving.fingerprint(), st.FG)
 	line += 2
 
 	// Who is here now, which is the part that changes while this is up.
 	line = p.drawClients(v, at, line, width, rows, clients, st)
 
-	for y := line; y < rows-2; y++ {
-		p.blank(v, y)
-	}
-	if rows-1 >= 0 {
-		p.blank(v, rows-1)
-	}
+	row := buttonRow(rows, line)
+	blankRest(v, p.app.colours.BG, line, rows, row)
 	p.settle(clients)
-	p.drawChoices(v, clients, rows)
+	p.drawChoices(v, clients, row)
 }
 
 // connectedNote says how many windows are working in this one.
@@ -116,15 +108,23 @@ func connectedNote(clients []*serve.Client) string {
 func (p *servingPane) drawClients(v grid.View, at, line, width, rows int,
 	clients []*serve.Client, st ui.FormStyle) int {
 
-	if len(clients) == 0 {
-		p.say(v, at, line, width,
-			"Nothing is connected. This window is waiting to be taken over.", st.HintFG)
-		return line + 1
-	}
+	// Room for the buttons and a blank row above them, whatever else
+	// there is to say. A line written past that is a line drawn onto
+	// the buttons and wiped again on the same frame, which is a pane
+	// that repaints for ever.
 	room := rows - line - 3
+	if room < 1 {
+		return line
+	}
+	if len(clients) == 0 {
+		sayRow(v, p.app.colours.BG, at, line, width,
+			"Nothing is connected. This window is waiting to be taken over.", st.HintFG)
+		blankRow(v, p.app.colours.BG, line+1)
+		return line + 2
+	}
 	for i, c := range clients {
 		if i >= room-1 && len(clients)-i > 1 {
-			p.say(v, at, line, width,
+			sayRow(v, p.app.colours.BG, at, line, width,
 				"and "+strconv.Itoa(len(clients)-i)+" more", st.HintFG)
 			line++
 			break
@@ -132,10 +132,10 @@ func (p *servingPane) drawClients(v grid.View, at, line, width, rows int,
 		if i >= room {
 			break
 		}
-		p.say(v, at, line, width, c.Name+"  from "+c.Addr, st.FG)
+		sayRow(v, p.app.colours.BG, at, line, width, c.Name+"  from "+c.Addr, st.FG)
 		line++
 	}
-	p.blank(v, line)
+	blankRow(v, p.app.colours.BG, line)
 	return line + 1
 }
 
@@ -166,20 +166,21 @@ func (p *servingPane) settle(clients []*serve.Client) {
 }
 
 // drawChoices paints the row along the bottom, centred.
-func (p *servingPane) drawChoices(v grid.View, clients []*serve.Client, rows int) {
+func (p *servingPane) drawChoices(v grid.View, clients []*serve.Client, row int) {
 	cols, _ := v.Size()
 	choices := p.choicesFor(clients)
 	p.at = min(max(p.at, 0), len(choices)-1)
 	st := p.app.formStyle()
-	row := rows - 2
-	if row < 1 {
-		p.row = -1
+	if row < 0 {
+		// Too short to draw them anywhere they would not be written
+		// over. Nothing to click, so nothing is remembered as drawn.
+		p.row, p.drawn = -1, p.drawn[:0]
 		return
 	}
 	p.row = row
 	p.cols = placeChoices(p.cols[:0], choices, cols)
 	p.drawn = append(p.drawn[:0], choices...)
-	pen := p.pen(v, row)
+	pen := penOn(v, p.app.colours.BG, row)
 	for i, at := range p.cols {
 		if at < 0 {
 			continue
@@ -206,6 +207,12 @@ func (p *servingPane) HandleKey(ev input.Event) (bool, error) {
 	case input.KeyRight, input.KeyTab:
 		p.at = (p.at + 1) % len(choices)
 	case input.KeyEnter, input.KeySpace:
+		if !sameChoices(choices, p.drawn) {
+			// Somebody connected or went since this row was drawn, so
+			// what the key was aimed at has moved along it.
+			p.app.markDirty()
+			return true, nil
+		}
 		return true, p.press(p.at)
 	default:
 		return false, nil
@@ -270,21 +277,6 @@ func (p *servingPane) press(i int) error {
 	}
 }
 
-// blank, pen and say are the pane's rows, as jobPane's are.
-func (p *servingPane) blank(v grid.View, y int) { p.pen(v, y).rest() }
-
-func (p *servingPane) pen(v grid.View, y int) *rowPen {
-	cols, _ := v.Size()
-	return &rowPen{v: v, bg: p.app.colours.BG, y: y, cols: cols}
-}
-
-func (p *servingPane) say(v grid.View, x, y, width int, text string, fg color.RGBA) {
-	pen := p.pen(v, y)
-	pen.skip(x)
-	pen.write(text, fg)
-	pen.rest()
-}
-
 // showServingPane opens the pane on what this window is serving, or
 // goes to the one already open.
 func (a *app) showServingPane() error {
@@ -330,6 +322,18 @@ func (a *app) servingPane() *servingPane {
 	return a.servePanes[0]
 }
 
+// closeServingPane takes the pane away, for a window that has stopped
+// serving. It does nothing when none is open.
+func (a *app) closeServingPane() {
+	pane := a.servingPane()
+	if pane == nil {
+		return
+	}
+	if err := a.closePane(pane); err != nil {
+		a.logError(err)
+	}
+}
+
 // forgetServingPane takes a closed pane off the window's record of it.
 func (a *app) forgetServingPane(w ui.Widget) {
 	pane, is := w.(*servingPane)
@@ -340,6 +344,11 @@ func (a *app) forgetServingPane(w ui.Widget) {
 		if open == pane {
 			a.servePanes = append(a.servePanes[:i], a.servePanes[i+1:]...)
 			a.registry.Drop(pane.entry)
+			// Let go of, not only dropped: what the window files a pane
+			// under is what says the pane is open at all, and a closed
+			// one still filed under a row is one the switcher goes on
+			// drawing a tile for.
+			pane.entry = nil
 			return
 		}
 	}

@@ -23,6 +23,7 @@ package main
 // a small set, so most dialogs draw from the first group.
 const (
 	btnAdd     = "Add"
+	btnChange  = "Change"
 	btnOK      = "OK"
 	btnShow    = "Show"
 	btnType    = "Type"

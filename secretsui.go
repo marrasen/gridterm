@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -927,6 +928,68 @@ func lastKeyHere(v *secrets.Vault, s secrets.KeySlot) bool {
 	}
 	return true
 }
+
+// confirmRemoveSecrets asks before taking secrets away, and takes them
+// when the user says so. then runs when any of them went.
+//
+// A question, because a secret that is gone is gone: the vault holds
+// the only copy of what is in it, and nothing here can put one back.
+// Rule 10 on both counts.
+func (a *app) confirmRemoveSecrets(v *secrets.Vault, going []secrets.Item, then func()) {
+	if len(going) == 0 {
+		return
+	}
+	f := a.newConfirm(removingTitle(going), wrapLines(cannotBePutBack, errorLineWidth))
+	f.AddButton(ui.Button{Title: btnRemove, Do: func() error {
+		var failed error
+		gone := 0
+		for _, it := range going {
+			switch err := v.Remove(it.ID); {
+			case errors.Is(err, secrets.ErrNoSuchItem):
+				// Taken away from somewhere else while this was being
+				// asked. What the user wanted has happened.
+				gone++
+			case err != nil:
+				// Every failure, not the first: removing four can fail
+				// four ways and three would go unsaid.
+				failed = errors.Join(failed, err)
+			default:
+				gone++
+			}
+		}
+		if gone > 0 && then != nil {
+			then()
+		}
+		if failed != nil {
+			return failed
+		}
+		a.say(wentAway(going))
+		return nil
+	}})
+	f.AddButton(ui.Button{Title: btnCancel})
+	// Opens on the button that changes nothing.
+	f.FocusButton(1)
+	a.showForm(f, nil)
+}
+
+// removingTitle names what is about to go: the one, or how many.
+func removingTitle(going []secrets.Item) string {
+	if len(going) == 1 {
+		return dlgRemove + going[0].Name + "?"
+	}
+	return dlgRemove + strconv.Itoa(len(going)) + " secrets?"
+}
+
+// wentAway says on the bottom row what has gone.
+func wentAway(going []secrets.Item) string {
+	if len(going) == 1 {
+		return going[0].Name + " removed"
+	}
+	return strconv.Itoa(len(going)) + " secrets removed"
+}
+
+// cannotBePutBack is why removing one is worth a question.
+const cannotBePutBack = "The vault holds the only copy of what is in it."
 
 // forgetSecret takes one out of the vault.
 func (a *app) forgetSecret() error {

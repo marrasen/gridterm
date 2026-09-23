@@ -2,7 +2,9 @@ package main
 
 import (
 	"image/color"
+	"slices"
 	"strconv"
+	"time"
 
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/grid"
@@ -33,6 +35,20 @@ type secretsPane struct {
 	// keys together: the list is one thing to walk.
 	at int
 
+	// button is the one along the bottom that Enter would press, and
+	// buttonCols where each was last drawn, for a click. What is
+	// offered changes with the row the bar is on, so a click measured
+	// against a row drawn for a different one would press the wrong
+	// thing: drawnChoices is what was actually on screen.
+	button       int
+	buttonRow    int
+	buttonCols   []int
+	drawnChoices []string
+
+	// picked are the secrets ticked for removing several at once, by
+	// id. Removing is the one thing that is tedious a row at a time.
+	picked map[string]bool
+
 	// items and keys are the vault as it was last read, and read says
 	// whether they have been. Held rather than asked for on every
 	// frame, because Items goes to the disk to pick up what another
@@ -45,6 +61,10 @@ type secretsPane struct {
 	// not. Drawn where the list would be: a pane that quietly showed
 	// nothing would read as an empty vault.
 	trouble error
+
+	// readAt is when the vault was last read, so the pane picks up what
+	// another window has written without asking the disk every frame.
+	readAt time.Time
 }
 
 // How the pane is laid out: the blank column each side, and the rows
@@ -54,7 +74,21 @@ const (
 
 	// secretsPaneTop is the heading and the blank row under it.
 	secretsPaneTop = 2
+
+	// secretsPaneButtons is the row of buttons with a blank above it
+	// and another below, so they sit off the bottom edge the way a
+	// dialog's do.
+	secretsPaneButtons = 3
 )
+
+// secretsPaneSettles is how often the pane reads the vault again while
+// it is open.
+//
+// Its own changes are picked up at once. This is for the ones it cannot
+// be told about: another window, or another command in this one. Often
+// enough that the list is not stale to look at, rarely enough that a
+// pane drawing sixty times a second is not sixty reads.
+const secretsPaneSettles = time.Second
 
 // newSecretsPane opens a pane on the vault.
 func newSecretsPane(a *app) *secretsPane { return &secretsPane{app: a} }
@@ -76,15 +110,25 @@ func (p *secretsPane) Draw(v grid.View) {
 		p.drawLocked(v)
 		return
 	}
-	if !p.read {
+	now := p.app.clock()
+	if !p.read || now.Sub(p.readAt) >= secretsPaneSettles {
 		p.reload(vault)
 	}
 	p.drawList(v)
+	p.drawButtons(v)
 }
 
 // forget drops everything read out of the vault.
 func (p *secretsPane) forget() {
 	p.items, p.keys, p.read, p.trouble = nil, nil, false, nil
+	p.picked = nil
+}
+
+// stale says to read the vault again on the next frame, for a change
+// this pane has just made.
+func (p *secretsPane) stale() {
+	p.read = false
+	p.app.markDirty()
 }
 
 // reload reads the vault again. Called when the pane has nothing and
@@ -92,10 +136,19 @@ func (p *secretsPane) forget() {
 func (p *secretsPane) reload(v *secrets.Vault) {
 	items, err := v.Items()
 	p.items, p.keys, p.read, p.trouble = items, v.Keys(), true, err
+	p.readAt = p.app.clock()
 	if err != nil {
 		p.items, p.keys = nil, nil
 	}
 	p.at = min(max(p.at, 0), max(p.rows()-1, 0))
+	// A tick on a secret that has gone is a tick on nothing. Dropped
+	// here rather than checked at the moment of removing, so the row
+	// count the buttons speak of is the one on screen.
+	for id := range p.picked {
+		if !slices.ContainsFunc(p.items, func(it secrets.Item) bool { return it.ID == id }) {
+			delete(p.picked, id)
+		}
+	}
 }
 
 // rows is how many lines the bar can be on: every secret and every key.
@@ -148,9 +201,11 @@ func (p *secretsPane) drawList(v grid.View) {
 		return
 	}
 
+	// The buttons have the bottom rows, so the list stops above them.
+	last := rows - secretsPaneButtons
 	y := secretsPaneTop
 	for i, it := range p.items {
-		if y >= rows {
+		if y >= last {
 			return
 		}
 		p.row(v, y, room, i, it.Name, secretNote(it))
@@ -162,18 +217,23 @@ func (p *secretsPane) drawList(v grid.View) {
 	// A blank row and a heading, so the keys read as what opens the
 	// list above rather than as more of it.
 	y++
-	if y < rows {
+	if y < last {
 		p.say(v, secretsPaneMargin, y, room, secretsPaneKeys, p.app.panelDimFG(), 0)
 		y++
 	}
 	for i, s := range p.keys {
-		if y >= rows {
+		if y >= last {
 			return
 		}
 		p.row(v, y, room, len(p.items)+i, keyRowName(s), keyPaneNote(s))
 		y++
 	}
 }
+
+// secretsPanePicked marks a row ticked for removing. The same character
+// the panel's clear button uses, which is this window's word for "this
+// one goes".
+const secretsPanePicked = '\u00d7'
 
 // secretsPaneKeys heads the keys under the secrets.
 const secretsPaneKeys = "Keys that open them"
@@ -213,6 +273,11 @@ func (p *secretsPane) row(v grid.View, y, room, i int, name, note string) {
 		// The whole width, so the bar reads as a line rather than as a
 		// word picked out.
 		v.Sub(0, y, p.widthOf(v), 1).Fill(grid.Cell{Rune: ' ', FG: fg, BG: bg, Width: 1})
+	}
+	if i < len(p.items) && p.picked[p.items[i].ID] {
+		// In the margin that is there anyway, so a row costs no width
+		// for a mark it usually does not carry.
+		p.sayOn(v, 0, y, secretsPaneMargin, string(secretsPanePicked), fg, bg, attr)
 	}
 	p.sayOn(v, secretsPaneMargin, y, room, name, fg, bg, attr)
 	if note == "" {
@@ -262,6 +327,168 @@ func (p *secretsPane) sayOn(v grid.View, x, y, room int, text string,
 	v.SetString(x, y, grid.Trim(text, room), fg, bg, attr)
 }
 
+// onSecret is the secret the bar is on, and whether it is on one.
+func (p *secretsPane) onSecret() (secrets.Item, bool) {
+	if p.at < 0 || p.at >= len(p.items) {
+		return secrets.Item{}, false
+	}
+	return p.items[p.at], true
+}
+
+// choices are what the pane offers for the row the bar is on, left to
+// right.
+//
+// They change with the row, the way a job's do with its state. A key
+// has its own two, which are not written yet: until they are, a key row
+// offers what any row does.
+func (p *secretsPane) choices() []string {
+	if _, on := p.onSecret(); !on {
+		return []string{btnAdd}
+	}
+	return []string{btnAdd, btnChange, p.removeTitle()}
+}
+
+// removeTitle says how many the button would take, when it is more than
+// the row the bar is on.
+func (p *secretsPane) removeTitle() string {
+	if n := len(p.picked); n > 1 {
+		return btnRemove + " " + strconv.Itoa(n)
+	}
+	return btnRemove
+}
+
+// drawButtons paints the row along the bottom, right aligned from the
+// corner the eye lands on.
+//
+// Right rather than centred, which is where the job pane puts its own:
+// this is a list with things to do to it, and every other list in the
+// window -- the chooser, a form, a notice -- puts them there.
+func (p *secretsPane) drawButtons(v grid.View) {
+	cols, rows := v.Size()
+	row := rows - 2
+	if row < secretsPaneTop || cols <= secretsPaneMargin*2 {
+		p.buttonRow = -1
+		return
+	}
+	p.buttonRow = row
+	choices := p.choices()
+	p.button = min(max(p.button, 0), len(choices)-1)
+	p.buttonCols = ui.ButtonColsInto(p.buttonCols[:0], choices, cols, secretsPaneMargin)
+	p.drawnChoices = append(p.drawnChoices[:0], choices...)
+	st := p.app.formStyle()
+	for i, at := range p.buttonCols {
+		if at < 0 {
+			continue
+		}
+		fg, bg := st.ButtonFG, st.ButtonBG
+		if i == p.button {
+			fg, bg = st.ActiveFG, st.ActiveBG
+		}
+		ui.DrawButton(v, at, row, choices[i], fg, bg)
+	}
+}
+
+// press does what the button at i says.
+func (p *secretsPane) press(i int) error {
+	choices := p.choices()
+	if i < 0 || i >= len(choices) {
+		return nil
+	}
+	v := p.app.secrets
+	if v == nil || v.Locked() {
+		return nil
+	}
+	switch choices[i] {
+	case btnAdd:
+		return p.app.askForSecret(v, secrets.Password)
+	case btnChange:
+		return p.change(v)
+	default:
+		return p.remove(v)
+	}
+}
+
+// change opens the form the chooser opens, on the row the bar is on.
+//
+// The same form, because it is the same change. What the pane adds is
+// that the list is still there afterwards.
+func (p *secretsPane) change(v *secrets.Vault) error {
+	it, on := p.onSecret()
+	if !on {
+		return nil
+	}
+	if !p.stillThere(v, it.ID) {
+		return nil
+	}
+	return p.app.askToChange(v, it)
+}
+
+// stillThere reports whether a secret is in the vault now, and says so
+// when it is not.
+//
+// Another window may have taken it away between this pane drawing the
+// row and the user pressing the button. Saying that is better than
+// handing on the vault's own "there is no such item", which reads as
+// something having gone wrong here.
+func (p *secretsPane) stillThere(v *secrets.Vault, id string) bool {
+	p.reload(v)
+	if slices.ContainsFunc(p.items, func(it secrets.Item) bool { return it.ID == id }) {
+		return true
+	}
+	p.app.say(secretWentElsewhere)
+	return false
+}
+
+// secretWentElsewhere is said when a row is acted on after something
+// else has removed it.
+const secretWentElsewhere = "That secret has been removed from somewhere else"
+
+// remove takes away what is ticked, or the row the bar is on when
+// nothing is.
+func (p *secretsPane) remove(v *secrets.Vault) error {
+	going := p.going()
+	if len(going) == 0 {
+		return nil
+	}
+	p.app.confirmRemoveSecrets(v, going, func() { p.forget() })
+	return nil
+}
+
+// going are the secrets Remove would take: the ticked ones, or the row
+// the bar is on when none are ticked.
+func (p *secretsPane) going() []secrets.Item {
+	var out []secrets.Item
+	for _, it := range p.items {
+		if p.picked[it.ID] {
+			out = append(out, it)
+		}
+	}
+	if len(out) > 0 {
+		return out
+	}
+	if it, on := p.onSecret(); on {
+		return []secrets.Item{it}
+	}
+	return nil
+}
+
+// tick turns the row the bar is on over, for removing several at once.
+func (p *secretsPane) tick() {
+	it, on := p.onSecret()
+	if !on {
+		return
+	}
+	if p.picked == nil {
+		p.picked = map[string]bool{}
+	}
+	if p.picked[it.ID] {
+		delete(p.picked, it.ID)
+	} else {
+		p.picked[it.ID] = true
+	}
+	p.app.markDirty()
+}
+
 // HandleKey moves the bar. Everything else travels on: a pane shares
 // the screen, so it swallows only what it uses.
 func (p *secretsPane) HandleKey(ev input.Event) (bool, error) {
@@ -284,6 +511,63 @@ func (p *secretsPane) HandleKey(ev input.Event) (bool, error) {
 		return true, nil
 	case input.KeyEnd:
 		p.at = max(p.rows()-1, 0)
+		p.app.markDirty()
+		return true, nil
+	case input.KeyLeft, input.KeyRight:
+		// The same keys as every list with things to do to it: up and
+		// down pick the row, left and right pick what to do with it.
+		n := len(p.choices())
+		step := 1
+		if ev.Key == input.KeyLeft {
+			step = -1
+		}
+		p.button = ((p.button+step)%n + n) % n
+		p.app.markDirty()
+		return true, nil
+	case input.KeySpace:
+		if ev.Kind != input.KeyPress {
+			return true, nil
+		}
+		p.tick()
+		return true, nil
+	case input.KeyEnter:
+		if ev.Kind != input.KeyPress {
+			return true, nil
+		}
+		return true, p.press(p.button)
+	}
+	return false, nil
+}
+
+// HandleMouse presses the button under the pointer, and puts the bar on
+// the row that was clicked.
+func (p *secretsPane) HandleMouse(ev input.MouseEvent) (bool, error) {
+	if ev.Kind != input.MousePress || ev.Button != input.MouseLeft {
+		return false, nil
+	}
+	if ev.Row == p.buttonRow && p.buttonRow >= 0 {
+		choices := p.choices()
+		if !slices.Equal(choices, p.drawnChoices) {
+			// What is offered has changed since the row was drawn, so
+			// where the pointer went is not what it went to. The next
+			// frame draws the new row and a second click presses what
+			// it says.
+			p.app.markDirty()
+			return true, nil
+		}
+		for i, at := range p.buttonCols {
+			if at < 0 || i >= len(choices) {
+				continue
+			}
+			if ev.Col >= at && ev.Col < at+ui.ButtonWidth(choices[i]) {
+				p.button = i
+				return true, p.press(i)
+			}
+		}
+		return true, nil
+	}
+	if row := ev.Row - secretsPaneTop; row >= 0 && row < len(p.items) {
+		p.at = row
 		p.app.markDirty()
 		return true, nil
 	}

@@ -1217,3 +1217,57 @@ func TestAJobsPaneIsOneOfThePanes(t *testing.T) {
 		t.Errorf("the window files the pane under %v, want its own row", got)
 	}
 }
+
+// A job pane too short for its buttons draws none, rather than drawing
+// them onto what it has already said and wiping them on the same frame.
+func TestAShortJobPaneDoesNotRepaintForEver(t *testing.T) {
+	a, _ := aCopyWindow(t)
+	d, _, _ := aFinishedCopy(t, a)
+	prog := d.job.Progress()
+	now := time.Now()
+
+	for rows := 1; rows <= 12; rows++ {
+		g := grid.New(60, rows, color.RGBA{}, color.RGBA{})
+		d.Layout(ui.Size{Cols: 60, Rows: rows})
+		d.draw(g.View(), prog, now)
+		g.ClearDirty()
+		d.draw(g.View(), prog, now)
+		if g.AnyDirty() {
+			t.Errorf("a pane %d rows tall repaints a frame with nothing new:\n%s",
+				rows, gridRows(g))
+		}
+	}
+}
+
+// A closed pane is not one the window still counts as open.
+//
+// What a pane is filed under is what says it is open at all, so a
+// closed one left filed under a row is one the switcher goes on drawing
+// a tile for and can focus after it has left the tree.
+func TestAClosedJobPaneIsNotFiledUnderARow(t *testing.T) {
+	a, _ := aCopyWindow(t)
+	d, _, _ := aFinishedCopy(t, a)
+	row := d.entry
+
+	pressChoice(t, d, btnClose)
+
+	if a.entryOf(d) != nil {
+		t.Error("the window still files the closed pane under a row")
+	}
+	// The job's own row stays: it is the work's, not the pane's.
+	if a.jobs[row] == nil && !rowIsOn(a, row) {
+		t.Error("closing the pane took the job's row with it")
+	}
+}
+
+// rowIsOn reports whether the sidebar still holds a row.
+func rowIsOn(a *testApp, want *conns.Entry) bool {
+	for _, group := range a.registry.Groups(panelNow) {
+		for _, row := range group.Rows {
+			if row.Entry == want {
+				return true
+			}
+		}
+	}
+	return false
+}

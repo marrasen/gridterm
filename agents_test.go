@@ -4052,12 +4052,13 @@ func TestTheMenuBarSaysBothServingAndSharing(t *testing.T) {
 		t.Errorf("the bar row is %q, want serving drawn last", row)
 	}
 
-	// The chip by the edge is the serving one, and it opens the serving
-	// dialog rather than the share.
+	// The chip by the edge is the serving one, and it opens the pane on
+	// what this window is serving rather than the share.
 	col, at := chipColumn(t, a)
 	pressChip(t, a, col, at)
-	f := awaitModal(t, a, "the serving dialog", byTitle[*ui.Form](dlgServingWindow))
-	pressButton(t, a, f, btnClose)
+	if a.servingPane() == nil {
+		t.Fatal("the serving chip opened nothing")
+	}
 
 	// And the one beside it opens the share.
 	area, _ := barRow(t, a)

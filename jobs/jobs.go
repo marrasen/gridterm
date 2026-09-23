@@ -226,6 +226,15 @@ type Queue struct {
 	jobs    []*Job
 	running int
 	waiting []*Job
+
+	// leaving are jobs taken off the list that have not stopped yet.
+	//
+	// Dropping one cancels it, and cancelling is not stopping: a job
+	// part way through a write finishes that write, and one waiting on
+	// a filesystem that has stopped answering waits however long that
+	// takes. A window closing has to wait for those as much as for the
+	// ones still listed, or it goes while something is still writing.
+	leaving []*Job
 }
 
 // DefaultLimit is how many jobs run at once when nothing says otherwise.
@@ -327,6 +336,12 @@ func (q *Queue) Drop(j *Job) {
 			break
 		}
 	}
+	// Off the list and still running, so it is kept here until it has
+	// stopped: nothing else is holding it, and Wait would answer for a
+	// job that is still writing.
+	if !j.Progress().Done {
+		q.leaving = append(q.leaving, j)
+	}
 	q.mu.Unlock()
 
 	if waiting {
@@ -359,15 +374,36 @@ func (q *Queue) DropFinished() int {
 
 // CancelAll gives up on every job, for a window that is closing.
 func (q *Queue) CancelAll() {
-	for _, j := range q.Jobs() {
+	for _, j := range q.unfinished() {
 		j.Cancel()
 	}
+}
+
+// unfinished is every job this queue is still answering for: the ones
+// on the list, and the ones dropped that have not stopped yet.
+//
+// Finished ones drop out of the second lot as it is read, which is the
+// only sweep it needs: a queue is asked this whenever anybody waits.
+func (q *Queue) unfinished() []*Job {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	kept := q.leaving[:0]
+	for _, j := range q.leaving {
+		if !j.Progress().Done {
+			kept = append(kept, j)
+		}
+	}
+	for i := len(kept); i < len(q.leaving); i++ {
+		q.leaving[i] = nil
+	}
+	q.leaving = kept
+	return append(append([]*Job(nil), q.jobs...), q.leaving...)
 }
 
 // Wait blocks until every job has stopped. It is for a window closing
 // and for tests; nothing on the drawing goroutine may call it.
 func (q *Queue) Wait() {
-	for _, j := range q.Jobs() {
+	for _, j := range q.unfinished() {
 		<-j.Done()
 	}
 }
@@ -383,7 +419,7 @@ func (q *Queue) Wait() {
 // ends them.
 func (q *Queue) WaitFor(d time.Duration) bool {
 	deadline := time.After(d)
-	for _, j := range q.Jobs() {
+	for _, j := range q.unfinished() {
 		select {
 		case <-j.Done():
 		case <-deadline:

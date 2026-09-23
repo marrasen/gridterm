@@ -227,6 +227,8 @@ func (a *app) paneName(w ui.Widget) string {
 		if pane.entry != nil {
 			return pane.entry.Kind.String() + " " + pane.entry.Label
 		}
+	case *servingPane:
+		return dlgServingWindow
 	}
 	return fmt.Sprintf("%T", w)
 }

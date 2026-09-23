@@ -39,17 +39,13 @@ func TestServingIsWrittenDownForTheNextWindow(t *testing.T) {
 
 // Stopping from the dialog is written down too, so the next window does
 // not offer.
-func TestStoppingFromTheDialogIsWrittenDown(t *testing.T) {
+func TestStoppingFromThePaneIsWrittenDown(t *testing.T) {
 	a, set := aWindowThatCanServe(t)
 	if err := a.startServing("0", whereHere); err != nil {
 		t.Fatalf("serve: %v", err)
 	}
 
-	if err := a.showServing(); err != nil {
-		t.Fatalf("open the dialog: %v", err)
-	}
-	f := awaitModal(t, a, "the serving dialog", byTitle[*ui.Form](dlgServingWindow))
-	pressButton(t, a, f, btnStopServing)
+	pressServingChoice(t, theServingPane(t, a), btnStopServing)
 
 	if a.serving.on() {
 		t.Fatal("the port is still open")

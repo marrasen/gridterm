@@ -373,13 +373,35 @@ longer needed. It also makes D15 and D16 end the same way: `Open` ·
 **Instructions:** The text after the fields goes. `All networks` needs
 no paragraph, and the Tailscale remark belongs in documentation.
 
-## D20
-- **Title:** `Serving this window`
-- **Body:** the listening address, then `Connected:` with
-  `  <name> from <addr>` per client, or `No one is connected.`
-- **Buttons:** `Close` · `Disconnect <name>` *(or `Disconnect all`)* ·
-  `Stop serving`
-- **Focus:** `Close`
+## D20 — a pane now, not a dialog
+
+What this window is serving is watched in a pane. What it says changes
+while it is up -- windows connect and go -- and a box that is read and
+answered cannot show that. It is also what the row of a window working
+here opens, and a row opens a pane.
+
+```
+  Serving this window                              nobody is connected
+
+  Address     127.0.0.1:2222
+  Fingerprint SHA256:gEfIWpKgh3H5IiKLkY761rUnM4Dex5imXn9B2Q5z7PI
+
+  Nothing is connected. This window is waiting to be taken over.
+
+                       Stop serving   Close
+```
+
+With windows connected, the line under the fingerprint is one per
+window -- `<name>  from <addr>` -- and `Disconnect <name>`, or
+`Disconnect all`, joins the row along the bottom.
+
+- **Focus:** `Close`, and it moves there by itself whenever a window
+  connects or goes, because the button that disconnects them comes and
+  goes with them and the rest of the row moves along.
+- It has a row on the sidebar, `Serving`, the way every other pane does.
+- Opened by that row, by the `Serving` chip on the status bar, by
+  `Serve This Window` while it is already serving, and by serving
+  starting. One page, four ways in.
 
 ## D21
 - **Title:** `Resume serving?`

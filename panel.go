@@ -50,6 +50,8 @@ func icon(k conns.Kind) grid.Art {
 		return grid.Icon(grid.IconDelete)
 	case conns.Log:
 		return grid.Icon(grid.IconLog)
+	case conns.Secrets:
+		return grid.Icon(grid.IconSecrets)
 	}
 	return grid.Icon(grid.IconTerminal)
 }

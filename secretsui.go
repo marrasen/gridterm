@@ -25,6 +25,7 @@ import (
 const (
 	secretsTitle          = "Secrets"
 	showSecretsTitle      = "Show Secrets"
+	manageSecretsTitle    = "Manage Secrets"
 	addSecretTitle        = "Add Secret"
 	addNoteTitle          = "Add Note"
 	changeSecretTitle     = "Change Secret"

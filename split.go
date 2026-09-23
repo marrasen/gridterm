@@ -227,6 +227,8 @@ func (a *app) paneName(w ui.Widget) string {
 		if pane.entry != nil {
 			return pane.entry.Kind.String() + " " + pane.entry.Label
 		}
+	case *secretsPane:
+		return conns.Secrets.String()
 	}
 	return fmt.Sprintf("%T", w)
 }
@@ -260,6 +262,10 @@ func (a *app) paneWhere(w ui.Widget) string {
 			// is on the sidebar.
 			return groupName(pane.entry.Host)
 		}
+	case *secretsPane:
+		// The vault is a file beside the window's own settings, so it
+		// is on this machine whatever the panes around it are on.
+		return groupName(conns.Local)
 	}
 	return ""
 }

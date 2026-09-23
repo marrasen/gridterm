@@ -352,6 +352,12 @@ type app struct {
 	secrets   *secrets.Vault
 	secretsAt string
 
+	// secretsPane is the pane the vault is worked in, and secretsRow
+	// its line on the sidebar. Both nil while none is open. There is at
+	// most one: a second would show the same vault twice.
+	secretsPane *secretsPane
+	secretsRow  *conns.Entry
+
 	// agentHolds asks the SSH agent whether it holds a key, by
 	// fingerprint. Nil means ask the agent this machine is running,
 	// which is what everything but a test does: a test that reached for
@@ -890,6 +896,10 @@ func (a *app) commands() {
 		ui.Command{ID: "edit.paste", Title: "Paste", Run: a.onFocused(a.paste)},
 		ui.Command{ID: "edit.pasteImage", Title: "Paste Image as File",
 			AlsoFind: []string{"picture", "screenshot", "path"}, Run: a.onFocused(a.pasteImage)},
+		ui.Command{ID: "secrets.pane", Title: manageSecretsTitle,
+			AlsoFind: []string{"secrets", "password", "vault", "note", "overview",
+				"edit", "list", "manager"},
+			Run: a.showSecretsPane},
 		ui.Command{ID: "secrets.open", Title: showSecretsTitle + "…",
 			AlsoFind: []string{"secrets", "password", "vault", "note", "credential"},
 			Run:      a.openSecrets},

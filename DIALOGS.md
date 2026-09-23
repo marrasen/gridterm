@@ -788,6 +788,9 @@ Could not remove the secret
 Could not create the key
 Could not add the key
 Could not remove the key
+Could not export the secrets
+Could not import the secrets
+Could not add the passphrase
 ```
 
 A passphrase dialog the user closed is not one of these. It reports
@@ -1081,6 +1084,184 @@ rather than what has been lost.
 Removing says `<key file> removed — <n> keys still open the secrets` on
 the bottom row.
 
+## D73
+- **Title:** `Export Secrets`
+- **Body:** none
+- **Fields:** `File` — placeholder `CSV file path`; hint
+  `Comma-separated values, which other managers read`
+- **Buttons:** `Export` · `Cancel`
+- **Error:** `Enter a path`
+- **Opened from:** `Export Secrets`
+
+**Instructions:** The way out, and the reason the rest of this is worth
+adopting: a password manager nobody can leave is one nobody should keep
+passwords in.
+
+Nothing is filled in, and that is what keeps this from happening by
+accident -- there is no path until one is typed. Not the focus: a form
+whose first job is to be typed into opens in its field, or everything
+typed goes to a button and nowhere. The question that opens on the way
+out is D74, after this.
+
+## D74
+- **Title:** `Export every secret to <path>?`
+- **Body:** `Anyone who can read the file can read them all.`
+- **Buttons:** `Export` · `Cancel`
+- **Focus:** `Cancel`
+- **Opened from:** `Export` on D73.
+
+**Instructions:** Rule 10, and the plainest case of it in the window:
+this is the one action that takes every secret out of the thing built
+to hold them. The shape a tunnel already uses -- a form to fill in,
+then a question naming what filling it in would do.
+
+Plain text on purpose. It is what every other manager reads, and a way
+out that only gridterm can read is not one.
+
+## D75
+- **Title:** `Secrets written`
+- **Body:**
+  ```
+  <path>
+
+  <n> secrets, in plain text.
+
+  Import it as "Chrome" or "Other CSV".
+  Remove the file once it has been imported.
+  ```
+- **Buttons:** `Copy` · `OK`
+- **Focus:** `OK`
+
+**Instructions:** Which importer to pick, because that is not
+guessable: there is no standard CSV and the managers that read this one
+read it as a browser's. And to take the file away, because it is the
+one place every secret sits in the clear.
+
+## D76
+- **Title:** `Import Secrets`
+- **Body:** none
+- **Fields:**
+  - `File` — placeholder `CSV file path`; hint `Comma-separated values,
+    as another manager writes them`
+  - `Duplicates` — cycles `Keep both` / `Skip` / `Replace`; hint
+    `What to do with a secret that is already here`
+- **Buttons:** `Import` · `Cancel`
+- **Error:** `Enter a path`
+- **Opened from:** `Import Secrets`
+
+**Instructions:** No warning: this is the easy direction. The plaintext
+file is already on the user's disk and this moves it into something
+sealed.
+
+`Keep both` is what the field starts on, because it is the answer that
+loses nothing. A file is not a reason for something somebody already
+has to disappear.
+
+## D77
+- **Title:** `Secrets read in`
+- **Body:**
+  ```
+  <n> secrets read in.
+  <n> were already here.
+
+  <path>
+  Remove the file: every secret in it is in plain text.
+  ```
+- **Buttons:** `Copy` · `OK`
+- **Focus:** `OK`
+
+**Instructions:** The second line only when something was passed over.
+The file is named because it has not moved, and whoever exported it
+from another manager to get here may not have thought about that since.
+
+## D78
+- **Title:** `Add Secrets Passphrase`
+- **Body:** `Anyone with a copy of the secrets can try passphrases
+  against them.`
+- **Fields:** `Passphrase` and `Confirm passphrase`, both masked
+- **Buttons:** `Add` · `Cancel`
+- **Focus:** `Cancel`
+- **Errors:** `Passphrases do not match`, `Enter a passphrase`
+- **Opened from:** `Add Secrets Passphrase`
+
+**Instructions:** Rule 10. Every other way into the vault is a key in a
+file, and nothing can be tried against one; this is what somebody
+typed. One sentence, in D17's shape, which is who can do what.
+
+Asked twice because it is masked and because it is the thing that gets
+the user back in years from now: a typo makes a way in nobody can find.
+
+Opens on the way out. Nothing adds one of these -- it is a command, and
+the weaker door stays shut unless somebody opens it on purpose.
+
+## D79
+- **Title:** `Unlock Secrets`
+- **Body:** none
+- **Fields:** `Passphrase` — masked
+- **Buttons:** `Unlock` · `Cancel`
+- **Error:** `Invalid passphrase`
+- **Opened from:** any secrets command, when no key of the vault's is
+  on this machine or the one it names will not open it, and a
+  passphrase has been added.
+
+**Instructions:** No body, and its own title rather than D05's. `Unlock
+Secrets` over a field called `Passphrase` says which passphrase and
+what it opens; a line under it repeating that is what rule 3 deletes.
+The title is the only thing telling this apart from D05, and it is
+enough.
+
+Asked as often as it takes, the way D05 is: the file is on this machine
+and this user can already read it, so a limit guards nothing.
+
+## D80
+- **Title:** `Remove <name>?` — or `Remove <n> secrets?`
+- **Body:** `This cannot be undone.`
+- **Buttons:** `Remove` · `Cancel`
+- **Focus:** `Cancel`
+- **Opened from:** `Remove` on the secrets pane.
+
+**Instructions:** Rule 10 on the second count: the vault holds the only
+copy of what is in it and nothing in the window can put one back. D29's
+own sentence, because it is the same fact.
+
+The first draft said `The vault holds the only copy of what is in it.`,
+which says *vault* where every other line says *the secrets*, and
+*holds*, which rule 2's list has a program not doing.
+
+---
+
+# The secrets pane
+
+Not a dialog, and the text on it is governed all the same.
+
+- **Heading:** `Manage Secrets`, or `Manage Secrets — <n> secrets`
+- **Rows:** each secret's name, with who it is for, the key file a
+  passphrase opens, and the kind when it is not a password
+- **Under them:** `Keys that open them`, then one row per slot: the key
+  file noted `on this machine`, or `Passphrase` noted
+  `a way in without a key`
+- **Buttons on a secret:** `Copy` · `Show` · `Change` · `Remove` ·
+  `Add secret` · `Add note`
+- **Buttons on a key:** `Add key` · `Remove key`
+- **Empty:** `Nothing here yet. Choose "Add Secret" to add one.`
+- **Locked:** `Locked. Choose "Show Secrets" to open them.`
+
+**Instructions:** The buttons follow the row, the way a job pane's
+follow its state, and answer the keys every list in this window
+answers to: up and down pick the row, left and right pick what to do
+with it, Enter does it. `Remove` says how many when several are ticked.
+
+No value is ever drawn on a row. `Show` opens the notice the chooser
+opens, which is read and then dismissed: a value revealed on a row
+would sit there for as long as the pane did, and a pane outlives
+everything.
+
+A note that will not fit is dropped rather than trimmed. A note here is
+a path or a fingerprint, and half a fingerprint is worse than none --
+it can be held against another and believed to match.
+
+---
+
 ---
 
 # The two the update check opens
@@ -1123,6 +1304,8 @@ the bottom row.
 
 The secrets commands answer the same way (G2), because each worked and
 there is nothing to read:
+
+- `A passphrase opens the secrets now`
 
 - `Secrets created — <key file> opens them`
 - `<name> saved`, `<name> changed`, `<name> removed`

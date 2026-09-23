@@ -9,6 +9,36 @@ change how something behaves.
 
 ## Unreleased
 
+**The secrets open in a pane, and can be taken out again.** `Manage
+Secrets` lists what is in the vault and the keys that open it, and is
+where a secret is copied, read, changed and removed -- several at once,
+without a dialog that goes away on the first pick. `Show Secrets` stays
+as it was, because `Type` sends a secret to the program in the pane in
+front and only a dialog drawn over that pane knows which one that is.
+
+`Export Secrets` writes every secret to a plaintext CSV, and
+`Import Secrets` reads one back. A password manager nobody can leave is
+one nobody should adopt, so the way out is plain text -- that is what
+every other manager reads -- in the columns a browser writes, which is
+the nearest thing to a standard there is. The import knows the headers
+Chrome, Bitwarden, LastPass, KeePassXC and 1Password write, because
+none of them agree. Both say to remove the file afterwards: it is the
+one place every secret sits in the clear.
+
+**A passphrase can open the secrets, for when every key is gone.**
+Every slot was an SSH key, so losing them all lost the secrets, and
+copying the file did not help because the copy wanted the same keys.
+`Add Secrets Passphrase` adds a slot opened by something known rather
+than something held, and then a copy of the file is a backup that
+survives losing the lot.
+
+Nothing adds one. It is the weaker door -- an ed25519 key is a hundred
+and twenty-eight bits in a file, and a passphrase is what somebody
+typed -- so it is a command, the dialog says what it costs before it is
+added, and it opens on `Cancel`. What a guess costs is written into the
+slot, so it can be raised later without shutting anybody out of a vault
+sealed under the old cost.
+
 ### Changed
 
 **File work is watched in a pane, not a dialog.** Clicking a copy's row

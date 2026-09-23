@@ -254,6 +254,10 @@ Fallback for a tunnel that will not parse:
 | `secrets.forget` | Remove Secret… | forget, password, vault, note, delete |
 | `secrets.addKey` | Add Secrets Key… | let another key open the secrets, vault, password, machine, key |
 | `secrets.removeKey` | Remove Secrets Key… | stop a key opening the secrets, vault, password, machine, key, revoke |
+| `secrets.pane` | Manage Secrets | secrets, password, vault, note, overview, edit, list, manager |
+| `secrets.addPassphrase` | Add Secrets Passphrase… | a way back in when every key is gone, vault, password, recovery, backup, forgot, lost key |
+| `secrets.export` | Export Secrets… | take the secrets somewhere else, csv, vault, password, backup, move, leave, another manager |
+| `secrets.import` | Import Secrets… | bring secrets in from another manager, csv, vault, password, move, bitwarden, 1password, keepass, lastpass, chrome |
 
 **Instructions:**
 
@@ -279,6 +283,21 @@ Fallback for a tunnel that will not parse:
   `Copy` `Show` `Cancel`, are constants in `wording.go` like every
   other button. `Type` and `Show` are new verbs there, and they are
   single verbs as rule 5 asks.
+- **`secrets.pane` has no `…`** under rule 3: it opens a pane and asks
+  nothing. It is the only one of these that does not.
+- **`Manage Secrets` beside `Show Secrets…`** is two ways in doing two
+  jobs. The list is for using a secret -- `Type` sends it to the
+  program in the pane in front, which only a dialog drawn over that
+  pane can know -- and the pane is for working on them. `Copy` and
+  `Show` are on both, because wanting one of those is not a different
+  frame of mind.
+- **`Export Secrets…` and `Import Secrets…`** are the way out and the
+  way in. A password manager nobody can leave is one nobody should
+  adopt, so the way out is a first-class command and not something
+  buried in the pane.
+- **`Add Secrets Passphrase…`** is the way back in when every key is
+  gone. It is a command rather than anything automatic because it is
+  the weaker door: see D78.
 - No `Lock Secrets` command. `Lock SSH Keys` locks them, because the
   vault is opened by one of those keys and a locked window still
   holding the thing the lock was for is not locked.

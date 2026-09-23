@@ -197,10 +197,15 @@ func TestTheSecretsPaneOffersWhatTheRowCanDo(t *testing.T) {
 
 	p.at = 0
 	got := p.choices()
-	for _, want := range []string{btnAddSecret, btnAddNote, btnChange, btnRemove} {
+	for _, want := range []string{btnCopy, btnShow, btnChange, btnRemove, btnAddSecret, btnAddNote} {
 		if !slices.Contains(got, want) {
 			t.Errorf("a secret offers %v, want %q among them", got, want)
 		}
+	}
+	// Copy is what the bar lands on, because it is what anybody wants
+	// from a password manager most of the time.
+	if got[0] != btnCopy {
+		t.Errorf("the buttons start on %q, want %q", got[0], btnCopy)
 	}
 	// Onto the first key, which offers its own two and none of those.
 	p.at = len(p.items)
@@ -210,7 +215,7 @@ func TestTheSecretsPaneOffersWhatTheRowCanDo(t *testing.T) {
 			t.Errorf("a key offers %v, want %q among them", got, want)
 		}
 	}
-	for _, never := range []string{btnChange, btnRemove, btnAddSecret} {
+	for _, never := range []string{btnChange, btnRemove, btnAddSecret, btnCopy, btnShow} {
 		if slices.Contains(got, never) {
 			t.Errorf("a key offers %q, which is what a secret offers", never)
 		}
@@ -372,6 +377,53 @@ func TestTheSecretsPaneSaysWhenARowHasGoneElsewhere(t *testing.T) {
 	}
 	if said := a.saying(); !strings.Contains(said, "removed from somewhere else") {
 		t.Errorf("the line says %q, want that it went elsewhere", said)
+	}
+}
+
+// Copy from the pane puts the secret on the clipboard, without it ever
+// being drawn.
+func TestTheSecretsPaneCopiesARow(t *testing.T) {
+	a, v, p := aWindowWithASecretsPane(t)
+	secretsPaneText(t, p, 80, 24)
+	p.at = 0
+	want, err := v.Secret(p.items[0].ID)
+	if err != nil {
+		t.Fatalf("secret: %v", err)
+	}
+
+	if err := p.press(slices.Index(p.choices(), btnCopy)); err != nil {
+		t.Fatalf("press Copy: %v", err)
+	}
+	waitFor(t, a, "the secret to reach the clipboard", func() bool {
+		return a.copiedText() == want
+	})
+	// And the pane still draws none of it.
+	if said := strings.Join(secretsPaneText(t, p, 80, 24), "\n"); strings.Contains(said, want) {
+		t.Errorf("the pane drew the secret it copied:\n%s", said)
+	}
+}
+
+// Show from the pane puts it in a notice, which is read and dismissed.
+// The value is never on a row, because a pane outlives everything.
+func TestTheSecretsPaneShowsARowInANotice(t *testing.T) {
+	a, v, p := aWindowWithASecretsPane(t)
+	secretsPaneText(t, p, 80, 24)
+	p.at = 0
+	it := p.items[0]
+	want, err := v.Secret(it.ID)
+	if err != nil {
+		t.Fatalf("secret: %v", err)
+	}
+
+	if err := p.press(slices.Index(p.choices(), btnShow)); err != nil {
+		t.Fatalf("press Show: %v", err)
+	}
+	n := awaitModal(t, a, "the secret on screen", byTitle[*ui.Notice](it.Name))
+	if n.Message() != want {
+		t.Errorf("it shows %q, want the secret", n.Message())
+	}
+	if said := strings.Join(secretsPaneText(t, p, 80, 24), "\n"); strings.Contains(said, want) {
+		t.Errorf("the pane drew it on the row as well:\n%s", said)
 	}
 }
 

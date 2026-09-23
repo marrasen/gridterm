@@ -353,7 +353,10 @@ func (p *secretsPane) choices() []string {
 	if _, on := p.onSecret(); !on {
 		return []string{btnAddSecret, btnAddNote}
 	}
-	return []string{btnAddSecret, btnAddNote, btnChange, p.removeTitle()}
+	// What is done to the row first, in the order the chooser offers
+	// the same things, so Copy and Show are in the same place in both.
+	// Then the two that are about the list rather than the row.
+	return []string{btnCopy, btnShow, btnChange, p.removeTitle(), btnAddSecret, btnAddNote}
 }
 
 // removeTitle says how many the button would take, when it is more than
@@ -402,11 +405,16 @@ func (p *secretsPane) press(i int) error {
 	if i < 0 || i >= len(choices) {
 		return nil
 	}
-	v := p.app.secrets
+	a := p.app
+	v := a.secrets
 	if v == nil || v.Locked() {
 		return nil
 	}
 	switch choices[i] {
+	case btnCopy:
+		return p.onTheRow(v, a.copySecret)
+	case btnShow:
+		return p.onTheRow(v, a.showSecret)
 	case btnAddSecret:
 		return p.app.askForSecret(v, secrets.Password)
 	case btnAddNote:
@@ -444,11 +452,15 @@ func (p *secretsPane) removeKey(v *secrets.Vault) error {
 	return nil
 }
 
-// change opens the form the chooser opens, on the row the bar is on.
+// onTheRow does something to the secret the bar is on, once it is
+// still there to do it to.
 //
-// The same form, because it is the same change. What the pane adds is
-// that the list is still there afterwards.
-func (p *secretsPane) change(v *secrets.Vault) error {
+// Copy and Show are the chooser's own, called here rather than written
+// again: the same secret leaves the vault the same way whichever list
+// asked for it. Show puts it in a notice, which is read and dismissed
+// -- a value revealed on a row would sit on screen for as long as the
+// pane did, and the pane outlives everything.
+func (p *secretsPane) onTheRow(v *secrets.Vault, do func(*secrets.Vault, secrets.Item) error) error {
 	it, on := p.onSecret()
 	if !on {
 		return nil
@@ -456,7 +468,15 @@ func (p *secretsPane) change(v *secrets.Vault) error {
 	if !p.stillThere(v, it.ID) {
 		return nil
 	}
-	return p.app.askToChange(v, it)
+	return do(v, it)
+}
+
+// change opens the form the chooser opens, on the row the bar is on.
+//
+// The same form, because it is the same change. What the pane adds is
+// that the list is still there afterwards.
+func (p *secretsPane) change(v *secrets.Vault) error {
+	return p.onTheRow(v, p.app.askToChange)
 }
 
 // stillThere reports whether a secret is in the vault now, and says so

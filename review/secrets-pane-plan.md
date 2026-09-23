@@ -228,15 +228,34 @@ should grow a field for it, which is a small piece of work on its own.
 **One save for the lot.** A file of two hundred logins is two hundred
 writes otherwise, and a failure half way through leaves half of them in.
 
-## Still to settle
+## Settled on 23 September: what each list can do
 
-1. **Does `Show Secrets…` keep `Show`?** With a pane to read them in,
-   the chooser could be Type and Copy alone, and reading one could be
-   the pane's job.
-2. **An encrypted export as well as the plaintext one?** It would make
+The split was drawn as *using* against *managing*, and that cut through
+the wrong place. Only one of the three verbs has a reason to be the
+chooser's alone:
+
+- **Type** is structural. It sends to `focusedTerminal()`, which the
+  chooser knows because it is drawn over the pane you came from. A pane
+  has the focus itself, so it cannot know.
+- **Copy** has no such reason. It is also the commonest thing anybody
+  does with a password manager, and a pane called Manage Secrets that
+  sends you to the palette for it is the friction the pane exists to
+  remove.
+- **Show** is what anyone expects of a manager's own list. It opens the
+  notice the chooser opens -- read, then dismissed. A value revealed on
+  a row would sit there for as long as the pane did, and the pane
+  outlives everything; the transience is the safety, so the reveal
+  stays in the transient thing.
+
+So the chooser keeps all four and the pane gains Copy and Show. They
+sit first on the row, in the order the chooser has them, so the two
+lists are learned once.
+
+## Still to settle
+1. **An encrypted export as well as the plaintext one?** It would make
    export a backup too. Against it: the vault file already is one, and a
    second encrypted format is a second thing to open in five years.
-3. **How much editing before this is worth landing?** Step 1 and 2 are
+2. **How much editing before this is worth landing?** Step 1 and 2 are
    a usable feature on their own; 4 and 5 are what make it safe to
    adopt.
 

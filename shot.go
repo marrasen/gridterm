@@ -10,6 +10,7 @@ import (
 
 	"github.com/hajimehoshi/ebiten/v2"
 
+	"github.com/marrasen/gridterm/agent"
 	"github.com/marrasen/gridterm/input"
 	"github.com/marrasen/gridterm/steps"
 	"github.com/marrasen/gridterm/ui"
@@ -60,14 +61,21 @@ type shooter struct {
 	was  string
 	left int
 
-	// typed says something has been put into the window since the last
-	// wait, so what an until step is watching for could be an answer to
-	// it.
+	// typed says the script has put something into the window, so what
+	// an until step is watching for could be an answer to it. Only an
+	// until before any of that has nothing to be an answer to.
 	typed bool
 
 	// pending is the file this frame's Draw should write, set by a shot
 	// step and cleared once written.
 	pending string
+
+	// failed is why the script gave up, and nil when it ran the whole
+	// way. It is what the process exits with: a script whose wait ran
+	// out has not taken the pictures it was asked for, and one that
+	// exited 0 leaves whatever is looking at the files reading the ones
+	// from last time as if they were new.
+	failed error
 
 	done bool
 }
@@ -99,7 +107,7 @@ func parseShotScript(script string) (*shooter, error) {
 	if strings.TrimSpace(script) == "" {
 		return nil, nil
 	}
-	list, err := steps.ParseAll(strings.Fields(script))
+	list, err := steps.ParseLine(script)
 	if err != nil {
 		return nil, err
 	}
@@ -155,16 +163,20 @@ func (s *shooter) update(a *app) {
 		// the text to arrive rather than matching the echo of what the
 		// script has just typed.
 		//
-		// Unless nothing has been typed since the last wait: then there
-		// is nothing for the text to be an answer to -- "until the
-		// prompt is up, then type" -- and the pane is taken as it
-		// already is, or the step waits out its whole patience for a
-		// prompt that was drawn before the script began.
+		// Unless nothing has been typed at all yet: then there is
+		// nothing for the text to be an answer to -- "until the prompt
+		// is up, then type" -- and the pane is taken as it already is,
+		// or the step waits out its whole patience for a prompt that
+		// was drawn before the script began.
+		//
+		// After that every until anchors here, including one following
+		// another: "until:Building until:Deployed" asks for Deployed
+		// after Building, not for a Deployed left over from last time.
 		s.was = ""
 		if s.typed {
 			s.was = paneNow(a)
 		}
-		s.want, s.left, s.typed = step.Text, framesFor(longestUntil), false
+		s.want, s.left = step.Text, framesFor(longestUntil)
 	case steps.Key:
 		chord, err := ui.ParseChord(step.Chord)
 		if err != nil {
@@ -200,13 +212,15 @@ func (s *shooter) watching(a *app) bool {
 		return false
 	}
 	now := paneNow(a)
-	if strings.Contains(addedTo(s.was, now), s.want) {
+	if strings.Contains(agent.AddedSince(s.was, now), s.want) {
 		s.want = ""
 		return false
 	}
 	if s.left--; s.left <= 0 {
-		a.logError(fmt.Errorf("screenshot until:%s: nothing said it in %s",
-			s.want, longestUntil))
+		// Kept rather than logged: the window is going, and shutDown
+		// reports this as what the run exited with.
+		s.failed = fmt.Errorf("until:%s: nothing said it in %s, and the steps"+
+			" after it were not run", s.want, longestUntil)
 		s.want = ""
 		s.done = true
 		a.quit.Store(true)
@@ -222,22 +236,6 @@ func paneNow(a *app) string {
 		return ""
 	}
 	return t.ReadLines(t.Size().Rows).Text
-}
-
-// addedTo is the part of a reading that was not in an earlier one.
-//
-// Both are the last lines of one pane, which only ever grows at the
-// bottom, so what the earlier reading ended with is where the new text
-// starts. A pane that has scrolled a whole screenful past has nothing
-// in common with it, and all of it is new.
-func addedTo(was, now string) string {
-	if was == "" {
-		return now
-	}
-	if at := strings.LastIndex(now, was); at >= 0 {
-		return now[at+len(was):]
-	}
-	return now
 }
 
 // captured writes the frame if one was asked for, and reports whether it

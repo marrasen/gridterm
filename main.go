@@ -108,8 +108,9 @@ func main() {
 				" for working out why a window feels slow")
 		shotScript = flag.String("shot", "",
 			"drive the window through a script and write PNGs, then exit;"+
-				" steps are wait:<frames> key:<chord> type:<text> shot:<file>,"+
-				` e.g. "wait:60 key:ctrl+shift+k shot:palette.png"`)
+				" steps are wait:<ms> until:<text> key:<chord> type:<text>"+
+				" shot:<file>, and until: is the one to reach for, e.g."+
+				` "until:$ type:make key:Enter until:done shot:built.png"`)
 	)
 	flag.Parse()
 
@@ -223,6 +224,12 @@ func (a *app) shutDown(ran error) error {
 	// there until something hovers over it.
 	if a.toasts != nil {
 		closed = append(closed, a.toasts.Close())
+	}
+	// A screenshot script that gave up is a failed run, so whatever
+	// started it is told rather than left reading the pictures from
+	// last time as if they were this run's.
+	if a.shot != nil {
+		closed = append(closed, a.shot.failed)
 	}
 	return a.graceLogged(errors.Join(closed...))
 }

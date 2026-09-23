@@ -50,12 +50,17 @@ func (s *server) runSteps(pane string, list []steps.Step, lines int, clamped boo
 		last  Screen
 		read  bool
 
-		// typed says the list has put something into the pane since
-		// the last wait, so what it is waiting for could be an answer
-		// to it. A wait before any of that has nothing to be an answer
-		// to -- "until the prompt is up, then type" -- and takes the
-		// pane as it already is, or it waits out its whole timeout for
-		// a prompt that was drawn before the list began.
+		// typed says the list has put something into the pane, so what
+		// it is waiting for could be an answer to it. Only a wait
+		// before any of that has nothing to be an answer to -- "until
+		// the prompt is up, then type" -- and it takes the pane as it
+		// already is, or it waits out its whole timeout for a prompt
+		// that was drawn before the list began.
+		//
+		// It holds for the rest of the list, including a wait that
+		// follows another: ["until:Building", "until:Deployed"] asks
+		// for Deployed after Building, not for a Deployed left on the
+		// screen by an earlier run.
 		typed bool
 	)
 	ends := time.Now().Add(longestList)
@@ -96,7 +101,7 @@ func (s *server) runSteps(pane string, list []steps.Step, lines int, clamped boo
 			// second wait later in the same list has moved the pane on.
 			shown := s.printedOrScreen(pane, screen, ended, lines, false)
 			waits = append(waits, waited{at: i, step: step, screen: shown, ended: ended})
-			last, read, typed = shown, true, false
+			last, read = shown, true
 			if ended.GaveUp {
 				return stoppedAt(i, step, "the time ran out", last, read)
 			}

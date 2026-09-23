@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -69,27 +70,90 @@ func TestAScreenshotScriptRefusesWhatItCannotDo(t *testing.T) {
 	}
 }
 
-// An until step waits for the text to arrive, so it is not ended by the
-// echo of what the script has just typed.
+// An until step waits for the text to arrive, so the prompt that was
+// already on the pane does not end it.
+//
+// Read against a real pane rather than against hand-written strings. A
+// reading is always the whole screen, blank rows and all, so one line of
+// output leaves two readings no longer lining up end to end: judged as
+// raw text the whole screen counts as new, and the prompt above ends the
+// wait before the command has finished. The rows that did carry over are
+// what says which of them is new.
 func TestWhatAnUntilStepCountsAsArriving(t *testing.T) {
-	for _, one := range []struct {
-		name     string
-		was, now string
-		want     string
-	}{
-		{name: "the echo of what was typed",
-			was: "$ echo done\n", now: "$ echo done\n", want: ""},
-		{name: "and the answer after it",
-			was: "$ echo done\n", now: "$ echo done\ndone\n$ ", want: "done\n$ "},
-		{name: "a pane that had nothing",
-			was: "", now: "$ ", want: "$ "},
-		{name: "a pane that scrolled a screenful past",
-			was: "old", now: "quite new", want: "quite new"},
-	} {
-		if got := addedTo(one.was, one.now); got != one.want {
-			t.Errorf("%s: addedTo(%q, %q) = %q, want %q",
-				one.name, one.was, one.now, got, one.want)
-		}
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	pane := onlyPaneOn(t, a)
+	says := func(what, look string) {
+		t.Helper()
+		a.shells[0].out <- []byte(what)
+		waitFor(t, a, "the pane to show "+strconv.Quote(look), func() bool {
+			return strings.Contains(paneText(pane), look)
+		})
+	}
+	says("$ ", "$")
+
+	s, err := parseShotScript("type:build key:Enter until:$")
+	if err != nil {
+		t.Fatalf("read it: %v", err)
+	}
+	for range 3 {
+		s.update(a.app)
+	}
+	if s.want != "$" {
+		t.Fatalf("the script is waiting for %q", s.want)
+	}
+
+	// What the command prints, on the lines under the prompt. The prompt
+	// itself is still where it was, and is not an answer to anything the
+	// script has typed since.
+	says("\r\nbuilding\r\n", "building")
+	if !s.watching(a.app) {
+		t.Error("the prompt that was already there ended the wait")
+	}
+
+	// The prompt the shell draws when the command is done does end it.
+	a.shells[0].out <- []byte("$ ")
+	waitFor(t, a, "the pane to show the prompt again", func() bool {
+		return strings.Count(paneText(pane), "$") == 2
+	})
+	if s.watching(a.app) {
+		t.Error("the new prompt did not end the wait")
+	}
+}
+
+// A script whose wait runs out is a failed run.
+//
+// The pictures after that wait were never taken, so a run that exited
+// saying nothing would leave whatever is looking at the files reading
+// the ones from last time as if they were this run's.
+func TestAScriptThatWaitsForNothingFails(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	s, err := parseShotScript("type:build until:nevermore shot:/tmp/never.png")
+	if err != nil {
+		t.Fatalf("read it: %v", err)
+	}
+	s.update(a.app)
+	s.update(a.app)
+	if s.want != "nevermore" {
+		t.Fatalf("the script is waiting for %q", s.want)
+	}
+
+	// The last frame of its patience.
+	s.left = 1
+	s.update(a.app)
+
+	if s.failed == nil {
+		t.Fatal("it gave up without saying so, and the run exits 0")
+	}
+	if !strings.Contains(s.failed.Error(), "nevermore") {
+		t.Errorf("it failed with %q, which does not say what it was waiting for", s.failed)
+	}
+	if !s.done || s.pending != "" {
+		t.Error("it went on to the steps after the wait")
+	}
+	if !a.quit.Load() {
+		t.Error("the window was left open")
 	}
 }
 

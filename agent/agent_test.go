@@ -1187,7 +1187,7 @@ func TestAWaitWhoseFirstReadFailsStillWaits(t *testing.T) {
 	}
 }
 
-// addedSince is the lines a later reading has that an earlier one did
+// AddedSince is the lines a later reading has that an earlier one did
 // not, however far the pane scrolled in between.
 func TestTheLinesAddedSinceAReadingAreTheNewOnes(t *testing.T) {
 	for _, tc := range []struct {
@@ -1210,7 +1210,7 @@ func TestTheLinesAddedSinceAReadingAreTheNewOnes(t *testing.T) {
 		{"a full-screen program took over", "$ vim x\n", "  1 package main\n  2\n~",
 			"  1 package main\n  2\n~"},
 	} {
-		if got := addedSince(tc.was, tc.now); got != tc.want {
+		if got := AddedSince(tc.was, tc.now); got != tc.want {
 			t.Errorf("%s: %q, want %q", tc.what, got, tc.want)
 		}
 	}

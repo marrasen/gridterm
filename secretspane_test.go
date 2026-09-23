@@ -554,3 +554,71 @@ func TestTheSecretsPaneButtonsStartAgainOnADifferentRow(t *testing.T) {
 		t.Errorf("the buttons start at %d on a key row, want the first", p.button)
 	}
 }
+
+// A whole frame's keys land before any of it is drawn, so the buttons
+// have to be right between them and not only after.
+//
+// The test above sets the bar directly and so exercises the drawing.
+// This one presses the keys, which is the path that had the bug: Right
+// onto Show, Down onto a key, Enter -- and Enter pressed the second of
+// the key's two rather than the second of the secret's six.
+func TestTheSecretsPaneButtonsAreRightBetweenKeystrokes(t *testing.T) {
+	a, v, p := aWindowWithASecretsPane(t)
+	secretsPaneText(t, p, 80, 24)
+	if err := v.AddPassphrase("one"); err != nil {
+		t.Fatalf("add a passphrase: %v", err)
+	}
+	p.forget()
+	secretsPaneText(t, p, 80, 24)
+
+	// Onto the first secret, then Right, then down onto the first key,
+	// with nothing drawn in between.
+	p.goTo(0)
+	if _, err := p.HandleKey(press(input.KeyRight, 0)); err != nil {
+		t.Fatalf("Right: %v", err)
+	}
+	for range len(p.items) {
+		if _, err := p.HandleKey(press(input.KeyDown, 0)); err != nil {
+			t.Fatalf("Down: %v", err)
+		}
+	}
+	if _, is := p.onKey(); !is {
+		t.Fatalf("the bar is on row %d, want a key", p.at)
+	}
+	if got := p.choices()[p.button]; got != btnAddKey {
+		t.Errorf("Enter would press %q, want the first of a key's own %q", got, btnAddKey)
+	}
+
+	// And a Right pressed after the move is kept rather than undone by
+	// the next draw.
+	if _, err := p.HandleKey(press(input.KeyRight, 0)); err != nil {
+		t.Fatalf("Right: %v", err)
+	}
+	want := p.choices()[p.button]
+	secretsPaneText(t, p, 80, 24)
+	if got := p.choices()[p.button]; got != want {
+		t.Errorf("the draw moved the button from %q to %q", want, got)
+	}
+	_ = a
+}
+
+// A pane too short to draw a line presses nothing: a button over a
+// list nobody can see would act on a row nobody chose.
+func TestTheSecretsPaneWithNoRoomPressesNothing(t *testing.T) {
+	a, v, p := aWindowWithASecretsPane(t)
+	secretsPaneText(t, p, 60, 4)
+	if p.shown != 0 {
+		t.Fatalf("%d lines were drawn in four rows", p.shown)
+	}
+
+	if err := p.press(slices.Index(p.choices(), btnCopy)); err != nil {
+		t.Fatalf("press: %v", err)
+	}
+	if got := a.copiedText(); got != "" {
+		t.Errorf("it copied %q from a list nobody can see", got)
+	}
+	if up := a.root.Modal(); up != nil {
+		t.Errorf("a %T dialog opened from a pane with no room", up)
+	}
+	_ = v
+}

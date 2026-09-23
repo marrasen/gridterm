@@ -1194,6 +1194,12 @@ from another manager to get here may not have thought about that since.
 file, and nothing can be tried against one; this is what somebody
 typed. One sentence, in D17's shape, which is who can do what.
 
+Asking for a second one never reaches this dialog. The vault takes one,
+and the answer comes before the typing: `A passphrase already opens the
+secrets` over `Choose "Remove Secrets Key" to take it away first.`,
+with `OK` alone. Being refused at the end of typing a long passphrase
+twice is being told something that was known at the start.
+
 Asked twice because it is masked and because it is the thing that gets
 the user back in years from now: a typo makes a way in nobody can find.
 

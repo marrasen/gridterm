@@ -235,3 +235,23 @@ func TestAKeyReplacedAtTheSamePathFallsBackToThePassphrase(t *testing.T) {
 		t.Errorf("it holds %v, want what was put in", items)
 	}
 }
+
+// Asking for a second is answered before the typing, not after.
+func TestASecondPassphraseIsRefusedBeforeTheAsking(t *testing.T) {
+	a, keyFile := aWindowWithSecrets(t)
+	v := startTheVault(t, a, keyFile)
+	if err := v.AddPassphrase("one"); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+
+	if err := a.addSecretsPassphrase(); err != nil {
+		t.Fatalf("ask again: %v", err)
+	}
+	if said := noticeTitleUp(t, a); !strings.Contains(said, "already opens") {
+		t.Errorf("it said %q", said)
+	}
+	// And no form went up to type into.
+	if _, isForm := a.root.Modal().(*ui.Form); isForm {
+		t.Error("it asked for a passphrase it was going to refuse")
+	}
+}

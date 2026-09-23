@@ -20,6 +20,17 @@ const addSecretsPassphraseTitle = "Add Secrets Passphrase"
 // stays shut unless somebody opens it on purpose.
 func (a *app) addSecretsPassphrase() error {
 	return a.withOpenSecrets(couldNotAddThePassphrase, func(v *secrets.Vault) error {
+		if v.TakesAPassphrase() {
+			// Said before the asking, not after. The vault takes one,
+			// and being refused at the end of typing a long passphrase
+			// twice is being told something that was known at the
+			// start.
+			n := a.newNotice(alreadyTakesOne,
+				`Choose "`+removeSecretsKeyTitle+`" to take it away first.`)
+			n.SetNoCopy()
+			a.presentNotice(n)
+			return nil
+		}
 		f := a.newForm(addSecretsPassphraseTitle)
 		f.Lines = wrapLines(anyoneCanTryAtIt, errorLineWidth)
 		pass := a.newField("", '*')
@@ -52,6 +63,9 @@ func (a *app) addSecretsPassphrase() error {
 		return nil
 	})
 }
+
+// alreadyTakesOne heads the answer to asking for a second.
+const alreadyTakesOne = "A passphrase already opens the secrets"
 
 // couldNotAddThePassphrase heads whatever went wrong.
 const couldNotAddThePassphrase = "Could not add the passphrase"

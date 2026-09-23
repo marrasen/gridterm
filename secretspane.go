@@ -45,6 +45,13 @@ type secretsPane struct {
 	buttonCols   []int
 	drawnChoices []string
 
+	// chosenFor is what was on offer when the button was last picked,
+	// which is not the same as what was last drawn. A frame's keys all
+	// land before any of it is drawn, so moving to a row and then
+	// pressing Right happens while drawnChoices still names the row
+	// before -- and resetting against that threw the Right away.
+	chosenFor []string
+
 	// picked are the secrets ticked for removing several at once, by
 	// id. Removing is the one thing that is tedious a row at a time.
 	picked map[string]bool
@@ -436,11 +443,12 @@ func (p *secretsPane) drawButtons(v grid.View) {
 	}
 	p.buttonRow = row
 	choices := p.choices()
-	if !slices.Equal(choices, p.drawnChoices) {
+	if !slices.Equal(choices, p.chosenFor) {
 		// A different row offers different things, and the place the
 		// bar was in among the old ones means nothing among the new:
 		// Show on a secret is Remove key on the key under it.
 		p.button = 0
+		p.chosenFor = append(p.chosenFor[:0], choices...)
 	}
 	p.button = min(max(p.button, 0), len(choices)-1)
 	p.buttonCols = ui.ButtonColsInto(p.buttonCols[:0], choices, cols, secretsPaneMargin)
@@ -635,12 +643,16 @@ func (p *secretsPane) HandleKey(ev input.Event) (bool, error) {
 	case input.KeyLeft, input.KeyRight:
 		// The same keys as every list with things to do to it: up and
 		// down pick the row, left and right pick what to do with it.
-		n := len(p.choices())
+		choices := p.choices()
+		n := len(choices)
 		step := 1
 		if ev.Key == input.KeyLeft {
 			step = -1
 		}
 		p.button = ((p.button+step)%n + n) % n
+		// Recorded against what is on offer now, not what was last
+		// drawn: this may be a row the frame has not drawn yet.
+		p.chosenFor = append(p.chosenFor[:0], choices...)
 		p.app.markDirty()
 		return true, nil
 	case input.KeySpace:
@@ -719,10 +731,11 @@ func (p *secretsPane) move(by int) {
 // have been worked out again -- and Enter then presses the second of
 // the key's two rather than the second of the secret's four.
 func (p *secretsPane) goTo(at int) {
-	was := p.choices()
 	p.at = at
-	if !slices.Equal(was, p.choices()) {
+	choices := p.choices()
+	if !slices.Equal(choices, p.chosenFor) {
 		p.button = 0
+		p.chosenFor = append(p.chosenFor[:0], choices...)
 	}
 	p.app.markDirty()
 }

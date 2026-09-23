@@ -46,6 +46,14 @@ type Item struct {
 	// renaming the item leaves the key still unlocking.
 	File string `json:"file,omitempty"`
 
+	// URL is where the secret is used, and empty for most of them.
+	//
+	// Nothing in the window asks for one. It is here so that a secret
+	// imported from a manager that had one keeps it, and carries it
+	// back out again: a way out that quietly drops a column is a way
+	// out that loses the user's work.
+	URL string `json:"url,omitempty"`
+
 	Made    time.Time `json:"made"`
 	Changed time.Time `json:"changed"`
 }

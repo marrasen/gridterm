@@ -93,5 +93,5 @@ func csvRow(e Export) []string {
 	if kind == "" {
 		kind = Password
 	}
-	return []string{e.Name, "", e.User, password, notes, string(kind), e.File}
+	return []string{e.Name, e.URL, e.User, password, notes, string(kind), e.File}
 }

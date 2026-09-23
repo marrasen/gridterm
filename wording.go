@@ -55,6 +55,7 @@ const (
 	btnDontAskAgain  = "Don't ask again"
 	btnExit          = "Exit"
 	btnExport        = "Export"
+	btnImport        = "Import"
 	btnGenerate      = "Generate"
 	btnGo            = "Go"
 	btnNotNow        = "Not now"
@@ -78,6 +79,7 @@ const (
 // The field labels.
 const (
 	fldAgent        = "Agent"
+	fldAlreadyHere  = "If it is already here"
 	fldCommand      = "Command"
 	fldComment      = "Comment"
 	fldConfirmPass  = "Confirm passphrase"
@@ -139,6 +141,7 @@ const (
 	dlgReplaceSkill     = "Replace existing skill?"
 	dlgServeWindow      = "Serve This Window"
 	dlgServingWindow    = "Serving this window"
+	dlgSecretsRead      = "Secrets read in"
 	dlgSecretsWritten   = "Secrets written"
 	dlgSkillWritten     = "Skill written"
 	dlgTermProgram      = "Terminal Identity"

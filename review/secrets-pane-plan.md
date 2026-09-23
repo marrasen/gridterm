@@ -212,6 +212,22 @@ because a way out that depends on the other end being modern is not one.
 Keep both is the safe default for a password manager: nothing a user
 already has should disappear because a file said so.
 
+**The headers are read, not assumed.** There is no standard CSV, so the
+header line says which column is which and the reader knows the names
+each manager writes: Chrome and the browsers, Bitwarden, LastPass,
+KeePassXC, 1Password. Matched without case, because they do not agree
+on that either. A file with no password and no notes column is refused
+rather than read as nothing.
+
+**`Item` gains a `URL`.** Nothing in the window asks for one and nothing
+draws it. It is here because every manager has the column, and a way out
+that quietly drops it is a way out that loses the user's work: what came
+in from Bitwarden goes back out to Bitwarden whole. The Change form
+should grow a field for it, which is a small piece of work on its own.
+
+**One save for the lot.** A file of two hundred logins is two hundred
+writes otherwise, and a failure half way through leaves half of them in.
+
 ## Still to settle
 
 1. **Does `Show Secrets…` keep `Show`?** With a pane to read them in,

@@ -11,6 +11,15 @@ change how something behaves.
 
 ### Changed
 
+**What this window is serving is a pane too.** It was a dialog, which
+could only say who was connected at the moment it opened -- and what it
+is about changes while it is up, as windows connect and go. The pane
+follows: the address, the fingerprint to check this machine by, and one
+line per window working here, with `Disconnect` and `Stop serving`
+along the bottom. The row of a window working in this one opens it,
+which is what that row could not do before: it stood in for a pane
+because there was none to put in front.
+
 **File work is watched in a pane, not a dialog.** Clicking a copy's row
 on the sidebar opened a box over the window, which took the keys and had
 to be dismissed before anything else could be done -- for work that

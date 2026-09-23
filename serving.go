@@ -300,7 +300,7 @@ func (s *serving) opens() serve.Snapshot { return s.openNow.get() }
 // at its next start, by offerToServeAgain.
 func (a *app) openServing() error {
 	if a.serving.on() {
-		return a.showServing()
+		return a.showServingPane()
 	}
 	paths, err := a.serving.where()
 	if err != nil {
@@ -350,7 +350,7 @@ func (a *app) openServing() error {
 		// Not from here: this form closes as soon as this returns, and
 		// closing a dialog takes anything stacked on top of it.
 		a.pump.post(func() {
-			if err := a.showServing(); err != nil {
+			if err := a.showServingPane(); err != nil {
 				a.reportError("Could not show the serving status", err)
 			}
 			// After that dialog, so a failure to write the settings
@@ -574,10 +574,11 @@ func (a *app) clientArrived(c *serve.Client) {
 		Label: "serving " + c.Name,
 		Note:  "from " + c.Addr,
 		Close: func() error { return c.Close() },
-		// There is no pane to put in front, so the row says what this
-		// window is serving and to whom.
+		// The pane on what this window is serving, which says who is
+		// working in it: there is no pane of this window's own to put
+		// in front for a window working over there.
 		Reveal: func() {
-			if err := a.showServing(); err != nil {
+			if err := a.showServingPane(); err != nil {
 				a.reportError("Could not show the serving status", err)
 			}
 		},
@@ -619,53 +620,6 @@ func (a *app) servingStopped(err error) {
 	a.reportError("This window is no longer being served", err)
 }
 
-// showServing says what the window is serving and offers to stop.
-func (a *app) showServing() error {
-	if !a.serving.on() {
-		return nil
-	}
-	lines := []string{
-		"This window is being served on " + a.serving.addr() + ".",
-		"",
-		"Check this machine by its fingerprint when you first connect:",
-		"  " + a.serving.fingerprint(),
-	}
-	// What is connected as the dialog opens. It says so once rather
-	// than following: a dialog is read and answered, and one that
-	// rewrote itself under the reader would be harder to trust, not
-	// easier.
-	clients := a.serving.clients()
-	if len(clients) > 0 {
-		lines = append(lines, "", "Connected:")
-		for _, c := range clients {
-			lines = append(lines, "  "+c.Name+" from "+c.Addr)
-		}
-	} else {
-		lines = append(lines, "", "No one is connected.")
-	}
-
-	f := a.newConfirm(dlgServingWindow, lines)
-	f.AddButton(ui.Button{Title: btnClose})
-	if len(clients) > 0 {
-		f.AddButton(ui.Button{
-			Title: kickTitle(clients),
-			// The windows the dialog named, not whoever is connected
-			// when the button is pressed: the user answered the list
-			// they were shown.
-			Do: func() error { return a.kickOut(clients) },
-		})
-	}
-	f.AddButton(ui.Button{Title: btnStopServing, Do: func() error {
-		// Forgotten here rather than in stopServing, which a window
-		// closing also calls: quitting is not the user saying they are
-		// done serving.
-		return errors.Join(a.stopServing(), a.serving.rememberOn(false))
-	}})
-	a.showForm(f, nil)
-	return nil
-}
-
-// kickTitle is what the button that hangs up on the connected windows
 // says, naming the one client there is.
 func kickTitle(clients []*serve.Client) string {
 	if len(clients) == 1 {

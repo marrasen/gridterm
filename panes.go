@@ -432,6 +432,8 @@ func (a *app) entryOf(w ui.Widget) *conns.Entry {
 			return held.row
 		}
 		return nil
+	case *jobPane:
+		return p.entry
 	}
 	return nil
 }

@@ -1191,3 +1191,29 @@ func TestAClickOnAChangedRowPressesNothing(t *testing.T) {
 		t.Fatalf("the row was drawn offering %q, so this proves nothing", got)
 	}
 }
+
+// The pane on a piece of file work is one of the panes, so All Panes
+// draws it, the keys walk on to it, and it is named there.
+//
+// Everything that asks what a pane is asks by type, so a kind that was
+// not on those lists was a pane the window could not close, could not
+// walk to, and drew a nameless tile for.
+func TestAJobsPaneIsOneOfThePanes(t *testing.T) {
+	a, _ := aCopyWindow(t)
+	d, _, _ := aFinishedCopy(t, a)
+
+	panes := a.panesInSidebarOrder()
+	if !slices.Contains(panes, ui.Widget(d)) {
+		t.Errorf("the window lists %d panes, and the file work is not one", len(panes))
+	}
+	// Named by what it is and what it is on, the way every other pane
+	// is named in that list.
+	if got := a.paneName(d); !strings.Contains(got, conns.Copy.String()) {
+		t.Errorf("All Panes would call it %q", got)
+	}
+	// And filed under the row it belongs to, so it sorts where the
+	// sidebar puts it rather than last.
+	if got := a.entryOf(d); got != d.entry {
+		t.Errorf("the window files the pane under %v, want its own row", got)
+	}
+}

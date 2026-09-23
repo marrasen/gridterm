@@ -118,15 +118,56 @@ Anyone who can read the file can read them all.
 No export to the clipboard. No default path, so it is never one press
 from happening. No writing over a file that is there.
 
-**The format is CSV**, because 1Password, Bitwarden and KeePass all read
-it. The columns are the common ones -- name, username, password, notes
--- with `kind` and `file` on the end so gridterm can read its own export
-back without losing what it knows. Importers ignore columns they do not
-recognise.
+**The format is CSV, and there is no standard one.** Checked on 23
+September rather than assumed. Every manager defines its own columns:
+KeePassXC into Bitwarden wants headers renamed by hand, 1Password wants
+"All Fields" and "Include Column Labels" ticked before its own export
+is readable. CSV is what everything takes, not what anything agrees on.
+
+So the columns are the browser shape, `name,url,username,password`,
+which is the closest thing to a common one: Chrome insists on `url`,
+`username` and `password` as headers, and Bitwarden, Dashlane and the
+rest import a Chrome CSV directly. Whoever leaves gridterm picks
+"Chrome" or "Other CSV" in whatever they are moving to, and it works.
+The dialog should say so, because that choice is not guessable.
+
+`notes`, `kind` and `file` go on the end, so gridterm can read its own
+export back without losing what it knows. Importers ignore columns they
+do not recognise.
 
 **Key passphrases go in it.** They are secrets the user owns, and a way
 out that quietly keeps some back is not one. They are the rows where
 `kind` says `passphrase` and `file` names the key.
+
+They are also the reason CSV is right rather than merely available. A
+passphrase for `~/.ssh/id_ed25519` is not a login: it has no URL and no
+username, and no credential format models it. CSV has a notes column
+and no opinion, which is what an awkward secret needs.
+
+**The file is a hazard until it is gone.** The notice after a successful
+export says to remove it once it has been imported. That is the advice
+every manager gives about its own export and it is worth repeating,
+because the file is the one place every secret sits in the clear.
+
+## The standard that is arriving, and why not yet
+
+The FIDO Alliance's **Credential Exchange Format** (CXF) became a
+Proposed Standard in August 2025, written by Apple, Google, Microsoft,
+1Password, Bitwarden and Dashlane, for exactly the reason above: to end
+the inconsistent CSV files that were the only common option. It is JSON
+and it is a real specification.
+
+It is not what this should write yet, for two reasons. The protocol
+half, CXP, is still being finished, so what has shipped is local
+on-device transfer through platform APIs -- Apple in iOS and macOS 26,
+Google on Android. A terminal emulator on Linux and Windows is not part
+of that path. And third-party managers are still prototyping their side,
+so a CXF file gridterm wrote today has little that would read it.
+
+What follows for the work: write the export behind something that takes
+a format, so a second one is a new writer and not a new feature. CXF is
+where this goes when managers can read it, and the CSV stays either way,
+because a way out that depends on the other end being modern is not one.
 
 ## Step 5 -- the way in
 

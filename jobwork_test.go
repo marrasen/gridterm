@@ -398,7 +398,23 @@ func TestAFinishedJobIsRepeatedFromItsDialog(t *testing.T) {
 	if !offersChoice(d, btnRepeat) {
 		t.Fatalf("the finished dialog offers %v", choiceTitles(d))
 	}
+	first, firstRow := d.job, d.entry
 	pressChoice(t, d, btnRepeat)
+
+	// The same pane watches the repeat, rather than a second one opening
+	// beside it or this one going on showing the run that finished.
+	if d.job == first {
+		t.Fatal("the pane still shows the copy that finished")
+	}
+	if d.entry == firstRow {
+		t.Error("the pane is still filed under the first run's row")
+	}
+	if n := len(a.jobPanes); n != 1 {
+		t.Errorf("the window holds %d panes on the work, want the one", n)
+	}
+	if a.entryOf(d) != d.entry || a.jobs[d.entry] != d.job {
+		t.Error("the pane is not filed under the row of the work it shows")
+	}
 
 	waitFor(t, a, "the copy to be done again", func() bool {
 		a.refreshJobs()

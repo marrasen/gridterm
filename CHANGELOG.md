@@ -61,7 +61,8 @@ moves in eighths of a cell; how much has moved, how fast, and how long
 is left; the last seconds of it as a run; and the names it was given,
 ticked off as it passes them. `Cancel`, `Repeat` and the box that keeps
 a copy are along the bottom, and `Close` takes the pane away and leaves
-the work running.
+the work running. `Repeat` watches the new run in the same pane, so a
+copy done again and again does not leave a pane for every time.
 
 ### Added
 

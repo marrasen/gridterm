@@ -83,12 +83,12 @@ func soFar(d time.Duration) string {
 }
 
 // repeatJob does a finished piece of work again, on filesystems found
-// afresh.
+// afresh, and turns the pane it was asked from onto the new work.
 //
 // Opened from the ends rather than from the filesystems the job held:
 // those belong to panes that may have been closed, and a machine that
 // dropped and came back is a different connection under the same name.
-func (a *app) repeatJob(op jobs.Op, from, to jobEnd) {
+func (a *app) repeatJob(p *jobPane, op jobs.Op, from, to jobEnd) {
 	title := "Could not " + strings.ToLower(op.Kind.String()) + " it again"
 	source, err := a.openEnd(from)
 	if err != nil {
@@ -114,5 +114,6 @@ func (a *app) repeatJob(op jobs.Op, from, to jobEnd) {
 		op.To = into
 		to.host = a.hostOf(into)
 	}
-	a.runJob(op, from, to, owned)
+	j, e := a.runJobRow(op, from, to, owned)
+	p.follow(j, e, from, to)
 }

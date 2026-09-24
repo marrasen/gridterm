@@ -571,6 +571,9 @@ The `Remember` / `Forget` button that changed its name is the tick box,
 matching `Save this tunnel` and `Save this command`. Ticked means it is
 in Saved Copies.
 
+`Repeat` turns the same pane onto the copy it starts. The row of the
+first run stays on the sidebar, saying how it ended.
+
 `Close` takes the pane away and leaves the work running, the way closing
 any pane does not end what is behind it.
 

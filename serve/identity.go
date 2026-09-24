@@ -19,8 +19,10 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"time"
 
 	"github.com/marrasen/gridterm/conf"
+	"github.com/marrasen/gridterm/internal/newfile"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -69,7 +71,7 @@ func AuthorizedKeysPath() (string, error) {
 // the next time.
 func HostKey(path string) (ssh.Signer, error) {
 	signer, err := readHostKey(path)
-	if err == nil || !errors.Is(err, os.ErrNotExist) {
+	if err == nil || !(errors.Is(err, os.ErrNotExist) || errors.Is(err, errClaimed)) {
 		return signer, err
 	}
 	signer, err = makeHostKey(path)
@@ -77,9 +79,22 @@ func HostKey(path string) (ssh.Signer, error) {
 		return signer, err
 	}
 	// Another window made one between the read and the write. Theirs is
-	// the one on disk, so theirs is the one this machine is known by.
-	return readHostKey(path)
+	// the one on disk, so theirs is the one this machine is known by --
+	// once it has finished writing it, which on a filesystem without
+	// hard links is a moment after it claims the name.
+	for range 40 {
+		signer, err = readHostKey(path)
+		if !errors.Is(err, errClaimed) {
+			return signer, err
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return nil, fmt.Errorf("serve: the host key %s is still being written by another window", path)
 }
+
+// errClaimed is a host key file with nothing in it yet: another window
+// has claimed the name and not filled it, or one that did so died.
+var errClaimed = errors.New("serve: the host key is not written yet")
 
 // modesMeanSomething is whether a file mode says who can read a file.
 //
@@ -98,6 +113,20 @@ func readHostKey(path string) (ssh.Signer, error) {
 		}
 		return nil, fmt.Errorf("serve: read the host key %s: %w", path, err)
 	}
+	if newfile.IsClaim(path) {
+		return nil, errClaimed
+	}
+	if modesMeanSomething && info.Mode().Perm()&0o077 != 0 && !modesStick(filepath.Dir(path)) {
+		// A stick formatted FAT32 or exFAT, mounted so every file on it
+		// is open to others: the mode is the mount's, and it is real --
+		// anybody on this machine can read the key. Refused the same, but
+		// told what would make it private.
+		return nil, fmt.Errorf(
+			"serve: the host key %s is readable by others (mode %04o), because the"+
+				" drive it is on gives every file that mode. Mount it with fmask=0077,"+
+				" or keep gridterm's files on a drive that keeps file permissions",
+			path, info.Mode().Perm())
+	}
 	if modesMeanSomething && info.Mode().Perm()&0o077 != 0 {
 		return nil, fmt.Errorf(
 			"serve: the host key %s is readable by others (mode %04o)."+
@@ -113,6 +142,33 @@ func readHostKey(path string) (ssh.Signer, error) {
 		return nil, fmt.Errorf("serve: read the host key %s: %w", path, err)
 	}
 	return signer, nil
+}
+
+// modesStick reports whether a file made private in a directory stays
+// private, which is not so on a filesystem that keeps no modes: FAT32
+// and exFAT on Linux and macOS give every file the mode the drive was
+// mounted with. That mode is enforced, so a key it opens to others is
+// one others can read, and is refused like any other; this is only for
+// saying why, and what would fix it.
+//
+// Asked of a file of its own rather than of the key, so the key's mode
+// is never changed behind the user's back.
+var modesStick = probeModes
+
+// probeModes is modesStick, asked of the filesystem.
+func probeModes(dir string) bool {
+	f, err := os.CreateTemp(dir, ".mode-*")
+	if err != nil {
+		// Nothing to learn from, so the mode is taken at its word.
+		return true
+	}
+	probe := f.Name()
+	defer func() { _ = os.Remove(probe) }()
+	if err := errors.Join(f.Chmod(0o600), f.Close()); err != nil {
+		return true
+	}
+	info, err := os.Stat(probe)
+	return err != nil || info.Mode().Perm()&0o077 == 0
 }
 
 // makeHostKey writes a new key and returns it.
@@ -139,29 +195,10 @@ func makeHostKey(path string) (ssh.Signer, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, fmt.Errorf("serve: make %s: %w", filepath.Dir(path), err)
 	}
-	// In the same directory, so linking it into place cannot cross a
-	// filesystem. CreateTemp makes it readable by its owner and nobody
-	// else, which is what the real one has to be too.
-	f, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+"-*")
-	if err != nil {
-		return nil, fmt.Errorf("serve: write the host key %s: %w", path, err)
-	}
-	tmp := f.Name()
-	if _, err := f.Write(pem.EncodeToMemory(block)); err != nil {
-		return nil, fmt.Errorf("serve: write the host key %s: %w", path,
-			errors.Join(err, f.Close(), os.Remove(tmp)))
-	}
-	if err := f.Close(); err != nil {
-		_ = os.Remove(tmp)
-		return nil, fmt.Errorf("serve: write the host key %s: %w", path, err)
-	}
-	// Link rather than rename: a rename would write over a key another
-	// window had just made, and this machine would answer to two.
-	err = os.Link(tmp, path)
-	if rmErr := os.Remove(tmp); rmErr != nil && err == nil {
-		return nil, fmt.Errorf("serve: clear up %s: %w", tmp, rmErr)
-	}
-	if err != nil {
+	// Whole or not at all, and never over a key another window made a
+	// moment ago: this machine would answer to two. newfile also works
+	// where there are no hard links, which a copy on a USB stick needs.
+	if err := newfile.Write(path, pem.EncodeToMemory(block), 0o600); err != nil {
 		if errors.Is(err, os.ErrExist) {
 			return nil, err
 		}

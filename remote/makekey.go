@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/marrasen/gridterm/internal/newfile"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -125,42 +126,16 @@ func marshalKey(priv ed25519.PrivateKey, comment, passphrase string) (*pem.Block
 
 // writeWhole writes a file that is not there, and refuses one that is.
 //
-// Written to a file of its own and then linked into place, the way the
-// serving window's host key is, so the key either exists complete or
-// does not exist at all. Creating the real file and then filling it
+// Through newfile, the way the serving window's host key is, so the key
+// either exists complete or does not exist at all, on any filesystem. Creating the real file and then filling it
 // would leave a half-written key at the name ssh looks for, and that
 // name would then be refused for ever.
 func writeWhole(path string, body []byte, perm os.FileMode) error {
-	dir := filepath.Dir(path)
-	f, err := os.CreateTemp(dir, filepath.Base(path)+"-*")
-	if err != nil {
-		return fmt.Errorf("write %s: %w", path, err)
-	}
-	tmp := f.Name()
-	if _, err := f.Write(body); err != nil {
-		return fmt.Errorf("write %s: %w", path, errors.Join(err, f.Close(), os.Remove(tmp)))
-	}
-	// Flushed before it is linked into place, or a machine that stopped
-	// here would leave the name pointing at an empty key.
-	if err := f.Sync(); err != nil {
-		return fmt.Errorf("write %s: %w", path, errors.Join(err, f.Close(), os.Remove(tmp)))
-	}
-	if err := f.Chmod(perm); err != nil {
-		return fmt.Errorf("write %s: %w", path, errors.Join(err, f.Close(), os.Remove(tmp)))
-	}
-	if err := f.Close(); err != nil {
-		return fmt.Errorf("write %s: %w", path, errors.Join(err, os.Remove(tmp)))
-	}
-	// Link rather than rename: a rename would write over a key that
-	// appeared between the check and here.
-	err = os.Link(tmp, path)
-	if rm := os.Remove(tmp); rm != nil && err == nil {
-		return fmt.Errorf("clear up %s: %w", tmp, rm)
-	}
-	if err != nil {
-		if errors.Is(err, os.ErrExist) {
-			return fmt.Errorf("%s is already there, and a key file is not written over", path)
-		}
+	err := newfile.Write(path, body, perm)
+	switch {
+	case errors.Is(err, os.ErrExist):
+		return fmt.Errorf("%s is already there, and a key file is not written over", path)
+	case err != nil:
 		return fmt.Errorf("put the key at %s: %w", path, err)
 	}
 	return nil

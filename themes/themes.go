@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/marrasen/gridterm/internal/newfile"
 	"github.com/marrasen/gridterm/vt"
 )
 
@@ -296,16 +297,16 @@ func WriteStart(path string, from Theme) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("themes: write %s: %w", path, err)
 	}
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	// Whole or not at all: a starting file cut short by a write that
+	// failed would be a file the next attempt refuses to write over.
+	err = newfile.Write(path, append(raw, '\n'), 0o600)
+	if errors.Is(err, fs.ErrExist) {
+		return fmt.Errorf(
+			"%s is already there. Edit it, or move it aside and take this again", path)
+	}
 	if err != nil {
-		if errors.Is(err, fs.ErrExist) {
-			return fmt.Errorf(
-				"%s is already there. Edit it, or move it aside and take this again", path)
-		}
-		return fmt.Errorf("themes: write %s: %w", path, err)
+		// newfile says which file already.
+		return fmt.Errorf("themes: %w", err)
 	}
-	if _, err := f.Write(append(raw, '\n')); err != nil {
-		return fmt.Errorf("themes: write %s: %w", path, errors.Join(err, f.Close()))
-	}
-	return f.Close()
+	return nil
 }

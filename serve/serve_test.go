@@ -868,3 +868,52 @@ func TestAClientBehindIsSentTheLatestSnapshot(t *testing.T) {
 		t.Errorf("it queued %q for a client that has gone", got)
 	}
 }
+
+// On a filesystem that keeps no modes -- FAT32 and exFAT on a stick,
+// mounted on Linux or macOS -- a key open to others is one others can
+// read, because the mount's mode is enforced. It is refused, and the
+// refusal says what would make it private.
+func TestAHostKeyWhereModesDoNotStickIsRefusedWithTheFix(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("file modes on Windows say nothing about who can read a file")
+	}
+	path := filepath.Join(t.TempDir(), "host_key")
+	if _, err := HostKey(path); err != nil {
+		t.Fatalf("make: %v", err)
+	}
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	was := modesStick
+	modesStick = func(string) bool { return false }
+	t.Cleanup(func() { modesStick = was })
+
+	_, err := HostKey(path)
+	if err == nil {
+		t.Fatal("a key others can read was used")
+	}
+	if !strings.Contains(err.Error(), "fmask=0077") {
+		t.Errorf("the refusal says %v, want it to say how to mount the drive", err)
+	}
+}
+
+// An empty key file left long enough ago -- a window that claimed the name
+// and died before filling it, a stick pulled at the wrong moment -- is
+// replaced by a key, rather than refused on every start after.
+func TestAnEmptyHostKeyLeftBehindIsReplaced(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "host_key")
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	long := time.Now().Add(-time.Minute)
+	if err := os.Chtimes(path, long, long); err != nil {
+		t.Fatalf("age it: %v", err)
+	}
+
+	if _, err := HostKey(path); err != nil {
+		t.Fatalf("an empty key left behind was not replaced: %v", err)
+	}
+	if info, _ := os.Stat(path); info.Size() == 0 {
+		t.Error("the key file is still empty")
+	}
+}

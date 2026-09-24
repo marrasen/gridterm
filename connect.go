@@ -623,19 +623,16 @@ func (a *app) filesystemAgain(host string, at step, then func(vfs.FS, error)) {
 	notMade := func() {
 		then(nil, fmt.Errorf("the connection to %s was not made", groupName(host)))
 	}
-	// reachable says this machine, or a machine on the way to it, is
-	// connected.
+	// reachable says a machine on the way to this one is connected, so
+	// this one is worth asking for again.
 	//
-	// It is what a dial this read waited on is judged by, because what
-	// a dial reports is whether its own far end answered -- which is
-	// not this machine and need not even be the one on the way. A
+	// Asked of the window rather than of the dial that settled, because
+	// what a dial reports is whether its own far end answered -- which
+	// is not this machine and need not even be the one on the way. A
 	// machine of a route that answered is held, stays held when the
 	// dial beyond it fails, and is no longer a name that dial
-	// remembers, so the window is asked rather than the dial.
+	// remembers.
 	reachable := func(name string) bool {
-		if a.about(name).machine != nil {
-			return true
-		}
 		route, err := a.route(name)
 		if err != nil {
 			return false
@@ -649,24 +646,39 @@ func (a *app) filesystemAgain(host string, at step, then func(vfs.FS, error)) {
 	// says it, not only the one that starts the connection: a second
 	// pane queueing behind the first waits just as long.
 	line := "Reconnecting to " + groupName(host) + "…"
-	// waitFor queues this read behind a connection being made, and asks
-	// again once that one has settled -- for the machine as it is
-	// called then, because a machine renamed while it was being dialled
-	// is held under the name the window uses now.
+	// waitFor queues this read behind a connection being made.
+	//
+	// ours says that connection is this machine's own attempt. When one
+	// of those settles the read has its answer either way: the machine
+	// is there or it is not, and asking again would dial it a second
+	// time the moment the first attempt failed -- and a third, and a
+	// fourth, for as long as the way there looked open. It would also
+	// dial it again the moment the user gave up on it, which is the
+	// opposite of what giving up means.
+	//
+	// A dial that was on its way somewhere else is the other case. That
+	// one says nothing about this machine, which may never have been
+	// tried, so this asks again.
+	//
+	// Either way it asks for the machine as it is called then, because
+	// one renamed while it was being dialled is held under the name the
+	// window uses now.
 	//
 	// Queued on answering rather than waiting: a pane is blocked on
 	// this, so a connection that was not made has to come back as a
 	// failure. What waits is thrown away when the dial fails, which
 	// here would leave the pane reading for ever.
-	waitFor := func(d *dialling) {
+	waitFor := func(d *dialling, ours bool) {
 		a.sayWhile(line)
 		d.answering = append(d.answering, func(bool) {
 			a.doneSaying(line)
 			now := d.nameNow(host)
-			if !reachable(now) {
-				// Nothing on the way answered, so this machine cannot
-				// be reached either. Said rather than dialled again
-				// here, which is not what waiting for one means.
+			if a.about(now).machine != nil {
+				f, err := a.machineFilesWithArchives(now)
+				then(f, err)
+				return
+			}
+			if ours || !reachable(now) {
 				notMade()
 				return
 			}
@@ -682,7 +694,7 @@ func (a *app) filesystemAgain(host string, at step, then func(vfs.FS, error)) {
 			answer()
 			return
 		}
-		waitFor(d)
+		waitFor(d, true)
 		return
 	}
 	route, err := a.route(host)
@@ -705,7 +717,7 @@ func (a *app) filesystemAgain(host string, at step, then func(vfs.FS, error)) {
 	// this read with "nothing is connected" while they read it.
 	for _, s := range route {
 		if d := a.about(s.name).dialling; d != nil && !d.settled {
-			waitFor(d)
+			waitFor(d, false)
 			return
 		}
 	}
@@ -713,7 +725,7 @@ func (a *app) filesystemAgain(host string, at step, then func(vfs.FS, error)) {
 	a.sayWhile(line)
 	a.openRoute(host, route, opening{only: true}, nil)
 	if d := a.machines.connecting(host); d != nil && !d.settled {
-		waitFor(d)
+		waitFor(d, true)
 		return
 	}
 	a.doneSaying(line)

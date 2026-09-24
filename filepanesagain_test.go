@@ -573,9 +573,13 @@ func TestARenameCaughtMidDialIsFollowed(t *testing.T) {
 
 	// A connection to it on its way, and the user renames it while that
 	// is happening.
-	stuck := &dialling{names: []string{host}, cancel: func() {}}
-	holdTheNames(t, a, stuck)
 	addr, port := s.Host()
+	stuck := &dialling{
+		names:  []string{host},
+		cancel: func() {},
+		route:  []step{{name: host, cfg: serverConfig(t, s)}},
+	}
+	holdTheNames(t, a, stuck)
 	a.renamedMachine(host, remote.Host{
 		Name: "renamed", Address: addr, Port: port, User: "tester",
 	})
@@ -697,5 +701,139 @@ func TestARenameThatChangesTheAddressIsNotFollowed(t *testing.T) {
 	}
 	if now, followed := a.renamed["one"]; followed {
 		t.Errorf("work on one would be sent to %q, which is somewhere else", now)
+	}
+}
+
+// A dial renamed once is still checked against the address the second
+// time.
+//
+// A dial carries the route it is on, and that is what says whether a
+// rename is the same machine. Left spelling the name the route started
+// with, the second rename finds nothing to check against and the dial
+// follows a name to an address that is somewhere else -- taking the
+// panes and the finished work with it.
+func TestADialRenamedTwiceIsCheckedBothTimes(t *testing.T) {
+	here, elsewhere := sshtest.New(t), sshtest.New(t)
+	a := newTestApp(t, 100, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pinServers(t, a, here, elsewhere)
+	saveHost(t, a, "one", here, "")
+
+	stuck := &dialling{
+		names:  []string{"one"},
+		cancel: func() {},
+		route:  []step{{name: "one", cfg: serverConfig(t, here)}},
+	}
+	holdTheNames(t, a, stuck)
+
+	// The first rename keeps the address, so the dial follows it.
+	renameSaved(t, a, "one", "two")
+	if a.machines.connecting("two") != stuck {
+		t.Fatalf("the dial did not follow the first rename: %v", a.machines.reaching())
+	}
+
+	// A second rename that keeps the address is followed too, which is
+	// what the dial needs its route spelled the current way for.
+	renameSaved(t, a, "two", "twice")
+	if a.machines.connecting("twice") != stuck {
+		t.Fatalf("the dial did not follow the second rename: %v", a.machines.reaching())
+	}
+
+	// The next one points the entry somewhere else. The dial is on its
+	// way to the first machine and stays where it is.
+	addr, port := elsewhere.Host()
+	h, ok := a.book.Lookup("twice")
+	if !ok {
+		t.Fatal("twice is not saved")
+	}
+	h.Name, h.Address, h.Port = "three", addr, port
+	if err := a.book.Put(h, "twice"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	a.renamedMachine("twice", h)
+
+	if a.machines.connecting("three") != nil {
+		t.Error("the dial followed a rename onto another machine's address")
+	}
+	if a.machines.connecting("twice") != stuck {
+		t.Errorf("the dial is no longer held under the name it was reaching: %v", a.machines.reaching())
+	}
+	if now, followed := a.renamed["twice"]; followed {
+		t.Errorf("work on twice would be sent to %q, which is somewhere else", now)
+	}
+}
+
+// A machine that moved and was reconnected to is renamed by where it is
+// now, not by where it was when the pane opened.
+//
+// What the filesystem kept is the only record of where a machine is
+// when no list has a route to it, so it has to be the machine it last
+// reached. Left as it was when the pane opened, a rename after the
+// address changed would be read as a rename onto somewhere else and
+// nothing would follow it.
+func TestAMachineThatMovedIsRenamedByWhereItIsNow(t *testing.T) {
+	was, now := sshtest.New(t), sshtest.New(t)
+	a := newTestApp(t, 100, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pinServers(t, a, was, now)
+	saveHost(t, a, "one", was, "")
+	if err := a.connectSaved("one"); err != nil {
+		t.Fatalf("connectSaved: %v", err)
+	}
+	waitFor(t, a, "the machine to answer", func() bool {
+		return a.machines.named("one") != nil
+	})
+	if openFilesFromThePlus(t, a, "one") == nil {
+		t.Fatal("no file pane opened")
+	}
+	f := reopenersOn(t, a, "one")[0]
+
+	was.CloseClients()
+	waitFor(t, a, "the window to see it go", func() bool {
+		a.reapExited()
+		return a.machines.named("one") == nil
+	})
+	settleAndClearNotices(t, a)
+
+	// The server moved, and the entry is pointed at where it is now.
+	// The name is untouched, so nothing tells the pane anything.
+	addr, port := now.Host()
+	h, ok := a.book.Lookup("one")
+	if !ok {
+		t.Fatal("one is not saved")
+	}
+	h.Address, h.Port = addr, port
+	if err := a.book.Put(h, "one"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+
+	// A read takes the pane to where the machine is now.
+	done := make(chan error, 1)
+	go func() {
+		_, err := f.ReadDir("/")
+		done <- err
+	}()
+	waitFor(t, a, "the read to come back", func() bool { return len(done) > 0 })
+	if err := <-done; err != nil {
+		t.Fatalf("reading after the machine moved: %v", err)
+	}
+	if got := a.machines.named("one"); got == nil || got.at.cfg.Port != port {
+		t.Fatalf("the pane did not reach the machine where it is now: %v", a.machines.names())
+	}
+
+	// It goes again, and is renamed. That is the same machine, so the
+	// pane and the work follow it.
+	now.CloseClients()
+	waitFor(t, a, "the window to see it go again", func() bool {
+		a.reapExited()
+		return a.machines.named("one") == nil
+	})
+	settleAndClearNotices(t, a)
+
+	renameSaved(t, a, "one", "two")
+	if got := f.Host(); got != "two" {
+		t.Errorf("the pane's filesystem is filed under %q, want the name it has now", got)
 	}
 }

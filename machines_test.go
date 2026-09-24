@@ -1241,7 +1241,7 @@ func TestAMachineRenamedWhileItWasBeingReachedLandsUnderTheNewName(t *testing.T)
 
 	saveHost(t, a, "picard", s, "")
 	route := []step{{name: "picard", cfg: a.prepare(serverConfig(t, s))}}
-	held := &dialling{cancel: func() {}, names: []string{"picard"}}
+	held := &dialling{cancel: func() {}, names: []string{"picard"}, route: route}
 	holdTheNames(t, a, held)
 
 	// Renamed while the dial is still running.
@@ -1288,7 +1288,7 @@ func TestAMachineRenamedTwiceWhileBeingReachedLandsUnderTheLastName(t *testing.T
 
 	saveHost(t, a, "picard", s, "")
 	route := []step{{name: "picard", cfg: a.prepare(serverConfig(t, s))}}
-	held := &dialling{cancel: func() {}, names: []string{"picard"}}
+	held := &dialling{cancel: func() {}, names: []string{"picard"}, route: route}
 	holdTheNames(t, a, held)
 
 	// Twice, while the dial is still running.

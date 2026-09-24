@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/crypto/ssh"
+
 	"github.com/marrasen/gridterm/internal/sshtest"
 	"github.com/marrasen/gridterm/remote"
 )
@@ -621,5 +623,68 @@ func TestAReadWaitsThroughADialThatFailedBeyondTheJumpHost(t *testing.T) {
 	}
 	if a.machines.named("db") == nil {
 		t.Error("db was never reached, although edge was connected")
+	}
+}
+
+// A reconnect that fails answers the read, once, and dials once.
+//
+// The machine on the way stays up, so anything asking whether the way
+// there is open gets yes for ever. Asking again on that basis dials the
+// far end again the moment it failed, and again, and opens a pane to
+// watch each one.
+func TestAFailedReconnectBehindALiveJumpHostDialsOnce(t *testing.T) {
+	near, far := sshtest.New(t), sshtest.New(t)
+	a := newTestApp(t, 100, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pinServers(t, a, near, far)
+	saveHost(t, a, "edge", near, "")
+	saveHost(t, a, "db", far, "edge")
+	if err := a.connectSaved("db"); err != nil {
+		t.Fatalf("connectSaved: %v", err)
+	}
+	waitFor(t, a, "both machines to answer", func() bool {
+		return a.machines.named("db") != nil && a.machines.named("edge") != nil
+	})
+	if openFilesFromThePlus(t, a, "db") == nil {
+		t.Fatal("no file pane opened")
+	}
+	f := reopenersOn(t, a, "db")[0]
+
+	// Only the far machine goes, and it will not be let in again: its
+	// key stops matching what the window pinned. The machine on the way
+	// stays connected throughout.
+	_, farPort := far.Host()
+	pinned := a.prepare
+	a.prepare = func(cfg remote.Config) remote.Config {
+		cfg = pinned(cfg)
+		if cfg.Port == farPort {
+			cfg.HostKeyCallback = ssh.FixedHostKey(near.HostKey())
+		}
+		return cfg
+	}
+	far.CloseClients()
+	waitFor(t, a, "the window to see the far machine go", func() bool {
+		a.reapExited()
+		return a.machines.named("db") == nil
+	})
+	settleAndClearNotices(t, a)
+	if a.machines.named("edge") == nil {
+		t.Fatal("the machine on the way went too")
+	}
+	panes := len(a.panes)
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := f.ReadDir("/")
+		done <- err
+	}()
+	waitFor(t, a, "the read to come back", func() bool { return len(done) > 0 })
+	if err := <-done; err == nil {
+		t.Error("the read answered although the machine would not open")
+	}
+	settleAndClearNotices(t, a)
+	if got := len(a.panes) - panes; got > 1 {
+		t.Errorf("the read opened %d panes to watch it, want the one", got)
 	}
 }

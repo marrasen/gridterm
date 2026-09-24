@@ -41,18 +41,11 @@ func (ms *machines) rename(was string, to remote.Host) (moved moves, err error) 
 		ms.held[now] = m
 		moved.connection = true
 	}
-	if d := ms.opening[was]; d != nil {
-		// The same rule the connection gets: a rename that changes the
-		// address as well says the name stands for a different machine
-		// now, so the dial keeps the name it was started under. A
-		// window being taken over has no route, and is moved as it
-		// always was.
-		if s, known := d.stepFor(was); !known || s.cfg.SameMachine(to.Config()) {
-			delete(ms.opening, was)
-			ms.opening[now] = d
-			d.renamedTo(was, now)
-			moved.dial = true
-		}
+	if d := ms.opening[was]; d != nil && d.movesTo(was, to) {
+		delete(ms.opening, was)
+		ms.opening[now] = d
+		d.renamedTo(was, now)
+		moved.dial = true
 	}
 	return moved, nil
 }
@@ -124,7 +117,11 @@ func (a *app) sameDroppedMachine(was string, to remote.Host) bool {
 		return false
 	}
 	r := a.reopeningOn(was)
-	return r != nil && r.step().cfg.SameMachine(to.Config())
+	if r == nil {
+		return false
+	}
+	on := r.step()
+	return on.cfg.Host != "" && on.cfg.SameMachine(to.Config())
 }
 
 // renamedWork records what a machine was called, for file work that has

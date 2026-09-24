@@ -132,13 +132,23 @@ func (r *reopening) ready() (vfs.FS, error) {
 	// for one already on its way means waiting for that one rather than
 	// starting a second.
 	type answer struct {
-		f   vfs.FS
+		f vfs.FS
+		// on is how the machine was reached this time, taken on the
+		// goroutine that draws because that is where the machines are.
+		// The step this kept is the only record of where the machine
+		// is when no list has a route to it, and one left as it was
+		// when the pane opened is a record of where it used to be.
+		on  step
 		err error
 	}
 	back := make(chan answer, 1)
 	r.app.pump.post(func() {
 		r.app.filesystemAgain(host, at, func(f vfs.FS, err error) {
-			back <- answer{f, err}
+			var on step
+			if m := r.app.about(host).machine; m != nil {
+				on = m.at
+			}
+			back <- answer{f, on, err}
 		})
 	})
 	select {
@@ -166,6 +176,9 @@ func (r *reopening) ready() (vfs.FS, error) {
 				_ = got.f.Close()
 			}
 			return r.under, nil
+		}
+		if got.on.cfg.Host != "" {
+			r.at = got.on
 		}
 		r.took(got.f)
 		return got.f, nil

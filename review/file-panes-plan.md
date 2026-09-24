@@ -178,7 +178,17 @@ wrapper, so it opens the machine again to do it. The alternative is a
 
 ## Settled while building
 
-1. **How many panes reconnect at once?** One. They all go through the
+1. **A read waits for one connection, and asks again only for someone
+   else's.** When the dial this read started settles, the answer is in:
+   the machine is there or it is not. Asking again on the strength of
+   "the way there is still open" dials the far end again the moment it
+   failed, and again, for as long as the jump host stays up -- a pane
+   for every attempt and a read that never comes back. It also dialled
+   again the moment the user gave up, which is the opposite of what
+   giving up means. A dial that was on its way somewhere else says
+   nothing about this machine, and that one is worth asking again.
+
+3. **How many panes reconnect at once?** One. They all go through the
    dial queue, and a caller blocked on an answer queues on `answering`
    rather than `waiting`, so a connection that is not made comes back
    as a failure instead of leaving the pane reading for ever.

@@ -55,6 +55,15 @@ type askUser struct {
 // a file on this machine that this user can already read, so a limit
 // protects nothing and only strands whoever mistyped a long passphrase.
 func (u *askUser) Passphrase(ctx context.Context, key remote.LockedKey) (string, error) {
+	// The one the vault holds, when it holds one and a key already
+	// unlocked opens it. Only on the first go round: a passphrase the
+	// key has just refused is not worth offering twice, and the user is
+	// owed the dialog instead.
+	if key.Wrong == 0 {
+		if pass, saved := u.app.savedPassphrase(ctx, key.Path); saved {
+			return pass, nil
+		}
+	}
 	return u.secret(ctx, secret{
 		title:   "Unlock Private Key",
 		lines:   []string{key.Path},
@@ -63,6 +72,30 @@ func (u *askUser) Passphrase(ctx context.Context, key remote.LockedKey) (string,
 		accept:  "Unlock",
 		trouble: wrongPassphrase(key),
 	})
+}
+
+// secretsPassphrase asks for the passphrase that opens the secrets,
+// which is not a key's and says so.
+//
+// Its own dialog rather than the key one with a different path in it:
+// what is being asked for here is the way back into the vault, and a
+// box headed with a key file would have the user typing the wrong
+// thing with nothing on screen to say so.
+//
+// No body. Unlock Secrets over a field called Passphrase says which
+// passphrase and which thing it opens, and a line under it repeating
+// that is the body rule 3 says to delete.
+func (u *askUser) secretsPassphrase(ctx context.Context, wrong int) (string, error) {
+	s := secret{
+		title:  dlgUnlockSecrets,
+		labels: []string{fldPassphrase},
+		masked: []bool{true},
+		accept: btnUnlock,
+	}
+	if wrong > 0 {
+		s.trouble = errWrongPassphrase
+	}
+	return u.secret(ctx, s)
 }
 
 // wrongPassphrase is what the dialog says about the answer before it,

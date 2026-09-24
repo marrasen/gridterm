@@ -2,9 +2,13 @@ package main
 
 import (
 	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/marrasen/gridterm/remote"
+	"github.com/marrasen/gridterm/secrets"
 	"github.com/marrasen/gridterm/serve"
 	"github.com/marrasen/gridterm/settings"
 	"github.com/marrasen/gridterm/ui"
@@ -58,6 +62,15 @@ func (a *app) openMakeKey() error {
 	f := a.newForm(makeKeyTitle)
 	where := f.AddField(fldFile, a.newField("Private key path", 0))
 	who := f.AddField(fldComment, a.newField("Optional", 0))
+	// Before the two fields it turns off, so it is read before a
+	// passphrase has been typed into one of them. Offered only where it
+	// can work: the passphrase goes into the vault, so there has to be
+	// a vault to put it in.
+	var generate *ui.Field
+	if a.haveSecrets() {
+		generate = f.AddTick(fldGeneratePass, false)
+		generate.Hint = "Saved in the secrets and used automatically"
+	}
 	pass := a.newField("Optional", 0)
 	pass.Mask = '*'
 	f.AddField(fldPassphrase, pass)
@@ -66,6 +79,20 @@ func (a *app) openMakeKey() error {
 	again := a.newField("", 0)
 	again.Mask = '*'
 	f.AddField(fldConfirmPass, again)
+	if generate != nil {
+		// Disabled rather than accepted and dropped on save: a
+		// passphrase typed into a field that will not be used is one
+		// the user believes they set.
+		generate.OnChange = func(string) {
+			on := generate.On()
+			pass.Disabled, again.Disabled = on, on
+			if on {
+				pass.SetText("")
+				again.SetText("")
+			}
+			a.markDirty()
+		}
+	}
 	f.Lines = []string{
 		"Creates an ed25519 key pair.",
 		"The public key is saved as <file>.pub.",
@@ -80,6 +107,18 @@ func (a *app) openMakeKey() error {
 	a.completePath(where, vfs.NewLocal())
 
 	f.AddButton(ui.Button{Title: btnCreate, Do: func() error {
+		comment := strings.TrimSpace(who.Text())
+		if generate != nil && generate.On() {
+			at, err := fromHome(where.Text())
+			if err != nil {
+				return err
+			}
+			// Not from here: this dialog closes as soon as this returns,
+			// and closing one takes anything stacked on top of it. The
+			// vault may have a passphrase dialog of its own to put up.
+			a.pump.post(func() { a.makeKeyWithSavedPassphrase(at, comment) })
+			return nil
+		}
 		if pass.Text() != again.Text() {
 			// Returned rather than shown here, so the dialog stays open
 			// with what was typed still there to correct.
@@ -89,38 +128,11 @@ func (a *app) openMakeKey() error {
 		if err != nil {
 			return err
 		}
-		key, err := remote.MakeKey(at, strings.TrimSpace(who.Text()), pass.Text())
+		key, err := remote.MakeKey(at, comment, pass.Text())
 		if err != nil {
 			return err
 		}
-		// The key is on disk, so it is said before anything else: a list
-		// that could not be written is not a reason to leave the user
-		// without the line to paste.
-		kept := a.keyFiles.keep(key.Path)
-		a.pump.post(func() {
-			a.refreshServers()
-			lines, err := installKeyLines(key)
-			if err != nil {
-				a.reportError("Key created, but install steps are unavailable", err)
-				return
-			}
-			n := a.newNotice(madeKeyTitle(key), lines)
-			// Paths and a key line, which the dialog would otherwise
-			// re-wrap at the spaces.
-			n.Preformatted = true
-			// The public key on its own: it is the one thing anybody
-			// takes away from this dialog, and Copy would hand over the
-			// whole page of instructions around it.
-			line := key.Line
-			n.Action = ui.NoticeAction{Title: btnCopyPublicKey, Do: func() {
-				a.clip.set(line)
-			}}
-			n.FocusOK()
-			a.presentNotice(n)
-			if kept != nil {
-				a.reportError("Key created, but not added to the list", kept)
-			}
-		})
+		a.keyWritten(key, false)
 		return nil
 	}})
 	f.AddButton(ui.Button{Title: btnCancel})
@@ -128,14 +140,146 @@ func (a *app) openMakeKey() error {
 	return nil
 }
 
-// madeKeyTitle names the notice that says where a new key went.
-func madeKeyTitle(remote.NewKey) string { return "Key created" }
+// couldNotCreateTheKey heads whatever went wrong on the way to a key.
+const couldNotCreateTheKey = "Could not create the key"
 
-// installKeyLines says how to put the public half where it is needed.
-func installKeyLines(key remote.NewKey) (string, error) {
+// makeKeyWithSavedPassphrase writes a key locked with a passphrase
+// nobody is shown, kept in the vault so the window opens the key itself
+// from here on.
+//
+// The passphrase reaches the vault before the key is written with it.
+// The other way round leaves, on a save that failed, a key on disk
+// locked with a passphrase that exists nowhere: nobody opens that key
+// again, and the path cannot be used twice.
+func (a *app) makeKeyWithSavedPassphrase(at, comment string) {
+	err := a.withOpenSecrets(couldNotCreateTheKey, func(v *secrets.Vault) error {
+		// What is at the path decides everything below, so it is asked
+		// first. MakeKey refuses a path that has a key on it, and it is
+		// called after the passphrase is saved: without this the user
+		// would be told about a passphrase when what is in the way is a
+		// file.
+		//
+		// Lstat and only ErrNotExist, both to match the look MakeKey
+		// itself takes. Stat follows a symlink, so a key linked to a
+		// volume that is not mounted read as a free path here and as a
+		// taken one there; and any other trouble reading the path --
+		// a directory this user cannot look in, a home that has hung --
+		// is not a free path either.
+		switch _, err := os.Lstat(at); {
+		case err == nil:
+			return fmt.Errorf("there is already a key at %s", at)
+		case !errors.Is(err, os.ErrNotExist):
+			return fmt.Errorf("look at %s: %w", at, err)
+		}
+		pass, err := secrets.NewPassword(secrets.PassphraseLength)
+		if err != nil {
+			return err
+		}
+		// A passphrase already filed under this path, left by an
+		// attempt that got as far as saving one and no further, or by a
+		// key that has been moved or deleted since.
+		//
+		// It is taken off the path and kept, not written over. The path
+		// is free, but the key that passphrase was made for may be
+		// alive somewhere else -- moved, or copied to the second
+		// machine this vault has a slot for -- and this item is the
+		// only record of it. Nothing on screen ever showed it.
+		//
+		// Left detached if the key below is never written: the path is
+		// empty either way, so an item claiming it was wrong to begin
+		// with.
+		if old, found := passphraseFor(v, at); found {
+			old.File = ""
+			if _, err := v.PutDetails(old); err != nil {
+				return err
+			}
+		}
+		it, err := v.Put(secrets.Item{
+			Name: filepath.Base(at),
+			Kind: secrets.Passphrase,
+			File: at,
+		}, pass)
+		if err != nil {
+			return err
+		}
+		key, err := remote.MakeKey(at, comment, pass)
+		if err != nil {
+			// No key, so what was saved is the passphrase of nothing.
+			return errors.Join(err, v.Remove(it.ID))
+		}
+		a.keyWritten(key, true)
+		return nil
+	})
+	if err != nil {
+		a.reportError(couldNotCreateTheKey, err)
+	}
+}
+
+// passphraseFor is the item holding a key file's passphrase, for a
+// caller that needs the item rather than the secret in it.
+func passphraseFor(v *secrets.Vault, keyFile string) (secrets.Item, bool) {
+	items, err := v.Items()
+	if err != nil {
+		return secrets.Item{}, false
+	}
+	for _, it := range items {
+		if it.Kind == secrets.Passphrase && it.File == keyFile {
+			return it, true
+		}
+	}
+	return secrets.Item{}, false
+}
+
+// keyWritten says where a new key went and how to install it, and adds
+// it to the list of key files the window offers.
+func (a *app) keyWritten(key remote.NewKey, savedPassphrase bool) {
+	// The key is on disk, so it is said before anything else: a list
+	// that could not be written is not a reason to leave the user
+	// without the line to paste.
+	kept := a.keyFiles.keep(key.Path)
+	a.pump.post(func() {
+		a.refreshServers()
+		lines, err := installKeyLines(key, savedPassphrase)
+		if err != nil {
+			a.reportError("Key created, but install steps are unavailable", err)
+			return
+		}
+		n := a.newNotice(madeKeyTitle(key), lines)
+		// Paths and a key line, which the dialog would otherwise
+		// re-wrap at the spaces.
+		n.Preformatted = true
+		// The public key on its own: it is the one thing anybody takes
+		// away from this dialog, and Copy would hand over the whole
+		// page of instructions around it.
+		line := key.Line
+		n.Action = ui.NoticeAction{Title: btnCopyPublicKey, Do: func() {
+			a.clip.set(line)
+		}}
+		n.FocusOK()
+		a.presentNotice(n)
+		if kept != nil {
+			a.reportError("Key created, but not added to the list", kept)
+		}
+	})
+}
+
+// madeKeyTitle names the notice that says where a new key went.
+//
+// The constant rather than the words: every title this window draws is
+// one, so rewording costs one edit and not a search.
+func madeKeyTitle(remote.NewKey) string { return dlgKeyCreated }
+
+// installKeyLines says how to put the public half where it is needed,
+// and where the passphrase went when the window kept one.
+func installKeyLines(key remote.NewKey, savedPassphrase bool) (string, error) {
 	var b strings.Builder
 	b.WriteString("Private key:  " + key.Path + "\n")
 	b.WriteString("Public key:   " + key.Pub + "\n\n")
+	if savedPassphrase {
+		// Said because it cannot be typed. It was never on screen, and
+		// the window is what opens this key from now on.
+		b.WriteString("The passphrase is saved in the secrets.\n\n")
+	}
 	b.WriteString(key.Line + "\n\n")
 	b.WriteString("To install it on a server:\n\n")
 	b.WriteString("  ssh-copy-id -i " + key.Pub + " user@host\n\n")

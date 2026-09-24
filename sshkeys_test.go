@@ -293,7 +293,7 @@ func TestTheInstructionsNameThePublicHalfOnly(t *testing.T) {
 		t.Fatalf("make a key: %v", err)
 	}
 
-	got, err := installKeyLines(key)
+	got, err := installKeyLines(key, false)
 	if err != nil {
 		t.Fatalf("say how to install it: %v", err)
 	}

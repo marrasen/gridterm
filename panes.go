@@ -498,7 +498,8 @@ func (a *app) isPane(w ui.Widget) bool {
 	}
 	return ui.EachLeaf(w, func(leaf ui.Widget) bool {
 		switch leaf.(type) {
-		case *term.Terminal, *files.Pane, *files.Reader, *jobPane, *servingPane:
+		case *term.Terminal, *files.Pane, *files.Reader, *jobPane,
+			*secretsPane, *servingPane:
 			return true
 		}
 		return false
@@ -570,6 +571,7 @@ func (a *app) closePane(w ui.Widget) error {
 		// A pane watching a piece of file work or what this window is
 		// serving holds nothing: both go on without it.
 		a.forgetJobPane(leaf)
+		a.forgetSecretsPane(leaf)
 		a.forgetServingPane(leaf)
 		t, isTerm := leaf.(*term.Terminal)
 		if !isTerm {

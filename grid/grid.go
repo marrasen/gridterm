@@ -142,6 +142,9 @@ const (
 	// IconLog is a run of entries, each with its time beside it.
 	IconLog
 
+	// IconSecrets is a padlock: a shackle over a body with a keyhole.
+	IconSecrets
+
 	// NumIcons is how many there are, for a caller checking one.
 	NumIcons
 )

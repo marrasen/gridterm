@@ -243,6 +243,67 @@ Fallback for a tunnel that will not parse:
 
 ---
 
+# 10. Secrets
+
+| ID | Title | Also found under |
+|---|---|---|
+| `secrets.open` | Show Secrets… | secrets, password, vault, note, credential |
+| `secrets.add` | Add Secret… | password, vault, keep, new |
+| `secrets.addNote` | Add Note… | secret, vault, recovery, licence, license, keep |
+| `secrets.change` | Change Secret… | password, vault, note, edit, rename |
+| `secrets.forget` | Remove Secret… | forget, password, vault, note, delete |
+| `secrets.addKey` | Add Secrets Key… | let another key open the secrets, vault, password, machine, key |
+| `secrets.removeKey` | Remove Secrets Key… | stop a key opening the secrets, vault, password, machine, key, revoke |
+| `secrets.pane` | Manage Secrets | secrets, password, vault, note, overview, edit, list, manager |
+| `secrets.addPassphrase` | Add Secrets Passphrase… | a way back in when every key is gone, vault, password, recovery, backup, forgot, lost key |
+| `secrets.export` | Export Secrets… | take the secrets somewhere else, csv, vault, password, backup, move, leave, another manager |
+| `secrets.import` | Import Secrets… | bring secrets in from another manager, csv, vault, password, move, bitwarden, 1password, keepass, lastpass, chrome |
+
+**Instructions:**
+
+- All seven take `…` under rule 3: every one of them asks which secret,
+  or which key, or what to save, before it does anything. `Show
+  Secrets` asks too — its list is picked from, not merely read.
+- Every one of the dialogs they open is titled with the command, minus
+  the `…`, under G6 and P4. The list `Show Secrets` opens was titled
+  `Secrets`, and the two key lists both said `Choose a key`, so two
+  different jobs shared a heading.
+- **Secret** rather than **Password** in the titles, because the same
+  list holds notes: a licence, a recovery code, an answer to a security
+  question. Every row that is about a password carries the other word
+  in `Also found under`, so whoever types either finds the command.
+  `Add Note` is the one row without `password`, because it is not one.
+- **Key** in `secrets.addKey` and `secrets.removeKey` means an SSH key,
+  the way it does on `sshkey.make` and `sshkey.lock`, and never the
+  keyboard. Rule 2's vocabulary holds: the keyboard is shortcuts.
+- The `Also found under` words on those two carry the whole sentence a
+  shorter title had to drop, because what they do is not guessable from
+  three words.
+- The buttons along the bottom of the `Show Secrets` list, `Type`
+  `Copy` `Show` `Cancel`, are constants in `wording.go` like every
+  other button. `Type` and `Show` are new verbs there, and they are
+  single verbs as rule 5 asks.
+- **`secrets.pane` has no `…`** under rule 3: it opens a pane and asks
+  nothing. It is the only one of these that does not.
+- **`Manage Secrets` beside `Show Secrets…`** is two ways in doing two
+  jobs. The list is for using a secret -- `Type` sends it to the
+  program in the pane in front, which only a dialog drawn over that
+  pane can know -- and the pane is for working on them. `Copy` and
+  `Show` are on both, because wanting one of those is not a different
+  frame of mind.
+- **`Export Secrets…` and `Import Secrets…`** are the way out and the
+  way in. A password manager nobody can leave is one nobody should
+  adopt, so the way out is a first-class command and not something
+  buried in the pane.
+- **`Add Secrets Passphrase…`** is the way back in when every key is
+  gone. It is a command rather than anything automatic because it is
+  the weaker door: see D78.
+- No `Lock Secrets` command. `Lock SSH Keys` locks them, because the
+  vault is opened by one of those keys and a locked window still
+  holding the thing the lock was for is not locked.
+
+---
+
 # Titles that are shared with something else
 
 | Constant | Becomes | Note |

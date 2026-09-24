@@ -144,6 +144,19 @@ var icons = [grid.NumIcons][]unit{
 		{X: 0, Y: 7, W: 1, H: 1},
 		{X: 2, Y: 7, W: 3, H: 1},
 	},
+	grid.IconSecrets: {
+		// A padlock: a shackle standing over a body with a keyhole in
+		// it. The plainest thing that reads as kept shut at the size
+		// this is drawn.
+		{X: 2, Y: 0, W: 4, H: 1},
+		{X: 1, Y: 1, W: 1, H: 2},
+		{X: 6, Y: 1, W: 1, H: 2},
+		{X: 0, Y: 3, W: 8, H: 1},
+		{X: 0, Y: 4, W: 1, H: 3},
+		{X: 7, Y: 4, W: 1, H: 3},
+		{X: 0, Y: 7, W: 8, H: 1},
+		{X: 3, Y: 5, W: 2, H: 2},
+	},
 }
 
 // iconBars is where an icon's rectangles go inside the cols cells from

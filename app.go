@@ -21,6 +21,7 @@ import (
 	"github.com/marrasen/gridterm/notify"
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/render"
+	"github.com/marrasen/gridterm/secrets"
 	"github.com/marrasen/gridterm/session"
 	"github.com/marrasen/gridterm/themes"
 	"github.com/marrasen/gridterm/ui"
@@ -213,6 +214,18 @@ type app struct {
 	// now is the clock this window runs on, so a test can hold it still.
 	now func() time.Time
 
+	// secretCopied is the secret put on the clipboard and not yet taken
+	// off it, so the window can take it off on the way out. Empty when
+	// there is none.
+	//
+	// secretCopies counts the secrets that have been copied, so a timer
+	// can tell whether the copy it was started for is still the one on
+	// the clipboard. Copying the same secret twice otherwise had the
+	// first timer clear the second copy, which cut its half minute
+	// short by however long was left of the first.
+	secretCopied string
+	secretCopies int
+
 	// status is the line along the bottom saying that something worked,
 	// and nothing while there is nothing to say.
 	status status
@@ -336,6 +349,25 @@ type app struct {
 	// keys holds private keys the user has unlocked, so a passphrase is
 	// asked for once rather than once per connection.
 	keys *remote.Ring
+
+	// secrets is the vault one of those keys opens, read off disk the
+	// first time anything asks for it. Locking the keys locks it.
+	// secretsAt overrides where it is kept, for a test.
+	secrets   *secrets.Vault
+	secretsAt string
+
+	// secretsPane is the pane the vault is worked in, and secretsRow
+	// its line on the sidebar. Both nil while none is open. There is at
+	// most one: a second would show the same vault twice.
+	secretsPane *secretsPane
+	secretsRow  *conns.Entry
+
+	// agentHolds asks the SSH agent whether it holds a key, by
+	// fingerprint. Nil means ask the agent this machine is running,
+	// which is what everything but a test does: a test that reached for
+	// the real socket would answer out of whatever the person running
+	// it happens to have loaded.
+	agentHolds func(fingerprint string) (bool, error)
 
 	// book is the saved list of machines, and serverCommands are the ids
 	// registered for what is in it, so one list can be taken away when
@@ -516,6 +548,10 @@ func (a *app) Update() error {
 	// half-finished copy says so.
 	a.watchForClosing()
 	if a.quit.Load() {
+		// Before the drain and on this goroutine: the timer that would
+		// have taken it off posts work nothing will run now, and the
+		// clipboard's own goroutine goes with the window.
+		a.takeAnySecretOffTheClipboard()
 		// Drained once on the way out: a connection that finished in
 		// this very frame is holding a shell that only this queue knows
 		// how to close.
@@ -864,6 +900,46 @@ func (a *app) commands() {
 		ui.Command{ID: "edit.paste", Title: "Paste", Run: a.onFocused(a.paste)},
 		ui.Command{ID: "edit.pasteImage", Title: "Paste Image as File",
 			AlsoFind: []string{"picture", "screenshot", "path"}, Run: a.onFocused(a.pasteImage)},
+		ui.Command{ID: "secrets.pane", Title: manageSecretsTitle,
+			AlsoFind: []string{"secrets", "password", "vault", "note", "overview",
+				"edit", "list", "manager"},
+			Run: a.showSecretsPane},
+		ui.Command{ID: "secrets.open", Title: showSecretsTitle + "…",
+			AlsoFind: []string{"secrets", "password", "vault", "note", "credential"},
+			Run:      a.openSecrets},
+		ui.Command{ID: "secrets.add", Title: addSecretTitle + "…",
+			AlsoFind: []string{"password", "vault", "keep", "new"},
+			Run:      a.addSecret},
+		ui.Command{ID: "secrets.addNote", Title: addNoteTitle + "…",
+			AlsoFind: []string{"secret", "vault", "recovery", "licence", "license", "keep"},
+			Run:      a.addNote},
+		ui.Command{ID: "secrets.change", Title: changeSecretTitle + "…",
+			AlsoFind: []string{"password", "vault", "note", "edit", "rename"},
+			Run:      a.changeSecret},
+		ui.Command{ID: "secrets.addKey", Title: addSecretsKeyTitle + "…",
+			AlsoFind: []string{"let another key open the secrets", "vault", "password",
+				"machine", "key"},
+			Run: a.addVaultKey},
+		ui.Command{ID: "secrets.addPassphrase", Title: addSecretsPassphraseTitle + "…",
+			AlsoFind: []string{"a way back in when every key is gone", "vault",
+				"password", "recovery", "backup", "forgot", "lost key"},
+			Run: a.addSecretsPassphrase},
+		ui.Command{ID: "secrets.removeKey", Title: removeSecretsKeyTitle + "…",
+			AlsoFind: []string{"stop a key opening the secrets", "vault", "password",
+				"machine", "key", "revoke"},
+			Run: a.removeVaultKey},
+		ui.Command{ID: "secrets.export", Title: exportSecretsTitle + "…",
+			AlsoFind: []string{"take the secrets somewhere else", "csv", "vault",
+				"password", "backup", "move", "leave", "another manager"},
+			Run: a.exportSecrets},
+		ui.Command{ID: "secrets.import", Title: importSecretsTitle + "…",
+			AlsoFind: []string{"bring secrets in from another manager", "csv",
+				"vault", "password", "move", "bitwarden", "1password", "keepass",
+				"lastpass", "chrome"},
+			Run: a.importSecrets},
+		ui.Command{ID: "secrets.forget", Title: removeSecretTitle + "…",
+			AlsoFind: []string{"forget", "password", "vault", "note", "delete"},
+			Run:      a.forgetSecret},
 		ui.Command{ID: scrollbackCommand, Title: scrollbackTitle,
 			AlsoFind: []string{"search", "history", "buffer", "save", "view", "open"},
 			Run:      a.showScrollback},

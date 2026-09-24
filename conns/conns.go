@@ -61,6 +61,9 @@ const (
 	// Log is what the window itself has logged.
 	Log
 
+	// Secrets is the vault of passwords and notes, open for working in.
+	Secrets
+
 	// NumKinds is how many there are, for a caller walking them.
 	NumKinds
 )
@@ -92,6 +95,8 @@ func (k Kind) String() string {
 		return "Delete"
 	case Log:
 		return "Log"
+	case Secrets:
+		return "Secrets"
 	}
 	return "Unknown"
 }

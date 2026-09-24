@@ -28,10 +28,36 @@ type clipboardWriter struct {
 	ch   chan string
 }
 
+// clear empties the clipboard, which set will not do: a copy of
+// nothing is a mistake, and wiping what somebody copied earlier is not
+// what they asked for. Taking a secret back off it afterwards is.
+func (c *clipboardWriter) clear() { c.put("") }
+
+// clearNow empties it on the caller's own goroutine, for the way out.
+//
+// Everything else here is handed to the goroutine that owns the
+// clipboard, and that goroutine does not outlive the window: work given
+// to it as gridterm exits is work nobody does. A secret left on the
+// clipboard because the window closed is the one thing taking it off
+// after half a minute exists to prevent.
+func (c *clipboardWriter) clearNow() error {
+	put := c.write
+	if put == nil {
+		put = writeClipboardText
+	}
+	return put("")
+}
+
 func (c *clipboardWriter) set(text string) {
 	if text == "" {
 		return
 	}
+	c.put(text)
+}
+
+// put hands text to the goroutine that owns the clipboard, starting it
+// on the first call.
+func (c *clipboardWriter) put(text string) {
 	c.once.Do(func() {
 		put := c.write
 		if put == nil {

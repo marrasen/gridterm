@@ -239,6 +239,12 @@ func newTestApp(t *testing.T, cols, rows int, opts ...testOption) *testApp {
 		ta.copied = append(ta.copied, s)
 		return nil
 	}
+	// And read back from the same place. Without this a test that puts
+	// something on the clipboard and then asks what is on it gets the
+	// clipboard of whoever is running the test, so anything that reads
+	// before it writes cannot be tested at all.
+	ta.readClip = func() (string, error) { return ta.copiedText(), nil }
+	ta.hasClipText = func() bool { return ta.copiedText() != "" }
 	// The window's own grid, so markDirty and setGridSize do what they do
 	// in the program rather than nothing at all.
 	ta.g = grid.New(cols, rows, ta.colours.FG, ta.colours.BG)

@@ -1074,10 +1074,18 @@ func TestClearingTheLastRowOnAMachineTakesItsCommands(t *testing.T) {
 	}
 
 	// The machine drops, which greys its row and ends the shell on it.
+	//
+	// Both are waited for, because clearing goes by the second and the
+	// two arrive from different goroutines. The machine is dropped by
+	// the window; the meter on the shell riding on it is closed by the
+	// goroutine reading that session. Clear Finished keeps every row
+	// whose meter has not closed yet, so waiting for the machine alone
+	// waited for the wrong thing: this test saw the row survive twice
+	// under a full suite, and neither run has been reproduced since.
 	s.CloseClients()
-	waitFor(t, a, "the window to see the machine go", func() bool {
+	waitFor(t, a, "the machine and the rows on it to close", func() bool {
 		a.reapExited()
-		return a.machines.named(host) == nil
+		return a.machines.named(host) == nil && allClosedOn(a, host)
 	})
 
 	if err := a.clearFinished(); err != nil {
@@ -1086,12 +1094,61 @@ func TestClearingTheLastRowOnAMachineTakesItsCommands(t *testing.T) {
 
 	for _, row := range panelText(a, panelNow) {
 		if strings.Contains(row, host) {
-			t.Fatalf("the sidebar still shows %q after clearing", row)
+			t.Fatalf("the sidebar still shows %q after clearing\n%s", row, whatIsHeld(a))
 		}
 	}
 	if _, ok := a.root.Commands.Lookup(want); ok {
 		t.Errorf("%q is still registered for a machine the sidebar no longer holds", want)
 	}
+}
+
+// whatIsHeld describes what the window is still holding, for the
+// message a failure here leaves behind.
+//
+// A heading on the sidebar means the registry still has a row under
+// that machine, and which row it is and what state it reports is the
+// whole of the answer. Without it a failure says only that the heading
+// is there, which is where this test was left the two times it failed:
+// seen twice, never reproduced, and nothing written down to work from.
+// The next one costs nothing to diagnose.
+func whatIsHeld(a *testApp) string {
+	var b strings.Builder
+	now := time.Now()
+	b.WriteString("  rows the registry still holds:\n")
+	rows := 0
+	for _, group := range a.registry.Groups(now) {
+		for _, row := range group.Rows {
+			rows++
+			fmt.Fprintf(&b, "    %s / %s / %v / %v\n",
+				groupName(group.Host), row.Label, row.Kind, row.State)
+		}
+	}
+	if rows == 0 {
+		b.WriteString("    none\n")
+	}
+	fmt.Fprintf(&b, "  panes: %d, machines: %v, connecting: %v\n",
+		len(a.panes), a.machines.names(), a.machines.reaching())
+	return b.String()
+}
+
+// allClosedOn reports whether every row on a machine says closed, which
+// is what Clear Finished acts on.
+//
+// The real clock, not panelNow: a meter that has been closed says so
+// whatever the time is, and the rows here are waited on rather than
+// drawn.
+func allClosedOn(a *testApp, host string) bool {
+	for _, group := range a.registry.Groups(time.Now()) {
+		if group.Host != host {
+			continue
+		}
+		for _, row := range group.Rows {
+			if row.State != meter.Closed {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // The close-pane key with the panel focused used to detach the panel and
@@ -1749,6 +1806,7 @@ func TestEachKindCarriesItsPicture(t *testing.T) {
 		conns.Move:     grid.Icon(grid.IconMove),
 		conns.Delete:   grid.Icon(grid.IconDelete),
 		conns.Log:      grid.Icon(grid.IconLog),
+		conns.Secrets:  grid.Icon(grid.IconSecrets),
 	} {
 		if got := icon(kind); got != want {
 			t.Errorf("%v carries %v, want %v", kind, got, want)

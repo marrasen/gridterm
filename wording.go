@@ -22,7 +22,11 @@ package main
 // The buttons. Rule 5 in WORDING.md fixes most of these to one verb from
 // a small set, so most dialogs draw from the first group.
 const (
+	btnAdd     = "Add"
+	btnChange  = "Change"
 	btnOK      = "OK"
+	btnShow    = "Show"
+	btnType    = "Type"
 	btnCancel  = "Cancel"
 	btnClose   = "Close"
 	btnRetry   = "Retry"
@@ -42,15 +46,22 @@ const (
 // object, or a second answer to the same question.
 const (
 	btnCheckUpdates  = "Check for updates"
+	btnAddKey        = "Add key"
+	btnAddNote       = "Add note"
+	btnAddSecret     = "Add secret"
 	btnCopy          = "Copy"
 	btnCopyPrompt    = "Copy prompt"
 	btnCopyPublicKey = "Copy public key"
 	btnDontAskAgain  = "Don't ask again"
 	btnExit          = "Exit"
+	btnExport        = "Export"
+	btnImport        = "Import"
+	btnGenerate      = "Generate"
 	btnGo            = "Go"
 	btnNotNow        = "Not now"
 	btnOpenLink      = "Open link"
 	btnReconnect     = "Reconnect"
+	btnRemoveKey     = "Remove key"
 	btnRemovePane    = "Remove pane"
 	btnRename        = "Rename"
 	btnRepeat        = "Repeat"
@@ -73,8 +84,10 @@ const (
 	fldConfirmPass  = "Confirm passphrase"
 	fldDirection    = "Direction"
 	fldDirectory    = "Directory"
+	fldDuplicates   = "Duplicates"
 	fldFile         = "File"
 	fldFolders      = "Folders"
+	fldFor          = "For"
 	fldForwardAgent = "Forward SSH agent"
 	fldForwardTo    = "Forward to"
 	fldHost         = "Host"
@@ -82,10 +95,14 @@ const (
 	fldKeyFile      = "Key file"
 	fldListenOn     = "Listen on"
 	fldName         = "Name"
+	fldNewNote      = "New note"
+	fldNewSecret    = "New secret"
+	fldNote         = "Note"
 	fldPassphrase   = "Passphrase"
 	fldPassword     = "Password"
 	fldPath         = "Path"
 	fldPort         = "Port"
+	fldSecret       = "Secret"
 	fldServer       = "Server"
 	fldShellSetup   = "Shell setup"
 	fldTermProgram  = "TERM_PROGRAM"
@@ -98,7 +115,15 @@ const (
 	fldSaveCommand = "Save this command"
 	fldSaveCopy    = "Save this copy"
 	fldSaveTunnel  = "Save this tunnel"
+	fldShowSecret  = "Show the secret"
 )
+
+// The tick box on the new key dialog, which is not one of those three:
+// it does not save what was typed, it says not to type one at all.
+//
+// The label is the short name and the field's hint says the rest, so
+// the row beside it stays a row rather than a sentence.
+const fldGeneratePass = "Generate passphrase"
 
 // The dialog titles that are a fixed phrase. A title built from a name
 // is made where it is used, out of the parts below.
@@ -116,19 +141,25 @@ const (
 	dlgReplaceSkill     = "Replace existing skill?"
 	dlgServeWindow      = "Serve This Window"
 	dlgServingWindow    = "Serving this window"
+	dlgSecretsRead      = "Secrets read in"
+	dlgSecretsWritten   = "Secrets written"
 	dlgSkillWritten     = "Skill written"
 	dlgTermProgram      = "Terminal Identity"
 	dlgUnknownHostKey   = "Unknown host key"
 	dlgUpdateAvailable  = "Update available"
 	dlgUnlockKey        = "Unlock Private Key"
+	dlgUnlockSecrets    = "Unlock Secrets"
 	dlgWaitingForServer = "Waiting for server"
 )
 
 // The halves a title built from a name is made of, so the wording is
 // still in one place when the name is not.
 const (
+	dlgAddKey            = "Add "
 	dlgAlreadyConnecting = "Already connecting to "
 	dlgDelete            = "Delete "
+	dlgExportTo          = "Export every secret to "
+	dlgSecretsOn         = "Create the secrets on "
 	dlgOpenToNetwork     = "Open "
 	dlgRemove            = "Remove "
 	dlgRename            = "Rename "

@@ -9,14 +9,37 @@ change how something behaves.
 
 ## Unreleased
 
-### Fixed
+### Added
 
-**A window closing waits for file work the user dismissed.** Dropping a
-copy cancels it and takes its row away, and cancelling is not stopping:
-the write it is in finishes, and one waiting on a machine that has
-stopped answering waits however long that takes. The queue stopped
-answering for it the moment it left the list, so a window could close
-while it was still writing.
+**The secrets open in a pane, and can be taken out again.** `Manage
+Secrets` lists what is in the vault and the keys that open it, and is
+where a secret is copied, read, changed and removed -- several at once,
+without a dialog that goes away on the first pick. `Show Secrets` stays
+as it was, because `Type` sends a secret to the program in the pane in
+front and only a dialog drawn over that pane knows which one that is.
+
+`Export Secrets` writes every secret to a plaintext CSV, and
+`Import Secrets` reads one back. A password manager nobody can leave is
+one nobody should adopt, so the way out is plain text -- that is what
+every other manager reads -- in the columns a browser writes, which is
+the nearest thing to a standard there is. The import knows the headers
+Chrome, Bitwarden, LastPass, KeePassXC and 1Password write, because
+none of them agree. Both say to remove the file afterwards: it is the
+one place every secret sits in the clear.
+
+**A passphrase can open the secrets, for when every key is gone.**
+Every slot was an SSH key, so losing them all lost the secrets, and
+copying the file did not help because the copy wanted the same keys.
+`Add Secrets Passphrase` adds a slot opened by something known rather
+than something held, and then a copy of the file is a backup that
+survives losing the lot.
+
+Nothing adds one. It is the weaker door -- an ed25519 key is a hundred
+and twenty-eight bits in a file, and a passphrase is what somebody
+typed -- so it is a command, the dialog says what it costs before it is
+added, and it opens on `Cancel`. What a guess costs is written into the
+slot, so it can be raised later without shutting anybody out of a vault
+sealed under the old cost.
 
 ### Changed
 
@@ -79,6 +102,84 @@ until it says done" after `echo done` ended before the command had run.
 steps it is always on, because a list has no gap in which the text could
 arrive unseen.
 
+**A vault for passwords and notes, opened by a key you already
+unlock.** `Show Secrets` lists what is in it; `Add Secret` and `Add
+Note` put things in; `Change Secret` and `Remove Secret` deal with what
+is there. It is a file called `secrets.json` beside everything else the
+window saves, sealed with a key of its own, and that key is wrapped once
+for each SSH key allowed to open it. So `Add Secrets Key` lets a second
+machine's key in without re-encrypting anything, and `Remove Secrets
+Key` takes one away with only its own wrapping.
+
+The key has to be ed25519, because a slot is opened by having the key
+sign a fixed challenge and only ed25519 signs the same way every time.
+It is one of the keys already unlocked to reach a server, so the vault
+usually opens for nothing: the passphrase typed at the first connection
+is the whole of it. `Lock SSH Keys` locks the vault with them.
+
+No secret is ever drawn on a row. `Copy` puts one on the clipboard and
+says so without showing it, and takes it back off thirty seconds later
+unless something else has been copied since. A window closing does the
+same thing there and then, because the timer that would have done it
+posts work nobody is left to run. `Type` sends it to the program in the
+pane in front, so it never reaches the clipboard at all; a return goes
+with it only when something is waiting for a whole answer. `Show` is the
+only thing that puts a secret on screen, and it has to be asked for.
+
+**A password gridterm makes, and the machine in front of you
+suggested.** `Generate` on the add and change dialogs writes twenty
+characters and leaves the dialog open so they can be read back with
+`Show`. They are letters and digits with the lookalike pairs left out --
+no `l` or `1` or `I`, no `O` or `0` -- because a password kept in a
+vault is still read aloud now and again. No symbols: a symbol buys about
+as much as one more character does, and it is the thing a server's own
+rules refuse.
+
+The `For` field starts on the machine the user is looking at and offers
+the rest of the machines the window knows of. It is a suggestion in a
+field that can be cleared.
+
+**A new SSH key can have its passphrase generated and kept in the
+vault.** `New SSH Key` has a `Generate passphrase` tick. With it on,
+gridterm makes the passphrase, locks the key with it and puts it in the
+vault, and nobody is shown it -- there is nothing to write down and
+nothing to lose. Unlocking that key from then on takes the passphrase
+out of the vault instead of asking. One that the key refuses falls
+through to the dialog, and a key the vault knows nothing about is asked
+about the way it always was.
+
+It only reads a vault that a key already unlocked opens: asking for a
+passphrase to read a passphrase would be a dialog to spare a dialog, and
+the key being unlocked may be the vault's own. The tick is only offered
+where there is a vault to put one in.
+
+A key whose passphrase is in the vault is no use as a spare for it: with
+the other key gone, opening the vault needs this key and unlocking this
+key needs the vault. `Add Secrets Key` marks that key in the list and
+says so before adding it, and adds it anyway when told to -- the
+passphrase can be copied out and kept elsewhere, and then it is a spare
+like any other.
+
+**A word before the secrets are trusted to a key the SSH agent has.** A
+slot is opened by that key signing, and an agent signs for whoever it
+is forwarded to, so `A server you forward the agent to can open any
+copy of the secrets it has.` Starting a vault on such a key, or adding
+one to a vault that exists, now says that first and goes ahead when
+told to: it is a cost only to somebody who has a copy of the file as
+well, and whether that is worth it is the user's to weigh.
+
+This and the warning about a key whose passphrase is in the vault are
+one question, because a key can have both against it. It opens on
+`Cancel`, the way every question about exposing something does.
+
+The agent is asked by fingerprint, off the `.pub` file beside the key,
+so nothing has to be unlocked to ask, and a key with no public half or
+an agent that will not answer gets no warning rather than one the
+window cannot stand behind. It is a snapshot: the key may be added to
+the agent a minute later. The key `New SSH Key` offers by default,
+`id_ed25519_gridterm`, is not one most people load into an agent, and
+agent forwarding is off unless a saved server turns it on.
+
 ### Changed
 
 **The sidebar's notes go quiet.** A note is the second thing on a row
@@ -102,6 +203,36 @@ reason a connection was lost is written into the account, where there is
 room for it, rather than onto the row, where a sentence either pushed
 the name off the end or did not fit and was dropped without a mark.
 
+**The secrets went through the wording rules a second time.** Five
+dialogs said `Take "Add Secret"` where the vocabulary table has
+`choose` for a menu line. The `Show` button on the add and change forms
+renamed itself to `Hide`, which rule 9 calls a bug wearing an
+explanation; it is a `Show the secret` tick now, beside the field it is
+about. The list `Show Secrets` opens was titled `Secrets` and the two
+key lists both said `Choose a key`, so two different jobs shared a
+heading; each is titled with the command that opens it. The question
+before a key is revoked offered `Remove` and `OK`, where `OK` reads as
+agreeing to the removal, and carried a `Copy` button over a body with
+nothing in it to copy; it is `Remove` and `Cancel`. Two warnings that
+ran to two sentences are one each. And the line over the add and change
+forms said `Sealed in the vault`, which was the only place on screen
+that called the secrets anything but the secrets; it now says `Only
+your key opens the secrets.`, which is the one thing the title cannot
+say. Every error the `secrets` package reports went the same way: they
+said `the vault`, and they are read under a heading that has just said
+`the secrets`. The ones that also said make, take or holds now say
+create, create and is, which is what the vocabulary table has.
+
+**A list's buttons look and answer like every other dialog's.** The row
+along the bottom of a chooser drew its actions as names in square
+brackets, so `Show Secrets` offered `[ Type ] [ Copy ] [ Show ]
+[ Cancel ]` while every dialog beside it drew real buttons. They are now
+the same buttons, right aligned from the corner the eye lands on, and
+clicking one works. A form also takes left and right along its button
+row, which a notice and a chooser already did -- so every dialog in the
+window is answered the same way. In a field the arrows are still the
+caret's.
+
 **The File menu's shells say only which shell they open.** Under the
 `New Terminal In` heading each line read `New Terminal: Command Prompt`,
 so the heading and the line said the same three words before either got
@@ -109,6 +240,16 @@ to the shell. The lines are now `Command Prompt`, `Windows PowerShell`
 and the rest, which is what the same list already said on a machine's
 plus menu. The commands keep their full titles for the palette, where
 they are read with no heading around them.
+
+### Fixed
+
+**A window closing waits for file work the user dismissed.** Dropping a
+copy cancels it and takes its row away, and cancelling is not stopping:
+the write it is in finishes, and one waiting on a machine that has
+stopped answering waits however long that takes. The queue stopped
+answering for it the moment it left the list, so a window could close
+while it was still writing.
+
 
 ## v0.2.1
 

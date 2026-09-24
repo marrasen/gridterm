@@ -1412,3 +1412,82 @@ func TestButtonColsKeepsItsRoomWithNoButtons(t *testing.T) {
 		t.Errorf("it came back with room for %d, want the %d it had", cap(got), cap(kept))
 	}
 }
+
+// Left and right walk along the button row, the way they do on a notice
+// and on a chooser's buttons.
+func TestFormArrowsWalkTheButtonRow(t *testing.T) {
+	tf := newTestForm(t)
+	n := len(tf.form.Buttons())
+	if n < 2 {
+		t.Fatalf("the test form has %d buttons, want at least two", n)
+	}
+	// Onto the first button.
+	for range len(tf.form.Fields()) {
+		if _, err := tf.form.HandleKey(press(input.KeyTab, 0)); err != nil {
+			t.Fatalf("Tab: %v", err)
+		}
+	}
+	if at, isButton := tf.form.Focused(); !isButton || at != 0 {
+		t.Fatalf("the focus is at %d (button %v), want the first button", at, isButton)
+	}
+
+	if _, err := tf.form.HandleKey(press(input.KeyRight, 0)); err != nil {
+		t.Fatalf("Right: %v", err)
+	}
+	if at, isButton := tf.form.Focused(); !isButton || at != 1 {
+		t.Errorf("Right went to %d (button %v), want the second button", at, isButton)
+	}
+	if _, err := tf.form.HandleKey(press(input.KeyLeft, 0)); err != nil {
+		t.Fatalf("Left: %v", err)
+	}
+	if at, isButton := tf.form.Focused(); !isButton || at != 0 {
+		t.Errorf("Left went to %d (button %v), want the first button", at, isButton)
+	}
+}
+
+// They wrap round the row rather than walking back into the fields: a
+// left arrow that put the caret in a field would be typing somewhere
+// the user did not ask for.
+func TestFormArrowsStayOnTheButtonRow(t *testing.T) {
+	tf := newTestForm(t)
+	n := len(tf.form.Buttons())
+	for range len(tf.form.Fields()) {
+		if _, err := tf.form.HandleKey(press(input.KeyTab, 0)); err != nil {
+			t.Fatalf("Tab: %v", err)
+		}
+	}
+
+	if _, err := tf.form.HandleKey(press(input.KeyLeft, 0)); err != nil {
+		t.Fatalf("Left: %v", err)
+	}
+	if at, isButton := tf.form.Focused(); !isButton || at != n-1 {
+		t.Errorf("Left off the first button went to %d (button %v), want the last one",
+			at, isButton)
+	}
+	if _, err := tf.form.HandleKey(press(input.KeyRight, 0)); err != nil {
+		t.Fatalf("Right: %v", err)
+	}
+	if at, isButton := tf.form.Focused(); !isButton || at != 0 {
+		t.Errorf("Right off the last button went to %d (button %v), want the first one",
+			at, isButton)
+	}
+}
+
+// In a field the arrows are the caret's, so the focus does not move.
+func TestFormArrowsInAFieldMoveTheCaret(t *testing.T) {
+	tf := newTestForm(t)
+	if len(tf.form.Fields()) == 0 {
+		t.Skip("the test form has no fields")
+	}
+	fld := tf.form.Fields()[0]
+	fld.SetText("hello")
+	if _, err := tf.form.HandleKey(press(input.KeyLeft, 0)); err != nil {
+		t.Fatalf("Left: %v", err)
+	}
+	if _, isButton := tf.form.Focused(); isButton {
+		t.Fatal("Left in a field moved the focus to a button")
+	}
+	if got := fld.Caret(); got != len("hell") {
+		t.Errorf("the caret is at %d, want one cluster back from the end", got)
+	}
+}

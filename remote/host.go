@@ -34,8 +34,14 @@ type Host struct {
 	// User is the account to log in as. Empty means the local username.
 	User string `json:"user,omitempty"`
 
-	// Via is the Name of another saved host to reach this one through,
+	// Via is the ID of another saved host to reach this one through,
 	// with no local port opened for it.
+	//
+	// The id and not the name, so a jump host renamed is still the one
+	// this goes through, and a server saved since under the name it
+	// gave up is not. A Book given a name here, in a list saved before
+	// servers had ids or in one edited by hand, turns it into the id of
+	// the server with that name.
 	Via string `json:"via,omitempty"`
 
 	// Identities lists private key files to prefer. Empty means the
@@ -192,7 +198,7 @@ func (h Host) Validate() error {
 		return fmt.Errorf("the port %d is not between 1 and 65535", h.Port)
 	case strings.IndexFunc(h.User, badInHost) >= 0:
 		return fmt.Errorf("the user name contains a character that is not allowed")
-	case h.Via == h.Name && h.Via != "":
+	case h.Via != "" && (h.Via == h.ID || strings.EqualFold(h.Via, h.Name)):
 		return fmt.Errorf("%q cannot be reached through itself", h.Name)
 	case CommandName(h.Name) == "":
 		return fmt.Errorf("the name has to have something in it a command can be named after")

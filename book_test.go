@@ -383,6 +383,7 @@ func TestAddServerSavesEveryFieldInTheDialog(t *testing.T) {
 	if !ok {
 		t.Fatal("the server was not saved")
 	}
+	bastion, _ := a.book.Lookup("bastion")
 	switch {
 	case got.Address != "db.internal":
 		t.Errorf("address = %q", got.Address)
@@ -390,8 +391,8 @@ func TestAddServerSavesEveryFieldInTheDialog(t *testing.T) {
 		t.Errorf("port = %d, want 5433", got.Port)
 	case got.User != "postgres":
 		t.Errorf("user = %q, want postgres", got.User)
-	case got.Via != "bastion":
-		t.Errorf("through = %q, want bastion", got.Via)
+	case got.Via != bastion.ID:
+		t.Errorf("through = %q, want bastion's id %q", got.Via, bastion.ID)
 	case len(got.Identities) != 1 || got.Identities[0] != "/keys/db":
 		t.Errorf("key files = %v, want the one that was typed", got.Identities)
 	}

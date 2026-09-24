@@ -217,9 +217,9 @@ func TestRouteRefusesWhatItCannotWalk(t *testing.T) {
 	// Reached past the checks on purpose: this is what Route is the last
 	// guard against.
 	b.hosts = []Host{
-		{Name: "dangling", Address: "a.example", Via: "gone"},
-		{Name: "p", Address: "p.example", Via: "q"},
-		{Name: "q", Address: "q.example", Via: "p"},
+		{Name: "dangling", ID: "d", Address: "a.example", Via: "gone"},
+		{Name: "p", ID: "p", Address: "p.example", Via: "q"},
+		{Name: "q", ID: "q", Address: "q.example", Via: "p"},
 	}
 
 	if _, err := b.Route("nothing"); err == nil {

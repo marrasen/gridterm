@@ -256,7 +256,8 @@ func (a *app) askCommandOn(host string, at *spot) {
 		// Only from the machine it was saved on, and only over an empty
 		// field: a path belongs to its machine, and what the user typed
 		// is theirs.
-		if saved.Dir != "" && saved.Host == host && strings.TrimSpace(in.Text()) == "" {
+		if saved.Dir != "" && a.sameServer(saved.Host, saved.HostID, host) &&
+			strings.TrimSpace(in.Text()) == "" {
 			in.SetText(saved.Dir)
 		}
 	}
@@ -271,7 +272,9 @@ func (a *app) askCommandOn(host string, at *spot) {
 		line := commandLine(what.Text())
 		switch {
 		case keep.On():
-			cmd := settings.SavedCommand{Line: line, Dir: dir, Host: host}
+			cmd := settings.SavedCommand{
+				Line: line, Dir: dir, Host: host, HostID: a.serverID(host),
+			}
 			if err := a.saved.keep(cmd); err != nil {
 				return err
 			}
@@ -316,7 +319,11 @@ func (a *app) runSaved(cmd settings.SavedCommand) error {
 	if len(command) == 0 {
 		return fmt.Errorf("the command kept as %q has nothing to run", cmd.Line)
 	}
-	return a.runCommandOn(cmd.Host, command, cmd.Dir, nil)
+	host, err := a.savedAs(cmd.Host, cmd.HostID)
+	if err != nil {
+		return err
+	}
+	return a.runCommandOn(host, command, cmd.Dir, nil)
 }
 
 // showConnLogHere opens the account of how the machine the user is
@@ -392,9 +399,12 @@ func (a *app) openTunnelHere() error {
 	keep := f.AddTick(fldSaveTunnel, false)
 	// The ones kept for this machine, so one is a key away rather than
 	// two ports to remember.
-	listen.Options = a.savedTuns.listenOn(host)
+	kept := func(saved settings.SavedTunnel) bool {
+		return a.sameServer(saved.Host, saved.HostID, host)
+	}
+	listen.Options = a.savedTuns.listenOn(kept)
 	listen.OnPick = func(text string) {
-		saved, have := a.savedTuns.findListen(host, text)
+		saved, have := a.savedTuns.findListen(kept, text)
 		if !have {
 			return
 		}

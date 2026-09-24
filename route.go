@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/marrasen/gridterm/remote"
+	"github.com/marrasen/gridterm/settings"
 )
 
 // step is one machine on the way to another: what to connect to, and
@@ -31,6 +32,84 @@ type step struct {
 // hostStep turns a saved machine into a step of a route.
 func hostStep(h remote.Host) step {
 	return step{name: h.Name, cfg: h.Config(), term: h.Term, id: h.ID}
+}
+
+// serverID is the id of the saved server the window calls host, and
+// empty for a machine on no list.
+//
+// The connection's own when there is one: a connection left under a
+// name when its entry was renamed and pointed somewhere else is still
+// the server it was made to, whatever the list calls that name now.
+func (a *app) serverID(host string) string {
+	if m := a.about(host).machine; m != nil {
+		return m.at.id
+	}
+	if h, saved := a.book.Lookup(host); saved {
+		return h.ID
+	}
+	return ""
+}
+
+// savedAs is what a machine something was saved on goes by now: the
+// name its id has on the list, or the name it was saved with when it
+// has no id.
+//
+// An error says the server has been removed from the list, or that its
+// name is held by a connection to another server.
+func (a *app) savedAs(name, id string) (string, error) {
+	if id == "" {
+		return name, nil
+	}
+	now, saved := a.book.NameOf(id)
+	if !saved {
+		return "", removedServer(name)
+	}
+	if m := a.about(now).machine; m != nil && anotherServer(m.at, step{id: id}) {
+		return "", connectedElsewhere(now)
+	}
+	return now, nil
+}
+
+// shownAs is what a machine something was saved on is shown as: the
+// name its id has on the list, and the name it was saved with when the
+// list has no such id.
+func (a *app) shownAs(name, id string) string {
+	if now, saved := a.book.NameOf(id); saved {
+		return now
+	}
+	return name
+}
+
+// sameServer reports whether something saved on a machine is on the one
+// the window calls host: by id when both have one, and by name when
+// either has none.
+func (a *app) sameServer(name, id, host string) bool {
+	if id != "" {
+		if here := a.serverID(host); here != "" {
+			return here == id
+		}
+	}
+	return name == host
+}
+
+// giveSavedIDs gives the commands, tunnels and copies saved before
+// servers had ids the ids of the servers their names stand for now.
+func (a *app) giveSavedIDs() {
+	set := a.saved.remembered
+	if set == nil {
+		return
+	}
+	err := set.FillServerIDs(func(name string) string {
+		if h, saved := a.book.Lookup(name); saved {
+			return h.ID
+		}
+		return ""
+	})
+	// Settings that could not be read are reported on their own, and
+	// ids that could not be written are asked for again next time.
+	if err != nil && !errors.Is(err, settings.ErrUnsaveable) {
+		a.logError(err)
+	}
 }
 
 // route returns the machines to connect to in order to reach one: the

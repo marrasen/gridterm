@@ -217,21 +217,15 @@ func (b *Book) Put(h Host, under string) error {
 		h.ID = newID(b.hosts)
 	}
 
+	// A rename needs nothing from the servers reached through this one:
+	// they name it by its id, which the rename keeps.
 	before := cloneHosts(b.hosts)
 	if at >= 0 {
-		// A rename leaves anything that went through the old name
-		// pointing at nothing, so those follow it.
-		if old := b.hosts[at].Name; !strings.EqualFold(old, h.Name) {
-			for i := range b.hosts {
-				if strings.EqualFold(b.hosts[i].Via, old) {
-					b.hosts[i].Via = h.Name
-				}
-			}
-		}
 		b.hosts[at] = h
 	} else {
 		b.hosts = append(b.hosts, h)
 	}
+	resolveVia(b.hosts)
 	// Checked after the change, not before: a rename can take away the
 	// very name a route was pointing at, and a check run first would
 	// have approved it.
@@ -262,7 +256,7 @@ func (b *Book) Remove(name string) error {
 		return fmt.Errorf("there is no saved server called %q", name)
 	}
 	for _, h := range b.hosts {
-		if strings.EqualFold(h.Via, name) {
+		if h.Via == b.hosts[at].ID {
 			return fmt.Errorf("%q is reached through %q, so %q has to stay",
 				h.Name, b.hosts[at].Name, b.hosts[at].Name)
 		}
@@ -291,24 +285,61 @@ func (b *Book) Route(name string) ([]Host, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
+	h, ok := b.lookupLocked(name)
+	if !ok {
+		return nil, fmt.Errorf("there is no saved server called %q", name)
+	}
 	var route []Host
 	seen := map[string]bool{}
-	for at := name; at != ""; {
-		key := strings.ToLower(at)
-		if seen[key] {
+	for {
+		if seen[h.ID] {
 			return nil, fmt.Errorf("the route to %q goes round in a circle", name)
 		}
-		seen[key] = true
-
-		h, ok := b.lookupLocked(at)
-		if !ok {
-			return nil, fmt.Errorf("there is no saved server called %q", at)
-		}
+		seen[h.ID] = true
 		route = append(route, h.clone())
-		at = h.Via
+		if h.Via == "" {
+			break
+		}
+		if h, ok = withID(b.hosts, h.Via); !ok {
+			return nil, fmt.Errorf("the server %q is reached through is not saved", route[len(route)-1].Name)
+		}
 	}
 	slices.Reverse(route)
 	return route, nil
+}
+
+// withID is the server in a list with an id.
+func withID(hosts []Host, id string) (Host, bool) {
+	for _, h := range hosts {
+		if h.ID == id {
+			return h, true
+		}
+	}
+	return Host{}, false
+}
+
+// resolveVia turns a jump host named by its name into the id of the
+// server with that name, for a list saved before servers had ids or
+// edited by hand.
+//
+// An id is taken first: an id that is also somebody's name is the id.
+// One that is neither is left for checkRoutes to report.
+func resolveVia(hosts []Host) {
+	for i := range hosts {
+		via := hosts[i].Via
+		if via == "" {
+			continue
+		}
+		if _, ok := withID(hosts, via); ok {
+			continue
+		}
+		for _, h := range hosts {
+			if strings.EqualFold(h.Name, via) {
+				hosts[i].Via = h.ID
+				break
+			}
+		}
+	}
 }
 
 // rereadLocked reads the file into the book, replacing what it holds.
@@ -401,15 +432,15 @@ func readBook(path string) ([]Host, error) {
 			"remote: the server list %s saves %q and %q as the window at %s",
 			path, first, second, addr)
 	}
+	sortHosts(file.Servers)
+	giveIDs(file.Servers)
+	resolveVia(file.Servers)
 	// Checked on the way in as well as on the way out, or a file with a
 	// broken route would load clean and then refuse every later change
 	// for a reason the user never touched.
 	if err := checkRoutes(file.Servers); err != nil {
 		return nil, fmt.Errorf("remote: the server list %s: %w", path, err)
 	}
-
-	sortHosts(file.Servers)
-	giveIDs(file.Servers)
 	return file.Servers, nil
 }
 
@@ -480,28 +511,22 @@ func endOfFile(dec *json.Decoder) error {
 // checkRoutes reports a Via that names nothing, or that goes round in a
 // circle. Either would be found only when somebody tried to connect.
 func checkRoutes(hosts []Host) error {
-	find := func(name string) (Host, bool) {
-		for _, h := range hosts {
-			if strings.EqualFold(h.Name, name) {
-				return h, true
-			}
-		}
-		return Host{}, false
-	}
 	for _, start := range hosts {
 		seen := map[string]bool{}
-		for at := start.Name; at != ""; {
-			key := strings.ToLower(at)
-			if seen[key] {
+		for h := start; ; {
+			if seen[h.ID] {
 				return fmt.Errorf("the route to %q goes round in a circle", start.Name)
 			}
-			seen[key] = true
-			h, ok := find(at)
+			seen[h.ID] = true
+			if h.Via == "" {
+				break
+			}
+			next, ok := withID(hosts, h.Via)
 			if !ok {
 				return fmt.Errorf("there is no saved server called %q to reach %q through",
-					at, start.Name)
+					h.Via, start.Name)
 			}
-			at = h.Via
+			h = next
 		}
 	}
 	return nil

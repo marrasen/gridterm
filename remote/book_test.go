@@ -162,7 +162,7 @@ func TestBookEditsAndRenames(t *testing.T) {
 	if err := b.Put(margit(), ""); err != nil {
 		t.Fatalf("Put: %v", err)
 	}
-	// Something reached through it, so a rename has to carry it along.
+	// Something reached through it, which has to stay reached through it.
 	via := Host{Name: "web1", Address: "web1.internal", Via: "margit"}
 	if err := b.Put(via, ""); err != nil {
 		t.Fatalf("Put: %v", err)
@@ -185,9 +185,10 @@ func TestBookEditsAndRenames(t *testing.T) {
 	if got.User != "root" {
 		t.Errorf("user = %q, want the edit to have stuck", got.User)
 	}
+	// By the id, which the rename kept.
 	after, _ := b.Lookup("web1")
-	if after.Via != "bastion" {
-		t.Errorf("web1 goes through %q, want it to follow the rename", after.Via)
+	if after.Via != got.ID {
+		t.Errorf("web1 goes through %q, want bastion's id %q", after.Via, got.ID)
 	}
 }
 
@@ -614,5 +615,54 @@ func TestAListWithoutIDsIsGivenTheSameOnesByEveryReader(t *testing.T) {
 		if again, _ := three.Lookup(h.Name); again.ID != h.ID {
 			t.Errorf("%s was %q before the save and %q after", h.Name, h.ID, again.ID)
 		}
+	}
+}
+
+// A jump host is named by its id, so a list saved with names is read
+// as ids, and a jump host renamed is still on the route.
+//
+// A name can be given up in a rename and given to another server. A
+// route that went by the name would go through that one, which is not
+// the machine the user chose to connect through.
+func TestAJumpHostIsKeptByItsID(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "servers.json")
+	const old = `{"version":1,"servers":[` +
+		`{"name":"bastion","address":"bastion.example"},` +
+		`{"name":"db","address":"db.internal","via":"Bastion"}]}`
+	if err := os.WriteFile(path, []byte(old), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	b, err := LoadBook(path)
+	if err != nil {
+		t.Fatalf("LoadBook: %v", err)
+	}
+	bastion, _ := b.Lookup("bastion")
+	if db, _ := b.Lookup("db"); db.Via != bastion.ID {
+		t.Fatalf("db goes through %q, want bastion's id %q", db.Via, bastion.ID)
+	}
+
+	renamed := bastion
+	renamed.Name = "jump"
+	if err := b.Put(renamed, "bastion"); err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+	// The name it gave up, taken by another server.
+	if err := b.Put(Host{Name: "bastion", Address: "elsewhere.example"}, ""); err != nil {
+		t.Fatalf("Put the new bastion: %v", err)
+	}
+	route, err := b.Route("db")
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if len(route) != 2 || route[0].Name != "jump" || route[0].Address != "bastion.example" {
+		t.Errorf("the route to db is %v, want it through jump at bastion.example", route)
+	}
+	// And the file says so after the save.
+	again, err := LoadBook(path)
+	if err != nil {
+		t.Fatalf("LoadBook after the save: %v", err)
+	}
+	if db, _ := again.Lookup("db"); db.Via != bastion.ID {
+		t.Errorf("db goes through %q after the save, want %q", db.Via, bastion.ID)
 	}
 }

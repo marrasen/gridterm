@@ -106,7 +106,6 @@ func (a *app) endOfSaved(host, id, window string) (jobEnd, error) {
 // runSavedCopy does a remembered copy again, on filesystems opened
 // afresh from the machines it names.
 func (a *app) runSavedCopy(c settings.SavedCopy) error {
-	c = a.withServerIDs(c)
 	from, err := a.endOfSaved(c.From, c.FromID, c.FromWindow)
 	if err != nil {
 		return err
@@ -123,35 +122,6 @@ func (a *app) runSavedCopy(c settings.SavedCopy) error {
 	}
 	a.repeatSavedCopy(op, from, to)
 	return nil
-}
-
-// withServerIDs gives a copy saved before servers had ids the ids of the
-// servers its names stand for now, and keeps them.
-//
-// Now is the last time the names can be trusted to mean what they meant
-// when it was saved: once the ids are kept, a server renamed afterwards
-// is still the one the copy runs on, and one saved since under a name
-// another gave up is not.
-func (a *app) withServerIDs(c settings.SavedCopy) settings.SavedCopy {
-	was := c
-	fill := func(name, window string, id *string) {
-		if *id != "" || window != "" || name == "" {
-			return
-		}
-		if h, saved := a.book.Lookup(name); saved {
-			*id = h.ID
-		}
-	}
-	fill(c.From, c.FromWindow, &c.FromID)
-	fill(c.To, c.ToWindow, &c.ToID)
-	if c.FromID != was.FromID || c.ToID != was.ToID {
-		// Logged rather than shown: the copy runs either way, and a
-		// list that could not be written is asked again next time.
-		if err := a.copies.update(c); err != nil {
-			a.logError(err)
-		}
-	}
-	return c
 }
 
 // repeatSavedCopy opens both ends of a saved copy and starts it, the
@@ -226,12 +196,7 @@ func (a *app) openCopies() error {
 // and a row naming what one of them used to be called would say it goes
 // somewhere else.
 func (a *app) namedNow(c settings.SavedCopy) settings.SavedCopy {
-	if now, saved := a.book.NameOf(c.FromID); saved {
-		c.From = now
-	}
-	if now, saved := a.book.NameOf(c.ToID); saved {
-		c.To = now
-	}
+	c.From, c.To = a.shownAs(c.From, c.FromID), a.shownAs(c.To, c.ToID)
 	return c
 }
 

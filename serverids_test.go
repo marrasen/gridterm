@@ -224,15 +224,15 @@ func TestWorkFollowsAMachineThatMovedAndWasRenamed(t *testing.T) {
 	}
 }
 
-// A copy saved before servers had ids is given them the first time it
-// runs, and follows a rename after that.
+// A copy saved before servers had ids is given them when a window
+// opens, and follows a rename after that.
 //
-// Before the ids, the names are all there is, and the first run is the
-// last time they can be trusted to mean what they meant when the copy
-// was saved.
+// Before the ids, the names are all there is, and the sooner they are
+// turned into ids the likelier they still mean what they meant when the
+// copy was saved.
 func TestAnOldSavedCopyIsGivenIDsAndFollowsARenameAfter(t *testing.T) {
 	first, second := sshtest.New(t), sshtest.New(t)
-	a, _ := aCopyWindow(t)
+	a, path := aCopyWindow(t)
 	withPanel(t, a)
 	pinServers(t, a, first, second)
 	saveHost(t, a, "one", first, "")
@@ -244,6 +244,10 @@ func TestAnOldSavedCopyIsGivenIDsAndFollowsARenameAfter(t *testing.T) {
 	}
 	if err := a.copies.keep(old); err != nil {
 		t.Fatalf("keep: %v", err)
+	}
+	// The settings read again, the way a window opening reads them.
+	if _, err := withSettings(t, a, path); err != nil {
+		t.Fatalf("settings: %v", err)
 	}
 
 	runIt := func() {
@@ -262,11 +266,11 @@ func TestAnOldSavedCopyIsGivenIDsAndFollowsARenameAfter(t *testing.T) {
 			return err == nil
 		})
 	}
-	runIt()
 	saved, _ := a.book.Lookup("one")
 	if got := a.copies.all()[0].FromID; got != saved.ID {
-		t.Fatalf("the copy kept the id %q, want one's (%q)", got, saved.ID)
+		t.Fatalf("the copy was given the id %q, want one's (%q)", got, saved.ID)
 	}
+	runIt()
 
 	// Renamed, and the name it gave up saved for another machine.
 	renameSaved(t, a, "one", "two")
@@ -418,4 +422,116 @@ func TestFollowingARenameLeavesTheOtherServersPaneAlone(t *testing.T) {
 	if row := a.files.rows[second]; row == nil || row.Host != "db" {
 		t.Errorf("the other server's row is under %v, want db", row)
 	}
+}
+
+// A saved command runs on the server it was saved on, under the name
+// that server has now, and not on a server saved since under its old
+// name. Its palette row says the name it has now.
+func TestASavedCommandFollowsItsServer(t *testing.T) {
+	first, second := sshtest.New(t), sshtest.New(t)
+	a, _ := aCopyWindow(t)
+	withPanel(t, a)
+	pinServers(t, a, first, second)
+	saveHost(t, a, "one", first, "")
+	one, _ := a.book.Lookup("one")
+	cmd := settings.SavedCommand{Line: "true", Host: "one", HostID: one.ID}
+	if err := a.saved.keep(cmd); err != nil {
+		t.Fatalf("keep: %v", err)
+	}
+
+	renameSaved(t, a, "one", "two")
+	saveHost(t, a, "one", second, "")
+	a.refreshServers()
+	if !hasCommandTitled(a, "Run true on two") {
+		t.Error("the palette does not offer the command on two")
+	}
+
+	if err := a.runSaved(a.saved.all()[0]); err != nil {
+		t.Fatalf("runSaved: %v", err)
+	}
+	waitFor(t, a, "the machine to answer", func() bool {
+		return a.machines.named("two") != nil || a.machines.named("one") != nil
+	})
+	if a.machines.named("one") != nil {
+		t.Errorf("the command went to the server saved since as one: %v", a.machines.names())
+	}
+	if _, port := first.Host(); a.machines.named("two") == nil ||
+		a.machines.named("two").at.cfg.Port != port {
+		t.Errorf("the command did not go to the server it was saved on: %v", a.machines.names())
+	}
+}
+
+// A saved tunnel is offered on its server after a rename, and one whose
+// server was removed says so rather than opening anywhere.
+func TestASavedTunnelFollowsItsServer(t *testing.T) {
+	a, _ := aCopyWindow(t)
+	saveHostNamed(t, a, "one", "one.example")
+	one, _ := a.book.Lookup("one")
+	kept := settings.SavedTunnel{
+		Host: "one", HostID: one.ID, Kind: "local", Listen: "127.0.0.1:8080", Target: "localhost:80",
+	}
+	if err := a.savedTuns.keep(kept); err != nil {
+		t.Fatalf("keep: %v", err)
+	}
+
+	renameSaved(t, a, "one", "two")
+	saveHostNamed(t, a, "one", "elsewhere.example")
+	on := func(host string) func(settings.SavedTunnel) bool {
+		return func(saved settings.SavedTunnel) bool {
+			return a.sameServer(saved.Host, saved.HostID, host)
+		}
+	}
+	if got := a.savedTuns.listenOn(on("two")); len(got) != 2 || got[1] != "127.0.0.1:8080" {
+		t.Errorf("the dialog on two offers %v, want the tunnel saved on it", got)
+	}
+	if got := a.savedTuns.listenOn(on("one")); len(got) != 0 {
+		t.Errorf("the dialog on the new one offers %v, want nothing", got)
+	}
+	if got := a.savedTunnelTitle(a.savedTuns.all()[0]); !strings.HasSuffix(got, "via two") {
+		t.Errorf("the palette calls it %q, want it over two", got)
+	}
+
+	if err := a.book.Remove("two"); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+	err := a.openSavedTunnel(a.savedTuns.all()[0])
+	if err == nil || !strings.Contains(err.Error(), "removed") {
+		t.Errorf("opening it says %v, want it to say the server was removed", err)
+	}
+}
+
+// Commands and tunnels saved before servers had ids are given them when
+// a window opens, from the names they were saved with.
+func TestOldCommandsAndTunnelsAreGivenIDs(t *testing.T) {
+	a, path := aCopyWindow(t)
+	saveHostNamed(t, a, "one", "one.example")
+	if err := a.saved.keep(settings.SavedCommand{Line: "uptime", Host: "one"}); err != nil {
+		t.Fatalf("keep the command: %v", err)
+	}
+	if err := a.savedTuns.keep(settings.SavedTunnel{
+		Host: "one", Kind: "local", Listen: "8080", Target: "localhost:80",
+	}); err != nil {
+		t.Fatalf("keep the tunnel: %v", err)
+	}
+	if _, err := withSettings(t, a, path); err != nil {
+		t.Fatalf("settings: %v", err)
+	}
+	one, _ := a.book.Lookup("one")
+	if got := a.saved.all()[0].HostID; got != one.ID {
+		t.Errorf("the command was given the id %q, want %q", got, one.ID)
+	}
+	if got := a.savedTuns.all()[0].HostID; got != one.ID {
+		t.Errorf("the tunnel was given the id %q, want %q", got, one.ID)
+	}
+}
+
+// hasCommandTitled reports whether the palette offers a command with
+// this title.
+func hasCommandTitled(a *testApp, title string) bool {
+	for _, cmd := range a.root.Commands.All() {
+		if cmd.Title == title {
+			return true
+		}
+	}
+	return false
 }

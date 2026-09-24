@@ -200,6 +200,20 @@ the machine again they ask the list what that id is called now. So:
 - **A machine typed by hand** is on no list and has no id. It reopens
   at the address it was reached at, as before.
 
+**Everything else that names a server goes by the id too**, at
+Marcus's request:
+
+- **A jump host** (`via` in `servers.json`) is the jump server's id. A
+  list saved with names there, or edited by hand, has them turned into
+  ids as it is read. A jump host renamed is still on the route; a
+  server saved since under its old name is not.
+- **Saved tunnels and saved commands** keep a `hostId` beside the name.
+  They run on that server under the name it has now, and the palette
+  shows that name. One whose server was removed says so.
+- **Settings saved before ids** are given them once, when a window
+  opens with both lists, and again when a broken server list is
+  reloaded.
+
 What this replaced: a trail of old names (`a.renamed`, `renamedWork`,
 `nameNow`, `endNow`) and an address check on renames. A trail entry is
 two names and cannot tell that a name has changed hands. Nearly every

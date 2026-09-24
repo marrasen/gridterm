@@ -137,7 +137,7 @@ func (a *app) refreshServers() {
 		saved := cmd
 		a.registerServerCommands(a.reporting(ui.Command{
 			ID:       savedCommandID(i),
-			Title:    "Run " + saved.Line + " on " + groupName(saved.Host),
+			Title:    "Run " + saved.Line + " on " + groupName(a.shownAs(saved.Host, saved.HostID)),
 			AlsoFind: []string{"saved command", "remembered", "saved"},
 			Run:      func() error { return a.runSaved(saved) },
 		}))
@@ -148,7 +148,7 @@ func (a *app) refreshServers() {
 		saved := t
 		a.registerServerCommands(a.reporting(ui.Command{
 			ID:       savedTunnelID(i),
-			Title:    savedTunnelTitle(saved),
+			Title:    a.savedTunnelTitle(saved),
 			AlsoFind: []string{"saved tunnel", "remembered", "saved", "forward", "port"},
 			Run:      func() error { return a.openSavedTunnel(saved) },
 		}))
@@ -405,6 +405,9 @@ func (a *app) reloadBook() error {
 	if err := a.book.Reload(); err != nil {
 		return err
 	}
+	// A list that could not be read when the window opened gave nothing
+	// its id then.
+	a.giveSavedIDs()
 	a.refreshServers()
 	return nil
 }
@@ -478,7 +481,10 @@ func (a *app) openServerForm(under string) error {
 	if len(was.Identities) > 0 {
 		key.SetText(was.Identities[0])
 	}
-	via.SetText(was.Via)
+	// Saved as the jump host's id, shown as its name.
+	if through, ok := a.book.NameOf(was.Via); ok {
+		via.SetText(through)
+	}
 	folders.SetText(was.FoldersJoined())
 	setup.SetText(setupNo)
 	if was.Setup {

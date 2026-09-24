@@ -451,13 +451,14 @@ func (a *app) takeOverFor(addr, keyFile string, at *spot, open opening) error {
 	// Already on its way. Asked about rather than refused: waiting for
 	// it is usually what the user wants.
 	if d := a.about(name).dialling; d != nil {
-		// Run once the other dial has settled, however it went: waited
-		// on, it may have connected or failed, and retried it has been
-		// given up on. A window connected now gets what was asked of it;
-		// one that is not is dialled again for it.
-		a.askAboutTheOneOnItsWay(d, name, func() {
+		// Run once the other dial has settled. A window connected now
+		// gets what was asked of it. One that is not was given up on:
+		// retried, it is dialled again; waited for, it failed, and its
+		// own pane says why -- waiting is not asking for a fresh try.
+		a.askAboutTheOneOnItsWay(d, name, func(retried bool) {
 			held := a.windows.at(addr)
 			switch {
+			case held == nil && (open.only || open.files) && !retried:
 			case held == nil && (open.only || open.files):
 				if err := a.takeOverFor(addr, keyFile, at, open); err != nil {
 					a.reportError("Could not connect to "+name, err)

@@ -15,6 +15,7 @@ import (
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/serve"
 	"github.com/marrasen/gridterm/session"
+	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/term"
 )
 
@@ -53,6 +54,10 @@ type startedAs struct {
 	// program belongs to the other window, and this one cannot start it
 	// by itself.
 	window *taken
+
+	// asking says the window has been asked to start it again and has
+	// not answered, so a second press does not ask twice.
+	asking bool
 }
 
 // startsAgain records what a pane's program was started on, so the
@@ -343,16 +348,76 @@ func (a *app) startAgainOn(t *term.Terminal, m *machine, s *startedAs) error {
 	return nil
 }
 
-// startAgainOnWindow asks a window connected to for another shell, and
-// puts it in the pane whose shell there ended.
+// startAgainOnWindow starts again the shell a pane on a window connected
+// to was watching, and puts it back in the pane.
 //
-// The same way a terminal is opened on a window from its plus, into the
-// pane the user is answering in rather than a new one beside it.
+// The other window is asked to start its own pane's shell again and the
+// pane watches that, so the pane over there is the one that comes back
+// rather than a new one opening beside a finished one on every
+// reconnect. A window of a build that cannot is asked for a new shell
+// instead, the way a terminal is opened on it from its plus.
 func (a *app) startAgainOnWindow(pane *term.Terminal, t *taken) error {
 	if !a.windows.holds(t) {
 		return fmt.Errorf("this window is no longer connected to %s", t.name)
 	}
 	size := pane.Size()
+	if what, ok := a.windows.watching(pane); ok {
+		if open, still := a.openOver(what); still {
+			if s := a.started[pane]; s != nil {
+				if s.asking {
+					return nil
+				}
+				s.asking = true
+			}
+			a.startAgainOver(pane, t, open, size)
+			return nil
+		}
+	}
+	return a.openAgainOnWindow(pane, t, size)
+}
+
+// startAgainOver asks the other window to start its pane's program again
+// and has the pane watch it, off the goroutine that draws: the answer is
+// a round trip away and waits on that window's own frame.
+//
+// A window of a build that cannot is asked for a new shell instead.
+func (a *app) startAgainOver(pane *term.Terminal, t *taken, open serve.Open, size ui.Size) {
+	a.closes.inBackground(func() error {
+		err := t.win.StartAgain(serve.Attached{ID: open.ID, Host: open.Host, Kind: open.Kind})
+		var sess session.Session
+		if err == nil {
+			sess, err = t.win.Attach(open, size.Cols, size.Rows)
+		}
+		a.pump.post(func() {
+			if s := a.started[pane]; s != nil {
+				s.asking = false
+			}
+			title := "Could not reconnect to " + t.name
+			switch {
+			case errors.Is(err, serve.ErrCannotStartAgain):
+				if err := a.openAgainOnWindow(pane, t, size); err != nil {
+					a.reportError(title, err)
+				}
+			case err != nil:
+				a.reportError(title, err)
+			case !a.live(pane):
+				// Closed while the answer was on its way. The shell
+				// over there runs on in its own pane.
+				_ = sess.Close()
+			default:
+				if err := a.restartPane(pane, sess, ""); err != nil {
+					a.reportError(title, errors.Join(err, sess.Close()))
+				}
+			}
+		})
+		return nil
+	})
+}
+
+// openAgainOnWindow asks a window for a new shell and puts it in a pane
+// whose shell there ended, for a window that cannot start the old one
+// again.
+func (a *app) openAgainOnWindow(pane *term.Terminal, t *taken, size ui.Size) error {
 	sess, err := t.win.Open(size.Cols, size.Rows, func(named serve.Attached) {
 		// Said on a goroutine of the session's, and the record of what a
 		// pane is watching belongs to the one that draws.

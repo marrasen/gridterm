@@ -3400,13 +3400,27 @@ func TestAShellOnAWindowThatEndsCanBeReconnected(t *testing.T) {
 	held := client.windows.named(addr)
 	pane := client.windows.drawnFrom(held)[0]
 	shells := host.shellCount()
+	hostPanes := len(host.panes)
+	var watched remoteKey
+	waitFor(t, client, "the pane to know what it watches over there", func() bool {
+		watched, _ = client.windows.watching(pane)
+		return watched.id != ""
+	}, host)
 
 	if err := host.shell(shells - 1).Close(); err != nil {
 		t.Fatalf("end the shell over there: %v", err)
 	}
 	waitFor(t, client, "the pane to ask what next", func() bool {
 		client.reapExited()
-		return pane.Asking() != ""
+		host.reapExited()
+		return pane.Asking() != "" && len(host.ended) > 0
+	}, host)
+	// What the window over there has open, as it tells a client every
+	// frame it draws: the finished pane is still among it.
+	waitFor(t, client, "the window over there to say what it has open", func() bool {
+		host.refreshPanel(time.Now())
+		_, ok := client.openOver(watched)
+		return ok
 	}, host)
 	if q := pane.Asking(); !strings.Contains(q, "closed") {
 		t.Fatalf("the pane asks %q, want it to say the connection closed", q)
@@ -3418,10 +3432,18 @@ func TestAShellOnAWindowThatEndsCanBeReconnected(t *testing.T) {
 	waitFor(t, host, "another shell on the window", func() bool {
 		return host.shellCount() > shells
 	}, client)
-	waitFor(t, client, "the pane to watch the new shell", func() bool {
-		what, ok := client.windows.watching(pane)
-		return ok && what.id != ""
+	waitFor(t, client, "the pane to take the shell back", func() bool {
+		return pane.Asking() == "" && !client.ended[pane]
 	}, host)
+	// The pane over there came back, rather than a new one opening
+	// beside a finished one: reconnecting again and again used to fill
+	// the other window with them.
+	if got := len(host.panes); got != hostPanes {
+		t.Errorf("the window over there holds %d panes, want the %d it had", got, hostPanes)
+	}
+	if what, _ := client.windows.watching(pane); what != watched {
+		t.Errorf("the pane watches %v, want the pane over there it watched before", what)
+	}
 
 	if got := client.windows.drawnFrom(held); len(got) != 1 || got[0] != pane {
 		t.Errorf("the window draws %d panes, want the same pane again", len(got))

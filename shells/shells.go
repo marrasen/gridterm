@@ -139,7 +139,13 @@ func named(p probe, id string) (Shell, bool) {
 // The whole argv, because every WSL distribution runs wsl.exe and only
 // the arguments tell them apart. Windows ignores case in a path, so this
 // does too.
+//
+// A WSL shell started somewhere is still that shell: the --cd Command
+// put on the end says where it started, not which it is.
 func Running(list []Shell, argv []string) (Shell, bool) {
+	if n := len(argv); n >= 2 && argv[n-2] == "--cd" {
+		argv = argv[:n-2]
+	}
 	for _, s := range list {
 		if slices.EqualFunc(s.Command(""), argv, strings.EqualFold) {
 			return s, true

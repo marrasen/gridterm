@@ -133,6 +133,12 @@ func (a *app) openTerminalHere() error {
 	// what "another one of these" means.
 	if argv := a.shellLikeThePaneHere(h); argv != nil {
 		dir := a.dirOfThePaneHere()
+		// A shell the list knows is started for where the new pane
+		// opens, not copied with wherever the old one was started: a
+		// WSL shell carries a --cd of its own.
+		if sh, ok := a.shellPick.running(argv); ok {
+			argv = sh.Command(dir)
+		}
 		return a.openPaneWith(func() (*term.Terminal, error) {
 			return a.localTerminalIn(argv, dir)
 		})

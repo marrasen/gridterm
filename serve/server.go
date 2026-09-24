@@ -101,6 +101,12 @@ type Config struct {
 	// a client that asks is told so.
 	Attach Attacher
 
+	// StartAgain starts again the program of something this window has
+	// open whose program has ended, in the pane it ended in, for a
+	// client that was working in it. A nil one refuses. It is called
+	// from a goroutine of the server's.
+	StartAgain func(Attached) error
+
 	// Files gives a client the files of the machine this window is on.
 	// A nil one refuses the channel by name.
 	Files Filer
@@ -381,7 +387,7 @@ func (s *Server) handshake(nc net.Conn) {
 		s.cfg.OnJoin(c)
 	}
 
-	go ssh.DiscardRequests(reqs)
+	go s.answerRequests(reqs)
 	// live ends when the connection has finished, and served closes once
 	// every session on it has been hung up on.
 	live, finished := context.WithCancel(context.Background())
@@ -501,5 +507,30 @@ func (s *Server) isClosed() bool {
 func (s *Server) onError(err error) {
 	if s.cfg.OnError != nil {
 		s.cfg.OnError(err)
+	}
+}
+
+// answerRequests answers what a client asks of the connection as a
+// whole, which is starting something again. Anything else is refused.
+func (s *Server) answerRequests(reqs <-chan *ssh.Request) {
+	for req := range reqs {
+		if req.Type != reqStartAgain || s.cfg.StartAgain == nil {
+			if req.WantReply {
+				_ = req.Reply(false, nil)
+			}
+			continue
+		}
+		var want opened
+		if err := ssh.Unmarshal(req.Payload, &want); err != nil {
+			_ = req.Reply(false, []byte("that request could not be read"))
+			continue
+		}
+		if err := s.cfg.StartAgain(Attached(want)); err != nil {
+			// The reason goes back with the no, so the client can tell
+			// a refusal from a window that does not know how.
+			_ = req.Reply(false, []byte(err.Error()))
+			continue
+		}
+		_ = req.Reply(true, nil)
 	}
 }

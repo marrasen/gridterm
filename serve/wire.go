@@ -35,6 +35,17 @@ const (
 	// program's own bytes, so a client drawing a pane for it can tell
 	// that pane from the row the served window publishes for it.
 	reqOpened = "opened@gridterm"
+
+	// reqStartAgain asks the served window to start again the program of
+	// something it has open whose program has ended, in the same pane.
+	// Its payload is opened, naming it the way Attach does.
+	//
+	// A request on the connection rather than a field of openSession,
+	// which is positional and would break every session between two
+	// builds that disagreed about it. A window of an older build throws
+	// an unknown request away with a bare no, which a client takes as
+	// "cannot" and does something else.
+	reqStartAgain = "start-again@gridterm"
 )
 
 // opened names what the served window opened, in the same three parts a

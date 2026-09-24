@@ -41,6 +41,38 @@ func (a *app) attachTo(want serve.Attached, cols, rows int) (session.Session, er
 	}
 }
 
+// startAgainFor starts again, in its own pane, the program of something
+// this window has open whose program has ended, for a client that was
+// working in it and asked. Called on a goroutine of the server's.
+//
+// The same pane rather than a new one: a client reconnecting to a shell
+// that ended would otherwise leave a finished pane here every time.
+func (a *app) startAgainFor(want serve.Attached) error {
+	back := make(chan error, 1)
+	a.pump.post(func() {
+		e, err := a.entryAsked(want)
+		if err != nil {
+			back <- err
+			return
+		}
+		pane := a.paneFor(e)
+		switch {
+		case pane == nil:
+			back <- errors.New("that has no program to start again")
+		case !a.ended[pane]:
+			back <- errors.New("it is still running")
+		default:
+			back <- a.startAgain(pane)
+		}
+	})
+	select {
+	case err := <-back:
+		return err
+	case <-a.ctx.Done():
+		return errors.New("this window is closing")
+	}
+}
+
 // watchPane finds the pane a client asked for and starts watching it.
 //
 // On the goroutine that draws, which is the only one that may look at

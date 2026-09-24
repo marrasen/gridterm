@@ -241,3 +241,47 @@ func TestASplitFromWSLKeepsItsPlaceBothWays(t *testing.T) {
 		t.Errorf("WSL is started as %q, want it sent back to /mnt/c/Workspace", got)
 	}
 }
+
+// A WSL pane opened beside another -- started with a --cd of its own --
+// is still a WSL pane: a split on cmd from it starts in the Windows path
+// of where it is now, and another terminal here starts WSL there too,
+// not where the pane itself was started.
+func TestAWSLPaneStartedSomewhereIsStillWSL(t *testing.T) {
+	a := newTestApp(t, 160, 40)
+	withPanel(t, a)
+	withDialogs(t, a)
+	a.commands()
+	first := wslPaneAt(t, a, "/home/marcus")
+	wsl, _ := shells.Lookup(testShells(), "wsl:Ubuntu")
+	if err := a.splitOnShell(ui.Columns, first, wsl); err != nil {
+		t.Fatalf("split on WSL: %v", err)
+	}
+	second := newestPane(t, a)
+	a.shell(a.shellCount() - 1).out <- []byte("\x1b]7;file:///home/marcus/proj\x07")
+	waitFor(t, a, "the second pane to say where it is", func() bool {
+		at, _ := second.Dir()
+		return at == "/home/marcus/proj"
+	})
+
+	cmd, _ := shells.Lookup(testShells(), "cmd")
+	if err := a.splitOnShell(ui.Rows, second, cmd); err != nil {
+		t.Fatalf("split on cmd: %v", err)
+	}
+	a.shellsMu.Lock()
+	dir := a.dirs[len(a.dirs)-1]
+	a.shellsMu.Unlock()
+	if want := `\\wsl.localhost\Ubuntu\home\marcus\proj`; dir != want {
+		t.Errorf("cmd beside the second pane starts in %q, want %q", dir, want)
+	}
+
+	a.focus(second)
+	if err := a.openTerminalHere(); err != nil {
+		t.Fatalf("another terminal here: %v", err)
+	}
+	a.shellsMu.Lock()
+	argv := strings.Join(a.argvs[len(a.argvs)-1], " ")
+	a.shellsMu.Unlock()
+	if !strings.HasSuffix(argv, "--cd /home/marcus/proj") {
+		t.Errorf("another terminal here runs %q, want it started where the pane is now", argv)
+	}
+}

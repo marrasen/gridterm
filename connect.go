@@ -129,7 +129,7 @@ func (a *app) openRoute(name string, route []step, open opening, at *spot) {
 		// for it is usually what the user wants, and refusing left them
 		// with a machine they could not reach and no way to say so.
 		if d := a.about(s.name).dialling; d != nil {
-			a.askAboutTheOneOnItsWay(d, s.name, func() { a.openRoute(name, route, open, at) })
+			a.askAboutTheOneOnItsWay(d, s.name, func(bool) { a.openRoute(name, route, open, at) })
 			return
 		}
 	}

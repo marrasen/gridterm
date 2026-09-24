@@ -477,6 +477,9 @@ func (a *app) startServing(port, where string) error {
 		// What is already running here, so a window taken over shows
 		// the shell that was left running rather than only new ones.
 		Attach: a.attachTo,
+		// A program here that ended, started again in its own pane for
+		// a client reconnecting to it.
+		StartAgain: a.startAgainFor,
 		// A shell on this machine, sized for the pane the other window
 		// will draw it in. The same shell a pane here starts, without a
 		// pane: this is the machine being worked on, not the one doing

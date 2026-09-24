@@ -1856,3 +1856,33 @@ func TestWaitingForAConnectionToAWindowSaysNothing(t *testing.T) {
 		t.Errorf("waiting said %q: %s", n.Title, n.Message())
 	}
 }
+
+// Waiting for a connection to a window that then fails does not start a
+// fresh one: waiting is not asking for another try, and on a window that
+// never answers it would ask again and again.
+func TestWaitingForAConnectionToAWindowThatWentDialsNothing(t *testing.T) {
+	client := newTestApp(t, 90, 30)
+	withDialogs(t, client)
+	withPanel(t, client)
+	withMenubar(t, client)
+	keyFile, _ := aKeyFile(t)
+	deafHost, deafPort := sshtest.Deaf(t)
+	addr := net.JoinHostPort(deafHost, strconv.Itoa(deafPort))
+	saveWindowFromTheDialog(t, client, "statio", addr, keyFile)
+
+	client.openRoute("statio", nil, opening{only: true}, nil)
+	first := client.about("statio").dialling
+	client.openRoute("statio", nil, opening{only: true}, nil)
+	f := awaitModal(t, client, "the Already connecting to statio dialog",
+		byTitle[*ui.Form](dlgAlreadyConnecting+"statio"))
+	// The attempt goes before the answer does.
+	client.machines.giveUp(first)
+	pressButton(t, client, f, btnWait)
+	for range 5 {
+		client.pump.run()
+	}
+
+	if d := client.about("statio").dialling; d != nil {
+		t.Error("waiting for an attempt that had gone started another")
+	}
+}

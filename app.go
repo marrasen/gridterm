@@ -278,6 +278,14 @@ type app struct {
 	fsHeld map[vfs.FS]int
 	fsGone map[vfs.FS]bool
 
+	// renamed is what each machine the user has renamed was called
+	// before, mapped to what it is called now.
+	//
+	// File work keeps the name its machine had when it started, and
+	// finished work sits on the sidebar to be done again. This is how
+	// that work finds the machine after a rename.
+	renamed map[string]string
+
 	// paneRows are the rows that stand for a pane of this window, worked
 	// out once a frame.
 	paneRows map[*conns.Entry]*term.Terminal

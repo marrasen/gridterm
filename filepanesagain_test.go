@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/internal/sshtest"
@@ -403,6 +404,7 @@ func TestPressingRepeatTwiceWhileReconnectingStartsOneCopy(t *testing.T) {
 	if err := os.Remove(filepath.Join(into, "one.txt")); err != nil {
 		t.Fatalf("clear what the first copy made: %v", err)
 	}
+	rows := copyRows(a)
 
 	// Two presses before the window has had a frame to answer the
 	// first, which is what a machine being opened again leaves room for.
@@ -414,10 +416,79 @@ func TestPressingRepeatTwiceWhileReconnectingStartsOneCopy(t *testing.T) {
 		return err == nil
 	})
 	settleAndClearNotices(t, a)
-	if got := len(a.jobs); got != 0 {
-		t.Errorf("%d copies are still going, want the one press to have started one", got)
-	}
 	if up := a.root.Modal(); up != nil {
 		t.Errorf("a second copy asked about the file the first wrote: %T", up)
+	}
+	if got := copyRows(a) - rows; got != 1 {
+		t.Errorf("the two presses put %d copies on the sidebar, want the one", got)
+	}
+}
+
+// copyRows is how many copies the sidebar is showing, finished or not.
+func copyRows(a *testApp) int {
+	n := 0
+	for _, group := range a.registry.Groups(time.Now()) {
+		for _, row := range group.Rows {
+			if row.Entry != nil && row.Entry.Kind == conns.Copy {
+				n++
+			}
+		}
+	}
+	return n
+}
+
+// A name given to another machine since the rename stands for that
+// machine, so work that remembers the name is left pointing at it.
+//
+// The rename trail says what a machine used to be called. It must not
+// outlive the name: a user who renames one server and saves another
+// under the name it gave up has said which machine that name means.
+func TestARepeatGoesToTheMachineThatHasTheNameNow(t *testing.T) {
+	first, second := sshtest.New(t), sshtest.New(t)
+	a := newTestApp(t, 100, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pinServers(t, a, first, second)
+	saveHost(t, a, "one", first, "")
+	if err := a.connectSaved("one"); err != nil {
+		t.Fatalf("connectSaved: %v", err)
+	}
+	waitFor(t, a, "the machine to answer", func() bool {
+		return a.machines.named("one") != nil
+	})
+	there := openFilesFromThePlus(t, a, "one")
+	here := openFilesFromThePlus(t, a, conns.Local)
+	if there == nil || here == nil {
+		t.Fatal("no file panes opened")
+	}
+	from, into := t.TempDir(), t.TempDir()
+	putFile(t, from, "one.txt", "the body")
+	openAt(t, a, there, filepath.ToSlash(from))
+	openAt(t, a, here, into)
+	fromEnd, toEnd := a.endOf(there), a.endOf(here)
+	op := jobs.Op{
+		Kind: jobs.Copy, At: filepath.ToSlash(from), Into: into,
+		Names: []string{"one.txt"},
+	}
+
+	// The machine is renamed, and the name it gave up is saved for
+	// another machine.
+	renameSaved(t, a, "one", "two")
+	saveHost(t, a, "one", second, "")
+
+	a.repeatSavedCopy(op, fromEnd, toEnd)
+	waitFor(t, a, "the copy to happen", func() bool {
+		a.refreshJobs()
+		_, err := os.Stat(filepath.Join(into, "one.txt"))
+		return err == nil
+	})
+	// It went to the machine the name stands for now.
+	m := a.machines.named("one")
+	if m == nil {
+		t.Fatalf("the window holds %v, want the machine called one", a.machines.names())
+	}
+	if _, port := second.Host(); m.at.cfg.Port != port {
+		t.Errorf("one is connected to port %d, want the machine saved under that name (%d)",
+			m.at.cfg.Port, port)
 	}
 }

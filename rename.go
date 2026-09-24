@@ -71,6 +71,7 @@ func (a *app) renamedMachine(was string, to remote.Host) {
 	case moved.connection:
 		a.renamedFiles(was, to.Name)
 		a.renamedTheMachine(was, to.Name)
+		a.renamedWork(was, to.Name)
 		// The file sessions left parked on it need nothing: they are
 		// counted against the connection, which the rename did not touch.
 		// The connection's own row, and the rows of the panes and the
@@ -96,6 +97,29 @@ func (a *app) renamedFiles(was, now string) {
 	for _, f := range a.filesystemsOn(was) {
 		f.fs.Renamed(f.named(now))
 	}
+}
+
+// renamedWork records what a machine was called, for file work that has
+// already been done on it.
+//
+// A finished copy sits on the sidebar with the ends it ran between, and
+// those keep the name the machine had. Doing it again has only that
+// name to go on, so what the user renamed is kept here rather than
+// worked out later from an address: two machines reached through
+// different jump hosts can have one address between them.
+func (a *app) renamedWork(was, now string) {
+	if a.renamed == nil {
+		a.renamed = map[string]string{}
+	}
+	// A machine renamed twice: what the work remembers maps to the name
+	// it has now, not to the one in between. The same walk a dial still
+	// on its way does.
+	for started, then := range a.renamed {
+		if then == was {
+			a.renamed[started] = now
+		}
+	}
+	a.renamed[was] = now
 }
 
 // rekeyWindows follows a change to the server list through the windows

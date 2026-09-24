@@ -534,33 +534,30 @@ func (a *app) openEndAgain(end jobEnd, then func(vfs.FS, error)) {
 // in to the machine a second time and puts a second group on the
 // sidebar beside the one already there -- two names for one machine,
 // which is the thing the window holds one connection per machine to
-// avoid. Matched by where the machine is rather than by what it is
-// called, which is the only thing a rename leaves alone.
+// avoid.
+//
+// Followed through what the user renamed, not matched by address. Two
+// machines reached through different jump hosts can have one address
+// between them, and a repeat that picked the wrong one of those would
+// write the user's files onto a machine they never named.
 func (a *app) endNow(end jobEnd) jobEnd {
-	if end.far.window != nil || end.at.cfg.Host == "" {
+	if end.far.window != nil {
+		return end
+	}
+	now, renamed := a.renamed[end.host]
+	if !renamed || now == end.host {
+		return end
+	}
+	// The old name is something else's now: a machine saved under it
+	// since, or one connected under it. It stands for that, so the work
+	// is left pointing at it and says plainly what it finds there.
+	if _, saved := a.book.Lookup(end.host); saved {
 		return end
 	}
 	if a.about(end.host).machine != nil {
-		// Something is connected under that name. Whether it is this
-		// machine is not for a repeat to second-guess: the name is what
-		// the user sees on the row.
 		return end
 	}
-	named := func(now string) jobEnd {
-		end.host, end.at.name = now, now
-		return end
-	}
-	if now := a.machines.sameMachineAs(end.at); now != "" {
-		return named(now)
-	}
-	// Nothing connected to it. The server list is asked next, so a
-	// machine that is merely disconnected is dialled under the name the
-	// list gives it rather than the one the work remembers.
-	for _, h := range a.book.Hosts() {
-		if h.Config().SameMachine(end.at.cfg) {
-			return named(h.Name)
-		}
-	}
+	end.host, end.at.name = now, now
 	return end
 }
 

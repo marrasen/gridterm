@@ -137,7 +137,12 @@ at all: nothing connected, no route on any list, and no step kept.
 3. **A repeat follows a rename.** Work keeps the name its machine had
    when it started. Opening it again under that name would log in to
    the machine a second time and put a second group on the sidebar, so
-   the machine is found by where it is instead.
+   the window keeps a trail of what the user renamed and follows it.
+   Not matched by address: two machines reached through different jump
+   hosts can have one address between them, and a repeat that picked
+   the wrong one would write the user's files onto a machine they never
+   named. A name given to another machine since stands for that one,
+   and the trail stops there.
 4. **A repeat connects.** Pressing "Do it again" on work whose machine
    has gone opens that machine rather than refusing.
 

@@ -123,6 +123,30 @@ func (l *Local) Open(path string) (io.ReadCloser, error) {
 	return f, nil
 }
 
+// Append opens a file that is there, to write after what is in it.
+func (l *Local) Append(path string) (io.WriteCloser, error) {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0)
+	if err != nil {
+		return nil, wrap(l, "open", path, err)
+	}
+	return f, nil
+}
+
+// CreateNew makes a file that is not there, and fails when there is
+// one.
+func (l *Local) CreateNew(path string, mode fs.FileMode) (io.WriteCloser, error) {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode.Perm())
+	if err != nil {
+		return nil, wrap(l, "create", path, err)
+	}
+	// Set rather than left to the umask, the way Create sets it.
+	if err := os.Chmod(path, mode.Perm()); err != nil {
+		return nil, wrap(l, "set the permissions on", path,
+			errors.Join(err, f.Close(), os.Remove(path)))
+	}
+	return f, nil
+}
+
 // Create makes a file, replacing one that is there.
 //
 // The mode is set rather than left to the umask, so a file made here and

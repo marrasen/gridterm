@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"io/fs"
+	"os"
 	"sync"
 
 	"github.com/pkg/sftp"
@@ -182,6 +183,43 @@ func (s *SFTP) Create(path string, mode fs.FileMode) (io.WriteCloser, error) {
 		// The file is half made: it has been emptied and nothing has
 		// been written to it. Taking it away is better than leaving one
 		// that nobody asked for with a mode nobody chose.
+		return nil, wrap(s, "set the permissions on", path,
+			errors.Join(err, f.Close(), s.client.Remove(path)))
+	}
+	return f, nil
+}
+
+// Append opens a file that is there, to write after what is in it.
+//
+// OpenSSH writes such a file at its end whatever offset it is sent, and
+// other servers write where they are told, so the end is also where it
+// is told. Its length is asked of the path before the file is opened:
+// asked of a handle opened only to write, Windows' OpenSSH may refuse.
+func (s *SFTP) Append(path string) (io.WriteCloser, error) {
+	info, err := s.client.Stat(path)
+	if err != nil {
+		return nil, wrap(s, "read", path, err)
+	}
+	f, err := s.client.OpenFile(path, os.O_WRONLY|os.O_APPEND)
+	if err != nil {
+		return nil, wrap(s, "open", path, err)
+	}
+	if _, err := f.Seek(info.Size(), io.SeekStart); err != nil {
+		return nil, wrap(s, "open", path, errors.Join(err, f.Close()))
+	}
+	return f, nil
+}
+
+// CreateNew makes a file that is not there, and fails when there is
+// one.
+func (s *SFTP) CreateNew(path string, mode fs.FileMode) (io.WriteCloser, error) {
+	f, err := s.client.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL)
+	if err != nil {
+		return nil, wrap(s, "create", path, err)
+	}
+	if err := s.client.Chmod(path, mode.Perm()); err != nil {
+		// Made here a moment ago and empty, so taking it away loses
+		// nothing.
 		return nil, wrap(s, "set the permissions on", path,
 			errors.Join(err, f.Close(), s.client.Remove(path)))
 	}

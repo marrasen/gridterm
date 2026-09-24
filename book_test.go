@@ -99,8 +99,10 @@ func chooseIn(t *testing.T, a *testApp, f *ui.Form, label, answer string) {
 	}
 	// Each as a keyboard sends it: the key, then the character.
 	for _, r := range answer {
-		key := input.KeySpace
-		if l := unicode.ToLower(r); l >= 'a' && l <= 'z' {
+		key := input.KeyNone
+		if r == ' ' {
+			key = input.KeySpace
+		} else if l := unicode.ToLower(r); l >= 'a' && l <= 'z' {
 			key = input.KeyA + input.Key(l-'a')
 		}
 		for _, ev := range []input.Event{{Kind: input.KeyPress, Key: key}, input1(r)} {

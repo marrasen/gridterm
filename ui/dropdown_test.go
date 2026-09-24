@@ -24,8 +24,12 @@ func servers() *Field {
 // keystroke is one key as a keyboard delivers it: the key going down,
 // and then the character it types, tied together by one Source.
 func keystroke(r rune) []input.Event {
-	key := input.KeySpace
-	if r >= 'a' && r <= 'z' {
+	// A key with no name of its own, for anything but a letter or space:
+	// it arrives as the character alone, as far as a field is concerned.
+	key := input.KeyNone
+	if r == ' ' {
+		key = input.KeySpace
+	} else if r >= 'a' && r <= 'z' {
 		key = input.KeyA + input.Key(r-'a')
 	} else if r >= 'A' && r <= 'Z' {
 		key = input.KeyA + input.Key(r-'A')
@@ -175,6 +179,27 @@ func TestASpaceInANameIsTypedNotPressed(t *testing.T) {
 	strokeInto(t, f, " ")
 	if !f.IsOpen() {
 		t.Error("a space after a pause did not open the list")
+	}
+}
+
+// Space opens the list after a letter that is the start of nothing, and
+// with Shift still down from a capital.
+func TestSpaceOpensAfterALetterThatMatchedNothing(t *testing.T) {
+	f := servers()
+	strokeInto(t, f, "x")
+	strokeInto(t, f, " ")
+	if !f.IsOpen() {
+		t.Error("space after a letter nothing starts with did not open the list")
+	}
+	f.closeList()
+	f.HandleKey(press(input.KeySpace, input.ModShift))
+	if !f.IsOpen() {
+		t.Error("Shift+Space did not open the list")
+	}
+	tick := NewTick(false)
+	tick.HandleKey(press(input.KeySpace, input.ModShift))
+	if !tick.On() {
+		t.Error("Shift+Space did not turn a tick box over")
 	}
 }
 

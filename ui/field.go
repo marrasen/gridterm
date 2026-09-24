@@ -273,7 +273,8 @@ func (f *Field) HandleKey(ev input.Event) (bool, error) {
 			return false, nil
 		}
 		switch {
-		case ev.Key == input.KeySpace && ev.Mods == 0,
+		// Shift as well, because it is still down after a capital.
+		case ev.Key == input.KeySpace && (ev.Mods == 0 || ev.Mods == input.ModShift),
 			ev.Mods == input.ModCtrl && (ev.Key == input.KeyDown || ev.Key == input.KeyUp):
 			f.Toggle()
 			return true, nil

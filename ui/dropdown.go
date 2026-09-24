@@ -150,10 +150,14 @@ func (f *Field) typeAhead(r rune) {
 		prefix = strings.ToLower(string(r))
 		at = find(prefix)
 	}
-	f.typed = prefix
 	if at < 0 {
+		// Not the start of any answer, so not a name being typed: a
+		// space after it opens the list rather than waiting on a name
+		// that is going nowhere.
+		f.typed = ""
 		return
 	}
+	f.typed = prefix
 	if f.open {
 		f.lit = at
 		return
@@ -203,7 +207,8 @@ func (f *Field) dropKey(ev input.Event) bool {
 		return f.open
 	}
 	fresh := ev.Kind == input.KeyPress
-	if ev.Key == input.KeySpace && ev.Mods == 0 {
+	// Shift as well, because it is still down after a capital.
+	if ev.Key == input.KeySpace && (ev.Mods == 0 || ev.Mods == input.ModShift) {
 		switch {
 		case f.naming():
 			// Its character carries on the name.

@@ -11,6 +11,7 @@ import (
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/session"
 	"github.com/marrasen/gridterm/ui/term"
+	"github.com/marrasen/gridterm/vfs"
 )
 
 // opening is what a route is opened for: a shell to type into, one
@@ -34,6 +35,13 @@ type opening struct {
 	// pane the user answered the question on, and it keeps everything
 	// the last program printed.
 	into *term.Terminal
+
+	// only says to make the connection and open nothing on it.
+	//
+	// It is how a file pane whose machine dropped asks for it back: the
+	// pane is on screen already and wants the connection, not a second
+	// pane beside it.
+	only bool
 }
 
 // kind says what sort of connection an opening is, for the row the
@@ -398,6 +406,16 @@ func (a *app) becamePane(name string, open opening, pane *term.Terminal, log *co
 	// the way shares this account, and a line on each of their rows would
 	// open an account about somewhere else.
 	m.log = log
+	if open.only {
+		// Nothing to open: what asked for this is already on screen.
+		// The pane that watched the dial goes the way it does for
+		// files, because nothing rides in it either.
+		log.Connected()
+		if err := a.closePane(pane); err != nil {
+			a.reportError("Could not close the pane", err)
+		}
+		return
+	}
 	if open.files {
 		a.becomeFilesPane(name, pane, log, open.dir)
 		return
@@ -480,6 +498,10 @@ func (a *app) openFor(open opening, sess session.Session, host, label string,
 // startOn opens what was asked for on a machine that is already
 // connected to.
 func (a *app) startOn(name string, open opening, at *spot) error {
+	if open.only {
+		// Already connected, which is the whole of what was asked for.
+		return nil
+	}
 	if open.files {
 		// at is not used: a file pane goes in the file manager itself.
 		return a.browseOn(name, open.dir)
@@ -581,6 +603,55 @@ func (a *app) connectAndBrowse(name, at string) error {
 	}
 	a.openRoute(name, route, opening{files: true, dir: at}, nil)
 	return nil
+}
+
+// filesystemAgain hands back a filesystem on a machine, connecting to
+// it first when nothing is.
+//
+// On the goroutine that draws. then is called when the connection is
+// made or has failed, and for one already on its way that means when
+// that one settles rather than starting a second: four panes on one
+// machine that dropped make one connection between them.
+func (a *app) filesystemAgain(host string, at step, then func(vfs.FS, error)) {
+	answer := func() {
+		f, err := a.machineFilesWithArchives(host)
+		then(f, err)
+	}
+	if a.about(host).machine != nil {
+		answer()
+		return
+	}
+	if d := a.machines.connecting(host); d != nil {
+		if d.settled {
+			answer()
+			return
+		}
+		d.waiting = append(d.waiting, answer)
+		return
+	}
+	route, err := a.route(host)
+	if err != nil {
+		if a.about(host).saved || at.cfg.Host == "" {
+			then(nil, err)
+			return
+		}
+		// No route on any list, and one is still owed: a machine
+		// connected to from a typed target is on no list and was
+		// reached all the same. The step it was reached by is what
+		// this filesystem kept, the way a pane keeps the one its
+		// shell was started on.
+		route = []step{at}
+	}
+	// Said on the bottom row, because a folder click that waits ten
+	// seconds with nothing on screen reads as a window that has
+	// stopped.
+	a.say("Reconnecting to " + groupName(host) + "…")
+	a.openRoute(host, route, opening{only: true}, nil)
+	if d := a.machines.connecting(host); d != nil && !d.settled {
+		d.waiting = append(d.waiting, answer)
+		return
+	}
+	answer()
 }
 
 // labelFor names a connection by what it is running.

@@ -356,6 +356,11 @@ type app struct {
 	secrets   *secrets.Vault
 	secretsAt string
 
+	// reopening are the filesystems that hold a machine rather than a
+	// connection to it, so a machine that drops can tell them and they
+	// can open it again when the user next asks for something.
+	reopening []*reopening
+
 	// secretsPane is the pane the vault is worked in, and secretsRow
 	// its line on the sidebar. Both nil while none is open. There is at
 	// most one: a second would show the same vault twice.

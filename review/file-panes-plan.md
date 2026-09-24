@@ -68,6 +68,17 @@ up, which is what opening a machine has always looked like.
 **Reading.** This is the whole of the reported bug: the panes stay, and
 the dialog that complained about closing them is gone with the closing.
 
+**Done.** The
+pane stays, its filesystem is told, and a read afterwards opens the
+machine again.
+
+**Reading, found while building it.** A filesystem whose pane has been
+closed must open nothing more. A finished copy holds the filesystems it
+ran on, and one of those outlives the pane it came from -- so a job
+pane drawn after its machine went reached through that copy and opened
+a connection nobody had asked for, which put a row on the sidebar out
+of nothing. That is also what keeps step 3 out of step 1.
+
 ## Step 2 -- everything else the pane does
 
 Stat, open a file, make a directory, rename, remove, chmod. They go
@@ -84,12 +95,28 @@ different thing and is not this: it has half-written a file, and what
 to do about that is the question `jobpane` already asks. This is only
 about running it again afterwards.
 
+## What Marcus settled, 24 September
+
+1. **The bottom row says it is reconnecting.** A folder click that takes
+   ten seconds with nothing on screen reads as a window that has
+   stopped. The line goes up when the connection is asked for and is
+   replaced by whatever happens next, the way `Checking for updates…`
+   does.
+
 ## Still to settle
 
-1. **Does a pane say it is reconnecting?** A folder click that takes
-   ten seconds with nothing on screen reads as a window that has
-   stopped. The bottom row is where this window says that sort of
-   thing.
-2. **How many panes reconnect at once?** Four panes on one dropped
+1. **How many panes reconnect at once?** Four panes on one dropped
    machine, all clicked, should make one connection and not four. The
    dial queue already answers this if they all go through it.
+
+## How the wrapper knows its connection has gone
+
+Not by reading the error. Telling "the connection went" from "there is
+no such file" means classifying whatever sftp, ssh and the net packages
+happen to say, and getting that wrong either reconnects over a real
+answer or leaves a dead session in place.
+
+`machineDied` already walks the panes on the machine, to close them.
+It tells them instead, and a wrapper that has been told opens itself
+again on the next call. That is exact, and it is the same walk the bug
+was in.

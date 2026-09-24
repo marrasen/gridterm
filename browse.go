@@ -259,15 +259,22 @@ func (a *app) oneFolderOn(host string) string {
 // filesystem opens a filesystem for a machine: this one, or one reached
 // over a connection that is already open.
 func (a *app) filesystem(host string) (vfs.FS, error) {
-	f, err := a.machineFiles(host)
+	f, err := a.machineFilesWithArchives(host)
 	if err != nil {
 		return nil, err
 	}
-	// With the archives on it opened as directories. One wrapper per
-	// pane rather than one for the window: it holds the archive it is
-	// reading, and two panes in two archives would take turns throwing
-	// each other's out.
-	return vfs.WithArchives(f), nil
+	if a.about(host).machine == nil {
+		// Local files have no connection to lose, and a window taken
+		// over is read over a connection this window did not make.
+		return f, nil
+	}
+	// Outermost, so that what the browser holds and asks about is the
+	// wrapper: a pane's filesystem is looked up by identity in one
+	// place and type-asserted for a rename in another, and both have to
+	// find this rather than the session it happens to hold now.
+	r := newReopening(a, host, a.about(host).machine.at, f)
+	a.keepReopening(r)
+	return r, nil
 }
 
 // machineFiles opens a filesystem for a machine, as the machine has
@@ -289,6 +296,20 @@ func (a *app) machineFiles(host string) (vfs.FS, error) {
 	// The connection is what says which machine this is: two
 	// panes on one machine open two sessions on it.
 	return vfs.NewSFTP(on.name, on.machine.conn, f.Client(), f.Close), nil
+}
+
+// machineFilesWithArchives is a machine's filesystem with the archives
+// on it opened as directories.
+//
+// One wrapper per filesystem rather than one for the window: it holds
+// the archive it is reading, and two panes in two archives would take
+// turns throwing each other's out.
+func (a *app) machineFilesWithArchives(host string) (vfs.FS, error) {
+	f, err := a.machineFiles(host)
+	if err != nil {
+		return nil, err
+	}
+	return vfs.WithArchives(f), nil
 }
 
 // newPane builds one pane of the file manager.
@@ -1127,6 +1148,7 @@ func (a *app) filesPaneGone(p *files.Pane) error {
 // close waits for the last reader to go and for the last read it has out
 // to come back.
 func (a *app) browserLetGoFS(f vfs.FS) error {
+	a.forgetReopening(f)
 	if f == nil {
 		return nil
 	}

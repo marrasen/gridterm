@@ -420,11 +420,15 @@ func (a *app) machineDied(m *machine, why error) {
 	// transport, so the window stops counting them against it.
 	a.serving.relaysEnded(m.conn)
 	// A pane of the file manager on this machine is reading through a
-	// session that has gone. It is taken away here, because nothing else
-	// would: a pane does not end by itself the way a shell does.
-	if err := a.graceLogged(a.closeFilesOn(m.at.name)); err != nil {
-		a.reportError("Trouble closing the file panes on "+m.at.name, err)
-	}
+	// session that has gone. It used to be closed here, and the closing
+	// asked a dead channel to close itself, which is what put "close
+	// SFTP: EOF" in front of whoever had just lost a connection -- the
+	// window taking the user's panes away and then complaining about
+	// how it went.
+	//
+	// They are told instead. The next thing asked of one opens the
+	// machine again.
+	a.lostTheMachine(m.at.name)
 	// The tunnels went with it, but a local forward listens on a socket
 	// of this machine, which the far end dropping does nothing to.
 	if err := a.tunnelsDiedOn(m); err != nil {

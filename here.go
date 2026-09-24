@@ -10,6 +10,7 @@ import (
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/settings"
+	"github.com/marrasen/gridterm/shells"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/files"
 	"github.com/marrasen/gridterm/ui/term"
@@ -158,6 +159,14 @@ func (a *app) dirOfThePaneHere() string {
 	dir, host := t.Dir()
 	if dir == "" || !isThisMachine(host) {
 		return ""
+	}
+	// A pane in WSL says a path inside the distribution, and whatever
+	// opens next starts as a Windows process in a Windows directory:
+	// cmd.exe given /home/marcus is refused with "The directory name is
+	// invalid". The path Windows reaches it by instead, which a shell in
+	// WSL is handed back as its own path.
+	if sh, ok := a.shellPick.running(a.localArgv(t)); ok && sh.Distro != "" {
+		return shells.WindowsPath(sh.Distro, dir)
 	}
 	return dir
 }

@@ -231,11 +231,25 @@ func (s Shell) Command(dir string) []string {
 
 	// WSL has its own idea of the working directory, and only a path it can reach will do.
 	if s.Distro != "" && dir != "" {
-		if unix := UnixPath(dir); unix != "" {
+		if unix := s.pathInside(dir); unix != "" {
 			argv = append(argv, "--cd", unix)
 		}
 	}
 	return argv
+}
+
+// pathInside is a Windows path as this distribution reaches it: a drive
+// through its mount, and a path on the distribution's own share as the
+// path it is inside. Anything else gives "".
+func (s Shell) pathInside(win string) string {
+	if unix := UnixPath(win); unix != "" {
+		return unix
+	}
+	root := WSLRoot(s.Distro) + `\`
+	if len(win) >= len(root) && strings.EqualFold(win[:len(root)], root) {
+		return "/" + strings.ReplaceAll(win[len(root):], `\`, "/")
+	}
+	return ""
 }
 
 // WSLRoot is where Windows reaches a WSL distribution's files. Every Windows program can read a path

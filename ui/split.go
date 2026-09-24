@@ -524,8 +524,8 @@ func LeafAt(root Widget, area Rect, x, y int) (Widget, Rect, bool) {
 	return root, area, true
 }
 
-// focusingPress reports whether ev is a left press that moves the keys.
-// The widget it lands on must take such a press as nothing else. A
+// focusingPress moves the keys to the leaf a left press lands on, and
+// reports whether that leaf takes such a press as nothing else. A
 // container told true keeps the press and delivers nothing.
 //
 // Only the left button, because a middle press pastes and a right press
@@ -533,6 +533,13 @@ func LeafAt(root Widget, area Rect, x, y int) (Widget, Rect, bool) {
 //
 // The leaf under the pointer is asked, not the child the event would go
 // to: that child may be a subtree with the leaf somewhere inside it.
+//
+// The keys are pointed at that leaf whatever it answers. A leaf that
+// takes the press as well still has to be the one the keys land on: left
+// to the container, they go to its child, and a child holding several
+// leaves hands them to whichever it had last -- which a file browser
+// then tells why its read failed, for a click on the pane beside it.
+// Asked before the keys move, because gaining them can change the answer.
 func focusingPress(c Container, area Rect, ev input.MouseEvent) bool {
 	if ev.Kind != input.MousePress || ev.Button != input.MouseLeft {
 		return false
@@ -542,10 +549,11 @@ func focusingPress(c Container, area Rect, ev input.MouseEvent) bool {
 		return false
 	}
 	first, ok := leaf.(FocusesFirst)
-	if !ok || !first.FocusesFirst() {
+	if !ok {
 		return false
 	}
-	return pointFocus(c, leaf)
+	keep := first.FocusesFirst()
+	return pointFocus(c, leaf) && keep
 }
 
 // pointFocus points every container between c and target at the child

@@ -3015,3 +3015,34 @@ func TestReadsAnsweredOutOfOrderLeaveNoReadingLine(t *testing.T) {
 		t.Fatalf("the pane says it is reading after both answers:\n%s", got)
 	}
 }
+
+// A click on one pane of a browser without the keys hands them to that
+// pane, not to the one the browser had last. That one could not be
+// read, and handed the keys on the way it showed why, for a click that
+// was not on it.
+func TestAClickOnABrowserWithoutTheKeysGoesToThatPane(t *testing.T) {
+	b, _ := many(t, 2)
+	r := &ui.Root{}
+	r.SetWidget(ui.NewSplit(ui.Columns, &blank{}, b))
+	r.Layout(ui.Rect{Cols: 185, Rows: 12})
+	b.SetFocus(false)
+	last := b.panes[0]
+	shown := failing(last)
+	last.Reload()
+	if len(*shown) != 0 {
+		t.Fatalf("a pane without the keys showed %v", *shown)
+	}
+	area, _ := r.AreaOf(b)
+	start, _ := b.paneCell(1, area.Cols)
+
+	mouseTo(t, r, input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft,
+		Col: area.X + start + 1, Row: b.panes[1].head(),
+	})
+	if b.Here() != b.panes[1] {
+		t.Fatal("the keys are not in the pane that was clicked")
+	}
+	if len(*shown) != 0 {
+		t.Errorf("a click on the pane beside it showed %v", *shown)
+	}
+}

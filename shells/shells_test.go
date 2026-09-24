@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"runtime"
 	"slices"
+	"strings"
 	"testing"
 	"unicode/utf16"
 )
@@ -505,5 +506,25 @@ func TestFindAndNamedOnThisMachine(t *testing.T) {
 	}
 	if got, ok := Named("cmd"); !ok || got.ID != cmd.ID {
 		t.Errorf("Named(cmd) gave %+v, %v, want the id %q", got, ok, cmd.ID)
+	}
+}
+
+// A WSL shell is sent to a path on its own distribution's share as the
+// path it is inside, and to a drive through its mount.
+func TestAWSLShellIsSentWhereItCanGo(t *testing.T) {
+	sh := Shell{Path: "wsl.exe", Args: []string{"-d", "Ubuntu"}, Distro: "Ubuntu"}
+	for _, c := range []struct{ dir, cd string }{
+		{`\\wsl.localhost\Ubuntu\home\marcus`, "/home/marcus"},
+		{`\\WSL.LOCALHOST\ubuntu\etc`, "/etc"},
+		{`C:\Workspace`, "/mnt/c/Workspace"},
+		{`\\wsl.localhost\Debian\home`, ""},
+	} {
+		argv := strings.Join(sh.Command(c.dir), " ")
+		switch {
+		case c.cd == "" && strings.Contains(argv, "--cd"):
+			t.Errorf("%s: started as %q, want no --cd", c.dir, argv)
+		case c.cd != "" && !strings.HasSuffix(argv, "--cd "+c.cd):
+			t.Errorf("%s: started as %q, want --cd %s", c.dir, argv, c.cd)
+		}
 	}
 }

@@ -677,9 +677,11 @@ func TestAPaneThatCameBackCanEndAndAskAgain(t *testing.T) {
 	checkTree(t, a)
 }
 
-// A pane drawn from a window taken over asks nothing: its program is the
-// other window's, and this one has no way to start it again.
-func TestAPaneOnAWindowTakenOverAsksNothing(t *testing.T) {
+// A pane drawn from a shell on a window taken over asks whether to
+// reconnect when that shell goes, the way a shell here does. It used to
+// ask nothing, because the program is the other window's; this one asks
+// that window for another instead.
+func TestAPaneOnAWindowTakenOverAsksToReconnect(t *testing.T) {
 	host, client, addr, keyFile := aServingWindow(t)
 	pane := takeOverFromTheDialog(t, client, addr, keyFile)
 
@@ -698,8 +700,8 @@ func TestAPaneOnAWindowTakenOverAsksNothing(t *testing.T) {
 		return client.Ended(pane)
 	}, host)
 
-	if got := pane.Asking(); got != "" {
-		t.Errorf("the pane asks %q about a program this window does not own", got)
+	if got := pane.Asking(); !strings.Contains(got, "closed") {
+		t.Errorf("the pane asks %q, want it to say the connection closed", got)
 	}
 	if client.panes[pane] == nil {
 		t.Error("the pane went with the program over there")
@@ -707,15 +709,12 @@ func TestAPaneOnAWindowTakenOverAsksNothing(t *testing.T) {
 	if got := paneText(pane); !strings.Contains(got, "the program has finished") {
 		t.Errorf("the pane says nothing about the program finishing: %q", got)
 	}
-	// And the line names a way out, because this pane has no question to
-	// name one and the sidebar that would can be hidden.
-	//
-	// The line breaks wherever the pane is wide enough for, so they come
-	// out before the line is read: a row that filled has no padding, so
-	// taking them out joins the words back up.
-	read := strings.ReplaceAll(paneText(pane), "\n", "")
-	if !strings.Contains(read, "closes this pane") {
-		t.Errorf("the pane names no way out of it: %q", paneText(pane))
+	// And the question names both ways on: again, and out.
+	read := paneText(pane)
+	for _, want := range []string{"Reconnect", "Close"} {
+		if !strings.Contains(read, want) {
+			t.Errorf("the pane does not offer %s: %q", want, read)
+		}
 	}
 }
 

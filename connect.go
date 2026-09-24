@@ -36,6 +36,13 @@ type opening struct {
 	// the last program printed.
 	into *term.Terminal
 
+	// connect says the user asked to connect to the machine, and named
+	// nothing to open. On a machine logged in to, that is a shell, the
+	// way ssh does it. On a gridterm window it is the connection alone:
+	// what that window has open goes on the sidebar, and a terminal over
+	// there is something asked for on its own.
+	connect bool
+
 	// only says to make the connection and open nothing on it.
 	//
 	// It is how a file pane whose machine dropped asks for it back: the
@@ -83,6 +90,26 @@ func (a *app) openRoute(name string, route []step, open opening, at *spot) {
 				"%s is a gridterm window now, which is connected to rather than logged in to", name))
 			return
 		}
+		// What was asked for, on the window: the connection alone for a
+		// pane that wants its machine back, files for files, and a
+		// terminal only when a terminal is what was asked for.
+		if open.connect {
+			open = opening{only: true}
+		}
+		if open.only || open.files {
+			if held := a.windows.at(serveAddr(h.ServeAddr())); held != nil {
+				// Connected already: nothing to do for the connection
+				// alone, and files are opened on it straight away.
+				if open.files {
+					a.browseOnWindowOrSay(held.name, open.dir)
+				}
+				return
+			}
+			if err := a.takeOverFor(h.ServeAddr(), h.KeyFile(), at, open); err != nil {
+				a.reportError("Could not connect to "+name, err)
+			}
+			return
+		}
 		a.workOnWindowOrSay(h.ServeAddr(), h.KeyFile(), at)
 		return
 	}
@@ -102,7 +129,7 @@ func (a *app) openRoute(name string, route []step, open opening, at *spot) {
 		// for it is usually what the user wants, and refusing left them
 		// with a machine they could not reach and no way to say so.
 		if d := a.about(s.name).dialling; d != nil {
-			a.askAboutTheOneOnItsWay(d, s.name, func() { a.openRoute(name, route, open, at) })
+			a.askAboutTheOneOnItsWay(d, s.name, func(bool) { a.openRoute(name, route, open, at) })
 			return
 		}
 	}

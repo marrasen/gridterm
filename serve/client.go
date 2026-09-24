@@ -394,6 +394,29 @@ func (w *Window) Open(cols, rows int, named func(Attached)) (session.Session, er
 	return w.session(openSession{Cols: uint32(cols), Rows: uint32(rows)}, named)
 }
 
+// ErrCannotStartAgain is what StartAgain says when the window over there
+// does not know how: a build from before it could.
+var ErrCannotStartAgain = errors.New("serve: that window cannot start things again")
+
+// StartAgain asks the other window to start again, in the same pane, the
+// program of something it has open whose program has ended. Attach to it
+// afterwards to watch what it starts.
+func (w *Window) StartAgain(what Attached) error {
+	if w.isClosed() {
+		return errors.New("serve: that window has been let go of")
+	}
+	ok, reply, err := w.client.SendRequest(reqStartAgain, true, ssh.Marshal(opened(what)))
+	switch {
+	case err != nil:
+		return fmt.Errorf("serve: ask %s to start it again: %w", w.addr, err)
+	case ok:
+		return nil
+	case len(reply) == 0:
+		return ErrCannotStartAgain
+	}
+	return errors.New(Plain(string(reply)))
+}
+
 // open asks the other window for a session and wraps what comes back.
 func (w *Window) session(want openSession, named func(Attached)) (session.Session, error) {
 	if w.isClosed() {

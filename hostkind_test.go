@@ -192,31 +192,31 @@ func TestTheBookFoldsCaseAndTheWindowsMapDoesNot(t *testing.T) {
 	}
 }
 
-// A saved window taken over opens a terminal however its name is
-// capitalised, because the book folds case.
+// A saved window taken over is found however its name is capitalised,
+// because the book folds case.
 //
 // Typed into the address dialog, which is the one way in that carries
-// whatever capitals the user pressed.
+// whatever capitals the user pressed. Connecting to a window already
+// connected to opens nothing on it and dials nothing.
 func TestATerminalOnAWindowIgnoresCapitals(t *testing.T) {
 	client := aWindowTakenOverAs(t, "statio")
 	panes := len(client.panes)
 	dials := dialCounter(client)
 
 	connectByName(t, client, "STATIO")
+	for range 20 {
+		client.pump.run()
+		time.Sleep(time.Millisecond)
+	}
 
-	waitFor(t, client, "another pane on the window", func() bool {
-		return len(client.panes) > panes
-	})
+	if len(client.panes) != panes {
+		t.Errorf("connecting to it opened %d panes", len(client.panes)-panes)
+	}
 	if *dials != 0 {
 		t.Errorf("%d connections were prepared to dial; a window is taken over, not logged in to", *dials)
 	}
 	if n := client.windows.count(); n != 1 {
 		t.Errorf("it is holding %v, want the one window", client.windows.names())
-	}
-	// And the pane goes under the list's own spelling, so the sidebar
-	// keeps one heading for the window.
-	if got := client.panes[newestPane(t, client)].Host; got != "statio" {
-		t.Errorf("the new pane is filed under %q, want statio", got)
 	}
 
 	// The same again through openTerminalOn, which is the one place the
@@ -228,6 +228,11 @@ func TestATerminalOnAWindowIgnoresCapitals(t *testing.T) {
 	waitFor(t, client, "one more pane on the window", func() bool {
 		return len(client.panes) > panes
 	})
+	// And the pane goes under the list's own spelling, so the sidebar
+	// keeps one heading for the window.
+	if got := client.panes[newestPane(t, client)].Host; got != "statio" {
+		t.Errorf("the new pane is filed under %q, want statio", got)
+	}
 	if got := client.panes[newestPane(t, client)].Host; got != "statio" {
 		t.Errorf("that pane is filed under %q, want statio", got)
 	}
@@ -685,7 +690,8 @@ func waysIn() []wayIn {
 // nothing on the window, which is what connecting means. Every other way
 // asks for a terminal on it, and gets one.
 func connectsOnly(way string) bool {
-	return way == "take over a window, by address" || way == "the Servers menu"
+	return way == "take over a window, by address" || way == "the Servers menu" ||
+		way == "connect to a server, by address"
 }
 
 func TestEveryWayInTakesOverASavedWindow(t *testing.T) {

@@ -154,7 +154,10 @@ func (d *dialling) renamedTo(was, now string) {
 // Which of the two goes is the user's to say: the one on its way may be
 // a second from done, or may be stuck on a machine that will never
 // answer.
-func (a *app) askAboutTheOneOnItsWay(d *dialling, name string, again func()) {
+//
+// again is told whether it runs because the user retried, which gave up
+// the attempt in progress, or because they waited for it.
+func (a *app) askAboutTheOneOnItsWay(d *dialling, name string, again func(retried bool)) {
 	// Posted, not shown from here. This can be reached from a button of
 	// another dialog, and that dialog closes as soon as the button
 	// returns, taking anything stacked on top of it.
@@ -166,18 +169,19 @@ func (a *app) askAboutTheOneOnItsWay(d *dialling, name string, again func()) {
 // The title says the whole of it, so there is nothing under it. The
 // three buttons are the three things that can be done about a machine
 // already being dialled, and each says which.
-func (a *app) showTheOneOnItsWay(d *dialling, name string, again func()) {
+func (a *app) showTheOneOnItsWay(d *dialling, name string, again func(retried bool)) {
 	f := a.newConfirm(dlgAlreadyConnecting+name, nil)
 	// Wait joins the attempt in progress: what was asked for runs once
 	// that one has come back, whichever way it does.
 	f.AddButton(ui.Button{Title: btnWait, Do: func() error {
+		waited := func() { again(false) }
 		if d.settled {
 			// It came back while the dialog was open, so there is
 			// nothing left to wait for.
-			a.pump.post(again)
+			a.pump.post(waited)
 			return nil
 		}
-		d.waiting = append(d.waiting, again)
+		d.waiting = append(d.waiting, waited)
 		return nil
 	}})
 	// Retry cancels the attempt in progress and dials again, for one
@@ -186,7 +190,7 @@ func (a *app) showTheOneOnItsWay(d *dialling, name string, again func()) {
 		a.machines.giveUp(d)
 		// Not from here: this dialog closes as soon as this returns, and
 		// closing one takes anything stacked on top of it.
-		a.pump.post(again)
+		a.pump.post(func() { again(true) })
 		return nil
 	}})
 	// Cancel drops this request and leaves the attempt in progress

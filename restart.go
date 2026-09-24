@@ -13,7 +13,9 @@ import (
 	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/meter"
 	"github.com/marrasen/gridterm/remote"
+	"github.com/marrasen/gridterm/serve"
 	"github.com/marrasen/gridterm/session"
+	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/term"
 )
 
@@ -43,10 +45,19 @@ type startedAs struct {
 	// left open.
 	on *metered
 
-	// again says the window knows how to start the program once more. A
-	// pane drawn from a window taken over does not: that program belongs
-	// to the other window.
+	// again says the window knows how to start the program once more.
 	again bool
+
+	// window is the window connected to that a shell on its own machine
+	// was opened through, and nil for anything else. Starting it again
+	// asks that window for another shell, into the same pane: the
+	// program belongs to the other window, and this one cannot start it
+	// by itself.
+	window *taken
+
+	// asking says the window has been asked to start it again and has
+	// not answered, so a second press does not ask twice.
+	asking bool
 }
 
 // startsAgain records what a pane's program was started on, so the
@@ -61,6 +72,21 @@ func (a *app) startsAgain(t *term.Terminal, argv []string, dir string, m *machin
 	if m != nil {
 		s.at = m.at
 	}
+}
+
+// startsAgainOnWindow records that a pane's shell was opened on a window
+// connected to, on that window's own machine, so the question on it can
+// offer another one there.
+//
+// Only the window's own machine: a shell over there on a machine it is
+// connected to in turn is opened by that window, and asking it for
+// another opens one on the window's own machine instead.
+func (a *app) startsAgainOnWindow(pane *term.Terminal, t *taken) {
+	s := a.started[pane]
+	if s == nil || t == nil {
+		return
+	}
+	s.again, s.window = true, t
 }
 
 // askWhatNext puts the question on the last row of a pane whose program
@@ -269,6 +295,9 @@ func (a *app) startAgain(t *term.Terminal) error {
 	if s == nil || e == nil || !s.again {
 		return errors.New("nothing here says what this pane was started on")
 	}
+	if s.window != nil {
+		return a.startAgainOnWindow(t, s.window)
+	}
 	if e.Host == conns.Local {
 		return a.startAgainHere(t, s)
 	}
@@ -316,6 +345,120 @@ func (a *app) startAgainOn(t *term.Terminal, m *machine, s *startedAs) error {
 	// Which connection the pane rides on rather than which machine it is
 	// named after, for the reason the on field of machines gives.
 	a.machines.runs(t, m)
+	return nil
+}
+
+// startAgainOnWindow starts again the shell a pane on a window connected
+// to was watching, and puts it back in the pane.
+//
+// The other window is asked to start its own pane's shell again and the
+// pane watches that, so the pane over there is the one that comes back
+// rather than a new one opening beside a finished one on every
+// reconnect. A window of a build that cannot is asked for a new shell
+// instead, the way a terminal is opened on it from its plus.
+func (a *app) startAgainOnWindow(pane *term.Terminal, t *taken) error {
+	if !a.windows.holds(t) {
+		return fmt.Errorf("this window is no longer connected to %s", t.name)
+	}
+	size := pane.Size()
+	if what, ok := a.windows.watching(pane); ok {
+		if open, still := a.openOver(what); still {
+			if s := a.started[pane]; s != nil {
+				if s.asking {
+					return nil
+				}
+				s.asking = true
+			}
+			a.startAgainOver(pane, t, open, size)
+			return nil
+		}
+	}
+	return a.openAgainOnWindow(pane, t, size)
+}
+
+// startAgainOver asks the other window to start its pane's program again
+// and has the pane watch it, off the goroutine that draws: the answer is
+// a round trip away and waits on that window's own frame. A window of a
+// build that cannot is asked for a new shell instead, the same way.
+//
+// A failure puts the question back on the pane, so the user is not left
+// looking at a finished pane with nothing to press.
+func (a *app) startAgainOver(pane *term.Terminal, t *taken, open serve.Open, size ui.Size) {
+	// What the pane watched before, so a fresh shell's binding, which can
+	// land before the answer below does, is not the one taken away.
+	was, _ := a.windows.watching(pane)
+	a.closes.inBackground(func() error {
+		var (
+			sess  session.Session
+			fresh bool
+		)
+		err := t.win.StartAgain(serve.Attached{ID: open.ID, Host: open.Host, Kind: open.Kind})
+		switch {
+		case err == nil:
+			sess, err = t.win.Attach(open, size.Cols, size.Rows)
+		case errors.Is(err, serve.ErrCannotStartAgain):
+			fresh = true
+			sess, err = t.win.Open(size.Cols, size.Rows, func(named serve.Attached) {
+				a.pump.post(func() { a.bindWatched(pane, t, named) })
+			})
+		}
+		a.pump.post(func() {
+			if s := a.started[pane]; s != nil {
+				s.asking = false
+			}
+			if !a.live(pane) {
+				// Closed while the answer was on its way. What runs over
+				// there runs on in its own pane there.
+				if sess != nil {
+					_ = sess.Close()
+				}
+				return
+			}
+			if err == nil {
+				err = a.restartPane(pane, sess, "")
+				if err != nil {
+					err = errors.Join(err, sess.Close())
+				}
+			}
+			if err != nil {
+				a.reportError("Could not reconnect to "+t.name, err)
+				a.askWhatNext(pane)
+				return
+			}
+			if fresh {
+				// What it was watching has ended over there. The new
+				// shell is bound once the window says what it calls it,
+				// which may have happened already.
+				if now, _ := a.windows.watching(pane); now == was {
+					delete(a.windows.seen, pane)
+				}
+				a.windows.draws(pane, t)
+			}
+		})
+		return nil
+	})
+}
+
+// openAgainOnWindow asks a window for a new shell and puts it in a pane
+// whose shell there ended, for a window that cannot start the old one
+// again.
+func (a *app) openAgainOnWindow(pane *term.Terminal, t *taken, size ui.Size) error {
+	sess, err := t.win.Open(size.Cols, size.Rows, func(named serve.Attached) {
+		// Said on a goroutine of the session's, and the record of what a
+		// pane is watching belongs to the one that draws.
+		a.pump.post(func() { a.bindWatched(pane, t, named) })
+	})
+	if err != nil {
+		return err
+	}
+	if err := a.restartPane(pane, sess, ""); err != nil {
+		// The shell over there is ours now and nothing else will close it.
+		return errors.Join(err, sess.Close())
+	}
+	// What it was watching has ended over there. The new shell is bound
+	// once the window says what it calls it.
+	delete(a.windows.seen, pane)
+	a.windows.draws(pane, t)
 	return nil
 }
 

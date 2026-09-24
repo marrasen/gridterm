@@ -1718,3 +1718,66 @@ func TestAFileSessionRequestOfAnotherBuildIsRefused(t *testing.T) {
 	case <-time.After(200 * time.Millisecond):
 	}
 }
+
+// takenOverStarting is takenOver for a window that starts things again
+// the way start does, or cannot when start is nil.
+func takenOverStarting(t *testing.T, start func(Attached) error) *Window {
+	t.Helper()
+	mine, line := aKey(t, "marcus@laptop")
+	host, err := HostKey(t.TempDir() + "/host_key")
+	if err != nil {
+		t.Fatalf("host key: %v", err)
+	}
+	keys, err := ParseAllowed([]byte(line), "the test")
+	if err != nil {
+		t.Fatalf("allowed: %v", err)
+	}
+	s, err := Listen(Config{
+		Addr: "127.0.0.1:0", HostKey: host, Allowed: keys,
+		StartAgain: start,
+		OnError:    func(error) {},
+	})
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	w, err := Dial(context.Background(), DialConfig{
+		Addr: s.Addr(), Keys: []ssh.Signer{mine},
+		HostKey: ssh.FixedHostKey(host.PublicKey()),
+	})
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	t.Cleanup(func() { _ = w.Close() })
+	return w
+}
+
+// A client asks the served window to start something again by what it
+// was told it is called, and hears how that went: done, refused with the
+// reason, or a window that cannot, which is what an older one says.
+func TestAClientAsksForSomethingToBeStartedAgain(t *testing.T) {
+	want := Attached{ID: "3", Host: "", Kind: "Terminal"}
+
+	var asked Attached
+	w := takenOverStarting(t, func(a Attached) error {
+		asked = a
+		return nil
+	})
+	if err := w.StartAgain(want); err != nil {
+		t.Fatalf("start it again: %v", err)
+	}
+	if asked != want {
+		t.Errorf("the served window was asked about %+v, want %+v", asked, want)
+	}
+
+	w = takenOverStarting(t, func(Attached) error { return errors.New("it is still running") })
+	err := w.StartAgain(want)
+	if err == nil || errors.Is(err, ErrCannotStartAgain) || !strings.Contains(err.Error(), "it is still running") {
+		t.Errorf("a refusal came back as %v, want its reason", err)
+	}
+
+	w = takenOverStarting(t, nil)
+	if err := w.StartAgain(want); !errors.Is(err, ErrCannotStartAgain) {
+		t.Errorf("a window that cannot said %v, want ErrCannotStartAgain", err)
+	}
+}

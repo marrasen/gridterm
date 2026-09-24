@@ -612,7 +612,21 @@ func (a *app) connectAndBrowse(name, at string) error {
 // made or has failed, and for one already on its way that means when
 // that one settles rather than starting a second: four panes on one
 // machine that dropped make one connection between them.
-func (a *app) filesystemAgain(host string, at step, then func(vfs.FS, step, error)) {
+// calledNow is asked what a machine goes by now, for a read that has
+// been waiting while it was renamed. was is the name the dial it waited
+// on knows it by; the answer is the name to ask for. A nil one means
+// the dial's answer is the whole of it.
+//
+// It is asked rather than worked out here because the two callers know
+// different things. A filesystem holds its machine's address and is
+// told directly when the machine is renamed, so it says what it is
+// called and is always right. A piece of finished work has only a
+// name, and follows the trail of what the user renamed -- which is a
+// weaker thing, and must not be used on a filesystem: a name that has
+// been given up, given away and renamed again would take the pane to a
+// machine it was never on.
+func (a *app) filesystemAgain(host string, at step, calledNow func(was string) string,
+	then func(vfs.FS, step, error)) {
 	// answerOn hands back a filesystem and the machine it was opened
 	// on. The machine goes with it because the caller keeps it, and a
 	// caller that looked it up again by the name it asked with could
@@ -682,10 +696,12 @@ func (a *app) filesystemAgain(host string, at step, then func(vfs.FS, step, erro
 		a.sayWhile(line)
 		d.answering = append(d.answering, func(bool) {
 			a.doneSaying(line)
-			// What the machine is called now: a rename that dial
-			// followed, and then one the window followed while nothing
-			// was connected. A read can be queued across both.
-			now := a.nameNow(d.nameNow(host))
+			// What the machine is called now: the dial's own answer,
+			// and then whatever the caller knows on top of it.
+			now := d.nameNow(host)
+			if calledNow != nil {
+				now = calledNow(now)
+			}
 			if a.about(now).machine != nil {
 				answerOn(now)
 				return
@@ -698,7 +714,7 @@ func (a *app) filesystemAgain(host string, at step, then func(vfs.FS, step, erro
 			// would be dialled under the name it has stopped using.
 			on := at
 			on.name = now
-			a.filesystemAgain(now, on, then)
+			a.filesystemAgain(now, on, calledNow, then)
 		})
 	}
 	if a.about(host).machine != nil {

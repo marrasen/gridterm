@@ -524,7 +524,9 @@ func (a *app) openEndAgain(end jobEnd, then func(vfs.FS, error)) {
 		then(f, err)
 		return
 	}
-	a.filesystemAgain(end.host, end.at, func(f vfs.FS, on step, err error) {
+	// Work has only a name to go on, so it follows the trail of what
+	// the user renamed.
+	a.filesystemAgain(end.host, end.at, a.nameNow, func(f vfs.FS, on step, err error) {
 		if err != nil {
 			then(nil, err)
 			return

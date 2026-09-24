@@ -176,6 +176,23 @@ wrapper, so it opens the machine again to do it. The alternative is a
 `.gridterm-part` file left on the machine for good. The user sees
 `Reconnecting to X…` for a copy that has just failed.
 
+## Two rules, not one
+
+**A filesystem knows its machine. A piece of work knows a name.** They
+follow a rename differently, and the difference is not a detail.
+
+A `reopening` holds the machine's address and is told directly when
+that machine is renamed -- and only when it really is that machine,
+because the rename checks the address. So it says what it is called and
+is always right.
+
+A finished copy has a name and nothing else. It follows the trail of
+what the user renamed, with guards for a name given to something else
+since. That is a weaker thing, and giving it to a filesystem is how a
+pane ends up reading a machine it was never on: a name given up, given
+away and left off the list leads the trail straight to the first
+machine. Work gets the trail. A filesystem is asked.
+
 ## Settled while building
 
 1. **A read waits for one connection, and asks again only for someone

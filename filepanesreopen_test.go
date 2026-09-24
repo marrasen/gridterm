@@ -833,3 +833,82 @@ func TestAQueuedReadFollowsARenameTheWindowMade(t *testing.T) {
 		t.Errorf("the window holds %v, want db2 among them", a.machines.names())
 	}
 }
+
+// A pane is never answered from a machine that only inherited its name.
+//
+// Work has a name and nothing else, so it follows the trail of what the
+// user renamed. A filesystem holds its machine's address and is told
+// when that machine is renamed, so it does not need the trail -- and
+// must not use it: a name given up, given away and left off the list
+// would take the pane to a machine it was never on.
+func TestAPaneIsNotAnsweredFromTheMachineThatInheritedItsName(t *testing.T) {
+	first, second := sshtest.New(t), sshtest.New(t)
+	a := newTestApp(t, 100, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pinServers(t, a, first, second)
+
+	// The first machine is connected and renamed, so the window keeps
+	// what it used to be called.
+	saveHost(t, a, "db", first, "")
+	if err := a.connectSaved("db"); err != nil {
+		t.Fatalf("connectSaved the first: %v", err)
+	}
+	waitFor(t, a, "the first machine to answer", func() bool {
+		return a.machines.named("db") != nil
+	})
+	renameSaved(t, a, "db", "db2")
+
+	// The second takes the name the first gave up, and has a
+	// filesystem on it.
+	saveHost(t, a, "db", second, "")
+	if err := a.connectSaved("db"); err != nil {
+		t.Fatalf("connectSaved the second: %v", err)
+	}
+	waitFor(t, a, "the second machine to answer", func() bool {
+		return a.machines.named("db") != nil
+	})
+	opened, err := a.filesystem("db")
+	if err != nil {
+		t.Fatalf("open a filesystem on db: %v", err)
+	}
+	f := opened.(*reopening)
+
+	// It drops and will not be let in again, and the user takes it off
+	// the list. The pane stays.
+	_, secondPort := second.Host()
+	pinned := a.prepare
+	a.prepare = func(cfg remote.Config) remote.Config {
+		cfg = pinned(cfg)
+		if cfg.Port == secondPort {
+			cfg.HostKeyCallback = ssh.FixedHostKey(first.HostKey())
+		}
+		return cfg
+	}
+	second.CloseClients()
+	waitFor(t, a, "the window to see the second machine go", func() bool {
+		a.reapExited()
+		return a.machines.named("db") == nil
+	})
+	settleAndClearNotices(t, a)
+	if err := a.book.Remove("db"); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+
+	// A read cannot reach it. What it must not do is answer from the
+	// machine that used to be called db.
+	_, firstPort := first.Host()
+	done := make(chan error, 1)
+	go func() {
+		_, err := f.ReadDir("/")
+		done <- err
+	}()
+	waitFor(t, a, "the read to come back", func() bool { return len(done) > 0 })
+	<-done
+	if got := f.step().cfg.Port; got == firstPort {
+		t.Errorf("the pane took the machine that inherited its name, on port %d", got)
+	}
+	if got := f.Host(); got != "db" {
+		t.Errorf("the pane's filesystem is filed under %q, want db", got)
+	}
+}

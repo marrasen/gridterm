@@ -118,7 +118,7 @@ func (r *reopening) on(do func(vfs.FS) error) error {
 // ready is what is open on the machine, opening it if nothing is.
 func (r *reopening) ready() (vfs.FS, error) {
 	r.mu.Lock()
-	f, forgotten, host, at, gone := r.under, r.forgotten, r.host, r.at, r.gone
+	f, forgotten, host, gone := r.under, r.forgotten, r.host, r.gone
 	r.mu.Unlock()
 	if f != nil {
 		return f, nil
@@ -143,9 +143,13 @@ func (r *reopening) ready() (vfs.FS, error) {
 	}
 	back := make(chan answer, 1)
 	r.app.pump.post(func() {
-		r.app.filesystemAgain(host, at, func(f vfs.FS, on step, err error) {
-			back <- answer{f, on, err}
-		})
+		// The name and the step are read here rather than above,
+		// because a rename can land between the two and this runs
+		// where renames do.
+		r.app.filesystemAgain(r.Host(), r.step(), r.calledNow,
+			func(f vfs.FS, on step, err error) {
+				back <- answer{f, on, err}
+			})
 	})
 	select {
 	case got := <-back:
@@ -187,6 +191,13 @@ func (r *reopening) ready() (vfs.FS, error) {
 		return nil, r.app.ctx.Err()
 	}
 }
+
+// calledNow is what this filesystem's machine goes by now.
+//
+// The window tells this directly when the machine is renamed, and only
+// when it is the same machine, so what it says is exact. The name the
+// dial knows is ignored: this one is at least as new.
+func (r *reopening) calledNow(string) string { return r.Host() }
 
 // Name is what the panel calls the machine.
 func (r *reopening) Name() string {

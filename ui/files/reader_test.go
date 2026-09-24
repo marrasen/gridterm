@@ -24,6 +24,7 @@ func readerStyle() Style {
 		ErrorFG:    color.RGBA{R: 0xff, A: 0xff},
 		KeyFG:      color.RGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff},
 		OffBG:      color.RGBA{R: 0x30, G: 0x30, B: 0x30, A: 0xff},
+		MarkedFG:   color.RGBA{R: 0xff, G: 0xc0, A: 0xff},
 	}
 }
 

@@ -938,9 +938,18 @@ func (r *Reader) paintLines(v grid.View, cols, rows int) {
 		// What was searched for, marked out where it falls. Written over
 		// the line rather than in place of it, so a match part way off
 		// the left edge still marks the part that is on screen.
+		//
+		// The one Next and Previous step from is drawn on the match's own
+		// colour, in the selected text's, and underlined, so it is told
+		// from the rest by more than a colour.
+		fg, bg, attr := r.Style.MarkedFG, r.Style.SelectedBG, grid.Attr(0)
+		if i == r.found {
+			fg, bg, attr = r.Style.SelectedFG, r.Style.MarkedFG, grid.AttrBold|grid.AttrUnderline
+		}
 		for x := max(at, 0); x < min(at+wide, cols); x++ {
 			c := v.At(x, y+1)
-			c.FG, c.BG = r.Style.MarkedFG, r.Style.SelectedBG
+			c.FG, c.BG = fg, bg
+			c.Attr |= attr
 			v.Set(x, y+1, c)
 		}
 	}

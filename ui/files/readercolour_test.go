@@ -341,17 +341,18 @@ func TestASearchMatchLandsRightOnAColouredLine(t *testing.T) {
 	press(t, r, input.KeyEnter)
 	g := drawReader(r, 40, 8)
 
-	// "x := 1 // the " is fourteen columns, then the match.
-	if got, want := g.At(14, 1).BG, r.Style.SelectedBG; got != want {
+	// "x := 1 // the " is fourteen columns, then the match. The only
+	// match, so the one the reader is on.
+	if got, want := g.At(14, 1).BG, r.Style.MarkedFG; got != want {
 		t.Errorf("the match sits on %v, want the marked-out ground %v", got, want)
 	}
-	if got, want := g.At(13, 1).BG, r.Style.SelectedBG; got == want {
+	if got, want := g.At(13, 1).BG, r.Style.MarkedFG; got == want {
 		t.Error("the column before the match is marked out too")
 	}
-	if got, want := g.At(19, 1).BG, r.Style.SelectedBG; got != want {
+	if got, want := g.At(19, 1).BG, r.Style.MarkedFG; got != want {
 		t.Errorf("the last column of the match is %v, want it marked out", got)
 	}
-	if got, want := g.At(20, 1).BG, r.Style.SelectedBG; got == want {
+	if got, want := g.At(20, 1).BG, r.Style.MarkedFG; got == want {
 		t.Error("the column after the match is marked out too")
 	}
 }

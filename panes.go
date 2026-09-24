@@ -529,6 +529,8 @@ func (a *app) closePane(w ui.Widget) error {
 	// Every shell under it, in case the pane being closed is a whole
 	// subtree rather than one terminal.
 	doomed := ui.Leaves(w)
+	// Asked now, because the reader's record goes with it below.
+	back := a.backFrom(w)
 
 	root, detached := ui.Detach(a.root.Widget(), w)
 	switch {
@@ -544,6 +546,12 @@ func (a *app) closePane(w ui.Widget) error {
 		}
 		a.relayout()
 		a.focus(ui.FocusedLeaf(a.root.Widget()))
+		if back != nil && ui.ParentOf(a.root.Widget(), back) != nil {
+			// Back to where the user was when they opened it: Ctrl+D
+			// on a file is putting it away, and the browser it was
+			// picked in is where they go on from.
+			a.focus(back)
+		}
 	}
 
 	// Every failure, not the first: a manager with panes on four

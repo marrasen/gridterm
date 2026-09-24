@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/marrasen/gridterm/input"
+	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/files"
 )
 
@@ -400,5 +401,32 @@ func TestRereadingAViewerWhosePaneWentDoesNothing(t *testing.T) {
 
 	if got := readerText(t, r); got != was {
 		t.Error("the reread took away what the viewer was showing")
+	}
+}
+
+// Closing the scrollback gives the keys back to the pane it is of, not
+// to whichever pane the window opened last.
+func TestClosingTheScrollbackGoesBackToItsPane(t *testing.T) {
+	a := aPaneThatSaid(t, "needle here\r\n")
+	first := onlyPaneOn(t, a)
+	if err := a.openPane(); err != nil {
+		t.Fatalf("open another pane: %v", err)
+	}
+	a.focus(first)
+	if err := a.root.Commands.Run(scrollbackCommand); err != nil {
+		t.Fatalf("running %s: %v", scrollbackCommand, err)
+	}
+	r := onlyReader(t, a)
+	if _, err := r.HandleKey(input.Event{Kind: input.KeyPress, Key: input.KeyEscape}); err != nil {
+		t.Fatalf("Escape: %v", err)
+	}
+
+	if _, err := r.HandleKey(input.Event{Kind: input.KeyPress, Key: input.KeyD, Mods: input.ModCtrl}); err != nil {
+		t.Fatalf("Ctrl+D: %v", err)
+	}
+	a.pump.run()
+
+	if got := ui.FocusedLeaf(a.root.Widget()); got != ui.Widget(first) {
+		t.Errorf("the keys went to %v, want the pane the scrollback is of", got)
 	}
 }

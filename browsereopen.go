@@ -133,21 +133,17 @@ func (r *reopening) ready() (vfs.FS, error) {
 	// starting a second.
 	type answer struct {
 		f vfs.FS
-		// on is how the machine was reached this time, taken on the
-		// goroutine that draws because that is where the machines are.
-		// The step this kept is the only record of where the machine
-		// is when no list has a route to it, and one left as it was
-		// when the pane opened is a record of where it used to be.
+		// on is how the machine was reached this time, said by the one
+		// that opened it rather than looked up here. The step this
+		// kept is the only record of where the machine is when no list
+		// has a route to it, and one left as it was when the pane
+		// opened is a record of where it used to be.
 		on  step
 		err error
 	}
 	back := make(chan answer, 1)
 	r.app.pump.post(func() {
-		r.app.filesystemAgain(host, at, func(f vfs.FS, err error) {
-			var on step
-			if m := r.app.about(host).machine; m != nil {
-				on = m.at
-			}
+		r.app.filesystemAgain(host, at, func(f vfs.FS, on step, err error) {
 			back <- answer{f, on, err}
 		})
 	})
@@ -178,6 +174,11 @@ func (r *reopening) ready() (vfs.FS, error) {
 			return r.under, nil
 		}
 		if got.on.cfg.Host != "" {
+			// The name this one goes by wins, the way it does for what
+			// the machine is called: one renamed while its connection
+			// was being made is called what the window calls it now,
+			// not what it was called when the dial started.
+			got.on.name = r.host
 			r.at = got.on
 		}
 		r.took(got.f)

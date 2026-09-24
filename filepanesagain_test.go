@@ -837,3 +837,90 @@ func TestAMachineThatMovedIsRenamedByWhereItIsNow(t *testing.T) {
 		t.Errorf("the pane's filesystem is filed under %q, want the name it has now", got)
 	}
 }
+
+// A filesystem keeps the machine it was opened on, not whatever wears
+// its old name by the time the connection lands.
+//
+// A name given up in a rename can be saved for somewhere else while the
+// dial is still running. Looking the machine up again by the name the
+// read asked with would file another machine's address in the pane, and
+// a repeat with no list entry to go on would open that one.
+func TestAReconnectKeepsTheMachineItOpened(t *testing.T) {
+	mine, other := sshtest.New(t), sshtest.New(t)
+	a := newTestApp(t, 100, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pinServers(t, a, mine, other)
+	saveHost(t, a, "one", mine, "")
+	if err := a.connectSaved("one"); err != nil {
+		t.Fatalf("connectSaved: %v", err)
+	}
+	waitFor(t, a, "the machine to answer", func() bool {
+		return a.machines.named("one") != nil
+	})
+	// A filesystem on it, held the way a job's is: no pane, so nothing
+	// reads through it except this test.
+	opened, err := a.filesystem("one")
+	if err != nil {
+		t.Fatalf("open a filesystem on one: %v", err)
+	}
+	f, is := opened.(*reopening)
+	if !is {
+		t.Fatalf("the filesystem is a %T, not one that holds the machine", opened)
+	}
+
+	// The machine is set aside rather than closed, so it can answer the
+	// dial further down while still being the machine it always was.
+	was := a.machines.named("one")
+	delete(a.machines.held, "one")
+	f.Lost()
+
+	// A connection to it on its way, and the read queues behind that.
+	stuck := &dialling{
+		names:  []string{"one"},
+		cancel: func() {},
+		route:  []step{{name: "one", cfg: serverConfig(t, mine)}},
+	}
+	holdTheNames(t, a, stuck)
+	done := make(chan error, 1)
+	go func() {
+		_, err := f.ReadDir("/")
+		done <- err
+	}()
+	waitFor(t, a, "the read to queue behind it", func() bool {
+		return len(stuck.answering) > 0
+	})
+
+	// While it runs: the machine is renamed, and the name it gave up is
+	// saved for a different machine and connected.
+	renameSaved(t, a, "one", "two")
+	if got := f.Host(); got != "two" {
+		t.Fatalf("the filesystem is filed under %q after the rename", got)
+	}
+	saveHost(t, a, "one", other, "")
+	if err := a.connectSaved("one"); err != nil {
+		t.Fatalf("connectSaved the other machine: %v", err)
+	}
+	waitFor(t, a, "the other machine to answer", func() bool {
+		return a.machines.named("one") != nil
+	})
+
+	// Then the connection lands, under the name the machine has now.
+	was.at.name = "two"
+	a.machines.take(was)
+	a.machines.settle(stuck, true)
+
+	waitFor(t, a, "the read to come back", func() bool { return len(done) > 0 })
+	if err := <-done; err != nil {
+		t.Fatalf("reading after the old name was given to another machine: %v", err)
+	}
+
+	// What it kept is its own machine, not the one wearing its old name.
+	_, port := mine.Host()
+	if got := f.step().cfg.Port; got != port {
+		t.Errorf("the filesystem kept port %d, want its own machine's %d", got, port)
+	}
+	if got := f.step().name; got != "two" {
+		t.Errorf("the step it kept is named %q, want the name the machine has now", got)
+	}
+}

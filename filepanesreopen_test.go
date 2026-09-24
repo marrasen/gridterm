@@ -684,7 +684,68 @@ func TestAFailedReconnectBehindALiveJumpHostDialsOnce(t *testing.T) {
 		t.Error("the read answered although the machine would not open")
 	}
 	settleAndClearNotices(t, a)
-	if got := len(a.panes) - panes; got > 1 {
+	if got := len(a.panes) - panes; got != 1 {
 		t.Errorf("the read opened %d panes to watch it, want the one", got)
+	}
+}
+
+// Giving up on a reconnect ends it, even with the way there still open.
+//
+// Cancelling and having the window dial again a moment later is the
+// opposite of what giving up means. The machine on the way stays
+// connected, so anything that asks only whether the way is open would
+// start another one on the strength of it.
+func TestGivingUpOnAReconnectBehindALiveJumpHostStartsNothing(t *testing.T) {
+	near, far := sshtest.New(t), sshtest.New(t)
+	a := newTestApp(t, 100, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pinServers(t, a, near, far)
+	saveHost(t, a, "edge", near, "")
+	saveHost(t, a, "db", far, "edge")
+	if err := a.connectSaved("db"); err != nil {
+		t.Fatalf("connectSaved: %v", err)
+	}
+	waitFor(t, a, "both machines to answer", func() bool {
+		return a.machines.named("db") != nil && a.machines.named("edge") != nil
+	})
+	if openFilesFromThePlus(t, a, "db") == nil {
+		t.Fatal("no file pane opened")
+	}
+	f := reopenersOn(t, a, "db")[0]
+
+	far.CloseClients()
+	waitFor(t, a, "the window to see the far machine go", func() bool {
+		a.reapExited()
+		return a.machines.named("db") == nil
+	})
+	settleAndClearNotices(t, a)
+	if a.machines.named("edge") == nil {
+		t.Fatal("the machine on the way went too")
+	}
+
+	// The pane's own reconnect, caught before it settles.
+	done := make(chan error, 1)
+	go func() {
+		_, err := f.ReadDir("/")
+		done <- err
+	}()
+	var mine *dialling
+	waitFor(t, a, "the reconnect to start", func() bool {
+		mine = a.machines.connecting("db")
+		return mine != nil && len(mine.answering) > 0
+	})
+
+	a.machines.giveUp(mine)
+	waitFor(t, a, "the read to come back", func() bool { return len(done) > 0 })
+	if err := <-done; err == nil {
+		t.Error("the read answered although the user gave up on the connection")
+	}
+	settleAndClearNotices(t, a)
+	if d := a.machines.connecting("db"); d != nil {
+		t.Error("the window started another connection after the user gave up")
+	}
+	if a.machines.named("db") != nil {
+		t.Error("the window connected to db after the user gave up")
 	}
 }

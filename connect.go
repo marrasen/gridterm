@@ -612,16 +612,26 @@ func (a *app) connectAndBrowse(name, at string) error {
 // made or has failed, and for one already on its way that means when
 // that one settles rather than starting a second: four panes on one
 // machine that dropped make one connection between them.
-func (a *app) filesystemAgain(host string, at step, then func(vfs.FS, error)) {
-	answer := func() {
-		f, err := a.machineFilesWithArchives(host)
-		then(f, err)
+func (a *app) filesystemAgain(host string, at step, then func(vfs.FS, step, error)) {
+	// answerOn hands back a filesystem and the machine it was opened
+	// on. The machine goes with it because the caller keeps it, and a
+	// caller that looked it up again by the name it asked with could
+	// find a different machine: a name given up in a rename can be
+	// saved for somewhere else while the dial is still running.
+	answerOn := func(name string) {
+		f, err := a.machineFilesWithArchives(name)
+		var on step
+		if m := a.about(name).machine; m != nil {
+			on = m.at
+		}
+		then(f, on, err)
 	}
+	answer := func() { answerOn(host) }
 	// Why it was not made is in the account of the connection, which is
 	// where a reason belongs: this is read in a file pane, which has no
 	// room for one and nothing to do with it.
 	notMade := func() {
-		then(nil, fmt.Errorf("the connection to %s was not made", groupName(host)))
+		then(nil, step{}, fmt.Errorf("the connection to %s was not made", groupName(host)))
 	}
 	// reachable says a machine on the way to this one is connected, so
 	// this one is worth asking for again.
@@ -674,8 +684,7 @@ func (a *app) filesystemAgain(host string, at step, then func(vfs.FS, error)) {
 			a.doneSaying(line)
 			now := d.nameNow(host)
 			if a.about(now).machine != nil {
-				f, err := a.machineFilesWithArchives(now)
-				then(f, err)
+				answerOn(now)
 				return
 			}
 			if ours || !reachable(now) {
@@ -700,7 +709,7 @@ func (a *app) filesystemAgain(host string, at step, then func(vfs.FS, error)) {
 	route, err := a.route(host)
 	if err != nil {
 		if a.about(host).saved || at.cfg.Host == "" {
-			then(nil, err)
+			then(nil, step{}, err)
 			return
 		}
 		// No route on any list, and one is still owed: a machine

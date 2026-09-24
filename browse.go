@@ -518,7 +518,7 @@ func (a *app) openEndAgain(end jobEnd, then func(vfs.FS, error)) {
 		then(f, err)
 		return
 	}
-	a.filesystemAgain(end.host, end.at, func(f vfs.FS, err error) {
+	a.filesystemAgain(end.host, end.at, func(f vfs.FS, _ step, err error) {
 		if err != nil {
 			then(nil, err)
 			return

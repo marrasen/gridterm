@@ -654,3 +654,45 @@ func TestClosingAFileGoesBackToTheBrowser(t *testing.T) {
 		t.Errorf("the keys went to %T, want the browser pane the file was picked in", got)
 	}
 }
+
+// A file closed from its row while the user works in another pane
+// leaves the keys in that pane. Only a file that had them gives them
+// back to the browser.
+func TestClosingAFileFromItsRowLeavesTheKeysWhereTheyAre(t *testing.T) {
+	a := newTestApp(t, 120, 30)
+	withPanel(t, a)
+	withDialogs(t, a)
+	a.commands()
+	name, path := aReadableFile(t, "one", "two")
+	e, err := vfs.NewLocal().Stat(path)
+	if err != nil {
+		t.Fatalf("stat the file: %v", err)
+	}
+	if err := a.openFilesOn(conns.Local); err != nil {
+		t.Fatalf("open the browser: %v", err)
+	}
+	pane := a.files.view.Here()
+	pane.Open(filepath.Dir(path))
+	waitFor(t, a, "the directory to be listed", func() bool {
+		return len(pane.Entries()) > 0
+	})
+	if err := a.readFileFrom(pane, e, false); err != nil {
+		t.Fatalf("read %s: %v", name, err)
+	}
+	r := onlyReader(t, a)
+	if err := a.openPane(); err != nil {
+		t.Fatalf("open a terminal: %v", err)
+	}
+	working := ui.FocusedLeaf(a.root.Widget())
+
+	if err := a.closePaneRow(a.readers[r].row); err != nil {
+		t.Fatalf("press the cross: %v", err)
+	}
+
+	if inTree(a, r) {
+		t.Fatal("the cross left the file open")
+	}
+	if got := ui.FocusedLeaf(a.root.Widget()); got != working {
+		t.Errorf("the keys went to %T, want them left in the pane the user was working in", got)
+	}
+}

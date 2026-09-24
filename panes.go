@@ -529,8 +529,13 @@ func (a *app) closePane(w ui.Widget) error {
 	// Every shell under it, in case the pane being closed is a whole
 	// subtree rather than one terminal.
 	doomed := ui.Leaves(w)
-	// Asked now, because the reader's record goes with it below.
-	back := a.backFrom(w)
+	// Asked now, because the reader's record goes with it below. Only
+	// for a reader that had the keys: one closed from its row while the
+	// user works in another pane leaves them where they are.
+	var back ui.Widget
+	if ui.FocusedLeaf(a.root.Widget()) == w {
+		back = a.backFrom(w)
+	}
 
 	root, detached := ui.Detach(a.root.Widget(), w)
 	switch {
@@ -561,8 +566,10 @@ func (a *app) closePane(w ui.Widget) error {
 	for _, leaf := range doomed {
 		// Whichever kind it is, the order panes were last used in lets
 		// go of it: that list would otherwise hold a pane nobody can
-		// reach, and its scrollback with it.
+		// reach, and its scrollback with it. So does any reader that
+		// would have given the keys back to it.
 		a.forgetRecent(leaf)
+		a.forgetOpenedFrom(leaf)
 		// A file pane is not a terminal: it holds a filesystem, which
 		// may be a session on a connection.
 		if p, isFiles := leaf.(*files.Pane); isFiles {
@@ -778,6 +785,17 @@ func (a *app) letGoOfPane(t *term.Terminal) {
 		held.pane = nil
 		r.Follow(false)
 		r.Gone("the pane this came from has closed")
+	}
+}
+
+// forgetOpenedFrom stops any reader giving the keys back to a pane that
+// has closed, and holding that pane -- a terminal's grid and scrollback
+// with it -- for as long as the reader is open.
+func (a *app) forgetOpenedFrom(w ui.Widget) {
+	for _, held := range a.readers {
+		if held.from == w {
+			held.from = nil
+		}
 	}
 }
 

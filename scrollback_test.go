@@ -430,3 +430,27 @@ func TestClosingTheScrollbackGoesBackToItsPane(t *testing.T) {
 		t.Errorf("the keys went to %v, want the pane the scrollback is of", got)
 	}
 }
+
+// Closing the pane a scrollback is of lets go of it: the viewer keeps
+// its text and no longer holds the closed terminal to give the keys
+// back to.
+func TestClosingThePaneLetsTheScrollbackGoOfIt(t *testing.T) {
+	a := aPaneThatSaid(t, "needle here\r\n")
+	first := onlyPaneOn(t, a)
+	if err := a.root.Commands.Run(scrollbackCommand); err != nil {
+		t.Fatalf("running %s: %v", scrollbackCommand, err)
+	}
+	r := onlyReader(t, a)
+
+	if err := a.closePane(first); err != nil {
+		t.Fatalf("close the pane: %v", err)
+	}
+
+	held := a.readers[r]
+	if held == nil {
+		t.Fatal("closing the pane closed its scrollback")
+	}
+	if held.from != nil {
+		t.Errorf("the scrollback still holds the closed pane, %T", held.from)
+	}
+}

@@ -1393,9 +1393,13 @@ func (a *app) windowFilesOn(t *taken, host string) (vfs.FS, error) {
 	// machine over there it reads is the place, so two panes on one
 	// machine over there are one place and neither is the window's own
 	// disk.
-	return vfs.NewSFTP(farName(host, t.name), remoteHostKey{window: t, host: host}, client, func() error {
+	//
+	// With its archives opened as directories, the way every other
+	// machine's are: a zip on a machine over there was a file that
+	// could not be walked into.
+	return vfs.WithArchives(vfs.NewSFTP(farName(host, t.name), remoteHostKey{window: t, host: host}, client, func() error {
 		return a.letGoOfFilesOver(t, client, ch)
-	}), nil
+	})), nil
 }
 
 // roomForFilesOver refuses a file pane on a window already holding as

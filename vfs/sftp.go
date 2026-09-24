@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"io/fs"
+	"os"
 	"sync"
 
 	"github.com/pkg/sftp"
@@ -92,6 +93,17 @@ func (s *SFTP) Home() (string, error) {
 // worse than one that says it could not be read.
 func (s *SFTP) ReadDir(path string) ([]Entry, error) {
 	infos, err := s.client.ReadDir(path)
+	if err != nil && path == "/" {
+		// A Windows machine lists its drives at the top, and the SFTP
+		// server gridterm runs there gives up on the whole list when one
+		// drive cannot be read: an empty card reader answers "the device
+		// is not ready" and every other drive goes with it. The drives
+		// are asked about one at a time instead, and the ones that answer
+		// are the listing.
+		if drives := s.drivesAnswering(); len(drives) > 0 {
+			infos, err = drives, nil
+		}
+	}
 	if err != nil {
 		return nil, wrap(s, "read the directory", path, err)
 	}
@@ -267,3 +279,41 @@ func (s *SFTP) Close() error {
 	}
 	return s.close()
 }
+
+// drivesAnswering asks about every drive letter at once and answers the
+// drives that are there and can be read, named the way the machine's
+// own listing names them. None on a machine that is not Windows, or on
+// a session that has stopped answering.
+func (s *SFTP) drivesAnswering() []os.FileInfo {
+	var (
+		wg    sync.WaitGroup
+		found [26]os.FileInfo
+	)
+	for i := range found {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			name := string(rune('a'+i)) + ":"
+			if info, err := s.client.Stat("/" + name); err == nil && info.IsDir() {
+				found[i] = drive{FileInfo: info, name: name}
+			}
+		}()
+	}
+	wg.Wait()
+	var out []os.FileInfo
+	for _, info := range found {
+		if info != nil {
+			out = append(out, info)
+		}
+	}
+	return out
+}
+
+// drive is a drive's details under the drive's own name: asked about
+// directly, the top of a drive calls itself by its path.
+type drive struct {
+	os.FileInfo
+	name string
+}
+
+func (d drive) Name() string { return d.name }

@@ -4,12 +4,14 @@ import (
 	"archive/zip"
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 // aZip writes an archive holding these names, with the name as its own
@@ -418,3 +420,387 @@ type renameable struct {
 }
 
 func (r *renameable) Renamed(now string) { r.now = now }
+
+// An archive changed since it was read is read again. The wrapper holds
+// the last one it read, and a copy from another pane or a program
+// outside gridterm can change the file under it.
+func TestAnArchiveChangedSinceItWasReadIsReadAgain(t *testing.T) {
+	// Asked every time here, rather than once a second.
+	was := archiveRecheck
+	archiveRecheck = 0
+	t.Cleanup(func() { archiveRecheck = was })
+	f, at := withAZip(t, "one.txt")
+	if got, err := f.ReadDir(at); err != nil || !slices.Equal(named(got), []string{"one.txt"}) {
+		t.Fatalf("first read: %v, %v", named(got), err)
+	}
+
+	aZip(t, at, "two.txt", "three.txt")
+
+	got, err := f.ReadDir(at)
+	if err != nil {
+		t.Fatalf("second read: %v", err)
+	}
+	if want := []string{"three.txt", "two.txt"}; !slices.Equal(named(got), want) {
+		t.Errorf("the changed archive lists %v, want %v", named(got), want)
+	}
+}
+
+// A real directory with an archive's name is a directory, not an
+// archive: nothing says to read it as a file.
+func TestADirectoryNamedLikeAnArchiveIsNotOne(t *testing.T) {
+	dir := t.TempDir()
+	at := filepath.Join(dir, "made.zip")
+	if err := os.Mkdir(at, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	f := WithArchives(NewLocal())
+
+	e, err := f.Stat(at)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if e.Archive || !e.Stored().IsDir() {
+		t.Errorf("a directory named made.zip reads as an archive: %+v", e)
+	}
+}
+
+// A directory with an archive's name is a directory: made, walked,
+// written into and removed like any other. Only a file is an archive.
+func TestADirectoryWithAnArchivesNameIsADirectory(t *testing.T) {
+	dir := t.TempDir()
+	f := WithArchives(NewLocal())
+	at := filepath.Join(dir, "made.zip")
+
+	if err := f.Mkdir(at, 0o755); err != nil {
+		t.Fatalf("making a directory named made.zip: %v", err)
+	}
+	w, err := f.Create(filepath.Join(at, "one.txt"), 0o644)
+	if err != nil {
+		t.Fatalf("writing into it: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	got, err := f.ReadDir(at)
+	if err != nil || !slices.Equal(named(got), []string{"one.txt"}) {
+		t.Fatalf("listing it: %v, %v", named(got), err)
+	}
+	if err := f.Remove(filepath.Join(at, "one.txt")); err != nil {
+		t.Fatalf("removing what is in it: %v", err)
+	}
+	if err := f.Remove(at); err != nil {
+		t.Errorf("removing it: %v", err)
+	}
+}
+
+// A link with an archive's name is made, the way a jar is linked to by
+// a name without its version.
+func TestALinkWithAnArchivesNameIsMade(t *testing.T) {
+	f, at := withAZip(t, "one.txt")
+	link := filepath.Join(filepath.Dir(at), "latest.zip")
+
+	if err := f.Symlink(at, link); err != nil {
+		t.Fatalf("linking latest.zip: %v", err)
+	}
+}
+
+// Nothing is written inside an archive: that is building the container
+// again, which is not what reading one is.
+func TestNothingIsWrittenInsideAnArchive(t *testing.T) {
+	f, at := withAZip(t, "one.txt")
+
+	if _, err := f.Create(filepath.Join(at, "two.txt"), 0o644); !errors.Is(err, ErrInArchive) {
+		t.Errorf("writing inside the archive: %v", err)
+	}
+	if err := f.Mkdir(filepath.Join(at, "sub"), 0o755); !errors.Is(err, ErrInArchive) {
+		t.Errorf("making a directory inside the archive: %v", err)
+	}
+}
+
+// statCounting counts the questions asked of a filesystem.
+type statCounting struct {
+	FS
+	stats int
+}
+
+func (c *statCounting) Stat(at string) (Entry, error) {
+	c.stats++
+	return c.FS.Stat(at)
+}
+
+// The archive held open is asked whether it changed at most once a
+// second, not once for every file read out of it: over a connection each
+// question is a round trip, and a copy out of a jar opens it for every
+// file in it.
+func TestAHeldArchiveIsNotAskedAboutForEveryRead(t *testing.T) {
+	_, at := withAZip(t, "one.txt", "two.txt", "three.txt")
+	c := &statCounting{FS: NewLocal()}
+	f := WithArchives(c)
+
+	for range 10 {
+		if _, err := f.ReadDir(at); err != nil {
+			t.Fatalf("list: %v", err)
+		}
+		r, err := f.Open(filepath.Join(at, "one.txt"))
+		if err != nil {
+			t.Fatalf("open: %v", err)
+		}
+		_ = r.Close()
+	}
+	if c.stats > 3 {
+		t.Errorf("the archive was asked about %d times for twenty reads", c.stats)
+	}
+}
+
+// A zip replaced through the same pane is read afresh straight away: a
+// write to the file lets go of the one held, however recently it was
+// asked about.
+func TestAZipReplacedThroughThePaneIsReadAgainAtOnce(t *testing.T) {
+	f, at := withAZip(t, "old.txt")
+	if _, err := f.ReadDir(at); err != nil {
+		t.Fatalf("first read: %v", err)
+	}
+	fresh := filepath.Join(filepath.Dir(at), "fresh.zip")
+	aZip(t, fresh, "new.txt")
+
+	if err := f.Rename(fresh, at); err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+	got, err := f.ReadDir(at)
+	if err != nil || !slices.Equal(named(got), []string{"new.txt"}) {
+		t.Errorf("the replaced zip lists %v, %v", named(got), err)
+	}
+
+	// And one removed and made again as a directory is a directory.
+	if err := f.Remove(at); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	if err := f.Mkdir(at, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	w, err := f.Create(filepath.Join(at, "one.txt"), 0o644)
+	if err != nil {
+		t.Fatalf("writing into the directory that replaced the zip: %v", err)
+	}
+	_ = w.Close()
+}
+
+// A link with an archive's name that points at a directory is walked
+// like the directory.
+func TestALinkToADirectoryWithAnArchivesNameIsWalked(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "real"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "real", "one.class"), nil, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := os.Symlink("real", filepath.Join(dir, "cur.jar")); err != nil {
+		t.Skipf("no links here: %v", err)
+	}
+	f := WithArchives(NewLocal())
+
+	got, err := f.ReadDir(filepath.Join(dir, "cur.jar"))
+	if err != nil || !slices.Equal(named(got), []string{"one.class"}) {
+		t.Errorf("the link lists %v, %v", named(got), err)
+	}
+}
+
+// A zip changed by something else is noticed once the second it is
+// trusted for has passed.
+func TestAZipChangedElsewhereIsNoticedAfterASecond(t *testing.T) {
+	was := archiveRecheck
+	archiveRecheck = 20 * time.Millisecond
+	t.Cleanup(func() { archiveRecheck = was })
+	f, at := withAZip(t, "one.txt")
+	if _, err := f.ReadDir(at); err != nil {
+		t.Fatalf("first read: %v", err)
+	}
+
+	aZip(t, at, "two.txt", "three.txt")
+	time.Sleep(3 * archiveRecheck)
+
+	got, err := f.ReadDir(at)
+	if err != nil || !slices.Equal(named(got), []string{"three.txt", "two.txt"}) {
+		t.Errorf("the changed zip lists %v, %v", named(got), err)
+	}
+}
+
+// A link to a zip is the zip: a path typed into Go to through one, the
+// way /usr/share/java links a jar under a name without its version, is
+// walked into.
+func TestALinkToAZipIsTheZip(t *testing.T) {
+	f, at := withAZip(t, "one.txt")
+	link := filepath.Join(filepath.Dir(at), "latest.zip")
+	if err := os.Symlink(filepath.Base(at), link); err != nil {
+		t.Skipf("no links here: %v", err)
+	}
+
+	got, err := f.ReadDir(link)
+	if err != nil || !slices.Equal(named(got), []string{"one.txt"}) {
+		t.Fatalf("the link lists %v, %v", named(got), err)
+	}
+	r, err := f.Open(filepath.Join(link, "one.txt"))
+	if err != nil {
+		t.Fatalf("open through the link: %v", err)
+	}
+	_ = r.Close()
+}
+
+// failingStat answers every question about one name with a failure that
+// is not "it is not there", the way a dropped connection does.
+type failingStat struct {
+	FS
+	name string
+}
+
+func (f failingStat) Stat(at string) (Entry, error) {
+	if filepath.Base(at) == f.name {
+		return Entry{}, errors.New("the connection went")
+	}
+	return f.FS.Stat(at)
+}
+
+// A name that cannot be asked about is not taken for an archive, so a
+// write under it fails for its own reason rather than for being "inside
+// an archive".
+func TestAWriteThatFailsIsNotBlamedOnAnArchive(t *testing.T) {
+	dir := t.TempDir()
+	f := WithArchives(failingStat{FS: NewLocal(), name: "ext.xpi"})
+
+	_, err := f.Create(filepath.Join(dir, "ext.xpi", "a.txt"), 0o644)
+	if err == nil {
+		t.Fatal("writing under a name nothing has worked")
+	}
+	if errors.Is(err, ErrInArchive) {
+		t.Errorf("the failure was blamed on an archive: %v", err)
+	}
+}
+
+// A link whose target has a colon in its name is a relative path on a
+// filesystem that does not write drives, and is followed from where the
+// link is.
+func TestALinkToANameWithAColonIsFollowedFromTheLink(t *testing.T) {
+	if os.PathSeparator == '\\' {
+		t.Skip("a name cannot hold a colon here")
+	}
+	dir := t.TempDir()
+	sub := filepath.Join(dir, "sub")
+	if err := os.Mkdir(sub, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	aZip(t, filepath.Join(sub, "a:b.jar"), "one.txt")
+	if err := os.Symlink("a:b.jar", filepath.Join(sub, "l.jar")); err != nil {
+		t.Skipf("no links here: %v", err)
+	}
+	f := WithArchives(NewLocal())
+
+	got, err := f.ReadDir(filepath.Join(sub, "l.jar"))
+	if err != nil || !slices.Equal(named(got), []string{"one.txt"}) {
+		t.Errorf("the link lists %v, %v", named(got), err)
+	}
+}
+
+// A link that leads nowhere is a link, not an archive to be: a write
+// under it says what the filesystem says rather than blaming an archive.
+func TestABrokenLinkIsNotAnArchive(t *testing.T) {
+	dir := t.TempDir()
+	link := filepath.Join(dir, "gone.jar")
+	if err := os.Symlink("nowhere.jar", link); err != nil {
+		t.Skipf("no links here: %v", err)
+	}
+	f := WithArchives(NewLocal())
+
+	e, err := f.Stat(link)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if e.IsDir() {
+		t.Error("a broken link is shown as a directory to walk into")
+	}
+	if _, err := f.Create(filepath.Join(link, "x"), 0o644); errors.Is(err, ErrInArchive) {
+		t.Errorf("a write under a broken link was blamed on an archive: %v", err)
+	}
+}
+
+// sepOf is a filesystem that writes paths with the separator given.
+type sepOf struct {
+	FS
+	sep byte
+}
+
+func (s sepOf) Sep() byte { return s.sep }
+
+// Where a link points is taken as starting at the top when it starts
+// at the separator, or at a drive and the top of it in either spelling:
+// a Windows machine served over SFTP says "C:\x" although its paths go
+// with "/". A colon in a name does not make it a drive.
+func TestWhereALinkPointsIsReadTheWayTheMachineWritesIt(t *testing.T) {
+	for _, c := range []struct {
+		sep  byte
+		path string
+		abs  bool
+	}{
+		{'/', "/x/y.jar", true},
+		{'/', `C:\x\y.jar`, true},
+		{'/', "C:/x/y.jar", true},
+		{'/', "a:b.jar", false},
+		{'/', "../y.jar", false},
+		{'/', `..\y.jar`, false},
+		{'\\', `C:\x\y.jar`, true},
+		{'\\', `\\server\share\y.jar`, true},
+		{'\\', `..\y.jar`, false},
+	} {
+		if got := isAbsOn(sepOf{FS: NewLocal(), sep: c.sep}, c.path); got != c.abs {
+			t.Errorf("%q with %q between names: absolute %v, want %v", c.path, c.sep, got, c.abs)
+		}
+	}
+}
+
+// Where a link points, as the filesystem it is on is asked about it: a
+// relative target beside the link, and a drive on a machine served over
+// SFTP in the spelling its server takes for a drive.
+func TestALinksTargetIsAskedForWhereItIs(t *testing.T) {
+	slash := sepOf{FS: NewLocal(), sep: '/'}
+	back := sepOf{FS: NewLocal(), sep: '\\'}
+	for _, c := range []struct {
+		f              FS
+		at, to, wanted string
+	}{
+		{slash, "/d/l.jar", "x.jar", "/d/x.jar"},
+		{slash, "/d/l.jar", "/e/x.jar", "/e/x.jar"},
+		{slash, "/C:/d/l.jar", `C:\e\x.jar`, "/C:/e/x.jar"},
+		{slash, "/C:/d/l.jar", "C:/e/x.jar", "/C:/e/x.jar"},
+		{slash, "/", "/", "/"},
+		{back, `C:\d\l.jar`, `C:\e\x.jar`, `C:\e\x.jar`},
+		{back, `C:\d\l.jar`, "x.jar", `C:\d\x.jar`},
+	} {
+		if got := linkTarget(c.f, c.at, c.to); got != c.wanted {
+			t.Errorf("%s -> %s is asked for as %q, want %q", c.at, c.to, got, c.wanted)
+		}
+	}
+}
+
+// A chain of links as long as the most followed is followed to its end;
+// one longer is given up on.
+func TestAChainOfLinksIsFollowedAsFarAsItMay(t *testing.T) {
+	dir := t.TempDir()
+	aZip(t, filepath.Join(dir, "real.zip"), "one.txt")
+	prev := "real.zip"
+	for i := range mostLinkHops + 1 {
+		name := fmt.Sprintf("l%d.zip", i)
+		if err := os.Symlink(prev, filepath.Join(dir, name)); err != nil {
+			t.Skipf("no links here: %v", err)
+		}
+		prev = name
+	}
+	f := WithArchives(NewLocal())
+
+	longest := filepath.Join(dir, fmt.Sprintf("l%d.zip", mostLinkHops-1))
+	if got, err := f.ReadDir(longest); err != nil || !slices.Equal(named(got), []string{"one.txt"}) {
+		t.Errorf("%d links to the zip list %v, %v", mostLinkHops, named(got), err)
+	}
+	if e, err := f.(*archives).followed(filepath.Join(dir, fmt.Sprintf("l%d.zip", mostLinkHops))); err == nil {
+		t.Errorf("%d links were followed to %+v", mostLinkHops+1, e)
+	}
+}

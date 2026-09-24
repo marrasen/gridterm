@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -180,5 +181,68 @@ func TestWritingIntoAnArchiveIsRefused(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "read only") {
 		t.Errorf("it said %q, which does not say why", err)
+	}
+}
+
+// A zip on the disk of a window this one is connected to is walked into
+// the way one on this machine is.
+func TestAnArchiveOnAWindowCanBeWalkedInto(t *testing.T) {
+	_, client, addr := twoWindows(t)
+	dir, _ := aBundle(t)
+	at := path.Join("/", filepath.ToSlash(dir))
+	pane := openFilesFromThePlus(t, client, addr)
+	openAt(t, client, pane, at)
+
+	openAt(t, client, pane, at+"/bundle.zip")
+	if err := pane.Err(); err != nil {
+		t.Fatalf("walking into the archive: %v", err)
+	}
+	if got := namesOn(pane); !slices.Contains(got, "readme.md") {
+		t.Errorf("the archive on the window shows %v", got)
+	}
+}
+
+// And one on a machine that window is connected to, read through it.
+// That filesystem was the one without its archives opened, so the zip
+// was a file and walking into it said it was not a directory.
+func TestAnArchiveOnAMachineOverThereCanBeWalkedInto(t *testing.T) {
+	host, client, addr := aWindowConnectedToMargit(t)
+	dir, _ := aBundle(t)
+	pane := openFilesFromTheFarPlus(t, client, host, addr, "margit")
+	at := overThere(dir)
+
+	var listed, inside []vfs.Entry
+	var body []byte
+	offWindow(t, client, "read the archive on margit", func() error {
+		var err error
+		if listed, err = pane.FS().ReadDir(at); err != nil {
+			return err
+		}
+		if inside, err = pane.FS().ReadDir(at + "/bundle.zip"); err != nil {
+			return err
+		}
+		f, err := pane.FS().Open(at + "/bundle.zip/readme.md")
+		if err != nil {
+			return err
+		}
+		defer func() { _ = f.Close() }()
+		body, err = io.ReadAll(f)
+		return err
+	})
+
+	for _, e := range listed {
+		if e.Name == "bundle.zip" && !e.IsDir() {
+			t.Error("the archive is listed as a file, so the browser cannot walk into it")
+		}
+	}
+	var names []string
+	for _, e := range inside {
+		names = append(names, e.Name)
+	}
+	if !slices.Contains(names, "readme.md") {
+		t.Errorf("the archive on margit shows %v", names)
+	}
+	if string(body) != "# the bundle\n" {
+		t.Errorf("a file inside it read %q", body)
 	}
 }

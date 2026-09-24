@@ -10,6 +10,7 @@ import (
 	"path"
 	"strings"
 	"sync"
+	"time"
 )
 
 // MostArchiveBytes is the largest archive this will open.
@@ -51,7 +52,16 @@ type archives struct {
 	at    string
 	held  *zip.Reader
 	bytes []byte
+
+	// was is the archive as it stood when it was read, to tell it has
+	// changed since, and checked when that was last asked.
+	was     Entry
+	checked time.Time
 }
+
+// archiveRecheck is how long the archive held open is trusted before the
+// file is asked again whether it has changed.
+var archiveRecheck = time.Second
 
 // WithArchives returns the filesystem with its archives opened as
 // directories.
@@ -82,6 +92,11 @@ func IsArchive(name string) bool {
 // The inner path is in the archive's own spelling, which is slashes
 // whatever the machine outside uses. It is empty for the archive
 // itself, which is the directory at its top.
+//
+// A name is only an archive when there is a file by it. A directory
+// with an archive's name is a directory, walked and written like any
+// other, and a name nothing has yet is taken for an archive, so a path
+// under it is not written into one by mistake.
 func (a *archives) split(at string) (outer, inner string, in bool) {
 	sep := string(a.Sep())
 	parts := strings.Split(at, sep)
@@ -89,10 +104,118 @@ func (a *archives) split(at string) (outer, inner string, in bool) {
 		if !IsArchive(part) {
 			continue
 		}
-		return strings.Join(parts[:i+1], sep),
-			strings.Trim(strings.Join(parts[i+1:], "/"), "/"), true
+		outer = strings.Join(parts[:i+1], sep)
+		if !a.mayBeArchive(outer) {
+			continue
+		}
+		return outer, strings.Trim(strings.Join(parts[i+1:], "/"), "/"), true
 	}
 	return at, "", false
+}
+
+// mayBeArchive reports whether a path with an archive's name is to be
+// read as one: a plain file, or nothing yet, so a path under a name
+// nothing has is not written into an archive by mistake.
+//
+// A directory is a directory whatever it is called. A link is what it
+// points at: one to a directory is walked like the directory, and one
+// to a jar is the jar. A name that cannot be asked about
+// at all is not taken for an archive, so what goes wrong with it is said
+// by the filesystem under this one rather than blamed on an archive.
+// The archive held open is known to be one without asking.
+func (a *archives) mayBeArchive(at string) bool {
+	a.mu.Lock()
+	known := a.at == at && a.held != nil && time.Since(a.checked) < archiveRecheck
+	a.mu.Unlock()
+	if known {
+		return true
+	}
+	e, err := a.FS.Stat(at)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return true
+	case err != nil:
+		return false
+	}
+	if e.IsLink() {
+		// Only the name itself being free makes it one to be. A link
+		// that leads nowhere is a link, and it is left to say so.
+		if e, err = a.follow(at, e); err != nil {
+			return false
+		}
+	}
+	return !e.IsDir()
+}
+
+// mostLinkHops is how many links are followed to find what a name is,
+// before a loop of them is given up on.
+const mostLinkHops = 8
+
+// followed is what a path is once any links it names are followed: a
+// link to a jar is the jar, and one to a directory the directory. The
+// filesystems under this one answer about the link itself.
+func (a *archives) followed(at string) (Entry, error) {
+	e, err := a.FS.Stat(at)
+	if err != nil {
+		return e, err
+	}
+	return a.follow(at, e)
+}
+
+// follow is followed for a name already asked about once.
+func (a *archives) follow(at string, e Entry) (Entry, error) {
+	for hop := 0; e.IsLink(); hop++ {
+		if hop == mostLinkHops {
+			return Entry{}, fmt.Errorf("%s: more than %d links, one after another", at, mostLinkHops)
+		}
+		at = linkTarget(a, at, e.Link)
+		var err error
+		if e, err = a.FS.Stat(at); err != nil {
+			return e, err
+		}
+	}
+	return e, nil
+}
+
+// linkTarget is the path a link at a path points to, as the filesystem
+// the link is on is asked about it.
+//
+// A relative target is beside the link. A drive on a filesystem whose
+// paths go with "/" -- a Windows machine over SFTP, which says where a
+// link points in its own spelling -- is written the way that machine is
+// asked about its drives, "/C:/dir", or its server takes "C:\dir" for a
+// name under the directory it started in.
+func linkTarget(f FS, at, target string) string {
+	if !isAbsOn(f, target) {
+		return Join(f, Dir(f, at), target)
+	}
+	if f.Sep() == '/' && len(target) >= 2 && isDrive(target[:2]) {
+		return "/" + strings.ReplaceAll(target, `\`, "/")
+	}
+	return target
+}
+
+// isAbsOn reports whether a path starts at the top of a filesystem: at
+// its separator, or at a drive and the top of it -- "C:\x" or "C:/x".
+// The drive is taken whatever the separator: a Windows machine served
+// over SFTP says where a link points in its own spelling. "a:b.jar" is
+// a name.
+func isAbsOn(f FS, p string) bool {
+	if strings.HasPrefix(p, string(f.Sep())) {
+		return true
+	}
+	return len(p) >= 3 && isDrive(p[:2]) && (p[2] == '\\' || p[2] == '/')
+}
+
+// letGo drops the archive held open when a write is about to change the
+// file at a path, so what is read next is what is there then rather
+// than what was there a moment ago.
+func (a *archives) letGo(at string) {
+	a.mu.Lock()
+	if a.at == at {
+		a.at, a.held, a.bytes = "", nil, nil
+	}
+	a.mu.Unlock()
 }
 
 // open reads an archive and keeps it, or answers the one it is already
@@ -100,12 +223,24 @@ func (a *archives) split(at string) (outer, inner string, in bool) {
 func (a *archives) open(at string) (*zip.Reader, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.at == at && a.held != nil {
+	// The one held is answered only while the file is still the one it
+	// was read from. Anything can change it: a copy from another pane, a
+	// move, a program outside gridterm. A zip read before and shown after
+	// would list what is no longer there. Asked at most once a
+	// archiveRecheck, because a copy out of a zip on a machine far away
+	// opens it once for every file, and each question is a round trip.
+	if a.at == at && a.held != nil && time.Since(a.checked) < archiveRecheck {
 		return a.held, nil
 	}
-	e, err := a.FS.Stat(at)
+	// What the name leads to, so a jar reached through a link is sized
+	// and watched for changes as the jar rather than as the link.
+	e, err := a.followed(at)
 	if err != nil {
 		return nil, err
+	}
+	if a.at == at && a.held != nil && e.Size == a.was.Size && e.Mod.Equal(a.was.Mod) {
+		a.checked = time.Now()
+		return a.held, nil
 	}
 	if e.Size > MostArchiveBytes {
 		return nil, fmt.Errorf("%s is %d bytes, and the most an archive may be to open it here is %d",
@@ -129,7 +264,7 @@ func (a *archives) open(at string) (*zip.Reader, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read the archive %s: %w", at, err)
 	}
-	a.at, a.held, a.bytes = at, got, raw
+	a.at, a.held, a.bytes, a.was, a.checked = at, got, raw, e, time.Now()
 	return got, nil
 }
 
@@ -146,7 +281,12 @@ func (a *archives) Stat(at string) (Entry, error) {
 		if err != nil {
 			return Entry{}, err
 		}
-		e.Mode |= fs.ModeDir
+		if !e.IsDir() {
+			// A file, shown as the directory at its top. A real
+			// directory with an archive's name is left as it is.
+			e.Mode |= fs.ModeDir
+			e.Archive = true
+		}
 		return e, nil
 	}
 	got, err := a.open(outer)
@@ -209,6 +349,7 @@ func (a *archives) markArchives(at string) ([]Entry, error) {
 	for i, e := range out {
 		if !e.IsDir() && e.Link == "" && IsArchive(e.Name) {
 			out[i].Mode |= fs.ModeDir
+			out[i].Archive = true
 		}
 	}
 	return out, nil
@@ -291,26 +432,31 @@ func (a *archives) Close() error {
 
 // Everything that writes is refused inside an archive and handed on
 // outside one. Writing one means building the container again, which
-// is a different thing from reading it.
+// is a different thing from reading it. The archive itself is a file
+// like any other, and a name with an archive's ending that is not a
+// file yet can be made into anything: a link to a jar, a directory.
 
 func (a *archives) Create(at string, mode fs.FileMode) (io.WriteCloser, error) {
-	if _, _, in := a.split(at); in {
+	if _, inner, in := a.split(at); in && inner != "" {
 		return nil, inArchive("write", at)
 	}
+	a.letGo(at)
 	return a.FS.Create(at, mode)
 }
 
 func (a *archives) Mkdir(at string, mode fs.FileMode) error {
-	if _, _, in := a.split(at); in {
+	if _, inner, in := a.split(at); in && inner != "" {
 		return inArchive("make a directory in", at)
 	}
+	a.letGo(at)
 	return a.FS.Mkdir(at, mode)
 }
 
 func (a *archives) Symlink(target, at string) error {
-	if _, _, in := a.split(at); in {
+	if _, inner, in := a.split(at); in && inner != "" {
 		return inArchive("make a link in", at)
 	}
+	a.letGo(at)
 	return a.FS.Symlink(target, at)
 }
 
@@ -318,6 +464,7 @@ func (a *archives) Remove(at string) error {
 	if _, inner, in := a.split(at); in && inner != "" {
 		return inArchive("remove something from", at)
 	}
+	a.letGo(at)
 	return a.FS.Remove(at)
 }
 
@@ -327,6 +474,8 @@ func (a *archives) Rename(from, to string) error {
 			return inArchive("move something in", at)
 		}
 	}
+	a.letGo(from)
+	a.letGo(to)
 	return a.FS.Rename(from, to)
 }
 
@@ -334,6 +483,7 @@ func (a *archives) Chmod(at string, mode fs.FileMode) error {
 	if _, inner, in := a.split(at); in && inner != "" {
 		return inArchive("change the permissions of something in", at)
 	}
+	a.letGo(at)
 	return a.FS.Chmod(at, mode)
 }
 

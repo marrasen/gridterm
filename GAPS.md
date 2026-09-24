@@ -1,6 +1,7 @@
 # Known gaps
 
-What is not there yet, said plainly. [TODO.md](TODO.md) is the working
+What is not there yet, said plainly. The
+[issues](https://github.com/marrasen/gridterm/issues) are the working
 list; this is the part worth knowing before you try to use gridterm for
 something.
 

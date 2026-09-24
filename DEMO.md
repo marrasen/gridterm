@@ -317,7 +317,7 @@ This is the group with the most "oh, nice" in it.
 
 # Planned
 
-From `TODO.md` and `MARCUS_TODO.md`. Grouped by how settled each one
+From the GitHub issues. Grouped by how settled each one
 is, so a question in the room gets a straight answer.
 
 ## Next, in order
@@ -411,9 +411,9 @@ Honest limits, in case they come up.
   ConPTY throws away the sequences that carry them, so neither ever
   reaches gridterm. OSC 1337 is the one it passes on, which is why
   pictures work at all. Measured on 2026-09-20; the table is in
-  `TODO.md`.
-- **Thirteen small faults are written down** under "Bugs Marcus has
-  hit" in `TODO.md`, mostly in the file browser and the viewer: a
+  `DESIGN.md`.
+- **Small faults are written down** as issues with the `bug`
+  label, mostly in the file browser and the viewer: a
   single click opens instead of marking, the minimap scrollbar cannot
   be dragged, a zip is not browsable over a connection to another
   gridterm, and a copy shows under the machine it came from rather

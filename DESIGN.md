@@ -229,3 +229,124 @@ is refused outright: there is no answer a user could give that would
 make connecting safe. A `known_hosts` that cannot be read is an error
 rather than an empty one, because a truncated list does not report a
 host as unknown — it reports its key as changed.
+
+## What ConPTY passes on
+
+Every pane on this machine runs through ConPTY, which is not a pipe. It
+reads what the program writes, keeps a console buffer, and writes that
+out again. So it answers some sequences itself and passes on the ones it
+has no opinion about.
+
+Measured on 2026-09-20 on this machine, twice: once from PowerShell and
+once with raw bytes through `cmd /c type`, which agreed.
+
+| Passed on | Kept by ConPTY |
+|---|---|
+| XTVERSION (`CSI > q`) | DA1 (`CSI c`) |
+| OSC 4, the palette question | OSC 11, the background question |
+| OSC 7, where the shell is | APC, which is the kitty protocol |
+| OSC 9, a message | DCS, which is sixel |
+| OSC 133, the prompt marks | |
+| OSC 1337 and OSC 1338, the pictures | |
+
+What follows from it:
+
+- **Everything gridterm reads today is passed on.** The pictures and
+  the prompt marks are in the left column, which is why they work.
+
+- **DA1 is answered by ConPTY from its own model.** It asks this
+  window once as it starts and keeps the answer. So adding a
+  capability to gridterm's own DA1 reply changes what conhost thinks
+  and not what a program is told. Sixel is discovered through DA1, so
+  that is the second thing blocking it.
+
+- **XTVERSION reaches gridterm.** That settles the open question: the
+  CSI sequences ConPTY has no opinion about are passed on.
+
+- **There is no passthrough flag.** microsoft/terminal#1985 asked for
+  one and was closed as a duplicate. The real flags are in
+  `src/inc/conpty-static.h`, and they are about glyph width.
+
+- **A passed-on sequence can arrive out of order** against the text
+  around it -- microsoft/terminal#17314 and #11220. If a picture ever
+  lands a line off, that is where it comes from.
+
+## Settled, do not re-open
+
+- **A failure belonging to a pane the user has closed goes to the log,
+  not to a dialog** (2026-09-20). It failed long after the user stopped
+  waiting, and the dialog took their next click. `reportForPane` shows
+  it only while the pane is open. The error is not dropped: "Show what
+  the window has logged" is where it goes.
+
+- **The file viewer stays a viewer, with no caret** (2026-09-20). A
+  keyboard selection goes on starting at the top left of the view,
+  which is the price of the arrows still scrolling. A caret would mean
+  Up and Down moved it and the view followed, which is an editor, and
+  the reader is a pager.
+
+- **The words a user reads say "connect to"** (2026-09-19), mirroring
+  the host's "Serve this window…". "Work in" was wrong because
+  nothing moves, "share" because a share is the set of panes handed to
+  an agent, and "session" because a session is a running shell. The
+  code still says "take over"; see #60.
+
+- **A new pane opens on the shell that was picked last** (2026-09-19).
+  Three things are asked in order: `-e` on the command line, the shell
+  in the settings file, then the machine's default. `rememberShell`
+  writes the file when a shell is opened by name. "Default shell" opens
+  on the machine's default and forgets the pick. With nothing written
+  down, `session.DefaultShell` answers `%COMSPEC%` on Windows, so a
+  first launch opens cmd.exe, not PowerShell.
+
+- **"Connection closed." already has two buttons** (2026-09-19,
+  against `d79f629`). Reconnect and Close, with Close the default, as
+  `TestEnterClosesThePaneRatherThanStartingItAgain` pins.
+
+- **Every shell gets "Connection closed. Reconnect?"**, whether the
+  transport went or the user typed exit, and whether the shell is on a
+  machine or this one. That is what ssh prints, and gridterm calls
+  every pane a connection. Settled twice on 2026-09-17: a reviewer
+  argued a local shell was never connected, and Marcus kept the one
+  wording.
+
+- **A command is worded differently**, and not for tidiness. Nothing is
+  being connected: the command's channel closed and the SSH connection
+  is up. The question names the command and the choice says it runs it
+  again, because running `make deploy` twice is a thing the user has to
+  see before they press it.
+
+- **A pane that cannot be put in a job object opens no pane, and the
+  window says why** (2026-09-17). Opening it anyway brings back the
+  orphaned shells the job object is there to stop, in silence.
+  `log.Fatal` was wrong too: started from Explorer there is no console.
+
+- **The keyboard shortcuts file holds changes, not the whole map**
+  (2026-09-17). Moving a shortcut takes two lines, and the notice and
+  the README say so.
+
+- **A listing that fails while a path is being completed is not shown**
+  (2026-09-17). A dialog per keystroke would be worse than the fault,
+  so the failure goes to the log and the completion offers nothing.
+
+- **Nothing caps the panes a window keeps** (2026-09-16). A pane worth
+  keeping is worth reusing, so reusing it is the easy thing rather than
+  throwing the transcript away. Closing a pane does release what it
+  held.
+
+- **What the agent sent is written down**, and is on the Servers menu
+  as "What the agent typed" (2026-09-17). The user hands the pane over,
+  gives the access and holds the secrets, so what the agent does there
+  is theirs to read. It is what was sent, not what ran: Backspace, Tab
+  completion and Up through the history all change a line first, Ctrl+U
+  throws one away, a here-document reads as four commands, and in a
+  full-screen program every line typed reads as a command. The dialog
+  says so. A secret the user types at the agent's asking is not in it.
+
+- **A hand-over does not expire** (2026-09-17). It lasts until the user
+  takes it back or closes the pane. Revisit if forgotten hand-overs
+  ever pile up.
+
+- **A command pane can be handed over**, running or not. A running one
+  takes keys on the command's stdin; an ended one can be read and not
+  typed into, which is worth having for a failed build.

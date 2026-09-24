@@ -511,6 +511,7 @@ func (a *app) endOf(p *files.Pane) jobEnd {
 // its machines dropped is what this is for, and it connects to them one
 // after the other rather than both at once.
 func (a *app) openEndAgain(end jobEnd, then func(vfs.FS, error)) {
+	end = a.endNow(end)
 	if end.far.window != nil || a.about(end.host).machine != nil ||
 		a.about(end.host).kind == hostHere {
 		f, err := a.openEnd(end)
@@ -524,6 +525,43 @@ func (a *app) openEndAgain(end jobEnd, then func(vfs.FS, error)) {
 		}
 		then(a.holdingTheMachine(end.host, f), nil)
 	})
+}
+
+// endNow gives an end the name its machine goes by now.
+//
+// Work started before a rename keeps the name the machine had, and the
+// name is all it has to go on. Opening it again under the old one logs
+// in to the machine a second time and puts a second group on the
+// sidebar beside the one already there -- two names for one machine,
+// which is the thing the window holds one connection per machine to
+// avoid. Matched by where the machine is rather than by what it is
+// called, which is the only thing a rename leaves alone.
+func (a *app) endNow(end jobEnd) jobEnd {
+	if end.far.window != nil || end.at.cfg.Host == "" {
+		return end
+	}
+	if a.about(end.host).machine != nil {
+		// Something is connected under that name. Whether it is this
+		// machine is not for a repeat to second-guess: the name is what
+		// the user sees on the row.
+		return end
+	}
+	named := func(now string) jobEnd {
+		end.host, end.at.name = now, now
+		return end
+	}
+	if now := a.machines.sameMachineAs(end.at); now != "" {
+		return named(now)
+	}
+	// Nothing connected to it. The server list is asked next, so a
+	// machine that is merely disconnected is dialled under the name the
+	// list gives it rather than the one the work remembers.
+	for _, h := range a.book.Hosts() {
+		if h.Config().SameMachine(end.at.cfg) {
+			return named(h.Name)
+		}
+	}
+	return end
 }
 
 // openEnd opens one end of a piece of file work again: a machine this

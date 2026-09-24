@@ -387,6 +387,17 @@ func (a *app) renamedTheMachine(was, now string) {
 	}
 }
 
+// reopeningOn is a filesystem the window holds for a machine, and nil
+// when it holds none.
+func (a *app) reopeningOn(host string) *reopening {
+	for _, r := range a.reopening {
+		if r.Host() == host {
+			return r
+		}
+	}
+	return nil
+}
+
 // keepReopening remembers a filesystem so the machine going can tell
 // it, and forgets the ones nothing is using.
 func (a *app) keepReopening(r *reopening) {

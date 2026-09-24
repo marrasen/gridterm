@@ -64,7 +64,14 @@ func windowName(end jobEnd) string {
 // next run.
 func (a *app) endOfSaved(host, window string) (jobEnd, error) {
 	if window == "" {
-		return jobEnd{host: host}, nil
+		end := jobEnd{host: host}
+		// The step the machine was reached by, when something else
+		// still holds it: a machine on no list is reachable only
+		// through that, and a saved copy names it by name alone.
+		if r := a.reopeningOn(host); r != nil {
+			end.at = r.step()
+		}
+		return end, nil
 	}
 	t := a.windows.named(window)
 	if t == nil {

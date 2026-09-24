@@ -79,6 +79,23 @@ func (ms *machines) named(name string) *machine { return ms.held[name] }
 // connecting is the dial on its way to a name, or nil.
 func (ms *machines) connecting(name string) *dialling { return ms.opening[name] }
 
+// sameMachineAs is the name a connection to this very machine is held
+// under, and empty when none is.
+//
+// By where the machine is rather than by what it is called, for work
+// that kept a name the machine no longer goes by.
+func (ms *machines) sameMachineAs(at step) string {
+	if at.cfg.Host == "" {
+		return ""
+	}
+	for name, m := range ms.held {
+		if m.at.cfg.SameMachine(at.cfg) {
+			return name
+		}
+	}
+	return ""
+}
+
 // count is how many connections are held, for a test.
 func (ms *machines) count() int { return len(ms.held) }
 
@@ -291,7 +308,7 @@ func (ms *machines) settle(d *dialling, made bool) {
 		run()
 	}
 	for _, tell := range answering {
-		tell(nil)
+		tell(true)
 	}
 }
 
@@ -305,13 +322,9 @@ func (ms *machines) dropWaiting(d *dialling) {
 	answering := d.answering
 	d.settled, d.waiting, d.answering = true, nil, nil
 	for _, tell := range answering {
-		tell(errNotMade)
+		tell(false)
 	}
 }
-
-// errNotMade is what a caller blocked on a connection is told when that
-// connection was not made, whether it failed or was given up on.
-var errNotMade = errors.New("the connection was not made")
 
 // machine is one connection to one server.
 //

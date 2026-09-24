@@ -733,13 +733,15 @@ func TestARepeatThatCannotReachTheFarEndStartsNothing(t *testing.T) {
 	withPanel(t, a)
 	host := connectedTo(t, a, s)
 
-	here := openFilesFromThePlus(t, a, conns.Local)
+	// The copy comes off the machine, so the source is a filesystem
+	// that has to be opened before the far end is found wanting.
 	there := openFilesFromThePlus(t, a, host)
-	from, into := t.TempDir(), filepath.ToSlash(t.TempDir())
+	here := openFilesFromThePlus(t, a, conns.Local)
+	from, into := filepath.ToSlash(t.TempDir()), t.TempDir()
 	putFile(t, from, "one.txt", "the body")
-	a.focus(here)
-	openAt(t, a, here, from)
-	openAt(t, a, there, into)
+	a.focus(there)
+	openAt(t, a, there, from)
+	openAt(t, a, here, into)
 
 	copyTheFirstFile(t, a, a.files.view)
 	e := theJobRow(t, a)
@@ -751,12 +753,10 @@ func TestARepeatThatCannotReachTheFarEndStartsNothing(t *testing.T) {
 	d := theJobPane(t, a)
 
 	// The far end is a machine the window has no way to reach.
-	if err := a.dropMachine(host); err != nil {
-		t.Fatalf("dropMachine: %v", err)
-	}
 	gone := "gone-for-good"
 	d.to = jobEnd{host: gone}
 	rows := len(a.registry.Groups(time.Now()))
+	held := len(a.reopening)
 	pressChoice(t, d, btnRepeat)
 
 	n := awaitModal(t, a, "a dialog saying it could not be done again",
@@ -770,6 +770,11 @@ func TestARepeatThatCannotReachTheFarEndStartsNothing(t *testing.T) {
 	if got := len(a.registry.Groups(time.Now())); got != rows {
 		t.Fatalf("the sidebar grew from %d groups to %d", rows, got)
 	}
+	// And the source it had already opened is let go of, rather than
+	// left as a session nobody closes.
+	waitFor(t, a, "the source to be let go of", func() bool {
+		return len(a.reopening) == held
+	})
 }
 
 // The dialog reads the panel's rates and never adds to them: the panel

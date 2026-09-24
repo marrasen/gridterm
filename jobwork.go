@@ -90,10 +90,17 @@ func soFar(d time.Duration) string {
 // dropped and came back is a different connection under the same name.
 // A machine that has not come back is connected to here, so the work
 // can be done again without the user reconnecting first.
-func (a *app) repeatJob(op jobs.Op, from, to jobEnd) {
+//
+// done says the attempt is over, whether it started the work or failed,
+// so what asked can let the user ask again.
+func (a *app) repeatJob(op jobs.Op, from, to jobEnd, done func()) {
 	title := "Could not " + strings.ToLower(op.Kind.String()) + " it again"
+	if done == nil {
+		done = func() {}
+	}
 	a.openEndAgain(from, func(source vfs.FS, err error) {
 		if err != nil {
+			done()
 			a.reportError(title, err)
 			return
 		}
@@ -105,10 +112,12 @@ func (a *app) repeatJob(op jobs.Op, from, to jobEnd) {
 		// has.
 		from.host = a.hostOf(source)
 		if op.To == nil {
+			done()
 			a.runJob(op, from, to, owned)
 			return
 		}
 		a.openEndAgain(to, func(into vfs.FS, err error) {
+			done()
 			if err != nil {
 				// The source is let go of here: nothing else holds it,
 				// and a session nobody closes is a session left open on

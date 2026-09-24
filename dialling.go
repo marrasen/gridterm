@@ -28,13 +28,15 @@ type dialling struct {
 	waiting []func()
 
 	// answering are the callers blocked on this connection, told
-	// whichever way it goes.
+	// whichever way it goes: made says the machine answered.
 	//
 	// Not waiting: what waits is work to run once the machine answers,
 	// and a connection that was not made leaves it nothing to do, so it
 	// is thrown away. A caller blocked on an answer has to be told
-	// anyway, or it waits for a connection that is never coming.
-	answering []func(error)
+	// anyway, or it waits for a connection that is never coming. What
+	// to say about one that failed is the caller's, which is why this
+	// carries no error of its own.
+	answering []func(made bool)
 
 	// settled says the dial has come back, so anything waiting on it has
 	// already run and a new request must run now rather than queue.

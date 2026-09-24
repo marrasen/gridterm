@@ -19,7 +19,7 @@ import (
 
 // aPaneOnADroppedMachine is a file pane pointed at a directory the test
 // owns, on a machine whose connection has gone.
-func aPaneOnADroppedMachine(t *testing.T) (a *testApp, dir string, pane *files.Pane) {
+func aPaneOnADroppedMachine(t *testing.T) (a *testApp, s *sshtest.Server, dir string, pane *files.Pane) {
 	t.Helper()
 	a, s, host := aConnectedWindow(t, 100, 30)
 	pane = openFilesFromThePlus(t, a, host)
@@ -35,13 +35,13 @@ func aPaneOnADroppedMachine(t *testing.T) (a *testApp, dir string, pane *files.P
 		return a.machines.named(host) == nil
 	})
 	settleAndClearNotices(t, a)
-	return a, dir, pane
+	return a, s, dir, pane
 }
 
 // Making a directory after the connection went opens the machine again
 // and makes it.
 func TestMakingADirectoryAfterTheDropOpensTheMachineAgain(t *testing.T) {
-	a, dir, pane := aPaneOnADroppedMachine(t)
+	a, _, dir, pane := aPaneOnADroppedMachine(t)
 
 	a.makeDirectory(pane, "made")
 	waitFor(t, a, "the directory to be made", func() bool {
@@ -58,8 +58,9 @@ func TestMakingADirectoryAfterTheDropOpensTheMachineAgain(t *testing.T) {
 // it is the operation that would show a reconnect twice if the
 // filesystem did not keep what it opened.
 func TestRenamingAfterTheDropOpensTheMachineAgain(t *testing.T) {
-	a, dir, pane := aPaneOnADroppedMachine(t)
+	a, s, dir, pane := aPaneOnADroppedMachine(t)
 	putFile(t, dir, "was.txt", "hello")
+	sessions := s.SFTPs()
 
 	a.renameTo(pane, "was.txt", "now.txt")
 	waitFor(t, a, "the rename to happen", func() bool {
@@ -72,16 +73,17 @@ func TestRenamingAfterTheDropOpensTheMachineAgain(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, "was.txt")); err == nil {
 		t.Error("the old name is still there")
 	}
-	// One connection between the two asks, not one each.
-	if got := len(reopenersOn(t, a, a.hostOf(pane.FS()))); got != 1 {
-		t.Errorf("%d filesystems hold the machine after the rename", got)
+	// One session between the two asks, not one each: the filesystem
+	// keeps what it opened for the first.
+	if got := s.SFTPs() - sessions; got != 1 {
+		t.Errorf("the rename opened %d sessions on the machine, want the one", got)
 	}
 }
 
 // Reading a file after the connection went opens the machine again and
 // shows it.
 func TestReadingAFileAfterTheDropOpensTheMachineAgain(t *testing.T) {
-	a, dir, pane := aPaneOnADroppedMachine(t)
+	a, _, dir, pane := aPaneOnADroppedMachine(t)
 	putFile(t, dir, "note.txt", "what it says\n")
 	var found bool
 	for _, e := range pane.Entries() {
@@ -124,13 +126,15 @@ func TestReadingAFileAfterTheDropOpensTheMachineAgain(t *testing.T) {
 // Deleting after the connection went opens the machine again, and the
 // work is filed under that machine rather than under this one.
 func TestDeletingAfterTheDropOpensTheMachineAgain(t *testing.T) {
-	a, dir, pane := aPaneOnADroppedMachine(t)
+	a, _, dir, pane := aPaneOnADroppedMachine(t)
 	putFile(t, dir, "gone.txt", "take me")
 	host := a.hostOf(pane.FS())
 
 	a.startJob(jobs.Delete, files.Work{
 		From: pane, At: filepath.ToSlash(dir), Names: []string{"gone.txt"},
 	})
+	// The row, taken while the work is still on the window's list.
+	row := theJobRow(t, a)
 	waitFor(t, a, "the file to go", func() bool {
 		a.refreshJobs()
 		_, err := os.Stat(filepath.Join(dir, "gone.txt"))
@@ -141,14 +145,8 @@ func TestDeletingAfterTheDropOpensTheMachineAgain(t *testing.T) {
 	}
 	// Filed under the machine it happened on. Reading which machine off
 	// what is connected would have said Local.
-	var filed []string
-	for e := range a.jobs {
-		filed = append(filed, e.Host)
-	}
-	for _, at := range filed {
-		if at != host {
-			t.Errorf("the work is filed under %q, want %q", at, host)
-		}
+	if row.Host != host {
+		t.Errorf("the work is filed under %q, want %q", row.Host, host)
 	}
 }
 
@@ -235,6 +233,9 @@ func TestASavedCopyRunAgainOpensTheMachine(t *testing.T) {
 	settleAndClearNotices(t, a)
 
 	a.repeatSavedCopy(op, fromEnd, toEnd)
+	waitFor(t, a, "the copy to start", func() bool { return len(a.jobs) == 1 })
+	// The row, taken while the work is still on the window's list.
+	row := theJobRow(t, a)
 	waitFor(t, a, "the copy to happen", func() bool {
 		a.refreshJobs()
 		_, err := os.Stat(filepath.Join(into, "one.txt"))
@@ -247,19 +248,12 @@ func TestASavedCopyRunAgainOpensTheMachine(t *testing.T) {
 		t.Errorf("a dialog complained about it: %T", up)
 	}
 	// The row is filed under the machine, not under this one.
-	var filed []string
-	for e := range a.jobs {
-		filed = append(filed, e.Host)
-	}
-	for _, at := range filed {
-		if at != host {
-			t.Errorf("the work is filed under %q, want %q", at, host)
-		}
+	if row.Host != host {
+		t.Errorf("the work is filed under %q, want %q", row.Host, host)
 	}
 }
 
-// A copy between two machines that both went opens them one after the
-// other, rather than both at once.
+// A copy between two machines that both went opens both of them.
 func TestACopyBetweenTwoGoneMachinesOpensBoth(t *testing.T) {
 	near, far := sshtest.New(t), sshtest.New(t)
 	a := newTestApp(t, 100, 30)
@@ -311,5 +305,119 @@ func TestACopyBetweenTwoGoneMachinesOpensBoth(t *testing.T) {
 	}
 	if up := a.root.Modal(); up != nil {
 		t.Errorf("a dialog complained about it: %T", up)
+	}
+}
+
+// A repeat after the machine was renamed goes to the machine, not to a
+// second login under the name the work remembers.
+//
+// Work keeps the name its machine had when it started, and the name is
+// all it has to go on. Dialling under the old one puts a second group
+// on the sidebar for a machine already there.
+func TestARepeatAfterARenameGoesToTheOneMachine(t *testing.T) {
+	s := sshtest.New(t)
+	a := newTestApp(t, 100, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pinServers(t, a, s)
+	saveHost(t, a, "one", s, "")
+	if err := a.connectSaved("one"); err != nil {
+		t.Fatalf("connectSaved: %v", err)
+	}
+	waitFor(t, a, "the machine to answer", func() bool {
+		return a.machines.named("one") != nil
+	})
+	there := openFilesFromThePlus(t, a, "one")
+	here := openFilesFromThePlus(t, a, conns.Local)
+	if there == nil || here == nil {
+		t.Fatal("no file panes opened")
+	}
+	from, into := t.TempDir(), t.TempDir()
+	putFile(t, from, "one.txt", "the body")
+	openAt(t, a, there, filepath.ToSlash(from))
+	openAt(t, a, here, into)
+
+	// The ends as the work took them, before the rename.
+	op := jobs.Op{
+		Kind: jobs.Copy, At: filepath.ToSlash(from), Into: into,
+		Names: []string{"one.txt"},
+	}
+	fromEnd, toEnd := a.endOf(there), a.endOf(here)
+	renameSaved(t, a, "one", "two")
+	if a.machines.named("two") == nil {
+		t.Fatalf("the connection did not follow the rename: %v", a.machines.names())
+	}
+
+	a.repeatSavedCopy(op, fromEnd, toEnd)
+	waitFor(t, a, "the copy to happen", func() bool {
+		a.refreshJobs()
+		_, err := os.Stat(filepath.Join(into, "one.txt"))
+		return err == nil
+	})
+	if got := a.machines.names(); len(got) != 1 || got[0] != "two" {
+		t.Errorf("the window holds %v, want the one machine under its new name", got)
+	}
+	if up := a.root.Modal(); up != nil {
+		t.Errorf("a dialog complained about it: %T", up)
+	}
+}
+
+// Pressing Repeat twice while the machine is being opened again starts
+// one copy, not two.
+//
+// It used to be instant, so a second press was a second copy the user
+// had asked for. A repeat that has to open a machine takes as long as a
+// connection does, and the press in that time is the user wondering
+// whether the first one registered.
+func TestPressingRepeatTwiceWhileReconnectingStartsOneCopy(t *testing.T) {
+	a, s, host := aConnectedWindow(t, 100, 30)
+	there := openFilesFromThePlus(t, a, host)
+	here := openFilesFromThePlus(t, a, conns.Local)
+	if there == nil || here == nil {
+		t.Fatal("no file panes opened")
+	}
+	from, into := t.TempDir(), t.TempDir()
+	putFile(t, from, "one.txt", "the body")
+	a.focus(there)
+	openAt(t, a, there, filepath.ToSlash(from))
+	openAt(t, a, here, into)
+
+	copyTheFirstFile(t, a, a.files.view)
+	e := theJobRow(t, a)
+	waitFor(t, a, "the copy to finish", func() bool {
+		a.refreshJobs()
+		return len(a.jobs) == 0
+	})
+	openTheRow(t, a, e)
+	d := theJobPane(t, a)
+
+	s.CloseClients()
+	waitFor(t, a, "the window to see the machine go", func() bool {
+		a.reapExited()
+		return a.machines.named(host) == nil
+	})
+	settleAndClearNotices(t, a)
+
+	// What the first copy made goes, so the copy done again is the one
+	// that puts it back.
+	if err := os.Remove(filepath.Join(into, "one.txt")); err != nil {
+		t.Fatalf("clear what the first copy made: %v", err)
+	}
+
+	// Two presses before the window has had a frame to answer the
+	// first, which is what a machine being opened again leaves room for.
+	pressChoice(t, d, btnRepeat)
+	pressChoice(t, d, btnRepeat)
+	waitFor(t, a, "the copy to be done again", func() bool {
+		a.refreshJobs()
+		_, err := os.Stat(filepath.Join(into, "one.txt"))
+		return err == nil
+	})
+	settleAndClearNotices(t, a)
+	if got := len(a.jobs); got != 0 {
+		t.Errorf("%d copies are still going, want the one press to have started one", got)
+	}
+	if up := a.root.Modal(); up != nil {
+		t.Errorf("a second copy asked about the file the first wrote: %T", up)
 	}
 }

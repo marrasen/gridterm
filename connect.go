@@ -621,9 +621,12 @@ func (a *app) filesystemAgain(host string, at step, then func(vfs.FS, error)) {
 	// this, so a connection that was not made has to come back as a
 	// failure. What waits is thrown away when the dial fails, which
 	// here would leave the pane reading for ever.
-	told := func(err error) {
-		if err != nil {
-			then(nil, fmt.Errorf("connecting to %s: %w", groupName(host), err))
+	told := func(made bool) {
+		if !made {
+			// Why it was not made is in the account of the connection,
+			// which is where a reason belongs: this is read in a file
+			// pane, which has no room for one and nothing to do with it.
+			then(nil, fmt.Errorf("the connection to %s was not made", groupName(host)))
 			return
 		}
 		answer()
@@ -660,7 +663,7 @@ func (a *app) filesystemAgain(host string, at step, then func(vfs.FS, error)) {
 	// this read with "nothing is connected" while they read it.
 	for _, s := range route {
 		if d := a.about(s.name).dialling; d != nil && !d.settled {
-			d.answering = append(d.answering, func(error) {
+			d.answering = append(d.answering, func(bool) {
 				a.filesystemAgain(host, at, then)
 			})
 			return

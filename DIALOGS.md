@@ -1336,6 +1336,15 @@ it can be held against another and believed to match.
   from `main` gives.
 - `Checking for updates…` — while the question is out.
 
+A file pane whose machine has gone opens it again when the user asks
+for something, and says so while that is happening:
+
+- `Reconnecting to <machine>…` — a folder click, a rename, a file
+  opened or a copy done again, on a machine that dropped. It goes up
+  when the connection is asked for and is replaced by whatever happens
+  next. Without it a click that waits the length of a login reads as a
+  window that has stopped.
+
 The secrets commands answer the same way (G2), because each worked and
 there is nothing to read:
 

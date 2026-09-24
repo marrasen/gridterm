@@ -130,8 +130,24 @@ at all: nothing connected, no route on any list, and no step kept.
    replaced by whatever happens next, the way `Checking for updates…`
    does.
 
-2. **A repeat connects.** Pressing "Do it again" on work whose machine
+2. **A repeat that has to open a machine ignores a second press.** The
+   button used to be instant, so pressing twice meant two copies. It
+   now takes the length of a login, and the press in that time is the
+   user wondering whether the first one registered.
+3. **A repeat follows a rename.** Work keeps the name its machine had
+   when it started. Opening it again under that name would log in to
+   the machine a second time and put a second group on the sidebar, so
+   the machine is found by where it is instead.
+4. **A repeat connects.** Pressing "Do it again" on work whose machine
    has gone opens that machine rather than refusing.
+
+## Left as it is
+
+**A failed copy's clean-up reconnects.** A job that dies with the
+transport removes what it half wrote, and that call goes through the
+wrapper, so it opens the machine again to do it. The alternative is a
+`.gridterm-part` file left on the machine for good. The user sees
+`Reconnecting to X…` for a copy that has just failed.
 
 ## Settled while building
 

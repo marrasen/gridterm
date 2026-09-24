@@ -517,16 +517,26 @@ func TestTheReconnectingLineHoldsUntilTheMachineAnswers(t *testing.T) {
 	waitFor(t, a, "the read to ask for the machine", func() bool {
 		return len(stuck.answering) > 0
 	})
-	if got := a.saying(); !strings.Contains(got, "Reconnecting") {
-		t.Fatalf("the bottom row says %q", got)
+	// Read off the drawn grid, not off the field: the sidebar is on a
+	// layer over this row, and a line shorter than the sidebar is wide
+	// is one nobody sees.
+	a.g.Clear()
+	a.drawHint()
+	if got := bottomRow(t, a); !strings.Contains(got, "Reconnecting to") {
+		t.Fatalf("the bottom row reads %q", got)
 	}
 
 	// Long past the few seconds a line that says something worked gets.
 	was := a.frameTime()
 	a.now = func() time.Time { return was.Add(10 * statusFor) }
 	a.stepStatus()
-	if got := a.saying(); !strings.Contains(got, "Reconnecting") {
-		t.Errorf("the bottom row says %q after the wait, want it still saying so", got)
+	// Cleared first, because a row nothing writes to keeps what the
+	// last frame left on it -- which is the line, and would read as
+	// still being there however broken the holding was.
+	a.g.Clear()
+	a.drawHint()
+	if got := bottomRow(t, a); !strings.Contains(got, "Reconnecting to") {
+		t.Errorf("the bottom row reads %q after the wait, want it still saying so", got)
 	}
 
 	// And it goes when the connection has settled.
@@ -534,7 +544,9 @@ func TestTheReconnectingLineHoldsUntilTheMachineAnswers(t *testing.T) {
 	waitFor(t, a, "the read to come back", func() bool { return len(done) > 0 })
 	<-done
 	a.stepStatus()
-	if got := a.saying(); strings.Contains(got, "Reconnecting") {
-		t.Errorf("the bottom row still says %q", got)
+	a.g.Clear()
+	a.drawHint()
+	if got := bottomRow(t, a); strings.Contains(got, "Reconnecting") {
+		t.Errorf("the bottom row still reads %q", got)
 	}
 }

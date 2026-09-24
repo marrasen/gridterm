@@ -130,12 +130,19 @@ func (a *archives) mayBeArchive(at string) bool {
 	if known {
 		return true
 	}
-	e, err := a.followed(at)
+	e, err := a.FS.Stat(at)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
 		return true
 	case err != nil:
 		return false
+	}
+	if e.IsLink() {
+		// Only the name itself being free makes it one to be. A link
+		// that leads nowhere is a link, and it is left to say so.
+		if e, err = a.followed(at); err != nil {
+			return false
+		}
 	}
 	return !e.IsDir()
 }
@@ -163,9 +170,13 @@ func (a *archives) followed(at string) (Entry, error) {
 }
 
 // isAbsOn reports whether a path starts at the top of a filesystem: at
-// its separator, or, on Windows, at a drive.
+// its separator, or, on a filesystem that writes paths the Windows way,
+// at a drive. "a:b.jar" is a name anywhere else.
 func isAbsOn(f FS, p string) bool {
-	return strings.HasPrefix(p, string(f.Sep())) || (len(p) >= 2 && p[1] == ':')
+	if strings.HasPrefix(p, string(f.Sep())) {
+		return true
+	}
+	return f.Sep() == '\\' && len(p) >= 2 && isDrive(p[:2])
 }
 
 // letGo drops the archive held open when a write is about to change the

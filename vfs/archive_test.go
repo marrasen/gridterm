@@ -675,3 +675,49 @@ func TestAWriteThatFailsIsNotBlamedOnAnArchive(t *testing.T) {
 		t.Errorf("the failure was blamed on an archive: %v", err)
 	}
 }
+
+// A link whose target has a colon in its name is a relative path on a
+// filesystem that does not write drives, and is followed from where the
+// link is.
+func TestALinkToANameWithAColonIsFollowedFromTheLink(t *testing.T) {
+	if os.PathSeparator == '\\' {
+		t.Skip("a name cannot hold a colon here")
+	}
+	dir := t.TempDir()
+	sub := filepath.Join(dir, "sub")
+	if err := os.Mkdir(sub, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	aZip(t, filepath.Join(sub, "a:b.jar"), "one.txt")
+	if err := os.Symlink("a:b.jar", filepath.Join(sub, "l.jar")); err != nil {
+		t.Skipf("no links here: %v", err)
+	}
+	f := WithArchives(NewLocal())
+
+	got, err := f.ReadDir(filepath.Join(sub, "l.jar"))
+	if err != nil || !slices.Equal(named(got), []string{"one.txt"}) {
+		t.Errorf("the link lists %v, %v", named(got), err)
+	}
+}
+
+// A link that leads nowhere is a link, not an archive to be: a write
+// under it says what the filesystem says rather than blaming an archive.
+func TestABrokenLinkIsNotAnArchive(t *testing.T) {
+	dir := t.TempDir()
+	link := filepath.Join(dir, "gone.jar")
+	if err := os.Symlink("nowhere.jar", link); err != nil {
+		t.Skipf("no links here: %v", err)
+	}
+	f := WithArchives(NewLocal())
+
+	e, err := f.Stat(link)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if e.IsDir() {
+		t.Error("a broken link is shown as a directory to walk into")
+	}
+	if _, err := f.Create(filepath.Join(link, "x"), 0o644); errors.Is(err, ErrInArchive) {
+		t.Errorf("a write under a broken link was blamed on an archive: %v", err)
+	}
+}

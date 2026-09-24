@@ -339,7 +339,7 @@ func (a *app) openServing() error {
 	port.SetText(strconv.Itoa(a.serving.startPort()))
 	port.Hint = "0 picks a free port"
 	reach := f.AddField(fldListenOn, a.newField("", 0))
-	reach.Options = []string{whereHere, whereAnywhere}
+	reach.Choices = ui.ChoicesOf(whereHere, whereAnywhere)
 	reach.SetText(a.serving.startReach())
 
 	f.AddButton(ui.Button{Title: btnServe, Do: func() error {

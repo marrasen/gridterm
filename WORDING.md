@@ -143,6 +143,7 @@ them before adding body text.
 | A paragraph explaining one field | `ui.Field.Hint` — one line, drawn while that field has focus |
 | A sentence saying a field is ignored here | `ui.Field.Disabled` — drawn dim, takes no keys, focus steps over it |
 | "Ctrl+down and Ctrl+up step through…" | Nothing: a field with `Options` draws `Ctrl+↑↓` beside it |
+| A field whose answer must be one of a list, typed and then refused | `ui.Field.Choices` — a drop-down, drawn with `▾`. It holds a key and shows a label, so a server can be saved by its id and shown by its name |
 | A dialog that only says something worked | `(*app).say(text)` — one line along the bottom row |
 | `Copy` on a notice with nothing to copy | `ui.Notice.SetNoCopy()` |
 

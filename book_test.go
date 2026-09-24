@@ -87,6 +87,34 @@ func retypeField(t *testing.T, a *testApp, f *ui.Form, label, text string) {
 	typeIntoField(t, a, f, label, text)
 }
 
+// chooseIn picks an answer in a drop-down the way a user does from the
+// keyboard: the focus on it, and the answer's name typed.
+func chooseIn(t *testing.T, a *testApp, f *ui.Form, label, answer string) {
+	t.Helper()
+	focusField(t, a, f, label)
+	// A key that is not typing, so nothing typed before runs into this.
+	if _, err := a.root.HandleKey(press(input.KeyEnd, 0)); err != nil {
+		t.Fatalf("choosing in the %q field: %v", label, err)
+	}
+	for _, r := range answer {
+		if _, err := a.root.HandleKey(input1(r)); err != nil {
+			t.Fatalf("choosing in the %q field: %v", label, err)
+		}
+	}
+	if got := f.Field(label).Label(); got != answer {
+		t.Fatalf("the %q field shows %q, want %q", label, got, answer)
+	}
+}
+
+// dropLabels is what a drop-down offers, as the user reads it.
+func dropLabels(f *ui.Field) []string {
+	out := make([]string, len(f.Choices))
+	for i, c := range f.Choices {
+		out[i] = c.Label
+	}
+	return out
+}
+
 // stepOptions moves the focus onto a field that offers a list and steps
 // it on, with the keys the dialog's own hint names.
 func stepOptions(t *testing.T, a *testApp, f *ui.Form, label string) {
@@ -373,7 +401,7 @@ func TestAddServerSavesEveryFieldInTheDialog(t *testing.T) {
 	typeIntoField(t, a, f, fldName, "db")
 	typeIntoField(t, a, f, fldServer, "postgres@db.internal:5433")
 	typeIntoField(t, a, f, fldKeyFile, "/keys/db")
-	typeIntoField(t, a, f, fldJumpHost, "bastion")
+	chooseIn(t, a, f, fldJumpHost, "bastion")
 	pressButton(t, a, f, btnSave)
 
 	if f.Error() != nil {
@@ -522,23 +550,22 @@ func TestTheThroughFieldOffersTheSavedServers(t *testing.T) {
 		t.Fatalf("it showed %T", a.root.Modal())
 	}
 	via := f.Field(fldJumpHost)
-	if len(via.Options) != 3 {
-		t.Fatalf("the field offers %v, want the blank and both machines", via.Options)
+	offered := dropLabels(via)
+	if len(offered) != 3 {
+		t.Fatalf("the field offers %v, want None and both machines", offered)
 	}
-	// The blank first: leaving it empty is the usual answer, and it is
-	// what stepping back round lands on.
-	if via.Options[0] != "" {
-		t.Fatalf("the field offers %v, want the blank first", via.Options)
+	// None first: it is the usual answer. It is kept as nothing at all.
+	if offered[0] != viaNone || via.Choices[0].Key != "" {
+		t.Fatalf("the field offers %v, want None first", offered)
 	}
 	for _, want := range []string{"edge", "db"} {
-		var found bool
-		for _, option := range via.Options {
-			if option == want {
-				found = true
-			}
+		if !slices.Contains(offered, want) {
+			t.Fatalf("the field offers %v, missing %q", offered, want)
 		}
-		if !found {
-			t.Fatalf("the field offers %v, missing %q", via.Options, want)
+		// Kept by the id, shown by the name.
+		h, _ := a.book.Lookup(want)
+		if !slices.Contains(via.Choices, ui.Choice{Key: h.ID, Label: want}) {
+			t.Errorf("%s is not offered under its id %q: %v", want, h.ID, via.Choices)
 		}
 	}
 	// And the field says what it is for, on its own line rather than in
@@ -565,14 +592,12 @@ func TestAServerIsNotOfferedAsItsOwnRoute(t *testing.T) {
 		t.Fatalf("openEditServer: %v", err)
 	}
 	f := a.root.Modal().(*ui.Form)
-	via := f.Field(fldJumpHost)
-	for _, option := range via.Options {
-		if option == "db" {
-			t.Fatalf("the dialog offers db as its own route: %v", via.Options)
-		}
+	offered := dropLabels(f.Field(fldJumpHost))
+	if slices.Contains(offered, "db") {
+		t.Fatalf("the dialog offers db as its own route: %v", offered)
 	}
-	if len(via.Options) != 2 {
-		t.Fatalf("the dialog offers %v, want the blank and edge", via.Options)
+	if len(offered) != 2 {
+		t.Fatalf("the dialog offers %v, want None and edge", offered)
 	}
 }
 
@@ -1148,7 +1173,12 @@ func TestAKindThatIsNeitherIsRefused(t *testing.T) {
 		t.Fatalf("edit: %v", err)
 	}
 	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
-	retypeField(t, a, f, fldType, "windwo")
+	// Typed at the field, which takes nothing that is not one of its
+	// answers.
+	typeIntoField(t, a, f, fldType, "windwo")
+	if got := f.Field(fldType).Text(); got != kindWindow {
+		t.Errorf("the type field holds %q after the typo, want it unchanged", got)
+	}
 	pressButton(t, a, f, btnSave)
 	a.pump.run()
 
@@ -1219,8 +1249,8 @@ func TestTheKindFieldSaysWhatItIsFor(t *testing.T) {
 	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
 
 	kind := f.Field(fldType)
-	if len(kind.Options) == 0 {
-		t.Fatal("the type field steps through nothing")
+	if len(kind.Choices) == 0 {
+		t.Fatal("the type field offers nothing to choose")
 	}
 	if kind.Hint == "" {
 		t.Error("the type field says nothing about what it is for")
@@ -1257,7 +1287,7 @@ func TestChangingAMachineIntoAWindowTakesEffectAtOnce(t *testing.T) {
 		t.Fatalf("edit: %v", err)
 	}
 	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
-	retypeField(t, a, f, fldType, kindWindow)
+	chooseIn(t, a, f, fldType, kindWindow)
 	pressButton(t, a, f, btnSave)
 	a.pump.run()
 
@@ -1551,7 +1581,7 @@ func TestTheServerDialogSavesTheAgentTick(t *testing.T) {
 	if got := f.Field(fldForwardAgent).Text(); got != setupNo {
 		t.Errorf("a new server starts with the SSH agent %q, want %q", got, setupNo)
 	}
-	retypeField(t, a, f, fldForwardAgent, setupYes)
+	chooseIn(t, a, f, fldForwardAgent, setupYes)
 	pressButton(t, a, f, btnSave)
 
 	if f.Error() != nil {
@@ -1634,7 +1664,7 @@ func TestAWindowDisablesTheFieldsThatMeanNothingToIt(t *testing.T) {
 	}
 
 	// Turned back into a machine, they come back.
-	retypeField(t, a, f, fldType, kindMachine)
+	chooseIn(t, a, f, fldType, kindMachine)
 	for _, label := range []string{"Forward SSH agent", "Jump host"} {
 		if fld := f.Field(label); fld == nil || fld.Disabled {
 			// Jump host stays off when there is nothing to go through,

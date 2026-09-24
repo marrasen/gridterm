@@ -392,7 +392,7 @@ func (a *app) openTunnelHere() error {
 	// way as the SOCKS one: Open, then Cancel.
 	local, remoteWay := tunnelWays(host)
 	way := f.AddField(fldDirection, a.newField("", 0))
-	way.Options = []string{local, remoteWay}
+	way.Choices = ui.ChoicesOf(local, remoteWay)
 	way.SetText(local)
 	listen := f.AddField(fldListenOn, a.newField("[address:]port", 0))
 	target := f.AddField(fldForwardTo, a.newField("host:port", 0))

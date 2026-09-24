@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/marrasen/gridterm/internal/sshtest"
 	"github.com/marrasen/gridterm/jobs"
 	"github.com/marrasen/gridterm/settings"
+	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/vfs"
 )
 
@@ -570,4 +572,36 @@ func hasCommandTitled(a *testApp, title string) bool {
 		}
 	}
 	return false
+}
+
+// The tunnel dialog on a renamed server offers the tunnels kept on it
+// under its old name.
+func TestTheTunnelDialogOffersWhatWasKeptBeforeARename(t *testing.T) {
+	s := sshtest.New(t)
+	a, _ := aCopyWindow(t)
+	withPanel(t, a)
+	pinServers(t, a, s)
+	saveHost(t, a, "one", s, "")
+	if err := a.connectSaved("one"); err != nil {
+		t.Fatalf("connectSaved: %v", err)
+	}
+	waitFor(t, a, "the machine to answer", func() bool {
+		return a.machines.named("one") != nil
+	})
+	one, _ := a.book.Lookup("one")
+	if err := a.savedTuns.keep(settings.SavedTunnel{
+		Host: "one", HostID: one.ID, Kind: "local",
+		Listen: "127.0.0.1:8080", Target: "localhost:80",
+	}); err != nil {
+		t.Fatalf("keep: %v", err)
+	}
+	renameSaved(t, a, "one", "two")
+
+	if err := a.openTunnelHere(); err != nil {
+		t.Fatalf("openTunnelHere: %v", err)
+	}
+	f := awaitModal(t, a, "the tunnel dialog", byTitle[*ui.Form](dlgTunnelVia+"two"))
+	if got := f.Field(fldListenOn).Options; !slices.Contains(got, "127.0.0.1:8080") {
+		t.Errorf("the dialog offers %v, want the tunnel kept on one", got)
+	}
 }

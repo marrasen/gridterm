@@ -298,7 +298,7 @@ func TestForgettingAJumpHostSaysWhatElseGoesWithIt(t *testing.T) {
 	// machine db is still reached through.
 	chooseMenuItem(t, clickPlus(t, a, "db"), "server.editThis")
 	edit := awaitModal(t, a, "the Edit db dialog", byTitle[*ui.Form]("Edit db"))
-	retypeField(t, a, edit, fldJumpHost, "")
+	chooseIn(t, a, edit, fldJumpHost, viaNone)
 	pressButton(t, a, edit, btnSave)
 
 	f := openTheForgetDialog(t, a, "edge")

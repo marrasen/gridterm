@@ -231,16 +231,18 @@ note.
 - **Body:** none
 - **Fields:**
   - `Name` — no placeholder
-  - `Type` — cycles `SSH` / `gridterm window`
+  - `Type` — drop-down: `SSH` / `gridterm window`
   - `Server` — placeholder `[user@]host[:port]`
   - `Key file` — placeholder `Optional`
-  - `Jump host` — placeholder `Optional`
+  - `Jump host` — drop-down: `None`, then every other saved server by
+    name. Saved as the server's id, so it follows a rename; nothing
+    can be typed into it.
     - hint: `Connect through another saved server`
   - `Folders` — placeholder `Comma-separated paths`
     - hint: `Where the file browser opens on this server`
-  - `Shell setup` — cycles `No` / `Yes`
+  - `Shell setup` — drop-down: `No` / `Yes`
     - hint: `Tracks the directory and where each command ends. bash and zsh only.`
-  - `Forward SSH agent` — cycles `No` / `Yes`
+  - `Forward SSH agent` — drop-down: `No` / `Yes`
     - hint: `The server can use your keys for onward connections. So can root on the server.`
 - **Buttons:** `Save` · `Remove` *(edit only)* · `Cancel`
 
@@ -325,7 +327,7 @@ anywhere else; it is an item in the vault like any other.
 - **Title:** `Tunnel via <host>`
 - **Body:** none
 - **Fields:**
-  - `Direction` — cycles `Local — listen here` /
+  - `Direction` — drop-down: `Local — listen here` /
     `Remote — listen on <host>`
   - `Listen on` — placeholder `[address:]port`; cycles the saved tunnels
   - `Forward to` — placeholder `host:port`
@@ -385,7 +387,7 @@ longer needed. It also makes D15 and D16 end the same way: `Open` ·
   ```
 - **Fields:**
   - `Port` — pre-filled; hint: `0 picks a free port`
-  - `Listen on` — cycles `This machine only` / `All networks`
+  - `Listen on` — drop-down: `This machine only` / `All networks`
 - **Buttons:** `Serve` · `Cancel`
 
 **Instructions:** The text after the fields goes. `All networks` needs
@@ -1165,7 +1167,7 @@ one place every secret sits in the clear.
 - **Fields:**
   - `File` — placeholder `CSV file path`; hint `Comma-separated values,
     as another manager writes them`
-  - `Duplicates` — cycles `Keep both` / `Skip` / `Replace`; hint
+  - `Duplicates` — drop-down: `Keep both` / `Skip` / `Replace`; hint
     `What to do with a secret that is already here`
 - **Buttons:** `Import` · `Cancel`
 - **Error:** `Enter a path`

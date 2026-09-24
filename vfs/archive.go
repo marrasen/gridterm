@@ -117,9 +117,9 @@ func (a *archives) split(at string) (outer, inner string, in bool) {
 // read as one: a plain file, or nothing yet, so a path under a name
 // nothing has is not written into an archive by mistake.
 //
-// A directory is a directory whatever it is called, and so is a link:
-// one to a directory is walked like the directory, and one to a zip is
-// never walked into by a pane anyway. A name that cannot be asked about
+// A directory is a directory whatever it is called. A link is what it
+// points at: one to a directory is walked like the directory, and one
+// to a jar is the jar. A name that cannot be asked about
 // at all is not taken for an archive, so what goes wrong with it is said
 // by the filesystem under this one rather than blamed on an archive.
 // The archive held open is known to be one without asking.
@@ -130,14 +130,42 @@ func (a *archives) mayBeArchive(at string) bool {
 	if known {
 		return true
 	}
-	e, err := a.FS.Stat(at)
+	e, err := a.followed(at)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
 		return true
 	case err != nil:
 		return false
 	}
-	return !e.IsDir() && !e.IsLink()
+	return !e.IsDir()
+}
+
+// mostLinkHops is how many links are followed to find what a name is,
+// before a loop of them is given up on.
+const mostLinkHops = 8
+
+// followed is what a path is once any links it names are followed: a
+// link to a jar is the jar, and one to a directory the directory. The
+// filesystems under this one answer about the link itself.
+func (a *archives) followed(at string) (Entry, error) {
+	for range mostLinkHops {
+		e, err := a.FS.Stat(at)
+		if err != nil || !e.IsLink() {
+			return e, err
+		}
+		target := e.Link
+		if !isAbsOn(a, target) {
+			target = Join(a, Dir(a, at), target)
+		}
+		at = target
+	}
+	return Entry{}, fmt.Errorf("%s: more than %d links, one after another", at, mostLinkHops)
+}
+
+// isAbsOn reports whether a path starts at the top of a filesystem: at
+// its separator, or, on Windows, at a drive.
+func isAbsOn(f FS, p string) bool {
+	return strings.HasPrefix(p, string(f.Sep())) || (len(p) >= 2 && p[1] == ':')
 }
 
 // letGo drops the archive held open when a write is about to change the
@@ -165,7 +193,9 @@ func (a *archives) open(at string) (*zip.Reader, error) {
 	if a.at == at && a.held != nil && time.Since(a.checked) < archiveRecheck {
 		return a.held, nil
 	}
-	e, err := a.FS.Stat(at)
+	// What the name leads to, so a jar reached through a link is sized
+	// and watched for changes as the jar rather than as the link.
+	e, err := a.followed(at)
 	if err != nil {
 		return nil, err
 	}

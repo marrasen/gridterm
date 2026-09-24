@@ -624,3 +624,54 @@ func TestAZipChangedElsewhereIsNoticedAfterASecond(t *testing.T) {
 		t.Errorf("the changed zip lists %v, %v", named(got), err)
 	}
 }
+
+// A link to a zip is the zip: a path typed into Go to through one, the
+// way /usr/share/java links a jar under a name without its version, is
+// walked into.
+func TestALinkToAZipIsTheZip(t *testing.T) {
+	f, at := withAZip(t, "one.txt")
+	link := filepath.Join(filepath.Dir(at), "latest.zip")
+	if err := os.Symlink(filepath.Base(at), link); err != nil {
+		t.Skipf("no links here: %v", err)
+	}
+
+	got, err := f.ReadDir(link)
+	if err != nil || !slices.Equal(named(got), []string{"one.txt"}) {
+		t.Fatalf("the link lists %v, %v", named(got), err)
+	}
+	r, err := f.Open(filepath.Join(link, "one.txt"))
+	if err != nil {
+		t.Fatalf("open through the link: %v", err)
+	}
+	_ = r.Close()
+}
+
+// failingStat answers every question about one name with a failure that
+// is not "it is not there", the way a dropped connection does.
+type failingStat struct {
+	FS
+	name string
+}
+
+func (f failingStat) Stat(at string) (Entry, error) {
+	if filepath.Base(at) == f.name {
+		return Entry{}, errors.New("the connection went")
+	}
+	return f.FS.Stat(at)
+}
+
+// A name that cannot be asked about is not taken for an archive, so a
+// write under it fails for its own reason rather than for being "inside
+// an archive".
+func TestAWriteThatFailsIsNotBlamedOnAnArchive(t *testing.T) {
+	dir := t.TempDir()
+	f := WithArchives(failingStat{FS: NewLocal(), name: "ext.xpi"})
+
+	_, err := f.Create(filepath.Join(dir, "ext.xpi", "a.txt"), 0o644)
+	if err == nil {
+		t.Fatal("writing under a name nothing has worked")
+	}
+	if errors.Is(err, ErrInArchive) {
+		t.Errorf("the failure was blamed on an archive: %v", err)
+	}
+}

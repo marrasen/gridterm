@@ -1319,6 +1319,7 @@ func (a *app) stopJobsOn(on ...vfs.FS) []*jobs.Job {
 			stopping = append(stopping, j)
 			// The row goes with the browser it was started from.
 			delete(a.jobs, e)
+			delete(a.jobFrom, e)
 			a.registry.Drop(e)
 			break
 		}

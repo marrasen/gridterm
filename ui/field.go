@@ -3,6 +3,7 @@ package ui
 import (
 	"image/color"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/marrasen/gridterm/grid"
@@ -126,12 +127,13 @@ type Field struct {
 	focused bool
 
 	// open says a drop-down's list is showing, lit is the row the keys
-	// are on, top is the first row shown, and typed is what has been
-	// typed since the last key that was not a letter.
-	open  bool
-	lit   int
-	top   int
-	typed string
+	// are on, top is the first row shown, and typed is the name being
+	// typed, last added to at typedAt.
+	open    bool
+	lit     int
+	top     int
+	typed   string
+	typedAt time.Time
 }
 
 // NewField returns an empty field.
@@ -259,12 +261,14 @@ func (f *Field) HandleKey(ev input.Event) (bool, error) {
 	// nothing else: there is nothing to type into it, and every other
 	// key belongs to whatever is showing it.
 	if f.Tick {
-		// A press, not a repeat: a box held down would flicker, and a
-		// box is answered once.
+		// One press of space arrives as the key and then the character
+		// it types. The key turns the box over and the character is
+		// swallowed: taking both turned it over and straight back.
 		if ev.Kind == input.Text && ev.Rune == ' ' && ev.NormalText {
-			f.Toggle()
 			return true, nil
 		}
+		// A press, not a repeat: a box held down would flicker, and a
+		// box is answered once.
 		if ev.Kind != input.KeyPress {
 			return false, nil
 		}

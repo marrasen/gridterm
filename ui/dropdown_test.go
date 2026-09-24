@@ -21,8 +21,30 @@ func servers() *Field {
 	return f
 }
 
-func typed(r rune) input.Event {
-	return input.Event{Kind: input.Text, Rune: r, NormalText: true}
+// keystroke is one key as a keyboard delivers it: the key going down,
+// and then the character it types, tied together by one Source.
+func keystroke(r rune) []input.Event {
+	key := input.KeySpace
+	if r >= 'a' && r <= 'z' {
+		key = input.KeyA + input.Key(r-'a')
+	} else if r >= 'A' && r <= 'Z' {
+		key = input.KeyA + input.Key(r-'A')
+	}
+	src := input.Source(r) + 1000
+	return []input.Event{
+		{Kind: input.KeyPress, Key: key, Source: src},
+		{Kind: input.Text, Rune: r, NormalText: true, Source: src},
+	}
+}
+
+// strokeInto sends each of text's characters as a keystroke.
+func strokeInto(t *testing.T, f *Field, text string) {
+	t.Helper()
+	for _, r := range text {
+		for _, ev := range keystroke(r) {
+			f.HandleKey(ev)
+		}
+	}
 }
 
 // A drop-down opens with space, is walked with the arrows and picks with
@@ -99,22 +121,39 @@ func TestCtrlArrowsStepThroughADropDown(t *testing.T) {
 // the field: what it holds is always one of its keys.
 func TestTypingANamePicksItInADropDown(t *testing.T) {
 	f := servers()
-	for _, r := range "bas" {
-		if took, _ := f.HandleKey(typed(r)); !took {
-			t.Fatalf("%q went past the drop-down", r)
-		}
-	}
+	strokeInto(t, f, "bas")
 	if f.Text() != "id-bastion" {
 		t.Errorf("typing bas chose %q, want id-bastion", f.Text())
 	}
 	// A letter nothing starts with after what went before starts again.
-	f.HandleKey(typed('w'))
+	strokeInto(t, f, "w")
 	if f.Text() != "id-web" {
 		t.Errorf("typing w chose %q, want id-web", f.Text())
 	}
-	f.HandleKey(typed('z'))
+	strokeInto(t, f, "z")
 	if f.Text() != "id-web" {
 		t.Errorf("a letter nothing starts with changed it to %q", f.Text())
+	}
+}
+
+// One press of space opens the list and leaves it open, and one more
+// picks and leaves it shut.
+//
+// A keystroke is the key and then its character. Taking both would open
+// the list and pick from it in one press.
+func TestOneSpaceOpensTheListAndOneMorePicks(t *testing.T) {
+	f := servers()
+	strokeInto(t, f, " ")
+	if !f.IsOpen() {
+		t.Fatal("a press of space did not leave the list open")
+	}
+	f.HandleKey(press(input.KeyDown, 0))
+	strokeInto(t, f, " ")
+	if f.IsOpen() {
+		t.Error("a press of space on the open list did not pick")
+	}
+	if f.Text() != "id-backup" {
+		t.Errorf("it holds %q, want the answer that was lit", f.Text())
 	}
 }
 
@@ -124,10 +163,7 @@ func TestASpaceInANameIsTypedNotPressed(t *testing.T) {
 	f := NewField()
 	f.Choices = ChoicesOf("Keep both", "Keep neither", "Skip")
 	f.SetFocus(true)
-	f.HandleKey(press(input.KeyDown, 0)) // any key that is not typing
-	for _, r := range "Keep n" {
-		f.HandleKey(typed(r))
-	}
+	strokeInto(t, f, "Keep n")
 	if f.IsOpen() {
 		t.Error("the space in the name opened the list")
 	}
@@ -135,9 +171,23 @@ func TestASpaceInANameIsTypedNotPressed(t *testing.T) {
 		t.Errorf("typing Keep n chose %q", f.Text())
 	}
 	f.HandleKey(press(input.KeyEnd, 0))
-	f.HandleKey(typed(' '))
+	f.typedAt = f.typedAt.Add(-typeAheadGap) // a pause
+	strokeInto(t, f, " ")
 	if !f.IsOpen() {
-		t.Error("a space with nothing typed did not open the list")
+		t.Error("a space after a pause did not open the list")
+	}
+}
+
+// One press of space turns a tick box over once.
+func TestOneSpaceTurnsATickBoxOverOnce(t *testing.T) {
+	f := NewTick(false)
+	for _, ev := range keystroke(' ') {
+		if took, _ := f.HandleKey(ev); !took {
+			t.Errorf("%v went past the tick box", ev.Kind)
+		}
+	}
+	if !f.On() {
+		t.Error("one press of space left the box as it was")
 	}
 }
 

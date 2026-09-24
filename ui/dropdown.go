@@ -2,6 +2,7 @@ package ui
 
 import (
 	"strings"
+	"time"
 
 	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/input"
@@ -109,6 +110,7 @@ func (f *Field) step(by int) bool {
 		}
 	}
 	next := ((at+by)%n + n) % n
+	f.typed = ""
 	if next == at {
 		return false
 	}
@@ -120,6 +122,7 @@ func (f *Field) step(by int) bool {
 // would carry a held key round and round.
 func (f *Field) light(by int) {
 	f.lit = min(max(f.lit+by, 0), len(f.Choices)-1)
+	f.typed = ""
 }
 
 // typeAhead goes to the first answer that starts with what has been
@@ -137,6 +140,10 @@ func (f *Field) typeAhead(r rune) {
 		}
 		return -1
 	}
+	if !f.naming() {
+		f.typed = ""
+	}
+	f.typedAt = time.Now()
 	prefix := strings.ToLower(f.typed + string(r))
 	at := find(prefix)
 	if at < 0 {
@@ -154,7 +161,19 @@ func (f *Field) typeAhead(r rune) {
 	f.choose(at)
 }
 
+// typeAheadGap is how long a pause starts a new name rather than
+// carrying on the one being typed, the way a list box takes typing.
+const typeAheadGap = time.Second
+
+// naming reports whether a name is part way through being typed, so a
+// space is part of it rather than a key that opens or picks.
+func (f *Field) naming() bool {
+	return f.typed != "" && time.Since(f.typedAt) < typeAheadGap
+}
+
 // dropKey is HandleKey for a drop-down.
+//
+// The tick box takes space the same way, for the same reason.
 //
 // Closed, it takes the keys that open it, the ones that step through it
 // and letters, and hands everything else on: Up and Down move between
@@ -162,19 +181,19 @@ func (f *Field) typeAhead(r rune) {
 // field. Open, it takes every key, so nothing reaches the dialog while
 // the list is in front of it -- Escape puts the list away rather than
 // the dialog.
+//
+// One keystroke arrives as two events: the key, and then the character
+// it types. Each is acted on once. A letter is taken as the character,
+// because that is what knows the layout. Space is taken as the key and
+// its character is swallowed, or one press would open the list and pick
+// from it straight away -- except part way through a name, where the
+// space is a character of the name.
 func (f *Field) dropKey(ev input.Event) bool {
 	if ev.Kind == input.Text {
 		if !ev.NormalText || ev.Rune < ' ' || ev.Rune == 0x7f {
 			return f.open
 		}
-		// A space part way through a name is part of the name, the way a
-		// list box takes one: answers such as "Keep both" have them.
-		if ev.Rune == ' ' && f.typed == "" {
-			if f.open {
-				f.pickLit()
-			} else {
-				f.openList()
-			}
+		if ev.Rune == ' ' && !f.naming() {
 			return true
 		}
 		f.typeAhead(ev.Rune)
@@ -183,8 +202,19 @@ func (f *Field) dropKey(ev input.Event) bool {
 	if ev.Kind != input.KeyPress && ev.Kind != input.KeyRepeat {
 		return f.open
 	}
-	f.typed = ""
 	fresh := ev.Kind == input.KeyPress
+	if ev.Key == input.KeySpace && ev.Mods == 0 {
+		switch {
+		case f.naming():
+			// Its character carries on the name.
+		case !fresh:
+		case f.open:
+			f.pickLit()
+		default:
+			f.openList()
+		}
+		return true
+	}
 	if f.open {
 		switch ev.Key {
 		case input.KeyUp:
@@ -196,10 +226,10 @@ func (f *Field) dropKey(ev input.Event) bool {
 		case input.KeyPageDown:
 			f.light(dropMost)
 		case input.KeyHome:
-			f.lit = 0
+			f.light(-len(f.Choices))
 		case input.KeyEnd:
-			f.lit = len(f.Choices) - 1
-		case input.KeyEnter, input.KeySpace:
+			f.light(len(f.Choices))
+		case input.KeyEnter:
 			// A fresh press, for the reason a dialog's own Enter is: the
 			// repeats of a key held down would pick whatever they had
 			// just lit.
@@ -219,7 +249,7 @@ func (f *Field) dropKey(ev input.Event) bool {
 	switch {
 	case !fresh:
 		return false
-	case ev.Mods == 0 && (ev.Key == input.KeySpace || ev.Key == input.KeyF4),
+	case ev.Mods == 0 && ev.Key == input.KeyF4,
 		ev.Mods == input.ModAlt && ev.Key == input.KeyDown:
 		f.openList()
 		return true

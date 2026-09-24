@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode"
 
 	"github.com/marrasen/gridterm/input"
 	"github.com/marrasen/gridterm/internal/sshtest"
@@ -96,9 +97,16 @@ func chooseIn(t *testing.T, a *testApp, f *ui.Form, label, answer string) {
 	if _, err := a.root.HandleKey(press(input.KeyEnd, 0)); err != nil {
 		t.Fatalf("choosing in the %q field: %v", label, err)
 	}
+	// Each as a keyboard sends it: the key, then the character.
 	for _, r := range answer {
-		if _, err := a.root.HandleKey(input1(r)); err != nil {
-			t.Fatalf("choosing in the %q field: %v", label, err)
+		key := input.KeySpace
+		if l := unicode.ToLower(r); l >= 'a' && l <= 'z' {
+			key = input.KeyA + input.Key(l-'a')
+		}
+		for _, ev := range []input.Event{{Kind: input.KeyPress, Key: key}, input1(r)} {
+			if _, err := a.root.HandleKey(ev); err != nil {
+				t.Fatalf("choosing in the %q field: %v", label, err)
+			}
 		}
 	}
 	if got := f.Field(label).Label(); got != answer {

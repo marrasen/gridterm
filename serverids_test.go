@@ -605,3 +605,30 @@ func TestTheTunnelDialogOffersWhatWasKeptBeforeARename(t *testing.T) {
 		t.Errorf("the dialog offers %v, want the tunnel kept on one", got)
 	}
 }
+
+// Clearing finished work lets go of what the window kept about where
+// each row was filed, the way the cross on one row does.
+func TestClearingFinishedWorkForgetsItsEnds(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	from, into := t.TempDir(), t.TempDir()
+	putFile(t, from, "one.txt", "the body")
+	a.runJob(jobs.Op{
+		Kind: jobs.Copy, From: vfs.NewLocal(), At: from,
+		Names: []string{"one.txt"}, To: vfs.NewLocal(), Into: into,
+	}, jobEnd{host: conns.Local}, jobEnd{host: conns.Local}, nil)
+	waitFor(t, a, "the copy to finish", func() bool {
+		a.refreshJobs()
+		return len(a.jobs) == 0
+	})
+	if len(a.jobFrom) != 1 {
+		t.Fatalf("the window keeps %d ends, want the one row's", len(a.jobFrom))
+	}
+	if err := a.clearFinished(); err != nil {
+		t.Fatalf("clearFinished: %v", err)
+	}
+	if len(a.jobFrom) != 0 {
+		t.Errorf("the window still keeps %d ends after the rows went", len(a.jobFrom))
+	}
+}

@@ -486,7 +486,13 @@ func (a *app) openServerForm(under string) error {
 	if len(was.Identities) > 0 {
 		key.SetText(was.Identities[0])
 	}
-	via.SetText(was.Via)
+	// A jump host that is none of the servers offered is one that has
+	// gone from the list, which the field shows as None and saves as
+	// none: kept, it would be saved back under a field that said
+	// nothing about it.
+	if slices.ContainsFunc(via.Choices, func(c ui.Choice) bool { return c.Key == was.Via }) {
+		via.SetText(was.Via)
+	}
 	folders.SetText(was.FoldersJoined())
 	setup.SetText(setupNo)
 	if was.Setup {

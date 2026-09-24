@@ -74,6 +74,10 @@ type Server struct {
 	noSFTP  bool
 	sftpErr error
 
+	// sftpHome is where an SFTP session starts, and the process's own
+	// directory when it is empty.
+	sftpHome string
+
 	// sessions is how many session channels are open right now, so a
 	// test can tell a channel that was closed from one left behind.
 	sessions int

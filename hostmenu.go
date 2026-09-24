@@ -96,7 +96,8 @@ func (a *app) openHostMenu(row ui.ListRow) error {
 	)
 	switch key := row.Key.(type) {
 	case hostKey:
-		items = hostItems(a.about(string(key)), a.shellPick.lines(true), a.folderItems(string(key)))
+		items = hostItems(a.about(string(key)), a.shellPick.lines(true), a.folderItems(string(key)),
+			len(a.keyFiles.all()) > 0)
 		about = func() { a.hostMenus.nowAbout(string(key)) }
 	case remoteHostKey:
 		if key.window == nil {
@@ -236,7 +237,10 @@ func farItems() []ui.MenuItem {
 // A machine the server list holds can also be edited and forgotten.
 // This is where they belong: the row is the machine, so the plus on it
 // is where everything about that machine is.
-func hostItems(about hostFacts, shells, folders []ui.MenuItem) []ui.MenuItem {
+//
+// haveKeys says the window keeps key files, which is when a machine is
+// offered one to install.
+func hostItems(about hostFacts, shells, folders []ui.MenuItem, haveKeys bool) []ui.MenuItem {
 	if about.kind == hostHere {
 		items := []ui.MenuItem{{Command: "conn.terminal", Title: "Terminal"}}
 		// Under Terminal, which already says a pane here is what opens,
@@ -280,7 +284,11 @@ func hostItems(about hostFacts, shells, folders []ui.MenuItem) []ui.MenuItem {
 		ui.MenuItem{Command: "conn.command", Title: "Command…"},
 		ui.MenuSeparator(),
 		ui.MenuItem{Command: "conn.tunnel", Title: "Tunnel…"},
-		ui.MenuItem{Command: "conn.socks", Title: "SOCKS Proxy…"},
+		ui.MenuItem{Command: "conn.socks", Title: "SOCKS Proxy…"})
+	if haveKeys {
+		items = append(items, ui.MenuItem{Command: installKeyCommand})
+	}
+	items = append(items,
 		ui.MenuSeparator(),
 		// Not sidebar.closeRow: that one closes whatever the list has
 		// selected, which is not the machine whose row was clicked.

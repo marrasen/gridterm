@@ -319,6 +319,7 @@ func serverItems(saved []ui.MenuItem) []ui.MenuItem {
 		// header settles.
 		ui.MenuHeader("SSH Keys"),
 		ui.MenuItem{Command: "sshkey.make", Title: "New Key…"},
+		ui.MenuItem{Command: installKeyCommand, Title: installKeyRow},
 		ui.MenuItem{Command: "sshkey.lock", Title: "Lock Keys"})
 }
 

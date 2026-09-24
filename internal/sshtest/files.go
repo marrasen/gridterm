@@ -21,7 +21,7 @@ func (s *Server) sftpRequest(ch ssh.Channel, req *ssh.Request) bool {
 		return false
 	}
 	s.mu.Lock()
-	refuse := s.noSFTP
+	refuse, home := s.noSFTP, s.sftpHome
 	s.mu.Unlock()
 	if refuse {
 		// A machine that will not do SFTP, which is what an sshd with the
@@ -31,7 +31,11 @@ func (s *Server) sftpRequest(ch ssh.Channel, req *ssh.Request) bool {
 	// Writes go through the server's own lock: x/crypto documents
 	// concurrent writes to one channel as unsafe, and the request loop
 	// writes to this one too.
-	server, err := sftp.NewServer(locked{Channel: ch, mu: &s.writeMu})
+	var opts []sftp.ServerOption
+	if home != "" {
+		opts = append(opts, sftp.WithServerWorkingDirectory(home))
+	}
+	server, err := sftp.NewServer(locked{Channel: ch, mu: &s.writeMu}, opts...)
 	if err != nil {
 		// The harness itself, not the machine refusing. Told apart,
 		// because a test that fails for this reason would otherwise read
@@ -104,6 +108,15 @@ func (s *Server) RefuseSFTP() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.noSFTP = true
+}
+
+// SFTPHome makes SFTP sessions start in a directory, which is the home
+// directory a client finds there. Without it a test writing to its home
+// on the server writes into the directory the test runs in.
+func (s *Server) SFTPHome(dir string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sftpHome = dir
 }
 
 // SFTPs returns how many SFTP sessions the server has started, so a test

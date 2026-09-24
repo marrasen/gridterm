@@ -281,8 +281,8 @@ func installKeyLines(key remote.NewKey, savedPassphrase bool) (string, error) {
 		b.WriteString("The passphrase is saved in the secrets.\n\n")
 	}
 	b.WriteString(key.Line + "\n\n")
-	b.WriteString("To install it on a server:\n\n")
-	b.WriteString("  ssh-copy-id -i " + key.Pub + " user@host\n\n")
+	b.WriteString("To install it on a server, choose " + installKeyRow + "\n")
+	b.WriteString("on the " + serversMenu + " menu.\n\n")
 	b.WriteString("Or add the line above to ~/.ssh/authorized_keys there.\n\n")
 	b.WriteString("For OpenSSH on Windows, add it to\n")
 	b.WriteString(`  %USERPROFILE%\.ssh\authorized_keys` + "\n")

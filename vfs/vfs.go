@@ -132,6 +132,22 @@ type FS interface {
 	Close() error
 }
 
+// Appender is a filesystem that can add to a file without ever
+// emptying it: at the end of one that is there, or by making one that
+// is not.
+//
+// Not part of FS: a pane never needs it. It is for a file whose old
+// contents must survive a write that fails half way, or a second writer
+// that got there first, which a file replaced whole does not promise.
+type Appender interface {
+	// Append opens a file that is there, to write after what is in it.
+	Append(path string) (io.WriteCloser, error)
+
+	// CreateNew makes a file that is not there, with the mode given,
+	// and fails when there is one.
+	CreateNew(path string, mode fs.FileMode) (io.WriteCloser, error)
+}
+
 // errIsDir says an operation was given a directory where it needed a
 // file. It is not exported: a caller tells one from the other with Stat,
 // and this is only what the failure says.

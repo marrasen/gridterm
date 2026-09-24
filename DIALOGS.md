@@ -304,8 +304,8 @@ disabled field never gets the focus its hint is drawn for.
 
   <the public key line>
 
-  To install it on a server:
-    ssh-copy-id -i <path>.pub user@host
+  To install it on a server, choose Install Key…
+  on the Servers menu.
   ```
 - **Buttons:** `Copy public key` · `Copy` · `OK`
 
@@ -318,6 +318,43 @@ its place by rule 10: the passphrase was never on screen and cannot be
 typed, so this is the one place the user learns the window is what opens
 this key from now on. The passphrase itself is not shown here or
 anywhere else; it is an item in the vault like any other.
+
+
+## D81
+- **Title:** `Install SSH Key`
+- **Body:** none
+- **Fields:**
+  - `Server` — drop-down of every saved machine, and the machine being
+    looked at when it is connected without being saved. Starts on that
+    one.
+  - `Key file` — placeholder `Private key path`; cycles the saved keys;
+    hint `The .pub file beside it is what the server gets`. Starts on
+    the server's own key, or the newest one saved.
+- **Buttons:** `Add` · `Cancel`
+- **Error:** `Enter a key file` · `Public key not found` ·
+  `Invalid public key`
+- **Opened from:** `Install SSH Key…` in the palette, `Install Key…`
+  under SSH Keys on the Servers menu, and a machine's row, where the row
+  is drawn only while the window keeps at least one key file.
+
+**Instructions:** Built in rather than sending the user to
+`ssh-copy-id`, which Windows does not have. `Add` connects the way any
+pane does, password dialog included, and adds the key over SFTP to
+the end of `~/.ssh/authorized_keys`. The file is added to in place and
+never rewritten, so the keys already in it survive a failed write and
+it keeps its permissions and ACL. On a Windows server it also tries
+`%ProgramData%\ssh\administrators_authorized_keys`, which is the only
+file sshd reads for an administrator; a refusal to open it means the
+account is not one. A server that has the key already is left alone.
+
+Success is the status line (G2): `Key installed on <name>`, or
+`<name> already has this key`. Failure is `Could not install the key`,
+and `Key installed, but not in every file` when one file the server
+reads has the key, added now or there already, and another could not
+take it. The body names the file. The home file is written
+whatever happens to the administrators one: a refusal there can mean
+the account is an administrator with a file it may read and not write,
+or anybody on a server whose administrators file everybody may read.
 
 ---
 

@@ -78,7 +78,7 @@ func TestMakingAKeySaysHowToInstallIt(t *testing.T) {
 	if !strings.Contains(body, strings.TrimSpace(string(line))) {
 		t.Errorf("it says %q, want the line to paste", body)
 	}
-	for _, want := range []string{"ssh-copy-id", "authorized_keys", "administrators_authorized_keys"} {
+	for _, want := range []string{installKeyRow, "authorized_keys", "administrators_authorized_keys"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("it says nothing about %q:\n%s", want, body)
 		}
@@ -284,8 +284,8 @@ func TestAKeyThatCannotBeKeptIsStillReported(t *testing.T) {
 	})
 }
 
-// The instructions say only the public half, and name it in the command
-// they give.
+// The instructions name the private half only as the label saying where
+// it went.
 func TestTheInstructionsNameThePublicHalfOnly(t *testing.T) {
 	at := filepath.Join(t.TempDir(), "id_ed25519")
 	key, err := remote.MakeKey(at, "", "")
@@ -298,9 +298,6 @@ func TestTheInstructionsNameThePublicHalfOnly(t *testing.T) {
 		t.Fatalf("say how to install it: %v", err)
 	}
 
-	if !strings.Contains(got, "ssh-copy-id -i "+key.Pub+" ") {
-		t.Errorf("it says %q, want the public half as the -i argument", got)
-	}
 	// The private half is named once, as a label saying where it went.
 	// Every other line is an instruction to follow, and one naming the
 	// private half would have the user paste the wrong file.

@@ -164,6 +164,7 @@ the shells sort directly under `New Terminal`.
 | `server.forget` | Remove This Server… | forget, delete |
 | `server.reload` | Reload Server List | reread |
 | `sshkey.make` | New SSH Key… | make, create, generate, keygen, ed25519 |
+| `sshkey.install` | Install SSH Key… | authorized_keys, ssh-copy-id, copy, public key, server, add |
 | `sshkey.lock` | Lock SSH Keys | forget unlocked keys, passphrase, agent, try again |
 
 Built at run time:
@@ -371,6 +372,7 @@ and under `Terminal` on a machine's plus menu.
 | `server.reload` | Reload Server List | Reload | Server List |
 | `shell.default` | New Terminal, Default Shell | New Terminal In | Default shell |
 | `sshkey.make` | New SSH Key… | SSH Keys | New Key… |
+| `sshkey.install` | Install SSH Key… | SSH Keys | Install Key… |
 | `sshkey.lock` | Lock SSH Keys | SSH Keys | Lock Keys |
 | `view.theme` | Choose Theme… | — *(Options menu)* | Theme… |
 | `agent.hand` | Share Pane with Agent… | Agent | Share Pane… |

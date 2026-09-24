@@ -300,6 +300,30 @@ func (a *archives) Create(at string, mode fs.FileMode) (io.WriteCloser, error) {
 	return a.FS.Create(at, mode)
 }
 
+// Append adds to a file outside any archive, on a filesystem that can.
+func (a *archives) Append(at string) (io.WriteCloser, error) {
+	if _, _, in := a.split(at); in {
+		return nil, inArchive("write", at)
+	}
+	add, ok := a.FS.(Appender)
+	if !ok {
+		return nil, fmt.Errorf("%s cannot add to a file in place", a.Name())
+	}
+	return add.Append(at)
+}
+
+// CreateNew makes a file outside any archive, on a filesystem that can.
+func (a *archives) CreateNew(at string, mode fs.FileMode) (io.WriteCloser, error) {
+	if _, _, in := a.split(at); in {
+		return nil, inArchive("write", at)
+	}
+	add, ok := a.FS.(Appender)
+	if !ok {
+		return nil, fmt.Errorf("%s cannot add to a file in place", a.Name())
+	}
+	return add.CreateNew(at, mode)
+}
+
 func (a *archives) Mkdir(at string, mode fs.FileMode) error {
 	if _, _, in := a.split(at); in {
 		return inArchive("make a directory in", at)

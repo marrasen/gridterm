@@ -38,10 +38,28 @@ type Entry struct {
 	// everything else. What it points at is not followed: a browser
 	// shows the link, and the user decides.
 	Link string
+
+	// Archive says this is a file that a filesystem shows as a
+	// directory, so a pane can walk into it: a zip, under WithArchives.
+	// Mode carries the directory bit for the browser's sake. Stored is
+	// the file as it is on disk.
+	Archive bool
 }
 
 // IsDir reports whether the entry is a directory.
 func (e Entry) IsDir() bool { return e.Mode.IsDir() }
+
+// Stored is the entry as it is stored: an archive shown as a directory
+// is the file it is. What copies, moves and deletes asks, because a
+// copy of a folder with a zip in it is a copy of the zip, not of what
+// is inside it.
+func (e Entry) Stored() Entry {
+	if e.Archive {
+		e.Mode &^= fs.ModeDir
+		e.Archive = false
+	}
+	return e
+}
 
 // IsLink reports whether the entry is a symbolic link.
 func (e Entry) IsLink() bool { return e.Mode&fs.ModeSymlink != 0 }

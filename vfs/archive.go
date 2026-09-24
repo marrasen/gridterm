@@ -147,6 +147,7 @@ func (a *archives) Stat(at string) (Entry, error) {
 			return Entry{}, err
 		}
 		e.Mode |= fs.ModeDir
+		e.Archive = true
 		return e, nil
 	}
 	got, err := a.open(outer)
@@ -209,6 +210,7 @@ func (a *archives) markArchives(at string) ([]Entry, error) {
 	for i, e := range out {
 		if !e.IsDir() && e.Link == "" && IsArchive(e.Name) {
 			out[i].Mode |= fs.ModeDir
+			out[i].Archive = true
 		}
 	}
 	return out, nil
@@ -293,24 +295,36 @@ func (a *archives) Close() error {
 // outside one. Writing one means building the container again, which
 // is a different thing from reading it.
 
+//
+// The archive itself is a file like any other, and writing it -- a zip
+// copied in, or one copied over -- is handed on. The one held open is
+// let go of when it is, so what is read from it next is what is there
+// now.
+
 func (a *archives) Create(at string, mode fs.FileMode) (io.WriteCloser, error) {
-	if _, _, in := a.split(at); in {
+	if _, inner, in := a.split(at); in && inner != "" {
 		return nil, inArchive("write", at)
 	}
-	return a.FS.Create(at, mode)
+	a.forget(at)
+	w, err := a.FS.Create(at, mode)
+	if err != nil {
+		return nil, err
+	}
+	return &forgetting{WriteCloser: w, a: a, at: at}, nil
 }
 
 func (a *archives) Mkdir(at string, mode fs.FileMode) error {
-	if _, _, in := a.split(at); in {
+	if _, inner, in := a.split(at); in && inner != "" {
 		return inArchive("make a directory in", at)
 	}
 	return a.FS.Mkdir(at, mode)
 }
 
 func (a *archives) Symlink(target, at string) error {
-	if _, _, in := a.split(at); in {
+	if _, inner, in := a.split(at); in && inner != "" {
 		return inArchive("make a link in", at)
 	}
+	a.forget(at)
 	return a.FS.Symlink(target, at)
 }
 
@@ -318,6 +332,7 @@ func (a *archives) Remove(at string) error {
 	if _, inner, in := a.split(at); in && inner != "" {
 		return inArchive("remove something from", at)
 	}
+	a.forget(at)
 	return a.FS.Remove(at)
 }
 
@@ -327,7 +342,36 @@ func (a *archives) Rename(from, to string) error {
 			return inArchive("move something in", at)
 		}
 	}
+	a.forget(from)
+	a.forget(to)
 	return a.FS.Rename(from, to)
+}
+
+// forget lets go of the archive held open when it is the one at a path,
+// or inside a directory at it, because that file is about to change.
+func (a *archives) forget(at string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.at == "" {
+		return
+	}
+	if a.at == at || strings.HasPrefix(a.at, strings.TrimSuffix(at, string(a.Sep()))+string(a.Sep())) {
+		a.at, a.held, a.bytes = "", nil, nil
+	}
+}
+
+// forgetting lets go of the held archive again when a write to it ends,
+// in case it was read while the write was going on.
+type forgetting struct {
+	io.WriteCloser
+	a  *archives
+	at string
+}
+
+func (f *forgetting) Close() error {
+	err := f.WriteCloser.Close()
+	f.a.forget(f.at)
+	return err
 }
 
 func (a *archives) Chmod(at string, mode fs.FileMode) error {

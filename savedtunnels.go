@@ -66,10 +66,11 @@ func (c *savedTunnels) forget(t settings.SavedTunnel) error {
 var errNoTunnelsToSaveInto = errors.New(
 	"this window has no settings to keep a tunnel in")
 
-// asSaved is a tunnel written the way it is kept.
-func asSaved(host string, t remote.Tunnel) settings.SavedTunnel {
+// asSaved is a tunnel written the way it is kept. id is the saved
+// server host is, and empty for a machine on no list.
+func asSaved(host, id string, t remote.Tunnel) settings.SavedTunnel {
 	return settings.SavedTunnel{
-		Host: host, Kind: t.Kind.String(), Listen: t.Listen, Target: t.Target,
+		Host: host, HostID: id, Kind: t.Kind.String(), Listen: t.Listen, Target: t.Target,
 	}
 }
 
@@ -90,13 +91,15 @@ func asTunnel(saved settings.SavedTunnel) (remote.Tunnel, error) {
 	return remote.Tunnel{Kind: kind, Listen: saved.Listen, Target: saved.Target}, nil
 }
 
-// savedTunnelTitle is what the palette calls a saved tunnel.
-func savedTunnelTitle(saved settings.SavedTunnel) string {
+// savedTunnelTitle is what the palette calls a saved tunnel, over the
+// machine it was kept on under the name that machine has now.
+func (a *app) savedTunnelTitle(saved settings.SavedTunnel) string {
+	via := groupName(a.shownAs(saved.Host, saved.HostID))
 	t, err := asTunnel(saved)
 	if err != nil {
-		return "Open " + saved.Kind + " Tunnel via " + groupName(saved.Host)
+		return "Open " + saved.Kind + " Tunnel via " + via
 	}
-	return "Open Tunnel " + t.String() + " via " + groupName(saved.Host)
+	return "Open Tunnel " + t.String() + " via " + via
 }
 
 // openSavedTunnel opens a tunnel the user kept, over the machine it
@@ -113,20 +116,26 @@ func (a *app) openSavedTunnel(saved settings.SavedTunnel) error {
 	if err := t.Validate(); err != nil {
 		return err
 	}
-	if a.about(saved.Host).machine == nil {
-		return fmt.Errorf("nothing is connected to %s", groupName(saved.Host))
+	host, err := a.savedAs(saved.Host, saved.HostID)
+	if err != nil {
+		return err
 	}
-	a.confirmTunnel(saved.Host, t)
+	if a.about(host).machine == nil {
+		return fmt.Errorf("nothing is connected to %s", groupName(host))
+	}
+	a.confirmTunnel(host, t)
 	return nil
 }
 
 // listenOn are the addresses the tunnels kept for a machine listen on,
 // for a field to offer. Blank first: typing a new one is the usual
 // answer, and it is what cycling comes back round to.
-func (c *savedTunnels) listenOn(host string) []string {
+//
+// on says whether a tunnel was kept for the machine.
+func (c *savedTunnels) listenOn(on func(settings.SavedTunnel) bool) []string {
 	out := []string{""}
 	for _, saved := range c.all() {
-		if saved.Host == host {
+		if on(saved) {
 			out = append(out, saved.Listen)
 		}
 	}
@@ -138,9 +147,9 @@ func (c *savedTunnels) listenOn(host string) []string {
 
 // findListen is the tunnel kept for a machine that listens on an
 // address, and whether there is one.
-func (c *savedTunnels) findListen(host, listen string) (settings.SavedTunnel, bool) {
+func (c *savedTunnels) findListen(on func(settings.SavedTunnel) bool, listen string) (settings.SavedTunnel, bool) {
 	for _, saved := range c.all() {
-		if saved.Host == host && saved.Listen == listen {
+		if on(saved) && saved.Listen == listen {
 			return saved, true
 		}
 	}
@@ -150,7 +159,7 @@ func (c *savedTunnels) findListen(host, listen string) (settings.SavedTunnel, bo
 // keepOrForgetTunnel writes a tunnel down or takes it off the list,
 // which is what the tick box on the dialog says to do.
 func (a *app) keepOrForgetTunnel(keep bool, host string, t remote.Tunnel) error {
-	saved := asSaved(host, t)
+	saved := asSaved(host, a.serverID(host), t)
 	switch {
 	case keep:
 		return a.savedTuns.keep(saved)

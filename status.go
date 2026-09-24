@@ -19,9 +19,12 @@ type status struct {
 	text string
 
 	// until is when the line goes. Nothing is showing once the frame is
-	// past it.
+	// past it, and a zero time is a line that holds.
 	until time.Time
 }
+
+// held says this line stays up until what it is about has finished.
+func (s status) held() bool { return s.text != "" && s.until.IsZero() }
 
 // say puts a line on the bottom row for a few seconds.
 //
@@ -33,9 +36,38 @@ func (a *app) say(text string) {
 	a.markDirty()
 }
 
+// sayWhile puts a line on the bottom row and leaves it there until what
+// it is about has finished.
+//
+// For a line that says what the window is doing rather than what it has
+// done. A few seconds is long enough to read that something worked, and
+// not long enough for a login: the row would go blank half way through
+// the wait, which is the thing the line is up to prevent.
+func (a *app) sayWhile(text string) {
+	a.status = status{text: text}
+	a.markDirty()
+}
+
+// doneSaying takes a held line away, if it is still the one showing.
+//
+// Checked, because anything the user did in the meantime has its own
+// line and that one is not this one's to clear.
+func (a *app) doneSaying(text string) {
+	if a.status.held() && a.status.text == text {
+		a.status = status{}
+		a.markDirty()
+	}
+}
+
 // saying is the line to draw, and empty once its time is up.
 func (a *app) saying() string {
-	if a.status.text == "" || !a.frameTime().Before(a.status.until) {
+	if a.status.text == "" {
+		return ""
+	}
+	if a.status.held() {
+		return a.status.text
+	}
+	if !a.frameTime().Before(a.status.until) {
 		return ""
 	}
 	return a.status.text
@@ -47,7 +79,7 @@ func (a *app) saying() string {
 // so a line going costs one repaint rather than a repaint every frame
 // while it is up.
 func (a *app) stepStatus() {
-	if a.status.text == "" {
+	if a.status.text == "" || a.status.held() {
 		return
 	}
 	if a.frameTime().Before(a.status.until) {

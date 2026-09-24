@@ -31,6 +31,8 @@ func asSavedCopy(op jobs.Op, from, to jobEnd) (settings.SavedCopy, bool) {
 	return settings.SavedCopy{
 		From:       endMachine(from),
 		To:         endMachine(to),
+		FromID:     endServer(from),
+		ToID:       endServer(to),
 		FromWindow: windowName(from),
 		ToWindow:   windowName(to),
 		At:         op.At,
@@ -50,6 +52,18 @@ func endMachine(end jobEnd) string {
 	return end.host
 }
 
+// endServer is the id of the saved server an end's files are on, and
+// empty for a machine on no list.
+//
+// Empty for an end behind a window too: the id is one this window's list
+// gave out, and the machine that window reached is on its own list.
+func endServer(end jobEnd) string {
+	if end.far.window != nil {
+		return ""
+	}
+	return end.at.id
+}
+
 // windowName names the window an end is reached through, and is empty
 // for a machine this window reaches itself.
 func windowName(end jobEnd) string {
@@ -62,9 +76,23 @@ func windowName(end jobEnd) string {
 // endOfSaved is the end a saved copy names, found again now: a window is
 // looked up by name, because the one a copy ran through is gone by the
 // next run.
-func (a *app) endOfSaved(host, window string) (jobEnd, error) {
+//
+// An end on a saved server is the server with that id, which opening it
+// asks the list for by name.
+func (a *app) endOfSaved(host, id, window string) (jobEnd, error) {
 	if window == "" {
-		return jobEnd{host: host}, nil
+		end := jobEnd{host: host}
+		if id != "" {
+			end.at = step{name: host, id: id}
+			return end, nil
+		}
+		// The step the machine was reached by, when something else
+		// still holds it: a machine on no list is reachable only
+		// through that, and a saved copy names it by name alone.
+		if r := a.reopeningOn(host); r != nil {
+			end.at = r.step()
+		}
+		return end, nil
 	}
 	t := a.windows.named(window)
 	if t == nil {
@@ -78,11 +106,11 @@ func (a *app) endOfSaved(host, window string) (jobEnd, error) {
 // runSavedCopy does a remembered copy again, on filesystems opened
 // afresh from the machines it names.
 func (a *app) runSavedCopy(c settings.SavedCopy) error {
-	from, err := a.endOfSaved(c.From, c.FromWindow)
+	from, err := a.endOfSaved(c.From, c.FromID, c.FromWindow)
 	if err != nil {
 		return err
 	}
-	to, err := a.endOfSaved(c.To, c.ToWindow)
+	to, err := a.endOfSaved(c.To, c.ToID, c.ToWindow)
 	if err != nil {
 		return err
 	}
@@ -100,20 +128,23 @@ func (a *app) runSavedCopy(c settings.SavedCopy) error {
 // filesystems being found afresh from the machines it names.
 func (a *app) repeatSavedCopy(op jobs.Op, from, to jobEnd) {
 	title := "Could not copy it again"
-	source, err := a.openEnd(from)
-	if err != nil {
-		a.reportError(title, err)
-		return
-	}
-	into, err := a.openEnd(to)
-	if err != nil {
-		a.reportError(title, errors.Join(err, source.Close()))
-		return
-	}
-	op.From, op.To = source, into
-	// The names the panel files the rows under, off what was just opened.
-	from.host, to.host = a.hostOf(source), a.hostOf(into)
-	a.runJob(op, from, to, []vfs.FS{source, into})
+	a.openEndAgain(from, func(source vfs.FS, err error) {
+		if err != nil {
+			a.reportError(title, err)
+			return
+		}
+		a.openEndAgain(to, func(into vfs.FS, err error) {
+			if err != nil {
+				a.reportError(title, errors.Join(err, source.Close()))
+				return
+			}
+			op.From, op.To = source, into
+			// The names the panel files the rows under, off what was
+			// just opened.
+			from.host, to.host = a.hostOf(source), a.hostOf(into)
+			a.runJob(op, from, to, []vfs.FS{source, into})
+		})
+	})
 }
 
 // openCopies lists the copies the user asked to keep. Taking one runs it
@@ -149,7 +180,8 @@ func (a *app) openCopies() error {
 		return nil
 	}
 	for _, saved := range kept {
-		c.Add(copiedWhat(saved), copiedWhere(saved), func() error { return a.runSavedCopy(saved) })
+		c.Add(copiedWhat(saved), copiedWhere(a.namedNow(saved)),
+			func() error { return a.runSavedCopy(saved) })
 	}
 	hide = a.showModal(c, nil)
 	if a.root.Modal() != ui.Widget(c) {
@@ -157,6 +189,15 @@ func (a *app) openCopies() error {
 	}
 	a.markDirty()
 	return nil
+}
+
+// namedNow is a saved copy with its ends called what the list calls
+// them now, for showing: the copy runs on the servers it was saved on,
+// and a row naming what one of them used to be called would say it goes
+// somewhere else.
+func (a *app) namedNow(c settings.SavedCopy) settings.SavedCopy {
+	c.From, c.To = a.shownAs(c.From, c.FromID), a.shownAs(c.To, c.ToID)
+	return c
 }
 
 // copiedWhat names what a saved copy copies: the files, or how many of

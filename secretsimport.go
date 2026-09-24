@@ -39,7 +39,7 @@ func (a *app) importSecrets() error {
 		where.Hint = "Comma-separated values, as another manager writes them"
 		a.completePath(where, vfs.NewLocal())
 		same := f.AddField(fldDuplicates, a.newField("", 0))
-		same.Options = []string{keepBothTitle, skipTitle, replaceTitle}
+		same.Choices = ui.ChoicesOf(keepBothTitle, skipTitle, replaceTitle)
 		same.SetText(keepBothTitle)
 		same.Hint = "What to do with a secret that is already here"
 

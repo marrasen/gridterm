@@ -33,6 +33,10 @@ type jobPane struct {
 	// the job ran on may be closed by then.
 	from, to jobEnd
 
+	// repeating says a repeat has been asked for and has not started
+	// yet, because the machine it runs on is being opened again.
+	repeating bool
+
 	size ui.Size
 
 	// at is the button the keyboard is on, cols where each was last
@@ -605,8 +609,19 @@ func (p *jobPane) press(i int) error {
 		// go, and the row is where the outcome is read.
 		p.job.Cancel()
 	case btnRepeat:
+		if p.repeating {
+			// Already on its way. A machine that has to be opened again
+			// takes as long as a connection does, and a second press in
+			// that time would copy the same thing twice. The bottom row
+			// says what is happening.
+			return nil
+		}
 		op, from, to := p.job.Op(), p.from, p.to
-		p.app.repeatJob(p, op, from, to)
+		p.repeating = true
+		p.app.repeatJob(op, from, to, func() {
+			p.repeating = false
+			p.app.markDirty()
+		}, p.follow)
 	case btnClose:
 		return p.app.closePane(p)
 	}

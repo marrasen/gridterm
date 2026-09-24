@@ -231,16 +231,18 @@ note.
 - **Body:** none
 - **Fields:**
   - `Name` — no placeholder
-  - `Type` — cycles `SSH` / `gridterm window`
+  - `Type` — drop-down: `SSH` / `gridterm window`
   - `Server` — placeholder `[user@]host[:port]`
   - `Key file` — placeholder `Optional`
-  - `Jump host` — placeholder `Optional`
+  - `Jump host` — drop-down: `None`, then every other saved server by
+    name. Saved as the server's id, so it follows a rename; nothing
+    can be typed into it.
     - hint: `Connect through another saved server`
   - `Folders` — placeholder `Comma-separated paths`
     - hint: `Where the file browser opens on this server`
-  - `Shell setup` — cycles `No` / `Yes`
+  - `Shell setup` — drop-down: `No` / `Yes`
     - hint: `Tracks the directory and where each command ends. bash and zsh only.`
-  - `Forward SSH agent` — cycles `No` / `Yes`
+  - `Forward SSH agent` — drop-down: `No` / `Yes`
     - hint: `The server can use your keys for onward connections. So can root on the server.`
 - **Buttons:** `Save` · `Remove` *(edit only)* · `Cancel`
 
@@ -325,7 +327,7 @@ anywhere else; it is an item in the vault like any other.
 - **Title:** `Tunnel via <host>`
 - **Body:** none
 - **Fields:**
-  - `Direction` — cycles `Local — listen here` /
+  - `Direction` — drop-down: `Local — listen here` /
     `Remote — listen on <host>`
   - `Listen on` — placeholder `[address:]port`; cycles the saved tunnels
   - `Forward to` — placeholder `host:port`
@@ -385,7 +387,7 @@ longer needed. It also makes D15 and D16 end the same way: `Open` ·
   ```
 - **Fields:**
   - `Port` — pre-filled; hint: `0 picks a free port`
-  - `Listen on` — cycles `This machine only` / `All networks`
+  - `Listen on` — drop-down: `This machine only` / `All networks`
 - **Buttons:** `Serve` · `Cancel`
 
 **Instructions:** The text after the fields goes. `All networks` needs
@@ -1168,7 +1170,7 @@ one place every secret sits in the clear.
 - **Fields:**
   - `File` — placeholder `CSV file path`; hint `Comma-separated values,
     as another manager writes them`
-  - `Duplicates` — cycles `Keep both` / `Skip` / `Replace`; hint
+  - `Duplicates` — drop-down: `Keep both` / `Skip` / `Replace`; hint
     `What to do with a secret that is already here`
 - **Buttons:** `Import` · `Cancel`
 - **Error:** `Enter a path`
@@ -1338,6 +1340,16 @@ it can be held against another and believed to match.
 - `This build is later than the newest release, v0.2.0` — what building
   from `main` gives.
 - `Checking for updates…` — while the question is out.
+
+A file pane whose machine has gone opens it again when the user asks
+for something, and says so while that is happening:
+
+- `Reconnecting to <machine>…` — a folder click, a rename, a file
+  opened or a copy done again, on a machine that dropped. It holds
+  until the machine has answered or failed, rather than going after a
+  few seconds the way a line saying something worked does: a login can
+  take longer than that, and a row that went blank half way through the
+  wait would read as a window that has stopped.
 
 The secrets commands answer the same way (G2), because each worked and
 there is nothing to read:

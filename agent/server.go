@@ -636,7 +636,7 @@ func (s *Server) holds(want ask, look Look, was witness) bool {
 	if !was.read || was.cols != look.Cols || was.rows != look.Rows {
 		return true
 	}
-	return strings.Contains(addedSince(was.screen, look.Screen), want.Until.Contains)
+	return strings.Contains(AddedSince(was.screen, look.Screen), want.Until.Contains)
 }
 
 // witness is the reading a wait takes before it starts, so that what it
@@ -683,13 +683,13 @@ func (s *Server) ending(want ask, look Look, was witness, waited bool, because s
 	// narrowed then, and the wait stands as it ended.
 	sameSize := was.cols == full.Cols && was.rows == full.Rows
 	if waited && want.Until.Contains != "" && was.read && sameSize &&
-		strings.Contains(addedSince(was.screen, full.Screen), want.Until.Contains) {
+		strings.Contains(AddedSince(was.screen, full.Screen), want.Until.Contains) {
 		waited, because = false, EndedOnText
 	}
 	return said{Look: &full, Waited: waited, Because: because}
 }
 
-// addedSince is at most the part of a reading of a pane that was not in
+// AddedSince is at most the part of a reading of a pane that was not in
 // an earlier reading of the same pane.
 //
 // Both are the last lines of one pane, and a pane only ever grows at the
@@ -704,7 +704,7 @@ func (s *Server) ending(want ask, look Look, was witness, waited bool, because s
 // block of lines exactly, such as the same command run twice, matches a
 // longer run than really carried over, so what comes back is at most the
 // new text and can be less.
-func addedSince(was, now string) string {
+func AddedSince(was, now string) string {
 	// An earlier reading of nothing carried nothing over. Splitting an
 	// empty string gives one empty line, which would swallow the first new
 	// line whenever that line is empty too.

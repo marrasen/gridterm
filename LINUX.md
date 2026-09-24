@@ -204,7 +204,7 @@ is paste there.
 window was checked here:
 
 ```
-gridterm -shot "wait:150 shot:before.png type:pwd key:enter wait:120 shot:after.png"
+gridterm -shot "until:$ shot:before.png type:pwd key:enter until:/ shot:after.png"
 ```
 
 It is the way to take a picture of the window from a script, because

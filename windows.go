@@ -462,7 +462,7 @@ func (a *app) takeOver(addr, keyFile string, at *spot, open bool) error {
 	// Letting go of the address is done here rather than by the closure
 	// that finishes the dial: a dial that has not come back yet still
 	// has to stop holding it, or nothing can try again.
-	held := &dialling{cancel: cancel, names: []string{name}}
+	held := &dialling{cancel: cancel, names: []string{name}, takeover: true}
 	// Before the pane opens, so a name a machine is already connected
 	// under is refused with no pane left behind saying otherwise.
 	if err := a.machines.holdNames(held); err != nil {

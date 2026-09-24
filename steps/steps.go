@@ -1,14 +1,15 @@
 // Package steps is the one vocabulary for driving a pane: what to type,
 // what to press, how long to wait, and what to wait for.
 //
-// The MCP server reads it: an agent sends a list of steps to work in a
-// pane. The -shot flag that drives the window through a screenshot
-// script has its own grammar of the same shape, and this is where it
-// moves to -- but it has not yet, and the two do not agree about one
-// thing: a wait is milliseconds here and frames there. Moving it is a
-// change of meaning to be made on purpose, not by sharing a parser and
-// hoping, because every script written so far says wait:45 and means
-// forty-five frames.
+// Two things read it. An agent sends a list of steps to the MCP server
+// to work in a pane; the -shot flag drives the window through a script
+// to take screenshots. They were two grammars for the same idea, and a
+// step learned in one is a step learned in both.
+//
+// Not every step means something to both. A screenshot script cannot
+// wait for a command to finish, and an agent has nowhere to put a
+// picture, so each refuses the steps it cannot do -- by name, rather
+// than by quietly doing nothing.
 //
 // A step is a word, a colon, and the rest of the line:
 //
@@ -177,6 +178,17 @@ func ParseAll(list []string) ([]Step, error) {
 			typed, MostText)
 	}
 	return out, nil
+}
+
+// ParseLine reads a script written as one line, with the steps
+// separated by spaces.
+//
+// It is how a command line hands in a script, where a list of strings
+// has nowhere to live. Nothing typed or waited for can hold a space
+// then, which is the price of writing it on one line: ParseAll takes
+// the same steps with their spaces intact.
+func ParseLine(script string) ([]Step, error) {
+	return ParseAll(strings.Fields(script))
 }
 
 // String writes a step the way it was read, for an answer that has to

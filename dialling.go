@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 
+	"github.com/marrasen/gridterm/remote"
+
 	"github.com/marrasen/gridterm/ui"
 )
 
@@ -18,6 +20,23 @@ type dialling struct {
 	// names is every machine of the route and the name the pane goes by.
 	names []string
 
+	// route is the machines being reached and how, so a rename can ask
+	// whether the name it is changing still stands for the machine
+	// being dialled under it. A rename that changes the address as
+	// well leaves the dial where it is, the way it leaves a connection.
+	//
+	// Empty for a window being taken over, which is reached by its
+	// address rather than by a route.
+	route []step
+
+	// takeover says this is a window being taken over rather than a
+	// machine being dialled, so there is no route to ask about.
+	//
+	// Said rather than read off an empty route: "no route" would also
+	// be what a route this window cannot account for looks like, and
+	// the two want opposite answers.
+	takeover bool
+
 	// made names the machines of the route that answered, in the order
 	// they did.
 	made []string
@@ -26,6 +45,17 @@ type dialling struct {
 	// fails, for a user who asked for the same machine while it was on
 	// its way and chose to wait.
 	waiting []func()
+
+	// answering are the callers blocked on this connection, told
+	// whichever way it goes: made says the machine answered.
+	//
+	// Not waiting: what waits is work to run once the machine answers,
+	// and a connection that was not made leaves it nothing to do, so it
+	// is thrown away. A caller blocked on an answer has to be told
+	// anyway, or it waits for a connection that is never coming. What
+	// to say about one that failed is the caller's, which is why this
+	// carries no error of its own.
+	answering []func(made bool)
 
 	// settled says the dial has come back, so anything waiting on it has
 	// already run and a new request must run now rather than queue.
@@ -40,6 +70,36 @@ type dialling struct {
 	// what it is called now, for one renamed while it was on its way.
 	// The dial goroutine holds the old names and cannot be told.
 	renamed map[string]string
+}
+
+// stepFor is how one machine of the route is being reached, and false
+// when the route has no such name.
+func (d *dialling) stepFor(name string) (step, bool) {
+	for _, s := range d.route {
+		if s.name == name {
+			return s, true
+		}
+	}
+	return step{}, false
+}
+
+// movesTo reports whether a machine of this dial, called was, is the
+// one a saved entry now describes, so the dial follows the rename.
+//
+// The same rule the connection gets: a rename that changes the address
+// as well says the name stands for a different machine now, so the
+// dial keeps the name it was started under.
+func (d *dialling) movesTo(was string, to remote.Host) bool {
+	if d.takeover {
+		// A window, reached by its address. There is no route to ask
+		// about and the name is all it goes by, so it follows.
+		return true
+	}
+	s, known := d.stepFor(was)
+	// A name this route does not spell is one this window cannot
+	// account for, and a dial it cannot account for is one to leave
+	// where it is.
+	return known && s.cfg.SameMachine(to.Config())
 }
 
 // nameNow gives what a machine is called now, which is what it was
@@ -62,6 +122,15 @@ func (d *dialling) renamedTo(was, now string) {
 	for i := range d.made {
 		if d.made[i] == was {
 			d.made[i] = now
+		}
+	}
+	// The route too, because it is what says whether a later rename is
+	// still the same machine. Left spelling the old name, the machine
+	// would be renamed once more onto an address of somewhere else and
+	// the window would have no way to tell.
+	for i := range d.route {
+		if d.route[i].name == was {
+			d.route[i].name = now
 		}
 	}
 	// The dial goroutine holds the name it started with, so it is told

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/jobs"
 	"github.com/marrasen/gridterm/vfs"
 )
@@ -83,37 +84,59 @@ func soFar(d time.Duration) string {
 }
 
 // repeatJob does a finished piece of work again, on filesystems found
-// afresh, and turns the pane it was asked from onto the new work.
+// afresh.
 //
 // Opened from the ends rather than from the filesystems the job held:
 // those belong to panes that may have been closed, and a machine that
 // dropped and came back is a different connection under the same name.
-func (a *app) repeatJob(p *jobPane, op jobs.Op, from, to jobEnd) {
+// A machine that has not come back is connected to here, so the work
+// can be done again without the user reconnecting first.
+//
+// done says the attempt is over, whether it started the work or failed,
+// so what asked can let the user ask again. started is handed the new
+// work once it is going, so the pane it was asked from can turn onto it.
+func (a *app) repeatJob(op jobs.Op, from, to jobEnd, done func(),
+	started func(*jobs.Job, *conns.Entry, jobEnd, jobEnd)) {
 	title := "Could not " + strings.ToLower(op.Kind.String()) + " it again"
-	source, err := a.openEnd(from)
-	if err != nil {
-		a.reportError(title, err)
-		return
+	if done == nil {
+		done = func() {}
 	}
-	owned := []vfs.FS{source}
-	op.From = source
-	// The name the panel files the row under, worked out from the
-	// filesystem that was just opened: a machine or a window renamed since
-	// the job ran would leave the row under a name no heading has.
-	from.host = a.hostOf(source)
-	if op.To != nil {
-		into, err := a.openEnd(to)
+	run := func(op jobs.Op, from, to jobEnd, owned []vfs.FS) {
+		j, e := a.runJobRow(op, from, to, owned)
+		if started != nil {
+			started(j, e, from, to)
+		}
+	}
+	a.openEndAgain(from, func(source vfs.FS, err error) {
 		if err != nil {
-			// The source is let go of here: nothing else holds it, and
-			// a session nobody closes is a session left open on the
-			// machine.
-			a.reportError(title, errors.Join(err, source.Close()))
+			done()
+			a.reportError(title, err)
 			return
 		}
-		owned = append(owned, into)
-		op.To = into
-		to.host = a.hostOf(into)
-	}
-	j, e := a.runJobRow(op, from, to, owned)
-	p.follow(j, e, from, to)
+		owned := []vfs.FS{source}
+		op.From = source
+		// The name the panel files the row under, worked out from the
+		// filesystem that was just opened: a machine or a window renamed
+		// since the job ran would leave the row under a name no heading
+		// has.
+		from.host = a.hostOf(source)
+		if op.To == nil {
+			done()
+			run(op, from, to, owned)
+			return
+		}
+		a.openEndAgain(to, func(into vfs.FS, err error) {
+			done()
+			if err != nil {
+				// The source is let go of here: nothing else holds it,
+				// and a session nobody closes is a session left open on
+				// the machine.
+				a.reportError(title, errors.Join(err, source.Close()))
+				return
+			}
+			op.To = into
+			to.host = a.hostOf(into)
+			run(op, from, to, append(owned, into))
+		})
+	})
 }

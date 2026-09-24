@@ -26,6 +26,19 @@ import (
 func handedOver(t *testing.T, a *testApp) (*term.Terminal, string, *agent.Client) {
 	t.Helper()
 	pane := onlyPaneOn(t, a)
+	code := handedOverPane(t, a, pane)
+	c, err := agent.Dial(code)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	t.Cleanup(func() { _ = c.Close() })
+	return pane, code, c
+}
+
+// handedOverPane hands one pane to an agent and gives back the code for
+// it, for a test that picked the pane itself.
+func handedOverPane(t *testing.T, a *testApp, pane *term.Terminal) string {
+	t.Helper()
 	if err := a.handPane(pane); err != nil {
 		t.Fatalf("hand it over: %v", err)
 	}
@@ -33,12 +46,7 @@ func handedOver(t *testing.T, a *testApp) (*term.Terminal, string, *agent.Client
 	if h == nil {
 		t.Fatal("the window did not record the handover")
 	}
-	c, err := agent.Dial(h.in.code)
-	if err != nil {
-		t.Fatalf("dial: %v", err)
-	}
-	t.Cleanup(func() { _ = c.Close() })
-	return pane, h.in.code, c
+	return h.in.code
 }
 
 // An agent given a code reads the pane and types into it.

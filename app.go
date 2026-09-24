@@ -300,6 +300,12 @@ type app struct {
 	queue *jobs.Queue
 	jobs  map[*conns.Entry]*jobs.Job
 
+	// jobFrom is the end each row of file work is filed under, for as
+	// long as the row is on the panel. jobs lets go of a piece of work
+	// once it has finished, and its row stays; a rename still has to
+	// tell which server that row is on.
+	jobFrom map[*conns.Entry]jobEnd
+
 	// jobPanes are the panes open on a piece of file work, watching it
 	// go. A job may have one; closing the pane leaves the work running.
 	jobPanes []*jobPane
@@ -355,6 +361,11 @@ type app struct {
 	// secretsAt overrides where it is kept, for a test.
 	secrets   *secrets.Vault
 	secretsAt string
+
+	// reopening are the filesystems that hold a machine rather than a
+	// connection to it, so a machine that drops can tell them and they
+	// can open it again when the user next asks for something.
+	reopening []*reopening
 
 	// secretsPane is the pane the vault is worked in, and secretsRow
 	// its line on the sidebar. Both nil while none is open. There is at

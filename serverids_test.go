@@ -362,6 +362,19 @@ func TestFollowingARenameLeavesTheOtherServersPaneAlone(t *testing.T) {
 	}
 	mine := first.FS().(*reopening)
 
+	// A copy done from it, finished, and its row filed under db.
+	from, into := t.TempDir(), t.TempDir()
+	putFile(t, from, "one.txt", "the body")
+	a.runJob(jobs.Op{
+		Kind: jobs.Copy, From: mine, At: filepath.ToSlash(from),
+		Names: []string{"one.txt"}, To: vfs.NewLocal(), Into: into,
+	}, a.endOf(first), jobEnd{host: conns.Local}, nil)
+	jobRow := theJobRow(t, a)
+	waitFor(t, a, "the copy to finish", func() bool {
+		a.refreshJobs()
+		return len(a.jobs) == 0
+	})
+
 	// Renamed and pointed somewhere else: the connection, and the pane
 	// reading through it, stay as db. Then that connection goes.
 	addr, port := elsewhere.Host()
@@ -421,6 +434,29 @@ func TestFollowingARenameLeavesTheOtherServersPaneAlone(t *testing.T) {
 	}
 	if row := a.files.rows[second]; row == nil || row.Host != "db" {
 		t.Errorf("the other server's row is under %v, want db", row)
+	}
+	// And the finished copy went with its server.
+	if jobRow.Host != "db2" {
+		t.Errorf("the copy done from the first pane is under %q, want db2", jobRow.Host)
+	}
+}
+
+// A filesystem closed but not yet off the window's list is not counted
+// as another machine under its name.
+//
+// Closing takes it off the list a frame later. Counted until then, a
+// pane that has gone would make a rename move only part of what it
+// should.
+func TestAClosedFilesystemDoesNotShareAName(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	gone := newReopening(a.app, "db", step{name: "db", id: "theirs"}, nil)
+	a.keepReopening(gone)
+	if !a.sharesTheName("db", "mine") {
+		t.Fatal("a filesystem on another server under the name is not counted")
+	}
+	_ = gone.Close()
+	if a.sharesTheName("db", "mine") {
+		t.Error("a closed filesystem is still counted")
 	}
 }
 

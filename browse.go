@@ -618,6 +618,10 @@ func (a *app) runJob(op jobs.Op, from, to jobEnd, owned []vfs.FS) *jobs.Job {
 	e.Reveal = func() { a.showJobPane(j, e, from, to) }
 	e.Close = a.dropJobRow(e, j)
 	a.jobs[e] = j
+	if a.jobFrom == nil {
+		a.jobFrom = map[*conns.Entry]jobEnd{}
+	}
+	a.jobFrom[e] = from
 	a.registry.Add(e)
 	a.letGoWhenDone(j, owned)
 	a.markDirty()
@@ -632,6 +636,7 @@ func (a *app) dropJobRow(e *conns.Entry, j *jobs.Job) func() error {
 	return func() error {
 		a.queue.Drop(j)
 		delete(a.jobs, e)
+		delete(a.jobFrom, e)
 		a.registry.Drop(e)
 		return nil
 	}

@@ -300,6 +300,12 @@ type app struct {
 	queue *jobs.Queue
 	jobs  map[*conns.Entry]*jobs.Job
 
+	// jobFrom is the end each row of file work is filed under, for as
+	// long as the row is on the panel. jobs lets go of a piece of work
+	// once it has finished, and its row stays; a rename still has to
+	// tell which server that row is on.
+	jobFrom map[*conns.Entry]jobEnd
+
 	// jobPanes are the panes open on a piece of file work, watching it
 	// go. A job may have one; closing the pane leaves the work running.
 	jobPanes []*jobPane

@@ -120,9 +120,13 @@ func (a *app) movedFiles(was, now, id string) {
 // A name can stand for two machines at once: a pane left under it when
 // its server was renamed and pointed somewhere else, and a pane on a
 // server saved since under that name.
+//
+// A filesystem already closed does not count. Closing takes it off the
+// window's list a frame later, and until then it would count for a pane
+// that has gone.
 func (a *app) sharesTheName(was, id string) bool {
 	for _, r := range a.reopening {
-		if r.Host() == was && r.step().id != id {
+		if r.Host() == was && r.step().id != id && !r.closed() {
 			return true
 		}
 	}
@@ -134,8 +138,8 @@ func (a *app) sharesTheName(was, id string) bool {
 //
 // For a name that stands for two machines, where moving by the name
 // would take the other machine's panes and rows along. The rows that
-// can be told apart are the ones a file pane or a reader holds, because
-// each knows the filesystem it reads through.
+// can be told apart are the ones a file pane, a reader or a piece of
+// file work holds, because each knows the filesystem it reads through.
 func (a *app) movedServer(was, now, id string) {
 	on := func(f vfs.FS) bool {
 		r, is := f.(*reopening)
@@ -155,6 +159,13 @@ func (a *app) movedServer(was, now, id string) {
 	for _, r := range a.readers {
 		if r.on != nil && on(r.on) && r.row.Host == was {
 			r.row.Host = now
+		}
+	}
+	// Work is filed under the machine it read from, which its end says,
+	// finished or not.
+	for e, from := range a.jobFrom {
+		if e.Host == was && from.far.window == nil && from.at.id == id {
+			e.Host = now
 		}
 	}
 	a.renamedTheMachine(was, now, id)

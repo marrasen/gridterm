@@ -249,6 +249,13 @@ func (r *reopening) calledNow(string) string {
 	return r.Host()
 }
 
+// closed reports whether this has been closed, and so opens nothing more.
+func (r *reopening) closed() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.forgotten
+}
+
 // Name is what the panel calls the machine.
 func (r *reopening) Name() string {
 	r.mu.Lock()

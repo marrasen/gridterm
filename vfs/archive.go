@@ -105,7 +105,7 @@ func (a *archives) split(at string) (outer, inner string, in bool) {
 			continue
 		}
 		outer = strings.Join(parts[:i+1], sep)
-		if a.isDir(outer) {
+		if !a.mayBeArchive(outer) {
 			continue
 		}
 		return outer, strings.Trim(strings.Join(parts[i+1:], "/"), "/"), true
@@ -113,17 +113,42 @@ func (a *archives) split(at string) (outer, inner string, in bool) {
 	return at, "", false
 }
 
-// isDir reports whether a path with an archive's name is a directory.
-// The archive held open is known to be a file without asking.
-func (a *archives) isDir(at string) bool {
+// mayBeArchive reports whether a path with an archive's name is to be
+// read as one: a plain file, or nothing yet, so a path under a name
+// nothing has is not written into an archive by mistake.
+//
+// A directory is a directory whatever it is called, and so is a link:
+// one to a directory is walked like the directory, and one to a zip is
+// never walked into by a pane anyway. A name that cannot be asked about
+// at all is not taken for an archive, so what goes wrong with it is said
+// by the filesystem under this one rather than blamed on an archive.
+// The archive held open is known to be one without asking.
+func (a *archives) mayBeArchive(at string) bool {
 	a.mu.Lock()
 	known := a.at == at && a.held != nil && time.Since(a.checked) < archiveRecheck
 	a.mu.Unlock()
 	if known {
-		return false
+		return true
 	}
 	e, err := a.FS.Stat(at)
-	return err == nil && e.IsDir()
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return true
+	case err != nil:
+		return false
+	}
+	return !e.IsDir() && !e.IsLink()
+}
+
+// letGo drops the archive held open when a write is about to change the
+// file at a path, so what is read next is what is there then rather
+// than what was there a moment ago.
+func (a *archives) letGo(at string) {
+	a.mu.Lock()
+	if a.at == at {
+		a.at, a.held, a.bytes = "", nil, nil
+	}
+	a.mu.Unlock()
 }
 
 // open reads an archive and keeps it, or answers the one it is already
@@ -346,6 +371,7 @@ func (a *archives) Create(at string, mode fs.FileMode) (io.WriteCloser, error) {
 	if _, inner, in := a.split(at); in && inner != "" {
 		return nil, inArchive("write", at)
 	}
+	a.letGo(at)
 	return a.FS.Create(at, mode)
 }
 
@@ -353,6 +379,7 @@ func (a *archives) Mkdir(at string, mode fs.FileMode) error {
 	if _, inner, in := a.split(at); in && inner != "" {
 		return inArchive("make a directory in", at)
 	}
+	a.letGo(at)
 	return a.FS.Mkdir(at, mode)
 }
 
@@ -360,6 +387,7 @@ func (a *archives) Symlink(target, at string) error {
 	if _, inner, in := a.split(at); in && inner != "" {
 		return inArchive("make a link in", at)
 	}
+	a.letGo(at)
 	return a.FS.Symlink(target, at)
 }
 
@@ -367,6 +395,7 @@ func (a *archives) Remove(at string) error {
 	if _, inner, in := a.split(at); in && inner != "" {
 		return inArchive("remove something from", at)
 	}
+	a.letGo(at)
 	return a.FS.Remove(at)
 }
 
@@ -376,6 +405,8 @@ func (a *archives) Rename(from, to string) error {
 			return inArchive("move something in", at)
 		}
 	}
+	a.letGo(from)
+	a.letGo(to)
 	return a.FS.Rename(from, to)
 }
 
@@ -383,6 +414,7 @@ func (a *archives) Chmod(at string, mode fs.FileMode) error {
 	if _, inner, in := a.split(at); in && inner != "" {
 		return inArchive("change the permissions of something in", at)
 	}
+	a.letGo(at)
 	return a.FS.Chmod(at, mode)
 }
 

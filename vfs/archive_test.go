@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 // aZip writes an archive holding these names, with the name as its own
@@ -547,5 +548,79 @@ func TestAHeldArchiveIsNotAskedAboutForEveryRead(t *testing.T) {
 	}
 	if c.stats > 3 {
 		t.Errorf("the archive was asked about %d times for twenty reads", c.stats)
+	}
+}
+
+// A zip replaced through the same pane is read afresh straight away: a
+// write to the file lets go of the one held, however recently it was
+// asked about.
+func TestAZipReplacedThroughThePaneIsReadAgainAtOnce(t *testing.T) {
+	f, at := withAZip(t, "old.txt")
+	if _, err := f.ReadDir(at); err != nil {
+		t.Fatalf("first read: %v", err)
+	}
+	fresh := filepath.Join(filepath.Dir(at), "fresh.zip")
+	aZip(t, fresh, "new.txt")
+
+	if err := f.Rename(fresh, at); err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+	got, err := f.ReadDir(at)
+	if err != nil || !slices.Equal(named(got), []string{"new.txt"}) {
+		t.Errorf("the replaced zip lists %v, %v", named(got), err)
+	}
+
+	// And one removed and made again as a directory is a directory.
+	if err := f.Remove(at); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	if err := f.Mkdir(at, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	w, err := f.Create(filepath.Join(at, "one.txt"), 0o644)
+	if err != nil {
+		t.Fatalf("writing into the directory that replaced the zip: %v", err)
+	}
+	_ = w.Close()
+}
+
+// A link with an archive's name that points at a directory is walked
+// like the directory.
+func TestALinkToADirectoryWithAnArchivesNameIsWalked(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "real"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "real", "one.class"), nil, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := os.Symlink("real", filepath.Join(dir, "cur.jar")); err != nil {
+		t.Skipf("no links here: %v", err)
+	}
+	f := WithArchives(NewLocal())
+
+	got, err := f.ReadDir(filepath.Join(dir, "cur.jar"))
+	if err != nil || !slices.Equal(named(got), []string{"one.class"}) {
+		t.Errorf("the link lists %v, %v", named(got), err)
+	}
+}
+
+// A zip changed by something else is noticed once the second it is
+// trusted for has passed.
+func TestAZipChangedElsewhereIsNoticedAfterASecond(t *testing.T) {
+	was := archiveRecheck
+	archiveRecheck = 20 * time.Millisecond
+	t.Cleanup(func() { archiveRecheck = was })
+	f, at := withAZip(t, "one.txt")
+	if _, err := f.ReadDir(at); err != nil {
+		t.Fatalf("first read: %v", err)
+	}
+
+	aZip(t, at, "two.txt", "three.txt")
+	time.Sleep(3 * archiveRecheck)
+
+	got, err := f.ReadDir(at)
+	if err != nil || !slices.Equal(named(got), []string{"three.txt", "two.txt"}) {
+		t.Errorf("the changed zip lists %v, %v", named(got), err)
 	}
 }

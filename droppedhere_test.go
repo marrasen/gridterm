@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/marrasen/gridterm/shells"
-	"github.com/marrasen/gridterm/ui"
 )
 
 // saysWhereItIs makes a pane report a working directory the way a
@@ -55,7 +54,9 @@ func TestADroppedFileGoesWhereTheShellIs(t *testing.T) {
 }
 
 // And the window says so, because a file that arrives silently is a
-// file the user cannot tell arrived.
+// file the user cannot tell arrived. The way a program's message is
+// said -- a pop-up and a line on the bottom row -- and not in a dialog,
+// which would take the keys from whatever the user moved on to.
 func TestTheWindowSaysADroppedFileArrived(t *testing.T) {
 	a := newTestApp(t, 80, 24)
 	withPanel(t, a)
@@ -74,9 +75,15 @@ func TestTheWindowSaysADroppedFileArrived(t *testing.T) {
 	}
 
 	waitFor(t, a, "the window to say the file arrived", func() bool {
-		n, up := a.root.Modal().(*ui.Notice)
-		return up && strings.Contains(n.Title, "notes.txt")
+		return strings.Contains(a.saying(), "notes.txt")
 	})
+	if up := a.root.Modal(); up != nil {
+		t.Errorf("the window put up %T to say so", up)
+	}
+	shown := toasterOf(t, a).all()
+	if len(shown) != 1 || !strings.Contains(shown[0], "notes.txt") {
+		t.Errorf("the pop-ups said %q, want one naming the file", shown)
+	}
 }
 
 // A shell that has not said where it is leaves nowhere to put the

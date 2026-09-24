@@ -579,16 +579,25 @@ first run stays on the sidebar, saying how it ended.
 `Close` takes the pane away and leaves the work running, the way closing
 any pane does not end what is behind it.
 
-## D35
-- **Title:** `Copied <n> files to <dir> on <machine>`
-- **Body:** none — or `<n> failed. Details are on their rows.`
-  — or `Already exists.`
-- **Buttons:** `Copy` · `OK`
+## D35 — gone
+
+A finished drop is said the way a program's message is: a line in the
+log, a pop-up outside the window, and a line on the bottom row. It is
+news, not a question, and a box turning up when a copy lands takes the
+keys from whatever the user moved on to. The words are the same:
+
+- `Copied <n> files to <dir> on <machine>`, or `Copied <file> to …`
+- then ` — <n> failed. Details are on their rows.` or
+  ` — Already exists.` when either applies.
 
 ## D36
 - **Title:** `File copied`
 - **Body:** `<path> on <machine>`
 - **Buttons:** `Copy` · `OK`
+
+Still a dialog, unlike D35. It is shown when the pane the file was
+dropped on closed before the file landed, so the path could not be
+typed, and `Copy` is the one way left to get it.
 
 ## D37
 - **Title:** `Saved copies`

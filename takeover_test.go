@@ -728,6 +728,38 @@ func TestAWindowThatWasThrownOutSaysSo(t *testing.T) {
 	}
 }
 
+// The cross on a "serving" row throws the window out the same way, so
+// that window says it was thrown out rather than that the network went.
+func TestTheCrossOnAServedRowSaysTheWindowWasThrownOut(t *testing.T) {
+	host, client, addr := twoWindows(t)
+	row := client.windows.named(addr).entry
+	var served *conns.Entry
+	host.registry.Each(func(e *conns.Entry) bool {
+		if e.Kind == conns.Served {
+			served = e
+		}
+		return served == nil
+	})
+	if served == nil {
+		t.Fatal("the serving window has no row for the one working in it")
+	}
+
+	if err := host.closePaneRow(served); err != nil {
+		t.Fatalf("press the cross: %v", err)
+	}
+	waitFor(t, client, "the window to be let go of", func() bool {
+		return client.windows.named(addr) == nil
+	}, host)
+	client.pump.run()
+
+	if n, up := client.root.Modal().(*ui.Notice); up {
+		t.Errorf("being thrown out reported %q: %s", n.Title, n.Message())
+	}
+	if got := row.Label; got != stateClosedByWindow {
+		t.Errorf("the row says %q, want it to say the window closed the connection", got)
+	}
+}
+
 // A window that went without saying why is not reported as one that
 // stopped sharing, so the wording follows what the other end said and
 // not merely the fact that the connection ended.

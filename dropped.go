@@ -128,6 +128,7 @@ func (a *app) uploadDropped(end jobEnd, pane *term.Terminal, paths []string) err
 	if err != nil {
 		return err
 	}
+	end = endReached(end, fs)
 	dir, err := pastedDirOn(fs)
 	if err != nil {
 		return errors.Join(err, fs.Close())
@@ -143,6 +144,20 @@ func (a *app) uploadDropped(end jobEnd, pane *term.Terminal, paths []string) err
 		a.uploadOne(fs, end, pane, path, dir, owned)
 	}
 	return nil
+}
+
+// endReached is an end with the step its filesystem was reached by.
+//
+// A pane's end is named from its row, which says the machine's name and
+// not which saved server it is. The row of work on it is filed under
+// that end, and a rename moving a server's rows asks the end which
+// server it is: without the step it would say none, and the row would
+// stay under the old name.
+func endReached(end jobEnd, fs vfs.FS) jobEnd {
+	if r, is := fs.(*reopening); is {
+		end.at = r.step()
+	}
+	return end
 }
 
 // uploadOne copies one file and types its path when it is there.
@@ -174,6 +189,8 @@ func (a *app) uploadOne(fs vfs.FS, end jobEnd, pane *term.Terminal,
 				// The pane it was dropped on has been closed while the
 				// file was on its way. Typing into it would put the path
 				// where nobody can read it, and the file is there.
+				// A dialog, not tell: the path could not be typed, and
+				// its Copy is the one way left to get it.
 				a.showNotice("File copied",
 					at+" on "+groupName(endName(end)), false)
 				return

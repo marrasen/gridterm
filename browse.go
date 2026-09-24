@@ -608,8 +608,9 @@ func (a *app) runJob(op jobs.Op, from, to jobEnd, owned []vfs.FS) *jobs.Job {
 // well.
 func (a *app) runJobRow(op jobs.Op, from, to jobEnd, owned []vfs.FS) (*jobs.Job, *conns.Entry) {
 	count := meter.New()
+	filed := jobFiledUnder(op, from, to)
 	e := &conns.Entry{
-		Host:  from.host,
+		Host:  filed.host,
 		Kind:  jobRowKind(op.Kind),
 		Meter: count,
 	}
@@ -625,14 +626,28 @@ func (a *app) runJobRow(op jobs.Op, from, to jobEnd, owned []vfs.FS) (*jobs.Job,
 	e.Reveal = func() { a.showJobPane(j, e, from, to) }
 	e.Close = a.dropJobRow(e, j)
 	a.jobs[e] = j
-	if a.jobFrom == nil {
-		a.jobFrom = map[*conns.Entry]jobEnd{}
+	if a.jobFiled == nil {
+		a.jobFiled = map[*conns.Entry]jobEnd{}
 	}
-	a.jobFrom[e] = from
+	a.jobFiled[e] = filed
 	a.registry.Add(e)
 	a.letGoWhenDone(j, owned)
 	a.markDirty()
 	return j, e
+}
+
+// jobFiledUnder is the end a piece of file work is filed under on the
+// sidebar: the machine it writes to, unless that is this one.
+//
+// A file dropped on a pane on a server is going to that server, and its
+// row is looked for there. A copy from a server down to this machine
+// stays under the server, which is where the files it reads are. Work
+// with nowhere to write, a delete, is filed where it happens.
+func jobFiledUnder(op jobs.Op, from, to jobEnd) jobEnd {
+	if op.To == nil || (to.host == conns.Local && to.far.window == nil) {
+		return from
+	}
+	return to
 }
 
 // dropJobRow takes a job off the queue and its row off the panel.
@@ -643,7 +658,7 @@ func (a *app) dropJobRow(e *conns.Entry, j *jobs.Job) func() error {
 	return func() error {
 		a.queue.Drop(j)
 		delete(a.jobs, e)
-		delete(a.jobFrom, e)
+		delete(a.jobFiled, e)
 		a.registry.Drop(e)
 		return nil
 	}
@@ -1326,7 +1341,7 @@ func (a *app) stopJobsOn(on ...vfs.FS) []*jobs.Job {
 			stopping = append(stopping, j)
 			// The row goes with the browser it was started from.
 			delete(a.jobs, e)
-			delete(a.jobFrom, e)
+			delete(a.jobFiled, e)
 			a.registry.Drop(e)
 			break
 		}

@@ -339,6 +339,39 @@ func TestWorkIsNotDoneThroughAnotherServersConnection(t *testing.T) {
 	}
 }
 
+// A file dropped on a pane on a saved server is filed under that server
+// by its id as well as its name, so a rename that moves only that
+// server's rows takes this one along.
+func TestADroppedFileKnowsWhichServerItWentTo(t *testing.T) {
+	here := sshtest.New(t)
+	a := newTestApp(t, 100, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pinServers(t, a, here)
+	saveHost(t, a, "db", here, "")
+	if err := a.connectSaved("db"); err != nil {
+		t.Fatalf("connectSaved: %v", err)
+	}
+	waitFor(t, a, "the machine to answer", func() bool {
+		return a.machines.named("db") != nil
+	})
+	h, _ := a.book.Lookup("db")
+	from := filepath.Join(t.TempDir(), "notes.txt")
+	putFile(t, filepath.Dir(from), "notes.txt", "the body")
+
+	if err := a.copyDropped(jobEnd{host: "db"}, []string{from}, filepath.ToSlash(t.TempDir())); err != nil {
+		t.Fatalf("drop it: %v", err)
+	}
+
+	row := theJobRow(t, a)
+	if row.Host != "db" {
+		t.Errorf("the copy's row is under %q, want db", groupName(row.Host))
+	}
+	if got := a.jobFiled[row].at.id; got != h.ID {
+		t.Errorf("the copy's row is filed under server %q, want %q", got, h.ID)
+	}
+}
+
 // A pane that follows its server to a new name leaves a pane on another
 // server under the old name where it is.
 //
@@ -622,13 +655,13 @@ func TestClearingFinishedWorkForgetsItsEnds(t *testing.T) {
 		a.refreshJobs()
 		return len(a.jobs) == 0
 	})
-	if len(a.jobFrom) != 1 {
-		t.Fatalf("the window keeps %d ends, want the one row's", len(a.jobFrom))
+	if len(a.jobFiled) != 1 {
+		t.Fatalf("the window keeps %d ends, want the one row's", len(a.jobFiled))
 	}
 	if err := a.clearFinished(); err != nil {
 		t.Fatalf("clearFinished: %v", err)
 	}
-	if len(a.jobFrom) != 0 {
-		t.Errorf("the window still keeps %d ends after the rows went", len(a.jobFrom))
+	if len(a.jobFiled) != 0 {
+		t.Errorf("the window still keeps %d ends after the rows went", len(a.jobFiled))
 	}
 }

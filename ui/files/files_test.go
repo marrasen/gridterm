@@ -2772,3 +2772,135 @@ func TestANarrowBarStillNamesEveryKey(t *testing.T) {
 		}
 	}
 }
+
+// clickRow presses the left button on a row of a pane's listing,
+// counted from the top of the listing.
+func clickRow(t *testing.T, p *Pane, row int) {
+	t.Helper()
+	if _, err := p.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft, Col: 3, Row: p.head() + row,
+	}); err != nil {
+		t.Fatalf("click row %d: %v", row, err)
+	}
+}
+
+// A pane whose clock the test moves by hand.
+func clocked(t *testing.T, at string) (*Pane, *time.Time) {
+	t.Helper()
+	p := alone(t, at)
+	now := time.Date(2026, 9, 24, 12, 0, 0, 0, time.UTC)
+	p.clock = func() time.Time { return now }
+	return p, &now
+}
+
+// A click points at a name and a double click opens it. One click used
+// to open, which took the user into a directory they had only meant to
+// pick out.
+func TestAClickPointsAtANameAndADoubleClickOpensIt(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "sub/two.txt", "two")
+	write(t, dir, "one.txt", "one")
+	p, now := clocked(t, dir)
+
+	// Row 0 is the way up, then sub, then one.txt.
+	clickRow(t, p, 1)
+	if p.At() != dir {
+		t.Fatalf("one click went into %q", p.At())
+	}
+	if e, ok := p.Selected(); !ok || e.Name != "sub" {
+		t.Fatalf("one click left the bar on %v, want sub", e.Name)
+	}
+
+	*now = now.Add(ui.DoubleClickTime / 2)
+	clickRow(t, p, 1)
+	if want := filepath.Join(dir, "sub"); p.At() != want {
+		t.Fatalf("a double click left the pane in %q, want %q", p.At(), want)
+	}
+}
+
+// A double click on a file opens it.
+func TestADoubleClickOnAFileOpensIt(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "one.txt", "one")
+	p, _ := clocked(t, dir)
+	var opened []string
+	p.OnOpen = func(e vfs.Entry) { opened = append(opened, e.Name) }
+
+	clickRow(t, p, 1)
+	if len(opened) != 0 {
+		t.Fatalf("one click opened %v", opened)
+	}
+	clickRow(t, p, 1)
+	if len(opened) != 1 || opened[0] != "one.txt" {
+		t.Fatalf("a double click opened %v, want one.txt once", opened)
+	}
+}
+
+// Two clicks too far apart, or on two names, are two clicks.
+func TestTwoClicksThatAreNotADoubleClickOpenNothing(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "one.txt", "one")
+	write(t, dir, "two.txt", "two")
+	p, now := clocked(t, dir)
+	var opened []string
+	p.OnOpen = func(e vfs.Entry) { opened = append(opened, e.Name) }
+
+	clickRow(t, p, 1)
+	*now = now.Add(ui.DoubleClickTime + time.Millisecond)
+	clickRow(t, p, 1)
+	if len(opened) != 0 {
+		t.Fatalf("two slow clicks opened %v", opened)
+	}
+
+	*now = now.Add(ui.DoubleClickTime + time.Millisecond)
+	clickRow(t, p, 1)
+	clickRow(t, p, 2)
+	if len(opened) != 0 {
+		t.Fatalf("clicks on two names opened %v", opened)
+	}
+	if e, _ := p.Selected(); e.Name != "two.txt" {
+		t.Errorf("the bar is on %q, want the name clicked last", e.Name)
+	}
+}
+
+// A pane with nothing to show says it is reading while its first
+// listing is on the way, so a slow machine does not look like an empty
+// directory. Once the listing is in, an empty directory says nothing.
+func TestAPaneSaysItIsReadingUntilItsFirstListingArrives(t *testing.T) {
+	dir := t.TempDir()
+	p := New(vfs.NewLocal())
+	p.Style = styled()
+	var answer func()
+	p.Read = func(f vfs.FS, path string, then func([]vfs.Entry, error)) {
+		answer = func() { then(f.ReadDir(path)) }
+	}
+	p.Layout(ui.Size{Cols: 40, Rows: 12})
+
+	p.Open(dir)
+	if got := strings.Join(drawn(p, 40, 12), "\n"); !strings.Contains(got, stillReading) {
+		t.Fatalf("the pane says nothing while it reads:\n%s", got)
+	}
+	answer()
+	if got := strings.Join(drawn(p, 40, 12), "\n"); strings.Contains(got, stillReading) {
+		t.Fatalf("the pane still says it is reading once it has read:\n%s", got)
+	}
+}
+
+// A pane that has a listing keeps it while it moves, and says nothing
+// over it: the path line says where it is going.
+func TestAPaneMovingOnSaysNothingOverWhatItHas(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "one.txt", "one")
+	write(t, dir, "sub/two.txt", "two")
+	p := alone(t, dir)
+	p.Read = func(_ vfs.FS, _ string, _ func([]vfs.Entry, error)) {}
+
+	p.Open(filepath.Join(dir, "sub"))
+	got := strings.Join(drawn(p, 40, 12), "\n")
+	if strings.Contains(got, stillReading) {
+		t.Errorf("the pane says it is reading over the listing it has:\n%s", got)
+	}
+	if !strings.Contains(got, "one.txt") {
+		t.Errorf("the pane dropped the listing it had:\n%s", got)
+	}
+}

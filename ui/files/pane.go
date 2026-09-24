@@ -54,6 +54,11 @@ const up = ".."
 // errorRow is the row of the head a failed read is reported on, and
 // unreadable what it says. The reason itself is too long for a row, so
 // the row offers it instead and OnError shows it.
+// stillReading is the row a pane with nothing to show yet carries while
+// its first listing is on the way, so a slow machine does not look like
+// an empty directory.
+const stillReading = "reading…"
+
 const (
 	errorRow       = 2
 	unreadable     = "could not be read"
@@ -192,6 +197,11 @@ func New(f vfs.FS) *Pane {
 	p := &Pane{fs: f, marked: map[string]bool{}, clock: time.Now}
 	p.list = ui.NewList()
 	p.list.OnActivate = func(row ui.ListRow) error { return p.activate(row) }
+	// A click points at a name and a double click opens it, the way
+	// every other file manager does: opening on one click took the user
+	// into a directory they had only meant to pick out.
+	p.list.DoubleClick = true
+	p.list.Clock = func() time.Time { return p.clock() }
 	return p
 }
 
@@ -270,6 +280,9 @@ func (p *Pane) ask(path, land string, then func(error)) {
 	}
 	p.reading++
 	p.asked++
+	if p.waitingForFirst() {
+		p.rows()
+	}
 	// Which read this is. An answer that arrives after a later one has
 	// been asked for is about a directory the user has left, whichever
 	// order the two came back in.
@@ -277,6 +290,8 @@ func (p *Pane) ask(path, land string, then func(error)) {
 	p.Read(p.fs, path, func(entries []vfs.Entry, err error) {
 		p.reading--
 		if want != p.asked {
+			// Not the read being waited for, which will say what it
+			// found when it comes back.
 			return
 		}
 		// Carried by the read rather than by the pane, so an answer
@@ -402,7 +417,18 @@ func (p *Pane) rows() {
 	for _, e := range p.entries {
 		rows = append(rows, p.row(e))
 	}
+	if p.waitingForFirst() {
+		// A header, so the bar steps over it and a click does nothing.
+		rows = append(rows, ui.ListRow{Text: " " + stillReading, Header: true})
+	}
 	p.list.SetRows(rows)
+}
+
+// waitingForFirst says the pane has nothing to show and a read is on the
+// way. A pane with a listing keeps showing it while it moves: that is
+// the last thing that worked, and the path line says where it is going.
+func (p *Pane) waitingForFirst() bool {
+	return p.Busy() && len(p.entries) == 0 && p.err == nil
 }
 
 // row is one name as a line.
@@ -820,6 +846,8 @@ func (p *Pane) HandleMouse(ev input.MouseEvent) (bool, error) {
 	return p.list.HandleMouse(ev)
 }
 
-// FocusesFirst says a press that moves the keys to this pane does
-// nothing else, so the press that opens a name is the next one.
-func (p *Pane) FocusesFirst() bool { return true }
+// FocusesFirst says a press that moves the keys to this pane moves the
+// bar too. A click only points at a name, so there is nothing to lose
+// by letting the first one do it, and a double click on a pane without
+// the keys opens what it was aimed at.
+func (p *Pane) FocusesFirst() bool { return false }

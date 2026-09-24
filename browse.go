@@ -268,7 +268,7 @@ func (a *app) filesystem(host string) (vfs.FS, error) {
 		// over is read over a connection this window did not make.
 		return f, nil
 	}
-	return a.holdingTheMachine(host, f), nil
+	return a.holdingTheMachine(a.about(host).machine.at, f), nil
 }
 
 // holdingTheMachine wraps a filesystem so it holds the machine rather
@@ -278,12 +278,18 @@ func (a *app) filesystem(host string) (vfs.FS, error) {
 // wrapper: a pane's filesystem is looked up by identity in one place
 // and type-asserted for a rename in another, and both have to find this
 // rather than the session it happens to hold now.
-func (a *app) holdingTheMachine(host string, f vfs.FS) vfs.FS {
-	on := a.about(host)
-	if on.machine == nil {
+//
+// The machine is passed in rather than looked up by name, because the
+// name may not stand for it any more: one given up in a rename can be
+// saved for somewhere else while the connection is being made, and a
+// wrapper built from that lookup would hold another machine's address.
+func (a *app) holdingTheMachine(on step, f vfs.FS) vfs.FS {
+	if on.cfg.Host == "" {
+		// Nothing to hold: this machine is the one the window is
+		// running on, or one read through a window taken over.
 		return f
 	}
-	r := newReopening(a, host, on.machine.at, f)
+	r := newReopening(a, on.name, on, f)
 	a.keepReopening(r)
 	return r
 }
@@ -518,12 +524,12 @@ func (a *app) openEndAgain(end jobEnd, then func(vfs.FS, error)) {
 		then(f, err)
 		return
 	}
-	a.filesystemAgain(end.host, end.at, func(f vfs.FS, _ step, err error) {
+	a.filesystemAgain(end.host, end.at, func(f vfs.FS, on step, err error) {
 		if err != nil {
 			then(nil, err)
 			return
 		}
-		then(a.holdingTheMachine(end.host, f), nil)
+		then(a.holdingTheMachine(on, f), nil)
 	})
 }
 
@@ -544,26 +550,39 @@ func (a *app) endNow(end jobEnd) jobEnd {
 	if end.far.window != nil {
 		return end
 	}
-	now, renamed := a.renamed[end.host]
-	if !renamed || now == end.host {
-		return end
+	if now := a.nameNow(end.host); now != end.host {
+		end.host, end.at.name = now, now
+	}
+	return end
+}
+
+// nameNow gives what a machine called was goes by now.
+//
+// Followed through what the user renamed, not matched by address. Two
+// machines reached through different jump hosts can have one address
+// between them, and taking the wrong one of those would write the
+// user's files onto a machine they never named.
+func (a *app) nameNow(was string) string {
+	now, renamed := a.renamed[was]
+	if !renamed || now == was {
+		return was
 	}
 	// The old name is something else's now: a machine saved under it
-	// since, or one connected under it. It stands for that, so the work
-	// is left pointing at it and says plainly what it finds there.
+	// since, or one connected under it. It stands for that, so whatever
+	// is pointing at it is left pointing at it and says plainly what it
+	// finds there.
 	//
 	// The name the list gives back is what says whether it is something
 	// else, because the list does not tell two names apart by case: a
 	// machine renamed Prod to prod would otherwise find itself under
 	// the old name and never be followed.
-	if h, saved := a.book.Lookup(end.host); saved && !strings.EqualFold(h.Name, now) {
-		return end
+	if h, saved := a.book.Lookup(was); saved && !strings.EqualFold(h.Name, now) {
+		return was
 	}
-	if a.about(end.host).machine != nil {
-		return end
+	if a.about(was).machine != nil {
+		return was
 	}
-	end.host, end.at.name = now, now
-	return end
+	return now
 }
 
 // openEnd opens one end of a piece of file work again: a machine this

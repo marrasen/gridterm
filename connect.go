@@ -682,7 +682,10 @@ func (a *app) filesystemAgain(host string, at step, then func(vfs.FS, step, erro
 		a.sayWhile(line)
 		d.answering = append(d.answering, func(bool) {
 			a.doneSaying(line)
-			now := d.nameNow(host)
+			// What the machine is called now: a rename that dial
+			// followed, and then one the window followed while nothing
+			// was connected. A read can be queued across both.
+			now := a.nameNow(d.nameNow(host))
 			if a.about(now).machine != nil {
 				answerOn(now)
 				return
@@ -691,7 +694,11 @@ func (a *app) filesystemAgain(host string, at step, then func(vfs.FS, step, erro
 				notMade()
 				return
 			}
-			a.filesystemAgain(now, at, then)
+			// The step goes by that name too, or a machine on no list
+			// would be dialled under the name it has stopped using.
+			on := at
+			on.name = now
+			a.filesystemAgain(now, on, then)
 		})
 	}
 	if a.about(host).machine != nil {

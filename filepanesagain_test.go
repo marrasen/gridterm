@@ -924,3 +924,79 @@ func TestAReconnectKeepsTheMachineItOpened(t *testing.T) {
 		t.Errorf("the step it kept is named %q, want the name the machine has now", got)
 	}
 }
+
+// A copy done again holds the machine it opened, not whatever wears the
+// name it asked with.
+//
+// The same as a pane's read, on the path a job takes. A wrapper built
+// from the name rather than from the machine would carry another
+// machine's address, and a machine that dropped would send the job
+// there to finish.
+func TestARepeatKeepsTheMachineItOpened(t *testing.T) {
+	mine, other := sshtest.New(t), sshtest.New(t)
+	a := newTestApp(t, 100, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pinServers(t, a, mine, other)
+	saveHost(t, a, "one", mine, "")
+	if err := a.connectSaved("one"); err != nil {
+		t.Fatalf("connectSaved: %v", err)
+	}
+	waitFor(t, a, "the machine to answer", func() bool {
+		return a.machines.named("one") != nil
+	})
+	was := a.machines.named("one")
+	delete(a.machines.held, "one")
+
+	// The end of a piece of work on it, as the job pane keeps one.
+	end := jobEnd{host: "one", at: was.at}
+
+	// A connection to it on its way, and the work queues behind that.
+	stuck := &dialling{
+		names:  []string{"one"},
+		cancel: func() {},
+		route:  []step{{name: "one", cfg: serverConfig(t, mine)}},
+	}
+	holdTheNames(t, a, stuck)
+	type answer struct {
+		f   vfs.FS
+		err error
+	}
+	back := make(chan answer, 1)
+	a.openEndAgain(end, func(f vfs.FS, err error) { back <- answer{f, err} })
+	if len(stuck.answering) == 0 {
+		t.Fatal("the work did not queue behind the connection")
+	}
+
+	// While it runs: renamed, and the name it gave up saved for another
+	// machine and connected.
+	renameSaved(t, a, "one", "two")
+	saveHost(t, a, "one", other, "")
+	if err := a.connectSaved("one"); err != nil {
+		t.Fatalf("connectSaved the other machine: %v", err)
+	}
+	waitFor(t, a, "the other machine to answer", func() bool {
+		return a.machines.named("one") != nil
+	})
+
+	was.at.name = "two"
+	a.machines.take(was)
+	a.machines.settle(stuck, true)
+	waitFor(t, a, "the end to be opened", func() bool { return len(back) > 0 })
+
+	got := <-back
+	if got.err != nil {
+		t.Fatalf("opening the end after the old name was given away: %v", got.err)
+	}
+	r, is := got.f.(*reopening)
+	if !is {
+		t.Fatalf("the work got a %T, not one that holds the machine", got.f)
+	}
+	_, port := mine.Host()
+	if p := r.step().cfg.Port; p != port {
+		t.Errorf("the work holds port %d, want its own machine's %d", p, port)
+	}
+	if h := r.Host(); h != "two" {
+		t.Errorf("the work is filed under %q, want two", h)
+	}
+}

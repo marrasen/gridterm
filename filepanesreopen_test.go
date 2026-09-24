@@ -724,6 +724,10 @@ func TestGivingUpOnAReconnectBehindALiveJumpHostStartsNothing(t *testing.T) {
 		t.Fatal("the machine on the way went too")
 	}
 
+	// The machine on the way will not open a channel, so the reconnect
+	// through it cannot finish before the user gives up on it.
+	near.StallChannels()
+
 	// The pane's own reconnect, caught before it settles.
 	done := make(chan error, 1)
 	go func() {
@@ -747,5 +751,85 @@ func TestGivingUpOnAReconnectBehindALiveJumpHostStartsNothing(t *testing.T) {
 	}
 	if a.machines.named("db") != nil {
 		t.Error("the window connected to db after the user gave up")
+	}
+}
+
+// A read queued behind someone else's dial follows a rename the window
+// made while it waited.
+//
+// That dial knows the renames of the machines it is reaching and no
+// others. A machine renamed while nothing was connected to it is
+// followed by the window instead, and a read waiting can be across
+// both kinds at once.
+func TestAQueuedReadFollowsARenameTheWindowMade(t *testing.T) {
+	near, far := sshtest.New(t), sshtest.New(t)
+	a := newTestApp(t, 100, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pinServers(t, a, near, far)
+	saveHost(t, a, "edge", near, "")
+	saveHost(t, a, "db", far, "edge")
+	if err := a.connectSaved("db"); err != nil {
+		t.Fatalf("connectSaved: %v", err)
+	}
+	waitFor(t, a, "both machines to answer", func() bool {
+		return a.machines.named("db") != nil && a.machines.named("edge") != nil
+	})
+	opened, err := a.filesystem("db")
+	if err != nil {
+		t.Fatalf("open a filesystem on db: %v", err)
+	}
+	f := opened.(*reopening)
+
+	// db goes. edge is set aside so a dial can hold its name, and comes
+	// back when that dial settles.
+	far.CloseClients()
+	waitFor(t, a, "the window to see db go", func() bool {
+		a.reapExited()
+		return a.machines.named("db") == nil
+	})
+	settleAndClearNotices(t, a)
+	edge := a.machines.named("edge")
+	if edge == nil {
+		t.Fatal("the machine on the way went too")
+	}
+	delete(a.machines.held, "edge")
+	f.Lost()
+
+	// Someone else's dial, on its way through edge to somewhere else.
+	stuck := &dialling{
+		names:  []string{"edge", "web"},
+		cancel: func() {},
+		route:  []step{{name: "edge", cfg: serverConfig(t, near)}},
+	}
+	holdTheNames(t, a, stuck)
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := f.ReadDir("/")
+		done <- err
+	}()
+	waitFor(t, a, "the read to queue behind it", func() bool {
+		return len(stuck.answering) > 0
+	})
+
+	// db is renamed while it waits. Nothing is connected to db and
+	// nothing is on its way to it, so that dial is told nothing.
+	renameSaved(t, a, "db", "db2")
+	if got := f.Host(); got != "db2" {
+		t.Fatalf("the filesystem is filed under %q after the rename", got)
+	}
+
+	// edge answers; the machine beyond it does not.
+	a.machines.releaseName(stuck, "edge")
+	a.machines.take(edge)
+	a.machines.settle(stuck, false)
+
+	waitFor(t, a, "the read to come back", func() bool { return len(done) > 0 })
+	if err := <-done; err != nil {
+		t.Fatalf("reading after the rename: %v", err)
+	}
+	if a.machines.named("db2") == nil {
+		t.Errorf("the window holds %v, want db2 among them", a.machines.names())
 	}
 }

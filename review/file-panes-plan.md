@@ -188,12 +188,12 @@ wrapper, so it opens the machine again to do it. The alternative is a
    giving up means. A dial that was on its way somewhere else says
    nothing about this machine, and that one is worth asking again.
 
-2. **Giving up ends this read's own connection, and only that one.**
-   Cancelling a reconnect and having the window dial again a moment
-   later is the opposite of what giving up means. Giving up on a dial
-   to somewhere else that this read was waiting behind is a different
-   thing: the read still wants its machine and has not asked for it
-   yet, so it asks.
+2. **Giving up ends this read's own connection.** Cancelling a
+   reconnect and having the window dial again a moment later is the
+   opposite of what giving up means. Giving up on a dial to somewhere
+   else that this read was waiting behind ends the read too, unless a
+   machine on the way to it answered and is still held -- then the
+   read has not asked for its own machine yet, and asks.
 
 3. **How many panes reconnect at once?** One. They all go through the
    dial queue, and a caller blocked on an answer queues on `answering`

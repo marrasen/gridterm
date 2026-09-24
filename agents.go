@@ -1058,6 +1058,13 @@ func (w agentWindow) Restart(id string) (agent.Pane, error) {
 		if err := w.a.startAgain(h.pane); err != nil {
 			return agent.Pane{}, err
 		}
+		if s := w.a.started[h.pane]; s != nil && s.asking {
+			// A shell on another window, which that window starts
+			// again and answers about a moment later.
+			return agent.Pane{}, errors.New(
+				"the window this pane is on has been asked to start it again." +
+					" Wait for the prompt, then carry on")
+		}
 		if h.pane.Exited() {
 			// startAgain reports some failures to the user rather than to
 			// its caller. The question on the pane is what offers the

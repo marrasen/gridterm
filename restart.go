@@ -378,36 +378,55 @@ func (a *app) startAgainOnWindow(pane *term.Terminal, t *taken) error {
 
 // startAgainOver asks the other window to start its pane's program again
 // and has the pane watch it, off the goroutine that draws: the answer is
-// a round trip away and waits on that window's own frame.
+// a round trip away and waits on that window's own frame. A window of a
+// build that cannot is asked for a new shell instead, the same way.
 //
-// A window of a build that cannot is asked for a new shell instead.
+// A failure puts the question back on the pane, so the user is not left
+// looking at a finished pane with nothing to press.
 func (a *app) startAgainOver(pane *term.Terminal, t *taken, open serve.Open, size ui.Size) {
 	a.closes.inBackground(func() error {
+		var (
+			sess  session.Session
+			fresh bool
+		)
 		err := t.win.StartAgain(serve.Attached{ID: open.ID, Host: open.Host, Kind: open.Kind})
-		var sess session.Session
-		if err == nil {
+		switch {
+		case err == nil:
 			sess, err = t.win.Attach(open, size.Cols, size.Rows)
+		case errors.Is(err, serve.ErrCannotStartAgain):
+			fresh = true
+			sess, err = t.win.Open(size.Cols, size.Rows, func(named serve.Attached) {
+				a.pump.post(func() { a.bindWatched(pane, t, named) })
+			})
 		}
 		a.pump.post(func() {
 			if s := a.started[pane]; s != nil {
 				s.asking = false
 			}
-			title := "Could not reconnect to " + t.name
-			switch {
-			case errors.Is(err, serve.ErrCannotStartAgain):
-				if err := a.openAgainOnWindow(pane, t, size); err != nil {
-					a.reportError(title, err)
+			if !a.live(pane) {
+				// Closed while the answer was on its way. What runs over
+				// there runs on in its own pane there.
+				if sess != nil {
+					_ = sess.Close()
 				}
-			case err != nil:
-				a.reportError(title, err)
-			case !a.live(pane):
-				// Closed while the answer was on its way. The shell
-				// over there runs on in its own pane.
-				_ = sess.Close()
-			default:
-				if err := a.restartPane(pane, sess, ""); err != nil {
-					a.reportError(title, errors.Join(err, sess.Close()))
+				return
+			}
+			if err == nil {
+				err = a.restartPane(pane, sess, "")
+				if err != nil {
+					err = errors.Join(err, sess.Close())
 				}
+			}
+			if err != nil {
+				a.reportError("Could not reconnect to "+t.name, err)
+				a.askWhatNext(pane)
+				return
+			}
+			if fresh {
+				// What it was watching has ended over there. The new
+				// shell is bound once the window says what it calls it.
+				delete(a.windows.seen, pane)
+				a.windows.draws(pane, t)
 			}
 		})
 		return nil

@@ -3457,3 +3457,82 @@ func TestAShellOnAWindowThatEndsCanBeReconnected(t *testing.T) {
 		return strings.Contains(host.shell(host.shellCount()-1).sentText(), "echo hi")
 	}, client)
 }
+
+// endedOnBothSides ends the shell the client's one pane on the window
+// watches, and waits for both windows to see it and for the client to
+// hear that the pane over there is still open.
+func endedOnBothSides(t *testing.T, host, client *testApp, addr string) (pane, hostPane *term.Terminal) {
+	t.Helper()
+	held := client.windows.named(addr)
+	pane = client.windows.drawnFrom(held)[0]
+	var watched remoteKey
+	waitFor(t, client, "the pane to know what it watches over there", func() bool {
+		watched, _ = client.windows.watching(pane)
+		return watched.id != ""
+	}, host)
+	if err := host.shell(host.shellCount() - 1).Close(); err != nil {
+		t.Fatalf("end the shell over there: %v", err)
+	}
+	waitFor(t, client, "both windows to see it end", func() bool {
+		client.reapExited()
+		host.reapExited()
+		return pane.Asking() != "" && len(host.ended) > 0
+	}, host)
+	waitFor(t, client, "the window over there to say what it has open", func() bool {
+		host.refreshPanel(time.Now())
+		_, ok := client.openOver(watched)
+		return ok
+	}, host)
+	for p := range host.ended {
+		hostPane = p
+	}
+	return pane, hostPane
+}
+
+// The person at the other window answering the question there first is
+// no failure: the shell is running, which is what reconnecting asks for,
+// and the pane here watches it.
+func TestReconnectingToAShellStartedAgainOverThereWatchesIt(t *testing.T) {
+	host, client, addr := twoWindows(t)
+	pane, hostPane := endedOnBothSides(t, host, client, addr)
+	shells := host.shellCount()
+	if err := host.startAgain(hostPane); err != nil {
+		t.Fatalf("start it again over there: %v", err)
+	}
+
+	if err := client.startAgain(pane); err != nil {
+		t.Fatalf("reconnect: %v", err)
+	}
+	waitFor(t, client, "the pane to take the shell back", func() bool {
+		return pane.Asking() == "" && !client.ended[pane]
+	}, host)
+	if got := host.shellCount(); got != shells+1 {
+		t.Errorf("%d shells were started over there, want the one", got-shells)
+	}
+	if n, ok := client.root.Modal().(*ui.Notice); ok {
+		t.Errorf("reconnecting said %q: %s", n.Title, n.Message())
+	}
+}
+
+// A reconnect that fails puts the question back, so the pane is not left
+// finished with nothing to press.
+func TestAReconnectThatFailsAsksAgain(t *testing.T) {
+	host, client, addr := twoWindows(t)
+	withDialogs(t, client)
+	pane, hostPane := endedOnBothSides(t, host, client, addr)
+	// Gone over there, before this window has heard.
+	if err := host.closePane(hostPane); err != nil {
+		t.Fatalf("close the pane over there: %v", err)
+	}
+
+	// As pressing the button does: the question goes once its answer
+	// has returned without an error.
+	if err := client.startAgain(pane); err != nil {
+		t.Fatalf("reconnect: %v", err)
+	}
+	pane.Ask("")
+	waitFor(t, client, "the question to come back", func() bool {
+		_, told := client.root.Modal().(*ui.Notice)
+		return told && pane.Asking() != ""
+	}, host)
+}

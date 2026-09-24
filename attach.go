@@ -60,7 +60,10 @@ func (a *app) startAgainFor(want serve.Attached) error {
 		case pane == nil:
 			back <- errors.New("that has no program to start again")
 		case !a.ended[pane]:
-			back <- errors.New("it is still running")
+			// Started again already -- by whoever sits here, say, who
+			// answered the question on it first. Running is what was
+			// asked for, and the client watches it.
+			back <- nil
 		default:
 			back <- a.startAgain(pane)
 		}

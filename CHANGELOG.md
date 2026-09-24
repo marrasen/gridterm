@@ -292,7 +292,9 @@ with was put in place with a hard link, so two windows making one at
 once could not write over each other's. FAT32 and exFAT have no hard
 links, so the link failed every time and serving was refused. Where
 there are none, the name is claimed on its own and the finished key
-moved onto it. The same goes for a new SSH key made there.
+moved onto it. The same goes for a new SSH key made there. On Linux and
+macOS such a stick keeps no file modes, so every file on it reads as
+open to others; the key is used there rather than refused for it.
 
 **A starting file is written whole or not at all.** The keyboard
 shortcuts file and the theme file were created and then filled, so a

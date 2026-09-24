@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"syscall"
 	"testing"
+	"time"
 )
 
 // noHardLinks makes this a filesystem that refuses every hard link, the
@@ -110,5 +111,31 @@ func TestNoDirectoryIsMade(t *testing.T) {
 
 	if err := Write(at, []byte("the key"), 0o600); err == nil {
 		t.Fatal("a file was written into a directory that is not there")
+	}
+}
+
+// An empty file left at the name long enough ago is a claim whose writer
+// never came back, and is written over. One made a moment ago is another
+// writer's, part way through, and is not.
+func TestAnEmptyFileIsAClaimOnlyOnceItIsStale(t *testing.T) {
+	dir := t.TempDir()
+	at := filepath.Join(dir, "host_key")
+	if err := os.WriteFile(at, nil, 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	if err := Write(at, []byte("the key"), 0o600); !errors.Is(err, fs.ErrExist) {
+		t.Fatalf("a fresh claim was written over: %v", err)
+	}
+
+	long := time.Now().Add(-time.Minute)
+	if err := os.Chtimes(at, long, long); err != nil {
+		t.Fatalf("age it: %v", err)
+	}
+	if err := Write(at, []byte("the key"), 0o600); err != nil {
+		t.Fatalf("a stale claim was not written over: %v", err)
+	}
+	if got, _ := os.ReadFile(at); string(got) != "the key" {
+		t.Errorf("it reads %q", got)
 	}
 }

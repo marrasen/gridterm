@@ -205,7 +205,8 @@ func WriteStart(path string, have []ui.Binding) error {
 			"%s is already there. Edit it, or move it aside and take this again", path)
 	}
 	if err != nil {
-		return fmt.Errorf("write %s: %w", path, err)
+		// newfile says which file already.
+		return err
 	}
 	return nil
 }

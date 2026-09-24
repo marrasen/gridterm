@@ -305,7 +305,8 @@ func WriteStart(path string, from Theme) error {
 			"%s is already there. Edit it, or move it aside and take this again", path)
 	}
 	if err != nil {
-		return fmt.Errorf("themes: write %s: %w", path, err)
+		// newfile says which file already.
+		return fmt.Errorf("themes: %w", err)
 	}
 	return nil
 }

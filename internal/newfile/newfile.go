@@ -22,11 +22,18 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // link is os.Link, a variable so a test can be a filesystem without hard
 // links.
 var link = os.Link
+
+// StaleClaim is how long an empty file can sit at a name before it is
+// taken for a claim whose writer never came back -- a process that died,
+// a stick pulled -- and cleared. Nothing Write puts anywhere is empty,
+// so an empty file there is only ever a claim.
+var StaleClaim = 10 * time.Second
 
 // Write puts body at path with the mode given, when nothing is at path.
 // When something is, it writes nothing and returns an error that is
@@ -34,6 +41,7 @@ var link = os.Link
 //
 // The directory must exist already.
 func Write(path string, body []byte, perm fs.FileMode) error {
+	clearStaleClaim(path)
 	tmp, err := writeBeside(path, body, perm)
 	if err != nil {
 		return err
@@ -41,8 +49,11 @@ func Write(path string, body []byte, perm fs.FileMode) error {
 	err = link(tmp, path)
 	switch {
 	case err == nil:
-		if rm := os.Remove(tmp); rm != nil {
-			return fmt.Errorf("clear up %s: %w", tmp, rm)
+		if rm := removeSoon(tmp); rm != nil {
+			// The file is written. What is left is a copy of it beside
+			// it, which the user has to hear about: it may be a key.
+			return fmt.Errorf("%s was written, but its copy %s could not be removed: %w",
+				path, tmp, rm)
 		}
 		return nil
 	case errors.Is(err, fs.ErrExist):
@@ -71,6 +82,40 @@ func Write(path string, body []byte, perm fs.FileMode) error {
 			errors.Join(err, os.Remove(tmp), os.Remove(path)))
 	}
 	return nil
+}
+
+// IsClaim reports whether the file at path is an empty one, which Write
+// leaves at a name for the moment between claiming it and filling it
+// on a filesystem without hard links.
+func IsClaim(path string) bool {
+	info, err := os.Lstat(path)
+	return err == nil && info.Mode().IsRegular() && info.Size() == 0
+}
+
+// clearStaleClaim takes away an empty file left at a name longer than a
+// writer takes, so the name can be written again.
+func clearStaleClaim(path string) {
+	info, err := os.Lstat(path)
+	if err != nil || !info.Mode().IsRegular() || info.Size() != 0 {
+		return
+	}
+	if time.Since(info.ModTime()) < StaleClaim {
+		return
+	}
+	_ = os.Remove(path)
+}
+
+// removeSoon removes a file, trying again for a moment: on Windows a
+// file just closed can still be held open by whatever scans new files.
+func removeSoon(path string) error {
+	var err error
+	for range 10 {
+		if err = os.Remove(path); err == nil || errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return err
 }
 
 // writeBeside writes body to a new file in path's directory and flushes

@@ -19,6 +19,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"time"
 
 	"github.com/marrasen/gridterm/conf"
 	"github.com/marrasen/gridterm/internal/newfile"
@@ -70,7 +71,7 @@ func AuthorizedKeysPath() (string, error) {
 // the next time.
 func HostKey(path string) (ssh.Signer, error) {
 	signer, err := readHostKey(path)
-	if err == nil || !errors.Is(err, os.ErrNotExist) {
+	if err == nil || !(errors.Is(err, os.ErrNotExist) || errors.Is(err, errClaimed)) {
 		return signer, err
 	}
 	signer, err = makeHostKey(path)
@@ -78,9 +79,22 @@ func HostKey(path string) (ssh.Signer, error) {
 		return signer, err
 	}
 	// Another window made one between the read and the write. Theirs is
-	// the one on disk, so theirs is the one this machine is known by.
-	return readHostKey(path)
+	// the one on disk, so theirs is the one this machine is known by --
+	// once it has finished writing it, which on a filesystem without
+	// hard links is a moment after it claims the name.
+	for range 40 {
+		signer, err = readHostKey(path)
+		if !errors.Is(err, errClaimed) {
+			return signer, err
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return nil, fmt.Errorf("serve: the host key %s is still being written by another window", path)
 }
+
+// errClaimed is a host key file with nothing in it yet: another window
+// has claimed the name and not filled it, or one that did so died.
+var errClaimed = errors.New("serve: the host key is not written yet")
 
 // modesMeanSomething is whether a file mode says who can read a file.
 //
@@ -99,7 +113,10 @@ func readHostKey(path string) (ssh.Signer, error) {
 		}
 		return nil, fmt.Errorf("serve: read the host key %s: %w", path, err)
 	}
-	if modesMeanSomething && info.Mode().Perm()&0o077 != 0 {
+	if newfile.IsClaim(path) {
+		return nil, errClaimed
+	}
+	if modesMeanSomething && info.Mode().Perm()&0o077 != 0 && modesStick(filepath.Dir(path)) {
 		return nil, fmt.Errorf(
 			"serve: the host key %s is readable by others (mode %04o)."+
 				" Fix its permissions, or delete it and let gridterm make another",
@@ -114,6 +131,32 @@ func readHostKey(path string) (ssh.Signer, error) {
 		return nil, fmt.Errorf("serve: read the host key %s: %w", path, err)
 	}
 	return signer, nil
+}
+
+// modesStick reports whether a file made private in a directory stays
+// private, which is not so on a filesystem that keeps no modes: FAT32
+// and exFAT on Linux and macOS report every file readable by others,
+// whatever it was made as. There, the mode says nothing about the key,
+// and refusing it for its mode would refuse every key the stick holds.
+//
+// Asked of a file of its own rather than of the key, so the key's mode
+// is never changed behind the user's back.
+var modesStick = probeModes
+
+// probeModes is modesStick, asked of the filesystem.
+func probeModes(dir string) bool {
+	f, err := os.CreateTemp(dir, ".mode-*")
+	if err != nil {
+		// Nothing to learn from, so the mode is taken at its word.
+		return true
+	}
+	probe := f.Name()
+	defer func() { _ = os.Remove(probe) }()
+	if err := errors.Join(f.Chmod(0o600), f.Close()); err != nil {
+		return true
+	}
+	info, err := os.Stat(probe)
+	return err != nil || info.Mode().Perm()&0o077 == 0
 }
 
 // makeHostKey writes a new key and returns it.

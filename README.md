@@ -102,6 +102,22 @@ gridterm comes with:
 
 [USAGE.md](USAGE.md) covers the rest, and how to change a shortcut.
 
+## An administrator shell on Windows
+
+gridterm has no setting to run a pane as administrator. On Windows 11
+24H2 and later, Windows `sudo` can do it inside a normal pane:
+
+```
+sudo config --enable normal    # once: run elevated commands in the same pane
+sudo pwsh                      # an administrator PowerShell, in this pane
+```
+
+The first line asks for UAC (User Account Control) itself, and can also
+be set in Settings → System → For developers → Enable sudo → Inline.
+Out of the box `sudo` is set to open a new window, which is a console
+window outside gridterm. Inline mode shares the pane with processes that
+are not elevated, which is why Windows does not turn it on by default.
+
 ## Read more
 
 | | |

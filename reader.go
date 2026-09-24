@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/marrasen/gridterm/conns"
+	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/files"
 	"github.com/marrasen/gridterm/ui/term"
 	"github.com/marrasen/gridterm/vfs"
@@ -34,6 +35,12 @@ type reader struct {
 	// the browser pane the reader was opened from.
 	on vfs.FS
 	at string
+
+	// from is the pane that had the keys when this was opened: the
+	// browser pane a file was picked in, or the terminal a scrollback
+	// is of. Closing the reader gives the keys back to it, rather than
+	// to whichever pane the tree happens to land on.
+	from ui.Widget
 
 	// pane is the terminal a scrollback viewer was opened on, and nil
 	// for a viewer on a file. Such a viewer has no filesystem and no
@@ -108,6 +115,7 @@ func (a *app) openReader(f vfs.FS, host, path, name string, follow bool, expect 
 			}
 		})
 	}
+	from := ui.FocusedLeaf(a.root.Widget())
 	if err := a.placePane(r); err != nil {
 		return err
 	}
@@ -121,7 +129,7 @@ func (a *app) openReader(f vfs.FS, host, path, name string, follow bool, expect 
 	if a.readers == nil {
 		a.readers = map[*files.Reader]*reader{}
 	}
-	a.readers[r] = &reader{row: row, on: f, at: path}
+	a.readers[r] = &reader{row: row, on: f, at: path, from: from}
 	a.holdFS(f)
 	a.registry.Add(row)
 	// Following before the first read, so a file that is already long
@@ -195,6 +203,21 @@ func (a *app) hostOfPane(p *files.Pane) string {
 		}
 	}
 	return conns.Local
+}
+
+// backFrom is the pane closing w gives the keys back to: the one a
+// reader was opened from, while it is still in the window. Nil for
+// anything else, which leaves the keys where the tree puts them.
+func (a *app) backFrom(w ui.Widget) ui.Widget {
+	r, is := w.(*files.Reader)
+	if !is {
+		return nil
+	}
+	held := a.readers[r]
+	if held == nil || held.from == nil || held.from == w {
+		return nil
+	}
+	return held.from
 }
 
 // dropReader takes a reader's row off the sidebar, for a pane that has

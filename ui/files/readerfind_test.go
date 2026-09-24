@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/input"
 	"github.com/marrasen/gridterm/ui"
 )
@@ -148,8 +149,8 @@ func TestSearchingALineThatGrowsWhenLowercased(t *testing.T) {
 	press(t, r, input.KeyEnter)
 	g := drawReader(r, 40, 10)
 
-	if got, want := g.At(3, 1).BG, r.Style.SelectedBG; got != want {
-		t.Errorf("the match sits on %v, want the marked-out ground %v", got, want)
+	if got, want := g.At(3, 1).BG, r.Style.MarkedFG; got != want {
+		t.Errorf("the match sits on %v, want the ground of the match being on %v", got, want)
 	}
 }
 
@@ -256,14 +257,45 @@ func TestTheMatchIsMarkedOut(t *testing.T) {
 	press(t, r, input.KeyEnter)
 	g := drawReader(r, 40, 10)
 
-	// "a " then the match: the third column of the second line.
-	if got := g.At(2, 2).BG; got != r.Style.SelectedBG {
-		t.Errorf("the match sits on %v, want the marked-out ground %v", got, r.Style.SelectedBG)
+	// "a " then the match: the third column of the second line. It is
+	// the only match, so it is the one the reader is on.
+	if got := g.At(2, 2).BG; got != r.Style.MarkedFG {
+		t.Errorf("the match sits on %v, want the ground of the match being on %v", got, r.Style.MarkedFG)
 	}
 	// And what is not the match is not marked out.
-	if got := g.At(0, 2).BG; got == r.Style.SelectedBG {
+	if got := g.At(0, 2).BG; got == r.Style.MarkedFG || got == r.Style.SelectedBG {
 		t.Error("the whole line is marked out, want only the match")
 	}
+}
+
+// The match Next steps from is told from the others: drawn the other
+// way round and underlined, so it does not rest on a colour alone.
+func TestTheMatchBeingOnIsToldFromTheRest(t *testing.T) {
+	r := aFileOf(t, 40, 10, "a needle", "b needle")
+
+	typed(t, r, "/needle")
+	press(t, r, input.KeyEnter)
+	on, other := func(g *grid.Grid, y int) {
+		t.Helper()
+		c := g.At(2, y)
+		if c.BG != r.Style.MarkedFG || c.Attr&grid.AttrUnderline == 0 {
+			t.Errorf("row %d: the match being on is drawn %v on %v, attr %v", y, c.FG, c.BG, c.Attr)
+		}
+	}, func(g *grid.Grid, y int) {
+		t.Helper()
+		c := g.At(2, y)
+		if c.BG != r.Style.SelectedBG || c.Attr&grid.AttrUnderline != 0 {
+			t.Errorf("row %d: another match is drawn %v on %v, attr %v", y, c.FG, c.BG, c.Attr)
+		}
+	}
+	g := drawReader(r, 40, 10)
+	on(g, 1)
+	other(g, 2)
+
+	typed(t, r, "n")
+	g = drawReader(r, 40, 10)
+	other(g, 1)
+	on(g, 2)
 }
 
 // While a question is up, the keys that move through the file are typed

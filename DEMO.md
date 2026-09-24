@@ -216,8 +216,9 @@ The bits to say out loud if anyone in the room owns the servers.
 - [ ] **A tailed file** is asked about three times a second and stays
       at its end; scroll back and it leaves you where you put yourself.
 - [ ] **A strip beside the file**, where a code editor puts its
-      minimap: the shape of the whole file at once, the pane's place in
-      it as a box, and a click to go there. `Ctrl+M` turns it off.
+      minimap: the shape of the whole file at once, drawn in pixels, the
+      pane's place in it as a box, and a click or a drag to go there.
+      `Ctrl+M` turns it off.
 - [ ] **A JSON log read as a log.** A file of JSON lines lays itself
       out in columns — time, level, message, then the rest of the
       fields — with the level coloured for what it means, and a second
@@ -413,6 +414,5 @@ Honest limits, in case they come up.
   pictures work at all. Measured on 2026-09-20; the table is in
   `DESIGN.md`.
 - **Small faults are written down** as issues with the `bug`
-  label, mostly in the file browser and the viewer: the minimap
-  scrollbar cannot be dragged, and a zip is not browsable over a
-  connection to another gridterm.
+  label: a zip is not browsable over a connection to another
+  gridterm, for one.

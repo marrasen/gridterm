@@ -1,10 +1,13 @@
 package files
 
 import (
+	"image"
+	"image/color"
 	"strings"
 	"testing"
 
 	"github.com/marrasen/gridterm/grid"
+	"github.com/marrasen/gridterm/input"
 	"github.com/marrasen/gridterm/ui"
 )
 
@@ -118,7 +121,7 @@ func TestAPressOnTheStripGoesThere(t *testing.T) {
 
 	// Two thirds of the way down the strip.
 	at := 1 + body*2/3
-	if !r.mapPress(39, at, rows) {
+	if !r.mapPress(39, at) {
 		t.Fatal("the press was not taken as one on the strip")
 	}
 
@@ -134,19 +137,19 @@ func TestAPressOffTheStripIsNotTheStrips(t *testing.T) {
 	rows := 12
 	r := readerOn(t, "notes.txt", aLongFile(1000), 40, rows)
 
-	if r.mapPress(38, 3, rows) {
+	if r.mapPress(38, 3) {
 		t.Error("a press in the file was taken as one on the strip")
 	}
-	if r.mapPress(39, 0, rows) {
+	if r.mapPress(39, 0) {
 		t.Error("a press on the name at the top was taken as one on the strip")
 	}
-	if r.mapPress(39, rows-1, rows) {
+	if r.mapPress(39, rows-1) {
 		t.Error("a press on the key bar was taken as one on the strip")
 	}
 }
 
-// The strip is drawn in the last column, and a band with more text in
-// it is drawn darker than one with less.
+// The strip is drawn in pixels, and a band with more text in it draws
+// a longer bar than one with less.
 func TestTheStripDrawsTheShapeOfTheFile(t *testing.T) {
 	// Empty at the top and full at the bottom, so the two ends differ.
 	lines := make([]string, 400)
@@ -156,45 +159,69 @@ func TestTheStripDrawsTheShapeOfTheFile(t *testing.T) {
 		}
 	}
 	r := readerOn(t, "notes.txt", lines, 40, 12)
-	r.Style = Style{}
+	r.Style = readerStyle()
+
+	img := r.MapPicture(8, 100)
+	if img == nil {
+		t.Fatal("the strip drew no picture")
+	}
+	if top, bottom := barLength(img, 10), barLength(img, 90); top >= bottom {
+		t.Errorf("the empty half drew a bar %d long and the full half %d", top, bottom)
+	}
+}
+
+// barLength is how many pixels of a row of the strip are drawn in.
+func barLength(img *image.RGBA, y int) int {
+	n := 0
+	for x := range img.Bounds().Dx() {
+		if img.RGBAAt(x, y).A != 0 {
+			n++
+		}
+	}
+	return n
+}
+
+// The strip's own cells carry no characters: what is in the file is in
+// the picture, and the cells only say where the pane is.
+func TestTheStripHasNoCharactersInIt(t *testing.T) {
+	r := readerOn(t, "notes.txt", aLongFile(1000), 40, 12)
+	r.Style = readerStyle()
 
 	g := paintedReader(r, 40, 12)
 
-	top := g.At(39, 1).Rune
-	bottom := g.At(39, 12-readerChrome).Rune
-	if shadeAt(top) >= shadeAt(bottom) {
-		t.Errorf("the empty half drew %q and the full half %q", top, bottom)
-	}
-}
-
-// shadeAt is how full a block character is, for comparing two of them.
-func shadeAt(r rune) int {
-	for i, c := range mapShades {
-		if c == r {
-			return i
+	for y := 1; y <= 12-readerChrome; y++ {
+		if c := g.At(39, y).Rune; c != ' ' {
+			t.Fatalf("row %d of the strip is %q, want nothing drawn in text", y, c)
 		}
 	}
-	return -1
+	// And the rows the pane is showing are on a ground of their own.
+	if got := g.At(39, 1).BG; got != r.Style.OffBG {
+		t.Errorf("the top of the strip is on %v, want the box saying where the pane is", got)
+	}
 }
 
-// The bands are worked out once for a file and a height, not on every
-// frame: a file of a million lines is measured once.
-func TestTheBandsAreWorkedOutOnce(t *testing.T) {
+// The picture is drawn once for a file and a size, not on every frame:
+// a file of a million lines is measured once, and the window builds a
+// texture only when it changes.
+func TestThePictureIsKeptUntilItChanges(t *testing.T) {
 	r := readerOn(t, "notes.txt", aLongFile(1000), 40, 12)
 
-	one := r.bands(10)
-	two := r.bands(10)
-
-	if &one[0] != &two[0] {
-		t.Error("the bands were worked out twice for the same file and height")
+	one := r.MapPicture(8, 100)
+	if two := r.MapPicture(8, 100); two != one {
+		t.Error("the strip was drawn twice for the same file and size")
 	}
-	if three := r.bands(9); &three[0] == &one[0] {
-		t.Error("the bands were kept for a height they were not worked out at")
+	if three := r.MapPicture(8, 90); three == one {
+		t.Error("the strip was kept for a size it was not drawn at")
+	}
+	kept := r.MapPicture(8, 100)
+	r.Hex(true)
+	if again := r.MapPicture(8, 100); again == kept {
+		t.Error("the strip was kept after the lines it stands for changed")
 	}
 }
 
-// The worst line in a band is what the second column shows, so a
-// single error in a thousand quiet lines is still visible.
+// The worst line in a band is drawn in its colour, so a single error in
+// a thousand quiet lines is still visible.
 func TestTheWorstLineInABandShows(t *testing.T) {
 	lines := make([]string, 400)
 	for i := range lines {
@@ -202,19 +229,125 @@ func TestTheWorstLineInABandShows(t *testing.T) {
 	}
 	lines[300] = `{"level":"error","msg":"not fine"}`
 	r := readerOn(t, "app.log", lines, 40, 12)
+	r.Style = readerStyle()
 
-	bands := r.bands(10)
+	img := r.MapPicture(8, 100)
 
-	var bad int
-	for _, b := range bands {
-		if b.worst == colourBad {
-			bad++
+	var bad []int
+	for y := range 100 {
+		if img.RGBAAt(7, y) == r.Style.ErrorFG {
+			bad = append(bad, y)
 		}
 	}
-	if bad != 1 {
-		t.Errorf("%d bands of ten are marked bad for one error in four hundred lines", bad)
+	if len(bad) != 1 || bad[0] != 75 {
+		t.Errorf("rows %v of a hundred are marked bad for one error at line 300 of 400", bad)
 	}
-	if got := bands[0].worst; got != colourText {
-		t.Errorf("a band of info lines came out as colour %d, want %d", got, colourText)
+}
+
+// The strip is a scrollbar too: dragged, the file follows the pointer
+// until the button comes up, off the strip as well as on it.
+func TestDraggingTheStripMovesTheFile(t *testing.T) {
+	rows := 12
+	r := readerOn(t, "notes.txt", aLongFile(1000), 40, rows)
+	body := rows - readerChrome
+	press := func(kind input.MouseKind, col, row int) {
+		t.Helper()
+		if _, err := r.HandleMouse(input.MouseEvent{
+			Kind: kind, Button: input.MouseLeft, Col: col, Row: row,
+		}); err != nil {
+			t.Fatalf("mouse: %v", err)
+		}
+	}
+
+	press(input.MousePress, 39, 1)
+	if r.Top() != 0 {
+		t.Fatalf("a press at the top of the strip went to line %d", r.Top())
+	}
+	press(input.MouseMove, 39, body)
+	low := r.Top()
+	if low <= 0 {
+		t.Fatal("dragging down the strip did not move the file")
+	}
+	// Off the strip and into the file, still dragging.
+	press(input.MouseMove, 10, 1+body/2)
+	if got := r.Top(); got >= low {
+		t.Errorf("dragging back up, off the strip, left the file at %d", got)
+	}
+	if r.Selected() {
+		t.Error("dragging over the file picked text out")
+	}
+
+	press(input.MouseRelease, 10, 1+body/2)
+	stopped := r.Top()
+	press(input.MouseMove, 39, body)
+	if r.Top() != stopped {
+		t.Error("the file still follows the pointer once the button is up")
+	}
+}
+
+// A drag the window gives up on -- a dialog opening while the button
+// is down, say -- stops. Moves after it with no button held do not
+// scroll the file.
+func TestACancelledDragOfTheStripStops(t *testing.T) {
+	rows := 12
+	r := readerOn(t, "notes.txt", aLongFile(1000), 40, rows)
+	body := rows - readerChrome
+	if _, err := r.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft, Col: 39, Row: 1,
+	}); err != nil {
+		t.Fatalf("press: %v", err)
+	}
+
+	r.CancelGesture()
+	if _, err := r.HandleMouse(input.MouseEvent{
+		Kind: input.MouseMove, Button: input.MouseNone, Col: 39, Row: body,
+	}); err != nil {
+		t.Fatalf("move: %v", err)
+	}
+	if got := r.Top(); got != 0 {
+		t.Errorf("a move after the drag was given up scrolled the file to %d", got)
+	}
+}
+
+// A move with no button held ends a drag whose release never arrived,
+// however it was lost.
+func TestAMoveWithNothingHeldEndsADragOfTheStrip(t *testing.T) {
+	rows := 12
+	r := readerOn(t, "notes.txt", aLongFile(1000), 40, rows)
+	body := rows - readerChrome
+	if _, err := r.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft, Col: 39, Row: 1,
+	}); err != nil {
+		t.Fatalf("press: %v", err)
+	}
+
+	for _, row := range []int{body, body - 1} {
+		if _, err := r.HandleMouse(input.MouseEvent{
+			Kind: input.MouseMove, Button: input.MouseNone, Col: 39, Row: row,
+		}); err != nil {
+			t.Fatalf("move: %v", err)
+		}
+	}
+	if got := r.Top(); got != 0 {
+		t.Errorf("moves with nothing held scrolled the file to %d", got)
+	}
+}
+
+// The strip is drawn again in a new theme's colours, and against a new
+// width of the file: both are baked into the picture.
+func TestTheStripIsDrawnAgainForNewColoursOrWidth(t *testing.T) {
+	r := readerOn(t, "notes.txt", aLongFile(1000), 40, 12)
+	r.Style = readerStyle()
+	one := r.MapPicture(8, 100)
+
+	r.Style.NoteFG = color.RGBA{R: 1, G: 2, B: 3, A: 0xff}
+	two := r.MapPicture(8, 100)
+	if two == one {
+		t.Fatal("the strip kept the old theme's colours")
+	}
+
+	r.Layout(ui.Size{Cols: 60, Rows: 12})
+	if three := r.MapPicture(8, 100); three == two {
+		t.Error("the strip kept bars measured against the old width")
 	}
 }

@@ -80,7 +80,7 @@ func (a *app) showScrollback() error {
 		Reveal: func() { a.focus(r) },
 		Close:  func() error { return a.closePane(r) },
 	}
-	a.readers[r] = &reader{row: row, pane: t}
+	a.readers[r] = &reader{row: row, pane: t, from: t}
 	a.registry.Add(row)
 	r.Open()
 	// With the find prompt already up, because the command that opened

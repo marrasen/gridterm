@@ -269,6 +269,24 @@ said nothing while its first listing was on the way, so a slow machine
 looked like an empty directory. It says `reading…` until the listing
 arrives.
 
+**Ctrl+D on a file goes back to the browser.** Closing a file, or the
+scrollback of a pane, gives the keys back to the pane it was opened
+from. They used to land wherever the window's layout put them, which
+with another pane open was not the browser.
+
+**The search match being on is marked.** "/" finds and Next moves
+between the matches, and every match looked the same. The one Next
+steps from is drawn in the selected text's colour on the match's own,
+and underlined.
+
+**The strip beside a file is drawn, and can be dragged.** It was made
+of block characters, which could say how full a band of lines was in
+five steps and nothing finer. It is drawn in pixels now, a bar per row
+as long as the lines it stands for, with a log's bad parts in their
+colour beside them. Dragging it scrolls the file, the way a scrollbar
+does, and the file keeps following the pointer off the strip until the
+button comes up.
+
 **The cross on a file's row closes it.** It did nothing on a row for a
 file being read, a tunnel, a piece of file work or any other row that is
 not a terminal or a file browser.

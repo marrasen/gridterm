@@ -126,9 +126,16 @@ at all: nothing connected, no route on any list, and no step kept.
 
 1. **The bottom row says it is reconnecting.** A folder click that takes
    ten seconds with nothing on screen reads as a window that has
-   stopped. The line goes up when the connection is asked for and is
-   replaced by whatever happens next, the way `Checking for updates…`
-   does.
+   stopped. The line goes up when the connection is asked for and comes
+   off when the machine has answered or failed.
+
+   **Built as a held line, not a timed one.** `say` gives a line four
+   seconds, which is right for one saying something worked and wrong
+   for one saying what the window is doing: a login can take longer,
+   and the row going blank half way through is the symptom the line
+   exists to prevent. `sayWhile`/`doneSaying` hold it. Every way of
+   waiting says it, not only the one that starts the connection: a
+   second pane queueing behind the first waits just as long.
 
 2. **A repeat that has to open a machine ignores a second press.** The
    button used to be instant, so pressing twice meant two copies. It
@@ -147,6 +154,12 @@ at all: nothing connected, no route on any list, and no step kept.
    has gone opens that machine rather than refusing.
 
 ## Left as it is
+
+**Choosing the same saved copy twice while it reconnects starts two.**
+The job pane's Repeat ignores a second press, because the button sits
+there looking unpressed for the length of a login. The Saved Copies
+dialog closes as soon as one is chosen, so the user has to reopen it to
+choose again, and doing that is asking for it twice.
 
 **A failed copy's clean-up reconnects.** A job that dies with the
 transport removes what it half wrote, and that call goes through the

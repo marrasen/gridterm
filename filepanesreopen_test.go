@@ -164,9 +164,20 @@ func TestAReadAfterTheDropOpensTheMachineAgain(t *testing.T) {
 		_, err := f.ReadDir("/")
 		done <- answer{err}
 	}()
-	waitFor(t, a, "the read to come back", func() bool { return len(done) > 0 })
+	// What the bottom row said while the read was out, because a click
+	// that waits with nothing on screen reads as a window that has
+	// stopped. Read here rather than afterwards: the line goes when the
+	// connection has been made, which is what the read waits for.
+	var said bool
+	waitFor(t, a, "the read to come back", func() bool {
+		said = said || strings.Contains(a.saying(), "Reconnecting")
+		return len(done) > 0
+	})
 	if got := <-done; got.err != nil {
 		t.Fatalf("reading after the drop: %v", got.err)
+	}
+	if !said {
+		t.Error("the bottom row never said it was reconnecting")
 	}
 
 	// The machine is connected again and the filesystem holds it.
@@ -176,10 +187,10 @@ func TestAReadAfterTheDropOpensTheMachineAgain(t *testing.T) {
 	if f.under == nil {
 		t.Error("the filesystem did not keep what it opened")
 	}
-	// And the bottom row said what was happening, because a click that
-	// waits with nothing on screen reads as a window that has stopped.
-	if said := a.saying(); !strings.Contains(said, "Reconnecting") {
-		t.Errorf("the bottom row says %q", said)
+	// And the line is gone once the machine has answered, because it
+	// said what the window was doing and the window has done it.
+	if got := a.saying(); strings.Contains(got, "Reconnecting") {
+		t.Errorf("the bottom row still says %q", got)
 	}
 }
 
@@ -455,11 +466,75 @@ func TestAReconnectWaitsForAJumpHostOnItsWay(t *testing.T) {
 		t.Errorf("a dialog opened over the read: %T", up)
 	}
 
-	// It comes back once that connection has settled, whichever way it
-	// went: given up on, the read asks for the machine itself.
+	// It comes back once that connection has settled. Given up on: that
+	// machine is on the way to this one, so this one is not reachable
+	// either, and the read says so rather than the window dialling the
+	// route a second time a moment after the user said no.
 	a.machines.giveUp(stuck)
 	waitFor(t, a, "the read to come back", func() bool { return len(done) > 0 })
-	if err := <-done; err != nil {
-		t.Fatalf("reading once the machine on its way had settled: %v", err)
+	if err := <-done; err == nil {
+		t.Error("the read answered although the machine on the way was given up on")
+	}
+	if a.machines.named("db") != nil || a.machines.named("edge") != nil {
+		t.Errorf("the window dialled %v after the user gave up", a.machines.names())
+	}
+}
+
+// The bottom row says it is reconnecting for as long as that takes, not
+// for four seconds.
+//
+// A line that says something worked is gone by the time the user has
+// done the next thing. This one says what the window is doing, and a
+// login can take longer than that: a row that went blank half way
+// through the wait would read as a window that has stopped, which is
+// the thing the line is up to prevent.
+func TestTheReconnectingLineHoldsUntilTheMachineAnswers(t *testing.T) {
+	a, s, host := aConnectedWindow(t, 100, 30)
+	if openFilesFromThePlus(t, a, host) == nil {
+		t.Fatal("no file pane opened")
+	}
+	held := reopenersOn(t, a, host)
+	if len(held) != 1 {
+		t.Fatalf("%d filesystems hold %s", len(held), host)
+	}
+	f := held[0]
+
+	s.CloseClients()
+	waitFor(t, a, "the window to see the machine go", func() bool {
+		a.reapExited()
+		return a.machines.named(host) == nil
+	})
+	settleAndClearNotices(t, a)
+
+	// A connection to the machine that is on its way and takes its time.
+	stuck := &dialling{names: []string{host}, cancel: func() {}}
+	holdTheNames(t, a, stuck)
+	done := make(chan error, 1)
+	go func() {
+		_, err := f.ReadDir("/")
+		done <- err
+	}()
+	waitFor(t, a, "the read to ask for the machine", func() bool {
+		return len(stuck.answering) > 0
+	})
+	if got := a.saying(); !strings.Contains(got, "Reconnecting") {
+		t.Fatalf("the bottom row says %q", got)
+	}
+
+	// Long past the few seconds a line that says something worked gets.
+	was := a.frameTime()
+	a.now = func() time.Time { return was.Add(10 * statusFor) }
+	a.stepStatus()
+	if got := a.saying(); !strings.Contains(got, "Reconnecting") {
+		t.Errorf("the bottom row says %q after the wait, want it still saying so", got)
+	}
+
+	// And it goes when the connection has settled.
+	a.machines.giveUp(stuck)
+	waitFor(t, a, "the read to come back", func() bool { return len(done) > 0 })
+	<-done
+	a.stepStatus()
+	if got := a.saying(); strings.Contains(got, "Reconnecting") {
+		t.Errorf("the bottom row still says %q", got)
 	}
 }

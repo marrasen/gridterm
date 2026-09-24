@@ -1340,10 +1340,11 @@ A file pane whose machine has gone opens it again when the user asks
 for something, and says so while that is happening:
 
 - `Reconnecting to <machine>…` — a folder click, a rename, a file
-  opened or a copy done again, on a machine that dropped. It goes up
-  when the connection is asked for and is replaced by whatever happens
-  next. Without it a click that waits the length of a login reads as a
-  window that has stopped.
+  opened or a copy done again, on a machine that dropped. It holds
+  until the machine has answered or failed, rather than going after a
+  few seconds the way a line saying something worked does: a login can
+  take longer than that, and a row that went blank half way through the
+  wait would read as a window that has stopped.
 
 The secrets commands answer the same way (G2), because each worked and
 there is nothing to read:

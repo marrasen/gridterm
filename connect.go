@@ -631,6 +631,19 @@ func (a *app) filesystemAgain(host string, at step, then func(vfs.FS, error)) {
 		}
 		answer()
 	}
+	// Said on the bottom row for as long as the wait lasts, because a
+	// folder click that waits the length of a login with nothing on
+	// screen reads as a window that has stopped. Every way of waiting
+	// says it, not only the one that starts the connection: a second
+	// pane queueing behind the first waits just as long.
+	line := "Reconnecting to " + groupName(host) + "…"
+	waitFor := func(d *dialling, run func(bool)) {
+		a.sayWhile(line)
+		d.answering = append(d.answering, func(made bool) {
+			a.doneSaying(line)
+			run(made)
+		})
+	}
 	if a.about(host).machine != nil {
 		answer()
 		return
@@ -640,7 +653,7 @@ func (a *app) filesystemAgain(host string, at step, then func(vfs.FS, error)) {
 			answer()
 			return
 		}
-		d.answering = append(d.answering, told)
+		waitFor(d, told)
 		return
 	}
 	route, err := a.route(host)
@@ -663,22 +676,28 @@ func (a *app) filesystemAgain(host string, at step, then func(vfs.FS, error)) {
 	// this read with "nothing is connected" while they read it.
 	for _, s := range route {
 		if d := a.about(s.name).dialling; d != nil && !d.settled {
-			d.answering = append(d.answering, func(bool) {
+			waitFor(d, func(made bool) {
+				if !made {
+					// That machine is on the way to this one, so this
+					// one is not reachable either. Asked for again
+					// rather than dialled a second time here, which is
+					// not what waiting for a connection means.
+					told(false)
+					return
+				}
 				a.filesystemAgain(host, at, then)
 			})
 			return
 		}
 	}
 
-	// Said on the bottom row, because a folder click that waits ten
-	// seconds with nothing on screen reads as a window that has
-	// stopped.
-	a.say("Reconnecting to " + groupName(host) + "…")
+	a.sayWhile(line)
 	a.openRoute(host, route, opening{only: true}, nil)
 	if d := a.machines.connecting(host); d != nil && !d.settled {
-		d.answering = append(d.answering, told)
+		waitFor(d, told)
 		return
 	}
+	a.doneSaying(line)
 	answer()
 }
 

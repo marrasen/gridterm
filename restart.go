@@ -384,6 +384,9 @@ func (a *app) startAgainOnWindow(pane *term.Terminal, t *taken) error {
 // A failure puts the question back on the pane, so the user is not left
 // looking at a finished pane with nothing to press.
 func (a *app) startAgainOver(pane *term.Terminal, t *taken, open serve.Open, size ui.Size) {
+	// What the pane watched before, so a fresh shell's binding, which can
+	// land before the answer below does, is not the one taken away.
+	was, _ := a.windows.watching(pane)
 	a.closes.inBackground(func() error {
 		var (
 			sess  session.Session
@@ -424,8 +427,11 @@ func (a *app) startAgainOver(pane *term.Terminal, t *taken, open serve.Open, siz
 			}
 			if fresh {
 				// What it was watching has ended over there. The new
-				// shell is bound once the window says what it calls it.
-				delete(a.windows.seen, pane)
+				// shell is bound once the window says what it calls it,
+				// which may have happened already.
+				if now, _ := a.windows.watching(pane); now == was {
+					delete(a.windows.seen, pane)
+				}
 				a.windows.draws(pane, t)
 			}
 		})

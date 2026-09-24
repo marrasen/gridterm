@@ -569,9 +569,11 @@ var stepsArg = fmt.Sprintf(" Each step is a word, a colon and the rest of it, wh
 	" \"wait:<ms>\" waits that long whatever happens, for the moments nothing on"+
 	" screen marks;"+
 	" \"until:<text>\" waits for that text to arrive, measured against the screen as"+
-	" that step began -- not as the list began. What you typed earlier in the list"+
-	" has come back by then, so waiting for a word you typed waits for the program"+
-	" to say it rather than for your own typing echoed. A wait that ended some"+
+	" the list last typed -- not as the list began. What you typed has come back by"+
+	" then, so waiting for a word you typed waits for the program to say it rather"+
+	" than for your own typing echoed. A wait before the list has typed anything"+
+	" has nothing to be an answer to and takes the pane as it already is, so a list"+
+	" may open by waiting for the prompt to be up. A wait that ended some"+
 	" other way -- the command finished, the pane went quiet -- without that text"+
 	" in what the command printed stops the list, because a step that says"+
 	" \"until the editor is up\" has not done what it says. What it printed, not"+

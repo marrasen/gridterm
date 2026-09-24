@@ -49,6 +49,19 @@ func (s *server) runSteps(pane string, list []steps.Step, lines int, clamped boo
 		waits []waited
 		last  Screen
 		read  bool
+
+		// typed says the list has put something into the pane, so what
+		// it is waiting for could be an answer to it. Only a wait
+		// before any of that has nothing to be an answer to -- "until
+		// the prompt is up, then type" -- and it takes the pane as it
+		// already is, or it waits out its whole timeout for a prompt
+		// that was drawn before the list began.
+		//
+		// It holds for the rest of the list, including a wait that
+		// follows another: ["until:Building", "until:Deployed"] asks
+		// for Deployed after Building, not for a Deployed left on the
+		// screen by an earlier run.
+		typed bool
 	)
 	ends := time.Now().Add(longestList)
 	for i, step := range list {
@@ -61,10 +74,12 @@ func (s *server) runSteps(pane string, list []steps.Step, lines int, clamped boo
 			if err := s.panes.Send(pane, step.Text, nil); err != nil {
 				return stoppedAt(i, step, err.Error(), last, read)
 			}
+			typed = true
 		case steps.Key:
 			if err := s.panes.Send(pane, "", []string{step.Chord}); err != nil {
 				return stoppedAt(i, step, err.Error(), last, read)
 			}
+			typed = true
 		case steps.Wait:
 			if !s.rest(min(step.Wait, time.Until(ends))) {
 				return stoppedAt(i, step, "the window is closing", last, read)
@@ -72,10 +87,10 @@ func (s *server) runSteps(pane string, list []steps.Step, lines int, clamped boo
 		case steps.Until:
 			screen, ended, err := s.panes.Wait(pane, lines, Until{
 				Contains: step.Text,
-				// Only what arrived while this list was running counts.
-				// The text waited for is usually a word the list just
-				// typed, and a terminal echoes what is typed.
-				SinceKeys: step.Text != "",
+				// Only what arrived since this list last typed counts:
+				// the text waited for is usually a word it just typed,
+				// and a terminal echoes what is typed.
+				SinceKeys: step.Text != "" && typed,
 				TimeoutMS: waitFor(timeoutMS, time.Until(ends)),
 			})
 			if err != nil {

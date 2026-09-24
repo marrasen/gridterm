@@ -468,3 +468,61 @@ func TestAWaitIsHeldToWhatTheListHasLeft(t *testing.T) {
 		}
 	}
 }
+
+// A wait that follows another still waits for its text to arrive.
+//
+// The list has typed, and everything after that is an answer to it. Two
+// waits in a row are a list watching one command through two stages --
+// "until:Building", then "until:Deployed" -- and the second must not be
+// answered by a Deployed that an earlier run left on the screen.
+func TestASecondWaitInARowStillWaitsForTheTextToArrive(t *testing.T) {
+	panes := &fakePanes{code: "gt1-2222-abc", screen: "Building\nDeployed",
+		because: agent.EndedOnText}
+
+	if text, failed := runList(t, panes, "type:./deploy.sh", "key:Enter",
+		"until:Building", "until:Deployed"); failed {
+		t.Fatalf("the list failed: %q", text)
+	}
+
+	panes.mu.Lock()
+	waited := panes.waited
+	panes.mu.Unlock()
+	if waited.Contains != "Deployed" || !waited.SinceKeys {
+		t.Errorf("the second wait was %+v, want it watching for the text to arrive", waited)
+	}
+}
+
+// A wait before the list has typed anything takes the pane as it is.
+//
+// It has nothing to be an answer to: "wait until the prompt is up, then
+// type" is asking about a prompt that was drawn before the list began,
+// and a wait that insisted on watching it arrive would sit there until
+// the time ran out.
+func TestAWaitBeforeAnythingIsTypedTakesTheScreenAsItIs(t *testing.T) {
+	panes := &fakePanes{code: "gt1-2222-abc", screen: "$ ", because: agent.EndedOnText}
+
+	if text, failed := runList(t, panes, "until:$", "type:ls", "key:Enter", "until"); failed {
+		t.Fatalf("the list failed: %q", text)
+	}
+
+	panes.mu.Lock()
+	waited := panes.waited
+	panes.mu.Unlock()
+	// The last wait is the bare one; the first is the one under test,
+	// and the fake keeps only the last. So look at the list the other
+	// way round: run just the first step.
+	if waited.SinceKeys {
+		t.Errorf("the last wait was %+v", waited)
+	}
+
+	panes = &fakePanes{code: "gt1-2222-abc", screen: "$ ", because: agent.EndedOnText}
+	if text, failed := runList(t, panes, "until:$"); failed {
+		t.Fatalf("the list failed: %q", text)
+	}
+	panes.mu.Lock()
+	waited = panes.waited
+	panes.mu.Unlock()
+	if waited.Contains != "$" || waited.SinceKeys {
+		t.Errorf("it waited for %+v, want the screen as it already is", waited)
+	}
+}

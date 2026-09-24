@@ -139,3 +139,21 @@ func TestAnEmptyFileIsAClaimOnlyOnceItIsStale(t *testing.T) {
 		t.Errorf("it reads %q", got)
 	}
 }
+
+// A claim far in the future -- FAT keeps local time, so a stick written
+// on Windows reads hours ahead on Linux -- is stale too, not one being
+// written now.
+func TestAClaimFromAnotherClockIsStale(t *testing.T) {
+	at := filepath.Join(t.TempDir(), "host_key")
+	if err := os.WriteFile(at, nil, 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	ahead := time.Now().Add(2 * time.Hour)
+	if err := os.Chtimes(at, ahead, ahead); err != nil {
+		t.Fatalf("age it: %v", err)
+	}
+
+	if err := Write(at, []byte("the key"), 0o600); err != nil {
+		t.Fatalf("a claim hours ahead was not written over: %v", err)
+	}
+}

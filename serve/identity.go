@@ -116,7 +116,18 @@ func readHostKey(path string) (ssh.Signer, error) {
 	if newfile.IsClaim(path) {
 		return nil, errClaimed
 	}
-	if modesMeanSomething && info.Mode().Perm()&0o077 != 0 && modesStick(filepath.Dir(path)) {
+	if modesMeanSomething && info.Mode().Perm()&0o077 != 0 && !modesStick(filepath.Dir(path)) {
+		// A stick formatted FAT32 or exFAT, mounted so every file on it
+		// is open to others: the mode is the mount's, and it is real --
+		// anybody on this machine can read the key. Refused the same, but
+		// told what would make it private.
+		return nil, fmt.Errorf(
+			"serve: the host key %s is readable by others (mode %04o), because the"+
+				" drive it is on gives every file that mode. Mount it with fmask=0077,"+
+				" or keep gridterm's files on a drive that keeps file permissions",
+			path, info.Mode().Perm())
+	}
+	if modesMeanSomething && info.Mode().Perm()&0o077 != 0 {
 		return nil, fmt.Errorf(
 			"serve: the host key %s is readable by others (mode %04o)."+
 				" Fix its permissions, or delete it and let gridterm make another",
@@ -135,9 +146,10 @@ func readHostKey(path string) (ssh.Signer, error) {
 
 // modesStick reports whether a file made private in a directory stays
 // private, which is not so on a filesystem that keeps no modes: FAT32
-// and exFAT on Linux and macOS report every file readable by others,
-// whatever it was made as. There, the mode says nothing about the key,
-// and refusing it for its mode would refuse every key the stick holds.
+// and exFAT on Linux and macOS give every file the mode the drive was
+// mounted with. That mode is enforced, so a key it opens to others is
+// one others can read, and is refused like any other; this is only for
+// saying why, and what would fix it.
 //
 // Asked of a file of its own rather than of the key, so the key's mode
 // is never changed behind the user's back.

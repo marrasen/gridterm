@@ -99,7 +99,11 @@ func clearStaleClaim(path string) {
 	if err != nil || !info.Mode().IsRegular() || info.Size() != 0 {
 		return
 	}
-	if time.Since(info.ModTime()) < StaleClaim {
+	// Stale either way: a claim far in the future is one written under
+	// another idea of the time -- FAT keeps local time, and a stick
+	// written on Windows is read on Linux as hours ahead -- and not one
+	// being written now.
+	if age := time.Since(info.ModTime()); age < StaleClaim && age > -StaleClaim {
 		return
 	}
 	_ = os.Remove(path)

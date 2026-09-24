@@ -1,7 +1,6 @@
 package serve
 
 import (
-	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
 	"io"
@@ -871,17 +870,15 @@ func TestAClientBehindIsSentTheLatestSnapshot(t *testing.T) {
 }
 
 // On a filesystem that keeps no modes -- FAT32 and exFAT on a stick,
-// mounted on Linux or macOS -- every file reads as open to others, the
-// key gridterm made private among them. The mode says nothing there, so
-// the key is used; refusing it refused the stick's own key on every
-// start after the first.
-func TestAHostKeyWhereModesDoNotStickIsUsed(t *testing.T) {
+// mounted on Linux or macOS -- a key open to others is one others can
+// read, because the mount's mode is enforced. It is refused, and the
+// refusal says what would make it private.
+func TestAHostKeyWhereModesDoNotStickIsRefusedWithTheFix(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("file modes on Windows say nothing about who can read a file")
 	}
 	path := filepath.Join(t.TempDir(), "host_key")
-	made, err := HostKey(path)
-	if err != nil {
+	if _, err := HostKey(path); err != nil {
 		t.Fatalf("make: %v", err)
 	}
 	if err := os.Chmod(path, 0o644); err != nil {
@@ -891,12 +888,12 @@ func TestAHostKeyWhereModesDoNotStickIsUsed(t *testing.T) {
 	modesStick = func(string) bool { return false }
 	t.Cleanup(func() { modesStick = was })
 
-	again, err := HostKey(path)
-	if err != nil {
-		t.Fatalf("the stick's own key was refused: %v", err)
+	_, err := HostKey(path)
+	if err == nil {
+		t.Fatal("a key others can read was used")
 	}
-	if !bytes.Equal(again.PublicKey().Marshal(), made.PublicKey().Marshal()) {
-		t.Error("a different key was used")
+	if !strings.Contains(err.Error(), "fmask=0077") {
+		t.Errorf("the refusal says %v, want it to say how to mount the drive", err)
 	}
 }
 

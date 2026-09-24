@@ -413,8 +413,6 @@ Honest limits, in case they come up.
   pictures work at all. Measured on 2026-09-20; the table is in
   `DESIGN.md`.
 - **Small faults are written down** as issues with the `bug`
-  label, mostly in the file browser and the viewer: a
-  single click opens instead of marking, the minimap scrollbar cannot
-  be dragged, a zip is not browsable over a connection to another
-  gridterm, and a copy shows under the machine it came from rather
-  than the one it is going to.
+  label, mostly in the file browser and the viewer: the minimap
+  scrollbar cannot be dragged, and a zip is not browsable over a
+  connection to another gridterm.

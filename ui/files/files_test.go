@@ -2772,3 +2772,277 @@ func TestANarrowBarStillNamesEveryKey(t *testing.T) {
 		}
 	}
 }
+
+// clickRow presses the left button on a row of a pane's listing,
+// counted from the top of the listing.
+func clickRow(t *testing.T, p *Pane, row int) {
+	t.Helper()
+	if _, err := p.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft, Col: 3, Row: p.head() + row,
+	}); err != nil {
+		t.Fatalf("click row %d: %v", row, err)
+	}
+}
+
+// A pane whose clock the test moves by hand.
+func clocked(t *testing.T, at string) (*Pane, *time.Time) {
+	t.Helper()
+	p := alone(t, at)
+	now := time.Date(2026, 9, 24, 12, 0, 0, 0, time.UTC)
+	p.clock = func() time.Time { return now }
+	return p, &now
+}
+
+// A click points at a name and a double click opens it. One click used
+// to open, which took the user into a directory they had only meant to
+// pick out.
+func TestAClickPointsAtANameAndADoubleClickOpensIt(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "sub/two.txt", "two")
+	write(t, dir, "one.txt", "one")
+	p, now := clocked(t, dir)
+
+	// Row 0 is the way up, then sub, then one.txt.
+	clickRow(t, p, 1)
+	if p.At() != dir {
+		t.Fatalf("one click went into %q", p.At())
+	}
+	if e, ok := p.Selected(); !ok || e.Name != "sub" {
+		t.Fatalf("one click left the bar on %v, want sub", e.Name)
+	}
+
+	*now = now.Add(ui.DoubleClickTime / 2)
+	clickRow(t, p, 1)
+	if want := filepath.Join(dir, "sub"); p.At() != want {
+		t.Fatalf("a double click left the pane in %q, want %q", p.At(), want)
+	}
+}
+
+// A double click on a file opens it.
+func TestADoubleClickOnAFileOpensIt(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "one.txt", "one")
+	p, _ := clocked(t, dir)
+	var opened []string
+	p.OnOpen = func(e vfs.Entry) { opened = append(opened, e.Name) }
+
+	clickRow(t, p, 1)
+	if len(opened) != 0 {
+		t.Fatalf("one click opened %v", opened)
+	}
+	clickRow(t, p, 1)
+	if len(opened) != 1 || opened[0] != "one.txt" {
+		t.Fatalf("a double click opened %v, want one.txt once", opened)
+	}
+}
+
+// Two clicks too far apart, or on two names, are two clicks.
+func TestTwoClicksThatAreNotADoubleClickOpenNothing(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "one.txt", "one")
+	write(t, dir, "two.txt", "two")
+	p, now := clocked(t, dir)
+	var opened []string
+	p.OnOpen = func(e vfs.Entry) { opened = append(opened, e.Name) }
+
+	clickRow(t, p, 1)
+	*now = now.Add(ui.DoubleClickTime + time.Millisecond)
+	clickRow(t, p, 1)
+	if len(opened) != 0 {
+		t.Fatalf("two slow clicks opened %v", opened)
+	}
+
+	*now = now.Add(ui.DoubleClickTime + time.Millisecond)
+	clickRow(t, p, 1)
+	clickRow(t, p, 2)
+	if len(opened) != 0 {
+		t.Fatalf("clicks on two names opened %v", opened)
+	}
+	if e, _ := p.Selected(); e.Name != "two.txt" {
+		t.Errorf("the bar is on %q, want the name clicked last", e.Name)
+	}
+}
+
+// A pane with nothing to show says it is reading while its first
+// listing is on the way, so a slow machine does not look like an empty
+// directory. Once the listing is in, an empty directory says nothing.
+func TestAPaneSaysItIsReadingUntilItsFirstListingArrives(t *testing.T) {
+	dir := t.TempDir()
+	p := New(vfs.NewLocal())
+	p.Style = styled()
+	var answer func()
+	p.Read = func(f vfs.FS, path string, then func([]vfs.Entry, error)) {
+		answer = func() { then(f.ReadDir(path)) }
+	}
+	p.Layout(ui.Size{Cols: 40, Rows: 12})
+
+	p.Open(dir)
+	if got := strings.Join(drawn(p, 40, 12), "\n"); !strings.Contains(got, stillReading) {
+		t.Fatalf("the pane says nothing while it reads:\n%s", got)
+	}
+	answer()
+	if got := strings.Join(drawn(p, 40, 12), "\n"); strings.Contains(got, stillReading) {
+		t.Fatalf("the pane still says it is reading once it has read:\n%s", got)
+	}
+}
+
+// A pane that has a listing keeps it while it moves, and says nothing
+// over it: the path line says where it is going.
+func TestAPaneMovingOnSaysNothingOverWhatItHas(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "one.txt", "one")
+	write(t, dir, "sub/two.txt", "two")
+	p := alone(t, dir)
+	p.Read = func(_ vfs.FS, _ string, _ func([]vfs.Entry, error)) {}
+
+	p.Open(filepath.Join(dir, "sub"))
+	got := strings.Join(drawn(p, 40, 12), "\n")
+	if strings.Contains(got, stillReading) {
+		t.Errorf("the pane says it is reading over the listing it has:\n%s", got)
+	}
+	if !strings.Contains(got, "one.txt") {
+		t.Errorf("the pane dropped the listing it had:\n%s", got)
+	}
+}
+
+// failing makes a pane's reads fail from now on and counts the reasons
+// it shows.
+func failing(p *Pane) *[]error {
+	var shown []error
+	p.OnError = func(_ string, err error) { shown = append(shown, err) }
+	p.Read = func(_ vfs.FS, _ string, then func([]vfs.Entry, error)) {
+		then(nil, errors.New("the machine went away"))
+	}
+	return &shown
+}
+
+// A click on the row saying a pane without the keys could not be read
+// shows why once. Gaining the keys shows it, and the same press landing
+// on the row as well showed it again.
+func TestClickingAFailedPaneShowsWhyOnce(t *testing.T) {
+	b, _, _ := two(t)
+	p := b.panes[1]
+	shown := failing(p)
+	p.Reload()
+	if len(*shown) != 0 {
+		t.Fatalf("a pane without the keys showed %v", *shown)
+	}
+	start, _ := b.paneCell(1, 80)
+	errorPress := input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft, Col: start + 1, Row: errorRow,
+	}
+
+	mouseTo(t, b, errorPress)
+	if len(*shown) != 1 {
+		t.Fatalf("the click showed the reason %d times, want once", len(*shown))
+	}
+	// And the row still shows it again when asked.
+	mouseTo(t, b, errorPress)
+	if len(*shown) != 2 {
+		t.Errorf("a second click showed the reason %d times in all, want twice", len(*shown))
+	}
+}
+
+// The same through a split, where the press that moves the keys to the
+// browser is the split's to hand on or keep.
+func TestClickingAFailedPaneBesideShowsWhyOnce(t *testing.T) {
+	b, _ := many(t, 2)
+	r := &ui.Root{}
+	r.SetWidget(ui.NewSplit(ui.Columns, &blank{}, b))
+	r.Layout(ui.Rect{Cols: 185, Rows: 12})
+	p := b.panes[1]
+	shown := failing(p)
+	p.Reload()
+	if len(*shown) != 0 {
+		t.Fatalf("a pane without the keys showed %v", *shown)
+	}
+	area, _ := r.AreaOf(b)
+	start, _ := b.paneCell(1, area.Cols)
+
+	mouseTo(t, r, input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft, Col: area.X + start + 1, Row: errorRow,
+	})
+	if len(*shown) != 1 {
+		t.Fatalf("the click showed the reason %d times, want once", len(*shown))
+	}
+}
+
+// A double click on a name in a browser without the keys opens it: the
+// press that moves the keys there is the first of the two.
+func TestADoubleClickOnABrowserWithoutTheKeysOpens(t *testing.T) {
+	b, dirs := many(t, 2)
+	write(t, dirs[1], "one.txt", "one")
+	b.panes[1].Reload()
+	r := &ui.Root{}
+	r.SetWidget(ui.NewSplit(ui.Columns, &blank{}, b))
+	r.Layout(ui.Rect{Cols: 185, Rows: 12})
+	var opened []string
+	b.panes[1].OnOpen = func(e vfs.Entry) { opened = append(opened, e.Name) }
+	area, _ := r.AreaOf(b)
+	start, _ := b.paneCell(1, area.Cols)
+	// The way up is the first row of the listing, and one.txt the next.
+	click := input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft,
+		Col: area.X + start + 1, Row: b.panes[1].head() + 1,
+	}
+
+	mouseTo(t, r, click)
+	mouseTo(t, r, click)
+	if len(opened) != 1 || opened[0] != "one.txt" {
+		t.Fatalf("a double click opened %v, want one.txt", opened)
+	}
+}
+
+// Two reads answered out of order leave an empty directory saying
+// nothing, rather than saying it is still reading.
+func TestReadsAnsweredOutOfOrderLeaveNoReadingLine(t *testing.T) {
+	slow, empty := t.TempDir(), t.TempDir()
+	write(t, slow, "one.txt", "one")
+	p := New(vfs.NewLocal())
+	p.Style = styled()
+	answers := map[string]func(){}
+	p.Read = func(f vfs.FS, path string, then func([]vfs.Entry, error)) {
+		answers[path] = func() { then(f.ReadDir(path)) }
+	}
+	p.Layout(ui.Size{Cols: 40, Rows: 12})
+
+	p.Open(slow)
+	p.Open(empty)
+	answers[empty]()
+	answers[slow]()
+
+	if got := strings.Join(drawn(p, 40, 12), "\n"); strings.Contains(got, stillReading) {
+		t.Fatalf("the pane says it is reading after both answers:\n%s", got)
+	}
+}
+
+// A click on one pane of a browser without the keys hands them to that
+// pane, not to the one the browser had last. That one could not be
+// read, and handed the keys on the way it showed why, for a click that
+// was not on it.
+func TestAClickOnABrowserWithoutTheKeysGoesToThatPane(t *testing.T) {
+	b, _ := many(t, 2)
+	r := &ui.Root{}
+	r.SetWidget(ui.NewSplit(ui.Columns, &blank{}, b))
+	r.Layout(ui.Rect{Cols: 185, Rows: 12})
+	b.SetFocus(false)
+	last := b.panes[0]
+	shown := failing(last)
+	last.Reload()
+	if len(*shown) != 0 {
+		t.Fatalf("a pane without the keys showed %v", *shown)
+	}
+	area, _ := r.AreaOf(b)
+	start, _ := b.paneCell(1, area.Cols)
+
+	mouseTo(t, r, input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft,
+		Col: area.X + start + 1, Row: b.panes[1].head(),
+	})
+	if b.Here() != b.panes[1] {
+		t.Fatal("the keys are not in the pane that was clicked")
+	}
+	if len(*shown) != 0 {
+		t.Errorf("a click on the pane beside it showed %v", *shown)
+	}
+}

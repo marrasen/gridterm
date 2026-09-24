@@ -258,6 +258,17 @@ stopped answering waits however long that takes. The queue stopped
 answering for it the moment it left the list, so a window could close
 while it was still writing.
 
+**A click in the file browser points at a name, and a double click
+opens it.** One click opened, which took the user into a directory they
+had only meant to pick out. The click that moves the keys to a pane
+moves the bar as well now, so a double click on a pane without the keys
+opens what it was aimed at.
+
+**The file browser says it is reading.** A pane with nothing to show
+said nothing while its first listing was on the way, so a slow machine
+looked like an empty directory. It says `reading…` until the listing
+arrives.
+
 **The cross on a file's row closes it.** It did nothing on a row for a
 file being read, a tunnel, a piece of file work or any other row that is
 not a terminal or a file browser.

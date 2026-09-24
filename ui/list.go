@@ -4,6 +4,7 @@ import (
 	"image/color"
 	"math"
 	"reflect"
+	"time"
 
 	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/input"
@@ -211,8 +212,19 @@ func (l *List) ButtonCol() int { return buttonCol(l.size.Cols) }
 type List struct {
 	Style ListStyle
 
-	// OnActivate runs when Enter is pressed or a row is clicked.
+	// OnActivate runs when Enter is pressed or a row is clicked, or
+	// double-clicked when DoubleClick is set.
 	OnActivate func(ListRow) error
+
+	// DoubleClick makes a click move the bar and nothing else, and a
+	// second click on the same row inside DoubleClickTime run
+	// OnActivate. For a list where opening a row is too much to do on
+	// a click that was only meant to point at it.
+	DoubleClick bool
+
+	// Clock says what time it is, for telling a double click from two
+	// clicks. Nil is the wall clock; a test sets it.
+	Clock func() time.Time
 
 	// OnButton runs when a row's Button is clicked.
 	OnButton func(ListRow) error
@@ -236,10 +248,21 @@ type List struct {
 	// is showing, and -1 when it is on none of them.
 	hovered int
 
+	// clicked is the key of the row the last left click landed on, and
+	// clickedAt when. Kept by key rather than by place, so a listing
+	// rebuilt between the two clicks cannot make them a double click on
+	// another row.
+	clicked   any
+	clickedAt time.Time
+
 	size    Size
 	focused bool
 	buf     buffer
 }
+
+// DoubleClickTime is the longest two clicks can be apart and still be a
+// double click. Windows' default.
+const DoubleClickTime = 500 * time.Millisecond
 
 // NewList returns an empty list.
 func NewList() *List {
@@ -477,7 +500,30 @@ func (l *List) HandleMouse(ev input.MouseEvent) (bool, error) {
 		return true, nil
 	}
 	l.place.moveTo(row)
-	return true, l.activate()
+	if !l.DoubleClick {
+		return true, l.activate()
+	}
+	if ev.Button != input.MouseLeft {
+		return true, nil
+	}
+	now := l.now()
+	key := l.rows[row].Key
+	if l.clicked != nil && sameKey(l.clicked, key) && now.Sub(l.clickedAt) <= DoubleClickTime {
+		// The second click. A third starts again rather than opening
+		// the row twice.
+		l.clicked = nil
+		return true, l.activate()
+	}
+	l.clicked, l.clickedAt = key, now
+	return true, nil
+}
+
+// now is the time, off Clock when a test has set one.
+func (l *List) now() time.Time {
+	if l.Clock != nil {
+		return l.Clock()
+	}
+	return time.Now()
 }
 
 // Draw paints the rows that fit.

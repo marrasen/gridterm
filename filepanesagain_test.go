@@ -9,6 +9,7 @@ import (
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/internal/sshtest"
 	"github.com/marrasen/gridterm/jobs"
+	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/ui/files"
 	"github.com/marrasen/gridterm/vfs"
 )
@@ -490,5 +491,102 @@ func TestARepeatGoesToTheMachineThatHasTheNameNow(t *testing.T) {
 	if _, port := second.Host(); m.at.cfg.Port != port {
 		t.Errorf("one is connected to port %d, want the machine saved under that name (%d)",
 			m.at.cfg.Port, port)
+	}
+}
+
+// A machine renamed only by its letters' case is still followed.
+//
+// The server list does not tell two names apart by case, so the machine
+// finds itself under the name it gave up. Left there, a repeat would
+// say nothing is connected to Prod while prod sat connected.
+func TestARepeatFollowsARenameThatOnlyChangesTheCase(t *testing.T) {
+	s := sshtest.New(t)
+	a := newTestApp(t, 100, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pinServers(t, a, s)
+	saveHost(t, a, "Prod", s, "")
+	if err := a.connectSaved("Prod"); err != nil {
+		t.Fatalf("connectSaved: %v", err)
+	}
+	waitFor(t, a, "the machine to answer", func() bool {
+		return a.machines.named("Prod") != nil
+	})
+	there := openFilesFromThePlus(t, a, "Prod")
+	here := openFilesFromThePlus(t, a, conns.Local)
+	if there == nil || here == nil {
+		t.Fatal("no file panes opened")
+	}
+	from, into := t.TempDir(), t.TempDir()
+	putFile(t, from, "one.txt", "the body")
+	openAt(t, a, there, filepath.ToSlash(from))
+	openAt(t, a, here, into)
+	op := jobs.Op{
+		Kind: jobs.Copy, At: filepath.ToSlash(from), Into: into,
+		Names: []string{"one.txt"},
+	}
+	fromEnd, toEnd := a.endOf(there), a.endOf(here)
+
+	renameSaved(t, a, "Prod", "prod")
+	if a.machines.named("prod") == nil {
+		t.Fatalf("the connection did not follow the rename: %v", a.machines.names())
+	}
+
+	a.repeatSavedCopy(op, fromEnd, toEnd)
+	waitFor(t, a, "the copy to happen", func() bool {
+		a.refreshJobs()
+		_, err := os.Stat(filepath.Join(into, "one.txt"))
+		return err == nil
+	})
+	if up := a.root.Modal(); up != nil {
+		t.Errorf("a dialog complained about it: %T", up)
+	}
+	if got := a.machines.names(); len(got) != 1 || got[0] != "prod" {
+		t.Errorf("the window holds %v, want the one machine", got)
+	}
+}
+
+// A machine renamed while it is being connected to is followed too.
+//
+// The dial lands under the new name, so a file pane or a finished copy
+// left under the old one asks for a machine nothing is connected to and
+// dials the same box a second time under a name the window has stopped
+// using.
+func TestARenameCaughtMidDialIsFollowed(t *testing.T) {
+	a, s, host := aConnectedWindow(t, 100, 30)
+	pane := openFilesFromThePlus(t, a, host)
+	if pane == nil {
+		t.Fatal("no file pane opened")
+	}
+	held := reopenersOn(t, a, host)
+	if len(held) != 1 {
+		t.Fatalf("%d filesystems hold %s", len(held), host)
+	}
+	f := held[0]
+
+	s.CloseClients()
+	waitFor(t, a, "the window to see the machine go", func() bool {
+		a.reapExited()
+		return a.machines.named(host) == nil
+	})
+	settleAndClearNotices(t, a)
+
+	// A connection to it on its way, and the user renames it while that
+	// is happening.
+	stuck := &dialling{names: []string{host}, cancel: func() {}}
+	holdTheNames(t, a, stuck)
+	addr, port := s.Host()
+	a.renamedMachine(host, remote.Host{
+		Name: "renamed", Address: addr, Port: port, User: "tester",
+	})
+
+	if got := f.Host(); got != "renamed" {
+		t.Errorf("the pane's filesystem is filed under %q, want the name it has now", got)
+	}
+	if got := a.renamed[host]; got != "renamed" {
+		t.Errorf("the work on it would still look for %q", host)
+	}
+	if a.machines.connecting("renamed") == nil {
+		t.Errorf("the dial is still held under the old name: %v", a.machines.reaching())
 	}
 }

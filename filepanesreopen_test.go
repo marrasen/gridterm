@@ -550,3 +550,76 @@ func TestTheReconnectingLineHoldsUntilTheMachineAnswers(t *testing.T) {
 		t.Errorf("the bottom row still reads %q", got)
 	}
 }
+
+// A dial that fails beyond the machine on the way leaves that machine
+// connected, so a read queued behind it goes on through it.
+//
+// What a dial comes back with says whether its own far end answered.
+// That is not this machine and need not even be the one on the way: a
+// machine of a route that answered is held and stays held when the dial
+// beyond it fails. Asking that dial would fail the read although the
+// way to the machine is open.
+func TestAReadWaitsThroughADialThatFailedBeyondTheJumpHost(t *testing.T) {
+	near, far := sshtest.New(t), sshtest.New(t)
+	a := newTestApp(t, 100, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pinServers(t, a, near, far)
+	saveHost(t, a, "edge", near, "")
+	saveHost(t, a, "db", far, "edge")
+	if err := a.connectSaved("db"); err != nil {
+		t.Fatalf("connectSaved: %v", err)
+	}
+	waitFor(t, a, "both machines to answer", func() bool {
+		return a.machines.named("db") != nil && a.machines.named("edge") != nil
+	})
+	if openFilesFromThePlus(t, a, "db") == nil {
+		t.Fatal("no file pane opened")
+	}
+	held := reopenersOn(t, a, "db")
+	if len(held) != 1 {
+		t.Fatalf("%d filesystems hold db", len(held))
+	}
+	f := held[0]
+
+	// Only the machine at the far end goes. The one on the way stays
+	// connected, which is what makes this different from both dropping.
+	far.CloseClients()
+	waitFor(t, a, "the window to see the far machine go", func() bool {
+		a.reapExited()
+		return a.machines.named("db") == nil
+	})
+	settleAndClearNotices(t, a)
+	edge := a.machines.named("edge")
+	if edge == nil {
+		t.Fatal("the machine on the way went too")
+	}
+
+	// A dial on its way somewhere else through edge, holding both
+	// names, caught in the moment before edge has answered.
+	delete(a.machines.held, "edge")
+	stuck := &dialling{names: []string{"edge", "web"}, cancel: func() {}}
+	holdTheNames(t, a, stuck)
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := f.ReadDir("/")
+		done <- err
+	}()
+	waitFor(t, a, "the read to queue behind it", func() bool {
+		return len(stuck.answering) > 0
+	})
+
+	// edge answers and is held; the machine beyond it does not.
+	a.machines.releaseName(stuck, "edge")
+	a.machines.take(edge)
+	a.machines.settle(stuck, false)
+
+	waitFor(t, a, "the read to come back", func() bool { return len(done) > 0 })
+	if err := <-done; err != nil {
+		t.Fatalf("reading through a machine on the way that answered: %v", err)
+	}
+	if a.machines.named("db") == nil {
+		t.Error("db was never reached, although edge was connected")
+	}
+}

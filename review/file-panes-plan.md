@@ -148,8 +148,9 @@ at all: nothing connected, no route on any list, and no step kept.
    Not matched by address: two machines reached through different jump
    hosts can have one address between them, and a repeat that picked
    the wrong one would write the user's files onto a machine they never
-   named. A name given to another machine since stands for that one,
-   and the trail stops there.
+   named. A name given to another machine since stands for that one, so
+   work pointing at it is left pointing at it for as long as the list
+   says so.
 4. **A repeat connects.** Pressing "Do it again" on work whose machine
    has gone opens that machine rather than refusing.
 

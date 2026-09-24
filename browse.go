@@ -551,7 +551,12 @@ func (a *app) endNow(end jobEnd) jobEnd {
 	// The old name is something else's now: a machine saved under it
 	// since, or one connected under it. It stands for that, so the work
 	// is left pointing at it and says plainly what it finds there.
-	if _, saved := a.book.Lookup(end.host); saved {
+	//
+	// The name the list gives back is what says whether it is something
+	// else, because the list does not tell two names apart by case: a
+	// machine renamed Prod to prod would otherwise find itself under
+	// the old name and never be followed.
+	if h, saved := a.book.Lookup(end.host); saved && !strings.EqualFold(h.Name, now) {
 		return end
 	}
 	if a.about(end.host).machine != nil {

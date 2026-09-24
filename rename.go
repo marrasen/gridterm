@@ -67,18 +67,20 @@ func (a *app) renamedMachine(was string, to remote.Host) {
 	// under the old name because the address changed keeps its rows
 	// there, or the panel would draw them under a name nothing is
 	// connected to.
-	switch {
-	case moved.connection:
+	//
+	// A dial still on its way counts as moved for all of this. The
+	// machine it is reaching will be held under the new name, and a
+	// file pane or a finished copy left under the old one would ask for
+	// a machine nothing is connected to and dial the same box a second
+	// time under a name the window no longer uses.
+	if moved.connection || moved.dial {
 		a.renamedFiles(was, to.Name)
 		a.renamedTheMachine(was, to.Name)
 		a.renamedWork(was, to.Name)
 		// The file sessions left parked on it need nothing: they are
 		// counted against the connection, which the rename did not touch.
-		// The connection's own row, and the rows of the panes and the
-		// tunnels on it.
-		a.rehostRows(was, to.Name)
-	case moved.dial:
-		// The row of the pane watching the connection being made.
+		// The connection's own row, the rows of the panes and the
+		// tunnels on it, and the row of a pane watching one being made.
 		a.rehostRows(was, to.Name)
 	}
 	// refreshServers re-keys a window taken over under that name too.

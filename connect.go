@@ -653,7 +653,12 @@ func (a *app) filesystemAgain(host string, at step, then func(vfs.FS, error)) {
 			answer()
 			return
 		}
-		waitFor(d, told)
+		// What that dial came back with is not asked. It holds this
+		// machine's name and may be on its way somewhere beyond it, and
+		// a machine of a route that answered is held and stays held
+		// when the dial beyond it fails. Whether this machine is there
+		// is what the window itself says.
+		waitFor(d, func(bool) { told(a.about(host).machine != nil) })
 		return
 	}
 	route, err := a.route(host)
@@ -675,20 +680,31 @@ func (a *app) filesystemAgain(host string, at step, then func(vfs.FS, error)) {
 	// read through a filesystem is what is happening here -- and answer
 	// this read with "nothing is connected" while they read it.
 	for _, s := range route {
-		if d := a.about(s.name).dialling; d != nil && !d.settled {
-			waitFor(d, func(made bool) {
-				if !made {
-					// That machine is on the way to this one, so this
-					// one is not reachable either. Asked for again
-					// rather than dialled a second time here, which is
-					// not what waiting for a connection means.
-					told(false)
-					return
-				}
-				a.filesystemAgain(host, at, then)
-			})
-			return
+		d := a.about(s.name).dialling
+		if d == nil || d.settled {
+			continue
 		}
+		on := s.name
+		waitFor(d, func(bool) {
+			if a.about(host).machine != nil {
+				// This machine was on that dial's route too, and it
+				// answered.
+				answer()
+				return
+			}
+			if a.about(d.nameNow(on)).machine != nil {
+				// The machine on the way answered and is held. This one
+				// was never tried, so it is asked for now. The dial
+				// that failed was on its way somewhere else.
+				a.filesystemAgain(host, at, then)
+				return
+			}
+			// Nothing on the way answered, so this one cannot be
+			// reached either. Said rather than dialled again here,
+			// which is not what waiting for a connection means.
+			told(false)
+		})
+		return
 	}
 
 	a.sayWhile(line)

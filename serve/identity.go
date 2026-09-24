@@ -21,6 +21,7 @@ import (
 	"runtime"
 
 	"github.com/marrasen/gridterm/conf"
+	"github.com/marrasen/gridterm/internal/newfile"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -139,29 +140,10 @@ func makeHostKey(path string) (ssh.Signer, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, fmt.Errorf("serve: make %s: %w", filepath.Dir(path), err)
 	}
-	// In the same directory, so linking it into place cannot cross a
-	// filesystem. CreateTemp makes it readable by its owner and nobody
-	// else, which is what the real one has to be too.
-	f, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+"-*")
-	if err != nil {
-		return nil, fmt.Errorf("serve: write the host key %s: %w", path, err)
-	}
-	tmp := f.Name()
-	if _, err := f.Write(pem.EncodeToMemory(block)); err != nil {
-		return nil, fmt.Errorf("serve: write the host key %s: %w", path,
-			errors.Join(err, f.Close(), os.Remove(tmp)))
-	}
-	if err := f.Close(); err != nil {
-		_ = os.Remove(tmp)
-		return nil, fmt.Errorf("serve: write the host key %s: %w", path, err)
-	}
-	// Link rather than rename: a rename would write over a key another
-	// window had just made, and this machine would answer to two.
-	err = os.Link(tmp, path)
-	if rmErr := os.Remove(tmp); rmErr != nil && err == nil {
-		return nil, fmt.Errorf("serve: clear up %s: %w", tmp, rmErr)
-	}
-	if err != nil {
+	// Whole or not at all, and never over a key another window made a
+	// moment ago: this machine would answer to two. newfile also works
+	// where there are no hard links, which a copy on a USB stick needs.
+	if err := newfile.Write(path, pem.EncodeToMemory(block), 0o600); err != nil {
 		if errors.Is(err, os.ErrExist) {
 			return nil, err
 		}

@@ -287,6 +287,18 @@ colour beside them. Dragging it scrolls the file, the way a scrollbar
 does, and the file keeps following the pointer off the strip until the
 button comes up.
 
+**A copy of gridterm on a USB stick can serve.** The key a window serves
+with was put in place with a hard link, so two windows making one at
+once could not write over each other's. FAT32 and exFAT have no hard
+links, so the link failed every time and serving was refused. Where
+there are none, the name is claimed on its own and the finished key
+moved onto it. The same goes for a new SSH key made there.
+
+**A starting file is written whole or not at all.** The keyboard
+shortcuts file and the theme file were created and then filled, so a
+write that failed part way left a short file, and the next attempt
+refused to write over it.
+
 **Connecting to another window opens nothing on it, every way in.**
 Connect to Server with a window's name, Reconnect after a window's
 connection dropped, and a file pane asking for its window back each

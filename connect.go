@@ -614,8 +614,9 @@ func (a *app) connectAndBrowse(name, at string) error {
 // machine that dropped make one connection between them.
 // calledNow is asked what a machine goes by now, for a read that has
 // been waiting while it was renamed. was is the name the dial it waited
-// on knows it by; the answer is the name to ask for. A nil one means
-// the dial's answer is the whole of it.
+// on knows it by; the answer is the name to ask for, and empty when
+// nothing wants the machine any more. A nil one means the dial's answer
+// is the whole of it.
 //
 // It is asked rather than worked out here because the two callers know
 // different things. A filesystem holds its machine's address and is
@@ -701,6 +702,12 @@ func (a *app) filesystemAgain(host string, at step, calledNow func(was string) s
 			now := d.nameNow(host)
 			if calledNow != nil {
 				now = calledNow(now)
+				if now == "" {
+					// Nothing is using this any more. The pane it
+					// belonged to was closed while this waited.
+					notMade()
+					return
+				}
 			}
 			if a.about(now).machine != nil {
 				answerOn(now)

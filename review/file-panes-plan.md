@@ -186,12 +186,24 @@ that machine is renamed -- and only when it really is that machine,
 because the rename checks the address. So it says what it is called and
 is always right.
 
-A finished copy has a name and nothing else. It follows the trail of
-what the user renamed, with guards for a name given to something else
-since. That is a weaker thing, and giving it to a filesystem is how a
-pane ends up reading a machine it was never on: a name given up, given
-away and left off the list leads the trail straight to the first
-machine. Work gets the trail. A filesystem is asked.
+A finished copy is told. It follows the trail of what the user
+renamed, with guards for a name given to something else since. That is
+a weaker thing, and giving it to a filesystem is how a pane ends up
+reading a machine it was never on: a name given up, given away and left
+off the list leads the trail straight to the first machine. Work gets
+the trail. A filesystem is asked.
+
+Work taken from a pane knows where its machine was as well, so the
+trail is checked against that before it is followed. A veto and not a
+choice: two machines behind different jump hosts can have one address
+between them, so a match proves nothing and only a mismatch is acted
+on. A saved copy that names a machine on no list has nothing to check
+with, and follows the trail as it is.
+
+**An address edited under the same name is not this.** The user has
+said that name means somewhere else now, and the panes on it follow:
+there is no second machine to confuse it with. Only a name changing
+hands puts two machines in play.
 
 ## Settled while building
 

@@ -1000,3 +1000,105 @@ func TestARepeatKeepsTheMachineItOpened(t *testing.T) {
 		t.Errorf("the work is filed under %q, want two", h)
 	}
 }
+
+// Work does not follow its name to a machine it never ran on.
+//
+// An end taken from a pane knows where its machine was, so the trail of
+// what the user renamed is checked against that. A name given up, given
+// away and then left off the list leads the trail back to the machine
+// that gave it up.
+func TestWorkDoesNotFollowItsNameToAnotherMachine(t *testing.T) {
+	first, second := sshtest.New(t), sshtest.New(t)
+	a := newTestApp(t, 100, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pinServers(t, a, first, second)
+
+	// The first machine is connected and renamed, so the window keeps
+	// what it used to be called.
+	saveHost(t, a, "db", first, "")
+	if err := a.connectSaved("db"); err != nil {
+		t.Fatalf("connectSaved the first: %v", err)
+	}
+	waitFor(t, a, "the first machine to answer", func() bool {
+		return a.machines.named("db") != nil
+	})
+	renameSaved(t, a, "db", "db2")
+
+	// The second takes the name the first gave up, and work is done on
+	// it.
+	saveHost(t, a, "db", second, "")
+	if err := a.connectSaved("db"); err != nil {
+		t.Fatalf("connectSaved the second: %v", err)
+	}
+	waitFor(t, a, "the second machine to answer", func() bool {
+		return a.machines.named("db") != nil
+	})
+	on := a.machines.named("db")
+	end := jobEnd{host: "db", at: on.at}
+
+	// It drops and is taken off the list.
+	second.CloseClients()
+	waitFor(t, a, "the window to see it go", func() bool {
+		a.reapExited()
+		return a.machines.named("db") == nil
+	})
+	settleAndClearNotices(t, a)
+	if err := a.book.Remove("db"); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+
+	if got := a.endNow(end); got.host != "db" {
+		t.Errorf("the work would be done on %q, a machine it never ran on", got.host)
+	}
+}
+
+// A pane closed while its read waits opens no machine for it.
+//
+// A connection nobody asked for puts a row on the sidebar out of
+// nothing, which is what the pane being closed used to stop only before
+// the read was posted.
+func TestAPaneClosedWhileItsReadWaitsOpensNothing(t *testing.T) {
+	a, s, host := aConnectedWindow(t, 100, 30)
+	opened, err := a.filesystem(host)
+	if err != nil {
+		t.Fatalf("open a filesystem on %s: %v", host, err)
+	}
+	f := opened.(*reopening)
+
+	s.CloseClients()
+	waitFor(t, a, "the window to see the machine go", func() bool {
+		a.reapExited()
+		return a.machines.named(host) == nil
+	})
+	settleAndClearNotices(t, a)
+
+	// The read is posted, and the pane goes before the window gets to
+	// it.
+	done := make(chan error, 1)
+	go func() {
+		_, err := f.ReadDir("/")
+		done <- err
+	}()
+	for start := time.Now(); a.pump.pending() == 0; {
+		if time.Since(start) > waitBudget {
+			t.Fatal("the read never asked for the machine")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if err := a.browserLetGoFS(f); err != nil {
+		t.Fatalf("let go of the filesystem: %v", err)
+	}
+
+	waitFor(t, a, "the read to come back", func() bool { return len(done) > 0 })
+	if err := <-done; err == nil {
+		t.Error("a filesystem nobody is using answered a read")
+	}
+	settleAndClearNotices(t, a)
+	if a.machines.named(host) != nil {
+		t.Error("the window opened the machine for a pane that had gone")
+	}
+	if a.machines.connecting(host) != nil {
+		t.Error("the window is connecting for a pane that had gone")
+	}
+}

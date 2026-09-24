@@ -146,7 +146,12 @@ func (r *reopening) ready() (vfs.FS, error) {
 		// The name and the step are read here rather than above,
 		// because a rename can land between the two and this runs
 		// where renames do.
-		r.app.filesystemAgain(r.Host(), r.step(), r.calledNow,
+		name := r.calledNow("")
+		if name == "" {
+			back <- answer{err: notConnected(host)}
+			return
+		}
+		r.app.filesystemAgain(name, r.step(), r.calledNow,
 			func(f vfs.FS, on step, err error) {
 				back <- answer{f, on, err}
 			})
@@ -156,48 +161,70 @@ func (r *reopening) ready() (vfs.FS, error) {
 		if got.err != nil {
 			return nil, got.err
 		}
-		r.mu.Lock()
-		defer r.mu.Unlock()
-		if r.forgotten || r.gone != gone {
-			// The pane was closed, or the machine went again, while
-			// this was on its way. What came back belongs to nobody, so
-			// it is closed rather than stored: a session kept here that
-			// nothing will ever call is one the far end holds open for
-			// the life of the window.
-			if got.f != nil {
-				_ = got.f.Close()
+		// spare is what came back and is not wanted. It is closed after
+		// the lock goes, because closing a session waits for the far
+		// end and the goroutine that draws takes this lock every frame
+		// to ask what the machine is called.
+		var spare vfs.FS
+		f, err := func() (vfs.FS, error) {
+			r.mu.Lock()
+			defer r.mu.Unlock()
+			if r.forgotten || r.gone != gone {
+				// The pane was closed, or the machine went again,
+				// while this was on its way. What came back belongs to
+				// nobody, so it is closed rather than stored: a session
+				// kept here that nothing will ever call is one the far
+				// end holds open for the life of the window.
+				spare = got.f
+				return nil, notConnected(r.host)
 			}
-			return nil, notConnected(r.host)
-		}
-		if r.under != nil {
-			// Something else opened one while this was waiting. One is
-			// enough, and the one already in use is the one to keep.
-			if got.f != nil {
-				_ = got.f.Close()
+			if r.under != nil {
+				// Something else opened one while this was waiting. One
+				// is enough, and the one already in use is the one to
+				// keep.
+				spare = got.f
+				return r.under, nil
 			}
-			return r.under, nil
+			if got.on.cfg.Host != "" {
+				// The name this one goes by wins, the way it does for
+				// what the machine is called: one renamed while its
+				// connection was being made is called what the window
+				// calls it now, not what it was called when the dial
+				// started.
+				got.on.name = r.host
+				r.at = got.on
+			}
+			r.took(got.f)
+			return got.f, nil
+		}()
+		if spare != nil {
+			_ = spare.Close()
 		}
-		if got.on.cfg.Host != "" {
-			// The name this one goes by wins, the way it does for what
-			// the machine is called: one renamed while its connection
-			// was being made is called what the window calls it now,
-			// not what it was called when the dial started.
-			got.on.name = r.host
-			r.at = got.on
-		}
-		r.took(got.f)
-		return got.f, nil
+		return f, err
 	case <-r.app.ctx.Done():
 		return nil, r.app.ctx.Err()
 	}
 }
 
-// calledNow is what this filesystem's machine goes by now.
+// calledNow is what this filesystem's machine goes by now, and empty
+// when nothing is using this any more.
 //
 // The window tells this directly when the machine is renamed, and only
 // when it is the same machine, so what it says is exact. The name the
 // dial knows is ignored: this one is at least as new.
-func (r *reopening) calledNow(string) string { return r.Host() }
+//
+// The empty answer is how a pane closed while its read waited stops
+// the machine being opened for it. A connection nobody asked for puts
+// a row on the sidebar out of nothing, and the name this would ask
+// under is one the window has stopped following renames for.
+func (r *reopening) calledNow(string) string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.forgotten {
+		return ""
+	}
+	return r.host
+}
 
 // Name is what the panel calls the machine.
 func (r *reopening) Name() string {

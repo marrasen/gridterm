@@ -552,10 +552,38 @@ func (a *app) endNow(end jobEnd) jobEnd {
 	if end.far.window != nil {
 		return end
 	}
-	if now := a.nameNow(end.host); now != end.host {
-		end.host, end.at.name = now, now
+	now := a.nameNow(end.host)
+	if now == end.host {
+		return end
 	}
+	// An end taken from a pane knows where its machine was, so the
+	// trail is checked against that before it is followed. A name given
+	// up, given away and then left off the list leads the trail to the
+	// machine that gave it up, which this work never ran on.
+	//
+	// A veto and not a choice: two machines behind different jump hosts
+	// can have one address between them, so a match proves nothing and
+	// only a mismatch is acted on.
+	if end.at.cfg.Host != "" && a.somewhereElse(now, end.at) {
+		return end
+	}
+	end.host, end.at.name = now, now
 	return end
+}
+
+// somewhereElse reports whether a name is known to stand for a machine
+// other than this one.
+//
+// False when nothing says either way, because most of what the window
+// knows about a machine goes when its connection does.
+func (a *app) somewhereElse(name string, on step) bool {
+	if m := a.machines.named(name); m != nil {
+		return !m.at.cfg.SameMachine(on.cfg)
+	}
+	if h, saved := a.book.Lookup(name); saved {
+		return !h.Config().SameMachine(on.cfg)
+	}
+	return false
 }
 
 // nameNow gives what a machine called was goes by now.

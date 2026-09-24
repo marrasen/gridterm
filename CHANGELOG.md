@@ -287,6 +287,22 @@ colour beside them. Dragging it scrolls the file, the way a scrollbar
 does, and the file keeps following the pointer off the strip until the
 button comes up.
 
+**A folder with a zip in it is copied with the zip.** The browser shows
+a zip as a directory to walk into, and a copy of a folder took that view
+and copied what was inside each zip instead of the zip. A copy, a move
+and a delete now take a zip for the file it is. Only a file is taken for
+an archive, so a real directory called `x.zip` is a directory, and a
+link to a jar is the jar.
+
+**A zip on a machine behind another window can be walked into.** It was
+listed as a plain file, because that filesystem was the one built
+without archives opened.
+
+**The top of a Windows machine lists the drives that answer.** Going
+above `/C:` over a connection to another gridterm failed with "The
+device is not ready" when one drive, an empty card reader say, could
+not be read, and took every other drive with it.
+
 **The cross on a file's row closes it.** It did nothing on a row for a
 file being read, a tunnel, a piece of file work or any other row that is
 not a terminal or a file browser.

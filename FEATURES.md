@@ -86,10 +86,11 @@ The whole list. The [README](README.md) has the short version.
   text. Nothing is read on the goroutine that draws, and a file that will
   not read says why rather than showing an empty pane.
 - **A strip beside the file**, where a code editor puts its minimap and
-  doing the same job: the shape of the whole file at once, the pane's
-  place in it as a box, and a click to go there. A log gets a second
-  column for how bad it got, so one error in a thousand quiet lines is
-  found by looking rather than by scrolling. `Ctrl+M` turns it off.
+  doing the same job: the shape of the whole file at once, drawn in
+  pixels, the pane's place in it as a box, and a click or a drag to go
+  there. A log's strip is wider and marks how bad each part got, so one
+  error in a thousand quiet lines is found by looking rather than by
+  scrolling. `Ctrl+M` turns it off.
 - **A log of JSON lines read as a log.** A file whose lines are JSON
   objects is laid out in columns -- the time, the level, the message,
   and the rest of the fields after it -- with the level coloured for

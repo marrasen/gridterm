@@ -1,6 +1,13 @@
 package files
 
-import "github.com/marrasen/gridterm/grid"
+import (
+	"image"
+	"image/color"
+	"math"
+
+	"github.com/marrasen/gridterm/grid"
+	"github.com/marrasen/gridterm/ui"
+)
 
 // mapLeast is the narrowest pane that still gets a strip. Below it the
 // column the strip takes is a column the file needed more.
@@ -11,13 +18,13 @@ const mapLeast = 24
 // shape of the file rather than a measurement of it.
 const mapSample = 8
 
-// mapShades are the blocks a band is drawn with, emptiest first. A
-// band with nothing in it is left blank, so the strip shows where a
-// file stops as well as what is in it.
-var mapShades = []rune{' ', '░', '▒', '▓', '█'}
+// mapGapFrom is how many pixels a line has to be given on the strip
+// before a pixel of it is left out, so lines standing one under the
+// next read as lines rather than as one block.
+const mapGapFrom = 3
 
-// band is one row of the strip: how much text the lines it covers
-// hold, and the worst thing any of them said.
+// band is one row of pixels of the strip: how much text the lines it
+// covers hold, and the worst thing any of them said.
 type band struct {
 	// ink is 0 to 1, the share of the pane's width the lines fill.
 	ink float64
@@ -30,7 +37,8 @@ type band struct {
 // ShowMap turns the strip beside the file on or off.
 func (r *Reader) ShowMap(on bool) {
 	r.showMap = on
-	r.mapFor = -1
+	r.mapPic = nil
+	r.mapDrag = false
 }
 
 // MapShowing reports whether the strip is on, whether or not the pane
@@ -40,9 +48,8 @@ func (r *Reader) MapShowing() bool { return r.showMap }
 // mapWidth is how many columns the strip takes, and none when it is
 // off or the pane is too narrow for it.
 //
-// Two columns for a log: one for the shape of the text and one for how
-// bad it got, which is what a log is read for. One for everything
-// else.
+// Two columns for a log: room for how bad it got beside the shape of
+// the text, which is what a log is read for. One for everything else.
 func (r *Reader) mapWidth() int {
 	if !r.showMap || r.isPic || r.err != nil || len(r.shown) == 0 {
 		return 0
@@ -60,33 +67,87 @@ func (r *Reader) mapWidth() int {
 // less the strip.
 func (r *Reader) bodyCols() int { return max(r.size.Cols-r.mapWidth(), 0) }
 
-// bands are the rows of the strip, worked out once for a file and a
-// height rather than on every frame.
-func (r *Reader) bands(rows int) []band {
-	if rows <= 0 {
-		return nil
+// MapRoom is where the strip goes, in the reader's own cells, and empty
+// when there is none. The window draws MapPicture there.
+func (r *Reader) MapRoom() ui.Rect {
+	w := r.mapWidth()
+	body := r.size.Rows - readerChrome
+	if w == 0 || body <= 0 {
+		return ui.Rect{}
 	}
-	if r.mapFor == rows && r.mapLines == len(r.shown) && r.mapBands != nil {
-		return r.mapBands
-	}
-	wide := float64(max(r.bodyCols(), 1))
-	out := make([]band, rows)
-	for y := range out {
-		from, to := r.bandRange(y, rows)
-		out[y] = r.bandOf(from, to, wide)
-	}
-	r.mapBands, r.mapFor, r.mapLines = out, rows, len(r.shown)
-	return out
+	return ui.Rect{X: r.size.Cols - w, Y: 1, Cols: w, Rows: body}
 }
 
-// bandRange is the lines one row of the strip stands for.
+// MapPicture is the strip drawn w by h pixels, and nil when there is no
+// strip.
+//
+// Pixels rather than characters. The grid is for text, and a strip of
+// block characters could only say how full a line was in five steps and
+// a band in one row of text: this has a row of pixels for every few
+// lines and a bar as long as they are. The ground is left clear, so the
+// box the strip's own cells draw, saying where the pane is, shows
+// through.
+//
+// The same image comes back until the lines or the size change, so the
+// window builds a texture only then.
+func (r *Reader) MapPicture(w, h int) *image.RGBA {
+	if r.mapWidth() == 0 || w <= 0 || h <= 0 {
+		return nil
+	}
+	if p := r.mapPic; p != nil && p.Bounds().Dx() == w && p.Bounds().Dy() == h {
+		return p
+	}
+	img := image.NewRGBA(image.Rect(0, 0, w, h))
+	wide := float64(max(r.bodyCols(), 1))
+	// A log keeps a quarter of the strip, and never less than two
+	// pixels, for how bad each band got: a band with one error in it
+	// is found by its colour, however short its lines are.
+	mark := 0
+	if r.log != nil {
+		mark = max(w/4, 2)
+	}
+	room := max(w-mark-1, 1)
+	n := len(r.shown)
+	for y := range h {
+		from, to := r.bandRange(y, h)
+		if from >= n {
+			break
+		}
+		if n <= h/mapGapFrom && y+1 < h {
+			// Every line has a few rows to itself: the last of them is
+			// left clear so one line is told from the next.
+			if next, _ := r.bandRange(y+1, h); next != from {
+				continue
+			}
+		}
+		b := r.bandOf(from, to, wide)
+		if b.ink > 0 {
+			// A pixel at least, so a line with anything on it shows.
+			fill(img, 0, y, max(int(math.Round(b.ink*float64(room))), 1), r.Style.NoteFG)
+		}
+		if mark > 0 && b.worst != colourPlain {
+			fill(img, w-mark, y, mark, r.colourOf(b.worst))
+		}
+	}
+	r.mapPic = img
+	return img
+}
+
+// fill paints a run of one row of pixels.
+func fill(img *image.RGBA, x, y, n int, c color.RGBA) {
+	for i := range n {
+		img.SetRGBA(x+i, y, c)
+	}
+}
+
+// bandRange is the lines one row of the strip stands for, of rows.
 func (r *Reader) bandRange(y, rows int) (from, to int) {
 	n := len(r.shown)
 	from = y * n / rows
 	to = (y + 1) * n / rows
 	if to <= from {
-		// More rows than lines: every line gets a row of its own and
-		// the rows past the end stand for nothing.
+		// More rows than lines: a line is drawn on every row that
+		// falls inside it.
 		to = min(from+1, n)
 	}
 	return from, to
@@ -130,7 +191,10 @@ func (r *Reader) worstIn(from, to int) colour {
 	return worst
 }
 
-// paintMap draws the strip down the right of the file.
+// paintMap draws the ground of the strip down the right of the file:
+// blank cells, with the rows the pane is showing on a ground of their
+// own. What is in the file is drawn over them in pixels, by whatever
+// puts MapPicture on screen.
 //
 // In the place a code editor puts its minimap and doing the same job:
 // showing the shape of the whole file at once, so a run of errors is
@@ -141,10 +205,9 @@ func (r *Reader) paintMap(v grid.View, cols, rows int) {
 	if w == 0 || body <= 0 {
 		return
 	}
-	bands := r.bands(body)
 	first, last := r.viewBand(body)
 	x := cols - w
-	for y, b := range bands {
+	for y := range body {
 		bg := r.Style.BG
 		if y >= first && y < last {
 			// Where the pane is in the file, as a box rather than a
@@ -152,20 +215,9 @@ func (r *Reader) paintMap(v grid.View, cols, rows int) {
 			// a screenful.
 			bg = r.Style.OffBG
 		}
-		v.Set(x, y+1, grid.Cell{
-			Rune: mapShades[min(int(b.ink*float64(len(mapShades))), len(mapShades)-1)],
-			FG:   r.Style.NoteFG, BG: bg, Width: 1,
-		})
-		if w < 2 {
-			continue
+		for i := range w {
+			v.Set(x+i, y+1, grid.Cell{Rune: ' ', FG: r.Style.NoteFG, BG: bg, Width: 1})
 		}
-		mark := ' '
-		if b.worst != colourPlain {
-			mark = '▌'
-		}
-		v.Set(x+1, y+1, grid.Cell{
-			Rune: mark, FG: r.colourOf(b.worst), BG: bg, Width: 1,
-		})
 	}
 }
 
@@ -184,20 +236,38 @@ func (r *Reader) viewBand(rows int) (first, last int) {
 	return first, min(last, rows)
 }
 
-// mapPress is a press on the strip: the file goes to the band that was
-// pointed at, with the pane's own height centred on it.
-//
-// It reports whether the press was on the strip at all, so a press
-// anywhere else goes on to pick text out.
-func (r *Reader) mapPress(col, row, rows int) bool {
-	w := r.mapWidth()
-	body := rows - readerChrome
-	if w == 0 || body <= 0 || col < r.size.Cols-w || row < 1 || row > body {
-		return false
+// onMap reports whether a cell of the pane is on the strip.
+func (r *Reader) onMap(col, row int) bool {
+	room := r.MapRoom()
+	return !room.Empty() && room.Contains(col, row)
+}
+
+// mapTo moves the file to the line a row of the strip stands for, with
+// the pane's own height centred on it. A row past either end goes to
+// that end, so a drag carried off the strip keeps going the way it was.
+func (r *Reader) mapTo(row int) {
+	room := r.MapRoom()
+	if room.Empty() {
+		return
 	}
-	at := (row - 1) * len(r.shown) / body
+	y := min(max(row-room.Y, 0), room.Rows-1)
+	at := y * len(r.shown) / room.Rows
 	r.top = at - r.rows()/2
 	r.clampTop()
 	r.follow = false
+}
+
+// mapPress is a press on the strip: the file goes to the band that was
+// pointed at, and a drag from there carries on until the button comes
+// up.
+//
+// It reports whether the press was on the strip at all, so a press
+// anywhere else goes on to pick text out.
+func (r *Reader) mapPress(col, row int) bool {
+	if !r.onMap(col, row) {
+		return false
+	}
+	r.mapTo(row)
+	r.mapDrag = true
 	return true
 }

@@ -271,3 +271,96 @@ func TestAPictureRowSaysHowBigItIs(t *testing.T) {
 		t.Errorf("the row says %q, want it to say how big the picture is", got)
 	}
 }
+
+// The strip beside a file goes on a layer of its own, drawn in pixels
+// over the strip's cells, and a pixel of the picture for a pixel of the
+// box it goes in.
+func TestTheStripGoesOnALayerOverItsCells(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	withCompositor(t, a)
+	lines := make([]string, 500)
+	for i := range lines {
+		lines[i] = strings.Repeat("x", i%40)
+	}
+	name, path := aReadableFile(t, lines...)
+	if err := a.openReader(vfs.NewLocal(), conns.Local, path, name, false, 0); err != nil {
+		t.Fatalf("open a reader: %v", err)
+	}
+	r := onlyReader(t, a)
+	waitUntil(t, "the file to be read", func() bool {
+		a.pump.run()
+		return r.Lines() > 0
+	})
+	a.relayout()
+	a.placeReaderMaps()
+
+	p := a.readerMaps[r]
+	if p == nil {
+		t.Fatal("the reader has a strip and the window drew no layer for it")
+	}
+	if p.layer.Hidden || p.pic.Img == nil {
+		t.Fatal("the strip's layer draws nothing")
+	}
+	if p.layer.Grid != nil {
+		t.Error("the strip's layer carries a grid: the grid is for text")
+	}
+	if got, want := p.pic.Img.Bounds().Size(), p.pic.Rect.Size(); got != want {
+		t.Errorf("the strip is drawn %v for a box of %v", got, want)
+	}
+	area, _ := a.paneArea(r)
+	room := r.MapRoom()
+	left, _ := a.geo.ColBox(area.X+room.X, area.X+room.X+room.Cols)
+	if p.pic.Rect.Min.X != left {
+		t.Errorf("the strip starts at pixel %d, want the strip's first column at %d", p.pic.Rect.Min.X, left)
+	}
+
+	// The same texture while nothing changes.
+	img := p.pic.Img
+	a.placeReaderMaps()
+	if p.pic.Img != img {
+		t.Error("the strip was built again with nothing changed")
+	}
+
+	// Turned off, the layer goes.
+	r.ShowMap(false)
+	a.placeReaderMaps()
+	if a.readerMaps[r] != nil {
+		t.Error("the strip's layer stayed after the strip was turned off")
+	}
+	for _, l := range a.comp.Layers() {
+		if l == p.layer {
+			t.Error("the strip's layer is still on the stack")
+		}
+	}
+}
+
+// Closing the reader takes its strip with it.
+func TestClosingAReaderTakesItsStrip(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withPanel(t, a)
+	withCompositor(t, a)
+	name, path := aReadableFile(t, "one", "two", "three")
+	if err := a.openReader(vfs.NewLocal(), conns.Local, path, name, false, 0); err != nil {
+		t.Fatalf("open a reader: %v", err)
+	}
+	r := onlyReader(t, a)
+	waitUntil(t, "the file to be read", func() bool {
+		a.pump.run()
+		return r.Lines() > 0
+	})
+	a.relayout()
+	a.placeReaderMaps()
+	if a.readerMaps[r] == nil {
+		t.Fatal("no strip to take away")
+	}
+
+	if err := a.closePane(r); err != nil {
+		t.Fatalf("close it: %v", err)
+	}
+	a.placeReaderMaps()
+
+	if len(a.readerMaps) != 0 {
+		t.Errorf("the window still holds %d strips", len(a.readerMaps))
+	}
+}

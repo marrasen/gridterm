@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"image"
 	"image/color"
 	"io"
 	"slices"
@@ -130,13 +131,14 @@ type Reader struct {
 	isLog bool
 	logOn bool
 
-	// showMap turns on the strip beside the file, and mapBands is what
-	// it draws: worked out for mapLines lines at mapFor rows, and
-	// again when either changes.
-	showMap  bool
-	mapBands []band
-	mapFor   int
-	mapLines int
+	// showMap turns on the strip beside the file, and mapPic is the
+	// strip drawn in pixels: kept until the lines shown or the size it
+	// was drawn at change. mapDrag says a press on the strip is being
+	// dragged, so the file follows the pointer until the button comes
+	// up.
+	showMap bool
+	mapPic  *image.RGBA
+	mapDrag bool
 
 	// colour turns a line into the stretches it is drawn in, picked from
 	// what the file is called. A nil one leaves the file plain.
@@ -209,7 +211,6 @@ func NewReader(name, at string) *Reader {
 		// wide enough to spare it, and a file long enough to need it
 		// is the case a reader is opened for.
 		showMap: true,
-		mapFor:  -1,
 	}
 }
 
@@ -781,6 +782,13 @@ const readerWheel = 3
 func (r *Reader) HandleMouse(ev input.MouseEvent) (bool, error) {
 	switch ev.Kind {
 	case input.MouseMove:
+		if r.mapDrag {
+			// The strip is a scrollbar as well as a map: dragged, the
+			// file follows the pointer, whether or not it is still on
+			// the strip.
+			r.mapTo(ev.Row)
+			return true, nil
+		}
 		if r.selecting {
 			r.sel.to = r.spotAt(ev.Col, ev.Row)
 			r.sel.on = true
@@ -791,6 +799,9 @@ func (r *Reader) HandleMouse(ev input.MouseEvent) (bool, error) {
 		// else to go.
 		return true, nil
 	case input.MouseRelease:
+		if ev.Button == input.MouseLeft {
+			r.mapDrag = false
+		}
 		if r.selecting && ev.Button == input.MouseLeft {
 			r.selecting = false
 			// A click that never moved is a click, not one column left
@@ -827,7 +838,7 @@ func (r *Reader) HandleMouse(ev input.MouseEvent) (bool, error) {
 	// The strip beside the file: a press on it goes to that part of
 	// the file rather than picking text out of a column that holds
 	// none.
-	if r.mapPress(ev.Col, ev.Row, r.size.Rows) {
+	if r.mapPress(ev.Col, ev.Row) {
 		return true, nil
 	}
 	if !r.picking() || !r.inBody(ev.Row) {

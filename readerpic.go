@@ -130,3 +130,64 @@ func (a *app) dropReaderPic(r *files.Reader, p *readerPic) {
 	p.free()
 	delete(a.readerPics, r)
 }
+
+// placeReaderMaps puts the strip beside each file on a layer of its own,
+// over the strip's cells, and takes it away when the strip goes.
+//
+// The strip is drawn in pixels rather than in characters, the way a
+// picture in a reader is: the grid is for text, and a map of a file is
+// a shape. Its cells carry the box saying where the pane is, and show
+// through the picture where it is clear.
+func (a *app) placeReaderMaps() {
+	if a.comp == nil || a.g == nil {
+		return
+	}
+	for r, p := range a.readerMaps {
+		if _, live := a.readers[r]; !live {
+			a.dropReaderMap(r, p)
+		}
+	}
+	for r := range a.readers {
+		p := a.readerMaps[r]
+		room := r.MapRoom()
+		if room.Empty() {
+			// The strip is off, or the pane too narrow for it: nothing
+			// to keep a texture for.
+			if p != nil {
+				a.dropReaderMap(r, p)
+			}
+			continue
+		}
+		area, shown := a.paneArea(r)
+		if !shown {
+			if p != nil {
+				p.layer.Hidden = true
+			}
+			continue
+		}
+		if p == nil {
+			p = newReaderPic()
+			if a.readerMaps == nil {
+				a.readerMaps = map[*files.Reader]*readerPic{}
+			}
+			a.readerMaps[r] = p
+			a.addUnderModals(p.layer)
+		}
+		// Placed first, because the picture is drawn at the size of the
+		// box it goes in, a pixel for a pixel.
+		p.place(area, room, &a.geo)
+		img := r.MapPicture(p.pic.Rect.Dx(), p.pic.Rect.Dy())
+		if img == nil {
+			p.layer.Hidden = true
+			continue
+		}
+		p.take(img)
+	}
+}
+
+// dropReaderMap takes a reader's strip off the screen.
+func (a *app) dropReaderMap(r *files.Reader, p *readerPic) {
+	a.comp.Remove(p.layer)
+	p.free()
+	delete(a.readerMaps, r)
+}

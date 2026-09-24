@@ -35,9 +35,9 @@ func (r *Reader) remake() {
 	// line it was on either.
 	r.found = -1
 	defer r.clampSel()
-	// The bands the strip draws stand for the lines that are shown, so
-	// they are worked out again when those change.
-	r.mapFor = -1
+	// The strip stands for the lines that are shown, so it is drawn
+	// again when those change.
+	r.mapPic = nil
 	if r.hex {
 		r.shown, r.log = hexDump(r.lines), nil
 		r.wideOf = -1

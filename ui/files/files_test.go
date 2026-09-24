@@ -2904,3 +2904,114 @@ func TestAPaneMovingOnSaysNothingOverWhatItHas(t *testing.T) {
 		t.Errorf("the pane dropped the listing it had:\n%s", got)
 	}
 }
+
+// failing makes a pane's reads fail from now on and counts the reasons
+// it shows.
+func failing(p *Pane) *[]error {
+	var shown []error
+	p.OnError = func(_ string, err error) { shown = append(shown, err) }
+	p.Read = func(_ vfs.FS, _ string, then func([]vfs.Entry, error)) {
+		then(nil, errors.New("the machine went away"))
+	}
+	return &shown
+}
+
+// A click on the row saying a pane without the keys could not be read
+// shows why once. Gaining the keys shows it, and the same press landing
+// on the row as well showed it again.
+func TestClickingAFailedPaneShowsWhyOnce(t *testing.T) {
+	b, _, _ := two(t)
+	p := b.panes[1]
+	shown := failing(p)
+	p.Reload()
+	if len(*shown) != 0 {
+		t.Fatalf("a pane without the keys showed %v", *shown)
+	}
+	start, _ := b.paneCell(1, 80)
+	errorPress := input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft, Col: start + 1, Row: errorRow,
+	}
+
+	mouseTo(t, b, errorPress)
+	if len(*shown) != 1 {
+		t.Fatalf("the click showed the reason %d times, want once", len(*shown))
+	}
+	// And the row still shows it again when asked.
+	mouseTo(t, b, errorPress)
+	if len(*shown) != 2 {
+		t.Errorf("a second click showed the reason %d times in all, want twice", len(*shown))
+	}
+}
+
+// The same through a split, where the press that moves the keys to the
+// browser is the split's to hand on or keep.
+func TestClickingAFailedPaneBesideShowsWhyOnce(t *testing.T) {
+	b, _ := many(t, 2)
+	r := &ui.Root{}
+	r.SetWidget(ui.NewSplit(ui.Columns, &blank{}, b))
+	r.Layout(ui.Rect{Cols: 185, Rows: 12})
+	p := b.panes[1]
+	shown := failing(p)
+	p.Reload()
+	if len(*shown) != 0 {
+		t.Fatalf("a pane without the keys showed %v", *shown)
+	}
+	area, _ := r.AreaOf(b)
+	start, _ := b.paneCell(1, area.Cols)
+
+	mouseTo(t, r, input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft, Col: area.X + start + 1, Row: errorRow,
+	})
+	if len(*shown) != 1 {
+		t.Fatalf("the click showed the reason %d times, want once", len(*shown))
+	}
+}
+
+// A double click on a name in a browser without the keys opens it: the
+// press that moves the keys there is the first of the two.
+func TestADoubleClickOnABrowserWithoutTheKeysOpens(t *testing.T) {
+	b, dirs := many(t, 2)
+	write(t, dirs[1], "one.txt", "one")
+	b.panes[1].Reload()
+	r := &ui.Root{}
+	r.SetWidget(ui.NewSplit(ui.Columns, &blank{}, b))
+	r.Layout(ui.Rect{Cols: 185, Rows: 12})
+	var opened []string
+	b.panes[1].OnOpen = func(e vfs.Entry) { opened = append(opened, e.Name) }
+	area, _ := r.AreaOf(b)
+	start, _ := b.paneCell(1, area.Cols)
+	// The way up is the first row of the listing, and one.txt the next.
+	click := input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft,
+		Col: area.X + start + 1, Row: b.panes[1].head() + 1,
+	}
+
+	mouseTo(t, r, click)
+	mouseTo(t, r, click)
+	if len(opened) != 1 || opened[0] != "one.txt" {
+		t.Fatalf("a double click opened %v, want one.txt", opened)
+	}
+}
+
+// Two reads answered out of order leave an empty directory saying
+// nothing, rather than saying it is still reading.
+func TestReadsAnsweredOutOfOrderLeaveNoReadingLine(t *testing.T) {
+	slow, empty := t.TempDir(), t.TempDir()
+	write(t, slow, "one.txt", "one")
+	p := New(vfs.NewLocal())
+	p.Style = styled()
+	answers := map[string]func(){}
+	p.Read = func(f vfs.FS, path string, then func([]vfs.Entry, error)) {
+		answers[path] = func() { then(f.ReadDir(path)) }
+	}
+	p.Layout(ui.Size{Cols: 40, Rows: 12})
+
+	p.Open(slow)
+	p.Open(empty)
+	answers[empty]()
+	answers[slow]()
+
+	if got := strings.Join(drawn(p, 40, 12), "\n"); strings.Contains(got, stillReading) {
+		t.Fatalf("the pane says it is reading after both answers:\n%s", got)
+	}
+}

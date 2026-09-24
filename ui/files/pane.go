@@ -290,8 +290,12 @@ func (p *Pane) ask(path, land string, then func(error)) {
 	p.Read(p.fs, path, func(entries []vfs.Entry, err error) {
 		p.reading--
 		if want != p.asked {
-			// Not the read being waited for, which will say what it
-			// found when it comes back.
+			// Not the read being waited for. The one that was may have
+			// come back first, while this one still counted as out, and
+			// left the pane saying it was reading.
+			if !p.Busy() {
+				p.rows()
+			}
 			return
 		}
 		// Carried by the read rather than by the pane, so an answer
@@ -846,8 +850,19 @@ func (p *Pane) HandleMouse(ev input.MouseEvent) (bool, error) {
 	return p.list.HandleMouse(ev)
 }
 
-// FocusesFirst says a press that moves the keys to this pane moves the
-// bar too. A click only points at a name, so there is nothing to lose
-// by letting the first one do it, and a double click on a pane without
-// the keys opens what it was aimed at.
-func (p *Pane) FocusesFirst() bool { return false }
+// FocusesFirst says whether a press that moves the keys to this pane
+// does nothing else.
+//
+// Only when the move shows why the last read failed, which is what
+// gaining the keys does for a pane that has not said yet: the press has
+// done its job, and passed on it would land on the row that says the
+// same thing again. Otherwise the press moves the bar too. A click only
+// points at a name, so there is nothing to lose by letting the first one
+// do it, and a double click on a pane without the keys opens what it was
+// aimed at.
+func (p *Pane) FocusesFirst() bool { return p.untold() }
+
+// untold says the last read failed and the reason has not been shown.
+func (p *Pane) untold() bool {
+	return p.err != nil && !p.told && p.OnError != nil
+}

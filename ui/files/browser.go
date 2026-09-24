@@ -880,7 +880,14 @@ func (b *Browser) HandleMouse(ev input.MouseEvent) (bool, error) {
 			continue
 		}
 		if ev.Kind == input.MousePress && !ev.Button.IsWheel() {
+			untold := p.untold()
 			b.Focus(p)
+			if untold && !p.untold() {
+				// Gaining the keys showed why its read failed, which
+				// is all this press is for: passed on, it would land on
+				// the row saying so and show it a second time.
+				return true, nil
+			}
 		}
 		ev.Col -= start
 		return p.HandleMouse(ev)

@@ -287,6 +287,23 @@ colour beside them. Dragging it scrolls the file, the way a scrollbar
 does, and the file keeps following the pointer off the strip until the
 button comes up.
 
+**Connecting to another window opens nothing on it, every way in.**
+Connect to Server with a window's name, Reconnect after a window's
+connection dropped, and a file pane asking for its window back each
+still opened a terminal over there. They connect and nothing more; a
+terminal on a window is asked for from its plus.
+
+**A shell on another window that ends can be reconnected.** It said the
+program had finished and offered nothing. It asks "Connection closed."
+with Reconnect now, and Reconnect has that window start its own pane's
+shell again and watches it, so no finished panes pile up over there. A
+window of an older build is asked for a new shell instead.
+
+**A pane beside a WSL one starts where that one is.** A split on cmd
+from a WSL pane failed with "The directory name is invalid", because it
+was handed the Linux path. It is handed the Windows path of the same
+place, and a WSL shell beside it is sent back inside.
+
 **A folder with a zip in it is copied with the zip.** The browser shows
 a zip as a directory to walk into, and a copy of a folder took that view
 and copied what was inside each zip instead of the zip. A copy, a move

@@ -108,3 +108,43 @@ func TestDeleteAFolderWithAZipInIt(t *testing.T) {
 		gone(t, from.real, "tree")
 	})
 }
+
+// A zip moved over another on one filesystem replaces it. A move there
+// is a rename, and the zip in the way was taken for a directory with
+// things in it, which a rename will not go over.
+func TestMoveAZipOverAZip(t *testing.T) {
+	from, to := withZips(local(t)), local(t)
+	to.fs, to.at, to.real = from.fs, from.at+"/into", filepath.Join(from.real, "into")
+	body := aZip(t)
+	write(t, from.real, "pack.zip", string(body))
+	write(t, to.real, "pack.zip", string(aZipOf(t, "old.txt")))
+
+	q := New(1)
+	j := q.Start(t.Context(), Op{
+		Kind: Move, From: from.fs, At: from.at, Names: []string{"pack.zip"},
+		To: to.fs, Into: to.at,
+	}, Options{Ask: Always{What: Replace}})
+	if err := ends(t, j); err != nil {
+		t.Fatalf("the job: %v", err)
+	}
+	if got := read(t, to.real, "pack.zip"); got != string(body) {
+		t.Error("the zip was not replaced")
+	}
+	gone(t, from.real, "pack.zip")
+}
+
+// aZipOf is the bytes of a zip holding the names given.
+func aZipOf(t *testing.T, names ...string) []byte {
+	t.Helper()
+	var b bytes.Buffer
+	w := zip.NewWriter(&b)
+	for _, name := range names {
+		if _, err := w.Create(name); err != nil {
+			t.Fatalf("zip: %v", err)
+		}
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("zip: %v", err)
+	}
+	return b.Bytes()
+}

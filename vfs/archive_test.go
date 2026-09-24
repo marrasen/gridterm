@@ -418,3 +418,57 @@ type renameable struct {
 }
 
 func (r *renameable) Renamed(now string) { r.now = now }
+
+// An archive changed since it was read is read again. The wrapper holds
+// the last one it read, and a copy from another pane or a program
+// outside gridterm can change the file under it.
+func TestAnArchiveChangedSinceItWasReadIsReadAgain(t *testing.T) {
+	f, at := withAZip(t, "one.txt")
+	if got, err := f.ReadDir(at); err != nil || !slices.Equal(named(got), []string{"one.txt"}) {
+		t.Fatalf("first read: %v, %v", named(got), err)
+	}
+
+	aZip(t, at, "two.txt", "three.txt")
+
+	got, err := f.ReadDir(at)
+	if err != nil {
+		t.Fatalf("second read: %v", err)
+	}
+	if want := []string{"three.txt", "two.txt"}; !slices.Equal(named(got), want) {
+		t.Errorf("the changed archive lists %v, want %v", named(got), want)
+	}
+}
+
+// A real directory with an archive's name is a directory, not an
+// archive: nothing says to read it as a file.
+func TestADirectoryNamedLikeAnArchiveIsNotOne(t *testing.T) {
+	dir := t.TempDir()
+	at := filepath.Join(dir, "made.zip")
+	if err := os.Mkdir(at, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	f := WithArchives(NewLocal())
+
+	e, err := f.Stat(at)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if e.Archive || !e.Stored().IsDir() {
+		t.Errorf("a directory named made.zip reads as an archive: %+v", e)
+	}
+}
+
+// An archive is still read only: nothing is made or written inside one,
+// and nothing is made with an archive's name, which could not be walked
+// into afterwards.
+func TestNothingIsMadeWithAnArchivesName(t *testing.T) {
+	dir := t.TempDir()
+	f := WithArchives(NewLocal())
+
+	if err := f.Mkdir(filepath.Join(dir, "made.zip"), 0o755); !errors.Is(err, ErrInArchive) {
+		t.Errorf("making a directory named made.zip: %v", err)
+	}
+	if _, err := f.Create(filepath.Join(dir, "made.zip"), 0o644); !errors.Is(err, ErrInArchive) {
+		t.Errorf("writing made.zip straight: %v", err)
+	}
+}

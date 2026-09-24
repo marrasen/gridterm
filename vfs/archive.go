@@ -51,6 +51,10 @@ type archives struct {
 	at    string
 	held  *zip.Reader
 	bytes []byte
+
+	// was is the archive as it stood when it was read, to tell it has
+	// changed since.
+	was Entry
 }
 
 // WithArchives returns the filesystem with its archives opened as
@@ -100,12 +104,16 @@ func (a *archives) split(at string) (outer, inner string, in bool) {
 func (a *archives) open(at string) (*zip.Reader, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.at == at && a.held != nil {
-		return a.held, nil
-	}
+	// Asked every time, and the one held answered only while the file
+	// is still the one it was read from. Anything can change it: a copy
+	// from another pane, a move, a program outside gridterm. A zip read
+	// before and shown after would list what is no longer there.
 	e, err := a.FS.Stat(at)
 	if err != nil {
 		return nil, err
+	}
+	if a.at == at && a.held != nil && e.Size == a.was.Size && e.Mod.Equal(a.was.Mod) {
+		return a.held, nil
 	}
 	if e.Size > MostArchiveBytes {
 		return nil, fmt.Errorf("%s is %d bytes, and the most an archive may be to open it here is %d",
@@ -129,7 +137,7 @@ func (a *archives) open(at string) (*zip.Reader, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read the archive %s: %w", at, err)
 	}
-	a.at, a.held, a.bytes = at, got, raw
+	a.at, a.held, a.bytes, a.was = at, got, raw, e
 	return got, nil
 }
 
@@ -146,8 +154,12 @@ func (a *archives) Stat(at string) (Entry, error) {
 		if err != nil {
 			return Entry{}, err
 		}
-		e.Mode |= fs.ModeDir
-		e.Archive = true
+		if !e.IsDir() {
+			// A file, shown as the directory at its top. A real
+			// directory with an archive's name is left as it is.
+			e.Mode |= fs.ModeDir
+			e.Archive = true
+		}
 		return e, nil
 	}
 	got, err := a.open(outer)
@@ -295,36 +307,24 @@ func (a *archives) Close() error {
 // outside one. Writing one means building the container again, which
 // is a different thing from reading it.
 
-//
-// The archive itself is a file like any other, and writing it -- a zip
-// copied in, or one copied over -- is handed on. The one held open is
-// let go of when it is, so what is read from it next is what is there
-// now.
-
 func (a *archives) Create(at string, mode fs.FileMode) (io.WriteCloser, error) {
-	if _, inner, in := a.split(at); in && inner != "" {
+	if _, _, in := a.split(at); in {
 		return nil, inArchive("write", at)
 	}
-	a.forget(at)
-	w, err := a.FS.Create(at, mode)
-	if err != nil {
-		return nil, err
-	}
-	return &forgetting{WriteCloser: w, a: a, at: at}, nil
+	return a.FS.Create(at, mode)
 }
 
 func (a *archives) Mkdir(at string, mode fs.FileMode) error {
-	if _, inner, in := a.split(at); in && inner != "" {
+	if _, _, in := a.split(at); in {
 		return inArchive("make a directory in", at)
 	}
 	return a.FS.Mkdir(at, mode)
 }
 
 func (a *archives) Symlink(target, at string) error {
-	if _, inner, in := a.split(at); in && inner != "" {
+	if _, _, in := a.split(at); in {
 		return inArchive("make a link in", at)
 	}
-	a.forget(at)
 	return a.FS.Symlink(target, at)
 }
 
@@ -332,7 +332,6 @@ func (a *archives) Remove(at string) error {
 	if _, inner, in := a.split(at); in && inner != "" {
 		return inArchive("remove something from", at)
 	}
-	a.forget(at)
 	return a.FS.Remove(at)
 }
 
@@ -342,36 +341,7 @@ func (a *archives) Rename(from, to string) error {
 			return inArchive("move something in", at)
 		}
 	}
-	a.forget(from)
-	a.forget(to)
 	return a.FS.Rename(from, to)
-}
-
-// forget lets go of the archive held open when it is the one at a path,
-// or inside a directory at it, because that file is about to change.
-func (a *archives) forget(at string) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.at == "" {
-		return
-	}
-	if a.at == at || strings.HasPrefix(a.at, strings.TrimSuffix(at, string(a.Sep()))+string(a.Sep())) {
-		a.at, a.held, a.bytes = "", nil, nil
-	}
-}
-
-// forgetting lets go of the held archive again when a write to it ends,
-// in case it was read while the write was going on.
-type forgetting struct {
-	io.WriteCloser
-	a  *archives
-	at string
-}
-
-func (f *forgetting) Close() error {
-	err := f.WriteCloser.Close()
-	f.a.forget(f.at)
-	return err
 }
 
 func (a *archives) Chmod(at string, mode fs.FileMode) error {

@@ -491,6 +491,22 @@ func (f *Form) HandleMouse(ev input.MouseEvent) (bool, error) {
 	}
 	// A press ends whatever the last one started, wherever it lands.
 	f.CancelGesture()
+	// An open list is in front of everything, the dialog's edge
+	// included: a press on it picks, and a press anywhere else puts it
+	// away and does nothing more, the way a menu that is open does.
+	if list, fld, open := f.dropRect(); open {
+		switch {
+		case list.Contains(ev.Col, ev.Row):
+			if ev.Button == input.MouseLeft {
+				fld.lit = fld.top + ev.Row - list.Y
+				fld.pickLit()
+			}
+		case !popupOf(list).Contains(ev.Col, ev.Row):
+			// On the frame is on the list, and does nothing.
+			fld.closeList()
+		}
+		return true, nil
+	}
 	box := f.box()
 	if box.Empty() || !box.Contains(ev.Col, ev.Row) {
 		f.dismiss()
@@ -505,6 +521,14 @@ func (f *Form) HandleMouse(ev input.MouseEvent) (bool, error) {
 		// drawn on screen looks like it does.
 		if fld.Tick {
 			fld.Toggle()
+			return true, nil
+		}
+		// A drop-down opens, which is what the marker at its end says
+		// it does. A disabled one is focused and left: it does not apply.
+		if fld.DropDown() {
+			if ev.Button == input.MouseLeft && !fld.Disabled {
+				fld.toggleList()
+			}
 			return true, nil
 		}
 		// The caret goes where it was clicked, so a long value can be
@@ -619,6 +643,88 @@ func (f *Form) paint(v grid.View) {
 		in.SetString(formPad, l.errRow, grid.Trim(l.hint, room), f.Style.HintFG, f.Style.BG, 0)
 	}
 	f.paintButtons(in, l.buttonRow)
+	// Last, because it is in front of everything else the dialog drew.
+	f.paintList(v)
+}
+
+// dropRect is where the answers of the focused drop-down's list are
+// drawn, in the view the form draws through, and false when no list is
+// open. The frame around them is popupOf that.
+//
+// Under the field when it fits there, and above it when there is more
+// room above: a list cut short under a field near the bottom of the
+// window would hide the answers the user opened it for. The answers
+// line up with the field's text, and the frame sits one cell outside.
+// Worked out in one place, so what is drawn and what a click lands on
+// cannot disagree.
+func (f *Form) dropRect() (Rect, *Field, bool) {
+	fld := f.focusedField()
+	if fld == nil || !fld.open || fld.Disabled || !fld.DropDown() {
+		return Rect{}, nil, false
+	}
+	box := f.box()
+	l := f.layout()
+	if box.Empty() || f.at >= l.fields {
+		return Rect{}, nil, false
+	}
+	y := box.Y + l.fieldsTop + f.at
+	x := box.X + f.fieldX()
+	cols := f.fieldWidth(box.Cols-formPad*2, f.at)
+	want := min(len(fld.Choices), dropMost)
+	// Room for answers, which is the room less the frame's two rows.
+	below, above := f.size.Rows-y-1-2, y-2
+	var list Rect
+	if below >= want || below >= above {
+		list = Rect{X: x, Y: y + 2, Cols: cols, Rows: min(want, below)}
+	} else {
+		rows := min(want, above)
+		list = Rect{X: x, Y: y - 1 - rows, Cols: cols, Rows: rows}
+	}
+	if list.Empty() {
+		return Rect{}, nil, false
+	}
+	return list, fld, true
+}
+
+// popupOf is a list with its frame around it.
+func popupOf(list Rect) Rect {
+	return Rect{X: list.X - 1, Y: list.Y - 1, Cols: list.Cols + 2, Rows: list.Rows + 2}
+}
+
+// paintList draws the focused drop-down's list when it is open: framed
+// and shadowed like the dialog, so it reads as something in front of
+// the fields rather than as their values, with the lit answer in the
+// focus colours and a mark at an edge with more past it.
+func (f *Form) paintList(v grid.View) {
+	list, fld, open := f.dropRect()
+	if !open {
+		return
+	}
+	popup := popupOf(list)
+	drawShadow(v, popup, f.Style.ShadowBG)
+	popup.In(v).Fill(grid.Cell{Rune: ' ', FG: f.Style.FieldFG, BG: f.Style.FieldBG, Width: 1})
+	drawFrame(v, popup, f.Style.BorderFG, f.Style.FieldBG, f.Style.Rule)
+	fld.showLit(list.Rows)
+	for row := 0; row < list.Rows; row++ {
+		at := fld.top + row
+		fg, bg := f.Style.FieldFG, f.Style.FieldBG
+		if at == fld.lit {
+			fg, bg = f.Style.FocusFG, f.Style.FocusBG
+		}
+		line := v.Sub(list.X, list.Y+row, list.Cols, 1)
+		line.Fill(grid.Cell{Rune: ' ', FG: fg, BG: bg, Width: 1})
+		room := list.Cols - 2
+		if room <= 0 {
+			continue
+		}
+		line.SetString(0, 0, grid.Trim(fld.Choices[at].Label, room), fg, bg, 0)
+		switch {
+		case row == 0 && fld.top > 0:
+			line.SetString(list.Cols-1, 0, "▴", f.Style.HintFG, bg, 0)
+		case row == list.Rows-1 && at < len(fld.Choices)-1:
+			line.SetString(list.Cols-1, 0, dropMarker, f.Style.HintFG, bg, 0)
+		}
+	}
 }
 
 // formLayout is where each part of the dialog goes in the box it got.

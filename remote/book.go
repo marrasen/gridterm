@@ -2,6 +2,9 @@ package remote
 
 import (
 	"bytes"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,7 +22,12 @@ import (
 
 // bookVersion is written into the file so a later shape can be told from
 // this one.
-const bookVersion = 1
+//
+// 2 added the id each server carries. A file of version 1 still loads,
+// and is given ids as it does; the version went up so that an older
+// gridterm meeting the new field says the list is from a newer one,
+// rather than calling it unreadable.
+const bookVersion = 2
 
 // BookFile is what the saved servers are kept in, in the directory conf
 // gives gridterm.
@@ -129,6 +137,22 @@ func (b *Book) Lookup(name string) (Host, bool) {
 	return h.clone(), ok
 }
 
+// NameOf returns what the machine with an id is called now, and false
+// when the list no longer has it.
+func (b *Book) NameOf(id string) (string, bool) {
+	if id == "" {
+		return "", false
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for _, h := range b.hosts {
+		if h.ID == id {
+			return h.Name, true
+		}
+	}
+	return "", false
+}
+
 func (b *Book) lookupLocked(name string) (Host, bool) {
 	for _, h := range b.hosts {
 		if strings.EqualFold(h.Name, name) {
@@ -184,21 +208,24 @@ func (b *Book) Put(h Host, under string) error {
 		}
 	}
 
+	// The id is the book's to give, not the caller's: one kept across
+	// an edit is what lets the window tell a renamed machine from a new
+	// one under the name it gave up.
+	if at >= 0 {
+		h.ID = b.hosts[at].ID
+	} else {
+		h.ID = newID(b.hosts)
+	}
+
+	// A rename needs nothing from the servers reached through this one:
+	// they name it by its id, which the rename keeps.
 	before := cloneHosts(b.hosts)
 	if at >= 0 {
-		// A rename leaves anything that went through the old name
-		// pointing at nothing, so those follow it.
-		if old := b.hosts[at].Name; !strings.EqualFold(old, h.Name) {
-			for i := range b.hosts {
-				if strings.EqualFold(b.hosts[i].Via, old) {
-					b.hosts[i].Via = h.Name
-				}
-			}
-		}
 		b.hosts[at] = h
 	} else {
 		b.hosts = append(b.hosts, h)
 	}
+	resolveVia(b.hosts)
 	// Checked after the change, not before: a rename can take away the
 	// very name a route was pointing at, and a check run first would
 	// have approved it.
@@ -229,7 +256,7 @@ func (b *Book) Remove(name string) error {
 		return fmt.Errorf("there is no saved server called %q", name)
 	}
 	for _, h := range b.hosts {
-		if strings.EqualFold(h.Via, name) {
+		if h.Via == b.hosts[at].ID {
 			return fmt.Errorf("%q is reached through %q, so %q has to stay",
 				h.Name, b.hosts[at].Name, b.hosts[at].Name)
 		}
@@ -258,24 +285,61 @@ func (b *Book) Route(name string) ([]Host, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
+	h, ok := b.lookupLocked(name)
+	if !ok {
+		return nil, fmt.Errorf("there is no saved server called %q", name)
+	}
 	var route []Host
 	seen := map[string]bool{}
-	for at := name; at != ""; {
-		key := strings.ToLower(at)
-		if seen[key] {
+	for {
+		if seen[h.ID] {
 			return nil, fmt.Errorf("the route to %q goes round in a circle", name)
 		}
-		seen[key] = true
-
-		h, ok := b.lookupLocked(at)
-		if !ok {
-			return nil, fmt.Errorf("there is no saved server called %q", at)
-		}
+		seen[h.ID] = true
 		route = append(route, h.clone())
-		at = h.Via
+		if h.Via == "" {
+			break
+		}
+		if h, ok = withID(b.hosts, h.Via); !ok {
+			return nil, fmt.Errorf("the server %q is reached through is not saved", route[len(route)-1].Name)
+		}
 	}
 	slices.Reverse(route)
 	return route, nil
+}
+
+// withID is the server in a list with an id.
+func withID(hosts []Host, id string) (Host, bool) {
+	for _, h := range hosts {
+		if h.ID == id {
+			return h, true
+		}
+	}
+	return Host{}, false
+}
+
+// resolveVia turns a jump host named by its name into the id of the
+// server with that name, for a list saved before servers had ids or
+// edited by hand.
+//
+// An id is taken first: an id that is also somebody's name is the id.
+// One that is neither is left for checkRoutes to report.
+func resolveVia(hosts []Host) {
+	for i := range hosts {
+		via := hosts[i].Via
+		if via == "" {
+			continue
+		}
+		if _, ok := withID(hosts, via); ok {
+			continue
+		}
+		for _, h := range hosts {
+			if strings.EqualFold(h.Name, via) {
+				hosts[i].Via = h.ID
+				break
+			}
+		}
+	}
 }
 
 // rereadLocked reads the file into the book, replacing what it holds.
@@ -368,15 +432,72 @@ func readBook(path string) ([]Host, error) {
 			"remote: the server list %s saves %q and %q as the window at %s",
 			path, first, second, addr)
 	}
+	sortHosts(file.Servers)
+	giveIDs(file.Servers)
+	resolveVia(file.Servers)
 	// Checked on the way in as well as on the way out, or a file with a
 	// broken route would load clean and then refuse every later change
 	// for a reason the user never touched.
 	if err := checkRoutes(file.Servers); err != nil {
 		return nil, fmt.Errorf("remote: the server list %s: %w", path, err)
 	}
-
-	sortHosts(file.Servers)
 	return file.Servers, nil
+}
+
+// giveIDs gives an id to each server that has none, and a fresh one to
+// a server whose id another one already has.
+//
+// A list written before servers had ids has none, and one copied by
+// hand can have one twice. The ids given are worked out from the list
+// rather than drawn at random, so two windows reading the same file
+// give the same ones: the file is not written until something changes,
+// and until then each window has only its own reading to go by.
+//
+// In the order the book keeps, which is the one readBook has just put
+// the list in, so which of two servers keeps a shared id does not
+// depend on how the file happened to be written.
+func giveIDs(hosts []Host) {
+	taken := make(map[string]bool, len(hosts))
+	var missing []int
+	for i, h := range hosts {
+		if h.ID == "" || taken[h.ID] {
+			missing = append(missing, i)
+			continue
+		}
+		taken[h.ID] = true
+	}
+	for _, i := range missing {
+		for n := 0; ; n++ {
+			id := derivedID(hosts[i].Name, n)
+			if !taken[id] {
+				hosts[i].ID = id
+				taken[id] = true
+				break
+			}
+		}
+	}
+}
+
+// derivedID is the id a server without one is given: the same for the
+// same name every time the file is read, and a different one for each
+// try at a name whose first one is taken.
+func derivedID(name string, try int) string {
+	sum := sha256.Sum256(fmt.Appendf(nil, "gridterm server\x00%s\x00%d", strings.ToLower(name), try))
+	return hex.EncodeToString(sum[:8])
+}
+
+// newID is an id for a server being added, and one none of hosts has.
+func newID(hosts []Host) string {
+	for {
+		var raw [8]byte
+		// crypto/rand does not fail: it crashes the program rather than
+		// hand back less than was asked for.
+		_, _ = rand.Read(raw[:])
+		id := hex.EncodeToString(raw[:])
+		if !slices.ContainsFunc(hosts, func(h Host) bool { return h.ID == id }) {
+			return id
+		}
+	}
 }
 
 // endOfFile reports anything after the value that was decoded.
@@ -390,28 +511,22 @@ func endOfFile(dec *json.Decoder) error {
 // checkRoutes reports a Via that names nothing, or that goes round in a
 // circle. Either would be found only when somebody tried to connect.
 func checkRoutes(hosts []Host) error {
-	find := func(name string) (Host, bool) {
-		for _, h := range hosts {
-			if strings.EqualFold(h.Name, name) {
-				return h, true
-			}
-		}
-		return Host{}, false
-	}
 	for _, start := range hosts {
 		seen := map[string]bool{}
-		for at := start.Name; at != ""; {
-			key := strings.ToLower(at)
-			if seen[key] {
+		for h := start; ; {
+			if seen[h.ID] {
 				return fmt.Errorf("the route to %q goes round in a circle", start.Name)
 			}
-			seen[key] = true
-			h, ok := find(at)
+			seen[h.ID] = true
+			if h.Via == "" {
+				break
+			}
+			next, ok := withID(hosts, h.Via)
 			if !ok {
 				return fmt.Errorf("there is no saved server called %q to reach %q through",
-					at, start.Name)
+					h.Via, start.Name)
 			}
-			at = h.Via
+			h = next
 		}
 	}
 	return nil

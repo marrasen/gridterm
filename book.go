@@ -137,7 +137,7 @@ func (a *app) refreshServers() {
 		saved := cmd
 		a.registerServerCommands(a.reporting(ui.Command{
 			ID:       savedCommandID(i),
-			Title:    "Run " + saved.Line + " on " + groupName(saved.Host),
+			Title:    "Run " + saved.Line + " on " + groupName(a.shownAs(saved.Host, saved.HostID)),
 			AlsoFind: []string{"saved command", "remembered", "saved"},
 			Run:      func() error { return a.runSaved(saved) },
 		}))
@@ -148,7 +148,7 @@ func (a *app) refreshServers() {
 		saved := t
 		a.registerServerCommands(a.reporting(ui.Command{
 			ID:       savedTunnelID(i),
-			Title:    savedTunnelTitle(saved),
+			Title:    a.savedTunnelTitle(saved),
 			AlsoFind: []string{"saved tunnel", "remembered", "saved", "forward", "port"},
 			Run:      func() error { return a.openSavedTunnel(saved) },
 		}))
@@ -334,17 +334,15 @@ const (
 	kindWindow = remote.GridtermWindowKind
 )
 
-// whichKind reads the Kind field.
-//
-// Anything else is a mistake rather than an instruction. The field
-// takes whatever is typed into it, and a typo quietly turning a window
-// into a machine would leave the user with a saved entry that tries to
-// log in to a port with no shell behind it.
 // setupYes and setupNo are what the shell setup field offers.
 const (
 	setupNo  = "No"
 	setupYes = "Yes"
 )
+
+// viaNone is the jump host field's answer for a machine reached
+// directly.
+const viaNone = "None"
 
 // whichSetup reads the shell setup field.
 func whichSetup(text string) (on bool, err error) {
@@ -368,6 +366,12 @@ func whichForward(text string) (on bool, err error) {
 	return false, fmt.Errorf("the SSH agent has to be %q or %q", setupNo, setupYes)
 }
 
+// whichKind reads the Kind field.
+//
+// Anything else is a mistake rather than an instruction. The field is a
+// drop-down, so nothing else should reach here, but one that did and
+// was read as a machine would leave the user with a saved entry that
+// tries to log in to a port with no shell behind it.
 func whichKind(text string) (window bool, err error) {
 	switch strings.TrimSpace(text) {
 	case kindMachine:
@@ -405,6 +409,9 @@ func (a *app) reloadBook() error {
 	if err := a.book.Reload(); err != nil {
 		return err
 	}
+	// A list that could not be read when the window opened gave nothing
+	// its id then.
+	a.giveSavedIDs()
 	a.refreshServers()
 	return nil
 }
@@ -438,10 +445,10 @@ func (a *app) openServerForm(under string) error {
 	f := a.newForm(title)
 	// No lines under the title. Every field that needs explaining
 	// carries its own hint, drawn along the bottom while that field has
-	// the focus, and a field that steps through a list says so itself.
+	// the focus, and a field that opens a list says so itself.
 	name := f.AddField(fldName, a.newField("", 0))
 	kind := f.AddField(fldType, a.newField("", 0))
-	kind.Options = []string{kindMachine, kindWindow}
+	kind.Choices = ui.ChoicesOf(kindMachine, kindWindow)
 	kind.Hint = "A gridterm window is connected to, not logged in to"
 	target := f.AddField(fldServer, a.newField("[user@]host[:port]", 0))
 	key := f.AddField(fldKeyFile, a.newField("Optional", 0))
@@ -454,18 +461,19 @@ func (a *app) openServerForm(under string) error {
 	folders := f.AddField(fldFolders, a.newField("Comma-separated paths", 0))
 	folders.Hint = "Where the file browser opens on this server"
 	setup := f.AddField(fldShellSetup, a.newField("", 0))
-	setup.Options = []string{setupNo, setupYes}
+	setup.Choices = ui.ChoicesOf(setupNo, setupYes)
 	setup.Hint = "Tracks the directory and where each command ends. bash and zsh only."
 	forward := f.AddField(fldForwardAgent, a.newField("", 0))
-	forward.Options = []string{setupNo, setupYes}
+	forward.Choices = ui.ChoicesOf(setupNo, setupYes)
 	forward.Hint = "The server can use your keys for onward connections. So can root on the server."
-	// The machines already saved, so the field can be cycled rather than
-	// typed from memory. Blank first: leaving it empty is the usual
-	// answer, and it is what cycling comes back round to.
-	via.Options = append([]string{""}, a.serverNames(under)...)
+	// The machines already saved, picked rather than typed: the jump
+	// host is saved as the server's id, which the user never sees, so
+	// there is nothing a typed name could be but a guess at one. None
+	// first, because it is the usual answer.
+	via.Choices = append([]ui.Choice{{Key: "", Label: viaNone}}, a.serverChoices(was.ID)...)
 	// Nothing to go through, so there is nothing to fill in: the field
 	// is disabled rather than left empty beside a sentence saying why.
-	if len(via.Options) <= 1 {
+	if len(via.Choices) <= 1 {
 		via.Disabled = true
 	}
 
@@ -478,7 +486,13 @@ func (a *app) openServerForm(under string) error {
 	if len(was.Identities) > 0 {
 		key.SetText(was.Identities[0])
 	}
-	via.SetText(was.Via)
+	// A jump host that is none of the servers offered is one that has
+	// gone from the list, which the field shows as None and saves as
+	// none: kept, it would be saved back under a field that said
+	// nothing about it.
+	if slices.ContainsFunc(via.Choices, func(c ui.Choice) bool { return c.Key == was.Via }) {
+		via.SetText(was.Via)
+	}
 	folders.SetText(was.FoldersJoined())
 	setup.SetText(setupNo)
 	if was.Setup {
@@ -495,7 +509,7 @@ func (a *app) openServerForm(under string) error {
 	// that cannot apply is better greyed out than taken and dropped.
 	applies := func() {
 		window := kind.Text() == kindWindow
-		via.Disabled = window || len(via.Options) <= 1
+		via.Disabled = window || len(via.Choices) <= 1
 		forward.Disabled = window
 		// The caret may be sitting on one that just went off.
 		f.EnsureFocusable()
@@ -528,7 +542,7 @@ func (a *app) openServerForm(under string) error {
 			h.User, h.Via = was.User, was.Via
 			h.Window = true
 		} else {
-			h.Via = strings.TrimSpace(via.Text())
+			h.Via = via.Text()
 		}
 		if h.Setup, err = whichSetup(setup.Text()); err != nil {
 			return err
@@ -576,7 +590,11 @@ func (a *app) openServerForm(under string) error {
 		// book never saw -- a machine reached by typing a target, and
 		// this machine itself -- and two connections under one name
 		// would leave one of them open with nothing holding it.
-		if under != "" && under != h.Name {
+		// An added server as well as a renamed one: a new server under a
+		// name a connection still has would leave the name standing for
+		// two machines, and whatever opened it next would go through the
+		// connection to the other one.
+		if under != h.Name {
 			if a.about(h.Name).held() {
 				return fmt.Errorf("something is already connected as %q; close it first", h.Name)
 			}
@@ -596,6 +614,11 @@ func (a *app) openServerForm(under string) error {
 		}
 		if err := a.book.Put(h, under); err != nil {
 			return err
+		}
+		// As saved, which carries the id the list gave it: a rename
+		// goes by that to tell which panes are on this server.
+		if saved, ok := a.book.Lookup(h.Name); ok {
+			h = saved
 		}
 		// Exactly, not ignoring case: the window's own record is kept by
 		// name and a change of capitals is a change of name to it.
@@ -766,20 +789,21 @@ func (a *app) reportBookError() {
 	})
 }
 
-// serverNames is every saved machine except one, for the Through field
-// of the dialog editing that one.
+// serverChoices is every saved machine except one, kept by its id and
+// shown by its name, for the jump host field of the dialog editing that
+// one.
 //
 // A machine reached through itself is a machine nothing can reach, so it
 // is not on the list. A longer loop is still possible and is caught when
 // the connection is made, which is the only place the whole chain is
 // known.
-func (a *app) serverNames(except string) []string {
-	var out []string
+func (a *app) serverChoices(except string) []ui.Choice {
+	var out []ui.Choice
 	for _, h := range a.book.Hosts() {
-		if h.Name == except {
+		if except != "" && h.ID == except {
 			continue
 		}
-		out = append(out, h.Name)
+		out = append(out, ui.Choice{Key: h.ID, Label: h.Name})
 	}
 	return out
 }

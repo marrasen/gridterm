@@ -259,15 +259,39 @@ func (a *app) oneFolderOn(host string) string {
 // filesystem opens a filesystem for a machine: this one, or one reached
 // over a connection that is already open.
 func (a *app) filesystem(host string) (vfs.FS, error) {
-	f, err := a.machineFiles(host)
+	f, err := a.machineFilesWithArchives(host)
 	if err != nil {
 		return nil, err
 	}
-	// With the archives on it opened as directories. One wrapper per
-	// pane rather than one for the window: it holds the archive it is
-	// reading, and two panes in two archives would take turns throwing
-	// each other's out.
-	return vfs.WithArchives(f), nil
+	if a.about(host).machine == nil {
+		// Local files have no connection to lose, and a window taken
+		// over is read over a connection this window did not make.
+		return f, nil
+	}
+	return a.holdingTheMachine(a.about(host).machine.at, f), nil
+}
+
+// holdingTheMachine wraps a filesystem so it holds the machine rather
+// than the session on it.
+//
+// Outermost, so that what the browser holds and asks about is the
+// wrapper: a pane's filesystem is looked up by identity in one place
+// and type-asserted for a rename in another, and both have to find this
+// rather than the session it happens to hold now.
+//
+// The machine is passed in rather than looked up by name, because the
+// name may not stand for it any more: one given up in a rename can be
+// saved for somewhere else while the connection is being made, and a
+// wrapper built from that lookup would hold another machine's address.
+func (a *app) holdingTheMachine(on step, f vfs.FS) vfs.FS {
+	if on.cfg.Host == "" {
+		// Nothing to hold: this machine is the one the window is
+		// running on, or one read through a window taken over.
+		return f
+	}
+	r := newReopening(a, on.name, on, f)
+	a.keepReopening(r)
+	return r
 }
 
 // machineFiles opens a filesystem for a machine, as the machine has
@@ -289,6 +313,20 @@ func (a *app) machineFiles(host string) (vfs.FS, error) {
 	// The connection is what says which machine this is: two
 	// panes on one machine open two sessions on it.
 	return vfs.NewSFTP(on.name, on.machine.conn, f.Client(), f.Close), nil
+}
+
+// machineFilesWithArchives is a machine's filesystem with the archives
+// on it opened as directories.
+//
+// One wrapper per filesystem rather than one for the window: it holds
+// the archive it is reading, and two panes in two archives would take
+// turns throwing each other's out.
+func (a *app) machineFilesWithArchives(host string) (vfs.FS, error) {
+	f, err := a.machineFiles(host)
+	if err != nil {
+		return nil, err
+	}
+	return vfs.WithArchives(f), nil
 }
 
 // newPane builds one pane of the file manager.
@@ -450,15 +488,83 @@ func (a *app) startJob(kind jobs.Kind, w files.Work) {
 type jobEnd struct {
 	host string
 	far  remoteHostKey
+
+	// at is the step the machine was reached by, for opening it again
+	// when the server list has no route to it. A machine connected to
+	// from a typed target is on no list and still has to be reachable,
+	// which is what the pane's own filesystem keeps for the same reason.
+	at step
 }
 
 // endOf names the end of a piece of file work one pane stands for.
 func (a *app) endOf(p *files.Pane) jobEnd {
 	end := jobEnd{host: a.hostOf(p.FS())}
+	if r, is := p.FS().(*reopening); is {
+		end.at = r.step()
+	}
 	if b := a.files; b != nil {
 		end.far = b.far[p]
 	}
 	return end
+}
+
+// openEndAgain opens one end of a piece of file work, connecting to the
+// machine first when nothing is.
+//
+// then runs on the goroutine that draws, which is where the caller is:
+// straight away when the machine is there, and when the connection has
+// been made or has failed when it is not. A copy repeated after both
+// its machines dropped is what this is for, and it connects to them one
+// after the other rather than both at once.
+//
+// An end on a saved server is opened on that server under whatever it
+// is called now, and one whose server has left the list is not opened
+// at all. Work keeps the name its machine had when it ran, and a name
+// can be given up in a rename and given to another machine: going by it
+// would write the user's files onto a machine they never ran this on.
+func (a *app) openEndAgain(end jobEnd, then func(vfs.FS, error)) {
+	if end.far.window == nil && end.at.id != "" {
+		now, saved := a.book.NameOf(end.at.id)
+		if !saved {
+			then(nil, removedServer(end.host))
+			return
+		}
+		end.host, end.at.name = now, now
+	}
+	if m := a.about(end.host).machine; m != nil && end.far.window == nil &&
+		anotherServer(m.at, end.at) {
+		then(nil, connectedElsewhere(end.host))
+		return
+	}
+	if end.far.window != nil || a.about(end.host).machine != nil ||
+		a.about(end.host).kind == hostHere {
+		f, err := a.openEnd(end)
+		then(f, err)
+		return
+	}
+	a.filesystemAgain(end.host, end.at, a.savedCalledNow(end.at.id), func(f vfs.FS, on step, err error) {
+		if err != nil {
+			then(nil, err)
+			return
+		}
+		then(a.holdingTheMachine(on, f), nil)
+	})
+}
+
+// savedCalledNow asks the list what the saved server with an id goes by
+// now, for work waiting on a connection while it is renamed. Empty says
+// the server has left the list.
+//
+// Nil for a machine on no list, whose name the dial it waited on has
+// already followed.
+func (a *app) savedCalledNow(id string) func(string) string {
+	if id == "" {
+		return nil
+	}
+	return func(string) string {
+		now, _ := a.book.NameOf(id)
+		return now
+	}
 }
 
 // openEnd opens one end of a piece of file work again: a machine this
@@ -512,6 +618,10 @@ func (a *app) runJob(op jobs.Op, from, to jobEnd, owned []vfs.FS) *jobs.Job {
 	e.Reveal = func() { a.showJobPane(j, e, from, to) }
 	e.Close = a.dropJobRow(e, j)
 	a.jobs[e] = j
+	if a.jobFrom == nil {
+		a.jobFrom = map[*conns.Entry]jobEnd{}
+	}
+	a.jobFrom[e] = from
 	a.registry.Add(e)
 	a.letGoWhenDone(j, owned)
 	a.markDirty()
@@ -526,6 +636,7 @@ func (a *app) dropJobRow(e *conns.Entry, j *jobs.Job) func() error {
 	return func() error {
 		a.queue.Drop(j)
 		delete(a.jobs, e)
+		delete(a.jobFrom, e)
 		a.registry.Drop(e)
 		return nil
 	}
@@ -585,6 +696,13 @@ func (a *app) reloadPanesOn(on ...vfs.FS) {
 func (a *app) hostOf(f vfs.FS) string {
 	if key, over := farFS(f); over {
 		return key.window.name
+	}
+	// A filesystem that holds a machine says which, because the machine
+	// may not be connected right now. Going by the name would answer
+	// Local for a pane on a machine that dropped, and a copy out of it
+	// would be filed under this one.
+	if r, is := f.(*reopening); is {
+		return r.Host()
 	}
 	if on := a.about(f.Name()); on.machine != nil || on.window != nil {
 		return on.name
@@ -1131,6 +1249,10 @@ func (a *app) browserLetGoFS(f vfs.FS) error {
 		return nil
 	}
 	if a.fsHeld[f] > 0 {
+		// A reader is still on it, so it is not let go of and it is not
+		// forgotten either: the reader reads again when the user asks,
+		// and that read opens the machine the same as the browser's
+		// would have.
 		if a.fsGone == nil {
 			a.fsGone = map[vfs.FS]bool{}
 		}
@@ -1151,8 +1273,12 @@ func (a *app) browserLetGoFS(f vfs.FS) error {
 func (a *app) releaseFS(f vfs.FS) error {
 	stopping := a.stopJobsOn(f)
 	if len(stopping) == 0 {
+		a.dropReopeningFS(f)
 		return f.Close()
 	}
+	// The ones with a job still on them stay on the list until that job
+	// has stopped: the job is still using this, and a machine that goes
+	// while it runs has to reach it.
 	a.closes.inBackground(func() error {
 		for _, j := range stopping {
 			<-j.Done()
@@ -1193,6 +1319,7 @@ func (a *app) stopJobsOn(on ...vfs.FS) []*jobs.Job {
 			stopping = append(stopping, j)
 			// The row goes with the browser it was started from.
 			delete(a.jobs, e)
+			delete(a.jobFrom, e)
 			a.registry.Drop(e)
 			break
 		}

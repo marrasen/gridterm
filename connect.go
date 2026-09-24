@@ -11,6 +11,7 @@ import (
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/session"
 	"github.com/marrasen/gridterm/ui/term"
+	"github.com/marrasen/gridterm/vfs"
 )
 
 // opening is what a route is opened for: a shell to type into, one
@@ -34,6 +35,13 @@ type opening struct {
 	// pane the user answered the question on, and it keeps everything
 	// the last program printed.
 	into *term.Terminal
+
+	// only says to make the connection and open nothing on it.
+	//
+	// It is how a file pane whose machine dropped asks for it back: the
+	// pane is on screen already and wants the connection, not a second
+	// pane beside it.
+	only bool
 }
 
 // kind says what sort of connection an opening is, for the row the
@@ -128,7 +136,7 @@ func (a *app) openRoute(name string, route []step, open opening, at *spot) {
 	if !slices.Contains(names, name) {
 		names = append(names, name)
 	}
-	held := &dialling{cancel: cancel, names: names}
+	held := &dialling{cancel: cancel, names: names, route: slices.Clone(route)}
 	// Before the pane opens, so a route that cannot have its names says
 	// so rather than leaving a pane behind saying it is connecting.
 	if err := a.machines.holdNames(held); err != nil {
@@ -398,6 +406,16 @@ func (a *app) becamePane(name string, open opening, pane *term.Terminal, log *co
 	// the way shares this account, and a line on each of their rows would
 	// open an account about somewhere else.
 	m.log = log
+	if open.only {
+		// Nothing to open: what asked for this is already on screen.
+		// The pane that watched the dial goes the way it does for
+		// files, because nothing rides in it either.
+		log.Connected()
+		if err := a.closePane(pane); err != nil {
+			a.reportError("Could not close the pane", err)
+		}
+		return
+	}
 	if open.files {
 		a.becomeFilesPane(name, pane, log, open.dir)
 		return
@@ -480,6 +498,10 @@ func (a *app) openFor(open opening, sess session.Session, host, label string,
 // startOn opens what was asked for on a machine that is already
 // connected to.
 func (a *app) startOn(name string, open opening, at *spot) error {
+	if open.only {
+		// Already connected, which is the whole of what was asked for.
+		return nil
+	}
 	if open.files {
 		// at is not used: a file pane goes in the file manager itself.
 		return a.browseOn(name, open.dir)
@@ -581,6 +603,192 @@ func (a *app) connectAndBrowse(name, at string) error {
 	}
 	a.openRoute(name, route, opening{files: true, dir: at}, nil)
 	return nil
+}
+
+// filesystemAgain hands back a filesystem on a machine, connecting to
+// it first when nothing is.
+//
+// On the goroutine that draws. then is called when the connection is
+// made or has failed, and for one already on its way that means when
+// that one settles rather than starting a second: four panes on one
+// machine that dropped make one connection between them.
+// calledNow is asked what a machine goes by now, for a read that has
+// been waiting while it was renamed. was is the name the dial it waited
+// on knows it by; the answer is the name to ask for, and empty when
+// nothing wants the machine any more. A nil one means the dial's answer
+// is the whole of it.
+//
+// It is asked rather than worked out here because a filesystem also
+// files its pane under the name it finds, and finished work has no pane
+// to file. Both ask the list by the id of the saved server, so what
+// comes back is that server's name and never another machine's.
+func (a *app) filesystemAgain(host string, at step, calledNow func(was string) string,
+	then func(vfs.FS, step, error)) {
+	// answerOn hands back a filesystem and the machine it was opened
+	// on. The machine goes with it because the caller keeps it, and a
+	// caller that looked it up again by the name it asked with could
+	// find a different machine: a name given up in a rename can be
+	// saved for somewhere else while the dial is still running.
+	answerOn := func(name string) {
+		if m := a.about(name).machine; m != nil && anotherServer(m.at, at) {
+			then(nil, step{}, connectedElsewhere(name))
+			return
+		}
+		f, err := a.machineFilesWithArchives(name)
+		var on step
+		if m := a.about(name).machine; m != nil {
+			on = m.at
+		}
+		then(f, on, err)
+	}
+	answer := func() { answerOn(host) }
+	// Why it was not made is in the account of the connection, which is
+	// where a reason belongs: this is read in a file pane, which has no
+	// room for one and nothing to do with it.
+	notMade := func() {
+		then(nil, step{}, fmt.Errorf("the connection to %s was not made", groupName(host)))
+	}
+	// reachable says a machine on the way to this one is connected, so
+	// this one is worth asking for again.
+	//
+	// Asked of the window rather than of the dial that settled, because
+	// what a dial reports is whether its own far end answered -- which
+	// is not this machine and need not even be the one on the way. A
+	// machine of a route that answered is held, stays held when the
+	// dial beyond it fails, and is no longer a name that dial
+	// remembers.
+	reachable := func(name string) bool {
+		route, err := a.route(name)
+		if err != nil {
+			return false
+		}
+		through, _, err := a.plan(route)
+		return err == nil && through != nil
+	}
+	// Said on the bottom row for as long as the wait lasts, because a
+	// folder click that waits the length of a login with nothing on
+	// screen reads as a window that has stopped. Every way of waiting
+	// says it, not only the one that starts the connection: a second
+	// pane queueing behind the first waits just as long.
+	line := "Reconnecting to " + groupName(host) + "…"
+	// waitFor queues this read behind a connection being made.
+	//
+	// ours says that connection is this machine's own attempt. When one
+	// of those settles the read has its answer either way: the machine
+	// is there or it is not, and asking again would dial it a second
+	// time the moment the first attempt failed -- and a third, and a
+	// fourth, for as long as the way there looked open. It would also
+	// dial it again the moment the user gave up on it, which is the
+	// opposite of what giving up means.
+	//
+	// A dial that was on its way somewhere else is the other case. That
+	// one says nothing about this machine, which may never have been
+	// tried, so this asks again.
+	//
+	// Either way it asks for the machine as it is called then, because
+	// one renamed while it was being dialled is held under the name the
+	// window uses now.
+	//
+	// Queued on answering rather than waiting: a pane is blocked on
+	// this, so a connection that was not made has to come back as a
+	// failure. What waits is thrown away when the dial fails, which
+	// here would leave the pane reading for ever.
+	waitFor := func(d *dialling, ours bool) {
+		a.sayWhile(line)
+		d.answering = append(d.answering, func(bool) {
+			a.doneSaying(line)
+			// What the machine is called now: the dial's own answer,
+			// and then whatever the caller knows on top of it.
+			now := d.nameNow(host)
+			if calledNow != nil {
+				now = calledNow(now)
+				if now == "" {
+					// Nothing is using this any more. The pane it
+					// belonged to was closed while this waited.
+					notMade()
+					return
+				}
+			}
+			if a.about(now).machine != nil {
+				answerOn(now)
+				return
+			}
+			if ours || !reachable(now) {
+				notMade()
+				return
+			}
+			// The step goes by that name too, or a machine on no list
+			// would be dialled under the name it has stopped using.
+			on := at
+			on.name = now
+			a.filesystemAgain(now, on, calledNow, then)
+		})
+	}
+	if a.about(host).machine != nil {
+		answer()
+		return
+	}
+	if d := a.machines.connecting(host); d != nil {
+		if d.settled {
+			answer()
+			return
+		}
+		waitFor(d, true)
+		return
+	}
+	route, err := a.route(host)
+	if err != nil {
+		// A saved server is reached by the route the list gives it and
+		// no other way. The step kept is where it was, and the list has
+		// had the last word on where it is since.
+		if a.about(host).saved || at.cfg.Host == "" || at.id != "" {
+			then(nil, step{}, err)
+			return
+		}
+		// No route on any list, and one is still owed: a machine
+		// connected to from a typed target is on no list and was
+		// reached all the same. The step it was reached by is what
+		// this filesystem kept, the way a pane keeps the one its
+		// shell was started on.
+		route = []step{at}
+	}
+	// A machine on the way already being connected to: wait for that one
+	// and ask again. openRoute would put up the dialog about it, which
+	// asks the user about a connection they did not ask for -- a pane
+	// read through a filesystem is what is happening here -- and answer
+	// this read with "nothing is connected" while they read it.
+	for _, s := range route {
+		if d := a.about(s.name).dialling; d != nil && !d.settled {
+			waitFor(d, false)
+			return
+		}
+	}
+
+	a.sayWhile(line)
+	a.openRoute(host, route, opening{only: true}, nil)
+	if d := a.machines.connecting(host); d != nil && !d.settled {
+		waitFor(d, true)
+		return
+	}
+	a.doneSaying(line)
+	answer()
+}
+
+// anotherServer reports whether a connection is to a saved server other
+// than the one a filesystem or a piece of work is on.
+//
+// The name cannot say: a connection left under a name when its entry was
+// renamed and pointed somewhere else keeps that name, and a server saved
+// since can be given it too. A connection to a machine on no list says
+// nothing either way, and is taken at its name the way it always was.
+func anotherServer(held, want step) bool {
+	return want.id != "" && held.id != "" && held.id != want.id
+}
+
+// connectedElsewhere is what a call is answered with when the name its
+// machine goes by is held by a connection to a different one.
+func connectedElsewhere(name string) error {
+	return fmt.Errorf("%s is connected to another machine", groupName(name))
 }
 
 // labelFor names a connection by what it is running.

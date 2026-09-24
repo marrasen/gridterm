@@ -1451,7 +1451,7 @@ func (a *app) showShare() error {
 	f.Copyable = code
 
 	pick := f.AddField(fldAgent, a.newField("", 0))
-	pick.Options = agentHostNames()
+	pick.Choices = ui.ChoicesOf(agentHostNames()...)
 	pick.SetText(a.agents.startHost().name)
 	a.addShareRows(f)
 

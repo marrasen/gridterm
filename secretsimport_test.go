@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -64,8 +65,8 @@ func TestTheImportFormOffersWhatToDoAboutDuplicates(t *testing.T) {
 		t.Errorf("it starts on %q, want the answer that loses nothing", got)
 	}
 	for _, want := range []string{keepBothTitle, skipTitle, replaceTitle} {
-		if !strings.Contains(strings.Join(same.Options, " "), want) {
-			t.Errorf("it offers %v, want %q among them", same.Options, want)
+		if !slices.Contains(dropLabels(same), want) {
+			t.Errorf("it offers %v, want %q among them", dropLabels(same), want)
 		}
 	}
 	if at, isButton := f.Focused(); isButton || at != 0 {

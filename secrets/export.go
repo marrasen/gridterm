@@ -35,7 +35,7 @@ func (v *Vault) Everything() ([]Export, error) {
 	v.refresh()
 	out := make([]Export, 0, len(v.items))
 	for _, e := range v.items {
-		out = append(out, Export{Item: e.Item, Value: e.Value})
+		out = append(out, Export(e))
 	}
 	return out, nil
 }

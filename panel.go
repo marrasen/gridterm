@@ -788,6 +788,14 @@ func (a *app) clearFinished() error {
 			err = cerr
 		}
 	}
+	// The ends of the work rows about to go, by the same test the
+	// registry uses: kept past their rows, they would hold each job and
+	// what it read through for the life of the window.
+	for e := range a.jobFrom {
+		if e.State(now) == meter.Closed {
+			delete(a.jobFrom, e)
+		}
+	}
 	if a.registry.DropFinished(now) > 0 {
 		a.markDirty()
 	}

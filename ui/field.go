@@ -3,6 +3,7 @@ package ui
 import (
 	"image/color"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/marrasen/gridterm/grid"
@@ -59,8 +60,19 @@ type Field struct {
 	// cycled back to nothing.
 	//
 	// They are a suggestion, not a rule: the field still takes anything
-	// that is typed into it.
+	// that is typed into it. A field whose answer has to be one of a
+	// list is a drop-down, and has Choices instead.
 	Options []string
+
+	// Choices make this a drop-down: the field holds the Key of one of
+	// them, shows its Label, and nothing can be typed into it. Space,
+	// F4 and Alt+Down open the list; Ctrl+Up and Ctrl+Down step through
+	// it without opening it; a letter goes to the answer that starts
+	// with what has been typed.
+	//
+	// Nothing outside the list can be put in one, because what it holds
+	// can be something the user never sees, such as a server's id.
+	Choices []Choice
 
 	// Ghost is the rest of an answer the caller thinks is being typed,
 	// drawn after the text in the placeholder's colour. It is not part
@@ -113,6 +125,15 @@ type Field struct {
 
 	cols    int
 	focused bool
+
+	// open says a drop-down's list is showing, lit is the row the keys
+	// are on, top is the first row shown, and typed is the name being
+	// typed, last added to at typedAt.
+	open    bool
+	lit     int
+	top     int
+	typed   string
+	typedAt time.Time
 }
 
 // NewField returns an empty field.
@@ -215,6 +236,9 @@ func (f *Field) SetFocus(on bool) {
 	f.focused = on
 	if !on {
 		f.picked, f.dragging = false, false
+		// A list left open under a field the focus has left would be a
+		// list nothing is driving.
+		f.closeList()
 	}
 }
 
@@ -230,21 +254,27 @@ func (f *Field) HandleKey(ev input.Event) (bool, error) {
 	if f.Disabled {
 		return false, nil
 	}
+	if f.DropDown() {
+		return f.dropKey(ev), nil
+	}
 	// A tick box takes space and the keys that step through options, and
 	// nothing else: there is nothing to type into it, and every other
 	// key belongs to whatever is showing it.
 	if f.Tick {
-		// A press, not a repeat: a box held down would flicker, and a
-		// box is answered once.
+		// One press of space arrives as the key and then the character
+		// it types. The key turns the box over and the character is
+		// swallowed: taking both turned it over and straight back.
 		if ev.Kind == input.Text && ev.Rune == ' ' && ev.NormalText {
-			f.Toggle()
 			return true, nil
 		}
+		// A press, not a repeat: a box held down would flicker, and a
+		// box is answered once.
 		if ev.Kind != input.KeyPress {
 			return false, nil
 		}
 		switch {
-		case ev.Key == input.KeySpace && ev.Mods == 0,
+		// Shift as well, because it is still down after a capital.
+		case ev.Key == input.KeySpace && (ev.Mods == 0 || ev.Mods == input.ModShift),
 			ev.Mods == input.ModCtrl && (ev.Key == input.KeyDown || ev.Key == input.KeyUp):
 			f.Toggle()
 			return true, nil
@@ -396,6 +426,11 @@ func (f *Field) Draw(v grid.View) {
 
 	blank := grid.Cell{Rune: ' ', FG: f.Style.FG, BG: f.Style.BG, Width: 1}
 	v.Sub(0, 0, cols, 1).Fill(blank)
+
+	if f.DropDown() {
+		f.drawDrop(v)
+		return
+	}
 
 	if f.Tick {
 		box := "[ ]"

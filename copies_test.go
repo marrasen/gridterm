@@ -302,7 +302,7 @@ func TestARememberedCopyThroughAWindowOpensTheMachine(t *testing.T) {
 	nyli := &taken{name: "nyli"}
 	a.windows.add(nyli)
 
-	end, err := a.endOfSaved("picard", "nyli")
+	end, err := a.endOfSaved("picard", "", "nyli")
 
 	if err != nil {
 		t.Fatalf("find the end: %v", err)

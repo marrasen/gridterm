@@ -68,7 +68,7 @@ func TestASavedTunnelComesBackTheSame(t *testing.T) {
 		Kind: remote.RemoteForward, Listen: "0.0.0.0:8080", Target: "127.0.0.1:80",
 	}
 
-	if err := a.savedTuns.keep(asSaved("margit", want)); err != nil {
+	if err := a.savedTuns.keep(asSaved("margit", "", want)); err != nil {
 		t.Fatalf("keep it: %v", err)
 	}
 

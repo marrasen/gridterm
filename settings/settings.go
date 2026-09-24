@@ -114,6 +114,11 @@ type SavedCommand struct {
 	Line string `json:"line"`
 	Dir  string `json:"dir,omitempty"`
 	Host string `json:"host,omitempty"`
+
+	// HostID is the id of the saved server Host names, and empty for a
+	// machine on no list. Host is what is shown; the id is what the
+	// command runs on, because a name can be given to another server.
+	HostID string `json:"hostId,omitempty"`
 }
 
 // SavedTunnel is a tunnel the user asked to keep, so the same one can
@@ -125,6 +130,11 @@ type SavedCommand struct {
 type SavedTunnel struct {
 	// Host is the machine it runs over, as the sidebar names it.
 	Host string `json:"host"`
+
+	// HostID is the id of the saved server Host names, and empty for a
+	// machine on no list. Host is what is shown; the id is what the
+	// tunnel runs over, because a name can be given to another server.
+	HostID string `json:"hostId,omitempty"`
 
 	// Kind is which way it goes, written as remote.TunnelKind spells
 	// it: "local", "remote" or "socks".
@@ -139,8 +149,11 @@ type SavedTunnel struct {
 
 // Same reports whether two saved tunnels are the same tunnel, which is
 // what stops one being kept twice.
+//
+// The machine is the same by its id when both have one, and by its name
+// when either has none, the way a saved copy's ends are.
 func (t SavedTunnel) Same(other SavedTunnel) bool {
-	return t.Host == other.Host && t.Kind == other.Kind &&
+	return sameEnd(t.Host, t.HostID, other.Host, other.HostID) && t.Kind == other.Kind &&
 		t.Listen == other.Listen && t.Target == other.Target
 }
 
@@ -156,6 +169,16 @@ type SavedCopy struct {
 	From string `json:"from,omitempty"`
 	To   string `json:"to,omitempty"`
 
+	// FromID and ToID are the ids of the saved servers the ends are on,
+	// and empty for a machine on no list. The name is what the row
+	// shows and the id is what the copy is run on: a name can be given
+	// up in a rename and given to another machine.
+	//
+	// A copy saved before servers had ids has none, and is given them
+	// when a window opens with both lists.
+	FromID string `json:"fromId,omitempty"`
+	ToID   string `json:"toId,omitempty"`
+
 	// FromWindow and ToWindow name the window an end is reached
 	// through, and are empty for a machine this window reaches itself.
 	FromWindow string `json:"fromWindow,omitempty"`
@@ -170,10 +193,23 @@ type SavedCopy struct {
 
 // Same reports whether two saved copies do the same work, which is what
 // keeping one twice and forgetting one go by.
+//
+// An end is the same by its id when both have one, and by its name when
+// either has none: a copy saved before servers had ids is still the one
+// the same work would save now.
 func (c SavedCopy) Same(o SavedCopy) bool {
-	return c.From == o.From && c.To == o.To &&
+	return sameEnd(c.From, c.FromID, o.From, o.FromID) &&
+		sameEnd(c.To, c.ToID, o.To, o.ToID) &&
 		c.FromWindow == o.FromWindow && c.ToWindow == o.ToWindow &&
 		c.At == o.At && c.Into == o.Into && slices.Equal(sorted(c.Names), sorted(o.Names))
+}
+
+// sameEnd reports whether two ends of saved copies are on one machine.
+func sameEnd(name, id, otherName, otherID string) bool {
+	if id != "" && otherID != "" {
+		return id == otherID
+	}
+	return name == otherName
 }
 
 // sorted is the names in order, so which way round they were picked out
@@ -463,6 +499,61 @@ func (s *Settings) DropTunnel(t SavedTunnel) error {
 // dropTunnel is the list without one tunnel.
 func dropTunnel(have []SavedTunnel, t SavedTunnel) []SavedTunnel {
 	return slices.DeleteFunc(have, func(at SavedTunnel) bool { return at.Same(t) })
+}
+
+// FillServerIDs gives the saved commands, tunnels and copies that name a
+// machine but carry no id the id idOf gives for that name, and saves if
+// any of them changed. idOf answers empty for a name on no list.
+//
+// For settings saved before servers had ids. Done once, when the window
+// has both lists, rather than when each is used: the names are trusted
+// to mean what they meant when they were saved, and the longer that is
+// left the likelier a rename has made them mean something else.
+//
+// An end of a copy behind a window is left alone. Its name is from that
+// window's list, not from the one idOf reads.
+func (s *Settings) FillServerIDs(idOf func(name string) string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.rereadLocked(); err != nil {
+		return fmt.Errorf("%w: %w", ErrUnsaveable, err)
+	}
+	changed := false
+	fill := func(name string, id *string) {
+		if *id != "" || name == "" {
+			return
+		}
+		if got := idOf(name); got != "" {
+			*id, changed = got, true
+		}
+	}
+	before := s.have
+	commands := slices.Clone(s.have.Commands)
+	for i := range commands {
+		fill(commands[i].Host, &commands[i].HostID)
+	}
+	tunnels := slices.Clone(s.have.Tunnels)
+	for i := range tunnels {
+		fill(tunnels[i].Host, &tunnels[i].HostID)
+	}
+	copies := slices.Clone(s.have.Copies)
+	for i := range copies {
+		if copies[i].FromWindow == "" {
+			fill(copies[i].From, &copies[i].FromID)
+		}
+		if copies[i].ToWindow == "" {
+			fill(copies[i].To, &copies[i].ToID)
+		}
+	}
+	if !changed {
+		return nil
+	}
+	s.have.Commands, s.have.Tunnels, s.have.Copies = commands, tunnels, copies
+	if err := s.saveLocked(); err != nil {
+		s.have = before
+		return err
+	}
+	return nil
 }
 
 // putTunnels rereads the file, edits the list it holds and saves.

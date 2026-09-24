@@ -416,12 +416,23 @@ func (a *app) openTakeOver() error {
 
 // takeOver reaches another window and puts it on the panel.
 //
+// open says to open a terminal on the window once it answers, which is
+// what asking to work on one means. Connecting on its own opens nothing.
+func (a *app) takeOver(addr, keyFile string, at *spot, open bool) error {
+	if open {
+		return a.takeOverFor(addr, keyFile, at, opening{})
+	}
+	return a.takeOverFor(addr, keyFile, at, opening{only: true})
+}
+
+// takeOverFor reaches another window, puts it on the panel, and opens on
+// it what was asked for once it answers: nothing for a connection on its
+// own, a file pane for files, and a terminal otherwise.
+//
 // The work happens on a goroutine of its own: reaching a machine can
 // stop to ask for a passphrase, or to ask whether its key is the one
 // expected, and neither can be answered by the goroutine that draws.
-// open says to open a pane on the window once it answers, which is what
-// asking to work on one means. Connecting on its own opens nothing.
-func (a *app) takeOver(addr, keyFile string, at *spot, open bool) error {
+func (a *app) takeOverFor(addr, keyFile string, at *spot, open opening) error {
 	if addr == "" {
 		return errors.New("no machine to connect to")
 	}
@@ -441,12 +452,15 @@ func (a *app) takeOver(addr, keyFile string, at *spot, open bool) error {
 	// it is usually what the user wants.
 	if d := a.about(name).dialling; d != nil {
 		a.askAboutTheOneOnItsWay(d, name, func() {
-			if !open {
+			switch {
+			case open.only:
 				a.reportError("Could not connect to "+name,
 					errors.New("this window is already connected to it"))
-				return
+			case open.files:
+				a.browseOnWindowOrSay(name, open.dir)
+			default:
+				a.workOnWindowOrSay(addr, keyFile, at)
 			}
-			a.workOnWindowOrSay(addr, keyFile, at)
 		})
 		return nil
 	}
@@ -524,10 +538,14 @@ func (a *app) takeOver(addr, keyFile string, at *spot, open bool) error {
 				return
 			}
 			t := a.holdWindow(name, addr, keyFile, win)
-			if open {
-				a.becomeWindowPane(t, pane, log)
-			} else {
+			switch {
+			case open.only:
 				a.connectedToWindow(t, log)
+			case open.files:
+				a.connectedToWindow(t, log)
+				a.browseOnWindowOrSay(t.name, open.dir)
+			default:
+				a.becomeWindowPane(t, pane, log)
 			}
 			a.machines.settle(held, true)
 		})
@@ -562,6 +580,14 @@ func (a *app) workOnWindowOrSay(addr, keyFile string, at *spot) {
 	}
 	if err := a.workOnWindow(addr, keyFile, at); err != nil {
 		a.reportError(title, err)
+	}
+}
+
+// browseOnWindowOrSay opens a file pane on a window this one holds, and
+// says why when it cannot.
+func (a *app) browseOnWindowOrSay(name, at string) {
+	if err := a.browseOn(name, at); err != nil {
+		a.reportError("Could not browse the files on "+name, err)
 	}
 }
 
@@ -704,7 +730,10 @@ func (a *app) offerToTakeOverAgain(t *taken, why error) {
 	}
 	addr, keyFile := t.addr, t.keyFile
 	f.AddButton(ui.Button{Title: btnReconnect, Do: func() error {
-		return a.workOnWindow(addr, keyFile, nil)
+		// The connection, and nothing on it: reconnecting is not asking
+		// for a new terminal over there. What that window has open is
+		// on the sidebar again once it answers.
+		return a.takeOver(addr, keyFile, nil, false)
 	}})
 	f.AddButton(ui.Button{Title: btnClose})
 	a.showForm(f, nil)

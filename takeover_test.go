@@ -815,11 +815,23 @@ func TestAConnectionThatWentIsOfferedAWayBack(t *testing.T) {
 	if f == nil {
 		t.Fatal("nothing was offered")
 	}
+	hostPanes := len(host.panes)
 	pressButton(t, client, f, btnReconnect)
 
 	waitFor(t, client, "the window to be taken over again", func() bool {
 		return client.windows.named(addr) != nil
 	}, host)
+	// Reconnecting is connecting: no terminal is opened over there. It
+	// used to open one, which is how connecting to a remote left a new
+	// shell on the host.
+	for range 20 {
+		host.pump.run()
+		client.pump.run()
+		time.Sleep(time.Millisecond)
+	}
+	if got := len(host.panes); got != hostPanes {
+		t.Errorf("reconnecting opened %d panes on the window", got-hostPanes)
+	}
 }
 
 // A window that stopped sharing is not offered a way back: it said it

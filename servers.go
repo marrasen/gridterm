@@ -52,7 +52,7 @@ func (a *app) connect(cfg remote.Config) { a.connectAs(cfg.Target(), cfg) }
 // The connection is kept under that name, so a second terminal on the
 // machine rides on it rather than logging in again.
 func (a *app) connectAs(name string, cfg remote.Config) {
-	a.connectFor(name, cfg, opening{})
+	a.connectFor(name, cfg, opening{connect: true})
 }
 
 // connectFor is connectAs with what the connection is being made for,

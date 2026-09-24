@@ -1539,6 +1539,68 @@ func TestConnectingToASavedWindowOpensNothingOnIt(t *testing.T) {
 	}
 }
 
+// Connecting to a saved window by typing its name into Connect to Server
+// opens nothing on it either. It used to open a terminal: on a machine
+// logged in to, connecting is a shell, and the dialog asked for one on a
+// window too.
+func TestConnectingToASavedWindowByNameOpensNothingOnIt(t *testing.T) {
+	host, client, addr, keyFile := aServingWindow(t)
+	saveWindowFromTheDialog(t, client, "statio", addr, keyFile)
+	withMenubar(t, client)
+	hostPanes := len(host.panes)
+
+	connectByName(t, client, "statio")
+	waitFor(t, client, "the window to be connected to", func() bool {
+		return client.windows.count() == 1
+	}, host)
+	for range 20 {
+		host.pump.run()
+		client.pump.run()
+		time.Sleep(time.Millisecond)
+	}
+
+	if got := client.windows.drawn(); got != 0 {
+		t.Errorf("%d panes here are drawn from it, want none", got)
+	}
+	if got := len(host.panes); got != hostPanes {
+		t.Errorf("the window connected to holds %d panes, want the %d it had", got, hostPanes)
+	}
+}
+
+// A connection asked for on its own -- what a file pane whose window
+// dropped asks for to get it back -- reaches a saved window and opens
+// nothing on it. It used to open a terminal, like every other way to a
+// saved window through a route.
+func TestAConnectionAloneToASavedWindowOpensNothingOnIt(t *testing.T) {
+	host, client, addr, keyFile := aServingWindow(t)
+	saveWindowFromTheDialog(t, client, "statio", addr, keyFile)
+	hostPanes := len(host.panes)
+
+	client.openRoute("statio", nil, opening{only: true}, nil)
+	waitFor(t, client, "the window to be connected to", func() bool {
+		return client.windows.count() == 1
+	}, host)
+	for range 20 {
+		host.pump.run()
+		client.pump.run()
+		time.Sleep(time.Millisecond)
+	}
+
+	if got := client.windows.drawn(); got != 0 {
+		t.Errorf("%d panes here are drawn from it, want none", got)
+	}
+	if got := len(host.panes); got != hostPanes {
+		t.Errorf("the window holds %d panes, want the %d it had", got, hostPanes)
+	}
+
+	// Asked again with it connected, nothing happens and nothing is said.
+	client.openRoute("statio", nil, opening{only: true}, nil)
+	client.pump.run()
+	if m := client.root.Modal(); m != nil {
+		t.Errorf("asking again for a window already connected opened %T", m)
+	}
+}
+
 // commandTitle is what the palette lists a command as. The Servers menu
 // shows a different one for the same machine: "Connect to it".
 func commandTitle(t *testing.T, a *testApp, id string) string {

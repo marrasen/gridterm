@@ -600,6 +600,13 @@ func jobRowKind(k jobs.Kind) conns.Kind {
 // there may be nothing to read them off. owned are the filesystems the
 // job opened for itself, closed once it has stopped.
 func (a *app) runJob(op jobs.Op, from, to jobEnd, owned []vfs.FS) *jobs.Job {
+	j, _ := a.runJobRow(op, from, to, owned)
+	return j
+}
+
+// runJobRow is runJob, handing back the row it filed the job under as
+// well.
+func (a *app) runJobRow(op jobs.Op, from, to jobEnd, owned []vfs.FS) (*jobs.Job, *conns.Entry) {
 	count := meter.New()
 	e := &conns.Entry{
 		Host:  from.host,
@@ -625,7 +632,7 @@ func (a *app) runJob(op jobs.Op, from, to jobEnd, owned []vfs.FS) *jobs.Job {
 	a.registry.Add(e)
 	a.letGoWhenDone(j, owned)
 	a.markDirty()
-	return j
+	return j, e
 }
 
 // dropJobRow takes a job off the queue and its row off the panel.

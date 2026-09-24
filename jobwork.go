@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/jobs"
 	"github.com/marrasen/gridterm/vfs"
 )
@@ -92,11 +93,19 @@ func soFar(d time.Duration) string {
 // can be done again without the user reconnecting first.
 //
 // done says the attempt is over, whether it started the work or failed,
-// so what asked can let the user ask again.
-func (a *app) repeatJob(op jobs.Op, from, to jobEnd, done func()) {
+// so what asked can let the user ask again. started is handed the new
+// work once it is going, so the pane it was asked from can turn onto it.
+func (a *app) repeatJob(op jobs.Op, from, to jobEnd, done func(),
+	started func(*jobs.Job, *conns.Entry, jobEnd, jobEnd)) {
 	title := "Could not " + strings.ToLower(op.Kind.String()) + " it again"
 	if done == nil {
 		done = func() {}
+	}
+	run := func(op jobs.Op, from, to jobEnd, owned []vfs.FS) {
+		j, e := a.runJobRow(op, from, to, owned)
+		if started != nil {
+			started(j, e, from, to)
+		}
 	}
 	a.openEndAgain(from, func(source vfs.FS, err error) {
 		if err != nil {
@@ -113,7 +122,7 @@ func (a *app) repeatJob(op jobs.Op, from, to jobEnd, done func()) {
 		from.host = a.hostOf(source)
 		if op.To == nil {
 			done()
-			a.runJob(op, from, to, owned)
+			run(op, from, to, owned)
 			return
 		}
 		a.openEndAgain(to, func(into vfs.FS, err error) {
@@ -127,7 +136,7 @@ func (a *app) repeatJob(op jobs.Op, from, to jobEnd, done func()) {
 			}
 			op.To = into
 			to.host = a.hostOf(into)
-			a.runJob(op, from, to, append(owned, into))
+			run(op, from, to, append(owned, into))
 		})
 	})
 }

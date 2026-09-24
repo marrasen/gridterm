@@ -621,12 +621,27 @@ func (p *jobPane) press(i int) error {
 		p.app.repeatJob(op, from, to, func() {
 			p.repeating = false
 			p.app.markDirty()
-		})
+		}, p.follow)
 	case btnClose:
 		return p.app.closePane(p)
 	}
 	p.app.markDirty()
 	return nil
+}
+
+// follow turns the pane onto a job started again from it.
+//
+// The same pane rather than a second one beside it: a copy done over and
+// over would otherwise leave a pane for every time, each showing a run
+// nobody is watching any more. The row of the first run stays on the
+// sidebar, saying how it ended, and opens a pane of its own.
+//
+// wasDone is left as it was, so the next frame sees the work start and
+// puts the focus on Close: Cancel is drawn where Repeat was, and a second
+// Enter would otherwise stop the copy it had just started.
+func (p *jobPane) follow(j *jobs.Job, e *conns.Entry, from, to jobEnd) {
+	p.job, p.entry = j, e
+	p.from, p.to = from, to
 }
 
 // keepCopy puts this copy on the saved list, or takes it off.

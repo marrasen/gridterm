@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/jobs"
@@ -378,5 +379,29 @@ func TestTheSaveBoxFollowsTheList(t *testing.T) {
 	}
 	if ticked(d, fldSaveCopy) {
 		t.Error("the box still says the copy is saved")
+	}
+}
+
+// A copy done again is watched in the pane it was done again from, with
+// the focus on Close while it runs: Cancel is drawn where Repeat was, so
+// an Enter pressed twice would otherwise stop the copy it just started.
+func TestARepeatIsWatchedInTheSamePane(t *testing.T) {
+	a, _ := aCopyWindow(t)
+	d, _, _ := aFinishedCopy(t, a)
+	first := d.job
+	jobPaneText(d)
+
+	pressChoice(t, d, btnRepeat)
+
+	if d.job == first {
+		t.Fatal("the pane still shows the copy that finished")
+	}
+	if n := len(a.jobPanes); n != 1 {
+		t.Errorf("the window holds %d panes on the work, want the one", n)
+	}
+	running := jobs.Progress{Files: 1, Started: time.Now()}
+	jobPaneDrawn(d, running, time.Now())
+	if got := d.choicesFor(running)[d.at].title; got != btnClose {
+		t.Errorf("the focus is on %q while the repeat runs, want Close", got)
 	}
 }

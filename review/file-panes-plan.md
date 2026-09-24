@@ -186,8 +186,15 @@ the machine again they ask the list what that id is called now. So:
   address. A pane reading through it follows the server once that
   connection drops.
 - **Removed, and another server saved under the old name:** the new
-  one has a new id. The old pane and the old work say `nothing is
-  connected to <name>` and open nothing.
+  one has a new id. The old pane and the old work say `<name> was
+  removed from the server list` and open nothing. Not `nothing is
+  connected`: the new server may well be connected under that name.
+- **One name, two machines:** a pane left under a name when its server
+  was renamed and pointed elsewhere, beside a pane on a server saved
+  since under that name. The first pane follows its server alone; the
+  other pane, its title and its row stay where they are.
+- **Adding a server under a name a connection has** is refused, the
+  way renaming onto one always was.
 - **A connection under the name belongs to another saved server:**
   refused, with `<name> is connected to another machine`.
 - **A machine typed by hand** is on no list and has no id. It reopens

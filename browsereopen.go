@@ -151,7 +151,13 @@ func (r *reopening) ready() (vfs.FS, error) {
 			// The pane was closed, or its server has gone from the
 			// list. Nothing else is this machine: a server saved since
 			// under its name is another one.
-			back <- answer{err: notConnected(host)}
+			err := notConnected(host)
+			if id := r.step().id; id != "" {
+				if _, saved := r.app.book.NameOf(id); !saved {
+					err = removedServer(host)
+				}
+			}
+			back <- answer{err: err}
 			return
 		}
 		r.app.filesystemAgain(name, r.step(), r.calledNow,
@@ -303,6 +309,15 @@ func (r *reopening) renamedHost(was, now string) {
 // there is answered with.
 func notConnected(host string) error {
 	return fmt.Errorf("nothing is connected to %s", groupName(host))
+}
+
+// removedServer is what a call on a filesystem or a piece of work is
+// answered with when the saved server it is on has been removed.
+//
+// Not notConnected: a server saved since under the same name may well be
+// connected, and this is not on that one.
+func removedServer(host string) error {
+	return fmt.Errorf("%s was removed from the server list", groupName(host))
 }
 
 // placeOn names a machine as a filesystem's place.

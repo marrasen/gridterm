@@ -803,6 +803,39 @@ func TestRenamingOntoAConnectedNameIsRefused(t *testing.T) {
 	}
 }
 
+// Adding a server under a name something is already connected as is
+// refused the way a rename onto one is.
+//
+// The name would stand for two machines, and whatever opened it next
+// would go through the connection to the one that was there first.
+func TestAddingUnderAConnectedNameIsRefused(t *testing.T) {
+	s := sshtest.New(t)
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pinServers(t, a, s)
+	a.connectAs("enterprise", a.prepare(serverConfig(t, s)))
+	waitFor(t, a, "the typed machine to connect", func() bool {
+		return a.machines.named("enterprise") != nil
+	})
+
+	if err := a.openAddServer(); err != nil {
+		t.Fatalf("openAddServer: %v", err)
+	}
+	f := awaitModal(t, a, "the Add a server dialog", byTitle[*ui.Form]("Add Server"))
+	typeIntoField(t, a, f, fldName, "enterprise")
+	typeIntoField(t, a, f, fldServer, "root@elsewhere.example")
+	pressButton(t, a, f, btnSave)
+	a.pump.run()
+
+	if _, ok := a.book.Lookup("enterprise"); ok {
+		t.Fatal("a server was saved under a name a connection has")
+	}
+	if f.Error() == nil {
+		t.Error("the dialog did not say why")
+	}
+}
+
 // Renaming onto a name still being connected to is refused the same
 // way: the connection on its way will be held under that name.
 func TestRenamingOntoAConnectingNameIsRefused(t *testing.T) {

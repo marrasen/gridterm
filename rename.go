@@ -6,6 +6,7 @@ import (
 
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/remote"
+	"github.com/marrasen/gridterm/vfs"
 )
 
 // The whole of what a rename has to follow: the connection or the dial
@@ -100,6 +101,10 @@ func (a *app) renamedMachine(was string, to remote.Host) {
 // empty takes every one under the name. A connection that moved takes
 // them all, because they read through it whatever they were opened as.
 func (a *app) movedFiles(was, now, id string) {
+	if id != "" && a.sharesTheName(was, id) {
+		a.movedServer(was, now, id)
+		return
+	}
 	a.renamedFiles(was, now)
 	a.renamedTheMachine(was, now, id)
 	// The file sessions left parked on it need nothing: they are
@@ -107,6 +112,52 @@ func (a *app) movedFiles(was, now, id string) {
 	// The connection's own row, the rows of the panes and the
 	// tunnels on it, and the row of a pane watching one being made.
 	a.rehostRows(was, now)
+}
+
+// sharesTheName reports whether something filed under a name is on a
+// machine other than the saved server with an id.
+//
+// A name can stand for two machines at once: a pane left under it when
+// its server was renamed and pointed somewhere else, and a pane on a
+// server saved since under that name.
+func (a *app) sharesTheName(was, id string) bool {
+	for _, r := range a.reopening {
+		if r.Host() == was && r.step().id != id {
+			return true
+		}
+	}
+	return false
+}
+
+// movedServer files what is on one saved server under the name it has
+// now, and leaves everything else under the old name where it is.
+//
+// For a name that stands for two machines, where moving by the name
+// would take the other machine's panes and rows along. The rows that
+// can be told apart are the ones a file pane or a reader holds, because
+// each knows the filesystem it reads through.
+func (a *app) movedServer(was, now, id string) {
+	on := func(f vfs.FS) bool {
+		r, is := f.(*reopening)
+		return is && r.Host() == was && r.step().id == id
+	}
+	if b := a.files; b != nil {
+		for _, p := range b.view.Panes() {
+			if !on(p.FS()) {
+				continue
+			}
+			p.FS().(*reopening).Renamed(now)
+			if row := b.rows[p]; row != nil && row.Host == was {
+				row.Host = now
+			}
+		}
+	}
+	for _, r := range a.readers {
+		if r.on != nil && on(r.on) && r.row.Host == was {
+			r.row.Host = now
+		}
+	}
+	a.renamedTheMachine(was, now, id)
 }
 
 // renamedFiles tells the file panes on a machine that it is called

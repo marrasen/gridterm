@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/marrasen/gridterm/conns"
@@ -68,8 +69,11 @@ func TestAPaneOnARemovedServerDoesNotReachTheOneThatGaveUpItsName(t *testing.T) 
 		done <- err
 	}()
 	waitFor(t, a, "the read to come back", func() bool { return len(done) > 0 })
-	if err := <-done; err == nil {
+	err := <-done
+	if err == nil {
 		t.Error("a pane on a server that has left the list read something")
+	} else if !strings.Contains(err.Error(), "removed") {
+		t.Errorf("the read says %q, want it to say the server was removed", err)
 	}
 	if got := f.Host(); got != "db" {
 		t.Errorf("the pane was filed under %q, a machine it was never on", got)
@@ -326,5 +330,92 @@ func TestWorkIsNotDoneThroughAnotherServersConnection(t *testing.T) {
 	}
 	if opened != nil {
 		_ = opened.Close()
+	}
+}
+
+// A pane that follows its server to a new name leaves a pane on another
+// server under the old name where it is.
+//
+// The old name stands for two machines here: the pane left under it
+// when its server was renamed and pointed somewhere else, and a pane on
+// a server saved since under that name. Moving by the name took both.
+func TestFollowingARenameLeavesTheOtherServersPaneAlone(t *testing.T) {
+	here, elsewhere, other := sshtest.New(t), sshtest.New(t), sshtest.New(t)
+	a := newTestApp(t, 100, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pinServers(t, a, here, elsewhere, other)
+	saveHost(t, a, "db", here, "")
+	if err := a.connectSaved("db"); err != nil {
+		t.Fatalf("connectSaved: %v", err)
+	}
+	waitFor(t, a, "the machine to answer", func() bool {
+		return a.machines.named("db") != nil
+	})
+	first := openFilesFromThePlus(t, a, "db")
+	if first == nil {
+		t.Fatal("no file pane opened")
+	}
+	mine := first.FS().(*reopening)
+
+	// Renamed and pointed somewhere else: the connection, and the pane
+	// reading through it, stay as db. Then that connection goes.
+	addr, port := elsewhere.Host()
+	h, _ := a.book.Lookup("db")
+	h.Name, h.Address, h.Port = "db2", addr, port
+	if err := a.book.Put(h, "db"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	a.renamedMachine("db", h)
+	here.CloseClients()
+	waitFor(t, a, "the window to see it go", func() bool {
+		a.reapExited()
+		return a.machines.named("db") == nil
+	})
+	settleAndClearNotices(t, a)
+
+	// Another server saved as db, a pane on it, and that goes too.
+	saveHost(t, a, "db", other, "")
+	if err := a.connectSaved("db"); err != nil {
+		t.Fatalf("connectSaved the other: %v", err)
+	}
+	waitFor(t, a, "the other machine to answer", func() bool {
+		return a.machines.named("db") != nil
+	})
+	second := openFilesFromThePlus(t, a, "db")
+	if second == nil || second == first {
+		t.Fatal("no second file pane opened")
+	}
+	theirs := second.FS().(*reopening)
+	other.CloseClients()
+	waitFor(t, a, "the window to see the other go", func() bool {
+		a.reapExited()
+		return a.machines.named("db") == nil
+	})
+	settleAndClearNotices(t, a)
+
+	// The first pane is read, and follows its server to db2.
+	done := make(chan error, 1)
+	go func() {
+		_, err := mine.ReadDir("/")
+		done <- err
+	}()
+	waitFor(t, a, "the read to come back", func() bool { return len(done) > 0 })
+	if err := <-done; err != nil {
+		t.Fatalf("reading the first pane: %v", err)
+	}
+	if got := mine.Host(); got != "db2" {
+		t.Errorf("the first pane is filed under %q, want db2", got)
+	}
+
+	// The other server's pane is still db, by every name it has.
+	if got := theirs.Host(); got != "db" {
+		t.Errorf("the other server's filesystem is filed under %q, want db", got)
+	}
+	if got := theirs.Name(); got != "db" {
+		t.Errorf("the other server's pane is titled %q, want db", got)
+	}
+	if row := a.files.rows[second]; row == nil || row.Host != "db" {
+		t.Errorf("the other server's row is under %v, want db", row)
 	}
 }

@@ -526,7 +526,7 @@ func (a *app) openEndAgain(end jobEnd, then func(vfs.FS, error)) {
 	if end.far.window == nil && end.at.id != "" {
 		now, saved := a.book.NameOf(end.at.id)
 		if !saved {
-			then(nil, notConnected(end.host))
+			then(nil, removedServer(end.host))
 			return
 		}
 		end.host, end.at.name = now, now

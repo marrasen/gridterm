@@ -576,7 +576,11 @@ func (a *app) openServerForm(under string) error {
 		// book never saw -- a machine reached by typing a target, and
 		// this machine itself -- and two connections under one name
 		// would leave one of them open with nothing holding it.
-		if under != "" && under != h.Name {
+		// An added server as well as a renamed one: a new server under a
+		// name a connection still has would leave the name standing for
+		// two machines, and whatever opened it next would go through the
+		// connection to the other one.
+		if under != h.Name {
 			if a.about(h.Name).held() {
 				return fmt.Errorf("something is already connected as %q; close it first", h.Name)
 			}

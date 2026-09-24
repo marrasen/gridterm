@@ -31,6 +31,8 @@ func asSavedCopy(op jobs.Op, from, to jobEnd) (settings.SavedCopy, bool) {
 	return settings.SavedCopy{
 		From:       endMachine(from),
 		To:         endMachine(to),
+		FromID:     endServer(from),
+		ToID:       endServer(to),
 		FromWindow: windowName(from),
 		ToWindow:   windowName(to),
 		At:         op.At,
@@ -50,6 +52,18 @@ func endMachine(end jobEnd) string {
 	return end.host
 }
 
+// endServer is the id of the saved server an end's files are on, and
+// empty for a machine on no list.
+//
+// Empty for an end behind a window too: the id is one this window's list
+// gave out, and the machine that window reached is on its own list.
+func endServer(end jobEnd) string {
+	if end.far.window != nil {
+		return ""
+	}
+	return end.at.id
+}
+
 // windowName names the window an end is reached through, and is empty
 // for a machine this window reaches itself.
 func windowName(end jobEnd) string {
@@ -62,9 +76,16 @@ func windowName(end jobEnd) string {
 // endOfSaved is the end a saved copy names, found again now: a window is
 // looked up by name, because the one a copy ran through is gone by the
 // next run.
-func (a *app) endOfSaved(host, window string) (jobEnd, error) {
+//
+// An end on a saved server is the server with that id, which opening it
+// asks the list for by name.
+func (a *app) endOfSaved(host, id, window string) (jobEnd, error) {
 	if window == "" {
 		end := jobEnd{host: host}
+		if id != "" {
+			end.at = step{name: host, id: id}
+			return end, nil
+		}
 		// The step the machine was reached by, when something else
 		// still holds it: a machine on no list is reachable only
 		// through that, and a saved copy names it by name alone.
@@ -85,11 +106,12 @@ func (a *app) endOfSaved(host, window string) (jobEnd, error) {
 // runSavedCopy does a remembered copy again, on filesystems opened
 // afresh from the machines it names.
 func (a *app) runSavedCopy(c settings.SavedCopy) error {
-	from, err := a.endOfSaved(c.From, c.FromWindow)
+	c = a.withServerIDs(c)
+	from, err := a.endOfSaved(c.From, c.FromID, c.FromWindow)
 	if err != nil {
 		return err
 	}
-	to, err := a.endOfSaved(c.To, c.ToWindow)
+	to, err := a.endOfSaved(c.To, c.ToID, c.ToWindow)
 	if err != nil {
 		return err
 	}
@@ -101,6 +123,35 @@ func (a *app) runSavedCopy(c settings.SavedCopy) error {
 	}
 	a.repeatSavedCopy(op, from, to)
 	return nil
+}
+
+// withServerIDs gives a copy saved before servers had ids the ids of the
+// servers its names stand for now, and keeps them.
+//
+// Now is the last time the names can be trusted to mean what they meant
+// when it was saved: once the ids are kept, a server renamed afterwards
+// is still the one the copy runs on, and one saved since under a name
+// another gave up is not.
+func (a *app) withServerIDs(c settings.SavedCopy) settings.SavedCopy {
+	was := c
+	fill := func(name, window string, id *string) {
+		if *id != "" || window != "" || name == "" {
+			return
+		}
+		if h, saved := a.book.Lookup(name); saved {
+			*id = h.ID
+		}
+	}
+	fill(c.From, c.FromWindow, &c.FromID)
+	fill(c.To, c.ToWindow, &c.ToID)
+	if c.FromID != was.FromID || c.ToID != was.ToID {
+		// Logged rather than shown: the copy runs either way, and a
+		// list that could not be written is asked again next time.
+		if err := a.copies.update(c); err != nil {
+			a.logError(err)
+		}
+	}
+	return c
 }
 
 // repeatSavedCopy opens both ends of a saved copy and starts it, the
@@ -159,7 +210,8 @@ func (a *app) openCopies() error {
 		return nil
 	}
 	for _, saved := range kept {
-		c.Add(copiedWhat(saved), copiedWhere(saved), func() error { return a.runSavedCopy(saved) })
+		c.Add(copiedWhat(saved), copiedWhere(a.namedNow(saved)),
+			func() error { return a.runSavedCopy(saved) })
 	}
 	hide = a.showModal(c, nil)
 	if a.root.Modal() != ui.Widget(c) {
@@ -167,6 +219,20 @@ func (a *app) openCopies() error {
 	}
 	a.markDirty()
 	return nil
+}
+
+// namedNow is a saved copy with its ends called what the list calls
+// them now, for showing: the copy runs on the servers it was saved on,
+// and a row naming what one of them used to be called would say it goes
+// somewhere else.
+func (a *app) namedNow(c settings.SavedCopy) settings.SavedCopy {
+	if now, saved := a.book.NameOf(c.FromID); saved {
+		c.From = now
+	}
+	if now, saved := a.book.NameOf(c.ToID); saved {
+		c.To = now
+	}
+	return c
 }
 
 // copiedWhat names what a saved copy copies: the files, or how many of

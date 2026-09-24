@@ -438,13 +438,13 @@ func copyRows(a *testApp) int {
 	return n
 }
 
-// A name given to another machine since the rename stands for that
-// machine, so work that remembers the name is left pointing at it.
+// Work done again goes to the server it ran on, not to a server saved
+// since under the name that one gave up.
 //
-// The rename trail says what a machine used to be called. It must not
-// outlive the name: a user who renames one server and saves another
-// under the name it gave up has said which machine that name means.
-func TestARepeatGoesToTheMachineThatHasTheNameNow(t *testing.T) {
+// The name is what the work showed, and the id is what it ran on. A
+// repeat that went by the name would write the user's files onto a
+// machine they never ran this on.
+func TestARepeatGoesToTheServerItRanOnNotItsOldName(t *testing.T) {
 	first, second := sshtest.New(t), sshtest.New(t)
 	a := newTestApp(t, 100, 30)
 	withDialogs(t, a)
@@ -483,14 +483,17 @@ func TestARepeatGoesToTheMachineThatHasTheNameNow(t *testing.T) {
 		_, err := os.Stat(filepath.Join(into, "one.txt"))
 		return err == nil
 	})
-	// It went to the machine the name stands for now.
-	m := a.machines.named("one")
+	// It went to the machine it ran on, under the name it has now.
+	m := a.machines.named("two")
 	if m == nil {
-		t.Fatalf("the window holds %v, want the machine called one", a.machines.names())
+		t.Fatalf("the window holds %v, want the machine called two", a.machines.names())
 	}
-	if _, port := second.Host(); m.at.cfg.Port != port {
-		t.Errorf("one is connected to port %d, want the machine saved under that name (%d)",
+	if _, port := first.Host(); m.at.cfg.Port != port {
+		t.Errorf("two is connected to port %d, want the machine the copy ran on (%d)",
 			m.at.cfg.Port, port)
+	}
+	if a.machines.named("one") != nil {
+		t.Errorf("the repeat also opened the server saved since as one: %v", a.machines.names())
 	}
 }
 
@@ -587,9 +590,6 @@ func TestARenameCaughtMidDialIsFollowed(t *testing.T) {
 	if got := f.Host(); got != "renamed" {
 		t.Errorf("the pane's filesystem is filed under %q, want the name it has now", got)
 	}
-	if got := a.renamed[host]; got != "renamed" {
-		t.Errorf("the work on it would still look for %q", host)
-	}
 	if a.machines.connecting("renamed") == nil {
 		t.Errorf("the dial is still held under the old name: %v", a.machines.reaching())
 	}
@@ -652,14 +652,14 @@ func TestARenameWhileTheMachineIsDroppedIsFollowed(t *testing.T) {
 	}
 }
 
-// A rename that changes the address as well is a different machine
-// under that name, so nothing follows it.
+// A rename that points the entry somewhere else as well is followed by
+// a pane nothing is connected under.
 //
-// The connection has always been left where it is for this. The panes,
-// the work and a dial still on its way follow the same rule: the name
-// now stands for somewhere else, and a pane reading the old machine is
-// not reading that one.
-func TestARenameThatChangesTheAddressIsNotFollowed(t *testing.T) {
+// The pane is on the server the user edited, and the id says so. What
+// the address used to say was only a guess at that: an edit that moved
+// the machine and renamed it read as a different machine, and the pane
+// was left under a name the list had given up.
+func TestARenameThatChangesTheAddressIsFollowedByAPaneOnIt(t *testing.T) {
 	here, elsewhere := sshtest.New(t), sshtest.New(t)
 	a := newTestApp(t, 100, 30)
 	withDialogs(t, a)
@@ -684,7 +684,7 @@ func TestARenameThatChangesTheAddressIsNotFollowed(t *testing.T) {
 	})
 	settleAndClearNotices(t, a)
 
-	// The entry keeps its name and is pointed somewhere else.
+	// Renamed and pointed somewhere else, in one edit.
 	addr, port := elsewhere.Host()
 	h, ok := a.book.Lookup("one")
 	if !ok {
@@ -696,11 +696,20 @@ func TestARenameThatChangesTheAddressIsNotFollowed(t *testing.T) {
 	}
 	a.renamedMachine("one", h)
 
-	if got := f.Host(); got != "one" {
-		t.Errorf("the pane's filesystem is filed under %q, want the machine it is reading", got)
+	if got := f.Host(); got != "two" {
+		t.Errorf("the pane's filesystem is filed under %q, want the name its server has now", got)
 	}
-	if now, followed := a.renamed["one"]; followed {
-		t.Errorf("work on one would be sent to %q, which is somewhere else", now)
+	done := make(chan error, 1)
+	go func() {
+		_, err := f.ReadDir("/")
+		done <- err
+	}()
+	waitFor(t, a, "the read to come back", func() bool { return len(done) > 0 })
+	if err := <-done; err != nil {
+		t.Fatalf("reading after the edit: %v", err)
+	}
+	if got := a.machines.named("two"); got == nil || got.at.cfg.Port != port {
+		t.Errorf("the pane did not reach the server where it is now: %v", a.machines.names())
 	}
 }
 
@@ -758,9 +767,6 @@ func TestADialRenamedTwiceIsCheckedBothTimes(t *testing.T) {
 	}
 	if a.machines.connecting("twice") != stuck {
 		t.Errorf("the dial is no longer held under the name it was reaching: %v", a.machines.reaching())
-	}
-	if now, followed := a.renamed["twice"]; followed {
-		t.Errorf("work on twice would be sent to %q, which is somewhere else", now)
 	}
 }
 
@@ -1001,12 +1007,11 @@ func TestARepeatKeepsTheMachineItOpened(t *testing.T) {
 	}
 }
 
-// Work does not follow its name to a machine it never ran on.
+// Work on a server that has left the list is not done anywhere.
 //
-// An end taken from a pane knows where its machine was, so the trail of
-// what the user renamed is checked against that. A name given up, given
-// away and then left off the list leads the trail back to the machine
-// that gave it up.
+// The old trail of renames led here to the machine that first gave up
+// the name, which this work never ran on. The id of a removed server
+// leads nowhere, and the repeat says nothing is connected.
 func TestWorkDoesNotFollowItsNameToAnotherMachine(t *testing.T) {
 	first, second := sshtest.New(t), sshtest.New(t)
 	a := newTestApp(t, 100, 30)
@@ -1048,8 +1053,22 @@ func TestWorkDoesNotFollowItsNameToAnotherMachine(t *testing.T) {
 		t.Fatalf("Remove: %v", err)
 	}
 
-	if got := a.endNow(end); got.host != "db" {
-		t.Errorf("the work would be done on %q, a machine it never ran on", got.host)
+	// db2 is still connected, which is what makes it the machine the
+	// trail would have found.
+	var opened vfs.FS
+	answered := false
+	a.openEndAgain(end, func(f vfs.FS, err error) {
+		opened, answered = f, true
+		if err == nil {
+			t.Error("work on a server that has left the list was opened")
+		}
+	})
+	if !answered {
+		t.Fatal("the end was not answered straight away")
+	}
+	if opened != nil {
+		_ = opened.Close()
+		t.Errorf("the work was given a filesystem on %s", a.hostOf(opened))
 	}
 }
 

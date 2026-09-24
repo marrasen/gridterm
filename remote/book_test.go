@@ -521,3 +521,98 @@ func TestAKeyWrittenTwiceIsStillCaught(t *testing.T) {
 		t.Fatal("a file holding the list twice was read")
 	}
 }
+
+// A server keeps its id through an edit, and a new one under a name
+// another gave up gets an id of its own.
+//
+// The id is what tells the window a renamed machine from a new one
+// wearing its old name, so an edit that dropped it would make a renamed
+// server look new, and a new server that inherited one would make it
+// look renamed.
+func TestAServerKeepsItsIDAndANewOneGetsItsOwn(t *testing.T) {
+	b := newBook(t)
+	if err := b.Put(margit(), ""); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	first, _ := b.Lookup("margit")
+	if first.ID == "" {
+		t.Fatal("a new server was saved without an id")
+	}
+
+	renamed := margit()
+	renamed.Name, renamed.Address = "margit2", "elsewhere.example"
+	// What the caller says the id is does not count.
+	renamed.ID = "chosen by the caller"
+	if err := b.Put(renamed, "margit"); err != nil {
+		t.Fatalf("Put the rename: %v", err)
+	}
+	if got, _ := b.Lookup("margit2"); got.ID != first.ID {
+		t.Errorf("the renamed server has id %q, want the one it had (%q)", got.ID, first.ID)
+	}
+
+	if err := b.Put(margit(), ""); err != nil {
+		t.Fatalf("Put a new margit: %v", err)
+	}
+	if got, _ := b.Lookup("margit"); got.ID == first.ID || got.ID == "" {
+		t.Errorf("the new margit has id %q, want one of its own", got.ID)
+	}
+	if name, ok := b.NameOf(first.ID); !ok || name != "margit2" {
+		t.Errorf("NameOf the first id = %q, %v, want margit2", name, ok)
+	}
+}
+
+// A list saved before servers had ids is given them, the same ones by
+// every reader, and a copied id is given to one server only.
+//
+// Two windows read the same file and each hands its ids to the file
+// panes it opens. Ids drawn at random would differ between them until
+// one of them saved, and a pane in the other would lose its machine.
+func TestAListWithoutIDsIsGivenTheSameOnesByEveryReader(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "servers.json")
+	const old = `{"version":1,"servers":[` +
+		`{"name":"a","address":"a.example"},` +
+		`{"name":"b","id":"shared","address":"b.example"},` +
+		`{"name":"c","id":"shared","address":"c.example"}]}`
+	if err := os.WriteFile(path, []byte(old), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	one, err := LoadBook(path)
+	if err != nil {
+		t.Fatalf("LoadBook: %v", err)
+	}
+	two, err := LoadBook(path)
+	if err != nil {
+		t.Fatalf("LoadBook again: %v", err)
+	}
+
+	seen := map[string]string{}
+	for _, h := range one.Hosts() {
+		if h.ID == "" {
+			t.Errorf("%s has no id", h.Name)
+		}
+		if other, dup := seen[h.ID]; dup {
+			t.Errorf("%s and %s share the id %q", other, h.Name, h.ID)
+		}
+		seen[h.ID] = h.Name
+		if again, _ := two.Lookup(h.Name); again.ID != h.ID {
+			t.Errorf("%s is %q to one reader and %q to another", h.Name, h.ID, again.ID)
+		}
+	}
+	if b, _ := one.Lookup("b"); b.ID != "shared" {
+		t.Errorf("b, the first to have it, lost its id: %q", b.ID)
+	}
+
+	// And the next save writes them down as they were given.
+	if err := one.Put(Host{Name: "d", Address: "d.example"}, ""); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	three, err := LoadBook(path)
+	if err != nil {
+		t.Fatalf("LoadBook after the save: %v", err)
+	}
+	for _, h := range two.Hosts() {
+		if again, _ := three.Lookup(h.Name); again.ID != h.ID {
+			t.Errorf("%s was %q before the save and %q after", h.Name, h.ID, again.ID)
+		}
+	}
+}

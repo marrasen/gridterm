@@ -156,6 +156,16 @@ type SavedCopy struct {
 	From string `json:"from,omitempty"`
 	To   string `json:"to,omitempty"`
 
+	// FromID and ToID are the ids of the saved servers the ends are on,
+	// and empty for a machine on no list. The name is what the row
+	// shows and the id is what the copy is run on: a name can be given
+	// up in a rename and given to another machine.
+	//
+	// A copy saved before servers had ids has none, and is given them
+	// the first time it runs.
+	FromID string `json:"fromId,omitempty"`
+	ToID   string `json:"toId,omitempty"`
+
 	// FromWindow and ToWindow name the window an end is reached
 	// through, and are empty for a machine this window reaches itself.
 	FromWindow string `json:"fromWindow,omitempty"`
@@ -170,10 +180,23 @@ type SavedCopy struct {
 
 // Same reports whether two saved copies do the same work, which is what
 // keeping one twice and forgetting one go by.
+//
+// An end is the same by its id when both have one, and by its name when
+// either has none: a copy saved before servers had ids is still the one
+// the same work would save now.
 func (c SavedCopy) Same(o SavedCopy) bool {
-	return c.From == o.From && c.To == o.To &&
+	return sameEnd(c.From, c.FromID, o.From, o.FromID) &&
+		sameEnd(c.To, c.ToID, o.To, o.ToID) &&
 		c.FromWindow == o.FromWindow && c.ToWindow == o.ToWindow &&
 		c.At == o.At && c.Into == o.Into && slices.Equal(sorted(c.Names), sorted(o.Names))
+}
+
+// sameEnd reports whether two ends of saved copies are on one machine.
+func sameEnd(name, id, otherName, otherID string) bool {
+	if id != "" && otherID != "" {
+		return id == otherID
+	}
+	return name == otherName
 }
 
 // sorted is the names in order, so which way round they were picked out
@@ -513,6 +536,19 @@ func (s *Settings) KeepCopy(saved SavedCopy, most int) error {
 			want = want[:most]
 		}
 		return want
+	})
+}
+
+// PutCopy puts a copy where one the same as it is, and saves. One not
+// in the list is left out of it: the user has taken it off since.
+func (s *Settings) PutCopy(saved SavedCopy) error {
+	return s.putCopies(func(have []SavedCopy) []SavedCopy {
+		for i := range have {
+			if have[i].Same(saved) {
+				have[i] = saved
+			}
+		}
+		return have
 	})
 }
 

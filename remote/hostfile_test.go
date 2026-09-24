@@ -94,11 +94,18 @@ func TestBookWritesTheShapeItPromises(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
-	const want = `{
-  "version": 1,
+	// The id is drawn at random, so it is checked for and then written
+	// the way the rest of the shape is.
+	saved, _ := b.Lookup("web1")
+	if saved.ID == "" {
+		t.Fatal("the server was saved without an id")
+	}
+	want := `{
+  "version": 2,
   "servers": [
     {
       "name": "web1",
+      "id": "` + saved.ID + `",
       "address": "web1.internal",
       "port": 2222,
       "user": "deploy",
@@ -145,6 +152,8 @@ func TestBookWritesOnlyTheFieldsItIsMeantTo(t *testing.T) {
 	allowed := map[string]bool{
 		"name": true, "address": true, "port": true, "user": true,
 		"via": true, "identities": true, "term": true,
+		// Not a secret: what the window knows the machine by.
+		"id": true,
 	}
 	for _, server := range file.Servers {
 		for field := range server {

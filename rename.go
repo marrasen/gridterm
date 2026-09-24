@@ -70,27 +70,43 @@ func (a *app) renamedMachine(was string, to remote.Host) {
 	//
 	// A dial still on its way counts as moved for all of this. The
 	// machine it is reaching will be held under the new name, and a
-	// file pane or a finished copy left under the old one would ask for
-	// a machine nothing is connected to and dial the same box a second
-	// time under a name the window no longer uses.
-	// A machine nothing is connected to counts as moved as well. A file
-	// pane outlives its connection now, so the likeliest moment to
-	// rename a machine is while it is not there: left under the old
-	// name, the pane's next click dials the same box under a name the
-	// list has stopped using and puts a second group on the sidebar.
-	if moved.connection || moved.dial || a.sameDroppedMachine(was, to) {
-		a.renamedFiles(was, to.Name)
-		a.renamedTheMachine(was, to.Name)
-		a.renamedWork(was, to.Name)
-		// The file sessions left parked on it need nothing: they are
-		// counted against the connection, which the rename did not touch.
-		// The connection's own row, the rows of the panes and the
-		// tunnels on it, and the row of a pane watching one being made.
-		a.rehostRows(was, to.Name)
+	// file pane left under the old one would ask for a machine nothing
+	// is connected to and dial the same box a second time under a name
+	// the window no longer uses.
+	//
+	// Finished work needs nothing: it keeps the id of the server it ran
+	// on and asks the list what that is called when it is done again.
+	switch {
+	case moved.connection || moved.dial:
+		a.movedFiles(was, to.Name, "")
+	case a.droppedOn(was, to.ID):
+		// A machine nothing is connected to counts as moved as well. A
+		// file pane outlives its connection now, so the likeliest
+		// moment to rename a machine is while it is not there: left
+		// under the old name, the pane's next click dials the same box
+		// under a name the list has stopped using and puts a second
+		// group on the sidebar.
+		a.movedFiles(was, to.Name, to.ID)
 	}
 	// refreshServers re-keys a window taken over under that name too.
 	a.refreshServers()
 	a.markDirty()
+}
+
+// movedFiles files what was under one name under another: the file
+// panes, the filesystems no pane holds, and the rows.
+//
+// id narrows the filesystems to the ones on that saved server, and
+// empty takes every one under the name. A connection that moved takes
+// them all, because they read through it whatever they were opened as.
+func (a *app) movedFiles(was, now, id string) {
+	a.renamedFiles(was, now)
+	a.renamedTheMachine(was, now, id)
+	// The file sessions left parked on it need nothing: they are
+	// counted against the connection, which the rename did not touch.
+	// The connection's own row, the rows of the panes and the
+	// tunnels on it, and the row of a pane watching one being made.
+	a.rehostRows(was, now)
 }
 
 // renamedFiles tells the file panes on a machine that it is called
@@ -106,45 +122,44 @@ func (a *app) renamedFiles(was, now string) {
 	}
 }
 
-// sameDroppedMachine reports whether a machine nothing is connected to,
-// and nothing is on its way to, is the one a saved entry now describes.
+// droppedOn reports whether a file pane is filed under a name that
+// nothing is connected to, and nothing is on its way to, and is on the
+// saved server with an id.
 //
-// What a file pane's filesystem kept is the only record of where that
-// machine was, which is what says whether the rename changed the
-// address as well. Nothing held says nothing to follow.
-func (a *app) sameDroppedMachine(was string, to remote.Host) bool {
-	if a.machines.named(was) != nil || a.machines.connecting(was) != nil {
+// By the id and not by the address. The address says where the machine
+// was, which is not which server the user edited: one renamed and
+// pointed somewhere else in the same edit is still the entry the pane
+// was opened from, and one saved since under the name it gave up is
+// not, wherever it is.
+func (a *app) droppedOn(was, id string) bool {
+	if id == "" || a.machines.named(was) != nil || a.machines.connecting(was) != nil {
 		return false
 	}
-	r := a.reopeningOn(was)
-	if r == nil {
-		return false
-	}
-	on := r.step()
-	return on.cfg.Host != "" && on.cfg.SameMachine(to.Config())
-}
-
-// renamedWork records what a machine was called, for file work that has
-// already been done on it.
-//
-// A finished copy sits on the sidebar with the ends it ran between, and
-// those keep the name the machine had. Doing it again has only that
-// name to go on, so what the user renamed is kept here rather than
-// worked out later from an address: two machines reached through
-// different jump hosts can have one address between them.
-func (a *app) renamedWork(was, now string) {
-	if a.renamed == nil {
-		a.renamed = map[string]string{}
-	}
-	// A machine renamed twice: what the work remembers maps to the name
-	// it has now, not to the one in between. The same walk a dial still
-	// on its way does.
-	for started, then := range a.renamed {
-		if then == was {
-			a.renamed[started] = now
+	for _, r := range a.reopening {
+		if r.Host() == was && r.step().id == id {
+			return true
 		}
 	}
-	a.renamed[was] = now
+	return false
+}
+
+// followSaved files a filesystem's machine under the name its saved
+// server goes by now, for a pane that is about to open it again.
+//
+// A rename reaches a pane when it happens, but not one reading through a
+// connection left under the old name: a rename that points the entry
+// somewhere else leaves the connection where it is, because it is to the
+// old address. Once that goes, the pane is on the server the user
+// edited, and that server has another name.
+//
+// Left alone while something is connected or connecting under the old
+// name, because what is under it is what the pane reads through.
+func (a *app) followSaved(was, now, id string) {
+	if a.machines.named(was) != nil || a.machines.connecting(was) != nil {
+		return
+	}
+	a.movedFiles(was, now, id)
+	a.markDirty()
 }
 
 // rekeyWindows follows a change to the server list through the windows

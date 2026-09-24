@@ -148,6 +148,9 @@ func (r *reopening) ready() (vfs.FS, error) {
 		// where renames do.
 		name := r.calledNow("")
 		if name == "" {
+			// The pane was closed, or its server has gone from the
+			// list. Nothing else is this machine: a server saved since
+			// under its name is another one.
 			back <- answer{err: notConnected(host)}
 			return
 		}
@@ -207,23 +210,37 @@ func (r *reopening) ready() (vfs.FS, error) {
 }
 
 // calledNow is what this filesystem's machine goes by now, and empty
-// when nothing is using this any more.
+// when nothing is using this any more or its server has left the list.
 //
-// The window tells this directly when the machine is renamed, and only
-// when it is the same machine, so what it says is exact. The name the
-// dial knows is ignored: this one is at least as new.
+// A saved server is asked for by its id, and the pane is filed under
+// the name the list gives it now if it is not already. A machine on no
+// list goes by the name the window gave it, which a rename cannot touch.
+// The name the dial knows is ignored: this one is at least as new.
 //
 // The empty answer is how a pane closed while its read waited stops
 // the machine being opened for it. A connection nobody asked for puts
 // a row on the sidebar out of nothing, and the name this would ask
 // under is one the window has stopped following renames for.
+//
+// On the goroutine that draws, which is where renames happen.
 func (r *reopening) calledNow(string) string {
 	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.forgotten {
+	forgotten, host, id := r.forgotten, r.host, r.at.id
+	r.mu.Unlock()
+	if forgotten {
 		return ""
 	}
-	return r.host
+	if id == "" {
+		return host
+	}
+	now, saved := r.app.book.NameOf(id)
+	if !saved {
+		return ""
+	}
+	if now != host {
+		r.app.followSaved(host, now, id)
+	}
+	return r.Host()
 }
 
 // Name is what the panel calls the machine.
@@ -428,14 +445,17 @@ func (a *app) lostTheMachine(host string) {
 }
 
 // renamedTheMachine tells every filesystem filed under a machine that
-// it is called something else now.
+// it is called something else now: every one when id is empty, and the
+// ones on that saved server when it is not.
 //
 // This is the whole of a rename for these, and it has to reach the ones
 // no pane holds as well: a job opens filesystems for itself, and one of
 // those outlives the pane it was opened from.
-func (a *app) renamedTheMachine(was, now string) {
+func (a *app) renamedTheMachine(was, now, id string) {
 	for _, r := range a.reopening {
-		r.renamedHost(was, now)
+		if id == "" || r.step().id == id {
+			r.renamedHost(was, now)
+		}
 	}
 }
 

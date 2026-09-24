@@ -597,6 +597,11 @@ func (a *app) openServerForm(under string) error {
 		if err := a.book.Put(h, under); err != nil {
 			return err
 		}
+		// As saved, which carries the id the list gave it: a rename
+		// goes by that to tell which panes are on this server.
+		if saved, ok := a.book.Lookup(h.Name); ok {
+			h = saved
+		}
 		// Exactly, not ignoring case: the window's own record is kept by
 		// name and a change of capitals is a change of name to it.
 		if path != "" && path != firstIdentity(was) {

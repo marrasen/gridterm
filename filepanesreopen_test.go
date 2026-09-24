@@ -836,11 +836,9 @@ func TestAQueuedReadFollowsARenameTheWindowMade(t *testing.T) {
 
 // A pane is never answered from a machine that only inherited its name.
 //
-// Work has a name and nothing else, so it follows the trail of what the
-// user renamed. A filesystem holds its machine's address and is told
-// when that machine is renamed, so it does not need the trail -- and
-// must not use it: a name given up, given away and left off the list
-// would take the pane to a machine it was never on.
+// A filesystem is on a saved server by its id, so a name given up,
+// given away and left off the list leads it nowhere rather than to the
+// machine that first had the name.
 func TestAPaneIsNotAnsweredFromTheMachineThatInheritedItsName(t *testing.T) {
 	first, second := sshtest.New(t), sshtest.New(t)
 	a := newTestApp(t, 100, 30)

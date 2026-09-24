@@ -618,14 +618,10 @@ func (a *app) connectAndBrowse(name, at string) error {
 // nothing wants the machine any more. A nil one means the dial's answer
 // is the whole of it.
 //
-// It is asked rather than worked out here because the two callers know
-// different things. A filesystem holds its machine's address and is
-// told directly when the machine is renamed, so it says what it is
-// called and is always right. A piece of finished work has only a
-// name, and follows the trail of what the user renamed -- which is a
-// weaker thing, and must not be used on a filesystem: a name that has
-// been given up, given away and renamed again would take the pane to a
-// machine it was never on.
+// It is asked rather than worked out here because a filesystem also
+// files its pane under the name it finds, and finished work has no pane
+// to file. Both ask the list by the id of the saved server, so what
+// comes back is that server's name and never another machine's.
 func (a *app) filesystemAgain(host string, at step, calledNow func(was string) string,
 	then func(vfs.FS, step, error)) {
 	// answerOn hands back a filesystem and the machine it was opened
@@ -634,6 +630,10 @@ func (a *app) filesystemAgain(host string, at step, calledNow func(was string) s
 	// find a different machine: a name given up in a rename can be
 	// saved for somewhere else while the dial is still running.
 	answerOn := func(name string) {
+		if m := a.about(name).machine; m != nil && anotherServer(m.at, at) {
+			then(nil, step{}, connectedElsewhere(name))
+			return
+		}
 		f, err := a.machineFilesWithArchives(name)
 		var on step
 		if m := a.about(name).machine; m != nil {
@@ -738,7 +738,10 @@ func (a *app) filesystemAgain(host string, at step, calledNow func(was string) s
 	}
 	route, err := a.route(host)
 	if err != nil {
-		if a.about(host).saved || at.cfg.Host == "" {
+		// A saved server is reached by the route the list gives it and
+		// no other way. The step kept is where it was, and the list has
+		// had the last word on where it is since.
+		if a.about(host).saved || at.cfg.Host == "" || at.id != "" {
 			then(nil, step{}, err)
 			return
 		}
@@ -769,6 +772,23 @@ func (a *app) filesystemAgain(host string, at step, calledNow func(was string) s
 	}
 	a.doneSaying(line)
 	answer()
+}
+
+// anotherServer reports whether a connection is to a saved server other
+// than the one a filesystem or a piece of work is on.
+//
+// The name cannot say: a connection left under a name when its entry was
+// renamed and pointed somewhere else keeps that name, and a server saved
+// since can be given it too. A connection to a machine on no list says
+// nothing either way, and is taken at its name the way it always was.
+func anotherServer(held, want step) bool {
+	return want.id != "" && held.id != "" && held.id != want.id
+}
+
+// connectedElsewhere is what a call is answered with when the name its
+// machine goes by is held by a connection to a different one.
+func connectedElsewhere(name string) error {
+	return fmt.Errorf("%s is connected to another machine", groupName(name))
 }
 
 // labelFor names a connection by what it is running.

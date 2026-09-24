@@ -145,20 +145,12 @@ at all: nothing connected, no route on any list, and no step kept.
    being dialled, or dropped with only a file pane holding it: the
    panes, the rows and the finished work all follow. Dropped is the
    likeliest of the three, because a pane outlives its connection now
-   and that is when a user tidies the server list. A rename that
-   changes the address as well is a different machine under that name,
-   and nothing follows it -- the rule the connection has always had,
-   now applied to the rest.
-4. **A repeat follows a rename.** Work keeps the name its machine had
-   when it started. Opening it again under that name would log in to
-   the machine a second time and put a second group on the sidebar, so
-   the window keeps a trail of what the user renamed and follows it.
-   Not matched by address: two machines reached through different jump
-   hosts can have one address between them, and a repeat that picked
-   the wrong one would write the user's files onto a machine they never
-   named. A name given to another machine since stands for that one, so
-   work pointing at it is left pointing at it for as long as the list
-   says so.
+   and that is when a user tidies the server list. A live connection or
+   a dial follows only when the address is unchanged, because it is to
+   the old address. Everything else follows the saved server's id.
+4. **A repeat follows a rename.** Work keeps the id of the saved server
+   it ran on and asks the list what that server is called now. A server
+   that has left the list is not opened at all.
 5. **A repeat connects.** Pressing "Do it again" on work whose machine
    has gone opens that machine rather than refusing.
 
@@ -176,34 +168,40 @@ wrapper, so it opens the machine again to do it. The alternative is a
 `.gridterm-part` file left on the machine for good. The user sees
 `Reconnecting to X…` for a copy that has just failed.
 
-## Two rules, not one
+## Servers have ids, 24 September
 
-**A filesystem knows its machine. A piece of work knows a name.** They
-follow a rename differently, and the difference is not a detail.
+Marcus's ruling, after nine review rounds that did not converge. Each
+saved server carries an `id` the user never sees. The list gives it
+out when the server is saved and keeps it through every edit. A list
+saved before ids existed is given them as it is read. The same ones
+come back on every read, so two windows agree before either saves.
 
-A `reopening` holds the machine's address and is told directly when
-that machine is renamed -- and only when it really is that machine,
-because the rename checks the address. So it says what it is called and
-is always right.
+A file pane, a finished copy and a saved copy remember the id. To open
+the machine again they ask the list what that id is called now. So:
 
-A finished copy is told. It follows the trail of what the user
-renamed, with guards for a name given to something else since. That is
-a weaker thing, and giving it to a filesystem is how a pane ends up
-reading a machine it was never on: a name given up, given away and left
-off the list leads the trail straight to the first machine. Work gets
-the trail. A filesystem is asked.
+- **Renamed:** the id finds it under its new name.
+- **Renamed and pointed somewhere else in one edit:** it is still the
+  entry the user edited, so the pane and the work follow it. A live
+  connection stays under the old name, because it is to the old
+  address. A pane reading through it follows the server once that
+  connection drops.
+- **Removed, and another server saved under the old name:** the new
+  one has a new id. The old pane and the old work say `nothing is
+  connected to <name>` and open nothing.
+- **A connection under the name belongs to another saved server:**
+  refused, with `<name> is connected to another machine`.
+- **A machine typed by hand** is on no list and has no id. It reopens
+  at the address it was reached at, as before.
 
-Work taken from a pane knows where its machine was as well, so the
-trail is checked against that before it is followed. A veto and not a
-choice: two machines behind different jump hosts can have one address
-between them, so a match proves nothing and only a mismatch is acted
-on. A saved copy that names a machine on no list has nothing to check
-with, and follows the trail as it is.
+What this replaced: a trail of old names (`a.renamed`, `renamedWork`,
+`nameNow`, `endNow`) and an address check on renames. A trail entry is
+two names and cannot tell that a name has changed hands. Nearly every
+serious bug of review rounds 4 to 9 lived there. The worst: a pane on
+a server removed from the list followed the trail to the machine that
+first gave up the name, and listed and wrote that machine's files.
 
-**An address edited under the same name is not this.** The user has
-said that name means somewhere else now, and the panes on it follow:
-there is no second machine to confuse it with. Only a name changing
-hands puts two machines in play.
+The list file went to version 2, so an older gridterm says the list is
+from a newer one rather than calling it unreadable.
 
 ## Settled while building
 

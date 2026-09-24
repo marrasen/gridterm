@@ -51,6 +51,14 @@ func (c *savedCopies) keep(saved settings.SavedCopy) error {
 	return c.remembered.KeepCopy(saved, mostSavedCopies)
 }
 
+// update puts a copy back over the one the same as it, where it was.
+func (c *savedCopies) update(saved settings.SavedCopy) error {
+	if c.remembered == nil {
+		return errNothingToKeepACopyIn
+	}
+	return c.remembered.PutCopy(saved)
+}
+
 // forget drops a saved copy.
 func (c *savedCopies) forget(saved settings.SavedCopy) error {
 	if c.remembered == nil {

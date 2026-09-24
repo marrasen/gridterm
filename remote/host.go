@@ -19,6 +19,14 @@ type Host struct {
 	// shows and what Via names, so it has to be unique in a Book.
 	Name string `json:"name"`
 
+	// ID is what the window knows this machine by, and never changes.
+	//
+	// Not the name: a name can be given up in a rename and given to
+	// another machine, and something that remembered only the name
+	// would follow it there. The Book gives one out and keeps it; the
+	// user never sees it.
+	ID string `json:"id,omitempty"`
+
 	// Address and Port are the machine itself. A zero port means 22.
 	Address string `json:"address"`
 	Port    int    `json:"port,omitempty"`

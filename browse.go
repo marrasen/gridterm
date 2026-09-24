@@ -516,17 +516,33 @@ func (a *app) endOf(p *files.Pane) jobEnd {
 // been made or has failed when it is not. A copy repeated after both
 // its machines dropped is what this is for, and it connects to them one
 // after the other rather than both at once.
+//
+// An end on a saved server is opened on that server under whatever it
+// is called now, and one whose server has left the list is not opened
+// at all. Work keeps the name its machine had when it ran, and a name
+// can be given up in a rename and given to another machine: going by it
+// would write the user's files onto a machine they never ran this on.
 func (a *app) openEndAgain(end jobEnd, then func(vfs.FS, error)) {
-	end = a.endNow(end)
+	if end.far.window == nil && end.at.id != "" {
+		now, saved := a.book.NameOf(end.at.id)
+		if !saved {
+			then(nil, notConnected(end.host))
+			return
+		}
+		end.host, end.at.name = now, now
+	}
+	if m := a.about(end.host).machine; m != nil && end.far.window == nil &&
+		anotherServer(m.at, end.at) {
+		then(nil, connectedElsewhere(end.host))
+		return
+	}
 	if end.far.window != nil || a.about(end.host).machine != nil ||
 		a.about(end.host).kind == hostHere {
 		f, err := a.openEnd(end)
 		then(f, err)
 		return
 	}
-	// Work has only a name to go on, so it follows the trail of what
-	// the user renamed.
-	a.filesystemAgain(end.host, end.at, a.nameNow, func(f vfs.FS, on step, err error) {
+	a.filesystemAgain(end.host, end.at, a.savedCalledNow(end.at.id), func(f vfs.FS, on step, err error) {
 		if err != nil {
 			then(nil, err)
 			return
@@ -535,84 +551,20 @@ func (a *app) openEndAgain(end jobEnd, then func(vfs.FS, error)) {
 	})
 }
 
-// endNow gives an end the name its machine goes by now.
+// savedCalledNow asks the list what the saved server with an id goes by
+// now, for work waiting on a connection while it is renamed. Empty says
+// the server has left the list.
 //
-// Work started before a rename keeps the name the machine had, and the
-// name is all it has to go on. Opening it again under the old one logs
-// in to the machine a second time and puts a second group on the
-// sidebar beside the one already there -- two names for one machine,
-// which is the thing the window holds one connection per machine to
-// avoid.
-//
-// Followed through what the user renamed, not matched by address. Two
-// machines reached through different jump hosts can have one address
-// between them, and a repeat that picked the wrong one of those would
-// write the user's files onto a machine they never named.
-func (a *app) endNow(end jobEnd) jobEnd {
-	if end.far.window != nil {
-		return end
+// Nil for a machine on no list, whose name the dial it waited on has
+// already followed.
+func (a *app) savedCalledNow(id string) func(string) string {
+	if id == "" {
+		return nil
 	}
-	now := a.nameNow(end.host)
-	if now == end.host {
-		return end
+	return func(string) string {
+		now, _ := a.book.NameOf(id)
+		return now
 	}
-	// An end taken from a pane knows where its machine was, so the
-	// trail is checked against that before it is followed. A name given
-	// up, given away and then left off the list leads the trail to the
-	// machine that gave it up, which this work never ran on.
-	//
-	// A veto and not a choice: two machines behind different jump hosts
-	// can have one address between them, so a match proves nothing and
-	// only a mismatch is acted on.
-	if end.at.cfg.Host != "" && a.somewhereElse(now, end.at) {
-		return end
-	}
-	end.host, end.at.name = now, now
-	return end
-}
-
-// somewhereElse reports whether a name is known to stand for a machine
-// other than this one.
-//
-// False when nothing says either way, because most of what the window
-// knows about a machine goes when its connection does.
-func (a *app) somewhereElse(name string, on step) bool {
-	if m := a.machines.named(name); m != nil {
-		return !m.at.cfg.SameMachine(on.cfg)
-	}
-	if h, saved := a.book.Lookup(name); saved {
-		return !h.Config().SameMachine(on.cfg)
-	}
-	return false
-}
-
-// nameNow gives what a machine called was goes by now.
-//
-// Followed through what the user renamed, not matched by address. Two
-// machines reached through different jump hosts can have one address
-// between them, and taking the wrong one of those would write the
-// user's files onto a machine they never named.
-func (a *app) nameNow(was string) string {
-	now, renamed := a.renamed[was]
-	if !renamed || now == was {
-		return was
-	}
-	// The old name is something else's now: a machine saved under it
-	// since, or one connected under it. It stands for that, so whatever
-	// is pointing at it is left pointing at it and says plainly what it
-	// finds there.
-	//
-	// The name the list gives back is what says whether it is something
-	// else, because the list does not tell two names apart by case: a
-	// machine renamed Prod to prod would otherwise find itself under
-	// the old name and never be followed.
-	if h, saved := a.book.Lookup(was); saved && !strings.EqualFold(h.Name, now) {
-		return was
-	}
-	if a.about(was).machine != nil {
-		return was
-	}
-	return now
 }
 
 // openEnd opens one end of a piece of file work again: a machine this

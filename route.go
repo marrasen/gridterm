@@ -18,11 +18,19 @@ type step struct {
 	name string
 	cfg  remote.Config
 	term string
+
+	// id is the saved server this is, and empty for a machine on no
+	// list: one reached from a typed target, or this machine.
+	//
+	// It is what says which machine something opened on it belongs to.
+	// The name cannot: it can be given up in a rename and given to
+	// another machine, and what followed the name would follow it there.
+	id string
 }
 
 // hostStep turns a saved machine into a step of a route.
 func hostStep(h remote.Host) step {
-	return step{name: h.Name, cfg: h.Config(), term: h.Term}
+	return step{name: h.Name, cfg: h.Config(), term: h.Term, id: h.ID}
 }
 
 // route returns the machines to connect to in order to reach one: the

@@ -2,6 +2,9 @@ package remote
 
 import (
 	"bytes"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,7 +22,12 @@ import (
 
 // bookVersion is written into the file so a later shape can be told from
 // this one.
-const bookVersion = 1
+//
+// 2 added the id each server carries. A file of version 1 still loads,
+// and is given ids as it does; the version went up so that an older
+// gridterm meeting the new field says the list is from a newer one,
+// rather than calling it unreadable.
+const bookVersion = 2
 
 // BookFile is what the saved servers are kept in, in the directory conf
 // gives gridterm.
@@ -129,6 +137,22 @@ func (b *Book) Lookup(name string) (Host, bool) {
 	return h.clone(), ok
 }
 
+// NameOf returns what the machine with an id is called now, and false
+// when the list no longer has it.
+func (b *Book) NameOf(id string) (string, bool) {
+	if id == "" {
+		return "", false
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for _, h := range b.hosts {
+		if h.ID == id {
+			return h.Name, true
+		}
+	}
+	return "", false
+}
+
 func (b *Book) lookupLocked(name string) (Host, bool) {
 	for _, h := range b.hosts {
 		if strings.EqualFold(h.Name, name) {
@@ -182,6 +206,15 @@ func (b *Book) Put(h Host, under string) error {
 		if CommandName(have.Name) == CommandName(h.Name) {
 			return fmt.Errorf("%q is too much like %q to tell apart", h.Name, have.Name)
 		}
+	}
+
+	// The id is the book's to give, not the caller's: one kept across
+	// an edit is what lets the window tell a renamed machine from a new
+	// one under the name it gave up.
+	if at >= 0 {
+		h.ID = b.hosts[at].ID
+	} else {
+		h.ID = newID(b.hosts)
 	}
 
 	before := cloneHosts(b.hosts)
@@ -376,7 +409,64 @@ func readBook(path string) ([]Host, error) {
 	}
 
 	sortHosts(file.Servers)
+	giveIDs(file.Servers)
 	return file.Servers, nil
+}
+
+// giveIDs gives an id to each server that has none, and a fresh one to
+// a server whose id another one already has.
+//
+// A list written before servers had ids has none, and one copied by
+// hand can have one twice. The ids given are worked out from the list
+// rather than drawn at random, so two windows reading the same file
+// give the same ones: the file is not written until something changes,
+// and until then each window has only its own reading to go by.
+//
+// In the order the book keeps, which is the one readBook has just put
+// the list in, so which of two servers keeps a shared id does not
+// depend on how the file happened to be written.
+func giveIDs(hosts []Host) {
+	taken := make(map[string]bool, len(hosts))
+	var missing []int
+	for i, h := range hosts {
+		if h.ID == "" || taken[h.ID] {
+			missing = append(missing, i)
+			continue
+		}
+		taken[h.ID] = true
+	}
+	for _, i := range missing {
+		for n := 0; ; n++ {
+			id := derivedID(hosts[i].Name, n)
+			if !taken[id] {
+				hosts[i].ID = id
+				taken[id] = true
+				break
+			}
+		}
+	}
+}
+
+// derivedID is the id a server without one is given: the same for the
+// same name every time the file is read, and a different one for each
+// try at a name whose first one is taken.
+func derivedID(name string, try int) string {
+	sum := sha256.Sum256(fmt.Appendf(nil, "gridterm server\x00%s\x00%d", strings.ToLower(name), try))
+	return hex.EncodeToString(sum[:8])
+}
+
+// newID is an id for a server being added, and one none of hosts has.
+func newID(hosts []Host) string {
+	for {
+		var raw [8]byte
+		// crypto/rand does not fail: it crashes the program rather than
+		// hand back less than was asked for.
+		_, _ = rand.Read(raw[:])
+		id := hex.EncodeToString(raw[:])
+		if !slices.ContainsFunc(hosts, func(h Host) bool { return h.ID == id }) {
+			return id
+		}
+	}
 }
 
 // endOfFile reports anything after the value that was decoded.

@@ -2,6 +2,7 @@ package remote
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -100,7 +101,7 @@ func TestBookWillNotGuessAtARepeatedKey(t *testing.T) {
 // later version.
 func TestANewerListSaysSoRatherThanNamingItsNewField(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "servers.json")
-	const newer = `{"version":2,"servers":[],"colour":"green"}`
+	newer := fmt.Sprintf(`{"version":%d,"servers":[],"colour":"green"}`, bookVersion+1)
 	if err := os.WriteFile(path, []byte(newer), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}

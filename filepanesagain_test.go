@@ -590,3 +590,112 @@ func TestARenameCaughtMidDialIsFollowed(t *testing.T) {
 		t.Errorf("the dial is still held under the old name: %v", a.machines.reaching())
 	}
 }
+
+// A machine renamed while nothing is connected to it is followed.
+//
+// A file pane outlives its connection, so this is the likeliest moment
+// to rename a machine: the user sees the pane, sees the row greyed, and
+// tidies up the server list. Left under the old name, the pane's next
+// click dials the same box under a name the list has stopped using.
+func TestARenameWhileTheMachineIsDroppedIsFollowed(t *testing.T) {
+	s := sshtest.New(t)
+	a := newTestApp(t, 100, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pinServers(t, a, s)
+	saveHost(t, a, "one", s, "")
+	if err := a.connectSaved("one"); err != nil {
+		t.Fatalf("connectSaved: %v", err)
+	}
+	waitFor(t, a, "the machine to answer", func() bool {
+		return a.machines.named("one") != nil
+	})
+	pane := openFilesFromThePlus(t, a, "one")
+	if pane == nil {
+		t.Fatal("no file pane opened")
+	}
+	held := reopenersOn(t, a, "one")
+	if len(held) != 1 {
+		t.Fatalf("%d filesystems hold one", len(held))
+	}
+	f := held[0]
+
+	s.CloseClients()
+	waitFor(t, a, "the window to see the machine go", func() bool {
+		a.reapExited()
+		return a.machines.named("one") == nil
+	})
+	settleAndClearNotices(t, a)
+
+	renameSaved(t, a, "one", "two")
+	if got := f.Host(); got != "two" {
+		t.Errorf("the pane's filesystem is filed under %q, want the name it has now", got)
+	}
+
+	// And a read opens it under that name, rather than a second group
+	// for the same box under the name the list has given up.
+	done := make(chan error, 1)
+	go func() {
+		_, err := f.ReadDir("/")
+		done <- err
+	}()
+	waitFor(t, a, "the read to come back", func() bool { return len(done) > 0 })
+	if err := <-done; err != nil {
+		t.Fatalf("reading after the rename: %v", err)
+	}
+	if got := a.machines.names(); len(got) != 1 || got[0] != "two" {
+		t.Errorf("the window holds %v, want the one machine under its new name", got)
+	}
+}
+
+// A rename that changes the address as well is a different machine
+// under that name, so nothing follows it.
+//
+// The connection has always been left where it is for this. The panes,
+// the work and a dial still on its way follow the same rule: the name
+// now stands for somewhere else, and a pane reading the old machine is
+// not reading that one.
+func TestARenameThatChangesTheAddressIsNotFollowed(t *testing.T) {
+	here, elsewhere := sshtest.New(t), sshtest.New(t)
+	a := newTestApp(t, 100, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pinServers(t, a, here, elsewhere)
+	saveHost(t, a, "one", here, "")
+	if err := a.connectSaved("one"); err != nil {
+		t.Fatalf("connectSaved: %v", err)
+	}
+	waitFor(t, a, "the machine to answer", func() bool {
+		return a.machines.named("one") != nil
+	})
+	if openFilesFromThePlus(t, a, "one") == nil {
+		t.Fatal("no file pane opened")
+	}
+	f := reopenersOn(t, a, "one")[0]
+
+	here.CloseClients()
+	waitFor(t, a, "the window to see the machine go", func() bool {
+		a.reapExited()
+		return a.machines.named("one") == nil
+	})
+	settleAndClearNotices(t, a)
+
+	// The entry keeps its name and is pointed somewhere else.
+	addr, port := elsewhere.Host()
+	h, ok := a.book.Lookup("one")
+	if !ok {
+		t.Fatal("one is not saved")
+	}
+	h.Name, h.Address, h.Port = "two", addr, port
+	if err := a.book.Put(h, "one"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	a.renamedMachine("one", h)
+
+	if got := f.Host(); got != "one" {
+		t.Errorf("the pane's filesystem is filed under %q, want the machine it is reading", got)
+	}
+	if now, followed := a.renamed["one"]; followed {
+		t.Errorf("work on one would be sent to %q, which is somewhere else", now)
+	}
+}

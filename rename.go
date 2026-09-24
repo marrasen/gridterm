@@ -42,10 +42,17 @@ func (ms *machines) rename(was string, to remote.Host) (moved moves, err error) 
 		moved.connection = true
 	}
 	if d := ms.opening[was]; d != nil {
-		delete(ms.opening, was)
-		ms.opening[now] = d
-		d.renamedTo(was, now)
-		moved.dial = true
+		// The same rule the connection gets: a rename that changes the
+		// address as well says the name stands for a different machine
+		// now, so the dial keeps the name it was started under. A
+		// window being taken over has no route, and is moved as it
+		// always was.
+		if s, known := d.stepFor(was); !known || s.cfg.SameMachine(to.Config()) {
+			delete(ms.opening, was)
+			ms.opening[now] = d
+			d.renamedTo(was, now)
+			moved.dial = true
+		}
 	}
 	return moved, nil
 }
@@ -73,7 +80,12 @@ func (a *app) renamedMachine(was string, to remote.Host) {
 	// file pane or a finished copy left under the old one would ask for
 	// a machine nothing is connected to and dial the same box a second
 	// time under a name the window no longer uses.
-	if moved.connection || moved.dial {
+	// A machine nothing is connected to counts as moved as well. A file
+	// pane outlives its connection now, so the likeliest moment to
+	// rename a machine is while it is not there: left under the old
+	// name, the pane's next click dials the same box under a name the
+	// list has stopped using and puts a second group on the sidebar.
+	if moved.connection || moved.dial || a.sameDroppedMachine(was, to) {
 		a.renamedFiles(was, to.Name)
 		a.renamedTheMachine(was, to.Name)
 		a.renamedWork(was, to.Name)
@@ -99,6 +111,20 @@ func (a *app) renamedFiles(was, now string) {
 	for _, f := range a.filesystemsOn(was) {
 		f.fs.Renamed(f.named(now))
 	}
+}
+
+// sameDroppedMachine reports whether a machine nothing is connected to,
+// and nothing is on its way to, is the one a saved entry now describes.
+//
+// What a file pane's filesystem kept is the only record of where that
+// machine was, which is what says whether the rename changed the
+// address as well. Nothing held says nothing to follow.
+func (a *app) sameDroppedMachine(was string, to remote.Host) bool {
+	if a.machines.named(was) != nil || a.machines.connecting(was) != nil {
+		return false
+	}
+	r := a.reopeningOn(was)
+	return r != nil && r.step().cfg.SameMachine(to.Config())
 }
 
 // renamedWork records what a machine was called, for file work that has

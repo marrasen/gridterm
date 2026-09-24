@@ -141,7 +141,15 @@ at all: nothing connected, no route on any list, and no step kept.
    button used to be instant, so pressing twice meant two copies. It
    now takes the length of a login, and the press in that time is the
    user wondering whether the first one registered.
-3. **A repeat follows a rename.** Work keeps the name its machine had
+3. **A rename is followed wherever the machine is.** Connected, still
+   being dialled, or dropped with only a file pane holding it: the
+   panes, the rows and the finished work all follow. Dropped is the
+   likeliest of the three, because a pane outlives its connection now
+   and that is when a user tidies the server list. A rename that
+   changes the address as well is a different machine under that name,
+   and nothing follows it -- the rule the connection has always had,
+   now applied to the rest.
+4. **A repeat follows a rename.** Work keeps the name its machine had
    when it started. Opening it again under that name would log in to
    the machine a second time and put a second group on the sidebar, so
    the window keeps a trail of what the user renamed and follows it.
@@ -151,7 +159,7 @@ at all: nothing connected, no route on any list, and no step kept.
    named. A name given to another machine since stands for that one, so
    work pointing at it is left pointing at it for as long as the list
    says so.
-4. **A repeat connects.** Pressing "Do it again" on work whose machine
+5. **A repeat connects.** Pressing "Do it again" on work whose machine
    has gone opens that machine rather than refusing.
 
 ## Left as it is

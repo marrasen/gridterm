@@ -18,6 +18,12 @@ type dialling struct {
 	// names is every machine of the route and the name the pane goes by.
 	names []string
 
+	// route is the machines being reached and how, so a rename can ask
+	// whether the name it is changing still stands for the machine
+	// being dialled under it. A rename that changes the address as
+	// well leaves the dial where it is, the way it leaves a connection.
+	route []step
+
 	// made names the machines of the route that answered, in the order
 	// they did.
 	made []string
@@ -51,6 +57,17 @@ type dialling struct {
 	// what it is called now, for one renamed while it was on its way.
 	// The dial goroutine holds the old names and cannot be told.
 	renamed map[string]string
+}
+
+// stepFor is how one machine of the route is being reached, and false
+// when the route has no such name.
+func (d *dialling) stepFor(name string) (step, bool) {
+	for _, s := range d.route {
+		if s.name == name {
+			return s, true
+		}
+	}
+	return step{}, false
 }
 
 // nameNow gives what a machine is called now, which is what it was

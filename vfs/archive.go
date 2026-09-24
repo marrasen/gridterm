@@ -140,7 +140,7 @@ func (a *archives) mayBeArchive(at string) bool {
 	if e.IsLink() {
 		// Only the name itself being free makes it one to be. A link
 		// that leads nowhere is a link, and it is left to say so.
-		if e, err = a.followed(at); err != nil {
+		if e, err = a.follow(at, e); err != nil {
 			return false
 		}
 	}
@@ -155,28 +155,42 @@ const mostLinkHops = 8
 // link to a jar is the jar, and one to a directory the directory. The
 // filesystems under this one answer about the link itself.
 func (a *archives) followed(at string) (Entry, error) {
+	e, err := a.FS.Stat(at)
+	if err != nil {
+		return e, err
+	}
+	return a.follow(at, e)
+}
+
+// follow is followed for a name already asked about once.
+func (a *archives) follow(at string, e Entry) (Entry, error) {
 	for range mostLinkHops {
-		e, err := a.FS.Stat(at)
-		if err != nil || !e.IsLink() {
-			return e, err
+		if !e.IsLink() {
+			return e, nil
 		}
 		target := e.Link
 		if !isAbsOn(a, target) {
 			target = Join(a, Dir(a, at), target)
 		}
 		at = target
+		var err error
+		if e, err = a.FS.Stat(at); err != nil {
+			return e, err
+		}
 	}
 	return Entry{}, fmt.Errorf("%s: more than %d links, one after another", at, mostLinkHops)
 }
 
 // isAbsOn reports whether a path starts at the top of a filesystem: at
-// its separator, or, on a filesystem that writes paths the Windows way,
-// at a drive. "a:b.jar" is a name anywhere else.
+// its separator, or at a drive and the top of it -- "C:\x" or "C:/x".
+// The drive is taken whatever the separator: a Windows machine served
+// over SFTP says where a link points in its own spelling. "a:b.jar" is
+// a name.
 func isAbsOn(f FS, p string) bool {
 	if strings.HasPrefix(p, string(f.Sep())) {
 		return true
 	}
-	return f.Sep() == '\\' && len(p) >= 2 && isDrive(p[:2])
+	return len(p) >= 3 && isDrive(p[:2]) && (p[2] == '\\' || p[2] == '/')
 }
 
 // letGo drops the archive held open when a write is about to change the

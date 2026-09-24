@@ -721,3 +721,37 @@ func TestABrokenLinkIsNotAnArchive(t *testing.T) {
 		t.Errorf("a write under a broken link was blamed on an archive: %v", err)
 	}
 }
+
+// sepOf is a filesystem that writes paths with the separator given.
+type sepOf struct {
+	FS
+	sep byte
+}
+
+func (s sepOf) Sep() byte { return s.sep }
+
+// Where a link points is taken as starting at the top when it starts
+// at the separator, or at a drive and the top of it in either spelling:
+// a Windows machine served over SFTP says "C:\x" although its paths go
+// with "/". A colon in a name does not make it a drive.
+func TestWhereALinkPointsIsReadTheWayTheMachineWritesIt(t *testing.T) {
+	for _, c := range []struct {
+		sep  byte
+		path string
+		abs  bool
+	}{
+		{'/', "/x/y.jar", true},
+		{'/', `C:\x\y.jar`, true},
+		{'/', "C:/x/y.jar", true},
+		{'/', "a:b.jar", false},
+		{'/', "../y.jar", false},
+		{'/', `..\y.jar`, false},
+		{'\\', `C:\x\y.jar`, true},
+		{'\\', `\\server\share\y.jar`, true},
+		{'\\', `..\y.jar`, false},
+	} {
+		if got := isAbsOn(sepOf{FS: NewLocal(), sep: c.sep}, c.path); got != c.abs {
+			t.Errorf("%q with %q between names: absolute %v, want %v", c.path, c.sep, got, c.abs)
+		}
+	}
+}

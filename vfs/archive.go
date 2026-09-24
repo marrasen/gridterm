@@ -164,21 +164,35 @@ func (a *archives) followed(at string) (Entry, error) {
 
 // follow is followed for a name already asked about once.
 func (a *archives) follow(at string, e Entry) (Entry, error) {
-	for range mostLinkHops {
-		if !e.IsLink() {
-			return e, nil
+	for hop := 0; e.IsLink(); hop++ {
+		if hop == mostLinkHops {
+			return Entry{}, fmt.Errorf("%s: more than %d links, one after another", at, mostLinkHops)
 		}
-		target := e.Link
-		if !isAbsOn(a, target) {
-			target = Join(a, Dir(a, at), target)
-		}
-		at = target
+		at = linkTarget(a, at, e.Link)
 		var err error
 		if e, err = a.FS.Stat(at); err != nil {
 			return e, err
 		}
 	}
-	return Entry{}, fmt.Errorf("%s: more than %d links, one after another", at, mostLinkHops)
+	return e, nil
+}
+
+// linkTarget is the path a link at a path points to, as the filesystem
+// the link is on is asked about it.
+//
+// A relative target is beside the link. A drive on a filesystem whose
+// paths go with "/" -- a Windows machine over SFTP, which says where a
+// link points in its own spelling -- is written the way that machine is
+// asked about its drives, "/C:/dir", or its server takes "C:\dir" for a
+// name under the directory it started in.
+func linkTarget(f FS, at, target string) string {
+	if !isAbsOn(f, target) {
+		return Join(f, Dir(f, at), target)
+	}
+	if f.Sep() == '/' && len(target) >= 2 && isDrive(target[:2]) {
+		return "/" + strings.ReplaceAll(target, `\`, "/")
+	}
+	return target
 }
 
 // isAbsOn reports whether a path starts at the top of a filesystem: at

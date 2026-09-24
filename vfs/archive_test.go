@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -753,5 +754,53 @@ func TestWhereALinkPointsIsReadTheWayTheMachineWritesIt(t *testing.T) {
 		if got := isAbsOn(sepOf{FS: NewLocal(), sep: c.sep}, c.path); got != c.abs {
 			t.Errorf("%q with %q between names: absolute %v, want %v", c.path, c.sep, got, c.abs)
 		}
+	}
+}
+
+// Where a link points, as the filesystem it is on is asked about it: a
+// relative target beside the link, and a drive on a machine served over
+// SFTP in the spelling its server takes for a drive.
+func TestALinksTargetIsAskedForWhereItIs(t *testing.T) {
+	slash := sepOf{FS: NewLocal(), sep: '/'}
+	back := sepOf{FS: NewLocal(), sep: '\\'}
+	for _, c := range []struct {
+		f              FS
+		at, to, wanted string
+	}{
+		{slash, "/d/l.jar", "x.jar", "/d/x.jar"},
+		{slash, "/d/l.jar", "/e/x.jar", "/e/x.jar"},
+		{slash, "/C:/d/l.jar", `C:\e\x.jar`, "/C:/e/x.jar"},
+		{slash, "/C:/d/l.jar", "C:/e/x.jar", "/C:/e/x.jar"},
+		{slash, "/", "/", "/"},
+		{back, `C:\d\l.jar`, `C:\e\x.jar`, `C:\e\x.jar`},
+		{back, `C:\d\l.jar`, "x.jar", `C:\d\x.jar`},
+	} {
+		if got := linkTarget(c.f, c.at, c.to); got != c.wanted {
+			t.Errorf("%s -> %s is asked for as %q, want %q", c.at, c.to, got, c.wanted)
+		}
+	}
+}
+
+// A chain of links as long as the most followed is followed to its end;
+// one longer is given up on.
+func TestAChainOfLinksIsFollowedAsFarAsItMay(t *testing.T) {
+	dir := t.TempDir()
+	aZip(t, filepath.Join(dir, "real.zip"), "one.txt")
+	prev := "real.zip"
+	for i := range mostLinkHops + 1 {
+		name := fmt.Sprintf("l%d.zip", i)
+		if err := os.Symlink(prev, filepath.Join(dir, name)); err != nil {
+			t.Skipf("no links here: %v", err)
+		}
+		prev = name
+	}
+	f := WithArchives(NewLocal())
+
+	longest := filepath.Join(dir, fmt.Sprintf("l%d.zip", mostLinkHops-1))
+	if got, err := f.ReadDir(longest); err != nil || !slices.Equal(named(got), []string{"one.txt"}) {
+		t.Errorf("%d links to the zip list %v, %v", mostLinkHops, named(got), err)
+	}
+	if e, err := f.(*archives).followed(filepath.Join(dir, fmt.Sprintf("l%d.zip", mostLinkHops))); err == nil {
+		t.Errorf("%d links were followed to %+v", mostLinkHops+1, e)
 	}
 }

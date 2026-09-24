@@ -617,6 +617,17 @@ func (a *app) filesystemAgain(host string, at step, then func(vfs.FS, error)) {
 		f, err := a.machineFilesWithArchives(host)
 		then(f, err)
 	}
+	// Queued on answering rather than waiting: a pane is blocked on
+	// this, so a connection that was not made has to come back as a
+	// failure. What waits is thrown away when the dial fails, which
+	// here would leave the pane reading for ever.
+	told := func(err error) {
+		if err != nil {
+			then(nil, fmt.Errorf("connecting to %s: %w", groupName(host), err))
+			return
+		}
+		answer()
+	}
 	if a.about(host).machine != nil {
 		answer()
 		return
@@ -626,7 +637,7 @@ func (a *app) filesystemAgain(host string, at step, then func(vfs.FS, error)) {
 			answer()
 			return
 		}
-		d.waiting = append(d.waiting, answer)
+		d.answering = append(d.answering, told)
 		return
 	}
 	route, err := a.route(host)
@@ -642,13 +653,27 @@ func (a *app) filesystemAgain(host string, at step, then func(vfs.FS, error)) {
 		// shell was started on.
 		route = []step{at}
 	}
+	// A machine on the way already being connected to: wait for that one
+	// and ask again. openRoute would put up the dialog about it, which
+	// asks the user about a connection they did not ask for -- a pane
+	// read through a filesystem is what is happening here -- and answer
+	// this read with "nothing is connected" while they read it.
+	for _, s := range route {
+		if d := a.about(s.name).dialling; d != nil && !d.settled {
+			d.answering = append(d.answering, func(error) {
+				a.filesystemAgain(host, at, then)
+			})
+			return
+		}
+	}
+
 	// Said on the bottom row, because a folder click that waits ten
 	// seconds with nothing on screen reads as a window that has
 	// stopped.
 	a.say("Reconnecting to " + groupName(host) + "…")
 	a.openRoute(host, route, opening{only: true}, nil)
 	if d := a.machines.connecting(host); d != nil && !d.settled {
-		d.waiting = append(d.waiting, answer)
+		d.answering = append(d.answering, told)
 		return
 	}
 	answer()

@@ -37,6 +37,16 @@ type reopening struct {
 	mu sync.Mutex
 	// under is what is open on the machine now, and nil when nothing is.
 	under vfs.FS
+	// gone counts the times the connection under this one has been
+	// told to have gone, so an answer to a reconnect that lands after
+	// one is not stored.
+	//
+	// A machine can drop again while it is being opened: the connection
+	// is made, the filesystem is opened on it, the machine goes, and
+	// what comes back is a session that was dead before anything used
+	// it. Counting says that happened; comparing what is open cannot,
+	// because nothing is open either way.
+	gone int
 	// forgotten says the pane this belongs to has been closed, so this
 	// opens nothing more.
 	//
@@ -88,7 +98,7 @@ func (r *reopening) took(f vfs.FS) {
 func (r *reopening) Lost() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.under = nil
+	r.under, r.gone = nil, r.gone+1
 }
 
 // on hands the filesystem to do, opening the machine again first when
@@ -108,13 +118,13 @@ func (r *reopening) on(do func(vfs.FS) error) error {
 // ready is what is open on the machine, opening it if nothing is.
 func (r *reopening) ready() (vfs.FS, error) {
 	r.mu.Lock()
-	f, forgotten := r.under, r.forgotten
+	f, forgotten, host, at, gone := r.under, r.forgotten, r.host, r.at, r.gone
 	r.mu.Unlock()
 	if f != nil {
 		return f, nil
 	}
 	if forgotten {
-		return nil, fmt.Errorf("nothing is connected to %s", groupName(r.host))
+		return nil, notConnected(host)
 	}
 
 	// On the goroutine that draws, because that is where the machines
@@ -127,7 +137,7 @@ func (r *reopening) ready() (vfs.FS, error) {
 	}
 	back := make(chan answer, 1)
 	r.app.pump.post(func() {
-		r.app.filesystemAgain(r.host, r.at, func(f vfs.FS, err error) {
+		r.app.filesystemAgain(host, at, func(f vfs.FS, err error) {
 			back <- answer{f, err}
 		})
 	})
@@ -138,6 +148,17 @@ func (r *reopening) ready() (vfs.FS, error) {
 		}
 		r.mu.Lock()
 		defer r.mu.Unlock()
+		if r.forgotten || r.gone != gone {
+			// The pane was closed, or the machine went again, while
+			// this was on its way. What came back belongs to nobody, so
+			// it is closed rather than stored: a session kept here that
+			// nothing will ever call is one the far end holds open for
+			// the life of the window.
+			if got.f != nil {
+				_ = got.f.Close()
+			}
+			return nil, notConnected(r.host)
+		}
 		if r.under != nil {
 			// Something else opened one while this was waiting. One is
 			// enough, and the one already in use is the one to keep.
@@ -167,7 +188,45 @@ func (r *reopening) Name() string {
 // connection, so two panes on one machine stopped being the same place
 // the moment either of them opened a new one, and a move between them
 // quietly became a copy.
-func (r *reopening) Place() any { return placeOn(r.host) }
+func (r *reopening) Place() any {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return placeOn(r.host)
+}
+
+// Host is the machine this is filed under, which a rename changes.
+func (r *reopening) Host() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.host
+}
+
+// renamedHost says the machine this is filed under is called something
+// else now.
+//
+// The name is what ties this to a machine: to the walk that tells it
+// the connection has gone, and to the route it opens the machine by.
+// One left under the old name would never be told, so the pane would
+// keep calling a dead session -- which is the dialog this whole file
+// exists to take away -- and opening it again would dial under a name
+// the window no longer uses, putting a second machine on the sidebar.
+func (r *reopening) renamedHost(was, now string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.host != was {
+		return
+	}
+	r.host = now
+	if r.at.name == was {
+		r.at.name = now
+	}
+}
+
+// notConnected is what a call on a filesystem whose machine is not
+// there is answered with.
+func notConnected(host string) error {
+	return fmt.Errorf("nothing is connected to %s", groupName(host))
+}
 
 // placeOn names a machine as a filesystem's place.
 type placeOn string
@@ -274,11 +333,20 @@ func (r *reopening) Renamed(name string) {
 }
 
 // Close lets go of what is open, and opens nothing.
+//
+// Closing is also how the window stops holding this. A job opens
+// filesystems for itself and closes them when it stops, on a goroutine
+// of its own and without going through the browser, so leaving the
+// forgetting to the browser left those on the window's list for ever --
+// growing, and each one still able to open a machine nobody asked for.
 func (r *reopening) Close() error {
 	r.mu.Lock()
 	f := r.under
-	r.under = nil
+	r.under, r.forgotten = nil, true
 	r.mu.Unlock()
+	// Posted, because the list belongs to the goroutine that draws and
+	// this is closed on whichever one let go of it.
+	r.app.pump.post(func() { r.app.dropReopening(r) })
 	if f == nil {
 		return nil
 	}
@@ -293,9 +361,21 @@ func (r *reopening) Close() error {
 // for opens the machine again.
 func (a *app) lostTheMachine(host string) {
 	for _, r := range a.reopening {
-		if r.host == host {
+		if r.Host() == host {
 			r.Lost()
 		}
+	}
+}
+
+// renamedTheMachine tells every filesystem filed under a machine that
+// it is called something else now.
+//
+// This is the whole of a rename for these, and it has to reach the ones
+// no pane holds as well: a job opens filesystems for itself, and one of
+// those outlives the pane it was opened from.
+func (a *app) renamedTheMachine(was, now string) {
+	for _, r := range a.reopening {
+		r.renamedHost(was, now)
 	}
 }
 
@@ -315,6 +395,11 @@ func (a *app) forgetReopening(f vfs.FS) {
 	r.mu.Lock()
 	r.forgotten = true
 	r.mu.Unlock()
+	a.dropReopening(r)
+}
+
+// dropReopening takes one off the window's list.
+func (a *app) dropReopening(r *reopening) {
 	for i, held := range a.reopening {
 		if held == r {
 			a.reopening = append(a.reopening[:i], a.reopening[i+1:]...)

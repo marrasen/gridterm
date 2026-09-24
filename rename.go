@@ -70,6 +70,7 @@ func (a *app) renamedMachine(was string, to remote.Host) {
 	switch {
 	case moved.connection:
 		a.renamedFiles(was, to.Name)
+		a.renamedTheMachine(was, to.Name)
 		// The file sessions left parked on it need nothing: they are
 		// counted against the connection, which the rename did not touch.
 		// The connection's own row, and the rows of the panes and the

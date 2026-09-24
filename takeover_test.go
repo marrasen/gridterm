@@ -2496,7 +2496,9 @@ func TestTheScreensOfAWindowAreGroupedByMachine(t *testing.T) {
 	// Two machines' worth over there: the window's own, and one it is
 	// connected to.
 	s := sshtest.New(t)
-	withDialogs(t, host)
+	// Not withDialogs: twoWindows already gave the host one, and a
+	// second call replaces the context under the goroutine serving the
+	// window that has taken it over.
 	pinServers(t, host, s)
 	host.connectAs("margit", host.prepare(serverConfig(t, s)))
 	waitFor(t, host, "a pane on the machine over there", func() bool {

@@ -607,6 +607,13 @@ func (a *app) hostOf(f vfs.FS) string {
 	if key, over := farFS(f); over {
 		return key.window.name
 	}
+	// A filesystem that holds a machine says which, because the machine
+	// may not be connected right now. Going by the name would answer
+	// Local for a pane on a machine that dropped, and a copy out of it
+	// would be filed under this one.
+	if r, is := f.(*reopening); is {
+		return r.Host()
+	}
 	if on := a.about(f.Name()); on.machine != nil || on.window != nil {
 		return on.name
 	}

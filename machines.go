@@ -285,21 +285,33 @@ func (ms *machines) settle(d *dialling, made bool) {
 		ms.dropWaiting(d)
 		return
 	}
-	waiting := d.waiting
-	d.settled, d.waiting = true, nil
+	waiting, answering := d.waiting, d.answering
+	d.settled, d.waiting, d.answering = true, nil, nil
 	for _, run := range waiting {
 		run()
+	}
+	for _, tell := range answering {
+		tell(nil)
 	}
 }
 
 // dropWaiting throws away what was queued behind a connection that was
-// not made, saying so where the user is looking.
+// not made, saying so where the user is looking, and tells whoever is
+// blocked on it that it did not happen.
 func (ms *machines) dropWaiting(d *dialling) {
 	if len(d.waiting) > 0 && d.log != nil {
 		d.log.Say("what was waiting for this was not started")
 	}
-	d.settled, d.waiting = true, nil
+	answering := d.answering
+	d.settled, d.waiting, d.answering = true, nil, nil
+	for _, tell := range answering {
+		tell(errNotMade)
+	}
 }
+
+// errNotMade is what a caller blocked on a connection is told when that
+// connection was not made, whether it failed or was given up on.
+var errNotMade = errors.New("the connection was not made")
 
 // machine is one connection to one server.
 //

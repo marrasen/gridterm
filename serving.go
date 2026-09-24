@@ -574,7 +574,10 @@ func (a *app) clientArrived(c *serve.Client) {
 		Kind:  conns.Served,
 		Label: "serving " + c.Name,
 		Note:  "from " + c.Addr,
-		Close: func() error { return c.Close() },
+		// Through kickOut, the way Disconnect in the serving pane goes,
+		// so the window thrown out is told it was thrown out rather
+		// than seeing a network error.
+		Close: func() error { return a.kickOut([]*serve.Client{c}) },
 		// The pane on what this window is serving, which says who is
 		// working in it: there is no pane of this window's own to put
 		// in front for a window working over there.

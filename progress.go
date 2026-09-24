@@ -110,6 +110,24 @@ func (a *app) toast(title, body string) {
 	}
 }
 
+// tell says that something the window did in the background has
+// finished, the way a program's message is said: a line in the log, a
+// pop-up outside the window, and a line on the bottom row.
+//
+// Not a dialog. It is news, not a question, and a dialog that turns up
+// when a copy lands takes the keys from whatever the user moved on to.
+// The bottom row is there for a machine with no pop-ups, and for a
+// pop-up that came too soon after the last one.
+func (a *app) tell(title, body string) {
+	line := title
+	if body != "" {
+		line += " — " + body
+	}
+	log.Print(line)
+	a.toast(title, body)
+	a.say(line)
+}
+
 // forgetNotes drops the notes remembered for rows that have gone.
 func (a *app) forgetNotes() {
 	for e := range a.wrote {

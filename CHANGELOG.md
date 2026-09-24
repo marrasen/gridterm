@@ -52,6 +52,13 @@ along the bottom. The row of a window working in this one opens it,
 which is what that row could not do before: it stood in for a pane
 because there was none to put in front.
 
+**A finished drop says so without a dialog.** A file dropped on a pane
+put up a box when it landed, which took the keys from whatever the user
+had moved on to. It is said the way a program's message is now: a line
+in the log, a pop-up outside the window, and a line on the bottom row.
+A file whose pane closed before it landed still gets a dialog, because
+its path could not be typed and the dialog's `Copy` is how to get it.
+
 **File work is watched in a pane, not a dialog.** Clicking a copy's row
 on the sidebar opened a box over the window, which took the keys and had
 to be dismissed before anything else could be done -- for work that
@@ -250,6 +257,15 @@ the write it is in finishes, and one waiting on a machine that has
 stopped answering waits however long that takes. The queue stopped
 answering for it the moment it left the list, so a window could close
 while it was still writing.
+
+**The cross on a file's row closes it.** It did nothing on a row for a
+file being read, a tunnel, a piece of file work or any other row that is
+not a terminal or a file browser.
+
+**A dropped file's row is under the machine it is going to.** A file
+dropped on a pane on a server showed its copy under this machine,
+because that is where the file was read. Work is filed under the
+machine it writes to now, unless that is this one.
 
 
 ## v0.2.1

@@ -4,6 +4,8 @@ import (
 	"errors"
 	"io"
 	"io/fs"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -469,6 +471,61 @@ func TestTheCrossOnAFilePaneRowClosesThatPane(t *testing.T) {
 	a.refreshPanel(time.Now())
 	if _, ok := panelRow(a, e); ok {
 		t.Errorf("the row is still on the panel: %v", panelText(a, time.Now()))
+	}
+}
+
+// A file being read has a row with a cross too, and pressing it closes
+// the reader. It used to do nothing: the press only closed rows that
+// stood for a terminal or a file browser.
+func TestTheCrossOnAFileRowClosesTheFile(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	path := filepath.Join(t.TempDir(), "notes.txt")
+	if err := os.WriteFile(path, []byte("one\n"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := a.openReader(vfs.NewLocal(), conns.Local, path, "notes.txt", false, 0); err != nil {
+		t.Fatalf("open a reader: %v", err)
+	}
+	r := onlyReader(t, a)
+	e := a.readers[r].row
+
+	pointAtRow(t, a, e)
+	if row, _ := panelRow(a, e); row.HoverButton != clearButton {
+		t.Fatalf("the file's row offers %q under the pointer, want a cross", row.HoverButton)
+	}
+	clickClear(t, a, e)
+
+	if a.readers[r] != nil {
+		t.Fatal("the press left the file open")
+	}
+	a.refreshPanel(time.Now())
+	if _, ok := panelRow(a, e); ok {
+		t.Errorf("the row is still on the panel: %v", panelText(a, time.Now()))
+	}
+}
+
+// A row whose pane has already gone is not closed a second time. The
+// rows drawn are a frame old, so a key in the same frame can have closed
+// the pane before the press lands.
+func TestTheCrossOnARowAlreadyClosedDoesNothing(t *testing.T) {
+	a := newTestApp(t, 80, 24)
+	withDialogs(t, a)
+	withPanel(t, a)
+	closed := 0
+	e := &conns.Entry{Kind: conns.Tunnel, Label: "8080", Close: func() error {
+		closed++
+		return nil
+	}}
+	a.registry.Add(e)
+	a.registry.Drop(e)
+
+	if err := a.closePaneRow(e); err != nil {
+		t.Fatalf("closePaneRow: %v", err)
+	}
+	if closed != 0 {
+		t.Errorf("a row already off the sidebar was closed %d times", closed)
 	}
 }
 

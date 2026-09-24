@@ -67,7 +67,7 @@ func (a *app) pathsForPane(pane *term.Terminal, wins []string) []string {
 }
 
 // copyDropped copies dropped files into the directory the shell in a
-// pane said it was in, and says so once they are there.
+// pane said it was in, and says so once they are there, through tell.
 //
 // Nothing is typed. The file is where the program is already looking,
 // so a path after it would only be in the way.
@@ -76,6 +76,7 @@ func (a *app) copyDropped(end jobEnd, paths []string, dir string) error {
 	if err != nil {
 		return err
 	}
+	end = endReached(end, fs)
 	var started []*jobs.Job
 	var already []string
 	for _, path := range paths {
@@ -96,7 +97,7 @@ func (a *app) copyDropped(end jobEnd, paths []string, dir string) error {
 		}
 	}
 	if len(already) > 0 {
-		a.showNotice(arrived(already, dir, endName(end)), "Already exists.", false)
+		a.tell(arrived(already, dir, endName(end)), "Already exists.")
 	}
 	if len(started) == 0 {
 		return fs.Close()
@@ -139,7 +140,7 @@ func (a *app) sayWhenArrived(started []*jobs.Job, fs vfs.FS, paths []string,
 			if failed > 0 {
 				body = strconv.Itoa(failed) + " failed. Details are on their rows."
 			}
-			a.showNotice(arrived(names, dir, where), body, false)
+			a.tell(arrived(names, dir, where), body)
 		})
 		return errors.Join(fs.Close())
 	})

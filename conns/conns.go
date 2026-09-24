@@ -239,6 +239,13 @@ func (r *Registry) Drop(e *Entry) {
 	}
 }
 
+// Has reports whether a connection is still on the list.
+func (r *Registry) Has(e *Entry) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Contains(r.entries, e)
+}
+
 // DropFinished takes off every connection that has closed, for the
 // "clear finished" command.
 func (r *Registry) DropFinished(now time.Time) int {

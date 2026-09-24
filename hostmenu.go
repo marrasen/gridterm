@@ -150,13 +150,15 @@ func (a *app) openHostMenu(row ui.ListRow) error {
 	return nil
 }
 
-// closePaneRow closes the pane a row stands for, which is what the cross
-// on a pane's row does.
+// closePaneRow closes what a row stands for, which is what the cross on
+// its row does: a pane, a file being read, a tunnel, a piece of file
+// work.
 //
-// Asked of the panes rather than of paneRows: that set is a frame old,
-// and a key in the same frame can have closed the pane already.
+// Asked of the registry rather than of the rows drawn: those are a
+// frame old, and a key in the same frame can have closed the thing
+// already. Every close takes its row off the registry as it goes.
 func (a *app) closePaneRow(e *conns.Entry) error {
-	if !a.stillAPane(e) || e.Close == nil {
+	if e.Close == nil || !a.registry.Has(e) {
 		return nil
 	}
 	if err := e.Close(); err != nil {
@@ -166,25 +168,6 @@ func (a *app) closePaneRow(e *conns.Entry) error {
 	}
 	a.markDirty()
 	return nil
-}
-
-// stillAPane reports whether a row stands for a pane the window still
-// holds.
-func (a *app) stillAPane(e *conns.Entry) bool {
-	for _, have := range a.panes {
-		if have == e {
-			return true
-		}
-	}
-	if a.files == nil {
-		return false
-	}
-	for _, have := range a.files.rows {
-		if have == e {
-			return true
-		}
-	}
-	return false
 }
 
 // clearRow takes a finished row off the panel, which is what the cross at

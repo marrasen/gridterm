@@ -11,6 +11,7 @@ import (
 
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/internal/sshtest"
+	"github.com/marrasen/gridterm/jobs"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/vfs"
 )
@@ -127,6 +128,47 @@ func TestAFileDroppedOnAPaneElsewhereIsCopiedThere(t *testing.T) {
 	}
 	if got := a.shells[0].sentText(); !strings.Contains(got, "notes.txt") {
 		t.Errorf("it typed %q, want the path of the file it copied", got)
+	}
+}
+
+// The row of a file dropped on a pane on a server is under that server,
+// where the file is going. It used to be under this machine, because
+// that is where the file was read.
+func TestADroppedFilesRowIsUnderTheMachineItGoesTo(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pane := onlyPaneOn(t, a)
+	at := aDroppedFile(t, "notes.txt", 4096)
+
+	a.uploadOne(vfs.NewLocal(), jobEnd{host: "db"}, pane, at, t.TempDir(), nil)
+
+	if got := theJobRow(t, a).Host; got != "db" {
+		t.Errorf("the copy's row is under %q, want db, where the file is going", groupName(got))
+	}
+}
+
+// Which machine a piece of work is filed under: the one it writes to,
+// unless that is this one.
+func TestWorkIsFiledUnderTheMachineItWritesTo(t *testing.T) {
+	here, db, web := jobEnd{host: conns.Local}, jobEnd{host: "db"}, jobEnd{host: "web"}
+	to := vfs.NewLocal()
+	for _, c := range []struct {
+		what     string
+		op       jobs.Op
+		from, to jobEnd
+		want     string
+	}{
+		{"a copy up to a server", jobs.Op{Kind: jobs.Copy, To: to}, here, db, "db"},
+		{"a copy down from a server", jobs.Op{Kind: jobs.Copy, To: to}, db, here, "db"},
+		{"a copy between two servers", jobs.Op{Kind: jobs.Copy, To: to}, db, web, "web"},
+		{"a move up to a server", jobs.Op{Kind: jobs.Move, To: to}, here, db, "db"},
+		{"a delete on a server", jobs.Op{Kind: jobs.Delete}, db, web, "db"},
+		{"a copy on this machine", jobs.Op{Kind: jobs.Copy, To: to}, here, here, conns.Local},
+	} {
+		if got := jobFiledUnder(c.op, c.from, c.to).host; got != c.want {
+			t.Errorf("%s is filed under %q, want %q", c.what, groupName(got), groupName(c.want))
+		}
 	}
 }
 

@@ -161,10 +161,10 @@ func (a *app) movedServer(was, now, id string) {
 			r.row.Host = now
 		}
 	}
-	// Work is filed under the machine it read from, which its end says,
-	// finished or not.
-	for e, from := range a.jobFrom {
-		if e.Host == was && from.far.window == nil && from.at.id == id {
+	// Work is filed under one of its ends, which says which machine it
+	// is, finished or not.
+	for e, filed := range a.jobFiled {
+		if e.Host == was && filed.far.window == nil && filed.at.id == id {
 			e.Host = now
 		}
 	}

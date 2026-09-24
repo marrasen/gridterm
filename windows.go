@@ -451,13 +451,21 @@ func (a *app) takeOverFor(addr, keyFile string, at *spot, open opening) error {
 	// Already on its way. Asked about rather than refused: waiting for
 	// it is usually what the user wants.
 	if d := a.about(name).dialling; d != nil {
+		// Run once the other dial has settled, however it went: waited
+		// on, it may have connected or failed, and retried it has been
+		// given up on. A window connected now gets what was asked of it;
+		// one that is not is dialled again for it.
 		a.askAboutTheOneOnItsWay(d, name, func() {
+			held := a.windows.at(addr)
 			switch {
+			case held == nil && (open.only || open.files):
+				if err := a.takeOverFor(addr, keyFile, at, open); err != nil {
+					a.reportError("Could not connect to "+name, err)
+				}
 			case open.only:
-				a.reportError("Could not connect to "+name,
-					errors.New("this window is already connected to it"))
+				// Connected, which is all that was asked.
 			case open.files:
-				a.browseOnWindowOrSay(name, open.dir)
+				a.browseOnWindowOrSay(held.name, open.dir)
 			default:
 				a.workOnWindowOrSay(addr, keyFile, at)
 			}
@@ -625,6 +633,7 @@ func (a *app) becomeWindowPane(t *taken, pane *term.Terminal, log *connLog) {
 	}
 	log.Say("connected")
 	a.windows.draws(pane, t)
+	a.startsAgainOnWindow(pane, t)
 	log.Became(t.name, sess)
 }
 
@@ -780,6 +789,7 @@ func (a *app) openOnWindow(addr string, at *spot) error {
 		return errors.Join(err, sess.Close())
 	}
 	a.windows.draws(pane, t)
+	a.startsAgainOnWindow(pane, t)
 	return nil
 }
 
@@ -967,6 +977,12 @@ func (a *app) attachHere(what remoteKey, at *spot) error {
 	}
 	a.windows.draws(pane, t)
 	a.windows.watch(pane, what)
+	if open.Kind == conns.Terminal.String() && isTheirOwn(open.Host) {
+		// A shell on the window's own machine: once it ends, another
+		// can be asked for there. A command is the other window's to run
+		// again, and a machine beyond it is not one this can open on.
+		a.startsAgainOnWindow(pane, t)
+	}
 	return nil
 }
 

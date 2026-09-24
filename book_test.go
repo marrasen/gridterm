@@ -1793,3 +1793,66 @@ func TestTheAgentTickRefusesAnythingElse(t *testing.T) {
 		t.Errorf("a padded %q gave (%v, %v), want it read as on", setupYes, on, err)
 	}
 }
+
+// Retry on a window already being connected to gives up that attempt
+// and connects again, for a connection asked for on its own. It used to
+// give up and then say the window was already connected, with nothing
+// connected and nothing on its way.
+func TestRetryingAConnectionToAWindowConnectsAgain(t *testing.T) {
+	client := newTestApp(t, 90, 30)
+	withDialogs(t, client)
+	withPanel(t, client)
+	withMenubar(t, client)
+	keyFile, _ := aKeyFile(t)
+	deafHost, deafPort := sshtest.Deaf(t)
+	addr := net.JoinHostPort(deafHost, strconv.Itoa(deafPort))
+	saveWindowFromTheDialog(t, client, "statio", addr, keyFile)
+
+	client.openRoute("statio", nil, opening{only: true}, nil)
+	first := client.about("statio").dialling
+	if first == nil {
+		t.Fatal("nothing is on its way to the window")
+	}
+	client.openRoute("statio", nil, opening{only: true}, nil)
+	f := awaitModal(t, client, "the Already connecting to statio dialog",
+		byTitle[*ui.Form](dlgAlreadyConnecting+"statio"))
+	pressButton(t, client, f, btnRetry)
+	for range 5 {
+		client.pump.run()
+	}
+
+	if m := client.root.Modal(); m != nil {
+		if n, ok := m.(*ui.Notice); ok {
+			t.Fatalf("retrying said %q: %s", n.Title, n.Message())
+		}
+	}
+	if again := client.about("statio").dialling; again == nil || again == first {
+		t.Error("retrying left nothing on its way to the window")
+	}
+}
+
+// Waiting for a window already being connected to, when all that was
+// asked for is the connection, ends with it connected and nothing said.
+// It used to say the window could not be connected to, because it was.
+func TestWaitingForAConnectionToAWindowSaysNothing(t *testing.T) {
+	host, client, addr, keyFile := aServingWindow(t)
+	saveWindowFromTheDialog(t, client, "statio", addr, keyFile)
+
+	client.openRoute("statio", nil, opening{only: true}, nil)
+	client.openRoute("statio", nil, opening{only: true}, nil)
+	f := awaitModal(t, client, "the Already connecting to statio dialog",
+		byTitle[*ui.Form](dlgAlreadyConnecting+"statio"))
+	pressButton(t, client, f, btnWait)
+	waitFor(t, client, "the window to be connected to", func() bool {
+		return client.windows.count() == 1
+	}, host)
+	for range 20 {
+		host.pump.run()
+		client.pump.run()
+		time.Sleep(time.Millisecond)
+	}
+
+	if n, ok := client.root.Modal().(*ui.Notice); ok {
+		t.Errorf("waiting said %q: %s", n.Title, n.Message())
+	}
+}

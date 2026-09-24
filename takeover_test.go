@@ -3388,3 +3388,50 @@ type oneKeyAgent struct {
 }
 
 func (o oneKeyAgent) Signers() ([]ssh.Signer, error) { return []ssh.Signer{o.key}, nil }
+
+// A shell on another window that ends -- Marcus typed exit in one --
+// asks whether to reconnect, the way a shell here does. Answering yes
+// asks that window for another shell and puts it in the same pane.
+//
+// It used to say the program had finished and offer nothing: no
+// question, and only "Clear finished connections" to be rid of it.
+func TestAShellOnAWindowThatEndsCanBeReconnected(t *testing.T) {
+	host, client, addr := twoWindows(t)
+	held := client.windows.named(addr)
+	pane := client.windows.drawnFrom(held)[0]
+	shells := host.shellCount()
+
+	if err := host.shell(shells - 1).Close(); err != nil {
+		t.Fatalf("end the shell over there: %v", err)
+	}
+	waitFor(t, client, "the pane to ask what next", func() bool {
+		client.reapExited()
+		return pane.Asking() != ""
+	}, host)
+	if q := pane.Asking(); !strings.Contains(q, "closed") {
+		t.Fatalf("the pane asks %q, want it to say the connection closed", q)
+	}
+
+	if err := client.startAgain(pane); err != nil {
+		t.Fatalf("reconnect: %v", err)
+	}
+	waitFor(t, host, "another shell on the window", func() bool {
+		return host.shellCount() > shells
+	}, client)
+	waitFor(t, client, "the pane to watch the new shell", func() bool {
+		what, ok := client.windows.watching(pane)
+		return ok && what.id != ""
+	}, host)
+
+	if got := client.windows.drawnFrom(held); len(got) != 1 || got[0] != pane {
+		t.Errorf("the window draws %d panes, want the same pane again", len(got))
+	}
+	if pane.Asking() != "" {
+		t.Errorf("the pane still asks %q", pane.Asking())
+	}
+	// And what it types reaches the new shell over there.
+	pane.Send([]byte("echo hi\r"))
+	waitFor(t, host, "the new shell to be typed into", func() bool {
+		return strings.Contains(host.shell(host.shellCount()-1).sentText(), "echo hi")
+	}, client)
+}

@@ -46,7 +46,7 @@ func strokeInto(t *testing.T, f *Field, text string) {
 	t.Helper()
 	for _, r := range text {
 		for _, ev := range keystroke(r) {
-			f.HandleKey(ev)
+			send(t, f, ev)
 		}
 	}
 }
@@ -62,7 +62,7 @@ func TestADropDownPicksWithTheArrowsAndEnter(t *testing.T) {
 		t.Fatal("space did not open the list")
 	}
 	for range 2 {
-		f.HandleKey(press(input.KeyDown, 0))
+		send(t, f, press(input.KeyDown, 0))
 	}
 	if took, _ := f.HandleKey(press(input.KeyEnter, 0)); !took {
 		t.Fatal("Enter went past an open list")
@@ -83,8 +83,8 @@ func TestADropDownPicksWithTheArrowsAndEnter(t *testing.T) {
 func TestEscapePutsTheListAwayAndChangesNothing(t *testing.T) {
 	f := servers()
 	f.SetText("id-web")
-	f.HandleKey(press(input.KeySpace, 0))
-	f.HandleKey(press(input.KeyUp, 0))
+	send(t, f, press(input.KeySpace, 0))
+	send(t, f, press(input.KeyUp, 0))
 	if took, _ := f.HandleKey(press(input.KeyEscape, 0)); !took {
 		t.Error("Escape went past an open list, and would close the dialog")
 	}
@@ -108,14 +108,14 @@ func TestAClosedDropDownHandsOnTheDialogsKeys(t *testing.T) {
 // list, which is what a field with options has always taken.
 func TestCtrlArrowsStepThroughADropDown(t *testing.T) {
 	f := servers()
-	f.HandleKey(press(input.KeyDown, input.ModCtrl))
+	send(t, f, press(input.KeyDown, input.ModCtrl))
 	if f.IsOpen() {
 		t.Error("stepping opened the list")
 	}
 	if f.Text() != "id-backup" {
 		t.Errorf("it holds %q after one step from None, want id-backup", f.Text())
 	}
-	f.HandleKey(press(input.KeyUp, input.ModCtrl))
+	send(t, f, press(input.KeyUp, input.ModCtrl))
 	if f.Text() != "" {
 		t.Errorf("it holds %q after stepping back, want None", f.Text())
 	}
@@ -151,7 +151,7 @@ func TestOneSpaceOpensTheListAndOneMorePicks(t *testing.T) {
 	if !f.IsOpen() {
 		t.Fatal("a press of space did not leave the list open")
 	}
-	f.HandleKey(press(input.KeyDown, 0))
+	send(t, f, press(input.KeyDown, 0))
 	strokeInto(t, f, " ")
 	if f.IsOpen() {
 		t.Error("a press of space on the open list did not pick")
@@ -174,7 +174,7 @@ func TestASpaceInANameIsTypedNotPressed(t *testing.T) {
 	if f.Text() != "Keep neither" {
 		t.Errorf("typing Keep n chose %q", f.Text())
 	}
-	f.HandleKey(press(input.KeyEnd, 0))
+	send(t, f, press(input.KeyEnd, 0))
 	f.typedAt = f.typedAt.Add(-typeAheadGap) // a pause
 	strokeInto(t, f, " ")
 	if !f.IsOpen() {
@@ -192,12 +192,12 @@ func TestSpaceOpensAfterALetterThatMatchedNothing(t *testing.T) {
 		t.Error("space after a letter nothing starts with did not open the list")
 	}
 	f.closeList()
-	f.HandleKey(press(input.KeySpace, input.ModShift))
+	send(t, f, press(input.KeySpace, input.ModShift))
 	if !f.IsOpen() {
 		t.Error("Shift+Space did not open the list")
 	}
 	tick := NewTick(false)
-	tick.HandleKey(press(input.KeySpace, input.ModShift))
+	send(t, tick, press(input.KeySpace, input.ModShift))
 	if !tick.On() {
 		t.Error("Shift+Space did not turn a tick box over")
 	}
@@ -333,5 +333,13 @@ func TestADropDownTurnedOffPutsItsListAway(t *testing.T) {
 	}
 	if _, _, open := f.dropRect(); open {
 		t.Error("the form still has a list to draw")
+	}
+}
+
+// send gives a field one event, and fails the test on an error.
+func send(t *testing.T, f *Field, ev input.Event) {
+	t.Helper()
+	if _, err := f.HandleKey(ev); err != nil {
+		t.Fatalf("%v: %v", ev.Kind, err)
 	}
 }

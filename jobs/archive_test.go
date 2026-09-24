@@ -148,3 +148,29 @@ func aZipOf(t *testing.T, names ...string) []byte {
 	}
 	return b.Bytes()
 }
+
+// A folder with a real directory named like an archive in it, and a
+// link named like one, is copied whole: only a file is an archive.
+func TestCopyAFolderWithArchiveNamesThatAreNotArchives(t *testing.T) {
+	from, to := withZips(local(t)), withZips(local(t))
+	write(t, from.real, "lib/classes.jar/one.class", "one")
+	write(t, from.real, "lib/foo-1.2.jar", string(aZip(t)))
+	if err := os.Symlink("foo-1.2.jar", filepath.Join(from.real, "lib", "foo.jar")); err != nil {
+		t.Skipf("no links here: %v", err)
+	}
+
+	q := New(1)
+	j := q.Start(t.Context(), Op{
+		Kind: Copy, From: from.fs, At: from.at, Names: []string{"lib"},
+		To: to.fs, Into: to.at,
+	}, Options{})
+	if err := ends(t, j); err != nil {
+		t.Fatalf("the job: %v", err)
+	}
+	if got := read(t, to.real, "lib/classes.jar/one.class"); got != "one" {
+		t.Errorf("the directory named classes.jar arrived holding %q", got)
+	}
+	if got, err := os.Readlink(filepath.Join(to.real, "lib", "foo.jar")); err != nil || got != "foo-1.2.jar" {
+		t.Errorf("the link arrived as %q, %v", got, err)
+	}
+}

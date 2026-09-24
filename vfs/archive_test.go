@@ -423,6 +423,10 @@ func (r *renameable) Renamed(now string) { r.now = now }
 // the last one it read, and a copy from another pane or a program
 // outside gridterm can change the file under it.
 func TestAnArchiveChangedSinceItWasReadIsReadAgain(t *testing.T) {
+	// Asked every time here, rather than once a second.
+	was := archiveRecheck
+	archiveRecheck = 0
+	t.Cleanup(func() { archiveRecheck = was })
 	f, at := withAZip(t, "one.txt")
 	if got, err := f.ReadDir(at); err != nil || !slices.Equal(named(got), []string{"one.txt"}) {
 		t.Fatalf("first read: %v, %v", named(got), err)
@@ -458,17 +462,90 @@ func TestADirectoryNamedLikeAnArchiveIsNotOne(t *testing.T) {
 	}
 }
 
-// An archive is still read only: nothing is made or written inside one,
-// and nothing is made with an archive's name, which could not be walked
-// into afterwards.
-func TestNothingIsMadeWithAnArchivesName(t *testing.T) {
+// A directory with an archive's name is a directory: made, walked,
+// written into and removed like any other. Only a file is an archive.
+func TestADirectoryWithAnArchivesNameIsADirectory(t *testing.T) {
 	dir := t.TempDir()
 	f := WithArchives(NewLocal())
+	at := filepath.Join(dir, "made.zip")
 
-	if err := f.Mkdir(filepath.Join(dir, "made.zip"), 0o755); !errors.Is(err, ErrInArchive) {
-		t.Errorf("making a directory named made.zip: %v", err)
+	if err := f.Mkdir(at, 0o755); err != nil {
+		t.Fatalf("making a directory named made.zip: %v", err)
 	}
-	if _, err := f.Create(filepath.Join(dir, "made.zip"), 0o644); !errors.Is(err, ErrInArchive) {
-		t.Errorf("writing made.zip straight: %v", err)
+	w, err := f.Create(filepath.Join(at, "one.txt"), 0o644)
+	if err != nil {
+		t.Fatalf("writing into it: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	got, err := f.ReadDir(at)
+	if err != nil || !slices.Equal(named(got), []string{"one.txt"}) {
+		t.Fatalf("listing it: %v, %v", named(got), err)
+	}
+	if err := f.Remove(filepath.Join(at, "one.txt")); err != nil {
+		t.Fatalf("removing what is in it: %v", err)
+	}
+	if err := f.Remove(at); err != nil {
+		t.Errorf("removing it: %v", err)
+	}
+}
+
+// A link with an archive's name is made, the way a jar is linked to by
+// a name without its version.
+func TestALinkWithAnArchivesNameIsMade(t *testing.T) {
+	f, at := withAZip(t, "one.txt")
+	link := filepath.Join(filepath.Dir(at), "latest.zip")
+
+	if err := f.Symlink(at, link); err != nil {
+		t.Fatalf("linking latest.zip: %v", err)
+	}
+}
+
+// Nothing is written inside an archive: that is building the container
+// again, which is not what reading one is.
+func TestNothingIsWrittenInsideAnArchive(t *testing.T) {
+	f, at := withAZip(t, "one.txt")
+
+	if _, err := f.Create(filepath.Join(at, "two.txt"), 0o644); !errors.Is(err, ErrInArchive) {
+		t.Errorf("writing inside the archive: %v", err)
+	}
+	if err := f.Mkdir(filepath.Join(at, "sub"), 0o755); !errors.Is(err, ErrInArchive) {
+		t.Errorf("making a directory inside the archive: %v", err)
+	}
+}
+
+// statCounting counts the questions asked of a filesystem.
+type statCounting struct {
+	FS
+	stats int
+}
+
+func (c *statCounting) Stat(at string) (Entry, error) {
+	c.stats++
+	return c.FS.Stat(at)
+}
+
+// The archive held open is asked whether it changed at most once a
+// second, not once for every file read out of it: over a connection each
+// question is a round trip, and a copy out of a jar opens it for every
+// file in it.
+func TestAHeldArchiveIsNotAskedAboutForEveryRead(t *testing.T) {
+	_, at := withAZip(t, "one.txt", "two.txt", "three.txt")
+	c := &statCounting{FS: NewLocal()}
+	f := WithArchives(c)
+
+	for range 10 {
+		if _, err := f.ReadDir(at); err != nil {
+			t.Fatalf("list: %v", err)
+		}
+		r, err := f.Open(filepath.Join(at, "one.txt"))
+		if err != nil {
+			t.Fatalf("open: %v", err)
+		}
+		_ = r.Close()
+	}
+	if c.stats > 3 {
+		t.Errorf("the archive was asked about %d times for twenty reads", c.stats)
 	}
 }

@@ -100,20 +100,23 @@ func (a *app) runSavedCopy(c settings.SavedCopy) error {
 // filesystems being found afresh from the machines it names.
 func (a *app) repeatSavedCopy(op jobs.Op, from, to jobEnd) {
 	title := "Could not copy it again"
-	source, err := a.openEnd(from)
-	if err != nil {
-		a.reportError(title, err)
-		return
-	}
-	into, err := a.openEnd(to)
-	if err != nil {
-		a.reportError(title, errors.Join(err, source.Close()))
-		return
-	}
-	op.From, op.To = source, into
-	// The names the panel files the rows under, off what was just opened.
-	from.host, to.host = a.hostOf(source), a.hostOf(into)
-	a.runJob(op, from, to, []vfs.FS{source, into})
+	a.openEndAgain(from, func(source vfs.FS, err error) {
+		if err != nil {
+			a.reportError(title, err)
+			return
+		}
+		a.openEndAgain(to, func(into vfs.FS, err error) {
+			if err != nil {
+				a.reportError(title, errors.Join(err, source.Close()))
+				return
+			}
+			op.From, op.To = source, into
+			// The names the panel files the rows under, off what was
+			// just opened.
+			from.host, to.host = a.hostOf(source), a.hostOf(into)
+			a.runJob(op, from, to, []vfs.FS{source, into})
+		})
+	})
 }
 
 // openCopies lists the copies the user asked to keep. Taking one runs it

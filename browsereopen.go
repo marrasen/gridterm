@@ -194,6 +194,14 @@ func (r *reopening) Place() any {
 	return placeOn(r.host)
 }
 
+// step is how the machine was reached, for work that has to open it
+// again and has only this to go on.
+func (r *reopening) step() step {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.at
+}
+
 // Host is the machine this is filed under, which a rename changes.
 func (r *reopening) Host() string {
 	r.mu.Lock()

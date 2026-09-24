@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/marrasen/gridterm/conns"
+	"github.com/marrasen/gridterm/internal/sshtest"
 	"github.com/marrasen/gridterm/jobs"
 	"github.com/marrasen/gridterm/ui/files"
 	"github.com/marrasen/gridterm/vfs"
@@ -196,6 +198,116 @@ func TestAReaderWhoseBrowserPaneWentStillOpensTheMachine(t *testing.T) {
 	waitFor(t, a, "the reader to read again", func() bool { return open.Lines() == 3 })
 	if err := open.Err(); err != nil {
 		t.Errorf("reading again after the drop: %v", err)
+	}
+	if up := a.root.Modal(); up != nil {
+		t.Errorf("a dialog complained about it: %T", up)
+	}
+}
+
+// Step 3: a copy repeated after the connection went opens the machine
+// again by itself.
+
+// A saved copy run again after the machine it reads went connects to it
+// and copies.
+func TestASavedCopyRunAgainOpensTheMachine(t *testing.T) {
+	a, s, host := aConnectedWindow(t, 100, 30)
+	there := openFilesFromThePlus(t, a, host)
+	here := openFilesFromThePlus(t, a, conns.Local)
+	if there == nil || here == nil {
+		t.Fatal("no file panes opened")
+	}
+	from, into := t.TempDir(), t.TempDir()
+	putFile(t, from, "one.txt", "the body")
+	openAt(t, a, there, filepath.ToSlash(from))
+	openAt(t, a, here, into)
+
+	op := jobs.Op{
+		Kind: jobs.Copy, At: filepath.ToSlash(from), Into: into,
+		Names: []string{"one.txt"},
+	}
+	fromEnd, toEnd := a.endOf(there), a.endOf(here)
+
+	s.CloseClients()
+	waitFor(t, a, "the window to see the machine go", func() bool {
+		a.reapExited()
+		return a.machines.named(host) == nil
+	})
+	settleAndClearNotices(t, a)
+
+	a.repeatSavedCopy(op, fromEnd, toEnd)
+	waitFor(t, a, "the copy to happen", func() bool {
+		a.refreshJobs()
+		_, err := os.Stat(filepath.Join(into, "one.txt"))
+		return err == nil
+	})
+	if a.machines.named(host) == nil {
+		t.Error("the machine was not opened again")
+	}
+	if up := a.root.Modal(); up != nil {
+		t.Errorf("a dialog complained about it: %T", up)
+	}
+	// The row is filed under the machine, not under this one.
+	var filed []string
+	for e := range a.jobs {
+		filed = append(filed, e.Host)
+	}
+	for _, at := range filed {
+		if at != host {
+			t.Errorf("the work is filed under %q, want %q", at, host)
+		}
+	}
+}
+
+// A copy between two machines that both went opens them one after the
+// other, rather than both at once.
+func TestACopyBetweenTwoGoneMachinesOpensBoth(t *testing.T) {
+	near, far := sshtest.New(t), sshtest.New(t)
+	a := newTestApp(t, 100, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	pinServers(t, a, near, far)
+	saveHost(t, a, "one", near, "")
+	saveHost(t, a, "two", far, "")
+	for _, name := range []string{"one", "two"} {
+		if err := a.connectSaved(name); err != nil {
+			t.Fatalf("connectSaved %s: %v", name, err)
+		}
+	}
+	waitFor(t, a, "both machines to answer", func() bool {
+		return a.machines.named("one") != nil && a.machines.named("two") != nil
+	})
+	source := openFilesFromThePlus(t, a, "one")
+	sink := openFilesFromThePlus(t, a, "two")
+	if source == nil || sink == nil {
+		t.Fatal("no file panes opened")
+	}
+	from, into := t.TempDir(), t.TempDir()
+	putFile(t, from, "one.txt", "the body")
+	openAt(t, a, source, filepath.ToSlash(from))
+	openAt(t, a, sink, filepath.ToSlash(into))
+
+	op := jobs.Op{
+		Kind: jobs.Copy, At: filepath.ToSlash(from), Into: filepath.ToSlash(into),
+		Names: []string{"one.txt"},
+	}
+	fromEnd, toEnd := a.endOf(source), a.endOf(sink)
+
+	near.CloseClients()
+	far.CloseClients()
+	waitFor(t, a, "the window to see both machines go", func() bool {
+		a.reapExited()
+		return a.machines.named("one") == nil && a.machines.named("two") == nil
+	})
+	settleAndClearNotices(t, a)
+
+	a.repeatSavedCopy(op, fromEnd, toEnd)
+	waitFor(t, a, "the copy to happen", func() bool {
+		a.refreshJobs()
+		_, err := os.Stat(filepath.Join(into, "one.txt"))
+		return err == nil
+	})
+	if a.machines.named("one") == nil || a.machines.named("two") == nil {
+		t.Errorf("only %v were opened again", a.machines.names())
 	}
 	if up := a.root.Modal(); up != nil {
 		t.Errorf("a dialog complained about it: %T", up)

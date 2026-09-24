@@ -268,13 +268,24 @@ func (a *app) filesystem(host string) (vfs.FS, error) {
 		// over is read over a connection this window did not make.
 		return f, nil
 	}
-	// Outermost, so that what the browser holds and asks about is the
-	// wrapper: a pane's filesystem is looked up by identity in one
-	// place and type-asserted for a rename in another, and both have to
-	// find this rather than the session it happens to hold now.
-	r := newReopening(a, host, a.about(host).machine.at, f)
+	return a.holdingTheMachine(host, f), nil
+}
+
+// holdingTheMachine wraps a filesystem so it holds the machine rather
+// than the session on it.
+//
+// Outermost, so that what the browser holds and asks about is the
+// wrapper: a pane's filesystem is looked up by identity in one place
+// and type-asserted for a rename in another, and both have to find this
+// rather than the session it happens to hold now.
+func (a *app) holdingTheMachine(host string, f vfs.FS) vfs.FS {
+	on := a.about(host)
+	if on.machine == nil {
+		return f
+	}
+	r := newReopening(a, host, on.machine.at, f)
 	a.keepReopening(r)
-	return r, nil
+	return r
 }
 
 // machineFiles opens a filesystem for a machine, as the machine has
@@ -471,15 +482,48 @@ func (a *app) startJob(kind jobs.Kind, w files.Work) {
 type jobEnd struct {
 	host string
 	far  remoteHostKey
+
+	// at is the step the machine was reached by, for opening it again
+	// when the server list has no route to it. A machine connected to
+	// from a typed target is on no list and still has to be reachable,
+	// which is what the pane's own filesystem keeps for the same reason.
+	at step
 }
 
 // endOf names the end of a piece of file work one pane stands for.
 func (a *app) endOf(p *files.Pane) jobEnd {
 	end := jobEnd{host: a.hostOf(p.FS())}
+	if r, is := p.FS().(*reopening); is {
+		end.at = r.step()
+	}
 	if b := a.files; b != nil {
 		end.far = b.far[p]
 	}
 	return end
+}
+
+// openEndAgain opens one end of a piece of file work, connecting to the
+// machine first when nothing is.
+//
+// then runs on the goroutine that draws, which is where the caller is:
+// straight away when the machine is there, and when the connection has
+// been made or has failed when it is not. A copy repeated after both
+// its machines dropped is what this is for, and it connects to them one
+// after the other rather than both at once.
+func (a *app) openEndAgain(end jobEnd, then func(vfs.FS, error)) {
+	if end.far.window != nil || a.about(end.host).machine != nil ||
+		a.about(end.host).kind == hostHere {
+		f, err := a.openEnd(end)
+		then(f, err)
+		return
+	}
+	a.filesystemAgain(end.host, end.at, func(f vfs.FS, err error) {
+		if err != nil {
+			then(nil, err)
+			return
+		}
+		then(a.holdingTheMachine(end.host, f), nil)
+	})
 }
 
 // openEnd opens one end of a piece of file work again: a machine this

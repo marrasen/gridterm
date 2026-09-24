@@ -85,6 +85,22 @@ Stat, open a file, make a directory, rename, remove, chmod. They go
 through the same wrapper, so they come free -- but each has its own
 failure path in the browser and each needs a test.
 
+**Done.** Make a directory, rename, read a file, delete: each asked for
+the way the user asks for it. Rename asks twice, once to see whether
+the name is taken and once to rename, and makes one connection between
+the two.
+
+**Reading, found while building it.** A reader outlives the browser
+pane it was opened from, and the browser letting go of a filesystem a
+reader still holds left that filesystem unable to open the machine --
+the reader still on screen with nothing behind it. Closing a filesystem
+is now the single place it is forgotten, so one still being read
+through, or still carrying a job, keeps its machine until the last of
+those has finished with it.
+
+Chmod and Symlink are not browser commands: only the copy jobs use
+them, so they are step 3's.
+
 ## Step 3 -- a copy again
 
 A job holds the filesystem it was given. Holding the wrapper rather
@@ -95,6 +111,17 @@ different thing and is not this: it has half-written a file, and what
 to do about that is the question `jobpane` already asks. This is only
 about running it again afterwards.
 
+**Done.** A repeat opens its ends afresh, and a machine that is not
+connected is connected to first, one end after the other. A job end
+remembers the step its machine was reached by, the way the pane's own
+filesystem does, so a repeat onto a typed target works too.
+
+**What this changed.** A repeat used to refuse a machine that was not
+connected -- "Could not copy it again". Pressing the button means do
+this work, so the window opens the machine and does it, saying so on
+the bottom row. The refusal is left for an end that cannot be reached
+at all: nothing connected, no route on any list, and no step kept.
+
 ## What Marcus settled, 24 September
 
 1. **The bottom row says it is reconnecting.** A folder click that takes
@@ -103,11 +130,15 @@ about running it again afterwards.
    replaced by whatever happens next, the way `Checking for updates…`
    does.
 
-## Still to settle
+2. **A repeat connects.** Pressing "Do it again" on work whose machine
+   has gone opens that machine rather than refusing.
 
-1. **How many panes reconnect at once?** Four panes on one dropped
-   machine, all clicked, should make one connection and not four. The
-   dial queue already answers this if they all go through it.
+## Settled while building
+
+1. **How many panes reconnect at once?** One. They all go through the
+   dial queue, and a caller blocked on an answer queues on `answering`
+   rather than `waiting`, so a connection that is not made comes back
+   as a failure instead of leaving the pane reading for ever.
 
 ## How the wrapper knows its connection has gone
 

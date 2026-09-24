@@ -470,8 +470,13 @@ func TestCancellingAJobFromItsDialog(t *testing.T) {
 	}
 }
 
-// A repeat looks the machines up again by name, so one that has gone is
-// said plainly rather than copied to a filesystem nobody holds.
+// A repeat looks the machines up again by name, and connects to one
+// that has gone rather than refusing.
+//
+// Pressing the button means do this work. The machine it was done on is
+// not there, so the window opens it again and does it -- saying so on
+// the bottom row, because a button that waits with nothing on screen
+// reads as a window that has stopped.
 func TestRepeatingAJobWhoseMachineHasGone(t *testing.T) {
 	s := sshtest.New(t)
 	a := newTestApp(t, 80, 24)
@@ -498,15 +503,25 @@ func TestRepeatingAJobWhoseMachineHasGone(t *testing.T) {
 	openTheRow(t, a, e)
 	d := theJobPane(t, a)
 
+	if err := os.Remove(filepath.Join(into, "one.txt")); err != nil {
+		t.Fatalf("clear what the first copy made: %v", err)
+	}
 	if err := a.dropMachine(host); err != nil {
 		t.Fatalf("dropMachine: %v", err)
 	}
+	settleAndClearNotices(t, a)
 	pressChoice(t, d, btnRepeat)
 
-	n := awaitModal(t, a, "a dialog saying it could not be done again",
-		byTitle[*ui.Notice]("Could not copy it again"))
-	if !strings.Contains(n.Message(), host) {
-		t.Fatalf("it says %q, want which machine is gone", n.Message())
+	waitFor(t, a, "the copy to be done again", func() bool {
+		a.refreshJobs()
+		_, err := os.Stat(filepath.Join(into, "one.txt"))
+		return err == nil
+	})
+	if a.machines.named(host) == nil {
+		t.Error("the machine was not opened again")
+	}
+	if up := a.root.Modal(); up != nil {
+		t.Errorf("a dialog complained about it: %T", up)
 	}
 }
 
@@ -706,6 +721,11 @@ func TestAJobLetsGoOfTheFilesystemsItOpened(t *testing.T) {
 
 // A repeat that cannot reach the far end starts nothing: no second row,
 // no second job, and the source it had already opened is let go of.
+//
+// A machine that is merely not connected is connected to. This is the
+// one that cannot be reached at all: nothing is connected to it, the
+// server list has no route to it, and it was not reached from a typed
+// target either.
 func TestARepeatThatCannotReachTheFarEndStartsNothing(t *testing.T) {
 	s := sshtest.New(t)
 	a := newTestApp(t, 80, 24)
@@ -730,17 +750,19 @@ func TestARepeatThatCannotReachTheFarEndStartsNothing(t *testing.T) {
 	openTheRow(t, a, e)
 	d := theJobPane(t, a)
 
-	// The machine the copy went to is gone, and this machine is not.
+	// The far end is a machine the window has no way to reach.
 	if err := a.dropMachine(host); err != nil {
 		t.Fatalf("dropMachine: %v", err)
 	}
+	gone := "gone-for-good"
+	d.to = jobEnd{host: gone}
 	rows := len(a.registry.Groups(time.Now()))
 	pressChoice(t, d, btnRepeat)
 
 	n := awaitModal(t, a, "a dialog saying it could not be done again",
 		byTitle[*ui.Notice]("Could not copy it again"))
-	if !strings.Contains(n.Message(), host) {
-		t.Fatalf("it says %q, want which machine is gone", n.Message())
+	if !strings.Contains(n.Message(), gone) {
+		t.Fatalf("it says %q, want which machine cannot be reached", n.Message())
 	}
 	if len(a.jobs) != 0 {
 		t.Fatalf("%d jobs were started by a repeat that could not reach the far end", len(a.jobs))

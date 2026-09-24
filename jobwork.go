@@ -88,31 +88,37 @@ func soFar(d time.Duration) string {
 // Opened from the ends rather than from the filesystems the job held:
 // those belong to panes that may have been closed, and a machine that
 // dropped and came back is a different connection under the same name.
+// A machine that has not come back is connected to here, so the work
+// can be done again without the user reconnecting first.
 func (a *app) repeatJob(op jobs.Op, from, to jobEnd) {
 	title := "Could not " + strings.ToLower(op.Kind.String()) + " it again"
-	source, err := a.openEnd(from)
-	if err != nil {
-		a.reportError(title, err)
-		return
-	}
-	owned := []vfs.FS{source}
-	op.From = source
-	// The name the panel files the row under, worked out from the
-	// filesystem that was just opened: a machine or a window renamed since
-	// the job ran would leave the row under a name no heading has.
-	from.host = a.hostOf(source)
-	if op.To != nil {
-		into, err := a.openEnd(to)
+	a.openEndAgain(from, func(source vfs.FS, err error) {
 		if err != nil {
-			// The source is let go of here: nothing else holds it, and
-			// a session nobody closes is a session left open on the
-			// machine.
-			a.reportError(title, errors.Join(err, source.Close()))
+			a.reportError(title, err)
 			return
 		}
-		owned = append(owned, into)
-		op.To = into
-		to.host = a.hostOf(into)
-	}
-	a.runJob(op, from, to, owned)
+		owned := []vfs.FS{source}
+		op.From = source
+		// The name the panel files the row under, worked out from the
+		// filesystem that was just opened: a machine or a window renamed
+		// since the job ran would leave the row under a name no heading
+		// has.
+		from.host = a.hostOf(source)
+		if op.To == nil {
+			a.runJob(op, from, to, owned)
+			return
+		}
+		a.openEndAgain(to, func(into vfs.FS, err error) {
+			if err != nil {
+				// The source is let go of here: nothing else holds it,
+				// and a session nobody closes is a session left open on
+				// the machine.
+				a.reportError(title, errors.Join(err, source.Close()))
+				return
+			}
+			op.To = into
+			to.host = a.hostOf(into)
+			a.runJob(op, from, to, append(owned, into))
+		})
+	})
 }

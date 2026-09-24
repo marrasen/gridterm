@@ -2,6 +2,7 @@ package files
 
 import (
 	"image"
+	"image/color"
 	"strings"
 	"testing"
 
@@ -281,5 +282,72 @@ func TestDraggingTheStripMovesTheFile(t *testing.T) {
 	press(input.MouseMove, 39, body)
 	if r.Top() != stopped {
 		t.Error("the file still follows the pointer once the button is up")
+	}
+}
+
+// A drag the window gives up on -- a dialog opening while the button
+// is down, say -- stops. Moves after it with no button held do not
+// scroll the file.
+func TestACancelledDragOfTheStripStops(t *testing.T) {
+	rows := 12
+	r := readerOn(t, "notes.txt", aLongFile(1000), 40, rows)
+	body := rows - readerChrome
+	if _, err := r.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft, Col: 39, Row: 1,
+	}); err != nil {
+		t.Fatalf("press: %v", err)
+	}
+
+	r.CancelGesture()
+	if _, err := r.HandleMouse(input.MouseEvent{
+		Kind: input.MouseMove, Button: input.MouseNone, Col: 39, Row: body,
+	}); err != nil {
+		t.Fatalf("move: %v", err)
+	}
+	if got := r.Top(); got != 0 {
+		t.Errorf("a move after the drag was given up scrolled the file to %d", got)
+	}
+}
+
+// A move with no button held ends a drag whose release never arrived,
+// however it was lost.
+func TestAMoveWithNothingHeldEndsADragOfTheStrip(t *testing.T) {
+	rows := 12
+	r := readerOn(t, "notes.txt", aLongFile(1000), 40, rows)
+	body := rows - readerChrome
+	if _, err := r.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft, Col: 39, Row: 1,
+	}); err != nil {
+		t.Fatalf("press: %v", err)
+	}
+
+	for _, row := range []int{body, body - 1} {
+		if _, err := r.HandleMouse(input.MouseEvent{
+			Kind: input.MouseMove, Button: input.MouseNone, Col: 39, Row: row,
+		}); err != nil {
+			t.Fatalf("move: %v", err)
+		}
+	}
+	if got := r.Top(); got != 0 {
+		t.Errorf("moves with nothing held scrolled the file to %d", got)
+	}
+}
+
+// The strip is drawn again in a new theme's colours, and against a new
+// width of the file: both are baked into the picture.
+func TestTheStripIsDrawnAgainForNewColoursOrWidth(t *testing.T) {
+	r := readerOn(t, "notes.txt", aLongFile(1000), 40, 12)
+	r.Style = readerStyle()
+	one := r.MapPicture(8, 100)
+
+	r.Style.NoteFG = color.RGBA{R: 1, G: 2, B: 3, A: 0xff}
+	two := r.MapPicture(8, 100)
+	if two == one {
+		t.Fatal("the strip kept the old theme's colours")
+	}
+
+	r.Layout(ui.Size{Cols: 60, Rows: 12})
+	if three := r.MapPicture(8, 100); three == two {
+		t.Error("the strip kept bars measured against the old width")
 	}
 }

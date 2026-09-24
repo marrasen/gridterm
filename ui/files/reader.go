@@ -140,6 +140,12 @@ type Reader struct {
 	mapPic  *image.RGBA
 	mapDrag bool
 
+	// mapStyle and mapWide are what mapPic was drawn with: its colours
+	// are the style's, and its bars are measured against the width the
+	// file is drawn in. A change to either draws it again.
+	mapStyle Style
+	mapWide  int
+
 	// colour turns a line into the stretches it is drawn in, picked from
 	// what the file is called. A nil one leaves the file plain.
 	colour colourer
@@ -783,6 +789,12 @@ func (r *Reader) HandleMouse(ev input.MouseEvent) (bool, error) {
 	switch ev.Kind {
 	case input.MouseMove:
 		if r.mapDrag {
+			if ev.Button != input.MouseLeft {
+				// The button came up somewhere this never heard about.
+				// A move with nothing held is not a drag.
+				r.mapDrag = false
+				return true, nil
+			}
 			// The strip is a scrollbar as well as a map: dragged, the
 			// file follows the pointer, whether or not it is still on
 			// the strip.
@@ -864,7 +876,7 @@ func (r *Reader) FocusesFirst() bool { return true }
 // CancelGesture says the release that would end a drag is never coming.
 // Left alone, the next time the pointer crossed the reader with no
 // button down it would carry on picking text out.
-func (r *Reader) CancelGesture() { r.selecting = false }
+func (r *Reader) CancelGesture() { r.selecting, r.mapDrag = false, false }
 
 // SetFocus takes or gives up the keys, and Focused says which it is. A
 // reader draws its bar differently without them, so the pane says

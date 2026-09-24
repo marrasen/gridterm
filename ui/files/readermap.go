@@ -88,13 +88,14 @@ func (r *Reader) MapRoom() ui.Rect {
 // box the strip's own cells draw, saying where the pane is, shows
 // through.
 //
-// The same image comes back until the lines or the size change, so the
-// window builds a texture only then.
+// The same image comes back until the lines, the size, the width of the
+// file or the colours change, so the window builds a texture only then.
 func (r *Reader) MapPicture(w, h int) *image.RGBA {
 	if r.mapWidth() == 0 || w <= 0 || h <= 0 {
 		return nil
 	}
-	if p := r.mapPic; p != nil && p.Bounds().Dx() == w && p.Bounds().Dy() == h {
+	if p := r.mapPic; p != nil && p.Bounds().Dx() == w && p.Bounds().Dy() == h &&
+		r.mapStyle == r.Style && r.mapWide == r.bodyCols() {
 		return p
 	}
 	img := image.NewRGBA(image.Rect(0, 0, w, h))
@@ -129,7 +130,7 @@ func (r *Reader) MapPicture(w, h int) *image.RGBA {
 			fill(img, w-mark, y, mark, r.colourOf(b.worst))
 		}
 	}
-	r.mapPic = img
+	r.mapPic, r.mapStyle, r.mapWide = img, r.Style, r.bodyCols()
 	return img
 }
 

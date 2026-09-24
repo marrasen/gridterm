@@ -385,17 +385,16 @@ func (a *app) keepReopening(r *reopening) {
 	a.reopening = append(a.reopening, r)
 }
 
-// forgetReopening takes one off the list, for a filesystem that has
-// been closed.
-func (a *app) forgetReopening(f vfs.FS) {
-	r, is := f.(*reopening)
-	if !is {
-		return
+// dropReopeningFS takes a filesystem off the window's list, for one
+// being closed on this goroutine.
+//
+// Closing takes it off the list by itself, but on the next frame,
+// because a filesystem is closed on whichever goroutine let go of it.
+// One let go of here is off the list before anything else is asked.
+func (a *app) dropReopeningFS(f vfs.FS) {
+	if r, is := f.(*reopening); is {
+		a.dropReopening(r)
 	}
-	r.mu.Lock()
-	r.forgotten = true
-	r.mu.Unlock()
-	a.dropReopening(r)
 }
 
 // dropReopening takes one off the window's list.

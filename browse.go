@@ -1155,11 +1155,14 @@ func (a *app) filesPaneGone(p *files.Pane) error {
 // close waits for the last reader to go and for the last read it has out
 // to come back.
 func (a *app) browserLetGoFS(f vfs.FS) error {
-	a.forgetReopening(f)
 	if f == nil {
 		return nil
 	}
 	if a.fsHeld[f] > 0 {
+		// A reader is still on it, so it is not let go of and it is not
+		// forgotten either: the reader reads again when the user asks,
+		// and that read opens the machine the same as the browser's
+		// would have.
 		if a.fsGone == nil {
 			a.fsGone = map[vfs.FS]bool{}
 		}
@@ -1180,8 +1183,12 @@ func (a *app) browserLetGoFS(f vfs.FS) error {
 func (a *app) releaseFS(f vfs.FS) error {
 	stopping := a.stopJobsOn(f)
 	if len(stopping) == 0 {
+		a.dropReopeningFS(f)
 		return f.Close()
 	}
+	// The ones with a job still on them stay on the list until that job
+	// has stopped: the job is still using this, and a machine that goes
+	// while it runs has to reach it.
 	a.closes.inBackground(func() error {
 		for _, j := range stopping {
 			<-j.Done()

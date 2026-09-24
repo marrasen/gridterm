@@ -7,10 +7,12 @@ import (
 	"crypto/rand"
 	"encoding/pem"
 	"errors"
+	"image/color"
 	"io"
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -242,7 +244,7 @@ func TestPressingServeOnTheDialogAsItOpensWorks(t *testing.T) {
 // dialog takes anything stacked on top of it. Opened from inside the
 // action, the dialog with the port and the fingerprint in it was
 // destroyed the moment it appeared.
-func TestTheServingDialogSurvivesTheButtonThatOpensIt(t *testing.T) {
+func TestTheServingPaneSurvivesTheButtonThatOpensIt(t *testing.T) {
 	a := newTestApp(t, 90, 30)
 	withDialogs(t, a)
 	withServing(t, a, aPublicKey(t, "marcus@laptop"))
@@ -251,14 +253,16 @@ func TestTheServingDialogSurvivesTheButtonThatOpensIt(t *testing.T) {
 	}
 	pressButton(t, a, awaitModal[*ui.Form](t, a, "a dialog", nil), "Serve")
 
-	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
-
-	text := strings.Join(f.Lines, "\n")
+	pane := a.servingPane()
+	if pane == nil {
+		t.Fatal("nothing opened on what the window is serving")
+	}
+	text := servingPaneText(pane)
 	if !strings.Contains(text, "SHA256:") {
-		t.Errorf("the dialog does not show a fingerprint:\n%s", text)
+		t.Errorf("the pane does not show a fingerprint:\n%s", text)
 	}
 	if !strings.Contains(text, a.serving.addr()) {
-		t.Errorf("the dialog does not say where it is serving:\n%s", text)
+		t.Errorf("the pane does not say where it is serving:\n%s", text)
 	}
 }
 
@@ -281,13 +285,10 @@ func TestTheFingerprintShownIsTheOneBeingServed(t *testing.T) {
 	if err := os.Remove(paths.hostKey); err != nil {
 		t.Fatalf("remove: %v", err)
 	}
-	if err := a.showServing(); err != nil {
-		t.Fatalf("show: %v", err)
-	}
+	pane := theServingPane(t, a)
 
-	f := awaitModal[*ui.Form](t, a, "a dialog", nil)
-	if text := strings.Join(f.Lines, "\n"); !strings.Contains(text, want) {
-		t.Errorf("the dialog shows a fingerprint the server does not present:\n%s\nwant %s",
+	if text := servingPaneText(pane); !strings.Contains(text, want) {
+		t.Errorf("the pane shows a fingerprint the server does not present:\n%s\nwant %s",
 			text, want)
 	}
 }
@@ -430,7 +431,7 @@ func TestTheServeDialogOpensOnWhatWasLastServedWith(t *testing.T) {
 	f := openServeDialog(t, a)
 	retypeField(t, a, f, fldPort, want)
 	pressButton(t, a, f, btnServe)
-	pressButton(t, a, awaitModal[*ui.Form](t, a, "the serving dialog", nil), "Stop serving")
+	pressServingChoice(t, theServingPane(t, a), btnStopServing)
 
 	if port, saved := set.ServePort(); !saved || strconv.Itoa(port) != want {
 		t.Errorf("the settings hold port %d, %v; want %s saved", port, saved, want)
@@ -489,7 +490,7 @@ func TestNoPortAskedForIsRememberedAsNoPortAskedFor(t *testing.T) {
 	if port, saved := set.ServePort(); !saved || port != 0 {
 		t.Errorf("the settings hold port %d, %v; want 0 saved", port, saved)
 	}
-	pressButton(t, a, awaitModal[*ui.Form](t, a, "the serving dialog", nil), "Stop serving")
+	pressServingChoice(t, theServingPane(t, a), btnStopServing)
 	fieldSays(t, openServeDialog(t, a), "Port", "0")
 }
 
@@ -1479,5 +1480,227 @@ func TestTheRowForAClientIsARemote(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("the window has no row for the client working in it")
+	}
+}
+
+// theServingPane is the pane the window has open on what it is serving,
+// and its drawn text.
+func theServingPane(t *testing.T, a *testApp) *servingPane {
+	t.Helper()
+	if err := a.showServingPane(); err != nil {
+		t.Fatalf("open the pane: %v", err)
+	}
+	pane := a.servingPane()
+	if pane == nil {
+		t.Fatal("no pane opened on what the window is serving")
+	}
+	return pane
+}
+
+// servingPaneText is what the pane draws, one line per row.
+func servingPaneText(p *servingPane) string {
+	cols, rows := 90, 30
+	g := grid.New(cols, rows, color.RGBA{}, color.RGBA{})
+	p.Layout(ui.Size{Cols: cols, Rows: rows})
+	p.draw(g.View(), p.app.serving.clients())
+	return gridRows(g)
+}
+
+// pressServingChoice presses one of the pane's buttons by name.
+func pressServingChoice(t *testing.T, p *servingPane, title string) {
+	t.Helper()
+	for i, c := range p.choices() {
+		if c.title == title {
+			if err := p.press(i); err != nil {
+				t.Fatalf("press %q: %v", title, err)
+			}
+			return
+		}
+	}
+	var titles []string
+	for _, c := range p.choices() {
+		titles = append(titles, c.title)
+	}
+	t.Fatalf("the pane offers %v, with no %q", titles, title)
+}
+
+// The pane on what this window is serving follows what is connected.
+//
+// A dialog could only say who was there when it opened. This is about
+// something that changes while it is up, which is why it is a pane.
+func TestTheServingPaneFollowsWhoIsConnected(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	withServing(t, a, aPublicKey(t, "marcus@laptop"))
+	if err := a.startServing("0", whereHere); err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+	pane := theServingPane(t, a)
+
+	// With nobody connected it says so, and offers nothing to
+	// disconnect.
+	if said := servingPaneText(pane); !strings.Contains(said, "Nothing is connected") {
+		t.Errorf("the pane says:\n%s", said)
+	}
+	for _, c := range pane.choices() {
+		if strings.HasPrefix(c.title, "Disconnect") {
+			t.Errorf("it offers %q with nobody connected", c.title)
+		}
+	}
+
+	// And with one, it names it and offers to disconnect it.
+	clients := []*serve.Client{{Name: "marcus@laptop", Addr: "10.0.0.9:51000"}}
+	g := grid.New(90, 30, color.RGBA{}, color.RGBA{})
+	pane.Layout(ui.Size{Cols: 90, Rows: 30})
+	pane.draw(g.View(), clients)
+
+	said := gridRows(g)
+	for _, want := range []string{"marcus@laptop", "10.0.0.9:51000", "1 connected"} {
+		if !strings.Contains(said, want) {
+			t.Errorf("the pane does not say %q:\n%s", want, said)
+		}
+	}
+	if got := pane.choicesFor(clients); got[0].title != "Disconnect marcus@laptop" {
+		t.Errorf("it offers %q, want the window it named", got[0].title)
+	}
+	// The focus is on Close, not on the button that throws somebody
+	// out: that button moved into the place the last one was in.
+	if got := pane.choicesFor(clients)[pane.at].title; got != btnClose {
+		t.Errorf("the focus is on %q, want Close", got)
+	}
+}
+
+// The pane has a row on the sidebar, so it can be found and closed the
+// way everything else the window holds can.
+func TestTheServingPaneHasARow(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	withServing(t, a, aPublicKey(t, "marcus@laptop"))
+	if err := a.startServing("0", whereHere); err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+	pane := theServingPane(t, a)
+
+	if a.entryOf(pane) != pane.entry {
+		t.Error("the window does not file the pane under its own row")
+	}
+	if !slices.Contains(a.panesInSidebarOrder(), ui.Widget(pane)) {
+		t.Error("the pane is not one of the window's panes")
+	}
+	if got := a.paneName(pane); got == "" {
+		t.Error("All Panes would draw it with no name")
+	}
+
+	if err := a.closePane(pane); err != nil {
+		t.Fatalf("close it: %v", err)
+	}
+	if a.servingPane() != nil {
+		t.Error("the window still holds the pane")
+	}
+	for _, group := range a.registry.Groups(panelNow) {
+		for _, row := range group.Rows {
+			if row.Entry == pane.entry {
+				t.Error("the row is still on the sidebar")
+			}
+		}
+	}
+	// And the window is still serving: closing the page about it is not
+	// the same as stopping.
+	if !a.serving.on() {
+		t.Error("closing the pane stopped the port")
+	}
+}
+
+// The pane goes when the serving does.
+//
+// A listener that failed leaves nothing to show: an address nothing is
+// listening on, a fingerprint for nobody, and a button offering to stop
+// what has stopped.
+func TestTheServingPaneGoesWhenTheListenerDoes(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	withServing(t, a, aPublicKey(t, "marcus@laptop"))
+	if err := a.startServing("0", whereHere); err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+	pane := theServingPane(t, a)
+
+	a.servingStopped(errors.New("the port was taken away"))
+
+	if a.servingPane() != nil {
+		t.Error("the pane is still open on a window that is not serving")
+	}
+	if ui.ParentOf(a.root.Widget(), pane) != nil {
+		t.Error("the pane is still in the tree")
+	}
+	for _, group := range a.registry.Groups(panelNow) {
+		for _, row := range group.Rows {
+			if row.Label == servingPaneLabel {
+				t.Error("the sidebar still says this window is serving")
+			}
+		}
+	}
+}
+
+// A pane too short for a list draws none, rather than drawing one onto
+// the buttons and wiping it again on the same frame.
+func TestAShortServingPaneDoesNotRepaintForEver(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	withServing(t, a, aPublicKey(t, "marcus@laptop"))
+	if err := a.startServing("0", whereHere); err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+	pane := theServingPane(t, a)
+	clients := []*serve.Client{{Name: "marcus@laptop", Addr: "10.0.0.9:51000"}}
+
+	for rows := 1; rows <= 12; rows++ {
+		g := grid.New(60, rows, color.RGBA{}, color.RGBA{})
+		pane.Layout(ui.Size{Cols: 60, Rows: rows})
+		pane.draw(g.View(), clients)
+		g.ClearDirty()
+		pane.draw(g.View(), clients)
+		if g.AnyDirty() {
+			t.Errorf("a pane %d rows tall repaints a frame with nothing new:\n%s",
+				rows, gridRows(g))
+		}
+	}
+}
+
+// A window that connects between the frame and the key does not turn
+// Enter on Close into Stop serving.
+func TestAKeyOnAChangedServingRowPressesNothing(t *testing.T) {
+	a := newTestApp(t, 90, 30)
+	withDialogs(t, a)
+	withPanel(t, a)
+	withServing(t, a, aPublicKey(t, "marcus@laptop"))
+	if err := a.startServing("0", whereHere); err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+	pane := theServingPane(t, a)
+	// Drawn with nobody connected, so the row is Stop serving and
+	// Close, and the focus is on Close.
+	servingPaneText(pane)
+	at := pane.at
+
+	// And a window connects, which puts Disconnect in front of them
+	// both and moves what the focus is on.
+	pane.drawn = pane.choicesFor([]*serve.Client{{Name: "marcus@laptop"}})
+	took, err := pane.HandleKey(press(input.KeyEnter, 0))
+	if err != nil {
+		t.Fatalf("Enter: %v", err)
+	}
+	if !took {
+		t.Error("the key went on to whatever is behind the pane")
+	}
+	if !a.serving.on() {
+		t.Error("Enter stopped the window serving")
+	}
+	if pane.at != at {
+		t.Errorf("the focus moved to %d", pane.at)
 	}
 }

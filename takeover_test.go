@@ -3220,10 +3220,11 @@ func TestClickingTheClientRowSaysWhatIsBeingServed(t *testing.T) {
 	}
 	host.pump.run()
 
-	f := awaitModal(t, host, "what this window is serving",
-		byTitle[*ui.Form](dlgServingWindow))
-	said := strings.Join(f.Lines, " ")
-	if !strings.Contains(said, host.serving.addr()) {
+	pane := host.servingPane()
+	if pane == nil {
+		t.Fatalf("the row opened nothing: %v", panelText(host, panelNow))
+	}
+	if said := servingPaneText(pane); !strings.Contains(said, host.serving.addr()) {
 		t.Errorf("it says %q, want it to name the address it is serving on", said)
 	}
 }

@@ -296,7 +296,7 @@ func (a *app) statusChips() []ui.Chip {
 			text, fg = "Remote controlled", statusTakenFG(a.colours)
 		}
 		chips = append(chips, ui.Chip{
-			Text: text, FG: fg, BG: a.chipBG(), Do: a.showServing,
+			Text: text, FG: fg, BG: a.chipBG(), Do: a.showServingPane,
 		})
 	}
 	return chips

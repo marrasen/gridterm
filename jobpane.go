@@ -95,34 +95,34 @@ func (p *jobPane) draw(v grid.View, prog jobs.Progress, now time.Time) {
 	width := max(cols-2*jobPaneMargin, 1)
 	// Nothing above the heading clears this row, and a pane draws over
 	// whatever the widget before it left in its place.
-	p.blank(v, 0)
+	blankRow(v, p.app.colours.BG, 0)
 	line := 1
 
 	// The heading: what this is, and how much of it there is.
-	head := p.pen(v, line)
+	head := penOn(v, p.app.colours.BG, line)
 	head.skip(at)
 	head.write(p.heading(prog), st.TitleFG)
 	head.right(p.counted(prog), st.HintFG, jobPaneMargin)
 	head.rest()
-	p.blank(v, line+1)
+	blankRow(v, p.app.colours.BG, line+1)
 	line += 2
 
 	// The bar, with the share it has done written at the end of it.
 	done := shareOf(prog)
 	share := fmt.Sprintf("%3d%%", int(done*100))
 	barWidth := max(width-len(share)-1, 1)
-	bar := p.pen(v, line)
+	bar := penOn(v, p.app.colours.BG, line)
 	bar.skip(at)
 	drawBar(bar, barWidth, done, p.app.fillBG(), st.HintFG)
 	bar.skip(1)
 	bar.write(share, st.FG)
 	bar.rest()
-	p.blank(v, line+1)
+	blankRow(v, p.app.colours.BG, line+1)
 	line += 2
 
 	// The numbers under it: how much, how fast, how long left.
-	p.say(v, at, line, width, p.facts(prog, now), st.FG)
-	p.blank(v, line+1)
+	sayRow(v, p.app.colours.BG, at, line, width, p.facts(prog, now), st.FG)
+	blankRow(v, p.app.colours.BG, line+1)
 	line += 2
 
 	// And how it ended, which for one that failed is the whole of what
@@ -130,10 +130,10 @@ func (p *jobPane) draw(v grid.View, prog jobs.Progress, now time.Time) {
 	// is a sentence, not a word.
 	if prog.Done {
 		for _, said := range wrapLines(outcomeOf(prog), width) {
-			p.say(v, at, line, width, said, st.FG)
+			sayRow(v, p.app.colours.BG, at, line, width, said, st.FG)
 			line++
 		}
-		p.blank(v, line)
+		blankRow(v, p.app.colours.BG, line)
 		line++
 	}
 
@@ -145,7 +145,7 @@ func (p *jobPane) draw(v grid.View, prog jobs.Progress, now time.Time) {
 	// is not a question about it any more.
 	if !prog.Done && rows > line+jobPaneGraph+3 {
 		if drawn := p.drawGraph(v, at, line, width, now); drawn {
-			p.blank(v, line+jobPaneGraph)
+			blankRow(v, p.app.colours.BG, line+jobPaneGraph)
 			line += jobPaneGraph + 1
 		}
 	}
@@ -153,18 +153,14 @@ func (p *jobPane) draw(v grid.View, prog jobs.Progress, now time.Time) {
 	// What it is working on, and the names it was given.
 	line = p.drawNames(v, at, line, width, rows, prog, st)
 
-	// Everything between what has been drawn and the buttons, so a
-	// pane that says less than it did leaves nothing of the old behind.
-	for y := line; y < rows-2; y++ {
-		p.blank(v, y)
-	}
-	if rows-1 >= 0 {
-		p.blank(v, rows-1)
-	}
+	// Everything between what has been drawn and the bottom, so a pane
+	// that says less than it did leaves nothing of the old behind.
+	row := buttonRow(rows, line)
+	blankRest(v, p.app.colours.BG, line, rows, row)
 
 	// And what can be done about it, along the bottom.
 	p.settle(prog)
-	p.drawButtons(v, prog, rows)
+	p.drawButtons(v, prog, row)
 }
 
 // shareOf is how much of the work is done, as a share of one.
@@ -354,7 +350,7 @@ func (p *jobPane) drawGraph(v grid.View, at, line, width int, now time.Time) boo
 		return false
 	}
 	for y := range jobPaneGraph {
-		pen := p.pen(v, line+y)
+		pen := penOn(v, p.app.colours.BG, line+y)
 		pen.skip(at)
 		drawRun(pen, width, past, most, y, jobPaneGraph, p.app.fillBG())
 		pen.rest()
@@ -384,13 +380,13 @@ func (p *jobPane) drawNames(v grid.View, at, line, width, rows int,
 		// The last row the names have goes to saying how many are not
 		// drawn, rather than to one more name.
 		if i >= room-1 && len(names)-i > 1 {
-			p.say(v, at, line, width,
+			sayRow(v, p.app.colours.BG, at, line, width,
 				fmt.Sprintf("and %d more", len(names)-i), st.HintFG)
 			line++
 			break
 		}
 		mark, fg := p.markOf(i, name, prog, st)
-		pen := p.pen(v, line)
+		pen := penOn(v, p.app.colours.BG, line)
 		pen.skip(at)
 		pen.write(mark+name, fg)
 		pen.rest()
@@ -399,7 +395,7 @@ func (p *jobPane) drawNames(v grid.View, at, line, width, rows int,
 	// The row under the names, so a list that shrank -- the graph goes
 	// when the job finishes, and everything moves up -- leaves none of
 	// the old one behind.
-	p.blank(v, line)
+	blankRow(v, p.app.colours.BG, line)
 	return line + 1
 }
 
@@ -430,166 +426,6 @@ func (p *jobPane) markOf(i int, name string, prog jobs.Progress,
 // tick marks a name the job is past.
 const tick = '✓'
 
-// A pane draws every frame, and a job's numbers move on their own, so
-// the cheap frame matters: a cell written twice in one frame -- blanked
-// and then written over -- counts as changed even when it ends up the
-// way it started, and a pane that did that would repaint itself for as
-// long as it was open.
-//
-// So every row is written exactly once, through a pen that knows how
-// far along it is and blanks the rest.
-type rowPen struct {
-	v  grid.View
-	bg color.RGBA
-	y  int
-
-	// at is the column the next write starts at, and cols the width of
-	// the row.
-	at, cols int
-}
-
-// pen starts a row.
-func (p *jobPane) pen(v grid.View, y int) *rowPen {
-	cols, _ := v.Size()
-	return &rowPen{v: v, bg: p.app.colours.BG, y: y, cols: cols}
-}
-
-// skip leaves n blank columns.
-func (r *rowPen) skip(n int) {
-	for i := 0; i < n && r.at < r.cols; i++ {
-		r.v.Set(r.at, r.y, grid.Cell{Rune: ' ', BG: r.bg, Width: 1})
-		r.at++
-	}
-}
-
-// write puts text down, cut to what is left of the row.
-func (r *rowPen) write(text string, fg color.RGBA) {
-	if r.at >= r.cols || text == "" {
-		return
-	}
-	text = grid.TrimTail(text, r.cols-r.at)
-	r.v.SetString(r.at, r.y, text, fg, r.bg, 0)
-	r.at += grid.StringWidth(text)
-}
-
-// writeOn puts text down on a ground of its own, for a button.
-func (r *rowPen) writeOn(text string, fg, bg color.RGBA) {
-	if r.at >= r.cols || text == "" {
-		return
-	}
-	text = grid.TrimTail(text, r.cols-r.at)
-	r.v.SetString(r.at, r.y, text, fg, bg, 0)
-	r.at += grid.StringWidth(text)
-}
-
-// cell puts one character down, for a bar or a graph.
-func (r *rowPen) cell(c grid.Cell) {
-	if r.at >= r.cols {
-		return
-	}
-	c.BG = r.bg
-	c.Width = 1
-	r.v.Set(r.at, r.y, c)
-	r.at++
-}
-
-// right writes text against the right-hand edge, blanking what is
-// between here and there.
-func (r *rowPen) right(text string, fg color.RGBA, margin int) {
-	w := grid.StringWidth(text)
-	if at := r.cols - margin - w; at > r.at {
-		r.skip(at - r.at)
-		r.write(text, fg)
-	}
-}
-
-// rest blanks the row to its end.
-func (r *rowPen) rest() { r.skip(r.cols - r.at) }
-
-// blank writes an empty row.
-func (p *jobPane) blank(v grid.View, y int) { p.pen(v, y).rest() }
-
-// say writes one line of the pane, margins and all.
-func (p *jobPane) say(v grid.View, x, y, width int, text string, fg color.RGBA) {
-	pen := p.pen(v, y)
-	pen.skip(x)
-	pen.write(text, fg)
-	pen.rest()
-}
-
-// The characters a bar and a run are drawn with.
-//
-// gridterm draws these itself rather than looking them up in a font --
-// see glyph/boxdraw.go -- so they fill their cell exactly and a bar has
-// no seam where one cell meets the next. The eighths are what let a bar
-// move by less than a whole cell, which is the difference between a bar
-// that creeps and one that jumps.
-const (
-	barFull  = '█'
-	barTrack = '░'
-)
-
-// barEighths are the part-full blocks, from one eighth to seven.
-var barEighths = []rune{'▏', '▎', '▍', '▌', '▋', '▊', '▉'}
-
-// runHeights are the bars of a graph, from one eighth of a cell to a
-// full one.
-var runHeights = []rune{'▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'}
-
-// drawBar paints a bar filled to share, in eighths of a cell.
-func drawBar(pen *rowPen, cols int, share float64, fill, track color.RGBA) {
-	if cols <= 0 {
-		return
-	}
-	share = min(max(share, 0), 1)
-	// In eighths, so the bar moves on a screen where one cell is a
-	// whole percent or more.
-	eighths := int(share * float64(cols) * 8)
-	whole := eighths / 8
-	part := eighths % 8
-	for x := range cols {
-		switch {
-		case x < whole:
-			pen.cell(grid.Cell{Rune: barFull, FG: fill})
-		case x == whole && part > 0:
-			pen.cell(grid.Cell{Rune: barEighths[part-1], FG: fill})
-		default:
-			pen.cell(grid.Cell{Rune: barTrack, FG: track})
-		}
-	}
-}
-
-// drawRun paints speeds as a column chart, newest on the right.
-//
-// Eight steps to a row, so a graph four rows tall has thirty-two
-// heights to draw a second at. The tallest second is the top of the
-// chart: what a run says is its shape, and a scale fixed to some
-// absolute speed would draw every ordinary copy as a flat line.
-func drawRun(pen *rowPen, cols int, past []uint64, most uint64, y, rows int, fg color.RGBA) {
-	if cols <= 0 || rows <= 0 || most == 0 {
-		return
-	}
-	if len(past) > cols {
-		past = past[len(past)-cols:]
-	}
-	// Against the right-hand edge, so the newest second is always in
-	// the same place and the run grows leftwards as it lengthens.
-	pen.skip(cols - len(past))
-	// Counted from the bottom row up.
-	below := (rows - 1 - y) * 8
-	for _, speed := range past {
-		eighths := int(float64(speed) / float64(most) * float64(rows*8))
-		switch {
-		case eighths >= below+8:
-			pen.cell(grid.Cell{Rune: barFull, FG: fg})
-		case eighths > below:
-			pen.cell(grid.Cell{Rune: runHeights[eighths-below-1], FG: fg})
-		default:
-			pen.skip(1)
-		}
-	}
-}
-
 // settle moves the focus when a job finishes under it.
 //
 // Cancel and Repeat sit in the same place, so a job that finished while
@@ -602,34 +438,6 @@ func (p *jobPane) settle(prog jobs.Progress) {
 	}
 	p.wasDone = prog.Done
 	p.at = len(p.choicesFor(prog)) - 1
-}
-
-// choice is one thing along the bottom of the pane: a button, or the
-// tick that keeps this copy.
-type choice struct {
-	title string
-
-	// tick says this is a box rather than a button, and on whether it
-	// is ticked now.
-	tick bool
-	on   bool
-}
-
-// width is how many columns the choice takes when it is drawn.
-func (c choice) width() int {
-	if c.tick {
-		return grid.StringWidth(c.label())
-	}
-	return ui.ButtonWidth(c.title)
-}
-
-// label is a tick as it is drawn: the box, then what it keeps.
-func (c choice) label() string {
-	box := "[ ] "
-	if c.on {
-		box = "[×] "
-	}
-	return box + c.title
 }
 
 // choices are what this job offers now, left to right.
@@ -669,20 +477,21 @@ func (p *jobPane) choicesFor(prog jobs.Progress) []choice {
 }
 
 // drawButtons paints the row along the bottom, centred.
-func (p *jobPane) drawButtons(v grid.View, prog jobs.Progress, rows int) {
+func (p *jobPane) drawButtons(v grid.View, prog jobs.Progress, row int) {
 	cols, _ := v.Size()
 	choices := p.choicesFor(prog)
 	p.at = min(max(p.at, 0), len(choices)-1)
 	st := p.app.formStyle()
-	row := rows - 2
-	if row < 1 {
-		p.row = -1
+	if row < 0 {
+		// Too short to draw them anywhere they would not be written
+		// over. Nothing to click, so nothing is remembered as drawn.
+		p.row, p.drawn = -1, p.drawn[:0]
 		return
 	}
 	p.row = row
 	p.cols = placeChoices(p.cols[:0], choices, cols)
 	p.drawn = append(p.drawn[:0], choices...)
-	pen := p.pen(v, row)
+	pen := penOn(v, p.app.colours.BG, row)
 	for i, at := range p.cols {
 		if at < 0 {
 			continue
@@ -707,29 +516,6 @@ func (p *jobPane) drawButtons(v grid.View, prog jobs.Progress, rows int) {
 	pen.rest()
 }
 
-// placeChoices works out where each choice starts, centred as a row
-// with a blank column between them.
-func placeChoices(into []int, choices []choice, cols int) []int {
-	at := into[:0]
-	wide := 0
-	for i, c := range choices {
-		if i > 0 {
-			wide++
-		}
-		wide += c.width()
-	}
-	x := max((cols-wide)/2, 0)
-	for _, c := range choices {
-		if x+c.width() > cols {
-			at = append(at, -1)
-			continue
-		}
-		at = append(at, x)
-		x += c.width() + 1
-	}
-	return at
-}
-
 // HandleKey moves along the buttons and presses one.
 //
 // Every other key is left alone: this is a pane, sharing the window
@@ -746,6 +532,13 @@ func (p *jobPane) HandleKey(ev input.Event) (bool, error) {
 	case input.KeyRight, input.KeyTab:
 		p.at = (p.at + 1) % len(choices)
 	case input.KeyEnter, input.KeySpace:
+		if !sameChoices(choices, p.drawn) {
+			// The job finished since this row was drawn, so what the
+			// key was aimed at has moved along it: Repeat is where
+			// Cancel was.
+			p.app.markDirty()
+			return true, nil
+		}
 		return true, p.press(p.at)
 	default:
 		return false, nil
@@ -872,6 +665,12 @@ func (a *app) forgetJobPane(w ui.Widget) {
 	for i, open := range a.jobPanes {
 		if open == pane {
 			a.jobPanes = append(a.jobPanes[:i], a.jobPanes[i+1:]...)
+			// Let go of the row as well: what the window files a pane
+			// under is what says the pane is open at all, and a closed
+			// one still filed under a row is one the switcher goes on
+			// drawing a tile for. The row itself stays on the sidebar
+			// -- it is the job's, not the pane's.
+			pane.entry = nil
 			return
 		}
 	}

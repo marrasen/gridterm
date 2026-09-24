@@ -9,6 +9,8 @@ change how something behaves.
 
 ## Unreleased
 
+### Added
+
 **The secrets open in a pane, and can be taken out again.** `Manage
 Secrets` lists what is in the vault and the keys that open it, and is
 where a secret is copied, read, changed and removed -- several at once,
@@ -40,6 +42,15 @@ slot, so it can be raised later without shutting anybody out of a vault
 sealed under the old cost.
 
 ### Changed
+
+**What this window is serving is a pane too.** It was a dialog, which
+could only say who was connected at the moment it opened -- and what it
+is about changes while it is up, as windows connect and go. The pane
+follows: the address, the fingerprint to check this machine by, and one
+line per window working here, with `Disconnect` and `Stop serving`
+along the bottom. The row of a window working in this one opens it,
+which is what that row could not do before: it stood in for a pane
+because there was none to put in front.
 
 **File work is watched in a pane, not a dialog.** Clicking a copy's row
 on the sidebar opened a box over the window, which took the keys and had
@@ -229,6 +240,16 @@ to the shell. The lines are now `Command Prompt`, `Windows PowerShell`
 and the rest, which is what the same list already said on a machine's
 plus menu. The commands keep their full titles for the palette, where
 they are read with no heading around them.
+
+### Fixed
+
+**A window closing waits for file work the user dismissed.** Dropping a
+copy cancels it and takes its row away, and cancelling is not stopping:
+the write it is in finishes, and one waiting on a machine that has
+stopped answering waits however long that takes. The queue stopped
+answering for it the moment it left the list, so a window could close
+while it was still writing.
+
 
 ## v0.2.1
 

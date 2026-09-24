@@ -327,9 +327,11 @@ func TestPressingTheStatusKicksTheOtherWindowOut(t *testing.T) {
 	if !took {
 		t.Fatal("the press on the chip travelled on")
 	}
-	f := awaitModal(t, host, "the serving dialog", byTitle[*ui.Form](dlgServingWindow))
-	kick := "Disconnect " + host.serving.clients()[0].Name
-	pressButton(t, host, f, kick)
+	pane := host.servingPane()
+	if pane == nil {
+		t.Fatal("the chip opened nothing")
+	}
+	pressServingChoice(t, pane, "Disconnect "+host.serving.clients()[0].Name)
 
 	waitFor(t, client, "the window over there to see the connection go", func() bool {
 		return client.windows.at(addr) == nil
@@ -351,10 +353,13 @@ func TestPressingTheStatusKicksTheOtherWindowOut(t *testing.T) {
 	}
 }
 
-// A window that let go between the dialog opening and the button being
-// pressed is not a failed kick. It has gone, which is what the button
-// was for, so nothing is said about it.
-func TestKickingAWindowThatHasAlreadyGoneSaysNothing(t *testing.T) {
+// A window that let go while the pane is up takes its button with it.
+//
+// The pane follows what is connected, so the button that disconnects a
+// window is not there to press once that window has gone -- and a click
+// where it was presses nothing rather than whatever moved into that
+// place.
+func TestAWindowThatHasGoneTakesItsButtonWithIt(t *testing.T) {
 	host, client, addr := twoWindows(t)
 	withMenubar(t, host)
 	col, row := chipColumn(t, host)
@@ -364,11 +369,20 @@ func TestKickingAWindowThatHasAlreadyGoneSaysNothing(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("pressing the chip: %v", err)
 	}
-	f := awaitModal(t, host, "the serving dialog", byTitle[*ui.Form](dlgServingWindow))
-	kick := buttonNamed(t, f, "Disconnect "+host.serving.clients()[0].Name)
+	pane := host.servingPane()
+	if pane == nil {
+		t.Fatal("the chip opened nothing")
+	}
+	kick := "Disconnect " + host.serving.clients()[0].Name
+	// Drawn while it was still there, so the row holds that button and
+	// a click can be aimed at it.
+	servingPaneText(pane)
+	at := pane.cols[0]
+	if got := pane.drawn[0].title; got != kick {
+		t.Fatalf("the row was drawn offering %q, so this proves nothing", got)
+	}
 
-	// The window connected lets go while the dialog is up, so the button
-	// names a window that is no longer there.
+	// The window connected lets go while the pane is up.
 	if err := client.dropWindow(addr); err != nil {
 		t.Fatalf("let go: %v", err)
 	}
@@ -376,16 +390,23 @@ func TestKickingAWindowThatHasAlreadyGoneSaysNothing(t *testing.T) {
 		return len(host.serving.clients()) == 0
 	}, client)
 
-	// Pressed, not run: a deliberate let-go arrives as an end of file and
-	// is filtered, so nothing else is on the screen for the press to land
-	// on, and pressing is what a user does.
-	pressButton(t, host, f, kick.Title)
-
-	if n, up := host.root.Modal().(*ui.Notice); up {
-		t.Errorf("kicking a window that had already gone reported %q: %s", n.Title, n.Message())
+	for _, c := range pane.choices() {
+		if c.title == kick {
+			t.Errorf("the pane still offers %q for a window that has gone", kick)
+		}
 	}
-	if host.root.Modal() != nil {
-		t.Error("the dialog is still up after the kick")
+	// And a click where that button was presses nothing.
+	took, err := pane.HandleMouse(input.MouseEvent{
+		Kind: input.MousePress, Button: input.MouseLeft, Col: at, Row: pane.row,
+	})
+	if err != nil {
+		t.Fatalf("click: %v", err)
+	}
+	if !took {
+		t.Error("the click went through to whatever is behind the pane")
+	}
+	if n, up := host.root.Modal().(*ui.Notice); up {
+		t.Errorf("the click reported %q: %s", n.Title, n.Message())
 	}
 	if !host.serving.on() {
 		t.Error("it stopped the port as well")
@@ -449,8 +470,7 @@ func TestKickingAWindowOutIsNotReportedAsALoss(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("pressing the chip: %v", err)
 	}
-	f := awaitModal(t, host, "the serving dialog", byTitle[*ui.Form](dlgServingWindow))
-	pressButton(t, host, f, "Disconnect "+host.serving.clients()[0].Name)
+	pressServingChoice(t, theServingPane(t, host), "Disconnect "+host.serving.clients()[0].Name)
 
 	waitFor(t, host, "the window serving to let the client go", func() bool {
 		return servingRows(host) == 0
@@ -473,18 +493,6 @@ func TestAClientLostToAFaultIsStillReported(t *testing.T) {
 	}
 }
 
-// buttonNamed is one of a dialog's buttons, by what it says.
-func buttonNamed(t *testing.T, f *ui.Form, title string) ui.Button {
-	t.Helper()
-	for _, b := range f.Buttons() {
-		if b.Title == title {
-			return b
-		}
-	}
-	t.Fatalf("the dialog has no %q button", title)
-	return ui.Button{}
-}
-
 // With nobody connected there is nothing to kick, and the same dialog
 // still stops serving.
 func TestTheServingDialogOffersNoKickWithNobodyConnected(t *testing.T) {
@@ -497,13 +505,16 @@ func TestTheServingDialogOffersNoKickWithNobodyConnected(t *testing.T) {
 		t.Fatalf("pressing the chip: %v", err)
 	}
 
-	f := awaitModal(t, a, "the serving dialog", byTitle[*ui.Form](dlgServingWindow))
-	for _, b := range f.Buttons() {
-		if strings.HasPrefix(b.Title, "Kick") {
-			t.Errorf("the dialog offers %q with nobody connected", b.Title)
+	pane := a.servingPane()
+	if pane == nil {
+		t.Fatal("the chip opened nothing")
+	}
+	for _, c := range pane.choices() {
+		if strings.HasPrefix(c.title, "Disconnect") {
+			t.Errorf("the pane offers %q with nobody connected", c.title)
 		}
 	}
-	pressButton(t, a, f, btnStopServing)
+	pressServingChoice(t, pane, btnStopServing)
 	if a.serving.on() {
 		t.Error("the port is still open")
 	}
@@ -541,8 +552,7 @@ func TestKickingEveryoneOutClosesEveryConnection(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("pressing the chip: %v", err)
 	}
-	f := awaitModal(t, host, "the serving dialog", byTitle[*ui.Form](dlgServingWindow))
-	pressButton(t, host, f, "Disconnect all")
+	pressServingChoice(t, theServingPane(t, host), "Disconnect all")
 
 	waitFor(t, host, "both windows to go", func() bool {
 		return len(host.serving.clients()) == 0

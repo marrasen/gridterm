@@ -229,6 +229,8 @@ func (a *app) paneName(w ui.Widget) string {
 		}
 	case *secretsPane:
 		return conns.Secrets.String()
+	case *servingPane:
+		return dlgServingWindow
 	}
 	return fmt.Sprintf("%T", w)
 }

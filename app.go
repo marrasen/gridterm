@@ -304,6 +304,10 @@ type app struct {
 	// go. A job may have one; closing the pane leaves the work running.
 	jobPanes []*jobPane
 
+	// servePanes is the pane open on what this window is serving, and
+	// holds at most one: there is one thing being served.
+	servePanes []*servingPane
+
 	// asking is how to take away a question a job is waiting on, by the
 	// channel the answer goes back through. A job given up on while its
 	// question is up has to take the question with it.

@@ -105,6 +105,16 @@ type Config struct {
 	ReadClipboard  func() string
 	WriteClipboard func(string)
 
+	// OnOutput is told each time the screen has taken something the
+	// program wrote, for a window that draws when there is something
+	// new rather than every frame. It is called from the goroutine
+	// reading the program, after the screen has changed.
+	OnOutput func()
+
+	// OnClipboard is given what a program puts on the clipboard with
+	// OSC 52. Nil ignores it. Called the same way as OnOutput.
+	OnClipboard func(string)
+
 	// Now is the clock the cursor's hide is measured against. Nil means
 	// time.Now.
 	Now func() time.Time
@@ -317,7 +327,8 @@ func New(cfg Config) (*Terminal, error) {
 		// they must not touch the session directly: a program that has
 		// stopped reading would block the write and deadlock the reader
 		// against every other user of the lock.
-		Reply: t.send,
+		Reply:        t.send,
+		ClipboardSet: cfg.OnClipboard,
 	})
 	t.term.SetProgram(cfg.Program)
 
@@ -489,6 +500,9 @@ func (t *Terminal) Say(line string) {
 	t.said.Add(1)
 	t.mu.Unlock()
 	t.pending.Store(true)
+	if t.cfg.OnOutput != nil {
+		t.cfg.OnOutput()
+	}
 }
 
 // WaitForSecret says the user has been asked to type something into this
@@ -1557,6 +1571,9 @@ func (t *Terminal) readLoop(r *run) {
 			t.said.Add(1)
 			t.mu.Unlock()
 			t.pending.Store(true)
+			if t.cfg.OnOutput != nil {
+				t.cfg.OnOutput()
+			}
 		}
 		if err != nil {
 			if !errors.Is(err, io.EOF) {

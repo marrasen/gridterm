@@ -197,6 +197,12 @@ func (w *window) run(id string, u *gunim.UI) bool {
 		}
 		u.Send(w, ShowLog{Machine: machine})
 		return true
+	case "secrets.export":
+		w.exportForm(u)
+		return true
+	case "secrets.import":
+		w.importForm(u)
+		return true
 	case "secrets.add", "secrets.addNote":
 		kind := secrets.Password
 		if id == "secrets.addNote" {

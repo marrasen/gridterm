@@ -241,3 +241,48 @@ func (w *window) confirmRemoveKey(st Secrets, k SecretKey, u *gunim.UI) {
 	d.Accept, d.Dismiss = RemoveSecretsKey{Fingerprint: k.Fingerprint}, DialogClosed{}
 	w.openDialog(d, u)
 }
+
+// exportForm asks where to write the secrets, in plain text, for
+// another manager to read.
+func (w *window) exportForm(u *gunim.UI) {
+	path := widget.NewTextField()
+	path.SetText("~/secrets.csv")
+	d := widget.NewDialog("Export Secrets")
+	d.Body = widget.NewForm().
+		Add("", widget.NewLabel("Every secret goes into the file in plain text. Anyone who can read the file can read them all.")).
+		Add("File", path)
+	d.SetButtons("Export", "Cancel")
+	d.Danger = true
+	d.Check = func() string {
+		if strings.TrimSpace(path.Text()) == "" {
+			return "Type where the file goes."
+		}
+		return ""
+	}
+	d.OnAccept = func() gunim.Intent { return ExportSecrets{Path: path.Text()} }
+	d.Dismiss = DialogClosed{}
+	w.openDialog(d, u)
+}
+
+// importForm asks for a CSV file another manager wrote, and what to do
+// with a secret that is here already.
+func (w *window) importForm(u *gunim.UI) {
+	path := widget.NewTextField()
+	path.Placeholder = "a CSV file, such as ~/Downloads/passwords.csv"
+	dup := widget.NewDropdown(keepBoth, skipThem, replace)
+	dup.Label = "One already here"
+	d := widget.NewDialog("Import Secrets")
+	d.Body = widget.NewForm().Add("File", path).Add("Already here", dup)
+	d.SetButtons("Import", "Cancel")
+	d.Check = func() string {
+		if strings.TrimSpace(path.Text()) == "" {
+			return "Type where the file is."
+		}
+		return ""
+	}
+	d.OnAccept = func() gunim.Intent {
+		return ImportSecrets{Path: path.Text(), Duplicates: []string{keepBoth, skipThem, replace}[max(0, min(dup.Selected, 2))]}
+	}
+	d.Dismiss = DialogClosed{}
+	w.openDialog(d, u)
+}

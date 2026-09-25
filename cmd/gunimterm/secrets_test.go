@@ -269,3 +269,43 @@ func TestAKeysSavedPassphraseIsUsedWithoutAsking(t *testing.T) {
 		t.Fatalf("the passphrase came back %q, with questions %+v", pass, a.st.Asks)
 	}
 }
+
+func TestSecretsGoOutToACSVFileAndComeBackIn(t *testing.T) {
+	a, _ := secretsApp(t)
+	startVault(t, a)
+	a.handle(PutSecret{Name: "db", User: "admin", Kind: secrets.Password, Value: "hunter2"})
+	a.handle(PutSecret{Name: "codes", Kind: secrets.Note, Value: "1234\n5678"})
+	a.handle(ExportSecrets{Path: "~/out.csv"})
+	at := filepath.Join(os.Getenv("HOME"), "out.csv")
+	info, err := os.Stat(at)
+	if err != nil {
+		t.Fatalf("exported, the file: %v", err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("the file can be read by others: %v", info.Mode())
+	}
+	notices := len(a.st.Notices)
+	a.handle(ExportSecrets{Path: at})
+	if last := a.st.Notices[len(a.st.Notices)-1]; len(a.st.Notices) != notices+1 || !strings.Contains(last.Body, "already there") {
+		t.Fatalf("exporting over the file said %+v", last)
+	}
+
+	// Into secrets of their own, on another machine.
+	b, _ := secretsApp(t)
+	startVault(t, b)
+	b.handle(ImportSecrets{Path: at, Duplicates: keepBoth})
+	names := map[string]bool{}
+	for _, it := range b.st.Secrets.Items {
+		names[it.Name] = true
+	}
+	if len(b.st.Secrets.Items) != 2 || !names["db"] || !names["codes"] {
+		t.Fatalf("imported, the items are %+v", b.st.Secrets.Items)
+	}
+	b.handle(ImportSecrets{Path: at, Duplicates: skipThem})
+	if n := len(b.st.Secrets.Items); n != 2 {
+		t.Fatalf("imported again, skipping, there are %d", n)
+	}
+	if last := b.st.Notices[len(b.st.Notices)-1]; !strings.Contains(last.Body, "0 secrets read in, 2 left as they were") {
+		t.Fatalf("the second import said %q", last.Body)
+	}
+}

@@ -574,6 +574,10 @@ func (a *app) handle(in gunim.Intent) {
 		a.removeSecretsKey(in.Fingerprint)
 	case AddSecretsPassphrase:
 		a.addSecretsPassphrase(in.Passphrase)
+	case ExportSecrets:
+		a.exportSecrets(in)
+	case ImportSecrets:
+		a.importSecrets(in)
 	case ShowLog:
 		a.showLog(in.Machine)
 	case ShowJobs:

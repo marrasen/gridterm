@@ -69,6 +69,8 @@ var commands = []struct{ id, title string }{
 	{"secrets.add", "Add Secret"},
 	{"secrets.addNote", "Add Note"},
 	{"secrets.lock", "Lock Secrets"},
+	{"secrets.export", "Export Secrets"},
+	{"secrets.import", "Import Secrets"},
 	{"view.jobs", "Show Jobs"},
 	{"view.log", "Window Log"},
 	{"conn.log", "Connection Log"},
@@ -122,6 +124,7 @@ var menus = []struct {
 	{"Secrets", []menuItem{
 		{id: "secrets.show", title: "Show Secrets"},
 		{id: "secrets.add", title: "Add Secret…"}, {id: "secrets.addNote", title: "Add Note…"},
+		{id: "secrets.export", title: "Export…", group: true}, {id: "secrets.import", title: "Import…"},
 		{id: "secrets.lock", title: "Lock", group: true},
 	}},
 }

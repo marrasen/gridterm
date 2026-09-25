@@ -8,6 +8,7 @@ import (
 	"github.com/marrasen/gunim/theme"
 	"github.com/marrasen/gunim/widget"
 
+	"github.com/marrasen/gridterm/settings"
 	"github.com/marrasen/gridterm/themes"
 	"github.com/marrasen/gridterm/vt"
 )
@@ -66,10 +67,18 @@ func standout(bg color.NRGBA, cs ...color.NRGBA) color.NRGBA {
 	return best
 }
 
-// builtThemes returns gridterm's own themes, ready.
-func builtThemes() []themed {
+// loadThemes returns the themes on offer, ready: gridterm's own and the
+// user's, from the themes file gridterm reads, or gridterm's own alone
+// when there is no file to read.
+func loadThemes() []themed {
+	all := themes.Built()
+	if dir, err := settings.Dir(); err == nil {
+		if read, err := themes.Load(themes.Path(dir)); err == nil && len(read) > 0 {
+			all = read
+		}
+	}
 	var out []themed
-	for _, t := range themes.Built() {
+	for _, t := range all {
 		if th, err := themeOf(t); err == nil {
 			out = append(out, th)
 		}

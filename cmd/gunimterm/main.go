@@ -54,7 +54,7 @@ func run() error {
 		c := w.Client()
 		sh := &shells{m: map[string]*shell{}}
 		keys := shortcuts()
-		all := builtThemes()
+		all := loadThemes()
 		registerThemes(w, all)
 		gunim.RegisterView(w, "window", func(State) *window { return newWindow(sh, keys, all) },
 			func(win *window, st State, u *gunim.UI) { win.update(st, u) })

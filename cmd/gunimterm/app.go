@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"github.com/marrasen/gridterm/jobs"
 	"github.com/marrasen/gridterm/remote"
+	"github.com/marrasen/gridterm/settings"
 	"github.com/marrasen/gridterm/vfs"
 	"github.com/marrasen/gridterm/vt"
 	"slices"
@@ -251,8 +252,11 @@ type app struct {
 	local    vfs.FS
 	remoteFS map[string]vfs.FS
 	// themes are the themes on offer, and palette the terminals' now.
-	themes  []themed
-	palette vt.Palette
+	// settings is gridterm's settings file, which keeps the theme
+	// picked.
+	themes   []themed
+	palette  vt.Palette
+	settings *settings.Settings
 	// clip is the file clipboard, jobs the queue of file work, and
 	// running the jobs followed.
 	clip    *fileClip
@@ -323,8 +327,20 @@ func (a *app) run(ctx context.Context) error {
 	for _, t := range a.themes {
 		a.st.Themes = append(a.st.Themes, t.name)
 	}
+	if path, err := settings.Path(); err == nil {
+		if s, err := settings.Load(path); err == nil {
+			a.settings = s
+		}
+	}
+	// The theme picked last time, as gridterm keeps it, or the first.
 	if len(a.themes) > 0 {
-		a.pickTheme(a.themes[0].name)
+		name := a.themes[0].name
+		if a.settings != nil {
+			if picked, ok := a.settings.Theme(); ok && slices.ContainsFunc(a.themes, func(t themed) bool { return t.name == picked }) {
+				name = picked
+			}
+		}
+		a.pickTheme(name)
 	}
 	if path, err := remote.BookPath(); err == nil {
 		if b, err := remote.LoadBook(path); err == nil {
@@ -429,6 +445,11 @@ func (a *app) handle(in gunim.Intent) {
 		}
 	case PickTheme:
 		a.pickTheme(in.Name)
+		if a.settings != nil {
+			if err := a.settings.PutTheme(in.Name); err != nil {
+				a.notify("Couldn't keep the theme for next time", err.Error(), "")
+			}
+		}
 	case FontSize:
 		size := defaultFontSize
 		if in.Step != 0 {

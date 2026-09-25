@@ -3,6 +3,7 @@ package main
 import (
 	"image/color"
 	"math"
+	"time"
 
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/geom"
@@ -33,6 +34,34 @@ type term struct {
 	selecting bool
 	held      input.MouseButton
 	at        grid.Point
+	// wantBlink says the program asked for a blinking cursor, blinking
+	// that a blink is running, and blinkOff that the cursor is in the
+	// off half of one.
+	wantBlink, blinking, blinkOff bool
+}
+
+// blinkHalf is each half of a cursor's blink, as xterm times it.
+const blinkHalf = 530 * time.Millisecond
+
+// blink starts the cursor blinking, while the pane has the keyboard and
+// its program asked for a blinking cursor.
+func (t *term) blink(u *gunim.UI) {
+	if t.blinking || !t.focused || !t.wantBlink {
+		return
+	}
+	t.blinking = true
+	u.After(blinkHalf, t.blinkStep)
+}
+
+func (t *term) blinkStep(u *gunim.UI) {
+	if !t.focused || !t.wantBlink {
+		t.blinking, t.blinkOff = false, false
+	} else {
+		t.blinkOff = !t.blinkOff
+		u.After(blinkHalf, t.blinkStep)
+	}
+	t.sync()
+	u.Invalidate()
 }
 
 func newTerm(id string, sh *shell, keys *ui.Keymap) *term {
@@ -100,7 +129,9 @@ func (t *term) sync() {
 	if !t.focused {
 		shape = widget.CursorOutline
 	}
-	t.cells.SetCursor(widget.Cursor{Col: cur.X, Row: cur.Y, Shape: shape, Visible: cur.Visible})
+	t.wantBlink = cur.Blink
+	t.cells.SetCursor(widget.Cursor{Col: cur.X, Row: cur.Y, Shape: shape, Visible: cur.Visible,
+		Blinked: t.blinkOff && t.wantBlink && t.focused})
 }
 
 // cellOf turns one of gridterm's cells into gunim's, with its colours
@@ -146,6 +177,9 @@ func (t *term) Handle(e gi.Event, u *gunim.UI) bool {
 		if t.focused {
 			u.Send(t, FocusPane{Pane: t.id})
 		}
+		t.blinkOff = false
+		t.sync()
+		t.blink(u)
 		t.sync()
 		u.Invalidate()
 		return true
@@ -368,10 +402,11 @@ func (t *term) key(ev input.Event) {
 	if len(b) > 0 && scr.ViewOffset() != 0 {
 		scr.ResetView()
 	}
-	// Typing clears the selection.
+	// Typing clears the selection, and shows a blinking cursor.
 	if len(b) > 0 && sh.grid.Selection().Active {
 		sh.grid.ClearSelection()
 	}
+	t.blinkOff = false
 	sh.mu.Unlock()
 	sh.send(b)
 }

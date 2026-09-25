@@ -524,6 +524,9 @@ func (w *window) update(st State, u *gunim.UI) {
 			continue
 		}
 		t.sync()
+		if id == st.Focus {
+			t.blink(u)
+		}
 	}
 	if w.dialog != nil && u.Presence(w.dialog) == gunim.Exiting {
 		w.dialog = nil

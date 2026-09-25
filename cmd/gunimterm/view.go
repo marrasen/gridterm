@@ -269,16 +269,44 @@ func (w *window) showAsk(asks []Ask, u *gunim.UI) {
 		fields = append(fields, f)
 		form.Add(strings.TrimSuffix(strings.TrimSpace(prompt), ":"), f)
 	}
+	var also *widget.Checkbox
+	if q.Also != "" {
+		also = widget.NewCheckbox(q.Also)
+		form.Add("", also)
+	}
 	d := widget.NewDialog(q.Title)
 	d.Body = form
-	d.SetButtons(q.Yes, "Cancel")
 	id := q.ID
-	d.OnAccept = func() gunim.Intent {
+	answer := func(choice string) gunim.Intent {
 		answers := make([]string, len(fields))
 		for i, f := range fields {
 			answers[i] = f.Text()
 		}
+		if choice != "" {
+			answers = append(answers, choice)
+		}
+		if also != nil {
+			yes := ""
+			if also.On {
+				yes = "yes"
+			}
+			answers = append(answers, yes)
+		}
 		return AskAnswered{ID: id, Yes: true, Answers: answers}
+	}
+	no := q.No
+	if no == "" {
+		no = "Cancel"
+	}
+	if len(q.Choose) > 0 {
+		d.SetButtons(q.Choose[0], no)
+		d.OnAccept = func() gunim.Intent { return answer(q.Choose[0]) }
+		for _, c := range q.Choose[1:] {
+			d.AddButton(c, func() gunim.Intent { return answer(c) })
+		}
+	} else {
+		d.SetButtons(q.Yes, no)
+		d.OnAccept = func() gunim.Intent { return answer("") }
 	}
 	d.Dismiss = AskAnswered{ID: id}
 	w.ask, w.askID = d, id
@@ -646,7 +674,7 @@ func (w *window) paneNode(id string) gunim.Node {
 	case kindFiles:
 		b, ok := w.browsers[id]
 		if !ok {
-			b = newBrowser(id)
+			b = newBrowser(w, id)
 			w.browsers[id] = b
 		}
 		return b

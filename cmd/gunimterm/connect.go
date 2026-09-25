@@ -22,7 +22,15 @@ type Ask struct {
 	Prompts []string
 	// Secret says which fields hide what is typed.
 	Secret []bool
+	// Choose offers answers as buttons, the first the one Enter gives,
+	// answered after the fields by the button's words; Yes names the
+	// button when there is no Choose. Also is a box to tick, answered
+	// after that by "yes" when ticked. No names the button that says
+	// no, Cancel when empty.
+	Choose []string
+	Also   string
 	Yes    string
+	No     string
 }
 
 // errDeclined is the user saying no to a question, which stops the

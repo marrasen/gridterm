@@ -25,6 +25,7 @@ const up widget.Key = ".."
 // browser is a file pane: the folder's path over a table of what is in
 // it, folders first.
 type browser struct {
+	w     *window
 	id    string
 	path  *widget.Label
 	table *widget.Table
@@ -38,8 +39,8 @@ type browser struct {
 	descending bool
 }
 
-func newBrowser(id string) *browser {
-	b := &browser{id: id, byName: map[widget.Key]vfs.Entry{}}
+func newBrowser(w *window, id string) *browser {
+	b := &browser{w: w, id: id, byName: map[widget.Key]vfs.Entry{}}
 	b.path = widget.NewLabel("")
 	b.path.Size, b.path.Color, b.path.MaxLines = smallText, faint, 1
 	b.table = widget.NewTable(
@@ -82,13 +83,109 @@ func (b *browser) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gun
 	kids.At(0).Paint(p)
 }
 
-// Handle implements [gunim.Handler]: Backspace goes up, as in gridterm.
+// Handle implements [gunim.Handler]: gridterm's keys for files.
+// Backspace goes up; F5 or Ctrl+C copies the marked names, or the one
+// under the cursor, to the file clipboard, and F6 or Ctrl+X cuts them;
+// F7 or Ctrl+V pastes here; F8 or Delete deletes, after asking; F2
+// renames; F9 makes a folder.
 func (b *browser) Handle(e gi.Event, u *gunim.UI) bool {
-	if k, ok := e.(gi.KeyPress); ok && k.Key == gi.KeyBackspace && k.Mods == 0 {
-		u.Send(b, GoUp{Pane: b.id})
-		return true
+	k, ok := e.(gi.KeyPress)
+	if !ok {
+		return false
 	}
-	return false
+	ctrl := k.Mods == gi.ModControl
+	switch {
+	case k.Key == gi.KeyBackspace && k.Mods == 0:
+		u.Send(b, GoUp{Pane: b.id})
+	case k.Key == gi.KeyF5 && k.Mods == 0, k.Key == gi.KeyC && ctrl:
+		u.Send(b, ClipFiles{Pane: b.id, Names: b.picked()})
+	case k.Key == gi.KeyF6 && k.Mods == 0, k.Key == gi.KeyX && ctrl:
+		u.Send(b, ClipFiles{Pane: b.id, Names: b.picked(), Cut: true})
+	case k.Key == gi.KeyF7 && k.Mods == 0, k.Key == gi.KeyV && ctrl:
+		u.Send(b, PasteFiles{Pane: b.id})
+	case k.Key == gi.KeyF8 && k.Mods == 0, k.Key == gi.KeyDelete && k.Mods == 0:
+		b.confirmDelete(u)
+	case k.Key == gi.KeyF2 && k.Mods == 0:
+		b.askRename(u)
+	case k.Key == gi.KeyF9 && k.Mods == 0:
+		b.askFolder(u)
+	default:
+		return false
+	}
+	b.table.ClearMarks()
+	return true
+}
+
+// picked returns the marked names, or the one under the cursor.
+func (b *browser) picked() []string {
+	var out []string
+	for _, k := range b.table.Marked() {
+		if k != up {
+			out = append(out, string(k))
+		}
+	}
+	if len(out) == 0 {
+		if k, ok := b.table.Cursor(); ok && k != up {
+			out = []string{string(k)}
+		}
+	}
+	return out
+}
+
+func (b *browser) confirmDelete(u *gunim.UI) {
+	names := b.picked()
+	if len(names) == 0 {
+		return
+	}
+	what := names[0]
+	if len(names) > 1 {
+		what = count(len(names), "item")
+	}
+	d := widget.NewDialog("Delete " + what + "?")
+	d.Body = widget.NewLabel("From " + b.st.Path + ". This can't be undone.")
+	d.SetButtons("Delete", "Cancel")
+	d.Accept = DeleteFiles{Pane: b.id, Names: names}
+	d.Dismiss = DialogClosed{}
+	b.w.openDialog(d, u)
+}
+
+func (b *browser) askRename(u *gunim.UI) {
+	k, ok := b.table.Cursor()
+	if !ok || k == up {
+		return
+	}
+	name := widget.NewTextField()
+	name.SetText(string(k))
+	d := widget.NewDialog("Rename " + string(k))
+	d.Body = widget.NewForm().Add("New name", name)
+	d.SetButtons("Rename", "Cancel")
+	d.Check = func() string {
+		if strings.TrimSpace(name.Text()) == "" {
+			return "It needs a name."
+		}
+		return ""
+	}
+	d.OnAccept = func() gunim.Intent {
+		return RenameFile{Pane: b.id, From: string(k), To: strings.TrimSpace(name.Text())}
+	}
+	d.Dismiss = DialogClosed{}
+	b.w.openDialog(d, u)
+}
+
+func (b *browser) askFolder(u *gunim.UI) {
+	name := widget.NewTextField()
+	d := widget.NewDialog("New folder in " + b.st.Path)
+	d.Body = widget.NewForm().Add("Name", name)
+	d.SetButtons("Make", "Cancel")
+	d.Check = func() string {
+		if strings.TrimSpace(name.Text()) == "" {
+			return "It needs a name."
+		}
+		return ""
+	}
+	d.OnAccept = func() gunim.Intent { return MakeFolder{Pane: b.id, Name: strings.TrimSpace(name.Text())} }
+	d.Dismiss = DialogClosed{}
+	b.w.openDialog(d, u)
 }
 
 // show takes the program's state for the pane.
@@ -98,17 +195,22 @@ func (b *browser) show(st Browser, u *gunim.UI) {
 	if st.Err != "" {
 		text = st.Path + " — " + st.Err
 	}
+	moved := b.path.Text != text
 	b.path.SetText(text)
 	if st.Seq == b.shown {
 		return
 	}
+	moved = moved || b.shown == 0
 	b.shown = st.Seq
 	b.list(u)
-	land := widget.Key(st.Land)
-	if st.Land == "" {
-		land = up
+	// A new folder puts the cursor at the top, or on the name it came
+	// from; the same folder listed again keeps it where it was.
+	switch {
+	case st.Land != "":
+		b.table.SetCursor(widget.Key(st.Land), u)
+	case moved:
+		b.table.SetCursor(up, u)
 	}
-	b.table.SetCursor(land, u)
 }
 
 // list lists the entries in the order asked for, folders first, under

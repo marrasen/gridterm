@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"fmt"
+	"github.com/marrasen/gridterm/jobs"
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/vfs"
 	"slices"
@@ -239,8 +240,13 @@ type app struct {
 	// closing holds the panes folding away.
 	closing map[string]bool
 	// local is this computer's filesystem, once a file pane needs it.
-	local  vfs.FS
-	askIDs atomic.Uint64
+	local vfs.FS
+	// clip is the file clipboard, jobs the queue of file work, and
+	// running the jobs followed.
+	clip    *fileClip
+	jobs    *jobs.Queue
+	running []*running
+	askIDs  atomic.Uint64
 	// wake hears that a shell wrote, and events carries changes from
 	// the shells' goroutines to this one.
 	wake   chan struct{}
@@ -405,6 +411,16 @@ func (a *app) handle(in gunim.Intent) {
 		a.readFile(in)
 	case EnterEntry:
 		a.enter(in)
+	case ClipFiles:
+		a.clipFiles(in)
+	case PasteFiles:
+		err = a.pasteFiles(in)
+	case DeleteFiles:
+		a.deleteFiles(in)
+	case RenameFile:
+		a.renameFile(in)
+	case MakeFolder:
+		a.makeFolder(in)
 	case GoUp:
 		a.goUp(in)
 	case SaveServer:

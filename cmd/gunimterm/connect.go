@@ -195,3 +195,29 @@ func (q asker) Notice(_ context.Context, n remote.Notice) {
 	body := strings.TrimSpace(strings.Join([]string{n.Name, n.Instruction, n.Text}, " "))
 	go func() { q.a.events <- func() { q.a.notify(n.User+"@"+n.Host+" says", body, "") } }()
 }
+
+// saveServer saves a server in the book, and says so.
+func (a *app) saveServer(in SaveServer) error {
+	if a.book == nil {
+		return fmt.Errorf("gunimterm: the saved servers could not be read")
+	}
+	if err := a.book.Put(in.Host, in.Under); err != nil {
+		return err
+	}
+	a.st.Saved = a.book.Hosts()
+	a.notify("Saved "+in.Host.Name, in.Host.Target(), "")
+	return nil
+}
+
+// removeServer forgets a saved server.
+func (a *app) removeServer(name string) error {
+	if a.book == nil {
+		return fmt.Errorf("gunimterm: the saved servers could not be read")
+	}
+	if err := a.book.Remove(name); err != nil {
+		return err
+	}
+	a.st.Saved = a.book.Hosts()
+	a.notify("Removed "+name, "", "")
+	return nil
+}

@@ -35,8 +35,8 @@ type State struct {
 	// Asks are the questions connections are waiting on the user for,
 	// oldest first.
 	Asks []Ask
-	// Saved names the saved servers.
-	Saved  []string
+	// Saved are the saved servers.
+	Saved  []remote.Host
 	Status string
 	// Notices are the latest notices, oldest first, for the window to
 	// show each once.
@@ -187,6 +187,14 @@ type (
 	// saved one by name, and opens a shell there. Connected already, it
 	// opens another shell.
 	ConnectTo struct{ Target, Saved string }
+	// SaveServer saves a server, in place of the one named Under when
+	// that is set.
+	SaveServer struct {
+		Host  remote.Host
+		Under string
+	}
+	// RemoveServer forgets a saved server.
+	RemoveServer struct{ Name string }
 	// AskAnswered answers a question: Yes and the answers, or no.
 	AskAnswered struct {
 		ID      uint64
@@ -270,7 +278,7 @@ func (a *app) run(ctx context.Context) error {
 	if path, err := remote.BookPath(); err == nil {
 		if b, err := remote.LoadBook(path); err == nil {
 			a.book = b
-			a.st.Saved = b.Names()
+			a.st.Saved = b.Hosts()
 		}
 	}
 	if err := a.open("", placement{}); err != nil {
@@ -375,6 +383,10 @@ func (a *app) handle(in gunim.Intent) {
 		a.st.FontSize = size
 	case ConnectTo:
 		err = a.connect(in)
+	case SaveServer:
+		err = a.saveServer(in)
+	case RemoveServer:
+		err = a.removeServer(in.Name)
 	case AskAnswered:
 		if reply, ok := a.replies[in.ID]; ok {
 			a.dropAsk(in.ID)

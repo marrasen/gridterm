@@ -2,6 +2,8 @@ package main
 
 import (
 	"image/color"
+	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/marrasen/gunim"
@@ -12,6 +14,7 @@ import (
 	"github.com/marrasen/gunim/theme"
 	"github.com/marrasen/gunim/widget"
 
+	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/ui"
 )
 
@@ -58,10 +61,13 @@ type window struct {
 	// fontSize is the terminals' font size, as last published.
 	fontSize float32
 	// ask is the dialog asking a connection's question askID, and
-	// savedNames the saved servers the Servers menu lists.
+	// saved are the saved servers; serverIDs and paletteIDs are the
+	// commands of the Servers menu's items and the palette's.
 	ask        *widget.Dialog
 	askID      uint64
-	savedNames []string
+	saved      []remote.Host
+	serverIDs  []string
+	paletteIDs []string
 }
 
 func newWindow(sh *shells, keys *ui.Keymap) *window {
@@ -103,16 +109,11 @@ func newWindow(sh *shells, keys *ui.Keymap) *window {
 		w.bar.Menus = append(w.bar.Menus, bm)
 	}
 	w.bar.Pick = func(m, i int, u *gunim.UI) {
-		if m < len(menus) {
+		switch {
+		case m < len(menus):
 			w.run(menus[m].items[i].id, u)
-			return
-		}
-		// The Servers menu: Connect…, then the saved servers under a
-		// caption.
-		if i == 0 {
-			w.run("server.connect", u)
-		} else if i >= 2 && i-2 < len(w.savedNames) {
-			w.run("server.open:"+w.savedNames[i-2], u)
+		case i < len(w.serverIDs):
+			w.run(w.serverIDs[i], u)
 		}
 	}
 	w.bar.Menus = append(w.bar.Menus, widget.BarMenu{Title: "Servers"})
@@ -120,15 +121,11 @@ func newWindow(sh *shells, keys *ui.Keymap) *window {
 	w.top = widget.Column(w.bar, w.outer).Grow(w.outer, 1)
 	w.top.Cross, w.top.Gap = widget.CrossStretch, noGap
 	w.palette = &widget.Palette{Placeholder: "Type a command", Pick: func(i int, u *gunim.UI) {
-		w.run(commands[i].id, u)
-	}}
-	for _, c := range commands {
-		item := widget.PaletteItem{Title: c.title}
-		if chord, ok := keys.ChordFor(c.id); ok {
-			item.Hint = chordLabel(chord)
+		if i < len(w.paletteIDs) {
+			w.run(w.paletteIDs[i], u)
 		}
-		w.palette.Items = append(w.palette.Items, item)
-	}
+	}}
+	w.servers(nil)
 	return w
 }
 
@@ -151,6 +148,9 @@ func (w *window) run(id string, u *gunim.UI) bool {
 	case "server.connect":
 		w.connectDialog(u)
 		return true
+	case "server.add":
+		w.serverForm(nil, u)
+		return true
 	case "edit.paste":
 		if t, ok := w.terms[w.focused]; ok {
 			t.paste(u.Clipboard())
@@ -164,6 +164,18 @@ func (w *window) run(id string, u *gunim.UI) bool {
 	}
 	if name, ok := strings.CutPrefix(id, "server.open:"); ok {
 		u.Send(w, ConnectTo{Saved: name})
+		return true
+	}
+	if name, ok := strings.CutPrefix(id, "server.edit:"); ok {
+		for _, h := range w.saved {
+			if h.Name == name {
+				w.serverForm(&h, u)
+			}
+		}
+		return true
+	}
+	if name, ok := strings.CutPrefix(id, "server.remove:"); ok {
+		w.confirmRemove(name, u)
 		return true
 	}
 	if in, ok := commandIntent(id); ok {
@@ -268,27 +280,142 @@ func (w *window) showAsk(asks []Ask, u *gunim.UI) {
 	w.openDialog(d, u)
 }
 
-// servers fills the Servers menu: Connect…, then the saved servers.
-func (w *window) servers(saved []string) {
-	for i, m := range w.bar.Menus {
-		if m.Title != "Servers" {
-			continue
+// servers fills the Servers menu and the palette: the window's own
+// commands, then the saved servers, each to connect to, and in the
+// palette to edit or remove too.
+func (w *window) servers(saved []remote.Host) {
+	w.saved = saved
+	hint := func(id string) string {
+		if chord, ok := w.keys.ChordFor(id); ok {
+			return chordLabel(chord)
 		}
-		items, hints := []string{"Connect to Server…"}, []string{""}
-		if chord, ok := w.keys.ChordFor("server.connect"); ok {
-			hints[0] = chordLabel(chord)
+		return ""
+	}
+	m := widget.BarMenu{Title: "Servers",
+		Items: []string{"Connect to Server…", "Add Server…"},
+		Hints: []string{hint("server.connect"), ""}}
+	w.serverIDs = []string{"server.connect", "server.add"}
+	if len(saved) > 0 {
+		m.Breaks, m.Captions = []int{2}, []int{2}
+		m.Items, m.Hints = append(m.Items, "Saved"), append(m.Hints, "")
+		w.serverIDs = append(w.serverIDs, "")
+		for _, h := range saved {
+			m.Items, m.Hints = append(m.Items, h.Name), append(m.Hints, "")
+			w.serverIDs = append(w.serverIDs, "server.open:"+h.Name)
 		}
-		var breaks, captions []int
-		if len(saved) > 0 {
-			breaks, captions = []int{1}, []int{1}
-			items, hints = append(items, "Saved"), append(hints, "")
-			for _, name := range saved {
-				items, hints = append(items, name), append(hints, "")
+	}
+	for i := range w.bar.Menus {
+		if w.bar.Menus[i].Title == "Servers" {
+			w.bar.Menus[i] = m
+		}
+	}
+	w.palette.Items, w.paletteIDs = nil, nil
+	for _, c := range commands {
+		w.palette.Items = append(w.palette.Items, widget.PaletteItem{Title: c.title, Hint: hint(c.id)})
+		w.paletteIDs = append(w.paletteIDs, c.id)
+	}
+	w.palette.Items = append(w.palette.Items, widget.PaletteItem{Title: "Add Server"})
+	w.paletteIDs = append(w.paletteIDs, "server.add")
+	for _, h := range saved {
+		for _, c := range []struct{ title, id string }{
+			{"Connect to " + h.Name, "server.open:"},
+			{"Edit Server " + h.Name, "server.edit:"},
+			{"Remove Server " + h.Name, "server.remove:"},
+		} {
+			w.palette.Items = append(w.palette.Items, widget.PaletteItem{Title: c.title, Also: []string{h.Address}})
+			w.paletteIDs = append(w.paletteIDs, c.id+h.Name)
+		}
+	}
+}
+
+// serverForm asks for a server to save: a new one, or old edited.
+func (w *window) serverForm(old *remote.Host, u *gunim.UI) {
+	name, addr, port, user, key := widget.NewTextField(), widget.NewTextField(), widget.NewTextField(), widget.NewTextField(), widget.NewTextField()
+	addr.Placeholder, port.Placeholder = "host name or address", "22"
+	user.Placeholder, key.Placeholder = "your name here", "the usual keys in ~/.ssh"
+	// Through lists the other saved servers, to reach this one through.
+	through := []string{"Directly"}
+	ids := []string{""}
+	for _, h := range w.saved {
+		if old == nil || h.ID != old.ID {
+			through = append(through, h.Name)
+			ids = append(ids, h.ID)
+		}
+	}
+	via := widget.NewDropdown(through...)
+	via.Label = "Through"
+	title, under := "Add a server", ""
+	if old != nil {
+		title, under = "Edit "+old.Name, old.Name
+		name.SetText(old.Name)
+		addr.SetText(old.Address)
+		if old.Port != 0 {
+			port.SetText(strconv.Itoa(old.Port))
+		}
+		user.SetText(old.User)
+		if len(old.Identities) > 0 {
+			key.SetText(old.Identities[0])
+		}
+		for i, id := range ids {
+			if id != "" && id == old.Via {
+				via.Selected = i
 			}
 		}
-		w.bar.Menus[i] = widget.BarMenu{Title: "Servers", Items: items, Hints: hints, Breaks: breaks, Captions: captions}
-		w.savedNames = saved
 	}
+	host := func() (remote.Host, string) {
+		h := remote.Host{Name: strings.TrimSpace(name.Text()), Address: strings.TrimSpace(addr.Text()), User: strings.TrimSpace(user.Text())}
+		if old != nil {
+			h = *old
+			h.Name, h.Address, h.User = strings.TrimSpace(name.Text()), strings.TrimSpace(addr.Text()), strings.TrimSpace(user.Text())
+			h.Port, h.Identities = 0, nil
+		}
+		if p := strings.TrimSpace(port.Text()); p != "" {
+			n, err := strconv.Atoi(p)
+			if err != nil || n <= 0 || n > 65535 {
+				return h, "The port is a number from 1 to 65535."
+			}
+			h.Port = n
+		}
+		if k := strings.TrimSpace(key.Text()); k != "" {
+			h.Identities = []string{k}
+		}
+		h.Via = ids[max(0, min(via.Selected, len(ids)-1))]
+		if err := h.Validate(); err != nil {
+			return h, upperFirst(err.Error()) + "."
+		}
+		return h, ""
+	}
+	d := widget.NewDialog(title)
+	d.Body = widget.NewForm().Add("Name", name).Add("Address", addr).Add("Port", port).Add("User", user).Add("Through", via).Add("Key file", key)
+	d.SetButtons("Save", "Cancel")
+	d.Check = func() string {
+		_, problem := host()
+		return problem
+	}
+	d.OnAccept = func() gunim.Intent {
+		h, _ := host()
+		return SaveServer{Host: h, Under: under}
+	}
+	d.Dismiss = DialogClosed{}
+	w.openDialog(d, u)
+}
+
+// confirmRemove asks before forgetting a saved server.
+func (w *window) confirmRemove(name string, u *gunim.UI) {
+	d := widget.NewDialog("Remove " + name + "?")
+	d.Body = widget.NewLabel("Its panes stay open. Connecting to it again takes its address.")
+	d.SetButtons("Remove", "Cancel")
+	d.Accept = RemoveServer{Name: name}
+	d.Dismiss = DialogClosed{}
+	w.openDialog(d, u)
+}
+
+// upperFirst capitalises the first letter of s.
+func upperFirst(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
 }
 
 // rename asks for a new name for the pane with the keyboard.
@@ -380,7 +507,9 @@ func (w *window) update(st State, u *gunim.UI) {
 		}
 	}
 	w.showAsk(st.Asks, u)
-	w.servers(st.Saved)
+	if !slices.EqualFunc(st.Saved, w.saved, func(a, b remote.Host) bool { return a.ID == b.ID && a.Name == b.Name && a.Address == b.Address }) {
+		w.servers(st.Saved)
+	}
 
 	keep := map[string]bool{}
 	w.stage.show(w.build(st.Stage, keep), u)

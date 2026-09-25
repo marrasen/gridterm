@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/marrasen/gridterm/input"
 	"github.com/marrasen/gridterm/ui"
 )
 
@@ -48,5 +49,26 @@ func TestAProgramsClipboardIsHandedOn(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("the clipboard was never handed on")
+	}
+}
+
+func TestTheMouseIsTakenWhileAProgramAsksAndShiftIsUp(t *testing.T) {
+	sess := newFakeSession()
+	said := make(chan struct{}, 4)
+	term, err := New(Config{Session: sess, Size: ui.Size{Cols: 20, Rows: 3}, OnOutput: func() { said <- struct{}{} }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = term.Close() }()
+	if term.MouseTaken(0) {
+		t.Fatal("before any program asked, the mouse is taken")
+	}
+	sess.out <- []byte("\x1b[?1000h")
+	<-said
+	if !term.MouseTaken(0) {
+		t.Fatal("asked for, the mouse is not taken")
+	}
+	if term.MouseTaken(input.ModShift) {
+		t.Fatal("with Shift down, the mouse is still taken")
 	}
 }

@@ -6,28 +6,27 @@ import (
 
 	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/session"
+	"github.com/marrasen/gridterm/ui"
+	uiterm "github.com/marrasen/gridterm/ui/term"
 	"github.com/marrasen/gridterm/vt"
 )
 
-// shell is a running shell and the screen its output draws on. The
-// reader goroutine writes the screen and the window's goroutine reads
-// it, each holding mu.
+// shell is a running program and its screen, on gridterm's own
+// terminal: the emulator, the selection, the mouse, the history and
+// what an agent reads all behave as they do in gridterm. The window
+// draws the screen into view, a grid of its own, and copies the rows
+// that changed into the pane.
 type shell struct {
+	t *uiterm.Terminal
+	// mu guards view, which the window's goroutine draws into and
+	// reads from.
 	mu   sync.Mutex
-	vt   *vt.Terminal
-	grid *grid.Grid
-	pal  vt.Palette
-
-	sess session.Session
-	// out carries keys to the writer goroutine, so a shell that stops
-	// reading holds up that goroutine and never the window.
-	out  chan []byte
-	done chan struct{}
+	view *grid.Grid
 }
 
 // shellHooks are what a shell tells the program: that it wrote, that
-// it named itself, and that it exited. They run on the shell's reader
-// goroutine.
+// it named itself, that it exited, and what it put on the clipboard.
+// They run on the shell's reader goroutine.
 type shellHooks struct {
 	output    func()
 	title     func(string)
@@ -51,80 +50,54 @@ func startLocal(pal vt.Palette, hooks shellHooks) (*shell, error) {
 // openShell puts a screen on a running session, local or remote,
 // drawing with pal.
 func openShell(sess session.Session, pal vt.Palette, hooks shellHooks) *shell {
-	const cols, rows = shellCols, shellRows
-	sh := &shell{
-		pal:  pal,
-		grid: grid.New(cols, rows, pal.FG, pal.BG),
-		sess: sess,
-		out:  make(chan []byte, 1024),
-		done: make(chan struct{}),
+	t, err := uiterm.New(uiterm.Config{
+		Session:     sess,
+		Size:        ui.Size{Cols: shellCols, Rows: shellRows},
+		Scrollback:  5000,
+		Program:     "gunimterm",
+		Palette:     &pal,
+		OnTitle:     hooks.title,
+		OnExit:      hooks.exit,
+		OnOutput:    hooks.output,
+		OnClipboard: hooks.clipboard,
+	})
+	if err != nil {
+		// Only a missing session fails, and every caller has one.
+		panic(err)
 	}
-	sh.grid.SelectionBG = pal.Selection
-	sh.vt = vt.New(cols, rows, pal, 5000, vt.Callbacks{Reply: sh.send, Title: hooks.title, ClipboardSet: hooks.clipboard})
-	go sh.read(hooks)
-	go sh.write()
-	return sh
+	// Always focused, as far as the terminal knows, so it draws the
+	// cursor into the view; the pane draws it hollow when it lacks the
+	// keyboard.
+	t.SetFocus(true)
+	return &shell{t: t, view: grid.New(shellCols, shellRows, pal.FG, pal.BG)}
 }
 
-func (sh *shell) read(hooks shellHooks) {
-	defer hooks.exit()
-	defer close(sh.done)
-	buf := make([]byte, 64<<10)
-	for {
-		n, err := sh.sess.Read(buf)
-		if n > 0 {
-			sh.mu.Lock()
-			_, _ = sh.vt.Write(buf[:n])
-			sh.mu.Unlock()
-			hooks.output()
-		}
-		if err != nil {
-			return
-		}
+// draw draws the screen into view, at the size the screen is.
+func (sh *shell) draw() {
+	sh.mu.Lock()
+	defer sh.mu.Unlock()
+	size := sh.t.Size()
+	if cols, rows := sh.view.Size(); cols != size.Cols || rows != size.Rows {
+		sh.view.Resize(size.Cols, size.Rows)
 	}
-}
-
-func (sh *shell) write() {
-	for b := range sh.out {
-		if _, err := sh.sess.Write(b); err != nil {
-			return
-		}
-	}
-}
-
-// send queues bytes for the shell, dropping them when the shell has
-// stopped reading and the queue is full, as gridterm does.
-func (sh *shell) send(b []byte) {
-	if len(b) == 0 {
-		return
-	}
-	select {
-	case sh.out <- append([]byte(nil), b...):
-	default:
-	}
+	sh.t.DrawScreen(sh.view.View())
 }
 
 // resize gives the shell a new size in cells. It reports whether the
 // size changed.
 func (sh *shell) resize(cols, rows int) bool {
-	sh.mu.Lock()
-	defer sh.mu.Unlock()
-	if c, r := sh.vt.Screen().Size(); c == cols && r == rows {
+	if s := sh.t.Size(); s.Cols == cols && s.Rows == rows {
 		return false
 	}
-	sh.vt.Resize(cols, rows)
-	_ = sh.sess.Resize(cols, rows)
+	sh.t.Layout(ui.Size{Cols: cols, Rows: rows})
 	return true
 }
 
-func (sh *shell) close() { _ = sh.sess.Close() }
+// send hands bytes to the program as they are.
+func (sh *shell) send(b []byte) { sh.t.Send(b) }
+
+func (sh *shell) close() { _ = sh.t.Close() }
 
 // setPalette draws the screen in pal from now on, what is on it
 // included.
-func (sh *shell) setPalette(pal vt.Palette) {
-	sh.mu.Lock()
-	defer sh.mu.Unlock()
-	sh.pal = pal
-	sh.grid.SelectionBG = pal.Selection
-	sh.vt.Screen().SetPalette(pal)
-}
+func (sh *shell) setPalette(pal vt.Palette) { sh.t.SetPalette(pal) }

@@ -27,12 +27,10 @@ type term struct {
 	focused bool
 	// wheel gathers the wheel's movement until it makes a whole line.
 	wheel float32
-	// selecting is set while the pointer drags a selection. held is the
-	// button a program reporting the mouse saw go down, and at the cell
-	// it last heard of.
-	selecting bool
-	held      input.MouseButton
-	at        grid.Point
+	// held is the button down in the pane, and at the cell the pointer
+	// was last heard of in.
+	held input.MouseButton
+	at   grid.Point
 	// wantBlink says the program asked for a blinking cursor, blinking
 	// that a blink is running, and blinkOff that the cursor is in the
 	// off half of one.
@@ -94,14 +92,14 @@ func (t *term) Paint(p *paint.Painter, _ gunim.Frame, _ geom.Size, kids gunim.Ch
 	kids.At(0).Paint(p)
 }
 
-// sync copies the rows of the shell's screen that changed into the
-// grid, with the cursor.
+// sync draws the shell's screen and copies the rows that changed into
+// the grid, with the cursor.
 func (t *term) sync() {
 	sh := t.sh
+	sh.draw()
 	sh.mu.Lock()
 	defer sh.mu.Unlock()
-	g := sh.grid
-	sh.vt.Render(g)
+	g := sh.view
 	cols, rows := g.Size()
 	t.cells.Resize(cols, rows)
 	for y := range rows {
@@ -202,11 +200,7 @@ func (t *term) Handle(e gi.Event, u *gunim.UI) bool {
 		}
 		return true
 	case gi.Scroll:
-		if t.reporting(e.Mods) {
-			t.wheelReport(e, u)
-			return true
-		}
-		t.scroll(e.Delta.Y, u)
+		t.scroll(e, u)
 		return true
 	case gi.PointerDown:
 		return t.press(e, u)
@@ -218,24 +212,13 @@ func (t *term) Handle(e gi.Event, u *gunim.UI) bool {
 	return false
 }
 
-// reporting reports whether the program has the mouse: it asked for
-// it, and Shift, which keeps the mouse for selecting, is up.
-func (t *term) reporting(mods gi.Mods) bool {
-	t.sh.mu.Lock()
-	on := t.sh.vt.Screen().MouseEnabled()
-	t.sh.mu.Unlock()
-	return on && !mods.Has(gi.ModShift)
-}
-
-// report sends a mouse event to the program, in the encoding it asked
-// for.
-func (t *term) report(e input.MouseEvent) {
-	sh := t.sh
-	sh.mu.Lock()
-	click, drag, motion, sgr := sh.vt.Screen().MouseModes()
-	b := input.EncodeMouse(e, input.MouseMode{Click: click, Drag: drag, Motion: motion, SGR: sgr}, nil)
-	sh.mu.Unlock()
-	sh.send(b)
+// mouse hands a pointer event to the terminal, which reports it to a
+// program that asked for the mouse, and otherwise selects.
+func (t *term) mouse(e input.MouseEvent, u *gunim.UI) bool {
+	took, _ := t.sh.t.HandleMouse(e)
+	t.sync()
+	u.Invalidate()
+	return took
 }
 
 func mouseMods(m gi.Mods) input.Mods {
@@ -270,95 +253,44 @@ func (t *term) cellAt(p geom.Point) grid.Point {
 }
 
 // press starts a selection, or a program's click; the middle button
-// pastes.
+// pastes, and the right is left to the window.
 func (t *term) press(e gi.PointerDown, u *gunim.UI) bool {
 	at := t.cellAt(e.Pos)
-	if t.reporting(e.Mods) {
-		t.held, t.at = mouseButton(e.Button), at
-		t.report(input.MouseEvent{Kind: input.MousePress, Button: t.held, Col: at.X, Row: at.Y, Mods: mouseMods(e.Mods)})
-		return true
-	}
-	switch e.Button {
-	case gi.ButtonPrimary:
-		t.sh.mu.Lock()
-		t.sh.grid.SetSelection(grid.Selection{Anchor: at, Cursor: at, Block: e.Mods.Has(gi.ModAlt)})
-		t.sh.mu.Unlock()
-		t.selecting = true
-	case gi.ButtonMiddle:
+	mods := mouseMods(e.Mods)
+	switch {
+	case e.Button == gi.ButtonMiddle && !t.sh.t.MouseTaken(mods):
 		t.paste(u.Clipboard())
-	case gi.ButtonSecondary:
+		return true
+	case e.Button == gi.ButtonSecondary && !t.sh.t.MouseTaken(mods):
 		return false
 	}
-	t.sync()
-	u.Invalidate()
-	return true
+	t.held, t.at = mouseButton(e.Button), at
+	return t.mouse(input.MouseEvent{Kind: input.MousePress, Button: t.held, Col: at.X, Row: at.Y, Mods: mods}, u)
 }
 
 // drag extends the selection, or tells a program the pointer moved.
 func (t *term) drag(e gi.PointerMove, u *gunim.UI) bool {
 	at := t.cellAt(e.Pos)
-	if t.held != input.MouseNone || (!t.selecting && t.reporting(e.Mods)) {
-		if at != t.at {
-			t.at = at
-			t.report(input.MouseEvent{Kind: input.MouseMove, Button: t.held, Col: at.X, Row: at.Y, Mods: mouseMods(e.Mods)})
-		}
-		return true
+	if at == t.at {
+		return t.held != input.MouseNone
 	}
-	if !t.selecting {
+	t.at = at
+	return t.mouse(input.MouseEvent{Kind: input.MouseMove, Button: t.held, Col: at.X, Row: at.Y, Mods: mouseMods(e.Mods)}, u)
+}
+
+func (t *term) release(e gi.PointerUp, u *gunim.UI) bool {
+	if t.held == input.MouseNone {
 		return false
 	}
-	t.sh.mu.Lock()
-	sel := t.sh.grid.Selection()
-	sel.Cursor = at
-	sel.Active = sel.Active || at != sel.Anchor
-	t.sh.grid.SetSelection(sel)
-	t.sh.mu.Unlock()
-	t.sync()
-	u.Invalidate()
-	return true
-}
-
-func (t *term) release(e gi.PointerUp, _ *gunim.UI) bool {
-	if t.held != input.MouseNone {
-		at := t.cellAt(e.Pos)
-		t.report(input.MouseEvent{Kind: input.MouseRelease, Button: t.held, Col: at.X, Row: at.Y, Mods: mouseMods(e.Mods)})
-		t.held = input.MouseNone
-		return true
-	}
-	if t.selecting {
-		t.selecting = false
-		return true
-	}
-	return false
-}
-
-// wheelReport sends the wheel to a program that reports the mouse, a
-// press for each line's worth.
-func (t *term) wheelReport(e gi.Scroll, u *gunim.UI) {
-	h := t.cells.CellSize().H
-	if h <= 0 {
-		return
-	}
-	t.wheel += e.Delta.Y / h
-	lines := int(math.Trunc(float64(t.wheel)))
-	t.wheel -= float32(lines)
-	b := input.MouseWheelUp
-	if lines < 0 {
-		b, lines = input.MouseWheelDown, -lines
-	}
 	at := t.cellAt(e.Pos)
-	for range lines {
-		t.report(input.MouseEvent{Kind: input.MousePress, Button: b, Col: at.X, Row: at.Y, Mods: mouseMods(e.Mods)})
-	}
-	u.Invalidate()
+	held := t.held
+	t.held = input.MouseNone
+	return t.mouse(input.MouseEvent{Kind: input.MouseRelease, Button: held, Col: at.X, Row: at.Y, Mods: mouseMods(e.Mods)}, u)
 }
 
 // copySelection puts the selected text on the clipboard.
 func (t *term) copySelection(u *gunim.UI) {
-	t.sh.mu.Lock()
-	text := t.sh.grid.SelectedText()
-	t.sh.mu.Unlock()
-	if text != "" {
+	if text := t.sh.t.SelectionText(); text != "" {
 		u.SetClipboard(text)
 	}
 }
@@ -377,11 +309,9 @@ func (t *term) command(id string, u *gunim.UI) bool {
 		if id == "view.scrollDown" {
 			page = -page
 		}
-		t.sh.mu.Lock()
-		if !t.sh.vt.Screen().OnAltBuffer() {
-			t.sh.vt.Screen().ScrollView(page)
+		if _, _, alt := t.sh.t.Cursor(); !alt {
+			t.sh.t.ScrollView(page)
 		}
-		t.sh.mu.Unlock()
 		t.sync()
 		u.Invalidate()
 	default:
@@ -390,55 +320,44 @@ func (t *term) command(id string, u *gunim.UI) bool {
 	return true
 }
 
-// key encodes one event for the shell, and brings the view back to the
-// live screen, as typing does in gridterm.
+// key hands one event to the terminal, which encodes it for the
+// program, brings the view back to the live screen and clears the
+// selection, as typing does in gridterm.
 func (t *term) key(ev input.Event) {
-	sh := t.sh
-	sh.mu.Lock()
-	scr := sh.vt.Screen()
-	b := input.EncodeMode(ev, input.Mode{AppCursor: scr.AppCursor()}, nil)
-	if len(b) > 0 && scr.ViewOffset() != 0 {
-		scr.ResetView()
-	}
-	// Typing clears the selection, and shows a blinking cursor.
-	if len(b) > 0 && sh.grid.Selection().Active {
-		sh.grid.ClearSelection()
-	}
 	t.blinkOff = false
-	sh.mu.Unlock()
-	sh.send(b)
+	_, _ = t.sh.t.HandleKey(ev)
 }
 
-func (t *term) paste(s string) {
-	sh := t.sh
-	sh.mu.Lock()
-	b := input.EncodePaste(s, sh.vt.Screen().Bracketed(), nil)
-	sh.mu.Unlock()
-	sh.send(b)
-}
+func (t *term) paste(s string) { t.sh.t.Paste(s) }
 
-// scroll moves the view through history by the wheel's movement, a
-// line at a time. On the alternate screen, which keeps no history, it
-// sends the arrow keys instead, as gridterm does.
-func (t *term) scroll(dy float32, u *gunim.UI) {
+// scroll moves by the wheel's movement, a line at a time: to a program
+// that has the mouse, as a wheel click per line; on the alternate
+// screen, which keeps no history, as the arrow keys; and otherwise
+// through history.
+func (t *term) scroll(e gi.Scroll, u *gunim.UI) {
 	h := t.cells.CellSize().H
 	if h <= 0 {
 		return
 	}
-	t.wheel += dy / h
+	t.wheel += e.Delta.Y / h
 	lines := int(math.Trunc(float64(t.wheel)))
 	if lines == 0 {
 		return
 	}
 	t.wheel -= float32(lines)
-	sh := t.sh
-	sh.mu.Lock()
-	alt := sh.vt.Screen().OnAltBuffer()
-	if !alt {
-		sh.vt.Screen().ScrollView(lines)
-	}
-	sh.mu.Unlock()
-	if alt {
+	mods := mouseMods(e.Mods)
+	_, _, alt := t.sh.t.Cursor()
+	switch {
+	case t.sh.t.MouseTaken(mods):
+		b := input.MouseWheelUp
+		if lines < 0 {
+			b, lines = input.MouseWheelDown, -lines
+		}
+		at := t.cellAt(e.Pos)
+		for range lines {
+			_, _ = t.sh.t.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: b, Col: at.X, Row: at.Y, Mods: mods})
+		}
+	case alt:
 		k := input.KeyUp
 		if lines < 0 {
 			k, lines = input.KeyDown, -lines
@@ -446,7 +365,8 @@ func (t *term) scroll(dy float32, u *gunim.UI) {
 		for range lines {
 			t.key(input.Event{Kind: input.KeyPress, Key: k})
 		}
-		return
+	default:
+		t.sh.t.ScrollView(lines)
 	}
 	t.sync()
 	u.Invalidate()

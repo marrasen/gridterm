@@ -1465,6 +1465,15 @@ func (t *Terminal) mode() input.Mode {
 	return input.Mode{AppCursor: t.term.Screen().AppCursor()}
 }
 
+// MouseTaken reports whether the program has the mouse for a pointer
+// event with mods: it asked for mouse reports, and Shift, which keeps
+// the mouse for selecting, is up. A host that scrolls smoothly asks
+// this before scrolling the view itself.
+func (t *Terminal) MouseTaken(mods input.Mods) bool {
+	mode, _ := t.mouseMode()
+	return mode.Enabled() && !mods.Has(input.ModShift)
+}
+
 // mouseMode reads the mouse state and which buffer is in use, in one
 // pass under the lock rather than two.
 func (t *Terminal) mouseMode() (input.MouseMode, bool) {

@@ -574,10 +574,17 @@ func (w *window) update(st State, u *gunim.UI) {
 			delete(w.readers, id)
 			continue
 		}
-		if next := st.Readers[id]; next.Path != r.st.Path {
+		next := st.Readers[id]
+		if next.Path != r.st.Path {
 			r.colour = syntax.For(next.Path)
+			r.follow = next.Follow
 		}
-		r.st = st.Readers[id]
+		if next.Seq != r.seq && r.follow {
+			// Following, the reader stays at the end as the file grows.
+			r.top = len(next.Lines)
+		}
+		r.seq = next.Seq
+		r.st = next
 	}
 	for id, t := range w.terms {
 		if w.shells.get(id) == nil {

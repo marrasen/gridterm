@@ -112,6 +112,10 @@ func (b *browser) Handle(e gi.Event, u *gunim.UI) bool {
 		b.askRename(u)
 	case k.Key == gi.KeyF9 && k.Mods == 0:
 		b.askFolder(u)
+	case k.Key == gi.KeyF3 && k.Mods == 0, k.Key == gi.KeyF4 && k.Mods == 0:
+		if c, ok := b.table.Cursor(); ok && c != up && !b.byName[c].IsDir() {
+			u.Send(b, ViewFile{Pane: b.id, Name: string(c), Follow: k.Key == gi.KeyF4})
+		}
 	default:
 		return false
 	}
@@ -315,6 +319,10 @@ type reader struct {
 	top    int
 	wheel  float32
 	row    []widget.Cell
+	// seq is the read shown, and follow set while the reader stays at
+	// the end of a file it follows.
+	seq    int
+	follow bool
 	// bar is where a search or a line number is typed, shown while
 	// open; lines is set while it asks for a line. query is what is
 	// searched for, and the match the one found last: its line and
@@ -639,6 +647,11 @@ func (r *reader) Handle(e gi.Event, u *gunim.UI) bool {
 		return false
 	}
 	r.top = max(0, r.top)
+	// A reader following its file keeps to the end until scrolled up,
+	// and takes to it again at the end.
+	if r.st.Follow {
+		r.follow = r.top >= len(r.st.Lines)-rows
+	}
 	u.Invalidate()
 	return true
 }

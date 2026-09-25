@@ -428,6 +428,8 @@ func (a *app) handle(in gunim.Intent) {
 		a.goUp(in)
 	case GoTo:
 		a.goTo(in)
+	case ViewFile:
+		a.viewFile(in)
 	case SaveServer:
 		err = a.saveServer(in)
 	case RemoveServer:

@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/marrasen/gridterm/ui/files"
 	"github.com/marrasen/gridterm/vfs"
@@ -33,6 +34,10 @@ type Reader struct {
 	// Cut says the file was longer than a reader holds.
 	Cut bool
 	Err string
+	// Follow says the reader follows the file as it grows, and Seq
+	// counts its reads.
+	Follow bool
+	Seq    int
 }
 
 // Intents for files.
@@ -41,8 +46,12 @@ type (
 	OpenFiles struct{}
 	// Browse shows path in a file pane, with the cursor on land.
 	Browse struct{ Pane, Path, Land string }
-	// ReadFile opens path in a reader beside the file pane.
-	ReadFile struct{ Pane, Path string }
+	// ReadFile opens path in a reader beside the file pane, following
+	// it as it grows with Follow.
+	ReadFile struct {
+		Pane, Path string
+		Follow     bool
+	}
 	// EnterEntry goes into a folder of a file pane, or opens a file in
 	// a reader.
 	EnterEntry struct{ Pane, Name string }
@@ -51,7 +60,23 @@ type (
 	GoUp struct{ Pane string }
 	// GoTo shows a folder typed as a path, ~ standing for home.
 	GoTo struct{ Pane, Path string }
+	// ViewFile reads the file named in a file pane's folder, following
+	// it as it grows with Follow.
+	ViewFile struct {
+		Pane, Name string
+		Follow     bool
+	}
 )
+
+// viewFile reads a file of a file pane's folder.
+func (a *app) viewFile(in ViewFile) {
+	b, ok := a.st.Browsers[in.Pane]
+	f := a.fsFor(a.machineOf(in.Pane))
+	if !ok || f == nil {
+		return
+	}
+	a.readFile(ReadFile{Pane: in.Pane, Path: vfs.Join(f, b.Path, in.Name), Follow: in.Follow})
+}
 
 // goTo shows the folder typed.
 func (a *app) goTo(in GoTo) {
@@ -195,7 +220,8 @@ func (a *app) setBrowser(id string, b Browser) {
 	a.st.Browsers = m
 }
 
-// readFile opens a file in a reader beside its file pane.
+// readFile opens a file in a reader beside its file pane, and, to
+// follow it, reads it again each time it changes.
 func (a *app) readFile(in ReadFile) {
 	machine := a.machineOf(in.Pane)
 	f := a.fsFor(machine)
@@ -204,20 +230,60 @@ func (a *app) readFile(in ReadFile) {
 	}
 	a.next++
 	id := "p" + itoa(a.next)
-	a.addPane(Pane{ID: id, Title: vfs.Base(f, in.Path), Machine: machine, Kind: kindReader}, nil, placement{beside: in.Pane})
+	title := vfs.Base(f, in.Path)
+	if in.Follow {
+		title += " (following)"
+	}
+	a.addPane(Pane{ID: id, Title: title, Machine: machine, Kind: kindReader}, nil, placement{beside: in.Pane})
 	go func() {
-		lines, cut, err := files.ReadFile(f, in.Path)
-		r := Reader{Path: in.Path, Lines: lines, Cut: cut}
-		if err != nil {
-			r.Err = err.Error()
-		}
-		a.events <- func() {
-			m := make(map[string]Reader, len(a.st.Readers)+1)
-			for k, v := range a.st.Readers {
-				m[k] = v
+		var last vfs.Entry
+		seq := 0
+		for {
+			lines, cut, err := files.ReadFile(f, in.Path)
+			seq++
+			r := Reader{Path: in.Path, Lines: lines, Cut: cut, Follow: in.Follow, Seq: seq}
+			if err != nil {
+				r.Err = err.Error()
 			}
-			m[id] = r
-			a.st.Readers = m
+			open := make(chan bool, 1)
+			a.events <- func() {
+				if !a.has(id) {
+					open <- false
+					return
+				}
+				m := make(map[string]Reader, len(a.st.Readers)+1)
+				for k, v := range a.st.Readers {
+					m[k] = v
+				}
+				m[id] = r
+				a.st.Readers = m
+				open <- true
+			}
+			if !<-open || !in.Follow {
+				return
+			}
+			// Following: wait for the file to change, as gridterm does,
+			// by its size and its time.
+			for {
+				select {
+				case <-a.ctx.Done():
+					return
+				case <-time.After(time.Second):
+				}
+				e, err := f.Stat(in.Path)
+				if err == nil && (e.Size != last.Size || !e.Mod.Equal(last.Mod)) {
+					changed := last.Mod != (time.Time{})
+					last = e
+					if changed {
+						break
+					}
+				}
+				gone := make(chan bool, 1)
+				a.events <- func() { gone <- !a.has(id) }
+				if <-gone {
+					return
+				}
+			}
 		}
 	}()
 }

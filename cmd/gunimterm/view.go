@@ -528,7 +528,9 @@ func (w *window) update(st State, u *gunim.UI) {
 	if w.dialog != nil && u.Presence(w.dialog) == gunim.Exiting {
 		w.dialog = nil
 	}
-	if st.Focus != w.focused && w.sw == nil && w.dialog == nil {
+	// The pane with the keyboard gets it when it changes, and back when
+	// nothing has it, as when the split it sat in went away around it.
+	if w.sw == nil && w.dialog == nil && (st.Focus != w.focused || u.Focused() == nil) {
 		w.focused = st.Focus
 		if t, ok := w.terms[st.Focus]; ok {
 			u.Focus(t)

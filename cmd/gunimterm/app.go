@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"sync/atomic"
+	"time"
 
 	"fmt"
 	"github.com/marrasen/gridterm/remote"
@@ -227,6 +228,8 @@ type app struct {
 	// replies waits for the answers to asks, by ID, and askIDs counts
 	// them.
 	replies map[uint64]chan AskAnswered
+	// closing holds the panes folding away.
+	closing map[string]bool
 	askIDs  atomic.Uint64
 	// wake hears that a shell wrote, and events carries changes from
 	// the shells' goroutines to this one.
@@ -267,6 +270,7 @@ func newApp(c gunim.Client, sh *shells) *app {
 		dialing: map[string]bool{},
 		ring:    remote.NewRing(),
 		replies: map[uint64]chan AskAnswered{},
+		closing: map[string]bool{},
 		wake:    make(chan struct{}, 1),
 		events:  make(chan func(), 64),
 	}
@@ -363,7 +367,7 @@ func (a *app) handle(in gunim.Intent) {
 		a.st.SidebarWidth = in.Width
 	case Exit:
 		for len(a.st.Panes) > 0 {
-			a.closePane(a.st.Panes[0].ID)
+			a.remove(a.st.Panes[0].ID)
 		}
 	case RenamePane:
 		for i := range a.st.Panes {
@@ -551,7 +555,57 @@ func (a *app) take(id string) string {
 	return next
 }
 
+// foldTime is how long a closing pane takes to fold away before it
+// goes.
+const foldTime = 350 * time.Millisecond
+
+// closePane closes a pane. One in a split folds away first: the split
+// gives its space to the other side, and the pane goes once it has.
+// The keyboard moves to the pane beside it at once.
 func (a *app) closePane(id string) {
+	if a.closing[id] || !a.has(id) {
+		return
+	}
+	g, ok := a.groupOf[id]
+	if !ok || !fold(a.groups[g], id) {
+		a.remove(id)
+		return
+	}
+	a.closing[id] = true
+	if a.st.Focus == id {
+		if next := a.groups[g].beside(id); next != "" {
+			a.st.Focus = next
+		}
+	}
+	if sh := a.shells.get(id); sh != nil {
+		sh.close()
+	}
+	time.AfterFunc(foldTime, func() {
+		a.events <- func() {
+			delete(a.closing, id)
+			a.remove(id)
+		}
+	})
+}
+
+// fold aims the split holding pane at the other side, and reports
+// whether pane was in a split.
+func fold(b *Box, pane string) bool {
+	switch {
+	case b == nil || b.Pane != "":
+		return false
+	case b.A.Pane == pane:
+		b.Share = 0
+		return true
+	case b.B.Pane == pane:
+		b.Share = 1
+		return true
+	}
+	return fold(b.A, pane) || fold(b.B, pane)
+}
+
+// remove takes a pane away at once.
+func (a *app) remove(id string) {
 	i := slices.IndexFunc(a.st.Panes, func(p Pane) bool { return p.ID == id })
 	if i < 0 {
 		return

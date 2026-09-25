@@ -47,6 +47,10 @@ type window struct {
 	// it is open.
 	panes []Pane
 	sw    *switcher
+	// toasts shows the program's notices, and shown is the last one
+	// shown.
+	toasts *widget.Toasts
+	shown  uint64
 }
 
 func newWindow(sh *shells, keys *ui.Keymap) *window {
@@ -87,6 +91,7 @@ func newWindow(sh *shells, keys *ui.Keymap) *window {
 		w.bar.Menus = append(w.bar.Menus, bm)
 	}
 	w.bar.Pick = func(m, i int, u *gunim.UI) { w.run(menus[m].items[i].id, u) }
+	w.toasts = &widget.Toasts{}
 	w.top = widget.Column(w.bar, w.outer).Grow(w.outer, 1)
 	w.top.Cross, w.top.Gap = widget.CrossStretch, noGap
 	w.palette = &widget.Palette{Placeholder: "Type a command", Pick: func(i int, u *gunim.UI) {
@@ -129,13 +134,20 @@ func (w *window) run(id string, u *gunim.UI) bool {
 }
 
 // Children implements [gunim.Composite].
-func (w *window) Children() []gunim.Node { return []gunim.Node{w.top} }
+func (w *window) Children() []gunim.Node { return []gunim.Node{w.top, w.toasts} }
 
 // Layout implements [gunim.Node]. The switcher, while open, covers the
 // window.
 func (w *window) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children) geom.Size {
 	w.size = c.Max
 	for k := range kids.All {
+		if k.Node() == w.toasts {
+			// The toasts sit in the bottom right corner.
+			const margin = 16
+			s := k.Layout(gunim.Constraints{Max: geom.Sz(c.Max.W-2*margin, c.Max.H-2*margin)})
+			k.Place(geom.Pt(c.Max.W-margin-s.W, c.Max.H-margin-s.H))
+			continue
+		}
 		k.Layout(gunim.Tight(c.Max))
 		k.Place(geom.Point{})
 	}
@@ -238,6 +250,16 @@ func (w *window) update(st State, u *gunim.UI) {
 		w.outer.SetShare(width, widget.Settle.Get(th))
 	}
 	w.status.set(st.Status, u)
+	for _, n := range st.Notices {
+		if n.ID <= w.shown {
+			continue
+		}
+		w.shown = n.ID
+		if n.Clipboard != "" {
+			u.SetClipboard(n.Clipboard)
+		}
+		w.toasts.Show(widget.Toast{Title: n.Title, Body: n.Body}, u)
+	}
 	// The View menu ticks the sidebar while it shows.
 	for m := range menus {
 		for i, it := range menus[m].items {

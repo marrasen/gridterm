@@ -38,6 +38,8 @@ github.com/marrasen/gunim v0.0.0-20260925163618-53c34a99f93c h1:+8isbRIWOhc6RCU6
 github.com/marrasen/gunim v0.0.0-20260925163618-53c34a99f93c/go.mod h1:dqvMZdl0IQcmrgUv+tCRZboXPSHrLnELmbbh3jOrx9w=
 github.com/marrasen/gunim v0.0.0-20260925164117-c724b3a01f81 h1:YCQXe4l4NJCyInG94KWee7OVYqg/CU+UBI8Jwh70mGs=
 github.com/marrasen/gunim v0.0.0-20260925164117-c724b3a01f81/go.mod h1:dqvMZdl0IQcmrgUv+tCRZboXPSHrLnELmbbh3jOrx9w=
+github.com/marrasen/gunim v0.0.0-20260925170529-95045afc888a h1:gG+XDo9sbkQnPvS6BsLCL6vkfx3tAHcf7sJPnfruJd0=
+github.com/marrasen/gunim v0.0.0-20260925170529-95045afc888a/go.mod h1:dqvMZdl0IQcmrgUv+tCRZboXPSHrLnELmbbh3jOrx9w=
 github.com/pkg/sftp v1.13.11 h1:0N92SLTB8JqASJB14ZLHHzFnBV8mG9zw4K7jghEFWuE=
 github.com/pkg/sftp v1.13.11/go.mod h1:uNkH9roSXglNJqM+glJJi+TQXQUm0fXFWqCFmT8hsN0=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=

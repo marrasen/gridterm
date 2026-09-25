@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strconv"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/marrasen/gunim"
 )
@@ -27,9 +28,20 @@ type State struct {
 	Sidebar      bool
 	SidebarWidth float32
 	Status       string
+	// Notices are the latest notices, oldest first, for the window to
+	// show each once.
+	Notices []Notice
 	// Output counts the times shells wrote, so the window copies their
 	// screens once a frame however often they write.
 	Output uint64
+}
+
+// Notice is something to tell the user once, in a toast. Clipboard,
+// when set, goes on the clipboard as it shows.
+type Notice struct {
+	ID          uint64
+	Title, Body string
+	Clipboard   string
 }
 
 // Pane is one pane, as the sidebar lists it.
@@ -158,6 +170,8 @@ type app struct {
 	groups  map[int]*Box
 	groupOf map[string]int
 	next    int
+	// notices counts the notices made.
+	notices uint64
 	// wake hears that a shell wrote, and events carries changes from
 	// the shells' goroutines to this one.
 	wake   chan struct{}
@@ -233,6 +247,7 @@ func (a *app) run(ctx context.Context) error {
 func (a *app) publish() {
 	st := a.st
 	st.Panes = slices.Clone(a.st.Panes)
+	st.Notices = slices.Clone(a.st.Notices)
 	st.Stage = a.groups[a.groupOf[a.st.Focus]].clone()
 	_ = a.c.Publish(windowTopic, st)
 	// A split opens once; after that it is only a split.
@@ -283,8 +298,28 @@ func (a *app) handle(in gunim.Intent) {
 		}
 	}
 	if err != nil {
-		a.st.Status = err.Error()
+		a.notify("That didn't work", err.Error(), "")
 	}
+}
+
+// notify tells the user something, once, in a toast.
+func (a *app) notify(title, body, clip string) {
+	a.notices++
+	a.st.Notices = append(a.st.Notices, Notice{ID: a.notices, Title: title, Body: body, Clipboard: clip})
+	// The window has shown all but the newest few by now.
+	if n := len(a.st.Notices); n > 8 {
+		a.st.Notices = slices.Delete(a.st.Notices, 0, n-8)
+	}
+}
+
+// titleOf returns a pane's title, or empty.
+func (a *app) titleOf(id string) string {
+	for _, p := range a.st.Panes {
+		if p.ID == id {
+			return p.Title
+		}
+	}
+	return ""
 }
 
 func setShare(b *Box, id string, share float32) {
@@ -316,6 +351,11 @@ func (a *app) start() (string, error) {
 		},
 		title: func(t string) { a.events <- func() { a.retitle(id, t) } },
 		exit:  func() { a.events <- func() { a.closePane(id) } },
+		clipboard: func(s string) {
+			a.events <- func() {
+				a.notify("Copied to the clipboard", fmt.Sprintf("%d characters, from %s", utf8.RuneCountInString(s), a.titleOf(id)), s)
+			}
+		},
 	})
 	if err != nil {
 		return "", err

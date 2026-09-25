@@ -29,9 +29,10 @@ type shell struct {
 // it named itself, and that it exited. They run on the shell's reader
 // goroutine.
 type shellHooks struct {
-	output func()
-	title  func(string)
-	exit   func()
+	output    func()
+	title     func(string)
+	exit      func()
+	clipboard func(string)
 }
 
 // startShell starts the user's shell at 80 by 24.
@@ -49,7 +50,7 @@ func startShell(hooks shellHooks) (*shell, error) {
 		out:  make(chan []byte, 1024),
 		done: make(chan struct{}),
 	}
-	sh.vt = vt.New(cols, rows, pal, 5000, vt.Callbacks{Reply: sh.send, Title: hooks.title})
+	sh.vt = vt.New(cols, rows, pal, 5000, vt.Callbacks{Reply: sh.send, Title: hooks.title, ClipboardSet: hooks.clipboard})
 	go sh.read(hooks)
 	go sh.write()
 	return sh, nil

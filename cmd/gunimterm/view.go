@@ -1029,7 +1029,11 @@ func sidebarRows(panes []Pane, tunnels []Tunnel, share Share) []sideItem {
 		out = append(out, sideItem{key: "machine:" + m, text: name, heading: true})
 		for _, p := range panes {
 			if p.Machine == m && !shown[p.Tunnel] {
-				out = append(out, sideItem{key: p.ID, text: p.Title, note: notes[p.ID], pane: p.ID, click: FocusPane{Pane: p.ID}})
+				note := notes[p.ID]
+				if p.Ended {
+					note = "ended"
+				}
+				out = append(out, sideItem{key: p.ID, text: p.Title, note: note, pane: p.ID, click: FocusPane{Pane: p.ID}, dim: p.Ended})
 			}
 		}
 		for _, t := range tunnels {

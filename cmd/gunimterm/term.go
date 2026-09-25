@@ -126,7 +126,10 @@ func (t *term) sync() {
 		shape = widget.CursorOutline
 	}
 	t.wantBlink = cur.Blink
-	t.cells.SetCursor(widget.Cursor{Col: cur.X, Row: cur.Y, Shape: shape, Visible: cur.Visible,
+	// A pane whose program has ended takes no typing, so it shows no
+	// cursor.
+	visible := cur.Visible && !sh.t.Exited()
+	t.cells.SetCursor(widget.Cursor{Col: cur.X, Row: cur.Y, Shape: shape, Visible: visible,
 		Blinked: t.blinkOff && t.wantBlink && t.focused})
 }
 

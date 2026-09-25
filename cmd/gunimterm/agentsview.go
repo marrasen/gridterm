@@ -87,6 +87,7 @@ func (w *window) permissionsDialog(st Share, u *gunim.UI) {
 		{agent.BoxReadOnly, &may.ReadOnly},
 		{agent.BoxReadBack, &may.ReadBack},
 		{agent.BoxOpenMore, &may.OpenMore},
+		{agent.BoxRestart, &may.Restart},
 	} {
 		box := widget.NewCheckbox(b.label)
 		box.On = *b.on

@@ -101,6 +101,9 @@ type Pane struct {
 	shell string
 	// Tunnel is the tunnel a tunnel's pane tells of.
 	Tunnel string
+	// Ended says the program in a terminal pane has ended; the pane
+	// stays, asking whether to start it again.
+	Ended bool
 }
 
 // Box is one part of an arrangement: a pane, or a split of two boxes.
@@ -665,7 +668,7 @@ func (a *app) hooks(id string) shellHooks {
 			}
 		},
 		title: func(t string) { a.events <- func() { a.retitle(id, t) } },
-		exit:  func() { a.events <- func() { a.closePane(id) } },
+		exit:  func() { a.events <- func() { a.paneEnded(id) } },
 		clipboard: func(s string) {
 			a.events <- func() {
 				a.notify("Copied to the clipboard", fmt.Sprintf("%d characters, from %s", utf8.RuneCountInString(s), a.titleOf(id)), s)

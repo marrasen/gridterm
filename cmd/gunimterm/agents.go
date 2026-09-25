@@ -382,7 +382,7 @@ func (a *app) toldAbout(h *handover) (agent.Pane, error) {
 	may := a.agents.allowed(h)
 	return agent.Pane{
 		ID: h.name(), Label: a.agentLabel(h.pane), Cols: size.Cols, Rows: size.Rows, Ended: t.Exited(),
-		May: agent.May{OpenMore: may.OpenMore, ReadOnly: may.ReadOnly, ReadBack: may.ReadBack},
+		May: agent.May{Restart: may.Restart, OpenMore: may.OpenMore, ReadOnly: may.ReadOnly, ReadBack: may.ReadBack},
 	}, nil
 }
 
@@ -573,10 +573,43 @@ func (h *handover) promptIsBack(read uiterm.Reading) bool {
 	return read.Line > h.typedLine && read.Before == h.typed
 }
 
-// Restart implements [agent.Window]. A pane here closes when its
-// program ends, so there is never one to start again.
+// Restart implements [agent.Window]: it starts a pane's program again,
+// once it has ended, when the hand-over allows it.
 func (w agentWindow) Restart(id string) (agent.Pane, error) {
-	return agent.Pane{}, errors.New("this window closes a pane when its program ends, so there is nothing to start again. Ask the user to open another pane and add it to the share")
+	_, err := onApp(w.a, func() (struct{}, error) {
+		h, t, err := w.a.handedPane(id)
+		if err != nil {
+			return struct{}{}, err
+		}
+		if !w.a.agents.allowed(h).Restart {
+			return struct{}{}, errors.New(`this hand-over does not let you restart the pane. Ask the user to tick "` + agent.BoxRestart + `"`)
+		}
+		w.a.gave(h)
+		if !t.Exited() {
+			return struct{}{}, errors.New("the program in that pane is still running, so there is nothing to start again")
+		}
+		return struct{}{}, w.a.startAgain(h.pane)
+	})
+	if err != nil {
+		return agent.Pane{}, err
+	}
+	// A server's shell opens over the connection on a goroutine of its
+	// own; the pane is told about once it is running again.
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		p, err := onApp(w.a, func() (agent.Pane, error) {
+			h, _, err := w.a.handedPane(id)
+			if err != nil {
+				return agent.Pane{}, err
+			}
+			return w.a.toldAbout(h)
+		})
+		if err != nil || !p.Ended {
+			return p, err
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return agent.Pane{}, errors.New("the pane took more than half a minute to start again")
 }
 
 // Open implements [agent.Window]: another pane where a pane is, handed

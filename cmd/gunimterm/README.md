@@ -52,9 +52,6 @@ command gridterm registers, and against what was left out on the way.
 
 Panes and terminals:
 
-- A pane stays open when its program ends, with Restart to start it
-  again. In gunimterm the pane closes, so an agent cannot restart one
-  either (`restart_pane` says so).
 - Links: Ctrl+click on a URL, and on a file path, which opens it.
 - Pictures in a terminal (OSC 1337 and 1338).
 - The bell.

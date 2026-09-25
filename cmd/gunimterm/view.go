@@ -156,6 +156,11 @@ func (w *window) run(id string, u *gunim.UI) bool {
 	case "server.add":
 		w.serverForm(nil, u)
 		return true
+	case "files.goTo":
+		if b, ok := w.browsers[w.focused]; ok {
+			b.askGoTo(u)
+		}
+		return true
 	case "edit.paste":
 		if t, ok := w.terms[w.focused]; ok {
 			t.paste(u.Clipboard())

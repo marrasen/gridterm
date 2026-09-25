@@ -426,6 +426,8 @@ func (a *app) handle(in gunim.Intent) {
 		a.makeFolder(in)
 	case GoUp:
 		a.goUp(in)
+	case GoTo:
+		a.goTo(in)
 	case SaveServer:
 		err = a.saveServer(in)
 	case RemoveServer:

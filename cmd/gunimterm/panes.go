@@ -173,6 +173,24 @@ func (b *browser) askRename(u *gunim.UI) {
 	b.w.openDialog(d, u)
 }
 
+// askGoTo asks for a folder to show.
+func (b *browser) askGoTo(u *gunim.UI) {
+	path := widget.NewTextField()
+	path.SetText(b.st.Path)
+	d := widget.NewDialog("Go to a folder")
+	d.Body = widget.NewForm().Add("Folder", path)
+	d.SetButtons("Go", "Cancel")
+	d.Check = func() string {
+		if strings.TrimSpace(path.Text()) == "" {
+			return "Say which folder."
+		}
+		return ""
+	}
+	d.OnAccept = func() gunim.Intent { return GoTo{Pane: b.id, Path: path.Text()} }
+	d.Dismiss = DialogClosed{}
+	b.w.openDialog(d, u)
+}
+
 func (b *browser) askFolder(u *gunim.UI) {
 	name := widget.NewTextField()
 	d := widget.NewDialog("New folder in " + b.st.Path)

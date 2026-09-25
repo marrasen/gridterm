@@ -49,7 +49,27 @@ type (
 	// GoUp shows the folder above a file pane's, with the cursor on the
 	// one it came from.
 	GoUp struct{ Pane string }
+	// GoTo shows a folder typed as a path, ~ standing for home.
+	GoTo struct{ Pane, Path string }
 )
+
+// goTo shows the folder typed.
+func (a *app) goTo(in GoTo) {
+	f := a.fsFor(a.machineOf(in.Pane))
+	if f == nil {
+		return
+	}
+	path := strings.TrimSpace(in.Path)
+	if rest, ok := strings.CutPrefix(path, "~"); ok && (rest == "" || rest[0] == '/' || rest[0] == f.Sep()) {
+		home, err := f.Home()
+		if err != nil {
+			a.notify("Couldn't find home", err.Error(), "")
+			return
+		}
+		path = home + rest
+	}
+	a.browse(Browse{Pane: in.Pane, Path: path})
+}
 
 // enter goes into the folder named name, or reads the file.
 func (a *app) enter(in EnterEntry) {

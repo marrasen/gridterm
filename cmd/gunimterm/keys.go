@@ -35,6 +35,7 @@ func shortcuts() *ui.Keymap {
 		{Key: input.KeyPageDown, Mods: input.ModShift}:            "view.scrollDown",
 		{Key: input.KeyK, Mods: input.ModCtrl | input.ModShift}:   "palette.open",
 		{Key: input.KeyF10}: "menu.open",
+		{Key: input.KeyG, Mods: input.ModCtrl | input.ModShift}:      "files.goTo",
 		{Key: input.KeyN, Mods: input.ModCtrl | input.ModShift}:      "server.connect",
 		{Key: input.KeyEquals, Mods: input.ModCtrl}:                  "font.increase",
 		{Key: input.KeyEquals, Mods: input.ModCtrl | input.ModShift}: "font.increase",
@@ -62,6 +63,7 @@ var commands = []struct{ id, title string }{
 	{"font.reset", "Reset Font Size"},
 	{"server.connect", "Connect to Server"},
 	{"conn.files", "Files Here"},
+	{"files.goTo", "Go to Directory"},
 	{"edit.copy", "Copy"},
 	{"edit.paste", "Paste"},
 }
@@ -98,6 +100,8 @@ var menus = []struct {
 	{"Machine", []menuItem{
 		{title: "Open Here", caption: true},
 		{id: "conn.terminal", title: "Terminal"}, {id: "conn.files", title: "Files"},
+		{title: "Files", caption: true},
+		{id: "files.goTo", title: "Go to Directory…"},
 	}},
 }
 

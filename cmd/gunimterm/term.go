@@ -9,7 +9,6 @@ import (
 	"github.com/marrasen/gunim/geom"
 	gi "github.com/marrasen/gunim/input"
 	"github.com/marrasen/gunim/paint"
-	"github.com/marrasen/gunim/theme"
 	"github.com/marrasen/gunim/widget"
 
 	"github.com/marrasen/gridterm/grid"
@@ -67,8 +66,7 @@ func (t *term) blinkStep(u *gunim.UI) {
 func newTerm(id string, sh *shell, keys *ui.Keymap) *term {
 	g := widget.NewCellGrid()
 	g.Size = 15
-	bg := sh.pal.BG
-	g.Background = theme.Color("gunimterm.background", color.NRGBA{R: bg.R, G: bg.G, B: bg.B, A: 0xff})
+	g.Background = termBackground
 	t := &term{id: id, keys: keys, sh: sh, cells: g}
 	t.sync()
 	return t

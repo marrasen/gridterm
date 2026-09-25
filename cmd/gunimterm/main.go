@@ -54,7 +54,9 @@ func run() error {
 		c := w.Client()
 		sh := &shells{m: map[string]*shell{}}
 		keys := shortcuts()
-		gunim.RegisterView(w, "window", func(State) *window { return newWindow(sh, keys) },
+		all := builtThemes()
+		registerThemes(w, all)
+		gunim.RegisterView(w, "window", func(State) *window { return newWindow(sh, keys, all) },
 			func(win *window, st State, u *gunim.UI) { win.update(st, u) })
 		if err := c.Mount(gunim.Root, "window", "window", State{}, windowTopic); err != nil {
 			return err
@@ -62,7 +64,9 @@ func run() error {
 		if os.Getenv("GUNIMTERM_STATS") == "1" {
 			go logStats(ctx, w)
 		}
-		return newApp(c, sh).run(ctx)
+		prog := newApp(c, sh)
+		prog.themes = all
+		return prog.run(ctx)
 	})
 	if errors.Is(err, driver.ErrNoDriver) {
 		log.Print("gunim has no driver for this operating system")

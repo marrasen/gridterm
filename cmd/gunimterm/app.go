@@ -10,6 +10,7 @@ import (
 	"github.com/marrasen/gridterm/jobs"
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/vfs"
+	"github.com/marrasen/gridterm/vt"
 	"slices"
 	"strconv"
 	"sync"
@@ -36,6 +37,10 @@ type State struct {
 	SidebarWidth float32
 	// FontSize is the terminals' font size in logical pixels.
 	FontSize float32
+	// Theme names the theme the window is drawn in, and Themes those on
+	// offer.
+	Theme  string
+	Themes []string
 	// Asks are the questions connections are waiting on the user for,
 	// oldest first.
 	Asks []Ask
@@ -193,6 +198,8 @@ type (
 	// FontSize makes the terminals' text a point larger, or smaller,
 	// or, with no Step, the size it started at.
 	FontSize struct{ Step int }
+	// PickTheme draws the window, terminals and all, in a theme.
+	PickTheme struct{ Name string }
 	// ConnectTo connects to a server typed as user@host:port, or to a
 	// saved one by name, and opens a shell there. Connected already, it
 	// opens another shell.
@@ -243,6 +250,9 @@ type app struct {
 	// and remoteFS the servers' files opened so far, by machine.
 	local    vfs.FS
 	remoteFS map[string]vfs.FS
+	// themes are the themes on offer, and palette the terminals' now.
+	themes  []themed
+	palette vt.Palette
 	// clip is the file clipboard, jobs the queue of file work, and
 	// running the jobs followed.
 	clip    *fileClip
@@ -265,6 +275,17 @@ func (s *shells) get(id string) *shell {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.m[id]
+}
+
+// all returns the running shells.
+func (s *shells) all() []*shell {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]*shell, 0, len(s.m))
+	for _, sh := range s.m {
+		out = append(out, sh)
+	}
+	return out
 }
 
 func (s *shells) set(id string, sh *shell) {
@@ -298,6 +319,13 @@ func newApp(c gunim.Client, sh *shells) *app {
 // run serves the window until it closes or ctx ends.
 func (a *app) run(ctx context.Context) error {
 	a.ctx = ctx
+	a.palette = vt.DefaultPalette()
+	for _, t := range a.themes {
+		a.st.Themes = append(a.st.Themes, t.name)
+	}
+	if len(a.themes) > 0 {
+		a.pickTheme(a.themes[0].name)
+	}
 	if path, err := remote.BookPath(); err == nil {
 		if b, err := remote.LoadBook(path); err == nil {
 			a.book = b
@@ -340,6 +368,7 @@ func (a *app) publish() {
 	st.Notices = slices.Clone(a.st.Notices)
 	st.Asks = slices.Clone(a.st.Asks)
 	st.Saved = slices.Clone(a.st.Saved)
+	st.Themes = slices.Clone(a.st.Themes)
 	st.Stage = a.groups[a.groupOf[a.st.Focus]].clone()
 	_ = a.c.Publish(windowTopic, st)
 	// A split opens once; after that it is only a split.
@@ -398,6 +427,8 @@ func (a *app) handle(in gunim.Intent) {
 				}
 			}
 		}
+	case PickTheme:
+		a.pickTheme(in.Name)
 	case FontSize:
 		size := defaultFontSize
 		if in.Step != 0 {
@@ -515,7 +546,7 @@ func (a *app) open(machine string, at placement) error {
 	id := "p" + strconv.Itoa(a.next)
 	title := fmt.Sprintf("Terminal %d", a.next)
 	if machine == "" {
-		sh, err := startLocal(a.hooks(id))
+		sh, err := startLocal(a.palette, a.hooks(id))
 		if err != nil {
 			return err
 		}
@@ -533,7 +564,7 @@ func (a *app) open(machine string, at placement) error {
 				a.notify("Couldn't open a shell on "+machine, err.Error(), "")
 				return
 			}
-			a.addPane(Pane{ID: id, Title: title, Machine: machine}, openShell(sess, a.hooks(id)), at)
+			a.addPane(Pane{ID: id, Title: title, Machine: machine}, openShell(sess, a.palette, a.hooks(id)), at)
 		}
 	}()
 	return nil
@@ -726,3 +757,20 @@ const defaultFontSize float32 = 15
 const windowTopic = "window"
 
 func itoa(n int) string { return strconv.Itoa(n) }
+
+// pickTheme draws the window in the theme named: gunim fades its
+// colours across, and each terminal takes the new palette, what is on
+// its screen included.
+func (a *app) pickTheme(name string) {
+	for _, t := range a.themes {
+		if t.name != name {
+			continue
+		}
+		a.st.Theme = name
+		a.palette = t.palette
+		for _, sh := range a.shells.all() {
+			sh.setPalette(t.palette)
+		}
+		_ = a.c.SetTheme(name)
+	}
+}

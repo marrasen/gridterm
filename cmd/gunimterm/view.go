@@ -62,8 +62,15 @@ type window struct {
 	// dialog is the dialog open over the window, which keeps the
 	// keyboard until it starts to leave.
 	dialog *widget.Dialog
-	// fontSize is the terminals' font size, as last published.
+	// onStage gives the panes their theme's own colours. contents holds
+	// each theme's colours for the stage, by name.
+	onStage  *widget.Themed
+	contents map[string]theme.Theme
+	// fontSize is the terminals' font size, as last published, and
+	// themes the themes on offer.
 	fontSize float32
+	themes   []string
+	themeNow string
 	// ask is the dialog asking a connection's question askID, and
 	// saved are the saved servers; serverIDs and paletteIDs are the
 	// commands of the Servers menu's items and the palette's.
@@ -74,8 +81,9 @@ type window struct {
 	paletteIDs []string
 }
 
-func newWindow(sh *shells, keys *ui.Keymap) *window {
+func newWindow(sh *shells, keys *ui.Keymap, all []themed) *window {
 	w := &window{
+		contents: map[string]theme.Theme{},
 		list:     widget.NewList(),
 		stage:    &stage{},
 		shells:   sh,
@@ -88,7 +96,8 @@ func newWindow(sh *shells, keys *ui.Keymap) *window {
 	side := widget.Column(w.list)
 	side.Cross = widget.CrossStretch
 	w.status = newStatusLine()
-	main := widget.Column(w.stage, w.status).Grow(w.stage, 1)
+	w.onStage = widget.NewThemed(w.stage, widget.Dark())
+	main := widget.Column(w.onStage, w.status).Grow(w.onStage, 1)
 	main.Cross, main.Gap = widget.CrossStretch, noGap
 	w.side = &panel{child: widget.NewScroll(side), least: 220}
 	w.outer = widget.NewSplit(w.side, main)
@@ -132,6 +141,9 @@ func newWindow(sh *shells, keys *ui.Keymap) *window {
 		}
 	}}
 	w.servers(nil)
+	for _, t := range all {
+		w.contents[t.name] = t.content
+	}
 	return w
 }
 
@@ -156,6 +168,9 @@ func (w *window) run(id string, u *gunim.UI) bool {
 		return true
 	case "server.add":
 		w.serverForm(nil, u)
+		return true
+	case "theme.pick":
+		w.pickTheme(u)
 		return true
 	case "files.goTo":
 		if b, ok := w.browsers[w.focused]; ok {
@@ -232,6 +247,21 @@ func (w *window) openDialog(d *widget.Dialog, u *gunim.UI) {
 	w.dialog = d
 	// The pane takes the keyboard back once the dialog has closed.
 	w.focused = ""
+}
+
+// pickTheme offers the themes in a palette, the one on marked.
+func (w *window) pickTheme(u *gunim.UI) {
+	p := &widget.Palette{Placeholder: "Pick a theme"}
+	for _, name := range w.themes {
+		hint := ""
+		if name == w.themeNow {
+			hint = "in use"
+		}
+		p.Items = append(p.Items, widget.PaletteItem{Title: name, Hint: hint})
+	}
+	names := w.themes
+	p.Pick = func(i int, u *gunim.UI) { u.Send(w, PickTheme{Name: names[i]}) }
+	p.Open(w, geom.Rc(0, 48, w.size.W, 0), u)
 }
 
 // connectDialog asks which server to connect to.
@@ -530,6 +560,12 @@ func (w *window) Handle(e input.Event, u *gunim.UI) bool {
 func (w *window) update(st State, u *gunim.UI) {
 	th := u.Theme()
 	w.panes = st.Panes
+	if st.Theme != w.themeNow {
+		if c, ok := w.contents[st.Theme]; ok {
+			w.onStage.Use(c)
+		}
+	}
+	w.themes, w.themeNow = st.Themes, st.Theme
 	if st.FontSize != w.fontSize {
 		w.fontSize = st.FontSize
 		for _, t := range w.terms {

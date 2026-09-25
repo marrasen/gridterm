@@ -39,19 +39,19 @@ type shellHooks struct {
 // out and tells it its own.
 const shellCols, shellRows = 80, 24
 
-// startLocal starts the user's shell on this machine.
-func startLocal(hooks shellHooks) (*shell, error) {
+// startLocal starts the user's shell on this machine, drawing with pal.
+func startLocal(pal vt.Palette, hooks shellHooks) (*shell, error) {
 	sess, err := session.StartLocal(session.LocalConfig{Cols: shellCols, Rows: shellRows})
 	if err != nil {
 		return nil, fmt.Errorf("gunimterm: start the shell: %w", err)
 	}
-	return openShell(sess, hooks), nil
+	return openShell(sess, pal, hooks), nil
 }
 
-// openShell puts a screen on a running session, local or remote.
-func openShell(sess session.Session, hooks shellHooks) *shell {
+// openShell puts a screen on a running session, local or remote,
+// drawing with pal.
+func openShell(sess session.Session, pal vt.Palette, hooks shellHooks) *shell {
 	const cols, rows = shellCols, shellRows
-	pal := vt.DefaultPalette()
 	sh := &shell{
 		pal:  pal,
 		grid: grid.New(cols, rows, pal.FG, pal.BG),
@@ -118,3 +118,13 @@ func (sh *shell) resize(cols, rows int) bool {
 }
 
 func (sh *shell) close() { _ = sh.sess.Close() }
+
+// setPalette draws the screen in pal from now on, what is on it
+// included.
+func (sh *shell) setPalette(pal vt.Palette) {
+	sh.mu.Lock()
+	defer sh.mu.Unlock()
+	sh.pal = pal
+	sh.grid.SelectionBG = pal.Selection
+	sh.vt.Screen().SetPalette(pal)
+}

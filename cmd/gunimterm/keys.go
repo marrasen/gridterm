@@ -58,6 +58,7 @@ var commands = []struct{ id, title string }{
 	{"pane.switch", "Switch Pane"},
 	{"pane.rename", "Rename Pane"},
 	{"sidebar.toggle", "Show or Hide Sidebar"},
+	{"theme.pick", "Pick a Theme"},
 	{"font.increase", "Larger Font"},
 	{"font.decrease", "Smaller Font"},
 	{"font.reset", "Reset Font Size"},
@@ -83,6 +84,7 @@ var menus = []struct {
 	{"Edit", []menuItem{{id: "edit.copy", title: "Copy"}, {id: "edit.paste", title: "Paste"}}},
 	{"View", []menuItem{
 		{id: "sidebar.toggle", title: "Sidebar"},
+		{id: "theme.pick", title: "Theme…"},
 		{title: "Font", caption: true},
 		{id: "font.increase", title: "Larger"}, {id: "font.decrease", title: "Smaller"}, {id: "font.reset", title: "Reset"},
 		{title: "Scrollback", caption: true},

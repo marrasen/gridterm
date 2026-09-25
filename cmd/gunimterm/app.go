@@ -53,7 +53,9 @@ type State struct {
 	Readers  map[string]Reader
 	// Tunnels are the tunnels open, and those stopped until cleared,
 	// and SavedTunnels those kept for next time, newest first.
-	Tunnels      []Tunnel
+	Tunnels []Tunnel
+	// Jobs are the file jobs, running and finished, oldest first.
+	Jobs         []Job
 	SavedTunnels []settings.SavedTunnel
 	Status       string
 	// Notices are the latest notices, oldest first, for the window to
@@ -268,7 +270,11 @@ type app struct {
 	clip    *fileClip
 	jobs    *jobs.Queue
 	running []*running
-	askIDs  atomic.Uint64
+	// jobSeq counts the jobs, and watching is set while a goroutine
+	// looks at them.
+	jobSeq   int
+	watching bool
+	askIDs   atomic.Uint64
 	// tunnels are the tunnels by ID, tunnelSeq counts them, ticking is
 	// set while their notes are kept up to date, and quiet says a tick
 	// changed nothing, so nothing is published.
@@ -405,6 +411,7 @@ func (a *app) publish() {
 	st.Saved = slices.Clone(a.st.Saved)
 	st.Themes = slices.Clone(a.st.Themes)
 	st.Tunnels = slices.Clone(a.st.Tunnels)
+	st.Jobs = slices.Clone(a.st.Jobs)
 	st.SavedTunnels = slices.Clone(a.st.SavedTunnels)
 	st.Stage = a.groups[a.groupOf[a.st.Focus]].clone()
 	_ = a.c.Publish(windowTopic, st)
@@ -522,6 +529,13 @@ func (a *app) handle(in gunim.Intent) {
 		a.watchTunnel(in)
 	case ShowTunnel:
 		a.showTunnel(in.ID)
+	case ShowJobs:
+		a.showJobsPane()
+	case CancelJob:
+		a.cancelJob(in.ID)
+	case ClearJobs:
+		a.clearJobs(true)
+		a.showJobs()
 	case DialogClosed:
 	}
 	if err != nil {

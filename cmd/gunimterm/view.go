@@ -50,7 +50,9 @@ type window struct {
 	readers  map[string]*reader
 	// tunnelPanes are the tunnels' panes, and savedTunnels the tunnels
 	// kept, as the palette lists them.
-	tunnelPanes  map[string]*tunnelPane
+	tunnelPanes map[string]*tunnelPane
+	// jobs is the jobs pane, once it has been opened.
+	jobs         *jobsPane
 	savedTunnels []settings.SavedTunnel
 	splits       map[string]*widget.Split
 	focused      string
@@ -641,9 +643,17 @@ func (w *window) update(st State, u *gunim.UI) {
 		r.seq = next.Seq
 		r.st = next
 	}
+	// Panes off stage are out of the tree, where nothing can be added
+	// to them; each catches up as it comes back.
+	if w.jobs != nil && u.Presence(w.jobs) != gunim.Exiting {
+		w.jobs.show(st.Jobs, u)
+	}
 	for id, p := range w.tunnelPanes {
 		if !open[id] {
 			delete(w.tunnelPanes, id)
+			continue
+		}
+		if u.Presence(p) == gunim.Exiting {
 			continue
 		}
 		var t Tunnel
@@ -767,6 +777,11 @@ func (w *window) paneNode(id string) gunim.Node {
 			w.browsers[id] = b
 		}
 		return b
+	case kindJobs:
+		if w.jobs == nil {
+			w.jobs = newJobsPane()
+		}
+		return w.jobs
 	case kindTunnel:
 		p, ok := w.tunnelPanes[id]
 		if !ok {
@@ -796,6 +811,9 @@ func (w *window) focusNode(id string) gunim.Node {
 	}
 	if r, ok := w.readers[id]; ok {
 		return r
+	}
+	if w.kindOf(id) == kindJobs && w.jobs != nil {
+		return w.jobs.clear
 	}
 	return nil
 }

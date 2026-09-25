@@ -65,6 +65,7 @@ var commands = []struct{ id, title string }{
 	{"server.connect", "Connect to Server"},
 	{"conn.files", "Files Here"},
 	{"files.goTo", "Go to Directory"},
+	{"view.jobs", "Show Jobs"},
 	{"tunnel.open", "Open Tunnel"},
 	{"tunnel.socks", "Open SOCKS Proxy"},
 	{"edit.copy", "Copy"},
@@ -87,6 +88,7 @@ var menus = []struct {
 	{"View", []menuItem{
 		{id: "sidebar.toggle", title: "Sidebar"},
 		{id: "theme.pick", title: "Theme…"},
+		{id: "view.jobs", title: "Jobs"},
 		{title: "Font", caption: true},
 		{id: "font.increase", title: "Larger"}, {id: "font.decrease", title: "Smaller"}, {id: "font.reset", title: "Reset"},
 		{title: "Scrollback", caption: true},
@@ -156,6 +158,8 @@ func commandIntent(id string) (gunim.Intent, bool) {
 		return Exit{}, true
 	case "conn.files":
 		return OpenFiles{}, true
+	case "view.jobs":
+		return ShowJobs{}, true
 	case "font.increase":
 		return FontSize{Step: 1}, true
 	case "font.decrease":

@@ -51,6 +51,9 @@ type window struct {
 	// shown.
 	toasts *widget.Toasts
 	shown  uint64
+	// dialog is the dialog open over the window, which keeps the
+	// keyboard until it starts to leave.
+	dialog *widget.Dialog
 }
 
 func newWindow(sh *shells, keys *ui.Keymap) *window {
@@ -120,6 +123,9 @@ func (w *window) run(id string, u *gunim.UI) bool {
 	case "pane.switch":
 		w.openSwitcher(u)
 		return true
+	case "pane.rename":
+		w.rename(u)
+		return true
 	case "edit.paste":
 		if t, ok := w.terms[w.focused]; ok {
 			t.paste(u.Clipboard())
@@ -159,6 +165,33 @@ func (w *window) Paint(p *paint.Painter, _ gunim.Frame, _ geom.Size, kids gunim.
 	for k := range kids.All {
 		k.Paint(p)
 	}
+}
+
+// rename asks for a new name for the pane with the keyboard.
+func (w *window) rename(u *gunim.UI) {
+	id := w.focused
+	current := ""
+	for _, p := range w.panes {
+		if p.ID == id {
+			current = p.Title
+		}
+	}
+	if id == "" {
+		return
+	}
+	name := widget.NewTextField()
+	name.SetText(current)
+	name.Placeholder = "The shell's own title"
+	d := widget.NewDialog("Rename the pane")
+	d.Body = widget.NewForm().Add("Name", name)
+	d.SetButtons("Rename", "Cancel")
+	d.OnAccept = func() gunim.Intent { return RenamePane{Pane: id, Title: name.Text()} }
+	d.Dismiss = DialogClosed{}
+	u.Insert(w, d)
+	u.Focus(d)
+	w.dialog = d
+	// The pane takes the keyboard back once the dialog has closed.
+	w.focused = ""
 }
 
 // openSwitcher shows every pane, shrunk into a grid over the window.
@@ -234,7 +267,10 @@ func (w *window) update(st State, u *gunim.UI) {
 		}
 		t.sync()
 	}
-	if st.Focus != w.focused && w.sw == nil {
+	if w.dialog != nil && u.Presence(w.dialog) == gunim.Exiting {
+		w.dialog = nil
+	}
+	if st.Focus != w.focused && w.sw == nil && w.dialog == nil {
 		w.focused = st.Focus
 		if t, ok := w.terms[st.Focus]; ok {
 			u.Focus(t)

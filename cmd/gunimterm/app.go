@@ -48,6 +48,10 @@ type Notice struct {
 type Pane struct {
 	ID    string
 	Title string
+	// Named is set once the user has named the pane, and shell is the
+	// title its shell last gave it.
+	Named bool
+	shell string
 }
 
 // Box is one part of an arrangement: a pane, or a split of two boxes.
@@ -157,6 +161,12 @@ type (
 	SidebarMoved struct{ Width float32 }
 	// Exit closes the window, and every shell in it.
 	Exit struct{}
+	// RenamePane names a pane; its shell's titles no longer change it.
+	// An empty name hands the name back to the shell.
+	RenamePane struct{ Pane, Title string }
+	// DialogClosed says a dialog closed without a change, so the window
+	// gives the keyboard back.
+	DialogClosed struct{}
 )
 
 // app is the program side's state. It belongs to the goroutine running
@@ -296,6 +306,17 @@ func (a *app) handle(in gunim.Intent) {
 		for len(a.st.Panes) > 0 {
 			a.closePane(a.st.Panes[0].ID)
 		}
+	case RenamePane:
+		for i := range a.st.Panes {
+			if p := &a.st.Panes[i]; p.ID == in.Pane {
+				p.Named = in.Title != ""
+				p.Title = in.Title
+				if !p.Named {
+					p.Title = p.shell
+				}
+			}
+		}
+	case DialogClosed:
 	}
 	if err != nil {
 		a.notify("That didn't work", err.Error(), "")
@@ -470,8 +491,11 @@ func (a *app) popOut() {
 
 func (a *app) retitle(id, title string) {
 	for i := range a.st.Panes {
-		if a.st.Panes[i].ID == id && title != "" {
-			a.st.Panes[i].Title = title
+		if p := &a.st.Panes[i]; p.ID == id && title != "" {
+			p.shell = title
+			if !p.Named {
+				p.Title = title
+			}
 		}
 	}
 }

@@ -48,6 +48,7 @@ var commands = []struct{ id, title string }{
 	{"pane.next", "Next Pane"},
 	{"pane.previous", "Previous Pane"},
 	{"pane.switch", "Switch Pane"},
+	{"pane.rename", "Rename Pane"},
 	{"sidebar.toggle", "Show or Hide Sidebar"},
 	{"edit.paste", "Paste"},
 }
@@ -66,6 +67,7 @@ var menus = []struct {
 		{id: "pane.splitRight", title: "Split Right"}, {id: "pane.splitDown", title: "Split Down"}, {id: "pane.popOut", title: "Pop Out"},
 		{id: "pane.next", title: "Next Pane", group: true}, {id: "pane.previous", title: "Previous Pane"},
 		{id: "pane.switch", title: "Switch Pane…"},
+		{id: "pane.rename", title: "Rename…", group: true},
 	}},
 }
 

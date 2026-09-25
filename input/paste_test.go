@@ -68,3 +68,18 @@ func TestEncodePasteAppendsToCallerBuffer(t *testing.T) {
 		t.Fatalf("= %q, want \"xy\"", buf)
 	}
 }
+
+// Two newlines are a blank line, which the paste keeps, in either
+// line ending.
+func TestPasteKeepsABlankLine(t *testing.T) {
+	for in, want := range map[string]string{
+		"a\n\nb":         "a\r\rb",
+		"a\r\n\r\nb":     "a\r\rb",
+		"a\r\rb":         "a\r\rb",
+		"a\n\n\nb\r\n\n": "a\r\r\rb\r\r",
+	} {
+		if got := string(EncodePaste(in, false, nil)); got != want {
+			t.Errorf("EncodePaste(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

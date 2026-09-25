@@ -39,12 +39,16 @@ func EncodePaste(text string, bracketed bool, dst []byte) []byte {
 func appendSafe(dst []byte, text string) []byte {
 	var sb strings.Builder
 	sb.Grow(len(text))
+	var prev rune
 	for _, r := range text {
+		was := prev
+		prev = r
 		switch {
 		case r == '\n' || r == '\r':
 			// A CRLF pair must not become two returns, or a paste runs
-			// every line twice.
-			if sb.Len() > 0 && strings.HasSuffix(sb.String(), "\r") && r == '\n' {
+			// every line twice. Only a return in the text pairs with
+			// the newline after it: two newlines are a blank line.
+			if r == '\n' && was == '\r' {
 				continue
 			}
 			sb.WriteByte('\r')

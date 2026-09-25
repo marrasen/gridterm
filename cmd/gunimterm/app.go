@@ -143,6 +143,8 @@ type (
 	}
 	// SidebarMoved says how wide the pointer left the sidebar.
 	SidebarMoved struct{ Width float32 }
+	// Exit closes the window, and every shell in it.
+	Exit struct{}
 )
 
 // app is the program side's state. It belongs to the goroutine running
@@ -275,6 +277,10 @@ func (a *app) handle(in gunim.Intent) {
 		setShare(a.groups[a.groupOf[a.st.Focus]], in.Split, in.Share)
 	case SidebarMoved:
 		a.st.SidebarWidth = in.Width
+	case Exit:
+		for len(a.st.Panes) > 0 {
+			a.closePane(a.st.Panes[0].ID)
+		}
 	}
 	if err != nil {
 		a.st.Status = err.Error()

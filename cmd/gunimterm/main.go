@@ -88,4 +88,3 @@ func logStats(ctx context.Context, w *gunim.Window) {
 		last = s
 	}
 }
-

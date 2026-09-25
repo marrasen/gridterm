@@ -29,6 +29,8 @@ var (
 
 // window is the view the program's state drives.
 type window struct {
+	top     *widget.Flex
+	bar     *widget.Menubar
 	outer   *widget.Split
 	side    *panel
 	list    *widget.List
@@ -64,6 +66,25 @@ func newWindow(sh *shells, keys *ui.Keymap) *window {
 	w.outer.Fixed = true
 	w.outer.SetShare(220, nil)
 	w.outer.OnMove = func(v float32) gunim.Intent { return SidebarMoved{Width: v} }
+	w.bar = widget.NewMenubar()
+	for _, m := range menus {
+		bm := widget.BarMenu{Title: m.title}
+		for i, it := range m.items {
+			hint := ""
+			if chord, ok := keys.ChordFor(it.id); ok {
+				hint = chordLabel(chord)
+			}
+			bm.Items, bm.Hints = append(bm.Items, it.title), append(bm.Hints, hint)
+			bm.Checked = append(bm.Checked, false)
+			if it.group {
+				bm.Breaks = append(bm.Breaks, i)
+			}
+		}
+		w.bar.Menus = append(w.bar.Menus, bm)
+	}
+	w.bar.Pick = func(m, i int, u *gunim.UI) { w.run(menus[m].items[i].id, u) }
+	w.top = widget.Column(w.bar, w.outer).Grow(w.outer, 1)
+	w.top.Cross, w.top.Gap = widget.CrossStretch, noGap
 	w.palette = &widget.Palette{Placeholder: "Type a command", Pick: func(i int, u *gunim.UI) {
 		w.run(commands[i].id, u)
 	}}
@@ -84,6 +105,9 @@ func (w *window) run(id string, u *gunim.UI) bool {
 	case "palette.open":
 		w.palette.Open(w, geom.Rc(0, 48, w.size.W, 0), u)
 		return true
+	case "menu.open":
+		w.bar.Open(0, u)
+		return true
 	case "edit.paste":
 		if t, ok := w.terms[w.focused]; ok {
 			t.paste(u.Clipboard())
@@ -98,7 +122,7 @@ func (w *window) run(id string, u *gunim.UI) bool {
 }
 
 // Children implements [gunim.Composite].
-func (w *window) Children() []gunim.Node { return []gunim.Node{w.outer} }
+func (w *window) Children() []gunim.Node { return []gunim.Node{w.top} }
 
 // Layout implements [gunim.Node].
 func (w *window) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children) geom.Size {
@@ -175,6 +199,14 @@ func (w *window) update(st State, u *gunim.UI) {
 		w.outer.SetShare(width, widget.Settle.Get(th))
 	}
 	w.status.set(st.Status, u)
+	// The View menu ticks the sidebar while it shows.
+	for m := range menus {
+		for i, it := range menus[m].items {
+			if it.id == "sidebar.toggle" {
+				w.bar.Menus[m].Checked[i] = st.Sidebar
+			}
+		}
+	}
 	u.Invalidate()
 }
 

@@ -17,21 +17,22 @@ import (
 func shortcuts() *ui.Keymap {
 	keys := ui.NewKeymap()
 	keys.MustBind(map[ui.Chord]string{
-		{Key: input.KeyD, Mods: input.ModCtrl | input.ModShift}:        "pane.splitRight",
-		{Key: input.KeyE, Mods: input.ModCtrl | input.ModShift}:        "pane.splitDown",
-		{Key: input.KeyU, Mods: input.ModCtrl | input.ModShift}:        "pane.popOut",
-		{Key: input.KeyW, Mods: input.ModCtrl | input.ModShift}:        "pane.close",
-		{Key: input.KeyTab, Mods: input.ModCtrl}:                       "pane.next",
-		{Key: input.KeyTab, Mods: input.ModCtrl | input.ModShift}:      "pane.previous",
-		{Key: input.KeyPageDown, Mods: input.ModCtrl}:                  "pane.nextInSidebar",
-		{Key: input.KeyPageUp, Mods: input.ModCtrl}:                    "pane.previousInSidebar",
-		{Key: input.KeyT, Mods: input.ModCtrl | input.ModShift}:        "conn.terminal",
-		{Key: input.KeyB, Mods: input.ModCtrl | input.ModShift}:        "sidebar.toggle",
-		{Key: input.KeyV, Mods: input.ModCtrl | input.ModShift}:        "edit.paste",
-		{Key: input.KeyInsert, Mods: input.ModShift}:                   "edit.paste",
-		{Key: input.KeyPageUp, Mods: input.ModShift}:                   "view.scrollUp",
-		{Key: input.KeyPageDown, Mods: input.ModShift}:                 "view.scrollDown",
-		{Key: input.KeyK, Mods: input.ModCtrl | input.ModShift}:        "palette.open",
+		{Key: input.KeyD, Mods: input.ModCtrl | input.ModShift}:   "pane.splitRight",
+		{Key: input.KeyE, Mods: input.ModCtrl | input.ModShift}:   "pane.splitDown",
+		{Key: input.KeyU, Mods: input.ModCtrl | input.ModShift}:   "pane.popOut",
+		{Key: input.KeyW, Mods: input.ModCtrl | input.ModShift}:   "pane.close",
+		{Key: input.KeyTab, Mods: input.ModCtrl}:                  "pane.next",
+		{Key: input.KeyTab, Mods: input.ModCtrl | input.ModShift}: "pane.previous",
+		{Key: input.KeyPageDown, Mods: input.ModCtrl}:             "pane.nextInSidebar",
+		{Key: input.KeyPageUp, Mods: input.ModCtrl}:               "pane.previousInSidebar",
+		{Key: input.KeyT, Mods: input.ModCtrl | input.ModShift}:   "conn.terminal",
+		{Key: input.KeyB, Mods: input.ModCtrl | input.ModShift}:   "sidebar.toggle",
+		{Key: input.KeyV, Mods: input.ModCtrl | input.ModShift}:   "edit.paste",
+		{Key: input.KeyInsert, Mods: input.ModShift}:              "edit.paste",
+		{Key: input.KeyPageUp, Mods: input.ModShift}:              "view.scrollUp",
+		{Key: input.KeyPageDown, Mods: input.ModShift}:            "view.scrollDown",
+		{Key: input.KeyK, Mods: input.ModCtrl | input.ModShift}:   "palette.open",
+		{Key: input.KeyF10}: "menu.open",
 	})
 	return keys
 }
@@ -47,6 +48,27 @@ var commands = []struct{ id, title string }{
 	{"pane.previous", "Previous Pane"},
 	{"sidebar.toggle", "Show or Hide Sidebar"},
 	{"edit.paste", "Paste"},
+}
+
+// menus are the menubar's menus, in gridterm's order and words, with
+// the commands this window has so far. A line goes above an item that
+// starts a group.
+var menus = []struct {
+	title string
+	items []menuItem
+}{
+	{"File", []menuItem{{id: "conn.terminal", title: "New Terminal"}, {id: "pane.close", title: "Close Pane", group: true}, {id: "app.exit", title: "Exit", group: true}}},
+	{"Edit", []menuItem{{id: "edit.paste", title: "Paste"}}},
+	{"View", []menuItem{{id: "sidebar.toggle", title: "Sidebar"}, {id: "palette.open", title: "All Commands…", group: true}}},
+	{"Pane", []menuItem{
+		{id: "pane.splitRight", title: "Split Right"}, {id: "pane.splitDown", title: "Split Down"}, {id: "pane.popOut", title: "Pop Out"},
+		{id: "pane.next", title: "Next Pane", group: true}, {id: "pane.previous", title: "Previous Pane"},
+	}},
+}
+
+type menuItem struct {
+	id, title string
+	group     bool
 }
 
 // chordLabel writes a chord the way a desktop menu does, as
@@ -81,6 +103,8 @@ func commandIntent(id string) (gunim.Intent, bool) {
 		return NewTerminal{}, true
 	case "sidebar.toggle":
 		return ToggleSidebar{}, true
+	case "app.exit":
+		return Exit{}, true
 	}
 	return nil, false
 }

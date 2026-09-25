@@ -33,20 +33,23 @@ var (
 
 // window is the view the program's state drives.
 type window struct {
-	top     *widget.Flex
-	bar     *widget.Menubar
-	outer   *widget.Split
-	side    *panel
-	list    *widget.List
-	stage   *stage
-	status  *statusLine
-	shells  *shells
-	keys    *ui.Keymap
-	terms   map[string]*term
-	splits  map[string]*widget.Split
-	focused string
-	palette *widget.Palette
-	size    geom.Size
+	top    *widget.Flex
+	bar    *widget.Menubar
+	outer  *widget.Split
+	side   *panel
+	list   *widget.List
+	stage  *stage
+	status *statusLine
+	shells *shells
+	keys   *ui.Keymap
+	terms  map[string]*term
+	// browsers and readers are the file panes and readers, by pane.
+	browsers map[string]*browser
+	readers  map[string]*reader
+	splits   map[string]*widget.Split
+	focused  string
+	palette  *widget.Palette
+	size     geom.Size
 	// panes are the panes as last published, and sw the switcher while
 	// it is open.
 	panes []Pane
@@ -72,12 +75,14 @@ type window struct {
 
 func newWindow(sh *shells, keys *ui.Keymap) *window {
 	w := &window{
-		list:   widget.NewList(),
-		stage:  &stage{},
-		shells: sh,
-		keys:   keys,
-		terms:  map[string]*term{},
-		splits: map[string]*widget.Split{},
+		list:     widget.NewList(),
+		stage:    &stage{},
+		shells:   sh,
+		keys:     keys,
+		terms:    map[string]*term{},
+		browsers: map[string]*browser{},
+		readers:  map[string]*reader{},
+		splits:   map[string]*widget.Split{},
 	}
 	side := widget.Column(w.list)
 	side.Cross = widget.CrossStretch
@@ -461,8 +466,8 @@ func (w *window) closeSwitcher(back bool, u *gunim.UI) {
 	}
 	u.Remove(w.sw)
 	w.sw = nil
-	if t, ok := w.terms[w.focused]; ok && back {
-		u.Focus(t)
+	if n := w.focusNode(w.focused); n != nil && back {
+		u.Focus(n)
 		return
 	}
 	w.focused = ""
@@ -518,6 +523,24 @@ func (w *window) update(st State, u *gunim.UI) {
 			delete(w.splits, id)
 		}
 	}
+	open := map[string]bool{}
+	for _, p := range st.Panes {
+		open[p.ID] = true
+	}
+	for id, b := range w.browsers {
+		if !open[id] {
+			delete(w.browsers, id)
+			continue
+		}
+		b.show(st.Browsers[id], u)
+	}
+	for id, r := range w.readers {
+		if !open[id] {
+			delete(w.readers, id)
+			continue
+		}
+		r.st = st.Readers[id]
+	}
 	for id, t := range w.terms {
 		if w.shells.get(id) == nil {
 			delete(w.terms, id)
@@ -535,8 +558,8 @@ func (w *window) update(st State, u *gunim.UI) {
 	// nothing has it, as when the split it sat in went away around it.
 	if w.sw == nil && w.dialog == nil && (st.Focus != w.focused || u.Focused() == nil) {
 		w.focused = st.Focus
-		if t, ok := w.terms[st.Focus]; ok {
-			u.Focus(t)
+		if n := w.focusNode(st.Focus); n != nil {
+			u.Focus(n)
 		}
 	}
 
@@ -580,7 +603,7 @@ func (w *window) build(b *Box, keep map[string]bool) gunim.Node {
 	case b == nil:
 		return nil
 	case b.Pane != "":
-		return w.term(b.Pane)
+		return w.paneNode(b.Pane)
 	}
 	a, c := w.build(b.A, keep), w.build(b.B, keep)
 	keep[b.ID] = true
@@ -605,6 +628,52 @@ func (w *window) build(b *Box, keep map[string]bool) gunim.Node {
 	}
 	w.splits[b.ID] = sp
 	return sp
+}
+
+// kindOf returns the kind of pane id.
+func (w *window) kindOf(id string) string {
+	for _, p := range w.panes {
+		if p.ID == id {
+			return p.Kind
+		}
+	}
+	return kindTerminal
+}
+
+// paneNode returns the node that shows pane id, made on first use.
+func (w *window) paneNode(id string) gunim.Node {
+	switch w.kindOf(id) {
+	case kindFiles:
+		b, ok := w.browsers[id]
+		if !ok {
+			b = newBrowser(id)
+			w.browsers[id] = b
+		}
+		return b
+	case kindReader:
+		r, ok := w.readers[id]
+		if !ok {
+			r = newReader(id, w.fontSize)
+			w.readers[id] = r
+		}
+		return r
+	}
+	return w.term(id)
+}
+
+// focusNode returns the node in pane id that takes the keyboard, or
+// nil when there is none yet.
+func (w *window) focusNode(id string) gunim.Node {
+	if t, ok := w.terms[id]; ok {
+		return t
+	}
+	if b, ok := w.browsers[id]; ok {
+		return b.table
+	}
+	if r, ok := w.readers[id]; ok {
+		return r
+	}
+	return nil
 }
 
 func (w *window) term(id string) *term {

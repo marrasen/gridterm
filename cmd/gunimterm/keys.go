@@ -61,6 +61,7 @@ var commands = []struct{ id, title string }{
 	{"font.decrease", "Smaller Font"},
 	{"font.reset", "Reset Font Size"},
 	{"server.connect", "Connect to Server"},
+	{"conn.files", "Files Here"},
 	{"edit.copy", "Copy"},
 	{"edit.paste", "Paste"},
 }
@@ -93,6 +94,10 @@ var menus = []struct {
 		{id: "pane.nextInSidebar", title: "Next"}, {id: "pane.previousInSidebar", title: "Previous"},
 		{id: "pane.switch", title: "All Panes…"},
 		{id: "pane.rename", title: "Rename…", group: true},
+	}},
+	{"Machine", []menuItem{
+		{title: "Open Here", caption: true},
+		{id: "conn.terminal", title: "Terminal"}, {id: "conn.files", title: "Files"},
 	}},
 }
 
@@ -139,6 +144,8 @@ func commandIntent(id string) (gunim.Intent, bool) {
 		return ToggleSidebar{}, true
 	case "app.exit":
 		return Exit{}, true
+	case "conn.files":
+		return OpenFiles{}, true
 	case "font.increase":
 		return FontSize{Step: 1}, true
 	case "font.decrease":

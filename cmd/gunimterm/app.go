@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
+	"maps"
 	"sync/atomic"
 	"time"
 
 	"fmt"
 	"github.com/marrasen/gridterm/remote"
+	"github.com/marrasen/gridterm/vfs"
 	"slices"
 	"strconv"
 	"sync"
@@ -37,8 +39,12 @@ type State struct {
 	// oldest first.
 	Asks []Ask
 	// Saved are the saved servers.
-	Saved  []remote.Host
-	Status string
+	Saved []remote.Host
+	// Browsers and Readers are what the file panes and the readers
+	// show, by pane. Each is replaced whole, never changed in place.
+	Browsers map[string]Browser
+	Readers  map[string]Reader
+	Status   string
 	// Notices are the latest notices, oldest first, for the window to
 	// show each once.
 	Notices []Notice
@@ -62,6 +68,8 @@ type Pane struct {
 	// Machine is the server the pane's shell runs on, "" for this
 	// computer.
 	Machine string
+	// Kind says what the pane is: a terminal, a file pane or a reader.
+	Kind string
 	// Named is set once the user has named the pane, and shell is the
 	// title its shell last gave it.
 	Named bool
@@ -230,7 +238,9 @@ type app struct {
 	replies map[uint64]chan AskAnswered
 	// closing holds the panes folding away.
 	closing map[string]bool
-	askIDs  atomic.Uint64
+	// local is this computer's filesystem, once a file pane needs it.
+	local  vfs.FS
+	askIDs atomic.Uint64
 	// wake hears that a shell wrote, and events carries changes from
 	// the shells' goroutines to this one.
 	wake   chan struct{}
@@ -387,6 +397,16 @@ func (a *app) handle(in gunim.Intent) {
 		a.st.FontSize = size
 	case ConnectTo:
 		err = a.connect(in)
+	case OpenFiles:
+		err = a.openFiles()
+	case Browse:
+		a.browse(in)
+	case ReadFile:
+		a.readFile(in)
+	case EnterEntry:
+		a.enter(in)
+	case GoUp:
+		a.goUp(in)
 	case SaveServer:
 		err = a.saveServer(in)
 	case RemoveServer:
@@ -499,7 +519,9 @@ func (a *app) open(machine string, at placement) error {
 // addPane shows a new pane, with the keyboard: beside at.beside while
 // that pane is still open, and otherwise on a stage of its own.
 func (a *app) addPane(p Pane, sh *shell, at placement) {
-	a.shells.set(p.ID, sh)
+	if sh != nil {
+		a.shells.set(p.ID, sh)
+	}
 	a.st.Panes = append(a.st.Panes, p)
 	a.next++
 	g, ok := a.groupOf[at.beside]
@@ -614,6 +636,16 @@ func (a *app) remove(id string) {
 		sh.close()
 	}
 	a.shells.set(id, nil)
+	if _, ok := a.st.Browsers[id]; ok {
+		m := maps.Clone(a.st.Browsers)
+		delete(m, id)
+		a.st.Browsers = m
+	}
+	if _, ok := a.st.Readers[id]; ok {
+		m := maps.Clone(a.st.Readers)
+		delete(m, id)
+		a.st.Readers = m
+	}
 	next := a.take(id)
 	a.st.Panes = slices.Delete(a.st.Panes, i, i+1)
 	if a.st.Focus == id {
@@ -669,3 +701,5 @@ const defaultFontSize float32 = 15
 
 // windowTopic is what the program publishes the window's state to.
 const windowTopic = "window"
+
+func itoa(n int) string { return strconv.Itoa(n) }

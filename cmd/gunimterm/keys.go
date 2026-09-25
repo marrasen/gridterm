@@ -34,8 +34,12 @@ func shortcuts() *ui.Keymap {
 		{Key: input.KeyPageUp, Mods: input.ModShift}:              "view.scrollUp",
 		{Key: input.KeyPageDown, Mods: input.ModShift}:            "view.scrollDown",
 		{Key: input.KeyK, Mods: input.ModCtrl | input.ModShift}:   "palette.open",
-		{Key: input.KeyF10}: "menu.open",
-		{Key: input.KeyA, Mods: input.ModCtrl | input.ModShift}: "pane.switch",
+		{Key: input.KeyF10}:                                          "menu.open",
+		{Key: input.KeyEquals, Mods: input.ModCtrl}:                  "font.increase",
+		{Key: input.KeyEquals, Mods: input.ModCtrl | input.ModShift}: "font.increase",
+		{Key: input.KeyMinus, Mods: input.ModCtrl}:                   "font.decrease",
+		{Key: input.Key0, Mods: input.ModCtrl}:                       "font.reset",
+		{Key: input.KeyA, Mods: input.ModCtrl | input.ModShift}:      "pane.switch",
 	})
 	return keys
 }
@@ -52,6 +56,9 @@ var commands = []struct{ id, title string }{
 	{"pane.switch", "Switch Pane"},
 	{"pane.rename", "Rename Pane"},
 	{"sidebar.toggle", "Show or Hide Sidebar"},
+	{"font.increase", "Larger Font"},
+	{"font.decrease", "Smaller Font"},
+	{"font.reset", "Reset Font Size"},
 	{"edit.copy", "Copy"},
 	{"edit.paste", "Paste"},
 }
@@ -63,20 +70,37 @@ var menus = []struct {
 	title string
 	items []menuItem
 }{
-	{"File", []menuItem{{id: "conn.terminal", title: "New Terminal"}, {id: "pane.close", title: "Close Pane", group: true}, {id: "app.exit", title: "Exit", group: true}}},
+	{"File", []menuItem{
+		{id: "conn.terminal", title: "New Terminal"},
+		{title: "Close", caption: true}, {id: "pane.close", title: "Pane"},
+		{id: "app.exit", title: "Exit", group: true},
+	}},
 	{"Edit", []menuItem{{id: "edit.copy", title: "Copy"}, {id: "edit.paste", title: "Paste"}}},
-	{"View", []menuItem{{id: "sidebar.toggle", title: "Sidebar"}, {id: "palette.open", title: "All Commands…", group: true}}},
+	{"View", []menuItem{
+		{id: "sidebar.toggle", title: "Sidebar"},
+		{title: "Font", caption: true},
+		{id: "font.increase", title: "Larger"}, {id: "font.decrease", title: "Smaller"}, {id: "font.reset", title: "Reset"},
+		{title: "Scrollback", caption: true},
+		{id: "view.scrollUp", title: "Page Up"}, {id: "view.scrollDown", title: "Page Down"},
+		{id: "palette.open", title: "All Commands…", group: true},
+	}},
 	{"Pane", []menuItem{
-		{id: "pane.splitRight", title: "Split Right"}, {id: "pane.splitDown", title: "Split Down"}, {id: "pane.popOut", title: "Pop Out"},
-		{id: "pane.next", title: "Next Pane", group: true}, {id: "pane.previous", title: "Previous Pane"},
-		{id: "pane.switch", title: "Switch Pane…"},
+		{title: "Split", caption: true},
+		{id: "pane.splitRight", title: "Right"}, {id: "pane.splitDown", title: "Down"}, {id: "pane.popOut", title: "Pop Out"},
+		{title: "Go To", caption: true},
+		{id: "pane.nextInSidebar", title: "Next"}, {id: "pane.previousInSidebar", title: "Previous"},
+		{id: "pane.switch", title: "All Panes…"},
 		{id: "pane.rename", title: "Rename…", group: true},
 	}},
 }
 
+// menuItem is one line of a menu: a command, or a caption over the
+// group under it. A line goes above an item that starts a group, and
+// above every caption but a menu's first line.
 type menuItem struct {
 	id, title string
 	group     bool
+	caption   bool
 }
 
 // chordLabel writes a chord the way a desktop menu does, as
@@ -113,6 +137,12 @@ func commandIntent(id string) (gunim.Intent, bool) {
 		return ToggleSidebar{}, true
 	case "app.exit":
 		return Exit{}, true
+	case "font.increase":
+		return FontSize{Step: 1}, true
+	case "font.decrease":
+		return FontSize{Step: -1}, true
+	case "font.reset":
+		return FontSize{}, true
 	}
 	return nil, false
 }

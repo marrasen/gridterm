@@ -27,7 +27,9 @@ type State struct {
 	// Sidebar is whether the sidebar shows, and SidebarWidth how wide.
 	Sidebar      bool
 	SidebarWidth float32
-	Status       string
+	// FontSize is the terminals' font size in logical pixels.
+	FontSize float32
+	Status   string
 	// Notices are the latest notices, oldest first, for the window to
 	// show each once.
 	Notices []Notice
@@ -167,6 +169,9 @@ type (
 	// DialogClosed says a dialog closed without a change, so the window
 	// gives the keyboard back.
 	DialogClosed struct{}
+	// FontSize makes the terminals' text a point larger, or smaller,
+	// or, with no Step, the size it started at.
+	FontSize struct{ Step int }
 )
 
 // app is the program side's state. It belongs to the goroutine running
@@ -214,7 +219,7 @@ func newApp(c gunim.Client, sh *shells) *app {
 	return &app{
 		c:       c,
 		shells:  sh,
-		st:      State{Sidebar: true, SidebarWidth: 220},
+		st:      State{Sidebar: true, SidebarWidth: 220, FontSize: defaultFontSize},
 		groups:  map[int]*Box{},
 		groupOf: map[string]int{},
 		wake:    make(chan struct{}, 1),
@@ -316,6 +321,12 @@ func (a *app) handle(in gunim.Intent) {
 				}
 			}
 		}
+	case FontSize:
+		size := defaultFontSize
+		if in.Step != 0 {
+			size = min(max(a.st.FontSize+float32(in.Step), 8), 40)
+		}
+		a.st.FontSize = size
 	case DialogClosed:
 	}
 	if err != nil {
@@ -499,6 +510,9 @@ func (a *app) retitle(id, title string) {
 		}
 	}
 }
+
+// defaultFontSize is the terminals' font size to begin with.
+const defaultFontSize float32 = 15
 
 // windowTopic is what the program publishes the window's state to.
 const windowTopic = "window"

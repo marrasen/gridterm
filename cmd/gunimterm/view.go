@@ -54,6 +54,8 @@ type window struct {
 	// dialog is the dialog open over the window, which keeps the
 	// keyboard until it starts to leave.
 	dialog *widget.Dialog
+	// fontSize is the terminals' font size, as last published.
+	fontSize float32
 }
 
 func newWindow(sh *shells, keys *ui.Keymap) *window {
@@ -82,12 +84,15 @@ func newWindow(sh *shells, keys *ui.Keymap) *window {
 		bm := widget.BarMenu{Title: m.title}
 		for i, it := range m.items {
 			hint := ""
-			if chord, ok := keys.ChordFor(it.id); ok {
+			if chord, ok := keys.ChordFor(it.id); ok && !it.caption {
 				hint = chordLabel(chord)
 			}
 			bm.Items, bm.Hints = append(bm.Items, it.title), append(bm.Hints, hint)
 			bm.Checked = append(bm.Checked, false)
-			if it.group {
+			if it.caption {
+				bm.Captions = append(bm.Captions, i)
+			}
+			if it.group || (it.caption && i > 0) {
 				bm.Breaks = append(bm.Breaks, i)
 			}
 		}
@@ -248,6 +253,12 @@ func (w *window) Handle(e input.Event, u *gunim.UI) bool {
 func (w *window) update(st State, u *gunim.UI) {
 	th := u.Theme()
 	w.panes = st.Panes
+	if st.FontSize != w.fontSize {
+		w.fontSize = st.FontSize
+		for _, t := range w.terms {
+			t.cells.Size = st.FontSize
+		}
+	}
 	widget.Sync(w.list, u, st.Panes,
 		func(p Pane) widget.Key { return widget.Key(p.ID) },
 		func(p Pane) *sideRow { return newSideRow(p) },
@@ -354,6 +365,9 @@ func (w *window) term(id string) *term {
 		return t
 	}
 	t := newTerm(id, w.shells.get(id), w.keys)
+	if w.fontSize > 0 {
+		t.cells.Size = w.fontSize
+	}
 	w.terms[id] = t
 	return t
 }

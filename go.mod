@@ -7,6 +7,7 @@ require (
 	github.com/aymanbagabas/go-pty v0.2.3
 	github.com/danielgatis/go-vte v1.0.11
 	github.com/hajimehoshi/ebiten/v2 v2.10.2
+	github.com/marrasen/gunim v0.0.0-20260925130754-868ba4489a6f
 	github.com/pkg/sftp v1.13.11
 	github.com/rivo/uniseg v0.4.7
 	golang.design/x/clipboard v0.9.0
@@ -21,6 +22,8 @@ require (
 	github.com/ebitengine/gomobile v0.0.0-20260820040257-d11f821a26a6 // indirect
 	github.com/ebitengine/hideconsole v1.0.0 // indirect
 	github.com/ebitengine/purego v0.11.0 // indirect
+	github.com/go-text/typesetting v0.3.5 // indirect
+	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/kr/fs v0.1.0 // indirect
 	github.com/u-root/u-root v0.16.0 // indirect
 	golang.design/x/x11 v0.2.0 // indirect

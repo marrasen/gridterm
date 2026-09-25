@@ -5,3 +5,5 @@
 /gridterm-linux
 /.idea/
 /dist/
+/go.work
+/go.work.sum

@@ -66,6 +66,8 @@ var commands = []struct{ id, title string }{
 	{"conn.files", "Files Here"},
 	{"files.goTo", "Go to Directory"},
 	{"view.jobs", "Show Jobs"},
+	{"view.log", "Window Log"},
+	{"conn.log", "Connection Log"},
 	{"tunnel.open", "Open Tunnel"},
 	{"tunnel.socks", "Open SOCKS Proxy"},
 	{"edit.copy", "Copy"},
@@ -89,6 +91,7 @@ var menus = []struct {
 		{id: "sidebar.toggle", title: "Sidebar"},
 		{id: "theme.pick", title: "Theme…"},
 		{id: "view.jobs", title: "Jobs"},
+		{id: "view.log", title: "Window Log"},
 		{title: "Font", caption: true},
 		{id: "font.increase", title: "Larger"}, {id: "font.decrease", title: "Smaller"}, {id: "font.reset", title: "Reset"},
 		{title: "Scrollback", caption: true},
@@ -106,6 +109,7 @@ var menus = []struct {
 	{"Machine", []menuItem{
 		{title: "Open Here", caption: true},
 		{id: "conn.terminal", title: "Terminal"}, {id: "conn.files", title: "Files"},
+		{id: "conn.log", title: "Connection Log"},
 		{title: "Files", caption: true},
 		{id: "files.goTo", title: "Go to Directory…"},
 		{title: "Tunnels", caption: true},
@@ -160,6 +164,8 @@ func commandIntent(id string) (gunim.Intent, bool) {
 		return OpenFiles{}, true
 	case "view.jobs":
 		return ShowJobs{}, true
+	case "view.log":
+		return ShowLog{}, true
 	case "font.increase":
 		return FontSize{Step: 1}, true
 	case "font.decrease":

@@ -8,6 +8,7 @@ import (
 
 	"fmt"
 	"github.com/marrasen/gridterm/jobs"
+	"github.com/marrasen/gridterm/logs"
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/settings"
 	"github.com/marrasen/gridterm/vfs"
@@ -55,7 +56,10 @@ type State struct {
 	// and SavedTunnels those kept for next time, newest first.
 	Tunnels []Tunnel
 	// Jobs are the file jobs, running and finished, oldest first.
-	Jobs         []Job
+	Jobs []Job
+	// Accounts are the machines with a connection log, in the order
+	// their first connection began.
+	Accounts     []string
 	SavedTunnels []settings.SavedTunnel
 	Status       string
 	// Notices are the latest notices, oldest first, for the window to
@@ -278,7 +282,9 @@ type app struct {
 	// tunnels are the tunnels by ID, tunnelSeq counts them, ticking is
 	// set while their notes are kept up to date, and quiet says a tick
 	// changed nothing, so nothing is published.
-	tunnels   map[string]*tunnel
+	tunnels map[string]*tunnel
+	// accounts are the connection logs, by machine.
+	accounts  map[string]*logs.Lines
 	tunnelSeq int
 	ticking   bool
 	quiet     bool
@@ -335,6 +341,7 @@ func newApp(c gunim.Client, sh *shells) *app {
 		closing:  map[string]bool{},
 		remoteFS: map[string]vfs.FS{},
 		tunnels:  map[string]*tunnel{},
+		accounts: map[string]*logs.Lines{},
 		wake:     make(chan struct{}, 1),
 		events:   make(chan func(), 64),
 	}
@@ -412,6 +419,7 @@ func (a *app) publish() {
 	st.Themes = slices.Clone(a.st.Themes)
 	st.Tunnels = slices.Clone(a.st.Tunnels)
 	st.Jobs = slices.Clone(a.st.Jobs)
+	st.Accounts = slices.Clone(a.st.Accounts)
 	st.SavedTunnels = slices.Clone(a.st.SavedTunnels)
 	st.Stage = a.groups[a.groupOf[a.st.Focus]].clone()
 	_ = a.c.Publish(windowTopic, st)
@@ -529,6 +537,8 @@ func (a *app) handle(in gunim.Intent) {
 		a.watchTunnel(in)
 	case ShowTunnel:
 		a.showTunnel(in.ID)
+	case ShowLog:
+		a.showLog(in.Machine)
 	case ShowJobs:
 		a.showJobsPane()
 	case CancelJob:

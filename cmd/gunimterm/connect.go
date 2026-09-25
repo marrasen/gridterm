@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/marrasen/gridterm/remote"
 )
@@ -71,9 +72,14 @@ func (a *app) connect(in ConnectTo) error {
 		return nil
 	}
 	a.dialing[name] = true
+	acct := a.account(name)
+	logLine(acct, "", "connecting to "+name)
+	began := time.Now()
 	for i := range hops {
 		hops[i].Ask = asker{a}
 		hops[i].Ring = a.ring
+		hops[i].Saying = func(what string) { logLine(acct, "", what) }
+		hops[i].Wrong = func(what string) { logLine(acct, badly, what) }
 	}
 	a.st.Status = "Connecting to " + name + "…"
 	go func() {
@@ -88,15 +94,22 @@ func (a *app) connect(in ConnectTo) error {
 			delete(a.dialing, name)
 			a.st.Status = ""
 			if err != nil {
+				logLine(acct, badly, "could not connect: "+err.Error())
 				if !errors.Is(err, errDeclined) && !errors.Is(err, context.Canceled) {
 					a.notify("Couldn't connect to "+name, err.Error(), "")
 				}
 				return
 			}
 			a.conns[name] = conn
+			logLine(acct, well, "connected in "+time.Since(began).Round(10*time.Millisecond).String())
 			go func() {
-				_ = conn.Wait()
+				err := conn.Wait()
 				a.events <- func() {
+					if err != nil {
+						logLine(acct, badly, "disconnected: "+err.Error())
+					} else {
+						logLine(acct, "", "disconnected")
+					}
 					delete(a.conns, name)
 					a.tunnelsDiedOn(name)
 					if f, ok := a.remoteFS[name]; ok {

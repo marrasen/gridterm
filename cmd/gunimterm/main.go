@@ -43,6 +43,7 @@ func run() error {
 		defer pprof.StopCPUProfile()
 	}
 
+	log.SetOutput(windowLog)
 	err := gunim.Main(ctx, func(a *gunim.App) error {
 		w, err := a.NewWindow(gunim.WindowOptions{
 			Title: "gunimterm",

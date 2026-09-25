@@ -54,10 +54,13 @@ type window struct {
 	// jobs is the jobs pane, once it has been opened.
 	jobs         *jobsPane
 	savedTunnels []settings.SavedTunnel
-	splits       map[string]*widget.Split
-	focused      string
-	palette      *widget.Palette
-	size         geom.Size
+	// accounts are the machines with a connection log, as the palette
+	// lists them.
+	accounts []string
+	splits   map[string]*widget.Split
+	focused  string
+	palette  *widget.Palette
+	size     geom.Size
 	// panes are the panes as last published, and sw the switcher while
 	// it is open.
 	panes []Pane
@@ -180,6 +183,14 @@ func (w *window) run(id string, u *gunim.UI) bool {
 	case "theme.pick":
 		w.pickTheme(u)
 		return true
+	case "conn.log":
+		machine := w.machineOf(w.focused)
+		if machine == "" {
+			w.toasts.Show(widget.Toast{Title: "Connection logs belong to servers", Body: "Open one from a pane on a server."}, u)
+			return true
+		}
+		u.Send(w, ShowLog{Machine: machine})
+		return true
 	case "tunnel.open", "tunnel.socks":
 		w.tunnelDialog(id == "tunnel.socks", u)
 		return true
@@ -209,6 +220,10 @@ func (w *window) run(id string, u *gunim.UI) bool {
 				w.serverForm(&h, u)
 			}
 		}
+		return true
+	}
+	if m, ok := strings.CutPrefix(id, "conn.log:"); ok {
+		u.Send(w, ShowLog{Machine: m})
 		return true
 	}
 	if at, ok := strings.CutPrefix(id, "tunnel.saved:"); ok {
@@ -411,6 +426,10 @@ func (w *window) servers(saved []remote.Host) {
 			w.paletteIDs = append(w.paletteIDs, c.id+h.Name)
 		}
 	}
+	for _, m := range w.accounts {
+		w.palette.Items = append(w.palette.Items, widget.PaletteItem{Title: "Connection Log for " + m})
+		w.paletteIDs = append(w.paletteIDs, "conn.log:"+m)
+	}
 	for i, it := range w.savedTunnelItems() {
 		w.palette.Items = append(w.palette.Items, it)
 		w.paletteIDs = append(w.paletteIDs, "tunnel.saved:"+strconv.Itoa(i))
@@ -603,6 +622,10 @@ func (w *window) update(st State, u *gunim.UI) {
 		}
 	}
 	w.setSavedTunnels(st.SavedTunnels)
+	if !slices.Equal(st.Accounts, w.accounts) {
+		w.accounts = st.Accounts
+		w.servers(w.saved)
+	}
 	w.showAsk(st.Asks, u)
 	if !slices.EqualFunc(st.Saved, w.saved, func(a, b remote.Host) bool { return a.ID == b.ID && a.Name == b.Name && a.Address == b.Address }) {
 		w.servers(st.Saved)

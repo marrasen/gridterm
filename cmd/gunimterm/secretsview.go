@@ -167,6 +167,7 @@ func (w *window) secretForm(kind secrets.Kind, old *SecretItem, u *gunim.UI) {
 		d.AddAction("Make One Up", func(u *gunim.UI) {
 			if made, err := secrets.NewPassword(secrets.PasswordLength); err == nil {
 				value.SetText(made)
+				value.Flash()
 				u.Invalidate()
 			}
 		})

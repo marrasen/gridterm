@@ -44,5 +44,67 @@ Measured on the development machine: X11 over xrdp, software OpenGL
 - Idle, the window uses no CPU: 0 ticks in 10 seconds, against 639 for
   gridterm today, which draws continuously.
 
-Left for later: scrollback past the wheel, selection, links, pictures,
-splits, menus and dialogs.
+## Not ported yet
+
+What gridterm does that gunimterm does not, as of 2026-09-26. Each is to
+be done, or decided against, before the switch. Checked against every
+command gridterm registers, and against what was left out on the way.
+
+Panes and terminals:
+
+- A pane stays open when its program ends, with Restart to start it
+  again. In gunimterm the pane closes, so an agent cannot restart one
+  either (`restart_pane` says so).
+- Links: Ctrl+click on a URL, and on a file path, which opens it.
+- Pictures in a terminal (OSC 1337 and 1338).
+- The bell.
+- Find in Scrollback (`pane.scrollback`).
+- Show Pane Titles (`pane.titles`) and Full Screen (`view.fullScreen`).
+- Paste Image as File (`edit.pasteImage`).
+- Choosing the shell for a new terminal: the default, bash as a login
+  shell, and on Windows cmd, Windows PowerShell and PowerShell.
+- Shell Setup (`shell.setup`) and Terminal Identity (`shell.termProgram`).
+- Typing History (`agent.typed`), which shows what agents typed.
+
+Sidebar and connections:
+
+- Disconnect (`conn.disconnect`), and Clear Finished for rows that
+  ended (`conn.clearFinished`).
+- Run Command in a pane of its own (`conn.command`).
+- Edit This Server and Remove This Server for the focused pane's
+  server, and Reload Server List. The palette edits and removes saved
+  servers by name.
+- Focus Sidebar and Close Selected Row, for the sidebar by keyboard.
+- The dialog for a new tunnel offers the tunnels saved for that server
+  as it is typed; gunimterm offers them in the palette only.
+
+Files:
+
+- The hex view, the JSON-log view, pictures in the reader, and the
+  minimap.
+- Repeat, on a finished job.
+- Saved Copies (`files.copies`) and File Locations (`help.files`).
+
+Secrets and keys:
+
+- New SSH Key, which also keeps the new key's passphrase in the
+  secrets, and Lock SSH Keys.
+- The Show Secrets list's title saying when the pane is waiting for a
+  secret. Type answers such a pane either way.
+
+Agents:
+
+- Writing the skill file for an agent program, and the setup dialog
+  that shows the lines. gunimterm copies the prompt and the setup line.
+
+Window:
+
+- Serving this window, and connecting to another window
+  (`serve.window`, `serve.attach`). Next in the port.
+- Shortcuts and Commands, a shortcuts file of your own, and reloading
+  it (`help.shortcuts`, `shortcuts.write`, `shortcuts.reload`).
+- New Theme File and Reload Themes.
+- About gridterm.
+
+Checks on Windows, waiting until the Windows runs resume: the screen
+reader recheck (#10) and this spike on Windows (#11).

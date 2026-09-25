@@ -33,8 +33,8 @@ type Ask struct {
 	Yes    string
 	No     string
 	// Danger marks a question whose yes can do harm, and colours its
-	// button so.
-	Danger bool
+	// button so. Plain has Yes alone, for something only told.
+	Danger, Plain bool
 }
 
 // errDeclined is the user saying no to a question, which stops the

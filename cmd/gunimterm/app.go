@@ -10,6 +10,7 @@ import (
 	"github.com/marrasen/gridterm/jobs"
 	"github.com/marrasen/gridterm/logs"
 	"github.com/marrasen/gridterm/remote"
+	"github.com/marrasen/gridterm/secrets"
 	"github.com/marrasen/gridterm/settings"
 	"github.com/marrasen/gridterm/vfs"
 	"github.com/marrasen/gridterm/vt"
@@ -59,7 +60,9 @@ type State struct {
 	Jobs []Job
 	// Accounts are the machines with a connection log, in the order
 	// their first connection began.
-	Accounts     []string
+	Accounts []string
+	// Secrets is what the vault holds, by name.
+	Secrets      Secrets
 	SavedTunnels []settings.SavedTunnel
 	Status       string
 	// Notices are the latest notices, oldest first, for the window to
@@ -76,6 +79,9 @@ type Notice struct {
 	ID          uint64
 	Title, Body string
 	Clipboard   string
+	// Forget has the window take Clipboard back off the clipboard in
+	// half a minute, unless something else was copied since.
+	Forget bool
 }
 
 // Pane is one pane, as the sidebar lists it.
@@ -284,10 +290,16 @@ type app struct {
 	// changed nothing, so nothing is published.
 	tunnels map[string]*tunnel
 	// accounts are the connection logs, by machine.
-	accounts  map[string]*logs.Lines
-	tunnelSeq int
-	ticking   bool
-	quiet     bool
+	accounts map[string]*logs.Lines
+	// secrets is the vault, once asked for, and secretsAt where it is
+	// kept, when a test says. lastTerminal is the terminal pane that
+	// last had the keyboard, for typing a secret into.
+	secrets      *secrets.Vault
+	secretsAt    string
+	lastTerminal string
+	tunnelSeq    int
+	ticking      bool
+	quiet        bool
 	// wake hears that a shell wrote, and events carries changes from
 	// the shells' goroutines to this one.
 	wake   chan struct{}
@@ -405,6 +417,9 @@ func (a *app) run(ctx context.Context) error {
 		if a.quiet {
 			a.quiet = false
 			continue
+		}
+		if a.kindOfPane(a.st.Focus) == kindTerminal {
+			a.lastTerminal = a.st.Focus
 		}
 		a.publish()
 	}
@@ -537,6 +552,22 @@ func (a *app) handle(in gunim.Intent) {
 		a.watchTunnel(in)
 	case ShowTunnel:
 		a.showTunnel(in.ID)
+	case ShowSecrets:
+		a.showSecretsPane()
+	case UnlockSecrets:
+		a.withSecrets("Couldn't open the secrets", func(*secrets.Vault) error { return nil })
+	case LockSecrets:
+		a.lockSecrets()
+	case PutSecret:
+		a.putSecret(in)
+	case RemoveSecret:
+		a.withSecrets("Couldn't remove the secret", func(v *secrets.Vault) error { return v.Remove(in.ID) })
+	case CopySecret:
+		a.copySecret(in.ID)
+	case TypeSecret:
+		a.typeSecret(in.ID)
+	case RevealSecret:
+		a.revealSecret(in.ID)
 	case ShowLog:
 		a.showLog(in.Machine)
 	case ShowJobs:

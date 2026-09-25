@@ -126,7 +126,7 @@ type tunnelPane struct {
 
 func newTunnelPane(t *term) *tunnelPane {
 	bar := newTunnelBar()
-	col := widget.Column(t, bar).Grow(t, 1)
+	col := widget.Column(t, bar.bar).Grow(t, 1)
 	col.Cross, col.Gap = widget.CrossStretch, noGap
 	return &tunnelPane{col: col, bar: bar}
 }
@@ -151,76 +151,28 @@ func (p *tunnelPane) Paint(pt *paint.Painter, _ gunim.Frame, _ geom.Size, kids g
 // its traffic and close it. A stopped tunnel's bar offers to clear
 // its row; a closed one's says so.
 type tunnelBar struct {
-	label        *widget.Label
+	bar          *buttonBar
 	watch, close *widget.Button
-	// shown are the buttons in the bar now.
-	shown []gunim.Node
 }
 
 func newTunnelBar() *tunnelBar {
-	b := &tunnelBar{label: widget.NewLabel(""), watch: widget.NewButton(""), close: widget.NewButton("")}
-	b.label.Size, b.label.Color, b.label.MaxLines = smallText, faint, 1
-	return b
+	return &tunnelBar{bar: newButtonBar(), watch: widget.NewButton(""), close: widget.NewButton("")}
 }
 
 // show brings the bar up to date with t, which ok says still has a row.
 func (b *tunnelBar) show(t Tunnel, ok bool, u *gunim.UI) {
-	var want []gunim.Node
 	switch {
 	case ok && t.Live:
-		b.label.SetText(t.Label + " · " + t.Note)
 		b.watch.Label, b.watch.On = "Watch the Traffic", WatchTunnel{ID: t.ID, On: true}
 		if t.Watching {
 			b.watch.Label, b.watch.On = "Stop Watching", WatchTunnel{ID: t.ID}
 		}
 		b.close.Label, b.close.On = "Close Tunnel", CloseTunnel{ID: t.ID}
-		want = []gunim.Node{b.watch, b.close}
+		b.bar.set(t.Label+" · "+t.Note, u, b.watch, b.close)
 	case ok:
-		b.label.SetText(t.Label + " · stopped")
 		b.close.Label, b.close.On = "Clear", CloseTunnel{ID: t.ID}
-		want = []gunim.Node{b.close}
+		b.bar.set(t.Label+" · stopped", u, b.close)
 	default:
-		b.label.SetText("This tunnel has closed.")
-	}
-	for _, n := range b.shown {
-		if !slices.Contains(want, n) {
-			u.Remove(n)
-		}
-	}
-	for _, n := range want {
-		if !slices.Contains(b.shown, n) {
-			u.Insert(b, n)
-		}
-	}
-	b.shown = want
-}
-
-// Children implements [gunim.Composite].
-func (b *tunnelBar) Children() []gunim.Node { return append([]gunim.Node{b.label}, b.shown...) }
-
-// Layout implements [gunim.Node]: the label at the start, the buttons
-// at the end.
-func (b *tunnelBar) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children) geom.Size {
-	const padX, gap, height = 12, 8, 44
-	x := c.Max.W - padX
-	for i := kids.Len() - 1; i >= 1; i-- {
-		k := kids.At(i)
-		s := k.Layout(gunim.Constraints{Max: geom.Sz(c.Max.W, height)})
-		x -= s.W
-		k.Place(geom.Pt(x, (height-s.H)/2))
-		x -= gap
-	}
-	k := kids.At(0)
-	s := k.Layout(gunim.Constraints{Max: geom.Sz(max(0, x-padX), height)})
-	k.Place(geom.Pt(padX, (height-s.H)/2))
-	return c.Constrain(geom.Sz(c.Max.W, height))
-}
-
-// Paint implements [gunim.Node].
-func (b *tunnelBar) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gunim.Children) {
-	p.RRect(geom.Rect{Max: box.Point()}, 0, paint.Solid(widget.MenuFill.Get(f.Theme)))
-	p.RRect(geom.Rect{Max: geom.Pt(box.W, 1)}, 0, paint.Solid(widget.MenuBorder.Get(f.Theme)))
-	for k := range kids.All {
-		k.Paint(p)
+		b.bar.set("This tunnel has closed.", u)
 	}
 }

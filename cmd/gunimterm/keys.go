@@ -65,6 +65,10 @@ var commands = []struct{ id, title string }{
 	{"server.connect", "Connect to Server"},
 	{"conn.files", "Files Here"},
 	{"files.goTo", "Go to Directory"},
+	{"secrets.show", "Show Secrets"},
+	{"secrets.add", "Add Secret"},
+	{"secrets.addNote", "Add Note"},
+	{"secrets.lock", "Lock Secrets"},
 	{"view.jobs", "Show Jobs"},
 	{"view.log", "Window Log"},
 	{"conn.log", "Connection Log"},
@@ -115,6 +119,11 @@ var menus = []struct {
 		{title: "Tunnels", caption: true},
 		{id: "tunnel.open", title: "Open Tunnel…"}, {id: "tunnel.socks", title: "SOCKS Proxy…"},
 	}},
+	{"Secrets", []menuItem{
+		{id: "secrets.show", title: "Show Secrets"},
+		{id: "secrets.add", title: "Add Secret…"}, {id: "secrets.addNote", title: "Add Note…"},
+		{id: "secrets.lock", title: "Lock", group: true},
+	}},
 }
 
 // menuItem is one line of a menu: a command, or a caption over the
@@ -164,6 +173,10 @@ func commandIntent(id string) (gunim.Intent, bool) {
 		return OpenFiles{}, true
 	case "view.jobs":
 		return ShowJobs{}, true
+	case "secrets.show":
+		return ShowSecrets{}, true
+	case "secrets.lock":
+		return LockSecrets{}, true
 	case "view.log":
 		return ShowLog{}, true
 	case "font.increase":

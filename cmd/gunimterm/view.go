@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/anim"
@@ -15,6 +16,7 @@ import (
 	"github.com/marrasen/gunim/widget"
 
 	"github.com/marrasen/gridterm/remote"
+	"github.com/marrasen/gridterm/secrets"
 	"github.com/marrasen/gridterm/settings"
 	"github.com/marrasen/gridterm/syntax"
 	"github.com/marrasen/gridterm/ui"
@@ -52,7 +54,11 @@ type window struct {
 	// kept, as the palette lists them.
 	tunnelPanes map[string]*tunnelPane
 	// jobs is the jobs pane, once it has been opened.
-	jobs         *jobsPane
+	jobs *jobsPane
+	// secrets is the secrets pane, once opened, and lastTerm the
+	// terminal pane that last had the keyboard.
+	secrets      *secretsPane
+	lastTerm     string
 	savedTunnels []settings.SavedTunnel
 	// accounts are the machines with a connection log, as the palette
 	// lists them.
@@ -190,6 +196,13 @@ func (w *window) run(id string, u *gunim.UI) bool {
 			return true
 		}
 		u.Send(w, ShowLog{Machine: machine})
+		return true
+	case "secrets.add", "secrets.addNote":
+		kind := secrets.Password
+		if id == "secrets.addNote" {
+			kind = secrets.Note
+		}
+		w.secretForm(kind, nil, u)
 		return true
 	case "tunnel.open", "tunnel.socks":
 		w.tunnelDialog(id == "tunnel.socks", u)
@@ -376,6 +389,9 @@ func (w *window) showAsk(asks []Ask, u *gunim.UI) {
 	}
 	d.Dismiss = AskAnswered{ID: id}
 	d.Danger = q.Danger
+	if q.Plain {
+		d.SetButtons(q.Yes, "")
+	}
 	w.ask, w.askID = d, id
 	w.openDialog(d, u)
 }
@@ -671,6 +687,12 @@ func (w *window) update(st State, u *gunim.UI) {
 	if w.jobs != nil && u.Presence(w.jobs) != gunim.Exiting {
 		w.jobs.show(st.Jobs, u)
 	}
+	if w.secrets != nil && u.Presence(w.secrets) != gunim.Exiting {
+		w.secrets.show(st.Secrets, u)
+	}
+	if w.kindOf(st.Focus) == kindTerminal {
+		w.lastTerm = st.Focus
+	}
 	for id, p := range w.tunnelPanes {
 		if !open[id] {
 			delete(w.tunnelPanes, id)
@@ -729,6 +751,15 @@ func (w *window) update(st State, u *gunim.UI) {
 		w.shown = n.ID
 		if n.Clipboard != "" {
 			u.SetClipboard(n.Clipboard)
+			if n.Forget {
+				copied := n.Clipboard
+				u.After(clipboardHolds*time.Second, func(u *gunim.UI) {
+					// Only the secret goes; what was copied since stays.
+					if u.Clipboard() == copied {
+						u.SetClipboard("")
+					}
+				})
+			}
 		}
 		w.toasts.Show(widget.Toast{Title: n.Title, Body: n.Body}, u)
 	}
@@ -800,6 +831,11 @@ func (w *window) paneNode(id string) gunim.Node {
 			w.browsers[id] = b
 		}
 		return b
+	case kindSecrets:
+		if w.secrets == nil {
+			w.secrets = newSecretsPane(w)
+		}
+		return w.secrets
 	case kindJobs:
 		if w.jobs == nil {
 			w.jobs = newJobsPane()
@@ -837,6 +873,9 @@ func (w *window) focusNode(id string) gunim.Node {
 	}
 	if w.kindOf(id) == kindJobs && w.jobs != nil {
 		return w.jobs.clear
+	}
+	if w.kindOf(id) == kindSecrets && w.secrets != nil {
+		return w.secrets.table
 	}
 	return nil
 }

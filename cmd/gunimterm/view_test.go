@@ -85,7 +85,7 @@ func TestATunnelChangingOffStageShowsWhenItsPaneComesBack(t *testing.T) {
 	publish(st("p2", false))
 	publish(st("p1", false))
 	bar := win.tunnelPanes["p1"].bar
-	if len(bar.shown) != 1 || bar.shown[0] != bar.close || bar.close.Label != "Clear" {
-		t.Fatalf("back on stage, the stopped tunnel's bar offers %d buttons, the last saying %q", len(bar.shown), bar.close.Label)
+	if len(bar.bar.shown) != 1 || bar.bar.shown[0] != bar.close || bar.close.Label != "Clear" {
+		t.Fatalf("back on stage, the stopped tunnel's bar offers %d buttons, the last saying %q", len(bar.bar.shown), bar.close.Label)
 	}
 }

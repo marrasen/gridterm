@@ -35,13 +35,22 @@ type shellHooks struct {
 	clipboard func(string)
 }
 
-// startShell starts the user's shell at 80 by 24.
-func startShell(hooks shellHooks) (*shell, error) {
-	const cols, rows = 80, 24
-	sess, err := session.StartLocal(session.LocalConfig{Cols: cols, Rows: rows})
+// shellCols and shellRows are a new shell's size, until its pane lays
+// out and tells it its own.
+const shellCols, shellRows = 80, 24
+
+// startLocal starts the user's shell on this machine.
+func startLocal(hooks shellHooks) (*shell, error) {
+	sess, err := session.StartLocal(session.LocalConfig{Cols: shellCols, Rows: shellRows})
 	if err != nil {
 		return nil, fmt.Errorf("gunimterm: start the shell: %w", err)
 	}
+	return openShell(sess, hooks), nil
+}
+
+// openShell puts a screen on a running session, local or remote.
+func openShell(sess session.Session, hooks shellHooks) *shell {
+	const cols, rows = shellCols, shellRows
 	pal := vt.DefaultPalette()
 	sh := &shell{
 		pal:  pal,
@@ -54,7 +63,7 @@ func startShell(hooks shellHooks) (*shell, error) {
 	sh.vt = vt.New(cols, rows, pal, 5000, vt.Callbacks{Reply: sh.send, Title: hooks.title, ClipboardSet: hooks.clipboard})
 	go sh.read(hooks)
 	go sh.write()
-	return sh, nil
+	return sh
 }
 
 func (sh *shell) read(hooks shellHooks) {

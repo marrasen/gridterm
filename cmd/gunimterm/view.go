@@ -2,6 +2,7 @@ package main
 
 import (
 	"image/color"
+	"strings"
 
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/anim"
@@ -56,6 +57,11 @@ type window struct {
 	dialog *widget.Dialog
 	// fontSize is the terminals' font size, as last published.
 	fontSize float32
+	// ask is the dialog asking a connection's question askID, and
+	// savedNames the saved servers the Servers menu lists.
+	ask        *widget.Dialog
+	askID      uint64
+	savedNames []string
 }
 
 func newWindow(sh *shells, keys *ui.Keymap) *window {
@@ -67,9 +73,7 @@ func newWindow(sh *shells, keys *ui.Keymap) *window {
 		terms:  map[string]*term{},
 		splits: map[string]*widget.Split{},
 	}
-	heading := widget.NewLabel("This computer")
-	heading.Size, heading.Color = smallText, faint
-	side := widget.Column(widget.NewPad(heading), w.list)
+	side := widget.Column(w.list)
 	side.Cross = widget.CrossStretch
 	w.status = newStatusLine()
 	main := widget.Column(w.stage, w.status).Grow(w.stage, 1)
@@ -98,7 +102,20 @@ func newWindow(sh *shells, keys *ui.Keymap) *window {
 		}
 		w.bar.Menus = append(w.bar.Menus, bm)
 	}
-	w.bar.Pick = func(m, i int, u *gunim.UI) { w.run(menus[m].items[i].id, u) }
+	w.bar.Pick = func(m, i int, u *gunim.UI) {
+		if m < len(menus) {
+			w.run(menus[m].items[i].id, u)
+			return
+		}
+		// The Servers menu: Connect…, then the saved servers under a
+		// caption.
+		if i == 0 {
+			w.run("server.connect", u)
+		} else if i >= 2 && i-2 < len(w.savedNames) {
+			w.run("server.open:"+w.savedNames[i-2], u)
+		}
+	}
+	w.bar.Menus = append(w.bar.Menus, widget.BarMenu{Title: "Servers"})
 	w.toasts = &widget.Toasts{}
 	w.top = widget.Column(w.bar, w.outer).Grow(w.outer, 1)
 	w.top.Cross, w.top.Gap = widget.CrossStretch, noGap
@@ -131,6 +148,9 @@ func (w *window) run(id string, u *gunim.UI) bool {
 	case "pane.rename":
 		w.rename(u)
 		return true
+	case "server.connect":
+		w.connectDialog(u)
+		return true
 	case "edit.paste":
 		if t, ok := w.terms[w.focused]; ok {
 			t.paste(u.Clipboard())
@@ -140,6 +160,10 @@ func (w *window) run(id string, u *gunim.UI) bool {
 		if t, ok := w.terms[w.focused]; ok {
 			t.copySelection(u)
 		}
+		return true
+	}
+	if name, ok := strings.CutPrefix(id, "server.open:"); ok {
+		u.Send(w, ConnectTo{Saved: name})
 		return true
 	}
 	if in, ok := commandIntent(id); ok {
@@ -177,6 +201,96 @@ func (w *window) Paint(p *paint.Painter, _ gunim.Frame, _ geom.Size, kids gunim.
 	}
 }
 
+// openDialog shows d over the window, with the keyboard, until it
+// closes.
+func (w *window) openDialog(d *widget.Dialog, u *gunim.UI) {
+	u.Insert(w, d)
+	u.Focus(d)
+	w.dialog = d
+	// The pane takes the keyboard back once the dialog has closed.
+	w.focused = ""
+}
+
+// connectDialog asks which server to connect to.
+func (w *window) connectDialog(u *gunim.UI) {
+	target := widget.NewTextField()
+	target.Placeholder = "user@host or user@host:port"
+	d := widget.NewDialog("Connect to a server")
+	d.Body = widget.NewForm().Add("Server", target)
+	d.SetButtons("Connect", "Cancel")
+	d.OnAccept = func() gunim.Intent { return ConnectTo{Target: target.Text()} }
+	d.Dismiss = DialogClosed{}
+	w.openDialog(d, u)
+}
+
+// showAsk shows the oldest question a connection is waiting on, in a
+// dialog, and takes the dialog away when its question goes, as when the
+// connection gives up.
+func (w *window) showAsk(asks []Ask, u *gunim.UI) {
+	if w.ask != nil {
+		for _, q := range asks {
+			if q.ID == w.askID {
+				return
+			}
+		}
+		u.Remove(w.ask)
+		w.ask = nil
+	}
+	if len(asks) == 0 || w.dialog != nil && u.Presence(w.dialog) != gunim.Exiting {
+		return
+	}
+	q := asks[0]
+	form := widget.NewForm()
+	if q.Text != "" {
+		note := widget.NewLabel(q.Text)
+		form.Add("", note)
+	}
+	var fields []*widget.TextField
+	for i, prompt := range q.Prompts {
+		f := widget.NewTextField()
+		f.Secret = i < len(q.Secret) && q.Secret[i]
+		fields = append(fields, f)
+		form.Add(strings.TrimSuffix(strings.TrimSpace(prompt), ":"), f)
+	}
+	d := widget.NewDialog(q.Title)
+	d.Body = form
+	d.SetButtons(q.Yes, "Cancel")
+	id := q.ID
+	d.OnAccept = func() gunim.Intent {
+		answers := make([]string, len(fields))
+		for i, f := range fields {
+			answers[i] = f.Text()
+		}
+		return AskAnswered{ID: id, Yes: true, Answers: answers}
+	}
+	d.Dismiss = AskAnswered{ID: id}
+	w.ask, w.askID = d, id
+	w.openDialog(d, u)
+}
+
+// servers fills the Servers menu: Connect…, then the saved servers.
+func (w *window) servers(saved []string) {
+	for i, m := range w.bar.Menus {
+		if m.Title != "Servers" {
+			continue
+		}
+		items, hints := []string{"Connect to Server…"}, []string{""}
+		if chord, ok := w.keys.ChordFor("server.connect"); ok {
+			hints[0] = chordLabel(chord)
+		}
+		var breaks, captions []int
+		if len(saved) > 0 {
+			breaks, captions = []int{1}, []int{1}
+			items, hints = append(items, "Saved"), append(hints, "")
+			for _, name := range saved {
+				items, hints = append(items, name), append(hints, "")
+			}
+		}
+		w.bar.Menus[i] = widget.BarMenu{Title: "Servers", Items: items, Hints: hints, Breaks: breaks, Captions: captions}
+		w.savedNames = saved
+	}
+}
+
 // rename asks for a new name for the pane with the keyboard.
 func (w *window) rename(u *gunim.UI) {
 	id := w.focused
@@ -197,11 +311,7 @@ func (w *window) rename(u *gunim.UI) {
 	d.SetButtons("Rename", "Cancel")
 	d.OnAccept = func() gunim.Intent { return RenamePane{Pane: id, Title: name.Text()} }
 	d.Dismiss = DialogClosed{}
-	u.Insert(w, d)
-	u.Focus(d)
-	w.dialog = d
-	// The pane takes the keyboard back once the dialog has closed.
-	w.focused = ""
+	w.openDialog(d, u)
 }
 
 // openSwitcher shows every pane, shrunk into a grid over the window.
@@ -259,15 +369,18 @@ func (w *window) update(st State, u *gunim.UI) {
 			t.cells.Size = st.FontSize
 		}
 	}
-	widget.Sync(w.list, u, st.Panes,
-		func(p Pane) widget.Key { return widget.Key(p.ID) },
-		func(p Pane) *sideRow { return newSideRow(p) },
-		func(r *sideRow, p Pane, u *gunim.UI) { r.title.SetText(p.Title) })
-	for _, p := range st.Panes {
-		if r, ok := widget.RowOf[*sideRow](w.list, widget.Key(p.ID)); ok {
-			r.setActive(p.ID == st.Focus, u)
+	rows := sidebarRows(st.Panes)
+	widget.Sync(w.list, u, rows,
+		func(r sideItem) widget.Key { return widget.Key(r.key) },
+		func(r sideItem) *sideRow { return newSideRow(r) },
+		func(row *sideRow, r sideItem, u *gunim.UI) { row.title.SetText(r.text) })
+	for _, r := range rows {
+		if row, ok := widget.RowOf[*sideRow](w.list, widget.Key(r.key)); ok && !r.heading {
+			row.setActive(r.key == st.Focus, u)
 		}
 	}
+	w.showAsk(st.Asks, u)
+	w.servers(st.Saved)
 
 	keep := map[string]bool{}
 	w.stage.show(w.build(st.Stage, keep), u)
@@ -439,20 +552,60 @@ func (p *panel) Paint(pt *paint.Painter, f gunim.Frame, box geom.Size, kids guni
 	kids.At(0).Paint(pt)
 }
 
-// sideRow is a pane's row in the sidebar: its title, lit while its pane
-// has the keyboard. A click on it brings the pane forward.
-type sideRow struct {
-	anim.Group
-	id     string
-	title  *widget.Label
-	active *anim.Float
-	hover  *anim.Float
-	on     bool
+// sideItem is one row of the sidebar: a machine's heading, or a pane
+// under it.
+type sideItem struct {
+	key, text string
+	heading   bool
 }
 
-func newSideRow(p Pane) *sideRow {
-	r := &sideRow{id: p.ID, title: widget.NewLabel(p.Title), active: anim.NewFloat(0), hover: anim.NewFloat(0)}
+// sidebarRows lists the panes under their machines: this computer
+// first, then each server in the order its first pane opened.
+func sidebarRows(panes []Pane) []sideItem {
+	var machines []string
+	seen := map[string]bool{"": true}
+	machines = append(machines, "")
+	for _, p := range panes {
+		if !seen[p.Machine] {
+			seen[p.Machine] = true
+			machines = append(machines, p.Machine)
+		}
+	}
+	var out []sideItem
+	for _, m := range machines {
+		name := m
+		if m == "" {
+			name = "This computer"
+		}
+		out = append(out, sideItem{key: "machine:" + m, text: name, heading: true})
+		for _, p := range panes {
+			if p.Machine == m {
+				out = append(out, sideItem{key: p.ID, text: p.Title})
+			}
+		}
+	}
+	return out
+}
+
+// sideRow is a row in the sidebar. A pane's row shows its title, lit
+// while the pane has the keyboard, and a click brings the pane
+// forward. A machine's heading is small and dim.
+type sideRow struct {
+	anim.Group
+	id      string
+	heading bool
+	title   *widget.Label
+	active  *anim.Float
+	hover   *anim.Float
+	on      bool
+}
+
+func newSideRow(it sideItem) *sideRow {
+	r := &sideRow{id: it.key, heading: it.heading, title: widget.NewLabel(it.text), active: anim.NewFloat(0), hover: anim.NewFloat(0)}
 	r.title.MaxLines = 1
+	if it.heading {
+		r.title.Size, r.title.Color = smallText, faint
+	}
 	r.Add(r.active, r.hover)
 	return r
 }
@@ -499,6 +652,9 @@ func (r *sideRow) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gun
 
 // Handle implements [gunim.Handler].
 func (r *sideRow) Handle(e input.Event, u *gunim.UI) bool {
+	if r.heading {
+		return false
+	}
 	switch e := e.(type) {
 	case input.PointerEnter:
 		r.hover.Animate(1, widget.Quick.Get(u.Theme()))

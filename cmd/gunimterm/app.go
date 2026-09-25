@@ -2,7 +2,10 @@ package main
 
 import (
 	"context"
+	"sync/atomic"
+
 	"fmt"
+	"github.com/marrasen/gridterm/remote"
 	"slices"
 	"strconv"
 	"sync"
@@ -29,7 +32,12 @@ type State struct {
 	SidebarWidth float32
 	// FontSize is the terminals' font size in logical pixels.
 	FontSize float32
-	Status   string
+	// Asks are the questions connections are waiting on the user for,
+	// oldest first.
+	Asks []Ask
+	// Saved names the saved servers.
+	Saved  []string
+	Status string
 	// Notices are the latest notices, oldest first, for the window to
 	// show each once.
 	Notices []Notice
@@ -50,6 +58,9 @@ type Notice struct {
 type Pane struct {
 	ID    string
 	Title string
+	// Machine is the server the pane's shell runs on, "" for this
+	// computer.
+	Machine string
 	// Named is set once the user has named the pane, and shell is the
 	// title its shell last gave it.
 	Named bool
@@ -172,6 +183,16 @@ type (
 	// FontSize makes the terminals' text a point larger, or smaller,
 	// or, with no Step, the size it started at.
 	FontSize struct{ Step int }
+	// ConnectTo connects to a server typed as user@host:port, or to a
+	// saved one by name, and opens a shell there. Connected already, it
+	// opens another shell.
+	ConnectTo struct{ Target, Saved string }
+	// AskAnswered answers a question: Yes and the answers, or no.
+	AskAnswered struct {
+		ID      uint64
+		Yes     bool
+		Answers []string
+	}
 )
 
 // app is the program side's state. It belongs to the goroutine running
@@ -187,6 +208,18 @@ type app struct {
 	next    int
 	// notices counts the notices made.
 	notices uint64
+	// ctx ends with the window. conns are the connections open, by the
+	// machine's name, dialing the ones being made, and ring holds the
+	// keys unlocked so far. book is the saved servers.
+	ctx     context.Context
+	conns   map[string]*remote.Conn
+	dialing map[string]bool
+	ring    *remote.Ring
+	book    *remote.Book
+	// replies waits for the answers to asks, by ID, and askIDs counts
+	// them.
+	replies map[uint64]chan AskAnswered
+	askIDs  atomic.Uint64
 	// wake hears that a shell wrote, and events carries changes from
 	// the shells' goroutines to this one.
 	wake   chan struct{}
@@ -222,6 +255,10 @@ func newApp(c gunim.Client, sh *shells) *app {
 		st:      State{Sidebar: true, SidebarWidth: 220, FontSize: defaultFontSize},
 		groups:  map[int]*Box{},
 		groupOf: map[string]int{},
+		conns:   map[string]*remote.Conn{},
+		dialing: map[string]bool{},
+		ring:    remote.NewRing(),
+		replies: map[uint64]chan AskAnswered{},
 		wake:    make(chan struct{}, 1),
 		events:  make(chan func(), 64),
 	}
@@ -229,7 +266,14 @@ func newApp(c gunim.Client, sh *shells) *app {
 
 // run serves the window until it closes or ctx ends.
 func (a *app) run(ctx context.Context) error {
-	if err := a.openTerminal(); err != nil {
+	a.ctx = ctx
+	if path, err := remote.BookPath(); err == nil {
+		if b, err := remote.LoadBook(path); err == nil {
+			a.book = b
+			a.st.Saved = b.Names()
+		}
+	}
+	if err := a.open("", placement{}); err != nil {
 		return err
 	}
 	a.publish()
@@ -263,6 +307,8 @@ func (a *app) publish() {
 	st := a.st
 	st.Panes = slices.Clone(a.st.Panes)
 	st.Notices = slices.Clone(a.st.Notices)
+	st.Asks = slices.Clone(a.st.Asks)
+	st.Saved = slices.Clone(a.st.Saved)
 	st.Stage = a.groups[a.groupOf[a.st.Focus]].clone()
 	_ = a.c.Publish(windowTopic, st)
 	// A split opens once; after that it is only a split.
@@ -327,6 +373,13 @@ func (a *app) handle(in gunim.Intent) {
 			size = min(max(a.st.FontSize+float32(in.Step), 8), 40)
 		}
 		a.st.FontSize = size
+	case ConnectTo:
+		err = a.connect(in)
+	case AskAnswered:
+		if reply, ok := a.replies[in.ID]; ok {
+			a.dropAsk(in.ID)
+			reply <- in
+		}
 	case DialogClosed:
 	}
 	if err != nil {
@@ -369,12 +422,16 @@ func (a *app) has(id string) bool {
 	return slices.ContainsFunc(a.st.Panes, func(p Pane) bool { return p.ID == id })
 }
 
-// start starts a shell for a new pane, and returns the pane.
-func (a *app) start() (string, error) {
-	a.next++
-	id := "p" + strconv.Itoa(a.next)
-	title := fmt.Sprintf("Terminal %d", a.next)
-	sh, err := startShell(shellHooks{
+// placement says where a new pane goes: on a stage of its own, or
+// beside a pane, below it with vertical.
+type placement struct {
+	beside   string
+	vertical bool
+}
+
+// hooks are what a pane's shell tells the program.
+func (a *app) hooks(id string) shellHooks {
+	return shellHooks{
 		output: func() {
 			select {
 			case a.wake <- struct{}{}:
@@ -388,49 +445,79 @@ func (a *app) start() (string, error) {
 				a.notify("Copied to the clipboard", fmt.Sprintf("%d characters, from %s", utf8.RuneCountInString(s), a.titleOf(id)), s)
 			}
 		},
-	})
-	if err != nil {
-		return "", err
 	}
-	a.shells.set(id, sh)
-	a.st.Panes = append(a.st.Panes, Pane{ID: id, Title: title})
-	return id, nil
 }
 
-// openTerminal opens a shell on a stage of its own.
-func (a *app) openTerminal() error {
-	id, err := a.start()
-	if err != nil {
-		return err
-	}
+// open opens a shell on machine, "" for this one, as a new pane placed
+// at at. A remote shell opens over the machine's connection in the
+// background, and its pane arrives once it has.
+func (a *app) open(machine string, at placement) error {
 	a.next++
-	g := a.next
-	a.groups[g] = &Box{Pane: id}
-	a.groupOf[id] = g
-	a.st.Focus = id
-	return nil
-}
-
-// split opens a shell beside the focused pane.
-func (a *app) split(vertical bool) error {
-	focus := a.st.Focus
-	g, ok := a.groupOf[focus]
+	id := "p" + strconv.Itoa(a.next)
+	title := fmt.Sprintf("Terminal %d", a.next)
+	if machine == "" {
+		sh, err := startLocal(a.hooks(id))
+		if err != nil {
+			return err
+		}
+		a.addPane(Pane{ID: id, Title: title}, sh, at)
+		return nil
+	}
+	conn, ok := a.conns[machine]
 	if !ok {
-		return a.openTerminal()
+		return fmt.Errorf("gunimterm: %s is not connected", machine)
 	}
-	id, err := a.start()
-	if err != nil {
-		return err
-	}
-	a.next++
-	box := &Box{
-		ID: "s" + strconv.Itoa(a.next), Vertical: vertical, Share: 0.5, Opening: true,
-		A: &Box{Pane: focus}, B: &Box{Pane: id},
-	}
-	a.groups[g] = a.groups[g].replace(focus, box)
-	a.groupOf[id] = g
-	a.st.Focus = id
+	go func() {
+		sess, err := conn.Shell(a.ctx, remote.ShellConfig{Cols: shellCols, Rows: shellRows})
+		a.events <- func() {
+			if err != nil {
+				a.notify("Couldn't open a shell on "+machine, err.Error(), "")
+				return
+			}
+			a.addPane(Pane{ID: id, Title: title, Machine: machine}, openShell(sess, a.hooks(id)), at)
+		}
+	}()
 	return nil
+}
+
+// addPane shows a new pane, with the keyboard: beside at.beside while
+// that pane is still open, and otherwise on a stage of its own.
+func (a *app) addPane(p Pane, sh *shell, at placement) {
+	a.shells.set(p.ID, sh)
+	a.st.Panes = append(a.st.Panes, p)
+	a.next++
+	g, ok := a.groupOf[at.beside]
+	if at.beside == "" || !ok {
+		g = a.next
+		a.groups[g] = &Box{Pane: p.ID}
+	} else {
+		box := &Box{
+			ID: "s" + strconv.Itoa(a.next), Vertical: at.vertical, Share: 0.5, Opening: true,
+			A: &Box{Pane: at.beside}, B: &Box{Pane: p.ID},
+		}
+		a.groups[g] = a.groups[g].replace(at.beside, box)
+	}
+	a.groupOf[p.ID] = g
+	a.st.Focus = p.ID
+}
+
+// machineOf returns the machine a pane is on, "" for this one.
+func (a *app) machineOf(id string) string {
+	for _, p := range a.st.Panes {
+		if p.ID == id {
+			return p.Machine
+		}
+	}
+	return ""
+}
+
+// openTerminal opens a shell where the focused pane is, on a stage of
+// its own.
+func (a *app) openTerminal() error { return a.open(a.machineOf(a.st.Focus), placement{}) }
+
+// split opens a shell beside the focused pane, on its machine.
+func (a *app) split(vertical bool) error {
+	return a.open(a.machineOf(a.st.Focus), placement{beside: a.st.Focus, vertical: vertical})
 }
 
 // take takes a pane out of its group's arrangement, and reports the

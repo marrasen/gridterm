@@ -34,7 +34,8 @@ func shortcuts() *ui.Keymap {
 		{Key: input.KeyPageUp, Mods: input.ModShift}:              "view.scrollUp",
 		{Key: input.KeyPageDown, Mods: input.ModShift}:            "view.scrollDown",
 		{Key: input.KeyK, Mods: input.ModCtrl | input.ModShift}:   "palette.open",
-		{Key: input.KeyF10}:                                          "menu.open",
+		{Key: input.KeyF10}: "menu.open",
+		{Key: input.KeyN, Mods: input.ModCtrl | input.ModShift}:      "server.connect",
 		{Key: input.KeyEquals, Mods: input.ModCtrl}:                  "font.increase",
 		{Key: input.KeyEquals, Mods: input.ModCtrl | input.ModShift}: "font.increase",
 		{Key: input.KeyMinus, Mods: input.ModCtrl}:                   "font.decrease",
@@ -59,6 +60,7 @@ var commands = []struct{ id, title string }{
 	{"font.increase", "Larger Font"},
 	{"font.decrease", "Smaller Font"},
 	{"font.reset", "Reset Font Size"},
+	{"server.connect", "Connect to Server"},
 	{"edit.copy", "Copy"},
 	{"edit.paste", "Paste"},
 }

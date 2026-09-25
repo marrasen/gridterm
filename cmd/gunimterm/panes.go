@@ -6,6 +6,7 @@ import (
 	"image/color"
 	"math"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/marrasen/gunim"
@@ -314,24 +315,117 @@ type reader struct {
 	top    int
 	wheel  float32
 	row    []widget.Cell
+	// bar is where a search or a line number is typed, shown while
+	// open; lines is set while it asks for a line. query is what is
+	// searched for, and the match the one found last: its line and
+	// where in it.
+	bar       *widget.TextField
+	open      bool
+	lines     bool
+	query     string
+	matchLine int
+	matchAt   int
 }
 
 func newReader(id string, size float32) *reader {
-	r := &reader{id: id, cells: widget.NewCellGrid()}
+	r := &reader{id: id, cells: widget.NewCellGrid(), bar: widget.NewTextField(), matchLine: -1}
 	r.cells.Size = size
+	r.bar.OnEdit = r.typed
 	return r
 }
 
 // Children implements [gunim.Composite].
-func (r *reader) Children() []gunim.Node { return []gunim.Node{r.cells} }
+func (r *reader) Children() []gunim.Node { return []gunim.Node{r.cells, r.bar} }
+
+// openBar opens the bar at the reader's foot, to find text, or with
+// lines, to go to a line.
+func (r *reader) openBar(lines bool, u *gunim.UI) {
+	r.open, r.lines = true, lines
+	r.bar.Placeholder = "Find, ignoring case — Enter for the next, Shift+Enter the last"
+	if lines {
+		r.bar.Placeholder = "Go to line"
+	}
+	r.bar.SetText("")
+	u.Focus(r.bar)
+	u.Invalidate()
+}
+
+func (r *reader) closeBar(u *gunim.UI) {
+	r.open = false
+	u.Focus(r)
+	u.Invalidate()
+}
+
+// typed follows what is typed in the bar: to a line, or to the first
+// match from the top of the view.
+func (r *reader) typed(s string, u *gunim.UI) {
+	if r.lines {
+		if n, err := strconv.Atoi(strings.TrimSpace(s)); err == nil {
+			r.top = max(0, n-1)
+		}
+		u.Invalidate()
+		return
+	}
+	r.query = strings.ToLower(s)
+	r.matchLine, r.matchAt = r.top, -1
+	r.next(1, u)
+}
+
+// next moves to the next match, or the one before with dir -1, going
+// round the file's end, and brings its line into view.
+func (r *reader) next(dir int, u *gunim.UI) {
+	n := len(r.st.Lines)
+	if r.query == "" || n == 0 {
+		return
+	}
+	line, at := max(0, r.matchLine), r.matchAt
+	for range n + 1 {
+		text := strings.ToLower(r.st.Lines[line])
+		found := -1
+		if dir > 0 {
+			if from := at + 1; from <= len(text) {
+				if i := strings.Index(text[from:], r.query); i >= 0 {
+					found = from + i
+				}
+			}
+		} else if at != 0 {
+			end := len(text)
+			if at > 0 {
+				end = min(at, len(text))
+			}
+			found = strings.LastIndex(text[:end], r.query)
+		}
+		if found >= 0 {
+			r.matchLine, r.matchAt = line, found
+			_, rows := r.cells.GridSize()
+			if line < r.top || line >= r.top+rows {
+				r.top = max(0, line-rows/3)
+			}
+			u.Invalidate()
+			return
+		}
+		line = (line + dir + n) % n
+		at = -1
+		if dir < 0 {
+			at = len(r.st.Lines[line]) + 1
+		}
+	}
+}
 
 // Focusable implements [gunim.Focusable].
 func (r *reader) Focusable() bool { return true }
 
 // Layout implements [gunim.Node]. The lines in view go into the grid.
-func (r *reader) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children) geom.Size {
+func (r *reader) Layout(c gunim.Constraints, f gunim.Frame, kids gunim.Children) geom.Size {
+	barH := float32(0)
+	if r.open {
+		barH = widget.FieldHeight.Get(f.Theme) + 8
+		bar := kids.At(1)
+		bar.Layout(gunim.Tight(geom.Sz(max(0, c.Max.W-8), barH-8)))
+		bar.Place(geom.Pt(4, c.Max.H-barH+4))
+	}
 	k := kids.At(0)
-	k.Layout(gunim.Tight(c.Max))
+	k.Layout(gunim.Tight(geom.Sz(c.Max.W, max(0, c.Max.H-barH))))
 	k.Place(geom.Point{})
 	cols, rows := r.cells.Fit()
 	r.cells.Resize(cols, rows)
@@ -347,7 +441,7 @@ func (r *reader) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children)
 			} else {
 				r.runs = r.runs[:0]
 			}
-			r.row = appendLine(r.row, line, r.runs, cols)
+			r.row = appendLine(r.row, line, r.runs, r.found(i, line), cols)
 		case r.st.Err != "" && y == 0:
 			r.row = appendText(r.row, r.st.Err, faint)
 		case r.st.Cut && i == len(r.st.Lines):
@@ -358,10 +452,40 @@ func (r *reader) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children)
 	return c.Max
 }
 
-// appendLine puts a line in cells, coloured by runs, tabs taken to the
-// next stop of eight, cut at cols.
-func appendLine(row []widget.Cell, line string, runs []syntax.Run, cols int) []widget.Cell {
-	at := 0
+// found returns the matches of the search in line i, as byte ranges,
+// the current one marked by its third number being 1.
+func (r *reader) found(i int, line string) [][3]int {
+	if r.query == "" || !r.open && r.matchLine < 0 {
+		return nil
+	}
+	var out [][3]int
+	text := strings.ToLower(line)
+	for from := 0; from < len(text); {
+		j := strings.Index(text[from:], r.query)
+		if j < 0 {
+			break
+		}
+		start := from + j
+		current := 0
+		if i == r.matchLine && start == r.matchAt {
+			current = 1
+		}
+		out = append(out, [3]int{start, start + len(r.query), current})
+		from = start + max(1, len(r.query))
+	}
+	return out
+}
+
+// The search's colours: every match, and the one found last.
+var (
+	matchBG   = color.NRGBA{R: 0x6a, G: 0x55, B: 0x1e, A: 0xff}
+	currentBG = color.NRGBA{R: 0xc8, G: 0x93, B: 0x2c, A: 0xff}
+)
+
+// appendLine puts a line in cells, coloured by runs, the search's
+// matches behind it, tabs taken to the next stop of eight, cut at cols.
+func appendLine(row []widget.Cell, line string, runs []syntax.Run, matches [][3]int, cols int) []widget.Cell {
+	at, m := 0, 0
 	for i, ch := range line {
 		if len(row) >= cols {
 			break
@@ -369,9 +493,19 @@ func appendLine(row []widget.Cell, line string, runs []syntax.Run, cols int) []w
 		for at < len(runs) && runs[at].End <= i {
 			at++
 		}
+		for m < len(matches) && matches[m][1] <= i {
+			m++
+		}
 		var style widget.Cell
 		if at < len(runs) {
 			style = cellStyle(runs[at])
+		}
+		if m < len(matches) && matches[m][0] <= i {
+			style.BG = matchBG
+			if matches[m][2] == 1 {
+				style.BG = currentBG
+				style.FG = color.NRGBA{A: 0xff}
+			}
 		}
 		if ch == '\t' {
 			for n := 8 - len(row)%8; n > 0 && len(row) < cols; n-- {
@@ -417,18 +551,64 @@ func appendText(row []widget.Cell, s string, c color.NRGBA) []widget.Cell {
 }
 
 // Paint implements [gunim.Node].
-func (r *reader) Paint(p *paint.Painter, _ gunim.Frame, _ geom.Size, kids gunim.Children) {
+func (r *reader) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gunim.Children) {
 	kids.At(0).Paint(p)
+	if r.open {
+		barH := widget.FieldHeight.Get(f.Theme) + 8
+		p.RRect(geom.Rc(0, box.H-barH, box.W, barH), 0, paint.Solid(widget.MenuFill.Get(f.Theme)))
+		kids.At(1).Paint(p)
+	}
 }
 
-// Handle implements [gunim.Handler]: the keys and the wheel scroll.
+// Handle implements [gunim.Handler]: the keys and the wheel scroll; /
+// and Ctrl+F find, and : goes to a line, as in gridterm. With the bar
+// open, Enter finds the next match and Shift+Enter the last, and
+// Escape closes it.
 func (r *reader) Handle(e gi.Event, u *gunim.UI) bool {
 	_, rows := r.cells.GridSize()
 	page := max(1, rows-1)
 	switch e := e.(type) {
-	case gi.KeyPress:
-		if e.Mods.Has(gi.ModControl) || e.Mods.Has(gi.ModAlt) {
+	case gi.TextInput:
+		switch {
+		case r.open:
 			return false
+		case e.Text == "/":
+			r.openBar(false, u)
+		case e.Text == ":":
+			r.openBar(true, u)
+		default:
+			return false
+		}
+		return true
+	case gi.KeyPress:
+		if r.open {
+			switch e.Key {
+			case gi.KeyEscape:
+				r.closeBar(u)
+				return true
+			case gi.KeyEnter, gi.KeyKPEnter:
+				if r.lines {
+					r.closeBar(u)
+				} else if e.Mods.Has(gi.ModShift) {
+					r.next(-1, u)
+				} else {
+					r.next(1, u)
+				}
+				return true
+			}
+			return false
+		}
+		if e.Key == gi.KeyF && e.Mods == gi.ModControl {
+			r.openBar(false, u)
+			return true
+		}
+		if e.Key == gi.KeySpace && e.Mods == 0 {
+			r.top += page
+			u.Invalidate()
+			return true
+		}
+		if e.Typed || e.Mods.Has(gi.ModControl) || e.Mods.Has(gi.ModAlt) {
+			return e.Typed
 		}
 		switch e.Key {
 		case gi.KeyUp:

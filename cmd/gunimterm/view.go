@@ -43,6 +43,10 @@ type window struct {
 	focused string
 	palette *widget.Palette
 	size    geom.Size
+	// panes are the panes as last published, and sw the switcher while
+	// it is open.
+	panes []Pane
+	sw    *switcher
 }
 
 func newWindow(sh *shells, keys *ui.Keymap) *window {
@@ -108,6 +112,9 @@ func (w *window) run(id string, u *gunim.UI) bool {
 	case "menu.open":
 		w.bar.Open(0, u)
 		return true
+	case "pane.switch":
+		w.openSwitcher(u)
+		return true
 	case "edit.paste":
 		if t, ok := w.terms[w.focused]; ok {
 			t.paste(u.Clipboard())
@@ -124,18 +131,49 @@ func (w *window) run(id string, u *gunim.UI) bool {
 // Children implements [gunim.Composite].
 func (w *window) Children() []gunim.Node { return []gunim.Node{w.top} }
 
-// Layout implements [gunim.Node].
+// Layout implements [gunim.Node]. The switcher, while open, covers the
+// window.
 func (w *window) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children) geom.Size {
 	w.size = c.Max
-	k := kids.At(0)
-	k.Layout(gunim.Tight(c.Max))
-	k.Place(geom.Point{})
+	for k := range kids.All {
+		k.Layout(gunim.Tight(c.Max))
+		k.Place(geom.Point{})
+	}
 	return c.Max
 }
 
 // Paint implements [gunim.Node].
 func (w *window) Paint(p *paint.Painter, _ gunim.Frame, _ geom.Size, kids gunim.Children) {
-	kids.At(0).Paint(p)
+	for k := range kids.All {
+		k.Paint(p)
+	}
+}
+
+// openSwitcher shows every pane, shrunk into a grid over the window.
+func (w *window) openSwitcher(u *gunim.UI) {
+	if w.sw != nil || len(w.panes) == 0 {
+		return
+	}
+	w.sw = newSwitcher(w, w.panes, w.focused, u)
+	u.Insert(w, w.sw)
+	u.Focus(w.sw)
+	w.sw.light(w.sw.hot, u)
+}
+
+// closeSwitcher lets the switcher go. With back, the keyboard goes back
+// to the pane that had it; otherwise to the pane picked, once the
+// program has put it on stage.
+func (w *window) closeSwitcher(back bool, u *gunim.UI) {
+	if w.sw == nil {
+		return
+	}
+	u.Remove(w.sw)
+	w.sw = nil
+	if t, ok := w.terms[w.focused]; ok && back {
+		u.Focus(t)
+		return
+	}
+	w.focused = ""
 }
 
 // Handle implements [gunim.Handler]: the window's shortcuts, which the
@@ -159,6 +197,7 @@ func (w *window) Handle(e input.Event, u *gunim.UI) bool {
 // update shows st.
 func (w *window) update(st State, u *gunim.UI) {
 	th := u.Theme()
+	w.panes = st.Panes
 	widget.Sync(w.list, u, st.Panes,
 		func(p Pane) widget.Key { return widget.Key(p.ID) },
 		func(p Pane) *sideRow { return newSideRow(p) },
@@ -183,7 +222,7 @@ func (w *window) update(st State, u *gunim.UI) {
 		}
 		t.sync()
 	}
-	if st.Focus != w.focused {
+	if st.Focus != w.focused && w.sw == nil {
 		w.focused = st.Focus
 		if t, ok := w.terms[st.Focus]; ok {
 			u.Focus(t)

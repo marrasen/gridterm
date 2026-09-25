@@ -33,6 +33,7 @@ func shortcuts() *ui.Keymap {
 		{Key: input.KeyPageDown, Mods: input.ModShift}:            "view.scrollDown",
 		{Key: input.KeyK, Mods: input.ModCtrl | input.ModShift}:   "palette.open",
 		{Key: input.KeyF10}: "menu.open",
+		{Key: input.KeyA, Mods: input.ModCtrl | input.ModShift}: "pane.switch",
 	})
 	return keys
 }
@@ -46,6 +47,7 @@ var commands = []struct{ id, title string }{
 	{"pane.close", "Close Pane"},
 	{"pane.next", "Next Pane"},
 	{"pane.previous", "Previous Pane"},
+	{"pane.switch", "Switch Pane"},
 	{"sidebar.toggle", "Show or Hide Sidebar"},
 	{"edit.paste", "Paste"},
 }
@@ -63,6 +65,7 @@ var menus = []struct {
 	{"Pane", []menuItem{
 		{id: "pane.splitRight", title: "Split Right"}, {id: "pane.splitDown", title: "Split Down"}, {id: "pane.popOut", title: "Pop Out"},
 		{id: "pane.next", title: "Next Pane", group: true}, {id: "pane.previous", title: "Previous Pane"},
+		{id: "pane.switch", title: "Switch Pane…"},
 	}},
 }
 

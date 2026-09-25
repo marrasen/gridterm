@@ -93,9 +93,6 @@ func (sh *shell) resize(cols, rows int) bool {
 	return true
 }
 
-// send hands bytes to the program as they are.
-func (sh *shell) send(b []byte) { sh.t.Send(b) }
-
 func (sh *shell) close() { _ = sh.t.Close() }
 
 // setPalette draws the screen in pal from now on, what is on it

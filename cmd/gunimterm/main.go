@@ -20,6 +20,8 @@ import (
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/driver"
 	"github.com/marrasen/gunim/geom"
+
+	"github.com/marrasen/gridterm/mcp"
 )
 
 func main() {
@@ -31,6 +33,11 @@ func main() {
 func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
+	// gridterm's MCP server, for an agent program to start: it holds
+	// nothing and reaches nothing until the agent gives it a code.
+	if len(os.Args) > 1 && os.Args[1] == "-mcp" {
+		return mcp.Serve(ctx, os.Stdin, os.Stdout, mcp.NewWindow())
+	}
 	if path := os.Getenv("GUNIMTERM_PROFILE"); path != "" {
 		f, err := os.Create(path)
 		if err != nil {

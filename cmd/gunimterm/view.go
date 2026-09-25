@@ -57,8 +57,12 @@ type window struct {
 	jobs *jobsPane
 	// secrets is the secrets pane, once opened, and lastTerm the
 	// terminal pane that last had the keyboard.
-	secrets      *secretsPane
-	lastTerm     string
+	secrets  *secretsPane
+	lastTerm string
+	// share is the agent share as last published, and sharing says the
+	// user just asked for one, so its dialog opens once it has a code.
+	share        Share
+	sharing      bool
 	savedTunnels []settings.SavedTunnel
 	// accounts are the machines with a connection log, as the palette
 	// lists them.
@@ -196,6 +200,12 @@ func (w *window) run(id string, u *gunim.UI) bool {
 			return true
 		}
 		u.Send(w, ShowLog{Machine: machine})
+		return true
+	case "agent.share":
+		w.shareDialog(w.share, u)
+		return true
+	case "agent.permissions":
+		w.permissionsDialog(w.share, u)
 		return true
 	case "secrets.export":
 		w.exportForm(u)
@@ -633,7 +643,7 @@ func (w *window) update(st State, u *gunim.UI) {
 			t.cells.Size = st.FontSize
 		}
 	}
-	rows := sidebarRows(st.Panes, st.Tunnels)
+	rows := sidebarRows(st.Panes, st.Tunnels, st.Share)
 	widget.Sync(w.list, u, rows,
 		func(r sideItem) widget.Key { return widget.Key(r.key) },
 		func(r sideItem) *sideRow { return newSideRow(r) },
@@ -644,6 +654,13 @@ func (w *window) update(st State, u *gunim.UI) {
 		}
 	}
 	w.setSavedTunnels(st.SavedTunnels)
+	w.share = st.Share
+	if w.sharing && st.Share.Code != "" {
+		w.sharing = false
+		if w.dialog == nil {
+			w.shareDialog(st.Share, u)
+		}
+	}
 	if !slices.Equal(st.Accounts, w.accounts) {
 		w.accounts = st.Accounts
 		w.servers(w.saved)
@@ -980,7 +997,11 @@ type sideItem struct {
 // first, then each server in the order its first pane opened, and
 // each server's tunnels after its panes. A tunnel's pane is lit on the
 // tunnel's row.
-func sidebarRows(panes []Pane, tunnels []Tunnel) []sideItem {
+func sidebarRows(panes []Pane, tunnels []Tunnel, share Share) []sideItem {
+	notes := map[string]string{}
+	for _, p := range share.Panes {
+		notes[p.Pane] = p.Note
+	}
 	machines := []string{""}
 	seen := map[string]bool{"": true}
 	add := func(m string) {
@@ -1008,7 +1029,7 @@ func sidebarRows(panes []Pane, tunnels []Tunnel) []sideItem {
 		out = append(out, sideItem{key: "machine:" + m, text: name, heading: true})
 		for _, p := range panes {
 			if p.Machine == m && !shown[p.Tunnel] {
-				out = append(out, sideItem{key: p.ID, text: p.Title, pane: p.ID, click: FocusPane{Pane: p.ID}})
+				out = append(out, sideItem{key: p.ID, text: p.Title, note: notes[p.ID], pane: p.ID, click: FocusPane{Pane: p.ID}})
 			}
 		}
 		for _, t := range tunnels {

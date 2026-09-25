@@ -62,7 +62,9 @@ type State struct {
 	// their first connection began.
 	Accounts []string
 	// Secrets is what the vault holds, by name.
-	Secrets      Secrets
+	Secrets Secrets
+	// Share is the panes shared with an agent.
+	Share        Share
 	SavedTunnels []settings.SavedTunnel
 	Status       string
 	// Notices are the latest notices, oldest first, for the window to
@@ -297,9 +299,11 @@ type app struct {
 	secrets      *secrets.Vault
 	secretsAt    string
 	lastTerminal string
-	tunnelSeq    int
-	ticking      bool
-	quiet        bool
+	// agents is the share of panes with an agent.
+	agents    agents
+	tunnelSeq int
+	ticking   bool
+	quiet     bool
 	// wake hears that a shell wrote, and events carries changes from
 	// the shells' goroutines to this one.
 	wake   chan struct{}
@@ -353,6 +357,7 @@ func newApp(c gunim.Client, sh *shells) *app {
 		closing:  map[string]bool{},
 		remoteFS: map[string]vfs.FS{},
 		tunnels:  map[string]*tunnel{},
+		agents:   agents{by: map[string]*handover{}},
 		accounts: map[string]*logs.Lines{},
 		wake:     make(chan struct{}, 1),
 		events:   make(chan func(), 64),
@@ -382,6 +387,7 @@ func (a *app) run(ctx context.Context) error {
 		}
 		a.pickTheme(name)
 	}
+	a.showShare()
 	if path, err := remote.BookPath(); err == nil {
 		if b, err := remote.LoadBook(path); err == nil {
 			a.book = b
@@ -435,6 +441,7 @@ func (a *app) publish() {
 	st.Tunnels = slices.Clone(a.st.Tunnels)
 	st.Jobs = slices.Clone(a.st.Jobs)
 	st.Accounts = slices.Clone(a.st.Accounts)
+	st.Share.Panes = slices.Clone(a.st.Share.Panes)
 	st.SavedTunnels = slices.Clone(a.st.SavedTunnels)
 	st.Stage = a.groups[a.groupOf[a.st.Focus]].clone()
 	_ = a.c.Publish(windowTopic, st)
@@ -578,6 +585,18 @@ func (a *app) handle(in gunim.Intent) {
 		a.exportSecrets(in)
 	case ImportSecrets:
 		a.importSecrets(in)
+	case SharePane:
+		err = a.sharePane(in.Pane)
+	case UnsharePane:
+		err = a.unsharePane(in.Pane)
+	case StopSharing:
+		err = a.stopSharing()
+	case SetAgentMay:
+		a.setAgentMay(in)
+	case CopyAgentPrompt:
+		a.copyAgentPrompt(in.Host)
+	case CopyAgentSetup:
+		a.copyAgentSetup(in.Host)
 	case ShowLog:
 		a.showLog(in.Machine)
 	case ShowJobs:
@@ -658,7 +677,15 @@ func (a *app) hooks(id string) shellHooks {
 // open opens a shell on machine, "" for this one, as a new pane placed
 // at at. A remote shell opens over the machine's connection in the
 // background, and its pane arrives once it has.
-func (a *app) open(machine string, at placement) error {
+func (a *app) open(machine string, at placement) error { return a.openThen(machine, at, nil) }
+
+// openThen is open, telling then the pane it opened, or why it could
+// not, once it has. then runs on the program's goroutine, and may be
+// nil.
+func (a *app) openThen(machine string, at placement, then func(id string, err error)) error {
+	if then == nil {
+		then = func(string, error) {}
+	}
 	a.next++
 	id := "p" + strconv.Itoa(a.next)
 	title := fmt.Sprintf("Terminal %d", a.next)
@@ -668,6 +695,7 @@ func (a *app) open(machine string, at placement) error {
 			return err
 		}
 		a.addPane(Pane{ID: id, Title: title}, sh, at)
+		then(id, nil)
 		return nil
 	}
 	conn, ok := a.conns[machine]
@@ -679,9 +707,11 @@ func (a *app) open(machine string, at placement) error {
 		a.events <- func() {
 			if err != nil {
 				a.notify("Couldn't open a shell on "+machine, err.Error(), "")
+				then("", err)
 				return
 			}
 			a.addPane(Pane{ID: id, Title: title, Machine: machine}, openShell(sess, a.palette, a.hooks(id)), at)
+			then(id, nil)
 		}
 	}()
 	return nil
@@ -818,6 +848,9 @@ func (a *app) remove(id string) {
 		a.st.Readers = m
 	}
 	a.tunnelPaneGone(id)
+	if a.agents.by[id] != nil {
+		_ = a.unsharePane(id)
+	}
 	next := a.take(id)
 	a.st.Panes = slices.Delete(a.st.Panes, i, i+1)
 	if a.st.Focus == id {

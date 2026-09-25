@@ -71,6 +71,8 @@ var commands = []struct{ id, title string }{
 	{"secrets.lock", "Lock Secrets"},
 	{"secrets.export", "Export Secrets"},
 	{"secrets.import", "Import Secrets"},
+	{"agent.share", "Share with an Agent"},
+	{"agent.permissions", "Agent Permissions"},
 	{"view.jobs", "Show Jobs"},
 	{"view.log", "Window Log"},
 	{"conn.log", "Connection Log"},
@@ -111,6 +113,8 @@ var menus = []struct {
 		{id: "pane.nextInSidebar", title: "Next"}, {id: "pane.previousInSidebar", title: "Previous"},
 		{id: "pane.switch", title: "All Panes…"},
 		{id: "pane.rename", title: "Rename…", group: true},
+		{title: "Agent", caption: true},
+		{id: "agent.share", title: "Share with an Agent…"}, {id: "agent.permissions", title: "Agent Permissions…"},
 	}},
 	{"Machine", []menuItem{
 		{title: "Open Here", caption: true},

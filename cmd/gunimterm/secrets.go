@@ -466,7 +466,12 @@ func (a *app) typeSecret(id string) {
 			a.notify("No terminal to type into", "Click into a terminal first, then type the secret from here.", "")
 			return
 		}
-		sh.send([]byte(value))
+		// A pane an agent asked for a secret on is waiting for the
+		// whole answer, return and all.
+		if sh.t.AskedForASecret() {
+			value += "\r"
+		}
+		sh.t.Paste(value)
 		a.st.Focus = a.lastTerminal
 	})
 }

@@ -438,6 +438,7 @@ func (w *window) confirmRemove(name string, u *gunim.UI) {
 	d := widget.NewDialog("Remove " + name + "?")
 	d.Body = widget.NewLabel("Its panes stay open. Connecting to it again takes its address.")
 	d.SetButtons("Remove", "Cancel")
+	d.Danger = true
 	d.Accept = RemoveServer{Name: name}
 	d.Dismiss = DialogClosed{}
 	w.openDialog(d, u)

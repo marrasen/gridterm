@@ -144,6 +144,7 @@ func (b *browser) confirmDelete(u *gunim.UI) {
 	d := widget.NewDialog("Delete " + what + "?")
 	d.Body = widget.NewLabel("From " + b.st.Path + ". This can't be undone.")
 	d.SetButtons("Delete", "Cancel")
+	d.Danger = true
 	d.Accept = DeleteFiles{Pane: b.id, Names: names}
 	d.Dismiss = DialogClosed{}
 	b.w.openDialog(d, u)

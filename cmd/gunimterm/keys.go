@@ -1,6 +1,8 @@
 package main
 
 import (
+	"strings"
+
 	"github.com/marrasen/gunim"
 
 	"github.com/marrasen/gridterm/input"
@@ -29,8 +31,34 @@ func shortcuts() *ui.Keymap {
 		{Key: input.KeyInsert, Mods: input.ModShift}:                   "edit.paste",
 		{Key: input.KeyPageUp, Mods: input.ModShift}:                   "view.scrollUp",
 		{Key: input.KeyPageDown, Mods: input.ModShift}:                 "view.scrollDown",
+		{Key: input.KeyK, Mods: input.ModCtrl | input.ModShift}:        "palette.open",
 	})
 	return keys
+}
+
+// commands are what the palette offers, in gridterm's words.
+var commands = []struct{ id, title string }{
+	{"conn.terminal", "New Terminal"},
+	{"pane.splitRight", "Split Right"},
+	{"pane.splitDown", "Split Down"},
+	{"pane.popOut", "Pop Out Pane"},
+	{"pane.close", "Close Pane"},
+	{"pane.next", "Next Pane"},
+	{"pane.previous", "Previous Pane"},
+	{"sidebar.toggle", "Show or Hide Sidebar"},
+	{"edit.paste", "Paste"},
+}
+
+// chordLabel writes a chord the way a desktop menu does, as
+// Ctrl+Shift+K.
+func chordLabel(c ui.Chord) string {
+	parts := strings.Split(c.String(), "+")
+	for i, s := range parts {
+		if s != "" {
+			parts[i] = strings.ToUpper(s[:1]) + s[1:]
+		}
+	}
+	return strings.Join(parts, "+")
 }
 
 // commandIntent returns what the window asks the program for, for a

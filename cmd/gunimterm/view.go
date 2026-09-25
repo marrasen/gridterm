@@ -39,6 +39,8 @@ type window struct {
 	terms   map[string]*term
 	splits  map[string]*widget.Split
 	focused string
+	palette *widget.Palette
+	size    geom.Size
 }
 
 func newWindow(sh *shells, keys *ui.Keymap) *window {
@@ -62,7 +64,37 @@ func newWindow(sh *shells, keys *ui.Keymap) *window {
 	w.outer.Fixed = true
 	w.outer.SetShare(220, nil)
 	w.outer.OnMove = func(v float32) gunim.Intent { return SidebarMoved{Width: v} }
+	w.palette = &widget.Palette{Placeholder: "Type a command", Pick: func(i int, u *gunim.UI) {
+		w.run(commands[i].id, u)
+	}}
+	for _, c := range commands {
+		item := widget.PaletteItem{Title: c.title}
+		if chord, ok := keys.ChordFor(c.id); ok {
+			item.Hint = chordLabel(chord)
+		}
+		w.palette.Items = append(w.palette.Items, item)
+	}
 	return w
+}
+
+// run carries out a command: the window's own here, and the program's
+// by asking it.
+func (w *window) run(id string, u *gunim.UI) bool {
+	switch id {
+	case "palette.open":
+		w.palette.Open(w, geom.Rc(0, 48, w.size.W, 0), u)
+		return true
+	case "edit.paste":
+		if t, ok := w.terms[w.focused]; ok {
+			t.paste(u.Clipboard())
+		}
+		return true
+	}
+	if in, ok := commandIntent(id); ok {
+		u.Send(w, in)
+		return true
+	}
+	return false
 }
 
 // Children implements [gunim.Composite].
@@ -70,6 +102,7 @@ func (w *window) Children() []gunim.Node { return []gunim.Node{w.outer} }
 
 // Layout implements [gunim.Node].
 func (w *window) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children) geom.Size {
+	w.size = c.Max
 	k := kids.At(0)
 	k.Layout(gunim.Tight(c.Max))
 	k.Place(geom.Point{})
@@ -96,11 +129,7 @@ func (w *window) Handle(e input.Event, u *gunim.UI) bool {
 	if !ok {
 		return false
 	}
-	if in, ok := commandIntent(id); ok {
-		u.Send(w, in)
-		return true
-	}
-	return false
+	return w.run(id, u)
 }
 
 // update shows st.

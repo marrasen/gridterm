@@ -15,6 +15,7 @@ import (
 	"github.com/marrasen/gunim/widget"
 
 	"github.com/marrasen/gridterm/remote"
+	"github.com/marrasen/gridterm/syntax"
 	"github.com/marrasen/gridterm/ui"
 )
 
@@ -572,6 +573,9 @@ func (w *window) update(st State, u *gunim.UI) {
 		if !open[id] {
 			delete(w.readers, id)
 			continue
+		}
+		if next := st.Readers[id]; next.Path != r.st.Path {
+			r.colour = syntax.For(next.Path)
 		}
 		r.st = st.Readers[id]
 	}

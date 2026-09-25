@@ -14,6 +14,8 @@ import (
 	"github.com/marrasen/gunim/paint"
 	"github.com/marrasen/gunim/widget"
 
+	"github.com/marrasen/gridterm/grid"
+	"github.com/marrasen/gridterm/syntax"
 	"github.com/marrasen/gridterm/vfs"
 )
 
@@ -305,9 +307,13 @@ type reader struct {
 	id    string
 	cells *widget.CellGrid
 	st    Reader
-	top   int
-	wheel float32
-	row   []widget.Cell
+	// colour colours the file's lines by its kind, and runs holds a
+	// line's colouring.
+	colour syntax.Colourer
+	runs   []syntax.Run
+	top    int
+	wheel  float32
+	row    []widget.Cell
 }
 
 func newReader(id string, size float32) *reader {
@@ -335,7 +341,13 @@ func (r *reader) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children)
 		r.row = r.row[:0]
 		switch i := r.top + y; {
 		case i < len(r.st.Lines):
-			r.row = appendLine(r.row, r.st.Lines[i], cols)
+			line := r.st.Lines[i]
+			if r.colour != nil {
+				r.runs = r.colour(line, r.runs)
+			} else {
+				r.runs = r.runs[:0]
+			}
+			r.row = appendLine(r.row, line, r.runs, cols)
 		case r.st.Err != "" && y == 0:
 			r.row = appendText(r.row, r.st.Err, faint)
 		case r.st.Cut && i == len(r.st.Lines):
@@ -346,12 +358,20 @@ func (r *reader) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children)
 	return c.Max
 }
 
-// appendLine puts a line in cells, tabs taken to the next stop of
-// eight, cut at cols.
-func appendLine(row []widget.Cell, line string, cols int) []widget.Cell {
-	for _, ch := range line {
+// appendLine puts a line in cells, coloured by runs, tabs taken to the
+// next stop of eight, cut at cols.
+func appendLine(row []widget.Cell, line string, runs []syntax.Run, cols int) []widget.Cell {
+	at := 0
+	for i, ch := range line {
 		if len(row) >= cols {
 			break
+		}
+		for at < len(runs) && runs[at].End <= i {
+			at++
+		}
+		var style widget.Cell
+		if at < len(runs) {
+			style = cellStyle(runs[at])
 		}
 		if ch == '\t' {
 			for n := 8 - len(row)%8; n > 0 && len(row) < cols; n-- {
@@ -359,9 +379,34 @@ func appendLine(row []widget.Cell, line string, cols int) []widget.Cell {
 			}
 			continue
 		}
-		row = append(row, widget.Cell{Rune: ch})
+		style.Rune = ch
+		row = append(row, style)
 	}
 	return row
+}
+
+// syntaxColours are the reader's colours for what the syntax package
+// names.
+var syntaxColours = map[syntax.Colour]color.NRGBA{
+	syntax.Note: {R: 0x7f, G: 0x87, B: 0x96, A: 0xff},
+	syntax.Text: {R: 0x9e, G: 0xce, B: 0x6a, A: 0xff},
+	syntax.Mark: {R: 0xe0, G: 0xaf, B: 0x68, A: 0xff},
+	syntax.Bad:  {R: 0xf7, G: 0x76, B: 0x8e, A: 0xff},
+}
+
+// cellStyle is a cell coloured as a run says.
+func cellStyle(r syntax.Run) widget.Cell {
+	c := widget.Cell{FG: syntaxColours[r.Colour]}
+	if r.Attr&grid.AttrBold != 0 {
+		c.Style |= widget.CellBold
+	}
+	if r.Attr&grid.AttrUnderline != 0 {
+		c.Style |= widget.CellUnderline
+	}
+	if r.Attr&grid.AttrItalic != 0 {
+		c.Style |= widget.CellItalic
+	}
+	return c
 }
 
 func appendText(row []widget.Cell, s string, c color.NRGBA) []widget.Cell {

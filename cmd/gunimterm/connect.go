@@ -163,6 +163,24 @@ type asker struct{ a *app }
 
 // Passphrase implements [remote.Ask].
 func (q asker) Passphrase(ctx context.Context, key remote.LockedKey) (string, error) {
+	// The one the secrets keep, the first time round: one the key has
+	// just refused is worth nothing twice.
+	if key.Wrong == 0 {
+		kept := make(chan string, 1)
+		select {
+		case q.a.events <- func() { kept <- q.a.passphraseInHand(key.Path) }:
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+		select {
+		case pass := <-kept:
+			if pass != "" {
+				return pass, nil
+			}
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+	}
 	text := "The key " + key.Path + " is locked with a passphrase."
 	if key.Wrong > 0 {
 		text = "That passphrase did not open " + key.Path + ". Try again."

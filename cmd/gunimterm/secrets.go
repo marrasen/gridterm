@@ -45,6 +45,8 @@ type SecretItem struct {
 type SecretKey struct {
 	Name, Note, Fingerprint string
 	Passphrase              bool
+	// Removing says what is left once it goes.
+	Removing string
 }
 
 // Intents for the secrets.
@@ -362,7 +364,9 @@ func (a *app) showVault() {
 			s.Items = append(s.Items, SecretItem{ID: it.ID, Name: it.Name, User: it.User, File: it.File, Kind: it.Kind})
 		}
 		for _, k := range v.Keys() {
-			s.Keys = append(s.Keys, secretKey(k))
+			key := secretKey(k)
+			key.Removing = whatRemovingCosts(v, k)
+			s.Keys = append(s.Keys, key)
 		}
 	}
 	a.st.Secrets = s
@@ -493,4 +497,143 @@ func (a *app) lockSecrets() {
 		a.secrets.Lock()
 	}
 	a.showVault()
+}
+
+// Intents for what opens the secrets.
+type (
+	// AddSecretsKey lets another key open the secrets, asking which.
+	AddSecretsKey struct{}
+	// RemoveSecretsKey stops a key, or the passphrase, opening the
+	// secrets.
+	RemoveSecretsKey struct{ Fingerprint string }
+	// AddSecretsPassphrase lets a passphrase open the secrets too.
+	AddSecretsPassphrase struct{ Passphrase string }
+)
+
+// addSecretsKey asks which key to add, of those in ~/.ssh that do not
+// open the secrets yet, and adds it once unlocked.
+func (a *app) addSecretsKey() {
+	a.withSecrets("Couldn't add the key", func(v *secrets.Vault) error {
+		have := map[string]bool{}
+		for _, s := range v.Keys() {
+			have[s.KeyFile] = true
+		}
+		var spare []string
+		for _, k := range vaultKeys() {
+			if !have[k] {
+				spare = append(spare, k)
+			}
+		}
+		if len(spare) == 0 {
+			a.notify("No key to add", "Every ed25519 key in ~/.ssh opens the secrets already. A key from another machine has to be copied here first.", "")
+			return nil
+		}
+		go a.chooseKeyToAdd(v, spare)
+		return nil
+	})
+}
+
+// chooseKeyToAdd asks which of spare to add, warns about it when
+// there is reason to, and adds it. It runs on a goroutine of its own.
+func (a *app) chooseKeyToAdd(v *secrets.Vault, spare []string) {
+	q := Ask{Title: "Add Secrets Key", Text: "Choose the key that opens the secrets too, such as another machine's."}
+	for _, k := range spare {
+		q.Choose = append(q.Choose, filepath.Base(k))
+	}
+	ans, err := a.ask(a.ctx, q)
+	if err != nil || !ans.Yes {
+		return
+	}
+	i := slices.Index(q.Choose, ans.Answers[len(ans.Answers)-1])
+	if i < 0 {
+		return
+	}
+	keyFile := spare[i]
+	if warn := warningsAboutKey(a.ring, v, keyFile); warn != "" {
+		ans, err := a.ask(a.ctx, Ask{Title: "Add " + keyFile + "?", Text: warn, Yes: "Add", Danger: true})
+		if err != nil || !ans.Yes {
+			return
+		}
+	}
+	signer, err := a.ring.Unlock(a.ctx, keyFile, asker{a})
+	a.events <- func() {
+		if err == nil {
+			err = v.AddKey(signer, keyFile)
+		}
+		switch {
+		case errors.Is(err, errDeclined), errors.Is(err, context.Canceled):
+		case err != nil:
+			a.notify("Couldn't add the key", err.Error(), "")
+		default:
+			a.notify("Key added", fmt.Sprintf("%s opens the secrets. %d ways in now.", keyFile, len(v.Keys())), "")
+		}
+		a.showVault()
+	}
+}
+
+// removeSecretsKey stops a key opening the secrets. The last way in
+// stays: without it, nothing would open them.
+func (a *app) removeSecretsKey(fingerprint string) {
+	a.withSecrets("Couldn't remove the key", func(v *secrets.Vault) error {
+		if len(v.Keys()) < 2 {
+			a.notify("Only one key opens the secrets", "Add another first, so something still opens them.", "")
+			return nil
+		}
+		return v.RemoveKey(fingerprint)
+	})
+}
+
+// addSecretsPassphrase lets a passphrase open the secrets. Working the
+// passphrase into a key takes a moment on purpose, so it runs on a
+// goroutine of its own.
+func (a *app) addSecretsPassphrase(pass string) {
+	a.withSecrets("Couldn't add the passphrase", func(v *secrets.Vault) error {
+		if v.TakesAPassphrase() {
+			a.notify("A passphrase opens the secrets already", "Remove it first to set another.", "")
+			return nil
+		}
+		go func() {
+			err := v.AddPassphrase(pass)
+			a.events <- func() {
+				if err != nil {
+					a.notify("Couldn't add the passphrase", err.Error(), "")
+				} else {
+					a.notify("Passphrase added", "It opens the secrets where none of their keys is.", "")
+				}
+				a.showVault()
+			}
+		}()
+		return nil
+	})
+}
+
+// whatRemovingCosts says what is left once a slot goes.
+func whatRemovingCosts(v *secrets.Vault, s secrets.KeySlot) string {
+	for _, other := range v.Keys() {
+		if other.Fingerprint != s.Fingerprint && onThisMachine(other) {
+			return "Another key on this machine still opens the secrets."
+		}
+	}
+	if v.TakesAPassphrase() && !s.ByPassphrase() {
+		return "The passphrase still opens them here."
+	}
+	return "Opening them here again needs a key from another machine."
+}
+
+// passphraseInHand is the passphrase the secrets keep for a key file,
+// when a key already unlocked opens them, or "". It never asks: the
+// key being unlocked may be the one the secrets need.
+func (a *app) passphraseInHand(keyFile string) string {
+	v, err := a.vault()
+	if err != nil || !v.Exists() {
+		return ""
+	}
+	if v.Locked() && v.Unlock(a.ring.Signers()) != nil {
+		return ""
+	}
+	pass, err := v.PassphraseFor(keyFile)
+	if err != nil {
+		return ""
+	}
+	return pass
 }

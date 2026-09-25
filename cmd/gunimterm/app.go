@@ -568,6 +568,12 @@ func (a *app) handle(in gunim.Intent) {
 		a.typeSecret(in.ID)
 	case RevealSecret:
 		a.revealSecret(in.ID)
+	case AddSecretsKey:
+		a.addSecretsKey()
+	case RemoveSecretsKey:
+		a.removeSecretsKey(in.Fingerprint)
+	case AddSecretsPassphrase:
+		a.addSecretsPassphrase(in.Passphrase)
 	case ShowLog:
 		a.showLog(in.Machine)
 	case ShowJobs:

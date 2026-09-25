@@ -16,6 +16,7 @@ import (
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/geom"
 
+	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/secrets"
 )
 
@@ -27,28 +28,8 @@ func secretsApp(t *testing.T) (a *app, keyFile string) {
 	t.Setenv("HOME", home)
 	t.Setenv("SSH_AUTH_SOCK", "")
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
-	pub, priv, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	block, err := ssh.MarshalPrivateKey(priv, "")
-	if err != nil {
-		t.Fatal(err)
-	}
 	keyFile = filepath.Join(home, ".ssh", "id_ed25519")
-	if err := os.MkdirAll(filepath.Dir(keyFile), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(keyFile, pem.EncodeToMemory(block), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	sshPub, err := ssh.NewPublicKey(pub)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(keyFile+".pub", ssh.MarshalAuthorizedKey(sshPub), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	writeKey(t, keyFile)
 	w := gunim.NewOffscreen(geom.Sz(400, 300), nil)
 	a = newApp(w.Client(), &shells{m: map[string]*shell{}})
 	a.ctx = t.Context()
@@ -192,5 +173,99 @@ func TestAPassphraseOpensTheSecretsWhenTheirKeyIsGone(t *testing.T) {
 	waitFor(t, a, "the secrets open", func() bool { return a.st.Secrets.Open })
 	if len(a.st.Secrets.Items) != 1 {
 		t.Fatalf("opened by passphrase, the items are %+v", a.st.Secrets.Items)
+	}
+}
+
+// writeKey writes a new ed25519 key, with no passphrase, at path.
+func writeKey(t *testing.T, path string) {
+	t.Helper()
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, err := ssh.MarshalPrivateKey(priv, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, pem.EncodeToMemory(block), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sshPub, err := ssh.NewPublicKey(pub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path+".pub", ssh.MarshalAuthorizedKey(sshPub), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestASecondKeyOpensTheSecretsAndTheLastStays(t *testing.T) {
+	a, keyFile := secretsApp(t)
+	startVault(t, a)
+	work := filepath.Join(filepath.Dir(keyFile), "work_ed25519")
+	writeKey(t, work)
+	a.handle(AddSecretsKey{})
+	waitFor(t, a, "the question", func() bool { return len(a.st.Asks) > 0 })
+	if q := a.st.Asks[0]; len(q.Choose) != 1 || q.Choose[0] != "work_ed25519" {
+		t.Fatalf("adding a key offers %+v, want work_ed25519 alone", q.Choose)
+	}
+	answer(t, a, "Add Secrets Key", true, "work_ed25519")
+	waitFor(t, a, "a second key", func() bool { return len(a.st.Secrets.Keys) == 2 })
+	first := a.st.Secrets.Keys[0]
+	if first.Removing != "Another key on this machine still opens the secrets." {
+		t.Fatalf("with two keys here, removing one says %q", first.Removing)
+	}
+	a.handle(RemoveSecretsKey{Fingerprint: first.Fingerprint})
+	if keys := a.st.Secrets.Keys; len(keys) != 1 || keys[0].Name != work {
+		t.Fatalf("after removing the first, the keys are %+v", keys)
+	}
+	a.handle(RemoveSecretsKey{Fingerprint: a.st.Secrets.Keys[0].Fingerprint})
+	if len(a.st.Secrets.Keys) != 1 {
+		t.Fatal("the last key was removed")
+	}
+}
+
+func TestAPassphraseIsAddedOnce(t *testing.T) {
+	a, _ := secretsApp(t)
+	startVault(t, a)
+	a.handle(AddSecretsPassphrase{Passphrase: "correct horse"})
+	waitFor(t, a, "the passphrase", func() bool { return a.st.Secrets.Passphrase })
+	if keys := a.st.Secrets.Keys; len(keys) != 2 || !keys[1].Passphrase {
+		t.Fatalf("with a passphrase, the ways in are %+v", keys)
+	}
+	notices := len(a.st.Notices)
+	a.handle(AddSecretsPassphrase{Passphrase: "another"})
+	if len(a.st.Notices) != notices+1 || !strings.Contains(a.st.Notices[notices].Title, "already") {
+		t.Fatalf("a second passphrase said %+v", a.st.Notices[notices:])
+	}
+}
+
+func TestAKeysSavedPassphraseIsUsedWithoutAsking(t *testing.T) {
+	a, keyFile := secretsApp(t)
+	startVault(t, a)
+	locked := filepath.Join(filepath.Dir(keyFile), "locked_ed25519")
+	if _, err := a.secrets.Put(secrets.Item{Name: "locked key", Kind: secrets.Passphrase, File: locked}, "s3cret"); err != nil {
+		t.Fatal(err)
+	}
+	a.handle(LockSecrets{})
+	got := make(chan string, 1)
+	go func() {
+		pass, _ := asker{a}.Passphrase(t.Context(), remote.LockedKey{Path: locked})
+		got <- pass
+	}()
+	var pass string
+	waitFor(t, a, "the saved passphrase", func() bool {
+		select {
+		case pass = <-got:
+			return true
+		default:
+			return false
+		}
+	})
+	if pass != "s3cret" || len(a.st.Asks) != 0 {
+		t.Fatalf("the passphrase came back %q, with questions %+v", pass, a.st.Asks)
 	}
 }

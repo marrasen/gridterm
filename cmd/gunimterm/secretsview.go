@@ -19,6 +19,7 @@ type secretsPane struct {
 	head  *buttonBar
 	table *widget.Table
 	act   *buttonBar
+	opens *buttonBar
 	keys  *widget.Table
 	col   *widget.Flex
 	st    Secrets
@@ -26,11 +27,12 @@ type secretsPane struct {
 	// The header's buttons and the bar's.
 	add, note, lock, unlock         *widget.Button
 	typ, cp, reveal, change, remove *widget.Button
+	addKey, addPass, removeKey      *widget.Button
 	keyNames                        map[widget.Key]SecretKey
 }
 
 func newSecretsPane(w *window) *secretsPane {
-	p := &secretsPane{w: w, head: newButtonBar(), act: newButtonBar(), byID: map[widget.Key]SecretItem{}, keyNames: map[widget.Key]SecretKey{}}
+	p := &secretsPane{w: w, head: newButtonBar(), act: newButtonBar(), opens: newButtonBar(), byID: map[widget.Key]SecretItem{}, keyNames: map[widget.Key]SecretKey{}}
 	p.head.label.Size, p.head.label.Color = widget.DialogTitleSize, widget.Ink
 	p.table = widget.NewTable(
 		widget.TableColumn{Title: "Name"},
@@ -46,7 +48,7 @@ func newSecretsPane(w *window) *secretsPane {
 		return widget.TableRow{Cells: []string{it.Name, it.User, kind}}
 	}
 	p.table.OnActivate = func(k widget.Key, u *gunim.UI) { u.Send(p.table, CopySecret{ID: string(k)}) }
-	p.keys = widget.NewTable(widget.TableColumn{Title: "Opened by"}, widget.TableColumn{Title: "", Width: 340})
+	p.keys = widget.NewTable(widget.TableColumn{Title: "Key"}, widget.TableColumn{Title: "", Width: 340})
 	p.keys.Row = func(k widget.Key) widget.TableRow {
 		s := p.keyNames[k]
 		return widget.TableRow{Cells: []string{s.Name, s.Note}, Faint: s.Passphrase}
@@ -69,7 +71,15 @@ func newSecretsPane(w *window) *secretsPane {
 	onRow(p.reveal, func(it SecretItem, u *gunim.UI) { u.Send(p.table, RevealSecret{ID: it.ID}) })
 	onRow(p.change, func(it SecretItem, u *gunim.UI) { p.w.secretForm(it.Kind, &it, u) })
 	onRow(p.remove, func(it SecretItem, u *gunim.UI) { p.w.confirmRemoveSecret(it, u) })
-	p.col = widget.Column(p.head, p.table, p.act, p.keys).Grow(p.table, 3).Grow(p.keys, 1)
+	p.addKey, p.addPass, p.removeKey = button("Add Key"), button("Add Passphrase"), button("Remove")
+	p.addKey.On = AddSecretsKey{}
+	p.addPass.OnActivate(func(u *gunim.UI) { p.w.passphraseForm(p.st, u) })
+	p.removeKey.OnActivate(func(u *gunim.UI) {
+		if k, ok := p.keys.Cursor(); ok {
+			p.w.confirmRemoveKey(p.st, p.keyNames[k], u)
+		}
+	})
+	p.col = widget.Column(p.head, p.table, p.act, p.opens, p.keys).Grow(p.table, 3).Grow(p.keys, 1)
 	p.col.Cross, p.col.Gap = widget.CrossStretch, noGap
 	return p
 }
@@ -91,6 +101,11 @@ func (p *secretsPane) show(st Secrets, u *gunim.UI) {
 		slots = append(slots, widget.Key(k.Fingerprint))
 	}
 	p.keys.SetKeys(slots, u)
+	if st.Open {
+		p.opens.set("What opens them", u, p.addKey, p.addPass, p.removeKey)
+	} else {
+		p.opens.set("", u)
+	}
 	switch {
 	case !st.Open:
 		p.head.set("Secrets", u, p.unlock)
@@ -181,5 +196,48 @@ func (w *window) confirmRemoveSecret(it SecretItem, u *gunim.UI) {
 	d.SetButtons("Remove", "Cancel")
 	d.Danger = true
 	d.Accept, d.Dismiss = RemoveSecret{ID: it.ID}, DialogClosed{}
+	w.openDialog(d, u)
+}
+
+// passphraseForm asks for a passphrase that opens the secrets where
+// none of their keys is.
+func (w *window) passphraseForm(st Secrets, u *gunim.UI) {
+	if st.Passphrase {
+		w.toasts.Show(widget.Toast{Title: "A passphrase opens the secrets already", Body: "Remove it first to set another."}, u)
+		return
+	}
+	pass, again := widget.NewTextField(), widget.NewTextField()
+	pass.Secret, again.Secret = true, true
+	d := widget.NewDialog("Add Secrets Passphrase")
+	d.Body = widget.NewForm().
+		Add("", widget.NewLabel("A way in where none of their keys is. Anyone with a copy of the secrets can try passphrases against them, so make it long.")).
+		Add("Passphrase", pass).Add("Again", again)
+	d.SetButtons("Add", "Cancel")
+	d.Check = func() string {
+		switch {
+		case pass.Text() == "":
+			return "Type a passphrase."
+		case pass.Text() != again.Text():
+			return "The two passphrases differ."
+		}
+		return ""
+	}
+	d.OnAccept = func() gunim.Intent { return AddSecretsPassphrase{Passphrase: pass.Text()} }
+	d.Dismiss = DialogClosed{}
+	w.openDialog(d, u)
+}
+
+// confirmRemoveKey asks before a key, or the passphrase, stops opening
+// the secrets, saying what still opens them after.
+func (w *window) confirmRemoveKey(st Secrets, k SecretKey, u *gunim.UI) {
+	if len(st.Keys) < 2 {
+		w.toasts.Show(widget.Toast{Title: "Only one key opens the secrets", Body: "Add another first, so something still opens them."}, u)
+		return
+	}
+	d := widget.NewDialog("Remove " + k.Name + "?")
+	d.Body = widget.NewLabel(k.Removing)
+	d.SetButtons("Remove", "Cancel")
+	d.Danger = true
+	d.Accept, d.Dismiss = RemoveSecretsKey{Fingerprint: k.Fingerprint}, DialogClosed{}
 	w.openDialog(d, u)
 }

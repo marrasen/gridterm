@@ -164,7 +164,7 @@ func (w *window) secretForm(kind secrets.Kind, old *SecretItem, u *gunim.UI) {
 		reveal := widget.NewCheckbox("Show the password")
 		reveal.OnFlip(func(on bool, u *gunim.UI) { value.Secret = !on; u.Invalidate() })
 		form.Add("", reveal)
-		d.AddAction("Make One Up", func(u *gunim.UI) {
+		d.AddAction("Generate", func(u *gunim.UI) {
 			if made, err := secrets.NewPassword(secrets.PasswordLength); err == nil {
 				value.SetText(made)
 				value.Flash()

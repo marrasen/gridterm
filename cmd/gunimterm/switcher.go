@@ -71,8 +71,22 @@ func newSwitcher(w *window, panes []Pane, focus string, u *gunim.UI) *switcher {
 	return s
 }
 
+// natural returns the size a pane's screen has on stage, or the whole
+// of size for a pane with no screen yet.
+func (s *switcher) natural(t *tile, size geom.Size) geom.Size {
+	if term, ok := s.w.terms[t.id]; ok {
+		cell := term.cells.CellSize()
+		cols, rows := term.cells.GridSize()
+		if n := geom.Sz(cell.W*float32(cols), cell.H*float32(rows)); n.W > 0 && n.H > 0 {
+			return n
+		}
+	}
+	return size
+}
+
 // grid returns each tile's place in a box of size: rows and columns as
-// near square as the count allows, each keeping the window's shape.
+// near square as the count allows. Every pane shrinks by the same
+// amount, keeping its own shape, so text reads the same size in each.
 func (s *switcher) grid(size geom.Size) []geom.Rect {
 	n := len(s.tiles)
 	if n == 0 {
@@ -82,19 +96,19 @@ func (s *switcher) grid(size geom.Size) []geom.Rect {
 	rows := (n + cols - 1) / cols
 	const margin, gap, label = 40, 24, 22
 	cw := (size.W - 2*margin - float32(cols-1)*gap) / float32(cols)
-	ch := (size.H - 2*margin - float32(rows-1)*gap) / float32(rows)
-	// Keep the window's shape inside each cell.
-	aspect := size.W / max(size.H, 1)
-	tw, th := cw, cw/aspect
-	if th > ch-label {
-		th = ch - label
-		tw = th * aspect
+	ch := (size.H-2*margin-float32(rows-1)*gap)/float32(rows) - label
+	scale := float32(1)
+	nat := make([]geom.Size, n)
+	for i, t := range s.tiles {
+		nat[i] = s.natural(t, size)
+		scale = min(scale, cw/nat[i].W, ch/nat[i].H)
 	}
 	out := make([]geom.Rect, n)
 	for i := range out {
 		c, r := i%cols, i/cols
+		tw, th := nat[i].W*scale, nat[i].H*scale
 		x := margin + float32(c)*(cw+gap) + (cw-tw)/2
-		y := margin + float32(r)*(ch+gap) + label + (ch-label-th)/2
+		y := margin + float32(r)*(ch+label+gap) + label + (ch-th)/2
 		out[i] = geom.Rc(x, y, tw, th)
 	}
 	return out
@@ -171,9 +185,8 @@ func (s *switcher) paintTile(p *paint.Painter, f gunim.Frame, tl *tile, t float3
 	defer close()
 	p.ShadowRRect(r, 6, paint.Solid(widget.Background.Get(th)), paint.Shadow{Offset: geom.Pt(0, 4), Blur: 18, Color: color.NRGBA{A: uint8(0x90 * t)}})
 	if term, ok := s.w.terms[tl.id]; ok {
-		natural := term.cells.CellSize()
-		cols, rows := term.cells.GridSize()
-		gw, gh := natural.W*float32(cols), natural.H*float32(rows)
+		nat := s.natural(tl, s.size)
+		gw, gh := nat.W, nat.H
 		if gw > 0 && gh > 0 {
 			scale := min(r.Size().W/gw, r.Size().H/gh)
 			func() {

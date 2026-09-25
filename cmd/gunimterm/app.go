@@ -239,8 +239,10 @@ type app struct {
 	replies map[uint64]chan AskAnswered
 	// closing holds the panes folding away.
 	closing map[string]bool
-	// local is this computer's filesystem, once a file pane needs it.
-	local vfs.FS
+	// local is this computer's filesystem, once a file pane needs it,
+	// and remoteFS the servers' files opened so far, by machine.
+	local    vfs.FS
+	remoteFS map[string]vfs.FS
 	// clip is the file clipboard, jobs the queue of file work, and
 	// running the jobs followed.
 	clip    *fileClip
@@ -277,18 +279,19 @@ func (s *shells) set(id string, sh *shell) {
 
 func newApp(c gunim.Client, sh *shells) *app {
 	return &app{
-		c:       c,
-		shells:  sh,
-		st:      State{Sidebar: true, SidebarWidth: 220, FontSize: defaultFontSize},
-		groups:  map[int]*Box{},
-		groupOf: map[string]int{},
-		conns:   map[string]*remote.Conn{},
-		dialing: map[string]bool{},
-		ring:    remote.NewRing(),
-		replies: map[uint64]chan AskAnswered{},
-		closing: map[string]bool{},
-		wake:    make(chan struct{}, 1),
-		events:  make(chan func(), 64),
+		c:        c,
+		shells:   sh,
+		st:       State{Sidebar: true, SidebarWidth: 220, FontSize: defaultFontSize},
+		groups:   map[int]*Box{},
+		groupOf:  map[string]int{},
+		conns:    map[string]*remote.Conn{},
+		dialing:  map[string]bool{},
+		ring:     remote.NewRing(),
+		replies:  map[uint64]chan AskAnswered{},
+		closing:  map[string]bool{},
+		remoteFS: map[string]vfs.FS{},
+		wake:     make(chan struct{}, 1),
+		events:   make(chan func(), 64),
 	}
 }
 

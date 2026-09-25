@@ -95,6 +95,10 @@ func (a *app) connect(in ConnectTo) error {
 				_ = conn.Wait()
 				a.events <- func() {
 					delete(a.conns, name)
+					if f, ok := a.remoteFS[name]; ok {
+						_ = f.Close()
+						delete(a.remoteFS, name)
+					}
 					a.notify("Disconnected from "+name, "", "")
 				}
 			}()

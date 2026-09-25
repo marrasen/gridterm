@@ -85,7 +85,8 @@ const (
 	kindReader   = "reader"
 )
 
-// fsFor returns the filesystem of machine, "" for this computer.
+// fsFor returns the filesystem of machine, "" for this computer, or
+// nil for a server whose files are not open yet.
 func (a *app) fsFor(machine string) vfs.FS {
 	if machine == "" {
 		if a.local == nil {
@@ -93,16 +94,43 @@ func (a *app) fsFor(machine string) vfs.FS {
 		}
 		return a.local
 	}
+	return a.remoteFS[machine]
+}
+
+// openFiles opens a file pane at home on the focused pane's machine. A
+// server's files open over its connection first, with SFTP, once for
+// all its file panes.
+func (a *app) openFiles() error {
+	machine := a.machineOf(a.st.Focus)
+	if f := a.fsFor(machine); f != nil {
+		return a.openFilesOn(machine, f)
+	}
+	conn, ok := a.conns[machine]
+	if !ok {
+		return a.openFilesOn("", a.fsFor(""))
+	}
+	a.st.Status = "Opening the files on " + machine + "…"
+	go func() {
+		files, err := conn.Files(a.ctx)
+		a.events <- func() {
+			a.st.Status = ""
+			if err != nil {
+				a.notify("Couldn't open the files on "+machine, err.Error(), "")
+				return
+			}
+			f := vfs.NewSFTP(machine, conn, files.Client(), files.Close)
+			a.remoteFS[machine] = f
+			if err := a.openFilesOn(machine, f); err != nil {
+				a.notify("Couldn't open the files on "+machine, err.Error(), "")
+			}
+		}
+	}()
 	return nil
 }
 
-// openFiles opens a file pane at home on the focused pane's machine.
-func (a *app) openFiles() error {
-	machine := a.machineOf(a.st.Focus)
-	f := a.fsFor(machine)
-	if f == nil {
-		machine, f = "", a.fsFor("")
-	}
+// openFilesOn opens a file pane at home on a machine whose files are
+// open.
+func (a *app) openFilesOn(machine string, f vfs.FS) error {
 	home, err := f.Home()
 	if err != nil {
 		return err

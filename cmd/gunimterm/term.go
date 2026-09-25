@@ -13,11 +13,14 @@ import (
 
 	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/input"
+	"github.com/marrasen/gridterm/ui"
 )
 
 // term is the terminal on screen: a CellGrid showing the shell's
 // screen, taking keys for it.
 type term struct {
+	id      string
+	keys    *ui.Keymap
 	sh      *shell
 	cells   *widget.CellGrid
 	row     []widget.Cell
@@ -26,12 +29,12 @@ type term struct {
 	wheel float32
 }
 
-func newTerm(sh *shell) *term {
+func newTerm(id string, sh *shell, keys *ui.Keymap) *term {
 	g := widget.NewCellGrid()
 	g.Size = 15
 	bg := sh.pal.BG
 	g.Background = theme.Color("gunimterm.background", color.NRGBA{R: bg.R, G: bg.G, B: bg.B, A: 0xff})
-	t := &term{sh: sh, cells: g}
+	t := &term{id: id, keys: keys, sh: sh, cells: g}
 	t.sync()
 	return t
 }
@@ -134,14 +137,13 @@ func (t *term) Handle(e gi.Event, u *gunim.UI) bool {
 	switch e := e.(type) {
 	case gi.FocusGained, gi.FocusLost:
 		_, t.focused = e.(gi.FocusGained)
+		if t.focused {
+			u.Send(t, FocusPane{Pane: t.id})
+		}
 		t.sync()
 		u.Invalidate()
 		return true
 	case gi.KeyPress:
-		if e.Key == gi.KeyV && e.Mods == gi.ModControl|gi.ModShift {
-			t.paste(u.Clipboard())
-			return true
-		}
 		// A press that typed leaves it to the text, which follows.
 		if e.Typed {
 			return true
@@ -149,6 +151,10 @@ func (t *term) Handle(e gi.Event, u *gunim.UI) bool {
 		ev, ok := keyEvent(e)
 		if !ok {
 			return true
+		}
+		if id, bound := t.keys.Lookup(ui.ChordOf(ev)); bound {
+			// The window's shortcut, unless the terminal carries it out.
+			return t.command(id, u)
 		}
 		t.key(ev)
 		return true
@@ -162,6 +168,31 @@ func (t *term) Handle(e gi.Event, u *gunim.UI) bool {
 		return true
 	}
 	return false
+}
+
+// command carries out one of the window's commands that belongs to the
+// terminal, and reports false for the rest, which go on to the window.
+func (t *term) command(id string, u *gunim.UI) bool {
+	switch id {
+	case "edit.paste":
+		t.paste(u.Clipboard())
+	case "view.scrollUp", "view.scrollDown":
+		_, rows := t.cells.GridSize()
+		page := max(1, rows-1)
+		if id == "view.scrollDown" {
+			page = -page
+		}
+		t.sh.mu.Lock()
+		if !t.sh.vt.Screen().OnAltBuffer() {
+			t.sh.vt.Screen().ScrollView(page)
+		}
+		t.sh.mu.Unlock()
+		t.sync()
+		u.Invalidate()
+	default:
+		return false
+	}
+	return true
 }
 
 // key encodes one event for the shell, and brings the view back to the

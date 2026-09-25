@@ -52,32 +52,17 @@ func run() error {
 			return fmt.Errorf("gunimterm: %w", err)
 		}
 		c := w.Client()
-		sh, err := startShell(func() { _ = c.Publish(screenTopic, tick{}) })
-		if err != nil {
-			return err
-		}
-		defer sh.close()
-		gunim.RegisterView(w, "term", func(tick) *term { return newTerm(sh) },
-			func(t *term, _ tick, _ *gunim.UI) { t.sync() })
-		if err := c.Mount(gunim.Root, "term", "term", tick{}, screenTopic); err != nil {
-			return err
-		}
-		if err := c.Focus("term"); err != nil {
+		sh := &shells{m: map[string]*shell{}}
+		keys := shortcuts()
+		gunim.RegisterView(w, "window", func(State) *window { return newWindow(sh, keys) },
+			func(win *window, st State, u *gunim.UI) { win.update(st, u) })
+		if err := c.Mount(gunim.Root, "window", "window", State{}, windowTopic); err != nil {
 			return err
 		}
 		if os.Getenv("GUNIMTERM_STATS") == "1" {
 			go logStats(ctx, w)
 		}
-		// The window closes when the shell exits, or the shell ends when
-		// the window closes.
-		select {
-		case <-sh.done:
-			c.Close()
-		case <-ctx.Done():
-		}
-		for range c.Intents() {
-		}
-		return c.Err()
+		return newApp(c, sh).run(ctx)
 	})
 	if errors.Is(err, driver.ErrNoDriver) {
 		log.Print("gunim has no driver for this operating system")
@@ -104,9 +89,3 @@ func logStats(ctx context.Context, w *gunim.Window) {
 	}
 }
 
-// screenTopic is what the shell's output publishes to, so the view
-// copies the screen once a frame however much output arrives.
-const screenTopic = "screen"
-
-// tick says the screen has changed.
-type tick struct{}

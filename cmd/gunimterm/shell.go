@@ -25,9 +25,17 @@ type shell struct {
 	done chan struct{}
 }
 
-// startShell starts the user's shell at 80 by 24, calling changed each
-// time output arrives.
-func startShell(changed func()) (*shell, error) {
+// shellHooks are what a shell tells the program: that it wrote, that
+// it named itself, and that it exited. They run on the shell's reader
+// goroutine.
+type shellHooks struct {
+	output func()
+	title  func(string)
+	exit   func()
+}
+
+// startShell starts the user's shell at 80 by 24.
+func startShell(hooks shellHooks) (*shell, error) {
 	const cols, rows = 80, 24
 	sess, err := session.StartLocal(session.LocalConfig{Cols: cols, Rows: rows})
 	if err != nil {
@@ -41,13 +49,14 @@ func startShell(changed func()) (*shell, error) {
 		out:  make(chan []byte, 1024),
 		done: make(chan struct{}),
 	}
-	sh.vt = vt.New(cols, rows, pal, 5000, vt.Callbacks{Reply: sh.send})
-	go sh.read(changed)
+	sh.vt = vt.New(cols, rows, pal, 5000, vt.Callbacks{Reply: sh.send, Title: hooks.title})
+	go sh.read(hooks)
 	go sh.write()
 	return sh, nil
 }
 
-func (sh *shell) read(changed func()) {
+func (sh *shell) read(hooks shellHooks) {
+	defer hooks.exit()
 	defer close(sh.done)
 	buf := make([]byte, 64<<10)
 	for {
@@ -56,7 +65,7 @@ func (sh *shell) read(changed func()) {
 			sh.mu.Lock()
 			_, _ = sh.vt.Write(buf[:n])
 			sh.mu.Unlock()
-			changed()
+			hooks.output()
 		}
 		if err != nil {
 			return

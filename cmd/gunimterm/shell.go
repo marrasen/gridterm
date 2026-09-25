@@ -50,6 +50,7 @@ func startShell(hooks shellHooks) (*shell, error) {
 		out:  make(chan []byte, 1024),
 		done: make(chan struct{}),
 	}
+	sh.grid.SelectionBG = pal.Selection
 	sh.vt = vt.New(cols, rows, pal, 5000, vt.Callbacks{Reply: sh.send, Title: hooks.title, ClipboardSet: hooks.clipboard})
 	go sh.read(hooks)
 	go sh.write()

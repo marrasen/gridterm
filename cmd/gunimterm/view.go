@@ -131,6 +131,11 @@ func (w *window) run(id string, u *gunim.UI) bool {
 			t.paste(u.Clipboard())
 		}
 		return true
+	case "edit.copy":
+		if t, ok := w.terms[w.focused]; ok {
+			t.copySelection(u)
+		}
+		return true
 	}
 	if in, ok := commandIntent(id); ok {
 		u.Send(w, in)

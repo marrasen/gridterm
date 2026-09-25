@@ -28,6 +28,8 @@ func shortcuts() *ui.Keymap {
 		{Key: input.KeyT, Mods: input.ModCtrl | input.ModShift}:   "conn.terminal",
 		{Key: input.KeyB, Mods: input.ModCtrl | input.ModShift}:   "sidebar.toggle",
 		{Key: input.KeyV, Mods: input.ModCtrl | input.ModShift}:   "edit.paste",
+		{Key: input.KeyC, Mods: input.ModCtrl | input.ModShift}:   "edit.copy",
+		{Key: input.KeyInsert, Mods: input.ModCtrl}:               "edit.copy",
 		{Key: input.KeyInsert, Mods: input.ModShift}:              "edit.paste",
 		{Key: input.KeyPageUp, Mods: input.ModShift}:              "view.scrollUp",
 		{Key: input.KeyPageDown, Mods: input.ModShift}:            "view.scrollDown",
@@ -50,6 +52,7 @@ var commands = []struct{ id, title string }{
 	{"pane.switch", "Switch Pane"},
 	{"pane.rename", "Rename Pane"},
 	{"sidebar.toggle", "Show or Hide Sidebar"},
+	{"edit.copy", "Copy"},
 	{"edit.paste", "Paste"},
 }
 
@@ -61,7 +64,7 @@ var menus = []struct {
 	items []menuItem
 }{
 	{"File", []menuItem{{id: "conn.terminal", title: "New Terminal"}, {id: "pane.close", title: "Close Pane", group: true}, {id: "app.exit", title: "Exit", group: true}}},
-	{"Edit", []menuItem{{id: "edit.paste", title: "Paste"}}},
+	{"Edit", []menuItem{{id: "edit.copy", title: "Copy"}, {id: "edit.paste", title: "Paste"}}},
 	{"View", []menuItem{{id: "sidebar.toggle", title: "Sidebar"}, {id: "palette.open", title: "All Commands…", group: true}}},
 	{"Pane", []menuItem{
 		{id: "pane.splitRight", title: "Split Right"}, {id: "pane.splitDown", title: "Split Down"}, {id: "pane.popOut", title: "Pop Out"},

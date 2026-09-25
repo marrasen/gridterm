@@ -65,6 +65,8 @@ var commands = []struct{ id, title string }{
 	{"server.connect", "Connect to Server"},
 	{"conn.files", "Files Here"},
 	{"files.goTo", "Go to Directory"},
+	{"tunnel.open", "Open Tunnel"},
+	{"tunnel.socks", "Open SOCKS Proxy"},
 	{"edit.copy", "Copy"},
 	{"edit.paste", "Paste"},
 }
@@ -104,6 +106,8 @@ var menus = []struct {
 		{id: "conn.terminal", title: "Terminal"}, {id: "conn.files", title: "Files"},
 		{title: "Files", caption: true},
 		{id: "files.goTo", title: "Go to Directory…"},
+		{title: "Tunnels", caption: true},
+		{id: "tunnel.open", title: "Open Tunnel…"}, {id: "tunnel.socks", title: "SOCKS Proxy…"},
 	}},
 }
 

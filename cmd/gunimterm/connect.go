@@ -31,6 +31,9 @@ type Ask struct {
 	Also   string
 	Yes    string
 	No     string
+	// Danger marks a question whose yes can do harm, and colours its
+	// button so.
+	Danger bool
 }
 
 // errDeclined is the user saying no to a question, which stops the
@@ -95,6 +98,7 @@ func (a *app) connect(in ConnectTo) error {
 				_ = conn.Wait()
 				a.events <- func() {
 					delete(a.conns, name)
+					a.tunnelsDiedOn(name)
 					if f, ok := a.remoteFS[name]; ok {
 						_ = f.Close()
 						delete(a.remoteFS, name)

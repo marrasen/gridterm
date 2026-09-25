@@ -51,7 +51,11 @@ type State struct {
 	// show, by pane. Each is replaced whole, never changed in place.
 	Browsers map[string]Browser
 	Readers  map[string]Reader
-	Status   string
+	// Tunnels are the tunnels open, and those stopped until cleared,
+	// and SavedTunnels those kept for next time, newest first.
+	Tunnels      []Tunnel
+	SavedTunnels []settings.SavedTunnel
+	Status       string
 	// Notices are the latest notices, oldest first, for the window to
 	// show each once.
 	Notices []Notice
@@ -81,6 +85,8 @@ type Pane struct {
 	// title its shell last gave it.
 	Named bool
 	shell string
+	// Tunnel is the tunnel a tunnel's pane tells of.
+	Tunnel string
 }
 
 // Box is one part of an arrangement: a pane, or a split of two boxes.
@@ -263,6 +269,13 @@ type app struct {
 	jobs    *jobs.Queue
 	running []*running
 	askIDs  atomic.Uint64
+	// tunnels are the tunnels by ID, tunnelSeq counts them, ticking is
+	// set while their notes are kept up to date, and quiet says a tick
+	// changed nothing, so nothing is published.
+	tunnels   map[string]*tunnel
+	tunnelSeq int
+	ticking   bool
+	quiet     bool
 	// wake hears that a shell wrote, and events carries changes from
 	// the shells' goroutines to this one.
 	wake   chan struct{}
@@ -315,6 +328,7 @@ func newApp(c gunim.Client, sh *shells) *app {
 		replies:  map[uint64]chan AskAnswered{},
 		closing:  map[string]bool{},
 		remoteFS: map[string]vfs.FS{},
+		tunnels:  map[string]*tunnel{},
 		wake:     make(chan struct{}, 1),
 		events:   make(chan func(), 64),
 	}
@@ -330,6 +344,7 @@ func (a *app) run(ctx context.Context) error {
 	if path, err := settings.Path(); err == nil {
 		if s, err := settings.Load(path); err == nil {
 			a.settings = s
+			a.st.SavedTunnels = s.Tunnels()
 		}
 	}
 	// The theme picked last time, as gridterm keeps it, or the first.
@@ -374,6 +389,10 @@ func (a *app) run(ctx context.Context) error {
 			}
 			return a.c.Err()
 		}
+		if a.quiet {
+			a.quiet = false
+			continue
+		}
 		a.publish()
 	}
 }
@@ -385,6 +404,8 @@ func (a *app) publish() {
 	st.Asks = slices.Clone(a.st.Asks)
 	st.Saved = slices.Clone(a.st.Saved)
 	st.Themes = slices.Clone(a.st.Themes)
+	st.Tunnels = slices.Clone(a.st.Tunnels)
+	st.SavedTunnels = slices.Clone(a.st.SavedTunnels)
 	st.Stage = a.groups[a.groupOf[a.st.Focus]].clone()
 	_ = a.c.Publish(windowTopic, st)
 	// A split opens once; after that it is only a split.
@@ -491,6 +512,16 @@ func (a *app) handle(in gunim.Intent) {
 			a.dropAsk(in.ID)
 			reply <- in
 		}
+	case OpenTunnel:
+		err = a.openTunnel(in)
+	case OpenSavedTunnel:
+		err = a.openSavedTunnel(in.Saved)
+	case CloseTunnel:
+		err = a.closeTunnel(in.ID)
+	case WatchTunnel:
+		a.watchTunnel(in)
+	case ShowTunnel:
+		a.showTunnel(in.ID)
 	case DialogClosed:
 	}
 	if err != nil {
@@ -721,6 +752,7 @@ func (a *app) remove(id string) {
 		delete(m, id)
 		a.st.Readers = m
 	}
+	a.tunnelPaneGone(id)
 	next := a.take(id)
 	a.st.Panes = slices.Delete(a.st.Panes, i, i+1)
 	if a.st.Focus == id {

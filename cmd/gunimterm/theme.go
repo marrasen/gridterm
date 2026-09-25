@@ -131,6 +131,7 @@ func themeOf(t themes.Theme) (themed, error) {
 		theme.Set(widget.CardFill, surface),
 		theme.Set(widget.DialogFill, surface),
 		theme.Set(widget.DialogBorder, rule),
+		theme.Set(widget.DialogProblem, standout(surface, nrgba(pal.ANSI[1]), nrgba(pal.ANSI[9]))),
 		theme.Set(widget.MenuFill, surface),
 		theme.Set(widget.MenuBorder, rule),
 		theme.Set(widget.MenuHot, alpha(accent, 0x48)),

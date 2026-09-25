@@ -15,6 +15,7 @@ import (
 	"github.com/marrasen/gunim/widget"
 
 	"github.com/marrasen/gridterm/remote"
+	"github.com/marrasen/gridterm/settings"
 	"github.com/marrasen/gridterm/syntax"
 	"github.com/marrasen/gridterm/ui"
 )
@@ -47,10 +48,14 @@ type window struct {
 	// browsers and readers are the file panes and readers, by pane.
 	browsers map[string]*browser
 	readers  map[string]*reader
-	splits   map[string]*widget.Split
-	focused  string
-	palette  *widget.Palette
-	size     geom.Size
+	// tunnelPanes are the tunnels' panes, and savedTunnels the tunnels
+	// kept, as the palette lists them.
+	tunnelPanes  map[string]*tunnelPane
+	savedTunnels []settings.SavedTunnel
+	splits       map[string]*widget.Split
+	focused      string
+	palette      *widget.Palette
+	size         geom.Size
 	// panes are the panes as last published, and sw the switcher while
 	// it is open.
 	panes []Pane
@@ -83,15 +88,16 @@ type window struct {
 
 func newWindow(sh *shells, keys *ui.Keymap, all []themed) *window {
 	w := &window{
-		contents: map[string]theme.Theme{},
-		list:     widget.NewList(),
-		stage:    &stage{},
-		shells:   sh,
-		keys:     keys,
-		terms:    map[string]*term{},
-		browsers: map[string]*browser{},
-		readers:  map[string]*reader{},
-		splits:   map[string]*widget.Split{},
+		contents:    map[string]theme.Theme{},
+		list:        widget.NewList(),
+		stage:       &stage{},
+		shells:      sh,
+		keys:        keys,
+		terms:       map[string]*term{},
+		browsers:    map[string]*browser{},
+		readers:     map[string]*reader{},
+		tunnelPanes: map[string]*tunnelPane{},
+		splits:      map[string]*widget.Split{},
 	}
 	side := widget.Column(w.list)
 	side.Cross = widget.CrossStretch
@@ -172,6 +178,9 @@ func (w *window) run(id string, u *gunim.UI) bool {
 	case "theme.pick":
 		w.pickTheme(u)
 		return true
+	case "tunnel.open", "tunnel.socks":
+		w.tunnelDialog(id == "tunnel.socks", u)
+		return true
 	case "files.goTo":
 		if b, ok := w.browsers[w.focused]; ok {
 			b.askGoTo(u)
@@ -198,6 +207,10 @@ func (w *window) run(id string, u *gunim.UI) bool {
 				w.serverForm(&h, u)
 			}
 		}
+		return true
+	}
+	if at, ok := strings.CutPrefix(id, "tunnel.saved:"); ok {
+		w.runSavedTunnel(at, u)
 		return true
 	}
 	if name, ok := strings.CutPrefix(id, "server.remove:"); ok {
@@ -345,6 +358,7 @@ func (w *window) showAsk(asks []Ask, u *gunim.UI) {
 		d.OnAccept = func() gunim.Intent { return answer("") }
 	}
 	d.Dismiss = AskAnswered{ID: id}
+	d.Danger = q.Danger
 	w.ask, w.askID = d, id
 	w.openDialog(d, u)
 }
@@ -394,6 +408,10 @@ func (w *window) servers(saved []remote.Host) {
 			w.palette.Items = append(w.palette.Items, widget.PaletteItem{Title: c.title, Also: []string{h.Address}})
 			w.paletteIDs = append(w.paletteIDs, c.id+h.Name)
 		}
+	}
+	for i, it := range w.savedTunnelItems() {
+		w.palette.Items = append(w.palette.Items, it)
+		w.paletteIDs = append(w.paletteIDs, "tunnel.saved:"+strconv.Itoa(i))
 	}
 }
 
@@ -572,16 +590,17 @@ func (w *window) update(st State, u *gunim.UI) {
 			t.cells.Size = st.FontSize
 		}
 	}
-	rows := sidebarRows(st.Panes)
+	rows := sidebarRows(st.Panes, st.Tunnels)
 	widget.Sync(w.list, u, rows,
 		func(r sideItem) widget.Key { return widget.Key(r.key) },
 		func(r sideItem) *sideRow { return newSideRow(r) },
-		func(row *sideRow, r sideItem, u *gunim.UI) { row.title.SetText(r.text) })
+		func(row *sideRow, r sideItem, u *gunim.UI) { row.set(r) })
 	for _, r := range rows {
 		if row, ok := widget.RowOf[*sideRow](w.list, widget.Key(r.key)); ok && !r.heading {
-			row.setActive(r.key == st.Focus, u)
+			row.setActive(r.pane != "" && r.pane == st.Focus, u)
 		}
 	}
+	w.setSavedTunnels(st.SavedTunnels)
 	w.showAsk(st.Asks, u)
 	if !slices.EqualFunc(st.Saved, w.saved, func(a, b remote.Host) bool { return a.ID == b.ID && a.Name == b.Name && a.Address == b.Address }) {
 		w.servers(st.Saved)
@@ -621,6 +640,23 @@ func (w *window) update(st State, u *gunim.UI) {
 		}
 		r.seq = next.Seq
 		r.st = next
+	}
+	for id, p := range w.tunnelPanes {
+		if !open[id] {
+			delete(w.tunnelPanes, id)
+			continue
+		}
+		var t Tunnel
+		ok := false
+		for _, pane := range st.Panes {
+			if pane.ID == id {
+				i := slices.IndexFunc(st.Tunnels, func(t Tunnel) bool { return t.ID == pane.Tunnel })
+				if ok = i >= 0; ok {
+					t = st.Tunnels[i]
+				}
+			}
+		}
+		p.bar.show(t, ok, u)
 	}
 	for id, t := range w.terms {
 		if w.shells.get(id) == nil {
@@ -731,6 +767,13 @@ func (w *window) paneNode(id string) gunim.Node {
 			w.browsers[id] = b
 		}
 		return b
+	case kindTunnel:
+		p, ok := w.tunnelPanes[id]
+		if !ok {
+			p = newTunnelPane(w.term(id))
+			w.tunnelPanes[id] = p
+		}
+		return p
 	case kindReader:
 		r, ok := w.readers[id]
 		if !ok {
@@ -837,23 +880,38 @@ func (p *panel) Paint(pt *paint.Painter, f gunim.Frame, box geom.Size, kids guni
 }
 
 // sideItem is one row of the sidebar: a machine's heading, or a pane
-// under it.
+// or a tunnel under it. pane is the pane that lights the row while it
+// has the keyboard, click what a click asks for, and note is said
+// small at the end. dim marks a tunnel that has stopped.
 type sideItem struct {
-	key, text string
-	heading   bool
+	key, text, note string
+	pane            string
+	click           gunim.Intent
+	heading, dim    bool
 }
 
-// sidebarRows lists the panes under their machines: this computer
-// first, then each server in the order its first pane opened.
-func sidebarRows(panes []Pane) []sideItem {
-	var machines []string
+// sidebarRows lists the panes under their machines, this computer
+// first, then each server in the order its first pane opened, and
+// each server's tunnels after its panes. A tunnel's pane is lit on the
+// tunnel's row.
+func sidebarRows(panes []Pane, tunnels []Tunnel) []sideItem {
+	machines := []string{""}
 	seen := map[string]bool{"": true}
-	machines = append(machines, "")
-	for _, p := range panes {
-		if !seen[p.Machine] {
-			seen[p.Machine] = true
-			machines = append(machines, p.Machine)
+	add := func(m string) {
+		if !seen[m] {
+			seen[m] = true
+			machines = append(machines, m)
 		}
+	}
+	for _, p := range panes {
+		add(p.Machine)
+	}
+	for _, t := range tunnels {
+		add(t.Machine)
+	}
+	shown := map[string]bool{}
+	for _, t := range tunnels {
+		shown[t.ID] = true
 	}
 	var out []sideItem
 	for _, m := range machines {
@@ -863,8 +921,13 @@ func sidebarRows(panes []Pane) []sideItem {
 		}
 		out = append(out, sideItem{key: "machine:" + m, text: name, heading: true})
 		for _, p := range panes {
-			if p.Machine == m {
-				out = append(out, sideItem{key: p.ID, text: p.Title})
+			if p.Machine == m && !shown[p.Tunnel] {
+				out = append(out, sideItem{key: p.ID, text: p.Title, pane: p.ID, click: FocusPane{Pane: p.ID}})
+			}
+		}
+		for _, t := range tunnels {
+			if t.Machine == m {
+				out = append(out, sideItem{key: "tunnel:" + t.ID, text: t.Label, note: t.Note, pane: t.Pane, click: ShowTunnel{ID: t.ID}, dim: !t.Live})
 			}
 		}
 	}
@@ -876,22 +939,38 @@ func sidebarRows(panes []Pane) []sideItem {
 // forward. A machine's heading is small and dim.
 type sideRow struct {
 	anim.Group
-	id      string
 	heading bool
+	click   gunim.Intent
 	title   *widget.Label
+	note    *widget.Label
 	active  *anim.Float
 	hover   *anim.Float
 	on      bool
 }
 
 func newSideRow(it sideItem) *sideRow {
-	r := &sideRow{id: it.key, heading: it.heading, title: widget.NewLabel(it.text), active: anim.NewFloat(0), hover: anim.NewFloat(0)}
-	r.title.MaxLines = 1
+	r := &sideRow{heading: it.heading, title: widget.NewLabel(""), note: widget.NewLabel(""), active: anim.NewFloat(0), hover: anim.NewFloat(0)}
+	r.title.MaxLines, r.note.MaxLines = 1, 1
+	r.note.Size, r.note.Color = smallText, faint
 	if it.heading {
 		r.title.Size, r.title.Color = smallText, faint
 	}
+	r.set(it)
 	r.Add(r.active, r.hover)
 	return r
+}
+
+// set shows it on the row.
+func (r *sideRow) set(it sideItem) {
+	r.title.SetText(it.text)
+	r.note.SetText(it.note)
+	r.click = it.click
+	if !it.heading {
+		r.title.Color = widget.Ink
+		if it.dim {
+			r.title.Color = faint
+		}
+	}
 }
 
 func (r *sideRow) setActive(on bool, u *gunim.UI) {
@@ -907,13 +986,21 @@ func (r *sideRow) setActive(on bool, u *gunim.UI) {
 }
 
 // Children implements [gunim.Composite].
-func (r *sideRow) Children() []gunim.Node { return []gunim.Node{r.title} }
+func (r *sideRow) Children() []gunim.Node { return []gunim.Node{r.title, r.note} }
 
-// Layout implements [gunim.Node].
+// Layout implements [gunim.Node]: the title at the start, the note at
+// the end.
 func (r *sideRow) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children) geom.Size {
-	const padX, height = 12, 28
+	const padX, gap, height = 12, 8, 28
+	note := kids.At(1)
+	ns := note.Layout(gunim.Constraints{Max: geom.Sz(max(0, c.Max.W-2*padX)/2, height)})
+	note.Place(geom.Pt(c.Max.W-padX-ns.W, (height-ns.H)/2))
+	room := c.Max.W - 2*padX
+	if ns.W > 0 {
+		room -= ns.W + gap
+	}
 	k := kids.At(0)
-	s := k.Layout(gunim.Constraints{Max: geom.Sz(max(0, c.Max.W-2*padX), height)})
+	s := k.Layout(gunim.Constraints{Max: geom.Sz(max(0, room), height)})
 	k.Place(geom.Pt(padX, (height-s.H)/2))
 	return c.Constrain(geom.Sz(c.Max.W, height))
 }
@@ -932,6 +1019,7 @@ func (r *sideRow) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gun
 		p.RRect(inset, 6, paint.Solid(c))
 	}
 	kids.At(0).Paint(p)
+	kids.At(1).Paint(p)
 }
 
 // Handle implements [gunim.Handler].
@@ -946,7 +1034,7 @@ func (r *sideRow) Handle(e input.Event, u *gunim.UI) bool {
 		r.hover.Animate(0, widget.Settle.Get(u.Theme()))
 	case input.PointerDown:
 		if e.Button == input.ButtonPrimary {
-			u.Send(r, FocusPane{Pane: r.id})
+			u.Send(r, r.click)
 			return true
 		}
 		return false

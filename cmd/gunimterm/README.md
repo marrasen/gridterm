@@ -55,5 +55,64 @@ What gridterm does that gunimterm does not, as of 2026-09-26. Each is to
 be done, or decided against, before the switch. Checked against every
 command gridterm registers, and against what was left out on the way.
 
+Found by a second sweep on 2026-09-26, most important first. The first
+six are confirmed in the code; the rest are still to check.
+
+Connections and servers:
+
+- A file pane whose connection dropped goes dead; gridterm reconnects
+  on the next action.
+- Edit Server drops every key file after the first.
+- Removing a server leaves its connection, panes and dial open;
+  gridterm says what will close and closes it.
+- A dial cannot be given up; gridterm gives it up when its connection
+  log pane closes.
+- "Already connecting to X", with Wait, Retry and Cancel; gunimterm
+  ignores the second request.
+- The server form's checks on save: a name already connected, a window
+  saved twice, a connected window moved, a rename followed.
+- The server form's details: Cancel first on a new host key, "Invalid
+  password" on a retry, a key-file picker that remembers keys, Jump
+  host and Forward agent off for a window, a Remove button in Edit.
+- "Waiting for server" with Copy and Open for a browser sign-in.
+- "Connection lost" with Reconnect for a window taken over.
+
+Sidebar:
+
+- Saved servers as headings, with a plus that connects, and a
+  "+ Connect to server…" row at the foot.
+- On each row: a state dot that pulses with traffic, a kind icon, a
+  one-cell traffic graph, rows for file jobs with a progress fill, and
+  a greyed row kept after a drop.
+- Crosses on hover that close or clear a row.
+- This computer's plus menu lists its shells.
+- Headings for the machines on a window taken over; PageUp, PageDown,
+  Home, End and Space; scrolling to follow the stage; "Edit This
+  Window…".
+
+Files:
+
+- Archives open as folders (`vfs.WithArchives`).
+- Go To offers Windows drives, and completes paths.
+- The bar of F-keys, clickable, dimmed where they do nothing.
+- Keys: Backspace edits the type-ahead first; Escape clears it, then
+  the file clipboard; Insert marks; Ctrl+G opens Go To; Ctrl+D closes;
+  Tab and Shift+Tab move between file panes.
+- Symlinks in the link colour with "→ target"; F3 and F4 on a link to
+  a folder.
+- Files waiting to be pasted marked in the list; a read error as a
+  row to click, and a "reading…" row.
+- WSL folders in the Files menu; ".." hidden at a filesystem's top.
+
+Secrets, serving and agents:
+
+- A secret taken off the clipboard as the window closes.
+- The secrets pane read again every second.
+- An agent's secret request cut to 60 characters, invisible and
+  private-use characters taken out.
+- Removing several secrets at once.
+- Disconnecting one served window from its row; "Don't Ask Again" on
+  "Serve this window again?".
+
 Checks on Windows, waiting until the Windows runs resume: the screen
 reader recheck (#10) and this spike on Windows (#11).

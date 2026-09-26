@@ -12,6 +12,7 @@ import (
 
 	"github.com/marrasen/gunim"
 	gi "github.com/marrasen/gunim/input"
+	"github.com/marrasen/gunim/widget"
 
 	"github.com/marrasen/gridterm/input"
 	"github.com/marrasen/gridterm/internal/update"
@@ -293,5 +294,50 @@ func TestEditingAServerKeepsItsKeysAndRefusesATakenName(t *testing.T) {
 	renamed.Name = "laptop"
 	if why := win.savingClashes(renamed, &desk); why == "" {
 		t.Fatal("renamed to a name something is connected as, it was taken")
+	}
+}
+
+// A window's form greys out what a window has none of, and a server's
+// key is kept to be offered next time.
+func TestTheServerFormFitsItsType(t *testing.T) {
+	win, _, publish := windowStage(t)
+	desk := remote.Host{ID: "d1", Name: "desk", Address: "desk.example", Window: true}
+	publish(State{Saved: []remote.Host{desk, {ID: "j1", Name: "jump", Address: "jump.example"}}})
+	win.serverForm(&desk, lastUI)
+	for range 3 {
+		lastWindow.Frame(time.Second / 60)
+	}
+	form, ok := win.dialog.Body.(*widget.Form)
+	if !ok {
+		t.Fatalf("the form is a %T", win.dialog.Body)
+	}
+	var via *widget.Dropdown
+	var forward *widget.Checkbox
+	// Every field, the ones greyed out too, which take no focus.
+	for _, f := range form.Children() {
+		switch f := f.(type) {
+		case *widget.Dropdown:
+			if f.Label == "Through" {
+				via = f
+			}
+		case *widget.Checkbox:
+			if strings.Contains(f.Label, "agent") {
+				forward = f
+			}
+		}
+	}
+	if via == nil || forward == nil || !via.Disabled || !forward.Disabled {
+		t.Fatalf("for a window, Through is %+v and the agent box %+v", via, forward)
+	}
+
+	a := fontApp(t)
+	book, err := remote.LoadBook(filepath.Join(t.TempDir(), "servers.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.book = book
+	a.handle(SaveServer{Host: remote.Host{Name: "srv", Address: "srv.example", Identities: []string{"/k/id_ed25519"}}})
+	if !slices.Equal(a.st.KeyFiles, []string{"/k/id_ed25519"}) {
+		t.Fatalf("saved, the kept keys are %v", a.st.KeyFiles)
 	}
 }

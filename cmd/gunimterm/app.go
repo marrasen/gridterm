@@ -53,6 +53,9 @@ type State struct {
 	Marks Marks
 	// FileClip is what the file clipboard holds, marked in the lists.
 	FileClip FileClip
+	// KeyFiles are the key files kept, newest first, offered when a
+	// server is saved.
+	KeyFiles []string
 	// Theme names the theme the window is drawn in, and Themes those on
 	// offer.
 	Theme  string
@@ -531,6 +534,7 @@ func (a *app) run(ctx context.Context) error {
 			a.st.ShellSetup = s.ShellSetup()
 			a.st.TermProgram = s.TermProgram()
 			a.st.SavedCopies = s.Copies()
+			a.st.KeyFiles = s.Keys()
 			if size, ok := s.FontSize(); ok && !a.opts.sizeSet {
 				a.st.FontSize = min(max(float32(size), 8), 40)
 			}

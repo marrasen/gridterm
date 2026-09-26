@@ -126,3 +126,31 @@ func TestSavedServersAreListedWithAWayToConnect(t *testing.T) {
 		t.Fatal("the sidebar has no way to connect to a server")
 	}
 }
+
+// A password asked again on one connection says the last was refused,
+// and a new key's question opens on Cancel.
+func TestSigningInSaysAPasswordWasRefused(t *testing.T) {
+	a, _ := dialApp(t)
+	a.handle(ConnectTo{Saved: "srv"})
+	waitFor(t, a, "the host key question", func() bool { return len(a.st.Asks) > 0 })
+	if q := a.st.Asks[0]; !q.Careful || q.Danger {
+		t.Fatalf("the host key question is %+v", q)
+	}
+	a.handle(Disconnect{Machine: "srv"})
+
+	q := newAsker(a)
+	said := make(chan string, 2)
+	go func() {
+		for range 2 {
+			_, _ = q.Password(t.Context(), "tester", "srv")
+		}
+	}()
+	for range 2 {
+		waitFor(t, a, "the password question", func() bool { return len(a.st.Asks) > 0 && len(a.st.Asks[0].Prompts) > 0 })
+		said <- a.st.Asks[0].Text
+		a.handle(AskAnswered{ID: a.st.Asks[0].ID, Yes: true, Answers: []string{"x"}})
+	}
+	if first, second := <-said, <-said; first != "" || second != "Invalid password." {
+		t.Fatalf("the questions said %q, then %q", first, second)
+	}
+}

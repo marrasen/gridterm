@@ -60,9 +60,6 @@ six are confirmed in the code; the rest are still to check.
 
 Connections and servers:
 
-- The server form's details: Cancel first on a new host key, "Invalid
-  password" on a retry, a key-file picker that remembers keys, Jump
-  host and Forward agent off for a window, a Remove button in Edit.
 - "Waiting for server" with Copy and Open for a browser sign-in.
 - "Connection lost" with Reconnect for a window taken over.
 
@@ -75,9 +72,6 @@ Sidebar:
 - Headings for the machines on a window taken over; PageUp, PageDown,
   Home, End and Space; scrolling to follow the stage; "Edit This
   Window…".
-
-Files:
-
 
 Secrets, serving and agents:
 

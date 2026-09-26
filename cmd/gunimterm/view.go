@@ -105,10 +105,11 @@ type window struct {
 	afterUnlock string
 	// title is the window's title as last set.
 	title string
-	// dialing are the servers being connected to, and fileClip what the
-	// file clipboard holds.
+	// dialing are the servers being connected to, fileClip what the
+	// file clipboard holds, and keyFiles the key files kept.
 	dialing  []string
 	fileClip FileClip
+	keyFiles []string
 	// fonts are the families on the Font menu, and font the one the
 	// terminals are drawn in.
 	fonts []string
@@ -662,7 +663,7 @@ func (w *window) showAsk(asks []Ask, u *gunim.UI) {
 		d.OnAccept = func() gunim.Intent { return answer("") }
 	}
 	d.Dismiss = AskAnswered{ID: id}
-	d.Danger = q.Danger
+	d.Danger, d.Careful = q.Danger, q.Careful
 	if q.Plain {
 		d.SetButtons(q.Yes, "")
 	}
@@ -914,6 +915,20 @@ func (w *window) serverForm(old *remote.Host, u *gunim.UI) {
 	kind.Label = "Type"
 	folders := widget.NewTextField()
 	folders.Placeholder = "optional: paths to open files at, with commas"
+	// The key files kept, so one is a pick away rather than a path to
+	// remember.
+	var kept *widget.Dropdown
+	if len(w.keyFiles) > 0 {
+		kept = widget.NewDropdown(append([]string{"Pick a kept key"}, w.keyFiles...)...)
+		kept.Label = "Kept keys"
+		files := w.keyFiles
+		kept.OnPick(func(i int, u *gunim.UI) {
+			if i > 0 {
+				key.SetText(files[i-1])
+				u.Invalidate()
+			}
+		})
+	}
 	setup := widget.NewCheckbox("Teach its shell to say what it is doing")
 	forward := widget.NewCheckbox("Forward this machine's SSH agent to it")
 	title, under := "Add a server", ""
@@ -970,7 +985,10 @@ func (w *window) serverForm(old *remote.Host, u *gunim.UI) {
 		h.Via = ids[max(0, min(via.Selected, len(ids)-1))]
 		h.Window = kind.Selected == 1
 		h.Folders = remote.FoldersFrom(folders.Text())
-		h.Setup, h.ForwardAgent = setup.On, forward.On
+		h.Setup, h.ForwardAgent = setup.On, forward.On && !h.Window
+		if h.Window {
+			h.Via = ""
+		}
 		if err := h.Validate(); err != nil {
 			return h, upperFirst(err.Error()) + "."
 		}
@@ -979,10 +997,30 @@ func (w *window) serverForm(old *remote.Host, u *gunim.UI) {
 		}
 		return h, ""
 	}
+	// A window has no account, nothing to go through and no session to
+	// carry an agent over: those are greyed out while the type says
+	// window, as in gridterm, rather than taken and dropped.
+	applies := func() {
+		window := kind.Selected == 1
+		via.Disabled = window || len(ids) <= 1
+		forward.Disabled = window
+	}
+	applies()
+	kind.OnPick(func(int, *gunim.UI) { applies() })
+	form := widget.NewForm().Add("Name", name).Add("Type", kind).Add("Address", addr).Add("Port", port).Add("User", user).
+		Add("Through", via).Add("Key file", key)
+	if kept != nil {
+		form.Add("Kept keys", kept)
+	}
 	d := widget.NewDialog(title)
-	d.Body = widget.NewForm().Add("Name", name).Add("Type", kind).Add("Address", addr).Add("Port", port).Add("User", user).
-		Add("Through", via).Add("Key file", key).Add("Folders", folders).Add("", setup).Add("", forward)
+	d.Body = form.Add("Folders", folders).Add("", setup).Add("", forward)
 	d.SetButtons("Save", "Cancel")
+	if old != nil {
+		d.AddAction("Remove…", func(u *gunim.UI) {
+			d.Close(u)
+			w.confirmRemove(under, u)
+		})
+	}
 	d.Check = func() string {
 		_, problem := host()
 		return problem
@@ -1251,6 +1289,7 @@ func (w *window) update(st State, u *gunim.UI) {
 	w.remoteWindows = st.Windows
 	w.dialing = st.Dialing
 	w.fileClip = st.FileClip
+	w.keyFiles = st.KeyFiles
 	if renamed || !slices.Equal(st.Connected, w.connected) {
 		w.connected = st.Connected
 		w.servers(w.saved)

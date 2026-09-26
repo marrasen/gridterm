@@ -33,8 +33,9 @@ type Ask struct {
 	Yes    string
 	No     string
 	// Danger marks a question whose yes can do harm, and colours its
-	// button so. Plain has Yes alone, for something only told.
-	Danger, Plain bool
+	// button so. Careful opens on Cancel without the colour. Plain has
+	// Yes alone, for something only told.
+	Danger, Careful, Plain bool
 }
 
 // errDeclined is the user saying no to a question, which stops the
@@ -96,7 +97,7 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 	logLine(acct, "", "connecting to "+name)
 	began := time.Now()
 	for i := range hops {
-		hops[i].Ask = asker{a}
+		hops[i].Ask = newAsker(a)
 		hops[i].Ring = a.ring
 		hops[i].Saying = func(what string) { logLine(acct, "", what) }
 		hops[i].Wrong = func(what string) { logLine(acct, badly, what) }
@@ -230,7 +231,15 @@ func (a *app) dropAsk(id uint64) {
 }
 
 // asker answers the remote package's questions through the window.
-type asker struct{ a *app }
+type asker struct {
+	a *app
+	// asked says a password was asked for on this connection already,
+	// so asking again means the last one was refused.
+	asked *bool
+}
+
+// newAsker asks the user what one connection needs to know.
+func newAsker(a *app) asker { return asker{a: a, asked: new(bool)} }
 
 // Passphrase implements [remote.Ask].
 func (q asker) Passphrase(ctx context.Context, key remote.LockedKey) (string, error) {
@@ -265,7 +274,16 @@ func (q asker) Passphrase(ctx context.Context, key remote.LockedKey) (string, er
 
 // Password implements [remote.Ask].
 func (q asker) Password(ctx context.Context, user, host string) (string, error) {
-	ans, err := q.a.ask(ctx, Ask{Title: "Sign in to " + user + "@" + host, Prompts: []string{"Password"}, Secret: []bool{true}, Yes: "Sign in"})
+	// Asked again, the last one was refused, and the question says so
+	// rather than opening again with no word of why.
+	text := ""
+	if q.asked != nil {
+		if *q.asked {
+			text = "Invalid password."
+		}
+		*q.asked = true
+	}
+	ans, err := q.a.ask(ctx, Ask{Title: "Sign in to " + user + "@" + host, Text: text, Prompts: []string{"Password"}, Secret: []bool{true}, Yes: "Sign in"})
 	if err != nil {
 		return "", err
 	}
@@ -301,7 +319,9 @@ func (q asker) Question(ctx context.Context, rq remote.Question) ([]string, erro
 func (q asker) TrustHostKey(ctx context.Context, k remote.HostKey) (bool, error) {
 	text := fmt.Sprintf("%s is new to this computer. Its %s key has the fingerprint %s. Connect only if that matches the one its owner gave you.",
 		k.Addr, k.Type(), k.Fingerprint())
-	ans, err := q.a.ask(ctx, Ask{Title: "Trust this server?", Text: text, Yes: "Trust and Connect"})
+	// Careful: it opens on Cancel, as the one question where yes by
+	// reflex is the answer that cannot be taken back.
+	ans, err := q.a.ask(ctx, Ask{Title: "Trust this server?", Text: text, Yes: "Trust and Connect", Careful: true})
 	if errors.Is(err, errDeclined) {
 		return false, nil
 	}
@@ -323,6 +343,13 @@ func (a *app) saveServer(in SaveServer) error {
 		return err
 	}
 	a.st.Saved = a.book.Hosts()
+	// Its key is kept, to be offered for the next server.
+	if len(in.Host.Identities) > 0 && a.settings != nil {
+		if err := a.settings.KeepKey(in.Host.Identities[0], mostKeptKeys); err != nil {
+			a.notify("Server saved, but its key was not kept", err.Error(), "")
+		}
+		a.st.KeyFiles = a.settings.Keys()
+	}
 	a.notify("Saved "+in.Host.Name, in.Host.Target(), "")
 	return nil
 }

@@ -8,6 +8,7 @@ import (
 	"github.com/marrasen/gunim/paint"
 	"github.com/marrasen/gunim/widget"
 
+	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/secrets"
 )
 
@@ -111,10 +112,10 @@ func (p *secretsPane) show(st Secrets, u *gunim.UI) {
 		p.head.set("Secrets", u, p.unlock)
 		p.act.set("Locked. Unlock to see what is in them.", u)
 	case len(st.Items) == 0:
-		p.head.set("Secrets", u, p.add, p.note, p.lock)
+		p.head.set(secretsHeading(st), u, p.add, p.note, p.lock)
 		p.act.set("No secrets yet. Add one to keep it here, locked by your key.", u)
 	default:
-		p.head.set("Secrets", u, p.add, p.note, p.lock)
+		p.head.set(secretsHeading(st), u, p.add, p.note, p.lock)
 		p.act.set(count(len(st.Items), "secret")+" · Enter copies the one selected", u, p.typ, p.cp, p.reveal, p.change, p.remove)
 	}
 }
@@ -286,4 +287,52 @@ func (w *window) importForm(u *gunim.UI) {
 	}
 	d.Dismiss = DialogClosed{}
 	w.openDialog(d, u)
+}
+
+// makeKeyDialog asks where to write a new SSH key, and with what
+// passphrase: one typed, or, with the secrets there, one made up and
+// kept in them.
+func (w *window) makeKeyDialog(u *gunim.UI) {
+	path, comment, pass, again := widget.NewTextField(), widget.NewTextField(), widget.NewTextField(), widget.NewTextField()
+	if at, err := remote.DefaultKeyPath(); err == nil {
+		path.SetText(at)
+	}
+	comment.Placeholder, pass.Placeholder = "optional", "optional"
+	pass.Secret, again.Secret = true, true
+	form := widget.NewForm().
+		Add("", widget.NewLabel("Creates an ed25519 key pair. The public half is saved beside it, as the file's name with .pub.")).
+		Add("File", path).Add("Comment", comment)
+	var generate *widget.Checkbox
+	if w.secretsExist {
+		generate = widget.NewCheckbox("Make up a passphrase and keep it in the secrets")
+		form.Add("", generate)
+	}
+	form.Add("Passphrase", pass).Add("Again", again)
+	made := func() bool { return generate != nil && generate.On }
+	d := widget.NewDialog("New SSH Key")
+	d.Body = form
+	d.SetButtons("Create", "Cancel")
+	d.Check = func() string {
+		switch {
+		case strings.TrimSpace(path.Text()) == "":
+			return "Type where the key goes."
+		case !made() && pass.Text() != again.Text():
+			return "The two passphrases differ."
+		}
+		return ""
+	}
+	d.OnAccept = func() gunim.Intent {
+		return MakeKey{Path: path.Text(), Comment: comment.Text(), Passphrase: pass.Text(), Generate: made()}
+	}
+	d.Dismiss = DialogClosed{}
+	w.openDialog(d, u)
+}
+
+// secretsHeading is the pane's heading: the secrets, and the terminal
+// waiting for one, when one is.
+func secretsHeading(st Secrets) string {
+	if st.Waiting != "" {
+		return "Secrets — " + st.Waiting + " is waiting for one"
+	}
+	return "Secrets"
 }

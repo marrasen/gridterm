@@ -99,6 +99,8 @@ var commands = []struct{ id, title string }{
 	{"view.themesReload", "Reload Themes"},
 	{"help.files", "File Locations"},
 	{"app.about", "About gridterm"},
+	{"sshkey.make", "New SSH Key"},
+	{"sshkey.lock", "Lock SSH Keys"},
 	{"view.jobs", "Show Jobs"},
 	{"view.log", "Window Log"},
 	{"conn.log", "Connection Log"},
@@ -167,6 +169,8 @@ var menus = []struct {
 		{id: "secrets.add", title: "Add Secret…"}, {id: "secrets.addNote", title: "Add Note…"},
 		{id: "secrets.export", title: "Export…", group: true}, {id: "secrets.import", title: "Import…"},
 		{id: "secrets.lock", title: "Lock", group: true},
+		{title: "SSH Keys", caption: true},
+		{id: "sshkey.make", title: "New SSH Key…"}, {id: "sshkey.lock", title: "Lock SSH Keys"},
 	}},
 	{"Options", []menuItem{
 		{id: "theme.pick", title: "Theme…"},
@@ -237,6 +241,8 @@ func commandIntent(id string) (gunim.Intent, bool) {
 		return ReloadServers{}, true
 	case "shell.setup":
 		return ToggleShellSetup{}, true
+	case "sshkey.lock":
+		return LockKeys{}, true
 	case "shortcuts.reload":
 		return ReloadShortcuts{}, true
 	case "view.themesReload":

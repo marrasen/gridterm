@@ -65,13 +65,6 @@ Files:
   to a file, as the scrollback's Save As does.
 - Saved Copies (`files.copies`).
 
-Secrets and keys:
-
-- New SSH Key, which also keeps the new key's passphrase in the
-  secrets, and Lock SSH Keys.
-- The Show Secrets list's title saying when the pane is waiting for a
-  secret. Type answers such a pane either way.
-
 Agents:
 
 - Writing the skill file for an agent program, and the setup dialog

@@ -472,6 +472,10 @@ func (a *app) run(ctx context.Context) error {
 	a.showShare()
 	a.showServing()
 	a.scanShells()
+	// Whether there are secrets, read off the disk and left locked.
+	if _, err := a.vault(); err == nil {
+		a.showVault()
+	}
 	if err := a.loadShortcuts(false); err != nil {
 		a.notify("Couldn't read the shortcuts file", err.Error(), "")
 	}
@@ -542,6 +546,7 @@ func (a *app) publish() {
 	a.tellServed()
 	st.SavedTunnels = slices.Clone(a.st.SavedTunnels)
 	st.Stage = a.groups[a.groupOf[a.st.Focus]].clone()
+	st.Secrets.Waiting = a.waitingForSecret()
 	_ = a.c.Publish(windowTopic, st)
 	// A split opens once; after that it is only a split.
 	for _, g := range a.groups {
@@ -758,6 +763,10 @@ func (a *app) handle(in gunim.Intent) {
 		a.checkUpdates()
 	case ShowHelp:
 		a.showHelp()
+	case MakeKey:
+		err = a.makeKey(in)
+	case LockKeys:
+		a.lockKeys()
 	case ShowScrollback:
 		err = a.showScrollback(in.Pane)
 	case ReloadServers:

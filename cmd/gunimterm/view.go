@@ -84,11 +84,13 @@ type window struct {
 	// the shortcuts file's reads as last taken on.
 	help          *helpPane
 	shortcutsRead uint64
-	bells         uint64
-	titles        bool
-	captions      map[string]*captioned
-	sharing       bool
-	savedTunnels  []settings.SavedTunnel
+	// secretsExist says there are secrets, to keep a new key's passphrase in.
+	secretsExist bool
+	bells        uint64
+	titles       bool
+	captions     map[string]*captioned
+	sharing      bool
+	savedTunnels []settings.SavedTunnel
 	// accounts are the machines with a connection log, as the palette
 	// lists them.
 	accounts []string
@@ -259,6 +261,9 @@ func (w *window) run(id string, u *gunim.UI) bool {
 		} else {
 			w.confirmRemove(m, u)
 		}
+		return true
+	case "sshkey.make":
+		w.makeKeyDialog(u)
 		return true
 	case "help.shortcuts":
 		u.Send(w, ShowHelp{})
@@ -843,6 +848,7 @@ func (w *window) update(st State, u *gunim.UI) {
 	w.share = st.Share
 	w.sidebarShown = st.Sidebar
 	w.termProgram = st.TermProgram
+	w.secretsExist = st.Secrets.Exists
 	if st.ShortcutsRead != w.shortcutsRead {
 		w.shortcutsRead = st.ShortcutsRead
 		w.applyShortcuts(st.Shortcuts, u)

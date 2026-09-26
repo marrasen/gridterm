@@ -32,6 +32,9 @@ type Secrets struct {
 	Keys         []SecretKey
 	// Passphrase says a passphrase opens the vault as well as its keys.
 	Passphrase bool
+	// Waiting names the terminal used last when an agent has asked for a
+	// secret there, which Type answers, return and all.
+	Waiting string
 }
 
 // SecretItem is one secret, without the secret.
@@ -132,7 +135,7 @@ func (a *app) withSecrets(what string, then func(*secrets.Vault) error) {
 // there are several, and starts them. It runs on a goroutine of its
 // own, as asking waits.
 func (a *app) offerAVault(then func()) {
-	keys := vaultKeys()
+	keys := a.knownKeys()
 	if len(keys) == 0 {
 		a.events <- func() {
 			a.notify("No key to lock the secrets with", "An ed25519 key is needed. Make one with ssh-keygen -t ed25519.", "")
@@ -276,7 +279,20 @@ func onThisMachine(s secrets.KeySlot) bool {
 // vaultKeys are the key files a vault could be kept on: the usual one
 // and those in ~/.ssh, when their public half is ed25519, the one kind
 // that signs the same way every time.
-func vaultKeys() []string {
+func vaultKeys() []string { return vaultKeysWith(nil) }
+
+// knownKeys are the key files a vault could be kept on, the ones this
+// window made or was told of first.
+func (a *app) knownKeys() []string {
+	if a.settings == nil {
+		return vaultKeys()
+	}
+	return vaultKeysWith(a.settings.Keys)
+}
+
+// vaultKeysWith is vaultKeys, with the key files kept, as gridterm
+// keeps them, first.
+func vaultKeysWith(kept func() []string) []string {
 	var out []string
 	seen := map[string]bool{}
 	add := func(path string) {
@@ -295,6 +311,11 @@ func vaultKeys() []string {
 			return
 		}
 		out = append(out, path)
+	}
+	if kept != nil {
+		for _, k := range kept() {
+			add(k)
+		}
 	}
 	mine, err := remote.DefaultKeyPath()
 	if err == nil {
@@ -524,7 +545,7 @@ func (a *app) addSecretsKey() {
 			have[s.KeyFile] = true
 		}
 		var spare []string
-		for _, k := range vaultKeys() {
+		for _, k := range a.knownKeys() {
 			if !have[k] {
 				spare = append(spare, k)
 			}
@@ -641,4 +662,13 @@ func (a *app) passphraseInHand(keyFile string) string {
 		return ""
 	}
 	return pass
+}
+
+// waitingForSecret names the terminal used last when an agent has
+// asked for a secret there, or is "".
+func (a *app) waitingForSecret() string {
+	if t := a.terminal(a.lastTerminal); t != nil && t.AskedForASecret() {
+		return a.titleOf(a.lastTerminal)
+	}
+	return ""
 }

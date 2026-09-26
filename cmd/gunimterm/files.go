@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"os"
 	"slices"
 	"strings"
 	"time"
@@ -45,10 +46,31 @@ type Reader struct {
 	Seq    int
 	// Line is the line to show first, counted from 1, and 0 for the top.
 	Line int
+	// Name is the file's name, for telling its kind; Pic is it, read as
+	// a picture; SoFar is how much of it a read has got through.
+	Name  string
+	Pic   *files.Pic
+	SoFar int64
 	// Find opens the reader with its find bar open, as the scrollback
 	// is opened, to be searched.
 	Find bool
+	// Saves counts the reader's saves that have finished, and SaveErr
+	// is why the last one failed, empty when it worked.
+	Saves   int
+	SaveErr string
 }
+
+// Intents for readers.
+type (
+	// ReadAgain reads a reader pane's file again.
+	ReadAgain struct{ Pane string }
+	// SaveLines writes lines to a file at Path on this machine, for
+	// the reader in Pane, which is told how it went.
+	SaveLines struct {
+		Pane, Path string
+		Lines      []string
+	}
+)
 
 // Intents for files.
 type (
@@ -281,67 +303,142 @@ func (a *app) readFile(in ReadFile) {
 }
 
 // readOn opens path on a machine's files in a reader, at line when it
-// is past zero, placed at at.
+// is past zero, placed at at. A picture is read as a picture. A file
+// followed is read again each time it changes.
 func (a *app) readOn(machine string, f vfs.FS, path string, follow bool, line int, at placement) {
-	in := ReadFile{Path: path, Follow: follow}
 	a.next++
 	id := "p" + itoa(a.next)
-	title := vfs.Base(f, in.Path)
-	if in.Follow {
+	title := vfs.Base(f, path)
+	if follow {
 		title += " (following)"
 	}
 	a.addPane(Pane{ID: id, Title: title, Machine: machine, Kind: kindReader}, nil, at)
-	go func() {
-		var last vfs.Entry
-		seq := 0
-		for {
-			lines, cut, err := files.ReadFile(f, in.Path)
-			seq++
-			r := Reader{Path: in.Path, Lines: lines, Cut: cut, Follow: in.Follow, Seq: seq, Line: line}
-			if err != nil {
-				r.Err = err.Error()
-			}
-			open := make(chan bool, 1)
+	a.reads[id] = readSpec{f: f, path: path, name: vfs.Base(f, path), follow: follow, line: line}
+	a.readOnce(id)
+	if follow {
+		go a.followFile(id, f, path)
+	}
+}
+
+// readSpec is what a reader pane reads, to read it again.
+type readSpec struct {
+	f      vfs.FS
+	path   string
+	name   string
+	follow bool
+	line   int
+	seq    int
+}
+
+// mostPictureSide bounds a picture read, as gridterm bounds it.
+const mostPictureSide = 4096
+
+// readOnce reads a reader pane's file in the background, and publishes
+// it: its lines, or its picture, with how far the read has got as it
+// goes.
+func (a *app) readOnce(id string) {
+	spec, ok := a.reads[id]
+	if !ok {
+		return
+	}
+	var last time.Time
+	watch := func(read int64) {
+		if now := time.Now(); now.Sub(last) >= 100*time.Millisecond {
+			last = now
 			a.events <- func() {
-				if !a.has(id) {
-					open <- false
-					return
-				}
-				m := make(map[string]Reader, len(a.st.Readers)+1)
-				for k, v := range a.st.Readers {
-					m[k] = v
-				}
-				m[id] = r
-				a.st.Readers = m
-				open <- true
-			}
-			if !<-open || !in.Follow {
-				return
-			}
-			// Following: wait for the file to change, as gridterm does,
-			// by its size and its time.
-			for {
-				select {
-				case <-a.ctx.Done():
-					return
-				case <-time.After(time.Second):
-				}
-				e, err := f.Stat(in.Path)
-				if err == nil && (e.Size != last.Size || !e.Mod.Equal(last.Mod)) {
-					changed := last.Mod != (time.Time{})
-					last = e
-					if changed {
-						break
-					}
-				}
-				gone := make(chan bool, 1)
-				a.events <- func() { gone <- !a.has(id) }
-				if <-gone {
-					return
+				if r, ok := a.st.Readers[id]; ok {
+					r.SoFar = read
+					a.setReader(id, r)
 				}
 			}
 		}
+	}
+	go func() {
+		r := Reader{Path: spec.path, Name: spec.name, Follow: spec.follow, Line: spec.line}
+		var err error
+		if files.IsPicture(spec.name) {
+			var pic files.Pic
+			pic, err = files.ReadPictureWatched(spec.f, spec.path, mostPictureSide, watch)
+			r.Pic = &pic
+		} else {
+			r.Lines, r.Cut, err = files.ReadFileWatched(spec.f, spec.path, watch)
+		}
+		if err != nil {
+			r.Err = err.Error()
+		}
+		a.events <- func() {
+			if !a.has(id) {
+				return
+			}
+			spec := a.reads[id]
+			spec.seq++
+			a.reads[id] = spec
+			r.Seq = spec.seq
+			// A save that finished is still counted, for the reader to
+			// hear how it went.
+			was := a.st.Readers[id]
+			r.Saves, r.SaveErr = was.Saves, was.SaveErr
+			a.setReader(id, r)
+		}
 	}()
+}
+
+// setReader publishes a reader pane's state.
+func (a *app) setReader(id string, r Reader) {
+	m := make(map[string]Reader, len(a.st.Readers)+1)
+	maps.Copy(m, a.st.Readers)
+	m[id] = r
+	a.st.Readers = m
+}
+
+// followFile reads a followed file again each time it changes, by its
+// size and its time, as gridterm does, until its pane closes.
+func (a *app) followFile(id string, f vfs.FS, path string) {
+	var last vfs.Entry
+	for {
+		select {
+		case <-a.ctx.Done():
+			return
+		case <-time.After(time.Second):
+		}
+		gone := make(chan bool, 1)
+		a.events <- func() { gone <- !a.has(id) }
+		if <-gone {
+			return
+		}
+		e, err := f.Stat(path)
+		if err != nil || (e.Size == last.Size && e.Mod.Equal(last.Mod)) {
+			continue
+		}
+		first := last.Mod.IsZero()
+		last = e
+		if !first {
+			a.events <- func() { a.readOnce(id) }
+		}
+	}
+}
+
+// saveLines writes what a reader shows to a file on this machine.
+func (a *app) saveLines(in SaveLines) {
+	at, err := expandHome(in.Path)
+	if err == nil {
+		err = os.WriteFile(at, []byte(strings.Join(in.Lines, "\n")+"\n"), 0o600)
+	}
+	r, ok := a.st.Readers[in.Pane]
+	if !ok {
+		// The pane closed while its save was out; a notice says how
+		// it went instead.
+		if err != nil {
+			a.notify("Couldn't save", err.Error(), "")
+		}
+		return
+	}
+	r.Saves++
+	r.SaveErr = ""
+	if err != nil {
+		r.SaveErr = err.Error()
+	}
+	a.setReader(in.Pane, r)
 }
 
 // order sorts a folder's entries: folders first, then by name, as a

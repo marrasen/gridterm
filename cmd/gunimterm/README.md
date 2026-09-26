@@ -55,12 +55,5 @@ Panes and terminals:
 - Pictures in a terminal (OSC 1337 and 1338).
 - Paste Image as File (`edit.pasteImage`).
 
-Files:
-
-- The hex view, the JSON-log view, pictures in the reader, and the
-  minimap.
-- Selecting and copying text in the reader, and saving what it shows
-  to a file, as the scrollback's Save As does.
-
 Checks on Windows, waiting until the Windows runs resume: the screen
 reader recheck (#10) and this spike on Windows (#11).

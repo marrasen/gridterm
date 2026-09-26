@@ -372,6 +372,8 @@ type app struct {
 	far pathsFar
 	// typed is what agents typed, by pane.
 	typed map[string]*typedLog
+	// reads are what each reader pane reads, to read it again.
+	reads map[string]readSpec
 	// nextShell is the command the next terminal here starts, once.
 	nextShell []string
 	// found are the shells on this machine.
@@ -439,6 +441,7 @@ func newApp(c gunim.Client, sh *shells) *app {
 		windows:  map[string]*remoteWin{},
 		commands: map[string]command{},
 		typed:    map[string]*typedLog{},
+		reads:    map[string]readSpec{},
 		far:      pathsFar{known: map[string]farPath{}, asking: map[string]bool{}},
 		accounts: map[string]*logs.Lines{},
 		wake:     make(chan struct{}, 1),
@@ -789,6 +792,17 @@ func (a *app) handle(in gunim.Intent) {
 		err = a.forgetCopy(in.Saved)
 	case ShowCopies:
 		a.showCopies()
+	case ReadAgain:
+		if _, ok := a.reads[in.Pane]; ok {
+			a.readOnce(in.Pane)
+		} else if r, ok := a.st.Readers[in.Pane]; ok {
+			// Lines with no file behind them, as the scrollback's, are
+			// what they were.
+			r.Seq++
+			a.setReader(in.Pane, r)
+		}
+	case SaveLines:
+		a.saveLines(in)
 	case ShowScrollback:
 		err = a.showScrollback(in.Pane)
 	case ReloadServers:
@@ -1063,6 +1077,7 @@ func (a *app) remove(id string) {
 	a.tunnelPaneGone(id)
 	delete(a.commands, id)
 	delete(a.typed, id)
+	delete(a.reads, id)
 	if a.agents.by[id] != nil {
 		_ = a.unsharePane(id)
 	}

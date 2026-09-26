@@ -18,7 +18,6 @@ import (
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/secrets"
 	"github.com/marrasen/gridterm/settings"
-	"github.com/marrasen/gridterm/syntax"
 	"github.com/marrasen/gridterm/ui"
 )
 
@@ -828,6 +827,9 @@ func (w *window) update(st State, u *gunim.UI) {
 		for _, t := range w.terms {
 			t.cells.Size = st.FontSize
 		}
+		for _, r := range w.readers {
+			r.cells.Size = st.FontSize
+		}
 	}
 	rows := sidebarRows(st.Panes, st.Tunnels, st.Share, st.Windows)
 	// The windows connected to this one, under this computer.
@@ -925,24 +927,7 @@ func (w *window) update(st State, u *gunim.UI) {
 			delete(w.readers, id)
 			continue
 		}
-		next := st.Readers[id]
-		if next.Path != r.st.Path {
-			r.colour = syntax.For(next.Path)
-			r.follow = next.Follow
-			// Opened at a line, such as one a link named.
-			if next.Line > 0 {
-				r.top = min(next.Line-1, max(0, len(next.Lines)-1))
-			}
-			if next.Find {
-				r.openBar(false, u)
-			}
-		}
-		if next.Seq != r.seq && r.follow {
-			// Following, the reader stays at the end as the file grows.
-			r.top = len(next.Lines)
-		}
-		r.seq = next.Seq
-		r.st = next
+		r.show(st.Readers[id], u)
 	}
 	// Panes off stage are out of the tree, where nothing can be added
 	// to them; each catches up as it comes back.
@@ -1160,7 +1145,7 @@ func (w *window) bareNode(id string) gunim.Node {
 	case kindReader:
 		r, ok := w.readers[id]
 		if !ok {
-			r = newReader(id, w.fontSize)
+			r = newReader(w, id)
 			w.readers[id] = r
 		}
 		return r
@@ -1178,10 +1163,6 @@ func (w *window) focusNode(id string) gunim.Node {
 		return b.table
 	}
 	if r, ok := w.readers[id]; ok {
-		// Its find bar, when it is open, as it is for the scrollback.
-		if r.open {
-			return r.bar
-		}
 		return r
 	}
 	if w.kindOf(id) == kindJobs && w.jobs != nil {

@@ -1,6 +1,9 @@
 package main
 
 import (
+	"image"
+	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -8,10 +11,12 @@ import (
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/geom"
 	gi "github.com/marrasen/gunim/input"
+	"github.com/marrasen/gunim/paint"
 	"github.com/marrasen/gunim/widget"
 
 	"github.com/marrasen/gridterm/logs"
 	"github.com/marrasen/gridterm/settings"
+	"github.com/marrasen/gridterm/ui/files"
 	"github.com/marrasen/gridterm/vt"
 )
 
@@ -298,5 +303,110 @@ func TestAMachinesPlusOpensWhatCanBeOpenedThere(t *testing.T) {
 	}
 	if in, ok := nextIntent(t).(OpenOn); !ok || in.Machine != "" {
 		t.Fatalf("the first line of this computer's menu sent %#v", in)
+	}
+}
+
+func TestTheReaderShowsWhatArrivesAndWhatFollows(t *testing.T) {
+	win, _, publish := windowStage(t)
+	lines := []string{
+		`{"level":"info","msg":"started","time":"2026-09-26T10:00:00Z"}`,
+		`{"level":"warn","msg":"slow","time":"2026-09-26T10:00:01Z"}`,
+		`{"level":"info","msg":"served","time":"2026-09-26T10:00:02Z"}`,
+		`{"level":"info","msg":"served","time":"2026-09-26T10:00:03Z"}`,
+		`{"level":"info","msg":"served","time":"2026-09-26T10:00:04Z"}`,
+	}
+	st := State{Panes: []Pane{{ID: "p1", Title: "app.log", Kind: kindReader}}, Stage: &Box{Pane: "p1"}, Focus: "p1"}
+	st.Readers = map[string]Reader{"p1": {Path: "/var/log/app.log", Name: "app.log", Lines: lines, Seq: 1, Follow: true}}
+	publish(st)
+	rd := win.readers["p1"]
+	if rd == nil || rd.r == nil || rd.r.Lines() == 0 {
+		t.Fatal("the reader shows nothing")
+	}
+	if !rd.r.IsLog() {
+		t.Fatal("a JSON log reads as plain text")
+	}
+	// The file grew, and the reader, following, takes the new read.
+	st.Readers = map[string]Reader{"p1": {Path: "/var/log/app.log", Name: "app.log", Lines: append(lines, `{"level":"error","msg":"down","time":"2026-09-26T10:00:02Z"}`), Seq: 2, Follow: true}}
+	publish(st)
+	if got := rd.r.Lines(); got < 6 {
+		t.Fatalf("followed, the reader holds %d lines", got)
+	}
+	for range 5 {
+		lastWindow.Frame(time.Second / 60)
+	}
+}
+
+func TestTheReaderShowsAPicture(t *testing.T) {
+	win, _, publish := windowStage(t)
+	img := image.NewRGBA(image.Rect(0, 0, 40, 20))
+	st := State{Panes: []Pane{{ID: "p1", Title: "dot.png", Kind: kindReader}}, Stage: &Box{Pane: "p1"}, Focus: "p1"}
+	st.Readers = map[string]Reader{"p1": {Path: "/x/dot.png", Name: "dot.png", Pic: &files.Pic{Img: img, Kind: "PNG", Was: image.Pt(40, 20)}, Seq: 1}}
+	publish(st)
+	rd := win.readers["p1"]
+	if rd == nil || rd.r == nil || !rd.r.ShowsAPicture() || rd.r.Picture() == nil {
+		t.Fatal("the picture is not shown")
+	}
+	for range 5 {
+		lastWindow.Frame(time.Second / 60)
+	}
+	drawn := false
+	for _, op := range lastWindow.Offscreen().Ops() {
+		if im, ok := op.(*paint.ImageOp); ok && im.Image == rd.pic {
+			drawn = true
+		}
+	}
+	if !drawn {
+		t.Fatal("the picture was never painted")
+	}
+}
+
+// gridRow is a row of the reader's cells, as text.
+func gridRow(rd *reader, y int) string {
+	cols, _ := rd.g.Size()
+	var b strings.Builder
+	for x := range cols {
+		if r := rd.g.At(x, y).Rune; r != 0 {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+func TestTheReaderCopiesAndSaves(t *testing.T) {
+	win, _, publish := windowStage(t)
+	st := State{Panes: []Pane{{ID: "p1", Title: "notes.txt", Kind: kindReader}}, Stage: &Box{Pane: "p1"}, Focus: "p1"}
+	st.Readers = map[string]Reader{"p1": {Path: "/x/notes.txt", Name: "notes.txt", Lines: []string{"first", "second", "third"}, Seq: 1}}
+	publish(st)
+	for len(lastWindow.Client().Intents()) > 0 {
+		<-lastWindow.Client().Intents()
+	}
+	rd := win.readers["p1"]
+	press := func(k gi.Key, mods gi.Mods) {
+		lastWindow.Input(gi.KeyPress{Key: k, Mods: mods})
+		lastWindow.Frame(time.Second / 60)
+	}
+	press(gi.KeyA, gi.ModControl)
+	press(gi.KeyC, gi.ModControl)
+	if got, _ := lastWindow.Offscreen().Clipboard(); got != "first\nsecond\nthird" {
+		t.Fatalf("Ctrl+A and Ctrl+C copied %q", got)
+	}
+
+	press(gi.KeyS, gi.ModControl)
+	press(gi.KeyEnter, 0)
+	in, ok := nextIntent(t).(SaveLines)
+	if !ok || in.Pane != "p1" || in.Path != filepath.Join("~", "notes.txt") || len(in.Lines) != 3 {
+		t.Fatalf("Ctrl+S and Enter sent %#v", in)
+	}
+	_, rows := rd.g.Size()
+	if got := gridRow(rd, rows-1); !strings.Contains(got, "saving") {
+		t.Fatalf("while the save is out, the reader says %q", got)
+	}
+	// The program says how it went, and the reader says so.
+	r := st.Readers["p1"]
+	r.Saves, r.SaveErr = 1, "the disk is full"
+	st.Readers = map[string]Reader{"p1": r}
+	publish(st)
+	if got := gridRow(rd, rows-1); !strings.Contains(got, "the disk is full") {
+		t.Fatalf("the save failed, and the reader says %q", got)
 	}
 }

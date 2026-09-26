@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/marrasen/gridterm/settings"
+	shellfind "github.com/marrasen/gridterm/shells"
 )
 
 func TestACommandRunsInAPaneOfItsOwnAndAgain(t *testing.T) {
@@ -34,5 +35,36 @@ func TestACommandRunsInAPaneOfItsOwnAndAgain(t *testing.T) {
 	a.handle(RunSavedCommand{Saved: a.st.SavedCommands[0]})
 	if len(a.st.Panes) != 3 || a.st.Panes[2].Title != "echo command-ran" {
 		t.Fatalf("run from the saved list, the panes are %+v", a.st.Panes)
+	}
+}
+
+func TestAShellCanBeKeptForNewTerminals(t *testing.T) {
+	was := findShells
+	findShells = func() ([]shellfind.Shell, error) {
+		return []shellfind.Shell{
+			{ID: "login", Title: "sh", Path: "/bin/sh"},
+			{ID: "echoer", Title: "Echoer", Path: "/bin/sh", Args: []string{"-c", "echo i-am-the-echoer; sleep 5"}},
+		}, nil
+	}
+	t.Cleanup(func() { findShells = was })
+	a, _ := agentApp(t)
+	set, err := settings.Load(t.TempDir() + "/settings.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.settings = set
+	a.scanShells()
+	waitFor(t, a, "the shells", func() bool { return len(a.st.Shells) == 2 })
+	a.handle(OpenShellNamed{ID: "echoer"})
+	waitFor(t, a, "the echoer", func() bool { return strings.Contains(a.terminal(a.st.Panes[1].ID).Text(), "i-am-the-echoer") })
+	a.handle(PickShell{ID: "echoer"})
+	if id, ok := set.Shell(); !ok || id != "echoer" || a.st.ChosenShell != "echoer" {
+		t.Fatalf("kept, the settings say %q, %v", id, ok)
+	}
+	a.handle(NewTerminal{})
+	waitFor(t, a, "the echoer again", func() bool { return strings.Contains(a.terminal(a.st.Panes[2].ID).Text(), "i-am-the-echoer") })
+	a.handle(PickShell{})
+	if _, ok := set.Shell(); ok {
+		t.Fatal("back to the default, a shell is still kept")
 	}
 }

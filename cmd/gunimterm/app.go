@@ -12,6 +12,7 @@ import (
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/secrets"
 	"github.com/marrasen/gridterm/settings"
+	shellfind "github.com/marrasen/gridterm/shells"
 	"github.com/marrasen/gridterm/vfs"
 	"github.com/marrasen/gridterm/vt"
 	"slices"
@@ -75,9 +76,13 @@ type State struct {
 	PaneTitles bool
 	// SavedCommands are the commands kept, newest first.
 	SavedCommands []settings.SavedCommand
-	Bells         uint64
-	SavedTunnels  []settings.SavedTunnel
-	Status        string
+	// Shells are the shells found on this machine, and ChosenShell the
+	// one new terminals start, "" for the user's own.
+	Shells       []ShellChoice
+	ChosenShell  string
+	Bells        uint64
+	SavedTunnels []settings.SavedTunnel
+	Status       string
 	// Notices are the latest notices, oldest first, for the window to
 	// show each once.
 	Notices []Notice
@@ -340,7 +345,11 @@ type app struct {
 	// commands are what each command pane runs, to run it again.
 	commands map[string]command
 	// far remembers which paths on servers are there, for links.
-	far       pathsFar
+	far pathsFar
+	// nextShell is the command the next terminal here starts, once.
+	nextShell []string
+	// found are the shells on this machine.
+	found     []shellfind.Shell
 	tunnelSeq int
 	ticking   bool
 	quiet     bool
@@ -420,6 +429,7 @@ func (a *app) run(ctx context.Context) error {
 			a.st.SavedTunnels = s.Tunnels()
 			a.st.PaneTitles = s.PaneTitles()
 			a.st.SavedCommands = s.Commands()
+			a.st.ChosenShell, _ = s.Shell()
 		}
 	}
 	// The theme picked last time, as gridterm keeps it, or the first.
@@ -434,6 +444,7 @@ func (a *app) run(ctx context.Context) error {
 	}
 	a.showShare()
 	a.showServing()
+	a.scanShells()
 	if a.settings != nil && a.settings.ServeOn() {
 		go a.offerToServeAgain()
 	}
@@ -496,6 +507,7 @@ func (a *app) publish() {
 	st.Serving.Allowed = slices.Clone(a.st.Serving.Allowed)
 	st.Windows = slices.Clone(a.st.Windows)
 	st.SavedCommands = slices.Clone(a.st.SavedCommands)
+	st.Shells = slices.Clone(a.st.Shells)
 	a.tellServed()
 	st.SavedTunnels = slices.Clone(a.st.SavedTunnels)
 	st.Stage = a.groups[a.groupOf[a.st.Focus]].clone()
@@ -679,6 +691,16 @@ func (a *app) handle(in gunim.Intent) {
 		err = a.runCommand(in)
 	case RunSavedCommand:
 		err = a.runSavedCommand(in.Saved)
+	case OpenShellNamed:
+		argv := a.shellCommand(in.ID)
+		if argv == nil {
+			err = fmt.Errorf("this machine has no shell called %q", in.ID)
+			break
+		}
+		a.nextShell = argv
+		err = a.open("", placement{})
+	case PickShell:
+		err = a.pickShell(in.ID)
 	case ShowScrollback:
 		err = a.showScrollback(in.Pane)
 	case ReloadServers:
@@ -784,7 +806,11 @@ func (a *app) openThen(machine string, at placement, then func(id string, err er
 	id := "p" + strconv.Itoa(a.next)
 	title := fmt.Sprintf("Terminal %d", a.next)
 	if machine == "" {
-		sh, err := startLocal(a.palette, a.withLinks(a.hooks(id), ""))
+		argv := a.localShell()
+		if a.nextShell != nil {
+			argv, a.nextShell = a.nextShell, nil
+		}
+		sh, err := startLocal(argv, a.palette, a.withLinks(a.hooks(id), ""))
 		if err != nil {
 			return err
 		}

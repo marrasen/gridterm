@@ -54,8 +54,6 @@ Panes and terminals:
 
 - Pictures in a terminal (OSC 1337 and 1338).
 - Paste Image as File (`edit.pasteImage`).
-- Choosing the shell for a new terminal: the default, bash as a login
-  shell, and on Windows cmd, Windows PowerShell and PowerShell.
 - Shell Setup (`shell.setup`) and Terminal Identity (`shell.termProgram`).
 - Typing History (`agent.typed`), which shows what agents typed.
 

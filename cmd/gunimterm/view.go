@@ -72,11 +72,15 @@ type window struct {
 	// windows connected to, as last published.
 	savedCommands []settings.SavedCommand
 	remoteWindows []RemoteWindow
-	bells         uint64
-	titles        bool
-	captions      map[string]*captioned
-	sharing       bool
-	savedTunnels  []settings.SavedTunnel
+	// shellChoices are the shells here, and chosenShell the one kept,
+	// as last published.
+	shellChoices []ShellChoice
+	chosenShell  string
+	bells        uint64
+	titles       bool
+	captions     map[string]*captioned
+	sharing      bool
+	savedTunnels []settings.SavedTunnel
 	// accounts are the machines with a connection log, as the palette
 	// lists them.
 	accounts []string
@@ -320,6 +324,14 @@ func (w *window) run(id string, u *gunim.UI) bool {
 		u.Send(w, ShowLog{Machine: m})
 		return true
 	}
+	if s, ok := strings.CutPrefix(id, "shell.open."); ok {
+		u.Send(w, OpenShellNamed{ID: s})
+		return true
+	}
+	if s, ok := strings.CutPrefix(id, "shell.pick."); ok {
+		u.Send(w, PickShell{ID: s})
+		return true
+	}
 	if at, ok := strings.CutPrefix(id, "command.saved:"); ok {
 		w.runSavedCommand(at, u)
 		return true
@@ -531,6 +543,22 @@ func (w *window) servers(saved []remote.Host) {
 		w.palette.Items = append(w.palette.Items, widget.PaletteItem{Title: "Connection Log for " + m})
 		w.paletteIDs = append(w.paletteIDs, "conn.log:"+m)
 	}
+	// With more than one shell here, a terminal with any of them, and
+	// which new terminals start.
+	if len(w.shellChoices) > 1 {
+		for _, s := range w.shellChoices {
+			w.palette.Items = append(w.palette.Items, widget.PaletteItem{Title: "New " + s.Title})
+			w.paletteIDs = append(w.paletteIDs, "shell.open."+s.ID)
+			if s.ID != w.chosenShell {
+				w.palette.Items = append(w.palette.Items, widget.PaletteItem{Title: "Start " + s.Title + " in New Terminals"})
+				w.paletteIDs = append(w.paletteIDs, "shell.pick."+s.ID)
+			}
+		}
+		if w.chosenShell != "" {
+			w.palette.Items = append(w.palette.Items, widget.PaletteItem{Title: "Start The Default Shell in New Terminals"})
+			w.paletteIDs = append(w.paletteIDs, "shell.pick.")
+		}
+	}
 	for i, it := range w.savedCommandItems() {
 		w.palette.Items = append(w.palette.Items, it)
 		w.paletteIDs = append(w.paletteIDs, "command.saved:"+strconv.Itoa(i))
@@ -740,6 +768,10 @@ func (w *window) update(st State, u *gunim.UI) {
 	w.sidebarShown = st.Sidebar
 	w.remoteWindows = st.Windows
 	w.setSavedCommands(st.SavedCommands)
+	if !slices.Equal(st.Shells, w.shellChoices) || st.ChosenShell != w.chosenShell {
+		w.shellChoices, w.chosenShell = st.Shells, st.ChosenShell
+		w.servers(w.saved)
+	}
 	if st.Bells > w.bells {
 		w.bells = st.Bells
 		u.RequestAttention()

@@ -44,9 +44,10 @@ type shellHooks struct {
 // out and tells it its own.
 const shellCols, shellRows = 80, 24
 
-// startLocal starts the user's shell on this machine, drawing with pal.
-func startLocal(pal vt.Palette, hooks shellHooks) (*shell, error) {
-	sess, err := session.StartLocal(session.LocalConfig{Cols: shellCols, Rows: shellRows})
+// startLocal starts argv on this machine, or the user's shell when it
+// is nil, drawing with pal.
+func startLocal(argv []string, pal vt.Palette, hooks shellHooks) (*shell, error) {
+	sess, err := session.StartLocal(session.LocalConfig{Command: argv, Cols: shellCols, Rows: shellRows})
 	if err != nil {
 		return nil, fmt.Errorf("gunimterm: start the shell: %w", err)
 	}

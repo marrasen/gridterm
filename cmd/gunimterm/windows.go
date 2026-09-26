@@ -55,8 +55,10 @@ type remoteWin struct {
 	// bound is the pane here showing each thing it has open, by its id
 	// there.
 	bound map[string]string
-	// seen is its list as last told, to publish only a change.
-	seen []serve.Open
+	// seen is its list as last told, to publish only a change, and
+	// leaving says the user let go of it.
+	seen    []serve.Open
+	leaving bool
 }
 
 // serveAddr is an address with the serving port when it names none.
@@ -73,7 +75,11 @@ func serveAddr(addr string) string {
 
 // connectWindow connects to a served window, and opens a terminal on
 // it once it has.
-func (a *app) connectWindow(in ConnectWindow) error {
+func (a *app) connectWindow(in ConnectWindow) error { return a.reachWindow(in, true) }
+
+// reachWindow connects to a served window, and opens a terminal on it
+// once it has when terminal is set.
+func (a *app) reachWindow(in ConnectWindow, terminal bool) error {
 	addr := serveAddr(in.Addr)
 	if addr == "" {
 		return errors.New("type the address of the window to connect to")
@@ -113,6 +119,9 @@ func (a *app) connectWindow(in ConnectWindow) error {
 			}
 			logLine(acct, well, "connected in "+time.Since(began).Round(10*time.Millisecond).String())
 			a.holdWindow(name, addr, in.KeyFile, win)
+			if !terminal {
+				return
+			}
 			if err := a.open(name, placement{}); err != nil {
 				a.notify("Couldn't open a terminal on "+name, err.Error(), "")
 			}
@@ -188,10 +197,30 @@ func (a *app) windowGone(name string, w *remoteWin, why error) {
 		said = "It stopped being served. " + said
 	case serve.GoingKicked:
 		said = "It disconnected this one. " + said
-	default:
-		if why != nil && !serve.Ended(why) {
-			said = serve.Plain(why.Error()) + ". " + said
+	case "":
+		if w.leaving {
+			break
 		}
+		// The connection went, rather than the window saying so on
+		// purpose: offered to reach again, as gridterm offers it, the
+		// connection alone, with what it has open listed once it
+		// answers.
+		text := name
+		if why != nil && !serve.Ended(why) {
+			text += "\n\n" + serve.Plain(why.Error())
+		}
+		logLine(a.accounts[name], "", "connection lost")
+		again := ConnectWindow{Addr: w.addr, KeyFile: w.keyFile, Name: name}
+		a.askThen(a.ctx, Ask{Title: "Connection lost", Text: text, Yes: "Reconnect", No: "Close"}, func(ans AskAnswered) {
+			if !ans.Yes {
+				return
+			}
+			if err := a.reachWindow(again, false); err != nil {
+				a.notify("Couldn't reconnect to "+name, err.Error(), "")
+			}
+		})
+		a.showWindows()
+		return
 	}
 	logLine(a.accounts[name], "", "disconnected")
 	a.notify("Disconnected from the window at "+w.addr, said, "")
@@ -204,6 +233,8 @@ func (a *app) disconnectWindow(name string) error {
 	if !ok {
 		return nil
 	}
+	// Let go of on purpose: nothing to offer to reconnect.
+	w.leaving = true
 	err := w.win.Close()
 	if serve.Ended(err) {
 		err = nil

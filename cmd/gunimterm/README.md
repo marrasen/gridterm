@@ -60,7 +60,6 @@ six are confirmed in the code; the rest are still to check.
 
 Connections and servers:
 
-- "Connection lost" with Reconnect for a window taken over.
 
 Sidebar:
 

@@ -212,3 +212,32 @@ func TestAPaneOnAServerAWindowReachedWorksOnThatServer(t *testing.T) {
 		t.Fatalf("the file pane is on %q, %q, want srv through the window", p.Machine, p.On)
 	}
 }
+
+// A window whose connection dropped is offered to reach again: the
+// connection alone, with no new terminal on it.
+func TestAWindowWhoseConnectionDroppedIsOfferedAgain(t *testing.T) {
+	a, b := connectedWindows(t)
+	name := b.st.Windows[0].Name
+	for _, c := range a.serving.clients {
+		_ = c.Close()
+	}
+	pumpBoth(t, a, b, "the question", func() bool { return len(b.st.Asks) == 1 })
+	q := b.st.Asks[0]
+	if q.Title != "Connection lost" || q.Yes != "Reconnect" {
+		t.Fatalf("asked %+v", q)
+	}
+	panes := len(b.st.Panes)
+	b.handle(AskAnswered{ID: q.ID, Yes: true})
+	pumpBoth(t, a, b, "the window again", func() bool { return b.windows[name] != nil })
+	if len(b.st.Panes) != panes {
+		t.Fatalf("reconnected, the panes went from %d to %d", panes, len(b.st.Panes))
+	}
+	// Let go of on purpose, nothing is asked.
+	if err := b.disconnectWindow(name); err != nil {
+		t.Fatal(err)
+	}
+	pumpBoth(t, a, b, "the window to go", func() bool { return b.windows[name] == nil })
+	if len(b.st.Asks) != 0 {
+		t.Fatalf("let go of on purpose, it asks %+v", b.st.Asks)
+	}
+}

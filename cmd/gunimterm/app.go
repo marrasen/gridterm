@@ -386,6 +386,9 @@ type app struct {
 	windows map[string]*remoteWin
 	// leaving is set while the window asks whether to close.
 	leaving bool
+	// copied is the last secret put on the clipboard, and copiedAt when.
+	copied   string
+	copiedAt time.Time
 	// opts are what the command line asked for; fixedFont is a family
 	// -font-family named, and shotErr why a -shot script gave up.
 	opts      options
@@ -577,6 +580,7 @@ func (a *app) run(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
+			a.takeSecretBack()
 			return nil
 		case env, ok := <-intents:
 			if !ok {

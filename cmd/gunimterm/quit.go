@@ -38,6 +38,7 @@ func (a *app) askToQuit() {
 
 // exitNow closes every pane, which closes the window.
 func (a *app) exitNow() {
+	a.takeSecretBack()
 	for len(a.st.Panes) > 0 {
 		a.remove(a.st.Panes[0].ID)
 	}

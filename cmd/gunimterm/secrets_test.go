@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 
@@ -308,5 +309,30 @@ func TestSecretsGoOutToACSVFileAndComeBackIn(t *testing.T) {
 	}
 	if last := b.st.Notices[len(b.st.Notices)-1]; !strings.Contains(last.Body, "0 secrets read in, 2 left as they were") {
 		t.Fatalf("the second import said %q", last.Body)
+	}
+}
+
+// A secret still on the clipboard as the window closes is taken off it;
+// something copied since is left.
+func TestASecretIsTakenOffTheClipboardAtExit(t *testing.T) {
+	a, _ := secretsApp(t)
+	startVault(t, a)
+	a.handle(PutSecret{Name: "db", Kind: secrets.Password, Value: "hunter2"})
+	board := ""
+	wasRead, wasWrite := readClipboard, writeClipboard
+	readClipboard = func() (string, error) { return board, nil }
+	writeClipboard = func(s string) error { board = s; return nil }
+	t.Cleanup(func() { readClipboard, writeClipboard = wasRead, wasWrite })
+
+	a.handle(CopySecret{ID: a.st.Secrets.Items[0].ID})
+	board = "hunter2" // as the window put it there
+	a.exitNow()
+	if board != "" {
+		t.Fatalf("closed, the clipboard holds %q", board)
+	}
+	a.copied, a.copiedAt, board = "hunter2", time.Now(), "something else"
+	a.takeSecretBack()
+	if board != "something else" {
+		t.Fatalf("what was copied since became %q", board)
 	}
 }

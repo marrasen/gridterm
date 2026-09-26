@@ -95,7 +95,6 @@ Files:
 
 Secrets, serving and agents:
 
-- A secret taken off the clipboard as the window closes.
 - The secrets pane read again every second.
 - An agent's secret request cut to 60 characters, invisible and
   private-use characters taken out.

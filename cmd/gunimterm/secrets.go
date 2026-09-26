@@ -4,12 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"slices"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 
+	"github.com/marrasen/gridterm/clip"
 	"github.com/marrasen/gridterm/conf"
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/secrets"
@@ -476,8 +479,31 @@ func (a *app) copySecret(id string) {
 		a.notices++
 		a.st.Notices = append(a.st.Notices, Notice{ID: a.notices, Title: it.Name + " copied",
 			Body: fmt.Sprintf("The clipboard clears in %d seconds.", clipboardHolds), Clipboard: value, Forget: true})
+		a.copied, a.copiedAt = value, time.Now()
 	})
 }
+
+// takeSecretBack clears the clipboard as the window closes, when it
+// still holds a secret copied less than clipboardHolds ago, as gridterm
+// does: the window's own clearing would never come.
+func (a *app) takeSecretBack() {
+	if a.copied == "" || time.Since(a.copiedAt) > clipboardHolds*time.Second {
+		return
+	}
+	if now, err := readClipboard(); err == nil && now == a.copied {
+		if err := writeClipboard(""); err != nil {
+			log.Printf("taking the secret off the clipboard: %v", err)
+		}
+	}
+	a.copied = ""
+}
+
+// readClipboard and writeClipboard reach the system's clipboard from
+// the program's side. A test puts its own in their place.
+var (
+	readClipboard  = clip.Text
+	writeClipboard = clip.SetText
+)
 
 // typeSecret types a secret into the terminal used last, as if pasted.
 func (a *app) typeSecret(id string) {

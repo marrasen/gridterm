@@ -1,6 +1,7 @@
 package main
 
 import (
+	"image"
 	"image/color"
 	"math"
 	"time"
@@ -37,6 +38,9 @@ type term struct {
 	// that a blink is running, and blinkOff that the cursor is in the
 	// off half of one.
 	wantBlink, blinking, blinkOff bool
+	// pics are the inline pictures on screen as the painter holds
+	// them, by the picture each was made from.
+	pics map[image.Image]*paint.Image
 }
 
 // leastCols and leastRows are the smallest screen a shell is given.
@@ -96,9 +100,46 @@ func (t *term) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children) g
 	return size
 }
 
-// Paint implements [gunim.Node].
+// Paint implements [gunim.Node]: the cells, and over them the
+// pictures programs put in the output.
 func (t *term) Paint(p *paint.Painter, _ gunim.Frame, _ geom.Size, kids gunim.Children) {
 	kids.At(0).Paint(p)
+	t.paintPictures(p)
+}
+
+// paintPictures draws the inline pictures on screen, each over the
+// cells it was given, as gridterm draws them. A picture half scrolled
+// off is drawn in part.
+func (t *term) paintPictures(p *paint.Painter) {
+	placed := t.sh.t.Pictures()
+	if len(placed) == 0 && len(t.pics) == 0 {
+		return
+	}
+	cols, rows := t.cells.GridSize()
+	cell := t.cells.CellSize()
+	kept := make(map[image.Image]*paint.Image, len(placed))
+	for _, at := range placed {
+		if at.Img == nil || at.Cols <= 0 || at.Rows <= 0 {
+			continue
+		}
+		img, ok := t.pics[at.Img]
+		if !ok {
+			img = paint.NewImage(at.Img)
+		}
+		kept[at.Img] = img
+		top, bottom := max(at.Top, 0), min(at.Top+at.Rows, rows)
+		left, right := max(at.Col, 0), min(at.Col+at.Cols, cols)
+		if top >= bottom || left >= right {
+			continue
+		}
+		// The part of the picture that shows, in its own pixels.
+		w, h := img.Size()
+		sx, sy := float32(w)/float32(at.Cols), float32(h)/float32(at.Rows)
+		src := geom.Rc(float32(left-at.Col)*sx, float32(top-at.Top)*sy, float32(right-left)*sx, float32(bottom-top)*sy)
+		dst := geom.Rc(float32(left)*cell.W, float32(top)*cell.H, float32(right-left)*cell.W, float32(bottom-top)*cell.H)
+		p.Image(img, dst, paint.ImageOpts{Src: src, Opacity: 1})
+	}
+	t.pics = kept
 }
 
 // sync draws the shell's screen and copies the rows that changed into

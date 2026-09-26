@@ -52,7 +52,6 @@ command gridterm registers, and against what was left out on the way.
 
 Panes and terminals:
 
-- Pictures in a terminal (OSC 1337 and 1338).
 - Paste Image as File (`edit.pasteImage`).
 
 Checks on Windows, waiting until the Windows runs resume: the screen

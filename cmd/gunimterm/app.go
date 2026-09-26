@@ -641,6 +641,9 @@ func clearOpening(b *Box) {
 }
 
 func (a *app) handle(in gunim.Intent) {
+	if a.needsFiles(in) {
+		return
+	}
 	var err error
 	switch in := in.(type) {
 	case NewTerminal:

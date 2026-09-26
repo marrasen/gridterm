@@ -265,3 +265,33 @@ func TestClosingTheWindowAsksWhileAnythingIsOpen(t *testing.T) {
 	a.handle(AskAnswered{ID: a.st.Asks[0].ID, Yes: true})
 	waitFor(t, a, "the window to close", func() bool { return len(a.st.Panes) == 0 })
 }
+
+// Editing a server keeps the key files after the first, which the form
+// does not show, and refuses a name something is connected as.
+func TestEditingAServerKeepsItsKeysAndRefusesATakenName(t *testing.T) {
+	win, _, publish := windowStage(t)
+	desk := remote.Host{ID: "d1", Name: "desk", Address: "desk.example", Identities: []string{"/k/one", "/k/two"}}
+	publish(State{Saved: []remote.Host{desk}, Connected: []string{"laptop"}})
+	for len(lastWindow.Client().Intents()) > 0 {
+		<-lastWindow.Client().Intents()
+	}
+	win.serverForm(&desk, lastUI)
+	for range 5 {
+		lastWindow.Frame(time.Second / 60)
+	}
+	lastWindow.Input(gi.KeyPress{Key: gi.KeyEnter})
+	lastWindow.Frame(time.Second / 60)
+	for {
+		if in, ok := nextIntent(t).(SaveServer); ok {
+			if !slices.Equal(in.Host.Identities, []string{"/k/one", "/k/two"}) {
+				t.Fatalf("saved the keys %v", in.Host.Identities)
+			}
+			break
+		}
+	}
+	renamed := desk
+	renamed.Name = "laptop"
+	if why := win.savingClashes(renamed, &desk); why == "" {
+		t.Fatal("renamed to a name something is connected as, it was taken")
+	}
+}

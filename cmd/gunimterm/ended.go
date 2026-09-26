@@ -121,16 +121,7 @@ func (a *app) startAgain(id string) error {
 	if !ok {
 		// The connection has gone: dial it again, as gridterm does, and
 		// start the pane once it is back.
-		in := ConnectTo{Target: machine}
-		if a.book != nil {
-			if h, saved := a.book.Lookup(machine); saved {
-				if h.Window {
-					return errors.New("the window " + machine + " has gone. Connect to it again, then start the pane again")
-				}
-				in = ConnectTo{Saved: machine}
-			}
-		}
-		return a.connectThen(in, func(err error) {
+		return a.dialAgain(machine, func(err error) {
 			if err == nil {
 				err = a.startAgain(id)
 			}

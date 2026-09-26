@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"image/color"
 	"slices"
 	"strconv"
@@ -868,6 +869,32 @@ func (w *window) shellIDs() []string {
 	return shellfind.CommandIDs(list)
 }
 
+// savingClashes says what stands in the way of saving h in place of
+// old, as gridterm checks it: a new name something is connected as, a
+// window saved twice, a connected window moved.
+func (w *window) savingClashes(h remote.Host, old *remote.Host) string {
+	under := ""
+	if old != nil {
+		under = old.Name
+	}
+	if under != h.Name && (slices.Contains(w.connected, h.Name) || slices.ContainsFunc(w.remoteWindows, func(rw RemoteWindow) bool { return rw.Name == h.Name })) {
+		return fmt.Sprintf("Something is already connected as %q; close it first.", h.Name)
+	}
+	if h.Window {
+		for _, s := range w.saved {
+			if s.Window && s.Name != under && s.ServeAddr() == h.ServeAddr() {
+				return fmt.Sprintf("%s is already saved as the window at %s; a window has one entry in the list.", s.Name, h.ServeAddr())
+			}
+		}
+	}
+	for _, rw := range w.remoteWindows {
+		if under != "" && rw.Name == under && (!h.Window || rw.Addr != h.ServeAddr()) {
+			return fmt.Sprintf("%s is connected at %s; let go of it before changing where it is.", under, rw.Addr)
+		}
+	}
+	return ""
+}
+
 // serverForm asks for a server to save: a new one, or old edited.
 func (w *window) serverForm(old *remote.Host, u *gunim.UI) {
 	name, addr, port, user, key := widget.NewTextField(), widget.NewTextField(), widget.NewTextField(), widget.NewTextField(), widget.NewTextField()
@@ -927,8 +954,19 @@ func (w *window) serverForm(old *remote.Host, u *gunim.UI) {
 			}
 			h.Port = n
 		}
+		// The key typed first, and the keys after it the entry had,
+		// which the form does not show and so keeps.
+		var rest []string
+		if old != nil && len(old.Identities) > 1 {
+			rest = old.Identities[1:]
+		}
 		if k := strings.TrimSpace(key.Text()); k != "" {
 			h.Identities = []string{k}
+		}
+		for _, r := range rest {
+			if !slices.Contains(h.Identities, r) {
+				h.Identities = append(h.Identities, r)
+			}
 		}
 		h.Via = ids[max(0, min(via.Selected, len(ids)-1))]
 		h.Window = kind.Selected == 1
@@ -936,6 +974,9 @@ func (w *window) serverForm(old *remote.Host, u *gunim.UI) {
 		h.Setup, h.ForwardAgent = setup.On, forward.On
 		if err := h.Validate(); err != nil {
 			return h, upperFirst(err.Error()) + "."
+		}
+		if why := w.savingClashes(h, old); why != "" {
+			return h, why
 		}
 		return h, ""
 	}

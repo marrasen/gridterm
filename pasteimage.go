@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/marrasen/gridterm/clip"
 	"github.com/marrasen/gridterm/shellsetup"
 	"github.com/marrasen/gridterm/ui/term"
 	"github.com/marrasen/gridterm/vfs"
@@ -308,7 +309,7 @@ func takeSentPicture(raw []byte) error {
 	if err != nil {
 		return fmt.Errorf("that is not a picture this window can read: %w", err)
 	}
-	return setClipboardImage(img)
+	return clip.SetImage(img)
 }
 
 // paste puts whatever is on the clipboard into a pane.

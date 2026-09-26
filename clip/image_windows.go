@@ -1,6 +1,6 @@
 //go:build windows
 
-package main
+package clip
 
 import (
 	"encoding/binary"
@@ -38,8 +38,8 @@ const (
 // Another holding it for a few milliseconds is ordinary rather than a
 // failure, so opening it is tried for a moment rather than once.
 const (
-	clipboardTry  = 10 * time.Millisecond
-	clipboardWait = 300 * time.Millisecond
+	clipboardTry = 10 * time.Millisecond
+	wait         = 300 * time.Millisecond
 )
 
 var (
@@ -110,7 +110,7 @@ func withClipboard(f func() error) (err error) {
 // program that is holding it.
 func waitForClipboard() error {
 	var last error
-	for waited := time.Duration(0); waited < clipboardWait; waited += clipboardTry {
+	for waited := time.Duration(0); waited < wait; waited += clipboardTry {
 		last = clipOpen()
 		if last == nil {
 			return nil
@@ -120,12 +120,12 @@ func waitForClipboard() error {
 	return fmt.Errorf("open the clipboard: %w", last)
 }
 
-// clipboardHasText reports whether there is any text on the clipboard.
+// HasText reports whether there is any text on the clipboard.
 //
 // It is asked before reading, because the library that reads text says
 // "the operation completed successfully" when there is none: it hands
 // back whatever the last error was, and no error is what happened.
-func clipboardHasText() bool {
+func HasText() bool {
 	for _, want := range []uintptr{cfUnicodeText, cfText} {
 		if ok, _, _ := isFormatAvail.Call(want); ok != 0 {
 			return true
@@ -134,12 +134,12 @@ func clipboardHasText() bool {
 	return false
 }
 
-// clipboardImage returns the picture on the clipboard.
+// Image returns the picture on the clipboard.
 //
 // It reports whether there is one separately from whether reading it
 // failed: an empty clipboard is an ordinary thing to meet and a locked
 // one is not.
-func clipboardImage() (image.Image, bool, error) {
+func Image() (image.Image, bool, error) {
 	format := uintptr(0)
 	for _, want := range []uintptr{cfDIBV5, cfDIB} {
 		if ok, _, _ := isFormatAvail.Call(want); ok != 0 {
@@ -285,9 +285,9 @@ var (
 	globalFree  = kernel32.NewProc("GlobalFree")
 )
 
-// setClipboardImage puts a picture on the clipboard, as the bitmap every
+// SetImage puts a picture on the clipboard, as the bitmap every
 // Windows program knows how to read.
-func setClipboardImage(img image.Image) error {
+func SetImage(img image.Image) error {
 	dib := dibFrom(img)
 
 	mem, _, err := globalAlloc.Call(gmemMoveable, uintptr(len(dib)))

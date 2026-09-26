@@ -5,6 +5,8 @@ import (
 	"image"
 	"log"
 	"sync"
+
+	"github.com/marrasen/gridterm/clip"
 )
 
 // Clipboard access goes through a goroutine.
@@ -43,7 +45,7 @@ func (c *clipboardWriter) clear() { c.put("") }
 func (c *clipboardWriter) clearNow() error {
 	put := c.write
 	if put == nil {
-		put = writeClipboardText
+		put = clip.SetText
 	}
 	return put("")
 }
@@ -61,7 +63,7 @@ func (c *clipboardWriter) put(text string) {
 	c.once.Do(func() {
 		put := c.write
 		if put == nil {
-			put = writeClipboardText
+			put = clip.SetText
 		}
 		c.ch = make(chan string, 8)
 		go func() {
@@ -105,7 +107,7 @@ func (a *app) pasteText() string {
 	}
 	read := a.readClip
 	if read == nil {
-		read = readClipboardText
+		read = clip.Text
 	}
 	s, err := read()
 	if err != nil {
@@ -121,7 +123,7 @@ func (a *app) clipboardText() bool {
 	if a.hasClipText != nil {
 		return a.hasClipText()
 	}
-	return clipboardHasText()
+	return clip.HasText()
 }
 
 // clipboardPicture is the picture on the clipboard, through whatever the
@@ -130,5 +132,5 @@ func (a *app) clipboardPicture() (image.Image, bool, error) {
 	if a.readClipImage != nil {
 		return a.readClipImage()
 	}
-	return clipboardImage()
+	return clip.Image()
 }

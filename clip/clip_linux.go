@@ -1,6 +1,6 @@
 //go:build linux
 
-package main
+package clip
 
 import (
 	"bytes"
@@ -29,14 +29,14 @@ import (
 // pictures written by this one would take the clipboard from each other
 // on every copy.
 
-// clipboardWait bounds a read.
+// wait bounds a read.
 //
 // Reading asks whichever program owns the selection to hand the bytes
 // over, and these are called from the paste path, on the goroutine that
 // draws. A program that never answers would otherwise stop the window.
-const clipboardWait = 2 * time.Second
+const wait = 2 * time.Second
 
-// clipReady reports whether the clipboard can be reached, worked out
+// ready reports whether the clipboard can be reached, worked out
 // once and remembered.
 //
 // It is not done at startup. A gridterm with no display still runs --
@@ -44,15 +44,15 @@ const clipboardWait = 2 * time.Second
 // simply not among the things it can do. The library also warns that a
 // Read or a Write after a failed Init may panic outright, so every call
 // below asks this first.
-var clipReady = sync.OnceValue(func() error {
+var ready = sync.OnceValue(func() error {
 	if err := clipboard.Init(); err != nil {
 		return fmt.Errorf("reach the clipboard: %w", err)
 	}
 	return nil
 })
 
-// clipboardHas reports whether the clipboard holds a given format.
-func clipboardHas(ctx context.Context, want clipboard.Format) (bool, error) {
+// has reports whether the clipboard holds a given format.
+func has(ctx context.Context, want clipboard.Format) (bool, error) {
 	formats, err := clipboard.Formats(ctx)
 	if err != nil {
 		return false, fmt.Errorf("ask what is on the clipboard: %w", err)
@@ -60,19 +60,19 @@ func clipboardHas(ctx context.Context, want clipboard.Format) (bool, error) {
 	return slices.Contains(formats, want), nil
 }
 
-// clipboardHasText reports whether there is any text on the clipboard.
-func clipboardHasText() bool {
-	if clipReady() != nil {
+// HasText reports whether there is any text on the clipboard.
+func HasText() bool {
+	if ready() != nil {
 		// The clipboard cannot be reached at all. Saying yes sends the
 		// paste down the text path, where the read reports why in words
 		// the user sees. Saying no would paste nothing and explain
 		// nothing, which reads like an empty clipboard.
 		return true
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), clipboardWait)
+	ctx, cancel := context.WithTimeout(context.Background(), wait)
 	defer cancel()
 
-	has, err := clipboardHas(ctx, clipboard.FmtText)
+	has, err := has(ctx, clipboard.FmtText)
 	if err != nil {
 		// Same reasoning: unknown is answered as yes, so the failure is
 		// met on the path that can say it.
@@ -81,20 +81,20 @@ func clipboardHasText() bool {
 	return has
 }
 
-// clipboardImage returns the picture on the clipboard.
+// Image returns the picture on the clipboard.
 //
 // Whether there is one is reported separately from whether reading it
 // failed, because the paste command says different things about them:
 // an empty clipboard is an ordinary thing to meet and a clipboard that
 // would not be read is not.
-func clipboardImage() (image.Image, bool, error) {
-	if err := clipReady(); err != nil {
+func Image() (image.Image, bool, error) {
+	if err := ready(); err != nil {
 		return nil, false, err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), clipboardWait)
+	ctx, cancel := context.WithTimeout(context.Background(), wait)
 	defer cancel()
 
-	switch has, err := clipboardHas(ctx, clipboard.FmtImage); {
+	switch has, err := has(ctx, clipboard.FmtImage); {
 	case err != nil:
 		return nil, false, err
 	case !has:
@@ -121,22 +121,22 @@ func clipboardImage() (image.Image, bool, error) {
 	return img, true, nil
 }
 
-// setClipboardImage puts a picture on the clipboard, PNG-encoded, which
+// SetImage puts a picture on the clipboard, PNG-encoded, which
 // is how the library exchanges pictures and what carries the alpha.
 //
 // X11 gives the clipboard to the process that wrote it, which then
 // serves the bytes to whoever pastes. So the picture is there for as
 // long as this window is open, and a clipboard manager is what carries
 // it past that.
-func setClipboardImage(img image.Image) error {
-	if err := clipReady(); err != nil {
+func SetImage(img image.Image) error {
+	if err := ready(); err != nil {
 		return err
 	}
 	var buf bytes.Buffer
 	if err := png.Encode(&buf, img); err != nil {
 		return fmt.Errorf("encode the picture: %w", err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), clipboardWait)
+	ctx, cancel := context.WithTimeout(context.Background(), wait)
 	defer cancel()
 
 	if _, err := clipboard.Write(ctx, clipboard.FmtImage, buf.Bytes()); err != nil {
@@ -145,12 +145,12 @@ func setClipboardImage(img image.Image) error {
 	return nil
 }
 
-// writeClipboardText puts text on the clipboard.
-func writeClipboardText(s string) error {
-	if err := clipReady(); err != nil {
+// SetText puts text on the clipboard.
+func SetText(s string) error {
+	if err := ready(); err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), clipboardWait)
+	ctx, cancel := context.WithTimeout(context.Background(), wait)
 	defer cancel()
 
 	if _, err := clipboard.Write(ctx, clipboard.FmtText, []byte(s)); err != nil {
@@ -159,17 +159,17 @@ func writeClipboardText(s string) error {
 	return nil
 }
 
-// readClipboardText returns the text on the clipboard.
+// Text returns the text on the clipboard.
 //
 // It blocks, so it is called from the paste path only, where the user
 // is already waiting. A failure is returned rather than pasted as
 // nothing: a paste that does nothing looks exactly like an empty
 // clipboard, and the user tries again instead of being told why.
-func readClipboardText() (string, error) {
-	if err := clipReady(); err != nil {
+func Text() (string, error) {
+	if err := ready(); err != nil {
 		return "", err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), clipboardWait)
+	ctx, cancel := context.WithTimeout(context.Background(), wait)
 	defer cancel()
 
 	raw, err := clipboard.Read(ctx, clipboard.FmtText)

@@ -10,6 +10,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
+	"github.com/marrasen/gridterm/clip"
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/secrets"
@@ -315,7 +316,7 @@ func (a *app) stillOnTheClipboard(value string) bool {
 	}
 	read := a.readClip
 	if read == nil {
-		read = readClipboardText
+		read = clip.Text
 	}
 	got, err := read()
 	return err == nil && got == value

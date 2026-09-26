@@ -1,6 +1,6 @@
 //go:build linux
 
-package main
+package clip
 
 import (
 	"image"
@@ -16,13 +16,13 @@ import (
 //
 // Run them with:
 //
-//	GRIDTERM_CLIPBOARD_TEST=1 go test -run Clipboard .
+//	GRIDTERM_CLIPBOARD_TEST=1 go test -run Clipboard ./clip/
 func needsClipboard(t *testing.T) {
 	t.Helper()
 	if os.Getenv("GRIDTERM_CLIPBOARD_TEST") == "" {
 		t.Skip("set GRIDTERM_CLIPBOARD_TEST=1 to let this take the clipboard")
 	}
-	if err := clipReady(); err != nil {
+	if err := ready(); err != nil {
 		t.Skipf("no clipboard here: %v", err)
 	}
 }
@@ -33,20 +33,20 @@ func TestClipboardCarriesTextBothWays(t *testing.T) {
 	needsClipboard(t)
 
 	want := "gridterm on Linux: ÅÄÖ and a 🐧"
-	if err := writeClipboardText(want); err != nil {
+	if err := SetText(want); err != nil {
 		t.Fatalf("write the text: %v", err)
 	}
-	got, err := readClipboardText()
+	got, err := Text()
 	if err != nil {
 		t.Fatalf("read the text: %v", err)
 	}
 	if got != want {
 		t.Errorf("read back %q, want %q", got, want)
 	}
-	if !clipboardHasText() {
+	if !HasText() {
 		t.Error("the clipboard holds text and did not say so")
 	}
-	if _, have, err := clipboardImage(); err != nil || have {
+	if _, have, err := Image(); err != nil || have {
 		t.Errorf("the clipboard holds text, and it reported a picture: have=%v err=%v", have, err)
 	}
 }
@@ -67,10 +67,10 @@ func TestClipboardCarriesAPictureBothWays(t *testing.T) {
 	// asking for one back would be asking PNG for what nothing stores.
 	want.Set(1, 1, color.RGBA{})
 
-	if err := setClipboardImage(want); err != nil {
+	if err := SetImage(want); err != nil {
 		t.Fatalf("put the picture on the clipboard: %v", err)
 	}
-	got, have, err := clipboardImage()
+	got, have, err := Image()
 	if err != nil {
 		t.Fatalf("read the picture: %v", err)
 	}
@@ -95,10 +95,10 @@ func TestClipboardCarriesAPictureBothWays(t *testing.T) {
 func TestAClipboardHoldingAPictureHoldsNoText(t *testing.T) {
 	needsClipboard(t)
 
-	if err := setClipboardImage(image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
+	if err := SetImage(image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
 		t.Fatalf("put the picture on the clipboard: %v", err)
 	}
-	if clipboardHasText() {
+	if HasText() {
 		t.Error("the clipboard holds a picture and said it holds text")
 	}
 }

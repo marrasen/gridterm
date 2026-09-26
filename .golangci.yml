@@ -71,6 +71,6 @@ linters:
       # back an address in memory the operating system owns, which the
       # collector never moves, and the lock is held until the bytes have
       # been copied out. vet cannot see either of those.
-      - path: clipboard_image_windows\.go
+      - path: clip/image_windows\.go
         linters: [govet]
         text: possible misuse of unsafe.Pointer

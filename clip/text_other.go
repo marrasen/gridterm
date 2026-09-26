@@ -1,6 +1,6 @@
 //go:build !linux
 
-package main
+package clip
 
 import (
 	"fmt"
@@ -13,16 +13,16 @@ import (
 // installed. Linux is the one that shells out, which is why it has its
 // own -- see clipboard_linux.go.
 
-// writeClipboardText puts text on the clipboard.
-func writeClipboardText(s string) error { return clipboard.WriteAll(s) }
+// SetText puts text on the clipboard.
+func SetText(s string) error { return clipboard.WriteAll(s) }
 
-// readClipboardText returns the text on the clipboard.
+// Text returns the text on the clipboard.
 //
 // It blocks, so it is called from the paste path only, where the user
 // is already waiting. A failure is returned rather than pasted as
 // nothing: a paste that does nothing looks exactly like an empty
 // clipboard, and the user tries again instead of being told why.
-func readClipboardText() (string, error) {
+func Text() (string, error) {
 	s, err := clipboard.ReadAll()
 	if err != nil {
 		return "", fmt.Errorf("read the clipboard: %w", err)

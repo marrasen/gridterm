@@ -102,6 +102,8 @@ type window struct {
 	// waiting for them to open.
 	vault       Secrets
 	afterUnlock string
+	// title is the window's title as last set.
+	title string
 	size        geom.Size
 	// panes are the panes as last published, and sw the switcher while
 	// it is open.
@@ -404,6 +406,26 @@ func (w *window) openDialog(d *widget.Dialog, u *gunim.UI) {
 	w.dialog = d
 	// The pane takes the keyboard back once the dialog has closed.
 	w.focused = ""
+}
+
+// programName is what the window is called, before the focused
+// terminal's title.
+const programName = "gunimterm"
+
+// showTitle names the window after the focused terminal's title, as
+// its program sets it. Read from the focused one only: a build running
+// in a pane out of sight does not rename the window.
+func (w *window) showTitle(st State, u *gunim.UI) {
+	title := programName
+	if t, ok := w.terms[st.Focus]; ok {
+		if program := t.sh.t.Title(); program != "" {
+			title = programName + " — " + program
+		}
+	}
+	if title != w.title {
+		w.title = title
+		u.SetTitle(title)
+	}
 }
 
 // secretsCommand carries out a command on the secrets that picks one
@@ -1070,6 +1092,7 @@ func (w *window) update(st State, u *gunim.UI) {
 		w.secrets.show(st.Secrets, u)
 	}
 	w.vault = st.Secrets
+	w.showTitle(st, u)
 	if id := w.afterUnlock; id != "" && st.Secrets.Open {
 		w.run(id, u)
 	}

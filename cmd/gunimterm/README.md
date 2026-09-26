@@ -52,7 +52,6 @@ command gridterm registers, and against what was left out on the way.
 
 The window:
 
-- Its title follows the focused pane, as "gridterm — <title>".
 - Its icon, and a first size worked out from the font's cells.
 - The Font menu, which picks the font family (`font.use.<family>`),
   and the font size kept between runs.

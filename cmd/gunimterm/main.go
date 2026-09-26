@@ -53,7 +53,7 @@ func run() error {
 	log.SetOutput(windowLog)
 	err := gunim.Main(ctx, func(a *gunim.App) error {
 		w, err := a.NewWindow(gunim.WindowOptions{
-			Title: "gunimterm",
+			Title: programName,
 			Size:  geom.Sz(900, 600),
 			// The close button asks first, as Exit does.
 			AskToClose: Exit{},

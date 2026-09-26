@@ -72,3 +72,28 @@ func TestAPictureInTheOutputIsDrawnOverItsCells(t *testing.T) {
 		t.Fatalf("painted in %v, want the four by two cells under the first line, %v", drawn.Rect, want)
 	}
 }
+
+func TestTheWindowIsNamedAfterTheFocusedTerminal(t *testing.T) {
+	_, sh, publish := windowStage(t)
+	s := &printed{typed: typed{done: make(chan struct{})}, out: []byte("\x1b]2;vim notes.txt\x07")}
+	quiet := shellHooks{output: func() {}, title: func(string) {}, exit: func() {}, clipboard: func(string) {}}
+	sh.set("p1", openShell(s, vt.DefaultPalette(), quiet))
+	t.Cleanup(func() { _ = sh.get("p1").t.Close() })
+	deadline := time.Now().Add(5 * time.Second)
+	for sh.get("p1").t.Title() == "" {
+		if time.Now().After(deadline) {
+			t.Fatal("the program's title never arrived")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	panes := []Pane{{ID: "p1", Title: "Terminal 1"}, {ID: "p2", Title: "files", Kind: kindFiles}}
+	publish(State{Panes: panes, Stage: &Box{Pane: "p1"}, Focus: "p1"})
+	if got := lastWindow.Offscreen().Title(); got != "gunimterm — vim notes.txt" {
+		t.Fatalf("the window is called %q", got)
+	}
+	// A pane that is no terminal leaves the window its own name.
+	publish(State{Panes: panes, Stage: &Box{Pane: "p2"}, Focus: "p2"})
+	if got := lastWindow.Offscreen().Title(); got != "gunimterm" {
+		t.Fatalf("on a file pane, the window is called %q", got)
+	}
+}

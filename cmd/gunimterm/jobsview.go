@@ -92,7 +92,9 @@ type jobCard struct {
 	detail *widget.Label
 	names  *widget.Label
 	bar    *widget.ProgressBar
-	graph  *speedGraph
+	graph  *widget.LiveGraph
+	// sampled is how many of the job's speed samples the graph has.
+	sampled int
 	cancel *widget.Button
 	repeat *widget.Button
 	save   *widget.Checkbox
@@ -103,9 +105,10 @@ type jobCard struct {
 func newJobCard(j Job) *jobCard {
 	c := &jobCard{
 		title: widget.NewLabel(""), detail: widget.NewLabel(""), names: widget.NewLabel(""),
-		bar: widget.NewProgressBar(), graph: &speedGraph{},
+		bar: widget.NewProgressBar(), graph: widget.NewLiveGraph(sampleEvery, mostSpeeds),
 		cancel: widget.NewButton("Cancel"), repeat: widget.NewButton("Repeat"), save: widget.NewCheckbox("Save this copy"),
 	}
+	c.graph.Label = func(v float64) string { return humanSize(int64(v)) + "/s" }
 	c.title.MaxLines, c.detail.MaxLines = 1, 1
 	c.detail.Size, c.detail.Color = smallText, faint
 	c.names.Size = smallText
@@ -136,7 +139,14 @@ func (c *jobCard) fill(j Job) {
 	if j.Failed {
 		c.detail.Color = widget.DialogProblem
 	}
-	c.graph.speeds = j.Speeds
+	// The samples taken since the card last looked, into the graph,
+	// which slides on every frame while the job runs.
+	fresh := min(j.Sampled-c.sampled, len(j.Speeds))
+	for _, s := range j.Speeds[len(j.Speeds)-max(fresh, 0):] {
+		c.graph.Add(float64(s))
+	}
+	c.sampled = j.Sampled
+	c.graph.SetRunning(!j.Done)
 	c.save.On = j.Saved
 	c.names.SetText(namesLines(j))
 }
@@ -227,7 +237,7 @@ func (c *jobCard) Layout(cs gunim.Constraints, _ gunim.Frame, kids gunim.Childre
 	bs := bar.Layout(gunim.Constraints{Max: geom.Sz(max(0, w-2*pad), 20)})
 	bar.Place(geom.Pt(pad, y))
 	y += bs.H + gap/2
-	gs := graph.Layout(gunim.Constraints{Max: geom.Sz(max(0, w-2*pad), 40)})
+	gs := graph.Layout(gunim.Constraints{Max: geom.Sz(max(0, w-2*pad), 80)})
 	graph.Place(geom.Pt(pad, y))
 	if gs.H > 0 {
 		y += gs.H + gap/2
@@ -249,44 +259,6 @@ func (c *jobCard) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gun
 	p.RRect(geom.Rect{Max: box.Point()}, widget.CardRadius.Get(f.Theme), paint.Solid(widget.CardFill.Get(f.Theme)))
 	for k := range kids.All {
 		k.Paint(p)
-	}
-}
-
-// speedGraph draws a job's speed over the last while, a thin bar a
-// sample, the fastest reaching the top.
-type speedGraph struct{ speeds []uint64 }
-
-// graphHeight is the graph's height, when there is something to draw.
-const graphHeight = 28
-
-// Layout implements [gunim.Node]: nothing until there are samples.
-func (g *speedGraph) Layout(c gunim.Constraints, _ gunim.Frame, _ gunim.Children) geom.Size {
-	if len(g.speeds) < 2 {
-		return geom.Size{}
-	}
-	return c.Constrain(geom.Sz(c.Max.W, graphHeight))
-}
-
-// Paint implements [gunim.Node].
-func (g *speedGraph) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, _ gunim.Children) {
-	if box.H <= 0 || len(g.speeds) < 2 {
-		return
-	}
-	var most uint64
-	for _, s := range g.speeds {
-		most = max(most, s)
-	}
-	if most == 0 {
-		return
-	}
-	c := widget.Accent.Get(f.Theme)
-	c.A = 0x90
-	step := box.W / float32(mostSpeeds)
-	x := box.W - step*float32(len(g.speeds))
-	for _, s := range g.speeds {
-		h := max(1, box.H*float32(s)/float32(most))
-		p.RRect(geom.Rect{Min: geom.Pt(x+step*0.15, box.H-h), Max: geom.Pt(x+step*0.85, box.H)}, 1, paint.Solid(c))
-		x += step
 	}
 }
 

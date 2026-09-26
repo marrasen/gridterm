@@ -71,8 +71,10 @@ type Job struct {
 	Current string
 	Ticked  int
 	// Speeds are its speed over the last while, oldest first, for a
-	// graph.
-	Speeds []uint64
+	// graph, and Sampled how many samples have been taken in all, so a
+	// graph can tell the new ones.
+	Speeds  []uint64
+	Sampled int
 	// Repeatable says a finished copy can be run again, and Saved that
 	// it is on the saved list.
 	Repeatable, Saved bool
@@ -130,6 +132,7 @@ type running struct {
 	// and a second press in that time would copy the same thing twice.
 	repeating bool
 	speeds    []uint64
+	sampled   int
 	lastBytes int64
 	lastAt    time.Time
 	// ended is set once its end has been reported.
@@ -224,7 +227,7 @@ func (a *app) followOn(op jobs.Op, title, from, to string) *jobs.Job {
 
 // watchJobs looks at the jobs four times a second while any runs.
 func (a *app) watchJobs() {
-	t := time.NewTicker(250 * time.Millisecond)
+	t := time.NewTicker(sampleEvery)
 	defer t.Stop()
 	for {
 		select {
@@ -287,7 +290,7 @@ func (a *app) showJobs() bool {
 // jobRow is a job as the pane shows it.
 func jobRow(r *running, p jobs.Progress) Job {
 	row := Job{ID: r.id, Title: r.title, Share: -1, Done: p.Done, Names: r.op.Names, Current: p.Current,
-		Speeds: slices.Clone(r.speeds), Repeatable: p.Done && r.op.Kind == jobs.Copy, Machine: r.to, Kind: jobKind(r.op.Kind)}
+		Speeds: slices.Clone(r.speeds), Sampled: r.sampled, Repeatable: p.Done && r.op.Kind == jobs.Copy, Machine: r.to, Kind: jobKind(r.op.Kind)}
 	if r.op.Kind == jobs.Delete {
 		row.Machine = r.from
 	}
@@ -507,9 +510,12 @@ func describe(e vfs.Entry) string {
 	return humanSize(e.Size)
 }
 
-// mostSpeeds is how many speed samples a job keeps for its graph: a
-// quarter minute, four a second.
-const mostSpeeds = 60
+// mostSpeeds is how many speed samples a job keeps for its graph, and
+// sampleEvery how often one is taken: twelve seconds, ten a second.
+const (
+	mostSpeeds  = 120
+	sampleEvery = 100 * time.Millisecond
+)
 
 // sample writes down how fast the job went since it was last looked at.
 func (r *running) sample(p jobs.Progress) {
@@ -517,6 +523,7 @@ func (r *running) sample(p jobs.Progress) {
 	if !r.lastAt.IsZero() && !p.Done {
 		if dt := now.Sub(r.lastAt).Seconds(); dt > 0 {
 			r.speeds = append(r.speeds, uint64(max(0, float64(p.BytesDone-r.lastBytes)/dt)))
+			r.sampled++
 			if len(r.speeds) > mostSpeeds {
 				r.speeds = r.speeds[len(r.speeds)-mostSpeeds:]
 			}
@@ -527,7 +534,7 @@ func (r *running) sample(p jobs.Progress) {
 
 // speedNow is the job's speed over its last second.
 func (r *running) speedNow() uint64 {
-	n := min(4, len(r.speeds))
+	n := min(int(time.Second/sampleEvery), len(r.speeds))
 	if n == 0 {
 		return 0
 	}

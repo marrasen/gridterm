@@ -78,8 +78,6 @@ Sidebar:
 
 Files:
 
-- A read error as a row to click, and a "reading…" row.
-- WSL folders in the Files menu.
 
 Secrets, serving and agents:
 

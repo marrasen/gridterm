@@ -728,14 +728,9 @@ func (w *window) servers(saved []remote.Host) {
 		}
 		w.palette.Items = append(w.palette.Items, widget.PaletteItem{Title: "New Terminal on " + where}, widget.PaletteItem{Title: "Browse Files on " + where})
 		w.paletteIDs = append(w.paletteIDs, "conn.terminal."+remote.CommandName(m), "conn.files."+remote.CommandName(m))
-		for _, h := range w.saved {
-			if h.Name != m {
-				continue
-			}
-			for i, f := range h.Folders {
-				w.palette.Items = append(w.palette.Items, widget.PaletteItem{Title: "Browse " + f + " on " + where})
-				w.paletteIDs = append(w.paletteIDs, "conn.files."+remote.CommandName(m)+"."+strconv.Itoa(i+1))
-			}
+		for i, f := range w.foldersOn(m) {
+			w.palette.Items = append(w.palette.Items, widget.PaletteItem{Title: "Browse " + f + " on " + where})
+			w.paletteIDs = append(w.paletteIDs, "conn.files."+remote.CommandName(m)+"."+strconv.Itoa(i+1))
 		}
 	}
 	// With more than one shell here, a terminal with any of them, and
@@ -824,16 +819,16 @@ func (w *window) runItem(id string, u *gunim.UI) bool {
 			u.Send(w, FilesOn{Machine: m})
 			break
 		}
-		// A folder saved on a machine: its number follows the
+		// A folder offered on a machine: its number follows the
 		// machine's name, whose own name may hold stops.
 		cut := strings.LastIndex(rest, ".")
 		if cut < 0 {
 			break
 		}
-		h, ok := savedNamed(rest[:cut])
+		m, ok := machineNamed(rest[:cut])
 		i, numbered := nth(rest[cut+1:])
-		if ok && numbered && i < len(h.Folders) {
-			u.Send(w, FilesOn{Machine: h.Name, Path: h.Folders[i]})
+		if folders := w.foldersOn(m); ok && numbered && i < len(folders) {
+			u.Send(w, FilesOn{Machine: m, Path: folders[i]})
 		}
 	case strings.HasPrefix(id, shellfind.CommandPrefix):
 		for i, sid := range w.shellIDs() {
@@ -1045,6 +1040,26 @@ func (w *window) nextFilePane(id string, back bool) string {
 		step = -1
 	}
 	return files[(at+step+len(files))%len(files)]
+}
+
+// foldersOn are the folders offered for a machine, as gridterm offers
+// them: the ones saved for it, and on this computer each WSL
+// distribution's, which Windows serves on a share of its own.
+func (w *window) foldersOn(m string) []string {
+	var out []string
+	for _, h := range w.saved {
+		if h.Name == m {
+			out = append(out, h.Folders...)
+		}
+	}
+	if m == "" {
+		for _, s := range w.shellChoices {
+			if s.Folder != "" {
+				out = append(out, s.Folder)
+			}
+		}
+	}
+	return out
 }
 
 // removeSays is what removing a server closes, as gridterm says it, and
@@ -2090,12 +2105,8 @@ func (w *window) openMachineMenu(r *sideRow, u *gunim.UI) {
 		add("Command…", func(u *gunim.UI) { w.commandDialogOn(m, u) })
 	}
 	add("Files", send(FilesOn{Machine: m}))
-	for _, h := range w.saved {
-		if h.Name == m {
-			for _, f := range h.Folders {
-				add("Files in "+f, send(FilesOn{Machine: m, Path: f}))
-			}
-		}
+	for _, f := range w.foldersOn(m) {
+		add("Files in "+f, send(FilesOn{Machine: m, Path: f}))
 	}
 	if m != "" && !window {
 		add("Tunnel…", func(u *gunim.UI) { w.tunnelDialogOn(m, false, u) })

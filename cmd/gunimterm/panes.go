@@ -35,8 +35,10 @@ type browser struct {
 	byName     map[widget.Key]vfs.Entry
 	sortBy     int
 	descending bool
-	// keys is the bar of keys at the foot.
-	keys *keyBar
+	// keys is the bar of keys at the foot, and problem the line under
+	// the path saying a folder could not be read.
+	keys    *keyBar
+	problem *errLine
 	// goTo is Go To's field while it is open, and asked the folder whose
 	// names were last asked for, to complete from.
 	goTo  *widget.TextField
@@ -66,7 +68,9 @@ func newBrowser(w *window, id string) *browser {
 	}
 	b.table.SetSorted(0, false)
 	b.keys = b.newKeys()
-	b.col = widget.Column(widget.NewPad(b.path), b.table, b.keys).Grow(b.table, 1)
+	b.problem = &errLine{b: b, label: widget.NewLabel("")}
+	b.problem.label.Size, b.problem.label.Color, b.problem.label.MaxLines = smallText, widget.ButtonDangerFill, 1
+	b.col = widget.Column(widget.NewPad(b.path), b.problem, b.table, b.keys).Grow(b.table, 1)
 	b.col.Cross, b.col.Gap = widget.CrossStretch, noGap
 	return b
 }
@@ -283,12 +287,17 @@ func (b *browser) askFolder(u *gunim.UI) {
 func (b *browser) show(st Browser, u *gunim.UI) {
 	listed := st.Listed.Dir != b.st.Listed.Dir || !slices.Equal(st.Listed.Folders, b.st.Listed.Folders)
 	b.st = st
+	b.problem.label.SetText("")
+	if st.Err != "" {
+		b.problem.label.SetText("Couldn't read this folder. Click for why.")
+	}
 	if listed && b.goTo != nil {
 		b.complete(b.goTo.Text(), u)
 	}
 	text := st.Path
-	if st.Err != "" {
-		text = st.Path + " — " + st.Err
+	if st.Seq == 0 && st.Err == "" {
+		// Nothing to show yet, and a read on its way.
+		text = "Reading " + st.Path + "…"
 	}
 	moved := b.path.Text != text
 	b.path.SetText(text)

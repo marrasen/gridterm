@@ -13,7 +13,12 @@ import (
 // keeps one as the shell new terminals start.
 
 // ShellChoice is a shell on this machine, as the palette offers it.
-type ShellChoice struct{ ID, Title string }
+type ShellChoice struct {
+	ID, Title string
+	// Folder is where Windows reaches a WSL distribution's files, empty
+	// for any other shell.
+	Folder string
+}
 
 // Intents for the shell.
 type (
@@ -42,7 +47,11 @@ func (a *app) scanShells() {
 			a.found = found
 			a.st.Shells = nil
 			for _, s := range found {
-				a.st.Shells = append(a.st.Shells, ShellChoice{ID: s.ID, Title: s.Title})
+				choice := ShellChoice{ID: s.ID, Title: s.Title}
+				if s.Distro != "" {
+					choice.Folder = shellfind.WSLRoot(s.Distro)
+				}
+				a.st.Shells = append(a.st.Shells, choice)
 			}
 		}
 	}()

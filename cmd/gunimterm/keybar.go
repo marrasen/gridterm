@@ -115,3 +115,46 @@ func (b *keyBar) Handle(e gi.Event, u *gunim.UI) bool {
 	}
 	return false
 }
+
+// errLine is the line under a file pane's path saying its folder could
+// not be read, as gridterm's has it: short, and a click shows the whole
+// reason, which a line trimmed to the pane would cut.
+type errLine struct {
+	b     *browser
+	label *widget.Label
+}
+
+// Children implements [gunim.Composite].
+func (l *errLine) Children() []gunim.Node { return []gunim.Node{l.label} }
+
+// Layout implements [gunim.Node]: no room at all while there is
+// nothing to say.
+func (l *errLine) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children) geom.Size {
+	if l.label.Text == "" {
+		kids.At(0).Layout(gunim.Constraints{})
+		return geom.Size{}
+	}
+	s := kids.At(0).Layout(gunim.Constraints{Max: geom.Sz(c.Max.W-2*keyPad, c.Max.H)})
+	kids.At(0).Place(geom.Pt(keyPad, 2))
+	return c.Constrain(geom.Sz(c.Max.W, s.H+4))
+}
+
+// Paint implements [gunim.Node].
+func (l *errLine) Paint(p *paint.Painter, _ gunim.Frame, _ geom.Size, kids gunim.Children) {
+	if l.label.Text != "" {
+		kids.At(0).Paint(p)
+	}
+}
+
+// Handle implements [gunim.Handler]: a click shows why.
+func (l *errLine) Handle(e gi.Event, u *gunim.UI) bool {
+	if _, ok := e.(gi.PointerDown); !ok || l.b.st.Err == "" {
+		return false
+	}
+	d := widget.NewDialog("Couldn't read the folder")
+	d.Body = widget.NewLabel(l.b.st.Path + "\n\n" + l.b.st.Err)
+	d.SetButtons("OK", "")
+	d.Accept, d.Dismiss = DialogClosed{}, DialogClosed{}
+	l.b.w.openDialog(d, u)
+	return true
+}

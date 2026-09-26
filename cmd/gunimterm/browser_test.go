@@ -148,3 +148,41 @@ func TestTheKeyBarPressesItsKeys(t *testing.T) {
 		t.Fatalf("Close sent %#v", in)
 	}
 }
+
+func TestAFolderThatCannotBeReadSaysSoAndWhy(t *testing.T) {
+	win, _, publish := windowStage(t)
+	st := State{Panes: []Pane{{ID: "p1", Title: "/", Kind: kindFiles}}, Stage: &Box{Pane: "p1"}, Focus: "p1",
+		Browsers: map[string]Browser{"p1": {Path: "/root"}}}
+	publish(st)
+	b := win.browsers["p1"]
+	if b.path.Text != "Reading /root…" {
+		t.Fatalf("before the first read, the path says %q", b.path.Text)
+	}
+	st.Browsers = map[string]Browser{"p1": {Path: "/root", Err: "open /root: permission denied"}}
+	publish(st)
+	if b.problem.label.Text == "" {
+		t.Fatal("a folder that could not be read says nothing")
+	}
+	at, _ := lastUI.Bounds(b.problem)
+	lastWindow.Input(gi.PointerDown{Pos: at.Center(), Button: gi.ButtonPrimary, Clicks: 1})
+	lastWindow.Input(gi.PointerUp{Pos: at.Center(), Button: gi.ButtonPrimary})
+	lastWindow.Frame(time.Second / 60)
+	if win.dialog == nil {
+		t.Fatal("a click on the line did not say why")
+	}
+}
+
+func TestAWSLDistributionsFilesAreOfferedHere(t *testing.T) {
+	win, _, publish := windowStage(t)
+	root := `\\wsl.localhost\Ubuntu`
+	publish(State{Shells: []ShellChoice{{ID: "cmd", Title: "Command Prompt"}, {ID: "wsl:Ubuntu", Title: "Ubuntu", Folder: root}}})
+	for len(lastWindow.Client().Intents()) > 0 {
+		<-lastWindow.Client().Intents()
+	}
+	if !win.run("conn.files..1", lastUI) {
+		t.Fatal("the first folder here was not taken")
+	}
+	if in := nextIntent(t); in != (FilesOn{Machine: "", Path: root}) {
+		t.Fatalf("it sent %#v", in)
+	}
+}

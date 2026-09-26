@@ -12,6 +12,7 @@ import (
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/internal/sshtest"
 	"github.com/marrasen/gridterm/jobs"
+	"github.com/marrasen/gridterm/pasted"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/vfs"
 )
@@ -38,7 +39,7 @@ func TestWhatIsTypedForDroppedPaths(t *testing.T) {
 		"one with a space": {[]string{`C:\my files\a.png`}, `"C:\my files\a.png"`},
 		"none":             {nil, ""},
 	} {
-		if got := typedPaths(tc.paths); got != tc.want {
+		if got := pasted.Typed(tc.paths); got != tc.want {
 			t.Errorf("%s: it types %q, want %q", what, got, tc.want)
 		}
 	}
@@ -82,19 +83,19 @@ func TestDroppedFilesGoUnderHome(t *testing.T) {
 	home := t.TempDir()
 	fs := homedFS{FS: vfs.NewLocal(), home: home}
 
-	dir, err := pastedDirOn(fs)
+	dir, err := pasted.DirOn(fs)
 	if err != nil {
 		t.Fatalf("work out where: %v", err)
 	}
 
-	if want := filepath.Join(home, pastedDir); dir != want {
+	if want := filepath.Join(home, pasted.DirName); dir != want {
 		t.Errorf("it puts them in %q, want %q", dir, want)
 	}
 	if _, err := os.Stat(dir); err != nil {
 		t.Errorf("the directory was not made: %v", err)
 	}
 	// Asked again, it takes the one that is there rather than failing.
-	if again, err := pastedDirOn(fs); err != nil || again != dir {
+	if again, err := pasted.DirOn(fs); err != nil || again != dir {
 		t.Errorf("asked again it gave %q, %v", again, err)
 	}
 }
@@ -117,7 +118,7 @@ func TestAFileDroppedOnAPaneElsewhereIsCopiedThere(t *testing.T) {
 		t.Error("the row has no way to stop the copy")
 	}
 	waitFor(t, a, "the path to reach the shell", func() bool {
-		return strings.Contains(a.shells[0].sentText(), pastedDir) ||
+		return strings.Contains(a.shells[0].sentText(), pasted.DirName) ||
 			strings.Contains(a.shells[0].sentText(), "notes.txt")
 	})
 

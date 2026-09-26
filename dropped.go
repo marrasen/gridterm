@@ -2,7 +2,6 @@ package main
 
 import (
 	"errors"
-	"fmt"
 	"path/filepath"
 	"strings"
 
@@ -10,6 +9,7 @@ import (
 
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/jobs"
+	"github.com/marrasen/gridterm/pasted"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/term"
 	"github.com/marrasen/gridterm/vfs"
@@ -84,7 +84,7 @@ func (a *app) dropOnPane(pane *term.Terminal, paths []string) error {
 	if end.far.window == nil && a.about(end.host).kind == hostHere {
 		// Already on the machine the program runs on, so there is
 		// nothing to copy and the path is the whole of it.
-		pane.Paste(typedPaths(a.pathsForPane(pane, paths)))
+		pane.Paste(pasted.Typed(a.pathsForPane(pane, paths)))
 		return nil
 	}
 	return a.uploadDropped(end, pane, paths)
@@ -129,7 +129,7 @@ func (a *app) uploadDropped(end jobEnd, pane *term.Terminal, paths []string) err
 		return err
 	}
 	end = endReached(end, fs)
-	dir, err := pastedDirOn(fs)
+	dir, err := pasted.DirOn(fs)
 	if err != nil {
 		return errors.Join(err, fs.Close())
 	}
@@ -198,41 +198,8 @@ func (a *app) uploadOne(fs vfs.FS, end jobEnd, pane *term.Terminal,
 			// The pane it was dropped on, whatever the user has moved on
 			// to: a path typed into whatever happens to have the keys
 			// when a copy finishes would land in the wrong place.
-			pane.Paste(typedPaths([]string{at}))
+			pane.Paste(pasted.Typed([]string{at}))
 		})
 		return nil
 	})
-}
-
-// pastedDirOn is the directory dropped files go in on a machine, made if
-// it is not there yet.
-func pastedDirOn(fs vfs.FS) (string, error) {
-	home, err := fs.Home()
-	if err != nil {
-		return "", fmt.Errorf("find somewhere to put it: %w", err)
-	}
-	sep := string(fs.Sep())
-	dir := strings.TrimSuffix(home, sep) + sep + pastedDir
-	if _, err := fs.Stat(dir); err != nil {
-		if err := fs.Mkdir(dir, 0o700); err != nil {
-			return "", fmt.Errorf("make somewhere to put it: %w", err)
-		}
-	}
-	return dir, nil
-}
-
-// typedPaths is what is typed into the pane for a set of paths: one
-// line's worth, with a space between them.
-//
-// A path holding a space is quoted, because what reads it is a shell or
-// a program taking a word.
-func typedPaths(paths []string) string {
-	out := make([]string, 0, len(paths))
-	for _, path := range paths {
-		if strings.ContainsAny(path, " \t") {
-			path = `"` + path + `"`
-		}
-		out = append(out, path)
-	}
-	return strings.Join(out, " ")
 }

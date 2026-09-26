@@ -14,6 +14,7 @@ import (
 
 	"github.com/pkg/sftp"
 
+	"github.com/marrasen/gridterm/clip"
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/serve"
@@ -473,7 +474,7 @@ func (a *app) startServing(port, where string) error {
 		// goroutine of the server's, and the clipboard is the operating
 		// system's rather than the window's, so it is put there without
 		// going through the goroutine that draws.
-		Picture: takeSentPicture,
+		Picture: clip.SetPNG,
 		// What is already running here, so a window taken over shows
 		// the shell that was left running rather than only new ones.
 		Attach: a.attachTo,

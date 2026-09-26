@@ -1,31 +1,14 @@
 package main
 
 import (
-	"bytes"
-	"errors"
 	"fmt"
 	"image"
-	"image/png"
-	"os"
-	"path/filepath"
-	"time"
 
-	"github.com/marrasen/gridterm/clip"
+	"github.com/marrasen/gridterm/pasted"
 	"github.com/marrasen/gridterm/shellsetup"
 	"github.com/marrasen/gridterm/ui/term"
-	"github.com/marrasen/gridterm/vfs"
 )
 
-// pastedDir is where a picture is written on a machine that has no
-// clipboard this window can reach, under the home directory there.
-const pastedDir = "gridterm-pasted"
-
-// pasteImage writes the picture on the clipboard to a file and types its
-// path into the pane in front.
-//
-// A program reading a terminal cannot be handed a picture, so what it is
-// handed is somewhere to find one. Claude Code and the rest read the
-// path and open the file.
 // pastePicture hands the picture on the clipboard to the pane, by
 // whichever route reaches the program running in it.
 //
@@ -78,7 +61,7 @@ func (a *app) pasteImage(pane *term.Terminal) error {
 	if end.far.window == nil {
 		on := a.about(end.host)
 		if on.kind == hostHere {
-			path, err := writePastedImage(img, a.now)
+			path, err := pasted.WriteHere(img, a.now)
 			if err != nil {
 				return err
 			}
@@ -141,7 +124,7 @@ func (a *app) pictureFor(pane *term.Terminal) (image.Image, jobEnd, error) {
 // after a key was pressed, which is when the user expects one. The
 // writing is the part that can take a while, and that goes elsewhere.
 func (a *app) writePictureOn(end jobEnd, pane *term.Terminal, img image.Image) error {
-	raw, err := asPNG(img)
+	raw, err := pasted.PNG(img)
 	if err != nil {
 		return err
 	}
@@ -159,7 +142,7 @@ func (a *app) writePictureOn(end jobEnd, pane *term.Terminal, img image.Image) e
 				})
 			}
 		}()
-		path, err := putPictureOn(fs, raw, at)
+		path, err := pasted.WriteOn(fs, raw, at)
 		a.pump.post(func() {
 			sent()
 			if err != nil {
@@ -190,32 +173,6 @@ func (a *app) sendingPicture(to string) func() {
 	}
 }
 
-// putPictureOn writes a picture into a directory of its own under the
-// home directory of whoever the connection logs in as.
-//
-// Under home rather than a temporary directory, because where that is
-// depends on the machine and this has only a path separator to go on.
-// A directory of its own so the files are together and can be cleared
-// out in one go.
-func putPictureOn(fs vfs.FS, raw []byte, at time.Time) (string, error) {
-	dir, err := pastedDirOn(fs)
-	if err != nil {
-		return "", err
-	}
-	path := dir + string(fs.Sep()) + at.Format("20060102-150405.000") + ".png"
-	w, err := fs.Create(path, 0o600)
-	if err != nil {
-		return "", fmt.Errorf("write the picture: %w", err)
-	}
-	if _, err := w.Write(raw); err != nil {
-		return "", fmt.Errorf("write the picture: %w", errors.Join(err, w.Close()))
-	}
-	if err := w.Close(); err != nil {
-		return "", fmt.Errorf("write the picture: %w", err)
-	}
-	return path, nil
-}
-
 // endName is what to call the machine a piece of file work is going to.
 //
 // The machine over there when the work is on one a window reached, and
@@ -228,15 +185,6 @@ func endName(end jobEnd) string {
 	return end.host
 }
 
-// asPNG is a picture as the bytes that go over a connection.
-func asPNG(img image.Image) ([]byte, error) {
-	var buf bytes.Buffer
-	if err := png.Encode(&buf, img); err != nil {
-		return nil, fmt.Errorf("read the picture: %w", err)
-	}
-	return buf.Bytes(), nil
-}
-
 // sendPictureTo puts a picture on the clipboard of a window this one has
 // taken over, and then presses paste in the pane.
 //
@@ -245,7 +193,7 @@ func asPNG(img image.Image) ([]byte, error) {
 // paste is only pressed once the picture has landed: pressing it first
 // would paste whatever was on that clipboard before.
 func (a *app) sendPictureTo(on hostFacts, pane *term.Terminal, img image.Image) error {
-	raw, err := asPNG(img)
+	raw, err := pasted.PNG(img)
 	if err != nil {
 		return err
 	}
@@ -263,53 +211,6 @@ func (a *app) sendPictureTo(on hostFacts, pane *term.Terminal, img image.Image) 
 		})
 	}()
 	return nil
-}
-
-// writePastedImage puts a picture in a file of its own and returns the
-// path. now is the window's clock, so a test does not depend on the
-// wall clock.
-func writePastedImage(img image.Image, now func() time.Time) (string, error) {
-	at := time.Now
-	if now != nil {
-		at = now
-	}
-	dir := filepath.Join(os.TempDir(), pastedDir)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return "", fmt.Errorf("make somewhere to put the picture: %w", err)
-	}
-	// Named for the moment it was pasted, with the rest left to
-	// os.CreateTemp: it settles two pastes in one millisecond, and a
-	// second window pasting into the same directory, without this having
-	// to think about either.
-	f, err := os.CreateTemp(dir, at().Format("20060102-150405")+"-*.png")
-	if err != nil {
-		return "", fmt.Errorf("write the picture: %w", err)
-	}
-	path := f.Name()
-	if err := png.Encode(f, img); err != nil {
-		// Closed on the way out, and the half-written file taken away:
-		// a path typed into a shell has to name a picture that opens.
-		return "", fmt.Errorf("write the picture: %w",
-			errors.Join(err, f.Close(), os.Remove(path)))
-	}
-	if err := f.Close(); err != nil {
-		return "", fmt.Errorf("write the picture: %w", errors.Join(err, os.Remove(path)))
-	}
-	return path, nil
-}
-
-// takeSentPicture puts a picture a client pasted on this machine's
-// clipboard, so a program running here can be handed it.
-//
-// The bytes are decoded before anything is put on the clipboard: a
-// client that sent something that is not a picture must not empty the
-// clipboard of whoever is sitting here.
-func takeSentPicture(raw []byte) error {
-	img, err := png.Decode(bytes.NewReader(raw))
-	if err != nil {
-		return fmt.Errorf("that is not a picture this window can read: %w", err)
-	}
-	return clip.SetImage(img)
 }
 
 // paste puts whatever is on the clipboard into a pane.

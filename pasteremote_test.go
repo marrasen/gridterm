@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/marrasen/gridterm/pasted"
 	"github.com/marrasen/gridterm/vfs"
 )
 
@@ -90,12 +91,12 @@ var pastedAt = time.Date(2026, 9, 19, 14, 5, 6, 0, time.UTC)
 func TestAPictureIsWrittenUnderHomeOnTheMachine(t *testing.T) {
 	f := newPictureFS()
 
-	path, err := putPictureOn(f, []byte("a picture"), pastedAt)
+	path, err := pasted.WriteOn(f, []byte("a picture"), pastedAt)
 
 	if err != nil {
 		t.Fatalf("write it: %v", err)
 	}
-	if want := "/home/marcus/" + pastedDir; !strings.HasPrefix(path, want+"/") {
+	if want := "/home/marcus/" + pasted.DirName; !strings.HasPrefix(path, want+"/") {
 		t.Errorf("it wrote %s, want it under %s", path, want)
 	}
 	if !strings.HasSuffix(path, ".png") {
@@ -104,7 +105,7 @@ func TestAPictureIsWrittenUnderHomeOnTheMachine(t *testing.T) {
 	if got := string(f.written[path]); got != "a picture" {
 		t.Errorf("the file holds %q, want the picture", got)
 	}
-	if len(f.made) != 1 || f.made[0] != "/home/marcus/"+pastedDir {
+	if len(f.made) != 1 || f.made[0] != "/home/marcus/"+pasted.DirName {
 		t.Errorf("it made %v, want the one directory", f.made)
 	}
 }
@@ -115,12 +116,12 @@ func TestThePathIsSpeltTheMachinesOwnWay(t *testing.T) {
 	f := newPictureFS()
 	f.home, f.sep = `C:\Users\marcus\`, '\\'
 
-	path, err := putPictureOn(f, []byte("a picture"), pastedAt)
+	path, err := pasted.WriteOn(f, []byte("a picture"), pastedAt)
 
 	if err != nil {
 		t.Fatalf("write it: %v", err)
 	}
-	if want := `C:\Users\marcus\` + pastedDir + `\`; !strings.HasPrefix(path, want) {
+	if want := `C:\Users\marcus\` + pasted.DirName + `\`; !strings.HasPrefix(path, want) {
 		t.Errorf("it wrote %s, want it under %s", path, want)
 	}
 	if strings.Contains(path, `\\`) {
@@ -136,7 +137,7 @@ func TestADirectoryAlreadyThereIsNotMadeAgain(t *testing.T) {
 	// this fails the test if it is tried.
 	f.mkdirErr = errors.New("it is already there")
 
-	if _, err := putPictureOn(&statOK{pictureFS: f}, []byte("a picture"), pastedAt); err != nil {
+	if _, err := pasted.WriteOn(&statOK{pictureFS: f}, []byte("a picture"), pastedAt); err != nil {
 		t.Fatalf("write it: %v", err)
 	}
 	if len(f.made) != 0 {
@@ -162,7 +163,7 @@ func TestWhatWentWrongWritingAPictureSaysWhichStep(t *testing.T) {
 		f := newPictureFS()
 		setup(f)
 
-		_, err := putPictureOn(f, []byte("a picture"), pastedAt)
+		_, err := pasted.WriteOn(f, []byte("a picture"), pastedAt)
 
 		if err == nil {
 			t.Errorf("%s: it wrote the picture anyway", what)

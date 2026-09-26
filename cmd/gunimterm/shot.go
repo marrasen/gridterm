@@ -1,11 +1,13 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"image/png"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -84,22 +86,29 @@ func chordPress(written string) (gi.KeyPress, error) {
 // pressOf is the key press a chord is, as the window hears it, and
 // whether the window has the key at all.
 func pressOf(chord ui.Chord) (gi.KeyPress, bool) {
+	// The main keyboard's key before the keypad's that also means it,
+	// and the same one each time: keyMap is a map, visited in no fixed
+	// order.
+	var keys []gi.Key
 	for gk, k := range keyMap {
-		if k != chord.Key {
-			continue
+		if k == chord.Key {
+			keys = append(keys, gk)
 		}
-		press := gi.KeyPress{Key: gk}
-		for _, m := range [...]struct {
-			from input.Mods
-			to   gi.Mods
-		}{{input.ModShift, gi.ModShift}, {input.ModCtrl, gi.ModControl}, {input.ModAlt, gi.ModAlt}, {input.ModSuper, gi.ModSuper}} {
-			if chord.Mods.Has(m.from) {
-				press.Mods |= m.to
-			}
-		}
-		return press, true
 	}
-	return gi.KeyPress{}, false
+	if len(keys) == 0 {
+		return gi.KeyPress{}, false
+	}
+	slices.SortFunc(keys, func(a, b gi.Key) int { return cmp.Compare(keypad(a), keypad(b)) })
+	press := gi.KeyPress{Key: keys[0]}
+	for _, m := range [...]struct {
+		from input.Mods
+		to   gi.Mods
+	}{{input.ModShift, gi.ModShift}, {input.ModCtrl, gi.ModControl}, {input.ModAlt, gi.ModAlt}, {input.ModSuper, gi.ModSuper}} {
+		if chord.Mods.Has(m.from) {
+			press.Mods |= m.to
+		}
+	}
+	return press, true
 }
 
 // runShot drives the window through the script, on a goroutine of its
@@ -221,4 +230,14 @@ func (a *app) paneNow() string {
 		return ""
 	}
 	return t.ReadLines(t.Size().Rows).Text
+}
+
+// keypad is 1 for a key on the keypad and 0 for the rest.
+func keypad(k gi.Key) int {
+	switch k {
+	case gi.KeyKPEnter, gi.KeyKP0, gi.KeyKP1, gi.KeyKP2, gi.KeyKP3, gi.KeyKP4,
+		gi.KeyKP5, gi.KeyKP6, gi.KeyKP7, gi.KeyKP8, gi.KeyKP9, gi.KeyKPDecimal:
+		return 1
+	}
+	return 0
 }

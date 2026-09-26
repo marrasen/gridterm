@@ -104,6 +104,12 @@ type window struct {
 	// is what each of its lines asks the program for.
 	splitter  *widget.Palette
 	splitWith []gunim.Intent
+	// drawings keep what each pane's node drew last, by pane, and drawn
+	// is that node, for the switcher to show a pane of any kind, and one
+	// off the stage as it was last seen.
+	drawings    map[string]*gunim.Drawing
+	themePicker *widget.Palette
+	drawn       map[string]gunim.Node
 	// vault is the secrets as last published, and afterUnlock a command
 	// waiting for them to open.
 	vault       Secrets
@@ -620,6 +626,7 @@ func (w *window) pickTheme(u *gunim.UI) {
 	}
 	names := w.themes
 	p.Pick = func(i int, u *gunim.UI) { u.Send(w, PickTheme{Name: names[i]}) }
+	w.themePicker = p
 	p.Open(w, geom.Rc(0, 48, w.size.W, 0), u)
 }
 
@@ -1475,6 +1482,7 @@ func (w *window) update(st State, u *gunim.UI) {
 		}
 	}
 	w.glow(u)
+	w.keepDrawings(st, u)
 	w.showTitle(st, u)
 	if id := w.afterUnlock; id != "" && st.Secrets.Open {
 		w.run(id, u)
@@ -2516,4 +2524,72 @@ func (w *window) askSplit(vertical bool, u *gunim.UI) {
 		}
 	}
 	w.splitter.Open(w, geom.Rc(0, 48, w.size.W, 0), u)
+}
+
+// keepDrawings keeps what each pane draws, and lets go of the drawings
+// of panes that have closed.
+func (w *window) keepDrawings(st State, u *gunim.UI) {
+	if w.drawings == nil {
+		w.drawings, w.drawn = map[string]*gunim.Drawing{}, map[string]gunim.Node{}
+	}
+	live := map[string]bool{}
+	for _, p := range st.Panes {
+		live[p.ID] = true
+		n := w.madeNode(p.ID)
+		if n == nil || w.drawn[p.ID] == n {
+			continue
+		}
+		if old := w.drawn[p.ID]; old != nil {
+			u.ForgetDrawing(old)
+		}
+		w.drawn[p.ID], w.drawings[p.ID] = n, u.KeepDrawing(n)
+	}
+	for id, n := range w.drawn {
+		if !live[id] {
+			u.ForgetDrawing(n)
+			delete(w.drawn, id)
+			delete(w.drawings, id)
+		}
+	}
+}
+
+// madeNode is the node that shows pane id, or nil when none has been
+// made: bareNode without the making.
+func (w *window) madeNode(id string) gunim.Node {
+	var n gunim.Node
+	switch w.kindOf(id) {
+	case kindFiles:
+		if b, ok := w.browsers[id]; ok {
+			n = b
+		}
+	case kindCopies:
+		if w.copies != nil {
+			n = w.copies
+		}
+	case kindHelp:
+		if w.help != nil {
+			n = w.help
+		}
+	case kindSecrets:
+		if w.secrets != nil {
+			n = w.secrets
+		}
+	case kindJobs:
+		if w.jobs != nil {
+			n = w.jobs
+		}
+	case kindTunnel:
+		if p, ok := w.tunnelPanes[id]; ok {
+			n = p
+		}
+	case kindReader:
+		if r, ok := w.readers[id]; ok {
+			n = r
+		}
+	default:
+		if t, ok := w.terms[id]; ok {
+			n = t
+		}
+	}
+	return n
 }

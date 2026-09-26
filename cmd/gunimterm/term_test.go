@@ -167,3 +167,21 @@ func TestAClickOutsideThePaletteClosesIt(t *testing.T) {
 		t.Fatal("after the click, the terminal has no keyboard")
 	}
 }
+
+// The theme picker closes on a click outside it, as the palette does.
+func TestAClickOutsideTheThemePickerClosesIt(t *testing.T) {
+	win, tm := termStage(t, geom.Sz(900, 600))
+	win.themes = []string{"one", "two"}
+	win.pickTheme(lastUI)
+	frames(20)
+	if !win.themePicker.IsOpen() {
+		t.Fatal("the theme picker did not open")
+	}
+	box, _ := lastUI.Bounds(tm)
+	lastWindow.Input(gi.PointerDown{Pos: box.Center(), Button: gi.ButtonPrimary, Clicks: 1})
+	lastWindow.Input(gi.PointerUp{Pos: box.Center(), Button: gi.ButtonPrimary})
+	frames(20)
+	if win.themePicker.IsOpen() || !tm.focused {
+		t.Fatalf("after a click on the terminal, the picker is open %v, the terminal has the keyboard %v", win.themePicker.IsOpen(), tm.focused)
+	}
+}

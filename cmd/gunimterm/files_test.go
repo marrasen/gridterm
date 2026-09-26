@@ -68,7 +68,7 @@ func TestAFilePaneReconnectsOnItsNextAction(t *testing.T) {
 		}
 	}
 	a.handle(ConnectTo{Target: "tester@" + net.JoinHostPort(host, strconv.Itoa(port))})
-	waitFor(t, a, "a shell on the server", func() bool { answering(); return len(a.st.Panes) == 1 })
+	waitFor(t, a, "a shell on the server", func() bool { answering(); return oneShell(a) })
 	machine := a.st.Panes[0].Machine
 	a.handle(OpenFiles{})
 	waitFor(t, a, "the files", func() bool { return len(a.st.Panes) == 2 && a.st.Browsers[a.st.Panes[1].ID].Seq > 0 })

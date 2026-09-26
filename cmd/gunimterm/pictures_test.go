@@ -106,7 +106,7 @@ func connectedWindows(t *testing.T) (a, b *app) {
 	b.handle(ConnectWindow{Addr: a.st.Serving.Addr, KeyFile: keyFile})
 	pumpBoth(t, a, b, "the question about the host key", func() bool { return len(b.st.Asks) > 0 })
 	b.handle(AskAnswered{ID: b.st.Asks[0].ID, Yes: true})
-	pumpBoth(t, a, b, "a terminal on the window", func() bool { return len(b.st.Panes) == 1 })
+	pumpBoth(t, a, b, "a terminal on the window", func() bool { return oneShell(b) })
 	pumpBoth(t, a, b, "the pane on the first window", func() bool { return len(a.st.Panes) == 2 })
 	return a, b
 }

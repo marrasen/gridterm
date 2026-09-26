@@ -55,6 +55,12 @@ func dialApp(t *testing.T) (a *app, answering func()) {
 	}
 }
 
+// oneShell reports whether the one pane is a shell: the connection log
+// shown while connecting has folded away into it.
+func oneShell(a *app) bool {
+	return len(a.st.Panes) == 1 && a.st.Panes[0].Kind != kindLog
+}
+
 func TestADialIsGivenUp(t *testing.T) {
 	a, _ := dialApp(t)
 	a.handle(ConnectTo{Saved: "srv"})
@@ -72,7 +78,7 @@ func TestADialIsGivenUp(t *testing.T) {
 func TestRemovingAServerClosesItsConnection(t *testing.T) {
 	a, answering := dialApp(t)
 	a.handle(ConnectTo{Saved: "srv"})
-	waitFor(t, a, "a shell on the server", func() bool { answering(); return len(a.st.Panes) == 1 })
+	waitFor(t, a, "a shell on the server", func() bool { answering(); return oneShell(a) })
 	a.handle(RemoveServer{Name: "srv"})
 	waitFor(t, a, "the connection to close", func() bool { return a.conns["srv"] == nil && a.st.Panes[0].Ended })
 	if len(a.st.Saved) != 0 {
@@ -106,13 +112,16 @@ func TestConnectingAgainWhileConnectingAsks(t *testing.T) {
 	}
 	a.handle(AskAnswered{ID: q.ID, Yes: true, Answers: []string{"Wait"}})
 	// Waited for, the first lands and the second opens a shell too.
-	waitFor(t, a, "two shells", func() bool { answering(); return len(a.st.Panes) == 2 })
+	waitFor(t, a, "two shells", func() bool {
+		answering()
+		return len(a.st.Panes) == 2 && !slices.ContainsFunc(a.st.Panes, func(p Pane) bool { return p.Kind == kindLog })
+	})
 }
 
 func TestOpeningOnASavedServerConnectsFirst(t *testing.T) {
 	a, answering := dialApp(t)
 	a.handle(OpenOn{Machine: "srv"})
-	waitFor(t, a, "a shell on the server", func() bool { answering(); return len(a.st.Panes) == 1 })
+	waitFor(t, a, "a shell on the server", func() bool { answering(); return oneShell(a) })
 	if a.st.Panes[0].Machine != "srv" || a.conns["srv"] == nil {
 		t.Fatalf("opened %+v", a.st.Panes)
 	}
@@ -201,7 +210,7 @@ func (b *syncBuffer) String() string {
 func TestADroppedConnectionStaysUntilCleared(t *testing.T) {
 	a, answering := dialApp(t)
 	a.handle(ConnectTo{Saved: "srv"})
-	waitFor(t, a, "a shell", func() bool { answering(); return len(a.st.Panes) == 1 })
+	waitFor(t, a, "a shell", func() bool { answering(); return oneShell(a) })
 	_ = a.conns["srv"].Close() // as if the network went
 	waitFor(t, a, "the drop", func() bool { return a.conns["srv"] == nil })
 	if !a.dropped["srv"] {
@@ -212,10 +221,40 @@ func TestADroppedConnectionStaysUntilCleared(t *testing.T) {
 		t.Fatalf("cleared, it keeps %v and panes %+v", a.dropped, a.st.Panes)
 	}
 	a.handle(ConnectTo{Saved: "srv"})
-	waitFor(t, a, "a shell again", func() bool { answering(); return len(a.st.Panes) == 1 })
+	waitFor(t, a, "a shell again", func() bool { answering(); return oneShell(a) })
 	a.handle(Disconnect{Machine: "srv"})
 	waitFor(t, a, "the disconnect", func() bool { return a.conns["srv"] == nil })
 	if len(a.dropped) != 0 {
 		t.Fatalf("let go of on purpose, it keeps %v", a.dropped)
 	}
+}
+
+// The connection log shows as the connection is made, and gives way to
+// the shell once it is; a connection that fails leaves it, saying why.
+func TestTheConnectionLogShowsWhileConnecting(t *testing.T) {
+	a, answering := dialApp(t)
+	a.handle(ConnectTo{Saved: "srv"})
+	if len(a.st.Panes) != 1 || a.st.Panes[0].Kind != kindLog || a.st.Focus != a.st.Panes[0].ID {
+		t.Fatalf("connecting, the panes are %+v", a.st.Panes)
+	}
+	log := a.st.Panes[0].ID
+	waitFor(t, a, "the log's first line", func() bool {
+		return strings.Contains(a.shells.get(log).t.AllText(), "connecting to srv")
+	})
+	waitFor(t, a, "the shell in its place", func() bool { answering(); return oneShell(a) })
+
+	a.handle(ConnectTo{Target: "tester@127.0.0.1:1"})
+	waitFor(t, a, "the dial to fail", func() bool { return len(a.dialing) == 0 })
+	var failed string
+	for _, p := range a.st.Panes {
+		if p.Kind == kindLog {
+			failed = p.ID
+		}
+	}
+	if failed == "" {
+		t.Fatalf("failed, the panes are %+v", a.st.Panes)
+	}
+	waitFor(t, a, "why it failed", func() bool {
+		return strings.Contains(a.shells.get(failed).t.AllText(), "could not connect")
+	})
 }

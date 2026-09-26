@@ -122,7 +122,7 @@ func TestAPaneReconnectsWhenStartedAgain(t *testing.T) {
 	}
 	target := "tester@" + net.JoinHostPort(host, strconv.Itoa(port))
 	a.handle(ConnectTo{Target: target})
-	waitFor(t, a, "a shell on the server", func() bool { answering(); return len(a.st.Panes) == 1 })
+	waitFor(t, a, "a shell on the server", func() bool { answering(); return oneShell(a) })
 	id, name := a.st.Panes[0].ID, a.st.Panes[0].Machine
 	if a.paneAt[id] == "" {
 		t.Fatal("the pane's address was not written down")

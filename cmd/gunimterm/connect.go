@@ -104,6 +104,7 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 	a.dialCancel[name] = cancel
 	acct := a.account(name)
 	logLine(acct, "", "connecting to "+name)
+	logPane := a.watchDial(name)
 	began := time.Now()
 	for i := range hops {
 		hops[i].Ask = newAsker(a, name)
@@ -136,6 +137,11 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 			a.st.Status = ""
 			if err != nil {
 				logLine(acct, badly, "could not connect: "+err.Error())
+				if errors.Is(err, context.Canceled) && logPane != "" {
+					// Given up on purpose: its log goes with it. A
+					// failure leaves the log up, saying why.
+					a.closePane(logPane)
+				}
 				if !errors.Is(err, errDeclined) && !errors.Is(err, context.Canceled) {
 					a.notify("Couldn't connect to "+name, err.Error(), "")
 				}
@@ -176,12 +182,9 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 					a.notify("Disconnected from "+name, "", "")
 				}
 			}()
+			a.dialed(logPane, name, then == nil)
 			if then != nil {
 				then(nil)
-				return
-			}
-			if err := a.open(name, placement{}); err != nil {
-				a.notify("Couldn't open a shell on "+name, err.Error(), "")
 			}
 		}
 	}()

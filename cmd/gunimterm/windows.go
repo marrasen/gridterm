@@ -96,6 +96,7 @@ func (a *app) reachWindow(in ConnectWindow, terminal bool) error {
 	a.dialCancel[name] = cancel
 	acct := a.account(name)
 	logLine(acct, "", "connecting to the window at "+addr)
+	logPane := a.watchDial(name)
 	began := time.Now()
 	a.st.Status = "Connecting to the window at " + addr + "…"
 	go func() {
@@ -112,6 +113,11 @@ func (a *app) reachWindow(in ConnectWindow, terminal bool) error {
 			a.st.Status = ""
 			if err != nil {
 				logLine(acct, badly, "could not connect: "+err.Error())
+				if errors.Is(err, context.Canceled) && logPane != "" {
+					// Given up on purpose: its log goes with it. A
+					// failure leaves the log up, saying why.
+					a.closePane(logPane)
+				}
 				if !errors.Is(err, errDeclined) && !errors.Is(err, context.Canceled) {
 					a.notify("Couldn't connect to the window at "+addr, err.Error(), "")
 				}
@@ -119,12 +125,7 @@ func (a *app) reachWindow(in ConnectWindow, terminal bool) error {
 			}
 			logLine(acct, well, "connected in "+time.Since(began).Round(10*time.Millisecond).String())
 			a.holdWindow(name, addr, in.KeyFile, win)
-			if !terminal {
-				return
-			}
-			if err := a.open(name, placement{}); err != nil {
-				a.notify("Couldn't open a terminal on "+name, err.Error(), "")
-			}
+			a.dialed(logPane, name, terminal)
 		}
 	}()
 	return nil

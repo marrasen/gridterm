@@ -260,7 +260,7 @@ func TestAWindowConnectsToAServedOne(t *testing.T) {
 	b.handle(ConnectWindow{Addr: addr, KeyFile: keyFile})
 	pumpBoth(t, a, b, "the question about the host key", func() bool { return len(b.st.Asks) > 0 })
 	b.handle(AskAnswered{ID: b.st.Asks[0].ID, Yes: true})
-	pumpBoth(t, a, b, "a terminal on the window", func() bool { return len(b.st.Panes) == 1 })
+	pumpBoth(t, a, b, "a terminal on the window", func() bool { return oneShell(b) })
 	if p := b.st.Panes[0]; p.Machine != addr {
 		t.Fatalf("the terminal is on %q, want the window at %s", p.Machine, addr)
 	}
@@ -317,7 +317,7 @@ func TestASavedWindowIsConnectedToAsOne(t *testing.T) {
 	b.handle(ConnectTo{Saved: "desk"})
 	pumpBoth(t, a, b, "the question about the host key", func() bool { return len(b.st.Asks) > 0 })
 	b.handle(AskAnswered{ID: b.st.Asks[0].ID, Yes: true})
-	pumpBoth(t, a, b, "a terminal on the window", func() bool { return len(b.st.Panes) == 1 })
+	pumpBoth(t, a, b, "a terminal on the window", func() bool { return oneShell(b) })
 	if b.st.Panes[0].Machine != "desk" || b.windows["desk"] == nil {
 		t.Fatalf("connected, the pane is on %q and the windows are %v", b.st.Panes[0].Machine, b.windows)
 	}

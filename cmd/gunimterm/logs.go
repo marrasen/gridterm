@@ -73,3 +73,38 @@ func (a *app) showLog(machine string) {
 	id := "p" + itoa(a.next)
 	a.addPane(Pane{ID: id, Title: title, Machine: machine, Kind: kindLog}, openShell(l.Open(), a.palette, a.hooks(id)), placement{})
 }
+
+// watchDial shows a machine's connection log as the connection is made,
+// as gridterm does: the dial's steps, and why it failed, where the user
+// is looking. It returns the pane it opened, or "" when the log's pane
+// was open already, which it goes to instead. Closing the pane gives
+// the dial up.
+func (a *app) watchDial(machine string) string {
+	for _, p := range a.st.Panes {
+		if p.Kind == kindLog && p.Machine == machine {
+			a.st.Focus = p.ID
+			return ""
+		}
+	}
+	a.next++
+	id := "p" + itoa(a.next)
+	a.addPane(Pane{ID: id, Title: "Connecting to " + machine, Machine: machine, Kind: kindLog},
+		openShell(a.accounts[machine].Open(), a.palette, a.hooks(id)), placement{})
+	return id
+}
+
+// dialed puts what the connection was for in the place of the log
+// pane watchDial opened: a terminal, when open says so, beside it,
+// with the log folding away so the terminal takes its room. The log
+// stays under the machine's menu.
+func (a *app) dialed(logPane, machine string, open bool) {
+	if open {
+		if err := a.open(machine, placement{beside: logPane}); err != nil {
+			a.notify("Couldn't open a shell on "+machine, err.Error(), "")
+			return
+		}
+	}
+	if logPane != "" {
+		a.closePane(logPane)
+	}
+}

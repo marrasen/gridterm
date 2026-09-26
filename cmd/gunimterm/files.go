@@ -150,6 +150,10 @@ func (a *app) openFiles() error {
 	if f := a.fsFor(machine); f != nil {
 		return a.openFilesOn(machine, f)
 	}
+	if _, ok := a.windows[machine]; ok {
+		a.windowFiles(machine)
+		return nil
+	}
 	conn, ok := a.conns[machine]
 	if !ok {
 		return a.openFilesOn("", a.fsFor(""))

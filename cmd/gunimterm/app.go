@@ -64,7 +64,11 @@ type State struct {
 	// Secrets is what the vault holds, by name.
 	Secrets Secrets
 	// Share is the panes shared with an agent.
-	Share        Share
+	Share Share
+	// Serving is this window served to others.
+	Serving Serving
+	// Windows are the windows this one is connected to.
+	Windows      []RemoteWindow
 	SavedTunnels []settings.SavedTunnel
 	Status       string
 	// Notices are the latest notices, oldest first, for the window to
@@ -303,7 +307,11 @@ type app struct {
 	secretsAt    string
 	lastTerminal string
 	// agents is the share of panes with an agent.
-	agents    agents
+	agents agents
+	// serving serves this window to others.
+	serving serving
+	// windows are the windows connected to, by name.
+	windows   map[string]*remoteWin
 	tunnelSeq int
 	ticking   bool
 	quiet     bool
@@ -361,6 +369,7 @@ func newApp(c gunim.Client, sh *shells) *app {
 		remoteFS: map[string]vfs.FS{},
 		tunnels:  map[string]*tunnel{},
 		agents:   agents{by: map[string]*handover{}},
+		windows:  map[string]*remoteWin{},
 		accounts: map[string]*logs.Lines{},
 		wake:     make(chan struct{}, 1),
 		events:   make(chan func(), 64),
@@ -391,6 +400,10 @@ func (a *app) run(ctx context.Context) error {
 		a.pickTheme(name)
 	}
 	a.showShare()
+	a.showServing()
+	if a.settings != nil && a.settings.ServeOn() {
+		go a.offerToServeAgain()
+	}
 	if path, err := remote.BookPath(); err == nil {
 		if b, err := remote.LoadBook(path); err == nil {
 			a.book = b
@@ -445,6 +458,10 @@ func (a *app) publish() {
 	st.Jobs = slices.Clone(a.st.Jobs)
 	st.Accounts = slices.Clone(a.st.Accounts)
 	st.Share.Panes = slices.Clone(a.st.Share.Panes)
+	st.Serving.Clients = slices.Clone(a.st.Serving.Clients)
+	st.Serving.Allowed = slices.Clone(a.st.Serving.Allowed)
+	st.Windows = slices.Clone(a.st.Windows)
+	a.tellServed()
 	st.SavedTunnels = slices.Clone(a.st.SavedTunnels)
 	st.Stage = a.groups[a.groupOf[a.st.Focus]].clone()
 	_ = a.c.Publish(windowTopic, st)
@@ -600,6 +617,20 @@ func (a *app) handle(in gunim.Intent) {
 		a.copyAgentPrompt(in.Host)
 	case CopyAgentSetup:
 		a.copyAgentSetup(in.Host)
+	case StartServing:
+		err = a.startServing(in)
+	case StopServing:
+		err = a.stopServing()
+	case DisconnectClients:
+		err = a.disconnectClients()
+	case ConnectWindow:
+		err = a.connectWindow(in)
+	case DisconnectWindow:
+		err = a.disconnectWindow(in.Name)
+	case AttachWindow:
+		err = a.attachWindow(in)
+	case Disconnect:
+		err = a.disconnect(in.Machine)
 	case ShowLog:
 		a.showLog(in.Machine)
 	case ShowJobs:
@@ -700,6 +731,9 @@ func (a *app) openThen(machine string, at placement, then func(id string, err er
 		a.addPane(Pane{ID: id, Title: title}, sh, at)
 		then(id, nil)
 		return nil
+	}
+	if _, ok := a.windows[machine]; ok {
+		return a.openOnWindow(machine, id, title, at, then)
 	}
 	conn, ok := a.conns[machine]
 	if !ok {

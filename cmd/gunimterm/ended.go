@@ -8,6 +8,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/marrasen/gridterm/remote"
+	"github.com/marrasen/gridterm/serve"
 	"github.com/marrasen/gridterm/session"
 	uiterm "github.com/marrasen/gridterm/ui/term"
 )
@@ -83,11 +84,25 @@ func (a *app) startAgain(id string) error {
 		}
 		return a.restarted(id, t, sess)
 	}
+	size := t.Size()
+	if w, ok := a.windows[machine]; ok {
+		go func() {
+			sess, err := w.win.Open(size.Cols, size.Rows, func(serve.Attached) {})
+			a.events <- func() {
+				if err == nil {
+					err = a.restarted(id, t, sess)
+				}
+				if err != nil {
+					a.notify("Couldn't start it again", err.Error(), "")
+				}
+			}
+		}()
+		return nil
+	}
 	conn, ok := a.conns[machine]
 	if !ok {
-		return errors.New("this window is not connected to " + machine + " any more. Connect to it again from the Servers menu, then start the pane again")
+		return errors.New("this window is not connected to " + machine + " any more. Connect to it again, then start the pane again")
 	}
-	size := t.Size()
 	go func() {
 		sess, err := conn.Shell(a.ctx, remote.ShellConfig{Cols: size.Cols, Rows: size.Rows})
 		a.events <- func() {

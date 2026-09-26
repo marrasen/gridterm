@@ -61,7 +61,9 @@ type window struct {
 	lastTerm string
 	// share is the agent share as last published, and sharing says the
 	// user just asked for one, so its dialog opens once it has a code.
-	share        Share
+	share Share
+	// serving is the serving as last published.
+	serving      Serving
 	sharing      bool
 	savedTunnels []settings.SavedTunnel
 	// accounts are the machines with a connection log, as the palette
@@ -200,6 +202,19 @@ func (w *window) run(id string, u *gunim.UI) bool {
 			return true
 		}
 		u.Send(w, ShowLog{Machine: machine})
+		return true
+	case "serve.attach":
+		w.connectWindowDialog(u)
+		return true
+	case "conn.disconnect":
+		if m := w.machineOf(w.focused); m != "" {
+			u.Send(w, Disconnect{Machine: m})
+		} else {
+			w.toasts.Show(widget.Toast{Title: "This pane is on this computer", Body: "Disconnect closes the connection to a server or a window."}, u)
+		}
+		return true
+	case "serve.window":
+		w.servingDialog(w.serving, u)
 		return true
 	case "agent.share":
 		w.shareDialog(w.share, u)
@@ -643,7 +658,16 @@ func (w *window) update(st State, u *gunim.UI) {
 			t.cells.Size = st.FontSize
 		}
 	}
-	rows := sidebarRows(st.Panes, st.Tunnels, st.Share)
+	rows := sidebarRows(st.Panes, st.Tunnels, st.Share, st.Windows)
+	// The windows connected to this one, under this computer.
+	for i, c := range st.Serving.Clients {
+		at := slices.IndexFunc(rows, func(r sideItem) bool { return r.key == "machine:" }) + 1
+		for at < len(rows) && !rows[at].heading {
+			at++
+		}
+		item := sideItem{key: "client:" + c.Name + ":" + strconv.Itoa(i), text: "serving " + c.Name, note: "from " + c.From, local: func(u *gunim.UI) { w.servingDialog(w.serving, u) }}
+		rows = slices.Insert(rows, at, item)
+	}
 	widget.Sync(w.list, u, rows,
 		func(r sideItem) widget.Key { return widget.Key(r.key) },
 		func(r sideItem) *sideRow { return newSideRow(r) },
@@ -655,6 +679,7 @@ func (w *window) update(st State, u *gunim.UI) {
 	}
 	w.setSavedTunnels(st.SavedTunnels)
 	w.share = st.Share
+	w.serving = st.Serving
 	if w.sharing && st.Share.Code != "" {
 		w.sharing = false
 		if w.dialog == nil {
@@ -990,14 +1015,17 @@ type sideItem struct {
 	key, text, note string
 	pane            string
 	click           gunim.Intent
-	heading, dim    bool
+	// local is what a click does in the window, for a row whose click
+	// asks the program nothing.
+	local        func(*gunim.UI)
+	heading, dim bool
 }
 
 // sidebarRows lists the panes under their machines, this computer
 // first, then each server in the order its first pane opened, and
 // each server's tunnels after its panes. A tunnel's pane is lit on the
 // tunnel's row.
-func sidebarRows(panes []Pane, tunnels []Tunnel, share Share) []sideItem {
+func sidebarRows(panes []Pane, tunnels []Tunnel, share Share, windows []RemoteWindow) []sideItem {
 	notes := map[string]string{}
 	for _, p := range share.Panes {
 		notes[p.Pane] = p.Note
@@ -1015,6 +1043,9 @@ func sidebarRows(panes []Pane, tunnels []Tunnel, share Share) []sideItem {
 	}
 	for _, t := range tunnels {
 		add(t.Machine)
+	}
+	for _, w := range windows {
+		add(w.Name)
 	}
 	shown := map[string]bool{}
 	for _, t := range tunnels {
@@ -1036,6 +1067,19 @@ func sidebarRows(panes []Pane, tunnels []Tunnel, share Share) []sideItem {
 				out = append(out, sideItem{key: p.ID, text: p.Title, note: note, pane: p.ID, click: FocusPane{Pane: p.ID}, dim: p.Ended})
 			}
 		}
+		for _, w := range windows {
+			if w.Name != m {
+				continue
+			}
+			// What the window has open, to work in from here.
+			for _, o := range w.Open {
+				note := "there"
+				if o.Host != "" {
+					note = "on " + o.Host
+				}
+				out = append(out, sideItem{key: "window:" + m + ":" + o.ID, text: o.Label, note: note, click: AttachWindow{Window: m, ID: o.ID}, dim: true})
+			}
+		}
 		for _, t := range tunnels {
 			if t.Machine == m {
 				out = append(out, sideItem{key: "tunnel:" + t.ID, text: t.Label, note: t.Note, pane: t.Pane, click: ShowTunnel{ID: t.ID}, dim: !t.Live})
@@ -1052,6 +1096,7 @@ type sideRow struct {
 	anim.Group
 	heading bool
 	click   gunim.Intent
+	local   func(*gunim.UI)
 	title   *widget.Label
 	note    *widget.Label
 	active  *anim.Float
@@ -1075,7 +1120,7 @@ func newSideRow(it sideItem) *sideRow {
 func (r *sideRow) set(it sideItem) {
 	r.title.SetText(it.text)
 	r.note.SetText(it.note)
-	r.click = it.click
+	r.click, r.local = it.click, it.local
 	if !it.heading {
 		r.title.Color = widget.Ink
 		if it.dim {
@@ -1145,7 +1190,11 @@ func (r *sideRow) Handle(e input.Event, u *gunim.UI) bool {
 		r.hover.Animate(0, widget.Settle.Get(u.Theme()))
 	case input.PointerDown:
 		if e.Button == input.ButtonPrimary {
-			u.Send(r, r.click)
+			if r.local != nil {
+				r.local(u)
+			} else if r.click != nil {
+				u.Send(r, r.click)
+			}
 			return true
 		}
 		return false

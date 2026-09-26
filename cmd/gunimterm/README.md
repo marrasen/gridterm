@@ -65,8 +65,7 @@ Panes and terminals:
 
 Sidebar and connections:
 
-- Disconnect (`conn.disconnect`), and Clear Finished for rows that
-  ended (`conn.clearFinished`).
+- Clear Finished for rows that ended (`conn.clearFinished`).
 - Run Command in a pane of its own (`conn.command`).
 - Edit This Server and Remove This Server for the focused pane's
   server, and Reload Server List. The palette edits and removes saved
@@ -96,8 +95,6 @@ Agents:
 
 Window:
 
-- Serving this window, and connecting to another window
-  (`serve.window`, `serve.attach`). Next in the port.
 - Shortcuts and Commands, a shortcuts file of your own, and reloading
   it (`help.shortcuts`, `shortcuts.write`, `shortcuts.reload`).
 - New Theme File and Reload Themes.

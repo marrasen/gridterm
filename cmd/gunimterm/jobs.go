@@ -38,6 +38,8 @@ type (
 	RenameFile struct{ Pane, From, To string }
 	// MakeFolder makes a folder in a file pane's folder.
 	MakeFolder struct{ Pane, Name string }
+	// DropFileClip empties the file clipboard.
+	DropFileClip struct{}
 	// ShowJobs opens the jobs pane, or goes to it.
 	ShowJobs struct{}
 	// CancelJob stops a job part way.
@@ -84,6 +86,14 @@ type fileClip struct {
 	machine string
 	at      string
 	names   []string
+}
+
+// FileClip is the file clipboard as the window shows it: the names
+// waiting in folder At of the files kept under Key.
+type FileClip struct {
+	Key, At string
+	Names   []string
+	Cut     bool
 }
 
 // running is a job the program follows.

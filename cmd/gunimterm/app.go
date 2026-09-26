@@ -51,6 +51,8 @@ type State struct {
 	Font  Font
 	// Marks are the colours of the rings round shared panes.
 	Marks Marks
+	// FileClip is what the file clipboard holds, marked in the lists.
+	FileClip FileClip
 	// Theme names the theme the window is drawn in, and Themes those on
 	// offer.
 	Theme  string
@@ -615,6 +617,10 @@ func (a *app) run(ctx context.Context) error {
 
 func (a *app) publish() {
 	a.notePanes()
+	a.st.FileClip = FileClip{}
+	if c := a.clip; c != nil {
+		a.st.FileClip = FileClip{Key: c.machine, At: c.at, Names: slices.Clone(c.names), Cut: c.kind == jobs.Move}
+	}
 	st := a.st
 	st.Panes = slices.Clone(a.st.Panes)
 	st.Notices = slices.Clone(a.st.Notices)
@@ -895,6 +901,8 @@ func (a *app) handle(in gunim.Intent) {
 		}
 	case SaveLines:
 		a.saveLines(in)
+	case DropFileClip:
+		a.clip = nil
 	case DropFiles:
 		err = a.dropFiles(in)
 	case PasteImage:

@@ -105,8 +105,10 @@ type window struct {
 	afterUnlock string
 	// title is the window's title as last set.
 	title string
-	// dialing are the servers being connected to.
-	dialing []string
+	// dialing are the servers being connected to, and fileClip what the
+	// file clipboard holds.
+	dialing  []string
+	fileClip FileClip
 	// fonts are the families on the Font menu, and font the one the
 	// terminals are drawn in.
 	fonts []string
@@ -1011,6 +1013,40 @@ func (w *window) confirmRemove(name string, u *gunim.UI) {
 	w.openDialog(d, u)
 }
 
+// filesKeyOf is the name a pane's files are kept under, as the program
+// names it.
+func (w *window) filesKeyOf(id string) string {
+	for _, p := range w.panes {
+		if p.ID == id {
+			if p.On != "" {
+				return p.Machine + farSep + p.On
+			}
+			return p.Machine
+		}
+	}
+	return ""
+}
+
+// nextFilePane is the file pane after id, or before it with back, in
+// the sidebar's order, and empty when id is the only one.
+func (w *window) nextFilePane(id string, back bool) string {
+	var files []string
+	for _, p := range w.panes {
+		if p.Kind == kindFiles {
+			files = append(files, p.ID)
+		}
+	}
+	at := slices.Index(files, id)
+	if at < 0 || len(files) < 2 {
+		return ""
+	}
+	step := 1
+	if back {
+		step = -1
+	}
+	return files[(at+step+len(files))%len(files)]
+}
+
 // removeSays is what removing a server closes, as gridterm says it, and
 // nothing when it closes nothing.
 func (w *window) removeSays(name string) string {
@@ -1199,6 +1235,7 @@ func (w *window) update(st State, u *gunim.UI) {
 	}
 	w.remoteWindows = st.Windows
 	w.dialing = st.Dialing
+	w.fileClip = st.FileClip
 	if renamed || !slices.Equal(st.Connected, w.connected) {
 		w.connected = st.Connected
 		w.servers(w.saved)

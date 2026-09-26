@@ -81,13 +81,7 @@ Files:
 - Archives open as folders (`vfs.WithArchives`).
 - Go To offers Windows drives, and completes paths.
 - The bar of F-keys, clickable, dimmed where they do nothing.
-- Keys: Backspace edits the type-ahead first; Escape clears it, then
-  the file clipboard; Insert marks; Ctrl+G opens Go To; Ctrl+D closes;
-  Tab and Shift+Tab move between file panes.
-- Symlinks in the link colour with "→ target"; F3 and F4 on a link to
-  a folder.
-- Files waiting to be pasted marked in the list; a read error as a
-  row to click, and a "reading…" row.
+- A read error as a row to click, and a "reading…" row.
 - WSL folders in the Files menu; ".." hidden at a filesystem's top.
 
 Secrets, serving and agents:

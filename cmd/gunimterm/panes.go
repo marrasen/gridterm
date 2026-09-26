@@ -108,8 +108,22 @@ func (b *browser) Handle(e gi.Event, u *gunim.UI) bool {
 	case k.Key == gi.KeyF9 && k.Mods == 0:
 		b.askFolder(u)
 	case k.Key == gi.KeyF3 && k.Mods == 0, k.Key == gi.KeyF4 && k.Mods == 0:
-		if c, ok := b.table.Cursor(); ok && c != up && !b.byName[c].IsDir() {
+		// A link is read through, wherever it goes; a folder is Enter's.
+		if c, ok := b.table.Cursor(); ok && c != up && !(b.byName[c].IsDir() && !b.byName[c].IsLink()) {
 			u.Send(b, ViewFile{Pane: b.id, Name: string(c), Follow: k.Key == gi.KeyF4})
+		}
+	case k.Key == gi.KeyG && ctrl:
+		b.askGoTo(u)
+	case k.Key == gi.KeyD && ctrl:
+		u.Send(b, ClosePane{Pane: b.id})
+	case k.Key == gi.KeyEscape && k.Mods == 0:
+		// The table has had it first, for a name being found.
+		u.Send(b, DropFileClip{})
+	case k.Key == gi.KeyTab && (k.Mods == 0 || k.Mods == gi.ModShift):
+		// To the next file pane, or the one before, as between
+		// gridterm's two.
+		if next := b.w.nextFilePane(b.id, k.Mods == gi.ModShift); next != "" {
+			u.Send(b, FocusPane{Pane: next})
 		}
 	default:
 		return false
@@ -270,22 +284,39 @@ func (b *browser) list(u *gunim.UI) {
 	b.table.SetKeys(keys, u)
 }
 
-// row is what the table shows for an entry: folders strong, names
-// starting with a dot faint.
+// row is what the table shows for an entry: folders strong, links in
+// the accent colour with where they go, names starting with a dot
+// faint, and one waiting to be pasted with a dot in front, as gridterm
+// marks it.
 func (b *browser) row(k widget.Key) widget.TableRow {
 	if k == up {
 		return widget.TableRow{Cells: []string{"..", "", ""}, Strong: true}
 	}
 	e := b.byName[k]
 	size := ""
-	if !e.IsDir() {
+	switch {
+	case e.IsLink() && e.Link != "":
+		size = "→ " + e.Link
+	case e.IsLink():
+		size = "link"
+	case !e.IsDir():
 		size = humanSize(e.Size)
+	}
+	name := e.Name
+	if b.clipped(e.Name) {
+		name = "·" + name
 	}
 	when := ""
 	if !e.Mod.IsZero() {
 		when = e.Mod.Format("2006-01-02 15:04")
 	}
-	return widget.TableRow{Cells: []string{e.Name, size, when}, Strong: e.IsDir(), Faint: strings.HasPrefix(e.Name, ".")}
+	return widget.TableRow{Cells: []string{name, size, when}, Strong: e.IsDir() && !e.IsLink(), Faint: strings.HasPrefix(e.Name, "."), Accent: e.IsLink()}
+}
+
+// clipped reports whether a name here is waiting to be pasted.
+func (b *browser) clipped(name string) bool {
+	c := b.w.fileClip
+	return c.At == b.st.Path && c.Key == b.w.filesKeyOf(b.id) && slices.Contains(c.Names, name)
 }
 
 // humanSize writes a size the way a person reads it.

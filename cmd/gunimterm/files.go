@@ -2,6 +2,8 @@ package main
 
 import (
 	"cmp"
+	"errors"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -40,6 +42,9 @@ type Reader struct {
 	Seq    int
 	// Line is the line to show first, counted from 1, and 0 for the top.
 	Line int
+	// Find opens the reader with its find bar open, as the scrollback
+	// is opened, to be searched.
+	Find bool
 }
 
 // Intents for files.
@@ -325,4 +330,25 @@ func (a *app) retitleAs(id, title string) {
 			p.Title = title
 		}
 	}
+}
+
+// showScrollback opens what a terminal pane has kept in a reader
+// beside it, at the end, with the find bar open.
+func (a *app) showScrollback(pane string) error {
+	t := a.terminal(pane)
+	if t == nil {
+		return errors.New("the pane in front is not a terminal, so it has no scrollback")
+	}
+	lines := strings.Split(strings.TrimRight(t.AllText(), "\n "), "\n")
+	a.next++
+	id := "p" + itoa(a.next)
+	title := "Scrollback of " + a.titleOf(pane)
+	a.addPane(Pane{ID: id, Title: title, Machine: a.machineOf(pane), Kind: kindReader}, nil, placement{beside: pane})
+	m := maps.Clone(a.st.Readers)
+	if m == nil {
+		m = map[string]Reader{}
+	}
+	m[id] = Reader{Path: title, Lines: lines, Seq: 1, Line: max(1, len(lines)), Find: true}
+	a.st.Readers = m
+	return nil
 }

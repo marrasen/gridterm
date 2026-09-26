@@ -114,3 +114,19 @@ func TestAServersLocalAddressOpensThroughATunnel(t *testing.T) {
 		t.Fatalf("the second click opened another tunnel: %+v", a.st.Tunnels)
 	}
 }
+
+func TestTheScrollbackOpensInAReaderToSearch(t *testing.T) {
+	a, _ := agentApp(t)
+	id := a.st.Panes[0].ID
+	a.terminal(id).Paste("seq 1 300\r")
+	waitFor(t, a, "the numbers", func() bool { return strings.Contains(a.terminal(id).AllText(), "\n300\n") })
+	a.handle(ShowScrollback{Pane: id})
+	if len(a.st.Panes) != 2 || a.st.Panes[1].Kind != kindReader {
+		t.Fatalf("the panes are %+v", a.st.Panes)
+	}
+	r := a.st.Readers[a.st.Panes[1].ID]
+	text := strings.Join(r.Lines, "\n")
+	if !r.Find || !strings.Contains(text, "\n1\n2\n3\n") || !strings.Contains(text, "\n300\n") {
+		t.Fatalf("the reader holds %d lines, find %v", len(r.Lines), r.Find)
+	}
+}

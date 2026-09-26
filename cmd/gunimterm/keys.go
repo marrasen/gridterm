@@ -82,6 +82,7 @@ var commands = []struct{ id, title string }{
 	{"pane.titles", "Show Pane Titles"},
 	{"view.fullScreen", "Full Screen"},
 	{"conn.command", "Run Command"},
+	{"pane.scrollback", "Find in Scrollback"},
 	{"sidebar.focus", "Focus Sidebar"},
 	{"sidebar.closeRow", "Close Selected Row"},
 	{"conn.clearFinished", "Clear Finished"},
@@ -111,7 +112,7 @@ var menus = []struct {
 		{id: "serve.window", title: "Serve This Window…"}, {id: "serve.attach", title: "Connect to Window…"},
 		{id: "app.exit", title: "Exit", group: true},
 	}},
-	{"Edit", []menuItem{{id: "edit.copy", title: "Copy"}, {id: "edit.paste", title: "Paste"}}},
+	{"Edit", []menuItem{{id: "edit.copy", title: "Copy"}, {id: "edit.paste", title: "Paste"}, {id: "pane.scrollback", title: "Find in Scrollback…", group: true}}},
 	{"View", []menuItem{
 		{id: "sidebar.toggle", title: "Sidebar"},
 		{id: "pane.titles", title: "Pane Titles"},

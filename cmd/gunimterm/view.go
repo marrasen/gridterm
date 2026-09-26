@@ -215,6 +215,13 @@ func (w *window) run(id string, u *gunim.UI) bool {
 		}
 		u.Send(w, ShowLog{Machine: machine})
 		return true
+	case "pane.scrollback":
+		if w.kindOf(w.focused) != kindTerminal {
+			w.toasts.Show(widget.Toast{Title: "The pane in front is not a terminal", Body: "Find in Scrollback searches what a terminal has kept."}, u)
+			return true
+		}
+		u.Send(w, ShowScrollback{Pane: w.focused})
+		return true
 	case "conn.command":
 		w.commandDialog(u)
 		return true
@@ -789,6 +796,9 @@ func (w *window) update(st State, u *gunim.UI) {
 			if next.Line > 0 {
 				r.top = min(next.Line-1, max(0, len(next.Lines)-1))
 			}
+			if next.Find {
+				r.openBar(false, u)
+			}
 		}
 		if next.Seq != r.seq && r.follow {
 			// Following, the reader stays at the end as the file grows.
@@ -1013,6 +1023,10 @@ func (w *window) focusNode(id string) gunim.Node {
 		return b.table
 	}
 	if r, ok := w.readers[id]; ok {
+		// Its find bar, when it is open, as it is for the scrollback.
+		if r.open {
+			return r.bar
+		}
 		return r
 	}
 	if w.kindOf(id) == kindJobs && w.jobs != nil {

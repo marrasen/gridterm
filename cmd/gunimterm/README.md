@@ -53,7 +53,6 @@ command gridterm registers, and against what was left out on the way.
 Panes and terminals:
 
 - Pictures in a terminal (OSC 1337 and 1338).
-- Find in Scrollback (`pane.scrollback`).
 - Paste Image as File (`edit.pasteImage`).
 - Choosing the shell for a new terminal: the default, bash as a login
   shell, and on Windows cmd, Windows PowerShell and PowerShell.
@@ -65,6 +64,8 @@ Files:
 - The hex view, the JSON-log view, pictures in the reader, and the
   minimap.
 - Repeat, on a finished job.
+- Selecting and copying text in the reader, and saving what it shows
+  to a file, as the scrollback's Save As does.
 - Saved Copies (`files.copies`) and File Locations (`help.files`).
 
 Secrets and keys:

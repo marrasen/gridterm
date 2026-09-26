@@ -239,6 +239,9 @@ type (
 	TogglePaneTitles struct{}
 	// RunSavedCommand runs a command kept from before.
 	RunSavedCommand struct{ Saved settings.SavedCommand }
+	// ShowScrollback opens what a terminal pane has kept, scrollback
+	// and screen, in a reader beside it, to search and copy from.
+	ShowScrollback struct{ Pane string }
 	// ReloadServers reads the saved servers again, for a list changed
 	// by another window or by hand.
 	ReloadServers struct{}
@@ -676,6 +679,8 @@ func (a *app) handle(in gunim.Intent) {
 		err = a.runCommand(in)
 	case RunSavedCommand:
 		err = a.runSavedCommand(in.Saved)
+	case ShowScrollback:
+		err = a.showScrollback(in.Pane)
 	case ReloadServers:
 		err = a.reloadServers()
 	case ClearFinished:

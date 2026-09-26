@@ -58,9 +58,6 @@ command gridterm registers, and against what was left out on the way.
 Found by a second sweep on 2026-09-26, most important first. The first
 six are confirmed in the code; the rest are still to check.
 
-Connections and servers:
-
-
 Sidebar:
 
 - On each row: a state dot that pulses with traffic, a kind icon, a
@@ -70,12 +67,6 @@ Sidebar:
 - Headings for the machines on a window taken over; PageUp, PageDown,
   Home, End and Space; scrolling to follow the stage; "Edit This
   Window…".
-
-Secrets, serving and agents:
-
-- Removing several secrets at once.
-- Disconnecting one served window from its row; "Don't Ask Again" on
-  "Serve this window again?".
 
 Checks on Windows, waiting until the Windows runs resume: the screen
 reader recheck (#10) and this spike on Windows (#11).

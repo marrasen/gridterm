@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/marrasen/gunim"
@@ -71,7 +72,25 @@ func newSecretsPane(w *window) *secretsPane {
 	onRow(p.cp, func(it SecretItem, u *gunim.UI) { u.Send(p.table, CopySecret{ID: it.ID}) })
 	onRow(p.reveal, func(it SecretItem, u *gunim.UI) { u.Send(p.table, RevealSecret{ID: it.ID}) })
 	onRow(p.change, func(it SecretItem, u *gunim.UI) { p.w.secretForm(it.Kind, &it, u) })
-	onRow(p.remove, func(it SecretItem, u *gunim.UI) { p.w.confirmRemoveSecret(it, u) })
+	p.remove.OnActivate(func(u *gunim.UI) {
+		// The ones marked with Space, as gridterm removes several at
+		// once, or the one under the cursor.
+		var picked []SecretItem
+		for _, k := range p.table.Marked() {
+			picked = append(picked, p.byID[k])
+		}
+		if len(picked) > 1 {
+			p.w.confirmRemoveSecrets(picked, u)
+			return
+		}
+		if len(picked) == 1 {
+			p.w.confirmRemoveSecret(picked[0], u)
+			return
+		}
+		if k, ok := p.table.Cursor(); ok {
+			p.w.confirmRemoveSecret(p.byID[k], u)
+		}
+	})
 	p.addKey, p.addPass, p.removeKey = button("Add Key"), button("Add Passphrase"), button("Remove")
 	p.addKey.On = AddSecretsKey{}
 	p.addPass.OnActivate(func(u *gunim.UI) { p.w.passphraseForm(p.st, u) })
@@ -198,6 +217,21 @@ func (w *window) confirmRemoveSecret(it SecretItem, u *gunim.UI) {
 	d.SetButtons("Remove", "Cancel")
 	d.Danger = true
 	d.Accept, d.Dismiss = RemoveSecret{ID: it.ID}, DialogClosed{}
+	w.openDialog(d, u)
+}
+
+// confirmRemoveSecrets asks before removing several secrets at once.
+func (w *window) confirmRemoveSecrets(items []SecretItem, u *gunim.UI) {
+	names := make([]string, len(items))
+	ids := make([]string, len(items))
+	for i, it := range items {
+		names[i], ids[i] = it.Name, it.ID
+	}
+	d := widget.NewDialog("Remove " + count(len(items), "secret") + "?")
+	d.Body = widget.NewLabel(strings.Join(names, ", ") + ". They go from the secrets for good.")
+	d.SetButtons("Remove "+strconv.Itoa(len(items)), "Cancel")
+	d.Danger = true
+	d.Accept, d.Dismiss = RemoveSecrets{IDs: ids}, DialogClosed{}
 	w.openDialog(d, u)
 }
 

@@ -785,6 +785,15 @@ func (a *app) handle(in gunim.Intent) {
 		a.putSecret(in)
 	case RemoveSecret:
 		a.withSecrets("Couldn't remove the secret", func(v *secrets.Vault) error { return v.Remove(in.ID) })
+	case RemoveSecrets:
+		a.withSecrets("Couldn't remove the secrets", func(v *secrets.Vault) error {
+			for _, id := range in.IDs {
+				if err := v.Remove(id); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
 	case CopySecret:
 		a.copySecret(in.ID)
 	case TypeSecret:
@@ -821,6 +830,8 @@ func (a *app) handle(in gunim.Intent) {
 		err = a.stopServing()
 	case DisconnectClients:
 		err = a.disconnectClients()
+	case DisconnectClient:
+		err = a.disconnectClient(in)
 	case ConnectWindow:
 		err = a.connectWindow(in)
 	case DisconnectWindow:

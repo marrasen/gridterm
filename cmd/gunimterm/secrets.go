@@ -71,8 +71,10 @@ type (
 		Kind           secrets.Kind
 		Value          string
 	}
-	// RemoveSecret takes a secret out of the vault.
-	RemoveSecret struct{ ID string }
+	// RemoveSecret takes a secret out of the vault, and RemoveSecrets
+	// several at once.
+	RemoveSecret  struct{ ID string }
+	RemoveSecrets struct{ IDs []string }
 	// CopySecret puts a secret on the clipboard, for half a minute.
 	CopySecret struct{ ID string }
 	// TypeSecret types a secret into the terminal used last.

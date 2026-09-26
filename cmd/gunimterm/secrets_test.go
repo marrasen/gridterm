@@ -347,3 +347,16 @@ func TestTheSecretsPaneReadsTheVaultAgain(t *testing.T) {
 	}
 	waitFor(t, a, "the secret to show", func() bool { return len(a.st.Secrets.Items) == 1 })
 }
+
+func TestSeveralSecretsAreRemovedAtOnce(t *testing.T) {
+	a, _ := secretsApp(t)
+	startVault(t, a)
+	for _, name := range []string{"one", "two", "three"} {
+		a.handle(PutSecret{Name: name, Kind: secrets.Password, Value: "x"})
+	}
+	ids := []string{a.st.Secrets.Items[0].ID, a.st.Secrets.Items[1].ID}
+	a.handle(RemoveSecrets{IDs: ids})
+	if len(a.st.Secrets.Items) != 1 {
+		t.Fatalf("two removed, %d are left", len(a.st.Secrets.Items))
+	}
+}

@@ -54,6 +54,10 @@ type Serving struct {
 // ServedClient is a window connected to this one.
 type ServedClient struct{ Name, From string }
 
+// DisconnectClient hangs up on one window this one is served to, by
+// its name and where it came from.
+type DisconnectClient struct{ Name, From string }
+
 // Intents for serving.
 type (
 	// StartServing serves the window on Port, on this machine only or
@@ -204,6 +208,22 @@ func (a *app) disconnectClients() error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// disconnectClient hangs up on one window this one is served to.
+func (a *app) disconnectClient(in DisconnectClient) error {
+	for _, c := range a.serving.clients {
+		if c.Name != in.Name || c.Addr != in.From {
+			continue
+		}
+		if a.serving.server != nil {
+			a.serving.server.GoingTo(c, serve.GoingKicked)
+		}
+		if err := c.Close(); err != nil && !serve.Ended(err) {
+			return err
+		}
+	}
+	return nil
 }
 
 func (a *app) clientCame(c *serve.Client) {
@@ -554,8 +574,21 @@ func (a *app) offerToServeAgain() {
 	if s.Port == 0 {
 		port = "on whichever port was free"
 	}
-	ans, err := a.ask(a.ctx, Ask{Title: "Serve this window again?", Text: "It was served when it last closed: " + port + ", listening on " + where + ".", Yes: "Serve", No: "Not Now"})
+	ans, err := a.ask(a.ctx, Ask{Title: "Serve this window again?", Text: "It was served when it last closed: " + port + ", listening on " + where + ".",
+		Choose: []string{"Serve", "Don't Ask Again"}, No: "Not Now"})
 	if err != nil || !ans.Yes {
+		return
+	}
+	if len(ans.Answers) > 0 && ans.Answers[len(ans.Answers)-1] == "Don't Ask Again" {
+		// As gridterm has it: the window stops being served as it opens,
+		// until the user serves it again.
+		a.events <- func() {
+			if a.settings != nil {
+				if err := a.settings.PutServeOn(false); err != nil {
+					a.notify("Couldn't keep that for next time", err.Error(), "")
+				}
+			}
+		}
 		return
 	}
 	in := StartServing{Port: strconv.Itoa(s.Port), Anywhere: s.Anywhere}

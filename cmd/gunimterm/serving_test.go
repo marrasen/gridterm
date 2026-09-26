@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -320,4 +321,39 @@ func TestASavedWindowIsConnectedToAsOne(t *testing.T) {
 	if b.st.Panes[0].Machine != "desk" || b.windows["desk"] == nil {
 		t.Fatalf("connected, the pane is on %q and the windows are %v", b.st.Panes[0].Machine, b.windows)
 	}
+}
+
+func TestOneServedWindowIsDisconnectedFromItsRow(t *testing.T) {
+	a, win := servedApp(t)
+	waitFor(t, a, "the list of what is open", func() bool { return len(win.Opens()) == 1 })
+	c := a.st.Serving.Clients[0]
+	a.handle(DisconnectClient(c))
+	gone := make(chan struct{})
+	go func() { _ = win.Wait(); close(gone) }()
+	waitFor(t, a, "the other window to go", func() bool {
+		select {
+		case <-gone:
+			return len(a.st.Serving.Clients) == 0
+		default:
+			return false
+		}
+	})
+	if win.Going() != serve.GoingKicked {
+		t.Fatalf("hung up on, the other window was told %q", win.Going())
+	}
+}
+
+func TestServeAgainCanBeToldNotToAsk(t *testing.T) {
+	a := fontApp(t)
+	if err := a.settings.PutServeOn(true); err != nil {
+		t.Fatal(err)
+	}
+	go a.offerToServeAgain()
+	waitFor(t, a, "the question", func() bool { return len(a.st.Asks) == 1 })
+	q := a.st.Asks[0]
+	if !slices.Contains(q.Choose, "Don't Ask Again") {
+		t.Fatalf("asked %+v", q)
+	}
+	a.handle(AskAnswered{ID: q.ID, Yes: true, Answers: []string{"Don't Ask Again"}})
+	waitFor(t, a, "the setting", func() bool { return !a.settings.ServeOn() })
 }

@@ -1262,7 +1262,8 @@ func (w *window) update(st State, u *gunim.UI) {
 		for at < len(rows) && !rows[at].heading {
 			at++
 		}
-		item := sideItem{key: "client:" + c.Name + ":" + strconv.Itoa(i), text: "serving " + c.Name, note: "from " + c.From, local: func(u *gunim.UI) { w.servingDialog(w.serving, u) }}
+		item := sideItem{key: "client:" + c.Name + ":" + strconv.Itoa(i), text: "serving " + c.Name, note: "from " + c.From, local: func(u *gunim.UI) { w.servingDialog(w.serving, u) },
+			closes: DisconnectClient(c)}
 		rows = slices.Insert(rows, at, item)
 	}
 	// At the foot, as in gridterm, the way to a machine not yet listed.

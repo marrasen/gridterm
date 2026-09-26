@@ -124,6 +124,7 @@ func TestASecretIsTypedIntoTheTerminalUsedLast(t *testing.T) {
 	a, _ := secretsApp(t)
 	sess := &typed{done: make(chan struct{})}
 	quiet := shellHooks{output: func() {}, title: func(string) {}, exit: func() {}, clipboard: func(string) {}}
+	a.next++ // the pane takes a number, as the program's own do
 	a.addPane(Pane{ID: "p1", Title: "Terminal 1"}, openShell(sess, a.palette, quiet), placement{})
 	t.Cleanup(func() { a.remove("p1") })
 	a.lastTerminal = "p1"

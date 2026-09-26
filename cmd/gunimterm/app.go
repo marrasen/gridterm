@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"fmt"
-	"github.com/marrasen/gridterm/jobs"
 	"github.com/marrasen/gridterm/glyph"
+	"github.com/marrasen/gridterm/jobs"
 	"github.com/marrasen/gridterm/keys"
 	"github.com/marrasen/gridterm/logs"
 	"github.com/marrasen/gridterm/remote"
@@ -321,7 +321,9 @@ type app struct {
 	// group.
 	groups  map[int]*Box
 	groupOf map[string]int
-	next    int
+	// next numbers the panes, and nextGroup the groups.
+	next      int
+	nextGroup int
 	// notices counts the notices made.
 	notices uint64
 	// ctx ends with the window. conns are the connections open, by the
@@ -996,10 +998,10 @@ func (a *app) addPane(p Pane, sh *shell, at placement) {
 		a.shells.set(p.ID, sh)
 	}
 	a.st.Panes = append(a.st.Panes, p)
-	a.next++
+	a.nextGroup++
 	g, ok := a.groupOf[at.beside]
 	if at.beside == "" || !ok {
-		g = a.next
+		g = a.nextGroup
 		a.groups[g] = &Box{Pane: p.ID}
 	} else {
 		box := &Box{
@@ -1162,9 +1164,9 @@ func (a *app) popOut() {
 		return
 	}
 	a.take(id)
-	a.next++
-	a.groups[a.next] = &Box{Pane: id}
-	a.groupOf[id] = a.next
+	a.nextGroup++
+	a.groups[a.nextGroup] = &Box{Pane: id}
+	a.groupOf[id] = a.nextGroup
 }
 
 func (a *app) retitle(id, title string) {

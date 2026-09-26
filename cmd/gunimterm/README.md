@@ -52,8 +52,6 @@ command gridterm registers, and against what was left out on the way.
 
 The window:
 
-- Ctrl+Tab walks the panes in the order they were last used, with a
-  list shown while Ctrl is held.
 - The command-line flags: `-font-size`, `-e`, `-scrollback`, `-ssh`,
   `-font`, `-font-family`, `-list-fonts`, `-mcp-skill`, `-stats` and
   `-shot`.

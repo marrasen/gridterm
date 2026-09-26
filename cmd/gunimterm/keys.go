@@ -60,8 +60,10 @@ var commands = []struct{ id, title string }{
 	{"pane.splitDown", "Split Down"},
 	{"pane.popOut", "Pop Out Pane"},
 	{"pane.close", "Close Pane"},
-	{"pane.next", "Next Pane"},
-	{"pane.previous", "Previous Pane"},
+	{"pane.next", "Next Recent Pane"},
+	{"pane.previous", "Previous Recent Pane"},
+	{"pane.nextInSidebar", "Next Pane"},
+	{"pane.previousInSidebar", "Previous Pane"},
 	{"view.switcher", "All Panes"},
 	{"pane.rename", "Rename Pane"},
 	{"sidebar.toggle", "Show or Hide Sidebar"},
@@ -272,9 +274,9 @@ func commandIntent(id string) (gunim.Intent, bool) {
 		return ClosePane{}, true
 	case "edit.pasteImage":
 		return PasteImage{}, true
-	case "pane.next", "pane.nextInSidebar":
+	case "pane.nextInSidebar":
 		return NextPane{}, true
-	case "pane.previous", "pane.previousInSidebar":
+	case "pane.previousInSidebar":
 		return NextPane{Back: true}, true
 	case "conn.terminal":
 		return NewTerminal{}, true

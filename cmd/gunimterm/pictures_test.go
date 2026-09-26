@@ -34,6 +34,7 @@ func localPane(t *testing.T, out string, argv ...string) (*app, *printed) {
 	a.ctx = t.Context()
 	sess := &printed{typed: typed{done: make(chan struct{})}, out: []byte(out)}
 	quiet := shellHooks{output: func() {}, title: func(string) {}, exit: func() {}, clipboard: func(string) {}}
+	a.next++ // the pane takes a number, as the program's own do
 	a.addPane(Pane{ID: "p1", Title: "Terminal 1"}, openShell(sess, a.palette, quiet), placement{})
 	a.argvs["p1"] = argv
 	t.Cleanup(func() { a.remove("p1") })

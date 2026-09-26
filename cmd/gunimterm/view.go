@@ -111,7 +111,14 @@ type window struct {
 	// zoomed gathers Ctrl and the wheel until it makes a point of font
 	// size.
 	zoomed float32
-	size        geom.Size
+	// recent are the panes, the most recently used first; walk is a
+	// Ctrl+Tab walk under way, walkList its list on screen, and keyMods
+	// the modifiers of the key running the command now.
+	recent   []string
+	walk     *paneWalk
+	walkList *walkList
+	keyMods  input.Mods
+	size     geom.Size
 	// panes are the panes as last published, and sw the switcher while
 	// it is open.
 	panes []Pane
@@ -231,6 +238,18 @@ func (w *window) run(id string, u *gunim.UI) bool {
 		return true
 	case "view.switcher":
 		w.openSwitcher(u)
+		return true
+	case "pane.next", "pane.previous":
+		step := 1
+		if id == "pane.previous" {
+			step = -1
+		}
+		w.walkRecent(step, u)
+		if w.keyMods&input.ModControl == 0 {
+			// Run from the palette or the menu, with no Ctrl to let go
+			// of: one step.
+			w.endWalk(u)
+		}
 		return true
 	case "pane.rename":
 		w.rename(u)
@@ -1017,6 +1036,13 @@ func (w *window) Handle(e input.Event, u *gunim.UI) bool {
 		u.Send(w, DropFiles{Paths: d.Paths})
 		return true
 	}
+	if r, ok := e.(input.KeyRelease); ok {
+		if w.walk != nil && walkKey(r) {
+			w.endWalk(u)
+			return true
+		}
+		return false
+	}
 	k, ok := e.(input.KeyPress)
 	if !ok {
 		return false
@@ -1029,6 +1055,8 @@ func (w *window) Handle(e input.Event, u *gunim.UI) bool {
 	if !ok {
 		return false
 	}
+	w.keyMods = k.Mods
+	defer func() { w.keyMods = 0 }()
 	return w.run(id, u)
 }
 
@@ -1167,6 +1195,7 @@ func (w *window) update(st State, u *gunim.UI) {
 		w.secrets.show(st.Secrets, u)
 	}
 	w.vault = st.Secrets
+	w.noteFocus(st.Focus)
 	w.showTitle(st, u)
 	if id := w.afterUnlock; id != "" && st.Secrets.Open {
 		w.run(id, u)

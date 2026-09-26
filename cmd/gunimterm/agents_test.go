@@ -228,3 +228,22 @@ func TestTheSkillIsWrittenAndAnEditedOneAskedAbout(t *testing.T) {
 		return strings.Contains(string(body), "use_session_code")
 	})
 }
+
+func TestWhatAnAgentTypedIsKept(t *testing.T) {
+	a, code := agentApp(t)
+	c, sh := dial(t, a, code)
+	var err error
+	asAgent(t, a, func() { err = c.Send(sh.Panes[0].ID, "echo one\ttwo", []string{"Enter"}) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	pane := a.st.Panes[0].ID
+	a.handle(ShowTyped{Pane: pane})
+	if len(a.st.Panes) != 2 {
+		t.Fatalf("the panes are %+v", a.st.Panes)
+	}
+	r := a.st.Readers[a.st.Panes[1].ID]
+	if last := r.Lines[len(r.Lines)-1]; !strings.HasSuffix(last, `echo one\ttwo<Enter>`) {
+		t.Fatalf("the history ends %q", last)
+	}
+}

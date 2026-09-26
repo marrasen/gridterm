@@ -77,6 +77,7 @@ var commands = []struct{ id, title string }{
 	{"secrets.import", "Import Secrets"},
 	{"agent.share", "Share with an Agent"},
 	{"agent.permissions", "Agent Permissions"},
+	{"agent.typed", "Typing History"},
 	{"serve.window", "Serve This Window"},
 	{"serve.attach", "Connect to Window"},
 	{"conn.disconnect", "Disconnect"},
@@ -161,6 +162,7 @@ var menus = []struct {
 	{"Share", []menuItem{
 		{title: "With an Agent", caption: true},
 		{id: "agent.share", title: "Share Panes…"}, {id: "agent.permissions", title: "Permissions…"},
+		{id: "agent.typed", title: "Typing History"},
 		{title: "With Another Window", caption: true},
 		{id: "serve.window", title: "Serve This Window…"}, {id: "serve.attach", title: "Connect to Window…"},
 	}},

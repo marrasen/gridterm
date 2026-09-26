@@ -549,6 +549,7 @@ func (w agentWindow) Send(id, text string, keys []string) error {
 			return struct{}{}, errors.New("the program in that pane has finished, so nothing is left to type into")
 		}
 		h.markPrompt(t)
+		w.a.agentTyped(h.pane, text, keys)
 		return struct{}{}, typeInto(t, text, keys)
 	})
 	return err

@@ -54,7 +54,6 @@ Panes and terminals:
 
 - Pictures in a terminal (OSC 1337 and 1338).
 - Paste Image as File (`edit.pasteImage`).
-- Typing History (`agent.typed`), which shows what agents typed.
 
 Files:
 

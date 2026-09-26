@@ -368,6 +368,8 @@ type app struct {
 	commands map[string]command
 	// far remembers which paths on servers are there, for links.
 	far pathsFar
+	// typed is what agents typed, by pane.
+	typed map[string]*typedLog
 	// nextShell is the command the next terminal here starts, once.
 	nextShell []string
 	// found are the shells on this machine.
@@ -434,6 +436,7 @@ func newApp(c gunim.Client, sh *shells) *app {
 		agents:   agents{by: map[string]*handover{}},
 		windows:  map[string]*remoteWin{},
 		commands: map[string]command{},
+		typed:    map[string]*typedLog{},
 		far:      pathsFar{known: map[string]farPath{}, asking: map[string]bool{}},
 		accounts: map[string]*logs.Lines{},
 		wake:     make(chan struct{}, 1),
@@ -769,6 +772,8 @@ func (a *app) handle(in gunim.Intent) {
 		err = a.makeKey(in)
 	case LockKeys:
 		a.lockKeys()
+	case ShowTyped:
+		err = a.showTyped(in.Pane)
 	case ShowScrollback:
 		err = a.showScrollback(in.Pane)
 	case ReloadServers:
@@ -1042,6 +1047,7 @@ func (a *app) remove(id string) {
 	}
 	a.tunnelPaneGone(id)
 	delete(a.commands, id)
+	delete(a.typed, id)
 	if a.agents.by[id] != nil {
 		_ = a.unsharePane(id)
 	}

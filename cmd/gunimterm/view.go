@@ -272,13 +272,7 @@ func (w *window) run(id string, u *gunim.UI) bool {
 		w.askSplit(id == "pane.splitDown", u)
 		return true
 	case "palette.open":
-		// Opened from the chip bar, a small node that is always there,
-		// rather than from the whole window: a click in its opener leaves a
-		// popup open, and a click anywhere else in the window should
-		// close the palette. The anchor is the window's, moved into the
-		// chip bar's space.
-		at, _ := u.Bounds(w.chips)
-		w.palette.Open(w.chips, geom.Rc(-at.Min.X, 48-at.Min.Y, w.size.W, 0), u)
+		w.palette.Open(w, geom.Rc(0, 48, w.size.W, 0), u)
 		return true
 	case "menu.open":
 		w.bar.Open(0, u)
@@ -2521,6 +2515,5 @@ func (w *window) askSplit(vertical bool, u *gunim.UI) {
 			add("Terminal on "+placeName(m), "", SplitPane{Vertical: vertical, Machine: m, Elsewhere: true})
 		}
 	}
-	at, _ := u.Bounds(w.chips)
-	w.splitter.Open(w.chips, geom.Rc(-at.Min.X, 48-at.Min.Y, w.size.W, 0), u)
+	w.splitter.Open(w, geom.Rc(0, 48, w.size.W, 0), u)
 }

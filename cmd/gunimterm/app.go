@@ -335,7 +335,9 @@ type app struct {
 	// windows are the windows connected to, by name.
 	windows map[string]*remoteWin
 	// commands are what each command pane runs, to run it again.
-	commands  map[string]command
+	commands map[string]command
+	// far remembers which paths on servers are there, for links.
+	far       pathsFar
 	tunnelSeq int
 	ticking   bool
 	quiet     bool
@@ -395,6 +397,7 @@ func newApp(c gunim.Client, sh *shells) *app {
 		agents:   agents{by: map[string]*handover{}},
 		windows:  map[string]*remoteWin{},
 		commands: map[string]command{},
+		far:      pathsFar{known: map[string]farPath{}, asking: map[string]bool{}},
 		accounts: map[string]*logs.Lines{},
 		wake:     make(chan struct{}, 1),
 		events:   make(chan func(), 64),
@@ -776,7 +779,7 @@ func (a *app) openThen(machine string, at placement, then func(id string, err er
 	id := "p" + strconv.Itoa(a.next)
 	title := fmt.Sprintf("Terminal %d", a.next)
 	if machine == "" {
-		sh, err := startLocal(a.palette, a.hooks(id))
+		sh, err := startLocal(a.palette, a.withLinks(a.hooks(id), ""))
 		if err != nil {
 			return err
 		}
@@ -799,7 +802,7 @@ func (a *app) openThen(machine string, at placement, then func(id string, err er
 				then("", err)
 				return
 			}
-			a.addPane(Pane{ID: id, Title: title, Machine: machine}, openShell(sess, a.palette, a.hooks(id)), at)
+			a.addPane(Pane{ID: id, Title: title, Machine: machine}, openShell(sess, a.palette, a.withLinks(a.hooks(id), machine)), at)
 			then(id, nil)
 		}
 	}()

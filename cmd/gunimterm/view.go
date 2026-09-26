@@ -785,6 +785,10 @@ func (w *window) update(st State, u *gunim.UI) {
 		if next.Path != r.st.Path {
 			r.colour = syntax.For(next.Path)
 			r.follow = next.Follow
+			// Opened at a line, such as one a link named.
+			if next.Line > 0 {
+				r.top = min(next.Line-1, max(0, len(next.Lines)-1))
+			}
 		}
 		if next.Seq != r.seq && r.follow {
 			// Following, the reader stays at the end as the file grows.

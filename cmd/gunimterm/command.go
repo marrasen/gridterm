@@ -55,7 +55,7 @@ func (a *app) runCommand(in RunCommand) error {
 	a.commands[id] = cmd
 	title := strings.Join(argv, " ")
 	return a.startCommand(in.Machine, cmd, func(sess session.Session) {
-		a.addPane(Pane{ID: id, Title: title, Machine: in.Machine, Command: true}, openShell(sess, a.palette, a.hooks(id)), placement{})
+		a.addPane(Pane{ID: id, Title: title, Machine: in.Machine, Command: true}, openShell(sess, a.palette, a.withLinks(a.hooks(id), in.Machine)), placement{})
 	})
 }
 

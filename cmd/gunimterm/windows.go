@@ -247,7 +247,7 @@ func (a *app) openOnWindow(name, id, title string, at placement, then func(strin
 				then("", err)
 				return
 			}
-			a.addPane(Pane{ID: id, Title: title, Machine: name}, openShell(sess, a.palette, a.hooks(id)), at)
+			a.addPane(Pane{ID: id, Title: title, Machine: name}, openShell(sess, a.palette, a.withLinks(a.hooks(id), name)), at)
 			a.showWindows()
 			then(id, nil)
 		}
@@ -282,7 +282,7 @@ func (a *app) attachWindow(in AttachWindow) error {
 				a.notify("Couldn't work in "+open.Label, err.Error(), "")
 				return
 			}
-			a.addPane(Pane{ID: id, Title: open.Label, Machine: in.Window}, openShell(sess, a.palette, a.hooks(id)), placement{})
+			a.addPane(Pane{ID: id, Title: open.Label, Machine: in.Window}, openShell(sess, a.palette, a.withLinks(a.hooks(id), in.Window)), placement{})
 			w.bound[in.ID] = id
 			a.showWindows()
 		}

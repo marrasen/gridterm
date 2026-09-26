@@ -30,7 +30,9 @@ type term struct {
 	// held is the button down in the pane, and at the cell the pointer
 	// was last heard of in.
 	held input.MouseButton
-	at   grid.Point
+	// hoverMods are the modifiers the pointer last moved with.
+	hoverMods input.Mods
+	at        grid.Point
 	// wantBlink says the program asked for a blinking cursor, blinking
 	// that a blink is running, and blinkOff that the cursor is in the
 	// off half of one.
@@ -281,6 +283,17 @@ func (t *term) press(e gi.PointerDown, u *gunim.UI) bool {
 // drag extends the selection, or tells a program the pointer moved.
 func (t *term) drag(e gi.PointerMove, u *gunim.UI) bool {
 	at := t.cellAt(e.Pos)
+	// With Ctrl down, a link under the pointer is underlined, and a
+	// click follows it.
+	if t.held == input.MouseNone {
+		mods := mouseMods(e.Mods)
+		if mods != t.hoverMods || at != t.at {
+			t.hoverMods = mods
+			t.sh.t.SetHover(at.X, at.Y, mods)
+			t.sync()
+			u.Invalidate()
+		}
+	}
 	if at == t.at {
 		return t.held != input.MouseNone
 	}
@@ -433,3 +446,13 @@ var keyMap = func() map[gi.Key]input.Key {
 	}
 	return m
 }()
+
+// Cursor implements [gunim.CursorShaper]: a hand over a link that a
+// click would follow, and otherwise the text beam.
+func (t *term) Cursor(p geom.Point) gi.Cursor {
+	at := t.cellAt(p)
+	if _, on := t.sh.t.CursorAt(at.X, at.Y, t.hoverMods); on {
+		return gi.CursorHand
+	}
+	return gi.CursorText
+}

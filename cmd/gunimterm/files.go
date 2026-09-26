@@ -38,6 +38,8 @@ type Reader struct {
 	// counts its reads.
 	Follow bool
 	Seq    int
+	// Line is the line to show first, counted from 1, and 0 for the top.
+	Line int
 }
 
 // Intents for files.
@@ -232,20 +234,27 @@ func (a *app) readFile(in ReadFile) {
 	if f == nil {
 		return
 	}
+	a.readOn(machine, f, in.Path, in.Follow, 0, placement{beside: in.Pane})
+}
+
+// readOn opens path on a machine's files in a reader, at line when it
+// is past zero, placed at at.
+func (a *app) readOn(machine string, f vfs.FS, path string, follow bool, line int, at placement) {
+	in := ReadFile{Path: path, Follow: follow}
 	a.next++
 	id := "p" + itoa(a.next)
 	title := vfs.Base(f, in.Path)
 	if in.Follow {
 		title += " (following)"
 	}
-	a.addPane(Pane{ID: id, Title: title, Machine: machine, Kind: kindReader}, nil, placement{beside: in.Pane})
+	a.addPane(Pane{ID: id, Title: title, Machine: machine, Kind: kindReader}, nil, at)
 	go func() {
 		var last vfs.Entry
 		seq := 0
 		for {
 			lines, cut, err := files.ReadFile(f, in.Path)
 			seq++
-			r := Reader{Path: in.Path, Lines: lines, Cut: cut, Follow: in.Follow, Seq: seq}
+			r := Reader{Path: in.Path, Lines: lines, Cut: cut, Follow: in.Follow, Seq: seq, Line: line}
 			if err != nil {
 				r.Err = err.Error()
 			}

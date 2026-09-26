@@ -52,7 +52,6 @@ command gridterm registers, and against what was left out on the way.
 
 Panes and terminals:
 
-- Links: Ctrl+click on a URL, and on a file path, which opens it.
 - Pictures in a terminal (OSC 1337 and 1338).
 - Find in Scrollback (`pane.scrollback`).
 - Paste Image as File (`edit.pasteImage`).

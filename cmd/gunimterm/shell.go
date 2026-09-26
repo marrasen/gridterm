@@ -33,6 +33,11 @@ type shellHooks struct {
 	exit      func()
 	clipboard func(string)
 	bell      func()
+	// link, findPath and openPath follow the links in the pane; nil
+	// follows none.
+	link     func(string)
+	findPath func(text, dir string) (at string, isDir, ok bool)
+	openPath func(at string, isDir bool, line int)
 }
 
 // shellCols and shellRows are a new shell's size, until its pane lays
@@ -62,6 +67,9 @@ func openShell(sess session.Session, pal vt.Palette, hooks shellHooks) *shell {
 		OnOutput:    hooks.output,
 		OnClipboard: hooks.clipboard,
 		OnBell:      hooks.bell,
+		OnLink:      hooks.link,
+		FindPath:    hooks.findPath,
+		OnPath:      hooks.openPath,
 	})
 	if err != nil {
 		// Only a missing session fails, and every caller has one.

@@ -307,12 +307,16 @@ func (b *browser) show(st Browser, u *gunim.UI) {
 	b.shown = st.Seq
 	b.list(u)
 	// A new folder puts the cursor at the top, or on the name it came
-	// from; the same folder listed again keeps it where it was.
+	// from, and shows its rows in place rather than gliding them in
+	// from where the last folder was scrolled to; the same folder
+	// listed again keeps the cursor where it was.
 	switch {
+	case st.Land != "" && moved:
+		b.table.JumpTo(widget.Key(st.Land), u)
 	case st.Land != "":
 		b.table.SetCursor(widget.Key(st.Land), u)
 	case moved:
-		b.table.SetCursor(up, u)
+		b.table.JumpTo(up, u)
 	}
 }
 

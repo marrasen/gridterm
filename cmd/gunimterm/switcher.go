@@ -3,6 +3,7 @@ package main
 import (
 	"image/color"
 	"math"
+	"time"
 
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/anim"
@@ -37,6 +38,9 @@ type switcher struct {
 	picked int
 	size   geom.Size
 	laid   bool
+	// landed is when the pane picked had grown into place and was asked
+	// onto the stage; zero until then.
+	landed time.Time
 }
 
 type tile struct {
@@ -140,8 +144,25 @@ func (s *switcher) Transition(p gunim.Presence, f gunim.Frame) bool {
 		s.in.Animate(0, widget.Settle.Get(f.Theme))
 	case gunim.Present:
 	}
-	return !s.in.Active() && !s.moving()
+	return !s.in.Active() && !s.moving() && s.onStage(time.Now())
 }
+
+// onStage reports whether the pane picked is on the stage, so the
+// switcher can go without the stage before it showing for a frame. A
+// pane that never gets there lets the switcher go after landWait.
+func (s *switcher) onStage(now time.Time) bool {
+	if s.picked < 0 || s.picked >= len(s.tiles) {
+		return true
+	}
+	if s.landed.IsZero() {
+		return false
+	}
+	return s.w.focused == s.tiles[s.picked].id || now.Sub(s.landed) > landWait
+}
+
+// landWait is how long the switcher waits for the pane picked to come
+// on stage before it goes anyway.
+const landWait = 500 * time.Millisecond
 
 func (s *switcher) moving() bool {
 	for _, t := range s.tiles {
@@ -266,9 +287,26 @@ func (s *switcher) pick(i int, u *gunim.UI) {
 		o.fade.Animate(0, widget.Quick.Get(u.Theme()))
 		o.box.Animate(r.Inset(geom.Uniform(min(r.Size().W, r.Size().H)*0.08)), widget.Quick.Get(u.Theme()))
 	}
-	u.Send(s.w, FocusPane{Pane: t.id})
+	// The pane comes on stage once it has grown into place: it grows
+	// over the stage as it was, and then is what the stage shows.
+	w, id := s.w, t.id
+	var landed func(u *gunim.UI)
+	landed = func(u *gunim.UI) {
+		if t.box.Active() {
+			u.After(landCheck, landed)
+			return
+		}
+		s.landed = time.Now()
+		u.Send(w, FocusPane{Pane: id})
+		u.Invalidate()
+	}
+	u.After(landCheck, landed)
 	s.w.closeSwitcher(false, u)
 }
+
+// landCheck is how often a pane picked is looked at, to see whether it
+// has grown into place.
+const landCheck = 16 * time.Millisecond
 
 // cancel closes the overview without a choice; the panes on stage go
 // back where they stood.

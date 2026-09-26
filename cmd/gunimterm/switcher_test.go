@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/marrasen/gunim"
 	gi "github.com/marrasen/gunim/input"
 	"github.com/marrasen/gunim/paint"
 
@@ -82,5 +83,36 @@ func TestTheSwitcherShowsAFilePane(t *testing.T) {
 	}
 	if !small {
 		t.Fatal("the switcher shows no text drawn small: the file pane's tile is empty")
+	}
+}
+
+// The pane picked comes on stage once it has grown into place, and the
+// switcher stays until it is there.
+func TestThePanePickedComesOnStageOnceItHasGrown(t *testing.T) {
+	win := switcherStage(t)
+	sw := win.sw
+	for len(lastWindow.Client().Intents()) > 0 {
+		<-lastWindow.Client().Intents()
+	}
+	lastWindow.Input(gi.KeyPress{Key: gi.KeyRight})
+	lastWindow.Input(gi.KeyPress{Key: gi.KeyEnter})
+	lastWindow.Frame(time.Second / 60)
+	if n := len(lastWindow.Client().Intents()); n != 0 {
+		t.Fatalf("at the pick, %d intents went out; the pane should wait to grow", n)
+	}
+	var in FocusPane
+	for range 120 {
+		lastWindow.Frame(time.Second / 60)
+		time.Sleep(time.Millisecond)
+		if len(lastWindow.Client().Intents()) > 0 {
+			in, _ = nextIntent(t).(FocusPane)
+			break
+		}
+	}
+	if in.Pane != sw.tiles[sw.picked].id || sw.tiles[sw.picked].box.Active() {
+		t.Fatalf("grown, it asked for %#v, still moving %v", in, sw.tiles[sw.picked].box.Active())
+	}
+	if lastUI.Presence(sw) != gunim.Exiting {
+		t.Fatal("the switcher left before the pane was on stage")
 	}
 }

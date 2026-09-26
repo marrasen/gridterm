@@ -265,7 +265,13 @@ func (w *window) run(id string, u *gunim.UI) bool {
 	}
 	switch id {
 	case "palette.open":
-		w.palette.Open(w, geom.Rc(0, 48, w.size.W, 0), u)
+		// Opened from the chip bar, a small node that is always there,
+		// rather than from the whole window: a click in its opener leaves a
+		// popup open, and a click anywhere else in the window should
+		// close the palette. The anchor is the window's, moved into the
+		// chip bar's space.
+		at, _ := u.Bounds(w.chips)
+		w.palette.Open(w.chips, geom.Rc(-at.Min.X, 48-at.Min.Y, w.size.W, 0), u)
 		return true
 	case "menu.open":
 		w.bar.Open(0, u)
@@ -725,19 +731,24 @@ func (w *window) servers(saved []remote.Host) {
 		}
 		return ""
 	}
-	m := widget.BarMenu{Title: "Servers",
-		Items: []string{"Connect to Server…", "Add Server…", "Reload Server List"},
-		Hints: []string{hint("server.connect"), "", ""}}
-	w.serverIDs = []string{"server.connect", "server.add", "server.reload"}
+	// As gridterm has it: the saved servers first, under Connect To,
+	// then what is always there.
+	m := widget.BarMenu{Title: "Servers"}
+	w.serverIDs = nil
 	if len(saved) > 0 {
-		m.Breaks, m.Captions = []int{3}, []int{3}
-		m.Items, m.Hints = append(m.Items, "Saved"), append(m.Hints, "")
+		m.Captions = []int{0}
+		m.Items, m.Hints = append(m.Items, "Connect To"), append(m.Hints, "")
 		w.serverIDs = append(w.serverIDs, "")
 		for _, h := range saved {
-			m.Items, m.Hints = append(m.Items, h.Name), append(m.Hints, "")
-			w.serverIDs = append(w.serverIDs, "server.open."+remote.CommandName(h.Name))
+			id := "server.open." + remote.CommandName(h.Name)
+			m.Items, m.Hints = append(m.Items, h.Name), append(m.Hints, hint(id))
+			w.serverIDs = append(w.serverIDs, id)
 		}
+		m.Breaks = []int{len(m.Items)}
 	}
+	m.Items = append(m.Items, "Connect to Server…", "Add Server…", "Reload Server List")
+	m.Hints = append(m.Hints, hint("server.connect"), "", "")
+	w.serverIDs = append(w.serverIDs, "server.connect", "server.add", "server.reload")
 	for i := range w.bar.Menus {
 		if w.bar.Menus[i].Title == "Servers" {
 			w.bar.Menus[i] = m
@@ -1250,6 +1261,13 @@ func (w *window) Handle(e input.Event, u *gunim.UI) bool {
 	// Ctrl lights the link under the pointer in whichever pane it is
 	// over, whatever has the keyboard, as in gridterm.
 	switch k := e.(type) {
+	case input.WindowFocusLost:
+		// Another program took the keyboard, as a screenshot tool does,
+		// and no release of Ctrl will come: the walk ends where it is,
+		// and no link stays lit.
+		w.endWalk(u)
+		w.ctrlHeld(input.KeyLeftControl, 0, false, u)
+		return false
 	case input.KeyPress:
 		w.ctrlHeld(k.Key, k.Mods, true, u)
 	case input.KeyRelease:
@@ -2288,13 +2306,22 @@ func (w *window) machines() []string {
 	return out
 }
 
-// showMachineMenu opens a heading's menu of items, each doing its act.
+// showMachineMenu opens a heading's menu of items, each doing its act;
+// an item with no act is a caption over the group under it.
 func (w *window) showMachineMenu(r *sideRow, items []string, acts []func(*gunim.UI), u *gunim.UI) {
 	r.closeMenu(u)
 	menu := widget.NewMenu(items...)
+	for i, act := range acts {
+		if act == nil {
+			menu.Captions = append(menu.Captions, i)
+			if i > 0 {
+				menu.Breaks = append(menu.Breaks, i)
+			}
+		}
+	}
 	menu.Pick = func(i int, u *gunim.UI) {
 		r.closeMenu(u)
-		if i >= 0 && i < len(acts) {
+		if i >= 0 && i < len(acts) && acts[i] != nil {
 			acts[i](u)
 		}
 	}
@@ -2392,32 +2419,41 @@ func (w *window) openMachineMenu(r *sideRow, u *gunim.UI) {
 			return
 		}
 	}
-	add("Terminal", send(OpenOn{Machine: m}))
-	if m == "" && len(w.shellChoices) > 1 {
-		// This computer's shells, each to open a terminal with, as
-		// gridterm lists them.
-		for _, sh := range w.shellChoices {
-			add("Terminal: "+sh.Title, send(OpenShellNamed{ID: sh.ID}))
-		}
-	}
+	// Grouped under headings: what opens here, then the files, then
+	// what goes through the connection, then the connection and the
+	// saved server.
+	heading := func(title string) { add(title, nil) }
+	heading("Terminal")
+	add("New Terminal", send(OpenOn{Machine: m}))
 	if !window {
 		add("Command…", func(u *gunim.UI) { w.commandDialogOn(m, u) })
 	}
-	add("Files", send(FilesOn{Machine: m}))
+	if m == "" && len(w.shellChoices) > 1 {
+		// This computer's shells, each to open a terminal with.
+		heading("Shells")
+		for _, sh := range w.shellChoices {
+			add(sh.Title, send(OpenShellNamed{ID: sh.ID}))
+		}
+	}
+	heading("Files")
+	add("Home", send(FilesOn{Machine: m}))
 	for _, f := range w.foldersOn(m) {
-		add("Files in "+f, send(FilesOn{Machine: m, Path: f}))
+		add(f, send(FilesOn{Machine: m, Path: f}))
 	}
 	if m != "" && !window {
+		heading("Forward")
 		add("Tunnel…", func(u *gunim.UI) { w.tunnelDialogOn(m, false, u) })
 		add("SOCKS Proxy…", func(u *gunim.UI) { w.tunnelDialogOn(m, true, u) })
 	}
-	if slices.Contains(w.dropped, m) {
-		// Its connection went: the row stays until this clears it.
-		add("Clear", send(ClearMachine{Name: m}))
-	}
 	if m != "" {
+		heading("Connection")
 		add("Connection Log", send(ShowLog{Machine: m}))
-		add("Disconnect", send(Disconnect{Machine: m}))
+		if slices.Contains(w.dropped, m) {
+			// Its connection went: the row stays until this clears it.
+			add("Clear", send(ClearMachine{Name: m}))
+		} else {
+			add("Disconnect", send(Disconnect{Machine: m}))
+		}
 		for _, h := range w.saved {
 			if h.Name == m {
 				saved := h
@@ -2425,6 +2461,7 @@ func (w *window) openMachineMenu(r *sideRow, u *gunim.UI) {
 				if h.Window {
 					what = "Window"
 				}
+				heading(what)
 				add("Edit This "+what+"…", func(u *gunim.UI) { w.serverForm(&saved, u) })
 				add("Remove This "+what+"…", func(u *gunim.UI) { w.confirmRemove(m, u) })
 			}

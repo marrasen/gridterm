@@ -1,6 +1,7 @@
 package main
 
 import (
+	"slices"
 	"image"
 	"path/filepath"
 	"strings"
@@ -322,6 +323,10 @@ func TestAMachinesPlusOpensWhatCanBeOpenedThere(t *testing.T) {
 	lastWindow.Input(gi.PointerDown{Pos: geom.Pt(box.Max.X-20, box.Min.Y+box.Size().H/2), Button: gi.ButtonPrimary, Clicks: 1})
 	lastWindow.Input(gi.PointerUp{Pos: geom.Pt(box.Max.X-20, box.Min.Y+box.Size().H/2), Button: gi.ButtonPrimary})
 	lastWindow.Frame(time.Second / 60)
+	// Its lines are grouped under headings.
+	if m := row.menu; m == nil || !slices.Contains(m.Captions, 0) || m.Items[0] != "Terminal" || !slices.Contains(m.Items, "Files") {
+		t.Fatalf("this computer's menu is %+v", row.menu)
+	}
 	for _, k := range []gi.Key{gi.KeyDown, gi.KeyEnter} {
 		lastWindow.Input(gi.KeyPress{Key: k})
 		lastWindow.Frame(time.Second / 60)

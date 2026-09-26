@@ -79,7 +79,10 @@ func (w *window) walkRecent(step int, u *gunim.UI) {
 		}
 	}
 	if w.walkList == nil {
+		// Given its titles before it goes on screen: a node's children
+		// are read as it arrives, and the list's labels are its children.
 		w.walkList = newWalkList()
+		w.walkList.show(titles, w.walk.at)
 		u.Insert(w, w.walkList)
 	}
 	w.walkList.show(titles, w.walk.at)

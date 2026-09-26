@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/marrasen/gunim/driver"
 	gi "github.com/marrasen/gunim/input"
 
 	"github.com/marrasen/gridterm/vt"
@@ -41,6 +42,13 @@ func TestCtrlTabWalksThePanesByLastUse(t *testing.T) {
 	}
 	if win.walkList == nil {
 		t.Fatal("the walk shows no list")
+	}
+	// Its titles are on screen, one a pane.
+	lastWindow.Frame(time.Second / 60)
+	for i, l := range win.walkList.labels {
+		if box, ok := lastUI.Bounds(l); !ok || box.Empty() {
+			t.Fatalf("the walk's title %d, %q, is not on screen", i, l.Text)
+		}
 	}
 	if got := step(); got != "p1" {
 		t.Fatalf("the second went to %s, want p1", got)
@@ -79,5 +87,31 @@ func TestNewTerminalsAreNumberedInTurn(t *testing.T) {
 		if want := "Terminal " + strconv.Itoa(i+1); p.Title != want {
 			t.Fatalf("pane %d is called %q, want %q", i, p.Title, want)
 		}
+	}
+}
+
+// Another program taking the keyboard mid-walk, as a screenshot tool
+// does, ends the walk: no release of Ctrl would come.
+func TestAWalkEndsWhenTheWindowLosesTheKeyboard(t *testing.T) {
+	win, sh, publish := windowStage(t)
+	quiet := shellHooks{output: func() {}, title: func(string) {}, exit: func() {}, clipboard: func(string) {}}
+	var panes []Pane
+	for _, id := range []string{"p1", "p2"} {
+		sh.set(id, openShell(&typed{done: make(chan struct{})}, vt.DefaultPalette(), quiet))
+		t.Cleanup(func() { _ = sh.get(id).t.Close() })
+		panes = append(panes, Pane{ID: id, Title: "Terminal " + id})
+	}
+	for _, id := range []string{"p1", "p2"} {
+		publish(State{Panes: panes, Stage: &Box{Pane: id}, Focus: id})
+	}
+	lastWindow.Input(gi.KeyPress{Key: gi.KeyTab, Mods: gi.ModControl | gi.ModShift})
+	lastWindow.Frame(time.Second / 60)
+	if win.walk == nil {
+		t.Fatal("Ctrl+Shift+Tab started no walk")
+	}
+	lastWindow.Input(driver.WindowFocus{Focused: false})
+	lastWindow.Frame(time.Second / 60)
+	if win.walk != nil || win.walkList != nil {
+		t.Fatal("with the keyboard gone to another program, the walk goes on")
 	}
 }

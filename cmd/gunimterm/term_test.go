@@ -146,3 +146,24 @@ func TestATinyPaneResizesItsShellOnceSettled(t *testing.T) {
 		t.Fatalf("settled, the shell is %dx%d, want %dx%d", size.Cols, size.Rows, cols, rows)
 	}
 }
+
+// A click outside the palette closes it, and the keyboard goes where
+// the click landed.
+func TestAClickOutsideThePaletteClosesIt(t *testing.T) {
+	win, tm := termStage(t, geom.Sz(900, 600))
+	win.run("palette.open", lastUI)
+	frames(20)
+	if !win.palette.IsOpen() {
+		t.Fatal("the palette did not open")
+	}
+	box, _ := lastUI.Bounds(tm)
+	lastWindow.Input(gi.PointerDown{Pos: box.Center(), Button: gi.ButtonPrimary, Clicks: 1})
+	lastWindow.Input(gi.PointerUp{Pos: box.Center(), Button: gi.ButtonPrimary})
+	frames(20)
+	if win.palette.IsOpen() {
+		t.Fatal("a click on the terminal left the palette open")
+	}
+	if !tm.focused {
+		t.Fatal("after the click, the terminal has no keyboard")
+	}
+}

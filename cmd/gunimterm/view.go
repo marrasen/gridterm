@@ -124,9 +124,11 @@ type window struct {
 	walk     *paneWalk
 	walkList *walkList
 	keyMods  input.Mods
-	// glowing is set while a shared pane's ring keeps frames coming.
-	glowing bool
-	size    geom.Size
+	// glowing is set while a shared pane's ring keeps frames coming,
+	// and revealed is the pane whose row the sidebar last scrolled to.
+	glowing  bool
+	revealed string
+	size     geom.Size
 	// panes are the panes as last published, and sw the switcher while
 	// it is open.
 	panes []Pane
@@ -1277,6 +1279,14 @@ func (w *window) update(st State, u *gunim.UI) {
 			row.setActive(r.pane != "" && r.pane == st.Focus, u)
 		}
 	}
+	if st.Focus != w.revealed {
+		// The sidebar follows the stage, as gridterm's does: the row of
+		// the pane in front scrolls into view.
+		w.revealed = st.Focus
+		if row, ok := widget.RowOf[*sideRow](w.list, widget.Key(st.Focus)); ok {
+			u.Reveal(row)
+		}
+	}
 	w.setSavedTunnels(st.SavedTunnels)
 	w.share = st.Share
 	w.sidebarShown = st.Sidebar
@@ -1964,7 +1974,18 @@ func (r *sideRow) Handle(e input.Event, u *gunim.UI) bool {
 				step = -1
 			}
 			r.w.focusRow(r.key, step, u)
-		case e.Key == input.KeyEnter || e.Key == input.KeyKPEnter:
+		case e.Key == input.KeyPageUp, e.Key == input.KeyPageDown:
+			// A page of rows, as gridterm's list moves.
+			step := sidebarPage
+			if e.Key == input.KeyPageUp {
+				step = -step
+			}
+			r.w.focusRowsAway(r.key, step, u)
+		case e.Key == input.KeyHome:
+			r.w.focusRow("", 1, u)
+		case e.Key == input.KeyEnd:
+			r.w.focusRowsAway(r.key, len(r.w.list.Keys()), u)
+		case e.Key == input.KeyEnter || e.Key == input.KeyKPEnter, e.Key == input.KeySpace && e.Mods == 0:
 			r.activate(u)
 		case e.Key == input.KeyDelete && r.closes != nil:
 			u.Send(r, r.closes)
@@ -2049,6 +2070,31 @@ func (w *window) focusRow(from string, step int, u *gunim.UI) {
 	}
 }
 
+// sidebarPage is how many rows PageUp and PageDown move in the sidebar.
+const sidebarPage = 8
+
+// focusRowsAway gives the keyboard to the row n rows past from, or
+// before it for a negative n, counting only rows that take it, and
+// stopping at the last one there is.
+func (w *window) focusRowsAway(from string, n int, u *gunim.UI) {
+	keys := w.list.Keys()
+	at := slices.Index(keys, widget.Key(from))
+	step := 1
+	if n < 0 {
+		step, n = -1, -n
+	}
+	var last *sideRow
+	for i := at + step; i >= 0 && i < len(keys) && n > 0; i += step {
+		if row, ok := widget.RowOf[*sideRow](w.list, keys[i]); ok && !row.heading {
+			last = row
+			n--
+		}
+	}
+	if last != nil {
+		u.Focus(last)
+	}
+}
+
 // focusSidebar gives the keyboard to the sidebar's row for the focused
 // pane, or to its first row, showing the sidebar first.
 func (w *window) focusSidebar(u *gunim.UI) {
@@ -2071,6 +2117,29 @@ func (w *window) machines() []string {
 		out = append(out, rw.Name)
 	}
 	return out
+}
+
+// showMachineMenu opens a heading's menu of items, each doing its act.
+func (w *window) showMachineMenu(r *sideRow, items []string, acts []func(*gunim.UI), u *gunim.UI) {
+	r.closeMenu(u)
+	menu := widget.NewMenu(items...)
+	menu.Pick = func(i int, u *gunim.UI) {
+		r.closeMenu(u)
+		if i >= 0 && i < len(acts) {
+			acts[i](u)
+		}
+	}
+	box, _ := u.Bounds(r)
+	r.menu = menu
+	r.back = u.Focused()
+	r.popup = u.OpenPopup(r, menu, gunim.PopupOptions{
+		Anchor:  geom.Rect{Min: geom.Pt(box.Size().W-plusWidth-6, 0), Max: box.Size().Point()},
+		Max:     geom.Sz(360, 480),
+		Dismiss: r.closeMenu,
+	})
+	// The heading holds the keyboard while its menu is open, and
+	// passes keys to it.
+	u.Focus(r)
 }
 
 // plusWidth is the room the plus takes at the end of a heading.
@@ -2142,6 +2211,18 @@ func (w *window) openMachineMenu(r *sideRow, u *gunim.UI) {
 	}
 	send := func(in gunim.Intent) func(*gunim.UI) { return func(u *gunim.UI) { u.Send(w, in) } }
 	window := slices.ContainsFunc(w.remoteWindows, func(rw RemoteWindow) bool { return rw.Name == m })
+	for _, h := range w.saved {
+		if h.Name == m && h.Window && !window {
+			// Saved as a window and not connected: nothing that needs a
+			// shell applies, as in gridterm.
+			saved := h
+			add("Connect", send(ConnectTo{Saved: m}))
+			add("Edit This Window…", func(u *gunim.UI) { w.serverForm(&saved, u) })
+			add("Remove This Window…", func(u *gunim.UI) { w.confirmRemove(m, u) })
+			w.showMachineMenu(r, items, acts, u)
+			return
+		}
+	}
 	add("Terminal", send(OpenOn{Machine: m}))
 	if m == "" && len(w.shellChoices) > 1 {
 		// This computer's shells, each to open a terminal with, as
@@ -2167,28 +2248,14 @@ func (w *window) openMachineMenu(r *sideRow, u *gunim.UI) {
 		for _, h := range w.saved {
 			if h.Name == m {
 				saved := h
-				add("Edit This Server…", func(u *gunim.UI) { w.serverForm(&saved, u) })
-				add("Remove This Server…", func(u *gunim.UI) { w.confirmRemove(m, u) })
+				what := "Server"
+				if h.Window {
+					what = "Window"
+				}
+				add("Edit This "+what+"…", func(u *gunim.UI) { w.serverForm(&saved, u) })
+				add("Remove This "+what+"…", func(u *gunim.UI) { w.confirmRemove(m, u) })
 			}
 		}
 	}
-	r.closeMenu(u)
-	menu := widget.NewMenu(items...)
-	menu.Pick = func(i int, u *gunim.UI) {
-		r.closeMenu(u)
-		if i >= 0 && i < len(acts) {
-			acts[i](u)
-		}
-	}
-	box, _ := u.Bounds(r)
-	r.menu = menu
-	r.back = u.Focused()
-	r.popup = u.OpenPopup(r, menu, gunim.PopupOptions{
-		Anchor:  geom.Rect{Min: geom.Pt(box.Size().W-plusWidth-6, 0), Max: box.Size().Point()},
-		Max:     geom.Sz(360, 480),
-		Dismiss: r.closeMenu,
-	})
-	// The heading holds the keyboard while its menu is open, and
-	// passes keys to it.
-	u.Focus(r)
+	w.showMachineMenu(r, items, acts, u)
 }

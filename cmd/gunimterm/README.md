@@ -64,9 +64,7 @@ Sidebar:
   one-cell traffic graph, rows for file jobs with a progress fill, and
   a greyed row kept after a drop.
 - Crosses on hover that close or clear a row.
-- Headings for the machines on a window taken over; PageUp, PageDown,
-  Home, End and Space; scrolling to follow the stage; "Edit This
-  Window…".
+- Headings for the machines on a window taken over.
 
 Checks on Windows, waiting until the Windows runs resume: the screen
 reader recheck (#10) and this spike on Windows (#11).

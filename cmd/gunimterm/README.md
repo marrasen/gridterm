@@ -52,10 +52,9 @@ command gridterm registers, and against what was left out on the way.
 
 Panes and terminals:
 
-- A pane attached from another window, when it runs on a server that
-  window reached rather than on the window's own machine. Files opens
-  the window's own files for it, and a pasted picture or a dropped
-  file is refused.
+- Files, for a pane attached from another window that runs on a server
+  that window reached. It opens the window's own files. Pictures and
+  dropped files already reach that server.
 
 Checks on Windows, waiting until the Windows runs resume: the screen
 reader recheck (#10) and this spike on Windows (#11).

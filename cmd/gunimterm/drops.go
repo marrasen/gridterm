@@ -40,14 +40,11 @@ func (a *app) dropFiles(in DropFiles) error {
 		return nil
 	case t == nil:
 		return errors.New("dropped files go into a terminal, and none has the focus")
-	case a.farHost[id] != "":
-		return fmt.Errorf("this pane runs on %s, which %s reached, and this window has no way to put a file there", a.farHost[id], a.machineOf(id))
 	}
-	machine := a.machineOf(id)
 	if dir, ok := a.droppedInto(id); ok {
-		return a.copyDropped(machine, in.Paths, dir)
+		return a.copyDropped(a.filesKey(id), in.Paths, dir)
 	}
-	if machine == "" {
+	if a.machineOf(id) == "" {
 		// Already on the machine the program runs on, so the path is
 		// the whole of it.
 		paths := make([]string, 0, len(in.Paths))
@@ -57,7 +54,7 @@ func (a *app) dropFiles(in DropFiles) error {
 		t.Paste(pasted.Typed(paths))
 		return nil
 	}
-	return a.uploadDropped(id, machine, in.Paths)
+	return a.uploadDropped(id, a.filesKey(id), in.Paths)
 }
 
 // droppedInto is the folder a file dropped on a pane goes in, and
@@ -148,11 +145,7 @@ func arrived(names []string, dir, machine string) string {
 	if len(names) == 1 {
 		what = "Copied " + names[0]
 	}
-	where := "this computer"
-	if machine != "" {
-		where = machine
-	}
-	return fmt.Sprintf("%s to %s on %s", what, dir, where)
+	return fmt.Sprintf("%s to %s on %s", what, dir, placeName(machine))
 }
 
 // uploadDropped copies files into the folder for pasted files on the
@@ -167,13 +160,13 @@ func (a *app) uploadDropped(id, machine string, paths []string) error {
 			dir, err := pasted.DirOn(to)
 			a.events <- func() {
 				if err != nil {
-					a.notify("Couldn't copy the files to "+machine, err.Error(), "")
+					a.notify("Couldn't copy the files to "+placeName(machine), err.Error(), "")
 					return
 				}
 				for _, path := range paths {
 					name := filepath.Base(path)
 					op := jobs.Op{Kind: jobs.Copy, From: a.fsFor(""), At: filepath.Dir(path), Names: []string{name}, To: to, Into: dir}
-					j := a.followOn(op, "Copying "+name+" to "+machine, "", machine)
+					j := a.followOn(op, "Copying "+name+" to "+placeName(machine), "", machine)
 					at := strings.TrimSuffix(dir, string(to.Sep())) + string(to.Sep()) + name
 					go func() {
 						<-j.Done()
@@ -187,7 +180,7 @@ func (a *app) uploadDropped(id, machine string, paths []string) error {
 								// The pane closed while the file was on
 								// its way; the notice's Copy is the way
 								// left to the path.
-								a.notify("File copied", at+" on "+machine+".", at)
+								a.notify("File copied", at+" on "+placeName(machine)+".", at)
 							}
 						}
 					}()

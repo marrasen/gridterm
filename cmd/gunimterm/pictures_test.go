@@ -146,3 +146,49 @@ func TestAPictureGoesOnTheClipboardOfTheWindowItIsPastedInto(t *testing.T) {
 		return strings.Contains(a.terminal(there).Text(), ".png")
 	})
 }
+
+// A pane attached from a window, running on a server that window
+// reached, has its picture written on that server, through the window.
+func TestAPictureReachesTheServerAPaneOnAWindowRunsOn(t *testing.T) {
+	// The test server's files start in the folder the test runs in.
+	far := t.TempDir()
+	t.Chdir(far)
+	_, conn, _ := tunnelApp(t)
+	a, b := connectedWindows(t)
+	a.conns["srv"] = conn
+	if err := a.open("srv", placement{}); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, a, "the pane on the server", func() bool { return len(a.st.Panes) == 3 })
+	onSrv := a.st.Panes[2].ID
+	pumpBoth(t, a, b, "the server's pane listed", func() bool {
+		a.publish()
+		for _, w := range b.st.Windows {
+			for _, o := range w.Open {
+				if o.ID == onSrv {
+					return true
+				}
+			}
+		}
+		return false
+	})
+	b.handle(AttachWindow{Window: b.st.Windows[0].Name, ID: onSrv})
+	pumpBoth(t, a, b, "the pane attached", func() bool { return len(b.st.Panes) == 2 })
+	id := b.st.Panes[1].ID
+	if b.farHost[id] != "srv" {
+		t.Fatalf("attached, the pane runs on %q, want srv", b.farHost[id])
+	}
+
+	onClipboard(t, image.NewRGBA(image.Rect(0, 0, 3, 2)))
+	b.handle(PastePicture{Pane: id})
+	pumpBoth(t, a, b, "the path typed on the server", func() bool {
+		if len(b.st.Notices) > 0 {
+			t.Fatalf("pasting said %+v", b.st.Notices)
+		}
+		return strings.Contains(a.terminal(onSrv).Text(), ".png")
+	})
+	ents, err := os.ReadDir(filepath.Join(far, pasted.DirName))
+	if err != nil || len(ents) != 1 {
+		t.Fatalf("on the server: %v, %v", ents, err)
+	}
+}

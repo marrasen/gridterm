@@ -187,6 +187,38 @@ func (a *app) filesOn(machine, path string) error {
 	})
 }
 
+// farSep joins a window and a machine it reached, in the name the
+// files on that machine are kept under.
+const farSep = "\x00"
+
+// farFiles names the files on a machine a window reached, as a
+// filesystem tells whose files it holds.
+type farFiles struct {
+	w    *remoteWin
+	host string
+}
+
+// filesKey is the name the files a pane's program sees are kept under:
+// its machine's, or for a pane attached from a window, running on a
+// machine that window reached, that machine's through the window.
+func (a *app) filesKey(id string) string {
+	if host := a.farHost[id]; host != "" {
+		return a.machineOf(id) + farSep + host
+	}
+	return a.machineOf(id)
+}
+
+// placeName is what a files key is called where the user reads it.
+func placeName(key string) string {
+	if window, host, far := strings.Cut(key, farSep); far {
+		return host + " through " + window
+	}
+	if key == "" {
+		return "this computer"
+	}
+	return key
+}
+
 // withFiles runs then with machine's files, on the program's goroutine,
 // opening them first when they are not open: over a server's
 // connection, or a window's, with SFTP, once for all its file panes.
@@ -195,8 +227,21 @@ func (a *app) withFiles(machine string, then func(vfs.FS)) error {
 		then(f)
 		return nil
 	}
-	open := func() (vfs.FS, error) { return nil, fmt.Errorf("this window is not connected to %s", machine) }
-	if w, ok := a.windows[machine]; ok {
+	open := func() (vfs.FS, error) { return nil, fmt.Errorf("this window is not connected to %s", placeName(machine)) }
+	if window, host, far := strings.Cut(machine, farSep); far && a.windows[window] != nil {
+		w := a.windows[window]
+		open = func() (vfs.FS, error) {
+			files, err := w.win.FilesOn(host)
+			if err != nil {
+				return nil, err
+			}
+			client, err := sftp.NewClientPipe(files, files)
+			if err != nil {
+				return nil, errors.Join(err, files.Close())
+			}
+			return vfs.NewSFTP(host, farFiles{w, host}, client, func() error { return errors.Join(client.Close(), files.Close()) }), nil
+		}
+	} else if w, ok := a.windows[machine]; ok {
 		open = func() (vfs.FS, error) {
 			files, err := w.win.Files()
 			if err != nil {
@@ -220,13 +265,13 @@ func (a *app) withFiles(machine string, then func(vfs.FS)) error {
 		_, err := open()
 		return err
 	}
-	a.st.Status = "Opening the files on " + machine + "…"
+	a.st.Status = "Opening the files on " + placeName(machine) + "…"
 	go func() {
 		f, err := open()
 		a.events <- func() {
 			a.st.Status = ""
 			if err != nil {
-				a.notify("Couldn't open the files on "+machine, err.Error(), "")
+				a.notify("Couldn't open the files on "+placeName(machine), err.Error(), "")
 				return
 			}
 			if have := a.fsFor(machine); have != nil {

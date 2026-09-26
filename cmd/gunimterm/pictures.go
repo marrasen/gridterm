@@ -2,7 +2,6 @@ package main
 
 import (
 	"errors"
-	"fmt"
 	"image"
 	"time"
 
@@ -50,9 +49,6 @@ func (a *app) pastePicture(id string, asFile bool) error {
 	}
 	if a.terminal(id) == nil {
 		return errors.New("a picture is pasted into a terminal, and this pane is none")
-	}
-	if far := a.farHost[id]; far != "" {
-		return fmt.Errorf("this pane runs on %s, which %s reached, and this window has no way to put a file there", far, a.machineOf(id))
 	}
 	read := readPicture
 	go func() {
@@ -102,7 +98,7 @@ func (a *app) handPicture(id string, img image.Image, asFile bool) error {
 	if err != nil {
 		return err
 	}
-	if w, ok := a.windows[machine]; ok && !asFile {
+	if w, ok := a.windows[machine]; ok && !asFile && a.farHost[id] == "" {
 		// Onto that window's clipboard, then paste pressed, once it has
 		// landed: pressing first would paste what was there before.
 		go func() {
@@ -118,18 +114,22 @@ func (a *app) handPicture(id string, img image.Image, asFile bool) error {
 		}()
 		return nil
 	}
-	return a.withFiles(machine, func(f vfs.FS) {
+	// A file, on the machine the program runs on: a server, a window
+	// asked for a file, or a machine a window reached, which has no
+	// clipboard this window can hand the picture to.
+	key := a.filesKey(id)
+	return a.withFiles(key, func(f vfs.FS) {
 		at := time.Now()
 		go func() {
 			path, err := pasted.WriteOn(f, raw, at)
 			a.events <- func() {
 				switch {
 				case err != nil:
-					a.notify("Couldn't paste the picture to "+machine, err.Error(), "")
+					a.notify("Couldn't paste the picture to "+placeName(key), err.Error(), "")
 				case a.terminal(id) == t:
 					t.Paste(path)
 				default:
-					a.notify("Picture saved", path+" on "+machine+".", path)
+					a.notify("Picture saved", path+" on "+placeName(key)+".", path)
 				}
 			}
 		}()

@@ -56,10 +56,5 @@ The window:
   `-font`, `-font-family`, `-list-fonts`, `-mcp-skill`, `-stats` and
   `-shot`.
 
-Panes:
-
-- A held screen bigger than its pane, drawn scaled to fit, with its
-  sidebar row saying it is held.
-
 Checks on Windows, waiting until the Windows runs resume: the screen
 reader recheck (#10) and this spike on Windows (#11).

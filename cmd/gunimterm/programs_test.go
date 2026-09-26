@@ -17,7 +17,7 @@ func TestAProgramsProgressAndMessageGoOnItsRow(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	a.notePrograms()
+	a.notePanes()
 	if got := a.st.Panes[0].Note; got != "42%, build done" {
 		t.Fatalf("the pane's note is %q", got)
 	}
@@ -27,7 +27,7 @@ func TestAProgramsProgressAndMessageGoOnItsRow(t *testing.T) {
 	}
 	// The message went up once; the same one again goes up no more.
 	first := a.lastToast
-	a.notePrograms()
+	a.notePanes()
 	if a.lastToast != first {
 		t.Fatal("the same message went up twice")
 	}

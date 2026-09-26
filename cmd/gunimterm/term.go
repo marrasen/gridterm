@@ -45,6 +45,10 @@ type term struct {
 	// colours of the rings that say so.
 	agent bool
 	marks Marks
+	// scale is how much a held screen bigger than the pane is shrunk to
+	// fit it, and offset where it is drawn: 1 and nothing otherwise.
+	scale  float32
+	offset geom.Point
 }
 
 // leastCols and leastRows are the smallest screen a shell is given.
@@ -101,14 +105,32 @@ func (t *term) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children) g
 	if cols, rows := t.cells.Fit(); cols >= leastCols && rows >= leastRows && t.sh.resize(cols, rows) {
 		t.sync()
 	}
+	// A screen somebody watching has sized bigger than this pane is laid
+	// out whole, and drawn shrunk to fit, keeping its shape, in the
+	// middle of the pane, as gridterm draws it.
+	t.scale, t.offset = 1, geom.Point{}
+	cell := t.cells.CellSize()
+	cols, rows := t.cells.GridSize()
+	need := geom.Sz(float32(cols)*cell.W, float32(rows)*cell.H)
+	if t.sh.t.Held() && (need.W > size.W || need.H > size.H) && need.W > 0 && need.H > 0 {
+		t.scale = min(size.W/need.W, size.H/need.H)
+		k.Layout(gunim.Tight(need))
+		t.offset = geom.Pt((size.W-need.W*t.scale)/2, (size.H-need.H*t.scale)/2)
+	}
 	return size
 }
 
 // Paint implements [gunim.Node]: the cells, and over them the
 // pictures programs put in the output.
 func (t *term) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gunim.Children) {
-	kids.At(0).Paint(p)
-	t.paintPictures(p)
+	func() {
+		if t.scale < 1 {
+			defer p.Push(paint.Translate(t.offset))()
+			defer p.Push(paint.Scale(t.scale, geom.Point{}))()
+		}
+		kids.At(0).Paint(p)
+		t.paintPictures(p)
+	}()
 	t.paintRings(p, f, box)
 }
 
@@ -316,6 +338,10 @@ func mouseButton(b gi.Button) input.MouseButton {
 }
 
 func (t *term) cellAt(p geom.Point) grid.Point {
+	if t.scale > 0 && t.scale < 1 {
+		// Drawn shrunk: the point back in the cells' own space.
+		p = geom.Pt((p.X-t.offset.X)/t.scale, (p.Y-t.offset.Y)/t.scale)
+	}
 	col, row := t.cells.CellAt(p)
 	return grid.Point{X: col, Y: row}
 }

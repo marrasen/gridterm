@@ -30,9 +30,9 @@ var toaster = sync.OnceValue(func() notify.Toaster { return notify.New(programNa
 // toasted says whether toaster was made, for closing it.
 var toasted atomic.Bool
 
-// notePrograms puts what each program says on its pane's row, and
-// passes a new message on.
-func (a *app) notePrograms() {
+// notePanes puts on each terminal's row what its program says, and who
+// else is watching it, and passes a new message on.
+func (a *app) notePanes() {
 	for i := range a.st.Panes {
 		p := &a.st.Panes[i]
 		t := a.terminal(p.ID)
@@ -58,6 +58,15 @@ func (a *app) notePrograms() {
 		}
 		if text != "" {
 			say = append(say, text)
+		}
+		if n := t.Watched(); n > 0 {
+			watched := "watched by " + strconv.Itoa(n)
+			if size := t.Size(); t.Held() && size != t.ScreenRoom() {
+				// Somebody watching set the size, and the screen is drawn
+				// in whatever room there is: the size explains it.
+				watched = "at " + strconv.Itoa(size.Cols) + "x" + strconv.Itoa(size.Rows) + ", " + watched
+			}
+			say = append(say, watched)
 		}
 		p.Note = strings.Join(say, ", ")
 	}

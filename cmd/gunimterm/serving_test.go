@@ -117,6 +117,10 @@ func TestAnotherWindowWorksInAPaneHere(t *testing.T) {
 	if size := a.terminal(a.st.Panes[0].ID).Size(); size.Cols != 70 || size.Rows != 20 {
 		t.Fatalf("watched, the pane is %dx%d, want the watcher's 70x20", size.Cols, size.Rows)
 	}
+	a.publish()
+	if got := a.st.Panes[0].Note; got != "at 70x20, watched by 1" {
+		t.Fatalf("watched, the pane's row says %q", got)
+	}
 	_ = sess.Close()
 }
 

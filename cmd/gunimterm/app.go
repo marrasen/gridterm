@@ -562,7 +562,6 @@ func (a *app) run(ctx context.Context) error {
 			a.handle(env.Intent)
 		case <-a.wake:
 			a.st.Output++
-			a.notePrograms()
 		case f := <-a.events:
 			f()
 		}
@@ -586,6 +585,7 @@ func (a *app) run(ctx context.Context) error {
 }
 
 func (a *app) publish() {
+	a.notePanes()
 	st := a.st
 	st.Panes = slices.Clone(a.st.Panes)
 	st.Notices = slices.Clone(a.st.Notices)

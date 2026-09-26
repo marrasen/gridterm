@@ -199,9 +199,9 @@ func (p *helpPane) Paint(pt *paint.Painter, f gunim.Frame, box geom.Size, kids g
 }
 
 // applyShortcuts takes on the changes the shortcuts file makes to the
-// keys gridterm comes with. A file naming a command there is none of
-// changes nothing, and says which.
-func (w *window) applyShortcuts(changes []keys.Change, u *gunim.UI) {
+// keys gridterm comes with, and reports whether it did. A file naming a
+// command there is none of changes nothing, and says which.
+func (w *window) applyShortcuts(changes []keys.Change, u *gunim.UI) bool {
 	known := map[string]bool{}
 	for _, c := range everyCommand() {
 		known[c[0]] = true
@@ -215,6 +215,11 @@ func (w *window) applyShortcuts(changes []keys.Change, u *gunim.UI) {
 	next := shortcuts()
 	var unknown []string
 	for _, c := range changes {
+		// An id that has been renamed is followed to its new name, so a
+		// file written before the rename goes on working.
+		if to, moved := keys.Renamed[c.Command]; moved {
+			c.Command = to
+		}
 		switch {
 		case c.Command == "":
 			next.Unbind(c.Chord)
@@ -232,7 +237,7 @@ func (w *window) applyShortcuts(changes []keys.Change, u *gunim.UI) {
 	}
 	if len(unknown) > 0 {
 		w.toasts.Show(widget.Toast{Title: "The shortcuts file names commands this window lacks", Body: strings.Join(unknown, "; ") + ". None of it was used; Shortcuts and Commands lists every command's name."}, u)
-		return
+		return false
 	}
 	w.keys.Become(next)
 	// The menus and the palette say the new chords.
@@ -251,6 +256,7 @@ func (w *window) applyShortcuts(changes []keys.Change, u *gunim.UI) {
 	if w.help != nil {
 		w.help.show(w, u)
 	}
+	return true
 }
 
 // aboutDialog says what this build is.

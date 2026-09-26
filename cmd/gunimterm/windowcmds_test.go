@@ -44,18 +44,36 @@ func TestTheShortcutsFileMovesAKey(t *testing.T) {
 		t.Fatalf("read, the changes are %+v; notices %+v", a.st.Shortcuts, a.st.Notices)
 	}
 
+	if !a.st.ShortcutsAgain {
+		t.Fatal("read again, the state says it was read as the window opened")
+	}
+
 	win, _, publish := windowStage(t)
-	publish(State{Shortcuts: a.st.Shortcuts, ShortcutsRead: 1})
+	publish(State{Shortcuts: a.st.Shortcuts, ShortcutsRead: 1, ShortcutsAgain: true})
 	if id, _ := win.keys.Lookup(ui.Chord{Key: input.KeyJ, Mods: input.ModCtrl | input.ModShift}); id != "pane.close" {
 		t.Fatalf("Ctrl+Shift+J runs %q", id)
 	}
 	if id, ok := win.keys.Lookup(ui.Chord{Key: input.KeyW, Mods: input.ModCtrl | input.ModShift}); ok {
 		t.Fatalf("Ctrl+Shift+W still runs %q", id)
 	}
-	// One naming a command there is none of changes nothing.
-	publish(State{Shortcuts: []keys.Change{{Chord: ui.Chord{Key: input.KeyK, Mods: input.ModCtrl}, Command: "no.such", Written: "ctrl+K"}}, ShortcutsRead: 2})
+	if n := win.toasts.Len(); n != 1 {
+		t.Fatalf("taken, the window showed %d toasts, want the one saying so", n)
+	}
+	// One naming a command there is none of changes nothing, and says
+	// that alone.
+	publish(State{Shortcuts: []keys.Change{{Chord: ui.Chord{Key: input.KeyK, Mods: input.ModCtrl}, Command: "no.such", Written: "ctrl+K"}}, ShortcutsRead: 2, ShortcutsAgain: true})
 	if id, _ := win.keys.Lookup(ui.Chord{Key: input.KeyJ, Mods: input.ModCtrl | input.ModShift}); id != "pane.close" {
 		t.Fatal("a file naming an unknown command changed the keys")
+	}
+	if n := win.toasts.Len(); n != 2 {
+		t.Fatalf("refused, the window has shown %d toasts, want one more, saying why", n)
+	}
+	// A command renamed since the file was written is followed.
+	keys.Renamed["pane.shut"] = "pane.close"
+	t.Cleanup(func() { delete(keys.Renamed, "pane.shut") })
+	publish(State{Shortcuts: []keys.Change{{Chord: ui.Chord{Key: input.KeyK, Mods: input.ModCtrl | input.ModShift}, Command: "pane.shut", Written: "ctrl+shift+K"}}, ShortcutsRead: 3})
+	if id, _ := win.keys.Lookup(ui.Chord{Key: input.KeyK, Mods: input.ModCtrl | input.ModShift}); id != "pane.close" {
+		t.Fatalf("a renamed command's chord runs %q", id)
 	}
 	_ = gi.KeyA
 }

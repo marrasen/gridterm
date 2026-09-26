@@ -107,13 +107,17 @@ type State struct {
 	// doing, and TermProgram what they are told the terminal is called,
 	// "" for gridterm's own name.
 	// Shortcuts are the changes the user's shortcuts file makes to the
-	// window's keys, and ShortcutsRead counts its reads. Contents are
+	// window's keys, and ShortcutsRead counts its reads; ShortcutsAgain
+	// says the last read was asked for, and the window says so once it
+	// has taken the file. Contents are
 	// the themes' colours for the panes, when the themes were read
 	// again.
 	// SavedCopies are the copies kept, newest first.
 	SavedCopies   []settings.SavedCopy
 	Shortcuts     []keys.Change
 	ShortcutsRead uint64
+	// See Shortcuts.
+	ShortcutsAgain bool
 	Contents      map[string]theme.Theme
 	ShellSetup    bool
 	TermProgram   string

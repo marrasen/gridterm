@@ -1333,7 +1333,11 @@ func (w *window) update(st State, u *gunim.UI) {
 	w.secretsExist = st.Secrets.Exists
 	if st.ShortcutsRead != w.shortcutsRead {
 		w.shortcutsRead = st.ShortcutsRead
-		w.applyShortcuts(st.Shortcuts, u)
+		if w.applyShortcuts(st.Shortcuts, u) && st.ShortcutsAgain {
+			// Said only now: a file naming a command there is none of
+			// is refused here, and "reloaded" would be untrue.
+			w.toasts.Show(widget.Toast{Title: "Shortcuts reloaded"}, u)
+		}
 	}
 	if st.Contents != nil {
 		w.contents = st.Contents

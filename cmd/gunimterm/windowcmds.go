@@ -70,9 +70,7 @@ func (a *app) loadShortcuts(said bool) error {
 	}
 	a.st.Shortcuts = changes
 	a.st.ShortcutsRead++
-	if said {
-		a.notify("Shortcuts read again", keys.Path(dir), "")
-	}
+	a.st.ShortcutsAgain = said
 	return nil
 }
 

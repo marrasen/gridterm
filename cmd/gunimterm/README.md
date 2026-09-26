@@ -55,14 +55,11 @@ What gridterm does that gunimterm does not, as of 2026-09-26. Each is to
 be done, or decided against, before the switch. Checked against every
 command gridterm registers, and against what was left out on the way.
 
-Found by a third sweep on 2026-09-26, still to check one by one:
+Decided against:
 
-Help, themes and shortcuts:
-
-- A short confirmation stays on the status line for 4 seconds;
-  gunimterm uses a toast.
-- Reload Shortcuts says it worked only once the file is taken.
-- Command ids renamed in `keys.Renamed` are followed.
+- gridterm's short confirmations stay on the status line for 4
+  seconds. gunimterm shows them as toasts, which also go by themselves
+  and cost no keypress.
 
 Checks on Windows, waiting until the Windows runs resume: the screen
 reader recheck (#10) and this spike on Windows (#11).

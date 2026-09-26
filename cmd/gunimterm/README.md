@@ -55,5 +55,29 @@ What gridterm does that gunimterm does not, as of 2026-09-26. Each is to
 be done, or decided against, before the switch. Checked against every
 command gridterm registers, and against what was left out on the way.
 
+Found by a third sweep on 2026-09-26, still to check one by one:
+
+Help, themes and shortcuts:
+
+- While a menu is open, the full title of the item under the pointer
+  shows on the bottom row.
+- A short confirmation stays on the status line for 4 seconds;
+  gunimterm uses a toast.
+- A themes file that cannot be read says so; gunimterm drops it, and
+  any theme in it that fails, without a word.
+- A remembered theme gone from the list is logged.
+- Picking another theme lets its font win over one picked before.
+- The theme is saved only once it has been put on.
+- About opens on OK, and a second update check while one runs is
+  ignored.
+- A development build newer than the last release says so, rather
+  than "A newer gridterm is out".
+- File Locations offers to make the install portable.
+- Help groups the commands by menu, lists the keys the menus do not
+  show, and takes the file pane's and reader's keys from gridterm's
+  own lists.
+- Reload Shortcuts says it worked only once the file is taken.
+- Command ids renamed in `keys.Renamed` are followed.
+
 Checks on Windows, waiting until the Windows runs resume: the screen
 reader recheck (#10) and this spike on Windows (#11).

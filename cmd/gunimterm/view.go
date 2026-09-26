@@ -106,6 +106,8 @@ type window struct {
 	afterUnlock string
 	// title is the window's title as last set.
 	title string
+	// dropped are the machines whose connection went by itself.
+	dropped []string
 	// dialing are the servers being connected to, fileClip what the
 	// file clipboard holds, and keyFiles the key files kept.
 	dialing  []string
@@ -1258,7 +1260,7 @@ func (w *window) update(st State, u *gunim.UI) {
 	for _, h := range st.Saved {
 		saved = append(saved, h.Name)
 	}
-	rows := sidebarRows(st.Panes, st.Tunnels, st.Share, st.Windows, saved)
+	rows := sidebarRows(st.Panes, st.Tunnels, st.Share, st.Windows, saved, st.Dropped...)
 	// The windows connected to this one, under this computer.
 	for i, c := range st.Serving.Clients {
 		at := slices.IndexFunc(rows, func(r sideItem) bool { return r.key == "machine:" }) + 1
@@ -1310,6 +1312,7 @@ func (w *window) update(st State, u *gunim.UI) {
 	}
 	w.remoteWindows = st.Windows
 	w.dialing = st.Dialing
+	w.dropped = st.Dropped
 	w.fileClip = st.FileClip
 	w.keyFiles = st.KeyFiles
 	if renamed || !slices.Equal(st.Connected, w.connected) {
@@ -1754,7 +1757,7 @@ type sideItem struct {
 // first, then each server in the order its first pane opened, and
 // each server's tunnels after its panes. A tunnel's pane is lit on the
 // tunnel's row.
-func sidebarRows(panes []Pane, tunnels []Tunnel, share Share, windows []RemoteWindow, saved []string) []sideItem {
+func sidebarRows(panes []Pane, tunnels []Tunnel, share Share, windows []RemoteWindow, saved []string, dropped ...string) []sideItem {
 	notes := map[string]string{}
 	for _, p := range share.Panes {
 		notes[p.Pane] = p.Note
@@ -1779,6 +1782,10 @@ func sidebarRows(panes []Pane, tunnels []Tunnel, share Share, windows []RemoteWi
 	// The saved servers, as gridterm lists them, each under its heading
 	// with its plus, which connects to it.
 	for _, name := range saved {
+		add(name)
+	}
+	// And the ones whose connection went, kept until cleared.
+	for _, name := range dropped {
 		add(name)
 	}
 	shown := map[string]bool{}
@@ -2300,6 +2307,10 @@ func (w *window) openMachineMenu(r *sideRow, u *gunim.UI) {
 	if m != "" && !window {
 		add("Tunnel…", func(u *gunim.UI) { w.tunnelDialogOn(m, false, u) })
 		add("SOCKS Proxy…", func(u *gunim.UI) { w.tunnelDialogOn(m, true, u) })
+	}
+	if slices.Contains(w.dropped, m) {
+		// Its connection went: the row stays until this clears it.
+		add("Clear", send(ClearMachine{Name: m}))
 	}
 	if m != "" {
 		add("Connection Log", send(ShowLog{Machine: m}))

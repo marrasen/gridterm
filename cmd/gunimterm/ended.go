@@ -198,6 +198,7 @@ func exitStatus(why error, over bool) (int, bool) {
 // clearFinished closes the panes whose programs have ended and clears
 // the tunnels that stopped.
 func (a *app) clearFinished() {
+	clear(a.dropped)
 	for _, p := range slices.Clone(a.st.Panes) {
 		if p.Ended {
 			a.closePane(p.ID)
@@ -226,6 +227,20 @@ func (a *app) giveSavedIDs() {
 	// Settings that could not be written are asked for again next time.
 	if err != nil && !errors.Is(err, settings.ErrUnsaveable) {
 		log.Printf("giving saved things their servers' ids: %v", err)
+	}
+}
+
+// ClearMachine takes a machine whose connection went off the sidebar,
+// with the ended panes on it.
+type ClearMachine struct{ Name string }
+
+// clearMachine takes a machine whose connection went off the sidebar.
+func (a *app) clearMachine(name string) {
+	delete(a.dropped, name)
+	for _, p := range slices.Clone(a.st.Panes) {
+		if p.Machine == name && p.Ended {
+			a.closePane(p.ID)
+		}
 	}
 }
 

@@ -55,13 +55,5 @@ What gridterm does that gunimterm does not, as of 2026-09-26. Each is to
 be done, or decided against, before the switch. Checked against every
 command gridterm registers, and against what was left out on the way.
 
-Found by a second sweep on 2026-09-26, most important first. The first
-six are confirmed in the code; the rest are still to check.
-
-Sidebar:
-
-- A machine's row kept, greyed, after its connection drops, until it
-  is cleared. gunimterm greys its mark only while panes on it remain.
-
 Checks on Windows, waiting until the Windows runs resume: the screen
 reader recheck (#10) and this spike on Windows (#11).

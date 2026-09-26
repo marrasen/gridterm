@@ -297,7 +297,7 @@ func (w *window) markRows(rows []sideItem, st State) []sideItem {
 				r.live = func(time.Time) meter.State { return meter.Active }
 			case connected(m):
 				r.live = func(time.Time) meter.State { return meter.Settled }
-			case slices.ContainsFunc(st.Panes, func(p Pane) bool { return p.Machine == m }):
+			case slices.Contains(st.Dropped, m), slices.ContainsFunc(st.Panes, func(p Pane) bool { return p.Machine == m }):
 				// Its connection went, and its panes stay to be read.
 				r.live = func(time.Time) meter.State { return meter.Closed }
 			}

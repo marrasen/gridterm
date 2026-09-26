@@ -195,3 +195,27 @@ func (b *syncBuffer) String() string {
 	defer b.mu.Unlock()
 	return b.buf.String()
 }
+
+// A connection that goes by itself leaves its machine on the sidebar
+// until cleared; one let go of on purpose takes it along.
+func TestADroppedConnectionStaysUntilCleared(t *testing.T) {
+	a, answering := dialApp(t)
+	a.handle(ConnectTo{Saved: "srv"})
+	waitFor(t, a, "a shell", func() bool { answering(); return len(a.st.Panes) == 1 })
+	_ = a.conns["srv"].Close() // as if the network went
+	waitFor(t, a, "the drop", func() bool { return a.conns["srv"] == nil })
+	if !a.dropped["srv"] {
+		t.Fatalf("dropped, the machines kept are %v", a.dropped)
+	}
+	a.handle(ClearMachine{Name: "srv"})
+	if len(a.dropped) != 0 || len(a.st.Panes) != 0 {
+		t.Fatalf("cleared, it keeps %v and panes %+v", a.dropped, a.st.Panes)
+	}
+	a.handle(ConnectTo{Saved: "srv"})
+	waitFor(t, a, "a shell again", func() bool { answering(); return len(a.st.Panes) == 1 })
+	a.handle(Disconnect{Machine: "srv"})
+	waitFor(t, a, "the disconnect", func() bool { return a.conns["srv"] == nil })
+	if len(a.dropped) != 0 {
+		t.Fatalf("let go of on purpose, it keeps %v", a.dropped)
+	}
+}

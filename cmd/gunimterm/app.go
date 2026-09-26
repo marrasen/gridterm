@@ -95,8 +95,11 @@ type State struct {
 	// one new terminals start, "" for the user's own.
 	// Connected are the servers connected to, by name, and Dialing the
 	// ones being connected to.
-	Connected   []string
-	Dialing     []string
+	Connected []string
+	Dialing   []string
+	// Dropped are the machines whose connection went by itself, kept on
+	// the sidebar, greyed, until cleared.
+	Dropped     []string
 	Shells      []ShellChoice
 	ChosenShell string
 	// ShellSetup says new shells here are taught to say what they are
@@ -401,6 +404,11 @@ type app struct {
 	opts      options
 	fixedFont string
 	shotErr   error
+	// dropped are the machines whose connection went by itself, kept
+	// on the sidebar until cleared, and letGo the ones being let go of
+	// on purpose.
+	dropped map[string]bool
+	letGo   map[string]bool
 	// paneFiles is each file pane's view of its machine's files.
 	paneFiles map[string]wrappedFiles
 	// dialCancel gives up each connection being made, and dialWaiters
@@ -505,6 +513,8 @@ func newApp(c gunim.Client, sh *shells) *app {
 		noticed:     map[string]uint64{},
 		reached:     map[string]string{},
 		paneFiles:   map[string]wrappedFiles{},
+		dropped:     map[string]bool{},
+		letGo:       map[string]bool{},
 		dialCancel:  map[string]context.CancelFunc{},
 		dialWaiters: map[string][]func(error){},
 		paneAt:      map[string]string{},
@@ -648,6 +658,7 @@ func (a *app) publish() {
 	st.SavedCopies = slices.Clone(a.st.SavedCopies)
 	st.Connected = slices.Sorted(maps.Keys(a.conns))
 	st.Dialing = slices.Sorted(maps.Keys(a.dialing))
+	st.Dropped = slices.Sorted(maps.Keys(a.dropped))
 	a.tellServed()
 	st.SavedTunnels = slices.Clone(a.st.SavedTunnels)
 	st.Stage = a.groups[a.groupOf[a.st.Focus]].clone()
@@ -832,6 +843,8 @@ func (a *app) handle(in gunim.Intent) {
 		err = a.disconnectClients()
 	case DisconnectClient:
 		err = a.disconnectClient(in)
+	case ClearMachine:
+		a.clearMachine(in.Name)
 	case ConnectWindow:
 		err = a.connectWindow(in)
 	case DisconnectWindow:

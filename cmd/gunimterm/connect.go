@@ -141,6 +141,7 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 				return
 			}
 			a.conns[name] = conn
+			delete(a.dropped, name)
 			a.reached[name] = hops[len(hops)-1].Target()
 			logLine(acct, well, "connected in "+time.Since(began).Round(10*time.Millisecond).String())
 			go func() {
@@ -156,6 +157,13 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 					if f, ok := a.remoteFS[name]; ok {
 						_ = f.Close()
 						delete(a.remoteFS, name)
+					}
+					if a.letGo[name] {
+						delete(a.letGo, name)
+					} else {
+						// Gone by itself: its row stays, greyed, until it
+						// is cleared, as in gridterm.
+						a.dropped[name] = true
 					}
 					a.notify("Disconnected from "+name, "", "")
 				}

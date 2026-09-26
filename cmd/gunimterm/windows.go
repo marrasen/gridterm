@@ -147,6 +147,7 @@ func knownWindows() (string, error) {
 func (a *app) holdWindow(name, addr, keyFile string, win *serve.Window) {
 	w := &remoteWin{win: win, addr: addr, keyFile: keyFile, bound: map[string]string{}}
 	a.windows[name] = w
+	delete(a.dropped, name)
 	a.showWindows()
 	gone := make(chan struct{})
 	go func() {
@@ -201,6 +202,7 @@ func (a *app) windowGone(name string, w *remoteWin, why error) {
 		if w.leaving {
 			break
 		}
+		a.dropped[name] = true
 		// The connection went, rather than the window saying so on
 		// purpose: offered to reach again, as gridterm offers it, the
 		// connection alone, with what it has open listed once it
@@ -359,5 +361,7 @@ func (a *app) disconnect(machine string) error {
 	if !ok {
 		return fmt.Errorf("this window is not connected to %s", machine)
 	}
+	// Let go of on purpose: its row goes with it.
+	a.letGo[machine] = true
 	return conn.Close()
 }

@@ -103,7 +103,7 @@ type (
 // viewFile reads a file of a file pane's folder.
 func (a *app) viewFile(in ViewFile) {
 	b, ok := a.st.Browsers[in.Pane]
-	f := a.fsFor(a.machineOf(in.Pane))
+	f := a.fsFor(a.filesKey(in.Pane))
 	if !ok || f == nil {
 		return
 	}
@@ -112,7 +112,7 @@ func (a *app) viewFile(in ViewFile) {
 
 // goTo shows the folder typed.
 func (a *app) goTo(in GoTo) {
-	f := a.fsFor(a.machineOf(in.Pane))
+	f := a.fsFor(a.filesKey(in.Pane))
 	if f == nil {
 		return
 	}
@@ -131,7 +131,7 @@ func (a *app) goTo(in GoTo) {
 // enter goes into the folder named name, or reads the file.
 func (a *app) enter(in EnterEntry) {
 	b, ok := a.st.Browsers[in.Pane]
-	f := a.fsFor(a.machineOf(in.Pane))
+	f := a.fsFor(a.filesKey(in.Pane))
 	if !ok || f == nil {
 		return
 	}
@@ -148,7 +148,7 @@ func (a *app) enter(in EnterEntry) {
 // goUp shows the folder above a file pane's.
 func (a *app) goUp(in GoUp) {
 	b, ok := a.st.Browsers[in.Pane]
-	f := a.fsFor(a.machineOf(in.Pane))
+	f := a.fsFor(a.filesKey(in.Pane))
 	if !ok || f == nil || vfs.IsTop(f, b.Path) {
 		return
 	}
@@ -175,14 +175,14 @@ func (a *app) fsFor(machine string) vfs.FS {
 }
 
 // openFiles opens a file pane at home on the focused pane's machine.
-func (a *app) openFiles() error { return a.filesOn(a.machineOf(a.st.Focus), "") }
+func (a *app) openFiles() error { return a.filesOn(a.filesKey(a.st.Focus), "") }
 
 // filesOn opens a file pane on machine, at path, or at home when path
 // is empty.
 func (a *app) filesOn(machine, path string) error {
 	return a.withFiles(machine, func(f vfs.FS) {
 		if err := a.openFilesOn(machine, f, path); err != nil {
-			a.notify("Couldn't open the files on "+machine, err.Error(), "")
+			a.notify("Couldn't open the files on "+placeName(machine), err.Error(), "")
 		}
 	})
 }
@@ -206,6 +206,18 @@ func (a *app) filesKey(id string) string {
 		return a.machineOf(id) + farSep + host
 	}
 	return a.machineOf(id)
+}
+
+// paneOn files p under the machine a files key names: a window, for a
+// machine that window reached, with the machine noted.
+func (a *app) paneOn(key string, p Pane) Pane {
+	if window, host, far := strings.Cut(key, farSep); far {
+		a.farHost[p.ID] = host
+		p.Machine, p.On = window, host
+		return p
+	}
+	p.Machine = key
+	return p
 }
 
 // placeName is what a files key is called where the user reads it.
@@ -298,14 +310,14 @@ func (a *app) openFilesOn(machine string, f vfs.FS, path string) error {
 	}
 	a.next++
 	id := "p" + itoa(a.next)
-	a.addPane(Pane{ID: id, Title: vfs.Base(f, path), Machine: machine, Kind: kindFiles}, nil, placement{})
+	a.addPane(a.paneOn(machine, Pane{ID: id, Title: vfs.Base(f, path), Kind: kindFiles}), nil, placement{})
 	a.browse(Browse{Pane: id, Path: path})
 	return nil
 }
 
 // browse lists a folder for a file pane, in the background.
 func (a *app) browse(in Browse) {
-	f := a.fsFor(a.machineOf(in.Pane))
+	f := a.fsFor(a.filesKey(in.Pane))
 	if f == nil {
 		return
 	}
@@ -339,7 +351,7 @@ func (a *app) setBrowser(id string, b Browser) {
 // readFile opens a file in a reader beside its file pane, and, to
 // follow it, reads it again each time it changes.
 func (a *app) readFile(in ReadFile) {
-	machine := a.machineOf(in.Pane)
+	machine := a.filesKey(in.Pane)
 	f := a.fsFor(machine)
 	if f == nil {
 		return
@@ -357,7 +369,7 @@ func (a *app) readOn(machine string, f vfs.FS, path string, follow bool, line in
 	if follow {
 		title += " (following)"
 	}
-	a.addPane(Pane{ID: id, Title: title, Machine: machine, Kind: kindReader}, nil, at)
+	a.addPane(a.paneOn(machine, Pane{ID: id, Title: title, Kind: kindReader}), nil, at)
 	a.reads[id] = readSpec{f: f, path: path, name: vfs.Base(f, path), follow: follow, line: line}
 	a.readOnce(id)
 	if follow {
@@ -523,7 +535,7 @@ func (a *app) showScrollback(pane string) error {
 	a.next++
 	id := "p" + itoa(a.next)
 	title := "Scrollback of " + a.titleOf(pane)
-	a.addPane(Pane{ID: id, Title: title, Machine: a.machineOf(pane), Kind: kindReader}, nil, placement{beside: pane})
+	a.addPane(a.paneOn(a.filesKey(pane), Pane{ID: id, Title: title, Kind: kindReader}), nil, placement{beside: pane})
 	m := maps.Clone(a.st.Readers)
 	if m == nil {
 		m = map[string]Reader{}

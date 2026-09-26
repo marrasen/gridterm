@@ -108,7 +108,7 @@ type running struct {
 // folderOf returns a file pane's filesystem and folder.
 func (a *app) folderOf(pane string) (vfs.FS, string, bool) {
 	b, ok := a.st.Browsers[pane]
-	f := a.fsFor(a.machineOf(pane))
+	f := a.fsFor(a.filesKey(pane))
 	return f, b.Path, ok && f != nil
 }
 
@@ -121,7 +121,7 @@ func (a *app) clipFiles(in ClipFiles) {
 	if in.Cut {
 		kind, verb = jobs.Move, "move"
 	}
-	a.clip = &fileClip{kind: kind, from: f, machine: a.machineOf(in.Pane), at: at, names: in.Names}
+	a.clip = &fileClip{kind: kind, from: f, machine: a.filesKey(in.Pane), at: at, names: in.Names}
 	a.st.Status = fmt.Sprintf("Ready to %s %s; paste in a folder with F7 or Ctrl+V.", verb, count(len(in.Names), "item"))
 }
 
@@ -144,7 +144,7 @@ func (a *app) pasteFiles(in PasteFiles) error {
 	if c.kind == jobs.Move {
 		verb = "Moving"
 	}
-	a.followOn(op, fmt.Sprintf("%s %s to %s", verb, count(len(c.names), "item"), vfs.Base(f, into)), c.machine, a.machineOf(in.Pane))
+	a.followOn(op, fmt.Sprintf("%s %s to %s", verb, count(len(c.names), "item"), vfs.Base(f, into)), c.machine, a.filesKey(in.Pane))
 	return nil
 }
 
@@ -153,7 +153,7 @@ func (a *app) deleteFiles(in DeleteFiles) {
 	if !ok || len(in.Names) == 0 {
 		return
 	}
-	a.followOn(jobs.Op{Kind: jobs.Delete, From: f, At: at, Names: in.Names}, "Deleting "+count(len(in.Names), "item"), a.machineOf(in.Pane), "")
+	a.followOn(jobs.Op{Kind: jobs.Delete, From: f, At: at, Names: in.Names}, "Deleting "+count(len(in.Names), "item"), a.filesKey(in.Pane), "")
 }
 
 // follow starts a job and follows it, listing again the file panes
@@ -169,7 +169,7 @@ func (a *app) followOn(op jobs.Op, title, from, to string) *jobs.Job {
 	job := a.jobs.Start(a.ctx, op, jobs.Options{Ask: overwriteAsker{a}})
 	var panes []string
 	for id, b := range a.st.Browsers {
-		f := a.fsFor(a.machineOf(id))
+		f := a.fsFor(a.filesKey(id))
 		if f == nil {
 			continue
 		}

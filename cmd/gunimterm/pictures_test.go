@@ -148,8 +148,9 @@ func TestAPictureGoesOnTheClipboardOfTheWindowItIsPastedInto(t *testing.T) {
 }
 
 // A pane attached from a window, running on a server that window
-// reached, has its picture written on that server, through the window.
-func TestAPictureReachesTheServerAPaneOnAWindowRunsOn(t *testing.T) {
+// reached, has its picture written on that server, through the window,
+// and its files are that server's.
+func TestAPaneOnAServerAWindowReachedWorksOnThatServer(t *testing.T) {
 	// The test server's files start in the folder the test runs in.
 	far := t.TempDir()
 	t.Chdir(far)
@@ -190,5 +191,23 @@ func TestAPictureReachesTheServerAPaneOnAWindowRunsOn(t *testing.T) {
 	ents, err := os.ReadDir(filepath.Join(far, pasted.DirName))
 	if err != nil || len(ents) != 1 {
 		t.Fatalf("on the server: %v, %v", ents, err)
+	}
+
+	// Its files are the server's, filed under the window.
+	b.st.Focus = id
+	b.handle(OpenFiles{})
+	pumpBoth(t, a, b, "the server's files", func() bool {
+		if len(b.st.Panes) < 3 {
+			return false
+		}
+		for _, e := range b.st.Browsers[b.st.Panes[2].ID].Entries {
+			if e.Name == pasted.DirName {
+				return true
+			}
+		}
+		return false
+	})
+	if p := b.st.Panes[2]; p.Machine != b.st.Windows[0].Name || p.On != "srv" {
+		t.Fatalf("the file pane is on %q, %q, want srv through the window", p.Machine, p.On)
 	}
 }

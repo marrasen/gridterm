@@ -284,7 +284,7 @@ func (a *app) attachWindow(in AttachWindow) error {
 				a.notify("Couldn't work in "+open.Label, err.Error(), "")
 				return
 			}
-			a.addPane(Pane{ID: id, Title: open.Label, Machine: in.Window}, openShell(sess, a.palette, a.withLinks(a.hooks(id), in.Window)), placement{})
+			a.addPane(Pane{ID: id, Title: open.Label, Machine: in.Window, On: open.Host}, openShell(sess, a.palette, a.withLinks(a.hooks(id), in.Window)), placement{})
 			if open.Host != "" {
 				a.farHost[id] = open.Host
 			}

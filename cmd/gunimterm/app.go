@@ -128,6 +128,9 @@ type Pane struct {
 	// Machine is the server the pane's shell runs on, "" for this
 	// computer.
 	Machine string
+	// On is the machine the pane runs on when that is a server the
+	// window in Machine reached, and "" for the window's own.
+	On string
 	// Kind says what the pane is: a terminal, a file pane or a reader.
 	Kind string
 	// Named is set once the user has named the pane, and shell is the

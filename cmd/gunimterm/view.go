@@ -1103,8 +1103,11 @@ func (w *window) paneNode(id string) gunim.Node {
 	for _, p := range w.panes {
 		if p.ID == id {
 			where := p.Machine
-			if where == "" {
+			switch {
+			case where == "":
 				where = "This computer"
+			case p.On != "":
+				where = p.On + " through " + p.Machine
 			}
 			c.label.SetText(where + ": " + p.Title)
 		}
@@ -1328,6 +1331,8 @@ func sidebarRows(panes []Pane, tunnels []Tunnel, share Share, windows []RemoteWi
 					note = "ended"
 				case p.Rang:
 					note = "bell"
+				case note == "" && p.On != "":
+					note = "on " + p.On
 				}
 				out = append(out, sideItem{key: p.ID, text: p.Title, note: note, pane: p.ID, click: FocusPane{Pane: p.ID}, closes: ClosePane{Pane: p.ID}, dim: p.Ended})
 			}

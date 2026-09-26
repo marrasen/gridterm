@@ -32,6 +32,11 @@ type Ask struct {
 	Also   string
 	Yes    string
 	No     string
+	// Actions are buttons that do something and leave the question
+	// open, answered by AskAction; Copy is what a Copy button copies,
+	// and Link what Open Link opens.
+	Actions    []string
+	Copy, Link string
 	// Danger marks a question whose yes can do harm, and colours its
 	// button so. Careful opens on Cancel without the colour. Plain has
 	// Yes alone, for something only told.
@@ -97,7 +102,7 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 	logLine(acct, "", "connecting to "+name)
 	began := time.Now()
 	for i := range hops {
-		hops[i].Ask = newAsker(a)
+		hops[i].Ask = newAsker(a, name)
 		hops[i].Ring = a.ring
 		hops[i].Saying = func(what string) { logLine(acct, "", what) }
 		hops[i].Wrong = func(what string) { logLine(acct, badly, what) }
@@ -233,13 +238,16 @@ func (a *app) dropAsk(id uint64) {
 // asker answers the remote package's questions through the window.
 type asker struct {
 	a *app
+	// name is the machine being connected to, whose log and dial a
+	// notice belongs to.
+	name string
 	// asked says a password was asked for on this connection already,
 	// so asking again means the last one was refused.
 	asked *bool
 }
 
-// newAsker asks the user what one connection needs to know.
-func newAsker(a *app) asker { return asker{a: a, asked: new(bool)} }
+// newAsker asks the user what one connection to name needs to know.
+func newAsker(a *app, name string) asker { return asker{a: a, name: name, asked: new(bool)} }
 
 // Passphrase implements [remote.Ask].
 func (q asker) Passphrase(ctx context.Context, key remote.LockedKey) (string, error) {
@@ -328,11 +336,6 @@ func (q asker) TrustHostKey(ctx context.Context, k remote.HostKey) (bool, error)
 	return err == nil && ans.Yes, err
 }
 
-// Notice implements [remote.Ask]: the server's message, in a toast.
-func (q asker) Notice(_ context.Context, n remote.Notice) {
-	body := strings.TrimSpace(strings.Join([]string{n.Name, n.Instruction, n.Text}, " "))
-	go func() { q.a.events <- func() { q.a.notify(n.User+"@"+n.Host+" says", body, "") } }()
-}
 
 // saveServer saves a server in the book, and says so.
 func (a *app) saveServer(in SaveServer) error {

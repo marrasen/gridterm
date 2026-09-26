@@ -94,7 +94,7 @@ func (a *app) connectWindow(in ConnectWindow) error {
 	a.st.Status = "Connecting to the window at " + addr + "…"
 	go func() {
 		win, err := remote.ReachWindow(dctx, remote.Reach{
-			Addr: addr, KeyFile: strings.TrimSpace(in.KeyFile), Ring: a.ring, Ask: newAsker(a),
+			Addr: addr, KeyFile: strings.TrimSpace(in.KeyFile), Ring: a.ring, Ask: newAsker(a, name),
 			Known:  knownWindows,
 			Saying: func(what string) { logLine(acct, "", what) },
 			Wrong:  func(what string) { logLine(acct, badly, what) },

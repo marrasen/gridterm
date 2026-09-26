@@ -255,7 +255,7 @@ func TestAKeysSavedPassphraseIsUsedWithoutAsking(t *testing.T) {
 	a.handle(LockSecrets{})
 	got := make(chan string, 1)
 	go func() {
-		pass, _ := newAsker(a).Passphrase(t.Context(), remote.LockedKey{Path: locked})
+		pass, _ := newAsker(a, "").Passphrase(t.Context(), remote.LockedKey{Path: locked})
 		got <- pass
 	}()
 	var pass string

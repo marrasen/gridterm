@@ -912,6 +912,8 @@ func (a *app) handle(in gunim.Intent) {
 		a.clip = nil
 	case ListFolders:
 		a.listFolders(in)
+	case AskAction:
+		err = a.askAction(in)
 	case DropFiles:
 		err = a.dropFiles(in)
 	case PasteImage:

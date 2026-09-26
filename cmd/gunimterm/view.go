@@ -629,6 +629,15 @@ func (w *window) showAsk(asks []Ask, u *gunim.UI) {
 		form.Add("", also)
 	}
 	d := widget.NewDialog(q.Title)
+	// Buttons that do something and leave the question up.
+	for _, act := range q.Actions {
+		if act == "Copy" {
+			copied := q.Copy
+			d.AddAction(act, func(u *gunim.UI) { u.SetClipboard(copied) })
+			continue
+		}
+		d.AddAction(act, func(u *gunim.UI) { u.Send(w, AskAction{ID: q.ID, Action: act}) })
+	}
 	d.Body = form
 	id := q.ID
 	answer := func(choice string) gunim.Intent {

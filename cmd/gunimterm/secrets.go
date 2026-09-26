@@ -170,7 +170,7 @@ func (a *app) offerAVault(then func()) {
 			return
 		}
 	}
-	signer, err := a.ring.Unlock(a.ctx, keyFile, newAsker(a))
+	signer, err := a.ring.Unlock(a.ctx, keyFile, newAsker(a, ""))
 	a.events <- func() {
 		if err == nil {
 			err = a.makeVault(signer, keyFile)
@@ -219,7 +219,7 @@ func (a *app) unlockVault(v *secrets.Vault, what string, then func()) {
 	keyFile, err := keyFileForVault(v)
 	if err == nil {
 		var signer ssh.Signer
-		signer, err = a.ring.Unlock(a.ctx, keyFile, newAsker(a))
+		signer, err = a.ring.Unlock(a.ctx, keyFile, newAsker(a, ""))
 		if err == nil {
 			err = v.Unlock([]ssh.Signer{signer})
 		}
@@ -607,7 +607,7 @@ func (a *app) chooseKeyToAdd(v *secrets.Vault, spare []string) {
 			return
 		}
 	}
-	signer, err := a.ring.Unlock(a.ctx, keyFile, newAsker(a))
+	signer, err := a.ring.Unlock(a.ctx, keyFile, newAsker(a, ""))
 	a.events <- func() {
 		if err == nil {
 			err = v.AddKey(signer, keyFile)

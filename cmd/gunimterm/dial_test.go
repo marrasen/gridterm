@@ -1,8 +1,11 @@
 package main
 
 import (
+	"context"
 	"path/filepath"
 	"slices"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/marrasen/gunim"
@@ -138,7 +141,7 @@ func TestSigningInSaysAPasswordWasRefused(t *testing.T) {
 	}
 	a.handle(Disconnect{Machine: "srv"})
 
-	q := newAsker(a)
+	q := newAsker(a, "")
 	said := make(chan string, 2)
 	go func() {
 		for range 2 {
@@ -153,4 +156,42 @@ func TestSigningInSaysAPasswordWasRefused(t *testing.T) {
 	if first, second := <-said, <-said; first != "" || second != "Invalid password." {
 		t.Fatalf("the questions said %q, then %q", first, second)
 	}
+}
+
+func TestASignInLinkWaitsInAQuestionThatGoesWithTheDial(t *testing.T) {
+	a, _ := dialApp(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	var logged syncBuffer
+	a.account("srv").Also(&logged)
+	q := newAsker(a, "srv")
+	q.Notice(ctx, remote.Notice{User: "tester", Host: "srv", Text: "Sign in at https://sso.example/device and enter ABCD"})
+	waitFor(t, a, "the question", func() bool { return len(a.st.Asks) == 1 })
+	ask := a.st.Asks[0]
+	if ask.Title != "Waiting for server" || ask.Link != "https://sso.example/device" || !slices.Equal(ask.Actions, []string{"Open Link", "Copy"}) {
+		t.Fatalf("asked %+v", ask)
+	}
+	if !strings.Contains(logged.String(), "https://sso.example/device") {
+		t.Fatal("the connection log lacks the link")
+	}
+	cancel()
+	waitFor(t, a, "the question to go", func() bool { return len(a.st.Asks) == 0 })
+}
+
+// syncBuffer is a buffer written from one goroutine and read from
+// another.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf strings.Builder
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }

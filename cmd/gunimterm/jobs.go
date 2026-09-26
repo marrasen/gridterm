@@ -52,6 +52,9 @@ type (
 type Job struct {
 	ID    string
 	Title string
+	// Machine is where it works, as its row in the sidebar is filed,
+	// and Kind is copy, move or delete.
+	Machine, Kind string
 	// Detail says how far it has got, or how it ended.
 	Detail string
 	// Share is how much is done, from 0 to 1, and below zero while the
@@ -94,6 +97,17 @@ type FileClip struct {
 	Key, At string
 	Names   []string
 	Cut     bool
+}
+
+// jobKind names a kind of job for its row's icon.
+func jobKind(k jobs.Kind) string {
+	switch k {
+	case jobs.Move:
+		return "move"
+	case jobs.Delete:
+		return "delete"
+	}
+	return "copy"
 }
 
 // running is a job the program follows.
@@ -263,7 +277,10 @@ func (a *app) showJobs() bool {
 // jobRow is a job as the pane shows it.
 func jobRow(r *running, p jobs.Progress) Job {
 	row := Job{ID: r.id, Title: r.title, Share: -1, Done: p.Done, Names: r.op.Names, Current: p.Current,
-		Speeds: slices.Clone(r.speeds), Repeatable: p.Done && r.op.Kind == jobs.Copy}
+		Speeds: slices.Clone(r.speeds), Repeatable: p.Done && r.op.Kind == jobs.Copy, Machine: r.to, Kind: jobKind(r.op.Kind)}
+	if r.op.Kind == jobs.Delete {
+		row.Machine = r.from
+	}
 	if p.Files == len(r.op.Names) {
 		row.Ticked = p.FilesDone
 	}

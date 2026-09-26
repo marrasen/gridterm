@@ -16,6 +16,7 @@ import (
 	"github.com/marrasen/gunim/theme"
 	"github.com/marrasen/gunim/widget"
 
+	"github.com/marrasen/gridterm/meter"
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/secrets"
 	"github.com/marrasen/gridterm/settings"
@@ -1268,6 +1269,7 @@ func (w *window) update(st State, u *gunim.UI) {
 			closes: DisconnectClient(c)}
 		rows = slices.Insert(rows, at, item)
 	}
+	rows = w.markRows(rows, st)
 	// At the foot, as in gridterm, the way to a machine not yet listed.
 	rows = append(rows, sideItem{key: "connect:new", text: "+ Connect to server…", local: w.connectDialog})
 	widget.Sync(w.list, u, rows,
@@ -1735,6 +1737,17 @@ type sideItem struct {
 	// asks the program nothing.
 	local        func(*gunim.UI)
 	heading, dim bool
+	// depth sets a row a step in, as a machine a window reached is.
+	depth int
+	// kind picks the row's icon, live says how it is doing now, for the
+	// mark in front of it, and nil gives it none; fill is how far its
+	// work has got, drawn while filling; traffic is what it carries,
+	// drawn as a little graph.
+	kind    string
+	live    func(now time.Time) meter.State
+	fill    float32
+	filling bool
+	traffic *meter.Meter
 }
 
 // sidebarRows lists the panes under their machines, this computer
@@ -1772,6 +1785,18 @@ func sidebarRows(panes []Pane, tunnels []Tunnel, share Share, windows []RemoteWi
 	for _, t := range tunnels {
 		shown[t.ID] = true
 	}
+	paneRow := func(p Pane) sideItem {
+		note := notes[p.ID]
+		switch {
+		case p.Ended:
+			note = "ended"
+		case p.Rang:
+			note = "bell"
+		case note == "" && p.Note != "":
+			note = p.Note
+		}
+		return sideItem{key: p.ID, text: p.Title, note: note, pane: p.ID, click: FocusPane{Pane: p.ID}, closes: ClosePane{Pane: p.ID}, dim: p.Ended}
+	}
 	var out []sideItem
 	for _, m := range machines {
 		name := m
@@ -1780,32 +1805,49 @@ func sidebarRows(panes []Pane, tunnels []Tunnel, share Share, windows []RemoteWi
 		}
 		out = append(out, sideItem{key: "machine:" + m, text: name, heading: true})
 		for _, p := range panes {
-			if p.Machine == m && !shown[p.Tunnel] {
-				note := notes[p.ID]
-				switch {
-				case p.Ended:
-					note = "ended"
-				case p.Rang:
-					note = "bell"
-				case note == "" && p.Note != "":
-					note = p.Note
-				case note == "" && p.On != "":
-					note = "on " + p.On
-				}
-				out = append(out, sideItem{key: p.ID, text: p.Title, note: note, pane: p.ID, click: FocusPane{Pane: p.ID}, closes: ClosePane{Pane: p.ID}, dim: p.Ended})
+			if p.Machine == m && p.On == "" && !shown[p.Tunnel] {
+				out = append(out, paneRow(p))
 			}
 		}
+		var far []string
 		for _, w := range windows {
 			if w.Name != m {
 				continue
 			}
-			// What the window has open, to work in from here.
+			// What the window has open on its own machine, to work in
+			// from here.
 			for _, o := range w.Open {
-				note := "there"
-				if o.Host != "" {
-					note = "on " + o.Host
+				if o.Host == "" {
+					out = append(out, sideItem{key: "window:" + m + ":" + o.ID, text: o.Label, note: "there", click: AttachWindow{Window: m, ID: o.ID}, dim: true})
+				} else if !slices.Contains(far, o.Host) {
+					far = append(far, o.Host)
 				}
-				out = append(out, sideItem{key: "window:" + m + ":" + o.ID, text: o.Label, note: note, click: AttachWindow{Window: m, ID: o.ID}, dim: true})
+			}
+		}
+		for _, p := range panes {
+			if p.Machine == m && p.On != "" && !slices.Contains(far, p.On) {
+				far = append(far, p.On)
+			}
+		}
+		// Each machine the window reached, under a heading of its own a
+		// step in, as gridterm has them: this window's panes on it, and
+		// what the window has open there.
+		for _, host := range far {
+			out = append(out, sideItem{key: "machine:" + m + farSep + host, text: host, heading: true, depth: 1})
+			for _, p := range panes {
+				if p.Machine == m && p.On == host {
+					out = append(out, paneRow(p))
+				}
+			}
+			for _, w := range windows {
+				if w.Name != m {
+					continue
+				}
+				for _, o := range w.Open {
+					if o.Host == host {
+						out = append(out, sideItem{key: "window:" + m + ":" + o.ID, text: o.Label, note: "there", click: AttachWindow{Window: m, ID: o.ID}, dim: true})
+					}
+				}
 			}
 		}
 		for _, t := range tunnels {
@@ -1842,6 +1884,9 @@ type sideRow struct {
 	active *anim.Float
 	hover  *anim.Float
 	on     bool
+	// marks is what the row shows besides its words: its mark, icon,
+	// fill and traffic.
+	marks rowMarks
 }
 
 func (w *window) newSideRow(it sideItem) *sideRow {
@@ -1862,6 +1907,7 @@ func (r *sideRow) set(it sideItem) {
 	r.title.SetText(it.text)
 	r.note.SetText(it.note)
 	r.click, r.local, r.closes, r.key = it.click, it.local, it.closes, it.key
+	r.marks.set(it)
 	if m, ok := strings.CutPrefix(it.key, "machine:"); ok && it.heading {
 		r.machine = m
 	}
@@ -1892,10 +1938,14 @@ func (r *sideRow) Children() []gunim.Node { return []gunim.Node{r.title, r.note}
 // the end.
 func (r *sideRow) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children) geom.Size {
 	const padX, gap, height = 12, 8, 28
+	// Room at the end for the cross a closing row shows on hover, and
+	// for a traffic graph.
+	end := c.Max.W - padX - r.marks.endRoom(r)
 	note := kids.At(1)
 	ns := note.Layout(gunim.Constraints{Max: geom.Sz(max(0, c.Max.W-2*padX)/2, height)})
-	note.Place(geom.Pt(c.Max.W-padX-ns.W, (height-ns.H)/2))
-	room := c.Max.W - 2*padX
+	note.Place(geom.Pt(end-ns.W, (height-ns.H)/2))
+	start := padX + r.marks.startRoom(r)
+	room := end - start
 	if ns.W > 0 {
 		room -= ns.W + gap
 	}
@@ -1904,7 +1954,8 @@ func (r *sideRow) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children
 	}
 	k := kids.At(0)
 	s := k.Layout(gunim.Constraints{Max: geom.Sz(max(0, room), height)})
-	k.Place(geom.Pt(padX, (height-s.H)/2))
+	k.Place(geom.Pt(start, (height-s.H)/2))
+	r.marks.laid(padX, end, height, c.Max.W)
 	return c.Constrain(geom.Sz(c.Max.W, height))
 }
 
@@ -1926,8 +1977,10 @@ func (r *sideRow) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gun
 		c.A = uint8(float32(c.A) * min(t, 1))
 		p.RRectStroke(inset, 6, paint.Fill{}, paint.Stroke{Width: 1.5, Color: c})
 	}
+	r.marks.paintUnder(p, f, inset)
 	kids.At(0).Paint(p)
 	kids.At(1).Paint(p)
+	r.marks.paint(p, f, r)
 	if r.heading {
 		r.paintPlus(p, f, box)
 	}
@@ -1958,6 +2011,12 @@ func (r *sideRow) Handle(e input.Event, u *gunim.UI) bool {
 		r.hover.Animate(0, widget.Settle.Get(u.Theme()))
 	case input.PointerDown:
 		if e.Button == input.ButtonPrimary {
+			if r.closes != nil && r.marks.onCross(e.Pos) {
+				// The cross at the end: close the row, as gridterm's
+				// does, rather than go to it.
+				u.Send(r, r.closes)
+				return true
+			}
 			r.activate(u)
 			return true
 		}

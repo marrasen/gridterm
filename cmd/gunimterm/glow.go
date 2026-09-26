@@ -86,7 +86,8 @@ func (w *window) glow(u *gunim.UI) {
 	if w.glowing {
 		return
 	}
-	any := false
+	// A shared pane's ring glows, and a busy row's mark breathes.
+	any := w.anyBreathing(time.Now())
 	for _, t := range w.terms {
 		if agent, watched := t.shared(); agent || watched {
 			any = true

@@ -60,11 +60,8 @@ six are confirmed in the code; the rest are still to check.
 
 Sidebar:
 
-- On each row: a state dot that pulses with traffic, a kind icon, a
-  one-cell traffic graph, rows for file jobs with a progress fill, and
-  a greyed row kept after a drop.
-- Crosses on hover that close or clear a row.
-- Headings for the machines on a window taken over.
+- A machine's row kept, greyed, after its connection drops, until it
+  is cleared. gunimterm greys its mark only while panes on it remain.
 
 Checks on Windows, waiting until the Windows runs resume: the screen
 reader recheck (#10) and this spike on Windows (#11).

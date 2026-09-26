@@ -3,6 +3,8 @@ package main
 import (
 	"log"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/internal/build"
@@ -23,6 +25,9 @@ type shell struct {
 	// reads from.
 	mu   sync.Mutex
 	view *grid.Grid
+	// wrote is when the program last wrote, in nanoseconds, for the
+	// sidebar's mark to breathe while output comes.
+	wrote *atomic.Int64
 }
 
 // shellHooks are what a shell tells the program: that it wrote, that
@@ -52,6 +57,7 @@ var scrollbackLines = vt.DefaultScrollback
 // openShell puts a screen on a running session, local or remote,
 // drawing with pal.
 func openShell(sess session.Session, pal vt.Palette, hooks shellHooks) *shell {
+	wrote := new(atomic.Int64)
 	t, err := uiterm.New(uiterm.Config{
 		Session:     sess,
 		Size:        ui.Size{Cols: shellCols, Rows: shellRows},
@@ -60,7 +66,7 @@ func openShell(sess session.Session, pal vt.Palette, hooks shellHooks) *shell {
 		Palette:     &pal,
 		OnTitle:     hooks.title,
 		OnExit:      hooks.exit,
-		OnOutput:    hooks.output,
+		OnOutput:    func() { wrote.Store(time.Now().UnixNano()); hooks.output() },
 		OnClipboard: hooks.clipboard,
 		OnBell:      hooks.bell,
 		OnLink:      hooks.link,
@@ -78,7 +84,7 @@ func openShell(sess session.Session, pal vt.Palette, hooks shellHooks) *shell {
 	// cursor into the view; the pane draws it hollow when it lacks the
 	// keyboard.
 	t.SetFocus(true)
-	return &shell{t: t, view: grid.New(shellCols, shellRows, pal.FG, pal.BG)}
+	return &shell{t: t, view: grid.New(shellCols, shellRows, pal.FG, pal.BG), wrote: wrote}
 }
 
 // draw draws the screen into view, at the size the screen is.

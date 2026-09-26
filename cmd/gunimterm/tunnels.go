@@ -35,6 +35,8 @@ type Tunnel struct {
 	Live, Watching bool
 	// Pane is the pane showing its account, or "".
 	Pane string
+	// Meter counts what goes through it, for the sidebar to draw.
+	Meter *meter.Meter
 }
 
 // Intents for tunnels.
@@ -174,7 +176,7 @@ func (a *app) openTunnel(in OpenTunnel) error {
 	a.tunnels[id] = open
 	label := tunnelLabel(f)
 	open.say("opened " + label + " over " + in.Machine)
-	a.st.Tunnels = append(slices.Clone(a.st.Tunnels), Tunnel{ID: id, Machine: in.Machine, Label: label, Note: open.note(), Live: true})
+	a.st.Tunnels = append(slices.Clone(a.st.Tunnels), Tunnel{ID: id, Machine: in.Machine, Label: label, Note: open.note(), Live: true, Meter: open.count})
 	a.notify("Tunnel open", label+", over "+in.Machine, "")
 	a.tickTunnels()
 	return nil

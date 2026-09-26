@@ -38,9 +38,15 @@ type switcher struct {
 	picked int
 	size   geom.Size
 	laid   bool
-	// landed is when the pane picked had grown into place and was asked
-	// onto the stage; zero until then.
+	// landed is when the pane picked was asked onto the stage; zero
+	// until then.
 	landed time.Time
+	// stageDrawn is what the stage draws, kept while the switcher is
+	// open, and held at the pick: the stage as it was, for the pane
+	// picked to grow over while the stage underneath already shows it.
+	// stageAt is where the stage stood then.
+	stageDrawn *gunim.Drawing
+	stageAt    geom.Rect
 }
 
 type tile struct {
@@ -205,8 +211,16 @@ func (s *switcher) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, _ gunim
 		}
 		s.paintTile(p, f, tl, t)
 	}
-	// The pane picked grows over the rest.
+	// The pane picked grows over the rest, and over the stage as it
+	// was, while the stage underneath already shows it.
 	if s.picked >= 0 && s.picked < len(s.tiles) {
+		if d := s.stageDrawn; d != nil && !d.Recording().Empty() {
+			func() {
+				defer p.Layer(paint.LayerOpts{Bounds: s.stageAt, Opacity: 1, Clip: true})()
+				defer p.Push(paint.Translate(s.stageAt.Min))()
+				p.Replay(d.Recording())
+			}()
+		}
 		s.paintTile(p, f, s.tiles[s.picked], 1)
 	}
 }
@@ -287,26 +301,16 @@ func (s *switcher) pick(i int, u *gunim.UI) {
 		o.fade.Animate(0, widget.Quick.Get(u.Theme()))
 		o.box.Animate(r.Inset(geom.Uniform(min(r.Size().W, r.Size().H)*0.08)), widget.Quick.Get(u.Theme()))
 	}
-	// The pane comes on stage once it has grown into place: it grows
-	// over the stage as it was, and then is what the stage shows.
-	w, id := s.w, t.id
-	var landed func(u *gunim.UI)
-	landed = func(u *gunim.UI) {
-		if t.box.Active() {
-			u.After(landCheck, landed)
-			return
-		}
-		s.landed = time.Now()
-		u.Send(w, FocusPane{Pane: id})
-		u.Invalidate()
-	}
-	u.After(landCheck, landed)
+	// The pane comes on stage at once, with the keyboard, so it is live
+	// the moment it is picked. The stage as it was is held, drawn where
+	// the stage stands, for the pane to grow over; once it has grown
+	// into place, the switcher goes, and the stage shows the pane.
+	u.ForgetDrawing(s.w.stage)
+	s.stageAt = stage
+	s.landed = time.Now()
+	u.Send(s.w, FocusPane{Pane: t.id})
 	s.w.closeSwitcher(false, u)
 }
-
-// landCheck is how often a pane picked is looked at, to see whether it
-// has grown into place.
-const landCheck = 16 * time.Millisecond
 
 // cancel closes the overview without a choice; the panes on stage go
 // back where they stood.

@@ -1226,6 +1226,9 @@ func (w *window) openSwitcher(u *gunim.UI) {
 		return
 	}
 	w.sw = newSwitcher(w, w.panes, w.focused, u)
+	// What the stage draws is kept while the switcher is open, for the
+	// pane picked to grow over.
+	w.sw.stageDrawn = u.KeepDrawing(w.stage)
 	u.Insert(w, w.sw)
 	u.Focus(w.sw)
 	w.sw.light(w.sw.hot, u)
@@ -1240,6 +1243,7 @@ func (w *window) closeSwitcher(back bool, u *gunim.UI) {
 	}
 	u.Remove(w.sw)
 	w.sw = nil
+	u.ForgetDrawing(w.stage)
 	if n := w.focusNode(w.focused); n != nil && back {
 		u.Focus(n)
 		return

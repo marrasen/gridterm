@@ -86,9 +86,10 @@ func TestTheSwitcherShowsAFilePane(t *testing.T) {
 	}
 }
 
-// The pane picked comes on stage once it has grown into place, and the
-// switcher stays until it is there.
-func TestThePanePickedComesOnStageOnceItHasGrown(t *testing.T) {
+// The pane picked is live the moment it is picked: it is asked onto the
+// stage at once, with the keyboard, and grows over the stage as it was,
+// held, while the switcher stays until it has grown.
+func TestThePanePickedIsLiveAtOnce(t *testing.T) {
 	win := switcherStage(t)
 	sw := win.sw
 	for len(lastWindow.Client().Intents()) > 0 {
@@ -97,22 +98,14 @@ func TestThePanePickedComesOnStageOnceItHasGrown(t *testing.T) {
 	lastWindow.Input(gi.KeyPress{Key: gi.KeyRight})
 	lastWindow.Input(gi.KeyPress{Key: gi.KeyEnter})
 	lastWindow.Frame(time.Second / 60)
-	if n := len(lastWindow.Client().Intents()); n != 0 {
-		t.Fatalf("at the pick, %d intents went out; the pane should wait to grow", n)
+	in, ok := nextIntent(t).(FocusPane)
+	if !ok || in.Pane != sw.tiles[sw.picked].id {
+		t.Fatalf("at the pick, it asked for %#v", in)
 	}
-	var in FocusPane
-	for range 120 {
-		lastWindow.Frame(time.Second / 60)
-		time.Sleep(time.Millisecond)
-		if len(lastWindow.Client().Intents()) > 0 {
-			in, _ = nextIntent(t).(FocusPane)
-			break
-		}
+	if sw.stageDrawn == nil || sw.stageDrawn.Recording().Empty() {
+		t.Fatal("the stage as it was is not held")
 	}
-	if in.Pane != sw.tiles[sw.picked].id || sw.tiles[sw.picked].box.Active() {
-		t.Fatalf("grown, it asked for %#v, still moving %v", in, sw.tiles[sw.picked].box.Active())
-	}
-	if lastUI.Presence(sw) != gunim.Exiting {
-		t.Fatal("the switcher left before the pane was on stage")
+	if !sw.tiles[sw.picked].box.Active() || lastUI.Presence(sw) != gunim.Exiting {
+		t.Fatal("the switcher went before the pane grew into place")
 	}
 }

@@ -2612,15 +2612,17 @@ func (w *window) madeNode(id string) gunim.Node {
 
 // echoFor sends an echo out past the window's edges for each count in
 // st.Pings that went up: a failure, work finished, or a bell out of
-// sight, which is any bell while another program has the keyboard. A
+// sight. While another program has the keyboard, everything is out of
+// sight: a bell in any pane, and a long command finishing in the pane in
+// front. A
 // faint one goes out again and again while a connection is being made.
 func (w *window) echoFor(st State, u *gunim.UI) {
 	was := w.pings
 	w.pings = st.Pings
-	if st.Pings.Problems > was.Problems {
+	if st.Pings.Problems > was.Problems || st.Pings.FrontProblems > was.FrontProblems && w.away {
 		w.echo.Ping(u, widget.EchoProblem)
 	}
-	if st.Pings.Dones > was.Dones {
+	if st.Pings.Dones > was.Dones || st.Pings.FrontDones > was.FrontDones && w.away {
 		w.echo.Ping(u, widget.EchoDone)
 	}
 	if st.Pings.Calls > was.Calls || st.Bells > w.bells && w.away {

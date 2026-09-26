@@ -20,6 +20,8 @@ type harness struct {
 	titles  []string
 	clips   []string
 	ends    []cmdEnd
+	// starts counts the CommandStart callbacks.
+	starts int
 }
 
 // cmdEnd is one CommandDone callback, kept so a test can check what the
@@ -38,6 +40,7 @@ func newHarness(t *testing.T, cols, rows int) *harness {
 		Reply:        func(b []byte) { h.replies = append(h.replies, string(b)) },
 		ClipboardSet: func(s string) { h.clips = append(h.clips, s) },
 		CommandDone:  func(status int, ok bool) { h.ends = append(h.ends, cmdEnd{status: status, ok: ok}) },
+		CommandStart: func() { h.starts++ },
 	})
 	h.g = grid.New(cols, rows, DefaultPalette().FG, DefaultPalette().BG)
 	return h

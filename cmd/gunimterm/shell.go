@@ -39,6 +39,10 @@ type shellHooks struct {
 	exit      func()
 	clipboard func(string)
 	bell      func()
+	// commandDone says a command finished, as a shell that marks its
+	// commands says so: its exit status, whether the shell gave one, and
+	// how long it ran.
+	commandDone func(status int, ok bool, took time.Duration)
 	// link, findPath and openPath follow the links in the pane; nil
 	// follows none.
 	link     func(string)
@@ -59,19 +63,20 @@ var scrollbackLines = vt.DefaultScrollback
 func openShell(sess session.Session, pal vt.Palette, hooks shellHooks) *shell {
 	wrote := new(atomic.Int64)
 	t, err := uiterm.New(uiterm.Config{
-		Session:     sess,
-		Size:        ui.Size{Cols: shellCols, Rows: shellRows},
-		Scrollback:  scrollbackLines,
-		Program:     build.Name + " " + build.Version(),
-		Palette:     &pal,
-		OnTitle:     hooks.title,
-		OnExit:      hooks.exit,
-		OnOutput:    func() { wrote.Store(time.Now().UnixNano()); hooks.output() },
-		OnClipboard: hooks.clipboard,
-		OnBell:      hooks.bell,
-		OnLink:      hooks.link,
-		FindPath:    hooks.findPath,
-		OnPath:      hooks.openPath,
+		Session:       sess,
+		Size:          ui.Size{Cols: shellCols, Rows: shellRows},
+		Scrollback:    scrollbackLines,
+		Program:       build.Name + " " + build.Version(),
+		Palette:       &pal,
+		OnTitle:       hooks.title,
+		OnExit:        hooks.exit,
+		OnOutput:      func() { wrote.Store(time.Now().UnixNano()); hooks.output() },
+		OnClipboard:   hooks.clipboard,
+		OnBell:        hooks.bell,
+		OnCommandDone: hooks.commandDone,
+		OnLink:        hooks.link,
+		FindPath:      hooks.findPath,
+		OnPath:        hooks.openPath,
 		// A session's failures have nowhere else to go; the window log
 		// keeps them, as gridterm's does.
 		OnError: func(err error) { log.Printf("a pane's session: %v", err) },

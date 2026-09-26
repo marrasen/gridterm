@@ -66,6 +66,12 @@ type Config struct {
 	OnTitle func(string)
 	OnBell  func()
 
+	// OnCommandDone is called when the shell says a command finished,
+	// with its exit status, whether the shell gave one, and how long it
+	// ran. It needs a shell that marks its commands, with OSC 133 or
+	// OSC 633, and arrives as OnBell does, holding the same lock.
+	OnCommandDone func(status int, ok bool, took time.Duration)
+
 	// OnExit is called when the shell goes, from the goroutine that
 	// noticed, and again once the session has said how the program ended.
 	// Ending carries the status from that second call on: a program whose
@@ -156,6 +162,10 @@ type Terminal struct {
 
 	// exited is set once the shell is gone.
 	exited atomic.Bool
+
+	// commandFrom is when the running command started. Only the reader
+	// goroutine touches it, from the emulator's callbacks.
+	commandFrom time.Time
 
 	// secret is the ask the pane is waiting on, and is nil when nobody is
 	// waiting. Its own lock, because the goroutine waiting is not the one
@@ -329,6 +339,12 @@ func New(cfg Config) (*Terminal, error) {
 		// against every other user of the lock.
 		Reply:        t.send,
 		ClipboardSet: cfg.OnClipboard,
+		CommandStart: func() { t.commandFrom = time.Now() },
+		CommandDone: func(status int, ok bool) {
+			if cfg.OnCommandDone != nil && !t.commandFrom.IsZero() {
+				cfg.OnCommandDone(status, ok, time.Since(t.commandFrom))
+			}
+		},
 	})
 	t.term.SetProgram(cfg.Program)
 

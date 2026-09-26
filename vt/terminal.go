@@ -30,9 +30,11 @@ type Callbacks struct {
 	Reply func([]byte)
 	// ClipboardSet fires on OSC 52 with the decoded text.
 	ClipboardSet func(string)
-	// CommandDone fires when the shell says a command finished, with the
-	// exit status and whether the shell gave one.
-	CommandDone func(status int, ok bool)
+	// CommandStart fires when the shell says a command is starting, and
+	// CommandDone when it says one finished, with the exit status and
+	// whether the shell gave one.
+	CommandStart func()
+	CommandDone  func(status int, ok bool)
 }
 
 // Command is what the shell's OSC 133 and OSC 633 marks say about the
@@ -741,6 +743,9 @@ func (t *Terminal) semanticPrompt(params [][]byte) {
 		}
 	case "C":
 		t.cmd.Integrated = true
+		if !t.cmd.Running && t.cb.CommandStart != nil {
+			t.cb.CommandStart()
+		}
 		t.cmd.Running = true
 		// A message belongs to the command that sent it, so the next
 		// one starting takes it off the row.

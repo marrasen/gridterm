@@ -37,12 +37,18 @@ something happens that you may be looking away from:
 - Red: a connection fails, or drops by itself; a copy or other file job
   stops with an error; a tunnel dies; a served window loses its client;
   a shell or command fails to start; a pane out of sight ends with a
-  nonzero exit.
+  nonzero exit; a command that ran 3 seconds or more fails out of sight.
 - Green: a connection is made; a file job or upload finishes; a pane out
-  of sight ends with exit 0.
+  of sight ends with exit 0; a command that ran 3 seconds or more
+  succeeds out of sight.
 - Amber: the bell rings in a pane out of sight, or while another program
   has the keyboard.
 - Grey, faint and repeating: a connection is being made.
+
+Out of sight means in a pane other than the one in front, or in any pane
+while another program has the keyboard. A command's finish needs a
+shell that marks its commands with OSC 133 or OSC 633, as Machine >
+Shell Setup teaches bash, zsh and PowerShell to.
 
 A theme sets the colours and the strength in its `Echo` block, in the
 themes file. Each colour left out comes from the theme's palette: bright

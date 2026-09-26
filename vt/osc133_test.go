@@ -489,3 +489,21 @@ func TestASilentShellMarksNoOutput(t *testing.T) {
 		t.Errorf("a silent shell says its output began on line %d", from)
 	}
 }
+
+// CommandStart fires once for each command starting: a second C while
+// one runs starts nothing new.
+func TestSemanticPromptSaysACommandStarted(t *testing.T) {
+	h := newHarness(t, 20, 4)
+	h.write("\x1b]133;A\x07$ \x1b]133;B\x07")
+	if h.starts != 0 {
+		t.Fatalf("CommandStart fired %d times before any C", h.starts)
+	}
+	h.write("\x1b]133;C\x07\x1b]133;C\x07")
+	if h.starts != 1 {
+		t.Fatalf("CommandStart fired %d times for two Cs, want once", h.starts)
+	}
+	h.write("\x1b]133;D;0\x07\x1b]133;C\x07")
+	if h.starts != 2 {
+		t.Fatalf("CommandStart fired %d times for the next command, want twice", h.starts)
+	}
+}

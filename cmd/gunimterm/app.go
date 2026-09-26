@@ -140,8 +140,33 @@ type State struct {
 // dropped; Dones for work finished, such as a copy; and Calls for bells
 // rung in panes out of sight. The window sends one each time a count
 // goes up.
+//
+// FrontProblems and FrontDones count long commands that finished in the
+// pane in front, failing or not. The window sends those only while
+// another program has the keyboard, since otherwise the user is
+// watching.
 type Pings struct {
-	Problems, Dones, Calls uint64
+	Problems, Dones, Calls    uint64
+	FrontProblems, FrontDones uint64
+}
+
+// commandLong is how long a command runs before its finish is worth an
+// echo: a build or a copy, rather than an ls.
+const commandLong = 3 * time.Second
+
+// commandDone sends an echo for a long command that finished in pane
+// id: green for exit 0, red for any other.
+func (a *app) commandDone(id string, status int) {
+	switch {
+	case a.st.Focus == id && status == 0:
+		a.st.Pings.FrontDones++
+	case a.st.Focus == id:
+		a.st.Pings.FrontProblems++
+	case status == 0:
+		a.done()
+	default:
+		a.problem()
+	}
 }
 
 // problem and done have the window send an echo out for a failure, or
@@ -1117,6 +1142,12 @@ func (a *app) hooks(id string) shellHooks {
 					a.st.Pings.Calls++
 				}
 			}
+		},
+		commandDone: func(status int, ok bool, took time.Duration) {
+			if !ok || took < commandLong {
+				return
+			}
+			a.events <- func() { a.commandDone(id, status) }
 		},
 		clipboard: func(s string) {
 			a.events <- func() {

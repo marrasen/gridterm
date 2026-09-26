@@ -291,13 +291,19 @@ func TestTheTunnelDialogOffersTheTunnelsSavedForTheServer(t *testing.T) {
 
 func TestAMachinesPlusOpensWhatCanBeOpenedThere(t *testing.T) {
 	win, _, publish := windowStage(t)
-	publish(twoPanes("p2", nil))
+	st := twoPanes("p2", nil)
+	st.Sidebar, st.SidebarWidth = true, 220
+	publish(st)
 	for len(lastWindow.Client().Intents()) > 0 {
 		<-lastWindow.Client().Intents()
 	}
 	row, ok := widget.RowOf[*sideRow](win.list, "machine:")
 	if !ok {
 		t.Fatal("this computer has no heading")
+	}
+	// The rows settle in first.
+	for range 60 {
+		lastWindow.Frame(time.Second / 60)
 	}
 	box, _ := lastUI.Bounds(row)
 	lastWindow.Input(gi.PointerDown{Pos: geom.Pt(box.Max.X-20, box.Min.Y+box.Size().H/2), Button: gi.ButtonPrimary, Clicks: 1})

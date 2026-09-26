@@ -1153,7 +1153,11 @@ func (w *window) update(st State, u *gunim.UI) {
 			r.cells.Size = st.FontSize
 		}
 	}
-	rows := sidebarRows(st.Panes, st.Tunnels, st.Share, st.Windows)
+	saved := make([]string, 0, len(st.Saved))
+	for _, h := range st.Saved {
+		saved = append(saved, h.Name)
+	}
+	rows := sidebarRows(st.Panes, st.Tunnels, st.Share, st.Windows, saved)
 	// The windows connected to this one, under this computer.
 	for i, c := range st.Serving.Clients {
 		at := slices.IndexFunc(rows, func(r sideItem) bool { return r.key == "machine:" }) + 1
@@ -1163,6 +1167,8 @@ func (w *window) update(st State, u *gunim.UI) {
 		item := sideItem{key: "client:" + c.Name + ":" + strconv.Itoa(i), text: "serving " + c.Name, note: "from " + c.From, local: func(u *gunim.UI) { w.servingDialog(w.serving, u) }}
 		rows = slices.Insert(rows, at, item)
 	}
+	// At the foot, as in gridterm, the way to a machine not yet listed.
+	rows = append(rows, sideItem{key: "connect:new", text: "+ Connect to server…", local: w.connectDialog})
 	widget.Sync(w.list, u, rows,
 		func(r sideItem) widget.Key { return widget.Key(r.key) },
 		func(r sideItem) *sideRow { return w.newSideRow(r) },
@@ -1624,7 +1630,7 @@ type sideItem struct {
 // first, then each server in the order its first pane opened, and
 // each server's tunnels after its panes. A tunnel's pane is lit on the
 // tunnel's row.
-func sidebarRows(panes []Pane, tunnels []Tunnel, share Share, windows []RemoteWindow) []sideItem {
+func sidebarRows(panes []Pane, tunnels []Tunnel, share Share, windows []RemoteWindow, saved []string) []sideItem {
 	notes := map[string]string{}
 	for _, p := range share.Panes {
 		notes[p.Pane] = p.Note
@@ -1645,6 +1651,11 @@ func sidebarRows(panes []Pane, tunnels []Tunnel, share Share, windows []RemoteWi
 	}
 	for _, w := range windows {
 		add(w.Name)
+	}
+	// The saved servers, as gridterm lists them, each under its heading
+	// with its plus, which connects to it.
+	for _, name := range saved {
+		add(name)
 	}
 	shown := map[string]bool{}
 	for _, t := range tunnels {
@@ -2031,6 +2042,13 @@ func (w *window) openMachineMenu(r *sideRow, u *gunim.UI) {
 	send := func(in gunim.Intent) func(*gunim.UI) { return func(u *gunim.UI) { u.Send(w, in) } }
 	window := slices.ContainsFunc(w.remoteWindows, func(rw RemoteWindow) bool { return rw.Name == m })
 	add("Terminal", send(OpenOn{Machine: m}))
+	if m == "" && len(w.shellChoices) > 1 {
+		// This computer's shells, each to open a terminal with, as
+		// gridterm lists them.
+		for _, sh := range w.shellChoices {
+			add("Terminal: "+sh.Title, send(OpenShellNamed{ID: sh.ID}))
+		}
+	}
 	if !window {
 		add("Command…", func(u *gunim.UI) { w.commandDialogOn(m, u) })
 	}

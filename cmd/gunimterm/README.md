@@ -68,13 +68,10 @@ Connections and servers:
 
 Sidebar:
 
-- Saved servers as headings, with a plus that connects, and a
-  "+ Connect to server…" row at the foot.
 - On each row: a state dot that pulses with traffic, a kind icon, a
   one-cell traffic graph, rows for file jobs with a progress fill, and
   a greyed row kept after a drop.
 - Crosses on hover that close or clear a row.
-- This computer's plus menu lists its shells.
 - Headings for the machines on a window taken over; PageUp, PageDown,
   Home, End and Space; scrolling to follow the stage; "Edit This
   Window…".

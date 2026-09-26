@@ -275,6 +275,16 @@ func (a *app) withFiles(machine string, then func(vfs.FS)) error {
 			}
 			return vfs.NewSFTP(machine, conn, files.Client(), files.Close), nil
 		}
+	} else if _, _, far := strings.Cut(machine, farSep); !far && machine != "" {
+		// Not connected: connected to first.
+		return a.dialAgain(machine, func(err error) {
+			if err != nil {
+				return
+			}
+			if err := a.withFiles(machine, then); err != nil {
+				a.notify("Couldn't open the files on "+placeName(machine), err.Error(), "")
+			}
+		})
 	} else {
 		_, err := open()
 		return err

@@ -7,6 +7,7 @@ import (
 
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/geom"
+	"github.com/marrasen/gunim/widget"
 
 	"github.com/marrasen/gridterm/internal/sshtest"
 	"github.com/marrasen/gridterm/remote"
@@ -103,4 +104,25 @@ func TestConnectingAgainWhileConnectingAsks(t *testing.T) {
 	a.handle(AskAnswered{ID: q.ID, Yes: true, Answers: []string{"Wait"}})
 	// Waited for, the first lands and the second opens a shell too.
 	waitFor(t, a, "two shells", func() bool { answering(); return len(a.st.Panes) == 2 })
+}
+
+func TestOpeningOnASavedServerConnectsFirst(t *testing.T) {
+	a, answering := dialApp(t)
+	a.handle(OpenOn{Machine: "srv"})
+	waitFor(t, a, "a shell on the server", func() bool { answering(); return len(a.st.Panes) == 1 })
+	if a.st.Panes[0].Machine != "srv" || a.conns["srv"] == nil {
+		t.Fatalf("opened %+v", a.st.Panes)
+	}
+}
+
+func TestSavedServersAreListedWithAWayToConnect(t *testing.T) {
+	rows := sidebarRows(nil, nil, Share{}, nil, []string{"desk"})
+	if !slices.ContainsFunc(rows, func(r sideItem) bool { return r.key == "machine:desk" && r.heading }) {
+		t.Fatalf("a saved server has no heading: %+v", rows)
+	}
+	win, _, publish := windowStage(t)
+	publish(State{Sidebar: true, SidebarWidth: 220})
+	if _, ok := widget.RowOf[*sideRow](win.list, "connect:new"); !ok {
+		t.Fatal("the sidebar has no way to connect to a server")
+	}
 }

@@ -1002,6 +1002,19 @@ func (a *app) openThen(machine string, at placement, then func(id string, err er
 	if then == nil {
 		then = func(string, error) {}
 	}
+	if machine != "" && a.conns[machine] == nil && a.windows[machine] == nil {
+		// Not connected: connected to first, as a saved server's plus
+		// in the sidebar does in gridterm.
+		return a.dialAgain(machine, func(err error) {
+			if err != nil {
+				then("", err)
+				return
+			}
+			if err := a.openThen(machine, at, then); err != nil {
+				a.notify("Couldn't open a shell on "+machine, err.Error(), "")
+			}
+		})
+	}
 	a.next++
 	id := "p" + strconv.Itoa(a.next)
 	title := fmt.Sprintf("Terminal %d", a.next)

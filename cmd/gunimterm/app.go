@@ -8,6 +8,7 @@ import (
 
 	"fmt"
 	"github.com/marrasen/gridterm/jobs"
+	"github.com/marrasen/gridterm/glyph"
 	"github.com/marrasen/gridterm/keys"
 	"github.com/marrasen/gridterm/logs"
 	"github.com/marrasen/gridterm/remote"
@@ -44,6 +45,10 @@ type State struct {
 	SidebarWidth float32
 	// FontSize is the terminals' font size in logical pixels.
 	FontSize float32
+	// Fonts are the families to draw the terminals in, and Font the one
+	// they are drawn in.
+	Fonts []string
+	Font  Font
 	// Theme names the theme the window is drawn in, and Themes those on
 	// offer.
 	Theme  string
@@ -372,6 +377,12 @@ type app struct {
 	windows map[string]*remoteWin
 	// leaving is set while the window asks whether to close.
 	leaving bool
+	// families are the monospaced families found here; wantFont is the
+	// one the theme names, taken unless fontPicked says the user chose
+	// from the Font menu.
+	families   []glyph.Family
+	wantFont   string
+	fontPicked bool
 	// commands are what each command pane runs, to run it again.
 	commands map[string]command
 	// argvs are what each local pane runs, to start it again and to
@@ -439,7 +450,7 @@ func newApp(c gunim.Client, sh *shells) *app {
 	return &app{
 		c:        c,
 		shells:   sh,
-		st:       State{Sidebar: true, SidebarWidth: 220, FontSize: defaultFontSize},
+		st:       State{Sidebar: true, SidebarWidth: 220, FontSize: defaultFontSize, Fonts: []string{bundledFamily, dosFamily}},
 		groups:   map[int]*Box{},
 		groupOf:  map[string]int{},
 		conns:    map[string]*remote.Conn{},
@@ -480,6 +491,9 @@ func (a *app) run(ctx context.Context) error {
 			a.st.ShellSetup = s.ShellSetup()
 			a.st.TermProgram = s.TermProgram()
 			a.st.SavedCopies = s.Copies()
+			if size, ok := s.FontSize(); ok {
+				a.st.FontSize = min(max(float32(size), 8), 40)
+			}
 		}
 	}
 	// The theme picked last time, as gridterm keeps it, or the first.
@@ -495,6 +509,7 @@ func (a *app) run(ctx context.Context) error {
 	a.showShare()
 	a.showServing()
 	a.scanShells()
+	a.scanFonts()
 	// Whether there are secrets, read off the disk and left locked.
 	if _, err := a.vault(); err == nil {
 		a.showVault()
@@ -639,6 +654,13 @@ func (a *app) handle(in gunim.Intent) {
 			size = min(max(a.st.FontSize+float32(in.Step), 8), 40)
 		}
 		a.st.FontSize = size
+		if a.settings != nil {
+			if err := a.settings.PutFontSize(float64(size)); err != nil {
+				a.notify("Couldn't keep the font size for next time", err.Error(), "")
+			}
+		}
+	case PickFont:
+		err = a.pickFont(in.Name)
 	case ConnectTo:
 		err = a.connect(in)
 	case OpenFiles:
@@ -1174,6 +1196,8 @@ func (a *app) pickTheme(name string) {
 		}
 		a.st.Theme = name
 		a.palette = t.palette
+		a.wantFont = t.source.Font
+		a.useWantedFont()
 		for _, sh := range a.shells.all() {
 			sh.setPalette(t.palette)
 		}

@@ -131,7 +131,7 @@ var commands = []struct{ id, title string }{
 var itemPrefixes = []string{
 	"server.open.", "server.edit.", "server.remove.", "conn.log.",
 	"conn.terminal.", "conn.files.", "conn.saved.", "conn.savedtunnel.",
-	shellfind.CommandPrefix, "shell.pick.",
+	shellfind.CommandPrefix, "shell.pick.", "font.use.",
 }
 
 // isItem reports whether id names a command on one thing of many.
@@ -227,6 +227,8 @@ var menus = []struct {
 		{id: "server.reload", title: "Server List"},
 		{id: "help.files", title: "File Locations…", group: true},
 	}},
+	// The Font menu is made from the families found here.
+	{"Font", nil},
 	{"Help", []menuItem{
 		{id: "palette.open", title: "All Commands…"},
 		{id: "help.shortcuts", title: "Shortcuts and Commands"},

@@ -146,8 +146,6 @@ func TestEveryGridtermCommandIsKnownHere(t *testing.T) {
 		"savedTunnelID": "conn.savedtunnel.", "fontCommandID": "font.use.",
 		"ids": shellfind.CommandPrefix,
 	}
-	// Listed under "Not ported yet" in the README.
-	notYet := map[string]bool{"font.use.": true}
 	for _, m := range ids {
 		id := strings.Trim(m[1], `"`)
 		if c, ok := consts[m[1]]; ok {
@@ -157,7 +155,6 @@ func TestEveryGridtermCommandIsKnownHere(t *testing.T) {
 			id = p
 		}
 		switch {
-		case notYet[id]:
 		case strings.HasSuffix(id, "."):
 			if !slices.Contains(itemPrefixes, id) {
 				t.Errorf("gridterm's commands starting %s are unknown here", id)

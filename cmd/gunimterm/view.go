@@ -104,6 +104,13 @@ type window struct {
 	afterUnlock string
 	// title is the window's title as last set.
 	title string
+	// fonts are the families on the Font menu, and font the one the
+	// terminals are drawn in.
+	fonts []string
+	font  Font
+	// zoomed gathers Ctrl and the wheel until it makes a point of font
+	// size.
+	zoomed float32
 	size        geom.Size
 	// panes are the panes as last published, and sw the switcher while
 	// it is open.
@@ -184,6 +191,10 @@ func newWindow(sh *shells, keys *ui.Keymap, all []themed) *window {
 		case m < len(menus) && menus[m].title == "Servers":
 			if i < len(w.serverIDs) {
 				w.run(w.serverIDs[i], u)
+			}
+		case m < len(menus) && menus[m].title == "Font":
+			if i < len(w.fonts) {
+				u.Send(w, PickFont{Name: w.fonts[i]})
 			}
 		case m < len(menus) && i < len(menus[m].items):
 			w.run(menus[m].items[i].id, u)
@@ -406,6 +417,52 @@ func (w *window) openDialog(d *widget.Dialog, u *gunim.UI) {
 	w.dialog = d
 	// The pane takes the keyboard back once the dialog has closed.
 	w.focused = ""
+}
+
+// zoom makes the font a point larger for each notch the wheel turns
+// away from the user, with Ctrl held, and smaller toward, as gridterm
+// does.
+func (w *window) zoom(s input.Scroll, u *gunim.UI) {
+	w.zoomed += s.Delta.Y / zoomNotch
+	steps := int(w.zoomed)
+	if steps == 0 {
+		return
+	}
+	w.zoomed -= float32(steps)
+	u.Send(w, FontSize{Step: steps})
+}
+
+// zoomNotch is how far the wheel turns for a point of font size: a
+// notch, as the drivers count it.
+const zoomNotch = 40
+
+// showFonts fills the Font menu, the family in use ticked, and draws
+// every terminal and reader in that family.
+func (w *window) showFonts(st State) {
+	if st.Font.Name != w.font.Name {
+		for _, t := range w.terms {
+			t.cells.Faces = st.Font.Faces
+		}
+		for _, r := range w.readers {
+			r.cells.Faces = st.Font.Faces
+		}
+	}
+	w.fonts, w.font = st.Fonts, st.Font
+	w.servers(w.saved)
+	m := widget.BarMenu{Title: "Font"}
+	for i, name := range st.Fonts {
+		m.Items = append(m.Items, name)
+		m.Checked = append(m.Checked, fontCommandID(name) == fontCommandID(st.Font.Name))
+		if i == 1 {
+			// A line under Go Mono, as in gridterm.
+			m.Breaks = append(m.Breaks, i)
+		}
+	}
+	for i := range w.bar.Menus {
+		if w.bar.Menus[i].Title == "Font" {
+			w.bar.Menus[i] = m
+		}
+	}
 }
 
 // programName is what the window is called, before the focused
@@ -676,6 +733,11 @@ func (w *window) servers(saved []remote.Host) {
 		w.palette.Items = append(w.palette.Items, it)
 		w.paletteIDs = append(w.paletteIDs, "conn.saved."+strconv.Itoa(i+1))
 	}
+	for _, name := range w.fonts {
+		id := fontCommandID(name)
+		w.palette.Items = append(w.palette.Items, widget.PaletteItem{Title: "Font: " + name, Hint: hint(id)})
+		w.paletteIDs = append(w.paletteIDs, id)
+	}
 	for i, it := range w.savedTunnelItems() {
 		w.palette.Items = append(w.palette.Items, it)
 		w.paletteIDs = append(w.paletteIDs, "conn.savedtunnel."+strconv.Itoa(i+1))
@@ -758,6 +820,12 @@ func (w *window) runItem(id string, u *gunim.UI) bool {
 	case strings.HasPrefix(id, "conn.saved."):
 		if i, ok := nth(strings.TrimPrefix(id, "conn.saved.")); ok && i < len(w.savedCommands) {
 			u.Send(w, RunSavedCommand{Saved: w.savedCommands[i]})
+		}
+	case strings.HasPrefix(id, "font.use."):
+		for _, name := range w.fonts {
+			if fontCommandID(name) == id {
+				u.Send(w, PickFont{Name: name})
+			}
 		}
 	case strings.HasPrefix(id, "conn.savedtunnel."):
 		if i, ok := nth(strings.TrimPrefix(id, "conn.savedtunnel.")); ok && i < len(w.savedTunnels) {
@@ -938,6 +1006,10 @@ func (w *window) closeSwitcher(back bool, u *gunim.UI) {
 // Handle implements [gunim.Handler]: the window's shortcuts, which the
 // focused pane passes on.
 func (w *window) Handle(e input.Event, u *gunim.UI) bool {
+	if s, ok := e.(input.Scroll); ok && s.Mods&input.ModControl != 0 {
+		w.zoom(s, u)
+		return true
+	}
 	if d, ok := e.(input.Drop); ok && len(d.Paths) > 0 {
 		// Dropped somewhere that is no terminal: the sidebar, a file
 		// pane, the menu bar. The focused pane is what the user is
@@ -970,6 +1042,9 @@ func (w *window) update(st State, u *gunim.UI) {
 		}
 	}
 	w.themes, w.themeNow = st.Themes, st.Theme
+	if !slices.Equal(st.Fonts, w.fonts) || st.Font.Name != w.font.Name {
+		w.showFonts(st)
+	}
 	if st.FontSize != w.fontSize {
 		w.fontSize = st.FontSize
 		for _, t := range w.terms {
@@ -1344,6 +1419,7 @@ func (w *window) term(id string) *term {
 	if w.fontSize > 0 {
 		t.cells.Size = w.fontSize
 	}
+	t.cells.Faces = w.font.Faces
 	w.terms[id] = t
 	return t
 }

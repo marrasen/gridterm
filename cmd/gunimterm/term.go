@@ -259,6 +259,10 @@ func (t *term) Handle(e gi.Event, u *gunim.UI) bool {
 		}
 		return true
 	case gi.Scroll:
+		if e.Mods&gi.ModControl != 0 {
+			// Ctrl and the wheel size the font, which the window does.
+			return false
+		}
 		t.scroll(e, u)
 		return true
 	case gi.PointerDown:

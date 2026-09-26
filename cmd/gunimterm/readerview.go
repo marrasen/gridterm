@@ -63,6 +63,7 @@ type reader struct {
 func newReader(w *window, id string) *reader {
 	rd := &reader{id: id, w: w, cells: widget.NewCellGrid(), g: grid.New(1, 1, color.RGBA{}, color.RGBA{})}
 	rd.cells.Size = w.fontSize
+	rd.cells.Faces = w.font.Faces
 	return rd
 }
 
@@ -319,6 +320,10 @@ func (rd *reader) Handle(e gi.Event, u *gunim.UI) bool {
 			_, _ = rd.r.HandleKey(input.Event{Kind: input.Text, Rune: r, NormalText: true})
 		}
 	case gi.Scroll:
+		if e.Mods&gi.ModControl != 0 {
+			// Ctrl and the wheel size the font, which the window does.
+			return false
+		}
 		h := rd.cells.CellSize().H
 		if h <= 0 {
 			return true

@@ -99,7 +99,7 @@ func TestOnlyThePaneWithTheKeyboardDrawsACursor(t *testing.T) {
 
 // Ctrl going down over a still pointer is heard, as a move would be.
 func TestCtrlOverAStillPointerIsHeard(t *testing.T) {
-	_, tm := termStage(t, geom.Sz(900, 600))
+	win, tm := termStage(t, geom.Sz(900, 600))
 	box, _ := lastUI.Bounds(tm)
 	lastWindow.Input(gi.PointerMove{Pos: box.Center()})
 	frames(1)
@@ -110,6 +110,25 @@ func TestCtrlOverAStillPointerIsHeard(t *testing.T) {
 	lastWindow.Input(gi.KeyRelease{Key: gi.KeyLeftControl, Mods: gi.ModControl})
 	if tm.hoverMods != 0 {
 		t.Fatalf("with Ctrl up, the hover's modifiers are %v", tm.hoverMods)
+	}
+	// With the keyboard elsewhere, the pane under the pointer still
+	// hears it.
+	win.focusRow("", 1, lastUI)
+	frames(1)
+	if tm.focused {
+		t.Fatal("the terminal kept the keyboard")
+	}
+	lastWindow.Input(gi.KeyPress{Key: gi.KeyLeftControl})
+	if tm.hoverMods != input.ModCtrl {
+		t.Fatalf("with the keyboard elsewhere and Ctrl down, the hover's modifiers are %v", tm.hoverMods)
+	}
+	lastWindow.Input(gi.KeyRelease{Key: gi.KeyLeftControl, Mods: gi.ModControl})
+	// Once the pointer has gone, Ctrl leaves the pane alone.
+	lastWindow.Input(gi.PointerMove{Pos: geom.Pt(20, 300)})
+	frames(1)
+	lastWindow.Input(gi.KeyPress{Key: gi.KeyLeftControl})
+	if tm.over || tm.hoverMods != 0 {
+		t.Fatalf("with the pointer gone, the pane is over %v with modifiers %v", tm.over, tm.hoverMods)
 	}
 }
 

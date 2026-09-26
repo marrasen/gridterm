@@ -1225,6 +1225,14 @@ func (w *window) closeSwitcher(back bool, u *gunim.UI) {
 	w.focused = ""
 }
 
+// ctrlHeld tells every terminal that Ctrl went down or came up; the one
+// under the pointer lights or unlights its link.
+func (w *window) ctrlHeld(k input.Key, mods input.Mods, down bool, u *gunim.UI) {
+	for _, t := range w.terms {
+		t.ctrlHeld(k, mods, down, u)
+	}
+}
+
 // Handle implements [gunim.Handler]: the window's shortcuts, which the
 // focused pane passes on.
 func (w *window) Handle(e input.Event, u *gunim.UI) bool {
@@ -1238,6 +1246,14 @@ func (w *window) Handle(e input.Event, u *gunim.UI) bool {
 		// working in, and is where the files are wanted.
 		u.Send(w, DropFiles{Paths: d.Paths})
 		return true
+	}
+	// Ctrl lights the link under the pointer in whichever pane it is
+	// over, whatever has the keyboard, as in gridterm.
+	switch k := e.(type) {
+	case input.KeyPress:
+		w.ctrlHeld(k.Key, k.Mods, true, u)
+	case input.KeyRelease:
+		w.ctrlHeld(k.Key, k.Mods, false, u)
 	}
 	if r, ok := e.(input.KeyRelease); ok {
 		if w.walk != nil && walkKey(r) {
@@ -1691,6 +1707,7 @@ func (w *window) term(id string) *term {
 		return t
 	}
 	t := newTerm(id, w.shells.get(id), w.keys)
+	t.ctrl = w.ctrlHeld
 	if w.fontSize > 0 {
 		t.cells.Size = w.fontSize
 	}

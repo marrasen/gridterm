@@ -38,6 +38,9 @@ type term struct {
 	// since, and over says the pointer is over the pane.
 	hoverMods input.Mods
 	over      bool
+	// ctrl tells every pane in the window that Ctrl went down or came
+	// up, for the one under the pointer, which may be another than this.
+	ctrl func(k gi.Key, mods gi.Mods, down bool, u *gunim.UI)
 	at        grid.Point
 	// wantBlink says the program asked for a blinking cursor, blinking
 	// that a blink is running, and blinkOff that the cursor is in the
@@ -332,7 +335,7 @@ func (t *term) Handle(e gi.Event, u *gunim.UI) bool {
 		u.Invalidate()
 		return true
 	case gi.KeyPress:
-		t.ctrlHeld(e.Key, e.Mods, true, u)
+		t.ctrlChanged(e.Key, e.Mods, true, u)
 		// A press that typed leaves it to the text, which follows.
 		if e.Typed {
 			return true
@@ -349,7 +352,7 @@ func (t *term) Handle(e gi.Event, u *gunim.UI) bool {
 		t.typed(u)
 		return true
 	case gi.KeyRelease:
-		t.ctrlHeld(e.Key, e.Mods, false, u)
+		t.ctrlChanged(e.Key, e.Mods, false, u)
 		return false
 	case gi.TextInput:
 		for _, r := range e.Text {
@@ -382,6 +385,16 @@ func (t *term) typed(u *gunim.UI) {
 	t.sync()
 	t.blink(u)
 	u.Invalidate()
+}
+
+// ctrlChanged hands a Ctrl going down or coming up to every pane, or to
+// this one when it stands alone.
+func (t *term) ctrlChanged(k gi.Key, mods gi.Mods, down bool, u *gunim.UI) {
+	if t.ctrl != nil {
+		t.ctrl(k, mods, down, u)
+		return
+	}
+	t.ctrlHeld(k, mods, down, u)
 }
 
 // ctrlHeld lights or unlights the link under a still pointer as Ctrl

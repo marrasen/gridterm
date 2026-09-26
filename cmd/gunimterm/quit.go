@@ -39,6 +39,22 @@ func (a *app) askToQuit() {
 // exitNow closes every pane, which closes the window.
 func (a *app) exitNow() {
 	a.takeSecretBack()
+	a.leave()
+}
+
+// leave lets the window animate out with what it shows, and closes
+// the panes once it has gone: see the run loop. Nothing is published
+// meanwhile, so the window leaves as the user last saw it.
+func (a *app) leave() {
+	if a.gone {
+		return
+	}
+	a.gone = true
+	a.c.Leave()
+}
+
+// closeAll closes every pane, as the window goes.
+func (a *app) closeAll() {
 	for len(a.st.Panes) > 0 {
 		a.remove(a.st.Panes[0].ID)
 	}

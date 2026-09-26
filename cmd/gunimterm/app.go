@@ -427,6 +427,9 @@ type app struct {
 	opts      options
 	fixedFont string
 	shotErr   error
+	// gone says the window is on its way out, leaving with what it
+	// shows; its panes close once it has gone.
+	gone bool
 	// dropped are the machines whose connection went by itself, kept
 	// on the sidebar until cleared, and letGo the ones being let go of
 	// on purpose.
@@ -647,7 +650,12 @@ func (a *app) run(ctx context.Context) error {
 			return nil
 		case env, ok := <-intents:
 			if !ok {
+				a.closeAll()
 				return a.c.Err()
+			}
+			if a.gone {
+				// On its way out: nothing more is done.
+				continue
 			}
 			a.handle(env.Intent)
 		case <-a.wake:
@@ -656,13 +664,12 @@ func (a *app) run(ctx context.Context) error {
 			f()
 		}
 		// Empty, and connecting to nothing that would open a pane: the
-		// window closes.
+		// window leaves.
 		if len(a.st.Panes) == 0 && len(a.dialing) == 0 {
-			a.c.Close()
-			intents = a.c.Intents()
-			for range intents {
-			}
-			return a.c.Err()
+			a.leave()
+		}
+		if a.gone {
+			continue
 		}
 		if a.quiet {
 			a.quiet = false

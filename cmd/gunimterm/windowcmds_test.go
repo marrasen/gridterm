@@ -330,7 +330,12 @@ func TestClosingTheWindowAsksWhileAnythingIsOpen(t *testing.T) {
 	a.handle(Exit{})
 	waitFor(t, a, "the question again", func() bool { return len(a.st.Asks) == 1 })
 	a.handle(AskAnswered{ID: a.st.Asks[0].ID, Yes: true})
-	waitFor(t, a, "the window to close", func() bool { return len(a.st.Panes) == 0 })
+	// The window leaves with what it shows; its panes close once it
+	// has gone.
+	waitFor(t, a, "the window to leave", func() bool { return a.gone })
+	if len(a.st.Panes) != 1 {
+		t.Fatalf("leaving, the window shows %d panes, want the one it had", len(a.st.Panes))
+	}
 }
 
 // Editing a server keeps the key files after the first, which the form

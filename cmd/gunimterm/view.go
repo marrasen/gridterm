@@ -1313,7 +1313,14 @@ func sidebarRows(panes []Pane, tunnels []Tunnel, share Share, windows []RemoteWi
 // forward. A machine's heading is small and dim.
 type sideRow struct {
 	anim.Group
-	w       *window
+	w *window
+	// machine is the machine a heading heads, which its plus opens a
+	// menu for; menu is that menu while it is open, which holds the
+	// keyboard, and back what had the keyboard before.
+	machine string
+	menu    *widget.Menu
+	popup   *gunim.Popup
+	back    gunim.Node
 	key     string
 	heading bool
 	click   gunim.Intent
@@ -1346,6 +1353,9 @@ func (r *sideRow) set(it sideItem) {
 	r.title.SetText(it.text)
 	r.note.SetText(it.note)
 	r.click, r.local, r.closes, r.key = it.click, it.local, it.closes, it.key
+	if m, ok := strings.CutPrefix(it.key, "machine:"); ok && it.heading {
+		r.machine = m
+	}
 	if !it.heading {
 		r.title.Color = widget.Ink
 		if it.dim {
@@ -1380,6 +1390,9 @@ func (r *sideRow) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children
 	if ns.W > 0 {
 		room -= ns.W + gap
 	}
+	if r.heading {
+		room -= plusWidth
+	}
 	k := kids.At(0)
 	s := k.Layout(gunim.Constraints{Max: geom.Sz(max(0, room), height)})
 	k.Place(geom.Pt(padX, (height-s.H)/2))
@@ -1406,11 +1419,14 @@ func (r *sideRow) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gun
 	}
 	kids.At(0).Paint(p)
 	kids.At(1).Paint(p)
+	if r.heading {
+		r.paintPlus(p, f, box)
+	}
 }
 
 // Focusable implements [gunim.Focusable]: every row but a heading, for
 // working the sidebar from the keyboard.
-func (r *sideRow) Focusable() bool { return !r.heading }
+func (r *sideRow) Focusable() bool { return !r.heading || r.popup != nil }
 
 // activate does what a click on the row does.
 func (r *sideRow) activate(u *gunim.UI) {
@@ -1424,7 +1440,7 @@ func (r *sideRow) activate(u *gunim.UI) {
 // Handle implements [gunim.Handler].
 func (r *sideRow) Handle(e input.Event, u *gunim.UI) bool {
 	if r.heading {
-		return false
+		return r.handleHeading(e, u)
 	}
 	switch e := e.(type) {
 	case input.PointerEnter:
@@ -1556,4 +1572,121 @@ func (w *window) machines() []string {
 		out = append(out, rw.Name)
 	}
 	return out
+}
+
+// plusWidth is the room the plus takes at the end of a heading.
+const plusWidth = 28
+
+// handleHeading shows a heading's plus under the pointer, and opens the
+// machine's menu from it.
+func (r *sideRow) handleHeading(e input.Event, u *gunim.UI) bool {
+	switch e := e.(type) {
+	case input.PointerEnter:
+		r.hover.Animate(1, widget.Quick.Get(u.Theme()))
+	case input.PointerLeave:
+		r.hover.Animate(0, widget.Settle.Get(u.Theme()))
+	case input.PointerDown:
+		if e.Button != input.ButtonPrimary {
+			return false
+		}
+		r.w.openMachineMenu(r, u)
+		return true
+	case input.KeyPress:
+		if r.menu == nil {
+			return false
+		}
+		if e.Key == input.KeyEscape || e.Key == input.KeyTab {
+			r.closeMenu(u)
+			return true
+		}
+		return r.menu.Key(e, u)
+	default:
+		return false
+	}
+	return false
+}
+
+// closeMenu closes a heading's menu, and gives the keyboard back.
+func (r *sideRow) closeMenu(u *gunim.UI) {
+	if r.popup == nil {
+		return
+	}
+	r.popup.Close()
+	r.popup, r.menu = nil, nil
+	if r.back != nil {
+		u.Focus(r.back)
+		r.back = nil
+	}
+}
+
+// paintPlus draws a heading's plus, faint, and brighter under the
+// pointer.
+func (r *sideRow) paintPlus(p *paint.Painter, f gunim.Frame, box geom.Size) {
+	c := faint.Get(f.Theme)
+	if t := r.hover.Value(); t > 0.01 {
+		c = anim.Mix(anim.ColorCodec, c, widget.Accent.Get(f.Theme), min(t, 1))
+	}
+	cx, cy := box.W-6-plusWidth/2, box.H/2
+	p.RRect(geom.Rect{Min: geom.Pt(cx-5, cy-0.75), Max: geom.Pt(cx+5, cy+0.75)}, 0.75, paint.Solid(c))
+	p.RRect(geom.Rect{Min: geom.Pt(cx-0.75, cy-5), Max: geom.Pt(cx+0.75, cy+5)}, 0.75, paint.Solid(c))
+}
+
+// openMachineMenu opens the menu of what can be opened on a heading's
+// machine, under the heading.
+func (w *window) openMachineMenu(r *sideRow, u *gunim.UI) {
+	m := r.machine
+	var items []string
+	var acts []func(*gunim.UI)
+	add := func(title string, act func(*gunim.UI)) {
+		items = append(items, title)
+		acts = append(acts, act)
+	}
+	send := func(in gunim.Intent) func(*gunim.UI) { return func(u *gunim.UI) { u.Send(w, in) } }
+	window := slices.ContainsFunc(w.remoteWindows, func(rw RemoteWindow) bool { return rw.Name == m })
+	add("Terminal", send(OpenOn{Machine: m}))
+	if !window {
+		add("Command…", func(u *gunim.UI) { w.commandDialogOn(m, u) })
+	}
+	add("Files", send(FilesOn{Machine: m}))
+	for _, h := range w.saved {
+		if h.Name == m {
+			for _, f := range h.Folders {
+				add("Files in "+f, send(FilesOn{Machine: m, Path: f}))
+			}
+		}
+	}
+	if m != "" && !window {
+		add("Tunnel…", func(u *gunim.UI) { w.tunnelDialogOn(m, false, u) })
+		add("SOCKS Proxy…", func(u *gunim.UI) { w.tunnelDialogOn(m, true, u) })
+	}
+	if m != "" {
+		add("Connection Log", send(ShowLog{Machine: m}))
+		add("Disconnect", send(Disconnect{Machine: m}))
+		for _, h := range w.saved {
+			if h.Name == m {
+				saved := h
+				add("Edit This Server…", func(u *gunim.UI) { w.serverForm(&saved, u) })
+				add("Remove This Server…", func(u *gunim.UI) { w.confirmRemove(m, u) })
+			}
+		}
+	}
+	r.closeMenu(u)
+	menu := widget.NewMenu(items...)
+	menu.Pick = func(i int, u *gunim.UI) {
+		r.closeMenu(u)
+		if i >= 0 && i < len(acts) {
+			acts[i](u)
+		}
+	}
+	box, _ := u.Bounds(r)
+	r.menu = menu
+	r.back = u.Focused()
+	r.popup = u.OpenPopup(r, menu, gunim.PopupOptions{
+		Anchor:  geom.Rect{Min: geom.Pt(box.Size().W-plusWidth-6, 0), Max: box.Size().Point()},
+		Max:     geom.Sz(360, 480),
+		Dismiss: r.closeMenu,
+	})
+	// The heading holds the keyboard while its menu is open, and
+	// passes keys to it.
+	u.Focus(r)
 }

@@ -13,8 +13,10 @@ import (
 
 // commandDialog asks for a command to run in a pane of its own, on the
 // focused pane's machine.
-func (w *window) commandDialog(u *gunim.UI) {
-	machine := w.machineOf(w.focused)
+func (w *window) commandDialog(u *gunim.UI) { w.commandDialogOn(w.machineOf(w.focused), u) }
+
+// commandDialogOn asks for a command to run on machine.
+func (w *window) commandDialogOn(machine string, u *gunim.UI) {
 	for _, rw := range w.remoteWindows {
 		if rw.Name == machine {
 			w.toasts.Show(widget.Toast{Title: machine + " is a gunimterm window", Body: "It has no shell to run a command in. Open a terminal on it instead."}, u)

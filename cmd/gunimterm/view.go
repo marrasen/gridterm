@@ -100,6 +100,10 @@ type window struct {
 	splits   map[string]*widget.Split
 	focused  string
 	palette  *widget.Palette
+	// splitter asks what goes in the new half of a split, and splitWith
+	// is what each of its lines asks the program for.
+	splitter  *widget.Palette
+	splitWith []gunim.Intent
 	// vault is the secrets as last published, and afterUnlock a command
 	// waiting for them to open.
 	vault       Secrets
@@ -264,6 +268,9 @@ func (w *window) run(id string, u *gunim.UI) bool {
 		w.afterUnlock = ""
 	}
 	switch id {
+	case "pane.splitRight", "pane.splitDown":
+		w.askSplit(id == "pane.splitDown", u)
+		return true
 	case "palette.open":
 		// Opened from the chip bar, a small node that is always there,
 		// rather than from the whole window: a click in its opener leaves a
@@ -2468,4 +2475,52 @@ func (w *window) openMachineMenu(r *sideRow, u *gunim.UI) {
 		}
 	}
 	w.showMachineMenu(r, items, acts, u)
+}
+
+// askSplit asks what goes in the new half of a split of the focused
+// pane, as gridterm's Split Right and Split Down ask: a new terminal,
+// one on another shell or machine, or a pane already open, moved in.
+// Moving one in is how two file panes come to sit side by side.
+func (w *window) askSplit(vertical bool, u *gunim.UI) {
+	focus := w.focused
+	if focus == "" {
+		u.Send(w, SplitPane{Vertical: vertical})
+		return
+	}
+	if w.splitter == nil {
+		w.splitter = &widget.Palette{Placeholder: "Split with", Pick: func(i int, u *gunim.UI) {
+			if i < len(w.splitWith) {
+				u.Send(w, w.splitWith[i])
+			}
+		}}
+	}
+	w.splitter.Items, w.splitWith = nil, nil
+	add := func(title, also string, in gunim.Intent) {
+		w.splitter.Items = append(w.splitter.Items, widget.PaletteItem{Title: title, Also: []string{also}})
+		w.splitWith = append(w.splitWith, in)
+	}
+	add("New Terminal", "", SplitPane{Vertical: vertical})
+	if len(w.shellChoices) > 1 {
+		for _, sh := range w.shellChoices {
+			add("New "+sh.Title, "", SplitPane{Vertical: vertical, Shell: sh.ID})
+		}
+	}
+	for _, p := range w.panes {
+		if p.ID != focus {
+			add("Move "+p.Title, placeName(p.Machine), MovePane{Pane: p.ID, Beside: focus, Vertical: vertical})
+		}
+	}
+	here := ""
+	for _, p := range w.panes {
+		if p.ID == focus {
+			here = p.Machine
+		}
+	}
+	for _, m := range w.machines() {
+		if m != here {
+			add("Terminal on "+placeName(m), "", SplitPane{Vertical: vertical, Machine: m, Elsewhere: true})
+		}
+	}
+	at, _ := u.Bounds(w.chips)
+	w.splitter.Open(w.chips, geom.Rc(-at.Min.X, 48-at.Min.Y, w.size.W, 0), u)
 }

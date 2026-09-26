@@ -365,7 +365,14 @@ func (a *app) openFilesOn(machine string, f vfs.FS, path string) error {
 	}
 	a.next++
 	id := "p" + itoa(a.next)
-	a.addPane(a.paneOn(machine, Pane{ID: id, Title: vfs.Base(f, path), Kind: kindFiles}), nil, placement{})
+	// Beside the file pane in front, as gridterm's file manager adds a
+	// pane beside the one it has: two side by side is the way to copy
+	// between them.
+	at := placement{}
+	if a.kindOfPane(a.st.Focus) == kindFiles {
+		at.beside = a.st.Focus
+	}
+	a.addPane(a.paneOn(machine, Pane{ID: id, Title: vfs.Base(f, path), Kind: kindFiles}), nil, at)
 	a.browse(Browse{Pane: id, Path: path})
 	return nil
 }

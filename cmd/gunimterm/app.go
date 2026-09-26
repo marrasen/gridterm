@@ -258,8 +258,21 @@ type (
 	// NewTerminal opens a shell in a pane of its own.
 	NewTerminal struct{}
 	// SplitPane splits the focused pane, and opens a shell in the new
-	// half: to the right, or below with Vertical.
-	SplitPane struct{ Vertical bool }
+	// half: to the right, or below with Vertical. The shell is on the
+	// focused pane's machine, or on Machine with Elsewhere; Shell names
+	// one of this computer's shells.
+	SplitPane struct {
+		Vertical  bool
+		Machine   string
+		Elsewhere bool
+		Shell     string
+	}
+	// MovePane moves Pane out of wherever it is and into a split beside
+	// Beside: to the right, or below with Vertical.
+	MovePane struct {
+		Pane, Beside string
+		Vertical     bool
+	}
 	// ClosePane closes a pane, or the focused one when Pane is empty.
 	ClosePane struct{ Pane string }
 	// FocusPane gives a pane the keyboard, bringing its group on stage.
@@ -344,6 +357,8 @@ type app struct {
 	// next numbers the panes, and nextGroup the groups.
 	next      int
 	nextGroup int
+	// splits numbers the splits made, for their ids.
+	splits int
 	// notices counts the notices made.
 	notices uint64
 	// ctx ends with the window. conns are the connections open, by the
@@ -715,7 +730,9 @@ func (a *app) handle(in gunim.Intent) {
 	case NewTerminal:
 		err = a.openTerminal()
 	case SplitPane:
-		err = a.split(in.Vertical)
+		err = a.split(in)
+	case MovePane:
+		a.movePane(in)
 	case ClosePane:
 		id := in.Pane
 		if id == "" {
@@ -1151,20 +1168,27 @@ func (a *app) addPane(p Pane, sh *shell, at placement) {
 		a.shells.set(p.ID, sh)
 	}
 	a.st.Panes = append(a.st.Panes, p)
+	a.place(p.ID, at)
+	a.st.Focus = p.ID
+}
+
+// place puts a pane in no group yet where at says: in a split beside
+// another, or in a group of its own.
+func (a *app) place(id string, at placement) {
 	a.nextGroup++
 	g, ok := a.groupOf[at.beside]
 	if at.beside == "" || !ok {
 		g = a.nextGroup
-		a.groups[g] = &Box{Pane: p.ID}
+		a.groups[g] = &Box{Pane: id}
 	} else {
+		a.splits++
 		box := &Box{
-			ID: "s" + strconv.Itoa(a.next), Vertical: at.vertical, Share: 0.5, Opening: true,
-			A: &Box{Pane: at.beside}, B: &Box{Pane: p.ID},
+			ID: "s" + strconv.Itoa(a.splits), Vertical: at.vertical, Share: 0.5, Opening: true,
+			A: &Box{Pane: at.beside}, B: &Box{Pane: id},
 		}
 		a.groups[g] = a.groups[g].replace(at.beside, box)
 	}
-	a.groupOf[p.ID] = g
-	a.st.Focus = p.ID
+	a.groupOf[id] = g
 }
 
 // machineOf returns the machine a pane is on, "" for this one.
@@ -1182,8 +1206,31 @@ func (a *app) machineOf(id string) string {
 func (a *app) openTerminal() error { return a.open(a.machineOf(a.st.Focus), placement{}) }
 
 // split opens a shell beside the focused pane, on its machine.
-func (a *app) split(vertical bool) error {
-	return a.open(a.machineOf(a.st.Focus), placement{beside: a.st.Focus, vertical: vertical})
+func (a *app) split(in SplitPane) error {
+	machine := a.machineOf(a.st.Focus)
+	if in.Elsewhere {
+		machine = in.Machine
+	}
+	if in.Shell != "" {
+		argv := a.shellCommand(in.Shell)
+		if argv == nil {
+			return fmt.Errorf("this machine has no shell called %q", in.Shell)
+		}
+		a.nextShell, machine = argv, ""
+	}
+	return a.open(machine, placement{beside: a.st.Focus, vertical: in.Vertical})
+}
+
+// movePane moves a pane that is open into a split beside another, as
+// gridterm's Split Right and Split Down can: the way to two file panes
+// side by side.
+func (a *app) movePane(in MovePane) {
+	if in.Pane == in.Beside || !a.has(in.Pane) || !a.has(in.Beside) {
+		return
+	}
+	a.take(in.Pane)
+	a.place(in.Pane, placement{beside: in.Beside, vertical: in.Vertical})
+	a.st.Focus = in.Pane
 }
 
 // take takes a pane out of its group's arrangement, and reports the

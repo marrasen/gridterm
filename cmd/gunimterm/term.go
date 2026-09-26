@@ -41,7 +41,7 @@ type term struct {
 	// ctrl tells every pane in the window that Ctrl went down or came
 	// up, for the one under the pointer, which may be another than this.
 	ctrl func(k gi.Key, mods gi.Mods, down bool, u *gunim.UI)
-	at        grid.Point
+	at   grid.Point
 	// wantBlink says the program asked for a blinking cursor, blinking
 	// that a blink is running, and blinkOff that the cursor is in the
 	// off half of one. blinkRun numbers the blink running, so one

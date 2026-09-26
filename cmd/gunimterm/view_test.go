@@ -1,9 +1,9 @@
 package main
 
 import (
-	"slices"
 	"image"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"

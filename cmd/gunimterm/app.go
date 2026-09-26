@@ -345,8 +345,11 @@ type app struct {
 	// ctx ends with the window. conns are the connections open, by the
 	// machine's name, dialing the ones being made, and ring holds the
 	// keys unlocked so far. book is the saved servers.
-	ctx     context.Context
-	conns   map[string]*remote.Conn
+	ctx   context.Context
+	conns map[string]*remote.Conn
+	// connIDs is the saved server each connection was reached by, ""
+	// for one reached by a typed address.
+	connIDs map[string]string
 	dialing map[string]bool
 	ring    *remote.Ring
 	book    *remote.Book
@@ -508,6 +511,7 @@ func newApp(c gunim.Client, sh *shells) *app {
 		groups:      map[int]*Box{},
 		groupOf:     map[string]int{},
 		conns:       map[string]*remote.Conn{},
+		connIDs:     map[string]string{},
 		dialing:     map[string]bool{},
 		ring:        remote.NewRing(),
 		replies:     map[uint64]chan AskAnswered{},
@@ -883,6 +887,9 @@ func (a *app) handle(in gunim.Intent) {
 		a.cancelJob(in.ID)
 	case ClearJobs:
 		a.clearJobs(true)
+		a.showJobs()
+	case DropJob:
+		a.running = slices.DeleteFunc(a.running, func(r *running) bool { return r.id == in.ID && r.ended })
 		a.showJobs()
 	case RunCommand:
 		err = a.runCommand(in)

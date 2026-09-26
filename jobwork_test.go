@@ -294,7 +294,7 @@ func TestACancelThatCouldNotClearUpSaysSo(t *testing.T) {
 		t.Errorf("the row says %q, want the cancel and the trouble", e.Note)
 	}
 	// So does the account of it.
-	said := outcomeOf(j.Progress())
+	said := jobs.Outcome(j.Progress())
 	if !strings.Contains(said, "could not be taken away") ||
 		!strings.Contains(said, "read-only") {
 		t.Errorf("the outcome reads %q", said)

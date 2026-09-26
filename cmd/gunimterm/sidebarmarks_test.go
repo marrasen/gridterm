@@ -21,9 +21,10 @@ func TestTheSidebarMarksWhatEachRowIs(t *testing.T) {
 			{ID: "p2", Title: "docs", Kind: kindFiles},
 			{ID: "p3", Title: "far shell", Machine: "desk", On: "db"},
 		},
-		Windows:  []RemoteWindow{{Name: "desk", Addr: "desk:2222"}},
-		Tunnels:  []Tunnel{{ID: "t1", Machine: "srv", Label: ":8080", Live: true, Meter: busy}},
-		Jobs:     []Job{{ID: "j1", Title: "Copying 2 items", Machine: "srv", Kind: "copy", Share: 0.4}},
+		Windows: []RemoteWindow{{Name: "desk", Addr: "desk:2222"}},
+		Tunnels: []Tunnel{{ID: "t1", Machine: "srv", Label: ":8080", Live: true, Meter: busy}},
+		Jobs: []Job{{ID: "j1", Title: "Copying 2 items", Machine: "srv", Kind: "copy", Share: 0.4},
+			{ID: "j2", Title: "Deleting 1 item", Machine: "srv", Kind: "delete", Share: 1, Done: true}},
 		Stage:    &Box{Pane: "p2"},
 		Focus:    "p2",
 		Browsers: map[string]Browser{"p2": {Path: "/", Seq: 1}},
@@ -46,6 +47,9 @@ func TestTheSidebarMarksWhatEachRowIs(t *testing.T) {
 	}
 	if m := row("job:j1").marks; !m.filling || m.fill != 0.4 || m.kind != "copy" {
 		t.Fatalf("file work is marked %+v", m)
+	}
+	if r := row("job:j2"); r.closes != (DropJob{ID: "j2"}) || r.marks.filling || r.marks.live(now) != meter.Closed {
+		t.Fatalf("finished file work is marked %+v", r.marks)
 	}
 	if r := row("machine:desk" + farSep + "db"); !r.heading || r.marks.depth != 1 {
 		t.Fatal("a machine the window reached has no heading a step in")

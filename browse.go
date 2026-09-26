@@ -769,7 +769,7 @@ func (a *app) refreshJobsAt(now time.Time) {
 		// failure says beyond that is still shown: a cancel that could
 		// not take away what it half wrote is a disk that did not do
 		// what it was told.
-		if why := trouble(p.Err); why != nil {
+		if why := jobs.Trouble(p.Err); why != nil {
 			a.reportError("Could not finish "+j.Name(), why)
 		}
 		// What it changed is in front of the user, so it is read again.
@@ -821,36 +821,10 @@ func jobNote(p jobs.Progress) string {
 	}
 	// Stopping it was the user's own decision; whatever else went wrong
 	// was not, and the row is where they would look for it.
-	if trouble(p.Err) != nil {
+	if jobs.Trouble(p.Err) != nil {
 		return how + ", trouble"
 	}
 	return how
-}
-
-// trouble is what a job's failure says beyond the user having stopped
-// it, and nil when stopping it is the whole story.
-//
-// A cancel that could not take away the part it had written reports
-// both, and the disk failure is the half nobody asked for.
-func trouble(err error) error {
-	for err != nil {
-		if !errors.Is(err, context.Canceled) && !errors.Is(err, jobs.ErrStopped) {
-			return err
-		}
-		if joined, ok := err.(interface{ Unwrap() []error }); ok {
-			var rest []error
-			for _, e := range joined.Unwrap() {
-				rest = append(rest, trouble(e))
-			}
-			return errors.Join(rest...)
-		}
-		next, ok := err.(interface{ Unwrap() error })
-		if !ok {
-			return nil
-		}
-		err = next.Unwrap()
-	}
-	return nil
 }
 
 // confirmDelete asks before taking anything away.

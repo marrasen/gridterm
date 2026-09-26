@@ -133,7 +133,7 @@ func (p *jobPane) draw(v grid.View, prog jobs.Progress, now time.Time) {
 	// there is to know. Wrapped: a disk's reason for refusing a write
 	// is a sentence, not a word.
 	if prog.Done {
-		for _, said := range wrapLines(outcomeOf(prog), width) {
+		for _, said := range wrapLines(jobs.Outcome(prog), width) {
 			sayRow(v, p.app.colours.BG, at, line, width, said, st.FG)
 			line++
 		}
@@ -260,7 +260,7 @@ func (p *jobPane) facts(prog jobs.Progress, now time.Time) string {
 	if speed := meter.Speed(p.speed(now)); speed != "" {
 		said = append(said, speed)
 	}
-	said = append(said, soFar(now.Sub(prog.Started)))
+	said = append(said, jobs.Going(now.Sub(prog.Started)))
 	if left := p.timeLeft(prog, now); left != "" {
 		said = append(said, left)
 	}

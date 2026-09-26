@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 
@@ -63,20 +64,39 @@ func (a *app) repeatJob(id string) error {
 	if r == nil || r.op.Kind != jobs.Copy {
 		return errors.New("there is no finished copy to do again")
 	}
-	return a.copyBetween(r.from, r.to, r.op.At, r.op.Into, r.op.Names)
+	if r.repeating {
+		return nil
+	}
+	from, err := a.machineNow(r.from, r.fromID)
+	if err != nil {
+		return err
+	}
+	to, err := a.machineNow(r.to, r.toID)
+	if err != nil {
+		return err
+	}
+	r.repeating = true
+	return a.copyBetween(from, to, r.op.At, r.op.Into, r.op.Names, func() { r.repeating = false })
 }
 
 // copyBetween copies names from a folder on one machine into a folder
-// on another, opening the files of both first.
-func (a *app) copyBetween(from, to, at, into string, names []string) error {
-	return a.withFiles(from, func(ff vfs.FS) {
-		if err := a.withFiles(to, func(tf vfs.FS) {
+// on another, opening the files of both first. over is run once the
+// copy has started, or could not.
+func (a *app) copyBetween(from, to, at, into string, names []string, over func()) error {
+	err := a.withFilesOr(from, func(ff vfs.FS) {
+		if err := a.withFilesOr(to, func(tf vfs.FS) {
+			over()
 			op := jobs.Op{Kind: jobs.Copy, From: ff, At: at, Names: names, To: tf, Into: into}
 			a.followOn(op, "Copying "+count(len(names), "item")+" to "+vfs.Base(tf, into), from, to)
-		}); err != nil {
+		}, over); err != nil {
+			over()
 			a.notify("Couldn't copy", err.Error(), "")
 		}
-	})
+	}, over)
+	if err != nil {
+		over()
+	}
+	return err
 }
 
 // saveCopy keeps a finished copy, or forgets it.
@@ -113,17 +133,44 @@ func sameCopy(x, y settings.SavedCopy) bool {
 // runSavedCopy does a saved copy, between the machines it was saved
 // for, by the names they have now.
 func (a *app) runSavedCopy(c settings.SavedCopy) error {
-	return a.copyBetween(a.nameNow(c.From, c.FromID), a.nameNow(c.To, c.ToID), c.At, c.Into, c.Names)
+	from, err := a.machineNow(c.From, c.FromID)
+	if err != nil {
+		return err
+	}
+	to, err := a.machineNow(c.To, c.ToID)
+	if err != nil {
+		return err
+	}
+	return a.copyBetween(from, to, c.At, c.Into, c.Names, func() {})
 }
 
-// nameNow is a saved server's name now, by its id, or name as it was.
-func (a *app) nameNow(name, id string) string {
-	for _, h := range a.st.Saved {
-		if id != "" && h.ID == id {
-			return h.Name
+// machineNow is the machine a piece of work kept from before runs on:
+// the saved server with id, as the connection to it is called, or by
+// its name on the list now. A server removed from the list is refused,
+// and so is one whose name a connection to another machine holds. A
+// machine kept without an id is name, as it was.
+func (a *app) machineNow(name, id string) (string, error) {
+	if id == "" {
+		return name, nil
+	}
+	for held, heldID := range a.connIDs {
+		if heldID == id {
+			return held, nil
 		}
 	}
-	return name
+	now := ""
+	for _, h := range a.st.Saved {
+		if h.ID == id {
+			now = h.Name
+		}
+	}
+	if now == "" {
+		return "", fmt.Errorf("%s was removed from the server list", name)
+	}
+	if heldID := a.connIDs[now]; heldID != "" {
+		return "", fmt.Errorf("%s is connected to another machine", now)
+	}
+	return now, nil
 }
 
 // forgetCopy takes a copy off the saved list.

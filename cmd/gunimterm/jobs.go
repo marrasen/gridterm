@@ -46,6 +46,8 @@ type (
 	CancelJob struct{ ID string }
 	// ClearJobs takes the finished jobs off the jobs pane.
 	ClearJobs struct{}
+	// DropJob takes one finished job off the jobs pane.
+	DropJob struct{ ID string }
 )
 
 // Job is one piece of file work, as the jobs pane shows it.
@@ -118,8 +120,15 @@ type running struct {
 	// op is the work, and from and to the machines it is between, to
 	// do it again; speeds are its speed, sampled as it is looked at,
 	// from lastBytes at lastAt.
-	op        jobs.Op
-	from, to  string
+	op       jobs.Op
+	from, to string
+	// fromID and toID are the saved servers at either end, which a
+	// repeat finds by id, whatever they are called by then.
+	fromID, toID string
+	// repeating says a repeat has been asked for and has not started
+	// yet: a machine opened again takes as long as a connection does,
+	// and a second press in that time would copy the same thing twice.
+	repeating bool
 	speeds    []uint64
 	lastBytes int64
 	lastAt    time.Time
@@ -203,7 +212,8 @@ func (a *app) followOn(op jobs.Op, title, from, to string) *jobs.Job {
 	}
 	a.clearJobs(false)
 	a.jobSeq++
-	a.running = append(a.running, &running{id: "j" + itoa(a.jobSeq), job: job, title: title, panes: panes, op: op, from: from, to: to})
+	a.running = append(a.running, &running{id: "j" + itoa(a.jobSeq), job: job, title: title, panes: panes, op: op, from: from, to: to,
+		fromID: a.serverID(from), toID: a.serverID(to)})
 	if !a.watching {
 		a.watching = true
 		go a.watchJobs()
@@ -255,8 +265,8 @@ func (a *app) showJobs() bool {
 		}
 		r.ended = true
 		switch {
-		case p.Err != nil && !errors.Is(p.Err, context.Canceled):
-			a.notify(r.title+" stopped", p.Err.Error(), "")
+		case jobs.Trouble(p.Err) != nil:
+			a.notify(r.title+" stopped", jobs.Outcome(p), "")
 		case p.Err == nil:
 			a.notify(pastTense(r.title), row.Detail, "")
 		}
@@ -292,11 +302,14 @@ func jobRow(r *running, p jobs.Progress) Job {
 	}
 	var said []string
 	switch {
-	case p.Done && errors.Is(p.Err, context.Canceled):
-		said = append(said, "Cancelled after "+count(p.FilesDone, "file"))
 	case p.Done && p.Err != nil:
-		row.Failed = true
-		said = append(said, p.Err.Error())
+		// A job the user stopped says so, and how far it got; one that
+		// failed, or left half a file behind, says why.
+		row.Failed = jobs.Trouble(p.Err) != nil
+		said = append(said, jobs.Outcome(p))
+		if p.FilesDone > 0 {
+			said = append(said, count(p.FilesDone, "file")+" done")
+		}
 	case p.Done:
 		row.Share = 1
 		done := count(p.FilesDone, "file") + " done"
@@ -315,6 +328,9 @@ func jobRow(r *running, p jobs.Progress) Job {
 		said = append(said, "Counting…")
 	default:
 		said = append(said, fmt.Sprintf("%d of %s", p.FilesDone, count(p.Files, "file")))
+		if !p.Started.IsZero() {
+			said = append(said, jobs.Going(time.Since(p.Started)))
+		}
 		if p.Bytes > 0 {
 			said = append(said, humanSize(p.BytesDone)+" of "+humanSize(p.Bytes))
 		}
@@ -470,7 +486,11 @@ func (q overwriteAsker) Overwrite(ctx context.Context, c jobs.Conflict) (jobs.Ch
 		describe(c.Want), c.Want.Mod.Format("2006-01-02 15:04"))
 	ans, err := q.a.ask(ctx, Ask{Title: "Replace " + name + "?", Text: text,
 		Choose: []string{"Replace", "Leave It"}, Also: "Do the same for the rest", No: "Stop"})
-	if err != nil {
+	switch {
+	case errors.Is(err, errDeclined):
+		// Stop is an answer, and the job ends saying it was stopped.
+		return jobs.Choice{What: jobs.Stop}, nil
+	case err != nil:
 		return jobs.Choice{What: jobs.Stop}, err
 	}
 	what := jobs.Replace

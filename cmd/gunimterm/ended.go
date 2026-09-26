@@ -199,6 +199,8 @@ func exitStatus(why error, over bool) (int, bool) {
 // the tunnels that stopped.
 func (a *app) clearFinished() {
 	clear(a.dropped)
+	a.clearJobs(true)
+	a.showJobs()
 	for _, p := range slices.Clone(a.st.Panes) {
 		if p.Ended {
 			a.closePane(p.ID)

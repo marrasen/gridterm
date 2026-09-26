@@ -262,6 +262,12 @@ func placeName(key string) string {
 // opening them first when they are not open: over a server's
 // connection, or a window's, with SFTP, once for all its file panes.
 func (a *app) withFiles(machine string, then func(vfs.FS)) error {
+	return a.withFilesOr(machine, then, func() {})
+}
+
+// withFilesOr is withFiles, running failed when the files could not be
+// opened after it returned.
+func (a *app) withFilesOr(machine string, then func(vfs.FS), failed func()) error {
 	if f := a.fsFor(machine); f != nil {
 		then(f)
 		return nil
@@ -306,9 +312,11 @@ func (a *app) withFiles(machine string, then func(vfs.FS)) error {
 		// Not connected: connected to first.
 		return a.dialAgain(machine, func(err error) {
 			if err != nil {
+				failed()
 				return
 			}
-			if err := a.withFiles(machine, then); err != nil {
+			if err := a.withFilesOr(machine, then, failed); err != nil {
+				failed()
 				a.notify("Couldn't open the files on "+placeName(machine), err.Error(), "")
 			}
 		})
@@ -322,6 +330,7 @@ func (a *app) withFiles(machine string, then func(vfs.FS)) error {
 		a.events <- func() {
 			a.st.Status = ""
 			if err != nil {
+				failed()
 				a.notify("Couldn't open the files on "+placeName(machine), err.Error(), "")
 				return
 			}

@@ -338,11 +338,9 @@ func (w *window) markRows(rows []sideItem, st State) []sideItem {
 			}
 		}
 	}
-	// The file work under way, each under the machine it works on.
+	// The file work, each under the machine it works on. A finished
+	// one keeps its row, saying how it ended, until it is cleared.
 	for _, j := range st.Jobs {
-		if j.Done {
-			continue
-		}
 		at := slices.IndexFunc(rows, func(r sideItem) bool { return r.key == "machine:"+j.Machine })
 		if at < 0 {
 			continue
@@ -352,8 +350,12 @@ func (w *window) markRows(rows []sideItem, st State) []sideItem {
 			at++
 		}
 		item := sideItem{key: "job:" + j.ID, text: j.Title, note: j.Detail, kind: j.Kind,
-			click: ShowJobs{}, closes: CancelJob{ID: j.ID}, fill: j.Share, filling: j.Share >= 0,
+			click: ShowJobs{}, closes: CancelJob{ID: j.ID}, fill: j.Share, filling: j.Share >= 0 && !j.Done,
 			live: func(time.Time) meter.State { return meter.Active }}
+		if j.Done {
+			item.dim, item.closes = true, DropJob{ID: j.ID}
+			item.live = func(time.Time) meter.State { return meter.Closed }
+		}
 		rows = slices.Insert(rows, at, item)
 	}
 	return rows

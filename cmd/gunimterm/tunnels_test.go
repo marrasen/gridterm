@@ -15,6 +15,7 @@ import (
 
 	"github.com/marrasen/gridterm/internal/sshtest"
 	"github.com/marrasen/gridterm/remote"
+	"github.com/marrasen/gridterm/settings"
 )
 
 // passwordOnly answers the test server's password, and trusts it.
@@ -184,7 +185,9 @@ func TestATunnelStopsWithItsConnectionAndStaysUntilCleared(t *testing.T) {
 	a.handle(OpenTunnel{Machine: "srv", Tunnel: remote.Tunnel{Kind: remote.LocalForward, Listen: "127.0.0.1:0", Target: echo}})
 	id := a.st.Tunnels[0].ID
 	_ = conn.Close()
-	a.tunnelsDiedOn("srv")
+	if err := a.tunnelsDiedOn("srv", false); err != nil {
+		t.Fatalf("closing the tunnels said %v", err)
+	}
 	if row := a.st.Tunnels[0]; row.Live || row.Note != "stopped" {
 		t.Fatalf("with its connection gone, the row is %+v", row)
 	}
@@ -198,6 +201,23 @@ func TestATunnelStopsWithItsConnectionAndStaysUntilCleared(t *testing.T) {
 		t.Fatalf("cleared, the row stays: %+v", a.st.Tunnels)
 	}
 	a.remove(pane)
+}
+
+func TestATunnelGoesWithAConnectionLetGoOfOnPurpose(t *testing.T) {
+	a, conn, echo := tunnelApp(t)
+	a.handle(OpenTunnel{Machine: "srv", Tunnel: remote.Tunnel{Kind: remote.LocalForward, Listen: "127.0.0.1:0", Target: echo}})
+	addr := a.tunnels[a.st.Tunnels[0].ID].f.Addr()
+	_ = conn.Close()
+	if err := a.tunnelsDiedOn("srv", true); err != nil {
+		t.Fatalf("closing the tunnels said %v", err)
+	}
+	if len(a.st.Tunnels) != 0 || len(a.tunnels) != 0 {
+		t.Fatalf("let go of, the tunnel is still listed: %+v", a.st.Tunnels)
+	}
+	if c, err := net.Dial("tcp", addr); err == nil {
+		_ = c.Close()
+		t.Fatalf("let go of, the tunnel still accepts on %s", addr)
+	}
 }
 
 func TestWatchingATunnelWritesItsTrafficDown(t *testing.T) {
@@ -239,5 +259,28 @@ func TestATunnelsPaneIsLitOnTheTunnelsRow(t *testing.T) {
 	want := "machine:=,machine:srv=,p1=p1,tunnel:t1=p2"
 	if got := strings.Join(keys, ","); got != want {
 		t.Fatalf("the rows are %s, want %s", got, want)
+	}
+}
+
+func TestOpeningASavedTunnelLeavesTheListInItsOrder(t *testing.T) {
+	a, _, echo := tunnelApp(t)
+	set, err := settings.Load(t.TempDir() + "/settings.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.settings = set
+	first := asSaved("srv", "", remote.Tunnel{Kind: remote.LocalForward, Listen: "127.0.0.1:0", Target: echo})
+	second := asSaved("srv", "", remote.Tunnel{Kind: remote.LocalForward, Listen: "127.0.0.1:0", Target: "127.0.0.1:1"})
+	for _, s := range []settings.SavedTunnel{second, first} {
+		if err := set.KeepTunnel(s, mostSavedTunnels); err != nil {
+			t.Fatal(err)
+		}
+	}
+	a.handle(OpenSavedTunnel{Saved: second})
+	if len(a.st.Tunnels) != 1 {
+		t.Fatalf("opened, the tunnels are %+v", a.st.Tunnels)
+	}
+	if got := set.Tunnels(); len(got) != 2 || !got[0].Same(first) {
+		t.Fatalf("opened, the saved list is %+v", got)
 	}
 }

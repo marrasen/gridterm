@@ -84,6 +84,10 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 		hops = []remote.Config{cfg}
 		name = cfg.Target()
 	}
+	savedID := ""
+	if in.Saved != "" {
+		savedID = a.serverID(in.Saved)
+	}
 	if _, ok := a.conns[name]; ok {
 		if then != nil {
 			then(nil)
@@ -141,6 +145,7 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 				return
 			}
 			a.conns[name] = conn
+			a.connIDs[name] = savedID
 			delete(a.dropped, name)
 			a.reached[name] = hops[len(hops)-1].Target()
 			logLine(acct, well, "connected in "+time.Since(began).Round(10*time.Millisecond).String())
@@ -153,7 +158,10 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 						logLine(acct, "", "disconnected")
 					}
 					delete(a.conns, name)
-					a.tunnelsDiedOn(name)
+					delete(a.connIDs, name)
+					if err := a.tunnelsDiedOn(name, a.letGo[name]); err != nil {
+						a.notify("Trouble closing the tunnels on "+name, err.Error(), "")
+					}
 					if f, ok := a.remoteFS[name]; ok {
 						_ = f.Close()
 						delete(a.remoteFS, name)

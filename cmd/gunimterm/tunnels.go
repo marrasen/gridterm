@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -43,12 +44,14 @@ type Tunnel struct {
 type (
 	// OpenTunnel forwards a port over the connection to Machine, and
 	// saves it for next time with Keep. One open to the network is
-	// asked about first; Sure is the answer.
+	// asked about first; Sure is the answer. Saved says it was opened
+	// from the saved list, whose order stays as it is.
 	OpenTunnel struct {
 		Machine string
 		Tunnel  remote.Tunnel
 		Keep    bool
 		Sure    bool
+		Saved   bool
 	}
 	// OpenSavedTunnel opens a tunnel kept from before.
 	OpenSavedTunnel struct{ Saved settings.SavedTunnel }
@@ -146,13 +149,17 @@ func (a *app) openTunnel(in OpenTunnel) error {
 		go a.confirmTunnel(in)
 		return nil
 	}
-	if a.settings != nil {
+	if a.settings != nil && !in.Saved {
 		saved := asSaved(in.Machine, a.serverID(in.Machine), t)
 		switch {
 		case in.Keep:
-			_ = a.settings.KeepTunnel(saved, mostSavedTunnels)
+			if err := a.settings.KeepTunnel(saved, mostSavedTunnels); err != nil {
+				a.notify("Couldn't save the tunnel", err.Error(), "")
+			}
 		case slices.ContainsFunc(a.settings.Tunnels(), saved.Same):
-			_ = a.settings.DropTunnel(saved)
+			if err := a.settings.DropTunnel(saved); err != nil {
+				a.notify("Couldn't forget the tunnel", err.Error(), "")
+			}
 		}
 		a.st.SavedTunnels = a.settings.Tunnels()
 	}
@@ -166,7 +173,7 @@ func (a *app) openTunnel(in OpenTunnel) error {
 			a.events <- func() { a.tunnelFailed(id, err) }
 		},
 		OnStopped: func(err error) {
-			a.events <- func() { a.tunnelStopped(id, "stopped: "+err.Error(), err) }
+			a.events <- func() { _ = a.tunnelStopped(id, "stopped: "+err.Error(), err) }
 		},
 	})
 	if err != nil {
@@ -269,13 +276,13 @@ func (a *app) tunnelFailed(id string, err error) {
 // tunnelStopped marks a tunnel that ended on its own. Its row stays,
 // greyed, until it is cleared, and the user is told once, with err
 // when there is one.
-func (a *app) tunnelStopped(id, why string, err error) {
+func (a *app) tunnelStopped(id, why string, err error) error {
 	open, ok := a.tunnels[id]
 	if !ok || open.done {
-		return
+		return nil
 	}
 	open.done = true
-	_ = open.f.Close()
+	closeErr := open.f.Close()
 	open.tap.stop()
 	open.count.Close()
 	open.say(why)
@@ -283,17 +290,25 @@ func (a *app) tunnelStopped(id, why string, err error) {
 	if err != nil {
 		a.notify("Tunnel "+a.st.Tunnels[a.tunnelIndex(id)].Label+" stopped", err.Error(), "")
 	}
+	return closeErr
 }
 
 // tunnelsDiedOn stops the tunnels over a connection that has gone. A
 // local one listens here, which the far end going does nothing to, so
-// each is closed.
-func (a *app) tunnelsDiedOn(machine string) {
-	for _, t := range a.st.Tunnels {
-		if t.Machine == machine && t.Live {
-			a.tunnelStopped(t.ID, "stopped: the connection closed", nil)
+// each is closed. A connection let go of on purpose takes its tunnels'
+// rows with it; one that dropped leaves them, stopped, until cleared.
+func (a *app) tunnelsDiedOn(machine string, letGo bool) error {
+	var errs []error
+	for _, t := range slices.Clone(a.st.Tunnels) {
+		switch {
+		case t.Machine != machine:
+		case letGo:
+			errs = append(errs, a.closeTunnel(t.ID))
+		case t.Live:
+			errs = append(errs, a.tunnelStopped(t.ID, "stopped: the connection closed", nil))
 		}
 	}
+	return errors.Join(errs...)
 }
 
 // watchTunnel starts or stops writing a tunnel's traffic down.
@@ -387,19 +402,11 @@ func (a *app) openSavedTunnel(saved settings.SavedTunnel) error {
 	if err != nil {
 		return err
 	}
-	return a.openTunnel(OpenTunnel{Machine: a.savedMachine(saved), Tunnel: t, Keep: true})
-}
-
-// savedMachine is the machine a saved tunnel runs over: the saved
-// server it was kept for, under its name now, or the name it was kept
-// under.
-func (a *app) savedMachine(saved settings.SavedTunnel) string {
-	for _, h := range a.st.Saved {
-		if saved.HostID != "" && h.ID == saved.HostID {
-			return h.Name
-		}
+	machine, err := a.machineNow(saved.Host, saved.HostID)
+	if err != nil {
+		return err
 	}
-	return saved.Host
+	return a.openTunnel(OpenTunnel{Machine: machine, Tunnel: t, Keep: true, Saved: true})
 }
 
 // serverID is the ID of the saved server named machine, or "".

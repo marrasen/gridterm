@@ -1,11 +1,9 @@
 package main
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/marrasen/gridterm/conns"
 	"github.com/marrasen/gridterm/jobs"
@@ -41,46 +39,6 @@ func fileWord(n int) string {
 		return "1 file"
 	}
 	return fmt.Sprintf("%d files", n)
-}
-
-// outcomeOf says how a job ended.
-func outcomeOf(p jobs.Progress) string {
-	how := ""
-	switch {
-	case p.Err == nil:
-		return "It finished."
-	case errors.Is(p.Err, context.Canceled):
-		how = "It was cancelled"
-	case errors.Is(p.Err, jobs.ErrStopped):
-		how = "It was stopped"
-	default:
-		return "It failed: " + p.Err.Error()
-	}
-	// They asked for it to stop. They did not ask for half a file to be
-	// left behind, so that is said as well.
-	if why := trouble(p.Err); why != nil {
-		return how + ", but what was half written could not be taken away: " + why.Error()
-	}
-	return how + "."
-}
-
-// soFar says how long a job has been going, in whole seconds so a dialog
-// refreshed every frame says the same thing until there is something new
-// to say.
-//
-// The finished line uses howLong instead. That one counts tenths, which
-// on a line redrawn every frame would dirty a row ten times a second.
-func soFar(d time.Duration) string {
-	d = d.Truncate(time.Second)
-	switch {
-	case d < time.Second:
-		return "going under a second"
-	case d < time.Minute:
-		return fmt.Sprintf("going %d s", int(d/time.Second))
-	case d < time.Hour:
-		return fmt.Sprintf("going %d min %d s", int(d/time.Minute), int(d/time.Second)%60)
-	}
-	return fmt.Sprintf("going %d h %d min", int(d/time.Hour), int(d/time.Minute)%60)
 }
 
 // repeatJob does a finished piece of work again, on filesystems found

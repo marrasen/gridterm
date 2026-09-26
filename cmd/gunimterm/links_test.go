@@ -118,6 +118,8 @@ func TestAServersLocalAddressOpensThroughATunnel(t *testing.T) {
 func TestTheScrollbackOpensInAReaderToSearch(t *testing.T) {
 	a, _ := agentApp(t)
 	id := a.st.Panes[0].ID
+	// Typed at the prompt, so the numbers start a line of their own.
+	waitFor(t, a, "the prompt", func() bool { return strings.Contains(a.terminal(id).Text(), "$") })
 	a.terminal(id).Paste("seq 1 300\r")
 	waitFor(t, a, "the numbers", func() bool { return strings.Contains(a.terminal(id).AllText(), "\n300\n") })
 	a.handle(ShowScrollback{Pane: id})
@@ -127,6 +129,6 @@ func TestTheScrollbackOpensInAReaderToSearch(t *testing.T) {
 	r := a.st.Readers[a.st.Panes[1].ID]
 	text := strings.Join(r.Lines, "\n")
 	if !r.Find || !strings.Contains(text, "\n1\n2\n3\n") || !strings.Contains(text, "\n300\n") {
-		t.Fatalf("the reader holds %d lines, find %v", len(r.Lines), r.Find)
+		t.Fatalf("the reader holds %d lines, find %v, starting %q", len(r.Lines), r.Find, r.Lines[:5])
 	}
 }

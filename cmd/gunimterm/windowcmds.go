@@ -2,14 +2,19 @@ package main
 
 import (
 	"errors"
+	"fmt"
+	"os"
 	"slices"
 	"strings"
 
 	"github.com/marrasen/gunim/theme"
 
+	"github.com/marrasen/gridterm/conf"
 	"github.com/marrasen/gridterm/internal/build"
 	"github.com/marrasen/gridterm/internal/update"
 	"github.com/marrasen/gridterm/keys"
+	"github.com/marrasen/gridterm/remote"
+	"github.com/marrasen/gridterm/serve"
 	"github.com/marrasen/gridterm/settings"
 	"github.com/marrasen/gridterm/themes"
 	"github.com/marrasen/gridterm/ui"
@@ -33,6 +38,9 @@ type (
 	WriteThemeFile struct{}
 	// CheckUpdates asks whether a newer gridterm is out.
 	CheckUpdates struct{}
+	// MakePortable makes the folder beside the program and copies the
+	// files it reads now into it, for a copy that carries its own.
+	MakePortable struct{}
 	// ShowHelp opens the list of every command and its shortcut.
 	ShowHelp struct{}
 )
@@ -43,6 +51,11 @@ const kindHelp = "help"
 // latestRelease asks for the newest release. A variable, so a test
 // reaches no network.
 var latestRelease = update.Latest
+
+// thisVersion is what this build calls itself. A variable, so a test
+// can be a release: the tests run from a working tree, where every
+// build is a development build.
+var thisVersion = build.Version
 
 // loadShortcuts reads the user's shortcuts file, when there is one, for
 // the window to take on.
@@ -125,33 +138,52 @@ func (a *app) reloadThemes() {
 // checkUpdates asks, in the background, whether a newer gridterm is
 // out, and says what it found.
 func (a *app) checkUpdates() {
-	a.st.Status = "Looking for a newer gridterm…"
+	if a.checking {
+		// One question is already out, and it has one answer however
+		// many times the button is pressed while it is on its way.
+		return
+	}
+	a.checking = true
+	a.st.Status = "Checking for updates…"
 	go func() {
 		newest, err := latestRelease(a.ctx)
 		a.events <- func() {
+			a.checking = false
 			a.st.Status = ""
 			if err != nil {
-				a.notify("Couldn't check for a newer gridterm", err.Error(), "")
+				a.notify("Could not check for updates", err.Error(), "")
 				return
 			}
-			have := build.Version()
+			have := thisVersion()
 			switch update.Against(have, newest.Version) {
+			case update.Behind:
+				a.offerRelease("Update available", have, newest)
 			case update.Current:
-				a.notify("gridterm is up to date", newest.Version+" is the newest release.", "")
+				a.notify(newest.Version+" is the newest release", "", "")
 			case update.Ahead:
-				a.notify("This gridterm is newer than any release", "The newest release is "+newest.Version+".", "")
+				a.notify("This build is later than the newest release, "+newest.Version, "", "")
 			default:
-				page := newest.Page
-				go func() {
-					ans, err := a.ask(a.ctx, Ask{Title: "A newer gridterm is out", Text: newest.Version + " is the newest release; this one is " + have + ".\n\n" + page, Yes: "Open the Page", No: "Close"})
-					if err == nil && ans.Yes {
-						a.events <- func() {
-							if err := openInBrowser(page); err != nil {
-								a.notify("Couldn't open the page", err.Error(), "")
-							}
-						}
-					}
-				}()
+				// A build from a working tree, which has no order against
+				// a release: it may hold work no release has. Both
+				// versions are named and the choice is the reader's.
+				a.offerRelease("Newest release", have, newest)
+			}
+		}
+	}()
+}
+
+// offerRelease names both versions and the page the newer one is on.
+// Enter closes it: opening a browser is a thing to choose.
+func (a *app) offerRelease(title, have string, newest update.Release) {
+	page := newest.Page
+	go func() {
+		ans, err := a.ask(a.ctx, Ask{Title: title, Text: newest.Version + " is the newest release; this build is " + have + ".\n\n" + page,
+			Yes: "Open the Page", No: "Close", Careful: true})
+		if err == nil && ans.Yes {
+			a.events <- func() {
+				if err := openInBrowser(page); err != nil {
+					a.notify("Could not open the download page", err.Error(), "")
+				}
 			}
 		}
 	}()
@@ -167,4 +199,41 @@ func (a *app) showHelp() {
 	}
 	a.next++
 	a.addPane(Pane{ID: "p" + itoa(a.next), Title: "Shortcuts and Commands", Kind: kindHelp}, nil, placement{})
+}
+
+// ownFiles are the files a copy carrying its own takes with it, beside
+// the serving key.
+var ownFiles = []string{
+	settings.File, remote.BookFile, themes.File, keys.File,
+	serve.AuthFile, knownWindowsFile,
+}
+
+// makePortable copies the files the window reads now into the folder
+// beside the program, and lists what it did. The window reads them
+// once it is started again: where the files are is decided as it
+// opens.
+func (a *app) makePortable() {
+	said, err := func() ([]string, error) {
+		exe, err := os.Executable()
+		if err != nil {
+			return nil, fmt.Errorf("where this copy of %s is: %w", programName, err)
+		}
+		dir, err := conf.Dir()
+		if err != nil {
+			return nil, err
+		}
+		key, err := serve.HostKeyPath()
+		if err != nil {
+			return nil, err
+		}
+		return conf.CarryOwn(exe, dir, ownFiles, key)
+	}()
+	if err != nil {
+		a.notify("Could not make portable", err.Error(), "")
+		return
+	}
+	said = append(said, "", "Restart "+programName+" to use them.")
+	go func() {
+		_, _ = a.ask(a.ctx, Ask{Title: "Made Portable", Text: strings.Join(said, "\n"), Plain: true})
+	}()
 }

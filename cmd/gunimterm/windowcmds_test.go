@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -14,6 +16,7 @@ import (
 	gi "github.com/marrasen/gunim/input"
 	"github.com/marrasen/gunim/widget"
 
+	"github.com/marrasen/gridterm/conf"
 	"github.com/marrasen/gridterm/input"
 	"github.com/marrasen/gridterm/internal/update"
 	"github.com/marrasen/gridterm/keys"
@@ -77,15 +80,44 @@ func TestTheThemeFileIsWrittenAndReadAgain(t *testing.T) {
 
 func TestANewerReleaseIsOffered(t *testing.T) {
 	a, _ := agentApp(t)
-	was := latestRelease
+	was, wasVersion := latestRelease, thisVersion
 	latestRelease = func(context.Context) (update.Release, error) {
 		return update.Release{Version: "v99.0.0", Page: "https://example.com/release"}, nil
 	}
+	t.Cleanup(func() { latestRelease, thisVersion = was, wasVersion })
+	for _, c := range []struct{ have, title string }{
+		{"v1.0.0", "Update available"},
+		{"v1.0.0-3-gabcdef-dirty", "Newest release"},
+	} {
+		thisVersion = func() string { return c.have }
+		a.handle(CheckUpdates{})
+		waitFor(t, a, "the offer", func() bool { return len(a.st.Asks) > 0 })
+		q := a.st.Asks[0]
+		if q.Title != c.title || !strings.Contains(q.Text, "v99.0.0") || !strings.Contains(q.Text, c.have) || q.Yes != "Open the Page" || !q.Careful {
+			t.Fatalf("to %s, the offer is %+v", c.have, q)
+		}
+		a.handle(AskAnswered{ID: q.ID})
+		waitFor(t, a, "the offer to close", func() bool { return len(a.st.Asks) == 0 })
+	}
+}
+
+func TestASecondUpdateCheckWaitsForTheFirst(t *testing.T) {
+	a, _ := agentApp(t)
+	was := latestRelease
+	var asked atomic.Int32
+	answer := make(chan struct{})
+	latestRelease = func(context.Context) (update.Release, error) {
+		asked.Add(1)
+		<-answer
+		return update.Release{Version: "v0.0.1"}, nil
+	}
 	t.Cleanup(func() { latestRelease = was })
 	a.handle(CheckUpdates{})
-	waitFor(t, a, "the offer", func() bool { return len(a.st.Asks) > 0 })
-	if q := a.st.Asks[0]; !strings.Contains(q.Text, "v99.0.0") || q.Yes != "Open the Page" {
-		t.Fatalf("the offer is %+v", q)
+	a.handle(CheckUpdates{})
+	close(answer)
+	waitFor(t, a, "the answer", func() bool { return !a.checking })
+	if n := asked.Load(); n != 1 {
+		t.Fatalf("pressed twice, it asked %d times", n)
 	}
 }
 
@@ -100,6 +132,22 @@ func TestTheHelpListsEveryCommandWithItsShortcut(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("the help lacks Close Pane on Ctrl+Shift+W")
+	}
+	// Under the menu it is on, and the file pane's keys from
+	// gridterm's own list.
+	var heads []string
+	under := map[string]string{}
+	keys := slices.Sorted(maps.Keys(win.help.rows))
+	for _, k := range keys {
+		r := win.help.rows[k]
+		if win.help.heads[k] {
+			heads = append(heads, r[0])
+			continue
+		}
+		under[r[0]] = heads[len(heads)-1]
+	}
+	if heads[0] != "File" || under["Close Pane"] != "File" || !strings.HasPrefix(under["Tail"], "The file pane's keys") || !strings.HasPrefix(under["Hex"], "The reader's keys") {
+		t.Fatalf("the help's groups are %v, with Close Pane under %q, Tail under %q, Hex under %q", heads, under["Close Pane"], under["Tail"], under["Hex"])
 	}
 }
 
@@ -339,5 +387,41 @@ func TestTheServerFormFitsItsType(t *testing.T) {
 	a.handle(SaveServer{Host: remote.Host{Name: "srv", Address: "srv.example", Identities: []string{"/k/id_ed25519"}}})
 	if !slices.Equal(a.st.KeyFiles, []string{"/k/id_ed25519"}) {
 		t.Fatalf("saved, the kept keys are %v", a.st.KeyFiles)
+	}
+}
+
+// Enter on About closes it, rather than asking the network anything.
+func TestEnterClosesAbout(t *testing.T) {
+	win, _, publish := windowStage(t)
+	publish(State{})
+	for len(lastWindow.Client().Intents()) > 0 {
+		<-lastWindow.Client().Intents()
+	}
+	win.aboutDialog(lastUI)
+	for range 3 {
+		lastWindow.Frame(time.Second / 60)
+	}
+	lastWindow.Input(gi.KeyPress{Key: gi.KeyEnter})
+	lastWindow.Frame(time.Second / 60)
+	if got := nextIntent(t); got != (DialogClosed{}) {
+		t.Fatalf("Enter on About sent %#v", got)
+	}
+}
+
+func TestMakePortableCopiesTheFilesBesideTheProgram(t *testing.T) {
+	a, _ := agentApp(t)
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	beside := conf.Beside(exe)
+	t.Cleanup(func() { _ = os.RemoveAll(beside) })
+	a.handle(MakePortable{})
+	waitFor(t, a, "the list of what was done", func() bool { return len(a.st.Asks) == 1 })
+	if q := a.st.Asks[0]; q.Title != "Made Portable" || !strings.Contains(q.Text, "Created "+beside) || !strings.Contains(q.Text, "Restart gunimterm") {
+		t.Fatalf("made portable, it says %+v", q)
+	}
+	if made, err := conf.IsDir(beside); !made || err != nil {
+		t.Fatalf("the folder beside is made %v, %v", made, err)
 	}
 }

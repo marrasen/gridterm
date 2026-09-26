@@ -42,7 +42,7 @@ func (a *app) showWhereFiles() error {
 	// was decided when it opened and does not move, so it goes on saying
 	// it is not carrying its own files until it is started again --
 	// which is no reason to offer to make a directory that now exists.
-	made, err := isDir(beside)
+	made, err := conf.IsDir(beside)
 	if err != nil {
 		return err
 	}

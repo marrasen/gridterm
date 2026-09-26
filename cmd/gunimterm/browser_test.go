@@ -139,7 +139,7 @@ func TestTheKeyBarPressesItsKeys(t *testing.T) {
 		}
 		t.Fatalf("no key %s", name)
 	}
-	click("F7 Paste")
+	click("^V Paste")
 	if n := len(lastWindow.Client().Intents()); n != 0 {
 		t.Fatalf("with nothing to paste, Paste sent %d intents", n)
 	}

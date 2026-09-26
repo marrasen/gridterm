@@ -440,6 +440,8 @@ type app struct {
 	// themeTrouble is what went wrong reading the themes as the window
 	// opened, said once it is up.
 	themeTrouble error
+	// checking says a check for a newer release is on its way.
+	checking bool
 	// commands are what each command pane runs, to run it again.
 	commands map[string]command
 	// argvs are what each local pane runs, to start it again and to
@@ -933,6 +935,8 @@ func (a *app) handle(in gunim.Intent) {
 		err = a.writeThemeFile()
 	case CheckUpdates:
 		a.checkUpdates()
+	case MakePortable:
+		a.makePortable()
 	case ShowHelp:
 		a.showHelp()
 	case MakeKey:

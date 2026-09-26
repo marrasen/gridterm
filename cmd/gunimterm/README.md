@@ -61,14 +61,6 @@ Help, themes and shortcuts:
 
 - A short confirmation stays on the status line for 4 seconds;
   gunimterm uses a toast.
-- About opens on OK, and a second update check while one runs is
-  ignored.
-- A development build newer than the last release says so, rather
-  than "A newer gridterm is out".
-- File Locations offers to make the install portable.
-- Help groups the commands by menu, lists the keys the menus do not
-  show, and takes the file pane's and reader's keys from gridterm's
-  own lists.
 - Reload Shortcuts says it worked only once the file is taken.
 - Command ids renamed in `keys.Renamed` are followed.
 

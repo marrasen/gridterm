@@ -74,6 +74,16 @@ func chordPress(written string) (gi.KeyPress, error) {
 	if err != nil {
 		return gi.KeyPress{}, err
 	}
+	press, ok := pressOf(chord)
+	if !ok {
+		return gi.KeyPress{}, fmt.Errorf("%s is no key this window takes", written)
+	}
+	return press, nil
+}
+
+// pressOf is the key press a chord is, as the window hears it, and
+// whether the window has the key at all.
+func pressOf(chord ui.Chord) (gi.KeyPress, bool) {
 	for gk, k := range keyMap {
 		if k != chord.Key {
 			continue
@@ -87,9 +97,9 @@ func chordPress(written string) (gi.KeyPress, error) {
 				press.Mods |= m.to
 			}
 		}
-		return press, nil
+		return press, true
 	}
-	return gi.KeyPress{}, fmt.Errorf("%s is no key this window takes", written)
+	return gi.KeyPress{}, false
 }
 
 // runShot drives the window through the script, on a goroutine of its

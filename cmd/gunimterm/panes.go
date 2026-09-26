@@ -12,6 +12,7 @@ import (
 	"github.com/marrasen/gunim/paint"
 	"github.com/marrasen/gunim/widget"
 
+	"github.com/marrasen/gridterm/ui/files"
 	"github.com/marrasen/gridterm/vfs"
 )
 
@@ -156,20 +157,18 @@ func (b *browser) newKeys() *keyBar {
 	}
 	somePicked := func() bool { return len(b.picked()) > 0 }
 	waiting := func() bool { return len(b.w.fileClip.Names) > 0 }
-	fkey := func(k gi.Key) gi.KeyPress { return gi.KeyPress{Key: k} }
-	ctrl := func(k gi.Key) gi.KeyPress { return gi.KeyPress{Key: k, Mods: gi.ModControl} }
-	bar := newKeyBar(
-		barKey{"F2 Rename", fkey(gi.KeyF2), onRow},
-		barKey{"F3 View", fkey(gi.KeyF3), onFile},
-		barKey{"F4 Tail", fkey(gi.KeyF4), onFile},
-		barKey{"F5 Copy", fkey(gi.KeyF5), somePicked},
-		barKey{"F6 Cut", fkey(gi.KeyF6), somePicked},
-		barKey{"F7 Paste", fkey(gi.KeyF7), waiting},
-		barKey{"F8 Delete", fkey(gi.KeyF8), somePicked},
-		barKey{"F9 Folder", fkey(gi.KeyF9), nil},
-		barKey{"^G Go To", ctrl(gi.KeyG), nil},
-		barKey{"^D Close", ctrl(gi.KeyD), nil},
-	)
+	on := map[string]func() bool{
+		"Rename": onRow, "View": onFile, "Tail": onFile,
+		"Copy": somePicked, "Cut": somePicked, "Delete": somePicked, "Paste": waiting,
+	}
+	var keys []barKey
+	// gridterm's own list, so the two bars say the same.
+	for _, k := range files.BrowserKeys() {
+		if press, ok := pressOf(k.Chord); ok {
+			keys = append(keys, barKey{k.Shown + " " + k.Title, press, on[k.Title]})
+		}
+	}
+	bar := newKeyBar(keys...)
 	bar.pressed = func(k gi.KeyPress, u *gunim.UI) { b.Handle(k, u) }
 	return bar
 }

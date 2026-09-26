@@ -226,3 +226,44 @@ func TestGoingBackToAFolderShowsItAsItWasLeft(t *testing.T) {
 		t.Fatalf("back, the view is at %v, left at %v", off, left)
 	}
 }
+
+// The mouse's side buttons, and Alt with the arrows, go back and forward
+// through the folders been through, as in a browser.
+func TestTheSideButtonsGoBackAndForward(t *testing.T) {
+	win, _, publish := windowStage(t)
+	st := State{Panes: []Pane{{ID: "p1", Title: "/a", Kind: kindFiles}}, Stage: &Box{Pane: "p1"}, Focus: "p1",
+		Browsers: map[string]Browser{"p1": {Path: "/a", Entries: []vfs.Entry{{Name: "b", Mode: fs.ModeDir}}, Seq: 1}}}
+	publish(st)
+	st.Browsers = map[string]Browser{"p1": {Path: "/a/b", Entries: []vfs.Entry{{Name: "c"}}, Seq: 2}}
+	publish(st)
+	for len(lastWindow.Client().Intents()) > 0 {
+		<-lastWindow.Client().Intents()
+	}
+	box, _ := lastUI.Bounds(win.browsers["p1"])
+	side := func(b gi.Button) Browse {
+		t.Helper()
+		lastWindow.Input(gi.PointerDown{Pos: box.Center(), Button: b, Clicks: 1})
+		lastWindow.Input(gi.PointerUp{Pos: box.Center(), Button: b})
+		lastWindow.Frame(time.Second / 60)
+		in, ok := nextIntent(t).(Browse)
+		if !ok {
+			t.Fatalf("the side button sent %#v", in)
+		}
+		return in
+	}
+	if in := side(gi.ButtonBack); in.Path != "/a" {
+		t.Fatalf("Back went to %q", in.Path)
+	}
+	st.Browsers = map[string]Browser{"p1": {Path: "/a", Entries: []vfs.Entry{{Name: "b", Mode: fs.ModeDir}}, Seq: 3}}
+	publish(st)
+	if in := side(gi.ButtonForward); in.Path != "/a/b" {
+		t.Fatalf("Forward went to %q", in.Path)
+	}
+	st.Browsers = map[string]Browser{"p1": {Path: "/a/b", Entries: []vfs.Entry{{Name: "c"}}, Seq: 4}}
+	publish(st)
+	lastWindow.Input(gi.KeyPress{Key: gi.KeyLeft, Mods: gi.ModAlt})
+	lastWindow.Frame(time.Second / 60)
+	if in, ok := nextIntent(t).(Browse); !ok || in.Path != "/a" {
+		t.Fatalf("Alt+Left sent %#v", in)
+	}
+}

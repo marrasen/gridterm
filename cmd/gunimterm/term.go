@@ -467,6 +467,9 @@ func (t *term) press(e gi.PointerDown, u *gunim.UI) bool {
 	at := t.cellAt(e.Pos)
 	mods := mouseMods(e.Mods)
 	switch {
+	case e.Button == gi.ButtonBack || e.Button == gi.ButtonForward:
+		// A mouse's side buttons are the window's, not the program's.
+		return false
 	case e.Focusing && e.Button == gi.ButtonPrimary:
 		// The click that gives the pane the keyboard only does that, as
 		// in gridterm: it starts no selection, and a program with the

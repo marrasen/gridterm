@@ -31,10 +31,15 @@ type browser struct {
 	col   *widget.Flex
 	st    Browser
 	shown int
-	// at is the folder the rows show, and scrolled how far each folder
-	// left was scrolled, to put it back going back to it.
-	at       string
-	scrolled map[string]float32
+	// at is the folder the rows show, and left how each folder left was
+	// left, to show it so going back to it.
+	at   string
+	left map[string]leftAs
+	// back and forward are the folders been through, as a browser keeps
+	// them, the latest last, and travel says the folder showing next
+	// was gone to through them, so it goes on neither.
+	back, forward []string
+	travel        bool
 	// byName finds an entry by its row's key; sortBy and descending are
 	// the order the user asked for.
 	byName     map[widget.Key]vfs.Entry
@@ -103,9 +108,35 @@ func (b *browser) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gun
 // F7 or Ctrl+V pastes here; F8 or Delete deletes, after asking; F2
 // renames; F9 makes a folder.
 func (b *browser) Handle(e gi.Event, u *gunim.UI) bool {
+	switch e := e.(type) {
+	case gi.PointerDown:
+		// A mouse's side buttons go back and forward through the folders
+		// been through, as in a browser.
+		switch e.Button {
+		case gi.ButtonBack:
+			b.goBack(u)
+			return true
+		case gi.ButtonForward:
+			b.goForward(u)
+			return true
+		case gi.ButtonPrimary, gi.ButtonSecondary, gi.ButtonMiddle:
+		}
+		return false
+	case gi.PointerUp:
+		return e.Button == gi.ButtonBack || e.Button == gi.ButtonForward
+	}
 	k, ok := e.(gi.KeyPress)
 	if !ok {
 		return false
+	}
+	// Alt and the arrows go back and forward too, as in Explorer.
+	if k.Mods == gi.ModAlt && (k.Key == gi.KeyLeft || k.Key == gi.KeyRight) {
+		if k.Key == gi.KeyLeft {
+			b.goBack(u)
+		} else {
+			b.goForward(u)
+		}
+		return true
 	}
 	ctrl := k.Mods == gi.ModControl
 	switch {
@@ -309,11 +340,18 @@ func (b *browser) show(st Browser, u *gunim.UI) {
 	}
 	moved = moved || b.shown == 0
 	b.shown = st.Seq
-	if moved && b.at != "" {
-		if b.scrolled == nil {
-			b.scrolled = map[string]float32{}
+	if moved && b.at != "" && b.at != st.Path {
+		if b.left == nil {
+			b.left = map[string]leftAs{}
 		}
-		b.scrolled[b.at] = b.table.Offset()
+		key, _ := b.table.Cursor()
+		b.left[b.at] = leftAs{offset: b.table.Offset(), key: key}
+		if !b.travel {
+			b.back, b.forward = append(b.back, b.at), nil
+		}
+	}
+	if moved {
+		b.travel = false
 	}
 	b.at = st.Path
 	b.list(u)
@@ -321,15 +359,20 @@ func (b *browser) show(st Browser, u *gunim.UI) {
 	// from, and shows its rows in place rather than gliding them in
 	// from where the last folder was scrolled to; the same folder
 	// listed again keeps the cursor where it was.
-	// A folder gone back to shows as it was left, scrolled as far.
+	// A folder gone back to shows as it was left: scrolled as far, with
+	// the cursor on the folder come back from, or where it was.
+	was, been := b.left[st.Path]
 	land := widget.Key(st.Land)
-	if st.Land == "" {
+	switch {
+	case st.Land != "":
+	case been && was.key != "":
+		land = was.key
+	default:
 		land = up
 	}
-	off, been := b.scrolled[st.Path]
 	switch {
 	case moved && been:
-		b.table.ShowAt(land, off, u)
+		b.table.ShowAt(land, was.offset, u)
 	case moved:
 		b.table.JumpTo(land, u)
 	case st.Land != "":
@@ -424,4 +467,36 @@ func humanSize(n int64) string {
 		i++
 	}
 	return fmt.Sprintf("%.1f %cB", v, "KMGT"[i-1])
+}
+
+// leftAs is how a folder was left: how far it was scrolled, and the row
+// the cursor was on.
+type leftAs struct {
+	offset float32
+	key    widget.Key
+}
+
+// goBack goes to the folder before, as a browser's Back does.
+func (b *browser) goBack(u *gunim.UI) {
+	if len(b.back) == 0 {
+		return
+	}
+	to := b.back[len(b.back)-1]
+	b.back = b.back[:len(b.back)-1]
+	b.forward = append(b.forward, b.at)
+	b.travel = true
+	u.Send(b, Browse{Pane: b.id, Path: to})
+}
+
+// goForward goes to the folder gone back from, as a browser's Forward
+// does.
+func (b *browser) goForward(u *gunim.UI) {
+	if len(b.forward) == 0 {
+		return
+	}
+	to := b.forward[len(b.forward)-1]
+	b.forward = b.forward[:len(b.forward)-1]
+	b.back = append(b.back, b.at)
+	b.travel = true
+	u.Send(b, Browse{Pane: b.id, Path: to})
 }

@@ -74,6 +74,7 @@ func run() error {
 		}
 		prog := newApp(c, sh)
 		prog.themes = all
+		prog.registerThemes = func(all []themed) { registerThemes(w, all) }
 		return prog.run(ctx)
 	})
 	if errors.Is(err, driver.ErrNoDriver) {

@@ -33,6 +33,8 @@ type themed struct {
 	// frame round its blue ground does not.
 	content theme.Theme
 	palette vt.Palette
+	// source is the gridterm theme it came from, for writing a copy.
+	source themes.Theme
 }
 
 // luminance is how bright c looks, from 0 to 1.
@@ -177,7 +179,7 @@ func themeOf(t themes.Theme) (themed, error) {
 		theme.Set(widget.MenuFill, mix(bg, fg, 8)),
 		theme.Set(faint, mix(fg, bg, 45)),
 	)
-	return themed{name: t.Name, theme: th, content: content, palette: pal}, nil
+	return themed{name: t.Name, theme: th, content: content, palette: pal, source: t}, nil
 }
 
 // registerThemes names gridterm's themes to the window, for the program

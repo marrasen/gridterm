@@ -37,6 +37,7 @@ func shortcuts() *ui.Keymap {
 		{Key: input.KeyF10}: "menu.open",
 		{Key: input.KeyF11}: "view.fullScreen",
 		{Key: input.KeyL, Mods: input.ModCtrl | input.ModShift}:      "sidebar.focus",
+		{Key: input.KeyH, Mods: input.ModCtrl | input.ModShift}:      "help.shortcuts",
 		{Key: input.KeyPlus, Mods: input.ModCtrl}:                    "font.increase",
 		{Key: input.KeyG, Mods: input.ModCtrl | input.ModShift}:      "files.goTo",
 		{Key: input.KeyN, Mods: input.ModCtrl | input.ModShift}:      "server.connect",
@@ -91,6 +92,13 @@ var commands = []struct{ id, title string }{
 	{"server.reload", "Reload Server List"},
 	{"shell.setup", "Shell Setup"},
 	{"shell.termProgram", "Terminal Identity"},
+	{"help.shortcuts", "Shortcuts and Commands"},
+	{"shortcuts.write", "New Shortcuts File"},
+	{"shortcuts.reload", "Reload Shortcuts"},
+	{"view.themesStart", "New Theme File"},
+	{"view.themesReload", "Reload Themes"},
+	{"help.files", "File Locations"},
+	{"app.about", "About gridterm"},
 	{"view.jobs", "Show Jobs"},
 	{"view.log", "Window Log"},
 	{"conn.log", "Connection Log"},
@@ -163,12 +171,18 @@ var menus = []struct {
 	{"Options", []menuItem{
 		{id: "theme.pick", title: "Theme…"},
 		{id: "shell.termProgram", title: "Terminal Identity…"},
+		{title: "Start a File", caption: true},
+		{id: "view.themesStart", title: "Themes"}, {id: "shortcuts.write", title: "Shortcuts"},
 		{title: "Read Again", caption: true},
+		{id: "view.themesReload", title: "Themes"}, {id: "shortcuts.reload", title: "Shortcuts"},
 		{id: "server.reload", title: "Server List"},
+		{id: "help.files", title: "File Locations…", group: true},
 	}},
 	{"Help", []menuItem{
 		{id: "palette.open", title: "All Commands…"},
+		{id: "help.shortcuts", title: "Shortcuts and Commands"},
 		{id: "view.log", title: "Window Log", group: true},
+		{id: "app.about", title: "About gridterm", group: true},
 	}},
 }
 
@@ -223,6 +237,12 @@ func commandIntent(id string) (gunim.Intent, bool) {
 		return ReloadServers{}, true
 	case "shell.setup":
 		return ToggleShellSetup{}, true
+	case "shortcuts.reload":
+		return ReloadShortcuts{}, true
+	case "view.themesReload":
+		return ReloadThemes{}, true
+	case "view.themesStart":
+		return WriteThemeFile{}, true
 	case "conn.clearFinished":
 		return ClearFinished{}, true
 	case "secrets.show":

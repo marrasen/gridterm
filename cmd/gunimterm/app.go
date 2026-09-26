@@ -8,6 +8,7 @@ import (
 
 	"fmt"
 	"github.com/marrasen/gridterm/jobs"
+	"github.com/marrasen/gridterm/keys"
 	"github.com/marrasen/gridterm/logs"
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/secrets"
@@ -22,6 +23,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/marrasen/gunim"
+	"github.com/marrasen/gunim/theme"
 )
 
 // The program side of the window. It owns the panes, how they are
@@ -86,11 +88,18 @@ type State struct {
 	// ShellSetup says new shells here are taught to say what they are
 	// doing, and TermProgram what they are told the terminal is called,
 	// "" for gridterm's own name.
-	ShellSetup   bool
-	TermProgram  string
-	Bells        uint64
-	SavedTunnels []settings.SavedTunnel
-	Status       string
+	// Shortcuts are the changes the user's shortcuts file makes to the
+	// window's keys, and ShortcutsRead counts its reads. Contents are
+	// the themes' colours for the panes, when the themes were read
+	// again.
+	Shortcuts     []keys.Change
+	ShortcutsRead uint64
+	Contents      map[string]theme.Theme
+	ShellSetup    bool
+	TermProgram   string
+	Bells         uint64
+	SavedTunnels  []settings.SavedTunnel
+	Status        string
 	// Notices are the latest notices, oldest first, for the window to
 	// show each once.
 	Notices []Notice
@@ -362,10 +371,13 @@ type app struct {
 	// nextShell is the command the next terminal here starts, once.
 	nextShell []string
 	// found are the shells on this machine.
-	found     []shellfind.Shell
-	tunnelSeq int
-	ticking   bool
-	quiet     bool
+	found []shellfind.Shell
+	// registerThemes names themes to the window, for reading them
+	// again.
+	registerThemes func([]themed)
+	tunnelSeq      int
+	ticking        bool
+	quiet          bool
 	// wake hears that a shell wrote, and events carries changes from
 	// the shells' goroutines to this one.
 	wake   chan struct{}
@@ -460,6 +472,9 @@ func (a *app) run(ctx context.Context) error {
 	a.showShare()
 	a.showServing()
 	a.scanShells()
+	if err := a.loadShortcuts(false); err != nil {
+		a.notify("Couldn't read the shortcuts file", err.Error(), "")
+	}
 	if a.settings != nil && a.settings.ServeOn() {
 		go a.offerToServeAgain()
 	}
@@ -731,6 +746,18 @@ func (a *app) handle(in gunim.Intent) {
 		err = a.open(in.Machine, placement{})
 	case FilesOn:
 		err = a.filesOn(in.Machine, in.Path)
+	case ReloadShortcuts:
+		err = a.loadShortcuts(true)
+	case WriteShortcuts:
+		err = a.writeShortcuts(in.Bindings)
+	case ReloadThemes:
+		a.reloadThemes()
+	case WriteThemeFile:
+		err = a.writeThemeFile()
+	case CheckUpdates:
+		a.checkUpdates()
+	case ShowHelp:
+		a.showHelp()
 	case ShowScrollback:
 		err = a.showScrollback(in.Pane)
 	case ReloadServers:

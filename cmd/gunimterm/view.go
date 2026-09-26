@@ -79,12 +79,16 @@ type window struct {
 	// termProgram is what new shells are told the terminal is called.
 	termProgram string
 	// connected are the servers connected to, as last published.
-	connected    []string
-	bells        uint64
-	titles       bool
-	captions     map[string]*captioned
-	sharing      bool
-	savedTunnels []settings.SavedTunnel
+	connected []string
+	// help is the list of commands, once opened, and shortcutsRead
+	// the shortcuts file's reads as last taken on.
+	help          *helpPane
+	shortcutsRead uint64
+	bells         uint64
+	titles        bool
+	captions      map[string]*captioned
+	sharing       bool
+	savedTunnels  []settings.SavedTunnel
 	// accounts are the machines with a connection log, as the palette
 	// lists them.
 	accounts []string
@@ -255,6 +259,18 @@ func (w *window) run(id string, u *gunim.UI) bool {
 		} else {
 			w.confirmRemove(m, u)
 		}
+		return true
+	case "help.shortcuts":
+		u.Send(w, ShowHelp{})
+		return true
+	case "shortcuts.write":
+		u.Send(w, WriteShortcuts{Bindings: w.keys.Bindings()})
+		return true
+	case "app.about":
+		w.aboutDialog(u)
+		return true
+	case "help.files":
+		w.fileLocationsDialog(u)
 		return true
 	case "view.fullScreen":
 		u.SetFullScreen(!u.FullScreen())
@@ -827,6 +843,16 @@ func (w *window) update(st State, u *gunim.UI) {
 	w.share = st.Share
 	w.sidebarShown = st.Sidebar
 	w.termProgram = st.TermProgram
+	if st.ShortcutsRead != w.shortcutsRead {
+		w.shortcutsRead = st.ShortcutsRead
+		w.applyShortcuts(st.Shortcuts, u)
+	}
+	if st.Contents != nil {
+		w.contents = st.Contents
+		if c, ok := w.contents[st.Theme]; ok {
+			w.onStage.Use(c)
+		}
+	}
 	renamed := len(st.Windows) != len(w.remoteWindows)
 	for i := 0; !renamed && i < len(st.Windows); i++ {
 		renamed = st.Windows[i].Name != w.remoteWindows[i].Name
@@ -912,6 +938,9 @@ func (w *window) update(st State, u *gunim.UI) {
 	// to them; each catches up as it comes back.
 	if w.jobs != nil && u.Presence(w.jobs) != gunim.Exiting {
 		w.jobs.show(st.Jobs, u)
+	}
+	if w.help != nil && u.Presence(w.help) != gunim.Exiting {
+		w.help.show(w, u)
 	}
 	if w.secrets != nil && u.Presence(w.secrets) != gunim.Exiting {
 		w.secrets.show(st.Secrets, u)
@@ -1088,6 +1117,11 @@ func (w *window) bareNode(id string) gunim.Node {
 			w.browsers[id] = b
 		}
 		return b
+	case kindHelp:
+		if w.help == nil {
+			w.help = newHelpPane(w)
+		}
+		return w.help
 	case kindSecrets:
 		if w.secrets == nil {
 			w.secrets = newSecretsPane(w)
@@ -1137,6 +1171,9 @@ func (w *window) focusNode(id string) gunim.Node {
 	}
 	if w.kindOf(id) == kindSecrets && w.secrets != nil {
 		return w.secrets.table
+	}
+	if w.kindOf(id) == kindHelp && w.help != nil {
+		return w.help.table
 	}
 	return nil
 }

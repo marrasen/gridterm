@@ -63,7 +63,7 @@ Files:
 - Repeat, on a finished job.
 - Selecting and copying text in the reader, and saving what it shows
   to a file, as the scrollback's Save As does.
-- Saved Copies (`files.copies`) and File Locations (`help.files`).
+- Saved Copies (`files.copies`).
 
 Secrets and keys:
 
@@ -76,13 +76,6 @@ Agents:
 
 - Writing the skill file for an agent program, and the setup dialog
   that shows the lines. gunimterm copies the prompt and the setup line.
-
-Window:
-
-- Shortcuts and Commands, a shortcuts file of your own, and reloading
-  it (`help.shortcuts`, `shortcuts.write`, `shortcuts.reload`).
-- New Theme File and Reload Themes.
-- About gridterm.
 
 Checks on Windows, waiting until the Windows runs resume: the screen
 reader recheck (#10) and this spike on Windows (#11).

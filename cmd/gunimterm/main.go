@@ -19,9 +19,10 @@ import (
 
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/driver"
-	"github.com/marrasen/gunim/geom"
 
+	"github.com/marrasen/gridterm/appicon"
 	"github.com/marrasen/gridterm/mcp"
+	"github.com/marrasen/gridterm/settings"
 )
 
 func main() {
@@ -51,10 +52,23 @@ func run() error {
 	}
 
 	log.SetOutput(windowLog)
+	// keptFontSize is the font size kept from last time, which the
+	// window opens to fit.
+	keptFontSize := func() float32 {
+		if path, err := settings.Path(); err == nil {
+			if s, err := settings.Load(path); err == nil {
+				if size, ok := s.FontSize(); ok {
+					return min(max(float32(size), 8), 40)
+				}
+			}
+		}
+		return defaultFontSize
+	}
 	err := gunim.Main(ctx, func(a *gunim.App) error {
 		w, err := a.NewWindow(gunim.WindowOptions{
 			Title: programName,
-			Size:  geom.Sz(900, 600),
+			Size:  firstSize(keptFontSize(), 220),
+			Icons: appicon.Images(),
 			// The close button asks first, as Exit does.
 			AskToClose: Exit{},
 		})

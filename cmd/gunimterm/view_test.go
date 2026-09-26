@@ -32,7 +32,13 @@ var lastUI *gunim.UI
 // returns it with a way to publish a state and draw a few frames.
 func windowStage(t *testing.T) (win *window, sh *shells, publish func(State)) {
 	t.Helper()
-	w := gunim.NewOffscreen(geom.Sz(900, 600), nil)
+	return windowStageOf(t, geom.Sz(900, 600))
+}
+
+// windowStageOf is windowStage in a window of a given size.
+func windowStageOf(t *testing.T, size geom.Size) (win *window, sh *shells, publish func(State)) {
+	t.Helper()
+	w := gunim.NewOffscreen(size, nil)
 	lastWindow = w
 	sh = &shells{m: map[string]*shell{}}
 	gunim.RegisterView(w, "window", func(State) *window {

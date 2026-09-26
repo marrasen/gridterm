@@ -2,8 +2,10 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"strings"
 
+	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/text"
 
 	"github.com/marrasen/gridterm/fonts"
@@ -181,4 +183,26 @@ func fontCommandID(family string) string {
 		return "font.use.bundled"
 	}
 	return "font.use." + strings.ToLower(strings.ReplaceAll(family, " ", "-"))
+}
+
+// openCols and openRows are the terminal a new window opens with, beside
+// the sidebar: gridterm's 100 by 32, less its sidebar and bar.
+const openCols, openRows = 80, 30
+
+// frameW and frameH are the window around the terminal: the divider
+// beside the sidebar, and the menu bar and the pane's title above.
+const frameW, frameH = 6, 52
+
+// firstSize is how big a new window opens: room for the sidebar and a
+// terminal of openCols by openRows at font size, in Go Mono.
+func firstSize(size float32, sidebar float32) geom.Size {
+	face := text.GoMono(false, false)
+	ascent, descent, gap := face.Metrics(size)
+	_, advance, ok := face.Glyph('M', size)
+	if !ok {
+		advance = size * 0.6
+	}
+	w := float32(math.Round(float64(advance)))
+	h := float32(math.Round(float64(ascent + descent + gap)))
+	return geom.Sz(sidebar+frameW+openCols*w, frameH+openRows*h)
 }

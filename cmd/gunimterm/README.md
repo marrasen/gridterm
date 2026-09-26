@@ -52,7 +52,6 @@ command gridterm registers, and against what was left out on the way.
 
 The window:
 
-- Its icon, and a first size worked out from the font's cells.
 - Ctrl+Tab walks the panes in the order they were last used, with a
   list shown while Ctrl is held.
 - The command-line flags: `-font-size`, `-e`, `-scrollback`, `-ssh`,

@@ -111,3 +111,17 @@ func TestTheWindowDrawsInTheFontAndZoomsWithCtrlAndTheWheel(t *testing.T) {
 		t.Fatalf("font.use.bundled sent %#v", in)
 	}
 }
+
+func TestANewWindowOpensOnATerminalOf80By30(t *testing.T) {
+	win, sh, publish := windowStageOf(t, firstSize(defaultFontSize, 220))
+	quiet := shellHooks{output: func() {}, title: func(string) {}, exit: func() {}, clipboard: func(string) {}}
+	sh.set("p1", openShell(&typed{done: make(chan struct{})}, vt.DefaultPalette(), quiet))
+	t.Cleanup(func() { _ = sh.get("p1").t.Close() })
+	st := State{Panes: []Pane{{ID: "p1", Title: "Terminal 1"}}, Stage: &Box{Pane: "p1"}, Focus: "p1", Sidebar: true, SidebarWidth: 220, FontSize: defaultFontSize, PaneTitles: true}
+	for range 10 {
+		publish(st)
+	}
+	if cols, rows := win.terms["p1"].cells.Fit(); cols != openCols || rows != openRows {
+		t.Fatalf("the window opens on a terminal of %d by %d", cols, rows)
+	}
+}

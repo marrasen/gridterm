@@ -240,3 +240,31 @@ func TestChangeSecretUnlocksFirst(t *testing.T) {
 		t.Fatal("picking the secret opened no form")
 	}
 }
+
+func TestClosingTheWindowAsksWhileAnythingIsOpen(t *testing.T) {
+	a, _ := agentApp(t)
+	a.handle(Exit{})
+	waitFor(t, a, "the question", func() bool { return len(a.st.Asks) == 1 })
+	q := a.st.Asks[0]
+	if q.Text != "Still open: 1 pane and an agent share." || !q.Danger {
+		t.Fatalf("asked %+v", q)
+	}
+	// A second close while it asks asks nothing more.
+	a.handle(Exit{})
+	for f := range len(a.events) {
+		_ = f
+		(<-a.events)()
+	}
+	if len(a.st.Asks) != 1 {
+		t.Fatalf("closed twice, it asks %d questions", len(a.st.Asks))
+	}
+	a.handle(AskAnswered{ID: q.ID})
+	waitFor(t, a, "the no", func() bool { return !a.leaving })
+	if len(a.st.Panes) != 1 {
+		t.Fatalf("told no, the window closed %d panes", 1-len(a.st.Panes))
+	}
+	a.handle(Exit{})
+	waitFor(t, a, "the question again", func() bool { return len(a.st.Asks) == 1 })
+	a.handle(AskAnswered{ID: a.st.Asks[0].ID, Yes: true})
+	waitFor(t, a, "the window to close", func() bool { return len(a.st.Panes) == 0 })
+}

@@ -254,7 +254,8 @@ type (
 	}
 	// SidebarMoved says how wide the pointer left the sidebar.
 	SidebarMoved struct{ Width float32 }
-	// Exit closes the window, and every shell in it.
+	// Exit closes the window, and every shell in it, after asking while
+	// anything is open.
 	Exit struct{}
 	// RenamePane names a pane; its shell's titles no longer change it.
 	// An empty name hands the name back to the shell.
@@ -369,6 +370,8 @@ type app struct {
 	serving serving
 	// windows are the windows connected to, by name.
 	windows map[string]*remoteWin
+	// leaving is set while the window asks whether to close.
+	leaving bool
 	// commands are what each command pane runs, to run it again.
 	commands map[string]command
 	// argvs are what each local pane runs, to start it again and to
@@ -612,9 +615,7 @@ func (a *app) handle(in gunim.Intent) {
 	case SidebarMoved:
 		a.st.SidebarWidth = in.Width
 	case Exit:
-		for len(a.st.Panes) > 0 {
-			a.remove(a.st.Panes[0].ID)
-		}
+		a.askToQuit()
 	case RenamePane:
 		for i := range a.st.Panes {
 			if p := &a.st.Panes[i]; p.ID == in.Pane {

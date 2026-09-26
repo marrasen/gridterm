@@ -55,6 +55,8 @@ func run() error {
 		w, err := a.NewWindow(gunim.WindowOptions{
 			Title: "gunimterm",
 			Size:  geom.Sz(900, 600),
+			// The close button asks first, as Exit does.
+			AskToClose: Exit{},
 		})
 		if err != nil {
 			return fmt.Errorf("gunimterm: %w", err)

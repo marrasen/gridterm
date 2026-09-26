@@ -52,8 +52,6 @@ command gridterm registers, and against what was left out on the way.
 
 The window:
 
-- Closing it asks first while panes, tunnels or shares are open, and
-  lists them. gunimterm closes at once.
 - Its title follows the focused pane, as "gridterm — <title>".
 - Its icon, and a first size worked out from the font's cells.
 - The Font menu, which picks the font family (`font.use.<family>`),
